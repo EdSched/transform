@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>经济学课程安排 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f7f5f0;
+  --surface: #ffffff;
+  --border: #e2ded6;
+  --border-light: #ede9e2;
+  --text-primary: #1a1814;
+  --text-secondary: #5a5650;
+  --text-muted: #9a9590;
+  --accent: #2c4a8a;
+  --sat: #1a4a8a;
+  --sun: #8a1a2c;
+  --c-macro-bg: #ddeaf8; --c-macro: #1a3a6a;
+  --c-micro-bg: #ddf0e0; --c-micro: #1a4a28;
+  --c-math-bg: #e8e4f8; --c-math: #3a2a7a;
+  --c-ex-bg: #faecd8; --c-ex: #5a3010;
+  --c-meth-bg: #d8f0ea; --c-meth: #0a4038;
+  --c-com-bg: #ece8e0; --c-com: #3a3830;
+  --c-past-bg: #f8e4dc; --c-past: #6a2818;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'DM Mono', 'Noto Serif SC', monospace;
+  background: var(--bg);
+  color: var(--text-primary);
+  min-height: 100vh;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ── Header ── */
+header {
+  border-bottom: 1px solid var(--border);
+  padding: 2.5rem 3rem 1.5rem;
+  background: var(--surface);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem;
+}
+.header-left h1 {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+.header-left .sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* ── Controls ── */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.btn-group {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.btn-group button {
+  padding: 6px 16px;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  border-right: 1px solid var(--border);
+  letter-spacing: 0.03em;
+}
+.btn-group button:last-child { border-right: none; }
+.btn-group button.active {
+  background: var(--text-primary);
+  color: var(--bg);
+}
+.btn-group button:hover:not(.active) { background: var(--bg); }
+
+/* ── Legend ── */
+.legend-bar {
+  padding: 12px 3rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+.legend-dot {
+  width: 8px; height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Main ── */
+main { padding: 2rem 3rem 4rem; max-width: 1200px; }
+
+/* ── View toggle ── */
+.view-toggle {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 1.5rem;
+}
+.vtab {
+  padding: 4px 14px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: all 0.15s;
+}
+.vtab.active {
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+  background: var(--surface);
+}
+
+/* ── Calendar ── */
+.week-block { margin-bottom: 2rem; }
+.week-label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  padding-left: 2px;
+}
+.cal-grid {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.cal-head {
+  display: flex;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.ch-time {
+  width: 90px;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-right: 1px solid var(--border-light);
+}
+.ch-day {
+  flex: 1;
+  padding: 6px 6px 5px;
+  text-align: center;
+  border-right: 1px solid var(--border-light);
+  min-width: 0;
+}
+.ch-day:last-child { border-right: none; }
+.ch-dow {
+  display: block;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+.ch-dt {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.ch-day.sat .ch-dow { color: var(--sat); }
+.ch-day.sun .ch-dow { color: var(--sun); }
+.cal-row {
+  display: flex;
+  border-top: 1px solid var(--border-light);
+  min-height: 52px;
+}
+.cal-row:first-of-type { border-top: none; }
+.cr-time {
+  width: 90px;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  font-size: 10px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  border-right: 1px solid var(--border-light);
+  line-height: 1.4;
+}
+.cr-cell {
+  flex: 1;
+  padding: 4px;
+  border-right: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+.cr-cell:last-child { border-right: none; }
+.ev {
+  border-radius: 3px;
+  padding: 3px 5px;
+  font-size: 10px;
+  font-weight: 500;
+  width: 100%;
+  text-align: center;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+}
+.e-macro { background: var(--c-macro-bg); color: var(--c-macro); }
+.e-micro { background: var(--c-micro-bg); color: var(--c-micro); }
+.e-math  { background: var(--c-math-bg);  color: var(--c-math);  }
+.e-ex    { background: var(--c-ex-bg);    color: var(--c-ex);    }
+.e-meth  { background: var(--c-meth-bg);  color: var(--c-meth);  }
+.e-com   { background: var(--c-com-bg);   color: var(--c-com);   }
+.e-past  { background: var(--c-past-bg);  color: var(--c-past);  }
+
+/* ── Summary ── */
+.summary { display: flex; flex-direction: column; gap: 1.2rem; }
+.course-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.cc-head {
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg);
+}
+.cc-title {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.cc-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+.cc-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.cc-item {
+  padding: 8px 16px;
+  border-right: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cc-item:nth-child(n) { border-right: 1px solid var(--border-light); }
+.cc-date-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cc-date { font-size: 12px; font-weight: 500; }
+.cc-dow  { font-size: 11px; }
+.cc-dow.sat { color: var(--sat); }
+.cc-dow.sun { color: var(--sun); }
+.cc-time { font-size: 10px; color: var(--text-muted); }
+
+/* ── Responsive ── */
+@media (max-width: 680px) {
+  header { padding: 1.5rem 1.2rem 1rem; flex-direction: column; align-items: flex-start; }
+  .legend-bar { padding: 10px 1.2rem; }
+  main { padding: 1.2rem 1.2rem 3rem; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>经济学课程安排</h1>
+    <div class="sub">唯新教育 · 2026年度</div>
+  </div>
+  <div class="controls">
+    <div class="btn-group" id="period-btns">
+      <button class="active" onclick="setPeriod('july')">7月期</button>
+      <button onclick="setPeriod('oct')">10月期</button>
+    </div>
+  </div>
+</header>
+
+<div class="legend-bar">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-macro-bg);border:1px solid var(--c-macro)"></div>宏观经济学</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-micro-bg);border:1px solid var(--c-micro)"></div>微观经济学</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-math-bg);border:1px solid var(--c-math)"></div>经济数学</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-ex-bg);border:1px solid var(--c-ex)"></div>习题课</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-meth-bg);border:1px solid var(--c-meth)"></div>方法论 / 计量</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-com-bg);border:1px solid var(--c-com)"></div>社会科学共通课</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-past-bg);border:1px solid var(--c-past)"></div>备考过去问</div>
+</div>
+
+<main>
+  <div class="view-toggle">
+    <button class="vtab active" onclick="setView('cal')">日历视图</button>
+    <button class="vtab" onclick="setView('sum')">课程汇总</button>
+  </div>
+  <div id="cal-view"></div>
+  <div id="sum-view" style="display:none"></div>
+</main>
+
+<script>
+const TIMES = ['14:00–16:00', '16:00–18:00', '19:00–21:00'];
+const DAYS_CN = ['周一','周二','周三','周四','周五','周六','周日'];
+
+function cls(name) {
+  if (!name) return '';
+  if (name.includes('宏观经济学')) return 'e-macro';
+  if (name.includes('微观经济学')) return 'e-micro';
+  if (name.includes('经济数学'))   return 'e-math';
+  if (name.includes('习题课'))     return 'e-ex';
+  if (name.includes('计量') || name.includes('方法论')) return 'e-meth';
+  if (name.includes('共通课'))     return 'e-com';
+  if (name.includes('备考') || name.includes('过去问')) return 'e-past';
+  return 'e-com';
+}
+function short(n) {
+  return n.replace('社会科学共通课', '共通课').replace('经济学研究计划方法论', '研究计划方法论');
+}
+function fmtDate(d) { return `${d.getMonth()+1}/${d.getDate()}`; }
+function dowOf(d)   { return DAYS_CN[(d.getDay()+6)%7]; }
+function dowCls(d)  { return d.getDay()===6?'sat':d.getDay()===0?'sun':''; }
+function iso(d)     { return d.toISOString().slice(0,10); }
+function getMonday(d) {
+  const dd = new Date(d);
+  dd.setDate(dd.getDate() - ((dd.getDay()+6)%7));
+  dd.setHours(0,0,0,0); return dd;
+}
+
+const DATA = {
+  july: [
+    {date:'2026-06-27',slot:0,span:2,name:'宏观经济学1'},
+    {date:'2026-07-04',slot:0,span:2,name:'宏观经济学2'},
+    {date:'2026-07-08',slot:2,name:'备考过去问'},
+    {date:'2026-07-11',slot:0,span:2,name:'宏观经济学3'},
+    {date:'2026-07-12',slot:1,name:'社会科学共通课1'},
+    {date:'2026-07-15',slot:2,name:'宏观习题课3'},
+    {date:'2026-07-18',slot:0,span:2,name:'宏观经济学4'},
+    {date:'2026-07-19',slot:1,name:'社会科学共通课2'},
+    {date:'2026-07-22',slot:2,name:'宏观习题课4'},
+    {date:'2026-07-25',slot:0,span:2,name:'宏观经济学5'},
+    {date:'2026-07-26',slot:1,name:'社会科学共通课3'},
+    {date:'2026-07-29',slot:2,name:'宏观习题课5'},
+    {date:'2026-08-01',slot:0,span:2,name:'宏观经济学6'},
+    {date:'2026-08-02',slot:1,name:'社会科学共通课4'},
+    {date:'2026-08-05',slot:2,name:'宏观习题课6'},
+    {date:'2026-08-08',slot:0,span:2,name:'经济数学1'},
+    {date:'2026-08-09',slot:1,name:'社会科学共通课5'},
+    {date:'2026-08-15',slot:0,span:2,name:'经济数学2'},
+    {date:'2026-08-16',slot:1,name:'社会科学共通课6'},
+    {date:'2026-08-22',slot:0,span:2,name:'经济数学3'},
+    {date:'2026-08-23',slot:1,name:'社会科学共通课7'},
+    {date:'2026-08-29',slot:0,span:2,name:'经济数学4'},
+    {date:'2026-08-30',slot:1,name:'社会科学共通课8'},
+    {date:'2026-09-05',slot:0,span:2,name:'经济数学5'},
+    {date:'2026-09-06',slot:1,name:'社会科学共通课9'},
+    {date:'2026-09-12',slot:0,span:2,name:'经济数学6'},
+    {date:'2026-09-13',slot:1,name:'社会科学共通课10'},
+  ],
+  oct: [
+    {date:'2026-10-03',slot:0,span:2,name:'微观经济学1'},
+    {date:'2026-10-04',slot:1,name:'社会科学共通课1'},
+    {date:'2026-10-05',slot:2,name:'经济学研究计划方法论1'},
+    {date:'2026-10-08',slot:2,name:'微观习题课1'},
+    {date:'2026-10-10',slot:0,span:2,name:'微观经济学2'},
+    {date:'2026-10-11',slot:1,name:'社会科学共通课2'},
+    {date:'2026-10-12',slot:2,name:'经济学研究计划方法论2'},
+    {date:'2026-10-15',slot:2,name:'微观习题课2'},
+    {date:'2026-10-17',slot:0,span:2,name:'微观经济学3'},
+    {date:'2026-10-18',slot:1,name:'社会科学共通课3'},
+    {date:'2026-10-19',slot:2,name:'计量手法基础1'},
+    {date:'2026-10-22',slot:2,name:'微观习题课3'},
+    {date:'2026-10-24',slot:0,span:2,name:'微观经济学4'},
+    {date:'2026-10-25',slot:1,name:'社会科学共通课4'},
+    {date:'2026-10-26',slot:2,name:'计量手法基础2'},
+    {date:'2026-10-29',slot:2,name:'微观习题课4'},
+    {date:'2026-10-31',slot:0,span:2,name:'微观经济学5'},
+    {date:'2026-11-01',slot:1,name:'社会科学共通课5'},
+    {date:'2026-11-02',slot:2,name:'计量手法基础3'},
+    {date:'2026-11-05',slot:2,name:'微观习题课5'},
+    {date:'2026-11-07',slot:0,span:2,name:'微观经济学6'},
+    {date:'2026-11-08',slot:1,name:'社会科学共通课6'},
+    {date:'2026-11-12',slot:2,name:'微观习题课6'},
+    {date:'2026-11-14',slot:0,span:2,name:'微观经济学7'},
+    {date:'2026-11-15',slot:1,name:'社会科学共通课7'},
+    {date:'2026-11-19',slot:2,name:'微观习题课7'},
+    {date:'2026-11-21',slot:0,span:2,name:'微观经济学8'},
+    {date:'2026-11-22',slot:1,name:'社会科学共通课8'},
+    {date:'2026-11-26',slot:2,name:'微观习题课8'},
+    {date:'2026-11-28',slot:0,span:2,name:'微观经济学9'},
+    {date:'2026-11-29',slot:1,name:'社会科学共通课9'},
+    {date:'2026-12-03',slot:2,name:'微观习题课9'},
+    {date:'2026-12-05',slot:0,span:2,name:'微观经济学10'},
+    {date:'2026-12-06',slot:1,name:'社会科学共通课10'},
+    {date:'2026-12-10',slot:2,name:'微观习题课10'},
+    {date:'2026-12-12',slot:0,span:2,name:'宏观经济学1'},
+    {date:'2026-12-16',slot:2,name:'宏观习题课1'},
+    {date:'2026-12-19',slot:0,span:2,name:'宏观经济学2'},
+    {date:'2026-12-23',slot:2,name:'宏观习题课2'},
+  ]
+};
+
+const TIMES_MERGED = ['14:00–18:00', '14:00–16:00', '16:00–18:00', '19:00–21:00'];
+
+function evTime(ev) {
+  if (ev.span === 2) return '14:00–18:00';
+  return TIMES[ev.slot];
+}
+
+function buildCal(period) {
+  const evs = DATA[period].map(e => ({...e, dateObj: new Date(e.date)}));
+  const weeks = {};
+  for (const ev of evs) {
+    const mon = iso(getMonday(ev.dateObj));
+    if (!weeks[mon]) weeks[mon] = [];
+    weeks[mon].push(ev);
+  }
+  const monKeys = Object.keys(weeks).sort();
+  let html = '';
+  monKeys.forEach((mon, wi) => {
+    const wevs = weeks[mon];
+    const dateset = new Set(wevs.map(e => e.date));
+    const dates = [...dateset].sort().map(ds => new Date(ds));
+    const numCols = dates.length;
+    const lk = {};
+    for (const ev of wevs) {
+      if (!lk[ev.date]) lk[ev.date] = {};
+      lk[ev.date][ev.slot] = {name: ev.name, span: ev.span||1};
+    }
+    // Use CSS Grid: col1=time label, col2..N+1=dates; row1=header, row2=14-16, row3=16-18, row4=19-21
+    const gridCols = `90px repeat(${numCols}, minmax(0,1fr))`;
+    html += `<div class="week-block"><div class="week-label">第 ${wi+1} 周</div>`;
+    html += `<div style="display:grid;grid-template-columns:${gridCols};grid-template-rows:auto auto auto auto;border:1px solid var(--border);border-radius:4px;overflow:hidden;background:var(--surface)">`;
+    // Header row
+    html += `<div style="grid-row:1;grid-column:1;background:var(--bg);padding:6px 10px;border-bottom:1px solid var(--border)"></div>`;
+    dates.forEach((d, ci) => {
+      const dc = dowCls(d);
+      const col = ci + 2;
+      const dotColor = dc==='sat'?'var(--sat)':dc==='sun'?'var(--sun)':'var(--text-secondary)';
+      html += `<div style="grid-row:1;grid-column:${col};background:var(--bg);padding:6px 4px 5px;text-align:center;border-bottom:1px solid var(--border);border-left:1px solid var(--border-light)">`;
+      html += `<span style="display:block;font-size:10px;font-weight:500;letter-spacing:.04em;color:${dotColor}">${dowOf(d)}</span>`;
+      html += `<span style="display:block;font-size:10px;color:var(--text-muted);margin-top:1px">${fmtDate(d)}</span>`;
+      html += `</div>`;
+    });
+    // Time label cells
+    const timeRows = [['14:00–\n16:00',2],['16:00–\n18:00',3],['19:00–\n21:00',4]];
+    timeRows.forEach(([label, gr]) => {
+      html += `<div style="grid-row:${gr};grid-column:1;padding:6px 10px;font-size:10px;color:var(--text-muted);display:flex;align-items:center;border-top:1px solid var(--border-light);white-space:pre-line;line-height:1.4">${label}</div>`;
+    });
+    // Event cells
+    const spanned = new Set();
+    dates.forEach((d, ci) => {
+      const ds = iso(d);
+      const col = ci + 2;
+      for (let t = 0; t < 3; t++) {
+        if (spanned.has(`${ds}-${t}`)) continue;
+        const gr = t + 2;
+        const ev = (lk[ds]||{})[t] || null;
+        const borderT = `border-top:1px solid var(--border-light)`;
+        const borderL = `border-left:1px solid var(--border-light)`;
+        if (ev && ev.span === 2 && t === 0) {
+          spanned.add(`${ds}-1`);
+          html += `<div style="grid-row:2/4;grid-column:${col};padding:4px;${borderT};${borderL};display:flex;align-items:stretch">`;
+          html += `<div class="ev ${cls(ev.name)}" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:100%">`;
+          html += `${short(ev.name)}<span style="font-size:9px;opacity:0.7">14:00–18:00</span></div></div>`;
+        } else {
+          html += `<div style="grid-row:${gr};grid-column:${col};padding:4px;${borderT};${borderL};display:flex;align-items:center;justify-content:center;min-height:52px">`;
+          if (ev) html += `<div class="ev ${cls(ev.name)}">${short(ev.name)}</div>`;
+          html += `</div>`;
+        }
+      }
+    });
+    html += `</div></div>`;
+  });
+  return html;
+}
+
+function buildSummary(period) {
+  const evs = DATA[period].map(e => ({...e, dateObj: new Date(e.date)}));
+  const groups = {};
+  for (const ev of evs) {
+    const key = ev.name.replace(/\d+$/, '').trim();
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(ev);
+  }
+  const gkeys = Object.keys(groups).sort((a,b) => new Date(groups[a][0].date) - new Date(groups[b][0].date));
+  let html = '<div class="summary">';
+  for (const key of gkeys) {
+    const items = groups[key].sort((a,b) => new Date(a.date)-new Date(b.date));
+    const c = cls(items[0].name);
+    html += `<div class="course-card">`;
+    html += `<div class="cc-head"><span class="ev ${c}" style="display:inline-block;padding:2px 10px">${key}</span><span class="cc-count">${items.length} 课次</span></div>`;
+    html += `<div class="cc-body">`;
+    for (const ev of items) {
+      const d = ev.dateObj;
+      const dc = dowCls(d);
+      html += `<div class="cc-item">`;
+      html += `<div class="cc-date-row"><span class="cc-date">${fmtDate(d)}</span><span class="cc-dow ${dc}">${dowOf(d)}</span></div>`;
+      html += `<div class="cc-time">${evTime(ev)}</div>`;
+      html += `</div>`;
+    }
+    html += `</div></div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+let curPeriod = 'july', curView = 'cal';
+
+function render() {
+  const cal = document.getElementById('cal-view');
+  const sum = document.getElementById('sum-view');
+  if (curView === 'cal') {
+    cal.style.display = ''; sum.style.display = 'none';
+    cal.innerHTML = buildCal(curPeriod);
+  } else {
+    sum.style.display = ''; cal.style.display = 'none';
+    sum.innerHTML = buildSummary(curPeriod);
+  }
+}
+
+function setPeriod(p) {
+  curPeriod = p;
+  document.querySelectorAll('#period-btns button').forEach((b,i) => b.classList.toggle('active', (i===0&&p==='july')||(i===1&&p==='oct')));
+  render();
+}
+function setView(v) {
+  curView = v;
+  document.querySelectorAll('.vtab').forEach((b,i) => b.classList.toggle('active', (i===0&&v==='cal')||(i===1&&v==='sum')));
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
