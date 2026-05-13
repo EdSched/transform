@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>社会人文课程安排 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f5f4f0;
+  --surface: #ffffff;
+  --border: #e0dbd2;
+  --border-light: #eae6df;
+  --text-primary: #1a1814;
+  --text-secondary: #5a5650;
+  --text-muted: #9a9590;
+  --sat: #1a4a8a;
+  --sun: #8a1a2c;
+  --c-xinchuan-bg: #ddeaf8; --c-xinchuan: #1a3a6a;
+  --c-welfare-bg: #ddf0e0; --c-welfare: #1a4a28;
+  --c-shehui-bg: #e8e4f8; --c-shehui: #3a2a7a;
+  --c-core-bg: #d8f0ea; --c-core: #0a4038;
+  --c-large-bg: #faecd8; --c-large: #5a3010;
+  --c-past-bg: #f8e4dc; --c-past: #6a2818;
+  --c-other-bg: #ece8e0; --c-other: #3a3830;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'DM Mono', 'Noto Serif SC', monospace;
+  background: var(--bg);
+  color: var(--text-primary);
+  min-height: 100vh;
+  font-size: 13px;
+  line-height: 1.5;
+}
+header {
+  border-bottom: 1px solid var(--border);
+  padding: 2.5rem 3rem 1.5rem;
+  background: var(--surface);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem;
+}
+.header-left h1 {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+.header-left .sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.btn-group {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.btn-group button {
+  padding: 6px 16px;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  border-right: 1px solid var(--border);
+  letter-spacing: 0.03em;
+}
+.btn-group button:last-child { border-right: none; }
+.btn-group button.active { background: var(--text-primary); color: var(--bg); }
+.btn-group button:hover:not(.active) { background: var(--bg); }
+.legend-bar {
+  padding: 12px 3rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+.legend-dot {
+  width: 8px; height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+main { padding: 2rem 3rem 4rem; max-width: 1200px; }
+.view-toggle {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 1.5rem;
+}
+.vtab {
+  padding: 4px 14px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: all 0.15s;
+}
+.vtab.active { border-color: var(--text-secondary); color: var(--text-primary); background: var(--surface); }
+.week-block { margin-bottom: 2rem; }
+.week-label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  padding-left: 2px;
+}
+.ev {
+  border-radius: 3px;
+  padding: 3px 5px;
+  font-size: 10px;
+  font-weight: 500;
+  width: 100%;
+  text-align: center;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+}
+.e-xinchuan { background: var(--c-xinchuan-bg); color: var(--c-xinchuan); }
+.e-welfare  { background: var(--c-welfare-bg);  color: var(--c-welfare);  }
+.e-shehui   { background: var(--c-shehui-bg);   color: var(--c-shehui);   }
+.e-core     { background: var(--c-core-bg);     color: var(--c-core);     }
+.e-large    { background: var(--c-large-bg);    color: var(--c-large);    }
+.e-past     { background: var(--c-past-bg);     color: var(--c-past);     }
+.e-other    { background: var(--c-other-bg);    color: var(--c-other);    }
+/* Summary */
+.summary { display: flex; flex-direction: column; gap: 1.2rem; }
+.course-card { border: 1px solid var(--border); border-radius: 4px; overflow: hidden; background: var(--surface); }
+.cc-head {
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg);
+}
+.cc-count { font-size: 10px; color: var(--text-muted); letter-spacing: 0.04em; }
+.cc-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+.cc-item {
+  padding: 8px 16px;
+  border-right: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cc-date-row { display: flex; align-items: center; gap: 8px; }
+.cc-date { font-size: 12px; font-weight: 500; }
+.cc-dow { font-size: 11px; }
+.cc-dow.sat { color: var(--sat); }
+.cc-dow.sun { color: var(--sun); }
+.cc-time { font-size: 10px; color: var(--text-muted); }
+@media (max-width: 680px) {
+  header { padding: 1.5rem 1.2rem 1rem; flex-direction: column; align-items: flex-start; }
+  .legend-bar { padding: 10px 1.2rem; }
+  main { padding: 1.2rem 1.2rem 3rem; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>社会人文课程安排</h1>
+    <div class="sub">唯新教育 · 2026年度</div>
+  </div>
+  <div class="controls">
+    <div class="btn-group" id="period-btns">
+      <button class="active" onclick="setPeriod('july')">7月期</button>
+      <button onclick="setPeriod('oct')">10月期</button>
+    </div>
+  </div>
+</header>
+
+<div class="legend-bar">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-xinchuan-bg);border:1px solid var(--c-xinchuan)"></div>新传系（新传zemi・新闻传播学・社会心理学）</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-welfare-bg);border:1px solid var(--c-welfare)"></div>福祉系（福祉zemi・社会福祉学・社会政策学）</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-shehui-bg);border:1px solid var(--c-shehui)"></div>社会学系（社会学zemi・社会学理论・现代社会论）</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-core-bg);border:1px solid var(--c-core)"></div>社会学核心课（微观社会学・社会调查法・Gender研究）</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-large-bg);border:1px solid var(--c-large)"></div>社会人文大课</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-past-bg);border:1px solid var(--c-past)"></div>过去问</div>
+</div>
+
+<main>
+  <div class="view-toggle">
+    <button class="vtab active" onclick="setView('cal')">日历视图</button>
+    <button class="vtab" onclick="setView('sum')">课程汇总</button>
+  </div>
+  <div id="cal-view"></div>
+  <div id="sum-view" style="display:none"></div>
+</main>
+
+<script>
+const TIMES = ['10:00–12:00', '14:00–16:00', '16:30–18:30'];
+const DAYS_CN = ['周一','周二','周三','周四','周五','周六','周日'];
+
+function cls(name) {
+  if (!name) return '';
+  // 过去问优先判断，避免被其他规则误匹配
+  if (name.includes('过去问')) return 'e-past';
+  // 新传系
+  if (name.includes('新传') || name.includes('新闻传播') || name.includes('社会心理')) return 'e-xinchuan';
+  // 福祉系
+  if (name.includes('福祉') || name.includes('社会政策')) return 'e-welfare';
+  // 社会学核心课（优先于社会学系，避免被误匹配）
+  if (name.includes('微观社会') || name.includes('社会调查') || name.includes('Gender') || name.includes('gender')) return 'e-core';
+  // 社会学系
+  if (name.includes('社会学') || name.includes('现代社会')) return 'e-shehui';
+  // 大课
+  if (name.includes('社会人文大课')) return 'e-large';
+  return 'e-other';
+}
+
+function fmtDate(d) { return `${d.getMonth()+1}/${d.getDate()}`; }
+function dowOf(d)   { return DAYS_CN[(d.getDay()+6)%7]; }
+function dowCls(d)  { return d.getDay()===6?'sat':d.getDay()===0?'sun':''; }
+function iso(d)     { return d.toISOString().slice(0,10); }
+function getMonday(d) {
+  const dd = new Date(d);
+  dd.setDate(dd.getDate() - ((dd.getDay()+6)%7));
+  dd.setHours(0,0,0,0); return dd;
+}
+
+// slot: 0=10:00-12:00, 1=14:00-16:00, 2=16:30-18:30
+const DATA = {
+  july: [
+    // 周1–5 (7/11–8/9): 周六新传zemi+社会学zemi+社会学过去问, 周日社会福祉zemi+社会人文大课
+    {date:'2026-07-11',slot:0,name:'新传zemi'},
+    {date:'2026-07-11',slot:1,name:'社会学zemi'},
+    {date:'2026-07-11',slot:2,name:'社会学过去问'},
+    {date:'2026-07-12',slot:0,name:'社会福祉zemi'},
+    {date:'2026-07-12',slot:1,name:'社会人文大课'},
+    {date:'2026-07-18',slot:0,name:'新传zemi'},
+    {date:'2026-07-18',slot:1,name:'社会学zemi'},
+    {date:'2026-07-18',slot:2,name:'社会学过去问'},
+    {date:'2026-07-19',slot:0,name:'社会福祉zemi'},
+    {date:'2026-07-19',slot:1,name:'社会人文大课'},
+    {date:'2026-07-25',slot:0,name:'新传zemi'},
+    {date:'2026-07-25',slot:1,name:'社会学zemi'},
+    {date:'2026-07-25',slot:2,name:'社会学过去问'},
+    {date:'2026-07-26',slot:0,name:'社会福祉zemi'},
+    {date:'2026-07-26',slot:1,name:'社会人文大课'},
+    {date:'2026-08-01',slot:0,name:'新传zemi'},
+    {date:'2026-08-01',slot:1,name:'社会学zemi'},
+    {date:'2026-08-01',slot:2,name:'社会学过去问'},
+    {date:'2026-08-02',slot:0,name:'社会福祉zemi'},
+    {date:'2026-08-02',slot:1,name:'社会人文大课'},
+    {date:'2026-08-08',slot:0,name:'新传zemi'},
+    {date:'2026-08-08',slot:1,name:'社会学zemi'},
+    {date:'2026-08-08',slot:2,name:'社会学过去问'},
+    {date:'2026-08-09',slot:0,name:'社会福祉zemi'},
+    {date:'2026-08-09',slot:1,name:'社会人文大课'},
+    // 周6–10 (8/15–9/13): 周六社会心理学+Gender研究+现代社会论, 周日社会政策学+社会人文大课
+    {date:'2026-08-15',slot:0,name:'社会心理学'},
+    {date:'2026-08-15',slot:1,name:'Gender研究'},
+    {date:'2026-08-15',slot:2,name:'现代社会论'},
+    {date:'2026-08-16',slot:0,name:'社会政策学'},
+    {date:'2026-08-16',slot:1,name:'社会人文大课'},
+    {date:'2026-08-22',slot:0,name:'社会心理学'},
+    {date:'2026-08-22',slot:1,name:'Gender研究'},
+    {date:'2026-08-22',slot:2,name:'现代社会论'},
+    {date:'2026-08-23',slot:0,name:'社会政策学'},
+    {date:'2026-08-23',slot:1,name:'社会人文大课'},
+    {date:'2026-08-29',slot:0,name:'社会心理学'},
+    {date:'2026-08-29',slot:1,name:'Gender研究'},
+    {date:'2026-08-29',slot:2,name:'现代社会论'},
+    {date:'2026-08-30',slot:0,name:'社会政策学'},
+    {date:'2026-08-30',slot:1,name:'社会人文大课'},
+    {date:'2026-09-05',slot:0,name:'社会心理学'},
+    {date:'2026-09-05',slot:1,name:'Gender研究'},
+    {date:'2026-09-05',slot:2,name:'现代社会论'},
+    {date:'2026-09-06',slot:0,name:'社会政策学'},
+    {date:'2026-09-06',slot:1,name:'社会人文大课'},
+    {date:'2026-09-12',slot:0,name:'社会心理学'},
+    {date:'2026-09-12',slot:1,name:'Gender研究'},
+    {date:'2026-09-12',slot:2,name:'现代社会论'},
+    {date:'2026-09-13',slot:0,name:'社会政策学'},
+    {date:'2026-09-13',slot:1,name:'社会人文大课'},
+  ],
+  oct: [
+    // 周1–5 (10/10–11/8): 周六新闻传播学+社会调查法+社会学理论, 周日社会福祉学+社会人文大课
+    {date:'2026-10-10',slot:0,name:'新闻传播学'},
+    {date:'2026-10-10',slot:1,name:'社会调查法'},
+    {date:'2026-10-10',slot:2,name:'社会学理论'},
+    {date:'2026-10-11',slot:0,name:'社会福祉学'},
+    {date:'2026-10-11',slot:1,name:'社会人文大课'},
+    {date:'2026-10-17',slot:0,name:'新闻传播学'},
+    {date:'2026-10-17',slot:1,name:'社会调查法'},
+    {date:'2026-10-17',slot:2,name:'社会学理论'},
+    {date:'2026-10-18',slot:0,name:'社会福祉学'},
+    {date:'2026-10-18',slot:1,name:'社会人文大课'},
+    {date:'2026-10-24',slot:0,name:'新闻传播学'},
+    {date:'2026-10-24',slot:1,name:'社会调查法'},
+    {date:'2026-10-24',slot:2,name:'社会学理论'},
+    {date:'2026-10-25',slot:0,name:'社会福祉学'},
+    {date:'2026-10-25',slot:1,name:'社会人文大课'},
+    {date:'2026-10-31',slot:0,name:'新闻传播学'},
+    {date:'2026-10-31',slot:1,name:'社会调查法'},
+    {date:'2026-10-31',slot:2,name:'社会学理论'},
+    {date:'2026-11-01',slot:0,name:'社会福祉学'},
+    {date:'2026-11-01',slot:1,name:'社会人文大课'},
+    {date:'2026-11-07',slot:0,name:'新闻传播学'},
+    {date:'2026-11-07',slot:1,name:'社会调查法'},
+    {date:'2026-11-07',slot:2,name:'社会学理论'},
+    {date:'2026-11-08',slot:0,name:'社会福祉学'},
+    {date:'2026-11-08',slot:1,name:'社会人文大课'},
+    // 周6–10 (11/14–12/13): 周六新传zemi+社会学zemi+微观社会学, 周日社会福祉zemi+社会人文大课
+    {date:'2026-11-14',slot:0,name:'新传zemi'},
+    {date:'2026-11-14',slot:1,name:'社会学zemi'},
+    {date:'2026-11-14',slot:2,name:'微观社会学'},
+    {date:'2026-11-15',slot:0,name:'社会福祉zemi'},
+    {date:'2026-11-15',slot:1,name:'社会人文大课'},
+    {date:'2026-11-21',slot:0,name:'新传zemi'},
+    {date:'2026-11-21',slot:1,name:'社会学zemi'},
+    {date:'2026-11-21',slot:2,name:'微观社会学'},
+    {date:'2026-11-22',slot:0,name:'社会福祉zemi'},
+    {date:'2026-11-22',slot:1,name:'社会人文大课'},
+    {date:'2026-11-28',slot:0,name:'新传zemi'},
+    {date:'2026-11-28',slot:1,name:'社会学zemi'},
+    {date:'2026-11-28',slot:2,name:'微观社会学'},
+    {date:'2026-11-29',slot:0,name:'社会福祉zemi'},
+    {date:'2026-11-29',slot:1,name:'社会人文大课'},
+    {date:'2026-12-05',slot:0,name:'新传zemi'},
+    {date:'2026-12-05',slot:1,name:'社会学zemi'},
+    {date:'2026-12-05',slot:2,name:'微观社会学'},
+    {date:'2026-12-06',slot:0,name:'社会福祉zemi'},
+    {date:'2026-12-06',slot:1,name:'社会人文大课'},
+    {date:'2026-12-12',slot:0,name:'新传zemi'},
+    {date:'2026-12-12',slot:1,name:'社会学zemi'},
+    {date:'2026-12-12',slot:2,name:'微观社会学'},
+    {date:'2026-12-13',slot:0,name:'社会福祉zemi'},
+    {date:'2026-12-13',slot:1,name:'社会人文大课'},
+  ]
+};
+
+function buildCal(period) {
+  const evs = DATA[period].map(e => ({...e, dateObj: new Date(e.date)}));
+  const weeks = {};
+  for (const ev of evs) {
+    const mon = iso(getMonday(ev.dateObj));
+    if (!weeks[mon]) weeks[mon] = [];
+    weeks[mon].push(ev);
+  }
+  const monKeys = Object.keys(weeks).sort();
+  let html = '';
+  monKeys.forEach((mon, wi) => {
+    const wevs = weeks[mon];
+    const dateset = new Set(wevs.map(e => e.date));
+    const dates = [...dateset].sort().map(ds => new Date(ds));
+    const numCols = dates.length;
+    const lk = {};
+    for (const ev of wevs) {
+      if (!lk[ev.date]) lk[ev.date] = {};
+      lk[ev.date][ev.slot] = {name: ev.name};
+    }
+    const gridCols = `90px repeat(${numCols}, minmax(0,1fr))`;
+    html += `<div class="week-block"><div class="week-label">第 ${wi+1} 周</div>`;
+    html += `<div style="display:grid;grid-template-columns:${gridCols};grid-template-rows:auto auto auto auto;border:1px solid var(--border);border-radius:4px;overflow:hidden;background:var(--surface)">`;
+    // Header
+    html += `<div style="grid-row:1;grid-column:1;background:var(--bg);padding:6px 10px;border-bottom:1px solid var(--border)"></div>`;
+    dates.forEach((d, ci) => {
+      const dc = dowCls(d);
+      const col = ci + 2;
+      const dotColor = dc==='sat'?'var(--sat)':dc==='sun'?'var(--sun)':'var(--text-secondary)';
+      html += `<div style="grid-row:1;grid-column:${col};background:var(--bg);padding:6px 4px 5px;text-align:center;border-bottom:1px solid var(--border);border-left:1px solid var(--border-light)">`;
+      html += `<span style="display:block;font-size:10px;font-weight:500;letter-spacing:.04em;color:${dotColor}">${dowOf(d)}</span>`;
+      html += `<span style="display:block;font-size:10px;color:var(--text-muted);margin-top:1px">${fmtDate(d)}</span>`;
+      html += `</div>`;
+    });
+    // Time labels
+    [[TIMES[0],2],[TIMES[1],3],[TIMES[2],4]].forEach(([label, gr]) => {
+      html += `<div style="grid-row:${gr};grid-column:1;padding:6px 10px;font-size:10px;color:var(--text-muted);display:flex;align-items:center;border-top:1px solid var(--border-light);white-space:pre-line;line-height:1.4">${label.replace('–','\n–')}</div>`;
+    });
+    // Cells
+    dates.forEach((d, ci) => {
+      const ds = iso(d);
+      const col = ci + 2;
+      for (let t = 0; t < 3; t++) {
+        const gr = t + 2;
+        const ev = (lk[ds]||{})[t] || null;
+        html += `<div style="grid-row:${gr};grid-column:${col};padding:4px;border-top:1px solid var(--border-light);border-left:1px solid var(--border-light);display:flex;align-items:center;justify-content:center;min-height:48px">`;
+        if (ev) html += `<div class="ev ${cls(ev.name)}">${ev.name}</div>`;
+        html += `</div>`;
+      }
+    });
+    html += `</div></div>`;
+  });
+  return html;
+}
+
+function buildSummary(period) {
+  const evs = DATA[period].map(e => ({...e, dateObj: new Date(e.date)}));
+  const groups = {};
+  for (const ev of evs) {
+    const key = ev.name;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(ev);
+  }
+  const gkeys = Object.keys(groups).sort((a,b) => new Date(groups[a][0].date) - new Date(groups[b][0].date));
+  let html = '<div class="summary">';
+  for (const key of gkeys) {
+    const items = groups[key].sort((a,b) => new Date(a.date)-new Date(b.date));
+    const c = cls(items[0].name);
+    html += `<div class="course-card">`;
+    html += `<div class="cc-head"><span class="ev ${c}" style="display:inline-block;padding:2px 10px">${key}</span><span class="cc-count">${items.length} 课次</span></div>`;
+    html += `<div class="cc-body">`;
+    for (const ev of items) {
+      const d = ev.dateObj;
+      const dc = dowCls(d);
+      html += `<div class="cc-item">`;
+      html += `<div class="cc-date-row"><span class="cc-date">${fmtDate(d)}</span><span class="cc-dow ${dc}">${dowOf(d)}</span></div>`;
+      html += `<div class="cc-time">${TIMES[ev.slot]}</div>`;
+      html += `</div>`;
+    }
+    html += `</div></div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+let curPeriod = 'july', curView = 'cal';
+
+function render() {
+  const cal = document.getElementById('cal-view');
+  const sum = document.getElementById('sum-view');
+  if (curView === 'cal') {
+    cal.style.display = ''; sum.style.display = 'none';
+    cal.innerHTML = buildCal(curPeriod);
+  } else {
+    sum.style.display = ''; cal.style.display = 'none';
+    sum.innerHTML = buildSummary(curPeriod);
+  }
+}
+
+function setPeriod(p) {
+  curPeriod = p;
+  document.querySelectorAll('#period-btns button').forEach((b,i) => b.classList.toggle('active', (i===0&&p==='july')||(i===1&&p==='oct')));
+  render();
+}
+function setView(v) {
+  curView = v;
+  document.querySelectorAll('.vtab').forEach((b,i) => b.classList.toggle('active', (i===0&&v==='cal')||(i===1&&v==='sum')));
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
