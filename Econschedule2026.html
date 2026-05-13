@@ -360,9 +360,9 @@ function getMonday(d) {
 
 const DATA = {
   july: [
-    {date:'2026-06-27',slot:0,span:2,name:'宏观经济学1'},
-    {date:'2026-07-04',slot:0,span:2,name:'宏观经济学2'},
-    {date:'2026-07-08',slot:2,name:'备考过去问'},
+    {date:'2026-06-27',slot:0,span:2,name:'备考过去问1'},
+    {date:'2026-07-04',slot:0,span:2,name:'备考过去问2'},
+    {date:'2026-07-08',slot:2,name:'备考过去问3'},
     {date:'2026-07-11',slot:0,span:2,name:'宏观经济学3'},
     {date:'2026-07-12',slot:1,name:'社会科学共通课1'},
     {date:'2026-07-15',slot:2,name:'宏观习题课3'},
@@ -509,8 +509,16 @@ function buildCal(period) {
 function buildSummary(period) {
   const evs = DATA[period].map(e => ({...e, dateObj: new Date(e.date)}));
   const groups = {};
+  // Merge key: treat 研究计划方法论 and 计量手法基础 as same group in oct
+  function groupKey(name) {
+    const base = name.replace(/\d+$/, '').trim();
+    if (period === 'oct' && (base === '经济学研究计划方法论' || base === '计量手法基础')) {
+      return '研究计划方法论・计量手法基础';
+    }
+    return base;
+  }
   for (const ev of evs) {
-    const key = ev.name.replace(/\d+$/, '').trim();
+    const key = groupKey(ev.name);
     if (!groups[key]) groups[key] = [];
     groups[key].push(ev);
   }
@@ -525,8 +533,11 @@ function buildSummary(period) {
     for (const ev of items) {
       const d = ev.dateObj;
       const dc = dowCls(d);
+      const shortEvName = ev.name.replace(/\d+$/, '').trim();
+      const showLabel = (key === '研究计划方法论・计量手法基础');
       html += `<div class="cc-item">`;
       html += `<div class="cc-date-row"><span class="cc-date">${fmtDate(d)}</span><span class="cc-dow ${dc}">${dowOf(d)}</span></div>`;
+      if (showLabel) html += `<div style="font-size:9px;color:var(--text-muted);margin-top:1px">${shortEvName}</div>`;
       html += `<div class="cc-time">${evTime(ev)}</div>`;
       html += `</div>`;
     }
