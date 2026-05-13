@@ -331,7 +331,7 @@ main { padding: 2rem 3rem 4rem; max-width: 1200px; }
 </main>
 
 <script>
-const TIMES = ['14:00–16:00', '16:00–18:00', '19:00–21:00'];
+const TIMES = ['14:00–16:00', '16:00–18:00', '18:00–20:00'];
 const DAYS_CN = ['周一','周二','周三','周四','周五','周六','周日'];
 
 function cls(name) {
@@ -431,7 +431,7 @@ const DATA = {
   ]
 };
 
-const TIMES_MERGED = ['14:00–18:00', '14:00–16:00', '16:00–18:00', '19:00–21:00'];
+const TIMES_MERGED = ['14:00–18:00', '14:00–16:00', '16:00–18:00', '18:00–20:00'];
 
 function evTime(ev) {
   if (ev.span === 2) return '14:00–18:00';
@@ -474,7 +474,7 @@ function buildCal(period) {
       html += `</div>`;
     });
     // Time label cells
-    const timeRows = [['14:00–\n16:00',2],['16:00–\n18:00',3],['19:00–\n21:00',4]];
+    const timeRows = [['14:00–\n16:00',2],['16:00–\n18:00',3],['18:00–\n20:00',4]];
     timeRows.forEach(([label, gr]) => {
       html += `<div style="grid-row:${gr};grid-column:1;padding:6px 10px;font-size:10px;color:var(--text-muted);display:flex;align-items:center;border-top:1px solid var(--border-light);white-space:pre-line;line-height:1.4">${label}</div>`;
     });
