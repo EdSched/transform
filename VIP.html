@@ -398,7 +398,10 @@ main { padding: 2rem 3rem 4rem; max-width: 1100px; }
       已选课程合计
     </div>
   </div>
-  <button class="btn-reset" onclick="resetAll()">清空选择</button>
+  <div style="display:flex;gap:8px">
+    <button class="btn-reset" onclick="resetAll()">清空选择</button>
+    <button class="btn-reset" onclick="generateReport()" style="border-color:var(--text-secondary);color:var(--text-primary);font-weight:500">生成报告 →</button>
+  </div>
 </div>
 
 <div class="tabs-bar">
@@ -865,6 +868,234 @@ function syncSelection(id) {
   document.querySelectorAll(`[data-id="${id}"]`).forEach(el => {
     el.classList.toggle('checked', isSelected);
   });
+}
+
+// ── Report generation ──
+const PROJECT_META = {
+  '升学基本指导':  {bg:'#f5f0e8', color:'#2a2820'},
+  '1. 专业课基础知识': {bg:'#ddeaf8', color:'#1a3a6a'},
+  '2. 专业课备考强化': {bg:'#e8e4f8', color:'#3a2a7a'},
+  '3. 专业课基础方法论': {bg:'#ddf0e0', color:'#1a4a28'},
+  '过去问对策':    {bg:'#f8e4dc', color:'#6a2818'},
+  '英翻日对策':    {bg:'#ece8e0', color:'#3a3830'},
+  '研究计划书':    {bg:'#faecd8', color:'#5a3010'},
+  '出愿指导':      {bg:'#fbeaf0', color:'#6a1a3a'},
+  '面试对策':      {bg:'#e1f0ea', color:'#0a4030'},
+};
+
+function generateReport() {
+  if (selected.size === 0) {
+    alert('请先勾选课程再生成报告。');
+    return;
+  }
+
+  // Collect selected items with metadata
+  const allItems = [];
+
+  // Fixed courses
+  const fixedGroups = [
+    {key:'past',  label:'过去问对策',   courses: FIXED_COURSES.past},
+    {key:'eng',   label:'英翻日对策',   courses: FIXED_COURSES.eng},
+    {key:'plan',  label:'研究计划书',   courses: FIXED_COURSES.plan},
+    {key:'apply', label:'出愿指导',     courses: FIXED_COURSES.apply},
+    {key:'inter', label:'面试对策',     courses: FIXED_COURSES.inter},
+  ];
+  fixedGroups.forEach(g => {
+    const items = g.courses.filter(c => selected.has(c.id));
+    if (items.length) allItems.push({group: g.label, items: items.map(c => ({name: c.name, desc: c.desc, hw: c.hw, hours: c.hours}))});
+  });
+
+  // Subject courses — group by type label
+  const subjectGroups = [
+    {type:'base',   label:'1. 专业课基础知识'},
+    {type:'adv',    label:'2. 专业课备考强化'},
+    {type:'method', label:'3. 专业课基础方法论'},
+  ];
+  subjectGroups.forEach(sg => {
+    const items = [];
+    Object.entries(MAJOR_SUBJECTS).forEach(([major, data]) => {
+      const majorLabel = {xinchuan:'新闻传播学', shehui:'社会学', jingyingxue:'经营学', jingji:'经济学'}[major];
+      (data[sg.type]||[]).filter(s => selected.has(s.id)).forEach(s => {
+        items.push({name: `[${majorLabel}] ${s.num}. ${s.name}`, desc: s.topics, hw:'完成课后作业', hours: s.hours});
+      });
+    });
+    if (items.length) allItems.push({group: sg.label, items});
+  });
+
+  // 升学基本指导
+  const foundItem = document.querySelector('[data-id="升学目标指定"]') || document.querySelector('.course-row.checked');
+  // check manually
+  if (selected.has('升学目标指定')) {
+    allItems.unshift({group:'升学基本指导', items:[{name:'升学目标指定', desc:'面谈、方向确认、整体学习计划制定', hw:'完成老师要求信息提交', hours:0}]});
+  }
+
+  const totalHours = parseFloat(document.getElementById('total-hours').textContent) || 0;
+  const totalSessions = parseFloat(document.getElementById('total-sessions').textContent) || 0;
+
+  // Build print HTML
+  let tableRows = '';
+  let rowNum = 1;
+  allItems.forEach(g => {
+    const meta = PROJECT_META[g.group] || {bg:'#f0f0f0', color:'#333'};
+    const span = g.items.length;
+    g.items.forEach((item, i) => {
+      tableRows += `<tr>`;
+      if (i === 0) {
+        tableRows += `<td rowspan="${span}" class="group-cell" style="background:${meta.bg};color:${meta.color}">${g.group}</td>`;
+      }
+      tableRows += `
+        <td class="num-cell">${rowNum++}</td>
+        <td class="name-cell">${item.name}</td>
+        <td class="desc-cell">${item.desc}</td>
+        <td class="hw-cell">${item.hw}</td>
+        <td class="hours-cell">${item.hours > 0 ? item.hours : '—'}</td>
+      </tr>`;
+    });
+  });
+
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()}`;
+
+  const printHtml = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>VIP课程方案</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'DM Mono', 'Noto Serif SC', serif;
+  font-size: 11px;
+  color: #1a1814;
+  background: #fff;
+  padding: 2.5cm 2cm;
+}
+.report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1.5px solid #1a1814;
+}
+.report-title { font-family: 'Noto Serif SC', serif; font-size: 20px; font-weight: 600; letter-spacing: 0.02em; }
+.report-sub { font-size: 10px; color: #9a9590; margin-top: 3px; letter-spacing: 0.05em; }
+.report-meta { text-align: right; font-size: 10px; color: #5a5650; line-height: 1.8; }
+.summary-row {
+  display: flex;
+  gap: 2rem;
+  margin-bottom: 1.5rem;
+  padding: 10px 16px;
+  background: #f7f5f0;
+  border-radius: 3px;
+  border: 1px solid #e2ded6;
+}
+.summary-stat { display: flex; align-items: baseline; gap: 5px; }
+.stat-num { font-size: 22px; font-weight: 500; font-family: 'DM Mono', monospace; }
+.stat-label { font-size: 11px; color: #5a5650; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+}
+thead tr { background: #1a1814; color: #f7f5f0; }
+thead th {
+  padding: 7px 8px;
+  text-align: left;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  font-size: 9px;
+}
+tbody tr { border-bottom: 1px solid #ede9e2; }
+tbody tr:last-child { border-bottom: 1px solid #e2ded6; }
+td { padding: 6px 8px; vertical-align: top; line-height: 1.5; }
+.group-cell {
+  font-weight: 500;
+  font-size: 9px;
+  text-align: center;
+  letter-spacing: 0.03em;
+  border-right: 1px solid #e2ded6;
+  vertical-align: middle;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  padding: 8px 5px;
+  width: 28px;
+}
+.num-cell { width: 24px; color: #9a9590; text-align: center; font-family: 'DM Mono', monospace; }
+.name-cell { width: 22%; font-weight: 500; }
+.desc-cell { color: #5a5650; }
+.hw-cell { width: 22%; color: #5a5650; border-left: 1px solid #ede9e2; }
+.hours-cell { width: 44px; text-align: center; font-family: 'DM Mono', monospace; border-left: 1px solid #ede9e2; font-weight: 500; }
+.footer {
+  margin-top: 1.5rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid #e2ded6;
+  font-size: 9px;
+  color: #9a9590;
+  display: flex;
+  justify-content: space-between;
+}
+@media print {
+  body { padding: 0; }
+  @page { margin: 1.8cm 1.5cm; size: A4; }
+  .no-print { display: none; }
+}
+.print-btn {
+  display: inline-block;
+  margin-bottom: 1.5rem;
+  padding: 8px 20px;
+  background: #1a1814;
+  color: #f7f5f0;
+  border: none;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+</style>
+</head>
+<body>
+<button class="print-btn no-print" onclick="window.print()">打印 / 另存为 PDF</button>
+<div class="report-header">
+  <div>
+    <div class="report-title">VIP单回课程方案</div>
+    <div class="report-sub">唯新教育 · UNIQUE NEW EDUCATION</div>
+  </div>
+  <div class="report-meta">
+    <div>生成日期：${dateStr}</div>
+    <div>合计 ${totalSessions} 回 · ${totalHours} 课时</div>
+  </div>
+</div>
+<div class="summary-row">
+  <div class="summary-stat"><span class="stat-num">${totalSessions}</span><span class="stat-label">回</span></div>
+  <div class="summary-stat"><span class="stat-num">${totalHours}</span><span class="stat-label">课时</span></div>
+  <div class="summary-stat" style="margin-left:auto;font-size:10px;color:#9a9590;align-self:center">已选课程合计</div>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th style="width:28px"></th>
+      <th style="width:24px">#</th>
+      <th>课程名称</th>
+      <th>内容说明</th>
+      <th>课后作业</th>
+      <th style="width:44px;text-align:center">课时</th>
+    </tr>
+  </thead>
+  <tbody>${tableRows}</tbody>
+</table>
+<div class="footer">
+  <span>唯新教育 VIP课程方案</span>
+  <span>本文件由课程点选系统自动生成 · ${dateStr}</span>
+</div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank');
+  win.document.write(printHtml);
+  win.document.close();
 }
 
 // ── Init ──
