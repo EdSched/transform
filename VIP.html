@@ -650,34 +650,41 @@ const PROJECT_META = {
 function generateReport() {
   if (selected.size === 0) { alert('请先勾选课程再生成报告。'); return; }
   const allItems = [];
-  const fixedGroups = [
-    {label:'升学基本指导', courses:FIXED_COURSES.found},
-    {label:'过去问对策',   courses:FIXED_COURSES.past},
-    {label:'英翻日对策',   courses:FIXED_COURSES.eng},
-    {label:'研究计划书',   courses:FIXED_COURSES.plan},
-    {label:'出愿指导',     courses:FIXED_COURSES.apply},
-    {label:'面试对策',     courses:FIXED_COURSES.inter},
-    {label:'TA指导',       courses:FIXED_COURSES.ta},
-  ];
-  fixedGroups.forEach(g => {
-    const items = g.courses.filter(c=>selected.has(c.id)).map(c=>({
+
+  // Follow exact overview order: 升学 → 1基础 → 2强化 → 3方法论 → 4拓展 → 过去问 → 英翻日 → 计划书 → 出愿 → 面试 → TA
+  const majorLabel = {xinchuan:'新闻传播学',shehui:'社会学',jingyingxue:'经营学',jingji:'经济学'};
+
+  function addFixed(label, courses) {
+    const items = courses.filter(c=>selected.has(c.id)).map(c=>({
       name:c.name,
       desc:c.detail?`${c.desc}（${c.detail}）`:c.desc,
       schedule:c.schedule||'',
       hw:c.hw, hours:getHours(c.id,c.defaultHours),
     }));
-    if (items.length) allItems.push({group:g.label,items});
-  });
-  const majorLabel = {xinchuan:'新闻传播学',shehui:'社会学',jingyingxue:'经营学',jingji:'经济学'};
-  [{type:'base',label:'1. 专业课基础知识'},{type:'adv',label:'2. 专业课备考强化'},{type:'method',label:'3. 专业课基础方法论'},{type:'ext',label:'4. 专业课拓展方法论'}].forEach(sg => {
+    if (items.length) allItems.push({group:label,items});
+  }
+
+  function addSubjects(type, label) {
     const items = [];
     Object.entries(MAJOR_SUBJECTS).forEach(([major,data]) => {
-      (data[sg.type]||[]).filter(s=>selected.has(s.id)).forEach(s=>{
+      (data[type]||[]).filter(s=>selected.has(s.id)).forEach(s=>{
         items.push({name:`[${majorLabel[major]}] ${s.num}. ${s.name}`,desc:s.topics,schedule:'',hw:'完成课后作业',hours:s.hours});
       });
     });
-    if (items.length) allItems.push({group:sg.label,items});
-  });
+    if (items.length) allItems.push({group:label,items});
+  }
+
+  addFixed('升学基本指导',    FIXED_COURSES.found);
+  addSubjects('base',   '1. 专业课基础知识');
+  addSubjects('adv',    '2. 专业课备考强化');
+  addSubjects('method', '3. 专业课基础方法论');
+  addSubjects('ext',    '4. 专业课拓展方法论');
+  addFixed('过去问对策',      FIXED_COURSES.past);
+  addFixed('英翻日对策',      FIXED_COURSES.eng);
+  addFixed('研究计划书',      FIXED_COURSES.plan);
+  addFixed('出愿指导',        FIXED_COURSES.apply);
+  addFixed('面试对策',        FIXED_COURSES.inter);
+  addFixed('TA指导',          FIXED_COURSES.ta);
 
   const totalHours = +parseFloat(document.getElementById('total-hours').textContent).toFixed(1);
   const totalSessions = +parseFloat(document.getElementById('total-sessions').textContent).toFixed(1);
