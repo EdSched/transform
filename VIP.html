@@ -8,368 +8,104 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #f7f5f0;
-  --surface: #ffffff;
-  --border: #e2ded6;
-  --border-light: #ede9e2;
-  --text-primary: #1a1814;
-  --text-secondary: #5a5650;
-  --text-muted: #9a9590;
-  --accent: #2c4a8a;
-  --checked-bg: #1a1814;
-  --checked-text: #f7f5f0;
-
+  --bg: #f7f5f0; --surface: #ffffff;
+  --border: #e2ded6; --border-light: #ede9e2;
+  --text-primary: #1a1814; --text-secondary: #5a5650; --text-muted: #9a9590;
   --c-base-bg: #ddeaf8;   --c-base: #1a3a6a;
   --c-adv-bg: #e8e4f8;    --c-adv: #3a2a7a;
   --c-method-bg: #ddf0e0; --c-method: #1a4a28;
+  --c-ext-bg: #f0f4e8;    --c-ext: #3a4a18;
   --c-past-bg: #f8e4dc;   --c-past: #6a2818;
   --c-plan-bg: #faecd8;   --c-plan: #5a3010;
   --c-apply-bg: #fbeaf0;  --c-apply: #6a1a3a;
   --c-inter-bg: #e1f0ea;  --c-inter: #0a4030;
   --c-eng-bg: #ece8e0;    --c-eng: #3a3830;
+  --c-ta-bg: #e8eaf8;     --c-ta: #1a2a6a;
   --c-found-bg: #f5f0e8;  --c-found: #2a2820;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: 'DM Mono', 'Noto Serif SC', monospace;
-  background: var(--bg);
-  color: var(--text-primary);
-  min-height: 100vh;
-  font-size: 13px;
-  line-height: 1.5;
-}
+body { font-family: 'DM Mono','Noto Serif SC',monospace; background: var(--bg); color: var(--text-primary); min-height: 100vh; font-size: 13px; line-height: 1.5; }
 
-/* ── Header ── */
-header {
-  border-bottom: 1px solid var(--border);
-  padding: 2.5rem 3rem 1.5rem;
-  background: var(--surface);
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 2rem;
-  flex-wrap: wrap;
-}
-.header-left h1 {
-  font-family: 'Noto Serif SC', serif;
-  font-size: 1.6rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  line-height: 1.2;
-}
-.header-left .sub {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 4px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
+header { border-bottom: 1px solid var(--border); padding: 2.5rem 3rem 1.5rem; background: var(--surface); display: flex; align-items: flex-end; justify-content: space-between; gap: 2rem; flex-wrap: wrap; }
+.header-left h1 { font-family: 'Noto Serif SC',serif; font-size: 1.6rem; font-weight: 600; letter-spacing: .02em; line-height: 1.2; }
+.header-left .sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; letter-spacing: .05em; text-transform: uppercase; }
 
-/* ── Sticky summary bar ── */
-.summary-bar {
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 10px 3rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-.summary-counts {
-  display: flex;
-  gap: 1.5rem;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.summary-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-.summary-num {
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--text-primary);
-  font-family: 'DM Mono', monospace;
-  min-width: 2ch;
-  text-align: right;
-}
+.summary-bar { position: sticky; top: 0; z-index: 100; background: var(--surface); border-bottom: 1px solid var(--border); padding: 10px 3rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.summary-counts { display: flex; gap: 1.5rem; align-items: center; }
+.summary-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+.summary-num { font-size: 18px; font-weight: 500; color: var(--text-primary); font-family: 'DM Mono',monospace; min-width: 2ch; }
 .summary-divider { width: 1px; height: 20px; background: var(--border); }
-.btn-reset {
-  padding: 5px 14px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: transparent;
-  font-family: inherit;
-  font-size: 11px;
-  color: var(--text-muted);
-  cursor: pointer;
-  letter-spacing: 0.04em;
-  transition: all 0.15s;
-}
-.btn-reset:hover { border-color: var(--text-secondary); color: var(--text-primary); }
+.btn-action { padding: 5px 14px; border: 1px solid var(--border); border-radius: 3px; background: transparent; font-family: inherit; font-size: 11px; color: var(--text-muted); cursor: pointer; letter-spacing: .04em; transition: all .15s; }
+.btn-action:hover { border-color: var(--text-secondary); color: var(--text-primary); }
+.btn-action.primary { border-color: var(--text-secondary); color: var(--text-primary); font-weight: 500; }
 
-/* ── Tabs ── */
-.tabs-bar {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 0 3rem;
-  display: flex;
-  gap: 0;
-  overflow-x: auto;
-}
-.tab-btn {
-  padding: 10px 18px;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  font-family: inherit;
-  font-size: 12px;
-  color: var(--text-muted);
-  cursor: pointer;
-  letter-spacing: 0.03em;
-  white-space: nowrap;
-  transition: color 0.15s, border-color 0.15s;
-}
+.global-major-bar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 10px 3rem; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.global-major-label { font-size: 11px; color: var(--text-secondary); letter-spacing: .03em; flex-shrink: 0; }
+.major-btn { padding: 3px 12px; border: 1px solid var(--border); border-radius: 3px; background: transparent; font-family: inherit; font-size: 11px; color: var(--text-muted); cursor: pointer; transition: all .12s; }
+.major-btn.active { background: var(--text-primary); border-color: var(--text-primary); color: var(--bg); }
+.major-btn:hover:not(.active) { border-color: var(--text-secondary); color: var(--text-secondary); }
+
+.tabs-bar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 3rem; display: flex; overflow-x: auto; }
+.tab-btn { padding: 10px 18px; border: none; border-bottom: 2px solid transparent; background: transparent; font-family: inherit; font-size: 12px; color: var(--text-muted); cursor: pointer; letter-spacing: .03em; white-space: nowrap; transition: color .15s, border-color .15s; }
 .tab-btn.active { color: var(--text-primary); border-bottom-color: var(--text-primary); }
 .tab-btn:hover:not(.active) { color: var(--text-secondary); }
 
-/* ── Main layout ── */
 main { padding: 2rem 3rem 4rem; max-width: 1100px; }
-
-/* ── Section ── */
 .section { display: none; }
 .section.active { display: block; }
 
-/* ── Project group ── */
 .project-group { margin-bottom: 2rem; }
-.project-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border-light);
-}
-.project-tag {
-  border-radius: 3px;
-  padding: 2px 10px;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-}
-.project-count {
-  font-size: 10px;
-  color: var(--text-muted);
-  letter-spacing: 0.04em;
-}
+.project-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border-light); }
+.project-tag { border-radius: 3px; padding: 2px 10px; font-size: 11px; font-weight: 500; letter-spacing: .02em; }
+.project-count { font-size: 10px; color: var(--text-muted); }
 
-/* ── Course rows ── */
-.course-table {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  overflow: hidden;
-}
-.course-row {
-  display: grid;
-  grid-template-columns: 36px 1fr auto;
-  align-items: stretch;
-  border-bottom: 1px solid var(--border-light);
-  cursor: pointer;
-  transition: background 0.1s;
-  min-height: 48px;
-}
+.course-table { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.course-row { display: grid; grid-template-columns: 36px 1fr auto; align-items: stretch; border-bottom: 1px solid var(--border-light); cursor: pointer; transition: background .1s; min-height: 54px; }
 .course-row:last-child { border-bottom: none; }
 .course-row:hover { background: var(--bg); }
 .course-row.checked { background: #f0ede8; }
 
-.course-check {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-right: 1px solid var(--border-light);
-  padding: 0 8px;
-  flex-shrink: 0;
-}
-.checkmark {
-  width: 14px;
-  height: 14px;
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 9px;
-  color: transparent;
-  background: transparent;
-  transition: all 0.1s;
-  flex-shrink: 0;
-}
-.course-row.checked .checkmark {
-  background: var(--text-primary);
-  border-color: var(--text-primary);
-  color: #fff;
-}
+.course-check { display: flex; align-items: center; justify-content: center; border-right: 1px solid var(--border-light); padding: 0 8px; flex-shrink: 0; }
+.checkmark { width: 14px; height: 14px; border: 1px solid var(--border); border-radius: 2px; display: flex; align-items: center; justify-content: center; font-size: 9px; color: transparent; transition: all .1s; }
+.course-row.checked .checkmark { background: var(--text-primary); border-color: var(--text-primary); color: #fff; }
+.subject-row.checked .checkmark { background: var(--text-primary); border-color: var(--text-primary); color: #fff; }
 
-.course-info {
-  padding: 8px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-.course-title {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.course-num {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-family: 'DM Mono', monospace;
-}
+.course-info { padding: 8px 12px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.course-title { font-size: 12px; font-weight: 500; }
 .course-desc { font-size: 11px; color: var(--text-secondary); line-height: 1.5; }
-.course-hw {
-  font-size: 10px;
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 2px;
-}
-.hw-label {
-  background: var(--bg);
-  border: 1px solid var(--border-light);
-  border-radius: 2px;
-  padding: 0 4px;
-  font-size: 9px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
+.course-hw { font-size: 10px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; margin-top: 1px; }
+.hw-label { background: var(--bg); border: 1px solid var(--border-light); border-radius: 2px; padding: 0 4px; font-size: 9px; color: var(--text-muted); flex-shrink: 0; }
 
-/* subject detail rows */
-.subject-rows { display: none; }
-.subject-rows.open { display: block; }
-.subject-row {
-  display: grid;
-  grid-template-columns: 36px 36px 1fr auto;
-  align-items: stretch;
-  border-top: 1px solid var(--border-light);
-  cursor: pointer;
-  transition: background 0.1s;
-  min-height: 44px;
-  background: #fafaf8;
-}
-.subject-row:hover { background: #f5f3ee; }
-.subject-row.checked { background: #f0ede6; }
-.subject-indent {
-  border-right: 1px solid var(--border-light);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.indent-line {
-  width: 1px;
-  height: 60%;
-  background: var(--border);
-}
-.subject-check {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-right: 1px solid var(--border-light);
-  padding: 0 8px;
-}
-.subject-info {
-  padding: 7px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.subject-title { font-size: 11px; font-weight: 500; color: var(--text-primary); }
-.subject-topics { font-size: 10px; color: var(--text-muted); line-height: 1.5; }
-
-.course-meta {
-  padding: 8px 14px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 3px;
-  flex-shrink: 0;
-}
-.meta-hours {
-  font-size: 12px;
-  font-weight: 500;
-  font-family: 'DM Mono', monospace;
-  color: var(--text-primary);
-}
+.course-meta { padding: 8px 12px; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 4px; flex-shrink: 0; min-width: 76px; }
 .meta-unit { font-size: 9px; color: var(--text-muted); }
 
-/* ── 专业课 expand toggle ── */
-.expand-btn {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 10px;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 4px 12px 6px;
-  letter-spacing: 0.04em;
-  user-select: none;
-  transition: color 0.1s;
-}
-.expand-btn:hover { color: var(--text-secondary); }
-.expand-icon { font-size: 8px; transition: transform 0.2s; }
-.expand-icon.open { transform: rotate(90deg); }
+.hours-select { font-family: 'DM Mono',monospace; font-size: 12px; font-weight: 500; color: var(--text-primary); background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: 2px 4px; cursor: pointer; outline: none; width: 60px; text-align: center; transition: border-color .15s, opacity .15s; }
+.hours-select:disabled { opacity: .35; cursor: not-allowed; background: transparent; border-color: transparent; }
+.hours-select:not(:disabled):hover { border-color: var(--text-secondary); }
 
-/* ── 专业课 subject selector ── */
-.major-selector {
-  padding: 8px 12px;
-  background: var(--bg);
-  border-bottom: 1px solid var(--border-light);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.major-label { font-size: 11px; color: var(--text-secondary); letter-spacing: 0.03em; }
-.major-btn {
-  padding: 3px 10px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  background: transparent;
-  font-family: inherit;
-  font-size: 11px;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.12s;
-}
-.major-btn.active {
-  background: var(--text-primary);
-  border-color: var(--text-primary);
-  color: var(--bg);
-}
-.major-btn:hover:not(.active) { border-color: var(--text-secondary); color: var(--text-secondary); }
+.subject-row { display: grid; grid-template-columns: 36px 36px 1fr auto; align-items: stretch; border-top: 1px solid var(--border-light); cursor: pointer; transition: background .1s; min-height: 44px; background: #fafaf8; }
+.subject-row:hover { background: #f5f3ee; }
+.subject-row.checked { background: #f0ede6; }
+.subject-indent { border-right: 1px solid var(--border-light); display: flex; align-items: center; justify-content: center; }
+.indent-line { width: 1px; height: 60%; background: var(--border); }
+.subject-check { display: flex; align-items: center; justify-content: center; border-right: 1px solid var(--border-light); padding: 0 8px; }
+.subject-info { padding: 7px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.subject-title { font-size: 11px; font-weight: 500; }
+.subject-topics { font-size: 10px; color: var(--text-muted); line-height: 1.5; }
+.subject-meta { padding: 8px 12px; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 2px; flex-shrink: 0; }
+.subject-hours { font-size: 12px; font-weight: 500; font-family: 'DM Mono',monospace; }
+
+.subject-rows-container { display: none; }
+.subject-rows-container.open { display: block; }
+.expand-btn { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--text-muted); cursor: pointer; padding: 6px 12px; letter-spacing: .04em; user-select: none; transition: color .1s; border-top: 1px solid var(--border-light); background: #fafaf8; }
+.expand-btn:hover { color: var(--text-secondary); }
+.expand-icon { font-size: 8px; transition: transform .2s; }
+.expand-icon.open { transform: rotate(90deg); }
+.empty-notice { padding: 14px 16px; font-size: 11px; color: var(--text-muted); font-style: italic; }
 
 @media (max-width: 680px) {
-  header { padding: 1.5rem 1.2rem 1rem; }
-  .summary-bar { padding: 10px 1.2rem; }
-  .tabs-bar { padding: 0 1.2rem; }
+  header, .summary-bar, .global-major-bar, .tabs-bar { padding-left: 1.2rem; padding-right: 1.2rem; }
   main { padding: 1.2rem 1.2rem 3rem; }
-  .course-row { grid-template-columns: 36px 1fr auto; }
 }
 </style>
 </head>
@@ -384,24 +120,24 @@ main { padding: 2rem 3rem 4rem; max-width: 1100px; }
 
 <div class="summary-bar">
   <div class="summary-counts">
-    <div class="summary-item">
-      <span class="summary-num" id="total-sessions">0</span>
-      <span>回</span>
-    </div>
+    <div class="summary-item"><span class="summary-num" id="total-sessions">0</span><span>回</span></div>
     <div class="summary-divider"></div>
-    <div class="summary-item">
-      <span class="summary-num" id="total-hours">0</span>
-      <span>课时</span>
-    </div>
+    <div class="summary-item"><span class="summary-num" id="total-hours">0</span><span>课时</span></div>
     <div class="summary-divider"></div>
-    <div class="summary-item" style="color:var(--text-muted);font-size:11px">
-      已选课程合计
-    </div>
+    <div class="summary-item" style="color:var(--text-muted);font-size:11px">已选课程合计</div>
   </div>
   <div style="display:flex;gap:8px">
-    <button class="btn-reset" onclick="resetAll()">清空选择</button>
-    <button class="btn-reset" onclick="generateReport()" style="border-color:var(--text-secondary);color:var(--text-primary);font-weight:500">生成报告 →</button>
+    <button class="btn-action" onclick="resetAll()">清空选择</button>
+    <button class="btn-action primary" onclick="generateReport()">生成报告 →</button>
   </div>
+</div>
+
+<div class="global-major-bar" id="global-major-bar">
+  <span class="global-major-label">专业方向（统一选择）：</span>
+  <button class="major-btn active" onclick="setGlobalMajor('xinchuan',this)">新闻传播学</button>
+  <button class="major-btn" onclick="setGlobalMajor('shehui',this)">社会学</button>
+  <button class="major-btn" onclick="setGlobalMajor('jingyingxue',this)">经营学</button>
+  <button class="major-btn" onclick="setGlobalMajor('jingji',this)">经济学</button>
 </div>
 
 <div class="tabs-bar">
@@ -413,189 +149,152 @@ main { padding: 2rem 3rem 4rem; max-width: 1100px; }
 </div>
 
 <main>
-
-<!-- ── 总览 ── -->
 <div class="section active" id="tab-overview">
 
-  <!-- 升学基本指导 -->
   <div class="project-group">
-    <div class="project-header">
-      <span class="project-tag" style="background:var(--c-found-bg);color:var(--c-found)">升学基本指导</span>
-    </div>
-    <div class="course-table">
-      <div class="course-row" onclick="toggleCourse(this,'升学目标指定',0,0,'升学基本指导')">
-        <div class="course-check"><div class="checkmark">✓</div></div>
-        <div class="course-info">
-          <div class="course-title">升学目标指定</div>
-          <div class="course-desc">面谈、方向确认、整体学习计划制定</div>
-          <div class="course-hw"><span class="hw-label">作业</span>完成老师要求信息提交</div>
-        </div>
-        <div class="course-meta"><span class="meta-hours">—</span><span class="meta-unit">面谈</span></div>
-      </div>
-    </div>
+    <div class="project-header"><span class="project-tag" style="background:var(--c-found-bg);color:var(--c-found)">升学基本指导</span></div>
+    <div class="course-table" id="found-table"></div>
   </div>
 
-  <!-- 专业知识 -->
   <div class="project-group">
     <div class="project-header">
       <span class="project-tag" style="background:var(--c-base-bg);color:var(--c-base)">1. 专业课基础知识</span>
-      <span class="project-count" id="cnt-base">0 回选中</span>
+      <span class="project-count" id="cnt-base"></span>
     </div>
     <div class="course-table">
-      <div class="major-selector">
-        <span class="major-label">专业方向：</span>
-        <button class="major-btn active" onclick="setMajor('base','xinchuan',this)">新闻传播学</button>
-        <button class="major-btn" onclick="setMajor('base','shehui',this)">社会学</button>
-        <button class="major-btn" onclick="setMajor('base','jingyingxue',this)">经营学</button>
-        <button class="major-btn" onclick="setMajor('base','jingji',this)">经济学</button>
-      </div>
-      <div id="base-subjects"></div>
-      <div class="expand-btn" onclick="toggleExpand('base-subjects',this)">
-        <span class="expand-icon">▶</span> 查看各课详情
-      </div>
+      <div class="subject-rows-container" id="base-subjects"></div>
+      <div class="expand-btn" id="expand-base" onclick="toggleExpand('base-subjects',this)"><span class="expand-icon">▶</span><span>查看各课详情</span></div>
     </div>
   </div>
 
-  <!-- 专业课备考强化 -->
   <div class="project-group">
     <div class="project-header">
       <span class="project-tag" style="background:var(--c-adv-bg);color:var(--c-adv)">2. 专业课备考强化</span>
-      <span class="project-count" id="cnt-adv">0 回选中</span>
+      <span class="project-count" id="cnt-adv"></span>
     </div>
     <div class="course-table">
-      <div class="major-selector">
-        <span class="major-label">专业方向：</span>
-        <button class="major-btn active" onclick="setMajor('adv','xinchuan',this)">新闻传播学</button>
-        <button class="major-btn" onclick="setMajor('adv','shehui',this)">社会学</button>
-        <button class="major-btn" onclick="setMajor('adv','jingyingxue',this)">经营学</button>
-        <button class="major-btn" onclick="setMajor('adv','jingji',this)">经济学</button>
-      </div>
-      <div id="adv-subjects"></div>
-      <div class="expand-btn" onclick="toggleExpand('adv-subjects',this)">
-        <span class="expand-icon">▶</span> 查看各课详情
-      </div>
+      <div class="subject-rows-container" id="adv-subjects"></div>
+      <div class="expand-btn" id="expand-adv" onclick="toggleExpand('adv-subjects',this)"><span class="expand-icon">▶</span><span>查看各课详情</span></div>
     </div>
   </div>
 
-  <!-- 基础方法论 -->
   <div class="project-group">
     <div class="project-header">
       <span class="project-tag" style="background:var(--c-method-bg);color:var(--c-method)">3. 专业课基础方法论</span>
-      <span class="project-count" id="cnt-method">0 回选中</span>
+      <span class="project-count" id="cnt-method"></span>
     </div>
     <div class="course-table">
-      <div class="major-selector">
-        <span class="major-label">专业方向：</span>
-        <button class="major-btn active" onclick="setMajor('method','xinchuan',this)">新闻传播学</button>
-        <button class="major-btn" onclick="setMajor('method','shehui',this)">社会学</button>
-        <button class="major-btn" onclick="setMajor('method','jingyingxue',this)">经营学</button>
-        <button class="major-btn" onclick="setMajor('method','jingji',this)">经济学</button>
-      </div>
-      <div id="method-subjects"></div>
-      <div class="expand-btn" onclick="toggleExpand('method-subjects',this)">
-        <span class="expand-icon">▶</span> 查看各课详情
-      </div>
+      <div class="subject-rows-container" id="method-subjects"></div>
+      <div class="expand-btn" id="expand-method" onclick="toggleExpand('method-subjects',this)"><span class="expand-icon">▶</span><span>查看各课详情</span></div>
     </div>
   </div>
 
-  <!-- 过去问对策 -->
   <div class="project-group">
     <div class="project-header">
-      <span class="project-tag" style="background:var(--c-past-bg);color:var(--c-past)">过去问对策</span>
-      <span class="project-count" id="cnt-past">0 回选中</span>
+      <span class="project-tag" style="background:var(--c-ext-bg);color:var(--c-ext)">4. 专业课拓展方法论</span>
+      <span class="project-count" id="cnt-ext"></span>
     </div>
+    <div class="course-table">
+      <div class="subject-rows-container" id="ext-subjects"></div>
+      <div class="expand-btn" id="expand-ext" onclick="toggleExpand('ext-subjects',this)"><span class="expand-icon">▶</span><span>查看各课详情</span></div>
+    </div>
+  </div>
+
+  <div class="project-group">
+    <div class="project-header"><span class="project-tag" style="background:var(--c-past-bg);color:var(--c-past)">过去问对策</span><span class="project-count" id="cnt-past"></span></div>
     <div class="course-table" id="past-table"></div>
   </div>
 
-  <!-- 英翻日对策 -->
   <div class="project-group">
-    <div class="project-header">
-      <span class="project-tag" style="background:var(--c-eng-bg);color:var(--c-eng)">英翻日对策</span>
-      <span class="project-count" id="cnt-eng">0 回选中</span>
-    </div>
+    <div class="project-header"><span class="project-tag" style="background:var(--c-eng-bg);color:var(--c-eng)">英翻日对策</span><span class="project-count" id="cnt-eng"></span></div>
     <div class="course-table" id="eng-table"></div>
   </div>
 
-  <!-- 研究计划书 -->
   <div class="project-group">
-    <div class="project-header">
-      <span class="project-tag" style="background:var(--c-plan-bg);color:var(--c-plan)">研究计划书</span>
-      <span class="project-count" id="cnt-plan">0 回选中</span>
-    </div>
+    <div class="project-header"><span class="project-tag" style="background:var(--c-plan-bg);color:var(--c-plan)">研究计划书</span><span class="project-count" id="cnt-plan"></span></div>
     <div class="course-table" id="plan-table"></div>
   </div>
 
-  <!-- 出愿指导 -->
   <div class="project-group">
-    <div class="project-header">
-      <span class="project-tag" style="background:var(--c-apply-bg);color:var(--c-apply)">出愿指导</span>
-      <span class="project-count" id="cnt-apply">0 回选中</span>
-    </div>
+    <div class="project-header"><span class="project-tag" style="background:var(--c-apply-bg);color:var(--c-apply)">出愿指导</span><span class="project-count" id="cnt-apply"></span></div>
     <div class="course-table" id="apply-table"></div>
   </div>
 
-  <!-- 面试对策 -->
   <div class="project-group">
-    <div class="project-header">
-      <span class="project-tag" style="background:var(--c-inter-bg);color:var(--c-inter)">面试对策</span>
-      <span class="project-count" id="cnt-inter">0 回选中</span>
-    </div>
+    <div class="project-header"><span class="project-tag" style="background:var(--c-inter-bg);color:var(--c-inter)">面试对策</span><span class="project-count" id="cnt-inter"></span></div>
     <div class="course-table" id="inter-table"></div>
   </div>
 
-</div><!-- end overview -->
+  <div class="project-group">
+    <div class="project-header"><span class="project-tag" style="background:var(--c-ta-bg);color:var(--c-ta)">TA指导</span><span class="project-count" id="cnt-ta"></span></div>
+    <div class="course-table" id="ta-table"></div>
+  </div>
 
-<!-- ── 专业课详表 tabs ── -->
+</div>
+
 <div class="section" id="tab-xinchuan"></div>
 <div class="section" id="tab-shehui"></div>
 <div class="section" id="tab-jingyingxue"></div>
 <div class="section" id="tab-jingji"></div>
-
 </main>
 
 <script>
-// ── Data ──
 const FIXED_COURSES = {
+  found: [
+    {id:'found-1', name:'升学目标指定', desc:'面谈、方向确认、整体学习计划制定', hw:'完成老师要求信息提交', defaultHours:1},
+  ],
   past: [
-    {id:'past-1', name:'论述题写作基础', desc:'读题，读表技巧，名词解释，小论文写作', hw:'完成课后题目', hours:0.5},
-    {id:'past-2', name:'过去问真题练习', desc:'初次真题练习（题型理解＋解题框架搭建）', hw:'完成课后题目', hours:0},
-    {id:'past-3', name:'过去问真题强化', desc:'真题训练（重点题型强化＋解析）', hw:'完成课后题目', hours:0},
-    {id:'past-4', name:'志望校真题训练', desc:'志望校真题限时训练（含讲评＋技巧纠正）', hw:'完成课后题目', hours:0},
-    {id:'past-5', name:'志望校真题强化', desc:'志望校弱项强化训练（易错题专项）', hw:'完成课后题目', hours:0},
+    {id:'past-1', name:'论述题写作基础',  desc:'读题，读表技巧，名词解释，小论文写作',          hw:'完成课后题目', defaultHours:2},
+    {id:'past-2', name:'过去问真题练习',  desc:'初次真题练习（题型理解＋解题框架搭建）',          hw:'完成课后题目', defaultHours:2},
+    {id:'past-3', name:'过去问真题强化',  desc:'真题训练（重点题型强化＋解析）',                 hw:'完成课后题目', defaultHours:2},
+    {id:'past-4', name:'志望校真题训练',  desc:'志望校真题限时训练（含讲评＋技巧纠正）',          hw:'完成课后题目', defaultHours:2},
+    {id:'past-5', name:'志望校真题强化',  desc:'志望校弱项强化训练（易错题专项）',               hw:'完成课后题目', defaultHours:2},
   ],
   eng: [
-    {id:'eng-1', name:'英翻日基础', desc:'英翻日基础技巧，专业知识单词补充', hw:'完成课后题目', hours:0},
-    {id:'eng-2', name:'英翻日长文', desc:'英翻日长文翻译', hw:'完成课后题目', hours:0},
-    {id:'eng-3', name:'英翻日精读要约', desc:'英翻日要约和精读练习', hw:'完成课后题目', hours:0},
-    {id:'eng-4', name:'英翻日论述', desc:'英文阅读论述题练习', hw:'完成课后题目', hours:0},
+    {id:'eng-1', name:'英翻日基础',    desc:'英翻日基础技巧，专业知识单词补充', hw:'完成课后题目', defaultHours:2},
+    {id:'eng-2', name:'英翻日长文',    desc:'英翻日长文翻译',                 hw:'完成课后题目', defaultHours:2},
+    {id:'eng-3', name:'英翻日精读要约', desc:'英翻日要约和精读练习',           hw:'完成课后题目', defaultHours:2},
+    {id:'eng-4', name:'英翻日论述',    desc:'英文阅读论述题练习',             hw:'完成课后题目', defaultHours:2},
   ],
   plan: [
-    {id:'plan-1', name:'计划书选题', desc:'研究计划选题方向讨论、研究框架初设', hw:'完成计划书背景资料收集', hours:1},
-    {id:'plan-2', name:'计划书学术基础', desc:'学术表达：学术语言写作、计划书逻辑', hw:'完成计划书框架', hours:3},
-    {id:'plan-3', name:'计划书文献查找', desc:'文献检索方法：数据库、关键词选择、文献笔记整理', hw:'完成先行研究查找', hours:0},
-    {id:'plan-4', name:'计划书文献阅读', desc:'文献阅读方法：锁定问题意识，研究方法，结论', hw:'完成先行研究粗整理', hours:4},
-    {id:'plan-5', name:'计划书先行研究', desc:'先行研究整理：文献整理手法、结论统合归纳', hw:'完成先行研究表格', hours:0},
-    {id:'plan-6', name:'计划书背景', desc:'研究背景撰写：问题意识、研究目的、核心概念整理', hw:'完成计划书背景撰写', hours:0},
-    {id:'plan-7', name:'计划书写作基础', desc:'先行研究撰写：文献整合、理论定位、研究缝隙', hw:'完成先行研究撰写', hours:0},
-    {id:'plan-8', name:'计划书研究方法', desc:'研究方法撰写：定性／定量、访谈、内容分析', hw:'完成研究方法撰写', hours:0},
-    {id:'plan-9', name:'计划书初稿完成', desc:'研究计划草稿修订①：逻辑结构、章节安排', hw:'完成计划书草稿', hours:2},
-    {id:'plan-10', name:'计划书完善修订', desc:'研究计划草稿修订②：可行性、创新性、研究伦理补充', hw:'更新计划书草稿', hours:0},
-    {id:'plan-11', name:'计划书最终完成', desc:'研究计划最终整理：结构优化、语言校对、目标校对应', hw:'针对出愿学校完成计划书', hours:0},
+    {id:'plan-1',  name:'计划书选题',    desc:'研究计划选题方向讨论、研究框架初设',              hw:'完成计划书背景资料收集', defaultHours:2},
+    {id:'plan-2',  name:'计划书学术基础', desc:'学术表达：学术语言写作、计划书逻辑',             hw:'完成计划书框架',    defaultHours:2},
+    {id:'plan-3',  name:'计划书文献查找', desc:'文献检索方法：数据库、关键词选择、文献笔记整理', hw:'完成先行研究查找',   defaultHours:2},
+    {id:'plan-4',  name:'计划书文献阅读', desc:'文献阅读方法：锁定问题意识，研究方法，结论',     hw:'完成先行研究粗整理', defaultHours:2},
+    {id:'plan-5',  name:'计划书先行研究', desc:'先行研究整理：文献整理手法、结论统合归纳',       hw:'完成先行研究表格',   defaultHours:2},
+    {id:'plan-6',  name:'计划书背景',    desc:'研究背景撰写：问题意识、研究目的、核心概念整理',  hw:'完成计划书背景撰写', defaultHours:2},
+    {id:'plan-7',  name:'计划书写作基础', desc:'先行研究撰写：文献整合、理论定位、研究缝隙',     hw:'完成先行研究撰写',   defaultHours:2},
+    {id:'plan-8',  name:'计划书研究方法', desc:'研究方法撰写：定性／定量、访谈、内容分析',       hw:'完成研究方法撰写',   defaultHours:2},
+    {id:'plan-9',  name:'计划书初稿完成', desc:'研究计划草稿修订①：逻辑结构、章节安排',         hw:'完成计划书草稿',    defaultHours:2},
+    {id:'plan-10', name:'计划书完善修订', desc:'研究计划草稿修订②：可行性、创新性、研究伦理补充', hw:'更新计划书草稿',   defaultHours:2},
+    {id:'plan-11', name:'计划书最终完成', desc:'研究计划最终整理：结构优化、语言校对、目标校对应', hw:'针对出愿学校完成计划书', defaultHours:2},
   ],
   apply: [
-    {id:'apply-1', name:'出愿手续', desc:'出愿要项确认，前期出愿资料准备，证明书开具说明', hw:'完成证明书，语言成绩等开具', hours:0},
-    {id:'apply-2', name:'出愿学校初筛', desc:'根据计划书初稿筛选教授、提出修改计划书建议', hw:'完成出愿list', hours:0},
-    {id:'apply-3', name:'出愿学校确定', desc:'教授论文精读，联系邮件写作指导，学校信息分析', hw:'完成出愿资料准备，完成教授邮件', hours:0},
-    {id:'apply-4', name:'出愿资料撰写', desc:'出愿资料检查、志望理由书初稿指导', hw:'完成志望理由书和其他相关资料', hours:0},
-    {id:'apply-5', name:'出愿资料修改', desc:'志望理由书修改、出愿材料准备与清单确认、日语润色', hw:'完成所有出愿材料', hours:0},
-    {id:'apply-6', name:'出愿资料确认', desc:'目标校格式确认、研究主题对应检查、出愿材料最终确认', hw:'完成出愿', hours:0},
+    {id:'apply-1', name:'出愿手续',    desc:'出愿要项确认，前期出愿资料准备，证明书开具说明',          hw:'完成证明书，语言成绩等开具', defaultHours:2},
+    {id:'apply-2', name:'出愿学校初筛', desc:'根据计划书初稿筛选教授、提出修改计划书建议',             hw:'完成出愿list',       defaultHours:2},
+    {id:'apply-3', name:'出愿学校确定', desc:'教授论文精读，联系邮件写作指导，学校信息分析',           hw:'完成出愿资料准备，完成教授邮件', defaultHours:2},
+    {id:'apply-4', name:'出愿资料撰写', desc:'出愿资料检查、志望理由书初稿指导',                     hw:'完成志望理由书和其他相关资料', defaultHours:2},
+    {id:'apply-5', name:'出愿资料修改', desc:'志望理由书修改、出愿材料准备与清单确认、日语润色',       hw:'完成所有出愿材料', defaultHours:2},
+    {id:'apply-6', name:'出愿资料确认', desc:'目标校格式确认、研究主题对应检查、出愿材料最终确认',     hw:'完成出愿',         defaultHours:2},
   ],
   inter: [
-    {id:'inter-1', name:'面试稿准备', desc:'面试问题整理：基础问题和研究计划相关问题准备', hw:'完成面试初稿', hours:0},
-    {id:'inter-2', name:'面试稿定稿', desc:'面试对策：研究内容表达训练、常见问题应对', hw:'完成面试稿', hours:0},
-    {id:'inter-3', name:'模拟面试流程', desc:'面试礼仪流程说明和训练，初次面试并反馈改进点', hw:'更新面试稿问题', hours:0},
-    {id:'inter-4', name:'模拟面试更新', desc:'日语表达修正，更新随机问题和回答，反馈和改进计划', hw:'更新面试稿问题', hours:0},
-    {id:'inter-5', name:'模拟面试实战', desc:'实战模拟面试，熟悉完成流程，最终确认和表达优化', hw:'面试练习', hours:0},
+    {id:'inter-1', name:'面试稿准备',   desc:'面试问题整理：基础问题和研究计划相关问题准备', hw:'完成面试初稿',   defaultHours:2},
+    {id:'inter-2', name:'面试稿定稿',   desc:'面试对策：研究内容表达训练、常见问题应对',   hw:'完成面试稿',     defaultHours:2},
+    {id:'inter-3', name:'模拟面试流程', desc:'面试礼仪流程说明和训练，初次面试并反馈改进点', hw:'更新面试稿问题', defaultHours:2},
+    {id:'inter-4', name:'模拟面试更新', desc:'日语表达修正，更新随机问题和回答，反馈和改进计划', hw:'更新面试稿问题', defaultHours:2},
+    {id:'inter-5', name:'模拟面试实战', desc:'实战模拟面试，熟悉完成流程，最终确认和表达优化', hw:'面试练习',    defaultHours:2},
+  ],
+  ta: [
+    {id:'ta-1', name:'TA面试指导 20H',
+     desc:'在面试稿完成的前提下，模拟面试',
+     detail:'基本问题、高频问题、临场应变能力训练、表情管理、礼仪训练',
+     schedule:'时间可自由约，不限于周六日，与老师协商一致即可',
+     hw:'完成面试稿', defaultHours:20},
+    {id:'ta-2', name:'TA学习指导 20H',
+     desc:'日常学习指导',
+     detail:'日语语法纠正、论文写作规范、学习方法、综合学术训练（找论文、归纳整理理论文等，可按照学生需求调整）',
+     schedule:'时间可自由约，不限于周六日，与老师协商一致即可',
+     hw:'跟踪学习进度', defaultHours:20},
   ],
 };
 
@@ -603,31 +302,32 @@ const MAJOR_SUBJECTS = {
   xinchuan: {
     base: [
       {id:'xc-b1', num:'01', name:'传播学知识系谱', topics:'导入，媒介性，大众传播，代表性学者(拉扎斯菲尔德，李普曼，拉斯菲尔等)', hours:2},
-      {id:'xc-b2', num:'02', name:'媒介的发展', topics:'口语，文字，印刷，图像，广播，电影，电视和网络', hours:2},
-      {id:'xc-b3', num:'03', name:'传播效果论', topics:'火星人入侵，枪弹论，有限效果论，使用与满足，议题设定，沉默的螺旋，知沟理论，框架理论', hours:2},
-      {id:'xc-b4', num:'04', name:'近代新闻学', topics:'新闻学，日本报业发展，咖啡厅，公共圈，审查与言论自由，市民记者', hours:2},
-      {id:'xc-b5', num:'05', name:'现代政治传播与大众舆论', topics:'政治传播活动的基本结构，把关人理论，意见领袖，选择性接触，意见极化，AI发展，虚假新闻', hours:2},
+      {id:'xc-b2', num:'02', name:'媒介的发展',     topics:'口语，文字，印刷，图像，广播，电影，电视和网络', hours:2},
+      {id:'xc-b3', num:'03', name:'传播效果论',     topics:'枪弹论，有限效果论，使用与满足，议题设定，沉默的螺旋，知沟理论，框架理论', hours:2},
+      {id:'xc-b4', num:'04', name:'近代新闻学',     topics:'新闻学，日本报业发展，公共圈，审查与言论自由，市民记者', hours:2},
+      {id:'xc-b5', num:'05', name:'现代政治传播与大众舆论', topics:'把关人理论，意见领袖，选择性接触，意见极化，AI发展，虚假新闻', hours:2},
     ],
     adv: [
-      {id:'xc-a1', num:'06', name:'自我与社会认知', topics:'自我觉知，自我意识，自我表演，自证预言，认知偏差，启动效应，归因理论，刻板印象', hours:2},
-      {id:'xc-a2', num:'07', name:'态度与偏见', topics:'态度的功能，测量，学习理论，情感因素，计划行为理论，认知失调，说服，偏见', hours:2},
-      {id:'xc-a3', num:'08', name:'风险认知与受众心理', topics:'风险社会，台风眼效应，意见领袖，二阶段信息流向假设，粉丝行为和网络活动', hours:2},
+      {id:'xc-a1', num:'06', name:'自我与社会认知', topics:'自我觉知，自我表演，自证预言，认知偏差，启动效应，归因理论，刻板印象', hours:2},
+      {id:'xc-a2', num:'07', name:'态度与偏见',     topics:'态度的功能，学习理论，计划行为理论，认知失调，说服，偏见', hours:2},
+      {id:'xc-a3', num:'08', name:'风险认知与受众心理', topics:'风险社会，台风眼效应，意见领袖，二阶段信息流向假设，粉丝研究', hours:2},
     ],
     method: [
-      {id:'xc-m1', num:'09', name:'新传研究方法', topics:'问题意识，假说构成，定性与定量，观察法，访谈，田野调查，问卷调查，内容分析', hours:2},
-      {id:'xc-m2', num:'10', name:'调查问卷的设计与测量尺度', topics:'问卷设计，设问与选项，调查对象，数据的量化，尺度，信赖性，妥当性，量表', hours:2},
+      {id:'xc-m1', num:'09', name:'新传研究方法',         topics:'问题意识，假说构成，定性与定量，观察法，访谈，田野调查，问卷调查，内容分析', hours:2},
+      {id:'xc-m2', num:'10', name:'调查问卷的设计与测量尺度', topics:'问卷设计，设问与选项，调查对象，数据量化，尺度，信赖性，妥当性，量表', hours:2},
     ],
+    ext: [],
   },
   shehui: {
     base: [
-      {id:'sh-b1', num:'01', name:'古典社会学', topics:'デュルケーム、ウエーバー、ジンメル、ミードの諸概念', hours:2},
-      {id:'sh-b2', num:'02', name:'構造機能主義', topics:'パーソンズ、マートン、ルーマンの諸概念', hours:2},
-      {id:'sh-b3', num:'03', name:'意味学派', topics:'シンボリック相互作用論、現象学的社会学、ゴフマン、エスノメソドロジー', hours:2},
-      {id:'sh-b4', num:'04', name:'構造化理論', topics:'ブルデュー、ギデンズの社会学', hours:2},
+      {id:'sh-b1', num:'01', name:'古典社会学',    topics:'デュルケーム、ウエーバー、ジンメル、ミードの諸概念', hours:2},
+      {id:'sh-b2', num:'02', name:'構造機能主義',  topics:'パーソンズ、マートン、ルーマンの諸概念', hours:2},
+      {id:'sh-b3', num:'03', name:'意味学派',      topics:'シンボリック相互作用論、現象学的社会学、ゴフマン、エスノメソドロジー', hours:2},
+      {id:'sh-b4', num:'04', name:'構造化理論',    topics:'ブルデュー、ギデンズの社会学', hours:2},
     ],
     adv: [
-      {id:'sh-a1', num:'05', name:'現代社会論1', topics:'社会変動論，個人化と心理化，圧縮された近代，家族・親密な関係性の変容', hours:2},
-      {id:'sh-a2', num:'06', name:'現代社会論2', topics:'不安定社会と若者，バウマンの現代社会論，社会意識とグローバル化', hours:2},
+      {id:'sh-a1', num:'05', name:'現代社会論1',             topics:'社会変動論，個人化と心理化，圧縮された近代，家族・親密な関係性の変容', hours:2},
+      {id:'sh-a2', num:'06', name:'現代社会論2',             topics:'不安定社会と若者，バウマンの現代社会論，社会意識とグローバル化', hours:2},
       {id:'sh-a3', num:'07', name:'ジェンダー＆セクシュアリティ1', topics:'フェミニズムの流れと理論的パースペクティブ', hours:2},
       {id:'sh-a4', num:'08', name:'ジェンダー＆セクシュアリティ2', topics:'巨視的・マクロ的パースペクティブとミクロ・微視的パースペクティブ', hours:2},
     ],
@@ -635,38 +335,40 @@ const MAJOR_SUBJECTS = {
       {id:'sh-m1', num:'09', name:'量的調査', topics:'質問紙調査、仮説生成、変数設計、統計的検定、標本調査、相関分析', hours:2},
       {id:'sh-m2', num:'10', name:'質的調査', topics:'グランデッド・セオリー、ライフ・ストーリー、インタビュー調査、参与観察、内容分析、言説分析', hours:2},
     ],
+    ext: [],
   },
   jingyingxue: {
     base: [
-      {id:'jy-b1', num:'01', name:'組織論導入・企業論', topics:'組織・企業の諸基礎概念・所有と経営の分離・コーポレートガバナンス', hours:2},
-      {id:'jy-b2', num:'02', name:'組織論', topics:'古典組織論・新古典組織論', hours:2},
-      {id:'jy-b3', num:'03', name:'近代組織論', topics:'バーナードの近代組織論・意思決定論・集団浅慮', hours:2},
-      {id:'jy-b4', num:'04', name:'モチベーション論', topics:'モチベーション内容論・プロセス論', hours:2},
-      {id:'jy-b5', num:'08', name:'全社戦略（上）', topics:'SWOT分析・製品・市場マトリックス・多角化・PPM理論', hours:2},
-      {id:'jy-b6', num:'09', name:'全社戦略（下）', topics:'垂直統合・市場取引・戦略的提携・M&A', hours:2},
-      {id:'jy-b7', num:'10', name:'外部競争戦略', topics:'３つの基本戦略・ブルーオーシャン・競争ポジション・模倣戦略', hours:2},
-      {id:'jy-b8', num:'11', name:'内部競争戦略', topics:'速度の経済性・RBV・コアコンピタンス・バリューチェーン', hours:2},
-      {id:'jy-b9', num:'15', name:'マーケティング入門', topics:'マーケティングコンセプト・マーケティングの変遷', hours:2},
-      {id:'jy-b10', num:'16', name:'消費者行動論', topics:'個人消費者の理解・集団消費者の理解', hours:2},
-      {id:'jy-b11', num:'17', name:'製品戦略', topics:'製品の概念と構成・コープランドの製品分類・製品ミックス', hours:2},
-      {id:'jy-b12', num:'18', name:'価格戦略', topics:'価格設定の基本方針・製品ミックスによる価格対応・消費者心理による価格対応', hours:2},
+      {id:'jy-b1',  num:'01', name:'組織論導入・企業論',   topics:'組織・企業の諸基礎概念・所有と経営の分離・コーポレートガバナンス', hours:2},
+      {id:'jy-b2',  num:'02', name:'組織論',              topics:'古典組織論・新古典組織論', hours:2},
+      {id:'jy-b3',  num:'03', name:'近代組織論',           topics:'バーナードの近代組織論・意思決定論・集団浅慮', hours:2},
+      {id:'jy-b4',  num:'04', name:'モチベーション論',      topics:'モチベーション内容論・プロセス論', hours:2},
+      {id:'jy-b5',  num:'08', name:'全社戦略（上）',        topics:'SWOT分析・製品・市場マトリックス・多角化・PPM理論', hours:2},
+      {id:'jy-b6',  num:'09', name:'全社戦略（下）',        topics:'垂直統合・市場取引・戦略的提携・M&A', hours:2},
+      {id:'jy-b7',  num:'10', name:'外部競争戦略',          topics:'３つの基本戦略・ブルーオーシャン・競争ポジション・模倣戦略', hours:2},
+      {id:'jy-b8',  num:'11', name:'内部競争戦略',          topics:'速度の経済性・RBV・コアコンピタンス・バリューチェーン', hours:2},
+      {id:'jy-b9',  num:'15', name:'マーケティング入門',    topics:'マーケティングコンセプト・マーケティングの変遷', hours:2},
+      {id:'jy-b10', num:'16', name:'消費者行動論',          topics:'個人消費者の理解・集団消費者の理解', hours:2},
+      {id:'jy-b11', num:'17', name:'製品戦略',             topics:'製品の概念と構成・コープランドの製品分類・製品ミックス', hours:2},
+      {id:'jy-b12', num:'18', name:'価格戦略',             topics:'価格設定の基本方針・製品ミックスによる価格対応・消費者心理による価格対応', hours:2},
       {id:'jy-b13', num:'19', name:'コミュニケーション戦略', topics:'広告・セールスプロモーション・人的販売とパブリシティ', hours:2},
     ],
     adv: [
-      {id:'jy-a1', num:'05', name:'組織構造論', topics:'組織構造の基本形態・一般形態・その他の組織形態', hours:2},
-      {id:'jy-a2', num:'06', name:'組織文化・変革論', topics:'組織文化の諸概念・組織学習・組織変革', hours:2},
-      {id:'jy-a3', num:'07', name:'リーダーシップ論', topics:'リーダーシップ資質論・行動論・適応論', hours:2},
-      {id:'jy-a4', num:'12', name:'機能別戦略', topics:'生産戦略・技術経営', hours:2},
-      {id:'jy-a5', num:'13', name:'イノベーション', topics:'イノベーションの諸概念・イノベーターのジレンマ', hours:2},
-      {id:'jy-a6', num:'14', name:'国際戦略', topics:'多国籍企業・グローバル統合・ローカル統合・ボーングローバル企業', hours:2},
-      {id:'jy-a7', num:'20', name:'流通戦略', topics:'流通戦略の諸概念', hours:2},
+      {id:'jy-a1', num:'05', name:'組織構造論',                 topics:'組織構造の基本形態・一般形態・その他の組織形態', hours:2},
+      {id:'jy-a2', num:'06', name:'組織文化・変革論',            topics:'組織文化の諸概念・組織学習・組織変革', hours:2},
+      {id:'jy-a3', num:'07', name:'リーダーシップ論',            topics:'リーダーシップ資質論・行動論・適応論', hours:2},
+      {id:'jy-a4', num:'12', name:'機能別戦略',                 topics:'生産戦略・技術経営', hours:2},
+      {id:'jy-a5', num:'13', name:'イノベーション',              topics:'イノベーションの諸概念・イノベーターのジレンマ', hours:2},
+      {id:'jy-a6', num:'14', name:'国際戦略',                   topics:'多国籍企業・グローバル統合・ローカル統合・ボーングローバル企業', hours:2},
+      {id:'jy-a7', num:'20', name:'流通戦略',                   topics:'流通戦略の諸概念', hours:2},
       {id:'jy-a8', num:'21', name:'サービス・ソーシャル・マーケティング', topics:'サービス・マーケティングの特徴・営利・非営利組織のマーケティング', hours:2},
-      {id:'jy-a9', num:'22', name:'関係性マーケティング', topics:'関係性マーケティングの諸概念・CRM', hours:2},
+      {id:'jy-a9', num:'22', name:'関係性マーケティング',         topics:'関係性マーケティングの諸概念・CRM', hours:2},
     ],
     method: [
       {id:'jy-m1', num:'23', name:'量的調査', topics:'質問紙調査、仮説生成、変数設計、統計的検定、標本調査、相関分析', hours:2},
       {id:'jy-m2', num:'24', name:'質的調査', topics:'グランデッド・セオリー、ライフ・ストーリー、インタビュー調査、参与観察、内容分析', hours:2},
     ],
+    ext: [],
   },
   jingji: {
     base: [
@@ -674,60 +376,102 @@ const MAJOR_SUBJECTS = {
       {id:'jj-b2', num:'05', name:'生産者①〜④', topics:'生产函数、成本函数、供给函数、图形与均衡', hours:8},
       {id:'jj-b3', num:'09', name:'一般均衡①〜④', topics:'超额需求、消费者余剰、税与死荷重、福利定理', hours:8},
       {id:'jj-b4', num:'13', name:'市場失靈①〜③', topics:'外部性、公共财、Pigou税', hours:6},
-      {id:'jj-b5', num:'16', name:'博弈①〜③', topics:'支配策略・纳什、混合策略、动态博弈', hours:6},
+      {id:'jj-b5', num:'16', name:'博弈①〜③',   topics:'支配策略・纳什、混合策略、动态博弈', hours:6},
     ],
     adv: [
       {id:'jj-a1', num:'19', name:'消費者⑤⑥', topics:'综合题型、真题演练', hours:4},
-      {id:'jj-a2', num:'21', name:'生産者⑤', topics:'综合与演练', hours:2},
+      {id:'jj-a2', num:'21', name:'生産者⑤',  topics:'综合与演练', hours:2},
       {id:'jj-a3', num:'22', name:'一般均衡⑤', topics:'综合演练', hours:2},
       {id:'jj-a4', num:'23', name:'市場失靈④', topics:'综合演练', hours:2},
-      {id:'jj-a5', num:'24', name:'博弈④⑤', topics:'应用题、总结', hours:4},
+      {id:'jj-a5', num:'24', name:'博弈④⑤',  topics:'应用题、总结', hours:4},
     ],
     method: [],
+    ext: [],
   },
 };
 
 // ── State ──
 const selected = new Set();
-let currentMajor = {base:'xinchuan', adv:'xinchuan', method:'xinchuan'};
+const customHours = {};
+let globalMajor = 'xinchuan';
+const HOURS_OPTIONS = [0.5, 1, 2, 3, 4];
 
-// ── Build fixed course tables ──
-function buildFixedTable(tableId, courses, cntId, tagStyle) {
+function makeHoursSelect(id, defaultH) {
+  const sel = document.createElement('select');
+  sel.className = 'hours-select';
+  sel.disabled = true;
+  HOURS_OPTIONS.forEach(h => {
+    const opt = document.createElement('option');
+    opt.value = h; opt.textContent = h + 'H';
+    if (h === defaultH) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  sel.addEventListener('change', e => { e.stopPropagation(); customHours[id] = parseFloat(sel.value); updateCounts(); });
+  sel.addEventListener('click', e => e.stopPropagation());
+  return sel;
+}
+
+function buildFixedTable(tableId, courses) {
   const tbl = document.getElementById(tableId);
+  if (!tbl) return;
   tbl.innerHTML = '';
   courses.forEach(c => {
     const row = document.createElement('div');
     row.className = 'course-row';
     row.dataset.id = c.id;
-    row.dataset.hours = c.hours;
-    row.dataset.sessions = 1;
-    row.innerHTML = `
-      <div class="course-check"><div class="checkmark">✓</div></div>
-      <div class="course-info">
-        <div class="course-title">${c.name}</div>
-        <div class="course-desc">${c.desc}</div>
-        <div class="course-hw"><span class="hw-label">作业</span>${c.hw}</div>
-      </div>
-      <div class="course-meta">
-        <span class="meta-hours">${c.hours > 0 ? c.hours : '—'}</span>
-        <span class="meta-unit">${c.hours > 0 ? '课时' : '面谈'}</span>
-      </div>`;
-    row.addEventListener('click', () => { toggleRow(row); updateCounts(); });
+    row.dataset.defaultHours = c.defaultHours;
+    if (selected.has(c.id)) row.classList.add('checked');
+
+    const check = document.createElement('div');
+    check.className = 'course-check';
+    check.innerHTML = '<div class="checkmark">✓</div>';
+
+    const info = document.createElement('div');
+    info.className = 'course-info';
+    info.innerHTML = `<div class="course-title">${c.name}</div>
+      <div class="course-desc">${c.desc}</div>
+      ${c.detail ? `<div class="course-desc" style="font-size:10px;color:var(--text-muted);margin-top:1px">${c.detail}</div>` : ''}
+      ${c.schedule ? `<div class="course-hw"><span class="hw-label">时间</span>${c.schedule}</div>` : ''}
+      <div class="course-hw"><span class="hw-label">作业</span>${c.hw}</div>`;
+
+    const meta = document.createElement('div');
+    meta.className = 'course-meta';
+    const sel = makeHoursSelect(c.id, customHours[c.id] ?? c.defaultHours);
+    if (selected.has(c.id)) sel.disabled = false;
+    meta.appendChild(sel);
+    const unit = document.createElement('span');
+    unit.className = 'meta-unit'; unit.textContent = '课时/回';
+    meta.appendChild(unit);
+
+    row.appendChild(check); row.appendChild(info); row.appendChild(meta);
+    row.addEventListener('click', () => {
+      if (selected.has(c.id)) { selected.delete(c.id); row.classList.remove('checked'); sel.disabled = true; }
+      else { selected.add(c.id); row.classList.add('checked'); sel.disabled = false; }
+      updateCounts();
+    });
     tbl.appendChild(row);
   });
 }
 
-// ── Build subject detail rows ──
-function buildSubjectRows(containerId, major, type, cntId) {
+function buildSubjectRows(containerId, major, type) {
   const container = document.getElementById(containerId);
-  const subjects = MAJOR_SUBJECTS[major][type] || [];
+  if (!container) return;
+  const subjects = (MAJOR_SUBJECTS[major]||{})[type] || [];
   container.innerHTML = '';
+  const expandBtn = document.getElementById(`expand-${type}`);
+
+  if (subjects.length === 0) {
+    container.innerHTML = '<div class="empty-notice">该专业方向暂无此类课程</div>';
+    if (expandBtn) expandBtn.style.display = 'none';
+    return;
+  }
+  if (expandBtn) expandBtn.style.display = 'flex';
+
   subjects.forEach(s => {
     const row = document.createElement('div');
     row.className = 'subject-row';
-    row.dataset.id = s.id;
-    row.dataset.hours = s.hours;
-    row.dataset.sessions = s.hours / 2;
+    if (selected.has(s.id)) row.classList.add('checked');
+    row.dataset.id = s.id; row.dataset.hours = s.hours;
     row.innerHTML = `
       <div class="subject-indent"><div class="indent-line"></div></div>
       <div class="subject-check"><div class="checkmark">✓</div></div>
@@ -735,64 +479,61 @@ function buildSubjectRows(containerId, major, type, cntId) {
         <div class="subject-title"><span style="color:var(--text-muted);margin-right:6px">${s.num}</span>${s.name}</div>
         <div class="subject-topics">${s.topics}</div>
       </div>
-      <div class="course-meta">
-        <span class="meta-hours">${s.hours}</span>
-        <span class="meta-unit">课时</span>
-      </div>`;
-    if (selected.has(s.id)) row.classList.add('checked');
-    row.addEventListener('click', () => { toggleRow(row); updateCounts(); });
+      <div class="subject-meta"><span class="subject-hours">${s.hours}</span><span class="meta-unit">课时</span></div>`;
+    row.addEventListener('click', () => {
+      if (selected.has(s.id)) { selected.delete(s.id); row.classList.remove('checked'); }
+      else { selected.add(s.id); row.classList.add('checked'); }
+      syncSelection(s.id); updateCounts();
+    });
     container.appendChild(row);
   });
 }
 
-function setMajor(type, major, btn) {
-  currentMajor[type] = major;
-  btn.closest('.major-selector').querySelectorAll('.major-btn').forEach(b => b.classList.remove('active'));
+function setGlobalMajor(major, btn) {
+  globalMajor = major;
+  document.querySelectorAll('#global-major-bar .major-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  buildSubjectRows(`${type}-subjects`, major, type, `cnt-${type}`);
+  ['base','adv','method','ext'].forEach(type => buildSubjectRows(`${type}-subjects`, major, type));
   updateCounts();
-}
-
-function toggleRow(row) {
-  const id = row.dataset.id;
-  if (selected.has(id)) { selected.delete(id); row.classList.remove('checked'); }
-  else { selected.add(id); row.classList.add('checked'); }
 }
 
 function toggleExpand(id, btn) {
   const el = document.getElementById(id);
+  if (!el) return;
   const icon = btn.querySelector('.expand-icon');
+  const label = btn.querySelector('span:last-child');
   const isOpen = el.classList.toggle('open');
   icon.classList.toggle('open', isOpen);
-  btn.querySelector('span:last-child').textContent = isOpen ? '收起详情' : '查看各课详情';
+  label.textContent = isOpen ? '收起详情' : '查看各课详情';
 }
+
+function getHours(id, defaultH) { return customHours[id] !== undefined ? customHours[id] : defaultH; }
 
 function updateCounts() {
   let totalSessions = 0, totalHours = 0;
-  selected.forEach(id => {
-    const row = document.querySelector(`[data-id="${id}"]`);
-    if (!row) return;
-    totalSessions += parseFloat(row.dataset.sessions) || 0;
-    totalHours += parseFloat(row.dataset.hours) || 0;
+  Object.values(FIXED_COURSES).flat().forEach(c => {
+    if (selected.has(c.id)) { totalSessions += 1; totalHours += getHours(c.id, c.defaultHours); }
   });
-  document.getElementById('total-sessions').textContent = totalSessions;
-  document.getElementById('total-hours').textContent = totalHours;
+  Object.values(MAJOR_SUBJECTS).forEach(m => {
+    ['base','adv','method','ext'].forEach(type => {
+      (m[type]||[]).forEach(s => { if (selected.has(s.id)) { totalSessions += s.hours/2; totalHours += s.hours; } });
+    });
+  });
+  document.getElementById('total-sessions').textContent = +totalSessions.toFixed(1);
+  document.getElementById('total-hours').textContent = +totalHours.toFixed(1);
 
-  // Per-group counts
-  const groups = {
-    past: ['past-1','past-2','past-3','past-4','past-5'],
-    eng: ['eng-1','eng-2','eng-3','eng-4'],
-    plan: ['plan-1','plan-2','plan-3','plan-4','plan-5','plan-6','plan-7','plan-8','plan-9','plan-10','plan-11'],
-    apply: ['apply-1','apply-2','apply-3','apply-4','apply-5','apply-6'],
-    inter: ['inter-1','inter-2','inter-3','inter-4','inter-5'],
+  const fixedGroupIds = {
+    found: FIXED_COURSES.found.map(c=>c.id), past: FIXED_COURSES.past.map(c=>c.id),
+    eng: FIXED_COURSES.eng.map(c=>c.id), plan: FIXED_COURSES.plan.map(c=>c.id),
+    apply: FIXED_COURSES.apply.map(c=>c.id), inter: FIXED_COURSES.inter.map(c=>c.id),
+    ta: FIXED_COURSES.ta.map(c=>c.id),
   };
-  Object.entries(groups).forEach(([key, ids]) => {
+  Object.entries(fixedGroupIds).forEach(([key, ids]) => {
     const cnt = ids.filter(id => selected.has(id)).length;
     const el = document.getElementById(`cnt-${key}`);
     if (el) el.textContent = cnt > 0 ? `${cnt} 回选中` : '';
   });
-  // subject groups
-  ['base','adv','method'].forEach(type => {
+  ['base','adv','method','ext'].forEach(type => {
     const all = Object.values(MAJOR_SUBJECTS).flatMap(m => (m[type]||[]).map(s=>s.id));
     const cnt = all.filter(id => selected.has(id)).length;
     const el = document.getElementById(`cnt-${type}`);
@@ -802,7 +543,13 @@ function updateCounts() {
 
 function resetAll() {
   selected.clear();
-  document.querySelectorAll('.course-row.checked, .subject-row.checked').forEach(r => r.classList.remove('checked'));
+  Object.keys(customHours).forEach(k => delete customHours[k]);
+  document.querySelectorAll('.course-row.checked,.subject-row.checked').forEach(r => r.classList.remove('checked'));
+  document.querySelectorAll('.hours-select').forEach(s => {
+    s.disabled = true;
+    const row = s.closest('.course-row');
+    if (row) s.value = parseFloat(row.dataset.defaultHours);
+  });
   updateCounts();
 }
 
@@ -810,303 +557,179 @@ function showTab(tab) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.getElementById(`tab-${tab}`).classList.add('active');
   document.querySelectorAll('.tab-btn').forEach((b,i) => {
-    const tabs = ['overview','xinchuan','shehui','jingyingxue','jingji'];
-    b.classList.toggle('active', tabs[i] === tab);
+    b.classList.toggle('active', ['overview','xinchuan','shehui','jingyingxue','jingji'][i] === tab);
   });
+  document.getElementById('global-major-bar').style.display = tab==='overview' ? 'flex' : 'none';
   if (tab !== 'overview') buildMajorTab(tab);
 }
 
 function buildMajorTab(major) {
   const container = document.getElementById(`tab-${major}`);
-  const labels = {xinchuan:'新闻传播学', shehui:'社会学', jingyingxue:'经营学', jingji:'经济学'};
   const data = MAJOR_SUBJECTS[major];
   const types = [
-    {key:'base', label:'1. 专业课基础知识', bg:'var(--c-base-bg)', color:'var(--c-base)'},
-    {key:'adv',  label:'2. 专业课备考强化', bg:'var(--c-adv-bg)',  color:'var(--c-adv)'},
-    {key:'method',label:'3. 专业课基础方法论', bg:'var(--c-method-bg)', color:'var(--c-method)'},
+    {key:'base',   label:'1. 专业课基础知识',   bg:'var(--c-base-bg)',   color:'var(--c-base)'},
+    {key:'adv',    label:'2. 专业课备考强化',   bg:'var(--c-adv-bg)',    color:'var(--c-adv)'},
+    {key:'method', label:'3. 专业课基础方法论',  bg:'var(--c-method-bg)', color:'var(--c-method)'},
+    {key:'ext',    label:'4. 专业课拓展方法论',  bg:'var(--c-ext-bg)',    color:'var(--c-ext)'},
   ];
   container.innerHTML = '';
   types.forEach(t => {
     const subjects = data[t.key] || [];
-    if (!subjects.length) return;
-    const pg = document.createElement('div');
-    pg.className = 'project-group';
-    pg.innerHTML = `
-      <div class="project-header">
-        <span class="project-tag" style="background:${t.bg};color:${t.color}">${t.label}</span>
-        <span class="project-count">${subjects.reduce((a,s)=>a+s.hours,0)} 课时 / ${subjects.length} 回</span>
-      </div>
-      <div class="course-table" id="mt-${major}-${t.key}"></div>`;
+    const pg = document.createElement('div'); pg.className = 'project-group';
+    const total = subjects.reduce((a,s)=>a+s.hours,0);
+    pg.innerHTML = `<div class="project-header">
+      <span class="project-tag" style="background:${t.bg};color:${t.color}">${t.label}</span>
+      <span class="project-count">${subjects.length>0?`${total} 课时 / ${subjects.length} 回`:'暂无课程'}</span>
+    </div><div class="course-table" id="mt-${major}-${t.key}">
+      ${subjects.length===0?'<div class="empty-notice">该专业方向暂无此类课程</div>':''}
+    </div>`;
     container.appendChild(pg);
+    if (!subjects.length) return;
     const tbl = document.getElementById(`mt-${major}-${t.key}`);
     subjects.forEach(s => {
       const row = document.createElement('div');
       row.className = `subject-row${selected.has(s.id)?' checked':''}`;
       row.style.gridTemplateColumns = '36px 1fr auto';
-      row.dataset.id = s.id;
-      row.dataset.hours = s.hours;
-      row.dataset.sessions = s.hours / 2;
+      row.dataset.id = s.id; row.dataset.hours = s.hours;
       row.innerHTML = `
         <div class="subject-check" style="border-right:1px solid var(--border-light)"><div class="checkmark">✓</div></div>
         <div class="subject-info" style="padding:8px 12px">
           <div class="subject-title" style="font-size:12px"><span style="color:var(--text-muted);margin-right:6px">${s.num}</span>${s.name}</div>
           <div class="subject-topics">${s.topics}</div>
         </div>
-        <div class="course-meta">
-          <span class="meta-hours">${s.hours}</span>
-          <span class="meta-unit">课时</span>
-        </div>`;
-      row.addEventListener('click', () => { toggleRow(row); syncSelection(s.id); updateCounts(); });
+        <div class="subject-meta"><span class="subject-hours">${s.hours}</span><span class="meta-unit">课时</span></div>`;
+      row.addEventListener('click', () => {
+        if (selected.has(s.id)) { selected.delete(s.id); row.classList.remove('checked'); }
+        else { selected.add(s.id); row.classList.add('checked'); }
+        syncSelection(s.id); updateCounts();
+      });
       tbl.appendChild(row);
     });
   });
 }
 
-// sync selection state across overview and detail tabs
 function syncSelection(id) {
   const isSelected = selected.has(id);
-  document.querySelectorAll(`[data-id="${id}"]`).forEach(el => {
-    el.classList.toggle('checked', isSelected);
-  });
+  document.querySelectorAll(`[data-id="${id}"]`).forEach(el => el.classList.toggle('checked', isSelected));
 }
 
-// ── Report generation ──
+// ── Report ──
 const PROJECT_META = {
-  '升学基本指导':  {bg:'#f5f0e8', color:'#2a2820'},
-  '1. 专业课基础知识': {bg:'#ddeaf8', color:'#1a3a6a'},
-  '2. 专业课备考强化': {bg:'#e8e4f8', color:'#3a2a7a'},
-  '3. 专业课基础方法论': {bg:'#ddf0e0', color:'#1a4a28'},
-  '过去问对策':    {bg:'#f8e4dc', color:'#6a2818'},
-  '英翻日对策':    {bg:'#ece8e0', color:'#3a3830'},
-  '研究计划书':    {bg:'#faecd8', color:'#5a3010'},
-  '出愿指导':      {bg:'#fbeaf0', color:'#6a1a3a'},
-  '面试对策':      {bg:'#e1f0ea', color:'#0a4030'},
+  '升学基本指导':      {bg:'#f5f0e8',color:'#2a2820'},
+  '1. 专业课基础知识':  {bg:'#ddeaf8',color:'#1a3a6a'},
+  '2. 专业课备考强化':  {bg:'#e8e4f8',color:'#3a2a7a'},
+  '3. 专业课基础方法论':{bg:'#ddf0e0',color:'#1a4a28'},
+  '4. 专业课拓展方法论':{bg:'#f0f4e8',color:'#3a4a18'},
+  '过去问对策':        {bg:'#f8e4dc',color:'#6a2818'},
+  '英翻日对策':        {bg:'#ece8e0',color:'#3a3830'},
+  '研究计划书':        {bg:'#faecd8',color:'#5a3010'},
+  '出愿指导':          {bg:'#fbeaf0',color:'#6a1a3a'},
+  '面试对策':          {bg:'#e1f0ea',color:'#0a4030'},
+  'TA指导':            {bg:'#e8eaf8',color:'#1a2a6a'},
 };
 
 function generateReport() {
-  if (selected.size === 0) {
-    alert('请先勾选课程再生成报告。');
-    return;
-  }
-
-  // Collect selected items with metadata
+  if (selected.size === 0) { alert('请先勾选课程再生成报告。'); return; }
   const allItems = [];
-
-  // Fixed courses
   const fixedGroups = [
-    {key:'past',  label:'过去问对策',   courses: FIXED_COURSES.past},
-    {key:'eng',   label:'英翻日对策',   courses: FIXED_COURSES.eng},
-    {key:'plan',  label:'研究计划书',   courses: FIXED_COURSES.plan},
-    {key:'apply', label:'出愿指导',     courses: FIXED_COURSES.apply},
-    {key:'inter', label:'面试对策',     courses: FIXED_COURSES.inter},
+    {label:'升学基本指导', courses:FIXED_COURSES.found},
+    {label:'过去问对策',   courses:FIXED_COURSES.past},
+    {label:'英翻日对策',   courses:FIXED_COURSES.eng},
+    {label:'研究计划书',   courses:FIXED_COURSES.plan},
+    {label:'出愿指导',     courses:FIXED_COURSES.apply},
+    {label:'面试对策',     courses:FIXED_COURSES.inter},
+    {label:'TA指导',       courses:FIXED_COURSES.ta},
   ];
   fixedGroups.forEach(g => {
-    const items = g.courses.filter(c => selected.has(c.id));
-    if (items.length) allItems.push({group: g.label, items: items.map(c => ({name: c.name, desc: c.desc, hw: c.hw, hours: c.hours}))});
+    const items = g.courses.filter(c=>selected.has(c.id)).map(c=>({
+      name:c.name,
+      desc:c.detail?`${c.desc}（${c.detail}）`:c.desc,
+      schedule:c.schedule||'',
+      hw:c.hw, hours:getHours(c.id,c.defaultHours),
+    }));
+    if (items.length) allItems.push({group:g.label,items});
   });
-
-  // Subject courses — group by type label
-  const subjectGroups = [
-    {type:'base',   label:'1. 专业课基础知识'},
-    {type:'adv',    label:'2. 专业课备考强化'},
-    {type:'method', label:'3. 专业课基础方法论'},
-  ];
-  subjectGroups.forEach(sg => {
+  const majorLabel = {xinchuan:'新闻传播学',shehui:'社会学',jingyingxue:'经营学',jingji:'经济学'};
+  [{type:'base',label:'1. 专业课基础知识'},{type:'adv',label:'2. 专业课备考强化'},{type:'method',label:'3. 专业课基础方法论'},{type:'ext',label:'4. 专业课拓展方法论'}].forEach(sg => {
     const items = [];
-    Object.entries(MAJOR_SUBJECTS).forEach(([major, data]) => {
-      const majorLabel = {xinchuan:'新闻传播学', shehui:'社会学', jingyingxue:'经营学', jingji:'经济学'}[major];
-      (data[sg.type]||[]).filter(s => selected.has(s.id)).forEach(s => {
-        items.push({name: `[${majorLabel}] ${s.num}. ${s.name}`, desc: s.topics, hw:'完成课后作业', hours: s.hours});
+    Object.entries(MAJOR_SUBJECTS).forEach(([major,data]) => {
+      (data[sg.type]||[]).filter(s=>selected.has(s.id)).forEach(s=>{
+        items.push({name:`[${majorLabel[major]}] ${s.num}. ${s.name}`,desc:s.topics,schedule:'',hw:'完成课后作业',hours:s.hours});
       });
     });
-    if (items.length) allItems.push({group: sg.label, items});
+    if (items.length) allItems.push({group:sg.label,items});
   });
 
-  // 升学基本指导
-  const foundItem = document.querySelector('[data-id="升学目标指定"]') || document.querySelector('.course-row.checked');
-  // check manually
-  if (selected.has('升学目标指定')) {
-    allItems.unshift({group:'升学基本指导', items:[{name:'升学目标指定', desc:'面谈、方向确认、整体学习计划制定', hw:'完成老师要求信息提交', hours:0}]});
-  }
-
-  const totalHours = parseFloat(document.getElementById('total-hours').textContent) || 0;
-  const totalSessions = parseFloat(document.getElementById('total-sessions').textContent) || 0;
-
-  // Build print HTML
-  let tableRows = '';
-  let rowNum = 1;
+  const totalHours = +parseFloat(document.getElementById('total-hours').textContent).toFixed(1);
+  const totalSessions = +parseFloat(document.getElementById('total-sessions').textContent).toFixed(1);
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()}`;
+  let tableRows = '', rowNum = 1;
   allItems.forEach(g => {
-    const meta = PROJECT_META[g.group] || {bg:'#f0f0f0', color:'#333'};
-    const span = g.items.length;
-    g.items.forEach((item, i) => {
+    const meta = PROJECT_META[g.group]||{bg:'#f0f0f0',color:'#333'};
+    g.items.forEach((item,i) => {
       tableRows += `<tr>`;
-      if (i === 0) {
-        tableRows += `<td rowspan="${span}" class="group-cell" style="background:${meta.bg};color:${meta.color}">${g.group}</td>`;
-      }
-      tableRows += `
-        <td class="num-cell">${rowNum++}</td>
+      if (i===0) tableRows += `<td rowspan="${g.items.length}" class="group-cell" style="background:${meta.bg};color:${meta.color}">${g.group}</td>`;
+      tableRows += `<td class="num-cell">${rowNum++}</td>
         <td class="name-cell">${item.name}</td>
-        <td class="desc-cell">${item.desc}</td>
+        <td class="desc-cell">${item.desc}${item.schedule?`<br><span style="font-size:9px;color:#9a9590">${item.schedule}</span>`:''}</td>
         <td class="hw-cell">${item.hw}</td>
-        <td class="hours-cell">${item.hours > 0 ? item.hours : '—'}</td>
-      </tr>`;
+        <td class="hours-cell">${item.hours>0?item.hours+'H':'—'}</td></tr>`;
     });
   });
 
-  const now = new Date();
-  const dateStr = `${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()}`;
-
-  const printHtml = `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<title>VIP课程方案</title>
+  const win = window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>VIP课程方案</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: 'DM Mono', 'Noto Serif SC', serif;
-  font-size: 11px;
-  color: #1a1814;
-  background: #fff;
-  padding: 2.5cm 2cm;
-}
-.report-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 1.5rem;
-  padding-bottom: 1rem;
-  border-bottom: 1.5px solid #1a1814;
-}
-.report-title { font-family: 'Noto Serif SC', serif; font-size: 20px; font-weight: 600; letter-spacing: 0.02em; }
-.report-sub { font-size: 10px; color: #9a9590; margin-top: 3px; letter-spacing: 0.05em; }
-.report-meta { text-align: right; font-size: 10px; color: #5a5650; line-height: 1.8; }
-.summary-row {
-  display: flex;
-  gap: 2rem;
-  margin-bottom: 1.5rem;
-  padding: 10px 16px;
-  background: #f7f5f0;
-  border-radius: 3px;
-  border: 1px solid #e2ded6;
-}
-.summary-stat { display: flex; align-items: baseline; gap: 5px; }
-.stat-num { font-size: 22px; font-weight: 500; font-family: 'DM Mono', monospace; }
-.stat-label { font-size: 11px; color: #5a5650; }
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 10px;
-}
-thead tr { background: #1a1814; color: #f7f5f0; }
-thead th {
-  padding: 7px 8px;
-  text-align: left;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  font-size: 9px;
-}
-tbody tr { border-bottom: 1px solid #ede9e2; }
-tbody tr:last-child { border-bottom: 1px solid #e2ded6; }
-td { padding: 6px 8px; vertical-align: top; line-height: 1.5; }
-.group-cell {
-  font-weight: 500;
-  font-size: 9px;
-  text-align: center;
-  letter-spacing: 0.03em;
-  border-right: 1px solid #e2ded6;
-  vertical-align: middle;
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  padding: 8px 5px;
-  width: 28px;
-}
-.num-cell { width: 24px; color: #9a9590; text-align: center; font-family: 'DM Mono', monospace; }
-.name-cell { width: 22%; font-weight: 500; }
-.desc-cell { color: #5a5650; }
-.hw-cell { width: 22%; color: #5a5650; border-left: 1px solid #ede9e2; }
-.hours-cell { width: 44px; text-align: center; font-family: 'DM Mono', monospace; border-left: 1px solid #ede9e2; font-weight: 500; }
-.footer {
-  margin-top: 1.5rem;
-  padding-top: 0.8rem;
-  border-top: 1px solid #e2ded6;
-  font-size: 9px;
-  color: #9a9590;
-  display: flex;
-  justify-content: space-between;
-}
-@media print {
-  body { padding: 0; }
-  @page { margin: 1.8cm 1.5cm; size: A4; }
-  .no-print { display: none; }
-}
-.print-btn {
-  display: inline-block;
-  margin-bottom: 1.5rem;
-  padding: 8px 20px;
-  background: #1a1814;
-  color: #f7f5f0;
-  border: none;
-  border-radius: 3px;
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  letter-spacing: 0.04em;
-}
-</style>
-</head>
-<body>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Mono','Noto Serif SC',serif;font-size:11px;color:#1a1814;background:#fff;padding:2.5cm 2cm}
+.report-header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1.5px solid #1a1814}
+.report-title{font-family:'Noto Serif SC',serif;font-size:20px;font-weight:600;letter-spacing:.02em}
+.report-sub{font-size:10px;color:#9a9590;margin-top:3px;letter-spacing:.05em}
+.report-meta{text-align:right;font-size:10px;color:#5a5650;line-height:1.8}
+.summary-row{display:flex;gap:2rem;margin-bottom:1.5rem;padding:10px 16px;background:#f7f5f0;border-radius:3px;border:1px solid #e2ded6;align-items:center}
+.stat-num{font-size:22px;font-weight:500;font-family:'DM Mono',monospace;margin-right:4px}
+.stat-label{font-size:11px;color:#5a5650}
+table{width:100%;border-collapse:collapse;font-size:10px}
+thead tr{background:#1a1814;color:#f7f5f0}
+thead th{padding:7px 8px;text-align:left;font-weight:500;letter-spacing:.04em;font-size:9px}
+tbody tr{border-bottom:1px solid #ede9e2}
+td{padding:6px 8px;vertical-align:top;line-height:1.5}
+.group-cell{font-weight:500;font-size:9px;text-align:center;border-right:1px solid #e2ded6;vertical-align:middle;writing-mode:vertical-rl;padding:8px 5px;width:28px}
+.num-cell{width:24px;color:#9a9590;text-align:center;font-family:'DM Mono',monospace}
+.name-cell{width:22%;font-weight:500}
+.desc-cell{color:#5a5650}
+.hw-cell{width:22%;color:#5a5650;border-left:1px solid #ede9e2}
+.hours-cell{width:44px;text-align:center;font-family:'DM Mono',monospace;border-left:1px solid #ede9e2;font-weight:500}
+.footer{margin-top:1.5rem;padding-top:.8rem;border-top:1px solid #e2ded6;font-size:9px;color:#9a9590;display:flex;justify-content:space-between}
+.print-btn{display:inline-block;margin-bottom:1.5rem;padding:8px 20px;background:#1a1814;color:#f7f5f0;border:none;border-radius:3px;font-family:inherit;font-size:12px;cursor:pointer;letter-spacing:.04em}
+@media print{body{padding:0}@page{margin:1.8cm 1.5cm;size:A4}.no-print{display:none}}
+</style></head><body>
 <button class="print-btn no-print" onclick="window.print()">打印 / 另存为 PDF</button>
 <div class="report-header">
-  <div>
-    <div class="report-title">VIP单回课程方案</div>
-    <div class="report-sub">唯新教育 · UNIQUE NEW EDUCATION</div>
-  </div>
-  <div class="report-meta">
-    <div>生成日期：${dateStr}</div>
-    <div>合计 ${totalSessions} 回 · ${totalHours} 课时</div>
-  </div>
+  <div><div class="report-title">VIP单回课程方案</div><div class="report-sub">唯新教育 · UNIQUE NEW EDUCATION</div></div>
+  <div class="report-meta"><div>生成日期：${dateStr}</div><div>合计 ${totalSessions} 回 · ${totalHours} 课时</div></div>
 </div>
 <div class="summary-row">
-  <div class="summary-stat"><span class="stat-num">${totalSessions}</span><span class="stat-label">回</span></div>
-  <div class="summary-stat"><span class="stat-num">${totalHours}</span><span class="stat-label">课时</span></div>
-  <div class="summary-stat" style="margin-left:auto;font-size:10px;color:#9a9590;align-self:center">已选课程合计</div>
+  <span class="stat-num">${totalSessions}</span><span class="stat-label">回</span>
+  <span style="margin:0 8px;color:#e2ded6">|</span>
+  <span class="stat-num">${totalHours}</span><span class="stat-label">课时</span>
+  <span style="margin-left:auto;font-size:10px;color:#9a9590">已选课程合计</span>
 </div>
-<table>
-  <thead>
-    <tr>
-      <th style="width:28px"></th>
-      <th style="width:24px">#</th>
-      <th>课程名称</th>
-      <th>内容说明</th>
-      <th>课后作业</th>
-      <th style="width:44px;text-align:center">课时</th>
-    </tr>
-  </thead>
-  <tbody>${tableRows}</tbody>
-</table>
-<div class="footer">
-  <span>唯新教育 VIP课程方案</span>
-  <span>本文件由课程点选系统自动生成 · ${dateStr}</span>
-</div>
-</body>
-</html>`;
-
-  const win = window.open('', '_blank');
-  win.document.write(printHtml);
+<table><thead><tr>
+  <th style="width:28px"></th><th style="width:24px">#</th>
+  <th>课程名称</th><th>内容说明</th><th>课后作业</th>
+  <th style="width:48px;text-align:center">课时</th>
+</tr></thead><tbody>${tableRows}</tbody></table>
+<div class="footer"><span>唯新教育 VIP课程方案</span><span>本文件由课程点选系统自动生成 · ${dateStr}</span></div>
+</body></html>`);
   win.document.close();
 }
 
 // ── Init ──
-buildFixedTable('past-table', FIXED_COURSES.past, 'cnt-past');
-buildFixedTable('eng-table',  FIXED_COURSES.eng,  'cnt-eng');
-buildFixedTable('plan-table', FIXED_COURSES.plan, 'cnt-plan');
-buildFixedTable('apply-table',FIXED_COURSES.apply,'cnt-apply');
-buildFixedTable('inter-table',FIXED_COURSES.inter,'cnt-inter');
-buildSubjectRows('base-subjects',   'xinchuan', 'base',   'cnt-base');
-buildSubjectRows('adv-subjects',    'xinchuan', 'adv',    'cnt-adv');
-buildSubjectRows('method-subjects', 'xinchuan', 'method', 'cnt-method');
+Object.entries(FIXED_COURSES).forEach(([key,courses]) => buildFixedTable(`${key}-table`, courses));
+['base','adv','method','ext'].forEach(type => buildSubjectRows(`${type}-subjects`, globalMajor, type));
 updateCounts();
 </script>
 </body>
