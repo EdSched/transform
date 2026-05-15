@@ -114,7 +114,7 @@ main { padding: 2rem 3rem 4rem; max-width: 1100px; }
 <header>
   <div class="header-left">
     <h1>VIP单回课程点选</h1>
-    <div class="sub">唯新教育 · 请勾选所需课程</div>
+    <div class="sub">TRANSFORM EDUCATION · 请勾选所需课程</div>
   </div>
 </header>
 
@@ -125,6 +125,11 @@ main { padding: 2rem 3rem 4rem; max-width: 1100px; }
     <div class="summary-item"><span class="summary-num" id="total-hours">0</span><span>课时</span></div>
     <div class="summary-divider"></div>
     <div class="summary-item" style="color:var(--text-muted);font-size:11px">已选课程合计</div>
+    <div class="summary-divider"></div>
+    <div class="summary-item" style="gap:6px">
+      <span style="font-size:11px;color:var(--text-muted);flex-shrink:0">学生姓名</span>
+      <input type="text" id="student-name" placeholder="请输入姓名" style="font-family:'DM Mono',monospace;font-size:12px;border:1px solid var(--border);border-radius:3px;padding:2px 8px;background:var(--bg);color:var(--text-primary);outline:none;width:110px;transition:border-color .15s" onfocus="this.style.borderColor='var(--text-secondary)'" onblur="this.style.borderColor='var(--border)'">
+    </div>
   </div>
   <div style="display:flex;gap:8px">
     <button class="btn-action" onclick="resetAll()">清空选择</button>
@@ -530,8 +535,12 @@ function getHours(id, defaultH) { return customHours[id] !== undefined ? customH
 
 function updateCounts() {
   let totalSessions = 0, totalHours = 0;
+  const taIds = new Set(FIXED_COURSES.ta.map(c=>c.id));
   Object.values(FIXED_COURSES).flat().forEach(c => {
-    if (selected.has(c.id)) { totalSessions += 1; totalHours += getHours(c.id, c.defaultHours); }
+    if (selected.has(c.id)) {
+      if (!taIds.has(c.id)) totalSessions += 1;  // TA excluded from session count
+      totalHours += getHours(c.id, c.defaultHours);
+    }
   });
   Object.values(MAJOR_SUBJECTS).forEach(m => {
     ['base','adv','method','ext'].forEach(type => {
@@ -688,6 +697,7 @@ function generateReport() {
 
   const totalHours = +parseFloat(document.getElementById('total-hours').textContent).toFixed(1);
   const totalSessions = +parseFloat(document.getElementById('total-sessions').textContent).toFixed(1);
+  const studentName = document.getElementById('student-name').value.trim() || '—';
   const now = new Date();
   const dateStr = `${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()}`;
   let tableRows = '', rowNum = 1;
@@ -705,7 +715,7 @@ function generateReport() {
   });
 
   const win = window.open('','_blank');
-  win.document.write(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>VIP课程方案</title>
+  win.document.write(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>VIP课程方案 · ${studentName}</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -713,10 +723,12 @@ body{font-family:'DM Mono','Noto Serif SC',serif;font-size:11px;color:#1a1814;ba
 .report-header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1.5px solid #1a1814}
 .report-title{font-family:'Noto Serif SC',serif;font-size:20px;font-weight:600;letter-spacing:.02em}
 .report-sub{font-size:10px;color:#9a9590;margin-top:3px;letter-spacing:.05em}
-.report-meta{text-align:right;font-size:10px;color:#5a5650;line-height:1.8}
+.report-meta{text-align:right;font-size:10px;color:#5a5650;line-height:1.9}
+.report-meta .student{font-size:13px;font-weight:500;color:#1a1814;margin-bottom:2px}
 .summary-row{display:flex;gap:2rem;margin-bottom:1.5rem;padding:10px 16px;background:#f7f5f0;border-radius:3px;border:1px solid #e2ded6;align-items:center}
 .stat-num{font-size:22px;font-weight:500;font-family:'DM Mono',monospace;margin-right:4px}
 .stat-label{font-size:11px;color:#5a5650}
+.stat-note{font-size:9px;color:#9a9590;margin-left:2px}
 table{width:100%;border-collapse:collapse;font-size:10px}
 thead tr{background:#1a1814;color:#f7f5f0}
 thead th{padding:7px 8px;text-align:left;font-weight:500;letter-spacing:.04em;font-size:9px}
@@ -727,18 +739,22 @@ td{padding:6px 8px;vertical-align:top;line-height:1.5}
 .name-cell{width:22%;font-weight:500}
 .desc-cell{color:#5a5650}
 .hw-cell{width:22%;color:#5a5650;border-left:1px solid #ede9e2}
-.hours-cell{width:44px;text-align:center;font-family:'DM Mono',monospace;border-left:1px solid #ede9e2;font-weight:500}
+.hours-cell{width:48px;text-align:center;font-family:'DM Mono',monospace;border-left:1px solid #ede9e2;font-weight:500}
 .footer{margin-top:1.5rem;padding-top:.8rem;border-top:1px solid #e2ded6;font-size:9px;color:#9a9590;display:flex;justify-content:space-between}
 .print-btn{display:inline-block;margin-bottom:1.5rem;padding:8px 20px;background:#1a1814;color:#f7f5f0;border:none;border-radius:3px;font-family:inherit;font-size:12px;cursor:pointer;letter-spacing:.04em}
 @media print{body{padding:0}@page{margin:1.8cm 1.5cm;size:A4}.no-print{display:none}}
 </style></head><body>
 <button class="print-btn no-print" onclick="window.print()">打印 / 另存为 PDF</button>
 <div class="report-header">
-  <div><div class="report-title">VIP单回课程方案</div><div class="report-sub">唯新教育 · UNIQUE NEW EDUCATION</div></div>
-  <div class="report-meta"><div>生成日期：${dateStr}</div><div>合计 ${totalSessions} 回 · ${totalHours} 课时</div></div>
+  <div><div class="report-title">VIP单回课程方案</div><div class="report-sub">唯新教育 · TRANSFORM EDUCATION</div></div>
+  <div class="report-meta">
+    <div class="student">${studentName}</div>
+    <div>生成日期：${dateStr}</div>
+    <div>${totalSessions} 回 · ${totalHours} 课时</div>
+  </div>
 </div>
 <div class="summary-row">
-  <span class="stat-num">${totalSessions}</span><span class="stat-label">回</span>
+  <span class="stat-num">${totalSessions}</span><span class="stat-label">回</span><span class="stat-note">（不含TA指导）</span>
   <span style="margin:0 8px;color:#e2ded6">|</span>
   <span class="stat-num">${totalHours}</span><span class="stat-label">课时</span>
   <span style="margin-left:auto;font-size:10px;color:#9a9590">已选课程合计</span>
@@ -748,7 +764,7 @@ td{padding:6px 8px;vertical-align:top;line-height:1.5}
   <th>课程名称</th><th>内容说明</th><th>课后作业</th>
   <th style="width:48px;text-align:center">课时</th>
 </tr></thead><tbody>${tableRows}</tbody></table>
-<div class="footer"><span>唯新教育 VIP课程方案</span><span>本文件由课程点选系统自动生成 · ${dateStr}</span></div>
+<div class="footer"><span>唯新教育 TRANSFORM EDUCATION · VIP课程方案 · ${studentName}</span><span>本文件由课程点选系统自动生成 · ${dateStr}</span></div>
 </body></html>`);
   win.document.close();
 }
