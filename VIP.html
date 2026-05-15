@@ -285,12 +285,12 @@ const FIXED_COURSES = {
     {id:'inter-5', name:'模拟面试实战', desc:'实战模拟面试，熟悉完成流程，最终确认和表达优化', hw:'面试练习',    defaultHours:2},
   ],
   ta: [
-    {id:'ta-1', name:'TA面试指导 20H',
+    {id:'ta-1', name:'TA面试指导 20H', fixedHours:true,
      desc:'在面试稿完成的前提下，模拟面试',
      detail:'基本问题、高频问题、临场应变能力训练、表情管理、礼仪训练',
      schedule:'时间可自由约，不限于周六日，与老师协商一致即可',
      hw:'完成面试稿', defaultHours:20},
-    {id:'ta-2', name:'TA学习指导 20H',
+    {id:'ta-2', name:'TA学习指导 20H', fixedHours:true,
      desc:'日常学习指导',
      detail:'日语语法纠正、论文写作规范、学习方法、综合学术训练（找论文、归纳整理理论文等，可按照学生需求调整）',
      schedule:'时间可自由约，不限于周六日，与老师协商一致即可',
@@ -436,19 +436,38 @@ function buildFixedTable(tableId, courses) {
 
     const meta = document.createElement('div');
     meta.className = 'course-meta';
-    const sel = makeHoursSelect(c.id, customHours[c.id] ?? c.defaultHours);
-    if (selected.has(c.id)) sel.disabled = false;
-    meta.appendChild(sel);
-    const unit = document.createElement('span');
-    unit.className = 'meta-unit'; unit.textContent = '课时/回';
-    meta.appendChild(unit);
+
+    if (c.fixedHours) {
+      // Fixed total hours — no selector, just display
+      const numEl = document.createElement('span');
+      numEl.style.cssText = 'font-family:"DM Mono",monospace;font-size:13px;font-weight:500';
+      numEl.textContent = c.defaultHours + 'H';
+      const unit = document.createElement('span');
+      unit.className = 'meta-unit'; unit.textContent = '课时（固定）';
+      meta.appendChild(numEl); meta.appendChild(unit);
+    } else {
+      const sel = makeHoursSelect(c.id, customHours[c.id] ?? c.defaultHours);
+      if (selected.has(c.id)) sel.disabled = false;
+      meta.appendChild(sel);
+      const unit = document.createElement('span');
+      unit.className = 'meta-unit'; unit.textContent = '课时/回';
+      meta.appendChild(unit);
+      row.addEventListener('click', () => {
+        if (selected.has(c.id)) { selected.delete(c.id); row.classList.remove('checked'); sel.disabled = true; }
+        else { selected.add(c.id); row.classList.add('checked'); sel.disabled = false; }
+        updateCounts();
+      });
+    }
 
     row.appendChild(check); row.appendChild(info); row.appendChild(meta);
-    row.addEventListener('click', () => {
-      if (selected.has(c.id)) { selected.delete(c.id); row.classList.remove('checked'); sel.disabled = true; }
-      else { selected.add(c.id); row.classList.add('checked'); sel.disabled = false; }
-      updateCounts();
-    });
+
+    if (c.fixedHours) {
+      row.addEventListener('click', () => {
+        if (selected.has(c.id)) { selected.delete(c.id); row.classList.remove('checked'); }
+        else { selected.add(c.id); row.classList.add('checked'); }
+        updateCounts();
+      });
+    }
     tbl.appendChild(row);
   });
 }
