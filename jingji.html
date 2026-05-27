@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>经济学学科介绍 · TRANSFORM EDUCATION</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f7f5f0;
+  --surface: #ffffff;
+  --border: #e2ded6;
+  --border-light: #ede9e2;
+  --text-primary: #1a1814;
+  --text-secondary: #5a5650;
+  --text-muted: #9a9590;
+  --accent: #5a3e28;
+  --accent-light: #f5ede3;
+  --green: #2d5a3d;
+  --green-light: #e4f0e8;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'DM Mono', 'Noto Serif SC', monospace;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* ── Nav ── */
+nav {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 52px;
+}
+.nav-brand {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 13px; font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--text-primary);
+  text-decoration: none;
+  display: flex; align-items: center; gap: 10px;
+}
+.nav-brand span { color: var(--text-muted); font-weight: 400; font-size: 11px; }
+.nav-links { display: flex; overflow-x: auto; }
+.nav-link {
+  padding: 0 14px; height: 52px;
+  display: flex; align-items: center;
+  font-size: 11px; color: var(--text-muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  letter-spacing: .04em; white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.nav-link:hover { color: var(--text-primary); border-bottom-color: var(--border); }
+
+/* ── Hero ── */
+.hero {
+  background: #f5ede3;
+  color: var(--text-primary);
+  padding: 5rem 3rem 4rem;
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid #e8ddd2;
+}
+.hero::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent, transparent 40px,
+    rgba(90,62,40,.025) 40px, rgba(90,62,40,.025) 41px
+  );
+}
+.hero-inner { position: relative; max-width: 860px; }
+.hero-label {
+  font-size: 10px; letter-spacing: .15em;
+  text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: 1rem;
+  display: flex; align-items: center; gap: 8px;
+}
+.hero-label::before { content: ''; display: block; width: 24px; height: 1px; background: #d4c8bc; }
+.hero h1 {
+  font-family: 'Noto Serif SC', serif;
+  font-size: clamp(2rem, 5vw, 3.2rem);
+  font-weight: 700; line-height: 1.2;
+  letter-spacing: .02em; margin-bottom: 1.2rem;
+  color: var(--text-primary);
+}
+.hero-sub {
+  font-size: 13px; color: var(--text-secondary);
+  max-width: 580px; line-height: 1.75; margin-bottom: 2.5rem;
+}
+.hero-tags { display: flex; gap: 8px; flex-wrap: wrap; }
+.hero-tag {
+  padding: 4px 12px;
+  border: 1px solid #d4c8bc;
+  border-radius: 2px; font-size: 10px;
+  letter-spacing: .06em; color: var(--text-secondary);
+  background: rgba(255,255,255,.5);
+}
+
+/* ── Layout ── */
+.page-wrap { max-width: 980px; margin: 0 auto; padding: 0 3rem; }
+section { padding: 3.5rem 0; border-bottom: 1px solid var(--border); }
+section:last-child { border-bottom: none; }
+.section-label {
+  font-size: 9px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: .8rem;
+  display: flex; align-items: center; gap: 8px;
+}
+.section-label::before { content: ''; display: block; width: 16px; height: 1px; background: var(--border); }
+.section-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 1.4rem; font-weight: 600;
+  letter-spacing: .02em; margin-bottom: 1.5rem; line-height: 1.3;
+}
+
+/* ── Video ── */
+.video-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px; overflow: hidden;
+  margin-bottom: 1rem;
+}
+.video-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-light);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.video-header-label {
+  font-size: 11px; font-weight: 500;
+  display: flex; align-items: center; gap: 8px;
+}
+.video-dot { width: 6px; height: 6px; border-radius: 50%; background: #b8953a; }
+.video-duration { font-size: 10px; color: var(--text-muted); font-family: 'DM Mono', monospace; }
+.video-placeholder {
+  background: #0f0e0d;
+  aspect-ratio: 16/9;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 12px; color: rgba(255,255,255,.25);
+  font-size: 11px; letter-spacing: .08em; cursor: pointer;
+  transition: background .2s;
+}
+.video-placeholder:hover { background: #1a1814; }
+.video-play-icon {
+  width: 48px; height: 48px;
+  border: 1.5px solid rgba(255,255,255,.2);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; color: rgba(255,255,255,.3);
+}
+.video-iframe { width: 100%; aspect-ratio: 16/9; border: none; display: block; }
+
+/* ── Intro grid ── */
+.intro-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.2rem; }
+.intro-block {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1.4rem;
+}
+.intro-block-title {
+  font-size: 11px; font-weight: 500;
+  letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: .7rem;
+  padding-bottom: .6rem; border-bottom: 1px solid var(--border-light);
+}
+.intro-block p { font-size: 12px; color: var(--text-secondary); line-height: 1.75; margin-bottom: .5rem; }
+.intro-block p:last-child { margin-bottom: 0; }
+.intro-block strong { color: var(--text-primary); font-weight: 500; }
+
+/* ── Perspective box ── */
+.perspective-box {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 4px; overflow: hidden;
+}
+.perspective-head {
+  padding: 12px 16px; background: var(--bg);
+  border-bottom: 1px solid var(--border-light);
+  font-size: 12px; font-weight: 500;
+}
+.perspective-body { padding: 1.2rem 16px; }
+.perspective-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.p-col-title {
+  font-size: 10px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: .5rem;
+}
+.p-col-item {
+  display: flex; gap: 6px;
+  font-size: 11px; color: var(--text-secondary);
+  margin-bottom: .35rem; line-height: 1.5;
+}
+.p-col-item::before { content: '—'; color: var(--border); flex-shrink: 0; }
+
+/* ── Advantages ── */
+.advantage-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 1px; background: var(--border);
+  border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
+}
+.advantage-item { background: var(--surface); padding: 1.4rem 1.5rem; }
+.advantage-num { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-muted); margin-bottom: .5rem; }
+.advantage-title { font-size: 13px; font-weight: 500; color: var(--text-primary); margin-bottom: .4rem; }
+.advantage-desc { font-size: 11px; color: var(--text-secondary); line-height: 1.7; }
+
+/* ── Schools ── */
+.schools-note {
+  font-size: 11px; color: var(--text-secondary);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 4px; padding: 12px 16px; margin-bottom: 1rem; line-height: 1.7;
+}
+.schools-note strong { color: var(--text-primary); }
+.tier-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 1rem; }
+.tier-item { background: var(--surface); padding: 12px 14px; }
+.tier-label { font-size: 10px; font-weight: 500; letter-spacing: .06em; margin-bottom: 5px; }
+.tier-s { color: #8a1a1a; }
+.tier-a { color: var(--accent); }
+.tier-b { color: #3a5a3a; }
+.tier-schools { font-size: 11px; color: var(--text-secondary); line-height: 1.7; }
+.schools-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 11px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
+}
+.schools-table thead tr { background: var(--bg); border-bottom: 1px solid var(--border); }
+.schools-table th { padding: 7px 12px; text-align: left; font-size: 9px; letter-spacing: .06em; color: var(--text-muted); font-weight: 500; }
+.schools-table td { padding: 8px 12px; border-bottom: 1px solid var(--border-light); color: var(--text-secondary); vertical-align: top; }
+.schools-table tr:last-child td { border-bottom: none; }
+.school-name { font-weight: 500; color: var(--text-primary); }
+.schools-block-title { font-size: 11px; font-weight: 500; margin-bottom: .6rem; color: var(--text-secondary); }
+
+/* ── Course cards ── */
+.course-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 4px; overflow: hidden; margin-bottom: 1.2rem;
+}
+.course-card:last-child { margin-bottom: 0; }
+.course-card-head {
+  padding: 14px 20px; background: var(--text-primary);
+  color: var(--bg);
+  display: flex; align-items: baseline;
+  justify-content: space-between; gap: 1rem;
+  cursor: pointer; user-select: none;
+  transition: background .15s;
+}
+.course-card-head:hover { background: #2a2620; }
+.course-name { font-family: 'Noto Serif SC', serif; font-size: 15px; font-weight: 600; letter-spacing: .02em; }
+.course-meta-bar { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.course-hours { font-family: 'DM Mono', monospace; font-size: 11px; color: rgba(255,255,255,.5); }
+.course-toggle { font-size: 10px; color: rgba(255,255,255,.3); transition: transform .2s; }
+.course-toggle.open { transform: rotate(180deg); }
+.course-body { display: none; padding: 1.5rem 20px; }
+.course-body.open { display: block; }
+.course-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.75; margin-bottom: 1.2rem; }
+.course-goal { margin-bottom: 1.2rem; }
+.course-goal-title { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin-bottom: .6rem; }
+.goal-row { display: flex; gap: 8px; margin-bottom: .4rem; font-size: 11px; color: var(--text-secondary); }
+.goal-tag {
+  background: var(--bg); border: 1px solid var(--border-light);
+  border-radius: 2px; padding: 0 6px; font-size: 9px;
+  color: var(--text-muted); flex-shrink: 0; height: fit-content; margin-top: 2px;
+}
+.schedule-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.schedule-table thead tr { background: var(--bg); }
+.schedule-table th { padding: 6px 10px; text-align: left; font-size: 9px; letter-spacing: .06em; color: var(--text-muted); border-bottom: 1px solid var(--border); font-weight: 500; }
+.schedule-table td { padding: 8px 10px; border-bottom: 1px solid var(--border-light); vertical-align: top; line-height: 1.55; }
+.schedule-table tr:last-child td { border-bottom: none; }
+.num-cell { font-family: 'DM Mono', monospace; color: var(--text-muted); text-align: center; width: 32px; }
+.topic-cell { font-weight: 500; color: var(--text-primary); width: 130px; }
+.detail-cell { color: var(--text-secondary); }
+.hours-cell { font-family: 'DM Mono', monospace; color: var(--text-muted); text-align: center; width: 40px; }
+
+/* ── Research topics ── */
+.topics-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+  background: var(--border); border: 1px solid var(--border);
+  border-radius: 4px; overflow: hidden;
+}
+.topic-item {
+  background: var(--surface); padding: 10px 14px;
+  font-size: 11px; color: var(--text-secondary); line-height: 1.55;
+  display: flex; gap: 8px; align-items: flex-start;
+}
+.topic-num { font-family: 'DM Mono', monospace; color: var(--text-muted); flex-shrink: 0; font-size: 10px; margin-top: 1px; }
+
+/* ── Lecturers ── */
+.lecturer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.lecturer-card { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.lecturer-head { padding: 16px 18px; border-bottom: 1px solid var(--border-light); background: var(--bg); }
+.lecturer-name { font-family: 'Noto Serif SC', serif; font-size: 15px; font-weight: 600; margin-bottom: 3px; }
+.lecturer-affil { font-size: 10px; color: var(--text-muted); line-height: 1.5; }
+.lecturer-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+.lec-label { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 3px; }
+.lec-content { font-size: 11px; color: var(--text-secondary); line-height: 1.65; }
+.lec-tag { display: inline-block; background: var(--accent-light); color: var(--accent); font-size: 9px; padding: 1px 7px; border-radius: 2px; margin-right: 4px; margin-bottom: 3px; }
+
+@media (max-width: 720px) {
+  nav { padding: 0 1.2rem; }
+  .hero { padding: 3rem 1.2rem 2.5rem; }
+  .page-wrap { padding: 0 1.2rem; }
+  .intro-grid, .advantage-grid, .perspective-cols, .lecturer-grid, .tier-grid, .topics-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="#" class="nav-brand">唯新教育 <span>TRANSFORM EDUCATION</span></a>
+  <div class="nav-links">
+    <a href="#intro" class="nav-link">学科介绍</a>
+    <a href="#advantage" class="nav-link">学科优势</a>
+    <a href="#schools" class="nav-link">目标学校</a>
+    <a href="#courses" class="nav-link">专业课程</a>
+    <a href="#lecturers" class="nav-link">讲师介绍</a>
+  </div>
+</nav>
+
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-label">TRANSFORM EDUCATION · 学科介绍</div>
+    <h1>経済学<br>经济学</h1>
+    <p class="hero-sub">社会科学的女王——以严谨的演绎法构建经济理论，以实证分析揭示社会现象背后的因果逻辑。</p>
+    <div class="hero-tags">
+      <span class="hero-tag">微观经济学</span>
+      <span class="hero-tag">宏观经济学</span>
+      <span class="hero-tag">计量经济学</span>
+      <span class="hero-tag">产业组织论</span>
+      <span class="hero-tag">博弈论</span>
+      <span class="hero-tag">修士研究者</span>
+    </div>
+  </div>
+</div>
+
+<div class="page-wrap">
+
+<!-- ── 学科介绍 ── -->
+<section id="intro">
+  <div class="section-label">OVERVIEW</div>
+  <div class="section-title">学科介绍</div>
+
+  <div class="video-block" style="margin-bottom:1rem">
+    <div class="video-header">
+      <div class="video-header-label"><div class="video-dot"></div>学科介绍</div>
+      <span class="video-duration">20 min</span>
+    </div>
+    <div class="video-placeholder">
+      <div class="video-play-icon">▶</div>
+      <span>学科介绍视频（请插入链接）</span>
+    </div>
+  </div>
+
+  <div class="video-block" style="margin-bottom:2rem">
+    <div class="video-header">
+      <div class="video-header-label"><div class="video-dot" style="background:var(--green)"></div>正课体验</div>
+      <span class="video-duration">40 min</span>
+    </div>
+    <div class="video-placeholder">
+      <div class="video-play-icon">▶</div>
+      <span>正课体验视频（请插入链接）</span>
+    </div>
+  </div>
+
+  <div class="intro-grid">
+    <div class="intro-block">
+      <div class="intro-block-title">什么是经济学</div>
+      <p>经济学属于社会科学，研究社会现象以及背后的人类行动。与经营学、商学关注"研究对象"（企业战略、组织、市场）不同，经济学的重点在于<strong>研究思路</strong>——基于经济主体的合理性，用理论分析（数学建模）和实证分析（因果推断）揭示行动与结果之间的关系。</p>
+      <p>因此，经济学被称为"社会科学的女王"。</p>
+    </div>
+    <div class="intro-block">
+      <div class="intro-block-title">三大分析视角</div>
+      <p><strong>微观经济学</strong>——研究消费者、企业、政府如何做出决策，以及决策如何影响价格、产量和资源分配。</p>
+      <p><strong>宏观经济学</strong>——研究整体经济体系的运行，关注 GDP、失业、通货膨胀、财政与货币政策等总体变量。</p>
+      <p><strong>计量经济学</strong>——利用统计方法和数学模型检验理论、估计关系、评估政策效果，是撰写研究计划书的核心工具。</p>
+    </div>
+  </div>
+
+  <!-- 经济学 vs 经营学 视角对比 -->
+  <div class="perspective-box">
+    <div class="perspective-head">经济学视角 vs 经营学视角——以"创新者困境"为例</div>
+    <div class="perspective-body">
+      <p style="font-size:12px;color:var(--text-secondary);margin-bottom:1rem;line-height:1.7">为何锐意创新的大企业仍可能失败？经营学与经济学对同一问题给出了截然不同的分析路径：</p>
+      <div class="perspective-cols">
+        <div>
+          <div class="p-col-title">经营学视角（框架分析）</div>
+          <div class="p-col-item">战略：3C / 4P / STP / 5Force</div>
+          <div class="p-col-item">组织：促进创新的组织架构设计</div>
+          <div class="p-col-item">市场：创新是否迎合需求</div>
+          <div class="p-col-item" style="margin-top:.4rem;color:var(--text-muted)">结论：大企业在组织和心理层面存在"创新坎"</div>
+        </div>
+        <div>
+          <div class="p-col-title">经济学视角（理论+实证）</div>
+          <div class="p-col-item">置换效果：新品只会蚕食自身旧品销量</div>
+          <div class="p-col-item">先下手为强：老牌企业收购新技术以防参入</div>
+          <div class="p-col-item">创新能力差异的量化检验</div>
+          <div class="p-col-item" style="margin-top:.4rem;color:var(--text-muted)">结论：利用显示数据对三大假说逐一验证</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── 学科优势 ── -->
+<section id="advantage">
+  <div class="section-label">ADVANTAGES</div>
+  <div class="section-title">为什么选择经济学</div>
+  <div class="advantage-grid">
+    <div class="advantage-item">
+      <div class="advantage-num">01</div>
+      <div class="advantage-title">跨学科融合</div>
+      <div class="advantage-desc">与社会学、政治学、经营学、心理学等多学科相交融，提供全面的分析工具，帮助理解不同社会现象之间的深层联系。</div>
+    </div>
+    <div class="advantage-item">
+      <div class="advantage-num">02</div>
+      <div class="advantage-title">实用性强</div>
+      <div class="advantage-desc">理论可直接应用于社会政策、教育改革、城市规划等实际问题。经济学的本质是"讲好故事"——逻辑思维与沟通能力是贯穿职场的基础能力。</div>
+    </div>
+    <div class="advantage-item">
+      <div class="advantage-num">03</div>
+      <div class="advantage-title">数据驱动思维</div>
+      <div class="advantage-desc">以数据为核心，通过科学方法进行理性判断，避免主观偏见。这种思维广泛应用于商业、科技等领域，是现代社会不可或缺的核心能力。</div>
+    </div>
+  </div>
+
+  <div style="margin-top:1.2rem">
+    <div class="section-label" style="margin-bottom:.6rem">RESEARCH FIELDS</div>
+    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:.8rem">主要研究方向涵盖：劳动经济学 · 环境经济学 · 产业组织论 · 国际经济学 · 开发经济学 · 教育经济学 · 医疗经济学 · 都市经济学 · 政治经济学</p>
+    <div class="section-label" style="margin-bottom:.6rem">RESEARCH TOPICS</div>
+    <div class="topics-grid">
+      <div class="topic-item"><span class="topic-num">01</span>フレーミング効果と情報提供者の影響に関する研究</div>
+      <div class="topic-item"><span class="topic-num">02</span>配偶者控除制度改正が女性の労働供給に与えた影響</div>
+      <div class="topic-item"><span class="topic-num">03</span>高齢化の進展が世帯あたりCO₂排出量に与える影響（中国上海市）</div>
+      <div class="topic-item"><span class="topic-num">04</span>コロナ禍における男女間ワークライフバランス格差の分析</div>
+      <div class="topic-item"><span class="topic-num">05</span>地域金融機関の統合が貸出市場に与える影響</div>
+      <div class="topic-item"><span class="topic-num">06</span>ゲームコンソールの後方互換性が消費者選択とソフト販売に与える影響</div>
+      <div class="topic-item"><span class="topic-num">07</span>女性取締役が企業ESGスコアに与える影響（中国上場企業）</div>
+      <div class="topic-item"><span class="topic-num">08</span>中国文化産業の集積が労働生産性に与える影響</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── 目标学校 ── -->
+<section id="schools">
+  <div class="section-label">SCHOOLS</div>
+  <div class="section-title">目标学校</div>
+
+  <div class="schools-note">
+    <strong>报考通道：</strong>疫情后经济学大学院逐渐分为两条选拔通道——①<strong>书类选考</strong>（出身校 + GPA + 英语/日语 + 研究计划书 + 面试，如东大、一桥、早大）；②<strong>笔试</strong>（英语/日语 + 研究计划书 + 面试，如阪大、庆应、横国）。部分学校可用 <strong>ERE 经济学检定试验</strong>免除全部或部分笔试。
+  </div>
+
+  <div class="tier-grid" style="margin-bottom:1.2rem">
+    <div class="tier-item">
+      <div class="tier-label tier-s">S 级</div>
+      <div class="tier-schools">东京大学 · 一桥大学<br>京都大学 · 早稻田大学<br>庆应义塾大学 · 大阪大学</div>
+    </div>
+    <div class="tier-item">
+      <div class="tier-label tier-a">A 级</div>
+      <div class="tier-schools">横国 · 上智 · 神户<br>名古屋 · 东北 · 九州<br>北海道 · 筑波等</div>
+    </div>
+    <div class="tier-item">
+      <div class="tier-label tier-b">B 级</div>
+      <div class="tier-schools">明治 · 青山 · 立教<br>中央 · 法政 · 学习院<br>关关同立等</div>
+    </div>
+  </div>
+
+  <div class="schools-block-title">重点研究科（英语/日语为合格数据中最低成绩）</div>
+  <table class="schools-table">
+    <thead><tr><th>学校</th><th>研究科</th><th>英语</th><th>日语</th></tr></thead>
+    <tbody>
+      <tr><td class="school-name">东京大学</td><td>经济学研究科</td><td>TOEFL 95+ / GRE</td><td>N1</td></tr>
+      <tr><td class="school-name">一桥大学</td><td>経済学研究科</td><td>TOEFL 90+</td><td>N1</td></tr>
+      <tr><td class="school-name">京都大学</td><td>経営管理大学院（MBA）</td><td>TOEIC 850</td><td>N1</td></tr>
+      <tr><td class="school-name">大阪大学</td><td>経済学研究科</td><td>TOEFL 85+</td><td>N1</td></tr>
+      <tr><td class="school-name">早稻田大学</td><td>経済学研究科</td><td>TOEIC 850+</td><td>N1</td></tr>
+      <tr><td class="school-name">庆应义塾大学</td><td>経済学研究科</td><td>TOEFL 90+</td><td>N1</td></tr>
+      <tr><td class="school-name">上智大学</td><td>経済学研究科</td><td>TOEIC 800+</td><td>N1</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size:10px;color:var(--text-muted);margin-top:.6rem">※ 除经济学研究科外，部分学校的公共政策大学院、MBA 及环境学研究科等也可报考，可选学校非常多。</p>
+</section>
+
+<!-- ── 专业课程 ── -->
+<section id="courses">
+  <div class="section-label">CURRICULUM</div>
+  <div class="section-title">专业课程介绍</div>
+
+  <!-- 微观经济学 -->
+  <div class="course-card">
+    <div class="course-card-head" onclick="toggleCourse(this)">
+      <span class="course-name">微观经济学</span>
+      <div class="course-meta-bar">
+        <span class="course-hours">40H · 10回 · 4月期 / 10月期 · 10:00–14:00</span>
+        <span class="course-toggle">▼</span>
+      </div>
+    </div>
+    <div class="course-body">
+      <p class="course-desc">针对大学院经济学相关专攻笔试和面试题目设计，对微观经济学各基础知识进行系统串讲，讲课过程中结合研究计划书写作主题与考试内容进行深度讲解。</p>
+      <div class="course-goal">
+        <div class="course-goal-title">课程目标</div>
+        <div class="goal-row"><span class="goal-tag">知识</span>整合各教材和过去问知识点，系统梳理微观经济学核心内容。</div>
+        <div class="goal-row"><span class="goal-tag">技能</span>培养经济学思考方式，让知识点不仅用于考试，更能分析现实问题。</div>
+      </div>
+      <table class="schedule-table">
+        <thead><tr><th class="num-cell">#</th><th class="topic-cell">主题</th><th class="detail-cell">重点内容</th><th class="hours-cell">H</th></tr></thead>
+        <tbody>
+          <tr><td class="num-cell">1</td><td class="topic-cell">消费者理论1</td><td class="detail-cell">选好公理，效用函数，无差别曲线，拉格朗日乘数法</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">2</td><td class="topic-cell">消费者理论2</td><td class="detail-cell">替代效果与收入效果，补偿需求曲线，消费者剩余，Slutsky方程，弹性</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">3</td><td class="topic-cell">消费者理论3</td><td class="detail-cell">常见效用函数练习与总结，二期模型</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">4</td><td class="topic-cell">生产者理论</td><td class="detail-cell">利润最大化，费用最小化，企业长期与短期，供给曲线</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">5</td><td class="topic-cell">一般均衡理论</td><td class="detail-cell">纯粹交换经济，Edgeworth盒，福利经济学第一/第二基本定理</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">6</td><td class="topic-cell">外部性</td><td class="detail-cell">一般均衡典型例题，环境经济学基本概念，外部性，Coase定理</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">7</td><td class="topic-cell">公共财 · 垄断</td><td class="detail-cell">公共财，Samuelson条件，Lindahl机制，垄断与逆需求曲线</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">8</td><td class="topic-cell">产业 · 期待效用</td><td class="detail-cell">价格差别理论，垂直市场，网络外部性，期待效用理论</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">9</td><td class="topic-cell">博弈论1</td><td class="detail-cell">静态博弈，利得表，博弈论典型例子，寡占模型</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">10</td><td class="topic-cell">博弈论2</td><td class="detail-cell">共谋，混合战略均衡，动态博弈入门</td><td class="hours-cell">4</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 宏观经济学 -->
+  <div class="course-card">
+    <div class="course-card-head" onclick="toggleCourse(this)">
+      <span class="course-name">宏观经济学</span>
+      <div class="course-meta-bar">
+        <span class="course-hours">24H · 6回 · 7月期 / 1月期 · 10:00–14:00</span>
+        <span class="course-toggle">▼</span>
+      </div>
+    </div>
+    <div class="course-body">
+      <p class="course-desc">以宏观经济学核心主题为主线，精讲重点理论与模型，结合现实经典案例，深入浅出探讨宏观经济现象与政策效果。</p>
+      <div class="course-goal">
+        <div class="course-goal-title">课程目标</div>
+        <div class="goal-row"><span class="goal-tag">知识</span>系统梳理经典宏观理论和模型，辅以案例分析加深理解。</div>
+        <div class="goal-row"><span class="goal-tag">技能</span>掌握政策工具与分析方法，能在研究计划书和考试中精准运用。</div>
+      </div>
+      <table class="schedule-table">
+        <thead><tr><th class="num-cell">#</th><th class="topic-cell">主题</th><th class="detail-cell">重点内容</th><th class="hours-cell">H</th></tr></thead>
+        <tbody>
+          <tr><td class="num-cell">1</td><td class="topic-cell">国民所得·凯恩斯派</td><td class="detail-cell">国民所得概念，凯恩斯与新古典派，储蓄悖论，45度线分析，IS曲线</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">2</td><td class="topic-cell">IS-LM分析</td><td class="detail-cell">货币概念，LM曲线，IS-LM体系，挤出效果</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">3</td><td class="topic-cell">国际宏观经济学</td><td class="detail-cell">新国际收支统计，FM模型，物价概念，AD-AS曲线初步</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">4</td><td class="topic-cell">通胀·安倍经济学</td><td class="detail-cell">新凯恩斯派，合理预期学派，AS曲线，日本银行金融政策</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">5</td><td class="topic-cell">失业·菲利普斯曲线</td><td class="detail-cell">失业率概念，菲利普斯曲线，凯恩斯派与新古典派论争</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">6</td><td class="topic-cell">新古典·经济增长</td><td class="detail-cell">Solow模型，黄金律，景气循环理论</td><td class="hours-cell">4</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 经济数学 -->
+  <div class="course-card">
+    <div class="course-card-head" onclick="toggleCourse(this)">
+      <span class="course-name">经济数学</span>
+      <div class="course-meta-bar">
+        <span class="course-hours">18H · 6回 · 7月期 / 1月期 · 10:00–13:00</span>
+        <span class="course-toggle">▼</span>
+      </div>
+    </div>
+    <div class="course-body">
+      <p class="course-desc">补充大学院经济学入试必需的逻辑思维与数学知识，扫清微观、宏观经济学学习中的数理障碍。涵盖基础数学运算与严谨的形式逻辑，结合过去问实例讲解。</p>
+      <div class="course-goal">
+        <div class="course-goal-title">课程目标</div>
+        <div class="goal-row"><span class="goal-tag">知识</span>围绕数学分析核心内容，强调模型构建、变化分析与最值问题的系统理解。</div>
+        <div class="goal-row"><span class="goal-tag">技能</span>掌握微分、积分、最优化等基本方法，培养严谨逻辑思维和抽象建模能力。</div>
+      </div>
+      <table class="schedule-table">
+        <thead><tr><th class="num-cell">#</th><th class="topic-cell">主题</th><th class="detail-cell">重点内容</th><th class="hours-cell">H</th></tr></thead>
+        <tbody>
+          <tr><td class="num-cell">1</td><td class="topic-cell">经济模型与均衡</td><td class="detail-cell">经济模型，集合，函数，指数/对数函数，均衡概念</td><td class="hours-cell">3</td></tr>
+          <tr><td class="num-cell">2</td><td class="topic-cell">比较静态</td><td class="detail-cell">导数，极限，不等式，连续与可微，常见函数的导数</td><td class="hours-cell">3</td></tr>
+          <tr><td class="num-cell">3</td><td class="topic-cell">微分法则</td><td class="detail-cell">一元函数微分，链式法则，偏微分，全微分，隐函数</td><td class="hours-cell">3</td></tr>
+          <tr><td class="num-cell">4</td><td class="topic-cell">最优化</td><td class="detail-cell">无约束最优化，约束最优化，拉格朗日算子，包络定理</td><td class="hours-cell">3</td></tr>
+          <tr><td class="num-cell">5</td><td class="topic-cell">积分与微分方程</td><td class="detail-cell">定积分，不定积分，分部积分法，Solow模型应用</td><td class="hours-cell">3</td></tr>
+          <tr><td class="num-cell">6</td><td class="topic-cell">逻辑与证明</td><td class="detail-cell">逆命题与否命题，充分/必要条件，直接法，反证法，归纳法</td><td class="hours-cell">3</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 研究计划方法论&计量 -->
+  <div class="course-card">
+    <div class="course-card-head" onclick="toggleCourse(this)">
+      <span class="course-name">研究计划方法论 &amp; 计量经济学基础</span>
+      <div class="course-meta-bar">
+        <span class="course-hours">10H · 5回</span>
+        <span class="course-toggle">▼</span>
+      </div>
+    </div>
+    <div class="course-body">
+      <p class="course-desc">培养制定经济学研究计划的能力，掌握计量经济学基本理论，为完成研究计划书奠定坚实基础。</p>
+      <table class="schedule-table">
+        <thead><tr><th class="num-cell">#</th><th class="topic-cell">主题</th><th class="detail-cell">重点内容</th><th class="hours-cell">H</th></tr></thead>
+        <tbody>
+          <tr><td class="num-cell">1</td><td class="topic-cell">研究计划方法论1</td><td class="detail-cell">研究选题与文献综述：如何界定有价值的研究问题，检索与整理学术文献</td><td class="hours-cell">2</td></tr>
+          <tr><td class="num-cell">2</td><td class="topic-cell">研究计划方法论2</td><td class="detail-cell">研究设计与数据收集：研究目标制定，定性/定量方法选择，常用数据来源</td><td class="hours-cell">2</td></tr>
+          <tr><td class="num-cell">3</td><td class="topic-cell">计量手法基础1</td><td class="detail-cell">线性回归模型（OLS），假设检验，多重共线性、异方差性诊断</td><td class="hours-cell">2</td></tr>
+          <tr><td class="num-cell">4</td><td class="topic-cell">计量手法基础2</td><td class="detail-cell">因果推断：面板数据固定效应，RDD，DID，IV方法介绍</td><td class="hours-cell">2</td></tr>
+          <tr><td class="num-cell">5</td><td class="topic-cell">计量手法基础3</td><td class="detail-cell">论文轮读：实证论文结构与分析方法精讲</td><td class="hours-cell">2</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ERE提分班 -->
+  <div class="course-card">
+    <div class="course-card-head" onclick="toggleCourse(this)">
+      <span class="course-name">ERE 经济学检定试验提分班</span>
+      <div class="course-meta-bar">
+        <span class="course-hours">16H · 4回</span>
+        <span class="course-toggle">▼</span>
+      </div>
+    </div>
+    <div class="course-body">
+      <p class="course-desc">在微观、宏观经济学基础上，系统补充 ERE 必考知识点，目标是帮助学生取得 A+ 成绩。横滨国立、大阪公立、上智、明治、中央、法政、同志社、立命馆等学校均可用 ERE 成绩免除全部或部分笔试，且 ERE 现已全面改为机考，时间安排灵活。</p>
+      <table class="schedule-table">
+        <thead><tr><th class="num-cell">#</th><th class="topic-cell">主题</th><th class="detail-cell">重点内容</th><th class="hours-cell">H</th></tr></thead>
+        <tbody>
+          <tr><td class="num-cell">1-2</td><td class="topic-cell">ERE微观补充</td><td class="detail-cell">需要・供給分析 / 消費者の合理的行動 / 所得・価格変化と消費 / 需要弾力性 / 企業と生産関数 / 費用関数 / 利潤最大化 ほか</td><td class="hours-cell">8</td></tr>
+          <tr><td class="num-cell">3-4</td><td class="topic-cell">ERE宏观补充</td><td class="detail-cell">国民所得の概念とGDP / 国民所得決定論 / 財政・金融活動 / 消費・投資理論 / IS-LM分析 / 財政・金融政策の効果 ほか</td><td class="hours-cell">8</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 过去问训练 -->
+  <div class="course-card">
+    <div class="course-card-head" onclick="toggleCourse(this)">
+      <span class="course-name">过去问训练（微观宏观专项 + 套题演练）</span>
+      <div class="course-meta-bar">
+        <span class="course-hours">76H · 19回 · 10:00–14:00</span>
+        <span class="course-toggle">▼</span>
+      </div>
+    </div>
+    <div class="course-body">
+      <p class="course-desc">以微观、宏观经济学专业知识为核心，按知识点顺序补充所有备考所需专业知识与答题技巧，最终通过套题演练整合应试能力。</p>
+      <div class="course-goal">
+        <div class="course-goal-title">课程目标</div>
+        <div class="goal-row"><span class="goal-tag">知识</span>掌握必考知识点及答题战略，达到日本本科生专业知识水平。</div>
+        <div class="goal-row"><span class="goal-tag">技能</span>具备经济学研究科及公共政策大学院等笔试的完整答题能力。</div>
+      </div>
+      <table class="schedule-table">
+        <thead><tr><th class="num-cell">#</th><th class="topic-cell">主题</th><th class="detail-cell">重点内容</th><th class="hours-cell">H</th></tr></thead>
+        <tbody>
+          <tr><td class="num-cell">1</td><td class="topic-cell">微观·消费者理论</td><td class="detail-cell">消费者理论真题训练</td><td class="hours-cell">6</td></tr>
+          <tr><td class="num-cell">2</td><td class="topic-cell">微观·生产者理论</td><td class="detail-cell">生产者理论真题训练</td><td class="hours-cell">6</td></tr>
+          <tr><td class="num-cell">3</td><td class="topic-cell">微观·一般均衡</td><td class="detail-cell">一般均衡理论真题训练</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">4</td><td class="topic-cell">微观·公共财/外部性</td><td class="detail-cell">公共财、外部性真题训练</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">5</td><td class="topic-cell">微观·博弈论</td><td class="detail-cell">博弈论真题训练</td><td class="hours-cell">8</td></tr>
+          <tr><td class="num-cell">6</td><td class="topic-cell">微观·不完全竞争</td><td class="detail-cell">不完全竞争真题训练</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">7</td><td class="topic-cell">宏观·国民经济/金融</td><td class="detail-cell">国民经济计算、消费、投资、金融真题训练</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">8</td><td class="topic-cell">宏观·IS-LM/国际</td><td class="detail-cell">IS-LM、国际经济部分真题训练</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">9</td><td class="topic-cell">宏观·AS-AD</td><td class="detail-cell">AS-AD部分真题训练</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">10</td><td class="topic-cell">宏观·经济增长</td><td class="detail-cell">经济增长部分真题训练</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">11</td><td class="topic-cell">宏观·论述专题</td><td class="detail-cell">经典论述问题真题训练</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">12</td><td class="topic-cell">套题演练</td><td class="detail-cell">各大学最新过去问套题训练，综合梳理微观宏观理论，指导正确解答策略</td><td class="hours-cell">20</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 经济学zemi -->
+  <div class="course-card">
+    <div class="course-card-head" onclick="toggleCourse(this)">
+      <span class="course-name">经济学 Zemi</span>
+      <div class="course-meta-bar">
+        <span class="course-hours">16H · 16回 · 7月期 / 1月期</span>
+        <span class="course-toggle">▼</span>
+      </div>
+    </div>
+    <div class="course-body">
+      <p class="course-desc">前期结合计量经济学与研究计划书写法进行教学指导；后期以研究计划书发表、文献阅读发表和考学答疑为主。全程随堂给予评估与反馈，根据进度灵活调整。</p>
+      <div class="course-goal">
+        <div class="course-goal-title">每周流程</div>
+        <div class="goal-row"><span class="goal-tag">课前</span>发表同学提前两天分享研究计划书</div>
+        <div class="goal-row"><span class="goal-tag">课中</span>担当发表 → 全员讨论 → 考学相关答疑</div>
+        <div class="goal-row"><span class="goal-tag">目标</span>完成研究计划书构思与书写，提升日文文献阅读及日语发表能力</div>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<!-- ── 讲师介绍 ── -->
+<section id="lecturers">
+  <div class="section-label">LECTURERS</div>
+  <div class="section-title">讲师介绍</div>
+  <div class="lecturer-grid">
+
+    <div class="lecturer-card">
+      <div class="lecturer-head">
+        <div class="lecturer-name">周老师</div>
+        <div class="lecturer-affil">东京大学大学院 经济学研究科 修士</div>
+      </div>
+      <div class="lecturer-body">
+        <div>
+          <div class="lec-label">专攻方向</div>
+          <div class="lec-content"><span class="lec-tag">应用微观计量经济学</span></div>
+        </div>
+        <div>
+          <div class="lec-label">担当课程</div>
+          <div class="lec-content">计量经济学 · 经济学计划书讲座 · ERE提分班</div>
+        </div>
+        <div>
+          <div class="lec-label">授课特色</div>
+          <div class="lec-content">善于将深奥理论通俗化，以生活实例和风趣的语言让学生轻松理解复杂知识。结合最新经济动态，培养学生对社会经济现象的洞察力和分析能力。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="lecturer-card">
+      <div class="lecturer-head">
+        <div class="lecturer-name">章老师</div>
+        <div class="lecturer-affil">东北大学大学院 经济学研究科 修士</div>
+      </div>
+      <div class="lecturer-body">
+        <div>
+          <div class="lec-label">专攻方向</div>
+          <div class="lec-content"><span class="lec-tag">微观经济学</span><span class="lec-tag">计量经济学</span></div>
+        </div>
+        <div>
+          <div class="lec-label">担当课程</div>
+          <div class="lec-content">过去问训练 · 研究计划书指导</div>
+        </div>
+        <div>
+          <div class="lec-label">授课特色</div>
+          <div class="lec-content">十年以上大学院指导经验，在一桥、京大、阪大等高难度院校的合格实绩中几乎全部由其指导完成，被称为"经济学方向的压轴王牌"。讲课兼具严谨与幽默，帮助学生构建应试力与概念运用力的双重支柱。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="lecturer-card">
+      <div class="lecturer-head">
+        <div class="lecturer-name">邓老师</div>
+        <div class="lecturer-affil">慶應義塾大学大学院 経済学研究科 博士<br>一桥大学大学院 経済学研究科 修士</div>
+      </div>
+      <div class="lecturer-body">
+        <div>
+          <div class="lec-label">专攻方向</div>
+          <div class="lec-content"><span class="lec-tag">理论经济学</span><span class="lec-tag">产业组织论</span></div>
+        </div>
+        <div>
+          <div class="lec-label">担当课程</div>
+          <div class="lec-content">经济数学 · 过去问训练</div>
+        </div>
+        <div>
+          <div class="lec-label">授课特色</div>
+          <div class="lec-content">注重"直觉"与"逻辑"并重。通过图示让基础薄弱的同学从直觉上理解概念和定理，再用高度形式化语言严格表达，最终使学生在直觉与逻辑之间来去自如，在大学院学习高难度课程时也更游刃有余。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="lecturer-card">
+      <div class="lecturer-head">
+        <div class="lecturer-name">刘老师</div>
+        <div class="lecturer-affil">一桥大学大学院 社会数据研究科 修士</div>
+      </div>
+      <div class="lecturer-body">
+        <div>
+          <div class="lec-label">专攻方向</div>
+          <div class="lec-content"><span class="lec-tag">计量经济学</span><span class="lec-tag">应用微观经济学</span></div>
+        </div>
+        <div>
+          <div class="lec-label">担当课程</div>
+          <div class="lec-content">微观经济学 · 宏观经济学 · 研究计划书指导</div>
+        </div>
+        <div>
+          <div class="lec-label">授课特色</div>
+          <div class="lec-content">多引用现实案例，培养学生自发思考的经济学素养。擅长从"零基础"出发，消除对无经济学背景考学的恐惧感，不仅帮助学生建立考学知识点，更培养进学后的思考能力。</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+</div><!-- end page-wrap -->
+
+<footer style="background:var(--text-primary);color:rgba(255,255,255,.4);padding:2rem 3rem;font-size:10px;letter-spacing:.06em;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem">
+  <span>唯新教育 · TRANSFORM EDUCATION</span>
+  <span>© 2026 · 経済学学科介绍</span>
+</footer>
+
+<script>
+function toggleCourse(head) {
+  const body = head.nextElementSibling;
+  const toggle = head.querySelector('.course-toggle');
+  const isOpen = body.classList.toggle('open');
+  toggle.classList.toggle('open', isOpen);
+}
+</script>
+</body>
+</html>
