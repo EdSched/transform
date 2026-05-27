@@ -449,11 +449,9 @@ section:last-child { border-bottom: none; }
       <div class="video-header-label"><div class="video-dot"></div>学科介绍</div>
       <span class="video-duration">20 min</span>
     </div>
-    <!-- 替换下方 div 为 <iframe class="video-iframe" src="你的视频链接" allowfullscreen></iframe> -->
-    <div class="video-placeholder" id="vid-intro">
-      <div class="video-play-icon">▶</div>
-      <span>https://wx-offer.oss-accelerate.aliyuncs.com/wxLesson/67b551823595e12cf1baa059/record_video/1739962077976_split_20250219174930-2025.mp4</span>
-    </div>
+    <video class="video-iframe" controls controlsList="nodownload" style="background:#000">
+      <source src="https://wx-offer.oss-accelerate.aliyuncs.com/wxLesson/67b551823595e12cf1baa059/record_video/1739962077976_split_20250219174930-2025.mp4" type="video/mp4">
+    </video>
   </div>
 
   <!-- 40分钟 正课体验视频 -->
