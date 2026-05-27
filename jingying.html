@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>经营学学科介绍 · TRANSFORM EDUCATION</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f7f5f0;
+  --surface: #ffffff;
+  --border: #e2ded6;
+  --border-light: #ede9e2;
+  --text-primary: #1a1814;
+  --text-secondary: #5a5650;
+  --text-muted: #9a9590;
+  --accent: #2c3e6a;
+  --accent-light: #ddeaf8;
+  --gold: #b8953a;
+  --gold-light: #f8f0dc;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'DM Mono', 'Noto Serif SC', monospace;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* ── Nav ── */
+nav {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 52px;
+}
+.nav-brand {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--text-primary);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.nav-brand span { color: var(--text-muted); font-weight: 400; font-size: 11px; }
+.nav-links {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+}
+.nav-link {
+  padding: 0 14px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.nav-link:hover { color: var(--text-primary); border-bottom-color: var(--border); }
+
+/* ── Hero ── */
+.hero {
+  background: #eef2f7;
+  color: var(--text-primary);
+  padding: 5rem 3rem 4rem;
+  position: relative;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+.hero::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent, transparent 40px,
+    rgba(44,62,106,.03) 40px, rgba(44,62,106,.03) 41px
+  );
+}
+.hero-inner { position: relative; max-width: 860px; }
+.hero-label {
+  font-size: 10px;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hero-label::before { content: ''; display: block; width: 24px; height: 1px; background: var(--border); }
+.hero h1 {
+  font-family: 'Noto Serif SC', serif;
+  font-size: clamp(2rem, 5vw, 3.2rem);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: .02em;
+  margin-bottom: 1.2rem;
+  color: var(--text-primary);
+}
+.hero-sub {
+  font-size: 13px;
+  color: var(--text-secondary);
+  max-width: 560px;
+  line-height: 1.7;
+  margin-bottom: 2.5rem;
+}
+.hero-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.hero-tag {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-size: 10px;
+  letter-spacing: .06em;
+  color: var(--text-secondary);
+  background: rgba(255,255,255,.6);
+}
+
+/* ── Section wrapper ── */
+.page-wrap { max-width: 980px; margin: 0 auto; padding: 0 3rem; }
+
+/* ── Section ── */
+section { padding: 3.5rem 0; border-bottom: 1px solid var(--border); }
+section:last-child { border-bottom: none; }
+.section-label {
+  font-size: 9px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: .8rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.section-label::before { content: ''; display: block; width: 16px; height: 1px; background: var(--border); }
+.section-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 1.4rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+  margin-bottom: 1.5rem;
+  line-height: 1.3;
+}
+
+/* ── Video block ── */
+.video-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+}
+.video-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.video-header-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.video-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+}
+.video-duration {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: 'DM Mono', monospace;
+}
+.video-placeholder {
+  background: #0f0e0d;
+  aspect-ratio: 16/9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: rgba(255,255,255,.25);
+  font-size: 11px;
+  letter-spacing: .08em;
+  cursor: pointer;
+  transition: background .2s;
+  position: relative;
+}
+.video-placeholder:hover { background: #1a1814; }
+.video-play-icon {
+  width: 48px; height: 48px;
+  border: 1.5px solid rgba(255,255,255,.2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: rgba(255,255,255,.3);
+}
+/* If you have an embed URL, swap the placeholder div for an iframe */
+.video-iframe {
+  width: 100%;
+  aspect-ratio: 16/9;
+  border: none;
+  display: block;
+}
+
+/* ── Two-col intro ── */
+.intro-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+.intro-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1.5rem;
+}
+.intro-block-title {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: .8rem;
+  padding-bottom: .6rem;
+  border-bottom: 1px solid var(--border-light);
+}
+.intro-block p { font-size: 12px; color: var(--text-secondary); line-height: 1.75; margin-bottom: .6rem; }
+.intro-block p:last-child { margin-bottom: 0; }
+
+/* ── Advantages ── */
+.advantage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.advantage-item {
+  background: var(--surface);
+  padding: 1.4rem 1.5rem;
+}
+.advantage-num {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: .5rem;
+}
+.advantage-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: .5rem;
+  letter-spacing: .01em;
+}
+.advantage-desc { font-size: 11px; color: var(--text-secondary); line-height: 1.7; }
+
+/* ── Direction cards ── */
+.direction-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.direction-card {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.direction-card-head {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.direction-badge {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .08em;
+  padding: 2px 8px;
+  border-radius: 2px;
+}
+.badge-kenkyu { background: var(--accent-light); color: var(--accent); }
+.badge-mba { background: var(--gold-light); color: var(--gold); }
+.direction-card-title { font-size: 13px; font-weight: 500; }
+.direction-card-body { padding: 14px 16px; }
+.direction-row {
+  display: flex;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 11px;
+  align-items: flex-start;
+}
+.direction-row:last-child { border-bottom: none; }
+.direction-key { color: var(--text-muted); flex-shrink: 0; width: 70px; }
+.direction-val { color: var(--text-secondary); }
+
+/* ── Course cards ── */
+.course-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 1.2rem;
+}
+.course-card:last-child { margin-bottom: 0; }
+.course-card-head {
+  padding: 14px 20px;
+  background: var(--text-primary);
+  color: var(--bg);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  cursor: pointer;
+  user-select: none;
+}
+.course-card-head:hover { background: #2a2620; }
+.course-name { font-family: 'Noto Serif SC', serif; font-size: 15px; font-weight: 600; letter-spacing: .02em; }
+.course-meta-bar { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.course-hours { font-family: 'DM Mono', monospace; font-size: 11px; color: rgba(255,255,255,.5); }
+.course-toggle { font-size: 10px; color: rgba(255,255,255,.35); transition: transform .2s; }
+.course-toggle.open { transform: rotate(180deg); }
+.course-body { display: none; padding: 1.5rem 20px; }
+.course-body.open { display: block; }
+.course-desc { font-size: 12px; color: var(--text-secondary); line-height: 1.75; margin-bottom: 1.2rem; }
+.course-goal { margin-bottom: 1.2rem; }
+.course-goal-title { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin-bottom: .6rem; }
+.goal-row { display: flex; gap: 8px; margin-bottom: .4rem; font-size: 11px; color: var(--text-secondary); }
+.goal-tag { background: var(--bg); border: 1px solid var(--border-light); border-radius: 2px; padding: 0 6px; font-size: 9px; color: var(--text-muted); flex-shrink: 0; height: fit-content; margin-top: 2px; }
+
+/* Course schedule table */
+.schedule-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.schedule-table thead tr { background: var(--bg); }
+.schedule-table th { padding: 6px 10px; text-align: left; font-size: 9px; letter-spacing: .06em; color: var(--text-muted); border-bottom: 1px solid var(--border); font-weight: 500; }
+.schedule-table td { padding: 8px 10px; border-bottom: 1px solid var(--border-light); vertical-align: top; line-height: 1.55; }
+.schedule-table tr:last-child td { border-bottom: none; }
+.schedule-table .num-cell { font-family: 'DM Mono', monospace; color: var(--text-muted); text-align: center; width: 32px; }
+.schedule-table .topic-cell { font-weight: 500; color: var(--text-primary); width: 130px; }
+.schedule-table .detail-cell { color: var(--text-secondary); }
+.schedule-table .hours-cell { font-family: 'DM Mono', monospace; color: var(--text-muted); text-align: center; width: 40px; }
+
+/* ── Schools table ── */
+.schools-block { margin-bottom: 1.5rem; }
+.schools-block-title {
+  font-size: 11px; font-weight: 500; color: var(--text-primary);
+  margin-bottom: .6rem; display: flex; align-items: center; gap: 8px;
+}
+.schools-table { width: 100%; border-collapse: collapse; font-size: 11px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.schools-table thead tr { background: var(--bg); border-bottom: 1px solid var(--border); }
+.schools-table th { padding: 7px 12px; text-align: left; font-size: 9px; letter-spacing: .06em; color: var(--text-muted); font-weight: 500; }
+.schools-table td { padding: 8px 12px; border-bottom: 1px solid var(--border-light); color: var(--text-secondary); vertical-align: top; }
+.schools-table tr:last-child td { border-bottom: none; }
+.school-name { font-weight: 500; color: var(--text-primary); }
+
+/* ── Lecturer cards ── */
+.lecturer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.lecturer-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.lecturer-head {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg);
+}
+.lecturer-name { font-family: 'Noto Serif SC', serif; font-size: 15px; font-weight: 600; margin-bottom: 3px; }
+.lecturer-affil { font-size: 10px; color: var(--text-muted); line-height: 1.5; letter-spacing: .01em; }
+.lecturer-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+.lecturer-row { font-size: 11px; }
+.lec-label { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 3px; }
+.lec-content { color: var(--text-secondary); line-height: 1.65; }
+.lec-tag { display: inline-block; background: var(--accent-light); color: var(--accent); font-size: 9px; padding: 1px 7px; border-radius: 2px; margin-right: 4px; margin-bottom: 3px; }
+
+/* ── Responsive ── */
+@media (max-width: 720px) {
+  nav { padding: 0 1.2rem; }
+  .hero { padding: 3rem 1.2rem 2.5rem; }
+  .page-wrap { padding: 0 1.2rem; }
+  .intro-grid, .advantage-grid, .direction-grid, .lecturer-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="#" class="nav-brand">唯新教育 <span>TRANSFORM EDUCATION</span></a>
+  <div class="nav-links">
+    <a href="#intro" class="nav-link">学科介绍</a>
+    <a href="#advantage" class="nav-link">学科优势</a>
+    <a href="#direction" class="nav-link">报考方向</a>
+    <a href="#courses" class="nav-link">专业课程</a>
+    <a href="#schools" class="nav-link">目标学校</a>
+    <a href="#lecturers" class="nav-link">讲师介绍</a>
+  </div>
+</nav>
+
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-label">TRANSFORM EDUCATION · 学科介绍</div>
+    <h1>経営学<br>经营学</h1>
+    <p class="hero-sub">研究企业如何在竞争环境中制定战略、优化运营、配置资源，实现可持续成长的应用性社会科学。</p>
+    <div class="hero-tags">
+      <span class="hero-tag">经营战略</span>
+      <span class="hero-tag">组织科学</span>
+      <span class="hero-tag">市场营销</span>
+      <span class="hero-tag">国际经营</span>
+      <span class="hero-tag">MBA / MOT</span>
+      <span class="hero-tag">修士研究者</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── 学科介绍视频 ── -->
+<div class="page-wrap">
+<section id="intro">
+  <div class="section-label">OVERVIEW</div>
+  <div class="section-title">学科介绍</div>
+
+  <!-- 20分钟 学科介绍视频 -->
+  <div class="video-block" style="margin-bottom:1rem">
+    <div class="video-header">
+      <div class="video-header-label"><div class="video-dot"></div>学科介绍</div>
+      <span class="video-duration">20 min</span>
+    </div>
+    <!-- 替换下方 div 为 <iframe class="video-iframe" src="你的视频链接" allowfullscreen></iframe> -->
+    <div class="video-placeholder" id="vid-intro">
+      <div class="video-play-icon">▶</div>
+      <span>学科介绍视频（请插入链接）</span>
+    </div>
+  </div>
+
+  <!-- 40分钟 正课体验视频 -->
+  <div class="video-block" style="margin-bottom:2rem">
+    <div class="video-header">
+      <div class="video-header-label"><div class="video-dot" style="background:var(--accent)"></div>正课体验</div>
+      <span class="video-duration">40 min</span>
+    </div>
+    <!-- 替换下方 div 为 <iframe class="video-iframe" src="你的视频链接" allowfullscreen></iframe> -->
+    <div class="video-placeholder" id="vid-class">
+      <div class="video-play-icon">▶</div>
+      <span>正课体验视频（请插入链接）</span>
+    </div>
+  </div>
+
+  <div class="intro-grid">
+    <div class="intro-block">
+      <div class="intro-block-title">什么是经营学</div>
+      <p>经营学（Management Science）研究企业如何通过有效管理有限资源，在竞争环境中实现成长与盈利目标。简单来说，就是从理论和实证角度回答企业"如何用好手里的牌"的所有问题。</p>
+      <p>作为一门跨学科领域，经营学建立在经济学、心理学、社会学和统计学的基础之上，具有极强的应用性。</p>
+    </div>
+    <div class="intro-block">
+      <div class="intro-block-title">知识框架</div>
+      <p>经营学的核心分为两大支柱：</p>
+      <p>① <strong>经营战略</strong>——企业执行目标的行动方法论（How）</p>
+      <p>② <strong>经营组织</strong>——执行策略的企业主体建构（Who）</p>
+      <p>在此基础上进一步延伸出市场营销、国际经营和日本式经营管理等子领域，共计5大方向。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── 学科优势 ── -->
+<section id="advantage">
+  <div class="section-label">ADVANTAGES</div>
+  <div class="section-title">为什么选择经营学</div>
+  <div class="advantage-grid">
+    <div class="advantage-item">
+      <div class="advantage-num">01</div>
+      <div class="advantage-title">基础门槛低</div>
+      <div class="advantage-desc">无需深厚理工科背景，文科生和综合素质强的考生均可顺利入门，通过课程逐步建立理论框架。</div>
+    </div>
+    <div class="advantage-item">
+      <div class="advantage-num">02</div>
+      <div class="advantage-title">理论直观易理解</div>
+      <div class="advantage-desc">核心概念均可结合现实企业案例理解，不需要抽象数理推导，学习曲线友好。</div>
+    </div>
+    <div class="advantage-item">
+      <div class="advantage-num">03</div>
+      <div class="advantage-title">报考选择面广</div>
+      <div class="advantage-desc">从东京大学、一桥大学到各商学院均设有经营学课程，难度梯度均匀，各背景考生都能找到适合的目标校。</div>
+    </div>
+    <div class="advantage-item">
+      <div class="advantage-num">04</div>
+      <div class="advantage-title">就业前景宽松</div>
+      <div class="advantage-desc">涵盖制造业、金融、IT、咨询、商社等全行业。经营学的跨学科知识体系在统计分析、数据管理、商业策划等众多岗位均有直接应用价值。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── 报考方向 ── -->
+<section id="direction">
+  <div class="section-label">DIRECTIONS</div>
+  <div class="section-title">研究者 vs MBA / MOT</div>
+  <div class="direction-grid">
+    <div class="direction-card">
+      <div class="direction-card-head">
+        <span class="direction-badge badge-kenkyu">研究者育成</span>
+        <span class="direction-card-title">修士（学术方向）</span>
+      </div>
+      <div class="direction-card-body">
+        <div class="direction-row"><span class="direction-key">培养方向</span><span class="direction-val">理论研究能力、博士课程深造基础</span></div>
+        <div class="direction-row"><span class="direction-key">考试内容</span><span class="direction-val">理论笔试为主，考察严谨的分析与论述能力</span></div>
+        <div class="direction-row"><span class="direction-key">毕业要求</span><span class="direction-val">通常需完成理论性硕士论文</span></div>
+        <div class="direction-row"><span class="direction-key">语言要求</span><span class="direction-val">N1 必须；TOEIC 730～850 以上</span></div>
+      </div>
+    </div>
+    <div class="direction-card">
+      <div class="direction-card-head">
+        <span class="direction-badge badge-mba">专门职大学院</span>
+        <span class="direction-card-title">MBA / MOT</span>
+      </div>
+      <div class="direction-card-body">
+        <div class="direction-row"><span class="direction-key">培养方向</span><span class="direction-val">中级管理实践能力，课业量大、覆盖广</span></div>
+        <div class="direction-row"><span class="direction-key">考试内容</span><span class="direction-val">多数无笔试，面试为主，考察思考与表达</span></div>
+        <div class="direction-row"><span class="direction-key">毕业要求</span><span class="direction-val">部分学校不要求毕业论文</span></div>
+        <div class="direction-row"><span class="direction-key">附加优势</span><span class="direction-val">部分学校 MBA 学历可为永住权申请加分</span></div>
+      </div>
+    </div>
+  </div>
+  <div style="margin-top:1rem;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:4px;font-size:11px;color:var(--text-secondary);line-height:1.7">
+    <strong style="color:var(--text-primary)">备考建议：</strong>初期无需过早区分两者方向。多数 MBA 合格者也经历了基础理论学习，备考初期可两手抓，同步推进理论学习与面试准备。二者就业差异可忽略，更关键的是个人能力展示与目标校知名度。
+  </div>
+</section>
+
+<!-- ── 专业课程 ── -->
+<section id="courses">
+  <div class="section-label">CURRICULUM</div>
+  <div class="section-title">专业课程介绍</div>
+
+  <!-- 经营战略论 -->
+  <div class="course-card">
+    <div class="course-card-head" onclick="toggleCourse(this)">
+      <span class="course-name">经营战略论</span>
+      <div class="course-meta-bar">
+        <span class="course-hours">56H · 7回 · 4月期 / 10月期</span>
+        <span class="course-toggle">▼</span>
+      </div>
+    </div>
+    <div class="course-body">
+      <p class="course-desc">从企业顶层到基层，系统讲解企业为实现经营目标所执行的所有策略及方法论。研究企业如何分析内外部环境、设定发展目标、选择竞争策略，并在动态市场中确保可持续增长。</p>
+      <div class="course-goal">
+        <div class="course-goal-title">课程目标</div>
+        <div class="goal-row"><span class="goal-tag">知识</span>完整掌握经营战略的理论框架与若干核心机制。</div>
+        <div class="goal-row"><span class="goal-tag">技能</span>具备分析战略问题、梳理理论逻辑并高效应对考试的能力。</div>
+      </div>
+      <table class="schedule-table">
+        <thead><tr><th class="num-cell">#</th><th class="topic-cell">主题</th><th class="detail-cell">重点内容</th><th class="hours-cell">H</th></tr></thead>
+        <tbody>
+          <tr><td class="num-cell">1</td><td class="topic-cell">产业经济学基础</td><td class="detail-cell">经营学底层经济逻辑；成本理论；三大经济学效应</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">2</td><td class="topic-cell">事业进入</td><td class="detail-cell">产业结构论；进入壁垒理论；成长理论；PPM理论；事业范围论</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">3</td><td class="topic-cell">全社战略·理论框架</td><td class="detail-cell">供应链管理与整合战略；M&A理论</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">4</td><td class="topic-cell">全社战略·方法论</td><td class="detail-cell">整合-中间-市场交易；标准化战略；平台战略；知识产权战略</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">5</td><td class="topic-cell">事业战略·理论框架</td><td class="detail-cell">SWOT分析；外部环境竞争理论；内部资源竞争理论</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">6</td><td class="topic-cell">事业战略·方法论</td><td class="detail-cell">基本竞争战略类型；行业标准争夺战；先发/后发优势战略</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">7</td><td class="topic-cell">职能别战略</td><td class="detail-cell">研发管理论；产品开发论</td><td class="hours-cell">4</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 经营组织论 -->
+  <div class="course-card">
+    <div class="course-card-head" onclick="toggleCourse(this)">
+      <span class="course-name">经营组织论</span>
+      <div class="course-meta-bar">
+        <span class="course-hours">72H · 9回 · 4月期 / 10月期</span>
+        <span class="course-toggle">▼</span>
+      </div>
+    </div>
+    <div class="course-body">
+      <p class="course-desc">以执行战略的"主体"——企业与人——为核心讨论对象。从个人行动机制（微观组织论：动机、心理活动框架）到组织架构的宏观设计（宏观组织论：结构、权力、信息流动），系统构建组织科学的完整知识体系。</p>
+      <div class="course-goal">
+        <div class="course-goal-title">课程目标</div>
+        <div class="goal-row"><span class="goal-tag">知识</span>全面掌握微观/宏观组织理论、权变理论、组织文化与学习等考试核心内容。</div>
+        <div class="goal-row"><span class="goal-tag">技能</span>能够高效梳理组织学考点逻辑，熟练应对各类题型。</div>
+      </div>
+      <table class="schedule-table">
+        <thead><tr><th class="num-cell">#</th><th class="topic-cell">主题</th><th class="detail-cell">重点内容</th><th class="hours-cell">H</th></tr></thead>
+        <tbody>
+          <tr><td class="num-cell">1</td><td class="topic-cell">传统组织理论1</td><td class="detail-cell">古典；新古典组织论</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">2</td><td class="topic-cell">传统组织理论2</td><td class="detail-cell">近代组织论；组织的权变理论</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">3</td><td class="topic-cell">宏观组织理论</td><td class="detail-cell">组织构造；组织形态；机能与形态关联性</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">4</td><td class="topic-cell">微观组织理论1</td><td class="detail-cell">动机理论</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">5</td><td class="topic-cell">微观组织理论2</td><td class="detail-cell">领导力理论；SECI；MBO</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">6</td><td class="topic-cell">组织与战略特集</td><td class="detail-cell">组织机能与战略实施的系统性经典结论精讲</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">7</td><td class="topic-cell">企业论</td><td class="detail-cell">企业形态；经营者革命与企业统制；CSR / CSV</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">8</td><td class="topic-cell">日本式经营</td><td class="detail-cell">系列；现场；精细供应链；稟議制度；三种神器</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">9</td><td class="topic-cell">前沿组织理论</td><td class="detail-cell">网络组织科学；企业生态论；红皇后理论等</td><td class="hours-cell">4</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 市场营销论 -->
+  <div class="course-card">
+    <div class="course-card-head" onclick="toggleCourse(this)">
+      <span class="course-name">市场营销论</span>
+      <div class="course-meta-bar">
+        <span class="course-hours">64H · 8回 · 7月期 / 1月期</span>
+        <span class="course-toggle">▼</span>
+      </div>
+    </div>
+    <div class="course-body">
+      <p class="course-desc">围绕企业如何理解、创造并持续满足市场需求展开。从消费者行动机制（需求激发、偏好形成、购买行为）到企业营销战略（STP、营销组合、品牌构建），在微观行动与宏观战略的相互作用中理解市场营销的整体逻辑。</p>
+      <div class="course-goal">
+        <div class="course-goal-title">课程目标</div>
+        <div class="goal-row"><span class="goal-tag">知识</span>系统掌握消费者行动理论、STP、4P/4C、品牌战略、关系性营销、服务营销等考试核心内容。</div>
+        <div class="goal-row"><span class="goal-tag">技能</span>能够准确识别题目考点，清晰构建论述逻辑，熟练应对论述题、比较题与综合分析题。</div>
+      </div>
+      <table class="schedule-table">
+        <thead><tr><th class="num-cell">#</th><th class="topic-cell">主题</th><th class="detail-cell">重点内容</th><th class="hours-cell">H</th></tr></thead>
+        <tbody>
+          <tr><td class="num-cell">1</td><td class="topic-cell">营销入门</td><td class="detail-cell">STP；营销组合（Marketing Mix）</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">2</td><td class="topic-cell">研究方法与产品论</td><td class="detail-cell">研究方法；产品生命周期</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">3</td><td class="topic-cell">价格论与促销论</td><td class="detail-cell">定价方法；广告与SP</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">4</td><td class="topic-cell">流通论</td><td class="detail-cell">流通机能；流通系统设计</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">5</td><td class="topic-cell">服务与社会营销</td><td class="detail-cell">服务营销特征；社会导向营销</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">6</td><td class="topic-cell">关系性营销</td><td class="detail-cell">顾客关系管理；企业间关系管理</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">7</td><td class="topic-cell">品牌论</td><td class="detail-cell">品牌机能；品牌战略</td><td class="hours-cell">4</td></tr>
+          <tr><td class="num-cell">8</td><td class="topic-cell">消费者行动论</td><td class="detail-cell">消费者个人行动；消费者集团行动</td><td class="hours-cell">4</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 过去问对策 -->
+  <div class="course-card">
+    <div class="course-card-head" onclick="toggleCourse(this)">
+      <span class="course-name">考前对策 · 过去问指导</span>
+      <div class="course-meta-bar">
+        <span class="course-hours">20H · 5回 · 7月期 / 1月期</span>
+        <span class="course-toggle">▼</span>
+      </div>
+    </div>
+    <div class="course-body">
+      <p class="course-desc">围绕日本大学商学、经营学研究科笔试科目的针对性训练。涵盖学校别过去问、三大科目知识点复习补足、模拟考试三个部分，旨在快速提升专业知识应用与答题能力。</p>
+      <table class="schedule-table">
+        <thead><tr><th class="num-cell">#</th><th class="topic-cell">主题</th><th class="detail-cell">重点内容</th><th class="hours-cell">H</th></tr></thead>
+        <tbody>
+          <tr><td class="num-cell">1</td><td class="topic-cell">入试题型解析</td><td class="detail-cell">名词解释、论述题解题手法与出题意图分析</td><td class="hours-cell">2</td></tr>
+          <tr><td class="num-cell">2</td><td class="topic-cell">战略管理真题</td><td class="detail-cell">以经典战略理论为主（SWOT、波特竞争战略等），结合真题</td><td class="hours-cell">2</td></tr>
+          <tr><td class="num-cell">3</td><td class="topic-cell">组织理论真题</td><td class="detail-cell">组织设计、权力与文化等基础知识点，真题解题思路</td><td class="hours-cell">2</td></tr>
+          <tr><td class="num-cell">4</td><td class="topic-cell">市场营销真题</td><td class="detail-cell">4P理论、消费者行为，最新案例结合，重点突破难题</td><td class="hours-cell">2</td></tr>
+          <tr><td class="num-cell">5</td><td class="topic-cell">过去问综合演习</td><td class="detail-cell">综合实践，模拟解答过往真题，思路整理与时间分配</td><td class="hours-cell">2</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 流通学广告学 -->
+  <div class="course-card">
+    <div class="course-card-head" onclick="toggleCourse(this)">
+      <span class="course-name">流通学 · 广告学特别讲义</span>
+      <div class="course-meta-bar">
+        <span class="course-hours">20H · 5回 · 7月期 / 1月期</span>
+        <span class="course-toggle">▼</span>
+      </div>
+    </div>
+    <div class="course-body">
+      <p class="course-desc">专为备考早稻田、庆应、上智等顶尖名校设计的强化课程，涵盖流通机制、流通国际化、广告策略等高频考点，结合过去问训练，帮助学生在短时间内冲刺名校。</p>
+      <table class="schedule-table">
+        <thead><tr><th class="num-cell">#</th><th class="topic-cell">主题</th><th class="detail-cell">重点内容</th><th class="hours-cell">H</th></tr></thead>
+        <tbody>
+          <tr><td class="num-cell">1</td><td class="topic-cell">流通学基础</td><td class="detail-cell">流通机制、流通国际化、渠道设计核心考点梳理</td><td class="hours-cell">2</td></tr>
+          <tr><td class="num-cell">2</td><td class="topic-cell">流通学真题解析</td><td class="detail-cell">经典案例与历年真题，常见题型与高分解答技巧</td><td class="hours-cell">2</td></tr>
+          <tr><td class="num-cell">3</td><td class="topic-cell">广告学核心理论</td><td class="detail-cell">广告策略、传播路径、品牌定位等核心知识点</td><td class="hours-cell">2</td></tr>
+          <tr><td class="num-cell">4</td><td class="topic-cell">广告学真题演练</td><td class="detail-cell">高频题型分析，训练逻辑分析与论述写作能力</td><td class="hours-cell">2</td></tr>
+          <tr><td class="num-cell">5</td><td class="topic-cell">综合模拟</td><td class="detail-cell">流通＋广告综合模拟，详细反馈与考前策略指导</td><td class="hours-cell">2</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 经营学zemi -->
+  <div class="course-card">
+    <div class="course-card-head" onclick="toggleCourse(this)">
+      <span class="course-name">经营学 Zemi</span>
+      <div class="course-meta-bar">
+        <span class="course-hours">20H · 10回 · 7月期 / 1月期</span>
+        <span class="course-toggle">▼</span>
+      </div>
+    </div>
+    <div class="course-body">
+      <p class="course-desc">前半期围绕研究计划书发表与讨论，配合文献阅读与分享；后半期侧重目标学校过去问答疑与备考确认。全程随堂给予评估与反馈，根据学生进度灵活调整。</p>
+      <div class="course-goal">
+        <div class="course-goal-title">每周流程</div>
+        <div class="goal-row"><span class="goal-tag">课前</span>发表同学提前两天分享研究计划书及发表要约</div>
+        <div class="goal-row"><span class="goal-tag">课中</span>担当发表 → 全员讨论 → 过去问讲解讨论</div>
+        <div class="goal-row"><span class="goal-tag">反馈</span>老师随堂修改进度与内容，提供即时评估</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── 目标学校 ── -->
+<section id="schools">
+  <div class="section-label">SCHOOLS</div>
+  <div class="section-title">主要目标学校</div>
+
+  <div class="schools-block">
+    <div class="schools-block-title"><span class="direction-badge badge-kenkyu" style="font-size:9px">研究者课程</span>主要研究科</div>
+    <table class="schools-table">
+      <thead><tr><th>学校</th><th>研究科</th><th>英语（推荐）</th><th>日语</th><th>考试次数</th></tr></thead>
+      <tbody>
+        <tr><td class="school-name">东京大学</td><td>经济学研究科 · 经营学</td><td>TOEIC 800+</td><td>N1</td><td>1</td></tr>
+        <tr><td class="school-name">一桥大学</td><td>经营管理学研究科</td><td>—</td><td>N1</td><td>1</td></tr>
+        <tr><td class="school-name">庆应义塾大学</td><td>商学研究科</td><td>TOEIC 800+</td><td>N1</td><td>1</td></tr>
+        <tr><td class="school-name">早稻田大学</td><td>商学研究科 · 市场营销</td><td>TOEIC 760～850</td><td>N1</td><td>2</td></tr>
+        <tr><td class="school-name">大阪大学</td><td>经济学研究科 · 经营学</td><td>TOEIC 760+</td><td>N1</td><td>2</td></tr>
+        <tr><td class="school-name">东北大学</td><td>经济学研究科</td><td>TOEFL 80+</td><td>N1</td><td>2</td></tr>
+        <tr><td class="school-name">上智大学</td><td>経済学研究科 · 市场营销</td><td>TOEIC 800+</td><td>N1</td><td>2</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="schools-block">
+    <div class="schools-block-title"><span class="direction-badge badge-mba" style="font-size:9px">MBA / MOT</span>主要研究科</div>
+    <table class="schools-table">
+      <thead><tr><th>学校</th><th>研究科</th><th>英语（推荐）</th><th>日语</th><th>考试次数</th></tr></thead>
+      <tbody>
+        <tr><td class="school-name">一桥大学 ICS</td><td>国際企業戦略研究科 · MBA</td><td>TOEFL 100+ / GRE 330</td><td>N1</td><td>1</td></tr>
+        <tr><td class="school-name">一桥大学</td><td>経営管理学研究科 · MBA</td><td>—</td><td>N1</td><td>1</td></tr>
+        <tr><td class="school-name">庆应义塾 KBS</td><td>経営管理研究科 · MBA</td><td>TOEIC 800+</td><td>—</td><td>2</td></tr>
+        <tr><td class="school-name">京都大学</td><td>経営管理大学院 · MBA</td><td>TOEIC 800+</td><td>N1</td><td>2</td></tr>
+        <tr><td class="school-name">东京科学大学</td><td>環境社会理工学院 · MOT</td><td>TOEIC 800+</td><td>N1</td><td>1</td></tr>
+        <tr><td class="school-name">青山学院 ABS</td><td>国際マネジメント研究科 · MBA</td><td>TOEIC 760+</td><td>—</td><td>3</td></tr>
+        <tr><td class="school-name">立命馆大学</td><td>商学院 · MBA</td><td>TOEIC 700+</td><td>N1</td><td>3</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size:10px;color:var(--text-muted);margin-top:.6rem">※ 几乎所有好学校均要求 N1；TOEIC 推荐最低 730 分以上；顶级院校通常一年仅一次考试机会。</p>
+</section>
+
+<!-- ── 讲师介绍 ── -->
+<section id="lecturers">
+  <div class="section-label">LECTURERS</div>
+  <div class="section-title">讲师介绍</div>
+  <div class="lecturer-grid">
+    <div class="lecturer-card">
+      <div class="lecturer-head">
+        <div class="lecturer-name">田老师</div>
+        <div class="lecturer-affil">东京大学工学系研究科<br>技术经营战略专攻 · 博士</div>
+      </div>
+      <div class="lecturer-body">
+        <div class="lecturer-row">
+          <div class="lec-label">专攻方向</div>
+          <div class="lec-content">
+            <span class="lec-tag">经营战略</span>
+            <span class="lec-tag">组织科学</span>
+            <span class="lec-tag">社会网络分析</span>
+            <span class="lec-tag">知识产权战略</span>
+          </div>
+        </div>
+        <div class="lecturer-row">
+          <div class="lec-label">担当课程</div>
+          <div class="lec-content">经营战略论、经营组织论</div>
+        </div>
+        <div class="lecturer-row">
+          <div class="lec-label">授课特色</div>
+          <div class="lec-content">横跨经营、经济、社会科学与工程学，由浅入深帮助学生建立独立的知识体系和认知方法。通过充分的观点交流，让学生在游刃有余应对考试之上，获得对人文社科深层逻辑的理解与判断能力。</div>
+        </div>
+      </div>
+    </div>
+    <div class="lecturer-card">
+      <div class="lecturer-head">
+        <div class="lecturer-name">李老师</div>
+        <div class="lecturer-affil">上智大学大学院 経済学研究科 修士<br>英国布里斯托大学 経済学 学士</div>
+      </div>
+      <div class="lecturer-body">
+        <div class="lecturer-row">
+          <div class="lec-label">专攻方向</div>
+          <div class="lec-content">
+            <span class="lec-tag">供应链管理</span>
+            <span class="lec-tag">市场创新</span>
+            <span class="lec-tag">跨部门项目协作</span>
+          </div>
+        </div>
+        <div class="lecturer-row">
+          <div class="lec-label">担当课程</div>
+          <div class="lec-content">市场营销专业课、MBA指导、流通与创新管理实践</div>
+        </div>
+        <div class="lecturer-row">
+          <div class="lec-label">授课特色</div>
+          <div class="lec-content">拥有跨国企业供应链与市场创新实战经验，主导过多个新产品从开发到上市的完整流程。强调"商业思维、数据驱动、实践操作"，以真实案例带动学生理解运营逻辑，并提升计划书完成度与入试表达能力。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div><!-- end page-wrap -->
+
+<footer style="background:var(--text-primary);color:rgba(255,255,255,.4);padding:2rem 3rem;font-size:10px;letter-spacing:.06em;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem">
+  <span>唯新教育 · TRANSFORM EDUCATION</span>
+  <span>© 2026 · 经营学学科介绍</span>
+</footer>
+
+<script>
+function toggleCourse(head) {
+  const body = head.nextElementSibling;
+  const toggle = head.querySelector('.course-toggle');
+  const isOpen = body.classList.toggle('open');
+  toggle.classList.toggle('open', isOpen);
+}
+</script>
+</body>
+</html>
