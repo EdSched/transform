@@ -327,6 +327,21 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
   </div>
 </div>
 
+<!-- Import preview modal -->
+<div class="modal-overlay" id="importModal">
+  <div class="modal" style="width:760px;max-width:96vw">
+    <div class="modal-title">导入学生数据</div>
+    <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px">
+      预览解析结果，确认后批量写入数据库。已存在同名学生将被跳过（不覆盖）。
+    </div>
+    <div id="importPreview"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('importModal')">取消</button>
+      <button class="btn btn-primary" id="importConfirmBtn" onclick="confirmImport()">确认导入</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 // ── Supabase ──
@@ -736,6 +751,8 @@ function renderStudentsPage(mc){
     <div class="section-title">学生档案 <span class="badge-count">${cachedStudents.length}</span></div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline btn-sm" onclick="exportStudents()">↓ 导出 Excel</button>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('importFileInput').click()">↑ 导入 Excel</button>
+      <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleImportFile(this)">
       <button class="btn btn-primary btn-sm" onclick="openStudentModal()">＋ 添加学生</button>
     </div>
   </div>
@@ -918,6 +935,172 @@ function exportAttendance(){
 // ── Shared ──
 function closeModal(id){document.getElementById(id).classList.remove('open')}
 document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open')}));
+
+// ══════════════════════════════════
+// IMPORT EXCEL
+// ══════════════════════════════════
+// 列名映射：支持你的Excel格式（25年/26年两套）
+const COL_MAP = {
+  '学生姓名':'name', '氏名':'name',
+  '学生属性':'student_type', '状态':'notes',
+  '来源':'source', '课程属性':'course_type',
+  '困难点':'difficulty', '等级':'level',
+  '日语成绩':'japanese_score', '日本語成绩':'japanese_score',
+  '英语成绩':'english_score', '英語成绩':'english_score',
+  '出身大学':'university', '出身院校':'university',
+  '学部':'faculty', '专业':'faculty',
+  '卒論题目':'notes', '毕业论文':'notes',
+  'GPA/其他履历':'gpa', 'GPA':'gpa',
+  '毕业时间':'graduation_date',
+  '期待入学时间':'target_enrollment', '進度/希望入学时间':'target_enrollment',
+  '到期时间':'expiry_date', '截至日期':'expiry_date',
+  '赴日时间':'japan_arrival',
+  '志望大学':'notes2', '研究计划书':'notes2',
+  'テーマ':'notes2',
+};
+// 专业 sheet 名 → key
+const SHEET_MAJOR_MAP = {
+  '经营':'keiei','経営':'keiei','keiei':'keiei',
+  '经济':'keizai','経済':'keizai','keizai':'keizai',
+  '社会学':'shakai','shakai':'shakai',
+  '新传':'shinpan','新闻':'shinpan','shinpan':'shinpan',
+  '福祉':'fukushi','fukushi':'fukushi',
+};
+
+let importPendingRows = [];
+
+function detectMajorFromSheet(sheetName) {
+  const name = sheetName.toLowerCase();
+  for (const [key, val] of Object.entries(SHEET_MAJOR_MAP)) {
+    if (name.includes(key.toLowerCase())) return val;
+  }
+  return null;
+}
+
+function handleImportFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const rows = [];
+      // Try to find student info sheets
+      const infoSheets = wb.SheetNames.filter(n =>
+        n.includes('学生信息') || n.includes('大课') || n.includes('student') || n.includes('Student')
+      );
+      const sheetsToProcess = infoSheets.length ? infoSheets : wb.SheetNames.slice(0, 1);
+
+      for (const sheetName of sheetsToProcess) {
+        const ws = wb.Sheets[sheetName];
+        const data = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        if (!data.length) continue;
+        // detect major from sheet name or filename
+        const major = detectMajorFromSheet(sheetName) || detectMajorFromSheet(file.name) || '';
+        for (const row of data) {
+          const s = { major, status: 'active' };
+          let hasName = false;
+          for (const [col, val] of Object.entries(row)) {
+            const field = COL_MAP[col.trim()];
+            if (!field || !val) continue;
+            if (field === 'notes2') {
+              s.notes = [s.notes, String(val)].filter(Boolean).join(' / ');
+            } else {
+              s[field] = String(val).trim();
+            }
+            if (field === 'name') hasName = true;
+          }
+          if (!hasName || !s.name || s.name === '氏名') continue;
+          rows.push(s);
+        }
+      }
+
+      if (!rows.length) {
+        alert('未能解析到学生数据，请检查文件格式。\n支持格式：含「学生姓名」或「氏名」列的 Excel。');
+        return;
+      }
+
+      // Deduplicate against existing
+      const existingNames = new Set(cachedStudents.map(s => s.name));
+      importPendingRows = rows.map(r => ({ ...r, _exists: existingNames.has(r.name) }));
+
+      showImportPreview();
+    } catch (err) {
+      alert('解析失败：' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function showImportPreview() {
+  const newRows = importPendingRows.filter(r => !r._exists);
+  const skipRows = importPendingRows.filter(r => r._exists);
+  const preview = document.getElementById('importPreview');
+
+  preview.innerHTML = `
+    <div style="display:flex;gap:16px;margin-bottom:14px">
+      <div style="background:var(--ok-bg);border-radius:3px;padding:8px 16px;font-size:12px">
+        <strong style="color:var(--ok)">${newRows.length}</strong> <span style="color:var(--text-2)">条新记录将导入</span>
+      </div>
+      <div style="background:var(--warn-bg);border-radius:3px;padding:8px 16px;font-size:12px">
+        <strong style="color:var(--warn)">${skipRows.length}</strong> <span style="color:var(--text-2)">条已存在将跳过</span>
+      </div>
+    </div>
+    ${newRows.length ? `
+    <div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:3px">
+      <table class="student-table" style="margin:0">
+        <thead><tr>
+          <th>姓名</th><th>专业</th><th>属性</th><th>来源</th><th>日语</th><th>英语</th><th>出身大学</th>
+        </tr></thead>
+        <tbody>
+          ${newRows.map(r => `<tr>
+            <td class="student-name-cell">${r.name}</td>
+            <td>${MAJORS[r.major] || r.major || '<span style="color:var(--warn)">未识别</span>'}</td>
+            <td style="font-size:11px">${r.student_type || ''}</td>
+            <td style="font-size:11px">${r.source || ''}</td>
+            <td style="font-size:11px">${r.japanese_score || ''}</td>
+            <td style="font-size:11px">${r.english_score || ''}</td>
+            <td style="font-size:11px">${r.university || ''}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--text-3)">
+      ⚠ 专业未识别的记录将以空白专业导入，可导入后手动编辑。
+    </div>` : '<div class="empty">所有记录均已存在，无需导入。</div>'}
+  `;
+  document.getElementById('importConfirmBtn').disabled = !newRows.length;
+  document.getElementById('importModal').classList.add('open');
+}
+
+async function confirmImport() {
+  const newRows = importPendingRows.filter(r => !r._exists);
+  if (!newRows.length) { closeModal('importModal'); return; }
+  const btn = document.getElementById('importConfirmBtn');
+  btn.textContent = '导入中…'; btn.disabled = true;
+  const records = newRows.map(r => ({
+    ...r,
+    id: `${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
+    _exists: undefined,
+  }));
+  // remove internal flag
+  records.forEach(r => delete r._exists);
+  try {
+    // batch insert in chunks of 50
+    for (let i = 0; i < records.length; i += 50) {
+      const chunk = records.slice(i, i + 50);
+      const res = await sb('/rest/v1/students', 'POST', chunk);
+      cachedStudents.push(...(Array.isArray(res) ? res : chunk));
+    }
+    closeModal('importModal');
+    renderStudentsPage(document.getElementById('mainContent'));
+    alert(`成功导入 ${records.length} 名学生！`);
+  } catch (e) {
+    alert('导入失败：' + e.message);
+    btn.textContent = '确认导入'; btn.disabled = false;
+  }
+}
 
 // ── Init ──
 async function initApp(){
