@@ -28,11 +28,11 @@
   --warning:#b87820; --warning-light:#fdf2dc;
   --danger:#b03030;  --danger-light:#fceaea;
 }
-body { font-family: 'DM Mono','Noto Serif SC',monospace; background:var(--bg); color:var(--text-primary); font-size:13px; line-height:1.5; min-height:100vh; }
-header { background:var(--surface); border-bottom:1px solid var(--border); padding:1.6rem 2.5rem 1.2rem; display:flex; align-items:flex-end; justify-content:space-between; }
-header h1 { font-family:'Noto Serif SC',serif; font-size:1.4rem; font-weight:600; letter-spacing:.02em; }
+body { font-family:'DM Mono','Noto Serif SC',monospace; background:var(--bg); color:var(--text-primary); font-size:13px; line-height:1.5; min-height:100vh; }
+header { background:var(--surface); border-bottom:1px solid var(--border); padding:1.4rem 2.5rem 1.1rem; display:flex; align-items:flex-end; justify-content:space-between; }
+header h1 { font-family:'Noto Serif SC',serif; font-size:1.35rem; font-weight:600; letter-spacing:.02em; }
 .header-sub { font-size:10px; color:var(--text-muted); letter-spacing:.08em; text-transform:uppercase; margin-top:3px; }
-.layout { display:grid; grid-template-columns:310px 1fr; min-height:calc(100vh - 70px); }
+.layout { display:grid; grid-template-columns:320px 1fr; min-height:calc(100vh - 68px); }
 .sidebar { background:var(--surface); border-right:1px solid var(--border); padding:20px 18px; overflow-y:auto; }
 .main { padding:24px 2.5rem; overflow-y:auto; }
 
@@ -40,48 +40,44 @@ header h1 { font-family:'Noto Serif SC',serif; font-size:1.4rem; font-weight:600
 .form-group { margin-bottom:12px; }
 .form-label { display:block; font-size:11px; color:var(--text-secondary); margin-bottom:4px; letter-spacing:.02em; }
 input, select, textarea { width:100%; border:1px solid var(--border); background:var(--bg); border-radius:3px; padding:7px 9px; font-size:12px; font-family:'DM Mono',monospace; color:var(--text-primary); outline:none; transition:border-color .15s; }
-input:focus, select:focus, textarea:focus { border-color:var(--text-secondary); }
+input:focus, select:focus, textarea:focus { border-color:var(--accent); }
 .btn { display:inline-flex; align-items:center; gap:5px; padding:7px 14px; border-radius:3px; font-size:12px; font-weight:500; cursor:pointer; border:1px solid transparent; transition:all .15s; font-family:'DM Mono',monospace; letter-spacing:.02em; }
 .btn-primary { background:var(--accent); color:#fff; }
 .btn-primary:hover { background:#5a4a3c; }
 .btn-outline { background:transparent; color:var(--text-primary); border-color:var(--border); }
-.btn-outline:hover { background:var(--bg); border-color:var(--text-secondary); }
+.btn-outline:hover { background:var(--bg); border-color:var(--accent-mid); }
 .btn-ghost { background:transparent; border:none; color:var(--text-muted); cursor:pointer; font-family:'DM Mono',monospace; font-size:11px; padding:3px 6px; border-radius:2px; }
 .btn-ghost:hover { color:var(--danger); }
 .btn-full { width:100%; justify-content:center; }
-.btn-success { background:var(--success); color:#fff; border-color:var(--success); }
-.btn-success:hover { background:#158a63; }
+.btn-success { background:var(--success); color:#fff; }
+.btn-success:hover { background:#1f8558; }
 .btn-danger { background:transparent; color:var(--danger); border-color:var(--border); }
 .btn-danger:hover { background:var(--danger-light); border-color:var(--danger); }
 .btn-sm { padding:4px 10px; font-size:11px; }
+.btn-record { background:var(--accent-light); color:var(--accent); border-color:var(--border); }
+.btn-record:hover { background:var(--border); }
 .divider { border:none; border-top:1px solid var(--border); margin:16px 0; }
 
-/* Tabs */
 .btn-group { display:flex; border:1px solid var(--border); border-radius:3px; overflow:hidden; width:fit-content; }
 .btn-group button { padding:5px 14px; background:transparent; border:none; border-right:1px solid var(--border); font-family:'DM Mono',monospace; font-size:11px; color:var(--text-secondary); cursor:pointer; letter-spacing:.03em; transition:all .15s; }
 .btn-group button:last-child { border-right:none; }
 .btn-group button.active { background:var(--accent); color:#fff; }
 .btn-group button:hover:not(.active) { background:var(--bg); }
 
-/* Slot list */
 .slot-list { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
 .slot-item { display:flex; align-items:center; justify-content:space-between; padding:8px 10px; background:var(--bg); border:1px solid var(--border-light); border-radius:3px; font-size:11px; }
-.slot-item-left { display:flex; align-items:center; gap:7px; }
-.slot-time { color:var(--text-secondary); font-family:'DM Mono',monospace; }
+.slot-item-left { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
 
-/* Tags */
 .tag { display:inline-block; padding:1px 7px; border-radius:2px; font-size:10px; font-weight:500; letter-spacing:.02em; }
 .tag-daily { background:var(--tag-daily-bg); color:var(--tag-daily); }
-.tag-plan  { background:var(--tag-plan-bg);  color:var(--tag-plan);  }
-.tag-mock  { background:var(--tag-mock-bg);  color:var(--tag-mock);  }
+.tag-plan  { background:var(--tag-plan-bg);  color:var(--tag-plan); }
+.tag-mock  { background:var(--tag-mock-bg);  color:var(--tag-mock); }
 
-/* Status badges */
 .status-badge { padding:2px 8px; border-radius:2px; font-size:10px; font-weight:500; letter-spacing:.04em; }
 .status-pending   { background:var(--warning-light); color:var(--warning); }
-.status-confirmed { background:var(--success-light);  color:var(--success); }
+.status-confirmed { background:var(--success-light); color:var(--success); }
 .status-cancelled { background:var(--border); color:var(--text-muted); }
 
-/* Booking cards */
 .booking-grid { display:flex; flex-direction:column; gap:10px; }
 .booking-card { background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:14px 16px; }
 .booking-card.status-pending  { border-left:3px solid var(--warning); }
@@ -104,15 +100,15 @@ input:focus, select:focus, textarea:focus { border-color:var(--text-secondary); 
 .urgency-high { color:var(--danger); font-weight:600; }
 .urgency-mid  { color:var(--warning); font-weight:600; }
 .urgency-low  { color:var(--success); font-weight:600; }
+.record-done { font-size:10px; color:var(--success); background:var(--success-light); padding:2px 8px; border-radius:2px; }
 
-/* Top bar of main */
-.page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+.page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:10px; }
 .page-title { font-family:'Noto Serif SC',serif; font-size:1.2rem; font-weight:600; }
 .month-nav { display:flex; align-items:center; gap:10px; }
 .month-nav button { background:none; border:1px solid var(--border); border-radius:2px; width:26px; height:26px; cursor:pointer; font-size:13px; display:flex; align-items:center; justify-content:center; color:var(--text-primary); }
 .month-nav button:hover { background:var(--bg); }
 .month-display { font-size:13px; font-weight:500; min-width:70px; text-align:center; font-family:'DM Mono',monospace; }
-.export-bar { display:flex; align-items:center; justify-content:space-between; background:var(--surface); border:1px solid var(--border); border-radius:3px; padding:10px 14px; margin-bottom:16px; }
+.export-bar { display:flex; align-items:center; justify-content:space-between; background:var(--surface); border:1px solid var(--border); border-radius:3px; padding:10px 14px; margin-bottom:16px; flex-wrap:wrap; gap:8px; }
 .export-info { font-size:12px; color:var(--text-muted); }
 .export-info strong { color:var(--text-primary); }
 .filter-row { display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
@@ -121,15 +117,7 @@ input:focus, select:focus, textarea:focus { border-color:var(--text-secondary); 
 .empty-state { text-align:center; padding:50px 20px; color:var(--text-muted); font-size:12px; }
 .count-badge { display:inline-block; background:var(--accent); color:#fff; border-radius:2px; font-size:10px; padding:1px 5px; margin-left:4px; }
 
-/* Modal */
-.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:100; align-items:center; justify-content:center; }
-.modal-overlay.open { display:flex; }
-.modal { background:var(--surface); border-radius:4px; padding:22px; width:460px; max-height:80vh; overflow-y:auto; border:1px solid var(--border); }
-.modal-title { font-family:'Noto Serif SC',serif; font-size:15px; font-weight:600; margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid var(--border); }
-.modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; padding-top:12px; border-top:1px solid var(--border); }
-
-/* Slot mode toggle */
-.mode-tabs { display:flex; gap:0; border:1px solid var(--border); border-radius:3px; overflow:hidden; margin-bottom:14px; }
+.mode-tabs { display:flex; border:1px solid var(--border); border-radius:3px; overflow:hidden; margin-bottom:14px; }
 .mode-tab { flex:1; padding:6px 8px; background:transparent; border:none; font-family:'DM Mono',monospace; font-size:11px; color:var(--text-secondary); cursor:pointer; text-align:center; border-right:1px solid var(--border); transition:all .15s; }
 .mode-tab:last-child { border-right:none; }
 .mode-tab.active { background:var(--accent); color:#fff; }
@@ -138,10 +126,24 @@ input:focus, select:focus, textarea:focus { border-color:var(--text-secondary); 
 .wd-btn.selected { background:var(--accent); color:#fff; border-color:var(--accent); }
 .wd-btn.sat { color:var(--sat); }
 .wd-btn.sun { color:var(--sun); }
-.wd-btn.sat.selected, .wd-btn.sun.selected { background:var(--accent); color:#fff; }
 .date-range-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .time-range-row { display:grid; grid-template-columns:1fr 16px 1fr; gap:4px; align-items:center; }
 .time-sep { text-align:center; color:var(--text-muted); font-size:11px; }
+
+/* Modal */
+.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:100; align-items:center; justify-content:center; padding:20px; }
+.modal-overlay.open { display:flex; }
+.modal { background:var(--surface); border-radius:4px; padding:22px; width:560px; max-width:100%; max-height:88vh; overflow-y:auto; border:1px solid var(--border); }
+.modal-title { font-family:'Noto Serif SC',serif; font-size:15px; font-weight:600; margin-bottom:4px; }
+.modal-subtitle { font-size:11px; color:var(--text-muted); margin-bottom:16px; padding-bottom:14px; border-bottom:1px solid var(--border); }
+.modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; padding-top:12px; border-top:1px solid var(--border); }
+.modal-section { margin-bottom:18px; padding-bottom:18px; border-bottom:1px solid var(--border-light); }
+.modal-section:last-of-type { border-bottom:none; margin-bottom:0; padding-bottom:0; }
+.modal-section-title { font-size:11px; font-weight:600; color:var(--text-secondary); letter-spacing:.06em; text-transform:uppercase; margin-bottom:10px; }
+.warn-banner { background:var(--warning-light); border:1px solid var(--warning); border-radius:3px; padding:9px 12px; font-size:11px; color:var(--warning); margin-bottom:16px; line-height:1.6; }
+
+/* Record preview */
+.copy-box { background:var(--bg); border:1px solid var(--border); border-radius:3px; padding:12px 14px; font-size:11px; line-height:1.8; color:var(--text-secondary); white-space:pre-wrap; word-break:break-all; margin-top:12px; max-height:220px; overflow-y:auto; }
 </style>
 </head>
 <body>
@@ -154,24 +156,19 @@ input:focus, select:focus, textarea:focus { border-color:var(--text-secondary); 
 </header>
 
 <div class="layout">
-  <!-- Sidebar -->
   <div class="sidebar">
     <div class="section-label">新增时间槽</div>
-
     <div class="mode-tabs">
       <button class="mode-tab active" id="modeTabSingle" onclick="setMode('single')">单次指定</button>
       <button class="mode-tab" id="modeTabRepeat" onclick="setMode('repeat')">按星期循环</button>
     </div>
 
-    <!-- Single mode -->
     <div id="panelSingle">
       <div class="form-group">
         <label class="form-label">日期</label>
         <input type="date" id="slotDate">
       </div>
     </div>
-
-    <!-- Repeat mode -->
     <div id="panelRepeat" style="display:none">
       <div class="form-group">
         <label class="form-label">适用星期（可多选）</label>
@@ -194,7 +191,6 @@ input:focus, select:focus, textarea:focus { border-color:var(--text-secondary); 
       </div>
     </div>
 
-    <!-- Common fields -->
     <div class="form-group">
       <label class="form-label">时间段</label>
       <div class="time-range-row">
@@ -202,6 +198,16 @@ input:focus, select:focus, textarea:focus { border-color:var(--text-secondary); 
         <div class="time-sep">—</div>
         <input type="time" id="slotTimeEnd" value="12:00">
       </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">专业</label>
+      <select id="slotMajor">
+        <option value="keiei">経営学</option>
+        <option value="keizai">経済学</option>
+        <option value="shakai">社会学</option>
+        <option value="shinpan">新闻传播学</option>
+        <option value="fukushi">社会福祉学</option>
+      </select>
     </div>
     <div class="form-group">
       <label class="form-label">面谈类型</label>
@@ -220,12 +226,9 @@ input:focus, select:focus, textarea:focus { border-color:var(--text-secondary); 
     </div>
   </div>
 
-  <!-- Main -->
   <div class="main">
     <div class="page-header">
-      <div>
-        <div class="page-title">预约管理</div>
-      </div>
+      <div class="page-title">预约管理</div>
       <div class="month-nav">
         <button onclick="changeMonth(-1)">‹</button>
         <div class="month-display" id="monthDisplay"></div>
@@ -235,10 +238,21 @@ input:focus, select:focus, textarea:focus { border-color:var(--text-secondary); 
 
     <div class="export-bar">
       <div class="export-info">当月数据 · <strong id="exportCount">0</strong> 条预约记录</div>
-      <button class="btn btn-outline" onclick="exportExcel()">↓ 导出本月 Excel</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-outline" onclick="exportExcel()">↓ 导出本月 Excel</button>
+      </div>
     </div>
 
-    <div class="btn-group" style="margin-bottom:14px">
+    <div class="filter-row" id="majorFilterRow">
+      <div class="filter-chip active" onclick="setMajorFilter('all',this)">全部专业</div>
+      <div class="filter-chip" onclick="setMajorFilter('keiei',this)">経営学</div>
+      <div class="filter-chip" onclick="setMajorFilter('keizai',this)">経済学</div>
+      <div class="filter-chip" onclick="setMajorFilter('shakai',this)">社会学</div>
+      <div class="filter-chip" onclick="setMajorFilter('shinpan',this)">新闻传播</div>
+      <div class="filter-chip" onclick="setMajorFilter('fukushi',this)">社会福祉</div>
+    </div>
+
+    <div class="btn-group" style="margin-bottom:10px">
       <button class="active" onclick="setTab('all',this)">全部</button>
       <button onclick="setTab('pending',this)">待确认</button>
       <button onclick="setTab('confirmed',this)">已确认</button>
@@ -262,6 +276,7 @@ input:focus, select:focus, textarea:focus { border-color:var(--text-secondary); 
 <div class="modal-overlay" id="editModal">
   <div class="modal">
     <div class="modal-title">修改预约</div>
+    <div class="modal-subtitle" id="editModalSub"></div>
     <input type="hidden" id="editId">
     <div class="form-group">
       <label class="form-label">状态</label>
@@ -272,27 +287,166 @@ input:focus, select:focus, textarea:focus { border-color:var(--text-secondary); 
       </select>
     </div>
     <div class="form-group">
-      <label class="form-label">实际面谈时间（确认后填写）</label>
+      <label class="form-label">实际面谈时间</label>
       <input type="datetime-local" id="editActualTime">
     </div>
     <div class="form-group">
-      <label class="form-label">老师备注</label>
+      <label class="form-label">备注（计划书／模拟面试适用）</label>
       <textarea id="editNote" rows="3" placeholder="面谈记录、备注或跟进事项…"></textarea>
     </div>
     <div class="modal-actions">
-      <button class="btn btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn btn-outline" onclick="closeModal('editModal')">取消</button>
       <button class="btn btn-primary" onclick="saveEdit()">保存</button>
     </div>
   </div>
 </div>
 
+<!-- Record Modal (Daily only) -->
+<div class="modal-overlay" id="recordModal">
+  <div class="modal">
+    <div class="modal-title">面谈记录</div>
+    <div class="modal-subtitle" id="recordModalSub"></div>
+    <input type="hidden" id="recordId">
+    <div id="recordWarn" class="warn-banner" style="display:none"></div>
+
+    <div class="form-group">
+      <label class="form-label">实际面谈时间</label>
+      <input type="datetime-local" id="recActualTime">
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">知识学习进展</div>
+      <div class="form-group">
+        <label class="form-label">状态</label>
+        <select id="rec_study_status">
+          <option value="">请选择</option>
+          <option>进展顺利并能掌握</option>
+          <option>能够稳定跟上</option>
+          <option>需要更多时间</option>
+          <option>没有很好跟上进度</option>
+          <option>遇到困难</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">解决建议</label>
+        <textarea id="rec_study_advice" rows="2" placeholder="例：建议上课做好笔记，定期复习…"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">完成期限</label>
+        <input type="date" id="rec_study_deadline">
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">计划书完成情况</div>
+      <div class="form-group">
+        <label class="form-label">状态</label>
+        <select id="rec_plan_status">
+          <option value="">请选择</option>
+          <option>未开始</option>
+          <option>在收集材料</option>
+          <option>遇到困难</option>
+          <option>撰写中</option>
+          <option>已完成</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">解决建议</label>
+        <textarea id="rec_plan_advice" rows="2" placeholder="例：参考上课讲义先行研究的部分…"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">完成期限</label>
+        <input type="date" id="rec_plan_deadline">
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">出愿情况</div>
+      <div class="form-group">
+        <label class="form-label">状态</label>
+        <select id="rec_apply_status">
+          <option value="">请选择</option>
+          <option>未开始</option>
+          <option>完成择校</option>
+          <option>已联系教授</option>
+          <option>准备中</option>
+          <option>已出愿</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">解决建议</label>
+        <textarea id="rec_apply_advice" rows="2" placeholder="例：已完成择校：关西大学，早稻田大学…"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">完成期限</label>
+        <input type="date" id="rec_apply_deadline">
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">备考情况</div>
+      <div class="form-group">
+        <label class="form-label">状态</label>
+        <select id="rec_exam_status">
+          <option value="">请选择</option>
+          <option>未开始</option>
+          <option>在写过去问</option>
+          <option>过去问已提交</option>
+          <option>在准备面试稿</option>
+          <option>模拟面试阶段</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">解决建议</label>
+        <textarea id="rec_exam_advice" rows="2" placeholder="解决建议…"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">完成期限</label>
+        <input type="date" id="rec_exam_deadline">
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">目前困惑 / 问题</div>
+      <div class="form-group">
+        <label class="form-label">困惑内容</label>
+        <textarea id="rec_issue" rows="2" placeholder="例：计划书逻辑展开不够清晰…"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">解决建议</label>
+        <textarea id="rec_issue_advice" rows="2" placeholder="例：建议阅读相似领域的研究计划书…"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">完成期限</label>
+        <input type="date" id="rec_issue_deadline">
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">补充</div>
+      <div class="form-group" style="margin:0">
+        <textarea id="rec_extra" rows="3" placeholder="可补充学生目前语学成绩、学生本人诉求、对学生评价等…"></textarea>
+      </div>
+    </div>
+
+    <div class="modal-actions" style="flex-wrap:wrap;gap:8px">
+      <button class="btn btn-outline" onclick="closeModal('recordModal')">取消</button>
+      <button class="btn btn-outline" id="copyRecordBtn" onclick="copyRecord()" style="display:none">📋 复制记录</button>
+      <button class="btn btn-primary" onclick="saveRecord()">保存记录</button>
+    </div>
+    <div id="copyBox" class="copy-box" style="display:none"></div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-const SLOTS_KEY='txe_slots';
-const BOOKINGS_KEY='txe_bookings';
-let currentTab='all', currentTypeFilter='all';
+const SLOTS_KEY='txe_slots', BOOKINGS_KEY='txe_bookings';
+let currentTab='all', currentTypeFilter='all', currentMajorFilter='all';
 let currentMonth=new Date().getMonth(), currentYear=new Date().getFullYear();
 let slotMode='single';
+
+const MAJORS={keiei:'経営学',keizai:'経済学',shakai:'社会学',shinpan:'新闻传播学',fukushi:'社会福祉学'};
+const DAYS=['周日','周一','周二','周三','周四','周五','周六'];
 
 function getSlots(){return JSON.parse(localStorage.getItem(SLOTS_KEY)||'[]')}
 function saveSlots(d){localStorage.setItem(SLOTS_KEY,JSON.stringify(d))}
@@ -308,18 +462,14 @@ function setMode(m){
   document.getElementById('panelSingle').style.display=m==='single'?'':'none';
   document.getElementById('panelRepeat').style.display=m==='repeat'?'':'none';
 }
-
 function toggleWd(btn){btn.classList.toggle('selected')}
 
-// Get dates for weekday repeat in range
-function datesForWeekdays(wds, startStr, endStr){
-  const start=new Date(startStr), end=new Date(endStr);
+function datesForWeekdays(wds,startStr,endStr){
+  const start=new Date(startStr),end=new Date(endStr);
   if(isNaN(start)||isNaN(end)||start>end) return [];
-  const dates=[];
-  const cur=new Date(start);
+  const dates=[],cur=new Date(start);
   while(cur<=end){
-    const wd=cur.getDay(); // 0=Sun,1=Mon...6=Sat
-    if(wds.includes(wd)) dates.push(cur.toISOString().slice(0,10));
+    if(wds.includes(cur.getDay())) dates.push(cur.toISOString().slice(0,10));
     cur.setDate(cur.getDate()+1);
   }
   return dates;
@@ -329,10 +479,10 @@ function addSlot(){
   const tstart=document.getElementById('slotTimeStart').value;
   const tend=document.getElementById('slotTimeEnd').value;
   const type=document.getElementById('slotType').value;
+  const major=document.getElementById('slotMajor').value;
   if(!tstart||!tend){alert('请填写时间段');return}
   if(tstart>=tend){alert('结束时间需晚于开始时间');return}
   const timeRange=`${tstart}–${tend}`;
-
   let dates=[];
   if(slotMode==='single'){
     const d=document.getElementById('slotDate').value;
@@ -341,56 +491,49 @@ function addSlot(){
   } else {
     const wds=[...document.querySelectorAll('#weekdayGrid .wd-btn.selected')].map(b=>parseInt(b.dataset.wd));
     if(!wds.length){alert('请选择至少一个星期');return}
-    const rs=document.getElementById('repeatStart').value;
-    const re=document.getElementById('repeatEnd').value;
+    const rs=document.getElementById('repeatStart').value, re=document.getElementById('repeatEnd').value;
     if(!rs||!re){alert('请填写日期范围');return}
     dates=datesForWeekdays(wds,rs,re);
     if(!dates.length){alert('所选范围内没有符合的日期');return}
   }
-
   const slots=getSlots();
-  const existing=new Set(slots.map(s=>`${s.date}|${s.timeRange}|${s.type}`));
+  const existing=new Set(slots.map(s=>`${s.date}|${s.timeRange}|${s.type}|${s.major}`));
   let added=0;
   for(const date of dates){
-    const key=`${date}|${timeRange}|${type}`;
+    const key=`${date}|${timeRange}|${type}|${major}`;
     if(!existing.has(key)){
-      slots.push({id:`${Date.now()}-${Math.random().toString(36).slice(2,6)}`,date,timeRange,type});
-      existing.add(key);
-      added++;
+      slots.push({id:`${Date.now()}-${Math.random().toString(36).slice(2,6)}`,date,timeRange,type,major});
+      existing.add(key); added++;
     }
   }
   slots.sort((a,b)=>a.date.localeCompare(b.date)||a.timeRange.localeCompare(b.timeRange));
-  saveSlots(slots);
-  renderSlots();
+  saveSlots(slots); renderSlots();
   if(added>1) alert(`已添加 ${added} 个时间槽`);
 }
 
 function deleteSlot(id){
   if(!confirm('确定删除这个时间槽？')) return;
-  saveSlots(getSlots().filter(s=>s.id!==id));
-  renderSlots();
+  saveSlots(getSlots().filter(s=>s.id!==id)); renderSlots();
 }
 
 function renderSlots(){
   const slots=getSlots();
-  const now=new Date();
-  const ym=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const ym=`${currentYear}-${String(currentMonth+1).padStart(2,'0')}`;
   const monthSlots=slots.filter(s=>s.date.startsWith(ym));
   document.getElementById('slotCount').textContent=monthSlots.length;
   const list=document.getElementById('slotList');
   if(!monthSlots.length){list.innerHTML='<div style="font-size:11px;color:var(--text-muted);text-align:center;padding:14px 0">本月暂无时间槽</div>';return}
-  const DAYS=['周日','周一','周二','周三','周四','周五','周六'];
   list.innerHTML=monthSlots.map(s=>{
-    const d=new Date(s.date);
-    const dow=DAYS[d.getDay()];
-    const isSat=d.getDay()===6, isSun=d.getDay()===0;
-    const dowColor=isSat?'var(--sat)':isSun?'var(--sun)':'var(--text-secondary)';
+    const d=new Date(s.date), dow=DAYS[d.getDay()];
+    const isSat=d.getDay()===6,isSun=d.getDay()===0;
+    const dc=isSat?'var(--sat)':isSun?'var(--sun)':'var(--text-secondary)';
     return `<div class="slot-item">
       <div class="slot-item-left">
         <span class="tag ${typeTag(s.type)}">${s.type==='daily'?'日常':s.type==='plan'?'计划书':'模拟'}</span>
+        <span style="font-size:10px;color:var(--text-muted)">${MAJORS[s.major]||s.major}</span>
         <span style="font-weight:500">${s.date.slice(5)}</span>
-        <span style="font-size:10px;color:${dowColor}">${dow}</span>
-        <span class="slot-time">${s.timeRange}</span>
+        <span style="font-size:10px;color:${dc}">${dow}</span>
+        <span style="color:var(--text-secondary);font-family:'DM Mono',monospace;font-size:10px">${s.timeRange}</span>
       </div>
       <button class="btn-ghost" onclick="deleteSlot('${s.id}')">✕</button>
     </div>`;
@@ -402,7 +545,7 @@ function changeMonth(d){
   currentMonth+=d;
   if(currentMonth>11){currentMonth=0;currentYear++}
   if(currentMonth<0){currentMonth=11;currentYear--}
-  updateMonthDisplay(); renderBookings();
+  updateMonthDisplay(); renderSlots(); renderBookings();
 }
 function setTab(tab,el){
   currentTab=tab;
@@ -411,7 +554,12 @@ function setTab(tab,el){
 }
 function setTypeFilter(type,el){
   currentTypeFilter=type;
-  document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
+  document.querySelectorAll('.filter-row:nth-of-type(2) .filter-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active'); renderBookings();
+}
+function setMajorFilter(major,el){
+  currentMajorFilter=major;
+  document.querySelectorAll('#majorFilterRow .filter-chip').forEach(c=>c.classList.remove('active'));
   el.classList.add('active'); renderBookings();
 }
 function urgencyLabel(u){
@@ -419,6 +567,7 @@ function urgencyLabel(u){
   if(u==='mid')  return '<span class="urgency-mid">适中</span>';
   return '<span class="urgency-low">一般</span>';
 }
+
 function renderBookings(){
   updateMonthDisplay();
   const all=getBookings();
@@ -426,43 +575,51 @@ function renderBookings(){
   let filtered=all.filter(b=>b.slotDate&&b.slotDate.startsWith(ym));
   if(currentTab!=='all') filtered=filtered.filter(b=>b.status===currentTab);
   if(currentTypeFilter!=='all') filtered=filtered.filter(b=>b.type===currentTypeFilter);
+  if(currentMajorFilter!=='all') filtered=filtered.filter(b=>b.major===currentMajorFilter);
   filtered.sort((a,b)=>(a.slotDate+a.slotTimeRange).localeCompare(b.slotDate+b.slotTimeRange));
   document.getElementById('exportCount').textContent=all.filter(b=>b.slotDate&&b.slotDate.startsWith(ym)).length;
   const grid=document.getElementById('bookingGrid');
   if(!filtered.length){grid.innerHTML='<div class="empty-state">暂无预约记录</div>';return}
-  grid.innerHTML=filtered.map(b=>`
-    <div class="booking-card status-${b.status}">
+  grid.innerHTML=filtered.map(b=>{
+    const hasRecord=b.type==='daily'&&b.dailyRecord;
+    const majorName=MAJORS[b.major]||b.major||'';
+    return `<div class="booking-card status-${b.status}">
       <div class="booking-header">
         <div>
-          <div class="booking-name">${b.name}</div>
+          <div class="booking-name">${b.name} <span style="font-size:11px;color:var(--text-muted);font-weight:400;font-family:'DM Mono',monospace">${majorName}</span></div>
           <div class="booking-meta">${b.slotDate} ${b.slotTimeRange||''} · ${b.duration}min · ${urgencyLabel(b.urgency)}</div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
           <span class="tag ${typeTag(b.type)}">${typeLabel(b.type)}</span>
           <span class="status-badge status-${b.status}">${b.status==='pending'?'待确认':b.status==='confirmed'?'已确认':'已取消'}</span>
+          ${hasRecord?'<span class="record-done">已记录</span>':''}
         </div>
       </div>
       <div class="booking-body">
-        <div><div class="booking-field-label">出愿期间</div><div class="booking-field-value">${b.examPeriod}</div></div>
-        <div><div class="booking-field-label">研究计划书</div><div class="booking-field-value">${b.planStatus}</div></div>
-        <div><div class="booking-field-label">面试准备</div><div class="booking-field-value">${b.interviewStatus}</div></div>
+        <div><div class="booking-field-label">出愿期间</div><div class="booking-field-value">${b.examPeriod||''}</div></div>
+        <div><div class="booking-field-label">研究计划书</div><div class="booking-field-value">${b.planStatus||''}</div></div>
+        <div><div class="booking-field-label">面试准备</div><div class="booking-field-value">${b.interviewStatus||''}</div></div>
       </div>
       <div class="progress-pills">${renderProgressPills(b)}</div>
       ${b.needs?`<div class="booking-needs">💬 ${b.needs}</div>`:''}
-      ${b.actualTime?`<div class="note-field"><div class="note-label">实际面谈时间</div><div class="actual-time">✓ ${b.actualTime}</div></div>`:''}
-      ${b.note?`<div class="note-field"><div class="note-label">老师备注</div><div class="note-content">${b.note}</div></div>`:''}
+      ${b.actualTime?`<div class="note-field"><div class="note-label">实际面谈时间</div><div class="actual-time">✓ ${b.actualTime.replace('T',' ')}</div></div>`:''}
+      ${b.note?`<div class="note-field"><div class="note-label">备注</div><div class="note-content">${b.note}</div></div>`:''}
       <div class="booking-actions">
         ${b.status==='pending'?`<button class="btn btn-success btn-sm" onclick="confirmBooking('${b.id}')">✓ 确认</button>`:''}
         <button class="btn btn-outline btn-sm" onclick="openEdit('${b.id}')">编辑</button>
+        ${b.status==='confirmed'&&b.type==='daily'?`<button class="btn btn-record btn-sm" onclick="openRecord('${b.id}')">${hasRecord?'查看记录':'填写记录'}</button>`:''}
         ${b.status!=='cancelled'?`<button class="btn btn-danger btn-sm" onclick="cancelBooking('${b.id}')">取消预约</button>`:''}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
+
 function renderProgressPills(b){
   return [['targetSchool','目标学校'],['contactProf','联系教授'],['planStatus','计划书'],
           ['applicationStatus','出愿进度'],['writtenExam','笔试'],['interviewStatus','面试准备'],['specialtyStatus','专业知识']]
     .filter(([k])=>b[k]).map(([k,l])=>`<span class="progress-pill">${l}·${b[k]}</span>`).join('');
 }
+
 function confirmBooking(id){
   const bks=getBookings(),b=bks.find(x=>x.id===id);
   if(b){b.status='confirmed';saveBookings(bks);renderBookings()}
@@ -472,16 +629,17 @@ function cancelBooking(id){
   const bks=getBookings(),b=bks.find(x=>x.id===id);
   if(b){b.status='cancelled';saveBookings(bks);renderBookings()}
 }
+
 function openEdit(id){
   const b=getBookings().find(x=>x.id===id);
   if(!b) return;
   document.getElementById('editId').value=id;
+  document.getElementById('editModalSub').textContent=`${b.name} · ${b.slotDate} ${b.slotTimeRange||''}`;
   document.getElementById('editStatus').value=b.status;
   document.getElementById('editActualTime').value=b.actualTime||'';
   document.getElementById('editNote').value=b.note||'';
   document.getElementById('editModal').classList.add('open');
 }
-function closeModal(){document.getElementById('editModal').classList.remove('open')}
 function saveEdit(){
   const id=document.getElementById('editId').value;
   const bks=getBookings(),b=bks.find(x=>x.id===id);
@@ -489,35 +647,165 @@ function saveEdit(){
     b.status=document.getElementById('editStatus').value;
     b.actualTime=document.getElementById('editActualTime').value;
     b.note=document.getElementById('editNote').value;
-    saveBookings(bks); closeModal(); renderBookings();
+    saveBookings(bks); closeModal('editModal'); renderBookings();
   }
 }
+
+function openRecord(id){
+  const b=getBookings().find(x=>x.id===id);
+  if(!b) return;
+  document.getElementById('recordId').value=id;
+  document.getElementById('recordModalSub').textContent=`${b.name} · ${b.slotDate} ${b.slotTimeRange||''}`;
+  document.getElementById('copyBox').style.display='none';
+  document.getElementById('copyRecordBtn').style.display='none';
+
+  // Time warning
+  const warn=document.getElementById('recordWarn');
+  const actualStr=b.actualTime||b.slotDate+'T'+((b.slotTimeRange||'').split('–')[0]||'00:00');
+  const actualDt=new Date(actualStr);
+  const now=new Date();
+  if(actualDt>now){
+    warn.style.display='block';
+    warn.textContent=`⚠ 面谈还未开始（预约时间：${b.slotDate} ${b.slotTimeRange||''}），提前记录请准确填写实际面谈时间。`;
+  } else {
+    warn.style.display='none';
+  }
+
+  // Fill existing record if any
+  const r=b.dailyRecord||{};
+  document.getElementById('recActualTime').value=b.actualTime||'';
+  ['study','plan','apply','exam'].forEach(k=>{
+    document.getElementById(`rec_${k}_status`).value=r[`${k}_status`]||'';
+    document.getElementById(`rec_${k}_advice`).value=r[`${k}_advice`]||'';
+    document.getElementById(`rec_${k}_deadline`).value=r[`${k}_deadline`]||'';
+  });
+  document.getElementById('rec_issue').value=r.issue||'';
+  document.getElementById('rec_issue_advice').value=r.issue_advice||'';
+  document.getElementById('rec_issue_deadline').value=r.issue_deadline||'';
+  document.getElementById('rec_extra').value=r.extra||'';
+
+  document.getElementById('recordModal').classList.add('open');
+}
+
+function saveRecord(){
+  const id=document.getElementById('recordId').value;
+  const bks=getBookings(),b=bks.find(x=>x.id===id);
+  if(!b) return;
+  b.actualTime=document.getElementById('recActualTime').value;
+  b.dailyRecord={
+    study_status:document.getElementById('rec_study_status').value,
+    study_advice:document.getElementById('rec_study_advice').value,
+    study_deadline:document.getElementById('rec_study_deadline').value,
+    plan_status:document.getElementById('rec_plan_status').value,
+    plan_advice:document.getElementById('rec_plan_advice').value,
+    plan_deadline:document.getElementById('rec_plan_deadline').value,
+    apply_status:document.getElementById('rec_apply_status').value,
+    apply_advice:document.getElementById('rec_apply_advice').value,
+    apply_deadline:document.getElementById('rec_apply_deadline').value,
+    exam_status:document.getElementById('rec_exam_status').value,
+    exam_advice:document.getElementById('rec_exam_advice').value,
+    exam_deadline:document.getElementById('rec_exam_deadline').value,
+    issue:document.getElementById('rec_issue').value,
+    issue_advice:document.getElementById('rec_issue_advice').value,
+    issue_deadline:document.getElementById('rec_issue_deadline').value,
+    extra:document.getElementById('rec_extra').value,
+  };
+  saveBookings(bks);
+  // Show copy box
+  const text=buildRecordText(b);
+  document.getElementById('copyBox').textContent=text;
+  document.getElementById('copyBox').style.display='block';
+  document.getElementById('copyRecordBtn').style.display='inline-flex';
+  renderBookings();
+}
+
+function buildRecordText(b){
+  const r=b.dailyRecord||{};
+  const at=b.actualTime?b.actualTime.replace('T',' '):(b.slotDate+' '+b.slotTimeRange);
+  const lines=[
+    `【面谈记录】${b.name}`,
+    `日期：${at}`,
+    `专业：${MAJORS[b.major]||b.major||''}`,
+    ``,
+  ];
+  const sections=[
+    ['📚 知识学习进展','study'],
+    ['📝 计划书完成情况','plan'],
+    ['🎓 出愿情况','apply'],
+    ['📖 备考情况','exam'],
+  ];
+  sections.forEach(([title,k])=>{
+    const st=r[`${k}_status`],ad=r[`${k}_advice`],dl=r[`${k}_deadline`];
+    if(st||ad||dl){
+      lines.push(title);
+      if(st) lines.push(`状态：${st}`);
+      if(ad) lines.push(`建议：${ad}`);
+      if(dl) lines.push(`期限：${dl}`);
+      lines.push('');
+    }
+  });
+  if(r.issue||r.issue_advice){
+    lines.push('❓ 目前困惑 / 问题');
+    if(r.issue) lines.push(`问题：${r.issue}`);
+    if(r.issue_advice) lines.push(`建议：${r.issue_advice}`);
+    if(r.issue_deadline) lines.push(`期限：${r.issue_deadline}`);
+    lines.push('');
+  }
+  if(r.extra){lines.push('📌 补充');lines.push(r.extra);lines.push('')}
+  return lines.join('\n');
+}
+
+function copyRecord(){
+  const text=document.getElementById('copyBox').textContent;
+  navigator.clipboard.writeText(text).then(()=>{
+    const btn=document.getElementById('copyRecordBtn');
+    btn.textContent='✓ 已复制';
+    setTimeout(()=>{btn.textContent='📋 复制记录'},2000);
+  }).catch(()=>{
+    document.getElementById('copyBox').select?.();
+    alert('请手动选中上方文本复制');
+  });
+}
+
+function closeModal(id){document.getElementById(id).classList.remove('open')}
+document.querySelectorAll('.modal-overlay').forEach(m=>{
+  m.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open')});
+});
+
 function exportExcel(){
   const ym=`${currentYear}-${String(currentMonth+1).padStart(2,'0')}`;
   const data=getBookings().filter(b=>b.slotDate&&b.slotDate.startsWith(ym));
   if(!data.length){alert('当月暂无预约数据');return}
-  const rows=data.map(b=>({
-    '姓名':b.name,'预约日期':b.slotDate,'时间段':b.slotTimeRange||'','时长(分钟)':b.duration,
-    '面谈类型':typeLabel(b.type),'紧急程度':b.urgency==='high'?'紧急':b.urgency==='mid'?'适中':'一般',
-    '出愿期间':b.examPeriod,'专业知识':b.specialtyStatus,'目标学校':b.targetSchool,
-    '联系教授':b.contactProf,'研究计划书':b.planStatus,'出愿进度':b.applicationStatus,
-    '笔试准备':b.writtenExam,'面试准备':b.interviewStatus,'具体需求':b.needs,
-    '状态':b.status==='pending'?'待确认':b.status==='confirmed'?'已确认':'已取消',
-    '实际面谈时间':b.actualTime||'','老师备注':b.note||''
-  }));
+  const rows=data.map(b=>{
+    const r=b.dailyRecord||{};
+    return {
+      '姓名':b.name,'专业':MAJORS[b.major]||b.major||'',
+      '预约日期':b.slotDate,'时间段':b.slotTimeRange||'','时长(分钟)':b.duration,
+      '面谈类型':typeLabel(b.type),'紧急程度':b.urgency==='high'?'紧急':b.urgency==='mid'?'适中':'一般',
+      '出愿期间':b.examPeriod||'','专业知识':b.specialtyStatus||'','目标学校':b.targetSchool||'',
+      '联系教授':b.contactProf||'','研究计划书':b.planStatus||'','出愿进度':b.applicationStatus||'',
+      '笔试准备':b.writtenExam||'','面试准备':b.interviewStatus||'','具体需求':b.needs||'',
+      '状态':b.status==='pending'?'待确认':b.status==='confirmed'?'已确认':'已取消',
+      '实际面谈时间':b.actualTime||'','备注':b.note||'',
+      '知识进展状态':r.study_status||'','知识进展建议':r.study_advice||'','知识进展期限':r.study_deadline||'',
+      '计划书状态':r.plan_status||'','计划书建议':r.plan_advice||'','计划书期限':r.plan_deadline||'',
+      '出愿情况状态':r.apply_status||'','出愿建议':r.apply_advice||'','出愿期限':r.apply_deadline||'',
+      '备考状态':r.exam_status||'','备考建议':r.exam_advice||'','备考期限':r.exam_deadline||'',
+      '困惑问题':r.issue||'','困惑建议':r.issue_advice||'','困惑期限':r.issue_deadline||'',
+      '补充':r.extra||''
+    };
+  });
   const ws=XLSX.utils.json_to_sheet(rows);
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'预约记录');
   XLSX.writeFile(wb,`面谈预约_${currentYear}年${currentMonth+1}月.xlsx`);
 }
-document.getElementById('editModal').addEventListener('click',function(e){if(e.target===this)closeModal()});
 
-// Init
 const today=new Date();
 document.getElementById('slotDate').valueAsDate=today;
-const y=today.getFullYear(),m=String(today.getMonth()+1).padStart(2,'0'),d=String(today.getDate()).padStart(2,'0');
+const y=today.getFullYear(),m=String(today.getMonth()+1).padStart(2,'0');
 document.getElementById('repeatStart').value=`${y}-${m}-01`;
-document.getElementById('repeatEnd').value=`${y}-${m}-${d}`;
+document.getElementById('repeatEnd').value=today.toISOString().slice(0,10);
 currentMonth=today.getMonth(); currentYear=today.getFullYear();
 updateMonthDisplay(); renderSlots(); renderBookings();
 </script>
