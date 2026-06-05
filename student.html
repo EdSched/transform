@@ -268,7 +268,7 @@ function buildForm(){
         <label class="form-label">面试准备 <span class="required">*</span></label>
         <select id="interviewStatus" onchange="updateTypeOptions()">
           <option value="">请选择</option>
-          <option>已完成面试稿</option><option>面试稿撰写中</option><option>模拟面试中</option>
+          <option>未准备</option><option>已完成面试稿</option><option>面试稿撰写中</option><option>模拟面试中</option>
         </select>
       </div>
     </div>
@@ -400,7 +400,19 @@ function renderSlots(){
   // filter by major and month
   let allSlots=getSlots().filter(s=>s.date.startsWith(ym)&&s.major===major);
   allSlots.sort((a,b)=>a.date.localeCompare(b.date)||a.timeRange.localeCompare(b.timeRange));
-  const takenIds=new Set(getBookings().filter(b=>b.status!=='cancelled').map(b=>b.slotId));
+  // capacity = floor(minutes / 15)
+  function slotCapacity(timeRange){
+    const [a,b]=(timeRange||'').split('–');
+    if(!a||!b) return 4;
+    const [ah,am]=a.split(':').map(Number);
+    const [bh,bm]=b.split(':').map(Number);
+    return Math.max(1,Math.floor(((bh*60+bm)-(ah*60+am))/15));
+  }
+  // count bookings per slot
+  const bookings=getBookings().filter(b=>b.status!=='cancelled');
+  const slotBookedCount={};
+  bookings.forEach(b=>{slotBookedCount[b.slotId]=(slotBookedCount[b.slotId]||0)+1});
+
   if(!allSlots.length){
     grid.innerHTML='<div class="no-slots">本月暂无可预约时间槽<br><span style="font-size:10px">请联系老师确认排期</span></div>';
     return;
@@ -411,9 +423,16 @@ function renderSlots(){
     const d=new Date(s.date),dow=DAYS_CN[d.getDay()];
     const isSat=d.getDay()===6,isSun=d.getDay()===0;
     const dc=isSat?'var(--sat)':isSun?'var(--sun)':'var(--text-secondary)';
-    const taken=takenIds.has(s.id);
-    return `<div class="slot-option${taken||isDimmed?' taken':''}">
-      <input type="radio" name="slotPick" id="slot-${s.id}" value="${s.id}" ${taken||isDimmed?'disabled':''} onchange="selectedSlotId='${s.id}'">
+    const cap=slotCapacity(s.timeRange);
+    const booked=slotBookedCount[s.id]||0;
+    const remaining=cap-booked;
+    const full=remaining<=0;
+    const disabled=full||isDimmed;
+    const remainLabel=full
+      ? '<div class="slot-taken-label">已满</div>'
+      : `<div style="font-size:10px;color:var(--success);margin-top:2px">剩余 ${remaining} 名额</div>`;
+    return `<div class="slot-option${disabled?' taken':''}">
+      <input type="radio" name="slotPick" id="slot-${s.id}" value="${s.id}" ${disabled?'disabled':''} onchange="selectedSlotId='${s.id}'">
       <label for="slot-${s.id}">
         <div style="display:flex;align-items:center;gap:4px">
           <span class="slot-date-r">${s.date.slice(5).replace('-','/')}</span>
@@ -421,7 +440,7 @@ function renderSlots(){
           <span class="tag ${typeTag(s.type)}" style="margin-left:auto;font-size:9px">${s.type==='daily'?'日常':s.type==='plan'?'计划书':'模拟'}</span>
         </div>
         <div class="slot-time-r">${s.timeRange}</div>
-        ${taken?'<div class="slot-taken-label">已被预约</div>':''}
+        ${isDimmed?'':remainLabel}
       </label>
     </div>`;
   };
@@ -445,7 +464,9 @@ function submitBooking(){
   if(slot.type==='plan'&&!canSelectPlan()){alert('当前进程不符合计划书相关面谈的条件');return}
   if(slot.type==='mock'&&!canSelectMock()){alert('当前进程不符合模拟面试的条件');return}
   const bookings=getBookings();
-  if(bookings.find(b=>b.slotId===selectedSlotId&&b.status!=='cancelled')){alert('该时间已被预约，请选择其他时间');renderSlots();return}
+  const cap=Math.max(1,Math.floor((()=>{const [a,b]=(slot.timeRange||'').split('–');if(!a||!b)return 60;const[ah,am]=a.split(':').map(Number);const[bh,bm]=b.split(':').map(Number);return(bh*60+bm)-(ah*60+am)})() /15));
+  const booked=bookings.filter(b=>b.slotId===selectedSlotId&&b.status!=='cancelled').length;
+  if(booked>=cap){alert('该时间段名额已满，请选择其他时间');renderSlots();return}
   bookings.push({
     id:Date.now().toString(),name,major,examPeriod,
     specialtyStatus:document.getElementById('specialtyStatus').value,
