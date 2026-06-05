@@ -164,9 +164,9 @@ function buildForm(){
     <div class="form-group"><label class="form-label">姓名 <span class="required">*</span></label><input type="text" id="name" placeholder="请输入姓名"></div>
     <div class="form-group"><label class="form-label">出愿期间 <span class="required">*</span></label>
       <div class="radio-group">
-        <div class="radio-option"><input type="radio" name="examPeriod" id="ep1" value="夏季出愿"><label for="ep1">夏季出愿</label></div>
-        <div class="radio-option"><input type="radio" name="examPeriod" id="ep2" value="冬季出愿"><label for="ep2">冬季出愿</label></div>
-        <div class="radio-option"><input type="radio" name="examPeriod" id="ep3" value="次年出愿"><label for="ep3">次年出愿</label></div>
+        <div class="radio-option"><input type="radio" name="examPeriod" id="ep1" value="夏季出愿" onchange="updateTypeOptions()"><label for="ep1">夏季出愿</label></div>
+        <div class="radio-option"><input type="radio" name="examPeriod" id="ep2" value="冬季出愿" onchange="updateTypeOptions()"><label for="ep2">冬季出愿</label></div>
+        <div class="radio-option"><input type="radio" name="examPeriod" id="ep3" value="次年出愿" onchange="updateTypeOptions()"><label for="ep3">次年出愿</label></div>
       </div>
     </div>
   </div>
@@ -243,7 +243,13 @@ function buildForm(){
 
 function getPlanStatus(){return document.getElementById('planStatus')?.value||''}
 function getInterviewStatus(){return document.getElementById('interviewStatus')?.value||''}
-function canSelectPlan(){return getPlanStatus()!==''}
+function canSelectPlan(){
+  const p=getPlanStatus();
+  const ep=document.querySelector('input[name=examPeriod]:checked')?.value||'';
+  if(ep==='次年出愿') return false;
+  if(p===''||p==='未开始') return false;
+  return true;
+}
 function canSelectMock(){const p=getPlanStatus(),i=getInterviewStatus();return p==='已完成'&&(i==='已完成面试稿'||i==='面试稿撰写中'||i==='模拟面试中')}
 
 function updateTypeOptions(){
@@ -253,9 +259,10 @@ function updateTypeOptions(){
   planCard.classList.toggle('locked',!planOk);planCard.querySelector('.type-card-lock').style.display=planOk?'none':'block';
   mockCard.classList.toggle('locked',!mockOk);mockCard.querySelector('.type-card-lock').style.display=mockOk?'none':'block';
   const notices=[];
-  if(!mockOk)notices.push('模拟面试：研究计划书需为「已完成」且面试准备已推进');
+  if(!planOk) notices.push('计划书相关：请先通过日常学习面谈确定研究方向，再预约专业课老师');
+  if(!mockOk) notices.push('模拟面试：研究计划书需为「已完成」且面试准备已推进');
   const n=document.getElementById('lockNotice');
-  if(notices.length&&(getPlanStatus()||getInterviewStatus())){n.style.display='block';n.innerHTML='🔒 '+notices.join('<br>🔒 ')}else n.style.display='none';
+  if(notices.length&&(getPlanStatus()||document.querySelector('input[name=examPeriod]:checked'))){n.style.display='block';n.innerHTML='🔒 '+notices.join('<br>🔒 ')}else n.style.display='none';
   if(selectedType==='plan'&&!planOk){selectedType=null;document.querySelectorAll('.type-card').forEach(c=>c.classList.remove('selected'))}
   if(selectedType==='mock'&&!mockOk){selectedType=null;document.querySelectorAll('.type-card').forEach(c=>c.classList.remove('selected'))}
   renderSlots();
