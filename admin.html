@@ -192,7 +192,8 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
     <button class="nav-item" id="nav-slots" onclick="switchPage('slots')"><span class="nav-icon">⏰</span>时间槽设定</button>
     <div class="nav-sep">学生管理</div>
     <button class="nav-item" id="nav-students" onclick="switchPage('students')"><span class="nav-icon">👥</span>学生档案</button>
-    <button class="nav-item" id="nav-attendance" onclick="switchPage('attendance')"><span class="nav-icon">✅</span>出席管理</button>
+    <button class="nav-item" id="nav-courses" onclick="switchPage('courses')"><span class="nav-icon">📚</span>课程管理</button>
+    <button class="nav-item" id="nav-attendance" onclick="switchPage('attendance')"><span class="nav-icon">✅</span>出席・作业</button>
   </div>
 
   <!-- Main content -->
@@ -311,18 +312,55 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
   </div>
 </div>
 
-<!-- Attendance lesson modal -->
-<div class="modal-overlay" id="lessonModal">
-  <div class="modal" style="width:400px">
-    <div class="modal-title">新增课程</div>
-    <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px">为当前专业添加一次课程记录</div>
-    <div class="form-group"><label class="form-label">专业</label>
-      <select id="ls_major"><option value="keiei">経営学</option><option value="keizai">経済学</option><option value="shakai">社会学</option><option value="shinpan">新闻传播学</option><option value="fukushi">社会福祉学</option></select></div>
-    <div class="form-group"><label class="form-label">课程日期</label><input type="date" id="ls_date"></div>
-    <div class="form-group"><label class="form-label">课程名称</label><input id="ls_name" placeholder="例：経営学 第5回 / 社会学zemi…"></div>
+<!-- Course import modal -->
+<div class="modal-overlay" id="courseImportModal">
+  <div class="modal" style="width:700px;max-width:96vw">
+    <div class="modal-title">导入课程安排</div>
+    <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px">
+      上传课程安排Excel，自动解析并生成每次课的日期。已存在同名课程将跳过。
+    </div>
+    <div id="courseImportPreview"></div>
     <div class="modal-actions">
-      <button class="btn btn-outline" onclick="closeModal('lessonModal')">取消</button>
-      <button class="btn btn-primary" onclick="createLesson()">创建课程</button>
+      <button class="btn btn-outline" onclick="closeModal('courseImportModal')">取消</button>
+      <button class="btn btn-primary" id="courseImportConfirmBtn" onclick="confirmCourseImport()">确认导入</button>
+    </div>
+  </div>
+</div>
+
+<!-- Session record modal (attendance + homework per session) -->
+<div class="modal-overlay" id="sessionModal">
+  <div class="modal" style="width:900px;max-width:96vw">
+    <div class="modal-title" id="sessionModalTitle">出席记录</div>
+    <div class="modal-sub" id="sessionModalSub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px"></div>
+    <input type="hidden" id="sessionModalId">
+    <div style="overflow-x:auto">
+      <table class="student-table" id="sessionRecordTable">
+        <thead><tr>
+          <th style="min-width:90px">姓名</th>
+          <th style="min-width:90px">位置</th>
+          <th style="min-width:120px">出席方式</th>
+          <th style="min-width:50px">分值</th>
+          <th style="min-width:100px">作业</th>
+          <th>反馈备注</th>
+        </tr></thead>
+        <tbody id="sessionRecordBody"></tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('sessionModal')">关闭</button>
+      <button class="btn btn-primary" onclick="saveSessionRecords()">保存全部</button>
+    </div>
+  </div>
+</div>
+
+<!-- Student attendance view modal -->
+<div class="modal-overlay" id="studentAttModal">
+  <div class="modal" style="width:700px;max-width:96vw">
+    <div class="modal-title" id="studentAttTitle">学生出席记录</div>
+    <div class="modal-sub" id="studentAttSub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px"></div>
+    <div id="studentAttBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('studentAttModal')">关闭</button>
     </div>
   </div>
 </div>
@@ -408,10 +446,19 @@ async function renderPage(){
     } else if(curPage==='students'){
       cachedStudents=await sb('/rest/v1/students?select=*&order=name.asc');
       renderStudentsPage(mc);
-    } else if(curPage==='attendance'){
-      [cachedStudents,cachedAttendance]=await Promise.all([
+    } else if(curPage==='courses'){
+      [cachedStudents,cachedCourses,cachedSessions]=await Promise.all([
         sb('/rest/v1/students?select=*&order=name.asc'),
-        sb('/rest/v1/attendance?select=*&order=lesson_date.asc,lesson_name.asc')
+        sb('/rest/v1/courses?select=*&order=created_at.desc'),
+        sb('/rest/v1/course_sessions?select=*&order=session_date.asc')
+      ]);
+      renderCoursesPage(mc);
+    } else if(curPage==='attendance'){
+      [cachedStudents,cachedCourses,cachedSessions,cachedSessionRecords]=await Promise.all([
+        sb('/rest/v1/students?select=*&order=name.asc'),
+        sb('/rest/v1/courses?select=*&order=created_at.desc'),
+        sb('/rest/v1/course_sessions?select=*&order=session_date.asc,session_number.asc'),
+        sb('/rest/v1/session_records?select=*')
       ]);
       renderAttendancePage(mc);
     }
@@ -830,136 +877,429 @@ function exportStudents(){
 // ══════════════════════════════════
 // ATTENDANCE PAGE
 // ══════════════════════════════════
-let attMajor='keiei';
-function renderAttSingleTable(major, attMap){
-  const students=cachedStudents.filter(s=>s.major===major&&s.status==='active').sort((a,b)=>a.name.localeCompare(b.name,'zh'));
-  const lessons=[...new Set(cachedAttendance.filter(a=>a.major===major).map(a=>JSON.stringify({date:a.lesson_date,name:a.lesson_name})))].map(x=>JSON.parse(x)).sort((a,b)=>a.date.localeCompare(b.date));
-  if(!students.length&&!lessons.length) return `<div class="empty" style="padding:20px">暂无数据</div>`;
-  return `<table class="att-table">
-    <thead><tr>
-      <th class="name-col">姓名</th>
-      ${lessons.map(l=>`<th style="min-width:80px"><div>${l.date.slice(5)}</div><div style="font-size:9px;font-weight:400;color:var(--text-3)">${l.name}</div><button style="font-size:9px;color:var(--danger);background:none;border:none;cursor:pointer;margin-top:2px" onclick="deleteLesson('${l.date}','${l.name}','${major}')">删除</button></th>`).join('')}
-    </tr></thead>
+// ══════════════════════════════════
+// COURSES PAGE
+// ══════════════════════════════════
+let cachedCourses=[], cachedSessions=[], cachedSessionRecords=[];
+let pendingCourseImport=[];
+
+// 课程名 → 专业映射
+function detectMajorsFromCourseName(name){
+  const n=name;
+  const majors=[];
+  if(/社会人文|社会学/.test(n)&&!/新闻|新传|福祉/.test(n)) majors.push('shakai');
+  if(/新闻|新传/.test(n)) majors.push('shinpan');
+  if(/福祉/.test(n)) majors.push('fukushi');
+  if(/社会人文/.test(n)&&!majors.length){majors.push('shakai');majors.push('shinpan');majors.push('fukushi')}
+  if(/経営|经营/.test(n)) majors.push('keiei');
+  if(/経済|经济/.test(n)) majors.push('keizai');
+  // 社会人文大课包含全三个
+  if(/社会人文/.test(n)&&majors.includes('shakai')&&!majors.includes('shinpan')) majors.push('shinpan','fukushi');
+  return [...new Set(majors)];
+}
+
+// Excel日期数字 → JS Date
+function excelDateToJS(serial){
+  if(!serial||isNaN(serial)) return null;
+  const d=new Date((serial-25569)*86400*1000);
+  return d;
+}
+function excelDateToStr(serial){
+  const d=excelDateToJS(serial);
+  if(!d) return '';
+  return d.toISOString().slice(0,10);
+}
+
+// 星期字符串 → 星期数组 [0-6]
+function parseWeekdays(str){
+  if(!str) return [];
+  const map={'周日':0,'周一':1,'周二':2,'周三':3,'周四':4,'周五':5,'周六':6,'日':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6};
+  const days=[];
+  for(const [k,v] of Object.entries(map)){if(str.includes(k)) days.push(v)}
+  return [...new Set(days)];
+}
+
+// 生成课程日期列表（按星期，限回数）
+function generateSessionDates(startDate,endDate,weekdays,totalSessions){
+  const dates=[];
+  const end=new Date(endDate);
+  const cur=new Date(startDate);
+  while(cur<=end&&dates.length<totalSessions){
+    if(weekdays.includes(cur.getDay())) dates.push(cur.toISOString().slice(0,10));
+    cur.setDate(cur.getDate()+1);
+  }
+  return dates;
+}
+
+function handleCourseImportFile(input){
+  const file=input.files[0];
+  if(!file) return;
+  input.value='';
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const rows=[];
+      for(const sheetName of wb.SheetNames){
+        const ws=wb.Sheets[sheetName];
+        const data=XLSX.utils.sheet_to_json(ws,{defval:''});
+        for(const row of data){
+          const name=String(row['课程']||row['课程名']||'').trim();
+          if(!name) continue;
+          const startSerial=row['开课时间'];
+          const endSerial=row['结课时间'];
+          const start=excelDateToStr(startSerial);
+          const end=excelDateToStr(endSerial);
+          if(!start||!end) continue;
+          const wdStr=String(row['星期']||'');
+          const weekdays=parseWeekdays(wdStr);
+          const total=parseInt(row['课程回数']||row['回数']||0);
+          const teacher=String(row['讲师']||'').trim();
+          const campus=String(row['校区']||'').trim();
+          const timeRange=String(row['上课时间']||'').trim();
+          const notes=String(row['备注']||'').trim();
+          const majors=detectMajorsFromCourseName(name);
+          const dates=weekdays.length&&total>0?generateSessionDates(start,end,weekdays,total):[];
+          rows.push({name,major:majors,campus,teacher,start_date:start,end_date:end,total_sessions:total,weekdays:wdStr,time_range:timeRange,notes,_dates:dates});
+        }
+      }
+      if(!rows.length){alert('未能解析到课程数据，请确认Excel包含「课程」「开课时间」「结课时间」「课程回数」「星期」列');return}
+      const existingNames=new Set(cachedCourses.map(c=>c.name));
+      pendingCourseImport=rows.map(r=>({...r,_exists:existingNames.has(r.name)}));
+      showCourseImportPreview();
+    }catch(err){alert('解析失败：'+err.message)}
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function showCourseImportPreview(){
+  const newRows=pendingCourseImport.filter(r=>!r._exists);
+  const skipRows=pendingCourseImport.filter(r=>r._exists);
+  const preview=document.getElementById('courseImportPreview');
+  preview.innerHTML=`
+    <div style="display:flex;gap:12px;margin-bottom:14px">
+      <div style="background:var(--ok-bg);border-radius:3px;padding:8px 14px;font-size:12px"><strong style="color:var(--ok)">${newRows.length}</strong> <span style="color:var(--text-2)">门课程将导入</span></div>
+      <div style="background:var(--warn-bg);border-radius:3px;padding:8px 14px;font-size:12px"><strong style="color:var(--warn)">${skipRows.length}</strong> <span style="color:var(--text-2)">门已存在将跳过</span></div>
+    </div>
+    ${newRows.length?`<div style="max-height:360px;overflow-y:auto;border:1px solid var(--border);border-radius:3px">
+      <table class="student-table" style="margin:0">
+        <thead><tr><th>课程名称</th><th>讲师</th><th>专业</th><th>星期</th><th>回数</th><th>日期生成</th></tr></thead>
+        <tbody>${newRows.map(r=>`<tr>
+          <td style="font-size:11px;max-width:200px">${r.name}</td>
+          <td style="font-size:11px">${r.teacher}</td>
+          <td style="font-size:11px">${(r.major||[]).map(m=>MAJORS[m]||m).join('・')}</td>
+          <td style="font-size:11px">${r.weekdays}</td>
+          <td style="font-size:11px">${r.total_sessions}回</td>
+          <td style="font-size:11px;color:${r._dates.length?'var(--ok)':'var(--warn)'}">${r._dates.length?r._dates.length+'次课已生成':'无法生成'}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`:'<div class="empty">所有课程已存在</div>'}`;
+  document.getElementById('courseImportConfirmBtn').disabled=!newRows.length;
+  document.getElementById('courseImportModal').classList.add('open');
+}
+
+async function confirmCourseImport(){
+  const newRows=pendingCourseImport.filter(r=>!r._exists);
+  if(!newRows.length){closeModal('courseImportModal');return}
+  const btn=document.getElementById('courseImportConfirmBtn');
+  btn.textContent='导入中…';btn.disabled=true;
+  try{
+    for(const r of newRows){
+      const courseId=`c-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+      const course={id:courseId,name:r.name,major:r.major,campus:r.campus,teacher:r.teacher,start_date:r.start_date,end_date:r.end_date,total_sessions:r.total_sessions,weekdays:r.weekdays,time_range:r.time_range,notes:r.notes};
+      const res=await sb('/rest/v1/courses','POST',[course]);
+      cachedCourses.push(Array.isArray(res)?res[0]:course);
+      // create sessions
+      if(r._dates.length){
+        const sessions=r._dates.map((date,i)=>({id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,course_id:courseId,course_name:r.name,major:r.major,session_date:date,session_number:i+1,time_range:r.time_range,teacher:r.teacher}));
+        for(let i=0;i<sessions.length;i+=20){
+          const chunk=sessions.slice(i,i+20);
+          const sres=await sb('/rest/v1/course_sessions','POST',chunk);
+          cachedSessions.push(...(Array.isArray(sres)?sres:chunk));
+        }
+      }
+      await new Promise(r=>setTimeout(r,100));
+    }
+    closeModal('courseImportModal');
+    renderCoursesPage(document.getElementById('mainContent'));
+    alert(`成功导入 ${newRows.length} 门课程`);
+  }catch(e){alert('导入失败：'+e.message);btn.textContent='确认导入';btn.disabled=false}
+}
+
+function renderCoursesPage(mc){
+  mc.innerHTML=`
+  <div class="page-header">
+    <div class="section-title">课程管理 <span class="badge-count">${cachedCourses.length}</span></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('courseImportFileInput').click()">↑ 导入课程安排</button>
+      <input type="file" id="courseImportFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleCourseImportFile(this)">
+    </div>
+  </div>
+  ${cachedCourses.length?`
+  <table class="student-table">
+    <thead><tr><th>课程名称</th><th>讲师</th><th>专业</th><th>校区</th><th>时间</th><th>周</th><th>总回数</th><th>已生成</th><th></th></tr></thead>
     <tbody>
-      ${students.map(s=>`<tr>
-        <td class="name-col">${s.name}</td>
-        ${lessons.map(l=>{
-          const rec=attMap[`${s.name}|${l.date}|${l.name}`];
-          const attended=rec?.attended||false;
-          return `<td class="${attended?'att-present':'att-absent'}">
-            <input type="checkbox" class="att-check" ${attended?'checked':''} onchange="toggleAttendance('${s.id}','${s.name}','${l.date}','${l.name}',this.checked,'${major}')">
-          </td>`;
+      ${cachedCourses.map(c=>{
+        const sessionCount=cachedSessions.filter(s=>s.course_id===c.id).length;
+        return `<tr>
+          <td style="font-size:12px;max-width:220px">${c.name}</td>
+          <td style="font-size:11px">${c.teacher||''}</td>
+          <td style="font-size:11px">${(c.major||[]).map(m=>MAJORS[m]||m).join('・')}</td>
+          <td style="font-size:11px">${c.campus||''}</td>
+          <td style="font-size:11px">${c.time_range||''}</td>
+          <td style="font-size:11px">${c.weekdays||''}</td>
+          <td style="font-size:11px;text-align:center">${c.total_sessions||0}</td>
+          <td style="font-size:11px;text-align:center;color:${sessionCount>=c.total_sessions?'var(--ok)':'var(--warn)'}">${sessionCount}</td>
+          <td><button class="btn btn-danger btn-sm" onclick="deleteCourse('${c.id}')">删除</button></td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`:`<div class="empty" style="padding:60px">暂无课程，点击右上角「导入课程安排」上传 Excel</div>`}`;
+}
+
+async function deleteCourse(id){
+  if(!confirm('确定删除该课程及其所有课次和出席记录？'))return;
+  try{
+    await sb(`/rest/v1/session_records?session_id=in.(${cachedSessions.filter(s=>s.course_id===id).map(s=>`"${s.id}"`).join(',')||'""'})`,'DELETE').catch(()=>{});
+    await sb(`/rest/v1/course_sessions?course_id=eq.${id}`,'DELETE');
+    await sb(`/rest/v1/courses?id=eq.${id}`,'DELETE');
+    cachedSessions=cachedSessions.filter(s=>s.course_id!==id);
+    cachedSessionRecords=cachedSessionRecords.filter(r=>!cachedSessions.find(s=>s.id===r.session_id));
+    cachedCourses=cachedCourses.filter(c=>c.id!==id);
+    renderCoursesPage(document.getElementById('mainContent'));
+  }catch(e){alert('删除失败：'+e.message)}
+}
+
+// ══════════════════════════════════
+// ATTENDANCE & HOMEWORK PAGE
+// ══════════════════════════════════
+let attViewMode='by-session'; // 'by-session' | 'by-student'
+let attCourseFilter='all';
+let sessionEdits={}; // {studentId: {location, attendance, attendance_score, homework, homework_feedback}}
+
+const ATT_OPTIONS=[
+  {value:'present_offline',label:'线下出席',score:1},
+  {value:'present_online_domestic',label:'国内线上',score:1},
+  {value:'present_online_japan',label:'在日线上',score:0.5},
+  {value:'recording',label:'看录播',score:1},
+  {value:'leave',label:'请假',score:0},
+  {value:'absent',label:'缺席',score:0},
+];
+const LOC_OPTIONS=['国内','在日'];
+const HW_OPTIONS=['已提交','未提交','无作业'];
+
+function attScoreFromValue(val){return ATT_OPTIONS.find(o=>o.value===val)?.score??0}
+function attLabelFromValue(val){return ATT_OPTIONS.find(o=>o.value===val)?.label||val||'—'}
+function attColorFromScore(s){return s>=1?'var(--ok)':s>0?'var(--warn)':'var(--danger)'}
+
+function renderAttendancePage(mc){
+  const allSessions=[...cachedSessions].sort((a,b)=>a.session_date.localeCompare(b.session_date));
+  mc.innerHTML=`
+  <div class="page-header">
+    <div class="section-title">出席・作业</div>
+    <div class="btn-group">
+      <button class="${attViewMode==='by-session'?'active':''}" onclick="setAttView('by-session',this)">按课次</button>
+      <button class="${attViewMode==='by-student'?'active':''}" onclick="setAttView('by-student',this)">按学生</button>
+    </div>
+  </div>
+  <div class="filter-row" style="margin-bottom:14px">
+    <div class="filter-chip${attCourseFilter==='all'?' active':''}" onclick="setAttCourseFilter('all',this)">全部课程</div>
+    ${cachedCourses.map(c=>`<div class="filter-chip${attCourseFilter===c.id?' active':''}" onclick="setAttCourseFilter('${c.id}',this)" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</div>`).join('')}
+  </div>
+  ${attViewMode==='by-session'?renderBySession(allSessions):renderByStudent()}`;
+}
+
+function renderBySession(allSessions){
+  const sessions=attCourseFilter==='all'?allSessions:allSessions.filter(s=>s.course_id===attCourseFilter);
+  if(!sessions.length) return '<div class="empty">暂无课次数据，请先在「课程管理」导入课程安排</div>';
+  // group by course
+  const byCourse={};
+  sessions.forEach(s=>{if(!byCourse[s.course_id])byCourse[s.course_id]=[];byCourse[s.course_id].push(s)});
+  return Object.entries(byCourse).map(([cid,sess])=>{
+    const course=cachedCourses.find(c=>c.id===cid)||{name:sess[0]?.course_name||''};
+    return `<div style="margin-bottom:24px">
+      <div style="font-size:11px;font-weight:600;color:var(--text-2);padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:3px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between">
+        <span>${course.name} <span style="color:var(--text-3);font-weight:400">· ${course.teacher||''} · ${course.time_range||''}</span></span>
+        <span style="color:var(--text-3)">${sess.length}/${course.total_sessions||'?'}回</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${sess.map(s=>{
+          const recs=cachedSessionRecords.filter(r=>r.session_id===s.id);
+          const filled=recs.filter(r=>r.attendance).length;
+          const total=recs.length;
+          const avgScore=total?+(recs.reduce((a,b)=>a+(b.attendance_score||0),0)/total).toFixed(2):null;
+          return `<div onclick="openSessionModal('${s.id}')" style="cursor:pointer;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:9px 12px;min-width:110px;transition:all .15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+            <div style="font-size:11px;font-weight:600">${s.session_date.slice(5)} <span style="color:var(--text-3);font-weight:400">第${s.session_number}回</span></div>
+            <div style="font-size:10px;color:${filled?'var(--ok)':'var(--text-3)'};margin-top:3px">${filled?`已记录 ${filled}人`:'未记录'}</div>
+            ${avgScore!==null?`<div style="font-size:10px;color:${attColorFromScore(avgScore)}">均分 ${avgScore}</div>`:''}
+          </div>`;
         }).join('')}
-      </tr>`).join('')||`<tr><td colspan="${lessons.length+1}" style="text-align:center;padding:20px;color:var(--text-3)">暂无在籍学生</td></tr>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderByStudent(){
+  const students=cachedStudents.filter(s=>s.status==='active').sort((a,b)=>a.name.localeCompare(b.name,'zh'));
+  const filterStudents=attCourseFilter==='all'?students:students.filter(s=>{
+    const course=cachedCourses.find(c=>c.id===attCourseFilter);
+    return course&&(course.major||[]).includes(s.major);
+  });
+  if(!filterStudents.length) return '<div class="empty">暂无学生</div>';
+  return `<table class="student-table">
+    <thead><tr><th>姓名</th><th>专业</th><th>出席课次</th><th>平均分值</th><th>作业提交率</th><th></th></tr></thead>
+    <tbody>
+      ${filterStudents.map(s=>{
+        const recs=cachedSessionRecords.filter(r=>r.student_id===s.id);
+        const attended=recs.filter(r=>r.attendance&&r.attendance!=='absent'&&r.attendance!=='leave').length;
+        const total=recs.length;
+        const avg=total?+(recs.reduce((a,b)=>a+(b.attendance_score||0),0)/total).toFixed(2):0;
+        const hwRecs=recs.filter(r=>r.homework&&r.homework!=='无作业');
+        const hwSubmit=hwRecs.filter(r=>r.homework==='已提交').length;
+        return `<tr>
+          <td class="student-name-cell">${s.name}</td>
+          <td style="font-size:11px">${MAJORS[s.major]||s.major||''}</td>
+          <td style="font-size:11px">${attended}/${total}</td>
+          <td style="font-size:11px;color:${attColorFromScore(avg)}">${total?avg:'—'}</td>
+          <td style="font-size:11px">${hwRecs.length?`${hwSubmit}/${hwRecs.length}`:'—'}</td>
+          <td><button class="btn btn-outline btn-sm" onclick="openStudentAttModal('${s.id}')">查看详情</button></td>
+        </tr>`;
+      }).join('')}
     </tbody>
   </table>`;
 }
 
-function renderAttendancePage(mc){
-  const attMap={};
-  cachedAttendance.forEach(a=>{attMap[`${a.student_name}|${a.lesson_date}|${a.lesson_name}`]=a});
-  const isGroup=attMajor==='shakai_group';
-  const groupMajors=isGroup?SHAKAI_GROUP:[attMajor];
-  const totalStudents=cachedStudents.filter(s=>groupMajors.includes(s.major)&&s.status==='active').length;
-  const totalLessons=new Set(cachedAttendance.filter(a=>groupMajors.includes(a.major)).map(a=>`${a.lesson_date}|${a.lesson_name}|${a.major}`)).size;
+function setAttView(mode){attViewMode=mode;renderAttendancePage(document.getElementById('mainContent'))}
+function setAttCourseFilter(id,el){attCourseFilter=id;document.querySelectorAll('.filter-row .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderAttendancePage(document.getElementById('mainContent'))}
 
-  mc.innerHTML=`
-  <div class="page-header">
-    <div class="section-title">出席管理</div>
-    <button class="btn btn-primary btn-sm" onclick="openLessonModal()">＋ 新增课程</button>
-  </div>
-  <div class="filter-row">
-    ${['keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map(k=>`<div class="filter-chip${attMajor===k?' active':''}" onclick="setAttMajor('${k}',this)">${majorLabel(k)}</div>`).join('')}
-  </div>
-  <div class="export-bar" style="margin-bottom:16px">
-    <div style="font-size:12px;color:var(--text-3)">${majorLabel(attMajor)} · ${totalStudents} 名学生 · ${totalLessons} 次课程</div>
-    <button class="btn btn-outline btn-sm" onclick="exportAttendance()">↓ 导出 Excel</button>
-  </div>
-  ${isGroup
-    ? SHAKAI_GROUP.map(m=>`
-        <div style="margin-bottom:24px">
-          <div style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);margin-bottom:8px;padding:6px 10px;background:var(--bg);border-radius:3px;border:1px solid var(--border)">${MAJORS[m]}</div>
-          <div class="att-grid">${renderAttSingleTable(m,attMap)}</div>
-        </div>`).join('')
-    : `<div class="att-grid">${renderAttSingleTable(attMajor,attMap)}</div>`
-  }`;
-}
-function setAttMajor(m,el){attMajor=m;document.querySelectorAll('.filter-row .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderAttendancePage(document.getElementById('mainContent'))}
-function openLessonModal(){
-  document.getElementById('ls_major').value=attMajor;
-  document.getElementById('ls_date').valueAsDate=new Date();
-  document.getElementById('ls_name').value='';
-  document.getElementById('lessonModal').classList.add('open');
-}
-async function createLesson(){
-  const major=document.getElementById('ls_major').value;
-  const lesson_date=document.getElementById('ls_date').value;
-  const lesson_name=document.getElementById('ls_name').value.trim();
-  if(!lesson_date||!lesson_name){alert('请填写日期和课程名称');return}
-  // Create attendance records for all active students in this major
-  const students=cachedStudents.filter(s=>s.major===major&&s.status==='active');
-  if(!students.length){alert('该专业暂无在籍学生');return}
-  const existing=cachedAttendance.filter(a=>a.major===major&&a.lesson_date===lesson_date&&a.lesson_name===lesson_name);
-  if(existing.length){alert('该课程记录已存在');return}
-  const records=students.map(s=>({id:`${Date.now()}-${Math.random().toString(36).slice(2,6)}`,student_id:s.id,major,student_name:s.name,lesson_date,lesson_name,attended:false,homework_submitted:false,homework_note:''}));
-  try{
-    const res=await sb('/rest/v1/attendance','POST',records);
-    cachedAttendance=[...cachedAttendance,...(Array.isArray(res)?res:records)];
-    attMajor=major;closeModal('lessonModal');renderAttendancePage(document.getElementById('mainContent'));
-  }catch(e){alert('创建失败：'+e.message)}
-}
-async function toggleAttendance(studentId,studentName,lessonDate,lessonName,checked,major){
-  const key=`${studentName}|${lessonDate}|${lessonName}`;
-  const existing=cachedAttendance.find(a=>a.student_name===studentName&&a.lesson_date===lessonDate&&a.lesson_name===lessonName);
-  try{
-    if(existing){
-      await sb(`/rest/v1/attendance?id=eq.${existing.id}`,'PATCH',{attended:checked});
-      existing.attended=checked;
-    } else {
-      const rec={id:`${Date.now()}-${Math.random().toString(36).slice(2,6)}`,student_id:studentId,major,student_name:studentName,lesson_date:lessonDate,lesson_name:lessonName,attended:checked,homework_submitted:false,homework_note:''};
-      const res=await sb('/rest/v1/attendance','POST',[rec]);
-      cachedAttendance.push(Array.isArray(res)?res[0]:rec);
-    }
-    // update cell bg without full re-render
-    const cell=event.target.closest('td');
-    if(cell){cell.className=checked?'att-present':'att-absent'}
-  }catch(e){alert('保存失败：'+e.message);event.target.checked=!checked}
-}
-async function deleteLesson(date,name,major){
-  // major is passed from renderAttSingleTable; fallback to attMajor for non-group view
-  const targetMajor=major||attMajor;
-  if(!confirm(`确定删除课程「${name}」的所有出席记录？`))return;
-  try{
-    await sb(`/rest/v1/attendance?lesson_date=eq.${date}&lesson_name=eq.${name}&major=eq.${targetMajor}`,'DELETE');
-    cachedAttendance=cachedAttendance.filter(a=>!(a.lesson_date===date&&a.lesson_name===name&&a.major===targetMajor));
-    renderAttendancePage(document.getElementById('mainContent'));
-  }catch(e){alert('删除失败：'+e.message)}
-}
-function exportAttendance(){
-  const isGroup=attMajor==='shakai_group';
-  const groupMajors=isGroup?SHAKAI_GROUP:[attMajor];
-  const wb=XLSX.utils.book_new();
-  let hasData=false;
-  for(const m of groupMajors){
-    const students=cachedStudents.filter(s=>s.major===m&&s.status==='active').sort((a,b)=>a.name.localeCompare(b.name,'zh'));
-    const lessons=[...new Set(cachedAttendance.filter(a=>a.major===m).map(a=>JSON.stringify({date:a.lesson_date,name:a.lesson_name})))].map(x=>JSON.parse(x)).sort((a,b)=>a.date.localeCompare(b.date));
-    if(!students.length&&!lessons.length) continue;
-    hasData=true;
-    const rows=students.map(s=>{
-      const row={'姓名':s.name,'专业':MAJORS[m]||m};
-      lessons.forEach(l=>{
-        const rec=cachedAttendance.find(a=>a.student_name===s.name&&a.lesson_date===l.date&&a.lesson_name===l.name&&a.major===m);
-        row[`${l.date} ${l.name}`]=rec?.attended?'✓':'';
-      });
-      const total=lessons.filter(l=>cachedAttendance.find(a=>a.student_name===s.name&&a.lesson_date===l.date&&a.lesson_name===l.name&&a.major===m&&a.attended)).length;
-      row['出席率']=lessons.length?`${total}/${lessons.length}`:'';
-      return row;
-    });
-    const ws=XLSX.utils.json_to_sheet(rows);
-    XLSX.utils.book_append_sheet(wb,ws,MAJORS[m]||m);
+// ── Session modal ──
+async function openSessionModal(sessionId){
+  const session=cachedSessions.find(s=>s.id===sessionId);
+  if(!session) return;
+  const course=cachedCourses.find(c=>c.id===session.course_id)||{};
+  document.getElementById('sessionModalId').value=sessionId;
+  document.getElementById('sessionModalTitle').textContent=`${session.course_name} 第${session.session_number}回`;
+  document.getElementById('sessionModalSub').textContent=`${session.session_date} · ${session.time_range||''} · ${session.teacher||''}`;
+  // Get students for this course's majors
+  const majors=session.major||course.major||[];
+  const students=cachedStudents.filter(s=>majors.includes(s.major)&&s.status==='active').sort((a,b)=>a.name.localeCompare(b.name,'zh'));
+  // Load existing records
+  let existing=cachedSessionRecords.filter(r=>r.session_id===sessionId);
+  if(!existing.length){
+    // try fetch fresh
+    try{existing=await sb(`/rest/v1/session_records?session_id=eq.${sessionId}&select=*`)}catch(e){}
+    existing.forEach(r=>{if(!cachedSessionRecords.find(x=>x.id===r.id))cachedSessionRecords.push(r)});
   }
-  if(!hasData){alert('暂无数据');return}
-  XLSX.writeFile(wb,`出席记录_${majorLabel(attMajor)}.xlsx`);
+  sessionEdits={};
+  const tbody=document.getElementById('sessionRecordBody');
+  tbody.innerHTML=students.map(s=>{
+    const rec=existing.find(r=>r.student_id===s.id)||{};
+    sessionEdits[s.id]={location:rec.location||'',attendance:rec.attendance||'',attendance_score:rec.attendance_score??'',homework:rec.homework||'',homework_feedback:rec.homework_feedback||''};
+    return `<tr id="srow-${s.id}">
+      <td class="student-name-cell" style="font-size:12px">${s.name}</td>
+      <td>
+        <select onchange="updateSessionEdit('${s.id}','location',this.value)" style="font-size:11px;padding:4px 6px">
+          <option value="">—</option>
+          ${LOC_OPTIONS.map(o=>`<option value="${o}" ${rec.location===o?'selected':''}>${o}</option>`).join('')}
+        </select>
+      </td>
+      <td>
+        <select onchange="updateSessionEditAtt('${s.id}',this.value)" style="font-size:11px;padding:4px 6px">
+          <option value="">—</option>
+          ${ATT_OPTIONS.map(o=>`<option value="${o.value}" ${rec.attendance===o.value?'selected':''}>${o.label}</option>`).join('')}
+        </select>
+      </td>
+      <td id="score-${s.id}" style="font-size:11px;text-align:center;color:${attColorFromScore(rec.attendance_score??'')}">
+        ${rec.attendance_score!=null&&rec.attendance_score!==''?rec.attendance_score:'—'}
+      </td>
+      <td>
+        <select onchange="updateSessionEdit('${s.id}','homework',this.value)" style="font-size:11px;padding:4px 6px">
+          <option value="">—</option>
+          ${HW_OPTIONS.map(o=>`<option value="${o}" ${rec.homework===o?'selected':''}>${o}</option>`).join('')}
+        </select>
+      </td>
+      <td>
+        <input value="${rec.homework_feedback||''}" placeholder="反馈备注…" oninput="updateSessionEdit('${s.id}','homework_feedback',this.value)" style="font-size:11px;padding:4px 6px;min-width:160px">
+      </td>
+    </tr>`;
+  }).join('');
+  document.getElementById('sessionModal').classList.add('open');
+}
+
+function updateSessionEdit(studentId,field,value){
+  if(!sessionEdits[studentId]) sessionEdits[studentId]={};
+  sessionEdits[studentId][field]=value;
+}
+function updateSessionEditAtt(studentId,value){
+  if(!sessionEdits[studentId]) sessionEdits[studentId]={};
+  sessionEdits[studentId].attendance=value;
+  const score=attScoreFromValue(value);
+  sessionEdits[studentId].attendance_score=value?score:'';
+  const scoreCell=document.getElementById(`score-${studentId}`);
+  if(scoreCell){scoreCell.textContent=value?score:'—';scoreCell.style.color=attColorFromScore(score)}
+}
+
+async function saveSessionRecords(){
+  const sessionId=document.getElementById('sessionModalId').value;
+  const session=cachedSessions.find(s=>s.id===sessionId);
+  if(!session) return;
+  const majors=session.major||[];
+  const students=cachedStudents.filter(s=>majors.includes(s.major)&&s.status==='active');
+  const btn=document.querySelector('#sessionModal .btn-primary');
+  btn.textContent='保存中…';btn.disabled=true;
+  try{
+    for(const s of students){
+      const edit=sessionEdits[s.id];
+      if(!edit) continue;
+      const existing=cachedSessionRecords.find(r=>r.session_id===sessionId&&r.student_id===s.id);
+      const data={session_id:sessionId,course_name:session.course_name,session_date:session.session_date,student_id:s.id,student_name:s.name,major:s.major,location:edit.location||'',attendance:edit.attendance||'',attendance_score:edit.attendance_score!==''?Number(edit.attendance_score):null,homework:edit.homework||'',homework_feedback:edit.homework_feedback||''};
+      if(existing){
+        await sb(`/rest/v1/session_records?id=eq.${existing.id}`,'PATCH',data);
+        Object.assign(existing,data);
+      } else if(edit.attendance||edit.homework){
+        data.id=`r-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+        const res=await sb('/rest/v1/session_records','POST',[data]);
+        cachedSessionRecords.push(Array.isArray(res)?res[0]:data);
+      }
+    }
+    btn.textContent='✓ 已保存';setTimeout(()=>{btn.textContent='保存全部';btn.disabled=false},1500);
+    renderAttendancePage(document.getElementById('mainContent'));
+  }catch(e){alert('保存失败：'+e.message);btn.textContent='保存全部';btn.disabled=false}
+}
+
+// ── Student detail modal ──
+function openStudentAttModal(studentId){
+  const s=cachedStudents.find(x=>x.id===studentId);
+  if(!s) return;
+  document.getElementById('studentAttTitle').textContent=s.name+' · 出席记录';
+  document.getElementById('studentAttSub').textContent=`${MAJORS[s.major]||s.major||''} · 状态：${s.status==='active'?'在籍':'其他'}`;
+  const recs=cachedSessionRecords.filter(r=>r.student_id===studentId).sort((a,b)=>a.session_date?.localeCompare(b.session_date));
+  const total=recs.length;
+  const attended=recs.filter(r=>r.attendance&&r.attendance!=='absent'&&r.attendance!=='leave').length;
+  const avgScore=total?+(recs.reduce((a,b)=>a+(b.attendance_score||0),0)/total).toFixed(2):0;
+  const hwRecs=recs.filter(r=>r.homework&&r.homework!=='无作业');
+  const hwSubmit=hwRecs.filter(r=>r.homework==='已提交').length;
+  document.getElementById('studentAttBody').innerHTML=`
+    <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 16px;font-size:12px">出席 <strong style="color:var(--ok)">${attended}/${total}</strong></div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 16px;font-size:12px">平均分 <strong style="color:${attColorFromScore(avgScore)}">${total?avgScore:'—'}</strong></div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 16px;font-size:12px">作业提交 <strong>${hwRecs.length?hwSubmit+'/'+hwRecs.length:'—'}</strong></div>
+    </div>
+    ${recs.length?`<table class="student-table">
+      <thead><tr><th>课程</th><th>日期</th><th>位置</th><th>出席</th><th>分值</th><th>作业</th><th>反馈</th></tr></thead>
+      <tbody>
+        ${recs.map(r=>`<tr>
+          <td style="font-size:11px;max-width:180px">${r.course_name||''}</td>
+          <td style="font-size:11px">${r.session_date||''}</td>
+          <td style="font-size:11px">${r.location||'—'}</td>
+          <td style="font-size:11px">${attLabelFromValue(r.attendance)}</td>
+          <td style="font-size:11px;color:${attColorFromScore(r.attendance_score)}">${r.attendance_score!=null?r.attendance_score:'—'}</td>
+          <td style="font-size:11px">${r.homework||'—'}</td>
+          <td style="font-size:11px;color:var(--text-2);max-width:200px">${r.homework_feedback||''}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`:'<div class="empty">暂无记录</div>'}`;
+  document.getElementById('studentAttModal').classList.add('open');
 }
 
 // ── Shared ──
