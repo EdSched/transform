@@ -1079,13 +1079,12 @@ async function confirmImport() {
   if (!newRows.length) { closeModal('importModal'); return; }
   const btn = document.getElementById('importConfirmBtn');
   btn.textContent = '导入中…'; btn.disabled = true;
-  const records = newRows.map(r => ({
-    ...r,
-    id: `${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
-    _exists: undefined,
-  }));
-  // remove internal flag
-  records.forEach(r => delete r._exists);
+  const STUDENT_FIELDS = ['id','name','major','student_type','source','course_type','level','difficulty','japanese_score','english_score','university','faculty','gpa','graduation_date','target_enrollment','expiry_date','japan_arrival','status','notes'];
+  const records = newRows.map((r,i) => {
+    const rec = {};
+    STUDENT_FIELDS.forEach(f => rec[f] = r[f] || (f==='status'?'active':f==='id'?`${Date.now()}-${i}-${Math.random().toString(36).slice(2,5)}`:''));
+    return rec;
+  });
   try {
     // batch insert in chunks of 50
     for (let i = 0; i < records.length; i += 50) {
