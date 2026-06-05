@@ -243,7 +243,7 @@ function buildForm(){
 
 function getPlanStatus(){return document.getElementById('planStatus')?.value||''}
 function getInterviewStatus(){return document.getElementById('interviewStatus')?.value||''}
-function canSelectPlan(){const p=getPlanStatus();return p==='待修改'||p==='未完成'}
+function canSelectPlan(){return getPlanStatus()!==''}
 function canSelectMock(){const p=getPlanStatus(),i=getInterviewStatus();return p==='已完成'&&(i==='已完成面试稿'||i==='面试稿撰写中'||i==='模拟面试中')}
 
 function updateTypeOptions(){
@@ -253,8 +253,7 @@ function updateTypeOptions(){
   planCard.classList.toggle('locked',!planOk);planCard.querySelector('.type-card-lock').style.display=planOk?'none':'block';
   mockCard.classList.toggle('locked',!mockOk);mockCard.querySelector('.type-card-lock').style.display=mockOk?'none':'block';
   const notices=[];
-  if(!planOk)notices.push('计划书相关：研究计划书需为「待修改」或「未完成」');
-  if(!mockOk)notices.push('模拟面试：研究计划书「已完成」且面试准备已推进');
+  if(!mockOk)notices.push('模拟面试：研究计划书需为「已完成」且面试准备已推进');
   const n=document.getElementById('lockNotice');
   if(notices.length&&(getPlanStatus()||getInterviewStatus())){n.style.display='block';n.innerHTML='🔒 '+notices.join('<br>🔒 ')}else n.style.display='none';
   if(selectedType==='plan'&&!planOk){selectedType=null;document.querySelectorAll('.type-card').forEach(c=>c.classList.remove('selected'))}
