@@ -549,6 +549,14 @@ function deleteSlot(id){
   saveSlots(getSlots().filter(s=>s.id!==id)); renderSlots();
 }
 
+function slotCapacity(timeRange){
+  const [a,b]=(timeRange||'').split('–');
+  if(!a||!b) return 4;
+  const [ah,am]=a.split(':').map(Number);
+  const [bh,bm]=b.split(':').map(Number);
+  return Math.max(1,Math.floor(((bh*60+bm)-(ah*60+am))/15));
+}
+
 function renderSlots(){
   const slots=getSlots();
   const ym=`${currentYear}-${String(currentMonth+1).padStart(2,'0')}`;
@@ -560,6 +568,8 @@ function renderSlots(){
     const d=new Date(s.date), dow=DAYS[d.getDay()];
     const isSat=d.getDay()===6,isSun=d.getDay()===0;
     const dc=isSat?'var(--sat)':isSun?'var(--sun)':'var(--text-secondary)';
+    const cap=slotCapacity(s.timeRange);
+    const booked=getBookings().filter(b=>b.slotId===s.id&&b.status!=='cancelled').length;
     return `<div class="slot-item">
       <div class="slot-item-left">
         <span class="tag ${typeTag(s.type)}">${s.type==='daily'?'日常':s.type==='plan'?'计划书':'模拟'}</span>
@@ -567,6 +577,7 @@ function renderSlots(){
         <span style="font-weight:500">${s.date.slice(5)}</span>
         <span style="font-size:10px;color:${dc}">${dow}</span>
         <span style="color:var(--text-secondary);font-family:'DM Mono',monospace;font-size:10px">${s.timeRange}</span>
+        <span style="font-size:10px;color:${booked>=cap?'var(--danger)':'var(--success)'}">${booked}/${cap}</span>
       </div>
       <button class="btn-ghost" onclick="deleteSlot('${s.id}')">✕</button>
     </div>`;
