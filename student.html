@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>面谈预约 — 唯新教育</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F7F5F0;
+  --surface:#FFFFFF;
+  --border:#E8E4DC;
+  --border-strong:#C8C3B8;
+  --text:#1A1916;
+  --text-muted:#7A7670;
+  --text-light:#A8A49E;
+  --accent:#2B5CE6;
+  --accent-light:#EEF2FD;
+  --success:#1D9E75;
+  --success-light:#E1F5EE;
+  --warning:#BA7517;
+  --warning-light:#FAEEDA;
+  --danger:#A32D2D;
+  --danger-light:#FCEBEB;
+  --tag-daily:#534AB7;
+  --tag-daily-bg:#EEEDFE;
+  --tag-plan:#0F6E56;
+  --tag-plan-bg:#E1F5EE;
+  --tag-mock:#993C1D;
+  --tag-mock-bg:#FAECE7;
+}
+body{font-family:'Noto Sans SC',sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;min-height:100vh}
+.topbar{background:var(--text);color:#fff;padding:0 32px;height:52px;display:flex;align-items:center;justify-content:space-between}
+.topbar-title{font-size:15px;font-weight:500;letter-spacing:0.04em}
+.topbar-sub{font-size:12px;color:#888;font-family:'DM Mono',monospace}
+.page-wrap{max-width:760px;margin:0 auto;padding:36px 24px 60px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px 28px;margin-bottom:20px}
+.card-title{font-size:15px;font-weight:700;margin-bottom:18px;display:flex;align-items:center;gap:8px}
+.step-num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:var(--text);color:#fff;border-radius:50%;font-size:11px;font-weight:700;flex-shrink:0}
+.form-group{margin-bottom:14px}
+.form-label{display:block;font-size:12px;color:var(--text-muted);margin-bottom:5px}
+.form-label .required{color:var(--danger)}
+input,select,textarea{width:100%;border:1px solid var(--border);background:var(--bg);border-radius:6px;padding:8px 10px;font-size:13px;font-family:'Noto Sans SC',sans-serif;color:var(--text);outline:none;transition:border-color .15s}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+input:disabled,select:disabled{opacity:.5;cursor:not-allowed}
+.radio-group{display:flex;gap:8px;flex-wrap:wrap}
+.radio-option{position:relative}
+.radio-option input[type=radio]{position:absolute;opacity:0;width:0;height:0}
+.radio-option label{display:block;padding:7px 14px;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;transition:all .15s;background:var(--surface);white-space:nowrap}
+.radio-option input:checked+label{background:var(--text);color:#fff;border-color:var(--text)}
+.radio-option label:hover{border-color:var(--border-strong);background:var(--bg)}
+.progress-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;border:1px solid transparent;transition:all .15s;font-family:'Noto Sans SC',sans-serif}
+.btn-primary{background:var(--accent);color:#fff;border-color:var(--accent);width:100%;justify-content:center;padding:14px}
+.btn-primary:hover{background:#2451c8}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500}
+.tag-daily{background:var(--tag-daily-bg);color:var(--tag-daily)}
+.tag-plan{background:var(--tag-plan-bg);color:var(--tag-plan)}
+.tag-mock{background:var(--tag-mock-bg);color:var(--tag-mock)}
+.slot-select-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.slot-option{position:relative}
+.slot-option input[type=radio]{position:absolute;opacity:0;width:0;height:0}
+.slot-option label{display:block;padding:10px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s;background:var(--surface)}
+.slot-option label:hover{border-color:var(--border-strong)}
+.slot-option input:checked+label{border-color:var(--accent);background:var(--accent-light)}
+.slot-option.taken label{opacity:.4;cursor:not-allowed;background:var(--bg)}
+.slot-date{font-size:13px;font-weight:500}
+.slot-time{font-size:12px;color:var(--text-muted);font-family:'DM Mono',monospace}
+.slot-type-label{font-size:11px;margin-top:3px}
+.no-slots{text-align:center;padding:24px;color:var(--text-muted);font-size:13px}
+.divider{border:none;border-top:1px solid var(--border);margin:20px 0}
+.section-header{font-size:13px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px}
+.booking-list{display:flex;flex-direction:column;gap:10px}
+.booking-row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.booking-row-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.booking-row-name{font-weight:700;font-size:14px}
+.booking-row-meta{font-size:12px;color:var(--text-muted)}
+.booking-row-needs{font-size:12px;color:var(--text-muted);margin-top:4px}
+.status-badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+.status-pending{background:var(--warning-light);color:var(--warning)}
+.status-confirmed{background:var(--success-light);color:var(--success)}
+.status-cancelled{background:var(--border);color:var(--text-muted)}
+.urgency-high{color:var(--danger);font-weight:700}
+.urgency-mid{color:var(--warning);font-weight:700}
+.urgency-low{color:var(--success);font-weight:700}
+.success-banner{background:var(--success-light);border:1px solid var(--success);border-radius:10px;padding:16px 20px;margin-bottom:20px;display:none}
+.success-banner.show{display:block}
+.success-banner-title{font-weight:700;color:var(--success);margin-bottom:4px}
+.success-banner-text{font-size:13px;color:var(--text-muted)}
+.locked-notice{background:var(--bg);border:1px dashed var(--border-strong);border-radius:8px;padding:12px 14px;font-size:12px;color:var(--text-muted);margin-top:6px}
+.type-card{border:1px solid var(--border);border-radius:8px;padding:12px 14px;cursor:pointer;transition:all .15s;position:relative}
+.type-card.selected{border-color:var(--accent);background:var(--accent-light)}
+.type-card.locked{opacity:.4;cursor:not-allowed;background:var(--bg)}
+.type-card-name{font-size:13px;font-weight:700;margin-bottom:3px}
+.type-card-desc{font-size:12px;color:var(--text-muted)}
+.type-card-lock{position:absolute;top:10px;right:10px;font-size:14px}
+.type-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:6px}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-title">唯新教育 · 面谈预约</div>
+  <div class="topbar-sub">学生端</div>
+</div>
+
+<div class="page-wrap">
+
+  <div class="success-banner" id="successBanner">
+    <div class="success-banner-title">✓ 预约申请已提交！</div>
+    <div class="success-banner-text">请等待老师确认，您可以在下方查看预约状态。</div>
+  </div>
+
+  <!-- Step 1: Name -->
+  <div class="card">
+    <div class="card-title"><span class="step-num">1</span> 基本信息</div>
+    <div class="form-group">
+      <label class="form-label">姓名 <span class="required">*</span></label>
+      <input type="text" id="name" placeholder="请输入您的姓名">
+    </div>
+    <div class="form-group">
+      <label class="form-label">出愿期间 <span class="required">*</span></label>
+      <div class="radio-group">
+        <div class="radio-option"><input type="radio" name="examPeriod" id="ep1" value="夏季出愿"><label for="ep1">夏季出愿</label></div>
+        <div class="radio-option"><input type="radio" name="examPeriod" id="ep2" value="冬季出愿"><label for="ep2">冬季出愿</label></div>
+        <div class="radio-option"><input type="radio" name="examPeriod" id="ep3" value="次年出愿"><label for="ep3">次年出愿</label></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Progress -->
+  <div class="card">
+    <div class="card-title"><span class="step-num">2</span> 当前学习进程</div>
+    <div class="progress-grid">
+      <div class="form-group">
+        <label class="form-label">专业知识</label>
+        <select id="specialtyStatus" onchange="updateTypeOptions()">
+          <option value="">请选择</option>
+          <option value="刚开始">刚开始</option>
+          <option value="学习中">学习中</option>
+          <option value="完成一期">完成一期</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">目标学校</label>
+        <select id="targetSchool" onchange="updateTypeOptions()">
+          <option value="">请选择</option>
+          <option value="已择校">已择校</option>
+          <option value="择校中">择校中</option>
+          <option value="未择校">未择校</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">联系教授</label>
+        <select id="contactProf" onchange="updateTypeOptions()">
+          <option value="">请选择</option>
+          <option value="已联系">已联系</option>
+          <option value="未联系">未联系</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">研究计划书 <span class="required">*</span></label>
+        <select id="planStatus" onchange="updateTypeOptions()">
+          <option value="">请选择</option>
+          <option value="已完成">已完成</option>
+          <option value="待修改">待修改</option>
+          <option value="未完成">未完成</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">出愿进度</label>
+        <select id="applicationStatus" onchange="updateTypeOptions()">
+          <option value="">请选择</option>
+          <option value="已出愿">已出愿</option>
+          <option value="出愿中">出愿中</option>
+          <option value="待准备">待准备</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">笔试准备</label>
+        <select id="writtenExam" onchange="updateTypeOptions()">
+          <option value="">请选择</option>
+          <option value="已开始">已开始</option>
+          <option value="准备中">准备中</option>
+          <option value="未开始">未开始</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label class="form-label">面试准备 <span class="required">*</span></label>
+        <select id="interviewStatus" onchange="updateTypeOptions()">
+          <option value="">请选择</option>
+          <option value="已完成面试稿">已完成面试稿</option>
+          <option value="面试稿撰写中">面试稿撰写中</option>
+          <option value="模拟面试中">模拟面试中</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Interview Type -->
+  <div class="card">
+    <div class="card-title"><span class="step-num">3</span> 面谈类型</div>
+    <div class="type-grid" id="typeGrid">
+      <div class="type-card" id="type-daily" onclick="selectType('daily')">
+        <div class="type-card-name">日常学习面谈</div>
+        <div class="type-card-desc">TA老师负责</div>
+      </div>
+      <div class="type-card locked" id="type-plan" onclick="selectTypeIfUnlocked('plan')">
+        <div class="type-card-name">计划书相关</div>
+        <div class="type-card-desc">专业课老师负责</div>
+        <div class="type-card-lock">🔒</div>
+      </div>
+      <div class="type-card locked" id="type-mock" onclick="selectTypeIfUnlocked('mock')">
+        <div class="type-card-name">模拟面试</div>
+        <div class="type-card-desc">按情况安排老师</div>
+        <div class="type-card-lock">🔒</div>
+      </div>
+    </div>
+    <div id="lockNotice" class="locked-notice" style="display:none"></div>
+  </div>
+
+  <!-- Step 4: Time Slot -->
+  <div class="card">
+    <div class="card-title"><span class="step-num">4</span> 选择时间</div>
+    <div class="slot-select-grid" id="slotGrid">
+      <div class="no-slots">请先选择面谈类型，加载可用时间槽</div>
+    </div>
+    <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">面谈时长</label>
+        <div class="radio-group">
+          <div class="radio-option"><input type="radio" name="duration" id="d15" value="15" checked><label for="d15">15分钟</label></div>
+          <div class="radio-option"><input type="radio" name="duration" id="d30" value="30"><label for="d30">30分钟</label></div>
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">紧急程度</label>
+        <div class="radio-group">
+          <div class="radio-option"><input type="radio" name="urgency" id="uh" value="high"><label for="uh">紧急</label></div>
+          <div class="radio-option"><input type="radio" name="urgency" id="um" value="mid"><label for="um">适中</label></div>
+          <div class="radio-option"><input type="radio" name="urgency" id="ul" value="low" checked><label for="ul">一般</label></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 5: Needs -->
+  <div class="card">
+    <div class="card-title"><span class="step-num">5</span> 具体需求</div>
+    <textarea id="needs" rows="3" placeholder="请描述本次面谈希望解决的问题或需要老师重点关注的内容…"></textarea>
+  </div>
+
+  <button class="btn btn-primary" id="submitBtn" onclick="submitBooking()">提交预约申请</button>
+
+  <!-- Public Booking List -->
+  <hr class="divider" style="margin:40px 0 28px">
+  <div class="section-header">本月预约情况 <span id="publicCount" style="font-size:11px;font-weight:400;text-transform:none;letter-spacing:0"></span></div>
+  <div class="booking-list" id="publicBookingList">
+    <div style="font-size:13px;color:var(--text-muted);text-align:center;padding:24px 0">暂无预约记录</div>
+  </div>
+</div>
+
+<script>
+const SLOTS_KEY='txe_slots';
+const BOOKINGS_KEY='txe_bookings';
+let selectedType=null;
+let selectedSlotId=null;
+
+function getSlots(){return JSON.parse(localStorage.getItem(SLOTS_KEY)||'[]')}
+function getBookings(){return JSON.parse(localStorage.getItem(BOOKINGS_KEY)||'[]')}
+function saveBookings(d){localStorage.setItem(BOOKINGS_KEY,JSON.stringify(d))}
+
+function typeLabel(t){return t==='daily'?'日常学习面谈':t==='plan'?'计划书相关':'模拟面试'}
+function typeTag(t){return t==='daily'?'tag-daily':t==='plan'?'tag-plan':'tag-mock'}
+
+function getPlanStatus(){return document.getElementById('planStatus').value}
+function getInterviewStatus(){return document.getElementById('interviewStatus').value}
+
+function canSelectPlan(){
+  const p=getPlanStatus();
+  return p==='待修改'||p==='未完成';
+}
+function canSelectMock(){
+  const p=getPlanStatus();
+  const i=getInterviewStatus();
+  return p==='已完成'&&(i==='已完成面试稿'||i==='面试稿撰写中'||i==='模拟面试中');
+}
+
+function updateTypeOptions(){
+  const planCard=document.getElementById('type-plan');
+  const mockCard=document.getElementById('type-mock');
+  const lockNotice=document.getElementById('lockNotice');
+
+  const planOk=canSelectPlan();
+  const mockOk=canSelectMock();
+
+  planCard.classList.toggle('locked',!planOk);
+  planCard.querySelector('.type-card-lock').style.display=planOk?'none':'block';
+  mockCard.classList.toggle('locked',!mockOk);
+  mockCard.querySelector('.type-card-lock').style.display=mockOk?'none':'block';
+
+  let notices=[];
+  if(!planOk) notices.push('计划书相关：需研究计划书为「待修改」或「未完成」状态');
+  if(!mockOk) notices.push('模拟面试：需研究计划书「已完成」，且面试准备已推进');
+
+  if(notices.length&&(getPlanStatus()||getInterviewStatus())){
+    lockNotice.style.display='block';
+    lockNotice.innerHTML='🔒 ' + notices.join('<br>🔒 ');
+  } else {
+    lockNotice.style.display='none';
+  }
+
+  if(selectedType==='plan'&&!planOk) deselectType();
+  if(selectedType==='mock'&&!mockOk) deselectType();
+}
+
+function selectType(type){
+  selectedType=type;
+  document.querySelectorAll('.type-card').forEach(c=>c.classList.remove('selected'));
+  document.getElementById('type-'+type).classList.add('selected');
+  renderSlots();
+}
+
+function selectTypeIfUnlocked(type){
+  if(type==='plan'&&!canSelectPlan()) return;
+  if(type==='mock'&&!canSelectMock()) return;
+  selectType(type);
+}
+
+function deselectType(){
+  selectedType=null;
+  document.querySelectorAll('.type-card').forEach(c=>c.classList.remove('selected'));
+  document.getElementById('slotGrid').innerHTML='<div class="no-slots">请先选择面谈类型，加载可用时间槽</div>';
+}
+
+function renderSlots(){
+  if(!selectedType){
+    document.getElementById('slotGrid').innerHTML='<div class="no-slots">请先选择面谈类型，加载可用时间槽</div>';
+    return;
+  }
+  const now=new Date();
+  const ym=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const allSlots=getSlots().filter(s=>s.type===selectedType&&s.date.startsWith(ym));
+  const bookings=getBookings();
+  const takenSlotIds=new Set(bookings.filter(b=>b.status!=='cancelled').map(b=>b.slotId));
+
+  if(!allSlots.length){
+    document.getElementById('slotGrid').innerHTML='<div class="no-slots">本月暂无可预约的时间槽</div>';
+    return;
+  }
+  selectedSlotId=null;
+  document.getElementById('slotGrid').innerHTML=allSlots.map(s=>{
+    const taken=takenSlotIds.has(s.id);
+    return `<div class="slot-option${taken?' taken':''}">
+      <input type="radio" name="slotPick" id="slot-${s.id}" value="${s.id}" ${taken?'disabled':''} onchange="selectedSlotId='${s.id}'">
+      <label for="slot-${s.id}">
+        <div class="slot-date">${s.date.slice(5).replace('-','/')}</div>
+        <div class="slot-time">${s.start}</div>
+        ${taken?'<div style="font-size:11px;color:var(--danger);margin-top:3px">已被预约</div>':''}
+      </label>
+    </div>`;
+  }).join('');
+}
+
+function submitBooking(){
+  const name=document.getElementById('name').value.trim();
+  const examPeriod=document.querySelector('input[name=examPeriod]:checked')?.value;
+  const planStatus=getPlanStatus();
+  const interviewStatus=getInterviewStatus();
+  const duration=document.querySelector('input[name=duration]:checked')?.value;
+  const urgency=document.querySelector('input[name=urgency]:checked')?.value;
+  const needs=document.getElementById('needs').value.trim();
+
+  if(!name){alert('请填写姓名');return}
+  if(!examPeriod){alert('请选择出愿期间');return}
+  if(!planStatus){alert('请选择研究计划书状态');return}
+  if(!selectedType){alert('请选择面谈类型');return}
+  if(!selectedSlotId){alert('请选择预约时间');return}
+
+  const slot=getSlots().find(s=>s.id===selectedSlotId);
+  if(!slot){alert('所选时间槽不存在，请刷新重试');return}
+
+  const bookings=getBookings();
+  const existing=bookings.find(b=>b.slotId===selectedSlotId&&b.status!=='cancelled');
+  if(existing){alert('该时间段已被预约，请选择其他时间');renderSlots();return}
+
+  const booking={
+    id:Date.now().toString(),
+    name,
+    examPeriod,
+    specialtyStatus:document.getElementById('specialtyStatus').value,
+    targetSchool:document.getElementById('targetSchool').value,
+    contactProf:document.getElementById('contactProf').value,
+    planStatus,
+    applicationStatus:document.getElementById('applicationStatus').value,
+    writtenExam:document.getElementById('writtenExam').value,
+    interviewStatus,
+    type:selectedType,
+    slotId:selectedSlotId,
+    slotDate:slot.date,
+    slotTime:slot.start,
+    duration:parseInt(duration),
+    urgency,
+    needs,
+    status:'pending',
+    createdAt:new Date().toISOString(),
+    actualTime:'',
+    note:''
+  };
+  bookings.push(booking);
+  saveBookings(bookings);
+
+  document.getElementById('successBanner').classList.add('show');
+  window.scrollTo({top:0,behavior:'smooth'});
+  renderPublicList();
+  renderSlots();
+}
+
+function urgencySpan(u){
+  if(u==='high') return '<span class="urgency-high">紧急</span>';
+  if(u==='mid') return '<span class="urgency-mid">适中</span>';
+  return '<span class="urgency-low">一般</span>';
+}
+
+function renderPublicList(){
+  const now=new Date();
+  const ym=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const bookings=getBookings().filter(b=>b.slotDate&&b.slotDate.startsWith(ym));
+  bookings.sort((a,b)=>(a.slotDate+a.slotTime).localeCompare(b.slotDate+b.slotTime));
+  document.getElementById('publicCount').textContent=`共 ${bookings.length} 条`;
+  const list=document.getElementById('publicBookingList');
+  if(!bookings.length){
+    list.innerHTML='<div style="font-size:13px;color:var(--text-muted);text-align:center;padding:24px 0">暂无预约记录</div>';
+    return;
+  }
+  list.innerHTML=bookings.map(b=>`
+    <div class="booking-row">
+      <div class="booking-row-header">
+        <div>
+          <span class="booking-row-name">${b.name}</span>
+          <span style="font-size:12px;color:var(--text-muted);margin-left:8px">${b.slotDate.slice(5).replace('-','/')} ${b.slotTime} · ${b.duration}min · ${urgencySpan(b.urgency)}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="tag ${typeTag(b.type)}">${typeLabel(b.type)}</span>
+          <span class="status-badge status-${b.status}">${b.status==='pending'?'待确认':b.status==='confirmed'?'已确认':'已取消'}</span>
+        </div>
+      </div>
+      ${b.needs?`<div class="booking-row-needs">💬 ${b.needs}</div>`:''}
+    </div>`).join('');
+}
+
+renderPublicList();
+updateTypeOptions();
+</script>
+</body>
+</html>
