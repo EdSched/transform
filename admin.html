@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>面谈预约管理端 — 唯新教育</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F7F5F0;
+  --surface:#FFFFFF;
+  --border:#E8E4DC;
+  --border-strong:#C8C3B8;
+  --text:#1A1916;
+  --text-muted:#7A7670;
+  --text-light:#A8A49E;
+  --accent:#2B5CE6;
+  --accent-light:#EEF2FD;
+  --success:#1D9E75;
+  --success-light:#E1F5EE;
+  --warning:#BA7517;
+  --warning-light:#FAEEDA;
+  --danger:#A32D2D;
+  --danger-light:#FCEBEB;
+  --tag-daily:#534AB7;
+  --tag-daily-bg:#EEEDFE;
+  --tag-plan:#0F6E56;
+  --tag-plan-bg:#E1F5EE;
+  --tag-mock:#993C1D;
+  --tag-mock-bg:#FAECE7;
+}
+body{font-family:'Noto Sans SC',sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;min-height:100vh}
+.topbar{background:var(--text);color:#fff;padding:0 32px;height:52px;display:flex;align-items:center;justify-content:space-between}
+.topbar-title{font-size:15px;font-weight:500;letter-spacing:0.04em}
+.topbar-sub{font-size:12px;color:#888;font-family:'DM Mono',monospace}
+.layout{display:grid;grid-template-columns:300px 1fr;min-height:calc(100vh - 52px)}
+.sidebar{background:var(--surface);border-right:1px solid var(--border);padding:24px 20px;overflow-y:auto}
+.main{padding:28px 32px;overflow-y:auto}
+
+.section-title{font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-light);margin-bottom:14px}
+.form-group{margin-bottom:14px}
+.form-label{display:block;font-size:12px;color:var(--text-muted);margin-bottom:5px}
+input,select,textarea{width:100%;border:1px solid var(--border);background:var(--bg);border-radius:6px;padding:8px 10px;font-size:13px;font-family:'Noto Sans SC',sans-serif;color:var(--text);outline:none;transition:border-color .15s}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid transparent;transition:all .15s;font-family:'Noto Sans SC',sans-serif}
+.btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn-primary:hover{background:#2451c8}
+.btn-outline{background:transparent;color:var(--text);border-color:var(--border-strong)}
+.btn-outline:hover{background:var(--bg)}
+.btn-danger{background:transparent;color:var(--danger);border-color:var(--danger)}
+.btn-danger:hover{background:var(--danger-light)}
+.btn-success{background:var(--success);color:#fff;border-color:var(--success)}
+.btn-success:hover{background:#0d7a5c}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-full{width:100%;justify-content:center}
+.divider{border:none;border-top:1px solid var(--border);margin:20px 0}
+
+.slot-list{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.slot-item{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:12px}
+.slot-item-left{display:flex;align-items:center;gap:8px}
+.slot-date{font-weight:500}
+.slot-time{color:var(--text-muted);font-family:'DM Mono',monospace}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500}
+.tag-daily{background:var(--tag-daily-bg);color:var(--tag-daily)}
+.tag-plan{background:var(--tag-plan-bg);color:var(--tag-plan)}
+.tag-mock{background:var(--tag-mock-bg);color:var(--tag-mock)}
+
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.page-title{font-size:20px;font-weight:700}
+.page-meta{font-size:13px;color:var(--text-muted)}
+
+.tabs{display:flex;gap:2px;background:var(--border);padding:3px;border-radius:8px;margin-bottom:24px;width:fit-content}
+.tab{padding:7px 18px;border-radius:6px;font-size:13px;cursor:pointer;color:var(--text-muted);transition:all .15s}
+.tab.active{background:var(--surface);color:var(--text);font-weight:500;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+
+.booking-grid{display:flex;flex-direction:column;gap:12px}
+.booking-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;transition:border-color .15s}
+.booking-card:hover{border-color:var(--border-strong)}
+.booking-card.status-pending{border-left:3px solid var(--warning)}
+.booking-card.status-confirmed{border-left:3px solid var(--success)}
+.booking-card.status-cancelled{border-left:3px solid #ccc;opacity:.6}
+.booking-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px}
+.booking-name{font-size:15px;font-weight:700}
+.booking-meta{font-size:12px;color:var(--text-muted);margin-top:2px}
+.booking-status{display:flex;align-items:center;gap:8px}
+.status-badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.04em}
+.status-pending{background:var(--warning-light);color:var(--warning)}
+.status-confirmed{background:var(--success-light);color:var(--success)}
+.status-cancelled{background:var(--border);color:var(--text-muted)}
+.booking-body{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px}
+.booking-field{font-size:12px}
+.booking-field-label{color:var(--text-light);margin-bottom:2px}
+.booking-field-value{font-weight:500}
+.booking-needs{background:var(--bg);border-radius:6px;padding:8px 10px;font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5}
+.booking-actions{display:flex;gap:8px;flex-wrap:wrap}
+.progress-pills{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.progress-pill{padding:2px 8px;background:var(--bg);border:1px solid var(--border);border-radius:12px;font-size:11px;color:var(--text-muted)}
+.urgency-high{color:var(--danger);font-weight:700}
+.urgency-mid{color:var(--warning);font-weight:700}
+.urgency-low{color:var(--success);font-weight:700}
+
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--surface);border-radius:12px;padding:24px;width:480px;max-height:80vh;overflow-y:auto}
+.modal-title{font-size:16px;font-weight:700;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+
+.export-bar{display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:20px}
+.export-info{font-size:13px;color:var(--text-muted)}
+.export-info strong{color:var(--text)}
+.empty-state{text-align:center;padding:60px 20px;color:var(--text-muted)}
+.empty-icon{font-size:32px;margin-bottom:12px}
+.month-nav{display:flex;align-items:center;gap:12px}
+.month-nav button{background:none;border:1px solid var(--border);border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;color:var(--text)}
+.month-nav button:hover{background:var(--bg)}
+.month-display{font-size:14px;font-weight:500;min-width:80px;text-align:center}
+.filter-row{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.filter-chip{padding:5px 12px;border-radius:20px;font-size:12px;border:1px solid var(--border);cursor:pointer;transition:all .15s;background:var(--surface)}
+.filter-chip.active{background:var(--text);color:#fff;border-color:var(--text)}
+.count-badge{display:inline-block;background:var(--accent);color:#fff;border-radius:10px;font-size:10px;padding:1px 6px;margin-left:4px;font-weight:700}
+.note-field{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.note-label{font-size:11px;color:var(--text-light);margin-bottom:4px}
+.note-content{font-size:12px;color:var(--text-muted);font-style:italic}
+.actual-time{font-size:12px;color:var(--success);font-weight:500}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-title">唯新教育 · 面谈预约系统</div>
+  <div class="topbar-sub">管理端</div>
+</div>
+
+<div class="layout">
+  <!-- Sidebar: Slot Setup -->
+  <div class="sidebar">
+    <div class="section-title">设定可预约时间槽</div>
+    <div class="form-group">
+      <label class="form-label">日期</label>
+      <input type="date" id="slotDate">
+    </div>
+    <div class="form-group">
+      <label class="form-label">开始时间</label>
+      <input type="time" id="slotStart" value="10:00">
+    </div>
+    <div class="form-group">
+      <label class="form-label">面谈类型</label>
+      <select id="slotType">
+        <option value="daily">日常学习面谈（TA老师）</option>
+        <option value="plan">计划书相关（专业课老师）</option>
+        <option value="mock">模拟面试（按情况安排）</option>
+      </select>
+    </div>
+    <button class="btn btn-primary btn-full" onclick="addSlot()">＋ 添加时间槽</button>
+    <hr class="divider">
+    <div class="section-title">本月时间槽 <span id="slotCount" class="count-badge">0</span></div>
+    <div class="slot-list" id="slotList">
+      <div style="font-size:12px;color:var(--text-light);text-align:center;padding:16px 0">暂无时间槽</div>
+    </div>
+  </div>
+
+  <!-- Main: Booking Management -->
+  <div class="main">
+    <div class="page-header">
+      <div>
+        <div class="page-title">预约管理</div>
+        <div class="page-meta" id="pageMetaText">查看和管理所有学生预约</div>
+      </div>
+      <div class="month-nav">
+        <button onclick="changeMonth(-1)">‹</button>
+        <div class="month-display" id="monthDisplay"></div>
+        <button onclick="changeMonth(1)">›</button>
+      </div>
+    </div>
+
+    <div class="export-bar">
+      <div class="export-info">
+        当月数据 · <strong id="exportCount">0</strong> 条预约记录
+      </div>
+      <button class="btn btn-outline" onclick="exportExcel()">⬇ 导出本月 Excel</button>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" onclick="setTab('all',this)">全部</div>
+      <div class="tab" onclick="setTab('pending',this)">待确认</div>
+      <div class="tab" onclick="setTab('confirmed',this)">已确认</div>
+      <div class="tab" onclick="setTab('cancelled',this)">已取消</div>
+    </div>
+
+    <div class="filter-row" id="filterRow">
+      <div class="filter-chip active" onclick="setTypeFilter('all',this)">所有类型</div>
+      <div class="filter-chip" onclick="setTypeFilter('daily',this)">日常学习</div>
+      <div class="filter-chip" onclick="setTypeFilter('plan',this)">计划书</div>
+      <div class="filter-chip" onclick="setTypeFilter('mock',this)">模拟面试</div>
+    </div>
+
+    <div class="booking-grid" id="bookingGrid">
+      <div class="empty-state">
+        <div class="empty-icon">📋</div>
+        <div>暂无预约记录</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Edit Booking -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <div class="modal-title">修改预约</div>
+    <input type="hidden" id="editId">
+    <div class="form-group">
+      <label class="form-label">状态</label>
+      <select id="editStatus">
+        <option value="pending">待确认</option>
+        <option value="confirmed">已确认</option>
+        <option value="cancelled">已取消</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">实际面谈时间（确认后填写）</label>
+      <input type="datetime-local" id="editActualTime">
+    </div>
+    <div class="form-group">
+      <label class="form-label">老师备注</label>
+      <textarea id="editNote" rows="3" placeholder="填写面谈记录、备注或跟进事项…"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveEdit()">保存修改</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const SLOTS_KEY='txe_slots';
+const BOOKINGS_KEY='txe_bookings';
+let currentTab='all';
+let currentTypeFilter='all';
+let currentMonth=new Date().getMonth();
+let currentYear=new Date().getFullYear();
+
+function getSlots(){return JSON.parse(localStorage.getItem(SLOTS_KEY)||'[]')}
+function saveSlots(d){localStorage.setItem(SLOTS_KEY,JSON.stringify(d))}
+function getBookings(){return JSON.parse(localStorage.getItem(BOOKINGS_KEY)||'[]')}
+function saveBookings(d){localStorage.setItem(BOOKINGS_KEY,JSON.stringify(d))}
+
+function typeLabel(t){return t==='daily'?'日常学习面谈':t==='plan'?'计划书相关':'模拟面试'}
+function typeTag(t){return t==='daily'?'tag-daily':t==='plan'?'tag-plan':'tag-mock'}
+
+function addSlot(){
+  const date=document.getElementById('slotDate').value;
+  const start=document.getElementById('slotStart').value;
+  const type=document.getElementById('slotType').value;
+  if(!date||!start){alert('请填写日期和时间');return}
+  const slots=getSlots();
+  slots.push({id:Date.now().toString(),date,start,type});
+  slots.sort((a,b)=>(a.date+a.start).localeCompare(b.date+b.start));
+  saveSlots(slots);
+  renderSlots();
+}
+
+function deleteSlot(id){
+  if(!confirm('确定删除这个时间槽？')) return;
+  saveSlots(getSlots().filter(s=>s.id!==id));
+  renderSlots();
+}
+
+function renderSlots(){
+  const slots=getSlots();
+  const list=document.getElementById('slotList');
+  document.getElementById('slotCount').textContent=slots.length;
+  if(!slots.length){list.innerHTML='<div style="font-size:12px;color:var(--text-light);text-align:center;padding:16px 0">暂无时间槽</div>';return}
+  const now=new Date();
+  const y=now.getFullYear(),m=String(now.getMonth()+1).padStart(2,'0');
+  const monthSlots=slots.filter(s=>s.date.startsWith(`${y}-${m}`));
+  if(!monthSlots.length){list.innerHTML='<div style="font-size:12px;color:var(--text-light);text-align:center;padding:16px 0">本月暂无时间槽</div>';return}
+  list.innerHTML=monthSlots.map(s=>`
+    <div class="slot-item">
+      <div class="slot-item-left">
+        <span class="tag ${typeTag(s.type)}">${typeLabel(s.type).slice(0,2)}</span>
+        <span class="slot-date">${s.date.slice(5)}</span>
+        <span class="slot-time">${s.start}</span>
+      </div>
+      <button class="btn btn-sm" style="color:var(--danger);border:none;background:none;cursor:pointer;padding:4px" onclick="deleteSlot('${s.id}')">✕</button>
+    </div>`).join('');
+}
+
+function updateMonthDisplay(){
+  document.getElementById('monthDisplay').textContent=`${currentYear}年${currentMonth+1}月`;
+}
+
+function changeMonth(d){
+  currentMonth+=d;
+  if(currentMonth>11){currentMonth=0;currentYear++}
+  if(currentMonth<0){currentMonth=11;currentYear--}
+  updateMonthDisplay();
+  renderBookings();
+}
+
+function setTab(tab,el){
+  currentTab=tab;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  renderBookings();
+}
+
+function setTypeFilter(type,el){
+  currentTypeFilter=type;
+  document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  renderBookings();
+}
+
+function urgencyLabel(u){
+  if(u==='high') return '<span class="urgency-high">紧急</span>';
+  if(u==='mid') return '<span class="urgency-mid">适中</span>';
+  return '<span class="urgency-low">一般</span>';
+}
+
+function renderBookings(){
+  updateMonthDisplay();
+  const all=getBookings();
+  const ym=`${currentYear}-${String(currentMonth+1).padStart(2,'0')}`;
+  let filtered=all.filter(b=>b.slotDate&&b.slotDate.startsWith(ym));
+  if(currentTab!=='all') filtered=filtered.filter(b=>b.status===currentTab);
+  if(currentTypeFilter!=='all') filtered=filtered.filter(b=>b.type===currentTypeFilter);
+  filtered.sort((a,b)=>(a.slotDate+a.slotTime).localeCompare(b.slotDate+b.slotTime));
+  document.getElementById('exportCount').textContent=all.filter(b=>b.slotDate&&b.slotDate.startsWith(ym)).length;
+  const grid=document.getElementById('bookingGrid');
+  if(!filtered.length){
+    grid.innerHTML='<div class="empty-state"><div class="empty-icon">📋</div><div>暂无预约记录</div></div>';
+    return;
+  }
+  grid.innerHTML=filtered.map(b=>`
+    <div class="booking-card status-${b.status}">
+      <div class="booking-header">
+        <div>
+          <div class="booking-name">${b.name}</div>
+          <div class="booking-meta">${b.slotDate} ${b.slotTime} · ${b.duration}分钟 · ${urgencyLabel(b.urgency)}</div>
+        </div>
+        <div class="booking-status">
+          <span class="tag ${typeTag(b.type)}">${typeLabel(b.type)}</span>
+          <span class="status-badge status-${b.status}">${b.status==='pending'?'待确认':b.status==='confirmed'?'已确认':'已取消'}</span>
+        </div>
+      </div>
+      <div class="booking-body">
+        <div class="booking-field"><div class="booking-field-label">出愿期间</div><div class="booking-field-value">${b.examPeriod}</div></div>
+        <div class="booking-field"><div class="booking-field-label">研究计划书</div><div class="booking-field-value">${b.planStatus}</div></div>
+        <div class="booking-field"><div class="booking-field-label">面试准备</div><div class="booking-field-value">${b.interviewStatus}</div></div>
+      </div>
+      <div class="progress-pills">${renderProgressPills(b)}</div>
+      ${b.needs?`<div class="booking-needs" style="margin-top:10px">💬 ${b.needs}</div>`:''}
+      ${b.actualTime?`<div class="note-field"><div class="note-label">实际面谈时间</div><div class="actual-time">✓ ${b.actualTime}</div></div>`:''}
+      ${b.note?`<div class="note-field"><div class="note-label">老师备注</div><div class="note-content">${b.note}</div></div>`:''}
+      <div class="booking-actions" style="margin-top:12px">
+        ${b.status==='pending'?`<button class="btn btn-success btn-sm" onclick="confirmBooking('${b.id}')">✓ 确认预约</button>`:''}
+        <button class="btn btn-outline btn-sm" onclick="openEdit('${b.id}')">编辑</button>
+        ${b.status!=='cancelled'?`<button class="btn btn-danger btn-sm" onclick="cancelBooking('${b.id}')">取消预约</button>`:''}
+      </div>
+    </div>`).join('');
+}
+
+function renderProgressPills(b){
+  const fields=[
+    {k:'targetSchool',l:'目标学校'},{k:'contactProf',l:'联系教授'},
+    {k:'planStatus',l:'计划书'},{k:'applicationStatus',l:'出愿进度'},
+    {k:'writtenExam',l:'笔试'},{k:'interviewStatus',l:'面试准备'},
+    {k:'specialtyStatus',l:'专业知识'}
+  ];
+  return fields.filter(f=>b[f.k]).map(f=>`<span class="progress-pill">${f.l}·${b[f.k]}</span>`).join('');
+}
+
+function confirmBooking(id){
+  const bookings=getBookings();
+  const b=bookings.find(x=>x.id===id);
+  if(b){b.status='confirmed';saveBookings(bookings);renderBookings()}
+}
+
+function cancelBooking(id){
+  if(!confirm('确定取消这个预约？')) return;
+  const bookings=getBookings();
+  const b=bookings.find(x=>x.id===id);
+  if(b){b.status='cancelled';saveBookings(bookings);renderBookings()}
+}
+
+function openEdit(id){
+  const b=getBookings().find(x=>x.id===id);
+  if(!b) return;
+  document.getElementById('editId').value=id;
+  document.getElementById('editStatus').value=b.status;
+  document.getElementById('editActualTime').value=b.actualTime||'';
+  document.getElementById('editNote').value=b.note||'';
+  document.getElementById('editModal').classList.add('open');
+}
+
+function closeModal(){document.getElementById('editModal').classList.remove('open')}
+
+function saveEdit(){
+  const id=document.getElementById('editId').value;
+  const bookings=getBookings();
+  const b=bookings.find(x=>x.id===id);
+  if(b){
+    b.status=document.getElementById('editStatus').value;
+    b.actualTime=document.getElementById('editActualTime').value;
+    b.note=document.getElementById('editNote').value;
+    saveBookings(bookings);
+    closeModal();
+    renderBookings();
+  }
+}
+
+function exportExcel(){
+  const ym=`${currentYear}-${String(currentMonth+1).padStart(2,'0')}`;
+  const data=getBookings().filter(b=>b.slotDate&&b.slotDate.startsWith(ym));
+  if(!data.length){alert('当月暂无预约数据');return}
+  const rows=data.map(b=>({
+    '姓名':b.name,
+    '预约日期':b.slotDate,
+    '预约时间':b.slotTime,
+    '时长(分钟)':b.duration,
+    '面谈类型':typeLabel(b.type),
+    '紧急程度':b.urgency==='high'?'紧急':b.urgency==='mid'?'适中':'一般',
+    '出愿期间':b.examPeriod,
+    '专业知识':b.specialtyStatus,
+    '目标学校':b.targetSchool,
+    '联系教授':b.contactProf,
+    '研究计划书':b.planStatus,
+    '出愿进度':b.applicationStatus,
+    '笔试准备':b.writtenExam,
+    '面试准备':b.interviewStatus,
+    '具体需求':b.needs,
+    '状态':b.status==='pending'?'待确认':b.status==='confirmed'?'已确认':'已取消',
+    '实际面谈时间':b.actualTime||'',
+    '老师备注':b.note||''
+  }));
+  const ws=XLSX.utils.json_to_sheet(rows);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'预约记录');
+  XLSX.writeFile(wb,`面谈预约_${currentYear}年${currentMonth+1}月.xlsx`);
+}
+
+document.getElementById('editModal').addEventListener('click',function(e){if(e.target===this)closeModal()});
+
+// Init
+const today=new Date();
+document.getElementById('slotDate').valueAsDate=today;
+currentMonth=today.getMonth();
+currentYear=today.getFullYear();
+updateMonthDisplay();
+renderSlots();
+renderBookings();
+</script>
+</body>
+</html>
