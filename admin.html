@@ -220,7 +220,13 @@ input:focus, select:focus, textarea:focus { border-color:var(--accent); }
     <button class="btn btn-primary btn-full" onclick="addSlot()">＋ 添加时间槽</button>
 
     <hr class="divider">
-    <div class="section-label">本月时间槽 <span id="slotCount" class="count-badge">0</span></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div class="section-label" style="margin:0">本月时间槽 <span id="slotCount" class="count-badge">0</span></div>
+      <div style="display:flex;gap:6px">
+        <button class="btn-ghost" style="font-size:10px;color:var(--danger)" onclick="clearMonthSlots()">清空本月</button>
+        <button class="btn-ghost" style="font-size:10px;color:var(--text-muted)" onclick="clearAllSlots()">清空全部</button>
+      </div>
+    </div>
     <div class="slot-list" id="slotList">
       <div style="font-size:11px;color:var(--text-muted);text-align:center;padding:14px 0">暂无时间槽</div>
     </div>
@@ -509,6 +515,17 @@ function addSlot(){
   slots.sort((a,b)=>a.date.localeCompare(b.date)||a.timeRange.localeCompare(b.timeRange));
   saveSlots(slots); renderSlots();
   if(added>1) alert(`已添加 ${added} 个时间槽`);
+}
+
+function clearMonthSlots(){
+  const ym=`${currentYear}-${String(currentMonth+1).padStart(2,'0')}`;
+  const remaining=getSlots().filter(s=>!s.date.startsWith(ym));
+  if(!confirm(`确定清空 ${currentYear}年${currentMonth+1}月 的所有时间槽？`)) return;
+  saveSlots(remaining); renderSlots();
+}
+function clearAllSlots(){
+  if(!confirm('确定清空全部时间槽？此操作不可恢复。')) return;
+  saveSlots([]); renderSlots();
 }
 
 function deleteSlot(id){
