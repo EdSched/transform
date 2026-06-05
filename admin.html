@@ -972,21 +972,23 @@ document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click
 // 列名映射：支持你的Excel格式（25年/26年两套）
 const COL_MAP = {
   '学生姓名':'name', '氏名':'name',
-  '学生属性':'student_type', '状态':'notes',
+  '学生属性':'student_type',
   '来源':'source', '课程属性':'course_type',
   '困难点':'difficulty', '等级':'level',
   '日语成绩':'japanese_score', '日本語成绩':'japanese_score',
   '英语成绩':'english_score', '英語成绩':'english_score',
+  '研究计划书':'research_plan', '研究計画書':'research_plan',
+  '志望校':'target_school', '志望大学':'target_school',
   '出身大学':'university', '出身院校':'university',
   '学部':'faculty', '专业':'faculty',
-  '卒論题目':'notes', '毕业论文':'notes',
+  '卒論题目':'thesis_topic', '毕业论文':'thesis_topic',
   'GPA/其他履历':'gpa', 'GPA':'gpa',
   '毕业时间':'graduation_date',
   '期待入学时间':'target_enrollment', '進度/希望入学时间':'target_enrollment',
   '到期时间':'expiry_date', '截至日期':'expiry_date',
   '赴日时间':'japan_arrival',
-  '志望大学':'notes2', '研究计划书':'notes2',
-  'テーマ':'notes2',
+  'テーマ':'research_plan',
+  '状态':'notes',
 };
 // 专业 sheet 名 → key
 const SHEET_MAJOR_MAP = {
@@ -1034,11 +1036,7 @@ function handleImportFile(input) {
           for (const [col, val] of Object.entries(row)) {
             const field = COL_MAP[col.trim()];
             if (!field || !val) continue;
-            if (field === 'notes2') {
-              s.notes = [s.notes, String(val)].filter(Boolean).join(' / ');
-            } else {
-              s[field] = String(val).trim();
-            }
+            s[field] = String(val).trim();
             if (field === 'name') hasName = true;
           }
           if (!hasName || !s.name || s.name === '氏名') continue;
@@ -1109,7 +1107,7 @@ async function confirmImport() {
   if (!newRows.length) { closeModal('importModal'); return; }
   const btn = document.getElementById('importConfirmBtn');
   btn.textContent = '导入中…'; btn.disabled = true;
-  const STUDENT_FIELDS = ['id','name','major','student_type','source','course_type','level','difficulty','japanese_score','english_score','university','faculty','gpa','graduation_date','target_enrollment','expiry_date','japan_arrival','status','notes'];
+  const STUDENT_FIELDS = ['id','name','major','student_type','source','course_type','level','difficulty','japanese_score','english_score','university','faculty','gpa','thesis_topic','research_plan','target_school','graduation_date','target_enrollment','expiry_date','japan_arrival','status','notes'];
   const records = newRows.map((r,i) => {
     const rec = {};
     STUDENT_FIELDS.forEach(f => rec[f] = r[f] || (f==='status'?'active':f==='id'?`${Date.now()}-${i}-${Math.random().toString(36).slice(2,5)}`:''));
