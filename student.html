@@ -357,8 +357,13 @@ function renderPublicList(){
   const list=document.getElementById('publicBookingList');
   if(!list)return;
   if(!bookings.length){list.innerHTML='<div class="no-slots">暂无预约记录</div>';return}
-  list.innerHTML=bookings.map(b=>`
-    <div class="booking-row">
+  list.innerHTML=bookings.map(b=>{
+    const confirmedTime=b.status==='confirmed'&&b.actual_time
+      ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border-light);font-size:11px;color:var(--success)">✓ 确认面谈时间：${b.actual_time.replace('T',' ')}</div>`
+      : b.status==='confirmed'
+      ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border-light);font-size:11px;color:var(--text-muted)">⏳ 老师将尽快确认具体时间</div>`
+      : '';
+    return `<div class="booking-row">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
         <div>
           <span class="booking-row-name">${b.name}</span>
@@ -370,7 +375,9 @@ function renderPublicList(){
         </div>
       </div>
       ${b.needs?`<div class="booking-row-needs">💬 ${b.needs}</div>`:''}
-    </div>`).join('');
+      ${confirmedTime}
+    </div>`;
+  }).join('');
 }
 
 initMajor();
