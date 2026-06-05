@@ -368,6 +368,13 @@ document.getElementById('loginPw').addEventListener('keydown',e=>{if(e.key==='En
 
 // ── Constants ──
 const MAJORS={keiei:'経営学',keizai:'経済学',shakai:'社会学',shinpan:'新闻传播学',fukushi:'社会福祉学'};
+const SHAKAI_GROUP=['shakai','shinpan','fukushi'];
+function majorLabel(m){return m==='shakai_group'?'社会人文':MAJORS[m]||m||''}
+function matchesMajorFilter(major,filter){
+  if(filter==='all') return true;
+  if(filter==='shakai_group') return SHAKAI_GROUP.includes(major);
+  return major===filter;
+}
 const DAYS=['周日','周一','周二','周三','周四','周五','周六'];
 function typeLabel(t){return t==='daily'?'日常学习面谈':t==='plan'?'计划书相关':'模拟面试'}
 function typeTag(t){return t==='daily'?'tag-daily':t==='plan'?'tag-plan':'tag-mock'}
@@ -419,7 +426,7 @@ function renderBookingPage(mc){
   let filtered=cachedBookings.filter(b=>b.slot_date&&b.slot_date.startsWith(ym));
   if(bkTab!=='all') filtered=filtered.filter(b=>b.status===bkTab);
   if(bkType!=='all') filtered=filtered.filter(b=>b.type===bkType);
-  if(bkMajor!=='all') filtered=filtered.filter(b=>b.major===bkMajor);
+  if(bkMajor!=='all') filtered=filtered.filter(b=>matchesMajorFilter(b.major,bkMajor));
   const total=cachedBookings.filter(b=>b.slot_date&&b.slot_date.startsWith(ym)).length;
 
   mc.innerHTML=`
@@ -439,7 +446,7 @@ function renderBookingPage(mc){
     </div>
   </div>
   <div class="filter-row" id="majorFilterRow">
-    ${['all','keiei','keizai','shakai','shinpan','fukushi'].map((m,i)=>`<div class="filter-chip${bkMajor===m?' active':''}" onclick="setBkMajor('${m}',this)">${i===0?'全部专业':MAJORS[m]}</div>`).join('')}
+    ${['all','keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map((m,i)=>`<div class="filter-chip${bkMajor===m?' active':''}" onclick="setBkMajor('${m}',this)">${i===0?'全部专业':majorLabel(m)}</div>`).join('')}
   </div>
   <div class="btn-group" style="margin-bottom:10px">
     ${['all','pending','confirmed','cancelled'].map((t,i)=>`<button class="${bkTab===t?'active':''}" onclick="setBkTab('${t}',this)">${['全部','待确认','已确认','已取消'][i]}</button>`).join('')}
@@ -743,7 +750,7 @@ async function clearAllSlots(){
 let stMajorFilter='all',stSearch='',stStatus='active';
 function renderStudentsPage(mc){
   let list=cachedStudents;
-  if(stMajorFilter!=='all') list=list.filter(s=>s.major===stMajorFilter);
+  if(stMajorFilter!=='all') list=list.filter(s=>matchesMajorFilter(s.major,stMajorFilter));
   if(stStatus!=='all') list=list.filter(s=>s.status===stStatus);
   if(stSearch) list=list.filter(s=>s.name.includes(stSearch)||s.university?.includes(stSearch)||s.notes?.includes(stSearch));
   mc.innerHTML=`
@@ -757,7 +764,7 @@ function renderStudentsPage(mc){
     </div>
   </div>
   <div class="filter-row">
-    ${['all','keiei','keizai','shakai','shinpan','fukushi'].map((m,i)=>`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this)">${i===0?'全部专业':MAJORS[m]}</div>`).join('')}
+    ${['all','keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map((m,i)=>`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this)">${i===0?'全部专业':majorLabel(m)}</div>`).join('')}
   </div>
   <div class="filter-row">
     ${[['active','在籍'],['graduated','已合格'],['expired','已到期'],['stopped','停课'],['all','全部']].map(([v,l])=>`<div class="filter-chip${stStatus===v?' active':''}" onclick="setStStatus('${v}',this)">${l}</div>`).join('')}
@@ -824,11 +831,37 @@ function exportStudents(){
 // ATTENDANCE PAGE
 // ══════════════════════════════════
 let attMajor='keiei';
+function renderAttSingleTable(major, attMap){
+  const students=cachedStudents.filter(s=>s.major===major&&s.status==='active').sort((a,b)=>a.name.localeCompare(b.name,'zh'));
+  const lessons=[...new Set(cachedAttendance.filter(a=>a.major===major).map(a=>JSON.stringify({date:a.lesson_date,name:a.lesson_name})))].map(x=>JSON.parse(x)).sort((a,b)=>a.date.localeCompare(b.date));
+  if(!students.length&&!lessons.length) return `<div class="empty" style="padding:20px">暂无数据</div>`;
+  return `<table class="att-table">
+    <thead><tr>
+      <th class="name-col">姓名</th>
+      ${lessons.map(l=>`<th style="min-width:80px"><div>${l.date.slice(5)}</div><div style="font-size:9px;font-weight:400;color:var(--text-3)">${l.name}</div><button style="font-size:9px;color:var(--danger);background:none;border:none;cursor:pointer;margin-top:2px" onclick="deleteLesson('${l.date}','${l.name}','${major}')">删除</button></th>`).join('')}
+    </tr></thead>
+    <tbody>
+      ${students.map(s=>`<tr>
+        <td class="name-col">${s.name}</td>
+        ${lessons.map(l=>{
+          const rec=attMap[`${s.name}|${l.date}|${l.name}`];
+          const attended=rec?.attended||false;
+          return `<td class="${attended?'att-present':'att-absent'}">
+            <input type="checkbox" class="att-check" ${attended?'checked':''} onchange="toggleAttendance('${s.id}','${s.name}','${l.date}','${l.name}',this.checked,'${major}')">
+          </td>`;
+        }).join('')}
+      </tr>`).join('')||`<tr><td colspan="${lessons.length+1}" style="text-align:center;padding:20px;color:var(--text-3)">暂无在籍学生</td></tr>`}
+    </tbody>
+  </table>`;
+}
+
 function renderAttendancePage(mc){
-  const students=cachedStudents.filter(s=>s.major===attMajor&&s.status==='active').sort((a,b)=>a.name.localeCompare(b.name,'zh'));
-  const lessons=[...new Set(cachedAttendance.filter(a=>a.major===attMajor).map(a=>JSON.stringify({date:a.lesson_date,name:a.lesson_name})))].map(x=>JSON.parse(x)).sort((a,b)=>a.date.localeCompare(b.date));
   const attMap={};
   cachedAttendance.forEach(a=>{attMap[`${a.student_name}|${a.lesson_date}|${a.lesson_name}`]=a});
+  const isGroup=attMajor==='shakai_group';
+  const groupMajors=isGroup?SHAKAI_GROUP:[attMajor];
+  const totalStudents=cachedStudents.filter(s=>groupMajors.includes(s.major)&&s.status==='active').length;
+  const totalLessons=new Set(cachedAttendance.filter(a=>groupMajors.includes(a.major)).map(a=>`${a.lesson_date}|${a.lesson_name}|${a.major}`)).size;
 
   mc.innerHTML=`
   <div class="page-header">
@@ -836,33 +869,20 @@ function renderAttendancePage(mc){
     <button class="btn btn-primary btn-sm" onclick="openLessonModal()">＋ 新增课程</button>
   </div>
   <div class="filter-row">
-    ${Object.entries(MAJORS).map(([k,v])=>`<div class="filter-chip${attMajor===k?' active':''}" onclick="setAttMajor('${k}',this)">${v}</div>`).join('')}
+    ${['keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map(k=>`<div class="filter-chip${attMajor===k?' active':''}" onclick="setAttMajor('${k}',this)">${majorLabel(k)}</div>`).join('')}
   </div>
   <div class="export-bar" style="margin-bottom:16px">
-    <div style="font-size:12px;color:var(--text-3)">${MAJORS[attMajor]} · ${students.length} 名学生 · ${lessons.length} 次课程</div>
+    <div style="font-size:12px;color:var(--text-3)">${majorLabel(attMajor)} · ${totalStudents} 名学生 · ${totalLessons} 次课程</div>
     <button class="btn btn-outline btn-sm" onclick="exportAttendance()">↓ 导出 Excel</button>
   </div>
-  <div class="att-grid">
-    <table class="att-table">
-      <thead><tr>
-        <th class="name-col">姓名</th>
-        ${lessons.map(l=>`<th style="min-width:80px"><div>${l.date.slice(5)}</div><div style="font-size:9px;font-weight:400;color:var(--text-3)">${l.name}</div><button style="font-size:9px;color:var(--danger);background:none;border:none;cursor:pointer;margin-top:2px" onclick="deleteLesson('${l.date}','${l.name}')">删除</button></th>`).join('')}
-      </tr></thead>
-      <tbody>
-        ${students.map(s=>`<tr>
-          <td class="name-col">${s.name}</td>
-          ${lessons.map(l=>{
-            const key=`${s.name}|${l.date}|${l.name}`;
-            const rec=attMap[key];
-            const attended=rec?.attended||false;
-            return `<td class="${attended?'att-present':'att-absent'}">
-              <input type="checkbox" class="att-check" ${attended?'checked':''} onchange="toggleAttendance('${s.id}','${s.name}','${l.date}','${l.name}',this.checked,'${attMajor}')">
-            </td>`;
-          }).join('')}
-        </tr>`).join('')||`<tr><td colspan="${lessons.length+1}" class="empty">暂无在籍学生</td></tr>`}
-      </tbody>
-    </table>
-  </div>`;
+  ${isGroup
+    ? SHAKAI_GROUP.map(m=>`
+        <div style="margin-bottom:24px">
+          <div style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);margin-bottom:8px;padding:6px 10px;background:var(--bg);border-radius:3px;border:1px solid var(--border)">${MAJORS[m]}</div>
+          <div class="att-grid">${renderAttSingleTable(m,attMap)}</div>
+        </div>`).join('')
+    : `<div class="att-grid">${renderAttSingleTable(attMajor,attMap)}</div>`
+  }`;
 }
 function setAttMajor(m,el){attMajor=m;document.querySelectorAll('.filter-row .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderAttendancePage(document.getElementById('mainContent'))}
 function openLessonModal(){
@@ -905,31 +925,41 @@ async function toggleAttendance(studentId,studentName,lessonDate,lessonName,chec
     if(cell){cell.className=checked?'att-present':'att-absent'}
   }catch(e){alert('保存失败：'+e.message);event.target.checked=!checked}
 }
-async function deleteLesson(date,name){
+async function deleteLesson(date,name,major){
+  // major is passed from renderAttSingleTable; fallback to attMajor for non-group view
+  const targetMajor=major||attMajor;
   if(!confirm(`确定删除课程「${name}」的所有出席记录？`))return;
   try{
-    await sb(`/rest/v1/attendance?lesson_date=eq.${date}&lesson_name=eq.${name}&major=eq.${attMajor}`,'DELETE');
-    cachedAttendance=cachedAttendance.filter(a=>!(a.lesson_date===date&&a.lesson_name===name&&a.major===attMajor));
+    await sb(`/rest/v1/attendance?lesson_date=eq.${date}&lesson_name=eq.${name}&major=eq.${targetMajor}`,'DELETE');
+    cachedAttendance=cachedAttendance.filter(a=>!(a.lesson_date===date&&a.lesson_name===name&&a.major===targetMajor));
     renderAttendancePage(document.getElementById('mainContent'));
   }catch(e){alert('删除失败：'+e.message)}
 }
 function exportAttendance(){
-  const students=cachedStudents.filter(s=>s.major===attMajor&&s.status==='active').sort((a,b)=>a.name.localeCompare(b.name,'zh'));
-  const lessons=[...new Set(cachedAttendance.filter(a=>a.major===attMajor).map(a=>JSON.stringify({date:a.lesson_date,name:a.lesson_name})))].map(x=>JSON.parse(x)).sort((a,b)=>a.date.localeCompare(b.date));
-  if(!students.length||!lessons.length){alert('暂无数据');return}
-  const rows=students.map(s=>{
-    const row={'姓名':s.name};
-    lessons.forEach(l=>{
-      const rec=cachedAttendance.find(a=>a.student_name===s.name&&a.lesson_date===l.date&&a.lesson_name===l.name);
-      row[`${l.date} ${l.name}`]=rec?.attended?'✓':'';
+  const isGroup=attMajor==='shakai_group';
+  const groupMajors=isGroup?SHAKAI_GROUP:[attMajor];
+  const wb=XLSX.utils.book_new();
+  let hasData=false;
+  for(const m of groupMajors){
+    const students=cachedStudents.filter(s=>s.major===m&&s.status==='active').sort((a,b)=>a.name.localeCompare(b.name,'zh'));
+    const lessons=[...new Set(cachedAttendance.filter(a=>a.major===m).map(a=>JSON.stringify({date:a.lesson_date,name:a.lesson_name})))].map(x=>JSON.parse(x)).sort((a,b)=>a.date.localeCompare(b.date));
+    if(!students.length&&!lessons.length) continue;
+    hasData=true;
+    const rows=students.map(s=>{
+      const row={'姓名':s.name,'专业':MAJORS[m]||m};
+      lessons.forEach(l=>{
+        const rec=cachedAttendance.find(a=>a.student_name===s.name&&a.lesson_date===l.date&&a.lesson_name===l.name&&a.major===m);
+        row[`${l.date} ${l.name}`]=rec?.attended?'✓':'';
+      });
+      const total=lessons.filter(l=>cachedAttendance.find(a=>a.student_name===s.name&&a.lesson_date===l.date&&a.lesson_name===l.name&&a.major===m&&a.attended)).length;
+      row['出席率']=lessons.length?`${total}/${lessons.length}`:'';
+      return row;
     });
-    const total=lessons.filter(l=>cachedAttendance.find(a=>a.student_name===s.name&&a.lesson_date===l.date&&a.lesson_name===l.name&&a.attended)).length;
-    row['出席率']=`${total}/${lessons.length}`;
-    return row;
-  });
-  const ws=XLSX.utils.json_to_sheet(rows),wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'出席记录');
-  XLSX.writeFile(wb,`出席记录_${MAJORS[attMajor]}.xlsx`);
+    const ws=XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb,ws,MAJORS[m]||m);
+  }
+  if(!hasData){alert('暂无数据');return}
+  XLSX.writeFile(wb,`出席记录_${majorLabel(attMajor)}.xlsx`);
 }
 
 // ── Shared ──
