@@ -229,6 +229,7 @@ input:focus,select:focus,textarea:focus { border-color:var(--accent); }
     <div class="export-bar">
       <div class="export-info">当月数据 · <strong id="exportCount">0</strong> 条预约记录</div>
       <button class="btn btn-outline" onclick="exportExcel()">↓ 导出本月 Excel</button>
+      <button class="btn btn-danger btn-sm" onclick="clearCancelledBookings()">清空已取消</button>
     </div>
     <div class="filter-row" id="majorFilterRow">
       <div class="filter-chip active" onclick="setMajorFilter('all',this)">全部专业</div>
@@ -579,6 +580,18 @@ function copyRecord(){
 }
 function closeModal(id){document.getElementById(id).classList.remove('open')}
 document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open')}));
+
+async function clearCancelledBookings(){
+  const ym=`${currentYear}-${String(currentMonth+1).padStart(2,'0')}`;
+  const count=cachedBookings.filter(b=>b.status==='cancelled'&&b.slot_date&&b.slot_date.startsWith(ym)).length;
+  if(!count){alert('当月没有已取消的预约');return}
+  if(!confirm(`确定删除当月 ${count} 条已取消的预约记录？`))return;
+  try{
+    await sbFetch(`/rest/v1/bookings?status=eq.cancelled&slot_date=like.${ym}*`,'DELETE');
+    cachedBookings=cachedBookings.filter(b=>!(b.status==='cancelled'&&b.slot_date&&b.slot_date.startsWith(ym)));
+    renderBookings();renderSlots();
+  }catch(e){alert('操作失败：'+e.message)}
+}
 
 function exportExcel(){
   const ym=`${currentYear}-${String(currentMonth+1).padStart(2,'0')}`;
