@@ -1512,7 +1512,7 @@ function renderCoursesSummary(courses){
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <span style="font-size:10px;opacity:.7;white-space:nowrap">${total} 課次</span>
-            <button onclick="openEditCourse('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.35);border:1px solid rgba(0,0,0,.15);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:${color.text}">编辑</button>
+            <button onclick="openAddCourseModal('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.35);border:1px solid rgba(0,0,0,.15);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:${color.text}">编辑</button>
             <button onclick="openCopyPeriod('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.35);border:1px solid rgba(0,0,0,.15);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:${color.text}">复制到新期</button>
             <button onclick="deleteCourse('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.2);border:1px solid rgba(180,0,0,.25);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:#8a2020">删除</button>
           </div>
@@ -1596,9 +1596,18 @@ function openAddCourseModal(editId){
     // load existing session details
     const sessions=cachedSessions.filter(s=>s.course_id===editId).sort((a,b)=>a.session_number-b.session_number);
     const hasDetails=sessions.some(s=>s.session_title||s.session_teacher);
-    document.getElementById('ac_has_details').checked=hasDetails;
-    toggleAcDetails(hasDetails);
-    if(hasDetails) acPopulateRows(sessions.map(s=>({num:s.session_number,title:s.session_title||'',teacher:s.session_teacher||''})));
+    const multiTeacher=!hasDetails&&(c.teacher||'').includes('/');
+    const showDetails=hasDetails||multiTeacher;
+    document.getElementById('ac_has_details').checked=showDetails;
+    document.getElementById('ac_details_section').style.display=showDetails?'':'none';
+    if(showDetails){
+      if(hasDetails){
+        acPopulateRows(sessions.map(s=>({num:s.session_number,title:s.session_title||'',teacher:s.session_teacher||c.teacher||''})));
+      } else {
+        // 多讲师但没有明细，生成空行让用户填
+        acPopulateRows(sessions.map(s=>({num:s.session_number,title:'',teacher:c.teacher||''})));
+      }
+    }
   } else {
     ['ac_name','ac_teacher','ac_campus','ac_time_range','ac_notes'].forEach(id=>document.getElementById(id).value='');
     ['ac_period','ac_course_type','ac_delivery','ac_weekday'].forEach(id=>document.getElementById(id).value='');
