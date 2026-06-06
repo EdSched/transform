@@ -1026,107 +1026,179 @@ async function confirmCourseImport(){
   }catch(e){alert('导入失败：'+e.message);btn.textContent='确认导入';btn.disabled=false}
 }
 
-let coursesMajorFilter='all';
-let coursesPeriodFilter='all';
+let coursesMajorFilter='keizai';
+let coursesPeriodFilter='current'; // 'current' | 'all'
+
+// 判断当前是哪个期（按当前月份）
+function currentPeriodKey(){
+  const m=new Date().getMonth()+1;
+  if(m>=4&&m<=7) return '7月期';
+  if(m>=8&&m<=11) return '10月期';
+  return '1月期';
+}
+
+// 课程名去掉末尾数字 → 归组key
+function courseGroupKey(name){
+  return name.replace(/[\s　]*\d+$/, '').trim();
+}
+
+// 课程名颜色（根据关键词）
+function courseColor(name){
+  const n=name||'';
+  if(/宏观/.test(n)) return {bg:'#ddeaf8',text:'#1a3a6a'};
+  if(/微观/.test(n)) return {bg:'#ddf0e0',text:'#1a4a28'};
+  if(/数学/.test(n)) return {bg:'#e8e4f8',text:'#3a2a7a'};
+  if(/习题/.test(n)) return {bg:'#faecd8',text:'#5a3010'};
+  if(/計量|计量|方法論|方法论/.test(n)) return {bg:'#d8f0ea',text:'#0a4038'};
+  if(/共通/.test(n)) return {bg:'#ece8e0',text:'#3a3830'};
+  if(/過去問|过去问|備考|备考/.test(n)) return {bg:'#f8e4dc',text:'#6a2818'};
+  if(/経営|经营/.test(n)) return {bg:'#ddeaf8',text:'#1a3a6a'};
+  if(/社会学|社会人文/.test(n)) return {bg:'#ddf0e0',text:'#1a4a28'};
+  if(/新闻|新伝/.test(n)) return {bg:'#e8e4f8',text:'#3a2a7a'};
+  if(/福祉/.test(n)) return {bg:'#faecd8',text:'#5a3010'};
+  if(/zemi|ゼミ|seminar/i.test(n)) return {bg:'#d8f0ea',text:'#0a4038'};
+  return {bg:'#ece8e0',text:'#3a3830'};
+}
+
+// 课程期判断（根据 start_date 月份）
+function periodFromDate(dateStr){
+  if(!dateStr) return '未分期';
+  const m=parseInt(dateStr.slice(5,7));
+  if(m>=4&&m<=7) return '7月期';
+  if(m>=8&&m<=11) return '10月期';
+  return '1月期';
+}
+
+// 日期格式 → M/D 周X
+function fmtSessionDate(dateStr){
+  if(!dateStr) return '';
+  const d=new Date(dateStr);
+  const dow=['周日','周一','周二','周三','周四','周五','周六'][d.getDay()];
+  const dowColor=d.getDay()===6?'#1a4a8a':d.getDay()===0?'#8a1a2c':'var(--text-2)';
+  return {short:`${d.getMonth()+1}/${d.getDate()}`,dow,dowColor};
+}
 
 function renderCoursesPage(mc){
-  // collect all unique periods from course names
-  const allMajorSets=[...new Set(cachedCourses.flatMap(c=>c.major||[]))];
+  // 专业筛选
+  let majorList=coursesMajorFilter==='all'
+    ?['keiei','keizai','shakai','shinpan','fukushi']
+    :coursesMajorFilter==='shakai_group'
+      ?['shakai','shinpan','fukushi']
+      :[coursesMajorFilter];
 
-  // filter
-  let filtered=cachedCourses;
-  if(coursesMajorFilter!=='all') filtered=filtered.filter(c=>(c.major||[]).includes(coursesMajorFilter));
-  if(coursesPeriodFilter!=='all') filtered=filtered.filter(c=>c.campus===coursesPeriodFilter||c.notes?.includes(coursesPeriodFilter));
+  // 收集这些专业的课程
+  let filtered=cachedCourses.filter(c=>(c.major||[]).some(m=>majorList.includes(m)));
 
-  // group by major then by campus/period
-  const byMajor={};
-  filtered.forEach(c=>{
-    const majors=c.major?.length?c.major:['unknown'];
-    majors.forEach(m=>{
-      if(!byMajor[m]) byMajor[m]=[];
-      if(!byMajor[m].find(x=>x.id===c.id)) byMajor[m].push(c);
-    });
-  });
+  // 期数过滤
+  const curPeriod=currentPeriodKey();
+  if(coursesPeriodFilter==='current') filtered=filtered.filter(c=>periodFromDate(c.start_date)===curPeriod||periodFromDate(c.end_date)===curPeriod);
 
-  const majorOrder=['keiei','keizai','shakai','shinpan','fukushi','unknown'];
+  // 收集所有可用期数
+  const allPeriods=[...new Set(cachedCourses.map(c=>periodFromDate(c.start_date)).filter(Boolean))].sort();
 
   mc.innerHTML=`
   <div class="page-header">
-    <div class="section-title">课程管理 <span class="badge-count">${cachedCourses.length}</span></div>
-    <div style="display:flex;gap:8px">
+    <div class="section-title">课程管理</div>
+    <div style="display:flex;gap:8px;align-items:center">
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('courseImportFileInput').click()">↑ 导入课程安排</button>
       <input type="file" id="courseImportFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleCourseImportFile(this)">
     </div>
   </div>
 
-  <div class="filter-row" style="margin-bottom:6px">
-    ${['all','keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map((m,i)=>`
-      <div class="filter-chip${coursesMajorFilter===m?' active':''}" onclick="setCoursesMajor('${m}',this)">
-        ${i===0?'全部专业':majorLabel(m)}
-      </div>`).join('')}
+  <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:18px;flex-wrap:wrap">
+    <div>
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">专业</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        ${['all','keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map((m,i)=>`
+          <div class="filter-chip${coursesMajorFilter===m?' active':''}" onclick="setCoursesMajor('${m}',this)" style="font-size:11px;padding:3px 10px">
+            ${i===0?'全部':majorLabel(m)}
+          </div>`).join('')}
+      </div>
+    </div>
+    <div>
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">期数</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        <div class="filter-chip${coursesPeriodFilter==='current'?' active':''}" onclick="setCoursesPeriod('current',this)" style="font-size:11px;padding:3px 10px">当前期（${curPeriod}）</div>
+        ${allPeriods.map(p=>`<div class="filter-chip${coursesPeriodFilter===p?' active':''}" onclick="setCoursesPeriod('${p}',this)" style="font-size:11px;padding:3px 10px">${p}</div>`).join('')}
+        <div class="filter-chip${coursesPeriodFilter==='all'?' active':''}" onclick="setCoursesPeriod('all',this)" style="font-size:11px;padding:3px 10px">全部</div>
+      </div>
+    </div>
   </div>
 
-  ${!cachedCourses.length
-    ?`<div class="empty" style="padding:80px 0">
-        暂无课程数据<br>
-        <span style="font-size:11px;color:var(--text-3);margin-top:6px;display:block">点击右上角「导入课程安排」上传 Excel</span>
-      </div>`
-    :majorOrder.filter(m=>byMajor[m]?.length).map(m=>{
-        const courses=byMajor[m].sort((a,b)=>(a.start_date||'').localeCompare(b.start_date||''));
-        // group by campus (period)
-        const byCampus={};
-        courses.forEach(c=>{
-          const key=c.campus||'未分期';
-          if(!byCampus[key]) byCampus[key]=[];
-          byCampus[key].push(c);
-        });
-        return `
-        <div style="margin-bottom:28px">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--border)">
-            <span style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">${majorLabel(m)}</span>
-            <span style="font-size:11px;color:var(--text-3)">${courses.length} 门课程</span>
-          </div>
-          ${Object.entries(byCampus).map(([period,pCourses])=>`
-            <div style="margin-bottom:16px">
-              <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin-bottom:8px;display:flex;align-items:center;gap:8px">
-                <span style="background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:2px 8px">${period}</span>
-                <span>${pCourses.length} 门</span>
-              </div>
-              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px">
-                ${pCourses.map(c=>{
-                  const sessionCount=cachedSessions.filter(s=>s.course_id===c.id).length;
-                  const pct=c.total_sessions?Math.round(sessionCount/c.total_sessions*100):0;
-                  const color=sessionCount>=c.total_sessions?'var(--ok)':sessionCount>0?'var(--warn)':'var(--text-3)';
-                  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px">
-                    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
-                      <div style="font-size:12px;font-weight:600;line-height:1.4;flex:1">${c.name}</div>
-                      <button class="btn-ghost" style="flex-shrink:0;color:var(--danger);padding:0 2px" onclick="deleteCourse('${c.id}')">✕</button>
-                    </div>
-                    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
-                      ${c.teacher?`<span style="font-size:10px;background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 6px;color:var(--text-2)">👤 ${c.teacher}</span>`:''}
-                      ${c.weekdays?`<span style="font-size:10px;background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 6px;color:var(--text-2)">${c.weekdays}</span>`:''}
-                      ${c.time_range?`<span style="font-size:10px;background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 6px;color:var(--text-2)">${c.time_range}</span>`:''}
-                    </div>
-                    <div style="display:flex;align-items:center;gap:8px">
-                      <div style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden">
-                        <div style="height:100%;width:${pct}%;background:${color};border-radius:2px;transition:width .3s"></div>
-                      </div>
-                      <span style="font-size:10px;color:${color};white-space:nowrap">${sessionCount}/${c.total_sessions||'?'}回</span>
-                    </div>
-                    ${c.start_date?`<div style="font-size:10px;color:var(--text-3);margin-top:5px">${c.start_date} → ${c.end_date||'?'}</div>`:''}
-                  </div>`;
-                }).join('')}
-              </div>
-            </div>`).join('')}
-        </div>`;
-      }).join('')
+  ${!filtered.length
+    ?`<div class="empty" style="padding:60px 0">暂无课程数据<br><span style="font-size:11px;color:var(--text-3);margin-top:6px;display:block">请切换期数筛选，或点击右上角导入课程安排</span></div>`
+    :renderCoursesSummary(filtered)
   }`;
+}
+
+function renderCoursesSummary(courses){
+  // 按课程组key聚合（去掉末尾数字）
+  const groups={};
+  const groupOrder=[];
+  courses.forEach(c=>{
+    const key=courseGroupKey(c.name);
+    if(!groups[key]){groups[key]={course:c,sessions:[]};groupOrder.push(key)}
+    // 加入该课程的sessions
+    const sess=cachedSessions.filter(s=>s.course_id===c.id).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+    groups[key].sessions.push(...sess);
+  });
+  // 按第一个session日期排序
+  groupOrder.sort((a,b)=>{
+    const sa=groups[a].sessions[0]?.session_date||groups[a].course.start_date||'';
+    const sb=groups[b].sessions[0]?.session_date||groups[b].course.start_date||'';
+    return sa.localeCompare(sb);
+  });
+  // 去重sessions（同一session可能被多个课程引用）
+  groupOrder.forEach(k=>{
+    const seen=new Set();
+    groups[k].sessions=groups[k].sessions.filter(s=>{if(seen.has(s.id))return false;seen.add(s.id);return true});
+  });
+
+  return `<div style="display:flex;flex-direction:column;gap:12px">
+    ${groupOrder.map(key=>{
+      const {course,sessions}=groups[key];
+      const color=courseColor(key);
+      const total=sessions.length||course.total_sessions||0;
+      const teacherStr=course.teacher?` · ${course.teacher}`:'';
+      const timeStr=course.time_range?` · ${course.time_range}`:'';
+      return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
+        <div style="background:${color.bg};color:${color.text};padding:8px 14px;display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:12px;font-weight:600">${key}<span style="font-size:10px;font-weight:400;margin-left:8px;opacity:.8">${teacherStr}${timeStr}</span></span>
+          <span style="font-size:10px;opacity:.8">${total} 課次</span>
+        </div>
+        ${sessions.length
+          ?`<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0">
+              ${sessions.map((s,i)=>{
+                const f=fmtSessionDate(s.session_date);
+                const recCount=cachedSessionRecords.filter(r=>r.session_id===s.id&&r.attendance).length;
+                const hasRec=recCount>0;
+                const border=i%5!==0?'border-left:1px solid var(--border-light)':'';
+                const borderT=i>=5?'border-top:1px solid var(--border-light)':'';
+                return `<div style="padding:10px 12px;${border};${borderT}">
+                  <div style="display:flex;align-items:baseline;gap:5px">
+                    <span style="font-size:13px;font-weight:600">${f.short}</span>
+                    <span style="font-size:10px;font-weight:500;color:${f.dowColor}">${f.dow}</span>
+                  </div>
+                  <div style="font-size:10px;color:var(--text-3);margin-top:1px">${s.time_range||course.time_range||''}</div>
+                  ${hasRec?`<div style="font-size:9px;color:var(--ok);margin-top:3px">✓ ${recCount}人</div>`:''}
+                </div>`;
+              }).join('')}
+            </div>`
+          :`<div style="padding:14px;font-size:11px;color:var(--text-3)">暂无课次数据</div>`
+        }
+      </div>`;
+    }).join('')}
+  </div>`;
 }
 
 function setCoursesMajor(m,el){
   coursesMajorFilter=m;
-  document.querySelectorAll('.filter-row .filter-chip').forEach(c=>c.classList.remove('active'));
-  el.classList.add('active');
+  document.querySelectorAll('#mainContent .filter-chip').forEach(c=>c.classList.remove('active'));
+  // re-activate period chip too
+  renderCoursesPage(document.getElementById('mainContent'));
+}
+function setCoursesPeriod(p,el){
+  coursesPeriodFilter=p;
   renderCoursesPage(document.getElementById('mainContent'));
 }
 
