@@ -408,6 +408,68 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
   </div>
 </div>
 
+<!-- Manual add course modal -->
+<div class="modal-overlay" id="addCourseModal">
+  <div class="modal" style="width:680px">
+    <div class="modal-title" id="addCourseModalTitle">手动添加课程</div>
+    <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:16px">填写课程基本信息，系统自动生成课次日期</div>
+    <input type="hidden" id="ac_editing_id">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group" style="margin:0"><label class="form-label">课程名称 *</label><input id="ac_name" placeholder="例：社会人文大课"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">专业 *</label>
+        <select id="ac_major_sel">
+          <option value="">请选择</option>
+          <option value="keiei">経営学</option><option value="keizai">経済学</option>
+          <option value="shakai_group">社会人文（全三专业）</option>
+          <option value="shakai">社会学</option><option value="shinpan">新闻传播学</option><option value="fukushi">社会福祉学</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0"><label class="form-label">期数 *</label>
+        <select id="ac_period"><option value="">请选择</option><option>7月期</option><option>10月期</option><option>1月期</option><option>4月期</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">课程属性</label>
+        <select id="ac_course_type"><option value="">请选择</option><option>专业课</option><option>共通课</option><option>VIP课程</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">讲师</label><input id="ac_teacher" placeholder="多人用 / 分隔"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">校区</label><input id="ac_campus" placeholder="市谷 / 高马 / 腾讯会议…"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">授课形式</label>
+        <select id="ac_delivery"><option value="">请选择</option><option>线下</option><option>线上</option><option>线下＋线上</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">星期</label>
+        <select id="ac_weekday"><option value="">请选择</option><option>周一</option><option>周二</option><option>周三</option><option>周四</option><option>周五</option><option>周六</option><option>周日</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">上课时间</label><input id="ac_time_range" placeholder="14:00-18:00"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">课程回数 *</label><input type="number" id="ac_total" min="1" placeholder="10"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">第一回日期 *</label><input type="date" id="ac_first_date"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">备注</label><input id="ac_notes"></div>
+    </div>
+
+    <!-- 单回明细开关 -->
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border-light)">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:600">
+        <input type="checkbox" id="ac_has_details" onchange="toggleAcDetails(this.checked)" style="accent-color:var(--accent);width:16px;height:16px">
+        有单回明细（每回不同老师或不同主题）
+      </label>
+    </div>
+
+    <!-- 单回明细表格 -->
+    <div id="ac_details_section" style="display:none;margin-top:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:11px;color:var(--text-2)">每回的单回名称和任课老师（留空则继承主讲师）</div>
+        <button class="btn btn-outline btn-sm" onclick="acSyncRows()">↺ 按回数同步行数</button>
+      </div>
+      <div style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:3px">
+        <table class="student-table" style="margin:0" id="ac_details_table">
+          <thead><tr><th style="width:60px">第几回</th><th>单回名称</th><th>任课老师</th><th style="width:40px"></th></tr></thead>
+          <tbody id="ac_details_body"></tbody>
+        </table>
+      </div>
+      <button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="acAddRow()">＋ 添加一行</button>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('addCourseModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveAddCourse()">保存并生成课次</button>
+    </div>
+  </div>
+</div>
+
 <!-- Edit course modal -->
 <div class="modal-overlay" id="editCourseModal">
   <div class="modal" style="width:580px">
@@ -1347,7 +1409,8 @@ function renderCoursesPage(mc){
   <div class="page-header">
     <div class="section-title">课程安排</div>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn btn-outline btn-sm" onclick="document.getElementById('courseImportFileInput').click()">↑ 导入课程安排</button>
+      <button class="btn btn-primary btn-sm" onclick="openAddCourseModal()">＋ 手动添加</button>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('courseImportFileInput').click()">↑ 导入 Excel</button>
       <input type="file" id="courseImportFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleCourseImportFile(this)">
     </div>
   </div>
@@ -1487,7 +1550,159 @@ async function deleteCourse(id){
   }catch(e){alert('删除失败：'+e.message)}
 }
 
-// ── 编辑课程 ──
+// ── 手动添加课程 ──
+function openAddCourseModal(editId){
+  document.getElementById('addCourseModalTitle').textContent=editId?'编辑课程':'手动添加课程';
+  document.getElementById('ac_editing_id').value=editId||'';
+  if(editId){
+    const c=cachedCourses.find(x=>x.id===editId);
+    if(!c) return;
+    document.getElementById('ac_name').value=c.name||'';
+    // set major
+    const majors=c.major||[];
+    if(majors.includes('shakai')&&majors.includes('shinpan')&&majors.includes('fukushi')) document.getElementById('ac_major_sel').value='shakai_group';
+    else document.getElementById('ac_major_sel').value=majors[0]||'';
+    document.getElementById('ac_period').value=c.period||'';
+    document.getElementById('ac_course_type').value=c.course_type||'';
+    document.getElementById('ac_teacher').value=c.teacher||'';
+    document.getElementById('ac_campus').value=c.campus||'';
+    document.getElementById('ac_delivery').value=c.delivery||'';
+    document.getElementById('ac_weekday').value=c.weekdays||'';
+    document.getElementById('ac_time_range').value=c.time_range||'';
+    document.getElementById('ac_total').value=c.total_sessions||'';
+    document.getElementById('ac_first_date').value=c.first_session_date||'';
+    document.getElementById('ac_notes').value=c.notes||'';
+    // load existing session details
+    const sessions=cachedSessions.filter(s=>s.course_id===editId).sort((a,b)=>a.session_number-b.session_number);
+    const hasDetails=sessions.some(s=>s.session_title||s.session_teacher);
+    document.getElementById('ac_has_details').checked=hasDetails;
+    toggleAcDetails(hasDetails);
+    if(hasDetails) acPopulateRows(sessions.map(s=>({num:s.session_number,title:s.session_title||'',teacher:s.session_teacher||''})));
+  } else {
+    ['ac_name','ac_teacher','ac_campus','ac_time_range','ac_notes'].forEach(id=>document.getElementById(id).value='');
+    ['ac_major_sel','ac_period','ac_course_type','ac_delivery','ac_weekday'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('ac_total').value='';
+    document.getElementById('ac_first_date').value='';
+    document.getElementById('ac_has_details').checked=false;
+    toggleAcDetails(false);
+  }
+  document.getElementById('addCourseModal').classList.add('open');
+}
+
+function toggleAcDetails(show){
+  document.getElementById('ac_details_section').style.display=show?'':'none';
+  if(show&&!document.getElementById('ac_details_body').children.length) acSyncRows();
+}
+
+function acSyncRows(){
+  const total=parseInt(document.getElementById('ac_total').value)||0;
+  if(!total){alert('请先填写课程回数');return}
+  const teacher=document.getElementById('ac_teacher').value.trim();
+  const existing=acGetRows();
+  document.getElementById('ac_details_body').innerHTML='';
+  for(let i=1;i<=total;i++){
+    const ex=existing.find(r=>r.num===i)||{num:i,title:'',teacher};
+    acAddRow(ex);
+  }
+}
+
+function acAddRow(data){
+  const tbody=document.getElementById('ac_details_body');
+  const rowNum=data?.num||(tbody.children.length+1);
+  const tr=document.createElement('tr');
+  tr.innerHTML=`
+    <td style="font-size:12px;text-align:center;color:var(--text-3)">第${rowNum}回</td>
+    <td><input value="${data?.title||''}" placeholder="单回名称（可留空）" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
+    <td><input value="${data?.teacher||''}" placeholder="任课老师（可留空）" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
+    <td><button class="btn-ghost" onclick="this.closest('tr').remove()">✕</button></td>`;
+  tr.dataset.num=rowNum;
+  tbody.appendChild(tr);
+}
+
+function acGetRows(){
+  return [...document.querySelectorAll('#ac_details_body tr')].map((tr,i)=>{
+    const inputs=tr.querySelectorAll('input');
+    return {num:parseInt(tr.dataset.num)||i+1, title:inputs[0]?.value.trim()||'', teacher:inputs[1]?.value.trim()||''};
+  });
+}
+
+async function saveAddCourse(){
+  const name=document.getElementById('ac_name').value.trim();
+  const majorSel=document.getElementById('ac_major_sel').value;
+  const period=document.getElementById('ac_period').value;
+  const total=parseInt(document.getElementById('ac_total').value)||0;
+  const firstDate=document.getElementById('ac_first_date').value;
+  const weekdayStr=document.getElementById('ac_weekday').value;
+  if(!name){alert('请填写课程名称');return}
+  if(!period){alert('请选择期数');return}
+  if(!total||!firstDate||!weekdayStr){alert('请填写回数、第一回日期和星期');return}
+
+  const majors=majorSel==='shakai_group'?['shakai','shinpan','fukushi']:majorSel?[majorSel]:[];
+  const weekdays=parseWeekdays(weekdayStr);
+  const dates=generateSessionDatesFromFirst(firstDate,weekdays,total);
+  const hasDetails=document.getElementById('ac_has_details').checked;
+  const detailRows=hasDetails?acGetRows():[];
+  const editingId=document.getElementById('ac_editing_id').value;
+
+  const courseData={
+    name,major:majors,period,
+    course_type:document.getElementById('ac_course_type').value,
+    teacher:document.getElementById('ac_teacher').value.trim(),
+    campus:document.getElementById('ac_campus').value.trim(),
+    delivery:document.getElementById('ac_delivery').value,
+    weekdays:weekdayStr,
+    time_range:document.getElementById('ac_time_range').value.trim(),
+    total_sessions:total,
+    first_session_date:firstDate,
+    notes:document.getElementById('ac_notes').value.trim(),
+  };
+
+  try{
+    let courseId;
+    if(editingId){
+      await sb(`/rest/v1/courses?id=eq.${editingId}`,'PATCH',courseData);
+      const idx=cachedCourses.findIndex(c=>c.id===editingId);
+      if(idx>=0) cachedCourses[idx]={...cachedCourses[idx],...courseData};
+      courseId=editingId;
+      // delete old sessions
+      await sb(`/rest/v1/course_sessions?course_id=eq.${courseId}`,'DELETE');
+      cachedSessions=cachedSessions.filter(s=>s.course_id!==courseId);
+    } else {
+      courseId=`c-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+      const res=await sb('/rest/v1/courses','POST',[{...courseData,id:courseId}]);
+      cachedCourses.push(Array.isArray(res)?res[0]:{...courseData,id:courseId});
+    }
+    // create sessions
+    if(dates.length){
+      const sessions=dates.map((date,i)=>{
+        const detail=detailRows.find(r=>r.num===i+1)||{};
+        const mainTeacher=courseData.teacher;
+        return {
+          id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
+          course_id:courseId,course_name:name,major:majors,
+          session_date:date,session_number:i+1,
+          time_range:courseData.time_range,
+          teacher:detail.teacher||mainTeacher,
+          session_title:detail.title||'',
+          session_teacher:detail.teacher||mainTeacher,
+        };
+      });
+      for(let i=0;i<sessions.length;i+=20){
+        const chunk=sessions.slice(i,i+20);
+        const res=await sb('/rest/v1/course_sessions','POST',chunk);
+        cachedSessions.push(...(Array.isArray(res)?res:chunk));
+      }
+    }
+    closeModal('addCourseModal');
+    renderCoursesPage(document.getElementById('mainContent'));
+    alert(`${editingId?'更新':'添加'}成功！已生成 ${dates.length} 个课次`);
+  }catch(e){alert('保存失败：'+e.message)}
+}
+
+function acPopulateRows(rows){
+  document.getElementById('ac_details_body').innerHTML='';
+  rows.forEach(r=>acAddRow(r));
+}
 function openEditCourse(id){
   const c=cachedCourses.find(x=>x.id===id);
   if(!c) return;
