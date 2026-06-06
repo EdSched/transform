@@ -326,7 +326,10 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
     <div class="form-group">
       <label class="form-label">课程属性</label>
       <div style="display:flex;gap:4px;flex-wrap:wrap" id="cs_type_chips">
-        ${['全部','共通课','专业课','VIP'].map(t=>`<div class="filter-chip" onclick="csSetType('${t}',this)" style="font-size:11px;padding:3px 10px">${t}</div>`).join('')}
+        <div class="filter-chip active" onclick="csSetType('全部',this)" style="font-size:11px;padding:3px 10px">全部</div>
+        <div class="filter-chip" onclick="csSetType('共通课',this)" style="font-size:11px;padding:3px 10px">共通课</div>
+        <div class="filter-chip" onclick="csSetType('专业课',this)" style="font-size:11px;padding:3px 10px">专业课</div>
+        <div class="filter-chip" onclick="csSetType('VIP',this)" style="font-size:11px;padding:3px 10px">VIP</div>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
