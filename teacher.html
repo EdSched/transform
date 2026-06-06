@@ -11,49 +11,78 @@
   --bg:#faf7f2;--surface:#fff;--border:#e8e0d4;--border-light:#f0ebe2;
   --text:#3a2e24;--text-2:#6b5c4e;--text-3:#a8998a;
   --accent:#3a2e24;--ok:#2a9e6a;--ok-bg:#e4f5ee;
+  --danger:#b03030;--danger-bg:#fceaea;
   --warn:#b87820;--warn-bg:#fdf2dc;
 }
 body{font-family:'DM Mono','Noto Serif SC',monospace;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5;min-height:100vh}
-.header{background:var(--surface);border-bottom:1px solid var(--border);padding:20px 28px}
-.header h1{font-family:'Noto Serif SC',serif;font-size:18px;font-weight:600}
-.header-sub{font-size:11px;color:var(--text-3);margin-top:3px;letter-spacing:.05em}
-.main{max-width:680px;margin:0 auto;padding:28px 20px}
-.section-title{font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600;margin-bottom:16px}
-.info-box{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:14px 16px;margin-bottom:20px;font-size:12px;color:var(--text-2);line-height:1.8}
-.course-block{margin-bottom:24px}
-.course-head{padding:8px 14px;border-radius:3px 3px 0 0;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between}
-.slot-row{background:var(--surface);border:1px solid var(--border);border-top:none;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:16px}
-.slot-row:last-child{border-radius:0 0 3px 3px}
-.slot-date{font-size:14px;font-weight:600}
-.slot-dow{font-size:11px;font-weight:500;margin-left:5px}
-.slot-time{font-size:11px;color:var(--text-3);margin-top:2px}
-.slot-title{font-size:11px;color:var(--text-2);margin-top:2px}
-.toggle-btn{display:flex;border:1px solid var(--border);border-radius:3px;overflow:hidden;flex-shrink:0}
-.toggle-btn button{padding:6px 16px;background:transparent;border:none;font-family:'DM Mono',monospace;font-size:11px;color:var(--text-2);cursor:pointer;transition:all .15s;border-right:1px solid var(--border)}
-.toggle-btn button:last-child{border-right:none}
-.toggle-btn button.yes.active{background:#2a9e6a;color:#fff;border-color:#2a9e6a}
-.toggle-btn button.no.active{background:#b03030;color:#fff;border-color:#b03030}
-.toggle-btn button:hover:not(.active){background:var(--bg)}
-.submit-area{margin-top:28px;text-align:center}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:10px 28px;border-radius:3px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid transparent;font-family:'DM Mono',monospace;transition:all .15s}
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:18px 24px;display:flex;align-items:center;justify-content:space-between}
+.header-title{font-family:'Noto Serif SC',serif;font-size:16px;font-weight:600}
+.header-sub{font-size:11px;color:var(--text-3);margin-top:2px}
+.main{max-width:700px;margin:0 auto;padding:24px 16px 60px}
+.info-box{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:14px 18px;margin-bottom:22px;font-size:12px;color:var(--text-2);line-height:1.9}
+.section-block{margin-bottom:28px}
+.section-head{font-family:'Noto Serif SC',serif;font-size:14px;font-weight:600;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+
+/* Date slots */
+.date-card{background:var(--surface);border:1px solid var(--border);border-radius:4px;margin-bottom:8px;overflow:hidden;transition:border-color .15s}
+.date-card.selected{border-color:var(--ok);border-width:2px}
+.date-card-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;gap:12px}
+.date-card-head:hover{background:var(--bg)}
+.date-info{display:flex;align-items:baseline;gap:8px}
+.date-num{font-size:18px;font-weight:700;font-family:'DM Mono',monospace}
+.date-dow{font-size:11px;font-weight:600}
+.date-time{font-size:11px;color:var(--text-3);margin-top:2px}
+.date-session{font-size:10px;color:var(--text-3);margin-top:1px}
+.avail-toggle{display:flex;border:1px solid var(--border);border-radius:3px;overflow:hidden;flex-shrink:0}
+.avail-toggle button{padding:7px 18px;background:transparent;border:none;font-family:'DM Mono',monospace;font-size:11px;color:var(--text-2);cursor:pointer;transition:all .15s;border-right:1px solid var(--border)}
+.avail-toggle button:last-child{border-right:none}
+.avail-toggle button.ok.active{background:var(--ok);color:#fff}
+.avail-toggle button:hover:not(.active){background:var(--bg)}
+.date-card-body{padding:0 16px 12px;border-top:1px solid var(--border-light);display:none}
+.date-card.selected .date-card-body{display:block}
+.time-select{margin-top:10px}
+.time-label{font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px}
+.time-chips{display:flex;gap:6px;flex-wrap:wrap}
+.time-chip{padding:5px 14px;border:1px solid var(--border);border-radius:2px;font-size:11px;cursor:pointer;background:var(--bg);transition:all .15s;font-family:'DM Mono',monospace}
+.time-chip.active{background:var(--ok);color:#fff;border-color:var(--ok)}
+.time-chip.both{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+/* Title selection */
+.titles-section{margin-top:22px}
+.title-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.title-chip{padding:5px 14px;border:1px solid var(--border);border-radius:2px;font-size:11px;cursor:pointer;background:var(--bg);transition:all .15s;font-family:'DM Mono',monospace}
+.title-chip.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+/* Submit */
+.submit-area{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--border);padding:16px 16px;display:flex;align-items:center;justify-content:center;gap:16px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:10px 32px;border-radius:3px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid transparent;font-family:'DM Mono',monospace;transition:all .15s}
 .btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#5a4a3c}
-.btn-primary:disabled{opacity:.5;cursor:not-allowed}
-.notice{background:var(--warn-bg);border:1px solid var(--warn);border-radius:3px;padding:12px 16px;font-size:11px;color:var(--warn);line-height:1.7;margin-top:16px}
-.done-box{text-align:center;padding:48px 20px}
-.done-icon{font-size:40px;margin-bottom:12px}
-.done-title{font-family:'Noto Serif SC',serif;font-size:18px;font-weight:600;margin-bottom:8px}
-.done-sub{font-size:12px;color:var(--text-2);line-height:1.8}
-.empty{text-align:center;padding:48px;color:var(--text-3);font-size:12px}
-.loading{text-align:center;padding:48px;color:var(--text-3);font-size:12px}
+.btn-primary:disabled{opacity:.45;cursor:not-allowed}
+.done-box{text-align:center;padding:56px 20px}
+.done-icon{font-size:44px;margin-bottom:14px}
+.done-title{font-family:'Noto Serif SC',serif;font-size:20px;font-weight:600;margin-bottom:10px}
+.done-sub{font-size:12px;color:var(--text-2);line-height:2;max-width:380px;margin:0 auto}
+.empty{text-align:center;padding:56px;color:var(--text-3);font-size:12px;line-height:2}
+.loading{text-align:center;padding:56px;color:var(--text-3)}
+.notice{background:var(--warn-bg);border:1px solid var(--warn);border-radius:3px;padding:10px 14px;font-size:11px;color:var(--warn);line-height:1.7}
 </style>
 </head>
 <body>
+
 <div class="header">
-  <h1>唯新教育 · 课程排班</h1>
-  <div class="header-sub" id="headerSub">Transform Education · Teacher Availability</div>
+  <div>
+    <div class="header-title">唯新教育 · 课程排班</div>
+    <div class="header-sub" id="headerSub">Transform Education</div>
+  </div>
 </div>
-<div class="main" id="mainContent">
+
+<div id="mainContent" class="main">
   <div class="loading">加载中…</div>
+</div>
+
+<div class="submit-area" id="submitArea" style="display:none">
+  <span id="submitHint" style="font-size:11px;color:var(--text-3)"></span>
+  <button class="btn btn-primary" id="submitBtn" onclick="submitAvailability()">提交回复</button>
 </div>
 
 <script>
@@ -72,50 +101,67 @@ const teacherName=decodeURIComponent(params.get('teacher')||'');
 const DAYS=['周日','周一','周二','周三','周四','周五','周六'];
 const DOW_COLOR={6:'#1a4a8a',0:'#8a1a2c'};
 
-// availability state: {slotId: true/false/null}
-const availability={};
-let slots=[], existingAvail=[], submitted=false;
+let slots=[], existingAvail=[];
+// state per slot: {available: bool, time: string, bothTimes: bool}
+const slotState={};
+// selected titles (global across all slots)
+const selectedTitles=new Set();
+let allTitles=[];
 
 function courseColor(name){
   const n=name||'';
-  if(/宏观/.test(n)) return {bg:'#ddeaf8',text:'#1a3a6a'};
-  if(/微观/.test(n)) return {bg:'#ddf0e0',text:'#1a4a28'};
-  if(/数学/.test(n)) return {bg:'#e8e4f8',text:'#3a2a7a'};
-  if(/习题/.test(n)) return {bg:'#faecd8',text:'#5a3010'};
-  if(/计量|方法论/.test(n)) return {bg:'#d8f0ea',text:'#0a4038'};
-  if(/共通/.test(n)) return {bg:'#ece8e0',text:'#3a3830'};
-  if(/过去问|备考/.test(n)) return {bg:'#f8e4dc',text:'#6a2818'};
-  return {bg:'#ece8e0',text:'#3a3830'};
+  if(/宏观/.test(n)) return '#1a3a6a';
+  if(/微观/.test(n)) return '#1a4a28';
+  if(/数学/.test(n)) return '#3a2a7a';
+  if(/习题/.test(n)) return '#5a3010';
+  if(/计量|方法论/.test(n)) return '#0a4038';
+  if(/共通/.test(n)) return '#3a3830';
+  if(/过去问|备考/.test(n)) return '#6a2818';
+  return '#3a3830';
+}
+function courseBg(name){
+  const n=name||'';
+  if(/宏观/.test(n)) return '#ddeaf8';
+  if(/微观/.test(n)) return '#ddf0e0';
+  if(/数学/.test(n)) return '#e8e4f8';
+  if(/习题/.test(n)) return '#faecd8';
+  if(/计量|方法论/.test(n)) return '#d8f0ea';
+  if(/共通/.test(n)) return '#ece8e0';
+  if(/过去问|备考/.test(n)) return '#f8e4dc';
+  return '#ece8e0';
 }
 
 async function init(){
   const mc=document.getElementById('mainContent');
   if(!teacherName){
-    mc.innerHTML='<div class="empty">无效链接，请联系学科负责人获取正确链接</div>';
+    mc.innerHTML='<div class="empty">无效链接<br><span style="font-size:11px">请联系学科负责人获取正确链接</span></div>';
     return;
   }
   document.getElementById('headerSub').textContent=`${teacherName} 老师 · 课程排班`;
   try{
-    // fetch slots for this teacher
     slots=await sb(`/rest/v1/schedule_slots?teacher_names=cs.{"${teacherName}"}&select=*&order=session_date.asc`);
     existingAvail=await sb(`/rest/v1/teacher_availability?teacher_name=eq.${encodeURIComponent(teacherName)}&select=*`);
-    // check if already submitted
-    if(existingAvail.length&&existingAvail.length>=slots.length&&slots.length>0){
-      submitted=true;
-      renderDone();return;
+
+    // init state from existing replies
+    existingAvail.forEach(a=>{
+      slotState[a.slot_id]={available:a.available,time:a.available_time||'',bothTimes:false};
+      (a.preferred_titles||[]).forEach(t=>selectedTitles.add(t));
+    });
+
+    // collect all unique titles across all slots
+    slots.forEach(s=>(s.session_titles||[]).forEach(t=>{if(!allTitles.includes(t))allTitles.push(t)}));
+
+    if(!slots.length){
+      mc.innerHTML='<div class="empty">暂无排班课次<br><span style="font-size:11px">请等待学科负责人创建课次安排后再访问</span></div>';
+      return;
     }
-    // init availability from existing
-    existingAvail.forEach(a=>{availability[a.slot_id]=a.available});
     render();
+    document.getElementById('submitArea').style.display='flex';
+    updateHint();
   }catch(e){mc.innerHTML=`<div class="empty">加载失败：${e.message}</div>`}
 }
 
 function render(){
-  const mc=document.getElementById('mainContent');
-  if(!slots.length){
-    mc.innerHTML=`<div class="empty">暂无排班时间槽<br><span style="font-size:11px;color:var(--text-3);margin-top:6px;display:block">请等待学科负责人创建课次安排</span></div>`;
-    return;
-  }
   // group by course
   const byCourse={};
   slots.forEach(s=>{
@@ -123,91 +169,152 @@ function render(){
     byCourse[s.course_name].push(s);
   });
 
-  mc.innerHTML=`
+  document.getElementById('mainContent').innerHTML=`
   <div class="info-box">
     您好，<strong>${teacherName}</strong> 老师！<br>
-    以下是本期课程的所有课次安排，请为每节课选择您是否可以上课。<br>
-    选完后点击「提交回复」即可。最终排课结果由学科负责人确认后会另行通知。
+    请为每个课次选择您是否可以上课。不选即表示该课次不可以。<br>
+    如有两个时间段供选择，请选择您可以的时间（或「两个都行」）。<br>
+    如有单回内容，请在下方选择您可以负责的内容。
   </div>
-  <div id="slotsContainer">
-    ${Object.entries(byCourse).map(([courseName,courseSlots])=>{
-      const color=courseColor(courseName);
-      return `<div class="course-block">
-        <div class="course-head" style="background:${color.bg};color:${color.text}">
-          <span>${courseName}</span>
-          <span style="font-size:10px;opacity:.7">${courseSlots.length}课次</span>
+
+  ${Object.entries(byCourse).map(([courseName,courseSlots])=>`
+    <div class="section-block">
+      <div class="section-head" style="color:${courseColor(courseName)}">
+        ${courseName}
+        <span style="font-size:11px;font-weight:400;color:var(--text-3);margin-left:8px">${courseSlots.length}课次</span>
+      </div>
+      ${courseSlots.map(s=>renderSlotCard(s)).join('')}
+    </div>`).join('')}
+
+  ${allTitles.length?`
+    <div class="section-block">
+      <div class="section-head">单回内容认领</div>
+      <div style="font-size:11px;color:var(--text-2);margin-bottom:10px">请选择您可以负责的课程内容（可多选）</div>
+      <div class="title-chips" id="titleChips">
+        <div class="title-chip${selectedTitles.has('__all__')?' active':''}" onclick="toggleTitle('__all__',this)">全部都可以</div>
+        ${allTitles.map(t=>`<div class="title-chip${selectedTitles.has(t)?' active':''}" onclick="toggleTitle('${t}',this)">${t}</div>`).join('')}
+      </div>
+    </div>`:''}`;
+}
+
+function renderSlotCard(s){
+  const state=slotState[s.id]||{};
+  const isAvail=state.available===true;
+  const d=new Date(s.session_date+'T12:00:00');
+  const dow=DAYS[d.getDay()];
+  const dowColor=DOW_COLOR[d.getDay()]||'var(--text-2)';
+  const hasTwo=!!(s.time_range&&s.time_range_2);
+
+  return `<div class="date-card${isAvail?' selected':''}" id="card-${s.id}">
+    <div class="date-card-head" onclick="toggleAvail('${s.id}')">
+      <div>
+        <div class="date-info">
+          <span class="date-num">${d.getMonth()+1}/${d.getDate()}</span>
+          <span class="date-dow" style="color:${dowColor}">${dow}</span>
         </div>
-        ${courseSlots.map(s=>{
-          const d=new Date(s.session_date+'T12:00:00');
-          const dow=DAYS[d.getDay()];
-          const dowColor=DOW_COLOR[d.getDay()]||'var(--text-2)';
-          const avail=availability[s.id];
-          return `<div class="slot-row">
-            <div>
-              <div><span class="slot-date">${(d.getMonth()+1)}/${d.getDate()}</span><span class="slot-dow" style="color:${dowColor}">${dow}</span></div>
-              <div class="slot-time">${s.time_range||''}</div>
-              ${s.session_title?`<div class="slot-title">${s.session_number}回 · ${s.session_title}</div>`:`<div class="slot-time">第${s.session_number}回</div>`}
-            </div>
-            <div class="toggle-btn">
-              <button class="yes${avail===true?' active':''}" onclick="setAvail('${s.id}',true,this)">✓ 可以上</button>
-              <button class="no${avail===false?' active':''}" onclick="setAvail('${s.id}',false,this)">✕ 不可以</button>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>`;
-    }).join('')}
-  </div>
-  <div class="submit-area">
-    <button class="btn btn-primary" id="submitBtn" onclick="submitAvailability()">提交回复</button>
-    <div class="notice" style="max-width:420px;margin:16px auto 0">
-      ⚠ 提交后可联系学科负责人修改。最终安排确认后，若需要调整时间，学科负责人会另行联系您。
+        <div class="date-time">${s.time_range||''}${hasTwo?` / ${s.time_range_2}`:''}</div>
+        <div class="date-session">第${s.session_number}回</div>
+      </div>
+      <div class="avail-toggle" onclick="event.stopPropagation()">
+        <button class="ok${isAvail?' active':''}" onclick="setAvail('${s.id}',true)"">✓ 可以上</button>
+        <button class="${!isAvail&&state.available===false?' active':''}" style="${!isAvail&&state.available===false?'background:#f5e8e8;color:var(--danger)':''}" onclick="setAvail('${s.id}',false)">✕ 不可以</button>
+      </div>
     </div>
+    ${isAvail&&hasTwo?`
+    <div class="date-card-body">
+      <div class="time-select">
+        <div class="time-label">请选择您可以的时间</div>
+        <div class="time-chips">
+          <div class="time-chip${state.time===s.time_range&&!state.bothTimes?' active':''}" onclick="setTime('${s.id}','${s.time_range}',false)">${s.time_range}</div>
+          <div class="time-chip${state.time===s.time_range_2&&!state.bothTimes?' active':''}" onclick="setTime('${s.id}','${s.time_range_2}',false)">${s.time_range_2}</div>
+          <div class="time-chip both${state.bothTimes?' active':''}" onclick="setTime('${s.id}','',true)">两个都行</div>
+        </div>
+      </div>
+    </div>`:''}
   </div>`;
 }
 
-function setAvail(slotId,val,btn){
-  availability[slotId]=val;
-  const row=btn.closest('.toggle-btn');
-  row.querySelector('.yes').classList.toggle('active',val===true);
-  row.querySelector('.no').classList.toggle('active',val===false);
+function setAvail(slotId,val){
+  if(!slotState[slotId]) slotState[slotId]={};
+  slotState[slotId].available=val;
+  if(!val){slotState[slotId].time='';slotState[slotId].bothTimes=false}
+  rerenderCard(slotId);
+  updateHint();
+}
+function toggleAvail(slotId){
+  const cur=slotState[slotId]?.available;
+  setAvail(slotId,cur===true?false:true);
+}
+function setTime(slotId,time,both){
+  if(!slotState[slotId]) slotState[slotId]={};
+  slotState[slotId].time=time;
+  slotState[slotId].bothTimes=both;
+  rerenderCard(slotId);
+}
+function rerenderCard(slotId){
+  const s=slots.find(x=>x.id===slotId);
+  if(!s) return;
+  const el=document.getElementById(`card-${slotId}`);
+  if(el) el.outerHTML=renderSlotCard(s);
+}
+function toggleTitle(title,el){
+  if(title==='__all__'){
+    if(selectedTitles.has('__all__')){selectedTitles.clear()}
+    else{selectedTitles.clear();selectedTitles.add('__all__')}
+  } else {
+    selectedTitles.delete('__all__');
+    if(selectedTitles.has(title)) selectedTitles.delete(title);
+    else selectedTitles.add(title);
+  }
+  // re-render title chips
+  document.querySelectorAll('.title-chip').forEach(chip=>{
+    const t=chip.getAttribute('onclick').match(/'([^']+)'/)?.[1];
+    if(t) chip.classList.toggle('active',selectedTitles.has(t));
+  });
+}
+function updateHint(){
+  const count=Object.values(slotState).filter(s=>s.available===true).length;
+  document.getElementById('submitHint').textContent=`已选 ${count}/${slots.length} 个课次可以上`;
 }
 
 async function submitAvailability(){
   const btn=document.getElementById('submitBtn');
-  const unanswered=slots.filter(s=>availability[s.id]===undefined||availability[s.id]===null);
-  if(unanswered.length){
-    if(!confirm(`还有 ${unanswered.length} 个课次未选择，确定提交吗？`))return;
-  }
   btn.textContent='提交中…';btn.disabled=true;
   try{
-    // delete existing avail for this teacher
+    // delete existing
     if(existingAvail.length){
       await sb(`/rest/v1/teacher_availability?teacher_name=eq.${encodeURIComponent(teacherName)}`,'DELETE');
     }
-    const records=slots.map(s=>({
-      id:`av-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
-      slot_id:s.id,
-      teacher_name:teacherName,
-      available:availability[s.id]??false,
-    }));
+    const preferredTitles=selectedTitles.has('__all__')?allTitles:[...selectedTitles];
+    const records=slots.map(s=>{
+      const state=slotState[s.id]||{};
+      const timeStr=state.bothTimes?`${s.time_range} / ${s.time_range_2}`:state.time||'';
+      return {
+        id:`av-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
+        slot_id:s.id,
+        teacher_name:teacherName,
+        available:state.available===true,
+        available_time:state.available?timeStr:null,
+        preferred_titles:state.available&&preferredTitles.length?preferredTitles:null,
+      };
+    });
     await sb('/rest/v1/teacher_availability','POST',records);
-    renderDone();
+    // show done
+    const availCount=records.filter(r=>r.available).length;
+    document.getElementById('submitArea').style.display='none';
+    document.getElementById('mainContent').innerHTML=`
+    <div class="done-box">
+      <div class="done-icon">✅</div>
+      <div class="done-title">回复已提交！</div>
+      <div class="done-sub">
+        谢谢 ${teacherName} 老师！<br>
+        共 ${slots.length} 个课次，您选择了 <strong>${availCount}</strong> 个可以上课。<br>
+        ${preferredTitles.length?`可负责内容：${preferredTitles.join('・')}<br>`:''}
+        <br>最终排课结果确认后，学科负责人会另行通知您。<br>
+        如需修改请联系学科负责人。
+      </div>
+    </div>`;
   }catch(e){alert('提交失败：'+e.message);btn.textContent='提交回复';btn.disabled=false}
-}
-
-function renderDone(){
-  const avail=Object.values(availability).filter(v=>v===true).length;
-  document.getElementById('mainContent').innerHTML=`
-  <div class="done-box">
-    <div class="done-icon">✅</div>
-    <div class="done-title">回复已提交</div>
-    <div class="done-sub">
-      谢谢 ${teacherName} 老师！<br>
-      您共回复了 ${slots.length} 个课次，其中 <strong>${avail}</strong> 个可以上课。<br><br>
-      最终排课结果确认后，学科负责人会另行通知您。<br>
-      如需修改，请联系学科负责人。
-    </div>
-  </div>`;
 }
 
 init();
