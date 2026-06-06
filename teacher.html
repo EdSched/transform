@@ -291,8 +291,17 @@ function renderScheduling(){
     return;
   }
   const allTitles=[...new Set(slots.flatMap(s=>s.session_titles||[]))];
+  // 按「课程名+期」分组，同一课程不同期分开
   const byCourse={};
-  slots.forEach(s=>{if(!byCourse[s.course_name])byCourse[s.course_name]=[];byCourse[s.course_name].push(s)});
+  slots.forEach(s=>{
+    const d=new Date(s.session_date+'T12:00:00');
+    const m=d.getMonth()+1;
+    const period=m<=3?'1月期':m<=6?'4月期':m<=9?'7月期':'10月期';
+    const year=d.getFullYear();
+    const key=`${s.course_name}||${year}${period}`;
+    if(!byCourse[key]) byCourse[key]={name:s.course_name,period:`${year}年${period}`,slots:[]};
+    byCourse[key].slots.push(s);
+  });
 
   document.getElementById('mainContent').innerHTML=`
   <div class="info-box">
@@ -304,9 +313,9 @@ function renderScheduling(){
     本期您负责的课程内容：
     ${allTitles.map(t=>`<span style="background:rgba(255,255,255,.6);border-radius:2px;padding:1px 8px;margin-right:4px">${t}</span>`).join('')}
   </div>`:''}
-  ${Object.entries(byCourse).map(([courseName,courseSlots])=>`
+  ${Object.values(byCourse).map(({name,period,slots:courseSlots})=>`
     <div style="margin-bottom:24px">
-      <div class="section-head" style="color:${courseColor(courseName)}">${courseName} <span style="font-size:11px;font-weight:400;color:var(--text-3)">${courseSlots.length}课次</span></div>
+      <div class="section-head" style="color:${courseColor(name)}">${name} <span style="font-size:11px;font-weight:400;background:var(--bg);border-radius:2px;padding:1px 7px;margin-left:4px;color:var(--text-3)">${period}</span> <span style="font-size:11px;font-weight:400;color:var(--text-3)">${courseSlots.length}课次</span></div>
       ${courseSlots.map(s=>renderSlotCard(s)).join('')}
     </div>`).join('')}`;
 }
@@ -378,7 +387,10 @@ function renderMySchedule(){
           <div class="sc-date-dow" style="color:${dowColor}">${dow}</div>
         </div>
         <div class="sc-body">
-          <div class="sc-course">${s.course_name}</div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px">
+            <div class="sc-course" style="margin:0">${s.course_name}</div>
+            ${(()=>{const d2=new Date(s.session_date+'T12:00:00');const m2=d2.getMonth()+1;const p2=m2<=3?'1月期':m2<=6?'4月期':m2<=9?'7月期':'10月期';return `<span style="font-size:9px;color:var(--text-3);background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 5px">${d2.getFullYear()}年${p2}</span>`})()}
+          </div>
           <div class="sc-meta">第${s.session_number}回 · ${s.time_range||''} ${s.campus?`· ${s.campus}`:''}</div>
           ${s.session_title?`<div class="sc-title">📌 ${s.session_title}</div>`:''}
         </div>
