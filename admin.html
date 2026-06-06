@@ -1223,12 +1223,23 @@ function renderCoursesPage(mc){
   // 收集这些专业的课程
   let filtered=cachedCourses.filter(c=>(c.major||[]).some(m=>majorList.includes(m)));
 
-  // 期数过滤：用 course.period 字段，不再从日期推算
+  // 期数过滤：支持 "YYYY年X月期" 格式
   if(coursesPeriodFilter==='current') filtered=filtered.filter(c=>c.period===curPeriod);
-  else if(coursesPeriodFilter!=='all') filtered=filtered.filter(c=>c.period===coursesPeriodFilter);
+  else if(coursesPeriodFilter!=='all'){
+    const [filterYear,filterPeriod]=coursesPeriodFilter.match(/(\d{4})年(.+)/)?.slice(1)||[];
+    if(filterYear&&filterPeriod) filtered=filtered.filter(c=>c.period===filterPeriod&&c.first_session_date?.startsWith(filterYear));
+    else filtered=filtered.filter(c=>c.period===coursesPeriodFilter);
+  }
 
-  // 收集所有可用期数（从已有课程的period字段）
-  const allPeriods=[...new Set(cachedCourses.map(c=>c.period).filter(Boolean))].sort();
+  // 收集所有可用期数（period + 年份，从first_session_date取年）
+  const allPeriods=[...new Map(cachedCourses
+    .filter(c=>c.period&&c.first_session_date)
+    .map(c=>{
+      const year=c.first_session_date.slice(0,4);
+      const key=`${year}年${c.period}`;
+      return [key,{key,period:c.period,year}];
+    })
+  ).values()].sort((a,b)=>a.key.localeCompare(b.key));
 
   mc.innerHTML=`
   <div class="page-header">
@@ -1253,7 +1264,7 @@ function renderCoursesPage(mc){
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">期数</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
         <div class="filter-chip${coursesPeriodFilter==='current'?' active':''}" onclick="setCoursesPeriod('current',this)" style="font-size:11px;padding:3px 10px">当前期（${curPeriod}）</div>
-        ${allPeriods.map(p=>`<div class="filter-chip${coursesPeriodFilter===p?' active':''}" onclick="setCoursesPeriod('${p}',this)" style="font-size:11px;padding:3px 10px">${p}</div>`).join('')}
+        ${allPeriods.map(p=>`<div class="filter-chip${coursesPeriodFilter===p.key?' active':''}" onclick="setCoursesPeriod('${p.key}',this)" style="font-size:11px;padding:3px 10px">${p.key}</div>`).join('')}
         <div class="filter-chip${coursesPeriodFilter==='all'?' active':''}" onclick="setCoursesPeriod('all',this)" style="font-size:11px;padding:3px 10px">全部</div>
       </div>
     </div>
@@ -1299,6 +1310,7 @@ function renderCoursesSummary(courses){
         <div style="background:${color.bg};color:${color.text};padding:8px 14px;display:flex;align-items:center;justify-content:space-between">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <span style="font-size:12px;font-weight:600">${key}</span>
+            ${course.first_session_date?`<span style="font-size:10px;opacity:.6;background:rgba(0,0,0,.08);border-radius:2px;padding:1px 5px">${course.first_session_date.slice(0,4)}年</span>`:''}
             ${course.teacher?`<span style="font-size:10px;opacity:.75">👤 ${course.teacher}</span>`:''}
             ${course.campus?`<span style="font-size:10px;opacity:.75">📍 ${course.campus}</span>`:''}
             ${course.delivery?`<span style="font-size:10px;opacity:.75">${course.delivery.includes('线下')&&course.delivery.includes('线上')?'🔀':course.delivery==='线下'?'🏫':'💻'} ${course.delivery}</span>`:''}
