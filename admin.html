@@ -416,18 +416,19 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
     <input type="hidden" id="ac_editing_id">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div class="form-group" style="margin:0"><label class="form-label">课程名称 *</label><input id="ac_name" placeholder="例：社会人文大课"></div>
-      <div class="form-group" style="margin:0"><label class="form-label">专业 *</label>
-        <select id="ac_major_sel">
-          <option value="">请选择</option>
-          <option value="keiei">経営学</option><option value="keizai">経済学</option>
-          <option value="shakai_group">社会人文（全三专业）</option>
-          <option value="shakai">社会学</option><option value="shinpan">新闻传播学</option><option value="fukushi">社会福祉学</option>
-        </select>
+      <div class="form-group" style="margin:0"><label class="form-label">专业（可多选）</label>
+        <div id="ac_major_checkboxes" style="display:flex;flex-wrap:wrap;gap:6px;padding:7px 9px;border:1px solid var(--border);border-radius:3px;background:var(--bg)">
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="keiei" style="accent-color:var(--accent)">経営学</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="keizai" style="accent-color:var(--accent)">経済学</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="shakai" style="accent-color:var(--accent)">社会学</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="shinpan" style="accent-color:var(--accent)">新闻传播学</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="fukushi" style="accent-color:var(--accent)">社会福祉学</label>
+        </div>
       </div>
       <div class="form-group" style="margin:0"><label class="form-label">期数 *</label>
         <select id="ac_period"><option value="">请选择</option><option>7月期</option><option>10月期</option><option>1月期</option><option>4月期</option></select></div>
       <div class="form-group" style="margin:0"><label class="form-label">课程属性</label>
-        <select id="ac_course_type"><option value="">请选择</option><option>专业课</option><option>共通课</option><option>VIP课程</option></select></div>
+        <select id="ac_course_type" onchange="acOnTypeChange(this.value)"><option value="">请选择</option><option>专业课</option><option>共通课</option><option>VIP课程</option></select></div>
       <div class="form-group" style="margin:0"><label class="form-label">讲师</label><input id="ac_teacher" placeholder="多人用 / 分隔"></div>
       <div class="form-group" style="margin:0"><label class="form-label">校区</label><input id="ac_campus" placeholder="市谷 / 高马 / 腾讯会议…"></div>
       <div class="form-group" style="margin:0"><label class="form-label">授课形式</label>
@@ -1459,26 +1460,27 @@ function renderCoursesPage(mc){
 }
 
 function renderCoursesSummary(courses){
+  // 共通課など複数専業に属するコースが重複表示されないようにIDでユニーク化
+  const seen=new Set();
+  const uniqueCourses=courses.filter(c=>{if(seen.has(c.id))return false;seen.add(c.id);return true});
+
   // 按课程组key聚合（去掉末尾数字）
   const groups={};
   const groupOrder=[];
-  courses.forEach(c=>{
+  uniqueCourses.forEach(c=>{
     const key=courseGroupKey(c.name);
     if(!groups[key]){groups[key]={course:c,sessions:[]};groupOrder.push(key)}
-    // 加入该课程的sessions
     const sess=cachedSessions.filter(s=>s.course_id===c.id).sort((a,b)=>a.session_date.localeCompare(b.session_date));
     groups[key].sessions.push(...sess);
   });
-  // 按第一个session日期排序
   groupOrder.sort((a,b)=>{
     const sa=groups[a].sessions[0]?.session_date||groups[a].course.start_date||'';
     const sb=groups[b].sessions[0]?.session_date||groups[b].course.start_date||'';
     return sa.localeCompare(sb);
   });
-  // 去重sessions（同一session可能被多个课程引用）
   groupOrder.forEach(k=>{
-    const seen=new Set();
-    groups[k].sessions=groups[k].sessions.filter(s=>{if(seen.has(s.id))return false;seen.add(s.id);return true});
+    const seen2=new Set();
+    groups[k].sessions=groups[k].sessions.filter(s=>{if(seen2.has(s.id))return false;seen2.add(s.id);return true});
   });
 
   return `<div style="display:flex;flex-direction:column;gap:12px">
@@ -1493,6 +1495,7 @@ function renderCoursesSummary(courses){
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <span style="font-size:12px;font-weight:600">${key}</span>
             ${course.first_session_date?`<span style="font-size:10px;opacity:.6;background:rgba(0,0,0,.08);border-radius:2px;padding:1px 5px">${course.first_session_date.slice(0,4)}年</span>`:''}
+            ${(course.major||[]).length>1?`<span style="font-size:9px;opacity:.6">${(course.major||[]).map(m=>MAJORS[m]||m).join('・')}</span>`:''}
             ${course.teacher?`<span style="font-size:10px;opacity:.75">👤 ${course.teacher}</span>`:''}
             ${course.campus?`<span style="font-size:10px;opacity:.75">📍 ${course.campus}</span>`:''}
             ${course.delivery?`<span style="font-size:10px;opacity:.75">${course.delivery.includes('线下')&&course.delivery.includes('线上')?'🔀':course.delivery==='线下'?'🏫':'💻'} ${course.delivery}</span>`:''}
@@ -1569,10 +1572,8 @@ function openAddCourseModal(editId){
     const c=cachedCourses.find(x=>x.id===editId);
     if(!c) return;
     document.getElementById('ac_name').value=c.name||'';
-    // set major
-    const majors=c.major||[];
-    if(majors.includes('shakai')&&majors.includes('shinpan')&&majors.includes('fukushi')) document.getElementById('ac_major_sel').value='shakai_group';
-    else document.getElementById('ac_major_sel').value=majors[0]||'';
+    // set majors
+    acSetMajors(c.major||[]);
     document.getElementById('ac_period').value=c.period||'';
     document.getElementById('ac_course_type').value=c.course_type||'';
     document.getElementById('ac_teacher').value=c.teacher||'';
@@ -1591,17 +1592,33 @@ function openAddCourseModal(editId){
     if(hasDetails) acPopulateRows(sessions.map(s=>({num:s.session_number,title:s.session_title||'',teacher:s.session_teacher||''})));
   } else {
     ['ac_name','ac_teacher','ac_campus','ac_time_range','ac_notes'].forEach(id=>document.getElementById(id).value='');
-    ['ac_major_sel','ac_period','ac_course_type','ac_delivery','ac_weekday'].forEach(id=>document.getElementById(id).value='');
+    ['ac_period','ac_course_type','ac_delivery','ac_weekday'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('ac_total').value='';
     document.getElementById('ac_first_date').value='';
     document.getElementById('ac_has_details').checked=false;
+    acSetMajors([]);
     toggleAcDetails(false);
   }
   document.getElementById('addCourseModal').classList.add('open');
 }
 
+function acOnTypeChange(val){
+  if(val==='共通课'){
+    document.querySelectorAll('#ac_major_checkboxes input').forEach(cb=>cb.checked=true);
+  }
+}
+
+function acGetMajors(){
+  return [...document.querySelectorAll('#ac_major_checkboxes input:checked')].map(cb=>cb.value);
+}
+
+function acSetMajors(majors){
+  document.querySelectorAll('#ac_major_checkboxes input').forEach(cb=>{
+    cb.checked=majors.includes(cb.value);
+  });
+}
+
 function toggleAcDetails(show){
-  document.getElementById('ac_details_section').style.display=show?'':'none';
   if(show&&!document.getElementById('ac_details_body').children.length) acSyncRows();
 }
 
@@ -1639,7 +1656,6 @@ function acGetRows(){
 
 async function saveAddCourse(){
   const name=document.getElementById('ac_name').value.trim();
-  const majorSel=document.getElementById('ac_major_sel').value;
   const period=document.getElementById('ac_period').value;
   const total=parseInt(document.getElementById('ac_total').value)||0;
   const firstDate=document.getElementById('ac_first_date').value;
@@ -1648,7 +1664,8 @@ async function saveAddCourse(){
   if(!period){alert('请选择期数');return}
   if(!total||!firstDate||!weekdayStr){alert('请填写回数、第一回日期和星期');return}
 
-  const majors=majorSel==='shakai_group'?['shakai','shinpan','fukushi']:majorSel?[majorSel]:[];
+  const majors=acGetMajors();
+  if(!majors.length){alert('请至少选择一个专业');return}
   const weekdays=parseWeekdays(weekdayStr);
   const dates=generateSessionDatesFromFirst(firstDate,weekdays,total);
   const hasDetails=document.getElementById('ac_has_details').checked;
