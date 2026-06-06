@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>唯新教育 大学院管理系统</title>
+<title>唯新教育 管理系统</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -163,7 +163,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 <!-- Login -->
 <div id="loginOverlay">
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:36px 40px;width:320px;text-align:center">
-    <div style="font-family:'Noto Serif SC',serif;font-size:1.2rem;font-weight:600;margin-bottom:4px">唯新教育 大学院管理系统</div>
+    <div style="font-family:'Noto Serif SC',serif;font-size:1.2rem;font-weight:600;margin-bottom:4px">唯新教育 管理系统</div>
     <div style="font-size:10px;color:var(--text-3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:28px">Transform Education</div>
     <div style="text-align:left;margin-bottom:8px">
       <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:5px">管理密码</label>
@@ -179,7 +179,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
   <!-- Topbar -->
   <div class="topbar">
     <div>
-      <div class="topbar-title">唯新教育 大学院管理系统</div>
+      <div class="topbar-title">唯新教育 管理系统</div>
       <div class="topbar-sub">Transform Education · Admin</div>
     </div>
     <button class="btn btn-outline btn-sm" onclick="doLogout()">退出登录</button>
@@ -188,13 +188,12 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
   <!-- Sidebar -->
   <div class="sidebar">
     <div class="nav-sep">面谈预约</div>
-    <button class="nav-item active" id="nav-booking" onclick="switchPage('booking')"></span>预约管理</button>
-    <button class="nav-item" id="nav-slots" onclick="switchPage('slots')"></span>时间槽设定</button>
+    <button class="nav-item active" id="nav-booking" onclick="switchPage('booking')"><span class="nav-icon">📅</span>预约管理</button>
+    <button class="nav-item" id="nav-slots" onclick="switchPage('slots')"><span class="nav-icon">⏰</span>时间槽设定</button>
     <div class="nav-sep">学生管理</div>
-    <button class="nav-item" id="nav-students" onclick="switchPage('students')"></span>学生档案</button>
-    <button class="nav-item" id="nav-attendance" onclick="switchPage('attendance')"></span>出席・作业</button>
-    <div class="nav-sep">课程管理</div>
-    <button class="nav-item" id="nav-courses" onclick="switchPage('courses')"></span>课程登录</button>
+    <button class="nav-item" id="nav-students" onclick="switchPage('students')"><span class="nav-icon">👥</span>学生档案</button>
+    <button class="nav-item" id="nav-courses" onclick="switchPage('courses')"><span class="nav-icon">📚</span>课程管理</button>
+    <button class="nav-item" id="nav-attendance" onclick="switchPage('attendance')"><span class="nav-icon">✅</span>出席・作业</button>
   </div>
 
   <!-- Main content -->
@@ -1027,7 +1026,30 @@ async function confirmCourseImport(){
   }catch(e){alert('导入失败：'+e.message);btn.textContent='确认导入';btn.disabled=false}
 }
 
+let coursesMajorFilter='all';
+let coursesPeriodFilter='all';
+
 function renderCoursesPage(mc){
+  // collect all unique periods from course names
+  const allMajorSets=[...new Set(cachedCourses.flatMap(c=>c.major||[]))];
+
+  // filter
+  let filtered=cachedCourses;
+  if(coursesMajorFilter!=='all') filtered=filtered.filter(c=>(c.major||[]).includes(coursesMajorFilter));
+  if(coursesPeriodFilter!=='all') filtered=filtered.filter(c=>c.campus===coursesPeriodFilter||c.notes?.includes(coursesPeriodFilter));
+
+  // group by major then by campus/period
+  const byMajor={};
+  filtered.forEach(c=>{
+    const majors=c.major?.length?c.major:['unknown'];
+    majors.forEach(m=>{
+      if(!byMajor[m]) byMajor[m]=[];
+      if(!byMajor[m].find(x=>x.id===c.id)) byMajor[m].push(c);
+    });
+  });
+
+  const majorOrder=['keiei','keizai','shakai','shinpan','fukushi','unknown'];
+
   mc.innerHTML=`
   <div class="page-header">
     <div class="section-title">课程管理 <span class="badge-count">${cachedCourses.length}</span></div>
@@ -1036,26 +1058,76 @@ function renderCoursesPage(mc){
       <input type="file" id="courseImportFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleCourseImportFile(this)">
     </div>
   </div>
-  ${cachedCourses.length?`
-  <table class="student-table">
-    <thead><tr><th>课程名称</th><th>讲师</th><th>专业</th><th>校区</th><th>时间</th><th>周</th><th>总回数</th><th>已生成</th><th></th></tr></thead>
-    <tbody>
-      ${cachedCourses.map(c=>{
-        const sessionCount=cachedSessions.filter(s=>s.course_id===c.id).length;
-        return `<tr>
-          <td style="font-size:12px;max-width:220px">${c.name}</td>
-          <td style="font-size:11px">${c.teacher||''}</td>
-          <td style="font-size:11px">${(c.major||[]).map(m=>MAJORS[m]||m).join('・')}</td>
-          <td style="font-size:11px">${c.campus||''}</td>
-          <td style="font-size:11px">${c.time_range||''}</td>
-          <td style="font-size:11px">${c.weekdays||''}</td>
-          <td style="font-size:11px;text-align:center">${c.total_sessions||0}</td>
-          <td style="font-size:11px;text-align:center;color:${sessionCount>=c.total_sessions?'var(--ok)':'var(--warn)'}">${sessionCount}</td>
-          <td><button class="btn btn-danger btn-sm" onclick="deleteCourse('${c.id}')">删除</button></td>
-        </tr>`;
-      }).join('')}
-    </tbody>
-  </table>`:`<div class="empty" style="padding:60px">暂无课程，点击右上角「导入课程安排」上传 Excel</div>`}`;
+
+  <div class="filter-row" style="margin-bottom:6px">
+    ${['all','keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map((m,i)=>`
+      <div class="filter-chip${coursesMajorFilter===m?' active':''}" onclick="setCoursesMajor('${m}',this)">
+        ${i===0?'全部专业':majorLabel(m)}
+      </div>`).join('')}
+  </div>
+
+  ${!cachedCourses.length
+    ?`<div class="empty" style="padding:80px 0">
+        暂无课程数据<br>
+        <span style="font-size:11px;color:var(--text-3);margin-top:6px;display:block">点击右上角「导入课程安排」上传 Excel</span>
+      </div>`
+    :majorOrder.filter(m=>byMajor[m]?.length).map(m=>{
+        const courses=byMajor[m].sort((a,b)=>(a.start_date||'').localeCompare(b.start_date||''));
+        // group by campus (period)
+        const byCampus={};
+        courses.forEach(c=>{
+          const key=c.campus||'未分期';
+          if(!byCampus[key]) byCampus[key]=[];
+          byCampus[key].push(c);
+        });
+        return `
+        <div style="margin-bottom:28px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--border)">
+            <span style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">${majorLabel(m)}</span>
+            <span style="font-size:11px;color:var(--text-3)">${courses.length} 门课程</span>
+          </div>
+          ${Object.entries(byCampus).map(([period,pCourses])=>`
+            <div style="margin-bottom:16px">
+              <div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin-bottom:8px;display:flex;align-items:center;gap:8px">
+                <span style="background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:2px 8px">${period}</span>
+                <span>${pCourses.length} 门</span>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px">
+                ${pCourses.map(c=>{
+                  const sessionCount=cachedSessions.filter(s=>s.course_id===c.id).length;
+                  const pct=c.total_sessions?Math.round(sessionCount/c.total_sessions*100):0;
+                  const color=sessionCount>=c.total_sessions?'var(--ok)':sessionCount>0?'var(--warn)':'var(--text-3)';
+                  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px">
+                    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
+                      <div style="font-size:12px;font-weight:600;line-height:1.4;flex:1">${c.name}</div>
+                      <button class="btn-ghost" style="flex-shrink:0;color:var(--danger);padding:0 2px" onclick="deleteCourse('${c.id}')">✕</button>
+                    </div>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+                      ${c.teacher?`<span style="font-size:10px;background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 6px;color:var(--text-2)">👤 ${c.teacher}</span>`:''}
+                      ${c.weekdays?`<span style="font-size:10px;background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 6px;color:var(--text-2)">${c.weekdays}</span>`:''}
+                      ${c.time_range?`<span style="font-size:10px;background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 6px;color:var(--text-2)">${c.time_range}</span>`:''}
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <div style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+                        <div style="height:100%;width:${pct}%;background:${color};border-radius:2px;transition:width .3s"></div>
+                      </div>
+                      <span style="font-size:10px;color:${color};white-space:nowrap">${sessionCount}/${c.total_sessions||'?'}回</span>
+                    </div>
+                    ${c.start_date?`<div style="font-size:10px;color:var(--text-3);margin-top:5px">${c.start_date} → ${c.end_date||'?'}</div>`:''}
+                  </div>`;
+                }).join('')}
+              </div>
+            </div>`).join('')}
+        </div>`;
+      }).join('')
+  }`;
+}
+
+function setCoursesMajor(m,el){
+  coursesMajorFilter=m;
+  document.querySelectorAll('.filter-row .filter-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  renderCoursesPage(document.getElementById('mainContent'));
 }
 
 async function deleteCourse(id){
