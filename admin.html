@@ -408,6 +408,23 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
   </div>
 </div>
 
+<!-- Publish management modal -->
+<div class="modal-overlay" id="publishModal">
+  <div class="modal" style="width:760px;max-width:96vw">
+    <div class="modal-title">发布管理</div>
+    <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px">
+      勾选要发布给老师课表的课程，确认后老师可在「我的课表」中看到
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap" id="publishFilters"></div>
+    <div style="max-height:420px;overflow-y:auto;border:1px solid var(--border);border-radius:3px" id="publishList"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('publishModal')">关闭</button>
+      <button class="btn btn-danger btn-sm" onclick="publishSelected(false)">取消选中课程发布</button>
+      <button class="btn btn-primary" onclick="publishSelected(true)">✓ 发布选中课程</button>
+    </div>
+  </div>
+</div>
+
 <!-- Manual add course modal -->
 <div class="modal-overlay" id="addCourseModal">
   <div class="modal" style="width:680px">
@@ -471,6 +488,13 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
         </table>
       </div>
       <button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="acAddRow()">＋ 添加一行</button>
+    </div>
+
+    <div style="margin-top:12px;padding:10px 12px;background:var(--bg);border:1px solid var(--border-light);border-radius:3px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px">
+        <input type="checkbox" id="ac_confirm_publish" style="accent-color:var(--accent);width:15px;height:15px">
+        <span>直接确认发布（老师课表立即可见）</span>
+      </label>
     </div>
 
     <div class="modal-actions">
@@ -558,6 +582,13 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
       上传课程安排Excel，自动解析并生成每次课的日期。已存在同名课程将跳过。
     </div>
     <div id="courseImportPreview"></div>
+    <div style="margin:12px 0;padding:10px 12px;background:var(--bg);border:1px solid var(--border-light);border-radius:3px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px">
+        <input type="checkbox" id="importConfirmPublish" style="accent-color:var(--accent);width:15px;height:15px">
+        <span>直接确认发布（课程安排已定，老师课表立即可见）</span>
+      </label>
+      <div style="font-size:11px;color:var(--text-3);margin-top:4px;margin-left:23px">不勾选则为待发布状态，需要在「发布管理」中手动发布</div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeModal('courseImportModal')">取消</button>
       <button class="btn btn-primary" id="courseImportConfirmBtn" onclick="confirmCourseImport()">确认导入</button>
@@ -1304,6 +1335,7 @@ function showCourseImportPreview(){
 async function confirmCourseImport(){
   const newRows=pendingCourseImport.filter(r=>!r._exists);
   if(!newRows.length){closeModal('courseImportModal');return}
+  const confirmed=document.getElementById('importConfirmPublish')?.checked||false;
   const btn=document.getElementById('courseImportConfirmBtn');
   btn.textContent='导入中…';btn.disabled=true;
   try{
@@ -1331,7 +1363,8 @@ async function confirmCourseImport(){
             time_range:r.time_range,
             teacher:detail.teacher||r.teacher,
             session_title:detail.title||'',
-            session_teacher:detail.teacher||''
+            session_teacher:detail.teacher||'',
+            confirmed
           };
         });
         for(let i=0;i<sessions.length;i+=20){
@@ -1430,6 +1463,7 @@ function renderCoursesPage(mc){
   <div class="page-header">
     <div class="section-title">课程安排</div>
     <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-ok btn-sm" onclick="openPublishModal()" style="background:var(--ok);color:#fff;border:none">📢 发布管理</button>
       <button class="btn btn-primary btn-sm" onclick="openAddCourseModal()">＋ 手动添加</button>
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('courseImportFileInput').click()">↑ 导入 Excel</button>
       <input type="file" id="courseImportFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleCourseImportFile(this)">
@@ -1512,6 +1546,13 @@ function renderCoursesSummary(courses){
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <span style="font-size:10px;opacity:.7;white-space:nowrap">${total} 課次</span>
+            ${(()=>{
+              const isConfirmed=sessions.length>0&&sessions.every(s=>s.confirmed);
+              const someConfirmed=sessions.some(s=>s.confirmed);
+              if(isConfirmed) return `<span style="font-size:10px;background:rgba(42,158,106,.2);color:#1a5a3a;border-radius:2px;padding:1px 7px;font-weight:600">✓ 已发布</span>`;
+              if(someConfirmed) return `<span style="font-size:10px;background:rgba(184,120,32,.15);color:var(--warn);border-radius:2px;padding:1px 7px">部分发布</span>`;
+              return `<span style="font-size:10px;background:var(--bg);color:var(--text-3);border:1px solid var(--border);border-radius:2px;padding:1px 7px">未发布</span>`;
+            })()}
             <button onclick="openAddCourseModal('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.35);border:1px solid rgba(0,0,0,.15);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:${color.text}">编辑</button>
             <button onclick="openCopyPeriod('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.35);border:1px solid rgba(0,0,0,.15);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:${color.text}">复制到新期</button>
             <button onclick="deleteCourse('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.2);border:1px solid rgba(180,0,0,.25);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:#8a2020">删除</button>
@@ -1560,8 +1601,20 @@ function setCoursesType(t,el){
   renderCoursesPage(document.getElementById('mainContent'));
 }
 
+async function toggleCourseConfirm(courseId, isCurrentlyConfirmed){
+  const sessions=cachedSessions.filter(s=>s.course_id===courseId);
+  if(!sessions.length){alert('该课程暂无课次');return}
+  const newVal=!isCurrentlyConfirmed;
+  const action=newVal?'发布':'取消发布';
+  if(!confirm(`确定${action}该课程所有 ${sessions.length} 个课次？${newVal?'\n\n发布后老师可在「我的课表」中看到这门课。':''}`)){ return}
+  try{
+    await sb(`/rest/v1/course_sessions?course_id=eq.${courseId}`,'PATCH',{confirmed:newVal});
+    sessions.forEach(s=>s.confirmed=newVal);
+    renderCoursesPage(document.getElementById('mainContent'));
+  }catch(e){alert('操作失败：'+e.message)}
+}
+
 async function deleteCourse(id){
-  if(!confirm('确定删除该课程及其所有课次和出席记录？'))return;
   try{
     await sb(`/rest/v1/session_records?session_id=in.(${cachedSessions.filter(s=>s.course_id===id).map(s=>`"${s.id}"`).join(',')||'""'})`,'DELETE').catch(()=>{});
     await sb(`/rest/v1/course_sessions?course_id=eq.${id}`,'DELETE');
@@ -1573,7 +1626,94 @@ async function deleteCourse(id){
   }catch(e){alert('删除失败：'+e.message)}
 }
 
-// ── 手动添加课程 ──
+// ── 发布管理 ──
+let publishMajorFilter='all', publishPeriodFilter='all';
+
+function openPublishModal(){
+  publishMajorFilter='all'; publishPeriodFilter='all';
+  renderPublishModal();
+  document.getElementById('publishModal').classList.add('open');
+}
+
+function renderPublishModal(){
+  const allPeriods=[...new Map(cachedCourses
+    .filter(c=>c.period&&c.first_session_date)
+    .map(c=>{const year=c.first_session_date.slice(0,4);const key=`${year}年${c.period}`;return[key,key]})
+  ).values()].sort();
+
+  document.getElementById('publishFilters').innerHTML=`
+    <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:10px;color:var(--text-3);margin-right:2px">专业</span>
+      ${['all','keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map((m,i)=>`
+        <div class="filter-chip${publishMajorFilter===m?' active':''}" onclick="setPubMajor('${m}',this)" style="font-size:11px;padding:2px 8px">${i===0?'全部':majorLabel(m)}</div>`).join('')}
+    </div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:6px">
+      <span style="font-size:10px;color:var(--text-3);margin-right:2px">期数</span>
+      <div class="filter-chip${publishPeriodFilter==='all'?' active':''}" onclick="setPubPeriod('all',this)" style="font-size:11px;padding:2px 8px">全部</div>
+      ${allPeriods.map(p=>`<div class="filter-chip${publishPeriodFilter===p?' active':''}" onclick="setPubPeriod('${p}',this)" style="font-size:11px;padding:2px 8px">${p}</div>`).join('')}
+    </div>`;
+
+  let courses=cachedCourses;
+  if(publishMajorFilter!=='all'){
+    const ml=publishMajorFilter==='shakai_group'?['shakai','shinpan','fukushi']:[publishMajorFilter];
+    courses=courses.filter(c=>(c.major||[]).some(m=>ml.includes(m)));
+  }
+  if(publishPeriodFilter!=='all'){
+    const[y,p]=publishPeriodFilter.match(/(\d{4})年(.+)/)?.slice(1)||[];
+    if(y&&p) courses=courses.filter(c=>c.period===p&&c.first_session_date?.startsWith(y));
+  }
+  // deduplicate
+  const seen=new Set();
+  courses=courses.filter(c=>{if(seen.has(c.id))return false;seen.add(c.id);return true});
+
+  document.getElementById('publishList').innerHTML=courses.length
+    ?`<table class="student-table" style="margin:0">
+        <thead><tr>
+          <th style="width:36px"><input type="checkbox" id="pubSelectAll" onchange="pubToggleAll(this.checked)" style="accent-color:var(--accent)"></th>
+          <th>课程名称</th><th>期数</th><th>专业</th><th>属性</th><th>状态</th>
+        </tr></thead>
+        <tbody>
+          ${courses.map(c=>{
+            const sessions=cachedSessions.filter(s=>s.course_id===c.id);
+            const isConfirmed=sessions.length>0&&sessions.every(s=>s.confirmed);
+            const someConfirmed=sessions.some(s=>s.confirmed);
+            const statusLabel=isConfirmed?'<span style="color:var(--ok);font-size:11px">✓ 已发布</span>':someConfirmed?'<span style="color:var(--warn);font-size:11px">部分</span>':'<span style="color:var(--text-3);font-size:11px">未发布</span>';
+            const year=c.first_session_date?.slice(0,4)||'';
+            return `<tr>
+              <td><input type="checkbox" class="pub-course-cb" value="${c.id}" style="accent-color:var(--accent)" ${isConfirmed?'checked':''}></td>
+              <td style="font-size:12px;font-weight:600">${c.name}</td>
+              <td style="font-size:11px">${year?year+'年':''}${c.period||''}</td>
+              <td style="font-size:11px">${(c.major||[]).map(m=>MAJORS[m]||m).join('・')}</td>
+              <td style="font-size:11px">${c.course_type||''}</td>
+              <td>${statusLabel}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`
+    :'<div class="empty" style="padding:30px">暂无课程</div>';
+}
+
+function setPubMajor(m,el){publishMajorFilter=m;renderPublishModal()}
+function setPubPeriod(p,el){publishPeriodFilter=p;renderPublishModal()}
+function pubToggleAll(checked){
+  document.querySelectorAll('.pub-course-cb').forEach(cb=>cb.checked=checked);
+}
+
+async function publishSelected(confirm_val){
+  const ids=[...document.querySelectorAll('.pub-course-cb:checked')].map(cb=>cb.value);
+  if(!ids.length){alert('请先勾选课程');return}
+  const action=confirm_val?'发布':'取消发布';
+  if(!confirm(`确定${action}所选 ${ids.length} 门课程？`)) return;
+  try{
+    for(const id of ids){
+      await sb(`/rest/v1/course_sessions?course_id=eq.${id}`,'PATCH',{confirmed:confirm_val});
+      cachedSessions.filter(s=>s.course_id===id).forEach(s=>s.confirmed=confirm_val);
+    }
+    renderPublishModal();
+    renderCoursesPage(document.getElementById('mainContent'));
+    alert(`已${action} ${ids.length} 门课程`);
+  }catch(e){alert('操作失败：'+e.message)}
+}
 function openAddCourseModal(editId){
   document.getElementById('addCourseModalTitle').textContent=editId?'编辑课程':'手动添加课程';
   document.getElementById('ac_editing_id').value=editId||'';
@@ -1593,6 +1733,9 @@ function openAddCourseModal(editId){
     document.getElementById('ac_total').value=c.total_sessions||'';
     document.getElementById('ac_first_date').value=c.first_session_date||'';
     document.getElementById('ac_notes').value=c.notes||'';
+    // set confirmed state
+    const isConfirmed=cachedSessions.filter(s=>s.course_id===editId).every(s=>s.confirmed);
+    document.getElementById('ac_confirm_publish').checked=isConfirmed;
     // load existing session details
     const sessions=cachedSessions.filter(s=>s.course_id===editId).sort((a,b)=>a.session_number-b.session_number);
     const hasDetails=sessions.some(s=>s.session_title||s.session_teacher);
@@ -1764,6 +1907,7 @@ async function saveAddCourse(){
     }
     // create sessions
     if(dates.length){
+      const confirmed=document.getElementById('ac_confirm_publish')?.checked||false;
       const sessions=dates.map((date,i)=>{
         const detail=detailRows.find(r=>r.num===i+1)||{};
         const mainTeacher=courseData.teacher;
@@ -1775,6 +1919,7 @@ async function saveAddCourse(){
           teacher:detail.teacher||mainTeacher,
           session_title:detail.title||'',
           session_teacher:detail.teacher||mainTeacher,
+          confirmed
         };
       });
       for(let i=0;i<sessions.length;i+=20){
