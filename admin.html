@@ -884,47 +884,49 @@ let cachedCourses=[], cachedSessions=[], cachedSessionRecords=[];
 let pendingCourseImport=[];
 
 // 课程名 → 专业映射
-function detectMajorsFromCourseName(name){
-  const n=name;
-  const majors=[];
-  if(/社会人文|社会学/.test(n)&&!/新闻|新传|福祉/.test(n)) majors.push('shakai');
-  if(/新闻|新传/.test(n)) majors.push('shinpan');
-  if(/福祉/.test(n)) majors.push('fukushi');
-  if(/社会人文/.test(n)&&!majors.length){majors.push('shakai');majors.push('shinpan');majors.push('fukushi')}
-  if(/経営|经营/.test(n)) majors.push('keiei');
-  if(/経済|经济/.test(n)) majors.push('keizai');
-  // 社会人文大课包含全三个
-  if(/社会人文/.test(n)&&majors.includes('shakai')&&!majors.includes('shinpan')) majors.push('shinpan','fukushi');
-  return [...new Set(majors)];
+// 专业列名 → major key
+function detectMajorsFromField(str){
+  if(!str) return [];
+  const parts=String(str).split(/[,，、\/]/);
+  const result=[];
+  for(const p of parts){
+    const s=p.trim();
+    if(/经营|経営/i.test(s)) result.push('keiei');
+    else if(/经济|経済/i.test(s)) result.push('keizai');
+    else if(/社会人文/i.test(s)) result.push('shakai','shinpan','fukushi');
+    else if(/社会学/i.test(s)) result.push('shakai');
+    else if(/新闻|新传|新伝/i.test(s)) result.push('shinpan');
+    else if(/福祉/i.test(s)) result.push('fukushi');
+  }
+  return [...new Set(result)];
 }
 
-// Excel日期数字 → JS Date
-function excelDateToJS(serial){
-  if(!serial||isNaN(serial)) return null;
-  const d=new Date((serial-25569)*86400*1000);
-  return d;
-}
-function excelDateToStr(serial){
-  const d=excelDateToJS(serial);
-  if(!d) return '';
-  return d.toISOString().slice(0,10);
+// JS Date → YYYY-MM-DD
+function dateToStr(d){
+  if(!d||!(d instanceof Date)||isNaN(d)) return '';
+  // Excel日期用UTC，补时区偏移
+  const local=new Date(d.getTime()+d.getTimezoneOffset()*60000);
+  return local.toISOString().slice(0,10);
 }
 
-// 星期字符串 → 星期数组 [0-6]
+// 星期字符串 → 星期数组 [0=日,1=一…]
 function parseWeekdays(str){
   if(!str) return [];
-  const map={'周日':0,'周一':1,'周二':2,'周三':3,'周四':4,'周五':5,'周六':6,'日':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6};
+  const map={'周日':0,'周一':1,'周二':2,'周三':3,'周四':4,'周五':5,'周六':6};
   const days=[];
   for(const [k,v] of Object.entries(map)){if(str.includes(k)) days.push(v)}
   return [...new Set(days)];
 }
 
-// 生成课程日期列表（按星期，限回数）
-function generateSessionDates(startDate,endDate,weekdays,totalSessions){
+// 从第一回日期+星期+回数 生成所有日期
+function generateSessionDatesFromFirst(firstDate,weekdays,totalSessions){
+  if(!firstDate||!weekdays.length||!totalSessions) return [];
   const dates=[];
-  const end=new Date(endDate);
-  const cur=new Date(startDate);
-  while(cur<=end&&dates.length<totalSessions){
+  const cur=new Date(firstDate);
+  // 最多往后推2年防死循环
+  const limit=new Date(firstDate);
+  limit.setFullYear(limit.getFullYear()+2);
+  while(dates.length<totalSessions&&cur<=limit){
     if(weekdays.includes(cur.getDay())) dates.push(cur.toISOString().slice(0,10));
     cur.setDate(cur.getDate()+1);
   }
@@ -938,36 +940,74 @@ function handleCourseImportFile(input){
   const reader=new FileReader();
   reader.onload=e=>{
     try{
-      const wb=XLSX.read(e.target.result,{type:'array'});
-      const rows=[];
-      for(const sheetName of wb.SheetNames){
-        const ws=wb.Sheets[sheetName];
-        const data=XLSX.utils.sheet_to_json(ws,{defval:''});
-        for(const row of data){
-          const name=String(row['课程']||row['课程名']||'').trim();
-          if(!name) continue;
-          const startSerial=row['开课时间'];
-          const endSerial=row['结课时间'];
-          const start=excelDateToStr(startSerial);
-          const end=excelDateToStr(endSerial);
-          if(!start||!end) continue;
-          const wdStr=String(row['星期']||'');
-          const weekdays=parseWeekdays(wdStr);
-          const total=parseInt(row['课程回数']||row['回数']||0);
-          const teacher=String(row['讲师']||'').trim();
-          const campus=String(row['校区']||'').trim();
-          const timeRange=String(row['上课时间']||'').trim();
-          const notes=String(row['备注']||'').trim();
-          const majors=detectMajorsFromCourseName(name);
-          const dates=weekdays.length&&total>0?generateSessionDates(start,end,weekdays,total):[];
-          rows.push({name,major:majors,campus,teacher,start_date:start,end_date:end,total_sessions:total,weekdays:wdStr,time_range:timeRange,notes,_dates:dates});
-        }
+      const wb=XLSX.read(e.target.result,{type:'array',cellDates:true});
+
+      // 读主表
+      const mainSheet=wb.Sheets[wb.SheetNames[0]];
+      const mainData=XLSX.utils.sheet_to_json(mainSheet,{defval:''});
+
+      // 读单回明细表
+      const detailSheetName=wb.SheetNames.find(n=>n.includes('单回')||n.includes('明细'));
+      const detailData=detailSheetName
+        ?XLSX.utils.sheet_to_json(wb.Sheets[detailSheetName],{defval:''})
+        :[];
+
+      // 整理单回明细 {课程名: [{回数,单回名称,单回讲师,备注}]}
+      const detailMap={};
+      for(const row of detailData){
+        const name=String(row['课程名称']||'').trim();
+        if(!name) continue;
+        if(!detailMap[name]) detailMap[name]=[];
+        detailMap[name].push({
+          num:parseInt(row['第几回']||0),
+          title:String(row['单回名称']||'').trim(),
+          teacher:String(row['单回讲师']||'').trim(),
+          notes:String(row['备注']||'').trim(),
+        });
       }
-      if(!rows.length){alert('未能解析到课程数据，请确认Excel包含「课程」「开课时间」「结课时间」「课程回数」「星期」列');return}
-      const existingNames=new Set(cachedCourses.map(c=>c.name));
-      pendingCourseImport=rows.map(r=>({...r,_exists:existingNames.has(r.name)}));
+
+      const rows=[];
+      for(const row of mainData){
+        const name=String(row['课程名称']||'').trim();
+        if(!name||name==='课程名称') continue;
+
+        const majorStr=String(row['专业']||'').trim();
+        const majors=detectMajorsFromField(majorStr);
+        const period=String(row['期数']||'').trim();
+        const course_type=String(row['课程属性']||'').trim();
+        const teacher=String(row['讲师']||'').trim();
+        const campus=String(row['校区']||'').trim();
+        const delivery=String(row['授课形式']||'').trim();
+        const wdStr=String(row['星期']||'').trim();
+        const weekdays=parseWeekdays(wdStr);
+        const timeRange=String(row['上课时间']||'').trim();
+        const total=parseInt(row['课程回数']||0);
+        const notes=String(row['备注']||'').trim();
+
+        // 第一回日期：Excel读取后是JS Date对象（因为cellDates:true）
+        const rawDate=row['第一回日期'];
+        let firstDate='';
+        if(rawDate instanceof Date) firstDate=dateToStr(rawDate);
+        else if(typeof rawDate==='string'&&rawDate) firstDate=rawDate.slice(0,10);
+
+        const dates=generateSessionDatesFromFirst(firstDate,weekdays,total);
+        const details=detailMap[name]||[];
+
+        rows.push({
+          name,major:majors,period,course_type,teacher,campus,delivery,
+          weekdays:wdStr,time_range:timeRange,total_sessions:total,
+          first_session_date:firstDate,notes,
+          _dates:dates,_details:details
+        });
+      }
+
+      if(!rows.length){alert('未能解析到课程数据，请检查Excel格式');return}
+
+      // 已存在判断：同课程名+期数 算同一条
+      const existingKeys=new Set(cachedCourses.map(c=>`${c.name}|${c.period||''}`));
+      pendingCourseImport=rows.map(r=>({...r,_exists:existingKeys.has(`${r.name}|${r.period}`)}));
       showCourseImportPreview();
-    }catch(err){alert('解析失败：'+err.message)}
+    }catch(err){alert('解析失败：'+err.message+'\n'+err.stack)}
   };
   reader.readAsArrayBuffer(file);
 }
@@ -977,23 +1017,27 @@ function showCourseImportPreview(){
   const skipRows=pendingCourseImport.filter(r=>r._exists);
   const preview=document.getElementById('courseImportPreview');
   preview.innerHTML=`
-    <div style="display:flex;gap:12px;margin-bottom:14px">
+    <div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap">
       <div style="background:var(--ok-bg);border-radius:3px;padding:8px 14px;font-size:12px"><strong style="color:var(--ok)">${newRows.length}</strong> <span style="color:var(--text-2)">门课程将导入</span></div>
       <div style="background:var(--warn-bg);border-radius:3px;padding:8px 14px;font-size:12px"><strong style="color:var(--warn)">${skipRows.length}</strong> <span style="color:var(--text-2)">门已存在将跳过</span></div>
     </div>
-    ${newRows.length?`<div style="max-height:360px;overflow-y:auto;border:1px solid var(--border);border-radius:3px">
+    ${newRows.length?`<div style="max-height:380px;overflow-y:auto;border:1px solid var(--border);border-radius:3px">
       <table class="student-table" style="margin:0">
-        <thead><tr><th>课程名称</th><th>讲师</th><th>专业</th><th>星期</th><th>回数</th><th>日期生成</th></tr></thead>
+        <thead><tr><th>课程名称</th><th>专业</th><th>期数</th><th>讲师</th><th>校区</th><th>授课形式</th><th>星期</th><th>第一回</th><th>回数</th><th>日期生成</th></tr></thead>
         <tbody>${newRows.map(r=>`<tr>
-          <td style="font-size:11px;max-width:200px">${r.name}</td>
+          <td style="font-size:11px">${r.name}</td>
+          <td style="font-size:11px">${(r.major||[]).map(m=>MAJORS[m]||m).join('・')||'<span style="color:var(--warn)">未识别</span>'}</td>
+          <td style="font-size:11px">${r.period}</td>
           <td style="font-size:11px">${r.teacher}</td>
-          <td style="font-size:11px">${(r.major||[]).map(m=>MAJORS[m]||m).join('・')}</td>
+          <td style="font-size:11px">${r.campus}</td>
+          <td style="font-size:11px">${r.delivery}</td>
           <td style="font-size:11px">${r.weekdays}</td>
+          <td style="font-size:11px">${r.first_session_date||'<span style="color:var(--danger)">缺失</span>'}</td>
           <td style="font-size:11px">${r.total_sessions}回</td>
-          <td style="font-size:11px;color:${r._dates.length?'var(--ok)':'var(--warn)'}">${r._dates.length?r._dates.length+'次课已生成':'无法生成'}</td>
+          <td style="font-size:11px;color:${r._dates.length===r.total_sessions?'var(--ok)':r._dates.length>0?'var(--warn)':'var(--danger)'}">${r._dates.length}/${r.total_sessions}</td>
         </tr>`).join('')}</tbody>
       </table>
-    </div>`:'<div class="empty">所有课程已存在</div>'}`;
+    </div>`:'<div class="empty" style="padding:20px">所有课程已存在，无需导入</div>'}`;
   document.getElementById('courseImportConfirmBtn').disabled=!newRows.length;
   document.getElementById('courseImportModal').classList.add('open');
 }
@@ -1006,23 +1050,42 @@ async function confirmCourseImport(){
   try{
     for(const r of newRows){
       const courseId=`c-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
-      const course={id:courseId,name:r.name,major:r.major,campus:r.campus,teacher:r.teacher,start_date:r.start_date,end_date:r.end_date,total_sessions:r.total_sessions,weekdays:r.weekdays,time_range:r.time_range,notes:r.notes};
+      const course={
+        id:courseId,name:r.name,major:r.major,period:r.period,
+        course_type:r.course_type,teacher:r.teacher,campus:r.campus,
+        delivery:r.delivery,weekdays:r.weekdays,time_range:r.time_range,
+        total_sessions:r.total_sessions,first_session_date:r.first_session_date||null,
+        notes:r.notes
+      };
       const res=await sb('/rest/v1/courses','POST',[course]);
       cachedCourses.push(Array.isArray(res)?res[0]:course);
-      // create sessions
+
+      // 生成每次课
       if(r._dates.length){
-        const sessions=r._dates.map((date,i)=>({id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,course_id:courseId,course_name:r.name,major:r.major,session_date:date,session_number:i+1,time_range:r.time_range,teacher:r.teacher}));
+        const details=r._details||[];
+        const sessions=r._dates.map((date,i)=>{
+          const detail=details.find(d=>d.num===i+1)||{};
+          return {
+            id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
+            course_id:courseId,course_name:r.name,major:r.major,
+            session_date:date,session_number:i+1,
+            time_range:r.time_range,
+            teacher:detail.teacher||r.teacher,
+            session_title:detail.title||'',
+            session_teacher:detail.teacher||''
+          };
+        });
         for(let i=0;i<sessions.length;i+=20){
           const chunk=sessions.slice(i,i+20);
           const sres=await sb('/rest/v1/course_sessions','POST',chunk);
           cachedSessions.push(...(Array.isArray(sres)?sres:chunk));
         }
       }
-      await new Promise(r=>setTimeout(r,100));
+      await new Promise(resolve=>setTimeout(resolve,120));
     }
     closeModal('courseImportModal');
     renderCoursesPage(document.getElementById('mainContent'));
-    alert(`成功导入 ${newRows.length} 门课程`);
+    alert(`成功导入 ${newRows.length} 门课程！`);
   }catch(e){alert('导入失败：'+e.message);btn.textContent='确认导入';btn.disabled=false}
 }
 
@@ -1079,6 +1142,7 @@ function fmtSessionDate(dateStr){
 }
 
 function renderCoursesPage(mc){
+  const curPeriod=currentPeriodKey();
   // 专业筛选
   let majorList=coursesMajorFilter==='all'
     ?['keiei','keizai','shakai','shinpan','fukushi']
@@ -1089,12 +1153,12 @@ function renderCoursesPage(mc){
   // 收集这些专业的课程
   let filtered=cachedCourses.filter(c=>(c.major||[]).some(m=>majorList.includes(m)));
 
-  // 期数过滤
-  const curPeriod=currentPeriodKey();
-  if(coursesPeriodFilter==='current') filtered=filtered.filter(c=>periodFromDate(c.start_date)===curPeriod||periodFromDate(c.end_date)===curPeriod);
+  // 期数过滤：用 course.period 字段，不再从日期推算
+  if(coursesPeriodFilter==='current') filtered=filtered.filter(c=>c.period===curPeriod);
+  else if(coursesPeriodFilter!=='all') filtered=filtered.filter(c=>c.period===coursesPeriodFilter);
 
-  // 收集所有可用期数
-  const allPeriods=[...new Set(cachedCourses.map(c=>periodFromDate(c.start_date)).filter(Boolean))].sort();
+  // 收集所有可用期数（从已有课程的period字段）
+  const allPeriods=[...new Set(cachedCourses.map(c=>c.period).filter(Boolean))].sort();
 
   mc.innerHTML=`
   <div class="page-header">
@@ -1163,8 +1227,14 @@ function renderCoursesSummary(courses){
       const timeStr=course.time_range?` · ${course.time_range}`:'';
       return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
         <div style="background:${color.bg};color:${color.text};padding:8px 14px;display:flex;align-items:center;justify-content:space-between">
-          <span style="font-size:12px;font-weight:600">${key}<span style="font-size:10px;font-weight:400;margin-left:8px;opacity:.8">${teacherStr}${timeStr}</span></span>
-          <span style="font-size:10px;opacity:.8">${total} 課次</span>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span style="font-size:12px;font-weight:600">${key}</span>
+            ${course.teacher?`<span style="font-size:10px;opacity:.75">👤 ${course.teacher}</span>`:''}
+            ${course.campus?`<span style="font-size:10px;opacity:.75">📍 ${course.campus}</span>`:''}
+            ${course.delivery?`<span style="font-size:10px;opacity:.75">${course.delivery==='线下'?'🏫':course.delivery==='线上'?'💻':'🔀'} ${course.delivery}</span>`:''}
+            ${course.time_range?`<span style="font-size:10px;opacity:.75">⏰ ${course.time_range}</span>`:''}
+          </div>
+          <span style="font-size:10px;opacity:.8;white-space:nowrap">${total} 課次</span>
         </div>
         ${sessions.length
           ?`<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0">
