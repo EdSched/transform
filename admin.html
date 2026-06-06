@@ -312,7 +312,77 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
   </div>
 </div>
 
-<!-- Course import modal -->
+<!-- Edit course modal -->
+<div class="modal-overlay" id="editCourseModal">
+  <div class="modal" style="width:580px">
+    <div class="modal-title">编辑课程</div>
+    <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px">修改后保存，不影响已有出席记录</div>
+    <input type="hidden" id="ec_id">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group" style="margin:0"><label class="form-label">课程名称</label><input id="ec_name"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">期数</label>
+        <select id="ec_period"><option>7月期</option><option>10月期</option><option>1月期</option><option>4月期</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">课程属性</label><input id="ec_course_type" placeholder="専門科目 / 共通科目…"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">讲师</label><input id="ec_teacher"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">校区</label><input id="ec_campus" placeholder="市谷 / 高马 / 腾讯会议…"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">授课形式</label>
+        <select id="ec_delivery"><option value="">请选择</option><option>线下</option><option>线上</option><option>线下＋线上</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">星期</label><input id="ec_weekdays" placeholder="周六"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">上课时间</label><input id="ec_time_range" placeholder="14:00-18:00"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">课程回数</label><input type="number" id="ec_total" min="1"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">第一回日期</label><input type="date" id="ec_first_date"></div>
+    </div>
+    <div class="form-group" style="margin-top:12px"><label class="form-label">备注</label><input id="ec_notes"></div>
+    <div style="background:var(--warn-bg);border:1px solid var(--warn);border-radius:3px;padding:8px 12px;font-size:11px;color:var(--warn);margin-top:12px">
+      ⚠ 修改第一回日期或回数后点「重新生成课次」将重新计算所有课次日期（已有出席记录不受影响）
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('editCourseModal')">取消</button>
+      <button class="btn btn-outline" onclick="regenerateSessions()" style="color:var(--warn);border-color:var(--warn)">重新生成课次</button>
+      <button class="btn btn-primary" onclick="saveEditCourse()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Copy to new period modal -->
+<div class="modal-overlay" id="copyPeriodModal">
+  <div class="modal" style="width:480px">
+    <div class="modal-title">复制到新期数</div>
+    <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px">从当前期课程生成新一期，出席记录从零开始</div>
+    <input type="hidden" id="cp_source_ids">
+    <div class="form-group"><label class="form-label">目标期数</label>
+      <select id="cp_period"><option>7月期</option><option>10月期</option><option>1月期</option><option>4月期</option></select></div>
+    <div id="cp_courses_list" style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:3px;padding:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('copyPeriodModal')">取消</button>
+      <button class="btn btn-primary" onclick="confirmCopyPeriod()">复制并生成</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reschedule session modal -->
+<div class="modal-overlay" id="rescheduleModal">
+  <div class="modal" style="width:380px">
+    <div class="modal-title">调整课次日期</div>
+    <div class="modal-sub" id="reschedule_sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px"></div>
+    <input type="hidden" id="rs_session_id">
+    <div class="form-group"><label class="form-label">原日期</label><input id="rs_orig_date" disabled style="opacity:.6"></div>
+    <div class="form-group"><label class="form-label">调整为</label><input type="date" id="rs_new_date"></div>
+    <div class="form-group"><label class="form-label">调整原因</label>
+      <select id="rs_reason">
+        <option value="休讲顺延">休讲顺延</option>
+        <option value="提前补课">提前补课</option>
+        <option value="场地变更">场地变更</option>
+        <option value="其他">其他</option>
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">备注</label><input id="rs_note" placeholder="可选"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('rescheduleModal')">取消</button>
+      <button class="btn btn-primary" onclick="confirmReschedule()">确认调整</button>
+    </div>
+  </div>
+</div>
 <div class="modal-overlay" id="courseImportModal">
   <div class="modal" style="width:700px;max-width:96vw">
     <div class="modal-title">导入课程安排</div>
@@ -891,9 +961,9 @@ function detectMajorsFromField(str){
   const result=[];
   for(const p of parts){
     const s=p.trim();
-    if(/经营|経営/i.test(s)) result.push('keiei');
+    if(/社会人文/i.test(s)){result.push('shakai','shinpan','fukushi')}
+    else if(/经营|経営/i.test(s)) result.push('keiei');
     else if(/经济|経済/i.test(s)) result.push('keizai');
-    else if(/社会人文/i.test(s)) result.push('shakai','shinpan','fukushi');
     else if(/社会学/i.test(s)) result.push('shakai');
     else if(/新闻|新传|新伝/i.test(s)) result.push('shinpan');
     else if(/福祉/i.test(s)) result.push('fukushi');
@@ -1225,16 +1295,21 @@ function renderCoursesSummary(courses){
       const total=sessions.length||course.total_sessions||0;
       const teacherStr=course.teacher?` · ${course.teacher}`:'';
       const timeStr=course.time_range?` · ${course.time_range}`:'';
-      return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
+  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
         <div style="background:${color.bg};color:${color.text};padding:8px 14px;display:flex;align-items:center;justify-content:space-between">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <span style="font-size:12px;font-weight:600">${key}</span>
             ${course.teacher?`<span style="font-size:10px;opacity:.75">👤 ${course.teacher}</span>`:''}
             ${course.campus?`<span style="font-size:10px;opacity:.75">📍 ${course.campus}</span>`:''}
-            ${course.delivery?`<span style="font-size:10px;opacity:.75">${course.delivery==='线下'?'🏫':course.delivery==='线上'?'💻':'🔀'} ${course.delivery}</span>`:''}
+            ${course.delivery?`<span style="font-size:10px;opacity:.75">${course.delivery.includes('线下')&&course.delivery.includes('线上')?'🔀':course.delivery==='线下'?'🏫':'💻'} ${course.delivery}</span>`:''}
             ${course.time_range?`<span style="font-size:10px;opacity:.75">⏰ ${course.time_range}</span>`:''}
           </div>
-          <span style="font-size:10px;opacity:.8;white-space:nowrap">${total} 課次</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:10px;opacity:.7;white-space:nowrap">${total} 課次</span>
+            <button onclick="openEditCourse('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.35);border:1px solid rgba(0,0,0,.15);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:${color.text}">编辑</button>
+            <button onclick="openCopyPeriod('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.35);border:1px solid rgba(0,0,0,.15);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:${color.text}">复制到新期</button>
+            <button onclick="deleteCourse('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.2);border:1px solid rgba(180,0,0,.25);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:#8a2020">删除</button>
+          </div>
         </div>
         ${sessions.length
           ?`<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0">
@@ -1244,13 +1319,18 @@ function renderCoursesSummary(courses){
                 const hasRec=recCount>0;
                 const border=i%5!==0?'border-left:1px solid var(--border-light)':'';
                 const borderT=i>=5?'border-top:1px solid var(--border-light)':'';
-                return `<div style="padding:10px 12px;${border};${borderT}">
-                  <div style="display:flex;align-items:baseline;gap:5px">
-                    <span style="font-size:13px;font-weight:600">${f.short}</span>
-                    <span style="font-size:10px;font-weight:500;color:${f.dowColor}">${f.dow}</span>
+                const titleStr=s.session_title?`<div style="font-size:9px;color:var(--text-2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.session_title}</div>`:'';
+                return `<div style="padding:8px 10px;${border};${borderT};position:relative" title="${s.session_title||''}">
+                  <div style="display:flex;align-items:baseline;justify-content:space-between;gap:4px">
+                    <div style="display:flex;align-items:baseline;gap:4px">
+                      <span style="font-size:13px;font-weight:600">${f.short}</span>
+                      <span style="font-size:10px;font-weight:500;color:${f.dowColor}">${f.dow}</span>
+                    </div>
+                    <button onclick="openReschedule('${s.id}')" title="调整日期" style="font-size:9px;background:none;border:none;cursor:pointer;color:var(--text-3);padding:0;line-height:1">⇄</button>
                   </div>
+                  ${titleStr}
                   <div style="font-size:10px;color:var(--text-3);margin-top:1px">${s.time_range||course.time_range||''}</div>
-                  ${hasRec?`<div style="font-size:9px;color:var(--ok);margin-top:3px">✓ ${recCount}人</div>`:''}
+                  ${hasRec?`<div style="font-size:9px;color:var(--ok);margin-top:2px">✓ ${recCount}人</div>`:''}
                 </div>`;
               }).join('')}
             </div>`
@@ -1285,9 +1365,174 @@ async function deleteCourse(id){
   }catch(e){alert('删除失败：'+e.message)}
 }
 
-// ══════════════════════════════════
-// ATTENDANCE & HOMEWORK PAGE
-// ══════════════════════════════════
+// ── 编辑课程 ──
+function openEditCourse(id){
+  const c=cachedCourses.find(x=>x.id===id);
+  if(!c) return;
+  document.getElementById('ec_id').value=id;
+  document.getElementById('ec_name').value=c.name||'';
+  document.getElementById('ec_period').value=c.period||'7月期';
+  document.getElementById('ec_course_type').value=c.course_type||'';
+  document.getElementById('ec_teacher').value=c.teacher||'';
+  document.getElementById('ec_campus').value=c.campus||'';
+  document.getElementById('ec_delivery').value=c.delivery||'';
+  document.getElementById('ec_weekdays').value=c.weekdays||'';
+  document.getElementById('ec_time_range').value=c.time_range||'';
+  document.getElementById('ec_total').value=c.total_sessions||'';
+  document.getElementById('ec_first_date').value=c.first_session_date||'';
+  document.getElementById('ec_notes').value=c.notes||'';
+  document.getElementById('editCourseModal').classList.add('open');
+}
+async function saveEditCourse(){
+  const id=document.getElementById('ec_id').value;
+  const data={
+    name:document.getElementById('ec_name').value.trim(),
+    period:document.getElementById('ec_period').value,
+    course_type:document.getElementById('ec_course_type').value.trim(),
+    teacher:document.getElementById('ec_teacher').value.trim(),
+    campus:document.getElementById('ec_campus').value.trim(),
+    delivery:document.getElementById('ec_delivery').value,
+    weekdays:document.getElementById('ec_weekdays').value.trim(),
+    time_range:document.getElementById('ec_time_range').value.trim(),
+    total_sessions:parseInt(document.getElementById('ec_total').value)||0,
+    first_session_date:document.getElementById('ec_first_date').value||null,
+    notes:document.getElementById('ec_notes').value.trim(),
+  };
+  try{
+    await sb(`/rest/v1/courses?id=eq.${id}`,'PATCH',data);
+    const idx=cachedCourses.findIndex(c=>c.id===id);
+    if(idx>=0) cachedCourses[idx]={...cachedCourses[idx],...data};
+    closeModal('editCourseModal');
+    renderCoursesPage(document.getElementById('mainContent'));
+  }catch(e){alert('保存失败：'+e.message)}
+}
+async function regenerateSessions(){
+  const id=document.getElementById('ec_id').value;
+  const c=cachedCourses.find(x=>x.id===id);
+  if(!c) return;
+  const firstDate=document.getElementById('ec_first_date').value;
+  const total=parseInt(document.getElementById('ec_total').value)||0;
+  const wdStr=document.getElementById('ec_weekdays').value;
+  const weekdays=parseWeekdays(wdStr);
+  const timeRange=document.getElementById('ec_time_range').value.trim();
+  if(!firstDate||!weekdays.length||!total){alert('请填写第一回日期、星期和回数');return}
+  if(!confirm(`将删除该课程现有 ${cachedSessions.filter(s=>s.course_id===id).length} 个课次并重新生成 ${total} 个，是否继续？`))return;
+  try{
+    await sb(`/rest/v1/course_sessions?course_id=eq.${id}`,'DELETE');
+    cachedSessions=cachedSessions.filter(s=>s.course_id!==id);
+    const dates=generateSessionDatesFromFirst(firstDate,weekdays,total);
+    const sessions=dates.map((date,i)=>({
+      id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
+      course_id:id,course_name:c.name,major:c.major,
+      session_date:date,session_number:i+1,
+      time_range:timeRange||c.time_range,teacher:c.teacher
+    }));
+    for(let i=0;i<sessions.length;i+=20){
+      const chunk=sessions.slice(i,i+20);
+      const res=await sb('/rest/v1/course_sessions','POST',chunk);
+      cachedSessions.push(...(Array.isArray(res)?res:chunk));
+    }
+    // 同步保存新的first_session_date和total
+    await sb(`/rest/v1/courses?id=eq.${id}`,'PATCH',{first_session_date:firstDate,total_sessions:total,weekdays:wdStr,time_range:timeRange});
+    const idx=cachedCourses.findIndex(c=>c.id===id);
+    if(idx>=0) Object.assign(cachedCourses[idx],{first_session_date:firstDate,total_sessions:total,weekdays:wdStr,time_range:timeRange});
+    closeModal('editCourseModal');
+    renderCoursesPage(document.getElementById('mainContent'));
+    alert(`已重新生成 ${sessions.length} 个课次`);
+  }catch(e){alert('操作失败：'+e.message)}
+}
+
+// ── 复制到新期数 ──
+function openCopyPeriod(courseId){
+  const c=cachedCourses.find(x=>x.id===courseId);
+  if(!c) return;
+  document.getElementById('cp_source_ids').value=courseId;
+  // 默认目标期为下一期
+  const periods=['1月期','4月期','7月期','10月期'];
+  const cur=c.period||'7月期';
+  const next=periods[(periods.indexOf(cur)+1)%4];
+  document.getElementById('cp_period').value=next;
+  // 列出该课程的课次，每个显示一行让用户设置新第一回日期
+  const sessions=cachedSessions.filter(s=>s.course_id===courseId).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+  document.getElementById('cp_courses_list').innerHTML=`
+    <div style="margin-bottom:10px;font-size:11px;color:var(--text-2)">
+      课程：<strong>${c.name}</strong>　讲师：${c.teacher||''}　${c.total_sessions}回　${c.weekdays||''}
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <label style="font-size:11px;color:var(--text-2);white-space:nowrap">新第一回日期</label>
+      <input type="date" id="cp_first_date" style="flex:1">
+    </div>
+    <div style="font-size:10px;color:var(--text-3);margin-top:6px">系统将按「${c.weekdays||'星期'}」自动生成 ${c.total_sessions} 次课</div>`;
+  document.getElementById('copyPeriodModal').classList.add('open');
+}
+async function confirmCopyPeriod(){
+  const courseId=document.getElementById('cp_source_ids').value;
+  const newPeriod=document.getElementById('cp_period').value;
+  const newFirstDate=document.getElementById('cp_first_date').value;
+  if(!newFirstDate){alert('请填写新第一回日期');return}
+  const src=cachedCourses.find(c=>c.id===courseId);
+  if(!src) return;
+  const weekdays=parseWeekdays(src.weekdays||'');
+  if(!weekdays.length){alert('原课程未设置星期，无法自动生成日期');return}
+  const dates=generateSessionDatesFromFirst(newFirstDate,weekdays,src.total_sessions||0);
+  if(!dates.length){alert('无法生成课次，请检查日期和星期设置');return}
+  const btn=document.querySelector('#copyPeriodModal .btn-primary');
+  btn.textContent='生成中…';btn.disabled=true;
+  try{
+    const newId=`c-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+    const newCourse={...src,id:newId,period:newPeriod,first_session_date:newFirstDate};
+    delete newCourse.created_at;
+    const res=await sb('/rest/v1/courses','POST',[newCourse]);
+    cachedCourses.push(Array.isArray(res)?res[0]:newCourse);
+    const sessions=dates.map((date,i)=>({
+      id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
+      course_id:newId,course_name:src.name,major:src.major,
+      session_date:date,session_number:i+1,
+      time_range:src.time_range,teacher:src.teacher
+    }));
+    for(let i=0;i<sessions.length;i+=20){
+      const chunk=sessions.slice(i,i+20);
+      const sres=await sb('/rest/v1/course_sessions','POST',chunk);
+      cachedSessions.push(...(Array.isArray(sres)?sres:chunk));
+    }
+    coursesPeriodFilter=newPeriod;
+    closeModal('copyPeriodModal');
+    renderCoursesPage(document.getElementById('mainContent'));
+    alert(`已复制到${newPeriod}，生成 ${sessions.length} 次课`);
+  }catch(e){alert('操作失败：'+e.message);btn.textContent='复制并生成';btn.disabled=false}
+}
+
+// ── 调整课次日期（休讲顺延）──
+function openReschedule(sessionId){
+  const s=cachedSessions.find(x=>x.id===sessionId);
+  if(!s) return;
+  document.getElementById('rs_session_id').value=sessionId;
+  document.getElementById('reschedule_sub').textContent=`${s.course_name} 第${s.session_number}回`;
+  document.getElementById('rs_orig_date').value=s.session_date;
+  // 默认顺延7天
+  const next=new Date(s.session_date);
+  next.setDate(next.getDate()+7);
+  document.getElementById('rs_new_date').value=next.toISOString().slice(0,10);
+  document.getElementById('rs_reason').value='休讲顺延';
+  document.getElementById('rs_note').value='';
+  document.getElementById('rescheduleModal').classList.add('open');
+}
+async function confirmReschedule(){
+  const id=document.getElementById('rs_session_id').value;
+  const newDate=document.getElementById('rs_new_date').value;
+  const reason=document.getElementById('rs_reason').value;
+  const note=document.getElementById('rs_note').value;
+  if(!newDate){alert('请选择新日期');return}
+  try{
+    const patch={session_date:newDate};
+    if(note||reason) patch.session_title=document.getElementById('rs_orig_date').value+'→'+newDate+(note?` (${note})`:'');
+    await sb(`/rest/v1/course_sessions?id=eq.${id}`,'PATCH',patch);
+    const s=cachedSessions.find(x=>x.id===id);
+    if(s){s.session_date=newDate;if(patch.session_title)s.session_title=patch.session_title}
+    closeModal('rescheduleModal');
+    renderCoursesPage(document.getElementById('mainContent'));
+  }catch(e){alert('调整失败：'+e.message)}
+}
 let attViewMode='by-session'; // 'by-session' | 'by-student'
 let attCourseFilter='all';
 let sessionEdits={}; // {studentId: {location, attendance, attendance_score, homework, homework_feedback}}
