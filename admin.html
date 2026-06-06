@@ -451,9 +451,18 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 
     <!-- 单回明细表格 -->
     <div id="ac_details_section" style="display:none;margin-top:12px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
         <div style="font-size:11px;color:var(--text-2)">每回的单回名称和任课老师（留空则继承主讲师）</div>
-        <button class="btn btn-outline btn-sm" onclick="acSyncRows()">↺ 按回数同步行数</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('ac_paste_area').style.display=document.getElementById('ac_paste_area').style.display==='none'?'block':'none'">📋 从Excel粘贴</button>
+          <button class="btn btn-outline btn-sm" onclick="acSyncRows()">↺ 同步行数</button>
+        </div>
+      </div>
+      <!-- 粘贴区域 -->
+      <div id="ac_paste_area" style="display:none;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:10px">
+        <div style="font-size:11px;color:var(--text-2);margin-bottom:6px">从Excel复制「单回名称」和「任课老师」两列后粘贴到这里（Tab分隔）</div>
+        <textarea id="ac_paste_input" rows="4" placeholder="单回名称&#9;任课老师&#10;社会学导论&#9;田跃&#10;传播学基础&#9;郑佳琪&#10;…" style="width:100%;font-size:11px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:'DM Mono',monospace;resize:vertical"></textarea>
+        <button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="acPasteImport()">导入</button>
       </div>
       <div style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:3px">
         <table class="student-table" style="margin:0" id="ac_details_table">
@@ -1619,19 +1628,49 @@ function acSetMajors(majors){
 }
 
 function toggleAcDetails(show){
-  if(show&&!document.getElementById('ac_details_body').children.length) acSyncRows();
+  document.getElementById('ac_details_section').style.display=show?'':'none';
+  if(show) acSyncRows();
 }
 
 function acSyncRows(){
   const total=parseInt(document.getElementById('ac_total').value)||0;
-  if(!total){alert('请先填写课程回数');return}
+  if(!total){
+    // 如果还没填回数，先显示空提示
+    document.getElementById('ac_details_body').innerHTML=
+      `<tr><td colspan="4" style="text-align:center;padding:12px;color:var(--text-3);font-size:11px">请先填写课程回数，再点「↺ 同步行数」</td></tr>`;
+    return;
+  }
   const teacher=document.getElementById('ac_teacher').value.trim();
-  const existing=acGetRows();
+  const existing=acGetRows().filter(r=>r.title||r.teacher);
   document.getElementById('ac_details_body').innerHTML='';
   for(let i=1;i<=total;i++){
     const ex=existing.find(r=>r.num===i)||{num:i,title:'',teacher};
     acAddRow(ex);
   }
+}
+
+function acPasteImport(){
+  const raw=document.getElementById('ac_paste_input').value.trim();
+  if(!raw) return;
+  const lines=raw.split('\n').filter(l=>l.trim());
+  const existing=acGetRows();
+  lines.forEach((line,i)=>{
+    const parts=line.split('\t');
+    const title=(parts[0]||'').trim();
+    const teacher=(parts[1]||'').trim();
+    const rowNum=i+1;
+    // update existing row if exists
+    const rows=document.querySelectorAll('#ac_details_body tr');
+    if(rows[i]){
+      const inputs=rows[i].querySelectorAll('input');
+      if(title) inputs[0].value=title;
+      if(teacher) inputs[1].value=teacher;
+    } else {
+      acAddRow({num:rowNum,title,teacher});
+    }
+  });
+  document.getElementById('ac_paste_input').value='';
+  document.getElementById('ac_paste_area').style.display='none';
 }
 
 function acAddRow(data){
