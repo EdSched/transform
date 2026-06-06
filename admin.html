@@ -316,35 +316,72 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 
 <!-- Create schedule slots modal -->
 <div class="modal-overlay" id="createSlotsModal">
-  <div class="modal" style="width:660px">
+  <div class="modal" style="width:680px">
     <div class="modal-title">创建排班时间槽</div>
     <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px">
-      选课程后自动带入所有课次，选候选老师和单回内容，生成后复制链接发给老师
+      选好课程、老师和分配内容后生成时间槽，老师只需回复哪些日期可以上课
+    </div>
+
+    <!-- 课程筛选：属性 → 期数 → 课程 -->
+    <div class="form-group">
+      <label class="form-label">课程属性</label>
+      <div style="display:flex;gap:4px;flex-wrap:wrap" id="cs_type_chips">
+        ${['全部','共通课','专业课','VIP'].map(t=>`<div class="filter-chip" onclick="csSetType('${t}',this)" style="font-size:11px;padding:3px 10px">${t}</div>`).join('')}
+      </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
       <div class="form-group" style="margin:0">
-        <label class="form-label">课程</label>
-        <select id="cs_course" onchange="onCreateSlotCourseChange()"></select>
+        <label class="form-label">期数</label>
+        <select id="cs_period" onchange="csFilterCourses()">
+          <option value="">全部期数</option>
+        </select>
       </div>
       <div class="form-group" style="margin:0">
-        <label class="form-label">第二时间段（可选，同一天两个时间供老师选择）</label>
-        <input id="cs_time_range_2" placeholder="例：16:00-18:00（不填则只有一个时间）">
+        <label class="form-label">课程</label>
+        <select id="cs_course" onchange="onCreateSlotCourseChange()">
+          <option value="">请先选择期数</option>
+        </select>
       </div>
     </div>
+
     <div class="form-group">
-      <label class="form-label">候选老师（可多选）</label>
+      <label class="form-label">第二时间段（可选，同一天两个时间供老师选）</label>
+      <input id="cs_time_range_2" placeholder="例：16:00-18:00（不填则只有一个时间）">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">分配给老师的单回内容（点选，老师端将看到这些内容）</label>
+      <div id="cs_titles_select" style="display:flex;flex-wrap:wrap;gap:6px;border:1px solid var(--border);border-radius:3px;padding:10px;min-height:44px">
+        <span style="font-size:11px;color:var(--text-3)">选择课程后显示</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">候选老师（可多选，每位老师会收到相同的时间槽）</label>
       <div id="cs_teachers_list" style="display:flex;flex-wrap:wrap;gap:8px;border:1px solid var(--border);border-radius:3px;padding:10px;min-height:44px"></div>
     </div>
-    <div class="form-group">
-      <label class="form-label">单回内容（从明细表自动读取，老师端可认领）</label>
-      <div id="cs_titles_preview" style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;font-size:11px;color:var(--text-2);min-height:40px;line-height:2"></div>
-    </div>
-    <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;font-size:11px;color:var(--text-2);margin-bottom:12px">
+
+    <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;font-size:11px;color:var(--text-2);margin-bottom:4px">
       <div id="cs_sessions_preview" style="color:var(--text-3)">选择课程后显示课次预览</div>
     </div>
+
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeModal('createSlotsModal')">取消</button>
       <button class="btn btn-primary" id="createSlotsConfirmBtn" onclick="confirmCreateSlots()">确认创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- Schedule summary / auto-arrange modal -->
+<div class="modal-overlay" id="scheduleSummaryModal">
+  <div class="modal" style="width:900px;max-width:96vw">
+    <div class="modal-title">排课汇总</div>
+    <div class="modal-sub" id="scheduleSummarySub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px"></div>
+    <div id="scheduleSummaryBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('scheduleSummaryModal')">关闭</button>
+      <button class="btn btn-outline" onclick="autoArrange()" style="color:var(--warn);border-color:var(--warn)">⚡ 自动排课</button>
+      <button class="btn btn-primary" onclick="confirmArrangement()">✓ 确认并同步到课程安排</button>
     </div>
   </div>
 </div>
@@ -2109,6 +2146,7 @@ function renderScheduleSlots(slots){
           <div style="display:flex;gap:8px;align-items:center">
             <span style="font-size:10px;opacity:.7">${courseSlots.length}个课次</span>
             <button onclick="copyTeacherLinks('${courseName}')" style="font-size:10px;background:rgba(255,255,255,.35);border:1px solid rgba(0,0,0,.15);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:${color.text}">📋 复制老师链接</button>
+            <button onclick="openScheduleSummary('${courseName}')" style="font-size:10px;background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.2);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:${color.text};font-weight:600">📊 排课汇总</button>
           </div>
         </div>
         <table class="student-table" style="margin:0">
@@ -2211,43 +2249,105 @@ function copyTeacherLinks(courseName){
 }
 
 // ── 创建时间槽 modal ──
+// ── 创建时间槽 ──
+let csTypeFilter='全部';
+let csSelectedTitles=new Set();
+
 function openCreateSlots(){
-  const sel=document.getElementById('cs_course');
-  sel.innerHTML=cachedCourses.map(c=>`<option value="${c.id}">${c.name}（${c.period||''}）</option>`).join('');
+  csTypeFilter='全部';
+  csSelectedTitles=new Set();
   document.getElementById('cs_time_range_2').value='';
-  onCreateSlotCourseChange();
+  // init type chips
+  document.querySelectorAll('#cs_type_chips .filter-chip').forEach((el,i)=>{
+    el.classList.toggle('active',i===0);
+  });
+  csPopulatePeriods();
+  csFilterCourses();
   document.getElementById('createSlotsModal').classList.add('open');
 }
 
+function csSetType(t,el){
+  csTypeFilter=t;
+  document.querySelectorAll('#cs_type_chips .filter-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  csPopulatePeriods();
+  csFilterCourses();
+}
+
+function csPopulatePeriods(){
+  let courses=cachedCourses;
+  if(csTypeFilter!=='全部'){
+    if(csTypeFilter==='共通课') courses=courses.filter(c=>c.course_type?.includes('共通'));
+    else if(csTypeFilter==='专业课') courses=courses.filter(c=>c.course_type&&!c.course_type.includes('共通')&&!c.course_type.includes('VIP'));
+    else if(csTypeFilter==='VIP') courses=courses.filter(c=>c.course_type?.includes('VIP'));
+  }
+  const periods=[...new Map(courses.filter(c=>c.period&&c.first_session_date).map(c=>{
+    const year=c.first_session_date.slice(0,4);
+    const key=`${year}年${c.period}`;
+    return [key,key];
+  })).values()].sort();
+  const sel=document.getElementById('cs_period');
+  sel.innerHTML=`<option value="">全部期数</option>`+periods.map(p=>`<option value="${p}">${p}</option>`).join('');
+}
+
+function csFilterCourses(){
+  let courses=cachedCourses;
+  if(csTypeFilter!=='全部'){
+    if(csTypeFilter==='共通课') courses=courses.filter(c=>c.course_type?.includes('共通'));
+    else if(csTypeFilter==='专业课') courses=courses.filter(c=>c.course_type&&!c.course_type.includes('共通')&&!c.course_type.includes('VIP'));
+    else if(csTypeFilter==='VIP') courses=courses.filter(c=>c.course_type?.includes('VIP'));
+  }
+  const periodVal=document.getElementById('cs_period').value;
+  if(periodVal){
+    const [filterYear,filterPeriod]=periodVal.match(/(\d{4})年(.+)/)?.slice(1)||[];
+    if(filterYear&&filterPeriod) courses=courses.filter(c=>c.period===filterPeriod&&c.first_session_date?.startsWith(filterYear));
+  }
+  const sel=document.getElementById('cs_course');
+  sel.innerHTML=courses.length
+    ?courses.map(c=>`<option value="${c.id}">${c.name}（${c.first_session_date?.slice(0,4)||''}年${c.period||''}）</option>`).join('')
+    :'<option value="">暂无匹配课程</option>';
+  onCreateSlotCourseChange();
+}
+
 function onCreateSlotCourseChange(){
+  csSelectedTitles=new Set();
   const courseId=document.getElementById('cs_course').value;
   const course=cachedCourses.find(c=>c.id===courseId);
-  if(!course) return;
-
-  // sessions preview
+  if(!course){
+    document.getElementById('cs_sessions_preview').innerHTML='<span style="color:var(--text-3)">请先选择课程</span>';
+    document.getElementById('cs_titles_select').innerHTML='<span style="font-size:11px;color:var(--text-3)">选择课程后显示</span>';
+    return;
+  }
   const sessions=cachedSessions.filter(s=>s.course_id===courseId).sort((a,b)=>a.session_date.localeCompare(b.session_date));
   const existingIds=new Set(cachedScheduleSlots.map(s=>s.session_id));
   const newCount=sessions.filter(s=>!existingIds.has(s.id)).length;
-  document.getElementById('cs_sessions_preview').innerHTML=
-    sessions.length
-      ?`共 <strong>${sessions.length}</strong> 个课次，其中 <strong style="color:var(--ok)">${newCount}</strong> 个待创建，<span style="color:var(--text-3)">${sessions.length-newCount} 个已存在</span><br>
-        <span style="color:var(--text-3)">${sessions.slice(0,5).map(s=>{const d=new Date(s.session_date+'T12:00:00');return `${d.getMonth()+1}/${d.getDate()}`}).join('・')}${sessions.length>5?`… 共${sessions.length}回`:''}</span>`
-      :'该课程暂无课次';
-
-  // session_titles from course_sessions
+  document.getElementById('cs_sessions_preview').innerHTML=sessions.length
+    ?`共 <strong>${sessions.length}</strong> 个课次，<strong style="color:var(--ok)">${newCount}</strong> 个待创建，${sessions.length-newCount} 个已存在<br>
+      <span style="color:var(--text-3)">${sessions.slice(0,6).map(s=>{const d=new Date(s.session_date+'T12:00:00');return `${d.getMonth()+1}/${d.getDate()}`}).join(' · ')}${sessions.length>6?` … 共${sessions.length}回`:''}</span>`
+    :'该课程暂无课次';
+  // titles: selectable chips
   const titles=[...new Set(sessions.map(s=>s.session_title).filter(Boolean))];
-  document.getElementById('cs_titles_preview').innerHTML=
-    titles.length
-      ?titles.map(t=>`<span style="background:var(--surface);border:1px solid var(--border);border-radius:2px;padding:1px 8px;margin-right:4px">${t}</span>`).join('')
-      :'<span style="color:var(--text-3)">该课程暂无单回明细，老师端将不显示内容认领</span>';
-
+  document.getElementById('cs_titles_select').innerHTML=titles.length
+    ?titles.map(t=>`<div class="filter-chip" onclick="csToggleTitle('${t}',this)" style="font-size:11px;padding:3px 10px;cursor:pointer">${t}</div>`).join('')
+    +'<div class="filter-chip active" onclick="csSelectAllTitles(this)" id="cs_all_titles_btn" style="font-size:11px;padding:3px 10px">全选</div>'
+    :'<span style="font-size:11px;color:var(--text-3)">该课程暂无单回明细</span>';
   // teachers
   document.getElementById('cs_teachers_list').innerHTML=cachedTeachers.length
     ?cachedTeachers.map(t=>`<label style="display:flex;align-items:center;gap:5px;padding:4px 8px;background:var(--bg);border:1px solid var(--border-light);border-radius:2px;cursor:pointer;font-size:11px">
-        <input type="checkbox" value="${t.name}" style="accent-color:var(--accent)">
-        ${t.name}
+        <input type="checkbox" value="${t.name}" style="accent-color:var(--accent)"> ${t.name}
       </label>`).join('')
     :'<span style="font-size:11px;color:var(--text-3)">暂无老师，请先在「管理老师」中添加</span>';
+}
+
+function csToggleTitle(t,el){
+  document.getElementById('cs_all_titles_btn')?.classList.remove('active');
+  if(csSelectedTitles.has(t)){csSelectedTitles.delete(t);el.classList.remove('active')}
+  else{csSelectedTitles.add(t);el.classList.add('active')}
+}
+function csSelectAllTitles(el){
+  csSelectedTitles.clear();
+  document.querySelectorAll('#cs_titles_select .filter-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
 }
 
 async function confirmCreateSlots(){
@@ -2257,24 +2357,21 @@ async function confirmCreateSlots(){
   const selectedTeachers=[...document.querySelectorAll('#cs_teachers_list input[type=checkbox]:checked')].map(cb=>cb.value);
   if(!selectedTeachers.length){alert('请选择至少一位候选老师');return}
   const timeRange2=document.getElementById('cs_time_range_2').value.trim();
-
   const sessions=cachedSessions.filter(s=>s.course_id===courseId).sort((a,b)=>a.session_date.localeCompare(b.session_date));
   const existingIds=new Set(cachedScheduleSlots.map(s=>s.session_id));
   const newSessions=sessions.filter(s=>!existingIds.has(s.id));
   if(!newSessions.length){alert('该课程所有课次已创建过时间槽');return}
-
-  // collect all unique titles from sessions
-  const titles=[...new Set(sessions.map(s=>s.session_title).filter(Boolean))];
-
+  // titles: if nothing selected (all chips) use all, else use selected
+  const allTitles=[...new Set(sessions.map(s=>s.session_title).filter(Boolean))];
+  const isAllSelected=document.getElementById('cs_all_titles_btn')?.classList.contains('active');
+  const titles=isAllSelected||csSelectedTitles.size===0?allTitles:[...csSelectedTitles];
   const btn=document.getElementById('createSlotsConfirmBtn');
   btn.textContent='创建中…';btn.disabled=true;
   try{
     const slots=newSessions.map(s=>({
       id:`sl-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
-      session_id:s.id,
-      course_name:course.name,
-      session_date:s.session_date,
-      session_number:s.session_number,
+      session_id:s.id,course_name:course.name,
+      session_date:s.session_date,session_number:s.session_number,
       time_range:s.time_range||course.time_range||'',
       time_range_2:timeRange2||null,
       teacher_names:selectedTeachers,
@@ -2290,6 +2387,141 @@ async function confirmCreateSlots(){
     renderSchedulePage(document.getElementById('mainContent'));
     alert(`已为 ${selectedTeachers.join('・')} 创建 ${slots.length} 个排班时间槽`);
   }catch(e){alert('创建失败：'+e.message);btn.textContent='确认创建';btn.disabled=false}
+}
+
+// ── 排课汇总 ──
+let arrangementDraft={}; // {slotId: {teacher, title}}
+
+function openScheduleSummary(courseName){
+  const slots=cachedScheduleSlots.filter(s=>s.course_name===courseName).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+  const course=cachedCourses.find(c=>c.name===courseName)||{};
+  const year=course.first_session_date?.slice(0,4)||'';
+  document.getElementById('scheduleSummarySub').textContent=`${courseName}　${year}年${course.period||''}　共${slots.length}课次`;
+  // init draft from confirmed
+  arrangementDraft={};
+  slots.forEach(s=>{if(s.confirmed_teacher) arrangementDraft[s.id]={teacher:s.confirmed_teacher,title:s.confirmed_title||''}});
+  renderSummaryBody(slots,courseName);
+  document.getElementById('scheduleSummaryModal').classList.add('open');
+}
+
+function renderSummaryBody(slots,courseName){
+  const avails=cachedTeacherAvail.filter(a=>slots.find(s=>s.id===a.slot_id));
+  // collect all titles
+  const allTitles=[...new Set(slots.flatMap(s=>s.session_titles||[]))];
+
+  document.getElementById('scheduleSummaryBody').innerHTML=`
+  <table class="student-table" style="margin:0">
+    <thead><tr><th>回数</th><th>日期</th><th>时间</th><th>可上老师</th><th>分配老师</th><th>单回内容</th><th>状态</th></tr></thead>
+    <tbody>
+      ${slots.map(slot=>{
+        const slotAvails=avails.filter(a=>a.slot_id===slot.id&&a.available);
+        const draft=arrangementDraft[slot.id]||{};
+        const f=fmtSessionDate(slot.session_date);
+        const conflict=slotAvails.length>1;
+        const empty=slotAvails.length===0;
+        const statusColor=empty?'var(--danger)':conflict?'var(--warn)':'var(--ok)';
+        const statusText=empty?'⚠ 无人可上':conflict?`${slotAvails.length}人可上`:'✓ 已确定';
+        return `<tr style="${empty?'background:#fff8f8':''}">
+          <td style="font-size:11px">第${slot.session_number}回</td>
+          <td style="font-weight:600;font-size:12px">${f.short} <span style="color:${f.dowColor};font-size:10px">${f.dow}</span></td>
+          <td style="font-size:11px">${slot.time_range||''}</td>
+          <td style="font-size:11px">
+            ${slotAvails.length
+              ?slotAvails.map(a=>{
+                  const timeStr=a.available_time?` <span style="color:var(--text-3)">${a.available_time}</span>`:'';
+                  return `<div>${a.teacher_name}${timeStr}</div>`;
+                }).join('')
+              :'<span style="color:var(--danger)">暂无</span>'}
+          </td>
+          <td>
+            <select onchange="setDraftTeacher('${slot.id}',this.value)" style="font-size:11px;padding:3px 6px">
+              <option value="">— 选择 —</option>
+              ${slotAvails.map(a=>`<option value="${a.teacher_name}" ${draft.teacher===a.teacher_name?'selected':''}>${a.teacher_name}</option>`).join('')}
+              ${slot.teacher_names?.filter(n=>!slotAvails.find(a=>a.teacher_name===n)).map(n=>`<option value="${n}" ${draft.teacher===n?'selected':''}>${n}（未回复）</option>`).join('')||''}
+            </select>
+          </td>
+          <td>
+            <select onchange="setDraftTitle('${slot.id}',this.value)" style="font-size:11px;padding:3px 6px">
+              <option value="">— 内容 —</option>
+              ${allTitles.map(t=>`<option value="${t}" ${draft.title===t?'selected':''}>${t}</option>`).join('')}
+            </select>
+          </td>
+          <td style="font-size:10px;color:${statusColor}">${statusText}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
+}
+
+function setDraftTeacher(slotId,teacher){
+  if(!arrangementDraft[slotId]) arrangementDraft[slotId]={};
+  arrangementDraft[slotId].teacher=teacher;
+}
+function setDraftTitle(slotId,title){
+  if(!arrangementDraft[slotId]) arrangementDraft[slotId]={};
+  arrangementDraft[slotId].title=title;
+}
+
+function autoArrange(){
+  // get current course's slots
+  const sub=document.getElementById('scheduleSummarySub').textContent;
+  const courseName=sub.split('　')[0];
+  const slots=cachedScheduleSlots.filter(s=>s.course_name===courseName).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+  const avails=cachedTeacherAvail.filter(a=>slots.find(s=>s.id===a.slot_id)&&a.available);
+  // collect assignments: which slots each teacher can do
+  const teacherSlots={};
+  avails.forEach(a=>{
+    if(!teacherSlots[a.teacher_name]) teacherSlots[a.teacher_name]=[];
+    teacherSlots[a.teacher_name].push(a.slot_id);
+  });
+  // reset draft
+  arrangementDraft={};
+  const assigned=new Set(); // assigned slotIds
+  const teacherUsed={}; // how many times each teacher assigned
+  // sort slots by number of available teachers (fewest first = highest priority)
+  const slotPriority=[...slots].sort((a,b)=>{
+    const ca=avails.filter(x=>x.slot_id===a.id).length;
+    const cb=avails.filter(x=>x.slot_id===b.id).length;
+    return ca-cb;
+  });
+  for(const slot of slotPriority){
+    if(assigned.has(slot.id)) continue;
+    const candidates=avails.filter(a=>a.slot_id===slot.id).map(a=>a.teacher_name);
+    if(!candidates.length) continue;
+    // pick teacher with least assignments so far
+    const best=candidates.sort((a,b)=>(teacherUsed[a]||0)-(teacherUsed[b]||0))[0];
+    arrangementDraft[slot.id]={teacher:best,title:''};
+    teacherUsed[best]=(teacherUsed[best]||0)+1;
+    assigned.add(slot.id);
+  }
+  renderSummaryBody(slots,courseName);
+  // show stats
+  const done=Object.keys(arrangementDraft).length;
+  const total=slots.length;
+  alert(`自动排课完成：${done}/${total} 个课次已分配，${total-done} 个无人可上需手动处理`);
+}
+
+async function confirmArrangement(){
+  const entries=Object.entries(arrangementDraft).filter(([,v])=>v.teacher);
+  if(!entries.length){alert('请先选择或自动排课');return}
+  if(!confirm(`确认将 ${entries.length} 个课次的老师和内容同步到课程安排？`))return;
+  try{
+    for(const [slotId,{teacher,title}] of entries){
+      await sb(`/rest/v1/schedule_slots?id=eq.${slotId}`,'PATCH',{confirmed_teacher:teacher,confirmed_title:title,status:'confirmed'});
+      const slot=cachedScheduleSlots.find(s=>s.id===slotId);
+      if(slot){slot.confirmed_teacher=teacher;slot.confirmed_title=title;slot.status='confirmed'}
+      if(slot?.session_id){
+        const patch={session_teacher:teacher};
+        if(title) patch.session_title=title;
+        await sb(`/rest/v1/course_sessions?id=eq.${slot.session_id}`,'PATCH',patch);
+        const sess=cachedSessions.find(s=>s.id===slot.session_id);
+        if(sess){sess.session_teacher=teacher;if(title)sess.session_title=title}
+      }
+    }
+    closeModal('scheduleSummaryModal');
+    renderSchedulePage(document.getElementById('mainContent'));
+    alert(`已同步 ${entries.length} 个课次到课程安排！`);
+  }catch(e){alert('同步失败：'+e.message)}
 }
 
 // ── 管理老师 modal ──
