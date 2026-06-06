@@ -104,6 +104,7 @@ const DOW_COLOR={6:'#1a4a8a',0:'#8a1a2c'};
 let slots=[], existingAvail=[];
 // state per slot: {available: bool, time: string, bothTimes: bool}
 const slotState={};
+const slotTitleState={}; // {slotId: Set of selected titles}
 // selected titles (global across all slots)
 const selectedTitles=new Set();
 let allTitles=[];
@@ -186,15 +187,7 @@ function render(){
       ${courseSlots.map(s=>renderSlotCard(s)).join('')}
     </div>`).join('')}
 
-  ${allTitles.length?`
-    <div class="section-block">
-      <div class="section-head">单回内容认领</div>
-      <div style="font-size:11px;color:var(--text-2);margin-bottom:10px">请选择您可以负责的课程内容（可多选）</div>
-      <div class="title-chips" id="titleChips">
-        <div class="title-chip${selectedTitles.has('__all__')?' active':''}" onclick="toggleTitle('__all__',this)">全部都可以</div>
-        ${allTitles.map(t=>`<div class="title-chip${selectedTitles.has(t)?' active':''}" onclick="toggleTitle('${t}',this)">${t}</div>`).join('')}
-      </div>
-    </div>`:''}`;
+  `;
 }
 
 function renderSlotCard(s){
@@ -204,6 +197,8 @@ function renderSlotCard(s){
   const dow=DAYS[d.getDay()];
   const dowColor=DOW_COLOR[d.getDay()]||'var(--text-2)';
   const hasTwo=!!(s.time_range&&s.time_range_2);
+  const titles=s.session_titles||[];
+  const selectedTitlesForSlot=slotTitleState[s.id]||new Set();
 
   return `<div class="date-card${isAvail?' selected':''}" id="card-${s.id}">
     <div class="date-card-head" onclick="toggleAvail('${s.id}')">
@@ -216,20 +211,26 @@ function renderSlotCard(s){
         <div class="date-session">第${s.session_number}回</div>
       </div>
       <div class="avail-toggle" onclick="event.stopPropagation()">
-        <button class="ok${isAvail?' active':''}" onclick="setAvail('${s.id}',true)"">✓ 可以上</button>
-        <button class="${!isAvail&&state.available===false?' active':''}" style="${!isAvail&&state.available===false?'background:#f5e8e8;color:var(--danger)':''}" onclick="setAvail('${s.id}',false)">✕ 不可以</button>
+        <button class="ok${isAvail?' active':''}" onclick="setAvail('${s.id}',true)">✓ 可以上</button>
       </div>
     </div>
-    ${isAvail&&hasTwo?`
-    <div class="date-card-body">
-      <div class="time-select">
+    ${isAvail?`
+    <div class="date-card-body" style="display:block">
+      ${hasTwo?`<div class="time-select">
         <div class="time-label">请选择您可以的时间</div>
         <div class="time-chips">
           <div class="time-chip${state.time===s.time_range&&!state.bothTimes?' active':''}" onclick="setTime('${s.id}','${s.time_range}',false)">${s.time_range}</div>
           <div class="time-chip${state.time===s.time_range_2&&!state.bothTimes?' active':''}" onclick="setTime('${s.id}','${s.time_range_2}',false)">${s.time_range_2}</div>
           <div class="time-chip both${state.bothTimes?' active':''}" onclick="setTime('${s.id}','',true)">两个都行</div>
         </div>
-      </div>
+      </div>`:''}
+      ${titles.length?`<div class="time-select">
+        <div class="time-label">请选择您可以负责的内容（可多选）</div>
+        <div class="time-chips">
+          ${titles.map(t=>`<div class="time-chip${selectedTitlesForSlot.has(t)?' active':''}" onclick="toggleSlotTitle('${s.id}','${t.replace(/'/g,"\\'")}',this)">${t}</div>`).join('')}
+          <div class="time-chip both${selectedTitlesForSlot.has('__all__')?' active':''}" onclick="toggleSlotTitle('${s.id}','__all__',this)">都可以</div>
+        </div>
+      </div>`:''}
     </div>`:''}
   </div>`;
 }
@@ -272,6 +273,20 @@ function toggleTitle(title,el){
     if(t) chip.classList.toggle('active',selectedTitles.has(t));
   });
 }
+function toggleSlotTitle(slotId,title,el){
+  if(!slotTitleState[slotId]) slotTitleState[slotId]=new Set();
+  const set=slotTitleState[slotId];
+  if(title==='__all__'){
+    if(set.has('__all__')){set.clear()}
+    else{set.clear();set.add('__all__')}
+  } else {
+    set.delete('__all__');
+    if(set.has(title)) set.delete(title);
+    else set.add(title);
+  }
+  const slot=slots.find(s=>s.id===slotId);
+  if(slot){const el2=document.getElementById(`card-${slotId}`);if(el2)el2.outerHTML=renderSlotCard(slot)}
+}
 function updateHint(){
   const count=Object.values(slotState).filter(s=>s.available===true).length;
   document.getElementById('submitHint').textContent=`已选 ${count}/${slots.length} 个课次可以上`;
@@ -285,17 +300,18 @@ async function submitAvailability(){
     if(existingAvail.length){
       await sb(`/rest/v1/teacher_availability?teacher_name=eq.${encodeURIComponent(teacherName)}`,'DELETE');
     }
-    const preferredTitles=selectedTitles.has('__all__')?allTitles:[...selectedTitles];
     const records=slots.map(s=>{
       const state=slotState[s.id]||{};
       const timeStr=state.bothTimes?`${s.time_range} / ${s.time_range_2}`:state.time||'';
+      const titleSet=slotTitleState[s.id]||new Set();
+      const titles=titleSet.has('__all__')?(s.session_titles||[]):[...titleSet];
       return {
         id:`av-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
         slot_id:s.id,
         teacher_name:teacherName,
         available:state.available===true,
         available_time:state.available?timeStr:null,
-        preferred_titles:state.available&&preferredTitles.length?preferredTitles:null,
+        preferred_titles:state.available&&titles.length?titles:null,
       };
     });
     await sb('/rest/v1/teacher_availability','POST',records);
@@ -309,7 +325,7 @@ async function submitAvailability(){
       <div class="done-sub">
         谢谢 ${teacherName} 老师！<br>
         共 ${slots.length} 个课次，您选择了 <strong>${availCount}</strong> 个可以上课。<br>
-        ${preferredTitles.length?`可负责内容：${preferredTitles.join('・')}<br>`:''}
+  
         <br>最终排课结果确认后，学科负责人会另行通知您。<br>
         如需修改请联系学科负责人。
       </div>
