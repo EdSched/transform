@@ -655,7 +655,18 @@ let cachedSlots=[],cachedBookings=[],cachedStudents=[],cachedAttendance=[];
 let slotMode='single';
 
 // ── Navigation ──
+const COURSE_PW='miyako!!';
+function checkCoursePw(){
+  const r=localStorage.getItem('txe_course_pw');
+  if(r){const{ts}=JSON.parse(r);if(Date.now()-ts<30*24*60*60*1000)return true}
+  const pw=prompt('课程管理需要额外验证，请输入密码：');
+  if(pw===COURSE_PW){localStorage.setItem('txe_course_pw',JSON.stringify({ts:Date.now()}));return true}
+  if(pw!==null) alert('密码错误');
+  return false;
+}
+
 function switchPage(page){
+  if((page==='courses'||page==='schedule')&&!checkCoursePw()){return}
   curPage=page;
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const navId=page==='courses'?'nav-courses':page==='schedule'?'nav-schedule':'nav-'+page;
