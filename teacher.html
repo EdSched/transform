@@ -190,24 +190,29 @@ async function init(){
     existingAvail=await sb(`/rest/v1/teacher_availability?teacher_name=eq.${encodeURIComponent(teacherName)}&select=*`);
 
     // fetch已确认课次（两种来源）
-    const [confirmedSlots, directSessions]=await Promise.all([
+    const [confirmedSlots, directSessions, allCourses]=await Promise.all([
       // 从排班系统确认的
       sb(`/rest/v1/schedule_slots?confirmed_teacher=eq.${encodeURIComponent(teacherName)}&select=*`),
-      // 直接在course_sessions里有session_teacher的
-      sb(`/rest/v1/course_sessions?session_teacher=like.*${encodeURIComponent(teacherName)}*&select=*,courses(name,course_type,campus,delivery)&order=session_date.asc`).catch(()=>[])
+      // 直接在course_sessions里有session_teacher且confirmed=true的
+      sb(`/rest/v1/course_sessions?session_teacher=ilike.*${teacherName}*&confirmed=eq.true&select=*&order=session_date.asc`).catch(()=>[]),
+      // 课程信息
+      sb(`/rest/v1/courses?select=id,name,course_type,campus,delivery`).catch(()=>[])
     ]);
+    const courseMap={};
+    allCourses.forEach(c=>{courseMap[c.id]=c});
 
     // 合并已确认课次
     const confirmedSet=new Set();
     confirmedSessions=[];
     // 从直接session来的
     directSessions.forEach(s=>{
+      const course=courseMap[s.course_id]||{};
       confirmedSet.add(s.id);
       confirmedSessions.push({
         session_id:s.id,
-        course_name:s.course_name||s.courses?.name||'',
-        course_type:s.courses?.course_type||'',
-        campus:s.courses?.campus||'',
+        course_name:s.course_name||course.name||'',
+        course_type:course.course_type||'',
+        campus:s.campus||course.campus||'',
         session_date:s.session_date,
         session_number:s.session_number,
         time_range:s.time_range,
