@@ -316,22 +316,31 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 
 <!-- Create schedule slots modal -->
 <div class="modal-overlay" id="createSlotsModal">
-  <div class="modal" style="width:640px">
+  <div class="modal" style="width:660px">
     <div class="modal-title">创建排班时间槽</div>
     <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px">
-      选择课程和候选老师，生成时间槽后复制链接发给老师填写可用时间
+      选课程后自动带入所有课次，选候选老师和单回内容，生成后复制链接发给老师
     </div>
-    <div class="form-group">
-      <label class="form-label">课程</label>
-      <select id="cs_course" onchange="onCreateSlotCourseChange()"></select>
-    </div>
-    <div class="form-group">
-      <label class="form-label">选择课次</label>
-      <div id="cs_sessions_list" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:3px;padding:6px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">课程</label>
+        <select id="cs_course" onchange="onCreateSlotCourseChange()"></select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">第二时间段（可选，同一天两个时间供老师选择）</label>
+        <input id="cs_time_range_2" placeholder="例：16:00-18:00（不填则只有一个时间）">
+      </div>
     </div>
     <div class="form-group">
       <label class="form-label">候选老师（可多选）</label>
-      <div id="cs_teachers_list" style="display:flex;flex-wrap:wrap;gap:8px;border:1px solid var(--border);border-radius:3px;padding:10px"></div>
+      <div id="cs_teachers_list" style="display:flex;flex-wrap:wrap;gap:8px;border:1px solid var(--border);border-radius:3px;padding:10px;min-height:44px"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">单回内容（从明细表自动读取，老师端可认领）</label>
+      <div id="cs_titles_preview" style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;font-size:11px;color:var(--text-2);min-height:40px;line-height:2"></div>
+    </div>
+    <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;font-size:11px;color:var(--text-2);margin-bottom:12px">
+      <div id="cs_sessions_preview" style="color:var(--text-3)">选择课程后显示课次预览</div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeModal('createSlotsModal')">取消</button>
@@ -2090,8 +2099,16 @@ function renderScheduleSlots(sessions){
                 <td style="font-size:11px">${slot.time_range||''}</td>
                 <td style="font-size:11px">${(slot.teacher_names||[]).join('・')}</td>
                 <td style="font-size:11px">
-                  ${replied?`<span style="color:var(--ok)">${replied}/${totalTeachers} 已回复</span>
-                  <div style="font-size:10px;color:var(--text-3);margin-top:2px">可上：${availTeachers.join('・')||'无'}</div>`
+                  ${replied?`<div style="display:flex;flex-direction:column;gap:3px">
+                    ${avails.map(a=>{
+                      const avail=cachedTeacherAvail.find(x=>x.slot_id===slot.id&&x.teacher_name===a.teacher_name);
+                      if(!avail?.available) return `<span style="color:var(--text-3)">${a.teacher_name} ✕</span>`;
+                      const timeStr=avail.available_time?` · ${avail.available_time}`:'';
+                      const titlesStr=avail.preferred_titles?.length?`<div style="font-size:9px;color:var(--text-2)">${avail.preferred_titles.join('・')}</div>`:'';
+                      return `<div><span style="color:var(--ok)">${a.teacher_name} ✓${timeStr}</span>${titlesStr}</div>`;
+                    }).join('')}
+                    <span style="font-size:10px;color:var(--text-3);margin-top:2px">${replied}/${totalTeachers} 已回复</span>
+                  </div>`
                   :`<span style="color:var(--text-3)">等待回复</span>`}
                 </td>
                 <td>
@@ -2162,64 +2179,75 @@ function copyTeacherLinks(courseName){
 
 // ── 创建时间槽 modal ──
 function openCreateSlots(){
-  // populate course select
   const sel=document.getElementById('cs_course');
   sel.innerHTML=cachedCourses.map(c=>`<option value="${c.id}">${c.name}（${c.period||''}）</option>`).join('');
+  document.getElementById('cs_time_range_2').value='';
   onCreateSlotCourseChange();
   document.getElementById('createSlotsModal').classList.add('open');
 }
+
 function onCreateSlotCourseChange(){
   const courseId=document.getElementById('cs_course').value;
   const course=cachedCourses.find(c=>c.id===courseId);
   if(!course) return;
-  // show sessions for this course
-  const sessions=cachedSessions.filter(s=>s.course_id===courseId).sort((a,b)=>a.session_date.localeCompare(b.session_date));
-  const existingSlotSessionIds=new Set(cachedScheduleSlots.map(s=>s.session_id));
-  document.getElementById('cs_sessions_list').innerHTML=sessions.length
-    ?sessions.map(s=>{
-        const exists=existingSlotSessionIds.has(s.id);
-        const f=fmtSessionDate(s.session_date);
-        return `<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:3px;cursor:pointer;${exists?'opacity:.5':''}">
-          <input type="checkbox" value="${s.id}" ${exists?'disabled checked':''} style="accent-color:var(--accent)">
-          <span style="font-size:11px">第${s.session_number}回 · ${f.short} ${f.dow} · ${s.time_range||course.time_range||''}</span>
-          ${s.session_title?`<span style="font-size:10px;color:var(--text-3)">${s.session_title}</span>`:''}
-          ${exists?'<span style="font-size:10px;color:var(--text-3)">已创建</span>':''}
-        </label>`;
-      }).join('')
-    :'<div class="empty" style="padding:16px">该课程暂无课次</div>';
 
-  // populate teacher checkboxes
+  // sessions preview
+  const sessions=cachedSessions.filter(s=>s.course_id===courseId).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+  const existingIds=new Set(cachedScheduleSlots.map(s=>s.session_id));
+  const newCount=sessions.filter(s=>!existingIds.has(s.id)).length;
+  document.getElementById('cs_sessions_preview').innerHTML=
+    sessions.length
+      ?`共 <strong>${sessions.length}</strong> 个课次，其中 <strong style="color:var(--ok)">${newCount}</strong> 个待创建，<span style="color:var(--text-3)">${sessions.length-newCount} 个已存在</span><br>
+        <span style="color:var(--text-3)">${sessions.slice(0,5).map(s=>{const d=new Date(s.session_date+'T12:00:00');return `${d.getMonth()+1}/${d.getDate()}`}).join('・')}${sessions.length>5?`… 共${sessions.length}回`:''}</span>`
+      :'该课程暂无课次';
+
+  // session_titles from course_sessions
+  const titles=[...new Set(sessions.map(s=>s.session_title).filter(Boolean))];
+  document.getElementById('cs_titles_preview').innerHTML=
+    titles.length
+      ?titles.map(t=>`<span style="background:var(--surface);border:1px solid var(--border);border-radius:2px;padding:1px 8px;margin-right:4px">${t}</span>`).join('')
+      :'<span style="color:var(--text-3)">该课程暂无单回明细，老师端将不显示内容认领</span>';
+
+  // teachers
   document.getElementById('cs_teachers_list').innerHTML=cachedTeachers.length
-    ?cachedTeachers.map(t=>`<label style="display:flex;align-items:center;gap:6px;padding:4px 0;cursor:pointer">
+    ?cachedTeachers.map(t=>`<label style="display:flex;align-items:center;gap:5px;padding:4px 8px;background:var(--bg);border:1px solid var(--border-light);border-radius:2px;cursor:pointer;font-size:11px">
         <input type="checkbox" value="${t.name}" style="accent-color:var(--accent)">
-        <span style="font-size:11px">${t.name}</span>
+        ${t.name}
       </label>`).join('')
-    :'<div style="font-size:11px;color:var(--text-3)">暂无老师，请先在「管理老师」中添加</div>';
+    :'<span style="font-size:11px;color:var(--text-3)">暂无老师，请先在「管理老师」中添加</span>';
 }
+
 async function confirmCreateSlots(){
   const courseId=document.getElementById('cs_course').value;
   const course=cachedCourses.find(c=>c.id===courseId);
   if(!course){alert('请选择课程');return}
-  const selectedSessions=[...document.querySelectorAll('#cs_sessions_list input[type=checkbox]:checked:not(:disabled)')].map(cb=>cb.value);
   const selectedTeachers=[...document.querySelectorAll('#cs_teachers_list input[type=checkbox]:checked')].map(cb=>cb.value);
-  if(!selectedSessions.length){alert('请选择至少一个课次');return}
-  if(!selectedTeachers.length){alert('请选择至少一位老师');return}
+  if(!selectedTeachers.length){alert('请选择至少一位候选老师');return}
+  const timeRange2=document.getElementById('cs_time_range_2').value.trim();
+
+  const sessions=cachedSessions.filter(s=>s.course_id===courseId).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+  const existingIds=new Set(cachedScheduleSlots.map(s=>s.session_id));
+  const newSessions=sessions.filter(s=>!existingIds.has(s.id));
+  if(!newSessions.length){alert('该课程所有课次已创建过时间槽');return}
+
+  // collect all unique titles from sessions
+  const titles=[...new Set(sessions.map(s=>s.session_title).filter(Boolean))];
+
   const btn=document.getElementById('createSlotsConfirmBtn');
   btn.textContent='创建中…';btn.disabled=true;
   try{
-    const slots=selectedSessions.map(sessionId=>{
-      const sess=cachedSessions.find(s=>s.id===sessionId);
-      return {
-        id:`sl-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
-        session_id:sessionId,
-        course_name:course.name,
-        session_date:sess?.session_date||'',
-        session_number:sess?.session_number||0,
-        time_range:sess?.time_range||course.time_range||'',
-        teacher_names:selectedTeachers,
-        status:'pending'
-      };
-    });
+    const slots=newSessions.map(s=>({
+      id:`sl-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
+      session_id:s.id,
+      course_name:course.name,
+      session_date:s.session_date,
+      session_number:s.session_number,
+      time_range:s.time_range||course.time_range||'',
+      time_range_2:timeRange2||null,
+      teacher_names:selectedTeachers,
+      session_titles:titles.length?titles:null,
+      status:'pending'
+    }));
     for(let i=0;i<slots.length;i+=20){
       const chunk=slots.slice(i,i+20);
       const res=await sb('/rest/v1/schedule_slots','POST',chunk);
