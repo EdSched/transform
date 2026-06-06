@@ -11,77 +11,60 @@
   --bg:#faf7f2;--surface:#fff;--border:#e8e0d4;--border-light:#f0ebe2;
   --text:#3a2e24;--text-2:#6b5c4e;--text-3:#a8998a;
   --accent:#3a2e24;--ok:#2a9e6a;--ok-bg:#e4f5ee;
-  --danger:#b03030;--danger-bg:#fceaea;
-  --warn:#b87820;--warn-bg:#fdf2dc;
+  --danger:#b03030;--warn:#b87820;--warn-bg:#fdf2dc;
 }
 body{font-family:'DM Mono','Noto Serif SC',monospace;background:var(--bg);color:var(--text);font-size:13px;line-height:1.5;min-height:100vh}
-.header{background:var(--surface);border-bottom:1px solid var(--border);padding:18px 24px;display:flex;align-items:center;justify-content:space-between}
-.header-title{font-family:'Noto Serif SC',serif;font-size:16px;font-weight:600}
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:18px 24px}
+.header-title{font-family:'Noto Serif SC',serif;font-size:17px;font-weight:600}
 .header-sub{font-size:11px;color:var(--text-3);margin-top:2px}
-.main{max-width:700px;margin:0 auto;padding:24px 16px 60px}
-.info-box{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:14px 18px;margin-bottom:22px;font-size:12px;color:var(--text-2);line-height:1.9}
-.section-block{margin-bottom:28px}
+.main{max-width:680px;margin:0 auto;padding:24px 16px 100px}
+.info-box{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:14px 18px;margin-bottom:20px;font-size:12px;color:var(--text-2);line-height:1.9}
+.task-box{background:var(--ok-bg);border:1px solid var(--ok);border-radius:4px;padding:12px 16px;margin-bottom:20px;font-size:12px;color:#1a5a3a;line-height:1.8}
 .section-head{font-family:'Noto Serif SC',serif;font-size:14px;font-weight:600;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
 
-/* Date slots */
-.date-card{background:var(--surface);border:1px solid var(--border);border-radius:4px;margin-bottom:8px;overflow:hidden;transition:border-color .15s}
-.date-card.selected{border-color:var(--ok);border-width:2px}
-.date-card-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;gap:12px}
-.date-card-head:hover{background:var(--bg)}
-.date-info{display:flex;align-items:baseline;gap:8px}
-.date-num{font-size:18px;font-weight:700;font-family:'DM Mono',monospace}
-.date-dow{font-size:11px;font-weight:600}
-.date-time{font-size:11px;color:var(--text-3);margin-top:2px}
-.date-session{font-size:10px;color:var(--text-3);margin-top:1px}
-.avail-toggle{display:flex;border:1px solid var(--border);border-radius:3px;overflow:hidden;flex-shrink:0}
-.avail-toggle button{padding:7px 18px;background:transparent;border:none;font-family:'DM Mono',monospace;font-size:11px;color:var(--text-2);cursor:pointer;transition:all .15s;border-right:1px solid var(--border)}
-.avail-toggle button:last-child{border-right:none}
-.avail-toggle button.ok.active{background:var(--ok);color:#fff}
-.avail-toggle button:hover:not(.active){background:var(--bg)}
-.date-card-body{padding:0 16px 12px;border-top:1px solid var(--border-light);display:none}
-.date-card.selected .date-card-body{display:block}
-.time-select{margin-top:10px}
-.time-label{font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px}
-.time-chips{display:flex;gap:6px;flex-wrap:wrap}
-.time-chip{padding:5px 14px;border:1px solid var(--border);border-radius:2px;font-size:11px;cursor:pointer;background:var(--bg);transition:all .15s;font-family:'DM Mono',monospace}
-.time-chip.active{background:var(--ok);color:#fff;border-color:var(--ok)}
-.time-chip.both{background:var(--accent);color:#fff;border-color:var(--accent)}
+/* Date cards */
+.date-card{background:var(--surface);border:2px solid var(--border);border-radius:4px;margin-bottom:8px;overflow:hidden;transition:border-color .15s,opacity .15s}
+.date-card.available{border-color:var(--ok)}
+.date-card.unavailable{opacity:.45;border-color:var(--border)}
+.date-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;gap:12px}
+.date-left{flex:1}
+.date-num{font-size:20px;font-weight:700;font-family:'DM Mono',monospace}
+.date-dow{font-size:11px;font-weight:600;margin-left:6px}
+.date-meta{font-size:11px;color:var(--text-3);margin-top:2px}
+.avail-btn{padding:7px 18px;border-radius:3px;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;border:1px solid var(--border);background:var(--bg);color:var(--text-2);transition:all .15s;white-space:nowrap}
+.avail-btn.on{background:var(--ok);color:#fff;border-color:var(--ok)}
+.avail-btn.off{background:var(--bg);color:var(--text-3);border-color:var(--border)}
+/* expanded body for time + title */
+.date-body{padding:0 16px 12px;border-top:1px solid var(--border-light)}
+.sub-label{font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin:10px 0 5px}
+.chip-row{display:flex;flex-wrap:wrap;gap:5px}
+.chip{padding:5px 12px;border:1px solid var(--border);border-radius:2px;font-size:11px;cursor:pointer;background:var(--bg);transition:all .15s;font-family:'DM Mono',monospace}
+.chip.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chip.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
 
-/* Title selection */
-.titles-section{margin-top:22px}
-.title-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.title-chip{padding:5px 14px;border:1px solid var(--border);border-radius:2px;font-size:11px;cursor:pointer;background:var(--bg);transition:all .15s;font-family:'DM Mono',monospace}
-.title-chip.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-
-/* Submit */
-.submit-area{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--border);padding:16px 16px;display:flex;align-items:center;justify-content:center;gap:16px}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:10px 32px;border-radius:3px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid transparent;font-family:'DM Mono',monospace;transition:all .15s}
+/* Submit bar */
+.submit-bar{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;z-index:10}
+.submit-hint{font-size:12px;color:var(--text-2)}
+.btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 32px;border-radius:3px;font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:'DM Mono',monospace;transition:all .15s}
 .btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#5a4a3c}
 .btn-primary:disabled{opacity:.45;cursor:not-allowed}
+
 .done-box{text-align:center;padding:56px 20px}
 .done-icon{font-size:44px;margin-bottom:14px}
 .done-title{font-family:'Noto Serif SC',serif;font-size:20px;font-weight:600;margin-bottom:10px}
 .done-sub{font-size:12px;color:var(--text-2);line-height:2;max-width:380px;margin:0 auto}
 .empty{text-align:center;padding:56px;color:var(--text-3);font-size:12px;line-height:2}
 .loading{text-align:center;padding:56px;color:var(--text-3)}
-.notice{background:var(--warn-bg);border:1px solid var(--warn);border-radius:3px;padding:10px 14px;font-size:11px;color:var(--warn);line-height:1.7}
 </style>
 </head>
 <body>
-
 <div class="header">
-  <div>
-    <div class="header-title">唯新教育 · 课程排班</div>
-    <div class="header-sub" id="headerSub">Transform Education</div>
-  </div>
+  <div class="header-title">唯新教育 · 课程排班</div>
+  <div class="header-sub" id="headerSub">Transform Education</div>
 </div>
-
-<div id="mainContent" class="main">
-  <div class="loading">加载中…</div>
-</div>
-
-<div class="submit-area" id="submitArea" style="display:none">
-  <span id="submitHint" style="font-size:11px;color:var(--text-3)"></span>
+<div class="main" id="mainContent"><div class="loading">加载中…</div></div>
+<div class="submit-bar" id="submitBar" style="display:none">
+  <div class="submit-hint" id="submitHint"></div>
   <button class="btn btn-primary" id="submitBtn" onclick="submitAvailability()">提交回复</button>
 </div>
 
@@ -102,34 +85,21 @@ const DAYS=['周日','周一','周二','周三','周四','周五','周六'];
 const DOW_COLOR={6:'#1a4a8a',0:'#8a1a2c'};
 
 let slots=[], existingAvail=[];
-// state per slot: {available: bool, time: string, bothTimes: bool}
-const slotState={};
-const slotTitleState={}; // {slotId: Set of selected titles}
-// selected titles (global across all slots)
-const selectedTitles=new Set();
-let allTitles=[];
+// state: {slotId: {available: bool (default true), time: string, titles: Set}}
+const state={};
 
-function courseColor(name){
+function getState(slotId){
+  if(!state[slotId]) state[slotId]={available:true, time:'', titles:new Set()};
+  return state[slotId];
+}
+
+function courseColorText(name){
   const n=name||'';
   if(/宏观/.test(n)) return '#1a3a6a';
   if(/微观/.test(n)) return '#1a4a28';
-  if(/数学/.test(n)) return '#3a2a7a';
-  if(/习题/.test(n)) return '#5a3010';
-  if(/计量|方法论/.test(n)) return '#0a4038';
   if(/共通/.test(n)) return '#3a3830';
   if(/过去问|备考/.test(n)) return '#6a2818';
-  return '#3a3830';
-}
-function courseBg(name){
-  const n=name||'';
-  if(/宏观/.test(n)) return '#ddeaf8';
-  if(/微观/.test(n)) return '#ddf0e0';
-  if(/数学/.test(n)) return '#e8e4f8';
-  if(/习题/.test(n)) return '#faecd8';
-  if(/计量|方法论/.test(n)) return '#d8f0ea';
-  if(/共通/.test(n)) return '#ece8e0';
-  if(/过去问|备考/.test(n)) return '#f8e4dc';
-  return '#ece8e0';
+  return '#3a2e24';
 }
 
 async function init(){
@@ -142,191 +112,137 @@ async function init(){
   try{
     slots=await sb(`/rest/v1/schedule_slots?teacher_names=cs.{"${teacherName}"}&select=*&order=session_date.asc`);
     existingAvail=await sb(`/rest/v1/teacher_availability?teacher_name=eq.${encodeURIComponent(teacherName)}&select=*`);
-
-    // init state from existing replies
+    // restore existing replies
     existingAvail.forEach(a=>{
-      slotState[a.slot_id]={available:a.available,time:a.available_time||'',bothTimes:false};
-      (a.preferred_titles||[]).forEach(t=>selectedTitles.add(t));
+      const s=getState(a.slot_id);
+      s.available=a.available;
+      s.time=a.available_time||'';
+      (a.preferred_titles||[]).forEach(t=>s.titles.add(t));
     });
-
-    // collect all unique titles across all slots
-    slots.forEach(s=>(s.session_titles||[]).forEach(t=>{if(!allTitles.includes(t))allTitles.push(t)}));
-
     if(!slots.length){
-      mc.innerHTML='<div class="empty">暂无排班课次<br><span style="font-size:11px">请等待学科负责人创建课次安排后再访问</span></div>';
+      mc.innerHTML='<div class="empty">暂无排班课次<br><span style="font-size:11px">请等待学科负责人创建课次后再访问</span></div>';
       return;
     }
     render();
-    document.getElementById('submitArea').style.display='flex';
+    document.getElementById('submitBar').style.display='flex';
     updateHint();
   }catch(e){mc.innerHTML=`<div class="empty">加载失败：${e.message}</div>`}
 }
 
 function render(){
-  // group by course
+  // collect all titles and task info
+  const allTitles=[...new Set(slots.flatMap(s=>s.session_titles||[]))];
   const byCourse={};
-  slots.forEach(s=>{
-    if(!byCourse[s.course_name]) byCourse[s.course_name]=[];
-    byCourse[s.course_name].push(s);
-  });
+  slots.forEach(s=>{if(!byCourse[s.course_name])byCourse[s.course_name]=[];byCourse[s.course_name].push(s)});
 
   document.getElementById('mainContent').innerHTML=`
   <div class="info-box">
     您好，<strong>${teacherName}</strong> 老师！<br>
-    请为每个课次选择您是否可以上课。不选即表示该课次不可以。<br>
-    如有两个时间段供选择，请选择您可以的时间（或「两个都行」）。<br>
-    如有单回内容，请在下方选择您可以负责的内容。
+    以下是本期课程的所有课次。<strong>默认您所有日期均可上课</strong>，如有不能上的日期请点「✕ 不可以」。<br>
+    如有特定某天只想上某个内容，可在该课次下点选内容（否则默认都可以）。
   </div>
-
+  ${allTitles.length?`<div class="task-box">
+    <strong>您本期负责的课程内容：</strong><br>
+    ${allTitles.map(t=>`<span style="background:rgba(255,255,255,.6);border-radius:2px;padding:1px 8px;margin-right:4px">${t}</span>`).join('')}
+  </div>`:''}
   ${Object.entries(byCourse).map(([courseName,courseSlots])=>`
-    <div class="section-block">
-      <div class="section-head" style="color:${courseColor(courseName)}">
-        ${courseName}
-        <span style="font-size:11px;font-weight:400;color:var(--text-3);margin-left:8px">${courseSlots.length}课次</span>
-      </div>
-      ${courseSlots.map(s=>renderSlotCard(s)).join('')}
-    </div>`).join('')}
-
-  `;
+    <div style="margin-bottom:24px">
+      <div class="section-head" style="color:${courseColorText(courseName)}">${courseName} <span style="font-size:11px;font-weight:400;color:var(--text-3)">${courseSlots.length}课次</span></div>
+      ${courseSlots.map(s=>renderCard(s)).join('')}
+    </div>`).join('')}`;
 }
 
-function renderSlotCard(s){
-  const state=slotState[s.id]||{};
-  const isAvail=state.available===true;
+function renderCard(s){
+  const st=getState(s.id);
   const d=new Date(s.session_date+'T12:00:00');
   const dow=DAYS[d.getDay()];
   const dowColor=DOW_COLOR[d.getDay()]||'var(--text-2)';
   const hasTwo=!!(s.time_range&&s.time_range_2);
   const titles=s.session_titles||[];
-  const selectedTitlesForSlot=slotTitleState[s.id]||new Set();
+  const cardClass=st.available?'available':'unavailable';
 
-  return `<div class="date-card${isAvail?' selected':''}" id="card-${s.id}">
-    <div class="date-card-head" onclick="toggleAvail('${s.id}')">
-      <div>
-        <div class="date-info">
-          <span class="date-num">${d.getMonth()+1}/${d.getDate()}</span>
-          <span class="date-dow" style="color:${dowColor}">${dow}</span>
-        </div>
-        <div class="date-time">${s.time_range||''}${hasTwo?` / ${s.time_range_2}`:''}</div>
-        <div class="date-session">第${s.session_number}回</div>
+  return `<div class="date-card ${cardClass}" id="card-${s.id}">
+    <div class="date-head">
+      <div class="date-left">
+        <div><span class="date-num">${d.getMonth()+1}/${d.getDate()}</span><span class="date-dow" style="color:${dowColor}">${dow}</span></div>
+        <div class="date-meta">${s.time_range||''}${hasTwo?` / ${s.time_range_2}`:''} · 第${s.session_number}回</div>
       </div>
-      <div class="avail-toggle" onclick="event.stopPropagation()">
-        <button class="ok${isAvail?' active':''}" onclick="setAvail('${s.id}',true)">✓ 可以上</button>
-      </div>
+      <button class="avail-btn ${st.available?'on':'off'}" onclick="toggleAvail('${s.id}')">
+        ${st.available?'✓ 可以上':'✕ 不可以'}
+      </button>
     </div>
-    ${isAvail?`
-    <div class="date-card-body" style="display:block">
-      ${hasTwo?`<div class="time-select">
-        <div class="time-label">请选择您可以的时间</div>
-        <div class="time-chips">
-          <div class="time-chip${state.time===s.time_range&&!state.bothTimes?' active':''}" onclick="setTime('${s.id}','${s.time_range}',false)">${s.time_range}</div>
-          <div class="time-chip${state.time===s.time_range_2&&!state.bothTimes?' active':''}" onclick="setTime('${s.id}','${s.time_range_2}',false)">${s.time_range_2}</div>
-          <div class="time-chip both${state.bothTimes?' active':''}" onclick="setTime('${s.id}','',true)">两个都行</div>
-        </div>
+    ${st.available&&(hasTwo||titles.length)?`
+    <div class="date-body">
+      ${hasTwo?`<div class="sub-label">时间（如有偏好）</div>
+      <div class="chip-row">
+        <div class="chip${st.time===s.time_range?' active':''}" onclick="setTime('${s.id}','${s.time_range}')">${s.time_range}</div>
+        <div class="chip${st.time===s.time_range_2?' active':''}" onclick="setTime('${s.id}','${s.time_range_2}')">${s.time_range_2}</div>
+        <div class="chip ok${st.time==='both'?' active':''}" onclick="setTime('${s.id}','both')">两个都行</div>
       </div>`:''}
-      ${titles.length?`<div class="time-select">
-        <div class="time-label">请选择您可以负责的内容（可多选）</div>
-        <div class="time-chips">
-          ${titles.map(t=>`<div class="time-chip${selectedTitlesForSlot.has(t)?' active':''}" onclick="toggleSlotTitle('${s.id}','${t.replace(/'/g,"\\'")}',this)">${t}</div>`).join('')}
-          <div class="time-chip both${selectedTitlesForSlot.has('__all__')?' active':''}" onclick="toggleSlotTitle('${s.id}','__all__',this)">都可以</div>
-        </div>
+      ${titles.length?`<div class="sub-label">内容（如有特定偏好，不选=都可以）</div>
+      <div class="chip-row">
+        ${titles.map(t=>`<div class="chip${st.titles.has(t)?' active':''}" onclick="toggleTitle('${s.id}','${t.replace(/'/g,"\\'")}')">${t}</div>`).join('')}
       </div>`:''}
     </div>`:''}
   </div>`;
 }
 
-function setAvail(slotId,val){
-  if(!slotState[slotId]) slotState[slotId]={};
-  slotState[slotId].available=val;
-  if(!val){slotState[slotId].time='';slotState[slotId].bothTimes=false}
+function toggleAvail(slotId){
+  const st=getState(slotId);
+  st.available=!st.available;
+  if(!st.available){st.time='';st.titles.clear()}
   rerenderCard(slotId);
   updateHint();
 }
-function toggleAvail(slotId){
-  const cur=slotState[slotId]?.available;
-  setAvail(slotId,cur===true?false:true);
+function setTime(slotId,val){
+  const st=getState(slotId);
+  st.time=st.time===val?'':val;
+  rerenderCard(slotId);
 }
-function setTime(slotId,time,both){
-  if(!slotState[slotId]) slotState[slotId]={};
-  slotState[slotId].time=time;
-  slotState[slotId].bothTimes=both;
+function toggleTitle(slotId,title){
+  const st=getState(slotId);
+  st.titles.has(title)?st.titles.delete(title):st.titles.add(title);
   rerenderCard(slotId);
 }
 function rerenderCard(slotId){
   const s=slots.find(x=>x.id===slotId);
   if(!s) return;
   const el=document.getElementById(`card-${slotId}`);
-  if(el) el.outerHTML=renderSlotCard(s);
-}
-function toggleTitle(title,el){
-  if(title==='__all__'){
-    if(selectedTitles.has('__all__')){selectedTitles.clear()}
-    else{selectedTitles.clear();selectedTitles.add('__all__')}
-  } else {
-    selectedTitles.delete('__all__');
-    if(selectedTitles.has(title)) selectedTitles.delete(title);
-    else selectedTitles.add(title);
-  }
-  // re-render title chips
-  document.querySelectorAll('.title-chip').forEach(chip=>{
-    const t=chip.getAttribute('onclick').match(/'([^']+)'/)?.[1];
-    if(t) chip.classList.toggle('active',selectedTitles.has(t));
-  });
-}
-function toggleSlotTitle(slotId,title,el){
-  if(!slotTitleState[slotId]) slotTitleState[slotId]=new Set();
-  const set=slotTitleState[slotId];
-  if(title==='__all__'){
-    if(set.has('__all__')){set.clear()}
-    else{set.clear();set.add('__all__')}
-  } else {
-    set.delete('__all__');
-    if(set.has(title)) set.delete(title);
-    else set.add(title);
-  }
-  const slot=slots.find(s=>s.id===slotId);
-  if(slot){const el2=document.getElementById(`card-${slotId}`);if(el2)el2.outerHTML=renderSlotCard(slot)}
+  if(el) el.outerHTML=renderCard(s);
 }
 function updateHint(){
-  const count=Object.values(slotState).filter(s=>s.available===true).length;
-  document.getElementById('submitHint').textContent=`已选 ${count}/${slots.length} 个课次可以上`;
+  const avail=slots.filter(s=>getState(s.id).available).length;
+  document.getElementById('submitHint').textContent=`${avail}/${slots.length} 个课次可以上`;
 }
 
 async function submitAvailability(){
   const btn=document.getElementById('submitBtn');
   btn.textContent='提交中…';btn.disabled=true;
   try{
-    // delete existing
-    if(existingAvail.length){
-      await sb(`/rest/v1/teacher_availability?teacher_name=eq.${encodeURIComponent(teacherName)}`,'DELETE');
-    }
+    if(existingAvail.length) await sb(`/rest/v1/teacher_availability?teacher_name=eq.${encodeURIComponent(teacherName)}`,'DELETE');
     const records=slots.map(s=>{
-      const state=slotState[s.id]||{};
-      const timeStr=state.bothTimes?`${s.time_range} / ${s.time_range_2}`:state.time||'';
-      const titleSet=slotTitleState[s.id]||new Set();
-      const titles=titleSet.has('__all__')?(s.session_titles||[]):[...titleSet];
+      const st=getState(s.id);
+      const timeStr=st.time==='both'?`${s.time_range} / ${s.time_range_2}`:st.time||'';
+      const titles=[...st.titles];
       return {
         id:`av-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
-        slot_id:s.id,
-        teacher_name:teacherName,
-        available:state.available===true,
-        available_time:state.available?timeStr:null,
-        preferred_titles:state.available&&titles.length?titles:null,
+        slot_id:s.id,teacher_name:teacherName,
+        available:st.available,
+        available_time:st.available&&timeStr?timeStr:null,
+        preferred_titles:st.available&&titles.length?titles:null,
       };
     });
     await sb('/rest/v1/teacher_availability','POST',records);
-    // show done
     const availCount=records.filter(r=>r.available).length;
-    document.getElementById('submitArea').style.display='none';
+    document.getElementById('submitBar').style.display='none';
     document.getElementById('mainContent').innerHTML=`
     <div class="done-box">
       <div class="done-icon">✅</div>
       <div class="done-title">回复已提交！</div>
       <div class="done-sub">
         谢谢 ${teacherName} 老师！<br>
-        共 ${slots.length} 个课次，您选择了 <strong>${availCount}</strong> 个可以上课。<br>
-  
-        <br>最终排课结果确认后，学科负责人会另行通知您。<br>
+        共 ${slots.length} 个课次，您选择了 <strong>${availCount}</strong> 个可以上课。<br><br>
+        最终排课结果确认后，学科负责人会另行通知您。<br>
         如需修改请联系学科负责人。
       </div>
     </div>`;
