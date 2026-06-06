@@ -1651,26 +1651,40 @@ function acSyncRows(){
 
 function acPasteImport(){
   const raw=document.getElementById('ac_paste_input').value.trim();
-  if(!raw) return;
-  const lines=raw.split('\n').filter(l=>l.trim());
-  const existing=acGetRows();
+  if(!raw){alert('请先粘贴数据');return}
+  // handle Windows \r\n and Mac \r line endings
+  const lines=raw.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n').filter(l=>l.trim());
+  if(!lines.length) return;
+
+  // 如果表格是空的或只有提示行，先同步行数
+  const tbody=document.getElementById('ac_details_body');
+  const hasRealRows=tbody.querySelectorAll('tr input').length>0;
+  if(!hasRealRows) acSyncRows();
+
+  // 再次获取行（同步后）
   lines.forEach((line,i)=>{
     const parts=line.split('\t');
     const title=(parts[0]||'').trim();
     const teacher=(parts[1]||'').trim();
-    const rowNum=i+1;
-    // update existing row if exists
     const rows=document.querySelectorAll('#ac_details_body tr');
     if(rows[i]){
       const inputs=rows[i].querySelectorAll('input');
-      if(title) inputs[0].value=title;
-      if(teacher) inputs[1].value=teacher;
+      if(inputs[0]&&title) inputs[0].value=title;
+      if(inputs[1]&&teacher) inputs[1].value=teacher;
     } else {
-      acAddRow({num:rowNum,title,teacher});
+      acAddRow({num:i+1,title,teacher});
     }
   });
   document.getElementById('ac_paste_input').value='';
   document.getElementById('ac_paste_area').style.display='none';
+  // 给个确认提示
+  const count=lines.length;
+  const hint=document.createElement('div');
+  hint.style.cssText='font-size:11px;color:var(--ok);margin-top:4px';
+  hint.textContent=`✓ 已导入 ${count} 行`;
+  const btn=document.querySelector('#ac_details_section .btn-outline:last-child');
+  btn?.parentNode?.insertBefore(hint,btn);
+  setTimeout(()=>hint.remove(),2500);
 }
 
 function acAddRow(data){
