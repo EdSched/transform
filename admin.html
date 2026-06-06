@@ -1277,46 +1277,48 @@ function fmtSessionDate(dateStr){
   return {short:`${d.getMonth()+1}/${d.getDate()}`,dow,dowColor};
 }
 
+let coursesTypeFilter='all';
+
 function renderCoursesPage(mc){
   const curPeriod=currentPeriodKey();
-  // 专业筛选
   let majorList=coursesMajorFilter==='all'
     ?['keiei','keizai','shakai','shinpan','fukushi']
     :coursesMajorFilter==='shakai_group'
       ?['shakai','shinpan','fukushi']
       :[coursesMajorFilter];
-
-  // 收集这些专业的课程
   let filtered=cachedCourses.filter(c=>(c.major||[]).some(m=>majorList.includes(m)));
-
-  // 期数过滤：支持 "YYYY年X月期" 格式
   if(coursesPeriodFilter==='current') filtered=filtered.filter(c=>c.period===curPeriod);
   else if(coursesPeriodFilter!=='all'){
     const [filterYear,filterPeriod]=coursesPeriodFilter.match(/(\d{4})年(.+)/)?.slice(1)||[];
     if(filterYear&&filterPeriod) filtered=filtered.filter(c=>c.period===filterPeriod&&c.first_session_date?.startsWith(filterYear));
     else filtered=filtered.filter(c=>c.period===coursesPeriodFilter);
   }
+  // 课程属性筛选
+  if(coursesTypeFilter==='专业课') filtered=filtered.filter(c=>c.course_type&&!c.course_type.includes('共通')&&!c.course_type.includes('VIP'));
+  else if(coursesTypeFilter==='共通课') filtered=filtered.filter(c=>c.course_type?.includes('共通'));
+  else if(coursesTypeFilter==='VIP') filtered=filtered.filter(c=>c.course_type?.includes('VIP'));
 
-  // 收集所有可用期数（period + 年份，从first_session_date取年）
   const allPeriods=[...new Map(cachedCourses
     .filter(c=>c.period&&c.first_session_date)
-    .map(c=>{
-      const year=c.first_session_date.slice(0,4);
-      const key=`${year}年${c.period}`;
-      return [key,{key,period:c.period,year}];
-    })
+    .map(c=>{const year=c.first_session_date.slice(0,4);const key=`${year}年${c.period}`;return [key,{key,period:c.period,year}]})
   ).values()].sort((a,b)=>a.key.localeCompare(b.key));
 
   mc.innerHTML=`
   <div class="page-header">
-    <div class="section-title">课程管理</div>
+    <div class="section-title">课程安排</div>
     <div style="display:flex;gap:8px;align-items:center">
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('courseImportFileInput').click()">↑ 导入课程安排</button>
       <input type="file" id="courseImportFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleCourseImportFile(this)">
     </div>
   </div>
 
-  <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:18px;flex-wrap:wrap">
+  <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap">
+    <div>
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">课程属性</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        ${['all','专业课','共通课','VIP'].map((t,i)=>`<div class="filter-chip${coursesTypeFilter===t?' active':''}" onclick="setCoursesType('${t}',this)" style="font-size:11px;padding:3px 10px">${i===0?'全部':t}</div>`).join('')}
+      </div>
+    </div>
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">专业</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
@@ -1421,12 +1423,14 @@ function renderCoursesSummary(courses){
 
 function setCoursesMajor(m,el){
   coursesMajorFilter=m;
-  document.querySelectorAll('#mainContent .filter-chip').forEach(c=>c.classList.remove('active'));
-  // re-activate period chip too
   renderCoursesPage(document.getElementById('mainContent'));
 }
 function setCoursesPeriod(p,el){
   coursesPeriodFilter=p;
+  renderCoursesPage(document.getElementById('mainContent'));
+}
+function setCoursesType(t,el){
+  coursesTypeFilter=t;
   renderCoursesPage(document.getElementById('mainContent'));
 }
 
@@ -2011,74 +2015,99 @@ async function confirmImport() {
 // SCHEDULE (课程预定) PAGE
 // ══════════════════════════════════
 let cachedScheduleSlots=[], cachedTeacherAvail=[], cachedTeachers=[];
-let schedPeriodFilter='all', schedCourseFilter='all';
+let schedPeriodFilter='all', schedTypeFilter='all', schedCourseFilter='all';
 
 function renderSchedulePage(mc){
-  const allPeriods=[...new Set(cachedCourses.map(c=>c.period).filter(Boolean))].sort();
-  const needsSchedule=cachedCourses.filter(c=>
-    c.course_type==='共通科目'||
-    cachedSessions.some(s=>s.course_id===c.id&&s.session_title)
-  );
+  // 带年份的期数列表
+  const allPeriods=[...new Map(cachedCourses
+    .filter(c=>c.period&&c.first_session_date)
+    .map(c=>{const year=c.first_session_date.slice(0,4);const key=`${year}年${c.period}`;return [key,{key,period:c.period,year}]})
+  ).values()].sort((a,b)=>a.key.localeCompare(b.key));
 
+  // 按属性+期数+课程筛选
   let filteredCourses=cachedCourses;
-  if(schedPeriodFilter!=='all') filteredCourses=filteredCourses.filter(c=>c.period===schedPeriodFilter);
+  if(schedTypeFilter==='共通课') filteredCourses=filteredCourses.filter(c=>c.course_type?.includes('共通'));
+  else if(schedTypeFilter==='专业课') filteredCourses=filteredCourses.filter(c=>c.course_type&&!c.course_type.includes('共通')&&!c.course_type.includes('VIP'));
+  else if(schedTypeFilter==='VIP') filteredCourses=filteredCourses.filter(c=>c.course_type?.includes('VIP'));
+
+  if(schedPeriodFilter!=='all'){
+    const [filterYear,filterPeriod]=schedPeriodFilter.match(/(\d{4})年(.+)/)?.slice(1)||[];
+    if(filterYear&&filterPeriod) filteredCourses=filteredCourses.filter(c=>c.period===filterPeriod&&c.first_session_date?.startsWith(filterYear));
+  }
   if(schedCourseFilter!=='all') filteredCourses=filteredCourses.filter(c=>c.id===schedCourseFilter);
 
-  const filteredSessions=cachedSessions.filter(s=>filteredCourses.find(c=>c.id===s.course_id));
+  // 只显示有时间槽的课程的槽
+  const filteredSlots=schedCourseFilter==='all'
+    ?cachedScheduleSlots.filter(sl=>filteredCourses.find(c=>c.name===sl.course_name))
+    :cachedScheduleSlots.filter(sl=>filteredCourses.find(c=>c.name===sl.course_name));
+
+  const showPeriod=schedTypeFilter!=='VIP';
 
   mc.innerHTML=`
   <div class="page-header">
     <div class="section-title">课程预定</div>
     <div style="display:flex;gap:8px">
+      <button class="btn btn-danger btn-sm" onclick="clearAllScheduleSlots()" style="font-size:11px">🗑 清空全部</button>
       <button class="btn btn-primary btn-sm" onclick="openTeacherManager()">👤 管理老师</button>
       <button class="btn btn-outline btn-sm" onclick="openCreateSlots()">＋ 创建时间槽</button>
     </div>
   </div>
 
-  <div style="display:flex;gap:16px;margin-bottom:18px;flex-wrap:wrap">
+  <div style="display:flex;gap:16px;margin-bottom:14px;flex-wrap:wrap;align-items:flex-start">
     <div>
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">课程属性</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        ${['all','专业课','共通课','VIP'].map((t,i)=>`<div class="filter-chip${schedTypeFilter===t?' active':''}" onclick="setSchedType('${t}',this)" style="font-size:11px;padding:3px 10px">${i===0?'全部':t}</div>`).join('')}
+      </div>
+    </div>
+    ${showPeriod?`<div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">期数</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
         <div class="filter-chip${schedPeriodFilter==='all'?' active':''}" onclick="setSchedPeriod('all',this)" style="font-size:11px;padding:3px 10px">全部</div>
-        ${allPeriods.map(p=>`<div class="filter-chip${schedPeriodFilter===p?' active':''}" onclick="setSchedPeriod('${p}',this)" style="font-size:11px;padding:3px 10px">${p}</div>`).join('')}
+        ${allPeriods.map(p=>`<div class="filter-chip${schedPeriodFilter===p.key?' active':''}" onclick="setSchedPeriod('${p.key}',this)" style="font-size:11px;padding:3px 10px">${p.key}</div>`).join('')}
       </div>
-    </div>
+    </div>`:''}
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">课程</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
         <div class="filter-chip${schedCourseFilter==='all'?' active':''}" onclick="setSchedCourse('all',this)" style="font-size:11px;padding:3px 10px">全部</div>
-        ${filteredCourses.map(c=>`<div class="filter-chip${schedCourseFilter===c.id?' active':''}" onclick="setSchedCourse('${c.id}',this)" style="font-size:11px;padding:3px 10px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name}</div>`).join('')}
+        ${filteredCourses.slice(0,20).map(c=>`<div class="filter-chip${schedCourseFilter===c.id?' active':''}" onclick="setSchedCourse('${c.id}',this)" style="font-size:11px;padding:3px 10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.name}（${c.first_session_date?.slice(0,4)||''}年${c.period||''}）">${c.name}</div>`).join('')}
       </div>
     </div>
   </div>
 
-  ${!cachedScheduleSlots.length
+  ${!filteredSlots.length
     ?`<div class="empty" style="padding:60px 0">
         暂无排班时间槽<br>
         <span style="font-size:11px;color:var(--text-3);margin-top:6px;display:block">点击右上角「创建时间槽」，为需要确认老师的课次发送排班链接</span>
       </div>`
-    :renderScheduleSlots(filteredSessions)
+    :renderScheduleSlots(filteredSlots)
   }`;
 }
 
-function renderScheduleSlots(sessions){
+function renderScheduleSlots(slots){
   // group by course
   const byCourse={};
-  cachedScheduleSlots.forEach(slot=>{
+  (slots||cachedScheduleSlots).forEach(slot=>{
     if(!byCourse[slot.course_name]) byCourse[slot.course_name]=[];
     byCourse[slot.course_name].push(slot);
   });
 
   return `<div style="display:flex;flex-direction:column;gap:16px">
-    ${Object.entries(byCourse).map(([courseName,slots])=>{
+    ${Object.entries(byCourse).map(([courseName,courseSlots])=>{
       const course=cachedCourses.find(c=>c.name===courseName)||{};
       const color=courseColor(courseName);
-      slots.sort((a,b)=>a.session_date.localeCompare(b.session_date));
+      courseSlots.sort((a,b)=>a.session_date.localeCompare(b.session_date));
+      const yearStr=course.first_session_date?.slice(0,4)||'';
+      const periodStr=course.period||'';
       return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
         <div style="background:${color.bg};color:${color.text};padding:8px 14px;display:flex;align-items:center;justify-content:space-between">
-          <span style="font-size:12px;font-weight:600">${courseName}</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:12px;font-weight:600">${courseName}</span>
+            ${yearStr?`<span style="font-size:10px;opacity:.6;background:rgba(0,0,0,.08);border-radius:2px;padding:1px 5px">${yearStr}年${periodStr}</span>`:''}
+          </div>
           <div style="display:flex;gap:8px;align-items:center">
-            <span style="font-size:10px;opacity:.7">${slots.length}个课次</span>
+            <span style="font-size:10px;opacity:.7">${courseSlots.length}个课次</span>
             <button onclick="copyTeacherLinks('${courseName}')" style="font-size:10px;background:rgba(255,255,255,.35);border:1px solid rgba(0,0,0,.15);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:${color.text}">📋 复制老师链接</button>
           </div>
         </div>
@@ -2087,7 +2116,7 @@ function renderScheduleSlots(sessions){
             <th>回数</th><th>日期</th><th>时间</th><th>候选老师</th><th>回复状况</th><th>确认老师</th><th></th>
           </tr></thead>
           <tbody>
-            ${slots.map(slot=>{
+            ${courseSlots.map(slot=>{
               const avails=cachedTeacherAvail.filter(a=>a.slot_id===slot.id);
               const availTeachers=avails.filter(a=>a.available).map(a=>a.teacher_name);
               const totalTeachers=(slot.teacher_names||[]).length;
@@ -2132,14 +2161,18 @@ function renderScheduleSlots(sessions){
   </div>`;
 }
 
-function setSchedPeriod(p,el){
-  schedPeriodFilter=p;
-  document.querySelectorAll('#mainContent .filter-chip').forEach(c=>c.classList.remove('active'));
-  renderSchedulePage(document.getElementById('mainContent'));
-}
-function setSchedCourse(id,el){
-  schedCourseFilter=id;
-  renderSchedulePage(document.getElementById('mainContent'));
+function setSchedType(t,el){schedTypeFilter=t;if(t==='VIP')schedPeriodFilter='all';renderSchedulePage(document.getElementById('mainContent'))}
+function setSchedPeriod(p,el){schedPeriodFilter=p;renderSchedulePage(document.getElementById('mainContent'))}
+function setSchedCourse(id,el){schedCourseFilter=id;renderSchedulePage(document.getElementById('mainContent'))}
+async function clearAllScheduleSlots(){
+  if(!confirm('确定清空所有排班时间槽和老师回复数据？此操作不可恢复。'))return;
+  try{
+    await sb('/rest/v1/teacher_availability?id=neq.null','DELETE').catch(()=>{});
+    await sb('/rest/v1/schedule_slots?id=neq.null','DELETE');
+    cachedScheduleSlots=[];cachedTeacherAvail=[];
+    renderSchedulePage(document.getElementById('mainContent'));
+    alert('已清空所有排班数据');
+  }catch(e){alert('操作失败：'+e.message)}
 }
 
 async function confirmSlotTeacher(slotId,teacher){
