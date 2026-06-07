@@ -9,19 +9,6 @@ function doLogin(){
 function doLogout(){localStorage.removeItem('txe_login');location.reload()}
 document.getElementById('loginPw').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 
-// ── Constants ──
-const MAJORS={keiei:'経営学',keizai:'経済学',shakai:'社会学',shinpan:'新闻传播学',fukushi:'社会福祉学'};
-const SHAKAI_GROUP=['shakai','shinpan','fukushi'];
-function majorLabel(m){return m==='shakai_group'?'社会人文':MAJORS[m]||m||''}
-function matchesMajorFilter(major,filter){
-  if(filter==='all') return true;
-  if(filter==='shakai_group') return SHAKAI_GROUP.includes(major);
-  return major===filter;
-}
-const DAYS=['周日','周一','周二','周三','周四','周五','周六'];
-function typeLabel(t){return t==='daily'?'日常学习面谈':t==='plan'?'计划书相关':'模拟面试'}
-function typeTag(t){return t==='daily'?'tag-daily':t==='plan'?'tag-plan':'tag-mock'}
-function slotCap(tr){const[a,b]=(tr||'').split('–');if(!a||!b)return 4;const[ah,am]=a.split(':').map(Number);const[bh,bm]=b.split(':').map(Number);return Math.max(1,Math.floor(((bh*60+bm)-(ah*60+am))/15))}
 function urgLabel(u){return u==='high'?'<span class="urgency-high">紧急</span>':u==='mid'?'<span class="urgency-mid">适中</span>':'<span class="urgency-low">一般</span>'}
 
 // ── State ──
@@ -721,13 +708,7 @@ let coursesMajorFilter='keizai';
 let coursesPeriodFilter='current'; // 'current' | 'all'
 
 // 判断当前是哪个期（按当前月份）
-function currentPeriodKey(){
-  const m=new Date().getMonth()+1;
-  if(m>=1&&m<=3) return '1月期';
-  if(m>=4&&m<=6) return '4月期';
-  if(m>=7&&m<=9) return '7月期';
-  return '10月期';
-}
+
 
 // 课程名去掉末尾数字 → 归组key
 function courseGroupKey(name){
@@ -753,14 +734,7 @@ function courseColor(name){
 }
 
 // 课程期判断（根据 start_date 月份）
-function periodFromDate(dateStr){
-  if(!dateStr) return '未分期';
-  const m=parseInt(dateStr.slice(5,7));
-  if(m>=1&&m<=3) return '1月期';
-  if(m>=4&&m<=6) return '4月期';
-  if(m>=7&&m<=9) return '7月期';
-  return '10月期';
-}
+
 
 // 日期格式 → M/D 周X
 function fmtSessionDate(dateStr){
