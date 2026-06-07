@@ -1888,7 +1888,6 @@ function renderSchedulePage(mc){
 }
 
 function renderScheduleSlots(slots){
-  // group by course
   const byCourse={};
   (slots||cachedScheduleSlots).forEach(slot=>{
     if(!byCourse[slot.course_name]) byCourse[slot.course_name]=[];
@@ -1899,62 +1898,75 @@ function renderScheduleSlots(slots){
     ${Object.entries(byCourse).map(([courseName,courseSlots])=>{
       const course=cachedCourses.find(c=>c.name===courseName)||{};
       const color=courseColor(courseName);
-      courseSlots.sort((a,b)=>a.session_date.localeCompare(b.session_date));
       const yearStr=course.first_session_date?.slice(0,4)||'';
       const periodStr=course.period||'';
+      // 按回数合并：同一回所有老师slots合并成一行
+      const bySession={};
+      courseSlots.forEach(slot=>{
+        const key=slot.session_number+'_'+slot.session_date;
+        if(!bySession[key]) bySession[key]={session_number:slot.session_number,session_date:slot.session_date,time_range:slot.time_range,slots:[]};
+        bySession[key].slots.push(slot);
+      });
+      const sessions=Object.values(bySession).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+      const confirmedCount=sessions.filter(s=>s.slots.some(sl=>sl.confirmed_teacher)).length;
       return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
         <div style="background:${color.bg};color:${color.text};padding:8px 14px;display:flex;align-items:center;justify-content:space-between">
           <div style="display:flex;align-items:center;gap:8px">
             <span style="font-size:12px;font-weight:600">${courseName}</span>
             ${yearStr?`<span style="font-size:10px;opacity:.6;background:rgba(0,0,0,.08);border-radius:2px;padding:1px 5px">${yearStr}年${periodStr}</span>`:''}
+            <span style="font-size:10px;opacity:.7">已确认 ${confirmedCount}/${sessions.length} 回</span>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
-            <span style="font-size:10px;opacity:.7">${courseSlots.length}个课次</span>
-            <button onclick="copyTeacherLinks('${courseName}')" style="font-size:10px;background:rgba(255,255,255,.35);border:1px solid rgba(0,0,0,.15);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:${color.text}">📋 复制老师链接</button>
+            <button onclick="copyTeacherLinks('${courseName}')" style="font-size:10px;background:rgba(255,255,255,.35);border:1px solid rgba(0,0,0,.15);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:${color.text}">📋 复制链接</button>
             <button onclick="openScheduleSummary('${courseName}')" style="font-size:10px;background:rgba(255,255,255,.5);border:1px solid rgba(0,0,0,.2);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:${color.text};font-weight:600">📊 排课汇总</button>
           </div>
         </div>
         <table class="student-table" style="margin:0">
           <thead><tr>
-            <th>回数</th><th>日期</th><th>时间</th><th>候选老师</th><th>回复状况</th><th>确认老师</th><th></th>
+            <th style="width:60px">回数</th><th style="width:100px">日期</th><th style="width:120px">时间</th>
+            <th>可上老师</th><th style="width:180px">确认老师</th><th style="width:36px"></th>
           </tr></thead>
           <tbody>
-            ${courseSlots.map(slot=>{
-              const avails=cachedTeacherAvail.filter(a=>a.slot_id===slot.id);
-              const availTeachers=avails.filter(a=>a.available).map(a=>a.teacher_name);
-              const totalTeachers=(slot.teacher_names||[]).length;
-              const replied=avails.length;
-              const f=fmtSessionDate(slot.session_date);
-              return `<tr>
-                <td style="font-size:11px">第${slot.session_number||'?'}回</td>
+            ${sessions.map(sess=>{
+              const f=fmtSessionDate(sess.session_date);
+              const confirmedSlot=sess.slots.find(sl=>sl.confirmed_teacher);
+              // 收集所有老师回复
+              const allAvailTeachers=[];
+              sess.slots.forEach(slot=>{
+                cachedTeacherAvail.filter(a=>a.slot_id===slot.id&&a.available).forEach(a=>{
+                  if(!allAvailTeachers.find(x=>x.name===a.teacher_name))
+                    allAvailTeachers.push({name:a.teacher_name,time:a.available_time||'',titles:a.preferred_titles||[]});
+                });
+              });
+              const allTeacherNames=[...new Set(sess.slots.flatMap(sl=>sl.teacher_names||[]))];
+              const repliedNames=[...new Set(sess.slots.flatMap(sl=>cachedTeacherAvail.filter(a=>a.slot_id===sl.id).map(a=>a.teacher_name)))];
+              const waitingNames=allTeacherNames.filter(n=>!repliedNames.includes(n));
+              const firstSlot=sess.slots[0];
+              const slotIds=JSON.stringify(sess.slots.map(s=>s.id));
+              return `<tr style="${confirmedSlot?'background:var(--ok-bg)':''}">
+                <td style="font-size:11px;color:var(--text-3)">第${sess.session_number}回</td>
                 <td style="font-size:12px;font-weight:600">${f.short} <span style="color:${f.dowColor};font-size:10px">${f.dow}</span></td>
-                <td style="font-size:11px">${slot.time_range||''}</td>
-                <td style="font-size:11px">${(slot.teacher_names||[]).join('・')}</td>
-                <td style="font-size:11px">
-                  ${replied?`<div style="display:flex;flex-direction:column;gap:3px">
-                    ${avails.map(a=>{
-                      const avail=cachedTeacherAvail.find(x=>x.slot_id===slot.id&&x.teacher_name===a.teacher_name);
-                      if(!avail?.available) return `<span style="color:var(--text-3)">${a.teacher_name} ✕</span>`;
-                      const timeStr=avail.available_time?` · ${avail.available_time}`:'';
-                      const titlesStr=avail.preferred_titles?.length?`<div style="font-size:9px;color:var(--text-2)">${avail.preferred_titles.join('・')}</div>`:'';
-                      return `<div><span style="color:var(--ok)">${a.teacher_name} ✓${timeStr}</span>${titlesStr}</div>`;
-                    }).join('')}
-                    <span style="font-size:10px;color:var(--text-3);margin-top:2px">${replied}/${totalTeachers} 已回复</span>
-                  </div>`
-                  :`<span style="color:var(--text-3)">等待回复</span>`}
+                <td style="font-size:11px">${sess.time_range||''}</td>
+                <td>
+                  ${allAvailTeachers.length
+                    ?`<div style="display:flex;flex-wrap:wrap;gap:4px">
+                        ${allAvailTeachers.map(t=>`<span style="font-size:11px;background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:1px 7px">${t.name}${t.time?' · '+t.time:''}</span>`).join('')}
+                      </div>${waitingNames.length?`<div style="font-size:10px;color:var(--text-3);margin-top:3px">等待：${waitingNames.join('・')}</div>`:''}`
+                    :`<span style="font-size:11px;color:var(--text-3)">${waitingNames.length?'等待回复（'+waitingNames.join('・')+'）':'暂无回复'}</span>`}
                 </td>
                 <td>
-                  ${slot.confirmed_teacher
-                    ?`<span style="color:var(--ok);font-size:11px;font-weight:600">✓ ${slot.confirmed_teacher}</span>`
-                    :`<select onchange="confirmSlotTeacher('${slot.id}',this.value)" style="font-size:11px;padding:3px 6px">
+                  ${confirmedSlot
+                    ?`<div style="display:flex;align-items:center;gap:6px">
+                        <span style="color:var(--ok);font-size:11px;font-weight:600">✓ ${confirmedSlot.confirmed_teacher}</span>
+                        <button onclick="unconfirmSlot('${confirmedSlot.id}')" style="font-size:9px;color:var(--text-3);background:none;border:1px solid var(--border);border-radius:2px;padding:1px 5px;cursor:pointer">取消</button>
+                      </div>`
+                    :`<select onchange="confirmSlotTeacher('${firstSlot?.id}',this.value)" style="font-size:11px;padding:3px 6px;width:100%">
                         <option value="">— 选择老师 —</option>
-                        ${availTeachers.map(t=>`<option value="${t}">${t}</option>`).join('')}
-                        ${(slot.teacher_names||[]).filter(t=>!availTeachers.includes(t)).map(t=>`<option value="${t}">${t}（未回复）</option>`).join('')}
+                        ${allAvailTeachers.map(t=>`<option value="${t.name}">${t.name}</option>`).join('')}
+                        ${allTeacherNames.filter(n=>!allAvailTeachers.find(x=>x.name===n)).map(n=>`<option value="${n}">${n}（未回复）</option>`).join('')}
                       </select>`}
                 </td>
-                <td>
-                  <button class="btn-ghost" onclick="deleteScheduleSlot('${slot.id}')">✕</button>
-                </td>
+                <td><button class="btn-ghost" onclick="deleteSessionSlots(${slotIds})">✕</button></td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -1963,6 +1975,7 @@ function renderScheduleSlots(slots){
     }).join('')}
   </div>`;
 }
+
 
 function setSchedType(t,el){schedTypeFilter=t;if(t==='VIP')schedPeriodFilter='all';renderSchedulePage(document.getElementById('mainContent'))}
 function setSchedPeriod(p,el){schedPeriodFilter=p;renderSchedulePage(document.getElementById('mainContent'))}
@@ -1994,13 +2007,26 @@ async function confirmSlotTeacher(slotId,teacher){
   }catch(e){alert('保存失败：'+e.message)}
 }
 
-async function deleteScheduleSlot(id){
-  if(!confirm('删除此时间槽及所有老师回复？'))return;
+async function unconfirmSlot(slotId){
   try{
-    await sb(`/rest/v1/teacher_availability?slot_id=eq.${id}`,'DELETE');
-    await sb(`/rest/v1/schedule_slots?id=eq.${id}`,'DELETE');
-    cachedTeacherAvail=cachedTeacherAvail.filter(a=>a.slot_id!==id);
-    cachedScheduleSlots=cachedScheduleSlots.filter(s=>s.id!==id);
+    await sb(`/rest/v1/schedule_slots?id=eq.${slotId}`,'PATCH',{confirmed_teacher:null,confirmed_title:null,status:'pending'});
+    const slot=cachedScheduleSlots.find(s=>s.id===slotId);
+    if(slot){slot.confirmed_teacher=null;slot.confirmed_title=null;slot.status='pending'}
+    // also clear session_teacher on course_session
+    if(slot?.session_id) await sb(`/rest/v1/course_sessions?id=eq.${slot.session_id}`,'PATCH',{session_teacher:''}).catch(()=>{});
+    renderSchedulePage(document.getElementById('mainContent'));
+  }catch(e){alert('操作失败：'+e.message)}
+}
+
+async function deleteSessionSlots(slotIds){
+  if(!confirm('确定删除此回的所有排班时间槽？'))return;
+  try{
+    for(const id of slotIds){
+      await sb(`/rest/v1/teacher_availability?slot_id=eq.${id}`,'DELETE').catch(()=>{});
+      await sb(`/rest/v1/schedule_slots?id=eq.${id}`,'DELETE');
+      cachedTeacherAvail=cachedTeacherAvail.filter(a=>a.slot_id!==id);
+      cachedScheduleSlots=cachedScheduleSlots.filter(s=>s.id!==id);
+    }
     renderSchedulePage(document.getElementById('mainContent'));
   }catch(e){alert('删除失败：'+e.message)}
 }
