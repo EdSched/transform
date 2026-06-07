@@ -1,1 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>唯新教育 管理系统</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="admin.css">
+</head>
+<body>
+<!-- Login -->
+<div id="loginOverlay">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:36px 40px;width:320px;text-align:center">
+    <div style="font-family:'Noto Serif SC',serif;font-size:1.2rem;font-weight:600;margin-bottom:4px">唯新教育 管理系统</div>
+    <div style="font-size:10px;color:var(--text-3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:28px">Transform Education</div>
+    <div style="text-align:left;margin-bottom:8px">
+      <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:5px">管理密码</label>
+      <input type="password" id="loginPw" placeholder="请输入密码">
+    </div>
+    <div id="loginErr" style="font-size:11px;color:var(--danger);min-height:18px;margin-bottom:10px;text-align:left"></div>
+    <button class="btn btn-primary btn-full" onclick="doLogin()">进入管理系统</button>
+    <div style="font-size:10px;color:var(--text-3);margin-top:14px">登录后自动保持 30 天</div>
+  </div>
+</div>
 
+<div class="shell">
+  <!-- Topbar -->
+  <div class="topbar">
+    <div>
+      <div class="topbar-title">唯新教育 管理系统</div>
+      <div class="topbar-sub">Transform Education · Admin</div>
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="doLogout()">退出登录</button>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="nav-sep">面谈预约</div>
+    <button class="nav-item active" id="nav-booking" onclick="switchPage('booking')"><span class="nav-icon">📅</span>预约管理</button>
+    <button class="nav-item" id="nav-slots" onclick="switchPage('slots')"><span class="nav-icon">⏰</span>时间槽设定</button>
+    <div class="nav-sep">学生管理</div>
+    <button class="nav-item" id="nav-students" onclick="switchPage('students')"><span class="nav-icon">👥</span>学生档案</button>
+    <button class="nav-item" id="nav-attendance" onclick="switchPage('attendance')"><span class="nav-icon">✅</span>出席・作业</button>
+    <div class="nav-sep">课程管理</div>
+    <button class="nav-item" id="nav-courses" onclick="switchPage('courses')"><span class="nav-icon">📚</span>课程安排</button>
+    <button class="nav-item" id="nav-schedule" onclick="switchPage('schedule')"><span class="nav-icon">🗓</span>课程预定</button>
+  </div>
+
+  <!-- Main content -->
+  <div class="main" id="mainContent">
+    <div class="loading">加载中…</div>
+  </div>
+</div>
+
+<!-- Edit booking modal -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <div class="modal-title">修改预约</div>
+    <div class="modal-sub" id="editModalSub"></div>
+    <input type="hidden" id="editId">
+    <div class="form-group"><label class="form-label">状态</label>
+      <select id="editStatus"><option value="pending">待确认</option><option value="confirmed">已确认</option><option value="cancelled">已取消</option></select></div>
+    <div class="form-group"><label class="form-label">实际面谈时间</label><input type="datetime-local" id="editActualTime"></div>
+    <div class="form-group"><label class="form-label">备注（计划书／模拟面试）</label><textarea id="editNote" rows="3" placeholder="面谈记录、备注或跟进事项…"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('editModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Record modal -->
+<div class="modal-overlay" id="recordModal">
+  <div class="modal">
+    <div class="modal-title">面谈记录</div>
+    <div class="modal-sub" id="recordModalSub"></div>
+    <input type="hidden" id="recordId">
+    <div id="recordWarn" class="warn-banner" style="display:none"></div>
+    <div class="form-group"><label class="form-label">实际面谈时间</label><input type="datetime-local" id="recActualTime"></div>
+    <div class="modal-section">
+      <div class="modal-section-title">知识学习进展</div>
+      <div class="form-group"><label class="form-label">状态</label>
+        <select id="rec_study_status"><option value="">请选择</option><option>进展顺利并能掌握</option><option>能够稳定跟上</option><option>需要更多时间</option><option>没有很好跟上进度</option><option>遇到困难</option></select></div>
+      <div class="form-group"><label class="form-label">解决建议</label><textarea id="rec_study_advice" rows="2" placeholder="例：建议上课做好笔记，定期复习…"></textarea></div>
+      <div class="form-group"><label class="form-label">完成期限</label><input type="date" id="rec_study_deadline"></div>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">计划书完成情况</div>
+      <div class="form-group"><label class="form-label">状态</label>
+        <select id="rec_plan_status"><option value="">请选择</option><option>未开始</option><option>在收集材料</option><option>遇到困难</option><option>撰写中</option><option>已完成</option></select></div>
+      <div class="form-group"><label class="form-label">解决建议</label><textarea id="rec_plan_advice" rows="2" placeholder="例：参考上课讲义先行研究的部分…"></textarea></div>
+      <div class="form-group"><label class="form-label">完成期限</label><input type="date" id="rec_plan_deadline"></div>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">出愿情况</div>
+      <div class="form-group"><label class="form-label">状态</label>
+        <select id="rec_apply_status"><option value="">请选择</option><option>未开始</option><option>完成择校</option><option>已联系教授</option><option>准备中</option><option>已出愿</option></select></div>
+      <div class="form-group"><label class="form-label">解决建议</label><textarea id="rec_apply_advice" rows="2"></textarea></div>
+      <div class="form-group"><label class="form-label">完成期限</label><input type="date" id="rec_apply_deadline"></div>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">备考情况</div>
+      <div class="form-group"><label class="form-label">状态</label>
+        <select id="rec_exam_status"><option value="">请选择</option><option>未开始</option><option>在写过去问</option><option>过去问已提交</option><option>在准备面试稿</option><option>模拟面试阶段</option></select></div>
+      <div class="form-group"><label class="form-label">解决建议</label><textarea id="rec_exam_advice" rows="2"></textarea></div>
+      <div class="form-group"><label class="form-label">完成期限</label><input type="date" id="rec_exam_deadline"></div>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">目前困惑 / 问题</div>
+      <div class="form-group"><label class="form-label">困惑内容</label><textarea id="rec_issue" rows="2"></textarea></div>
+      <div class="form-group"><label class="form-label">解决建议</label><textarea id="rec_issue_advice" rows="2"></textarea></div>
+      <div class="form-group"><label class="form-label">完成期限</label><input type="date" id="rec_issue_deadline"></div>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-title">补充</div>
+      <div class="form-group" style="margin:0"><textarea id="rec_extra" rows="3" placeholder="语学成绩、学生诉求、评价等…"></textarea></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('recordModal')">取消</button>
+      <button class="btn btn-outline" id="copyRecordBtn" onclick="copyRecord()" style="display:none">📋 复制记录</button>
+      <button class="btn btn-primary" onclick="saveRecord()">保存记录</button>
+    </div>
+    <div id="copyBox" class="copy-box" style="display:none"></div>
+  </div>
+</div>
+
+<!-- Student modal -->
+<div class="modal-overlay" id="studentModal">
+  <div class="modal" style="width:620px">
+    <div class="modal-title" id="studentModalTitle">添加学生</div>
+    <div class="modal-sub" style="padding-bottom:14px;border-bottom:1px solid var(--border);margin-bottom:16px">学生基础档案信息</div>
+    <input type="hidden" id="studentId">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group" style="margin:0"><label class="form-label">姓名 *</label><input id="st_name" placeholder="学生姓名"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">专业 *</label>
+        <select id="st_major"><option value="keiei">経営学</option><option value="keizai">経済学</option><option value="shakai">社会学</option><option value="shinpan">新闻传播学</option><option value="fukushi">社会福祉学</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">学生属性</label>
+        <select id="st_type"><option value="">请选择</option><option>本科</option><option>专科</option><option>专升本</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">来源</label>
+        <select id="st_source"><option value="">请选择</option><option>唯新</option><option>新世界</option><option>校内塾</option><option>杭州校</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">课程属性</label><input id="st_course" placeholder="大课 / VIP / 保录…"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">等级</label>
+        <select id="st_level"><option value="">请选择</option><option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">日语成绩</label><input id="st_japanese" placeholder="N1 120 / 备考…"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">英语成绩</label><input id="st_english" placeholder="托业 800 / 托福 90…"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">出身大学</label><input id="st_university"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">学部 / 专业</label><input id="st_faculty"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">GPA / 其他履历</label><input id="st_gpa"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">毕业时间</label><input id="st_graduation" placeholder="25年6月"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">期待入学时间</label><input id="st_enrollment" placeholder="27年4月"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">赴日时间</label><input id="st_arrival" placeholder="26年7月"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">到期时间</label><input id="st_expiry" placeholder="27年3月"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">状态</label>
+        <select id="st_status"><option value="active">在籍</option><option value="graduated">合格归档</option><option value="expired">已到期</option><option value="stopped">停课</option></select></div>
+    </div>
+    <div class="form-group" style="margin-top:12px"><label class="form-label">困难点 / 备注</label><textarea id="st_difficulty" rows="2"></textarea></div>
+    <div class="form-group"><label class="form-label">志望大学 / 研究计划书方向</label><textarea id="st_notes" rows="2"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('studentModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveStudent()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Create schedule slots modal -->
+<div class="modal-overlay" id="createSlotsModal">
+  <div class="modal" style="width:680px">
+    <div class="modal-title">创建排班时间槽</div>
+    <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px">
+      选好课程、老师和分配内容后生成时间槽，老师只需回复哪些日期可以上课
+    </div>
+
+    <!-- 课程筛选：属性 → 期数 → 课程 -->
+    <div class="form-group">
+      <label class="form-label">课程属性</label>
+      <div style="display:flex;gap:4px;flex-wrap:wrap" id="cs_type_chips">
+        <div class="filter-chip active" onclick="csSetType('全部',this)" style="font-size:11px;padding:3px 10px">全部</div>
+        <div class="filter-chip" onclick="csSetType('共通课',this)" style="font-size:11px;padding:3px 10px">共通课</div>
+        <div class="filter-chip" onclick="csSetType('专业课',this)" style="font-size:11px;padding:3px 10px">专业课</div>
+        <div class="filter-chip" onclick="csSetType('VIP',this)" style="font-size:11px;padding:3px 10px">VIP</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">期数</label>
+        <select id="cs_period" onchange="csFilterCourses()">
+          <option value="">全部期数</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">课程</label>
+        <select id="cs_course" onchange="onCreateSlotCourseChange()">
+          <option value="">请先选择期数</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">第二时间段（可选，同一天两个时间供老师选）</label>
+      <input id="cs_time_range_2" placeholder="例：16:00-18:00（不填则只有一个时间）">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">老师与单回内容对应（从单回明细自动识别）</label>
+      <div id="cs_titles_select" style="border:1px solid var(--border);border-radius:3px;padding:10px;min-height:44px;background:var(--bg)">
+        <span style="font-size:11px;color:var(--text-3)">选择课程后显示</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">候选老师（可多选，每位老师会收到相同的时间槽）</label>
+      <div id="cs_teachers_list" style="display:flex;flex-wrap:wrap;gap:8px;border:1px solid var(--border);border-radius:3px;padding:10px;min-height:44px"></div>
+    </div>
+
+    <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;font-size:11px;color:var(--text-2);margin-bottom:4px">
+      <div id="cs_sessions_preview" style="color:var(--text-3)">选择课程后显示课次预览</div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('createSlotsModal')">取消</button>
+      <button class="btn btn-primary" id="createSlotsConfirmBtn" onclick="confirmCreateSlots()">确认创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- Schedule summary / auto-arrange modal -->
+<div class="modal-overlay" id="scheduleSummaryModal">
+  <div class="modal" style="width:900px;max-width:96vw">
+    <div class="modal-title">排课汇总</div>
+    <div class="modal-sub" id="scheduleSummarySub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px"></div>
+    <div id="scheduleSummaryBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('scheduleSummaryModal')">关闭</button>
+      <button class="btn btn-outline" onclick="autoArrange()" style="color:var(--warn);border-color:var(--warn)">⚡ 自动排课</button>
+      <button class="btn btn-primary" onclick="confirmArrangement()">✓ 确认并同步到课程安排</button>
+    </div>
+  </div>
+</div>
+
+<!-- Teacher manager modal -->
+<div class="modal-overlay" id="teacherManagerModal">
+  <div class="modal" style="width:440px">
+    <div class="modal-title">管理老师</div>
+    <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px">
+      添加或删除老师，老师端链接：teacher.html?teacher=姓名
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input id="new_teacher_name" placeholder="老师姓名" style="flex:1">
+      <input id="new_teacher_notes" placeholder="备注（可选）" style="flex:1.5">
+      <button class="btn btn-primary btn-sm" onclick="addTeacher()">添加</button>
+    </div>
+    <div id="teacherList"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('teacherManagerModal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- Publish management modal -->
+<div class="modal-overlay" id="publishModal">
+  <div class="modal" style="width:760px;max-width:96vw">
+    <div class="modal-title">发布管理</div>
+    <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px">
+      勾选要发布给老师课表的课程，确认后老师可在「我的课表」中看到
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap" id="publishFilters"></div>
+    <div style="max-height:420px;overflow-y:auto;border:1px solid var(--border);border-radius:3px" id="publishList"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('publishModal')">关闭</button>
+      <button class="btn btn-danger btn-sm" onclick="publishSelected(false)">取消选中课程发布</button>
+      <button class="btn btn-primary" onclick="publishSelected(true)">✓ 发布选中课程</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manual add course modal -->
+<div class="modal-overlay" id="addCourseModal">
+  <div class="modal" style="width:680px">
+    <div class="modal-title" id="addCourseModalTitle">手动添加课程</div>
+    <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:16px">填写课程基本信息，系统自动生成课次日期</div>
+    <input type="hidden" id="ac_editing_id">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group" style="margin:0"><label class="form-label">课程名称 *</label><input id="ac_name" placeholder="例：社会人文大课"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">专业（可多选）</label>
+        <div id="ac_major_checkboxes" style="display:flex;flex-wrap:wrap;gap:6px;padding:7px 9px;border:1px solid var(--border);border-radius:3px;background:var(--bg)">
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="keiei" style="accent-color:var(--accent)">経営学</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="keizai" style="accent-color:var(--accent)">経済学</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="shakai" style="accent-color:var(--accent)">社会学</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="shinpan" style="accent-color:var(--accent)">新闻传播学</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="fukushi" style="accent-color:var(--accent)">社会福祉学</label>
+        </div>
+      </div>
+      <div class="form-group" style="margin:0"><label class="form-label">期数 *</label>
+        <select id="ac_period"><option value="">请选择</option><option>7月期</option><option>10月期</option><option>1月期</option><option>4月期</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">课程属性</label>
+        <select id="ac_course_type" onchange="acOnTypeChange(this.value)"><option value="">请选择</option><option>专业课</option><option>共通课</option><option>VIP课程</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">讲师</label><input id="ac_teacher" placeholder="多人用 / 分隔"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">校区</label><input id="ac_campus" placeholder="市谷 / 高马 / 腾讯会议…"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">授课形式</label>
+        <select id="ac_delivery"><option value="">请选择</option><option>线下</option><option>线上</option><option>线下＋线上</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">星期</label>
+        <select id="ac_weekday"><option value="">请选择</option><option>周一</option><option>周二</option><option>周三</option><option>周四</option><option>周五</option><option>周六</option><option>周日</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">上课时间</label><input id="ac_time_range" placeholder="14:00-18:00"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">课程回数 *</label><input type="number" id="ac_total" min="1" placeholder="10"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">第一回日期 *</label><input type="date" id="ac_first_date"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">备注</label><input id="ac_notes"></div>
+    </div>
+
+    <!-- 单回明细开关 -->
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border-light)">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:600">
+        <input type="checkbox" id="ac_has_details" onchange="toggleAcDetails(this.checked)" style="accent-color:var(--accent);width:16px;height:16px">
+        有单回明细（每回不同老师或不同主题）
+      </label>
+    </div>
+
+    <!-- 单回明细表格 -->
+    <div id="ac_details_section" style="display:none;margin-top:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+        <div style="font-size:11px;color:var(--text-2)">每回的单回名称和任课老师（留空则继承主讲师）</div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('ac_paste_area').style.display=document.getElementById('ac_paste_area').style.display==='none'?'block':'none'">📋 从Excel粘贴</button>
+          <button class="btn btn-outline btn-sm" onclick="acSyncRows()">↺ 同步行数</button>
+        </div>
+      </div>
+      <!-- 粘贴区域 -->
+      <div id="ac_paste_area" style="display:none;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:10px">
+        <div style="font-size:11px;color:var(--text-2);margin-bottom:6px">从Excel复制「单回名称」和「任课老师」两列后粘贴到这里（Tab分隔）</div>
+        <textarea id="ac_paste_input" rows="4" placeholder="单回名称&#9;任课老师&#10;社会学导论&#9;田跃&#10;传播学基础&#9;郑佳琪&#10;…" style="width:100%;font-size:11px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:'DM Mono',monospace;resize:vertical"></textarea>
+        <button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="acPasteImport()">导入</button>
+      </div>
+      <div style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:3px">
+        <table class="student-table" style="margin:0" id="ac_details_table">
+          <thead><tr><th style="width:60px">第几回</th><th>单回名称</th><th>任课老师</th><th style="width:40px"></th></tr></thead>
+          <tbody id="ac_details_body"></tbody>
+        </table>
+      </div>
+      <button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="acAddRow()">＋ 添加一行</button>
+    </div>
+
+    <div style="margin-top:12px;padding:10px 12px;background:var(--bg);border:1px solid var(--border-light);border-radius:3px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px">
+        <input type="checkbox" id="ac_confirm_publish" style="accent-color:var(--accent);width:15px;height:15px">
+        <span>直接确认发布（老师课表立即可见）</span>
+      </label>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('addCourseModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveAddCourse()">保存并生成课次</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit course modal -->
+<div class="modal-overlay" id="editCourseModal">
+  <div class="modal" style="width:580px">
+    <div class="modal-title">编辑课程</div>
+    <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px">修改后保存，不影响已有出席记录</div>
+    <input type="hidden" id="ec_id">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group" style="margin:0"><label class="form-label">课程名称</label><input id="ec_name"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">期数</label>
+        <select id="ec_period"><option>7月期</option><option>10月期</option><option>1月期</option><option>4月期</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">课程属性</label><input id="ec_course_type" placeholder="専門科目 / 共通科目…"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">讲师</label><input id="ec_teacher"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">校区</label><input id="ec_campus" placeholder="市谷 / 高马 / 腾讯会议…"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">授课形式</label>
+        <select id="ec_delivery"><option value="">请选择</option><option>线下</option><option>线上</option><option>线下＋线上</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">星期</label><input id="ec_weekdays" placeholder="周六"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">上课时间</label><input id="ec_time_range" placeholder="14:00-18:00"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">课程回数</label><input type="number" id="ec_total" min="1"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">第一回日期</label><input type="date" id="ec_first_date"></div>
+    </div>
+    <div class="form-group" style="margin-top:12px"><label class="form-label">备注</label><input id="ec_notes"></div>
+    <div style="background:var(--warn-bg);border:1px solid var(--warn);border-radius:3px;padding:8px 12px;font-size:11px;color:var(--warn);margin-top:12px">
+      ⚠ 修改第一回日期或回数后点「重新生成课次」将重新计算所有课次日期（已有出席记录不受影响）
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('editCourseModal')">取消</button>
+      <button class="btn btn-outline" onclick="regenerateSessions()" style="color:var(--warn);border-color:var(--warn)">重新生成课次</button>
+      <button class="btn btn-primary" onclick="saveEditCourse()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Copy to new period modal -->
+<div class="modal-overlay" id="copyPeriodModal">
+  <div class="modal" style="width:480px">
+    <div class="modal-title">复制到新期数</div>
+    <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px">从当前期课程生成新一期，出席记录从零开始</div>
+    <input type="hidden" id="cp_source_ids">
+    <div class="form-group"><label class="form-label">目标期数</label>
+      <select id="cp_period"><option>7月期</option><option>10月期</option><option>1月期</option><option>4月期</option></select></div>
+    <div id="cp_courses_list" style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:3px;padding:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('copyPeriodModal')">取消</button>
+      <button class="btn btn-primary" onclick="confirmCopyPeriod()">复制并生成</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reschedule session modal -->
+<div class="modal-overlay" id="rescheduleModal">
+  <div class="modal" style="width:380px">
+    <div class="modal-title">调整课次日期</div>
+    <div class="modal-sub" id="reschedule_sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px"></div>
+    <input type="hidden" id="rs_session_id">
+    <div class="form-group"><label class="form-label">原日期</label><input id="rs_orig_date" disabled style="opacity:.6"></div>
+    <div class="form-group"><label class="form-label">调整为</label><input type="date" id="rs_new_date"></div>
+    <div class="form-group"><label class="form-label">调整原因</label>
+      <select id="rs_reason">
+        <option value="休讲顺延">休讲顺延</option>
+        <option value="提前补课">提前补课</option>
+        <option value="场地变更">场地变更</option>
+        <option value="其他">其他</option>
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">备注</label><input id="rs_note" placeholder="可选"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('rescheduleModal')">取消</button>
+      <button class="btn btn-primary" onclick="confirmReschedule()">确认调整</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="courseImportModal">
+  <div class="modal" style="width:700px;max-width:96vw">
+    <div class="modal-title">导入课程安排</div>
+    <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px">
+      上传课程安排Excel，自动解析并生成每次课的日期。已存在同名课程将跳过。
+    </div>
+    <div id="courseImportPreview"></div>
+    <div style="margin:12px 0;padding:10px 12px;background:var(--bg);border:1px solid var(--border-light);border-radius:3px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px">
+        <input type="checkbox" id="importConfirmPublish" style="accent-color:var(--accent);width:15px;height:15px">
+        <span>直接确认发布（课程安排已定，老师课表立即可见）</span>
+      </label>
+      <div style="font-size:11px;color:var(--text-3);margin-top:4px;margin-left:23px">不勾选则为待发布状态，需要在「发布管理」中手动发布</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('courseImportModal')">取消</button>
+      <button class="btn btn-primary" id="courseImportConfirmBtn" onclick="confirmCourseImport()">确认导入</button>
+    </div>
+  </div>
+</div>
+
+<!-- Session record modal (attendance + homework per session) -->
+<div class="modal-overlay" id="sessionModal">
+  <div class="modal" style="width:900px;max-width:96vw">
+    <div class="modal-title" id="sessionModalTitle">出席记录</div>
+    <div class="modal-sub" id="sessionModalSub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px"></div>
+    <input type="hidden" id="sessionModalId">
+    <div style="overflow-x:auto">
+      <table class="student-table" id="sessionRecordTable">
+        <thead><tr>
+          <th style="min-width:90px">姓名</th>
+          <th style="min-width:90px">位置</th>
+          <th style="min-width:120px">出席方式</th>
+          <th style="min-width:50px">分值</th>
+          <th style="min-width:100px">作业</th>
+          <th>反馈备注</th>
+        </tr></thead>
+        <tbody id="sessionRecordBody"></tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('sessionModal')">关闭</button>
+      <button class="btn btn-primary" onclick="saveSessionRecords()">保存全部</button>
+    </div>
+  </div>
+</div>
+
+<!-- Student attendance view modal -->
+<div class="modal-overlay" id="studentAttModal">
+  <div class="modal" style="width:700px;max-width:96vw">
+    <div class="modal-title" id="studentAttTitle">学生出席记录</div>
+    <div class="modal-sub" id="studentAttSub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px"></div>
+    <div id="studentAttBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('studentAttModal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import preview modal -->
+<div class="modal-overlay" id="importModal">
+  <div class="modal" style="width:760px;max-width:96vw">
+    <div class="modal-title">导入学生数据</div>
+    <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px">
+      预览解析结果，确认后批量写入数据库。已存在同名学生将被跳过（不覆盖）。
+    </div>
+    <div id="importPreview"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('importModal')">取消</button>
+      <button class="btn btn-primary" id="importConfirmBtn" onclick="confirmImport()">确认导入</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shared/constants.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>
