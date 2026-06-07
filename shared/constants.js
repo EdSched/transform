@@ -53,6 +53,7 @@ function courseColor(name) {
 
 // ── 日期工具 ──
 const DAYS_CN = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+const DAYS = DAYS_CN; // alias for backward compatibility
 const DOW_COLOR = { 6: '#1a4a8a', 0: '#8a1a2c' };
 
 function fmtSessionDate(dateStr) {
