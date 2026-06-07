@@ -2034,7 +2034,7 @@ async function deleteSessionSlots(slotIds){
 function copyTeacherLinks(courseName){
   const slots=cachedScheduleSlots.filter(s=>s.course_name===courseName);
   const teacherNames=[...new Set(slots.flatMap(s=>s.teacher_names||[]))];
-  const base=location.origin+location.pathname.replace(/\/admin\/?.*$/,'/teacher/');
+  const base=location.origin+location.pathname.replace(/\/admin\/.*$/,'/teacher/');
   const links=teacherNames.map(name=>`${name}：${base}?teacher=${encodeURIComponent(name)}`).join('\n');
   navigator.clipboard.writeText(links).then(()=>alert('已复制所有老师链接：\n\n'+links)).catch(()=>alert('链接：\n\n'+links));
 }
