@@ -67,6 +67,7 @@ function clearStoredInfo() {
   const banner = document.getElementById('infoBanner');
   if (banner) banner.style.display = 'none';
 }
+let major = null, selectedType = null, selectedSlotId = null;
 let slotViewYear = new Date().getFullYear(), slotViewMonth = new Date().getMonth();
 let cachedSlots = [], cachedBookings = [];
 
