@@ -2211,159 +2211,190 @@ function openScheduleSummary(courseName){
   const slots=cachedScheduleSlots.filter(s=>s.course_name===courseName).sort((a,b)=>a.session_date.localeCompare(b.session_date));
   const course=cachedCourses.find(c=>c.name===courseName)||{};
   const year=course.first_session_date?.slice(0,4)||'';
-  document.getElementById('scheduleSummarySub').textContent=`${courseName}　${year}年${course.period||''}　共${slots.length}课次`;
-  // init draft from confirmed
+  const uniqueDates=[...new Map(slots.map(s=>[s.session_date,s])).values()];
+  document.getElementById('scheduleSummarySub').textContent=`${courseName}\u3000${year}年${course.period||''}\u3000共${uniqueDates.length}课次`;
   arrangementDraft={};
-  slots.forEach(s=>{if(s.confirmed_teacher) arrangementDraft[s.id]={teacher:s.confirmed_teacher,title:s.confirmed_title||''}});
+  // restore confirmed from course_sessions
+  cachedSessions.filter(s=>s.course_name===courseName&&s.session_title&&s.session_teacher).forEach(s=>{
+    arrangementDraft[s.session_date]={title:s.session_title,teacher:s.session_teacher,session_id:s.id};
+  });
   renderSummaryBody(slots,courseName);
   document.getElementById('scheduleSummaryModal').classList.add('open');
 }
 
 function renderSummaryBody(slots,courseName){
   const allTitles=[...new Set(slots.flatMap(s=>s.session_titles||[]))];
-
-  // 按回数+日期分组，同一回合并
-  const bySession={};
+  // 按日期去重
+  const dateMap=new Map();
   slots.forEach(slot=>{
-    const key=`${slot.session_number}_${slot.session_date}`;
-    if(!bySession[key]) bySession[key]={session_number:slot.session_number,session_date:slot.session_date,time_range:slot.time_range,slots:[]};
-    bySession[key].slots.push(slot);
+    if(!dateMap.has(slot.session_date)) dateMap.set(slot.session_date,{date:slot.session_date,time_range:slot.time_range,slots:[]});
+    dateMap.get(slot.session_date).slots.push(slot);
   });
-  const sessions=Object.values(bySession).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+  const dates=[...dateMap.values()].sort((a,b)=>a.date.localeCompare(b.date));
+
+  // 老师-内容对应（优先用老师回复里的preferred_titles）
+  const teacherTitleMap={};
+  cachedTeacherAvail.filter(a=>slots.find(s=>s.id===a.slot_id)).forEach(a=>{
+    if(!teacherTitleMap[a.teacher_name]) teacherTitleMap[a.teacher_name]=new Set();
+    if(a.preferred_titles?.length) a.preferred_titles.forEach(t=>teacherTitleMap[a.teacher_name].add(t));
+    else (slots.find(s=>s.id===a.slot_id)?.session_titles||[]).forEach(t=>teacherTitleMap[a.teacher_name].add(t));
+  });
 
   document.getElementById('scheduleSummaryBody').innerHTML=`
+  ${allTitles.length?`<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:8px 12px;margin-bottom:12px;font-size:11px;color:var(--text-2)">
+    本期单回内容：${allTitles.map(t=>`<span style="background:var(--surface);border:1px solid var(--border);border-radius:2px;padding:1px 7px;margin-right:4px">${t}</span>`).join('')}
+  </div>`:''}
   <table class="student-table" style="margin:0">
-    <thead><tr><th>回数</th><th>日期</th><th>时间</th><th>可上老师</th><th>分配老师</th><th>单回内容</th><th>状态</th></tr></thead>
+    <thead><tr>
+      <th style="width:50px">序号</th><th style="width:90px">日期</th><th style="width:110px">时间</th>
+      <th>当天有空的老师</th><th style="width:150px">单回内容</th><th style="width:150px">上课老师</th><th style="width:55px">状态</th>
+    </tr></thead>
     <tbody>
-      ${sessions.map(sess=>{
-        const f=fmtSessionDate(sess.session_date);
-        // 收集这一回所有可上老师
-        const availTeachers=[];
-        sess.slots.forEach(slot=>{
+      ${dates.map((d,idx)=>{
+        const f=fmtSessionDate(d.date);
+        const draft=arrangementDraft[d.date]||{};
+        const isConfirmed=!!(draft.session_id||draft.confirmed);
+        const availOnDate=[];
+        d.slots.forEach(slot=>{
           cachedTeacherAvail.filter(a=>a.slot_id===slot.id&&a.available).forEach(a=>{
-            if(!availTeachers.find(x=>x.name===a.teacher_name))
-              availTeachers.push({name:a.teacher_name,time:a.available_time||''});
+            if(!availOnDate.find(x=>x.name===a.teacher_name))
+              availOnDate.push({name:a.teacher_name,time:a.available_time||''});
           });
         });
-        // 用第一个slot的id做draft key
-        const draftKey=sess.slots[0]?.id;
-        const draft=arrangementDraft[draftKey]||{};
-        const confirmed=sess.slots.find(sl=>sl.confirmed_teacher);
-        const allTeacherNames=[...new Set(sess.slots.flatMap(sl=>sl.teacher_names||[]))];
-        const empty=availTeachers.length===0&&!confirmed;
-        const statusColor=confirmed?'var(--ok)':empty?'var(--danger)':availTeachers.length>1?'var(--warn)':'var(--ok)';
-        const statusText=confirmed?`✓ ${confirmed.confirmed_teacher}`:empty?'⚠ 无人可上':availTeachers.length>1?`${availTeachers.length}人可上`:'✓ 可确定';
-
-        return `<tr style="${empty?'background:#fff8f8':confirmed?'background:var(--ok-bg)':''}">
-          <td style="font-size:11px">第${sess.session_number}回</td>
-          <td style="font-weight:600;font-size:12px">${f.short} <span style="color:${f.dowColor};font-size:10px">${f.dow}</span></td>
-          <td style="font-size:11px">${sess.time_range||''}</td>
-          <td style="font-size:11px">
-            ${availTeachers.length
-              ?availTeachers.map(a=>`<span style="display:inline-block;background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:1px 6px;margin:1px;font-size:11px">${a.name}${a.time?' · '+a.time:''}</span>`).join('')
-              :`<span style="color:var(--danger)">暂无</span>`}
+        const selectedTitle=draft.title||'';
+        const teachersForTitle=selectedTitle
+          ?availOnDate.filter(t=>!teacherTitleMap[t.name]?.size||teacherTitleMap[t.name]?.has(selectedTitle))
+          :availOnDate;
+        return `<tr style="${isConfirmed?'background:var(--ok-bg)':''}">
+          <td style="font-size:11px;color:var(--text-3)">${idx+1}</td>
+          <td style="font-size:12px;font-weight:600">${f.short} <span style="color:${f.dowColor};font-size:10px">${f.dow}</span></td>
+          <td style="font-size:11px">${d.time_range||''}</td>
+          <td>
+            ${availOnDate.length
+              ?availOnDate.map(t=>`<span style="font-size:10px;background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:1px 6px;margin:1px;display:inline-block">${t.name}${t.time?' · '+t.time:''}${teacherTitleMap[t.name]?.size?` (${[...teacherTitleMap[t.name]].join('/')})`:''}</span>`).join('')
+              :`<span style="font-size:11px;color:var(--danger)">暂无</span>`}
           </td>
           <td>
-            ${confirmed
-              ?`<div style="display:flex;align-items:center;gap:6px">
-                  <span style="color:var(--ok);font-size:11px;font-weight:600">✓ ${confirmed.confirmed_teacher}</span>
-                  <button onclick="unconfirmSlot('${confirmed.id}')" style="font-size:9px;color:var(--text-3);background:none;border:1px solid var(--border);border-radius:2px;padding:1px 5px;cursor:pointer">取消</button>
-                </div>`
-              :`<select onchange="setDraftTeacher('${draftKey}',this.value)" style="font-size:11px;padding:3px 6px">
-                  <option value="">— 选择 —</option>
-                  ${availTeachers.map(a=>`<option value="${a.name}" ${draft.teacher===a.name?'selected':''}>${a.name}</option>`).join('')}
-                  ${allTeacherNames.filter(n=>!availTeachers.find(x=>x.name===n)).map(n=>`<option value="${n}" ${draft.teacher===n?'selected':''}>${n}（未回复）</option>`).join('')}
-                </select>`}
-          </td>
-          <td>
-            <select onchange="setDraftTitle('${draftKey}',this.value)" style="font-size:11px;padding:3px 6px">
-              <option value="">— 内容 —</option>
+            <select id="title-${d.date}" onchange="onSummaryTitleChange('${d.date}',this.value)" style="font-size:11px;padding:3px 6px;width:100%">
+              <option value="">— 选内容 —</option>
               ${allTitles.map(t=>`<option value="${t}" ${draft.title===t?'selected':''}>${t}</option>`).join('')}
             </select>
           </td>
-          <td style="font-size:10px;color:${statusColor}">${statusText}</td>
+          <td>
+            <select id="teacher-${d.date}" onchange="onSummaryTeacherChange('${d.date}',this.value)" style="font-size:11px;padding:3px 6px;width:100%">
+              <option value="">— 选老师 —</option>
+              ${teachersForTitle.map(t=>`<option value="${t.name}" ${draft.teacher===t.name?'selected':''}>${t.name}</option>`).join('')}
+              ${availOnDate.filter(t=>!teachersForTitle.find(x=>x.name===t.name)).map(t=>`<option value="${t.name}" ${draft.teacher===t.name?'selected':''}>${t.name}（其他内容）</option>`).join('')}
+            </select>
+          </td>
+          <td style="font-size:10px;color:${isConfirmed?'var(--ok)':availOnDate.length?'var(--warn)':'var(--danger)'}">
+            ${isConfirmed?'✓ 已定':availOnDate.length?'待确认':'⚠ 无人'}
+          </td>
         </tr>`;
       }).join('')}
     </tbody>
   </table>`;
 }
 
-function setDraftTeacher(slotId,teacher){
-  if(!arrangementDraft[slotId]) arrangementDraft[slotId]={};
-  arrangementDraft[slotId].teacher=teacher;
+function onSummaryTitleChange(date,title){
+  if(!arrangementDraft[date]) arrangementDraft[date]={};
+  arrangementDraft[date].title=title;
+  arrangementDraft[date].teacher='';
+  const sub=document.getElementById('scheduleSummarySub').textContent;
+  const courseName=sub.split('\u3000')[0];
+  const slots=cachedScheduleSlots.filter(s=>s.course_name===courseName);
+  renderSummaryBody(slots,courseName);
 }
-function setDraftTitle(slotId,title){
-  if(!arrangementDraft[slotId]) arrangementDraft[slotId]={};
-  arrangementDraft[slotId].title=title;
+function onSummaryTeacherChange(date,teacher){
+  if(!arrangementDraft[date]) arrangementDraft[date]={};
+  arrangementDraft[date].teacher=teacher;
 }
+function setDraftTeacher(k,v){if(!arrangementDraft[k])arrangementDraft[k]={};arrangementDraft[k].teacher=v;}
+function setDraftTitle(k,v){if(!arrangementDraft[k])arrangementDraft[k]={};arrangementDraft[k].title=v;}
+
 
 function autoArrange(){
   const sub=document.getElementById('scheduleSummarySub').textContent;
-  const courseName=sub.split('　')[0];
-  const slots=cachedScheduleSlots.filter(s=>s.course_name===courseName).sort((a,b)=>a.session_date.localeCompare(b.session_date));
-
-  // 按回数分组
-  const bySession={};
+  const courseName=sub.split('\u3000')[0];
+  const slots=cachedScheduleSlots.filter(s=>s.course_name===courseName);
+  const allTitles=[...new Set(slots.flatMap(s=>s.session_titles||[]))];
+  // 按日期去重
+  const dateMap=new Map();
   slots.forEach(slot=>{
-    const key=`${slot.session_number}_${slot.session_date}`;
-    if(!bySession[key]) bySession[key]={session_number:slot.session_number,session_date:slot.session_date,slots:[]};
-    bySession[key].slots.push(slot);
+    if(!dateMap.has(slot.session_date)) dateMap.set(slot.session_date,{date:slot.session_date,slots:[]});
+    dateMap.get(slot.session_date).slots.push(slot);
   });
-  const sessions=Object.values(bySession).sort((a,b)=>a.session_date.localeCompare(b.session_date));
-
-  // 跳过已手动确认的
-  const autoSessions=sessions.filter(sess=>!sess.slots.find(sl=>sl.confirmed_teacher));
-
-  // 每个session收集可上老师
-  const sessionCandidates=autoSessions.map(sess=>{
-    const candidates=[];
-    sess.slots.forEach(slot=>{
+  const dates=[...dateMap.values()].sort((a,b)=>a.date.localeCompare(b.date));
+  // 老师-内容对应
+  const teacherTitleMap={};
+  cachedTeacherAvail.filter(a=>slots.find(s=>s.id===a.slot_id)).forEach(a=>{
+    if(!teacherTitleMap[a.teacher_name]) teacherTitleMap[a.teacher_name]=new Set();
+    if(a.preferred_titles?.length) a.preferred_titles.forEach(t=>teacherTitleMap[a.teacher_name].add(t));
+    else (slots.find(s=>s.id===a.slot_id)?.session_titles||[]).forEach(t=>teacherTitleMap[a.teacher_name].add(t));
+  });
+  // 跳过已确认
+  const unconfirmedDates=dates.filter(d=>!arrangementDraft[d.date]?.session_id);
+  // 每个内容要分配一次
+  const titleAssigned=new Set(Object.values(arrangementDraft).map(v=>v.title).filter(Boolean));
+  const remainingTitles=allTitles.filter(t=>!titleAssigned.has(t));
+  const teacherUsed={};
+  let done=0;
+  for(const d of unconfirmedDates){
+    if(done>=remainingTitles.length) break;
+    const availOnDate=[];
+    d.slots.forEach(slot=>{
       cachedTeacherAvail.filter(a=>a.slot_id===slot.id&&a.available).forEach(a=>{
-        if(!candidates.find(x=>x.name===a.teacher_name)) candidates.push({name:a.teacher_name});
+        if(!availOnDate.find(x=>x.name===a.teacher_name)) availOnDate.push(a.teacher_name);
       });
     });
-    return {sess,candidates,draftKey:sess.slots[0]?.id};
-  });
-
-  // 重置draft（保留已手动确认的不动）
-  const manualKeys=new Set(sessions.filter(s=>s.slots.find(sl=>sl.confirmed_teacher)).map(s=>s.slots[0]?.id));
-  Object.keys(arrangementDraft).forEach(k=>{if(!manualKeys.has(k)) delete arrangementDraft[k]});
-
-  const teacherUsed={};
-  // 优先安排候选老师少的回
-  sessionCandidates.sort((a,b)=>a.candidates.length-b.candidates.length);
-  let done=0;
-  for(const {sess,candidates,draftKey} of sessionCandidates){
-    if(!candidates.length) continue;
-    const best=candidates.sort((a,b)=>(teacherUsed[a.name]||0)-(teacherUsed[b.name]||0))[0];
-    arrangementDraft[draftKey]={teacher:best.name,title:''};
-    teacherUsed[best.name]=(teacherUsed[best.name]||0)+1;
-    done++;
+    if(!availOnDate.length) continue;
+    // 找一个还没分配的内容，且当天有人能上
+    for(const title of remainingTitles){
+      if(titleAssigned.has(title)) continue;
+      const capable=availOnDate.filter(t=>!teacherTitleMap[t]?.size||teacherTitleMap[t]?.has(title));
+      if(!capable.length) continue;
+      const best=capable.sort((a,b)=>(teacherUsed[a]||0)-(teacherUsed[b]||0))[0];
+      arrangementDraft[d.date]={title,teacher:best};
+      teacherUsed[best]=(teacherUsed[best]||0)+1;
+      titleAssigned.add(title);
+      done++;
+      break;
+    }
   }
   renderSummaryBody(slots,courseName);
-  alert(`自动排课完成：${done}/${autoSessions.length} 个未确认课次已分配，${autoSessions.length-done} 个无人可上需手动处理`);
+  alert(`自动排课完成：已分配 ${done} 个课次`);
 }
 
 async function confirmArrangement(){
-  const entries=Object.entries(arrangementDraft).filter(([,v])=>v.teacher);
-  if(!entries.length){alert('请先选择或自动排课');return}
-  if(!confirm(`确认将 ${entries.length} 个课次的老师和内容同步到课程安排？`))return;
+  const entries=Object.entries(arrangementDraft).filter(([,v])=>v.title&&v.teacher&&!v.session_id);
+  if(!entries.length){alert('请先选择内容和老师，或已全部确认');return}
+  const sub=document.getElementById('scheduleSummarySub').textContent;
+  const courseName=sub.split('\u3000')[0];
+  if(!confirm(`确认将 ${entries.length} 个课次的排课结果同步到课程安排？`))return;
   try{
-    for(const [slotId,{teacher,title}] of entries){
-      await sb(`/rest/v1/schedule_slots?id=eq.${slotId}`,'PATCH',{confirmed_teacher:teacher,confirmed_title:title,status:'confirmed'});
-      const slot=cachedScheduleSlots.find(s=>s.id===slotId);
-      if(slot){slot.confirmed_teacher=teacher;slot.confirmed_title=title;slot.status='confirmed'}
-      if(slot?.session_id){
-        const patch={session_teacher:teacher};
-        if(title) patch.session_title=title;
-        await sb(`/rest/v1/course_sessions?id=eq.${slot.session_id}`,'PATCH',patch);
-        const sess=cachedSessions.find(s=>s.id===slot.session_id);
-        if(sess){sess.session_teacher=teacher;if(title)sess.session_title=title}
+    let synced=0;
+    for(const [date,{title,teacher}] of entries){
+      // 找对应的 course_session
+      const session=cachedSessions.find(s=>s.course_name===courseName&&s.session_date===date);
+      if(session){
+        await sb(`/rest/v1/course_sessions?id=eq.${session.id}`,'PATCH',{session_title:title,session_teacher:teacher});
+        session.session_title=title;session.session_teacher=teacher;
+        arrangementDraft[date].session_id=session.id;
+        arrangementDraft[date].confirmed=true;
+        synced++;
+      }
+      // 同时更新对应的 schedule_slots
+      const relatedSlots=cachedScheduleSlots.filter(s=>s.course_name===courseName&&s.session_date===date);
+      for(const slot of relatedSlots){
+        if((slot.teacher_names||[]).includes(teacher)){
+          await sb(`/rest/v1/schedule_slots?id=eq.${slot.id}`,'PATCH',{confirmed_teacher:teacher,confirmed_title:title,status:'confirmed'});
+          slot.confirmed_teacher=teacher;slot.confirmed_title=title;slot.status='confirmed';
+        }
       }
     }
     closeModal('scheduleSummaryModal');
     renderSchedulePage(document.getElementById('mainContent'));
-    alert(`已同步 ${entries.length} 个课次到课程安排！`);
+    alert(`已同步 ${synced} 个课次到课程安排！`);
   }catch(e){alert('同步失败：'+e.message)}
 }
 
