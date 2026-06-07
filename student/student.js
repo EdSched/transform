@@ -1,7 +1,72 @@
 // Note: sb() is in shared/supabase.js
 // Note: MAJORS, typeLabel, typeTag, slotCap, DAYS_CN are in shared/constants.js
 
-let major = null, selectedType = null, selectedSlotId = null;
+const STORAGE_KEY = 'txe_student_info';
+const STORAGE_DAYS = 30;
+
+function saveStudentInfo() {
+  const info = {
+    ts: Date.now(),
+    name: document.getElementById('name')?.value || '',
+    examPeriod: document.querySelector('input[name=examPeriod]:checked')?.value || '',
+    specialtyStatus: document.getElementById('specialtyStatus')?.value || '',
+    targetSchool: document.getElementById('targetSchool')?.value || '',
+    contactProf: document.getElementById('contactProf')?.value || '',
+    planStatus: document.getElementById('planStatus')?.value || '',
+    applicationStatus: document.getElementById('applicationStatus')?.value || '',
+    writtenExam: document.getElementById('writtenExam')?.value || '',
+    interviewStatus: document.getElementById('interviewStatus')?.value || '',
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(info));
+}
+
+function loadStudentInfo() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const info = JSON.parse(raw);
+    if (Date.now() - info.ts > STORAGE_DAYS * 24 * 60 * 60 * 1000) {
+      localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+    return info;
+  } catch { return null; }
+}
+
+function applyStoredInfo(info) {
+  if (!info) return;
+  if (info.name) document.getElementById('name').value = info.name;
+  if (info.examPeriod) {
+    const ep = document.querySelector(`input[name=examPeriod][value="${info.examPeriod}"]`);
+    if (ep) ep.checked = true;
+  }
+  const selects = {
+    specialtyStatus: info.specialtyStatus, targetSchool: info.targetSchool,
+    contactProf: info.contactProf, planStatus: info.planStatus,
+    applicationStatus: info.applicationStatus, writtenExam: info.writtenExam,
+    interviewStatus: info.interviewStatus,
+  };
+  for (const [id, val] of Object.entries(selects)) {
+    const el = document.getElementById(id);
+    if (el && val) el.value = val;
+  }
+  updateTypeOptions();
+  // show reminder banner
+  const expiry = new Date(info.ts + STORAGE_DAYS * 24 * 60 * 60 * 1000);
+  const expiryStr = `${expiry.getMonth() + 1}月${expiry.getDate()}日`;
+  const banner = document.getElementById('infoBanner');
+  if (banner) {
+    banner.style.display = 'block';
+    banner.innerHTML = `📋 已自动填入上次保留的信息（保留至 ${expiryStr}）。如有进度更新请修改后再提交。
+      <button onclick="clearStoredInfo()" style="margin-left:10px;font-size:10px;color:var(--text-muted);background:none;border:1px solid var(--border);border-radius:2px;padding:1px 6px;cursor:pointer;font-family:inherit">清除</button>`;
+  }
+}
+
+function clearStoredInfo() {
+  localStorage.removeItem(STORAGE_KEY);
+  const banner = document.getElementById('infoBanner');
+  if (banner) banner.style.display = 'none';
+}
 let slotViewYear = new Date().getFullYear(), slotViewMonth = new Date().getMonth();
 let cachedSlots = [], cachedBookings = [];
 
@@ -37,6 +102,7 @@ function buildForm() {
     <div class="success-banner-title">✓ 预约申请已提交</div>
     <div class="success-banner-text">请等待老师确认，可在下方查看预约状态。</div>
   </div>
+  <div id="infoBanner" style="display:none;background:var(--warning-light);border:1px solid var(--warning);border-radius:3px;padding:9px 12px;margin-bottom:12px;font-size:11px;color:var(--warning);line-height:1.6"></div>
   <div class="card">
     <div class="card-title"><span class="step-num">1</span>基本信息</div>
     <div class="form-group"><label class="form-label">姓名 <span class="required">*</span></label><input type="text" id="name" placeholder="请输入姓名"></div>
@@ -117,6 +183,8 @@ function buildForm() {
   updateTypeOptions();
   renderSlots();
   renderPublicList();
+  // restore saved info
+  applyStoredInfo(loadStudentInfo());
 }
 
 function getPlanStatus() { return document.getElementById('planStatus')?.value || ''; }
@@ -213,6 +281,17 @@ async function submitBooking() {
   if (!examPeriod) { alert('请选择出愿期间'); return; }
   if (!planStatus) { alert('请选择研究计划书状态'); return; }
   if (!selectedSlotId) { alert('请选择预约时间'); return; }
+
+  // 检查是否有未完成的预约
+  const activeBooking = cachedBookings.find(b =>
+    b.name === name && b.major === major &&
+    (b.status === 'pending' || b.status === 'confirmed')
+  );
+  if (activeBooking) {
+    alert(`您好 ${name} 同学，您有一个面谈尚未完成（${activeBooking.slot_date} ${activeBooking.slot_time_range || ''}，状态：${activeBooking.status === 'pending' ? '待确认' : '已确认'}）。\n\n请在本次面谈完成后再提交新的预约申请。`);
+    return;
+  }
+
   const slot = cachedSlots.find(s => s.id === selectedSlotId);
   if (!slot) { alert('时间槽不存在，请刷新后重试'); return; }
   if (slot.type === 'plan' && !canSelectPlan()) { alert('当前进程不符合计划书相关面谈的条件'); return; }
@@ -220,6 +299,7 @@ async function submitBooking() {
   const cap = slotCap(slot.time_range);
   const booked = cachedBookings.filter(b => b.slot_id === selectedSlotId && b.status !== 'cancelled').length;
   if (booked >= cap) { alert('该时间段名额已满，请选择其他时间'); renderSlots(); return; }
+
   const booking = {
     id: Date.now().toString(), name, major, exam_period: examPeriod,
     specialty_status: document.getElementById('specialtyStatus').value,
@@ -234,6 +314,8 @@ async function submitBooking() {
   try {
     const res = await sb('/rest/v1/bookings', 'POST', booking);
     cachedBookings.push(Array.isArray(res) ? res[0] : booking);
+    // 保存信息到 localStorage
+    saveStudentInfo();
     document.getElementById('successBanner').classList.add('show');
     window.scrollTo({ top: 0, behavior: 'smooth' });
     renderSlots(); renderPublicList();
