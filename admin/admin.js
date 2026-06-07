@@ -2220,43 +2220,63 @@ function openScheduleSummary(courseName){
 }
 
 function renderSummaryBody(slots,courseName){
-  const avails=cachedTeacherAvail.filter(a=>slots.find(s=>s.id===a.slot_id));
-  // collect all titles
   const allTitles=[...new Set(slots.flatMap(s=>s.session_titles||[]))];
+
+  // 按回数+日期分组，同一回合并
+  const bySession={};
+  slots.forEach(slot=>{
+    const key=`${slot.session_number}_${slot.session_date}`;
+    if(!bySession[key]) bySession[key]={session_number:slot.session_number,session_date:slot.session_date,time_range:slot.time_range,slots:[]};
+    bySession[key].slots.push(slot);
+  });
+  const sessions=Object.values(bySession).sort((a,b)=>a.session_date.localeCompare(b.session_date));
 
   document.getElementById('scheduleSummaryBody').innerHTML=`
   <table class="student-table" style="margin:0">
     <thead><tr><th>回数</th><th>日期</th><th>时间</th><th>可上老师</th><th>分配老师</th><th>单回内容</th><th>状态</th></tr></thead>
     <tbody>
-      ${slots.map(slot=>{
-        const slotAvails=avails.filter(a=>a.slot_id===slot.id&&a.available);
-        const draft=arrangementDraft[slot.id]||{};
-        const f=fmtSessionDate(slot.session_date);
-        const conflict=slotAvails.length>1;
-        const empty=slotAvails.length===0;
-        const statusColor=empty?'var(--danger)':conflict?'var(--warn)':'var(--ok)';
-        const statusText=empty?'⚠ 无人可上':conflict?`${slotAvails.length}人可上`:'✓ 已确定';
-        return `<tr style="${empty?'background:#fff8f8':''}">
-          <td style="font-size:11px">第${slot.session_number}回</td>
+      ${sessions.map(sess=>{
+        const f=fmtSessionDate(sess.session_date);
+        // 收集这一回所有可上老师
+        const availTeachers=[];
+        sess.slots.forEach(slot=>{
+          cachedTeacherAvail.filter(a=>a.slot_id===slot.id&&a.available).forEach(a=>{
+            if(!availTeachers.find(x=>x.name===a.teacher_name))
+              availTeachers.push({name:a.teacher_name,time:a.available_time||''});
+          });
+        });
+        // 用第一个slot的id做draft key
+        const draftKey=sess.slots[0]?.id;
+        const draft=arrangementDraft[draftKey]||{};
+        const confirmed=sess.slots.find(sl=>sl.confirmed_teacher);
+        const allTeacherNames=[...new Set(sess.slots.flatMap(sl=>sl.teacher_names||[]))];
+        const empty=availTeachers.length===0&&!confirmed;
+        const statusColor=confirmed?'var(--ok)':empty?'var(--danger)':availTeachers.length>1?'var(--warn)':'var(--ok)';
+        const statusText=confirmed?`✓ ${confirmed.confirmed_teacher}`:empty?'⚠ 无人可上':availTeachers.length>1?`${availTeachers.length}人可上`:'✓ 可确定';
+
+        return `<tr style="${empty?'background:#fff8f8':confirmed?'background:var(--ok-bg)':''}">
+          <td style="font-size:11px">第${sess.session_number}回</td>
           <td style="font-weight:600;font-size:12px">${f.short} <span style="color:${f.dowColor};font-size:10px">${f.dow}</span></td>
-          <td style="font-size:11px">${slot.time_range||''}</td>
+          <td style="font-size:11px">${sess.time_range||''}</td>
           <td style="font-size:11px">
-            ${slotAvails.length
-              ?slotAvails.map(a=>{
-                  const timeStr=a.available_time?` <span style="color:var(--text-3)">${a.available_time}</span>`:'';
-                  return `<div>${a.teacher_name}${timeStr}</div>`;
-                }).join('')
-              :'<span style="color:var(--danger)">暂无</span>'}
+            ${availTeachers.length
+              ?availTeachers.map(a=>`<span style="display:inline-block;background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:1px 6px;margin:1px;font-size:11px">${a.name}${a.time?' · '+a.time:''}</span>`).join('')
+              :`<span style="color:var(--danger)">暂无</span>`}
           </td>
           <td>
-            <select onchange="setDraftTeacher('${slot.id}',this.value)" style="font-size:11px;padding:3px 6px">
-              <option value="">— 选择 —</option>
-              ${slotAvails.map(a=>`<option value="${a.teacher_name}" ${draft.teacher===a.teacher_name?'selected':''}>${a.teacher_name}</option>`).join('')}
-              ${slot.teacher_names?.filter(n=>!slotAvails.find(a=>a.teacher_name===n)).map(n=>`<option value="${n}" ${draft.teacher===n?'selected':''}>${n}（未回复）</option>`).join('')||''}
-            </select>
+            ${confirmed
+              ?`<div style="display:flex;align-items:center;gap:6px">
+                  <span style="color:var(--ok);font-size:11px;font-weight:600">✓ ${confirmed.confirmed_teacher}</span>
+                  <button onclick="unconfirmSlot('${confirmed.id}')" style="font-size:9px;color:var(--text-3);background:none;border:1px solid var(--border);border-radius:2px;padding:1px 5px;cursor:pointer">取消</button>
+                </div>`
+              :`<select onchange="setDraftTeacher('${draftKey}',this.value)" style="font-size:11px;padding:3px 6px">
+                  <option value="">— 选择 —</option>
+                  ${availTeachers.map(a=>`<option value="${a.name}" ${draft.teacher===a.name?'selected':''}>${a.name}</option>`).join('')}
+                  ${allTeacherNames.filter(n=>!availTeachers.find(x=>x.name===n)).map(n=>`<option value="${n}" ${draft.teacher===n?'selected':''}>${n}（未回复）</option>`).join('')}
+                </select>`}
           </td>
           <td>
-            <select onchange="setDraftTitle('${slot.id}',this.value)" style="font-size:11px;padding:3px 6px">
+            <select onchange="setDraftTitle('${draftKey}',this.value)" style="font-size:11px;padding:3px 6px">
               <option value="">— 内容 —</option>
               ${allTitles.map(t=>`<option value="${t}" ${draft.title===t?'selected':''}>${t}</option>`).join('')}
             </select>
@@ -2278,42 +2298,50 @@ function setDraftTitle(slotId,title){
 }
 
 function autoArrange(){
-  // get current course's slots
   const sub=document.getElementById('scheduleSummarySub').textContent;
   const courseName=sub.split('　')[0];
   const slots=cachedScheduleSlots.filter(s=>s.course_name===courseName).sort((a,b)=>a.session_date.localeCompare(b.session_date));
-  const avails=cachedTeacherAvail.filter(a=>slots.find(s=>s.id===a.slot_id)&&a.available);
-  // collect assignments: which slots each teacher can do
-  const teacherSlots={};
-  avails.forEach(a=>{
-    if(!teacherSlots[a.teacher_name]) teacherSlots[a.teacher_name]=[];
-    teacherSlots[a.teacher_name].push(a.slot_id);
+
+  // 按回数分组
+  const bySession={};
+  slots.forEach(slot=>{
+    const key=`${slot.session_number}_${slot.session_date}`;
+    if(!bySession[key]) bySession[key]={session_number:slot.session_number,session_date:slot.session_date,slots:[]};
+    bySession[key].slots.push(slot);
   });
-  // reset draft
-  arrangementDraft={};
-  const assigned=new Set(); // assigned slotIds
-  const teacherUsed={}; // how many times each teacher assigned
-  // sort slots by number of available teachers (fewest first = highest priority)
-  const slotPriority=[...slots].sort((a,b)=>{
-    const ca=avails.filter(x=>x.slot_id===a.id).length;
-    const cb=avails.filter(x=>x.slot_id===b.id).length;
-    return ca-cb;
+  const sessions=Object.values(bySession).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+
+  // 跳过已手动确认的
+  const autoSessions=sessions.filter(sess=>!sess.slots.find(sl=>sl.confirmed_teacher));
+
+  // 每个session收集可上老师
+  const sessionCandidates=autoSessions.map(sess=>{
+    const candidates=[];
+    sess.slots.forEach(slot=>{
+      cachedTeacherAvail.filter(a=>a.slot_id===slot.id&&a.available).forEach(a=>{
+        if(!candidates.find(x=>x.name===a.teacher_name)) candidates.push({name:a.teacher_name});
+      });
+    });
+    return {sess,candidates,draftKey:sess.slots[0]?.id};
   });
-  for(const slot of slotPriority){
-    if(assigned.has(slot.id)) continue;
-    const candidates=avails.filter(a=>a.slot_id===slot.id).map(a=>a.teacher_name);
+
+  // 重置draft（保留已手动确认的不动）
+  const manualKeys=new Set(sessions.filter(s=>s.slots.find(sl=>sl.confirmed_teacher)).map(s=>s.slots[0]?.id));
+  Object.keys(arrangementDraft).forEach(k=>{if(!manualKeys.has(k)) delete arrangementDraft[k]});
+
+  const teacherUsed={};
+  // 优先安排候选老师少的回
+  sessionCandidates.sort((a,b)=>a.candidates.length-b.candidates.length);
+  let done=0;
+  for(const {sess,candidates,draftKey} of sessionCandidates){
     if(!candidates.length) continue;
-    // pick teacher with least assignments so far
-    const best=candidates.sort((a,b)=>(teacherUsed[a]||0)-(teacherUsed[b]||0))[0];
-    arrangementDraft[slot.id]={teacher:best,title:''};
-    teacherUsed[best]=(teacherUsed[best]||0)+1;
-    assigned.add(slot.id);
+    const best=candidates.sort((a,b)=>(teacherUsed[a.name]||0)-(teacherUsed[b.name]||0))[0];
+    arrangementDraft[draftKey]={teacher:best.name,title:''};
+    teacherUsed[best.name]=(teacherUsed[best.name]||0)+1;
+    done++;
   }
   renderSummaryBody(slots,courseName);
-  // show stats
-  const done=Object.keys(arrangementDraft).length;
-  const total=slots.length;
-  alert(`自动排课完成：${done}/${total} 个课次已分配，${total-done} 个无人可上需手动处理`);
+  alert(`自动排课完成：${done}/${autoSessions.length} 个未确认课次已分配，${autoSessions.length-done} 个无人可上需手动处理`);
 }
 
 async function confirmArrangement(){
