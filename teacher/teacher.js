@@ -1,7 +1,6 @@
 const params=new URLSearchParams(location.search);
 const teacherName=decodeURIComponent(params.get('teacher')||'');
-const DAYS=['周日','周一','周二','周三','周四','周五','周六'];
-const DOW_COLOR={6:'#1a4a8a',0:'#8a1a2c'};
+// DAYS, DOW_COLOR are in shared/constants.js
 
 let slots=[], existingAvail=[], confirmedSessions=[];
 const state={};
