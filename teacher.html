@@ -194,7 +194,7 @@ async function init(){
       // 从排班系统确认的
       sb(`/rest/v1/schedule_slots?confirmed_teacher=eq.${encodeURIComponent(teacherName)}&select=*`),
       // 直接在course_sessions里有session_teacher且confirmed=true的
-      sb(`/rest/v1/course_sessions?session_teacher=ilike.*${teacherName}*&confirmed=eq.true&select=*&order=session_date.asc`).catch(()=>[]),
+      sb(`/rest/v1/course_sessions?session_teacher=ilike.%25${encodeURIComponent(teacherName)}%25&confirmed=eq.true&select=*&order=session_date.asc`).catch(()=>[]),
       // 课程信息
       sb(`/rest/v1/courses?select=id,name,course_type,campus,delivery`).catch(()=>[])
     ]);
