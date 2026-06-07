@@ -2214,10 +2214,7 @@ function openScheduleSummary(courseName){
   const uniqueDates=[...new Map(slots.map(s=>[s.session_date,s])).values()];
   document.getElementById('scheduleSummarySub').textContent=`${courseName}\u3000${year}年${course.period||''}\u3000共${uniqueDates.length}课次`;
   arrangementDraft={};
-  // restore confirmed from course_sessions
-  cachedSessions.filter(s=>s.course_name===courseName&&s.session_title&&s.session_teacher).forEach(s=>{
-    arrangementDraft[s.session_date]={title:s.session_title,teacher:s.session_teacher,session_id:s.id};
-  });
+  // 只恢复本次排课汇总手动确认的（不从course_sessions读旧数据）
   renderSummaryBody(slots,courseName);
   document.getElementById('scheduleSummaryModal').classList.add('open');
 }
