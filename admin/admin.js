@@ -2364,14 +2364,20 @@ function autoArrange(){
 
 async function confirmArrangement(){
   const entries=Object.entries(arrangementDraft).filter(([,v])=>v.title&&v.teacher&&!v.session_id);
-  if(!entries.length){alert('请先选择内容和老师，或已全部确认');return}
   const sub=document.getElementById('scheduleSummarySub').textContent;
   const courseName=sub.split('\u3000')[0];
+  const allSlots=cachedScheduleSlots.filter(s=>s.course_name===courseName);
+  if(!entries.length){
+    const allDates=[...new Set(allSlots.map(s=>s.session_date))];
+    const allDone=allDates.every(d=>arrangementDraft[d]?.session_id||arrangementDraft[d]?.confirmed);
+    if(allDone) openCompleteSchedule(courseName);
+    else alert('请先选择内容和老师');
+    return;
+  }
   if(!confirm(`确认将 ${entries.length} 个课次的排课结果同步到课程安排？`))return;
   try{
     let synced=0;
     for(const [date,{title,teacher}] of entries){
-      // 找对应的 course_session
       const session=cachedSessions.find(s=>s.course_name===courseName&&s.session_date===date);
       if(session){
         await sb(`/rest/v1/course_sessions?id=eq.${session.id}`,'PATCH',{session_title:title,session_teacher:teacher});
@@ -2380,7 +2386,6 @@ async function confirmArrangement(){
         arrangementDraft[date].confirmed=true;
         synced++;
       }
-      // 同时更新对应的 schedule_slots
       const relatedSlots=cachedScheduleSlots.filter(s=>s.course_name===courseName&&s.session_date===date);
       for(const slot of relatedSlots){
         if((slot.teacher_names||[]).includes(teacher)){
@@ -2389,10 +2394,54 @@ async function confirmArrangement(){
         }
       }
     }
-    closeModal('scheduleSummaryModal');
-    renderSchedulePage(document.getElementById('mainContent'));
-    alert(`已同步 ${synced} 个课次到课程安排！`);
+    // re-render summary
+    renderSummaryBody(allSlots,courseName);
+    // update courses page in background
+    if(curPage==='courses') renderCoursesPage(document.getElementById('mainContent'));
+    // check if all done → show complete button
+    const allDates=[...new Set(allSlots.map(s=>s.session_date))];
+    const allDone=allDates.every(d=>arrangementDraft[d]?.session_id||arrangementDraft[d]?.confirmed);
+    const actionsEl=document.querySelector('#scheduleSummaryModal .modal-actions');
+    if(allDone&&actionsEl&&!document.getElementById('completeScheduleBtn')){
+      const btn=document.createElement('button');
+      btn.id='completeScheduleBtn';
+      btn.className='btn';
+      btn.style.cssText='background:var(--ok);color:#fff;border:none;padding:7px 14px;border-radius:3px;font-family:inherit;font-size:12px;cursor:pointer;margin-right:auto';
+      btn.textContent='✓ 完成排课并归档';
+      btn.onclick=()=>openCompleteSchedule(courseName);
+      actionsEl.insertBefore(btn,actionsEl.firstChild);
+    }
+    alert(`已同步 ${synced} 个课次！${allDone?'\n\n全部课次已排完，可点「完成排课并归档」。':''}`);
   }catch(e){alert('同步失败：'+e.message)}
+}
+
+function openCompleteSchedule(courseName){
+  if(!confirm(`「${courseName}」排课已完成。\n\n点确定后：\n• 课程安排显示最终结果\n• 老师课表同步更新\n• 排班时间槽从课程预定中移除\n\n确认归档？`))return;
+  completeSchedule(courseName);
+}
+
+async function completeSchedule(courseName){
+  try{
+    const slots=cachedScheduleSlots.filter(s=>s.course_name===courseName);
+    for(const slot of slots){
+      await sb(`/rest/v1/teacher_availability?slot_id=eq.${slot.id}`,'DELETE').catch(()=>{});
+    }
+    if(slots.length){
+      const ids=slots.map(s=>`"${s.id}"`);
+      for(let i=0;i<ids.length;i+=20){
+        await sb(`/rest/v1/schedule_slots?id=in.(${ids.slice(i,i+20).join(',')})`, 'DELETE').catch(()=>{});
+      }
+      cachedTeacherAvail=cachedTeacherAvail.filter(a=>!slots.find(s=>s.id===a.slot_id));
+      cachedScheduleSlots=cachedScheduleSlots.filter(s=>s.course_name!==courseName);
+    }
+    closeModal('scheduleSummaryModal');
+    [cachedCourses,cachedSessions]=await Promise.all([
+      sb('/rest/v1/courses?select=*&order=created_at.desc'),
+      sb('/rest/v1/course_sessions?select=*&order=session_date.asc')
+    ]);
+    renderCoursesPage(document.getElementById('mainContent'));
+    alert(`「${courseName}」排课已归档完成！`);
+  }catch(e){alert('操作失败：'+e.message)}
 }
 
 // ── 管理老师 modal ──
