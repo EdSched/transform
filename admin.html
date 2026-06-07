@@ -1387,9 +1387,10 @@ let coursesPeriodFilter='current'; // 'current' | 'all'
 // 判断当前是哪个期（按当前月份）
 function currentPeriodKey(){
   const m=new Date().getMonth()+1;
-  if(m>=4&&m<=7) return '7月期';
-  if(m>=8&&m<=11) return '10月期';
-  return '1月期';
+  if(m>=1&&m<=3) return '1月期';
+  if(m>=4&&m<=6) return '4月期';
+  if(m>=7&&m<=9) return '7月期';
+  return '10月期';
 }
 
 // 课程名去掉末尾数字 → 归组key
@@ -1419,9 +1420,10 @@ function courseColor(name){
 function periodFromDate(dateStr){
   if(!dateStr) return '未分期';
   const m=parseInt(dateStr.slice(5,7));
-  if(m>=4&&m<=7) return '7月期';
-  if(m>=8&&m<=11) return '10月期';
-  return '1月期';
+  if(m>=1&&m<=3) return '1月期';
+  if(m>=4&&m<=6) return '4月期';
+  if(m>=7&&m<=9) return '7月期';
+  return '10月期';
 }
 
 // 日期格式 → M/D 周X
