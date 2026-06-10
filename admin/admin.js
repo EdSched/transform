@@ -33,7 +33,7 @@ function switchPage(page){
   if((page==='courses'||page==='schedule')&&!checkCoursePw()){return}
   curPage=page;
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  const navId=page==='courses'?'nav-courses':page==='schedule'?'nav-schedule':'nav-'+page;
+  const navId=page==='courses'?'nav-courses':page==='schedule'?'nav-schedule':page==='teachers'?'nav-teachers':'nav-'+page;
   document.getElementById(navId)?.classList.add('active');
   renderPage();
 }
@@ -66,6 +66,9 @@ async function renderPage(){
         sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[])
       ]);
       renderSchedulePage(mc);
+    } else if(curPage==='teachers'){
+      cachedTeachers=await sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[]);
+      renderTeachersPage(mc);
     } else if(curPage==='attendance'){
       [cachedStudents,cachedCourses,cachedSessions,cachedSessionRecords]=await Promise.all([
         sb('/rest/v1/students?select=*&order=name.asc'),
@@ -2463,7 +2466,84 @@ async function completeSchedule(courseName){
 }
 
 // ── 管理老师 modal ──
-// ── 管理老师 ──
+// ── 老师管理页面 ──
+function renderTeachersPage(mc){
+  mc.innerHTML=`
+  <div class="page-header">
+    <div class="section-title">老师管理 <span class="badge-count">${cachedTeachers.length}</span></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1.6fr;gap:20px;align-items:start">
+    <!-- 添加/编辑老师 -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:16px">
+      <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:14px;letter-spacing:.05em;text-transform:uppercase" id="teacherFormTitle">添加新老师</div>
+      <div class="form-group"><label class="form-label">姓名 *</label><input id="new_teacher_name" placeholder="老师姓名"></div>
+      <div class="form-group"><label class="form-label">备注</label><input id="new_teacher_notes" placeholder="可选"></div>
+      <div class="form-group">
+        <label class="form-label">负责专业（可多选）</label>
+        <div style="display:flex;flex-wrap:wrap;gap:6px" id="new_teacher_majors">
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="keiei" style="accent-color:var(--accent)">経営学</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="keizai" style="accent-color:var(--accent)">経済学</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="shakai" style="accent-color:var(--accent)">社会学</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="shinpan" style="accent-color:var(--accent)">新闻传播</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="fukushi" style="accent-color:var(--accent)">社会福祉</label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">权限配置</label>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:8px">
+            <div style="display:flex;align-items:center;gap:5px;margin-bottom:5px">
+              <input type="checkbox" id="perm_booking" style="accent-color:var(--accent)">
+              <span style="font-size:11px;font-weight:600">预约管理</span>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px" id="perm_booking_types">
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;cursor:pointer"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;cursor:pointer"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;cursor:pointer"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
+            </div>
+          </div>
+          <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:8px">
+            <div style="display:flex;align-items:center;gap:5px;margin-bottom:5px">
+              <input type="checkbox" id="perm_slots" style="accent-color:var(--accent)">
+              <span style="font-size:11px;font-weight:600">时间槽设定</span>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px" id="perm_slot_types">
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;cursor:pointer"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;cursor:pointer"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:10px;cursor:pointer"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
+            </div>
+          </div>
+          <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:8px">
+            <div style="display:flex;align-items:center;gap:5px">
+              <input type="checkbox" id="perm_schedule" style="accent-color:var(--accent)">
+              <span style="font-size:11px;font-weight:600">课程排班</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-primary btn-sm" id="teacherFormBtn" onclick="addTeacher()">＋ 添加老师</button>
+        <button class="btn btn-outline btn-sm" id="teacherFormCancelBtn" style="display:none" onclick="cancelEditTeacher()">取消</button>
+      </div>
+    </div>
+    <!-- 老师列表 -->
+    <div id="teacherList"></div>
+  </div>`;
+  renderTeacherList();
+}
+
+function cancelEditTeacher(){
+  document.getElementById('teacherFormTitle').textContent='添加新老师';
+  document.getElementById('teacherFormBtn').textContent='＋ 添加老师';
+  document.getElementById('teacherFormBtn').setAttribute('onclick','addTeacher()');
+  document.getElementById('teacherFormCancelBtn').style.display='none';
+  document.getElementById('new_teacher_name').value='';
+  document.getElementById('new_teacher_notes').value='';
+  document.querySelectorAll('#new_teacher_majors input,#perm_booking_types input,#perm_slot_types input').forEach(cb=>cb.checked=false);
+  document.getElementById('perm_booking').checked=false;
+  document.getElementById('perm_slots').checked=false;
+  document.getElementById('perm_schedule').checked=false;
+}
 function openTeacherManager(){
   // reset add form
   document.getElementById('new_teacher_name').value='';
@@ -2478,29 +2558,43 @@ function openTeacherManager(){
 }
 
 function renderTeacherList(){
-  document.getElementById('teacherList').innerHTML=cachedTeachers.length
-    ?`<table class="student-table" style="margin:0">
-        <thead><tr><th>姓名</th><th>负责专业</th><th>权限</th><th>备注</th><th></th></tr></thead>
-        <tbody>${cachedTeachers.map(t=>{
+  const base=location.origin+location.pathname.replace(/\/admin\/.*$/,'/teacher/');
+  const html=cachedTeachers.length
+    ?`<div style="display:flex;flex-direction:column;gap:8px">
+        ${cachedTeachers.map(t=>{
           const p=t.permissions||{};
           const majors=(t.majors||[]).map(m=>MAJORS[m]||m).join('・')||'—';
           const perms=[];
           if(p.booking) perms.push(`预约(${(p.booking_types||[]).join('/')})`);
           if(p.slots) perms.push(`时间槽(${(p.slot_types||[]).join('/')})`);
           if(p.schedule) perms.push('排班');
-          return `<tr>
-            <td style="font-family:'Noto Serif SC',serif;font-weight:600">${t.name}</td>
-            <td style="font-size:11px">${majors}</td>
-            <td style="font-size:10px;color:var(--text-2)">${perms.join(' · ')||'—'}</td>
-            <td style="font-size:11px;color:var(--text-2)">${t.notes||''}</td>
-            <td style="display:flex;gap:4px">
-              <button class="btn btn-outline btn-sm" onclick="openEditTeacher('${t.id}')">编辑</button>
-              <button class="btn-ghost" onclick="deleteTeacher('${t.id}')">✕</button>
-            </td>
-          </tr>`;
-        }).join('')}</tbody>
-      </table>`
-    :'<div class="empty" style="padding:20px">暂无老师</div>';
+          const link=`${base}?teacher=${encodeURIComponent(t.name)}`;
+          return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px">
+              <div>
+                <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:14px">${t.name}</span>
+                ${t.notes?`<span style="font-size:11px;color:var(--text-3);margin-left:6px">${t.notes}</span>`:''}
+              </div>
+              <div style="display:flex;gap:4px">
+                <button class="btn btn-outline btn-sm" onclick="openEditTeacher('${t.id}')">编辑</button>
+                <button class="btn-ghost" onclick="deleteTeacher('${t.id}')">✕</button>
+              </div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px">
+              ${(t.majors||[]).map(m=>`<span style="font-size:10px;background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 6px">${MAJORS[m]||m}</span>`).join('')}
+              ${perms.map(p2=>`<span style="font-size:10px;background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:1px 6px">${p2}</span>`).join('')}
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:10px;color:var(--text-3)">链接：</span>
+              <code style="font-size:10px;color:var(--text-2);background:var(--bg);padding:1px 6px;border-radius:2px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${link}</code>
+              <button onclick="navigator.clipboard.writeText('${link}').then(()=>alert('已复制'))" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:1px 7px;cursor:pointer;font-family:inherit;white-space:nowrap">复制</button>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`
+    :'<div class="empty" style="padding:40px">暂无老师</div>';
+  const el=document.getElementById('teacherList');
+  if(el) el.innerHTML=html;
 }
 
 function getPermissionsFromForm(){
@@ -2526,6 +2620,10 @@ async function addTeacher(){
     cachedTeachers.push(Array.isArray(res)?res[0]:t);
     document.getElementById('new_teacher_name').value='';
     document.getElementById('new_teacher_notes').value='';
+    document.querySelectorAll('#new_teacher_majors input,#perm_booking_types input,#perm_slot_types input').forEach(cb=>cb.checked=false);
+    document.getElementById('perm_booking').checked=false;
+    document.getElementById('perm_slots').checked=false;
+    document.getElementById('perm_schedule').checked=false;
     renderTeacherList();
   }catch(e){alert('添加失败：'+e.message)}
 }
@@ -2533,22 +2631,24 @@ async function addTeacher(){
 function openEditTeacher(id){
   const t=cachedTeachers.find(x=>x.id===id);
   if(!t) return;
-  // populate form with existing values
   document.getElementById('new_teacher_name').value=t.name;
   document.getElementById('new_teacher_notes').value=t.notes||'';
-  document.querySelectorAll('#new_teacher_majors input').forEach(cb=>{
-    cb.checked=(t.majors||[]).includes(cb.value);
-  });
+  document.querySelectorAll('#new_teacher_majors input').forEach(cb=>{cb.checked=(t.majors||[]).includes(cb.value)});
   const p=t.permissions||{};
   document.getElementById('perm_booking').checked=!!p.booking;
   document.getElementById('perm_slots').checked=!!p.slots;
   document.getElementById('perm_schedule').checked=!!p.schedule;
   document.querySelectorAll('#perm_booking_types input').forEach(cb=>cb.checked=(p.booking_types||[]).includes(cb.value));
   document.querySelectorAll('#perm_slot_types input').forEach(cb=>cb.checked=(p.slot_types||[]).includes(cb.value));
-  // change button to save edit
-  const btn=document.querySelector('[onclick="addTeacher()"]');
+  const btn=document.getElementById('teacherFormBtn');
   if(btn){btn.textContent='保存修改';btn.setAttribute('onclick',`saveEditTeacher('${id}')`);}
+  const cancelBtn=document.getElementById('teacherFormCancelBtn');
+  if(cancelBtn) cancelBtn.style.display='inline-flex';
+  const title=document.getElementById('teacherFormTitle');
+  if(title) title.textContent=`编辑：${t.name}`;
   document.getElementById('new_teacher_name').focus();
+  // scroll form into view on mobile
+  document.getElementById('new_teacher_name').scrollIntoView({behavior:'smooth',block:'center'});
 }
 
 async function saveEditTeacher(id){
@@ -2561,10 +2661,7 @@ async function saveEditTeacher(id){
     await sb(`/rest/v1/teachers?id=eq.${id}`,'PATCH',{name,notes,majors,permissions});
     const idx=cachedTeachers.findIndex(t=>t.id===id);
     if(idx>=0) Object.assign(cachedTeachers[idx],{name,notes,majors,permissions});
-    // reset button
-    const btn=document.querySelector(`[onclick="saveEditTeacher('${id}')"]`);
-    if(btn){btn.textContent='＋ 添加老师';btn.setAttribute('onclick','addTeacher()');}
-    document.getElementById('new_teacher_name').value='';
+    cancelEditTeacher();
     renderTeacherList();
   }catch(e){alert('保存失败：'+e.message)}
 }
