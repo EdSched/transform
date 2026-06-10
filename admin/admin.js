@@ -1,3 +1,4 @@
+
 // ── Auth ──
 const ADMIN_PW='weixin$2026';
 function checkLogin(){const r=localStorage.getItem('txe_login');if(r){const{ts}=JSON.parse(r);if(Date.now()-ts<30*24*60*60*1000)return true}return false}
@@ -344,6 +345,7 @@ function renderSlotsPage(mc){
         ${monthSlots.length?monthSlots.map(s=>{
           const d=new Date(s.date),dow=DAYS[d.getDay()];
           const dc=d.getDay()===6?'var(--sat)':d.getDay()===0?'var(--sun)':'var(--text-2)';
+          const cap=slotCap(s.time_range),booked=slotBookedCount[s.id]||0;
           const isLocked=s.locked||false;
           return `<div class="slot-item" style="${isLocked?'background:var(--danger-bg);border-color:var(--danger)':''}">
             <div class="slot-item-left">
