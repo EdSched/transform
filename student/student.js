@@ -81,7 +81,7 @@ async function initMajor() {
       <div class="header-locked">📌 ${MAJORS[major]}</div>`;
     try {
       [cachedSlots, cachedBookings] = await Promise.all([
-        sb(`/rest/v1/slots?select=*&major=eq.${major}&order=date.asc,time_range.asc`),
+        sb(`/rest/v1/slots?select=*&major=eq.${major}&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`),
         sb(`/rest/v1/bookings?select=*&major=eq.${major}&order=slot_date.asc`)
       ]);
       buildForm();
