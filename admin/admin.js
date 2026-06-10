@@ -341,17 +341,20 @@ function renderSlotsPage(mc){
         ${monthSlots.length?monthSlots.map(s=>{
           const d=new Date(s.date),dow=DAYS[d.getDay()];
           const dc=d.getDay()===6?'var(--sat)':d.getDay()===0?'var(--sun)':'var(--text-2)';
-          const cap=slotCap(s.time_range),booked=slotBookedCount[s.id]||0;
-          return `<div class="slot-item">
+          const isLocked=s.locked||false;
+          return `<div class="slot-item" style="${isLocked?'background:var(--danger-bg);border-color:var(--danger)':''}">
             <div class="slot-item-left">
               <span class="tag ${typeTag(s.type)}">${s.type==='daily'?'日常':s.type==='plan'?'计划书':'模拟'}</span>
               <span style="font-size:10px;color:var(--text-3)">${MAJORS[s.major]||s.major}</span>
               <span style="font-weight:500">${s.date.slice(5)}</span>
               <span style="font-size:10px;color:${dc}">${dow}</span>
               <span style="color:var(--text-2);font-size:10px">${s.time_range}</span>
-              <span style="font-size:10px;color:${booked>=cap?'var(--danger)':'var(--ok)'}">${booked}/${cap}</span>
+              <span style="font-size:10px;color:${isLocked?'var(--danger)':booked>=cap?'var(--danger)':'var(--ok)'}">${isLocked?'🔒 已锁定':booked+'/'+cap}</span>
             </div>
-            <button class="btn-ghost" onclick="deleteSlot('${s.id}')">✕</button>
+            <div style="display:flex;gap:4px">
+              <button onclick="lockSlot('${s.id}',${!isLocked})" style="font-size:10px;background:${isLocked?'var(--ok-bg)':'var(--danger-bg)'};color:${isLocked?'var(--ok)':'var(--danger)'};border:1px solid ${isLocked?'var(--ok)':'var(--danger)'};border-radius:2px;padding:1px 7px;cursor:pointer;font-family:inherit">${isLocked?'解锁':'锁定'}</button>
+              <button class="btn-ghost" onclick="deleteSlot('${s.id}')">✕</button>
+            </div>
           </div>`;
         }).join(''):'<div class="empty">本月暂无时间槽</div>'}
       </div>
@@ -390,6 +393,15 @@ async function addSlot(){
   try{const res=await sb('/rest/v1/slots','POST',toInsert);cachedSlots=[...cachedSlots,...(Array.isArray(res)?res:toInsert)];renderSlotsPage(document.getElementById('mainContent'));if(toInsert.length>1)alert(`已添加 ${toInsert.length} 个时间槽`)}
   catch(e){alert('添加失败：'+e.message)}
 }
+async function lockSlot(id, lock){
+  try{
+    await sb(`/rest/v1/slots?id=eq.${id}`,'PATCH',{locked:lock});
+    const s=cachedSlots.find(x=>x.id===id);
+    if(s) s.locked=lock;
+    renderSlotsPage(document.getElementById('mainContent'));
+  }catch(e){alert('操作失败：'+e.message)}
+}
+
 async function deleteSlot(id){
   if(!confirm('确定删除这个时间槽？'))return;
   try{await sb(`/rest/v1/slots?id=eq.${id}`,'DELETE');cachedSlots=cachedSlots.filter(s=>s.id!==id);renderSlotsPage(document.getElementById('mainContent'))}catch(e){alert('删除失败：'+e.message)}
