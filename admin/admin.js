@@ -1865,7 +1865,7 @@ function renderSchedulePage(mc){
     <div class="section-title">课程预定</div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-danger btn-sm" onclick="clearAllScheduleSlots()" style="font-size:11px">🗑 清空全部</button>
-      <button class="btn btn-primary btn-sm" onclick="openTeacherManager()">👤 管理老师</button>
+      <button class="btn btn-primary btn-sm" onclick="switchPage('teachers')">👤 管理老师</button>
       <button class="btn btn-outline btn-sm" onclick="openCreateSlots()">＋ 创建时间槽</button>
     </div>
   </div>
@@ -2490,34 +2490,36 @@ function renderTeachersPage(mc){
       </div>
       <div class="form-group">
         <label class="form-label">权限配置</label>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:8px">
-            <div style="display:flex;align-items:center;gap:5px;margin-bottom:5px">
-              <input type="checkbox" id="perm_booking" style="accent-color:var(--accent)">
-              <span style="font-size:11px;font-weight:600">预约管理</span>
-            </div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px" id="perm_booking_types">
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;cursor:pointer"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;cursor:pointer"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;cursor:pointer"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
+        <div style="border:1px solid var(--border-light);border-radius:3px;overflow:hidden">
+          <!-- header -->
+          <div style="display:grid;grid-template-columns:28px 90px 1fr;background:var(--bg);padding:6px 10px;font-size:10px;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;border-bottom:1px solid var(--border-light)">
+            <div></div><div>权限</div><div>可操作类型</div>
+          </div>
+          <!-- booking row -->
+          <div style="display:grid;grid-template-columns:28px 90px 1fr;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border-light)">
+            <input type="checkbox" id="perm_booking" style="accent-color:var(--accent)">
+            <span style="font-size:11px;font-weight:600">预约管理</span>
+            <div style="display:flex;gap:10px" id="perm_booking_types">
+              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
             </div>
           </div>
-          <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:8px">
-            <div style="display:flex;align-items:center;gap:5px;margin-bottom:5px">
-              <input type="checkbox" id="perm_slots" style="accent-color:var(--accent)">
-              <span style="font-size:11px;font-weight:600">时间槽设定</span>
-            </div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px" id="perm_slot_types">
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;cursor:pointer"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;cursor:pointer"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:10px;cursor:pointer"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
+          <!-- slots row -->
+          <div style="display:grid;grid-template-columns:28px 90px 1fr;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border-light)">
+            <input type="checkbox" id="perm_slots" style="accent-color:var(--accent)">
+            <span style="font-size:11px;font-weight:600">时间槽设定</span>
+            <div style="display:flex;gap:10px" id="perm_slot_types">
+              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
             </div>
           </div>
-          <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:8px">
-            <div style="display:flex;align-items:center;gap:5px">
-              <input type="checkbox" id="perm_schedule" style="accent-color:var(--accent)">
-              <span style="font-size:11px;font-weight:600">课程排班</span>
-            </div>
+          <!-- schedule row -->
+          <div style="display:grid;grid-template-columns:28px 90px 1fr;align-items:center;padding:8px 10px">
+            <input type="checkbox" id="perm_schedule" style="accent-color:var(--accent)">
+            <span style="font-size:11px;font-weight:600">课程排班</span>
+            <span style="font-size:10px;color:var(--text-3)">排班确认 + 我的课表</span>
           </div>
         </div>
       </div>
