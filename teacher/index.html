@@ -3,31 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>唯新教育 · 课程排班</title>
+<title>唯新教育 · 老师端</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="teacher.css">
 </head>
 <body>
 <div class="header">
   <div>
-    <div class="header-title">唯新教育 · 课程排班</div>
-    <div class="header-sub" id="headerSub">Transform Education</div>
-  </div>
-  <div style="display:flex;gap:6px" id="headerTabs" style="display:none">
-    <button class="header-btn active" id="tabScheduling" onclick="switchTab('scheduling')">排班确认</button>
-    <button class="header-btn" id="tabMySchedule" onclick="switchTab('mySchedule')">我的课表</button>
+    <div class="header-title">唯新教育</div>
+    <div class="header-sub" id="headerName">加载中…</div>
   </div>
 </div>
-
+<div id="tabBar" style="display:none;background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;gap:0;overflow-x:auto"></div>
 <div class="main" id="mainContent"><div class="loading">加载中…</div></div>
-
-<div class="submit-bar" id="submitBar" style="display:none">
-  <div class="hint" id="submitHint"></div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap">
-    <button class="btn btn-outline" id="viewScheduleBtn" onclick="switchTab('mySchedule')" style="display:none">📅 查看已确定课程</button>
-    <button class="btn btn-primary" id="submitBtn" onclick="submitAvailability()">提交回复</button>
-  </div>
-</div>
 <script src="../shared/supabase.js"></script>
 <script src="../shared/constants.js"></script>
 <script src="teacher.js"></script>
