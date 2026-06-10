@@ -252,7 +252,7 @@ async function cancelBookingTeacher(id) {
 }
 
 // ── Slot management tab ──
-let teacherSlotMode = 'single', teacherSlotYear = new Date().getFullYear(), teacherSlotMonth = new Date().getMonth();
+let teacherSlotMode = 'single';
 
 function renderSlotManagement(mc) {
   const p = teacherData?.permissions || {};
@@ -265,11 +265,29 @@ function renderSlotManagement(mc) {
 
   mc.innerHTML = `
   <div class="page-section">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-      <!-- Add slot panel -->
+    <div style="display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start">
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:14px">
-        <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:12px;letter-spacing:.06em;text-transform:uppercase">新增时间槽</div>
-        <div class="form-group"><label class="form-label">日期</label><input type="date" id="ts_date"></div>
+        <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:10px;letter-spacing:.06em;text-transform:uppercase">新增时间槽</div>
+        <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:3px;overflow:hidden;margin-bottom:12px">
+          <button onclick="tsSetMode('single')" style="flex:1;padding:6px;font-size:11px;font-family:'DM Mono',monospace;cursor:pointer;border:none;background:${teacherSlotMode==='single'?'var(--accent)':'var(--bg)'};color:${teacherSlotMode==='single'?'#fff':'var(--text-2)'}">单次</button>
+          <button onclick="tsSetMode('repeat')" style="flex:1;padding:6px;font-size:11px;font-family:'DM Mono',monospace;cursor:pointer;border:none;border-left:1px solid var(--border);background:${teacherSlotMode==='repeat'?'var(--accent)':'var(--bg)'};color:${teacherSlotMode==='repeat'?'#fff':'var(--text-2)'}">按周循环</button>
+        </div>
+        <div id="ts_panel_single" style="display:${teacherSlotMode==='single'?'block':'none'}">
+          <div class="form-group"><label class="form-label">日期</label><input type="date" id="ts_date"></div>
+        </div>
+        <div id="ts_panel_repeat" style="display:${teacherSlotMode==='repeat'?'block':'none'}">
+          <div class="form-group"><label class="form-label">适用星期（可多选）</label>
+            <div style="display:flex;flex-wrap:wrap;gap:4px">
+              ${['周一','周二','周三','周四','周五','周六','周日'].map((d,i)=>`<button class="ts-wd-btn" data-wd="${i===6?0:i+1}" onclick="tsToggleWd(this)" style="padding:4px 8px;font-size:11px;border:1px solid var(--border);border-radius:2px;background:var(--bg);cursor:pointer;font-family:'DM Mono',monospace">${d}</button>`).join('')}
+            </div>
+          </div>
+          <div class="form-group"><label class="form-label">日期范围</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <input type="date" id="ts_repeat_start">
+              <input type="date" id="ts_repeat_end">
+            </div>
+          </div>
+        </div>
         <div class="form-group"><label class="form-label">时间段</label>
           <div style="display:grid;grid-template-columns:1fr 16px 1fr;gap:4px;align-items:center">
             <input type="time" id="ts_start" value="10:00">
@@ -287,15 +305,14 @@ function renderSlotManagement(mc) {
             ${majors.map(m => `<option value="${m}">${MAJORS[m] || m}</option>`).join('')}
           </select>
         </div>
-        <button class="btn btn-primary btn-full" style="margin-top:12px" onclick="addTeacherSlot()">＋ 添加时间槽</button>
+        <button class="btn btn-primary btn-full" style="margin-top:12px" onclick="addTeacherSlot()">＋ 添加</button>
       </div>
-      <!-- Slot list -->
       <div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <div style="font-size:11px;font-weight:600;color:var(--text-2);letter-spacing:.06em;text-transform:uppercase">本月时间槽</div>
+          <div style="font-size:11px;font-weight:600;color:var(--text-2)">本月时间槽</div>
           <div style="display:flex;align-items:center;gap:6px">
             <button onclick="teacherSlotMonthShift(-1)" style="background:none;border:1px solid var(--border);border-radius:2px;width:22px;height:22px;cursor:pointer;font-size:11px">‹</button>
-            <span style="font-size:11px;font-weight:500">${teacherSlotYear}·${String(teacherSlotMonth + 1).padStart(2, '0')}</span>
+            <span style="font-size:11px">${teacherSlotYear}·${String(teacherSlotMonth + 1).padStart(2, '0')}</span>
             <button onclick="teacherSlotMonthShift(1)" style="background:none;border:1px solid var(--border);border-radius:2px;width:22px;height:22px;cursor:pointer;font-size:11px">›</button>
           </div>
         </div>
@@ -303,48 +320,74 @@ function renderSlotManagement(mc) {
           ${monthSlots.length ? monthSlots.map(s => {
             const d = new Date(s.date + 'T12:00:00');
             const dow = DAYS_CN[d.getDay()];
+            const dowColor = DOW_COLOR[d.getDay()] || 'var(--text-2)';
             const cap = slotCap(s.time_range), booked = slotBookedCount[s.id] || 0;
             const isLocked = s.locked || false;
-            return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:${isLocked ? 'var(--danger-bg)' : 'var(--bg)'};border:1px solid ${isLocked ? 'var(--danger)' : 'var(--border-light)'};border-radius:3px;font-size:11px">
-              <div style="display:flex;align-items:center;gap:6px;flex:1">
-                <span class="tag ${typeTag(s.type)}">${s.type === 'daily' ? '日常' : s.type === 'plan' ? '计划书' : '模拟'}</span>
-                <span>${s.date.slice(5)} ${dow}</span>
+            return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:${isLocked?'var(--danger-bg)':'var(--bg)'};border:1px solid ${isLocked?'var(--danger)':'var(--border-light)'};border-radius:3px;font-size:11px">
+              <div style="display:flex;align-items:center;gap:6px;flex:1;flex-wrap:wrap">
+                <span class="tag ${typeTag(s.type)}">${s.type==='daily'?'日常':s.type==='plan'?'计划书':'模拟'}</span>
+                <span style="font-weight:500">${s.date.slice(5)}</span>
+                <span style="color:${dowColor}">${dow}</span>
                 <span style="color:var(--text-3)">${s.time_range}</span>
-                <span style="color:${isLocked ? 'var(--danger)' : booked >= cap ? 'var(--danger)' : 'var(--ok)'}">${isLocked ? '🔒 已锁定' : booked + '/' + cap}</span>
+                <span style="color:${isLocked?'var(--danger)':booked>=cap?'var(--danger)':'var(--ok)'}">${isLocked?'🔒':booked+'/'+cap}</span>
               </div>
               <div style="display:flex;gap:4px">
-                <button onclick="lockTeacherSlot('${s.id}',${!isLocked})" style="font-size:10px;background:${isLocked ? 'var(--ok)' : 'var(--danger-bg)'};color:${isLocked ? 'var(--ok)' : 'var(--danger)'};border:1px solid ${isLocked ? 'var(--ok)' : 'var(--danger)'};border-radius:2px;padding:2px 7px;cursor:pointer;font-family:inherit">${isLocked ? '解锁' : '锁定'}</button>
+                <button onclick="lockTeacherSlot('${s.id}',${!isLocked})" style="font-size:10px;background:${isLocked?'var(--ok-bg)':'var(--danger-bg)'};color:${isLocked?'var(--ok)':'var(--danger)'};border:1px solid ${isLocked?'var(--ok)':'var(--danger)'};border-radius:2px;padding:1px 7px;cursor:pointer;font-family:inherit">${isLocked?'解锁':'锁定'}</button>
                 <button class="btn-ghost" onclick="deleteTeacherSlot('${s.id}')">✕</button>
               </div>
             </div>`;
-          }).join('') : '<div style="font-size:11px;color:var(--text-3);padding:12px 0;text-align:center">本月暂无时间槽</div>'}
+          }).join('') : '<div style="font-size:11px;color:var(--text-3);padding:20px 0;text-align:center">本月暂无时间槽</div>'}
         </div>
       </div>
     </div>
   </div>`;
-  document.getElementById('ts_date').valueAsDate = new Date();
+  const today = new Date().toISOString().slice(0,10);
+  const el = document.getElementById('ts_date'); if(el) el.value = today;
+  const rs = document.getElementById('ts_repeat_start'); if(rs) rs.value = today;
 }
 
-function teacherSlotMonthShift(d) {
-  teacherSlotMonth += d;
-  if (teacherSlotMonth > 11) { teacherSlotMonth = 0; teacherSlotYear++; }
-  if (teacherSlotMonth < 0) { teacherSlotMonth = 11; teacherSlotYear--; }
-  renderTab();
+function tsSetMode(mode) { teacherSlotMode = mode; renderTab(); }
+
+function tsToggleWd(btn) {
+  btn.classList.toggle('active');
+  btn.style.background = btn.classList.contains('active') ? 'var(--accent)' : 'var(--bg)';
+  btn.style.color = btn.classList.contains('active') ? '#fff' : 'var(--text-2)';
 }
 
 async function addTeacherSlot() {
-  const date = document.getElementById('ts_date').value;
   const start = document.getElementById('ts_start').value;
   const end = document.getElementById('ts_end').value;
-  const type = document.getElementById('ts_type').value;
-  const major = document.getElementById('ts_major').value;
-  if (!date || !start || !end) { alert('请填写日期和时间段'); return; }
+  const type = document.getElementById('ts_type')?.value || 'daily';
+  const major = document.getElementById('ts_major')?.value || (teacherData?.majors?.[0] || '');
+  if (!start || !end) { alert('请填写时间段'); return; }
   if (start >= end) { alert('结束时间需晚于开始时间'); return; }
-  const timeRange = `${start}–${end}`;
+  const timeRange = `${start}\u2013${end}`;
+  let dates = [];
+  if (teacherSlotMode === 'single') {
+    const date = document.getElementById('ts_date')?.value;
+    if (!date) { alert('请选择日期'); return; }
+    dates = [date];
+  } else {
+    const wds = [...document.querySelectorAll('.ts-wd-btn.active')].map(b => parseInt(b.dataset.wd));
+    const rs = document.getElementById('ts_repeat_start')?.value;
+    const re = document.getElementById('ts_repeat_end')?.value;
+    if (!wds.length) { alert('请选择星期'); return; }
+    if (!rs || !re) { alert('请填写日期范围'); return; }
+    const cur = new Date(rs); const endDate = new Date(re);
+    while (cur <= endDate) {
+      if (wds.includes(cur.getDay())) dates.push(cur.toISOString().slice(0,10));
+      cur.setDate(cur.getDate() + 1);
+    }
+    if (!dates.length) { alert('所选星期在日期范围内没有匹配日期'); return; }
+    if (!confirm(`将添加 ${dates.length} 个时间槽，确认？`)) return;
+  }
   try {
-    const slot = { id: `sl-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, date, time_range: timeRange, type, major };
-    const res = await sb('/rest/v1/slots', 'POST', [slot]);
-    cachedTeacherSlots.push(Array.isArray(res) ? res[0] : slot);
+    const newSlots = dates.map(date => ({ id: `sl-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, date, time_range: timeRange, type, major }));
+    for (let i = 0; i < newSlots.length; i += 10) {
+      const chunk = newSlots.slice(i, i+10);
+      const res = await sb('/rest/v1/slots', 'POST', chunk);
+      cachedTeacherSlots.push(...(Array.isArray(res) ? res : chunk));
+    }
     renderTab();
   } catch (e) { alert('添加失败：' + e.message); }
 }
