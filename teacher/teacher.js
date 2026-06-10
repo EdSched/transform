@@ -75,7 +75,7 @@ function buildTabs() {
   const p = teacherData?.permissions || {};
   const tabs = [{ id: 'todo', label: '⚡ 待处理' }];
   if (p.booking) tabs.push({ id: 'booking', label: '📅 预约管理' });
-  if (p.slots) tabs.push({ id: 'slots', label: '⏰ 时间槽' });
+  if (p.slots) tabs.push({ id: 'slots', label: '⏰ 时间槽设定' });
   if (p.schedule || slots.length) tabs.push({ id: 'schedule', label: '🗓 排课确认' });
   tabs.push({ id: 'mycourses', label: '📚 我的课表' });
 
@@ -172,7 +172,6 @@ function renderBookingManagement(mc) {
   <div class="page-section">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">预约管理</div>
-      <button class="btn-sm-action" onclick="openTeacherSlotModal()">＋ 设定时间槽</button>
     </div>
 
     <div style="margin-bottom:16px">
@@ -199,7 +198,7 @@ function renderBookingCard(b) {
         <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:14px">${b.name}</span>
         <span style="font-size:11px;color:var(--text-3);margin-left:6px">${MAJORS[b.major] || b.major}</span>
       </div>
-      <span style="font-size:10px;background:${b.status === 'pending' ? 'var(--warn-bg)' : 'var(--ok-bg)'};color:${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'};padding:2px 7px;border-radius:2px">${b.status === 'pending' ? '待确认' : '已确认'}</span>
+      <span style="font-size:10px;background:${b.status === 'pending' ? 'var(--warn-bg)' : 'var(--ok-bg)'};color:${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'};padding:2px 7px;border-radius:2px;white-space:nowrap">${b.status === 'pending' ? '待确认' : '已确认'}</span>
     </div>
     <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">${f.short} ${f.dow} · ${b.slot_time_range || ''} · ${b.duration}min · <span class="tag ${typeTag(b.type)}">${typeLabel(b.type)}</span></div>
     ${b.needs ? `<div style="font-size:11px;color:var(--text-2);background:var(--bg);border-radius:2px;padding:6px 8px;margin-bottom:8px">💬 ${b.needs}</div>` : ''}
@@ -208,8 +207,29 @@ function renderBookingCard(b) {
       <input type="datetime-local" id="actual_${b.id}" style="flex:1;font-size:11px;padding:5px 8px" placeholder="实际面谈时间">
       <button onclick="confirmBookingTeacher('${b.id}')" style="background:var(--ok);color:#fff;border:none;border-radius:3px;padding:6px 12px;font-size:11px;cursor:pointer;font-family:inherit">✓ 确认</button>
       <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:6px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text-3)">取消</button>
-    </div>` : b.actual_time ? `<div style="font-size:11px;color:var(--ok)">✓ 面谈时间：${b.actual_time.replace('T', ' ')}</div>` : ''}
+    </div>` : `
+    <div>
+      ${b.actual_time ? `<div style="font-size:11px;color:var(--ok);margin-bottom:8px">✓ 面谈时间：${b.actual_time.replace('T', ' ')}</div>` : ''}
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px">面谈记录</div>
+      <textarea id="record_${b.id}" rows="3" placeholder="记录面谈内容、进展、下次目标…" style="font-size:11px;padding:7px 9px;resize:vertical">${b.daily_record || ''}</textarea>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button onclick="saveBookingRecord('${b.id}')" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit">保存记录</button>
+        <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--danger)">取消预约</button>
+      </div>
+    </div>`}
   </div>`;
+}
+
+async function saveBookingRecord(id) {
+  const record = document.getElementById('record_' + id)?.value || '';
+  try {
+    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { daily_record: record });
+    const b = cachedTeacherBookings.find(x => x.id === id);
+    if (b) b.daily_record = record;
+    // show brief saved indicator
+    const btn = document.querySelector(`[onclick="saveBookingRecord('${id}')"]`);
+    if (btn) { const orig = btn.textContent; btn.textContent = '✓ 已保存'; setTimeout(() => btn.textContent = orig, 1500); }
+  } catch (e) { alert('保存失败：' + e.message); }
 }
 
 async function confirmBookingTeacher(id) {
@@ -284,14 +304,18 @@ function renderSlotManagement(mc) {
             const d = new Date(s.date + 'T12:00:00');
             const dow = DAYS_CN[d.getDay()];
             const cap = slotCap(s.time_range), booked = slotBookedCount[s.id] || 0;
-            return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--bg);border:1px solid var(--border-light);border-radius:3px;font-size:11px">
-              <div style="display:flex;align-items:center;gap:6px">
+            const isLocked = s.locked || false;
+            return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:${isLocked ? 'var(--danger-bg)' : 'var(--bg)'};border:1px solid ${isLocked ? 'var(--danger)' : 'var(--border-light)'};border-radius:3px;font-size:11px">
+              <div style="display:flex;align-items:center;gap:6px;flex:1">
                 <span class="tag ${typeTag(s.type)}">${s.type === 'daily' ? '日常' : s.type === 'plan' ? '计划书' : '模拟'}</span>
                 <span>${s.date.slice(5)} ${dow}</span>
                 <span style="color:var(--text-3)">${s.time_range}</span>
-                <span style="color:${booked >= cap ? 'var(--danger)' : 'var(--ok)'}">${booked}/${cap}</span>
+                <span style="color:${isLocked ? 'var(--danger)' : booked >= cap ? 'var(--danger)' : 'var(--ok)'}">${isLocked ? '🔒 已锁定' : booked + '/' + cap}</span>
               </div>
-              <button class="btn-ghost" onclick="deleteTeacherSlot('${s.id}')">✕</button>
+              <div style="display:flex;gap:4px">
+                <button onclick="lockTeacherSlot('${s.id}',${!isLocked})" style="font-size:10px;background:${isLocked ? 'var(--ok)' : 'var(--danger-bg)'};color:${isLocked ? 'var(--ok)' : 'var(--danger)'};border:1px solid ${isLocked ? 'var(--ok)' : 'var(--danger)'};border-radius:2px;padding:2px 7px;cursor:pointer;font-family:inherit">${isLocked ? '解锁' : '锁定'}</button>
+                <button class="btn-ghost" onclick="deleteTeacherSlot('${s.id}')">✕</button>
+              </div>
             </div>`;
           }).join('') : '<div style="font-size:11px;color:var(--text-3);padding:12px 0;text-align:center">本月暂无时间槽</div>'}
         </div>
@@ -323,6 +347,15 @@ async function addTeacherSlot() {
     cachedTeacherSlots.push(Array.isArray(res) ? res[0] : slot);
     renderTab();
   } catch (e) { alert('添加失败：' + e.message); }
+}
+
+async function lockTeacherSlot(id, lock) {
+  try {
+    await sb(`/rest/v1/slots?id=eq.${id}`, 'PATCH', { locked: lock });
+    const s = cachedTeacherSlots.find(x => x.id === id);
+    if (s) s.locked = lock;
+    renderTab();
+  } catch (e) { alert('操作失败：' + e.message); }
 }
 
 async function deleteTeacherSlot(id) {
