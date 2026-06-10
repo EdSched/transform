@@ -2451,29 +2451,65 @@ async function completeSchedule(courseName){
 }
 
 // ── 管理老师 modal ──
+// ── 管理老师 ──
 function openTeacherManager(){
+  // reset add form
+  document.getElementById('new_teacher_name').value='';
+  document.getElementById('new_teacher_notes').value='';
+  document.querySelectorAll('#new_teacher_majors input').forEach(cb=>cb.checked=false);
+  document.querySelectorAll('#perm_booking_types input,#perm_slot_types input').forEach(cb=>cb.checked=false);
+  document.getElementById('perm_booking').checked=false;
+  document.getElementById('perm_slots').checked=false;
+  document.getElementById('perm_schedule').checked=false;
   renderTeacherList();
   document.getElementById('teacherManagerModal').classList.add('open');
 }
+
 function renderTeacherList(){
   document.getElementById('teacherList').innerHTML=cachedTeachers.length
     ?`<table class="student-table" style="margin:0">
-        <thead><tr><th>姓名</th><th>备注</th><th></th></tr></thead>
-        <tbody>${cachedTeachers.map(t=>`<tr>
-          <td style="font-family:'Noto Serif SC',serif;font-weight:600">${t.name}</td>
-          <td style="font-size:11px;color:var(--text-2)">${t.notes||''}</td>
-          <td><button class="btn-ghost" onclick="deleteTeacher('${t.id}')">✕</button></td>
-        </tr>`).join('')}</tbody>
+        <thead><tr><th>姓名</th><th>负责专业</th><th>权限</th><th>备注</th><th></th></tr></thead>
+        <tbody>${cachedTeachers.map(t=>{
+          const p=t.permissions||{};
+          const majors=(t.majors||[]).map(m=>MAJORS[m]||m).join('・')||'—';
+          const perms=[];
+          if(p.booking) perms.push(`预约(${(p.booking_types||[]).join('/')})`);
+          if(p.slots) perms.push(`时间槽(${(p.slot_types||[]).join('/')})`);
+          if(p.schedule) perms.push('排班');
+          return `<tr>
+            <td style="font-family:'Noto Serif SC',serif;font-weight:600">${t.name}</td>
+            <td style="font-size:11px">${majors}</td>
+            <td style="font-size:10px;color:var(--text-2)">${perms.join(' · ')||'—'}</td>
+            <td style="font-size:11px;color:var(--text-2)">${t.notes||''}</td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-outline btn-sm" onclick="openEditTeacher('${t.id}')">编辑</button>
+              <button class="btn-ghost" onclick="deleteTeacher('${t.id}')">✕</button>
+            </td>
+          </tr>`;
+        }).join('')}</tbody>
       </table>`
     :'<div class="empty" style="padding:20px">暂无老师</div>';
 }
+
+function getPermissionsFromForm(){
+  return {
+    booking:document.getElementById('perm_booking').checked,
+    booking_types:[...document.querySelectorAll('#perm_booking_types input:checked')].map(c=>c.value),
+    slots:document.getElementById('perm_slots').checked,
+    slot_types:[...document.querySelectorAll('#perm_slot_types input:checked')].map(c=>c.value),
+    schedule:document.getElementById('perm_schedule').checked,
+  };
+}
+
 async function addTeacher(){
   const name=document.getElementById('new_teacher_name').value.trim();
   const notes=document.getElementById('new_teacher_notes').value.trim();
   if(!name){alert('请填写姓名');return}
   if(cachedTeachers.find(t=>t.name===name)){alert('该老师已存在');return}
+  const majors=[...document.querySelectorAll('#new_teacher_majors input:checked')].map(c=>c.value);
+  const permissions=getPermissionsFromForm();
   try{
-    const t={id:`t-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,name,notes};
+    const t={id:`t-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,name,notes,majors,permissions};
     const res=await sb('/rest/v1/teachers','POST',[t]);
     cachedTeachers.push(Array.isArray(res)?res[0]:t);
     document.getElementById('new_teacher_name').value='';
@@ -2481,6 +2517,46 @@ async function addTeacher(){
     renderTeacherList();
   }catch(e){alert('添加失败：'+e.message)}
 }
+
+function openEditTeacher(id){
+  const t=cachedTeachers.find(x=>x.id===id);
+  if(!t) return;
+  // populate form with existing values
+  document.getElementById('new_teacher_name').value=t.name;
+  document.getElementById('new_teacher_notes').value=t.notes||'';
+  document.querySelectorAll('#new_teacher_majors input').forEach(cb=>{
+    cb.checked=(t.majors||[]).includes(cb.value);
+  });
+  const p=t.permissions||{};
+  document.getElementById('perm_booking').checked=!!p.booking;
+  document.getElementById('perm_slots').checked=!!p.slots;
+  document.getElementById('perm_schedule').checked=!!p.schedule;
+  document.querySelectorAll('#perm_booking_types input').forEach(cb=>cb.checked=(p.booking_types||[]).includes(cb.value));
+  document.querySelectorAll('#perm_slot_types input').forEach(cb=>cb.checked=(p.slot_types||[]).includes(cb.value));
+  // change button to save edit
+  const btn=document.querySelector('[onclick="addTeacher()"]');
+  if(btn){btn.textContent='保存修改';btn.setAttribute('onclick',`saveEditTeacher('${id}')`);}
+  document.getElementById('new_teacher_name').focus();
+}
+
+async function saveEditTeacher(id){
+  const name=document.getElementById('new_teacher_name').value.trim();
+  if(!name){alert('请填写姓名');return}
+  const majors=[...document.querySelectorAll('#new_teacher_majors input:checked')].map(c=>c.value);
+  const permissions=getPermissionsFromForm();
+  const notes=document.getElementById('new_teacher_notes').value.trim();
+  try{
+    await sb(`/rest/v1/teachers?id=eq.${id}`,'PATCH',{name,notes,majors,permissions});
+    const idx=cachedTeachers.findIndex(t=>t.id===id);
+    if(idx>=0) Object.assign(cachedTeachers[idx],{name,notes,majors,permissions});
+    // reset button
+    const btn=document.querySelector(`[onclick="saveEditTeacher('${id}')"]`);
+    if(btn){btn.textContent='＋ 添加老师';btn.setAttribute('onclick','addTeacher()');}
+    document.getElementById('new_teacher_name').value='';
+    renderTeacherList();
+  }catch(e){alert('保存失败：'+e.message)}
+}
+
 async function deleteTeacher(id){
   if(!confirm('确定删除这位老师？'))return;
   try{
