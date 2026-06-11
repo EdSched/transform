@@ -1,6 +1,4 @@
-
 // ── Auth ──
-
 const ADMIN_PW='weixin$2026';
 function checkLogin(){const r=localStorage.getItem('txe_login');if(r){const{ts}=JSON.parse(r);if(Date.now()-ts<30*24*60*60*1000)return true}return false}
 function doLogin(){
@@ -181,15 +179,13 @@ function openEdit(id){
   document.getElementById('editId').value=id;
   document.getElementById('editModalSub').textContent=`${b.name} · ${b.slot_date} ${b.slot_time_range||''}`;
   document.getElementById('editStatus').value=b.status;
-  const eat=b.actual_time||'';
-document.getElementById('editActualDate').value=eat.slice(0,10)||'';
-document.getElementById('editActualTime').value=eat.slice(11,16)||'';
+  document.getElementById('editActualTime').value=b.actual_time||'';
   document.getElementById('editNote').value=b.note||'';
   document.getElementById('editModal').classList.add('open');
 }
 async function saveEdit(){
   const id=document.getElementById('editId').value;
-  const patch={status:document.getElementById('editStatus').value,actual_time:(document.getElementById('editActualDate').value&&document.getElementById('editActualTime').value)?document.getElementById('editActualDate').value+'T'+document.getElementById('editActualTime').value:'',note:document.getElementById('editNote').value};
+  const patch={status:document.getElementById('editStatus').value,actual_time:document.getElementById('editActualTime').value,note:document.getElementById('editNote').value};
   try{await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',patch);const b=cachedBookings.find(x=>x.id===id);if(b)Object.assign(b,patch);closeModal('editModal');renderBookingPage(document.getElementById('mainContent'))}catch(e){alert('保存失败：'+e.message)}
 }
 function openRecord(id){
@@ -203,9 +199,7 @@ function openRecord(id){
   if(slotDt>new Date()){warn.style.display='block';warn.textContent=`⚠ 面谈还未开始（${b.slot_date} ${b.slot_time_range||''}），提前记录请准确填写实际面谈时间。`}
   else warn.style.display='none';
   const r=b.daily_record||{};
-  const rat=b.actual_time||'';
-document.getElementById('recActualDate').value=rat.slice(0,10)||'';
-document.getElementById('recActualTime').value=rat.slice(11,16)||'';
+  document.getElementById('recActualTime').value=b.actual_time||'';
   ['study','plan','apply','exam'].forEach(k=>{
     document.getElementById(`rec_${k}_status`).value=r[`${k}_status`]||'';
     document.getElementById(`rec_${k}_advice`).value=r[`${k}_advice`]||'';
@@ -228,7 +222,7 @@ async function saveRecord(){
     issue:document.getElementById('rec_issue').value,issue_advice:document.getElementById('rec_issue_advice').value,issue_deadline:document.getElementById('rec_issue_deadline').value,
     extra:document.getElementById('rec_extra').value
   };
-  const actual_time=(document.getElementById('recActualDate').value&&document.getElementById('recActualTime').value)?document.getElementById('recActualDate').value+'T'+document.getElementById('recActualTime').value:'';
+  const actual_time=document.getElementById('recActualTime').value;
   try{
     await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',{actual_time,daily_record});
     b.actual_time=actual_time;b.daily_record=daily_record;
@@ -237,18 +231,6 @@ async function saveRecord(){
     document.getElementById('copyRecordBtn').style.display='inline-flex';
     renderBookingPage(document.getElementById('mainContent'));
   }catch(e){alert('保存失败：'+e.message)}
-}
-function buildRecordText(b){
-  const r=b.daily_record||{};
-  const at=b.actual_time?b.actual_time.replace('T',' '):`${b.slot_date} ${b.slot_time_range||''}`;
-  const lines=[`【面谈记录】${b.name}`,`日期：${at}`,`专业：${MAJORS[b.major]||b.major||''}`,``];
-  [['📚 知识学习进展','study'],['📝 计划书完成情况','plan'],['🎓 出愿情况','apply'],['📖 备考情况','exam']].forEach(([title,k])=>{
-    const st=r[`${k}_status`],ad=r[`${k}_advice`],dl=r[`${k}_deadline`];
-    if(st||ad||dl){lines.push(title);if(st)lines.push(`状态：${st}`);if(ad)lines.push(`建议：${ad}`);if(dl)lines.push(`期限：${dl}`);lines.push('')}
-  });
-  if(r.issue||r.issue_advice){lines.push('❓ 目前困惑 / 问题');if(r.issue)lines.push(`问题：${r.issue}`);if(r.issue_advice)lines.push(`建议：${r.issue_advice}`);if(r.issue_deadline)lines.push(`期限：${r.issue_deadline}`);lines.push('')}
-  if(r.extra){lines.push('📌 补充');lines.push(r.extra);lines.push('')}
-  return lines.join('\n');
 }
 function copyRecord(){
   navigator.clipboard.writeText(document.getElementById('copyBox').textContent).then(()=>{const btn=document.getElementById('copyRecordBtn');btn.textContent='✓ 已复制';setTimeout(()=>btn.textContent='📋 复制记录',2000)}).catch(()=>alert('请手动选中上方文本复制'));
@@ -1104,9 +1086,7 @@ function acOnTypeChange(val){
 }
 
 function acGetMajors(){
-  const vals=[...document.querySelectorAll('#ac_major_checkboxes input:checked')].map(cb=>cb.value);
-  if(vals.includes('shakai_group')) return [...new Set([...vals.filter(v=>v!=='shakai_group'),'shakai','shinpan','fukushi'])];
-  return vals;
+  return [...document.querySelectorAll('#ac_major_checkboxes input:checked')].map(cb=>cb.value);
 }
 
 function acSetMajors(majors){
@@ -2490,12 +2470,11 @@ function renderTeachersPage(mc){
       <div class="form-group">
         <label class="form-label">负责专业（可多选）</label>
         <div style="display:flex;flex-wrap:wrap;gap:6px" id="new_teacher_majors">
-        <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="shakai_group" style="accent-color:var(--accent)">社会人文</label>
-          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="keiei" style="accent-color:var(--accent)">経営学</label>
-         <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="keizai" style="accent-color:var(--accent)">経済学</label>
-         <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="shakai" style="accent-color:var(--accent)">社会学</label>
-          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="shinpan" style="accent-color:var(--accent)">新闻传播</label>
-         <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="fukushi" style="accent-color:var(--accent)">社会福祉</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="keiei" style="accent-color:var(--accent)">経営学</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="keizai" style="accent-color:var(--accent)">経済学</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="shakai" style="accent-color:var(--accent)">社会学</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="shinpan" style="accent-color:var(--accent)">新闻传播</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="fukushi" style="accent-color:var(--accent)">社会福祉</label>
         </div>
       </div>
       <div class="form-group">
@@ -2507,22 +2486,22 @@ function renderTeachersPage(mc){
           </div>
           <!-- booking row -->
           <div style="display:grid;grid-template-columns:28px 90px 1fr;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border-light)">
-            <input type="checkbox" id="perm_booking" style="accent-color:var(--accent)" onchange="if(this.checked)document.querySelectorAll('#perm_booking_types input').forEach(c=>c.checked=true)">
+            <input type="checkbox" id="perm_booking" style="accent-color:var(--accent)">
             <span style="font-size:11px;font-weight:600">预约管理</span>
             <div style="display:flex;gap:10px" id="perm_booking_types">
-              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
-              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
-              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
             </div>
           </div>
           <!-- slots row -->
           <div style="display:grid;grid-template-columns:28px 90px 1fr;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border-light)">
-            <input type="checkbox" id="perm_slots" style="accent-color:var(--accent)" onchange="if(this.checked)document.querySelectorAll('#perm_slot_types input').forEach(c=>c.checked=true)">
+            <input type="checkbox" id="perm_slots" style="accent-color:var(--accent)">
             <span style="font-size:11px;font-weight:600">时间槽设定</span>
             <div style="display:flex;gap:10px" id="perm_slot_types">
-              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
-              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
-              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
             </div>
           </div>
           <!-- schedule row -->
