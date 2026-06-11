@@ -187,6 +187,7 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1100px; }
   <button class="tab-btn active" onclick="switchTab('add')">手动添加</button>
   <button class="tab-btn" onclick="switchTab('excel')">Excel 批量导入</button>
   <button class="tab-btn" onclick="switchTab('list')">数据管理</button>
+  <button class="tab-btn" onclick="switchTab('tier')">Tier 管理</button>
 </div>
 
 <main>
@@ -394,6 +395,39 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
 
 </main>
 
+
+<!-- ── TAB: Tier 管理 ── -->
+<div id="tab-tier" style="display:none">
+
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 16px;margin-bottom:1rem;font-size:12px;color:var(--text-secondary);line-height:1.7">
+    データベース内の全大学を一覧表示します。<br>
+    自動判定（大学名から推測）の結果を確認しながら、必要な大学だけ手動でTierを上書きできます。<br>
+    <span style="color:var(--text-muted);font-size:11px">※ 保存ボタンを押すまで変更は反映されません。変更した行のみ更新します。</span>
+  </div>
+
+  <div style="display:flex;gap:10px;margin-bottom:1rem;align-items:center;flex-wrap:wrap">
+    <button class="btn btn-secondary" onclick="loadTierTab()">↺ 再読み込み</button>
+    <button class="btn btn-primary" onclick="saveTierChanges()" id="tier-save-btn" disabled>変更を保存（0件）</button>
+    <span style="font-size:11px;color:var(--text-muted)" id="tier-status"></span>
+    <div style="margin-left:auto;display:flex;gap:6px">
+      <input type="text" id="tier-search" placeholder="大学名で絞り込み..." 
+        style="padding:5px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:200px"
+        oninput="renderTierTable()">
+      <select id="tier-filter" onchange="renderTierTable()"
+        style="padding:5px 8px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg)">
+        <option value="">全Tier</option>
+        <option value="auto">自動判定のみ</option>
+        <option value="manual">手動設定済み</option>
+        <option value="1">T1</option>
+        <option value="2">T2</option>
+        <option value="3">T3</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="tier-area" class="load-state">「Tier管理」タブを開くと読み込みます</div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <div class="modal-overlay" id="confirm-modal">
@@ -419,13 +453,14 @@ let uploadHeaders = [];
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
 function switchTab(t) {
-  ['add','excel','list'].forEach(id => {
+  ['add','excel','list','tier'].forEach(id => {
     document.getElementById(`tab-${id}`).style.display = id === t ? '' : 'none';
   });
   document.querySelectorAll('.tab-btn').forEach((b,i) => {
-    b.classList.toggle('active', ['add','excel','list'][i] === t);
+    b.classList.toggle('active', ['add','excel','list','tier'][i] === t);
   });
   if (t === 'list') loadList();
+  if (t === 'tier') loadTierTab();
 }
 
 // ─── Toast ───────────────────────────────────────────────────────────────────
@@ -970,6 +1005,199 @@ function parseEng(raw) {
   const m = raw.match(/[\d.]+/);
   score = m ? parseFloat(m[0]) : null;
   return { eng_type: type, eng_score: score ? Math.round(score) : null };
+}
+
+
+// ─── Tier Tab ─────────────────────────────────────────────────────────────────
+let tierUnivData = [];   // [{ univ, count, autoTier, dbTier, pendingTier }]
+let tierChanges = {};    // univ → new tier value (null = clear to auto)
+
+async function loadTierTab() {
+  document.getElementById('tier-area').innerHTML = '<div class="load-state">読み込み中...</div>';
+  tierChanges = {};
+  updateTierSaveBtn();
+
+  try {
+    const all = await fetchAllResults();
+
+    // Group by univ, get representative tier
+    const univMap = {};
+    for (const r of all) {
+      if (!univMap[r.univ]) {
+        univMap[r.univ] = { count: 0, dbTier: r.tier || null, subjSet: new Set() };
+      }
+      univMap[r.univ].count++;
+      if (r.subject) univMap[r.univ].subjSet.add(r.subject);
+      // Use most common tier value in DB for this univ
+      if (r.tier && !univMap[r.univ].dbTier) univMap[r.univ].dbTier = r.tier;
+    }
+
+    tierUnivData = Object.entries(univMap).map(([univ, d]) => ({
+      univ,
+      count: d.count,
+      autoTier: tierOf(univ),
+      dbTier: d.dbTier,
+      subjs: [...d.subjSet],
+    })).sort((a, b) => a.autoTier - b.autoTier || a.univ.localeCompare(b.univ));
+
+    renderTierTable();
+  } catch(e) {
+    document.getElementById('tier-area').innerHTML =
+      `<div class="load-state" style="color:var(--red)">エラー: ${e.message}</div>`;
+  }
+}
+
+function renderTierTable() {
+  const q = (document.getElementById('tier-search')?.value || '').toLowerCase();
+  const f = document.getElementById('tier-filter')?.value || '';
+
+  let rows = tierUnivData.filter(d => {
+    if (q && !d.univ.toLowerCase().includes(q)) return false;
+    const effective = tierChanges[d.univ] !== undefined ? tierChanges[d.univ] : (d.dbTier || d.autoTier);
+    if (f === 'auto' && d.dbTier !== null) return false;
+    if (f === 'manual' && d.dbTier === null && tierChanges[d.univ] === undefined) return false;
+    if (f === '1' && effective !== 1) return false;
+    if (f === '2' && effective !== 2) return false;
+    if (f === '3' && effective !== 3) return false;
+    return true;
+  });
+
+  if (!rows.length) {
+    document.getElementById('tier-area').innerHTML =
+      '<div class="load-state">該当する大学がありません</div>';
+    return;
+  }
+
+  const TIER_COLOR = {
+    1: ['#e8edf8','#2c4a8a'],
+    2: ['#e8f0e4','#3a6630'],
+    3: ['#f4ece0','#7a4a20'],
+  };
+  const SUBJ_LABEL_SHORT = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',
+    keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学',
+    bungaku:'文学',rekishi:'歴史学',hyosho:'表象',nihongo:'日本語教育',shinri:'心理学',other:'その他'};
+
+  let tableHtml = `
+    <div style="overflow-x:auto">
+    <table class="data-table" style="min-width:600px">
+      <thead><tr>
+        <th style="min-width:180px">大学名</th>
+        <th style="width:60px;text-align:center">件数</th>
+        <th style="width:90px;text-align:center">自動判定</th>
+        <th style="width:90px;text-align:center">DB設定</th>
+        <th style="width:180px">Tier変更</th>
+        <th>学科構成</th>
+      </tr></thead>
+      <tbody>`;
+
+  for (const d of rows) {
+    const pending = tierChanges[d.univ];
+    const effective = pending !== undefined ? pending : (d.dbTier || d.autoTier);
+    const isChanged = pending !== undefined;
+    const isManual = d.dbTier !== null;
+
+    const [abg, afg] = TIER_COLOR[d.autoTier] || ['#eee','#666'];
+    const [dbg, dfg] = d.dbTier ? (TIER_COLOR[d.dbTier] || ['#eee','#666']) : ['#f0ede6','#9a9590'];
+    const [ebg, efg] = TIER_COLOR[effective] || ['#eee','#666'];
+
+    const subjTags = d.subjs.slice(0,3).map(s =>
+      `<span style="font-size:9px;padding:1px 5px;border-radius:2px;background:${SUBJ_COLOR[s]?.bg||'#eee'};color:${SUBJ_COLOR[s]?.fg||'#666'};margin-right:3px">${SUBJ_LABEL_SHORT[s]||s}</span>`
+    ).join('');
+
+    const rowBg = isChanged ? 'background:#fffbe8' : '';
+
+    tableHtml += `<tr style="${rowBg}">
+      <td>
+        <span style="font-weight:500">${d.univ}</span>
+        ${isManual ? '<span style="font-size:9px;margin-left:6px;padding:1px 5px;border-radius:2px;background:#e8f0f8;color:#2c4a8a">手動設定済み</span>' : ''}
+        ${isChanged ? '<span style="font-size:9px;margin-left:6px;padding:1px 5px;border-radius:2px;background:#fff0c8;color:#5a4000">変更あり</span>' : ''}
+      </td>
+      <td style="text-align:center;color:var(--text-muted)">${d.count}</td>
+      <td style="text-align:center">
+        <span style="font-size:10px;padding:2px 8px;border-radius:2px;background:${abg};color:${afg};font-weight:500">T${d.autoTier}</span>
+      </td>
+      <td style="text-align:center">
+        ${d.dbTier
+          ? `<span style="font-size:10px;padding:2px 8px;border-radius:2px;background:${dbg};color:${dfg};font-weight:500">T${d.dbTier}</span>`
+          : `<span style="font-size:10px;color:var(--text-muted)">—</span>`}
+      </td>
+      <td>
+        <div style="display:flex;gap:4px;align-items:center">
+          ${[1,2,3].map(t => {
+            const active = effective === t;
+            const [bg,fg] = TIER_COLOR[t];
+            return `<button onclick="setTierChange('${d.univ.replace(/'/g,"\'")}',${t})"
+              style="padding:3px 10px;border-radius:2px;border:1px solid ${active?fg:TIER_COLOR[t][0]};
+                background:${active?fg:'transparent'};color:${active?'#fff':fg};
+                font-family:inherit;font-size:10px;font-weight:500;cursor:pointer;transition:all .12s">T${t}</button>`;
+          }).join('')}
+          <button onclick="setTierChange('${d.univ.replace(/'/g,"\'")}',null)"
+            style="padding:3px 8px;border-radius:2px;border:1px solid var(--border);
+              background:transparent;color:var(--text-muted);font-family:inherit;font-size:10px;cursor:pointer">
+            自動</button>
+        </div>
+      </td>
+      <td>${subjTags}${d.subjs.length > 3 ? `<span style="font-size:9px;color:var(--text-muted)">+${d.subjs.length-3}</span>` : ''}</td>
+    </tr>`;
+  }
+
+  tableHtml += '</tbody></table></div>';
+  document.getElementById('tier-area').innerHTML = tableHtml;
+}
+
+function setTierChange(univ, tier) {
+  // If same as current DB value, remove from changes
+  const d = tierUnivData.find(x => x.univ === univ);
+  if (!d) return;
+  const currentDb = d.dbTier;
+  if (tier === currentDb || (tier === null && currentDb === null)) {
+    delete tierChanges[univ];
+  } else {
+    tierChanges[univ] = tier;
+  }
+  updateTierSaveBtn();
+  renderTierTable();
+}
+
+function updateTierSaveBtn() {
+  const n = Object.keys(tierChanges).length;
+  const btn = document.getElementById('tier-save-btn');
+  if (!btn) return;
+  btn.disabled = n === 0;
+  btn.textContent = `変更を保存（${n}件）`;
+}
+
+async function saveTierChanges() {
+  const entries = Object.entries(tierChanges);
+  if (!entries.length) return;
+
+  const btn = document.getElementById('tier-save-btn');
+  btn.disabled = true;
+  btn.textContent = '保存中...';
+
+  const status = document.getElementById('tier-status');
+  let done = 0, errors = 0;
+
+  try {
+    // For each univ, update all rows in admission_results with that univ name
+    for (const [univ, tier] of entries) {
+      const encoded = encodeURIComponent(univ);
+      await sbFetch(
+        `admission_results?univ=eq.${encoded}`,
+        { method: 'PATCH', body: { tier: tier }, prefer: 'return=minimal', headers: {} }
+      );
+      done++;
+      status.textContent = `${done} / ${entries.length} 件処理中...`;
+    }
+
+    toast(`${done} 大学のTierを更新しました ✓`);
+    tierChanges = {};
+    await loadTierTab();
+  } catch(e) {
+    toast('エラー: ' + e.message, false);
+    btn.disabled = false;
+    updateTierSaveBtn();
+  }
 }
 
 </script>
