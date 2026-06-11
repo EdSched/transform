@@ -564,7 +564,7 @@ function filtered() {
   return allData.filter(r=>{
     if (curEra!=='all' && r.era!==curEra) return false;
     if (!activeSubjs.has(r.subject||'other')) return false;
-    if (curTier!==-1 && (r.tier||tierOf(r.univ))!==curTier) return false;
+    if (curTier!==-1 && (r.tier != null ? r.tier : tierOf(r.univ))!==curTier) return false;
     if (curJlpt!=='all' && r.jlpt!==curJlpt) return false;
     if (jmin>0 && (!r.jlpt_score||r.jlpt_score<jmin)) return false;
     if (r.eng_type==='TOEIC'&&r.eng_score){if(tmin>0&&r.eng_score<tmin)return false;if(tmax<9999&&r.eng_score>tmax)return false}
@@ -608,7 +608,7 @@ function renderTierView(data) {
   // Group by tier→univ (canonical tier per univ)
   const univTierMap = {};
   for (const r of data) {
-    if (!univTierMap[r.univ]) univTierMap[r.univ] = r.tier||tierOf(r.univ);
+    if (!univTierMap[r.univ]) univTierMap[r.univ] = r.tier != null ? r.tier : tierOf(r.univ);
   }
   const tiers = {0:{},1:{},2:{},3:{}};
   for (const r of data) {
