@@ -34,11 +34,11 @@ async function init() {
       sb(`/rest/v1/courses?select=id,name,course_type,campus,delivery`).catch(() => []),
     ];
     if (p.booking && majors.length) {
-      fetches.push(
-        sb(`/rest/v1/bookings?major=in.(${majors.map(m=>`"${m}"`).join(',')})&type=in.(${(p.booking_types||['daily']).map(t=>`"${t}"`).join(',')})&status=in.("pending","confirmed")&select=*&order=slot_date.asc`).catch(() => []),
-        sb(`/rest/v1/slots?major=in.(${majors.map(m=>`"${m}"`).join(',')})&select=*&order=date.asc,time_range.asc`).catch(() => [])
-      );
-    }
+  fetches.push(
+    sb(`/rest/v1/bookings?major=in.(${majors.map(m=>`"${m}"`).join(',')})&type=in.(${(p.booking_types||['daily']).map(t=>`"${t}"`).join(',')})&status=in.("pending","confirmed")&select=*&order=slot_date.asc`).catch(() => []),
+    sb(`/rest/v1/slots?major=in.(${majors.map(m=>`"${m}"`).join(',')})&teacher_name=eq.${encodeURIComponent(teacherName)}&select=*&order=date.asc,time_range.asc`).catch(() => [])
+  );
+}
 
     const results = await Promise.all(fetches);
     slots = results[0] || [];
@@ -382,7 +382,7 @@ async function addTeacherSlot() {
     if (!confirm(`将添加 ${dates.length} 个时间槽，确认？`)) return;
   }
   try {
-    const newSlots = dates.map(date => ({ id: `sl-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, date, time_range: timeRange, type, major }));
+    const newSlots = dates.map(date => ({ id: `sl-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, date, time_range: timeRange, type, major, teacher_name: teacherName }));
     for (let i = 0; i < newSlots.length; i += 10) {
       const chunk = newSlots.slice(i, i+10);
       const res = await sb('/rest/v1/slots', 'POST', chunk);
