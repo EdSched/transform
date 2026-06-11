@@ -249,9 +249,10 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1100px; }
         <label>Tier（空白=自動判定）</label>
         <select id="f-tier">
           <option value="">自動判定</option>
-          <option value="1">T1 — 旧帝・一橋・東科大・早慶上智</option>
-          <option value="2">T2 — G-MARCH・関関同立・地方国公立</option>
-          <option value="3">T3 — 日駒東専・女子大・地方私立</option>
+          <option value="0">T0 — 旧帝・一橋・東科大・早慶上智</option>
+          <option value="1">T1 — G-MARCH・関関同立・地方国公立</option>
+          <option value="2">T2 — 日駒東専・女子大・地方私立</option>
+          <option value="3">T3 — その他</option>
         </select>
       </div>
     </div>
@@ -418,6 +419,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
         <option value="">全Tier</option>
         <option value="auto">自動判定のみ</option>
         <option value="manual">手動設定済み</option>
+        <option value="0">T0</option>
         <option value="1">T1</option>
         <option value="2">T2</option>
         <option value="3">T3</option>
@@ -810,7 +812,7 @@ function renderList() {
       <td>${r.dept||''}</td>
       <td>${r.spec||''}</td>
       <td><span class="subj-tag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[r.subject]||r.subject}</span></td>
-      <td>${r.tier ? `<span style="font-size:9px;padding:1px 6px;border-radius:2px;background:${['','#e8edf8','#e8f0e4','#f4ece0'][r.tier]||'#eee'};color:${['','#2c4a8a','#3a6630','#7a4a20'][r.tier]||'#666'};font-weight:500">T${r.tier}</span>` : '<span style="font-size:9px;color:var(--text-muted)">自動</span>'}</td>
+      <td>${r.tier !== null && r.tier !== undefined && r.tier !== '' ? `<span style="font-size:9px;padding:1px 6px;border-radius:2px;background:${['#dce4f4','#e8edf8','#e8f0e4','#f4ece0'][r.tier]||'#eee'};color:${['#1a3070','#2c4a8a','#3a6630','#7a4a20'][r.tier]||'#666'};font-weight:500">T${r.tier}</span>` : '<span style="font-size:9px;color:var(--text-muted)">自動</span>'}</td>
       <td>${eraTag}</td>
       <td>${r.jlpt||'—'}</td>
       <td>${r.jlpt_score||'—'}</td>
@@ -871,6 +873,7 @@ function confirmDeleteAll() {
 //   spec        text
 //   student     text
 //   subject     text   -- shakai / fukushi / shinpan / keizai / keiei / kyoiku / other
+//   tier        integer -- 0=T0(旧帝+早慶上智) 1=T1(MARCH等) 2=T2(日駒東専等) 3=T3(その他)
 //   era         text   -- 'hist' (2022-2024) or 'new' (2025-2026)
 //   jlpt        text   -- e.g. 'N1', 'N2', 'N1-145'
 //   jlpt_score  integer  -- numeric part if present, else null
@@ -924,19 +927,27 @@ const TIERS = {
   3: { label: 'T3', name: '日駒東専 ＋ 重点女子大・地方私立' },
 };
 
-const T1_UNIVS = ['东京大学','京都大学','大阪大学','名古屋大学','九州大学','东北大学','北海道大学',
+const T0_UNIVS = ['东京大学','京都大学','大阪大学','名古屋大学','九州大学','东北大学','北海道大学',
   '一桥大学','一橋大学','东京科学大学','东京工业大学','東京科学大学','東京工業大学',
   '早稻田大学','早稲田大学','庆应义塾大学','慶應義塾大学','上智大学',
   '御茶水女子大学','筑波大学'];
-const T2_UNIVS = ['法政大学','明治大学','青山学院大学','立教大学','中央大学','学习院大学','学習院大学',
+const T1_UNIVS = ['法政大学','明治大学','青山学院大学','立教大学','中央大学','学习院大学','学習院大学',
   '关西大学','関西大学','关西学院大学','関西学院大学','同志社大学','立命馆大学','立命館大学',
   '横滨国立大学','横浜国立大学','横滨市立大学','横浜市立大学','神户大学','神戸大学',
   '埼玉大学','千叶大学','千葉大学','东京都立大学','東京都立大学','金沢大学','金泽大学',
   '广岛大学','広島大学','弘前大学','爱知县立大学','愛知県立大学','大阪公立大学',
   '静冈县立大学','静岡県立大学','东京外国语大学','東京外国語大学','神奈川大学'];
+const T2_UNIVS = ['東洋大学','东洋大学','駒沢大学','驹泽大学','日本大学','専修大学',
+  '東京女子大学','东京女子大学','日本女子大学','共立女子大学','甲南女子大学',
+  '武蔵大学','武藏大学','成蹊大学','成城大学','武蔵野大学','武藏野大学',
+  '都留文科大学','立正大学','大東文化大学','大东文化大学','国士舘大学','国士馆大学',
+  '桜美林大学','樱美林大学','拓殖大学','城西大学','城西国際大学','城西国际大学',
+  '大正大学','目白大学','淑徳大学','淑德大学','日本経済大学','日本经济大学',
+  '桃山学院大学','二松学舎大学','流通科学大学','多摩大学'];
 
 function tierOf(univ) {
   const u = univ.replace(/\s/g, '');
+  if (T0_UNIVS.some(x => u.includes(x.replace(/\s/g, '')))) return 0;
   if (T1_UNIVS.some(x => u.includes(x.replace(/\s/g, '')))) return 1;
   if (T2_UNIVS.some(x => u.includes(x.replace(/\s/g, '')))) return 2;
   return 3;
@@ -1069,6 +1080,7 @@ function renderTierTable() {
   }
 
   const TIER_COLOR = {
+    0: ['#dce4f4','#1a3070'],
     1: ['#e8edf8','#2c4a8a'],
     2: ['#e8f0e4','#3a6630'],
     3: ['#f4ece0','#7a4a20'],
@@ -1123,7 +1135,7 @@ function renderTierTable() {
       </td>
       <td>
         <div style="display:flex;gap:4px;align-items:center">
-          ${[1,2,3].map(t => {
+          ${[0,1,2,3].map(t => {
             const active = effective === t;
             const [bg,fg] = TIER_COLOR[t];
             return `<button onclick="setTierChange('${d.univ.replace(/'/g,"\'")}',${t})"
