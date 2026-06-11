@@ -1,5 +1,6 @@
 
 // ── Auth ──
+
 const ADMIN_PW='weixin$2026';
 function checkLogin(){const r=localStorage.getItem('txe_login');if(r){const{ts}=JSON.parse(r);if(Date.now()-ts<30*24*60*60*1000)return true}return false}
 function doLogin(){
@@ -1099,7 +1100,9 @@ function acOnTypeChange(val){
 }
 
 function acGetMajors(){
-  return [...document.querySelectorAll('#ac_major_checkboxes input:checked')].map(cb=>cb.value);
+  const vals=[...document.querySelectorAll('#ac_major_checkboxes input:checked')].map(cb=>cb.value);
+  if(vals.includes('shakai_group')) return [...new Set([...vals.filter(v=>v!=='shakai_group'),'shakai','shinpan','fukushi'])];
+  return vals;
 }
 
 function acSetMajors(majors){
@@ -2483,6 +2486,7 @@ function renderTeachersPage(mc){
       <div class="form-group">
         <label class="form-label">负责专业（可多选）</label>
         <div style="display:flex;flex-wrap:wrap;gap:6px" id="new_teacher_majors">
+        <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="shakai_group" style="accent-color:var(--accent)">社会人文</label>
           <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="keiei" style="accent-color:var(--accent)">経営学</label>
          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="keizai" style="accent-color:var(--accent)">経済学</label>
          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="shakai" style="accent-color:var(--accent)">社会学</label>
