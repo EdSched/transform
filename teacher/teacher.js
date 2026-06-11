@@ -4,42 +4,32 @@
 const params = new URLSearchParams(location.search);
 const teacherName = decodeURIComponent(params.get('teacher') || '');
 
-let teacherData = null; // full teacher record with permissions
+let teacherData = null;
 let slots = [], existingAvail = [], confirmedSessions = [];
 let cachedTeacherSlots = [], cachedTeacherBookings = [];
 let curTab = 'todo';
 
-// ── Init ──
 async function init() {
   const mc = document.getElementById('mainContent');
-  if (!teacherName) {
-    mc.innerHTML = '<div class="empty">无效链接，请联系学科负责人</div>';
-    return;
-  }
+  if (!teacherName) { mc.innerHTML = '<div class="empty">无效链接，请联系学科负责人</div>'; return; }
   document.getElementById('headerName').textContent = teacherName + ' 老师';
   try {
-    // fetch teacher record
     const teachers = await sb(`/rest/v1/teachers?name=eq.${encodeURIComponent(teacherName)}&select=*`);
     teacherData = teachers[0] || { name: teacherName, permissions: {}, majors: [] };
     const p = teacherData.permissions || {};
     const majors = teacherData.majors || [];
-
-    // fetch data based on permissions
     const fetches = [
-      // schedule slots for排班
       sb(`/rest/v1/schedule_slots?teacher_names=cs.{"${teacherName}"}&select=*&order=session_date.asc`),
       sb(`/rest/v1/teacher_availability?teacher_name=eq.${encodeURIComponent(teacherName)}&select=*`),
-      // confirmed course sessions
       sb(`/rest/v1/course_sessions?session_teacher=ilike.%25${teacherName}%25&confirmed=eq.true&select=*&order=session_date.asc`).catch(() => []),
       sb(`/rest/v1/courses?select=id,name,course_type,campus,delivery`).catch(() => []),
     ];
     if (p.booking && majors.length) {
-  fetches.push(
-    sb(`/rest/v1/bookings?major=in.(${majors.map(m=>`"${m}"`).join(',')})&type=in.(${(p.booking_types||['daily']).map(t=>`"${t}"`).join(',')})&status=in.("pending","confirmed")&select=*&order=slot_date.asc`).catch(() => []),
-    sb(`/rest/v1/slots?major=in.(${majors.map(m=>`"${m}"`).join(',')})&teacher_name=eq.${encodeURIComponent(teacherName)}&select=*&order=date.asc,time_range.asc`).catch(() => [])
-  );
-}
-
+      fetches.push(
+        sb(`/rest/v1/bookings?major=in.(${majors.map(m=>`"${m}"`).join(',')})&type=in.(${(p.booking_types||['daily']).map(t=>`"${t}"`).join(',')})&status=in.("pending","confirmed")&select=*&order=slot_date.asc`).catch(() => []),
+        sb(`/rest/v1/slots?major=in.(${majors.map(m=>`"${m}"`).join(',')})&teacher_name=eq.${encodeURIComponent(teacherName)}&select=*&order=date.asc,time_range.asc`).catch(() => [])
+      );
+    }
     const results = await Promise.all(fetches);
     slots = results[0] || [];
     existingAvail = results[1] || [];
@@ -51,27 +41,19 @@ async function init() {
       course_type: courseMap[s.course_id]?.course_type || '',
       campus: s.campus || courseMap[s.course_id]?.campus || '',
     })).sort((a, b) => a.session_date.localeCompare(b.session_date));
-
     if (p.booking) {
       cachedTeacherSlots = results[5] || [];
-const mySlotIds = cachedTeacherSlots.map(s => s.id);
-cachedTeacherBookings = (results[4] || []).filter(b => mySlotIds.includes(b.slot_id));
+      const mySlotIds = cachedTeacherSlots.map(s => s.id);
+      cachedTeacherBookings = (results[4] || []).filter(b => mySlotIds.includes(b.slot_id));
     }
-
-    // restore avail state
     existingAvail.forEach(a => {
       slotState[a.slot_id] = { available: a.available, time: a.available_time || '', titles: new Set(a.preferred_titles || []) };
     });
-
-    // build tabs
     buildTabs();
     switchTab('todo');
-  } catch (e) {
-    mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
-  }
+  } catch (e) { mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; }
 }
 
-// ── Tab management ──
 function buildTabs() {
   const p = teacherData?.permissions || {};
   const tabs = [{ id: 'todo', label: '⚡ 待处理' }];
@@ -79,11 +61,8 @@ function buildTabs() {
   if (p.slots) tabs.push({ id: 'slots', label: '⏰ 时间槽设定' });
   if (p.schedule || slots.length) tabs.push({ id: 'schedule', label: '🗓 排课确认' });
   tabs.push({ id: 'mycourses', label: '📚 我的课表' });
-
   const tabBar = document.getElementById('tabBar');
-  tabBar.innerHTML = tabs.map(t =>
-    `<button class="tab-btn${curTab === t.id ? ' active' : ''}" onclick="switchTab('${t.id}')">${t.label}</button>`
-  ).join('');
+  tabBar.innerHTML = tabs.map(t => `<button class="tab-btn${curTab === t.id ? ' active' : ''}" onclick="switchTab('${t.id}')">${t.label}</button>`).join('');
   tabBar.style.display = tabs.length > 1 ? 'flex' : 'none';
 }
 
@@ -106,87 +85,53 @@ function renderTab() {
   }
 }
 
-// ── TODO tab ──
 function renderTodo(mc) {
-  const p = teacherData?.permissions || {};
   const pendingBookings = cachedTeacherBookings.filter(b => b.status === 'pending');
   const pendingSlots = slots.filter(s => !existingAvail.find(a => a.slot_id === s.id));
   const upcomingSessions = confirmedSessions.filter(s => new Date(s.session_date + 'T23:59:59') >= new Date()).slice(0, 3);
-
   const hasTodo = pendingBookings.length > 0 || pendingSlots.length > 0;
-
   mc.innerHTML = `
   <div style="display:flex;flex-direction:column;gap:12px">
     ${hasTodo ? '' : '<div style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:4px;padding:12px 16px;font-size:12px;color:#1a5a3a">✓ 暂无待处理事项</div>'}
-
-    ${pendingBookings.length ? `
-    <div class="todo-card urgent">
+    ${pendingBookings.length ? `<div class="todo-card urgent">
       <div class="todo-head">⚠ 有 ${pendingBookings.length} 个学生预约待确认</div>
       ${pendingBookings.slice(0, 3).map(b => {
         const f = fmtSessionDate(b.slot_date);
-        return `<div class="todo-item">
-          <span style="font-weight:600">${b.name}</span>
-          <span style="color:var(--text-3)">${f.short} ${f.dow} · ${b.slot_time_range || ''} · ${typeLabel(b.type)}</span>
-          <button onclick="switchTab('booking')" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;margin-left:auto">去确认</button>
-        </div>`;
+        return `<div class="todo-item"><span style="font-weight:600">${b.name}</span><span style="color:var(--text-3)">${f.short} ${f.dow} · ${b.slot_time_range || ''} · ${typeLabel(b.type)}</span><button onclick="switchTab('booking')" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;margin-left:auto">去确认</button></div>`;
       }).join('')}
       ${pendingBookings.length > 3 ? `<div style="font-size:10px;color:var(--text-3);text-align:center;padding-top:4px">还有 ${pendingBookings.length - 3} 个…</div>` : ''}
     </div>` : ''}
-
-    ${pendingSlots.length ? `
-    <div class="todo-card warn">
+    ${pendingSlots.length ? `<div class="todo-card warn">
       <div class="todo-head">📋 有 ${pendingSlots.length} 个课次排班待填写</div>
       ${[...new Set(pendingSlots.map(s => s.course_name))].map(name => {
         const count = pendingSlots.filter(s => s.course_name === name).length;
-        return `<div class="todo-item">
-          <span style="font-weight:600">${name}</span>
-          <span style="color:var(--text-3)">${count} 课次待回复</span>
-          <button onclick="switchTab('schedule')" style="font-size:10px;background:var(--warn);color:#fff;border:none;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;margin-left:auto">去填写</button>
-        </div>`;
+        return `<div class="todo-item"><span style="font-weight:600">${name}</span><span style="color:var(--text-3)">${count} 课次待回复</span><button onclick="switchTab('schedule')" style="font-size:10px;background:var(--warn);color:#fff;border:none;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;margin-left:auto">去填写</button></div>`;
       }).join('')}
     </div>` : ''}
-
-    ${upcomingSessions.length ? `
-    <div class="todo-card">
+    ${upcomingSessions.length ? `<div class="todo-card">
       <div class="todo-head" style="color:var(--text-2)">📅 近期课程</div>
       ${upcomingSessions.map(s => {
         const f = fmtSessionDate(s.session_date);
-        return `<div class="todo-item">
-          <span style="font-weight:600;color:${f.dowColor}">${f.short} ${f.dow}</span>
-          <span>${s.course_name}</span>
-          ${s.session_title ? `<span style="font-size:10px;color:var(--text-3)">${s.session_title}</span>` : ''}
-          <span style="font-size:10px;color:var(--text-3);margin-left:auto">${s.time_range || ''}</span>
-        </div>`;
+        return `<div class="todo-item"><span style="font-weight:600;color:${f.dowColor}">${f.short} ${f.dow}</span><span>${s.course_name}</span>${s.session_title ? `<span style="font-size:10px;color:var(--text-3)">${s.session_title}</span>` : ''}<span style="font-size:10px;color:var(--text-3);margin-left:auto">${s.time_range || ''}</span></div>`;
       }).join('')}
       <button onclick="switchTab('mycourses')" style="font-size:11px;color:var(--text-3);background:none;border:none;cursor:pointer;margin-top:6px;font-family:inherit">查看完整课表 →</button>
     </div>` : ''}
   </div>`;
 }
 
-// ── Booking management tab ──
 function renderBookingManagement(mc) {
-  const p = teacherData?.permissions || {};
-  const majors = teacherData?.majors || [];
-  const allowedTypes = p.booking_types || ['daily'];
-
   mc.innerHTML = `
   <div class="page-section">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">预约管理</div>
     </div>
-
     <div style="margin-bottom:16px">
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">待确认预约</div>
-      ${cachedTeacherBookings.filter(b => b.status === 'pending').length
-        ? cachedTeacherBookings.filter(b => b.status === 'pending').map(b => renderBookingCard(b)).join('')
-        : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无待确认预约</div>'}
+      ${cachedTeacherBookings.filter(b => b.status === 'pending').length ? cachedTeacherBookings.filter(b => b.status === 'pending').map(b => renderBookingCard(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无待确认预约</div>'}
     </div>
-
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">已确认预约</div>
-      ${cachedTeacherBookings.filter(b => b.status === 'confirmed').length
-        ? cachedTeacherBookings.filter(b => b.status === 'confirmed').map(b => renderBookingCard(b)).join('')
-        : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已确认预约</div>'}
+      ${cachedTeacherBookings.filter(b => b.status === 'confirmed').length ? cachedTeacherBookings.filter(b => b.status === 'confirmed').map(b => renderBookingCard(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已确认预约</div>'}
     </div>
   </div>`;
 }
@@ -206,50 +151,39 @@ function renderBookingCard(b) {
     ${b.status === 'pending' ? `
     <div style="display:flex;gap:6px">
       <input type="date" id="actual_date_${b.id}" style="flex:1;font-size:11px;padding:5px 8px">
-<input type="time" id="actual_time_${b.id}" style="width:90px;font-size:11px;padding:5px 8px">
+      <input type="time" id="actual_time_${b.id}" style="width:90px;font-size:11px;padding:5px 8px">
       <button onclick="confirmBookingTeacher('${b.id}')" style="background:var(--ok);color:#fff;border:none;border-radius:3px;padding:6px 12px;font-size:11px;cursor:pointer;font-family:inherit">✓ 确认</button>
       <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:6px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text-3)">取消</button>
     </div>` : `
     <div>
       ${b.actual_time ? `<div style="font-size:11px;color:var(--ok);margin-bottom:8px">✓ 面谈时间：${b.actual_time.replace('T', ' ')}</div>` : ''}
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px">面谈记录</div>
-${renderRecordForm(b.id, b.daily_record||{})}
-<div style="display:flex;gap:6px;margin-top:10px">
-  <button onclick="saveBookingRecord('${b.id}')" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit">保存记录</button>
-  <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--danger)">取消预约</button>
-</div>
+      ${renderRecordForm(b.id, b.daily_record || {})}
+      <div style="display:flex;gap:6px;margin-top:10px">
+        <button onclick="saveBookingRecord('${b.id}')" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit">保存记录</button>
+        <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--danger)">取消预约</button>
+      </div>
+      <div id="copy_area_${b.id}"></div>
     </div>`}
   </div>`;
 }
-function renderRecordForm(id, r) {
-  const sec = (title, fields) => `
-    <div style="margin-bottom:12px;padding:10px;background:var(--bg);border-radius:3px;border:1px solid var(--border-light)">
-      <div style="font-size:10px;font-weight:600;color:var(--text-2);margin-bottom:8px;letter-spacing:.05em">${title}</div>
-      ${fields}
-    </div>`;
-  const sel = (fid, val, opts) => `
-    <div class="form-group" style="margin-bottom:6px"><label class="form-label">状态</label>
-      <select id="${fid}_status_${id}" style="font-size:11px">
-        <option value="">请选择</option>
-        ${opts.map(o=>`<option ${val?.status===o?'selected':''}>${o}</option>`).join('')}
-      </select></div>`;
-  const ta = (fid, val, ph) => `
-    <div class="form-group" style="margin-bottom:6px"><label class="form-label">建议</label>
-      <textarea id="${fid}_advice_${id}" rows="2" placeholder="${ph}" style="font-size:11px">${val?.advice||''}</textarea></div>`;
-  const dl = (fid, val) => `
-    <div class="form-group" style="margin-bottom:0"><label class="form-label">期限</label>
-      <input type="date" id="${fid}_deadline_${id}" value="${val?.deadline||''}" style="font-size:11px"></div>`;
 
+function renderRecordForm(id, r) {
+  const sec = (title, fields) => `<div style="margin-bottom:10px;padding:10px;background:var(--bg);border-radius:3px;border:1px solid var(--border-light)"><div style="font-size:10px;font-weight:600;color:var(--text-2);margin-bottom:8px;letter-spacing:.05em">${title}</div>${fields}</div>`;
+  const sel = (fid, val, opts) => `<div class="form-group" style="margin-bottom:6px"><label class="form-label">状态</label><select id="${fid}_status_${id}" style="font-size:11px"><option value="">请选择</option>${opts.map(o=>`<option ${val?.status===o?'selected':''}>${o}</option>`).join('')}</select></div>`;
+  const ta = (fid, val, ph) => `<div class="form-group" style="margin-bottom:6px"><label class="form-label">建议</label><textarea id="${fid}_advice_${id}" rows="2" placeholder="${ph}" style="font-size:11px">${val?.advice||''}</textarea></div>`;
+  const dl = (fid, val) => `<div class="form-group" style="margin-bottom:0"><label class="form-label">期限</label><input type="month" id="${fid}_deadline_${id}" value="${val?.deadline||''}" style="font-size:11px"></div>`;
   return `
     ${sec('知识学习进展', sel('study',r.study,['进展顺利并能掌握','能够稳定跟上','需要更多时间','没有很好跟上进度','遇到困难'])+ta('study',r.study,'例：建议定期复习…')+dl('study',r.study))}
     ${sec('计划书完成情况', sel('plan',r.plan,['未开始','在收集材料','遇到困难','撰写中','已完成'])+ta('plan',r.plan,'例：参考先行研究…')+dl('plan',r.plan))}
     ${sec('出愿情况', sel('apply',r.apply,['未开始','完成择校','已联系教授','准备中','已出愿'])+ta('apply',r.apply,'')+dl('apply',r.apply))}
     ${sec('备考情况', sel('exam',r.exam,['未开始','在写过去问','过去问已提交','在准备面试稿','模拟面试阶段'])+ta('exam',r.exam,'')+dl('exam',r.exam))}
-    <div style="margin-bottom:0;padding:10px;background:var(--bg);border-radius:3px;border:1px solid var(--border-light)">
+    <div style="padding:10px;background:var(--bg);border-radius:3px;border:1px solid var(--border-light)">
       <div style="font-size:10px;font-weight:600;color:var(--text-2);margin-bottom:6px">补充</div>
       <textarea id="extra_${id}" rows="2" placeholder="语学成绩、学生诉求、评价等…" style="font-size:11px">${r.extra||''}</textarea>
     </div>`;
 }
+
 async function saveBookingRecord(id) {
   const g = (fid) => ({
     status: document.getElementById(`${fid}_status_${id}`)?.value || '',
@@ -259,47 +193,37 @@ async function saveBookingRecord(id) {
   const record = { study: g('study'), plan: g('plan'), apply: g('apply'), exam: g('exam'), extra: document.getElementById(`extra_${id}`)?.value || '' };
   try {
     await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { daily_record: record });
-    const b = cachedTeacherBookings.find(x => x.id === id);
-    if (b) b.daily_record = record;
-    // show brief saved indicator
+    const booking = cachedTeacherBookings.find(x => x.id === id);
+    if (booking) booking.daily_record = record;
     const btn = document.querySelector(`[onclick="saveBookingRecord('${id}')"]`);
     if (btn) { const orig = btn.textContent; btn.textContent = '✓ 已保存'; setTimeout(() => btn.textContent = orig, 1500); }
-// 生成记录文本
-const b = cachedTeacherBookings.find(x => x.id === id);
-if (b) {
-  const at = b.actual_time ? b.actual_time.replace('T',' ') : `${b.slot_date} ${b.slot_time_range||''}`;
-  const r = record;
-  const lines = [
-    `【面谈记录】${b.name}`,
-    `日期：${at}`,
-    `专业：${MAJORS[b.major]||b.major||''}`,
-    ``,
-    r.study?.status ? `知识学习：${r.study.status}${r.study.advice?'\n建议：'+r.study.advice:''}${r.study.deadline?'\n期限：'+r.study.deadline:''}` : '',
-    r.plan?.status ? `计划书：${r.plan.status}${r.plan.advice?'\n建议：'+r.plan.advice:''}${r.plan.deadline?'\n期限：'+r.plan.deadline:''}` : '',
-    r.apply?.status ? `出愿：${r.apply.status}${r.apply.advice?'\n建议：'+r.apply.advice:''}${r.apply.deadline?'\n期限：'+r.apply.deadline:''}` : '',
-    r.exam?.status ? `备考：${r.exam.status}${r.exam.advice?'\n建议：'+r.exam.advice:''}${r.exam.deadline?'\n期限：'+r.exam.deadline:''}` : '',
-    r.extra ? `补充：${r.extra}` : '',
-  ].filter(Boolean).join('\n');
-  // 显示文本框和复制按钮
-  let copyArea = document.getElementById(`copy_area_${id}`);
-  if (!copyArea) {
-    const container = btn.closest('div');
-    copyArea = document.createElement('div');
-    copyArea.id = `copy_area_${id}`;
-    copyArea.style.cssText = 'margin-top:10px';
-    copyArea.innerHTML = `<pre id="copy_text_${id}" style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:10px;font-size:11px;white-space:pre-wrap;font-family:'DM Mono',monospace;line-height:1.6"></pre>
-      <button onclick="navigator.clipboard.writeText(document.getElementById('copy_text_${id}').textContent).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制记录',2000)})" style="margin-top:6px;font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:4px 12px;cursor:pointer;font-family:inherit">📋 复制记录</button>`;
-    container.appendChild(copyArea);
-  }
-  document.getElementById(`copy_text_${id}`).textContent = lines;
-}
+    // 生成记录文本
+    if (booking) {
+      const at = booking.actual_time ? booking.actual_time.replace('T', ' ') : `${booking.slot_date} ${booking.slot_time_range || ''}`;
+      const lines = [
+        `【面谈记录】${booking.name}`,
+        `日期：${at}`,
+        `专业：${MAJORS[booking.major] || booking.major || ''}`,
+        ``,
+        record.study?.status ? `知识学习：${record.study.status}${record.study.advice ? '\n建议：' + record.study.advice : ''}${record.study.deadline ? '\n期限：' + record.study.deadline : ''}` : '',
+        record.plan?.status ? `计划书：${record.plan.status}${record.plan.advice ? '\n建议：' + record.plan.advice : ''}${record.plan.deadline ? '\n期限：' + record.plan.deadline : ''}` : '',
+        record.apply?.status ? `出愿：${record.apply.status}${record.apply.advice ? '\n建议：' + record.apply.advice : ''}${record.apply.deadline ? '\n期限：' + record.apply.deadline : ''}` : '',
+        record.exam?.status ? `备考：${record.exam.status}${record.exam.advice ? '\n建议：' + record.exam.advice : ''}${record.exam.deadline ? '\n期限：' + record.exam.deadline : ''}` : '',
+        record.extra ? `补充：${record.extra}` : '',
+      ].filter(Boolean).join('\n');
+      const copyArea = document.getElementById(`copy_area_${id}`);
+      if (copyArea) {
+        copyArea.innerHTML = `<pre id="copy_text_${id}" style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:10px;font-size:11px;white-space:pre-wrap;font-family:'DM Mono',monospace;line-height:1.6;margin-top:10px">${lines}</pre>
+          <button onclick="navigator.clipboard.writeText(document.getElementById('copy_text_${id}').textContent).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制记录',2000)})" style="margin-top:6px;font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:4px 12px;cursor:pointer;font-family:inherit">📋 复制记录</button>`;
+      }
+    }
   } catch (e) { alert('保存失败：' + e.message); }
 }
 
 async function confirmBookingTeacher(id) {
   const d = document.getElementById('actual_date_' + id)?.value || '';
-const t = document.getElementById('actual_time_' + id)?.value || '';
-const actualTime = d && t ? `${d}T${t}` : d || '';
+  const t = document.getElementById('actual_time_' + id)?.value || '';
+  const actualTime = d && t ? `${d}T${t}` : d || '';
   try {
     await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { status: 'confirmed', actual_time: actualTime });
     const b = cachedTeacherBookings.find(x => x.id === id);
@@ -317,7 +241,6 @@ async function cancelBookingTeacher(id) {
   } catch (e) { alert('操作失败：' + e.message); }
 }
 
-// ── Slot management tab ──
 let teacherSlotMode = 'single';
 let teacherSlotYear = new Date().getFullYear(), teacherSlotMonth = new Date().getMonth();
 
@@ -329,7 +252,6 @@ function renderSlotManagement(mc) {
   const monthSlots = cachedTeacherSlots.filter(s => s.date.startsWith(ym)).sort((a, b) => a.date.localeCompare(b.date));
   const slotBookedCount = {};
   cachedTeacherBookings.forEach(b => { slotBookedCount[b.slot_id] = (slotBookedCount[b.slot_id] || 0) + 1; });
-
   mc.innerHTML = `
   <div class="page-section">
     <div style="display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start">
@@ -363,12 +285,11 @@ function renderSlotManagement(mc) {
           </div>
         </div>
         <div class="form-group"><label class="form-label">类型</label>
-          <select id="ts_type">
-            ${allowedTypes.map(t => `<option value="${t}">${typeLabel(t)}</option>`).join('')}
-          </select>
+          <select id="ts_type">${allowedTypes.map(t => `<option value="${t}">${typeLabel(t)}</option>`).join('')}</select>
         </div>
         <div class="form-group" style="margin-bottom:0"><label class="form-label">专业</label>
           <select id="ts_major">
+            ${majors.some(m => ['shakai','shinpan','fukushi'].includes(m)) ? `<option value="shakai_group">社会人文</option>` : ''}
             ${majors.map(m => `<option value="${m}">${MAJORS[m] || m}</option>`).join('')}
           </select>
         </div>
@@ -408,17 +329,22 @@ function renderSlotManagement(mc) {
       </div>
     </div>
   </div>`;
-  const today = new Date().toISOString().slice(0,10);
-  const el = document.getElementById('ts_date'); if(el) el.value = today;
-  const rs = document.getElementById('ts_repeat_start'); if(rs) rs.value = today;
+  const today = new Date().toISOString().slice(0, 10);
+  const el = document.getElementById('ts_date'); if (el) el.value = today;
+  const rs = document.getElementById('ts_repeat_start'); if (rs) rs.value = today;
 }
 
 function tsSetMode(mode) { teacherSlotMode = mode; renderTab(); }
-
 function tsToggleWd(btn) {
   btn.classList.toggle('active');
   btn.style.background = btn.classList.contains('active') ? 'var(--accent)' : 'var(--bg)';
   btn.style.color = btn.classList.contains('active') ? '#fff' : 'var(--text-2)';
+}
+function teacherSlotMonthShift(d) {
+  teacherSlotMonth += d;
+  if (teacherSlotMonth > 11) { teacherSlotMonth = 0; teacherSlotYear++; }
+  if (teacherSlotMonth < 0) { teacherSlotMonth = 11; teacherSlotYear--; }
+  renderTab();
 }
 
 async function addTeacherSlot() {
@@ -442,16 +368,16 @@ async function addTeacherSlot() {
     if (!rs || !re) { alert('请填写日期范围'); return; }
     const cur = new Date(rs); const endDate = new Date(re);
     while (cur <= endDate) {
-      if (wds.includes(cur.getDay())) dates.push(cur.toISOString().slice(0,10));
+      if (wds.includes(cur.getDay())) dates.push(cur.toISOString().slice(0, 10));
       cur.setDate(cur.getDate() + 1);
     }
     if (!dates.length) { alert('所选星期在日期范围内没有匹配日期'); return; }
     if (!confirm(`将添加 ${dates.length} 个时间槽，确认？`)) return;
   }
   try {
-    const newSlots = dates.map(date => ({ id: `sl-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, date, time_range: timeRange, type, major, teacher_name: teacherName }));
+    const newSlots = dates.map(date => ({ id: `sl-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, date, time_range: timeRange, type, major, teacher_name: teacherName }));
     for (let i = 0; i < newSlots.length; i += 10) {
-      const chunk = newSlots.slice(i, i+10);
+      const chunk = newSlots.slice(i, i + 10);
       const res = await sb('/rest/v1/slots', 'POST', chunk);
       cachedTeacherSlots.push(...(Array.isArray(res) ? res : chunk));
     }
@@ -477,7 +403,6 @@ async function deleteTeacherSlot(id) {
   } catch (e) { alert('删除失败：' + e.message); }
 }
 
-// ── Schedule / 排班 tab ──
 const slotState = {};
 function getState(slotId) {
   if (!slotState[slotId]) slotState[slotId] = { available: false, time: '', titles: new Set() };
@@ -485,10 +410,7 @@ function getState(slotId) {
 }
 
 function renderScheduling(mc) {
-  if (!slots.length) {
-    mc.innerHTML = '<div class="empty">暂无排班课次<br><span style="font-size:11px">请等待学科负责人创建课次后访问</span></div>';
-    return;
-  }
+  if (!slots.length) { mc.innerHTML = '<div class="empty">暂无排班课次<br><span style="font-size:11px">请等待学科负责人创建课次后访问</span></div>'; return; }
   const allTitles = [...new Set(slots.flatMap(s => s.session_titles || []))];
   const byCourse = {};
   slots.forEach(s => {
@@ -499,15 +421,10 @@ function renderScheduling(mc) {
     if (!byCourse[key]) byCourse[key] = { name: s.course_name, period: `${d.getFullYear()}年${period}`, slots: [] };
     byCourse[key].slots.push(s);
   });
-
   mc.innerHTML = `
   <div class="page-section">
-    <div class="info-box" style="margin-bottom:16px">
-      请点击您<strong>可以上课的日期</strong>（打勾），不点视为不可以。如有内容偏好可在展开区域选择。
-    </div>
-    ${allTitles.length ? `<div class="task-box" style="margin-bottom:16px">
-      本期您负责的课程内容：${allTitles.map(t => `<span style="background:rgba(255,255,255,.6);border-radius:2px;padding:1px 8px;margin-right:4px">${t}</span>`).join('')}
-    </div>` : ''}
+    <div class="info-box" style="margin-bottom:16px">请点击您<strong>可以上课的日期</strong>（打勾），不点视为不可以。如有内容偏好可在展开区域选择。</div>
+    ${allTitles.length ? `<div class="task-box" style="margin-bottom:16px">本期您负责的课程内容：${allTitles.map(t => `<span style="background:rgba(255,255,255,.6);border-radius:2px;padding:1px 8px;margin-right:4px">${t}</span>`).join('')}</div>` : ''}
     ${Object.values(byCourse).map(({ name, period, slots: cs }) => `
       <div style="margin-bottom:24px">
         <div style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;color:${courseColorText(name)};margin-bottom:10px;padding-bottom:7px;border-bottom:1px solid var(--border)">
@@ -531,7 +448,6 @@ function renderSlotCard(s) {
   const dowColor = DOW_COLOR[d.getDay()] || 'var(--text-2)';
   const hasTwo = !!(s.time_range && s.time_range_2);
   const titles = s.session_titles || [];
-
   return `<div class="date-card${st.available ? ' selected' : ''}" id="card-${s.id}">
     <div class="date-head" onclick="toggleAvail('${s.id}')">
       <div class="date-left">
@@ -542,14 +458,12 @@ function renderSlotCard(s) {
     </div>
     ${st.available && (hasTwo || titles.length) ? `
     <div class="date-body">
-      ${hasTwo ? `<div class="sub-label">时间偏好</div>
-      <div class="chip-row">
+      ${hasTwo ? `<div class="sub-label">时间偏好</div><div class="chip-row">
         <div class="chip${st.time === s.time_range ? ' active' : ''}" onclick="event.stopPropagation();setTime('${s.id}','${s.time_range}')">${s.time_range}</div>
         <div class="chip${st.time === s.time_range_2 ? ' active' : ''}" onclick="event.stopPropagation();setTime('${s.id}','${s.time_range_2}')">${s.time_range_2}</div>
         <div class="chip ok-active${st.time === 'both' ? ' active' : ''}" onclick="event.stopPropagation();setTime('${s.id}','both')">两个都行</div>
       </div>` : ''}
-      ${titles.length ? `<div class="sub-label">内容偏好（不选=都可以）</div>
-      <div class="chip-row">
+      ${titles.length ? `<div class="sub-label">内容偏好（不选=都可以）</div><div class="chip-row">
         ${titles.map(t => `<div class="chip${st.titles.has(t) ? ' active' : ''}" onclick="event.stopPropagation();toggleTitle('${s.id}','${t.replace(/'/g, "\\'")}')">${t}</div>`).join('')}
       </div>` : ''}
     </div>` : ''}
@@ -581,7 +495,6 @@ async function submitAvailability() {
   } catch (e) { alert('提交失败：' + e.message); if (btn) { btn.textContent = '提交回复'; btn.disabled = false; } }
 }
 
-// ── My courses tab ──
 function courseColorText(name) {
   if (/宏观|微观|経済|经济/.test(name)) return '#1a3a6a';
   if (/経営|经营/.test(name)) return '#3a2e24';
@@ -593,14 +506,10 @@ function courseColorText(name) {
 }
 
 function renderMySchedule(mc) {
-  if (!confirmedSessions.length) {
-    mc.innerHTML = '<div class="empty">暂无已确定的课程<br><span style="font-size:11px">排课确认后这里会显示您的完整课表</span></div>';
-    return;
-  }
+  if (!confirmedSessions.length) { mc.innerHTML = '<div class="empty">暂无已确定的课程<br><span style="font-size:11px">排课确认后这里会显示您的完整课表</span></div>'; return; }
   const byMonth = {};
   confirmedSessions.forEach(s => { const m = s.session_date.slice(0, 7); if (!byMonth[m]) byMonth[m] = []; byMonth[m].push(s); });
   const monthNames = { '01': '一月', '02': '二月', '03': '三月', '04': '四月', '05': '五月', '06': '六月', '07': '七月', '08': '八月', '09': '九月', '10': '十月', '11': '十一月', '12': '十二月' };
-
   mc.innerHTML = `
   <div class="page-section">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
