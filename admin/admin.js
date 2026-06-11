@@ -2499,7 +2499,7 @@ function renderTeachersPage(mc){
           </div>
           <!-- booking row -->
           <div style="display:grid;grid-template-columns:28px 90px 1fr;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border-light)">
-            <input type="checkbox" id="perm_booking" style="accent-color:var(--accent)">
+            <input type="checkbox" id="perm_booking" style="accent-color:var(--accent)" onchange="if(this.checked)document.querySelectorAll('#perm_booking_types input').forEach(c=>c.checked=true)">
             <span style="font-size:11px;font-weight:600">预约管理</span>
             <div style="display:flex;gap:10px" id="perm_booking_types">
               <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
@@ -2509,7 +2509,7 @@ function renderTeachersPage(mc){
           </div>
           <!-- slots row -->
           <div style="display:grid;grid-template-columns:28px 90px 1fr;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border-light)">
-            <input type="checkbox" id="perm_slots" style="accent-color:var(--accent)">
+            <input type="checkbox" id="perm_slots" style="accent-color:var(--accent)" onchange="if(this.checked)document.querySelectorAll('#perm_slot_types input').forEach(c=>c.checked=true)">
             <span style="font-size:11px;font-weight:600">时间槽设定</span>
             <div style="display:flex;gap:10px" id="perm_slot_types">
               <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
