@@ -8,323 +8,198 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #f7f5f0; --surface: #fff; --border: #e2ded6; --border-light: #ede9e2;
-  --text-primary: #1a1814; --text-secondary: #5a5650; --text-muted: #9a9590;
-  --accent: #2c4a8a;
-  --t1: #2c4a8a; --t1-bg: #e8edf8; --t1-border: #c0cce8;
-  --t2: #3a6630; --t2-bg: #e8f0e4; --t2-border: #b8d0b4;
-  --t3: #7a4a20; --t3-bg: #f4ece0; --t3-border: #d8c0a4;
+  --bg:#f7f5f0;--surface:#fff;--border:#e2ded6;--border-light:#ede9e2;
+  --text-primary:#1a1814;--text-secondary:#5a5650;--text-muted:#9a9590;--accent:#2c4a8a;
+  --t1:#2c4a8a;--t1-bg:#e8edf8;--t1-bd:#c0cce8;
+  --t2:#3a6630;--t2-bg:#e8f0e4;--t2-bd:#b8d0b4;
+  --t3:#7a4a20;--t3-bg:#f4ece0;--t3-bd:#d8c0a4;
 }
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'DM Mono', monospace; background: var(--bg); color: var(--text-primary); font-size: 13px; line-height: 1.55; }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--text-primary);font-size:13px;line-height:1.55}
 
-/* ── Header ── */
-header {
-  background: var(--surface); border-bottom: 2px solid var(--text-primary);
-  padding: 2rem 3rem 1.5rem;
-  display: flex; align-items: flex-end; justify-content: space-between; gap: 2rem; flex-wrap: wrap;
-}
-.header-left h1 { font-family: 'Noto Serif SC', serif; font-size: 1.6rem; font-weight: 600; letter-spacing: .03em; }
-.header-left .sub { font-size: 10px; color: var(--text-muted); letter-spacing: .08em; text-transform: uppercase; margin-top: 4px; }
-.header-stats { display: flex; gap: 2rem; }
-.stat-item { text-align: right; }
-.stat-num { font-family: 'Noto Serif SC', serif; font-size: 2rem; font-weight: 300; color: var(--accent); line-height: 1; }
-.stat-label { font-size: 10px; color: var(--text-muted); letter-spacing: .06em; margin-top: 3px; }
+/* Header */
+header{background:var(--surface);border-bottom:2px solid var(--text-primary);padding:1.8rem 3rem 1.4rem;display:flex;align-items:flex-end;justify-content:space-between;gap:2rem;flex-wrap:wrap}
+.h-title{font-family:'Noto Serif SC',serif;font-size:1.5rem;font-weight:600;letter-spacing:.03em}
+.h-sub{font-size:10px;color:var(--text-muted);letter-spacing:.08em;text-transform:uppercase;margin-top:4px}
+.h-stats{display:flex;gap:1.5rem}
+.stat-num{font-family:'Noto Serif SC',serif;font-size:1.8rem;font-weight:300;color:var(--accent);line-height:1}
+.stat-lbl{font-size:10px;color:var(--text-muted);letter-spacing:.06em;margin-top:2px}
 
-/* ── Filter bar ── */
-.filter-bar {
-  background: var(--surface); border-bottom: 1px solid var(--border);
-  padding: 0 3rem; position: sticky; top: 0; z-index: 200;
-}
-.filter-row {
-  display: flex; align-items: center; gap: 16px; padding: 10px 0; flex-wrap: wrap;
-  border-bottom: 1px solid var(--border-light);
-}
-.filter-row:last-child { border-bottom: none; }
-.filter-label { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; min-width: 60px; }
+/* Filter bar */
+.filter-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 3rem;position:sticky;top:0;z-index:200}
+.filter-row{display:flex;align-items:center;gap:14px;padding:9px 0;border-bottom:1px solid var(--border-light);flex-wrap:wrap}
+.filter-row:last-child{border-bottom:none}
+.flbl{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);white-space:nowrap;min-width:50px}
 
-/* Seg buttons */
-.seg { display: flex; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
-.seg button {
-  padding: 4px 12px; background: none; border: none; border-right: 1px solid var(--border);
-  font-family: inherit; font-size: 11px; color: var(--text-secondary); cursor: pointer;
-  transition: background .12s, color .12s; letter-spacing: .03em; white-space: nowrap;
-}
-.seg button:last-child { border-right: none; }
-.seg button.active { background: var(--text-primary); color: var(--bg); }
-.seg button:hover:not(.active) { background: var(--bg); }
+/* Seg */
+.seg{display:flex;border:1px solid var(--border);border-radius:3px;overflow:hidden}
+.seg button{padding:4px 11px;background:none;border:none;border-right:1px solid var(--border);font-family:inherit;font-size:11px;color:var(--text-secondary);cursor:pointer;transition:background .12s,color .12s;white-space:nowrap}
+.seg button:last-child{border-right:none}
+.seg button.active{background:var(--text-primary);color:var(--bg)}
+.seg button:hover:not(.active){background:var(--bg)}
 
-/* Subject pills */
-.pill-row { display: flex; gap: 6px; flex-wrap: wrap; }
-.pill {
-  padding: 3px 10px; border-radius: 2px; font-size: 10px; font-family: inherit;
-  cursor: pointer; border: 1px solid transparent; transition: opacity .12s, transform .1s;
-  letter-spacing: .02em;
-}
-.pill:not(.active) { opacity: .38; }
-.pill.active { opacity: 1; }
-.pill:hover { transform: translateY(-1px); }
+/* Pills */
+.pill-row{display:flex;gap:5px;flex-wrap:wrap}
+.pill{padding:2px 9px;border-radius:2px;font-size:10px;font-family:inherit;cursor:pointer;border:1px solid transparent;transition:opacity .12s;letter-spacing:.02em}
+.pill:not(.active){opacity:.35}
+.pill.active{opacity:1}
 
-/* Score range sliders */
-.score-filters { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
-.score-group { display: flex; align-items: center; gap: 8px; }
-.score-group label { font-size: 10px; color: var(--text-muted); letter-spacing: .04em; white-space: nowrap; }
-.score-group select {
-  padding: 3px 8px; border: 1px solid var(--border); border-radius: 3px;
-  font-family: inherit; font-size: 11px; background: var(--bg); color: var(--text-primary);
-}
-.jlpt-toggles { display: flex; gap: 6px; }
-.jlpt-btn {
-  padding: 3px 10px; border: 1px solid var(--border); border-radius: 2px;
-  font-size: 11px; font-family: inherit; cursor: pointer; background: none; color: var(--text-secondary);
-  transition: all .12s;
-}
-.jlpt-btn.active { background: var(--text-primary); color: var(--bg); border-color: var(--text-primary); }
+/* Score filters */
+.score-filters{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.sg{display:flex;align-items:center;gap:6px}
+.sg label{font-size:10px;color:var(--text-muted);white-space:nowrap}
+.sg select{padding:3px 7px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:11px;background:var(--bg)}
+.jlpt-row{display:flex;gap:5px}
+.jbtn{padding:3px 9px;border:1px solid var(--border);border-radius:2px;font-size:11px;font-family:inherit;cursor:pointer;background:none;color:var(--text-secondary);transition:all .12s}
+.jbtn.active{background:var(--text-primary);color:var(--bg);border-color:var(--text-primary)}
 
-/* Sort control */
-.sort-row { display: flex; align-items: center; gap: 10px; }
-.sort-label { font-size: 10px; color: var(--text-muted); }
-.sort-btn {
-  padding: 3px 10px; border: 1px solid var(--border); border-radius: 2px;
-  font-size: 11px; font-family: inherit; cursor: pointer; background: none; color: var(--text-secondary);
-  transition: all .12s;
-}
-.sort-btn.active { border-color: var(--text-secondary); color: var(--text-primary); background: var(--surface); }
-.sort-dir-btn {
-  padding: 3px 8px; border: 1px solid var(--border); border-radius: 2px;
-  font-size: 11px; font-family: inherit; cursor: pointer; background: none; color: var(--text-secondary);
-}
+/* Sort */
+.sort-row{display:flex;align-items:center;gap:8px}
+.sdbtn{padding:3px 7px;border:1px solid var(--border);border-radius:2px;font-size:11px;font-family:inherit;cursor:pointer;background:none;color:var(--text-secondary)}
 
-/* ── Main ── */
-main { padding: 1.5rem 3rem 4rem; }
+/* Main */
+main{padding:1.5rem 3rem 4rem}
 
-/* ── Tier sections ── */
-.tier-section { margin-bottom: 2rem; }
-.tier-header {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
-  padding: 8px 12px; border-radius: 3px; cursor: pointer; user-select: none;
-}
-.tier-header:hover { opacity: .85; }
-.tier-1 .tier-header { background: var(--t1-bg); border: 1px solid var(--t1-border); }
-.tier-2 .tier-header { background: var(--t2-bg); border: 1px solid var(--t2-border); }
-.tier-3 .tier-header { background: var(--t3-bg); border: 1px solid var(--t3-border); }
-.tier-badge { font-size: 9px; font-weight: 600; padding: 2px 7px; border-radius: 2px; letter-spacing: .1em; }
-.tier-1 .tier-badge { background: var(--t1); color: #fff; }
-.tier-2 .tier-badge { background: var(--t2); color: #fff; }
-.tier-3 .tier-badge { background: var(--t3); color: #fff; }
-.tier-name { font-family: 'Noto Serif SC', serif; font-size: 13px; letter-spacing: .02em; }
-.tier-count { margin-left: auto; font-size: 10px; color: var(--text-muted); letter-spacing: .04em; }
-.tier-toggle { font-size: 11px; color: var(--text-muted); }
-.tier-body { }
+/* View tabs */
+.view-tabs{display:flex;gap:6px;margin-bottom:1.2rem}
+.vtab{padding:5px 16px;border:1px solid var(--border);border-radius:3px;background:none;font-family:inherit;font-size:11px;color:var(--text-muted);cursor:pointer;letter-spacing:.04em;transition:all .12s}
+.vtab.active{border-color:var(--text-secondary);color:var(--text-primary);background:var(--surface)}
 
-/* ── University grid ── */
-.univ-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
-.univ-card {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
-  cursor: pointer; transition: box-shadow .15s, border-color .15s; overflow: hidden;
-}
-.univ-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,.08); border-color: var(--text-muted); }
-.univ-card.expanded { border-color: var(--accent); }
-.univ-card-head {
-  padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 6px;
-}
-.univ-name { font-family: 'Noto Serif SC', serif; font-size: 12px; font-weight: 600; flex: 1; min-width: 0; line-height: 1.4; }
-.univ-badge {
-  font-size: 12px; font-weight: 600; color: var(--accent);
-  flex-shrink: 0; font-family: 'Noto Serif SC', serif;
-}
-.univ-subj-bar {
-  display: flex; height: 3px; margin: 0 12px 8px; border-radius: 2px; overflow: hidden; gap: 1px;
-}
-.subj-seg { height: 100%; flex-shrink: 0; }
+/* Tier section */
+.tier-section{margin-bottom:1.8rem}
+.tier-hdr{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:3px;cursor:pointer;user-select:none;margin-bottom:8px}
+.tier-hdr:hover{opacity:.85}
+.t1 .tier-hdr{background:var(--t1-bg);border:1px solid var(--t1-bd)}
+.t2 .tier-hdr{background:var(--t2-bg);border:1px solid var(--t2-bd)}
+.t3 .tier-hdr{background:var(--t3-bg);border:1px solid var(--t3-bd)}
+.tbadge{font-size:9px;font-weight:600;padding:2px 7px;border-radius:2px;letter-spacing:.1em}
+.t1 .tbadge{background:var(--t1);color:#fff}
+.t2 .tbadge{background:var(--t2);color:#fff}
+.t3 .tbadge{background:var(--t3);color:#fff}
+.tname{font-family:'Noto Serif SC',serif;font-size:13px}
+.tcount{margin-left:auto;font-size:10px;color:var(--text-muted)}
+.ttoggle{font-size:11px;color:var(--text-muted)}
 
-/* ── Expanded detail panel ── */
-.univ-detail {
-  border-top: 1px solid var(--border-light); display: none;
-  background: #faf9f6;
-}
-.univ-card.expanded .univ-detail { display: block; }
-.detail-inner { padding: 10px 12px; }
-.detail-sort-bar {
-  display: flex; gap: 6px; align-items: center; margin-bottom: 8px; flex-wrap: wrap;
-}
-.detail-sort-label { font-size: 9px; color: var(--text-muted); letter-spacing: .06em; }
-.detail-sort-btn {
-  font-size: 9px; padding: 1px 7px; border: 1px solid var(--border); border-radius: 2px;
-  background: none; font-family: inherit; cursor: pointer; color: var(--text-secondary);
-}
-.detail-sort-btn.active { background: var(--text-primary); color: var(--bg); border-color: var(--text-primary); }
-.entry-row {
-  display: flex; align-items: flex-start; gap: 8px;
-  padding: 6px 0; border-top: 1px solid var(--border-light);
-}
-.entry-row:first-of-type { border-top: none; }
-.subj-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
-.entry-info { flex: 1; min-width: 0; }
-.entry-dept { font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.entry-spec { font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
-.entry-tags { display: flex; gap: 4px; align-items: center; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
-.score-tag { font-size: 9px; padding: 1px 5px; border-radius: 2px; background: var(--border-light); color: var(--text-secondary); white-space: nowrap; }
-.score-tag.hi { background: #e8f0f8; color: var(--accent); font-weight: 500; }
-.subj-tag-sm { font-size: 9px; padding: 1px 5px; border-radius: 2px; white-space: nowrap; }
-.era-tag { font-size: 9px; padding: 1px 5px; border-radius: 2px; white-space: nowrap; }
-.era-hist { background: #f0ede6; color: var(--text-muted); }
-.era-new  { background: #e8f0f8; color: var(--accent); }
+/* Univ grid */
+.univ-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:7px}
+.ucard{background:var(--surface);border:1px solid var(--border);border-radius:4px;cursor:pointer;transition:box-shadow .15s,border-color .15s;overflow:hidden}
+.ucard:hover{box-shadow:0 2px 10px rgba(0,0,0,.09);border-color:var(--text-muted)}
+.ucard-head{padding:11px 13px;display:flex;align-items:center;justify-content:space-between;gap:5px}
+.ucard-name{font-family:'Noto Serif SC',serif;font-size:12px;font-weight:600;flex:1;min-width:0;line-height:1.4}
+.ucard-cnt{font-size:13px;font-weight:600;color:var(--accent);flex-shrink:0;font-family:'Noto Serif SC',serif}
+.ucard-bar{display:flex;height:3px;margin:0 13px 5px;border-radius:2px;overflow:hidden;gap:1px}
+.ucard-sub{padding:0 13px 9px;font-size:9px;color:var(--text-muted)}
 
-/* ── Loading / empty ── */
-.loading { padding: 3rem; text-align: center; color: var(--text-muted); font-size: 12px; letter-spacing: .04em; }
-.no-data { padding: 2rem; text-align: center; color: var(--text-muted); font-size: 12px; }
+/* Detail panel (inline expand below tier) */
+.detail-panel{display:none;background:var(--surface);border:1px solid var(--accent);border-radius:4px;margin-bottom:1rem;overflow:hidden}
+.detail-panel.open{display:block}
+.dp-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:#f5f8ff;flex-wrap:wrap}
+.dp-univ{font-family:'Noto Serif SC',serif;font-size:1rem;font-weight:600}
+.dp-tier{font-size:9px;font-weight:600;padding:2px 8px;border-radius:2px;letter-spacing:.08em}
+.dp-stats{font-size:11px;color:var(--text-secondary)}
+.dp-close{margin-left:auto;width:26px;height:26px;border-radius:50%;border:1px solid var(--border);background:none;font-size:13px;cursor:pointer;color:var(--text-muted);display:flex;align-items:center;justify-content:center}
+.dp-close:hover{background:var(--bg);color:var(--text-primary)}
+.dp-sort-bar{padding:8px 16px;border-bottom:1px solid var(--border-light);display:flex;gap:6px;align-items:center;background:var(--bg);flex-wrap:wrap}
+.dp-sort-lbl{font-size:10px;color:var(--text-muted)}
+.dp-sort-btn{padding:2px 9px;border:1px solid var(--border);border-radius:2px;font-size:10px;font-family:inherit;cursor:pointer;background:none;color:var(--text-secondary);transition:all .12s}
+.dp-sort-btn.active{background:var(--text-primary);color:var(--bg);border-color:var(--text-primary)}
+.dp-table-wrap{overflow-x:auto}
+.dp-table{width:100%;border-collapse:collapse;font-size:12px}
+.dp-table thead th{padding:8px 14px;background:var(--bg);border-bottom:2px solid var(--border);text-align:left;font-size:10px;letter-spacing:.06em;color:var(--text-muted);text-transform:uppercase;white-space:nowrap}
+.dp-table tbody tr{border-bottom:1px solid var(--border-light);transition:background .1s}
+.dp-table tbody tr:hover{background:#faf8f4}
+.dp-table td{padding:10px 14px;vertical-align:middle}
+.sbadge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:500;white-space:nowrap}
+.sbadge.toeic{background:#e8f0f8;color:#1a3060}
+.sbadge.toefl{background:#e8f4e4;color:#1a4020}
+.sbadge.ielts{background:#f4ede0;color:#5a3800}
+.sbadge.jlpt{background:#f0ede6;color:#3a3020}
+.sbadge.hi{background:#fff0c8;color:#5a4000;border:1px solid #e0c060}
 
-@media (max-width: 680px) {
-  header, main { padding-left: 1.2rem; padding-right: 1.2rem; }
-  .filter-bar { padding-left: 1.2rem; padding-right: 1.2rem; }
-  .univ-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
-}
+/* Group-by-subject view */
+.subj-section{margin-bottom:1.5rem}
+.subj-hdr{display:flex;align-items:center;gap:10px;padding:7px 12px;border-radius:3px;margin-bottom:8px;cursor:pointer;user-select:none}
+.subj-hdr:hover{opacity:.85}
+.subj-count{margin-left:auto;font-size:10px;color:var(--text-muted)}
 
-/* ── Modal overlay ── */
-.modal-overlay {
-  position: fixed; inset: 0; background: rgba(20,18,14,.55);
-  z-index: 500; display: none; align-items: center; justify-content: center;
-  padding: 1.5rem;
-  backdrop-filter: blur(2px);
-}
-.modal-overlay.show { display: flex; }
-.modal-box {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 6px; width: 100%; max-width: 860px;
-  max-height: 90vh; display: flex; flex-direction: column;
-  box-shadow: 0 8px 40px rgba(0,0,0,.18);
-}
-.modal-header {
-  padding: 1.2rem 1.6rem; border-bottom: 1px solid var(--border);
-  display: flex; align-items: flex-start; gap: 12px; flex-shrink: 0;
-}
-.modal-univ-name {
-  font-family: 'Noto Serif SC', serif; font-size: 1.3rem; font-weight: 600;
-  letter-spacing: .02em; flex: 1; min-width: 0;
-}
-.modal-tier-badge {
-  font-size: 10px; font-weight: 600; padding: 3px 10px; border-radius: 3px;
-  letter-spacing: .08em; flex-shrink: 0; margin-top: 4px;
-}
-.modal-close {
-  width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border);
-  background: none; font-size: 14px; cursor: pointer; color: var(--text-muted);
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-  transition: background .12s;
-}
-.modal-close:hover { background: var(--bg); color: var(--text-primary); }
-.modal-subheader {
-  padding: 8px 1.6rem; border-bottom: 1px solid var(--border-light);
-  display: flex; gap: 10px; align-items: center; flex-wrap: wrap; flex-shrink: 0;
-  background: var(--bg);
-}
-.modal-stat { font-size: 11px; color: var(--text-secondary); }
-.modal-stat strong { color: var(--text-primary); }
-.modal-sort-bar { margin-left: auto; display: flex; gap: 6px; align-items: center; }
-.modal-sort-label { font-size: 10px; color: var(--text-muted); }
-.modal-sort-btn {
-  padding: 3px 10px; border: 1px solid var(--border); border-radius: 2px;
-  font-size: 10px; font-family: inherit; cursor: pointer; background: none;
-  color: var(--text-secondary); transition: all .12s;
-}
-.modal-sort-btn.active { background: var(--text-primary); color: var(--bg); border-color: var(--text-primary); }
-.modal-body {
-  overflow-y: auto; flex: 1; padding: 0;
-}
-.modal-table {
-  width: 100%; border-collapse: collapse; font-size: 12px;
-}
-.modal-table thead th {
-  padding: 9px 14px; background: var(--bg); border-bottom: 2px solid var(--border);
-  text-align: left; font-size: 10px; letter-spacing: .06em; color: var(--text-muted);
-  text-transform: uppercase; white-space: nowrap; position: sticky; top: 0; z-index: 10;
-}
-.modal-table tbody tr { border-bottom: 1px solid var(--border-light); transition: background .1s; }
-.modal-table tbody tr:hover { background: #faf8f4; }
-.modal-table tbody td { padding: 10px 14px; vertical-align: middle; }
-.modal-table .dept-cell { color: var(--text-secondary); font-size: 12px; }
-.modal-table .spec-cell { color: var(--text-muted); font-size: 11px; margin-top: 2px; }
-.score-badge {
-  display: inline-flex; align-items: center; gap: 3px;
-  padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 500;
-  white-space: nowrap;
-}
-.score-badge.toeic { background: #e8f0f8; color: #1a3060; }
-.score-badge.toefl { background: #e8f4e4; color: #1a4020; }
-.score-badge.ielts { background: #f4ede0; color: #5a3800; }
-.score-badge.jlpt  { background: #f0ede6; color: #3a3020; }
-.score-badge.hi    { background: #fff0c8; color: #5a4000; border: 1px solid #e0c060; }
-.modal-subj-tag {
-  display: inline-block; padding: 2px 8px; border-radius: 3px;
-  font-size: 10px; white-space: nowrap;
-}
-.modal-era-tag {
-  display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 10px;
-}
+/* Group-by-era view */
+.era-section{margin-bottom:1.5rem}
+.era-hdr{padding:8px 14px;border-radius:3px;display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.era-new .era-hdr{background:#e8f0f8;border:1px solid #c0d0e8}
+.era-hist .era-hdr{background:#f0ede6;border:1px solid #d8d0c4}
 
-/* ── Univ card — make it clearly clickable ── */
-.univ-card { cursor: pointer; }
-.univ-card-head { padding: 12px 14px; }
-.univ-name { font-size: 13px; }
-.univ-hint { font-size: 9px; color: var(--text-muted); margin-top: 2px; letter-spacing:.03em; }
+/* Results table (shared) */
+.res-table{width:100%;border-collapse:collapse;font-size:12px}
+.res-table thead th{padding:7px 12px;background:var(--bg);border-bottom:2px solid var(--border);text-align:left;font-size:10px;letter-spacing:.06em;color:var(--text-muted);text-transform:uppercase;white-space:nowrap}
+.res-table tbody tr{border-bottom:1px solid var(--border-light);transition:background .1s}
+.res-table tbody tr:hover{background:#faf8f4}
+.res-table td{padding:8px 12px;vertical-align:middle}
+.stag{display:inline-block;padding:1px 7px;border-radius:2px;font-size:10px;white-space:nowrap}
+.etag{display:inline-block;padding:1px 6px;border-radius:2px;font-size:10px}
+.etag-new{background:#e8f0f8;color:#2c4a8a}
+.etag-hist{background:#f0ede6;color:#9a9590}
 
+.no-data{padding:2rem;text-align:center;color:var(--text-muted);font-size:12px}
+.loading{padding:3rem;text-align:center;color:var(--text-muted);font-size:12px}
+
+@media(max-width:680px){
+  header,main{padding-left:1.2rem;padding-right:1.2rem}
+  .filter-bar{padding-left:1.2rem;padding-right:1.2rem}
+  .univ-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
+}
 </style>
 </head>
 <body>
 
 <header>
-  <div class="header-left">
-    <h1>合格実绩</h1>
-    <div class="sub">唯新教育 · 文科大学院</div>
+  <div>
+    <div class="h-title">合格実绩</div>
+    <div class="h-sub">唯新教育 · 文科大学院</div>
   </div>
-  <div class="header-stats">
-    <div class="stat-item">
+  <div class="h-stats">
+    <div style="text-align:right">
       <div class="stat-num" id="stat-total">—</div>
-      <div class="stat-label">合格件数</div>
+      <div class="stat-lbl">合格件数</div>
     </div>
-    <div class="stat-item">
+    <div style="text-align:right">
       <div class="stat-num" id="stat-univs">—</div>
-      <div class="stat-label">合格大学数</div>
+      <div class="stat-lbl">合格大学数</div>
     </div>
   </div>
 </header>
 
 <div class="filter-bar">
-  <!-- Row 1: Era + Tier + Subject -->
   <div class="filter-row">
-    <span class="filter-label">年份</span>
+    <span class="flbl">年份</span>
     <div class="seg" id="era-seg">
       <button class="active" onclick="setEra('all')">全部</button>
       <button onclick="setEra('new')">2025–2026</button>
       <button onclick="setEra('hist')">2022–2024</button>
     </div>
-    <span class="filter-label" style="margin-left:8px">层次</span>
+    <span class="flbl" style="margin-left:6px">层次</span>
     <div class="seg" id="tier-seg">
       <button class="active" onclick="setTier(0)">全部</button>
       <button onclick="setTier(1)">T1</button>
       <button onclick="setTier(2)">T2</button>
       <button onclick="setTier(3)">T3</button>
     </div>
-    <span class="filter-label" style="margin-left:8px">学科</span>
+    <span class="flbl" style="margin-left:6px">学科</span>
     <div class="pill-row" id="subj-pills"></div>
   </div>
-
-  <!-- Row 2: Score filters -->
   <div class="filter-row">
-    <span class="filter-label">语言成绩</span>
+    <span class="flbl">成绩</span>
     <div class="score-filters">
-      <div class="score-group">
+      <div class="sg">
         <label>JLPT</label>
-        <div class="jlpt-toggles" id="jlpt-btns">
-          <button class="jlpt-btn active" onclick="toggleJlpt('all')">全部</button>
-          <button class="jlpt-btn" onclick="toggleJlpt('N1')">N1</button>
-          <button class="jlpt-btn" onclick="toggleJlpt('N2')">N2</button>
+        <div class="jlpt-row" id="jlpt-btns">
+          <button class="jbtn active" onclick="setJlpt('all')">全部</button>
+          <button class="jbtn" onclick="setJlpt('N1')">N1</button>
+          <button class="jbtn" onclick="setJlpt('N2')">N2</button>
         </div>
       </div>
-      <div class="score-group">
-        <label>JLPT点数 ≥</label>
-        <select id="jlpt-score-min" onchange="applyFilters()">
+      <div class="sg">
+        <label>JLPT点数≥</label>
+        <select id="jmin" onchange="applyFilters()">
           <option value="0">不限</option>
           <option value="100">100+</option>
           <option value="110">110+</option>
@@ -336,14 +211,14 @@ main { padding: 1.5rem 3rem 4rem; }
           <option value="170">170+</option>
         </select>
       </div>
-      <div class="score-group">
-        <label>TOEIC 区間</label>
+      <div class="sg">
+        <label>TOEIC</label>
         <select id="toeic-min" onchange="applyFilters()">
           <option value="0">不限</option>
-          <option value="500">500–599</option>
-          <option value="600">600–699</option>
-          <option value="700">700–799</option>
-          <option value="800">800–899</option>
+          <option value="500">500+</option>
+          <option value="600">600+</option>
+          <option value="700">700+</option>
+          <option value="800">800+</option>
           <option value="900">900+</option>
         </select>
         <select id="toeic-max" onchange="applyFilters()">
@@ -354,14 +229,14 @@ main { padding: 1.5rem 3rem 4rem; }
           <option value="899">〜899</option>
         </select>
       </div>
-      <div class="score-group">
-        <label>TOEFL 区間</label>
+      <div class="sg">
+        <label>TOEFL</label>
         <select id="toefl-min" onchange="applyFilters()">
           <option value="0">不限</option>
-          <option value="60">60–69</option>
-          <option value="70">70–79</option>
-          <option value="80">80–89</option>
-          <option value="90">90–99</option>
+          <option value="60">60+</option>
+          <option value="70">70+</option>
+          <option value="80">80+</option>
+          <option value="90">90+</option>
           <option value="100">100+</option>
         </select>
         <select id="toefl-max" onchange="applyFilters()">
@@ -374,10 +249,8 @@ main { padding: 1.5rem 3rem 4rem; }
       </div>
     </div>
   </div>
-
-  <!-- Row 3: Sort -->
   <div class="filter-row">
-    <span class="filter-label">排序</span>
+    <span class="flbl">排序</span>
     <div class="sort-row">
       <div class="seg" id="sort-seg">
         <button class="active" onclick="setSort('default')">默认</button>
@@ -385,612 +258,617 @@ main { padding: 1.5rem 3rem 4rem; }
         <button onclick="setSort('toeic')">TOEIC</button>
         <button onclick="setSort('toefl')">TOEFL</button>
       </div>
-      <button class="sort-dir-btn" id="sort-dir-btn" onclick="toggleSortDir()">↓</button>
+      <button class="sdbtn" id="sort-dir-btn" onclick="toggleSortDir()">↓</button>
     </div>
   </div>
 </div>
 
-<main id="main"><div class="loading">読み込み中...</div></main>
-
+<main id="main">
+  <div class="view-tabs">
+    <button class="vtab active" onclick="setGroupBy('tier')">学校別（層次）</button>
+    <button class="vtab" onclick="setGroupBy('subject')">学科別</button>
+    <button class="vtab" onclick="setGroupBy('era')">年度別</button>
+  </div>
+  <div id="content"><div class="loading">読み込み中...</div></div>
+</main>
 
 <script>
-// ─── State ───────────────────────────────────────────────────────────────────
-let allData = [];
-let curEra = 'all';
-let curTier = 0;
-let activeSubjs = new Set(['shakai','fukushi','shinpan','keizai','keiei','kyoiku','hougaku','seiji','bungaku','rekishi','hyosho','nihongo','shinri','other']);
-let curJlpt = 'all';
-let curSort = 'default';
-let sortDir = -1; // -1 = desc, 1 = asc
-let expandedUnivs = new Set();
-let univDetailSort = {}; // univName → sort key
+// ─── Univ name normalization ─────────────────────────────────────────────────
+// Maps variant spellings → canonical Japanese name
+const UNIV_NORM = {
+  // 早稲田
+  '早稻田大学':'早稲田大学',
+  // 慶應
+  '庆应义塾大学':'慶應義塾大学',
+  '慶応義塾大学':'慶應義塾大学',
+  // 一橋
+  '一桥大学':'一橋大学',
+  // 大阪
+  '大阪大学':'大阪大学',
+  // 東京
+  '东京大学':'東京大学',
+  // 京都
+  '京都大学':'京都大学',
+  // 名古屋
+  '名古屋大学':'名古屋大学',
+  // 九州
+  '九州大学':'九州大学',
+  // 東北
+  '东北大学':'東北大学',
+  // 北海道
+  '北海道大学':'北海道大学',
+  // 筑波
+  '筑波大学':'筑波大学',
+  // 東京科学/工業
+  '东京科学大学':'東京科学大学',
+  '东京工业大学':'東京科学大学',
+  '東京工業大学':'東京科学大学',
+  // 御茶水
+  '御茶水女子大学':'お茶の水女子大学',
+  // 上智
+  '上智大学':'上智大学',
+  // 横浜国立
+  '横滨国立大学':'横浜国立大学',
+  // 横浜市立
+  '横滨市立大学':'横浜市立大学',
+  '横濱市立大学':'横浜市立大学',
+  // 神戸
+  '神户大学':'神戸大学',
+  // 千葉
+  '千叶大学':'千葉大学',
+  '千葉大学':'千葉大学',
+  // 埼玉
+  '埼玉大学':'埼玉大学',
+  // 東京都立
+  '东京都立大学':'東京都立大学',
+  // 東京外国語
+  '东京外国语大学':'東京外国語大学',
+  // 広島
+  '广岛大学':'広島大学',
+  '広島大学':'広島大学',
+  // 広島市立
+  '广岛市立大学':'広島市立大学',
+  // 弘前
+  '弘前大学':'弘前大学',
+  // 金沢
+  '金沢大学':'金沢大学',
+  '金泽大学':'金沢大学',
+  // 神奈川
+  '神奈川大学':'神奈川大学',
+  // 愛知県立
+  '爱知县立大学':'愛知県立大学',
+  // 静岡県立
+  '静冈县立大学':'静岡県立大学',
+  // 大阪公立
+  '大阪公立大学':'大阪公立大学',
+  '大阪府立大学':'大阪公立大学',
+  // 法政
+  '法政大学':'法政大学',
+  // 明治
+  '明治大学':'明治大学',
+  // 青山学院
+  '青山学院大学':'青山学院大学',
+  '青山学院大学ABS':'青山学院大学',
+  // 立教
+  '立教大学':'立教大学',
+  // 中央
+  '中央大学':'中央大学',
+  // 関西
+  '关西大学':'関西大学',
+  '関西大学':'関西大学',
+  // 関西学院
+  '关西学院大学':'関西学院大学',
+  // 同志社
+  '同志社大学':'同志社大学',
+  // 立命館
+  '立命馆大学':'立命館大学',
+  '立命館大学':'立命館大学',
+  '立命馆大学MBA':'立命館大学',
+  '立命館大学MBA':'立命館大学',
+  // 東洋
+  '东洋大学':'東洋大学',
+  // 駒沢
+  '驹泽大学':'駒沢大学',
+  // 日本
+  '日本大学':'日本大学',
+  // 武蔵
+  '武藏大学':'武蔵大学',
+  '武蔵大学':'武蔵大学',
+  // 武蔵野
+  '武藏野大学':'武蔵野大学',
+  '武蔵野大学':'武蔵野大学',
+  // 成蹊
+  '成蹊大学':'成蹊大学',
+  // 甲南女子
+  '甲南女子大学':'甲南女子大学',
+  // 東京女子
+  '东京女子大学':'東京女子大学',
+  // 日本女子
+  '日本女子大学':'日本女子大学',
+  // 共立女子
+  '共立女子大学':'共立女子大学',
+  // 都留文科
+  '都留文科大学':'都留文科大学',
+  // 立正
+  '立正大学':'立正大学',
+  // 成城
+  '成城大学':'成城大学',
+  // 日本経済
+  '日本经济大学':'日本経済大学',
+  // 桃山学院
+  '桃山学院大学':'桃山学院大学',
+  // 大正
+  '大正大学':'大正大学',
+  // 目白
+  '目白大学':'目白大学',
+  '目白大学 ':'目白大学',
+  // 淑徳
+  '淑德大学':'淑徳大学',
+  // 城西国際
+  '城西国际大学':'城西国際大学',
+  // 城西
+  '城西大学':'城西大学',
+  // 拓殖
+  '拓殖大学':'拓殖大学',
+  // 桜美林
+  '樱美林大学':'桜美林大学',
+  // 国士舘
+  '国士馆大学':'国士舘大学',
+  // 大東文化
+  '大东文化大学':'大東文化大学',
+  '大东文化大学大学院':'大東文化大学',
+  '大東文化大学大学院':'大東文化大学',
+  // 二松学舎
+  '二松学舎大学':'二松学舎大学',
+  // 流通科学
+  '流通科学大学':'流通科学大学',
+  // 多摩
+  '多摩大学':'多摩大学',
+  // 宇都宮
+  '宇都宫大学':'宇都宮大学',
+  // 高知県立
+  '高知县立大学':'高知県立大学',
+  // 鹿児島
+  '鹿児島大学':'鹿児島大学',
+  // 北陸先端
+  '北陆先端科学技术大学院大学':'北陸先端科学技術大学院大学',
+  // 聖心女子
+  '聖心女子大学':'聖心女子大学',
+  // 神奈川大学
+  '神奈川大学研究生':'神奈川大学',
+  // 法政大学研究生
+  '法政大学研究生':'法政大学',
+  // 上智大学（研究生）
+  '上智大学（研究生）':'上智大学',
+  // 慶應義塾大学・明治大学 → 慶應義塾大学 (use first)
+  '慶應義塾大学・明治大学':'慶應義塾大学',
+  // 大阪大学・慶應 → 大阪大学
+  '大阪大学・慶應':'大阪大学',
+};
 
-const SUBJ_META = [
-  { id:'shakai',   label:'社会学',         cls:'pill-shakai'   },
-  { id:'fukushi',  label:'社会福祉',        cls:'pill-fukushi'  },
-  { id:'shinpan',  label:'新聞伝播',        cls:'pill-shinpan'  },
-  { id:'keizai',   label:'経済学',          cls:'pill-keizai'   },
-  { id:'keiei',    label:'経営学',          cls:'pill-keiei'    },
-  { id:'kyoiku',   label:'教育学',          cls:'pill-kyoiku'   },
-  { id:'hougaku',  label:'法学',            cls:'pill-hougaku'  },
-  { id:'seiji',    label:'政治学/国際',     cls:'pill-seiji'    },
-  { id:'bungaku',  label:'文学',            cls:'pill-bungaku'  },
-  { id:'rekishi',  label:'歴史学',          cls:'pill-rekishi'  },
-  { id:'hyosho',   label:'表象文化',        cls:'pill-hyosho'   },
-  { id:'nihongo',  label:'日本語教育',      cls:'pill-nihongo'  },
-  { id:'shinri',   label:'心理学',          cls:'pill-shinri'   },
-  { id:'other',    label:'その他',          cls:'pill-other'    },
-];
+function normUniv(u) {
+  if (!u) return u;
+  return UNIV_NORM[u.trim()] || u.trim();
+}
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://vwntezfvqbrkeovnseku.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
+
+const SUBJ_COLOR = {
+  shakai:  {bg:'#ddeaf8',fg:'#1a3a6a'},
+  fukushi: {bg:'#ddf0e8',fg:'#1a4a30'},
+  shinpan: {bg:'#ece4f8',fg:'#3a2a7a'},
+  keizai:  {bg:'#faecd8',fg:'#5a3010'},
+  keiei:   {bg:'#f8e8e0',fg:'#6a2820'},
+  kyoiku:  {bg:'#e8f4e4',fg:'#1a4818'},
+  hougaku: {bg:'#f0e8f4',fg:'#4a1a6a'},
+  seiji:   {bg:'#e4eef8',fg:'#1a3060'},
+  bungaku: {bg:'#f8f0e0',fg:'#5a4010'},
+  rekishi: {bg:'#f4ede0',fg:'#6a3800'},
+  hyosho:  {bg:'#fce8f0',fg:'#6a1a40'},
+  nihongo: {bg:'#e4f4f0',fg:'#0a4038'},
+  shinri:  {bg:'#faf0e8',fg:'#603018'},
+  other:   {bg:'#eeecea',fg:'#3a3830'},
+};
 const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学/国際',bungaku:'文学',rekishi:'歴史学',hyosho:'表象文化',nihongo:'日本語教育',shinri:'心理学',other:'その他'};
+const SUBJ_META = [
+  {id:'shakai',label:'社会学'},{id:'fukushi',label:'社会福祉'},{id:'shinpan',label:'新聞伝播'},
+  {id:'keizai',label:'経済学'},{id:'keiei',label:'経営学'},{id:'kyoiku',label:'教育学'},
+  {id:'hougaku',label:'法学'},{id:'seiji',label:'政治学/国際'},{id:'bungaku',label:'文学'},
+  {id:'rekishi',label:'歴史学'},{id:'hyosho',label:'表象文化'},{id:'nihongo',label:'日本語教育'},
+  {id:'shinri',label:'心理学'},{id:'other',label:'その他'},
+];
+const TIERS = {1:{label:'T1',name:'旧帝・一橋・東科大 ＋ 早慶上智'},2:{label:'T2',name:'G-MARCH・関関同立 ＋ 地方国公立'},3:{label:'T3',name:'日駒東専 ＋ 重点女子大・地方私立'}};
+const T1_UNIVS = ['東京大学','京都大学','大阪大学','名古屋大学','九州大学','東北大学','北海道大学','一橋大学','東京科学大学','早稲田大学','慶應義塾大学','上智大学','お茶の水女子大学','筑波大学'];
+const T2_UNIVS = ['法政大学','明治大学','青山学院大学','立教大学','中央大学','学習院大学','関西大学','関西学院大学','同志社大学','立命館大学','横浜国立大学','横浜市立大学','神戸大学','千葉大学','埼玉大学','東京都立大学','東京外国語大学','金沢大学','広島大学','弘前大学','愛知県立大学','大阪公立大学','静岡県立大学','神奈川大学','広島市立大学'];
 
-// ─── Boot ────────────────────────────────────────────────────────────────────
+function tierOf(univ) {
+  const u = normUniv(univ);
+  if (T1_UNIVS.includes(u)) return 1;
+  if (T2_UNIVS.includes(u)) return 2;
+  return 3;
+}
+
+// ─── Supabase ─────────────────────────────────────────────────────────────────
+async function fetchAllResults() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/admission_results?select=*&order=created_at.desc`, {
+    headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let allData = [];
+let curEra = 'all', curTier = 0, curJlpt = 'all';
+let curSort = 'default', sortDir = -1;
+let curGroup = 'tier';
+let activeSubjs = new Set(SUBJ_META.map(s=>s.id));
+let openUniv = null;
+let dpSortKey = 'default';
+let tierCollapsed = {};
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
   buildPills();
-
-  // Event delegation for univ card clicks
-  document.getElementById('main').addEventListener('click', e => {
-    const card = e.target.closest('.univ-card[data-univ]');
-    if (card) openModal(card.dataset.univ);
-  });
-
   try {
-    allData = await fetchAllResults();
+    const raw = await fetchAllResults();
+    // Normalize univ names
+    allData = raw.map(r => ({...r, univ: normUniv(r.univ)}));
     applyFilters();
   } catch(e) {
-    document.getElementById('main').innerHTML = `<div class="loading" style="color:#c00">データ読み込みエラー: ${e.message}<br><small>Supabaseの設定を確認してください</small></div>`;
+    document.getElementById('content').innerHTML =
+      `<div class="loading" style="color:#c00">エラー: ${e.message}</div>`;
   }
 });
 
-// ─── Pills ───────────────────────────────────────────────────────────────────
+// ─── Pills ────────────────────────────────────────────────────────────────────
 function buildPills() {
-  const container = document.getElementById('subj-pills');
-  container.innerHTML = SUBJ_META.map(s => {
+  document.getElementById('subj-pills').innerHTML = SUBJ_META.map(s => {
     const c = SUBJ_COLOR[s.id];
     return `<button class="pill active" id="pill-${s.id}"
       style="background:${c.bg};color:${c.fg};border-color:${c.fg}"
       onclick="toggleSubj('${s.id}')">${s.label}</button>`;
   }).join('');
 }
-
 function toggleSubj(id) {
-  if (activeSubjs.has(id) && activeSubjs.size === 1) return;
-  if (activeSubjs.has(id)) activeSubjs.delete(id); else activeSubjs.add(id);
-  document.getElementById(`pill-${id}`)?.classList.toggle('active', activeSubjs.has(id));
+  if (activeSubjs.has(id) && activeSubjs.size===1) return;
+  activeSubjs.has(id) ? activeSubjs.delete(id) : activeSubjs.add(id);
+  document.getElementById('pill-'+id)?.classList.toggle('active', activeSubjs.has(id));
   applyFilters();
 }
 
-// ─── Filter controls ─────────────────────────────────────────────────────────
-function setEra(e) {
-  curEra = e;
-  document.querySelectorAll('#era-seg button').forEach((b,i) =>
-    b.classList.toggle('active', ['all','new','hist'][i] === e));
+// ─── Controls ─────────────────────────────────────────────────────────────────
+function setEra(e){curEra=e;document.querySelectorAll('#era-seg button').forEach((b,i)=>b.classList.toggle('active',['all','new','hist'][i]===e));applyFilters()}
+function setTier(t){curTier=t;document.querySelectorAll('#tier-seg button').forEach((b,i)=>b.classList.toggle('active',i===t));applyFilters()}
+function setJlpt(v){curJlpt=v;document.querySelectorAll('#jlpt-btns .jbtn').forEach(b=>b.classList.toggle('active',b.textContent.trim()===v||(v==='all'&&b.textContent==='全部')));applyFilters()}
+function setSort(s){curSort=s;document.querySelectorAll('#sort-seg button').forEach((b,i)=>b.classList.toggle('active',['default','jlpt_score','toeic','toefl'][i]===s));applyFilters()}
+function toggleSortDir(){sortDir*=-1;document.getElementById('sort-dir-btn').textContent=sortDir===-1?'↓':'↑';applyFilters()}
+function setGroupBy(g){
+  curGroup=g;openUniv=null;dpSortKey='default';
+  document.querySelectorAll('.vtab').forEach((b,i)=>b.classList.toggle('active',['tier','subject','era'][i]===g));
   applyFilters();
 }
 
-function setTier(t) {
-  curTier = t;
-  document.querySelectorAll('#tier-seg button').forEach((b,i) =>
-    b.classList.toggle('active', i === t));
-  applyFilters();
-}
-
-function toggleJlpt(v) {
-  curJlpt = v;
-  document.querySelectorAll('#jlpt-btns .jlpt-btn').forEach(b =>
-    b.classList.toggle('active', b.textContent.trim() === v || (v==='all' && b.textContent==='全部')));
-  applyFilters();
-}
-
-function setSort(s) {
-  curSort = s;
-  document.querySelectorAll('#sort-seg button').forEach((b,i) =>
-    b.classList.toggle('active', ['default','jlpt_score','toeic','toefl'][i] === s));
-  applyFilters();
-}
-
-function toggleSortDir() {
-  sortDir *= -1;
-  document.getElementById('sort-dir-btn').textContent = sortDir === -1 ? '↓' : '↑';
-  applyFilters();
-}
-
-// ─── Filter + sort ───────────────────────────────────────────────────────────
-function applyFilters() {
-  const jlptScoreMin = parseInt(document.getElementById('jlpt-score-min').value);
-  const toeicMin = parseInt(document.getElementById('toeic-min').value);
-  const toeicMax = parseInt(document.getElementById('toeic-max').value);
-  const toeflMin = parseInt(document.getElementById('toefl-min').value);
-  const toeflMax = parseInt(document.getElementById('toefl-max').value);
-
-  let data = allData.filter(r => {
-    if (curEra !== 'all' && r.era !== curEra) return false;
-    if (!activeSubjs.has(r.subject || 'other')) return false;
-    if (curTier !== 0 && (r.tier || tierOf(r.univ)) !== curTier) return false;
-    if (curJlpt !== 'all' && r.jlpt !== curJlpt) return false;
-    if (jlptScoreMin > 0 && (!r.jlpt_score || r.jlpt_score < jlptScoreMin)) return false;
-    if (r.eng_type === 'TOEIC' && r.eng_score) {
-      if (toeicMin > 0 && r.eng_score < toeicMin) return false;
-      if (toeicMax < 9999 && r.eng_score > toeicMax) return false;
-    }
-    if (r.eng_type === 'TOEFL' && r.eng_score) {
-      if (toeflMin > 0 && r.eng_score < toeflMin) return false;
-      if (toeflMax < 999 && r.eng_score > toeflMax) return false;
-    }
+// ─── Filter ───────────────────────────────────────────────────────────────────
+function filtered() {
+  const jmin=parseInt(document.getElementById('jmin').value);
+  const tmin=parseInt(document.getElementById('toeic-min').value);
+  const tmax=parseInt(document.getElementById('toeic-max').value);
+  const fmin=parseInt(document.getElementById('toefl-min').value);
+  const fmax=parseInt(document.getElementById('toefl-max').value);
+  return allData.filter(r=>{
+    if (curEra!=='all' && r.era!==curEra) return false;
+    if (!activeSubjs.has(r.subject||'other')) return false;
+    if (curTier!==0 && (r.tier||tierOf(r.univ))!==curTier) return false;
+    if (curJlpt!=='all' && r.jlpt!==curJlpt) return false;
+    if (jmin>0 && (!r.jlpt_score||r.jlpt_score<jmin)) return false;
+    if (r.eng_type==='TOEIC'&&r.eng_score){if(tmin>0&&r.eng_score<tmin)return false;if(tmax<9999&&r.eng_score>tmax)return false}
+    if (r.eng_type==='TOEFL'&&r.eng_score){if(fmin>0&&r.eng_score<fmin)return false;if(fmax<999&&r.eng_score>fmax)return false}
     return true;
   });
-
-  // Global sort (affects order within each univ)
-  if (curSort !== 'default') {
-    data = sortRows(data, curSort, sortDir);
-  }
-
-  updateStats(data);
-  renderTiers(data);
 }
 
 function sortRows(rows, key, dir) {
-  return [...rows].sort((a, b) => {
-    let av, bv;
-    if (key === 'jlpt_score') { av = a.jlpt_score || 0; bv = b.jlpt_score || 0; }
-    else if (key === 'toeic') { av = a.eng_type==='TOEIC' ? (a.eng_score||0) : 0; bv = b.eng_type==='TOEIC' ? (b.eng_score||0) : 0; }
-    else if (key === 'toefl') { av = a.eng_type==='TOEFL' ? (a.eng_score||0) : 0; bv = b.eng_type==='TOEFL' ? (b.eng_score||0) : 0; }
-    else return 0;
-    return (bv - av) * dir * -1;  // desc = high first when dir=-1
+  return [...rows].sort((a,b)=>{
+    let av=0,bv=0;
+    if(key==='jlpt_score'){av=a.jlpt_score||0;bv=b.jlpt_score||0}
+    else if(key==='toeic'){av=a.eng_type==='TOEIC'?(a.eng_score||0):0;bv=b.eng_type==='TOEIC'?(b.eng_score||0):0}
+    else if(key==='toefl'){av=a.eng_type==='TOEFL'?(a.eng_score||0):0;bv=b.eng_type==='TOEFL'?(b.eng_score||0):0}
+    return (bv-av)*dir*-1;
   });
 }
 
-function updateStats(data) {
+// ─── Apply + render ───────────────────────────────────────────────────────────
+function applyFilters() {
+  let data = filtered();
+  if (curSort!=='default') data = sortRows(data, curSort, sortDir);
   document.getElementById('stat-total').textContent = data.length;
-  document.getElementById('stat-univs').textContent = new Set(data.map(d => d.univ)).size;
+  document.getElementById('stat-univs').textContent = new Set(data.map(d=>d.univ)).size;
+
+  const content = document.getElementById('content');
+  // Keep view-tabs
+  if (curGroup==='tier') content.innerHTML = renderTierView(data);
+  else if (curGroup==='subject') content.innerHTML = renderSubjectView(data);
+  else content.innerHTML = renderEraView(data);
+
+  // Re-attach open panel if univ still exists
+  if (openUniv) {
+    const rows = data.filter(r=>r.univ===openUniv);
+    if (rows.length) openDetailPanel(openUniv, rows, false);
+  }
 }
 
-// ─── Render ───────────────────────────────────────────────────────────────────
-function renderTiers(data) {
-  // Group by tier → univ (use tier from first record per univ, then auto)
-  // First pass: determine canonical tier per univ
+// ─── Tier view ────────────────────────────────────────────────────────────────
+function renderTierView(data) {
+  // Group by tier→univ (canonical tier per univ)
   const univTierMap = {};
   for (const r of data) {
-    if (!univTierMap[r.univ]) {
-      univTierMap[r.univ] = r.tier || tierOf(r.univ);
-    }
+    if (!univTierMap[r.univ]) univTierMap[r.univ] = r.tier||tierOf(r.univ);
   }
-  // Second pass: group using canonical tier
-  const tiers = { 1: {}, 2: {}, 3: {} };
+  const tiers = {1:{},2:{},3:{}};
   for (const r of data) {
     const t = univTierMap[r.univ];
     if (!tiers[t][r.univ]) tiers[t][r.univ] = [];
     tiers[t][r.univ].push(r);
   }
 
-  const main = document.getElementById('main');
-  if (!data.length) {
-    main.innerHTML = '<div class="no-data">条件に該当するデータがありません</div>';
-    return;
-  }
-
   let html = '';
-  for (const t of [1, 2, 3]) {
+  for (const t of [1,2,3]) {
     const univs = Object.keys(tiers[t]);
     if (!univs.length) continue;
-    const total = univs.reduce((s, u) => s + tiers[t][u].length, 0);
-    const tierColors = { 1: 'var(--t1)', 2: 'var(--t2)', 3: 'var(--t3)' };
+    const total = univs.reduce((s,u)=>s+tiers[t][u].length,0);
+    const col = ['','var(--t1)','var(--t2)','var(--t3)'][t];
+    const collapsed = tierCollapsed[t];
 
-    html += `<div class="tier-section tier-${t}" id="tier-block-${t}">`;
-    html += `<div class="tier-header" onclick="toggleTier(${t})">
-      <span class="tier-badge">${TIERS[t].label}</span>
-      <span class="tier-name">${TIERS[t].name}</span>
-      <span class="tier-count">${total} 件 · ${univs.length} 校</span>
-      <span class="tier-toggle" id="tier-toggle-${t}">▼</span>
-    </div>`;
-    html += `<div class="tier-body" id="tier-body-${t}">`;
+    html += `<div class="tier-section t${t}" id="tsec-${t}">
+      <div class="tier-hdr" onclick="toggleTierSection(${t})">
+        <span class="tbadge">${TIERS[t].label}</span>
+        <span class="tname">${TIERS[t].name}</span>
+        <span class="tcount">${total} 件 · ${univs.length} 校</span>
+        <span class="ttoggle" id="ttoggle-${t}">${collapsed?'▶':'▼'}</span>
+      </div>
+      <div id="tbody-${t}" style="${collapsed?'display:none':''}">`;
+
+    // Detail panel slot (before grid, so it appears above)
+    html += `<div id="dp-slot-${t}"></div>`;
+
     html += `<div class="univ-grid">`;
-
-    // Sort univs by count desc
-    univs.sort((a, b) => tiers[t][b].length - tiers[t][a].length);
+    univs.sort((a,b)=>tiers[t][b].length-tiers[t][a].length);
     for (const u of univs) {
-      html += buildUnivCard(u, tiers[t][u], tierColors[t]);
+      const rows = tiers[t][u];
+      const subjCounts = {};
+      for (const r of rows) subjCounts[r.subject||'other']=(subjCounts[r.subject||'other']||0)+1;
+      const barSegs = Object.entries(subjCounts).map(([s,cnt])=>{
+        const w=Math.round(cnt/rows.length*100);
+        return `<div class="subj-seg" style="width:${w}%;background:${SUBJ_COLOR[s]?.fg||'#999'}"></div>`;
+      }).join('');
+      const topSubjs = Object.entries(subjCounts).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([s])=>SUBJ_LABEL[s]||s).join('・');
+      const isOpen = openUniv===u;
+      const safeU = u.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+      html += `<div class="ucard${isOpen?' ucard-open':''}" data-univ="${safeU}" data-tier="${t}" style="${isOpen?'border-color:var(--accent)':''}">
+        <div class="ucard-head">
+          <div class="ucard-name">${u}</div>
+          <div class="ucard-cnt" style="color:${col}">${rows.length}</div>
+        </div>
+        <div class="ucard-bar">${barSegs}</div>
+        <div class="ucard-sub">${topSubjs}</div>
+      </div>`;
     }
     html += `</div></div></div>`;
   }
-
-  main.innerHTML = html;
-
-
+  return html || '<div class="no-data">条件に該当するデータがありません</div>';
 }
 
-function buildUnivCard(univ, rows, accentColor) {
-  const subjCounts = {};
-  for (const r of rows) subjCounts[r.subject || 'other'] = (subjCounts[r.subject||'other']||0) + 1;
-  const barSegs = Object.entries(subjCounts).map(([s, cnt]) => {
-    const w = Math.round(cnt / rows.length * 100);
-    return `<div class="subj-seg" style="width:${w}%;background:${SUBJ_COLOR[s]?.fg||'#999'}"></div>`;
+// ─── Subject view ─────────────────────────────────────────────────────────────
+function renderSubjectView(data) {
+  const groups = {};
+  for (const r of data) {
+    const s = r.subject||'other';
+    if (!groups[s]) groups[s]=[];
+    groups[s].push(r);
+  }
+  const order = SUBJ_META.map(s=>s.id).filter(s=>groups[s]);
+  if (!order.length) return '<div class="no-data">条件に該当するデータがありません</div>';
+
+  return order.map(s => {
+    const rows = groups[s];
+    const c = SUBJ_COLOR[s];
+    // Group by univ within subject
+    const univMap = {};
+    for (const r of rows) { if(!univMap[r.univ])univMap[r.univ]=[]; univMap[r.univ].push(r); }
+    const univs = Object.keys(univMap).sort((a,b)=>univMap[b].length-univMap[a].length);
+
+    let html = `<div class="subj-section">
+      <div class="subj-hdr" style="background:${c.bg};border:1px solid ${c.fg}"
+           onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'">
+        <span style="font-size:11px;font-weight:500;color:${c.fg}">${SUBJ_LABEL[s]}</span>
+        <span class="subj-count">${rows.length} 件 · ${univs.length} 校</span>
+        <span style="font-size:10px;color:${c.fg}">▼</span>
+      </div>
+      <div>
+        <div style="overflow-x:auto">
+        <table class="res-table">
+          <thead><tr>
+            <th>大学名</th><th>研究科</th><th>専攻</th>
+            <th>JLPT</th><th>英語</th><th>年度</th>
+          </tr></thead>
+          <tbody>`;
+    let sorted = [...rows];
+    if (curSort!=='default') sorted=sortRows(sorted,curSort,sortDir);
+    for (const r of sorted) {
+      html += buildTableRow(r);
+    }
+    html += `</tbody></table></div></div></div>`;
+    return html;
+  }).join('');
+}
+
+// ─── Era view ─────────────────────────────────────────────────────────────────
+function renderEraView(data) {
+  const newRows = data.filter(r=>r.era==='new');
+  const histRows = data.filter(r=>r.era==='hist');
+
+  function eraBlock(rows, cls, label, color) {
+    if (!rows.length) return '';
+    let sorted = [...rows];
+    if (curSort!=='default') sorted=sortRows(sorted,curSort,sortDir);
+    return `<div class="era-section ${cls}">
+      <div class="era-hdr">
+        <span style="font-size:11px;font-weight:600;color:${color}">${label}</span>
+        <span style="font-size:10px;color:var(--text-muted)">${rows.length} 件</span>
+      </div>
+      <div style="overflow-x:auto">
+      <table class="res-table">
+        <thead><tr><th>大学名</th><th>研究科</th><th>専攻</th><th>学科</th><th>JLPT</th><th>英語</th></tr></thead>
+        <tbody>${sorted.map(r=>buildTableRow(r,true)).join('')}</tbody>
+      </table></div></div>`;
+  }
+  const out = eraBlock(newRows,'era-new','2025–2026 入学','#2c4a8a') +
+              eraBlock(histRows,'era-hist','2022–2024 実绩','#9a9590');
+  return out || '<div class="no-data">条件に該当するデータがありません</div>';
+}
+
+// ─── Shared table row ─────────────────────────────────────────────────────────
+function buildTableRow(r, showSubj=false) {
+  const sc = SUBJ_COLOR[r.subject]||SUBJ_COLOR.other;
+  const jHi = r.jlpt_score&&r.jlpt_score>=150;
+  const jStr = r.jlpt?(r.jlpt_score?`${r.jlpt}-${r.jlpt_score}`:r.jlpt):null;
+  const eHi = r.eng_score&&((r.eng_type==='TOEIC'&&r.eng_score>=800)||(r.eng_type==='TOEFL'&&r.eng_score>=90)||(r.eng_type==='IELTS'&&r.eng_score>=7));
+  const eCls = (r.eng_type||'').toLowerCase();
+  const eraTag = `<span class="etag ${r.era==='new'?'etag-new':'etag-hist'}">${r.era==='new'?'25–26':'22–24'}</span>`;
+  return `<tr>
+    <td style="font-weight:500">${r.univ||'—'}</td>
+    <td style="color:var(--text-secondary)">${r.dept||'—'}</td>
+    <td style="color:var(--text-muted);font-size:11px">${r.spec||'—'}</td>
+    ${showSubj?`<td><span class="stag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[r.subject]||r.subject||'—'}</span></td>`:''}
+    <td>${jStr?`<span class="sbadge jlpt${jHi?' hi':''}">${jStr}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
+    <td>${(r.eng_type&&r.eng_score)?`<span class="sbadge ${eCls}${eHi?' hi':''}">${r.eng_type} ${r.eng_score}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
+    ${!showSubj?`<td>${eraTag}</td>`:''}
+  </tr>`;
+}
+
+// ─── Detail panel (tier view only) ────────────────────────────────────────────
+document.addEventListener('click', e => {
+  if (curGroup!=='tier') return;
+  const card = e.target.closest('.ucard[data-univ]');
+  if (!card) return;
+  const univ = card.dataset.univ;
+  const tier = parseInt(card.dataset.tier);
+  if (openUniv===univ) { closeDetailPanel(); return; }
+  const rows = filtered().filter(r=>r.univ===univ);
+  openUniv = univ;
+  dpSortKey = 'default';
+  openDetailPanel(univ, rows, true, tier);
+});
+
+function openDetailPanel(univ, rows, scroll=true, tier) {
+  // Close any existing
+  document.querySelectorAll('.detail-panel').forEach(el=>el.remove());
+  // Mark open card
+  document.querySelectorAll('.ucard').forEach(c=>c.style.borderColor='');
+  const card = document.querySelector(`.ucard[data-univ="${univ.replace(/"/g,'&quot;')}"]`);
+  if (card) { card.style.borderColor='var(--t1)'; tier=tier||parseInt(card.dataset.tier); }
+
+  // Find slot
+  const slot = document.getElementById(`dp-slot-${tier||3}`);
+  if (!slot) return;
+
+  const panel = document.createElement('div');
+  panel.className = 'detail-panel open';
+  panel.id = 'detail-panel-main';
+  panel.innerHTML = buildDetailPanelHTML(univ, rows, tier);
+  slot.after(panel);  // insert after slot (before grid)
+  // Actually insert AFTER the grid for this tier
+  const grid = slot.nextElementSibling;
+  if (grid) grid.after(panel);
+
+  if (scroll) setTimeout(()=>panel.scrollIntoView({behavior:'smooth',block:'nearest'}),50);
+}
+
+function buildDetailPanelHTML(univ, rows, tier) {
+  tier = tier || tierOf(univ);
+  const TCOL = {1:['#e8edf8','#2c4a8a'],2:['#e8f0e4','#3a6630'],3:['#f4ece0','#7a4a20']};
+  const [tbg,tfg] = TCOL[tier]||['#eee','#666'];
+  const TNAMES={1:'T1',2:'T2',3:'T3'};
+
+  const subjCounts={};
+  for(const r of rows) subjCounts[r.subject||'other']=(subjCounts[r.subject||'other']||0)+1;
+  const subjStr=Object.entries(subjCounts).sort((a,b)=>b[1]-a[1])
+    .map(([s,n])=>`<span class="stag" style="background:${SUBJ_COLOR[s]?.bg};color:${SUBJ_COLOR[s]?.fg};margin-right:4px">${SUBJ_LABEL[s]||s} ${n}</span>`).join('');
+
+  let sorted=[...rows];
+  if(dpSortKey!=='default') sorted=sortRows(sorted,dpSortKey,-1);
+
+  const btns=['デフォルト','JLPT↓','TOEIC↓','TOEFL↓'].map((lbl,i)=>{
+    const k=['default','jlpt_score','toeic','toefl'][i];
+    return `<button class="dp-sort-btn${dpSortKey===k?' active':''}" onclick="setDpSort('${k}')">${lbl}</button>`;
   }).join('');
 
-  const topSubjs = Object.entries(subjCounts).sort((a,b)=>b[1]-a[1]).slice(0,2)
-    .map(([s])=>SUBJ_LABEL[s]||s).join('・');
-
-  // Store univ in data attribute to avoid escaping issues
-  const safeUniv = univ.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
-  let h = `<div class="univ-card" data-univ="${safeUniv}">`;
-  h += `<div class="univ-card-head">
-    <div class="univ-name">${univ}</div>
-    <div class="univ-badge" style="color:${accentColor}">${rows.length}</div>
-  </div>`;
-  h += `<div class="univ-subj-bar" style="margin:0 14px 6px">${barSegs}</div>`;
-  h += `<div class="univ-hint" style="padding:0 14px 10px;font-size:9px;color:var(--text-muted)">${topSubjs}</div>`;
-  h += `</div>`;
-  return h;
-}
-
-function buildDetail(univ, rows) {
-  const sortKey = univDetailSort[univ] || 'default';
-  let sorted = [...rows];
-  if (sortKey !== 'default') sorted = sortRows(sorted, sortKey, -1);
-
-  let html = `<div class="detail-inner">`;
-  html += `<div class="detail-sort-bar">
-    <span class="detail-sort-label">ソート:</span>
-    <button class="detail-sort-btn ${sortKey==='default'?'active':''}" onclick="setDetailSort('${univ.replace(/'/g,"\\'")}','default',event)">デフォルト</button>
-    <button class="detail-sort-btn ${sortKey==='jlpt_score'?'active':''}" onclick="setDetailSort('${univ.replace(/'/g,"\\'")}','jlpt_score',event)">JLPT↓</button>
-    <button class="detail-sort-btn ${sortKey==='toeic'?'active':''}" onclick="setDetailSort('${univ.replace(/'/g,"\\'")}','toeic',event)">TOEIC↓</button>
-    <button class="detail-sort-btn ${sortKey==='toefl'?'active':''}" onclick="setDetailSort('${univ.replace(/'/g,"\\'")}','toefl',event)">TOEFL↓</button>
-  </div>`;
-
-  for (const r of sorted) {
-    const sc = SUBJ_COLOR[r.subject] || SUBJ_COLOR.other;
-    const jlptStr = r.jlpt ? (r.jlpt_score ? `${r.jlpt}-${r.jlpt_score}` : r.jlpt) : null;
-    const engStr = (r.eng_type && r.eng_score) ? `${r.eng_type}-${r.eng_score}` : (r.eng_type||null);
-
-    // Highlight high scores
-    const jlptHi = r.jlpt_score && r.jlpt_score >= 150;
-    const engHi = r.eng_score && ((r.eng_type==='TOEIC' && r.eng_score>=800) || (r.eng_type==='TOEFL' && r.eng_score>=90) || (r.eng_type==='IELTS' && r.eng_score>=7));
-
-    html += `<div class="entry-row">
-      <div class="subj-dot" style="background:${sc.fg}"></div>
-      <div class="entry-info">
-        <div class="entry-dept">${r.dept||'—'}</div>
-        ${r.spec ? `<div class="entry-spec">${r.spec}</div>` : ''}
-      </div>
-      <div class="entry-tags">
-        ${jlptStr ? `<span class="score-tag${jlptHi?' hi':''}">${jlptStr}</span>` : ''}
-        ${engStr  ? `<span class="score-tag${engHi?' hi':''}">${engStr}</span>`   : ''}
-        <span class="subj-tag-sm" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[r.subject]||r.subject}</span>
-        <span class="era-tag ${r.era==='new'?'era-new':'era-hist'}">${r.era==='new'?'25–26':'22–24'}</span>
-      </div>
-    </div>`;
-  }
-  html += `</div>`;
-  return html;
-}
-
-// ─── Interactions ─────────────────────────────────────────────────────────────
-function toggleTier(t) {
-  const body = document.getElementById(`tier-body-${t}`);
-  const icon = document.getElementById(`tier-toggle-${t}`);
-  const hidden = body.style.display === 'none';
-  body.style.display = hidden ? '' : 'none';
-  icon.textContent = hidden ? '▼' : '▶';
-}
-
-// ── Modal ────────────────────────────────────────────────────────────────────
-let modalUniv = null;
-let modalSortKey = 'default';
-
-function openModal(univ) {
-  modalUniv = univ;
-  modalSortKey = 'default';
-  document.querySelectorAll('.modal-sort-btn').forEach((b,i) =>
-    b.classList.toggle('active', i === 0));
-  renderModal();
-  document.getElementById('univ-modal').classList.add('show');
-  document.body.style.overflow = 'hidden';
-}
-
-function closeModal() {
-  document.getElementById('univ-modal').classList.remove('show');
-  document.body.style.overflow = '';
-  modalUniv = null;
-}
-
-function handleModalClick(e) {
-  if (e.target === document.getElementById('univ-modal')) closeModal();
-}
-
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
-
-function setModalSort(key, btn) {
-  modalSortKey = key;
-  document.querySelectorAll('.modal-sort-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  renderModal();
-}
-
-function getFilteredRowsForUniv(univ) {
-  const jlptScoreMin = parseInt(document.getElementById('jlpt-score-min').value);
-  const toeicMin = parseInt(document.getElementById('toeic-min').value);
-  const toeicMax = parseInt(document.getElementById('toeic-max').value);
-  const toeflMin = parseInt(document.getElementById('toefl-min').value);
-  const toeflMax = parseInt(document.getElementById('toefl-max').value);
-  return allData.filter(r => {
-    if (r.univ !== univ) return false;
-    if (curEra !== 'all' && r.era !== curEra) return false;
-    if (!activeSubjs.has(r.subject||'other')) return false;
-    if (curJlpt !== 'all' && r.jlpt !== curJlpt) return false;
-    if (jlptScoreMin > 0 && (!r.jlpt_score || r.jlpt_score < jlptScoreMin)) return false;
-    if (r.eng_type === 'TOEIC' && r.eng_score) {
-      if (toeicMin > 0 && r.eng_score < toeicMin) return false;
-      if (toeicMax < 9999 && r.eng_score > toeicMax) return false;
-    }
-    if (r.eng_type === 'TOEFL' && r.eng_score) {
-      if (toeflMin > 0 && r.eng_score < toeflMin) return false;
-      if (toeflMax < 999 && r.eng_score > toeflMax) return false;
-    }
-    return true;
-  });
-}
-
-function renderModal() {
-  if (!modalUniv) return;
-  let rows = getFilteredRowsForUniv(modalUniv);
-
-  // Sort
-  if (modalSortKey !== 'default') rows = sortRows(rows, modalSortKey, -1);
-
-  // Tier
-  const tier = rows[0]?.tier || tierOf(modalUniv);
-  const tierColors = { 1:['#e8edf8','#2c4a8a'], 2:['#e8f0e4','#3a6630'], 3:['#f4ece0','#7a4a20'] };
-  const [tbg, tfg] = tierColors[tier] || ['#eee','#666'];
-  const tierNames = { 1:'T1 旧帝・一橋・東科大・早慶上智', 2:'T2 G-MARCH・関関同立・地方国公立', 3:'T3 日駒東専・女子大・地方私立' };
-
-  document.getElementById('modal-univ-name').textContent = modalUniv;
-  const badge = document.getElementById('modal-tier-badge');
-  badge.textContent = tierNames[tier] || '';
-  badge.style.background = tbg; badge.style.color = tfg;
-
-  // Subject breakdown for stat line
-  const subjCounts = {};
-  for (const r of rows) subjCounts[r.subject||'other'] = (subjCounts[r.subject||'other']||0) + 1;
-  const subjStr = Object.entries(subjCounts).sort((a,b)=>b[1]-a[1])
-    .map(([s,n]) => `${SUBJ_LABEL[s]||s} ${n}`).join('　');
-  document.getElementById('modal-stat').innerHTML =
-    `<strong>${rows.length}</strong> 件　|　${subjStr}`;
-
-  // Table rows
-  const tbody = document.getElementById('modal-tbody');
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text-muted)">データなし</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = rows.map(r => {
-    const sc = SUBJ_COLOR[r.subject] || SUBJ_COLOR.other;
-    const jlptStr = r.jlpt ? (r.jlpt_score ? `${r.jlpt}-${r.jlpt_score}` : r.jlpt) : null;
-    const jlptHi = r.jlpt_score && r.jlpt_score >= 150;
-    const engHi = r.eng_score && (
-      (r.eng_type==='TOEIC' && r.eng_score>=800) ||
-      (r.eng_type==='TOEFL' && r.eng_score>=90) ||
-      (r.eng_type==='IELTS' && r.eng_score>=7)
-    );
-    const engCls = r.eng_type ? r.eng_type.toLowerCase() : '';
-    const eraStyle = r.era==='new'
-      ? 'background:#e8f0f8;color:#2c4a8a'
-      : 'background:#f0ede6;color:#9a9590';
-
+  const rows_html = sorted.map(r=>{
+    const sc=SUBJ_COLOR[r.subject]||SUBJ_COLOR.other;
+    const jHi=r.jlpt_score&&r.jlpt_score>=150;
+    const jStr=r.jlpt?(r.jlpt_score?`${r.jlpt}-${r.jlpt_score}`:r.jlpt):null;
+    const eHi=r.eng_score&&((r.eng_type==='TOEIC'&&r.eng_score>=800)||(r.eng_type==='TOEFL'&&r.eng_score>=90)||(r.eng_type==='IELTS'&&r.eng_score>=7));
+    const eCls=(r.eng_type||'').toLowerCase();
     return `<tr>
-      <td>
-        <div class="dept-cell">${r.dept||'—'}</div>
-      </td>
-      <td>
-        <div class="dept-cell">${r.spec||'—'}</div>
-      </td>
-      <td>
-        <span class="modal-subj-tag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[r.subject]||r.subject||'—'}</span>
-      </td>
-      <td>
-        ${jlptStr
-          ? `<span class="score-badge jlpt${jlptHi?' hi':''}">${jlptStr}</span>`
-          : '<span style="color:var(--text-muted);font-size:11px">—</span>'}
-      </td>
-      <td>
-        ${(r.eng_type && r.eng_score)
-          ? `<span class="score-badge ${engCls}${engHi?' hi':''}">${r.eng_type} ${r.eng_score}</span>`
-          : '<span style="color:var(--text-muted);font-size:11px">—</span>'}
-      </td>
-      <td><span class="modal-era-tag" style="${eraStyle}">${r.era==='new'?'25–26':'22–24'}</span></td>
+      <td style="color:var(--text-secondary)">${r.dept||'—'}</td>
+      <td style="color:var(--text-muted);font-size:11px">${r.spec||'—'}</td>
+      <td><span class="stag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[r.subject]||r.subject||'—'}</span></td>
+      <td>${jStr?`<span class="sbadge jlpt${jHi?' hi':''}">${jStr}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
+      <td>${(r.eng_type&&r.eng_score)?`<span class="sbadge ${eCls}${eHi?' hi':''}">${r.eng_type} ${r.eng_score}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
+      <td><span class="etag ${r.era==='new'?'etag-new':'etag-hist'}">${r.era==='new'?'25–26':'22–24'}</span></td>
     </tr>`;
   }).join('');
-}
-</script>
-<script>
-// ─── results-data.js ─────────────────────────────────────────────────────────
-// Shared between results/index.html and results/admin.html
-// Supabase table: admission_results
-//   id          uuid primary key default gen_random_uuid()
-//   univ        text not null
-//   dept        text
-//   spec        text
-//   student     text
-//   subject     text   -- shakai / fukushi / shinpan / keizai / keiei / kyoiku / other
-//   era         text   -- 'hist' (2022-2024) or 'new' (2025-2026)
-//   jlpt        text   -- e.g. 'N1', 'N2', 'N1-145'
-//   jlpt_score  integer  -- numeric part if present, else null
-//   eng_type    text   -- 'TOEIC','TOEFL','IELTS','EJU','—'
-//   eng_score   integer  -- numeric score, else null
-//   note        text
-//   created_at  timestamptz default now()
-// ─────────────────────────────────────────────────────────────────────────────
 
-const SUPABASE_URL = 'https://vwntezfvqbrkeovnseku.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
-
-// ── Constants ────────────────────────────────────────────────────────────────
-const SUBJECTS = [
-  { id: 'shakai',   label: '社会学',         labelJa: '社会学'         },
-  { id: 'fukushi',  label: '社会福祉',        labelJa: '社会福祉'       },
-  { id: 'shinpan',  label: '新聞伝播',        labelJa: '新聞・メディア' },
-  { id: 'keizai',   label: '経済学',          labelJa: '経済学'         },
-  { id: 'keiei',    label: '経営学',          labelJa: '経営学'         },
-  { id: 'kyoiku',   label: '教育学',          labelJa: '教育学'         },
-  { id: 'hougaku',  label: '法学',            labelJa: '法学'           },
-  { id: 'seiji',    label: '政治学/国際関係', labelJa: '政治学/国際関係'},
-  { id: 'bungaku',  label: '文学',            labelJa: '文学'           },
-  { id: 'rekishi',  label: '歴史学',          labelJa: '歴史学'         },
-  { id: 'hyosho',   label: '表象文化',        labelJa: '表象文化'       },
-  { id: 'nihongo',  label: '日本語教育',      labelJa: '日本語教育'     },
-  { id: 'shinri',   label: '心理学',          labelJa: '心理学'         },
-  { id: 'other',    label: 'その他',          labelJa: 'その他'         },
-];
-
-const SUBJ_COLOR = {
-  shakai:  { bg: '#ddeaf8', fg: '#1a3a6a' },
-  fukushi: { bg: '#ddf0e8', fg: '#1a4a30' },
-  shinpan: { bg: '#ece4f8', fg: '#3a2a7a' },
-  keizai:  { bg: '#faecd8', fg: '#5a3010' },
-  keiei:   { bg: '#f8e8e0', fg: '#6a2820' },
-  kyoiku:  { bg: '#e8f4e4', fg: '#1a4818' },
-  hougaku: { bg: '#f0e8f4', fg: '#4a1a6a' },
-  seiji:   { bg: '#e4eef8', fg: '#1a3060' },
-  bungaku: { bg: '#f8f0e0', fg: '#5a4010' },
-  rekishi: { bg: '#f4ede0', fg: '#6a3800' },
-  hyosho:  { bg: '#fce8f0', fg: '#6a1a40' },
-  nihongo: { bg: '#e4f4f0', fg: '#0a4038' },
-  shinri:  { bg: '#faf0e8', fg: '#603018' },
-  other:   { bg: '#eeecea', fg: '#3a3830' },
-};
-
-// Use DB tier field if set, else auto-detect
-function effectiveTier(r) {
-  return r.tier || tierOf(r.univ);
-}
-
-const TIERS = {
-  1: { label: 'T1', name: '旧帝・一橋・東科大 ＋ 早慶上智' },
-  2: { label: 'T2', name: 'G-MARCH・関関同立 ＋ 地方国公立' },
-  3: { label: 'T3', name: '日駒東専 ＋ 重点女子大・地方私立' },
-};
-
-const T1_UNIVS = ['东京大学','京都大学','大阪大学','名古屋大学','九州大学','东北大学','北海道大学',
-  '一桥大学','一橋大学','东京科学大学','东京工业大学','東京科学大学','東京工業大学',
-  '早稻田大学','早稲田大学','庆应义塾大学','慶應義塾大学','上智大学',
-  '御茶水女子大学','筑波大学'];
-const T2_UNIVS = ['法政大学','明治大学','青山学院大学','立教大学','中央大学','学习院大学','学習院大学',
-  '关西大学','関西大学','关西学院大学','関西学院大学','同志社大学','立命馆大学','立命館大学',
-  '横滨国立大学','横浜国立大学','横滨市立大学','横浜市立大学','神户大学','神戸大学',
-  '埼玉大学','千叶大学','千葉大学','东京都立大学','東京都立大学','金沢大学','金泽大学',
-  '广岛大学','広島大学','弘前大学','爱知县立大学','愛知県立大学','大阪公立大学',
-  '静冈县立大学','静岡県立大学','东京外国语大学','東京外国語大学','神奈川大学'];
-
-function tierOf(univ) {
-  const u = univ.replace(/\s/g, '');
-  if (T1_UNIVS.some(x => u.includes(x.replace(/\s/g, '')))) return 1;
-  if (T2_UNIVS.some(x => u.includes(x.replace(/\s/g, '')))) return 2;
-  return 3;
-}
-
-// ── Supabase helpers ─────────────────────────────────────────────────────────
-async function sbFetch(path, opts = {}) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: {
-      'apikey': SUPABASE_KEY,
-      'Authorization': `Bearer ${SUPABASE_KEY}`,
-      'Content-Type': 'application/json',
-      'Prefer': opts.prefer || 'return=representation',
-      ...opts.headers,
-    },
-    method: opts.method || 'GET',
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Supabase ${res.status}: ${err}`);
-  }
-  const text = await res.text();
-  return text ? JSON.parse(text) : null;
-}
-
-async function fetchAllResults() {
-  return sbFetch('admission_results?select=*&order=created_at.desc');
-}
-
-async function insertResult(row) {
-  return sbFetch('admission_results', { method: 'POST', body: row });
-}
-
-async function insertBatch(rows) {
-  return sbFetch('admission_results', { method: 'POST', body: rows, prefer: 'return=representation' });
-}
-
-async function deleteResult(id) {
-  return sbFetch(`admission_results?id=eq.${id}`, { method: 'DELETE', prefer: 'return=minimal', headers: {} });
-}
-
-async function updateResult(id, row) {
-  return sbFetch(`admission_results?id=eq.${id}`, { method: 'PATCH', body: row });
-}
-
-// ── Parse helpers ────────────────────────────────────────────────────────────
-// Parse jlpt string like 'N1-145' → { jlpt: 'N1', jlpt_score: 145 }
-function parseJlpt(raw) {
-  if (!raw || raw === '—' || raw === '无' || raw === '——') return { jlpt: null, jlpt_score: null };
-  const m = raw.match(/^(N[12])\D*(\d+)?/i);
-  if (!m) return { jlpt: raw.trim(), jlpt_score: null };
-  return { jlpt: m[1].toUpperCase(), jlpt_score: m[2] ? parseInt(m[2]) : null };
-}
-
-// Parse eng string like 'TOEIC-820', 'TOEFL-90', 'IELTS-7.0'
-function parseEng(raw) {
-  if (!raw || raw === '—' || raw === '无' || raw === '——') return { eng_type: null, eng_score: null };
-  const upper = raw.toUpperCase();
-  let type = null, score = null;
-  if (upper.includes('TOEIC')) type = 'TOEIC';
-  else if (upper.includes('TOEFL')) type = 'TOEFL';
-  else if (upper.includes('IELTS')) type = 'IELTS';
-  else if (upper.includes('EJU')) type = 'EJU';
-  else return { eng_type: raw.trim(), eng_score: null };
-  const m = raw.match(/[\d.]+/);
-  score = m ? parseFloat(m[0]) : null;
-  return { eng_type: type, eng_score: score ? Math.round(score) : null };
-}
-
-</script>
-
-<!-- ── Univ detail modal ── -->
-<div class="modal-overlay" id="univ-modal" onclick="handleModalClick(event)">
-  <div class="modal-box">
-    <div class="modal-header">
-      <div style="flex:1;min-width:0">
-        <div class="modal-univ-name" id="modal-univ-name"></div>
-      </div>
-      <span class="modal-tier-badge" id="modal-tier-badge"></span>
-      <button class="modal-close" onclick="closeModal()">✕</button>
+  return `
+    <div class="dp-header">
+      <div class="dp-univ">${univ}</div>
+      <span class="dp-tier" style="background:${tbg};color:${tfg}">${TNAMES[tier]||''}</span>
+      <span class="dp-stats">${rows.length} 件　${subjStr}</span>
+      <button class="dp-close" onclick="closeDetailPanel()">✕</button>
     </div>
-    <div class="modal-subheader">
-      <span class="modal-stat" id="modal-stat"></span>
-      <div class="modal-sort-bar">
-        <span class="modal-sort-label">ソート</span>
-        <button class="modal-sort-btn active" onclick="setModalSort('default',this)">デフォルト</button>
-        <button class="modal-sort-btn" onclick="setModalSort('jlpt_score',this)">JLPT↓</button>
-        <button class="modal-sort-btn" onclick="setModalSort('toeic',this)">TOEIC↓</button>
-        <button class="modal-sort-btn" onclick="setModalSort('toefl',this)">TOEFL↓</button>
-      </div>
+    <div class="dp-sort-bar">
+      <span class="dp-sort-lbl">ソート</span>${btns}
     </div>
-    <div class="modal-body">
-      <table class="modal-table">
-        <thead>
-          <tr>
-            <th style="width:220px">研究科</th>
-            <th>専攻</th>
-            <th style="width:90px">学科</th>
-            <th style="width:120px">JLPT</th>
-            <th style="width:120px">英語</th>
-            <th style="width:60px">年度</th>
-          </tr>
-        </thead>
-        <tbody id="modal-tbody"></tbody>
+    <div class="dp-table-wrap">
+      <table class="dp-table">
+        <thead><tr>
+          <th style="min-width:180px">研究科</th>
+          <th>専攻</th>
+          <th style="width:90px">学科</th>
+          <th style="width:120px">JLPT</th>
+          <th style="width:120px">英語</th>
+          <th style="width:60px">年度</th>
+        </tr></thead>
+        <tbody>${rows_html}</tbody>
       </table>
-    </div>
-  </div>
-</div>
+    </div>`;
+}
 
+function setDpSort(key) {
+  dpSortKey = key;
+  if (!openUniv) return;
+  const rows = filtered().filter(r=>r.univ===openUniv);
+  const tier = tierOf(openUniv);
+  const panel = document.getElementById('detail-panel-main');
+  if (panel) panel.innerHTML = buildDetailPanelHTML(openUniv, rows, tier);
+}
+
+function closeDetailPanel() {
+  openUniv = null;
+  document.getElementById('detail-panel-main')?.remove();
+  document.querySelectorAll('.ucard').forEach(c=>c.style.borderColor='');
+}
+
+function toggleTierSection(t) {
+  tierCollapsed[t] = !tierCollapsed[t];
+  const body = document.getElementById(`tbody-${t}`);
+  const icon = document.getElementById(`ttoggle-${t}`);
+  if (body) body.style.display = tierCollapsed[t]?'none':'';
+  if (icon) icon.textContent = tierCollapsed[t]?'▶':'▼';
+}
+</script>
 </body>
 </html>
