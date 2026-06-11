@@ -610,7 +610,7 @@ function renderTierView(data) {
   for (const r of data) {
     if (!univTierMap[r.univ]) univTierMap[r.univ] = r.tier||tierOf(r.univ);
   }
-  const tiers = {1:{},2:{},3:{}};
+  const tiers = {0:{},1:{},2:{},3:{}};
   for (const r of data) {
     const t = univTierMap[r.univ];
     if (!tiers[t][r.univ]) tiers[t][r.univ] = [];
@@ -622,7 +622,7 @@ function renderTierView(data) {
     const univs = Object.keys(tiers[t]);
     if (!univs.length) continue;
     const total = univs.reduce((s,u)=>s+tiers[t][u].length,0);
-    const col = ['#1a3070','var(--t1)','var(--t2)','var(--t3)'][t];
+    const col = {0:'#1a3070',1:'var(--t1)',2:'var(--t2)',3:'var(--t3)'}[t]||'var(--t1)';
     const collapsed = tierCollapsed[t];
 
     html += `<div class="tier-section t${t}" id="tsec-${t}">
