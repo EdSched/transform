@@ -205,7 +205,8 @@ function renderBookingCard(b) {
     ${b.needs ? `<div style="font-size:11px;color:var(--text-2);background:var(--bg);border-radius:2px;padding:6px 8px;margin-bottom:8px">💬 ${b.needs}</div>` : ''}
     ${b.status === 'pending' ? `
     <div style="display:flex;gap:6px">
-      <input type="datetime-local" id="actual_${b.id}" style="flex:1;font-size:11px;padding:5px 8px" placeholder="实际面谈时间">
+      <input type="date" id="actual_date_${b.id}" style="flex:1;font-size:11px;padding:5px 8px">
+<input type="time" id="actual_time_${b.id}" style="width:90px;font-size:11px;padding:5px 8px">
       <button onclick="confirmBookingTeacher('${b.id}')" style="background:var(--ok);color:#fff;border:none;border-radius:3px;padding:6px 12px;font-size:11px;cursor:pointer;font-family:inherit">✓ 确认</button>
       <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:6px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text-3)">取消</button>
     </div>` : `
@@ -234,7 +235,9 @@ async function saveBookingRecord(id) {
 }
 
 async function confirmBookingTeacher(id) {
-  const actualTime = document.getElementById('actual_' + id)?.value || '';
+  const d = document.getElementById('actual_date_' + id)?.value || '';
+const t = document.getElementById('actual_time_' + id)?.value || '';
+const actualTime = d && t ? `${d}T${t}` : d || '';
   try {
     await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { status: 'confirmed', actual_time: actualTime });
     const b = cachedTeacherBookings.find(x => x.id === id);
