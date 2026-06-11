@@ -426,6 +426,13 @@ const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝
 // ─── Boot ────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
   buildPills();
+
+  // Event delegation for univ card clicks
+  document.getElementById('main').addEventListener('click', e => {
+    const card = e.target.closest('.univ-card[data-univ]');
+    if (card) openModal(card.dataset.univ);
+  });
+
   try {
     allData = await fetchAllResults();
     applyFilters();
@@ -539,10 +546,18 @@ function updateStats(data) {
 
 // ─── Render ───────────────────────────────────────────────────────────────────
 function renderTiers(data) {
-  // Group by tier → univ
+  // Group by tier → univ (use tier from first record per univ, then auto)
+  // First pass: determine canonical tier per univ
+  const univTierMap = {};
+  for (const r of data) {
+    if (!univTierMap[r.univ]) {
+      univTierMap[r.univ] = r.tier || tierOf(r.univ);
+    }
+  }
+  // Second pass: group using canonical tier
   const tiers = { 1: {}, 2: {}, 3: {} };
   for (const r of data) {
-    const t = r.tier || tierOf(r.univ);
+    const t = univTierMap[r.univ];
     if (!tiers[t][r.univ]) tiers[t][r.univ] = [];
     tiers[t][r.univ].push(r);
   }
@@ -580,15 +595,10 @@ function renderTiers(data) {
 
   main.innerHTML = html;
 
-  // Restore expanded states
-  for (const u of expandedUnivs) {
-    const card = document.getElementById(`univ-card-${CSS.escape(u)}`);
-    if (card) card.classList.add('expanded');
-  }
+
 }
 
 function buildUnivCard(univ, rows, accentColor) {
-  // Subject breakdown for mini bar
   const subjCounts = {};
   for (const r of rows) subjCounts[r.subject || 'other'] = (subjCounts[r.subject||'other']||0) + 1;
   const barSegs = Object.entries(subjCounts).map(([s, cnt]) => {
@@ -596,19 +606,20 @@ function buildUnivCard(univ, rows, accentColor) {
     return `<div class="subj-seg" style="width:${w}%;background:${SUBJ_COLOR[s]?.fg||'#999'}"></div>`;
   }).join('');
 
-  const id = `univ-card-${CSS.escape(univ)}`;
-  const isExp = expandedUnivs.has(univ);
+  const topSubjs = Object.entries(subjCounts).sort((a,b)=>b[1]-a[1]).slice(0,2)
+    .map(([s])=>SUBJ_LABEL[s]||s).join('・');
 
-  let html = `<div class="univ-card${isExp?' expanded':''}" id="${id}" onclick="toggleUniv('${univ.replace(/'/g,"\\'")}',event)">`;
-  html += `<div class="univ-card-head">
+  // Store univ in data attribute to avoid escaping issues
+  const safeUniv = univ.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  let h = `<div class="univ-card" data-univ="${safeUniv}">`;
+  h += `<div class="univ-card-head">
     <div class="univ-name">${univ}</div>
     <div class="univ-badge" style="color:${accentColor}">${rows.length}</div>
   </div>`;
-  html += `<div class="univ-subj-bar">${barSegs}</div>`;
-  html += `<div class="univ-detail" id="detail-${CSS.escape(univ)}">`;
-  html += buildDetail(univ, rows);
-  html += `</div></div>`;
-  return html;
+  h += `<div class="univ-subj-bar" style="margin:0 14px 6px">${barSegs}</div>`;
+  h += `<div class="univ-hint" style="padding:0 14px 10px;font-size:9px;color:var(--text-muted)">${topSubjs}</div>`;
+  h += `</div>`;
+  return h;
 }
 
 function buildDetail(univ, rows) {
