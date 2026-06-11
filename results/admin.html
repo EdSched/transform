@@ -227,6 +227,13 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1100px; }
           <option value="keizai">経済学</option>
           <option value="keiei">経営学</option>
           <option value="kyoiku">教育学</option>
+          <option value="hougaku">法学</option>
+          <option value="seiji">政治学/国際関係</option>
+          <option value="bungaku">文学</option>
+          <option value="rekishi">歴史学</option>
+          <option value="hyosho">表象文化</option>
+          <option value="nihongo">日本語教育</option>
+          <option value="shinri">心理学</option>
           <option value="other">その他</option>
         </select>
       </div>
@@ -355,6 +362,13 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
       <option value="keizai">経済学</option>
       <option value="keiei">経営学</option>
       <option value="kyoiku">教育学</option>
+      <option value="hougaku">法学</option>
+      <option value="seiji">政治学/国際関係</option>
+      <option value="bungaku">文学</option>
+      <option value="rekishi">歴史学</option>
+      <option value="hyosho">表象文化</option>
+      <option value="nihongo">日本語教育</option>
+      <option value="shinri">心理学</option>
       <option value="other">その他</option>
     </select>
     <select id="filter-era" onchange="renderList()">
@@ -590,12 +604,19 @@ function mapRow(row) {
 
   // Subject normalization
   let subject = get('subject').toLowerCase();
-  if (subject.includes('社会学') || subject.includes('(社会)') || subject.includes('shakai')) subject = 'shakai';
-  else if (subject.includes('福祉') || subject.includes('(福祉)') || subject.includes('fukushi')) subject = 'fukushi';
-  else if (subject.includes('新伝') || subject.includes('(新传)') || subject.includes('メディア') || subject.includes('shinpan') || subject.includes('传播')) subject = 'shinpan';
-  else if (subject.includes('経済') || subject.includes('经济') || subject.includes('keizai')) subject = 'keizai';
-  else if (subject.includes('経営') || subject.includes('经营') || subject.includes('keiei')) subject = 'keiei';
-  else if (subject.includes('教育') || subject.includes('kyoiku')) subject = 'kyoiku';
+  if      (subject.includes('社会学') || subject.includes('(社会)') || subject === 'shakai') subject = 'shakai';
+  else if (subject.includes('福祉') || subject.includes('(福祉)') || subject === 'fukushi') subject = 'fukushi';
+  else if (subject.includes('新伝') || subject.includes('(新传)') || subject.includes('新聞') || subject.includes('メディア') || subject.includes('shinpan') || subject.includes('传播')) subject = 'shinpan';
+  else if (subject.includes('経済') || subject.includes('经济') || subject === 'keizai') subject = 'keizai';
+  else if (subject.includes('経営') || subject.includes('经营') || subject === 'keiei') subject = 'keiei';
+  else if (subject.includes('教育') || subject === 'kyoiku') subject = 'kyoiku';
+  else if (subject.includes('法学') || subject === 'hougaku') subject = 'hougaku';
+  else if (subject.includes('政治') || subject.includes('国際関係') || subject.includes('国际') || subject === 'seiji') subject = 'seiji';
+  else if (subject.includes('文学') || subject === 'bungaku') subject = 'bungaku';
+  else if (subject.includes('歴史') || subject.includes('历史') || subject === 'rekishi') subject = 'rekishi';
+  else if (subject.includes('表象') || subject === 'hyosho') subject = 'hyosho';
+  else if (subject.includes('日本語') || subject.includes('日本语') || subject === 'nihongo') subject = 'nihongo';
+  else if (subject.includes('心理') || subject === 'shinri') subject = 'shinri';
   else subject = 'other';
 
   return {
@@ -717,7 +738,7 @@ function renderList() {
     { key: 'student', label: '学生' },
   ];
 
-  const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',other:'その他'};
+  const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学/国際関係',bungaku:'文学',rekishi:'歴史学',hyosho:'表象文化',nihongo:'日本語教育',shinri:'心理学',other:'その他'};
 
   let html = `<div class="data-table-wrap"><table class="data-table"><thead><tr>`;
   for (const c of cols) {
@@ -811,13 +832,20 @@ const SUPABASE_KEY = 'sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const SUBJECTS = [
-  { id: 'shakai',  label: '社会学',   labelJa: '社会学'   },
-  { id: 'fukushi', label: '社会福祉', labelJa: '社会福祉' },
-  { id: 'shinpan', label: '新聞伝播', labelJa: '新聞・メディア' },
-  { id: 'keizai',  label: '経済学',   labelJa: '経済学'   },
-  { id: 'keiei',   label: '経営学',   labelJa: '経営学'   },
-  { id: 'kyoiku',  label: '教育学',   labelJa: '教育学'   },
-  { id: 'other',   label: 'その他',   labelJa: 'その他'   },
+  { id: 'shakai',   label: '社会学',         labelJa: '社会学'         },
+  { id: 'fukushi',  label: '社会福祉',        labelJa: '社会福祉'       },
+  { id: 'shinpan',  label: '新聞伝播',        labelJa: '新聞・メディア' },
+  { id: 'keizai',   label: '経済学',          labelJa: '経済学'         },
+  { id: 'keiei',    label: '経営学',          labelJa: '経営学'         },
+  { id: 'kyoiku',   label: '教育学',          labelJa: '教育学'         },
+  { id: 'hougaku',  label: '法学',            labelJa: '法学'           },
+  { id: 'seiji',    label: '政治学/国際関係', labelJa: '政治学/国際関係'},
+  { id: 'bungaku',  label: '文学',            labelJa: '文学'           },
+  { id: 'rekishi',  label: '歴史学',          labelJa: '歴史学'         },
+  { id: 'hyosho',   label: '表象文化',        labelJa: '表象文化'       },
+  { id: 'nihongo',  label: '日本語教育',      labelJa: '日本語教育'     },
+  { id: 'shinri',   label: '心理学',          labelJa: '心理学'         },
+  { id: 'other',    label: 'その他',          labelJa: 'その他'         },
 ];
 
 const SUBJ_COLOR = {
@@ -827,6 +855,13 @@ const SUBJ_COLOR = {
   keizai:  { bg: '#faecd8', fg: '#5a3010' },
   keiei:   { bg: '#f8e8e0', fg: '#6a2820' },
   kyoiku:  { bg: '#e8f4e4', fg: '#1a4818' },
+  hougaku: { bg: '#f0e8f4', fg: '#4a1a6a' },
+  seiji:   { bg: '#e4eef8', fg: '#1a3060' },
+  bungaku: { bg: '#f8f0e0', fg: '#5a4010' },
+  rekishi: { bg: '#f4ede0', fg: '#6a3800' },
+  hyosho:  { bg: '#fce8f0', fg: '#6a1a40' },
+  nihongo: { bg: '#e4f4f0', fg: '#0a4038' },
+  shinri:  { bg: '#faf0e8', fg: '#603018' },
   other:   { bg: '#eeecea', fg: '#3a3830' },
 };
 
