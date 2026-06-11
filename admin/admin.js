@@ -181,13 +181,15 @@ function openEdit(id){
   document.getElementById('editId').value=id;
   document.getElementById('editModalSub').textContent=`${b.name} · ${b.slot_date} ${b.slot_time_range||''}`;
   document.getElementById('editStatus').value=b.status;
-  document.getElementById('editActualTime').value=b.actual_time||'';
+  const eat=b.actual_time||'';
+document.getElementById('editActualDate').value=eat.slice(0,10)||'';
+document.getElementById('editActualTime').value=eat.slice(11,16)||'';
   document.getElementById('editNote').value=b.note||'';
   document.getElementById('editModal').classList.add('open');
 }
 async function saveEdit(){
   const id=document.getElementById('editId').value;
-  const patch={status:document.getElementById('editStatus').value,actual_time:document.getElementById('editActualTime').value,note:document.getElementById('editNote').value};
+  const patch={status:document.getElementById('editStatus').value,actual_time:(document.getElementById('editActualDate').value&&document.getElementById('editActualTime').value)?document.getElementById('editActualDate').value+'T'+document.getElementById('editActualTime').value:'',note:document.getElementById('editNote').value};
   try{await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',patch);const b=cachedBookings.find(x=>x.id===id);if(b)Object.assign(b,patch);closeModal('editModal');renderBookingPage(document.getElementById('mainContent'))}catch(e){alert('保存失败：'+e.message)}
 }
 function openRecord(id){
@@ -201,7 +203,9 @@ function openRecord(id){
   if(slotDt>new Date()){warn.style.display='block';warn.textContent=`⚠ 面谈还未开始（${b.slot_date} ${b.slot_time_range||''}），提前记录请准确填写实际面谈时间。`}
   else warn.style.display='none';
   const r=b.daily_record||{};
-  document.getElementById('recActualTime').value=b.actual_time||'';
+  const rat=b.actual_time||'';
+document.getElementById('recActualDate').value=rat.slice(0,10)||'';
+document.getElementById('recActualTime').value=rat.slice(11,16)||'';
   ['study','plan','apply','exam'].forEach(k=>{
     document.getElementById(`rec_${k}_status`).value=r[`${k}_status`]||'';
     document.getElementById(`rec_${k}_advice`).value=r[`${k}_advice`]||'';
@@ -224,7 +228,7 @@ async function saveRecord(){
     issue:document.getElementById('rec_issue').value,issue_advice:document.getElementById('rec_issue_advice').value,issue_deadline:document.getElementById('rec_issue_deadline').value,
     extra:document.getElementById('rec_extra').value
   };
-  const actual_time=document.getElementById('recActualTime').value;
+  const actual_time=(document.getElementById('recActualDate').value&&document.getElementById('recActualTime').value)?document.getElementById('recActualDate').value+'T'+document.getElementById('recActualTime').value:'';
   try{
     await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',{actual_time,daily_record});
     b.actual_time=actual_time;b.daily_record=daily_record;
