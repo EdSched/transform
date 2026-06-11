@@ -81,15 +81,8 @@ async function initMajor() {
       <div class="header-locked">📌 ${major === 'shakai_group' ? '社会人文' : MAJORS[major]}</div>;
     try {
       [cachedSlots, cachedBookings] = await Promise.all([
-  (()=>{
-    const slotMajorFilter = major === 'shakai_group'
-      ? 'major=in.(shakai,shinpan,fukushi,shakai_group)'
-      : ['shakai','shinpan','fukushi'].includes(major)
-        ? `major=in.(${major},shakai_group)`
-        : `major=eq.${major}`;
-    return sb(`/rest/v1/slots?select=*&${slotMajorFilter}&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`);
-  })(),
-  sb(`/rest/v1/bookings?select=*&${major==='shakai_group'?'major=in.(shakai,shinpan,fukushi,shakai_group)':'major=eq.'+major}&order=slot_date.asc`)
+  sb(`/rest/v1/slots?select=*&major=in.(shakai,shinpan,fukushi,shakai_group)&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`),
+  sb(`/rest/v1/bookings?select=*&major=eq.${major}&order=slot_date.asc`)
 ]);
       buildForm();
     } catch(e) {
