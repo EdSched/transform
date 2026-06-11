@@ -2483,11 +2483,11 @@ function renderTeachersPage(mc){
       <div class="form-group">
         <label class="form-label">负责专业（可多选）</label>
         <div style="display:flex;flex-wrap:wrap;gap:6px" id="new_teacher_majors">
-          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="keiei" style="accent-color:var(--accent)">経営学</label>
-          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="keizai" style="accent-color:var(--accent)">経済学</label>
-          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="shakai" style="accent-color:var(--accent)">社会学</label>
-          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="shinpan" style="accent-color:var(--accent)">新闻传播</label>
-          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="checkbox" value="fukushi" style="accent-color:var(--accent)">社会福祉</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="keiei" style="accent-color:var(--accent)">経営学</label>
+         <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="keizai" style="accent-color:var(--accent)">経済学</label>
+         <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="shakai" style="accent-color:var(--accent)">社会学</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="shinpan" style="accent-color:var(--accent)">新闻传播</label>
+         <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="fukushi" style="accent-color:var(--accent)">社会福祉</label>
         </div>
       </div>
       <div class="form-group">
@@ -2502,9 +2502,9 @@ function renderTeachersPage(mc){
             <input type="checkbox" id="perm_booking" style="accent-color:var(--accent)">
             <span style="font-size:11px;font-weight:600">预约管理</span>
             <div style="display:flex;gap:10px" id="perm_booking_types">
-              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
             </div>
           </div>
           <!-- slots row -->
@@ -2512,9 +2512,9 @@ function renderTeachersPage(mc){
             <input type="checkbox" id="perm_slots" style="accent-color:var(--accent)">
             <span style="font-size:11px;font-weight:600">时间槽设定</span>
             <div style="display:flex;gap:10px" id="perm_slot_types">
-              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
             </div>
           </div>
           <!-- schedule row -->
