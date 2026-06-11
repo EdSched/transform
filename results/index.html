@@ -180,6 +180,95 @@ main { padding: 1.5rem 3rem 4rem; }
   .filter-bar { padding-left: 1.2rem; padding-right: 1.2rem; }
   .univ-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 }
+
+/* ── Modal overlay ── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(20,18,14,.55);
+  z-index: 500; display: none; align-items: center; justify-content: center;
+  padding: 1.5rem;
+  backdrop-filter: blur(2px);
+}
+.modal-overlay.show { display: flex; }
+.modal-box {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; width: 100%; max-width: 860px;
+  max-height: 90vh; display: flex; flex-direction: column;
+  box-shadow: 0 8px 40px rgba(0,0,0,.18);
+}
+.modal-header {
+  padding: 1.2rem 1.6rem; border-bottom: 1px solid var(--border);
+  display: flex; align-items: flex-start; gap: 12px; flex-shrink: 0;
+}
+.modal-univ-name {
+  font-family: 'Noto Serif SC', serif; font-size: 1.3rem; font-weight: 600;
+  letter-spacing: .02em; flex: 1; min-width: 0;
+}
+.modal-tier-badge {
+  font-size: 10px; font-weight: 600; padding: 3px 10px; border-radius: 3px;
+  letter-spacing: .08em; flex-shrink: 0; margin-top: 4px;
+}
+.modal-close {
+  width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border);
+  background: none; font-size: 14px; cursor: pointer; color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  transition: background .12s;
+}
+.modal-close:hover { background: var(--bg); color: var(--text-primary); }
+.modal-subheader {
+  padding: 8px 1.6rem; border-bottom: 1px solid var(--border-light);
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap; flex-shrink: 0;
+  background: var(--bg);
+}
+.modal-stat { font-size: 11px; color: var(--text-secondary); }
+.modal-stat strong { color: var(--text-primary); }
+.modal-sort-bar { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.modal-sort-label { font-size: 10px; color: var(--text-muted); }
+.modal-sort-btn {
+  padding: 3px 10px; border: 1px solid var(--border); border-radius: 2px;
+  font-size: 10px; font-family: inherit; cursor: pointer; background: none;
+  color: var(--text-secondary); transition: all .12s;
+}
+.modal-sort-btn.active { background: var(--text-primary); color: var(--bg); border-color: var(--text-primary); }
+.modal-body {
+  overflow-y: auto; flex: 1; padding: 0;
+}
+.modal-table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+}
+.modal-table thead th {
+  padding: 9px 14px; background: var(--bg); border-bottom: 2px solid var(--border);
+  text-align: left; font-size: 10px; letter-spacing: .06em; color: var(--text-muted);
+  text-transform: uppercase; white-space: nowrap; position: sticky; top: 0; z-index: 10;
+}
+.modal-table tbody tr { border-bottom: 1px solid var(--border-light); transition: background .1s; }
+.modal-table tbody tr:hover { background: #faf8f4; }
+.modal-table tbody td { padding: 10px 14px; vertical-align: middle; }
+.modal-table .dept-cell { color: var(--text-secondary); font-size: 12px; }
+.modal-table .spec-cell { color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+.score-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 500;
+  white-space: nowrap;
+}
+.score-badge.toeic { background: #e8f0f8; color: #1a3060; }
+.score-badge.toefl { background: #e8f4e4; color: #1a4020; }
+.score-badge.ielts { background: #f4ede0; color: #5a3800; }
+.score-badge.jlpt  { background: #f0ede6; color: #3a3020; }
+.score-badge.hi    { background: #fff0c8; color: #5a4000; border: 1px solid #e0c060; }
+.modal-subj-tag {
+  display: inline-block; padding: 2px 8px; border-radius: 3px;
+  font-size: 10px; white-space: nowrap;
+}
+.modal-era-tag {
+  display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 10px;
+}
+
+/* ── Univ card — make it clearly clickable ── */
+.univ-card { cursor: pointer; }
+.univ-card-head { padding: 12px 14px; }
+.univ-name { font-size: 13px; }
+.univ-hint { font-size: 9px; color: var(--text-muted); margin-top: 2px; letter-spacing:.03em; }
+
 </style>
 </head>
 <body>
@@ -409,7 +498,7 @@ function applyFilters() {
   let data = allData.filter(r => {
     if (curEra !== 'all' && r.era !== curEra) return false;
     if (!activeSubjs.has(r.subject || 'other')) return false;
-    if (curTier !== 0 && tierOf(r.univ) !== curTier) return false;
+    if (curTier !== 0 && (r.tier || tierOf(r.univ)) !== curTier) return false;
     if (curJlpt !== 'all' && r.jlpt !== curJlpt) return false;
     if (jlptScoreMin > 0 && (!r.jlpt_score || r.jlpt_score < jlptScoreMin)) return false;
     if (r.eng_type === 'TOEIC' && r.eng_score) {
@@ -453,7 +542,7 @@ function renderTiers(data) {
   // Group by tier → univ
   const tiers = { 1: {}, 2: {}, 3: {} };
   for (const r of data) {
-    const t = tierOf(r.univ);
+    const t = r.tier || tierOf(r.univ);
     if (!tiers[t][r.univ]) tiers[t][r.univ] = [];
     tiers[t][r.univ].push(r);
   }
@@ -572,31 +661,46 @@ function toggleTier(t) {
   icon.textContent = hidden ? '▼' : '▶';
 }
 
-function toggleUniv(univ, e) {
-  // Don't toggle if clicking a detail-sort button
-  if (e.target.closest('.detail-sort-btn')) return;
-  const card = document.getElementById(`univ-card-${CSS.escape(univ)}`);
-  if (!card) return;
-  const isExp = card.classList.toggle('expanded');
-  if (isExp) expandedUnivs.add(univ); else expandedUnivs.delete(univ);
+// ── Modal ────────────────────────────────────────────────────────────────────
+let modalUniv = null;
+let modalSortKey = 'default';
+
+function openModal(univ) {
+  modalUniv = univ;
+  modalSortKey = 'default';
+  document.querySelectorAll('.modal-sort-btn').forEach((b,i) =>
+    b.classList.toggle('active', i === 0));
+  renderModal();
+  document.getElementById('univ-modal').classList.add('show');
+  document.body.style.overflow = 'hidden';
 }
 
-function setDetailSort(univ, key, e) {
-  e.stopPropagation();
-  univDetailSort[univ] = key;
+function closeModal() {
+  document.getElementById('univ-modal').classList.remove('show');
+  document.body.style.overflow = '';
+  modalUniv = null;
+}
 
-  // Find the card's rows from current rendered data
-  const detail = document.getElementById(`detail-${CSS.escape(univ)}`);
-  if (!detail) return;
+function handleModalClick(e) {
+  if (e.target === document.getElementById('univ-modal')) closeModal();
+}
 
-  // Re-fetch from filtered data
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+function setModalSort(key, btn) {
+  modalSortKey = key;
+  document.querySelectorAll('.modal-sort-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderModal();
+}
+
+function getFilteredRowsForUniv(univ) {
   const jlptScoreMin = parseInt(document.getElementById('jlpt-score-min').value);
   const toeicMin = parseInt(document.getElementById('toeic-min').value);
   const toeicMax = parseInt(document.getElementById('toeic-max').value);
   const toeflMin = parseInt(document.getElementById('toefl-min').value);
   const toeflMax = parseInt(document.getElementById('toefl-max').value);
-
-  const rows = allData.filter(r => {
+  return allData.filter(r => {
     if (r.univ !== univ) return false;
     if (curEra !== 'all' && r.era !== curEra) return false;
     if (!activeSubjs.has(r.subject||'other')) return false;
@@ -612,8 +716,78 @@ function setDetailSort(univ, key, e) {
     }
     return true;
   });
+}
 
-  detail.innerHTML = buildDetail(univ, rows);
+function renderModal() {
+  if (!modalUniv) return;
+  let rows = getFilteredRowsForUniv(modalUniv);
+
+  // Sort
+  if (modalSortKey !== 'default') rows = sortRows(rows, modalSortKey, -1);
+
+  // Tier
+  const tier = rows[0]?.tier || tierOf(modalUniv);
+  const tierColors = { 1:['#e8edf8','#2c4a8a'], 2:['#e8f0e4','#3a6630'], 3:['#f4ece0','#7a4a20'] };
+  const [tbg, tfg] = tierColors[tier] || ['#eee','#666'];
+  const tierNames = { 1:'T1 旧帝・一橋・東科大・早慶上智', 2:'T2 G-MARCH・関関同立・地方国公立', 3:'T3 日駒東専・女子大・地方私立' };
+
+  document.getElementById('modal-univ-name').textContent = modalUniv;
+  const badge = document.getElementById('modal-tier-badge');
+  badge.textContent = tierNames[tier] || '';
+  badge.style.background = tbg; badge.style.color = tfg;
+
+  // Subject breakdown for stat line
+  const subjCounts = {};
+  for (const r of rows) subjCounts[r.subject||'other'] = (subjCounts[r.subject||'other']||0) + 1;
+  const subjStr = Object.entries(subjCounts).sort((a,b)=>b[1]-a[1])
+    .map(([s,n]) => `${SUBJ_LABEL[s]||s} ${n}`).join('　');
+  document.getElementById('modal-stat').innerHTML =
+    `<strong>${rows.length}</strong> 件　|　${subjStr}`;
+
+  // Table rows
+  const tbody = document.getElementById('modal-tbody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text-muted)">データなし</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(r => {
+    const sc = SUBJ_COLOR[r.subject] || SUBJ_COLOR.other;
+    const jlptStr = r.jlpt ? (r.jlpt_score ? `${r.jlpt}-${r.jlpt_score}` : r.jlpt) : null;
+    const jlptHi = r.jlpt_score && r.jlpt_score >= 150;
+    const engHi = r.eng_score && (
+      (r.eng_type==='TOEIC' && r.eng_score>=800) ||
+      (r.eng_type==='TOEFL' && r.eng_score>=90) ||
+      (r.eng_type==='IELTS' && r.eng_score>=7)
+    );
+    const engCls = r.eng_type ? r.eng_type.toLowerCase() : '';
+    const eraStyle = r.era==='new'
+      ? 'background:#e8f0f8;color:#2c4a8a'
+      : 'background:#f0ede6;color:#9a9590';
+
+    return `<tr>
+      <td>
+        <div class="dept-cell">${r.dept||'—'}</div>
+      </td>
+      <td>
+        <div class="dept-cell">${r.spec||'—'}</div>
+      </td>
+      <td>
+        <span class="modal-subj-tag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[r.subject]||r.subject||'—'}</span>
+      </td>
+      <td>
+        ${jlptStr
+          ? `<span class="score-badge jlpt${jlptHi?' hi':''}">${jlptStr}</span>`
+          : '<span style="color:var(--text-muted);font-size:11px">—</span>'}
+      </td>
+      <td>
+        ${(r.eng_type && r.eng_score)
+          ? `<span class="score-badge ${engCls}${engHi?' hi':''}">${r.eng_type} ${r.eng_score}</span>`
+          : '<span style="color:var(--text-muted);font-size:11px">—</span>'}
+      </td>
+      <td><span class="modal-era-tag" style="${eraStyle}">${r.era==='new'?'25–26':'22–24'}</span></td>
+    </tr>`;
+  }).join('');
 }
 </script>
 <script>
@@ -672,6 +846,11 @@ const SUBJ_COLOR = {
   shinri:  { bg: '#faf0e8', fg: '#603018' },
   other:   { bg: '#eeecea', fg: '#3a3830' },
 };
+
+// Use DB tier field if set, else auto-detect
+function effectiveTier(r) {
+  return r.tier || tierOf(r.univ);
+}
 
 const TIERS = {
   1: { label: 'T1', name: '旧帝・一橋・東科大 ＋ 早慶上智' },
@@ -763,5 +942,44 @@ function parseEng(raw) {
 }
 
 </script>
+
+<!-- ── Univ detail modal ── -->
+<div class="modal-overlay" id="univ-modal" onclick="handleModalClick(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div style="flex:1;min-width:0">
+        <div class="modal-univ-name" id="modal-univ-name"></div>
+      </div>
+      <span class="modal-tier-badge" id="modal-tier-badge"></span>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-subheader">
+      <span class="modal-stat" id="modal-stat"></span>
+      <div class="modal-sort-bar">
+        <span class="modal-sort-label">ソート</span>
+        <button class="modal-sort-btn active" onclick="setModalSort('default',this)">デフォルト</button>
+        <button class="modal-sort-btn" onclick="setModalSort('jlpt_score',this)">JLPT↓</button>
+        <button class="modal-sort-btn" onclick="setModalSort('toeic',this)">TOEIC↓</button>
+        <button class="modal-sort-btn" onclick="setModalSort('toefl',this)">TOEFL↓</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <table class="modal-table">
+        <thead>
+          <tr>
+            <th style="width:220px">研究科</th>
+            <th>専攻</th>
+            <th style="width:90px">学科</th>
+            <th style="width:120px">JLPT</th>
+            <th style="width:120px">英語</th>
+            <th style="width:60px">年度</th>
+          </tr>
+        </thead>
+        <tbody id="modal-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
