@@ -212,18 +212,51 @@ function renderBookingCard(b) {
     </div>` : `
     <div>
       ${b.actual_time ? `<div style="font-size:11px;color:var(--ok);margin-bottom:8px">✓ 面谈时间：${b.actual_time.replace('T', ' ')}</div>` : ''}
-      <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px">面谈记录</div>
-      <textarea id="record_${b.id}" rows="3" placeholder="记录面谈内容、进展、下次目标…" style="font-size:11px;padding:7px 9px;resize:vertical">${b.daily_record || ''}</textarea>
-      <div style="display:flex;gap:6px;margin-top:6px">
-        <button onclick="saveBookingRecord('${b.id}')" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit">保存记录</button>
-        <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--danger)">取消预约</button>
-      </div>
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px">面谈记录</div>
+${renderRecordForm(b.id, b.daily_record||{})}
+<div style="display:flex;gap:6px;margin-top:10px">
+  <button onclick="saveBookingRecord('${b.id}')" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit">保存记录</button>
+  <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--danger)">取消预约</button>
+</div>
     </div>`}
   </div>`;
 }
+function renderRecordForm(id, r) {
+  const sec = (title, fields) => `
+    <div style="margin-bottom:12px;padding:10px;background:var(--bg);border-radius:3px;border:1px solid var(--border-light)">
+      <div style="font-size:10px;font-weight:600;color:var(--text-2);margin-bottom:8px;letter-spacing:.05em">${title}</div>
+      ${fields}
+    </div>`;
+  const sel = (fid, val, opts) => `
+    <div class="form-group" style="margin-bottom:6px"><label class="form-label">状态</label>
+      <select id="${fid}_status_${id}" style="font-size:11px">
+        <option value="">请选择</option>
+        ${opts.map(o=>`<option ${val?.status===o?'selected':''}>${o}</option>`).join('')}
+      </select></div>`;
+  const ta = (fid, val, ph) => `
+    <div class="form-group" style="margin-bottom:6px"><label class="form-label">建议</label>
+      <textarea id="${fid}_advice_${id}" rows="2" placeholder="${ph}" style="font-size:11px">${val?.advice||''}</textarea></div>`;
+  const dl = (fid, val) => `
+    <div class="form-group" style="margin-bottom:0"><label class="form-label">期限</label>
+      <input type="date" id="${fid}_deadline_${id}" value="${val?.deadline||''}" style="font-size:11px"></div>`;
 
+  return `
+    ${sec('知识学习进展', sel('study',r.study,['进展顺利并能掌握','能够稳定跟上','需要更多时间','没有很好跟上进度','遇到困难'])+ta('study',r.study,'例：建议定期复习…')+dl('study',r.study))}
+    ${sec('计划书完成情况', sel('plan',r.plan,['未开始','在收集材料','遇到困难','撰写中','已完成'])+ta('plan',r.plan,'例：参考先行研究…')+dl('plan',r.plan))}
+    ${sec('出愿情况', sel('apply',r.apply,['未开始','完成择校','已联系教授','准备中','已出愿'])+ta('apply',r.apply,'')+dl('apply',r.apply))}
+    ${sec('备考情况', sel('exam',r.exam,['未开始','在写过去问','过去问已提交','在准备面试稿','模拟面试阶段'])+ta('exam',r.exam,'')+dl('exam',r.exam))}
+    <div style="margin-bottom:0;padding:10px;background:var(--bg);border-radius:3px;border:1px solid var(--border-light)">
+      <div style="font-size:10px;font-weight:600;color:var(--text-2);margin-bottom:6px">补充</div>
+      <textarea id="extra_${id}" rows="2" placeholder="语学成绩、学生诉求、评价等…" style="font-size:11px">${r.extra||''}</textarea>
+    </div>`;
+}
 async function saveBookingRecord(id) {
-  const record = document.getElementById('record_' + id)?.value || '';
+  const g = (fid) => ({
+    status: document.getElementById(`${fid}_status_${id}`)?.value || '',
+    advice: document.getElementById(`${fid}_advice_${id}`)?.value || '',
+    deadline: document.getElementById(`${fid}_deadline_${id}`)?.value || '',
+  });
+  const record = { study: g('study'), plan: g('plan'), apply: g('apply'), exam: g('exam'), extra: document.getElementById(`extra_${id}`)?.value || '' };
   try {
     await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { daily_record: record });
     const b = cachedTeacherBookings.find(x => x.id === id);
