@@ -309,7 +309,7 @@ main { padding: 1.5rem 3rem 4rem; }
 let allData = [];
 let curEra = 'all';
 let curTier = 0;
-let activeSubjs = new Set(['shakai','fukushi','shinpan','keizai','keiei','kyoiku','other']);
+let activeSubjs = new Set(['shakai','fukushi','shinpan','keizai','keiei','kyoiku','hougaku','seiji','bungaku','rekishi','hyosho','nihongo','shinri','other']);
 let curJlpt = 'all';
 let curSort = 'default';
 let sortDir = -1; // -1 = desc, 1 = asc
@@ -317,15 +317,22 @@ let expandedUnivs = new Set();
 let univDetailSort = {}; // univName → sort key
 
 const SUBJ_META = [
-  { id:'shakai',  label:'社会学',   cls:'pill-shakai'  },
-  { id:'fukushi', label:'社会福祉', cls:'pill-fukushi' },
-  { id:'shinpan', label:'新聞伝播', cls:'pill-shinpan' },
-  { id:'keizai',  label:'経済学',   cls:'pill-keizai'  },
-  { id:'keiei',   label:'経営学',   cls:'pill-keiei'   },
-  { id:'kyoiku',  label:'教育学',   cls:'pill-kyoiku'  },
-  { id:'other',   label:'その他',   cls:'pill-other'   },
+  { id:'shakai',   label:'社会学',         cls:'pill-shakai'   },
+  { id:'fukushi',  label:'社会福祉',        cls:'pill-fukushi'  },
+  { id:'shinpan',  label:'新聞伝播',        cls:'pill-shinpan'  },
+  { id:'keizai',   label:'経済学',          cls:'pill-keizai'   },
+  { id:'keiei',    label:'経営学',          cls:'pill-keiei'    },
+  { id:'kyoiku',   label:'教育学',          cls:'pill-kyoiku'   },
+  { id:'hougaku',  label:'法学',            cls:'pill-hougaku'  },
+  { id:'seiji',    label:'政治学/国際',     cls:'pill-seiji'    },
+  { id:'bungaku',  label:'文学',            cls:'pill-bungaku'  },
+  { id:'rekishi',  label:'歴史学',          cls:'pill-rekishi'  },
+  { id:'hyosho',   label:'表象文化',        cls:'pill-hyosho'   },
+  { id:'nihongo',  label:'日本語教育',      cls:'pill-nihongo'  },
+  { id:'shinri',   label:'心理学',          cls:'pill-shinri'   },
+  { id:'other',    label:'その他',          cls:'pill-other'    },
 ];
-const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',other:'その他'};
+const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学/国際',bungaku:'文学',rekishi:'歴史学',hyosho:'表象文化',nihongo:'日本語教育',shinri:'心理学',other:'その他'};
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
@@ -633,13 +640,20 @@ const SUPABASE_KEY = 'sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const SUBJECTS = [
-  { id: 'shakai',  label: '社会学',   labelJa: '社会学'   },
-  { id: 'fukushi', label: '社会福祉', labelJa: '社会福祉' },
-  { id: 'shinpan', label: '新聞伝播', labelJa: '新聞・メディア' },
-  { id: 'keizai',  label: '経済学',   labelJa: '経済学'   },
-  { id: 'keiei',   label: '経営学',   labelJa: '経営学'   },
-  { id: 'kyoiku',  label: '教育学',   labelJa: '教育学'   },
-  { id: 'other',   label: 'その他',   labelJa: 'その他'   },
+  { id: 'shakai',   label: '社会学',         labelJa: '社会学'         },
+  { id: 'fukushi',  label: '社会福祉',        labelJa: '社会福祉'       },
+  { id: 'shinpan',  label: '新聞伝播',        labelJa: '新聞・メディア' },
+  { id: 'keizai',   label: '経済学',          labelJa: '経済学'         },
+  { id: 'keiei',    label: '経営学',          labelJa: '経営学'         },
+  { id: 'kyoiku',   label: '教育学',          labelJa: '教育学'         },
+  { id: 'hougaku',  label: '法学',            labelJa: '法学'           },
+  { id: 'seiji',    label: '政治学/国際関係', labelJa: '政治学/国際関係'},
+  { id: 'bungaku',  label: '文学',            labelJa: '文学'           },
+  { id: 'rekishi',  label: '歴史学',          labelJa: '歴史学'         },
+  { id: 'hyosho',   label: '表象文化',        labelJa: '表象文化'       },
+  { id: 'nihongo',  label: '日本語教育',      labelJa: '日本語教育'     },
+  { id: 'shinri',   label: '心理学',          labelJa: '心理学'         },
+  { id: 'other',    label: 'その他',          labelJa: 'その他'         },
 ];
 
 const SUBJ_COLOR = {
@@ -649,6 +663,13 @@ const SUBJ_COLOR = {
   keizai:  { bg: '#faecd8', fg: '#5a3010' },
   keiei:   { bg: '#f8e8e0', fg: '#6a2820' },
   kyoiku:  { bg: '#e8f4e4', fg: '#1a4818' },
+  hougaku: { bg: '#f0e8f4', fg: '#4a1a6a' },
+  seiji:   { bg: '#e4eef8', fg: '#1a3060' },
+  bungaku: { bg: '#f8f0e0', fg: '#5a4010' },
+  rekishi: { bg: '#f4ede0', fg: '#6a3800' },
+  hyosho:  { bg: '#fce8f0', fg: '#6a1a40' },
+  nihongo: { bg: '#e4f4f0', fg: '#0a4038' },
+  shinri:  { bg: '#faf0e8', fg: '#603018' },
   other:   { bg: '#eeecea', fg: '#3a3830' },
 };
 
