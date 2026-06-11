@@ -168,52 +168,19 @@ function renderBookingCard(b) {
   </div>`;
 }
 
-function renderRecordForm(id, r) {
-  const sec = (title, fields) => `<div style="margin-bottom:10px;padding:10px;background:var(--bg);border-radius:3px;border:1px solid var(--border-light)"><div style="font-size:10px;font-weight:600;color:var(--text-2);margin-bottom:8px;letter-spacing:.05em">${title}</div>${fields}</div>`;
-  const sel = (fid, val, opts) => `<div class="form-group" style="margin-bottom:6px"><label class="form-label">状态</label><select id="${fid}_status_${id}" style="font-size:11px"><option value="">请选择</option>${opts.map(o=>`<option ${val?.status===o?'selected':''}>${o}</option>`).join('')}</select></div>`;
-  const ta = (fid, val, ph) => `<div class="form-group" style="margin-bottom:6px"><label class="form-label">建议</label><textarea id="${fid}_advice_${id}" rows="2" placeholder="${ph}" style="font-size:11px">${val?.advice||''}</textarea></div>`;
-  const dl = (fid, val) => `<div class="form-group" style="margin-bottom:0"><label class="form-label">期限</label><input type="month" id="${fid}_deadline_${id}" value="${val?.deadline||''}" style="font-size:11px"></div>`;
-  return `
-    ${sec('知识学习进展', sel('study',r.study,['进展顺利并能掌握','能够稳定跟上','需要更多时间','没有很好跟上进度','遇到困难'])+ta('study',r.study,'例：建议定期复习…')+dl('study',r.study))}
-    ${sec('计划书完成情况', sel('plan',r.plan,['未开始','在收集材料','遇到困难','撰写中','已完成'])+ta('plan',r.plan,'例：参考先行研究…')+dl('plan',r.plan))}
-    ${sec('出愿情况', sel('apply',r.apply,['未开始','完成择校','已联系教授','准备中','已出愿'])+ta('apply',r.apply,'')+dl('apply',r.apply))}
-    ${sec('备考情况', sel('exam',r.exam,['未开始','在写过去问','过去问已提交','在准备面试稿','模拟面试阶段'])+ta('exam',r.exam,'')+dl('exam',r.exam))}
-    <div style="padding:10px;background:var(--bg);border-radius:3px;border:1px solid var(--border-light)">
-      <div style="font-size:10px;font-weight:600;color:var(--text-2);margin-bottom:6px">补充</div>
-      <textarea id="extra_${id}" rows="2" placeholder="语学成绩、学生诉求、评价等…" style="font-size:11px">${r.extra||''}</textarea>
-    </div>`;
-}
-
 async function saveBookingRecord(id) {
-  const g = (fid) => ({
-    status: document.getElementById(`${fid}_status_${id}`)?.value || '',
-    advice: document.getElementById(`${fid}_advice_${id}`)?.value || '',
-    deadline: document.getElementById(`${fid}_deadline_${id}`)?.value || '',
-  });
-  const record = { study: g('study'), plan: g('plan'), apply: g('apply'), exam: g('exam'), extra: document.getElementById(`extra_${id}`)?.value || '' };
+  const record = getRecordFromForm(id);
   try {
     await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { daily_record: record });
     const booking = cachedTeacherBookings.find(x => x.id === id);
     if (booking) booking.daily_record = record;
     const btn = document.querySelector(`[onclick="saveBookingRecord('${id}')"]`);
     if (btn) { const orig = btn.textContent; btn.textContent = '✓ 已保存'; setTimeout(() => btn.textContent = orig, 1500); }
-    // 生成记录文本
     if (booking) {
-      const at = booking.actual_time ? booking.actual_time.replace('T', ' ') : `${booking.slot_date} ${booking.slot_time_range || ''}`;
-      const lines = [
-        `【面谈记录】${booking.name}`,
-        `日期：${at}`,
-        `专业：${MAJORS[booking.major] || booking.major || ''}`,
-        ``,
-        record.study?.status ? `知识学习：${record.study.status}${record.study.advice ? '\n建议：' + record.study.advice : ''}${record.study.deadline ? '\n期限：' + record.study.deadline : ''}` : '',
-        record.plan?.status ? `计划书：${record.plan.status}${record.plan.advice ? '\n建议：' + record.plan.advice : ''}${record.plan.deadline ? '\n期限：' + record.plan.deadline : ''}` : '',
-        record.apply?.status ? `出愿：${record.apply.status}${record.apply.advice ? '\n建议：' + record.apply.advice : ''}${record.apply.deadline ? '\n期限：' + record.apply.deadline : ''}` : '',
-        record.exam?.status ? `备考：${record.exam.status}${record.exam.advice ? '\n建议：' + record.exam.advice : ''}${record.exam.deadline ? '\n期限：' + record.exam.deadline : ''}` : '',
-        record.extra ? `补充：${record.extra}` : '',
-      ].filter(Boolean).join('\n');
+      const text = buildRecordText(booking);
       const copyArea = document.getElementById(`copy_area_${id}`);
       if (copyArea) {
-        copyArea.innerHTML = `<pre id="copy_text_${id}" style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:10px;font-size:11px;white-space:pre-wrap;font-family:'DM Mono',monospace;line-height:1.6;margin-top:10px">${lines}</pre>
+        copyArea.innerHTML = `<pre id="copy_text_${id}" style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:10px;font-size:11px;white-space:pre-wrap;font-family:'DM Mono',monospace;line-height:1.6;margin-top:10px">${text}</pre>
           <button onclick="navigator.clipboard.writeText(document.getElementById('copy_text_${id}').textContent).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制记录',2000)})" style="margin-top:6px;font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:4px 12px;cursor:pointer;font-family:inherit">📋 复制记录</button>`;
       }
     }
