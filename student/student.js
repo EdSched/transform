@@ -263,6 +263,7 @@ function renderSlots() {
           <span class="tag ${typeTag(s.type)}" style="margin-left:auto;font-size:9px">${s.type === 'daily' ? '日常' : s.type === 'plan' ? '计划书' : '模拟'}</span>
         </div>
         <div class="slot-time-r">${s.time_range}</div>
+${s.teacher_name ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">👤 ${s.teacher_name}</div>` : ''}
         ${isDimmed ? '' : remainLabel}
       </label>
     </div>`;
