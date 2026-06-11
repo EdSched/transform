@@ -78,7 +78,7 @@ async function initMajor() {
     document.getElementById('headerContent').innerHTML = `
       <div class="header-major">面谈预约</div>
       <div class="header-sub">唯新教育</div>
-      <div class="header-locked">📌 ${major === 'shakai_group' ? '社会人文' : MAJORS[major]}</div>;
+      <div class="header-locked">📌 ${major === 'shakai_group' ? '社会人文' : MAJORS[major]}</div>`;
     try {
       [cachedSlots, cachedBookings] = await Promise.all([
   sb(`/rest/v1/slots?select=*&major=in.(shakai,shinpan,fukushi,shakai_group)&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`),
