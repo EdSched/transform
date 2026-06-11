@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>合格実绩 管理 · 唯新教育</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --bg: #f7f5f0; --surface: #fff; --border: #e2ded6; --border-light: #ede9e2;
+  --text-primary: #1a1814; --text-secondary: #5a5650; --text-muted: #9a9590;
+  --accent: #2c4a8a; --green: #2a5a30; --red: #7a2010;
+  --green-bg: #e8f4ea; --red-bg: #faeae8;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'DM Mono', monospace; background: var(--bg); color: var(--text-primary); font-size: 13px; line-height: 1.55; }
+
+header {
+  background: var(--surface); border-bottom: 2px solid var(--text-primary);
+  padding: 1.5rem 2.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.header-title { font-family: 'Noto Serif SC', serif; font-size: 1.2rem; font-weight: 600; letter-spacing: .03em; }
+.header-sub { font-size: 10px; color: var(--text-muted); letter-spacing: .08em; text-transform: uppercase; margin-top: 3px; }
+.header-actions { display: flex; gap: 8px; }
+
+.tab-bar {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  display: flex; padding: 0 2.5rem;
+}
+.tab-btn {
+  padding: 10px 18px; background: none; border: none; border-bottom: 2px solid transparent;
+  font-family: inherit; font-size: 12px; color: var(--text-muted); cursor: pointer;
+  letter-spacing: .04em; transition: color .15s, border-color .15s;
+}
+.tab-btn.active { color: var(--text-primary); border-bottom-color: var(--text-primary); }
+
+main { padding: 2rem 2.5rem 4rem; max-width: 1100px; }
+
+/* ── Form ── */
+.form-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 1.5rem; }
+.form-section-title {
+  font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted);
+  margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border-light);
+}
+.form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 1rem; }
+.form-grid-2 { grid-template-columns: repeat(2, 1fr); }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { font-size: 10px; letter-spacing: .06em; color: var(--text-muted); text-transform: uppercase; }
+.field input, .field select, .field textarea {
+  padding: 7px 10px; border: 1px solid var(--border); border-radius: 3px; background: var(--bg);
+  font-family: inherit; font-size: 12px; color: var(--text-primary);
+  transition: border-color .12s;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  outline: none; border-color: var(--accent); background: var(--surface);
+}
+.field textarea { resize: vertical; min-height: 60px; }
+
+.form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1rem; }
+.btn {
+  padding: 7px 18px; border-radius: 3px; font-family: inherit; font-size: 12px;
+  cursor: pointer; border: 1px solid transparent; letter-spacing: .03em; transition: opacity .12s;
+}
+.btn:hover { opacity: .85; }
+.btn-primary { background: var(--text-primary); color: var(--bg); }
+.btn-secondary { background: transparent; color: var(--text-secondary); border-color: var(--border); }
+.btn-danger { background: var(--red-bg); color: var(--red); border-color: #e8c0b8; }
+.btn-success { background: var(--green-bg); color: var(--green); border-color: #b8d8bc; }
+
+/* ── Toast ── */
+.toast {
+  position: fixed; bottom: 1.5rem; right: 1.5rem; padding: 10px 18px; border-radius: 4px;
+  font-size: 12px; display: none; z-index: 999; max-width: 320px;
+}
+.toast.show { display: block; }
+.toast-ok { background: var(--green-bg); color: var(--green); border: 1px solid #b8d8bc; }
+.toast-err { background: var(--red-bg); color: var(--red); border: 1px solid #e8c0b8; }
+
+/* ── Excel upload ── */
+.upload-zone {
+  border: 2px dashed var(--border); border-radius: 4px; padding: 2rem;
+  text-align: center; color: var(--text-muted); cursor: pointer; transition: border-color .15s;
+  margin-bottom: 1rem;
+}
+.upload-zone:hover, .upload-zone.drag { border-color: var(--accent); color: var(--text-secondary); }
+.upload-zone input { display: none; }
+
+.mapping-grid {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  gap: 8px; margin-bottom: 8px;
+}
+.mapping-arrow { color: var(--text-muted); font-size: 11px; }
+
+.preview-table-wrap { overflow-x: auto; margin: 1rem 0; }
+.preview-table {
+  width: 100%; border-collapse: collapse; font-size: 11px;
+}
+.preview-table th {
+  background: var(--bg); padding: 6px 10px; text-align: left;
+  border: 1px solid var(--border); font-weight: 500; letter-spacing: .03em; color: var(--text-secondary);
+}
+.preview-table td {
+  padding: 5px 10px; border: 1px solid var(--border-light); color: var(--text-secondary);
+  white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis;
+}
+.preview-table tr:hover td { background: #faf8f4; }
+
+/* ── Data list ── */
+.list-controls {
+  display: flex; gap: 10px; margin-bottom: 1rem; align-items: center; flex-wrap: wrap;
+}
+.list-controls input[type=text] {
+  padding: 6px 12px; border: 1px solid var(--border); border-radius: 3px;
+  font-family: inherit; font-size: 12px; background: var(--bg); flex: 1; min-width: 200px;
+}
+.list-controls select {
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: 3px;
+  font-family: inherit; font-size: 12px; background: var(--bg);
+}
+.result-count { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+
+.data-table-wrap { overflow-x: auto; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.data-table th {
+  background: var(--bg); padding: 7px 10px; text-align: left;
+  border-bottom: 2px solid var(--border); font-weight: 500; letter-spacing: .04em;
+  color: var(--text-secondary); white-space: nowrap; cursor: pointer; user-select: none;
+}
+.data-table th:hover { color: var(--text-primary); }
+.data-table th .sort-icon { margin-left: 4px; opacity: .4; }
+.data-table th.sorted .sort-icon { opacity: 1; }
+.data-table td {
+  padding: 6px 10px; border-bottom: 1px solid var(--border-light);
+  color: var(--text-secondary); white-space: nowrap;
+}
+.data-table tr:hover td { background: #faf8f4; }
+.data-table .subj-tag {
+  font-size: 9px; padding: 1px 6px; border-radius: 2px; white-space: nowrap;
+}
+.era-tag { font-size: 9px; padding: 1px 5px; border-radius: 2px; }
+.era-hist { background: #f0ede6; color: var(--text-muted); }
+.era-new  { background: #e8f0f8; color: var(--accent); }
+
+.load-state { padding: 2rem; text-align: center; color: var(--text-muted); font-size: 12px; }
+
+/* ── Progress bar ── */
+.progress-wrap { margin: 1rem 0; display: none; }
+.progress-wrap.show { display: block; }
+.progress-bar {
+  height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;
+}
+.progress-fill { height: 100%; background: var(--accent); transition: width .2s; }
+.progress-label { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+
+/* ── Confirm modal ── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 500;
+  display: none; align-items: center; justify-content: center;
+}
+.modal-overlay.show { display: flex; }
+.modal-box {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 1.5rem 2rem; max-width: 360px; width: 90%;
+}
+.modal-title { font-size: 14px; font-weight: 500; margin-bottom: .5rem; }
+.modal-body { font-size: 12px; color: var(--text-secondary); margin-bottom: 1.2rem; line-height: 1.6; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="header-title">合格実绩 管理</div>
+    <div class="header-sub">唯新教育 · Admin</div>
+  </div>
+  <div class="header-actions">
+    <a href="index.html" target="_blank">
+      <button class="btn btn-secondary">← 公开页面</button>
+    </a>
+  </div>
+</header>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('add')">手动添加</button>
+  <button class="tab-btn" onclick="switchTab('excel')">Excel 批量导入</button>
+  <button class="tab-btn" onclick="switchTab('list')">数据管理</button>
+</div>
+
+<main>
+
+<!-- ── TAB: 手动添加 ── -->
+<div id="tab-add">
+  <div class="form-panel">
+    <div class="form-section-title">院校信息</div>
+    <div class="form-grid">
+      <div class="field">
+        <label>大学名 *</label>
+        <input id="f-univ" type="text" placeholder="东京大学" list="univ-list">
+        <datalist id="univ-list"></datalist>
+      </div>
+      <div class="field">
+        <label>研究科</label>
+        <input id="f-dept" type="text" placeholder="社会学研究科">
+      </div>
+      <div class="field">
+        <label>专攻</label>
+        <input id="f-spec" type="text" placeholder="综合社会研究专攻">
+      </div>
+    </div>
+
+    <div class="form-section-title">学生情報</div>
+    <div class="form-grid">
+      <div class="field">
+        <label>学生名（イニシャル可）</label>
+        <input id="f-student" type="text" placeholder="A同学">
+      </div>
+      <div class="field">
+        <label>在籍学科 *</label>
+        <select id="f-subject">
+          <option value="">-- 选择 --</option>
+          <option value="shakai">社会学</option>
+          <option value="fukushi">社会福祉</option>
+          <option value="shinpan">新聞伝播</option>
+          <option value="keizai">経済学</option>
+          <option value="keiei">経営学</option>
+          <option value="kyoiku">教育学</option>
+          <option value="other">その他</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>入学年度 *</label>
+        <select id="f-era">
+          <option value="new">2025–2026 入学</option>
+          <option value="hist">2022–2024 実绩</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-section-title">語学スコア</div>
+    <div class="form-grid">
+      <div class="field">
+        <label>JLPT 級</label>
+        <select id="f-jlpt">
+          <option value="">—</option>
+          <option value="N1">N1</option>
+          <option value="N2">N2</option>
+          <option value="N3">N3</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>JLPT スコア（任意）</label>
+        <input id="f-jlpt-score" type="number" min="0" max="200" placeholder="145">
+      </div>
+      <div class="field">
+        <label>英語種別</label>
+        <select id="f-eng-type">
+          <option value="">—</option>
+          <option value="TOEIC">TOEIC</option>
+          <option value="TOEFL">TOEFL</option>
+          <option value="IELTS">IELTS</option>
+          <option value="EJU">EJU</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>英語スコア</label>
+        <input id="f-eng-score" type="number" min="0" placeholder="820">
+      </div>
+      <div class="field">
+        <label>備考</label>
+        <input id="f-note" type="text" placeholder="※ 研究生 等">
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="resetForm()">クリア</button>
+      <button class="btn btn-primary" onclick="submitForm()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TAB: Excel 批量导入 ── -->
+<div id="tab-excel" style="display:none">
+  <div class="form-panel">
+    <div class="form-section-title">ファイル選択</div>
+    <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
+      <input type="file" id="file-input" accept=".xlsx,.xls,.csv" onchange="handleFile(this.files[0])">
+      <div style="font-size:14px;margin-bottom:6px">クリックまたはドラッグ＆ドロップ</div>
+      <div style="font-size:11px">.xlsx / .xls / .csv 対応</div>
+    </div>
+
+    <div id="col-mapping" style="display:none">
+      <div class="form-section-title">列マッピング（Excelの列名を選択）</div>
+      <div id="mapping-fields" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:1rem"></div>
+      <div class="form-actions">
+        <button class="btn btn-secondary" onclick="resetUpload()">キャンセル</button>
+        <button class="btn btn-primary" onclick="previewImport()">プレビュー</button>
+      </div>
+    </div>
+
+    <div id="import-preview" style="display:none">
+      <div class="form-section-title">インポートプレビュー（先頭5件）</div>
+      <div class="preview-table-wrap" id="preview-wrap"></div>
+      <div class="progress-wrap" id="import-progress">
+        <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+        <div class="progress-label" id="progress-label">準備中...</div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-secondary" onclick="resetUpload()">キャンセル</button>
+        <button class="btn btn-success" onclick="executeImport()" id="import-btn">
+          <span id="import-count"></span>件をインポート
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SQL helper -->
+  <div class="form-panel" style="margin-top:1.5rem">
+    <div class="form-section-title">Supabase テーブル作成 SQL（初回のみ）</div>
+    <pre style="font-size:10px;line-height:1.6;color:var(--text-secondary);background:var(--bg);padding:1rem;border-radius:3px;overflow-x:auto;white-space:pre-wrap">CREATE TABLE admission_results (
+  id         uuid primary key default gen_random_uuid(),
+  univ       text not null,
+  dept       text,
+  spec       text,
+  student    text,
+  subject    text,
+  era        text,
+  jlpt       text,
+  jlpt_score integer,
+  eng_type   text,
+  eng_score  integer,
+  note       text,
+  created_at timestamptz default now()
+);
+-- RLS: allow anon read, restrict write to service_role or set up auth
+ALTER TABLE admission_results ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "public read" ON admission_results FOR SELECT USING (true);
+CREATE POLICY "anon insert" ON admission_results FOR INSERT WITH CHECK (true);
+CREATE POLICY "anon delete" ON admission_results FOR DELETE USING (true);
+CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
+  </div>
+</div>
+
+<!-- ── TAB: データ管理 ── -->
+<div id="tab-list" style="display:none">
+  <div class="list-controls">
+    <input type="text" id="search-input" placeholder="大学名・研究科・専攻で検索..." oninput="renderList()">
+    <select id="filter-subj" onchange="renderList()">
+      <option value="">全学科</option>
+      <option value="shakai">社会学</option>
+      <option value="fukushi">社会福祉</option>
+      <option value="shinpan">新聞伝播</option>
+      <option value="keizai">経済学</option>
+      <option value="keiei">経営学</option>
+      <option value="kyoiku">教育学</option>
+      <option value="other">その他</option>
+    </select>
+    <select id="filter-era" onchange="renderList()">
+      <option value="">全年度</option>
+      <option value="new">2025–2026</option>
+      <option value="hist">2022–2024</option>
+    </select>
+    <span class="result-count" id="result-count"></span>
+    <button class="btn btn-danger" onclick="confirmDeleteAll()" style="margin-left:auto">全件削除</button>
+  </div>
+  <div id="list-area" class="load-state">読み込み中...</div>
+</div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal-box">
+    <div class="modal-title" id="modal-title">確認</div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
+      <button class="btn btn-danger" id="modal-confirm-btn">削除</button>
+    </div>
+  </div>
+</div>
+
+<script src="results-data.js"></script>
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+let allData = [];
+let listSortCol = 'created_at';
+let listSortDir = -1;
+let uploadRows = [];
+let uploadColMap = {};
+let uploadHeaders = [];
+
+// ─── Tabs ────────────────────────────────────────────────────────────────────
+function switchTab(t) {
+  ['add','excel','list'].forEach(id => {
+    document.getElementById(`tab-${id}`).style.display = id === t ? '' : 'none';
+  });
+  document.querySelectorAll('.tab-btn').forEach((b,i) => {
+    b.classList.toggle('active', ['add','excel','list'][i] === t);
+  });
+  if (t === 'list') loadList();
+}
+
+// ─── Toast ───────────────────────────────────────────────────────────────────
+let toastTimer;
+function toast(msg, ok = true) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast show ${ok ? 'toast-ok' : 'toast-err'}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ─── Modal ───────────────────────────────────────────────────────────────────
+let modalCb = null;
+function showModal(title, body, cb) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').textContent = body;
+  document.getElementById('modal-confirm-btn').onclick = () => { closeModal(); cb(); };
+  document.getElementById('confirm-modal').classList.add('show');
+}
+function closeModal() { document.getElementById('confirm-modal').classList.remove('show'); }
+
+// ─── Form ────────────────────────────────────────────────────────────────────
+function resetForm() {
+  ['f-univ','f-dept','f-spec','f-student','f-jlpt-score','f-eng-score','f-note'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  ['f-subject','f-era','f-jlpt','f-eng-type'].forEach(id => {
+    document.getElementById(id).selectedIndex = 0;
+  });
+}
+
+async function submitForm() {
+  const univ = document.getElementById('f-univ').value.trim();
+  const subject = document.getElementById('f-subject').value;
+  if (!univ) { toast('大学名を入力してください', false); return; }
+  if (!subject) { toast('在籍学科を選択してください', false); return; }
+
+  const jlptScore = document.getElementById('f-jlpt-score').value;
+  const engScore = document.getElementById('f-eng-score').value;
+
+  const row = {
+    univ,
+    dept: document.getElementById('f-dept').value.trim() || null,
+    spec: document.getElementById('f-spec').value.trim() || null,
+    student: document.getElementById('f-student').value.trim() || null,
+    subject,
+    era: document.getElementById('f-era').value,
+    jlpt: document.getElementById('f-jlpt').value || null,
+    jlpt_score: jlptScore ? parseInt(jlptScore) : null,
+    eng_type: document.getElementById('f-eng-type').value || null,
+    eng_score: engScore ? parseInt(engScore) : null,
+    note: document.getElementById('f-note').value.trim() || null,
+  };
+
+  try {
+    await insertResult(row);
+    toast('保存しました ✓');
+    resetForm();
+    refreshUnivList();
+  } catch(e) {
+    toast('エラー: ' + e.message, false);
+  }
+}
+
+async function refreshUnivList() {
+  try {
+    const data = await fetchAllResults();
+    const univs = [...new Set(data.map(d => d.univ))].sort();
+    const dl = document.getElementById('univ-list');
+    dl.innerHTML = univs.map(u => `<option value="${u}">`).join('');
+  } catch(e) {}
+}
+
+// ─── Excel upload ─────────────────────────────────────────────────────────────
+const FIELD_DEFS = [
+  { key: 'univ',      label: '大学名 *',    required: true  },
+  { key: 'dept',      label: '研究科',       required: false },
+  { key: 'spec',      label: '専攻',         required: false },
+  { key: 'student',   label: '学生名',       required: false },
+  { key: 'subject',   label: '在籍学科',     required: false },
+  { key: 'era',       label: '入学年度',     required: false },
+  { key: 'jlpt_raw',  label: 'JLPT（テキスト）', required: false },
+  { key: 'eng_raw',   label: '英語スコア（テキスト）', required: false },
+];
+
+function handleFile(file) {
+  if (!file) return;
+  const zone = document.getElementById('upload-zone');
+  zone.textContent = `読み込み中: ${file.name}`;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const wb = XLSX.read(e.target.result, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    if (!rows.length) { toast('データが空です', false); return; }
+    uploadHeaders = rows[0].map(String);
+    uploadRows = rows.slice(1).filter(r => r.some(c => c !== ''));
+    buildMappingUI();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function buildMappingUI() {
+  const container = document.getElementById('mapping-fields');
+  container.innerHTML = FIELD_DEFS.map(fd => `
+    <div class="field">
+      <label>${fd.label}</label>
+      <select id="map-${fd.key}">
+        <option value="">— スキップ —</option>
+        ${uploadHeaders.map((h,i) => `<option value="${i}" ${guessCol(h, fd.key) ? 'selected' : ''}>${h}</option>`).join('')}
+      </select>
+    </div>
+  `).join('');
+  document.getElementById('col-mapping').style.display = '';
+  document.getElementById('upload-zone').style.display = 'none';
+  document.getElementById('import-preview').style.display = 'none';
+}
+
+function guessCol(header, key) {
+  const h = header.toLowerCase();
+  const guesses = {
+    univ: ['大学','学校','univ'],
+    dept: ['研究科','dept','研究'],
+    spec: ['専攻','专攻','spec'],
+    student: ['学生','名前','student','学员'],
+    subject: ['学科','在籍','subject'],
+    era: ['年度','era','入学','批次'],
+    jlpt_raw: ['日語','jlpt','日语','日本語'],
+    eng_raw: ['英語','toeic','toefl','英语','英'],
+  };
+  return (guesses[key] || []).some(g => h.includes(g));
+}
+
+function getColIndex(key) {
+  const v = document.getElementById(`map-${key}`)?.value;
+  return v !== '' && v !== undefined ? parseInt(v) : null;
+}
+
+function previewImport() {
+  const univIdx = getColIndex('univ');
+  if (univIdx === null) { toast('大学名の列を選択してください', false); return; }
+
+  uploadColMap = {};
+  FIELD_DEFS.forEach(fd => { uploadColMap[fd.key] = getColIndex(fd.key); });
+
+  // Build preview
+  const preview = uploadRows.slice(0, 5);
+  const headers = ['大学名','研究科','専攻','学生','学科','年度','JLPT','英語'];
+  let html = `<table class="preview-table"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>`;
+  for (const row of preview) {
+    const mapped = mapRow(row);
+    html += `<tr>
+      <td>${mapped.univ||''}</td>
+      <td>${mapped.dept||''}</td>
+      <td>${mapped.spec||''}</td>
+      <td>${mapped.student||''}</td>
+      <td>${mapped.subject||''}</td>
+      <td>${mapped.era||''}</td>
+      <td>${mapped.jlpt||''}${mapped.jlpt_score?' '+mapped.jlpt_score:''}</td>
+      <td>${mapped.eng_type||''}${mapped.eng_score?' '+mapped.eng_score:''}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  document.getElementById('preview-wrap').innerHTML = html;
+  document.getElementById('import-count').textContent = uploadRows.length;
+  document.getElementById('col-mapping').style.display = 'none';
+  document.getElementById('import-preview').style.display = '';
+}
+
+function mapRow(row) {
+  const get = key => {
+    const i = uploadColMap[key];
+    return (i !== null && i !== undefined) ? String(row[i] ?? '').trim() : '';
+  };
+  const jlptRaw = get('jlpt_raw');
+  const engRaw = get('eng_raw');
+  const { jlpt, jlpt_score } = parseJlpt(jlptRaw);
+  const { eng_type, eng_score } = parseEng(engRaw);
+
+  // Era inference
+  let era = get('era').toLowerCase();
+  if (era.includes('26') || era.includes('25') || era.includes('new') || era.includes('夏') || era.includes('冬')) era = 'new';
+  else if (era.includes('22') || era.includes('23') || era.includes('24') || era.includes('hist')) era = 'hist';
+  else era = 'new';
+
+  // Subject normalization
+  let subject = get('subject').toLowerCase();
+  if (subject.includes('社会学') || subject.includes('(社会)') || subject.includes('shakai')) subject = 'shakai';
+  else if (subject.includes('福祉') || subject.includes('(福祉)') || subject.includes('fukushi')) subject = 'fukushi';
+  else if (subject.includes('新伝') || subject.includes('(新传)') || subject.includes('メディア') || subject.includes('shinpan') || subject.includes('传播')) subject = 'shinpan';
+  else if (subject.includes('経済') || subject.includes('经济') || subject.includes('keizai')) subject = 'keizai';
+  else if (subject.includes('経営') || subject.includes('经营') || subject.includes('keiei')) subject = 'keiei';
+  else if (subject.includes('教育') || subject.includes('kyoiku')) subject = 'kyoiku';
+  else subject = 'other';
+
+  return {
+    univ: get('univ') || null,
+    dept: get('dept') || null,
+    spec: get('spec') || null,
+    student: get('student') || null,
+    subject,
+    era,
+    jlpt,
+    jlpt_score,
+    eng_type,
+    eng_score,
+    note: null,
+  };
+}
+
+async function executeImport() {
+  const btn = document.getElementById('import-btn');
+  btn.disabled = true;
+  const prog = document.getElementById('import-progress');
+  const fill = document.getElementById('progress-fill');
+  const label = document.getElementById('progress-label');
+  prog.classList.add('show');
+
+  const rows = uploadRows.map(mapRow).filter(r => r.univ);
+  const BATCH = 50;
+  let done = 0;
+
+  try {
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const batch = rows.slice(i, i + BATCH);
+      await insertBatch(batch);
+      done += batch.length;
+      const pct = Math.round(done / rows.length * 100);
+      fill.style.width = pct + '%';
+      label.textContent = `${done} / ${rows.length} 件処理済み`;
+    }
+    toast(`${done} 件をインポートしました ✓`);
+    resetUpload();
+  } catch(e) {
+    toast('インポートエラー: ' + e.message, false);
+    btn.disabled = false;
+  }
+}
+
+function resetUpload() {
+  document.getElementById('upload-zone').style.display = '';
+  document.getElementById('upload-zone').textContent = '';
+  document.getElementById('upload-zone').innerHTML = `
+    <input type="file" id="file-input" accept=".xlsx,.xls,.csv" onchange="handleFile(this.files[0])">
+    <div style="font-size:14px;margin-bottom:6px">クリックまたはドラッグ＆ドロップ</div>
+    <div style="font-size:11px">.xlsx / .xls / .csv 対応</div>`;
+  document.getElementById('col-mapping').style.display = 'none';
+  document.getElementById('import-preview').style.display = 'none';
+  document.getElementById('import-progress').classList.remove('show');
+  uploadRows = []; uploadColMap = {}; uploadHeaders = [];
+}
+
+// ── Drag & drop ──────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const zone = document.getElementById('upload-zone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag');
+    handleFile(e.dataTransfer.files[0]);
+  });
+  refreshUnivList();
+});
+
+// ─── List ─────────────────────────────────────────────────────────────────────
+async function loadList() {
+  document.getElementById('list-area').innerHTML = '<div class="load-state">読み込み中...</div>';
+  try {
+    allData = await fetchAllResults();
+    renderList();
+  } catch(e) {
+    document.getElementById('list-area').innerHTML = `<div class="load-state" style="color:var(--red)">エラー: ${e.message}</div>`;
+  }
+}
+
+function renderList() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  const fs = document.getElementById('filter-subj').value;
+  const fe = document.getElementById('filter-era').value;
+
+  let rows = allData.filter(r => {
+    if (fs && r.subject !== fs) return false;
+    if (fe && r.era !== fe) return false;
+    if (q && !`${r.univ} ${r.dept} ${r.spec} ${r.student}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  // Sort
+  rows.sort((a, b) => {
+    let av = a[listSortCol] ?? '', bv = b[listSortCol] ?? '';
+    if (typeof av === 'string') return av.localeCompare(bv) * listSortDir;
+    return (av - bv) * listSortDir;
+  });
+
+  document.getElementById('result-count').textContent = `${rows.length} 件`;
+
+  if (!rows.length) {
+    document.getElementById('list-area').innerHTML = '<div class="load-state">データが見つかりません</div>';
+    return;
+  }
+
+  const cols = [
+    { key: 'univ', label: '大学名' },
+    { key: 'dept', label: '研究科' },
+    { key: 'spec', label: '専攻' },
+    { key: 'subject', label: '学科' },
+    { key: 'era', label: '年度' },
+    { key: 'jlpt', label: 'JLPT' },
+    { key: 'jlpt_score', label: 'J点数' },
+    { key: 'eng_type', label: '英語' },
+    { key: 'eng_score', label: '英語点' },
+    { key: 'student', label: '学生' },
+  ];
+
+  const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',other:'その他'};
+
+  let html = `<div class="data-table-wrap"><table class="data-table"><thead><tr>`;
+  for (const c of cols) {
+    const sorted = listSortCol === c.key;
+    const arrow = sorted ? (listSortDir === 1 ? '↑' : '↓') : '↕';
+    html += `<th class="${sorted?'sorted':''}" onclick="sortList('${c.key}')">${c.label} <span class="sort-icon">${arrow}</span></th>`;
+  }
+  html += `<th>操作</th></tr></thead><tbody>`;
+
+  for (const r of rows) {
+    const sc = SUBJ_COLOR[r.subject] || SUBJ_COLOR.other;
+    const eraTag = r.era === 'new'
+      ? `<span class="era-tag era-new">25–26</span>`
+      : `<span class="era-tag era-hist">22–24</span>`;
+    html += `<tr>
+      <td>${r.univ||''}</td>
+      <td>${r.dept||''}</td>
+      <td>${r.spec||''}</td>
+      <td><span class="subj-tag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[r.subject]||r.subject}</span></td>
+      <td>${eraTag}</td>
+      <td>${r.jlpt||'—'}</td>
+      <td>${r.jlpt_score||'—'}</td>
+      <td>${r.eng_type||'—'}</td>
+      <td>${r.eng_score||'—'}</td>
+      <td>${r.student||'—'}</td>
+      <td>
+        <button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="confirmDelete('${r.id}','${(r.univ||'').replace(/'/g,"\\'")}')">削除</button>
+      </td>
+    </tr>`;
+  }
+  html += '</tbody></table></div>';
+  document.getElementById('list-area').innerHTML = html;
+}
+
+function sortList(col) {
+  if (listSortCol === col) listSortDir *= -1;
+  else { listSortCol = col; listSortDir = 1; }
+  renderList();
+}
+
+function confirmDelete(id, univ) {
+  showModal('削除確認', `「${univ}」のレコードを削除しますか？`, async () => {
+    try {
+      await deleteResult(id);
+      allData = allData.filter(r => r.id !== id);
+      renderList();
+      toast('削除しました ✓');
+    } catch(e) {
+      toast('削除エラー: ' + e.message, false);
+    }
+  });
+}
+
+function confirmDeleteAll() {
+  showModal('全件削除', `${allData.length} 件すべてを削除しますか？この操作は元に戻せません。`, async () => {
+    try {
+      // Delete all filtered visible rows
+      const ids = allData.map(r => r.id);
+      // Supabase: delete with in filter
+      for (const id of ids) await deleteResult(id);
+      allData = [];
+      renderList();
+      toast('全件削除しました ✓');
+    } catch(e) {
+      toast('削除エラー: ' + e.message, false);
+    }
+  });
+}
+</script>
+</body>
+</html>
