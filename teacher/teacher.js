@@ -53,8 +53,9 @@ async function init() {
     })).sort((a, b) => a.session_date.localeCompare(b.session_date));
 
     if (p.booking) {
-      cachedTeacherBookings = results[4] || [];
       cachedTeacherSlots = results[5] || [];
+const mySlotIds = cachedTeacherSlots.map(s => s.id);
+cachedTeacherBookings = (results[4] || []).filter(b => mySlotIds.includes(b.slot_id));
     }
 
     // restore avail state
