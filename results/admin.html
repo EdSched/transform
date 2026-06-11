@@ -511,7 +511,7 @@ async function submitForm() {
     student: document.getElementById('f-student').value.trim() || null,
     subject,
     era: document.getElementById('f-era').value,
-    tier: document.getElementById('f-tier').value ? parseInt(document.getElementById('f-tier').value) : null,
+    tier: document.getElementById('f-tier').value !== '' ? parseInt(document.getElementById('f-tier').value) : null,
     jlpt: document.getElementById('f-jlpt').value || null,
     jlpt_score: jlptScore ? parseInt(jlptScore) : null,
     eng_type: document.getElementById('f-eng-type').value || null,
@@ -1035,12 +1035,12 @@ async function loadTierTab() {
     const univMap = {};
     for (const r of all) {
       if (!univMap[r.univ]) {
-        univMap[r.univ] = { count: 0, dbTier: r.tier || null, subjSet: new Set() };
+        univMap[r.univ] = { count: 0, dbTier: r.tier != null ? r.tier : null, subjSet: new Set() };
       }
       univMap[r.univ].count++;
       if (r.subject) univMap[r.univ].subjSet.add(r.subject);
       // Use most common tier value in DB for this univ
-      if (r.tier && !univMap[r.univ].dbTier) univMap[r.univ].dbTier = r.tier;
+      if (r.tier != null && univMap[r.univ].dbTier == null) univMap[r.univ].dbTier = r.tier;
     }
 
     tierUnivData = Object.entries(univMap).map(([univ, d]) => ({
@@ -1104,7 +1104,7 @@ function renderTierTable() {
 
   for (const d of rows) {
     const pending = tierChanges[d.univ];
-    const effective = pending !== undefined ? pending : (d.dbTier || d.autoTier);
+    const effective = pending !== undefined ? pending : (d.dbTier != null ? d.dbTier : d.autoTier);
     const isChanged = pending !== undefined;
     const isManual = d.dbTier !== null;
 
