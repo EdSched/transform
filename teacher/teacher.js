@@ -264,6 +264,35 @@ async function saveBookingRecord(id) {
     // show brief saved indicator
     const btn = document.querySelector(`[onclick="saveBookingRecord('${id}')"]`);
     if (btn) { const orig = btn.textContent; btn.textContent = '✓ 已保存'; setTimeout(() => btn.textContent = orig, 1500); }
+// 生成记录文本
+const b = cachedTeacherBookings.find(x => x.id === id);
+if (b) {
+  const at = b.actual_time ? b.actual_time.replace('T',' ') : `${b.slot_date} ${b.slot_time_range||''}`;
+  const r = record;
+  const lines = [
+    `【面谈记录】${b.name}`,
+    `日期：${at}`,
+    `专业：${MAJORS[b.major]||b.major||''}`,
+    ``,
+    r.study?.status ? `知识学习：${r.study.status}${r.study.advice?'\n建议：'+r.study.advice:''}${r.study.deadline?'\n期限：'+r.study.deadline:''}` : '',
+    r.plan?.status ? `计划书：${r.plan.status}${r.plan.advice?'\n建议：'+r.plan.advice:''}${r.plan.deadline?'\n期限：'+r.plan.deadline:''}` : '',
+    r.apply?.status ? `出愿：${r.apply.status}${r.apply.advice?'\n建议：'+r.apply.advice:''}${r.apply.deadline?'\n期限：'+r.apply.deadline:''}` : '',
+    r.exam?.status ? `备考：${r.exam.status}${r.exam.advice?'\n建议：'+r.exam.advice:''}${r.exam.deadline?'\n期限：'+r.exam.deadline:''}` : '',
+    r.extra ? `补充：${r.extra}` : '',
+  ].filter(Boolean).join('\n');
+  // 显示文本框和复制按钮
+  let copyArea = document.getElementById(`copy_area_${id}`);
+  if (!copyArea) {
+    const container = btn.closest('div');
+    copyArea = document.createElement('div');
+    copyArea.id = `copy_area_${id}`;
+    copyArea.style.cssText = 'margin-top:10px';
+    copyArea.innerHTML = `<pre id="copy_text_${id}" style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:10px;font-size:11px;white-space:pre-wrap;font-family:'DM Mono',monospace;line-height:1.6"></pre>
+      <button onclick="navigator.clipboard.writeText(document.getElementById('copy_text_${id}').textContent).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制记录',2000)})" style="margin-top:6px;font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:4px 12px;cursor:pointer;font-family:inherit">📋 复制记录</button>`;
+    container.appendChild(copyArea);
+  }
+  document.getElementById(`copy_text_${id}`).textContent = lines;
+}
   } catch (e) { alert('保存失败：' + e.message); }
 }
 
