@@ -253,6 +253,7 @@ async function cancelBookingTeacher(id) {
 
 // ── Slot management tab ──
 let teacherSlotMode = 'single';
+let teacherSlotYear = new Date().getFullYear(), teacherSlotMonth = new Date().getMonth();
 
 function renderSlotManagement(mc) {
   const p = teacherData?.permissions || {};
