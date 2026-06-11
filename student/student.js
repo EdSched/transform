@@ -74,15 +74,15 @@ let cachedSlots = [], cachedBookings = [];
 async function initMajor() {
   const p = new URLSearchParams(window.location.search);
   major = p.get('major');
-  if (major && MAJORS[major]) {
+  if (major && (MAJORS[major] || major === 'shakai_group')) {
     document.getElementById('headerContent').innerHTML = `
       <div class="header-major">面谈预约</div>
       <div class="header-sub">唯新教育</div>
-      <div class="header-locked">📌 ${MAJORS[major]}</div>`;
+      <div class="header-locked">📌 ${major === 'shakai_group' ? '社会人文' : MAJORS[major]}</div>;
     try {
       [cachedSlots, cachedBookings] = await Promise.all([
-        sb(`/rest/v1/slots?select=*&major=eq.${major}&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`),
-        sb(`/rest/v1/bookings?select=*&major=eq.${major}&order=slot_date.asc`)
+        sb(`/rest/v1/slots?select=*&${['shakai','shinpan','fukushi'].includes(major)?`major=in.(${major},shakai_group)`:major==='shakai_group'?'major=in.(shakai,shinpan,fukushi,shakai_group)':'major=eq.'+major}&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`),
+sb(`/rest/v1/bookings?select=*&${major==='shakai_group'?'major=in.(shakai,shinpan,fukushi,shakai_group)':'major=eq.'+major}&order=slot_date.asc`)
       ]);
       buildForm();
     } catch(e) {
@@ -284,8 +284,9 @@ async function submitBooking() {
   if (!selectedSlotId) { alert('请选择预约时间'); return; }
 
   // 检查是否有未完成的预约
-  const activeBooking = cachedBookings.find(b =>
-    b.name === name && b.major === major &&
+  const majorList = major === 'shakai_group' ? ['shakai','shinpan','fukushi','shakai_group'] : [major];
+const activeBooking = cachedBookings.find(b =>
+  b.name === name && majorList.includes(b.major) &&
     (b.status === 'pending' || b.status === 'confirmed')
   );
   if (activeBooking) {
@@ -302,7 +303,7 @@ async function submitBooking() {
   if (booked >= cap) { alert('该时间段名额已满，请选择其他时间'); renderSlots(); return; }
 
   const booking = {
-    id: Date.now().toString(), name, major, exam_period: examPeriod,
+    id: Date.now().toString(), name, major: slot.major || major, exam_period: examPeriod,
     specialty_status: document.getElementById('specialtyStatus').value,
     target_school: document.getElementById('targetSchool').value,
     contact_prof: document.getElementById('contactProf').value,
