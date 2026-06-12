@@ -15,7 +15,7 @@ async function init() {
   document.getElementById('headerName').textContent = teacherName + ' 老师';
   try {
     const teachers = await sb(`/rest/v1/teachers?name=eq.${encodeURIComponent(teacherName)}&select=*`);
-    teacherData = teachers[0] || { name: teacherName, permissions: {}, majors: [] };
+    teacherData = teachers[0] || { name: teacherName, permissions: {}, majors: [], display_name: '' };
     const p = teacherData.permissions || {};
     const majors = teacherData.majors || [];
     const fetches = [
@@ -93,6 +93,14 @@ function renderTodo(mc) {
   mc.innerHTML = `
   <div style="display:flex;flex-direction:column;gap:12px">
     ${hasTodo ? '' : '<div style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:4px;padding:12px 16px;font-size:12px;color:#1a5a3a">✓ 暂无待处理事项</div>'}
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px">
+  <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px">显示昵称设置</div>
+  <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">学生预约页面显示的名字，留空则显示真实姓名「${teacherName}」</div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <input id="displayNameInput" type="text" value="${teacherData.display_name||''}" placeholder="输入昵称（可留空）" style="flex:1;font-size:12px;padding:6px 9px">
+    <button onclick="saveDisplayName()" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 14px;font-size:11px;cursor:pointer;font-family:inherit">保存</button>
+  </div>
+</div>
     ${pendingBookings.length ? `<div class="todo-card urgent">
       <div class="todo-head">⚠ 有 ${pendingBookings.length} 个学生预约待确认</div>
       ${pendingBookings.slice(0, 3).map(b => {
@@ -173,7 +181,15 @@ function renderBookingCard(b) {
     </div>`}
   </div>`;
 }
-
+async function saveDisplayName() {
+  const val = document.getElementById('displayNameInput')?.value.trim() || '';
+  try {
+    await sb(`/rest/v1/teachers?name=eq.${encodeURIComponent(teacherName)}`, 'PATCH', { display_name: val });
+    teacherData.display_name = val;
+    const btn = document.querySelector('[onclick="saveDisplayName()"]');
+    if (btn) { btn.textContent = '✓ 已保存'; setTimeout(() => btn.textContent = '保存', 1500); }
+  } catch(e) { alert('保存失败：' + e.message); }
+}
 function toggleRecordPanel(id) {
   const panel = document.getElementById(`record_panel_${id}`);
   if (!panel) return;
