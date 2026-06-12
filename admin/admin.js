@@ -104,8 +104,22 @@ function renderBookingPage(mc){
   <div class="export-bar">
     <div style="font-size:12px;color:var(--text-3)">当月 <strong style="color:var(--text)">${total}</strong> 条预约</div>
     <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="toggleStudentLinks()">🔗 学生链接</button>
       <button class="btn btn-danger btn-sm" onclick="clearCancelledBookings()">清空已取消</button>
       <button class="btn btn-outline btn-sm" onclick="exportExcel()">↓ 导出 Excel</button>
+    </div>
+  </div>
+  <div id="studentLinksPanel" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:12px 14px;margin-bottom:10px">
+    <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px">学生预约链接</div>
+    <div style="display:flex;flex-direction:column;gap:5px">
+      ${[['keiei','経営学'],['keizai','経済学'],['shakai_group','社会人文（三专业）'],['shakai','社会学'],['shinpan','新闻传播学'],['fukushi','社会福祉学']].map(([key,label])=>{
+        const url=`https://edsched.github.io/transform/student/?major=${key}`;
+        return `<div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:11px;min-width:130px;white-space:nowrap">${label}</span>
+          <code style="font-size:10px;color:var(--text-2);background:var(--surface);padding:2px 8px;border-radius:2px;flex:1;border:1px solid var(--border-light);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${url}</code>
+          <button onclick="navigator.clipboard.writeText('${url}').then(()=>{this.textContent='✓';setTimeout(()=>this.textContent='复制',1500)})" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;white-space:nowrap">复制</button>
+        </div>`;
+      }).join('')}
     </div>
   </div>
   <div class="filter-row" id="majorFilterRow">
@@ -159,6 +173,10 @@ function renderPills(b){
 function bkMonthShift(d){bkMonth+=d;if(bkMonth>11){bkMonth=0;bkYear++}if(bkMonth<0){bkMonth=11;bkYear--}renderPage()}
 function setBkTab(t,el){bkTab=t;document.querySelectorAll('.btn-group button').forEach(b=>b.classList.remove('active'));el.classList.add('active');renderBookingPage(document.getElementById('mainContent'))}
 function setBkType(t,el){bkType=t;document.querySelectorAll('.filter-row:nth-of-type(3) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderBookingPage(document.getElementById('mainContent'))}
+function toggleStudentLinks(){
+  const p=document.getElementById('studentLinksPanel');
+  if(p) p.style.display=p.style.display==='none'?'block':'none';
+}
 function setBkMajor(m,el){bkMajor=m;document.querySelectorAll('#majorFilterRow .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderBookingPage(document.getElementById('mainContent'))}
 async function confirmBooking(id){
   try{await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',{status:'confirmed'});const b=cachedBookings.find(x=>x.id===id);if(b)b.status='confirmed';renderBookingPage(document.getElementById('mainContent'))}catch(e){alert('操作失败：'+e.message)}
