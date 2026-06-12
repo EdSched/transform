@@ -334,6 +334,21 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1100px; }
     </div>
   </div>
 
+  <!-- Repair section -->
+  <div class="form-panel" style="margin-top:1.5rem">
+    <div class="form-section-title">既存データの語学スコア修復</div>
+    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;line-height:1.7">
+      アップロード済みデータのJLPT・英語スコアが空白になっている場合、以下から再アップロードして修復できます。<br>
+      <span style="color:var(--text-muted);font-size:11px">同じ大学名・研究科・専攻のレコードをマッチングして、jlpt / eng_type / eng_score のみ上書き更新します。</span>
+    </p>
+    <div class="upload-zone" id="repair-zone" onclick="document.getElementById('repair-input').click()">
+      <input type="file" id="repair-input" accept=".xlsx,.xls,.csv" onchange="handleRepairFile(this.files[0])">
+      <div style="font-size:13px;margin-bottom:6px">修復用ファイルをここにドロップ</div>
+      <div style="font-size:11px">同じ列構成のExcelをアップロード → スコアのみ更新</div>
+    </div>
+    <div id="repair-status" style="font-size:12px;color:var(--text-muted);margin-top:8px"></div>
+  </div>
+
   <!-- SQL helper -->
   <div class="form-panel" style="margin-top:1.5rem">
     <div class="form-section-title">Supabase テーブル作成 SQL（初回のみ）</div>
@@ -983,7 +998,14 @@ async function insertResult(row) {
 }
 
 async function insertBatch(rows) {
-  return sbFetch('admission_results', { method: 'POST', body: rows, prefer: 'return=representation' });
+  // Ensure numeric fields are properly typed
+  const clean = rows.map(r => ({
+    ...r,
+    jlpt_score: r.jlpt_score != null ? parseInt(r.jlpt_score) || null : null,
+    eng_score:  r.eng_score  != null ? parseInt(r.eng_score)  || null : null,
+    tier:       r.tier       != null ? parseInt(r.tier)       || null : null,
+  }));
+  return sbFetch('admission_results', { method: 'POST', body: clean, prefer: 'return=representation' });
 }
 
 async function deleteResult(id) {
@@ -1210,6 +1232,99 @@ async function saveTierChanges() {
     btn.disabled = false;
     updateTierSaveBtn();
   }
+}
+
+
+// ─── Repair existing records ──────────────────────────────────────────────────
+async function handleRepairFile(file) {
+  if (!file) return;
+  const status = document.getElementById('repair-status');
+  status.textContent = '読み込み中...';
+
+  const reader = new FileReader();
+  reader.onload = async e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      if (rows.length < 2) { status.textContent = 'データが空です'; return; }
+
+      const headers = rows[0].map(String);
+      const dataRows = rows.slice(1).filter(r => r.some(c => c !== ''));
+
+      // Auto-detect columns
+      function findCol(keywords) {
+        return headers.findIndex(h => keywords.some(k => h.toLowerCase().includes(k)));
+      }
+      const univCol  = findCol(['大学','学校','univ']);
+      const deptCol  = findCol(['研究科','dept']);
+      const specCol  = findCol(['専攻','专攻','spec']);
+      const jlptCol  = findCol(['jlpt','日語','日语']);
+      const engCol   = findCol(['英語','toeic','toefl','英语','英']);
+
+      if (univCol === -1) { status.textContent = '大学名の列が見つかりません'; return; }
+
+      status.textContent = `${dataRows.length} 件を処理中...`;
+
+      // Fetch all existing records
+      const all = await fetchAllResults();
+      let updated = 0, skipped = 0;
+
+      for (const row of dataRows) {
+        const univ = String(row[univCol] || '').trim();
+        if (!univ) continue;
+
+        const jlptRaw = jlptCol >= 0 ? String(row[jlptCol] || '') : '';
+        const engRaw  = engCol  >= 0 ? String(row[engCol]  || '') : '';
+
+        const { jlpt, jlpt_score } = parseJlpt(jlptRaw);
+        const { eng_type, eng_score } = parseEng(engRaw);
+
+        // Skip if no score data to update
+        if (!jlpt && !eng_type) { skipped++; continue; }
+
+        // Find matching records by univ (+ optionally dept/spec)
+        const dept = deptCol >= 0 ? String(row[deptCol] || '').trim() : '';
+        const spec = specCol >= 0 ? String(row[specCol] || '').trim() : '';
+
+        const matches = all.filter(r => {
+          if (normUnivAdmin(r.univ) !== normUnivAdmin(univ)) return false;
+          if (dept && r.dept && !r.dept.includes(dept) && !dept.includes(r.dept)) return false;
+          return true;
+        });
+
+        for (const rec of matches) {
+          if (rec.jlpt || rec.eng_type) { skipped++; continue; } // already has data
+          await sbFetch(`admission_results?id=eq.${rec.id}`, {
+            method: 'PATCH',
+            body: { jlpt, jlpt_score, eng_type, eng_score },
+            prefer: 'return=minimal',
+            headers: {}
+          });
+          updated++;
+        }
+      }
+
+      status.textContent = `完了: ${updated} 件更新, ${skipped} 件スキップ ✓`;
+      // Reset file input
+      document.getElementById('repair-input').value = '';
+    } catch(err) {
+      status.textContent = 'エラー: ' + err.message;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// Minimal univ normalizer for admin (no full UNIV_NORM needed)
+function normUnivAdmin(u) {
+  if (!u) return '';
+  const map = {
+    '早稻田大学':'早稲田大学','一桥大学':'一橋大学','东京大学':'東京大学',
+    '大阪大学':'大阪大学','庆应义塾大学':'慶應義塾大学','慶応義塾大学':'慶應義塾大学',
+    '立命馆大学':'立命館大学','关西大学':'関西大学','关西学院大学':'関西学院大学',
+    '东洋大学':'東洋大学','驹泽大学':'駒沢大学','武藏大学':'武蔵大学',
+  };
+  return map[u.trim()] || u.trim();
 }
 
 </script>
