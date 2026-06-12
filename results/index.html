@@ -185,6 +185,11 @@ main{padding:1.5rem 3rem 4rem}
       <button onclick="setTier(3)">T3</button>
     </div>
     <span class="flbl" style="margin-left:6px">学科</span>
+    <button id="subj-all-btn" onclick="toggleAllSubj()"
+      style="padding:2px 10px;border:1px solid var(--border);border-radius:2px;font-family:inherit;font-size:10px;
+             background:var(--bg);color:var(--text-muted);cursor:pointer;white-space:nowrap;transition:all .12s;flex-shrink:0">
+      全解除
+    </button>
     <div class="pill-row" id="subj-pills"></div>
   </div>
   <div class="filter-row">
@@ -534,12 +539,54 @@ function buildPills() {
       style="background:${c.bg};color:${c.fg};border-color:${c.fg}"
       onclick="toggleSubj('${s.id}')">${s.label}</button>`;
   }).join('');
+  updatePillUI();
 }
 function toggleSubj(id) {
-  if (activeSubjs.has(id) && activeSubjs.size===1) return;
-  activeSubjs.has(id) ? activeSubjs.delete(id) : activeSubjs.add(id);
-  document.getElementById('pill-'+id)?.classList.toggle('active', activeSubjs.has(id));
+  const allIds = SUBJ_META.map(s => s.id);
+  const isOnlyOne = activeSubjs.size === 1 && activeSubjs.has(id);
+  const isAllActive = activeSubjs.size === allIds.length;
+
+  if (isAllActive) {
+    // All active → single-select this one
+    activeSubjs = new Set([id]);
+  } else if (isOnlyOne) {
+    // Already the only one → re-select all
+    activeSubjs = new Set(allIds);
+  } else {
+    // Toggle this one in/out
+    activeSubjs.has(id) ? activeSubjs.delete(id) : activeSubjs.add(id);
+    if (activeSubjs.size === 0) activeSubjs = new Set(allIds);
+  }
+  updatePillUI();
   applyFilters();
+}
+
+function toggleAllSubj() {
+  const allIds = SUBJ_META.map(s => s.id);
+  if (activeSubjs.size === allIds.length) {
+    // All active → deactivate all (show nothing — or keep one)
+    // Better: cycle through: all→none shown as "全解除" state, click again→all
+    activeSubjs = new Set();
+  } else {
+    activeSubjs = new Set(allIds);
+  }
+  updatePillUI();
+  applyFilters();
+}
+
+function updatePillUI() {
+  const allIds = SUBJ_META.map(s => s.id);
+  allIds.forEach(id => {
+    document.getElementById('pill-'+id)?.classList.toggle('active', activeSubjs.has(id));
+  });
+  const btn = document.getElementById('subj-all-btn');
+  if (btn) {
+    const allActive = activeSubjs.size === allIds.length;
+    btn.textContent = allActive ? '全解除' : '全選択';
+    btn.style.background = allActive ? 'var(--bg)' : 'var(--text-primary)';
+    btn.style.color = allActive ? 'var(--text-muted)' : 'var(--bg)';
+    btn.style.borderColor = allActive ? 'var(--border)' : 'var(--text-primary)';
+  }
 }
 
 // ─── Controls ─────────────────────────────────────────────────────────────────
@@ -563,6 +610,7 @@ function filtered() {
   const fmax=parseInt(document.getElementById('toefl-max').value);
   return allData.filter(r=>{
     if (curEra!=='all' && r.era!==curEra) return false;
+    if (activeSubjs.size === 0) return false;
     if (!activeSubjs.has(r.subject||'other')) return false;
     if (curTier!==-1 && (r.tier != null ? r.tier : tierOf(r.univ))!==curTier) return false;
     if (curJlpt!=='all' && r.jlpt!==curJlpt) return false;
