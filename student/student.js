@@ -70,6 +70,7 @@ function clearStoredInfo() {
 let major = null, selectedType = null, selectedSlotId = null;
 let slotViewYear = new Date().getFullYear(), slotViewMonth = new Date().getMonth();
 let cachedSlots = [], cachedBookings = [];
+let teacherDisplayNames = {};
 
 async function initMajor() {
   const p = new URLSearchParams(window.location.search);
@@ -80,7 +81,7 @@ async function initMajor() {
       <div class="header-sub">唯新教育</div>
       <div class="header-locked">📌 ${major === 'shakai_group' ? '社会人文' : MAJORS[major]}</div>`;
     try {
-      let teacherDisplayNames = {};
+      teacherDisplayNames = {};
 [cachedSlots, cachedBookings] = await Promise.all([
   sb(`/rest/v1/slots?select=*&major=in.(shakai,shinpan,fukushi,shakai_group)&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`),
   sb(`/rest/v1/bookings?select=*&major=eq.${major}&order=slot_date.asc`)
