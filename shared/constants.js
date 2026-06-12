@@ -3,6 +3,7 @@ const MAJORS = {
   keiei: '経営学',
   keizai: '経済学',
   shakai: '社会学',
+  shakai_group: '社会人文',
   shinpan: '新闻传播学',
   fukushi: '社会福祉学'
 };
