@@ -80,10 +80,16 @@ async function initMajor() {
       <div class="header-sub">唯新教育</div>
       <div class="header-locked">📌 ${major === 'shakai_group' ? '社会人文' : MAJORS[major]}</div>`;
     try {
-      [cachedSlots, cachedBookings] = await Promise.all([
+      let teacherDisplayNames = {};
+[cachedSlots, cachedBookings] = await Promise.all([
   sb(`/rest/v1/slots?select=*&major=in.(shakai,shinpan,fukushi,shakai_group)&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`),
   sb(`/rest/v1/bookings?select=*&major=eq.${major}&order=slot_date.asc`)
 ]);
+      const teacherNames = [...new Set(cachedSlots.map(s => s.teacher_name).filter(Boolean))];
+if (teacherNames.length) {
+  const teachers = await sb(`/rest/v1/teachers?name=in.(${teacherNames.map(n=>`"${n}"`).join(',')})&select=name,display_name`).catch(() => []);
+  teachers.forEach(t => { if (t.display_name) teacherDisplayNames[t.name] = t.display_name; });
+}
       buildForm();
     } catch(e) {
       document.getElementById('mainWrap').innerHTML = `<div class="no-major-banner"><div class="no-major-title">加载失败</div><div class="no-major-text">${e.message}</div></div>`;
@@ -263,7 +269,7 @@ function renderSlots() {
           <span class="tag ${typeTag(s.type)}" style="margin-left:auto;font-size:9px">${s.type === 'daily' ? '日常' : s.type === 'plan' ? '计划书' : '模拟'}</span>
         </div>
         <div class="slot-time-r">${s.time_range}</div>
-${s.teacher_name ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">👤 ${s.teacher_name}</div>` : ''}
+${s.teacher_name ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">👤 ${teacherDisplayNames[s.teacher_name] || s.teacher_name}</div>` : ''}
         ${isDimmed ? '' : remainLabel}
       </label>
     </div>`;
