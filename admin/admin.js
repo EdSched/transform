@@ -2472,6 +2472,7 @@ function renderTeachersPage(mc){
         <div style="display:flex;flex-wrap:wrap;gap:6px" id="new_teacher_majors">
           <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="keiei" style="accent-color:var(--accent)">経営学</label>
           <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="keizai" style="accent-color:var(--accent)">経済学</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="shakai_group" style="accent-color:var(--accent)">社会人文</label>
           <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="shakai" style="accent-color:var(--accent)">社会学</label>
           <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="shinpan" style="accent-color:var(--accent)">新闻传播</label>
           <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="fukushi" style="accent-color:var(--accent)">社会福祉</label>
