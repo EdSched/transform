@@ -26,7 +26,7 @@ async function init() {
     ];
     if (p.booking && majors.length) {
       fetches.push(
-        sb(`/rest/v1/bookings?major=in.(${majors.map(m=>`"${m}"`).join(',')})&type=in.(${(p.booking_types||['daily']).map(t=>`"${t}"`).join(',')})&status=in.("pending","confirmed")&select=*&order=slot_date.asc`).catch(() => []),
+        sb(`/rest/v1/bookings?major=in.(${[...new Set(majors.flatMap(m=>m==='shakai_group'?['shakai','shinpan','fukushi','shakai_group']:m))].map(m=>`"${m}"`).join(',')})&type=in.(${(p.booking_types||['daily']).map(t=>`"${t}"`).join(',')})&status=in.("pending","confirmed")&select=*&order=slot_date.asc`).catch(() => []),
         sb(`/rest/v1/slots?major=in.(${majors.map(m=>`"${m}"`).join(',')})&teacher_name=eq.${encodeURIComponent(teacherName)}&select=*&order=date.asc,time_range.asc`).catch(() => [])
       );
     }
