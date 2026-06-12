@@ -39,9 +39,9 @@ header{background:var(--surface);border-bottom:2px solid var(--text-primary);pad
 .seg button:hover:not(.active){background:var(--bg)}
 
 /* Pills */
-.pill-row{display:flex;gap:5px;flex-wrap:wrap}
-.pill{padding:2px 9px;border-radius:2px;font-size:10px;font-family:inherit;cursor:pointer;border:1px solid transparent;transition:opacity .12s;letter-spacing:.02em}
-.pill:not(.active){opacity:.35}
+.pill-row{display:flex;gap:6px;flex-wrap:wrap;max-width:700px}
+.pill{padding:4px 11px;border-radius:3px;font-size:12px;font-family:inherit;cursor:pointer;border:1px solid transparent;transition:opacity .12s;letter-spacing:.01em;white-space:nowrap}
+.pill:not(.active){opacity:.32}
 .pill.active{opacity:1}
 
 /* Score filters */
@@ -270,10 +270,20 @@ main{padding:1.5rem 3rem 4rem}
 </div>
 
 <main id="main">
-  <div class="view-tabs">
+  <div class="view-tabs" style="display:flex;align-items:center;gap:6px;margin-bottom:1.2rem">
     <button class="vtab active" onclick="setGroupBy('tier')">学校別（層次）</button>
     <button class="vtab" onclick="setGroupBy('subject')">学科別</button>
     <button class="vtab" onclick="setGroupBy('era')">年度別</button>
+    <div id="inline-stats" style="margin-left:auto;display:flex;align-items:center;gap:16px">
+      <div style="text-align:right">
+        <div style="font-family:'Noto Serif SC',serif;font-size:2.2rem;font-weight:300;color:var(--accent);line-height:1" id="inline-total">—</div>
+        <div style="font-size:10px;color:var(--text-muted);letter-spacing:.06em;margin-top:2px">合格件数</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-family:'Noto Serif SC',serif;font-size:2.2rem;font-weight:300;color:var(--text-secondary);line-height:1" id="inline-univs">—</div>
+        <div style="font-size:10px;color:var(--text-muted);letter-spacing:.06em;margin-top:2px">合格大学数</div>
+      </div>
+    </div>
   </div>
   <div id="content"><div class="loading">読み込み中...</div></div>
 </main>
@@ -635,8 +645,15 @@ function sortRows(rows, key, dir) {
 function applyFilters() {
   let data = filtered();
   if (curSort!=='default') data = sortRows(data, curSort, sortDir);
-  document.getElementById('stat-total').textContent = data.length;
-  document.getElementById('stat-univs').textContent = new Set(data.map(d=>d.univ)).size;
+  const totalCount = data.length;
+  const univCount = new Set(data.map(d=>d.univ)).size;
+  document.getElementById('stat-total').textContent = totalCount;
+  document.getElementById('stat-univs').textContent = univCount;
+  // Inline stats below view tabs
+  const il = document.getElementById('inline-total');
+  const iu = document.getElementById('inline-univs');
+  if (il) il.textContent = totalCount;
+  if (iu) iu.textContent = univCount;
 
   const content = document.getElementById('content');
   // Keep view-tabs
