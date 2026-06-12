@@ -138,6 +138,7 @@ function renderBookingManagement(mc) {
 
 function renderBookingCard(b) {
   const f = fmtSessionDate(b.slot_date);
+  const hasRecord = b.daily_record && Object.values(b.daily_record).some(v => v && (typeof v === 'string' ? v : Object.values(v).some(x=>x)));
   return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px;margin-bottom:8px;border-left:3px solid ${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'}">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px">
       <div>
@@ -148,6 +149,7 @@ function renderBookingCard(b) {
     </div>
     <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">${f.short} ${f.dow} · ${b.slot_time_range || ''} · ${b.duration}min · <span class="tag ${typeTag(b.type)}">${typeLabel(b.type)}</span></div>
     ${b.needs ? `<div style="font-size:11px;color:var(--text-2);background:var(--bg);border-radius:2px;padding:6px 8px;margin-bottom:8px">💬 ${b.needs}</div>` : ''}
+    ${b.actual_time ? `<div style="font-size:11px;color:var(--ok);margin-bottom:6px">✓ 面谈时间：${b.actual_time.replace('T', ' ')}</div>` : ''}
     ${b.status === 'pending' ? `
     <div style="display:flex;gap:6px">
       <input type="date" id="actual_date_${b.id}" style="flex:1;font-size:11px;padding:5px 8px">
@@ -156,16 +158,29 @@ function renderBookingCard(b) {
       <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:6px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text-3)">取消</button>
     </div>` : `
     <div>
-      ${b.actual_time ? `<div style="font-size:11px;color:var(--ok);margin-bottom:8px">✓ 面谈时间：${b.actual_time.replace('T', ' ')}</div>` : ''}
-      <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px">面谈记录</div>
-      ${renderRecordForm(b.id, b.daily_record || {})}
-      <div style="display:flex;gap:6px;margin-top:10px">
-        <button onclick="saveBookingRecord('${b.id}')" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit">保存记录</button>
-        <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--danger)">取消预约</button>
+      <button onclick="toggleRecordPanel('${b.id}')" style="font-size:11px;color:var(--text-2);background:none;border:1px solid var(--border);border-radius:3px;padding:4px 10px;cursor:pointer;font-family:inherit;margin-bottom:8px">
+        ${hasRecord ? '📋 查看/编辑记录' : '📝 填写面谈记录'} ▾
+      </button>
+      <div id="record_panel_${b.id}" style="display:none">
+        <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px">面谈记录</div>
+        ${renderRecordForm(b.id, b.daily_record || {})}
+        <div style="display:flex;gap:6px;margin-top:10px">
+          <button onclick="saveBookingRecord('${b.id}')" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit">保存记录</button>
+          <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--danger)">取消预约</button>
+        </div>
+        <div id="copy_area_${b.id}"></div>
       </div>
-      <div id="copy_area_${b.id}"></div>
     </div>`}
   </div>`;
+}
+
+function toggleRecordPanel(id) {
+  const panel = document.getElementById(`record_panel_${id}`);
+  if (!panel) return;
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'block';
+  const btn = panel.previousElementSibling;
+  if (btn) btn.innerHTML = btn.innerHTML.replace(isOpen ? '▴' : '▾', isOpen ? '▾' : '▴');
 }
 
 async function saveBookingRecord(id) {
