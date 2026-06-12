@@ -82,15 +82,20 @@ async function initMajor() {
       <div class="header-locked">📌 ${major === 'shakai_group' ? '社会人文' : MAJORS[major]}</div>`;
     try {
       teacherDisplayNames = {};
-[cachedSlots, cachedBookings] = await Promise.all([
-  sb(`/rest/v1/slots?select=*&major=in.(shakai,shinpan,fukushi,shakai_group)&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`),
-  sb(`/rest/v1/bookings?select=*&major=eq.${major}&order=slot_date.asc`)
-]);
+      const slotMajorFilter = major === 'shakai_group'
+        ? 'major=in.(shakai,shinpan,fukushi,shakai_group)'
+        : ['shakai','shinpan','fukushi'].includes(major)
+          ? `major=in.(${major},shakai_group)`
+          : `major=eq.${major}`;
+      [cachedSlots, cachedBookings] = await Promise.all([
+        sb(`/rest/v1/slots?select=*&${slotMajorFilter}&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`),
+        sb(`/rest/v1/bookings?select=*&major=eq.${major}&order=slot_date.asc`)
+      ]);
       const teacherNames = [...new Set(cachedSlots.map(s => s.teacher_name).filter(Boolean))];
-if (teacherNames.length) {
-  const teachers = await sb(`/rest/v1/teachers?name=in.(${teacherNames.map(n=>`"${n}"`).join(',')})&select=name,display_name`).catch(() => []);
-  teachers.forEach(t => { if (t.display_name) teacherDisplayNames[t.name] = t.display_name; });
-}
+      if (teacherNames.length) {
+        const teachers = await sb(`/rest/v1/teachers?name=in.(${teacherNames.map(n=>`"${n}"`).join(',')})&select=name,display_name`).catch(() => []);
+        teachers.forEach(t => { if (t.display_name) teacherDisplayNames[t.name] = t.display_name; });
+      }
       buildForm();
     } catch(e) {
       document.getElementById('mainWrap').innerHTML = `<div class="no-major-banner"><div class="no-major-title">加载失败</div><div class="no-major-text">${e.message}</div></div>`;
