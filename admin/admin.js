@@ -157,6 +157,7 @@ function renderBookingCard(b){
     <div class="progress-pills">${renderPills(b)}</div>
     ${b.needs?`<div class="booking-needs">💬 ${b.needs}</div>`:''}
     ${b.actual_time?`<div class="note-field"><div class="note-label">实际面谈时间</div><div class="actual-time">✓ ${b.actual_time.replace('T',' ')}</div></div>`:''}
+    ${b.file_url?`<div class="note-field"><div class="note-label">提交文件</div><a href="${b.file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 查看文件</a></div>`:''}
     ${b.note?`<div class="note-field"><div class="note-label">备注</div><div class="note-content">${b.note}</div></div>`:''}
     <div class="booking-actions">
       ${b.status==='pending'?`<button class="btn btn-success btn-sm" onclick="confirmBooking('${b.id}')">✓ 确认</button>`:''}
