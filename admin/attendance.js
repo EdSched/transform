@@ -19,6 +19,7 @@ function attPresent(v){return v==='offline'||v==='online'||v==='replay';}
 
 let attPeriodFilter='';
 let attTypeFilter='';
+let attMajorFilter='all';
 let sessionEdits={};
 
 function renderAttendancePage(mc){
@@ -28,8 +29,22 @@ function renderAttendancePage(mc){
       return y+'年'+c.period;
     })
   )].sort();
-
   const types=[...new Set(cachedCourses.map(c=>c.course_type).filter(Boolean))];
+
+  // courses matching current type+period filter
+  let filteredCourses=cachedCourses;
+  if(attTypeFilter) filteredCourses=filteredCourses.filter(c=>c.course_type===attTypeFilter);
+  if(attPeriodFilter){
+    filteredCourses=filteredCourses.filter(c=>{
+      const y=c.first_session_date?.slice(0,4)||'';
+      return y+'年'+c.period===attPeriodFilter;
+    });
+  }
+  const seen=new Set();
+  filteredCourses=filteredCourses.filter(c=>{if(seen.has(c.id))return false;seen.add(c.id);return true});
+
+  // majors available in filtered courses
+  const availMajors=[...new Set(filteredCourses.flatMap(c=>c.major||[]))].filter(m=>MAJORS[m]);
 
   mc.innerHTML=`
   <div class="page-header">
@@ -38,37 +53,35 @@ function renderAttendancePage(mc){
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:14px;margin-bottom:16px">
     <div style="display:flex;gap:16px;flex-wrap:wrap">
       <div>
-        <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">期数</div>
-        <div style="display:flex;gap:5px;flex-wrap:wrap">
-          ${periods.map(p=>`<div class="filter-chip${attPeriodFilter===p?' active':''}" onclick="setAttPeriod('${p}')">${p}</div>`).join('')}
-        </div>
-      </div>
-      <div>
         <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">课程属性</div>
         <div style="display:flex;gap:5px;flex-wrap:wrap">
           ${types.map(t=>`<div class="filter-chip${attTypeFilter===t?' active':''}" onclick="setAttType('${t}')">${t}</div>`).join('')}
         </div>
       </div>
+      <div>
+        <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">期数</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">
+          ${periods.map(p=>`<div class="filter-chip${attPeriodFilter===p?' active':''}" onclick="setAttPeriod('${p}')">${p}</div>`).join('')}
+        </div>
+      </div>
+      ${attTypeFilter&&availMajors.length?`<div>
+        <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">专业</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">
+          <div class="filter-chip${attMajorFilter==='all'?' active':''}" onclick="setAttMajor('all')">全部</div>
+          ${availMajors.map(m=>`<div class="filter-chip${attMajorFilter===m?' active':''}" onclick="setAttMajor('${m}')">${MAJORS[m]||m}</div>`).join('')}
+        </div>
+      </div>`:''}
     </div>
-    ${!attPeriodFilter&&!attTypeFilter?'<div style="font-size:11px;color:var(--text-3);margin-top:10px">请选择期数或课程属性查看课次</div>':''}
+    ${!attTypeFilter&&!attPeriodFilter?'<div style="font-size:11px;color:var(--text-3);margin-top:10px">请选择课程属性或期数查看课次</div>':''}
   </div>
-  ${attPeriodFilter||attTypeFilter ? renderSessionList() : ''}`;
+  ${attTypeFilter||attPeriodFilter ? renderSessionList(filteredCourses) : ''}`;
 }
 
-function renderSessionList(){
-  let courses=cachedCourses;
-  if(attPeriodFilter){
-    courses=courses.filter(c=>{
-      const y=c.first_session_date?.slice(0,4)||'';
-      return y+'年'+c.period===attPeriodFilter;
-    });
+function renderSessionList(filteredCourses){
+  let courses=filteredCourses;
+  if(attMajorFilter!=='all'){
+    courses=courses.filter(c=>(c.major||[]).includes(attMajorFilter));
   }
-  if(attTypeFilter){
-    courses=courses.filter(c=>c.course_type===attTypeFilter);
-  }
-  // deduplicate by id
-  const seen=new Set();
-  courses=courses.filter(c=>{if(seen.has(c.id))return false;seen.add(c.id);return true});
 
   const sessions=cachedSessions
     .filter(s=>courses.find(c=>c.id===s.course_id)&&s.confirmed)
@@ -136,10 +149,16 @@ function renderSessionList(){
 
 function setAttPeriod(p){
   attPeriodFilter=attPeriodFilter===p?'':p;
+  attMajorFilter='all';
   renderAttendancePage(document.getElementById('mainContent'));
 }
 function setAttType(t){
   attTypeFilter=attTypeFilter===t?'':t;
+  attMajorFilter='all';
+  renderAttendancePage(document.getElementById('mainContent'));
+}
+function setAttMajor(m){
+  attMajorFilter=m;
   renderAttendancePage(document.getElementById('mainContent'));
 }
 
