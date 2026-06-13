@@ -185,6 +185,7 @@ function buildForm() {
   <div class="card">
     <div class="card-title"><span class="step-num">5</span>具体需求</div>
     <textarea id="needs" rows="3" placeholder="希望解决的问题，或需要老师重点关注的内容…"></textarea>
+    <div style="font-size:10px;color:var(--text-muted);margin-top:6px;line-height:1.6">⚠ 非老师明确指定的线下面谈，一律默认线上进行。请确认好选择的日期和地点，如有疑问请及时和老师联系。</div>
   </div>
   <button class="btn btn-primary" onclick="submitBooking()">提交预约申请 →</button>
   <div class="section-sep"><div class="section-sep-line"></div><div class="section-sep-label">本月预约情况</div><div class="section-sep-line"></div></div>
@@ -259,8 +260,8 @@ function renderSlots() {
   const slotBookedCount = {};
   cachedBookings.filter(b => b.status !== 'cancelled').forEach(b => { slotBookedCount[b.slot_id] = (slotBookedCount[b.slot_id] || 0) + 1; });
   if (!allSlots.length) { grid.innerHTML = '<div class="no-slots">本月暂无可预约时间槽<br><span style="font-size:10px">请联系老师确认排期</span></div>'; return; }
-  const visible = selectedType ? allSlots.filter(s => s.type === selectedType) : allSlots;
-  const dimmed = selectedType ? allSlots.filter(s => s.type !== selectedType) : [];
+  const visible = selectedType ? allSlots.filter(s => Array.isArray(s.type) ? s.type.includes(selectedType) : s.type === selectedType) : allSlots;
+  const dimmed = selectedType ? allSlots.filter(s => Array.isArray(s.type) ? !s.type.includes(selectedType) : s.type !== selectedType) : [];
   const renderSlot = (s, isDimmed) => {
     const d = new Date(s.date), dow = DAYS_CN[d.getDay()];
     const dc = d.getDay() === 6 ? 'var(--sat)' : d.getDay() === 0 ? 'var(--sun)' : 'var(--text-secondary)';
@@ -273,10 +274,11 @@ function renderSlots() {
         <div style="display:flex;align-items:center;gap:4px">
           <span class="slot-date-r">${s.date.slice(5).replace('-', '/')}</span>
           <span class="slot-dow-r" style="color:${dc}">${dow}</span>
-          <span class="tag ${typeTag(s.type)}" style="margin-left:auto;font-size:9px">${s.type === 'daily' ? '日常' : s.type === 'plan' ? '计划书' : '模拟'}</span>
+          <span class="tag ${typeTag(Array.isArray(s.type)?s.type[0]:s.type)}" style="margin-left:auto;font-size:9px">${(Array.isArray(s.type)?s.type:[s.type]).map(t=>t==='daily'?'日常':t==='plan'?'计划书':'模拟').join('・')}</span>
         </div>
         <div class="slot-time-r">${s.time_range}</div>
 ${s.teacher_name ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">👤 ${teacherDisplayNames[s.teacher_name] || s.teacher_name}</div>` : ''}
+${s.location && s.location !== 'online' ? `<div style="font-size:10px;color:#2a6aad;margin-top:2px">📍 ${s.location==='offline_takadanobaba'?'线下 · 高田马场':'线下 · 市谷'}</div>` : ''}
         ${isDimmed ? '' : remainLabel}
       </label>
     </div>`;
@@ -310,8 +312,8 @@ const activeBooking = cachedBookings.find(b =>
 
   const slot = cachedSlots.find(s => s.id === selectedSlotId);
   if (!slot) { alert('时间槽不存在，请刷新后重试'); return; }
-  if (slot.type === 'plan' && !canSelectPlan()) { alert('当前进程不符合计划书相关面谈的条件'); return; }
-  if (slot.type === 'mock' && !canSelectMock()) { alert('当前进程不符合模拟面试的条件'); return; }
+  if ((Array.isArray(slot.type)?slot.type:[slot.type]).includes('plan') && !canSelectPlan()) { alert('当前进程不符合计划书相关面谈的条件'); return; }
+  if ((Array.isArray(slot.type)?slot.type:[slot.type]).includes('mock') && !canSelectMock()) { alert('当前进程不符合模拟面试的条件'); return; }
   const cap = slotCap(slot.time_range);
   const booked = cachedBookings.filter(b => b.slot_id === selectedSlotId && b.status !== 'cancelled').length;
   if (booked >= cap) { alert('该时间段名额已满，请选择其他时间'); renderSlots(); return; }
@@ -323,7 +325,7 @@ const activeBooking = cachedBookings.find(b =>
     contact_prof: document.getElementById('contactProf').value,
     plan_status: planStatus, application_status: document.getElementById('applicationStatus').value,
     written_exam: document.getElementById('writtenExam').value,
-    interview_status: interviewStatus, type: slot.type, slot_id: selectedSlotId,
+    interview_status: interviewStatus, type: selectedType || (Array.isArray(slot.type)?slot.type[0]:slot.type), slot_id: selectedSlotId,
     slot_date: slot.date, slot_time_range: slot.time_range,
     duration: parseInt(duration), urgency, needs, status: 'pending', actual_time: '', note: null, daily_record: null
   };
