@@ -302,9 +302,9 @@ function renderSlotManagement(mc) {
           </div>
         </div>
         <div class="form-group"><label class="form-label">类型（可多选）</label>
-          <div style="display:flex;gap:8px;flex-wrap:wrap" id="ts_type_group">
-            ${allowedTypes.map(t => `<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap">
-              <input type="checkbox" value="${t}" style="accent-color:var(--accent)">${typeLabel(t)}
+          <div style="display:flex;flex-direction:column;gap:8px" id="ts_type_group">
+            ${allowedTypes.map(t => `<label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer">
+              <input type="checkbox" value="${t}" style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0">${typeLabel(t)}
             </label>`).join('')}
           </div>
         </div>
