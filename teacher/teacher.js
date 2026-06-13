@@ -166,6 +166,14 @@ function renderBookingCard(b) {
       <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:6px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text-3)">取消</button>
     </div>` : `
     <div>
+      <div style="margin-bottom:8px">
+        <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">提交文件链接（可选）</div>
+        <div style="display:flex;gap:6px">
+          <input type="url" id="fileurl_${b.id}" value="${b.file_url||''}" placeholder="Google Drive / 百度网盘 等链接" style="flex:1;font-size:11px;padding:5px 8px">
+          <button onclick="saveFileUrl('${b.id}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">保存链接</button>
+        </div>
+        ${b.file_url ? `<a href="${b.file_url}" target="_blank" style="font-size:10px;color:var(--accent);margin-top:3px;display:block">📎 已提交文件</a>` : ''}
+      </div>
       <button onclick="toggleRecordPanel('${b.id}')" style="font-size:11px;color:var(--text-2);background:none;border:1px solid var(--border);border-radius:3px;padding:4px 10px;cursor:pointer;font-family:inherit;margin-bottom:8px">
         ${hasRecord ? '📋 查看/编辑记录' : '📝 填写面谈记录'} ▾
       </button>
@@ -190,6 +198,17 @@ async function saveDisplayName() {
     if (btn) { btn.textContent = '✓ 已保存'; setTimeout(() => btn.textContent = '保存', 1500); }
   } catch(e) { alert('保存失败：' + e.message); }
 }
+async function saveFileUrl(id) {
+  const url = document.getElementById(`fileurl_${id}`)?.value.trim() || '';
+  try {
+    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { file_url: url });
+    const b = cachedTeacherBookings.find(x => x.id === id);
+    if (b) b.file_url = url;
+    const btn = document.querySelector(`[onclick="saveFileUrl('${id}')"]`);
+    if (btn) { btn.textContent = '✓ 已保存'; setTimeout(() => btn.textContent = '保存链接', 1500); }
+  } catch(e) { alert('保存失败：' + e.message); }
+}
+
 function toggleRecordPanel(id) {
   const panel = document.getElementById(`record_panel_${id}`);
   if (!panel) return;
@@ -282,13 +301,24 @@ function renderSlotManagement(mc) {
             <input type="time" id="ts_end" value="12:00">
           </div>
         </div>
-        <div class="form-group"><label class="form-label">类型</label>
-          <select id="ts_type">${allowedTypes.map(t => `<option value="${t}">${typeLabel(t)}</option>`).join('')}</select>
+        <div class="form-group"><label class="form-label">类型（可多选）</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap" id="ts_type_group">
+            ${allowedTypes.map(t => `<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap">
+              <input type="checkbox" value="${t}" style="accent-color:var(--accent)">${typeLabel(t)}
+            </label>`).join('')}
+          </div>
         </div>
         <div class="form-group" style="margin-bottom:0"><label class="form-label">专业</label>
           <select id="ts_major">
             ${majors.some(m => ['shakai','shinpan','fukushi'].includes(m)) ? `<option value="shakai_group">社会人文</option>` : ''}
             ${majors.map(m => `<option value="${m}">${MAJORS[m] || m}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0;margin-top:8px"><label class="form-label">面谈地点（可选）</label>
+          <select id="ts_location">
+            <option value="online">线上（默认）</option>
+            <option value="offline_takadanobaba">线下 · 高田马场</option>
+            <option value="offline_ichigaya">线下 · 市谷</option>
           </select>
         </div>
         <button class="btn btn-primary btn-full" style="margin-top:12px" onclick="addTeacherSlot()">＋ 添加</button>
@@ -311,10 +341,11 @@ function renderSlotManagement(mc) {
             const isLocked = s.locked || false;
             return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:${isLocked?'var(--danger-bg)':'var(--bg)'};border:1px solid ${isLocked?'var(--danger)':'var(--border-light)'};border-radius:3px;font-size:11px">
               <div style="display:flex;align-items:center;gap:6px;flex:1;flex-wrap:wrap">
-                <span class="tag ${typeTag(s.type)}">${s.type==='daily'?'日常':s.type==='plan'?'计划书':'模拟'}</span>
+                <span class="tag ${typeTag(Array.isArray(s.type)?s.type[0]:s.type)}">${(Array.isArray(s.type)?s.type:[s.type]).map(t=>t==='daily'?'日常':t==='plan'?'计划书':'模拟').join('・')}</span>
                 <span style="font-weight:500">${s.date.slice(5)}</span>
                 <span style="color:${dowColor}">${dow}</span>
                 <span style="color:var(--text-3)">${s.time_range}</span>
+                ${s.location&&s.location!=='online'?`<span style="font-size:10px;color:#2a6aad">${s.location==='offline_takadanobaba'?'线下·高马':'线下·市谷'}</span>`:''}
                 <span style="color:${isLocked?'var(--danger)':booked>=cap?'var(--danger)':'var(--ok)'}">${isLocked?'🔒':booked+'/'+cap}</span>
               </div>
               <div style="display:flex;gap:4px">
@@ -348,8 +379,10 @@ function teacherSlotMonthShift(d) {
 async function addTeacherSlot() {
   const start = document.getElementById('ts_start').value;
   const end = document.getElementById('ts_end').value;
-  const type = document.getElementById('ts_type')?.value || 'daily';
+  const types = [...document.querySelectorAll('#ts_type_group input:checked')].map(c => c.value);
+  if (!types.length) { alert('请至少选择一个类型'); return; }
   const major = document.getElementById('ts_major')?.value || (teacherData?.majors?.[0] || '');
+  const location = document.getElementById('ts_location')?.value || 'online';
   if (!start || !end) { alert('请填写时间段'); return; }
   if (start >= end) { alert('结束时间需晚于开始时间'); return; }
   const timeRange = `${start}\u2013${end}`;
@@ -373,7 +406,7 @@ async function addTeacherSlot() {
     if (!confirm(`将添加 ${dates.length} 个时间槽，确认？`)) return;
   }
   try {
-    const newSlots = dates.map(date => ({ id: `sl-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, date, time_range: timeRange, type, major, teacher_name: teacherName }));
+    const newSlots = dates.map(date => ({ id: `sl-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, date, time_range: timeRange, type: types, major, location, teacher_name: teacherName }));
     for (let i = 0; i < newSlots.length; i += 10) {
       const chunk = newSlots.slice(i, i + 10);
       const res = await sb('/rest/v1/slots', 'POST', chunk);
