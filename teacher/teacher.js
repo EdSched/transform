@@ -271,7 +271,7 @@ function renderSlotManagement(mc) {
   cachedTeacherBookings.forEach(b => { slotBookedCount[b.slot_id] = (slotBookedCount[b.slot_id] || 0) + 1; });
   mc.innerHTML = `
   <div class="page-section">
-    <div style="display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start">
+    <div class="swipe-row" style="grid-template-columns:280px 1fr">
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:14px">
         <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:10px;letter-spacing:.06em;text-transform:uppercase">新增时间槽</div>
         <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:3px;overflow:hidden;margin-bottom:12px">
@@ -357,7 +357,8 @@ function renderSlotManagement(mc) {
         </div>
       </div>
     </div>
-  </div>`;
+  </div>
+  <div class="swipe-hint">← 左右滑动切换：新增表单 / 时间槽列表 →</div>`;
   const today = new Date().toISOString().slice(0, 10);
   const el = document.getElementById('ts_date'); if (el) el.value = today;
   const rs = document.getElementById('ts_repeat_start'); if (rs) rs.value = today;
