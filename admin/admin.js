@@ -374,6 +374,7 @@ function renderSlotsPage(mc){
           <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" value="daily" style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0">日常学习面谈（TA老师）</label>
           <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" value="plan" style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0">计划书相关（专业课老师）</label>
           <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" value="mock" style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0">模拟面试（按情况安排）</label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" value="vip" style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0">VIP预约（单独通道）</label>
         </div>
       </div>
       <div class="form-group"><label class="form-label">面谈地点（可选）</label>
@@ -401,7 +402,7 @@ function renderSlotsPage(mc){
           const isLocked=s.locked||false;
           return `<div class="slot-item" style="${isLocked?'background:var(--danger-bg);border-color:var(--danger)':''}">
             <div class="slot-item-left">
-              <span class="tag ${typeTag(Array.isArray(s.type)?s.type[0]:s.type)}">${(Array.isArray(s.type)?s.type:[s.type]).map(t=>t==='daily'?'日常':t==='plan'?'计划书':'模拟').join('・')}</span>
+              <span class="tag ${typeTag(Array.isArray(s.type)?s.type[0]:s.type)}">${(Array.isArray(s.type)?s.type:[s.type]).map(t=>t==='daily'?'日常':t==='plan'?'计划书':t==='vip'?'VIP':'模拟').join('・')}</span>
               <span style="font-size:10px;color:var(--text-3)">${MAJORS[s.major]||s.major}</span>
               <span style="font-weight:500">${s.date.slice(5)}</span>
               <span style="font-size:10px;color:${dc}">${dow}</span>
@@ -2337,6 +2338,7 @@ function renderTeachersPage(mc){
               <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
               <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
               <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="vip" style="accent-color:var(--accent)">VIP</label>
             </div>
           </div>
           <!-- slots row -->
@@ -2347,6 +2349,7 @@ function renderTeachersPage(mc){
               <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
               <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
               <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
+              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="vip" style="accent-color:var(--accent)">VIP</label>
             </div>
           </div>
           <!-- schedule row -->
