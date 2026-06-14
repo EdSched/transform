@@ -35,7 +35,16 @@ function switchPage(page){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const navId=page==='courses'?'nav-courses':page==='schedule'?'nav-schedule':page==='teachers'?'nav-teachers':'nav-'+page;
   document.getElementById(navId)?.classList.add('active');
+  closeDrawer();
   renderPage();
+}
+function toggleDrawer(){
+  document.getElementById('sidebar')?.classList.toggle('open');
+  document.getElementById('drawerOverlay')?.classList.toggle('open');
+}
+function closeDrawer(){
+  document.getElementById('sidebar')?.classList.remove('open');
+  document.getElementById('drawerOverlay')?.classList.remove('open');
 }
 async function renderPage(){
   const mc=document.getElementById('mainContent');
@@ -292,7 +301,7 @@ function renderSlotsPage(mc){
       <button onclick="bkMonthShift(1)">›</button>
     </div>
   </div>
-  <div style="display:grid;grid-template-columns:300px 1fr;gap:24px">
+  <div class="swipe-row" style="grid-template-columns:300px 1fr">
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:18px">
       <div style="font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);margin-bottom:12px">新增时间槽</div>
       <div class="mode-tabs">
@@ -378,7 +387,8 @@ function renderSlotsPage(mc){
         }).join(''):'<div class="empty">本月暂无时间槽</div>'}
       </div>
     </div>
-  </div>`;
+  </div>
+  <div class="swipe-hint">← 左右滑动切换：新增表单 / 时间槽列表 →</div>`;
 
   // restore date defaults
   const today=new Date();
@@ -2265,7 +2275,7 @@ function renderTeachersPage(mc){
   <div class="page-header">
     <div class="section-title">老师管理 <span class="badge-count">${cachedTeachers.length}</span></div>
   </div>
-  <div style="display:grid;grid-template-columns:1fr 1.6fr;gap:20px;align-items:start">
+  <div class="swipe-row" style="grid-template-columns:1fr 1.6fr">
     <!-- 添加/编辑老师 -->
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:16px">
       <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:14px;letter-spacing:.05em;text-transform:uppercase" id="teacherFormTitle">添加新老师</div>
@@ -2324,7 +2334,8 @@ function renderTeachersPage(mc){
     </div>
     <!-- 老师列表 -->
     <div id="teacherList"></div>
-  </div>`;
+  </div>
+  <div class="swipe-hint">← 左右滑动切换：编辑表单 / 老师列表 →</div>`;
   renderTeacherList();
 }
 
