@@ -330,11 +330,18 @@ function renderSlotsPage(mc){
           ${Object.entries(MAJORS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}
         </select>
       </div>
-      <div class="form-group"><label class="form-label">面谈类型</label>
-        <select id="slotType">
-          <option value="daily">日常学习面谈（TA老师）</option>
-          <option value="plan">计划书相关（专业课老师）</option>
-          <option value="mock">模拟面试（按情况安排）</option>
+      <div class="form-group"><label class="form-label">面谈类型（可多选）</label>
+        <div style="display:flex;flex-direction:column;gap:6px" id="slotTypeGroup">
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" value="daily" style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0">日常学习面谈（TA老师）</label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" value="plan" style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0">计划书相关（专业课老师）</label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" value="mock" style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0">模拟面试（按情况安排）</label>
+        </div>
+      </div>
+      <div class="form-group"><label class="form-label">面谈地点（可选）</label>
+        <select id="slotLocation">
+          <option value="online">线上（默认）</option>
+          <option value="offline_takadanobaba">线下 · 高田马场</option>
+          <option value="offline_ichigaya">线下 · 市谷</option>
         </select>
       </div>
       <button class="btn btn-primary btn-full" onclick="addSlot()">＋ 添加时间槽</button>
@@ -355,11 +362,12 @@ function renderSlotsPage(mc){
           const isLocked=s.locked||false;
           return `<div class="slot-item" style="${isLocked?'background:var(--danger-bg);border-color:var(--danger)':''}">
             <div class="slot-item-left">
-              <span class="tag ${typeTag(s.type)}">${s.type==='daily'?'日常':s.type==='plan'?'计划书':'模拟'}</span>
+              <span class="tag ${typeTag(Array.isArray(s.type)?s.type[0]:s.type)}">${(Array.isArray(s.type)?s.type:[s.type]).map(t=>t==='daily'?'日常':t==='plan'?'计划书':'模拟').join('・')}</span>
               <span style="font-size:10px;color:var(--text-3)">${MAJORS[s.major]||s.major}</span>
               <span style="font-weight:500">${s.date.slice(5)}</span>
               <span style="font-size:10px;color:${dc}">${dow}</span>
               <span style="color:var(--text-2);font-size:10px">${s.time_range}</span>
+              ${s.location&&s.location!=='online'?`<span style="font-size:10px;color:#2a6aad">${s.location==='offline_takadanobaba'?'线下·高马':'线下·市谷'}</span>`:''}
               <span style="font-size:10px;color:${isLocked?'var(--danger)':booked>=cap?'var(--danger)':'var(--ok)'}">${isLocked?'🔒 已锁定':booked+'/'+cap}</span>
             </div>
             <div style="display:flex;gap:4px">
@@ -390,16 +398,20 @@ function toggleWd(btn){btn.classList.toggle('selected')}
 function datesForWeekdays(wds,s,e){const start=new Date(s),end=new Date(e);if(isNaN(start)||isNaN(end)||start>end)return[];const dates=[],cur=new Date(start);while(cur<=end){if(wds.includes(cur.getDay()))dates.push(cur.toISOString().slice(0,10));cur.setDate(cur.getDate()+1)}return dates}
 async function addSlot(){
   const ts=document.getElementById('slotTimeStart').value,te=document.getElementById('slotTimeEnd').value;
-  const type=document.getElementById('slotType').value,major=document.getElementById('slotMajor').value;
+  const types=[...document.querySelectorAll('#slotTypeGroup input:checked')].map(c=>c.value);
+  const major=document.getElementById('slotMajor').value;
+  const location=document.getElementById('slotLocation').value||'online';
   if(!ts||!te){alert('请填写时间段');return}
   if(ts>=te){alert('结束时间需晚于开始时间');return}
+  if(!types.length){alert('请至少选择一个面谈类型');return}
   const timeRange=`${ts}–${te}`;
   let dates=[];
   if(slotMode==='single'){const d=document.getElementById('slotDate').value;if(!d){alert('请选择日期');return}dates=[d]}
   else{const wds=[...document.querySelectorAll('#weekdayGrid .wd-btn.selected')].map(b=>parseInt(b.dataset.wd));if(!wds.length){alert('请选择至少一个星期');return}const rs=document.getElementById('repeatStart').value,re=document.getElementById('repeatEnd').value;if(!rs||!re){alert('请填写日期范围');return}dates=datesForWeekdays(wds,rs,re);if(!dates.length){alert('所选范围内没有符合的日期');return}}
-  const existing=new Set(cachedSlots.map(s=>`${s.date}|${s.time_range}|${s.type}|${s.major}`));
+  const existing=new Set(cachedSlots.map(s=>`${s.date}|${s.time_range}|${(Array.isArray(s.type)?s.type:[s.type]).join(',')}|${s.major}`));
   const toInsert=[];
-  for(const date of dates){const key=`${date}|${timeRange}|${type}|${major}`;if(!existing.has(key)){toInsert.push({id:`${Date.now()}-${Math.random().toString(36).slice(2,6)}`,date,time_range:timeRange,type,major});existing.add(key)}}
+  const typeKey=types.join(',');
+  for(const date of dates){const key=`${date}|${timeRange}|${typeKey}|${major}`;if(!existing.has(key)){toInsert.push({id:`${Date.now()}-${Math.random().toString(36).slice(2,6)}`,date,time_range:timeRange,type:types,major,location});existing.add(key)}}
   if(!toInsert.length){alert('所选日期的时间槽已存在');return}
   try{const res=await sb('/rest/v1/slots','POST',toInsert);cachedSlots=[...cachedSlots,...(Array.isArray(res)?res:toInsert)];renderSlotsPage(document.getElementById('mainContent'));if(toInsert.length>1)alert(`已添加 ${toInsert.length} 个时间槽`)}
   catch(e){alert('添加失败：'+e.message)}
