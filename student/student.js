@@ -127,6 +127,75 @@ function buildForm() {
         <div class="radio-option"><input type="radio" name="examPeriod" id="ep3" value="次年出愿" onchange="updateTypeOptions()"><label for="ep3">次年出愿</label></div>
       </div>
     </div>
+    <div class="form-group" style="margin-bottom:0">
+      <label class="form-label">语言能力（选填）</label>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px">
+          <div style="font-size:11px;font-weight:600;margin-bottom:8px">英语</div>
+          <div style="display:flex;gap:16px;margin-bottom:8px">
+            <label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer"><input type="checkbox" id="en_have" onchange="toggleLangBox('en_have')" style="accent-color:var(--accent)">已有成绩</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer"><input type="checkbox" id="en_upcoming" onchange="toggleLangBox('en_upcoming')" style="accent-color:var(--accent)">待考</label>
+          </div>
+          <div id="en_have_box" style="display:none;margin-bottom:8px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <select id="en_have_type"><option value="TOEFL">托福 TOEFL</option><option value="TOEIC">托业 TOEIC</option><option value="IELTS">雅思 IELTS</option></select>
+              <input type="number" id="en_have_score" placeholder="分数">
+            </div>
+          </div>
+          <div id="en_upcoming_box" style="display:none">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+              <select id="en_upcoming_type"><option value="TOEFL">托福 TOEFL</option><option value="TOEIC">托业 TOEIC</option><option value="IELTS">雅思 IELTS</option></select>
+              <input type="month" id="en_upcoming_date">
+            </div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap">
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="radio" name="en_upcoming_status" value="备考" style="accent-color:var(--accent)">备考中（上方填写考试月份）</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="radio" name="en_upcoming_status" value="等成绩" style="accent-color:var(--accent)">等成绩（上方填写出分月份）</label>
+            </div>
+          </div>
+        </div>
+        <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px">
+          <div style="font-size:11px;font-weight:600;margin-bottom:8px">日语</div>
+          <div style="display:flex;gap:16px;margin-bottom:8px">
+            <label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer"><input type="checkbox" id="ja_have" onchange="toggleLangBox('ja_have')" style="accent-color:var(--accent)">已有成绩</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer"><input type="checkbox" id="ja_upcoming" onchange="toggleLangBox('ja_upcoming')" style="accent-color:var(--accent)">待考</label>
+          </div>
+          <div id="ja_have_box" style="display:none;margin-bottom:8px">
+            <select id="ja_have_type" onchange="onJaTypeChange('ja_have','grid')" style="margin-bottom:6px">
+              <option value="JLPT">JLPT</option><option value="EJU">EJU</option><option value="其他">其他</option>
+            </select>
+            <div id="ja_have_jlpt" style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <select id="ja_have_jlpt_level"><option>N1</option><option>N2</option><option>N3</option><option>N4</option><option>N5</option></select>
+              <input type="number" id="ja_have_jlpt_score" placeholder="分数">
+            </div>
+            <div id="ja_have_eju" style="display:none;grid-template-columns:1fr 1fr;gap:6px">
+              <input type="number" id="ja_have_eju_japanese" placeholder="日语成绩">
+              <input type="number" id="ja_have_eju_writing" placeholder="记述分数">
+            </div>
+            <div id="ja_have_other" style="display:none">
+              <input type="text" id="ja_have_other_text" placeholder="请说明">
+            </div>
+          </div>
+          <div id="ja_upcoming_box" style="display:none">
+            <select id="ja_upcoming_type" onchange="onJaTypeChange('ja_upcoming','block')" style="margin-bottom:6px">
+              <option value="JLPT">JLPT</option><option value="EJU">EJU</option><option value="其他">其他</option>
+            </select>
+            <div id="ja_upcoming_jlpt" style="margin-bottom:6px">
+              <select id="ja_upcoming_jlpt_level"><option>N1</option><option>N2</option><option>N3</option><option>N4</option><option>N5</option></select>
+            </div>
+            <div id="ja_upcoming_other" style="display:none;margin-bottom:6px">
+              <input type="text" id="ja_upcoming_other_text" placeholder="请说明">
+            </div>
+            <div style="margin-bottom:6px">
+              <input type="month" id="ja_upcoming_date">
+            </div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap">
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="radio" name="ja_upcoming_status" value="备考" style="accent-color:var(--accent)">备考中（上方填写考试月份）</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer"><input type="radio" name="ja_upcoming_status" value="等成绩" style="accent-color:var(--accent)">等成绩（上方填写出分月份）</label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
   <div class="card">
     <div class="card-title"><span class="step-num">2</span>当前学习进程</div>
@@ -196,6 +265,8 @@ function buildForm() {
   <div class="booking-list" id="publicBookingList"><div class="loading">加载中…</div></div>`;
 
   updateTypeOptions();
+  onJaTypeChange('ja_have', 'grid');
+  onJaTypeChange('ja_upcoming', 'block');
   renderSlots();
   renderPublicList();
   // restore saved info
@@ -213,6 +284,81 @@ function canSelectPlan() {
 function canSelectMock() {
   const p = getPlanStatus(), i = getInterviewStatus();
   return p === '已完成' && (i === '已完成面试稿' || i === '面试稿撰写中' || i === '模拟面试中');
+}
+
+// ── 语言能力 ──
+function toggleLangBox(id) {
+  const box = document.getElementById(id + '_box');
+  const checked = document.getElementById(id)?.checked;
+  if (box) box.style.display = checked ? 'block' : 'none';
+}
+function onJaTypeChange(prefix, jlptDisplay) {
+  const type = document.getElementById(prefix + '_type')?.value;
+  const jlpt = document.getElementById(prefix + '_jlpt');
+  const eju = document.getElementById(prefix + '_eju');
+  const other = document.getElementById(prefix + '_other');
+  if (jlpt) jlpt.style.display = type === 'JLPT' ? (jlptDisplay || 'block') : 'none';
+  if (eju) eju.style.display = type === 'EJU' ? 'grid' : 'none';
+  if (other) other.style.display = type === '其他' ? 'block' : 'none';
+}
+function buildEnglishText() {
+  const parts = [];
+  if (document.getElementById('en_have')?.checked) {
+    const type = document.getElementById('en_have_type')?.value || '';
+    const score = document.getElementById('en_have_score')?.value || '';
+    parts.push(score ? `${type} ${score}分` : type);
+  }
+  if (document.getElementById('en_upcoming')?.checked) {
+    const type = document.getElementById('en_upcoming_type')?.value || '';
+    const status = document.querySelector('input[name=en_upcoming_status]:checked')?.value || '';
+    const date = document.getElementById('en_upcoming_date')?.value || '';
+    let s = `待考 ${type}`;
+    const inner = [status, date].filter(Boolean).join('，');
+    if (inner) s += `（${inner}）`;
+    parts.push(s);
+  }
+  return parts.join('；');
+}
+function buildJapaneseText() {
+  const parts = [];
+  if (document.getElementById('ja_have')?.checked) {
+    const type = document.getElementById('ja_have_type')?.value || '';
+    if (type === 'JLPT') {
+      const level = document.getElementById('ja_have_jlpt_level')?.value || '';
+      const score = document.getElementById('ja_have_jlpt_score')?.value || '';
+      parts.push(score ? `JLPT ${level} ${score}分` : `JLPT ${level}`);
+    } else if (type === 'EJU') {
+      const jp = document.getElementById('ja_have_eju_japanese')?.value || '';
+      const wr = document.getElementById('ja_have_eju_writing')?.value || '';
+      const bits = [];
+      if (jp) bits.push(`日语 ${jp}分`);
+      if (wr) bits.push(`记述 ${wr}分`);
+      parts.push(bits.length ? `EJU（${bits.join('，')}）` : 'EJU');
+    } else {
+      const text = document.getElementById('ja_have_other_text')?.value || '';
+      parts.push(text ? `其他：${text}` : '其他');
+    }
+  }
+  if (document.getElementById('ja_upcoming')?.checked) {
+    const type = document.getElementById('ja_upcoming_type')?.value || '';
+    let label = '';
+    if (type === 'JLPT') {
+      const level = document.getElementById('ja_upcoming_jlpt_level')?.value || '';
+      label = `JLPT ${level}`;
+    } else if (type === 'EJU') {
+      label = 'EJU';
+    } else {
+      const text = document.getElementById('ja_upcoming_other_text')?.value || '';
+      label = text ? `其他：${text}` : '其他';
+    }
+    const status = document.querySelector('input[name=ja_upcoming_status]:checked')?.value || '';
+    const date = document.getElementById('ja_upcoming_date')?.value || '';
+    let s = `待考 ${label}`;
+    const inner = [status, date].filter(Boolean).join('，');
+    if (inner) s += `（${inner}）`;
+    parts.push(s);
+  }
+  return parts.join('；');
 }
 
 function updateTypeOptions() {
@@ -327,7 +473,8 @@ const activeBooking = cachedBookings.find(b =>
     written_exam: document.getElementById('writtenExam').value,
     interview_status: interviewStatus, type: selectedType || (Array.isArray(slot.type)?slot.type[0]:slot.type), slot_id: selectedSlotId,
     slot_date: slot.date, slot_time_range: slot.time_range,
-    duration: parseInt(duration), urgency, needs, status: 'pending', actual_time: '', note: null, daily_record: null
+    duration: parseInt(duration), urgency, needs, status: 'pending', actual_time: '', note: null, daily_record: null,
+    english_score: buildEnglishText(), japanese_score: buildJapaneseText()
   };
   try {
     const res = await sb('/rest/v1/bookings', 'POST', booking);
