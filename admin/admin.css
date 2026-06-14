@@ -7,6 +7,7 @@
   --tag-daily-bg:#ede8fa;--tag-daily:#4a3a8a;
   --tag-plan-bg:#e2f2e8;--tag-plan:#2a5a38;
   --tag-mock-bg:#faeae0;--tag-mock:#7a3818;
+  --tag-vip-bg:#fdf0d0;--tag-vip:#9a6a10;
   --ok:#2a9e6a;--ok-bg:#e4f5ee;
   --warn:#b87820;--warn-bg:#fdf2dc;
   --danger:#b03030;--danger-bg:#fceaea;
@@ -93,6 +94,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 .tag-daily{background:var(--tag-daily-bg);color:var(--tag-daily)}
 .tag-plan{background:var(--tag-plan-bg);color:var(--tag-plan)}
 .tag-mock{background:var(--tag-mock-bg);color:var(--tag-mock)}
+.tag-vip{background:var(--tag-vip-bg);color:var(--tag-vip)}
 .status-badge{padding:2px 8px;border-radius:2px;font-size:10px;font-weight:500}
 .status-pending{background:var(--warn-bg);color:var(--warn)}
 .status-confirmed{background:var(--ok-bg);color:var(--ok)}
