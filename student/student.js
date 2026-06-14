@@ -85,9 +85,7 @@ async function initMajor() {
       teacherDisplayNames = {};
       const slotMajorFilter = major === 'shakai_group'
         ? 'major=in.(shakai,shinpan,fukushi,shakai_group)'
-        : ['shakai','shinpan','fukushi'].includes(major)
-          ? `major=in.(${major},shakai_group)`
-          : `major=eq.${major}`;
+        : `major=eq.${major}`;
       [cachedSlots, cachedBookings] = await Promise.all([
         sb(`/rest/v1/slots?select=*&${slotMajorFilter}&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`),
         sb(`/rest/v1/bookings?select=*&major=eq.${major}&order=slot_date.asc`)
@@ -210,7 +208,7 @@ function buildForm() {
     </div>
   </div>
   <div class="card">
-    <div class="card-title"><span class="step-num">2</span>当前学习进程</div>
+    <div class="card-title"><span class="step-num">${stepProgress}</span>当前学习进程</div>
     <div class="progress-grid">
       <div class="form-group"><label class="form-label">专业知识</label>
         <select id="specialtyStatus" onchange="updateTypeOptions()"><option value="">请选择</option><option>刚开始</option><option>学习中</option><option>完成一期</option></select></div>
@@ -228,17 +226,17 @@ function buildForm() {
         <select id="interviewStatus" onchange="updateTypeOptions()"><option value="">请选择</option><option>已完成面试稿</option><option>面试稿撰写中</option><option>模拟面试中</option><option>未开始</option></select></div>
     </div>
   </div>
-  <div class="card">
-    <div class="card-title"><span class="step-num">3</span>面谈类型 <span style="font-size:10px;color:var(--text-muted);font-weight:400">（点击可筛选时间槽）</span></div>
+  ${stepType ? `<div class="card">
+    <div class="card-title"><span class="step-num">${stepType}</span>面谈类型 <span style="font-size:10px;color:var(--text-muted);font-weight:400">（点击可筛选时间槽）</span></div>
     <div class="type-grid" id="typeGrid">
       <div class="type-card" id="type-daily" onclick="selectType('daily')"><div class="type-card-name">日常学习面谈</div><div class="type-card-desc">TA老师负责</div></div>
       <div class="type-card locked" id="type-plan" onclick="selectTypeIfUnlocked('plan')"><div class="type-card-name">计划书相关</div><div class="type-card-desc">专业课老师</div><div class="type-card-lock">🔒</div></div>
       <div class="type-card locked" id="type-mock" onclick="selectTypeIfUnlocked('mock')"><div class="type-card-name">模拟面试</div><div class="type-card-desc">按情况安排</div><div class="type-card-lock">🔒</div></div>
     </div>
     <div id="lockNotice" class="locked-notice" style="display:none"></div>
-  </div>
+  </div>` : ''}
   <div class="card">
-    <div class="card-title"><span class="step-num">4</span>选择预约时间</div>
+    <div class="card-title"><span class="step-num">${stepSlot}</span>选择预约时间</div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
       <div style="font-size:11px;font-weight:600;letter-spacing:.04em" id="slotMonthLabel"></div>
       <div style="display:flex;gap:4px">
@@ -264,12 +262,12 @@ function buildForm() {
     </div>
   </div>
   <div class="card">
-    <div class="card-title"><span class="step-num">5</span>具体需求</div>
+    <div class="card-title"><span class="step-num">${stepNeeds}</span>具体需求</div>
     <textarea id="needs" rows="3" placeholder="希望解决的问题，或需要老师重点关注的内容…"></textarea>
     <div style="font-size:10px;color:var(--text-muted);margin-top:6px;line-height:1.6">⚠ 非老师明确指定的线下面谈，一律默认线上进行。请确认好选择的日期和地点，如有疑问请及时和老师联系。</div>
   </div>
   <button class="btn btn-primary" onclick="submitBooking()">提交预约申请 →</button>
-  <div class="section-sep"><div class="section-sep-line"></div><div class="section-sep-label">本月预约情况</div><div class="section-sep-line"></div></div>
+  <div class="section-sep"><div class="section-sep-line"></div><div class="section-sep-label">${vipMode ? '本月VIP预约情况' : '本月预约情况'}</div><div class="section-sep-line"></div></div>
   <div class="refresh-row">
     <div class="refresh-meta" id="refreshMeta"></div>
     <button class="btn btn-outline" style="font-size:11px;padding:5px 10px" onclick="reloadPublicList()">↺ 刷新</button>
@@ -483,7 +481,7 @@ const activeBooking = cachedBookings.find(b =>
     contact_prof: document.getElementById('contactProf').value,
     plan_status: planStatus, application_status: document.getElementById('applicationStatus').value,
     written_exam: document.getElementById('writtenExam').value,
-    interview_status: interviewStatus, type: selectedType || (Array.isArray(slot.type)?slot.type[0]:slot.type), slot_id: selectedSlotId,
+    interview_status: interviewStatus, type: vipMode ? 'vip' : (selectedType || (Array.isArray(slot.type)?slot.type[0]:slot.type)), slot_id: selectedSlotId,
     slot_date: slot.date, slot_time_range: slot.time_range,
     duration: parseInt(duration), urgency, needs, status: 'pending', actual_time: '', note: null, daily_record: null,
     english_score: buildEnglishText(), japanese_score: buildJapaneseText()
