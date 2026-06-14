@@ -165,9 +165,14 @@ function renderBookingCard(b){
     </div>
     <div class="progress-pills">${renderPills(b)}</div>
     ${b.needs?`<div class="booking-needs">💬 ${b.needs}</div>`:''}
-    ${b.actual_time?`<div class="note-field"><div class="note-label">实际面谈时间</div><div class="actual-time">✓ ${b.actual_time.replace('T',' ')}</div></div>`:''}
+    ${b.actual_time?`<div class="note-field"><div class="note-label">实际面谈时间</div><div class="actual-time">✓ ${b.actual_time.replace('T',' ')}${b.actual_duration?` · ${b.actual_duration}min`:''}</div></div>`:''}
     ${b.file_url?`<div class="note-field"><div class="note-label">提交文件</div><a href="${b.file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 查看文件</a></div>`:''}
     ${b.note?`<div class="note-field"><div class="note-label">备注</div><div class="note-content">${b.note}</div></div>`:''}
+    ${(b.english_score||b.japanese_score)?`<div class="note-field"><div class="note-label">语言能力</div>
+      ${b.english_score?`<div class="note-content">英语：${b.english_score}</div>`:''}
+      ${b.japanese_score?`<div class="note-content">日语：${b.japanese_score}</div>`:''}
+      <button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="syncLangScore('${b.id}')">↻ 同步到学生档案</button>
+    </div>`:''}
     <div class="booking-actions">
       ${b.status==='pending'?`<button class="btn btn-success btn-sm" onclick="confirmBooking('${b.id}')">✓ 确认</button>`:''}
       <button class="btn btn-outline btn-sm" onclick="openEdit('${b.id}')">编辑</button>
@@ -202,18 +207,43 @@ async function clearCancelledBookings(){
   if(!confirm(`确定删除当月 ${count} 条已取消记录？`))return;
   try{await sb(`/rest/v1/bookings?status=eq.cancelled&slot_date=like.${ym}*`,'DELETE');cachedBookings=cachedBookings.filter(b=>!(b.status==='cancelled'&&b.slot_date&&b.slot_date.startsWith(ym)));renderBookingPage(document.getElementById('mainContent'))}catch(e){alert('操作失败：'+e.message)}
 }
+async function syncLangScore(id){
+  const b=cachedBookings.find(x=>x.id===id);if(!b)return;
+  const btn=document.querySelector(`[onclick="syncLangScore('${id}')"]`);
+  if(btn){btn.textContent='同步中…';btn.disabled=true}
+  try{
+    const matches=await sb(`/rest/v1/students?name=eq.${encodeURIComponent(b.name)}&major=eq.${b.major}&select=id,name`);
+    if(!matches.length){
+      alert(`未在学生档案中找到「${b.name}」（${MAJORS[b.major]||b.major}），未同步。`);
+      if(btn){btn.textContent='↻ 同步到学生档案';btn.disabled=false}
+      return;
+    }
+    const patch={};
+    if(b.english_score) patch.english_score=b.english_score;
+    if(b.japanese_score) patch.japanese_score=b.japanese_score;
+    await sb(`/rest/v1/students?id=eq.${matches[0].id}`,'PATCH',patch);
+    if(btn){btn.textContent='✓ 已同步';setTimeout(()=>{btn.textContent='↻ 同步到学生档案';btn.disabled=false},1500)}
+  }catch(e){alert('同步失败：'+e.message);if(btn){btn.textContent='↻ 同步到学生档案';btn.disabled=false}}
+}
 function openEdit(id){
   const b=cachedBookings.find(x=>x.id===id);if(!b)return;
   document.getElementById('editId').value=id;
   document.getElementById('editModalSub').textContent=`${b.name} · ${b.slot_date} ${b.slot_time_range||''}`;
   document.getElementById('editStatus').value=b.status;
-  document.getElementById('editActualTime').value=b.actual_time||'';
+  const at=b.actual_time||'';
+  document.getElementById('editActualDate').value=at.slice(0,10)||'';
+  document.getElementById('editActualTime').value=at.slice(11,16)||'';
+  document.getElementById('editActualDuration').value=b.actual_duration||'';
   document.getElementById('editNote').value=b.note||'';
   document.getElementById('editModal').classList.add('open');
 }
 async function saveEdit(){
   const id=document.getElementById('editId').value;
-  const patch={status:document.getElementById('editStatus').value,actual_time:document.getElementById('editActualTime').value,note:document.getElementById('editNote').value};
+  const d=document.getElementById('editActualDate').value;
+  const t=document.getElementById('editActualTime').value;
+  const actual_time=(d&&t)?`${d}T${t}`:(d||'');
+  const durVal=document.getElementById('editActualDuration').value;
+  const patch={status:document.getElementById('editStatus').value,actual_time,actual_duration:durVal?parseInt(durVal):null,note:document.getElementById('editNote').value};
   try{await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',patch);const b=cachedBookings.find(x=>x.id===id);if(b)Object.assign(b,patch);closeModal('editModal');renderBookingPage(document.getElementById('mainContent'))}catch(e){alert('保存失败：'+e.message)}
 }
 function openRecord(id){
@@ -271,7 +301,7 @@ function exportExcel(){
     '姓名':b.name,'专业':MAJORS[b.major]||b.major||'','预约日期':b.slot_date,'时间段':b.slot_time_range||'','时长(分钟)':b.duration,
     '面谈类型':typeLabel(b.type),'紧急程度':b.urgency==='high'?'紧急':b.urgency==='mid'?'适中':'一般',
     '出愿期间':b.exam_period||'','研究计划书':b.plan_status||'','面试准备':b.interview_status||'','具体需求':b.needs||'',
-    '状态':b.status==='pending'?'待确认':b.status==='confirmed'?'已确认':'已取消','实际面谈时间':b.actual_time||'','备注':b.note||'',
+    '状态':b.status==='pending'?'待确认':b.status==='confirmed'?'已确认':'已取消','实际面谈时间':b.actual_time||'','实际面谈时长':b.actual_duration||'','备注':b.note||'',
     '知识进展':r.study_status||'','知识建议':r.study_advice||'','知识期限':r.study_deadline||'',
     '计划书状态':r.plan_status||'','计划书建议':r.plan_advice||'','计划书期限':r.plan_deadline||'',
     '出愿状态':r.apply_status||'','出愿建议':r.apply_advice||'','出愿期限':r.apply_deadline||'',
