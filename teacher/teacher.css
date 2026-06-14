@@ -75,6 +75,7 @@ input:focus,select:focus{border-color:var(--accent)}
 .tag-daily{background:#ede8fa;color:#4a3a8a}
 .tag-plan{background:#e2f2e8;color:#2a5a38}
 .tag-mock{background:#faeae0;color:#7a3818}
+.tag-vip{background:#fdf0d0;color:#9a6a10}
 
 /* Loading/Empty */
 .loading{text-align:center;padding:48px;color:var(--text-3)}
