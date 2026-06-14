@@ -157,7 +157,7 @@ function renderBookingCard(b) {
     </div>
     <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">${f.short} ${f.dow} · ${b.slot_time_range || ''} · ${b.duration}min · <span class="tag ${typeTag(b.type)}">${typeLabel(b.type)}</span></div>
     ${b.needs ? `<div style="font-size:11px;color:var(--text-2);background:var(--bg);border-radius:2px;padding:6px 8px;margin-bottom:8px">💬 ${b.needs}</div>` : ''}
-    ${b.actual_time ? `<div style="font-size:11px;color:var(--ok);margin-bottom:6px">✓ 面谈时间：${b.actual_time.replace('T', ' ')}</div>` : ''}
+    ${b.actual_time ? `<div style="font-size:11px;color:var(--ok);margin-bottom:6px">✓ 面谈时间：${b.actual_time.replace('T', ' ')}${b.actual_duration?` · ${b.actual_duration}min`:''}</div>` : ''}
     ${b.status === 'pending' ? `
     <div style="display:flex;gap:6px">
       <input type="date" id="actual_date_${b.id}" style="flex:1;font-size:11px;padding:5px 8px">
@@ -178,6 +178,9 @@ function renderBookingCard(b) {
         ${hasRecord ? '📋 查看/编辑记录' : '📝 填写面谈记录'} ▾
       </button>
       <div id="record_panel_${b.id}" style="display:none">
+        <div style="margin-bottom:10px"><label class="form-label">实际面谈时长（分钟）</label>
+          <input type="number" id="duration_${b.id}" value="${b.actual_duration||''}" placeholder="例：30" min="0" step="5" style="font-size:11px;width:120px">
+        </div>
         <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px">面谈记录</div>
         ${renderRecordForm(b.id, b.daily_record || {})}
         <div style="display:flex;gap:6px;margin-top:10px">
@@ -220,10 +223,12 @@ function toggleRecordPanel(id) {
 
 async function saveBookingRecord(id) {
   const record = getRecordFromForm(id);
+  const durVal = document.getElementById(`duration_${id}`)?.value || '';
+  const actual_duration = durVal ? parseInt(durVal) : null;
   try {
-    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { daily_record: record });
+    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { daily_record: record, actual_duration });
     const booking = cachedTeacherBookings.find(x => x.id === id);
-    if (booking) booking.daily_record = record;
+    if (booking) { booking.daily_record = record; booking.actual_duration = actual_duration; }
     const btn = document.querySelector(`[onclick="saveBookingRecord('${id}')"]`);
     if (btn) { const orig = btn.textContent; btn.textContent = '✓ 已保存'; setTimeout(() => btn.textContent = orig, 1500); }
     if (booking) {
@@ -341,7 +346,7 @@ function renderSlotManagement(mc) {
             const isLocked = s.locked || false;
             return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:${isLocked?'var(--danger-bg)':'var(--bg)'};border:1px solid ${isLocked?'var(--danger)':'var(--border-light)'};border-radius:3px;font-size:11px">
               <div style="display:flex;align-items:center;gap:6px;flex:1;flex-wrap:wrap">
-                <span class="tag ${typeTag(Array.isArray(s.type)?s.type[0]:s.type)}">${(Array.isArray(s.type)?s.type:[s.type]).map(t=>t==='daily'?'日常':t==='plan'?'计划书':'模拟').join('・')}</span>
+                <span class="tag ${typeTag(Array.isArray(s.type)?s.type[0]:s.type)}">${(Array.isArray(s.type)?s.type:[s.type]).map(t=>t==='daily'?'日常':t==='plan'?'计划书':t==='vip'?'VIP':'模拟').join('・')}</span>
                 <span style="font-weight:500">${s.date.slice(5)}</span>
                 <span style="color:${dowColor}">${dow}</span>
                 <span style="color:var(--text-3)">${s.time_range}</span>
