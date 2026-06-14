@@ -71,6 +71,7 @@
       <select id="editStatus"><option value="pending">待确认</option><option value="confirmed">已确认</option><option value="cancelled">已取消</option></select></div>
     <div class="form-group"><label class="form-label">实际面谈时间</label><input type="date" id="editActualDate" style="margin-bottom:4px">
 <input type="time" id="editActualTime"></div>
+    <div class="form-group"><label class="form-label">实际面谈时长（分钟）</label><input type="number" id="editActualDuration" placeholder="例：30" min="0" step="5"></div>
     <div class="form-group"><label class="form-label">备注（计划书／模拟面试）</label><textarea id="editNote" rows="3" placeholder="面谈记录、备注或跟进事项…"></textarea></div>
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeModal('editModal')">取消</button>
