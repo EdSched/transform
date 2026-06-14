@@ -80,7 +80,20 @@ input:focus,select:focus{border-color:var(--accent)}
 .loading{text-align:center;padding:48px;color:var(--text-3)}
 .empty{text-align:center;padding:48px;color:var(--text-3);font-size:12px;line-height:2}
 
+/* Swipe utility (mobile 2-col → swipeable) */
+.swipe-row{display:grid;gap:16px;align-items:start}
+.swipe-hint{display:none;font-size:10px;color:var(--text-3);text-align:center;padding:6px 0;letter-spacing:.04em}
+
 /* Mobile optimizations */
+@media(max-width:768px){
+  .swipe-row{
+    display:flex;overflow-x:auto;scroll-snap-type:x mandatory;
+    -webkit-overflow-scrolling:touch;gap:0;
+    margin:0 -16px;padding:0 16px;
+  }
+  .swipe-row>*{flex:0 0 100%;width:100%;min-width:0;scroll-snap-align:start}
+  .swipe-row+.swipe-hint{display:block}
+}
 @media(max-width:480px){
   .main{padding:16px 12px 80px}
   .date-num{font-size:17px}
