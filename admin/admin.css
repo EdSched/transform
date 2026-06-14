@@ -24,7 +24,55 @@ body{font-family:'DM Mono','Noto Serif SC',monospace;background:var(--bg);color:
 .nav-item.active{background:var(--accent);color:#fff}
 .nav-icon{font-size:14px;width:18px;text-align:center}
 .nav-sep{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);padding:14px 10px 4px;margin-top:4px}
-.main{padding:24px 28px;overflow-y:auto}
+.main{padding:24px 28px;overflow-y:auto;overflow-x:hidden}
+
+/* ── Drawer toggle (mobile) ── */
+.drawer-toggle{display:none;background:none;border:none;cursor:pointer;font-size:20px;color:var(--text);padding:4px 8px;font-family:inherit;line-height:1}
+.drawer-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:90}
+.drawer-overlay.open{display:block}
+
+/* ── Swipe utility (mobile 2-col → swipeable) ── */
+.swipe-row{display:grid;gap:16px;align-items:start}
+.swipe-hint{display:none;font-size:10px;color:var(--text-3);text-align:center;padding:6px 0;letter-spacing:.04em}
+
+/* ── Mobile breakpoint ── */
+@media (max-width:768px){
+  .shell{grid-template-columns:1fr;grid-template-rows:48px 1fr}
+  .topbar{padding:0 12px}
+  .topbar-title{font-size:13px}
+  .drawer-toggle{display:inline-flex;align-items:center}
+  .sidebar{
+    position:fixed;top:48px;left:0;bottom:0;width:220px;z-index:100;
+    transform:translateX(-100%);transition:transform .2s ease;
+    box-shadow:2px 0 12px rgba(0,0,0,.08);overflow-y:auto;
+  }
+  .sidebar.open{transform:translateX(0)}
+  .main{padding:14px 12px 40px}
+  .page-header{margin-bottom:14px}
+  .section-title{font-size:14px;margin-bottom:10px}
+
+  /* swipeable two-column rows */
+  .swipe-row{
+    display:flex;overflow-x:auto;scroll-snap-type:x mandatory;
+    -webkit-overflow-scrolling:touch;gap:0;
+    margin:0 -12px;padding:0 12px;
+  }
+  .swipe-row>*{
+    flex:0 0 100%;width:100%;min-width:0;
+    scroll-snap-align:start;
+  }
+  .swipe-row+.swipe-hint{display:block}
+
+  /* tables: allow horizontal scroll instead of squishing */
+  .student-table{font-size:11px}
+  .student-table th,.student-table td{padding:6px 6px;white-space:nowrap}
+
+  /* booking page body grid */
+  .booking-body{grid-template-columns:1fr 1fr}
+
+  /* generic export bars / filter rows wrap better */
+  .export-bar,.filter-row{gap:6px}
+}
 
 /* ── Common ── */
 .section-title{font-family:'Noto Serif SC',serif;font-size:16px;font-weight:600;margin-bottom:18px}
