@@ -133,8 +133,8 @@ function getRecordFromForm(id) {
     extra: v('extra'),
   };
 }
-function typeLabel(t) { return t === 'daily' ? '日常学习面谈' : t === 'plan' ? '计划书相关' : '模拟面试'; }
-function typeTag(t) { return t === 'daily' ? 'tag-daily' : t === 'plan' ? 'tag-plan' : 'tag-mock'; }
+function typeLabel(t) { return t === 'daily' ? '日常学习面谈' : t === 'plan' ? '计划书相关' : t === 'vip' ? 'VIP预约' : '模拟面试'; }
+function typeTag(t) { return t === 'daily' ? 'tag-daily' : t === 'plan' ? 'tag-plan' : t === 'vip' ? 'tag-vip' : 'tag-mock'; }
 function slotCap(tr) {
   const [a, b] = (tr || '').split('–');
   if (!a || !b) return 4;
