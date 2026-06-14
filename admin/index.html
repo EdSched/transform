@@ -27,15 +27,21 @@
 <div class="shell">
   <!-- Topbar -->
   <div class="topbar">
-    <div>
-      <div class="topbar-title">唯新教育 管理系统</div>
-      <div class="topbar-sub">Transform Education · Admin</div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <button class="drawer-toggle" onclick="toggleDrawer()">☰</button>
+      <div>
+        <div class="topbar-title">唯新教育 管理系统</div>
+        <div class="topbar-sub">Transform Education · Admin</div>
+      </div>
     </div>
     <button class="btn btn-outline btn-sm" onclick="doLogout()">退出登录</button>
   </div>
 
+  <!-- Drawer overlay (mobile) -->
+  <div class="drawer-overlay" id="drawerOverlay" onclick="toggleDrawer()"></div>
+
   <!-- Sidebar -->
-  <div class="sidebar">
+  <div class="sidebar" id="sidebar">
     <div class="nav-sep">面谈预约</div>
     <button class="nav-item active" id="nav-booking" onclick="switchPage('booking')"><span class="nav-icon">📅</span>预约管理</button>
     <button class="nav-item" id="nav-slots" onclick="switchPage('slots')"><span class="nav-icon">⏰</span>时间槽设定</button>
