@@ -142,3 +142,28 @@ function slotCap(tr) {
   const [bh, bm] = b.split(':').map(Number);
   return Math.max(1, Math.floor(((bh * 60 + bm) - (ah * 60 + am)) / 15));
 }
+
+// ── 文件相关 ──
+// 把一段纯文本下载为 .doc 文件（Word 兼容，无需额外库）
+function downloadAsWord(filename, title, content) {
+  const escaped = String(content || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+  const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head><meta charset="utf-8"><title>${title||''}</title>
+<style>body{font-family:'Microsoft YaHei',sans-serif;font-size:14px;line-height:1.8}h1{font-size:18px}</style>
+</head>
+<body>${title?`<h1>${title}</h1>`:''}<div>${escaped}</div></body></html>`;
+  const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename.endsWith('.doc')?filename:filename+'.doc';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+
+// 生成提取码（避免易混淆字符 0/O/1/I）
+function generateRetrievalCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
