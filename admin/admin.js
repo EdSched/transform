@@ -112,8 +112,9 @@ function renderBookingPage(mc){
   </div>
   <div class="export-bar">
     <div style="font-size:12px;color:var(--text-3)">当月 <strong style="color:var(--text)">${total}</strong> 条预约</div>
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" onclick="toggleStudentLinks()">🔗 学生链接</button>
+      <button class="btn btn-outline btn-sm" onclick="exportAllFiles()">📦 批量导出全部文件</button>
       <button class="btn btn-danger btn-sm" onclick="clearCancelledBookings()">清空已取消</button>
       <button class="btn btn-outline btn-sm" onclick="exportExcel()">↓ 导出 Excel</button>
     </div>
@@ -167,6 +168,11 @@ function renderBookingCard(b){
     ${b.needs?`<div class="booking-needs">💬 ${b.needs}</div>`:''}
     ${b.actual_time?`<div class="note-field"><div class="note-label">实际面谈时间</div><div class="actual-time">✓ ${b.actual_time.replace('T',' ')}${b.actual_duration?` · ${b.actual_duration}min`:''}</div></div>`:''}
     ${b.file_url?`<div class="note-field"><div class="note-label">提交文件</div><a href="${b.file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 查看文件</a></div>`:''}
+    ${b.student_content?`<div class="note-field"><div class="note-label">计划书 / 面试稿件</div><div class="note-content" style="max-height:80px;overflow-y:auto;white-space:pre-wrap">${b.student_content}</div></div>`:''}
+    ${(b.teacher_file_url||b.retrieval_code)?`<div class="note-field"><div class="note-label">老师修改文件</div>
+      ${b.teacher_file_url?`<a href="${b.teacher_file_url}" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-bottom:3px">📎 查看文件</a>`:'<div class="note-content" style="color:var(--text-3)">老师未上传</div>'}
+      ${b.retrieval_code?`<div class="note-content">提取码：<span style="font-weight:600;letter-spacing:2px">${b.retrieval_code}</span></div>`:''}
+    </div>`:''}
     ${b.note?`<div class="note-field"><div class="note-label">备注</div><div class="note-content">${b.note}</div></div>`:''}
     ${(b.english_score||b.japanese_score)?`<div class="note-field"><div class="note-label">语言能力</div>
       ${b.english_score?`<div class="note-content">英语：${b.english_score}</div>`:''}
@@ -292,6 +298,31 @@ async function saveRecord(){
 }
 function copyRecord(){
   navigator.clipboard.writeText(document.getElementById('copyBox').textContent).then(()=>{const btn=document.getElementById('copyRecordBtn');btn.textContent='✓ 已复制';setTimeout(()=>btn.textContent='📋 复制记录',2000)}).catch(()=>alert('请手动选中上方文本复制'));
+}
+async function exportAllFiles(){
+  const withFiles=cachedBookings.filter(b=>b.teacher_file_url);
+  if(!withFiles.length){alert('暂无可导出的文件');return}
+  const btn=document.querySelector('[onclick="exportAllFiles()"]');
+  if(btn){btn.textContent='打包中…';btn.disabled=true}
+  try{
+    const zip=new JSZip();
+    for(const b of withFiles){
+      try{
+        const res=await fetch(b.teacher_file_url);
+        const blob=await res.blob();
+        const ext=(b.teacher_file_url.split('.').pop()||'file').split('?')[0];
+        const major=MAJORS[b.major]||b.major||'';
+        zip.file(`${major}/${b.name}_${b.slot_date}.${ext}`,blob);
+      }catch(e){}
+    }
+    const content=await zip.generateAsync({type:'blob'});
+    const url=URL.createObjectURL(content);
+    const a=document.createElement('a');
+    a.href=url;a.download=`全部面谈文件_${new Date().toISOString().slice(0,10)}.zip`;
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(e){alert('打包失败：'+e.message)}
+  finally{if(btn){btn.textContent='📦 批量导出全部文件';btn.disabled=false}}
 }
 function exportExcel(){
   const ym=`${bkYear}-${String(bkMonth+1).padStart(2,'0')}`;
