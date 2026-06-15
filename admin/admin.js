@@ -2346,48 +2346,41 @@ function renderTeachersPage(mc){
       <div class="form-group">
         <label class="form-label">负责专业（可多选）</label>
         <div style="display:flex;flex-wrap:wrap;gap:6px" id="new_teacher_majors">
-          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="keiei" style="accent-color:var(--accent)">経営学</label>
-          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="keizai" style="accent-color:var(--accent)">経済学</label>
-          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="shakai_group" style="accent-color:var(--accent)">社会人文</label>
-          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="shakai" style="accent-color:var(--accent)">社会学</label>
-          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="shinpan" style="accent-color:var(--accent)">新闻传播</label>
-          <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="fukushi" style="accent-color:var(--accent)">社会福祉</label>
+          <div class="filter-chip" data-value="keiei" onclick="toggleChip(this)" style="padding:4px 10px">経営学</div>
+          <div class="filter-chip" data-value="keizai" onclick="toggleChip(this)" style="padding:4px 10px">経済学</div>
+          <div class="filter-chip" data-value="shakai_group" onclick="toggleChip(this)" style="padding:4px 10px">社会人文</div>
+          <div class="filter-chip" data-value="shakai" onclick="toggleChip(this)" style="padding:4px 10px">社会学</div>
+          <div class="filter-chip" data-value="shinpan" onclick="toggleChip(this)" style="padding:4px 10px">新闻传播</div>
+          <div class="filter-chip" data-value="fukushi" onclick="toggleChip(this)" style="padding:4px 10px">社会福祉</div>
         </div>
       </div>
       <div class="form-group">
         <label class="form-label">权限配置</label>
         <div style="border:1px solid var(--border-light);border-radius:3px;overflow:hidden">
-          <!-- header -->
-          <div style="display:grid;grid-template-columns:28px 90px 1fr;background:var(--bg);padding:6px 10px;font-size:10px;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;border-bottom:1px solid var(--border-light)">
-            <div></div><div>权限</div><div>可操作类型</div>
-          </div>
           <!-- booking row -->
-          <div style="display:grid;grid-template-columns:28px 90px 1fr;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border-light)">
-            <input type="checkbox" id="perm_booking" style="accent-color:var(--accent)">
-            <span style="font-size:11px;font-weight:600">预约管理</span>
-            <div style="display:flex;gap:10px" id="perm_booking_types">
-              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="vip" style="accent-color:var(--accent)">VIP</label>
+          <div style="padding:10px;border-bottom:1px solid var(--border-light)">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px"><input type="checkbox" id="perm_booking" style="accent-color:var(--accent);flex-shrink:0">预约管理</label>
+            <div style="display:flex;flex-wrap:wrap;gap:6px" id="perm_booking_types">
+              <div class="filter-chip" data-value="daily" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">日常</div>
+              <div class="filter-chip" data-value="plan" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">计划书</div>
+              <div class="filter-chip" data-value="mock" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">模拟面试</div>
+              <div class="filter-chip" data-value="vip" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">VIP</div>
             </div>
           </div>
           <!-- slots row -->
-          <div style="display:grid;grid-template-columns:28px 90px 1fr;align-items:center;padding:8px 10px;border-bottom:1px solid var(--border-light)">
-            <input type="checkbox" id="perm_slots" style="accent-color:var(--accent)">
-            <span style="font-size:11px;font-weight:600">时间槽设定</span>
-            <div style="display:flex;gap:10px" id="perm_slot_types">
-              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="daily" style="accent-color:var(--accent)">日常</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="plan" style="accent-color:var(--accent)">计划书</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="mock" style="accent-color:var(--accent)">模拟面试</label>
-              <label style="display:flex;align-items:center;gap:3px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="vip" style="accent-color:var(--accent)">VIP</label>
+          <div style="padding:10px;border-bottom:1px solid var(--border-light)">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px"><input type="checkbox" id="perm_slots" style="accent-color:var(--accent);flex-shrink:0">时间槽设定</label>
+            <div style="display:flex;flex-wrap:wrap;gap:6px" id="perm_slot_types">
+              <div class="filter-chip" data-value="daily" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">日常</div>
+              <div class="filter-chip" data-value="plan" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">计划书</div>
+              <div class="filter-chip" data-value="mock" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">模拟面试</div>
+              <div class="filter-chip" data-value="vip" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">VIP</div>
             </div>
           </div>
           <!-- schedule row -->
-          <div style="display:grid;grid-template-columns:28px 90px 1fr;align-items:center;padding:8px 10px">
-            <input type="checkbox" id="perm_schedule" style="accent-color:var(--accent)">
-            <span style="font-size:11px;font-weight:600">课程排班</span>
-            <span style="font-size:10px;color:var(--text-3)">排班确认 + 我的课表</span>
+          <div style="padding:10px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer"><input type="checkbox" id="perm_schedule" style="accent-color:var(--accent);flex-shrink:0">课程排班</label>
+            <div style="font-size:10px;color:var(--text-3);margin-top:4px;margin-left:20px">排班确认 + 我的课表</div>
           </div>
         </div>
       </div>
@@ -2403,6 +2396,9 @@ function renderTeachersPage(mc){
   renderTeacherList();
 }
 
+function toggleChip(el){
+  el.classList.toggle('active');
+}
 function cancelEditTeacher(){
   document.getElementById('teacherFormTitle').textContent='添加新老师';
   document.getElementById('teacherFormBtn').textContent='＋ 添加老师';
@@ -2410,7 +2406,7 @@ function cancelEditTeacher(){
   document.getElementById('teacherFormCancelBtn').style.display='none';
   document.getElementById('new_teacher_name').value='';
   document.getElementById('new_teacher_notes').value='';
-  document.querySelectorAll('#new_teacher_majors input,#perm_booking_types input,#perm_slot_types input').forEach(cb=>cb.checked=false);
+  document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip').forEach(c=>c.classList.remove('active'));
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
   document.getElementById('perm_schedule').checked=false;
@@ -2419,8 +2415,7 @@ function openTeacherManager(){
   // reset add form
   document.getElementById('new_teacher_name').value='';
   document.getElementById('new_teacher_notes').value='';
-  document.querySelectorAll('#new_teacher_majors input').forEach(cb=>cb.checked=false);
-  document.querySelectorAll('#perm_booking_types input,#perm_slot_types input').forEach(cb=>cb.checked=false);
+  document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip').forEach(c=>c.classList.remove('active'));
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
   document.getElementById('perm_schedule').checked=false;
@@ -2471,9 +2466,9 @@ function renderTeacherList(){
 function getPermissionsFromForm(){
   return {
     booking:document.getElementById('perm_booking').checked,
-    booking_types:[...document.querySelectorAll('#perm_booking_types input:checked')].map(c=>c.value),
+    booking_types:[...document.querySelectorAll('#perm_booking_types .filter-chip.active')].map(c=>c.dataset.value),
     slots:document.getElementById('perm_slots').checked,
-    slot_types:[...document.querySelectorAll('#perm_slot_types input:checked')].map(c=>c.value),
+    slot_types:[...document.querySelectorAll('#perm_slot_types .filter-chip.active')].map(c=>c.dataset.value),
     schedule:document.getElementById('perm_schedule').checked,
   };
 }
@@ -2483,7 +2478,7 @@ async function addTeacher(){
   const notes=document.getElementById('new_teacher_notes').value.trim();
   if(!name){alert('请填写姓名');return}
   if(cachedTeachers.find(t=>t.name===name)){alert('该老师已存在');return}
-  const majors=[...document.querySelectorAll('#new_teacher_majors input:checked')].map(c=>c.value);
+  const majors=[...document.querySelectorAll('#new_teacher_majors .filter-chip.active')].map(c=>c.dataset.value);
   const permissions=getPermissionsFromForm();
   try{
     const t={id:`t-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,name,notes,majors,permissions};
@@ -2491,7 +2486,7 @@ async function addTeacher(){
     cachedTeachers.push(Array.isArray(res)?res[0]:t);
     document.getElementById('new_teacher_name').value='';
     document.getElementById('new_teacher_notes').value='';
-    document.querySelectorAll('#new_teacher_majors input,#perm_booking_types input,#perm_slot_types input').forEach(cb=>cb.checked=false);
+    document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip').forEach(c=>c.classList.remove('active'));
     document.getElementById('perm_booking').checked=false;
     document.getElementById('perm_slots').checked=false;
     document.getElementById('perm_schedule').checked=false;
@@ -2504,13 +2499,13 @@ function openEditTeacher(id){
   if(!t) return;
   document.getElementById('new_teacher_name').value=t.name;
   document.getElementById('new_teacher_notes').value=t.notes||'';
-  document.querySelectorAll('#new_teacher_majors input').forEach(cb=>{cb.checked=(t.majors||[]).includes(cb.value)});
+  document.querySelectorAll('#new_teacher_majors .filter-chip').forEach(c=>{c.classList.toggle('active',(t.majors||[]).includes(c.dataset.value))});
   const p=t.permissions||{};
   document.getElementById('perm_booking').checked=!!p.booking;
   document.getElementById('perm_slots').checked=!!p.slots;
   document.getElementById('perm_schedule').checked=!!p.schedule;
-  document.querySelectorAll('#perm_booking_types input').forEach(cb=>cb.checked=(p.booking_types||[]).includes(cb.value));
-  document.querySelectorAll('#perm_slot_types input').forEach(cb=>cb.checked=(p.slot_types||[]).includes(cb.value));
+  document.querySelectorAll('#perm_booking_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.booking_types||[]).includes(c.dataset.value))});
+  document.querySelectorAll('#perm_slot_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.slot_types||[]).includes(c.dataset.value))});
   const btn=document.getElementById('teacherFormBtn');
   if(btn){btn.textContent='保存修改';btn.setAttribute('onclick',`saveEditTeacher('${id}')`);}
   const cancelBtn=document.getElementById('teacherFormCancelBtn');
@@ -2525,7 +2520,7 @@ function openEditTeacher(id){
 async function saveEditTeacher(id){
   const name=document.getElementById('new_teacher_name').value.trim();
   if(!name){alert('请填写姓名');return}
-  const majors=[...document.querySelectorAll('#new_teacher_majors input:checked')].map(c=>c.value);
+  const majors=[...document.querySelectorAll('#new_teacher_majors .filter-chip.active')].map(c=>c.dataset.value);
   const permissions=getPermissionsFromForm();
   const notes=document.getElementById('new_teacher_notes').value.trim();
   try{
