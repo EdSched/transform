@@ -23,6 +23,7 @@ header { background:var(--surface); border-bottom:1px solid var(--border); paddi
 .step-num { display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; background:var(--accent); color:#fff; border-radius:2px; font-size:10px; font-weight:600; flex-shrink:0; font-family:'DM Mono',monospace; }
 .form-group { margin-bottom:12px; }
 .form-label { display:block; font-size:11px; color:var(--text-secondary); margin-bottom:4px; }
+.sub-label { display:block; font-size:10px; color:var(--text-muted); margin-bottom:4px; }
 .required { color:var(--danger); }
 input,select,textarea { width:100%; border:1px solid var(--border); background:var(--bg); border-radius:3px; padding:7px 9px; font-size:12px; font-family:'DM Mono',monospace; color:var(--text-primary); outline:none; transition:border-color .15s; }
 input:focus,select:focus,textarea:focus { border-color:var(--accent); }
