@@ -130,8 +130,9 @@ function renderTodo(mc) {
 function renderBookingManagement(mc) {
   mc.innerHTML = `
   <div class="page-section">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
       <div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">预约管理</div>
+      <button onclick="exportMyFiles()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 12px;cursor:pointer;font-family:inherit;white-space:nowrap">📦 批量导出我的文件</button>
     </div>
     <div style="margin-bottom:16px">
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">待确认预约</div>
@@ -174,6 +175,25 @@ function renderBookingCard(b) {
         </div>
         ${b.file_url ? `<a href="${b.file_url}" target="_blank" style="font-size:10px;color:var(--accent);margin-top:3px;display:block">📎 已提交文件</a>` : ''}
       </div>
+      ${(b.type === 'plan' || b.type === 'mock') ? `
+      <div style="margin-bottom:8px;background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:8px">
+        <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">📎 计划书 / 面试稿件</div>
+        ${b.student_content ? `
+          <div style="font-size:11px;color:var(--text-2);background:var(--surface);border:1px solid var(--border-light);border-radius:2px;padding:6px 8px;margin-bottom:6px;max-height:100px;overflow-y:auto;white-space:pre-wrap">${b.student_content}</div>
+          <button onclick="downloadStudentContent('${b.id}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit;margin-bottom:8px">⬇ 下载为Word</button>
+        ` : `<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">学生未提交文字内容</div>`}
+        <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">上传修改文件（学生可通过提取码下载）</div>
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <input type="file" id="teacherfile_${b.id}" style="flex:1;font-size:11px;min-width:0">
+          <button onclick="uploadTeacherFile('${b.id}')" id="uploadbtn_${b.id}" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">上传</button>
+        </div>
+        ${b.teacher_file_url ? `<a href="${b.teacher_file_url}" target="_blank" style="font-size:10px;color:var(--accent);display:block;margin-bottom:6px">📎 已上传修改文件</a>` : ''}
+        <div style="display:flex;align-items:center;gap:8px">
+          <button onclick="generateCode('${b.id}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">🔑 生成提取码</button>
+          <span id="code_${b.id}" style="font-size:13px;font-weight:600;letter-spacing:2px;color:${b.retrieval_code?'var(--accent)':'var(--text-muted)'}">${b.retrieval_code || '尚未生成'}</span>
+        </div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:4px">提取码生成后请告知学生（学生姓名 + 提取码可在预约页面下方查询）</div>
+      </div>` : ''}
       <button onclick="toggleRecordPanel('${b.id}')" style="font-size:11px;color:var(--text-2);background:none;border:1px solid var(--border);border-radius:3px;padding:4px 10px;cursor:pointer;font-family:inherit;margin-bottom:8px">
         ${hasRecord ? '📋 查看/编辑记录' : '📝 填写面谈记录'} ▾
       </button>
@@ -210,6 +230,68 @@ async function saveFileUrl(id) {
     const btn = document.querySelector(`[onclick="saveFileUrl('${id}')"]`);
     if (btn) { btn.textContent = '✓ 已保存'; setTimeout(() => btn.textContent = '保存链接', 1500); }
   } catch(e) { alert('保存失败：' + e.message); }
+}
+
+function downloadStudentContent(id) {
+  const b = cachedTeacherBookings.find(x => x.id === id);
+  if (!b || !b.student_content) return;
+  downloadAsWord(`${b.name}_${b.slot_date}_${typeLabel(b.type)}`, `${b.name} · ${typeLabel(b.type)}（${b.slot_date}）`, b.student_content);
+}
+
+async function uploadTeacherFile(id) {
+  const input = document.getElementById(`teacherfile_${id}`);
+  const file = input?.files?.[0];
+  if (!file) { alert('请选择要上传的文件'); return; }
+  const btn = document.getElementById(`uploadbtn_${id}`);
+  if (btn) { btn.textContent = '上传中…'; btn.disabled = true; }
+  try {
+    const ext = file.name.split('.').pop();
+    const path = `${teacherName}/${id}-${Date.now()}.${ext}`;
+    const url = await sbUpload('teacher-files', path, file);
+    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { teacher_file_url: url });
+    const b = cachedTeacherBookings.find(x => x.id === id);
+    if (b) b.teacher_file_url = url;
+    renderBookingManagement(document.getElementById('mainContent'));
+  } catch(e) {
+    alert('上传失败：' + e.message);
+    if (btn) { btn.textContent = '上传'; btn.disabled = false; }
+  }
+}
+
+async function generateCode(id) {
+  const code = generateRetrievalCode();
+  try {
+    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { retrieval_code: code });
+    const b = cachedTeacherBookings.find(x => x.id === id);
+    if (b) b.retrieval_code = code;
+    const span = document.getElementById(`code_${id}`);
+    if (span) { span.textContent = code; span.style.color = 'var(--accent)'; }
+  } catch(e) { alert('生成失败：' + e.message); }
+}
+
+async function exportMyFiles() {
+  const withFiles = cachedTeacherBookings.filter(b => b.teacher_file_url);
+  if (!withFiles.length) { alert('暂无可导出的文件'); return; }
+  const btn = document.querySelector('[onclick="exportMyFiles()"]');
+  if (btn) { btn.textContent = '打包中…'; btn.disabled = true; }
+  try {
+    const zip = new JSZip();
+    for (const b of withFiles) {
+      try {
+        const res = await fetch(b.teacher_file_url);
+        const blob = await res.blob();
+        const ext = (b.teacher_file_url.split('.').pop() || 'file').split('?')[0];
+        zip.file(`${b.name}_${b.slot_date}.${ext}`, blob);
+      } catch(e) {}
+    }
+    const content = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(content);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${teacherName}_面谈文件_${new Date().toISOString().slice(0,10)}.zip`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch(e) { alert('打包失败：' + e.message); }
+  finally { if (btn) { btn.textContent = '📦 批量导出我的文件'; btn.disabled = false; } }
 }
 
 function toggleRecordPanel(id) {
