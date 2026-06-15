@@ -246,7 +246,7 @@ async function uploadTeacherFile(id) {
   if (btn) { btn.textContent = '上传中…'; btn.disabled = true; }
   try {
     const ext = file.name.split('.').pop();
-    const path = `${teacherName}/${id}-${Date.now()}.${ext}`;
+    const path = `${id}-${Date.now()}.${ext}`;
     const url = await sbUpload('teacher-files', path, file);
     await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { teacher_file_url: url });
     const b = cachedTeacherBookings.find(x => x.id === id);
