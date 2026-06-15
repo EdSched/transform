@@ -266,13 +266,29 @@ function buildForm() {
     <textarea id="needs" rows="3" placeholder="希望解决的问题，或需要老师重点关注的内容…"></textarea>
     <div style="font-size:10px;color:var(--text-muted);margin-top:6px;line-height:1.6">⚠ 非老师明确指定的线下面谈，一律默认线上进行。请确认好选择的日期和地点，如有疑问请及时和老师联系。</div>
   </div>
+  <div class="card" id="contentCard" style="display:none">
+    <div class="card-title">📎 提交内容（可选）</div>
+    <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px">如需要老师查看 / 修改计划书或面试稿件，可在此粘贴文字内容（老师可下载为Word文件进行批注）</div>
+    <textarea id="studentContent" rows="6" placeholder="粘贴计划书草稿、面试稿等文字内容…"></textarea>
+  </div>
   <button class="btn btn-primary" onclick="submitBooking()">提交预约申请 →</button>
   <div class="section-sep"><div class="section-sep-line"></div><div class="section-sep-label">${vipMode ? '本月VIP预约情况' : '本月预约情况'}</div><div class="section-sep-line"></div></div>
   <div class="refresh-row">
     <div class="refresh-meta" id="refreshMeta"></div>
     <button class="btn btn-outline" style="font-size:11px;padding:5px 10px" onclick="reloadPublicList()">↺ 刷新</button>
   </div>
-  <div class="booking-list" id="publicBookingList"><div class="loading">加载中…</div></div>`;
+  <div class="booking-list" id="publicBookingList"><div class="loading">加载中…</div></div>
+  <div style="text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid var(--border-light)">
+    <a href="javascript:void(0)" onclick="toggleRetrievalPanel()" style="font-size:10px;color:var(--text-muted);text-decoration:underline;cursor:pointer">查询面谈记录</a>
+    <div id="retrievalPanel" style="display:none;margin-top:10px;text-align:left;background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
+        <input type="text" id="rt_name" placeholder="姓名">
+        <input type="text" id="rt_code" placeholder="提取码" style="text-transform:uppercase">
+      </div>
+      <button class="btn btn-outline btn-full" onclick="lookupRetrieval()">查询</button>
+      <div id="retrievalResult" style="margin-top:10px"></div>
+    </div>
+  </div>`;
 
   updateTypeOptions();
   onJaTypeChange('ja_have', 'grid');
@@ -371,6 +387,10 @@ function buildJapaneseText() {
   return parts.join('；');
 }
 
+function updateContentCardVisibility() {
+  const card = document.getElementById('contentCard');
+  if (card) card.style.display = (selectedType === 'plan' || selectedType === 'mock') ? 'block' : 'none';
+}
 function updateTypeOptions() {
   const planOk = canSelectPlan(), mockOk = canSelectMock();
   const planCard = document.getElementById('type-plan'), mockCard = document.getElementById('type-mock');
@@ -386,12 +406,14 @@ function updateTypeOptions() {
   } else n.style.display = 'none';
   if (selectedType === 'plan' && !planOk) { selectedType = null; document.querySelectorAll('.type-card').forEach(c => c.classList.remove('selected')); }
   if (selectedType === 'mock' && !mockOk) { selectedType = null; document.querySelectorAll('.type-card').forEach(c => c.classList.remove('selected')); }
+  updateContentCardVisibility();
   renderSlots();
 }
 function selectType(type) {
   selectedType = (selectedType === type) ? null : type;
   document.querySelectorAll('.type-card').forEach(c => c.classList.remove('selected'));
   if (selectedType) document.getElementById('type-' + selectedType)?.classList.add('selected');
+  updateContentCardVisibility();
   renderSlots();
 }
 function selectTypeIfUnlocked(type) {
@@ -484,7 +506,9 @@ const activeBooking = cachedBookings.find(b =>
     interview_status: interviewStatus, type: vipMode ? 'vip' : (selectedType || (Array.isArray(slot.type)?slot.type[0]:slot.type)), slot_id: selectedSlotId,
     slot_date: slot.date, slot_time_range: slot.time_range,
     duration: parseInt(duration), urgency, needs, status: 'pending', actual_time: '', note: null, daily_record: null,
-    english_score: buildEnglishText(), japanese_score: buildJapaneseText()
+    english_score: buildEnglishText(), japanese_score: buildJapaneseText(),
+    student_content: document.getElementById('studentContent')?.value.trim() || null,
+    teacher_file_url: null, retrieval_code: null
   };
   try {
     const res = await sb('/rest/v1/bookings', 'POST', booking);
@@ -539,6 +563,39 @@ function renderPublicList() {
       ${confirmedTime}
     </div>`;
   }).join('');
+}
+
+// ── 查询面谈记录 ──
+function toggleRetrievalPanel() {
+  const p = document.getElementById('retrievalPanel');
+  if (p) p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+async function lookupRetrieval() {
+  const name = document.getElementById('rt_name').value.trim();
+  const code = document.getElementById('rt_code').value.trim().toUpperCase();
+  const result = document.getElementById('retrievalResult');
+  if (!name || !code) { result.innerHTML = '<div style="font-size:11px;color:var(--danger)">请输入姓名和提取码</div>'; return; }
+  result.innerHTML = '<div class="loading">查询中…</div>';
+  try {
+    const matches = await sb(`/rest/v1/bookings?name=eq.${encodeURIComponent(name)}&retrieval_code=eq.${encodeURIComponent(code)}&select=*`);
+    if (!matches.length) {
+      result.innerHTML = '<div style="font-size:11px;color:var(--danger)">未找到匹配的记录，请确认姓名和提取码是否正确</div>';
+      return;
+    }
+    const b = matches[0];
+    let html = `<div style="font-size:11px;color:var(--text-2);margin-bottom:8px">${b.slot_date} · ${typeLabel(b.type)}</div>`;
+    if (b.daily_record) {
+      html += `<div style="font-size:11px;line-height:1.7;white-space:pre-wrap;background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:8px;margin-bottom:8px">${buildRecordText(b)}</div>`;
+    }
+    if (b.teacher_file_url) {
+      html += `<a href="${b.teacher_file_url}" target="_blank" class="btn btn-primary btn-full" style="text-decoration:none;display:block;text-align:center;box-sizing:border-box">📎 下载老师修改文件</a>`;
+    } else {
+      html += `<div style="font-size:11px;color:var(--text-muted)">老师暂未上传修改文件</div>`;
+    }
+    result.innerHTML = html;
+  } catch(e) {
+    result.innerHTML = `<div style="font-size:11px;color:var(--danger)">查询失败：${e.message}</div>`;
+  }
 }
 
 initMajor();
