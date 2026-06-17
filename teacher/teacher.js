@@ -43,7 +43,7 @@ async function init() {
       sb(`/rest/v1/schedule_slots?teacher_names=cs.{"${teacherName}"}&select=*&order=session_date.asc`),
       sb(`/rest/v1/teacher_availability?teacher_name=eq.${encodeURIComponent(teacherName)}&select=*`),
       sb(`/rest/v1/course_sessions?session_teacher=ilike.%25${teacherName}%25&confirmed=eq.true&select=*&order=session_date.asc`).catch(() => []),
-      sb(`/rest/v1/courses?select=id,name,course_type,campus,delivery`).catch(() => []),
+      sb(`/rest/v1/courses?select=id,name,course_type,campus,delivery,meeting_url,host_key,needs_recording`).catch(() => []),
     ];
     if (p.booking && majors.length) {
       fetches.push(
@@ -61,6 +61,9 @@ async function init() {
       ...s,
       course_type: courseMap[s.course_id]?.course_type || '',
       campus: s.campus || courseMap[s.course_id]?.campus || '',
+      meeting_url: courseMap[s.course_id]?.meeting_url || '',
+      host_key: courseMap[s.course_id]?.host_key || '',
+      needs_recording: courseMap[s.course_id]?.needs_recording || false,
     })).sort((a, b) => a.session_date.localeCompare(b.session_date));
     if (p.booking) {
       cachedTeacherSlots = results[5] || [];
@@ -774,6 +777,11 @@ function renderMySchedule(mc) {
             </div>
             <div style="font-size:11px;color:var(--text-3)">第${s.session_number}回 · ${s.time_range || ''} ${s.campus ? '· ' + s.campus : ''}</div>
             ${s.session_title ? `<div style="font-size:11px;color:var(--text-2);margin-top:3px">📌 ${s.session_title}</div>` : ''}
+            ${s.meeting_url ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border-light)">
+              <a href="${s.meeting_url}" target="_blank" style="font-size:11px;color:var(--accent)">🎥 腾讯会议链接</a>
+              ${s.host_key ? `<span style="font-size:11px;color:var(--text-3);margin-left:10px">主持人密钥：<span style="font-weight:600;font-family:'DM Mono',monospace">${s.host_key}</span></span>` : ''}
+              ${s.needs_recording ? `<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:2px;padding:1px 6px;margin-left:8px">📹 需要录制</span>` : ''}
+            </div>` : ''}
           </div>
         </div>`;
       }).join('')}`).join('')}
