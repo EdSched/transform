@@ -84,6 +84,7 @@ function buildTabs() {
   if (p.booking) tabs.push({ id: 'booking', label: '📅 预约管理' });
   if (p.slots) tabs.push({ id: 'slots', label: '⏰ 时间槽设定' });
   if (p.schedule || slots.length) tabs.push({ id: 'schedule', label: '🗓 排课确认' });
+  if (p.homework) tabs.push({ id: 'homework', label: '📝 作业反馈' });
   tabs.push({ id: 'mycourses', label: '📚 我的课表' });
   const tabBar = document.getElementById('tabBar');
   tabBar.innerHTML = tabs.map(t => `<button class="tab-btn${curTab === t.id ? ' active' : ''}" onclick="switchTab('${t.id}')">${t.label}</button>`).join('');
@@ -105,6 +106,7 @@ function renderTab() {
     case 'booking': renderBookingManagement(mc); break;
     case 'slots': renderSlotManagement(mc); break;
     case 'schedule': renderScheduling(mc); break;
+    case 'homework': renderHomeworkFeedback(mc); break;
     case 'mycourses': renderMySchedule(mc); break;
   }
 }
@@ -744,6 +746,233 @@ function courseColorText(name) {
   if (/福祉/.test(name)) return '#5a3010';
   return '#3a2e24';
 }
+
+// ── 作业反馈 ──
+let hwFeedbackCourse = null;
+let hwFeedbackSessions = [];
+let hwFeedbackRecords = [];
+
+async function renderHomeworkFeedback(mc) {
+  const p = teacherData?.permissions || {};
+  const myCourses = p.homework_courses || [];
+
+  mc.innerHTML = '<div class="loading">加载中…</div>';
+
+  try {
+    // 拉取老师负责的课程的 session（有作业的）
+    let sessions = [];
+    if (myCourses.length) {
+      sessions = await sb(
+        `/rest/v1/course_sessions?homework_enabled=is.true&course_name=in.(${myCourses.map(c=>`"${c}"`).join(',')})&select=*&order=session_date.desc`
+      ).catch(() => []);
+    }
+
+    if (!sessions.length) {
+      mc.innerHTML = '<div class="empty">暂无负责的作业课程<br><span style="font-size:11px">请联系管理员配置批改作业权限</span></div>';
+      return;
+    }
+
+    hwFeedbackSessions = sessions;
+
+    // 按课程分组
+    const byCourse = {};
+    sessions.forEach(s => {
+      if (!byCourse[s.course_name]) byCourse[s.course_name] = [];
+      byCourse[s.course_name].push(s);
+    });
+
+    const courseOptions = Object.keys(byCourse).map(name =>
+      `<option value="${name}" ${hwFeedbackCourse===name?'selected':''}>${name}</option>`
+    ).join('');
+
+    if (!hwFeedbackCourse) hwFeedbackCourse = Object.keys(byCourse)[0];
+
+    mc.innerHTML = `
+    <div class="page-section">
+      <div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600;margin-bottom:14px">作业反馈</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+        <select onchange="hwFeedbackCourse=this.value;renderHomeworkFeedback(document.getElementById('mainContent'))" style="font-size:12px;padding:6px 10px">
+          ${courseOptions}
+        </select>
+        <button onclick="hwBatchDownload()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit">📦 批量下载作业</button>
+        <button onclick="document.getElementById('hw_batch_upload').click()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit">📤 批量上传批改</button>
+        <input type="file" id="hw_batch_upload" multiple accept="image/*,.pdf,.doc,.docx" style="display:none" onchange="hwBatchUpload(this)">
+      </div>
+      <div id="hw_session_list"></div>
+    </div>`;
+
+    renderHwSessionList(byCourse[hwFeedbackCourse] || []);
+  } catch(e) {
+    mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
+  }
+}
+
+async function renderHwSessionList(sessions) {
+  const wrap = document.getElementById('hw_session_list');
+  if (!wrap) return;
+
+  // 拉取这些 session 的所有作业记录
+  const sessionIds = sessions.map(s => `"${s.id}"`).join(',');
+  const records = await sb(
+    `/rest/v1/session_records?session_id=in.(${sessionIds})&select=*&order=student_name.asc`
+  ).catch(() => []);
+  hwFeedbackRecords = records;
+
+  wrap.innerHTML = sessions.map(s => {
+    const recs = records.filter(r => r.session_id === s.id);
+    const submitted = recs.filter(r => r.homework_submitted || r.homework_file_url).length;
+    const f = fmtSessionDate(s.session_date);
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;margin-bottom:8px;overflow:hidden">
+      <div onclick="toggleHwSession('${s.id}')" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;cursor:pointer">
+        <div>
+          <span style="font-size:13px;font-weight:600">${f.short} ${f.dow}</span>
+          ${s.session_title ? `<span style="font-size:11px;color:var(--text-3);margin-left:8px">${s.session_title}</span>` : ''}
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:11px;color:var(--text-muted)">${submitted} 份已提交</span>
+          <span style="font-size:11px;color:var(--text-3)">▾</span>
+        </div>
+      </div>
+      <div id="hw_session_${s.id}" style="display:none;border-top:1px solid var(--border-light)">
+        ${recs.length ? recs.map(r => renderHwRecord(r, s)).join('') : '<div style="padding:12px 14px;font-size:11px;color:var(--text-muted)">暂无提交记录</div>'}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderHwRecord(r, s) {
+  const hasFile = !!r.homework_file_url;
+  const hasFeedback = !!(r.feedback_knowledge || r.feedback_attitude || r.feedback_suggestions);
+  const teacherUploaded = !!r.teacher_file_url;
+  return `<div style="padding:10px 14px;border-bottom:1px solid var(--border-light);display:flex;align-items:flex-start;gap:12px">
+    <div style="flex:1">
+      <div style="font-size:12px;font-weight:600;margin-bottom:4px">${r.student_name}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+        ${hasFile ? `<a href="${r.homework_file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 下载作业</a>` : '<span style="font-size:11px;color:var(--text-muted)">未提交</span>'}
+        ${teacherUploaded ? `<a href="${r.teacher_file_url}" target="_blank" style="font-size:11px;color:var(--ok)">✓ 已上传批改</a>` : ''}
+        ${hasFeedback ? `<span style="font-size:11px;color:var(--ok)">✓ 已反馈</span>` : ''}
+      </div>
+    </div>
+    <button onclick="openHwFeedbackPanel('${r.id}','${r.student_name}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:4px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">
+      ${hasFeedback||teacherUploaded ? '查看/编辑反馈' : '填写反馈'}
+    </button>
+  </div>
+  <!-- 反馈面板 -->
+  <div id="hw_panel_${r.id}" style="display:none;padding:12px 14px;background:var(--bg);border-bottom:1px solid var(--border-light)">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+      <div>
+        <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">知识掌握情况</div>
+        <textarea id="hw_fb_knowledge_${r.id}" rows="2" style="font-size:11px;width:100%;box-sizing:border-box">${r.feedback_knowledge||''}</textarea>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">学习态度</div>
+        <textarea id="hw_fb_attitude_${r.id}" rows="2" style="font-size:11px;width:100%;box-sizing:border-box">${r.feedback_attitude||''}</textarea>
+      </div>
+      <div style="grid-column:1/-1">
+        <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">建议</div>
+        <textarea id="hw_fb_suggestions_${r.id}" rows="2" style="font-size:11px;width:100%;box-sizing:border-box">${r.feedback_suggestions||''}</textarea>
+      </div>
+    </div>
+    <div style="margin-bottom:10px">
+      <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">上传批改文件（可选）</div>
+      <div style="display:flex;gap:6px">
+        <input type="file" id="hw_teacher_file_${r.id}" accept="image/*,.pdf,.doc,.docx" style="font-size:11px;flex:1">
+        <button onclick="uploadHwTeacherFile('${r.id}','${s.id}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:4px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">上传</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px">
+      <button onclick="saveHwFeedback('${r.id}','${s.id}')" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 12px;cursor:pointer;font-family:inherit">保存反馈</button>
+      <button onclick="document.getElementById('hw_panel_${r.id}').style.display='none'" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit">收起</button>
+    </div>
+    <div id="hw_fb_result_${r.id}" style="margin-top:6px;font-size:11px"></div>
+  </div>`;
+}
+
+function openHwFeedbackPanel(recordId, studentName) {
+  const panel = document.getElementById(`hw_panel_${recordId}`);
+  if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+function toggleHwSession(sessionId) {
+  const el = document.getElementById(`hw_session_${sessionId}`);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function saveHwFeedback(recordId, sessionId) {
+  const result = document.getElementById(`hw_fb_result_${recordId}`);
+  const data = {
+    feedback_knowledge: document.getElementById(`hw_fb_knowledge_${recordId}`)?.value || '',
+    feedback_attitude: document.getElementById(`hw_fb_attitude_${recordId}`)?.value || '',
+    feedback_suggestions: document.getElementById(`hw_fb_suggestions_${recordId}`)?.value || '',
+  };
+  try {
+    await sb(`/rest/v1/session_records?id=eq.${recordId}`, 'PATCH', data);
+    if (result) { result.innerHTML = '<span style="color:var(--ok)">✓ 已保存</span>'; setTimeout(()=>result.innerHTML='', 2000); }
+  } catch(e) { if (result) result.innerHTML = `<span style="color:var(--danger)">保存失败：${e.message}</span>`; }
+}
+
+async function uploadHwTeacherFile(recordId, sessionId) {
+  const fileInput = document.getElementById(`hw_teacher_file_${recordId}`);
+  const result = document.getElementById(`hw_fb_result_${recordId}`);
+  const file = fileInput?.files[0];
+  if (!file) { if(result) result.innerHTML = '<span style="color:var(--danger)">请选择文件</span>'; return; }
+  const rec = hwFeedbackRecords.find(r => r.id === recordId);
+  if (!rec) return;
+  const ext = file.name.split('.').pop();
+  const path = `homework-feedback/${sessionId}_${rec.student_name}.${ext}`;
+  try {
+    if (result) result.innerHTML = '<span style="color:var(--text-muted)">上传中…</span>';
+    const url = await sbUpload('teacher-files', path, file);
+    await sb(`/rest/v1/session_records?id=eq.${recordId}`, 'PATCH', { teacher_file_url: url });
+    rec.teacher_file_url = url;
+    if (result) { result.innerHTML = '<span style="color:var(--ok)">✓ 上传成功</span>'; setTimeout(()=>result.innerHTML='', 2000); }
+  } catch(e) { if(result) result.innerHTML = `<span style="color:var(--danger)">上传失败：${e.message}</span>`; }
+}
+
+async function hwBatchDownload() {
+  const sessionSel = hwFeedbackSessions.find(s => s.course_name === hwFeedbackCourse);
+  // 找当前展开的或最近一次
+  const recs = hwFeedbackRecords.filter(r => r.homework_file_url);
+  if (!recs.length) { alert('暂无可下载的作业文件'); return; }
+  // 逐个下载
+  for (const r of recs) {
+    const a = document.createElement('a');
+    a.href = r.homework_file_url;
+    a.download = '';
+    a.target = '_blank';
+    a.click();
+    await new Promise(res => setTimeout(res, 300));
+  }
+}
+
+async function hwBatchUpload(input) {
+  const files = [...input.files];
+  if (!files.length) return;
+  let success = 0, fail = 0;
+  for (const file of files) {
+    // 从文件名提取学生姓名（格式：日期_姓名_课程.ext 或 姓名_任意.ext）
+    const parts = file.name.replace(/\.[^.]+$/, '').split('_');
+    // 尝试找匹配的学生姓名
+    let matched = null;
+    for (const part of parts) {
+      const rec = hwFeedbackRecords.find(r => r.student_name === part);
+      if (rec) { matched = rec; break; }
+    }
+    if (!matched) { fail++; continue; }
+    const ext = file.name.split('.').pop();
+    const path = `homework-feedback/${matched.session_id}_${matched.student_name}.${ext}`;
+    try {
+      const url = await sbUpload('teacher-files', path, file);
+      await sb(`/rest/v1/session_records?id=eq.${matched.id}`, 'PATCH', { teacher_file_url: url });
+      matched.teacher_file_url = url;
+      success++;
+    } catch(e) { fail++; }
+  }
+  alert(`批量上传完成：${success} 成功，${fail} 失败${fail>0?'\n（失败的文件名中未能匹配到学生姓名）':''}`);
+  renderHwSessionList(hwFeedbackSessions.filter(s => s.course_name === hwFeedbackCourse));
+  input.value = '';
+}
+
 
 function renderMySchedule(mc) {
   if (!confirmedSessions.length) { mc.innerHTML = '<div class="empty">暂无已确定的课程<br><span style="font-size:11px">排课确认后这里会显示您的完整课表</span></div>'; return; }
