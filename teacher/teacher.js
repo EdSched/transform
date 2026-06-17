@@ -270,14 +270,26 @@ async function uploadTeacherFile(id) {
 }
 
 async function generateCode(id) {
-  const code = generateRetrievalCode();
+  const b = cachedTeacherBookings.find(x => x.id === id);
+  if (!b) return;
+  const span = document.getElementById(`code_${id}`);
   try {
-    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { retrieval_code: code });
-    const b = cachedTeacherBookings.find(x => x.id === id);
-    if (b) b.retrieval_code = code;
-    const span = document.getElementById(`code_${id}`);
-    if (span) { span.textContent = code; span.style.color = 'var(--accent)'; }
-  } catch(e) { alert('生成失败：' + e.message); }
+    // 查学生档案里的 student_code
+    const students = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(b.name)}&select=id,name,student_code`);
+    const student = students[0];
+    if (!student) {
+      alert(`未在学生档案中找到「${b.name}」，请先在学生管理中建立档案并生成查询码`);
+      return;
+    }
+    if (!student.student_code) {
+      alert(`「${b.name}」尚未生成查询码，请管理员在学生管理中生成`);
+      return;
+    }
+    // 同步写入 booking，方便兼容旧查询逻辑
+    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { retrieval_code: student.student_code });
+    b.retrieval_code = student.student_code;
+    if (span) { span.textContent = student.student_code; span.style.color = 'var(--accent)'; }
+  } catch(e) { alert('操作失败：' + e.message); }
 }
 
 async function exportMyFiles() {
