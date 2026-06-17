@@ -172,7 +172,7 @@ function renderBookingCard(b) {
   return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px;margin-bottom:8px;border-left:3px solid ${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'}">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px">
       <div>
-        <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:14px">${b.name}</span>
+        <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:14px;cursor:pointer;color:var(--accent);text-decoration:underline" onclick="showStudentInfoTeacher('${b.name}')">${b.name}</span>
         <span style="font-size:11px;color:var(--text-3);margin-left:6px">${MAJORS[b.major] || b.major}</span>
       </div>
       <span style="font-size:10px;background:${b.status === 'pending' ? 'var(--warn-bg)' : 'var(--ok-bg)'};color:${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'};padding:2px 7px;border-radius:2px;white-space:nowrap">${b.status === 'pending' ? '待确认' : '已确认'}</span>
@@ -188,29 +188,14 @@ function renderBookingCard(b) {
       <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:6px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text-3)">取消</button>
     </div>` : `
     <div>
-      <div style="margin-bottom:8px">
-        <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">提交文件链接（可选）</div>
-        <div style="display:flex;gap:6px">
-          <input type="url" id="fileurl_${b.id}" value="${b.file_url||''}" placeholder="Google Drive / 百度网盘 等链接" style="flex:1;font-size:11px;padding:5px 8px">
-          <button onclick="saveFileUrl('${b.id}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">保存链接</button>
-        </div>
-        ${b.file_url ? `<a href="${b.file_url}" target="_blank" style="font-size:10px;color:var(--accent);margin-top:3px;display:block">📎 已提交文件</a>` : ''}
-      </div>
-      ${(b.type === 'plan' || b.type === 'mock') ? `
       <div style="margin-bottom:8px;background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:8px">
-        <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">📎 计划书 / 面试稿件</div>
-        ${b.student_content ? `
-          <div style="font-size:11px;color:var(--text-2);background:var(--surface);border:1px solid var(--border-light);border-radius:2px;padding:6px 8px;margin-bottom:6px;max-height:100px;overflow-y:auto;white-space:pre-wrap">${b.student_content}</div>
-          <button onclick="downloadStudentContent('${b.id}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit;margin-bottom:8px">⬇ 下载为Word</button>
-        ` : `<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">学生未提交文字内容</div>`}
-        <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">上传修改文件（学生可通过提取码下载）</div>
+        <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">📎 上传修改文件（学生可通过查询码下载）</div>
         <div style="display:flex;gap:6px;margin-bottom:6px">
           <input type="file" id="teacherfile_${b.id}" style="flex:1;font-size:11px;min-width:0">
           <button onclick="uploadTeacherFile('${b.id}')" id="uploadbtn_${b.id}" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">上传</button>
         </div>
-        ${b.teacher_file_url ? `<a href="${b.teacher_file_url}" target="_blank" style="font-size:10px;color:var(--accent);display:block;margin-bottom:6px">📎 已上传修改文件</a>` : ''}
-
-      </div>` : ''}
+        ${b.teacher_file_url ? `<a href="${b.teacher_file_url}" target="_blank" style="font-size:10px;color:var(--accent);display:block">📎 已上传修改文件</a>` : '<div style="font-size:10px;color:var(--text-muted)">尚未上传</div>'}
+      </div>
       <!-- 面谈查询码（常驻，跟文件无关）-->
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
         <button onclick="generateCode('${b.id}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:4px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">🔑 ${b.retrieval_code?'重新生成查询码':'生成查询码'}</button>
@@ -253,16 +238,7 @@ async function saveDisplayName() {
     if (btn) { btn.textContent = '✓ 已保存'; setTimeout(() => btn.textContent = '保存', 1500); }
   } catch(e) { alert('保存失败：' + e.message); }
 }
-async function saveFileUrl(id) {
-  const url = document.getElementById(`fileurl_${id}`)?.value.trim() || '';
-  try {
-    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { file_url: url });
-    const b = cachedTeacherBookings.find(x => x.id === id);
-    if (b) b.file_url = url;
-    const btn = document.querySelector(`[onclick="saveFileUrl('${id}')"]`);
-    if (btn) { btn.textContent = '✓ 已保存'; setTimeout(() => btn.textContent = '保存链接', 1500); }
-  } catch(e) { alert('保存失败：' + e.message); }
-}
+// saveFileUrl removed - using Supabase Storage instead
 
 function downloadStudentContent(id) {
   const b = cachedTeacherBookings.find(x => x.id === id);
@@ -391,6 +367,77 @@ async function saveBookingRecord(id) {
     const btn = document.querySelector(`[onclick="saveBookingRecord('${id}')"]`);
     if (btn) { btn.textContent = '✓ 已保存'; setTimeout(() => btn.textContent = '保存记录', 1500); }
   } catch (e) { alert('保存失败：' + e.message); }
+}
+
+
+async function showStudentInfoTeacher(name) {
+  // 学生档案
+  const students = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(name)}&select=*`).catch(()=>[]);
+  const s = students[0];
+  if (!s) { alert(`未找到学生档案：${name}`); return; }
+
+  // 考学进度
+  const progress = await sb(`/rest/v1/student_progress?student_id=eq.${s.id}&select=*`).catch(()=>[]);
+  const p = progress[0] || {};
+
+  // 最近面谈（最多3条）
+  const bookings = await sb(`/rest/v1/bookings?name=eq.${encodeURIComponent(name)}&status=eq.confirmed&select=*&order=slot_date.desc&limit=3`).catch(()=>[]);
+  const lb = bookings[0];
+  const r = lb?.daily_record || {};
+
+  const row = (label, val) => val ? `<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border-light)"><span style="font-size:11px;color:var(--text-3);min-width:80px;flex-shrink:0">${label}</span><span style="font-size:11px;color:var(--text-2)">${val}</span></div>` : '';
+  const statusIcon = (v) => ({进展顺利并能掌握:'🟢',能够稳定跟上:'🟡',需要更多时间:'🟠',没有很好跟上进度:'🔴',遇到困难:'🔴',未开始:'⚪',撰写中:'🟡',已完成:'🟢',已出愿:'🟢'}[v]||'');
+
+  const html = `
+    <div style="font-size:15px;font-weight:700;margin-bottom:4px">${s.name}</div>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">${MAJORS[s.major]||s.major||''} · ${s.student_type||''} · ${({active:'在籍',graduated:'已合格',expired:'已到期',stopped:'停课',withdrawn:'退学'}[s.status])||s.status}</div>
+
+    <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">基础信息</div>
+    ${row('日语成绩', s.japanese_score)}
+    ${row('英语成绩', s.english_score)}
+    ${row('出身大学', s.university)}
+    ${row('学部/专业', s.faculty)}
+    ${row('GPA/履历', s.gpa)}
+    ${row('毕业论文', s.thesis)}
+    ${row('毕业时间', s.graduation_date)}
+    ${row('期待入学', s.target_enrollment)}
+    ${row('赴日时间', s.japan_arrival)}
+
+    ${(p.target_schools||p.difficulties||p.research_plan) ? `
+    <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin:12px 0 8px">考学进度</div>
+    ${row('志望校', p.target_schools)}
+    ${row('困难点', p.difficulties)}
+    ${row('研究计划', p.research_plan)}
+    ` : ''}
+
+    ${lb ? `
+    <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin:12px 0 8px">最新面谈进度（${lb.slot_date}）</div>
+    ${r.study_status ? `<div style="font-size:11px;padding:4px 0;border-bottom:1px solid var(--border-light)">${statusIcon(r.study_status)} 知识进展：${r.study_status}${r.study_advice?' · '+r.study_advice:''}</div>` : ''}
+    ${r.plan_status ? `<div style="font-size:11px;padding:4px 0;border-bottom:1px solid var(--border-light)">${statusIcon(r.plan_status)} 计划书：${r.plan_status}${r.plan_advice?' · '+r.plan_advice:''}</div>` : ''}
+    ${r.apply_status ? `<div style="font-size:11px;padding:4px 0;border-bottom:1px solid var(--border-light)">${statusIcon(r.apply_status)} 出愿：${r.apply_status}${r.apply_advice?' · '+r.apply_advice:''}</div>` : ''}
+    ${r.exam_status ? `<div style="font-size:11px;padding:4px 0;border-bottom:1px solid var(--border-light)">${statusIcon(r.exam_status)} 备考：${r.exam_status}${r.exam_advice?' · '+r.exam_advice:''}</div>` : ''}
+    ${r.issue ? `<div style="font-size:11px;padding:4px 0;border-bottom:1px solid var(--border-light)">❓ 困惑：${r.issue}</div>` : ''}
+    ` : '<div style="font-size:11px;color:var(--text-muted);margin-top:8px">暂无面谈记录</div>'}
+
+    ${bookings.length > 1 ? `
+    <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin:12px 0 8px">历史面谈</div>
+    ${bookings.slice(1).map(b=>`<div style="font-size:11px;color:var(--text-3);padding:3px 0;border-bottom:1px solid var(--border-light)">${b.slot_date} · ${typeLabel(b.type)}</div>`).join('')}
+    ` : ''}`;
+
+  // 显示在一个简单的 overlay
+  let overlay = document.getElementById('teacherStudentInfoOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'teacherStudentInfoOverlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center';
+    overlay.onclick = (e) => { if(e.target===overlay) overlay.remove(); };
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border-radius:6px;padding:20px;width:420px;max-height:80vh;overflow-y:auto;position:relative">
+      <button onclick="document.getElementById('teacherStudentInfoOverlay').remove()" style="position:absolute;top:12px;right:12px;background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-3)">×</button>
+      ${html}
+    </div>`;
 }
 
 
