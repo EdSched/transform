@@ -190,6 +190,12 @@ function renderBookingCard(b) {
         ${b.teacher_file_url ? `<a href="${b.teacher_file_url}" target="_blank" style="font-size:10px;color:var(--accent);display:block;margin-bottom:6px">📎 已上传修改文件</a>` : ''}
 
       </div>` : ''}
+      <!-- 面谈查询码（常驻，跟文件无关）-->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <button onclick="generateCode('${b.id}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:4px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">🔑 ${b.retrieval_code?'重新生成查询码':'生成查询码'}</button>
+        <span id="code_${b.id}" style="font-size:13px;font-weight:600;letter-spacing:2px;color:${b.retrieval_code?'var(--accent)':'var(--text-muted)'}">${b.retrieval_code||'未生成'}</span>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px">生成后告知学生，凭姓名＋查询码可在预约页面查看面谈记录</div>
       <button onclick="toggleRecordPanel('${b.id}')" style="font-size:11px;color:var(--text-2);background:none;border:1px solid var(--border);border-radius:3px;padding:4px 10px;cursor:pointer;font-family:inherit;margin-bottom:8px">
         ${hasRecord ? '📋 查看/编辑记录' : '📝 填写面谈记录'} ▾
       </button>
@@ -208,12 +214,6 @@ function renderBookingCard(b) {
             <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--danger)">取消预约</button>
           </div>
         </div>
-        <!-- 提取码（所有类型通用，记录保存后告知学生）-->
-        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light);display:flex;align-items:center;gap:8px">
-          <button onclick="generateCode('${b.id}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">🔑 生成提取码</button>
-          <span id="code_${b.id}" style="font-size:13px;font-weight:600;letter-spacing:2px;color:${b.retrieval_code?'var(--accent)':'var(--text-muted)'}">${b.retrieval_code || '尚未生成'}</span>
-        </div>
-        <div style="font-size:10px;color:var(--text-muted);margin-top:4px">生成提取码后告知学生，凭姓名＋提取码可查询面谈记录及文件</div>
       </div>
     </div>`}
   </div>`;
