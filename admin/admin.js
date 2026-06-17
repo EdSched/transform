@@ -1543,8 +1543,7 @@ function openAddCourseModal(editId){
     document.getElementById('ac_notes').value=c.notes||'';
     document.getElementById('ac_meeting_url').value=c.meeting_url||'';
     document.getElementById('ac_host_key').value=c.host_key||'';
-    const recVal2 = c.needs_recording ? 'yes' : 'no';
-    document.querySelectorAll('input[name="ac_recording"]').forEach(r=>r.checked=(r.value===recVal2));
+    document.getElementById('ac_recording').value = c.needs_recording ? 'yes' : 'no';
     // set confirmed state
     const isConfirmed=cachedSessions.filter(s=>s.course_id===editId).every(s=>s.confirmed);
     document.getElementById('ac_confirm_publish').checked=isConfirmed;
@@ -1565,7 +1564,7 @@ function openAddCourseModal(editId){
     }
   } else {
     ['ac_name','ac_teacher','ac_campus','ac_time_range','ac_notes','ac_meeting_url','ac_host_key'].forEach(id=>document.getElementById(id).value='');
-    document.querySelectorAll('input[name="ac_recording"]').forEach(r=>r.checked=(r.value==='no'));
+    document.getElementById('ac_recording').value = 'no';
     ['ac_period','ac_course_type','ac_delivery','ac_weekday'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('ac_total').value='';
     document.getElementById('ac_first_date').value='';
@@ -1703,7 +1702,7 @@ async function saveAddCourse(){
     notes:document.getElementById('ac_notes').value.trim(),
     meeting_url:document.getElementById('ac_meeting_url').value.trim(),
     host_key:document.getElementById('ac_host_key').value.trim(),
-    needs_recording:document.querySelector('input[name="ac_recording"]:checked')?.value==='yes',
+    needs_recording:document.getElementById('ac_recording').value==='yes',
   };
 
   try{
@@ -1771,8 +1770,7 @@ function openEditCourse(id){
   document.getElementById('ec_notes').value=c.notes||'';
   document.getElementById('ec_meeting_url').value=c.meeting_url||'';
   document.getElementById('ec_host_key').value=c.host_key||'';
-  const recVal = c.needs_recording ? 'yes' : 'no';
-  document.querySelectorAll('input[name="ec_recording"]').forEach(r=>r.checked=(r.value===recVal));
+  document.getElementById('ec_recording').value = c.needs_recording ? 'yes' : 'no';
   document.getElementById('editCourseModal').classList.add('open');
 }
 async function saveEditCourse(){
@@ -1791,7 +1789,7 @@ async function saveEditCourse(){
     notes:document.getElementById('ec_notes').value.trim(),
     meeting_url:document.getElementById('ec_meeting_url').value.trim(),
     host_key:document.getElementById('ec_host_key').value.trim(),
-    needs_recording:document.querySelector('input[name="ec_recording"]:checked')?.value==='yes',
+    needs_recording:document.getElementById('ec_recording').value==='yes',
   };
   try{
     await sb(`/rest/v1/courses?id=eq.${id}`,'PATCH',data);
