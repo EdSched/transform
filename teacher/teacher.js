@@ -426,14 +426,7 @@ function renderSlotManagement(mc) {
         </div>
         <div class="form-group" style="margin-bottom:0"><label class="form-label">专业</label>
           <select id="ts_major">
-            ${(() => {
-              const hasShakai = majors.some(m => ['shakai','shinpan','fukushi','shakai_group'].includes(m));
-              const otherMajors = majors.filter(m => !['shakai','shinpan','fukushi','shakai_group'].includes(m));
-              return [
-                hasShakai ? `<option value="shakai_group">社会人文</option>` : '',
-                ...otherMajors.map(m => `<option value="${m}">${MAJORS[m] || m}</option>`)
-              ].join('');
-            })()}
+            ${majors.map(m => `<option value="${m}">${m === 'shakai_group' ? '社会人文' : MAJORS[m] || m}</option>`).join('')}
           </select>
         </div>
         <div class="form-group" style="margin-bottom:0;margin-top:8px"><label class="form-label">面谈地点（可选）</label>
