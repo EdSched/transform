@@ -150,7 +150,7 @@ function buildForm() {
   <div id="homeworkNotice" style="display:none;background:var(--ok-bg);border:1px solid var(--ok);border-radius:3px;padding:10px 14px;margin-bottom:12px">
     <div style="font-size:12px;font-weight:600;color:var(--ok);margin-bottom:4px">📝 近期作业提醒</div>
     <div id="homeworkNoticeList" style="font-size:11px;color:var(--text-2);line-height:1.8;margin-bottom:8px"></div>
-    <button onclick="scrollToHomework()" style="font-size:11px;background:var(--ok);color:#fff;border:none;border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">→ 去提交作业</button>
+    <button onclick="scrollToHomework()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit;font-weight:600;margin-top:4px">→ 去提交作业</button>
   </div>
   <div id="infoBanner" style="display:none;background:var(--warning-light);border:1px solid var(--warning);border-radius:3px;padding:9px 12px;margin-bottom:12px;font-size:11px;color:var(--warning);line-height:1.6"></div>
   <div class="card">
@@ -756,10 +756,10 @@ async function loadHomeworkSessions() {
     wrap.innerHTML = relevant.map(s => {
       const submitted = submittedIds.has(s.id);
       const label = s.session_date + ' · ' + s.course_name + (s.session_title ? ' · ' + s.session_title : '');
-      return '<label style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);border:1px solid ' + (submitted?'var(--ok)':'var(--border)') + ';border-radius:3px;cursor:' + (submitted?'default':'pointer') + ';overflow:hidden;margin-bottom:4px">'
-        + '<input type="radio" name="hw_session" value="' + s.id + '" data-name="' + s.course_name.replace(/"/g,'&quot;') + '" data-date="' + s.session_date + '" style="flex-shrink:0" ' + (submitted?'disabled':'') + '>'
-        + '<span style="font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + label + '</span>'
-        + '<span style="font-size:10px;color:' + (submitted?'var(--ok)':'var(--text-muted)') + ';flex-shrink:0;margin-left:6px;white-space:nowrap">' + (submitted?'✓ 已提交':'未提交') + '</span>'
+      return '<label style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);border:1px solid ' + (submitted?'var(--ok)':'var(--border)') + ';border-radius:3px;cursor:' + (submitted?'default':'pointer') + ';margin-bottom:4px">'
+        + '<input type="radio" name="hw_session" value="' + s.id + '" data-name="' + s.course_name.replace(/"/g,'&quot;') + '" data-date="' + s.session_date + '" style="flex-shrink:0;margin-top:2px" ' + (submitted?'disabled':'') + '>'
+        + '<span style="font-size:12px;flex:1;line-height:1.5">' + label + '</span>'
+        + '<span style="font-size:10px;color:' + (submitted?'var(--ok)':'var(--text-muted)') + ';flex-shrink:0;margin-left:6px">' + (submitted?'✓':'—') + '</span>'
         + '</label>';
     }).join('');
     // 事件委托
