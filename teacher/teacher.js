@@ -188,26 +188,32 @@ function renderBookingCard(b) {
           <button onclick="uploadTeacherFile('${b.id}')" id="uploadbtn_${b.id}" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">上传</button>
         </div>
         ${b.teacher_file_url ? `<a href="${b.teacher_file_url}" target="_blank" style="font-size:10px;color:var(--accent);display:block;margin-bottom:6px">📎 已上传修改文件</a>` : ''}
-        <div style="display:flex;align-items:center;gap:8px">
-          <button onclick="generateCode('${b.id}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">🔑 生成提取码</button>
-          <span id="code_${b.id}" style="font-size:13px;font-weight:600;letter-spacing:2px;color:${b.retrieval_code?'var(--accent)':'var(--text-muted)'}">${b.retrieval_code || '尚未生成'}</span>
-        </div>
-        <div style="font-size:10px;color:var(--text-muted);margin-top:4px">提取码生成后请告知学生（学生姓名 + 提取码可在预约页面下方查询）</div>
+
       </div>` : ''}
       <button onclick="toggleRecordPanel('${b.id}')" style="font-size:11px;color:var(--text-2);background:none;border:1px solid var(--border);border-radius:3px;padding:4px 10px;cursor:pointer;font-family:inherit;margin-bottom:8px">
         ${hasRecord ? '📋 查看/编辑记录' : '📝 填写面谈记录'} ▾
       </button>
       <div id="record_panel_${b.id}" style="display:none">
-        <div style="margin-bottom:10px"><label class="form-label">实际面谈时长（分钟）</label>
-          <input type="number" id="duration_${b.id}" value="${b.actual_duration||''}" placeholder="例：30" min="0" step="5" style="font-size:11px;width:120px">
+        <!-- 查看模式 -->
+        <div id="rec_view_${b.id}" style="display:none"></div>
+        <!-- 编辑模式 -->
+        <div id="rec_edit_${b.id}">
+          <div style="margin-bottom:10px"><label class="form-label">实际面谈时长（分钟）</label>
+            <input type="number" id="duration_${b.id}" value="${b.actual_duration||''}" placeholder="例：30" min="0" step="5" style="font-size:11px;width:120px">
+          </div>
+          <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px">面谈记录</div>
+          ${renderRecordForm(b.id, b.daily_record || {})}
+          <div style="display:flex;gap:6px;margin-top:10px">
+            <button onclick="saveBookingRecord('${b.id}')" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit">保存记录</button>
+            <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--danger)">取消预约</button>
+          </div>
         </div>
-        <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px">面谈记录</div>
-        ${renderRecordForm(b.id, b.daily_record || {})}
-        <div style="display:flex;gap:6px;margin-top:10px">
-          <button onclick="saveBookingRecord('${b.id}')" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit">保存记录</button>
-          <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--danger)">取消预约</button>
+        <!-- 提取码（所有类型通用，记录保存后告知学生）-->
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light);display:flex;align-items:center;gap:8px">
+          <button onclick="generateCode('${b.id}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">🔑 生成提取码</button>
+          <span id="code_${b.id}" style="font-size:13px;font-weight:600;letter-spacing:2px;color:${b.retrieval_code?'var(--accent)':'var(--text-muted)'}">${b.retrieval_code || '尚未生成'}</span>
         </div>
-        <div id="copy_area_${b.id}"></div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:4px">生成提取码后告知学生，凭姓名＋提取码可查询面谈记录及文件</div>
       </div>
     </div>`}
   </div>`;
@@ -299,8 +305,36 @@ function toggleRecordPanel(id) {
   if (!panel) return;
   const isOpen = panel.style.display !== 'none';
   panel.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen) {
+    // 展开时：有记录就默认查看模式，否则编辑模式
+    const booking = cachedTeacherBookings.find(x => x.id === id);
+    const hasRecord = booking && booking.daily_record && Object.values(booking.daily_record).some(v => v);
+    setTeacherRecordMode(id, hasRecord ? 'view' : 'edit');
+  }
   const btn = panel.previousElementSibling;
   if (btn) btn.innerHTML = btn.innerHTML.replace(isOpen ? '▴' : '▾', isOpen ? '▾' : '▴');
+}
+
+function setTeacherRecordMode(id, mode) {
+  const editArea = document.getElementById(`rec_edit_${id}`);
+  const viewArea = document.getElementById(`rec_view_${id}`);
+  const booking = cachedTeacherBookings.find(x => x.id === id);
+  if (mode === 'view' && booking) {
+    if (editArea) editArea.style.display = 'none';
+    if (viewArea) {
+      viewArea.style.display = 'block';
+      const text = buildRecordText(booking);
+      viewArea.innerHTML = `
+        <pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:'DM Mono',monospace;color:var(--text-2);background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px">${text}</pre>
+        <div style="display:flex;gap:6px">
+          <button onclick="setTeacherRecordMode('${id}','edit')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:4px 10px;cursor:pointer;font-family:inherit">✏ 编辑记录</button>
+          <button onclick="navigator.clipboard.writeText(document.getElementById('rec_view_${id}').querySelector('pre').textContent).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制记录',2000)})" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:4px 10px;cursor:pointer;font-family:inherit">📋 复制记录</button>
+        </div>`;
+    }
+  } else {
+    if (editArea) editArea.style.display = 'block';
+    if (viewArea) viewArea.style.display = 'none';
+  }
 }
 
 async function saveBookingRecord(id) {
@@ -311,18 +345,13 @@ async function saveBookingRecord(id) {
     await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { daily_record: record, actual_duration });
     const booking = cachedTeacherBookings.find(x => x.id === id);
     if (booking) { booking.daily_record = record; booking.actual_duration = actual_duration; }
+    // 保存后切换到查看模式
+    setTeacherRecordMode(id, 'view');
     const btn = document.querySelector(`[onclick="saveBookingRecord('${id}')"]`);
-    if (btn) { const orig = btn.textContent; btn.textContent = '✓ 已保存'; setTimeout(() => btn.textContent = orig, 1500); }
-    if (booking) {
-      const text = buildRecordText(booking);
-      const copyArea = document.getElementById(`copy_area_${id}`);
-      if (copyArea) {
-        copyArea.innerHTML = `<pre id="copy_text_${id}" style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:10px;font-size:11px;white-space:pre-wrap;font-family:'DM Mono',monospace;line-height:1.6;margin-top:10px">${text}</pre>
-          <button onclick="navigator.clipboard.writeText(document.getElementById('copy_text_${id}').textContent).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制记录',2000)})" style="margin-top:6px;font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:4px 12px;cursor:pointer;font-family:inherit">📋 复制记录</button>`;
-      }
-    }
+    if (btn) { btn.textContent = '✓ 已保存'; setTimeout(() => btn.textContent = '保存记录', 1500); }
   } catch (e) { alert('保存失败：' + e.message); }
 }
+
 
 async function confirmBookingTeacher(id) {
   const d = document.getElementById('actual_date_' + id)?.value || '';
@@ -397,8 +426,14 @@ function renderSlotManagement(mc) {
         </div>
         <div class="form-group" style="margin-bottom:0"><label class="form-label">专业</label>
           <select id="ts_major">
-            ${majors.some(m => ['shakai','shinpan','fukushi'].includes(m)) ? `<option value="shakai_group">社会人文</option>` : ''}
-            ${majors.map(m => `<option value="${m}">${MAJORS[m] || m}</option>`).join('')}
+            ${(() => {
+              const hasShakai = majors.some(m => ['shakai','shinpan','fukushi','shakai_group'].includes(m));
+              const otherMajors = majors.filter(m => !['shakai','shinpan','fukushi','shakai_group'].includes(m));
+              return [
+                hasShakai ? `<option value="shakai_group">社会人文</option>` : '',
+                ...otherMajors.map(m => `<option value="${m}">${MAJORS[m] || m}</option>`)
+              ].join('');
+            })()}
           </select>
         </div>
         <div class="form-group" style="margin-bottom:0;margin-top:8px"><label class="form-label">面谈地点（可选）</label>
