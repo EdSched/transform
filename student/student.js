@@ -437,8 +437,12 @@ function slotMonthShift(d) {
   slotViewMonth += d;
   if (slotViewMonth > 11) { slotViewMonth = 0; slotViewYear++; }
   if (slotViewMonth < 0) { slotViewMonth = 11; slotViewYear--; }
+  expandedDateKey = null;
   renderSlots();
 }
+
+// 当前展开的日期key
+let expandedDateKey = null;
 
 function renderSlots() {
   const lbl = document.getElementById('slotMonthLabel'), grid = document.getElementById('slotGrid');
@@ -450,31 +454,76 @@ function renderSlots() {
   const slotBookedCount = {};
   cachedBookings.filter(b => b.status !== 'cancelled').forEach(b => { slotBookedCount[b.slot_id] = (slotBookedCount[b.slot_id] || 0) + 1; });
   if (!allSlots.length) { grid.innerHTML = '<div class="no-slots">本月暂无可预约时间槽<br><span style="font-size:10px">请联系老师确认排期</span></div>'; return; }
-  const visible = selectedType ? allSlots.filter(s => Array.isArray(s.type) ? s.type.includes(selectedType) : s.type === selectedType) : allSlots;
-  const dimmed = selectedType ? allSlots.filter(s => Array.isArray(s.type) ? !s.type.includes(selectedType) : s.type !== selectedType) : [];
-  const renderSlot = (s, isDimmed) => {
-    const d = new Date(s.date), dow = DAYS_CN[d.getDay()];
-    const dc = d.getDay() === 6 ? 'var(--sat)' : d.getDay() === 0 ? 'var(--sun)' : 'var(--text-secondary)';
-    const cap = slotCap(s.time_range), booked = slotBookedCount[s.id] || 0, remaining = cap - booked, full = remaining <= 0;
-    const disabled = full || isDimmed;
-    const remainLabel = full ? '<div class="slot-remain" style="color:var(--danger)">已满</div>' : `<div class="slot-remain" style="color:var(--success)">剩余 ${remaining} 名额</div>`;
-    return `<div class="slot-option${disabled ? ' taken' : ''}">
-      <input type="radio" name="slotPick" id="slot-${s.id}" value="${s.id}" ${disabled ? 'disabled' : ''} onchange="selectedSlotId='${s.id}'">
-      <label for="slot-${s.id}">
-        <div style="display:flex;align-items:center;gap:4px">
-          <span class="slot-date-r">${s.date.slice(5).replace('-', '/')}</span>
-          <span class="slot-dow-r" style="color:${dc}">${dow}</span>
-          <span class="tag ${typeTag(Array.isArray(s.type)?s.type[0]:s.type)}" style="margin-left:auto;font-size:9px">${(Array.isArray(s.type)?s.type:[s.type]).map(t=>t==='daily'?'日常':t==='plan'?'计划书':t==='vip'?'VIP':'模拟').join('・')}</span>
-        </div>
-        <div class="slot-time-r">${s.time_range}</div>
-${s.teacher_name ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">👤 ${teacherDisplayNames[s.teacher_name] || s.teacher_name}</div>` : ''}
-${s.location && s.location !== 'online' ? `<div style="font-size:10px;color:#2a6aad;margin-top:2px">📍 ${s.location==='offline_takadanobaba'?'线下 · 高田马场':'线下 · 市谷'}</div>` : ''}
-        ${isDimmed ? '' : remainLabel}
-      </label>
-    </div>`;
-  };
+
+  // 筛选类型
+  const filtered = selectedType
+    ? allSlots.filter(s => Array.isArray(s.type) ? s.type.includes(selectedType) : s.type === selectedType)
+    : allSlots;
+
+  if (!filtered.length) { grid.innerHTML = '<div class="no-slots">该类型暂无可预约时间槽</div>'; return; }
+
+  // 按日期分组
+  const byDate = {};
+  filtered.forEach(s => {
+    if (!byDate[s.date]) byDate[s.date] = [];
+    byDate[s.date].push(s);
+  });
+
   selectedSlotId = null;
-  grid.innerHTML = [...visible.map(s => renderSlot(s, false)), ...dimmed.map(s => renderSlot(s, true))].join('');
+
+  const rows = Object.entries(byDate).map(([date, slots]) => {
+    const d = new Date(date + 'T12:00:00');
+    const dow = DAYS_CN[d.getDay()];
+    const dowColor = d.getDay() === 6 ? 'var(--sat)' : d.getDay() === 0 ? 'var(--sun)' : 'var(--text-secondary)';
+    const allFull = slots.every(s => {
+      const cap = slotCap(s.time_range), booked = slotBookedCount[s.id] || 0;
+      return booked >= cap;
+    });
+    const totalRemaining = slots.reduce((sum, s) => {
+      const cap = slotCap(s.time_range), booked = slotBookedCount[s.id] || 0;
+      return sum + Math.max(0, cap - booked);
+    }, 0);
+    const isOpen = expandedDateKey === date;
+
+    const slotItems = slots.map(s => {
+      const cap = slotCap(s.time_range), booked = slotBookedCount[s.id] || 0, remaining = cap - booked, full = remaining <= 0;
+      const types = Array.isArray(s.type) ? s.type : [s.type];
+      return `<div class="slot-option${full ? ' taken' : ''}" style="border:none;border-top:1px solid var(--border-light);border-radius:0;padding:10px 14px">
+        <input type="radio" name="slotPick" id="slot-${s.id}" value="${s.id}" ${full ? 'disabled' : ''} onchange="selectedSlotId='${s.id}'">
+        <label for="slot-${s.id}" style="display:flex;flex-direction:column;gap:3px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:13px;font-weight:600;font-family:'DM Mono',monospace">${s.time_range}</span>
+            <span class="tag ${typeTag(types[0])}" style="font-size:9px">${types.map(t=>t==='daily'?'日常':t==='plan'?'计划书':t==='vip'?'VIP':'模拟').join('・')}</span>
+            <span style="margin-left:auto;font-size:10px;color:${full?'var(--danger)':'var(--success)'}">${full?'已满':`剩余 ${remaining}`}</span>
+          </div>
+          ${s.teacher_name ? `<div style="font-size:10px;color:var(--text-muted)">👤 ${teacherDisplayNames[s.teacher_name] || s.teacher_name}</div>` : ''}
+          ${s.location && s.location !== 'online' ? `<div style="font-size:10px;color:#2a6aad">📍 ${s.location==='offline_takadanobaba'?'线下 · 高田马场':'线下 · 市谷'}</div>` : ''}
+        </label>
+      </div>`;
+    }).join('');
+
+    return `<div style="border:1px solid ${isOpen?'var(--accent)':'var(--border)'};border-radius:4px;overflow:hidden;margin-bottom:6px${allFull?';opacity:.55':''}">
+      <div onclick="toggleDateSlots('${date}')" style="display:flex;align-items:center;padding:11px 14px;cursor:${allFull?'default':'pointer'};background:${isOpen?'var(--accent-light)':'var(--surface)'}">
+        <span style="font-size:15px;font-weight:600;font-family:'DM Mono',monospace;min-width:44px">${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}</span>
+        <span style="font-size:12px;font-weight:600;color:${dowColor};margin-left:6px">${dow}</span>
+        <span style="margin-left:10px;font-size:11px;color:var(--text-muted)">${slots.length}个时段</span>
+        <span style="margin-left:auto;font-size:11px;color:${allFull?'var(--danger)':'var(--text-2)'}">
+          ${allFull ? '全部已满' : `${totalRemaining} 名额 ›`}
+        </span>
+      </div>
+      ${isOpen ? `<div style="background:var(--bg)">${slotItems}</div>` : ''}
+    </div>`;
+  });
+
+  grid.innerHTML = rows.join('');
+}
+
+function toggleDateSlots(date) {
+  // 点击已展开的 → 收起；点击新日期 → 展开
+  expandedDateKey = (expandedDateKey === date) ? null : date;
+  // 清除已选时间槽（切换日期时重置）
+  if (expandedDateKey !== date) selectedSlotId = null;
+  renderSlots();
 }
 
 async function submitBooking() {
