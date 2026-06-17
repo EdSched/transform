@@ -694,7 +694,7 @@ async function loadHomeworkNotice() {
 
     // 查本周及下周有课的 session（只显示有作业要提交的）
     const sessions = await sb(
-      `/rest/v1/course_sessions?session_date=gte.${fmt(weekStart)}&session_date=lte.${fmt(weekEnd)}&select=*&order=session_date.asc`
+      `/rest/v1/course_sessions?session_date=gte.${fmt(weekStart)}&session_date=lte.${fmt(weekEnd)}&homework_enabled=eq.true&select=*&order=session_date.asc`
     ).catch(() => []);
 
     // 只取专业匹配的课程
@@ -740,7 +740,7 @@ async function loadHomeworkSessions() {
     const fmt = d => d.toISOString().slice(0, 10);
 
     const [sessions, records] = await Promise.all([
-      sb(`/rest/v1/course_sessions?session_date=gte.${fmt(from)}&session_date=lte.${fmt(to)}&select=*&order=session_date.desc`).catch(() => []),
+      sb(`/rest/v1/course_sessions?session_date=gte.${fmt(from)}&session_date=lte.${fmt(to)}&homework_enabled=eq.true&select=*&order=session_date.desc`).catch(() => []),
       sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(name)}&select=session_id,homework_submitted,homework_file_url`).catch(() => [])
     ]);
 
