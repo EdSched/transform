@@ -259,11 +259,13 @@ function openRecord(id){
   document.getElementById('copyBox').style.display='none';
   document.getElementById('copyRecordBtn').style.display='none';
   const warn=document.getElementById('recordWarn');
-  const slotDt=new Date((b.slot_date||'')+'T'+((b.slot_time_range||'').split('–')[0]||'00:00'));
+  const slotDt=new Date((b.slot_date||'')+'T'+((b.slot_time_range||'').split('\u2013')[0]||'00:00'));
   if(slotDt>new Date()){warn.style.display='block';warn.textContent=`⚠ 面谈还未开始（${b.slot_date} ${b.slot_time_range||''}），提前记录请准确填写实际面谈时间。`}
   else warn.style.display='none';
   const r=b.daily_record||{};
-  document.getElementById('recActualTime').value=b.actual_time||'';
+  const at=b.actual_time||'';
+  document.getElementById('recActualDate').value=at.slice(0,10)||'';
+  document.getElementById('recActualTime').value=at.slice(11,16)||'';
   ['study','plan','apply','exam'].forEach(k=>{
     document.getElementById(`rec_${k}_status`).value=r[`${k}_status`]||'';
     document.getElementById(`rec_${k}_advice`).value=r[`${k}_advice`]||'';
@@ -273,8 +275,37 @@ function openRecord(id){
   document.getElementById('rec_issue_advice').value=r.issue_advice||'';
   document.getElementById('rec_issue_deadline').value=r.issue_deadline||'';
   document.getElementById('rec_extra').value=r.extra||'';
+  if(b.daily_record && Object.values(b.daily_record).some(v=>v)){
+    setRecordMode('view',b);
+  } else {
+    setRecordMode('edit',b);
+  }
   document.getElementById('recordModal').classList.add('open');
 }
+
+function setRecordMode(mode,b){
+  if(!b){const id=document.getElementById('recordId').value;b=cachedBookings.find(x=>x.id===id);if(!b)return;}
+  const editArea=document.getElementById('recordEditArea');
+  const viewArea=document.getElementById('recordViewArea');
+  const saveBtn=document.getElementById('recordSaveBtn');
+  const editBtn=document.getElementById('recordEditBtn');
+  if(mode==='view'){
+    if(editArea) editArea.style.display='none';
+    if(viewArea){
+      viewArea.style.display='block';
+      const text=buildRecordText(b);
+      viewArea.innerHTML=`<pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:'DM Mono',monospace;color:var(--text-2);background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:12px;margin:0">${text}</pre>`;
+    }
+    if(saveBtn) saveBtn.style.display='none';
+    if(editBtn) editBtn.style.display='inline-flex';
+  } else {
+    if(editArea) editArea.style.display='block';
+    if(viewArea) viewArea.style.display='none';
+    if(saveBtn) saveBtn.style.display='inline-flex';
+    if(editBtn) editBtn.style.display='none';
+  }
+}
+
 async function saveRecord(){
   const id=document.getElementById('recordId').value;
   const b=cachedBookings.find(x=>x.id===id);if(!b)return;
@@ -286,19 +317,24 @@ async function saveRecord(){
     issue:document.getElementById('rec_issue').value,issue_advice:document.getElementById('rec_issue_advice').value,issue_deadline:document.getElementById('rec_issue_deadline').value,
     extra:document.getElementById('rec_extra').value
   };
-  const actual_time=document.getElementById('recActualTime').value;
+  const d=document.getElementById('recActualDate').value;
+  const t=document.getElementById('recActualTime').value;
+  const actual_time=(d&&t)?`${d}T${t}`:(d||'');
   try{
     await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',{actual_time,daily_record});
     b.actual_time=actual_time;b.daily_record=daily_record;
-    const text=buildRecordText(b);
-    document.getElementById('copyBox').textContent=text;document.getElementById('copyBox').style.display='block';
+    setRecordMode('view',b);
     document.getElementById('copyRecordBtn').style.display='inline-flex';
     renderBookingPage(document.getElementById('mainContent'));
   }catch(e){alert('保存失败：'+e.message)}
 }
 function copyRecord(){
-  navigator.clipboard.writeText(document.getElementById('copyBox').textContent).then(()=>{const btn=document.getElementById('copyRecordBtn');btn.textContent='✓ 已复制';setTimeout(()=>btn.textContent='📋 复制记录',2000)}).catch(()=>alert('请手动选中上方文本复制'));
+  const id=document.getElementById('recordId').value;
+  const b=cachedBookings.find(x=>x.id===id);
+  const text=b?buildRecordText(b):'';
+  navigator.clipboard.writeText(text).then(()=>{const btn=document.getElementById('copyRecordBtn');btn.textContent='✓ 已复制';setTimeout(()=>btn.textContent='📋 复制记录',2000)}).catch(()=>alert('请手动选中文本复制'));
 }
+
 async function exportAllFiles(){
   const withFiles=cachedBookings.filter(b=>b.teacher_file_url);
   if(!withFiles.length){alert('暂无可导出的文件');return}
