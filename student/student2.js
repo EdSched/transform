@@ -720,6 +720,25 @@ async function loadHomeworkNotice() {
 }
 
 // 姓名输入后加载可提交课程
+let selected_hw_session = null;
+let selected_hw_data = {};
+
+function selectHwSession(el) {
+  const id = el.dataset.id;
+  const name = el.dataset.name;
+  const date = el.dataset.date;
+  selected_hw_session = id;
+  selected_hw_data = { id, name, date };
+  // 更新所有行的样式
+  el.parentElement.querySelectorAll('div[onclick]').forEach(d => {
+    d.style.background = 'var(--bg)';
+    d.style.borderColor = 'var(--border)';
+  });
+  el.style.background = 'var(--accent-light, #f0f7ff)';
+  el.style.borderColor = 'var(--accent)';
+  document.getElementById('hw_upload_area').style.display = 'block';
+}
+
 async function loadHomeworkSessions() {
   const name = document.getElementById('hw_name')?.value.trim();
   const wrap = document.getElementById('hw_sessions_wrap');
@@ -730,6 +749,8 @@ async function loadHomeworkSessions() {
     if (uploadArea) uploadArea.style.display = 'none';
     return;
   }
+  selected_hw_session = null; selected_hw_data = {};
+  document.getElementById('hw_upload_area').style.display = 'none';
   wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">加载中…</div>';
   try {
     const from = new Date();
@@ -753,23 +774,28 @@ async function loadHomeworkSessions() {
       return;
     }
     const submittedIds = new Set(records.filter(r => r.homework_submitted || r.homework_file_url).map(r => r.session_id));
-    wrap.innerHTML = relevant.map(s => {
+    relevant.forEach(s => {
       const submitted = submittedIds.has(s.id);
       const label = s.session_date + ' · ' + s.course_name + (s.session_title ? ' · ' + s.session_title : '');
-      return '<label style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);border:1px solid ' + (submitted?'var(--ok)':'var(--border)') + ';border-radius:3px;cursor:' + (submitted?'default':'pointer') + ';margin-bottom:4px">'
-        + '<input type="radio" name="hw_session" value="' + s.id + '" data-name="' + s.course_name.replace(/"/g,'&quot;') + '" data-date="' + s.session_date + '" style="flex-shrink:0;margin-top:2px" ' + (submitted?'disabled':'') + '>'
-        + '<span style="font-size:12px;flex:1;line-height:1.5">' + label + '</span>'
-        + '<span style="font-size:10px;color:' + (submitted?'var(--ok)':'var(--text-muted)') + ';flex-shrink:0;margin-left:6px">' + (submitted?'✓':'—') + '</span>'
-        + '</label>';
-    }).join('');
-    // 事件委托
-    wrap.onclick = function(e) {
-      const radio = e.target.closest('label')?.querySelector('input[type="radio"]');
-      if (radio && !radio.disabled) {
-        radio.checked = true;
-        if (uploadArea) uploadArea.style.display = 'block';
+      const rowEl = document.createElement('div');
+      rowEl.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg);border:1px solid ' + (submitted?'var(--ok)':'var(--border)') + ';border-radius:3px;cursor:' + (submitted?'default':'pointer') + ';margin-bottom:4px;user-select:none';
+      rowEl.dataset.id = s.id;
+      rowEl.dataset.name = s.course_name;
+      rowEl.dataset.date = s.session_date;
+      if (!submitted) {
+        rowEl.addEventListener('click', function() { selectHwSession(this); });
       }
-    };
+      const labelSpan = document.createElement('span');
+      labelSpan.style.cssText = 'font-size:12px;color:var(--text-2)';
+      labelSpan.textContent = label;
+      const statusSpan = document.createElement('span');
+      statusSpan.style.cssText = 'font-size:10px;color:' + (submitted?'var(--ok)':'var(--text-muted)') + ';flex-shrink:0;margin-left:12px';
+      statusSpan.textContent = submitted ? '✓ 已提交' : '未提交';
+      rowEl.appendChild(labelSpan);
+      rowEl.appendChild(statusSpan);
+      wrap.appendChild(rowEl);
+      return null;
+    });
   } catch(e) {
     wrap.innerHTML = '<div style="font-size:11px;color:var(--danger)">加载失败：' + e.message + '</div>';
   }
@@ -778,17 +804,16 @@ async function loadHomeworkSessions() {
 
 async function submitHomework() {
   const name = document.getElementById('hw_name')?.value.trim();
-  const sessionEl = document.querySelector('input[name="hw_session"]:checked');
   const fileEl = document.getElementById('hw_file');
   const result = document.getElementById('hw_result');
 
   if (!name) { result.innerHTML = '<span style="color:var(--danger)">请填写姓名</span>'; return; }
-  if (!sessionEl) { result.innerHTML = '<span style="color:var(--danger)">请选择课程</span>'; return; }
+  if (!selected_hw_session) { result.innerHTML = '<span style="color:var(--danger)">请选择课程</span>'; return; }
   if (!fileEl?.files[0]) { result.innerHTML = '<span style="color:var(--danger)">请选择文件</span>'; return; }
 
-  const sessionId = sessionEl.value;
-  const sessionDate = sessionEl.dataset.date;
-  const courseName = sessionEl.dataset.name;
+  const sessionId = selected_hw_data.id;
+  const sessionDate = selected_hw_data.date;
+  const courseName = selected_hw_data.name;
   const file = fileEl.files[0];
 
   result.innerHTML = '<span style="color:var(--text-muted)">上传中…</span>';
