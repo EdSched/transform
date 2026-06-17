@@ -97,7 +97,10 @@ async function renderPage(){
       ]);
       renderSchedulePage(mc);
     } else if(curPage==='teachers'){
-      cachedTeachers=await sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[]);
+      [cachedTeachers, cachedSessions]=await Promise.all([
+        sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[]),
+        sb('/rest/v1/course_sessions?homework_enabled=is.true&select=id,course_name&order=course_name.asc').catch(()=>[]),
+      ]);
       renderTeachersPage(mc);
     } else if(curPage==='attendance'){
       [cachedStudents,cachedCourses,cachedSessions,cachedSessionRecords]=await Promise.all([
@@ -2780,9 +2783,18 @@ function renderTeachersPage(mc){
             </div>
           </div>
           <!-- schedule row -->
-          <div style="padding:10px">
+          <div style="padding:10px;border-bottom:1px solid var(--border-light)">
             <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap"><input type="checkbox" id="perm_schedule" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">课程排班</label>
             <div style="font-size:10px;color:var(--text-3);margin-top:4px;margin-left:20px">排班确认 + 我的课表</div>
+          </div>
+          <!-- homework row -->
+          <div style="padding:10px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;white-space:nowrap"><input type="checkbox" id="perm_homework" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">批改作业</label>
+            <div style="font-size:10px;color:var(--text-3);margin-bottom:8px;margin-left:20px">开启后可在老师端查看并批改作业</div>
+            <div style="margin-left:20px">
+              <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">负责课程（可多选）</div>
+              <div id="perm_homework_courses" style="display:flex;flex-wrap:wrap;gap:4px;max-height:80px;overflow-y:auto"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -2798,6 +2810,24 @@ function renderTeachersPage(mc){
   renderTeacherList();
 }
 
+function renderHomeworkCoursesChips(selected=[]) {
+  const wrap = document.getElementById('perm_homework_courses');
+  if (!wrap) return;
+  // 获取所有有 homework_enabled 的课程
+  const courses = [...new Set(cachedSessions
+    .filter(s => s.homework_enabled)
+    .map(s => s.course_name)
+  )].sort();
+  if (!courses.length) {
+    wrap.innerHTML = '<span style="font-size:10px;color:var(--text-muted)">暂无开通作业的课程</span>';
+    return;
+  }
+  wrap.innerHTML = courses.map(name =>
+    `<div class="filter-chip${selected.includes(name)?' active':''}" data-value="${name}" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">${name}</div>`
+  ).join('');
+}
+
+
 function toggleChip(el){
   el.classList.toggle('active');
 }
@@ -2812,6 +2842,8 @@ function cancelEditTeacher(){
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
   document.getElementById('perm_schedule').checked=false;
+  document.getElementById('perm_homework').checked=false;
+  renderHomeworkCoursesChips([]);
 }
 function openTeacherManager(){
   // reset add form
@@ -2821,6 +2853,8 @@ function openTeacherManager(){
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
   document.getElementById('perm_schedule').checked=false;
+  document.getElementById('perm_homework').checked=false;
+  renderHomeworkCoursesChips([]);
   renderTeacherList();
   document.getElementById('teacherManagerModal').classList.add('open');
 }
@@ -2872,6 +2906,8 @@ function getPermissionsFromForm(){
     slots:document.getElementById('perm_slots').checked,
     slot_types:[...document.querySelectorAll('#perm_slot_types .filter-chip.active')].map(c=>c.dataset.value),
     schedule:document.getElementById('perm_schedule').checked,
+    homework:document.getElementById('perm_homework').checked,
+    homework_courses:[...document.querySelectorAll('#perm_homework_courses .filter-chip.active')].map(c=>c.dataset.value),
   };
 }
 
@@ -2906,8 +2942,10 @@ function openEditTeacher(id){
   document.getElementById('perm_booking').checked=!!p.booking;
   document.getElementById('perm_slots').checked=!!p.slots;
   document.getElementById('perm_schedule').checked=!!p.schedule;
+  document.getElementById('perm_homework').checked=!!p.homework;
   document.querySelectorAll('#perm_booking_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.booking_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_slot_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.slot_types||[]).includes(c.dataset.value))});
+  renderHomeworkCoursesChips(p.homework_courses||[]);
   const btn=document.getElementById('teacherFormBtn');
   if(btn){btn.textContent='保存修改';btn.setAttribute('onclick',`saveEditTeacher('${id}')`);}
   const cancelBtn=document.getElementById('teacherFormCancelBtn');
