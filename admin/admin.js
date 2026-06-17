@@ -107,6 +107,9 @@ async function renderPage(){
         sb('/rest/v1/session_records?select=*')
       ]);
       renderAttendancePage(mc);
+    } else if(curPage==='progress'){
+      cachedStudents=await sb('/rest/v1/students?select=*&order=name.asc');
+      renderProgressPage(mc);
     }
   }catch(e){mc.innerHTML=`<div class="empty">加载失败：${e.message}</div>`}
 }
@@ -600,13 +603,17 @@ function renderStudentsPage(mc){
   if(stMajorFilter!=='all') list=list.filter(s=>matchesMajorFilter(s.major,stMajorFilter));
   if(stStatus!=='all') list=list.filter(s=>s.status===stStatus);
   if(stSearch) list=list.filter(s=>s.name.includes(stSearch)||s.university?.includes(stSearch)||s.notes?.includes(stSearch));
+  const statusLabel=(v)=>({active:'在籍',graduated:'已合格',expired:'已到期',stopped:'停课',withdrawn:'退学'}[v]||v);
+  const statusColor=(v)=>v==='active'?'var(--ok)':v==='graduated'?'#1a6a9a':v==='withdrawn'?'var(--danger)':'var(--text-3)';
+  const statusBg=(v)=>v==='active'?'var(--ok-bg)':v==='graduated'?'#e8f4fd':v==='withdrawn'?'#fdecea':'var(--border)';
   mc.innerHTML=`
   <div class="page-header">
     <div class="section-title">学生档案 <span class="badge-count">${cachedStudents.length}</span></div>
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" onclick="exportStudents()">↓ 导出 Excel</button>
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('importFileInput').click()">↑ 导入 Excel</button>
       <button class="btn btn-outline btn-sm" onclick="generateAllStudentCodes()">🔑 批量生成查询码</button>
+      <button class="btn btn-outline btn-sm" onclick="batchChangeStatus()">批量改状态</button>
       <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleImportFile(this)">
       <button class="btn btn-primary btn-sm" onclick="openStudentModal()">＋ 添加学生</button>
     </div>
@@ -615,24 +622,27 @@ function renderStudentsPage(mc){
     ${['all','keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map((m,i)=>`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this)">${i===0?'全部专业':majorLabel(m)}</div>`).join('')}
   </div>
   <div class="filter-row">
-    ${[['active','在籍'],['graduated','已合格'],['expired','已到期'],['stopped','停课'],['all','全部']].map(([v,l])=>`<div class="filter-chip${stStatus===v?' active':''}" onclick="setStStatus('${v}',this)">${l}</div>`).join('')}
+    ${[['active','在籍'],['graduated','已合格'],['expired','已到期'],['stopped','停课'],['withdrawn','退学'],['all','全部']].map(([v,l])=>`<div class="filter-chip${stStatus===v?' active':''}" onclick="setStStatus('${v}',this)">${l}</div>`).join('')}
   </div>
   <div class="search-bar"><input placeholder="搜索姓名 / 学校 / 备注…" value="${stSearch}" oninput="stSearch=this.value;renderStudentsPage(document.getElementById('mainContent'))"></div>
   <table class="student-table">
     <thead><tr>
-      <th>姓名</th><th>专业</th><th>等级</th><th>属性</th><th>日语</th><th>英语</th><th>出身大学</th><th>入学目标</th><th>状态</th><th>查询码</th><th></th>
+      <th><input type="checkbox" id="selectAllStudents" onchange="toggleSelectAllStudents(this)"></th>
+      <th>姓名</th><th>专业</th><th>等级</th><th>属性</th><th>日语</th><th>英语</th><th>出身大学</th><th>入学目标</th><th>赴日</th><th>状态</th><th>查询码</th><th></th>
     </tr></thead>
     <tbody>
       ${list.length?list.map(s=>`<tr>
-        <td class="student-name-cell">${s.name}</td>
+        <td><input type="checkbox" class="student-select" value="${s.id}"></td>
+        <td class="student-name-cell" onclick="openStudentDetail('${s.id}')" style="cursor:pointer;color:var(--accent);text-decoration:underline">${s.name}</td>
         <td>${MAJORS[s.major]||s.major||''}</td>
         <td>${s.level?`<span class="level-badge level-${s.level}">${s.level}</span>`:''}</td>
         <td style="font-size:11px">${s.student_type||''}</td>
-        <td style="font-size:11px">${s.japanese_score||''}</td>
+        <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${s.japanese_score||''}">${s.japanese_score||''}</td>
         <td style="font-size:11px">${s.english_score||''}</td>
         <td style="font-size:11px">${s.university||''}</td>
         <td style="font-size:11px">${s.target_enrollment||''}</td>
-        <td><span class="status-badge" style="background:${s.status==='active'?'var(--ok-bg)':s.status==='graduated'?'#e8f4fd':'var(--border)'};color:${s.status==='active'?'var(--ok)':s.status==='graduated'?'#1a6a9a':'var(--text-3)'}">${s.status==='active'?'在籍':s.status==='graduated'?'已合格':s.status==='expired'?'已到期':'停课'}</span></td>
+        <td style="font-size:11px">${s.japan_arrival||''}</td>
+        <td><span class="status-badge" style="background:${statusBg(s.status)};color:${statusColor(s.status)}">${statusLabel(s.status)}</span></td>
         <td>
           ${s.student_code
             ? `<span style="font-size:11px;font-weight:600;letter-spacing:1px;color:var(--accent)">${s.student_code}</span>`
@@ -642,36 +652,156 @@ function renderStudentsPage(mc){
           <button class="btn btn-outline btn-sm" onclick="openStudentModal('${s.id}')">编辑</button>
           <button class="btn btn-danger btn-sm" onclick="deleteStudent('${s.id}')">删除</button>
         </td>
-      </tr>`).join(''):'<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--text-3)">暂无学生数据</td></tr>'}
+      </tr>`).join(''):'<tr><td colspan="13" style="text-align:center;padding:30px;color:var(--text-3)">暂无学生数据</td></tr>'}
     </tbody>
   </table>`;
 }
+
 function setStMajor(m,el){stMajorFilter=m;document.querySelectorAll('.filter-row:nth-of-type(1) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderStudentsPage(document.getElementById('mainContent'))}
 function setStStatus(v,el){stStatus=v;document.querySelectorAll('.filter-row:nth-of-type(2) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderStudentsPage(document.getElementById('mainContent'))}
 function openStudentModal(id){
   const s=id?cachedStudents.find(x=>x.id===id):null;
   document.getElementById('studentModalTitle').textContent=s?'编辑学生':'添加学生';
   document.getElementById('studentId').value=s?.id||'';
-  const fields={st_name:'name',st_major:'major',st_type:'student_type',st_source:'source',st_course:'course_type',st_level:'level',st_japanese:'japanese_score',st_english:'english_score',st_university:'university',st_faculty:'faculty',st_gpa:'gpa',st_graduation:'graduation_date',st_enrollment:'target_enrollment',st_arrival:'japan_arrival',st_expiry:'expiry_date',st_status:'status',st_difficulty:'difficulty',st_notes:'notes',st_default_mode:'default_mode'};
-  Object.entries(fields).forEach(([el,key])=>{const e=document.getElementById(el);if(e)e.value=s?.(s[key]||'')??''});
+  const fields={
+    st_name:'name',st_major:'major',st_type:'student_type',st_source:'source',
+    st_course:'course_type',st_level:'level',st_japanese:'japanese_score',
+    st_english:'english_score',st_university:'university',st_faculty:'faculty',
+    st_gpa:'gpa',st_thesis:'thesis',st_graduation:'graduation_date',
+    st_enrollment:'target_enrollment',st_arrival:'japan_arrival',
+    st_expiry:'expiry_date',st_default_mode:'default_mode',st_status:'status'
+  };
+  Object.entries(fields).forEach(([el,key])=>{const e=document.getElementById(el);if(e)e.value=s?.(s[key]||'')??'';});
   document.getElementById('studentModal').classList.add('open');
 }
+
 async function saveStudent(){
   const name=document.getElementById('st_name').value.trim();
   const major=document.getElementById('st_major').value;
   if(!name){alert('请填写姓名');return}
   const id=document.getElementById('studentId').value;
-  const data={name,major,student_type:document.getElementById('st_type').value,source:document.getElementById('st_source').value,course_type:document.getElementById('st_course').value,level:document.getElementById('st_level').value,japanese_score:document.getElementById('st_japanese').value,english_score:document.getElementById('st_english').value,university:document.getElementById('st_university').value,faculty:document.getElementById('st_faculty').value,gpa:document.getElementById('st_gpa').value,graduation_date:document.getElementById('st_graduation').value,target_enrollment:document.getElementById('st_enrollment').value,japan_arrival:document.getElementById('st_arrival').value,expiry_date:document.getElementById('st_expiry').value,status:document.getElementById('st_status').value,difficulty:document.getElementById('st_difficulty').value,notes:document.getElementById('st_notes').value,default_mode:document.getElementById('st_default_mode').value};
+  const data={
+    name,major,
+    student_type:document.getElementById('st_type').value,
+    source:document.getElementById('st_source').value,
+    course_type:document.getElementById('st_course').value,
+    level:document.getElementById('st_level').value,
+    japanese_score:document.getElementById('st_japanese').value,
+    english_score:document.getElementById('st_english').value,
+    university:document.getElementById('st_university').value,
+    faculty:document.getElementById('st_faculty').value,
+    gpa:document.getElementById('st_gpa').value,
+    thesis:document.getElementById('st_thesis').value,
+    graduation_date:document.getElementById('st_graduation').value,
+    target_enrollment:document.getElementById('st_enrollment').value,
+    japan_arrival:document.getElementById('st_arrival').value,
+    expiry_date:document.getElementById('st_expiry').value,
+    default_mode:document.getElementById('st_default_mode').value,
+    status:document.getElementById('st_status').value
+  };
   try{
-    if(id){await sb(`/rest/v1/students?id=eq.${id}`,'PATCH',data);const idx=cachedStudents.findIndex(x=>x.id===id);if(idx>=0)cachedStudents[idx]={...cachedStudents[idx],...data}}
-    else{data.id=`${Date.now()}-${Math.random().toString(36).slice(2,6)}`;const res=await sb('/rest/v1/students','POST',data);cachedStudents.push(Array.isArray(res)?res[0]:data)}
-    closeModal('studentModal');renderStudentsPage(document.getElementById('mainContent'));
+    if(id){
+      await sb(`/rest/v1/students?id=eq.${id}`,'PATCH',data);
+      const idx=cachedStudents.findIndex(x=>x.id===id);
+      if(idx>=0)cachedStudents[idx]={...cachedStudents[idx],...data};
+    } else {
+      data.id=`${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
+      const res=await sb('/rest/v1/students','POST',data);
+      cachedStudents.push(Array.isArray(res)?res[0]:data);
+    }
+    closeModal('studentModal');
+    renderStudentsPage(document.getElementById('mainContent'));
   }catch(e){alert('保存失败：'+e.message)}
 }
+
 async function deleteStudent(id){
   if(!confirm('确定删除这个学生？'))return;
-  try{await sb(`/rest/v1/students?id=eq.${id}`,'DELETE');cachedStudents=cachedStudents.filter(s=>s.id!==id);renderStudentsPage(document.getElementById('mainContent'))}catch(e){alert('删除失败：'+e.message)}
+  try{
+    await sb(`/rest/v1/students?id=eq.${id}`,'DELETE');
+    cachedStudents=cachedStudents.filter(s=>s.id!==id);
+    renderStudentsPage(document.getElementById('mainContent'));
+  }catch(e){alert('删除失败：'+e.message)}
 }
+
+function toggleSelectAllStudents(cb){
+  document.querySelectorAll('.student-select').forEach(c=>c.checked=cb.checked);
+}
+
+async function batchChangeStatus(){
+  const selected=[...document.querySelectorAll('.student-select:checked')].map(c=>c.value);
+  if(!selected.length){alert('请先勾选学生');return}
+  const status=prompt('输入新状态：active（在籍）/ graduated（已合格）/ expired（已到期）/ stopped（停课）/ withdrawn（退学）');
+  const valid=['active','graduated','expired','stopped','withdrawn'];
+  if(!valid.includes(status)){alert('状态无效');return}
+  try{
+    for(const id of selected){
+      await sb(`/rest/v1/students?id=eq.${id}`,'PATCH',{status});
+      const s=cachedStudents.find(x=>x.id===id);
+      if(s) s.status=status;
+    }
+    renderStudentsPage(document.getElementById('mainContent'));
+    alert(`✓ 已更新 ${selected.length} 名学生状态`);
+  }catch(e){alert('批量更新失败：'+e.message)}
+}
+
+async function openStudentDetail(id){
+  const s=cachedStudents.find(x=>x.id===id);
+  if(!s) return;
+  // 拉取该学生最新面谈记录和考学进度
+  const [bookings, progress] = await Promise.all([
+    sb(`/rest/v1/bookings?name=eq.${encodeURIComponent(s.name)}&status=eq.confirmed&select=*&order=slot_date.desc&limit=5`).catch(()=>[]),
+    sb(`/rest/v1/student_progress?student_id=eq.${s.id}&select=*`).catch(()=>[])
+  ]);
+  const p=progress[0]||{};
+  const statusLabel=(v)=>({active:'在籍',graduated:'已合格',expired:'已到期',stopped:'停课',withdrawn:'退学'}[v]||v);
+  const row=(label,val)=>val?`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border-light)"><span style="font-size:11px;color:var(--text-3);min-width:90px">${label}</span><span style="font-size:11px;color:var(--text-2)">${val}</span></div>`:'';
+  const latest=bookings[0];
+  const r=latest?.daily_record||{};
+
+  const html=`
+    <div style="font-size:16px;font-weight:700;margin-bottom:4px">${s.name}</div>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:16px">${MAJORS[s.major]||s.major||''} · ${statusLabel(s.status)}</div>
+    <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">基础档案</div>
+    ${row('学生属性',s.student_type)}
+    ${row('来源',s.source)}
+    ${row('课程属性',s.course_type)}
+    ${row('等级',s.level)}
+    ${row('日语成绩',s.japanese_score)}
+    ${row('英语成绩',s.english_score)}
+    ${row('出身大学',s.university)}
+    ${row('学部/专业',s.faculty)}
+    ${row('GPA/履历',s.gpa)}
+    ${row('毕业论文',s.thesis)}
+    ${row('毕业时间',s.graduation_date)}
+    ${row('期待入学',s.target_enrollment)}
+    ${row('赴日时间',s.japan_arrival)}
+    ${row('到期时间',s.expiry_date)}
+    ${row('上课方式',s.default_mode==='online'?'线上':'线下')}
+    ${row('查询码',s.student_code)}
+    ${p.target_schools||p.difficulties||p.research_plan?`
+    <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin:14px 0 8px">考学进度</div>
+    ${row('志望校',p.target_schools)}
+    ${row('困难点',p.difficulties)}
+    ${row('研究计划书',p.research_plan)}
+    ${row('知识进展',r.study_status?r.study_status+(r.study_advice?' · '+r.study_advice:''):'')}
+    ${row('计划书进展',r.plan_status?r.plan_status+(r.plan_advice?' · '+r.plan_advice:''):'')}
+    ${row('出愿情况',r.apply_status?r.apply_status+(r.apply_advice?' · '+r.apply_advice:''):'')}
+    ${row('备考情况',r.exam_status?r.exam_status+(r.exam_advice?' · '+r.exam_advice:''):'')}
+    `:''}
+    ${bookings.length?`
+    <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin:14px 0 8px">最近面谈（${bookings.length}条）</div>
+    ${bookings.map(b=>`<div style="font-size:11px;padding:6px 0;border-bottom:1px solid var(--border-light);color:var(--text-2)">${b.slot_date} ${b.slot_time_range||''} · ${typeLabel(b.type)||b.type}</div>`).join('')}
+    `:''}
+    <div style="margin-top:16px;display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="closeModal('studentDetailModal');openStudentModal('${s.id}')">✏ 编辑档案</button>
+      <button class="btn btn-outline btn-sm" onclick="closeModal('studentDetailModal');renderProgressPage(document.getElementById('mainContent'),'${s.id}')">📊 考学进度</button>
+    </div>`;
+
+  document.getElementById('studentDetailContent').innerHTML=html;
+  document.getElementById('studentDetailModal').classList.add('open');
+}
+
+
 // ── 学生查询码 ──
 function genCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -703,6 +833,128 @@ async function generateAllStudentCodes() {
     renderStudentsPage(document.getElementById('mainContent'));
     alert(`✓ 已为 ${noCode.length} 名学生生成查询码`);
   } catch(e) { alert('生成失败：' + e.message); }
+}
+
+
+// ── 考学进度页面 ──
+let progressStudentFilter = '';
+
+async function renderProgressPage(mc, focusStudentId=null){
+  mc.innerHTML='<div class="loading">加载中…</div>';
+  let students=cachedStudents.filter(s=>s.status==='active'||s.status==='stopped');
+  if(stMajorFilter!=='all') students=students.filter(s=>matchesMajorFilter(s.major,stMajorFilter));
+  if(progressStudentFilter) students=students.filter(s=>s.name.includes(progressStudentFilter));
+
+  // 拉取所有考学进度
+  const progressList = await sb(`/rest/v1/student_progress?select=*`).catch(()=>[]);
+  const progressMap = {};
+  progressList.forEach(p=>{ progressMap[p.student_id]=p; });
+
+  // 拉取最新面谈记录（按学生名）
+  const bookings = await sb(`/rest/v1/bookings?status=eq.confirmed&select=*&order=slot_date.desc`).catch(()=>[]);
+  const latestBooking = {};
+  bookings.forEach(b=>{
+    if(!latestBooking[b.name]) latestBooking[b.name]=b;
+  });
+
+  const statusIcon=(s)=>({进展顺利并能掌握:'🟢',能够稳定跟上:'🟡',需要更多时间:'🟠',没有很好跟上进度:'🔴',遇到困难:'🔴',未开始:'⚪',在收集材料:'🟡',撰写中:'🟡',已完成:'🟢',完成择校:'🟡',已联系教授:'🟡',准备中:'🟡',已出愿:'🟢'}[s]||'');
+
+  mc.innerHTML=`
+  <div class="page-header">
+    <div class="section-title">考学进度 <span class="badge-count">${students.length}</span></div>
+  </div>
+  <div class="filter-row">
+    ${['all','keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map((m,i)=>`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this);renderProgressPage(document.getElementById('mainContent'))">${i===0?'全部专业':majorLabel(m)}</div>`).join('')}
+  </div>
+  <div class="search-bar"><input placeholder="搜索学生姓名…" value="${progressStudentFilter}" oninput="progressStudentFilter=this.value;renderProgressPage(document.getElementById('mainContent'))"></div>
+  <div style="display:flex;flex-direction:column;gap:8px">
+    ${students.map(s=>{
+      const p=progressMap[s.id]||{};
+      const lb=latestBooking[s.name];
+      const r=lb?.daily_record||{};
+      const isFocus=focusStudentId===s.id;
+      return `<div style="background:var(--surface);border:1px solid ${isFocus?'var(--accent)':'var(--border)'};border-radius:4px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer" onclick="toggleProgressCard('${s.id}')">
+          <div style="flex:1">
+            <span style="font-size:13px;font-weight:600">${s.name}</span>
+            <span style="font-size:11px;color:var(--text-3);margin-left:8px">${MAJORS[s.major]||s.major||''}</span>
+            ${lb?`<span style="font-size:10px;color:var(--text-muted);margin-left:8px">最新面谈：${lb.slot_date}</span>`:''}
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            ${statusIcon(r.study_status)?`<span title="知识进展">${statusIcon(r.study_status)}</span>`:''}
+            ${statusIcon(r.plan_status)?`<span title="计划书">${statusIcon(r.plan_status)}</span>`:''}
+            ${statusIcon(r.apply_status)?`<span title="出愿">${statusIcon(r.apply_status)}</span>`:''}
+            ${statusIcon(r.exam_status)?`<span title="备考">${statusIcon(r.exam_status)}</span>`:''}
+            <span style="font-size:11px;color:var(--text-3)">▾</span>
+          </div>
+        </div>
+        <div id="prog_${s.id}" style="display:${isFocus?'block':'none'};padding:12px 14px;border-top:1px solid var(--border-light);background:var(--bg)">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+            <div><label class="form-label">志望校</label><textarea id="prog_schools_${s.id}" rows="2" style="font-size:11px">${p.target_schools||''}</textarea></div>
+            <div><label class="form-label">困难点</label><textarea id="prog_diff_${s.id}" rows="2" style="font-size:11px">${p.difficulties||''}</textarea></div>
+            <div><label class="form-label">研究计划书方向</label><textarea id="prog_plan_${s.id}" rows="2" style="font-size:11px">${p.research_plan||''}</textarea></div>
+            <div><label class="form-label">入学目标</label><input id="prog_enroll_${s.id}" value="${p.target_enrollment||s.target_enrollment||''}" style="font-size:11px"></div>
+          </div>
+          ${lb?`
+          <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">最新面谈进度（${lb.slot_date}）</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px">
+            ${[['知识进展','study'],['计划书','plan'],['出愿','apply'],['备考','exam']].map(([label,k])=>r[k+'_status']?`
+            <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:8px">
+              <div style="font-size:10px;color:var(--text-3);margin-bottom:3px">${label}</div>
+              <div style="font-size:11px;font-weight:600">${statusIcon(r[k+'_status'])} ${r[k+'_status']}</div>
+              ${r[k+'_advice']?`<div style="font-size:10px;color:var(--text-2);margin-top:3px">${r[k+'_advice']}</div>`:''}
+              ${r[k+'_deadline']?`<div style="font-size:10px;color:var(--danger);margin-top:3px">⏰ ${r[k+'_deadline']}</div>`:''}
+            </div>`:'').join('')}
+          </div>
+          `:'<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">暂无面谈记录</div>'}
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary btn-sm" onclick="saveStudentProgress('${s.id}','${s.name}','${s.major}')">保存进度</button>
+            ${lb?`<button class="btn btn-outline btn-sm" onclick="syncProgressFromBooking('${s.id}','${lb.id}')">↺ 同步最新面谈</button>`:''}
+          </div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function toggleProgressCard(id){
+  const el=document.getElementById(`prog_${id}`);
+  if(el) el.style.display=el.style.display==='none'?'block':'none';
+}
+
+async function saveStudentProgress(studentId, studentName, major){
+  const data={
+    student_id:studentId,
+    student_name:studentName,
+    major,
+    target_schools:document.getElementById(`prog_schools_${studentId}`)?.value||'',
+    difficulties:document.getElementById(`prog_diff_${studentId}`)?.value||'',
+    research_plan:document.getElementById(`prog_plan_${studentId}`)?.value||'',
+    target_enrollment:document.getElementById(`prog_enroll_${studentId}`)?.value||'',
+    updated_at:new Date().toISOString()
+  };
+  try{
+    // upsert：有就更新，没有就插入
+    const existing=await sb(`/rest/v1/student_progress?student_id=eq.${studentId}&select=id`).catch(()=>[]);
+    if(existing.length){
+      await sb(`/rest/v1/student_progress?student_id=eq.${studentId}`,'PATCH',data);
+    } else {
+      data.id=`sp-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+      await sb('/rest/v1/student_progress','POST',data);
+    }
+    const btn=document.querySelector(`[onclick="saveStudentProgress('${studentId}','${studentName}','${major}')"]`);
+    if(btn){btn.textContent='✓ 已保存';setTimeout(()=>btn.textContent='保存进度',1500);}
+  }catch(e){alert('保存失败：'+e.message)}
+}
+
+async function syncProgressFromBooking(studentId, bookingId){
+  const b=await sb(`/rest/v1/bookings?id=eq.${bookingId}&select=*`).catch(()=>[]);
+  if(!b.length) return;
+  const r=b[0].daily_record||{};
+  // 把面谈里的各状态同步到进度卡片显示（不覆盖志望校/困难点等手填项）
+  // 只刷新页面展示，让用户看到后自行保存
+  alert('已从最新面谈读取进度，请检查后点「保存进度」');
+  renderProgressPage(document.getElementById('mainContent'), studentId);
 }
 
 
