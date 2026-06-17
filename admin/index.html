@@ -333,6 +333,18 @@
       <div class="form-group" style="margin:0"><label class="form-label">第一回日期 *</label><input type="date" id="ac_first_date"></div>
       <div class="form-group" style="margin:0"><label class="form-label">备注</label><input id="ac_notes"></div>
     </div>
+    <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin:14px 0 8px">腾讯会议设置（选填）</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div class="form-group" style="margin:0"><label class="form-label">腾讯会议链接</label><input id="ac_meeting_url" placeholder="https://meeting.tencent.com/…"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">主持人密钥</label><input id="ac_host_key" placeholder="数字密钥"></div>
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">是否需要老师录制</label>
+      <div style="display:flex;gap:12px;margin-top:6px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="radio" name="ac_recording" value="yes"> 需要录制</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="radio" name="ac_recording" value="no" checked> 不需要录制</label>
+      </div>
+    </div>
 
     <!-- 单回明细开关 -->
     <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border-light)">
