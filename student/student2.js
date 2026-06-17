@@ -725,18 +725,28 @@ let selected_hw_data = {};
 
 function selectHwSession(el) {
   const id = el.dataset.id;
-  const name = el.dataset.name;
-  const date = el.dataset.date;
+  const uploadArea = document.getElementById('hw_upload_area');
+  // 点同一行 → 取消选中
+  if (selected_hw_session === id) {
+    selected_hw_session = null;
+    selected_hw_data = {};
+    el.style.background = 'var(--bg)';
+    el.style.borderColor = 'var(--border)';
+    if (uploadArea) uploadArea.style.display = 'none';
+    return;
+  }
+  // 切换到新行
   selected_hw_session = id;
-  selected_hw_data = { id, name, date };
-  // 更新所有行的样式
-  el.parentElement.querySelectorAll('div[onclick]').forEach(d => {
+  selected_hw_data = { id, name: el.dataset.name, date: el.dataset.date };
+  // 重置所有行
+  el.closest('#hw_sessions_wrap').querySelectorAll('[data-id]').forEach(d => {
     d.style.background = 'var(--bg)';
     d.style.borderColor = 'var(--border)';
   });
-  el.style.background = 'var(--accent-light, #f0f7ff)';
+  // 高亮选中行
+  el.style.background = '#f0f7ff';
   el.style.borderColor = 'var(--accent)';
-  document.getElementById('hw_upload_area').style.display = 'block';
+  if (uploadArea) uploadArea.style.display = 'block';
 }
 
 async function loadHomeworkSessions() {
