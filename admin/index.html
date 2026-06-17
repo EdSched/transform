@@ -47,6 +47,7 @@
     <button class="nav-item" id="nav-slots" onclick="switchPage('slots')"><span class="nav-icon">⏰</span>时间槽设定</button>
     <div class="nav-sep">学生管理</div>
     <button class="nav-item" id="nav-students" onclick="switchPage('students')"><span class="nav-icon">👥</span>学生档案</button>
+    <button class="nav-item" id="nav-progress" onclick="switchPage('progress')"><span class="nav-icon">📊</span>考学进度</button>
     <button class="nav-item" id="nav-attendance" onclick="switchPage('attendance')"><span class="nav-icon">✅</span>出席・作业</button>
     <div class="nav-sep">课程管理</div>
     <button class="nav-item" id="nav-courses" onclick="switchPage('courses')"><span class="nav-icon">📚</span>课程安排</button>
@@ -153,19 +154,12 @@
 
 <!-- Student modal -->
 <div class="modal-overlay" id="studentModal">
-  <div class="modal" style="width:620px">
+  <div class="modal" style="width:660px;max-height:85vh;overflow-y:auto">
     <div class="modal-title" id="studentModalTitle">添加学生</div>
     <div class="modal-sub" style="padding-bottom:14px;border-bottom:1px solid var(--border);margin-bottom:16px">学生基础档案信息</div>
     <input type="hidden" id="studentId">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div class="form-group" style="margin:0"><label class="form-label">姓名 *</label><input id="st_name" placeholder="学生姓名"></div>
-      <div class="form-group">
-  <label class="form-label">默认上课方式</label>
-  <select id="stu_default_mode">
-    <option value="offline">线下</option>
-    <option value="online">线上</option>
-  </select>
-</div>
       <div class="form-group" style="margin:0"><label class="form-label">专业 *</label>
         <select id="st_major"><option value="keiei">経営学</option><option value="keizai">経済学</option><option value="shakai">社会学</option><option value="shinpan">新闻传播学</option><option value="fukushi">社会福祉学</option></select></div>
       <div class="form-group" style="margin:0"><label class="form-label">学生属性</label>
@@ -180,24 +174,36 @@
       <div class="form-group" style="margin:0"><label class="form-label">出身大学</label><input id="st_university"></div>
       <div class="form-group" style="margin:0"><label class="form-label">学部 / 专业</label><input id="st_faculty"></div>
       <div class="form-group" style="margin:0"><label class="form-label">GPA / 其他履历</label><input id="st_gpa"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">毕业论文方向</label><input id="st_thesis" placeholder="论文题目或方向"></div>
       <div class="form-group" style="margin:0"><label class="form-label">毕业时间</label><input id="st_graduation" placeholder="25年6月"></div>
       <div class="form-group" style="margin:0"><label class="form-label">期待入学时间</label><input id="st_enrollment" placeholder="27年4月"></div>
       <div class="form-group" style="margin:0"><label class="form-label">赴日时间</label><input id="st_arrival" placeholder="26年7月"></div>
       <div class="form-group" style="margin:0"><label class="form-label">到期时间</label><input id="st_expiry" placeholder="27年3月"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">默认上课方式</label>
+        <select id="st_default_mode"><option value="online">线上</option><option value="offline">线下</option></select></div>
       <div class="form-group" style="margin:0"><label class="form-label">状态</label>
-        <select id="st_status"><option value="active">在籍</option><option value="graduated">合格归档</option><option value="expired">已到期</option><option value="stopped">停课</option></select></div>
-    </div>
-    <div class="form-group" style="margin-top:12px"><label class="form-label">困难点 / 备注</label><textarea id="st_difficulty" rows="2"></textarea></div>
-    <div class="form-group"><label class="form-label">志望大学 / 研究计划书方向</label><textarea id="st_notes" rows="2"></textarea></div>
-    <div class="form-group"><label class="form-label">默认上课方式</label>
-      <select id="st_default_mode">
-        <option value="offline">线下</option>
-        <option value="online">线上</option>
-      </select>
+        <select id="st_status">
+          <option value="active">在籍</option>
+          <option value="graduated">已合格</option>
+          <option value="expired">已到期</option>
+          <option value="stopped">停课</option>
+          <option value="withdrawn">退学</option>
+        </select></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeModal('studentModal')">取消</button>
       <button class="btn btn-primary" onclick="saveStudent()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Student Detail Modal -->
+<div class="modal-overlay" id="studentDetailModal">
+  <div class="modal" style="width:580px;max-height:85vh;overflow-y:auto">
+    <div class="modal-title">学生详情</div>
+    <div id="studentDetailContent"></div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn btn-outline" onclick="closeModal('studentDetailModal')">关闭</button>
     </div>
   </div>
 </div>
