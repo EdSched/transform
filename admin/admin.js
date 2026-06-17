@@ -628,7 +628,7 @@ function renderStudentsPage(mc){
     ${[['active','在籍'],['graduated','已合格'],['expired','已到期'],['stopped','停课'],['withdrawn','退学'],['all','全部']].map(([v,l])=>`<div class="filter-chip${stStatus===v?' active':''}" onclick="setStStatus('${v}',this)">${l}</div>`).join('')}
   </div>
   <div class="search-bar"><input placeholder="搜索姓名 / 学校 / 备注…" value="${stSearch}" oninput="stSearch=this.value;renderStudentsPage(document.getElementById('mainContent'))"></div>
-  <table class="student-table">
+  <div class="table-scroll"><table class="student-table">
     <thead><tr>
       <th><input type="checkbox" id="selectAllStudents" onchange="toggleSelectAllStudents(this)"></th>
       <th>姓名</th><th>专业</th><th>等级</th><th>属性</th><th>日语</th><th>英语</th><th>出身大学</th><th>入学目标</th><th>赴日</th><th>状态</th><th>查询码</th><th></th>
@@ -657,7 +657,7 @@ function renderStudentsPage(mc){
         </td>
       </tr>`).join(''):'<tr><td colspan="13" style="text-align:center;padding:30px;color:var(--text-3)">暂无学生数据</td></tr>'}
     </tbody>
-  </table>`;
+  </table></div>`;
 }
 
 function setStMajor(m,el){stMajorFilter=m;document.querySelectorAll('.filter-row:nth-of-type(1) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderStudentsPage(document.getElementById('mainContent'))}
