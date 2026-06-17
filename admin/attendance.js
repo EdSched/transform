@@ -111,7 +111,7 @@ function renderSessionList(filteredCourses){
         <span>${course.name} <span style="font-size:10px;font-weight:400;opacity:.7">${course.time_range||''}</span></span>
         <span style="font-size:10px;opacity:.7">${sess.length}回 · ${totalStudents}人</span>
       </div>
-      <table class="student-table" style="margin:0">
+      <div class="table-scroll"><table class="student-table" style="margin:0;min-width:700px">
         <thead><tr>
           <th style="width:55px">序号</th>
           <th style="width:90px">日期</th>
@@ -149,7 +149,7 @@ function renderSessionList(filteredCourses){
             </tr>`;
           }).join('')}
         </tbody>
-      </table>
+      </table></div>
     </div>`;
   }).join('');
 }
@@ -360,7 +360,7 @@ function openStudentAttModal(studentId){
       <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 14px;font-size:12px">出席率 <strong style="color:${recs.length&&present/recs.length>=0.8?'var(--ok)':'var(--warn)'}">${recs.length?Math.round(present/recs.length*100)+'%':'—'}</strong></div>
       <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 14px;font-size:12px">作业提交 <strong>${hwSubmit}/${recs.length}</strong></div>
     </div>
-    ${recs.length?`<table class="student-table">
+    ${recs.length?`<div class="table-scroll"><table class="student-table" style="min-width:600px">
       <thead><tr><th>课程</th><th>日期</th><th>单回</th><th>方式</th><th>出席状态</th><th>作业</th></tr></thead>
       <tbody>
         ${recs.map(r=>`<tr>
@@ -372,6 +372,6 @@ function openStudentAttModal(studentId){
           <td style="font-size:11px;color:${r.homework_submitted?'var(--ok)':'var(--text-3)'}">${r.homework_submitted?'✓ 已提交':'—'}</td>
         </tr>`).join('')}
       </tbody>
-    </table>`:'<div class="empty">暂无记录</div>'}`;
+    </table></div>`:'<div class="empty">暂无记录</div>'}`;
   document.getElementById('studentAttModal').classList.add('open');
 }
