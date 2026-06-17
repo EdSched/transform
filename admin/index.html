@@ -338,12 +338,11 @@
       <div class="form-group" style="margin:0"><label class="form-label">腾讯会议链接</label><input id="ac_meeting_url" placeholder="https://meeting.tencent.com/…"></div>
       <div class="form-group" style="margin:0"><label class="form-label">主持人密钥</label><input id="ac_host_key" placeholder="数字密钥"></div>
     </div>
-    <div class="form-group" style="margin-bottom:12px">
-      <label class="form-label">是否需要老师录制</label>
-      <div style="display:flex;gap:12px;margin-top:6px">
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="radio" name="ac_recording" value="yes"> 需要录制</label>
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="radio" name="ac_recording" value="no" checked> 不需要录制</label>
-      </div>
+    <div class="form-group" style="margin-bottom:12px"><label class="form-label">是否需要老师录制</label>
+      <select id="ac_recording">
+        <option value="no">不需要录制</option>
+        <option value="yes">需要录制</option>
+      </select>
     </div>
 
     <!-- 单回明细开关 -->
@@ -417,12 +416,11 @@
       <div class="form-group" style="margin:0"><label class="form-label">腾讯会议链接</label><input id="ec_meeting_url" placeholder="https://meeting.tencent.com/…"></div>
       <div class="form-group" style="margin:0"><label class="form-label">主持人密钥</label><input id="ec_host_key" placeholder="数字密钥"></div>
     </div>
-    <div class="form-group" style="margin-bottom:12px">
-      <label class="form-label">是否需要老师录制</label>
-      <div style="display:flex;gap:12px;margin-top:6px">
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="radio" name="ec_recording" id="ec_recording_yes" value="yes"> 需要录制</label>
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="radio" name="ec_recording" id="ec_recording_no" value="no" checked> 不需要录制</label>
-      </div>
+    <div class="form-group" style="margin-bottom:12px"><label class="form-label">是否需要老师录制</label>
+      <select id="ec_recording">
+        <option value="no">不需要录制</option>
+        <option value="yes">需要录制</option>
+      </select>
     </div>
     <div class="form-group" style="margin-top:4px"><label class="form-label">备注</label><input id="ec_notes"></div>
     <div style="background:var(--warn-bg);border:1px solid var(--warn);border-radius:3px;padding:8px 12px;font-size:11px;color:var(--warn);margin-top:12px">
