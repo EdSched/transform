@@ -89,8 +89,15 @@ function generateSessionDatesFromFirst(firstDate, weekdays, totalSessions) {
 // ── 面谈记录工具（admin 和 teacher 共用）──
 function buildRecordText(b) {
   const r = b.daily_record || {};
-  const at = b.actual_time ? b.actual_time.replace('T', ' ') : `${b.slot_date} ${b.slot_time_range || ''}`;
-  const lines = [`【面谈记录】${b.name}`, `日期：${at}`, `专业：${MAJORS[b.major] || b.major || ''}`, ``];
+  // 优先使用实际面谈时间+时长；没有则只显示预约日期，不显示时间槽范围
+  let atStr = '';
+  if (b.actual_time) {
+    atStr = b.actual_time.replace('T', ' ');
+    if (b.actual_duration) atStr += `（${b.actual_duration}min）`;
+  } else {
+    atStr = b.slot_date || '';
+  }
+  const lines = [`【面谈记录】${b.name}`, `日期：${atStr}`, `专业：${MAJORS[b.major] || b.major || ''}`, ``];
   [['📚 知识学习进展', 'study'], ['📝 计划书完成情况', 'plan'], ['🎓 出愿情况', 'apply'], ['📖 备考情况', 'exam']].forEach(([title, k]) => {
     const st = r[`${k}_status`], ad = r[`${k}_advice`], dl = r[`${k}_deadline`];
     if (st || ad || dl) { lines.push(title); if (st) lines.push(`状态：${st}`); if (ad) lines.push(`建议：${ad}`); if (dl) lines.push(`期限：${dl}`); lines.push(''); }
