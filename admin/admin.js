@@ -1761,6 +1761,10 @@ function openEditCourse(id){
   document.getElementById('ec_total').value=c.total_sessions||'';
   document.getElementById('ec_first_date').value=c.first_session_date||'';
   document.getElementById('ec_notes').value=c.notes||'';
+  document.getElementById('ec_meeting_url').value=c.meeting_url||'';
+  document.getElementById('ec_host_key').value=c.host_key||'';
+  const recVal = c.needs_recording ? 'yes' : 'no';
+  document.querySelectorAll('input[name="ec_recording"]').forEach(r=>r.checked=(r.value===recVal));
   document.getElementById('editCourseModal').classList.add('open');
 }
 async function saveEditCourse(){
@@ -1777,6 +1781,9 @@ async function saveEditCourse(){
     total_sessions:parseInt(document.getElementById('ec_total').value)||0,
     first_session_date:document.getElementById('ec_first_date').value||null,
     notes:document.getElementById('ec_notes').value.trim(),
+    meeting_url:document.getElementById('ec_meeting_url').value.trim(),
+    host_key:document.getElementById('ec_host_key').value.trim(),
+    needs_recording:document.querySelector('input[name="ec_recording"]:checked')?.value==='yes',
   };
   try{
     await sb(`/rest/v1/courses?id=eq.${id}`,'PATCH',data);
