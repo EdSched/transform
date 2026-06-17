@@ -188,6 +188,7 @@ function renderBookingCard(b){
     <div class="progress-pills">${renderPills(b)}</div>
     ${b.needs?`<div class="booking-needs">💬 ${b.needs}</div>`:''}
     ${b.actual_time?`<div class="note-field"><div class="note-label">实际面谈时间</div><div class="actual-time">✓ ${b.actual_time.replace('T',' ')}${b.actual_duration?` · ${b.actual_duration}min`:''}</div></div>`:''}
+    ${(b.location||cachedSlots.find(s=>s.id===b.slot_id)?.location)?`<div class="note-field"><div class="note-label">面谈地点</div><div class="note-content" style="color:${locationColor(b.location||cachedSlots.find(s=>s.id===b.slot_id)?.location)}">${locationLong(b.location||cachedSlots.find(s=>s.id===b.slot_id)?.location)||'线上'}</div></div>`:''}
     ${b.file_url?`<div class="note-field"><div class="note-label">提交文件</div><a href="${b.file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 查看文件</a></div>`:''}
     ${b.student_content?`<div class="note-field"><div class="note-label">计划书 / 面试稿件</div><div class="note-content" style="max-height:80px;overflow-y:auto;white-space:pre-wrap">${b.student_content}</div></div>`:''}
     ${b.status==='confirmed'?`<div class="note-field">
@@ -278,6 +279,9 @@ function openEdit(id){
   document.getElementById('editActualTime').value=at.slice(11,16)||'';
   document.getElementById('editActualDuration').value=b.actual_duration||'';
   document.getElementById('editNote').value=b.note||'';
+  // 地点：优先用 booking 自身记录的，没有就查对应 slot
+  const slot=cachedSlots.find(s=>s.id===b.slot_id);
+  document.getElementById('editLocation').value=b.location||slot?.location||'online';
   document.getElementById('editModal').classList.add('open');
 }
 async function saveEdit(){
@@ -286,7 +290,7 @@ async function saveEdit(){
   const t=document.getElementById('editActualTime').value;
   const actual_time=(d&&t)?`${d}T${t}`:(d||'');
   const durVal=document.getElementById('editActualDuration').value;
-  const patch={status:document.getElementById('editStatus').value,actual_time,actual_duration:durVal?parseInt(durVal):null,note:document.getElementById('editNote').value};
+  const patch={status:document.getElementById('editStatus').value,actual_time,actual_duration:durVal?parseInt(durVal):null,note:document.getElementById('editNote').value,location:document.getElementById('editLocation').value};
   try{await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',patch);const b=cachedBookings.find(x=>x.id===id);if(b)Object.assign(b,patch);closeModal('editModal');renderBookingPage(document.getElementById('mainContent'))}catch(e){alert('保存失败：'+e.message)}
 }
 function openRecord(id){
