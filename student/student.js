@@ -518,7 +518,7 @@ function renderSlots() {
             <span style="margin-left:auto;font-size:10px;color:${full?'var(--danger)':'var(--success)'}">${full?'已满':`剩余 ${remaining}`}</span>
           </div>
           ${s.teacher_name ? `<div style="font-size:10px;color:var(--text-muted)">👤 ${teacherDisplayNames[s.teacher_name] || s.teacher_name}</div>` : ''}
-          ${s.location && s.location !== 'online' ? `<div style="font-size:10px;color:#2a6aad">📍 ${s.location==='offline_takadanobaba'?'线下 · 高田马场':'线下 · 市谷'}</div>` : ''}
+          ${locationLong(s.location)?`<div style="font-size:10px;color:${locationColor(s.location)}">📍 ${locationLong(s.location)}</div>`:''}
         </label>
       </div>`;
     }).join('');
