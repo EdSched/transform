@@ -1,3 +1,24 @@
+function locationShort(loc) {
+  if (!loc || loc === 'online') return '';
+  if (loc === 'offline_takadanobaba') return '线下·高马';
+  if (loc === 'offline_ichigaya') return '线下·市谷';
+  if (loc === 'both_takadanobaba') return '线上/线下·高马';
+  if (loc === 'both_ichigaya') return '线上/线下·市谷';
+  return '';
+}
+function locationLong(loc) {
+  if (!loc || loc === 'online') return '';
+  if (loc === 'offline_takadanobaba') return '线下 · 高田马场';
+  if (loc === 'offline_ichigaya') return '线下 · 市谷';
+  if (loc === 'both_takadanobaba') return '线上 / 线下均可 · 高田马场';
+  if (loc === 'both_ichigaya') return '线上 / 线下均可 · 市谷';
+  return '';
+}
+function locationColor(loc) {
+  if (!loc || loc === 'online') return '#2a6aad';
+  if (loc.startsWith('both')) return '#2a7a4a';
+  return '#2a6aad';
+}
 // teacher.js - Permission-based teacher portal
 // Depends on: shared/supabase.js, shared/constants.js
 
@@ -451,9 +472,11 @@ function renderSlotManagement(mc) {
         </div>
         <div class="form-group" style="margin-bottom:0;margin-top:8px"><label class="form-label">面谈地点（可选）</label>
           <select id="ts_location">
-            <option value="online">线上（默认）</option>
+            <option value="online">线上</option>
             <option value="offline_takadanobaba">线下 · 高田马场</option>
             <option value="offline_ichigaya">线下 · 市谷</option>
+            <option value="both_takadanobaba">线上 · 线下均可（高田马场）</option>
+            <option value="both_ichigaya">线上 · 线下均可（市谷）</option>
           </select>
         </div>
         <button class="btn btn-primary btn-full" style="margin-top:12px" onclick="addTeacherSlot()">＋ 添加</button>
@@ -480,7 +503,7 @@ function renderSlotManagement(mc) {
                 <span style="font-weight:500">${s.date.slice(5)}</span>
                 <span style="color:${dowColor}">${dow}</span>
                 <span style="color:var(--text-3)">${s.time_range}</span>
-                ${s.location&&s.location!=='online'?`<span style="font-size:10px;color:#2a6aad">${s.location==='offline_takadanobaba'?'线下·高马':'线下·市谷'}</span>`:''}
+                ${locationShort(s.location)?`<span style="font-size:10px;color:${locationColor(s.location)}">${locationShort(s.location)}</span>`:''}
                 <span style="color:${isLocked?'var(--danger)':booked>=cap?'var(--danger)':'var(--ok)'}">${isLocked?'🔒':booked+'/'+cap}</span>
               </div>
               <div style="display:flex;gap:4px">
