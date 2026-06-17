@@ -335,7 +335,8 @@ async function saveRecord(){
   };
   const d=document.getElementById('recActualDate').value;
   const t=document.getElementById('recActualTime').value;
-  const actual_time=(d&&t)?`${d}T${t}`:(d||'');
+  // 如果没填实际时间，默认用预约日期（不附时间段，避免显示时间槽范围）
+  const actual_time=(d&&t)?`${d}T${t}`:d||b.slot_date||'';
   try{
     await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',{actual_time,daily_record});
     b.actual_time=actual_time;b.daily_record=daily_record;
