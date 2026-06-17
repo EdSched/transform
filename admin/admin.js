@@ -169,9 +169,14 @@ function renderBookingCard(b){
     ${b.actual_time?`<div class="note-field"><div class="note-label">实际面谈时间</div><div class="actual-time">✓ ${b.actual_time.replace('T',' ')}${b.actual_duration?` · ${b.actual_duration}min`:''}</div></div>`:''}
     ${b.file_url?`<div class="note-field"><div class="note-label">提交文件</div><a href="${b.file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 查看文件</a></div>`:''}
     ${b.student_content?`<div class="note-field"><div class="note-label">计划书 / 面试稿件</div><div class="note-content" style="max-height:80px;overflow-y:auto;white-space:pre-wrap">${b.student_content}</div></div>`:''}
-    ${(b.teacher_file_url||b.retrieval_code)?`<div class="note-field"><div class="note-label">老师修改文件</div>
-      ${b.teacher_file_url?`<a href="${b.teacher_file_url}" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-bottom:3px">📎 查看文件</a>`:'<div class="note-content" style="color:var(--text-3)">老师未上传</div>'}
-      ${b.retrieval_code?`<div class="note-content">提取码：<span style="font-weight:600;letter-spacing:2px">${b.retrieval_code}</span></div>`:''}
+    ${b.status==='confirmed'?`<div class="note-field">
+      <div class="note-label" style="margin-bottom:6px">面谈查询码</div>
+      ${b.teacher_file_url?`<a href="${b.teacher_file_url}" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-bottom:6px">📎 查看老师修改文件</a>`:''}
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" onclick="adminGenerateCode('${b.id}')">🔑 ${b.retrieval_code?'重新生成':'生成查询码'}</button>
+        <span id="admin_code_${b.id}" style="font-size:13px;font-weight:600;letter-spacing:2px;color:${b.retrieval_code?'var(--accent)':'var(--text-3)'}">${b.retrieval_code||'未生成'}</span>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:4px">生成后告知学生，凭姓名＋查询码可在预约页面查看面谈记录</div>
     </div>`:''}
     ${b.note?`<div class="note-field"><div class="note-label">备注</div><div class="note-content">${b.note}</div></div>`:''}
     ${(b.english_score||b.japanese_score)?`<div class="note-field"><div class="note-label">语言能力</div>
@@ -213,6 +218,17 @@ async function clearCancelledBookings(){
   if(!confirm(`确定删除当月 ${count} 条已取消记录？`))return;
   try{await sb(`/rest/v1/bookings?status=eq.cancelled&slot_date=like.${ym}*`,'DELETE');cachedBookings=cachedBookings.filter(b=>!(b.status==='cancelled'&&b.slot_date&&b.slot_date.startsWith(ym)));renderBookingPage(document.getElementById('mainContent'))}catch(e){alert('操作失败：'+e.message)}
 }
+async function adminGenerateCode(id){
+  const code=[...'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'].sort(()=>Math.random()-.5).slice(0,6).join('');
+  try{
+    await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',{retrieval_code:code});
+    const b=cachedBookings.find(x=>x.id===id);
+    if(b) b.retrieval_code=code;
+    const span=document.getElementById(`admin_code_${id}`);
+    if(span){span.textContent=code;span.style.color='var(--accent)';}
+  }catch(e){alert('生成失败：'+e.message)}
+}
+
 async function syncLangScore(id){
   const b=cachedBookings.find(x=>x.id===id);if(!b)return;
   const btn=document.querySelector(`[onclick="syncLangScore('${id}')"]`);
