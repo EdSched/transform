@@ -204,8 +204,13 @@ function renderBookingCard(b) {
         <div id="rec_view_${b.id}" style="display:none"></div>
         <!-- 编辑模式 -->
         <div id="rec_edit_${b.id}">
-          <div style="margin-bottom:10px"><label class="form-label">实际面谈时长（分钟）</label>
-            <input type="number" id="duration_${b.id}" value="${b.actual_duration||''}" placeholder="例：30" min="0" step="5" style="font-size:11px;width:120px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+            <div><label class="form-label">实际面谈时间</label>
+              <input type="datetime-local" id="actual_time_rec_${b.id}" value="${b.actual_time||''}" style="font-size:11px;width:100%">
+            </div>
+            <div><label class="form-label">实际时长（分钟）</label>
+              <input type="number" id="duration_${b.id}" value="${b.actual_duration||''}" placeholder="例：30" min="0" step="5" style="font-size:11px;width:100%">
+            </div>
           </div>
           <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px">面谈记录</div>
           ${renderRecordForm(b.id, b.daily_record || {})}
@@ -341,10 +346,13 @@ async function saveBookingRecord(id) {
   const record = getRecordFromForm(id);
   const durVal = document.getElementById(`duration_${id}`)?.value || '';
   const actual_duration = durVal ? parseInt(durVal) : null;
+  const booking = cachedTeacherBookings.find(x => x.id === id);
+  // 实际时间：从记录表单里取，没填则 fallback 到 confirmBooking 时填的 actual_time，再 fallback 到 slot_date
+  const timeInput = document.getElementById(`actual_time_rec_${id}`)?.value || '';
+  const actual_time = timeInput || booking?.actual_time || booking?.slot_date || '';
   try {
-    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { daily_record: record, actual_duration });
-    const booking = cachedTeacherBookings.find(x => x.id === id);
-    if (booking) { booking.daily_record = record; booking.actual_duration = actual_duration; }
+    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { daily_record: record, actual_duration, actual_time });
+    if (booking) { booking.daily_record = record; booking.actual_duration = actual_duration; booking.actual_time = actual_time; }
     // 保存后切换到查看模式
     setTeacherRecordMode(id, 'view');
     const btn = document.querySelector(`[onclick="saveBookingRecord('${id}')"]`);
