@@ -176,7 +176,7 @@ function renderBookingCard(b){
         <button class="btn btn-outline btn-sm" onclick="adminGenerateCode('${b.id}')">🔑 ${b.retrieval_code?'重新生成':'生成查询码'}</button>
         <span id="admin_code_${b.id}" style="font-size:13px;font-weight:600;letter-spacing:2px;color:${b.retrieval_code?'var(--accent)':'var(--text-3)'}">${b.retrieval_code||'未生成'}</span>
       </div>
-      <div style="font-size:10px;color:var(--text-muted);margin-top:4px">生成后告知学生，凭姓名＋查询码可在预约页面查看面谈记录</div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:4px">生成后告知学生，凭姓名＋查询码可查看面谈记录及作业反馈</div>
     </div>`:''}
     ${b.note?`<div class="note-field"><div class="note-label">备注</div><div class="note-content">${b.note}</div></div>`:''}
     ${(b.english_score||b.japanese_score)?`<div class="note-field"><div class="note-label">语言能力</div>
@@ -579,6 +579,7 @@ function renderStudentsPage(mc){
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline btn-sm" onclick="exportStudents()">↓ 导出 Excel</button>
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('importFileInput').click()">↑ 导入 Excel</button>
+      <button class="btn btn-outline btn-sm" onclick="generateAllStudentCodes()">🔑 批量生成查询码</button>
       <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleImportFile(this)">
       <button class="btn btn-primary btn-sm" onclick="openStudentModal()">＋ 添加学生</button>
     </div>
@@ -592,7 +593,7 @@ function renderStudentsPage(mc){
   <div class="search-bar"><input placeholder="搜索姓名 / 学校 / 备注…" value="${stSearch}" oninput="stSearch=this.value;renderStudentsPage(document.getElementById('mainContent'))"></div>
   <table class="student-table">
     <thead><tr>
-      <th>姓名</th><th>专业</th><th>等级</th><th>属性</th><th>日语</th><th>英语</th><th>出身大学</th><th>入学目标</th><th>状态</th><th></th>
+      <th>姓名</th><th>专业</th><th>等级</th><th>属性</th><th>日语</th><th>英语</th><th>出身大学</th><th>入学目标</th><th>状态</th><th>查询码</th><th></th>
     </tr></thead>
     <tbody>
       ${list.length?list.map(s=>`<tr>
@@ -605,6 +606,11 @@ function renderStudentsPage(mc){
         <td style="font-size:11px">${s.university||''}</td>
         <td style="font-size:11px">${s.target_enrollment||''}</td>
         <td><span class="status-badge" style="background:${s.status==='active'?'var(--ok-bg)':s.status==='graduated'?'#e8f4fd':'var(--border)'};color:${s.status==='active'?'var(--ok)':s.status==='graduated'?'#1a6a9a':'var(--text-3)'}">${s.status==='active'?'在籍':s.status==='graduated'?'已合格':s.status==='expired'?'已到期':'停课'}</span></td>
+        <td>
+          ${s.student_code
+            ? `<span style="font-size:11px;font-weight:600;letter-spacing:1px;color:var(--accent)">${s.student_code}</span>`
+            : `<button class="btn btn-outline btn-sm" onclick="generateStudentCode('${s.id}')">生成</button>`}
+        </td>
         <td style="display:flex;gap:4px">
           <button class="btn btn-outline btn-sm" onclick="openStudentModal('${s.id}')">编辑</button>
           <button class="btn btn-danger btn-sm" onclick="deleteStudent('${s.id}')">删除</button>
@@ -639,6 +645,40 @@ async function deleteStudent(id){
   if(!confirm('确定删除这个学生？'))return;
   try{await sb(`/rest/v1/students?id=eq.${id}`,'DELETE');cachedStudents=cachedStudents.filter(s=>s.id!==id);renderStudentsPage(document.getElementById('mainContent'))}catch(e){alert('删除失败：'+e.message)}
 }
+// ── 学生查询码 ──
+function genCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length:6}, ()=>chars[Math.floor(Math.random()*chars.length)]).join('');
+}
+
+async function generateStudentCode(id) {
+  const s = cachedStudents.find(x => x.id === id);
+  if (!s) return;
+  if (s.student_code && !confirm(`${s.name} 已有查询码 ${s.student_code}，确定重新生成？`)) return;
+  const code = genCode();
+  try {
+    await sb(`/rest/v1/students?id=eq.${id}`, 'PATCH', { student_code: code });
+    s.student_code = code;
+    renderStudentsPage(document.getElementById('mainContent'));
+  } catch(e) { alert('生成失败：' + e.message); }
+}
+
+async function generateAllStudentCodes() {
+  const noCode = cachedStudents.filter(s => !s.student_code);
+  if (!noCode.length) { alert('所有学生已有查询码'); return; }
+  if (!confirm(`将为 ${noCode.length} 名学生生成查询码，继续？`)) return;
+  try {
+    for (const s of noCode) {
+      const code = genCode();
+      await sb(`/rest/v1/students?id=eq.${s.id}`, 'PATCH', { student_code: code });
+      s.student_code = code;
+    }
+    renderStudentsPage(document.getElementById('mainContent'));
+    alert(`✓ 已为 ${noCode.length} 名学生生成查询码`);
+  } catch(e) { alert('生成失败：' + e.message); }
+}
+
+
 function exportStudents(){
   if(!cachedStudents.length){alert('暂无学生数据');return}
   const rows=cachedStudents.map(s=>({'姓名':s.name,'专业':MAJORS[s.major]||s.major||'','等级':s.level||'','属性':s.student_type||'','来源':s.source||'','课程属性':s.course_type||'','日语成绩':s.japanese_score||'','英语成绩':s.english_score||'','出身大学':s.university||'','学部专业':s.faculty||'','GPA':s.gpa||'','毕业时间':s.graduation_date||'','入学目标':s.target_enrollment||'','赴日时间':s.japan_arrival||'','到期时间':s.expiry_date||'','状态':s.status||'','困难点':s.difficulty||'','备注':s.notes||''}));
