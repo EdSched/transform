@@ -72,6 +72,15 @@
     <div class="form-group"><label class="form-label">实际面谈时间</label><input type="date" id="editActualDate" style="margin-bottom:4px">
 <input type="time" id="editActualTime"></div>
     <div class="form-group"><label class="form-label">实际面谈时长（分钟）</label><input type="number" id="editActualDuration" placeholder="例：30" min="0" step="5"></div>
+    <div class="form-group"><label class="form-label">面谈地点</label>
+      <select id="editLocation">
+        <option value="online">线上</option>
+        <option value="offline_takadanobaba">线下 · 高田马场</option>
+        <option value="offline_ichigaya">线下 · 市谷</option>
+        <option value="both_takadanobaba">线上 · 线下均可（高田马场）</option>
+        <option value="both_ichigaya">线上 · 线下均可（市谷）</option>
+      </select>
+    </div>
     <div class="form-group"><label class="form-label">备注（计划书／模拟面试）</label><textarea id="editNote" rows="3" placeholder="面谈记录、备注或跟进事项…"></textarea></div>
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeModal('editModal')">取消</button>
