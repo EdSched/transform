@@ -727,12 +727,30 @@ function toggleSelectAllStudents(cb){
   document.querySelectorAll('.student-select').forEach(c=>c.checked=cb.checked);
 }
 
-async function batchChangeStatus(){
+function batchChangeStatus(){
   const selected=[...document.querySelectorAll('.student-select:checked')].map(c=>c.value);
   if(!selected.length){alert('请先勾选学生');return}
-  const status=prompt('输入新状态：active（在籍）/ graduated（已合格）/ expired（已到期）/ stopped（停课）/ withdrawn（退学）');
-  const valid=['active','graduated','expired','stopped','withdrawn'];
-  if(!valid.includes(status)){alert('状态无效');return}
+  // 显示状态选择浮层
+  let overlay=document.getElementById('batchStatusOverlay');
+  if(!overlay){
+    overlay=document.createElement('div');
+    overlay.id='batchStatusOverlay';
+    overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center';
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML=`
+    <div style="background:var(--surface);border-radius:6px;padding:20px;width:280px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:14px">批量修改状态（已选 ${selected.length} 人）</div>
+      ${[['active','在籍'],['graduated','已合格'],['expired','已到期'],['stopped','停课'],['withdrawn','退学']].map(([v,l])=>`
+        <div onclick="applyBatchStatus('${v}',${JSON.stringify(selected)})" style="padding:10px 14px;border-radius:3px;cursor:pointer;font-size:13px;margin-bottom:4px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;gap:8px">
+          <span style="font-size:16px">${{active:'🟢',graduated:'🔵',expired:'⚫',stopped:'🟡',withdrawn:'🔴'}[v]}</span>${l}
+        </div>`).join('')}
+      <button onclick="document.getElementById('batchStatusOverlay').remove()" style="width:100%;margin-top:8px;padding:8px;background:none;border:1px solid var(--border);border-radius:3px;cursor:pointer;font-size:12px;font-family:inherit">取消</button>
+    </div>`;
+}
+
+async function applyBatchStatus(status, selected){
+  document.getElementById('batchStatusOverlay')?.remove();
   try{
     for(const id of selected){
       await sb(`/rest/v1/students?id=eq.${id}`,'PATCH',{status});
@@ -740,7 +758,6 @@ async function batchChangeStatus(){
       if(s) s.status=status;
     }
     renderStudentsPage(document.getElementById('mainContent'));
-    alert(`✓ 已更新 ${selected.length} 名学生状态`);
   }catch(e){alert('批量更新失败：'+e.message)}
 }
 
