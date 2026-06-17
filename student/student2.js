@@ -148,13 +148,9 @@ function buildForm() {
   </div>
   <!-- 作业提醒区块 -->
   <div id="homeworkNotice" style="display:none;background:var(--ok-bg);border:1px solid var(--ok);border-radius:3px;padding:10px 14px;margin-bottom:12px">
-    <div style="display:flex;align-items:center;justify-content:space-between">
-      <div>
-        <div style="font-size:12px;font-weight:600;color:var(--ok);margin-bottom:4px">📝 近期作业提醒</div>
-        <div id="homeworkNoticeList" style="font-size:11px;color:var(--text-2);line-height:1.8"></div>
-      </div>
-      <button onclick="scrollToHomework()" style="font-size:11px;background:var(--ok);color:#fff;border:none;border-radius:3px;padding:6px 12px;cursor:pointer;font-family:inherit;white-space:nowrap;margin-left:12px">提交作业 →</button>
-    </div>
+    <div style="font-size:12px;font-weight:600;color:var(--ok);margin-bottom:4px">📝 近期作业提醒</div>
+    <div id="homeworkNoticeList" style="font-size:11px;color:var(--text-2);line-height:1.8;margin-bottom:8px"></div>
+    <button onclick="scrollToHomework()" style="font-size:11px;background:var(--ok);color:#fff;border:none;border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">→ 去提交作业</button>
   </div>
   <div id="infoBanner" style="display:none;background:var(--warning-light);border:1px solid var(--warning);border-radius:3px;padding:9px 12px;margin-bottom:12px;font-size:11px;color:var(--warning);line-height:1.6"></div>
   <div class="card">
@@ -347,8 +343,8 @@ function buildForm() {
       </div>
     </div>
     <div id="hw_upload_area" style="display:none">
-      <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">上传作业文件（图片/PDF，最大50MB）</div>
-      <input type="file" id="hw_file" accept="image/*,.pdf,.doc,.docx" style="font-size:11px;margin-bottom:8px">
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">上传作业文件（图片 / PDF / Word，最大50MB）</div>
+      <input type="file" id="hw_file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="font-size:11px;margin-bottom:8px">
       <button onclick="submitHomework()" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:inherit;width:100%">提交作业</button>
       <div id="hw_result" style="margin-top:8px;font-size:11px"></div>
     </div>
@@ -764,10 +760,11 @@ async function loadHomeworkSessions() {
 
     wrap.innerHTML = relevant.map(s => {
       const submitted = submittedIds.has(s.id);
-      return `<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg);border:1px solid ${submitted ? 'var(--ok)' : 'var(--border)'};border-radius:3px;cursor:${submitted ? 'default' : 'pointer'}">
-        <input type="radio" name="hw_session" value="${s.id}" data-name="${s.course_name}" data-date="${s.session_date}" ${submitted ? 'disabled' : ''} onchange="document.getElementById('hw_upload_area').style.display='block'">
-        <span style="font-size:11px;flex:1">${s.session_date} · ${s.course_name}${s.session_title ? ' · ' + s.session_title : ''}</span>
-        ${submitted ? '<span style="font-size:10px;color:var(--ok);white-space:nowrap">✓ 已提交</span>' : '<span style="font-size:10px;color:var(--text-muted);white-space:nowrap">未提交</span>'}
+      const label = `${s.session_date} · ${s.course_name}${s.session_title ? ' · ' + s.session_title : ''}`;
+      return `<label style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);border:1px solid ${submitted ? 'var(--ok)' : 'var(--border)'};border-radius:3px;cursor:${submitted ? 'default' : 'pointer'};white-space:nowrap;overflow:hidden">
+        <input type="radio" name="hw_session" value="${s.id}" data-name="${s.course_name}" data-date="${s.session_date}" ${submitted ? 'disabled' : ''} onchange="document.getElementById('hw_upload_area').style.display='block'" style="flex-shrink:0">
+        <span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;flex:1">${label}</span>
+        <span style="font-size:10px;color:${submitted ? 'var(--ok)' : 'var(--text-muted)'};flex-shrink:0;margin-left:6px">${submitted ? '✓ 已提交' : '未提交'}</span>
       </label>`;
     }).join('');
 
