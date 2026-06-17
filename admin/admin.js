@@ -671,7 +671,7 @@ function openStudentModal(id){
     st_enrollment:'target_enrollment',st_arrival:'japan_arrival',
     st_expiry:'expiry_date',st_default_mode:'default_mode',st_status:'status'
   };
-  Object.entries(fields).forEach(([el,key])=>{const e=document.getElementById(el);if(e)e.value=s?.(s[key]||'')??'';});
+  Object.entries(fields).forEach(([el,key])=>{const e=document.getElementById(el);if(e)e.value=s?.[key]||'';});
   document.getElementById('studentModal').classList.add('open');
 }
 
@@ -1933,15 +1933,15 @@ const COL_MAP = {
   '研究计划书':'research_plan', '研究計画書':'research_plan',
   '志望校':'target_school', '志望大学':'target_school',
   '出身大学':'university', '出身院校':'university',
-  '学部':'faculty', '专业':'faculty',
-  '卒論题目':'thesis_topic', '毕业论文':'thesis_topic',
-  'GPA/其他履历':'gpa', 'GPA':'gpa',
+  '学部':'faculty', '本科专业':'faculty', '出身专业':'faculty', '学部专业':'faculty',
+  '卒論题目':'thesis', '毕业论文':'thesis', '毕业论文方向':'thesis',
+  'GPA/其他履历':'gpa', 'GPA':'gpa', 'GPA/其他':'gpa',
   '毕业时间':'graduation_date',
-  '期待入学时间':'target_enrollment', '進度/希望入学时间':'target_enrollment',
+  '期待入学时间':'target_enrollment', '進度/希望入学时间':'target_enrollment', '期待入学':'target_enrollment',
   '到期时间':'expiry_date', '截至日期':'expiry_date',
   '赴日时间':'japan_arrival',
   'テーマ':'research_plan',
-  '状态':'notes',
+  '状态':'status',
 };
 // 专业 sheet 名 → key
 const SHEET_MAJOR_MAP = {
