@@ -293,11 +293,11 @@ function buildForm() {
   </div>
   <div class="booking-list" id="publicBookingList"><div class="loading">加载中…</div></div>
   <div style="text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid var(--border-light)">
-    <a href="javascript:void(0)" onclick="toggleRetrievalPanel()" style="font-size:10px;color:var(--text-muted);text-decoration:underline;cursor:pointer">查询面谈记录</a>
+    <a href="javascript:void(0)" onclick="toggleRetrievalPanel()" style="font-size:10px;color:var(--text-muted);text-decoration:underline;cursor:pointer">查询学习记录</a>
     <div id="retrievalPanel" style="display:none;margin-top:10px;text-align:left;background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:12px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
         <input type="text" id="rt_name" placeholder="姓名">
-        <input type="text" id="rt_code" placeholder="提取码" style="text-transform:uppercase">
+        <input type="text" id="rt_code" placeholder="查询码" style="text-transform:uppercase">
       </div>
       <button class="btn btn-outline btn-full" onclick="lookupRetrieval()">查询</button>
       <div id="retrievalResult" style="margin-top:10px"></div>
@@ -635,28 +635,85 @@ async function lookupRetrieval() {
   const name = document.getElementById('rt_name').value.trim();
   const code = document.getElementById('rt_code').value.trim().toUpperCase();
   const result = document.getElementById('retrievalResult');
-  if (!name || !code) { result.innerHTML = '<div style="font-size:11px;color:var(--danger)">请输入姓名和提取码</div>'; return; }
+  if (!name || !code) { result.innerHTML = '<div style="font-size:11px;color:var(--danger)">请输入姓名和查询码</div>'; return; }
   result.innerHTML = '<div class="loading">查询中…</div>';
   try {
-    const matches = await sb(`/rest/v1/bookings?name=eq.${encodeURIComponent(name)}&retrieval_code=eq.${encodeURIComponent(code)}&select=*`);
-    if (!matches.length) {
-      result.innerHTML = '<div style="font-size:11px;color:var(--danger)">未找到匹配的记录，请确认姓名和提取码是否正确</div>';
+    // 用 student_code 验证身份
+    const students = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(name)}&student_code=eq.${encodeURIComponent(code)}&select=id,name,student_code`);
+    if (!students.length) {
+      // 兼容旧的 bookings.retrieval_code 逻辑
+      const oldMatches = await sb(`/rest/v1/bookings?name=eq.${encodeURIComponent(name)}&retrieval_code=eq.${encodeURIComponent(code)}&select=*`);
+      if (!oldMatches.length) {
+        result.innerHTML = '<div style="font-size:11px;color:var(--danger)">未找到匹配记录，请确认姓名和查询码是否正确</div>';
+        return;
+      }
+      // 旧逻辑：只显示单条面谈
+      const b = oldMatches[0];
+      let html = renderSingleBookingResult(b);
+      result.innerHTML = html;
       return;
     }
-    const b = matches[0];
-    let html = `<div style="font-size:11px;color:var(--text-2);margin-bottom:8px">${b.slot_date} · ${typeLabel(b.type)}</div>`;
-    if (b.daily_record) {
-      html += `<div style="font-size:11px;line-height:1.7;white-space:pre-wrap;background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:8px;margin-bottom:8px">${buildRecordText(b)}</div>`;
+
+    // 新逻辑：显示该学生所有老师共享的内容
+    const student = students[0];
+    const [bookings, sessionRecs] = await Promise.all([
+      sb(`/rest/v1/bookings?name=eq.${encodeURIComponent(name)}&status=eq.confirmed&select=*&order=slot_date.desc`),
+      sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(name)}&select=*&order=session_date.desc`)
+    ]);
+
+    // 只显示有面谈记录或文件的条目
+    const validBookings = bookings.filter(b => b.daily_record && Object.values(b.daily_record).some(v=>v));
+    const validHomework = sessionRecs.filter(r => r.teacher_file_url);
+
+    if (!validBookings.length && !validHomework.length) {
+      result.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:12px 0">暂无可查询的记录，请等待老师共享</div>';
+      return;
     }
-    if (b.teacher_file_url) {
-      html += `<a href="${b.teacher_file_url}" target="_blank" class="btn btn-primary btn-full" style="text-decoration:none;display:block;text-align:center;box-sizing:border-box">📎 下载老师修改文件</a>`;
-    } else {
-      html += `<div style="font-size:11px;color:var(--text-muted)">老师暂未上传修改文件</div>`;
+
+    let html = `<div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:12px">👤 ${name} 的学习记录</div>`;
+
+    // 面谈记录
+    if (validBookings.length) {
+      html += `<div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">面谈记录（${validBookings.length}条）</div>`;
+      validBookings.forEach(b => {
+        html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px">
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">${b.slot_date} · ${typeLabel(b.type)}${b.actual_duration?' · '+b.actual_duration+'min':''}</div>
+          <pre style="font-size:11px;line-height:1.7;white-space:pre-wrap;font-family:'DM Mono',monospace;margin:0;color:var(--text-2)">${buildRecordText(b)}</pre>
+          ${b.teacher_file_url?`<a href="${b.teacher_file_url}" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-top:8px">📎 下载老师修改文件</a>`:''}
+        </div>`;
+      });
     }
+
+    // 作业批改
+    if (validHomework.length) {
+      html += `<div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;margin-top:${validBookings.length?'12px':'0'}">作业批改（${validHomework.length}条）</div>`;
+      validHomework.forEach(r => {
+        html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px">
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">${r.session_date} · ${r.course_name}</div>
+          ${r.feedback_knowledge?`<div style="font-size:11px;color:var(--text-2);margin-bottom:4px">📚 ${r.feedback_knowledge}</div>`:''}
+          ${r.feedback_suggestions?`<div style="font-size:11px;color:var(--text-2);margin-bottom:6px">💡 ${r.feedback_suggestions}</div>`:''}
+          <a href="${r.teacher_file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 下载批改文件</a>
+        </div>`;
+      });
+    }
+
     result.innerHTML = html;
   } catch(e) {
     result.innerHTML = `<div style="font-size:11px;color:var(--danger)">查询失败：${e.message}</div>`;
   }
+}
+
+function renderSingleBookingResult(b) {
+  let html = `<div style="font-size:11px;color:var(--text-2);margin-bottom:8px">${b.slot_date} · ${typeLabel(b.type)}</div>`;
+  if (b.daily_record) {
+    html += `<pre style="font-size:11px;line-height:1.7;white-space:pre-wrap;background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:8px;margin-bottom:8px;font-family:'DM Mono',monospace">${buildRecordText(b)}</pre>`;
+  }
+  if (b.teacher_file_url) {
+    html += `<a href="${b.teacher_file_url}" target="_blank" class="btn btn-primary btn-full" style="text-decoration:none;display:block;text-align:center;box-sizing:border-box">📎 下载老师修改文件</a>`;
+  } else {
+    html += `<div style="font-size:11px;color:var(--text-muted)">老师暂未上传修改文件</div>`;
+  }
+  return html;
 }
 
 initMajor();
