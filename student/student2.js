@@ -761,16 +761,22 @@ async function loadHomeworkSessions() {
     wrap.innerHTML = relevant.map(s => {
       const submitted = submittedIds.has(s.id);
       const label = s.session_date + ' · ' + s.course_name + (s.session_title ? ' · ' + s.session_title : '');
-      const borderColor = submitted ? 'var(--ok)' : 'var(--border)';
-      const cursor = submitted ? 'default' : 'pointer';
-      const statusColor = submitted ? 'var(--ok)' : 'var(--text-muted)';
-      const statusText = submitted ? '✓ 已提交' : '未提交';
-      const disabledAttr = submitted ? 'disabled' : '';
-      return '<label style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);border:1px solid ' + borderColor + ';border-radius:3px;cursor:' + cursor + ';overflow:hidden">'
-        + '<input type="radio" name="hw_session" value="' + s.id + '" data-name="' + s.course_name + '" data-date="' + s.session_date + '" ' + disabledAttr + ' onchange="document.getElementById('hw_upload_area').style.display='block'" style="flex-shrink:0">'
-        + '<span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;flex:1">' + label + '</span>'
-        + '<span style="font-size:10px;color:' + statusColor + ';flex-shrink:0;margin-left:6px">' + statusText + '</span>'
-        + '</label>';
+      const el = document.createElement('label');
+      el.style.cssText = 'display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);border:1px solid ' + (submitted?'var(--ok)':'var(--border)') + ';border-radius:3px;cursor:' + (submitted?'default':'pointer') + ';overflow:hidden';
+      const radio = document.createElement('input');
+      radio.type = 'radio'; radio.name = 'hw_session'; radio.value = s.id;
+      radio.dataset.name = s.course_name; radio.dataset.date = s.session_date;
+      radio.style.flexShrink = '0';
+      if (submitted) radio.disabled = true;
+      radio.addEventListener('change', function(){ document.getElementById('hw_upload_area').style.display='block'; });
+      const txt = document.createElement('span');
+      txt.style.cssText = 'font-size:12px;overflow:hidden;text-overflow:ellipsis;flex:1';
+      txt.textContent = label;
+      const status = document.createElement('span');
+      status.style.cssText = 'font-size:10px;color:' + (submitted?'var(--ok)':'var(--text-muted)') + ';flex-shrink:0;margin-left:6px';
+      status.textContent = submitted ? '✓ 已提交' : '未提交';
+      el.appendChild(radio); el.appendChild(txt); el.appendChild(status);
+      return el.outerHTML;
     }).join('');
 
   } catch(e) {
