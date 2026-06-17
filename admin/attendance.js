@@ -119,6 +119,7 @@ function renderSessionList(filteredCourses){
           <th style="width:90px">出席人数</th>
           <th style="width:80px">出席率</th>
           <th style="width:90px">交作业</th>
+          <th style="width:80px">作业提交</th>
           <th style="width:80px">状态</th>
           <th style="width:80px"></th>
         </tr></thead>
@@ -137,6 +138,12 @@ function renderSessionList(filteredCourses){
               <td style="font-size:11px">${recs.length?`${present}/${totalStudents}`:'—'}</td>
               <td style="font-size:11px;color:${rate>=80?'var(--ok)':rate>=60?'var(--warn)':'var(--danger)'}">${recs.length?rate+'%':'—'}</td>
               <td style="font-size:11px">${recs.length?`${hwSubmit}/${totalStudents}`:'—'}</td>
+              <td>
+                <button onclick="toggleHomeworkEnabled('${s.id}',${!!s.homework_enabled})"
+                  style="font-size:10px;padding:2px 8px;border-radius:2px;border:1px solid ${s.homework_enabled?'var(--ok)':'var(--border)'};background:${s.homework_enabled?'var(--ok-bg)':'var(--bg)'};color:${s.homework_enabled?'var(--ok)':'var(--text-3)'};cursor:pointer;font-family:inherit">
+                  ${s.homework_enabled?'✓ 已开通':'— 未开通'}
+                </button>
+              </td>
               <td><span style="font-size:10px;padding:2px 7px;border-radius:2px;background:${isDone?'var(--ok-bg)':'var(--bg)'};color:${isDone?'var(--ok)':'var(--text-3)'};border:1px solid ${isDone?'var(--ok)':'var(--border)'}">${isDone?'✓ 完成':'待记录'}</span></td>
               <td><button class="btn btn-outline btn-sm" onclick="openSessionModal('${s.id}')">记录</button></td>
             </tr>`;
@@ -282,6 +289,17 @@ function toggleHw(studentId){
     btn.style.borderColor=st.homework_submitted?'var(--ok)':'var(--border)';
   }
 }
+
+async function toggleHomeworkEnabled(sessionId, current) {
+  const newVal = !current;
+  try {
+    await sb(`/rest/v1/course_sessions?id=eq.${sessionId}`, 'PATCH', { homework_enabled: newVal });
+    const s = cachedSessions.find(x => x.id === sessionId);
+    if (s) s.homework_enabled = newVal;
+    renderAttendancePage(document.getElementById('mainContent'));
+  } catch(e) { alert('操作失败：' + e.message); }
+}
+
 
 async function saveSessionRecords(){
   const sessionId=document.getElementById('sessionModalId').value;
