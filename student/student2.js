@@ -758,26 +758,40 @@ async function loadHomeworkSessions() {
 
     const submittedIds = new Set(records.filter(r => r.homework_submitted || r.homework_file_url).map(r => r.session_id));
 
-    wrap.innerHTML = relevant.map(s => {
+    // DOM 방식으로 직접 추가
+    wrap.innerHTML = '';
+    relevant.forEach(s => {
       const submitted = submittedIds.has(s.id);
       const label = s.session_date + ' · ' + s.course_name + (s.session_title ? ' · ' + s.session_title : '');
+
       const el = document.createElement('label');
-      el.style.cssText = 'display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);border:1px solid ' + (submitted?'var(--ok)':'var(--border)') + ';border-radius:3px;cursor:' + (submitted?'default':'pointer') + ';overflow:hidden';
+      el.style.cssText = 'display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);border:1px solid ' + (submitted ? 'var(--ok)' : 'var(--border)') + ';border-radius:3px;cursor:' + (submitted ? 'default' : 'pointer') + ';overflow:hidden;margin-bottom:4px';
+
       const radio = document.createElement('input');
-      radio.type = 'radio'; radio.name = 'hw_session'; radio.value = s.id;
-      radio.dataset.name = s.course_name; radio.dataset.date = s.session_date;
+      radio.type = 'radio';
+      radio.name = 'hw_session';
+      radio.value = s.id;
+      radio.dataset.name = s.course_name;
+      radio.dataset.date = s.session_date;
       radio.style.flexShrink = '0';
       if (submitted) radio.disabled = true;
-      radio.addEventListener('change', function(){ document.getElementById('hw_upload_area').style.display='block'; });
+      radio.addEventListener('change', function() {
+        document.getElementById('hw_upload_area').style.display = 'block';
+      });
+
       const txt = document.createElement('span');
-      txt.style.cssText = 'font-size:12px;overflow:hidden;text-overflow:ellipsis;flex:1';
+      txt.style.cssText = 'font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
       txt.textContent = label;
+
       const status = document.createElement('span');
-      status.style.cssText = 'font-size:10px;color:' + (submitted?'var(--ok)':'var(--text-muted)') + ';flex-shrink:0;margin-left:6px';
+      status.style.cssText = 'font-size:10px;color:' + (submitted ? 'var(--ok)' : 'var(--text-muted)') + ';flex-shrink:0;margin-left:6px;white-space:nowrap';
       status.textContent = submitted ? '✓ 已提交' : '未提交';
-      el.appendChild(radio); el.appendChild(txt); el.appendChild(status);
-      return el.outerHTML;
-    }).join('');
+
+      el.appendChild(radio);
+      el.appendChild(txt);
+      el.appendChild(status);
+      wrap.appendChild(el);
+    });
 
   } catch(e) {
     wrap.innerHTML = `<div style="font-size:11px;color:var(--danger)">加载失败：${e.message}</div>`;
