@@ -697,11 +697,12 @@ async function loadHomeworkNotice() {
       `/rest/v1/course_sessions?session_date=gte.${fmt(weekStart)}&session_date=lte.${fmt(weekEnd)}&homework_enabled=is.true&select=*&order=session_date.asc`
     ).catch(() => []);
 
-    // 只取专业匹配的课程
+    // 只取专业匹配的课程（s.major 是数组）
     const relevant = sessions.filter(s => {
+      const sm = Array.isArray(s.major) ? s.major : [s.major||''];
       if (!major) return true;
-      if (major === 'shakai_group') return ['shakai','shinpan','fukushi'].some(m => (s.major||'').includes(m));
-      return (s.major||'').includes(major);
+      if (major === 'shakai_group') return sm.some(m => ['shakai','shinpan','fukushi'].includes(m));
+      return sm.includes(major);
     });
 
     console.log('[HW Notice] sessions:', sessions.length, 'relevant:', relevant.length, 'major:', major);
@@ -741,9 +742,10 @@ async function loadHomeworkSessions() {
       sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(name)}&select=session_id,homework_submitted,homework_file_url`).catch(() => [])
     ]);
     const relevant = sessions.filter(s => {
+      const sm = Array.isArray(s.major) ? s.major : [s.major||''];
       if (!major) return true;
-      if (major === 'shakai_group') return ['shakai','shinpan','fukushi'].some(m => (s.major||'').includes(m));
-      return (s.major||'').includes(major);
+      if (major === 'shakai_group') return sm.some(m => ['shakai','shinpan','fukushi'].includes(m));
+      return sm.includes(major);
     });
     if (!relevant.length) {
       wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">近期暂无需提交作业的课程</div>';
