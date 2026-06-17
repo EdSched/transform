@@ -694,7 +694,7 @@ async function loadHomeworkNotice() {
 
     // 查本周及下周有课的 session（只显示有作业要提交的）
     const sessions = await sb(
-      `/rest/v1/course_sessions?session_date=gte.${fmt(weekStart)}&session_date=lte.${fmt(weekEnd)}&homework_enabled=eq.true&select=*&order=session_date.asc`
+      `/rest/v1/course_sessions?session_date=gte.${fmt(weekStart)}&session_date=lte.${fmt(weekEnd)}&homework_enabled=is.true&select=*&order=session_date.asc`
     ).catch(() => []);
 
     // 只取专业匹配的课程
@@ -740,7 +740,7 @@ async function loadHomeworkSessions() {
     const fmt = d => d.toISOString().slice(0, 10);
 
     const [sessions, records] = await Promise.all([
-      sb(`/rest/v1/course_sessions?session_date=gte.${fmt(from)}&session_date=lte.${fmt(to)}&homework_enabled=eq.true&select=*&order=session_date.desc`).catch(() => []),
+      sb(`/rest/v1/course_sessions?session_date=gte.${fmt(from)}&session_date=lte.${fmt(to)}&homework_enabled=is.true&select=*&order=session_date.desc`).catch(() => []),
       sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(name)}&select=session_id,homework_submitted,homework_file_url`).catch(() => [])
     ]);
 
@@ -760,12 +760,17 @@ async function loadHomeworkSessions() {
 
     wrap.innerHTML = relevant.map(s => {
       const submitted = submittedIds.has(s.id);
-      const label = `${s.session_date} · ${s.course_name}${s.session_title ? ' · ' + s.session_title : ''}`;
-      return `<label style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);border:1px solid ${submitted ? 'var(--ok)' : 'var(--border)'};border-radius:3px;cursor:${submitted ? 'default' : 'pointer'};white-space:nowrap;overflow:hidden">
-        <input type="radio" name="hw_session" value="${s.id}" data-name="${s.course_name}" data-date="${s.session_date}" ${submitted ? 'disabled' : ''} onchange="document.getElementById('hw_upload_area').style.display='block'" style="flex-shrink:0">
-        <span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;flex:1">${label}</span>
-        <span style="font-size:10px;color:${submitted ? 'var(--ok)' : 'var(--text-muted)'};flex-shrink:0;margin-left:6px">${submitted ? '✓ 已提交' : '未提交'}</span>
-      </label>`;
+      const label = s.session_date + ' · ' + s.course_name + (s.session_title ? ' · ' + s.session_title : '');
+      const borderColor = submitted ? 'var(--ok)' : 'var(--border)';
+      const cursor = submitted ? 'default' : 'pointer';
+      const statusColor = submitted ? 'var(--ok)' : 'var(--text-muted)';
+      const statusText = submitted ? '✓ 已提交' : '未提交';
+      const disabledAttr = submitted ? 'disabled' : '';
+      return '<label style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);border:1px solid ' + borderColor + ';border-radius:3px;cursor:' + cursor + ';overflow:hidden">'
+        + '<input type="radio" name="hw_session" value="' + s.id + '" data-name="' + s.course_name + '" data-date="' + s.session_date + '" ' + disabledAttr + ' onchange="document.getElementById('hw_upload_area').style.display='block'" style="flex-shrink:0">'
+        + '<span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;flex:1">' + label + '</span>'
+        + '<span style="font-size:10px;color:' + statusColor + ';flex-shrink:0;margin-left:6px">' + statusText + '</span>'
+        + '</label>';
     }).join('');
 
   } catch(e) {
