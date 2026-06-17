@@ -1,3 +1,24 @@
+function locationShort(loc) {
+  if (!loc || loc === 'online') return '';
+  if (loc === 'offline_takadanobaba') return '线下·高马';
+  if (loc === 'offline_ichigaya') return '线下·市谷';
+  if (loc === 'both_takadanobaba') return '线上/线下·高马';
+  if (loc === 'both_ichigaya') return '线上/线下·市谷';
+  return '';
+}
+function locationLong(loc) {
+  if (!loc || loc === 'online') return '';
+  if (loc === 'offline_takadanobaba') return '线下 · 高田马场';
+  if (loc === 'offline_ichigaya') return '线下 · 市谷';
+  if (loc === 'both_takadanobaba') return '线上 / 线下均可 · 高田马场';
+  if (loc === 'both_ichigaya') return '线上 / 线下均可 · 市谷';
+  return '';
+}
+function locationColor(loc) {
+  if (!loc || loc === 'online') return '#2a6aad';
+  if (loc.startsWith('both')) return '#2a7a4a';
+  return '#2a6aad';
+}
 // Note: sb() is in shared/supabase.js
 // Note: MAJORS, typeLabel, typeTag, slotCap, DAYS_CN are in shared/constants.js
 
@@ -278,7 +299,7 @@ function buildForm() {
   <div class="card">
     <div class="card-title"><span class="step-num">${stepNeeds}</span>具体需求</div>
     <textarea id="needs" rows="3" placeholder="希望解决的问题，或需要老师重点关注的内容…"></textarea>
-    <div style="font-size:10px;color:var(--text-muted);margin-top:6px;line-height:1.6">⚠ 非老师明确指定的线下面谈，一律默认线上进行。请确认好选择的日期和地点，如有疑问请及时和老师联系。</div>
+    <div style="font-size:10px;color:var(--text-muted);margin-top:6px;line-height:1.6">📌 标注「线下」的时间槽需线下出席；标注「线上/线下均可」的可根据自身情况选择，请在具体需求中注明。未标注地点默认线上进行，如有疑问请提前联系老师确认。</div>
   </div>
   <div class="card" id="contentCard" style="display:none">
     <div class="card-title">📎 提交内容（可选）</div>
