@@ -704,11 +704,12 @@ async function loadHomeworkNotice() {
       return (s.major||'').includes(major);
     });
 
+    console.log('[HW Notice] sessions:', sessions.length, 'relevant:', relevant.length, 'major:', major);
     if (!relevant.length) return;
 
     const notice = document.getElementById('homeworkNotice');
     const list = document.getElementById('homeworkNoticeList');
-    if (!notice || !list) return;
+    if (!notice || !list) { console.log('[HW Notice] DOM not found'); return; }
 
     list.innerHTML = relevant.map(s =>
       `${s.session_date} · ${s.course_name}${s.session_title ? ' · ' + s.session_title : ''}`
@@ -724,79 +725,54 @@ async function loadHomeworkSessions() {
   const uploadArea = document.getElementById('hw_upload_area');
   if (!wrap) return;
   if (!name) {
-    wrap.innerHTML = '<div id="hw_sessions_loading" style="font-size:11px;color:var(--text-muted)">请先填写姓名后选择课程</div>';
+    wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">请先填写姓名后选择课程</div>';
     if (uploadArea) uploadArea.style.display = 'none';
     return;
   }
-
   wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">加载中…</div>';
-
   try {
-    // 取最近30天内的课程
     const from = new Date();
     from.setDate(from.getDate() - 7);
     const to = new Date();
     to.setDate(to.getDate() + 7);
     const fmt = d => d.toISOString().slice(0, 10);
-
     const [sessions, records] = await Promise.all([
       sb(`/rest/v1/course_sessions?session_date=gte.${fmt(from)}&session_date=lte.${fmt(to)}&homework_enabled=is.true&select=*&order=session_date.desc`).catch(() => []),
       sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(name)}&select=session_id,homework_submitted,homework_file_url`).catch(() => [])
     ]);
-
     const relevant = sessions.filter(s => {
       if (!major) return true;
       if (major === 'shakai_group') return ['shakai','shinpan','fukushi'].some(m => (s.major||'').includes(m));
       return (s.major||'').includes(major);
     });
-
     if (!relevant.length) {
-      wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">近期暂无课程记录</div>';
+      wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">近期暂无需提交作业的课程</div>';
       if (uploadArea) uploadArea.style.display = 'none';
       return;
     }
-
     const submittedIds = new Set(records.filter(r => r.homework_submitted || r.homework_file_url).map(r => r.session_id));
-
-    // DOM 방식으로 직접 추가
-    wrap.innerHTML = '';
-    relevant.forEach(s => {
+    wrap.innerHTML = relevant.map(s => {
       const submitted = submittedIds.has(s.id);
       const label = s.session_date + ' · ' + s.course_name + (s.session_title ? ' · ' + s.session_title : '');
-
-      const el = document.createElement('label');
-      el.style.cssText = 'display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);border:1px solid ' + (submitted ? 'var(--ok)' : 'var(--border)') + ';border-radius:3px;cursor:' + (submitted ? 'default' : 'pointer') + ';overflow:hidden;margin-bottom:4px';
-
-      const radio = document.createElement('input');
-      radio.type = 'radio';
-      radio.name = 'hw_session';
-      radio.value = s.id;
-      radio.dataset.name = s.course_name;
-      radio.dataset.date = s.session_date;
-      radio.style.flexShrink = '0';
-      if (submitted) radio.disabled = true;
-      radio.addEventListener('change', function() {
-        document.getElementById('hw_upload_area').style.display = 'block';
-      });
-
-      const txt = document.createElement('span');
-      txt.style.cssText = 'font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
-      txt.textContent = label;
-
-      const status = document.createElement('span');
-      status.style.cssText = 'font-size:10px;color:' + (submitted ? 'var(--ok)' : 'var(--text-muted)') + ';flex-shrink:0;margin-left:6px;white-space:nowrap';
-      status.textContent = submitted ? '✓ 已提交' : '未提交';
-
-      el.appendChild(radio);
-      el.appendChild(txt);
-      el.appendChild(status);
-      wrap.appendChild(el);
-    });
-
+      return '<label style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);border:1px solid ' + (submitted?'var(--ok)':'var(--border)') + ';border-radius:3px;cursor:' + (submitted?'default':'pointer') + ';overflow:hidden;margin-bottom:4px">'
+        + '<input type="radio" name="hw_session" value="' + s.id + '" data-name="' + s.course_name.replace(/"/g,'&quot;') + '" data-date="' + s.session_date + '" style="flex-shrink:0" ' + (submitted?'disabled':'') + '>'
+        + '<span style="font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + label + '</span>'
+        + '<span style="font-size:10px;color:' + (submitted?'var(--ok)':'var(--text-muted)') + ';flex-shrink:0;margin-left:6px;white-space:nowrap">' + (submitted?'✓ 已提交':'未提交') + '</span>'
+        + '</label>';
+    }).join('');
+    // 事件委托
+    wrap.onclick = function(e) {
+      const radio = e.target.closest('label')?.querySelector('input[type="radio"]');
+      if (radio && !radio.disabled) {
+        radio.checked = true;
+        if (uploadArea) uploadArea.style.display = 'block';
+      }
+    };
   } catch(e) {
-    wrap.innerHTML = `<div style="font-size:11px;color:var(--danger)">加载失败：${e.message}</div>`;
+    wrap.innerHTML = '<div style="font-size:11px;color:var(--danger)">加载失败：' + e.message + '</div>';
   }
 }
+
 
 async function submitHomework() {
   const name = document.getElementById('hw_name')?.value.trim();
