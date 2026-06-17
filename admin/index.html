@@ -87,6 +87,10 @@
     <div class="modal-sub" id="recordModalSub"></div>
     <input type="hidden" id="recordId">
     <div id="recordWarn" class="warn-banner" style="display:none"></div>
+    <!-- 查看模式 -->
+    <div id="recordViewArea" style="display:none"></div>
+    <!-- 编辑模式 -->
+    <div id="recordEditArea">
     <div class="form-group"><label class="form-label">实际面谈时间</label><input type="date" id="recActualDate" style="margin-bottom:4px">
 <input type="time" id="recActualTime"></div>
     <div class="modal-section">
@@ -127,10 +131,12 @@
       <div class="modal-section-title">补充</div>
       <div class="form-group" style="margin:0"><textarea id="rec_extra" rows="3" placeholder="语学成绩、学生诉求、评价等…"></textarea></div>
     </div>
+    </div><!-- /recordEditArea -->
     <div class="modal-actions">
-      <button class="btn btn-outline" onclick="closeModal('recordModal')">取消</button>
+      <button class="btn btn-outline" onclick="closeModal('recordModal')">关闭</button>
+      <button class="btn btn-outline" id="recordEditBtn" onclick="setRecordMode('edit')" style="display:none">✏ 编辑记录</button>
       <button class="btn btn-outline" id="copyRecordBtn" onclick="copyRecord()" style="display:none">📋 复制记录</button>
-      <button class="btn btn-primary" onclick="saveRecord()">保存记录</button>
+      <button class="btn btn-primary" id="recordSaveBtn" onclick="saveRecord()">保存记录</button>
     </div>
     <div id="copyBox" class="copy-box" style="display:none"></div>
   </div>
