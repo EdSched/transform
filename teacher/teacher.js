@@ -685,7 +685,9 @@ function renderScheduling(mc) {
 
 function renderSlotCard(s) {
   const st = getState(s.id);
-  const d = new Date(s.session_date + 'T12:00:00');
+  const st_pre = getState(s.id);
+  const displayDate = st_pre.adjusted_date || s.session_date;
+  const d = new Date(displayDate + 'T12:00:00');
   const dow = DAYS_CN[d.getDay()];
   const dowColor = DOW_COLOR[d.getDay()] || 'var(--text-2)';
   const hasTwo = !!(s.time_range && s.time_range_2);
@@ -720,7 +722,27 @@ function renderSlotCard(s) {
 
 function toggleAvail(slotId) { const st = getState(slotId); st.available = !st.available; if (!st.available) { st.time = ''; st.titles.clear(); } rerenderCard(slotId); updateHint(); }
 function setTime(slotId, val) { const st = getState(slotId); st.time = st.time === val ? '' : val; rerenderCard(slotId); }
-function setDow(slotId, val) { const st = getState(slotId); st.dow = st.dow === val ? '' : val; rerenderCard(slotId); }
+function setDow(slotId, val) {
+  const st = getState(slotId);
+  st.dow = st.dow === val ? '' : val;
+  // 计算选择的周几对应的实际日期
+  const s = slots.find(x => x.id === slotId);
+  if (s && st.dow && st.dow !== 'both') {
+    const dowMap = {'周一':1,'周二':2,'周三':3,'周四':4,'周五':5,'周六':6,'周日':0};
+    const targetDow = dowMap[st.dow];
+    if (targetDow !== undefined) {
+      const base = new Date(s.session_date + 'T12:00:00');
+      const baseDow = base.getDay();
+      const diff = targetDow - baseDow;
+      const newDate = new Date(base);
+      newDate.setDate(base.getDate() + diff);
+      st.adjusted_date = newDate.toISOString().slice(0,10);
+    }
+  } else {
+    st.adjusted_date = null;
+  }
+  rerenderCard(slotId);
+}
 function toggleTitle(slotId, title) { const st = getState(slotId); st.titles.has(title) ? st.titles.delete(title) : st.titles.add(title); rerenderCard(slotId); }
 function rerenderCard(slotId) { const s = slots.find(x => x.id === slotId); if (!s) return; const el = document.getElementById(`card-${slotId}`); if (el) el.outerHTML = renderSlotCard(s); }
 function updateHint() { const avail = slots.filter(s => getState(s.id).available).length; const hint = document.getElementById('schedHint'); if (hint) hint.textContent = `已选 ${avail} / ${slots.length} 个课次`; }
@@ -736,7 +758,8 @@ async function submitAvailability() {
       const st = getState(s.id);
       const timeStr = st.time === 'both' ? `${s.time_range} / ${s.time_range_2}` : st.time || '';
       const dowStr = st.dow === 'both' ? `${DAYS_CN[d.getDay()]} / ${s.weekday_2}` : st.dow || '';
-      return { id: `av-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, slot_id: s.id, teacher_name: teacherName, available: st.available, available_time: st.available && timeStr ? timeStr : null, preferred_dow: st.available && dowStr ? dowStr : null, preferred_titles: st.available && st.titles.size ? [...st.titles] : null };
+      const adjustedDate = st.adjusted_date || null;
+      return { id: `av-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, slot_id: s.id, teacher_name: teacherName, available: st.available, available_time: st.available && timeStr ? timeStr : null, preferred_dow: st.available && dowStr ? dowStr : null, preferred_date: st.available && adjustedDate ? adjustedDate : null, preferred_titles: st.available && st.titles.size ? [...st.titles] : null };
     });
     await sb('/rest/v1/teacher_availability', 'POST', records);
     existingAvail = records;
