@@ -1190,7 +1190,8 @@ async function confirmCourseImport(){
           };
         });
         for(let i=0;i<sessions.length;i+=20){
-          const chunk=sessions.slice(i,i+20);
+          // 每个课次继承课程的 homework_enabled
+          const chunk=sessions.slice(i,i+20).map(s=>({...s,homework_enabled:courseData.homework_enabled||false}));
           const sres=await sb('/rest/v1/course_sessions','POST',chunk);
           cachedSessions.push(...(Array.isArray(sres)?sres:chunk));
         }
@@ -1544,6 +1545,7 @@ function openAddCourseModal(editId){
     document.getElementById('ac_total').value=c.total_sessions||'';
     document.getElementById('ac_first_date').value=c.first_session_date||'';
     document.getElementById('ac_notes').value=c.notes||'';
+    document.getElementById('ac_homework_enabled').value=c.homework_enabled?'true':'false';
     document.getElementById('ac_meeting_url').value=c.meeting_url||'';
     document.getElementById('ac_host_key').value=c.host_key||'';
     document.getElementById('ac_recording').value = c.needs_recording ? 'yes' : 'no';
@@ -1568,6 +1570,7 @@ function openAddCourseModal(editId){
   } else {
     ['ac_name','ac_teacher','ac_campus','ac_time_range','ac_notes','ac_meeting_url','ac_host_key'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('ac_recording').value = 'no';
+    document.getElementById('ac_homework_enabled').value = 'false';
     ['ac_period','ac_course_type','ac_delivery','ac_weekday'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('ac_total').value='';
     document.getElementById('ac_first_date').value='';
@@ -1703,6 +1706,7 @@ async function saveAddCourse(){
     total_sessions:total,
     first_session_date:firstDate,
     notes:document.getElementById('ac_notes').value.trim(),
+    homework_enabled:document.getElementById('ac_homework_enabled').value==='true',
     meeting_url:document.getElementById('ac_meeting_url').value.trim(),
     host_key:document.getElementById('ac_host_key').value.trim(),
     needs_recording:document.getElementById('ac_recording').value==='yes',
@@ -1712,6 +1716,8 @@ async function saveAddCourse(){
     let courseId;
     if(editingId){
       await sb(`/rest/v1/courses?id=eq.${editingId}`,'PATCH',courseData);
+      // 同步所有课次的 homework_enabled
+      await sb(`/rest/v1/course_sessions?course_id=eq.${editingId}`,'PATCH',{homework_enabled:courseData.homework_enabled}).catch(()=>{});
       const idx=cachedCourses.findIndex(c=>c.id===editingId);
       if(idx>=0) cachedCourses[idx]={...cachedCourses[idx],...courseData};
       courseId=editingId;
@@ -1771,6 +1777,7 @@ function openEditCourse(id){
   document.getElementById('ec_total').value=c.total_sessions||'';
   document.getElementById('ec_first_date').value=c.first_session_date||'';
   document.getElementById('ec_notes').value=c.notes||'';
+  document.getElementById('ec_homework_enabled').value=c.homework_enabled?'true':'false';
   document.getElementById('ec_meeting_url').value=c.meeting_url||'';
   document.getElementById('ec_host_key').value=c.host_key||'';
   document.getElementById('ec_recording').value = c.needs_recording ? 'yes' : 'no';
@@ -1790,6 +1797,7 @@ async function saveEditCourse(){
     total_sessions:parseInt(document.getElementById('ec_total').value)||0,
     first_session_date:document.getElementById('ec_first_date').value||null,
     notes:document.getElementById('ec_notes').value.trim(),
+    homework_enabled:document.getElementById('ec_homework_enabled').value==='true',
     meeting_url:document.getElementById('ec_meeting_url').value.trim(),
     host_key:document.getElementById('ec_host_key').value.trim(),
     needs_recording:document.getElementById('ec_recording').value==='yes',
