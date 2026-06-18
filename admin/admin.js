@@ -2614,7 +2614,7 @@ function renderSummaryBody(slots,courseName){
         d.slots.forEach(slot=>{
           cachedTeacherAvail.filter(a=>a.slot_id===slot.id&&a.available).forEach(a=>{
             if(!availOnDate.find(x=>x.name===a.teacher_name))
-              availOnDate.push({name:a.teacher_name,time:a.available_time||''});
+              availOnDate.push({name:a.teacher_name,time:a.available_time||'',dow:a.preferred_dow||'',date:a.preferred_date||''});
           });
         });
         const selectedTitle=draft.title||'';
@@ -2627,7 +2627,7 @@ function renderSummaryBody(slots,courseName){
           <td style="font-size:11px">${d.time_range||''}</td>
           <td>
             ${availOnDate.length
-              ?availOnDate.map(t=>`<span style="font-size:10px;background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:1px 6px;margin:1px;display:inline-block">${t.name}${t.time?' · '+t.time:''}${teacherTitleMap[t.name]?.size?` (${[...teacherTitleMap[t.name]].join('/')})`:''}</span>`).join('')
+              ?availOnDate.map(t=>`<span style="font-size:10px;background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:1px 6px;margin:1px;display:inline-block">${t.name}${t.dow?' · '+t.dow:''}${t.date?' ('+t.date+')':''}${t.time?' · '+t.time:''}${teacherTitleMap[t.name]?.size?` (${[...teacherTitleMap[t.name]].join('/')})`:''}</span>`).join('')
               :`<span style="font-size:11px;color:var(--danger)">暂无</span>`}
           </td>
           <td>
