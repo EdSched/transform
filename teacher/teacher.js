@@ -653,6 +653,40 @@ function getState(slotId) {
 
 function renderScheduling(mc) {
   if (!slots.length) { mc.innerHTML = '<div class="empty">暂无排班课次<br><span style="font-size:11px">请等待学科负责人创建课次后访问</span></div>'; return; }
+  
+  // 判断是否已经回复过
+  const hasReplied = existingAvail.length > 0;
+  
+  if (hasReplied) {
+    // 已回复状态：显示已回复摘要，需要点击才能修改
+    const availCount = existingAvail.filter(a => a.available).length;
+    mc.innerHTML = `
+    <div class="page-section">
+      <div style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:4px;padding:14px 16px;margin-bottom:16px">
+        <div style="font-size:13px;font-weight:600;color:var(--ok);margin-bottom:4px">✓ 已提交回复</div>
+        <div style="font-size:11px;color:var(--text-2)">共选择了 ${availCount} 个可上课的课次，等待管理员排课确认。</div>
+        <button onclick="renderSchedulingEdit(document.getElementById('mainContent'))" style="margin-top:10px;font-size:11px;background:none;border:1px solid var(--ok);border-radius:3px;padding:5px 12px;cursor:pointer;color:var(--ok);font-family:inherit">✏ 修改回复</button>
+      </div>
+      ${slots.map(s => {
+        const a = existingAvail.find(x => x.slot_id === s.id);
+        if (!a || !a.available) return '';
+        const d = new Date(s.session_date + 'T12:00:00');
+        return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-light);font-size:11px">
+          <span style="font-weight:600;min-width:60px">${(d.getMonth()+1)}/${d.getDate()}</span>
+          <span style="color:var(--text-3)">${s.course_name}</span>
+          ${a.preferred_dow ? `<span style="color:var(--accent)">${a.preferred_dow}</span>` : ''}
+          ${a.available_time ? `<span style="color:var(--text-2)">${a.available_time}</span>` : ''}
+          ${a.preferred_titles?.length ? `<span style="color:var(--text-3)">${a.preferred_titles.join('/')}</span>` : ''}
+        </div>`;
+      }).filter(Boolean).join('')}
+    </div>`;
+    return;
+  }
+  
+  renderSchedulingEdit(mc);
+}
+
+function renderSchedulingEdit(mc) {
   const allTitles = [...new Set(slots.flatMap(s => s.session_titles || []))];
   const byCourse = {};
   slots.forEach(s => {
@@ -685,19 +719,20 @@ function renderScheduling(mc) {
 
 function renderSlotCard(s) {
   const st = getState(s.id);
-  const st_pre = getState(s.id);
-  const displayDate = st_pre.adjusted_date || s.session_date;
-  const d = new Date(displayDate + 'T12:00:00');
-  const dow = DAYS_CN[d.getDay()];
-  const dowColor = DOW_COLOR[d.getDay()] || 'var(--text-2)';
   const hasTwo = !!(s.time_range && s.time_range_2);
   const hasTwoDow = !!(s.weekday_2);
   const titles = s.session_titles || [];
+  // 如果选了周几，显示调整后的日期
+  const displayDow = st.dow && st.dow !== 'both' ? st.dow : dow;
+  const displayDate = st.adjusted_date || s.session_date;
+  const dd = new Date(displayDate + 'T12:00:00');
+  const displayDowColor = DOW_COLOR[dd.getDay()] || 'var(--text-2)';
+
   return `<div class="date-card${st.available ? ' selected' : ''}" id="card-${s.id}">
     <div class="date-head" onclick="toggleAvail('${s.id}')">
       <div class="date-left">
-        <div><span class="date-num">${d.getMonth() + 1}/${d.getDate()}</span><span class="date-dow" style="color:${dowColor}">${dow}</span>${hasTwoDow ? `<span class="date-dow" style="color:var(--text-3);font-size:10px;margin-left:4px">/ ${s.weekday_2}</span>` : ''}</div>
-        <div class="date-meta">${s.time_range || ''}${hasTwo ? ` / ${s.time_range_2}` : ''} · 第${s.session_number}回</div>
+        <div><span class="date-num">${dd.getMonth() + 1}/${dd.getDate()}</span><span class="date-dow" style="color:${displayDowColor}">${displayDow}</span>${hasTwoDow && !st.dow ? `<span style="color:var(--text-3);font-size:10px;margin-left:4px">/ ${s.weekday_2}</span>` : ''}</div>
+        <div class="date-meta">${st.time && st.time !== 'both' ? st.time : s.time_range || ''}${hasTwo && !st.time ? ` / ${s.time_range_2}` : ''} · 第${s.session_number}回</div>
       </div>
       <div class="check-circle${st.available ? ' checked' : ''}">✓</div>
     </div>
@@ -706,12 +741,12 @@ function renderSlotCard(s) {
       ${hasTwoDow ? `<div class="sub-label">周几偏好</div><div class="chip-row">
         <div class="chip${st.dow === dow ? ' active' : ''}" onclick="event.stopPropagation();setDow('${s.id}','${dow}')">${dow}</div>
         <div class="chip${st.dow === s.weekday_2 ? ' active' : ''}" onclick="event.stopPropagation();setDow('${s.id}','${s.weekday_2}')">${s.weekday_2}</div>
-        <div class="chip ok-active${st.dow === 'both' ? ' active' : ''}" onclick="event.stopPropagation();setDow('${s.id}','both')">两天都行</div>
+        ${!st.dow ? `<div class="chip ok-active" onclick="event.stopPropagation();setDow('${s.id}','both')">两天都行</div>` : `<div class="chip" onclick="event.stopPropagation();setDow('${s.id}','')" style="color:var(--text-3);font-size:10px">清除</div>`}
       </div>` : ''}
       ${hasTwo ? `<div class="sub-label">时间偏好</div><div class="chip-row">
         <div class="chip${st.time === s.time_range ? ' active' : ''}" onclick="event.stopPropagation();setTime('${s.id}','${s.time_range}')">${s.time_range}</div>
         <div class="chip${st.time === s.time_range_2 ? ' active' : ''}" onclick="event.stopPropagation();setTime('${s.id}','${s.time_range_2}')">${s.time_range_2}</div>
-        <div class="chip ok-active${st.time === 'both' ? ' active' : ''}" onclick="event.stopPropagation();setTime('${s.id}','both')">两个都行</div>
+        ${!st.time ? `<div class="chip ok-active" onclick="event.stopPropagation();setTime('${s.id}','both')">两个都行</div>` : `<div class="chip" onclick="event.stopPropagation();setTime('${s.id}','')" style="color:var(--text-3);font-size:10px">清除</div>`}
       </div>` : ''}
       ${titles.length ? `<div class="sub-label">内容偏好（不选=都可以）</div><div class="chip-row">
         ${titles.map(t => `<div class="chip${st.titles.has(t) ? ' active' : ''}" onclick="event.stopPropagation();toggleTitle('${s.id}','${t.replace(/'/g, "\\'")}')">${t}</div>`).join('')}
