@@ -1078,7 +1078,7 @@ function generateSessionDatesFromFirst(firstDate,weekdays,totalSessions){
   const dates=[];
   const cur=new Date(firstDate+'T12:00:00');
   // 最多往后推2年防死循环
-  const limit=new Date(firstDate);
+  const limit=new Date(firstDate+'T12:00:00');
   limit.setFullYear(limit.getFullYear()+2);
   while(dates.length<totalSessions&&cur<=limit){
     if(weekdays.includes(cur.getDay())) dates.push(cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0')+'-'+String(cur.getDate()).padStart(2,'0'));
@@ -1764,23 +1764,9 @@ async function saveAddCourse(){
       const idx=cachedCourses.findIndex(c=>c.id===editingId);
       if(idx>=0) cachedCourses[idx]={...cachedCourses[idx],...courseData};
       courseId=editingId;
-      // 编辑模式：不重新生成课次，只更新单回名称/老师
-      if(detailRows.length){
-        for(const detail of detailRows){
-          const existingSession=cachedSessions.find(s=>s.course_id===courseId&&s.session_number===detail.num);
-          if(existingSession){
-            await sb(`/rest/v1/course_sessions?id=eq.${existingSession.id}`,'PATCH',{
-              session_title:detail.title||'',
-              session_teacher:detail.teacher||courseData.teacher,
-              teacher:detail.teacher||courseData.teacher,
-            }).catch(()=>{});
-          }
-        }
-      }
-      closeModal('addCourseModal');
-      renderCoursesPage(document.getElementById('mainContent'));
-      alert('课程信息已更新');
-      return;
+      // 删除旧课次，重新生成
+      await sb(`/rest/v1/course_sessions?course_id=eq.${editingId}`,'DELETE');
+      cachedSessions=cachedSessions.filter(s=>s.course_id!==editingId);
     } else {
       courseId=`c-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
       const res=await sb('/rest/v1/courses','POST',[{...courseData,id:courseId}]);
