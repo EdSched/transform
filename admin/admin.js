@@ -181,7 +181,9 @@ function renderBookingCard(b){
       <div>
         <div class="booking-name">${b.name} <span style="font-size:11px;color:var(--text-3);font-weight:400">${MAJORS[b.major]||''}</span></div>
         <div class="booking-meta">${b.slot_date} ${b.slot_time_range||''} · ${b.duration}min · ${urgLabel(b.urgency)}</div>
-        ${teacherName?`<div style="font-size:11px;color:var(--text-2);margin-top:2px">👤 ${teacherName} <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="openReassignTeacher('${b.id}','${b.slot_id}')">重新分配</button></div>`:`<div style="font-size:11px;color:var(--danger);margin-top:2px">⚠ 未关联老师 <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="openReassignTeacher('${b.id}','${b.slot_id}')">分配老师</button></div>`}
+        ${teacherName
+          ? `<div style="font-size:11px;color:var(--text-2);margin-top:2px">👤 ${teacherName} <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="openReassignTeacher('${b.id}','${b.slot_id}')">重新分配</button></div>`
+          : `<div style="font-size:11px;color:var(--danger);margin-top:2px">⚠ 未关联老师 <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="openReassignTeacher('${b.id}','${b.slot_id}')">分配老师</button></div>`}
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
         <span class="tag ${typeTag(b.type)}">${typeLabel(b.type)}</span>
@@ -249,10 +251,12 @@ async function clearCancelledBookings(){
   if(!confirm(`确定删除当月 ${count} 条已取消记录？`))return;
   try{await sb(`/rest/v1/bookings?status=eq.cancelled&slot_date=like.${ym}*`,'DELETE');cachedBookings=cachedBookings.filter(b=>!(b.status==='cancelled'&&b.slot_date&&b.slot_date.startsWith(ym)));renderBookingPage(document.getElementById('mainContent'))}catch(e){alert('操作失败：'+e.message)}
 }
-function openReassignTeacher(bookingId, slotId) {
-  const options = cachedTeachers.map(t =>
-    `<option value="${t.name}">${t.name}</option>`
-  ).join('');
+async function openReassignTeacher(bookingId, slotId) {
+  let teachers = cachedTeachers && cachedTeachers.length ? cachedTeachers : [];
+  if (!teachers.length) {
+    try { teachers = await sb('/rest/v1/teachers?select=name&order=name.asc'); } catch(e) { teachers = []; }
+  }
+  const options = teachers.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
   const modal = document.createElement('div');
   modal.id = 'reassignModal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
