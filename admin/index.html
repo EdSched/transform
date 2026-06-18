@@ -524,7 +524,7 @@
     <div class="modal-sub" id="sessionModalSub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:10px"></div>
     <input type="hidden" id="sessionModalId">
     <div style="margin-bottom:10px">
-      <input id="sessionStudentSearch" placeholder="搜索学生姓名…" oninput="renderStudentRows(this.value)" style="font-size:12px;padding:6px 10px;width:100%;box-sizing:border-box">
+      <input id="sessionStudentSearch" placeholder="输入姓名或拼音首字母（如A、Z）…" autocomplete="off" oninput="renderStudentRows(this.value)" style="font-size:12px;padding:6px 10px;width:100%;box-sizing:border-box">
     </div>
     <div style="overflow-x:auto">
       <table class="student-table" id="sessionRecordTable">
