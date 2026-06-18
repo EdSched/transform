@@ -64,11 +64,15 @@ function bookingTimes(b) {
 }
 
 // ── 生成课程行 ──
-function buildCourseRows(sessions, teacherName) {
+function buildCourseRows(sessions, teacherName, courses) {
+  // courses 用于 time_range fallback（旧课次可能没有该字段）
+  const courseMap = {};
+  (courses || []).forEach(c => { courseMap[c.id] = c; });
   return sessions
     .filter(s => (s.teacher === teacherName || s.session_teacher === teacherName))
     .map(s => {
-      const { start, end, hours } = parseTimeRange(s.session_date, s.time_range);
+      const tr = s.time_range || courseMap[s.course_id]?.time_range || '';
+      const { start, end, hours } = parseTimeRange(s.session_date, tr);
       return {
         type: 'course',
         source_id: s.id,
@@ -76,8 +80,8 @@ function buildCourseRows(sessions, teacherName) {
         开始时间: start,
         结束时间: end,
         时长: hours,
-        工作内容: payrollWorkType(s.course_type),
-        工作地点: payrollLocation(s.delivery, s.campus),
+        工作内容: payrollWorkType(s.course_type || courseMap[s.course_id]?.course_type),
+        工作地点: payrollLocation(s.delivery || courseMap[s.course_id]?.delivery, s.campus || courseMap[s.course_id]?.campus),
         备注: `${s.course_name} 第${s.session_number}回`,
         _date: s.session_date
       };
@@ -184,13 +188,14 @@ async function runPayroll() {
   res.innerHTML = '<div style="font-size:12px;color:var(--text-3)">加载中…</div>';
 
   try {
-    const [sessions, bookings, slots] = await Promise.all([
+    const [sessions, bookings, slots, courses] = await Promise.all([
       sb(`/rest/v1/course_sessions?select=*&session_date=gte.${start}&session_date=lte.${end}&order=session_date.asc`),
       sb(`/rest/v1/bookings?select=*&slot_date=gte.${start}&slot_date=lte.${end}&order=slot_date.asc`),
-      sb(`/rest/v1/slots?select=*&date=gte.${start}&date=lte.${end}`)
+      sb(`/rest/v1/slots?select=*&date=gte.${start}&date=lte.${end}`),
+      sb(`/rest/v1/courses?select=id,time_range,course_type,delivery,campus`)
     ]);
 
-    const courseRows = buildCourseRows(sessions, teacherName);
+    const courseRows = buildCourseRows(sessions, teacherName, courses);
     const bookingRows = buildBookingRows(bookings, slots, teacherName);
     payrollRows = [...courseRows, ...bookingRows].sort((a, b) => a._date.localeCompare(b._date));
 
