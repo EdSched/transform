@@ -315,7 +315,7 @@ function renderStudentRows(filter='') {
     : students;
   const tbody=document.getElementById('sessionRecordBody');
   tbody.innerHTML=filtered.map(s=>{
-    const rec=existing.find(r=>r.student_id===s.id)||{};
+    const rec=existing.find(r=>r.student_id===s.id||r.student_name===s.name)||{};
     const defaultMode=rec.student_mode||s.default_mode||'offline';
     sessionEdits[s.id]={
       student_mode:defaultMode,
