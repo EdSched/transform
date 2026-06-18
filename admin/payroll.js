@@ -160,7 +160,14 @@ function renderPayrollSection(container) {
       <button class="btn btn-primary btn-sm" onclick="runPayroll()">生成</button>
     </div>
     <div id="pr_result"></div>
-  </div>`;
+    <div id="pr_submit_bar" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
+      <button class="btn btn-primary btn-sm" onclick="submitWorkRecords()">↑ 提交到工作记录</button>
+      <span style="font-size:11px;color:var(--text-3);margin-left:8px">提交后可在下方审核，老师端可查看已通过的记录</span>
+    </div>
+  </div>
+  <div id="pr_records"></div>`;
+
+  renderWorkRecordsAdmin(document.getElementById('pr_records'));
 }
 
 async function runPayroll() {
@@ -196,6 +203,8 @@ async function runPayroll() {
     const courseCount = courseRows.length;
     const bookingCount = bookingRows.length;
     const dateRange = `${start.slice(0, 7).replace('-', '年')}月`;
+    const submitBar = document.getElementById('pr_submit_bar');
+    if (submitBar) submitBar.style.display = 'block';
 
     res.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
@@ -232,4 +241,177 @@ async function runPayroll() {
   } catch(e) {
     res.innerHTML = `<div style="font-size:12px;color:var(--danger)">加载失败：${e.message}</div>`;
   }
+}
+
+// ══════════════════════════════════
+// 工作记录 — Admin 审核
+// ══════════════════════════════════
+
+// 把 payrollRows 提交固化到 work_records 表
+async function submitWorkRecords() {
+  if (!payrollRows.length) { alert('请先生成工资核算数据'); return; }
+  const existing = await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(payrollTeacher)}&select=source_id`);
+  const existingIds = new Set((existing || []).map(r => r.source_id));
+  const toInsert = payrollRows
+    .filter(r => !existingIds.has(r.source_id))
+    .map(r => ({
+      id: `wr-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
+      teacher_name: r.姓名,
+      start_time: r.开始时间,
+      end_time: r.结束时间,
+      duration: r.时长,
+      work_type: r.工作内容,
+      location: r.工作地点,
+      notes: r.备注,
+      source: r.type,
+      source_id: r.source_id,
+      status: 'pending'
+    }));
+  if (!toInsert.length) { alert('所有记录已提交过，无新增'); return; }
+  try {
+    for (let i = 0; i < toInsert.length; i += 20) {
+      await sb('/rest/v1/work_records', 'POST', toInsert.slice(i, i + 20));
+    }
+    alert(`已提交 ${toInsert.length} 条记录，待审核`);
+    renderWorkRecordsAdmin(document.getElementById('pr_records'));
+  } catch(e) { alert('提交失败：' + e.message); }
+}
+
+// Admin 审核界面
+async function renderWorkRecordsAdmin(container) {
+  if (!container) return;
+  container.innerHTML = '<div style="font-size:12px;color:var(--text-3)">加载中…</div>';
+  try {
+    const records = await sb(`/rest/v1/work_records?order=start_time.asc`);
+    if (!records.length) {
+      container.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无工作记录</div>';
+      return;
+    }
+    // 按老师分组
+    const byTeacher = {};
+    records.forEach(r => { if (!byTeacher[r.teacher_name]) byTeacher[r.teacher_name] = []; byTeacher[r.teacher_name].push(r); });
+
+    container.innerHTML = `
+    <div style="font-size:12px;font-weight:600;color:var(--text-2);margin:20px 0 12px;letter-spacing:.05em;text-transform:uppercase">工作记录审核</div>
+    ${Object.entries(byTeacher).map(([name, rows]) => {
+      const pending = rows.filter(r => r.status === 'pending').length;
+      return `
+      <div style="margin-bottom:16px">
+        <div style="font-size:11px;font-weight:600;color:var(--text);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px;display:flex;align-items:center;gap:8px">
+          ${name}
+          ${pending ? `<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:2px;padding:1px 6px">${pending} 待审核</span>` : ''}
+          <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="exportWorkRecordsExcel('${name}')">↓ 导出</button>
+        </div>
+        ${rows.map(r => renderWorkRecordRow(r)).join('')}
+      </div>`;
+    }).join('')}`;
+  } catch(e) {
+    container.innerHTML = `<div style="font-size:12px;color:var(--danger)">加载失败：${e.message}</div>`;
+  }
+}
+
+function renderWorkRecordRow(r) {
+  const statusColor = r.status === 'approved' ? '#1a4a28' : r.status === 'rejected' ? '#8a1a1a' : '#856404';
+  const statusBg = r.status === 'approved' ? '#ddf0e0' : r.status === 'rejected' ? '#f8e0e0' : '#fff3cd';
+  const statusLabel = r.status === 'approved' ? '已通过' : r.status === 'rejected' ? '已驳回' : '待审核';
+  return `
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:10px 12px;margin-bottom:6px;font-size:11px" id="wr_row_${r.id}">
+    <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap">
+          <span style="font-weight:600">${r.start_time}</span>
+          <span style="color:var(--text-3)">→ ${r.end_time}</span>
+          <span style="font-weight:600;color:var(--accent)">${r.duration}h</span>
+          <span style="background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 5px">${r.work_type}</span>
+          <span style="background:${statusBg};color:${statusColor};border-radius:2px;padding:1px 5px">${statusLabel}</span>
+        </div>
+        <div style="color:var(--text-3)">${r.location} · ${r.notes}</div>
+        ${r.admin_note ? `<div style="margin-top:4px;color:var(--text-2);font-style:italic">备注：${r.admin_note}</div>` : ''}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-outline btn-sm" onclick="openEditWorkRecord('${r.id}')">编辑</button>
+          <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deleteWorkRecord('${r.id}')">删除</button>
+        </div>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-sm" style="background:#ddf0e0;color:#1a4a28;border:1px solid #b0d8b8" onclick="approveWorkRecord('${r.id}')">通过</button>
+          <button class="btn btn-sm" style="background:#f8e0e0;color:#8a1a1a;border:1px solid #d8b0b0" onclick="rejectWorkRecord('${r.id}')">驳回</button>
+        </div>
+      </div>
+    </div>
+    <div id="wr_edit_${r.id}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        <div class="form-group" style="margin:0;flex:1;min-width:120px"><label class="form-label">开始时间</label><input id="wr_start_${r.id}" value="${r.start_time}" style="font-size:11px"></div>
+        <div class="form-group" style="margin:0;flex:1;min-width:120px"><label class="form-label">结束时间</label><input id="wr_end_${r.id}" value="${r.end_time}" style="font-size:11px"></div>
+        <div class="form-group" style="margin:0;width:80px"><label class="form-label">时长(h)</label><input id="wr_dur_${r.id}" value="${r.duration}" type="number" step="0.5" style="font-size:11px"></div>
+        <div class="form-group" style="margin:0;flex:1;min-width:100px"><label class="form-label">工作内容</label><input id="wr_type_${r.id}" value="${r.work_type}" style="font-size:11px"></div>
+        <div class="form-group" style="margin:0;flex:1;min-width:100px"><label class="form-label">工作地点</label><input id="wr_loc_${r.id}" value="${r.location}" style="font-size:11px"></div>
+        <div class="form-group" style="margin:0;flex:2;min-width:160px"><label class="form-label">备注</label><input id="wr_notes_${r.id}" value="${r.notes}" style="font-size:11px"></div>
+        <div class="form-group" style="margin:0;flex:2;min-width:160px"><label class="form-label">审批理由</label><input id="wr_anote_${r.id}" value="${r.admin_note||''}" placeholder="可选" style="font-size:11px"></div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="saveWorkRecord('${r.id}')">保存</button>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('wr_edit_${r.id}').style.display='none'">取消</button>
+    </div>
+  </div>`;
+}
+
+function openEditWorkRecord(id) {
+  const el = document.getElementById(`wr_edit_${id}`);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function saveWorkRecord(id) {
+  const patch = {
+    start_time: document.getElementById(`wr_start_${id}`).value,
+    end_time: document.getElementById(`wr_end_${id}`).value,
+    duration: parseFloat(document.getElementById(`wr_dur_${id}`).value) || 0,
+    work_type: document.getElementById(`wr_type_${id}`).value,
+    location: document.getElementById(`wr_loc_${id}`).value,
+    notes: document.getElementById(`wr_notes_${id}`).value,
+    admin_note: document.getElementById(`wr_anote_${id}`).value,
+    updated_at: new Date().toISOString()
+  };
+  try {
+    await sb(`/rest/v1/work_records?id=eq.${id}`, 'PATCH', patch);
+    renderWorkRecordsAdmin(document.getElementById('pr_records'));
+  } catch(e) { alert('保存失败：' + e.message); }
+}
+
+async function approveWorkRecord(id) {
+  try {
+    await sb(`/rest/v1/work_records?id=eq.${id}`, 'PATCH', { status: 'approved', updated_at: new Date().toISOString() });
+    renderWorkRecordsAdmin(document.getElementById('pr_records'));
+  } catch(e) { alert('操作失败：' + e.message); }
+}
+
+async function rejectWorkRecord(id) {
+  const note = prompt('驳回理由（可选）：') ?? '';
+  try {
+    await sb(`/rest/v1/work_records?id=eq.${id}`, 'PATCH', { status: 'rejected', admin_note: note || null, updated_at: new Date().toISOString() });
+    renderWorkRecordsAdmin(document.getElementById('pr_records'));
+  } catch(e) { alert('操作失败：' + e.message); }
+}
+
+async function deleteWorkRecord(id) {
+  if (!confirm('确定删除这条工作记录？')) return;
+  try {
+    await sb(`/rest/v1/work_records?id=eq.${id}`, 'DELETE');
+    renderWorkRecordsAdmin(document.getElementById('pr_records'));
+  } catch(e) { alert('删除失败：' + e.message); }
+}
+
+// 导出某老师所有 approved 记录为 Excel
+async function exportWorkRecordsExcel(teacherName) {
+  const records = await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&status=eq.approved&order=start_time.asc`);
+  if (!records.length) { alert('该老师暂无已通过的工作记录'); return; }
+  const headers = ['姓名', '开始时间', '结束时间', '时长', '工作内容', '工作地点', '备注'];
+  const csvRows = [headers.join('\t')];
+  records.forEach(r => csvRows.push([r.teacher_name, r.start_time, r.end_time, r.duration, r.work_type, r.location, r.notes].join('\t')));
+  const blob = new Blob(['\ufeff' + csvRows.join('\n')], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `工作记录_${teacherName}.xls`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
