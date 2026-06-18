@@ -919,7 +919,7 @@ async function uploadHwTeacherFile(recordId, sessionId) {
   const rec = hwFeedbackRecords.find(r => r.id === recordId);
   if (!rec) return;
   const ext = file.name.split('.').pop();
-  const path = `homework-feedback/${sessionId}_${rec.student_name}.${ext}`;
+  const path = `homework-feedback/${recordId}.${ext}`;  // 用 record_id 命名，避免中文路径问题
   try {
     if (result) result.innerHTML = '<span style="color:var(--text-muted)">上传中…</span>';
     const url = await sbUpload('teacher-files', path, file);
