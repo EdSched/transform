@@ -1076,12 +1076,12 @@ function parseWeekdays(str){
 function generateSessionDatesFromFirst(firstDate,weekdays,totalSessions){
   if(!firstDate||!weekdays.length||!totalSessions) return [];
   const dates=[];
-  const cur=new Date(firstDate);
+  const cur=new Date(firstDate+'T12:00:00');
   // 最多往后推2年防死循环
   const limit=new Date(firstDate);
   limit.setFullYear(limit.getFullYear()+2);
   while(dates.length<totalSessions&&cur<=limit){
-    if(weekdays.includes(cur.getDay())) dates.push(cur.toISOString().slice(0,10));
+    if(weekdays.includes(cur.getDay())) dates.push(cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0')+'-'+String(cur.getDate()).padStart(2,'0'));
     cur.setDate(cur.getDate()+1);
   }
   return dates;
