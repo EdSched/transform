@@ -1716,14 +1716,12 @@ async function saveAddCourse(){
     let courseId;
     if(editingId){
       await sb(`/rest/v1/courses?id=eq.${editingId}`,'PATCH',courseData);
-      // 同步所有课次的 homework_enabled
+      // 同步所有课次的 homework_enabled（不删除课次，避免破坏出席记录）
       await sb(`/rest/v1/course_sessions?course_id=eq.${editingId}`,'PATCH',{homework_enabled:courseData.homework_enabled}).catch(()=>{});
       const idx=cachedCourses.findIndex(c=>c.id===editingId);
       if(idx>=0) cachedCourses[idx]={...cachedCourses[idx],...courseData};
       courseId=editingId;
-      // delete old sessions
-      await sb(`/rest/v1/course_sessions?course_id=eq.${courseId}`,'DELETE');
-      cachedSessions=cachedSessions.filter(s=>s.course_id!==courseId);
+      // 不删除旧课次，只更新课程基本信息和新增课次
     } else {
       courseId=`c-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
       const res=await sb('/rest/v1/courses','POST',[{...courseData,id:courseId}]);
