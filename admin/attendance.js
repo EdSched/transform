@@ -116,7 +116,9 @@ function renderSessionList(filteredCourses){
             const noneEnabled = sess.every(s => !s.homework_enabled);
             const label = allEnabled ? '📝 作业已全开' : noneEnabled ? '📝 开通作业' : '📝 部分开通';
             const nextVal = !allEnabled;
-            return `<button onclick="toggleCourseHomework('${cid}',${nextVal})" style="font-size:10px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);border-radius:3px;padding:3px 8px;cursor:pointer;color:inherit;font-family:inherit">${label}</button>`;
+            const hwBtn = `<button onclick="toggleCourseHomework('${cid}',${nextVal})" style="font-size:10px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);border-radius:3px;padding:3px 8px;cursor:pointer;color:inherit;font-family:inherit">${label}</button>`;
+            const dlBtn = sess.some(s=>s.homework_enabled) ? `<button onclick="adminBatchDownloadCourse('${cid}')" style="font-size:10px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);border-radius:3px;padding:3px 8px;cursor:pointer;color:inherit;font-family:inherit">📦 批量下载作业</button>` : '';
+            return hwBtn + dlBtn;
           })()}
         </div>
       </div>
@@ -157,6 +159,7 @@ function renderSessionList(filteredCourses){
               <td style="display:flex;gap:4px">
                 <button class="btn btn-outline btn-sm" onclick="openSessionModal('${s.id}')">记录</button>
                 ${s.homework_enabled?`<button class="btn btn-outline btn-sm" onclick="toggleAdminHwPanel('${s.id}')">作业</button>`:''}
+                <button class="btn btn-danger btn-sm" onclick="deleteSession('${s.id}')">删除</button>
               </td>
             </tr>
             <tr id="admin_hw_panel_${s.id}" style="display:none">
@@ -322,6 +325,11 @@ function renderStudentRows(filter='') {
     const att=rec.attendance_status||'';
     // 有上传文件的也算已交作业
     const hw=rec.homework_submitted||!!rec.homework_file_url;
+    // 如果有文件但 homework_submitted 还是 false，自动更新
+    if(!rec.homework_submitted && rec.homework_file_url && rec.id){
+      sb(`/rest/v1/session_records?id=eq.${rec.id}`,'PATCH',{homework_submitted:true}).catch(()=>{});
+      rec.homework_submitted=true;
+    }
     return `<tr id="srow-${s.id}">
       <td style="font-size:12px;font-family:'Noto Serif SC',serif;font-weight:600">${s.name}</td>
       <td>
@@ -357,7 +365,33 @@ function renderStudentRows(filter='') {
     }).join('');
 }
 
-function getPinyinInitials(str) { return ''; }
+function getPinyinInitials(str) {
+  // 常用姓氏拼音首字母映射
+  const map = {
+    '阿':'A','艾':'A','安':'A','昂':'A','敖':'A',
+    '巴':'B','白':'B','柏':'B','班':'B','包':'B','鲍':'B','贝':'B','本':'B','毕':'B','卞':'B','别':'B','薄':'B','卜':'B',
+    '蔡':'C','曹':'C','岑':'C','柴':'C','常':'C','车':'C','陈':'C','程':'C','池':'C','仇':'C','储':'C','楚':'C','褚':'C','崔':'C',
+    '戴':'D','邓':'D','刁':'D','丁':'D','董':'D','窦':'D','杜':'D','段':'D','樊':'F','范':'F','方':'F','房':'F','费':'F','冯':'F','凤':'F','伏':'F','符':'F','傅':'F',
+    '盖':'G','甘':'G','高':'G','葛':'G','耿':'G','弓':'G','宫':'G','巩':'G','贡':'G','苟':'G','古':'G','谷':'G','顾':'G','管':'G','郭':'G','过':'G',
+    '郝':'H','何':'H','和':'H','赫':'H','贺':'H','洪':'H','侯':'H','胡':'H','花':'H','滑':'H','怀':'H','桓':'H','黄':'H','惠':'H','霍':'H',
+    '纪':'J','计':'J','季':'J','贾':'J','简':'J','江':'J','姜':'J','蒋':'J','焦':'J','解':'J','金':'J','靳':'J','经':'J','景':'J','鞠':'J',
+    '康':'K','柯':'K','孔':'K','寇':'K','匡':'K',
+    '郎':'L','劳':'L','乐':'L','雷':'L','冷':'L','黎':'L','李':'L','厉':'L','连':'L','廉':'L','练':'L','梁':'L','林':'L','刘':'L','龙':'L','楼':'L','卢':'L','鲁':'L','陆':'L','路':'L','吕':'L','罗':'L','骆':'L',
+    '马':'M','麦':'M','毛':'M','梅':'M','孟':'M','苗':'M','闵':'M','莫':'M','牟':'M','穆':'M',
+    '倪':'N','聂':'N','宁':'N','牛':'N','钮':'N',
+    '欧':'O',
+    '潘':'P','庞':'P','裴':'P','彭':'P','皮':'P','平':'P','蒲':'P','濮':'P',
+    '戚':'Q','祁':'Q','齐':'Q','钱':'Q','强':'Q','乔':'Q','秦':'Q','邱':'Q','丘':'Q','仇':'Q',
+    '冉':'R','任':'R','荣':'R','阮':'R',
+    '桑':'S','沙':'S','邵':'S','申':'S','沈':'S','盛':'S','施':'S','石':'S','史':'S','舒':'S','宋':'S','苏':'S','孙':'S',
+    '谭':'T','汤':'T','唐':'T','陶':'T','田':'T','仝':'T','涂':'T','屠':'T',
+    '万':'W','汪':'W','王':'W','韦':'W','魏':'W','文':'W','翁':'W','吴':'W','伍':'W',
+    '奚':'X','夏':'X','项':'X','萧':'X','谢':'X','邢':'X','熊':'X','徐':'X','许':'X','宣':'X','薛':'X',
+    '闫':'Y','严':'Y','颜':'Y','杨':'Y','姚':'Y','叶':'Y','尹':'Y','应':'Y','于':'Y','俞':'Y','虞':'Y','余':'Y','禹':'Y','袁':'Y','岳':'Y','云':'Y',
+    '曾':'Z','占':'Z','章':'Z','赵':'Z','甄':'Z','郑':'Z','钟':'Z','周':'Z','朱':'Z','庄':'Z','卓':'Z','宗':'Z','邹':'Z'
+  };
+  return str.split('').map(c => map[c] || '').join('');
+}
 
 function toggleMode(studentId){
   const st=sessionEdits[studentId];
@@ -407,6 +441,58 @@ function toggleHw(studentId){
     btn.style.borderColor=st.homework_submitted?'var(--ok)':'var(--border)';
   }
 }
+
+async function adminBatchDownloadCourse(courseId) {
+  const sessions = cachedSessions.filter(s => s.course_id === courseId && s.homework_enabled);
+  if (!sessions.length) { alert('该课程暂无开通作业的课次'); return; }
+  const sessionIds = sessions.map(s => `"${s.id}"`).join(',');
+  try {
+    const recs = await sb(`/rest/v1/session_records?session_id=in.(${sessionIds})&homework_file_url=not.is.null&select=*&order=session_date.asc,student_name.asc`);
+    if (!recs.length) { alert('暂无提交的作业文件'); return; }
+    // 生成对照表
+    const listLines = ['文件ID → 课次 → 学生姓名'];
+    recs.forEach(r => {
+      const s = sessions.find(x => x.id === r.session_id);
+      const ext = r.homework_file_url.split('.').pop().split('?')[0].slice(0,5);
+      listLines.push(`${r.id}.${ext}  →  ${s ? s.session_date + ' ' + (s.session_title||'') : r.session_id}  →  ${r.student_name}`);
+    });
+    const blob = new Blob([listLines.join('\n')], {type:'text/plain;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `作业对照表.txt`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    await new Promise(res => setTimeout(res, 300));
+    // 下载作业文件
+    for (const r of recs) {
+      try {
+        const res = await fetch(r.homework_file_url);
+        const blob2 = await res.blob();
+        const ext = r.homework_file_url.split('.').pop().split('?')[0].slice(0,5);
+        const a2 = document.createElement('a');
+        a2.href = URL.createObjectURL(blob2);
+        a2.download = `${r.id}.${ext}`;
+        a2.click();
+        URL.revokeObjectURL(a2.href);
+        await new Promise(res => setTimeout(res, 400));
+      } catch(e) {
+        window.open(r.homework_file_url, '_blank');
+        await new Promise(res => setTimeout(res, 400));
+      }
+    }
+  } catch(e) { alert('下载失败：' + e.message); }
+}
+
+
+async function deleteSession(sessionId) {
+  if (!confirm('确定删除这个课次？')) return;
+  try {
+    await sb(`/rest/v1/course_sessions?id=eq.${sessionId}`, 'DELETE');
+    cachedSessions = cachedSessions.filter(s => s.id !== sessionId);
+    renderAttendancePage(document.getElementById('mainContent'));
+  } catch(e) { alert('删除失败：' + e.message); }
+}
+
 
 async function toggleCourseHomework(courseId, enable) {
   try {
