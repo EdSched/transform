@@ -830,8 +830,11 @@ async function submitHomework() {
 
   try {
     // 上传到 Supabase Storage homework bucket
-    const ext = file.name.split('.').pop();
-    const path = `${major||'general'}/${sessionDate}_${name}_${courseName}.${ext}`.replace(/[^a-zA-Z0-9_\-./一-龥]/g, '_');
+    const ext = file.name.split('.').pop().toLowerCase();
+    const ts = Date.now();
+    // 文件名只用安全字符：专业/日期_时间戳.扩展名
+    // 学生姓名通过数据库 session_records 记录，不放在文件名里
+    const path = `${major||'general'}/${sessionDate}_${ts}.${ext}`;
     const fileUrl = await sbUpload('homework', path, file);
 
     // 查找或创建 session_record
