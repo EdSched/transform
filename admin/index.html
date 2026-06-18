@@ -332,6 +332,12 @@
       <div class="form-group" style="margin:0"><label class="form-label">课程回数 *</label><input type="number" id="ac_total" min="1" placeholder="10"></div>
       <div class="form-group" style="margin:0"><label class="form-label">第一回日期 *</label><input type="date" id="ac_first_date"></div>
       <div class="form-group" style="margin:0"><label class="form-label">备注</label><input id="ac_notes"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">布置作业</label>
+        <select id="ac_homework_enabled">
+          <option value="false">不布置作业</option>
+          <option value="true">布置作业（学生可提交）</option>
+        </select>
+      </div>
     </div>
     <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin:14px 0 8px">腾讯会议设置（选填）</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
@@ -422,7 +428,15 @@
         <option value="yes">需要录制</option>
       </select>
     </div>
-    <div class="form-group" style="margin-top:4px"><label class="form-label">备注</label><input id="ec_notes"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px">
+      <div class="form-group" style="margin:0"><label class="form-label">备注</label><input id="ec_notes"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">布置作业</label>
+        <select id="ec_homework_enabled">
+          <option value="false">不布置作业</option>
+          <option value="true">布置作业（学生可提交）</option>
+        </select>
+      </div>
+    </div>
     <div style="background:var(--warn-bg);border:1px solid var(--warn);border-radius:3px;padding:8px 12px;font-size:11px;color:var(--warn);margin-top:12px">
       ⚠ 修改第一回日期或回数后点「重新生成课次」将重新计算所有课次日期（已有出席记录不受影响）
     </div>
