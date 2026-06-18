@@ -2880,8 +2880,10 @@ function renderTeachersPage(mc){
     <!-- 老师列表 -->
     <div id="teacherList"></div>
   </div>
-  <div class="swipe-hint">← 左右滑动切换：编辑表单 / 老师列表 →</div>`;
+  <div class="swipe-hint">← 左右滑动切换：编辑表单 / 老师列表 →</div>
+  <div id="payrollContainer"></div>`;
   renderTeacherList();
+  renderPayrollSection(document.getElementById('payrollContainer'));
 }
 
 function renderHomeworkCoursesChips(selected=[]) {
