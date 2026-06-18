@@ -1050,47 +1050,116 @@ async function hwBatchUpload(input) {
 }
 
 
+let myScheduleView = 'list';
+let myScheduleCalMonth = null;
+
 function renderMySchedule(mc) {
   if (!confirmedSessions.length) { mc.innerHTML = '<div class="empty">暂无已确定的课程<br><span style="font-size:11px">排课确认后这里会显示您的完整课表</span></div>'; return; }
+  if (!myScheduleCalMonth) {
+    const today = new Date().toISOString().slice(0,7);
+    const future = confirmedSessions.filter(s => s.session_date >= today);
+    myScheduleCalMonth = (future.length ? future[0].session_date : confirmedSessions[0].session_date).slice(0,7);
+  }
   const byMonth = {};
   confirmedSessions.forEach(s => { const m = s.session_date.slice(0, 7); if (!byMonth[m]) byMonth[m] = []; byMonth[m].push(s); });
   const monthNames = { '01': '一月', '02': '二月', '03': '三月', '04': '四月', '05': '五月', '06': '六月', '07': '七月', '08': '八月', '09': '九月', '10': '十月', '11': '十一月', '12': '十二月' };
+  const listHtml = Object.entries(byMonth).map(([ym, sessions]) => `
+    <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);padding:10px 0 6px;border-bottom:1px solid var(--border-light);margin-bottom:8px">
+      ${ym.slice(0, 4)}年 ${monthNames[ym.slice(5, 7)] || ym.slice(5, 7) + '月'} · ${sessions.length}课次
+    </div>
+    ${sessions.map(s => renderMySessionRow(s)).join('')}`).join('');
+  const calHtml = renderMyCalendar(myScheduleCalMonth, byMonth, monthNames);
   mc.innerHTML = `
   <div class="page-section">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
       <div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">我的课表</div>
-      <div style="font-size:11px;color:var(--text-3)">共 ${confirmedSessions.length} 课次</div>
-    </div>
-    ${Object.entries(byMonth).map(([ym, sessions]) => `
-      <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);padding:10px 0 6px;border-bottom:1px solid var(--border-light);margin-bottom:8px">
-        ${ym.slice(0, 4)}年 ${monthNames[ym.slice(5, 7)] || ym.slice(5, 7) + '月'} · ${sessions.length}课次
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="font-size:11px;color:var(--text-3)">共 ${confirmedSessions.length} 课次</div>
+        <div style="display:flex;border:1px solid var(--border);border-radius:3px;overflow:hidden">
+          <button onclick="setMyScheduleView('list')" style="padding:4px 10px;font-size:11px;border:none;cursor:pointer;font-family:inherit;background:${myScheduleView==='list'?'var(--accent)':'var(--surface)'};color:${myScheduleView==='list'?'#fff':'var(--text-2)'}">列表</button>
+          <button onclick="setMyScheduleView('calendar')" style="padding:4px 10px;font-size:11px;border:none;border-left:1px solid var(--border);cursor:pointer;font-family:inherit;background:${myScheduleView==='calendar'?'var(--accent)':'var(--surface)'};color:${myScheduleView==='calendar'?'#fff':'var(--text-2)'}">日历</button>
+        </div>
       </div>
-      ${sessions.map(s => {
-        const d = new Date(s.session_date + 'T12:00:00');
-        const dow = DAYS_CN[d.getDay()];
-        const dowColor = DOW_COLOR[d.getDay()] || 'var(--text-2)';
-        return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:flex-start;gap:14px">
-          <div style="text-align:center;min-width:44px">
-            <div style="font-size:17px;font-weight:700;font-family:'DM Mono',monospace;color:${dowColor}">${d.getMonth() + 1}/${d.getDate()}</div>
-            <div style="font-size:10px;font-weight:600;color:${dowColor}">${dow}</div>
-          </div>
-          <div style="flex:1">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap">
-              <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px">${s.course_name}</span>
-              ${s.course_type ? `<span style="font-size:9px;background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 5px">${s.course_type}</span>` : ''}
-              <span style="font-size:9px;color:var(--text-3);background:var(--bg);border-radius:2px;padding:1px 5px">${(()=>{const m2=d.getMonth()+1;return m2<=3?'1月期':m2<=6?'4月期':m2<=9?'7月期':'10月期'})()}</span>
-            </div>
-            <div style="font-size:11px;color:var(--text-3)">第${s.session_number}回 · ${s.time_range || ''} ${s.campus ? '· ' + s.campus : ''}</div>
-            ${s.session_title ? `<div style="font-size:11px;color:var(--text-2);margin-top:3px">📌 ${s.session_title}</div>` : ''}
-            ${s.meeting_url ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border-light)">
-              <a href="${s.meeting_url}" target="_blank" style="font-size:11px;color:var(--accent)">🎥 腾讯会议链接</a>
-              ${s.host_key ? `<span style="font-size:11px;color:var(--text-3);margin-left:10px">主持人密钥：<span style="font-weight:600;font-family:'DM Mono',monospace">${s.host_key}</span></span>` : ''}
-              ${s.needs_recording ? `<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:2px;padding:1px 6px;margin-left:8px">📹 需要录制</span>` : ''}
-            </div>` : ''}
-          </div>
-        </div>`;
-      }).join('')}`).join('')}
+    </div>
+    <div id="myScheduleBody">
+      ${myScheduleView === 'list' ? listHtml : calHtml}
+    </div>
   </div>`;
+}
+
+function setMyScheduleView(v) {
+  myScheduleView = v;
+  renderMySchedule(document.getElementById('mainContent'));
+}
+
+function shiftMyCalMonth(delta) {
+  const [y, m] = myScheduleCalMonth.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  myScheduleCalMonth = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  renderMySchedule(document.getElementById('mainContent'));
+}
+
+function renderMySessionRow(s) {
+  const d = new Date(s.session_date + 'T12:00:00');
+  const dow = DAYS_CN[d.getDay()];
+  const dowColor = DOW_COLOR[d.getDay()] || 'var(--text-2)';
+  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:flex-start;gap:14px">
+    <div style="text-align:center;min-width:44px">
+      <div style="font-size:17px;font-weight:700;font-family:'DM Mono',monospace;color:${dowColor}">${d.getMonth() + 1}/${d.getDate()}</div>
+      <div style="font-size:10px;font-weight:600;color:${dowColor}">${dow}</div>
+    </div>
+    <div style="flex:1">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap">
+        <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px">${s.course_name}</span>
+        ${s.course_type ? `<span style="font-size:9px;background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 5px">${s.course_type}</span>` : ''}
+        <span style="font-size:9px;color:var(--text-3);background:var(--bg);border-radius:2px;padding:1px 5px">${(()=>{const m2=d.getMonth()+1;return m2<=3?'1月期':m2<=6?'4月期':m2<=9?'7月期':'10月期'})()}</span>
+      </div>
+      <div style="font-size:11px;color:var(--text-3)">第${s.session_number}回 · ${s.time_range || ''} ${s.campus ? '· ' + s.campus : ''}</div>
+      ${s.session_title ? `<div style="font-size:11px;color:var(--text-2);margin-top:3px">📌 ${s.session_title}</div>` : ''}
+      ${s.meeting_url ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border-light)">
+        <a href="${s.meeting_url}" target="_blank" style="font-size:11px;color:var(--accent)">🎥 腾讯会议链接</a>
+        ${s.host_key ? `<span style="font-size:11px;color:var(--text-3);margin-left:10px">主持人密钥：<span style="font-weight:600;font-family:'DM Mono',monospace">${s.host_key}</span></span>` : ''}
+        ${s.needs_recording ? `<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:2px;padding:1px 6px;margin-left:8px">📹 需要录制</span>` : ''}
+      </div>` : ''}
+    </div>
+  </div>`;
+}
+
+function renderMyCalendar(ym, byMonth, monthNames) {
+  const [y, m] = ym.split('-').map(Number);
+  const sessionsThisMonth = byMonth[ym] || [];
+  const byDate = {};
+  sessionsThisMonth.forEach(s => { byDate[s.session_date] = byDate[s.session_date] || []; byDate[s.session_date].push(s); });
+  const firstDay = new Date(y, m - 1, 1).getDay();
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const today = new Date().toISOString().slice(0, 10);
+  const dayLabels = ['日','一','二','三','四','五','六'];
+  let cells = '';
+  for (let i = 0; i < firstDay; i++) cells += `<div></div>`;
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = ym + '-' + String(day).padStart(2, '0');
+    const sessions = byDate[dateStr] || [];
+    const isToday = dateStr === today;
+    cells += `<div style="min-height:64px;border:1px solid var(--border-light);border-radius:3px;padding:4px 5px;background:${sessions.length?'var(--surface)':'transparent'}">
+      <div style="font-size:11px;font-weight:${isToday?700:400};color:${isToday?'var(--accent)':sessions.length?'var(--text)':'var(--text-3)'};margin-bottom:3px">${day}</div>
+      ${sessions.map(s => `<div style="font-size:9px;background:var(--accent);color:#fff;border-radius:2px;padding:1px 4px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${s.course_name} 第${s.session_number}回 ${s.time_range||''}">${s.course_name}</div>`).join('')}
+    </div>`;
+  }
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <button onclick="shiftMyCalMonth(-1)" style="background:none;border:1px solid var(--border);border-radius:3px;padding:4px 10px;cursor:pointer;font-size:13px">‹</button>
+      <div style="font-size:13px;font-weight:600">${y}年 ${monthNames[String(m).padStart(2,'0')] || m+'月'}</div>
+      <button onclick="shiftMyCalMonth(1)" style="background:none;border:1px solid var(--border);border-radius:3px;padding:4px 10px;cursor:pointer;font-size:13px">›</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:10px">
+      ${dayLabels.map(l => `<div style="font-size:10px;text-align:center;color:var(--text-3);padding-bottom:4px">${l}</div>`).join('')}
+      ${cells}
+    </div>
+    ${sessionsThisMonth.length ? `
+      <div style="font-size:10px;color:var(--text-3);margin:10px 0 6px;border-top:1px solid var(--border-light);padding-top:10px">本月课次详情</div>
+      ${sessionsThisMonth.map(s => renderMySessionRow(s)).join('')}
+    ` : `<div style="font-size:12px;color:var(--text-3);text-align:center;padding:20px 0">本月无课</div>`}
+  `;
 }
 
 init();
