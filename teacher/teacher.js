@@ -647,7 +647,7 @@ async function deleteTeacherSlot(id) {
 
 const slotState = {};
 function getState(slotId) {
-  if (!slotState[slotId]) slotState[slotId] = { available: false, time: '', titles: new Set() };
+  if (!slotState[slotId]) slotState[slotId] = { available: false, time: '', dow: '', titles: new Set() };
   return slotState[slotId];
 }
 
@@ -689,17 +689,23 @@ function renderSlotCard(s) {
   const dow = DAYS_CN[d.getDay()];
   const dowColor = DOW_COLOR[d.getDay()] || 'var(--text-2)';
   const hasTwo = !!(s.time_range && s.time_range_2);
+  const hasTwoDow = !!(s.weekday_2);
   const titles = s.session_titles || [];
   return `<div class="date-card${st.available ? ' selected' : ''}" id="card-${s.id}">
     <div class="date-head" onclick="toggleAvail('${s.id}')">
       <div class="date-left">
-        <div><span class="date-num">${d.getMonth() + 1}/${d.getDate()}</span><span class="date-dow" style="color:${dowColor}">${dow}</span></div>
+        <div><span class="date-num">${d.getMonth() + 1}/${d.getDate()}</span><span class="date-dow" style="color:${dowColor}">${dow}</span>${hasTwoDow ? `<span class="date-dow" style="color:var(--text-3);font-size:10px;margin-left:4px">/ ${s.weekday_2}</span>` : ''}</div>
         <div class="date-meta">${s.time_range || ''}${hasTwo ? ` / ${s.time_range_2}` : ''} · 第${s.session_number}回</div>
       </div>
       <div class="check-circle${st.available ? ' checked' : ''}">✓</div>
     </div>
-    ${st.available && (hasTwo || titles.length) ? `
+    ${st.available && (hasTwo || hasTwoDow || titles.length) ? `
     <div class="date-body">
+      ${hasTwoDow ? `<div class="sub-label">周几偏好</div><div class="chip-row">
+        <div class="chip${st.dow === dow ? ' active' : ''}" onclick="event.stopPropagation();setDow('${s.id}','${dow}')">${dow}</div>
+        <div class="chip${st.dow === s.weekday_2 ? ' active' : ''}" onclick="event.stopPropagation();setDow('${s.id}','${s.weekday_2}')">${s.weekday_2}</div>
+        <div class="chip ok-active${st.dow === 'both' ? ' active' : ''}" onclick="event.stopPropagation();setDow('${s.id}','both')">两天都行</div>
+      </div>` : ''}
       ${hasTwo ? `<div class="sub-label">时间偏好</div><div class="chip-row">
         <div class="chip${st.time === s.time_range ? ' active' : ''}" onclick="event.stopPropagation();setTime('${s.id}','${s.time_range}')">${s.time_range}</div>
         <div class="chip${st.time === s.time_range_2 ? ' active' : ''}" onclick="event.stopPropagation();setTime('${s.id}','${s.time_range_2}')">${s.time_range_2}</div>
@@ -714,6 +720,7 @@ function renderSlotCard(s) {
 
 function toggleAvail(slotId) { const st = getState(slotId); st.available = !st.available; if (!st.available) { st.time = ''; st.titles.clear(); } rerenderCard(slotId); updateHint(); }
 function setTime(slotId, val) { const st = getState(slotId); st.time = st.time === val ? '' : val; rerenderCard(slotId); }
+function setDow(slotId, val) { const st = getState(slotId); st.dow = st.dow === val ? '' : val; rerenderCard(slotId); }
 function toggleTitle(slotId, title) { const st = getState(slotId); st.titles.has(title) ? st.titles.delete(title) : st.titles.add(title); rerenderCard(slotId); }
 function rerenderCard(slotId) { const s = slots.find(x => x.id === slotId); if (!s) return; const el = document.getElementById(`card-${slotId}`); if (el) el.outerHTML = renderSlotCard(s); }
 function updateHint() { const avail = slots.filter(s => getState(s.id).available).length; const hint = document.getElementById('schedHint'); if (hint) hint.textContent = `已选 ${avail} / ${slots.length} 个课次`; }
@@ -728,7 +735,8 @@ async function submitAvailability() {
     const records = slots.map(s => {
       const st = getState(s.id);
       const timeStr = st.time === 'both' ? `${s.time_range} / ${s.time_range_2}` : st.time || '';
-      return { id: `av-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, slot_id: s.id, teacher_name: teacherName, available: st.available, available_time: st.available && timeStr ? timeStr : null, preferred_titles: st.available && st.titles.size ? [...st.titles] : null };
+      const dowStr = st.dow === 'both' ? `${DAYS_CN[d.getDay()]} / ${s.weekday_2}` : st.dow || '';
+      return { id: `av-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, slot_id: s.id, teacher_name: teacherName, available: st.available, available_time: st.available && timeStr ? timeStr : null, preferred_dow: st.available && dowStr ? dowStr : null, preferred_titles: st.available && st.titles.size ? [...st.titles] : null };
     });
     await sb('/rest/v1/teacher_availability', 'POST', records);
     existingAvail = records;
