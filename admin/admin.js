@@ -2813,11 +2813,8 @@ function renderTeachersPage(mc){
 function renderHomeworkCoursesChips(selected=[]) {
   const wrap = document.getElementById('perm_homework_courses');
   if (!wrap) return;
-  // 获取所有有 homework_enabled 的课程
-  const courses = [...new Set(cachedSessions
-    .filter(s => s.homework_enabled)
-    .map(s => s.course_name)
-  )].sort();
+  // cachedSessions 已经是 homework_enabled=true 过滤过的，直接用
+  const courses = [...new Set(cachedSessions.map(s => s.course_name))].sort();
   if (!courses.length) {
     wrap.innerHTML = '<span style="font-size:10px;color:var(--text-muted)">暂无开通作业的课程</span>';
     return;
