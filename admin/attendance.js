@@ -154,13 +154,104 @@ function renderSessionList(filteredCourses){
                 </button>
               </td>
               <td><span style="font-size:10px;padding:2px 7px;border-radius:2px;background:${isDone?'var(--ok-bg)':'var(--bg)'};color:${isDone?'var(--ok)':'var(--text-3)'};border:1px solid ${isDone?'var(--ok)':'var(--border)'}">${isDone?'✓ 完成':'待记录'}</span></td>
-              <td><button class="btn btn-outline btn-sm" onclick="openSessionModal('${s.id}')">记录</button></td>
+              <td style="display:flex;gap:4px">
+                <button class="btn btn-outline btn-sm" onclick="openSessionModal('${s.id}')">记录</button>
+                ${s.homework_enabled?`<button class="btn btn-outline btn-sm" onclick="toggleAdminHwPanel('${s.id}')">作业</button>`:''}
+              </td>
+            </tr>
+            <tr id="admin_hw_panel_${s.id}" style="display:none">
+              <td colspan="9" style="padding:0;background:var(--bg)">
+                <div id="admin_hw_content_${s.id}" style="padding:10px 14px">加载中…</div>
+              </td>
             </tr>`;
           }).join('')}
         </tbody>
       </table></div>
     </div>`;
   }).join('');
+}
+
+async function toggleAdminHwPanel(sessionId) {
+  const row = document.getElementById(`admin_hw_panel_${sessionId}`);
+  if (!row) return;
+  const isOpen = row.style.display !== 'none';
+  row.style.display = isOpen ? 'none' : 'table-row';
+  if (!isOpen) await loadAdminHwPanel(sessionId);
+}
+
+async function loadAdminHwPanel(sessionId) {
+  const wrap = document.getElementById(`admin_hw_content_${sessionId}`);
+  if (!wrap) return;
+  try {
+    const recs = await sb(`/rest/v1/session_records?session_id=eq.${sessionId}&select=*&order=student_name.asc`);
+    const submitted = recs.filter(r => r.homework_file_url);
+    if (!submitted.length) {
+      wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:4px 0">暂无提交作业</div>';
+      return;
+    }
+    window._adminHwRecs = window._adminHwRecs || {};
+    window._adminHwRecs[sessionId] = submitted;
+
+    wrap.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--text-3)">${submitted.length}/${recs.length} 份已提交</span>
+        <button onclick="adminBatchDownloadHw('${sessionId}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:3px 8px;cursor:pointer;font-family:inherit">📦 批量下载（附对照表）</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px">
+        ${recs.map(r => `
+          <div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--border-light)">
+            <span style="font-size:12px;font-weight:600;min-width:60px">${r.student_name}</span>
+            ${r.homework_file_url
+              ? `<a href="${r.homework_file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 查看作业</a>`
+              : '<span style="font-size:11px;color:var(--text-muted)">未提交</span>'}
+            ${r.teacher_file_url
+              ? `<a href="${r.teacher_file_url}" target="_blank" style="font-size:11px;color:var(--ok);margin-left:6px">✓ 批改文件</a>`
+              : ''}
+            ${r.feedback_knowledge||r.feedback_suggestions
+              ? `<span style="font-size:10px;color:var(--text-2);margin-left:6px" title="${[r.feedback_knowledge,r.feedback_attitude,r.feedback_suggestions].filter(Boolean).join(' | ')}">💬 ${(r.feedback_knowledge||r.feedback_suggestions||'').slice(0,25)}…</span>`
+              : ''}
+          </div>`).join('')}
+      </div>`;
+  } catch(e) {
+    wrap.innerHTML = `<div style="font-size:11px;color:var(--danger)">加载失败：${e.message}</div>`;
+  }
+}
+
+async function adminBatchDownloadHw(sessionId) {
+  const recs = (window._adminHwRecs || {})[sessionId] || [];
+  if (!recs.length) { alert('暂无可下载的作业'); return; }
+
+  // 先下载对照表
+  const listContent = ['文件ID → 学生姓名 对照表', '='.repeat(40)].join('\n') + '\n' +
+    recs.map(r => {
+      const ext = r.homework_file_url.split('.').pop().split('?')[0].slice(0,5);
+      return `${r.id}.${ext}  →  ${r.student_name}`;
+    }).join('\n');
+  const listBlob = new Blob([listContent], { type: 'text/plain;charset=utf-8' });
+  const listA = document.createElement('a');
+  listA.href = URL.createObjectURL(listBlob);
+  listA.download = `作业对照表_${sessionId}.txt`;
+  listA.click();
+  URL.revokeObjectURL(listA.href);
+  await new Promise(res => setTimeout(res, 300));
+
+  // 下载作业文件
+  for (const r of recs) {
+    try {
+      const res = await fetch(r.homework_file_url);
+      const blob = await res.blob();
+      const ext = r.homework_file_url.split('.').pop().split('?')[0].slice(0,5);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${r.id}.${ext}`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      await new Promise(res => setTimeout(res, 400));
+    } catch(e) {
+      window.open(r.homework_file_url, '_blank');
+      await new Promise(res => setTimeout(res, 400));
+    }
+  }
 }
 
 function setAttPeriod(p){
@@ -202,18 +293,35 @@ async function openSessionModal(sessionId){
   }
 
   sessionEdits={};
+  _currentSessionStudents = students;
+  _currentSessionRecords = existing;
+  const searchInput = document.getElementById('sessionStudentSearch');
+  if (searchInput) searchInput.value = '';
+  renderStudentRows('');
+  document.getElementById('sessionModal').classList.add('open');
+}
+
+let _currentSessionStudents = [];
+let _currentSessionRecords = [];
+
+function renderStudentRows(filter='') {
+  const students = _currentSessionStudents;
+  const existing = _currentSessionRecords;
+  const filtered = filter
+    ? students.filter(s => s.name.includes(filter))
+    : students;
   const tbody=document.getElementById('sessionRecordBody');
-  tbody.innerHTML=students.map(s=>{
+  tbody.innerHTML=filtered.map(s=>{
     const rec=existing.find(r=>r.student_id===s.id)||{};
-    // Use saved default_mode, fallback to student's default_mode field
     const defaultMode=rec.student_mode||s.default_mode||'offline';
     sessionEdits[s.id]={
       student_mode:defaultMode,
       attendance_status:rec.attendance_status||'',
-      homework_submitted:rec.homework_submitted||false,
+      homework_submitted:rec.homework_submitted||!!rec.homework_file_url,
     };
     const att=rec.attendance_status||'';
-    const hw=rec.homework_submitted||false;
+    // 有上传文件的也算已交作业
+    const hw=rec.homework_submitted||!!rec.homework_file_url;
     return `<tr id="srow-${s.id}">
       <td style="font-size:12px;font-family:'Noto Serif SC',serif;font-weight:600">${s.name}</td>
       <td>
@@ -246,9 +354,10 @@ async function openSessionModal(sessionId){
         </button>
       </td>
     </tr>`;
-  }).join('');
-  document.getElementById('sessionModal').classList.add('open');
+    }).join('');
 }
+
+function getPinyinInitials(str) { return ''; }
 
 function toggleMode(studentId){
   const st=sessionEdits[studentId];
