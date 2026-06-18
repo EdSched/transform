@@ -2623,10 +2623,19 @@ function renderSummaryBody(slots,courseName){
           :availOnDate;
         return `<tr style="${isConfirmed?'background:var(--ok-bg)':''}">
           <td style="font-size:11px;color:var(--text-3)">${idx+1}</td>
-          <td style="font-size:12px;font-weight:600">
-            ${f.short} <span style="color:${f.dowColor};font-size:10px">${f.dow}</span>
-            ${availOnDate.some(t=>t.date&&t.date!==d.date)?`<div style="font-size:10px;color:var(--accent);margin-top:2px">${[...new Set(availOnDate.filter(t=>t.date&&t.date!==d.date).map(t=>t.date))].map(dt=>{const dd=new Date(dt+'T12:00:00');return (dd.getMonth()+1)+'/'+(dd.getDate())+' '+DAYS_CN[dd.getDay()]}).join(' / ')}</div>`:''}
-          </td>
+          ${(() => {
+            // 取老师偏好日期中出现最多的那个，否则用原始日期
+            const prefDates = availOnDate.filter(t=>t.date).map(t=>t.date);
+            const preferredDate = prefDates.length ? prefDates.sort((a,b)=>prefDates.filter(x=>x===b).length-prefDates.filter(x=>x===a).length)[0] : null;
+            const showDate = preferredDate || d.date;
+            const sd = new Date(showDate+'T12:00:00');
+            const sdFmt = fmtSessionDate(showDate);
+            const isChanged = showDate !== d.date;
+            return `<td style="font-size:12px;font-weight:600;color:${isChanged?'var(--accent)':'inherit'}">
+              ${sdFmt.short} <span style="color:${sdFmt.dowColor};font-size:10px">${sdFmt.dow}</span>
+              ${isChanged?`<div style="font-size:10px;color:var(--text-muted);text-decoration:line-through">${f.short} ${f.dow}</div>`:''}
+            </td>`;
+          })()}
           <td style="font-size:11px">${d.time_range||''}</td>
           <td>
             ${availOnDate.length
@@ -2742,8 +2751,16 @@ async function confirmArrangement(){
     for(const [date,{title,teacher}] of entries){
       const session=cachedSessions.find(s=>s.course_name===courseName&&s.session_date===date);
       if(session){
-        await sb(`/rest/v1/course_sessions?id=eq.${session.id}`,'PATCH',{session_title:title,session_teacher:teacher});
+        // 取老师偏好日期（如果有）
+        const allSlotIds=cachedScheduleSlots.filter(s=>s.course_name===courseName&&s.session_date===date).map(s=>s.id);
+        const prefDates=cachedTeacherAvail.filter(a=>allSlotIds.includes(a.slot_id)&&a.available&&a.preferred_date).map(a=>a.preferred_date);
+        const preferredDate=prefDates.length ? prefDates.sort((a,b)=>prefDates.filter(x=>x===b).length-prefDates.filter(x=>x===a).length)[0] : null;
+        const finalDate=preferredDate||date;
+        const patchData={session_title:title,session_teacher:teacher};
+        if(preferredDate&&preferredDate!==date) patchData.session_date=preferredDate;
+        await sb(`/rest/v1/course_sessions?id=eq.${session.id}`,'PATCH',patchData);
         session.session_title=title;session.session_teacher=teacher;
+        if(patchData.session_date) session.session_date=patchData.session_date;
         arrangementDraft[date].session_id=session.id;
         arrangementDraft[date].confirmed=true;
         synced++;
