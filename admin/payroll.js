@@ -64,15 +64,11 @@ function bookingTimes(b) {
 }
 
 // ── 生成课程行 ──
-function buildCourseRows(sessions, teacherName, courses) {
-  // courses 用于 time_range fallback（旧课次可能没有该字段）
-  const courseMap = {};
-  (courses || []).forEach(c => { courseMap[c.id] = c; });
+function buildCourseRows(sessions, teacherName) {
   return sessions
     .filter(s => (s.teacher === teacherName || s.session_teacher === teacherName))
     .map(s => {
-      const tr = s.time_range || courseMap[s.course_id]?.time_range || '';
-      const { start, end, hours } = parseTimeRange(s.session_date, tr);
+      const { start, end, hours } = parseTimeRange(s.session_date, s.time_range);
       return {
         type: 'course',
         source_id: s.id,
@@ -80,8 +76,8 @@ function buildCourseRows(sessions, teacherName, courses) {
         开始时间: start,
         结束时间: end,
         时长: hours,
-        工作内容: payrollWorkType(s.course_type || courseMap[s.course_id]?.course_type),
-        工作地点: payrollLocation(s.delivery || courseMap[s.course_id]?.delivery, s.campus || courseMap[s.course_id]?.campus),
+        工作内容: payrollWorkType(s.course_type),
+        工作地点: payrollLocation(s.delivery, s.campus),
         备注: `${s.course_name} 第${s.session_number}回`,
         _date: s.session_date
       };
@@ -188,14 +184,13 @@ async function runPayroll() {
   res.innerHTML = '<div style="font-size:12px;color:var(--text-3)">加载中…</div>';
 
   try {
-    const [sessions, bookings, slots, courses] = await Promise.all([
+    const [sessions, bookings, slots] = await Promise.all([
       sb(`/rest/v1/course_sessions?select=*&session_date=gte.${start}&session_date=lte.${end}&order=session_date.asc`),
       sb(`/rest/v1/bookings?select=*&slot_date=gte.${start}&slot_date=lte.${end}&order=slot_date.asc`),
-      sb(`/rest/v1/slots?select=*&date=gte.${start}&date=lte.${end}`),
-      sb(`/rest/v1/courses?select=id,time_range,course_type,delivery,campus`)
+      sb(`/rest/v1/slots?select=*&date=gte.${start}&date=lte.${end}`)
     ]);
 
-    const courseRows = buildCourseRows(sessions, teacherName, courses);
+    const courseRows = buildCourseRows(sessions, teacherName);
     const bookingRows = buildBookingRows(bookings, slots, teacherName);
     payrollRows = [...courseRows, ...bookingRows].sort((a, b) => a._date.localeCompare(b._date));
 
@@ -305,6 +300,7 @@ async function renderWorkRecordsAdmin(container) {
         <div style="font-size:11px;font-weight:600;color:var(--text);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px;display:flex;align-items:center;gap:8px">
           ${name}
           ${pending ? `<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:2px;padding:1px 6px">${pending} 待审核</span>` : ''}
+          ${pending ? `<button class="btn btn-sm" style="background:#ddf0e0;color:#1a4a28;border:1px solid #b0d8b8" onclick="approveAllWorkRecords('${name}')">全部通过</button>` : ''}
           <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="exportWorkRecordsExcel('${name}')">↓ 导出</button>
         </div>
         ${rows.map(r => renderWorkRecordRow(r)).join('')}
@@ -385,6 +381,14 @@ async function saveWorkRecord(id) {
 async function approveWorkRecord(id) {
   try {
     await sb(`/rest/v1/work_records?id=eq.${id}`, 'PATCH', { status: 'approved', updated_at: new Date().toISOString() });
+    renderWorkRecordsAdmin(document.getElementById('pr_records'));
+  } catch(e) { alert('操作失败：' + e.message); }
+}
+
+async function approveAllWorkRecords(teacherName) {
+  if (!confirm(`确定将「${teacherName}」所有待审核记录全部通过？`)) return;
+  try {
+    await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&status=eq.pending`, 'PATCH', { status: 'approved', updated_at: new Date().toISOString() });
     renderWorkRecordsAdmin(document.getElementById('pr_records'));
   } catch(e) { alert('操作失败：' + e.message); }
 }
