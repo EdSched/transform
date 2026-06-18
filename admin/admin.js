@@ -2404,6 +2404,7 @@ function openCreateSlots(){
   csTypeFilter='全部';
   csSelectedTitles=new Set();
   document.getElementById('cs_time_range_2').value='';
+  document.getElementById('cs_weekday_2').value='';
   // init type chips
   document.querySelectorAll('#cs_type_chips .filter-chip').forEach((el,i)=>{
     el.classList.toggle('active',i===0);
@@ -2523,6 +2524,7 @@ async function confirmCreateSlots(){
   const checkedTeachers=[...document.querySelectorAll('#cs_teachers_list input[type=checkbox]:checked')];
   if(!checkedTeachers.length){alert('请选择至少一位候选老师');return}
   const timeRange2=document.getElementById('cs_time_range_2').value.trim();
+  const weekday2=document.getElementById('cs_weekday_2')?.value||'';
   const sessions=cachedSessions.filter(s=>s.course_id===courseId).sort((a,b)=>a.session_date.localeCompare(b.session_date));
   const existingIds=new Set(cachedScheduleSlots.map(s=>s.session_id));
   const newSessions=sessions.filter(s=>!existingIds.has(s.id));
@@ -2543,6 +2545,7 @@ async function confirmCreateSlots(){
         session_date:s.session_date,session_number:s.session_number,
         time_range:s.time_range||course.time_range||'',
         time_range_2:timeRange2||null,
+        weekday_2:weekday2||null,
         teacher_names:[teacherName],
         session_titles:allTitles.length?allTitles:null,
         status:'pending'
