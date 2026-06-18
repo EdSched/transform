@@ -295,15 +295,23 @@ async function renderWorkRecordsAdmin(container) {
     <div style="font-size:12px;font-weight:600;color:var(--text-2);margin:20px 0 12px;letter-spacing:.05em;text-transform:uppercase">工作记录审核</div>
     ${Object.entries(byTeacher).map(([name, rows]) => {
       const pending = rows.filter(r => r.status === 'pending').length;
+      const approved = rows.filter(r => r.status === 'approved').length;
+      const safeId = name.replace(/[^a-zA-Z0-9]/g, '_');
       return `
       <div style="margin-bottom:16px">
-        <div style="font-size:11px;font-weight:600;color:var(--text);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px;display:flex;align-items:center;gap:8px">
-          ${name}
+        <div style="font-size:11px;font-weight:600;color:var(--text);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="cursor:pointer" onclick="toggleWrGroup('${safeId}')">▾ ${name}</span>
           ${pending ? `<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:2px;padding:1px 6px">${pending} 待审核</span>` : ''}
           ${pending ? `<button class="btn btn-sm" style="background:#ddf0e0;color:#1a4a28;border:1px solid #b0d8b8" onclick="approveAllWorkRecords('${name}')">全部通过</button>` : ''}
-          <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="exportWorkRecordsExcel('${name}')">↓ 导出</button>
+          <div style="display:flex;gap:4px;margin-left:auto">
+            <button class="btn btn-outline btn-sm" onclick="exportWorkRecordsExcel('${name}')">↓ 导出</button>
+            ${approved ? `<button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="deleteApprovedWorkRecords('${name}')">删除已通过</button>` : ''}
+            <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="deleteAllWorkRecords('${name}')">全部删除</button>
+          </div>
         </div>
-        ${rows.map(r => renderWorkRecordRow(r)).join('')}
+        <div id="wr_group_${safeId}">
+          ${rows.map(r => renderWorkRecordRow(r)).join('')}
+        </div>
       </div>`;
     }).join('')}`;
   } catch(e) {
@@ -391,6 +399,35 @@ async function approveAllWorkRecords(teacherName) {
     await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&status=eq.pending`, 'PATCH', { status: 'approved', updated_at: new Date().toISOString() });
     renderWorkRecordsAdmin(document.getElementById('pr_records'));
   } catch(e) { alert('操作失败：' + e.message); }
+}
+
+function toggleWrGroup(safeId) {
+  const el = document.getElementById(`wr_group_${safeId}`);
+  if (!el) return;
+  const arrow = el.previousElementSibling?.querySelector('span[style*="cursor"]');
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+    if (arrow) arrow.textContent = arrow.textContent.replace('▸', '▾');
+  } else {
+    el.style.display = 'none';
+    if (arrow) arrow.textContent = arrow.textContent.replace('▾', '▸');
+  }
+}
+
+async function deleteApprovedWorkRecords(teacherName) {
+  if (!confirm(`确定删除「${teacherName}」所有已通过的工作记录？`)) return;
+  try {
+    await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&status=eq.approved`, 'DELETE');
+    renderWorkRecordsAdmin(document.getElementById('pr_records'));
+  } catch(e) { alert('删除失败：' + e.message); }
+}
+
+async function deleteAllWorkRecords(teacherName) {
+  if (!confirm(`确定删除「${teacherName}」全部工作记录（包括待审核和已通过）？`)) return;
+  try {
+    await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}`, 'DELETE');
+    renderWorkRecordsAdmin(document.getElementById('pr_records'));
+  } catch(e) { alert('删除失败：' + e.message); }
 }
 
 async function rejectWorkRecord(id) {
