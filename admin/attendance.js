@@ -107,9 +107,18 @@ function renderSessionList(filteredCourses){
     ).length;
 
     return `<div style="margin-bottom:20px;background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
-      <div style="background:${color.bg};color:${color.text};padding:8px 14px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between">
+      <div style="background:${color.bg};color:${color.text};padding:8px 14px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
         <span>${course.name} <span style="font-size:10px;font-weight:400;opacity:.7">${course.time_range||''}</span></span>
-        <span style="font-size:10px;opacity:.7">${sess.length}回 · ${totalStudents}人</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:10px;opacity:.7">${sess.length}回 · ${totalStudents}人</span>
+          ${(() => {
+            const allEnabled = sess.every(s => s.homework_enabled);
+            const noneEnabled = sess.every(s => !s.homework_enabled);
+            const label = allEnabled ? '📝 作业已全开' : noneEnabled ? '📝 开通作业' : '📝 部分开通';
+            const nextVal = !allEnabled;
+            return `<button onclick="toggleCourseHomework('${cid}',${nextVal})" style="font-size:10px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);border-radius:3px;padding:3px 8px;cursor:pointer;color:inherit;font-family:inherit">${label}</button>`;
+          })()}
+        </div>
       </div>
       <div class="table-scroll"><table class="student-table" style="margin:0;min-width:700px">
         <thead><tr>
@@ -289,6 +298,19 @@ function toggleHw(studentId){
     btn.style.borderColor=st.homework_submitted?'var(--ok)':'var(--border)';
   }
 }
+
+async function toggleCourseHomework(courseId, enable) {
+  try {
+    // 해당 코스의 모든 세션 일괄 업데이트
+    await sb(`/rest/v1/course_sessions?course_id=eq.${courseId}`, 'PATCH', { homework_enabled: enable });
+    // 课程表也同步
+    await sb(`/rest/v1/courses?id=eq.${courseId}`, 'PATCH', { homework_enabled: enable }).catch(() => {});
+    // 로컬 캐시 업데이트
+    cachedSessions.forEach(s => { if (s.course_id === courseId) s.homework_enabled = enable; });
+    renderAttendancePage(document.getElementById('mainContent'));
+  } catch(e) { alert('操作失败：' + e.message); }
+}
+
 
 async function toggleHomeworkEnabled(sessionId, current) {
   const newVal = !current;
