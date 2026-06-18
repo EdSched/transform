@@ -173,7 +173,7 @@ function renderBookingPage(mc){
   </div>`;
 }
 function renderBookingCard(b){
-  const hasRecord=b.type==='daily'&&b.daily_record;
+  const hasRecord=b.daily_record&&Object.values(b.daily_record).some(v=>v);
   return `<div class="booking-card status-${b.status}">
     <div class="booking-header">
       <div>
@@ -215,7 +215,7 @@ function renderBookingCard(b){
     <div class="booking-actions">
       ${b.status==='pending'?`<button class="btn btn-success btn-sm" onclick="confirmBooking('${b.id}')">✓ 确认</button>`:''}
       <button class="btn btn-outline btn-sm" onclick="openEdit('${b.id}')">编辑</button>
-      ${b.status==='confirmed'&&b.type==='daily'?`<button class="btn btn-sm" style="background:var(--accent-light);color:var(--accent);border-color:var(--border)" onclick="openRecord('${b.id}')">${hasRecord?'查看记录':'填写记录'}</button>`:''}
+      ${b.status==='confirmed'?`<button class="btn btn-sm" style="background:var(--accent-light);color:var(--accent);border-color:var(--border)" onclick="openRecord('${b.id}')">${hasRecord?'查看记录':'填写记录'}</button>`:''}
       ${b.status!=='cancelled'?`<button class="btn btn-danger btn-sm" onclick="cancelBooking('${b.id}')">取消预约</button>`:''}
     </div>
   </div>`;
@@ -978,6 +978,48 @@ async function syncProgressFromBooking(studentId, bookingId){
 }
 
 
+function exportCoursesExcel(){
+  if(!cachedCourses.length){alert('暂无课程数据');return;}
+  // 按课程+课次展开
+  const rows=[];
+  cachedCourses.forEach(c=>{
+    const sessions=cachedSessions.filter(s=>s.course_id===c.id).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+    if(!sessions.length){
+      rows.push({
+        课程名称:c.name||'',专业:Array.isArray(c.major)?c.major.join('/'):c.major||'',
+        期数:c.period||'',课程属性:c.course_type||'',主讲老师:c.teacher||'',
+        校区:c.campus||'',授课形式:c.delivery||'',上课时间:c.time_range||'',
+        第几回:'',日期:'',单回名称:'',任课老师:'',是否发布:'',
+        腾讯会议:c.meeting_url||'',主持人密钥:c.host_key||'',
+        布置作业:c.homework_enabled?'是':'否',备注:c.notes||''
+      });
+    } else {
+      sessions.forEach((s,i)=>{
+        rows.push({
+          课程名称:i===0?c.name:'',专业:i===0?(Array.isArray(c.major)?c.major.join('/'):c.major||''):'',
+          期数:i===0?c.period||'':'',课程属性:i===0?c.course_type||'':'',主讲老师:i===0?c.teacher||'':'',
+          校区:i===0?c.campus||'':'',授课形式:i===0?c.delivery||'':'',上课时间:i===0?c.time_range||'':'',
+          第几回:`第${s.session_number}回`,日期:s.session_date||'',
+          单回名称:s.session_title||'',任课老师:s.session_teacher||s.teacher||'',
+          是否发布:s.confirmed?'已发布':'未发布',
+          腾讯会议:i===0?c.meeting_url||'':'',主持人密钥:i===0?c.host_key||'':'',
+          布置作业:i===0?c.homework_enabled?'是':'否':'',备注:i===0?c.notes||'':''
+        });
+      });
+    }
+  });
+  // 生成 CSV
+  const headers=Object.keys(rows[0]);
+  const csv=[headers.join(','),...rows.map(r=>headers.map(h=>`"${(r[h]||'').toString().replace(/"/g,'""')}"`).join(','))].join('\n');
+  const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`课程安排_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+
 function exportStudents(){
   if(!cachedStudents.length){alert('暂无学生数据');return}
   const rows=cachedStudents.map(s=>({'姓名':s.name,'专业':MAJORS[s.major]||s.major||'','等级':s.level||'','属性':s.student_type||'','来源':s.source||'','课程属性':s.course_type||'','日语成绩':s.japanese_score||'','英语成绩':s.english_score||'','出身大学':s.university||'','学部专业':s.faculty||'','GPA':s.gpa||'','毕业时间':s.graduation_date||'','入学目标':s.target_enrollment||'','赴日时间':s.japan_arrival||'','到期时间':s.expiry_date||'','状态':s.status||'','困难点':s.difficulty||'','备注':s.notes||''}));
@@ -1277,6 +1319,7 @@ function renderCoursesPage(mc){
     <div style="display:flex;gap:8px;align-items:center">
       <button class="btn btn-ok btn-sm" onclick="openPublishModal()" style="background:var(--ok);color:#fff;border:none">📢 发布管理</button>
       <button class="btn btn-primary btn-sm" onclick="openAddCourseModal()">＋ 手动添加</button>
+      <button class="btn btn-outline btn-sm" onclick="exportCoursesExcel()">↓ 导出 Excel</button>
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('courseImportFileInput').click()">↑ 导入 Excel</button>
       <input type="file" id="courseImportFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleCourseImportFile(this)">
     </div>
