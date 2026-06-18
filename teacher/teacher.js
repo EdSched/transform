@@ -665,7 +665,7 @@ function renderScheduling(mc) {
       <div style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:4px;padding:14px 16px;margin-bottom:16px">
         <div style="font-size:13px;font-weight:600;color:var(--ok);margin-bottom:4px">✓ 已提交回复</div>
         <div style="font-size:11px;color:var(--text-2)">共选择了 ${availCount} 个可上课的课次，等待管理员排课确认。</div>
-        <button onclick="renderSchedulingEdit(document.getElementById('mainContent'))" style="margin-top:10px;font-size:11px;background:none;border:1px solid var(--ok);border-radius:3px;padding:5px 12px;cursor:pointer;color:var(--ok);font-family:inherit">✏ 修改回复</button>
+        <button onclick="renderSchedulingEdit()" style="margin-top:10px;font-size:11px;background:none;border:1px solid var(--ok);border-radius:3px;padding:5px 12px;cursor:pointer;color:var(--ok);font-family:inherit">✏ 修改回复</button>
       </div>
       ${slots.map(s => {
         const a = existingAvail.find(x => x.slot_id === s.id);
@@ -687,6 +687,7 @@ function renderScheduling(mc) {
 }
 
 function renderSchedulingEdit(mc) {
+  if (!mc) mc = document.getElementById('mainContent');
   const allTitles = [...new Set(slots.flatMap(s => s.session_titles || []))];
   const byCourse = {};
   slots.forEach(s => {
@@ -722,8 +723,11 @@ function renderSlotCard(s) {
   const hasTwo = !!(s.time_range && s.time_range_2);
   const hasTwoDow = !!(s.weekday_2);
   const titles = s.session_titles || [];
+  // 原始日期和周几
+  const origD = new Date(s.session_date + 'T12:00:00');
+  const origDow = DAYS_CN[origD.getDay()];
   // 如果选了周几，显示调整后的日期
-  const displayDow = st.dow && st.dow !== 'both' ? st.dow : dow;
+  const displayDow = st.dow && st.dow !== 'both' ? st.dow : origDow;
   const displayDate = st.adjusted_date || s.session_date;
   const dd = new Date(displayDate + 'T12:00:00');
   const displayDowColor = DOW_COLOR[dd.getDay()] || 'var(--text-2)';
@@ -739,7 +743,7 @@ function renderSlotCard(s) {
     ${st.available && (hasTwo || hasTwoDow || titles.length) ? `
     <div class="date-body">
       ${hasTwoDow ? `<div class="sub-label">周几偏好</div><div class="chip-row">
-        <div class="chip${st.dow === dow ? ' active' : ''}" onclick="event.stopPropagation();setDow('${s.id}','${dow}')">${dow}</div>
+        <div class="chip${st.dow === origDow ? ' active' : ''}" onclick="event.stopPropagation();setDow('${s.id}','${origDow}')">${origDow}</div>
         <div class="chip${st.dow === s.weekday_2 ? ' active' : ''}" onclick="event.stopPropagation();setDow('${s.id}','${s.weekday_2}')">${s.weekday_2}</div>
         ${!st.dow ? `<div class="chip ok-active" onclick="event.stopPropagation();setDow('${s.id}','both')">两天都行</div>` : `<div class="chip" onclick="event.stopPropagation();setDow('${s.id}','')" style="color:var(--text-3);font-size:10px">清除</div>`}
       </div>` : ''}
@@ -792,7 +796,8 @@ async function submitAvailability() {
     const records = slots.map(s => {
       const st = getState(s.id);
       const timeStr = st.time === 'both' ? `${s.time_range} / ${s.time_range_2}` : st.time || '';
-      const dowStr = st.dow === 'both' ? `${DAYS_CN[d.getDay()]} / ${s.weekday_2}` : st.dow || '';
+      const origD2 = new Date(s.session_date + 'T12:00:00');
+      const dowStr = st.dow === 'both' ? `${DAYS_CN[origD2.getDay()]} / ${s.weekday_2}` : st.dow || '';
       const adjustedDate = st.adjusted_date || null;
       return { id: `av-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, slot_id: s.id, teacher_name: teacherName, available: st.available, available_time: st.available && timeStr ? timeStr : null, preferred_dow: st.available && dowStr ? dowStr : null, preferred_date: st.available && adjustedDate ? adjustedDate : null, preferred_titles: st.available && st.titles.size ? [...st.titles] : null };
     });
