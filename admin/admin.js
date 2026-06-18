@@ -174,11 +174,14 @@ function renderBookingPage(mc){
 }
 function renderBookingCard(b){
   const hasRecord=b.daily_record&&Object.values(b.daily_record).some(v=>v);
+  const slot=cachedSlots.find(s=>s.id===b.slot_id);
+  const teacherName=slot?.teacher_name||'';
   return `<div class="booking-card status-${b.status}">
     <div class="booking-header">
       <div>
         <div class="booking-name">${b.name} <span style="font-size:11px;color:var(--text-3);font-weight:400">${MAJORS[b.major]||''}</span></div>
         <div class="booking-meta">${b.slot_date} ${b.slot_time_range||''} · ${b.duration}min · ${urgLabel(b.urgency)}</div>
+        ${teacherName?`<div style="font-size:11px;color:var(--text-2);margin-top:2px">👤 ${teacherName} <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="openReassignTeacher('${b.id}','${b.slot_id}')">重新分配</button></div>`:`<div style="font-size:11px;color:var(--danger);margin-top:2px">⚠ 未关联老师 <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="openReassignTeacher('${b.id}','${b.slot_id}')">分配老师</button></div>`}
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
         <span class="tag ${typeTag(b.type)}">${typeLabel(b.type)}</span>
@@ -246,6 +249,42 @@ async function clearCancelledBookings(){
   if(!confirm(`确定删除当月 ${count} 条已取消记录？`))return;
   try{await sb(`/rest/v1/bookings?status=eq.cancelled&slot_date=like.${ym}*`,'DELETE');cachedBookings=cachedBookings.filter(b=>!(b.status==='cancelled'&&b.slot_date&&b.slot_date.startsWith(ym)));renderBookingPage(document.getElementById('mainContent'))}catch(e){alert('操作失败：'+e.message)}
 }
+function openReassignTeacher(bookingId, slotId) {
+  const options = cachedTeachers.map(t =>
+    `<option value="${t.name}">${t.name}</option>`
+  ).join('');
+  const modal = document.createElement('div');
+  modal.id = 'reassignModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:6px;padding:20px;min-width:280px;max-width:360px;width:90%">
+      <div style="font-size:13px;font-weight:600;margin-bottom:14px">重新分配老师</div>
+      <div class="form-group">
+        <label class="form-label">选择老师</label>
+        <select id="reassign_teacher">${options}</select>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-primary btn-sm" onclick="confirmReassignTeacher('${bookingId}','${slotId}')">确认</button>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('reassignModal').remove()">取消</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function confirmReassignTeacher(bookingId, slotId) {
+  const name = document.getElementById('reassign_teacher').value;
+  if (!name) return;
+  try {
+    if (slotId) {
+      await sb(`/rest/v1/slots?id=eq.${slotId}`, 'PATCH', { teacher_name: name });
+      const idx = cachedSlots.findIndex(s => s.id === slotId);
+      if (idx >= 0) cachedSlots[idx].teacher_name = name;
+    }
+    document.getElementById('reassignModal').remove();
+    renderBookingsPage(document.getElementById('mainContent'));
+  } catch(e) { alert('操作失败：' + e.message); }
+}
+
 async function adminGenerateCode(id){
   const code=[...'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'].sort(()=>Math.random()-.5).slice(0,6).join('');
   try{
