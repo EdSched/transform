@@ -512,8 +512,11 @@
 <div class="modal-overlay" id="sessionModal">
   <div class="modal" style="width:900px;max-width:96vw">
     <div class="modal-title" id="sessionModalTitle">出席记录</div>
-    <div class="modal-sub" id="sessionModalSub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px"></div>
+    <div class="modal-sub" id="sessionModalSub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:10px"></div>
     <input type="hidden" id="sessionModalId">
+    <div style="margin-bottom:10px">
+      <input id="sessionStudentSearch" placeholder="搜索学生姓名…" oninput="renderStudentRows(this.value)" style="font-size:12px;padding:6px 10px;width:100%;box-sizing:border-box">
+    </div>
     <div style="overflow-x:auto">
       <table class="student-table" id="sessionRecordTable">
         <thead><tr>
