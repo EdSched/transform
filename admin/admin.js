@@ -2623,7 +2623,10 @@ function renderSummaryBody(slots,courseName){
           :availOnDate;
         return `<tr style="${isConfirmed?'background:var(--ok-bg)':''}">
           <td style="font-size:11px;color:var(--text-3)">${idx+1}</td>
-          <td style="font-size:12px;font-weight:600">${f.short} <span style="color:${f.dowColor};font-size:10px">${f.dow}</span></td>
+          <td style="font-size:12px;font-weight:600">
+            ${f.short} <span style="color:${f.dowColor};font-size:10px">${f.dow}</span>
+            ${availOnDate.some(t=>t.date&&t.date!==d.date)?`<div style="font-size:10px;color:var(--accent);margin-top:2px">${[...new Set(availOnDate.filter(t=>t.date&&t.date!==d.date).map(t=>t.date))].map(dt=>{const dd=new Date(dt+'T12:00:00');return (dd.getMonth()+1)+'/'+(dd.getDate())+' '+DAYS_CN[dd.getDay()]}).join(' / ')}</div>`:''}
+          </td>
           <td style="font-size:11px">${d.time_range||''}</td>
           <td>
             ${availOnDate.length
