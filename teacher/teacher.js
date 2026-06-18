@@ -930,45 +930,50 @@ async function uploadHwTeacherFile(recordId, sessionId) {
 }
 
 async function hwBatchDownload() {
-  const sessionSel = hwFeedbackSessions.find(s => s.course_name === hwFeedbackCourse);
-  // 找当前展开的或最近一次
   const recs = hwFeedbackRecords.filter(r => r.homework_file_url);
   if (!recs.length) { alert('暂无可下载的作业文件'); return; }
-  // 逐个下载
+  // 下载时文件名改成「record_id.ext」，方便批改后对号上传
   for (const r of recs) {
-    const a = document.createElement('a');
-    a.href = r.homework_file_url;
-    a.download = '';
-    a.target = '_blank';
-    a.click();
-    await new Promise(res => setTimeout(res, 300));
+    try {
+      const res = await fetch(r.homework_file_url);
+      const blob = await res.blob();
+      const ext = (r.homework_file_url.split('.').pop() || 'file').split('?')[0].slice(0, 5);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${r.id}.${ext}`;  // 文件名 = record_id.ext
+      a.click();
+      URL.revokeObjectURL(a.href);
+      await new Promise(res => setTimeout(res, 400));
+    } catch(e) {
+      // fetch 失败时直接打开链接
+      window.open(r.homework_file_url, '_blank');
+      await new Promise(res => setTimeout(res, 400));
+    }
   }
+  alert(`已下载 ${recs.length} 份作业，文件名格式为「记录ID.扩展名」，批改后直接上传即可自动匹配学生`);
 }
 
 async function hwBatchUpload(input) {
   const files = [...input.files];
   if (!files.length) return;
-  let success = 0, fail = 0;
+  let success = 0, fail = 0, failNames = [];
   for (const file of files) {
-    // 从文件名提取学生姓名（格式：日期_姓名_课程.ext 或 姓名_任意.ext）
-    const parts = file.name.replace(/\.[^.]+$/, '').split('_');
-    // 尝试找匹配的学生姓名
-    let matched = null;
-    for (const part of parts) {
-      const rec = hwFeedbackRecords.find(r => r.student_name === part);
-      if (rec) { matched = rec; break; }
-    }
-    if (!matched) { fail++; continue; }
+    // 从文件名提取 record_id（格式：record_id.ext，record_id 就是 session_records 的 id）
+    const recordId = file.name.replace(/\.[^.]+$/, '');
+    const matched = hwFeedbackRecords.find(r => r.id === recordId);
+    if (!matched) { fail++; failNames.push(file.name); continue; }
     const ext = file.name.split('.').pop();
-    const path = `homework-feedback/${matched.session_id}_${matched.student_name}.${ext}`;
+    const path = `homework-feedback/${recordId}.${ext}`;
     try {
       const url = await sbUpload('teacher-files', path, file);
-      await sb(`/rest/v1/session_records?id=eq.${matched.id}`, 'PATCH', { teacher_file_url: url });
+      await sb(`/rest/v1/session_records?id=eq.${recordId}`, 'PATCH', { teacher_file_url: url });
       matched.teacher_file_url = url;
       success++;
-    } catch(e) { fail++; }
+    } catch(e) { fail++; failNames.push(file.name); }
   }
-  alert(`批量上传完成：${success} 成功，${fail} 失败${fail>0?'\n（失败的文件名中未能匹配到学生姓名）':''}`);
+  const msg = `批量上传完成：${success} 成功，${fail} 失败` + (failNames.length ? `
+失败文件：${failNames.join('、')}` : '');
+  alert(msg);
   renderHwSessionList(hwFeedbackSessions.filter(s => s.course_name === hwFeedbackCourse));
   input.value = '';
 }
