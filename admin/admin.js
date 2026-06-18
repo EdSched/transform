@@ -1721,13 +1721,29 @@ async function saveAddCourse(){
       const idx=cachedCourses.findIndex(c=>c.id===editingId);
       if(idx>=0) cachedCourses[idx]={...cachedCourses[idx],...courseData};
       courseId=editingId;
-      // 不删除旧课次，只更新课程基本信息和新增课次
+      // 编辑模式：不重新生成课次，只更新单回名称/老师
+      if(detailRows.length){
+        for(const detail of detailRows){
+          const existingSession=cachedSessions.find(s=>s.course_id===courseId&&s.session_number===detail.num);
+          if(existingSession){
+            await sb(`/rest/v1/course_sessions?id=eq.${existingSession.id}`,'PATCH',{
+              session_title:detail.title||'',
+              session_teacher:detail.teacher||courseData.teacher,
+              teacher:detail.teacher||courseData.teacher,
+            }).catch(()=>{});
+          }
+        }
+      }
+      closeModal('addCourseModal');
+      renderCoursesPage(document.getElementById('mainContent'));
+      alert('课程信息已更新');
+      return;
     } else {
       courseId=`c-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
       const res=await sb('/rest/v1/courses','POST',[{...courseData,id:courseId}]);
       cachedCourses.push(Array.isArray(res)?res[0]:{...courseData,id:courseId});
     }
-    // create sessions
+    // 新增课程时生成课次
     if(dates.length){
       const confirmed=document.getElementById('ac_confirm_publish')?.checked||false;
       const sessions=dates.map((date,i)=>{
@@ -1745,14 +1761,14 @@ async function saveAddCourse(){
         };
       });
       for(let i=0;i<sessions.length;i+=20){
-        const chunk=sessions.slice(i,i+20);
-        const res=await sb('/rest/v1/course_sessions','POST',chunk);
-        cachedSessions.push(...(Array.isArray(res)?res:chunk));
+        const chunk=sessions.slice(i,i+20).map(s=>({...s,homework_enabled:courseData.homework_enabled||false}));
+        const sres=await sb('/rest/v1/course_sessions','POST',chunk);
+        cachedSessions.push(...(Array.isArray(sres)?sres:chunk));
       }
     }
     closeModal('addCourseModal');
     renderCoursesPage(document.getElementById('mainContent'));
-    alert(`${editingId?'更新':'添加'}成功！已生成 ${dates.length} 个课次`);
+    alert('添加成功！已生成 ' + dates.length + ' 个课次');
   }catch(e){alert('保存失败：'+e.message)}
 }
 
