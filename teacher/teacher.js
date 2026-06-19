@@ -1062,15 +1062,37 @@ function renderMySchedule(mc) {
     const future = confirmedSessions.filter(s => s.session_date >= today);
     myScheduleCalMonth = (future.length ? future[0].session_date : confirmedSessions[0].session_date).slice(0,7);
   }
-  const byMonth = {};
-  confirmedSessions.forEach(s => { const m = s.session_date.slice(0, 7); if (!byMonth[m]) byMonth[m] = []; byMonth[m].push(s); });
   const monthNames = { '01': '一月', '02': '二月', '03': '三月', '04': '四月', '05': '五月', '06': '六月', '07': '七月', '08': '八月', '09': '九月', '10': '十月', '11': '十一月', '12': '十二月' };
-  const listHtml = Object.entries(byMonth).map(([ym, sessions]) => `
+
+  // 列表视图：只显示今天及以后的课次，已上完的收进历史
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const upcomingSessions = confirmedSessions.filter(s => s.session_date >= todayStr);
+  const pastSessions = confirmedSessions.filter(s => s.session_date < todayStr);
+
+  const byMonthUpcoming = {};
+  upcomingSessions.forEach(s => { const m = s.session_date.slice(0, 7); if (!byMonthUpcoming[m]) byMonthUpcoming[m] = []; byMonthUpcoming[m].push(s); });
+
+  const byMonthAll = {};
+  confirmedSessions.forEach(s => { const m = s.session_date.slice(0, 7); if (!byMonthAll[m]) byMonthAll[m] = []; byMonthAll[m].push(s); });
+
+  const listHtml = Object.entries(byMonthUpcoming).map(([ym, sessions]) => `
     <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);padding:10px 0 6px;border-bottom:1px solid var(--border-light);margin-bottom:8px">
       ${ym.slice(0, 4)}年 ${monthNames[ym.slice(5, 7)] || ym.slice(5, 7) + '月'} · ${sessions.length}课次
     </div>
-    ${sessions.map(s => renderMySessionRow(s)).join('')}`).join('');
-  const calHtml = renderMyCalendar(myScheduleCalMonth, byMonth, monthNames);
+    ${sessions.map(s => renderMySessionRow(s)).join('')}`).join('')
+    || '<div style="font-size:12px;color:var(--text-3);padding:12px 0">近期暂无排课</div>';
+
+  const historyHtml = pastSessions.length ? `
+    <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
+      <div style="cursor:pointer;font-size:11px;color:var(--text-3);padding:4px 0" onclick="toggleScheduleHistory()">
+        <span id="sched_history_arrow">▸</span> 已上完的课次（${pastSessions.length} 节）
+      </div>
+      <div id="sched_history_body" style="display:none;margin-top:8px">
+        ${[...pastSessions].reverse().map(s => renderMySessionRow(s)).join('')}
+      </div>
+    </div>` : '';
+
+  const calHtml = renderMyCalendar(myScheduleCalMonth, byMonthAll, monthNames);
   mc.innerHTML = `
   <div class="page-section">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
@@ -1084,9 +1106,18 @@ function renderMySchedule(mc) {
       </div>
     </div>
     <div id="myScheduleBody">
-      ${myScheduleView === 'list' ? listHtml : calHtml}
+      ${myScheduleView === 'list' ? listHtml + historyHtml : calHtml}
     </div>
   </div>`;
+}
+
+function toggleScheduleHistory() {
+  const body = document.getElementById('sched_history_body');
+  const arrow = document.getElementById('sched_history_arrow');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (arrow) arrow.textContent = open ? '▸' : '▾';
 }
 
 function setMyScheduleView(v) {
