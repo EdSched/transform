@@ -1195,31 +1195,41 @@ async function renderWorkRecordsTeacher(mc) {
     const approved = records.filter(r => r.status === 'approved');
     const pending = records.filter(r => r.status === 'pending');
     const rejected = records.filter(r => r.status === 'rejected');
-    const totalHours = Math.round(approved.reduce((s, r) => s + (r.duration || 0), 0) * 10) / 10;
+    const courseCount = approved.filter(r => r.source === 'course').length;
+    const bookingCount = approved.filter(r => r.source === 'booking').length;
+    const totalHours = Math.round(approved.reduce((s, r) => s + (r.duration || 0), 0) * 100) / 100;
 
     mc.innerHTML = `
     <div class="page-section">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">工作记录</div>
-        <div style="font-size:11px;color:var(--text-3)">已通过 ${approved.length} 条 · ${totalHours} 小时</div>
       </div>
-      ${pending.length ? `<div style="font-size:11px;background:#fff3cd;color:#856404;border-radius:3px;padding:8px 12px;margin-bottom:12px">⏳ ${pending.length} 条记录待 Admin 审核</div>` : ''}
-      ${rejected.length ? `<div style="font-size:11px;background:#f8e0e0;color:#8a1a1a;border-radius:3px;padding:8px 12px;margin-bottom:12px">✗ ${rejected.length} 条记录已驳回${rejected[0]?.admin_note ? `：${rejected[0].admin_note}` : ''}</div>` : ''}
-      ${approved.length ? approved.map(r => `
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:flex-start;gap:14px">
-          <div style="text-align:center;min-width:44px">
-            <div style="font-size:15px;font-weight:700;font-family:'DM Mono',monospace;color:var(--accent)">${r.duration}h</div>
-            <div style="font-size:9px;color:var(--text-3)">${r.start_time.slice(0,10).replace(/年(\d+)月(\d+)日/,'/$1/$2').slice(5)}</div>
-          </div>
-          <div style="flex:1">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap">
-              <span style="font-size:11px;font-weight:600">${r.start_time}</span>
-              <span style="font-size:10px;background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 5px">${r.work_type}</span>
-            </div>
-            <div style="font-size:11px;color:var(--text-3)">${r.location} · ${r.notes}</div>
-            ${r.admin_note ? `<div style="font-size:11px;color:var(--text-2);margin-top:3px;font-style:italic">📝 ${r.admin_note}</div>` : ''}
-          </div>
-        </div>`).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已通过的工作记录</div>'}
+      ${pending.length ? `<div style="font-size:11px;background:#fff3cd;color:#856404;border-radius:3px;padding:8px 12px;margin-bottom:10px">⏳ ${pending.length} 条记录待 Admin 审核</div>` : ''}
+      ${rejected.length ? `<div style="font-size:11px;background:#f8e0e0;color:#8a1a1a;border-radius:3px;padding:8px 12px;margin-bottom:10px">✗ ${rejected.length} 条记录已驳回${rejected[0]?.admin_note ? `：${rejected[0].admin_note}` : ''}</div>` : ''}
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">大课 <strong style="color:var(--text)">${courseCount}</strong> 节 · 面谈 <strong style="color:var(--text)">${bookingCount}</strong> 次 · 合计 <strong style="color:var(--text)">${totalHours}</strong> 小时</div>
+      ${approved.length ? `
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead>
+            <tr style="background:var(--bg)">
+              ${['开始时间','结束时间','时长(h)','工作内容','工作地点','备注'].map(h =>
+                `<th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);font-weight:600;color:var(--text-2);white-space:nowrap">${h}</th>`
+              ).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${approved.map(r => `
+            <tr style="border-bottom:1px solid var(--border-light);background:${r.source === 'booking' ? 'rgba(42,106,173,0.03)' : 'transparent'}">
+              <td style="padding:6px 8px;white-space:nowrap;color:var(--text-2)">${r.start_time}</td>
+              <td style="padding:6px 8px;white-space:nowrap;color:var(--text-2)">${r.end_time}</td>
+              <td style="padding:6px 8px;text-align:center;font-weight:600">${r.duration}</td>
+              <td style="padding:6px 8px"><span style="font-size:10px;background:${r.source === 'booking' ? '#e8f0fb' : 'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px">${r.work_type}</span></td>
+              <td style="padding:6px 8px;color:var(--text-2);white-space:nowrap">${r.location}</td>
+              <td style="padding:6px 8px;color:var(--text-2)">${r.notes}${r.admin_note ? `<div style="color:var(--text-3);font-style:italic;margin-top:2px">📝 ${r.admin_note}</div>` : ''}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>` : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已通过的工作记录</div>'}
     </div>`;
   } catch(e) {
     mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
