@@ -72,9 +72,10 @@ async function renderPage(){
   mc.innerHTML='<div class="loading">加载中…</div>';
   try{
     if(curPage==='booking'||curPage==='slots'){
-      [cachedSlots,cachedBookings]=await Promise.all([
+      [cachedSlots,cachedBookings,cachedStudents]=await Promise.all([
         sb('/rest/v1/slots?select=*&order=date.asc,time_range.asc'),
-        sb('/rest/v1/bookings?select=*&order=slot_date.asc,slot_time_range.asc')
+        sb('/rest/v1/bookings?select=*&order=slot_date.asc,slot_time_range.asc'),
+        sb('/rest/v1/students?select=*&order=name.asc')
       ]);
       curPage==='booking'?renderBookingPage(mc):renderSlotsPage(mc);
     } else if(curPage==='students'){
@@ -176,10 +177,13 @@ function renderBookingCard(b){
   const hasRecord=b.daily_record&&Object.values(b.daily_record).some(v=>v);
   const slot=cachedSlots.find(s=>s.id===b.slot_id);
   const teacherName=slot?.teacher_name||'';
+  // 优先显示学生档案中的真实专业；若 booking.major 是社会人文分组标记或学生档案找不到，则退回显示 booking.major
+  const studentRecord=cachedStudents?.find(s=>s.name===b.name);
+  const displayMajor=studentRecord?.major ? (MAJORS[studentRecord.major]||studentRecord.major) : (MAJORS[b.major]||'');
   return `<div class="booking-card status-${b.status}">
     <div class="booking-header">
       <div>
-        <div class="booking-name">${b.name} <span style="font-size:11px;color:var(--text-3);font-weight:400">${MAJORS[b.major]||''}</span></div>
+        <div class="booking-name">${b.name} <span style="font-size:11px;color:var(--text-3);font-weight:400">${displayMajor}</span></div>
         <div class="booking-meta">${b.slot_date} ${b.slot_time_range||''} · ${b.duration}min · ${urgLabel(b.urgency)}</div>
         ${teacherName
           ? `<div style="font-size:11px;color:var(--text-2);margin-top:2px">👤 ${teacherName} <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="openReassignTeacher('${b.id}','${b.slot_id}')">重新分配</button></div>`
@@ -310,9 +314,10 @@ async function syncLangScore(id){
   const btn=document.querySelector(`[onclick="syncLangScore('${id}')"]`);
   if(btn){btn.textContent='同步中…';btn.disabled=true}
   try{
-    const matches=await sb(`/rest/v1/students?name=eq.${encodeURIComponent(b.name)}&major=eq.${b.major}&select=id,name`);
+    // 按姓名匹配学生档案（不限定专业，因为面谈记录的专业可能是社会人文分组标记，与学生真实专业不同）
+    const matches=await sb(`/rest/v1/students?name=eq.${encodeURIComponent(b.name)}&select=id,name,major`);
     if(!matches.length){
-      alert(`未在学生档案中找到「${b.name}」（${MAJORS[b.major]||b.major}），未同步。`);
+      alert(`未在学生档案中找到「${b.name}」，未同步。`);
       if(btn){btn.textContent='↻ 同步到学生档案';btn.disabled=false}
       return;
     }
