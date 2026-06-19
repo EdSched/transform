@@ -99,7 +99,7 @@ async function initMajor() {
   vipMode = p.get('mode') === 'vip';
   if (major && (MAJORS[major] || major === 'shakai_group')) {
     document.getElementById('headerContent').innerHTML = `
-      <div class="header-major">${vipMode ? 'VIP预约' : '学习助手'}</div>
+      <div class="header-major">${vipMode ? 'VIP预约' : '面谈预约'}</div>
       <div class="header-sub">唯新教育</div>
       <div class="header-locked">📌 ${major === 'shakai_group' ? '社会人文' : MAJORS[major]}</div>`;
     try {
@@ -605,8 +605,17 @@ const activeBooking = cachedBookings.find(b =>
   const booked = cachedBookings.filter(b => b.slot_id === selectedSlotId && b.status !== 'cancelled').length;
   if (booked >= cap) { alert('该时间段名额已满，请选择其他时间'); renderSlots(); return; }
 
+  // 若该学生在学生档案中已有真实专业记录，优先使用真实专业（避免社会人文分组链接覆盖真实专业）
+  let bookingMajor = slot.major || major;
+  try {
+    const existingStudent = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(name)}&select=major&limit=1`);
+    if (existingStudent && existingStudent.length && existingStudent[0].major) {
+      bookingMajor = existingStudent[0].major;
+    }
+  } catch (e) { /* 查询失败时退回原逻辑，不阻断预约流程 */ }
+
   const booking = {
-    id: Date.now().toString(), name, major: slot.major || major, exam_period: examPeriod,
+    id: Date.now().toString(), name, major: bookingMajor, exam_period: examPeriod,
     specialty_status: document.getElementById('specialtyStatus').value,
     target_school: document.getElementById('targetSchool').value,
     contact_prof: document.getElementById('contactProf').value,
@@ -675,204 +684,6 @@ function renderPublicList() {
 }
 
 // ── 查询面谈记录 ──
-// ── 作业系统 ──
-
-function scrollToHomework() {
-  const el = document.getElementById('homeworkSection');
-  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-// 加载本周有作业的课程（全局公告，不针对特定学生）
-async function loadHomeworkNotice() {
-  try {
-    const today = new Date();
-    const weekStart = new Date(today);
-    weekStart.setDate(today.getDate() - today.getDay() + 1); // 本周一
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 13); // 往后两周
-    const fmt = d => d.toISOString().slice(0, 10);
-
-    // 查本周及下周有课的 session（只显示有作业要提交的）
-    const sessions = await sb(
-      `/rest/v1/course_sessions?session_date=gte.${fmt(weekStart)}&session_date=lte.${fmt(weekEnd)}&homework_enabled=is.true&select=*&order=session_date.asc`
-    ).catch(() => []);
-
-    // 只取专业匹配的课程（s.major 是数组）
-    const relevant = sessions.filter(s => {
-      const sm = Array.isArray(s.major) ? s.major : [s.major||''];
-      if (!major) return true;
-      if (major === 'shakai_group') return sm.some(m => ['shakai','shinpan','fukushi'].includes(m));
-      return sm.includes(major);
-    });
-
-    console.log('[HW Notice] sessions:', sessions.length, 'relevant:', relevant.length, 'major:', major);
-    if (!relevant.length) return;
-
-    const notice = document.getElementById('homeworkNotice');
-    const list = document.getElementById('homeworkNoticeList');
-    if (!notice || !list) { console.log('[HW Notice] DOM not found'); return; }
-
-    list.innerHTML = relevant.map(s =>
-      `${s.session_date} · ${s.course_name}${s.session_title ? ' · ' + s.session_title : ''}`
-    ).join('<br>');
-    notice.style.display = 'block';
-  } catch(e) { /* 静默失败，不影响主流程 */ }
-}
-
-// 姓名输入后加载可提交课程
-let selected_hw_session = null;
-let selected_hw_data = {};
-
-function selectHwSession(el) {
-  const id = el.dataset.id;
-  const uploadArea = document.getElementById('hw_upload_area');
-  // 点同一行 → 取消选中
-  if (selected_hw_session === id) {
-    selected_hw_session = null;
-    selected_hw_data = {};
-    el.style.background = 'var(--bg)';
-    el.style.borderColor = 'var(--border)';
-    if (uploadArea) uploadArea.style.display = 'none';
-    return;
-  }
-  // 切换到新行
-  selected_hw_session = id;
-  selected_hw_data = { id, name: el.dataset.name, date: el.dataset.date };
-  // 重置所有行
-  el.closest('#hw_sessions_wrap').querySelectorAll('[data-id]').forEach(d => {
-    d.style.background = 'var(--bg)';
-    d.style.borderColor = 'var(--border)';
-  });
-  // 高亮选中行
-  el.style.background = '#f0f7ff';
-  el.style.borderColor = 'var(--accent)';
-  if (uploadArea) uploadArea.style.display = 'block';
-}
-
-async function loadHomeworkSessions() {
-  const name = document.getElementById('hw_name')?.value.trim();
-  const wrap = document.getElementById('hw_sessions_wrap');
-  const uploadArea = document.getElementById('hw_upload_area');
-  if (!wrap) return;
-  if (!name) {
-    wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">请先填写姓名后选择课程</div>';
-    if (uploadArea) uploadArea.style.display = 'none';
-    return;
-  }
-  selected_hw_session = null; selected_hw_data = {};
-  document.getElementById('hw_upload_area').style.display = 'none';
-  wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">加载中…</div>';
-  try {
-    const from = new Date();
-    from.setDate(from.getDate() - 7);
-    const to = new Date();
-    to.setDate(to.getDate() + 7);
-    const fmt = d => d.toISOString().slice(0, 10);
-    const [sessions, records] = await Promise.all([
-      sb(`/rest/v1/course_sessions?session_date=gte.${fmt(from)}&session_date=lte.${fmt(to)}&homework_enabled=is.true&select=*&order=session_date.desc`).catch(() => []),
-      sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(name)}&select=session_id,homework_submitted,homework_file_url`).catch(() => [])
-    ]);
-    const relevant = sessions.filter(s => {
-      const sm = Array.isArray(s.major) ? s.major : [s.major||''];
-      if (!major) return true;
-      if (major === 'shakai_group') return sm.some(m => ['shakai','shinpan','fukushi'].includes(m));
-      return sm.includes(major);
-    });
-    if (!relevant.length) {
-      wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">近期暂无需提交作业的课程</div>';
-      if (uploadArea) uploadArea.style.display = 'none';
-      return;
-    }
-    const submittedIds = new Set(records.filter(r => r.homework_submitted || r.homework_file_url).map(r => r.session_id));
-    relevant.forEach(s => {
-      const submitted = submittedIds.has(s.id);
-      const label = s.session_date + ' · ' + s.course_name + (s.session_title ? ' · ' + s.session_title : '');
-      const rowEl = document.createElement('div');
-      rowEl.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg);border:1px solid ' + (submitted?'var(--ok)':'var(--border)') + ';border-radius:3px;cursor:' + (submitted?'default':'pointer') + ';margin-bottom:4px;user-select:none';
-      rowEl.dataset.id = s.id;
-      rowEl.dataset.name = s.course_name;
-      rowEl.dataset.date = s.session_date;
-      if (!submitted) {
-        rowEl.addEventListener('click', function() { selectHwSession(this); });
-      }
-      const labelSpan = document.createElement('span');
-      labelSpan.style.cssText = 'font-size:12px;color:var(--text-2)';
-      labelSpan.textContent = label;
-      const statusSpan = document.createElement('span');
-      statusSpan.style.cssText = 'font-size:10px;color:' + (submitted?'var(--ok)':'var(--text-muted)') + ';flex-shrink:0;margin-left:12px';
-      statusSpan.textContent = submitted ? '✓ 已提交' : '未提交';
-      rowEl.appendChild(labelSpan);
-      rowEl.appendChild(statusSpan);
-      wrap.appendChild(rowEl);
-      return null;
-    });
-  } catch(e) {
-    wrap.innerHTML = '<div style="font-size:11px;color:var(--danger)">加载失败：' + e.message + '</div>';
-  }
-}
-
-
-async function submitHomework() {
-  const name = document.getElementById('hw_name')?.value.trim();
-  const fileEl = document.getElementById('hw_file');
-  const result = document.getElementById('hw_result');
-
-  if (!name) { result.innerHTML = '<span style="color:var(--danger)">请填写姓名</span>'; return; }
-  if (!selected_hw_session) { result.innerHTML = '<span style="color:var(--danger)">请选择课程</span>'; return; }
-  if (!fileEl?.files[0]) { result.innerHTML = '<span style="color:var(--danger)">请选择文件</span>'; return; }
-
-  const sessionId = selected_hw_data.id;
-  const sessionDate = selected_hw_data.date;
-  const courseName = selected_hw_data.name;
-  const file = fileEl.files[0];
-
-  result.innerHTML = '<span style="color:var(--text-muted)">上传中…</span>';
-
-  try {
-    // 上传到 Supabase Storage homework bucket
-    const ext = file.name.split('.').pop().toLowerCase();
-    const ts = Date.now();
-    // 文件名只用安全字符：专业/日期_时间戳.扩展名
-    // 学生姓名通过数据库 session_records 记录，不放在文件名里
-    const path = `${major||'general'}/${sessionDate}_${ts}.${ext}`;
-    const fileUrl = await sbUpload('homework', path, file);
-
-    // 查找或创建 session_record
-    const existing = await sb(
-      `/rest/v1/session_records?session_id=eq.${sessionId}&student_name=eq.${encodeURIComponent(name)}&select=id`
-    ).catch(() => []);
-
-    if (existing.length) {
-      await sb(`/rest/v1/session_records?id=eq.${existing[0].id}`, 'PATCH', {
-        homework_submitted: true,
-        homework_file_url: fileUrl
-      });
-    } else {
-      // 取课程信息
-      const sessions = await sb(`/rest/v1/course_sessions?id=eq.${sessionId}&select=*`).catch(() => []);
-      const s = sessions[0] || {};
-      await sb('/rest/v1/session_records', 'POST', {
-        id: `r-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
-        session_id: sessionId,
-        course_name: s.course_name || courseName,
-        session_date: sessionDate,
-        student_name: name,
-        major: major || s.major || '',
-        homework_submitted: true,
-        homework_file_url: fileUrl
-      });
-    }
-
-    result.innerHTML = '<span style="color:var(--ok)">✓ 作业提交成功！老师批改后可通过查询码查看反馈。</span>';
-    fileEl.value = '';
-    // 刷新列表显示已提交
-    await loadHomeworkSessions();
-  } catch(e) {
-    result.innerHTML = `<span style="color:var(--danger)">提交失败：${e.message}</span>`;
-  }
-}
-
-
 function toggleRetrievalPanel() {
   const p = document.getElementById('retrievalPanel');
   if (p) p.style.display = p.style.display === 'none' ? 'block' : 'none';
@@ -960,6 +771,188 @@ function renderSingleBookingResult(b) {
     html += `<div style="font-size:11px;color:var(--text-muted)">老师暂未上传修改文件</div>`;
   }
   return html;
+}
+
+// ── 作业系统 ──
+
+function scrollToHomework() {
+  const el = document.getElementById('homeworkSection');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// 加载本周有作业的课程（全局公告，不针对特定学生）
+async function loadHomeworkNotice() {
+  try {
+    const today = new Date();
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - today.getDay() + 1); // 本周一
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 13); // 往后两周
+    const fmt = d => d.toISOString().slice(0, 10);
+
+    const sessions = await sb(
+      `/rest/v1/course_sessions?session_date=gte.${fmt(weekStart)}&session_date=lte.${fmt(weekEnd)}&homework_enabled=is.true&select=*&order=session_date.asc`
+    ).catch(() => []);
+
+    const relevant = sessions.filter(s => {
+      const sm = Array.isArray(s.major) ? s.major : [s.major||''];
+      if (!major) return true;
+      if (major === 'shakai_group') return sm.some(m => ['shakai','shinpan','fukushi'].includes(m));
+      return sm.includes(major);
+    });
+
+    if (!relevant.length) return;
+
+    const notice = document.getElementById('homeworkNotice');
+    const list = document.getElementById('homeworkNoticeList');
+    if (!notice || !list) return;
+
+    list.innerHTML = relevant.map(s =>
+      `${s.session_date} · ${s.course_name}${s.session_title ? ' · ' + s.session_title : ''}`
+    ).join('<br>');
+    notice.style.display = 'block';
+  } catch(e) { /* 静默失败，不影响主流程 */ }
+}
+
+let selected_hw_session = null;
+let selected_hw_data = {};
+
+function selectHwSession(el) {
+  const id = el.dataset.id;
+  const uploadArea = document.getElementById('hw_upload_area');
+  if (selected_hw_session === id) {
+    selected_hw_session = null;
+    selected_hw_data = {};
+    el.style.background = 'var(--bg)';
+    el.style.borderColor = 'var(--border)';
+    if (uploadArea) uploadArea.style.display = 'none';
+    return;
+  }
+  selected_hw_session = id;
+  selected_hw_data = { id, name: el.dataset.name, date: el.dataset.date };
+  el.closest('#hw_sessions_wrap').querySelectorAll('[data-id]').forEach(d => {
+    d.style.background = 'var(--bg)';
+    d.style.borderColor = 'var(--border)';
+  });
+  el.style.background = '#f0f7ff';
+  el.style.borderColor = 'var(--accent)';
+  if (uploadArea) uploadArea.style.display = 'block';
+}
+
+async function loadHomeworkSessions() {
+  const name = document.getElementById('hw_name')?.value.trim();
+  const wrap = document.getElementById('hw_sessions_wrap');
+  const uploadArea = document.getElementById('hw_upload_area');
+  if (!wrap) return;
+  if (!name) {
+    wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">请先填写姓名后选择课程</div>';
+    if (uploadArea) uploadArea.style.display = 'none';
+    return;
+  }
+  selected_hw_session = null; selected_hw_data = {};
+  document.getElementById('hw_upload_area').style.display = 'none';
+  wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">加载中…</div>';
+  try {
+    const from = new Date();
+    from.setDate(from.getDate() - 7);
+    const to = new Date();
+    to.setDate(to.getDate() + 7);
+    const fmt = d => d.toISOString().slice(0, 10);
+    const [sessions, records] = await Promise.all([
+      sb(`/rest/v1/course_sessions?session_date=gte.${fmt(from)}&session_date=lte.${fmt(to)}&homework_enabled=is.true&select=*&order=session_date.desc`).catch(() => []),
+      sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(name)}&select=session_id,homework_submitted,homework_file_url`).catch(() => [])
+    ]);
+    const relevant = sessions.filter(s => {
+      const sm = Array.isArray(s.major) ? s.major : [s.major||''];
+      if (!major) return true;
+      if (major === 'shakai_group') return sm.some(m => ['shakai','shinpan','fukushi'].includes(m));
+      return sm.includes(major);
+    });
+    if (!relevant.length) {
+      wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">近期暂无需提交作业的课程</div>';
+      if (uploadArea) uploadArea.style.display = 'none';
+      return;
+    }
+    const submittedIds = new Set(records.filter(r => r.homework_submitted || r.homework_file_url).map(r => r.session_id));
+    wrap.innerHTML = '';
+    relevant.forEach(s => {
+      const submitted = submittedIds.has(s.id);
+      const label = s.session_date + ' · ' + s.course_name + (s.session_title ? ' · ' + s.session_title : '');
+      const rowEl = document.createElement('div');
+      rowEl.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg);border:1px solid ' + (submitted?'var(--ok)':'var(--border)') + ';border-radius:3px;cursor:' + (submitted?'default':'pointer') + ';margin-bottom:4px;user-select:none';
+      rowEl.dataset.id = s.id;
+      rowEl.dataset.name = s.course_name;
+      rowEl.dataset.date = s.session_date;
+      if (!submitted) {
+        rowEl.addEventListener('click', function() { selectHwSession(this); });
+      }
+      const labelSpan = document.createElement('span');
+      labelSpan.style.cssText = 'font-size:12px;color:var(--text-2)';
+      labelSpan.textContent = label;
+      const statusSpan = document.createElement('span');
+      statusSpan.style.cssText = 'font-size:10px;color:' + (submitted?'var(--ok)':'var(--text-muted)') + ';flex-shrink:0;margin-left:12px';
+      statusSpan.textContent = submitted ? '✓ 已提交' : '未提交';
+      rowEl.appendChild(labelSpan);
+      rowEl.appendChild(statusSpan);
+      wrap.appendChild(rowEl);
+    });
+  } catch(e) {
+    wrap.innerHTML = '<div style="font-size:11px;color:var(--danger)">加载失败：' + e.message + '</div>';
+  }
+}
+
+async function submitHomework() {
+  const name = document.getElementById('hw_name')?.value.trim();
+  const fileEl = document.getElementById('hw_file');
+  const result = document.getElementById('hw_result');
+
+  if (!name) { result.innerHTML = '<span style="color:var(--danger)">请填写姓名</span>'; return; }
+  if (!selected_hw_session) { result.innerHTML = '<span style="color:var(--danger)">请选择课程</span>'; return; }
+  if (!fileEl?.files[0]) { result.innerHTML = '<span style="color:var(--danger)">请选择文件</span>'; return; }
+
+  const sessionId = selected_hw_data.id;
+  const sessionDate = selected_hw_data.date;
+  const courseName = selected_hw_data.name;
+  const file = fileEl.files[0];
+
+  result.innerHTML = '<span style="color:var(--text-muted)">上传中…</span>';
+
+  try {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const ts = Date.now();
+    const path = `${major||'general'}/${sessionDate}_${ts}.${ext}`;
+    const fileUrl = await sbUpload('homework', path, file);
+
+    const existing = await sb(
+      `/rest/v1/session_records?session_id=eq.${sessionId}&student_name=eq.${encodeURIComponent(name)}&select=id`
+    ).catch(() => []);
+
+    if (existing.length) {
+      await sb(`/rest/v1/session_records?id=eq.${existing[0].id}`, 'PATCH', {
+        homework_submitted: true,
+        homework_file_url: fileUrl
+      });
+    } else {
+      const sessions = await sb(`/rest/v1/course_sessions?id=eq.${sessionId}&select=*`).catch(() => []);
+      const s = sessions[0] || {};
+      await sb('/rest/v1/session_records', 'POST', {
+        id: `r-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
+        session_id: sessionId,
+        course_name: s.course_name || courseName,
+        session_date: sessionDate,
+        student_name: name,
+        major: major || s.major || '',
+        homework_submitted: true,
+        homework_file_url: fileUrl
+      });
+    }
+
+    result.innerHTML = '<span style="color:var(--ok)">✓ 作业提交成功！老师批改后可通过查询码查看反馈。</span>';
+    fileEl.value = '';
+    await loadHomeworkSessions();
+  } catch(e) {
+    result.innerHTML = `<span style="color:var(--danger)">提交失败：${e.message}</span>`;
+  }
 }
 
 initMajor();
