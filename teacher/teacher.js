@@ -1141,6 +1141,19 @@ function renderMySessionRow(s) {
     : s.delivery === 'offline' ? `线下${s.campus ? ' · ' + s.campus : ''}`
     : s.delivery === 'both' ? `线上+线下${s.campus ? ' · ' + s.campus : ''}`
     : (s.campus || '');
+  if (s.is_cancelled) {
+    return `<div style="background:rgba(0,0,0,.03);border:1px solid var(--border);border-radius:4px;margin-bottom:8px;padding:12px 14px;display:flex;align-items:center;gap:14px">
+      <div style="text-align:center;min-width:44px">
+        <div style="font-size:17px;font-weight:700;font-family:'DM Mono',monospace;color:var(--text-3);text-decoration:line-through">${d.getMonth() + 1}/${d.getDate()}</div>
+        <div style="font-size:10px;font-weight:600;color:var(--text-3)">${dow}</div>
+      </div>
+      <div style="flex:1">
+        <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px;color:var(--text-3)">${s.course_name}</span>
+        <span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:2px;padding:1px 6px;margin-left:6px">休讲${s.cancel_reason ? '・' + s.cancel_reason : ''}</span>
+        ${s.cancel_note ? `<div style="font-size:11px;color:var(--text-3);margin-top:3px">${s.cancel_note}</div>` : ''}
+      </div>
+    </div>`;
+  }
   return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;margin-bottom:8px;cursor:pointer" onclick="toggleSessionDetail('${rowId}')">
     <div style="padding:12px 14px;display:flex;align-items:flex-start;gap:14px">
       <div style="text-align:center;min-width:44px">
