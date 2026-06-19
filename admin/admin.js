@@ -1281,6 +1281,7 @@ async function confirmCourseImport(){
             course_id:courseId,course_name:r.name,major:r.major,
             session_date:date,session_number:i+1,
             time_range:r.time_range,
+            delivery:r.delivery,campus:r.campus,
             teacher:detail.teacher||r.teacher,
             session_title:detail.title||'',
             session_teacher:detail.teacher||'',
@@ -1860,6 +1861,7 @@ async function saveAddCourse(){
           session_date:newDates[i],
           time_range:courseData.time_range,
           actual_hours:courseData.actual_hours,
+          delivery:courseData.delivery,campus:courseData.campus,
           homework_enabled:courseData.homework_enabled,
         };
         // 单回名称/任课老师只在明确填写时才覆盖，避免清空已有的个别设置
@@ -1885,6 +1887,7 @@ async function saveAddCourse(){
             session_date:date,session_number:i+1,
             time_range:courseData.time_range,
             actual_hours:courseData.actual_hours,
+            delivery:courseData.delivery,campus:courseData.campus,
             teacher:detail.teacher||mainTeacher,
             session_title:detail.title||'',
             session_teacher:detail.teacher||mainTeacher,
@@ -1920,6 +1923,7 @@ async function saveAddCourse(){
           session_date:date,session_number:i+1,
           time_range:courseData.time_range,
           actual_hours:courseData.actual_hours,
+          delivery:courseData.delivery,campus:courseData.campus,
           teacher:detail.teacher||mainTeacher,
           session_title:detail.title||'',
           session_teacher:detail.teacher||mainTeacher,
@@ -2011,7 +2015,8 @@ async function regenerateSessions(){
       id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
       course_id:id,course_name:c.name,major:c.major,
       session_date:date,session_number:i+1,
-      time_range:timeRange||c.time_range,teacher:c.teacher
+      time_range:timeRange||c.time_range,teacher:c.teacher,
+      delivery:c.delivery,campus:c.campus
     }));
     for(let i=0;i<sessions.length;i+=20){
       const chunk=sessions.slice(i,i+20);
@@ -2115,27 +2120,24 @@ async function confirmReschedule(){
   const course=cachedCourses.find(c=>c.id===courseId);
   const weekdays=parseWeekdays(course?.weekdays||'');
   const lastSession=allSessions[allSessions.length-1];
-  const after=allSessions.slice(idx+1); // 休讲之后的所有课次（日期不变，内容要整体前移一位）
+  const after=allSessions.slice(idx+1); // 休讲之后的所有课次（日期固定，等待填入顺延后的内容）
 
-  if(!confirm(`确认将 ${target.session_date}（第${target.session_number}回）标记为休讲？\n后续课次的内容将整体顺延一位，并在末尾新增一节课承接最后被顶出的内容。`)) return;
+  if(!confirm(`确认将 ${target.session_date}（第${target.session_number}回）标记为休讲？\n该日期作废、不计入回数。被休讲掉的内容（连同之后所有内容）整体顺延一位，末尾新增一个日期承接原本最后一回的内容。`)) return;
 
   try{
-    // 1. 末尾新增一节课的日期＝最后一节课之后下一个符合星期规律的日期
-    let newDate=new Date(lastSession.session_date+'T12:00:00');
-    do{ newDate.setDate(newDate.getDate()+1); } while(weekdays.length && !weekdays.includes(newDate.getDay()));
-    const newDateStr=newDate.getFullYear()+'-'+String(newDate.getMonth()+1).padStart(2,'0')+'-'+String(newDate.getDate()).padStart(2,'0');
+    // ── 第一步：在做任何修改之前，构造完整的「内容链」快照 ──
+    // 内容链 = [target自己原本的内容, after[0]原本的内容, after[1]原本的内容, ..., after[n-1]原本的内容]
+    // 共 after.length + 1 份，要依次贴到 [after[0]的日期, after[1]的日期, ..., after[n-1]的日期, 新增日期] 这 after.length+1 个日期上
+    const contentChain = [
+      { session_title: target.session_title, teacher: target.teacher, session_teacher: target.session_teacher },
+      ...after.map(s => ({ session_title: s.session_title, teacher: s.teacher, session_teacher: s.session_teacher }))
+    ];
+    // contentChain[0] 是休讲那天原本的内容 → 贴到 after[0] 的日期上
+    // contentChain[1] 是 after[0] 原本的内容 → 贴到 after[1] 的日期上
+    // ...
+    // contentChain[after.length] 是 after[after.length-1]（也就是 lastSession）原本的内容 → 贴到新增日期上
 
-    // 2. 内容整体顺延：把 after 数组的内容字段（session_title/teacher/session_teacher）依次往前挪一位，
-    //    即 after[i] 应显示原本 after[i+1] 的内容；最后一个（lastSession）的内容顺延到新增的那一节。
-    //    构造完整链条：after + [新增占位]，内容从后一项往前一项搬
-    const contentChain = after.map(s => ({ session_title: s.session_title, teacher: s.teacher, session_teacher: s.session_teacher }));
-    contentChain.push({ session_title: lastSession.session_title, teacher: lastSession.teacher, session_teacher: lastSession.session_teacher });
-    // contentChain[0] 原本属于 after[0]，但 after[0] 现在应该显示 contentChain[1]（也就是原本下一节的内容）
-    // 实际上更简单的理解：休讲腾出一个空位，后面的内容整体往前挪一位填补，
-    // 所以 after[i] 的新内容 = contentChain[i+1]（也就是原本紧邻的下一节内容）
-    const newContents = contentChain.slice(1); // after[0]..after[n-1] 对应的新内容，长度 = after.length
-
-    // 3. 标记当前课次为休讲（日期不变，回数不再计入，内容清空）
+    // 1. 标记休讲：日期不变，不计入回数，内容清空
     await sb(`/rest/v1/course_sessions?id=eq.${id}`,'PATCH',{
       is_cancelled:true,
       cancel_reason:reason,
@@ -2146,29 +2148,35 @@ async function confirmReschedule(){
     target.is_cancelled=true; target.cancel_reason=reason; target.cancel_note=note||null;
     target.session_title='休讲'; target.session_teacher='';
 
-    // 4. after 中每节课：session_number 减 1，内容替换为顺延后的新内容
+    // 2. after 中每节课：日期不变，session_number 减 1，内容＝contentChain 中对应的「前一份」内容
     for(let i=0;i<after.length;i++){
       const s=after[i];
-      const content=newContents[i];
+      const content=contentChain[i]; // 注意：是 contentChain[i] 不是 [i+1]，因为 contentChain[0] 就是要贴给 after[0] 的
       const patch={
         session_number: s.session_number - 1,
         session_title: content.session_title || '',
-        teacher: content.teacher || s.teacher,
+        teacher: content.teacher,
         session_teacher: content.session_teacher || '',
       };
       await sb(`/rest/v1/course_sessions?id=eq.${s.id}`,'PATCH',patch);
       Object.assign(s,patch);
     }
 
-    // 5. 末尾新增一节课，承接最后被顶出来的内容（原 lastSession 的内容）
+    // 3. 新增补课日期，内容＝contentChain 最后一项（原本 lastSession 自己的内容）
+    let newDate=new Date(lastSession.session_date+'T12:00:00');
+    do{ newDate.setDate(newDate.getDate()+1); } while(weekdays.length && !weekdays.includes(newDate.getDay()));
+    const newDateStr=newDate.getFullYear()+'-'+String(newDate.getMonth()+1).padStart(2,'0')+'-'+String(newDate.getDate()).padStart(2,'0');
+    const lastContent=contentChain[contentChain.length-1];
+
     const newSession={
       id:`s-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
       course_id:courseId,course_name:lastSession.course_name,major:lastSession.major,
-      session_date:newDateStr,session_number:lastSession.session_number,
+      session_date:newDateStr,session_number:lastSession.session_number, // 原始最后编号（顺延前）
       time_range:lastSession.time_range,actual_hours:lastSession.actual_hours,
-      teacher:lastSession.teacher,
-      session_title:lastSession.session_title||'',
-      session_teacher:lastSession.session_teacher||'',
+      delivery:lastSession.delivery,campus:lastSession.campus,
+      teacher:lastContent.teacher,
+      session_title:lastContent.session_title||'',
+      session_teacher:lastContent.session_teacher||'',
       homework_enabled:lastSession.homework_enabled,confirmed:lastSession.confirmed,
       is_cancelled:false
     };
@@ -2177,7 +2185,7 @@ async function confirmReschedule(){
 
     closeModal('rescheduleModal');
     renderCoursesPage(document.getElementById('mainContent'));
-    alert(`已将 ${target.session_date} 标记为休讲，后续内容已自动顺延，并在 ${newDateStr} 新增补课承接最后一回内容`);
+    alert(`已将 ${target.session_date} 标记为休讲，内容已整体顺延，并在 ${newDateStr} 新增第${newSession.session_number}回承接原最后一回内容`);
   }catch(e){alert('操作失败：'+e.message)}
 }
 // ── 出席・作业（see attendance.js）──
