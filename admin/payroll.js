@@ -47,12 +47,12 @@ function parseTimeRange(dateStr, timeRange, actualHours) {
     return {
       start: `${y}年${mo}月${day}日 ${startT}`,
       end: `${y}年${mo}月${day}日 ${endT2}`,
-      hours: Math.round(actualHours * 10) / 10
+      hours: Math.round(actualHours * 100) / 100
     };
   }
 
   const [eh, em] = endT.split(':').map(Number);
-  const hours = Math.round(((eh * 60 + em) - (sh * 60 + sm)) / 60 * 10) / 10;
+  const hours = Math.round(((eh * 60 + em) - (sh * 60 + sm)) / 60 * 100) / 100;
   return {
     start: `${y}年${mo}月${day}日 ${startT}`,
     end: `${y}年${mo}月${day}日 ${endT}`,
@@ -75,7 +75,7 @@ function bookingTimes(b) {
     const mm = String(dt.getMinutes()).padStart(2, '0');
     return `${y}年${mo}月${day}日 ${hh}:${mm}`;
   };
-  return { start: fmt(d), end: fmt(endD), hours: Math.round(mins / 60 * 10) / 10 };
+  return { start: fmt(d), end: fmt(endD), hours: Math.round(mins / 60 * 100) / 100 };
 }
 
 // ── 生成课程行 ──
@@ -220,7 +220,7 @@ async function runPayroll() {
       return;
     }
 
-    const totalHours = Math.round(payrollRows.reduce((s, r) => s + (r.时长 || 0), 0) * 10) / 10;
+    const totalHours = Math.round(payrollRows.reduce((s, r) => s + (r.时长 || 0), 0) * 100) / 100;
     const courseCount = courseRows.length;
     const bookingCount = bookingRows.length;
     const dateRange = `${start.slice(0, 7).replace('-', '年')}月`;
