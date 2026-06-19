@@ -578,8 +578,17 @@ const activeBooking = cachedBookings.find(b =>
   const booked = cachedBookings.filter(b => b.slot_id === selectedSlotId && b.status !== 'cancelled').length;
   if (booked >= cap) { alert('该时间段名额已满，请选择其他时间'); renderSlots(); return; }
 
+  // 若该学生在学生档案中已有真实专业记录，优先使用真实专业（避免社会人文分组链接覆盖真实专业）
+  let bookingMajor = slot.major || major;
+  try {
+    const existingStudent = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(name)}&select=major&limit=1`);
+    if (existingStudent && existingStudent.length && existingStudent[0].major) {
+      bookingMajor = existingStudent[0].major;
+    }
+  } catch (e) { /* 查询失败时退回原逻辑，不阻断预约流程 */ }
+
   const booking = {
-    id: Date.now().toString(), name, major: slot.major || major, exam_period: examPeriod,
+    id: Date.now().toString(), name, major: bookingMajor, exam_period: examPeriod,
     specialty_status: document.getElementById('specialtyStatus').value,
     target_school: document.getElementById('targetSchool').value,
     contact_prof: document.getElementById('contactProf').value,
