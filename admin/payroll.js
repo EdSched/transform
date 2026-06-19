@@ -188,6 +188,15 @@ function renderPayrollSection(container) {
       </div>
       <button class="btn btn-primary btn-sm" onclick="runPayroll()">生成</button>
     </div>
+    <div style="margin-bottom:14px;padding-top:10px;border-top:1px solid var(--border-light)">
+      <label class="form-label">按专业批量生成（自动覆盖该专业所有老师）</label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+        ${[['keiei','経営学'],['keizai','経済学'],['shakai','社会学'],['shinpan','新闻传播学'],['fukushi','社会福祉学']].map(([key,label]) =>
+          `<button class="btn btn-outline btn-sm" onclick="runPayrollByMajor('${key}')">${label}</button>`
+        ).join('')}
+        <button class="btn btn-outline btn-sm" onclick="runPayrollByMajor('all')">全部老师</button>
+      </div>
+    </div>
     <div id="pr_result"></div>
     <div id="pr_submit_bar" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
       <button class="btn btn-primary btn-sm" onclick="submitWorkRecords()">↑ 提交到工作记录</button>
@@ -244,6 +253,89 @@ async function runPayroll() {
         合计 <strong style="color:var(--text)">${totalHours}</strong> 小时
       </div>
       <button class="btn btn-outline btn-sm" onclick="exportPayrollExcel(payrollRows,'${teacherName}','${dateRange}')">↓ 导出 Excel</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead>
+          <tr style="background:var(--bg)">
+            ${['姓名','开始时间','结束时间','时长(h)','工作内容','工作地点','备注'].map(h =>
+              `<th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);font-weight:600;color:var(--text-2);white-space:nowrap">${h}</th>`
+            ).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${payrollRows.map((r, i) => `
+          <tr style="border-bottom:1px solid var(--border-light);background:${r.type === 'booking' ? 'rgba(42,106,173,0.03)' : 'transparent'}">
+            <td style="padding:6px 8px;white-space:nowrap">${r.姓名}</td>
+            <td style="padding:6px 8px;white-space:nowrap;color:var(--text-2)">${r.开始时间}</td>
+            <td style="padding:6px 8px;white-space:nowrap;color:var(--text-2)">${r.结束时间}</td>
+            <td style="padding:6px 8px;text-align:center;font-weight:600">${r.时长}</td>
+            <td style="padding:6px 8px"><span style="font-size:10px;background:${r.type === 'booking' ? '#e8f0fb' : 'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px">${r.工作内容}</span></td>
+            <td style="padding:6px 8px;color:var(--text-2)">${r.工作地点}</td>
+            <td style="padding:6px 8px;color:var(--text-2)">${r.备注}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  } catch(e) {
+    res.innerHTML = `<div style="font-size:12px;color:var(--danger)">加载失败：${e.message}</div>`;
+  }
+}
+
+async function runPayrollByMajor(majorKey) {
+  const start = document.getElementById('pr_start').value;
+  const end = document.getElementById('pr_end').value;
+  if (!start || !end || start > end) { alert('请选择有效日期范围'); return; }
+  payrollStart = start;
+  payrollEnd = end;
+
+  const teacherNames = majorKey === 'all'
+    ? cachedTeachers.map(t => t.name)
+    : cachedTeachers.filter(t => (t.majors || []).includes(majorKey)).map(t => t.name);
+
+  if (!teacherNames.length) { alert('该专业下暂无老师'); return; }
+
+  const res = document.getElementById('pr_result');
+  res.innerHTML = '<div style="font-size:12px;color:var(--text-3)">加载中…</div>';
+
+  try {
+    const [sessions, bookings, slots, courses] = await Promise.all([
+      sb(`/rest/v1/course_sessions?select=*&session_date=gte.${start}&session_date=lte.${end}&order=session_date.asc`),
+      sb(`/rest/v1/bookings?select=*&slot_date=gte.${start}&slot_date=lte.${end}&order=slot_date.asc`),
+      sb(`/rest/v1/slots?select=*&date=gte.${start}&date=lte.${end}`),
+      sb(`/rest/v1/courses?select=id,time_range,course_type,delivery,campus,actual_hours`)
+    ]);
+
+    payrollRows = [];
+    teacherNames.forEach(teacherName => {
+      const courseRows = buildCourseRows(sessions, teacherName, courses);
+      const bookingRows = buildBookingRows(bookings, slots, teacherName);
+      payrollRows.push(...courseRows, ...bookingRows);
+    });
+    payrollRows.sort((a, b) => a.姓名.localeCompare(b.姓名) || a._date.localeCompare(b._date));
+
+    if (!payrollRows.length) {
+      res.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:12px 0">该时间段内无数据</div>';
+      return;
+    }
+
+    const courseCount = payrollRows.filter(r => r.type === 'course').length;
+    const bookingCount = payrollRows.filter(r => r.type === 'booking').length;
+    const totalHours = Math.round(payrollRows.reduce((s, r) => s + (r.时长 || 0), 0) * 100) / 100;
+    const dateRange = `${start.slice(0, 7).replace('-', '年')}月`;
+    const submitBar = document.getElementById('pr_submit_bar');
+    if (submitBar) submitBar.style.display = 'block';
+    const labelMap = {keiei:'経営学',keizai:'経済学',shakai:'社会学',shinpan:'新闻传播学',fukushi:'社会福祉学',all:'全部老师'};
+
+    res.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:11px;color:var(--text-3)">
+        ${labelMap[majorKey]} · ${teacherNames.length} 位老师 ·
+        大课 <strong style="color:var(--text)">${courseCount}</strong> 节 ·
+        面谈 <strong style="color:var(--text)">${bookingCount}</strong> 次 ·
+        合计 <strong style="color:var(--text)">${totalHours}</strong> 小时
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="exportPayrollExcel(payrollRows,'${labelMap[majorKey]}','${dateRange}')">↓ 导出 Excel</button>
     </div>
     <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:11px">
