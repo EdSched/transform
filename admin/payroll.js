@@ -158,7 +158,6 @@ function exportPayrollExcel(rows, teacherName, dateRange) {
 // ══════════════════════════════════
 
 let payrollTeacher = '';
-let payrollTeachers = [];
 let payrollStart = '';
 let payrollEnd = '';
 let payrollRows = [];
@@ -168,33 +167,17 @@ function renderPayrollSection(container) {
   if (!payrollStart) payrollStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
   if (!payrollEnd) payrollEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
 
-  const majorList = [['keiei','経営学'],['keizai','経済学'],['shakai','社会学'],['shinpan','新闻传播学'],['fukushi','社会福祉学']];
-
   container.innerHTML = `
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:16px;margin-top:16px">
     <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:14px;letter-spacing:.05em;text-transform:uppercase">工资核算</div>
-
-    <div style="margin-bottom:10px">
-      <label class="form-label">按专业快速选择老师</label>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
-        ${majorList.map(([key,label]) => `<button class="btn btn-outline btn-sm" onclick="selectTeachersByMajor('${key}')">${label}</button>`).join('')}
-        <button class="btn btn-outline btn-sm" onclick="selectAllTeachers()">全选</button>
-        <button class="btn btn-outline btn-sm" onclick="clearTeacherSelection()">清空</button>
-      </div>
-    </div>
-
-    <div style="margin-bottom:14px">
-      <label class="form-label">老师（可多选）</label>
-      <div id="pr_teacher_list" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;padding:10px;background:var(--bg);border:1px solid var(--border-light);border-radius:3px;max-height:140px;overflow-y:auto">
-        ${cachedTeachers.map(t => `
-          <label style="display:flex;align-items:center;gap:4px;font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:2px;padding:3px 8px;cursor:pointer">
-            <input type="checkbox" class="pr_teacher_cb" value="${t.name}" ${payrollTeachers.includes(t.name)?'checked':''} style="margin:0">
-            ${t.name}
-          </label>`).join('')}
-      </div>
-    </div>
-
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:14px">
+      <div class="form-group" style="margin:0;min-width:140px">
+        <label class="form-label">老师</label>
+        <select id="pr_teacher">
+          <option value="">请选择老师</option>
+          ${cachedTeachers.map(t => `<option value="${t.name}" ${payrollTeacher === t.name ? 'selected' : ''}>${t.name}</option>`).join('')}
+        </select>
+      </div>
       <div class="form-group" style="margin:0">
         <label class="form-label">开始日期</label>
         <input type="date" id="pr_start" value="${payrollStart}" style="width:140px">
@@ -216,29 +199,13 @@ function renderPayrollSection(container) {
   renderWorkRecordsAdmin(document.getElementById('pr_records'));
 }
 
-function selectTeachersByMajor(majorKey) {
-  document.querySelectorAll('.pr_teacher_cb').forEach(cb => {
-    const t = cachedTeachers.find(x => x.name === cb.value);
-    cb.checked = !!(t && (t.majors || []).includes(majorKey));
-  });
-}
-function selectAllTeachers() {
-  document.querySelectorAll('.pr_teacher_cb').forEach(cb => cb.checked = true);
-}
-function clearTeacherSelection() {
-  document.querySelectorAll('.pr_teacher_cb').forEach(cb => cb.checked = false);
-}
-function getSelectedTeachers() {
-  return [...document.querySelectorAll('.pr_teacher_cb:checked')].map(cb => cb.value);
-}
-
 async function runPayroll() {
-  const teacherNames = getSelectedTeachers();
+  const teacherName = document.getElementById('pr_teacher').value;
   const start = document.getElementById('pr_start').value;
   const end = document.getElementById('pr_end').value;
-  if (!teacherNames.length) { alert('请至少选择一位老师'); return; }
+  if (!teacherName) { alert('请选择老师'); return; }
   if (!start || !end || start > end) { alert('请选择有效日期范围'); return; }
-  payrollTeachers = teacherNames;
+  payrollTeacher = teacherName;
   payrollStart = start;
   payrollEnd = end;
 
@@ -253,39 +220,30 @@ async function runPayroll() {
       sb(`/rest/v1/courses?select=id,time_range,course_type,delivery,campus,actual_hours`)
     ]);
 
-    payrollRows = [];
-    teacherNames.forEach(teacherName => {
-      const courseRows = buildCourseRows(sessions, teacherName, courses);
-      const bookingRows = buildBookingRows(bookings, slots, teacherName);
-      payrollRows.push(...courseRows, ...bookingRows);
-    });
-    payrollRows.sort((a, b) => a.姓名.localeCompare(b.姓名) || a._date.localeCompare(b._date));
+    const courseRows = buildCourseRows(sessions, teacherName, courses);
+    const bookingRows = buildBookingRows(bookings, slots, teacherName);
+    payrollRows = [...courseRows, ...bookingRows].sort((a, b) => a._date.localeCompare(b._date));
 
     if (!payrollRows.length) {
       res.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:12px 0">该时间段内无数据</div>';
       return;
     }
 
-    const courseCount = payrollRows.filter(r => r.type === 'course').length;
-    const bookingCount = payrollRows.filter(r => r.type === 'booking').length;
     const totalHours = Math.round(payrollRows.reduce((s, r) => s + (r.时长 || 0), 0) * 100) / 100;
+    const courseCount = courseRows.length;
+    const bookingCount = bookingRows.length;
     const dateRange = `${start.slice(0, 7).replace('-', '年')}月`;
     const submitBar = document.getElementById('pr_submit_bar');
     if (submitBar) submitBar.style.display = 'block';
 
-    // 按老师分组小计
-    const byTeacher = {};
-    payrollRows.forEach(r => { (byTeacher[r.姓名] = byTeacher[r.姓名] || []).push(r); });
-
     res.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
       <div style="font-size:11px;color:var(--text-3)">
-        ${teacherNames.length} 位老师 ·
         大课 <strong style="color:var(--text)">${courseCount}</strong> 节 ·
         面谈 <strong style="color:var(--text)">${bookingCount}</strong> 次 ·
         合计 <strong style="color:var(--text)">${totalHours}</strong> 小时
       </div>
-      <button class="btn btn-outline btn-sm" onclick="exportPayrollExcel(payrollRows,'${teacherNames.length>1?'批量':teacherNames[0]}','${dateRange}')">↓ 导出 Excel（全部）</button>
+      <button class="btn btn-outline btn-sm" onclick="exportPayrollExcel(payrollRows,'${teacherName}','${dateRange}')">↓ 导出 Excel</button>
     </div>
     <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:11px">
@@ -345,7 +303,7 @@ async function submitWorkRecords() {
     for (let i = 0; i < toInsert.length; i += 20) {
       await sb('/rest/v1/work_records', 'POST', toInsert.slice(i, i + 20));
     }
-    alert(`已提交 ${toInsert.length} 条记录（${teacherNames.length} 位老师），待审核`);
+    alert(`已提交 ${toInsert.length} 条记录，待审核`);
     renderWorkRecordsAdmin(document.getElementById('pr_records'));
   } catch(e) { alert('提交失败：' + e.message); }
 }
