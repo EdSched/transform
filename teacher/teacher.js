@@ -1137,10 +1137,17 @@ function renderMySessionRow(s) {
   const dow = DAYS_CN[d.getDay()];
   const dowColor = DOW_COLOR[d.getDay()] || 'var(--text-2)';
   const rowId = 'sr_' + s.id;
-  const locationText = !s.delivery || s.delivery === 'online' ? '线上'
-    : s.delivery === 'offline' ? `线下${s.campus ? ' · ' + s.campus : ''}`
-    : s.delivery === 'both' ? `线上+线下${s.campus ? ' · ' + s.campus : ''}`
-    : (s.campus || '');
+  const locationText = (() => {
+    const loc = s.delivery;
+    if (!loc || loc === 'online') return '线上';
+    if (loc === 'offline_takadanobaba') return '线下 · 高田马场';
+    if (loc === 'offline_ichigaya') return '线下 · 市谷';
+    if (loc === 'both_takadanobaba') return '线上 / 线下均可 · 高田马场';
+    if (loc === 'both_ichigaya') return '线上 / 线下均可 · 市谷';
+    if (loc === 'offline') return `线下${s.campus ? ' · ' + s.campus : ''}`;
+    if (loc === 'both') return `线上 / 线下均可${s.campus ? ' · ' + s.campus : ''}`;
+    return s.campus || loc;
+  })();
   if (s.is_cancelled) {
     return `<div style="background:rgba(0,0,0,.03);border:1px solid var(--border);border-radius:4px;margin-bottom:8px;padding:12px 14px;display:flex;align-items:center;gap:14px">
       <div style="text-align:center;min-width:44px">
