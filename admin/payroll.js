@@ -93,7 +93,7 @@ function buildCourseRows(sessions, teacherName, courses) {
   const courseMap = {};
   (courses || []).forEach(c => { courseMap[c.id] = c; });
   return sessions
-    .filter(s => (s.teacher === teacherName || s.session_teacher === teacherName))
+    .filter(s => !s.is_cancelled && (s.teacher === teacherName || s.session_teacher === teacherName))
     .map(s => {
       const tr = s.time_range || courseMap[s.course_id]?.time_range || '';
       const actualHours = (s.actual_hours != null ? s.actual_hours : courseMap[s.course_id]?.actual_hours);
