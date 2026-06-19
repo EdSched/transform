@@ -1478,6 +1478,18 @@ function renderCoursesSummary(courses){
                 const border=i%5!==0?'border-left:1px solid var(--border-light)':'';
                 const borderT=i>=5?'border-top:1px solid var(--border-light)':'';
                 const titleStr=s.session_title?`<div style="font-size:9px;color:var(--text-2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.session_title}</div>`:'';
+                if(s.is_cancelled){
+                  return `<div style="padding:8px 10px;${border};${borderT};position:relative;background:rgba(0,0,0,.03)" title="休讲${s.cancel_note?'：'+s.cancel_note:''}">
+                    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:4px">
+                      <div style="display:flex;align-items:baseline;gap:4px">
+                        <span style="font-size:13px;font-weight:600;color:var(--text-3);text-decoration:line-through">${f.short}</span>
+                        <span style="font-size:10px;font-weight:500;color:var(--text-3)">${f.dow}</span>
+                      </div>
+                      <button onclick="openReschedule('${s.id}')" title="调整日期" style="font-size:9px;background:none;border:none;cursor:pointer;color:var(--text-3);padding:0;line-height:1">⇄</button>
+                    </div>
+                    <div style="font-size:9px;color:#b07020;margin-top:1px;font-weight:600">休讲${s.cancel_reason?'・'+s.cancel_reason:''}</div>
+                  </div>`;
+                }
                 return `<div style="padding:8px 10px;${border};${borderT};position:relative" title="${s.session_title||''}">
                   <div style="display:flex;align-items:baseline;justify-content:space-between;gap:4px">
                     <div style="display:flex;align-items:baseline;gap:4px">
@@ -1816,14 +1828,81 @@ async function saveAddCourse(){
     let courseId;
     if(editingId){
       await sb(`/rest/v1/courses?id=eq.${editingId}`,'PATCH',courseData);
-      // 同步所有课次的 homework_enabled（不删除课次，避免破坏出席记录）
-      await sb(`/rest/v1/course_sessions?course_id=eq.${editingId}`,'PATCH',{homework_enabled:courseData.homework_enabled}).catch(()=>{});
       const idx=cachedCourses.findIndex(c=>c.id===editingId);
       if(idx>=0) cachedCourses[idx]={...cachedCourses[idx],...courseData};
       courseId=editingId;
-      // 删除旧课次，重新生成
-      await sb(`/rest/v1/course_sessions?course_id=eq.${editingId}`,'DELETE');
-      cachedSessions=cachedSessions.filter(s=>s.course_id!==editingId);
+
+      // ── 编辑模式：按 session_number 对应更新已有课次，不删除重建，保留 id 不变 ──
+      const existing=cachedSessions.filter(s=>s.course_id===editingId).sort((a,b)=>a.session_number-b.session_number);
+      const newDates=dates; // 已在上方按新的 first_session_date/weekdays/total 重新生成
+
+      if(newDates.length < existing.length){
+        // 课次数量减少：检查被砍掉的部分是否已有出席记录
+        const toRemove=existing.slice(newDates.length);
+        const toRemoveIds=toRemove.map(s=>s.id);
+        const records=await sb(`/rest/v1/session_records?session_id=in.(${toRemoveIds.map(i=>`"${i}"`).join(',')})&select=id`).catch(()=>[]);
+        if(records.length){
+          alert(`无法保存：第${toRemove[0].session_number}回及之后已有出席/作业记录，不能减少课次数量。请先确认是否真的要减少回数。`);
+          return;
+        }
+        // 没有记录，可以安全删除多余课次
+        await sb(`/rest/v1/course_sessions?id=in.(${toRemoveIds.map(i=>`"${i}"`).join(',')})`,'DELETE');
+        cachedSessions=cachedSessions.filter(s=>!toRemoveIds.includes(s.id));
+      }
+
+      // 更新已有课次（按 session_number 对应，id 不变，关联不断）
+      const updateCount=Math.min(newDates.length, existing.length);
+      for(let i=0;i<updateCount;i++){
+        const detail=detailRows.find(r=>r.num===i+1)||{};
+        const mainTeacher=courseData.teacher;
+        const patch={
+          course_name:name, major:majors,
+          session_date:newDates[i],
+          time_range:courseData.time_range,
+          actual_hours:courseData.actual_hours,
+          homework_enabled:courseData.homework_enabled,
+        };
+        // 单回名称/任课老师只在明确填写时才覆盖，避免清空已有的个别设置
+        if(hasDetails){
+          patch.session_title=detail.title||'';
+          patch.teacher=detail.teacher||mainTeacher;
+          patch.session_teacher=detail.teacher||mainTeacher;
+        }
+        await sb(`/rest/v1/course_sessions?id=eq.${existing[i].id}`,'PATCH',patch);
+        Object.assign(existing[i],patch);
+      }
+
+      // 课次数量增加：新增超出部分
+      if(newDates.length > existing.length){
+        const confirmed=document.getElementById('ac_confirm_publish')?.checked ?? (existing[0]?.confirmed||false);
+        const addRows=newDates.slice(existing.length).map((date,j)=>{
+          const i=existing.length+j;
+          const detail=detailRows.find(r=>r.num===i+1)||{};
+          const mainTeacher=courseData.teacher;
+          return {
+            id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
+            course_id:courseId,course_name:name,major:majors,
+            session_date:date,session_number:i+1,
+            time_range:courseData.time_range,
+            actual_hours:courseData.actual_hours,
+            teacher:detail.teacher||mainTeacher,
+            session_title:detail.title||'',
+            session_teacher:detail.teacher||mainTeacher,
+            homework_enabled:courseData.homework_enabled||false,
+            confirmed
+          };
+        });
+        for(let i=0;i<addRows.length;i+=20){
+          const chunk=addRows.slice(i,i+20);
+          const sres=await sb('/rest/v1/course_sessions','POST',chunk);
+          cachedSessions.push(...(Array.isArray(sres)?sres:chunk));
+        }
+      }
+
+      closeModal('addCourseModal');
+      renderCoursesPage(document.getElementById('mainContent'));
+      alert('课程信息已更新，已同步到所有相关页面');
+      return;
     } else {
       courseId=`c-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
       const res=await sb('/rest/v1/courses','POST',[{...courseData,id:courseId}]);
@@ -2009,36 +2088,80 @@ async function confirmCopyPeriod(){
   }catch(e){alert('操作失败：'+e.message);btn.textContent='复制并生成';btn.disabled=false}
 }
 
-// ── 调整课次日期（休讲顺延）──
+// ── 休讲调整（标记休讲 + 内容顺延 + 末尾补课）──
 function openReschedule(sessionId){
   const s=cachedSessions.find(x=>x.id===sessionId);
   if(!s) return;
+  if(s.is_cancelled){ alert('该课次已标记为休讲'); return; }
   document.getElementById('rs_session_id').value=sessionId;
-  document.getElementById('reschedule_sub').textContent=`${s.course_name} 第${s.session_number}回`;
+  document.getElementById('reschedule_sub').textContent=`${s.course_name} 第${s.session_number}回 · ${s.session_date}`;
   document.getElementById('rs_orig_date').value=s.session_date;
-  // 默认顺延7天
-  const next=new Date(s.session_date);
-  next.setDate(next.getDate()+7);
-  document.getElementById('rs_new_date').value=next.toISOString().slice(0,10);
-  document.getElementById('rs_reason').value='休讲顺延';
+  document.getElementById('rs_reason').value='老师请假';
   document.getElementById('rs_note').value='';
   document.getElementById('rescheduleModal').classList.add('open');
 }
 async function confirmReschedule(){
   const id=document.getElementById('rs_session_id').value;
-  const newDate=document.getElementById('rs_new_date').value;
   const reason=document.getElementById('rs_reason').value;
   const note=document.getElementById('rs_note').value;
-  if(!newDate){alert('请选择新日期');return}
+  const target=cachedSessions.find(x=>x.id===id);
+  if(!target){alert('找不到该课次');return}
+
+  const courseId=target.course_id;
+  const allSessions=cachedSessions.filter(s=>s.course_id===courseId).sort((a,b)=>a.session_number-b.session_number);
+  const idx=allSessions.findIndex(s=>s.id===id);
+  if(idx===-1){alert('找不到该课次');return}
+
+  const course=cachedCourses.find(c=>c.id===courseId);
+  const weekdays=parseWeekdays(course?.weekdays||'');
+  const lastSession=allSessions[allSessions.length-1];
+  const after=allSessions.slice(idx+1); // 休讲之后的所有课次（日期不变，内容要整体前移一位）
+
+  if(!confirm(`确认将 ${target.session_date}（第${target.session_number}回）标记为休讲？\n后续课次的「第几回」与内容将整体顺延一位，并在末尾新增一节课补齐总回数。`)) return;
+
   try{
-    const patch={session_date:newDate};
-    if(note||reason) patch.session_title=document.getElementById('rs_orig_date').value+'→'+newDate+(note?` (${note})`:'');
-    await sb(`/rest/v1/course_sessions?id=eq.${id}`,'PATCH',patch);
-    const s=cachedSessions.find(x=>x.id===id);
-    if(s){s.session_date=newDate;if(patch.session_title)s.session_title=patch.session_title}
+    // 1. 标记当前课次为休讲（日期不变，不再计入回数序列，内容清空）
+    await sb(`/rest/v1/course_sessions?id=eq.${id}`,'PATCH',{
+      is_cancelled:true,
+      cancel_reason:reason,
+      cancel_note:note||null,
+      session_title:'休讲',
+      session_teacher:'',
+    });
+    target.is_cancelled=true; target.cancel_reason=reason; target.cancel_note=note||null;
+    target.session_title='休讲'; target.session_teacher='';
+
+    // 2. 末尾新增一节课，日期＝最后一节课之后下一个符合星期规律的日期，内容留空待填
+    let newDate=new Date(lastSession.session_date+'T12:00:00');
+    do{ newDate.setDate(newDate.getDate()+1); } while(weekdays.length && !weekdays.includes(newDate.getDay()));
+    const newDateStr=newDate.getFullYear()+'-'+String(newDate.getMonth()+1).padStart(2,'0')+'-'+String(newDate.getDate()).padStart(2,'0');
+
+    // 3. 顺延：after 中每节课的「内容」往前挪一位（即 after[i] 显示 原本 after[i] 自己的 session_number 减1 对应的内容，
+    //    实际操作＝把 after 数组里的 session_number 整体减1，内容字段（session_title/teacher/session_teacher）保持跟随各自记录本身，
+    //    因为内容原本就和 session_number 是绑定生成的，这里只需把 session_number 集体减 1，
+    //    新增的最后一节用原来空出来的最大 session_number。
+    for(const s of after){
+      const patch={ session_number: s.session_number - 1 };
+      await sb(`/rest/v1/course_sessions?id=eq.${s.id}`,'PATCH',patch);
+      s.session_number = patch.session_number;
+    }
+
+    const newSession={
+      id:`s-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
+      course_id:courseId,course_name:lastSession.course_name,major:lastSession.major,
+      session_date:newDateStr,session_number:lastSession.session_number,
+      time_range:lastSession.time_range,actual_hours:lastSession.actual_hours,
+      teacher:lastSession.teacher,session_title:'',session_teacher:lastSession.session_teacher,
+      homework_enabled:lastSession.homework_enabled,confirmed:lastSession.confirmed,
+      is_cancelled:false
+    };
+    const sres=await sb('/rest/v1/course_sessions','POST',[newSession]);
+    cachedSessions.push(Array.isArray(sres)?sres[0]:newSession);
+
     closeModal('rescheduleModal');
     renderCoursesPage(document.getElementById('mainContent'));
-  }catch(e){alert('调整失败：'+e.message)}
+    alert(`已将 ${target.session_date} 标记为休讲，后续课次回数已顺延，并在 ${newDateStr} 新增补课（第${newSession.session_number}回，请填写内容）`);
+  }catch(e){alert('操作失败：'+e.message)}
 }
 // ── 出席・作业（see attendance.js）──
 
