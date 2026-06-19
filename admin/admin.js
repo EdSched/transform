@@ -103,6 +103,9 @@ async function renderPage(){
         sb('/rest/v1/course_sessions?homework_enabled=is.true&select=id,course_name&order=course_name.asc').catch(()=>[]),
       ]);
       renderTeachersPage(mc);
+    } else if(curPage==='payroll'){
+      cachedTeachers=await sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[]);
+      renderPayrollPage(mc);
     } else if(curPage==='attendance'){
       [cachedStudents,cachedCourses,cachedSessions,cachedSessionRecords]=await Promise.all([
         sb('/rest/v1/students?select=*&order=name.asc'),
@@ -1799,6 +1802,7 @@ async function saveAddCourse(){
     delivery:document.getElementById('ac_delivery').value,
     weekdays:weekdayStr,
     time_range:document.getElementById('ac_time_range').value.trim(),
+    actual_hours:parseFloat(document.getElementById('ac_actual_hours').value)||null,
     total_sessions:total,
     first_session_date:firstDate,
     notes:document.getElementById('ac_notes').value.trim(),
@@ -1836,6 +1840,7 @@ async function saveAddCourse(){
           course_id:courseId,course_name:name,major:majors,
           session_date:date,session_number:i+1,
           time_range:courseData.time_range,
+          actual_hours:courseData.actual_hours,
           teacher:detail.teacher||mainTeacher,
           session_title:detail.title||'',
           session_teacher:detail.teacher||mainTeacher,
@@ -1870,6 +1875,7 @@ function openEditCourse(id){
   document.getElementById('ec_delivery').value=c.delivery||'';
   document.getElementById('ec_weekdays').value=c.weekdays||'';
   document.getElementById('ec_time_range').value=c.time_range||'';
+  document.getElementById('ec_actual_hours').value=c.actual_hours||'';
   document.getElementById('ec_total').value=c.total_sessions||'';
   document.getElementById('ec_first_date').value=c.first_session_date||'';
   document.getElementById('ec_notes').value=c.notes||'';
@@ -1890,6 +1896,7 @@ async function saveEditCourse(){
     delivery:document.getElementById('ec_delivery').value,
     weekdays:document.getElementById('ec_weekdays').value.trim(),
     time_range:document.getElementById('ec_time_range').value.trim(),
+    actual_hours:parseFloat(document.getElementById('ec_actual_hours').value)||null,
     total_sessions:parseInt(document.getElementById('ec_total').value)||0,
     first_session_date:document.getElementById('ec_first_date').value||null,
     notes:document.getElementById('ec_notes').value.trim(),
@@ -2933,9 +2940,17 @@ function renderTeachersPage(mc){
     <!-- 老师列表 -->
     <div id="teacherList"></div>
   </div>
-  <div class="swipe-hint">← 左右滑动切换：编辑表单 / 老师列表 →</div>
-  <div id="payrollContainer"></div>`;
+  <div class="swipe-hint">← 左右滑动切换：编辑表单 / 老师列表 →</div>`;
   renderTeacherList();
+}
+
+function renderPayrollPage(mc){
+  mc.innerHTML = `
+  <div class="page-section">
+    <div class="section-title">工作管理</div>
+    <div class="section-sub">工资核算与工作记录审核</div>
+  </div>
+  <div id="payrollContainer"></div>`;
   renderPayrollSection(document.getElementById('payrollContainer'));
 }
 
