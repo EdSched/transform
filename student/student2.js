@@ -109,7 +109,7 @@ async function initMajor() {
         : `major=eq.${major}`;
       [cachedSlots, cachedBookings] = await Promise.all([
         sb(`/rest/v1/slots?select=*&${slotMajorFilter}&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`),
-        sb(`/rest/v1/bookings?select=*&major=eq.${major}&order=slot_date.asc`)
+        sb(`/rest/v1/bookings?select=*&${slotMajorFilter}&order=slot_date.asc`)
       ]);
       if (vipMode) {
         cachedSlots = cachedSlots.filter(s => (Array.isArray(s.type) ? s.type : [s.type]).includes('vip'));
@@ -645,7 +645,10 @@ function urgencySpan(u) {
 
 async function reloadPublicList() {
   try {
-    cachedBookings = await sb(`/rest/v1/bookings?select=*&major=eq.${major}&order=slot_date.asc`);
+    const majorFilter = major === 'shakai_group'
+      ? 'major=in.(shakai,shinpan,fukushi,shakai_group)'
+      : `major=eq.${major}`;
+    cachedBookings = await sb(`/rest/v1/bookings?select=*&${majorFilter}&order=slot_date.asc`);
     renderSlots(); renderPublicList();
   } catch(e) { console.error(e); }
 }
