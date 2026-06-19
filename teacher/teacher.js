@@ -1105,26 +1105,46 @@ function renderMySessionRow(s) {
   const d = new Date(s.session_date + 'T12:00:00');
   const dow = DAYS_CN[d.getDay()];
   const dowColor = DOW_COLOR[d.getDay()] || 'var(--text-2)';
-  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:flex-start;gap:14px">
-    <div style="text-align:center;min-width:44px">
-      <div style="font-size:17px;font-weight:700;font-family:'DM Mono',monospace;color:${dowColor}">${d.getMonth() + 1}/${d.getDate()}</div>
-      <div style="font-size:10px;font-weight:600;color:${dowColor}">${dow}</div>
-    </div>
-    <div style="flex:1">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap">
-        <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px">${s.course_name}</span>
-        ${s.course_type ? `<span style="font-size:9px;background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 5px">${s.course_type}</span>` : ''}
-        <span style="font-size:9px;color:var(--text-3);background:var(--bg);border-radius:2px;padding:1px 5px">${(()=>{const m2=d.getMonth()+1;return m2<=3?'1月期':m2<=6?'4月期':m2<=9?'7月期':'10月期'})()}</span>
+  const rowId = 'sr_' + s.id;
+  const locationText = !s.delivery || s.delivery === 'online' ? '线上'
+    : s.delivery === 'offline' ? `线下${s.campus ? ' · ' + s.campus : ''}`
+    : s.delivery === 'both' ? `线上+线下${s.campus ? ' · ' + s.campus : ''}`
+    : (s.campus || '');
+  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;margin-bottom:8px;cursor:pointer" onclick="toggleSessionDetail('${rowId}')">
+    <div style="padding:12px 14px;display:flex;align-items:flex-start;gap:14px">
+      <div style="text-align:center;min-width:44px">
+        <div style="font-size:17px;font-weight:700;font-family:'DM Mono',monospace;color:${dowColor}">${d.getMonth() + 1}/${d.getDate()}</div>
+        <div style="font-size:10px;font-weight:600;color:${dowColor}">${dow}</div>
       </div>
-      <div style="font-size:11px;color:var(--text-3)">第${s.session_number}回 · ${s.time_range || ''} ${s.campus ? '· ' + s.campus : ''}</div>
-      ${s.session_title ? `<div style="font-size:11px;color:var(--text-2);margin-top:3px">📌 ${s.session_title}</div>` : ''}
-      ${s.meeting_url ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border-light)">
-        <a href="${s.meeting_url}" target="_blank" style="font-size:11px;color:var(--accent)">🎥 腾讯会议链接</a>
-        ${s.host_key ? `<span style="font-size:11px;color:var(--text-3);margin-left:10px">主持人密钥：<span style="font-weight:600;font-family:'DM Mono',monospace">${s.host_key}</span></span>` : ''}
-        ${s.needs_recording ? `<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:2px;padding:1px 6px;margin-left:8px">📹 需要录制</span>` : ''}
-      </div>` : ''}
+      <div style="flex:1">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap">
+          <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px">${s.course_name}</span>
+          ${s.course_type ? `<span style="font-size:9px;background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 5px">${s.course_type}</span>` : ''}
+          <span style="font-size:9px;color:var(--text-3);background:var(--bg);border-radius:2px;padding:1px 5px">${(()=>{const m2=d.getMonth()+1;return m2<=3?'1月期':m2<=6?'4月期':m2<=9?'7月期':'10月期'})()}</span>
+          <span style="margin-left:auto;font-size:10px;color:var(--text-3)" id="${rowId}_arrow">▾ 详情</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-3)">第${s.session_number}回 · ${s.time_range || ''} · ${locationText}</div>
+        ${s.session_title ? `<div style="font-size:11px;color:var(--text-2);margin-top:3px">📌 ${s.session_title}</div>` : ''}
+      </div>
+    </div>
+    <div id="${rowId}" style="display:none;padding:0 14px 14px 72px">
+      <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;font-size:11px;color:var(--text-2);line-height:1.9">
+        <div>📍 上课地点：${locationText}</div>
+        ${s.meeting_url ? `<div>🎥 腾讯会议：<a href="${s.meeting_url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent)">${s.meeting_url}</a></div>` : ''}
+        ${s.host_key ? `<div>🔑 主持人密钥：<span style="font-weight:600;font-family:'DM Mono',monospace">${s.host_key}</span></div>` : ''}
+        <div>📹 是否需要录制：${s.needs_recording ? '<span style="color:#856404;font-weight:600">是</span>' : '否'}</div>
+      </div>
     </div>
   </div>`;
+}
+
+function toggleSessionDetail(rowId) {
+  const el = document.getElementById(rowId);
+  const arrow = document.getElementById(rowId + '_arrow');
+  if (!el) return;
+  const open = el.style.display !== 'none';
+  el.style.display = open ? 'none' : 'block';
+  if (arrow) arrow.textContent = open ? '▾ 详情' : '▴ 收起';
 }
 
 function renderMyCalendar(ym, byMonth, monthNames) {
