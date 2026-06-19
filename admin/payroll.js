@@ -25,19 +25,34 @@ function payrollLocation(loc, campus) {
 }
 
 // ── 时间段解析 → 开始/结束/时长 ──
-function parseTimeRange(dateStr, timeRange) {
+function parseTimeRange(dateStr, timeRange, actualHours) {
   if (!dateStr || !timeRange) return { start: '', end: '', hours: 0 };
   const parts = timeRange.split(/[–\-]/);
   if (parts.length < 2) return { start: '', end: '', hours: 0 };
   const startT = parts[0].trim();
   const endT = parts[1].trim();
   const [sh, sm] = startT.split(':').map(Number);
-  const [eh, em] = endT.split(':').map(Number);
-  const hours = Math.round(((eh * 60 + em) - (sh * 60 + sm)) / 60 * 10) / 10;
   const d = new Date(dateStr + 'T12:00:00');
   const y = d.getFullYear();
   const mo = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
+
+  // 若填写了实际课时（小时），用「开始时间 + 课时」反推结束时间；否则用 time_range 字面差值
+  if (actualHours != null && !isNaN(actualHours) && actualHours > 0) {
+    const totalStartMin = sh * 60 + sm;
+    const totalEndMin = totalStartMin + Math.round(actualHours * 60);
+    const eh2 = Math.floor(totalEndMin / 60) % 24;
+    const em2 = totalEndMin % 60;
+    const endT2 = `${String(eh2).padStart(2,'0')}:${String(em2).padStart(2,'0')}`;
+    return {
+      start: `${y}年${mo}月${day}日 ${startT}`,
+      end: `${y}年${mo}月${day}日 ${endT2}`,
+      hours: Math.round(actualHours * 10) / 10
+    };
+  }
+
+  const [eh, em] = endT.split(':').map(Number);
+  const hours = Math.round(((eh * 60 + em) - (sh * 60 + sm)) / 60 * 10) / 10;
   return {
     start: `${y}年${mo}月${day}日 ${startT}`,
     end: `${y}年${mo}月${day}日 ${endT}`,
@@ -64,11 +79,16 @@ function bookingTimes(b) {
 }
 
 // ── 生成课程行 ──
-function buildCourseRows(sessions, teacherName) {
+function buildCourseRows(sessions, teacherName, courses) {
+  // courses 用于 time_range/actual_hours fallback（旧课次可能没有该字段）
+  const courseMap = {};
+  (courses || []).forEach(c => { courseMap[c.id] = c; });
   return sessions
     .filter(s => (s.teacher === teacherName || s.session_teacher === teacherName))
     .map(s => {
-      const { start, end, hours } = parseTimeRange(s.session_date, s.time_range);
+      const tr = s.time_range || courseMap[s.course_id]?.time_range || '';
+      const actualHours = (s.actual_hours != null ? s.actual_hours : courseMap[s.course_id]?.actual_hours);
+      const { start, end, hours } = parseTimeRange(s.session_date, tr, actualHours);
       return {
         type: 'course',
         source_id: s.id,
@@ -76,8 +96,8 @@ function buildCourseRows(sessions, teacherName) {
         开始时间: start,
         结束时间: end,
         时长: hours,
-        工作内容: payrollWorkType(s.course_type),
-        工作地点: payrollLocation(s.delivery, s.campus),
+        工作内容: payrollWorkType(s.course_type || courseMap[s.course_id]?.course_type),
+        工作地点: payrollLocation(s.delivery || courseMap[s.course_id]?.delivery, s.campus || courseMap[s.course_id]?.campus),
         备注: `${s.course_name} 第${s.session_number}回`,
         _date: s.session_date
       };
@@ -184,13 +204,14 @@ async function runPayroll() {
   res.innerHTML = '<div style="font-size:12px;color:var(--text-3)">加载中…</div>';
 
   try {
-    const [sessions, bookings, slots] = await Promise.all([
+    const [sessions, bookings, slots, courses] = await Promise.all([
       sb(`/rest/v1/course_sessions?select=*&session_date=gte.${start}&session_date=lte.${end}&order=session_date.asc`),
       sb(`/rest/v1/bookings?select=*&slot_date=gte.${start}&slot_date=lte.${end}&order=slot_date.asc`),
-      sb(`/rest/v1/slots?select=*&date=gte.${start}&date=lte.${end}`)
+      sb(`/rest/v1/slots?select=*&date=gte.${start}&date=lte.${end}`),
+      sb(`/rest/v1/courses?select=id,time_range,course_type,delivery,campus,actual_hours`)
     ]);
 
-    const courseRows = buildCourseRows(sessions, teacherName);
+    const courseRows = buildCourseRows(sessions, teacherName, courses);
     const bookingRows = buildBookingRows(bookings, slots, teacherName);
     payrollRows = [...courseRows, ...bookingRows].sort((a, b) => a._date.localeCompare(b._date));
 
