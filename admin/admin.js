@@ -2117,10 +2117,25 @@ async function confirmReschedule(){
   const lastSession=allSessions[allSessions.length-1];
   const after=allSessions.slice(idx+1); // 休讲之后的所有课次（日期不变，内容要整体前移一位）
 
-  if(!confirm(`确认将 ${target.session_date}（第${target.session_number}回）标记为休讲？\n后续课次的「第几回」与内容将整体顺延一位，并在末尾新增一节课补齐总回数。`)) return;
+  if(!confirm(`确认将 ${target.session_date}（第${target.session_number}回）标记为休讲？\n后续课次的内容将整体顺延一位，并在末尾新增一节课承接最后被顶出的内容。`)) return;
 
   try{
-    // 1. 标记当前课次为休讲（日期不变，不再计入回数序列，内容清空）
+    // 1. 末尾新增一节课的日期＝最后一节课之后下一个符合星期规律的日期
+    let newDate=new Date(lastSession.session_date+'T12:00:00');
+    do{ newDate.setDate(newDate.getDate()+1); } while(weekdays.length && !weekdays.includes(newDate.getDay()));
+    const newDateStr=newDate.getFullYear()+'-'+String(newDate.getMonth()+1).padStart(2,'0')+'-'+String(newDate.getDate()).padStart(2,'0');
+
+    // 2. 内容整体顺延：把 after 数组的内容字段（session_title/teacher/session_teacher）依次往前挪一位，
+    //    即 after[i] 应显示原本 after[i+1] 的内容；最后一个（lastSession）的内容顺延到新增的那一节。
+    //    构造完整链条：after + [新增占位]，内容从后一项往前一项搬
+    const contentChain = after.map(s => ({ session_title: s.session_title, teacher: s.teacher, session_teacher: s.session_teacher }));
+    contentChain.push({ session_title: lastSession.session_title, teacher: lastSession.teacher, session_teacher: lastSession.session_teacher });
+    // contentChain[0] 原本属于 after[0]，但 after[0] 现在应该显示 contentChain[1]（也就是原本下一节的内容）
+    // 实际上更简单的理解：休讲腾出一个空位，后面的内容整体往前挪一位填补，
+    // 所以 after[i] 的新内容 = contentChain[i+1]（也就是原本紧邻的下一节内容）
+    const newContents = contentChain.slice(1); // after[0]..after[n-1] 对应的新内容，长度 = after.length
+
+    // 3. 标记当前课次为休讲（日期不变，回数不再计入，内容清空）
     await sb(`/rest/v1/course_sessions?id=eq.${id}`,'PATCH',{
       is_cancelled:true,
       cancel_reason:reason,
@@ -2131,27 +2146,29 @@ async function confirmReschedule(){
     target.is_cancelled=true; target.cancel_reason=reason; target.cancel_note=note||null;
     target.session_title='休讲'; target.session_teacher='';
 
-    // 2. 末尾新增一节课，日期＝最后一节课之后下一个符合星期规律的日期，内容留空待填
-    let newDate=new Date(lastSession.session_date+'T12:00:00');
-    do{ newDate.setDate(newDate.getDate()+1); } while(weekdays.length && !weekdays.includes(newDate.getDay()));
-    const newDateStr=newDate.getFullYear()+'-'+String(newDate.getMonth()+1).padStart(2,'0')+'-'+String(newDate.getDate()).padStart(2,'0');
-
-    // 3. 顺延：after 中每节课的「内容」往前挪一位（即 after[i] 显示 原本 after[i] 自己的 session_number 减1 对应的内容，
-    //    实际操作＝把 after 数组里的 session_number 整体减1，内容字段（session_title/teacher/session_teacher）保持跟随各自记录本身，
-    //    因为内容原本就和 session_number 是绑定生成的，这里只需把 session_number 集体减 1，
-    //    新增的最后一节用原来空出来的最大 session_number。
-    for(const s of after){
-      const patch={ session_number: s.session_number - 1 };
+    // 4. after 中每节课：session_number 减 1，内容替换为顺延后的新内容
+    for(let i=0;i<after.length;i++){
+      const s=after[i];
+      const content=newContents[i];
+      const patch={
+        session_number: s.session_number - 1,
+        session_title: content.session_title || '',
+        teacher: content.teacher || s.teacher,
+        session_teacher: content.session_teacher || '',
+      };
       await sb(`/rest/v1/course_sessions?id=eq.${s.id}`,'PATCH',patch);
-      s.session_number = patch.session_number;
+      Object.assign(s,patch);
     }
 
+    // 5. 末尾新增一节课，承接最后被顶出来的内容（原 lastSession 的内容）
     const newSession={
       id:`s-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
       course_id:courseId,course_name:lastSession.course_name,major:lastSession.major,
       session_date:newDateStr,session_number:lastSession.session_number,
       time_range:lastSession.time_range,actual_hours:lastSession.actual_hours,
-      teacher:lastSession.teacher,session_title:'',session_teacher:lastSession.session_teacher,
+      teacher:lastSession.teacher,
+      session_title:lastSession.session_title||'',
+      session_teacher:lastSession.session_teacher||'',
       homework_enabled:lastSession.homework_enabled,confirmed:lastSession.confirmed,
       is_cancelled:false
     };
@@ -2160,7 +2177,7 @@ async function confirmReschedule(){
 
     closeModal('rescheduleModal');
     renderCoursesPage(document.getElementById('mainContent'));
-    alert(`已将 ${target.session_date} 标记为休讲，后续课次回数已顺延，并在 ${newDateStr} 新增补课（第${newSession.session_number}回，请填写内容）`);
+    alert(`已将 ${target.session_date} 标记为休讲，后续内容已自动顺延，并在 ${newDateStr} 新增补课承接最后一回内容`);
   }catch(e){alert('操作失败：'+e.message)}
 }
 // ── 出席・作业（see attendance.js）──
