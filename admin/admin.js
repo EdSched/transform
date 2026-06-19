@@ -285,7 +285,7 @@ async function confirmReassignTeacher(bookingId, slotId) {
       if (idx >= 0) cachedSlots[idx].teacher_name = name;
     }
     document.getElementById('reassignModal').remove();
-    renderBookingsPage(document.getElementById('mainContent'));
+    renderBookingPage(document.getElementById('mainContent'));
   } catch(e) { alert('操作失败：' + e.message); }
 }
 
