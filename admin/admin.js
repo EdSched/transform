@@ -282,7 +282,12 @@ async function confirmReassignTeacher(bookingId, slotId) {
     if (slotId) {
       await sb(`/rest/v1/slots?id=eq.${slotId}`, 'PATCH', { teacher_name: name });
       const idx = cachedSlots.findIndex(s => s.id === slotId);
-      if (idx >= 0) cachedSlots[idx].teacher_name = name;
+      if (idx >= 0) {
+        cachedSlots[idx].teacher_name = name;
+      } else {
+        // slot 不在缓存里，直接推入
+        cachedSlots.push({ id: slotId, teacher_name: name });
+      }
     }
     document.getElementById('reassignModal').remove();
     renderBookingPage(document.getElementById('mainContent'));
