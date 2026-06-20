@@ -1467,6 +1467,7 @@ function renderCoursesSummary(courses){
             })()}
             <button onclick="openAddCourseModal('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.35);border:1px solid rgba(0,0,0,.15);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:${color.text}">编辑</button>
             <button onclick="openCopyPeriod('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.35);border:1px solid rgba(0,0,0,.15);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:${color.text}">复制到新期</button>
+            ${sessions.some(s=>s.is_cancelled) ? `<button onclick="restoreOriginalSchedule('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.2);border:1px solid rgba(184,120,32,.4);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:#b87820">撤销休讲</button>` : ''}
             <button onclick="deleteCourse('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.2);border:1px solid rgba(180,0,0,.25);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:#8a2020">删除</button>
           </div>
         </div>
@@ -2149,6 +2150,18 @@ async function confirmReschedule(){
   const lastSession=allSessions[allSessions.length-1];
   const after=allSessions.slice(idx+1); // 休讲之后的所有课次（日期固定，等待填入顺延后的内容）
 
+  // 若该课程还没有原始排课快照，先存一份当前（休讲前）的完整状态，供日后「撤销休讲」整体复原使用
+  try{
+    const existingSnapshot=await sb(`/rest/v1/course_original_schedule?course_id=eq.${courseId}&select=course_id`);
+    if(!existingSnapshot.length){
+      const snapshot=allSessions.map(s=>({
+        id:s.id, session_number:s.session_number, session_date:s.session_date,
+        session_title:s.session_title||'', teacher:s.teacher||'', session_teacher:s.session_teacher||''
+      }));
+      await sb('/rest/v1/course_original_schedule','POST',{course_id:courseId,snapshot});
+    }
+  }catch(e){ /* 快照保存失败不阻断主流程，但会导致该课程无法使用「撤销休讲」 */ }
+
   if(!confirm(`确认将 ${target.session_date}（第${target.session_number}回）标记为休讲？\n该日期作废、不计入回数。被休讲掉的内容（连同之后所有内容）整体顺延一位，末尾新增一个日期承接原本最后一回的内容。`)) return;
 
   try{
@@ -2218,6 +2231,62 @@ async function confirmReschedule(){
     alert(`已将 ${target.session_date} 标记为休讲，内容已整体顺延，并在 ${newDateStr} 新增第${newSession.session_number}回承接原最后一回内容`);
   }catch(e){alert('操作失败：'+e.message)}
 }
+
+// ── 撤销休讲：整体复原到第一次休讲之前的原始排课状态 ──
+async function restoreOriginalSchedule(courseId){
+  try{
+    const snapshots=await sb(`/rest/v1/course_original_schedule?course_id=eq.${courseId}&select=snapshot`);
+    if(!snapshots.length){ alert('该课程没有可复原的原始排课记录'); return; }
+    const snapshot=snapshots[0].snapshot;
+    const snapshotIds=new Set(snapshot.map(s=>s.id));
+
+    const current=cachedSessions.filter(s=>s.course_id===courseId);
+    // 因休讲而新增的补课记录：不在原始快照里的那些
+    const addedByReschedule=current.filter(s=>!snapshotIds.has(s.id));
+    const addedIds=addedByReschedule.map(s=>s.id);
+
+    // 检查这些新增补课记录是否已有出席/作业记录
+    if(addedIds.length){
+      const records=await sb(`/rest/v1/session_records?session_id=in.(${addedIds.map(i=>`"${i}"`).join(',')})&select=id`).catch(()=>[]);
+      if(records.length){
+        alert('无法撤销：休讲顺延后产生的补课已有出席或作业记录，不能整体复原。请联系开发者手动处理。');
+        return;
+      }
+    }
+
+    if(!confirm(`确认撤销该课程所有休讲调整，恢复到最初排课状态？\n将删除 ${addedIds.length} 条因休讲新增的补课记录，其余课次的日期/编号/内容/状态全部还原。`)) return;
+
+    // 1. 删除因休讲新增的补课记录
+    if(addedIds.length){
+      await sb(`/rest/v1/course_sessions?id=in.(${addedIds.map(i=>`"${i}"`).join(',')})`,'DELETE');
+      cachedSessions=cachedSessions.filter(s=>!addedIds.includes(s.id));
+    }
+
+    // 2. 把快照里的每条记录还原（编号/日期/内容/老师），并清除休讲标记
+    for(const snap of snapshot){
+      const patch={
+        session_number:snap.session_number,
+        session_date:snap.session_date,
+        session_title:snap.session_title,
+        teacher:snap.teacher,
+        session_teacher:snap.session_teacher,
+        is_cancelled:false,
+        cancel_reason:null,
+        cancel_note:null,
+      };
+      await sb(`/rest/v1/course_sessions?id=eq.${snap.id}`,'PATCH',patch);
+      const s=cachedSessions.find(x=>x.id===snap.id);
+      if(s) Object.assign(s,patch);
+    }
+
+    // 3. 清除快照记录（下次再休讲时会重新生成一份新的快照）
+    await sb(`/rest/v1/course_original_schedule?course_id=eq.${courseId}`,'DELETE');
+
+    renderCoursesPage(document.getElementById('mainContent'));
+    alert('已撤销所有休讲调整，课程已恢复到最初排课状态');
+  }catch(e){alert('撤销失败：'+e.message)}
+}
+
 // ── 出席・作业（see attendance.js）──
 
 // ── Shared ──
