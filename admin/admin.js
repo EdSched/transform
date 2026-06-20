@@ -1467,7 +1467,6 @@ function renderCoursesSummary(courses){
             })()}
             <button onclick="openAddCourseModal('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.35);border:1px solid rgba(0,0,0,.15);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:${color.text}">编辑</button>
             <button onclick="openCopyPeriod('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.35);border:1px solid rgba(0,0,0,.15);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:${color.text}">复制到新期</button>
-            ${sessions.some(s=>s.is_cancelled) ? `<button onclick="restoreOriginalSchedule('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.2);border:1px solid rgba(184,120,32,.4);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:#b87820">撤销休讲</button>` : ''}
             <button onclick="deleteCourse('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.2);border:1px solid rgba(180,0,0,.25);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:#8a2020">删除</button>
           </div>
         </div>
@@ -1665,21 +1664,17 @@ function openAddCourseModal(editId){
     // set confirmed state
     const isConfirmed=cachedSessions.filter(s=>s.course_id===editId).every(s=>s.confirmed);
     document.getElementById('ac_confirm_publish').checked=isConfirmed;
-    // load existing session details
-    const sessions=cachedSessions.filter(s=>s.course_id===editId).sort((a,b)=>a.session_number-b.session_number);
-    const hasDetails=sessions.some(s=>s.session_title||s.session_teacher);
-    const multiTeacher=!hasDetails&&(c.teacher||'').includes('/');
-    const showDetails=hasDetails||multiTeacher;
-    document.getElementById('ac_has_details').checked=showDetails;
-    document.getElementById('ac_details_section').style.display=showDetails?'':'none';
-    if(showDetails){
-      if(hasDetails){
-        acPopulateRows(sessions.map(s=>({num:s.session_number,title:s.session_title||'',teacher:s.session_teacher||c.teacher||''})));
-      } else {
-        // 多讲师但没有明细，生成空行让用户填
-        acPopulateRows(sessions.map(s=>({num:s.session_number,title:'',teacher:c.teacher||''})));
-      }
-    }
+    // load existing session details（编辑时始终展示明细表，date 按真实日期排序，便于直接调整）
+    const sessions=cachedSessions.filter(s=>s.course_id===editId).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+    document.getElementById('ac_has_details').checked=true;
+    document.getElementById('ac_details_section').style.display='';
+    acPopulateRows(sessions.map(s=>({
+      id:s.id,
+      num:s.is_cancelled?'休讲':s.session_number,
+      date:s.session_date,
+      title:s.is_cancelled?(s.cancel_reason||'休讲'):(s.session_title||''),
+      teacher:s.session_teacher||c.teacher||''
+    })));
   } else {
     ['ac_name','ac_teacher','ac_campus','ac_time_range','ac_notes','ac_meeting_url','ac_host_key'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('ac_recording').value = 'no';
@@ -1772,21 +1767,28 @@ function acPasteImport(){
 
 function acAddRow(data){
   const tbody=document.getElementById('ac_details_body');
-  const rowNum=data?.num||(tbody.children.length+1);
+  const rowNum=data?.num??(tbody.children.length+1);
   const tr=document.createElement('tr');
+  tr.dataset.id=data?.id||'';
   tr.innerHTML=`
-    <td style="font-size:12px;text-align:center;color:var(--text-3)">第${rowNum}回</td>
-    <td><input value="${data?.title||''}" placeholder="单回名称（可留空）" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
+    <td style="width:64px"><input value="${rowNum}" placeholder="第几回" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);text-align:center;font-family:'DM Mono',monospace"></td>
+    <td style="width:120px"><input type="date" value="${data?.date||''}" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg)"></td>
+    <td><input value="${data?.title||''}" placeholder="单回名称（可留空，也可填「休讲」）" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
     <td><input value="${data?.teacher||''}" placeholder="任课老师（可留空）" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
     <td><button class="btn-ghost" onclick="this.closest('tr').remove()">✕</button></td>`;
-  tr.dataset.num=rowNum;
   tbody.appendChild(tr);
 }
 
 function acGetRows(){
-  return [...document.querySelectorAll('#ac_details_body tr')].map((tr,i)=>{
+  return [...document.querySelectorAll('#ac_details_body tr')].map((tr)=>{
     const inputs=tr.querySelectorAll('input');
-    return {num:parseInt(tr.dataset.num)||i+1, title:inputs[0]?.value.trim()||'', teacher:inputs[1]?.value.trim()||''};
+    return {
+      id: tr.dataset.id||'',
+      num: inputs[0]?.value.trim()||'',
+      date: inputs[1]?.value||'',
+      title: inputs[2]?.value.trim()||'',
+      teacher: inputs[3]?.value.trim()||''
+    };
   });
 }
 
@@ -1834,94 +1836,65 @@ async function saveAddCourse(){
       if(idx>=0) cachedCourses[idx]={...cachedCourses[idx],...courseData};
       courseId=editingId;
 
-      // ── 编辑模式：按 session_number 对应更新已有课次，不删除重建，保留 id 不变 ──
-      const existing=cachedSessions.filter(s=>s.course_id===editingId).sort((a,b)=>a.session_date.localeCompare(b.session_date));
-      const hasCancelled=existing.some(s=>s.is_cancelled);
-      const newDates=dates; // 已在上方按新的 first_session_date/weekdays/total 重新生成
+      // ── 编辑模式：单回明细表是唯一真相来源，按行直接覆盖更新，不再按总回数重铺日期 ──
+      // 这样可以保留休讲、调课等手动调整的结果，不会被「总回数」逻辑误删
+      const existing=cachedSessions.filter(s=>s.course_id===editingId);
+      const existingMap={}; existing.forEach(s=>{ existingMap[s.id]=s; });
 
-      if(hasCancelled){
-        // 该课程存在休讲/顺延记录，实际课次数与课程表单里的「总回数」已不再一一对应，
-        // 不能再用「按总回数重铺日期」的方式更新，否则会误删休讲顺延产生的补课记录。
-        // 此时只更新课程公共字段（课程名/专业/地点/课时/作业开关等），不触碰 session_date 和课次数量。
-        for(const s of existing){
-          const patch={
-            course_name:name, major:majors,
-            time_range:courseData.time_range,
-            actual_hours:courseData.actual_hours,
-            delivery:courseData.delivery,campus:courseData.campus,
-            homework_enabled:courseData.homework_enabled,
-          };
-          await sb(`/rest/v1/course_sessions?id=eq.${s.id}`,'PATCH',patch);
-          Object.assign(s,patch);
-        }
-        closeModal('addCourseModal');
-        renderCoursesPage(document.getElementById('mainContent'));
-        alert('该课程存在休讲记录，本次仅更新课程基本信息（名称/专业/地点/课时等），课次日期与数量保持不变');
-        return;
+      const rows=detailRows; // 来自 acGetRows()：[{id,num,date,title,teacher}, ...]
+      if(!rows.length){ alert('单回明细不能为空，至少需要一行课次'); return; }
+      for(const r of rows){
+        if(!r.date){ alert(`第「${r.num}」行缺少日期，请补全后再保存`); return; }
       }
 
-      if(newDates.length < existing.length){
-        // 课次数量减少：检查被砍掉的部分是否已有出席记录
-        const toRemove=existing.slice(newDates.length);
+      const rowIds=new Set(rows.filter(r=>r.id).map(r=>r.id));
+      const toRemove=existing.filter(s=>!rowIds.has(s.id));
+
+      // 检查将被删除的行是否已有出席/作业记录
+      if(toRemove.length){
         const toRemoveIds=toRemove.map(s=>s.id);
         const records=await sb(`/rest/v1/session_records?session_id=in.(${toRemoveIds.map(i=>`"${i}"`).join(',')})&select=id`).catch(()=>[]);
         if(records.length){
-          alert(`无法保存：第${toRemove[0].session_number}回及之后已有出席/作业记录，不能减少课次数量。请先确认是否真的要减少回数。`);
+          alert('无法保存：表格中被删除的某些课次已有出席/作业记录，不能删除。请恢复该行或先处理相关记录。');
           return;
         }
-        // 没有记录，可以安全删除多余课次
         await sb(`/rest/v1/course_sessions?id=in.(${toRemoveIds.map(i=>`"${i}"`).join(',')})`,'DELETE');
         cachedSessions=cachedSessions.filter(s=>!toRemoveIds.includes(s.id));
       }
 
-      // 更新已有课次（按 session_number 对应，id 不变，关联不断）
-      const updateCount=Math.min(newDates.length, existing.length);
-      for(let i=0;i<updateCount;i++){
-        const detail=detailRows.find(r=>r.num===i+1)||{};
-        const mainTeacher=courseData.teacher;
-        const patch={
+      const confirmed=document.getElementById('ac_confirm_publish')?.checked ?? (existing[0]?.confirmed||false);
+      const mainTeacher=courseData.teacher;
+
+      for(const r of rows){
+        const isCancelled = r.num==='休讲' || r.title==='休讲';
+        const patchCommon={
           course_name:name, major:majors,
-          session_date:newDates[i],
+          session_date:r.date,
+          session_number: isCancelled ? (existingMap[r.id]?.session_number ?? null) : (parseInt(r.num)||null),
           time_range:courseData.time_range,
           actual_hours:courseData.actual_hours,
           delivery:courseData.delivery,campus:courseData.campus,
           homework_enabled:courseData.homework_enabled,
+          teacher:r.teacher||mainTeacher,
+          session_title:r.title||'',
+          session_teacher:r.teacher||mainTeacher,
+          is_cancelled:isCancelled,
+          cancel_reason:isCancelled?(r.title||'休讲'):null,
         };
-        // 单回名称/任课老师只在明确填写时才覆盖，避免清空已有的个别设置
-        if(hasDetails){
-          patch.session_title=detail.title||'';
-          patch.teacher=detail.teacher||mainTeacher;
-          patch.session_teacher=detail.teacher||mainTeacher;
-        }
-        await sb(`/rest/v1/course_sessions?id=eq.${existing[i].id}`,'PATCH',patch);
-        Object.assign(existing[i],patch);
-      }
-
-      // 课次数量增加：新增超出部分
-      if(newDates.length > existing.length){
-        const confirmed=document.getElementById('ac_confirm_publish')?.checked ?? (existing[0]?.confirmed||false);
-        const addRows=newDates.slice(existing.length).map((date,j)=>{
-          const i=existing.length+j;
-          const detail=detailRows.find(r=>r.num===i+1)||{};
-          const mainTeacher=courseData.teacher;
-          return {
-            id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
-            course_id:courseId,course_name:name,major:majors,
-            session_date:date,session_number:i+1,
-            time_range:courseData.time_range,
-            actual_hours:courseData.actual_hours,
-            delivery:courseData.delivery,campus:courseData.campus,
-            teacher:detail.teacher||mainTeacher,
-            session_title:detail.title||'',
-            session_teacher:detail.teacher||mainTeacher,
-            homework_enabled:courseData.homework_enabled||false,
-            confirmed
+        if(r.id && existingMap[r.id]){
+          // 已有记录：PATCH，id 不变，所有关联（出席/作业）保持
+          await sb(`/rest/v1/course_sessions?id=eq.${r.id}`,'PATCH',patchCommon);
+          Object.assign(existingMap[r.id],patchCommon);
+        } else {
+          // 表格里新增的行：新建记录
+          const newRow={
+            id:`s-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
+            course_id:editingId,
+            confirmed,
+            ...patchCommon
           };
-        });
-        for(let i=0;i<addRows.length;i+=20){
-          const chunk=addRows.slice(i,i+20);
-          const sres=await sb('/rest/v1/course_sessions','POST',chunk);
-          cachedSessions.push(...(Array.isArray(sres)?sres:chunk));
+          const sres=await sb('/rest/v1/course_sessions','POST',[newRow]);
+          cachedSessions.push(Array.isArray(sres)?sres[0]:newRow);
         }
       }
 
@@ -2150,19 +2123,7 @@ async function confirmReschedule(){
   const lastSession=allSessions[allSessions.length-1];
   const after=allSessions.slice(idx+1); // 休讲之后的所有课次（日期固定，等待填入顺延后的内容）
 
-  // 若该课程还没有原始排课快照，先存一份当前（休讲前）的完整状态，供日后「撤销休讲」整体复原使用
-  try{
-    const existingSnapshot=await sb(`/rest/v1/course_original_schedule?course_id=eq.${courseId}&select=course_id`);
-    if(!existingSnapshot.length){
-      const snapshot=allSessions.map(s=>({
-        id:s.id, session_number:s.session_number, session_date:s.session_date,
-        session_title:s.session_title||'', teacher:s.teacher||'', session_teacher:s.session_teacher||''
-      }));
-      await sb('/rest/v1/course_original_schedule','POST',{course_id:courseId,snapshot});
-    }
-  }catch(e){ /* 快照保存失败不阻断主流程，但会导致该课程无法使用「撤销休讲」 */ }
-
-  if(!confirm(`确认将 ${target.session_date}（第${target.session_number}回）标记为休讲？\n该日期作废、不计入回数。被休讲掉的内容（连同之后所有内容）整体顺延一位，末尾新增一个日期承接原本最后一回的内容。`)) return;
+  if(!confirm(`确认将 ${target.session_date}（第${target.session_number}回）标记为休讲？\n该日期作废、不计入回数。被休讲掉的内容（连同之后所有内容）整体顺延一位，末尾新增一个日期承接原本最后一回的内容。\n\n如需更精细的手动调整（如改回数、改日期），可在「编辑课程」的单回明细表中直接修改。`)) return;
 
   try{
     // ── 第一步：在做任何修改之前，构造完整的「内容链」快照 ──
@@ -2230,61 +2191,6 @@ async function confirmReschedule(){
     renderCoursesPage(document.getElementById('mainContent'));
     alert(`已将 ${target.session_date} 标记为休讲，内容已整体顺延，并在 ${newDateStr} 新增第${newSession.session_number}回承接原最后一回内容`);
   }catch(e){alert('操作失败：'+e.message)}
-}
-
-// ── 撤销休讲：整体复原到第一次休讲之前的原始排课状态 ──
-async function restoreOriginalSchedule(courseId){
-  try{
-    const snapshots=await sb(`/rest/v1/course_original_schedule?course_id=eq.${courseId}&select=snapshot`);
-    if(!snapshots.length){ alert('该课程没有可复原的原始排课记录'); return; }
-    const snapshot=snapshots[0].snapshot;
-    const snapshotIds=new Set(snapshot.map(s=>s.id));
-
-    const current=cachedSessions.filter(s=>s.course_id===courseId);
-    // 因休讲而新增的补课记录：不在原始快照里的那些
-    const addedByReschedule=current.filter(s=>!snapshotIds.has(s.id));
-    const addedIds=addedByReschedule.map(s=>s.id);
-
-    // 检查这些新增补课记录是否已有出席/作业记录
-    if(addedIds.length){
-      const records=await sb(`/rest/v1/session_records?session_id=in.(${addedIds.map(i=>`"${i}"`).join(',')})&select=id`).catch(()=>[]);
-      if(records.length){
-        alert('无法撤销：休讲顺延后产生的补课已有出席或作业记录，不能整体复原。请联系开发者手动处理。');
-        return;
-      }
-    }
-
-    if(!confirm(`确认撤销该课程所有休讲调整，恢复到最初排课状态？\n将删除 ${addedIds.length} 条因休讲新增的补课记录，其余课次的日期/编号/内容/状态全部还原。`)) return;
-
-    // 1. 删除因休讲新增的补课记录
-    if(addedIds.length){
-      await sb(`/rest/v1/course_sessions?id=in.(${addedIds.map(i=>`"${i}"`).join(',')})`,'DELETE');
-      cachedSessions=cachedSessions.filter(s=>!addedIds.includes(s.id));
-    }
-
-    // 2. 把快照里的每条记录还原（编号/日期/内容/老师），并清除休讲标记
-    for(const snap of snapshot){
-      const patch={
-        session_number:snap.session_number,
-        session_date:snap.session_date,
-        session_title:snap.session_title,
-        teacher:snap.teacher,
-        session_teacher:snap.session_teacher,
-        is_cancelled:false,
-        cancel_reason:null,
-        cancel_note:null,
-      };
-      await sb(`/rest/v1/course_sessions?id=eq.${snap.id}`,'PATCH',patch);
-      const s=cachedSessions.find(x=>x.id===snap.id);
-      if(s) Object.assign(s,patch);
-    }
-
-    // 3. 清除快照记录（下次再休讲时会重新生成一份新的快照）
-    await sb(`/rest/v1/course_original_schedule?course_id=eq.${courseId}`,'DELETE');
-
-    renderCoursesPage(document.getElementById('mainContent'));
-    alert('已撤销所有休讲调整，课程已恢复到最初排课状态');
-  }catch(e){alert('撤销失败：'+e.message)}
 }
 
 // ── 出席・作业（see attendance.js）──
