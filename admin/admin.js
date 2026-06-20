@@ -179,7 +179,9 @@ function renderBookingPage(mc){
 function renderBookingCard(b){
   const hasRecord=b.daily_record&&Object.values(b.daily_record).some(v=>v);
   const slot=cachedSlots.find(s=>s.id===b.slot_id);
-  const teacherName=slot?.teacher_name||'';
+  // 优先使用该预约自己分配的老师（assigned_teacher），避免同一时间槽下其他学生被一起改动；
+  // 若该预约从未单独分配过，则退回显示时间槽默认的老师
+  const teacherName=b.assigned_teacher||slot?.teacher_name||'';
   // 优先显示学生档案中的真实专业；若 booking.major 是社会人文分组标记或学生档案找不到，则退回显示 booking.major
   const studentRecord=cachedStudents?.find(s=>s.name===b.name);
   const displayMajor=studentRecord?.major ? (MAJORS[studentRecord.major]||studentRecord.major) : (MAJORS[b.major]||'');
@@ -286,16 +288,10 @@ async function confirmReassignTeacher(bookingId, slotId) {
   const name = document.getElementById('reassign_teacher').value;
   if (!name) return;
   try {
-    if (slotId) {
-      await sb(`/rest/v1/slots?id=eq.${slotId}`, 'PATCH', { teacher_name: name });
-      const idx = cachedSlots.findIndex(s => s.id === slotId);
-      if (idx >= 0) {
-        cachedSlots[idx].teacher_name = name;
-      } else {
-        // slot 不在缓存里，直接推入
-        cachedSlots.push({ id: slotId, teacher_name: name });
-      }
-    }
+    // 只更新这一条预约自己的老师归属，不动 slots 表（避免影响同一时间槽下的其他学生）
+    await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', { assigned_teacher: name });
+    const b = cachedBookings.find(x => x.id === bookingId);
+    if (b) b.assigned_teacher = name;
     document.getElementById('reassignModal').remove();
     renderBookingPage(document.getElementById('mainContent'));
   } catch(e) { alert('操作失败：' + e.message); }
