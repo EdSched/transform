@@ -68,7 +68,14 @@ async function init() {
     if (p.booking) {
       cachedTeacherSlots = results[5] || [];
       const mySlotIds = cachedTeacherSlots.map(s => s.id);
-      cachedTeacherBookings = (results[4] || []).filter(b => mySlotIds.includes(b.slot_id));
+      // 一条预约对该老师可见的条件：
+      // 1) 该预约被明确分配给了这位老师（assigned_teacher === 我），不论时间槽是谁开的；或
+      // 2) 该预约从未被单独分配过（assigned_teacher 为空），且时间槽是这位老师自己开的（沿用原有默认归属）
+      cachedTeacherBookings = (results[4] || []).filter(b =>
+        b.assigned_teacher
+          ? b.assigned_teacher === teacherName
+          : mySlotIds.includes(b.slot_id)
+      );
     }
     existingAvail.forEach(a => {
       slotState[a.slot_id] = { available: a.available, time: a.available_time || '', titles: new Set(a.preferred_titles || []) };
