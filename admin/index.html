@@ -373,7 +373,7 @@
     <!-- 单回明细表格 -->
     <div id="ac_details_section" style="display:none;margin-top:12px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
-        <div style="font-size:11px;color:var(--text-2)">每回的单回名称和任课老师（留空则继承主讲师）</div>
+        <div style="font-size:11px;color:var(--text-2)">每回的日期/编号/名称/任课老师均可自由调整（用于休讲、调课等场景）</div>
         <div style="display:flex;gap:6px">
           <button class="btn btn-outline btn-sm" onclick="document.getElementById('ac_paste_area').style.display=document.getElementById('ac_paste_area').style.display==='none'?'block':'none'">📋 从Excel粘贴</button>
           <button class="btn btn-outline btn-sm" onclick="acSyncRows()">↺ 同步行数</button>
@@ -387,7 +387,7 @@
       </div>
       <div style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:3px">
         <table class="student-table" style="margin:0" id="ac_details_table">
-          <thead><tr><th style="width:60px">第几回</th><th>单回名称</th><th>任课老师</th><th style="width:40px"></th></tr></thead>
+          <thead><tr><th style="width:64px">第几回</th><th style="width:120px">日期</th><th>单回名称</th><th>任课老师</th><th style="width:40px"></th></tr></thead>
           <tbody id="ac_details_body"></tbody>
         </table>
       </div>
