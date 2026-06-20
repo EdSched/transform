@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>合格実绩 · 学部 · 唯新教育</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#f7f5f0;--surface:#fff;--border:#e2ded6;--border-light:#ede9e2;
+  --text-primary:#1a1814;--text-secondary:#5a5650;--text-muted:#9a9590;--accent:#2c4a8a;
+  --t0:#1a3070;--t0-bg:#dce4f4;--t0-bd:#a8bce0;
+  --t1:#2c4a8a;--t1-bg:#e8edf8;--t1-bd:#c0cce8;
+  --t2:#3a6630;--t2-bg:#e8f0e4;--t2-bd:#b8d0b4;
+  --t3:#7a4a20;--t3-bg:#f4ece0;--t3-bd:#d8c0a4;
+  --t4:#7a2020;--t4-bg:#f4e0e0;--t4-bd:#d8a4a4;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Mono',monospace;background:var(--bg);color:var(--text-primary);font-size:13px;line-height:1.55}
+
+/* Header */
+header{background:var(--surface);border-bottom:2px solid var(--text-primary);padding:1.4rem 3rem 1.4rem;display:flex;align-items:flex-end;justify-content:space-between;gap:2rem;flex-wrap:wrap}
+.h-title{font-family:'Noto Serif SC',serif;font-size:1.5rem;font-weight:600;letter-spacing:.03em}
+.h-sub{font-size:10px;color:var(--text-muted);letter-spacing:.08em;text-transform:uppercase;margin-top:4px}
+.h-stats{display:flex;gap:1.5rem}
+.stat-num{font-family:'Noto Serif SC',serif;font-size:1.8rem;font-weight:300;color:var(--accent);line-height:1}
+.stat-lbl{font-size:10px;color:var(--text-muted);letter-spacing:.06em;margin-top:2px}
+.back-home{padding:5px 14px;border:1px solid var(--border);border-radius:3px;background:var(--surface);font-family:inherit;font-size:11px;color:var(--text-secondary);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:5px;transition:all .12s}
+.back-home:hover{border-color:var(--text-secondary);color:var(--text-primary)}
+
+/* Track tabs */
+.track-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 3rem;display:flex;align-items:center;gap:0}
+.track-tab{padding:10px 22px;background:none;border:none;border-bottom:3px solid transparent;font-family:'Noto Serif SC',serif;font-size:14px;color:var(--text-muted);cursor:pointer;letter-spacing:.04em;transition:all .15s}
+.track-tab.active{color:var(--text-primary);border-bottom-color:var(--accent);font-weight:600}
+.track-tab:hover:not(.active){color:var(--text-secondary);background:var(--bg)}
+.track-tab .tcount{font-size:10px;color:var(--text-muted);margin-left:6px;font-family:'DM Mono',monospace}
+.track-empty{padding:4rem 2rem;text-align:center;color:var(--text-muted)}
+.track-empty .te-icon{font-size:2rem;margin-bottom:.8rem;opacity:.4}
+.track-empty .te-text{font-size:13px;letter-spacing:.04em}
+
+/* Filter bar */
+.filter-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 3rem;position:sticky;top:0;z-index:200}
+.filter-row{display:flex;align-items:center;gap:14px;padding:9px 0;border-bottom:1px solid var(--border-light);flex-wrap:wrap}
+.filter-row:last-child{border-bottom:none}
+.flbl{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);white-space:nowrap;min-width:50px}
+
+.seg{display:flex;border:1px solid var(--border);border-radius:3px;overflow:hidden}
+.seg button{padding:4px 11px;background:none;border:none;border-right:1px solid var(--border);font-family:inherit;font-size:11px;color:var(--text-secondary);cursor:pointer;transition:background .12s,color .12s;white-space:nowrap}
+.seg button:last-child{border-right:none}
+.seg button.active{background:var(--text-primary);color:var(--bg)}
+.seg button:hover:not(.active){background:var(--bg)}
+
+.score-filters{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.sg{display:flex;align-items:center;gap:6px}
+.sg label{font-size:10px;color:var(--text-muted);white-space:nowrap}
+.sg select{padding:3px 7px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:11px;background:var(--bg)}
+.jlpt-row{display:flex;gap:5px}
+.jbtn{padding:3px 9px;border:1px solid var(--border);border-radius:2px;font-size:11px;font-family:inherit;cursor:pointer;background:none;color:var(--text-secondary);transition:all .12s}
+.jbtn.active{background:var(--text-primary);color:var(--bg);border-color:var(--text-primary)}
+
+.sort-row{display:flex;align-items:center;gap:8px}
+.sdbtn{padding:3px 7px;border:1px solid var(--border);border-radius:2px;font-size:11px;font-family:inherit;cursor:pointer;background:none;color:var(--text-secondary)}
+
+/* Main */
+main{padding:1.5rem 3rem 4rem}
+
+.view-tabs{display:flex;align-items:center;gap:6px;margin-bottom:1.2rem}
+.vtab{padding:5px 16px;border:1px solid var(--border);border-radius:3px;background:none;font-family:inherit;font-size:11px;color:var(--text-muted);cursor:pointer;letter-spacing:.04em;transition:all .12s}
+.vtab.active{border-color:var(--text-secondary);color:var(--text-primary);background:var(--surface)}
+
+/* Tier section */
+.tier-section{margin-bottom:1.8rem}
+.tier-hdr{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:3px;cursor:pointer;user-select:none;margin-bottom:8px}
+.tier-hdr:hover{opacity:.85}
+.t0 .tier-hdr{background:var(--t0-bg);border:1px solid var(--t0-bd)}
+.t1 .tier-hdr{background:var(--t1-bg);border:1px solid var(--t1-bd)}
+.t2 .tier-hdr{background:var(--t2-bg);border:1px solid var(--t2-bd)}
+.t3 .tier-hdr{background:var(--t3-bg);border:1px solid var(--t3-bd)}
+.t4 .tier-hdr{background:var(--t4-bg);border:1px solid var(--t4-bd)}
+.tbadge{font-size:9px;font-weight:600;padding:2px 7px;border-radius:2px;letter-spacing:.1em}
+.t0 .tbadge{background:var(--t0);color:#fff}
+.t1 .tbadge{background:var(--t1);color:#fff}
+.t2 .tbadge{background:var(--t2);color:#fff}
+.t3 .tbadge{background:var(--t3);color:#fff}
+.t4 .tbadge{background:var(--t4);color:#fff}
+.tname{font-family:'Noto Serif SC',serif;font-size:13px}
+.tcount{margin-left:auto;font-size:10px;color:var(--text-muted)}
+.ttoggle{font-size:11px;color:var(--text-muted)}
+
+/* Univ grid */
+.univ-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:7px}
+.ucard{background:var(--surface);border:1px solid var(--border);border-radius:4px;cursor:pointer;transition:box-shadow .15s,border-color .15s;overflow:hidden}
+.ucard:hover{box-shadow:0 2px 10px rgba(0,0,0,.09);border-color:var(--text-muted)}
+.ucard-head{padding:11px 13px;display:flex;align-items:center;justify-content:space-between;gap:5px}
+.ucard-name{font-family:'Noto Serif SC',serif;font-size:12px;font-weight:600;flex:1;min-width:0;line-height:1.4}
+.ucard-cnt{font-size:13px;font-weight:600;color:var(--accent);flex-shrink:0;font-family:'Noto Serif SC',serif}
+.ucard-bar{display:flex;height:3px;margin:0 13px 5px;border-radius:2px;overflow:hidden;gap:1px}
+.ucard-sub{padding:0 13px 9px;font-size:9px;color:var(--text-muted);display:flex;align-items:center;gap:5px}
+.type-pill{font-size:8px;padding:1px 5px;border-radius:2px;font-weight:500}
+.type-pill.public{background:#e0eef8;color:#1a3a6a}
+.type-pill.private{background:#f4ece0;color:#5a3010}
+
+/* Detail panel */
+.detail-panel{display:none;background:var(--surface);border:1px solid var(--accent);border-radius:4px;margin-bottom:1rem;overflow:hidden}
+.detail-panel.open{display:block}
+.dp-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:#f5f8ff;flex-wrap:wrap}
+.dp-univ{font-family:'Noto Serif SC',serif;font-size:1rem;font-weight:600}
+.dp-tier{font-size:9px;font-weight:600;padding:2px 8px;border-radius:2px;letter-spacing:.08em}
+.dp-type{font-size:9px;font-weight:500;padding:2px 8px;border-radius:2px}
+.dp-stats{font-size:11px;color:var(--text-secondary)}
+.dp-close{margin-left:auto;width:26px;height:26px;border-radius:50%;border:1px solid var(--border);background:none;font-size:13px;cursor:pointer;color:var(--text-muted);display:flex;align-items:center;justify-content:center}
+.dp-close:hover{background:var(--bg);color:var(--text-primary)}
+.dp-sort-bar{padding:8px 16px;border-bottom:1px solid var(--border-light);display:flex;gap:6px;align-items:center;background:var(--bg);flex-wrap:wrap}
+.dp-sort-lbl{font-size:10px;color:var(--text-muted)}
+.dp-sort-btn{padding:2px 9px;border:1px solid var(--border);border-radius:2px;font-size:10px;font-family:inherit;cursor:pointer;background:none;color:var(--text-secondary);transition:all .12s}
+.dp-sort-btn.active{background:var(--text-primary);color:var(--bg);border-color:var(--text-primary)}
+.dp-table-wrap{overflow-x:auto}
+.dp-table{width:100%;border-collapse:collapse;font-size:11.5px}
+.dp-table thead th{padding:8px 10px;background:var(--bg);border-bottom:2px solid var(--border);text-align:left;font-size:9.5px;letter-spacing:.05em;color:var(--text-muted);text-transform:uppercase;white-space:nowrap}
+.dp-table tbody tr{border-bottom:1px solid var(--border-light);transition:background .1s}
+.dp-table tbody tr:hover{background:#faf8f4}
+.dp-table td{padding:9px 10px;vertical-align:middle}
+.sbadge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:3px;font-size:10.5px;font-weight:500;white-space:nowrap}
+.sbadge.eju{background:#e8f0f8;color:#1a3060}
+.sbadge.toefl{background:#e8f4e4;color:#1a4020}
+.sbadge.toeic{background:#f0ede6;color:#3a3020}
+.sbadge.jlpt{background:#f4ede0;color:#5a3800}
+.sbadge.hi{background:#fff0c8;color:#5a4000;border:1px solid #e0c060}
+.eju-mini{font-size:9.5px;color:var(--text-muted);display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+.eju-mini span{white-space:nowrap}
+
+/* Subject/era view tables */
+.subj-section,.era-section{margin-bottom:1.5rem}
+.subj-hdr{display:flex;align-items:center;gap:10px;padding:7px 12px;border-radius:3px;margin-bottom:8px;cursor:pointer;user-select:none}
+.subj-hdr:hover{opacity:.85}
+.subj-count{margin-left:auto;font-size:10px;color:var(--text-muted)}
+.era-hdr{padding:8px 14px;border-radius:3px;display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.era-new .era-hdr{background:#e8f0f8;border:1px solid #c0d0e8}
+.era-hist .era-hdr{background:#f0ede6;border:1px solid #d8d0c4}
+
+.res-table{width:100%;border-collapse:collapse;font-size:11.5px}
+.res-table thead th{padding:7px 10px;background:var(--bg);border-bottom:2px solid var(--border);text-align:left;font-size:9.5px;letter-spacing:.05em;color:var(--text-muted);text-transform:uppercase;white-space:nowrap}
+.res-table tbody tr{border-bottom:1px solid var(--border-light);transition:background .1s}
+.res-table tbody tr:hover{background:#faf8f4}
+.res-table td{padding:8px 10px;vertical-align:middle}
+.stag{display:inline-block;padding:1px 7px;border-radius:2px;font-size:10px;white-space:nowrap}
+.etag{display:inline-block;padding:1px 6px;border-radius:2px;font-size:10px}
+.etag-new{background:#e8f0f8;color:#2c4a8a}
+.etag-hist{background:#f0ede6;color:#9a9590}
+
+.no-data{padding:2rem;text-align:center;color:var(--text-muted);font-size:12px}
+.loading{padding:3rem;text-align:center;color:var(--text-muted);font-size:12px}
+
+@media(max-width:680px){
+  header,main{padding-left:1.2rem;padding-right:1.2rem}
+  .filter-bar,.track-bar{padding-left:1.2rem;padding-right:1.2rem}
+  .univ-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <a href="index.html" class="back-home">← 総合トップ</a>
+    <div class="h-title" style="margin-top:8px">合格実绩 · 学部</div>
+    <div class="h-sub" id="track-sub">唯新教育 · 学部</div>
+  </div>
+  <div class="h-stats">
+    <div style="text-align:right">
+      <div class="stat-num" id="stat-total">—</div>
+      <div class="stat-lbl">合格件数</div>
+    </div>
+    <div style="text-align:right">
+      <div class="stat-num" id="stat-univs">—</div>
+      <div class="stat-lbl">合格大学数</div>
+    </div>
+  </div>
+</header>
+
+<div class="track-bar" id="track-bar">
+  <button class="track-tab active" onclick="setTrack('bunka')">文科<span class="tcount" id="tc-bunka"></span></button>
+  <button class="track-tab" onclick="setTrack('rika')">理科<span class="tcount" id="tc-rika"></span></button>
+  <button class="track-tab" onclick="setTrack('bijutsu')">美術<span class="tcount" id="tc-bijutsu"></span></button>
+</div>
+
+<div class="filter-bar">
+  <div class="filter-row">
+    <span class="flbl">年份</span>
+    <div class="seg" id="era-seg">
+      <button class="active" onclick="setEra('all')">全部</button>
+      <button onclick="setEra('new')">2025–2026</button>
+      <button onclick="setEra('hist')">2022–2024</button>
+    </div>
+    <span class="flbl" style="margin-left:6px">层次</span>
+    <div class="seg" id="tier-seg">
+      <button class="active" onclick="setTier(-1)">全部</button>
+      <button onclick="setTier(0)">T0</button>
+      <button onclick="setTier(1)">T1</button>
+      <button onclick="setTier(2)">T2</button>
+      <button onclick="setTier(3)">T3</button>
+      <button onclick="setTier(4)">T4</button>
+    </div>
+    <span class="flbl" style="margin-left:6px">区分</span>
+    <div class="seg" id="type-seg">
+      <button class="active" onclick="setSchoolType('all')">全部</button>
+      <button onclick="setSchoolType('public')">国公立</button>
+      <button onclick="setSchoolType('private')">私立</button>
+    </div>
+  </div>
+  <div class="filter-row">
+    <span class="flbl">成绩</span>
+    <div class="score-filters">
+      <div class="sg">
+        <label>JLPT</label>
+        <div class="jlpt-row" id="jlpt-btns">
+          <button class="jbtn active" onclick="setJlpt('all')">全部</button>
+          <button class="jbtn" onclick="setJlpt('N1')">N1</button>
+          <button class="jbtn" onclick="setJlpt('N2')">N2</button>
+        </div>
+      </div>
+      <div class="sg">
+        <label>EJU総分≥</label>
+        <select id="eju-min" onchange="applyFilters()">
+          <option value="0">不限</option>
+          <option value="400">400+</option>
+          <option value="500">500+</option>
+          <option value="600">600+</option>
+          <option value="650">650+</option>
+          <option value="700">700+</option>
+          <option value="750">750+</option>
+        </select>
+      </div>
+      <div class="sg">
+        <label>TOEFL≥</label>
+        <select id="toefl-min" onchange="applyFilters()">
+          <option value="0">不限</option>
+          <option value="60">60+</option>
+          <option value="70">70+</option>
+          <option value="80">80+</option>
+          <option value="90">90+</option>
+          <option value="100">100+</option>
+        </select>
+      </div>
+      <div class="sg">
+        <label>TOEIC≥</label>
+        <select id="toeic-min" onchange="applyFilters()">
+          <option value="0">不限</option>
+          <option value="500">500+</option>
+          <option value="600">600+</option>
+          <option value="700">700+</option>
+          <option value="800">800+</option>
+          <option value="900">900+</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="filter-row">
+    <span class="flbl">排序</span>
+    <div class="sort-row">
+      <div class="seg" id="sort-seg">
+        <button class="active" onclick="setSort('default')">默认</button>
+        <button onclick="setSort('eju_total')">EJU総分</button>
+        <button onclick="setSort('toefl')">TOEFL</button>
+        <button onclick="setSort('toeic')">TOEIC</button>
+      </div>
+      <button class="sdbtn" id="sort-dir-btn" onclick="toggleSortDir()">↓</button>
+    </div>
+  </div>
+</div>
+
+<main>
+  <div class="view-tabs">
+    <button class="vtab active" onclick="setGroupBy('tier')">学校別（層次）</button>
+    <button class="vtab" onclick="setGroupBy('dept')">学部別</button>
+    <button class="vtab" onclick="setGroupBy('era')">年度別</button>
+    <div id="inline-stats" style="margin-left:auto;display:flex;align-items:center;gap:16px">
+      <div style="text-align:right">
+        <div style="font-family:'Noto Serif SC',serif;font-size:2.2rem;font-weight:300;color:var(--accent);line-height:1" id="inline-total">—</div>
+        <div style="font-size:10px;color:var(--text-muted);letter-spacing:.06em;margin-top:2px">合格件数</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-family:'Noto Serif SC',serif;font-size:2.2rem;font-weight:300;color:var(--text-secondary);line-height:1" id="inline-univs">—</div>
+        <div style="font-size:10px;color:var(--text-muted);letter-spacing:.06em;margin-top:2px">合格大学数</div>
+      </div>
+    </div>
+  </div>
+  <div id="content"><div class="loading">読み込み中...</div></div>
+</main>
+
+<script>
+// ─── Univ Tier dict (T0-T4 + school_type) ────────────────────────────────────
+const UG_TIER_INFO = {
+  0: { label:'T0', name:'旧帝大・東工大クラス ＋ 早慶上理ICU' },
+  1: { label:'T1', name:'上位国公立 ＋ MARCH・関関同立' },
+  2: { label:'T2', name:'地方国公立 ＋ 日東駒専・成成明学国武独等' },
+  3: { label:'T3', name:'大東亜帝国クラス' },
+  4: { label:'T4', name:'保底校' },
+};
+
+const UG_SCHOOL_DB = {
+  '東京大学':{tier:0,type:'public'}, '東京科学大学':{tier:0,type:'public'}, '北海道大学':{tier:0,type:'public'},
+  '早稲田大学':{tier:0,type:'private'}, '慶應義塾大学':{tier:0,type:'private'}, '上智大学':{tier:0,type:'private'},
+  '東京理科大学':{tier:0,type:'private'}, '国際基督教大学':{tier:0,type:'private'},
+  '千葉大学':{tier:1,type:'public'}, '横浜国立大学':{tier:1,type:'public'}, '電気通信大学':{tier:1,type:'public'},
+  '筑波大学':{tier:1,type:'public'}, '横浜市立大学':{tier:1,type:'public'},
+  '中央大学':{tier:1,type:'private'}, '関西大学':{tier:1,type:'private'}, '関西学院大学':{tier:1,type:'private'},
+  '同志社大学':{tier:1,type:'private'}, '明治大学':{tier:1,type:'private'}, '法政大学':{tier:1,type:'private'},
+  '立命館大学':{tier:1,type:'private'}, '立教大学':{tier:1,type:'private'}, '青山学院大学':{tier:1,type:'private'},
+  '旭川市立大学':{tier:2,type:'public'}, '秋田大学':{tier:2,type:'public'}, '茨城大学':{tier:2,type:'public'}, '長崎大学':{tier:2,type:'public'},
+  '専修大学':{tier:2,type:'private'}, '東京電機大学':{tier:2,type:'private'}, '東洋大学':{tier:2,type:'private'},
+  '日本大学':{tier:2,type:'private'}, '日本女子大学':{tier:2,type:'private'}, '明治学院大学':{tier:2,type:'private'},
+  '独協大学':{tier:2,type:'private'}, '近畿大学':{tier:2,type:'private'}, '順天堂大学':{tier:2,type:'private'},
+  '駒澤大学':{tier:2,type:'private'}, '龍谷大学':{tier:2,type:'private'},
+  '東京工科大学':{tier:3,type:'private'}, '東海大学':{tier:3,type:'private'}, '二松学舎大学':{tier:3,type:'private'},
+  '京都外国語大学':{tier:3,type:'private'}, '国士舘大学':{tier:3,type:'private'}, '聖心女子大学':{tier:3,type:'private'},
+  '大東文化大学':{tier:3,type:'private'}, '帝京大学':{tier:3,type:'private'}, '成安造形大学':{tier:3,type:'private'},
+  '桃山学院大学':{tier:3,type:'private'}, '武蔵野大学':{tier:3,type:'private'}, '神奈川大学':{tier:3,type:'private'},
+  '福岡大学':{tier:3,type:'private'}, '大手前大学':{tier:3,type:'private'},
+  '東京工芸大学':{tier:4,type:'private'}, '京東光華大学':{tier:4,type:'private'}, '兵庫大学':{tier:4,type:'private'},
+  '岡山理科大学':{tier:4,type:'private'}, '和光大学':{tier:4,type:'private'}, '聖学院大学':{tier:4,type:'private'},
+  '多摩大学':{tier:4,type:'private'}, '大阪工業大学':{tier:4,type:'private'}, '大阪経済法科大学':{tier:4,type:'private'},
+  '大阪観光大学':{tier:4,type:'private'}, '帝京平成大学':{tier:4,type:'private'}, '帝京科学大学':{tier:4,type:'private'},
+  '平成国際大学':{tier:4,type:'private'}, '拓殖大学':{tier:4,type:'private'}, '文化学園大学':{tier:4,type:'private'},
+  '日本工業大学':{tier:4,type:'private'}, '明海大学':{tier:4,type:'private'}, '札幌学院大学':{tier:4,type:'private'},
+  '桜美林大学':{tier:4,type:'private'}, '江戸川大学':{tier:4,type:'private'}, '流通経済大学':{tier:4,type:'private'},
+  '湘南工科大学':{tier:4,type:'private'}, '神奈川工科大学':{tier:4,type:'private'}, '福岡女子大学':{tier:4,type:'public'},
+  '立正大学':{tier:4,type:'private'}, '西武文理大学':{tier:4,type:'private'}, '足利大学':{tier:4,type:'private'},
+  '長崎総合科学大学':{tier:4,type:'private'}, '青森大学':{tier:4,type:'private'}, '駿河台大学':{tier:4,type:'private'},
+  '北洋大学':{tier:4,type:'private'}, '千葉科学大学':{tier:4,type:'private'}, '山梨学院大学':{tier:4,type:'private'},
+  '徳島文理大学':{tier:4,type:'private'}, '第一工科大学':{tier:4,type:'private'}, '至誠館大学':{tier:4,type:'private'},
+};
+
+const UG_UNIV_NORM = {
+  '拓値大学':'拓殖大学', '京东光华大学':'京東光華大学', '横滨国立大学（尹老师母校！！！！！':'横浜国立大学',
+  '东京大学':'東京大学','东京科学大学':'東京科学大学','北海道大学':'北海道大学',
+  '早稻田大学':'早稲田大学','庆应义塾大学':'慶應義塾大学','上智大学':'上智大学',
+  '东京理科大学':'東京理科大学','ICU大学':'国際基督教大学','国际基督教大学':'国際基督教大学',
+  '千叶大学':'千葉大学','横滨国立大学':'横浜国立大学','电气通信大学':'電気通信大学',
+  '筑波大学':'筑波大学','横滨市立大学':'横浜市立大学',
+  '中央大学':'中央大学','关西大学':'関西大学','关西学院大学':'関西学院大学',
+  '同志社大学':'同志社大学','明治大学':'明治大学','法政大学':'法政大学',
+  '立命馆大学':'立命館大学','立教大学':'立教大学','青山学院大学':'青山学院大学',
+  '旭川市立大学':'旭川市立大学','秋田大学':'秋田大学','茨城大学':'茨城大学','长崎大学':'長崎大学',
+  '专修大学':'専修大学','东京电机大学':'東京電機大学','东洋大学':'東洋大学',
+  '日本大学':'日本大学','日本女子大学':'日本女子大学','明治学院大学':'明治学院大学',
+  '独协大学':'独協大学','近畿大学':'近畿大学','顺天堂大学':'順天堂大学',
+  '驹泽大学':'駒澤大学','龙谷大学':'龍谷大学',
+  '东京工科大学':'東京工科大学','东海大学':'東海大学','二松学舍大学':'二松学舎大学',
+  '京都外国语大学 大手前大学':'京都外国語大学','京都外国语大学':'京都外国語大学',
+  '国士馆大学':'国士舘大学','圣心女子大学':'聖心女子大学','大东文化大学':'大東文化大学',
+  '帝京大学（海外出愿）':'帝京大学','武藏野大学':'武蔵野大学','福冈大学':'福岡大学',
+  '东京工艺大学':'東京工芸大学','兵库大学':'兵庫大学','冈山理科大学':'岡山理科大学','圣学院大学':'聖学院大学',
+  '大阪工业大学':'大阪工業大学','大阪经济法科':'大阪経済法科大学','大阪经济法科大学':'大阪経済法科大学',
+  '大阪观光大学':'大阪観光大学','平成国际大学':'平成国際大学','文化学园大学':'文化学園大学',
+  '日本工业大学':'日本工業大学','札幌学院大学':'札幌学院大学','樱美林大学':'桜美林大学',
+  '江户川大学':'江戸川大学','流通经济大学':'流通経済大学','福冈女子大学':'福岡女子大学',
+  '长崎综合科学大学':'長崎総合科学大学','骏河台大学':'駿河台大学','千叶科学大学':'千葉科学大学',
+  '徳岛文理大学':'徳島文理大学','至诚馆大学':'至誠館大学',
+};
+
+function normUnivUG(u) { if (!u) return u; const t = u.trim(); return UG_UNIV_NORM[t] || t; }
+function ugTierOf(univ) { return UG_SCHOOL_DB[normUnivUG(univ)]?.tier ?? 4; }
+function ugSchoolType(univ) { return UG_SCHOOL_DB[normUnivUG(univ)]?.type ?? 'private'; }
+
+// ─── Supabase ─────────────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://vwntezfvqbrkeovnseku.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
+
+async function fetchAllUG() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/undergrad_results?select=*&order=created_at.desc`, {
+    headers: {'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let allData = [];
+let curEra = 'all', curTier = -1, curJlpt = 'all', curSchoolType = 'all', curTrack = 'bunka';
+let curSort = 'default', sortDir = -1;
+let curGroup = 'tier';
+let openUniv = null;
+let dpSortKey = 'default';
+let tierCollapsed = {};
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const raw = await fetchAllUG();
+    allData = raw.map(r => ({
+      ...r,
+      univ: normUnivUG(r.univ),
+      track: r.track || 'bunka',
+      tier: r.tier != null ? r.tier : ugTierOf(normUnivUG(r.univ)),
+      school_type: r.school_type || ugSchoolType(normUnivUG(r.univ)),
+    }));
+    updateTrackCounts();
+    applyFilters();
+  } catch(e) {
+    document.getElementById('content').innerHTML = `<div class="loading" style="color:#c00">エラー: ${e.message}</div>`;
+  }
+});
+
+function setTrack(t) {
+  curTrack = t;
+  document.querySelectorAll('.track-tab').forEach((b,i) => b.classList.toggle('active', ['bunka','rika','bijutsu'][i] === t));
+  const sub = document.getElementById('track-sub');
+  const labels = {bunka:'学部文科', rika:'学部理科', bijutsu:'学部美術'};
+  if (sub) sub.textContent = '唯新教育 · ' + labels[t];
+  applyFilters();
+}
+
+function updateTrackCounts() {
+  const counts = {bunka:0, rika:0, bijutsu:0};
+  for (const r of allData) counts[r.track||'bunka'] = (counts[r.track||'bunka']||0) + 1;
+  document.getElementById('tc-bunka').textContent = counts.bunka ? `(${counts.bunka})` : '';
+  document.getElementById('tc-rika').textContent = counts.rika ? `(${counts.rika})` : '';
+  document.getElementById('tc-bijutsu').textContent = counts.bijutsu ? `(${counts.bijutsu})` : '';
+}
+
+// ─── Controls ─────────────────────────────────────────────────────────────────
+function setEra(e){curEra=e;document.querySelectorAll('#era-seg button').forEach((b,i)=>b.classList.toggle('active',['all','new','hist'][i]===e));applyFilters()}
+function setTier(t){curTier=t;document.querySelectorAll('#tier-seg button').forEach((b,i)=>b.classList.toggle('active',[-1,0,1,2,3,4][i]===t));applyFilters()}
+function setSchoolType(t){curSchoolType=t;document.querySelectorAll('#type-seg button').forEach((b,i)=>b.classList.toggle('active',['all','public','private'][i]===t));applyFilters()}
+function setJlpt(v){curJlpt=v;document.querySelectorAll('#jlpt-btns .jbtn').forEach(b=>b.classList.toggle('active',b.textContent.trim()===v||(v==='all'&&b.textContent==='全部')));applyFilters()}
+function setSort(s){curSort=s;document.querySelectorAll('#sort-seg button').forEach((b,i)=>b.classList.toggle('active',['default','eju_total','toefl','toeic'][i]===s));applyFilters()}
+function toggleSortDir(){sortDir*=-1;document.getElementById('sort-dir-btn').textContent=sortDir===-1?'↓':'↑';applyFilters()}
+function setGroupBy(g){
+  curGroup=g;openUniv=null;dpSortKey='default';
+  document.querySelectorAll('.vtab').forEach((b,i)=>b.classList.toggle('active',['tier','dept','era'][i]===g));
+  applyFilters();
+}
+
+// ─── Filter ───────────────────────────────────────────────────────────────────
+function filtered() {
+  const ejuMin = parseInt(document.getElementById('eju-min').value);
+  const toeflMin = parseInt(document.getElementById('toefl-min').value);
+  const toeicMin = parseInt(document.getElementById('toeic-min').value);
+  return allData.filter(r=>{
+    if ((r.track||'bunka')!==curTrack) return false;
+    if (curEra!=='all' && r.era!==curEra) return false;
+    if (curTier!==-1 && r.tier!==curTier) return false;
+    if (curSchoolType!=='all' && r.school_type!==curSchoolType) return false;
+    if (curJlpt!=='all' && r.jlpt!==curJlpt) return false;
+    if (ejuMin>0 && (!r.eju_total || r.eju_total<ejuMin)) return false;
+    if (toeflMin>0 && (!r.toefl || r.toefl<toeflMin)) return false;
+    if (toeicMin>0 && (!r.toeic || r.toeic<toeicMin)) return false;
+    return true;
+  });
+}
+
+function sortRows(rows, key, dir) {
+  return [...rows].sort((a,b)=>{
+    let av = a[key]||0, bv = b[key]||0;
+    return (bv-av)*dir*-1;
+  });
+}
+
+function applyFilters() {
+  let data = filtered();
+  if (curSort!=='default') data = sortRows(data, curSort, sortDir);
+
+  const totalCount = data.length;
+  const univCount = new Set(data.map(d=>d.univ)).size;
+  document.getElementById('stat-total').textContent = totalCount;
+  document.getElementById('stat-univs').textContent = univCount;
+  const il = document.getElementById('inline-total');
+  const iu = document.getElementById('inline-univs');
+  if (il) il.textContent = totalCount;
+  if (iu) iu.textContent = univCount;
+
+  const content = document.getElementById('content');
+  const trackTotal = allData.filter(r => (r.track||'bunka')===curTrack).length;
+  if (trackTotal === 0) {
+    const labels = {bunka:'文科', rika:'理科', bijutsu:'美術'};
+    content.innerHTML = `<div class="track-empty"><div class="te-icon">○</div><div class="te-text">${labels[curTrack]}のデータはまだありません</div></div>`;
+  } else if (curGroup==='tier') content.innerHTML = renderTierView(data);
+  else if (curGroup==='dept') content.innerHTML = renderDeptView(data);
+  else content.innerHTML = renderEraView(data);
+
+  if (openUniv) {
+    const rows = data.filter(r=>r.univ===openUniv);
+    if (rows.length) openDetailPanel(openUniv, rows, false);
+  }
+}
+
+// ─── Tier view ────────────────────────────────────────────────────────────────
+function renderTierView(data) {
+  const tiers = {0:{},1:{},2:{},3:{},4:{}};
+  for (const r of data) {
+    const t = r.tier;
+    if (!tiers[t][r.univ]) tiers[t][r.univ] = [];
+    tiers[t][r.univ].push(r);
+  }
+
+  let html = '';
+  for (const t of [0,1,2,3,4]) {
+    const univs = Object.keys(tiers[t]);
+    if (!univs.length) continue;
+    const total = univs.reduce((s,u)=>s+tiers[t][u].length,0);
+    const col = {0:'var(--t0)',1:'var(--t1)',2:'var(--t2)',3:'var(--t3)',4:'var(--t4)'}[t];
+    const collapsed = tierCollapsed[t];
+
+    html += `<div class="tier-section t${t}" id="tsec-${t}">
+      <div class="tier-hdr" onclick="toggleTierSection(${t})">
+        <span class="tbadge">${UG_TIER_INFO[t].label}</span>
+        <span class="tname">${UG_TIER_INFO[t].name}</span>
+        <span class="tcount">${total} 件 · ${univs.length} 校</span>
+        <span class="ttoggle" id="ttoggle-${t}">${collapsed?'▶':'▼'}</span>
+      </div>
+      <div id="tbody-${t}" style="${collapsed?'display:none':''}">`;
+    html += `<div id="dp-slot-${t}"></div>`;
+    html += `<div class="univ-grid">`;
+
+    univs.sort((a,b)=>tiers[t][b].length-tiers[t][a].length);
+    for (const u of univs) {
+      const rows = tiers[t][u];
+      const stype = rows[0].school_type;
+      // mini EJU/TOEFL bar — just show count proportion by era
+      const newCnt = rows.filter(r=>r.era==='new').length;
+      const histCnt = rows.length - newCnt;
+      const barSegs = `<div class="subj-seg" style="width:${Math.round(newCnt/rows.length*100)}%;background:#2c4a8a"></div><div class="subj-seg" style="width:${Math.round(histCnt/rows.length*100)}%;background:#bbb"></div>`;
+      const isOpen = openUniv===u;
+      const safeU = u.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+      html += `<div class="ucard${isOpen?' ucard-open':''}" data-univ="${safeU}" data-tier="${t}" style="${isOpen?'border-color:var(--accent)':''}">
+        <div class="ucard-head">
+          <div class="ucard-name">${u}</div>
+          <div class="ucard-cnt" style="color:${col}">${rows.length}</div>
+        </div>
+        <div class="ucard-bar">${barSegs}</div>
+        <div class="ucard-sub"><span class="type-pill ${stype}">${stype==='public'?'国公立':'私立'}</span></div>
+      </div>`;
+    }
+    html += `</div></div></div>`;
+  }
+  return html || '<div class="no-data">条件に該当するデータがありません</div>';
+}
+
+// ─── Dept view (group by 学部) ────────────────────────────────────────────────
+function renderDeptView(data) {
+  const groups = {};
+  for (const r of data) {
+    const key = r.dept || '学部不明';
+    if (!groups[key]) groups[key]=[];
+    groups[key].push(r);
+  }
+  const order = Object.keys(groups).sort((a,b)=>groups[b].length-groups[a].length);
+  if (!order.length) return '<div class="no-data">条件に該当するデータがありません</div>';
+
+  return order.map(dept => {
+    const rows = groups[dept];
+    let sorted = [...rows];
+    if (curSort!=='default') sorted=sortRows(sorted,curSort,sortDir);
+    return `<div class="subj-section">
+      <div class="subj-hdr" style="background:#eef0e8;border:1px solid #c8d0bc"
+           onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'">
+        <span style="font-size:11px;font-weight:500;color:#3a4830">${dept}</span>
+        <span class="subj-count">${rows.length} 件</span>
+        <span style="font-size:10px;color:#3a4830">▼</span>
+      </div>
+      <div><div style="overflow-x:auto"><table class="res-table">
+        <thead><tr><th>大学名</th><th>学科</th><th>EJU総分</th><th>JLPT</th><th>TOEFL</th><th>TOEIC</th><th>年度</th></tr></thead>
+        <tbody>${sorted.map(r=>buildTableRow(r)).join('')}</tbody>
+      </table></div></div></div>`;
+  }).join('');
+}
+
+// ─── Era view ─────────────────────────────────────────────────────────────────
+function renderEraView(data) {
+  const newRows = data.filter(r=>r.era==='new');
+  const histRows = data.filter(r=>r.era==='hist');
+  function eraBlock(rows, cls, label, color) {
+    if (!rows.length) return '';
+    let sorted = [...rows];
+    if (curSort!=='default') sorted=sortRows(sorted,curSort,sortDir);
+    return `<div class="era-section ${cls}">
+      <div class="era-hdr"><span style="font-size:11px;font-weight:600;color:${color}">${label}</span><span style="font-size:10px;color:var(--text-muted)">${rows.length} 件</span></div>
+      <div style="overflow-x:auto"><table class="res-table">
+        <thead><tr><th>大学名</th><th>学部</th><th>学科</th><th>EJU総分</th><th>JLPT</th><th>TOEFL</th><th>TOEIC</th></tr></thead>
+        <tbody>${sorted.map(r=>buildTableRow(r,true)).join('')}</tbody>
+      </table></div></div>`;
+  }
+  const out = eraBlock(newRows,'era-new','2025–2026 入学','#2c4a8a') + eraBlock(histRows,'era-hist','2022–2024 実绩','#9a9590');
+  return out || '<div class="no-data">条件に該当するデータがありません</div>';
+}
+
+// ─── Shared table row ─────────────────────────────────────────────────────────
+function buildTableRow(r, showDept=false) {
+  const ejuHi = r.eju_total && r.eju_total>=700;
+  const toeflHi = r.toefl && r.toefl>=90;
+  const toeicHi = r.toeic && r.toeic>=800;
+  const eraTag = `<span class="etag ${r.era==='new'?'etag-new':'etag-hist'}">${r.era==='new'?'25–26':'22–24'}</span>`;
+  return `<tr>
+    <td style="font-weight:500">${r.univ||'—'}</td>
+    ${showDept?`<td style="color:var(--text-secondary)">${r.dept||'—'}</td>`:''}
+    <td style="color:var(--text-muted);font-size:11px">${r.spec||'—'}</td>
+    <td>${r.eju_total?`<span class="sbadge eju${ejuHi?' hi':''}">EJU ${r.eju_total}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
+    <td>${r.jlpt?`<span class="sbadge jlpt">${r.jlpt}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
+    <td>${r.toefl?`<span class="sbadge toefl${toeflHi?' hi':''}">${r.toefl}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
+    <td>${r.toeic?`<span class="sbadge toeic${toeicHi?' hi':''}">${r.toeic}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
+    ${!showDept?`<td>${eraTag}</td>`:''}
+  </tr>`;
+}
+
+// ─── Detail panel ─────────────────────────────────────────────────────────────
+document.addEventListener('click', e => {
+  if (curGroup!=='tier') return;
+  const card = e.target.closest('.ucard[data-univ]');
+  if (!card) return;
+  const univ = card.dataset.univ;
+  const tierAttr = card.dataset.tier;
+  const tier = tierAttr !== '' && tierAttr != null ? parseInt(tierAttr) : ugTierOf(univ);
+  if (openUniv===univ) { closeDetailPanel(); return; }
+  const rows = filtered().filter(r=>r.univ===univ);
+  openUniv = univ;
+  dpSortKey = 'default';
+  openDetailPanel(univ, rows, true, tier);
+});
+
+function openDetailPanel(univ, rows, scroll=true, tier) {
+  document.querySelectorAll('.detail-panel').forEach(el=>el.remove());
+  document.querySelectorAll('.ucard').forEach(c=>c.style.borderColor='');
+  const card = document.querySelector(`.ucard[data-univ="${univ.replace(/"/g,'&quot;')}"]`);
+  if (card) { card.style.borderColor='var(--accent)'; tier = (tier != null) ? tier : parseInt(card.dataset.tier); }
+
+  const slot = document.getElementById(`dp-slot-${tier != null ? tier : 4}`);
+  if (!slot) return;
+
+  const panel = document.createElement('div');
+  panel.className = 'detail-panel open';
+  panel.id = 'detail-panel-main';
+  panel.innerHTML = buildDetailPanelHTML(univ, rows, tier);
+  const grid = slot.nextElementSibling;
+  if (grid) grid.after(panel);
+
+  if (scroll) setTimeout(()=>panel.scrollIntoView({behavior:'smooth',block:'nearest'}),50);
+}
+
+function buildDetailPanelHTML(univ, rows, tier) {
+  tier = (tier != null) ? tier : ugTierOf(univ);
+  const TCOL = {0:['#dce4f4','#1a3070'],1:['#e8edf8','#2c4a8a'],2:['#e8f0e4','#3a6630'],3:['#f4ece0','#7a4a20'],4:['#f4e0e0','#7a2020']};
+  const [tbg,tfg] = TCOL[tier]||['#eee','#666'];
+  const stype = rows[0]?.school_type || ugSchoolType(univ);
+
+  let sorted=[...rows];
+  if(dpSortKey!=='default') sorted=sortRows(sorted,dpSortKey,-1);
+
+  const btns=['デフォルト','EJU総分↓','TOEFL↓','TOEIC↓'].map((lbl,i)=>{
+    const k=['default','eju_total','toefl','toeic'][i];
+    return `<button class="dp-sort-btn${dpSortKey===k?' active':''}" onclick="setDpSort('${k}')">${lbl}</button>`;
+  }).join('');
+
+  const rows_html = sorted.map(r=>{
+    const ejuHi = r.eju_total && r.eju_total>=700;
+    const toeflHi = r.toefl && r.toefl>=90;
+    const toeicHi = r.toeic && r.toeic>=800;
+    const ejuParts = [];
+    if (r.eju_japanese) ejuParts.push(`日語${r.eju_japanese}`);
+    if (r.eju_math) ejuParts.push(`数学${r.eju_math}`);
+    if (r.eju_physics) ejuParts.push(`物理${r.eju_physics}`);
+    if (r.eju_chemistry) ejuParts.push(`化学${r.eju_chemistry}`);
+    if (r.eju_biology) ejuParts.push(`生物${r.eju_biology}`);
+    if (r.eju_bunsou) ejuParts.push(`文综${r.eju_bunsou}`);
+    if (r.eju_kijutsu) ejuParts.push(`記述${r.eju_kijutsu}`);
+
+    return `<tr>
+      <td style="color:var(--text-secondary)">${r.dept||'—'}</td>
+      <td style="color:var(--text-muted);font-size:11px">${r.spec||'—'}</td>
+      <td>
+        ${r.eju_total?`<span class="sbadge eju${ejuHi?' hi':''}">EJU総分 ${r.eju_total}</span>`:'<span style="color:var(--text-muted)">—</span>'}
+        ${ejuParts.length?`<div class="eju-mini">${ejuParts.map(p=>`<span>${p}</span>`).join('')}</div>`:''}
+      </td>
+      <td>${r.jlpt?`<span class="sbadge jlpt">${r.jlpt}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
+      <td>${r.toefl?`<span class="sbadge toefl${toeflHi?' hi':''}">${r.toefl}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
+      <td>${r.toeic?`<span class="sbadge toeic${toeicHi?' hi':''}">${r.toeic}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
+      <td><span class="etag ${r.era==='new'?'etag-new':'etag-hist'}">${r.era==='new'?'25–26':'22–24'}</span></td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="dp-header">
+      <div class="dp-univ">${univ}</div>
+      <span class="dp-tier" style="background:${tbg};color:${tfg}">${UG_TIER_INFO[tier]?.label||''}</span>
+      <span class="dp-type" style="background:${stype==='public'?'#e0eef8':'#f4ece0'};color:${stype==='public'?'#1a3a6a':'#5a3010'}">${stype==='public'?'国公立':'私立'}</span>
+      <span class="dp-stats">${rows.length} 件</span>
+      <button class="dp-close" onclick="closeDetailPanel()">✕</button>
+    </div>
+    <div class="dp-sort-bar"><span class="dp-sort-lbl">ソート</span>${btns}</div>
+    <div class="dp-table-wrap">
+      <table class="dp-table">
+        <thead><tr>
+          <th style="min-width:140px">学部</th><th style="min-width:120px">学科</th>
+          <th style="min-width:200px">EJU</th><th style="width:90px">JLPT</th>
+          <th style="width:90px">TOEFL</th><th style="width:90px">TOEIC</th><th style="width:60px">年度</th>
+        </tr></thead>
+        <tbody>${rows_html}</tbody>
+      </table>
+    </div>`;
+}
+
+function setDpSort(key) {
+  dpSortKey = key;
+  if (!openUniv) return;
+  const rows = filtered().filter(r=>r.univ===openUniv);
+  const tier = ugTierOf(openUniv);
+  const panel = document.getElementById('detail-panel-main');
+  if (panel) panel.innerHTML = buildDetailPanelHTML(openUniv, rows, tier);
+}
+
+function closeDetailPanel() {
+  openUniv = null;
+  document.getElementById('detail-panel-main')?.remove();
+  document.querySelectorAll('.ucard').forEach(c=>c.style.borderColor='');
+}
+
+function toggleTierSection(t) {
+  tierCollapsed[t] = !tierCollapsed[t];
+  const body = document.getElementById(`tbody-${t}`);
+  const icon = document.getElementById(`ttoggle-${t}`);
+  if (body) body.style.display = tierCollapsed[t]?'none':'';
+  if (icon) icon.textContent = tierCollapsed[t]?'▶':'▼';
+}
+</script>
+</body>
+</html>
