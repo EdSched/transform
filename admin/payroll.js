@@ -115,14 +115,18 @@ function buildCourseRows(sessions, teacherName, courses) {
 
 // ── 生成面谈行 ──
 function buildBookingRows(bookings, slots, teacherName) {
-  const teacherSlotIds = new Set(
-    slots.filter(s => s.teacher_name === teacherName).map(s => s.id)
-  );
+  const slotMap = {};
+  slots.forEach(s => { slotMap[s.id] = s; });
   return bookings
-    .filter(b => b.status !== 'cancelled' && b.actual_time && teacherSlotIds.has(b.slot_id))
+    .filter(b => {
+      if (b.status === 'cancelled' || !b.actual_time) return false;
+      // 优先用该预约自己分配的老师；若从未单独分配过，则退回看时间槽默认老师
+      const owner = b.assigned_teacher || slotMap[b.slot_id]?.teacher_name || '';
+      return owner === teacherName;
+    })
     .map(b => {
       const { start, end, hours } = bookingTimes(b);
-      const slot = slots.find(s => s.id === b.slot_id);
+      const slot = slotMap[b.slot_id];
       const loc = b.location || slot?.location || 'online';
       return {
         type: 'booking',
