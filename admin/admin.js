@@ -2016,6 +2016,7 @@ async function regenerateSessions(){
       course_id:id,course_name:c.name,major:c.major,
       session_date:date,session_number:i+1,
       time_range:timeRange||c.time_range,teacher:c.teacher,
+      session_teacher:c.teacher,
       delivery:c.delivery,campus:c.campus
     }));
     for(let i=0;i<sessions.length;i+=20){
@@ -2079,7 +2080,11 @@ async function confirmCopyPeriod(){
       id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
       course_id:newId,course_name:src.name,major:src.major,
       session_date:date,session_number:i+1,
-      time_range:src.time_range,teacher:src.teacher
+      time_range:src.time_range,teacher:src.teacher,
+      session_teacher:src.teacher,
+      delivery:src.delivery,campus:src.campus,
+      actual_hours:src.actual_hours,
+      homework_enabled:src.homework_enabled||false,
     }));
     for(let i=0;i<sessions.length;i+=20){
       const chunk=sessions.slice(i,i+20);
@@ -2149,14 +2154,16 @@ async function confirmReschedule(){
     target.session_title='休讲'; target.session_teacher='';
 
     // 2. after 中每节课：日期不变，session_number 减 1，内容＝contentChain 中对应的「前一份」内容
+    //    session_teacher 为空时退回用 teacher 字段兜底，避免老师端按 session_teacher 查询时漏掉这节课
     for(let i=0;i<after.length;i++){
       const s=after[i];
       const content=contentChain[i]; // 注意：是 contentChain[i] 不是 [i+1]，因为 contentChain[0] 就是要贴给 after[0] 的
+      const teacherVal = content.teacher || s.teacher;
       const patch={
         session_number: s.session_number - 1,
         session_title: content.session_title || '',
-        teacher: content.teacher,
-        session_teacher: content.session_teacher || '',
+        teacher: teacherVal,
+        session_teacher: content.session_teacher || teacherVal || '',
       };
       await sb(`/rest/v1/course_sessions?id=eq.${s.id}`,'PATCH',patch);
       Object.assign(s,patch);
@@ -2167,6 +2174,7 @@ async function confirmReschedule(){
     do{ newDate.setDate(newDate.getDate()+1); } while(weekdays.length && !weekdays.includes(newDate.getDay()));
     const newDateStr=newDate.getFullYear()+'-'+String(newDate.getMonth()+1).padStart(2,'0')+'-'+String(newDate.getDate()).padStart(2,'0');
     const lastContent=contentChain[contentChain.length-1];
+    const newTeacherVal = lastContent.teacher || lastSession.teacher;
 
     const newSession={
       id:`s-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
@@ -2174,9 +2182,9 @@ async function confirmReschedule(){
       session_date:newDateStr,session_number:lastSession.session_number, // 原始最后编号（顺延前）
       time_range:lastSession.time_range,actual_hours:lastSession.actual_hours,
       delivery:lastSession.delivery,campus:lastSession.campus,
-      teacher:lastContent.teacher,
+      teacher:newTeacherVal,
       session_title:lastContent.session_title||'',
-      session_teacher:lastContent.session_teacher||'',
+      session_teacher:lastContent.session_teacher||newTeacherVal||'',
       homework_enabled:lastSession.homework_enabled,confirmed:lastSession.confirmed,
       is_cancelled:false
     };
