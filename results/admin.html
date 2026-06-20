@@ -25,6 +25,16 @@ header {
 .header-sub { font-size: 10px; color: var(--text-muted); letter-spacing: .08em; text-transform: uppercase; margin-top: 3px; }
 .header-actions { display: flex; gap: 8px; }
 
+/* Major-category bar (院/学部) */
+.major-bar { background: #1a1814; padding: 0 2.5rem; display: flex; gap: 0; }
+.major-btn {
+  padding: 10px 22px; background: none; border: none; border-bottom: 3px solid transparent;
+  font-family: 'Noto Serif SC', serif; font-size: 13px; color: #9a9590; cursor: pointer;
+  letter-spacing: .04em; transition: all .15s;
+}
+.major-btn.active { color: #fff; border-bottom-color: var(--accent); font-weight: 600; }
+.major-btn:hover:not(.active) { color: #d0ccc4; }
+
 .tab-bar {
   background: var(--surface); border-bottom: 1px solid var(--border);
   display: flex; padding: 0 2.5rem;
@@ -36,16 +46,15 @@ header {
 }
 .tab-btn.active { color: var(--text-primary); border-bottom-color: var(--text-primary); }
 
-main { padding: 2rem 2.5rem 4rem; max-width: 1100px; }
+main { padding: 2rem 2.5rem 4rem; max-width: 1200px; }
 
-/* ── Form ── */
 .form-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 1.5rem; }
 .form-section-title {
   font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted);
   margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border-light);
 }
 .form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 1rem; }
-.form-grid-2 { grid-template-columns: repeat(2, 1fr); }
+.form-grid-4 { grid-template-columns: repeat(4, 1fr); }
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field label { font-size: 10px; letter-spacing: .06em; color: var(--text-muted); text-transform: uppercase; }
 .field input, .field select, .field textarea {
@@ -69,7 +78,6 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1100px; }
 .btn-danger { background: var(--red-bg); color: var(--red); border-color: #e8c0b8; }
 .btn-success { background: var(--green-bg); color: var(--green); border-color: #b8d8bc; }
 
-/* ── Toast ── */
 .toast {
   position: fixed; bottom: 1.5rem; right: 1.5rem; padding: 10px 18px; border-radius: 4px;
   font-size: 12px; display: none; z-index: 999; max-width: 320px;
@@ -78,7 +86,6 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1100px; }
 .toast-ok { background: var(--green-bg); color: var(--green); border: 1px solid #b8d8bc; }
 .toast-err { background: var(--red-bg); color: var(--red); border: 1px solid #e8c0b8; }
 
-/* ── Excel upload ── */
 .upload-zone {
   border: 2px dashed var(--border); border-radius: 4px; padding: 2rem;
   text-align: center; color: var(--text-muted); cursor: pointer; transition: border-color .15s;
@@ -88,15 +95,11 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1100px; }
 .upload-zone input { display: none; }
 
 .mapping-grid {
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
-  gap: 8px; margin-bottom: 8px;
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 1rem;
 }
-.mapping-arrow { color: var(--text-muted); font-size: 11px; }
 
 .preview-table-wrap { overflow-x: auto; margin: 1rem 0; }
-.preview-table {
-  width: 100%; border-collapse: collapse; font-size: 11px;
-}
+.preview-table { width: 100%; border-collapse: collapse; font-size: 11px; }
 .preview-table th {
   background: var(--bg); padding: 6px 10px; text-align: left;
   border: 1px solid var(--border); font-weight: 500; letter-spacing: .03em; color: var(--text-secondary);
@@ -107,10 +110,7 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1100px; }
 }
 .preview-table tr:hover td { background: #faf8f4; }
 
-/* ── Data list ── */
-.list-controls {
-  display: flex; gap: 10px; margin-bottom: 1rem; align-items: center; flex-wrap: wrap;
-}
+.list-controls { display: flex; gap: 10px; margin-bottom: 1rem; align-items: center; flex-wrap: wrap; }
 .list-controls input[type=text] {
   padding: 6px 12px; border: 1px solid var(--border); border-radius: 3px;
   font-family: inherit; font-size: 12px; background: var(--bg); flex: 1; min-width: 200px;
@@ -136,7 +136,7 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1100px; }
   color: var(--text-secondary); white-space: nowrap;
 }
 .data-table tr:hover td { background: #faf8f4; }
-.data-table .subj-tag {
+.data-table .subj-tag, .track-tag, .type-tag, .tier-tag {
   font-size: 9px; padding: 1px 6px; border-radius: 2px; white-space: nowrap;
 }
 .era-tag { font-size: 9px; padding: 1px 5px; border-radius: 2px; }
@@ -145,16 +145,12 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1100px; }
 
 .load-state { padding: 2rem; text-align: center; color: var(--text-muted); font-size: 12px; }
 
-/* ── Progress bar ── */
 .progress-wrap { margin: 1rem 0; display: none; }
 .progress-wrap.show { display: block; }
-.progress-bar {
-  height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;
-}
+.progress-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
 .progress-fill { height: 100%; background: var(--accent); transition: width .2s; }
 .progress-label { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
 
-/* ── Confirm modal ── */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 500;
   display: none; align-items: center; justify-content: center;
@@ -167,6 +163,8 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1100px; }
 .modal-title { font-size: 14px; font-weight: 500; margin-bottom: .5rem; }
 .modal-body { font-size: 12px; color: var(--text-secondary); margin-bottom: 1.2rem; line-height: 1.6; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+.info-box { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 12px 16px; margin-bottom: 1rem; font-size: 12px; color: var(--text-secondary); line-height: 1.7; }
 </style>
 </head>
 <body>
@@ -182,6 +180,16 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1100px; }
     </a>
   </div>
 </header>
+
+<div class="major-bar">
+  <button class="major-btn active" onclick="switchMajor('grad')">大学院</button>
+  <button class="major-btn" onclick="switchMajor('ug')">学部</button>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════
+     大学院セクション
+════════════════════════════════════════════════════════════════════════ -->
+<div id="major-grad">
 
 <div class="tab-bar">
   <button class="tab-btn active" onclick="switchTab('add')">手动添加</button>
@@ -311,7 +319,7 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1100px; }
 
     <div id="col-mapping" style="display:none">
       <div class="form-section-title">列マッピング（Excelの列名を選択）</div>
-      <div id="mapping-fields" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:1rem"></div>
+      <div id="mapping-fields" class="mapping-grid"></div>
       <div class="form-actions">
         <button class="btn btn-secondary" onclick="resetUpload()">キャンセル</button>
         <button class="btn btn-primary" onclick="previewImport()">プレビュー</button>
@@ -351,7 +359,7 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1100px; }
 
   <!-- SQL helper -->
   <div class="form-panel" style="margin-top:1.5rem">
-    <div class="form-section-title">Supabase テーブル作成 SQL（初回のみ）</div>
+    <div class="form-section-title">Supabase テーブル作成 SQL（初回のみ・大学院用）</div>
     <pre style="font-size:10px;line-height:1.6;color:var(--text-secondary);background:var(--bg);padding:1rem;border-radius:3px;overflow-x:auto;white-space:pre-wrap">CREATE TABLE admission_results (
   id         uuid primary key default gen_random_uuid(),
   univ       text not null,
@@ -368,7 +376,6 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1100px; }
   tier       integer,
   created_at timestamptz default now()
 );
--- RLS: allow anon read, restrict write to service_role or set up auth
 ALTER TABLE admission_results ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "public read" ON admission_results FOR SELECT USING (true);
 CREATE POLICY "anon insert" ON admission_results FOR INSERT WITH CHECK (true);
@@ -409,13 +416,9 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
   <div id="list-area" class="load-state">読み込み中...</div>
 </div>
 
-</main>
-
-
 <!-- ── TAB: Tier 管理 ── -->
 <div id="tab-tier" style="display:none">
-
-  <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 16px;margin-bottom:1rem;font-size:12px;color:var(--text-secondary);line-height:1.7">
+  <div class="info-box">
     データベース内の全大学を一覧表示します。<br>
     自動判定（大学名から推測）の結果を確認しながら、必要な大学だけ手動でTierを上書きできます。<br>
     <span style="color:var(--text-muted);font-size:11px">※ 保存ボタンを押すまで変更は反映されません。変更した行のみ更新します。</span>
@@ -426,7 +429,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
     <button class="btn btn-primary" onclick="saveTierChanges()" id="tier-save-btn" disabled>変更を保存（0件）</button>
     <span style="font-size:11px;color:var(--text-muted)" id="tier-status"></span>
     <div style="margin-left:auto;display:flex;gap:6px">
-      <input type="text" id="tier-search" placeholder="大学名で絞り込み..." 
+      <input type="text" id="tier-search" placeholder="大学名で絞り込み..."
         style="padding:5px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:200px"
         oninput="renderTierTable()">
       <select id="tier-filter" onchange="renderTierTable()"
@@ -445,6 +448,215 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
   <div id="tier-area" class="load-state">「Tier管理」タブを開くと読み込みます</div>
 </div>
 
+</main>
+</div>
+<!-- ═══ /大学院セクション ═══ -->
+
+<!-- ════════════════════════════════════════════════════════════════════════
+     学部セクション
+════════════════════════════════════════════════════════════════════════ -->
+<div id="major-ug" style="display:none">
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchUgTab('add')">手动添加</button>
+  <button class="tab-btn" onclick="switchUgTab('excel')">Excel 批量导入</button>
+  <button class="tab-btn" onclick="switchUgTab('list')">数据管理</button>
+</div>
+
+<main>
+
+<!-- ── UG TAB: 手动添加 ── -->
+<div id="ugtab-add">
+  <div class="form-panel">
+    <div class="form-section-title">院校信息</div>
+    <div class="form-grid">
+      <div class="field">
+        <label>大学名 *</label>
+        <input id="ug-f-univ" type="text" placeholder="早稲田大学" list="ug-univ-list">
+        <datalist id="ug-univ-list"></datalist>
+      </div>
+      <div class="field">
+        <label>学部名</label>
+        <input id="ug-f-dept" type="text" placeholder="商学部">
+      </div>
+      <div class="field">
+        <label>学科名</label>
+        <input id="ug-f-spec" type="text" placeholder="経営学科">
+      </div>
+    </div>
+
+    <div class="form-section-title">学生・分类情報</div>
+    <div class="form-grid form-grid-4">
+      <div class="field">
+        <label>学生名</label>
+        <input id="ug-f-student" type="text" placeholder="A同学">
+      </div>
+      <div class="field">
+        <label>系統 *</label>
+        <select id="ug-f-track">
+          <option value="bunka">文科</option>
+          <option value="rika">理科</option>
+          <option value="bijutsu">美術</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>入学年度 *</label>
+        <select id="ug-f-era">
+          <option value="new">2025–2026 入学</option>
+          <option value="hist">2022–2024 実绩</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Tier（空白=自動判定）</label>
+        <select id="ug-f-tier">
+          <option value="">自動判定</option>
+          <option value="0">T0 — 旧帝大・早慶上理ICU</option>
+          <option value="1">T1 — 上位国公立・MARCH関関同立</option>
+          <option value="2">T2 — 地方国公立・日東駒専等</option>
+          <option value="3">T3 — 大東亜帝国クラス</option>
+          <option value="4">T4 — 保底校</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-section-title">EJU成績</div>
+    <div class="form-grid form-grid-4">
+      <div class="field"><label>EJU日本語</label><input id="ug-f-eju-jp" type="number" placeholder="354"></div>
+      <div class="field"><label>EJU記述</label><input id="ug-f-eju-kijutsu" type="number" placeholder="45"></div>
+      <div class="field"><label>EJU文系総合</label><input id="ug-f-eju-bunsou" type="number" placeholder="150"></div>
+      <div class="field"><label>EJU数学</label><input id="ug-f-eju-math" type="number" placeholder="193"></div>
+      <div class="field"><label>EJU物理</label><input id="ug-f-eju-phys" type="number" placeholder="93"></div>
+      <div class="field"><label>EJU化学</label><input id="ug-f-eju-chem" type="number" placeholder="95"></div>
+      <div class="field"><label>EJU生物</label><input id="ug-f-eju-bio" type="number" placeholder=""></div>
+      <div class="field"><label>EJU総分</label><input id="ug-f-eju-total" type="number" placeholder="735"></div>
+    </div>
+
+    <div class="form-section-title">語学</div>
+    <div class="form-grid form-grid-4">
+      <div class="field">
+        <label>JLPT</label>
+        <select id="ug-f-jlpt">
+          <option value="">—</option>
+          <option value="N1">N1</option>
+          <option value="N2">N2</option>
+          <option value="N3">N3</option>
+        </select>
+      </div>
+      <div class="field"><label>TOEFL</label><input id="ug-f-toefl" type="number" placeholder="100"></div>
+      <div class="field"><label>TOEIC</label><input id="ug-f-toeic" type="number" placeholder="800"></div>
+      <div class="field"><label>備考</label><input id="ug-f-note" type="text" placeholder=""></div>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="ugResetForm()">クリア</button>
+      <button class="btn btn-primary" onclick="ugSubmitForm()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── UG TAB: Excel 批量导入 ── -->
+<div id="ugtab-excel" style="display:none">
+  <div class="form-panel">
+    <div class="form-section-title">ファイル選択</div>
+    <div class="upload-zone" id="ug-upload-zone" onclick="document.getElementById('ug-file-input').click()">
+      <input type="file" id="ug-file-input" accept=".xlsx,.xls,.csv" onchange="ugHandleFile(this.files[0])">
+      <div style="font-size:14px;margin-bottom:6px">クリックまたはドラッグ＆ドロップ</div>
+      <div style="font-size:11px">.xlsx / .xls / .csv 対応</div>
+    </div>
+
+    <div id="ug-col-mapping" style="display:none">
+      <div class="form-section-title">列マッピング（Excelの列名を選択）</div>
+      <div id="ug-mapping-fields" class="mapping-grid"></div>
+      <div class="form-actions">
+        <button class="btn btn-secondary" onclick="ugResetUpload()">キャンセル</button>
+        <button class="btn btn-primary" onclick="ugPreviewImport()">プレビュー</button>
+      </div>
+    </div>
+
+    <div id="ug-import-preview" style="display:none">
+      <div class="form-section-title">インポートプレビュー（先頭5件）</div>
+      <div class="preview-table-wrap" id="ug-preview-wrap"></div>
+      <div class="progress-wrap" id="ug-import-progress">
+        <div class="progress-bar"><div class="progress-fill" id="ug-progress-fill" style="width:0%"></div></div>
+        <div class="progress-label" id="ug-progress-label">準備中...</div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-secondary" onclick="ugResetUpload()">キャンセル</button>
+        <button class="btn btn-success" onclick="ugExecuteImport()" id="ug-import-btn">
+          <span id="ug-import-count"></span>件をインポート
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="form-panel" style="margin-top:1.5rem">
+    <div class="form-section-title">Supabase テーブル作成 SQL（初回のみ・学部用）</div>
+    <pre style="font-size:10px;line-height:1.6;color:var(--text-secondary);background:var(--bg);padding:1rem;border-radius:3px;overflow-x:auto;white-space:pre-wrap">CREATE TABLE undergrad_results (
+  id          uuid primary key default gen_random_uuid(),
+  univ        text not null,
+  dept        text,
+  spec        text,
+  student     text,
+  track       text,
+  subject     text,
+  era         text,
+  tier        integer,
+  school_type text,
+  eju_japanese  integer,
+  eju_kijutsu   integer,
+  eju_bunsou    integer,
+  eju_math      integer,
+  eju_physics   integer,
+  eju_chemistry integer,
+  eju_biology   integer,
+  eju_total     integer,
+  jlpt        text,
+  toefl       integer,
+  toeic       integer,
+  note        text,
+  created_at  timestamptz default now()
+);
+ALTER TABLE undergrad_results ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "public read" ON undergrad_results FOR SELECT USING (true);
+CREATE POLICY "anon insert" ON undergrad_results FOR INSERT WITH CHECK (true);
+CREATE POLICY "anon delete" ON undergrad_results FOR DELETE USING (true);
+CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
+  </div>
+</div>
+
+<!-- ── UG TAB: データ管理 ── -->
+<div id="ugtab-list" style="display:none">
+  <div class="list-controls">
+    <input type="text" id="ug-search-input" placeholder="大学名・学部・学科で検索..." oninput="ugRenderList()">
+    <select id="ug-filter-track" onchange="ugRenderList()">
+      <option value="">全系統</option>
+      <option value="bunka">文科</option>
+      <option value="rika">理科</option>
+      <option value="bijutsu">美術</option>
+    </select>
+    <select id="ug-filter-era" onchange="ugRenderList()">
+      <option value="">全年度</option>
+      <option value="new">2025–2026</option>
+      <option value="hist">2022–2024</option>
+    </select>
+    <select id="ug-filter-tier" onchange="ugRenderList()">
+      <option value="">全Tier</option>
+      <option value="0">T0</option>
+      <option value="1">T1</option>
+      <option value="2">T2</option>
+      <option value="3">T3</option>
+      <option value="4">T4</option>
+    </select>
+    <span class="result-count" id="ug-result-count"></span>
+    <button class="btn btn-danger" onclick="ugConfirmDeleteAll()" style="margin-left:auto">全件削除</button>
+  </div>
+  <div id="ug-list-area" class="load-state">読み込み中...</div>
+</div>
+
+</main>
+</div>
+<!-- ═══ /学部セクション ═══ -->
+
 <div class="toast" id="toast"></div>
 
 <div class="modal-overlay" id="confirm-modal">
@@ -458,9 +670,21 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
   </div>
 </div>
 
-
 <script>
-// ─── State ───────────────────────────────────────────────────────────────────
+// ─── Major category switch (大学院 / 学部) ───────────────────────────────────
+let curMajor = 'grad';
+function switchMajor(m) {
+  curMajor = m;
+  document.getElementById('major-grad').style.display = m==='grad' ? '' : 'none';
+  document.getElementById('major-ug').style.display = m==='ug' ? '' : 'none';
+  document.querySelectorAll('.major-btn').forEach((b,i) => b.classList.toggle('active', ['grad','ug'][i]===m));
+  if (m === 'ug' && !ugDataLoaded) { ugRefreshUnivList(); ugDataLoaded = true; }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 大学院 (admission_results) ロジック
+// ════════════════════════════════════════════════════════════════════════
+
 let allData = [];
 let listSortCol = 'created_at';
 let listSortDir = -1;
@@ -468,19 +692,17 @@ let uploadRows = [];
 let uploadColMap = {};
 let uploadHeaders = [];
 
-// ─── Tabs ────────────────────────────────────────────────────────────────────
 function switchTab(t) {
   ['add','excel','list','tier'].forEach(id => {
     document.getElementById(`tab-${id}`).style.display = id === t ? '' : 'none';
   });
-  document.querySelectorAll('.tab-btn').forEach((b,i) => {
+  document.querySelectorAll('#major-grad .tab-btn').forEach((b,i) => {
     b.classList.toggle('active', ['add','excel','list','tier'][i] === t);
   });
   if (t === 'list') loadList();
   if (t === 'tier') loadTierTab();
 }
 
-// ─── Toast ───────────────────────────────────────────────────────────────────
 let toastTimer;
 function toast(msg, ok = true) {
   const el = document.getElementById('toast');
@@ -490,7 +712,6 @@ function toast(msg, ok = true) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
 }
 
-// ─── Modal ───────────────────────────────────────────────────────────────────
 let modalCb = null;
 function showModal(title, body, cb) {
   document.getElementById('modal-title').textContent = title;
@@ -500,7 +721,6 @@ function showModal(title, body, cb) {
 }
 function closeModal() { document.getElementById('confirm-modal').classList.remove('show'); }
 
-// ─── Form ────────────────────────────────────────────────────────────────────
 function resetForm() {
   ['f-univ','f-dept','f-spec','f-student','f-jlpt-score','f-eng-score','f-note'].forEach(id => {
     document.getElementById(id).value = '';
@@ -553,17 +773,16 @@ async function refreshUnivList() {
   } catch(e) {}
 }
 
-// ─── Excel upload ─────────────────────────────────────────────────────────────
 const FIELD_DEFS = [
-  { key: 'univ',      label: '大学名 *',    required: true  },
-  { key: 'dept',      label: '研究科',       required: false },
-  { key: 'spec',      label: '専攻',         required: false },
-  { key: 'student',   label: '学生名',       required: false },
-  { key: 'subject',   label: '在籍学科',     required: false },
-  { key: 'era',       label: '入学年度',     required: false },
-  { key: 'tier',      label: 'Tier（1/2/3）', required: false },
-  { key: 'jlpt_raw',  label: 'JLPT（テキスト）', required: false },
-  { key: 'eng_raw',   label: '英語スコア（テキスト）', required: false },
+  { key: 'univ',      label: '大学名 *' },
+  { key: 'dept',      label: '研究科' },
+  { key: 'spec',      label: '専攻' },
+  { key: 'student',   label: '学生名' },
+  { key: 'subject',   label: '在籍学科' },
+  { key: 'era',       label: '入学年度' },
+  { key: 'tier',      label: 'Tier（1/2/3）' },
+  { key: 'jlpt_raw',  label: 'JLPT（テキスト）' },
+  { key: 'eng_raw',   label: '英語スコア（テキスト）' },
 ];
 
 function handleFile(file) {
@@ -602,13 +821,9 @@ function buildMappingUI() {
 function guessCol(header, key) {
   const h = header.toLowerCase();
   const guesses = {
-    univ: ['大学','学校','univ'],
-    dept: ['研究科','dept','研究'],
-    spec: ['専攻','专攻','spec'],
-    student: ['学生','名前','student','学员'],
-    subject: ['学科','在籍','subject'],
-    era: ['年度','era','入学','批次'],
-    jlpt_raw: ['日語','jlpt','日语','日本語'],
+    univ: ['大学','学校','univ'], dept: ['研究科','dept','研究'], spec: ['専攻','专攻','spec'],
+    student: ['学生','名前','student','学员'], subject: ['学科','在籍','subject'],
+    era: ['年度','era','入学','批次'], jlpt_raw: ['日語','jlpt','日语','日本語'],
     eng_raw: ['英語','toeic','toefl','英语','英'],
   };
   return (guesses[key] || []).some(g => h.includes(g));
@@ -622,23 +837,17 @@ function getColIndex(key) {
 function previewImport() {
   const univIdx = getColIndex('univ');
   if (univIdx === null) { toast('大学名の列を選択してください', false); return; }
-
   uploadColMap = {};
   FIELD_DEFS.forEach(fd => { uploadColMap[fd.key] = getColIndex(fd.key); });
 
-  // Build preview
   const preview = uploadRows.slice(0, 5);
   const headers = ['大学名','研究科','専攻','学生','学科','年度','JLPT','英語'];
   let html = `<table class="preview-table"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>`;
   for (const row of preview) {
     const mapped = mapRow(row);
     html += `<tr>
-      <td>${mapped.univ||''}</td>
-      <td>${mapped.dept||''}</td>
-      <td>${mapped.spec||''}</td>
-      <td>${mapped.student||''}</td>
-      <td>${mapped.subject||''}</td>
-      <td>${mapped.era||''}</td>
+      <td>${mapped.univ||''}</td><td>${mapped.dept||''}</td><td>${mapped.spec||''}</td>
+      <td>${mapped.student||''}</td><td>${mapped.subject||''}</td><td>${mapped.era||''}</td>
       <td>${mapped.jlpt||''}${mapped.jlpt_score?' '+mapped.jlpt_score:''}</td>
       <td>${mapped.eng_type||''}${mapped.eng_score?' '+mapped.eng_score:''}</td>
     </tr>`;
@@ -660,13 +869,11 @@ function mapRow(row) {
   const { jlpt, jlpt_score } = parseJlpt(jlptRaw);
   const { eng_type, eng_score } = parseEng(engRaw);
 
-  // Era inference
   let era = get('era').toLowerCase();
   if (era.includes('26') || era.includes('25') || era.includes('new') || era.includes('夏') || era.includes('冬')) era = 'new';
   else if (era.includes('22') || era.includes('23') || era.includes('24') || era.includes('hist')) era = 'hist';
   else era = 'new';
 
-  // Subject normalization
   let subject = get('subject').toLowerCase();
   if      (subject.includes('社会学') || subject.includes('(社会)') || subject === 'shakai') subject = 'shakai';
   else if (subject.includes('福祉') || subject.includes('(福祉)') || subject === 'fukushi') subject = 'fukushi';
@@ -684,21 +891,11 @@ function mapRow(row) {
   else subject = 'other';
 
   const tierRaw = get('tier');
-  const tier = tierRaw && ['1','2','3'].includes(tierRaw.trim()) ? parseInt(tierRaw.trim()) : null;
+  const tier = tierRaw && ['0','1','2','3'].includes(tierRaw.trim()) ? parseInt(tierRaw.trim()) : null;
 
   return {
-    univ: get('univ') || null,
-    dept: get('dept') || null,
-    spec: get('spec') || null,
-    student: get('student') || null,
-    subject,
-    era,
-    tier,
-    jlpt,
-    jlpt_score,
-    eng_type,
-    eng_score,
-    note: null,
+    univ: get('univ') || null, dept: get('dept') || null, spec: get('spec') || null,
+    student: get('student') || null, subject, era, tier, jlpt, jlpt_score, eng_type, eng_score, note: null,
   };
 }
 
@@ -719,8 +916,7 @@ async function executeImport() {
       const batch = rows.slice(i, i + BATCH);
       await insertBatch(batch);
       done += batch.length;
-      const pct = Math.round(done / rows.length * 100);
-      fill.style.width = pct + '%';
+      fill.style.width = Math.round(done / rows.length * 100) + '%';
       label.textContent = `${done} / ${rows.length} 件処理済み`;
     }
     toast(`${done} 件をインポートしました ✓`);
@@ -733,7 +929,6 @@ async function executeImport() {
 
 function resetUpload() {
   document.getElementById('upload-zone').style.display = '';
-  document.getElementById('upload-zone').textContent = '';
   document.getElementById('upload-zone').innerHTML = `
     <input type="file" id="file-input" accept=".xlsx,.xls,.csv" onchange="handleFile(this.files[0])">
     <div style="font-size:14px;margin-bottom:6px">クリックまたはドラッグ＆ドロップ</div>
@@ -744,27 +939,23 @@ function resetUpload() {
   uploadRows = []; uploadColMap = {}; uploadHeaders = [];
 }
 
-// ── Drag & drop ──────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   const zone = document.getElementById('upload-zone');
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
-  zone.addEventListener('drop', e => {
-    e.preventDefault(); zone.classList.remove('drag');
-    handleFile(e.dataTransfer.files[0]);
-  });
+  zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('drag'); handleFile(e.dataTransfer.files[0]); });
   refreshUnivList();
+
+  const ugZone = document.getElementById('ug-upload-zone');
+  ugZone.addEventListener('dragover', e => { e.preventDefault(); ugZone.classList.add('drag'); });
+  ugZone.addEventListener('dragleave', () => ugZone.classList.remove('drag'));
+  ugZone.addEventListener('drop', e => { e.preventDefault(); ugZone.classList.remove('drag'); ugHandleFile(e.dataTransfer.files[0]); });
 });
 
-// ─── List ─────────────────────────────────────────────────────────────────────
 async function loadList() {
   document.getElementById('list-area').innerHTML = '<div class="load-state">読み込み中...</div>';
-  try {
-    allData = await fetchAllResults();
-    renderList();
-  } catch(e) {
-    document.getElementById('list-area').innerHTML = `<div class="load-state" style="color:var(--red)">エラー: ${e.message}</div>`;
-  }
+  try { allData = await fetchAllResults(); renderList(); }
+  catch(e) { document.getElementById('list-area').innerHTML = `<div class="load-state" style="color:var(--red)">エラー: ${e.message}</div>`; }
 }
 
 function renderList() {
@@ -779,7 +970,6 @@ function renderList() {
     return true;
   });
 
-  // Sort
   rows.sort((a, b) => {
     let av = a[listSortCol] ?? '', bv = b[listSortCol] ?? '';
     if (typeof av === 'string') return av.localeCompare(bv) * listSortDir;
@@ -787,24 +977,13 @@ function renderList() {
   });
 
   document.getElementById('result-count').textContent = `${rows.length} 件`;
-
-  if (!rows.length) {
-    document.getElementById('list-area').innerHTML = '<div class="load-state">データが見つかりません</div>';
-    return;
-  }
+  if (!rows.length) { document.getElementById('list-area').innerHTML = '<div class="load-state">データが見つかりません</div>'; return; }
 
   const cols = [
-    { key: 'univ', label: '大学名' },
-    { key: 'dept', label: '研究科' },
-    { key: 'spec', label: '専攻' },
-    { key: 'subject', label: '学科' },
-    { key: 'tier', label: 'Tier' },
-    { key: 'era', label: '年度' },
-    { key: 'jlpt', label: 'JLPT' },
-    { key: 'jlpt_score', label: 'J点数' },
-    { key: 'eng_type', label: '英語' },
-    { key: 'eng_score', label: '英語点' },
-    { key: 'student', label: '学生' },
+    { key: 'univ', label: '大学名' }, { key: 'dept', label: '研究科' }, { key: 'spec', label: '専攻' },
+    { key: 'subject', label: '学科' }, { key: 'tier', label: 'Tier' }, { key: 'era', label: '年度' },
+    { key: 'jlpt', label: 'JLPT' }, { key: 'jlpt_score', label: 'J点数' }, { key: 'eng_type', label: '英語' },
+    { key: 'eng_score', label: '英語点' }, { key: 'student', label: '学生' },
   ];
 
   const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学/国際関係',bungaku:'文学',rekishi:'歴史学',hyosho:'表象文化',nihongo:'日本語教育',shinri:'心理学',other:'その他'};
@@ -819,24 +998,14 @@ function renderList() {
 
   for (const r of rows) {
     const sc = SUBJ_COLOR[r.subject] || SUBJ_COLOR.other;
-    const eraTag = r.era === 'new'
-      ? `<span class="era-tag era-new">25–26</span>`
-      : `<span class="era-tag era-hist">22–24</span>`;
+    const eraTag = r.era === 'new' ? `<span class="era-tag era-new">25–26</span>` : `<span class="era-tag era-hist">22–24</span>`;
     html += `<tr>
-      <td>${r.univ||''}</td>
-      <td>${r.dept||''}</td>
-      <td>${r.spec||''}</td>
+      <td>${r.univ||''}</td><td>${r.dept||''}</td><td>${r.spec||''}</td>
       <td><span class="subj-tag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[r.subject]||r.subject}</span></td>
       <td>${r.tier !== null && r.tier !== undefined && r.tier !== '' ? `<span style="font-size:9px;padding:1px 6px;border-radius:2px;background:${['#dce4f4','#e8edf8','#e8f0e4','#f4ece0'][r.tier]||'#eee'};color:${['#1a3070','#2c4a8a','#3a6630','#7a4a20'][r.tier]||'#666'};font-weight:500">T${r.tier}</span>` : '<span style="font-size:9px;color:var(--text-muted)">自動</span>'}</td>
-      <td>${eraTag}</td>
-      <td>${r.jlpt||'—'}</td>
-      <td>${r.jlpt_score||'—'}</td>
-      <td>${r.eng_type||'—'}</td>
-      <td>${r.eng_score||'—'}</td>
-      <td>${r.student||'—'}</td>
-      <td>
-        <button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="confirmDelete('${r.id}','${(r.univ||'').replace(/'/g,"\\'")}')">削除</button>
-      </td>
+      <td>${eraTag}</td><td>${r.jlpt||'—'}</td><td>${r.jlpt_score||'—'}</td><td>${r.eng_type||'—'}</td>
+      <td>${r.eng_score||'—'}</td><td>${r.student||'—'}</td>
+      <td><button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="confirmDelete('${r.id}','${(r.univ||'').replace(/'/g,"\\'")}')">削除</button></td>
     </tr>`;
   }
   html += '</tbody></table></div>';
@@ -844,108 +1013,54 @@ function renderList() {
 }
 
 function sortList(col) {
-  if (listSortCol === col) listSortDir *= -1;
-  else { listSortCol = col; listSortDir = 1; }
+  if (listSortCol === col) listSortDir *= -1; else { listSortCol = col; listSortDir = 1; }
   renderList();
 }
 
 function confirmDelete(id, univ) {
   showModal('削除確認', `「${univ}」のレコードを削除しますか？`, async () => {
-    try {
-      await deleteResult(id);
-      allData = allData.filter(r => r.id !== id);
-      renderList();
-      toast('削除しました ✓');
-    } catch(e) {
-      toast('削除エラー: ' + e.message, false);
-    }
+    try { await deleteResult(id); allData = allData.filter(r => r.id !== id); renderList(); toast('削除しました ✓'); }
+    catch(e) { toast('削除エラー: ' + e.message, false); }
   });
 }
 
 function confirmDeleteAll() {
   showModal('全件削除', `${allData.length} 件すべてを削除しますか？この操作は元に戻せません。`, async () => {
-    try {
-      // Delete all filtered visible rows
-      const ids = allData.map(r => r.id);
-      // Supabase: delete with in filter
-      for (const id of ids) await deleteResult(id);
-      allData = [];
-      renderList();
-      toast('全件削除しました ✓');
-    } catch(e) {
-      toast('削除エラー: ' + e.message, false);
-    }
+    try { for (const id of allData.map(r=>r.id)) await deleteResult(id); allData = []; renderList(); toast('全件削除しました ✓'); }
+    catch(e) { toast('削除エラー: ' + e.message, false); }
   });
 }
-</script>
-<script>
-// ─── results-data.js ─────────────────────────────────────────────────────────
-// Shared between results/index.html and results/admin.html
-// Supabase table: admission_results
-//   id          uuid primary key default gen_random_uuid()
-//   univ        text not null
-//   dept        text
-//   spec        text
-//   student     text
-//   subject     text   -- shakai / fukushi / shinpan / keizai / keiei / kyoiku / other
-//   tier        integer -- 0=T0(旧帝+早慶上智) 1=T1(MARCH等) 2=T2(日駒東専等) 3=T3(その他)
-//   era         text   -- 'hist' (2022-2024) or 'new' (2025-2026)
-//   jlpt        text   -- e.g. 'N1', 'N2', 'N1-145'
-//   jlpt_score  integer  -- numeric part if present, else null
-//   eng_type    text   -- 'TOEIC','TOEFL','IELTS','EJU','—'
-//   eng_score   integer  -- numeric score, else null
-//   note        text
-//   created_at  timestamptz default now()
-// ─────────────────────────────────────────────────────────────────────────────
 
+// ─── Supabase (大学院: admission_results) ────────────────────────────────────
 const SUPABASE_URL = 'https://vwntezfvqbrkeovnseku.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
 
-// ── Constants ────────────────────────────────────────────────────────────────
 const SUBJECTS = [
-  { id: 'shakai',   label: '社会学',         labelJa: '社会学'         },
-  { id: 'fukushi',  label: '社会福祉',        labelJa: '社会福祉'       },
-  { id: 'shinpan',  label: '新聞伝播',        labelJa: '新聞・メディア' },
-  { id: 'keizai',   label: '経済学',          labelJa: '経済学'         },
-  { id: 'keiei',    label: '経営学',          labelJa: '経営学'         },
-  { id: 'kyoiku',   label: '教育学',          labelJa: '教育学'         },
-  { id: 'hougaku',  label: '法学',            labelJa: '法学'           },
-  { id: 'seiji',    label: '政治学/国際関係', labelJa: '政治学/国際関係'},
-  { id: 'bungaku',  label: '文学',            labelJa: '文学'           },
-  { id: 'rekishi',  label: '歴史学',          labelJa: '歴史学'         },
-  { id: 'hyosho',   label: '表象文化',        labelJa: '表象文化'       },
-  { id: 'nihongo',  label: '日本語教育',      labelJa: '日本語教育'     },
-  { id: 'shinri',   label: '心理学',          labelJa: '心理学'         },
-  { id: 'other',    label: 'その他',          labelJa: 'その他'         },
+  { id:'shakai',label:'社会学' },{ id:'fukushi',label:'社会福祉' },{ id:'shinpan',label:'新聞伝播' },
+  { id:'keizai',label:'経済学' },{ id:'keiei',label:'経営学' },{ id:'kyoiku',label:'教育学' },
+  { id:'hougaku',label:'法学' },{ id:'seiji',label:'政治学/国際関係' },{ id:'bungaku',label:'文学' },
+  { id:'rekishi',label:'歴史学' },{ id:'hyosho',label:'表象文化' },{ id:'nihongo',label:'日本語教育' },
+  { id:'shinri',label:'心理学' },{ id:'other',label:'その他' },
 ];
 
 const SUBJ_COLOR = {
-  shakai:  { bg: '#ddeaf8', fg: '#1a3a6a' },
-  fukushi: { bg: '#ddf0e8', fg: '#1a4a30' },
-  shinpan: { bg: '#ece4f8', fg: '#3a2a7a' },
-  keizai:  { bg: '#faecd8', fg: '#5a3010' },
-  keiei:   { bg: '#f8e8e0', fg: '#6a2820' },
-  kyoiku:  { bg: '#e8f4e4', fg: '#1a4818' },
-  hougaku: { bg: '#f0e8f4', fg: '#4a1a6a' },
-  seiji:   { bg: '#e4eef8', fg: '#1a3060' },
-  bungaku: { bg: '#f8f0e0', fg: '#5a4010' },
-  rekishi: { bg: '#f4ede0', fg: '#6a3800' },
-  hyosho:  { bg: '#fce8f0', fg: '#6a1a40' },
-  nihongo: { bg: '#e4f4f0', fg: '#0a4038' },
-  shinri:  { bg: '#faf0e8', fg: '#603018' },
-  other:   { bg: '#eeecea', fg: '#3a3830' },
+  shakai:{bg:'#ddeaf8',fg:'#1a3a6a'}, fukushi:{bg:'#ddf0e8',fg:'#1a4a30'}, shinpan:{bg:'#ece4f8',fg:'#3a2a7a'},
+  keizai:{bg:'#faecd8',fg:'#5a3010'}, keiei:{bg:'#f8e8e0',fg:'#6a2820'}, kyoiku:{bg:'#e8f4e4',fg:'#1a4818'},
+  hougaku:{bg:'#f0e8f4',fg:'#4a1a6a'}, seiji:{bg:'#e4eef8',fg:'#1a3060'}, bungaku:{bg:'#f8f0e0',fg:'#5a4010'},
+  rekishi:{bg:'#f4ede0',fg:'#6a3800'}, hyosho:{bg:'#fce8f0',fg:'#6a1a40'}, nihongo:{bg:'#e4f4f0',fg:'#0a4038'},
+  shinri:{bg:'#faf0e8',fg:'#603018'}, other:{bg:'#eeecea',fg:'#3a3830'},
 };
 
 const TIERS = {
-  1: { label: 'T1', name: '旧帝・一橋・東科大 ＋ 早慶上智' },
-  2: { label: 'T2', name: 'G-MARCH・関関同立 ＋ 地方国公立' },
-  3: { label: 'T3', name: '日駒東専 ＋ 重点女子大・地方私立' },
+  0: { label:'T0', name:'旧帝・一橋・東科大 ＋ 早慶上智' },
+  1: { label:'T1', name:'G-MARCH・関関同立 ＋ 地方国公立' },
+  2: { label:'T2', name:'日駒東専 ＋ 重点女子大・地方私立' },
+  3: { label:'T3', name:'その他' },
 };
 
 const T0_UNIVS = ['东京大学','京都大学','大阪大学','名古屋大学','九州大学','东北大学','北海道大学',
   '一桥大学','一橋大学','东京科学大学','东京工业大学','東京科学大学','東京工業大学',
-  '早稻田大学','早稲田大学','庆应义塾大学','慶應義塾大学','上智大学',
-  '御茶水女子大学','筑波大学'];
+  '早稻田大学','早稲田大学','庆应义塾大学','慶應義塾大学','上智大学','御茶水女子大学','筑波大学'];
 const T1_UNIVS = ['法政大学','明治大学','青山学院大学','立教大学','中央大学','学习院大学','学習院大学',
   '关西大学','関西大学','关西学院大学','関西学院大学','同志社大学','立命馆大学','立命館大学',
   '横滨国立大学','横浜国立大学','横滨市立大学','横浜市立大学','神户大学','神戸大学',
@@ -968,56 +1083,33 @@ function tierOf(univ) {
   return 3;
 }
 
-// ── Supabase helpers ─────────────────────────────────────────────────────────
 async function sbFetch(path, opts = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     headers: {
-      'apikey': SUPABASE_KEY,
-      'Authorization': `Bearer ${SUPABASE_KEY}`,
-      'Content-Type': 'application/json',
-      'Prefer': opts.prefer || 'return=representation',
-      ...opts.headers,
+      'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json', 'Prefer': opts.prefer || 'return=representation', ...opts.headers,
     },
-    method: opts.method || 'GET',
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
+    method: opts.method || 'GET', body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Supabase ${res.status}: ${err}`);
-  }
+  if (!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`);
   const text = await res.text();
   return text ? JSON.parse(text) : null;
 }
 
-async function fetchAllResults() {
-  return sbFetch('admission_results?select=*&order=created_at.desc');
-}
-
-async function insertResult(row) {
-  return sbFetch('admission_results', { method: 'POST', body: row });
-}
-
+async function fetchAllResults() { return sbFetch('admission_results?select=*&order=created_at.desc'); }
+async function insertResult(row) { return sbFetch('admission_results', { method:'POST', body:row }); }
 async function insertBatch(rows) {
-  // Ensure numeric fields are properly typed
   const clean = rows.map(r => ({
     ...r,
     jlpt_score: r.jlpt_score != null ? parseInt(r.jlpt_score) || null : null,
     eng_score:  r.eng_score  != null ? parseInt(r.eng_score)  || null : null,
     tier:       r.tier       != null ? parseInt(r.tier)       || null : null,
   }));
-  return sbFetch('admission_results', { method: 'POST', body: clean, prefer: 'return=representation' });
+  return sbFetch('admission_results', { method:'POST', body:clean, prefer:'return=representation' });
 }
+async function deleteResult(id) { return sbFetch(`admission_results?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); }
+async function updateResult(id, row) { return sbFetch(`admission_results?id=eq.${id}`, { method:'PATCH', body:row }); }
 
-async function deleteResult(id) {
-  return sbFetch(`admission_results?id=eq.${id}`, { method: 'DELETE', prefer: 'return=minimal', headers: {} });
-}
-
-async function updateResult(id, row) {
-  return sbFetch(`admission_results?id=eq.${id}`, { method: 'PATCH', body: row });
-}
-
-// ── Parse helpers ────────────────────────────────────────────────────────────
-// Parse jlpt string like 'N1-145' → { jlpt: 'N1', jlpt_score: 145 }
 function parseJlpt(raw) {
   if (!raw || raw === '—' || raw === '无' || raw === '——') return { jlpt: null, jlpt_score: null };
   const m = raw.match(/^(N[12])\D*(\d+)?/i);
@@ -1025,170 +1117,113 @@ function parseJlpt(raw) {
   return { jlpt: m[1].toUpperCase(), jlpt_score: m[2] ? parseInt(m[2]) : null };
 }
 
-// Parse eng string like 'TOEIC-820', 'TOEFL-90', 'IELTS-7.0'
 function parseEng(raw) {
   if (!raw || raw === '—' || raw === '无' || raw === '——') return { eng_type: null, eng_score: null };
   const upper = raw.toUpperCase();
-  let type = null, score = null;
+  let type = null;
   if (upper.includes('TOEIC')) type = 'TOEIC';
   else if (upper.includes('TOEFL')) type = 'TOEFL';
   else if (upper.includes('IELTS')) type = 'IELTS';
   else if (upper.includes('EJU')) type = 'EJU';
   else return { eng_type: raw.trim(), eng_score: null };
   const m = raw.match(/[\d.]+/);
-  score = m ? parseFloat(m[0]) : null;
+  const score = m ? parseFloat(m[0]) : null;
   return { eng_type: type, eng_score: score ? Math.round(score) : null };
 }
 
-
-// ─── Tier Tab ─────────────────────────────────────────────────────────────────
-let tierUnivData = [];   // [{ univ, count, autoTier, dbTier, pendingTier }]
-let tierChanges = {};    // univ → new tier value (null = clear to auto)
+// ─── Tier Tab (大学院) ────────────────────────────────────────────────────────
+let tierUnivData = [];
+let tierChanges = {};
 
 async function loadTierTab() {
   document.getElementById('tier-area').innerHTML = '<div class="load-state">読み込み中...</div>';
   tierChanges = {};
   updateTierSaveBtn();
-
   try {
     const all = await fetchAllResults();
-
-    // Group by univ, get representative tier
     const univMap = {};
     for (const r of all) {
-      if (!univMap[r.univ]) {
-        univMap[r.univ] = { count: 0, dbTier: r.tier != null ? r.tier : null, subjSet: new Set() };
-      }
+      if (!univMap[r.univ]) univMap[r.univ] = { count:0, dbTier: r.tier != null ? r.tier : null, subjSet: new Set() };
       univMap[r.univ].count++;
       if (r.subject) univMap[r.univ].subjSet.add(r.subject);
-      // Use most common tier value in DB for this univ
       if (r.tier != null && univMap[r.univ].dbTier == null) univMap[r.univ].dbTier = r.tier;
     }
-
     tierUnivData = Object.entries(univMap).map(([univ, d]) => ({
-      univ,
-      count: d.count,
-      autoTier: tierOf(univ),
-      dbTier: d.dbTier,
-      subjs: [...d.subjSet],
+      univ, count: d.count, autoTier: tierOf(univ), dbTier: d.dbTier, subjs: [...d.subjSet],
     })).sort((a, b) => a.autoTier - b.autoTier || a.univ.localeCompare(b.univ));
-
     renderTierTable();
   } catch(e) {
-    document.getElementById('tier-area').innerHTML =
-      `<div class="load-state" style="color:var(--red)">エラー: ${e.message}</div>`;
+    document.getElementById('tier-area').innerHTML = `<div class="load-state" style="color:var(--red)">エラー: ${e.message}</div>`;
   }
 }
 
 function renderTierTable() {
   const q = (document.getElementById('tier-search')?.value || '').toLowerCase();
   const f = document.getElementById('tier-filter')?.value || '';
-
   let rows = tierUnivData.filter(d => {
     if (q && !d.univ.toLowerCase().includes(q)) return false;
-    const effective = tierChanges[d.univ] !== undefined ? tierChanges[d.univ] : (d.dbTier || d.autoTier);
+    const effective = tierChanges[d.univ] !== undefined ? tierChanges[d.univ] : (d.dbTier != null ? d.dbTier : d.autoTier);
     if (f === 'auto' && d.dbTier !== null) return false;
     if (f === 'manual' && d.dbTier === null && tierChanges[d.univ] === undefined) return false;
+    if (f === '0' && effective !== 0) return false;
     if (f === '1' && effective !== 1) return false;
     if (f === '2' && effective !== 2) return false;
     if (f === '3' && effective !== 3) return false;
     return true;
   });
 
-  if (!rows.length) {
-    document.getElementById('tier-area').innerHTML =
-      '<div class="load-state">該当する大学がありません</div>';
-    return;
-  }
+  if (!rows.length) { document.getElementById('tier-area').innerHTML = '<div class="load-state">該当する大学がありません</div>'; return; }
 
-  const TIER_COLOR = {
-    0: ['#dce4f4','#1a3070'],
-    1: ['#e8edf8','#2c4a8a'],
-    2: ['#e8f0e4','#3a6630'],
-    3: ['#f4ece0','#7a4a20'],
-  };
-  const SUBJ_LABEL_SHORT = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',
-    keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学',
-    bungaku:'文学',rekishi:'歴史学',hyosho:'表象',nihongo:'日本語教育',shinri:'心理学',other:'その他'};
+  const TIER_COLOR = { 0:['#dce4f4','#1a3070'], 1:['#e8edf8','#2c4a8a'], 2:['#e8f0e4','#3a6630'], 3:['#f4ece0','#7a4a20'] };
+  const SUBJ_LABEL_SHORT = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学',bungaku:'文学',rekishi:'歴史学',hyosho:'表象',nihongo:'日本語教育',shinri:'心理学',other:'その他'};
 
-  let tableHtml = `
-    <div style="overflow-x:auto">
-    <table class="data-table" style="min-width:600px">
-      <thead><tr>
-        <th style="min-width:180px">大学名</th>
-        <th style="width:60px;text-align:center">件数</th>
-        <th style="width:90px;text-align:center">自動判定</th>
-        <th style="width:90px;text-align:center">DB設定</th>
-        <th style="width:180px">Tier変更</th>
-        <th>学科構成</th>
-      </tr></thead>
-      <tbody>`;
+  let tableHtml = `<div style="overflow-x:auto"><table class="data-table" style="min-width:600px">
+    <thead><tr><th style="min-width:180px">大学名</th><th style="width:60px;text-align:center">件数</th>
+    <th style="width:90px;text-align:center">自動判定</th><th style="width:90px;text-align:center">DB設定</th>
+    <th style="width:220px">Tier変更</th><th>学科構成</th></tr></thead><tbody>`;
 
   for (const d of rows) {
     const pending = tierChanges[d.univ];
     const effective = pending !== undefined ? pending : (d.dbTier != null ? d.dbTier : d.autoTier);
     const isChanged = pending !== undefined;
     const isManual = d.dbTier !== null;
-
     const [abg, afg] = TIER_COLOR[d.autoTier] || ['#eee','#666'];
-    const [dbg, dfg] = d.dbTier ? (TIER_COLOR[d.dbTier] || ['#eee','#666']) : ['#f0ede6','#9a9590'];
-    const [ebg, efg] = TIER_COLOR[effective] || ['#eee','#666'];
+    const [dbg, dfg] = d.dbTier != null ? (TIER_COLOR[d.dbTier] || ['#eee','#666']) : ['#f0ede6','#9a9590'];
 
     const subjTags = d.subjs.slice(0,3).map(s =>
       `<span style="font-size:9px;padding:1px 5px;border-radius:2px;background:${SUBJ_COLOR[s]?.bg||'#eee'};color:${SUBJ_COLOR[s]?.fg||'#666'};margin-right:3px">${SUBJ_LABEL_SHORT[s]||s}</span>`
     ).join('');
 
     const rowBg = isChanged ? 'background:#fffbe8' : '';
-
     tableHtml += `<tr style="${rowBg}">
-      <td>
-        <span style="font-weight:500">${d.univ}</span>
+      <td><span style="font-weight:500">${d.univ}</span>
         ${isManual ? '<span style="font-size:9px;margin-left:6px;padding:1px 5px;border-radius:2px;background:#e8f0f8;color:#2c4a8a">手動設定済み</span>' : ''}
         ${isChanged ? '<span style="font-size:9px;margin-left:6px;padding:1px 5px;border-radius:2px;background:#fff0c8;color:#5a4000">変更あり</span>' : ''}
       </td>
       <td style="text-align:center;color:var(--text-muted)">${d.count}</td>
-      <td style="text-align:center">
-        <span style="font-size:10px;padding:2px 8px;border-radius:2px;background:${abg};color:${afg};font-weight:500">T${d.autoTier}</span>
-      </td>
-      <td style="text-align:center">
-        ${d.dbTier
-          ? `<span style="font-size:10px;padding:2px 8px;border-radius:2px;background:${dbg};color:${dfg};font-weight:500">T${d.dbTier}</span>`
-          : `<span style="font-size:10px;color:var(--text-muted)">—</span>`}
-      </td>
-      <td>
-        <div style="display:flex;gap:4px;align-items:center">
-          ${[0,1,2,3].map(t => {
-            const active = effective === t;
-            const [bg,fg] = TIER_COLOR[t];
-            return `<button onclick="setTierChange('${d.univ.replace(/'/g,"\'")}',${t})"
-              style="padding:3px 10px;border-radius:2px;border:1px solid ${active?fg:TIER_COLOR[t][0]};
-                background:${active?fg:'transparent'};color:${active?'#fff':fg};
-                font-family:inherit;font-size:10px;font-weight:500;cursor:pointer;transition:all .12s">T${t}</button>`;
-          }).join('')}
-          <button onclick="setTierChange('${d.univ.replace(/'/g,"\'")}',null)"
-            style="padding:3px 8px;border-radius:2px;border:1px solid var(--border);
-              background:transparent;color:var(--text-muted);font-family:inherit;font-size:10px;cursor:pointer">
-            自動</button>
-        </div>
-      </td>
+      <td style="text-align:center"><span style="font-size:10px;padding:2px 8px;border-radius:2px;background:${abg};color:${afg};font-weight:500">T${d.autoTier}</span></td>
+      <td style="text-align:center">${d.dbTier != null ? `<span style="font-size:10px;padding:2px 8px;border-radius:2px;background:${dbg};color:${dfg};font-weight:500">T${d.dbTier}</span>` : `<span style="font-size:10px;color:var(--text-muted)">—</span>`}</td>
+      <td><div style="display:flex;gap:4px;align-items:center">
+        ${[0,1,2,3].map(t => {
+          const active = effective === t;
+          const [bg,fg] = TIER_COLOR[t];
+          return `<button onclick="setTierChange('${d.univ.replace(/'/g,"\\'")}',${t})"
+            style="padding:3px 9px;border-radius:2px;border:1px solid ${active?fg:bg};background:${active?fg:'transparent'};color:${active?'#fff':fg};font-family:inherit;font-size:10px;font-weight:500;cursor:pointer;transition:all .12s">T${t}</button>`;
+        }).join('')}
+        <button onclick="setTierChange('${d.univ.replace(/'/g,"\\'")}',null)" style="padding:3px 8px;border-radius:2px;border:1px solid var(--border);background:transparent;color:var(--text-muted);font-family:inherit;font-size:10px;cursor:pointer">自動</button>
+      </div></td>
       <td>${subjTags}${d.subjs.length > 3 ? `<span style="font-size:9px;color:var(--text-muted)">+${d.subjs.length-3}</span>` : ''}</td>
     </tr>`;
   }
-
   tableHtml += '</tbody></table></div>';
   document.getElementById('tier-area').innerHTML = tableHtml;
 }
 
 function setTierChange(univ, tier) {
-  // If same as current DB value, remove from changes
   const d = tierUnivData.find(x => x.univ === univ);
   if (!d) return;
-  const currentDb = d.dbTier;
-  if (tier === currentDb || (tier === null && currentDb === null)) {
-    delete tierChanges[univ];
-  } else {
-    tierChanges[univ] = tier;
-  }
+  if (tier === d.dbTier || (tier === null && d.dbTier === null)) delete tierChanges[univ];
+  else tierChanges[univ] = tier;
   updateTierSaveBtn();
   renderTierTable();
 }
@@ -1204,129 +1239,450 @@ function updateTierSaveBtn() {
 async function saveTierChanges() {
   const entries = Object.entries(tierChanges);
   if (!entries.length) return;
-
   const btn = document.getElementById('tier-save-btn');
-  btn.disabled = true;
-  btn.textContent = '保存中...';
-
+  btn.disabled = true; btn.textContent = '保存中...';
   const status = document.getElementById('tier-status');
-  let done = 0, errors = 0;
-
+  let done = 0;
   try {
-    // For each univ, update all rows in admission_results with that univ name
     for (const [univ, tier] of entries) {
-      const encoded = encodeURIComponent(univ);
-      await sbFetch(
-        `admission_results?univ=eq.${encoded}`,
-        { method: 'PATCH', body: { tier: tier }, prefer: 'return=minimal', headers: {} }
-      );
-      done++;
-      status.textContent = `${done} / ${entries.length} 件処理中...`;
+      await sbFetch(`admission_results?univ=eq.${encodeURIComponent(univ)}`, { method:'PATCH', body:{tier}, prefer:'return=minimal', headers:{} });
+      done++; status.textContent = `${done} / ${entries.length} 件処理中...`;
     }
-
     toast(`${done} 大学のTierを更新しました ✓`);
     tierChanges = {};
     await loadTierTab();
-  } catch(e) {
-    toast('エラー: ' + e.message, false);
-    btn.disabled = false;
-    updateTierSaveBtn();
-  }
+  } catch(e) { toast('エラー: ' + e.message, false); btn.disabled = false; updateTierSaveBtn(); }
 }
 
-
-// ─── Repair existing records ──────────────────────────────────────────────────
+// ─── 既存データの語学スコア修復 ────────────────────────────────────────────────
 async function handleRepairFile(file) {
   if (!file) return;
   const status = document.getElementById('repair-status');
   status.textContent = '読み込み中...';
-
   const reader = new FileReader();
   reader.onload = async e => {
     try {
-      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const wb = XLSX.read(e.target.result, { type:'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
       if (rows.length < 2) { status.textContent = 'データが空です'; return; }
-
       const headers = rows[0].map(String);
       const dataRows = rows.slice(1).filter(r => r.some(c => c !== ''));
-
-      // Auto-detect columns
-      function findCol(keywords) {
-        return headers.findIndex(h => keywords.some(k => h.toLowerCase().includes(k)));
-      }
-      const univCol  = findCol(['大学','学校','univ']);
-      const deptCol  = findCol(['研究科','dept']);
-      const specCol  = findCol(['専攻','专攻','spec']);
-      const jlptCol  = findCol(['jlpt','日語','日语']);
-      const engCol   = findCol(['英語','toeic','toefl','英语','英']);
-
+      function findCol(keywords) { return headers.findIndex(h => keywords.some(k => h.toLowerCase().includes(k))); }
+      const univCol = findCol(['大学','学校','univ']);
+      const deptCol = findCol(['研究科','dept']);
+      const jlptCol = findCol(['jlpt','日語','日语']);
+      const engCol  = findCol(['英語','toeic','toefl','英语','英']);
       if (univCol === -1) { status.textContent = '大学名の列が見つかりません'; return; }
-
       status.textContent = `${dataRows.length} 件を処理中...`;
-
-      // Fetch all existing records
       const all = await fetchAllResults();
       let updated = 0, skipped = 0;
-
       for (const row of dataRows) {
         const univ = String(row[univCol] || '').trim();
         if (!univ) continue;
-
         const jlptRaw = jlptCol >= 0 ? String(row[jlptCol] || '') : '';
         const engRaw  = engCol  >= 0 ? String(row[engCol]  || '') : '';
-
         const { jlpt, jlpt_score } = parseJlpt(jlptRaw);
         const { eng_type, eng_score } = parseEng(engRaw);
-
-        // Skip if no score data to update
         if (!jlpt && !eng_type) { skipped++; continue; }
-
-        // Find matching records by univ (+ optionally dept/spec)
         const dept = deptCol >= 0 ? String(row[deptCol] || '').trim() : '';
-        const spec = specCol >= 0 ? String(row[specCol] || '').trim() : '';
-
         const matches = all.filter(r => {
           if (normUnivAdmin(r.univ) !== normUnivAdmin(univ)) return false;
           if (dept && r.dept && !r.dept.includes(dept) && !dept.includes(r.dept)) return false;
           return true;
         });
-
         for (const rec of matches) {
-          if (rec.jlpt || rec.eng_type) { skipped++; continue; } // already has data
-          await sbFetch(`admission_results?id=eq.${rec.id}`, {
-            method: 'PATCH',
-            body: { jlpt, jlpt_score, eng_type, eng_score },
-            prefer: 'return=minimal',
-            headers: {}
-          });
+          if (rec.jlpt || rec.eng_type) { skipped++; continue; }
+          await sbFetch(`admission_results?id=eq.${rec.id}`, { method:'PATCH', body:{jlpt,jlpt_score,eng_type,eng_score}, prefer:'return=minimal', headers:{} });
           updated++;
         }
       }
-
       status.textContent = `完了: ${updated} 件更新, ${skipped} 件スキップ ✓`;
-      // Reset file input
       document.getElementById('repair-input').value = '';
-    } catch(err) {
-      status.textContent = 'エラー: ' + err.message;
-    }
+    } catch(err) { status.textContent = 'エラー: ' + err.message; }
   };
   reader.readAsArrayBuffer(file);
 }
 
-// Minimal univ normalizer for admin (no full UNIV_NORM needed)
 function normUnivAdmin(u) {
   if (!u) return '';
   const map = {
-    '早稻田大学':'早稲田大学','一桥大学':'一橋大学','东京大学':'東京大学',
-    '大阪大学':'大阪大学','庆应义塾大学':'慶應義塾大学','慶応義塾大学':'慶應義塾大学',
-    '立命馆大学':'立命館大学','关西大学':'関西大学','关西学院大学':'関西学院大学',
-    '东洋大学':'東洋大学','驹泽大学':'駒沢大学','武藏大学':'武蔵大学',
+    '早稻田大学':'早稲田大学','一桥大学':'一橋大学','东京大学':'東京大学','大阪大学':'大阪大学',
+    '庆应义塾大学':'慶應義塾大学','慶応義塾大学':'慶應義塾大学','立命馆大学':'立命館大学',
+    '关西大学':'関西大学','关西学院大学':'関西学院大学','东洋大学':'東洋大学','驹泽大学':'駒沢大学','武藏大学':'武蔵大学',
   };
   return map[u.trim()] || u.trim();
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// 学部 (undergrad_results) ロジック
+// ════════════════════════════════════════════════════════════════════════
+
+const UG_TABLE = 'undergrad_results';
+let ugAllData = [];
+let ugDataLoaded = false;
+let ugListSortCol = 'created_at', ugListSortDir = -1;
+let ugUploadRows = [], ugUploadColMap = {}, ugUploadHeaders = [];
+
+async function ugFetchAll() { return sbFetch(`${UG_TABLE}?select=*&order=created_at.desc`); }
+async function ugInsertOne(row) { return sbFetch(UG_TABLE, { method:'POST', body:row }); }
+async function ugInsertBatch(rows) {
+  const clean = rows.map(r => ({ ...r, tier: r.tier != null ? parseInt(r.tier)||null : null }));
+  return sbFetch(UG_TABLE, { method:'POST', body:clean, prefer:'return=representation' });
+}
+async function ugDeleteOne(id) { return sbFetch(`${UG_TABLE}?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); }
+
+// ─── Tier dict (T0-T4 + school_type) ────────────────────────────────────────
+const UG_TIER_INFO = {
+  0: { label:'T0', name:'旧帝大・東工大クラス ＋ 早慶上理ICU' },
+  1: { label:'T1', name:'上位国公立 ＋ MARCH・関関同立' },
+  2: { label:'T2', name:'地方国公立 ＋ 日東駒専・成成明学国武独等' },
+  3: { label:'T3', name:'大東亜帝国クラス' },
+  4: { label:'T4', name:'保底校' },
+};
+
+const UG_SCHOOL_DB = {
+  '東京大学':{tier:0,type:'public'}, '東京科学大学':{tier:0,type:'public'}, '北海道大学':{tier:0,type:'public'},
+  '早稲田大学':{tier:0,type:'private'}, '慶應義塾大学':{tier:0,type:'private'}, '上智大学':{tier:0,type:'private'},
+  '東京理科大学':{tier:0,type:'private'}, '国際基督教大学':{tier:0,type:'private'},
+  '千葉大学':{tier:1,type:'public'}, '横浜国立大学':{tier:1,type:'public'}, '電気通信大学':{tier:1,type:'public'},
+  '筑波大学':{tier:1,type:'public'}, '横浜市立大学':{tier:1,type:'public'},
+  '中央大学':{tier:1,type:'private'}, '関西大学':{tier:1,type:'private'}, '関西学院大学':{tier:1,type:'private'},
+  '同志社大学':{tier:1,type:'private'}, '明治大学':{tier:1,type:'private'}, '法政大学':{tier:1,type:'private'},
+  '立命館大学':{tier:1,type:'private'}, '立教大学':{tier:1,type:'private'}, '青山学院大学':{tier:1,type:'private'},
+  '旭川市立大学':{tier:2,type:'public'}, '秋田大学':{tier:2,type:'public'}, '茨城大学':{tier:2,type:'public'}, '長崎大学':{tier:2,type:'public'},
+  '専修大学':{tier:2,type:'private'}, '東京電機大学':{tier:2,type:'private'}, '東洋大学':{tier:2,type:'private'},
+  '日本大学':{tier:2,type:'private'}, '日本女子大学':{tier:2,type:'private'}, '明治学院大学':{tier:2,type:'private'},
+  '独協大学':{tier:2,type:'private'}, '近畿大学':{tier:2,type:'private'}, '順天堂大学':{tier:2,type:'private'},
+  '駒澤大学':{tier:2,type:'private'}, '龍谷大学':{tier:2,type:'private'},
+  '東京工科大学':{tier:3,type:'private'}, '東海大学':{tier:3,type:'private'}, '二松学舎大学':{tier:3,type:'private'},
+  '京都外国語大学':{tier:3,type:'private'}, '国士舘大学':{tier:3,type:'private'}, '聖心女子大学':{tier:3,type:'private'},
+  '大東文化大学':{tier:3,type:'private'}, '帝京大学':{tier:3,type:'private'}, '成安造形大学':{tier:3,type:'private'},
+  '桃山学院大学':{tier:3,type:'private'}, '武蔵野大学':{tier:3,type:'private'}, '神奈川大学':{tier:3,type:'private'},
+  '福岡大学':{tier:3,type:'private'}, '大手前大学':{tier:3,type:'private'},
+  '東京工芸大学':{tier:4,type:'private'}, '京東光華大学':{tier:4,type:'private'}, '兵庫大学':{tier:4,type:'private'},
+  '岡山理科大学':{tier:4,type:'private'}, '和光大学':{tier:4,type:'private'}, '聖学院大学':{tier:4,type:'private'},
+  '多摩大学':{tier:4,type:'private'}, '大阪工業大学':{tier:4,type:'private'}, '大阪経済法科大学':{tier:4,type:'private'},
+  '大阪観光大学':{tier:4,type:'private'}, '帝京平成大学':{tier:4,type:'private'}, '帝京科学大学':{tier:4,type:'private'},
+  '平成国際大学':{tier:4,type:'private'}, '拓殖大学':{tier:4,type:'private'}, '文化学園大学':{tier:4,type:'private'},
+  '日本工業大学':{tier:4,type:'private'}, '明海大学':{tier:4,type:'private'}, '札幌学院大学':{tier:4,type:'private'},
+  '桜美林大学':{tier:4,type:'private'}, '江戸川大学':{tier:4,type:'private'}, '流通経済大学':{tier:4,type:'private'},
+  '湘南工科大学':{tier:4,type:'private'}, '神奈川工科大学':{tier:4,type:'private'}, '福岡女子大学':{tier:4,type:'public'},
+  '立正大学':{tier:4,type:'private'}, '西武文理大学':{tier:4,type:'private'}, '足利大学':{tier:4,type:'private'},
+  '長崎総合科学大学':{tier:4,type:'private'}, '青森大学':{tier:4,type:'private'}, '駿河台大学':{tier:4,type:'private'},
+  '北洋大学':{tier:4,type:'private'}, '千葉科学大学':{tier:4,type:'private'}, '山梨学院大学':{tier:4,type:'private'},
+  '徳島文理大学':{tier:4,type:'private'}, '第一工科大学':{tier:4,type:'private'}, '至誠館大学':{tier:4,type:'private'},
+};
+
+const UG_UNIV_NORM = {
+  '拓値大学':'拓殖大学', '京东光华大学':'京東光華大学', '横滨国立大学（尹老师母校！！！！！':'横浜国立大学',
+  '东京大学':'東京大学','东京科学大学':'東京科学大学','北海道大学':'北海道大学',
+  '早稻田大学':'早稲田大学','庆应义塾大学':'慶應義塾大学','上智大学':'上智大学',
+  '东京理科大学':'東京理科大学','ICU大学':'国際基督教大学','国际基督教大学':'国際基督教大学',
+  '千叶大学':'千葉大学','横滨国立大学':'横浜国立大学','电气通信大学':'電気通信大学',
+  '筑波大学':'筑波大学','横滨市立大学':'横浜市立大学',
+  '中央大学':'中央大学','关西大学':'関西大学','关西学院大学':'関西学院大学',
+  '同志社大学':'同志社大学','明治大学':'明治大学','法政大学':'法政大学',
+  '立命馆大学':'立命館大学','立教大学':'立教大学','青山学院大学':'青山学院大学',
+  '旭川市立大学':'旭川市立大学','秋田大学':'秋田大学','茨城大学':'茨城大学','长崎大学':'長崎大学',
+  '专修大学':'専修大学','东京电机大学':'東京電機大学','东洋大学':'東洋大学',
+  '日本大学':'日本大学','日本女子大学':'日本女子大学','明治学院大学':'明治学院大学',
+  '独协大学':'独協大学','近畿大学':'近畿大学','顺天堂大学':'順天堂大学',
+  '驹泽大学':'駒澤大学','龙谷大学':'龍谷大学',
+  '东京工科大学':'東京工科大学','东海大学':'東海大学','二松学舍大学':'二松学舎大学',
+  '京都外国语大学 大手前大学':'京都外国語大学','京都外国语大学':'京都外国語大学',
+  '国士馆大学':'国士舘大学','圣心女子大学':'聖心女子大学','大东文化大学':'大東文化大学',
+  '帝京大学（海外出愿）':'帝京大学','武藏野大学':'武蔵野大学','福冈大学':'福岡大学',
+  '东京工艺大学':'東京工芸大学','兵库大学':'兵庫大学','冈山理科大学':'岡山理科大学','圣学院大学':'聖学院大学',
+  '大阪工业大学':'大阪工業大学','大阪经济法科':'大阪経済法科大学','大阪经济法科大学':'大阪経済法科大学',
+  '大阪观光大学':'大阪観光大学','平成国际大学':'平成国際大学','文化学园大学':'文化学園大学',
+  '日本工业大学':'日本工業大学','札幌学院大学':'札幌学院大学','樱美林大学':'桜美林大学',
+  '江户川大学':'江戸川大学','流通经济大学':'流通経済大学','福冈女子大学':'福岡女子大学',
+  '长崎综合科学大学':'長崎総合科学大学','骏河台大学':'駿河台大学','千叶科学大学':'千葉科学大学',
+  '徳岛文理大学':'徳島文理大学','至诚馆大学':'至誠館大学',
+};
+
+function normUnivUG(u) { if (!u) return u; const t = u.trim(); return UG_UNIV_NORM[t] || t; }
+function ugTierOf(univ) { return UG_SCHOOL_DB[normUnivUG(univ)]?.tier ?? 4; }
+function ugSchoolType(univ) { return UG_SCHOOL_DB[normUnivUG(univ)]?.type ?? 'private'; }
+
+function switchUgTab(t) {
+  ['add','excel','list'].forEach(id => document.getElementById(`ugtab-${id}`).style.display = id===t?'':'none');
+  document.querySelectorAll('#major-ug .tab-btn').forEach((b,i) => b.classList.toggle('active', ['add','excel','list'][i]===t));
+  if (t === 'list') ugLoadList();
+}
+
+function ugResetForm() {
+  ['ug-f-univ','ug-f-dept','ug-f-spec','ug-f-student','ug-f-eju-jp','ug-f-eju-kijutsu','ug-f-eju-bunsou',
+   'ug-f-eju-math','ug-f-eju-phys','ug-f-eju-chem','ug-f-eju-bio','ug-f-eju-total','ug-f-toefl','ug-f-toeic','ug-f-note'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  ['ug-f-track','ug-f-era','ug-f-tier','ug-f-jlpt'].forEach(id => document.getElementById(id).selectedIndex = 0);
+}
+
+async function ugSubmitForm() {
+  const univ = document.getElementById('ug-f-univ').value.trim();
+  if (!univ) { toast('大学名を入力してください', false); return; }
+  const num = id => { const v = document.getElementById(id).value; return v !== '' ? parseInt(v) : null; };
+
+  const row = {
+    univ, dept: document.getElementById('ug-f-dept').value.trim()||null,
+    spec: document.getElementById('ug-f-spec').value.trim()||null,
+    student: document.getElementById('ug-f-student').value.trim()||null,
+    track: document.getElementById('ug-f-track').value,
+    era: document.getElementById('ug-f-era').value,
+    tier: document.getElementById('ug-f-tier').value !== '' ? parseInt(document.getElementById('ug-f-tier').value) : null,
+    school_type: ugSchoolType(univ),
+    eju_japanese: num('ug-f-eju-jp'), eju_kijutsu: num('ug-f-eju-kijutsu'), eju_bunsou: num('ug-f-eju-bunsou'),
+    eju_math: num('ug-f-eju-math'), eju_physics: num('ug-f-eju-phys'), eju_chemistry: num('ug-f-eju-chem'),
+    eju_biology: num('ug-f-eju-bio'), eju_total: num('ug-f-eju-total'),
+    jlpt: document.getElementById('ug-f-jlpt').value || null,
+    toefl: num('ug-f-toefl'), toeic: num('ug-f-toeic'),
+    note: document.getElementById('ug-f-note').value.trim()||null,
+  };
+
+  try { await ugInsertOne(row); toast('保存しました ✓'); ugResetForm(); ugRefreshUnivList(); }
+  catch(e) { toast('エラー: ' + e.message, false); }
+}
+
+async function ugRefreshUnivList() {
+  try {
+    const data = await ugFetchAll();
+    const univs = [...new Set(data.map(d => d.univ))].sort();
+    document.getElementById('ug-univ-list').innerHTML = univs.map(u => `<option value="${u}">`).join('');
+  } catch(e) {}
+}
+
+const UG_FIELD_DEFS = [
+  { key:'univ', label:'大学名 *' }, { key:'dept', label:'学部名' }, { key:'spec', label:'学科名' },
+  { key:'student', label:'学生名' }, { key:'track', label:'系統（学部理科/学部文科）' }, { key:'era', label:'年度' },
+  { key:'eju_japanese', label:'EJU日本語' }, { key:'eju_kijutsu', label:'EJU記述' },
+  { key:'eju_bunsou', label:'EJU文系総合' }, { key:'eju_math', label:'EJU数学' },
+  { key:'eju_physics', label:'EJU物理' }, { key:'eju_chemistry', label:'EJU化学' },
+  { key:'eju_biology', label:'EJU生物' }, { key:'eju_total', label:'EJU総分' },
+  { key:'toefl', label:'TOEFL' }, { key:'toeic', label:'TOEIC' }, { key:'jlpt', label:'JLPT' },
+  { key:'tier', label:'学校等级（元データ）' },
+];
+
+function ugHandleFile(file) {
+  if (!file) return;
+  document.getElementById('ug-upload-zone').textContent = `読み込み中: ${file.name}`;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const wb = XLSX.read(e.target.result, { type:'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+    if (!rows.length) { toast('データが空です', false); return; }
+    ugUploadHeaders = rows[0].map(String);
+    ugUploadRows = rows.slice(1).filter(r => r.some(c => c !== ''));
+    ugBuildMappingUI();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function ugBuildMappingUI() {
+  document.getElementById('ug-mapping-fields').innerHTML = UG_FIELD_DEFS.map(fd => `
+    <div class="field"><label>${fd.label}</label>
+      <select id="ug-map-${fd.key}">
+        <option value="">— スキップ —</option>
+        ${ugUploadHeaders.map((h,i) => `<option value="${i}" ${ugGuessCol(h,fd.key)?'selected':''}>${h}</option>`).join('')}
+      </select></div>`).join('');
+  document.getElementById('ug-col-mapping').style.display = '';
+  document.getElementById('ug-upload-zone').style.display = 'none';
+  document.getElementById('ug-import-preview').style.display = 'none';
+}
+
+function ugGuessCol(header, key) {
+  const h = header.toLowerCase();
+  const guesses = {
+    univ:['大学','学校名（中文', '学校名（日'], dept:['学部名'], spec:['学科名'],
+    student:['学生姓名','学生名'], track:['学科'], era:['年份','年度'],
+    eju_japanese:['eju日语','eju日本語'], eju_kijutsu:['eju记述','eju記述'],
+    eju_bunsou:['eju文综','eju文系'], eju_math:['eju数学'], eju_physics:['eju物理'],
+    eju_chemistry:['eju化学'], eju_biology:['eju生物'], eju_total:['eju总分','eju総分'],
+    toefl:['托福','toefl'], toeic:['托业','toeic'], jlpt:['jlpt'], tier:['学校等级','学校等級'],
+  };
+  return (guesses[key]||[]).some(g => h.includes(g));
+}
+
+function ugGetColIndex(key) {
+  const v = document.getElementById(`ug-map-${key}`)?.value;
+  return v !== '' && v !== undefined ? parseInt(v) : null;
+}
+
+function ugPreviewImport() {
+  const univIdx = ugGetColIndex('univ');
+  if (univIdx === null) { toast('大学名の列を選択してください', false); return; }
+  ugUploadColMap = {};
+  UG_FIELD_DEFS.forEach(fd => ugUploadColMap[fd.key] = ugGetColIndex(fd.key));
+
+  const preview = ugUploadRows.slice(0,5);
+  const headers = ['大学名','学部','学科','系統','年度','Tier(元)','EJU総分','JLPT'];
+  let html = `<table class="preview-table"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>`;
+  for (const row of preview) {
+    const m = ugMapRow(row);
+    html += `<tr><td>${m.univ||''}</td><td>${m.dept||''}</td><td>${m.spec||''}</td>
+      <td>${m.track==='rika'?'理科':m.track==='bijutsu'?'美術':'文科'}</td>
+      <td>${m.era||''}</td><td>${m.tier!=null?'T'+m.tier:'自動'}</td>
+      <td>${m.eju_total||''}</td><td>${m.jlpt||''}</td></tr>`;
+  }
+  html += '</tbody></table>';
+  document.getElementById('ug-preview-wrap').innerHTML = html;
+  document.getElementById('ug-import-count').textContent = ugUploadRows.length;
+  document.getElementById('ug-col-mapping').style.display = 'none';
+  document.getElementById('ug-import-preview').style.display = '';
+}
+
+function ugMapRow(row) {
+  const get = key => { const i = ugUploadColMap[key]; return (i!=null) ? String(row[i]??'').trim() : ''; };
+  const getNum = key => { const v = get(key); return v!=='' && v!=='None' && !isNaN(parseFloat(v)) ? Math.round(parseFloat(v)) : null; };
+
+  let trackRaw = get('track');
+  let track = 'bunka';
+  if (trackRaw.includes('理科')) track = 'rika';
+  else if (trackRaw.includes('美术') || trackRaw.includes('美術')) track = 'bijutsu';
+  else if (trackRaw.includes('文科')) track = 'bunka';
+
+  let eraRaw = get('era');
+  let era = 'new';
+  const yearNum = parseInt(eraRaw);
+  if (!isNaN(yearNum)) era = (yearNum >= 2025) ? 'new' : 'hist';
+
+  const univRaw = get('univ');
+  const univ = normUnivUG(univRaw);
+
+  const origTierLabel = get('tier');
+  let tier = null;
+  const TIER_LABEL_MAP = {
+    'SS帝大':0, 'SS顶尖私立-早庆上理ICU':0,
+    'AA超一流国公立':1, 'AA超一流私立march关关同立等':1, 'A一流国公立':1,
+    'A中坚私立-日东专驹四工大成成明学国武独等':2, 'A地方国公立':2,
+    'C知名学校-大东亚帝国等':3, 'D相对保底':4, 'E稳妥保底':4,
+  };
+  if (origTierLabel && TIER_LABEL_MAP[origTierLabel] !== undefined) tier = TIER_LABEL_MAP[origTierLabel];
+
+  return {
+    univ: univ || null, dept: get('dept') || null, spec: get('spec') || null, student: get('student') || null,
+    track, era, tier, school_type: univ ? ugSchoolType(univ) : null,
+    eju_japanese: getNum('eju_japanese'), eju_kijutsu: getNum('eju_kijutsu'),
+    eju_bunsou: getNum('eju_bunsou'), eju_math: getNum('eju_math'),
+    eju_physics: getNum('eju_physics'), eju_chemistry: getNum('eju_chemistry'),
+    eju_biology: getNum('eju_biology'), eju_total: getNum('eju_total'),
+    jlpt: (() => { const v=get('jlpt'); return (v && v!=='None' && v!=='无') ? v : null; })(),
+    toefl: getNum('toefl'), toeic: getNum('toeic'), note: null,
+  };
+}
+
+async function ugExecuteImport() {
+  const btn = document.getElementById('ug-import-btn');
+  btn.disabled = true;
+  const prog = document.getElementById('ug-import-progress');
+  const fill = document.getElementById('ug-progress-fill');
+  const label = document.getElementById('ug-progress-label');
+  prog.classList.add('show');
+  const rows = ugUploadRows.map(ugMapRow).filter(r => r.univ);
+  const BATCH = 50;
+  let done = 0;
+  try {
+    for (let i=0; i<rows.length; i+=BATCH) {
+      const batch = rows.slice(i, i+BATCH);
+      await ugInsertBatch(batch);
+      done += batch.length;
+      fill.style.width = Math.round(done/rows.length*100) + '%';
+      label.textContent = `${done} / ${rows.length} 件処理済み`;
+    }
+    toast(`${done} 件をインポートしました ✓`);
+    ugResetUpload();
+  } catch(e) { toast('インポートエラー: ' + e.message, false); btn.disabled = false; }
+}
+
+function ugResetUpload() {
+  document.getElementById('ug-upload-zone').style.display = '';
+  document.getElementById('ug-upload-zone').innerHTML = `
+    <input type="file" id="ug-file-input" accept=".xlsx,.xls,.csv" onchange="ugHandleFile(this.files[0])">
+    <div style="font-size:14px;margin-bottom:6px">クリックまたはドラッグ＆ドロップ</div>
+    <div style="font-size:11px">.xlsx / .xls / .csv 対応</div>`;
+  document.getElementById('ug-col-mapping').style.display = 'none';
+  document.getElementById('ug-import-preview').style.display = 'none';
+  document.getElementById('ug-import-progress').classList.remove('show');
+  ugUploadRows = []; ugUploadColMap = {}; ugUploadHeaders = [];
+}
+
+async function ugLoadList() {
+  document.getElementById('ug-list-area').innerHTML = '<div class="load-state">読み込み中...</div>';
+  try { ugAllData = await ugFetchAll(); ugRenderList(); }
+  catch(e) { document.getElementById('ug-list-area').innerHTML = `<div class="load-state" style="color:var(--red)">エラー: ${e.message}</div>`; }
+}
+
+function ugRenderList() {
+  const q = document.getElementById('ug-search-input').value.toLowerCase();
+  const ft = document.getElementById('ug-filter-track').value;
+  const fe = document.getElementById('ug-filter-era').value;
+  const fT = document.getElementById('ug-filter-tier').value;
+
+  let rows = ugAllData.filter(r => {
+    if (ft && r.track !== ft) return false;
+    if (fe && r.era !== fe) return false;
+    if (fT !== '' && String(r.tier ?? ugTierOf(r.univ)) !== fT) return false;
+    if (q && !`${r.univ} ${r.dept} ${r.spec} ${r.student}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  rows.sort((a,b) => {
+    let av=a[ugListSortCol]??'', bv=b[ugListSortCol]??'';
+    if (typeof av === 'string') return av.localeCompare(bv) * ugListSortDir;
+    return (av-bv) * ugListSortDir;
+  });
+
+  document.getElementById('ug-result-count').textContent = `${rows.length} 件`;
+  if (!rows.length) { document.getElementById('ug-list-area').innerHTML = '<div class="load-state">データが見つかりません</div>'; return; }
+
+  const TRACK_LABEL = {bunka:'文科',rika:'理科',bijutsu:'美術'};
+  const TIER_COLOR = {0:['#dce4f4','#1a3070'],1:['#e8edf8','#2c4a8a'],2:['#e8f0e4','#3a6630'],3:['#f4ece0','#7a4a20'],4:['#f4e0e0','#7a2020']};
+
+  let html = `<div class="data-table-wrap"><table class="data-table"><thead><tr>
+    <th onclick="ugSortList('univ')">大学名</th><th onclick="ugSortList('dept')">学部</th><th onclick="ugSortList('spec')">学科</th>
+    <th onclick="ugSortList('track')">系統</th><th onclick="ugSortList('era')">年度</th><th onclick="ugSortList('tier')">Tier</th>
+    <th>区分</th><th onclick="ugSortList('eju_total')">EJU総分</th><th onclick="ugSortList('jlpt')">JLPT</th>
+    <th onclick="ugSortList('toefl')">TOEFL</th><th onclick="ugSortList('toeic')">TOEIC</th><th onclick="ugSortList('student')">学生</th><th>操作</th>
+  </tr></thead><tbody>`;
+
+  for (const r of rows) {
+    const tier = r.tier != null ? r.tier : ugTierOf(r.univ);
+    const [tbg, tfg] = TIER_COLOR[tier] || ['#eee','#666'];
+    const stype = r.school_type || ugSchoolType(r.univ);
+    html += `<tr>
+      <td>${r.univ||''}</td><td>${r.dept||''}</td><td>${r.spec||''}</td>
+      <td><span class="track-tag" style="background:#eef0e8;color:#3a3830">${TRACK_LABEL[r.track]||'文科'}</span></td>
+      <td>${r.era==='new'?'25–26':'22–24'}</td>
+      <td><span class="tier-tag" style="background:${tbg};color:${tfg}">T${tier}${r.tier==null?'(自動)':''}</span></td>
+      <td><span class="type-tag" style="background:${stype==='public'?'#e0eef8':'#f4ece0'};color:${stype==='public'?'#1a3a6a':'#5a3010'}">${stype==='public'?'国公立':'私立'}</span></td>
+      <td>${r.eju_total||'—'}</td><td>${r.jlpt||'—'}</td><td>${r.toefl||'—'}</td><td>${r.toeic||'—'}</td><td>${r.student||'—'}</td>
+      <td><button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="ugConfirmDelete('${r.id}','${(r.univ||'').replace(/'/g,"\\'")}')">削除</button></td>
+    </tr>`;
+  }
+  html += '</tbody></table></div>';
+  document.getElementById('ug-list-area').innerHTML = html;
+}
+
+function ugSortList(col) {
+  if (ugListSortCol === col) ugListSortDir *= -1; else { ugListSortCol = col; ugListSortDir = 1; }
+  ugRenderList();
+}
+
+function ugConfirmDelete(id, univ) {
+  showModal('削除確認', `「${univ}」のレコードを削除しますか？`, async () => {
+    try { await ugDeleteOne(id); ugAllData = ugAllData.filter(r=>r.id!==id); ugRenderList(); toast('削除しました ✓'); }
+    catch(e) { toast('削除エラー: ' + e.message, false); }
+  });
+}
+
+function ugConfirmDeleteAll() {
+  showModal('全件削除', `${ugAllData.length} 件すべてを削除しますか？この操作は元に戻せません。`, async () => {
+    try { for (const r of ugAllData) await ugDeleteOne(r.id); ugAllData = []; ugRenderList(); toast('全件削除しました ✓'); }
+    catch(e) { toast('削除エラー: ' + e.message, false); }
+  });
+}
 </script>
 </body>
 </html>
