@@ -2118,7 +2118,7 @@ async function confirmReschedule(){
   if(!target){alert('找不到该课次');return}
 
   const courseId=target.course_id;
-  const allSessions=cachedSessions.filter(s=>s.course_id===courseId).sort((a,b)=>a.session_number-b.session_number);
+  const allSessions=cachedSessions.filter(s=>s.course_id===courseId).sort((a,b)=>a.session_date.localeCompare(b.session_date));
   const idx=allSessions.findIndex(s=>s.id===id);
   if(idx===-1){alert('找不到该课次');return}
 
