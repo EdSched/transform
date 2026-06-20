@@ -1834,8 +1834,30 @@ async function saveAddCourse(){
       courseId=editingId;
 
       // ── 编辑模式：按 session_number 对应更新已有课次，不删除重建，保留 id 不变 ──
-      const existing=cachedSessions.filter(s=>s.course_id===editingId).sort((a,b)=>a.session_number-b.session_number);
+      const existing=cachedSessions.filter(s=>s.course_id===editingId).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+      const hasCancelled=existing.some(s=>s.is_cancelled);
       const newDates=dates; // 已在上方按新的 first_session_date/weekdays/total 重新生成
+
+      if(hasCancelled){
+        // 该课程存在休讲/顺延记录，实际课次数与课程表单里的「总回数」已不再一一对应，
+        // 不能再用「按总回数重铺日期」的方式更新，否则会误删休讲顺延产生的补课记录。
+        // 此时只更新课程公共字段（课程名/专业/地点/课时/作业开关等），不触碰 session_date 和课次数量。
+        for(const s of existing){
+          const patch={
+            course_name:name, major:majors,
+            time_range:courseData.time_range,
+            actual_hours:courseData.actual_hours,
+            delivery:courseData.delivery,campus:courseData.campus,
+            homework_enabled:courseData.homework_enabled,
+          };
+          await sb(`/rest/v1/course_sessions?id=eq.${s.id}`,'PATCH',patch);
+          Object.assign(s,patch);
+        }
+        closeModal('addCourseModal');
+        renderCoursesPage(document.getElementById('mainContent'));
+        alert('该课程存在休讲记录，本次仅更新课程基本信息（名称/专业/地点/课时等），课次日期与数量保持不变');
+        return;
+      }
 
       if(newDates.length < existing.length){
         // 课次数量减少：检查被砍掉的部分是否已有出席记录
