@@ -524,8 +524,18 @@ function renderSlotManagement(mc) {
         <div class="form-group"><label class="form-label">类型（可多选）</label>
           <div style="display:flex;flex-direction:column;gap:8px" id="ts_type_group">
             ${allowedTypes.map(t => `<label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer">
-              <input type="checkbox" value="${t}" style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0">${typeLabel(t)}
+              <input type="checkbox" value="${t}" style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0" ${t==='vip'?'onchange="tsToggleVipPanel(this)"':''}>${typeLabel(t)}
             </label>`).join('')}
+          </div>
+        </div>
+        <div id="ts_vip_content_panel" style="display:none;margin-top:8px">
+          <label class="form-label">VIP内容（本次时间槽提供的指导内容，可多选）</label>
+          <div style="display:flex;flex-wrap:wrap;gap:6px" id="ts_vip_content_group">
+            ${(teacherData?.permissions?.vip_content||[]).length
+              ? (teacherData.permissions.vip_content).map(c=>`<label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;border:1px solid var(--border);border-radius:3px;padding:3px 9px">
+                  <input type="checkbox" value="${c}" style="accent-color:var(--accent);width:14px;height:14px">${c}
+                </label>`).join('')
+              : '<div style="font-size:11px;color:var(--text-3)">尚未被分配可指导的VIP内容，请联系管理员设置</div>'}
           </div>
         </div>
         <div class="form-group" style="margin-bottom:0"><label class="form-label">专业</label>
@@ -567,6 +577,7 @@ function renderSlotManagement(mc) {
                 <span style="color:${dowColor}">${dow}</span>
                 <span style="color:var(--text-3)">${s.time_range}</span>
                 ${locationShort(s.location)?`<span style="font-size:10px;color:${locationColor(s.location)}">${locationShort(s.location)}</span>`:''}
+                ${(s.vip_content&&s.vip_content.length)?`<span style="font-size:10px;color:var(--text-3)">[${s.vip_content.join('・')}]</span>`:''}
                 <span style="color:${isLocked?'var(--danger)':booked>=cap?'var(--danger)':'var(--ok)'}">${isLocked?'🔒':booked+'/'+cap}</span>
               </div>
               <div style="display:flex;gap:4px">
@@ -586,6 +597,10 @@ function renderSlotManagement(mc) {
 }
 
 function tsSetMode(mode) { teacherSlotMode = mode; renderTab(); }
+function tsToggleVipPanel(checkbox) {
+  const panel = document.getElementById('ts_vip_content_panel');
+  if (panel) panel.style.display = checkbox.checked ? 'block' : 'none';
+}
 function tsToggleWd(btn) {
   btn.classList.toggle('active');
   btn.style.background = btn.classList.contains('active') ? 'var(--accent)' : 'var(--bg)';
@@ -603,6 +618,11 @@ async function addTeacherSlot() {
   const end = document.getElementById('ts_end').value;
   const types = [...document.querySelectorAll('#ts_type_group input:checked')].map(c => c.value);
   if (!types.length) { alert('请至少选择一个类型'); return; }
+  let vipContent = [];
+  if (types.includes('vip')) {
+    vipContent = [...document.querySelectorAll('#ts_vip_content_group input:checked')].map(c => c.value);
+    if (!vipContent.length) { alert('已选择VIP类型，请至少勾选一项本次提供的VIP指导内容'); return; }
+  }
   const major = document.getElementById('ts_major')?.value || (teacherData?.majors?.[0] || '');
   const location = document.getElementById('ts_location')?.value || 'online';
   if (!start || !end) { alert('请填写时间段'); return; }
@@ -628,7 +648,7 @@ async function addTeacherSlot() {
     if (!confirm(`将添加 ${dates.length} 个时间槽，确认？`)) return;
   }
   try {
-    const newSlots = dates.map(date => ({ id: `sl-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, date, time_range: timeRange, type: types, major, location, teacher_name: teacherName }));
+    const newSlots = dates.map(date => ({ id: `sl-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, date, time_range: timeRange, type: types, major, location, teacher_name: teacherName, vip_content: vipContent.length ? vipContent : null }));
     for (let i = 0; i < newSlots.length; i += 10) {
       const chunk = newSlots.slice(i, i + 10);
       const res = await sb('/rest/v1/slots', 'POST', chunk);
