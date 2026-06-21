@@ -1284,6 +1284,116 @@ function copyVipConfirmText() {
   navigator.clipboard.writeText(ta.value).then(() => alert('已复制，可直接发给学生'));
 }
 
+// ── VIP 时间调整（老师需填理由）──
+function openVipReschedule(bookingId) {
+  const b = cachedTeacherBookings.find(x => x.id === bookingId);
+  if (!b) return;
+  const existing = document.getElementById('vipRescheduleModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'vipRescheduleModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:380px;width:100%">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">调整 ${b.name} 的VIP课程时间</div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">原时间：${b.slot_date} ${b.slot_time_range || ''}</div>
+      <div class="form-group"><label class="form-label">新日期</label><input type="date" id="vip_resched_date" value="${b.slot_date}"></div>
+      <div class="form-group"><label class="form-label">新时间段</label>
+        <div style="display:grid;grid-template-columns:1fr 16px 1fr;gap:4px;align-items:center">
+          <input type="time" id="vip_resched_start" value="${(b.slot_time_range||'').split(/[–\\-]/)[0]?.trim()||''}">
+          <div style="text-align:center;font-size:11px;color:var(--text-3)">—</div>
+          <input type="time" id="vip_resched_end" value="${(b.slot_time_range||'').split(/[–\\-]/)[1]?.trim()||''}">
+        </div>
+      </div>
+      <div class="form-group"><label class="form-label">调整原因（必填）</label>
+        <select id="vip_resched_reason_select" onchange="document.getElementById('vip_resched_reason_other').style.display=this.value==='其他'?'block':'none'">
+          <option value="">请选择</option>
+          <option>学生迟到</option>
+          <option>学生请假</option>
+          <option>学生生病</option>
+          <option>老师临时有事</option>
+          <option>其他</option>
+        </select>
+        <input id="vip_resched_reason_other" placeholder="请说明具体原因" style="display:none;margin-top:6px">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-primary btn-sm" onclick="saveVipReschedule('${bookingId}')">保存</button>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('vipRescheduleModal').remove()">取消</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function saveVipReschedule(bookingId) {
+  const b = cachedTeacherBookings.find(x => x.id === bookingId);
+  if (!b) return;
+  const date = document.getElementById('vip_resched_date').value;
+  const start = document.getElementById('vip_resched_start').value;
+  const end = document.getElementById('vip_resched_end').value;
+  const reasonSel = document.getElementById('vip_resched_reason_select').value;
+  const reasonOther = document.getElementById('vip_resched_reason_other').value.trim();
+  const reason = reasonSel === '其他' ? reasonOther : reasonSel;
+  if (!date || !start || !end) { alert('请填写完整的新日期和时间'); return; }
+  if (!reason) { alert('请填写调整原因'); return; }
+  const timeRange = `${start}\u2013${end}`;
+  try {
+    await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', {
+      slot_date: date, slot_time_range: timeRange,
+      reschedule_reason: reason, reschedule_by: teacherName,
+    });
+    Object.assign(b, { slot_date: date, slot_time_range: timeRange, reschedule_reason: reason, reschedule_by: teacherName });
+    document.getElementById('vipRescheduleModal').remove();
+    renderMySchedule(document.getElementById('mainContent'));
+    alert('时间已调整，建议告知学生新的上课时间');
+  } catch (e) { alert('保存失败：' + e.message); }
+}
+
+// ── VIP 留言 ──
+function openVipMessages(bookingId) {
+  const b = cachedTeacherBookings.find(x => x.id === bookingId);
+  if (!b) return;
+  const messages = b.messages || [];
+  const existing = document.getElementById('vipMessagesModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'vipMessagesModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:380px;width:100%;max-height:80vh;display:flex;flex-direction:column">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">与 ${b.name} 的留言</div>
+      <div id="vip_teacher_messages_list" style="flex:1;overflow-y:auto;margin-bottom:10px;max-height:300px">
+        ${messages.length ? messages.map(m => `
+          <div style="font-size:12px;margin-bottom:8px;${m.from==='teacher'?'text-align:right':''}">
+            <span style="display:inline-block;max-width:80%;background:${m.from==='teacher'?'var(--accent)':'var(--bg)'};color:${m.from==='teacher'?'#fff':'inherit'};border-radius:8px;padding:6px 11px;text-align:left">
+              <div style="font-size:9px;opacity:.7;margin-bottom:2px">${m.from==='teacher'?'我':b.name}</div>
+              ${m.text}
+            </span>
+          </div>`).join('') : '<div style="font-size:11px;color:var(--text-3)">暂无留言</div>'}
+      </div>
+      <div style="display:flex;gap:6px">
+        <input type="text" id="vip_teacher_message_input" placeholder="回复留言…" style="flex:1;font-size:12px">
+        <button class="btn btn-primary btn-sm" onclick="sendVipTeacherMessage('${bookingId}')">发送</button>
+      </div>
+      <button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="document.getElementById('vipMessagesModal').remove()">关闭</button>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function sendVipTeacherMessage(bookingId) {
+  const input = document.getElementById('vip_teacher_message_input');
+  const text = input.value.trim();
+  if (!text) return;
+  const b = cachedTeacherBookings.find(x => x.id === bookingId);
+  if (!b) return;
+  const newMessages = [...(b.messages || []), { from: 'teacher', text, ts: Date.now() }];
+  try {
+    await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', { messages: newMessages });
+    b.messages = newMessages;
+    document.getElementById('vipMessagesModal').remove();
+    openVipMessages(bookingId);
+  } catch (e) { alert('发送失败：' + e.message); }
+}
+
 function renderMyVipRow(b, s) {
   const d = new Date(b.slot_date + 'T12:00:00');
   const dow = DAYS_CN[d.getDay()];
@@ -1300,15 +1410,20 @@ function renderMyVipRow(b, s) {
           <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px">${b.name} 的VIP课程</span>
           <span style="font-size:9px;background:#5a3a9a;color:#fff;border-radius:2px;padding:1px 6px">VIP</span>
           ${hasRecord ? `<span style="font-size:9px;background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:1px 6px">已记录</span>` : (isPast ? `<span style="font-size:9px;background:#fff3cd;color:#856404;border-radius:2px;padding:1px 6px">待填写</span>` : '')}
+          ${(b.messages||[]).length ? `<span style="font-size:9px;background:#e8f0fb;color:#1a6a9a;border-radius:2px;padding:1px 6px">💬 ${b.messages.length}</span>` : ''}
         </div>
         <div style="font-size:11px;color:var(--text-3)">${b.slot_time_range || ''} · ${(cachedTeacherSlots.find(x => x.id === b.slot_id)?.vip_content || []).join('・') || ''}</div>
+        ${b.location ? `<div style="font-size:11px;color:${locationColor(b.location)};margin-top:2px">📍 ${locationLong(b.location) || '线上'}</div>` : ''}
         ${hasRecord ? `<div style="font-size:11px;color:var(--text-2);margin-top:3px">📝 ${b.vip_session_notes}</div>` : ''}
         ${b.student_confirmed ? `<div style="font-size:11px;color:var(--ok);margin-top:3px">✓ 学生已确认${b.student_rating ? '・评价：' + b.student_rating : ''}</div>` : (hasRecord ? `<div style="font-size:11px;color:#856404;margin-top:3px">⏳ 等待学生确认</div>` : '')}
+        ${b.reschedule_reason ? `<div style="font-size:10px;color:var(--text-3);margin-top:3px">🔄 已调整时间・原因：${b.reschedule_reason}</div>` : ''}
       </div>
     </div>
-    <div style="margin-top:8px;padding-top:8px;border-top:1px solid #ddd5f0;display:flex;gap:6px">
+    <div style="margin-top:8px;padding-top:8px;border-top:1px solid #ddd5f0;display:flex;gap:6px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" onclick="openVipSessionRecord('${b.id}')">${hasRecord ? '编辑上课记录' : '填写上课记录'}</button>
       ${hasRecord && !b.student_confirmed ? `<button class="btn btn-outline btn-sm" onclick="openVipConfirmText('${b.id}')">📋 生成确认链接文案</button>` : ''}
+      ${!hasRecord ? `<button class="btn btn-outline btn-sm" onclick="openVipReschedule('${b.id}')">🔄 调整时间</button>` : ''}
+      <button class="btn btn-outline btn-sm" onclick="openVipMessages('${b.id}')">💬 留言</button>
     </div>
   </div>`;
 }
