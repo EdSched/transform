@@ -88,7 +88,7 @@ function clearStoredInfo() {
   const banner = document.getElementById('infoBanner');
   if (banner) banner.style.display = 'none';
 }
-let major = null, selectedType = null, selectedSlotId = null, vipMode = false;
+let major = null, selectedType = null, selectedSlotId = null;
 let slotViewYear = new Date().getFullYear(), slotViewMonth = new Date().getMonth();
 let cachedSlots = [], cachedBookings = [];
 let teacherDisplayNames = {};
@@ -96,12 +96,12 @@ let teacherDisplayNames = {};
 async function initMajor() {
   const p = new URLSearchParams(window.location.search);
   major = p.get('major');
-  vipMode = p.get('mode') === 'vip';
   if (major && (MAJORS[major] || major === 'shakai_group')) {
     document.getElementById('headerContent').innerHTML = `
-      <div class="header-major">${vipMode ? 'VIP预约' : '面谈预约'}</div>
+      <div class="header-major">面谈预约</div>
       <div class="header-sub">唯新教育</div>
-      <div class="header-locked">📌 ${major === 'shakai_group' ? '社会人文' : MAJORS[major]}</div>`;
+      <div class="header-locked">📌 ${major === 'shakai_group' ? '社会人文' : MAJORS[major]}</div>
+      <a href="../vip/" style="display:inline-block;margin-top:8px;font-size:11px;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:4px 12px;text-decoration:none">⭐ 我有VIP课程 →</a>`;
     try {
       teacherDisplayNames = {};
       const slotMajorFilter = major === 'shakai_group'
@@ -111,10 +111,9 @@ async function initMajor() {
         sb(`/rest/v1/slots?select=*&${slotMajorFilter}&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`),
         sb(`/rest/v1/bookings?select=*&${slotMajorFilter}&order=slot_date.asc`)
       ]);
-      if (vipMode) {
-        cachedSlots = cachedSlots.filter(s => (Array.isArray(s.type) ? s.type : [s.type]).includes('vip'));
-        cachedBookings = cachedBookings.filter(b => b.type === 'vip');
-      }
+      // VIP 时间槽走独立的 /vip/ 页面预约，不在普通面谈预约里出现
+      cachedSlots = cachedSlots.filter(s => !(Array.isArray(s.type) ? s.type : [s.type]).includes('vip'));
+      cachedBookings = cachedBookings.filter(b => b.type !== 'vip');
       const teacherNames = [...new Set(cachedSlots.map(s => s.teacher_name).filter(Boolean))];
       if (teacherNames.length) {
         const teachers = await sb(`/rest/v1/teachers?name=in.(${teacherNames.map(n=>`"${n}"`).join(',')})&select=name,display_name`).catch(() => []);
@@ -137,7 +136,7 @@ function buildForm() {
   let step = 0;
   const stepBasic = ++step;       // 基本信息
   const stepProgress = ++step;    // 当前学习进程
-  const stepType = vipMode ? null : ++step; // 面谈类型（VIP模式跳过）
+  const stepType = ++step; // 面谈类型
   const stepSlot = ++step;        // 选择预约时间
   const stepNeeds = ++step;       // 具体需求
 
@@ -313,7 +312,7 @@ function buildForm() {
     <textarea id="studentContent" rows="6" placeholder="粘贴计划书草稿、面试稿等文字内容…"></textarea>
   </div>
   <button class="btn btn-primary" onclick="submitBooking()">提交预约申请 →</button>
-  <div class="section-sep"><div class="section-sep-line"></div><div class="section-sep-label">${vipMode ? '本月VIP预约情况' : '本月预约情况'}</div><div class="section-sep-line"></div></div>
+  <div class="section-sep"><div class="section-sep-line"></div><div class="section-sep-label">本月预约情况</div><div class="section-sep-line"></div></div>
   <div class="refresh-row">
     <div class="refresh-meta" id="refreshMeta"></div>
     <button class="btn btn-outline" style="font-size:11px;padding:5px 10px" onclick="reloadPublicList()">↺ 刷新</button>
@@ -621,7 +620,7 @@ const activeBooking = cachedBookings.find(b =>
     contact_prof: document.getElementById('contactProf').value,
     plan_status: planStatus, application_status: document.getElementById('applicationStatus').value,
     written_exam: document.getElementById('writtenExam').value,
-    interview_status: interviewStatus, type: vipMode ? 'vip' : (selectedType || (Array.isArray(slot.type)?slot.type[0]:slot.type)), slot_id: selectedSlotId,
+    interview_status: interviewStatus, type: selectedType || (Array.isArray(slot.type)?slot.type[0]:slot.type), slot_id: selectedSlotId,
     slot_date: slot.date, slot_time_range: slot.time_range,
     duration: parseInt(duration), urgency, needs, status: 'pending', actual_time: '', note: null, daily_record: null,
     english_score: buildEnglishText(), japanese_score: buildJapaneseText(),
