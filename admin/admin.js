@@ -88,6 +88,13 @@ async function renderPage(){
         sb('/rest/v1/course_sessions?select=*&order=session_date.asc')
       ]);
       renderCoursesPage(mc);
+    } else if(curPage==='coursecleanup'){
+      [cachedCourses,cachedSessions,cachedTeachers]=await Promise.all([
+        sb('/rest/v1/courses?select=*&order=created_at.desc'),
+        sb('/rest/v1/course_sessions?select=*&order=session_date.asc'),
+        sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[])
+      ]);
+      renderCourseCleanupPage(mc);
     } else if(curPage==='schedule'){
       [cachedCourses,cachedSessions,cachedScheduleSlots,cachedTeacherAvail,cachedTeachers]=await Promise.all([
         sb('/rest/v1/courses?select=*&order=created_at.desc'),
@@ -1347,7 +1354,234 @@ function fmtSessionDate(dateStr){
 
 let coursesTypeFilter='all';
 
+// ══════════════════════════════════
+// COURSE CLEANUP PAGE
+// ══════════════════════════════════
+let cleanupSelected=new Set();
+
+function renderCourseCleanupPage(mc){
+  // 按「年份 + 期数」分组，年份取自 first_session_date
+  const groups={};
+  cachedCourses.forEach(c=>{
+    const year=c.first_session_date?c.first_session_date.slice(0,4):'未知年份';
+    const period=c.period||'未设期数';
+    const key=`${year}年 ${period}`;
+    if(!groups[key]) groups[key]={key,year,period,courses:[]};
+    groups[key].courses.push(c);
+  });
+  const sortedKeys=Object.keys(groups).sort((a,b)=>b.localeCompare(a)); // 新的在前
+
+  // 标记可能重复的课程：同名课程出现在同一个分组内超过1次
+  const dupKeys=new Set();
+  Object.values(groups).forEach(g=>{
+    const nameCount={};
+    g.courses.forEach(c=>{ nameCount[c.name]=(nameCount[c.name]||0)+1; });
+    g.courses.forEach(c=>{ if(nameCount[c.name]>1) dupKeys.add(c.id); });
+  });
+
+  mc.innerHTML=`
+  <div class="page-header">
+    <div class="section-title">课程清理</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-outline btn-sm" onclick="cleanupSelectAll()">全选当前页</button>
+      <button class="btn btn-outline btn-sm" onclick="cleanupClearSelection()">清空选择</button>
+      <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="cleanupDeleteSelected()">删除已选 (<span id="cleanup_count">0</span>)</button>
+    </div>
+  </div>
+  <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">按年份与期数分组展示全部课程，标黄的为同分组内同名重复课程。勾选后可批量删除。每门课标题旁有「保存为模板」，可将课程结构（专业/课时/地点/单回明细等）存为模板，日后开新一期时直接套用。</div>
+  <div id="cleanup_list">
+    ${sortedKeys.map(key=>{
+      const g=groups[key];
+      return `
+      <div style="margin-bottom:18px">
+        <div style="font-size:12px;font-weight:600;color:var(--text-2);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px;display:flex;align-items:center;gap:8px">
+          ${key} <span style="font-size:10px;color:var(--text-3);font-weight:400">共 ${g.courses.length} 门</span>
+        </div>
+        ${g.courses.map(c=>{
+          const sessions=cachedSessions.filter(s=>s.course_id===c.id);
+          const isDup=dupKeys.has(c.id);
+          return `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid ${isDup?'#e0c060':'var(--border-light)'};background:${isDup?'#fffbe8':'var(--surface)'};border-radius:3px;margin-bottom:6px">
+            <input type="checkbox" class="cleanup_cb" data-id="${c.id}" onchange="cleanupToggle('${c.id}',this.checked)">
+            <div style="flex:1">
+              <div style="font-size:12px;font-weight:600">${c.name} ${isDup?'<span style="font-size:9px;background:#e0c060;color:#5a4a10;border-radius:2px;padding:1px 5px;margin-left:4px">疑似重复</span>':''}</div>
+              <div style="font-size:11px;color:var(--text-3);margin-top:2px">
+                ${(c.major||[]).map(m=>majorLabel(m)).join('/')} · ${c.teacher||''} · ${c.time_range||''} ·
+                ${sessions.length} 条课次记录（设置回数：${c.total_sessions||'-'}）·
+                首回 ${c.first_session_date||'-'}
+              </div>
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="openSaveAsTemplate('${c.id}')">💾 存为模板</button>
+            <button class="btn btn-outline btn-sm" onclick="openAddCourseModal('${c.id}')">编辑</button>
+            <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="cleanupDeleteSingle('${c.id}')">删除</button>
+          </div>`;
+        }).join('')}
+      </div>`;
+    }).join('')}
+  </div>
+  <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--border)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div class="section-title" style="font-size:14px">课程模板</div>
+    </div>
+    <div id="template_list"></div>
+  </div>`;
+
+  renderTemplateList();
+}
+
+function cleanupToggle(id,checked){
+  if(checked) cleanupSelected.add(id); else cleanupSelected.delete(id);
+  document.getElementById('cleanup_count').textContent=cleanupSelected.size;
+}
+function cleanupSelectAll(){
+  document.querySelectorAll('.cleanup_cb').forEach(cb=>{cb.checked=true;cleanupSelected.add(cb.dataset.id)});
+  document.getElementById('cleanup_count').textContent=cleanupSelected.size;
+}
+function cleanupClearSelection(){
+  cleanupSelected.clear();
+  document.querySelectorAll('.cleanup_cb').forEach(cb=>cb.checked=false);
+  document.getElementById('cleanup_count').textContent=0;
+}
+async function cleanupDeleteSingle(courseId){
+  if(!confirm('确定删除这门课程及其所有课次记录？此操作不可恢复。'))return;
+  try{
+    await sb(`/rest/v1/session_records?session_id=in.(${cachedSessions.filter(s=>s.course_id===courseId).map(s=>`"${s.id}"`).join(',')||'""'})`,'DELETE').catch(()=>{});
+    await sb(`/rest/v1/course_sessions?course_id=eq.${courseId}`,'DELETE');
+    await sb(`/rest/v1/courses?id=eq.${courseId}`,'DELETE');
+    cachedCourses=cachedCourses.filter(c=>c.id!==courseId);
+    cachedSessions=cachedSessions.filter(s=>s.course_id!==courseId);
+    cleanupSelected.delete(courseId);
+    renderCourseCleanupPage(document.getElementById('mainContent'));
+  }catch(e){alert('删除失败：'+e.message)}
+}
+async function cleanupDeleteSelected(){
+  if(!cleanupSelected.size){alert('请先勾选要删除的课程');return}
+  if(!confirm(`确定删除已选中的 ${cleanupSelected.size} 门课程及其所有课次记录？此操作不可恢复。`))return;
+  try{
+    for(const courseId of cleanupSelected){
+      const sessionIds=cachedSessions.filter(s=>s.course_id===courseId).map(s=>s.id);
+      if(sessionIds.length) await sb(`/rest/v1/session_records?session_id=in.(${sessionIds.map(i=>`"${i}"`).join(',')})`,'DELETE').catch(()=>{});
+      await sb(`/rest/v1/course_sessions?course_id=eq.${courseId}`,'DELETE');
+      await sb(`/rest/v1/courses?id=eq.${courseId}`,'DELETE');
+    }
+    cachedCourses=cachedCourses.filter(c=>!cleanupSelected.has(c.id));
+    cachedSessions=cachedSessions.filter(s=>!cleanupSelected.has(s.course_id));
+    cleanupSelected.clear();
+    renderCourseCleanupPage(document.getElementById('mainContent'));
+  }catch(e){alert('删除失败：'+e.message)}
+}
+
+// ── 课程模板 ──
+function openSaveAsTemplate(courseId){
+  const c=cachedCourses.find(x=>x.id===courseId);
+  if(!c){alert('找不到课程');return}
+  const name=prompt('模板名称：',c.name);
+  if(!name)return;
+  saveAsTemplate(courseId,name);
+}
+async function saveAsTemplate(courseId,templateName){
+  const c=cachedCourses.find(x=>x.id===courseId);
+  if(!c)return;
+  const sessions=cachedSessions.filter(s=>s.course_id===courseId).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+  const detailRows=sessions.map((s,i)=>({num:s.session_number,title:s.session_title||'',teacher:s.session_teacher||c.teacher||''}));
+  const tpl={
+    id:`tpl-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
+    name:templateName,
+    major:c.major,
+    course_type:c.course_type,
+    weekdays:c.weekdays,
+    time_range:c.time_range,
+    total_sessions:c.total_sessions,
+    actual_hours:c.actual_hours,
+    delivery:c.delivery,
+    campus:c.campus,
+    teacher:c.teacher,
+    homework_enabled:c.homework_enabled,
+    detail_rows:detailRows
+  };
+  try{
+    await sb('/rest/v1/course_templates','POST',tpl);
+    alert(`已保存为模板「${templateName}」`);
+    renderTemplateList();
+  }catch(e){alert('保存模板失败：'+e.message)}
+}
+async function renderTemplateList(){
+  const wrap=document.getElementById('template_list');
+  if(!wrap)return;
+  wrap.innerHTML='<div style="font-size:11px;color:var(--text-3)">加载中…</div>';
+  try{
+    const templates=await sb('/rest/v1/course_templates?select=*&order=created_at.desc');
+    if(!templates.length){
+      wrap.innerHTML='<div style="font-size:12px;color:var(--text-3);padding:8px 0">暂无保存的模板</div>';
+      return;
+    }
+    wrap.innerHTML=templates.map(t=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border-light);border-radius:3px;margin-bottom:6px">
+        <div style="flex:1">
+          <div style="font-size:12px;font-weight:600">${t.name}</div>
+          <div style="font-size:11px;color:var(--text-3);margin-top:2px">
+            ${(t.major||[]).map(m=>majorLabel(m)).join('/')} · ${t.teacher||''} · ${t.time_range||''} · 共${t.total_sessions||'-'}回 · ${t.detail_rows?.length||0}条单回明细
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openApplyTemplate('${t.id}')">套用</button>
+        <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="deleteTemplate('${t.id}')">删除模板</button>
+      </div>`).join('');
+  }catch(e){
+    wrap.innerHTML=`<div style="font-size:12px;color:var(--danger)">加载失败：${e.message}</div>`;
+  }
+}
+async function deleteTemplate(templateId){
+  if(!confirm('确定删除这个模板？'))return;
+  try{
+    await sb(`/rest/v1/course_templates?id=eq.${templateId}`,'DELETE');
+    renderTemplateList();
+  }catch(e){alert('删除失败：'+e.message)}
+}
+async function openApplyTemplate(templateId){
+  const firstDate=prompt('请输入新一期的第一回日期（格式 YYYY-MM-DD）：');
+  if(!firstDate)return;
+  try{
+    const templates=await sb(`/rest/v1/course_templates?id=eq.${templateId}&select=*`);
+    const t=templates[0];
+    if(!t){alert('模板不存在');return}
+    const weekdays=parseWeekdays(t.weekdays||'');
+    const dates=generateSessionDatesFromFirst(firstDate,weekdays,t.total_sessions||0);
+    if(!dates.length){alert('无法根据模板生成日期，请检查模板的星期设置');return}
+
+    const courseId=`c-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+    const fdMonth=parseInt(firstDate.slice(5,7));
+    const period=fdMonth<=3?'1月期':fdMonth<=6?'4月期':fdMonth<=9?'7月期':'10月期';
+    await sb('/rest/v1/courses','POST',{
+      id:courseId,name:t.name,major:t.major,course_type:t.course_type,
+      weekdays:t.weekdays,time_range:t.time_range,total_sessions:t.total_sessions,
+      actual_hours:t.actual_hours,delivery:t.delivery,campus:t.campus,teacher:t.teacher,
+      homework_enabled:t.homework_enabled,first_session_date:firstDate,period
+    });
+
+    const sessions=dates.map((date,i)=>{
+      const detail=(t.detail_rows||[]).find(r=>r.num===i+1)||{};
+      return {
+        id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
+        course_id:courseId,course_name:t.name,major:t.major,
+        session_date:date,session_number:i+1,
+        time_range:t.time_range,actual_hours:t.actual_hours,
+        delivery:t.delivery,campus:t.campus,
+        teacher:detail.teacher||t.teacher,
+        session_title:detail.title||'',
+        session_teacher:detail.teacher||t.teacher,
+        homework_enabled:t.homework_enabled||false
+      };
+    });
+    for(let i=0;i<sessions.length;i+=20){
+      await sb('/rest/v1/course_sessions','POST',sessions.slice(i,i+20));
+    }
+    alert(`已根据模板「${t.name}」生成新一期课程（${dates.length}回），请到「课程安排」中查看并发布`);
+    renderCourseCleanupPage(document.getElementById('mainContent'));
+  }catch(e){alert('套用模板失败：'+e.message)}
+}
+
 function renderCoursesPage(mc){
+
   const curPeriod=currentPeriodKey();
   let majorList=coursesMajorFilter==='all'
     ?['keiei','keizai','shakai','shinpan','fukushi']
