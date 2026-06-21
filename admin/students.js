@@ -76,7 +76,12 @@ function openStudentModal(id){
     st_enrollment:'target_enrollment',st_arrival:'japan_arrival',
     st_expiry:'expiry_date',st_default_mode:'default_mode',st_status:'status'
   };
-  Object.entries(fields).forEach(([el,key])=>{const e=document.getElementById(el);if(e)e.value=s?.[key]||'';});
+  Object.entries(fields).forEach(([el,key])=>{
+    const e=document.getElementById(el);
+    if(!e) return;
+    if(s){ e.value=s[key]||''; }
+    else { e.value = el==='st_status' ? 'active' : ''; }
+  });
   document.getElementById('studentModal').classList.add('open');
 }
 
