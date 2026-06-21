@@ -172,22 +172,69 @@ function renderTodo(mc) {
   </div>`;
 }
 
+let teacherBkSection = 'regular'; // 'regular' | 'vip'
+
 function renderBookingManagement(mc) {
+  const regularBookings = cachedTeacherBookings.filter(b => b.type !== 'vip');
+  const vipBookings = cachedTeacherBookings.filter(b => b.type === 'vip');
   mc.innerHTML = `
   <div class="page-section">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
       <div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">预约管理</div>
       <button onclick="exportMyFiles()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 12px;cursor:pointer;font-family:inherit;white-space:nowrap">📦 批量导出我的文件</button>
     </div>
+    <div style="display:flex;border:1px solid var(--border);border-radius:3px;overflow:hidden;margin-bottom:16px;width:fit-content">
+      <button onclick="setTeacherBkSection('regular')" style="padding:6px 16px;font-size:12px;border:none;cursor:pointer;font-family:inherit;background:${teacherBkSection==='regular'?'var(--accent)':'var(--surface)'};color:${teacherBkSection==='regular'?'#fff':'var(--text-2)'}">面谈预约</button>
+      <button onclick="setTeacherBkSection('vip')" style="padding:6px 16px;font-size:12px;border:none;border-left:1px solid var(--border);cursor:pointer;font-family:inherit;background:${teacherBkSection==='vip'?'var(--accent)':'var(--surface)'};color:${teacherBkSection==='vip'?'#fff':'var(--text-2)'}">VIP预约</button>
+    </div>
+    ${teacherBkSection==='regular' ? `
     <div style="margin-bottom:16px">
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">待确认预约</div>
-      ${cachedTeacherBookings.filter(b => b.status === 'pending').length ? cachedTeacherBookings.filter(b => b.status === 'pending').map(b => renderBookingCard(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无待确认预约</div>'}
+      ${regularBookings.filter(b => b.status === 'pending').length ? regularBookings.filter(b => b.status === 'pending').map(b => renderBookingCardCollapsed(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无待确认预约</div>'}
     </div>
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">已确认预约</div>
-      ${cachedTeacherBookings.filter(b => b.status === 'confirmed').length ? cachedTeacherBookings.filter(b => b.status === 'confirmed').map(b => renderBookingCard(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已确认预约</div>'}
+      ${regularBookings.filter(b => b.status === 'confirmed').length ? regularBookings.filter(b => b.status === 'confirmed').map(b => renderBookingCardCollapsed(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已确认预约</div>'}
+    </div>` : `
+    <div style="margin-bottom:16px">
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">待确认VIP预约</div>
+      ${vipBookings.filter(b => b.status === 'pending').length ? vipBookings.filter(b => b.status === 'pending').map(b => renderMyVipRow(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无待确认VIP预约</div>'}
+    </div>
+    <div>
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">已确认VIP预约</div>
+      ${vipBookings.filter(b => b.status === 'confirmed').length ? vipBookings.filter(b => b.status === 'confirmed').map(b => renderMyVipRow(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已确认VIP预约</div>'}
+    </div>`}
+  </div>`;
+}
+
+function setTeacherBkSection(s) {
+  teacherBkSection = s;
+  renderBookingManagement(document.getElementById('mainContent'));
+}
+
+// 默认收起的卡片：只显示姓名+时间+状态一行，点击展开完整内容
+function renderBookingCardCollapsed(b) {
+  const f = fmtSessionDate(b.slot_date);
+  const rowId = 'bkc_' + b.id;
+  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;margin-bottom:8px;border-left:3px solid ${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'}">
+    <div style="padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer" onclick="toggleBookingCard('${b.id}')">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px">${b.name}</span>
+        <span style="font-size:11px;color:var(--text-3)">${f.short} ${f.dow} · ${b.slot_time_range || ''}</span>
+        ${b.type==='vip' ? '<span style="font-size:9px;background:#5a3a9a;color:#fff;border-radius:2px;padding:1px 6px">VIP</span>' : `<span class="tag ${typeTag(b.type)}" style="font-size:9px">${typeLabel(b.type)}</span>`}
+      </div>
+      <span style="font-size:10px;background:${b.status === 'pending' ? 'var(--warn-bg)' : 'var(--ok-bg)'};color:${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'};padding:2px 7px;border-radius:2px;white-space:nowrap">${b.status === 'pending' ? '待确认' : '已确认'}</span>
+    </div>
+    <div id="${rowId}" style="display:none;padding:0 14px 14px">
+      ${renderBookingCard(b)}
     </div>
   </div>`;
+}
+
+function toggleBookingCard(id) {
+  const el = document.getElementById('bkc_' + id);
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
 function renderBookingCard(b) {
