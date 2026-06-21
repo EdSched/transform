@@ -94,11 +94,26 @@ function setStVip(v,el){stVipFilter=v;document.querySelectorAll('.filter-row:nth
 
 function setStMajor(m,el){stMajorFilter=m;document.querySelectorAll('.filter-row:nth-of-type(1) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderStudentsPage(document.getElementById('mainContent'))}
 function setStStatus(v,el){stStatus=v;document.querySelectorAll('.filter-row:nth-of-type(2) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderStudentsPage(document.getElementById('mainContent'))}
+// 渲染VIP指导老师勾选chip，选中状态从该学生已绑定的老师回显
+function populateVipTeachers(selectedTeachers){
+  const wrap=document.getElementById('st_vip_teachers');
+  if(!wrap) return;
+  if(!cachedTeachers || !cachedTeachers.length){
+    wrap.innerHTML='<span style="font-size:11px;color:var(--text-3)">暂无老师数据，请先到「管理老师」添加</span>';
+    return;
+  }
+  wrap.innerHTML=cachedTeachers.map(t=>`
+    <label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;border:1px solid var(--border);border-radius:3px;padding:3px 9px">
+      <input type="checkbox" class="st_vip_teacher_cb" value="${t.name}" ${selectedTeachers.includes(t.name)?'checked':''} style="accent-color:var(--accent);width:14px;height:14px">${t.name}
+    </label>`).join('');
+}
+
 function openStudentModal(id){
   const s=id?cachedStudents.find(x=>x.id===id):null;
   document.getElementById('studentModalTitle').textContent=s?'编辑学生':'添加学生';
   document.getElementById('studentId').value=s?.id||'';
   populateMajorSelect('st_major', s?.major||'');
+  populateVipTeachers(s?.vip_teachers||[]);
   const fields={
     st_name:'name',st_type:'student_type',st_source:'source',
     st_course:'course_type',st_level:'level',st_japanese:'japanese_score',
@@ -168,7 +183,8 @@ async function saveStudent(){
     status:document.getElementById('st_status').value,
     is_vip_course:document.getElementById('st_vip_course').value,
     vip_hours_total:parseFloat(document.getElementById('st_vip_total').value)||0,
-    vip_hours_used:parseFloat(document.getElementById('st_vip_used').value)||0
+    vip_hours_used:parseFloat(document.getElementById('st_vip_used').value)||0,
+    vip_teachers:[...document.querySelectorAll('.st_vip_teacher_cb:checked')].map(c=>c.value)
   };
   try{
     if(id){
