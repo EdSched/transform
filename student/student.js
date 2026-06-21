@@ -308,8 +308,12 @@ function buildForm() {
   </div>
   <div class="card" id="contentCard" style="display:none">
     <div class="card-title">📎 提交内容（可选）</div>
-    <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px">如需要老师查看 / 修改计划书或面试稿件，可在此粘贴文字内容（老师可下载为Word文件进行批注）</div>
+    <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px">如需要老师查看 / 修改计划书或面试稿件，可粘贴文字内容，或直接上传文件（如含公式的Word文档），二者均可</div>
     <textarea id="studentContent" rows="6" placeholder="粘贴计划书草稿、面试稿等文字内容…"></textarea>
+    <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">或上传文件（Word / PDF / 图片，最大50MB）</div>
+      <input type="file" id="studentFileUpload" accept=".doc,.docx,.pdf,image/*">
+    </div>
   </div>
   <button class="btn btn-primary" onclick="submitBooking()">提交预约申请 →</button>
   <div class="section-sep"><div class="section-sep-line"></div><div class="section-sep-label">本月预约情况</div><div class="section-sep-line"></div></div>
@@ -613,6 +617,21 @@ const activeBooking = cachedBookings.find(b =>
     }
   } catch (e) { /* 查询失败时退回原逻辑，不阻断预约流程 */ }
 
+  // 若学生选择了上传文件，先上传（文件名用专业+时间戳拼接，避免中文文件名导致的存储路径问题）
+  let studentFileUrl = null;
+  const fileInput = document.getElementById('studentFileUpload');
+  const file = fileInput?.files[0];
+  if (file) {
+    try {
+      const ext = file.name.split('.').pop().toLowerCase();
+      const path = `${bookingMajor || 'general'}/${Date.now()}.${ext}`;
+      studentFileUrl = await sbUpload('student-files', path, file);
+    } catch (e) {
+      alert('文件上传失败：' + e.message + '\n您可以改为粘贴文字内容，或稍后重试');
+      return;
+    }
+  }
+
   const booking = {
     id: Date.now().toString(), name, major: bookingMajor, exam_period: examPeriod,
     specialty_status: document.getElementById('specialtyStatus').value,
@@ -625,6 +644,7 @@ const activeBooking = cachedBookings.find(b =>
     duration: parseInt(duration), urgency, needs, status: 'pending', actual_time: '', note: null, daily_record: null,
     english_score: buildEnglishText(), japanese_score: buildJapaneseText(),
     student_content: document.getElementById('studentContent')?.value.trim() || null,
+    student_file_url: studentFileUrl,
     teacher_file_url: null, retrieval_code: null
   };
   try {
