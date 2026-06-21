@@ -630,3 +630,13 @@ async function exportAllWorkRecordsExcel() {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+function renderPayrollPage(mc){
+  mc.innerHTML = `
+  <div class="page-section">
+    <div class="section-title">工作管理</div>
+    <div class="section-sub">工资核算与工作记录审核</div>
+  </div>
+  <div id="payrollContainer"></div>`;
+  renderPayrollSection(document.getElementById('payrollContainer'));
+}
