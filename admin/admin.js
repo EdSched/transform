@@ -129,7 +129,12 @@ function renderBookingPage(mc){
   let filtered=cachedBookings.filter(b=>b.slot_date&&b.slot_date.startsWith(ym));
   if(bkTab!=='all') filtered=filtered.filter(b=>b.status===bkTab);
   if(bkType!=='all') filtered=filtered.filter(b=>b.type===bkType);
-  if(bkMajor!=='all') filtered=filtered.filter(b=>matchesMajorFilter(b.major,bkMajor));
+  if(bkMajor!=='all') filtered=filtered.filter(b=>{
+    // 按学生档案中的真实专业筛选，与该预约的入口标记（bookings.major，如「社会人文」分组链接）无关
+    const studentRecord=cachedStudents?.find(s=>s.name===b.name);
+    const realMajor=studentRecord?.major||b.major; // 找不到学生档案时退回用 bookings.major，避免数据完全消失
+    return matchesMajorFilter(realMajor,bkMajor);
+  });
   const total=cachedBookings.filter(b=>b.slot_date&&b.slot_date.startsWith(ym)).length;
 
   mc.innerHTML=`
