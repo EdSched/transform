@@ -1,5 +1,7 @@
 // ── 专业常量 ──
-const MAJORS = {
+// MAJORS 初始包含5个核心专业（写死，保证数据库未加载完成前页面也能正常显示）
+// 数据库 majors 表中的内容会在 loadMajorsFromDB() 后合并进来，不会覆盖/删除这5个核心专业
+let MAJORS = {
   keiei: '経営学',
   keizai: '経済学',
   shakai: '社会学',
@@ -8,6 +10,60 @@ const MAJORS = {
   shakai_group: '社会人文',
 };
 const SHAKAI_GROUP = ['shakai', 'shinpan', 'fukushi'];
+
+// 从数据库加载专业字典，合并进全局 MAJORS（不会清空/覆盖已有的核心专业）
+// 各页面应在初始化阶段调用一次：await loadMajorsFromDB();
+let majorsLoadedFromDB = false;
+async function loadMajorsFromDB() {
+  try {
+    const rows = await sb('/rest/v1/majors?select=key,label');
+    (rows || []).forEach(r => { if (r.key && r.label) MAJORS[r.key] = r.label; });
+    majorsLoadedFromDB = true;
+  } catch (e) {
+    // 加载失败不影响主流程，MAJORS 仍保留核心5个专业
+  }
+}
+
+// 中文专业名 → 生成一个安全的英文 key（拼音首字母不可行时退回时间戳后缀，保证唯一）
+function generateMajorKey(label) {
+  const pinyinMap = {
+    '国': 'guo','际': 'ji','关': 'guan','系': 'xi','学': 'xue','文': 'wen',
+    '化': 'hua','表': 'biao','象': 'xiang','艺': 'yi','术': 'shu','传': 'chuan',
+    '播': 'bo','心': 'xin','理': 'li','教': 'jiao','育': 'yu','法': 'fa',
+    '律': 'lv','医': 'yi','工': 'gong','程': 'cheng','计': 'ji','算': 'suan',
+    '机': 'ji','环': 'huan','境': 'jing','建': 'jian','筑': 'zhu','农': 'nong',
+    '生': 'sheng','物': 'wu','化学': 'huaxue','物理': 'wuli','数': 'shu',
+  };
+  let key = '';
+  for (const ch of String(label)) {
+    key += pinyinMap[ch] || '';
+  }
+  // 没匹配到足够字符时（生僻字较多），退回用 base36 短哈希保证可用且唯一
+  if (key.length < 2) {
+    key = 'm' + Date.now().toString(36).slice(-6);
+  }
+  return key;
+}
+
+// 新增一个专业到数据库，返回生成的 key（重名/已存在则直接返回已有 key，不重复创建）
+async function createMajor(label) {
+  label = String(label || '').trim();
+  if (!label) return null;
+  // 先看是否已经存在同名专业（避免重复创建多个 key 对应同一个中文名）
+  const existing = Object.entries(MAJORS).find(([k, v]) => v === label);
+  if (existing) return existing[0];
+  let key = generateMajorKey(label);
+  // 避免 key 冲突：如果已存在，加随机后缀
+  if (MAJORS[key]) key = key + Date.now().toString(36).slice(-3);
+  try {
+    await sb('/rest/v1/majors', 'POST', { key, label });
+    MAJORS[key] = label;
+    return key;
+  } catch (e) {
+    alert('新增专业失败：' + e.message);
+    return null;
+  }
+}
 
 function majorLabel(m) {
   return m === 'shakai_group' ? '社会人文' : MAJORS[m] || m || '';
