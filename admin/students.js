@@ -2,10 +2,13 @@
 // STUDENTS PAGE
 // ══════════════════════════════════
 let stMajorFilter='all',stSearch='',stStatus='active';
+let stVipFilter='all'; // 'all' | 'vip_only'(VIP+大课VIP都含) | 'vip_exclusive'(仅VIP不含大课)
 function renderStudentsPage(mc){
   let list=cachedStudents;
   if(stMajorFilter!=='all') list=list.filter(s=>matchesMajorFilter(s.major,stMajorFilter));
   if(stStatus!=='all') list=list.filter(s=>s.status===stStatus);
+  if(stVipFilter==='vip_only') list=list.filter(s=>s.is_vip_course==='VIP'||s.is_vip_course==='大课+VIP');
+  if(stVipFilter==='vip_exclusive') list=list.filter(s=>s.is_vip_course==='VIP');
   if(stSearch) list=list.filter(s=>s.name.includes(stSearch)||s.university?.includes(stSearch)||s.notes?.includes(stSearch));
   const statusLabel=(v)=>({active:'在籍',graduated:'已合格',expired:'已到期',stopped:'停课',withdrawn:'退学'}[v]||v);
   const statusColor=(v)=>v==='active'?'var(--ok)':v==='graduated'?'#1a6a9a':v==='withdrawn'?'var(--danger)':'var(--text-3)';
@@ -28,19 +31,26 @@ function renderStudentsPage(mc){
   <div class="filter-row">
     ${[['active','在籍'],['graduated','已合格'],['expired','已到期'],['stopped','停课'],['withdrawn','退学'],['all','全部']].map(([v,l])=>`<div class="filter-chip${stStatus===v?' active':''}" onclick="setStStatus('${v}',this)">${l}</div>`).join('')}
   </div>
+  <div class="filter-row">
+    ${[['all','全部学生'],['vip_only','含VIP（含大课+VIP）'],['vip_exclusive','仅VIP（不含大课）']].map(([v,l])=>`<div class="filter-chip${stVipFilter===v?' active':''}" onclick="setStVip('${v}',this)">${l}</div>`).join('')}
+  </div>
   <div class="search-bar"><input placeholder="搜索姓名 / 学校 / 备注…" value="${stSearch}" oninput="stSearch=this.value;renderStudentsPage(document.getElementById('mainContent'))"></div>
   <div class="table-scroll"><table class="student-table">
     <thead><tr>
       <th><input type="checkbox" id="selectAllStudents" onchange="toggleSelectAllStudents(this)"></th>
-      <th>姓名</th><th>专业</th><th>等级</th><th>属性</th><th>日语</th><th>英语</th><th>出身大学</th><th>入学目标</th><th>赴日</th><th>状态</th><th>查询码</th><th></th>
+      <th>姓名</th><th>专业</th><th>等级</th><th>属性</th><th>VIP课时</th><th>日语</th><th>英语</th><th>出身大学</th><th>入学目标</th><th>赴日</th><th>状态</th><th>查询码</th><th></th>
     </tr></thead>
     <tbody>
-      ${list.length?list.map(s=>`<tr>
+      ${list.length?list.map(s=>{
+        const isVip = s.is_vip_course==='VIP'||s.is_vip_course==='大课+VIP';
+        const vipRemain = (s.vip_hours_total||0)-(s.vip_hours_used||0);
+        return `<tr>
         <td><input type="checkbox" class="student-select" value="${s.id}"></td>
         <td class="student-name-cell" onclick="openStudentDetail('${s.id}')" style="cursor:pointer;color:var(--accent);text-decoration:underline">${s.name}</td>
         <td>${MAJORS[s.major]||s.major||''}</td>
         <td>${s.level?`<span class="level-badge level-${s.level}">${s.level}</span>`:''}</td>
         <td style="font-size:11px">${s.student_type||''}</td>
+        <td style="font-size:11px">${isVip?`<span style="color:var(--accent);font-weight:600">${vipRemain}</span> / ${s.vip_hours_total||0}`:'—'}</td>
         <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${s.japanese_score||''}">${s.japanese_score||''}</td>
         <td style="font-size:11px">${s.english_score||''}</td>
         <td style="font-size:11px">${s.university||''}</td>
@@ -56,10 +66,13 @@ function renderStudentsPage(mc){
           <button class="btn btn-outline btn-sm" onclick="openStudentModal('${s.id}')">编辑</button>
           <button class="btn btn-danger btn-sm" onclick="deleteStudent('${s.id}')">删除</button>
         </td>
-      </tr>`).join(''):'<tr><td colspan="13" style="text-align:center;padding:30px;color:var(--text-3)">暂无学生数据</td></tr>'}
+      </tr>`;
+      }).join(''):'<tr><td colspan="14" style="text-align:center;padding:30px;color:var(--text-3)">暂无学生数据</td></tr>'}
     </tbody>
   </table></div>`;
 }
+
+function setStVip(v,el){stVipFilter=v;document.querySelectorAll('.filter-row:nth-of-type(3) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderStudentsPage(document.getElementById('mainContent'))}
 
 function setStMajor(m,el){stMajorFilter=m;document.querySelectorAll('.filter-row:nth-of-type(1) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderStudentsPage(document.getElementById('mainContent'))}
 function setStStatus(v,el){stStatus=v;document.querySelectorAll('.filter-row:nth-of-type(2) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderStudentsPage(document.getElementById('mainContent'))}
@@ -74,13 +87,16 @@ function openStudentModal(id){
     st_english:'english_score',st_university:'university',st_faculty:'faculty',
     st_gpa:'gpa',st_thesis:'thesis',st_graduation:'graduation_date',
     st_enrollment:'target_enrollment',st_arrival:'japan_arrival',
-    st_expiry:'expiry_date',st_default_mode:'default_mode',st_status:'status'
+    st_expiry:'expiry_date',st_default_mode:'default_mode',st_status:'status',
+    st_vip_course:'is_vip_course',st_vip_total:'vip_hours_total',st_vip_used:'vip_hours_used'
   };
   Object.entries(fields).forEach(([el,key])=>{
     const e=document.getElementById(el);
     if(!e) return;
-    if(s){ e.value=s[key]||''; }
-    else { e.value = el==='st_status' ? 'active' : ''; }
+    if(s){ e.value=s[key]??''; }
+    else if(el==='st_status'){ e.value='active'; }
+    else if(el==='st_vip_course'){ e.value='大课'; }
+    else { e.value=''; }
   });
   document.getElementById('studentModal').classList.add('open');
 }
@@ -131,7 +147,10 @@ async function saveStudent(){
     japan_arrival:document.getElementById('st_arrival').value,
     expiry_date:document.getElementById('st_expiry').value,
     default_mode:document.getElementById('st_default_mode').value,
-    status:document.getElementById('st_status').value
+    status:document.getElementById('st_status').value,
+    is_vip_course:document.getElementById('st_vip_course').value,
+    vip_hours_total:parseFloat(document.getElementById('st_vip_total').value)||0,
+    vip_hours_used:parseFloat(document.getElementById('st_vip_used').value)||0
   };
   try{
     if(id){
