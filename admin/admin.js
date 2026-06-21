@@ -184,6 +184,17 @@ function renderTeachersPage(mc){
               <div class="filter-chip" data-value="mock" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">模拟面试</div>
               <div class="filter-chip" data-value="vip" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">VIP</div>
             </div>
+            <div style="margin-top:8px;margin-left:20px">
+              <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可指导的VIP内容（开设VIP时间槽时只能从这里选）</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px" id="perm_vip_content">
+                <div class="filter-chip" data-value="专业课指导" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">专业课指导</div>
+                <div class="filter-chip" data-value="过去问对策" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">过去问对策</div>
+                <div class="filter-chip" data-value="研究计划书" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">研究计划书</div>
+                <div class="filter-chip" data-value="出愿指导" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">出愿指导</div>
+                <div class="filter-chip" data-value="面试对策" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">面试对策</div>
+                <div class="filter-chip" data-value="TA指导" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">TA指导</div>
+              </div>
+            </div>
           </div>
           <!-- schedule row -->
           <div style="padding:10px;border-bottom:1px solid var(--border-light)">
@@ -239,7 +250,7 @@ function cancelEditTeacher(){
   document.getElementById('teacherFormCancelBtn').style.display='none';
   document.getElementById('new_teacher_name').value='';
   document.getElementById('new_teacher_notes').value='';
-  document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip').forEach(c=>c.classList.remove('active'));
+  document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip').forEach(c=>c.classList.remove('active'));
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
   document.getElementById('perm_schedule').checked=false;
@@ -250,7 +261,7 @@ function openTeacherManager(){
   // reset add form
   document.getElementById('new_teacher_name').value='';
   document.getElementById('new_teacher_notes').value='';
-  document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip').forEach(c=>c.classList.remove('active'));
+  document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip').forEach(c=>c.classList.remove('active'));
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
   document.getElementById('perm_schedule').checked=false;
@@ -306,6 +317,7 @@ function getPermissionsFromForm(){
     booking_types:[...document.querySelectorAll('#perm_booking_types .filter-chip.active')].map(c=>c.dataset.value),
     slots:document.getElementById('perm_slots').checked,
     slot_types:[...document.querySelectorAll('#perm_slot_types .filter-chip.active')].map(c=>c.dataset.value),
+    vip_content:[...document.querySelectorAll('#perm_vip_content .filter-chip.active')].map(c=>c.dataset.value),
     schedule:document.getElementById('perm_schedule').checked,
     homework:document.getElementById('perm_homework').checked,
     homework_courses:[...document.querySelectorAll('#perm_homework_courses .filter-chip.active')].map(c=>c.dataset.value),
@@ -325,7 +337,7 @@ async function addTeacher(){
     cachedTeachers.push(Array.isArray(res)?res[0]:t);
     document.getElementById('new_teacher_name').value='';
     document.getElementById('new_teacher_notes').value='';
-    document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip').forEach(c=>c.classList.remove('active'));
+    document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip').forEach(c=>c.classList.remove('active'));
     document.getElementById('perm_booking').checked=false;
     document.getElementById('perm_slots').checked=false;
     document.getElementById('perm_schedule').checked=false;
@@ -346,6 +358,7 @@ function openEditTeacher(id){
   document.getElementById('perm_homework').checked=!!p.homework;
   document.querySelectorAll('#perm_booking_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.booking_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_slot_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.slot_types||[]).includes(c.dataset.value))});
+  document.querySelectorAll('#perm_vip_content .filter-chip').forEach(c=>{c.classList.toggle('active',(p.vip_content||[]).includes(c.dataset.value))});
   renderHomeworkCoursesChips(p.homework_courses||[]);
   const btn=document.getElementById('teacherFormBtn');
   if(btn){btn.textContent='保存修改';btn.setAttribute('onclick',`saveEditTeacher('${id}')`);}
