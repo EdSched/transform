@@ -3,6 +3,24 @@
 // ══════════════════════════════════
 let stMajorFilter='all',stSearch='',stStatus='active';
 let stVipFilter='all'; // 'all' | 'vip_only'(VIP+大课VIP都含) | 'vip_exclusive'(仅VIP不含大课)
+
+// 中文输入法兼容：组合输入（拼音候选未确认）期间不重新渲染，避免打断输入法状态导致打不出字
+function handleStSearchInput(el){
+  if(el.dataset.composing==='1') return; // 正在用输入法组合中，先不处理
+  stSearch=el.value;
+  const cursorPos=el.selectionStart;
+  renderStudentsPage(document.getElementById('mainContent'));
+  const newEl=document.getElementById('st_search_input');
+  if(newEl){ newEl.focus(); newEl.setSelectionRange(cursorPos,cursorPos); }
+}
+function handleProgressSearchInput(el){
+  if(el.dataset.composing==='1') return;
+  progressStudentFilter=el.value;
+  const cursorPos=el.selectionStart;
+  renderProgressPage(document.getElementById('mainContent'));
+  const newEl=document.getElementById('progress_search_input');
+  if(newEl){ newEl.focus(); newEl.setSelectionRange(cursorPos,cursorPos); }
+}
 function renderStudentsPage(mc){
   let list=cachedStudents;
   if(stMajorFilter!=='all') list=list.filter(s=>matchesMajorFilter(s.major,stMajorFilter));
@@ -34,7 +52,7 @@ function renderStudentsPage(mc){
   <div class="filter-row">
     ${[['all','全部学生'],['vip_only','含VIP（含大课+VIP）'],['vip_exclusive','仅VIP（不含大课）']].map(([v,l])=>`<div class="filter-chip${stVipFilter===v?' active':''}" onclick="setStVip('${v}',this)">${l}</div>`).join('')}
   </div>
-  <div class="search-bar"><input placeholder="搜索姓名 / 学校 / 备注…" value="${stSearch}" oninput="stSearch=this.value;renderStudentsPage(document.getElementById('mainContent'))"></div>
+  <div class="search-bar"><input id="st_search_input" placeholder="搜索姓名 / 学校 / 备注…" value="${stSearch}" oninput="handleStSearchInput(this)" oncompositionstart="this.dataset.composing='1'" oncompositionend="this.dataset.composing='';handleStSearchInput(this)"></div>
   <div class="table-scroll"><table class="student-table">
     <thead><tr>
       <th><input type="checkbox" id="selectAllStudents" onchange="toggleSelectAllStudents(this)"></th>
@@ -336,7 +354,7 @@ async function renderProgressPage(mc, focusStudentId=null){
   <div class="filter-row">
     ${['all','keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map((m,i)=>`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this);renderProgressPage(document.getElementById('mainContent'))">${i===0?'全部专业':majorLabel(m)}</div>`).join('')}
   </div>
-  <div class="search-bar"><input placeholder="搜索学生姓名…" value="${progressStudentFilter}" oninput="progressStudentFilter=this.value;renderProgressPage(document.getElementById('mainContent'))"></div>
+  <div class="search-bar"><input id="progress_search_input" placeholder="搜索学生姓名…" value="${progressStudentFilter}" oninput="handleProgressSearchInput(this)" oncompositionstart="this.dataset.composing='1'" oncompositionend="this.dataset.composing='';handleProgressSearchInput(this)"></div>
   <div style="display:flex;flex-direction:column;gap:8px">
     ${students.map(s=>{
       const p=progressMap[s.id]||{};
