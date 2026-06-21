@@ -1383,12 +1383,11 @@ function renderCourseCleanupPage(mc){
   <div class="page-header">
     <div class="section-title">课程清理</div>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn btn-outline btn-sm" onclick="cleanupSelectAll()">全选当前页</button>
       <button class="btn btn-outline btn-sm" onclick="cleanupClearSelection()">清空选择</button>
       <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="cleanupDeleteSelected()">删除已选 (<span id="cleanup_count">0</span>)</button>
     </div>
   </div>
-  <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">按年份与期数分组展示全部课程，标黄的为同分组内同名重复课程。勾选后可批量删除。每门课标题旁有「保存为模板」，可将课程结构（专业/课时/地点/单回明细等）存为模板，日后开新一期时直接套用。</div>
+  <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">按年份与期数分组展示全部课程，标黄的为同分组内同名重复课程。点击行可选中（再点取消），选中后可批量删除。每门课标题旁有「保存为模板」，可将课程结构（专业/课时/地点/单回明细等）存为模板，日后开新一期时直接套用。</div>
   <div id="cleanup_list">
     ${sortedKeys.map(key=>{
       const g=groups[key];
@@ -1401,8 +1400,7 @@ function renderCourseCleanupPage(mc){
           const sessions=cachedSessions.filter(s=>s.course_id===c.id);
           const isDup=dupKeys.has(c.id);
           return `
-          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid ${isDup?'#e0c060':'var(--border-light)'};background:${isDup?'#fffbe8':'var(--surface)'};border-radius:3px;margin-bottom:6px">
-            <input type="checkbox" class="cleanup_cb" data-id="${c.id}" onchange="cleanupToggle('${c.id}',this.checked)">
+          <div class="cleanup_row" data-id="${c.id}" data-dup="${isDup?'1':'0'}" onclick="cleanupRowClick(event,'${c.id}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid ${isDup?'#e0c060':'var(--border-light)'};background:${isDup?'#fffbe8':'var(--surface)'};border-radius:3px;margin-bottom:6px;transition:background-color .12s">
             <div style="flex:1">
               <div style="font-size:12px;font-weight:600">${c.name} ${isDup?'<span style="font-size:9px;background:#e0c060;color:#5a4a10;border-radius:2px;padding:1px 5px;margin-left:4px">疑似重复</span>':''}</div>
               <div style="font-size:11px;color:var(--text-3);margin-top:2px">
@@ -1411,9 +1409,9 @@ function renderCourseCleanupPage(mc){
                 首回 ${c.first_session_date||'-'}
               </div>
             </div>
-            <button class="btn btn-outline btn-sm" onclick="openSaveAsTemplate('${c.id}')">💾 存为模板</button>
-            <button class="btn btn-outline btn-sm" onclick="openAddCourseModal('${c.id}')">编辑</button>
-            <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="cleanupDeleteSingle('${c.id}')">删除</button>
+            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openSaveAsTemplate('${c.id}')">💾 存为模板</button>
+            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openAddCourseModal('${c.id}')">编辑</button>
+            <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="event.stopPropagation();cleanupDeleteSingle('${c.id}')">删除</button>
           </div>`;
         }).join('')}
       </div>`;
@@ -1429,17 +1427,25 @@ function renderCourseCleanupPage(mc){
   renderTemplateList();
 }
 
-function cleanupToggle(id,checked){
-  if(checked) cleanupSelected.add(id); else cleanupSelected.delete(id);
-  document.getElementById('cleanup_count').textContent=cleanupSelected.size;
-}
-function cleanupSelectAll(){
-  document.querySelectorAll('.cleanup_cb').forEach(cb=>{cb.checked=true;cleanupSelected.add(cb.dataset.id)});
+function cleanupRowClick(e,id){
+  const row=e.currentTarget;
+  if(cleanupSelected.has(id)){
+    cleanupSelected.delete(id);
+    row.style.backgroundColor='';
+    row.style.borderColor=row.dataset.dup==='1'?'#e0c060':'var(--border-light)';
+  } else {
+    cleanupSelected.add(id);
+    row.style.backgroundColor='var(--accent-light, #e8e0d0)';
+    row.style.borderColor='var(--accent)';
+  }
   document.getElementById('cleanup_count').textContent=cleanupSelected.size;
 }
 function cleanupClearSelection(){
   cleanupSelected.clear();
-  document.querySelectorAll('.cleanup_cb').forEach(cb=>cb.checked=false);
+  document.querySelectorAll('.cleanup_row').forEach(row=>{
+    row.style.backgroundColor='';
+    row.style.borderColor=row.dataset.dup==='1'?'#e0c060':'var(--border-light)';
+  });
   document.getElementById('cleanup_count').textContent=0;
 }
 async function cleanupDeleteSingle(courseId){
