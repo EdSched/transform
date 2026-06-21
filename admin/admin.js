@@ -79,7 +79,10 @@ async function renderPage(){
       ]);
       curPage==='booking'?renderBookingPage(mc):renderSlotsPage(mc);
     } else if(curPage==='students'){
-      cachedStudents=await sb('/rest/v1/students?select=*&order=name.asc');
+      [cachedStudents,cachedTeachers]=await Promise.all([
+        sb('/rest/v1/students?select=*&order=name.asc'),
+        sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[])
+      ]);
       renderStudentsPage(mc);
     } else if(curPage==='courses'){
       [cachedStudents,cachedCourses,cachedSessions]=await Promise.all([
