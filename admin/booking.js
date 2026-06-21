@@ -191,6 +191,8 @@ function renderVipBookingCard(b){
       <div><div class="bf-label">本次VIP内容</div><div class="bf-value">${contentDisplay}</div></div>
       <div><div class="bf-label">课时余额</div><div class="bf-value">剩余 <strong style="color:var(--accent)">${remainH}</strong> / 总 ${totalH}（已用${usedH}）</div></div>
       ${b.location?`<div><div class="bf-label">上课地点</div><div class="bf-value">${locationLong(b.location)||'线上'}</div></div>`:''}
+      ${b.student_content?`<div style="grid-column:1/-1"><div class="bf-label">学生提交内容</div><div class="bf-value" style="white-space:pre-wrap">${b.student_content}</div></div>`:''}
+      ${b.student_file_url?`<div style="grid-column:1/-1"><a href="${b.student_file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 学生上传文件下载</a></div>`:''}
       ${b.reschedule_reason?`<div style="grid-column:1/-1"><div class="bf-label">时间调整记录</div><div class="bf-value">由${b.reschedule_by||'未知'}调整・原因：${b.reschedule_reason}</div></div>`:''}
       ${b.vip_session_notes?`<div style="grid-column:1/-1"><div class="bf-label">上课记录</div><div class="bf-value" style="white-space:pre-wrap">${b.vip_session_notes}</div></div>`:''}
       ${b.student_rating?`<div><div class="bf-label">学生评价</div><div class="bf-value">${b.student_rating}</div></div>`:''}
