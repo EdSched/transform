@@ -1358,11 +1358,32 @@ let coursesTypeFilter='all';
 // COURSE CLEANUP PAGE
 // ══════════════════════════════════
 let cleanupSelected=new Set();
+let cleanupTypeFilter='all';
+let cleanupMajorFilter='all';
+let cleanupPeriodFilter='all';
+let cleanupYearFilter='all';
 
 function renderCourseCleanupPage(mc){
   // 按「年份 + 期数」分组，年份取自 first_session_date
+  let majorList=cleanupMajorFilter==='all'
+    ?['keiei','keizai','shakai','shinpan','fukushi']
+    :cleanupMajorFilter==='shakai_group'
+      ?['shakai','shinpan','fukushi']
+      :[cleanupMajorFilter];
+  let filtered=cachedCourses.filter(c=>(c.major||[]).some(m=>majorList.includes(m)));
+
+  if(cleanupTypeFilter==='专业课') filtered=filtered.filter(c=>c.course_type&&!c.course_type.includes('共通')&&!c.course_type.includes('VIP'));
+  else if(cleanupTypeFilter==='共通课') filtered=filtered.filter(c=>c.course_type?.includes('共通'));
+  else if(cleanupTypeFilter==='VIP') filtered=filtered.filter(c=>c.course_type?.includes('VIP'));
+
+  if(cleanupPeriodFilter!=='all') filtered=filtered.filter(c=>c.period===cleanupPeriodFilter);
+  if(cleanupYearFilter!=='all') filtered=filtered.filter(c=>c.first_session_date?.startsWith(cleanupYearFilter));
+
+  const allYears=[...new Set(cachedCourses.filter(c=>c.first_session_date).map(c=>c.first_session_date.slice(0,4)))].sort((a,b)=>b.localeCompare(a));
+  const allCleanupPeriods=['1月期','4月期','7月期','10月期'];
+
   const groups={};
-  cachedCourses.forEach(c=>{
+  filtered.forEach(c=>{
     const year=c.first_session_date?c.first_session_date.slice(0,4):'未知年份';
     const period=c.period||'未设期数';
     const key=`${year}年 ${period}`;
@@ -1387,7 +1408,41 @@ function renderCourseCleanupPage(mc){
       <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="cleanupDeleteSelected()">删除已选 (<span id="cleanup_count">0</span>)</button>
     </div>
   </div>
-  <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">按年份与期数分组展示全部课程，标黄的为同分组内同名重复课程。点击行可选中（再点取消），选中后可批量删除。每门课标题旁有「保存为模板」，可将课程结构（专业/课时/地点/单回明细等）存为模板，日后开新一期时直接套用。</div>
+
+  <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap">
+    <div>
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">课程属性</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        ${['all','专业课','共通课','VIP'].map((t,i)=>`<div class="filter-chip${cleanupTypeFilter===t?' active':''}" onclick="setCleanupType('${t}',this)" style="font-size:11px;padding:3px 10px">${i===0?'全部':t}</div>`).join('')}
+      </div>
+    </div>
+    <div>
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">专业</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        ${['all','keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map((m,i)=>`
+          <div class="filter-chip${cleanupMajorFilter===m?' active':''}" onclick="setCleanupMajor('${m}',this)" style="font-size:11px;padding:3px 10px">
+            ${i===0?'全部':majorLabel(m)}
+          </div>`).join('')}
+      </div>
+    </div>
+    <div>
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">期数</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        <div class="filter-chip${cleanupPeriodFilter==='all'?' active':''}" onclick="setCleanupPeriod('all',this)" style="font-size:11px;padding:3px 10px">全部</div>
+        ${allCleanupPeriods.map(p=>`<div class="filter-chip${cleanupPeriodFilter===p?' active':''}" onclick="setCleanupPeriod('${p}',this)" style="font-size:11px;padding:3px 10px">${p}</div>`).join('')}
+      </div>
+    </div>
+    <div>
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">年份</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        <div class="filter-chip${cleanupYearFilter==='all'?' active':''}" onclick="setCleanupYear('all',this)" style="font-size:11px;padding:3px 10px">全部</div>
+        ${allYears.map(y=>`<div class="filter-chip${cleanupYearFilter===y?' active':''}" onclick="setCleanupYear('${y}',this)" style="font-size:11px;padding:3px 10px">${y}年</div>`).join('')}
+      </div>
+    </div>
+  </div>
+
+  <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">按年份与期数分组展示筛选后的课程，标黄的为同分组内同名重复课程。点击行可选中（再点取消），选中后可批量删除。每门课标题旁有「保存为模板」，可将课程结构（专业/课时/地点/单回明细等）存为模板，日后开新一期时直接套用。</div>
+  ${!filtered.length?`<div class="empty" style="padding:40px 0">没有符合筛选条件的课程</div>`:`
   <div id="cleanup_list">
     ${sortedKeys.map(key=>{
       const g=groups[key];
@@ -1416,7 +1471,7 @@ function renderCourseCleanupPage(mc){
         }).join('')}
       </div>`;
     }).join('')}
-  </div>
+  </div>`}
   <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--border)">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
       <div class="section-title" style="font-size:14px">课程模板</div>
@@ -1426,6 +1481,11 @@ function renderCourseCleanupPage(mc){
 
   renderTemplateList();
 }
+
+function setCleanupType(t,el){cleanupTypeFilter=t;document.querySelectorAll('#mainContent .filter-chip').forEach(c=>c.classList.remove('active'));renderCourseCleanupPage(document.getElementById('mainContent'))}
+function setCleanupMajor(m,el){cleanupMajorFilter=m;renderCourseCleanupPage(document.getElementById('mainContent'))}
+function setCleanupPeriod(p,el){cleanupPeriodFilter=p;renderCourseCleanupPage(document.getElementById('mainContent'))}
+function setCleanupYear(y,el){cleanupYearFilter=y;renderCourseCleanupPage(document.getElementById('mainContent'))}
 
 function cleanupRowClick(e,id){
   const row=e.currentTarget;
