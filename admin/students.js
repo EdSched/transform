@@ -67,8 +67,9 @@ function openStudentModal(id){
   const s=id?cachedStudents.find(x=>x.id===id):null;
   document.getElementById('studentModalTitle').textContent=s?'编辑学生':'添加学生';
   document.getElementById('studentId').value=s?.id||'';
+  populateMajorSelect('st_major', s?.major||'');
   const fields={
-    st_name:'name',st_major:'major',st_type:'student_type',st_source:'source',
+    st_name:'name',st_type:'student_type',st_source:'source',
     st_course:'course_type',st_level:'level',st_japanese:'japanese_score',
     st_english:'english_score',st_university:'university',st_faculty:'faculty',
     st_gpa:'gpa',st_thesis:'thesis',st_graduation:'graduation_date',
@@ -77,6 +78,30 @@ function openStudentModal(id){
   };
   Object.entries(fields).forEach(([el,key])=>{const e=document.getElementById(el);if(e)e.value=s?.[key]||'';});
   document.getElementById('studentModal').classList.add('open');
+}
+
+// 用当前 MAJORS（核心专业 + 数据库已加载的专业）动态生成下拉选项，并选中指定值
+function populateMajorSelect(selectId, selectedValue){
+  const sel=document.getElementById(selectId);
+  if(!sel) return;
+  // 排除 shakai_group（这是筛选用的分组标记，不是真实可选专业）
+  const entries=Object.entries(MAJORS).filter(([k])=>k!=='shakai_group');
+  sel.innerHTML=entries.map(([k,v])=>`<option value="${k}" ${k===selectedValue?'selected':''}>${v}</option>`).join('');
+  // 若学生当前专业不在 MAJORS 里（理论上不该发生，但做个保险），追加一个临时选项避免下拉显示为空
+  if(selectedValue && !MAJORS[selectedValue]){
+    sel.insertAdjacentHTML('beforeend', `<option value="${selectedValue}" selected>${selectedValue}</option>`);
+  }
+}
+
+// 新增专业：输入中文名 → 调用 createMajor（写入数据库 majors 表）→ 刷新下拉并选中新专业
+async function addNewMajor(){
+  const label=prompt('请输入新专业名称（中文）：');
+  if(!label||!label.trim()) return;
+  const key=await createMajor(label.trim());
+  if(key){
+    populateMajorSelect('st_major', key);
+    alert(`已新增专业「${label.trim()}」`);
+  }
 }
 
 async function saveStudent(){
