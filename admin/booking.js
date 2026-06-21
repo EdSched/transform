@@ -1,9 +1,12 @@
 // ══════════════════════════════════
 // BOOKING PAGE
 // ══════════════════════════════════
+let bkSection='regular'; // 'regular' | 'vip'
+
 function renderBookingPage(mc){
+  if(bkSection==='vip'){ renderVipBookingPage(mc); return; }
   const ym=`${bkYear}-${String(bkMonth+1).padStart(2,'0')}`;
-  let filtered=cachedBookings.filter(b=>b.slot_date&&b.slot_date.startsWith(ym));
+  let filtered=cachedBookings.filter(b=>b.slot_date&&b.slot_date.startsWith(ym)&&b.type!=='vip');
   if(bkTab!=='all') filtered=filtered.filter(b=>b.status===bkTab);
   if(bkType!=='all') filtered=filtered.filter(b=>b.type===bkType);
   if(bkMajor!=='all') filtered=filtered.filter(b=>{
@@ -12,7 +15,7 @@ function renderBookingPage(mc){
     const realMajor=studentRecord?.major||b.major; // 找不到学生档案时退回用 bookings.major，避免数据完全消失
     return matchesMajorFilter(realMajor,bkMajor);
   });
-  const total=cachedBookings.filter(b=>b.slot_date&&b.slot_date.startsWith(ym)).length;
+  const total=cachedBookings.filter(b=>b.slot_date&&b.slot_date.startsWith(ym)&&b.type!=='vip').length;
 
   mc.innerHTML=`
   <div class="page-header">
@@ -22,6 +25,10 @@ function renderBookingPage(mc){
       <div class="month-display">${bkYear}·${String(bkMonth+1).padStart(2,'0')}</div>
       <button onclick="bkMonthShift(1)">›</button>
     </div>
+  </div>
+  <div class="btn-group" style="margin-bottom:10px">
+    <button class="${bkSection==='regular'?'active':''}" onclick="setBkSection('regular')">面谈预约</button>
+    <button class="${bkSection==='vip'?'active':''}" onclick="setBkSection('vip')">VIP预约</button>
   </div>
   <div class="export-bar">
     <div style="font-size:12px;color:var(--text-3)">当月 <strong style="color:var(--text)">${total}</strong> 条预约</div>
@@ -58,6 +65,78 @@ function renderBookingPage(mc){
     ${filtered.length?filtered.map(b=>renderBookingCard(b)).join(''):'<div class="empty">暂无预约记录</div>'}
   </div>`;
 }
+
+function setBkSection(s){ bkSection=s; renderBookingPage(document.getElementById('mainContent')); }
+
+// ── VIP 预约页面 ──
+function renderVipBookingPage(mc){
+  const ym=`${bkYear}-${String(bkMonth+1).padStart(2,'0')}`;
+  let filtered=cachedBookings.filter(b=>b.type==='vip'&&b.slot_date&&b.slot_date.startsWith(ym));
+  if(bkTab!=='all') filtered=filtered.filter(b=>b.status===bkTab);
+  const total=filtered.length;
+
+  mc.innerHTML=`
+  <div class="page-header">
+    <div class="section-title">预约管理</div>
+    <div class="month-nav">
+      <button onclick="bkMonthShift(-1)">‹</button>
+      <div class="month-display">${bkYear}·${String(bkMonth+1).padStart(2,'0')}</div>
+      <button onclick="bkMonthShift(1)">›</button>
+    </div>
+  </div>
+  <div class="btn-group" style="margin-bottom:10px">
+    <button class="${bkSection==='regular'?'active':''}" onclick="setBkSection('regular')">面谈预约</button>
+    <button class="${bkSection==='vip'?'active':''}" onclick="setBkSection('vip')">VIP预约</button>
+  </div>
+  <div class="export-bar">
+    <div style="font-size:12px;color:var(--text-3)">当月 <strong style="color:var(--text)">${total}</strong> 条VIP预约</div>
+  </div>
+  <div class="btn-group" style="margin-bottom:10px">
+    ${['all','pending','confirmed','cancelled'].map((t,i)=>`<button class="${bkTab===t?'active':''}" onclick="setBkTab('${t}',this)">${['全部','待确认','已确认','已取消'][i]}</button>`).join('')}
+  </div>
+  <div class="booking-grid" id="bookingGrid">
+    ${filtered.length?filtered.map(b=>renderVipBookingCard(b)).join(''):'<div class="empty">暂无VIP预约记录</div>'}
+  </div>`;
+}
+
+function renderVipBookingCard(b){
+  const slot=cachedSlots.find(s=>s.id===b.slot_id);
+  const teacherName=b.assigned_teacher||slot?.teacher_name||'';
+  const studentRecord=cachedStudents?.find(s=>s.name===b.name);
+  const totalH=studentRecord?.vip_hours_total||0;
+  const usedH=studentRecord?.vip_hours_used||0;
+  const remainH=totalH-usedH;
+  // 上课前显示该时间槽老师勾选的全部可选内容（参考）；老师填完上课记录后显示实际内容
+  const contentDisplay = b.vip_content ? b.vip_content : (slot?.vip_content?.join('・')||'未设置');
+  const statusLabel = b.status==='pending'?'待确认':b.status==='confirmed'?(b.student_confirmed?'学生已确认':'已确认'):'已取消';
+  const statusColor = b.status==='cancelled'?'var(--danger)':b.student_confirmed?'var(--ok)':b.status==='confirmed'?'#1a6a9a':'#856404';
+  const statusBg = b.status==='cancelled'?'#fdecea':b.student_confirmed?'var(--ok-bg)':b.status==='confirmed'?'#e8f4fd':'#fff3cd';
+  const code=studentRecord?.student_code;
+  return `<div class="booking-card status-${b.status}">
+    <div class="booking-header">
+      <div>
+        <div class="booking-name">${b.name} <span style="font-size:11px;color:var(--text-3);font-weight:400">VIP</span></div>
+        <div class="booking-meta">${b.slot_date} ${b.slot_time_range||''} · ${b.duration||''}min</div>
+        ${teacherName?`<div style="font-size:11px;color:var(--text-2);margin-top:2px">👤 ${teacherName} <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="openReassignTeacher('${b.id}','${b.slot_id}')">重新分配</button></div>`:`<div style="font-size:11px;color:var(--danger);margin-top:2px">⚠ 未关联老师 <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="openReassignTeacher('${b.id}','${b.slot_id}')">分配老师</button></div>`}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+        <span class="status-badge" style="background:${statusBg};color:${statusColor}">${statusLabel}</span>
+      </div>
+    </div>
+    <div class="booking-body">
+      <div><div class="bf-label">查询码</div><div class="bf-value" style="${code?'font-weight:600;letter-spacing:1px;color:var(--accent)':'color:var(--text-3);font-size:11px'}">${code||'学生档案尚未生成'}</div></div>
+      <div><div class="bf-label">本次VIP内容</div><div class="bf-value">${contentDisplay}</div></div>
+      <div><div class="bf-label">课时余额</div><div class="bf-value">剩余 <strong style="color:var(--accent)">${remainH}</strong> / 总 ${totalH}（已用${usedH}）</div></div>
+      ${b.vip_session_notes?`<div style="grid-column:1/-1"><div class="bf-label">上课记录</div><div class="bf-value" style="white-space:pre-wrap">${b.vip_session_notes}</div></div>`:''}
+      ${b.student_rating?`<div><div class="bf-label">学生评价</div><div class="bf-value">${b.student_rating}</div></div>`:''}
+    </div>
+    <div style="display:flex;gap:6px;padding:0 14px 12px">
+      ${b.status==='pending'?`<button class="btn btn-primary btn-sm" onclick="confirmBooking('${b.id}')">确认</button>`:''}
+      ${b.status!=='cancelled'?`<button class="btn btn-outline btn-sm" onclick="cancelBooking('${b.id}')">取消</button>`:''}
+    </div>
+  </div>`;
+}
+
 function renderBookingCard(b){
   const hasRecord=b.daily_record&&Object.values(b.daily_record).some(v=>v);
   const slot=cachedSlots.find(s=>s.id===b.slot_id);
