@@ -176,6 +176,12 @@ function renderVipMain() {
             }).join('');
           }).join('')}
         </div>
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border-light)">
+          <div class="sub-label" style="margin-bottom:6px">提交内容（可选，老师课前可参考）</div>
+          <textarea id="vipStudentContent" rows="4" placeholder="计划书草稿、需要讨论的问题等文字内容…" style="margin-bottom:8px"></textarea>
+          <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">或上传文件（Word / PDF / 图片，最大50MB）</div>
+          <input type="file" id="vipStudentFileUpload" accept=".doc,.docx,.pdf,image/*">
+        </div>
         <button class="btn btn-primary btn-full" style="margin-top:14px" onclick="submitVipBooking()">提交预约申请 →</button>
       ` : '<div class="no-slots">暂无可预约的时间，请稍后再来查看</div>')
     }
@@ -277,11 +283,28 @@ async function submitVipBooking() {
     finalLocation = choice === 'online' ? 'online' : `offline_${campus}`;
   }
 
+  // 若学生选择了上传文件，先上传（文件名用专业+时间戳拼接，避免中文文件名导致的存储路径问题）
+  let studentFileUrl = null;
+  const fileInput = document.getElementById('vipStudentFileUpload');
+  const file = fileInput?.files[0];
+  if (file) {
+    try {
+      const ext = file.name.split('.').pop().toLowerCase();
+      const path = `${vipStudent.major || 'general'}/${Date.now()}.${ext}`;
+      studentFileUrl = await sbUpload('student-files', path, file);
+    } catch (e) {
+      alert('文件上传失败：' + e.message + '\n您可以改为粘贴文字内容，或稍后重试');
+      return;
+    }
+  }
+  const studentContent = document.getElementById('vipStudentContent')?.value.trim() || null;
+
   try {
     const booking = {
       id: Date.now().toString(), name: vipStudent.name, major: vipStudent.major,
       type: 'vip', slot_id: vipSelectedSlotId, slot_date: slot.date, slot_time_range: slot.time_range,
-      assigned_teacher: slot.teacher_name, location: finalLocation, duration: null, status: 'pending', needs: ''
+      assigned_teacher: slot.teacher_name, location: finalLocation, duration: null, status: 'pending', needs: '',
+      student_content: studentContent, student_file_url: studentFileUrl
     };
     await sb('/rest/v1/bookings', 'POST', booking);
     vipSelectedSlotId = null;
