@@ -147,9 +147,12 @@ function renderVipMain() {
           ${dateKeys.map(date => {
             const d = new Date(date + 'T12:00:00');
             const dow = DAYS_CN[d.getDay()];
-            return byDate[date].map(s => `
+            return byDate[date].map(s => {
+              const needsLocationChoice = s.location === 'both_takadanobaba' || s.location === 'both_ichigaya';
+              const campusLabel = s.location === 'both_takadanobaba' ? '高田马场' : s.location === 'both_ichigaya' ? '市谷' : '';
+              return `
               <div class="slot-option">
-                <input type="radio" name="vipSlotPick" id="vipslot-${s.id}" value="${s.id}" onchange="vipSelectedSlotId='${s.id}'">
+                <input type="radio" name="vipSlotPick" id="vipslot-${s.id}" value="${s.id}" onchange="vipSelectedSlotId='${s.id}';vipRenderLocationChoice('${s.id}')">
                 <label for="vipslot-${s.id}">
                   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                     <span class="slot-date-r">${d.getMonth() + 1}/${d.getDate()}</span>
@@ -158,9 +161,19 @@ function renderVipMain() {
                     <span style="font-size:10px;color:var(--text-muted);margin-left:auto">👤 ${s.teacher_name}</span>
                   </div>
                   ${s.vip_content && s.vip_content.length ? `<div style="font-size:10px;color:var(--text-secondary);margin-top:3px">可指导：${s.vip_content.join('・')}</div>` : ''}
-                  ${locationLong(s.location) ? `<div style="font-size:10px;color:${locationColor(s.location)};margin-top:2px">📍 ${locationLong(s.location)}</div>` : ''}
+                  ${needsLocationChoice
+                    ? `<div style="font-size:10px;color:var(--text-secondary);margin-top:2px">📍 线上 / 线下均可・${campusLabel}（需选择）</div>`
+                    : (locationLong(s.location) ? `<div style="font-size:10px;color:${locationColor(s.location)};margin-top:2px">📍 ${locationLong(s.location)}</div>` : '')}
                 </label>
-              </div>`).join('');
+              </div>
+              ${needsLocationChoice ? `
+              <div id="vip_location_choice_${s.id}" style="display:none;padding:8px 10px 4px;margin-top:-2px">
+                <div class="radio-group">
+                  <div class="radio-option"><input type="radio" name="vipLocationChoice" id="vloc_online_${s.id}" value="online" checked><label for="vloc_online_${s.id}">线上</label></div>
+                  <div class="radio-option"><input type="radio" name="vipLocationChoice" id="vloc_offline_${s.id}" value="offline"><label for="vloc_offline_${s.id}">线下・${campusLabel}</label></div>
+                </div>
+              </div>` : ''}`;
+            }).join('');
           }).join('')}
         </div>
         <button class="btn btn-primary btn-full" style="margin-top:14px" onclick="submitVipBooking()">提交预约申请 →</button>
@@ -176,6 +189,7 @@ function renderVipMain() {
 
 function renderVipActiveBooking(b) {
   const statusText = b.status === 'pending' ? '待老师确认' : '已确认，等待上课';
+  const messages = b.messages || [];
   return `<div class="card" style="border-color:var(--accent)">
     <div class="card-title">当前预约</div>
     <div style="font-size:12px;line-height:1.8">
@@ -183,8 +197,39 @@ function renderVipActiveBooking(b) {
       <div>👤 老师：${b.assigned_teacher || '老师确认中'}</div>
       <div>状态：<span style="color:var(--accent);font-weight:600">${statusText}</span></div>
     </div>
-    <div style="font-size:10px;color:var(--text-muted);margin-top:8px">如需调整请直接联系老师或管理员</div>
+    <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
+      <div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:6px">💬 与老师留言</div>
+      <div id="vip_messages_list" style="max-height:160px;overflow-y:auto;margin-bottom:8px">
+        ${messages.length ? messages.map(m => `
+          <div style="font-size:11px;margin-bottom:6px;${m.from==='student'?'text-align:right':''}">
+            <span style="display:inline-block;max-width:80%;background:${m.from==='student'?'var(--accent-light,#e8e0d0)':'var(--bg)'};border-radius:8px;padding:5px 10px;text-align:left">
+              <div style="font-size:9px;color:var(--text-muted);margin-bottom:2px">${m.from==='student'?'我':(b.assigned_teacher||'老师')}</div>
+              ${m.text}
+            </span>
+          </div>`).join('') : '<div style="font-size:11px;color:var(--text-muted)">暂无留言</div>'}
+      </div>
+      <div style="display:flex;gap:6px">
+        <input type="text" id="vip_message_input" placeholder="给老师留言…" style="flex:1;font-size:12px">
+        <button class="btn btn-outline btn-sm" onclick="sendVipMessage('${b.id}')">发送</button>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--text-muted);margin-top:8px">如需调整请联系老师或管理员</div>
   </div>`;
+}
+
+async function sendVipMessage(bookingId) {
+  const input = document.getElementById('vip_message_input');
+  const text = input.value.trim();
+  if (!text) return;
+  const b = vipBookings.find(x => x.id === bookingId);
+  if (!b) return;
+  const newMessages = [...(b.messages || []), { from: 'student', text, ts: Date.now() }];
+  try {
+    await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', { messages: newMessages });
+    b.messages = newMessages;
+    input.value = '';
+    renderVipMain();
+  } catch (e) { alert('发送失败：' + e.message); }
 }
 
 function renderVipHistory() {
@@ -209,17 +254,34 @@ function renderVipHistory() {
   }).join('');
 }
 
+function vipRenderLocationChoice(slotId) {
+  document.querySelectorAll('[id^="vip_location_choice_"]').forEach(el => { el.style.display = 'none'; });
+  const el = document.getElementById(`vip_location_choice_${slotId}`);
+  if (el) el.style.display = 'block';
+}
+
 async function submitVipBooking() {
   if (!vipSelectedSlotId) { alert('请选择预约时间'); return; }
   const slot = vipSlots.find(s => s.id === vipSelectedSlotId);
   if (!slot) { alert('时间槽不存在，请刷新后重试'); return; }
   const remainH = (vipStudent.vip_hours_total || 0) - (vipStudent.vip_hours_used || 0);
   if (remainH <= 0) { alert('您的VIP课时已用完，请联系管理员充值'); return; }
+
+  // 若该时间槽是「线上/线下均可」，必须读取学生的选择并转换成确定的地点值
+  let finalLocation = slot.location;
+  const needsChoice = slot.location === 'both_takadanobaba' || slot.location === 'both_ichigaya';
+  if (needsChoice) {
+    const choice = document.querySelector(`input[name="vipLocationChoice"]:checked`)?.value;
+    if (!choice) { alert('请选择线上还是线下上课'); return; }
+    const campus = slot.location === 'both_takadanobaba' ? 'takadanobaba' : 'ichigaya';
+    finalLocation = choice === 'online' ? 'online' : `offline_${campus}`;
+  }
+
   try {
     const booking = {
       id: Date.now().toString(), name: vipStudent.name, major: vipStudent.major,
       type: 'vip', slot_id: vipSelectedSlotId, slot_date: slot.date, slot_time_range: slot.time_range,
-      assigned_teacher: slot.teacher_name, duration: null, status: 'pending', needs: ''
+      assigned_teacher: slot.teacher_name, location: finalLocation, duration: null, status: 'pending', needs: ''
     };
     await sb('/rest/v1/bookings', 'POST', booking);
     vipSelectedSlotId = null;
