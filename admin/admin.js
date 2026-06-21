@@ -386,6 +386,7 @@ async function deleteTeacher(id){
 // ── Init ──
 async function initApp(){
   bkMonth=new Date().getMonth();bkYear=new Date().getFullYear();
+  await loadMajorsFromDB();
   await renderPage();
 }
 if(checkLogin()){initApp()}else{document.getElementById('loginOverlay').style.display='flex'}
