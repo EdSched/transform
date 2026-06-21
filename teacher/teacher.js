@@ -125,7 +125,14 @@ function renderTab() {
 function renderTodo(mc) {
   const pendingBookings = cachedTeacherBookings.filter(b => b.status === 'pending');
   const pendingSlots = slots.filter(s => !existingAvail.find(a => a.slot_id === s.id));
-  const upcomingSessions = confirmedSessions.filter(s => new Date(s.session_date + 'T23:59:59') >= new Date()).slice(0, 3);
+  const now = new Date();
+  const upcomingCourseSessions = confirmedSessions.filter(s => new Date(s.session_date + 'T23:59:59') >= now);
+  const upcomingVipBookings = cachedTeacherBookings
+    .filter(b => b.type === 'vip' && b.status === 'confirmed' && new Date(b.slot_date + 'T23:59:59') >= now)
+    .map(b => ({ _isVip: true, session_date: b.slot_date, time_range: b.slot_time_range, course_name: `${b.name} 的VIP课程` }));
+  const upcomingSessions = [...upcomingCourseSessions, ...upcomingVipBookings]
+    .sort((a, b) => a.session_date.localeCompare(b.session_date))
+    .slice(0, 3);
   // VIP 已上完课、老师已填记录、但学生还没确认的——需要提醒老师去联系学生
   const unconfirmedVip = cachedTeacherBookings.filter(b => b.type === 'vip' && b.status === 'confirmed' && b.vip_session_notes && !b.student_confirmed);
   const hasTodo = pendingBookings.length > 0 || pendingSlots.length > 0 || unconfirmedVip.length > 0;
@@ -165,6 +172,9 @@ function renderTodo(mc) {
       <div class="todo-head" style="color:var(--text-2)">📅 近期课程</div>
       ${upcomingSessions.map(s => {
         const f = fmtSessionDate(s.session_date);
+        if (s._isVip) {
+          return `<div class="todo-item"><span style="font-weight:600;color:#5a3a9a">${f.short} ${f.dow}</span><span>${s.course_name}</span><span style="font-size:9px;background:#5a3a9a;color:#fff;border-radius:2px;padding:1px 6px">VIP</span><span style="font-size:10px;color:var(--text-3);margin-left:auto">${s.time_range || ''}</span></div>`;
+        }
         return `<div class="todo-item"><span style="font-weight:600;color:${f.dowColor}">${f.short} ${f.dow}</span><span>${s.course_name}</span>${s.session_title ? `<span style="font-size:10px;color:var(--text-3)">${s.session_title}</span>` : ''}<span style="font-size:10px;color:var(--text-3);margin-left:auto">${s.time_range || ''}</span></div>`;
       }).join('')}
       <button onclick="switchTab('mycourses')" style="font-size:11px;color:var(--text-3);background:none;border:none;cursor:pointer;margin-top:6px;font-family:inherit">查看完整课表 →</button>
@@ -226,7 +236,11 @@ function renderBookingCardCollapsed(b) {
       <span style="font-size:10px;background:${b.status === 'pending' ? 'var(--warn-bg)' : 'var(--ok-bg)'};color:${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'};padding:2px 7px;border-radius:2px;white-space:nowrap">${b.status === 'pending' ? '待确认' : '已确认'}</span>
     </div>
     <div id="${rowId}" style="display:none;padding:0 14px 14px">
-      ${renderBookingCard(b)}
+      <div style="font-size:11px;margin-bottom:8px">
+        <span style="cursor:pointer;color:var(--accent);text-decoration:underline" onclick="showStudentInfoTeacher('${b.name}')">${b.name}</span>
+        <span style="color:var(--text-3);margin-left:6px">${MAJORS[b.major] || b.major}</span>
+      </div>
+      ${renderBookingCardBody(b)}
     </div>
   </div>`;
 }
@@ -237,9 +251,9 @@ function toggleBookingCard(id) {
   el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
+// 独立展示用（如需要单独渲染一张完整卡片，带外壳+头部）
 function renderBookingCard(b) {
   const f = fmtSessionDate(b.slot_date);
-  const hasRecord = b.daily_record && Object.values(b.daily_record).some(v => v && (typeof v === 'string' ? v : Object.values(v).some(x=>x)));
   return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px;margin-bottom:8px;border-left:3px solid ${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'}">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px">
       <div>
@@ -248,8 +262,19 @@ function renderBookingCard(b) {
       </div>
       <span style="font-size:10px;background:${b.status === 'pending' ? 'var(--warn-bg)' : 'var(--ok-bg)'};color:${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'};padding:2px 7px;border-radius:2px;white-space:nowrap">${b.status === 'pending' ? '待确认' : '已确认'}</span>
     </div>
+    ${renderBookingCardBody(b)}
+  </div>`;
+}
+
+// 卡片主体内容（不含外壳/姓名头部），供独立卡片和收起展开两种场景共用
+function renderBookingCardBody(b) {
+  const f = fmtSessionDate(b.slot_date);
+  const hasRecord = b.daily_record && Object.values(b.daily_record).some(v => v && (typeof v === 'string' ? v : Object.values(v).some(x=>x)));
+  return `
     <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">${f.short} ${f.dow} · ${b.slot_time_range || ''} · ${b.duration}min · <span class="tag ${typeTag(b.type)}">${typeLabel(b.type)}</span></div>
     ${b.needs ? `<div style="font-size:11px;color:var(--text-2);background:var(--bg);border-radius:2px;padding:6px 8px;margin-bottom:8px">💬 ${b.needs}</div>` : ''}
+    ${b.student_content ? `<div style="font-size:11px;color:var(--text-2);background:var(--bg);border-radius:2px;padding:6px 8px;margin-bottom:8px;white-space:pre-wrap">📄 ${b.student_content}</div>` : ''}
+    ${b.student_file_url ? `<a href="${b.student_file_url}" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-bottom:8px">📎 学生上传文件下载</a>` : ''}
     ${b.actual_time ? `<div style="font-size:11px;color:var(--ok);margin-bottom:6px">✓ 面谈时间：${b.actual_time.replace('T', ' ')}${b.actual_duration?` · ${b.actual_duration}min`:''}</div>` : ''}
     ${b.status === 'pending' ? `
     <div style="display:flex;gap:6px">
@@ -298,7 +323,7 @@ function renderBookingCard(b) {
         </div>
       </div>
     </div>`}
-  </div>`;
+  `;
 }
 async function saveDisplayName() {
   const val = document.getElementById('displayNameInput')?.value.trim() || '';
@@ -1461,6 +1486,8 @@ function renderMyVipRow(b, s) {
         </div>
         <div style="font-size:11px;color:var(--text-3)">${b.slot_time_range || ''} · ${(cachedTeacherSlots.find(x => x.id === b.slot_id)?.vip_content || []).join('・') || ''}</div>
         ${b.location ? `<div style="font-size:11px;color:${locationColor(b.location)};margin-top:2px">📍 ${locationLong(b.location) || '线上'}</div>` : ''}
+        ${b.student_content ? `<div style="font-size:11px;color:var(--text-2);background:var(--bg);border-radius:2px;padding:6px 8px;margin-top:6px;white-space:pre-wrap">📄 ${b.student_content}</div>` : ''}
+        ${b.student_file_url ? `<a href="${b.student_file_url}" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-top:4px">📎 学生上传文件下载</a>` : ''}
         ${hasRecord ? `<div style="font-size:11px;color:var(--text-2);margin-top:3px">📝 ${b.vip_session_notes}</div>` : ''}
         ${b.student_confirmed ? `<div style="font-size:11px;color:var(--ok);margin-top:3px">✓ 学生已确认${b.student_rating ? '・评价：' + b.student_rating : ''}</div>` : (hasRecord ? `<div style="font-size:11px;color:#856404;margin-top:3px">⏳ 等待学生确认</div>` : '')}
         ${b.reschedule_reason ? `<div style="font-size:10px;color:var(--text-3);margin-top:3px">🔄 已调整时间・原因：${b.reschedule_reason}</div>` : ''}
