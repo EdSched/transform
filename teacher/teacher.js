@@ -126,7 +126,9 @@ function renderTodo(mc) {
   const pendingBookings = cachedTeacherBookings.filter(b => b.status === 'pending');
   const pendingSlots = slots.filter(s => !existingAvail.find(a => a.slot_id === s.id));
   const upcomingSessions = confirmedSessions.filter(s => new Date(s.session_date + 'T23:59:59') >= new Date()).slice(0, 3);
-  const hasTodo = pendingBookings.length > 0 || pendingSlots.length > 0;
+  // VIP 已上完课、老师已填记录、但学生还没确认的——需要提醒老师去联系学生
+  const unconfirmedVip = cachedTeacherBookings.filter(b => b.type === 'vip' && b.status === 'confirmed' && b.vip_session_notes && !b.student_confirmed);
+  const hasTodo = pendingBookings.length > 0 || pendingSlots.length > 0 || unconfirmedVip.length > 0;
   mc.innerHTML = `
   <div style="display:flex;flex-direction:column;gap:12px">
     ${hasTodo ? '' : '<div style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:4px;padding:12px 16px;font-size:12px;color:#1a5a3a">✓ 暂无待处理事项</div>'}
@@ -138,6 +140,12 @@ function renderTodo(mc) {
     <button onclick="saveDisplayName()" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 14px;font-size:11px;cursor:pointer;font-family:inherit">保存</button>
   </div>
 </div>
+    ${unconfirmedVip.length ? `<div class="todo-card warn">
+      <div class="todo-head">⏳ 有 ${unconfirmedVip.length} 位VIP学生还未确认上课，请联系学生</div>
+      ${unconfirmedVip.slice(0, 5).map(b => {
+        return `<div class="todo-item"><span style="font-weight:600">${b.name}</span><span style="color:var(--text-3)">${b.slot_date} ${b.slot_time_range || ''}</span><button onclick="openVipConfirmText('${b.id}')" style="font-size:10px;background:#5a3a9a;color:#fff;border:none;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;margin-left:auto">去完成</button></div>`;
+      }).join('')}
+    </div>` : ''}
     ${pendingBookings.length ? `<div class="todo-card urgent">
       <div class="todo-head">⚠ 有 ${pendingBookings.length} 个学生预约待确认</div>
       ${pendingBookings.slice(0, 3).map(b => {
@@ -1085,30 +1093,44 @@ let myScheduleView = 'list';
 let myScheduleCalMonth = null;
 
 function renderMySchedule(mc) {
-  if (!confirmedSessions.length) { mc.innerHTML = '<div class="empty">暂无已确定的课程<br><span style="font-size:11px">排课确认后这里会显示您的完整课表</span></div>'; return; }
+  // VIP 已确认预约也要并入课表（这是老师要上的课，必须和大课一样被看到）
+  const vipSessions = (cachedTeacherBookings || [])
+    .filter(b => b.type === 'vip' && b.status === 'confirmed')
+    .map(b => ({
+      _isVip: true,
+      id: b.id,
+      session_date: b.slot_date,
+      time_range: b.slot_time_range,
+      course_name: `${b.name} 的VIP课程`,
+      session_title: b.vip_session_notes ? '' : ((cachedTeacherSlots.find(s => s.id === b.slot_id)?.vip_content || []).join('・') || '内容待定'),
+      vip_booking: b,
+    }));
+  const allSessions = [...confirmedSessions, ...vipSessions];
+
+  if (!allSessions.length) { mc.innerHTML = '<div class="empty">暂无已确定的课程<br><span style="font-size:11px">排课确认后这里会显示您的完整课表</span></div>'; return; }
   if (!myScheduleCalMonth) {
     const today = new Date().toISOString().slice(0,7);
-    const future = confirmedSessions.filter(s => s.session_date >= today);
-    myScheduleCalMonth = (future.length ? future[0].session_date : confirmedSessions[0].session_date).slice(0,7);
+    const future = allSessions.filter(s => s.session_date >= today);
+    myScheduleCalMonth = (future.length ? future.sort((a,b)=>a.session_date.localeCompare(b.session_date))[0].session_date : allSessions[0].session_date).slice(0,7);
   }
   const monthNames = { '01': '一月', '02': '二月', '03': '三月', '04': '四月', '05': '五月', '06': '六月', '07': '七月', '08': '八月', '09': '九月', '10': '十月', '11': '十一月', '12': '十二月' };
 
   // 列表视图：只显示今天及以后的课次，已上完的收进历史
   const todayStr = new Date().toISOString().slice(0, 10);
-  const upcomingSessions = confirmedSessions.filter(s => s.session_date >= todayStr);
-  const pastSessions = confirmedSessions.filter(s => s.session_date < todayStr);
+  const upcomingSessions = allSessions.filter(s => s.session_date >= todayStr).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+  const pastSessions = allSessions.filter(s => s.session_date < todayStr).sort((a,b)=>a.session_date.localeCompare(b.session_date));
 
   const byMonthUpcoming = {};
   upcomingSessions.forEach(s => { const m = s.session_date.slice(0, 7); if (!byMonthUpcoming[m]) byMonthUpcoming[m] = []; byMonthUpcoming[m].push(s); });
 
   const byMonthAll = {};
-  confirmedSessions.forEach(s => { const m = s.session_date.slice(0, 7); if (!byMonthAll[m]) byMonthAll[m] = []; byMonthAll[m].push(s); });
+  allSessions.forEach(s => { const m = s.session_date.slice(0, 7); if (!byMonthAll[m]) byMonthAll[m] = []; byMonthAll[m].push(s); });
 
   const listHtml = Object.entries(byMonthUpcoming).map(([ym, sessions]) => `
     <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);padding:10px 0 6px;border-bottom:1px solid var(--border-light);margin-bottom:8px">
       ${ym.slice(0, 4)}年 ${monthNames[ym.slice(5, 7)] || ym.slice(5, 7) + '月'} · ${sessions.length}课次
     </div>
-    ${sessions.map(s => renderMySessionRow(s)).join('')}`).join('')
+    ${sessions.map(s => s._isVip ? renderMyVipRow(s.vip_booking, s) : renderMySessionRow(s)).join('')}`).join('')
     || '<div style="font-size:12px;color:var(--text-3);padding:12px 0">近期暂无排课</div>';
 
   const historyHtml = pastSessions.length ? `
@@ -1117,7 +1139,7 @@ function renderMySchedule(mc) {
         <span id="sched_history_arrow">▸</span> 已上完的课次（${pastSessions.length} 节）
       </div>
       <div id="sched_history_body" style="display:none;margin-top:8px">
-        ${[...pastSessions].reverse().map(s => renderMySessionRow(s)).join('')}
+        ${[...pastSessions].reverse().map(s => s._isVip ? renderMyVipRow(s.vip_booking, s) : renderMySessionRow(s)).join('')}
       </div>
     </div>` : '';
 
@@ -1127,7 +1149,7 @@ function renderMySchedule(mc) {
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
       <div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">我的课表</div>
       <div style="display:flex;align-items:center;gap:8px">
-        <div style="font-size:11px;color:var(--text-3)">共 ${confirmedSessions.length} 课次</div>
+        <div style="font-size:11px;color:var(--text-3)">共 ${allSessions.length} 课次</div>
         <div style="display:flex;border:1px solid var(--border);border-radius:3px;overflow:hidden">
           <button onclick="setMyScheduleView('list')" style="padding:4px 10px;font-size:11px;border:none;cursor:pointer;font-family:inherit;background:${myScheduleView==='list'?'var(--accent)':'var(--surface)'};color:${myScheduleView==='list'?'#fff':'var(--text-2)'}">列表</button>
           <button onclick="setMyScheduleView('calendar')" style="padding:4px 10px;font-size:11px;border:none;border-left:1px solid var(--border);cursor:pointer;font-family:inherit;background:${myScheduleView==='calendar'?'var(--accent)':'var(--surface)'};color:${myScheduleView==='calendar'?'#fff':'var(--text-2)'}">日历</button>
@@ -1159,6 +1181,136 @@ function shiftMyCalMonth(delta) {
   const d = new Date(y, m - 1 + delta, 1);
   myScheduleCalMonth = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   renderMySchedule(document.getElementById('mainContent'));
+}
+
+// ── VIP 上课记录填写 ──
+const VIP_CONTENT_OPTIONS = ['专业课指导', '过去问对策', '研究计划书', '出愿指导', '面试对策', 'TA指导'];
+
+function openVipSessionRecord(bookingId) {
+  const b = cachedTeacherBookings.find(x => x.id === bookingId);
+  if (!b) return;
+  const slot = cachedTeacherSlots.find(x => x.id === b.slot_id);
+  const availableContent = slot?.vip_content || VIP_CONTENT_OPTIONS;
+  const existing = document.getElementById('vipRecordModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'vipRecordModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:420px;width:100%;max-height:88vh;overflow-y:auto">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">${b.name} 的VIP上课记录</div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">${b.slot_date} ${b.slot_time_range || ''}</div>
+      <div class="form-group"><label class="form-label">本次实际授课内容（可多选）</label>
+        <div style="display:flex;flex-wrap:wrap;gap:6px" id="vip_content_select">
+          ${availableContent.map(c => `<label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;border:1px solid var(--border);border-radius:3px;padding:4px 10px">
+            <input type="checkbox" value="${c}" ${b.vip_content && b.vip_content.includes(c) ? 'checked' : ''} style="accent-color:var(--accent);width:14px;height:14px">${c}
+          </label>`).join('')}
+        </div>
+      </div>
+      <div class="form-group"><label class="form-label">上课内容 / 学生状态 / 作业安排</label>
+        <textarea id="vip_notes" rows="5" placeholder="本次课讲了什么、学生当前状态如何、布置了什么作业…">${b.vip_session_notes || ''}</textarea>
+      </div>
+      <div class="form-group"><label class="form-label">本次耗时（小时，保存后将自动从学生VIP总课时中扣除）</label>
+        <input type="number" id="vip_hours" step="0.5" min="0" value="${b.vip_hours_used || ''}" placeholder="例：1.5"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-primary btn-sm" onclick="saveVipSessionRecord('${bookingId}')">保存</button>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('vipRecordModal').remove()">取消</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function saveVipSessionRecord(bookingId) {
+  const b = cachedTeacherBookings.find(x => x.id === bookingId);
+  if (!b) return;
+  const content = [...document.querySelectorAll('#vip_content_select input:checked')].map(c => c.value);
+  const notes = document.getElementById('vip_notes').value.trim();
+  const newHours = parseFloat(document.getElementById('vip_hours').value) || 0;
+  if (!content.length) { alert('请至少勾选一项本次授课内容'); return; }
+  if (!notes) { alert('请填写上课内容/学生状态/作业安排'); return; }
+  if (newHours <= 0) { alert('请填写本次耗时'); return; }
+
+  const prevHours = b.vip_hours_used || 0; // 若是重新编辑，先扣除上次记录的耗时再加上新的，避免重复扣减
+  try {
+    // 找到学生档案，调整课时（先退回旧耗时，再扣新耗时）
+    const students = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(b.name)}&select=id,vip_hours_used`);
+    if (students.length) {
+      const stu = students[0];
+      const newUsed = Math.max(0, (stu.vip_hours_used || 0) - prevHours + newHours);
+      await sb(`/rest/v1/students?id=eq.${stu.id}`, 'PATCH', { vip_hours_used: newUsed });
+    }
+    await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', {
+      vip_content: content.join('・'),
+      vip_session_notes: notes,
+      vip_hours_used: newHours,
+      student_confirmed: false, // 每次重新填写记录都重置学生确认状态，避免老师改了内容但学生还以为是旧版本
+    });
+    Object.assign(b, { vip_content: content.join('・'), vip_session_notes: notes, vip_hours_used: newHours, student_confirmed: false });
+    document.getElementById('vipRecordModal').remove();
+    renderMySchedule(document.getElementById('mainContent'));
+    alert('上课记录已保存，课时已扣除。建议点击「生成确认链接文案」发给学生确认。');
+  } catch (e) { alert('保存失败：' + e.message); }
+}
+
+async function openVipConfirmText(bookingId) {
+  const b = cachedTeacherBookings.find(x => x.id === bookingId);
+  if (!b) return;
+  let code = '（未生成，请联系管理员在学生档案中生成查询码）';
+  try {
+    const students = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(b.name)}&select=student_code`);
+    if (students.length && students[0].student_code) code = students[0].student_code;
+  } catch (e) { /* 拉取失败不阻断，使用默认提示文字 */ }
+  const text = `【唯新教育】${b.name}同学，您本次VIP课程已完成，请前往以下页面确认并评价：\nhttps://edsched.github.io/transform/vip/\n姓名：${b.name}\n查询码：${code}`;
+  const existing = document.getElementById('vipConfirmTextModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'vipConfirmTextModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:380px;width:100%">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">发给学生的确认文案</div>
+      <textarea id="vip_confirm_text_area" rows="7" style="font-size:12px;width:100%">${text}</textarea>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-primary btn-sm" onclick="copyVipConfirmText()">复制文案</button>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('vipConfirmTextModal').remove()">关闭</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+function copyVipConfirmText() {
+  const ta = document.getElementById('vip_confirm_text_area');
+  if (!ta) return;
+  navigator.clipboard.writeText(ta.value).then(() => alert('已复制，可直接发给学生'));
+}
+
+function renderMyVipRow(b, s) {
+  const d = new Date(b.slot_date + 'T12:00:00');
+  const dow = DAYS_CN[d.getDay()];
+  const hasRecord = !!b.vip_session_notes;
+  const isPast = b.slot_date < new Date().toISOString().slice(0, 10);
+  return `<div style="background:#f0edf8;border:1px solid #c8bfe8;border-radius:4px;margin-bottom:8px;padding:12px 14px">
+    <div style="display:flex;align-items:flex-start;gap:14px">
+      <div style="text-align:center;min-width:44px">
+        <div style="font-size:17px;font-weight:700;font-family:'DM Mono',monospace;color:#5a3a9a">${d.getMonth() + 1}/${d.getDate()}</div>
+        <div style="font-size:10px;font-weight:600;color:#5a3a9a">${dow}</div>
+      </div>
+      <div style="flex:1">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap">
+          <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px">${b.name} 的VIP课程</span>
+          <span style="font-size:9px;background:#5a3a9a;color:#fff;border-radius:2px;padding:1px 6px">VIP</span>
+          ${hasRecord ? `<span style="font-size:9px;background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:1px 6px">已记录</span>` : (isPast ? `<span style="font-size:9px;background:#fff3cd;color:#856404;border-radius:2px;padding:1px 6px">待填写</span>` : '')}
+        </div>
+        <div style="font-size:11px;color:var(--text-3)">${b.slot_time_range || ''} · ${(cachedTeacherSlots.find(x => x.id === b.slot_id)?.vip_content || []).join('・') || ''}</div>
+        ${hasRecord ? `<div style="font-size:11px;color:var(--text-2);margin-top:3px">📝 ${b.vip_session_notes}</div>` : ''}
+        ${b.student_confirmed ? `<div style="font-size:11px;color:var(--ok);margin-top:3px">✓ 学生已确认${b.student_rating ? '・评价：' + b.student_rating : ''}</div>` : (hasRecord ? `<div style="font-size:11px;color:#856404;margin-top:3px">⏳ 等待学生确认</div>` : '')}
+      </div>
+    </div>
+    <div style="margin-top:8px;padding-top:8px;border-top:1px solid #ddd5f0;display:flex;gap:6px">
+      <button class="btn btn-outline btn-sm" onclick="openVipSessionRecord('${b.id}')">${hasRecord ? '编辑上课记录' : '填写上课记录'}</button>
+      ${hasRecord && !b.student_confirmed ? `<button class="btn btn-outline btn-sm" onclick="openVipConfirmText('${b.id}')">📋 生成确认链接文案</button>` : ''}
+    </div>
+  </div>`;
 }
 
 function renderMySessionRow(s) {
