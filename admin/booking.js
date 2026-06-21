@@ -99,6 +99,69 @@ function renderVipBookingPage(mc){
   </div>`;
 }
 
+// ── Admin 调整VIP预约时间 ──
+function openAdminVipReschedule(bookingId) {
+  const b = cachedBookings.find(x => x.id === bookingId);
+  if (!b) return;
+  const existing = document.getElementById('adminVipRescheduleModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'adminVipRescheduleModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:380px;width:100%">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">调整 ${b.name} 的VIP课程时间</div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">原时间：${b.slot_date} ${b.slot_time_range || ''}</div>
+      <div class="form-group"><label class="form-label">新日期</label><input type="date" id="avr_date" value="${b.slot_date}"></div>
+      <div class="form-group"><label class="form-label">新时间段</label>
+        <div style="display:grid;grid-template-columns:1fr 16px 1fr;gap:4px;align-items:center">
+          <input type="time" id="avr_start" value="${(b.slot_time_range||'').split(/[–\-]/)[0]?.trim()||''}">
+          <div style="text-align:center;font-size:11px;color:var(--text-3)">—</div>
+          <input type="time" id="avr_end" value="${(b.slot_time_range||'').split(/[–\-]/)[1]?.trim()||''}">
+        </div>
+      </div>
+      <div class="form-group"><label class="form-label">调整原因（必填）</label>
+        <select id="avr_reason_select" onchange="document.getElementById('avr_reason_other').style.display=this.value==='其他'?'block':'none'">
+          <option value="">请选择</option>
+          <option>学生迟到</option>
+          <option>学生请假</option>
+          <option>学生生病</option>
+          <option>老师临时有事</option>
+          <option>其他</option>
+        </select>
+        <input id="avr_reason_other" placeholder="请说明具体原因" style="display:none;margin-top:6px">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-primary btn-sm" onclick="saveAdminVipReschedule('${bookingId}')">保存</button>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('adminVipRescheduleModal').remove()">取消</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function saveAdminVipReschedule(bookingId) {
+  const b = cachedBookings.find(x => x.id === bookingId);
+  if (!b) return;
+  const date = document.getElementById('avr_date').value;
+  const start = document.getElementById('avr_start').value;
+  const end = document.getElementById('avr_end').value;
+  const reasonSel = document.getElementById('avr_reason_select').value;
+  const reasonOther = document.getElementById('avr_reason_other').value.trim();
+  const reason = reasonSel === '其他' ? reasonOther : reasonSel;
+  if (!date || !start || !end) { alert('请填写完整的新日期和时间'); return; }
+  if (!reason) { alert('请填写调整原因'); return; }
+  const timeRange = `${start}\u2013${end}`;
+  try {
+    await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', {
+      slot_date: date, slot_time_range: timeRange,
+      reschedule_reason: reason, reschedule_by: 'admin',
+    });
+    Object.assign(b, { slot_date: date, slot_time_range: timeRange, reschedule_reason: reason, reschedule_by: 'admin' });
+    document.getElementById('adminVipRescheduleModal').remove();
+    renderBookingPage(document.getElementById('mainContent'));
+  } catch (e) { alert('保存失败：' + e.message); }
+}
+
 function renderVipBookingCard(b){
   const slot=cachedSlots.find(s=>s.id===b.slot_id);
   const teacherName=b.assigned_teacher||slot?.teacher_name||'';
@@ -127,11 +190,14 @@ function renderVipBookingCard(b){
       <div><div class="bf-label">查询码</div><div class="bf-value" style="${code?'font-weight:600;letter-spacing:1px;color:var(--accent)':'color:var(--text-3);font-size:11px'}">${code||'学生档案尚未生成'}</div></div>
       <div><div class="bf-label">本次VIP内容</div><div class="bf-value">${contentDisplay}</div></div>
       <div><div class="bf-label">课时余额</div><div class="bf-value">剩余 <strong style="color:var(--accent)">${remainH}</strong> / 总 ${totalH}（已用${usedH}）</div></div>
+      ${b.location?`<div><div class="bf-label">上课地点</div><div class="bf-value">${locationLong(b.location)||'线上'}</div></div>`:''}
+      ${b.reschedule_reason?`<div style="grid-column:1/-1"><div class="bf-label">时间调整记录</div><div class="bf-value">由${b.reschedule_by||'未知'}调整・原因：${b.reschedule_reason}</div></div>`:''}
       ${b.vip_session_notes?`<div style="grid-column:1/-1"><div class="bf-label">上课记录</div><div class="bf-value" style="white-space:pre-wrap">${b.vip_session_notes}</div></div>`:''}
       ${b.student_rating?`<div><div class="bf-label">学生评价</div><div class="bf-value">${b.student_rating}</div></div>`:''}
     </div>
     <div style="display:flex;gap:6px;padding:0 14px 12px">
       ${b.status==='pending'?`<button class="btn btn-primary btn-sm" onclick="confirmBooking('${b.id}')">确认</button>`:''}
+      ${b.status!=='cancelled'&&!b.vip_session_notes?`<button class="btn btn-outline btn-sm" onclick="openAdminVipReschedule('${b.id}')">🔄 调整时间</button>`:''}
       ${b.status!=='cancelled'?`<button class="btn btn-outline btn-sm" onclick="cancelBooking('${b.id}')">取消</button>`:''}
     </div>
   </div>`;
