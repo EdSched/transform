@@ -94,18 +94,42 @@ function setStVip(v,el){stVipFilter=v;document.querySelectorAll('.filter-row:nth
 
 function setStMajor(m,el){stMajorFilter=m;document.querySelectorAll('.filter-row:nth-of-type(1) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderStudentsPage(document.getElementById('mainContent'))}
 function setStStatus(v,el){stStatus=v;document.querySelectorAll('.filter-row:nth-of-type(2) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderStudentsPage(document.getElementById('mainContent'))}
-// 渲染VIP指导老师勾选chip，选中状态从该学生已绑定的老师回显
+// 渲染VIP指导老师标签+输入框，selectedTeachers 是已选老师姓名数组（存在 module 级变量里方便增删）
+let vipTeacherTags = [];
 function populateVipTeachers(selectedTeachers){
+  vipTeacherTags = [...(selectedTeachers||[])];
+  renderVipTeacherTags();
+}
+function renderVipTeacherTags(){
   const wrap=document.getElementById('st_vip_teachers');
   if(!wrap) return;
-  if(!cachedTeachers || !cachedTeachers.length){
-    wrap.innerHTML='<span style="font-size:11px;color:var(--text-3)">暂无老师数据，请先到「管理老师」添加</span>';
-    return;
-  }
-  wrap.innerHTML=cachedTeachers.map(t=>`
-    <label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;border:1px solid var(--border);border-radius:3px;padding:3px 9px">
-      <input type="checkbox" class="st_vip_teacher_cb" value="${t.name}" ${selectedTeachers.includes(t.name)?'checked':''} style="accent-color:var(--accent);width:14px;height:14px">${t.name}
-    </label>`).join('');
+  const datalistOptions=(cachedTeachers||[]).map(t=>`<option value="${t.name}">`).join('');
+  wrap.innerHTML=`
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+      ${vipTeacherTags.map(name=>`
+        <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;background:var(--accent-light,#eee);border:1px solid var(--accent);border-radius:3px;padding:3px 8px">
+          ${name}
+          <span onclick="removeVipTeacherTag('${name.replace(/'/g,"\\'")}')" style="cursor:pointer;color:var(--text-3);font-weight:600">✕</span>
+        </span>`).join('') || '<span style="font-size:11px;color:var(--text-3)">尚未分配老师</span>'}
+    </div>
+    <div style="display:flex;gap:6px">
+      <input list="vip_teacher_suggestions" id="st_vip_teacher_input" placeholder="输入老师姓名，回车添加" style="flex:1;font-size:11px" onkeydown="if(event.key==='Enter'){event.preventDefault();addVipTeacherTag()}">
+      <datalist id="vip_teacher_suggestions">${datalistOptions}</datalist>
+      <button type="button" class="btn btn-outline btn-sm" onclick="addVipTeacherTag()">添加</button>
+    </div>`;
+}
+function addVipTeacherTag(){
+  const input=document.getElementById('st_vip_teacher_input');
+  const name=input.value.trim();
+  if(!name) return;
+  if(!vipTeacherTags.includes(name)) vipTeacherTags.push(name);
+  input.value='';
+  renderVipTeacherTags();
+  document.getElementById('st_vip_teacher_input')?.focus();
+}
+function removeVipTeacherTag(name){
+  vipTeacherTags=vipTeacherTags.filter(n=>n!==name);
+  renderVipTeacherTags();
 }
 
 function openStudentModal(id){
@@ -184,7 +208,7 @@ async function saveStudent(){
     is_vip_course:document.getElementById('st_vip_course').value,
     vip_hours_total:parseFloat(document.getElementById('st_vip_total').value)||0,
     vip_hours_used:parseFloat(document.getElementById('st_vip_used').value)||0,
-    vip_teachers:[...document.querySelectorAll('.st_vip_teacher_cb:checked')].map(c=>c.value)
+    vip_teachers:[...vipTeacherTags]
   };
   try{
     if(id){
