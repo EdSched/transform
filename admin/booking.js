@@ -94,13 +94,16 @@ function renderBookingCard(b){
     ${b.file_url?`<div class="note-field"><div class="note-label">提交文件</div><a href="${b.file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 查看文件</a></div>`:''}
     ${b.student_content?`<div class="note-field"><div class="note-label">计划书 / 面试稿件</div><div class="note-content" style="max-height:80px;overflow-y:auto;white-space:pre-wrap">${b.student_content}</div></div>`:''}
     ${b.status==='confirmed'?`<div class="note-field">
-      <div class="note-label" style="margin-bottom:6px">面谈查询码</div>
+      <div class="note-label" style="margin-bottom:6px">学生查询码</div>
       ${b.teacher_file_url?`<a href="${b.teacher_file_url}" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-bottom:6px">📎 查看老师修改文件</a>`:''}
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-outline btn-sm" onclick="adminGenerateCode('${b.id}')">🔑 ${b.retrieval_code?'重新生成':'生成查询码'}</button>
-        <span id="admin_code_${b.id}" style="font-size:13px;font-weight:600;letter-spacing:2px;color:${b.retrieval_code?'var(--accent)':'var(--text-3)'}">${b.retrieval_code||'未生成'}</span>
-      </div>
-      <div style="font-size:10px;color:var(--text-muted);margin-top:4px">生成后告知学生，凭姓名＋查询码可查看面谈记录及作业反馈</div>
+      ${(()=>{
+        const studentRecord=cachedStudents?.find(s=>s.name===b.name);
+        const code=studentRecord?.student_code;
+        return code
+          ? `<span style="font-size:13px;font-weight:600;letter-spacing:2px;color:var(--accent)">${code}</span>`
+          : `<span style="font-size:11px;color:var(--text-3)">该学生档案尚未生成查询码，请前往「学生档案」生成</span>`;
+      })()}
+      <div style="font-size:10px;color:var(--text-muted);margin-top:4px">凭学生姓名＋此查询码可查看面谈记录及作业反馈</div>
     </div>`:''}
     ${b.note?`<div class="note-field"><div class="note-label">备注</div><div class="note-content">${b.note}</div></div>`:''}
     ${(b.english_score||b.japanese_score)?`<div class="note-field"><div class="note-label">语言能力</div>
@@ -177,17 +180,6 @@ async function confirmReassignTeacher(bookingId, slotId) {
     document.getElementById('reassignModal').remove();
     renderBookingPage(document.getElementById('mainContent'));
   } catch(e) { alert('操作失败：' + e.message); }
-}
-
-async function adminGenerateCode(id){
-  const code=[...'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'].sort(()=>Math.random()-.5).slice(0,6).join('');
-  try{
-    await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',{retrieval_code:code});
-    const b=cachedBookings.find(x=>x.id===id);
-    if(b) b.retrieval_code=code;
-    const span=document.getElementById(`admin_code_${id}`);
-    if(span){span.textContent=code;span.style.color='var(--accent)';}
-  }catch(e){alert('生成失败：'+e.message)}
 }
 
 async function syncLangScore(id){
