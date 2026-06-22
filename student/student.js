@@ -589,10 +589,10 @@ async function submitBooking() {
   if (!planStatus) { alert('请选择研究计划书状态'); return; }
   if (!selectedSlotId) { alert('请选择预约时间'); return; }
 
-  // 检查是否有未完成的预约
+  // 检查是否有未完成的预约（已完成 completed 的不拦截）
   const majorList = major === 'shakai_group' ? ['shakai','shinpan','fukushi','shakai_group'] : [major];
-const activeBooking = cachedBookings.find(b =>
-  b.name === name && majorList.includes(b.major) &&
+  const activeBooking = cachedBookings.find(b =>
+    b.name === name && majorList.includes(b.major) &&
     (b.status === 'pending' || b.status === 'confirmed')
   );
   if (activeBooking) {
@@ -696,7 +696,7 @@ function renderPublicList() {
         </div>
         <div style="display:flex;align-items:center;gap:5px">
           <span class="tag ${typeTag(b.type)}">${typeLabel(b.type)}</span>
-          <span class="status-badge status-${b.status}">${b.status === 'pending' ? '待确认' : b.status === 'confirmed' ? '已确认' : '已取消'}</span>
+          <span class="status-badge status-${b.status}">${b.status === 'pending' ? '待确认' : b.status === 'completed' ? '已完成' : b.status === 'confirmed' ? '已确认' : '已取消'}</span>
         </div>
       </div>
       ${b.needs ? `<div class="booking-row-needs">💬 ${b.needs}</div>` : ''}
