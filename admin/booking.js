@@ -56,7 +56,7 @@ function renderBookingPage(mc){
     ${['all','keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map((m,i)=>`<div class="filter-chip${bkMajor===m?' active':''}" onclick="setBkMajor('${m}',this)">${i===0?'全部专业':majorLabel(m)}</div>`).join('')}
   </div>
   <div class="btn-group" style="margin-bottom:10px">
-    ${['all','pending','confirmed','cancelled'].map((t,i)=>`<button class="${bkTab===t?'active':''}" onclick="setBkTab('${t}',this)">${['全部','待确认','已确认','已取消'][i]}</button>`).join('')}
+    ${['all','pending','confirmed','completed','cancelled'].map((t,i)=>`<button class="${bkTab===t?'active':''}" onclick="setBkTab('${t}',this)">${['全部','待确认','已确认','已完成','已取消'][i]}</button>`).join('')}
   </div>
   <div class="filter-row">
     ${['all','daily','plan','mock'].map((t,i)=>`<div class="filter-chip${bkType===t?' active':''}" onclick="setBkType('${t}',this)">${['所有类型','日常学习','计划书','模拟面试'][i]}</div>`).join('')}
@@ -92,7 +92,7 @@ function renderVipBookingPage(mc){
     <div style="font-size:12px;color:var(--text-3)">当月 <strong style="color:var(--text)">${total}</strong> 条VIP预约</div>
   </div>
   <div class="btn-group" style="margin-bottom:10px">
-    ${['all','pending','confirmed','cancelled'].map((t,i)=>`<button class="${bkTab===t?'active':''}" onclick="setBkTab('${t}',this)">${['全部','待确认','已确认','已取消'][i]}</button>`).join('')}
+    ${['all','pending','confirmed','completed','cancelled'].map((t,i)=>`<button class="${bkTab===t?'active':''}" onclick="setBkTab('${t}',this)">${['全部','待确认','已确认','已完成','已取消'][i]}</button>`).join('')}
   </div>
   <div class="booking-grid" id="bookingGrid">
     ${filtered.length?filtered.map(b=>renderVipBookingCard(b)).join(''):'<div class="empty">暂无VIP预约记录</div>'}
@@ -171,9 +171,9 @@ function renderVipBookingCard(b){
   const remainH=totalH-usedH;
   // 上课前显示该时间槽老师勾选的全部可选内容（参考）；老师填完上课记录后显示实际内容
   const contentDisplay = b.vip_content ? b.vip_content : (slot?.vip_content?.join('・')||'未设置');
-  const statusLabel = b.status==='pending'?'待确认':b.status==='confirmed'?(b.student_confirmed?'学生已确认':'已确认'):'已取消';
-  const statusColor = b.status==='cancelled'?'var(--danger)':b.student_confirmed?'var(--ok)':b.status==='confirmed'?'#1a6a9a':'#856404';
-  const statusBg = b.status==='cancelled'?'#fdecea':b.student_confirmed?'var(--ok-bg)':b.status==='confirmed'?'#e8f4fd':'#fff3cd';
+  const statusLabel = b.status==='pending'?'待确认':b.status==='completed'?'已完成':b.status==='confirmed'?(b.student_confirmed?'学生已确认':'已确认'):'已取消';
+  const statusColor = b.status==='cancelled'?'var(--danger)':b.status==='completed'?'var(--ok)':b.student_confirmed?'var(--ok)':b.status==='confirmed'?'#1a6a9a':'#856404';
+  const statusBg = b.status==='cancelled'?'#fdecea':b.status==='completed'?'var(--ok-bg)':b.student_confirmed?'var(--ok-bg)':b.status==='confirmed'?'#e8f4fd':'#fff3cd';
   const code=studentRecord?.student_code;
   return `<div class="booking-card status-${b.status}">
     <div class="booking-header">
@@ -225,7 +225,7 @@ function renderBookingCard(b){
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
         <span class="tag ${typeTag(b.type)}">${typeLabel(b.type)}</span>
-        <span class="status-badge status-${b.status}">${b.status==='pending'?'待确认':b.status==='confirmed'?'已确认':'已取消'}</span>
+        <span class="status-badge status-${b.status}">${b.status==='pending'?'待确认':b.status==='completed'?'已完成':b.status==='confirmed'?'已确认':'已取消'}</span>
         ${hasRecord?'<span class="record-done">已记录</span>':''}
       </div>
     </div>
@@ -261,8 +261,9 @@ function renderBookingCard(b){
     <div class="booking-actions">
       ${b.status==='pending'?`<button class="btn btn-success btn-sm" onclick="confirmBooking('${b.id}')">✓ 确认</button>`:''}
       <button class="btn btn-outline btn-sm" onclick="openEdit('${b.id}')">编辑</button>
-      ${b.status==='confirmed'?`<button class="btn btn-sm" style="background:var(--accent-light);color:var(--accent);border-color:var(--border)" onclick="openRecord('${b.id}')">${hasRecord?'查看记录':'填写记录'}</button>`:''}
-      ${b.status!=='cancelled'?`<button class="btn btn-danger btn-sm" onclick="cancelBooking('${b.id}')">取消预约</button>`:''}
+      ${(b.status==='confirmed'||b.status==='completed')?`<button class="btn btn-sm" style="background:var(--accent-light);color:var(--accent);border-color:var(--border)" onclick="openRecord('${b.id}')">${hasRecord?'查看记录':'填写记录'}</button>`:''}
+      ${(b.status!=='cancelled'&&b.status!=='completed')?`<button class="btn btn-danger btn-sm" onclick="cancelBooking('${b.id}')">取消预约</button>`:''}
+      ${b.status==='completed'?`<button class="btn btn-outline btn-sm" style="color:var(--text-3);font-size:10px" onclick="revertToConfirmed('${b.id}')">撤销完成</button>`:''}
     </div>
   </div>`;
 }
@@ -442,8 +443,8 @@ async function saveRecord(){
   // 如果没填实际时间，默认用预约日期（不附时间段，避免显示时间槽范围）
   const actual_time=(d&&t)?`${d}T${t}`:d||b.slot_date||'';
   try{
-    await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',{actual_time,daily_record});
-    b.actual_time=actual_time;b.daily_record=daily_record;
+    await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',{actual_time,daily_record,status:'completed'});
+    b.actual_time=actual_time;b.daily_record=daily_record;b.status='completed';
     setRecordMode('view',b);
     document.getElementById('copyRecordBtn').style.display='inline-flex';
     renderBookingPage(document.getElementById('mainContent'));
@@ -489,7 +490,7 @@ function exportExcel(){
     '姓名':b.name,'专业':MAJORS[b.major]||b.major||'','预约日期':b.slot_date,'时间段':b.slot_time_range||'','时长(分钟)':b.duration,
     '面谈类型':typeLabel(b.type),'紧急程度':b.urgency==='high'?'紧急':b.urgency==='mid'?'适中':'一般',
     '出愿期间':b.exam_period||'','研究计划书':b.plan_status||'','面试准备':b.interview_status||'','具体需求':b.needs||'',
-    '状态':b.status==='pending'?'待确认':b.status==='confirmed'?'已确认':'已取消','实际面谈时间':b.actual_time||'','实际面谈时长':b.actual_duration||'','备注':b.note||'',
+    '状态':b.status==='pending'?'待确认':b.status==='completed'?'已完成':b.status==='confirmed'?'已确认':'已取消','实际面谈时间':b.actual_time||'','实际面谈时长':b.actual_duration||'','备注':b.note||'',
     '知识进展':r.study_status||'','知识建议':r.study_advice||'','知识期限':r.study_deadline||'',
     '计划书状态':r.plan_status||'','计划书建议':r.plan_advice||'','计划书期限':r.plan_deadline||'',
     '出愿状态':r.apply_status||'','出愿建议':r.apply_advice||'','出愿期限':r.apply_deadline||'',
@@ -668,4 +669,14 @@ async function clearMonthSlots(){
 async function clearAllSlots(){
   if(!confirm('确定清空全部时间槽？此操作不可恢复。'))return;
   try{await sb('/rest/v1/slots?id=neq.null','DELETE');cachedSlots=[];renderSlotsPage(document.getElementById('mainContent'))}catch(e){alert('操作失败：'+e.message)}
+}
+
+async function revertToConfirmed(id){
+  if(!confirm('确定撤销「已完成」状态，改回「已确认」？'))return;
+  try{
+    await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',{status:'confirmed'});
+    const b=cachedBookings.find(x=>x.id===id);
+    if(b) b.status='confirmed';
+    renderBookingPage(document.getElementById('mainContent'));
+  }catch(e){alert('操作失败：'+e.message)}
 }
