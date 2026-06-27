@@ -243,7 +243,16 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1200px; }
           <option value="hyosho">表象文化</option>
           <option value="nihongo">日本語教育</option>
           <option value="shinri">心理学</option>
-          <option value="other">その他</option>
+          <option value="other">その他（文科）</option>
+          <!-- 理科 -->
+          <option value="rika_kikai">機械工学</option>
+          <option value="rika_denki">電気電子工学</option>
+          <option value="rika_kagaku">化学・化学工学</option>
+          <option value="rika_joho">情報工学</option>
+          <option value="rika_kenchiku">建築・土木工学</option>
+          <option value="rika_bio">生命科学・医学</option>
+          <option value="rika_keiei">技術経営</option>
+          <option value="rika_other">その他（理科）</option>
         </select>
       </div>
       <div class="field">
@@ -251,14 +260,6 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1200px; }
         <select id="f-era">
           <option value="new">2025–2026 入学</option>
           <option value="hist">2022–2024 実绩</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>系統 *</label>
-        <select id="f-track">
-          <option value="bunka">文科</option>
-          <option value="rika">理科</option>
-          <option value="bijutsu">美術</option>
         </select>
       </div>
       <div class="field">
@@ -419,7 +420,16 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
       <option value="hyosho">表象文化</option>
       <option value="nihongo">日本語教育</option>
       <option value="shinri">心理学</option>
-      <option value="other">その他</option>
+      <option value="other">その他（文科）</option>
+      <!-- 理科 -->
+      <option value="rika_kikai">機械工学</option>
+      <option value="rika_denki">電気電子工学</option>
+      <option value="rika_kagaku">化学・化学工学</option>
+      <option value="rika_joho">情報工学</option>
+      <option value="rika_kenchiku">建築・土木工学</option>
+      <option value="rika_bio">生命科学・医学</option>
+      <option value="rika_keiei">技術経営</option>
+      <option value="rika_other">その他（理科）</option>
     </select>
     <select id="filter-era" onchange="renderList()">
       <option value="">全年度</option>
@@ -911,6 +921,8 @@ function mapRow(row) {
   else if (subject.includes('表象') || subject === 'hyosho') subject = 'hyosho';
   else if (subject.includes('日本語') || subject.includes('日本语') || subject === 'nihongo') subject = 'nihongo';
   else if (subject.includes('心理') || subject === 'shinri') subject = 'shinri';
+  // 理科コード（直接入力されている場合はそのまま）
+  else if (subject.startsWith('rika_')) { /* keep as-is */ }
   else subject = 'other';
 
   const tierRaw = get('tier');
@@ -1009,7 +1021,7 @@ function renderList() {
     { key: 'eng_score', label: '英語点' }, { key: 'student', label: '学生' },
   ];
 
-  const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学/国際関係',bungaku:'文学',rekishi:'歴史学',hyosho:'表象文化',nihongo:'日本語教育',shinri:'心理学',other:'その他'};
+  const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学/国際関係',bungaku:'文学',rekishi:'歴史学',hyosho:'表象文化',nihongo:'日本語教育',shinri:'心理学',other:'その他',rika_kikai:'機械工学',rika_denki:'電気電子工学',rika_kagaku:'化学・化学工学',rika_joho:'情報工学',rika_kenchiku:'建築・土木工学',rika_bio:'生命科学・医学',rika_keiei:'技術経営',rika_other:'その他（理科）'};
 
   let html = `<div class="data-table-wrap"><table class="data-table"><thead><tr>`;
   for (const c of cols) {
@@ -1073,6 +1085,10 @@ const SUBJ_COLOR = {
   hougaku:{bg:'#f0e8f4',fg:'#4a1a6a'}, seiji:{bg:'#e4eef8',fg:'#1a3060'}, bungaku:{bg:'#f8f0e0',fg:'#5a4010'},
   rekishi:{bg:'#f4ede0',fg:'#6a3800'}, hyosho:{bg:'#fce8f0',fg:'#6a1a40'}, nihongo:{bg:'#e4f4f0',fg:'#0a4038'},
   shinri:{bg:'#faf0e8',fg:'#603018'}, other:{bg:'#eeecea',fg:'#3a3830'},
+  rika_kikai:{bg:'#e4f0e8',fg:'#1a4a28'}, rika_denki:{bg:'#dde8f8',fg:'#1a2a6a'},
+  rika_kagaku:{bg:'#faf0dc',fg:'#5a3800'}, rika_joho:{bg:'#ece8f8',fg:'#3a1a7a'},
+  rika_kenchiku:{bg:'#f0ece0',fg:'#4a3810'}, rika_bio:{bg:'#e4f8f0',fg:'#0a4838'},
+  rika_keiei:{bg:'#f8ece0',fg:'#5a3010'}, rika_other:{bg:'#eeecea',fg:'#3a3830'},
 };
 
 const TIERS = {
