@@ -674,7 +674,9 @@ function filtered() {
     if ((r.track||'bunka')!==curTrack) return false;
     if (curEra!=='all' && r.era!==curEra) return false;
     if (activeSubjs.size === 0) return false;
-    if (!activeSubjs.has(r.subject||'other')) return false;
+    // 理科タブでsubject='other'のデータはrika_otherとして扱う
+    const effectiveSubj = (curTrack === 'rika' && (r.subject === 'other' || !r.subject)) ? 'rika_other' : (r.subject || 'other');
+    if (!activeSubjs.has(effectiveSubj)) return false;
     if (curTier!==-1 && (r.tier != null ? r.tier : tierOf(r.univ))!==curTier) return false;
     if (curJlpt!=='all' && r.jlpt!==curJlpt) return false;
     if (jmin>0 && (!r.jlpt_score||r.jlpt_score<jmin)) return false;
@@ -792,7 +794,7 @@ function renderTierView(data) {
 function renderSubjectView(data) {
   const groups = {};
   for (const r of data) {
-    const s = r.subject||'other';
+    const s = (curTrack === 'rika' && (r.subject === 'other' || !r.subject)) ? 'rika_other' : (r.subject||'other');
     if (!groups[s]) groups[s]=[];
     groups[s].push(r);
   }
@@ -859,7 +861,8 @@ function renderEraView(data) {
 
 // ─── Shared table row ─────────────────────────────────────────────────────────
 function buildTableRow(r, showSubj=false) {
-  const sc = SUBJ_COLOR[r.subject]||SUBJ_COLOR.other;
+  const effSubj = (curTrack === 'rika' && (r.subject === 'other' || !r.subject)) ? 'rika_other' : (r.subject||'other');
+  const sc = SUBJ_COLOR[effSubj]||SUBJ_COLOR.other;
   const jHi = r.jlpt_score&&r.jlpt_score>=150;
   const jStr = r.jlpt?(r.jlpt_score?`${r.jlpt}-${r.jlpt_score}`:r.jlpt):null;
   const eHi = r.eng_score&&((r.eng_type==='TOEIC'&&r.eng_score>=800)||(r.eng_type==='TOEFL'&&r.eng_score>=90)||(r.eng_type==='IELTS'&&r.eng_score>=7));
@@ -870,7 +873,7 @@ function buildTableRow(r, showSubj=false) {
     <td style="font-weight:500">${r.univ||'—'}</td>
     <td style="color:var(--text-secondary)">${r.dept||'—'}</td>
     <td style="color:var(--text-muted);font-size:11px">${r.spec||'—'}</td>
-    ${showS?`<td><span class="stag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[r.subject]||r.subject||'—'}</span></td>`:''}
+    ${showS?`<td><span class="stag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[effSubj]||effSubj||'—'}</span></td>`:''}
     <td>${jStr?`<span class="sbadge jlpt${jHi?' hi':''}">${jStr}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
     <td>${(r.eng_type&&r.eng_score)?`<span class="sbadge ${eCls}${eHi?' hi':''}">${r.eng_type} ${r.eng_score}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
     <td>${eraTag}</td>
@@ -943,7 +946,7 @@ function buildDetailPanelHTML(univ, rows, tier) {
     return `<tr>
       <td style="color:var(--text-secondary)">${r.dept||'—'}</td>
       <td style="color:var(--text-muted);font-size:11px">${r.spec||'—'}</td>
-      <td><span class="stag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[r.subject]||r.subject||'—'}</span></td>
+      <td><span class="stag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[effSubj]||effSubj||'—'}</span></td>
       <td>${jStr?`<span class="sbadge jlpt${jHi?' hi':''}">${jStr}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
       <td>${(r.eng_type&&r.eng_score)?`<span class="sbadge ${eCls}${eHi?' hi':''}">${r.eng_type} ${r.eng_score}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
       <td><span class="etag ${r.era==='new'?'etag-new':'etag-hist'}">${r.era==='new'?'25–26':'22–24'}</span></td>
