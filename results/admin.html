@@ -254,6 +254,22 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1200px; }
         </select>
       </div>
       <div class="field">
+        <label>系統 *</label>
+        <select id="f-track">
+          <option value="bunka">文科</option>
+          <option value="rika">理科</option>
+          <option value="bijutsu">美術</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>系統 *</label>
+        <select id="f-track">
+          <option value="bunka">文科</option>
+          <option value="rika">理科</option>
+          <option value="bijutsu">美術</option>
+        </select>
+      </div>
+            <div class="field">
         <label>Tier（空白=自動判定）</label>
         <select id="f-tier">
           <option value="">自動判定</option>
@@ -746,6 +762,7 @@ async function submitForm() {
     student: document.getElementById('f-student').value.trim() || null,
     subject,
     era: document.getElementById('f-era').value,
+    track: document.getElementById('f-track').value || 'bunka',
     tier: document.getElementById('f-tier').value !== '' ? parseInt(document.getElementById('f-tier').value) : null,
     jlpt: document.getElementById('f-jlpt').value || null,
     jlpt_score: jlptScore ? parseInt(jlptScore) : null,
@@ -779,8 +796,9 @@ const FIELD_DEFS = [
   { key: 'spec',      label: '専攻' },
   { key: 'student',   label: '学生名' },
   { key: 'subject',   label: '在籍学科' },
+  { key: 'track',     label: '系統（bunka/rika/bijutsu）' },
   { key: 'era',       label: '入学年度' },
-  { key: 'tier',      label: 'Tier（1/2/3）' },
+  { key: 'tier',      label: 'Tier（0/1/2/3）' },
   { key: 'jlpt_raw',  label: 'JLPT（テキスト）' },
   { key: 'eng_raw',   label: '英語スコア（テキスト）' },
 ];
@@ -874,6 +892,11 @@ function mapRow(row) {
   else if (era.includes('22') || era.includes('23') || era.includes('24') || era.includes('hist')) era = 'hist';
   else era = 'new';
 
+  let track = get('track').toLowerCase();
+  if (track.includes('rika') || track.includes('理科')) track = 'rika';
+  else if (track.includes('bijutsu') || track.includes('美術') || track.includes('美术')) track = 'bijutsu';
+  else track = 'bunka';
+
   let subject = get('subject').toLowerCase();
   if      (subject.includes('社会学') || subject.includes('(社会)') || subject === 'shakai') subject = 'shakai';
   else if (subject.includes('福祉') || subject.includes('(福祉)') || subject === 'fukushi') subject = 'fukushi';
@@ -895,7 +918,7 @@ function mapRow(row) {
 
   return {
     univ: get('univ') || null, dept: get('dept') || null, spec: get('spec') || null,
-    student: get('student') || null, subject, era, tier, jlpt, jlpt_score, eng_type, eng_score, note: null,
+    student: get('student') || null, subject, era, track, tier, jlpt, jlpt_score, eng_type, eng_score, note: null,
   };
 }
 
@@ -981,7 +1004,7 @@ function renderList() {
 
   const cols = [
     { key: 'univ', label: '大学名' }, { key: 'dept', label: '研究科' }, { key: 'spec', label: '専攻' },
-    { key: 'subject', label: '学科' }, { key: 'tier', label: 'Tier' }, { key: 'era', label: '年度' },
+    { key: 'subject', label: '学科' }, { key: 'track', label: '系統' }, { key: 'tier', label: 'Tier' }, { key: 'era', label: '年度' },
     { key: 'jlpt', label: 'JLPT' }, { key: 'jlpt_score', label: 'J点数' }, { key: 'eng_type', label: '英語' },
     { key: 'eng_score', label: '英語点' }, { key: 'student', label: '学生' },
   ];
@@ -1002,6 +1025,7 @@ function renderList() {
     html += `<tr>
       <td>${r.univ||''}</td><td>${r.dept||''}</td><td>${r.spec||''}</td>
       <td><span class="subj-tag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[r.subject]||r.subject}</span></td>
+      <td><span style="font-size:9px;padding:1px 5px;border-radius:2px;background:${r.track==='rika'?'#e8f0e4':r.track==='bijutsu'?'#f4ece0':'#e8edf8'};color:${r.track==='rika'?'#3a6630':r.track==='bijutsu'?'#7a4a20':'#2c4a8a'}">${{bunka:'文科',rika:'理科',bijutsu:'美術'}[r.track]||'文科'}</span></td>
       <td>${r.tier !== null && r.tier !== undefined && r.tier !== '' ? `<span style="font-size:9px;padding:1px 6px;border-radius:2px;background:${['#dce4f4','#e8edf8','#e8f0e4','#f4ece0'][r.tier]||'#eee'};color:${['#1a3070','#2c4a8a','#3a6630','#7a4a20'][r.tier]||'#666'};font-weight:500">T${r.tier}</span>` : '<span style="font-size:9px;color:var(--text-muted)">自動</span>'}</td>
       <td>${eraTag}</td><td>${r.jlpt||'—'}</td><td>${r.jlpt_score||'—'}</td><td>${r.eng_type||'—'}</td>
       <td>${r.eng_score||'—'}</td><td>${r.student||'—'}</td>
