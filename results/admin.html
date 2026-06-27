@@ -328,6 +328,26 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1200px; }
 <div id="tab-excel" style="display:none">
   <div class="form-panel">
     <div class="form-section-title">ファイル選択</div>
+
+    <div style="margin-bottom:14px">
+      <div style="font-size:10px;letter-spacing:.08em;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px">このファイルの系統 *</div>
+      <div style="display:flex;gap:8px">
+        <button id="track-btn-bunka" onclick="selectImportTrack('bunka')"
+          style="padding:7px 20px;border-radius:3px;border:2px solid #2c4a8a;background:#2c4a8a;color:#fff;font-family:inherit;font-size:12px;cursor:pointer;font-weight:600;transition:all .12s">
+          文科
+        </button>
+        <button id="track-btn-rika" onclick="selectImportTrack('rika')"
+          style="padding:7px 20px;border-radius:3px;border:2px solid var(--border);background:var(--bg);color:var(--text-secondary);font-family:inherit;font-size:12px;cursor:pointer;transition:all .12s">
+          理科
+        </button>
+        <button id="track-btn-bijutsu" onclick="selectImportTrack('bijutsu')"
+          style="padding:7px 20px;border-radius:3px;border:2px solid var(--border);background:var(--bg);color:var(--text-secondary);font-family:inherit;font-size:12px;cursor:pointer;transition:all .12s">
+          美術
+        </button>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:6px">選択した系統が全件に適用されます（Excelにtrack列がある場合はそちらを優先）</div>
+    </div>
+
     <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
       <input type="file" id="file-input" accept=".xlsx,.xls,.csv" onchange="handleFile(this.files[0])">
       <div style="font-size:14px;margin-bottom:6px">クリックまたはドラッグ＆ドロップ</div>
@@ -813,6 +833,28 @@ const FIELD_DEFS = [
   { key: 'eng_raw',   label: '英語スコア（テキスト）' },
 ];
 
+let importTrack = 'bunka';
+
+function selectImportTrack(t) {
+  importTrack = t;
+  const colors = {bunka:'#2c4a8a', rika:'#3a6630', bijutsu:'#7a4a20'};
+  ['bunka','rika','bijutsu'].forEach(id => {
+    const btn = document.getElementById('track-btn-' + id);
+    if (!btn) return;
+    if (id === t) {
+      btn.style.background = colors[t];
+      btn.style.borderColor = colors[t];
+      btn.style.color = '#fff';
+      btn.style.fontWeight = '600';
+    } else {
+      btn.style.background = 'var(--bg)';
+      btn.style.borderColor = 'var(--border)';
+      btn.style.color = 'var(--text-secondary)';
+      btn.style.fontWeight = 'normal';
+    }
+  });
+}
+
 function handleFile(file) {
   if (!file) return;
   const zone = document.getElementById('upload-zone');
@@ -902,12 +944,14 @@ function mapRow(row) {
   else if (era.includes('22') || era.includes('23') || era.includes('24') || era.includes('hist')) era = 'hist';
   else era = 'new';
 
-  let track = get('track').toLowerCase();
-  if (track.includes('rika') || track.includes('理科')) track = 'rika';
-  else if (track.includes('bijutsu') || track.includes('美術') || track.includes('美术')) track = 'bijutsu';
-  else track = 'bunka';
+  let trackRaw = get('track').toLowerCase().trim();
+  let track;
+  if (trackRaw.includes('rika') || trackRaw.includes('理科')) track = 'rika';
+  else if (trackRaw.includes('bijutsu') || trackRaw.includes('美術') || trackRaw.includes('美术')) track = 'bijutsu';
+  else if (trackRaw.includes('bunka') || trackRaw.includes('文科')) track = 'bunka';
+  else track = importTrack; // Excel にtrack列がなければUIで選んだ系統を使用
 
-  let subject = get('subject').toLowerCase();
+  let subject = get('subject').toLowerCase().trim();
   if      (subject.includes('社会学') || subject.includes('(社会)') || subject === 'shakai') subject = 'shakai';
   else if (subject.includes('福祉') || subject.includes('(福祉)') || subject === 'fukushi') subject = 'fukushi';
   else if (subject.includes('新伝') || subject.includes('(新传)') || subject.includes('新聞') || subject.includes('メディア') || subject.includes('shinpan') || subject.includes('传播')) subject = 'shinpan';
@@ -928,6 +972,7 @@ function mapRow(row) {
   const tierRaw = get('tier');
   const tier = tierRaw && ['0','1','2','3'].includes(tierRaw.trim()) ? parseInt(tierRaw.trim()) : null;
 
+  if (subject.startsWith('rika_')) track = 'rika';
   return {
     univ: get('univ') || null, dept: get('dept') || null, spec: get('spec') || null,
     student: get('student') || null, subject, era, track, tier, jlpt, jlpt_score, eng_type, eng_score, note: null,
