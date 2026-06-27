@@ -392,10 +392,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     allData = raw.map(r => ({
       ...r,
       univ: normUnivUG(r.univ),
-      track: r.track && r.track !== 'bunka' ? r.track
-             : (r.eju_math || r.eju_physics || r.eju_chemistry || r.eju_biology) ? 'rika'
-             : (r.eju_bunsou || !r.eju_math) ? 'bunka'
-             : r.track || 'bunka',
+      track: r.eju_bunsou ? 'bunka' : r.eju_math || r.eju_physics || r.eju_chemistry || r.eju_biology ? 'rika' : r.track || 'bunka',
       tier: r.tier != null ? r.tier : ugTierOf(normUnivUG(r.univ)),
       school_type: r.school_type || ugSchoolType(normUnivUG(r.univ)),
     }));
