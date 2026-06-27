@@ -507,24 +507,33 @@ const SUBJ_COLOR = {
   shinri:  {bg:'#faf0e8',fg:'#603018'},
   other:   {bg:'#eeecea',fg:'#3a3830'},
 };
-const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学/国際',bungaku:'文学',rekishi:'歴史学',hyosho:'表象文化',nihongo:'日本語教育',shinri:'心理学',other:'その他'};
-const SUBJ_META = [
+const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学/国際',bungaku:'文学',rekishi:'歴史学',hyosho:'表象文化',nihongo:'日本語教育',shinri:'心理学',other:'その他',rika_kikai:'機械工学',rika_denki:'電気電子工学',rika_kagaku:'化学・化学工学',rika_joho:'情報工学',rika_kenchiku:'建築・土木工学',rika_bio:'生命科学・医学',rika_keiei:'技術経営',rika_other:'その他（理科）'};
+const SUBJ_META_BUNKA = [
   {id:'shakai',label:'社会学'},{id:'fukushi',label:'社会福祉'},{id:'shinpan',label:'新聞伝播'},
   {id:'keizai',label:'経済学'},{id:'keiei',label:'経営学'},{id:'kyoiku',label:'教育学'},
   {id:'hougaku',label:'法学'},{id:'seiji',label:'政治学/国際'},{id:'bungaku',label:'文学'},
   {id:'rekishi',label:'歴史学'},{id:'hyosho',label:'表象文化'},{id:'nihongo',label:'日本語教育'},
   {id:'shinri',label:'心理学'},{id:'other',label:'その他'},
 ];
+const SUBJ_META_RIKA = [
+  {id:'rika_kikai',label:'機械工学'},{id:'rika_denki',label:'電気電子工学'},
+  {id:'rika_kagaku',label:'化学・化学工学'},{id:'rika_joho',label:'情報工学'},
+  {id:'rika_kenchiku',label:'建築・土木工学'},{id:'rika_bio',label:'生命科学・医学'},
+  {id:'rika_keiei',label:'技術経営'},{id:'rika_other',label:'その他（理科）'},
+];
+let SUBJ_META = SUBJ_META_BUNKA;
 const TIERS = {0:{label:'T0',name:'旧帝・一橋・東科大 ＋ 早慶上智'},1:{label:'T1',name:'G-MARCH・関関同立 ＋ 地方国公立'},2:{label:'T2',name:'日駒東専 ＋ 重点女子大・地方私立'},3:{label:'T3',name:'その他'}};
 const T0_UNIVS = ['東京大学','京都大学','大阪大学','名古屋大学','九州大学','東北大学','北海道大学','一橋大学','東京科学大学','早稲田大学','慶應義塾大学','上智大学','お茶の水女子大学','筑波大学'];
 const T1_UNIVS = ['法政大学','明治大学','青山学院大学','立教大学','中央大学','学習院大学','関西大学','関西学院大学','同志社大学','立命館大学','横浜国立大学','横浜市立大学','神戸大学','千葉大学','埼玉大学','東京都立大学','東京外国語大学','金沢大学','広島大学','弘前大学','愛知県立大学','大阪公立大学','静岡県立大学','神奈川大学','広島市立大学'];
-const T2_UNIVS = ['東洋大学','駒沢大学','日本大学','専修大学','東京女子大学','日本女子大学','共立女子大学','甲南女子大学','武蔵大学','成蹊大学','成城大学','武蔵野大学','都留文科大学','立正大学','大東文化大学','国士舘大学','桜美林大学','拓殖大学','城西大学','城西国際大学','大正大学','目白大学','淑徳大学','日本経済大学','桃山学院大学','二松学舎大学','流通科学大学','多摩大学','高知県立大学','鹿児島大学','北陸先端科学技術大学院大学','宇都宮大学','聖心女子大学'];
+const T2_UNIVS = ['東洋大学','駒沢大学','日本大学','専修大学','東京女子大学','日本女子大学','共立女子大学','甲南女子大学','武蔵大学','成蹊大学','成城大学','武蔵野大学','都留文科大学','立正大学','大東文化大学','国士舘大学','桜美林大学','拓殖大学','城西大学','城西国際大学','大正大学','目白大学','淑徳大学','日本経済大学','桃山学院大学','二松学舎大学','流通科学大学','多摩大学','高知県立大学','鹿児島大学','北陸先端科学技術大学院大学','宇都宮大学','聖心女子大学','芝浦工業大学','東京農工大学','東京薬科大学','熊本大学','会津大学','茨城大学','長崎大学'];
 
 function tierOf(univ) {
   const u = normUniv(univ);
   if (T0_UNIVS.includes(u)) return 0;
   if (T1_UNIVS.includes(u)) return 1;
   if (T2_UNIVS.includes(u)) return 2;
+  // T3: 理科系保底校
+  if (['東京工科大学','国士舘大学','日本体育大学','京都情報大学院大学','神奈川工科大学'].includes(u)) return 3;
   return 3;
 }
 
@@ -628,6 +637,10 @@ function setTrack(t) {
   const sub = document.getElementById('track-sub');
   const labels = {bunka:'文科大学院', rika:'理科大学院', bijutsu:'美術大学院'};
   if (sub) sub.textContent = '唯新教育 · ' + labels[t];
+  // 学科ピルをtrack別に切り替え
+  SUBJ_META = (t === 'rika') ? SUBJ_META_RIKA : SUBJ_META_BUNKA;
+  activeSubjs = new Set(SUBJ_META.map(s => s.id));
+  buildPills();
   applyFilters();
 }
 
@@ -783,7 +796,7 @@ function renderSubjectView(data) {
     if (!groups[s]) groups[s]=[];
     groups[s].push(r);
   }
-  const order = SUBJ_META.map(s=>s.id).filter(s=>groups[s]);
+  const knownIds = SUBJ_META.map(s=>s.id); const order = [...knownIds.filter(s=>groups[s]), ...Object.keys(groups).filter(k=>!knownIds.includes(k))];
   if (!order.length) return '<div class="no-data">条件に該当するデータがありません</div>';
 
   return order.map(s => {
@@ -852,14 +865,15 @@ function buildTableRow(r, showSubj=false) {
   const eHi = r.eng_score&&((r.eng_type==='TOEIC'&&r.eng_score>=800)||(r.eng_type==='TOEFL'&&r.eng_score>=90)||(r.eng_type==='IELTS'&&r.eng_score>=7));
   const eCls = (r.eng_type||'').toLowerCase();
   const eraTag = `<span class="etag ${r.era==='new'?'etag-new':'etag-hist'}">${r.era==='new'?'25–26':'22–24'}</span>`;
+  const showS = showSubj || curTrack==='rika';
   return `<tr>
     <td style="font-weight:500">${r.univ||'—'}</td>
     <td style="color:var(--text-secondary)">${r.dept||'—'}</td>
     <td style="color:var(--text-muted);font-size:11px">${r.spec||'—'}</td>
-    ${showSubj?`<td><span class="stag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[r.subject]||r.subject||'—'}</span></td>`:''}
+    ${showS?`<td><span class="stag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[r.subject]||r.subject||'—'}</span></td>`:''}
     <td>${jStr?`<span class="sbadge jlpt${jHi?' hi':''}">${jStr}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
     <td>${(r.eng_type&&r.eng_score)?`<span class="sbadge ${eCls}${eHi?' hi':''}">${r.eng_type} ${r.eng_score}</span>`:'<span style="color:var(--text-muted)">—</span>'}</td>
-    ${!showSubj?`<td>${eraTag}</td>`:''}
+    <td>${eraTag}</td>
   </tr>`;
 }
 
