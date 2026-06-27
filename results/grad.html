@@ -10,6 +10,7 @@
 :root {
   --bg:#f7f5f0;--surface:#fff;--border:#e2ded6;--border-light:#ede9e2;
   --text-primary:#1a1814;--text-secondary:#5a5650;--text-muted:#9a9590;--accent:#2c4a8a;
+  --t0:#1a3070;--t0-bg:#1a3070;--t0-bd:#1a3070;
   --t1:#2c4a8a;--t1-bg:#e8edf8;--t1-bd:#c0cce8;
   --t2:#3a6630;--t2-bg:#e8f0e4;--t2-bd:#b8d0b4;
   --t3:#7a4a20;--t3-bg:#f4ece0;--t3-bd:#d8c0a4;
@@ -69,10 +70,15 @@ main{padding:1.5rem 3rem 4rem}
 .tier-section{margin-bottom:1.8rem}
 .tier-hdr{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:3px;cursor:pointer;user-select:none;margin-bottom:8px}
 .tier-hdr:hover{opacity:.85}
+.t0 .tier-hdr{background:var(--t0);border:1px solid var(--t0)}
+.t0 .tier-hdr .tname{color:#fff}
+.t0 .tier-hdr .tcount{color:rgba(255,255,255,.7)}
+.t0 .tier-hdr .ttoggle{color:rgba(255,255,255,.7)}
 .t1 .tier-hdr{background:var(--t1-bg);border:1px solid var(--t1-bd)}
 .t2 .tier-hdr{background:var(--t2-bg);border:1px solid var(--t2-bd)}
 .t3 .tier-hdr{background:var(--t3-bg);border:1px solid var(--t3-bd)}
 .tbadge{font-size:9px;font-weight:600;padding:2px 7px;border-radius:2px;letter-spacing:.1em}
+.t0 .tbadge{background:rgba(255,255,255,.2);color:#fff}
 .t1 .tbadge{background:var(--t1);color:#fff}
 .t2 .tbadge{background:var(--t2);color:#fff}
 .t3 .tbadge{background:var(--t3);color:#fff}
