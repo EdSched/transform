@@ -289,7 +289,6 @@ function render() {
 function buildMainContent(combined, g, u) {
   if (!combined.length) return '<div class="loading">データがまだありません</div>';
 
-  // Group by univ, count grad/ug separately
   const univMap = {};
   for (const r of combined) {
     if (!univMap[r.univ]) univMap[r.univ] = { grad:0, ug:0, total:0 };
@@ -314,17 +313,19 @@ function buildMainContent(combined, g, u) {
   }
   html += `</div>`;
 
-  // Bar charts: subject distribution (grad) + tier distribution (combined)
+  // Bar charts
   html += `<div class="two-col">`;
 
-  // Grad subject distribution
-  if (g.length) {
-    const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学/国際',bungaku:'文学',rekishi:'歴史学',hyosho:'表象文化',nihongo:'日本語教育',shinri:'心理学',other:'その他'};
+  // 大学院：文科学科別
+  const gBunka = g.filter(r=>(r.track||'bunka')==='bunka');
+  const gRika  = g.filter(r=>r.track==='rika');
+
+  if (gBunka.length) {
     const counts = {};
-    for (const r of g) counts[r.subject||'other'] = (counts[r.subject||'other']||0)+1;
+    for (const r of gBunka) counts[r.subject||'other']=(counts[r.subject||'other']||0)+1;
     const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
     const max = entries[0]?.[1]||1;
-    html += `<div class="bar-section"><div class="bar-section-title">大学院 · 学科別件数</div>`;
+    html += `<div class="bar-section"><div class="bar-section-title">大学院 文科 · 学科別件数</div>`;
     for (const [s,cnt] of entries) {
       const pct = Math.round(cnt/max*100);
       html += `<div class="bar-row"><div class="bar-label">${SUBJ_LABEL[s]||s}</div>
@@ -334,12 +335,28 @@ function buildMainContent(combined, g, u) {
     html += `</div>`;
   }
 
-  // UG tier distribution
-  if (u.length) {
-    const TIER_LABEL = {0:'T0 旧帝・早慶上理',1:'T1 上位国公立/MARCH',2:'T2 地方国公立/日東駒専',3:'T3 大東亜帝国',4:'T4 保底校'};
+  // 大学院：理科学科別
+  if (gRika.length) {
     const counts = {};
-    for (const r of u) { const t = r.tier ?? 4; counts[t] = (counts[t]||0)+1; }
-    const max = Math.max(...Object.values(counts), 1);
+    for (const r of gRika) counts[r.subject||'rika_other']=(counts[r.subject||'rika_other']||0)+1;
+    const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+    const max = entries[0]?.[1]||1;
+    html += `<div class="bar-section"><div class="bar-section-title">大学院 理科 · 学科別件数</div>`;
+    for (const [s,cnt] of entries) {
+      const pct = Math.round(cnt/max*100);
+      html += `<div class="bar-row"><div class="bar-label">${SUBJ_LABEL[s]||s}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:#3a6630"></div></div>
+        <div class="bar-val">${cnt}</div></div>`;
+    }
+    html += `</div>`;
+  }
+
+  // 学部：Tier別
+  if (u.length) {
+    const TIER_LABEL = {0:'T0 旧帝・早慶上理ICU',1:'T1 上位国公立/MARCH等',2:'T2 地方国公立/日東駒専等',3:'T3 大東亜帝国クラス',4:'T4 保底校'};
+    const counts = {};
+    for (const r of u) { const t = r.tier??4; counts[t]=(counts[t]||0)+1; }
+    const max = Math.max(...Object.values(counts),1);
     html += `<div class="bar-section"><div class="bar-section-title">学部 · 層次別件数</div>`;
     for (const t of [0,1,2,3,4]) {
       const cnt = counts[t]||0;
