@@ -286,6 +286,16 @@ function render() {
   document.getElementById('main').innerHTML = buildMainContent(combined, g, u);
 }
 
+const SUBJ_LABEL = {
+  shakai:'社会学', fukushi:'社会福祉', shinpan:'新聞伝播', keizai:'経済学',
+  keiei:'経営学', kyoiku:'教育学', hougaku:'法学', seiji:'政治学/国際',
+  bungaku:'文学', rekishi:'歴史学', hyosho:'表象文化', nihongo:'日本語教育',
+  shinri:'心理学', other:'その他',
+  rika_kikai:'機械工学', rika_denki:'電気電子工学', rika_kagaku:'化学・化学工学',
+  rika_joho:'情報工学', rika_kenchiku:'建築・土木工学', rika_bio:'生命科学・医学',
+  rika_keiei:'技術経営', rika_other:'その他（理科）',
+};
+
 function buildMainContent(combined, g, u) {
   if (!combined.length) return '<div class="loading">データがまだありません</div>';
 
