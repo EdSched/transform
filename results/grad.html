@@ -933,7 +933,7 @@ function buildDetailPanelHTML(univ, rows, tier) {
   const TNAMES={0:'T0',1:'T1',2:'T2',3:'T3'};
 
   const subjCounts={};
-  for(const r of rows) subjCounts[r.subject||'other']=(subjCounts[r.subject||'other']||0)+1;
+  for(const r of rows) { const es=(curTrack==='rika'&&(r.subject==='other'||!r.subject))?'rika_other':(r.subject||'other'); subjCounts[es]=(subjCounts[es]||0)+1; }
   const subjStr=Object.entries(subjCounts).sort((a,b)=>b[1]-a[1])
     .map(([s,n])=>`<span class="stag" style="background:${SUBJ_COLOR[s]?.bg};color:${SUBJ_COLOR[s]?.fg};margin-right:4px">${SUBJ_LABEL[s]||s} ${n}</span>`).join('');
 
@@ -946,7 +946,8 @@ function buildDetailPanelHTML(univ, rows, tier) {
   }).join('');
 
   const rows_html = sorted.map(r=>{
-    const sc=SUBJ_COLOR[r.subject]||SUBJ_COLOR.other;
+    const effSubj = (curTrack === 'rika' && (r.subject === 'other' || !r.subject)) ? 'rika_other' : (r.subject||'other');
+    const sc=SUBJ_COLOR[effSubj]||SUBJ_COLOR.other;
     const jHi=r.jlpt_score&&r.jlpt_score>=150;
     const jStr=r.jlpt?(r.jlpt_score?`${r.jlpt}-${r.jlpt_score}`:r.jlpt):null;
     const eHi=r.eng_score&&((r.eng_type==='TOEIC'&&r.eng_score>=800)||(r.eng_type==='TOEFL'&&r.eng_score>=90)||(r.eng_type==='IELTS'&&r.eng_score>=7));
