@@ -251,7 +251,7 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1200px; }
           <option value="rika_joho">情報工学</option>
           <option value="rika_kenchiku">建築・土木工学</option>
           <option value="rika_bio">生命科学・医学</option>
-          <option value="rika_keiei">技術経営</option>
+          <option value="rika_keiei">経営工学</option>
           <option value="rika_other">その他（理科）</option>
         </select>
       </div>
@@ -448,7 +448,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
       <option value="rika_joho">情報工学</option>
       <option value="rika_kenchiku">建築・土木工学</option>
       <option value="rika_bio">生命科学・医学</option>
-      <option value="rika_keiei">技術経営</option>
+      <option value="rika_keiei">経営工学</option>
       <option value="rika_other">その他（理科）</option>
     </select>
     <select id="filter-era" onchange="renderList()">
@@ -1066,7 +1066,7 @@ function renderList() {
     { key: 'eng_score', label: '英語点' }, { key: 'student', label: '学生' },
   ];
 
-  const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学/国際関係',bungaku:'文学',rekishi:'歴史学',hyosho:'表象文化',nihongo:'日本語教育',shinri:'心理学',other:'その他',rika_kikai:'機械工学',rika_denki:'電気電子工学',rika_kagaku:'化学・化学工学',rika_joho:'情報工学',rika_kenchiku:'建築・土木工学',rika_bio:'生命科学・医学',rika_keiei:'技術経営',rika_other:'その他（理科）'};
+  const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学/国際関係',bungaku:'文学',rekishi:'歴史学',hyosho:'表象文化',nihongo:'日本語教育',shinri:'心理学',other:'その他',rika_kikai:'機械工学',rika_denki:'電気電子工学',rika_kagaku:'化学・化学工学',rika_joho:'情報工学',rika_kenchiku:'建築・土木工学',rika_bio:'生命科学・医学',rika_keiei:'経営工学',rika_other:'その他（理科）'};
 
   let html = `<div class="data-table-wrap"><table class="data-table"><thead><tr>`;
   for (const c of cols) {
