@@ -10,7 +10,7 @@
 :root {
   --bg:#f7f5f0;--surface:#fff;--border:#e2ded6;--border-light:#ede9e2;
   --text-primary:#1a1814;--text-secondary:#5a5650;--text-muted:#9a9590;--accent:#2c4a8a;
-  --t0:#1a3070;--t0-bg:#1a3070;--t0-bd:#1a3070;
+  --t0:#c06080;--t0-bg:#fce8ef;--t0-bd:#e8b0c0;
   --t1:#2c4a8a;--t1-bg:#e8edf8;--t1-bd:#c0cce8;
   --t2:#3a6630;--t2-bg:#e8f0e4;--t2-bd:#b8d0b4;
   --t3:#7a4a20;--t3-bg:#f4ece0;--t3-bd:#d8c0a4;
@@ -70,15 +70,15 @@ main{padding:1.5rem 3rem 4rem}
 .tier-section{margin-bottom:1.8rem}
 .tier-hdr{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:3px;cursor:pointer;user-select:none;margin-bottom:8px}
 .tier-hdr:hover{opacity:.85}
-.t0 .tier-hdr{background:var(--t0);border:1px solid var(--t0)}
-.t0 .tier-hdr .tname{color:#fff}
-.t0 .tier-hdr .tcount{color:rgba(255,255,255,.7)}
-.t0 .tier-hdr .ttoggle{color:rgba(255,255,255,.7)}
+.t0 .tier-hdr{background:var(--t0-bg);border:1px solid var(--t0-bd)}
+.t0 .tier-hdr .tname{color:#8a2040}
+.t0 .tier-hdr .tcount{color:#c06080}
+.t0 .tier-hdr .ttoggle{color:#c06080}
 .t1 .tier-hdr{background:var(--t1-bg);border:1px solid var(--t1-bd)}
 .t2 .tier-hdr{background:var(--t2-bg);border:1px solid var(--t2-bd)}
 .t3 .tier-hdr{background:var(--t3-bg);border:1px solid var(--t3-bd)}
 .tbadge{font-size:9px;font-weight:600;padding:2px 7px;border-radius:2px;letter-spacing:.1em}
-.t0 .tbadge{background:rgba(255,255,255,.2);color:#fff}
+.t0 .tbadge{background:#c06080;color:#fff}
 .t1 .tbadge{background:var(--t1);color:#fff}
 .t2 .tbadge{background:var(--t2);color:#fff}
 .t3 .tbadge{background:var(--t3);color:#fff}
@@ -521,7 +521,7 @@ const SUBJ_COLOR = {
   rika_keiei:    {bg:'#f8ece0',fg:'#5a3010'},
   rika_other:    {bg:'#eeecea',fg:'#3a3830'},
 };
-const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学/国際',bungaku:'文学',rekishi:'歴史学',hyosho:'表象文化',nihongo:'日本語教育',shinri:'心理学',other:'その他',rika_kikai:'機械工学',rika_denki:'電気電子工学',rika_kagaku:'化学・化学工学',rika_joho:'情報工学',rika_kenchiku:'建築・土木工学',rika_bio:'生命科学・医学',rika_keiei:'技術経営',rika_other:'その他（理科）'};
+const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学/国際',bungaku:'文学',rekishi:'歴史学',hyosho:'表象文化',nihongo:'日本語教育',shinri:'心理学',other:'その他',rika_kikai:'機械工学',rika_denki:'電気電子工学',rika_kagaku:'化学・化学工学',rika_joho:'情報工学',rika_kenchiku:'建築・土木工学',rika_bio:'生命科学・医学',rika_keiei:'経営工学',rika_other:'その他（理科）'};
 const SUBJ_META_BUNKA = [
   {id:'shakai',label:'社会学'},{id:'fukushi',label:'社会福祉'},{id:'shinpan',label:'新聞伝播'},
   {id:'keizai',label:'経済学'},{id:'keiei',label:'経営学'},{id:'kyoiku',label:'教育学'},
@@ -533,7 +533,7 @@ const SUBJ_META_RIKA = [
   {id:'rika_kikai',label:'機械工学'},{id:'rika_denki',label:'電気電子工学'},
   {id:'rika_kagaku',label:'化学・化学工学'},{id:'rika_joho',label:'情報工学'},
   {id:'rika_kenchiku',label:'建築・土木工学'},{id:'rika_bio',label:'生命科学・医学'},
-  {id:'rika_keiei',label:'技術経営'},{id:'rika_other',label:'その他（理科）'},
+  {id:'rika_keiei',label:'経営工学'},{id:'rika_other',label:'その他（理科）'},
 ];
 let SUBJ_META = SUBJ_META_BUNKA;
 const TIERS = {0:{label:'T0',name:'旧帝・一橋・東科大 ＋ 早慶上智'},1:{label:'T1',name:'G-MARCH・関関同立 ＋ 地方国公立'},2:{label:'T2',name:'日駒東専 ＋ 重点女子大・地方私立'},3:{label:'T3',name:'その他'}};
@@ -762,7 +762,7 @@ function renderTierView(data) {
     const univs = Object.keys(tiers[t]);
     if (!univs.length) continue;
     const total = univs.reduce((s,u)=>s+tiers[t][u].length,0);
-    const col = {0:'#1a3070',1:'var(--t1)',2:'var(--t2)',3:'var(--t3)'}[t]||'var(--t1)';
+    const col = {0:'#c06080',1:'var(--t1)',2:'var(--t2)',3:'var(--t3)'}[t]||'var(--t1)';
     const collapsed = tierCollapsed[t];
 
     html += `<div class="tier-section t${t}" id="tsec-${t}">
