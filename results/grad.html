@@ -506,6 +506,14 @@ const SUBJ_COLOR = {
   nihongo: {bg:'#e4f4f0',fg:'#0a4038'},
   shinri:  {bg:'#faf0e8',fg:'#603018'},
   other:   {bg:'#eeecea',fg:'#3a3830'},
+  rika_kikai:    {bg:'#e4f0e8',fg:'#1a4a28'},
+  rika_denki:    {bg:'#dde8f8',fg:'#1a2a6a'},
+  rika_kagaku:   {bg:'#faf0dc',fg:'#5a3800'},
+  rika_joho:     {bg:'#ece8f8',fg:'#3a1a7a'},
+  rika_kenchiku: {bg:'#f0ece0',fg:'#4a3810'},
+  rika_bio:      {bg:'#e4f8f0',fg:'#0a4838'},
+  rika_keiei:    {bg:'#f8ece0',fg:'#5a3010'},
+  rika_other:    {bg:'#eeecea',fg:'#3a3830'},
 };
 const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学/国際',bungaku:'文学',rekishi:'歴史学',hyosho:'表象文化',nihongo:'日本語教育',shinri:'心理学',other:'その他',rika_kikai:'機械工学',rika_denki:'電気電子工学',rika_kagaku:'化学・化学工学',rika_joho:'情報工学',rika_kenchiku:'建築・土木工学',rika_bio:'生命科学・医学',rika_keiei:'技術経営',rika_other:'その他（理科）'};
 const SUBJ_META_BUNKA = [
@@ -574,7 +582,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 // ─── Pills ────────────────────────────────────────────────────────────────────
 function buildPills() {
   document.getElementById('subj-pills').innerHTML = SUBJ_META.map(s => {
-    const c = SUBJ_COLOR[s.id];
+    const c = SUBJ_COLOR[s.id] || { bg: '#eeecea', fg: '#3a3830' };
     return `<button class="pill active" id="pill-${s.id}"
       style="background:${c.bg};color:${c.fg};border-color:${c.fg}"
       onclick="toggleSubj('${s.id}')">${s.label}</button>`;
