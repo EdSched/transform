@@ -119,7 +119,7 @@ function buildBookingRows(bookings, slots, teacherName) {
   slots.forEach(s => { slotMap[s.id] = s; });
   return bookings
     .filter(b => {
-      if (b.status === 'cancelled' || !b.actual_time) return false;
+      if (b.status === 'cancelled' || b.status === 'pending' || !b.actual_time) return false;
       // 优先用该预约自己分配的老师；若从未单独分配过，则退回看时间槽默认老师
       const owner = b.assigned_teacher || slotMap[b.slot_id]?.teacher_name || '';
       return owner === teacherName;
