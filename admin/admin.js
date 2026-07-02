@@ -37,6 +37,7 @@ let curPage='booking';
 let bkMonth=new Date().getMonth(),bkYear=new Date().getFullYear();
 let bkTab='all',bkType='all',bkMajor='all';
 let cachedSlots=[],cachedBookings=[],cachedStudents=[],cachedAttendance=[];
+let cachedAdmissionSchools=[];
 let slotMode='single';
 
 // ── Navigation ──
@@ -54,7 +55,7 @@ function switchPage(page){
   if((page==='courses'||page==='schedule')&&!checkCoursePw()){return}
   curPage=page;
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  const navId=page==='courses'?'nav-courses':page==='schedule'?'nav-schedule':page==='teachers'?'nav-teachers':'nav-'+page;
+  const navId=page==='courses'?'nav-courses':page==='schedule'?'nav-schedule':page==='teachers'?'nav-teachers':page==='admissiondb'?'nav-admissiondb':'nav-'+page;
   document.getElementById(navId)?.classList.add('active');
   closeDrawer();
   renderPage();
@@ -116,6 +117,9 @@ async function renderPage(){
     } else if(curPage==='payroll'){
       cachedTeachers=await sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[]);
       renderPayrollPage(mc);
+    } else if(curPage==='admissiondb'){
+      cachedAdmissionSchools=await sb('/rest/v1/admission_schools?select=*&order=major.asc,university.asc').catch(()=>[]);
+      renderAdmissionDbPage(mc);
     } else if(curPage==='attendance'){
       [cachedStudents,cachedCourses,cachedSessions,cachedSessionRecords]=await Promise.all([
         sb('/rest/v1/students?select=*&order=name.asc'),
