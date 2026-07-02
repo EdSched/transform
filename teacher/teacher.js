@@ -49,7 +49,7 @@ async function init() {
       fetches.push(
         // 不再用 major 过滤 bookings：bookings.major 只是学生预约入口的分类标记，与「这位老师能否看到这条预约」无关。
         // 能否看到只由 assigned_teacher / slot 归属决定（见下方 cachedTeacherBookings 过滤逻辑）。
-        sb(`/rest/v1/bookings?type=in.(${(p.booking_types||['daily']).map(t=>`"${t}"`).join(',')})&status=in.("pending","confirmed")&select=*&order=slot_date.asc`).catch(() => []),
+        sb(`/rest/v1/bookings?type=in.(${(p.booking_types||['daily']).map(t=>`"${t}"`).join(',')})&status=in.("pending","confirmed","completed")&select=*&order=slot_date.asc`).catch(() => []),
         sb(`/rest/v1/slots?teacher_name=eq.${encodeURIComponent(teacherName)}&select=*&order=date.asc,time_range.asc`).catch(() => [])
       );
     }
@@ -205,6 +205,10 @@ function renderBookingManagement(mc) {
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">已确认预约</div>
       ${regularBookings.filter(b => b.status === 'confirmed').length ? regularBookings.filter(b => b.status === 'confirmed').map(b => renderBookingCardCollapsed(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已确认预约</div>'}
+    </div>
+    <div style="margin-top:16px">
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">已完成预约</div>
+      ${regularBookings.filter(b => b.status === 'completed').length ? regularBookings.filter(b => b.status === 'completed').map(b => renderBookingCardCollapsed(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已完成预约</div>'}
     </div>` : `
     <div style="margin-bottom:16px">
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">待确认VIP预约</div>
@@ -233,7 +237,7 @@ function renderBookingCardCollapsed(b) {
         <span style="font-size:11px;color:var(--text-3)">${f.short} ${f.dow} · ${b.slot_time_range || ''}</span>
         ${b.type==='vip' ? '<span style="font-size:9px;background:#5a3a9a;color:#fff;border-radius:2px;padding:1px 6px">VIP</span>' : `<span class="tag ${typeTag(b.type)}" style="font-size:9px">${typeLabel(b.type)}</span>`}
       </div>
-      <span style="font-size:10px;background:${b.status === 'pending' ? 'var(--warn-bg)' : 'var(--ok-bg)'};color:${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'};padding:2px 7px;border-radius:2px;white-space:nowrap">${b.status === 'pending' ? '待确认' : '已确认'}</span>
+      <span style="font-size:10px;background:${b.status === 'pending' ? 'var(--warn-bg)' : 'var(--ok-bg)'};color:${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'};padding:2px 7px;border-radius:2px;white-space:nowrap">${b.status === 'pending' ? '待确认' : b.status === 'completed' ? '已完成' : '已确认'}</span>
     </div>
     <div id="${rowId}" style="display:none;padding:0 14px 14px">
       <div style="font-size:11px;margin-bottom:8px">
@@ -260,7 +264,7 @@ function renderBookingCard(b) {
         <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:14px;cursor:pointer;color:var(--accent);text-decoration:underline" onclick="showStudentInfoTeacher('${b.name}')">${b.name}</span>
         <span style="font-size:11px;color:var(--text-3);margin-left:6px">${MAJORS[b.major] || b.major}</span>
       </div>
-      <span style="font-size:10px;background:${b.status === 'pending' ? 'var(--warn-bg)' : 'var(--ok-bg)'};color:${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'};padding:2px 7px;border-radius:2px;white-space:nowrap">${b.status === 'pending' ? '待确认' : '已确认'}</span>
+      <span style="font-size:10px;background:${b.status === 'pending' ? 'var(--warn-bg)' : 'var(--ok-bg)'};color:${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'};padding:2px 7px;border-radius:2px;white-space:nowrap">${b.status === 'pending' ? '待确认' : b.status === 'completed' ? '已完成' : '已确认'}</span>
     </div>
     ${renderBookingCardBody(b)}
   </div>`;
@@ -456,12 +460,12 @@ async function saveBookingRecord(id) {
   const timeInput = document.getElementById(`actual_time_rec_${id}`)?.value || '';
   const actual_time = timeInput || booking?.actual_time || booking?.slot_date || '';
   try {
-    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { daily_record: record, actual_duration, actual_time });
-    if (booking) { booking.daily_record = record; booking.actual_duration = actual_duration; booking.actual_time = actual_time; }
+    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { daily_record: record, actual_duration, actual_time, status: 'completed' });
+    if (booking) { booking.daily_record = record; booking.actual_duration = actual_duration; booking.actual_time = actual_time; booking.status = 'completed'; }
     // 保存后切换到查看模式
     setTeacherRecordMode(id, 'view');
     const btn = document.querySelector(`[onclick="saveBookingRecord('${id}')"]`);
-    if (btn) { btn.textContent = '✓ 已保存'; setTimeout(() => btn.textContent = '保存记录', 1500); }
+    if (btn) { btn.textContent = '✓ 已保存，面谈标记为已完成'; setTimeout(() => btn.textContent = '保存记录', 2000); }
   } catch (e) { alert('保存失败：' + e.message); }
 }
 
