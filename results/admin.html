@@ -124,7 +124,7 @@ main { padding: 2rem 1.5rem 4rem; max-width: none; }
 .data-table-wrap { overflow-x: auto; }
 .data-table { width: 100%; border-collapse: collapse; font-size: 11px; }
 .data-table th {
-  background: var(--bg); padding: 7px 10px; text-align: left;
+  background: var(--bg); padding: 7px 8px; text-align: left;
   border-bottom: 2px solid var(--border); font-weight: 500; letter-spacing: .04em;
   color: var(--text-secondary); white-space: nowrap; cursor: pointer; user-select: none;
 }
@@ -132,8 +132,9 @@ main { padding: 2rem 1.5rem 4rem; max-width: none; }
 .data-table th .sort-icon { margin-left: 4px; opacity: .4; }
 .data-table th.sorted .sort-icon { opacity: 1; }
 .data-table td {
-  padding: 6px 10px; border-bottom: 1px solid var(--border-light);
-  color: var(--text-secondary); white-space: nowrap;
+  padding: 6px 8px; border-bottom: 1px solid var(--border-light);
+  color: var(--text-secondary); white-space: nowrap; max-width: 160px;
+  overflow: hidden; text-overflow: ellipsis;
 }
 .data-table tr:hover td { background: #faf8f4; }
 .data-table .subj-tag, .track-tag, .type-tag, .tier-tag {
@@ -1156,7 +1157,7 @@ function renderList() {
     const sc = SUBJ_COLOR[r.subject] || SUBJ_COLOR.other;
     const eraTag = r.era === 'new' ? `<span class="era-tag era-new">25–26</span>` : `<span class="era-tag era-hist">22–24</span>`;
     html += `<tr data-id="${r.id}" data-univ="${(r.univ||'').replace(/"/g,'&quot;')}">
-      <td>${r.univ||''}</td><td>${r.dept||''}</td><td>${r.spec||''}</td>
+      <td style="max-width:120px">${r.univ||''}</td><td style="max-width:120px">${r.dept||''}</td><td style="max-width:100px">${r.spec||''}</td>
       <td><span class="subj-tag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[r.subject]||r.subject}</span></td>
       <td><span style="font-size:9px;padding:1px 5px;border-radius:2px;background:${r.track==='rika'?'#e8f0e4':r.track==='bijutsu'?'#f4ece0':'#e8edf8'};color:${r.track==='rika'?'#3a6630':r.track==='bijutsu'?'#7a4a20':'#2c4a8a'}">${{bunka:'文科',rika:'理科',bijutsu:'美術'}[r.track]||'文科'}</span></td>
       <td>${r.tier != null ? `<span style="font-size:9px;padding:1px 6px;border-radius:2px;background:${['#dce4f4','#e8edf8','#e8f0e4','#f4ece0'][r.tier]||'#eee'};color:${['#1a3070','#2c4a8a','#3a6630','#7a4a20'][r.tier]||'#666'};font-weight:500">T${r.tier}</span>` : '<span style="font-size:9px;color:var(--text-muted)">自動</span>'}</td>
@@ -1820,7 +1821,7 @@ function ugRenderList() {
     const [tbg, tfg] = TIER_COLOR[tier] || ['#eee','#666'];
     const stype = r.school_type || ugSchoolType(r.univ);
     html += `<tr data-id="${r.id}" data-univ="${(r.univ||'').replace(/"/g,'&quot;')}">
-      <td>${r.univ||''}</td><td>${r.dept||''}</td><td>${r.spec||''}</td>
+      <td style="max-width:120px">${r.univ||''}</td><td style="max-width:120px">${r.dept||''}</td><td style="max-width:100px">${r.spec||''}</td>
       <td><span class="track-tag" style="background:#eef0e8;color:#3a3830">${TRACK_LABEL[r.track]||'文科'}</span></td>
       <td>${r.era==='new'?'25–26':'22–24'}</td>
       <td><span class="tier-tag" style="background:${tbg};color:${tfg}">T${tier}${r.tier==null?'(自動)':''}</span></td>
