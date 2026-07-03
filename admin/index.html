@@ -112,34 +112,89 @@
       <div class="form-group"><label class="form-label">状态</label>
         <select id="rec_study_status"><option value="">请选择</option><option>进展顺利并能掌握</option><option>能够稳定跟上</option><option>需要更多时间</option><option>没有很好跟上进度</option><option>遇到困难</option></select></div>
       <div class="form-group"><label class="form-label">解决建议</label><textarea id="rec_study_advice" rows="2" placeholder="例：建议上课做好笔记，定期复习…"></textarea></div>
-      <div class="form-group"><label class="form-label">完成期限</label><input type="date" id="rec_study_deadline"></div>
+      <div class="form-group"><label class="form-label">完成期限</label>
+      <div style="display:flex;align-items:center;gap:4px">
+        <input type="number" id="rec_study_deadline_y" placeholder="年" min="2024" max="2030" style="width:62px;text-align:center">
+        <span style="font-size:12px;color:var(--text-2)">年</span>
+        <input type="number" id="rec_study_deadline_m" placeholder="月" min="1" max="12" style="width:42px;text-align:center">
+        <span style="font-size:12px;color:var(--text-2)">月</span>
+        <select id="rec_study_deadline_x" style="width:64px">
+          <option value="">旬</option>
+          <option>上旬</option><option>中旬</option><option>下旬</option>
+        </select>
+      </div>
+    </div>
     </div>
     <div class="modal-section">
       <div class="modal-section-title">计划书完成情况</div>
       <div class="form-group"><label class="form-label">状态</label>
         <select id="rec_plan_status"><option value="">请选择</option><option>未开始</option><option>在收集材料</option><option>遇到困难</option><option>撰写中</option><option>已完成</option></select></div>
       <div class="form-group"><label class="form-label">解决建议</label><textarea id="rec_plan_advice" rows="2" placeholder="例：参考上课讲义先行研究的部分…"></textarea></div>
-      <div class="form-group"><label class="form-label">完成期限</label><input type="date" id="rec_plan_deadline"></div>
+      <div class="form-group"><label class="form-label">完成期限</label>
+      <div style="display:flex;align-items:center;gap:4px">
+        <input type="number" id="rec_plan_deadline_y" placeholder="年" min="2024" max="2030" style="width:62px;text-align:center">
+        <span style="font-size:12px;color:var(--text-2)">年</span>
+        <input type="number" id="rec_plan_deadline_m" placeholder="月" min="1" max="12" style="width:42px;text-align:center">
+        <span style="font-size:12px;color:var(--text-2)">月</span>
+        <select id="rec_plan_deadline_x" style="width:64px">
+          <option value="">旬</option>
+          <option>上旬</option><option>中旬</option><option>下旬</option>
+        </select>
+      </div>
+    </div>
     </div>
     <div class="modal-section">
       <div class="modal-section-title">出愿情况</div>
       <div class="form-group"><label class="form-label">状态</label>
         <select id="rec_apply_status"><option value="">请选择</option><option>未开始</option><option>完成择校</option><option>已联系教授</option><option>准备中</option><option>已出愿</option></select></div>
       <div class="form-group"><label class="form-label">解决建议</label><textarea id="rec_apply_advice" rows="2"></textarea></div>
-      <div class="form-group"><label class="form-label">完成期限</label><input type="date" id="rec_apply_deadline"></div>
+      <div class="form-group"><label class="form-label">完成期限</label>
+      <div style="display:flex;align-items:center;gap:4px">
+        <input type="number" id="rec_apply_deadline_y" placeholder="年" min="2024" max="2030" style="width:62px;text-align:center">
+        <span style="font-size:12px;color:var(--text-2)">年</span>
+        <input type="number" id="rec_apply_deadline_m" placeholder="月" min="1" max="12" style="width:42px;text-align:center">
+        <span style="font-size:12px;color:var(--text-2)">月</span>
+        <select id="rec_apply_deadline_x" style="width:64px">
+          <option value="">旬</option>
+          <option>上旬</option><option>中旬</option><option>下旬</option>
+        </select>
+      </div>
+    </div>
     </div>
     <div class="modal-section">
       <div class="modal-section-title">备考情况</div>
       <div class="form-group"><label class="form-label">状态</label>
         <select id="rec_exam_status"><option value="">请选择</option><option>未开始</option><option>在写过去问</option><option>过去问已提交</option><option>在准备面试稿</option><option>模拟面试阶段</option></select></div>
       <div class="form-group"><label class="form-label">解决建议</label><textarea id="rec_exam_advice" rows="2"></textarea></div>
-      <div class="form-group"><label class="form-label">完成期限</label><input type="date" id="rec_exam_deadline"></div>
+      <div class="form-group"><label class="form-label">完成期限</label>
+      <div style="display:flex;align-items:center;gap:4px">
+        <input type="number" id="rec_exam_deadline_y" placeholder="年" min="2024" max="2030" style="width:62px;text-align:center">
+        <span style="font-size:12px;color:var(--text-2)">年</span>
+        <input type="number" id="rec_exam_deadline_m" placeholder="月" min="1" max="12" style="width:42px;text-align:center">
+        <span style="font-size:12px;color:var(--text-2)">月</span>
+        <select id="rec_exam_deadline_x" style="width:64px">
+          <option value="">旬</option>
+          <option>上旬</option><option>中旬</option><option>下旬</option>
+        </select>
+      </div>
+    </div>
     </div>
     <div class="modal-section">
       <div class="modal-section-title">目前困惑 / 问题</div>
       <div class="form-group"><label class="form-label">困惑内容</label><textarea id="rec_issue" rows="2"></textarea></div>
       <div class="form-group"><label class="form-label">解决建议</label><textarea id="rec_issue_advice" rows="2"></textarea></div>
-      <div class="form-group"><label class="form-label">完成期限</label><input type="date" id="rec_issue_deadline"></div>
+      <div class="form-group"><label class="form-label">完成期限</label>
+      <div style="display:flex;align-items:center;gap:4px">
+        <input type="number" id="rec_issue_deadline_y" placeholder="年" min="2024" max="2030" style="width:62px;text-align:center">
+        <span style="font-size:12px;color:var(--text-2)">年</span>
+        <input type="number" id="rec_issue_deadline_m" placeholder="月" min="1" max="12" style="width:42px;text-align:center">
+        <span style="font-size:12px;color:var(--text-2)">月</span>
+        <select id="rec_issue_deadline_x" style="width:64px">
+          <option value="">旬</option>
+          <option>上旬</option><option>中旬</option><option>下旬</option>
+        </select>
+      </div>
+    </div>
     </div>
     <div class="modal-section">
       <div class="modal-section-title">补充</div>
