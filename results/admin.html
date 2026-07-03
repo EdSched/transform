@@ -165,6 +165,12 @@ main { padding: 2rem 2.5rem 4rem; max-width: 1200px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 .info-box { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 12px 16px; margin-bottom: 1rem; font-size: 12px; color: var(--text-secondary); line-height: 1.7; }
+.edit-modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:600;display:none;align-items:center;justify-content:center }
+.edit-modal-overlay.show { display:flex }
+.edit-modal-box { background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:1.5rem 2rem;width:520px;max-width:95vw;max-height:90vh;overflow-y:auto }
+.edit-modal-title { font-size:14px;font-weight:500;margin-bottom:1rem;padding-bottom:8px;border-bottom:1px solid var(--border) }
+.edit-grid { display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:1rem }
+.edit-grid-3 { grid-template-columns:1fr 1fr 1fr }
 </style>
 </head>
 <body>
@@ -712,6 +718,77 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
       <button class="btn btn-danger" id="modal-confirm-btn">削除</button>
+    </div>
+  </div>
+</div>
+
+<div class="edit-modal-overlay" id="edit-modal">
+  <div class="edit-modal-box">
+    <div class="edit-modal-title" id="edit-modal-title">編集</div>
+    <div class="edit-grid">
+      <div class="field"><label>大学名</label><input id="em-univ" type="text"></div>
+      <div class="field"><label>研究科</label><input id="em-dept" type="text"></div>
+      <div class="field"><label>専攻</label><input id="em-spec" type="text"></div>
+      <div class="field"><label>学生名</label><input id="em-student" type="text"></div>
+      <div class="field"><label>在籍学科</label>
+        <select id="em-subject">
+          <option value="shakai">社会学</option><option value="fukushi">社会福祉</option>
+          <option value="shinpan">新聞伝播</option><option value="keizai">経済学</option>
+          <option value="keiei">経営学</option><option value="kyoiku">教育学</option>
+          <option value="hougaku">法学</option><option value="seiji">政治学/国際関係</option>
+          <option value="bungaku">文学</option><option value="rekishi">歴史学</option>
+          <option value="hyosho">表象文化</option><option value="nihongo">日本語教育</option>
+          <option value="shinri">心理学</option><option value="other">その他（文科）</option>
+          <option value="rika_kikai">機械工学</option><option value="rika_denki">電気電子工学</option>
+          <option value="rika_kagaku">化学・化学工学</option><option value="rika_joho">情報工学</option>
+          <option value="rika_kenchiku">建築・土木工学</option><option value="rika_bio">生命科学・医学</option>
+          <option value="rika_keiei">経営工学</option><option value="rika_other">その他（理科）</option>
+        </select>
+      </div>
+      <div class="field"><label>系統</label>
+        <select id="em-track">
+          <option value="bunka">文科</option>
+          <option value="rika">理科</option>
+          <option value="bijutsu">美術</option>
+        </select>
+      </div>
+      <div class="field"><label>年度</label>
+        <select id="em-era">
+          <option value="new">2025–2026</option>
+          <option value="hist">2022–2024</option>
+        </select>
+      </div>
+      <div class="field"><label>Tier</label>
+        <select id="em-tier">
+          <option value="">自動</option>
+          <option value="0">T0</option><option value="1">T1</option>
+          <option value="2">T2</option><option value="3">T3</option>
+        </select>
+      </div>
+    </div>
+    <div class="edit-grid edit-grid-3">
+      <div class="field"><label>JLPT</label>
+        <select id="em-jlpt">
+          <option value="">—</option>
+          <option value="N1">N1</option><option value="N2">N2</option><option value="N3">N3</option>
+        </select>
+      </div>
+      <div class="field"><label>JLPT スコア</label><input id="em-jlpt-score" type="number" placeholder="145"></div>
+      <div class="field"><label>英語種別</label>
+        <select id="em-eng-type">
+          <option value="">—</option>
+          <option value="TOEIC">TOEIC</option>
+          <option value="TOEFL">TOEFL</option>
+          <option value="IELTS">IELTS</option>
+        </select>
+      </div>
+      <div class="field"><label>英語スコア</label><input id="em-eng-score" type="number" placeholder="800"></div>
+      <div class="field" style="grid-column:span 1"><label>備考</label><input id="em-note" type="text"></div>
+    </div>
+    <input type="hidden" id="em-id">
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeEditModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="saveEdit()">保存</button>
     </div>
   </div>
 </div>
@@ -1768,6 +1845,70 @@ function ugConfirmDeleteAll() {
     catch(e) { toast('削除エラー: ' + e.message, false); }
   });
 }
+
+// ─── 編集モーダル ────────────────────────────────────────────────────────────
+function openEditModal(id) {
+  const r = allData.find(x => x.id === id);
+  if (!r) return;
+  document.getElementById('em-id').value = id;
+  document.getElementById('em-univ').value = r.univ || '';
+  document.getElementById('em-dept').value = r.dept || '';
+  document.getElementById('em-spec').value = r.spec || '';
+  document.getElementById('em-student').value = r.student || '';
+  document.getElementById('em-subject').value = r.subject || 'other';
+  document.getElementById('em-track').value = r.track || 'bunka';
+  document.getElementById('em-era').value = r.era || 'new';
+  document.getElementById('em-tier').value = r.tier != null ? r.tier : '';
+  document.getElementById('em-jlpt').value = r.jlpt || '';
+  document.getElementById('em-jlpt-score').value = r.jlpt_score || '';
+  document.getElementById('em-eng-type').value = r.eng_type || '';
+  document.getElementById('em-eng-score').value = r.eng_score || '';
+  document.getElementById('em-note').value = r.note || '';
+  document.getElementById('edit-modal-title').textContent = `編集: ${r.univ}`;
+  document.getElementById('edit-modal').classList.add('show');
+}
+
+function closeEditModal() {
+  document.getElementById('edit-modal').classList.remove('show');
+}
+
+async function saveEdit() {
+  const id = document.getElementById('em-id').value;
+  const tierVal = document.getElementById('em-tier').value;
+  const jlptScore = document.getElementById('em-jlpt-score').value;
+  const engScore = document.getElementById('em-eng-score').value;
+
+  const updates = {
+    univ:       document.getElementById('em-univ').value.trim() || null,
+    dept:       document.getElementById('em-dept').value.trim() || null,
+    spec:       document.getElementById('em-spec').value.trim() || null,
+    student:    document.getElementById('em-student').value.trim() || null,
+    subject:    document.getElementById('em-subject').value || null,
+    track:      document.getElementById('em-track').value || 'bunka',
+    era:        document.getElementById('em-era').value,
+    tier:       tierVal !== '' ? parseInt(tierVal) : null,
+    jlpt:       document.getElementById('em-jlpt').value || null,
+    jlpt_score: jlptScore ? parseInt(jlptScore) : null,
+    eng_type:   document.getElementById('em-eng-type').value || null,
+    eng_score:  engScore ? parseInt(engScore) : null,
+    note:       document.getElementById('em-note').value.trim() || null,
+  };
+
+  try {
+    await sbFetch(`admission_results?id=eq.${id}`, {
+      method: 'PATCH', body: updates, prefer: 'return=minimal', headers: {}
+    });
+    // ローカルデータも更新
+    const idx = allData.findIndex(x => x.id === id);
+    if (idx >= 0) allData[idx] = { ...allData[idx], ...updates };
+    closeEditModal();
+    renderList();
+    toast('保存しました ✓');
+  } catch(e) {
+    toast('エラー: ' + e.message, false);
+  }
+}
+
 </script>
 </body>
 </html>
