@@ -214,13 +214,18 @@ function renderTeachersPage(mc){
             <div style="font-size:10px;color:var(--text-3);margin-top:4px;margin-left:20px">排班确认 + 我的课表</div>
           </div>
           <!-- homework row -->
-          <div style="padding:10px">
+          <div style="padding:10px;border-bottom:1px solid var(--border-light)">
             <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;white-space:nowrap"><input type="checkbox" id="perm_homework" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">批改作业</label>
             <div style="font-size:10px;color:var(--text-3);margin-bottom:8px;margin-left:20px">开启后可在老师端查看并批改作业</div>
             <div style="margin-left:20px">
               <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">负责课程（可多选）</div>
               <div id="perm_homework_courses" style="display:flex;flex-wrap:wrap;gap:4px;max-height:80px;overflow-y:auto"></div>
             </div>
+          </div>
+          <!-- admission_query row -->
+          <div style="padding:10px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap"><input type="checkbox" id="perm_admission_query" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">出願数据查询</label>
+            <div style="font-size:10px;color:var(--text-3);margin-top:4px;margin-left:20px">开启后可在老师端查看出願学校数据库（只读）</div>
           </div>
         </div>
       </div>
@@ -267,6 +272,7 @@ function cancelEditTeacher(){
   document.getElementById('perm_slots').checked=false;
   document.getElementById('perm_schedule').checked=false;
   document.getElementById('perm_homework').checked=false;
+  document.getElementById('perm_admission_query').checked=false;
   renderHomeworkCoursesChips([]);
 }
 function openTeacherManager(){
@@ -278,6 +284,7 @@ function openTeacherManager(){
   document.getElementById('perm_slots').checked=false;
   document.getElementById('perm_schedule').checked=false;
   document.getElementById('perm_homework').checked=false;
+  document.getElementById('perm_admission_query').checked=false;
   renderHomeworkCoursesChips([]);
   renderTeacherList();
   document.getElementById('teacherManagerModal').classList.add('open');
@@ -333,6 +340,7 @@ function getPermissionsFromForm(){
     schedule:document.getElementById('perm_schedule').checked,
     homework:document.getElementById('perm_homework').checked,
     homework_courses:[...document.querySelectorAll('#perm_homework_courses .filter-chip.active')].map(c=>c.dataset.value),
+    admission_query:document.getElementById('perm_admission_query').checked,
   };
 }
 
@@ -368,6 +376,7 @@ function openEditTeacher(id){
   document.getElementById('perm_slots').checked=!!p.slots;
   document.getElementById('perm_schedule').checked=!!p.schedule;
   document.getElementById('perm_homework').checked=!!p.homework;
+  document.getElementById('perm_admission_query').checked=!!p.admission_query;
   document.querySelectorAll('#perm_booking_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.booking_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_slot_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.slot_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_vip_content .filter-chip').forEach(c=>{c.classList.toggle('active',(p.vip_content||[]).includes(c.dataset.value))});
