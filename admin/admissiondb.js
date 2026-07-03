@@ -509,20 +509,53 @@ function exportAdmissionHtml() {
     : adbSelectedMajors.map(m => ADMISSION_MAJORS[m]||m).join('・');
   const today = new Date().toLocaleDateString('zh-CN', {year:'numeric',month:'2-digit',day:'2-digit'});
 
-  const cols = [
-    ...(showMajor ? [['专业','60px']] : []),
-    ['大学名','110px'],['設置主体','44px'],['研究科名','140px'],['専攻名','100px'],
-    ['コース名','90px'],['出願類型','72px'],['資格審査','72px'],['出願期間','72px'],
-    ['筆記試験','72px'],['口述試験','72px'],['合格発表','72px'],
-    ['英語','44px'],['日語','44px'],
+  // 筛选条件描述
+  const filterDesc = [];
+  if (adbEnglish !== 'all') filterDesc.push(`英语：${adbEnglish==='必須'?'必须':adbEnglish==='任意'?'任意':'不要'}`);
+  if (adbJapanese !== 'all') filterDesc.push(`日语：${adbJapanese==='必須'?'必须':adbJapanese==='任意'?'任意':'不要'}`);
+  if (adbSearch.trim()) filterDesc.push(`关键词：${adbSearch.trim()}`);
+  // 出願期間范围（从筛选结果中提取月份）
+  const periods = filtered.map(s => s.application_period||'').filter(Boolean);
+  const monthNums = [];
+  periods.forEach(p => { const m = p.match(/(\d+)月/g); if(m) m.forEach(x => monthNums.push(parseInt(x))); });
+  if (monthNums.length) {
+    const mn = Math.min(...monthNums), mx = Math.max(...monthNums);
+    filterDesc.push(mn===mx ? `出願：${mn}月` : `出願：${mn}月～${mx}月`);
+  }
+  const filterLine = filterDesc.length ? filterDesc.join('　|　') : '全部';
+
+  // 列定义：[label, width, color-group]
+  // color-group: school=学校信息, time=时间, lang=语言
+  const colDefs = [
+    ...(showMajor ? [['专业','56px','school']] : []),
+    ['大学名','108px','school'],
+    ['設置主体','40px','school'],
+    ['研究科名','136px','school'],
+    ['専攻名','96px','school'],
+    ['コース名','88px','school'],
+    ['出願類型','68px','time'],
+    ['資格審査','68px','time'],
+    ['出願期間','68px','time'],
+    ['筆記試験','68px','time'],
+    ['口述試験','68px','time'],
+    ['合格発表','68px','time'],
+    ['英語','42px','lang'],
+    ['日語','42px','lang'],
   ];
 
-  const engColor = v => v==='必須'?'#1a56a0':v==='任意'?'#b45309':'#666';
+  // 表头颜色
+  const thColors = {
+    school: { bg:'#2c4a7c', border:'#1e3560' },
+    time:   { bg:'#3d6b4f', border:'#2a4d38' },
+    lang:   { bg:'#7c4a2c', border:'#5e3520' },
+  };
 
-  const rows = filtered.map(s => `<tr>
+  const engColor = v => v==='必須'?'#1a56a0':v==='任意'?'#b45309':'#888';
+
+  const rows = filtered.map((s,i) => `<tr class="${i%2===1?'even':''}">
     ${showMajor ? `<td>${ADMISSION_MAJORS[s.major]||s.major}</td>` : ''}
-    <td style="font-weight:600">${s.university||''}</td>
-    <td style="text-align:center">${s.type||''}</td>
+    <td class="bold">${s.university||''}</td>
+    <td class="center">${s.type||''}</td>
     <td>${s.faculty||''}</td>
     <td>${s.department||''}</td>
     <td>${s.course||''}</td>
@@ -532,31 +565,46 @@ function exportAdmissionHtml() {
     <td>${s.written_exam||''}</td>
     <td>${s.oral_exam||''}</td>
     <td>${s.result_date||''}</td>
-    <td style="text-align:center;color:${engColor(s.english_required)};font-weight:600">${s.english_required||'-'}</td>
-    <td style="text-align:center;color:${engColor(s.japanese_required)};font-weight:600">${s.japanese_required||'-'}</td>
+    <td class="center" style="color:${engColor(s.english_required)};font-weight:700">${s.english_required||'-'}</td>
+    <td class="center" style="color:${engColor(s.japanese_required)};font-weight:700">${s.japanese_required||'-'}</td>
   </tr>`).join('');
+
+  const theadCells = colDefs.map(([l,,g]) =>
+    `<th style="background:${thColors[g].bg};border-color:${thColors[g].border}">${l}</th>`
+  ).join('');
 
   const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
 <title>${majorLabel} 出願学校名单 ${today}</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: 'Hiragino Sans', 'Noto Sans JP', 'MS Gothic', sans-serif; font-size: 10px; color: #222; background: #fff; padding: 16px; }
-  h1 { font-size: 14px; font-weight: 700; margin-bottom: 2px; }
-  .sub { font-size: 10px; color: #666; margin-bottom: 12px; }
-  table { border-collapse: collapse; width: 100%; table-layout: fixed; }
-  th { background: #2c3e50; color: #fff; padding: 5px 4px; text-align: left; font-size: 9px; font-weight: 600; border: 1px solid #1a252f; white-space: nowrap; }
-  td { padding: 4px; border: 1px solid #ddd; vertical-align: top; word-break: break-all; line-height: 1.4; }
-  tr:nth-child(even) { background: #f8f9fa; }
-  tr:hover { background: #eef2ff; }
-  ${cols.map(([,w],i)=>`col:nth-child(${i+1}){width:${w}}`).join('')}
-  @page { size: A3 landscape; margin: 10mm; }
-  @media print { body { padding: 0; } tr:hover { background: inherit; } }
+  body { font-family: 'Hiragino Sans','Noto Sans JP','Yu Gothic','MS Gothic',sans-serif; font-size: 11px; color: #222; background: #fff; padding: 20px; }
+  .title-block { margin-bottom: 14px; border-left: 4px solid #2c4a7c; padding-left: 10px; }
+  h1 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .meta { font-size: 11px; color: #555; margin-bottom: 3px; }
+  .filters { font-size: 11px; color: #2c4a7c; background: #eef3fb; border-radius: 3px; padding: 4px 8px; display: inline-block; margin-top: 4px; }
+  table { border-collapse: collapse; width: 100%; table-layout: fixed; margin-top: 12px; }
+  th { padding: 6px 4px; text-align: left; font-size: 10px; font-weight: 700; color: #fff; border: 1px solid #ccc; white-space: nowrap; }
+  td { padding: 5px 4px; border: 1px solid #ddd; vertical-align: top; word-break: break-all; line-height: 1.5; font-size: 11px; }
+  tr.even td { background: #f4f7fb; }
+  .bold { font-weight: 700; }
+  .center { text-align: center; }
+  ${colDefs.map(([,w],i) => `col:nth-child(${i+1}){width:${w}}`).join('')}
+  @page { size: A3 landscape; margin: 12mm; }
+  @media print {
+    body { padding: 0; font-size: 10px; }
+    td { font-size: 10px; padding: 4px 3px; }
+    th { font-size: 9px; padding: 5px 3px; }
+    .title-block { margin-bottom: 10px; }
+  }
 </style></head><body>
-<h1>${majorLabel} 可出願学校名单</h1>
-<div class="sub">唯新教育 · ${today} · 共 ${filtered.length} 条</div>
+<div class="title-block">
+  <h1>${majorLabel} 可出願学校名单</h1>
+  <div class="meta">唯新教育 · ${today} · 共 ${filtered.length} 条</div>
+  <div class="filters">筛选条件：${filterLine}</div>
+</div>
 <table>
-  <colgroup>${cols.map(([,w])=>`<col style="width:${w}">`).join('')}</colgroup>
-  <thead><tr>${cols.map(([l])=>`<th>${l}</th>`).join('')}</tr></thead>
+  <colgroup>${colDefs.map(([,w]) => `<col style="width:${w}">`).join('')}</colgroup>
+  <thead><tr>${theadCells}</tr></thead>
   <tbody>${rows}</tbody>
 </table>
 </body></html>`;
