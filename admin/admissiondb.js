@@ -466,12 +466,8 @@ async function confirmAdmissionImport() {
   const btn = document.getElementById('admissionImportBtn');
   btn.textContent = '导入中…'; btn.disabled = true;
 
-  // 去重：同大学+研究科+出願類型 已存在则跳过
-  const existingKeys = new Set(cachedAdmissionSchools.map(s => `${s.university}|${s.faculty}|${s.admission_type}`));
-  const toInsert = admissionImportData.filter(s => !existingKeys.has(`${s.university}|${s.faculty}|${s.admission_type}`));
-  const skipped = admissionImportData.length - toInsert.length;
-
-  if (!toInsert.length) { alert(`全部 ${admissionImportData.length} 条已存在，跳过。`); btn.textContent = '确认导入'; btn.disabled = false; return; }
+  const toInsert = admissionImportData;
+  const skipped = 0;
 
   // 分批插入（每批50条）
   try {
