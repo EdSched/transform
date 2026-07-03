@@ -41,10 +41,7 @@ let adbMajor = 'all', adbEnglish = 'all', adbJapanese = 'all', adbSearch = '';
 let adbEditId = null;
 
 function renderAdmissionDbPage(mc) {
-  const majorCounts = {};
-  cachedAdmissionSchools.forEach(s => {
-    majorCounts[s.major] = (majorCounts[s.major] || 0) + 1;
-  });
+  const majorCounts = (typeof cachedAdmissionMajorCounts !== 'undefined' && Object.keys(cachedAdmissionMajorCounts).length) ? cachedAdmissionMajorCounts : {};
 
   let filtered = filterAdmissionSchools();
 
@@ -61,8 +58,8 @@ function renderAdmissionDbPage(mc) {
   <!-- 专业筛选 -->
   <div class="filter-row" style="margin-bottom:8px" id="adbMajorRow">
     <div class="filter-chip${adbMajor==='all'?' active':''}" onclick="setAdbMajor('all',this)">全部专业</div>
-    ${Object.entries(ADMISSION_MAJORS).filter(([k])=>majorCounts[k]).map(([k,v])=>`
-      <div class="filter-chip${adbMajor===k?' active':''}" onclick="setAdbMajor('${k}',this)">${v} <span style="font-size:9px;opacity:.6">${majorCounts[k]||0}</span></div>
+    ${Object.entries(ADMISSION_MAJORS).map(([k,v])=>`
+      <div class="filter-chip${adbMajor===k?' active':''}" onclick="setAdbMajor('${k}',this)">${v}${majorCounts[k]?` <span style="font-size:9px;opacity:.6">${majorCounts[k]}</span>`:''}</div>
     `).join('')}
   </div>
 
