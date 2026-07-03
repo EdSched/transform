@@ -19,6 +19,20 @@ async function sb(path, method = 'GET', body = null) {
   return t ? JSON.parse(t) : [];
 }
 
+// ── Fetch all rows (bypasses 1000-row default limit) ──
+async function sbAll(path) {
+  const pageSize = 1000;
+  let all = [], offset = 0;
+  const sep = path.includes('?') ? '&' : '?';
+  while (true) {
+    const batch = await sb(`${path}${sep}limit=${pageSize}&offset=${offset}`);
+    all = all.concat(batch);
+    if (batch.length < pageSize) break;
+    offset += pageSize;
+  }
+  return all;
+}
+
 // ── Supabase Storage ──
 // Upload a file to a public bucket, returns the public URL
 async function sbUpload(bucket, path, file) {
