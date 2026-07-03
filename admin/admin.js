@@ -118,7 +118,7 @@ async function renderPage(){
       cachedTeachers=await sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[]);
       renderPayrollPage(mc);
     } else if(curPage==='admissiondb'){
-      cachedAdmissionSchools=await sb('/rest/v1/admission_schools?select=*&order=major.asc,university.asc').catch(()=>[]);
+      cachedAdmissionSchools=await sb('/rest/v1/admission_schools?select=*&order=major.asc,university.asc&limit=10000').catch(()=>[]);
       renderAdmissionDbPage(mc);
     } else if(curPage==='attendance'){
       [cachedStudents,cachedCourses,cachedSessions,cachedSessionRecords]=await Promise.all([
