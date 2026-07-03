@@ -50,7 +50,7 @@ function renderAdmissionDbPage(mc) {
 
   mc.innerHTML = `
   <div class="page-header">
-    <div class="section-title">出願数据库 <span class="badge-count">${cachedAdmissionSchools.length}</span></div>
+    <div class="section-title">出願数据库</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" onclick="openAdmissionImport()">↑ 导入 Excel</button>
       <button class="btn btn-outline btn-sm" onclick="openAdmissionAdd()">＋ 添加</button>
@@ -81,7 +81,7 @@ function renderAdmissionDbPage(mc) {
   </div>
 
   <!-- 结果数 -->
-  <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">筛选结果 <strong style="color:var(--text)">${filtered.length}</strong> 条</div>
+  <div style="font-size:11px;color:var(--text-3);margin-bottom:8px" id="adbResultCount">请选择专业查看数据</div>
 
   <!-- 表格 -->
   <div style="overflow-x:auto">
@@ -188,6 +188,13 @@ function renderAdmissionTable() {
   const tbody = document.getElementById('admissionTableBody');
   if (!tbody) return;
   const filtered = filterAdmissionSchools();
+  const countEl = document.getElementById('adbResultCount');
+  if (!cachedAdmissionSchools.length) {
+    if (countEl) countEl.textContent = '请选择专业查看数据';
+    tbody.innerHTML = `<tr><td colspan="16" style="text-align:center;padding:40px;color:var(--text-3)">← 请点击上方专业筛选查看数据</td></tr>`;
+    return;
+  }
+  if (countEl) countEl.innerHTML = `筛选结果 <strong style="color:var(--text)">${filtered.length}</strong> 条`;
   if (!filtered.length) { tbody.innerHTML = `<tr><td colspan="16" style="text-align:center;padding:20px;color:var(--text-3)">暂无数据</td></tr>`; return; }
 
   tbody.innerHTML = filtered.map(s => {
@@ -217,11 +224,41 @@ function renderAdmissionTable() {
   }).join('');
 }
 
-function setAdbMajor(m, el) {
+async function setAdbMajor(m, el) {
   adbMajor = m;
   document.querySelectorAll('#adbMajorRow .filter-chip').forEach(c => c.classList.remove('active'));
   el.classList.add('active');
+  // 按需加载：切换专业时拉对应数据
+  const tbody = document.getElementById('admissionTableBody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;padding:20px;color:var(--text-3)">加载中…</td></tr>';
+  if (m === 'all') {
+    if (!confirm('全部专业数据量较大（4000+条），确定加载？')) {
+      // 恢复上一个选中状态
+      document.querySelectorAll('#adbMajorRow .filter-chip').forEach(c => c.classList.remove('active'));
+      const prev = document.querySelector(`#adbMajorRow .filter-chip[onclick*="'${adbMajor}'"]`);
+      if (prev) prev.classList.add('active');
+      if (tbody) renderAdmissionTable();
+      return;
+    }
+    cachedAdmissionSchools = await sb('/rest/v1/admission_schools?select=*&order=major.asc,university.asc&limit=10000').catch(() => []);
+  } else {
+    cachedAdmissionSchools = await sb(`/rest/v1/admission_schools?select=*&major=eq.${m}&order=university.asc&limit=2000`).catch(() => []);
+  }
+  // 更新专业计数显示
+  updateMajorCounts();
   renderAdmissionTable();
+}
+
+function updateMajorCounts() {
+  const majorCounts = {};
+  cachedAdmissionSchools.forEach(s => { majorCounts[s.major] = (majorCounts[s.major] || 0) + 1; });
+  document.querySelectorAll('#adbMajorRow .filter-chip').forEach(chip => {
+    const m = chip.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
+    if (m && m !== 'all' && majorCounts[m] !== undefined) {
+      const countSpan = chip.querySelector('span');
+      if (countSpan) countSpan.textContent = majorCounts[m];
+    }
+  });
 }
 
 function setAdbFilter(type, val, el) {
