@@ -1157,7 +1157,7 @@ function renderList() {
     const sc = SUBJ_COLOR[r.subject] || SUBJ_COLOR.other;
     const eraTag = r.era === 'new' ? `<span class="era-tag era-new">25–26</span>` : `<span class="era-tag era-hist">22–24</span>`;
     html += `<tr data-id="${r.id}" data-univ="${(r.univ||'').replace(/"/g,'&quot;')}">
-      <td style="max-width:120px">${r.univ||''}</td><td style="max-width:120px">${r.dept||''}</td><td style="max-width:100px">${r.spec||''}</td>
+      <td style="max-width:100px">${r.univ||''}</td><td style="max-width:100px">${r.dept||''}</td><td style="max-width:80px">${r.spec||''}</td>
       <td><span class="subj-tag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[r.subject]||r.subject}</span></td>
       <td><span style="font-size:9px;padding:1px 5px;border-radius:2px;background:${r.track==='rika'?'#e8f0e4':r.track==='bijutsu'?'#f4ece0':'#e8edf8'};color:${r.track==='rika'?'#3a6630':r.track==='bijutsu'?'#7a4a20':'#2c4a8a'}">${{bunka:'文科',rika:'理科',bijutsu:'美術'}[r.track]||'文科'}</span></td>
       <td>${r.tier != null ? `<span style="font-size:9px;padding:1px 6px;border-radius:2px;background:${['#dce4f4','#e8edf8','#e8f0e4','#f4ece0'][r.tier]||'#eee'};color:${['#1a3070','#2c4a8a','#3a6630','#7a4a20'][r.tier]||'#666'};font-weight:500">T${r.tier}</span>` : '<span style="font-size:9px;color:var(--text-muted)">自動</span>'}</td>
@@ -1821,7 +1821,7 @@ function ugRenderList() {
     const [tbg, tfg] = TIER_COLOR[tier] || ['#eee','#666'];
     const stype = r.school_type || ugSchoolType(r.univ);
     html += `<tr data-id="${r.id}" data-univ="${(r.univ||'').replace(/"/g,'&quot;')}">
-      <td style="max-width:120px">${r.univ||''}</td><td style="max-width:120px">${r.dept||''}</td><td style="max-width:100px">${r.spec||''}</td>
+      <td style="max-width:100px">${r.univ||''}</td><td style="max-width:100px">${r.dept||''}</td><td style="max-width:80px">${r.spec||''}</td>
       <td><span class="track-tag" style="background:#eef0e8;color:#3a3830">${TRACK_LABEL[r.track]||'文科'}</span></td>
       <td>${r.era==='new'?'25–26':'22–24'}</td>
       <td><span class="tier-tag" style="background:${tbg};color:${tfg}">T${tier}${r.tier==null?'(自動)':''}</span></td>
