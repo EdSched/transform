@@ -103,6 +103,11 @@ function buildTabs() {
 }
 
 function switchTab(tab) {
+  // 出願ページ以外はmain幅をリセット
+  if (tab !== 'admissiondb') {
+    const mainEl = document.querySelector('.main');
+    if (mainEl) mainEl.style.maxWidth = '';
+  }
   curTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`)?.classList.add('active');
@@ -1723,32 +1728,47 @@ const TEACHER_ADB_COLS = [
 ];
 
 async function renderTeacherAdmissionDb(mc) {
+  // 出願ページは全幅表示
+  const mainEl = document.querySelector('.main');
+  if (mainEl) mainEl.style.maxWidth = 'none';
+
   mc.innerHTML = `
-  <div class="page-header" style="margin-bottom:12px">
-    <div class="section-title">出願数据库</div>
-    <button class="btn btn-outline btn-sm" onclick="teacherAdbExportHtml()">↓ 导出 PDF表格</button>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+    <div style="font-size:15px;font-weight:600;font-family:'Noto Serif SC',serif">出願数据库</div>
+    <button class="btn btn-sm btn-outline" onclick="teacherAdbExportHtml()" style="border:1px solid var(--border)">↓ 导出 PDF表格</button>
   </div>
-  <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">点击专业查看数据（可多选）</div>
-  <div class="filter-row" style="margin-bottom:10px" id="tadbMajorRow">
-    <div class="filter-chip" onclick="teacherAdbToggleGroup(this)">社会人文</div>
-    ${Object.entries(TEACHER_ADB_MAJORS).map(([k,v])=>`<div class="filter-chip" data-key="${k}" onclick="teacherAdbToggleMajor('${k}',this)">${v}</div>`).join('')}
-    <div class="filter-chip" style="color:var(--text-3)" onclick="teacherAdbClear()">✕ 清除</div>
+
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px;margin-bottom:12px">
+    <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">选择专业 <span style="font-weight:400;text-transform:none">（可多选，点「社会人文」同时选中三个专业）</span></div>
+    <div class="filter-row" id="tadbMajorRow">
+      <div class="filter-chip" onclick="teacherAdbToggleGroup(this)">社会人文</div>
+      ${Object.entries(TEACHER_ADB_MAJORS).map(([k,v])=>`<div class="filter-chip" data-key="${k}" onclick="teacherAdbToggleMajor('${k}',this)">${v}</div>`).join('')}
+      <div class="filter-chip" style="opacity:.6" onclick="teacherAdbClear()">✕ 清除</div>
+    </div>
   </div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
-    <span style="font-size:11px;color:var(--text-3)">英语</span>
-    ${['all','必須','任意','不要'].map((v,i)=>`<button class="btn btn-sm ${teacherAdbEnglish===v?'btn-primary':'btn-outline'}" onclick="teacherAdbSetLang('english','${v}')" style="font-size:11px;padding:3px 9px">${['全部','必须','任意','不要'][i]}</button>`).join('')}
-    <div style="width:1px;height:16px;background:var(--border)"></div>
-    <span style="font-size:11px;color:var(--text-3)">日语</span>
-    ${['all','必須','任意','不要'].map((v,i)=>`<button class="btn btn-sm ${teacherAdbJapanese===v?'btn-primary':'btn-outline'}" onclick="teacherAdbSetLang('japanese','${v}')" style="font-size:11px;padding:3px 9px">${['全部','必须','任意','不要'][i]}</button>`).join('')}
+
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px;margin-bottom:12px">
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:11px;color:var(--text-3);min-width:28px">英语</span>
+        ${['all','必須','任意','不要'].map((v,i)=>`<button class="btn btn-sm ${teacherAdbEnglish===v?'btn-primary':'btn-outline'}" onclick="teacherAdbSetLang('english','${v}')" style="padding:3px 10px;font-size:11px;border:1px solid var(--border)">${['全部','必须','任意','不要'][i]}</button>`).join('')}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:11px;color:var(--text-3);min-width:28px">日语</span>
+        ${['all','必須','任意','不要'].map((v,i)=>`<button class="btn btn-sm ${teacherAdbJapanese===v?'btn-primary':'btn-outline'}" onclick="teacherAdbSetLang('japanese','${v}')" style="padding:3px 10px;font-size:11px;border:1px solid var(--border)">${['全部','必须','任意','不要'][i]}</button>`).join('')}
+      </div>
+      <input type="text" placeholder="搜索大学名、研究科、専攻…" value="${teacherAdbSearch}"
+        oninput="if(this.dataset.composing!=='1'){teacherAdbSearch=this.value;teacherAdbRender()}"
+        oncompositionstart="this.dataset.composing='1'"
+        oncompositionend="this.dataset.composing='';teacherAdbSearch=this.value;teacherAdbRender()"
+        style="font-size:12px;max-width:220px;padding:4px 8px">
+    </div>
   </div>
-  <input type="text" placeholder="搜索大学名、研究科、専攻…" value="${teacherAdbSearch}"
-    oninput="if(this.dataset.composing!=='1'){teacherAdbSearch=this.value;teacherAdbRender()}"
-    oncompositionstart="this.dataset.composing='1'"
-    oncompositionend="this.dataset.composing='';teacherAdbSearch=this.value;teacherAdbRender()"
-    style="font-size:12px;max-width:300px;margin-bottom:10px">
-  <div style="font-size:11px;color:var(--text-3);margin-bottom:8px" id="tadbCount">请选择专业查看数据</div>
-  <div style="overflow-x:auto;width:100%">
-    <table class="student-table" style="font-size:11px;min-width:900px">
+
+  <div style="font-size:11px;color:var(--text-3);margin-bottom:6px" id="tadbCount">请选择专业查看数据</div>
+  <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">💡 点击列标题可排序，列标题右侧的 ▾ 可筛选该列内容</div>
+  <div style="overflow-x:auto">
+    <table class="student-table" style="min-width:960px">
       <thead id="tadbThead"></thead>
       <tbody id="tadbBody"></tbody>
     </table>
