@@ -114,7 +114,7 @@ main{padding:1.5rem 3rem 4rem}
 .dp-table thead th{padding:8px 14px;background:var(--bg);border-bottom:2px solid var(--border);text-align:left;font-size:10px;letter-spacing:.06em;color:var(--text-muted);text-transform:uppercase;white-space:nowrap}
 .dp-table tbody tr{border-bottom:1px solid var(--border-light);transition:background .1s}
 .dp-table tbody tr:hover{background:#faf8f4}
-.dp-table td{padding:10px 14px;vertical-align:middle}
+.dp-table td{padding:10px 12px;vertical-align:middle;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sbadge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:500;white-space:nowrap}
 .sbadge.toeic{background:#e8f0f8;color:#1a3060}
 .sbadge.toefl{background:#e8f4e4;color:#1a4020}
@@ -981,8 +981,8 @@ function buildDetailPanelHTML(univ, rows, tier) {
     <div class="dp-table-wrap">
       <table class="dp-table">
         <thead><tr>
-          <th style="min-width:180px">研究科</th>
-          <th>専攻</th>
+          <th style="min-width:100px;max-width:140px">研究科</th>
+          <th style="max-width:140px">専攻</th>
           <th style="width:90px">学科</th>
           <th style="width:120px">JLPT</th>
           <th style="width:120px">英語</th>
