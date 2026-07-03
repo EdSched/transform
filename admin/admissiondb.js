@@ -8,7 +8,6 @@ const ADMISSION_MAJORS = {
   keizai: '経済学',
   shinpan: '新闻传播学',
   fukushi: '社会福祉学',
-  shakai_group: '社会人文',
   nihongo: '日本语教育',
   hyosho: '表象文化・文学・哲学',
   seiji: '政治学',
@@ -18,32 +17,23 @@ const ADMISSION_MAJORS = {
   tokei: '統計・計量',
 };
 
-// Excel sheet名 → major key 映射
 const SHEET_TO_MAJOR = {
-  '社会学': 'shakai',
-  '经营学': 'keiei',
-  '经济学': 'keizai',
-  '新闻传播学': 'shinpan',
-  '社会福祉学': 'fukushi',
-  '日本语教育': 'nihongo',
-  '表象文化・文学・哲学': 'hyosho',
-  '政治学': 'seiji',
-  '东洋史': 'toyo',
-  '文化人类学': 'bunka',
-  'MOT': 'mot',
-  'MOT（复制用）': 'mot',
-  '統計・計量在籍': 'tokei',
-  '经营学专升硕': 'keiei',
-  '社会学各分': 'shakai',
+  '社会学': 'shakai', '经营学': 'keiei', '经济学': 'keizai',
+  '新闻传播学': 'shinpan', '社会福祉学': 'fukushi', '日本语教育': 'nihongo',
+  '表象文化・文学・哲学': 'hyosho', '政治学': 'seiji', '东洋史': 'toyo',
+  '文化人类学': 'bunka', 'MOT': 'mot', 'MOT（复制用）': 'mot',
+  '統計・計量在籍': 'tokei', '经营学专升硕': 'keiei', '社会学各分': 'shakai',
 };
 
-let adbMajor = 'all', adbEnglish = 'all', adbJapanese = 'all', adbSearch = '';
+// 当前选中的专业列表（支持多选）
+let adbSelectedMajors = []; // 空=未选，['shakai']单选，['shakai','shinpan','fukushi']多选
+let adbEnglish = 'all', adbJapanese = 'all', adbSearch = '';
 let adbEditId = null;
+let adbSortCol = '', adbSortDir = 1;
+let adbColFilters = {}; // { col: Set of values }
 
 function renderAdmissionDbPage(mc) {
   const majorCounts = (typeof cachedAdmissionMajorCounts !== 'undefined' && Object.keys(cachedAdmissionMajorCounts).length) ? cachedAdmissionMajorCounts : {};
-
-  let filtered = filterAdmissionSchools();
 
   mc.innerHTML = `
   <div class="page-header">
@@ -51,56 +41,45 @@ function renderAdmissionDbPage(mc) {
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" onclick="openAdmissionImport()">↑ 导入 Excel</button>
       <button class="btn btn-outline btn-sm" onclick="openAdmissionAdd()">＋ 添加</button>
-      <button class="btn btn-outline btn-sm" onclick="exportAdmissionExcel()">↓ 导出筛选结果</button>
+      <button class="btn btn-outline btn-sm" onclick="exportAdmissionExcel()">↓ 导出 Excel</button>
     </div>
   </div>
 
-  <!-- 专业筛选 -->
+  <!-- 专业筛选（支持多选） -->
+  <div style="margin-bottom:6px;font-size:10px;color:var(--text-3)">点击选择专业（可多选）；点「社会人文」同时加载社会学+新闻传播+社会福祉</div>
   <div class="filter-row" style="margin-bottom:8px" id="adbMajorRow">
-    <div class="filter-chip${adbMajor==='all'?' active':''}" onclick="setAdbMajor('all',this)">全部专业</div>
+    <div class="filter-chip" onclick="toggleAdbMajor('shakai_group',this)" id="adb_chip_shakai_group">社会人文</div>
     ${Object.entries(ADMISSION_MAJORS).map(([k,v])=>`
-      <div class="filter-chip${adbMajor===k?' active':''}" onclick="setAdbMajor('${k}',this)">${v}${majorCounts[k]?` <span style="font-size:9px;opacity:.6">${majorCounts[k]}</span>`:''}</div>
+      <div class="filter-chip" onclick="toggleAdbMajor('${k}',this)" id="adb_chip_${k}">${v}${majorCounts[k]?` <span style="font-size:9px;opacity:.6">${majorCounts[k]}</span>`:''}</div>
     `).join('')}
+    <div class="filter-chip" onclick="clearAdbMajors()" style="color:var(--text-3)">清除</div>
   </div>
 
-  <!-- 筛选条件 -->
+  <!-- 语言筛选 -->
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-    <div style="font-size:11px;color:var(--text-3)">英语成绩</div>
-    ${['all','必須','任意','不要'].map((v,i)=>`<div class="filter-chip${adbEnglish===v?' active':''}" onclick="setAdbFilter('english','${v}',this)" style="font-size:11px;padding:3px 10px">${['全部','必须','任意','不要'][i]}</div>`).join('')}
+    <div style="font-size:11px;color:var(--text-3)">英语</div>
+    ${['all','必須','任意','不要'].map((v,i)=>`<button class="btn btn-sm adb-lang-btn${adbEnglish===v?' btn-primary':' btn-outline'}" onclick="setAdbFilter('english','${v}')" style="font-size:11px;padding:3px 10px">${['全部','必须','任意','不要'][i]}</button>`).join('')}
     <div style="width:1px;height:18px;background:var(--border);margin:0 4px"></div>
-    <div style="font-size:11px;color:var(--text-3)">日语成绩</div>
-    ${['all','必須','任意','不要'].map((v,i)=>`<div class="filter-chip${adbJapanese===v?' active':''}" onclick="setAdbFilter('japanese','${v}',this)" style="font-size:11px;padding:3px 10px">${['全部','必须','任意','不要'][i]}</div>`).join('')}
+    <div style="font-size:11px;color:var(--text-3)">日语</div>
+    ${['all','必須','任意','不要'].map((v,i)=>`<button class="btn btn-sm adb-lang-btn${adbJapanese===v?' btn-primary':' btn-outline'}" onclick="setAdbFilter('japanese','${v}')" style="font-size:11px;padding:3px 10px">${['全部','必须','任意','不要'][i]}</button>`).join('')}
   </div>
 
   <!-- 搜索 -->
   <div style="margin-bottom:10px">
-    <input type="text" placeholder="搜索大学名、研究科…" value="${adbSearch}" oninput="adbSearch=this.value;renderAdmissionTable()" style="font-size:12px;max-width:320px">
+    <input type="text" placeholder="搜索大学名、研究科、専攻…" value="${adbSearch}"
+      oninput="if(this.dataset.composing!=='1')setAdbSearch(this.value)"
+      oncompositionstart="this.dataset.composing='1'"
+      oncompositionend="this.dataset.composing='';setAdbSearch(this.value)"
+      style="font-size:12px;max-width:320px">
   </div>
 
   <!-- 结果数 -->
-  <div style="font-size:11px;color:var(--text-3);margin-bottom:8px" id="adbResultCount">请选择专业查看数据</div>
+  <div style="font-size:11px;color:var(--text-3);margin-bottom:8px" id="adbResultCount">请点击上方专业查看数据</div>
 
   <!-- 表格 -->
   <div style="overflow-x:auto">
-    <table class="student-table" id="admissionTable">
-      <thead><tr>
-        <th style="min-width:80px">专业</th>
-        <th style="min-width:120px">大学名</th>
-        <th style="min-width:60px">性质</th>
-        <th style="min-width:140px">研究科</th>
-        <th style="min-width:100px">専攻</th>
-        <th style="min-width:80px">出願類型</th>
-        <th style="min-width:90px">出願期間</th>
-        <th style="min-width:80px">筆記試験</th>
-        <th style="min-width:80px">口述試験</th>
-        <th style="min-width:80px">合格発表</th>
-        <th style="min-width:60px">英語</th>
-        <th style="min-width:60px">日語</th>
-        <th style="min-width:60px">推薦状</th>
-        <th style="min-width:60px">卒論</th>
-        <th style="min-width:80px">試験方式</th>
-        <th style="min-width:50px"></th>
-      </tr></thead>
+    <table class="student-table" id="admissionTable" style="font-size:11px">
+      <thead id="admissionThead"></thead>
       <tbody id="admissionTableBody"></tbody>
     </table>
   </div>
@@ -120,7 +99,8 @@ function renderAdmissionDbPage(mc) {
         <div class="form-group" style="margin:0"><label class="form-label">専攻名</label><input id="adb_department"></div>
         <div class="form-group" style="margin:0"><label class="form-label">コース名</label><input id="adb_course"></div>
         <div class="form-group" style="margin:0"><label class="form-label">出願類型</label><input id="adb_admission_type"></div>
-        <div class="form-group" style="margin:0"><label class="form-label">出願期間</label><input id="adb_application_period" placeholder="5月上旬まで"></div>
+        <div class="form-group" style="margin:0"><label class="form-label">資格審査</label><input id="adb_doc_review_period" placeholder="5月上旬まで"></div>
+        <div class="form-group" style="margin:0"><label class="form-label">出願期間</label><input id="adb_application_period" placeholder="5月下旬"></div>
         <div class="form-group" style="margin:0"><label class="form-label">筆記試験</label><input id="adb_written_exam"></div>
         <div class="form-group" style="margin:0"><label class="form-label">口述試験</label><input id="adb_oral_exam"></div>
         <div class="form-group" style="margin:0"><label class="form-label">合格発表</label><input id="adb_result_date"></div>
@@ -152,11 +132,9 @@ function renderAdmissionDbPage(mc) {
     <div class="modal" style="width:560px">
       <div class="modal-title">导入 Excel</div>
       <div style="font-size:11px;color:var(--text-2);margin-bottom:12px;line-height:1.8">
-        上传格式与原始数据 Excel 相同的文件。系统会按 sheet 名自动识别专业。<br>
-        每个 sheet 第一行为列名，第二行起为数据。<br>
-        <strong>同大学+研究科+出願類型完全相同的记录会跳过（不覆盖）。</strong>
+        上传格式与原始数据 Excel 相同的文件，系统按 sheet 名自动识别专业。
       </div>
-      <div class="form-group"><label class="form-label">选择专业 Excel 文件</label>
+      <div class="form-group"><label class="form-label">选择文件</label>
         <input type="file" id="admissionImportFile" accept=".xlsx,.xls"></div>
       <div id="admissionImportPreview" style="margin-top:10px;font-size:11px;color:var(--text-2)"></div>
       <div class="modal-actions">
@@ -169,51 +147,174 @@ function renderAdmissionDbPage(mc) {
   renderAdmissionTable();
 }
 
+// ── 专业多选 ──
+async function toggleAdbMajor(key, el) {
+  if (key === 'shakai_group') {
+    // 社会人文：切换 shakai+shinpan+fukushi 整体
+    const groupKeys = ['shakai','shinpan','fukushi'];
+    const allSelected = groupKeys.every(k => adbSelectedMajors.includes(k));
+    if (allSelected) {
+      adbSelectedMajors = adbSelectedMajors.filter(k => !groupKeys.includes(k));
+    } else {
+      groupKeys.forEach(k => { if (!adbSelectedMajors.includes(k)) adbSelectedMajors.push(k); });
+    }
+  } else {
+    if (adbSelectedMajors.includes(key)) {
+      adbSelectedMajors = adbSelectedMajors.filter(k => k !== key);
+    } else {
+      adbSelectedMajors.push(key);
+    }
+  }
+  updateMajorChips();
+  await loadAdbData();
+}
+
+function clearAdbMajors() {
+  adbSelectedMajors = [];
+  updateMajorChips();
+  cachedAdmissionSchools = [];
+  renderAdmissionTable();
+}
+
+function updateMajorChips() {
+  const groupKeys = ['shakai','shinpan','fukushi'];
+  const groupActive = groupKeys.every(k => adbSelectedMajors.includes(k));
+  const groupChip = document.getElementById('adb_chip_shakai_group');
+  if (groupChip) groupChip.classList.toggle('active', groupActive);
+  Object.keys(ADMISSION_MAJORS).forEach(k => {
+    const chip = document.getElementById(`adb_chip_${k}`);
+    if (chip) chip.classList.toggle('active', adbSelectedMajors.includes(k));
+  });
+}
+
+async function loadAdbData() {
+  if (!adbSelectedMajors.length) { cachedAdmissionSchools = []; renderAdmissionTable(); return; }
+  const tbody = document.getElementById('admissionTableBody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;padding:20px;color:var(--text-3)">加载中…</td></tr>';
+  const majorFilter = `major=in.(${adbSelectedMajors.map(m=>`"${m}"`).join(',')})`;
+  cachedAdmissionSchools = await sb(`/rest/v1/admission_schools?select=*&${majorFilter}&order=university.asc&limit=5000`).catch(() => []);
+  adbColFilters = {};
+  adbSortCol = '';
+  renderAdmissionTable();
+}
+
+// ── 语言筛选 ──
+function setAdbFilter(type, val) {
+  if (type === 'english') adbEnglish = val;
+  else adbJapanese = val;
+  // 更新按钮样式
+  document.querySelectorAll('.adb-lang-btn').forEach(btn => {
+    const onclick = btn.getAttribute('onclick') || '';
+    const isEnglish = onclick.includes("'english'");
+    const isJapanese = onclick.includes("'japanese'");
+    const btnVal = onclick.match(/'([^']+)'\)$/)?.[1];
+    if ((isEnglish && type === 'english') || (isJapanese && type === 'japanese')) {
+      const active = btnVal === val;
+      btn.classList.toggle('btn-primary', active);
+      btn.classList.toggle('btn-outline', !active);
+    }
+  });
+  renderAdmissionTable();
+}
+
+function setAdbSearch(v) { adbSearch = v; renderAdmissionTable(); }
+
+// ── 过滤 ──
 function filterAdmissionSchools() {
   let list = cachedAdmissionSchools;
-  if (adbMajor !== 'all') list = list.filter(s => s.major === adbMajor);
   if (adbEnglish !== 'all') list = list.filter(s => s.english_required === adbEnglish);
   if (adbJapanese !== 'all') list = list.filter(s => s.japanese_required === adbJapanese);
   if (adbSearch.trim()) {
     const q = adbSearch.trim().toLowerCase();
-    list = list.filter(s => (s.university||'').toLowerCase().includes(q) || (s.faculty||'').toLowerCase().includes(q) || (s.department||'').toLowerCase().includes(q));
+    list = list.filter(s => (s.university||'').toLowerCase().includes(q) || (s.faculty||'').toLowerCase().includes(q) || (s.department||'').toLowerCase().includes(q) || (s.admission_type||'').toLowerCase().includes(q));
+  }
+  // 列筛选
+  Object.entries(adbColFilters).forEach(([col, vals]) => {
+    if (vals && vals.size) list = list.filter(s => vals.has(s[col]||''));
+  });
+  // 排序
+  if (adbSortCol) {
+    list = [...list].sort((a,b) => {
+      const av = a[adbSortCol]||'', bv = b[adbSortCol]||'';
+      return av.localeCompare(bv, 'ja') * adbSortDir;
+    });
   }
   return list;
 }
 
+// ── 表格渲染（带列头筛选/排序） ──
+const ADB_COLS = [
+  { key:'university', label:'大学名', width:'120px' },
+  { key:'type', label:'性质', width:'54px' },
+  { key:'faculty', label:'研究科', width:'140px' },
+  { key:'department', label:'専攻', width:'100px' },
+  { key:'admission_type', label:'出願類型', width:'80px' },
+  { key:'doc_review_period', label:'資格審査', width:'80px' },
+  { key:'application_period', label:'出願期間', width:'80px' },
+  { key:'written_exam', label:'筆記試験', width:'80px' },
+  { key:'oral_exam', label:'口述試験', width:'72px' },
+  { key:'result_date', label:'合格発表', width:'72px' },
+  { key:'english_required', label:'英語', width:'54px' },
+  { key:'japanese_required', label:'日語', width:'54px' },
+  { key:'recommendation', label:'推薦状', width:'54px' },
+  { key:'thesis', label:'卒論', width:'54px' },
+  { key:'exam_style', label:'試験方式', width:'90px' },
+];
+
 function renderAdmissionTable() {
+  const thead = document.getElementById('admissionThead');
   const tbody = document.getElementById('admissionTableBody');
-  if (!tbody) return;
+  if (!thead || !tbody) return;
+
+  const showMajorCol = adbSelectedMajors.length !== 1;
   const filtered = filterAdmissionSchools();
+
   const countEl = document.getElementById('adbResultCount');
   if (!cachedAdmissionSchools.length) {
-    if (countEl) countEl.textContent = '请选择专业查看数据';
-    tbody.innerHTML = `<tr><td colspan="16" style="text-align:center;padding:40px;color:var(--text-3)">← 请点击上方专业筛选查看数据</td></tr>`;
+    if (countEl) countEl.textContent = '请点击上方专业查看数据';
+    thead.innerHTML = '';
+    tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;padding:40px;color:var(--text-3)">← 请先选择专业</td></tr>';
     return;
   }
   if (countEl) countEl.innerHTML = `筛选结果 <strong style="color:var(--text)">${filtered.length}</strong> 条`;
-  if (!filtered.length) { tbody.innerHTML = `<tr><td colspan="16" style="text-align:center;padding:20px;color:var(--text-3)">暂无数据</td></tr>`; return; }
+
+  // 构建列头（含排序箭头和筛选下拉）
+  const cols = showMajorCol ? [{ key:'major', label:'专业', width:'72px' }, ...ADB_COLS] : ADB_COLS;
+  thead.innerHTML = `<tr>${cols.map(c => {
+    const sortArrow = adbSortCol===c.key ? (adbSortDir===1?'▲':'▼') : '⇅';
+    // 收集该列的唯一值用于筛选
+    const uniqueVals = [...new Set(cachedAdmissionSchools.map(s => s[c.key]||'').filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ja'));
+    const hasFilter = adbColFilters[c.key] && adbColFilters[c.key].size;
+    const filterIcon = uniqueVals.length > 1 ? `<span onclick="event.stopPropagation();openColFilter('${c.key}',this)" style="cursor:pointer;color:${hasFilter?'var(--accent)':'var(--text-3)'};margin-left:3px;font-size:10px">▾</span>` : '';
+    return `<th style="min-width:${c.width};cursor:pointer;user-select:none;white-space:nowrap" onclick="adbSort('${c.key}')">
+      ${c.label} <span style="font-size:9px;color:var(--text-3)">${sortArrow}</span>${filterIcon}
+    </th>`;
+  }).join('')}<th style="width:50px"></th></tr>`;
+
+  if (!filtered.length) { tbody.innerHTML = `<tr><td colspan="${cols.length+1}" style="text-align:center;padding:20px;color:var(--text-3)">暂无数据</td></tr>`; return; }
+
+  const engColor = v => v==='必須'?'var(--accent)':v==='任意'?'var(--warn)':'var(--text-3)';
 
   tbody.innerHTML = filtered.map(s => {
-    const engColor = s.english_required==='必須'?'var(--accent)':s.english_required==='任意'?'var(--warn)':'var(--text-3)';
-    const jpColor = s.japanese_required==='必須'?'var(--accent)':s.japanese_required==='任意'?'var(--warn)':'var(--text-3)';
+    const majorCell = showMajorCol ? `<td style="font-size:10px;color:var(--text-2)">${ADMISSION_MAJORS[s.major]||s.major}</td>` : '';
     return `<tr style="cursor:pointer" onclick="openAdmissionEdit('${s.id}')">
-      <td style="font-size:10px">${ADMISSION_MAJORS[s.major]||s.major}</td>
+      ${majorCell}
       <td style="font-weight:500">${s.university||''}</td>
-      <td><span style="font-size:10px;background:${s.type==='国立'?'#e8f0fb':s.type==='公立'?'#e8f5e9':'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 5px">${s.type||''}</span></td>
-      <td style="font-size:11px">${s.faculty||''}</td>
-      <td style="font-size:11px">${s.department||''}</td>
-      <td style="font-size:10px">${s.admission_type||''}</td>
-      <td style="font-size:11px">${s.application_period||''}</td>
-      <td style="font-size:11px;color:var(--text-2)">${s.written_exam||''}</td>
-      <td style="font-size:11px;color:var(--text-2)">${s.oral_exam||''}</td>
-      <td style="font-size:11px;color:var(--text-2)">${s.result_date||''}</td>
-      <td><span style="font-size:11px;color:${engColor};font-weight:600">${s.english_required||'-'}</span></td>
-      <td><span style="font-size:11px;color:${jpColor};font-weight:600">${s.japanese_required||'-'}</span></td>
-      <td style="font-size:11px;color:var(--text-2)">${s.recommendation||'-'}</td>
-      <td style="font-size:11px;color:var(--text-2)">${s.thesis||'-'}</td>
-      <td style="font-size:10px;color:var(--text-2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.exam_style||''}</td>
-      <td onclick="event.stopPropagation()">
+      <td><span style="font-size:10px;background:${s.type==='国立'?'#e8f0fb':s.type==='公立'?'#e8f5e9':'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 4px">${s.type||''}</span></td>
+      <td>${s.faculty||''}</td>
+      <td>${s.department||''}</td>
+      <td style="color:var(--text-2)">${s.admission_type||''}</td>
+      <td style="color:var(--text-2)">${s.doc_review_period||''}</td>
+      <td>${s.application_period||''}</td>
+      <td style="color:var(--text-2)">${s.written_exam||''}</td>
+      <td style="color:var(--text-2)">${s.oral_exam||''}</td>
+      <td style="color:var(--text-2)">${s.result_date||''}</td>
+      <td><span style="font-weight:600;color:${engColor(s.english_required)}">${s.english_required||'-'}</span></td>
+      <td><span style="font-weight:600;color:${engColor(s.japanese_required)}">${s.japanese_required||'-'}</span></td>
+      <td style="color:var(--text-2)">${s.recommendation||'-'}</td>
+      <td style="color:var(--text-2)">${s.thesis||'-'}</td>
+      <td style="color:var(--text-2);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.exam_style||''}</td>
+      <td onclick="event.stopPropagation()" style="white-space:nowrap">
         ${s.guideline_url?`<a href="${s.guideline_url}" target="_blank" style="font-size:10px;color:var(--accent);margin-right:4px">要项</a>`:''}
         ${s.past_exam_url?`<a href="${s.past_exam_url}" target="_blank" style="font-size:10px;color:var(--accent)">过去问</a>`:''}
       </td>
@@ -221,48 +322,51 @@ function renderAdmissionTable() {
   }).join('');
 }
 
-async function setAdbMajor(m, el) {
-  adbMajor = m;
-  document.querySelectorAll('#adbMajorRow .filter-chip').forEach(c => c.classList.remove('active'));
-  el.classList.add('active');
-  // 按需加载：切换专业时拉对应数据
-  const tbody = document.getElementById('admissionTableBody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;padding:20px;color:var(--text-3)">加载中…</td></tr>';
-  if (m === 'all') {
-    if (!confirm('全部专业数据量较大（4000+条），确定加载？')) {
-      // 恢复上一个选中状态
-      document.querySelectorAll('#adbMajorRow .filter-chip').forEach(c => c.classList.remove('active'));
-      const prev = document.querySelector(`#adbMajorRow .filter-chip[onclick*="'${adbMajor}'"]`);
-      if (prev) prev.classList.add('active');
-      if (tbody) renderAdmissionTable();
-      return;
-    }
-    cachedAdmissionSchools = await sb('/rest/v1/admission_schools?select=*&order=major.asc,university.asc&limit=10000').catch(() => []);
-  } else {
-    cachedAdmissionSchools = await sb(`/rest/v1/admission_schools?select=*&major=eq.${m}&order=university.asc&limit=2000`).catch(() => []);
-  }
-  // 更新专业计数显示
-  updateMajorCounts();
+function adbSort(col) {
+  if (adbSortCol === col) adbSortDir *= -1;
+  else { adbSortCol = col; adbSortDir = 1; }
   renderAdmissionTable();
 }
 
-function updateMajorCounts() {
-  const majorCounts = {};
-  cachedAdmissionSchools.forEach(s => { majorCounts[s.major] = (majorCounts[s.major] || 0) + 1; });
-  document.querySelectorAll('#adbMajorRow .filter-chip').forEach(chip => {
-    const m = chip.getAttribute('onclick')?.match(/'([^']+)'/)?.[1];
-    if (m && m !== 'all' && majorCounts[m] !== undefined) {
-      const countSpan = chip.querySelector('span');
-      if (countSpan) countSpan.textContent = majorCounts[m];
-    }
-  });
+// 列筛选下拉
+function openColFilter(col, btn) {
+  document.querySelectorAll('.adb-col-filter-popup').forEach(p => p.remove());
+  const uniqueVals = [...new Set(cachedAdmissionSchools.map(s => s[col]||'').filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ja'));
+  const current = adbColFilters[col] || new Set();
+  const popup = document.createElement('div');
+  popup.className = 'adb-col-filter-popup';
+  popup.style.cssText = 'position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:8px;z-index:9999;min-width:140px;max-height:260px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)';
+  popup.innerHTML = `
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+      <span style="font-size:11px;font-weight:600">筛选</span>
+      <button onclick="clearColFilter('${col}')" style="font-size:10px;background:none;border:none;color:var(--accent);cursor:pointer">清除</button>
+    </div>
+    ${uniqueVals.map(v=>`
+      <label style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;cursor:pointer">
+        <input type="checkbox" ${current.has(v)?'checked':''} onchange="toggleColFilter('${col}','${v.replace(/'/g,"\\'")}',this.checked)" style="accent-color:var(--accent)">
+        ${v}
+      </label>
+    `).join('')}`;
+  const rect = btn.getBoundingClientRect();
+  popup.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+  popup.style.left = (rect.left + window.scrollX) + 'px';
+  document.body.appendChild(popup);
+  setTimeout(() => document.addEventListener('click', function closeFilter(e) {
+    if (!popup.contains(e.target)) { popup.remove(); document.removeEventListener('click', closeFilter); }
+  }), 10);
 }
 
-function setAdbFilter(type, val, el) {
-  if (type === 'english') adbEnglish = val;
-  else adbJapanese = val;
-  el.closest('div').querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
-  el.classList.add('active');
+function toggleColFilter(col, val, checked) {
+  if (!adbColFilters[col]) adbColFilters[col] = new Set();
+  if (checked) adbColFilters[col].add(val);
+  else adbColFilters[col].delete(val);
+  if (!adbColFilters[col].size) delete adbColFilters[col];
+  renderAdmissionTable();
+}
+
+function clearColFilter(col) {
+  delete adbColFilters[col];
+  document.querySelectorAll('.adb-col-filter-popup').forEach(p => p.remove());
   renderAdmissionTable();
 }
 
@@ -271,18 +375,15 @@ function openAdmissionAdd() {
   adbEditId = null;
   document.getElementById('admissionEditTitle').textContent = '添加学校';
   document.getElementById('adbDeleteBtn').style.display = 'none';
-  ['id','university','faculty','department','course','admission_type','application_period',
-   'written_exam','oral_exam','result_date','english_detail','japanese_detail','exam_style','notes',
-   'guideline_url','past_exam_url'].forEach(f => {
-    const el = document.getElementById('adb_' + f);
-    if (el) el.value = '';
+  ['id','university','faculty','department','course','admission_type','doc_review_period',
+   'application_period','written_exam','oral_exam','result_date','english_detail',
+   'japanese_detail','exam_style','notes','guideline_url','past_exam_url'].forEach(f => {
+    const el = document.getElementById('adb_' + f); if (el) el.value = '';
   });
   ['major','type','english_required','japanese_required','recommendation','thesis'].forEach(f => {
-    const el = document.getElementById('adb_' + f);
-    if (el) el.value = '';
+    const el = document.getElementById('adb_' + f); if (el) el.value = '';
   });
-  const m = document.getElementById('admissionEditModal');
-  m.style.display = 'flex';
+  document.getElementById('admissionEditModal').style.display = 'flex';
 }
 
 function openAdmissionEdit(id) {
@@ -294,8 +395,9 @@ function openAdmissionEdit(id) {
   const fields = {
     id: s.id, major: s.major, university: s.university, type: s.type,
     faculty: s.faculty, department: s.department, course: s.course,
-    admission_type: s.admission_type, application_period: s.application_period,
-    written_exam: s.written_exam, oral_exam: s.oral_exam, result_date: s.result_date,
+    admission_type: s.admission_type, doc_review_period: s.doc_review_period,
+    application_period: s.application_period, written_exam: s.written_exam,
+    oral_exam: s.oral_exam, result_date: s.result_date,
     english_required: s.english_required, english_detail: s.english_detail,
     japanese_required: s.japanese_required, japanese_detail: s.japanese_detail,
     recommendation: s.recommendation, thesis: s.thesis,
@@ -303,8 +405,7 @@ function openAdmissionEdit(id) {
     guideline_url: s.guideline_url, past_exam_url: s.past_exam_url,
   };
   for (const [k, v] of Object.entries(fields)) {
-    const el = document.getElementById('adb_' + k);
-    if (el) el.value = v || '';
+    const el = document.getElementById('adb_' + k); if (el) el.value = v || '';
   }
   document.getElementById('admissionEditModal').style.display = 'flex';
 }
@@ -317,7 +418,6 @@ async function saveAdmissionSchool() {
   const university = document.getElementById('adb_university').value.trim();
   const major = document.getElementById('adb_major').value;
   if (!university || !major) { alert('请填写大学名和专业'); return; }
-
   const data = {
     major, university,
     type: document.getElementById('adb_type').value,
@@ -325,6 +425,7 @@ async function saveAdmissionSchool() {
     department: document.getElementById('adb_department').value,
     course: document.getElementById('adb_course').value,
     admission_type: document.getElementById('adb_admission_type').value,
+    doc_review_period: document.getElementById('adb_doc_review_period').value,
     application_period: document.getElementById('adb_application_period').value,
     written_exam: document.getElementById('adb_written_exam').value,
     oral_exam: document.getElementById('adb_oral_exam').value,
@@ -341,7 +442,6 @@ async function saveAdmissionSchool() {
     past_exam_url: document.getElementById('adb_past_exam_url').value,
     updated_at: new Date().toISOString(),
   };
-
   try {
     if (adbEditId) {
       await sb(`/rest/v1/admission_schools?id=eq.${adbEditId}`, 'PATCH', data);
@@ -353,7 +453,7 @@ async function saveAdmissionSchool() {
       cachedAdmissionSchools.push(Array.isArray(res) ? res[0] : data);
     }
     closeAdmissionEdit();
-    renderAdmissionDbPage(document.getElementById('mainContent'));
+    renderAdmissionTable();
   } catch(e) { alert('保存失败：' + e.message); }
 }
 
@@ -363,42 +463,40 @@ async function deleteAdmissionSchool() {
     await sb(`/rest/v1/admission_schools?id=eq.${adbEditId}`, 'DELETE');
     cachedAdmissionSchools = cachedAdmissionSchools.filter(x => x.id !== adbEditId);
     closeAdmissionEdit();
-    renderAdmissionDbPage(document.getElementById('mainContent'));
+    renderAdmissionTable();
   } catch(e) { alert('删除失败：' + e.message); }
 }
 
-// ── 导出 Excel ──
+// ── 导出 Excel（按 PDF 样式简化） ──
 function exportAdmissionExcel() {
   const filtered = filterAdmissionSchools();
   if (!filtered.length) { alert('没有可导出的数据'); return; }
-  const rows = filtered.map(s => ({
-    '专业': ADMISSION_MAJORS[s.major] || s.major,
-    '大学名': s.university,
-    '設置主体': s.type,
-    '研究科名': s.faculty,
-    '専攻名': s.department,
-    'コース名': s.course,
-    '出願類型': s.admission_type,
-    '出願期間': s.application_period,
-    '筆記試験': s.written_exam,
-    '口述試験': s.oral_exam,
-    '合格発表': s.result_date,
-    '英語成績': s.english_required,
-    '英語詳細': s.english_detail,
-    '日本語成績': s.japanese_required,
-    '日本語詳細': s.japanese_detail,
-    '推薦状': s.recommendation,
-    '卒業論文': s.thesis,
-    '試験方式': s.exam_style,
-    '備考': s.notes,
-    '募集要項URL': s.guideline_url,
-    '過去問URL': s.past_exam_url,
-  }));
+  const showMajor = adbSelectedMajors.length !== 1;
+  const rows = filtered.map(s => {
+    const row = {};
+    if (showMajor) row['专业'] = ADMISSION_MAJORS[s.major] || s.major;
+    row['大学名'] = s.university;
+    row['設置主体'] = s.type;
+    row['研究科名'] = s.faculty;
+    row['専攻名'] = s.department;
+    row['コース名'] = s.course;
+    row['出願類型'] = s.admission_type;
+    row['資格審査'] = s.doc_review_period;
+    row['出願期間'] = s.application_period;
+    row['筆記試験時間'] = s.written_exam;
+    row['口述試験時間'] = s.oral_exam;
+    row['合格発表時間'] = s.result_date;
+    row['英語成績'] = s.english_required;
+    row['日本語成績'] = s.japanese_required;
+    return row;
+  });
   const ws = XLSX.utils.json_to_sheet(rows);
+  // 设置列宽
+  ws['!cols'] = Object.keys(rows[0]).map(k => ({ wch: k === '研究科名' || k === '専攻名' ? 20 : k === '大学名' ? 16 : 10 }));
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, '出願数据');
-  const majorLabel = adbMajor === 'all' ? '全专业' : (ADMISSION_MAJORS[adbMajor] || adbMajor);
-  XLSX.writeFile(wb, `出願数据库_${majorLabel}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  const majorLabel = adbSelectedMajors.length === 1 ? (ADMISSION_MAJORS[adbSelectedMajors[0]] || adbSelectedMajors[0]) : '複数専業';
+  XLSX.utils.book_append_sheet(wb, ws, majorLabel);
+  XLSX.writeFile(wb, `出願数据_${majorLabel}_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
 // ── 导入 Excel ──
@@ -428,55 +526,40 @@ document.addEventListener('change', function(e) {
       const results = [];
       wb.SheetNames.forEach(sheetName => {
         const major = SHEET_TO_MAJOR[sheetName];
-        if (!major) { results.push(`⚠ 跳过未识别的 sheet：${sheetName}`); return; }
+        if (!major) { results.push(`⚠ 跳过：${sheetName}`); return; }
         const ws = wb.Sheets[sheetName];
         const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
         let count = 0;
+        const normalizeReq = v => {
+          if (!v) return '不要';
+          v = v.toString().trim();
+          if (v === '必要' || v === '必須') return '必須';
+          if (v === '任意') return '任意';
+          if (v === '不要') return '不要';
+          return v || '不要';
+        };
         rows.forEach(row => {
           const university = (row['大学名'] || row['大学'] || '').toString().trim();
           if (!university) return;
-          // 解析英语成绩：检查各列
-          let englishRequired = (row['英語成績'] || '').toString().trim() || '不要';
-          let englishDetail = '';
-          ['TOEFL','TOEIC','IELTS','GRE','GMAT','英検'].forEach(k => {
-            if (row[k] && row[k].toString().trim() === '〇') englishDetail += (englishDetail ? '/' : '') + k;
-          });
-          if (row['その他'] && row['その他'].toString().trim() === '〇') englishDetail += (englishDetail ? '/' : '') + '其他';
-
-          let japaneseRequired = (row['日本語成績'] || '').toString().trim() || '不要';
-          let japaneseDetail = '';
-          ['JLPT-N1','JLPT-N2','EJU','日本語学力証明'].forEach(k => {
-            if (row[k] && row[k].toString().trim() === '〇') japaneseDetail += (japaneseDetail ? '/' : '') + k;
-          });
-
-          // 标准化成绩字段
-          const normalizeReq = v => {
-            if (!v || v === '不要') return '不要';
-            if (v === '必要' || v === '必須') return '必須';
-            if (v === '任意') return '任意';
-            return v;
-          };
-
           admissionImportData.push({
             id: `as-${Date.now()}-${Math.random().toString(36).slice(2,6)}-${count}`,
-            major,
-            university,
+            major, university,
             type: (row['設置主体'] || '').toString().trim(),
             faculty: (row['研究科名'] || '').toString().trim(),
             department: (row['専攻名'] || '').toString().trim(),
             course: (row['コース名'] || '').toString().trim(),
             admission_type: (row['出願類型'] || '').toString().trim(),
-            doc_review_period: (row['資格審査'] || '').toString().trim(),
+            doc_review_period: (row['資格審査'] || row['資格審査期間'] || '').toString().trim(),
             application_period: (row['出願期間'] || '').toString().trim(),
             written_exam: (row['筆記試験時間'] || '').toString().trim(),
             oral_exam: (row['口述試験時間'] || '').toString().trim(),
             result_date: (row['合格発表時間'] || '').toString().trim(),
-            english_required: normalizeReq(englishRequired),
-            english_detail: englishDetail,
-            japanese_required: normalizeReq(japaneseRequired),
-            japanese_detail: japaneseDetail,
-            recommendation: normalizeReq((row['推薦状'] || '').toString().trim()),
-            thesis: normalizeReq((row['卒業論文'] || '').toString().trim()),
+            english_required: normalizeReq(row['英語成績']),
+            english_detail: '',
+            japanese_required: normalizeReq(row['日本語成績']),
+            japanese_detail: '',
+            recommendation: normalizeReq(row['推薦状']),
+            thesis: normalizeReq(row['卒業論文']),
             other_docs: (row['その他書類'] || '').toString().trim(),
             exam_style: (row['試験方式'] || '').toString().trim(),
             notes: (row['備考'] || '').toString().trim(),
@@ -485,7 +568,7 @@ document.addEventListener('change', function(e) {
           });
           count++;
         });
-        results.push(`✓ ${sheetName}（${ADMISSION_MAJORS[major]}）：${count} 条`);
+        results.push(`✓ ${sheetName}（${ADMISSION_MAJORS[major]||major}）：${count} 条`);
       });
       preview.innerHTML = `<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;line-height:2">${results.join('<br>')}</div><div style="margin-top:6px;color:var(--text-3)">共 <strong>${admissionImportData.length}</strong> 条待导入</div>`;
     } catch(err) {
@@ -499,22 +582,24 @@ async function confirmAdmissionImport() {
   if (!admissionImportData.length) { alert('请先选择文件'); return; }
   const btn = document.getElementById('admissionImportBtn');
   btn.textContent = '导入中…'; btn.disabled = true;
-
-  const toInsert = admissionImportData;
-  const skipped = 0;
-
-  // 分批插入（每批50条）
+  let successCount = 0;
   try {
-    for (let i = 0; i < toInsert.length; i += 50) {
-      const batch = toInsert.slice(i, i + 50);
+    for (let i = 0; i < admissionImportData.length; i += 100) {
+      const batch = admissionImportData.slice(i, i + 100);
+      btn.textContent = `导入中… ${i}/${admissionImportData.length}`;
       await sb('/rest/v1/admission_schools', 'POST', batch);
-      cachedAdmissionSchools.push(...batch);
+      successCount += batch.length;
     }
     closeAdmissionImport();
-    alert(`导入完成：新增 ${toInsert.length} 条，跳过 ${skipped} 条重复`);
+    alert(`导入完成：成功 ${successCount} 条`);
+    // 刷新 major counts
+    const majorRows = await sb('/rest/v1/admission_schools?select=major&limit=10000').catch(()=>[]);
+    cachedAdmissionMajorCounts = {};
+    majorRows.forEach(r => { cachedAdmissionMajorCounts[r.major] = (cachedAdmissionMajorCounts[r.major]||0)+1; });
     renderAdmissionDbPage(document.getElementById('mainContent'));
   } catch(e) {
-    alert('导入失败：' + e.message);
+    alert(`导入中断（已成功 ${successCount} 条）：${e.message}`);
+    if (successCount > 0) renderAdmissionDbPage(document.getElementById('mainContent'));
   } finally {
     btn.textContent = '确认导入'; btn.disabled = false;
   }
