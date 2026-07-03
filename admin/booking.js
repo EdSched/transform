@@ -387,14 +387,20 @@ function openRecord(id){
   const at=b.actual_time||'';
   document.getElementById('recActualDate').value=at.slice(0,10)||'';
   document.getElementById('recActualTime').value=at.slice(11,16)||'';
+  const setDeadline = (prefix, val) => {
+    const m = (val||'').match(/^(\d{4})年(\d{1,2})月(上旬|中旬|下旬)$/);
+    document.getElementById(`${prefix}_y`).value = m ? m[1] : '';
+    document.getElementById(`${prefix}_m`).value = m ? m[2] : '';
+    document.getElementById(`${prefix}_x`).value = m ? m[3] : '';
+  };
   ['study','plan','apply','exam'].forEach(k=>{
     document.getElementById(`rec_${k}_status`).value=r[`${k}_status`]||'';
     document.getElementById(`rec_${k}_advice`).value=r[`${k}_advice`]||'';
-    document.getElementById(`rec_${k}_deadline`).value=r[`${k}_deadline`]||'';
+    setDeadline(`rec_${k}_deadline`, r[`${k}_deadline`]||'');
   });
   document.getElementById('rec_issue').value=r.issue||'';
   document.getElementById('rec_issue_advice').value=r.issue_advice||'';
-  document.getElementById('rec_issue_deadline').value=r.issue_deadline||'';
+  setDeadline('rec_issue_deadline', r.issue_deadline||'');
   document.getElementById('rec_extra').value=r.extra||'';
   if(b.daily_record && Object.values(b.daily_record).some(v=>v)){
     setRecordMode('view',b);
@@ -430,12 +436,18 @@ function setRecordMode(mode,b){
 async function saveRecord(){
   const id=document.getElementById('recordId').value;
   const b=cachedBookings.find(x=>x.id===id);if(!b)return;
+  const readDeadline = (prefix) => {
+    const y = document.getElementById(`${prefix}_y`)?.value || '';
+    const m = document.getElementById(`${prefix}_m`)?.value || '';
+    const x = document.getElementById(`${prefix}_x`)?.value || '';
+    return (y && m && x) ? `${y}年${m}月${x}` : '';
+  };
   const daily_record={
-    study_status:document.getElementById('rec_study_status').value,study_advice:document.getElementById('rec_study_advice').value,study_deadline:document.getElementById('rec_study_deadline').value,
-    plan_status:document.getElementById('rec_plan_status').value,plan_advice:document.getElementById('rec_plan_advice').value,plan_deadline:document.getElementById('rec_plan_deadline').value,
-    apply_status:document.getElementById('rec_apply_status').value,apply_advice:document.getElementById('rec_apply_advice').value,apply_deadline:document.getElementById('rec_apply_deadline').value,
-    exam_status:document.getElementById('rec_exam_status').value,exam_advice:document.getElementById('rec_exam_advice').value,exam_deadline:document.getElementById('rec_exam_deadline').value,
-    issue:document.getElementById('rec_issue').value,issue_advice:document.getElementById('rec_issue_advice').value,issue_deadline:document.getElementById('rec_issue_deadline').value,
+    study_status:document.getElementById('rec_study_status').value,study_advice:document.getElementById('rec_study_advice').value,study_deadline:readDeadline('rec_study_deadline'),
+    plan_status:document.getElementById('rec_plan_status').value,plan_advice:document.getElementById('rec_plan_advice').value,plan_deadline:readDeadline('rec_plan_deadline'),
+    apply_status:document.getElementById('rec_apply_status').value,apply_advice:document.getElementById('rec_apply_advice').value,apply_deadline:readDeadline('rec_apply_deadline'),
+    exam_status:document.getElementById('rec_exam_status').value,exam_advice:document.getElementById('rec_exam_advice').value,exam_deadline:readDeadline('rec_exam_deadline'),
+    issue:document.getElementById('rec_issue').value,issue_advice:document.getElementById('rec_issue_advice').value,issue_deadline:readDeadline('rec_issue_deadline'),
     extra:document.getElementById('rec_extra').value
   };
   const d=document.getElementById('recActualDate').value;
