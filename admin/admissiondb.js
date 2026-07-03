@@ -42,6 +42,7 @@ function renderAdmissionDbPage(mc) {
       <button class="btn btn-outline btn-sm" onclick="openAdmissionImport()">↑ 导入 Excel</button>
       <button class="btn btn-outline btn-sm" onclick="openAdmissionAdd()">＋ 添加</button>
       <button class="btn btn-outline btn-sm" onclick="exportAdmissionExcel()">↓ 导出 Excel</button>
+      <button class="btn btn-outline btn-sm" onclick="exportAdmissionHtml()">↓ 导出 PDF表格</button>
     </div>
   </div>
 
@@ -467,7 +468,7 @@ async function deleteAdmissionSchool() {
   } catch(e) { alert('删除失败：' + e.message); }
 }
 
-// ── 导出 Excel（按 PDF 样式简化） ──
+// ── 导出 Excel ──
 function exportAdmissionExcel() {
   const filtered = filterAdmissionSchools();
   if (!filtered.length) { alert('没有可导出的数据'); return; }
@@ -491,12 +492,81 @@ function exportAdmissionExcel() {
     return row;
   });
   const ws = XLSX.utils.json_to_sheet(rows);
-  // 设置列宽
-  ws['!cols'] = Object.keys(rows[0]).map(k => ({ wch: k === '研究科名' || k === '専攻名' ? 20 : k === '大学名' ? 16 : 10 }));
+  ws['!cols'] = Object.keys(rows[0]).map(k => ({ wch: ['研究科名','専攻名'].includes(k)?22:k==='大学名'?18:k==='コース名'?16:10 }));
   const wb = XLSX.utils.book_new();
   const majorLabel = adbSelectedMajors.length === 1 ? (ADMISSION_MAJORS[adbSelectedMajors[0]] || adbSelectedMajors[0]) : '複数専業';
   XLSX.utils.book_append_sheet(wb, ws, majorLabel);
   XLSX.writeFile(wb, `出願数据_${majorLabel}_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+// ── 导出 HTML（可打印为 PDF）──
+function exportAdmissionHtml() {
+  const filtered = filterAdmissionSchools();
+  if (!filtered.length) { alert('没有可导出的数据'); return; }
+  const showMajor = adbSelectedMajors.length !== 1;
+  const majorLabel = adbSelectedMajors.length === 1
+    ? (ADMISSION_MAJORS[adbSelectedMajors[0]] || adbSelectedMajors[0])
+    : adbSelectedMajors.map(m => ADMISSION_MAJORS[m]||m).join('・');
+  const today = new Date().toLocaleDateString('zh-CN', {year:'numeric',month:'2-digit',day:'2-digit'});
+
+  const cols = [
+    ...(showMajor ? [['专业','60px']] : []),
+    ['大学名','110px'],['設置主体','44px'],['研究科名','140px'],['専攻名','100px'],
+    ['コース名','90px'],['出願類型','72px'],['資格審査','72px'],['出願期間','72px'],
+    ['筆記試験','72px'],['口述試験','72px'],['合格発表','72px'],
+    ['英語','44px'],['日語','44px'],
+  ];
+
+  const engColor = v => v==='必須'?'#1a56a0':v==='任意'?'#b45309':'#666';
+
+  const rows = filtered.map(s => `<tr>
+    ${showMajor ? `<td>${ADMISSION_MAJORS[s.major]||s.major}</td>` : ''}
+    <td style="font-weight:600">${s.university||''}</td>
+    <td style="text-align:center">${s.type||''}</td>
+    <td>${s.faculty||''}</td>
+    <td>${s.department||''}</td>
+    <td>${s.course||''}</td>
+    <td>${s.admission_type||''}</td>
+    <td>${s.doc_review_period||''}</td>
+    <td>${s.application_period||''}</td>
+    <td>${s.written_exam||''}</td>
+    <td>${s.oral_exam||''}</td>
+    <td>${s.result_date||''}</td>
+    <td style="text-align:center;color:${engColor(s.english_required)};font-weight:600">${s.english_required||'-'}</td>
+    <td style="text-align:center;color:${engColor(s.japanese_required)};font-weight:600">${s.japanese_required||'-'}</td>
+  </tr>`).join('');
+
+  const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
+<title>${majorLabel} 出願学校名单 ${today}</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: 'Hiragino Sans', 'Noto Sans JP', 'MS Gothic', sans-serif; font-size: 10px; color: #222; background: #fff; padding: 16px; }
+  h1 { font-size: 14px; font-weight: 700; margin-bottom: 2px; }
+  .sub { font-size: 10px; color: #666; margin-bottom: 12px; }
+  table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+  th { background: #2c3e50; color: #fff; padding: 5px 4px; text-align: left; font-size: 9px; font-weight: 600; border: 1px solid #1a252f; white-space: nowrap; }
+  td { padding: 4px; border: 1px solid #ddd; vertical-align: top; word-break: break-all; line-height: 1.4; }
+  tr:nth-child(even) { background: #f8f9fa; }
+  tr:hover { background: #eef2ff; }
+  ${cols.map(([,w],i)=>`col:nth-child(${i+1}){width:${w}}`).join('')}
+  @page { size: A3 landscape; margin: 10mm; }
+  @media print { body { padding: 0; } tr:hover { background: inherit; } }
+</style></head><body>
+<h1>${majorLabel} 可出願学校名单</h1>
+<div class="sub">唯新教育 · ${today} · 共 ${filtered.length} 条</div>
+<table>
+  <colgroup>${cols.map(([,w])=>`<col style="width:${w}">`).join('')}</colgroup>
+  <thead><tr>${cols.map(([l])=>`<th>${l}</th>`).join('')}</tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+</body></html>`;
+
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `出願名单_${majorLabel}_${today.replace(/\//g,'-')}.html`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // ── 导入 Excel ──
