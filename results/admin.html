@@ -1163,7 +1163,9 @@ function renderList() {
       <td>${r.tier !== null && r.tier !== undefined && r.tier !== '' ? `<span style="font-size:9px;padding:1px 6px;border-radius:2px;background:${['#dce4f4','#e8edf8','#e8f0e4','#f4ece0'][r.tier]||'#eee'};color:${['#1a3070','#2c4a8a','#3a6630','#7a4a20'][r.tier]||'#666'};font-weight:500">T${r.tier}</span>` : '<span style="font-size:9px;color:var(--text-muted)">自動</span>'}</td>
       <td>${eraTag}</td><td>${r.jlpt||'—'}</td><td>${r.jlpt_score||'—'}</td><td>${r.eng_type||'—'}</td>
       <td>${r.eng_score||'—'}</td><td>${r.student||'—'}</td>
-      <td><button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="confirmDelete('${r.id}','${(r.univ||'').replace(/'/g,"\\'")}')">削除</button></td>
+      <td><button class="btn btn-danger" style="padding:3px 8px;font-size:10<td style="display:flex;gap:4px">
+        <button class="btn btn-secondary" style="padding:3px 8px;font-size:10px" onclick="openEditModal('${r.id}')">編集</button>
+        <button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="confirmDelete('${r.id}','${(r.univ||'').replace(/'/g,"\\'")}')">削除</button></td>
     </tr>`;
   }
   html += '</tbody></table></div>';
