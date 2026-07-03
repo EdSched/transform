@@ -168,7 +168,27 @@ function renderRecordForm(id, r) {
   const sec = (title, fields) => `<div style="margin-bottom:10px;padding:10px;background:var(--bg);border-radius:3px;border:1px solid var(--border-light)"><div style="font-size:10px;font-weight:600;color:var(--text-2);margin-bottom:8px">${title}</div>${fields}</div>`;
   const sel = (k, opts) => `<div class="form-group" style="margin-bottom:6px"><label class="form-label">状态</label><select id="rf_${k}_status_${id}" style="font-size:11px"><option value="">请选择</option>${opts.map(o => `<option ${r[`${k}_status`] === o ? 'selected' : ''}>${o}</option>`).join('')}</select></div>`;
   const ta = (k, ph, label) => `<div class="form-group" style="margin-bottom:6px"><label class="form-label">${label || '建议'}</label><textarea id="rf_${k}_advice_${id}" rows="2" placeholder="${ph}" style="font-size:11px">${r[`${k}_advice`] || ''}</textarea></div>`;
-  const dl = (k) => `<div class="form-group" style="margin-bottom:0"><label class="form-label">期限</label><input type="month" id="rf_${k}_deadline_${id}" value="${r[`${k}_deadline`] || ''}" style="font-size:11px"></div>`;
+  const dl = (k) => {
+    const val = r[`${k}_deadline`] || '';
+    const m = val.match(/^(\d{4})年(\d{1,2})月(上旬|中旬|下旬)$/);
+    const yr = m ? m[1] : (val ? '' : new Date().getFullYear());
+    const mo = m ? m[2] : '';
+    const xun = m ? m[3] : '';
+    return `<div class="form-group" style="margin-bottom:0"><label class="form-label">期限</label>
+      <div style="display:flex;align-items:center;gap:4px">
+        <input type="number" id="rf_${k}_deadline_y_${id}" value="${yr}" placeholder="年" min="2024" max="2030" style="font-size:11px;width:58px;text-align:center">
+        <span style="font-size:11px;color:var(--text-2)">年</span>
+        <input type="number" id="rf_${k}_deadline_m_${id}" value="${mo}" placeholder="月" min="1" max="12" style="font-size:11px;width:40px;text-align:center">
+        <span style="font-size:11px;color:var(--text-2)">月</span>
+        <select id="rf_${k}_deadline_x_${id}" style="font-size:11px;width:60px">
+          <option value="">旬</option>
+          <option ${xun==='上旬'?'selected':''}>上旬</option>
+          <option ${xun==='中旬'?'selected':''}>中旬</option>
+          <option ${xun==='下旬'?'selected':''}>下旬</option>
+        </select>
+      </div>
+    </div>`;
+  };
   return `
     ${sec('📚 知识学习进展', sel('study', ['进展顺利并能掌握', '能够稳定跟上', '需要更多时间', '没有很好跟上进度', '遇到困难']) + ta('study', '例：建议定期复习…') + dl('study'))}
     ${sec('📝 计划书完成情况', sel('plan', ['未开始', '在收集材料', '遇到困难', '撰写中', '已完成']) + ta('plan', '例：参考先行研究…') + dl('plan'))}
@@ -177,7 +197,10 @@ function renderRecordForm(id, r) {
     ${sec('❓ 目前困惑 / 问题', `
       <div class="form-group" style="margin-bottom:6px"><label class="form-label">困惑内容</label><textarea id="rf_issue_content_${id}" rows="2" style="font-size:11px">${r.issue || ''}</textarea></div>
       <div class="form-group" style="margin-bottom:6px"><label class="form-label">解决建议</label><textarea id="rf_issue_advice_${id}" rows="2" style="font-size:11px">${r.issue_advice || ''}</textarea></div>
-      <div class="form-group" style="margin-bottom:0"><label class="form-label">期限</label><input type="month" id="rf_issue_deadline_${id}" value="${r.issue_deadline || ''}" style="font-size:11px"></div>
+      <div class="form-group" style="margin-bottom:0"><label class="form-label">期限</label>
+      <div style="display:flex;align-items:center;gap:4px">
+        ${(() => { const val=r.issue_deadline||''; const m=val.match(/^(\d{4})年(\d{1,2})月(上旬|中旬|下旬)$/); const yr=m?m[1]:(val?'':new Date().getFullYear()); const mo=m?m[2]:''; const xun=m?m[3]:''; return `<input type="number" id="rf_issue_deadline_y_${id}" value="${yr}" placeholder="年" min="2024" max="2030" style="font-size:11px;width:58px;text-align:center"><span style="font-size:11px;color:var(--text-2)">年</span><input type="number" id="rf_issue_deadline_m_${id}" value="${mo}" placeholder="月" min="1" max="12" style="font-size:11px;width:40px;text-align:center"><span style="font-size:11px;color:var(--text-2)">月</span><select id="rf_issue_deadline_x_${id}" style="font-size:11px;width:60px"><option value="">旬</option><option ${xun==='上旬'?'selected':''}>上旬</option><option ${xun==='中旬'?'selected':''}>中旬</option><option ${xun==='下旬'?'selected':''}>下旬</option></select>`; })()}
+      </div></div>
     `)}
     <div style="padding:10px;background:var(--bg);border-radius:3px;border:1px solid var(--border-light)">
       <div style="font-size:10px;font-weight:600;color:var(--text-2);margin-bottom:6px">📌 补充</div>
@@ -187,12 +210,24 @@ function renderRecordForm(id, r) {
 
 function getRecordFromForm(id) {
   const v = (k) => document.getElementById(`rf_${k}_${id}`)?.value || '';
+  const dl = (k) => {
+    const y = document.getElementById(`rf_${k}_deadline_y_${id}`)?.value || '';
+    const m = document.getElementById(`rf_${k}_deadline_m_${id}`)?.value || '';
+    const x = document.getElementById(`rf_${k}_deadline_x_${id}`)?.value || '';
+    return (y && m && x) ? `${y}年${m}月${x}` : '';
+  };
   return {
-    study_status: v('study_status'), study_advice: v('study_advice'), study_deadline: v('study_deadline'),
-    plan_status: v('plan_status'), plan_advice: v('plan_advice'), plan_deadline: v('plan_deadline'),
-    apply_status: v('apply_status'), apply_advice: v('apply_advice'), apply_deadline: v('apply_deadline'),
-    exam_status: v('exam_status'), exam_advice: v('exam_advice'), exam_deadline: v('exam_deadline'),
-    issue: v('issue_content'), issue_advice: v('issue_advice'), issue_deadline: v('issue_deadline'),
+    study_status: v('study_status'), study_advice: v('study_advice'), study_deadline: dl('study'),
+    plan_status: v('plan_status'), plan_advice: v('plan_advice'), plan_deadline: dl('plan'),
+    apply_status: v('apply_status'), apply_advice: v('apply_advice'), apply_deadline: dl('apply'),
+    exam_status: v('exam_status'), exam_advice: v('exam_advice'), exam_deadline: dl('exam'),
+    issue: v('issue_content'), issue_advice: v('issue_advice'),
+    issue_deadline: (() => {
+      const y = document.getElementById(`rf_issue_deadline_y_${id}`)?.value || '';
+      const m = document.getElementById(`rf_issue_deadline_m_${id}`)?.value || '';
+      const x = document.getElementById(`rf_issue_deadline_x_${id}`)?.value || '';
+      return (y && m && x) ? `${y}年${m}月${x}` : '';
+    })(),
     extra: v('extra'),
   };
 }
