@@ -1156,16 +1156,17 @@ function renderList() {
   for (const r of rows) {
     const sc = SUBJ_COLOR[r.subject] || SUBJ_COLOR.other;
     const eraTag = r.era === 'new' ? `<span class="era-tag era-new">25–26</span>` : `<span class="era-tag era-hist">22–24</span>`;
-    html += `<tr>
+    html += `<tr data-id="${r.id}" data-univ="${(r.univ||'').replace(/"/g,'&quot;')}">
       <td>${r.univ||''}</td><td>${r.dept||''}</td><td>${r.spec||''}</td>
       <td><span class="subj-tag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[r.subject]||r.subject}</span></td>
       <td><span style="font-size:9px;padding:1px 5px;border-radius:2px;background:${r.track==='rika'?'#e8f0e4':r.track==='bijutsu'?'#f4ece0':'#e8edf8'};color:${r.track==='rika'?'#3a6630':r.track==='bijutsu'?'#7a4a20':'#2c4a8a'}">${{bunka:'文科',rika:'理科',bijutsu:'美術'}[r.track]||'文科'}</span></td>
       <td>${r.tier !== null && r.tier !== undefined && r.tier !== '' ? `<span style="font-size:9px;padding:1px 6px;border-radius:2px;background:${['#dce4f4','#e8edf8','#e8f0e4','#f4ece0'][r.tier]||'#eee'};color:${['#1a3070','#2c4a8a','#3a6630','#7a4a20'][r.tier]||'#666'};font-weight:500">T${r.tier}</span>` : '<span style="font-size:9px;color:var(--text-muted)">自動</span>'}</td>
       <td>${eraTag}</td><td>${r.jlpt||'—'}</td><td>${r.jlpt_score||'—'}</td><td>${r.eng_type||'—'}</td>
       <td>${r.eng_score||'—'}</td><td>${r.student||'—'}</td>
-      <td><button class="btn btn-danger" style="padding:3px 8px;font-size:10<td style="display:flex;gap:4px">
-        <button class="btn btn-secondary" style="padding:3px 8px;font-size:10px" onclick="openEditModal('${r.id}')">編集</button>
-        <button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="confirmDelete('${r.id}','${(r.univ||'').replace(/'/g,"\\'")}')">削除</button></td>
+      <td style="display:flex;gap:4px">
+        <button class="btn btn-secondary" style="padding:3px 8px;font-size:10px" onclick="openEditModal(this)">編集</button>
+        <button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="doDelete(this)">削除</button>
+      </td>
     </tr>`;
   }
   html += '</tbody></table></div>';
@@ -1815,7 +1816,7 @@ function ugRenderList() {
     const tier = r.tier != null ? r.tier : ugTierOf(r.univ);
     const [tbg, tfg] = TIER_COLOR[tier] || ['#eee','#666'];
     const stype = r.school_type || ugSchoolType(r.univ);
-    html += `<tr>
+    html += `<tr data-id="${r.id}" data-univ="${(r.univ||'').replace(/"/g,'&quot;')}">
       <td>${r.univ||''}</td><td>${r.dept||''}</td><td>${r.spec||''}</td>
       <td><span class="track-tag" style="background:#eef0e8;color:#3a3830">${TRACK_LABEL[r.track]||'文科'}</span></td>
       <td>${r.era==='new'?'25–26':'22–24'}</td>
@@ -1849,7 +1850,8 @@ function ugConfirmDeleteAll() {
 }
 
 // ─── 編集モーダル ────────────────────────────────────────────────────────────
-function openEditModal(id) {
+function openEditModal(el) {
+  const id = typeof el === 'string' ? el : el.closest('tr').dataset.id;
   const r = allData.find(x => x.id === id);
   if (!r) return;
   document.getElementById('em-id').value = id;
@@ -1909,6 +1911,14 @@ async function saveEdit() {
   } catch(e) {
     toast('エラー: ' + e.message, false);
   }
+}
+
+
+function doDelete(btn) {
+  const tr = btn.closest('tr');
+  const id = tr.dataset.id;
+  const univ = tr.dataset.univ;
+  confirmDelete(id, univ);
 }
 
 </script>
