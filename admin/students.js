@@ -27,7 +27,7 @@ function renderStudentsPage(mc){
   if(stStatus!=='all') list=list.filter(s=>s.status===stStatus);
   if(stVipFilter==='vip_only') list=list.filter(s=>s.is_vip_course==='VIP'||s.is_vip_course==='大课+VIP');
   if(stVipFilter==='vip_exclusive') list=list.filter(s=>s.is_vip_course==='VIP');
-  if(stSearch) list=list.filter(s=>s.name.includes(stSearch)||s.university?.includes(stSearch)||s.notes?.includes(stSearch));
+  if(stSearch) list=list.filter(s=>matchesStudentSearch(s,stSearch));
   const statusLabel=(v)=>({active:'在籍',graduated:'已合格',expired:'已到期',stopped:'停课',withdrawn:'退学'}[v]||v);
   const statusColor=(v)=>v==='active'?'var(--ok)':v==='graduated'?'#1a6a9a':v==='withdrawn'?'var(--danger)':'var(--text-3)';
   const statusBg=(v)=>v==='active'?'var(--ok-bg)':v==='graduated'?'#e8f4fd':v==='withdrawn'?'#fdecea':'var(--border)';
