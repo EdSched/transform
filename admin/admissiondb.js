@@ -81,7 +81,7 @@ function renderAdmissionDbPage(mc) {
     </select>
     ${(adbMonthFrom||adbMonthTo)?`<button onclick="adbMonthFrom=0;adbMonthTo=0;renderAdmissionDbPage(document.getElementById('mainContent'))" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 7px;cursor:pointer;font-family:inherit;color:var(--text-3)">清除</button>`:''}
   </div>
-  ${(adbSelectedMajors.includes('keizai') || adbSelectedMajors.length === 0) ? `
+  ${adbSelectedMajors.includes('keizai') ? `
   <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
     <button class="btn btn-sm ${adbEreOnly?'btn-primary':'btn-outline'}" onclick="adbEreOnly=!adbEreOnly;renderAdmissionTable()" style="font-size:11px;padding:3px 12px;border:1px solid var(--border)">
       📊 ERE可代替笔试
