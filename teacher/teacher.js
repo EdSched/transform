@@ -479,7 +479,29 @@ async function saveBookingRecord(id) {
   try {
     await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { daily_record: record, actual_duration, actual_time, status: 'completed' });
     if (booking) { booking.daily_record = record; booking.actual_duration = actual_duration; booking.actual_time = actual_time; booking.status = 'completed'; }
-    // 保存后切换到查看模式
+
+    // 自动追加进度时间线
+    const stuRes = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(booking?.name||'')}&select=id,major`).catch(()=>[]);
+    if (stuRes.length && booking) {
+      const stu = stuRes[0];
+      const entry = makeProgressEntry({
+        studentId: stu.id,
+        studentName: booking.name,
+        major: booking.major || stu.major,
+        source: 'booking',
+        sourceName: `${teacherName}（面谈）`,
+        bookingId: id,
+        recorded_at: actual_time ? actual_time.slice(0,7).replace('-','年') + '月' : '',
+        plan: record.plan_status || '',
+        apply: record.apply_status || '',
+        exam: record.exam_status || '',
+        notes: record.extra || '',
+      });
+      if (entry.plan || entry.apply || entry.exam || entry.notes) {
+        sb('/rest/v1/student_progress_timeline', 'POST', entry).catch(()=>{});
+      }
+    }
+
     setTeacherRecordMode(id, 'view');
     const btn = document.querySelector(`[onclick="saveBookingRecord('${id}')"]`);
     if (btn) { btn.textContent = '✓ 已保存，面谈标记为已完成'; setTimeout(() => btn.textContent = '保存记录', 2000); }
