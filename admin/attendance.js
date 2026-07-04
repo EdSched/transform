@@ -311,7 +311,7 @@ function renderStudentRows(filter='') {
   const students = _currentSessionStudents;
   const existing = _currentSessionRecords;
   const filtered = filter
-    ? students.filter(s => s.name.includes(filter))
+    ? students.filter(s => matchesStudentSearch(s, filter))
     : students;
   const tbody=document.getElementById('sessionRecordBody');
   tbody.innerHTML=filtered.map(s=>{
