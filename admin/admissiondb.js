@@ -28,7 +28,8 @@ const SHEET_TO_MAJOR = {
 // 当前选中的专业列表（支持多选）
 let adbSelectedMajors = []; // 空=未选，['shakai']单选，['shakai','shinpan','fukushi']多选
 let adbEnglish = 'all', adbJapanese = 'all', adbSearch = '';
-let adbMonthFrom = 0, adbMonthTo = 0; // 0=不限
+let adbMonthFrom = 0, adbMonthTo = 0;
+let adbEreOnly = false; // 0=不限
 let adbEditId = null;
 let adbSortCol = '', adbSortDir = 1;
 let adbColFilters = {}; // { col: Set of values }
@@ -80,6 +81,13 @@ function renderAdmissionDbPage(mc) {
     </select>
     ${(adbMonthFrom||adbMonthTo)?`<button onclick="adbMonthFrom=0;adbMonthTo=0;renderAdmissionDbPage(document.getElementById('mainContent'))" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 7px;cursor:pointer;font-family:inherit;color:var(--text-3)">清除</button>`:''}
   </div>
+  ${(adbSelectedMajors.includes('keizai') || adbSelectedMajors.length === 0) ? `
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+    <button class="btn btn-sm ${adbEreOnly?'btn-primary':'btn-outline'}" onclick="adbEreOnly=!adbEreOnly;renderAdmissionTable()" style="font-size:11px;padding:3px 12px;border:1px solid var(--border)">
+      📊 ERE可代替笔试
+    </button>
+    ${adbEreOnly?'<span style="font-size:10px;color:var(--text-3)">仅显示可用ERE成绩代替笔记试验的学校</span>':''}
+  </div>` : ''}
 
   <!-- 搜索 -->
   <div style="margin-bottom:10px">
@@ -131,6 +139,11 @@ function renderAdmissionDbPage(mc) {
           <select id="adb_recommendation"><option value="">-</option><option>必須</option><option>任意</option><option>不要</option></select></div>
         <div class="form-group" style="margin:0"><label class="form-label">卒業論文</label>
           <select id="adb_thesis"><option value="">-</option><option>必須</option><option>任意</option><option>不要</option></select></div>
+        <div class="form-group" style="margin:0;align-self:center"><label class="form-label">ERE可代替笔试</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-top:4px">
+            <input type="checkbox" id="adb_ere_available" style="accent-color:var(--accent);width:16px;height:16px">
+            <span>是（可用ERE代替笔记试）</span>
+          </label></div>
         <div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">試験方式</label><input id="adb_exam_style"></div>
         <div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">備考</label><textarea id="adb_notes" rows="2"></textarea></div>
         <div class="form-group" style="margin:0"><label class="form-label">募集要項URL</label><input id="adb_guideline_url" type="url"></div>
@@ -188,6 +201,7 @@ async function toggleAdbMajor(key, el) {
 
 function clearAdbMajors() {
   adbSelectedMajors = [];
+  adbEreOnly = false;
   updateMajorChips();
   cachedAdmissionSchools = [];
   renderAdmissionTable();
@@ -267,6 +281,8 @@ function filterAdmissionSchools() {
       return true;
     });
   }
+  // ERE筛选
+  if (adbEreOnly) list = list.filter(s => s.ere_available === true);
   // 列筛选
   Object.entries(adbColFilters).forEach(([col, vals]) => {
     if (vals && vals.size) list = list.filter(s => vals.has(s[col]||''));
@@ -298,6 +314,7 @@ const ADB_COLS = [
   { key:'recommendation', label:'推薦状', width:'54px' },
   { key:'thesis', label:'卒論', width:'54px' },
   { key:'exam_style', label:'試験方式', width:'90px' },
+  { key:'ere_available', label:'ERE', width:'44px' },
 ];
 
 function renderAdmissionTable() {
@@ -353,6 +370,7 @@ function renderAdmissionTable() {
       <td style="color:var(--text-2)">${s.recommendation||'-'}</td>
       <td style="color:var(--text-2)">${s.thesis||'-'}</td>
       <td style="color:var(--text-2);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.exam_style||''}</td>
+      <td style="text-align:center">${s.ere_available?'<span style="font-size:11px;color:var(--ok);font-weight:700">✓</span>':''}</td>
       <td onclick="event.stopPropagation()" style="white-space:nowrap">
         ${s.guideline_url?`<a href="${s.guideline_url}" target="_blank" style="font-size:10px;color:var(--accent);margin-right:4px">要项</a>`:''}
         ${s.past_exam_url?`<a href="${s.past_exam_url}" target="_blank" style="font-size:10px;color:var(--accent)">过去问</a>`:''}
@@ -442,9 +460,13 @@ function openAdmissionEdit(id) {
     recommendation: s.recommendation, thesis: s.thesis,
     exam_style: s.exam_style, notes: s.notes,
     guideline_url: s.guideline_url, past_exam_url: s.past_exam_url,
+    ere_available: s.ere_available,
   };
   for (const [k, v] of Object.entries(fields)) {
-    const el = document.getElementById('adb_' + k); if (el) el.value = v || '';
+    const el = document.getElementById('adb_' + k);
+    if (!el) continue;
+    if (el.type === 'checkbox') el.checked = !!v;
+    else el.value = v || '';
   }
   document.getElementById('admissionEditModal').style.display = 'flex';
 }
@@ -479,6 +501,7 @@ async function saveAdmissionSchool() {
     notes: document.getElementById('adb_notes').value,
     guideline_url: document.getElementById('adb_guideline_url').value,
     past_exam_url: document.getElementById('adb_past_exam_url').value,
+    ere_available: document.getElementById('adb_ere_available')?.checked || false,
     updated_at: new Date().toISOString(),
   };
   try {
@@ -527,6 +550,7 @@ function exportAdmissionExcel() {
     row['合格発表時間'] = s.result_date;
     row['英語成績'] = s.english_required;
     row['日本語成績'] = s.japanese_required;
+    if (s.major === 'keizai') row['ERE可代替笔试'] = s.ere_available ? '是' : '';
     return row;
   });
   const ws = XLSX.utils.json_to_sheet(rows);
