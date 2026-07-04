@@ -478,6 +478,28 @@ async function saveRecord(){
   try{
     await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',{actual_time,daily_record,status:'completed'});
     b.actual_time=actual_time;b.daily_record=daily_record;b.status='completed';
+
+    // 自动追加进度时间线（从面谈记录映射）
+    const stu = cachedStudents?.find(s=>s.name===b.name);
+    if (stu) {
+      const entry = makeProgressEntry({
+        studentId: stu.id,
+        studentName: b.name,
+        major: b.major || stu.major,
+        source: 'booking',
+        sourceName: '面谈记录',
+        bookingId: id,
+        recorded_at: actual_time ? actual_time.slice(0,7).replace('-','年') + '月' : '',
+        plan: daily_record.plan_status || '',
+        apply: daily_record.apply_status || '',
+        exam: daily_record.exam_status || '',
+        notes: daily_record.extra || '',
+      });
+      if (entry.plan || entry.apply || entry.exam || entry.notes) {
+        sb('/rest/v1/student_progress_timeline','POST',entry).catch(()=>{});
+      }
+    }
+
     setRecordMode('view',b);
     document.getElementById('copyRecordBtn').style.display='inline-flex';
     renderBookingPage(document.getElementById('mainContent'));
