@@ -1473,12 +1473,18 @@ function openVipMessages(bookingId) {
   document.body.appendChild(modal);
 }
 
+const VIP_MSG_LIMIT = 30;
+
 async function sendVipTeacherMessage(bookingId) {
   const input = document.getElementById('vip_teacher_message_input');
   const text = input.value.trim();
   if (!text) return;
   const b = cachedTeacherBookings.find(x => x.id === bookingId);
   if (!b) return;
+  if ((b.messages || []).length >= VIP_MSG_LIMIT) {
+    alert(`每个预约最多 ${VIP_MSG_LIMIT} 条留言，当前已达上限。如需继续沟通请通过其他方式联系学生。`);
+    return;
+  }
   const newMessages = [...(b.messages || []), { from: 'teacher', text, ts: Date.now() }];
   try {
     await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', { messages: newMessages });
