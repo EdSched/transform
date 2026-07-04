@@ -1953,11 +1953,10 @@ async function renderTeacherAdmissionDb(mc) {
     </select>
     ${(teacherAdbMonthFrom||teacherAdbMonthTo)?`<button onclick="teacherAdbMonthFrom=0;teacherAdbMonthTo=0;teacherAdbRender()" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 7px;cursor:pointer;font-family:inherit;color:var(--text-3)">清除</button>`:''}
   </div>
-  ${teacherAdbMajors.includes('keizai') ? `
-  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-    <button class="btn btn-sm ${teacherAdbEreOnly?'btn-primary':'btn-outline'}" onclick="teacherAdbEreOnly=!teacherAdbEreOnly;teacherAdbRender()" style="font-size:11px;padding:3px 12px;border:1px solid var(--border)">📊 ERE可代替笔试</button>
-    ${teacherAdbEreOnly?'<span style="font-size:10px;color:var(--text-3)">仅显示ERE可代替笔试的学校</span>':''}
-  </div>` : ''}
+  <div id="tadbEreContainer" style="margin-bottom:10px;display:none;align-items:center;gap:8px">
+    <button id="tadbEreBtn" class="btn btn-sm btn-outline" onclick="teacherAdbEreOnly=!teacherAdbEreOnly;teacherAdbRender()" style="font-size:11px;padding:3px 12px;border:1px solid var(--border)">📊 ERE可代替笔试</button>
+    <span id="tadbEreHint" style="font-size:10px;color:var(--text-3);display:none">仅显示ERE可代替笔试的学校</span>
+  </div>
 
   <div style="font-size:11px;color:var(--text-3);margin-bottom:6px" id="tadbCount">请选择专业查看数据</div>
   <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">💡 点击列标题可排序，列标题右侧的 ▾ 可筛选该列内容</div>
@@ -2103,6 +2102,18 @@ function teacherAdbRender() {
 
   const showMajor = teacherAdbMajors.length !== 1;
   const filtered = teacherAdbFilter();
+
+  // ERE按钮动态控制
+  const ereContainer = document.getElementById('tadbEreContainer');
+  const ereBtn = document.getElementById('tadbEreBtn');
+  const ereHint = document.getElementById('tadbEreHint');
+  if (ereContainer) {
+    const showEre = teacherAdbMajors.includes('keizai');
+    ereContainer.style.display = showEre ? 'flex' : 'none';
+    if (ereBtn) ereBtn.className = `btn btn-sm ${teacherAdbEreOnly ? 'btn-primary' : 'btn-outline'}`;
+    if (ereHint) ereHint.style.display = teacherAdbEreOnly ? 'inline' : 'none';
+    if (!showEre && teacherAdbEreOnly) teacherAdbEreOnly = false;
+  }
 
   if (!teacherAdbData.length) {
     if (countEl) countEl.textContent = '请选择专业查看数据';
