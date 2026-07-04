@@ -523,3 +523,127 @@ function buildAdmissionFilterDesc(opts) {
   }
   return desc.length ? desc.join('　|　') : '全部';
 }
+
+// ══════════════════════════════════
+// 考学进度时间线 共享常量和工具函数
+// ══════════════════════════════════
+
+const PROGRESS_OPTIONS = {
+  japanese: ['不需要','备考中','已报名','成绩待出','N2合格','N1合格','EJU完成'],
+  english:  ['不需要','备考中','已报名','成绩待出','已完成'],
+  plan:     ['未开始','收集资料中','撰写中','修改中','已完成'],
+  apply:    ['择校确认中','联系教授中','材料准备中','已出愿','合格发表中','已合格'],
+  exam:     ['不需要','笔试练习中','面试准备中','已完成'],
+};
+
+const PROGRESS_LABELS = {
+  japanese: '日语成绩',
+  english:  '英语成绩',
+  plan:     '计划书',
+  apply:    '出愿',
+  exam:     '备考',
+};
+
+const PROGRESS_ICONS = {
+  japanese: '🗣',
+  english:  '📝',
+  plan:     '📄',
+  apply:    '🏫',
+  exam:     '✏️',
+};
+
+// 每个维度的"完成"状态
+const PROGRESS_DONE = {
+  japanese: ['不需要','N2合格','N1合格','EJU完成'],
+  english:  ['不需要','已完成'],
+  plan:     ['已完成'],
+  apply:    ['已合格'],
+  exam:     ['不需要','已完成'],
+};
+
+// 来源标签
+const PROGRESS_SOURCE_LABEL = {
+  student: { label: '学生', color: '#1a6a9a', bg: '#e8f4fd' },
+  teacher: { label: '老师', color: '#2a7a4a', bg: '#e4f5ee' },
+  admin:   { label: 'Admin', color: '#7a3a8a', bg: '#f3e8fa' },
+  booking: { label: '面谈记录', color: '#856404', bg: '#fff3cd' },
+};
+
+/**
+ * 判断某个状态是否已完成
+ */
+function isProgressDone(dimension, value) {
+  return value && (PROGRESS_DONE[dimension] || []).includes(value);
+}
+
+/**
+ * 从时间线数组中提取每个维度的最新状态
+ * @param {Array} timeline - student_progress_timeline 记录数组（按时间正序）
+ */
+function getLatestProgress(timeline) {
+  const latest = { japanese: '', english: '', plan: '', apply: '', exam: '', notes: '' };
+  if (!timeline || !timeline.length) return latest;
+  // 按 created_at 正序，后面的覆盖前面的
+  const sorted = [...timeline].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+  sorted.forEach(entry => {
+    Object.keys(latest).forEach(k => {
+      if (entry[k]) latest[k] = entry[k];
+    });
+  });
+  return latest;
+}
+
+/**
+ * 生成一条进度时间线记录（插入前调用）
+ */
+function makeProgressEntry({ studentId, studentName, major, source, sourceName, bookingId, recordedAt, japanese, english, plan, apply, exam, notes }) {
+  return {
+    id: `spt-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
+    student_id: studentId,
+    student_name: studentName,
+    major: major || '',
+    japanese: japanese || '',
+    english: english || '',
+    plan: plan || '',
+    apply: apply || '',
+    exam: exam || '',
+    notes: notes || '',
+    source: source || 'admin',
+    source_name: sourceName || '',
+    booking_id: bookingId || '',
+    recorded_at: recordedAt || '',
+  };
+}
+
+/**
+ * 渲染进度状态 badge
+ */
+function renderProgressBadge(dimension, value) {
+  if (!value) return '<span style="font-size:10px;color:var(--text-3)">未填写</span>';
+  const done = isProgressDone(dimension, value);
+  const color = done ? 'var(--ok)' : value === '未开始' || value === '不需要' ? 'var(--text-3)' : 'var(--warn)';
+  const bg = done ? 'var(--ok-bg)' : value === '未开始' || value === '不需要' ? 'var(--bg)' : 'var(--warn-bg)';
+  return `<span style="font-size:10px;background:${bg};color:${color};padding:2px 8px;border-radius:3px;font-weight:600;white-space:nowrap">${value}</span>`;
+}
+
+/**
+ * 渲染单条时间线记录
+ */
+function renderProgressTimelineEntry(entry, canEdit = false, onEdit = '') {
+  const src = PROGRESS_SOURCE_LABEL[entry.source] || PROGRESS_SOURCE_LABEL.admin;
+  const dims = ['japanese','english','plan','apply','exam'].filter(k => entry[k]);
+  return `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-light)">
+    <div style="min-width:60px;text-align:right">
+      <span style="font-size:10px;background:${src.bg};color:${src.color};padding:1px 6px;border-radius:2px">${src.label}</span>
+      ${entry.source_name ? `<div style="font-size:9px;color:var(--text-3);margin-top:2px">${entry.source_name}</div>` : ''}
+    </div>
+    <div style="flex:1">
+      <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">${entry.recorded_at || entry.created_at?.slice(0,10) || ''}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px">
+        ${dims.map(k => `<div style="font-size:11px">${PROGRESS_ICONS[k]} ${PROGRESS_LABELS[k]}：${renderProgressBadge(k, entry[k])}</div>`).join('')}
+      </div>
+      ${entry.notes ? `<div style="font-size:11px;color:var(--text-2);margin-top:4px">💬 ${entry.notes}</div>` : ''}
+    </div>
+    ${canEdit ? `<button onclick="${onEdit}" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;color:var(--text-3);white-space:nowrap;align-self:flex-start">编辑</button>` : ''}
+  </div>`;
+}
