@@ -394,13 +394,19 @@ function renderVipActiveBooking(b) {
     <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:11px;font-weight:600;color:var(--text-secondary)">💬 与老师留言</div><div style="font-size:10px;color:${messages.length >= VIP_MSG_LIMIT ? 'var(--danger)' : 'var(--text-muted)'}">${messages.length}/${VIP_MSG_LIMIT}</div></div>
       <div id="vip_messages_list" style="max-height:160px;overflow-y:auto;margin-bottom:8px">
-        ${messages.length ? messages.map(m => `
+        ${messages.length ? messages.map(m => {
+          if (m.from === 'system') return `
+            <div style="text-align:center;margin-bottom:8px">
+              <span style="display:inline-block;background:#fff3cd;border:1px solid #e6a817;border-radius:4px;padding:5px 10px;font-size:10px;color:#856404;max-width:90%;text-align:left">${m.text}</span>
+            </div>`;
+          return `
           <div style="font-size:11px;margin-bottom:6px;${m.from==='student'?'text-align:right':''}">
             <span style="display:inline-block;max-width:80%;background:${m.from==='student'?'var(--accent-light,#e8e0d0)':'var(--bg)'};border-radius:8px;padding:5px 10px;text-align:left">
               <div style="font-size:9px;color:var(--text-muted);margin-bottom:2px">${m.from==='student'?'我':(b.assigned_teacher||'老师')}</div>
               ${m.text}
             </span>
-          </div>`).join('') : '<div style="font-size:11px;color:var(--text-muted)">暂无留言</div>'}
+          </div>`;
+        }).join('') : '<div style="font-size:11px;color:var(--text-muted)">暂无留言</div>'}
       </div>
       <div style="display:flex;gap:6px">
         <input type="text" id="vip_message_input" placeholder="${messages.length >= VIP_MSG_LIMIT ? '留言已达上限（'+VIP_MSG_LIMIT+'条）' : '给老师留言…'}" ${messages.length >= VIP_MSG_LIMIT ? 'disabled style="flex:1;font-size:12px;opacity:.5"' : 'style="flex:1;font-size:12px"'}>
@@ -429,6 +435,30 @@ function renderVipHistory() {
   const done = vipBookings.filter(b => (b.status === 'confirmed' || b.status === 'completed') && b.vip_session_notes);
   if (!done.length) return '<div class="no-slots">暂无已完成的课程记录</div>';
   return done.map(b => {
+    // 作业区块
+    const hasHomework = !!b.vip_homework;
+    const hasSubmitted = !!b.vip_homework_file_url;
+    const hasFeedback = !!b.vip_homework_feedback || !!b.vip_homework_feedback_file_url;
+    const homeworkBlock = hasHomework ? `
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
+        <div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:6px">📝 作业</div>
+        <div style="font-size:12px;color:var(--text);background:var(--bg);border-radius:3px;padding:8px 10px;margin-bottom:8px;white-space:pre-wrap">${b.vip_homework}</div>
+        ${hasFeedback ? `
+          <div style="font-size:11px;font-weight:600;color:var(--ok);margin-bottom:4px">✓ 老师已批改</div>
+          ${b.vip_homework_feedback ? `<div style="font-size:12px;color:var(--text-2);margin-bottom:6px">${b.vip_homework_feedback}</div>` : ''}
+          ${b.vip_homework_feedback_file_url ? `<a href="${b.vip_homework_feedback_file_url}" target="_blank" style="font-size:12px;color:var(--accent)">📎 下载批改文件</a>` : ''}
+        ` : hasSubmitted ? `
+          <div style="font-size:11px;color:#856404">⏳ 作业已提交，等待老师批改</div>
+          <a href="${b.vip_homework_file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 查看已提交文件</a>
+        ` : `
+          <div style="font-size:11px;color:var(--danger);margin-bottom:6px">⚠ 请提交作业</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <input type="file" id="hw_file_${b.id}" accept="image/*,.pdf,.doc,.docx" style="font-size:11px">
+            <button onclick="submitVipHomework('${b.id}')" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 14px;font-size:11px;cursor:pointer;font-family:inherit;align-self:flex-start">提交作业</button>
+            <div id="hw_result_${b.id}" style="font-size:11px"></div>
+          </div>
+        `}
+      </div>` : '';
     const needsConfirm = !b.student_confirmed;
     return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:12px;margin-bottom:8px;background:${needsConfirm ? 'var(--accent-light)' : 'var(--surface)'}">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
@@ -443,8 +473,28 @@ function renderVipHistory() {
           <button class="btn btn-outline btn-sm" onclick="confirmVipSession('${b.id}','满意')">满意</button>
           <button class="btn btn-outline btn-sm" onclick="confirmVipSession('${b.id}','不满意')">不满意</button>
         </div>` : `<div style="font-size:11px;color:var(--text-muted)">您的评价：${b.student_rating || '—'}</div>`}
+      ${homeworkBlock}
     </div>`;
   }).join('');
+}
+
+async function submitVipHomework(bookingId) {
+  const fileEl = document.getElementById('hw_file_' + bookingId);
+  const resultEl = document.getElementById('hw_result_' + bookingId);
+  if (!fileEl?.files[0]) { if(resultEl) resultEl.innerHTML = '<span style="color:var(--danger)">请选择文件</span>'; return; }
+  if (resultEl) resultEl.textContent = '上传中…';
+  const file = fileEl.files[0];
+  try {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const path = `${vipStudent.major || 'vip'}/${Date.now()}_hw.${ext}`;
+    const url = await sbUpload('student-files', path, file);
+    await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', { vip_homework_file_url: url });
+    const b = vipBookings.find(x => x.id === bookingId);
+    if (b) b.vip_homework_file_url = url;
+    renderVipMain();
+  } catch(e) {
+    if (resultEl) resultEl.innerHTML = `<span style="color:var(--danger)">上传失败：${e.message}</span>`;
+  }
 }
 
 function vipRenderLocationChoice(slotId) {
