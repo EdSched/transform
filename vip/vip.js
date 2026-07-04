@@ -553,9 +553,9 @@ async function submitVipBooking() {
 
 async function confirmVipSession(bookingId, rating) {
   try {
-    await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', { student_confirmed: true, student_rating: rating });
+    await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', { student_confirmed: true, student_rating: rating, status: 'completed' });
     const b = vipBookings.find(x => x.id === bookingId);
-    if (b) { b.student_confirmed = true; b.student_rating = rating; }
+    if (b) { b.student_confirmed = true; b.student_rating = rating; b.status = 'completed'; }
     renderVipMain();
   } catch (e) { alert('提交失败：' + e.message); }
 }
