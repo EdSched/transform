@@ -1521,13 +1521,119 @@ function renderMyVipRow(b, s) {
         ${b.reschedule_reason ? `<div style="font-size:10px;color:var(--text-3);margin-top:3px">🔄 已调整时间・原因：${b.reschedule_reason}</div>` : ''}
       </div>
     </div>
+    ${b.vip_room ? `<div style="font-size:11px;color:var(--ok);margin-top:3px">🏫 教室：${b.vip_room}</div>` : ''}
+    ${b.vip_meeting_url ? `<div style="font-size:11px;color:#1a6a9a;margin-top:3px">💻 <a href="${b.vip_meeting_url}" target="_blank" style="color:#1a6a9a">${b.vip_meeting_url}</a></div>` : ''}
     <div style="margin-top:8px;padding-top:8px;border-top:1px solid #ddd5f0;display:flex;gap:6px;flex-wrap:wrap">
+      ${b.status === 'pending' ? `<button class="btn btn-sm" style="background:var(--ok);color:#fff;border:none;border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit" onclick="openVipConfirmModal('${b.id}')">✓ 确认预约</button>` : ''}
+      ${b.status === 'pending' ? `<button class="btn btn-outline btn-sm" onclick="openVipRoomBookText('${b.id}')">🏫 预约教室文案</button>` : ''}
       <button class="btn btn-outline btn-sm" onclick="openVipSessionRecord('${b.id}')">${b.student_confirmed ? '查看上课记录' : hasRecord ? '编辑上课记录' : '填写上课记录'}</button>
       ${hasRecord && !b.student_confirmed ? `<button class="btn btn-outline btn-sm" onclick="openVipConfirmText('${b.id}')">📋 生成确认链接文案</button>` : ''}
-      ${!hasRecord ? `<button class="btn btn-outline btn-sm" onclick="openVipReschedule('${b.id}')">🔄 调整时间</button>` : ''}
+      ${!hasRecord && b.status !== 'completed' ? `<button class="btn btn-outline btn-sm" onclick="openVipReschedule('${b.id}')">🔄 调整时间</button>` : ''}
       <button class="btn btn-outline btn-sm" onclick="openVipMessages('${b.id}')">💬 留言</button>
     </div>
   </div>`;
+}
+
+// ── 预约教室文案 ──
+function openVipRoomBookText(bookingId) {
+  const b = cachedTeacherBookings.find(x => x.id === bookingId);
+  if (!b) return;
+  const d = new Date(b.slot_date + 'T12:00:00');
+  const dow = DAYS_CN[d.getDay()];
+  const month = d.getMonth() + 1, day = d.getDate();
+  const campus = b.location === 'offline_takadanobaba' ? '高田马场' :
+                 b.location === 'offline_ichigaya' ? '市谷' :
+                 b.location === 'both_takadanobaba' ? '高田马场' :
+                 b.location === 'both_ichigaya' ? '市谷' : '校区';
+  const major = (typeof MAJORS !== 'undefined' ? MAJORS[b.major] || b.major : b.major) || '';
+  const text = `老师好！麻烦预约${campus}，${month}月${day}日${dow}，${b.slot_time_range || ''}，${major}，${b.name}同学的VIP教室。谢谢！`;
+
+  const existing = document.getElementById('vipRoomBookModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'vipRoomBookModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:420px;width:100%">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">📋 预约教室文案</div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:10px;font-size:12px;line-height:1.7;margin-bottom:12px">${text}</div>
+      <div style="margin-bottom:12px">
+        <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">预约好后填写教室号：</div>
+        <input id="vip_room_input" placeholder="例：VIP1、高马VIP2…" style="font-size:12px;width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="navigator.clipboard.writeText('${text.replace(/'/g,"\'")}').then(()=>{const b=this;b.textContent='✓ 已复制';setTimeout(()=>b.textContent='复制文案',1500)})" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:9px;font-size:12px;cursor:pointer;font-family:inherit">复制文案</button>
+        <button onclick="saveVipRoom('${bookingId}')" style="flex:1;background:var(--ok);color:#fff;border:none;border-radius:3px;padding:9px;font-size:12px;cursor:pointer;font-family:inherit">保存教室号</button>
+        <button onclick="document.getElementById('vipRoomBookModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:9px 14px;font-size:12px;cursor:pointer;font-family:inherit">关闭</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  const existing_room = b.vip_room || '';
+  document.getElementById('vip_room_input').value = existing_room;
+}
+
+async function saveVipRoom(bookingId) {
+  const room = document.getElementById('vip_room_input').value.trim();
+  const b = cachedTeacherBookings.find(x => x.id === bookingId);
+  if (!b) return;
+  try {
+    await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', { vip_room: room });
+    b.vip_room = room;
+    document.getElementById('vipRoomBookModal').remove();
+    renderBookingManagement(document.getElementById('mainContent'));
+  } catch(e) { alert('保存失败：' + e.message); }
+}
+
+// ── VIP确认modal（线下填教室，线上填会议链接）──
+function openVipConfirmModal(bookingId) {
+  const b = cachedTeacherBookings.find(x => x.id === bookingId);
+  if (!b) return;
+  const isOffline = b.location && (b.location.startsWith('offline') || b.location.startsWith('both'));
+  const isOnline = !b.location || b.location === 'online' || b.location.startsWith('both');
+  const existing = document.getElementById('vipConfirmModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'vipConfirmModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:380px;width:100%">
+      <div style="font-size:13px;font-weight:600;margin-bottom:14px">确认VIP预约 · ${b.name}</div>
+      <div style="font-size:11px;color:var(--text-2);margin-bottom:14px">${b.slot_date} ${b.slot_time_range || ''} · ${locationLong(b.location) || '线上'}</div>
+      ${isOffline ? `
+      <div class="form-group">
+        <label class="form-label">教室号（线下上课必填）</label>
+        <input id="vcm_room" value="${b.vip_room||''}" placeholder="例：VIP1、高马VIP2…">
+      </div>` : ''}
+      ${isOnline ? `
+      <div class="form-group">
+        <label class="form-label">腾讯会议链接${isOffline?'（可选）':'（建议填写）'}</label>
+        <input id="vcm_meeting" value="${b.vip_meeting_url||''}" placeholder="https://meeting.tencent.com/…">
+      </div>` : ''}
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button onclick="confirmVipWithDetails('${bookingId}')" style="flex:1;background:var(--ok);color:#fff;border:none;border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">✓ 确认预约</button>
+        <button onclick="document.getElementById('vipConfirmModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:10px 14px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function confirmVipWithDetails(bookingId) {
+  const b = cachedTeacherBookings.find(x => x.id === bookingId);
+  if (!b) return;
+  const isOffline = b.location && (b.location.startsWith('offline') || b.location.startsWith('both'));
+  const room = document.getElementById('vcm_room')?.value.trim() || '';
+  const meeting = document.getElementById('vcm_meeting')?.value.trim() || '';
+  if (isOffline && !room) { alert('线下课程请填写教室号'); return; }
+  try {
+    await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', {
+      status: 'confirmed',
+      vip_room: room,
+      vip_meeting_url: meeting,
+    });
+    Object.assign(b, { status: 'confirmed', vip_room: room, vip_meeting_url: meeting });
+    document.getElementById('vipConfirmModal').remove();
+    renderBookingManagement(document.getElementById('mainContent'));
+  } catch(e) { alert('确认失败：' + e.message); }
 }
 
 function renderMySessionRow(s) {
