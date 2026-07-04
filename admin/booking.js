@@ -171,9 +171,9 @@ function renderVipBookingCard(b){
   const remainH=totalH-usedH;
   // 上课前显示该时间槽老师勾选的全部可选内容（参考）；老师填完上课记录后显示实际内容
   const contentDisplay = b.vip_content ? b.vip_content : (slot?.vip_content?.join('・')||'未设置');
-  const statusLabel = b.status==='pending'?'待确认':b.status==='completed'?'已完成':b.status==='confirmed'?(b.student_confirmed?'学生已确认':'已确认'):'已取消';
-  const statusColor = b.status==='cancelled'?'var(--danger)':b.status==='completed'?'var(--ok)':b.student_confirmed?'var(--ok)':b.status==='confirmed'?'#1a6a9a':'#856404';
-  const statusBg = b.status==='cancelled'?'#fdecea':b.status==='completed'?'var(--ok-bg)':b.student_confirmed?'var(--ok-bg)':b.status==='confirmed'?'#e8f4fd':'#fff3cd';
+  const statusLabel = bookingStatusLabel(b, true);
+  const statusColor = bookingStatusColor(b);
+  const statusBg = bookingStatusBg(b);
   const code=studentRecord?.student_code;
   return `<div class="booking-card status-${b.status}">
     <div class="booking-header">
@@ -246,7 +246,7 @@ function renderBookingCard(b){
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
         <span class="tag ${typeTag(b.type)}">${typeLabel(b.type)}</span>
-        <span class="status-badge status-${b.status}">${b.status==='pending'?'待确认':b.status==='completed'?'已完成':b.status==='confirmed'?'已确认':'已取消'}</span>
+        <span class="status-badge status-${b.status}">${bookingStatusLabel(b)}</span>
         ${hasRecord?'<span class="record-done">已记录</span>':''}
       </div>
     </div>
@@ -523,7 +523,7 @@ function exportExcel(){
     '姓名':b.name,'专业':MAJORS[b.major]||b.major||'','预约日期':b.slot_date,'时间段':b.slot_time_range||'','时长(分钟)':b.duration,
     '面谈类型':typeLabel(b.type),'紧急程度':b.urgency==='high'?'紧急':b.urgency==='mid'?'适中':'一般',
     '出愿期间':b.exam_period||'','研究计划书':b.plan_status||'','面试准备':b.interview_status||'','具体需求':b.needs||'',
-    '状态':b.status==='pending'?'待确认':b.status==='completed'?'已完成':b.status==='confirmed'?'已确认':'已取消','实际面谈时间':b.actual_time||'','实际面谈时长':b.actual_duration||'','备注':b.note||'',
+    '状态':bookingStatusLabel(b),'实际面谈时间':b.actual_time||'','实际面谈时长':b.actual_duration||'','备注':b.note||'',
     '知识进展':r.study_status||'','知识建议':r.study_advice||'','知识期限':r.study_deadline||'',
     '计划书状态':r.plan_status||'','计划书建议':r.plan_advice||'','计划书期限':r.plan_deadline||'',
     '出愿状态':r.apply_status||'','出愿建议':r.apply_advice||'','出愿期限':r.apply_deadline||'',
