@@ -94,7 +94,11 @@ function buildTabs() {
   if (p.slots) tabs.push({ id: 'slots', label: '⏰ 时间槽设定' });
   if (p.schedule || slots.length) tabs.push({ id: 'schedule', label: '🗓 排课确认' });
   if (p.homework) tabs.push({ id: 'homework', label: '📝 作业反馈' });
-  if (p.admission_query) tabs.push({ id: 'admissiondb', label: '🏫 出願数据库' });
+  if (p.admission_query) {
+    tabs.push({ id: 'admissiondb', label: '🏫 出願数据库' });
+    // 记录该老师被允许查看的专业（空数组=全部）
+    window._teacherAllowedAdmMajors = p.admission_majors || [];
+  }
   tabs.push({ id: 'mycourses', label: '📚 我的课表' });
   tabs.push({ id: 'workrecords', label: '📋 工作记录' });
   const tabBar = document.getElementById('tabBar');
@@ -1741,8 +1745,19 @@ async function renderTeacherAdmissionDb(mc) {
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px;margin-bottom:12px">
     <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">选择专业 <span style="font-weight:400;text-transform:none">（可多选，点「社会人文」同时选中三个专业）</span></div>
     <div class="filter-row" id="tadbMajorRow">
-      <div class="filter-chip" onclick="teacherAdbToggleGroup(this)">社会人文</div>
-      ${Object.entries(TEACHER_ADB_MAJORS).map(([k,v])=>`<div class="filter-chip" data-key="${k}" onclick="teacherAdbToggleMajor('${k}',this)">${v}</div>`).join('')}
+      ${(() => {
+      const allowed = window._teacherAllowedAdmMajors || [];
+      const group = ['shakai','shinpan','fukushi'];
+      const show = !allowed.length || group.every(k => allowed.includes(k));
+      return show ? '<div class="filter-chip" onclick="teacherAdbToggleGroup(this)">社会人文</div>' : '';
+    })()}
+      ${(() => {
+      const allowed = window._teacherAllowedAdmMajors || [];
+      const entries = allowed.length
+        ? Object.entries(TEACHER_ADB_MAJORS).filter(([k]) => allowed.includes(k))
+        : Object.entries(TEACHER_ADB_MAJORS);
+      return entries.map(([k,v]) => `<div class="filter-chip" data-key="${k}" onclick="teacherAdbToggleMajor('${k}',this)">${v}</div>`).join('');
+    })()}
       <div class="filter-chip" style="opacity:.6" onclick="teacherAdbClear()">✕ 清除</div>
     </div>
   </div>
