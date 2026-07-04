@@ -2201,9 +2201,10 @@ td{padding:5px 4px;border:1px solid #ddd;vertical-align:top;word-break:break-all
 tr.even td{background:#f4f7fb}
 .bold{font-weight:700}.center{text-align:center}
 ${colDefs.map(([,w],i)=>`col:nth-child(${i+1}){width:${w}}`).join('')}
-body::after{content:'唯新教育 TRANSFORM EDUCATION';position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-35deg);font-size:52px;font-weight:700;color:rgba(0,0,0,0.06);white-space:nowrap;pointer-events:none;z-index:9999;letter-spacing:4px}
+#wm{position:fixed;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:9999;overflow:hidden}
+#wm span{position:absolute;font-size:16px;font-weight:700;color:rgba(0,0,0,0.07);white-space:nowrap;transform:rotate(-35deg);letter-spacing:3px;font-family:sans-serif}
 @page{size:A3 landscape;margin:12mm}
-@media print{body{padding:0}td,th{font-size:10px;padding:4px 3px}body::after{position:fixed}}
+@media print{body{padding:0}td,th{font-size:10px;padding:4px 3px}#wm{position:fixed}}
 </style></head><body>
 <div class="title-block">
   <h1>${majorLabel} 可出願学校名单</h1>
@@ -2214,7 +2215,24 @@ body::after{content:'唯新教育 TRANSFORM EDUCATION';position:fixed;top:50%;le
   <colgroup>${colDefs.map(([,w])=>`<col style="width:${w}">`).join('')}</colgroup>
   <thead><tr>${colDefs.map(([l,,g])=>`<th style="background:${thColors[g].bg};border-color:${thColors[g].border}">${l}</th>`).join('')}</tr></thead>
   <tbody>${rows}</tbody>
-</table></body></html>`;
+</table>
+<div id="wm"></div>
+<script>
+(function(){
+  var wm=document.getElementById('wm');
+  var text='唯新教育  TRANSFORM EDUCATION';
+  for(var y=-100;y<1000;y+=100){
+    for(var x=-200;x<1600;x+=320){
+      var s=document.createElement('span');
+      s.textContent=text;
+      s.style.left=x+'px';
+      s.style.top=y+'px';
+      wm.appendChild(s);
+    }
+  }
+})();
+</script>
+</body></html>`;
 
   const blob = new Blob([html],{type:'text/html;charset=utf-8'});
   const url = URL.createObjectURL(blob);
