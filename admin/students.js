@@ -369,25 +369,70 @@ let progressStudentFilter = '';
 
 async function renderProgressPage(mc, focusStudentId=null){
   mc.innerHTML='<div class="loading">加载中…</div>';
-  let students=cachedStudents.filter(s=>s.status==='active'||s.status==='stopped');
+  let students=cachedStudents.filter(s=>s.status==='active'||s.status==='stopped'||s.status==='graduated');
   if(stMajorFilter!=='all') students=students.filter(s=>matchesMajorFilter(s.major,stMajorFilter));
-  if(progressStudentFilter) students=students.filter(s=>s.name.includes(progressStudentFilter));
+  if(progressStudentFilter) students=students.filter(s=>matchesStudentSearch(s,progressStudentFilter));
 
-  // 拉取所有考学进度
-  const progressList = await sb(`/rest/v1/student_progress?select=*`).catch(()=>[]);
-  const progressMap = {};
-  progressList.forEach(p=>{ progressMap[p.student_id]=p; });
-
-  // 拉取最新面谈记录（按学生名）
-  const bookings = await sb(`/rest/v1/bookings?status=eq.confirmed&select=*&order=slot_date.desc`).catch(()=>[]);
-  const latestBooking = {};
-  bookings.forEach(b=>{
-    if(!latestBooking[b.name]) latestBooking[b.name]=b;
+  const allTimeline = await sb('/rest/v1/student_progress_timeline?select=*&order=created_at.asc&limit=5000').catch(()=>[]);
+  const timelineMap = {};
+  allTimeline.forEach(t => {
+    if (!timelineMap[t.student_id]) timelineMap[t.student_id] = [];
+    timelineMap[t.student_id].push(t);
   });
 
-  const statusIcon=(s)=>({进展顺利并能掌握:'🟢',能够稳定跟上:'🟡',需要更多时间:'🟠',没有很好跟上进度:'🔴',遇到困难:'🔴',未开始:'⚪',在收集材料:'🟡',撰写中:'🟡',已完成:'🟢',完成择校:'🟡',已联系教授:'🟡',准备中:'🟡',已出愿:'🟢'}[s]||'');
+  const cards = students.map(s => {
+    const timeline = timelineMap[s.id] || [];
+    const latest = getLatestProgress(timeline);
+    const isFocus = focusStudentId === s.id;
 
-  mc.innerHTML=`
+    const statusRow = Object.entries(PROGRESS_LABELS).map(([k,label]) => {
+      if (!latest[k]) return '';
+      const done = isProgressDone(k, latest[k]);
+      return `<span title="${label}" style="font-size:10px;background:${done?'var(--ok-bg)':'var(--warn-bg)'};color:${done?'var(--ok)':'var(--warn)'};padding:1px 6px;border-radius:2px">${PROGRESS_ICONS[k]} ${latest[k]}</span>`;
+    }).join('');
+
+    const dimCards = Object.entries(PROGRESS_LABELS).map(([k,label]) =>
+      `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:8px">
+        <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">${PROGRESS_ICONS[k]} ${label}</div>
+        ${renderProgressBadge(k, latest[k])}
+      </div>`
+    ).join('');
+
+    const timelineHtml = timeline.length
+      ? [...timeline].reverse().map(entry =>
+          renderProgressTimelineEntry(entry, true, `editProgressEntry('${entry.id}','${s.id}','${s.name}','${s.major}')`)
+        ).join('')
+      : '<div style="font-size:11px;color:var(--text-3);padding:8px 0">暂无进度记录</div>';
+
+    return `<div style="background:var(--surface);border:1px solid ${isFocus?'var(--accent)':'var(--border)'};border-radius:4px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer" onclick="toggleProgressCard('${s.id}')">
+        <div style="flex:1">
+          <span style="font-size:13px;font-weight:600">${s.name}</span>
+          <span style="font-size:11px;color:var(--text-3);margin-left:8px">${MAJORS[s.major]||s.major||''}</span>
+          ${s.target_enrollment?`<span style="font-size:10px;color:var(--text-3);margin-left:8px">目标：${s.target_enrollment}</span>`:''}
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+          ${statusRow || '<span style="font-size:10px;color:var(--text-3)">暂无记录</span>'}
+          <span style="font-size:11px;color:var(--text-3);margin-left:4px">▾</span>
+        </div>
+      </div>
+      <div id="prog_${s.id}" style="display:${isFocus?'block':'none'};border-top:1px solid var(--border-light);background:var(--bg)">
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border-light)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div style="font-size:11px;font-weight:600;color:var(--text-2)">当前进度</div>
+            <button class="btn btn-primary btn-sm" onclick="openAddProgressEntry('${s.id}','${s.name}','${s.major}')">＋ 更新进度</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${dimCards}</div>
+        </div>
+        <div style="padding:12px 14px">
+          <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px">进度时间线 <span style="font-weight:400;color:var(--text-3)">${timeline.length} 条记录</span></div>
+          ${timelineHtml}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  mc.innerHTML = `
   <div class="page-header">
     <div class="section-title">考学进度 <span class="badge-count">${students.length}</span></div>
   </div>
@@ -395,53 +440,40 @@ async function renderProgressPage(mc, focusStudentId=null){
     ${['all','keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map((m,i)=>`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this);renderProgressPage(document.getElementById('mainContent'))">${i===0?'全部专业':majorLabel(m)}</div>`).join('')}
   </div>
   <div class="search-bar"><input id="progress_search_input" placeholder="搜索学生姓名…" value="${progressStudentFilter}" oninput="handleProgressSearchInput(this)" oncompositionstart="this.dataset.composing='1'" oncompositionend="this.dataset.composing='';handleProgressSearchInput(this)"></div>
-  <div style="display:flex;flex-direction:column;gap:8px">
-    ${students.map(s=>{
-      const p=progressMap[s.id]||{};
-      const lb=latestBooking[s.name];
-      const r=lb?.daily_record||{};
-      const isFocus=focusStudentId===s.id;
-      return `<div style="background:var(--surface);border:1px solid ${isFocus?'var(--accent)':'var(--border)'};border-radius:4px;overflow:hidden">
-        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer" onclick="toggleProgressCard('${s.id}')">
-          <div style="flex:1">
-            <span style="font-size:13px;font-weight:600">${s.name}</span>
-            <span style="font-size:11px;color:var(--text-3);margin-left:8px">${MAJORS[s.major]||s.major||''}</span>
-            ${lb?`<span style="font-size:10px;color:var(--text-muted);margin-left:8px">最新面谈：${lb.slot_date}</span>`:''}
-          </div>
-          <div style="display:flex;gap:6px;align-items:center">
-            ${statusIcon(r.study_status)?`<span title="知识进展">${statusIcon(r.study_status)}</span>`:''}
-            ${statusIcon(r.plan_status)?`<span title="计划书">${statusIcon(r.plan_status)}</span>`:''}
-            ${statusIcon(r.apply_status)?`<span title="出愿">${statusIcon(r.apply_status)}</span>`:''}
-            ${statusIcon(r.exam_status)?`<span title="备考">${statusIcon(r.exam_status)}</span>`:''}
-            <span style="font-size:11px;color:var(--text-3)">▾</span>
-          </div>
-        </div>
-        <div id="prog_${s.id}" style="display:${isFocus?'block':'none'};padding:12px 14px;border-top:1px solid var(--border-light);background:var(--bg)">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
-            <div><label class="form-label">志望校</label><textarea id="prog_schools_${s.id}" rows="2" style="font-size:11px">${p.target_schools||''}</textarea></div>
-            <div><label class="form-label">困难点</label><textarea id="prog_diff_${s.id}" rows="2" style="font-size:11px">${p.difficulties||''}</textarea></div>
-            <div><label class="form-label">研究计划书方向</label><textarea id="prog_plan_${s.id}" rows="2" style="font-size:11px">${p.research_plan||''}</textarea></div>
-            <div><label class="form-label">入学目标</label><input id="prog_enroll_${s.id}" value="${p.target_enrollment||s.target_enrollment||''}" style="font-size:11px"></div>
-          </div>
-          ${lb?`
-          <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">最新面谈进度（${lb.slot_date}）</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px">
-            ${[['知识进展','study'],['计划书','plan'],['出愿','apply'],['备考','exam']].map(([label,k])=>r[k+'_status']?`
-            <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:8px">
-              <div style="font-size:10px;color:var(--text-3);margin-bottom:3px">${label}</div>
-              <div style="font-size:11px;font-weight:600">${statusIcon(r[k+'_status'])} ${r[k+'_status']}</div>
-              ${r[k+'_advice']?`<div style="font-size:10px;color:var(--text-2);margin-top:3px">${r[k+'_advice']}</div>`:''}
-              ${r[k+'_deadline']?`<div style="font-size:10px;color:var(--danger);margin-top:3px">⏰ ${r[k+'_deadline']}</div>`:''}
-            </div>`:'').join('')}
-          </div>
-          `:'<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">暂无面谈记录</div>'}
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-primary btn-sm" onclick="saveStudentProgress('${s.id}','${s.name}','${s.major}')">保存进度</button>
-            ${lb?`<button class="btn btn-outline btn-sm" onclick="syncProgressFromBooking('${s.id}','${lb.id}')">↺ 同步最新面谈</button>`:''}
-          </div>
-        </div>
-      </div>`;
-    }).join('')}
+  <div style="display:flex;flex-direction:column;gap:8px">${cards}</div>
+
+  <div class="modal-overlay" id="progressEntryModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;padding:16px">
+    <div class="modal" style="width:520px;max-height:85vh;overflow-y:auto">
+      <div class="modal-title" id="progressEntryTitle">录入进度</div>
+      <input type="hidden" id="pe_entry_id">
+      <input type="hidden" id="pe_student_id">
+      <input type="hidden" id="pe_student_name">
+      <input type="hidden" id="pe_major">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        ${Object.entries(PROGRESS_LABELS).map(([k,label]) =>
+          `<div class="form-group" style="margin:0">
+            <label class="form-label">${PROGRESS_ICONS[k]} ${label}</label>
+            <select id="pe_${k}">
+              <option value="">不更新此项</option>
+              ${PROGRESS_OPTIONS[k].map(v=>`<option value="${v}">${v}</option>`).join('')}
+            </select>
+          </div>`
+        ).join('')}
+      </div>
+      <div class="form-group">
+        <label class="form-label">备注</label>
+        <textarea id="pe_notes" rows="2" placeholder="补充说明…"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">记录时间（年月旬，可选）</label>
+        <input id="pe_recorded_at" placeholder="例：2026年6月中旬">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="closeProgressModal()">取消</button>
+        <button id="pe_delete_btn" class="btn btn-danger btn-sm" style="display:none" onclick="deleteProgressEntry()">删除</button>
+        <button class="btn btn-primary" onclick="saveProgressEntry()">保存</button>
+      </div>
+    </div>
   </div>`;
 }
 
@@ -450,39 +482,78 @@ function toggleProgressCard(id){
   if(el) el.style.display=el.style.display==='none'?'block':'none';
 }
 
-async function saveStudentProgress(studentId, studentName, major){
-  const data={
-    student_id:studentId,
-    student_name:studentName,
-    major,
-    target_schools:document.getElementById(`prog_schools_${studentId}`)?.value||'',
-    difficulties:document.getElementById(`prog_diff_${studentId}`)?.value||'',
-    research_plan:document.getElementById(`prog_plan_${studentId}`)?.value||'',
-    target_enrollment:document.getElementById(`prog_enroll_${studentId}`)?.value||'',
-    updated_at:new Date().toISOString()
-  };
-  try{
-    // upsert：有就更新，没有就插入
-    const existing=await sb(`/rest/v1/student_progress?student_id=eq.${studentId}&select=id`).catch(()=>[]);
-    if(existing.length){
-      await sb(`/rest/v1/student_progress?student_id=eq.${studentId}`,'PATCH',data);
-    } else {
-      data.id=`sp-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
-      await sb('/rest/v1/student_progress','POST',data);
-    }
-    const btn=document.querySelector(`[onclick="saveStudentProgress('${studentId}','${studentName}','${major}')"]`);
-    if(btn){btn.textContent='✓ 已保存';setTimeout(()=>btn.textContent='保存进度',1500);}
-  }catch(e){alert('保存失败：'+e.message)}
+function openAddProgressEntry(studentId='', studentName='', major='') {
+  document.getElementById('pe_entry_id').value = '';
+  document.getElementById('pe_student_id').value = studentId;
+  document.getElementById('pe_student_name').value = studentName;
+  document.getElementById('pe_major').value = major;
+  document.getElementById('progressEntryTitle').textContent = studentName ? `录入进度 · ${studentName}` : '录入进度';
+  document.getElementById('pe_delete_btn').style.display = 'none';
+  document.getElementById('pe_notes').value = '';
+  document.getElementById('pe_recorded_at').value = '';
+  Object.keys(PROGRESS_OPTIONS).forEach(k => {
+    const el = document.getElementById(`pe_${k}`); if (el) el.value = '';
+  });
+  document.getElementById('progressEntryModal').style.display = 'flex';
 }
 
-async function syncProgressFromBooking(studentId, bookingId){
-  const b=await sb(`/rest/v1/bookings?id=eq.${bookingId}&select=*`).catch(()=>[]);
-  if(!b.length) return;
-  const r=b[0].daily_record||{};
-  // 把面谈里的各状态同步到进度卡片显示（不覆盖志望校/困难点等手填项）
-  // 只刷新页面展示，让用户看到后自行保存
-  alert('已从最新面谈读取进度，请检查后点「保存进度」');
-  renderProgressPage(document.getElementById('mainContent'), studentId);
+function editProgressEntry(entryId, studentId, studentName, major) {
+  sb(`/rest/v1/student_progress_timeline?id=eq.${entryId}&select=*`).then(rows => {
+    if (!rows.length) return;
+    const entry = rows[0];
+    document.getElementById('pe_entry_id').value = entryId;
+    document.getElementById('pe_student_id').value = studentId;
+    document.getElementById('pe_student_name').value = studentName;
+    document.getElementById('pe_major').value = major;
+    document.getElementById('progressEntryTitle').textContent = `编辑进度 · ${studentName}`;
+    document.getElementById('pe_delete_btn').style.display = 'inline-flex';
+    document.getElementById('pe_notes').value = entry.notes || '';
+    document.getElementById('pe_recorded_at').value = entry.recorded_at || '';
+    Object.keys(PROGRESS_OPTIONS).forEach(k => {
+      const el = document.getElementById(`pe_${k}`); if (el) el.value = entry[k] || '';
+    });
+    document.getElementById('progressEntryModal').style.display = 'flex';
+  }).catch(e => alert('加载失败：' + e.message));
+}
+
+function closeProgressModal() {
+  document.getElementById('progressEntryModal').style.display = 'none';
+}
+
+async function saveProgressEntry() {
+  const entryId = document.getElementById('pe_entry_id').value;
+  const studentId = document.getElementById('pe_student_id').value;
+  const studentName = document.getElementById('pe_student_name').value;
+  const major = document.getElementById('pe_major').value;
+  if (!studentId || !studentName) { alert('请指定学生'); return; }
+  const dims = {};
+  Object.keys(PROGRESS_OPTIONS).forEach(k => {
+    dims[k] = document.getElementById(`pe_${k}`)?.value || '';
+  });
+  const notes = document.getElementById('pe_notes').value.trim();
+  const recorded_at = document.getElementById('pe_recorded_at').value.trim();
+  if (!Object.values(dims).some(v=>v) && !notes) { alert('请至少更新一个维度的进度'); return; }
+  const data = makeProgressEntry({ studentId, studentName, major, source: 'admin', sourceName: '管理员', notes, recorded_at, ...dims });
+  try {
+    if (entryId) {
+      await sb(`/rest/v1/student_progress_timeline?id=eq.${entryId}`, 'PATCH', data);
+    } else {
+      await sb('/rest/v1/student_progress_timeline', 'POST', data);
+    }
+    closeProgressModal();
+    renderProgressPage(document.getElementById('mainContent'), studentId);
+  } catch(e) { alert('保存失败：' + e.message); }
+}
+
+async function deleteProgressEntry() {
+  const entryId = document.getElementById('pe_entry_id').value;
+  const studentId = document.getElementById('pe_student_id').value;
+  if (!entryId || !confirm('确定删除这条进度记录？')) return;
+  try {
+    await sb(`/rest/v1/student_progress_timeline?id=eq.${entryId}`, 'DELETE');
+    closeProgressModal();
+    renderProgressPage(document.getElementById('mainContent'), studentId);
+  } catch(e) { alert('删除失败：' + e.message); }
 }
 
 
