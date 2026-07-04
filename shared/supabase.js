@@ -36,7 +36,7 @@ async function sbAll(path) {
 // ── Supabase Storage ──
 // Upload a file to a public bucket, returns the public URL
 async function sbUpload(bucket, path, file) {
-  const url = `${SB_URL}/storage/v1/object/${bucket}/${encodeURIComponent(path)}`;
+  const url = `${SB_URL}/storage/v1/object/${bucket}/${path.split('/').map(encodeURIComponent).join('/')}`;
   const r = await fetch(url, {
     method: 'POST',
     headers: {
