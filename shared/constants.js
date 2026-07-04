@@ -328,3 +328,76 @@ function matchesStudentSearch(student, query) {
     || (student.university||'').includes(query)
     || (student.notes||'').includes(query);
 }
+
+// ── 预约状态统一工具函数 ──
+
+/**
+ * 返回预约状态的中文标签
+ * @param {object} booking - booking 对象，需要 status 和 student_confirmed 字段
+ * @param {boolean} showStudentConfirmed - 是否区分显示「学生已确认」（admin端用）
+ */
+function bookingStatusLabel(booking, showStudentConfirmed = false) {
+  const s = booking.status;
+  if (s === 'pending') return '待确认';
+  if (s === 'completed') return '已完成';
+  if (s === 'cancelled') return '已取消';
+  if (s === 'confirmed') {
+    if (showStudentConfirmed && booking.student_confirmed) return '学生已确认';
+    return '已确认';
+  }
+  return s || '未知';
+}
+
+/**
+ * 返回状态对应的前景色（CSS 变量或颜色值）
+ */
+function bookingStatusColor(booking) {
+  const s = booking.status;
+  if (s === 'cancelled') return 'var(--danger)';
+  if (s === 'completed') return 'var(--ok)';
+  if (s === 'confirmed') {
+    if (booking.student_confirmed) return 'var(--ok)';
+    return '#1a6a9a';
+  }
+  return '#856404'; // pending
+}
+
+/**
+ * 返回状态对应的背景色
+ */
+function bookingStatusBg(booking) {
+  const s = booking.status;
+  if (s === 'cancelled') return '#fdecea';
+  if (s === 'completed') return 'var(--ok-bg)';
+  if (s === 'confirmed') {
+    if (booking.student_confirmed) return 'var(--ok-bg)';
+    return '#e8f4fd';
+  }
+  return '#fff3cd'; // pending
+}
+
+/**
+ * 返回状态对应的左边框色（老师端卡片用）
+ */
+function bookingStatusBorderColor(booking) {
+  const s = booking.status;
+  if (s === 'pending') return 'var(--warn)';
+  return 'var(--ok)';
+}
+
+/**
+ * 渲染状态 badge HTML
+ */
+function bookingStatusBadge(booking, showStudentConfirmed = false) {
+  const label = bookingStatusLabel(booking, showStudentConfirmed);
+  const color = bookingStatusColor(booking);
+  const bg = bookingStatusBg(booking);
+  return `<span style="font-size:10px;background:${bg};color:${color};padding:2px 7px;border-radius:2px;white-space:nowrap">${label}</span>`;
+}
+
+/**
+ * VIP预约是否已完成（老师填记录 OR 学生已确认）
+ */
+function isVipDone(booking) {
+  return booking.status === 'completed' || booking.student_confirmed;
+}
