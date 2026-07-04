@@ -632,12 +632,28 @@ function exportAdmissionHtml() {
   .bold { font-weight: 700; }
   .center { text-align: center; }
   ${colDefs.map(([,w],i) => `col:nth-child(${i+1}){width:${w}}`).join('')}
+  /* 水印 */
+  body::after {
+    content: '唯新教育 TRANSFORM EDUCATION';
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-35deg);
+    font-size: 52px;
+    font-weight: 700;
+    color: rgba(0,0,0,0.06);
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 9999;
+    letter-spacing: 4px;
+  }
   @page { size: A3 landscape; margin: 12mm; }
   @media print {
     body { padding: 0; font-size: 10px; }
     td { font-size: 10px; padding: 4px 3px; }
     th { font-size: 9px; padding: 5px 3px; }
     .title-block { margin-bottom: 10px; }
+    body::after { position: fixed; }
   }
 </style></head><body>
 <div class="title-block">
