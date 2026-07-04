@@ -2201,8 +2201,9 @@ td{padding:5px 4px;border:1px solid #ddd;vertical-align:top;word-break:break-all
 tr.even td{background:#f4f7fb}
 .bold{font-weight:700}.center{text-align:center}
 ${colDefs.map(([,w],i)=>`col:nth-child(${i+1}){width:${w}}`).join('')}
+body::after{content:'唯新教育 TRANSFORM EDUCATION';position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-35deg);font-size:52px;font-weight:700;color:rgba(0,0,0,0.06);white-space:nowrap;pointer-events:none;z-index:9999;letter-spacing:4px}
 @page{size:A3 landscape;margin:12mm}
-@media print{body{padding:0}td,th{font-size:10px;padding:4px 3px}}
+@media print{body{padding:0}td,th{font-size:10px;padding:4px 3px}body::after{position:fixed}}
 </style></head><body>
 <div class="title-block">
   <h1>${majorLabel} 可出願学校名单</h1>
