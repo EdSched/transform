@@ -81,13 +81,10 @@ function renderAdmissionDbPage(mc) {
     </select>
     ${(adbMonthFrom||adbMonthTo)?`<button onclick="adbMonthFrom=0;adbMonthTo=0;renderAdmissionDbPage(document.getElementById('mainContent'))" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 7px;cursor:pointer;font-family:inherit;color:var(--text-3)">清除</button>`:''}
   </div>
-  ${adbSelectedMajors.includes('keizai') ? `
-  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-    <button class="btn btn-sm ${adbEreOnly?'btn-primary':'btn-outline'}" onclick="adbEreOnly=!adbEreOnly;renderAdmissionTable()" style="font-size:11px;padding:3px 12px;border:1px solid var(--border)">
-      📊 ERE可代替笔试
-    </button>
-    ${adbEreOnly?'<span style="font-size:10px;color:var(--text-3)">仅显示可用ERE成绩代替笔记试验的学校</span>':''}
-  </div>` : ''}
+  <div id="adbEreContainer" style="margin-bottom:10px;display:none">
+    <button id="adbEreBtn" class="btn btn-sm btn-outline" onclick="adbEreOnly=!adbEreOnly;renderAdmissionTable()" style="font-size:11px;padding:3px 12px;border:1px solid var(--border)">📊 ERE可代替笔试</button>
+    <span id="adbEreHint" style="font-size:10px;color:var(--text-3);margin-left:6px;display:none">仅显示ERE可代替笔试的学校</span>
+  </div>
 
   <!-- 搜索 -->
   <div style="margin-bottom:10px">
@@ -324,6 +321,21 @@ function renderAdmissionTable() {
 
   const showMajorCol = adbSelectedMajors.length !== 1;
   const filtered = filterAdmissionSchools();
+
+  // ERE按钮：只在选了经济学时显示
+  const ereContainer = document.getElementById('adbEreContainer');
+  const ereBtn = document.getElementById('adbEreBtn');
+  const ereHint = document.getElementById('adbEreHint');
+  if (ereContainer) {
+    const showEre = adbSelectedMajors.includes('keizai');
+    ereContainer.style.display = showEre ? 'flex' : 'none';
+    if (ereBtn) {
+      ereBtn.className = `btn btn-sm ${adbEreOnly ? 'btn-primary' : 'btn-outline'}`;
+      ereBtn.style.cssText = 'font-size:11px;padding:3px 12px;border:1px solid var(--border)';
+    }
+    if (ereHint) ereHint.style.display = adbEreOnly ? 'inline' : 'none';
+    if (!showEre && adbEreOnly) { adbEreOnly = false; }
+  }
 
   const countEl = document.getElementById('adbResultCount');
   if (!cachedAdmissionSchools.length) {
