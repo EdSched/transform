@@ -2216,6 +2216,14 @@ ${colDefs.map(([,w],i)=>`col:nth-child(${i+1}){width:${w}}`).join('')}
   <thead><tr>${colDefs.map(([l,,g])=>`<th style="background:${thColors[g].bg};border-color:${thColors[g].border}">${l}</th>`).join('')}</tr></thead>
   <tbody>${rows}</tbody>
 </table>
+
+<div style="margin-top:20px;padding:12px 14px;border:1px solid #ddd;border-radius:4px;background:#fafafa;font-size:10px;color:#666;line-height:1.9">
+  <div style="font-weight:700;color:#444;margin-bottom:6px">📌 使用说明</div>
+  <div>・<strong>旬的参考时间</strong>：上旬约为1日～10日，中旬约为11日～20日，下旬约为21日～月末。实际截止日期以各校官方募集要项为准。</div>
+  <div>・<strong>出愿信息每年均有变化</strong>，本表格仅供参考，具体出愿期间、考试日程、募集人数等信息请务必确认当年度各校最新出愿要项。</div>
+  <div>・<strong>语言成绩要求</strong>：各校对语言考试类型（JLPT / EJU / TOEFL / IELTS 等）及分数要求不同，部分学校另有内部要求，请以官方要项为准。</div>
+  <div>・如有疑问请联系唯新教育老师确认。</div>
+</div>
 <div id="wm"></div>
 <script>
 (function(){
