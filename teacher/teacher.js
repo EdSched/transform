@@ -1300,11 +1300,25 @@ function openVipSessionRecord(bookingId) {
           </label>`).join('')}
         </div>
       </div>
-      <div class="form-group"><label class="form-label">上课内容 / 学生状态 / 作业安排</label>
-        <textarea id="vip_notes" rows="5" placeholder="本次课讲了什么、学生当前状态如何、布置了什么作业…">${b.vip_session_notes || ''}</textarea>
+      <div class="form-group"><label class="form-label">上课内容 / 学生状态</label>
+        <textarea id="vip_notes" rows="4" placeholder="本次课讲了什么、学生当前状态如何…">${b.vip_session_notes || ''}</textarea>
+      </div>
+      <div class="form-group"><label class="form-label">布置作业（学生将在VIP页面看到并提交）</label>
+        <textarea id="vip_homework" rows="3" placeholder="下节课前请完成…">${b.vip_homework || ''}</textarea>
       </div>
       <div class="form-group"><label class="form-label">本次耗时（小时，保存后将自动从学生VIP总课时中扣除）</label>
         <input type="number" id="vip_hours" step="0.5" min="0" value="${b.vip_hours_used || ''}" placeholder="例：1.5"></div>
+      ${b.vip_homework_file_url ? `
+      <div style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:3px;padding:10px 12px;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:600;color:var(--ok);margin-bottom:6px">📎 学生已提交作业</div>
+        <a href="${b.vip_homework_file_url}" target="_blank" style="font-size:12px;color:var(--accent)">下载学生提交文件</a>
+        <div style="margin-top:8px">
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:4px">批改反馈（文字）</div>
+          <textarea id="vip_hw_feedback" rows="2" placeholder="批改意见…">${b.vip_homework_feedback || ''}</textarea>
+          <div style="font-size:11px;color:var(--text-3);margin:6px 0 4px">上传批改文件（可选）</div>
+          <input type="file" id="vip_hw_feedback_file" accept=".doc,.docx,.pdf,image/*" style="font-size:11px">
+        </div>
+      </div>` : ''}
       <div style="display:flex;gap:8px;margin-top:14px">
         <button class="btn btn-primary btn-sm" onclick="saveVipSessionRecord('${bookingId}')">保存</button>
         <button class="btn btn-outline btn-sm" onclick="document.getElementById('vipRecordModal').remove()">取消</button>
@@ -1332,14 +1346,30 @@ async function saveVipSessionRecord(bookingId) {
       const newUsed = Math.max(0, (stu.vip_hours_used || 0) - prevHours + newHours);
       await sb(`/rest/v1/students?id=eq.${stu.id}`, 'PATCH', { vip_hours_used: newUsed });
     }
+    const homework = document.getElementById('vip_homework')?.value.trim() || b.vip_homework || '';
+    const hwFeedback = document.getElementById('vip_hw_feedback')?.value.trim() || '';
+
+    // 上传批改文件（如果有）
+    let hwFeedbackFileUrl = b.vip_homework_feedback_file_url || '';
+    const hwFileEl = document.getElementById('vip_hw_feedback_file');
+    if (hwFileEl?.files[0]) {
+      const f = hwFileEl.files[0];
+      const ext = f.name.split('.').pop().toLowerCase();
+      const path = `${b.major || 'vip'}/${Date.now()}_feedback.${ext}`;
+      hwFeedbackFileUrl = await sbUpload('teacher-files', path, f);
+    }
+
     await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', {
       vip_content: content.join('・'),
       vip_session_notes: notes,
       vip_hours_used: newHours,
+      vip_homework: homework,
+      vip_homework_feedback: hwFeedback,
+      vip_homework_feedback_file_url: hwFeedbackFileUrl,
       student_confirmed: false,
       status: 'completed',
     });
-    Object.assign(b, { vip_content: content.join('・'), vip_session_notes: notes, vip_hours_used: newHours, student_confirmed: false, status: 'completed' });
+    Object.assign(b, { vip_content: content.join('・'), vip_session_notes: notes, vip_hours_used: newHours, vip_homework: homework, vip_homework_feedback: hwFeedback, vip_homework_feedback_file_url: hwFeedbackFileUrl, student_confirmed: false, status: 'completed' });
     document.getElementById('vipRecordModal').remove();
     renderMySchedule(document.getElementById('mainContent'));
     alert('上课记录已保存，课时已扣除。建议点击「生成确认链接文案」发给学生确认。');
@@ -1431,14 +1461,24 @@ async function saveVipReschedule(bookingId) {
   if (!reason) { alert('请填写调整原因'); return; }
   const timeRange = `${start}\u2013${end}`;
   try {
+    // 生成系统留言通知学生
+    const d = new Date(date + 'T12:00:00');
+    const dow = DAYS_CN[d.getDay()];
+    const sysMsg = {
+      from: 'system',
+      text: `【时间调整通知】老师已将您的VIP课程调整为：${date}（${dow}）${timeRange}。调整原因：${reason}。如有疑问请留言联系老师。`,
+      ts: Date.now()
+    };
+    const newMessages = [...(b.messages || []), sysMsg];
     await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', {
       slot_date: date, slot_time_range: timeRange,
       reschedule_reason: reason, reschedule_by: teacherName,
+      messages: newMessages,
     });
-    Object.assign(b, { slot_date: date, slot_time_range: timeRange, reschedule_reason: reason, reschedule_by: teacherName });
+    Object.assign(b, { slot_date: date, slot_time_range: timeRange, reschedule_reason: reason, reschedule_by: teacherName, messages: newMessages });
     document.getElementById('vipRescheduleModal').remove();
     renderMySchedule(document.getElementById('mainContent'));
-    alert('时间已调整，建议告知学生新的上课时间');
+    alert('时间已调整，已自动发送通知给学生。');
   } catch (e) { alert('保存失败：' + e.message); }
 }
 
