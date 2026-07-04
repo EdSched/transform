@@ -1865,6 +1865,7 @@ init();
 
 let teacherAdbMajors = [], teacherAdbEnglish = 'all', teacherAdbJapanese = 'all', teacherAdbSearch = '';
 let teacherAdbMonthFrom = 0, teacherAdbMonthTo = 0;
+let teacherAdbEreOnly = false;
 let teacherAdbData = [];
 let teacherAdbSortCol = '', teacherAdbSortDir = 1;
 let teacherAdbColFilters = {};
@@ -1952,6 +1953,11 @@ async function renderTeacherAdmissionDb(mc) {
     </select>
     ${(teacherAdbMonthFrom||teacherAdbMonthTo)?`<button onclick="teacherAdbMonthFrom=0;teacherAdbMonthTo=0;teacherAdbRender()" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 7px;cursor:pointer;font-family:inherit;color:var(--text-3)">清除</button>`:''}
   </div>
+  ${teacherAdbMajors.includes('keizai') ? `
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+    <button class="btn btn-sm ${teacherAdbEreOnly?'btn-primary':'btn-outline'}" onclick="teacherAdbEreOnly=!teacherAdbEreOnly;teacherAdbRender()" style="font-size:11px;padding:3px 12px;border:1px solid var(--border)">📊 ERE可代替笔试</button>
+    ${teacherAdbEreOnly?'<span style="font-size:10px;color:var(--text-3)">仅显示ERE可代替笔试的学校</span>':''}
+  </div>` : ''}
 
   <div style="font-size:11px;color:var(--text-3);margin-bottom:6px" id="tadbCount">请选择专业查看数据</div>
   <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">💡 点击列标题可排序，列标题右侧的 ▾ 可筛选该列内容</div>
@@ -1984,6 +1990,7 @@ async function teacherAdbToggleGroup(el) {
 
 async function teacherAdbClear() {
   teacherAdbMajors = [];
+  teacherAdbEreOnly = false;
   document.querySelectorAll('#tadbMajorRow .filter-chip').forEach(c => c.classList.remove('active'));
   teacherAdbData = [];
   teacherAdbColFilters = {};
@@ -2020,6 +2027,7 @@ function teacherAdbFilter() {
     const q = teacherAdbSearch.trim().toLowerCase();
     list = list.filter(s => (s.university||'').toLowerCase().includes(q)||(s.faculty||'').toLowerCase().includes(q)||(s.department||'').toLowerCase().includes(q));
   }
+  if (teacherAdbEreOnly) list = list.filter(s => s.ere_available === true);
   if (teacherAdbMonthFrom || teacherAdbMonthTo) {
     list = list.filter(s => {
       const months = (s.application_period||'').match(/(\d{1,2})月/g);
