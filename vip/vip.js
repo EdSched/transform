@@ -399,7 +399,7 @@ async function sendVipMessage(bookingId) {
 }
 
 function renderVipHistory() {
-  const done = vipBookings.filter(b => b.status === 'confirmed' && b.vip_session_notes);
+  const done = vipBookings.filter(b => (b.status === 'confirmed' || b.status === 'completed') && b.vip_session_notes);
   if (!done.length) return '<div class="no-slots">暂无已完成的课程记录</div>';
   return done.map(b => {
     const needsConfirm = !b.student_confirmed;
