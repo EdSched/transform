@@ -233,7 +233,7 @@ function renderBookingManagement(mc) {
     </div>
     <div style="margin-top:16px">
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">已完成VIP预约</div>
-      ${vipBookings.filter(b => b.status === 'completed' || b.student_confirmed).length ? vipBookings.filter(b => b.status === 'completed' || b.student_confirmed).map(b => renderMyVipRow(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已完成VIP预约</div>'}
+      ${vipBookings.filter(b => isVipDone(b)).length ? vipBookings.filter(b => isVipDone(b)).map(b => renderMyVipRow(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已完成VIP预约</div>'}
     </div>`}
   </div>`;
 }
@@ -247,14 +247,14 @@ function setTeacherBkSection(s) {
 function renderBookingCardCollapsed(b) {
   const f = fmtSessionDate(b.slot_date);
   const rowId = 'bkc_' + b.id;
-  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;margin-bottom:8px;border-left:3px solid ${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'}">
+  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;margin-bottom:8px;border-left:3px solid ${bookingStatusBorderColor(b)}">
     <div style="padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer" onclick="toggleBookingCard('${b.id}')">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px">${b.name}</span>
         <span style="font-size:11px;color:var(--text-3)">${f.short} ${f.dow} · ${b.slot_time_range || ''}</span>
         ${b.type==='vip' ? '<span style="font-size:9px;background:#5a3a9a;color:#fff;border-radius:2px;padding:1px 6px">VIP</span>' : `<span class="tag ${typeTag(b.type)}" style="font-size:9px">${typeLabel(b.type)}</span>`}
       </div>
-      <span style="font-size:10px;background:${b.status === 'pending' ? 'var(--warn-bg)' : 'var(--ok-bg)'};color:${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'};padding:2px 7px;border-radius:2px;white-space:nowrap">${b.status === 'pending' ? '待确认' : b.status === 'completed' ? '已完成' : '已确认'}</span>
+      <span style="font-size:10px;background:${bookingStatusBg(b)};color:${bookingStatusColor(b)};padding:2px 7px;border-radius:2px;white-space:nowrap">${bookingStatusLabel(b)}</span>
     </div>
     <div id="${rowId}" style="display:none;padding:0 14px 14px">
       <div style="font-size:11px;margin-bottom:8px">
@@ -275,13 +275,13 @@ function toggleBookingCard(id) {
 // 独立展示用（如需要单独渲染一张完整卡片，带外壳+头部）
 function renderBookingCard(b) {
   const f = fmtSessionDate(b.slot_date);
-  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px;margin-bottom:8px;border-left:3px solid ${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'}">
+  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px;margin-bottom:8px;border-left:3px solid ${bookingStatusBorderColor(b)}">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px">
       <div>
         <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:14px;cursor:pointer;color:var(--accent);text-decoration:underline" onclick="showStudentInfoTeacher('${b.name}')">${b.name}</span>
         <span style="font-size:11px;color:var(--text-3);margin-left:6px">${MAJORS[b.major] || b.major}</span>
       </div>
-      <span style="font-size:10px;background:${b.status === 'pending' ? 'var(--warn-bg)' : 'var(--ok-bg)'};color:${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'};padding:2px 7px;border-radius:2px;white-space:nowrap">${b.status === 'pending' ? '待确认' : b.status === 'completed' ? '已完成' : '已确认'}</span>
+      <span style="font-size:10px;background:${bookingStatusBg(b)};color:${bookingStatusColor(b)};padding:2px 7px;border-radius:2px;white-space:nowrap">${bookingStatusLabel(b)}</span>
     </div>
     ${renderBookingCardBody(b)}
   </div>`;
