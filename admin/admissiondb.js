@@ -576,154 +576,18 @@ function exportAdmissionExcel() {
 // ── 导出 HTML（可打印为 PDF）──
 function exportAdmissionHtml() {
   const filtered = filterAdmissionSchools();
-  if (!filtered.length) { alert('没有可导出的数据'); return; }
   const showMajor = adbSelectedMajors.length !== 1;
   const majorLabel = adbSelectedMajors.length === 1
     ? (ADMISSION_MAJORS[adbSelectedMajors[0]] || adbSelectedMajors[0])
     : adbSelectedMajors.map(m => ADMISSION_MAJORS[m]||m).join('・');
-  const today = new Date().toLocaleDateString('zh-CN', {year:'numeric',month:'2-digit',day:'2-digit'});
-
-  // 筛选条件描述
-  const filterDesc = [];
-  if (adbEnglish !== 'all') filterDesc.push(`英语：${adbEnglish==='必須'?'必须':adbEnglish==='任意'?'任意':'不要'}`);
-  if (adbJapanese !== 'all') filterDesc.push(`日语：${adbJapanese==='必須'?'必须':adbJapanese==='任意'?'任意':'不要'}`);
-  if (adbSearch.trim()) filterDesc.push(`关键词：${adbSearch.trim()}`);
-  if (adbMonthFrom || adbMonthTo) {
-    const from = adbMonthFrom ? `${adbMonthFrom}月` : '不限';
-    const to = adbMonthTo ? `${adbMonthTo}月` : '不限';
-    filterDesc.push(`出願：${from}～${to}`);
-  }
-  // 出願期間范围（从筛选结果中提取月份）
-  const periods = filtered.map(s => s.application_period||'').filter(Boolean);
-  const monthNums = [];
-  periods.forEach(p => { const m = p.match(/(\d+)月/g); if(m) m.forEach(x => monthNums.push(parseInt(x))); });
-  if (monthNums.length) {
-    const mn = Math.min(...monthNums), mx = Math.max(...monthNums);
-    filterDesc.push(mn===mx ? `出願：${mn}月` : `出願：${mn}月～${mx}月`);
-  }
-  const filterLine = filterDesc.length ? filterDesc.join('　|　') : '全部';
-
-  // 列定义：[label, width, color-group]
-  // color-group: school=学校信息, time=时间, lang=语言
-  const colDefs = [
-    ...(showMajor ? [['专业','56px','school']] : []),
-    ['大学名','108px','school'],
-    ['設置主体','40px','school'],
-    ['研究科名','136px','school'],
-    ['専攻名','96px','school'],
-    ['コース名','88px','school'],
-    ['出願類型','68px','time'],
-    ['資格審査','68px','time'],
-    ['出願期間','68px','time'],
-    ['筆記試験','68px','time'],
-    ['口述試験','68px','time'],
-    ['合格発表','68px','time'],
-    ['英語','42px','lang'],
-    ['日語','42px','lang'],
-  ];
-
-  // 表头颜色
-  const thColors = {
-    school: { bg:'#2c4a7c', border:'#1e3560' },
-    time:   { bg:'#3d6b4f', border:'#2a4d38' },
-    lang:   { bg:'#7c4a2c', border:'#5e3520' },
-  };
-
-  const engColor = v => v==='必須'?'#1a56a0':v==='任意'?'#b45309':'#888';
-
-  const rows = filtered.map((s,i) => `<tr class="${i%2===1?'even':''}">
-    ${showMajor ? `<td>${ADMISSION_MAJORS[s.major]||s.major}</td>` : ''}
-    <td class="bold">${s.university||''}</td>
-    <td class="center">${s.type||''}</td>
-    <td>${s.faculty||''}</td>
-    <td>${s.department||''}</td>
-    <td>${s.course||''}</td>
-    <td>${s.admission_type||''}</td>
-    <td>${s.doc_review_period||''}</td>
-    <td>${s.application_period||''}</td>
-    <td>${s.written_exam||''}</td>
-    <td>${s.oral_exam||''}</td>
-    <td>${s.result_date||''}</td>
-    <td class="center" style="color:${engColor(s.english_required)};font-weight:700">${s.english_required||'-'}</td>
-    <td class="center" style="color:${engColor(s.japanese_required)};font-weight:700">${s.japanese_required||'-'}</td>
-  </tr>`).join('');
-
-  const theadCells = colDefs.map(([l,,g]) =>
-    `<th style="background:${thColors[g].bg};border-color:${thColors[g].border}">${l}</th>`
-  ).join('');
-
-  const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
-<title>${majorLabel} 出願学校名单 ${today}</title>
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: 'Hiragino Sans','Noto Sans JP','Yu Gothic','MS Gothic',sans-serif; font-size: 11px; color: #222; background: #fff; padding: 20px; }
-  .title-block { margin-bottom: 14px; border-left: 4px solid #2c4a7c; padding-left: 10px; }
-  h1 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
-  .meta { font-size: 11px; color: #555; margin-bottom: 3px; }
-  .filters { font-size: 11px; color: #2c4a7c; background: #eef3fb; border-radius: 3px; padding: 4px 8px; display: inline-block; margin-top: 4px; }
-  table { border-collapse: collapse; width: 100%; table-layout: fixed; margin-top: 12px; }
-  th { padding: 6px 4px; text-align: left; font-size: 10px; font-weight: 700; color: #fff; border: 1px solid #ccc; white-space: nowrap; }
-  td { padding: 5px 4px; border: 1px solid #ddd; vertical-align: top; word-break: break-all; line-height: 1.5; font-size: 11px; }
-  tr.even td { background: #f4f7fb; }
-  .bold { font-weight: 700; }
-  .center { text-align: center; }
-  ${colDefs.map(([,w],i) => `col:nth-child(${i+1}){width:${w}}`).join('')}
-  /* 水印 */
-  #wm { position:fixed; top:0; left:0; right:0; bottom:0; pointer-events:none; z-index:9999; overflow:hidden; }
-  #wm span { position:absolute; font-size:16px; font-weight:700; color:rgba(0,0,0,0.07); white-space:nowrap; transform:rotate(-35deg); letter-spacing:3px; font-family:sans-serif; }
-  @page { size: A3 landscape; margin: 12mm; }
-  @media print {
-    body { padding: 0; font-size: 10px; }
-    td { font-size: 10px; padding: 4px 3px; }
-    th { font-size: 9px; padding: 5px 3px; }
-    .title-block { margin-bottom: 10px; }
-    #wm { position: fixed; }
-  }
-</style></head><body>
-<div class="title-block">
-  <h1>${majorLabel} 可出願学校名单</h1>
-  <div class="meta">唯新教育 · ${today} · 共 ${filtered.length} 条</div>
-  <div class="filters">筛选条件：${filterLine}</div>
-</div>
-<table>
-  <colgroup>${colDefs.map(([,w]) => `<col style="width:${w}">`).join('')}</colgroup>
-  <thead><tr>${theadCells}</tr></thead>
-  <tbody>${rows}</tbody>
-</table>
-
-<div style="margin-top:20px;padding:12px 14px;border:1px solid #ddd;border-radius:4px;background:#fafafa;font-size:10px;color:#666;line-height:1.9">
-  <div style="font-weight:700;color:#444;margin-bottom:6px">📌 使用说明</div>
-  <div>・<strong>旬的参考时间</strong>：上旬约为1日～10日，中旬约为11日～20日，下旬约为21日～月末。实际截止日期以各校官方募集要项为准。</div>
-  <div>・<strong>出愿信息每年均有变化</strong>，本表格仅供参考，具体出愿期间、考试日程、募集人数等信息请务必确认当年度各校最新出愿要项。</div>
-  <div>・<strong>语言成绩要求</strong>：各校对语言考试类型（JLPT / EJU / TOEFL / IELTS 等）及分数要求不同，部分学校另有内部要求，请以官方要项为准。</div>
-  <div>・如有疑问请联系唯新教育老师确认。</div>
-</div>
-<div id="wm"></div>
-<script>
-(function(){
-  var wm=document.getElementById('wm');
-  var text='唯新教育  TRANSFORM EDUCATION';
-  for(var y=-100;y<1000;y+=100){
-    for(var x=-200;x<1600;x+=320){
-      var s=document.createElement('span');
-      s.textContent=text;
-      s.style.left=x+'px';
-      s.style.top=y+'px';
-      wm.appendChild(s);
-    }
-  }
-})();
-</script>
-</body></html>`;
-
-
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `出願名单_${majorLabel}_${today.replace(/\//g,'-')}.html`;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const filterLine = buildAdmissionFilterDesc({
+    english: adbEnglish, japanese: adbJapanese,
+    search: adbSearch, monthFrom: adbMonthFrom, monthTo: adbMonthTo,
+    filtered,
+  });
+  exportAdmissionHtmlShared(filtered, { majorLabel, filterLine, showMajor, majorMap: ADMISSION_MAJORS });
 }
+
 
 // ── 导入 Excel ──
 let admissionImportData = [];
