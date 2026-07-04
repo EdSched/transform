@@ -354,17 +354,44 @@ function renderVipMain() {
 }
 
 function renderVipActiveBooking(b) {
-  const statusText = b.status === 'pending' ? '待老师确认' : '已确认，等待上课';
+  const isPending = b.status === 'pending';
+  const isConfirmed = b.status === 'confirmed';
+  const isOffline = b.location && (b.location.startsWith('offline') || b.location.startsWith('both'));
   const messages = b.messages || [];
-  return `<div class="card" style="border-color:var(--accent)">
+
+  // 上课信息块（确认后显示）
+  const confirmedInfo = isConfirmed ? `
+    <div style="background:var(--ok-bg,#e4f5ee);border:1px solid var(--ok,#2a9e6a);border-radius:4px;padding:10px 12px;margin:10px 0">
+      <div style="font-size:12px;font-weight:600;color:var(--ok,#2a9e6a);margin-bottom:6px">✅ 老师已确认，请按时上课</div>
+      <div style="font-size:12px;line-height:2">
+        <div>📅 ${b.slot_date} ${b.slot_time_range || ''}</div>
+        <div>👤 ${b.assigned_teacher || ''} 老师</div>
+        ${b.vip_room ? `<div>🏫 教室：<strong>${b.vip_room}</strong></div>` : ''}
+        ${b.vip_meeting_url ? `<div>💻 腾讯会议：<a href="${b.vip_meeting_url}" target="_blank" style="color:var(--ok)">${b.vip_meeting_url}</a></div>` : (!isOffline ? '<div style="color:#856404">💻 老师将在上课前发送会议链接，请关注留言</div>' : '')}
+      </div>
+      <div style="font-size:10px;color:var(--text-muted,#888);margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,0,0,.08);line-height:1.8">
+        ⚠ 请准时进入课堂。如需调整请提前联系老师。<br>
+        上课后30分钟内未联系且未上课，将自动扣除30分钟课时。
+      </div>
+    </div>` : `
+    <div style="background:var(--warn-bg,#fff8e1);border:1px solid var(--warn,#e6a817);border-radius:4px;padding:10px 12px;margin:10px 0">
+      <div style="font-size:12px;font-weight:600;color:var(--warn,#b45309);margin-bottom:4px">⏳ 等待老师确认</div>
+      <div style="font-size:11px;color:var(--text-muted);line-height:1.7">
+        老师确认后将显示${isOffline ? '教室号' : '腾讯会议链接'}。<br>
+        如需调整请通过下方留言联系老师。
+      </div>
+    </div>`;
+
+  return `<div class="card" style="border-color:${isConfirmed ? 'var(--ok,#2a9e6a)' : 'var(--accent)'}">
     <div class="card-title">当前预约</div>
-    <div style="font-size:12px;line-height:1.8">
+    ${isPending ? `<div style="font-size:12px;line-height:1.8;margin-bottom:4px">
       <div>📅 ${b.slot_date} ${b.slot_time_range || ''}</div>
-      <div>👤 老师：${b.assigned_teacher || '老师确认中'}</div>
-      <div>状态：<span style="color:var(--accent);font-weight:600">${statusText}</span></div>
-    </div>
+      <div>👤 老师：${b.assigned_teacher || '确认中'}</div>
+      ${b.location ? `<div>📍 ${locationLong(b.location) || '线上'}</div>` : ''}
+    </div>` : ''}
+    ${confirmedInfo}
     <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
-      <div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:6px">💬 与老师留言</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:11px;font-weight:600;color:var(--text-secondary)">💬 与老师留言</div><div style="font-size:10px;color:${messages.length >= VIP_MSG_LIMIT ? 'var(--danger)' : 'var(--text-muted)'}">${messages.length}/${VIP_MSG_LIMIT}</div></div>
       <div id="vip_messages_list" style="max-height:160px;overflow-y:auto;margin-bottom:8px">
         ${messages.length ? messages.map(m => `
           <div style="font-size:11px;margin-bottom:6px;${m.from==='student'?'text-align:right':''}">
@@ -375,11 +402,10 @@ function renderVipActiveBooking(b) {
           </div>`).join('') : '<div style="font-size:11px;color:var(--text-muted)">暂无留言</div>'}
       </div>
       <div style="display:flex;gap:6px">
-        <input type="text" id="vip_message_input" placeholder="给老师留言…" style="flex:1;font-size:12px">
+        <input type="text" id="vip_message_input" placeholder="${messages.length >= VIP_MSG_LIMIT ? '留言已达上限（'+VIP_MSG_LIMIT+'条）' : '给老师留言…'}" ${messages.length >= VIP_MSG_LIMIT ? 'disabled style="flex:1;font-size:12px;opacity:.5"' : 'style="flex:1;font-size:12px"'}>
         <button class="btn btn-outline btn-sm" onclick="sendVipMessage('${b.id}')">发送</button>
       </div>
     </div>
-    <div style="font-size:10px;color:var(--text-muted);margin-top:8px">如需调整请联系老师或管理员</div>
   </div>`;
 }
 
