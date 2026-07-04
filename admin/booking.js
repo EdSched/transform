@@ -197,12 +197,33 @@ function renderVipBookingCard(b){
       ${b.vip_session_notes?`<div style="grid-column:1/-1"><div class="bf-label">上课记录</div><div class="bf-value" style="white-space:pre-wrap">${b.vip_session_notes}</div></div>`:''}
       ${b.student_rating?`<div><div class="bf-label">学生评价</div><div class="bf-value">${b.student_rating}</div></div>`:''}
     </div>
-    <div style="display:flex;gap:6px;padding:0 14px 12px">
+    <div style="display:flex;gap:6px;padding:0 14px 12px;flex-wrap:wrap">
       ${b.status==='pending'?`<button class="btn btn-primary btn-sm" onclick="confirmBooking('${b.id}')">确认</button>`:''}
       ${b.status!=='cancelled'&&!b.vip_session_notes?`<button class="btn btn-outline btn-sm" onclick="openAdminVipReschedule('${b.id}')">🔄 调整时间</button>`:''}
+      ${b.status==='completed'?`<button class="btn btn-outline btn-sm" style="color:var(--text-3);font-size:10px" onclick="revertVipToConfirmed('${b.id}')">撤销完成</button>`:''}
       ${b.status!=='cancelled'?`<button class="btn btn-outline btn-sm" onclick="cancelBooking('${b.id}')">取消</button>`:''}
+      <button class="btn btn-danger btn-sm" onclick="deleteVipBooking('${b.id}')">删除</button>
     </div>
   </div>`;
+}
+
+async function revertVipToConfirmed(id) {
+  if (!confirm('确定撤销「已完成」状态，改回「已确认」？')) return;
+  try {
+    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { status: 'confirmed' });
+    const b = cachedBookings.find(x => x.id === id);
+    if (b) b.status = 'confirmed';
+    renderBookingPage(document.getElementById('mainContent'));
+  } catch(e) { alert('操作失败：' + e.message); }
+}
+
+async function deleteVipBooking(id) {
+  if (!confirm('确定彻底删除这条VIP预约记录？此操作不可恢复。')) return;
+  try {
+    await sb(`/rest/v1/bookings?id=eq.${id}`, 'DELETE');
+    cachedBookings = cachedBookings.filter(x => x.id !== id);
+    renderBookingPage(document.getElementById('mainContent'));
+  } catch(e) { alert('删除失败：' + e.message); }
 }
 
 function renderBookingCard(b){
