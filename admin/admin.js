@@ -224,8 +224,19 @@ function renderTeachersPage(mc){
           </div>
           <!-- admission_query row -->
           <div style="padding:10px">
-            <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap"><input type="checkbox" id="perm_admission_query" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">出願数据查询</label>
-            <div style="font-size:10px;color:var(--text-3);margin-top:4px;margin-left:20px">开启后可在老师端查看出願学校数据库（只读）</div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;white-space:nowrap"><input type="checkbox" id="perm_admission_query" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">出願数据查询</label>
+            <div style="font-size:10px;color:var(--text-3);margin-bottom:8px;margin-left:20px">开启后可在老师端查看出願学校数据库（只读）</div>
+            <div style="margin-left:20px">
+              <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可查看的专业（不选则全部可查看）</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px" id="perm_admission_majors">
+                ${[
+              ['shakai','社会学'],['keiei','経営学'],['keizai','経済学'],
+              ['shinpan','新闻传播学'],['fukushi','社会福祉学'],['nihongo','日本语教育'],
+              ['hyosho','表象文化・文学・哲学'],['seiji','政治学'],['toyo','東洋史'],
+              ['bunka','文化人类学'],['mot','MOT'],['tokei','統計・計量'],
+            ].map(([k,v])=>`<div class="filter-chip" data-value="${k}" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">${v}</div>`).join('')}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -273,6 +284,7 @@ function cancelEditTeacher(){
   document.getElementById('perm_schedule').checked=false;
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
+  document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>c.classList.remove('active'));
   renderHomeworkCoursesChips([]);
 }
 function openTeacherManager(){
@@ -285,6 +297,7 @@ function openTeacherManager(){
   document.getElementById('perm_schedule').checked=false;
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
+  document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>c.classList.remove('active'));
   renderHomeworkCoursesChips([]);
   renderTeacherList();
   document.getElementById('teacherManagerModal').classList.add('open');
@@ -341,6 +354,7 @@ function getPermissionsFromForm(){
     homework:document.getElementById('perm_homework').checked,
     homework_courses:[...document.querySelectorAll('#perm_homework_courses .filter-chip.active')].map(c=>c.dataset.value),
     admission_query:document.getElementById('perm_admission_query').checked,
+    admission_majors:[...document.querySelectorAll('#perm_admission_majors .filter-chip.active')].map(c=>c.dataset.value),
   };
 }
 
@@ -377,6 +391,7 @@ function openEditTeacher(id){
   document.getElementById('perm_schedule').checked=!!p.schedule;
   document.getElementById('perm_homework').checked=!!p.homework;
   document.getElementById('perm_admission_query').checked=!!p.admission_query;
+  document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>{c.classList.toggle('active',(p.admission_majors||[]).includes(c.dataset.value));});
   document.querySelectorAll('#perm_booking_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.booking_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_slot_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.slot_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_vip_content .filter-chip').forEach(c=>{c.classList.toggle('active',(p.vip_content||[]).includes(c.dataset.value))});
