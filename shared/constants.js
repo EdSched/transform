@@ -265,3 +265,66 @@ function generateRetrievalCode() {
   for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
   return code;
 }
+
+// ── 拼音首字母搜索 ──
+// 输入1-2个英文字母时，匹配对应拼音首字母的汉字姓氏
+// 输入中文或混合时，直接做 includes 匹配
+const PINYIN_MAP = {
+  a:['安','艾','阿','敖','奥'],
+  b:['白','包','鲍','贝','毕','卞','边','别','宾','卜','步','蔡','薄'],
+  c:['蔡','曹','岑','柴','常','陈','成','程','池','褚','从','崔','从'],
+  d:['戴','邓','狄','刁','丁','董','窦','杜','段',''],
+  e:['鄂','恩'],
+  f:['范','方','房','费','丰','冯','凤','符','付','傅','扶'],
+  g:['高','葛','龚','宫','巩','管','顾','关','郭','贵'],
+  h:['韩','郝','何','贺','洪','胡','花','华','黄','霍','侯','后','哈'],
+  j:['贾','简','江','姜','蒋','焦','金','荆','景','靳','纪','季','吉','计','冀'],
+  k:['柯','孔','寇','匡'],
+  l:['李','林','刘','陆','罗','雷','黎','廖','梁','连','蔺','凌','令','刁','鲁','卢','栾'],
+  m:['马','毛','茅','梅','孟','苗','闵','莫','牟','穆'],
+  n:['倪','聂','宁','牛','农'],
+  o:['欧','区'],
+  p:['潘','彭','皮','平','蒲','朴'],
+  q:['齐','钱','强','乔','秦','邱','瞿','屈','曲','权','全','钱'],
+  r:['任','荣','阮','芮'],
+  s:['沈','施','石','史','舒','宋','苏','孙','单','邵','申','盛'],
+  t:['谭','唐','陶','田','童','涂','屠','汤'],
+  w:['王','韦','魏','温','文','吴','武','汪','万','翁','卫','危'],
+  x:['夏','谢','徐','许','薛','向','项','萧','邢','熊','修','宣','玄'],
+  y:['严','杨','姚','叶','易','尹','应','袁','于','俞','余','岳','云','颜','晏'],
+  z:['张','章','赵','郑','钟','周','朱','庄','邹','左','宗','曾','占','詹','翟'],
+};
+
+function matchesPinyin(name, query) {
+  if (!name || !query) return false;
+  const q = query.trim().toLowerCase();
+  // 纯英文字母（1-3位）→ 拼音首字母匹配
+  if (/^[a-z]{1,3}$/.test(q)) {
+    const firstChar = name[0];
+    // 单字母：匹配姓氏第一个字
+    const chars = PINYIN_MAP[q[0]] || [];
+    if (!chars.includes(firstChar)) return false;
+    // 两个字母：第二个字母匹配名字第二个字（简单前缀匹配）
+    if (q.length >= 2) {
+      const secondChar = name[1];
+      if (!secondChar) return false;
+      const chars2 = PINYIN_MAP[q[1]] || [];
+      if (!chars2.includes(secondChar)) return false;
+    }
+    return true;
+  }
+  // 其他情况：直接 includes
+  return name.includes(query);
+}
+
+// 通用学生名称搜索：支持姓名（汉字/拼音首字母）、学校、备注
+function matchesStudentSearch(student, query) {
+  if (!query || !query.trim()) return true;
+  const q = query.trim().toLowerCase();
+  // 拼音首字母模式
+  if (/^[a-z]{1,3}$/.test(q)) return matchesPinyin(student.name || '', q);
+  // 普通搜索
+  return (student.name||'').includes(query)
+    || (student.university||'').includes(query)
+    || (student.notes||'').includes(query);
+}
