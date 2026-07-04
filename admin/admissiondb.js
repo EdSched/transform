@@ -28,6 +28,7 @@ const SHEET_TO_MAJOR = {
 // 当前选中的专业列表（支持多选）
 let adbSelectedMajors = []; // 空=未选，['shakai']单选，['shakai','shinpan','fukushi']多选
 let adbEnglish = 'all', adbJapanese = 'all', adbSearch = '';
+let adbMonthFrom = 0, adbMonthTo = 0; // 0=不限
 let adbEditId = null;
 let adbSortCol = '', adbSortDir = 1;
 let adbColFilters = {}; // { col: Set of values }
@@ -63,6 +64,21 @@ function renderAdmissionDbPage(mc) {
     <div style="width:1px;height:18px;background:var(--border);margin:0 4px"></div>
     <div style="font-size:11px;color:var(--text-3)">日语</div>
     ${['all','必須','任意','不要'].map((v,i)=>`<button class="btn btn-sm adb-lang-btn${adbJapanese===v?' btn-primary':' btn-outline'}" onclick="setAdbFilter('japanese','${v}')" style="font-size:11px;padding:3px 10px">${['全部','必须','任意','不要'][i]}</button>`).join('')}
+  </div>
+
+  <!-- 出願月份筛选 -->
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+    <span style="font-size:11px;color:var(--text-3)">出願月份</span>
+    <select id="adbMonthFromSel" onchange="setAdbMonthFrom(parseInt(this.value))" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
+      <option value="0">从（不限）</option>
+      ${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}" ${adbMonthFrom===m?'selected':''}>${m}月</option>`).join('')}
+    </select>
+    <span style="font-size:11px;color:var(--text-3)">—</span>
+    <select id="adbMonthToSel" onchange="setAdbMonthTo(parseInt(this.value))" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
+      <option value="0">至（不限）</option>
+      ${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}" ${adbMonthTo===m?'selected':''}>${m}月</option>`).join('')}
+    </select>
+    ${(adbMonthFrom||adbMonthTo)?`<button onclick="adbMonthFrom=0;adbMonthTo=0;renderAdmissionDbPage(document.getElementById('mainContent'))" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 7px;cursor:pointer;font-family:inherit;color:var(--text-3)">清除</button>`:''}
   </div>
 
   <!-- 搜索 -->
@@ -200,6 +216,17 @@ async function loadAdbData() {
 }
 
 // ── 语言筛选 ──
+function setAdbMonthFrom(v) { adbMonthFrom = v; renderAdmissionTable(); }
+function setAdbMonthTo(v) { adbMonthTo = v; renderAdmissionTable(); }
+
+// 从出願期間字符串提取月份数字列表（例："5月上旬" → [5]，"5月上旬まで" → [5]）
+function extractMonths(periodStr) {
+  if (!periodStr) return [];
+  const matches = periodStr.match(/(\d{1,2})月/g);
+  if (!matches) return [];
+  return matches.map(m => parseInt(m));
+}
+
 function setAdbFilter(type, val) {
   if (type === 'english') adbEnglish = val;
   else adbJapanese = val;
@@ -228,6 +255,17 @@ function filterAdmissionSchools() {
   if (adbSearch.trim()) {
     const q = adbSearch.trim().toLowerCase();
     list = list.filter(s => (s.university||'').toLowerCase().includes(q) || (s.faculty||'').toLowerCase().includes(q) || (s.department||'').toLowerCase().includes(q) || (s.admission_type||'').toLowerCase().includes(q));
+  }
+  // 出願月份范围筛选
+  if (adbMonthFrom || adbMonthTo) {
+    list = list.filter(s => {
+      const months = extractMonths(s.application_period);
+      if (!months.length) return false;
+      const minM = Math.min(...months), maxM = Math.max(...months);
+      if (adbMonthFrom && maxM < adbMonthFrom) return false;
+      if (adbMonthTo && minM > adbMonthTo) return false;
+      return true;
+    });
   }
   // 列筛选
   Object.entries(adbColFilters).forEach(([col, vals]) => {
@@ -514,6 +552,11 @@ function exportAdmissionHtml() {
   if (adbEnglish !== 'all') filterDesc.push(`英语：${adbEnglish==='必須'?'必须':adbEnglish==='任意'?'任意':'不要'}`);
   if (adbJapanese !== 'all') filterDesc.push(`日语：${adbJapanese==='必須'?'必须':adbJapanese==='任意'?'任意':'不要'}`);
   if (adbSearch.trim()) filterDesc.push(`关键词：${adbSearch.trim()}`);
+  if (adbMonthFrom || adbMonthTo) {
+    const from = adbMonthFrom ? `${adbMonthFrom}月` : '不限';
+    const to = adbMonthTo ? `${adbMonthTo}月` : '不限';
+    filterDesc.push(`出願：${from}～${to}`);
+  }
   // 出願期間范围（从筛选结果中提取月份）
   const periods = filtered.map(s => s.application_period||'').filter(Boolean);
   const monthNums = [];
