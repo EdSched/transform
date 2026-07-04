@@ -233,7 +233,7 @@ function renderBookingManagement(mc) {
     </div>
     <div style="margin-top:16px">
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">已完成VIP预约</div>
-      ${vipBookings.filter(b => b.status === 'completed').length ? vipBookings.filter(b => b.status === 'completed').map(b => renderMyVipRow(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已完成VIP预约</div>'}
+      ${vipBookings.filter(b => b.status === 'completed' || b.student_confirmed).length ? vipBookings.filter(b => b.status === 'completed' || b.student_confirmed).map(b => renderMyVipRow(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已完成VIP预约</div>'}
     </div>`}
   </div>`;
 }
