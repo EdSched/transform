@@ -1864,6 +1864,7 @@ init();
 // ══════════════════════════════════
 
 let teacherAdbMajors = [], teacherAdbEnglish = 'all', teacherAdbJapanese = 'all', teacherAdbSearch = '';
+let teacherAdbMonthFrom = 0, teacherAdbMonthTo = 0;
 let teacherAdbData = [];
 let teacherAdbSortCol = '', teacherAdbSortDir = 1;
 let teacherAdbColFilters = {};
@@ -1938,6 +1939,19 @@ async function renderTeacherAdmissionDb(mc) {
         style="font-size:12px;max-width:220px;padding:4px 8px">
     </div>
   </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+    <span style="font-size:11px;color:var(--text-3)">出願月份</span>
+    <select onchange="teacherAdbMonthFrom=parseInt(this.value);teacherAdbRender()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
+      <option value="0">从（不限）</option>
+      ${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}" ${teacherAdbMonthFrom===m?'selected':''}>${m}月</option>`).join('')}
+    </select>
+    <span style="font-size:11px;color:var(--text-3)">—</span>
+    <select onchange="teacherAdbMonthTo=parseInt(this.value);teacherAdbRender()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
+      <option value="0">至（不限）</option>
+      ${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<option value="${m}" ${teacherAdbMonthTo===m?'selected':''}>${m}月</option>`).join('')}
+    </select>
+    ${(teacherAdbMonthFrom||teacherAdbMonthTo)?`<button onclick="teacherAdbMonthFrom=0;teacherAdbMonthTo=0;teacherAdbRender()" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 7px;cursor:pointer;font-family:inherit;color:var(--text-3)">清除</button>`:''}
+  </div>
 
   <div style="font-size:11px;color:var(--text-3);margin-bottom:6px" id="tadbCount">请选择专业查看数据</div>
   <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">💡 点击列标题可排序，列标题右侧的 ▾ 可筛选该列内容</div>
@@ -2005,6 +2019,17 @@ function teacherAdbFilter() {
   if (teacherAdbSearch.trim()) {
     const q = teacherAdbSearch.trim().toLowerCase();
     list = list.filter(s => (s.university||'').toLowerCase().includes(q)||(s.faculty||'').toLowerCase().includes(q)||(s.department||'').toLowerCase().includes(q));
+  }
+  if (teacherAdbMonthFrom || teacherAdbMonthTo) {
+    list = list.filter(s => {
+      const months = (s.application_period||'').match(/(\d{1,2})月/g);
+      if (!months) return false;
+      const nums = months.map(m => parseInt(m));
+      const minM = Math.min(...nums), maxM = Math.max(...nums);
+      if (teacherAdbMonthFrom && maxM < teacherAdbMonthFrom) return false;
+      if (teacherAdbMonthTo && minM > teacherAdbMonthTo) return false;
+      return true;
+    });
   }
   Object.entries(teacherAdbColFilters).forEach(([col, vals]) => {
     if (vals && vals.size) list = list.filter(s => vals.has(s[col]||''));
