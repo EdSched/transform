@@ -230,6 +230,10 @@ function renderBookingManagement(mc) {
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">已确认VIP预约</div>
       ${vipBookings.filter(b => b.status === 'confirmed').length ? vipBookings.filter(b => b.status === 'confirmed').map(b => renderMyVipRow(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已确认VIP预约</div>'}
+    </div>
+    <div style="margin-top:16px">
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">已完成VIP预约</div>
+      ${vipBookings.filter(b => b.status === 'completed').length ? vipBookings.filter(b => b.status === 'completed').map(b => renderMyVipRow(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已完成VIP预约</div>'}
     </div>`}
   </div>`;
 }
@@ -1332,9 +1336,10 @@ async function saveVipSessionRecord(bookingId) {
       vip_content: content.join('・'),
       vip_session_notes: notes,
       vip_hours_used: newHours,
-      student_confirmed: false, // 每次重新填写记录都重置学生确认状态，避免老师改了内容但学生还以为是旧版本
+      student_confirmed: false,
+      status: 'completed',
     });
-    Object.assign(b, { vip_content: content.join('・'), vip_session_notes: notes, vip_hours_used: newHours, student_confirmed: false });
+    Object.assign(b, { vip_content: content.join('・'), vip_session_notes: notes, vip_hours_used: newHours, student_confirmed: false, status: 'completed' });
     document.getElementById('vipRecordModal').remove();
     renderMySchedule(document.getElementById('mainContent'));
     alert('上课记录已保存，课时已扣除。建议点击「生成确认链接文案」发给学生确认。');
