@@ -261,6 +261,22 @@ async function saveVipProgress() {
   try {
     await sb(`/rest/v1/students?id=eq.${vipStudent.id}`, 'PATCH', { progress });
     vipStudent.progress = progress;
+
+    // 追加进度时间线（学生只能追加不能修改）
+    const entry = makeProgressEntry({
+      studentId: vipStudent.id,
+      studentName: vipStudent.name,
+      major: vipStudent.major,
+      source: 'student',
+      sourceName: vipStudent.name,
+      plan: progress.plan_status || '',
+      apply: progress.apply_status || '',
+      notes: progress.target_schools ? `目标学校：${progress.target_schools}` : '',
+    });
+    if (entry.plan || entry.apply || entry.notes) {
+      sb('/rest/v1/student_progress_timeline', 'POST', entry).catch(()=>{});
+    }
+
     document.getElementById('vipProgressEditModal').remove();
     renderVipMain();
   } catch(e) { alert('保存失败：' + e.message); }
