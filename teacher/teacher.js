@@ -1522,7 +1522,7 @@ function renderMyVipRow(b, s) {
       </div>
     </div>
     <div style="margin-top:8px;padding-top:8px;border-top:1px solid #ddd5f0;display:flex;gap:6px;flex-wrap:wrap">
-      <button class="btn btn-outline btn-sm" onclick="openVipSessionRecord('${b.id}')">${hasRecord ? '编辑上课记录' : '填写上课记录'}</button>
+      <button class="btn btn-outline btn-sm" onclick="openVipSessionRecord('${b.id}')">${b.student_confirmed ? '查看上课记录' : hasRecord ? '编辑上课记录' : '填写上课记录'}</button>
       ${hasRecord && !b.student_confirmed ? `<button class="btn btn-outline btn-sm" onclick="openVipConfirmText('${b.id}')">📋 生成确认链接文案</button>` : ''}
       ${!hasRecord ? `<button class="btn btn-outline btn-sm" onclick="openVipReschedule('${b.id}')">🔄 调整时间</button>` : ''}
       <button class="btn btn-outline btn-sm" onclick="openVipMessages('${b.id}')">💬 留言</button>
