@@ -386,17 +386,24 @@ async function renderProgressPage(mc, focusStudentId=null){
     const isFocus = focusStudentId === s.id;
 
     const statusRow = Object.entries(PROGRESS_LABELS).map(([k,label]) => {
-      if (!latest[k]) return '';
+      if (!latest[k] && !((k==='japanese'&&s.japanese_score)||(k==='english'&&s.english_score))) return '';
       const done = isProgressDone(k, latest[k]);
-      return `<span title="${label}" style="font-size:10px;background:${done?'var(--ok-bg)':'var(--warn-bg)'};color:${done?'var(--ok)':'var(--warn)'};padding:1px 6px;border-radius:2px">${PROGRESS_ICONS[k]} ${latest[k]}</span>`;
+      const scoreText = k==='japanese'&&s.japanese_score ? ` · ${s.japanese_score}` : k==='english'&&s.english_score ? ` · ${s.english_score}` : '';
+      const val = latest[k] || (k==='japanese'?'有成绩':'有成绩');
+      return `<span title="${label}" style="font-size:10px;background:${done?'var(--ok-bg)':'var(--warn-bg)'};color:${done?'var(--ok)':'var(--warn)'};padding:1px 6px;border-radius:2px">${PROGRESS_ICONS[k]} ${latest[k]||''}${scoreText}</span>`;
     }).join('');
 
-    const dimCards = Object.entries(PROGRESS_LABELS).map(([k,label]) =>
-      `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:8px">
+    const dimCards = Object.entries(PROGRESS_LABELS).map(([k,label]) => {
+      // 语言维度直接显示学生档案里的实际成绩
+      let scoreHint = '';
+      if (k === 'japanese' && s.japanese_score) scoreHint = `<div style="font-size:11px;color:var(--text-2);margin-top:4px">📊 ${s.japanese_score}</div>`;
+      if (k === 'english' && s.english_score) scoreHint = `<div style="font-size:11px;color:var(--text-2);margin-top:4px">📊 ${s.english_score}</div>`;
+      return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:8px">
         <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">${PROGRESS_ICONS[k]} ${label}</div>
         ${renderProgressBadge(k, latest[k])}
-      </div>`
-    ).join('');
+        ${scoreHint}
+      </div>`;
+    }).join('');
 
     const timelineHtml = timeline.length
       ? [...timeline].reverse().map(entry =>
