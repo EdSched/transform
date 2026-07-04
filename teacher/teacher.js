@@ -99,8 +99,10 @@ function buildTabs() {
     // 记录该老师被允许查看的专业（空数组=全部）
     window._teacherAllowedAdmMajors = p.admission_majors || [];
   }
-  tabs.push({ id: 'mycourses', label: '📚 我的课表' });
-  tabs.push({ id: 'workrecords', label: '📋 工作记录' });
+  // 我的课表：有排班权限或有实际排到课才显示
+  if (p.schedule || slots.length) tabs.push({ id: 'mycourses', label: '📚 我的课表' });
+  // 工作记录：有实际教学相关权限才显示
+  if (p.booking || p.slots || p.schedule || p.homework || slots.length) tabs.push({ id: 'workrecords', label: '📋 工作记录' });
   const tabBar = document.getElementById('tabBar');
   tabBar.innerHTML = tabs.map(t => `<button class="tab-btn${curTab === t.id ? ' active' : ''}" onclick="switchTab('${t.id}')">${t.label}</button>`).join('');
   tabBar.style.display = tabs.length > 1 ? 'flex' : 'none';
