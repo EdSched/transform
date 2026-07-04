@@ -204,7 +204,7 @@ function renderVipActiveBooking(b) {
       <div>状态：<span style="color:var(--accent);font-weight:600">${statusText}</span></div>
     </div>
     <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
-      <div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:6px">💬 与老师留言</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:11px;font-weight:600;color:var(--text-secondary)">💬 与老师留言</div><div style="font-size:10px;color:${messages.length >= VIP_MSG_LIMIT ? 'var(--danger)' : 'var(--text-muted)'}">${messages.length}/${VIP_MSG_LIMIT}</div></div>
       <div id="vip_messages_list" style="max-height:160px;overflow-y:auto;margin-bottom:8px">
         ${messages.length ? messages.map(m => `
           <div style="font-size:11px;margin-bottom:6px;${m.from==='student'?'text-align:right':''}">
@@ -215,7 +215,7 @@ function renderVipActiveBooking(b) {
           </div>`).join('') : '<div style="font-size:11px;color:var(--text-muted)">暂无留言</div>'}
       </div>
       <div style="display:flex;gap:6px">
-        <input type="text" id="vip_message_input" placeholder="给老师留言…" style="flex:1;font-size:12px">
+        <input type="text" id="vip_message_input" placeholder="${messages.length >= VIP_MSG_LIMIT ? '留言已达上限（'+VIP_MSG_LIMIT+'条）' : '给老师留言…'}" ${messages.length >= VIP_MSG_LIMIT ? 'disabled style="flex:1;font-size:12px;opacity:.5"' : 'style="flex:1;font-size:12px"'}>
         <button class="btn btn-outline btn-sm" onclick="sendVipMessage('${b.id}')">发送</button>
       </div>
     </div>
@@ -223,12 +223,18 @@ function renderVipActiveBooking(b) {
   </div>`;
 }
 
+const VIP_MSG_LIMIT = 30;
+
 async function sendVipMessage(bookingId) {
   const input = document.getElementById('vip_message_input');
   const text = input.value.trim();
   if (!text) return;
   const b = vipBookings.find(x => x.id === bookingId);
   if (!b) return;
+  if ((b.messages || []).length >= VIP_MSG_LIMIT) {
+    alert(`每个预约最多 ${VIP_MSG_LIMIT} 条留言，当前已达上限。如需继续沟通请直接联系老师。`);
+    return;
+  }
   const newMessages = [...(b.messages || []), { from: 'student', text, ts: Date.now() }];
   try {
     await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', { messages: newMessages });
