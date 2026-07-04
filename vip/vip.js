@@ -14,6 +14,7 @@ function locationColor(loc) {
 }
 
 const STORAGE_KEY_VIP = 'txe_vip_login';
+const VIP_MSG_LIMIT = 30;
 const STORAGE_DAYS_VIP = 30;
 
 let vipStudent = null; // 登录后的学生档案 {id,name,student_code,vip_hours_total,vip_hours_used,vip_teachers,...}
