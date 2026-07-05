@@ -522,7 +522,7 @@ function exportAdmissionHtmlShared(filtered, opts) {
   .bold{font-weight:700}.center{text-align:center}
   ${colDefs.map(([,w],i)=>`col:nth-child(${i+1}){width:${w}}`).join('')}
   #wm{position:fixed;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:9999;overflow:hidden}
-  #wm span{position:absolute;font-size:16px;font-weight:700;color:rgba(0,0,0,0.20);white-space:nowrap;transform:rotate(-35deg);letter-spacing:3px;font-family:sans-serif}
+  #wm span{position:absolute;font-size:16px;font-weight:700;color:rgba(0,0,0,0.15);white-space:nowrap;transform:rotate(-35deg);letter-spacing:3px;font-family:sans-serif}
   @page{size:A3 landscape;margin:12mm}
   @media print{body{padding:0;font-size:10px}td{font-size:10px;padding:4px 3px}th{font-size:9px;padding:5px 3px}.title-block{margin-bottom:10px}#wm{position:fixed}}
 </style></head><body>
