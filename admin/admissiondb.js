@@ -719,6 +719,25 @@ function openShareToStudents() {
         <div style="margin-top:4px;font-size:11px;color:var(--text-3)">学生将在「查询学习记录」页面看到这份列表，可从中点选自己的志望校。</div>
       </div>
       <div class="form-group">
+        <label class="form-label">发布到哪个学生页面 *</label>
+        <select id="share_booking_major">
+          <option value="shakai_group">社会人文（社会学/新传/福祉合并页）</option>
+          <option value="shakai">社会学</option>
+          <option value="keizai">経済学</option>
+          <option value="keiei">経営学</option>
+          <option value="shinpan">新闻传播学</option>
+          <option value="fukushi">社会福祉学</option>
+          <option value="nihongo">日本语教育</option>
+          <option value="hyosho">表象文化・文学・哲学</option>
+          <option value="seiji">政治学</option>
+          <option value="toyo">東洋史</option>
+          <option value="bunka">文化人类学</option>
+          <option value="mot">MOT</option>
+          <option value="tokei">統計・計量</option>
+        </select>
+        <div style="font-size:10px;color:var(--text-3);margin-top:3px">学生只会在对应页面看到这份列表</div>
+      </div>
+      <div class="form-group">
         <label class="form-label">出愿季度</label>
         <select id="share_season">
           <option value="summer">夏季</option>
@@ -749,17 +768,19 @@ async function confirmShareToStudents() {
   const schoolIds = (window._shareFilteredSchools || []).map(s => s.id);
   const majorLabel = window._shareMajorLabel || '';
   const count = schoolIds.length;
+  const bookingMajor = document.getElementById('share_booking_major').value;
   const season = document.getElementById('share_season').value;
   const year = parseInt(document.getElementById('share_year').value);
   const notes = document.getElementById('share_notes').value.trim();
   const seasonLabel = { summer:'夏季', winter:'冬季', next_year:'次年' }[season] || season;
+  if (!bookingMajor) { alert('请选择发布到哪个学生页面'); return; }
 
-  // 检查是否已有同专业同季度同年份的共享
-  const existing = await sb(`/rest/v1/teacher_school_shares?major=in.(${adbSelectedMajors.map(m=>`"${m}"`).join(',')})&season=eq.${season}&year=eq.${year}&select=id,title`).catch(()=>[]);
+  // 检查是否已有同页面同季度同年份的共享
+  const existing = await sb(`/rest/v1/teacher_school_shares?major=eq.${bookingMajor}&season=eq.${season}&year=eq.${year}&select=id,title`).catch(()=>[]);
 
   const data = {
     id: `tss-${Date.now()}-${Math.random().toString(36).slice(2,4)}`,
-    major: adbSelectedMajors.length === 1 ? adbSelectedMajors[0] : adbSelectedMajors.join(','),
+    major: bookingMajor,
     season, year,
     title: `${year}年${seasonLabel} ${majorLabel} 出愿学校列表`,
     school_ids: schoolIds,
