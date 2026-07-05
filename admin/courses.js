@@ -873,7 +873,8 @@ function openAddCourseModal(editId){
       num:s.is_cancelled?'休讲':s.session_number,
       date:s.session_date,
       title:s.is_cancelled?(s.cancel_reason||'休讲'):(s.session_title||''),
-      teacher:s.session_teacher||c.teacher||''
+      teacher:s.session_teacher||c.teacher||'',
+      time_range:s.time_range||''
     })));
   } else {
     ['ac_name','ac_teacher','ac_campus','ac_time_range','ac_notes','ac_meeting_url','ac_host_key'].forEach(id=>document.getElementById(id).value='');
@@ -973,6 +974,7 @@ function acAddRow(data){
   tr.innerHTML=`
     <td style="width:64px"><input value="${rowNum}" placeholder="第几回" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);text-align:center;font-family:'DM Mono',monospace"></td>
     <td style="width:120px"><input type="date" value="${data?.date||''}" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg)"></td>
+    <td style="width:100px"><input value="${data?.time_range||''}" placeholder="时间（如 10:00-12:00）" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
     <td><input value="${data?.title||''}" placeholder="单回名称（可留空，也可填「休讲」）" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
     <td><input value="${data?.teacher||''}" placeholder="任课老师（可留空）" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
     <td><button class="btn-ghost" onclick="this.closest('tr').remove()">✕</button></td>`;
@@ -986,8 +988,9 @@ function acGetRows(){
       id: tr.dataset.id||'',
       num: inputs[0]?.value.trim()||'',
       date: inputs[1]?.value||'',
-      title: inputs[2]?.value.trim()||'',
-      teacher: inputs[3]?.value.trim()||''
+      time_range: inputs[2]?.value.trim()||'',
+      title: inputs[3]?.value.trim()||'',
+      teacher: inputs[4]?.value.trim()||''
     };
   });
 }
@@ -1071,7 +1074,7 @@ async function saveAddCourse(){
           course_name:name, major:majors,
           session_date:r.date,
           session_number: isCancelled ? (existingMap[r.id]?.session_number ?? null) : (parseInt(r.num)||null),
-          time_range:courseData.time_range,
+          time_range:r.time_range||courseData.time_range,
           actual_hours:courseData.actual_hours,
           delivery:courseData.delivery,campus:courseData.campus,
           homework_enabled:courseData.homework_enabled,
@@ -1117,7 +1120,7 @@ async function saveAddCourse(){
           id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
           course_id:courseId,course_name:name,major:majors,
           session_date:date,session_number:i+1,
-          time_range:courseData.time_range,
+          time_range:r.time_range||courseData.time_range,
           actual_hours:courseData.actual_hours,
           delivery:courseData.delivery,campus:courseData.campus,
           teacher:detail.teacher||mainTeacher,
