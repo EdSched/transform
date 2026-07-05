@@ -184,11 +184,10 @@ function buildForm() {
     <button onclick="scrollToHomework()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit;font-weight:600;margin-top:4px">→ 去提交作业</button>
   </div>
   <div id="infoBanner" style="display:none;background:var(--warning-light);border:1px solid var(--warning);border-radius:3px;padding:9px 12px;margin-bottom:12px;font-size:11px;color:var(--warning);line-height:1.6"></div>
-  <!-- 出愿/计划书提醒 -->
-  <div id="schoolPlanBanner" style="display:none;background:#eef3fb;border:1px solid #2c4a7c;border-radius:3px;padding:10px 14px;margin-bottom:12px">
-    <div style="font-size:12px;font-weight:600;color:#2c4a7c;margin-bottom:4px">🏫 老师已共享出愿学校列表</div>
-    <div id="schoolPlanBannerText" style="font-size:11px;color:var(--text-2);line-height:1.8;margin-bottom:8px"></div>
-    <a href="../student/study.html?major=${major}" style="font-size:12px;background:#2c4a7c;color:#fff;border:none;border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit;text-decoration:none;display:inline-block">→ 查看出愿信息 &amp; 填写志望校</a>
+  <!-- 统一提醒条 -->
+  <div id="reminderStrip" style="display:none;background:#eef3fb;border:1px solid #2c4a7c;border-radius:3px;padding:10px 14px;margin-bottom:12px">
+    <div id="reminderItems" style="font-size:11px;color:#2c4a7c;line-height:2;margin-bottom:8px"></div>
+    <a href="../student/study.html?major=${major}" style="font-size:12px;background:#2c4a7c;color:#fff;border-radius:3px;padding:7px 16px;text-decoration:none;display:inline-block">→ 前往学习记录完成</a>
   </div>
   <div class="card">
     <div class="card-title" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between" onclick="toggleCard('basicCardBody','basicCardArrow')">
@@ -791,41 +790,43 @@ function scrollToRetrieval() {
 async function loadSchoolPlanBanner() {
   try {
     const name = localStorage.getItem('txe_student_name') || '';
-    if (!name) return;
-    // 拉取该专业最新共享列表
-    // 直接用URL的major参数匹配，不做专业转换
-    const shares = await sb(`/rest/v1/teacher_school_shares?major=eq.${major}&select=*&order=created_at.desc&limit=1`).catch(()=>[]);
-    if (!shares.length) return;
-    const share = shares[0];
-    // 检查学生是否已填写志望校
     const code = localStorage.getItem('txe_student_code') || '';
-    if (!name || !code) {
-      // 未登录，只显示提示
-      document.getElementById('schoolPlanBanner').style.display = 'block';
-      document.getElementById('schoolPlanBannerText').textContent = `${share.title}已发布，请在下方「查询学习记录」中完成志望校填写。${share.notes||''}`;
-      return;
-    }
-    const stuMatch = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(name)}&student_code=eq.${encodeURIComponent(code.toUpperCase())}&select=id`).catch(()=>[]);
-    if (!stuMatch.length) return;
-    const plans = await sb(`/rest/v1/student_school_plans?student_id=eq.${stuMatch[0].id}&select=id&limit=1`).catch(()=>[]);
-    if (plans.length) return; // 已填写，不显示提醒
-    // 显示提醒
-    document.getElementById('schoolPlanBanner').style.display = 'block';
-    // 提取部分学校出愿时间
-    const schoolIds = share.school_ids || [];
-    let periodHint = '';
-    if (schoolIds.length) {
-      const sample = await sb(`/rest/v1/admission_schools?id=in.(${schoolIds.slice(0,5).map(id=>`"${id}"`).join(',')})&select=university,application_period`).catch(()=>[]);
-      if (sample.length) {
-        periodHint = sample.filter(s=>s.application_period).map(s=>`${s.university}：${s.application_period}`).join('　');
+    const reminders = [];
+
+    // 检查出愿共享列表
+    const shares = await sb(`/rest/v1/teacher_school_shares?major=eq.${major}&select=*&order=created_at.desc&limit=1`).catch(()=>[]);
+    if (shares.length) {
+      let schoolFilled = false;
+      if (name && code) {
+        const stuMatch = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(name)}&student_code=eq.${encodeURIComponent(code.toUpperCase())}&select=id`).catch(()=>[]);
+        if (stuMatch.length) {
+          const sid = stuMatch[0].id;
+          // 志望校
+          const plans = await sb(`/rest/v1/student_school_plans?student_id=eq.${sid}&select=id&limit=1`).catch(()=>[]);
+          schoolFilled = plans.length > 0;
+          // 计划书
+          const drafts = await sb(`/rest/v1/student_plan_drafts?student_id=eq.${sid}&select=id&limit=1`).catch(()=>[]);
+          if (!drafts.length) reminders.push('📄 计划书进度尚未填写');
+        }
       }
+      if (!schoolFilled) reminders.push(`🏫 ${shares[0].title} · 待填写志望校`);
     }
-    document.getElementById('schoolPlanBannerText').innerHTML =
-      `${share.title}已发布，请完成志望校填写。${share.notes?`<br>${share.notes}`:''}` +
-      (periodHint ? `<br><span style="color:var(--text-3);font-size:10px">📅 出愿参考：${periodHint}…</span>` : '');
+
+    // 检查近期作业提醒（从 infoBanner 里的作业提醒获取）
+    const hwBanner = document.getElementById('hwBannerItems');
+    if (hwBanner && hwBanner.children.length) {
+      reminders.push(`📝 有近期作业待提交`);
+    }
+
+    if (!reminders.length) return;
+    const strip = document.getElementById('reminderStrip');
+    const items = document.getElementById('reminderItems');
+    if (strip && items) {
+      strip.style.display = 'block';
+      items.innerHTML = reminders.map(r => `· ${r}`).join('<br>');
+    }
   } catch(e) { /* 静默失败 */ }
 }
-
 
 function toggleRetrievalPanel() {
   const p = document.getElementById('retrievalPanel');
