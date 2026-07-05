@@ -103,6 +103,7 @@ function buildTabs() {
   if (p.schedule || slots.length) tabs.push({ id: 'mycourses', label: '📚 我的课表' });
   // 工作记录：有实际教学相关权限才显示
   if (p.booking || p.slots || p.schedule || p.homework || slots.length) tabs.push({ id: 'workrecords', label: '📋 工作记录' });
+  if (p.booking) tabs.push({ id: 'studyprogress', label: '📊 考学进度' });
   const tabBar = document.getElementById('tabBar');
   tabBar.innerHTML = tabs.map(t => `<button class="tab-btn${curTab === t.id ? ' active' : ''}" onclick="switchTab('${t.id}')">${t.label}</button>`).join('');
   tabBar.style.display = tabs.length > 1 ? 'flex' : 'none';
@@ -130,6 +131,7 @@ function renderTab() {
     case 'schedule': renderScheduling(mc); break;
     case 'homework': renderHomeworkFeedback(mc); break;
     case 'admissiondb': renderTeacherAdmissionDb(mc); break;
+    case 'studyprogress': renderTeacherStudyProgress(mc); break;
     case 'mycourses': renderMySchedule(mc); break;
     case 'workrecords': renderWorkRecordsTeacher(mc); break;
   }
@@ -2255,4 +2257,187 @@ function teacherAdbRender() {
     <td style="text-align:center;font-weight:700;color:${engCol(s.english_required)}">${s.english_required||'-'}</td>
     <td style="text-align:center;font-weight:700;color:${engCol(s.japanese_required)}">${s.japanese_required||'-'}</td>
   </tr>`).join('');
+}
+
+// ══════════════════════════════════
+// 考学进度（老师端）
+// ══════════════════════════════════
+
+let teacherProgressFilter = '';
+let teacherProgressData = { students: [], timeline: {}, schoolPlans: {}, planDrafts: {} };
+
+async function renderTeacherStudyProgress(mc) {
+  mc.innerHTML = '<div class="empty">加载中…</div>';
+
+  // 拉取该老师负责的学生（通过面谈预约关联）
+  const myBookings = cachedTeacherBookings || [];
+  const myStudentNames = [...new Set(myBookings.map(b => b.name).filter(Boolean))];
+
+  if (!myStudentNames.length) {
+    mc.innerHTML = '<div class="empty">暂无负责的学生数据</div>';
+    return;
+  }
+
+  // 拉取学生档案
+  const students = await sb(`/rest/v1/students?name=in.(${myStudentNames.map(n=>`"${n}"`).join(',')})&select=*`).catch(()=>[]);
+
+  // 拉取进度时间线
+  const stuIds = students.map(s => s.id);
+  const [allTimeline, allPlans, allDrafts] = await Promise.all([
+    stuIds.length ? sb(`/rest/v1/student_progress_timeline?student_id=in.(${stuIds.map(id=>`"${id}"`).join(',')})&select=*&order=created_at.asc`).catch(()=>[]) : [],
+    stuIds.length ? sb(`/rest/v1/student_school_plans?student_id=in.(${stuIds.map(id=>`"${id}"`).join(',')})&select=*&order=level.asc`).catch(()=>[]) : [],
+    stuIds.length ? sb(`/rest/v1/student_plan_drafts?student_id=in.(${stuIds.map(id=>`"${id}"`).join(',')})&select=*&order=updated_at.desc`).catch(()=>[]) : [],
+  ]);
+
+  // 按学生ID分组
+  const timelineMap = {}, plansMap = {}, draftsMap = {};
+  allTimeline.forEach(t => { if (!timelineMap[t.student_id]) timelineMap[t.student_id] = []; timelineMap[t.student_id].push(t); });
+  allPlans.forEach(p => { if (!plansMap[p.student_id]) plansMap[p.student_id] = []; plansMap[p.student_id].push(p); });
+  allDrafts.forEach(d => { if (!draftsMap[d.student_id]) draftsMap[d.student_id] = d; });
+
+  teacherProgressData = { students, timelineMap, plansMap, draftsMap };
+
+  let filtered = students;
+  if (teacherProgressFilter.trim()) {
+    filtered = students.filter(s => s.name.includes(teacherProgressFilter));
+  }
+
+  const cards = filtered.map(s => {
+    const timeline = timelineMap[s.id] || [];
+    const latest = getLatestProgress(timeline);
+    const plans = plansMap[s.id] || [];
+    const draft = draftsMap[s.id];
+    const levelLabel = { 1:'🔴', 2:'🟡', 3:'🟢' };
+
+    const statusRow = Object.entries(PROGRESS_LABELS).map(([k]) => {
+      const val = k === 'japanese' ? (latest[k] || (s.japanese_score ? '有成绩' : '')) :
+                  k === 'english' ? (latest[k] || (s.english_score ? '有成绩' : '')) :
+                  latest[k];
+      if (!val) return '';
+      const done = isProgressDone(k, latest[k]);
+      const scoreHint = k==='japanese'&&s.japanese_score ? ` · ${s.japanese_score}` : k==='english'&&s.english_score ? ` · ${s.english_score}` : '';
+      return `<span style="font-size:10px;background:${done?'var(--ok-bg)':'var(--warn-bg)'};color:${done?'var(--ok)':'var(--warn)'};padding:1px 6px;border-radius:2px;white-space:nowrap">${PROGRESS_ICONS[k]} ${latest[k]||''}${scoreHint}</span>`;
+    }).join('');
+
+    const schoolSummary = plans.length
+      ? plans.slice(0,3).map(p => `<span style="font-size:10px;color:var(--text-2)">${levelLabel[p.level]||''} ${p.school_name}${p.professor?` · ${p.professor}`:''}</span>`).join('<br>')
+      : '<span style="font-size:10px;color:var(--text-3)">未填写志望校</span>';
+
+    const draftStatus = draft
+      ? `<span style="font-size:10px;color:var(--ok)">已填写${draft.teacher_comment?' · 已批注':''}</span>`
+      : '<span style="font-size:10px;color:var(--text-3)">未填写</span>';
+
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer" onclick="toggleTeacherProgressCard('${s.id}')">
+        <div style="flex:1">
+          <span style="font-size:13px;font-weight:600">${s.name}</span>
+          <span style="font-size:11px;color:var(--text-3);margin-left:8px">${MAJORS[s.major]||s.major||''}</span>
+        </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:60%">
+          ${statusRow || '<span style="font-size:10px;color:var(--text-3)">暂无进度</span>'}
+        </div>
+      </div>
+      <div id="tprog_${s.id}" style="display:none;border-top:1px solid var(--border-light);background:var(--bg)">
+        <div style="padding:12px 14px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <!-- 语言成绩 -->
+          <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px">
+            <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">🗣 日语　📝 英语</div>
+            <div style="font-size:11px">${s.japanese_score||'未填写'}</div>
+            <div style="font-size:11px;color:var(--text-2)">${s.english_score||'未填写'}</div>
+          </div>
+          <!-- 计划书 -->
+          <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px">
+            <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">📄 计划书进度</div>
+            ${draft ? `
+            <div style="font-size:11px;color:var(--text-2)">${draft.research_question?`问题：${draft.research_question.slice(0,40)}…`:''}</div>
+            <div style="font-size:11px;color:var(--text-2)">${draft.prior_research?`先行研究：${draft.prior_research.slice(0,30)}…`:''}</div>
+            ${draft.draft_file_url?`<a href="${draft.draft_file_url}" target="_blank" style="font-size:10px;color:var(--accent)">📎 草稿文件</a>`:''}
+            <button onclick="openTeacherDraftComment('${s.id}','${s.name}')" style="margin-top:6px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;display:block">
+              ${draft.teacher_comment?'修改批注':'添加批注'}
+            </button>
+            ` : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写</div>'}
+          </div>
+        </div>
+        <!-- 志望校 -->
+        <div style="padding:0 14px 12px">
+          <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">🏫 志望校（${plans.length}所）</div>
+          ${plans.length ? `
+          <div style="display:flex;flex-direction:column;gap:4px">
+            ${plans.map(p=>`<div style="font-size:11px;background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:6px 8px">
+              <span style="color:var(--text-3)">${levelLabel[p.level]||''}</span>
+              <span style="font-weight:500;margin-left:4px">${p.school_name}</span>
+              ${p.faculty?`<span style="color:var(--text-3);margin-left:4px">${p.faculty}</span>`:''}
+              ${p.professor?`<span style="color:var(--text-2);margin-left:6px">👤 ${p.professor}</span>`:''}
+              ${p.application_period?`<span style="color:var(--accent);margin-left:6px;font-size:10px">📅 ${p.application_period}</span>`:''}
+            </div>`).join('')}
+          </div>` : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写志望校</div>'}
+        </div>
+        <!-- 进度时间线 -->
+        <div style="padding:0 14px 12px">
+          <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">进度时间线（${timeline.length}条）</div>
+          ${timeline.length ? [...timeline].reverse().slice(0,3).map(entry => renderProgressTimelineEntry(entry, false)).join('') : '<div style="font-size:11px;color:var(--text-3)">暂无记录</div>'}
+          ${timeline.length > 3 ? `<div style="font-size:10px;color:var(--text-3);text-align:center">还有 ${timeline.length-3} 条…</div>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  mc.innerHTML = `
+  <div class="page-header">
+    <div class="section-title">考学进度 <span class="badge-count">${filtered.length}</span></div>
+  </div>
+  <div class="search-bar" style="margin-bottom:10px">
+    <input placeholder="搜索学生姓名…" value="${teacherProgressFilter}"
+      oninput="if(this.dataset.composing!=='1'){teacherProgressFilter=this.value;renderTeacherStudyProgress(document.getElementById('mainContent'))}"
+      oncompositionstart="this.dataset.composing='1'"
+      oncompositionend="this.dataset.composing='';teacherProgressFilter=this.value;renderTeacherStudyProgress(document.getElementById('mainContent'))">
+  </div>
+  <div>${cards || '<div class="empty">暂无数据</div>'}</div>`;
+}
+
+function toggleTeacherProgressCard(id) {
+  const el = document.getElementById(`tprog_${id}`);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function openTeacherDraftComment(studentId, studentName) {
+  const draft = teacherProgressData.draftsMap?.[studentId];
+  if (!draft) return;
+  const existing = document.getElementById('teacherDraftCommentModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'teacherDraftCommentModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:420px;width:100%">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">📝 计划书批注 · ${studentName}</div>
+      <div style="background:var(--bg);border-radius:3px;padding:10px;font-size:11px;color:var(--text-2);margin-bottom:12px;line-height:1.8">
+        ${draft.research_question?`<div>问题意识：${draft.research_question}</div>`:''}
+        ${draft.prior_research?`<div>先行研究：${draft.prior_research}</div>`:''}
+        ${draft.methodology?`<div>研究方法：${draft.methodology}</div>`:''}
+        ${draft.draft_file_url?`<a href="${draft.draft_file_url}" target="_blank" style="color:var(--accent)">📎 草稿文件</a>`:''}
+      </div>
+      <div class="form-group">
+        <label class="form-label">批注内容</label>
+        <textarea id="tdc_comment" rows="4" placeholder="针对计划书内容的反馈和建议…">${draft.teacher_comment||''}</textarea>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="saveTeacherDraftComment('${draft.id}','${studentId}')" style="flex:1;background:var(--ok);color:#fff;border:none;border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">保存批注</button>
+        <button onclick="document.getElementById('teacherDraftCommentModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:10px 14px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function saveTeacherDraftComment(draftId, studentId) {
+  const comment = document.getElementById('tdc_comment').value.trim();
+  if (!comment) { alert('请填写批注内容'); return; }
+  try {
+    await sb(`/rest/v1/student_plan_drafts?id=eq.${draftId}`, 'PATCH', { teacher_comment: comment, updated_at: new Date().toISOString() });
+    if (teacherProgressData.draftsMap?.[studentId]) {
+      teacherProgressData.draftsMap[studentId].teacher_comment = comment;
+    }
+    document.getElementById('teacherDraftCommentModal').remove();
+    renderTeacherStudyProgress(document.getElementById('mainContent'));
+  } catch(e) { alert('保存失败：' + e.message); }
 }
