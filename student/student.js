@@ -789,7 +789,7 @@ function scrollToRetrieval() {
 async function loadSchoolPlanBanner() {
   try {
     const name = localStorage.getItem('txe_student_name') || '';
-    const code = localStorage.getItem('txe_student_code') || '';
+    if (!name) return;
     // 拉取该专业最新共享列表
     const majorFilter = major === 'shakai_group'
       ? 'major=in.("shakai","shinpan","fukushi","shakai_group")'
@@ -797,8 +797,10 @@ async function loadSchoolPlanBanner() {
     const shares = await sb(`/rest/v1/teacher_school_shares?${majorFilter}&select=*&order=created_at.desc&limit=1`).catch(()=>[]);
     if (!shares.length) return;
     const share = shares[0];
-    // 没有姓名查询码 → 直接显示提醒，不检查是否已填写
+    // 检查学生是否已填写志望校
+    const code = localStorage.getItem('txe_student_code') || '';
     if (!name || !code) {
+      // 未登录，只显示提示
       document.getElementById('schoolPlanBanner').style.display = 'block';
       document.getElementById('schoolPlanBannerText').textContent = `${share.title}已发布，请在下方「查询学习记录」中完成志望校填写。${share.notes||''}`;
       return;
@@ -829,151 +831,7 @@ function toggleRetrievalPanel() {
   const p = document.getElementById('retrievalPanel');
   if (p) p.style.display = p.style.display === 'none' ? 'block' : 'none';
 }
-async function lookupRetrieval() {
-  const name = document.getElementById('rt_name').value.trim();
-  const code = document.getElementById('rt_code').value.trim().toUpperCase();
-  const result = document.getElementById('retrievalResult');
-  if (!name || !code) { result.innerHTML = '<div style="font-size:11px;color:var(--danger)">请输入姓名和查询码</div>'; return; }
-  result.innerHTML = '<div class="loading">查询中…</div>';
-  try {
-    const students = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(name)}&student_code=eq.${encodeURIComponent(code)}&select=*`);
-    if (!students.length) {
-      result.innerHTML = '<div style="font-size:11px;color:var(--danger)">未找到匹配记录，请确认姓名和查询码是否正确</div>';
-      return;
-    }
-    const student = students[0];
 
-    // 并行拉取所有需要的数据
-    const [bookings, sessionRecs, timeline, schoolPlans, planDrafts, sharedLists] = await Promise.all([
-      sb(`/rest/v1/bookings?name=eq.${encodeURIComponent(name)}&status=in.("confirmed","completed")&select=*&order=slot_date.desc`).catch(()=>[]),
-      sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(name)}&select=*&order=session_date.desc`).catch(()=>[]),
-      sb(`/rest/v1/student_progress_timeline?student_id=eq.${student.id}&select=*&order=created_at.desc&limit=5`).catch(()=>[]),
-      sb(`/rest/v1/student_school_plans?student_id=eq.${student.id}&select=*&order=level.asc`).catch(()=>[]),
-      sb(`/rest/v1/student_plan_drafts?student_id=eq.${student.id}&select=*&order=created_at.desc&limit=1`).catch(()=>[]),
-      sb(`/rest/v1/teacher_school_shares?${student.major === 'shakai_group' ? 'major=in.("shakai","shinpan","fukushi","shakai_group")' : `major=eq.${student.major}`}&select=*&order=created_at.desc&limit=3`).catch(()=>[]),
-    ]);
-
-    const validBookings = bookings.filter(b => b.daily_record && Object.values(b.daily_record).some(v=>v));
-    const validHomework = sessionRecs.filter(r => r.teacher_file_url);
-
-    // 季度同步（从面谈记录里提取出愿季度）
-    const examSeasons = [...new Set(bookings.map(b => b.exam_period).filter(Boolean))];
-
-    let html = `<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border-light)">👤 ${name} 的学习记录</div>`;
-
-    // ── 1. 考学进度快照 ──
-    if (timeline.length || student.japanese_score || student.english_score) {
-      html += `<div style="margin-bottom:16px">
-        <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;margin-bottom:8px">📊 考学进度</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px">
-          ${student.japanese_score?`<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:6px 8px"><span style="color:var(--text-3)">🗣 日语</span><br>${student.japanese_score}</div>`:''}
-          ${student.english_score?`<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:6px 8px"><span style="color:var(--text-3)">📝 英语</span><br>${student.english_score}</div>`:''}
-        </div>
-        ${timeline.length?`<div style="margin-top:8px;font-size:11px;color:var(--text-2)">${timeline[0].plan?`📄 计划书：${timeline[0].plan}　`:''}${timeline[0].apply?`🏫 出愿：${timeline[0].apply}`:''}${timeline[0].notes?`<br>💬 ${timeline[0].notes}`:''}</div>`:''}
-        ${examSeasons.length?`<div style="margin-top:6px;font-size:10px;color:var(--accent)">📅 出愿季度：${examSeasons.join('、')}</div>`:''}
-      </div>`;
-    }
-
-    // ── 2. 志望校列表 ──
-    html += `<div style="margin-bottom:16px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em">🏫 志望校列表 <span style="font-weight:400">(${schoolPlans.length}/6)</span></div>
-        <button onclick="openSchoolPlanEditor('${student.id}','${name}','${student.major}')" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">＋ 编辑志望校</button>
-      </div>`;
-    if (schoolPlans.length) {
-      const levelLabel = { 1:'🔴 冲刺', 2:'🟡 匹配', 3:'🟢 保底' };
-      [1,2,3].forEach(lv => {
-        const lvSchools = schoolPlans.filter(s => s.level === lv);
-        if (!lvSchools.length) return;
-        html += `<div style="font-size:10px;color:var(--text-3);margin:6px 0 4px">${levelLabel[lv]}</div>`;
-        lvSchools.forEach(s => {
-          html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:8px;margin-bottom:6px;font-size:11px">
-            <div style="font-weight:600">${s.school_name}</div>
-            <div style="color:var(--text-2)">${[s.faculty,s.department].filter(Boolean).join(' · ')}</div>
-            ${s.professor?`<div style="color:var(--text-3);margin-top:2px">👤 ${s.professor}</div>`:''}
-            ${s.application_period?`<div style="color:var(--accent);margin-top:2px">📅 ${s.application_period}</div>`:''}
-            ${s.notes?`<div style="color:var(--text-3);margin-top:2px;font-size:10px">${s.notes}</div>`:''}
-          </div>`;
-        });
-      });
-    } else {
-      // 有共享列表但未填写时显示提示
-      if (sharedLists.length) {
-        const sl = sharedLists[0];
-        html += `<div style="background:var(--warn-bg);border:1px solid var(--warn);border-radius:3px;padding:10px;font-size:11px;color:var(--warn)">
-          ⚠ 老师已共享「${sl.title}」，请点击「编辑志望校」完成填写${sl.notes?`<br><span style="font-size:10px">${sl.notes}</span>`:''}
-        </div>`;
-      } else {
-        html += `<div style="font-size:11px;color:var(--text-3);padding:8px 0">暂无志望校记录，请等待老师共享学校列表</div>`;
-      }
-    }
-    html += `</div>`;
-
-    // ── 3. 计划书进度 ──
-    html += `<div style="margin-bottom:16px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em">📄 计划书进度</div>
-        <button onclick="openPlanDraftEditor('${student.id}','${name}','${student.major}')" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">＋ 更新进度</button>
-      </div>`;
-    if (planDrafts.length) {
-      const d = planDrafts[0];
-      html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px;font-size:11px">
-        ${d.research_question?`<div style="margin-bottom:6px"><span style="color:var(--text-3)">问题意识：</span>${d.research_question}</div>`:''}
-        ${d.prior_research?`<div style="margin-bottom:6px"><span style="color:var(--text-3)">先行研究：</span>${d.prior_research}</div>`:''}
-        ${d.prior_research_url?`<div style="margin-bottom:6px"><a href="${d.prior_research_url}" target="_blank" style="color:var(--accent);font-size:10px">🔗 先行研究链接</a></div>`:''}
-        ${d.methodology?`<div style="margin-bottom:6px"><span style="color:var(--text-3)">研究方法：</span>${d.methodology}</div>`:''}
-        ${d.draft_file_url?`<div style="margin-bottom:6px"><a href="${d.draft_file_url}" target="_blank" style="color:var(--accent)">📎 草稿文件</a></div>`:''}
-        ${d.teacher_comment?`<div style="background:var(--ok-bg);border-radius:2px;padding:6px;color:var(--ok);margin-top:6px">💬 老师批注：${d.teacher_comment}</div>`:''}
-        <div style="font-size:10px;color:var(--text-3);margin-top:6px">更新于 ${d.updated_at?.slice(0,10)||''}</div>
-      </div>`;
-    } else {
-      html += `<div style="font-size:11px;color:var(--text-3);padding:8px 0">暂无计划书记录，点击「更新进度」开始填写</div>`;
-    }
-    html += `</div>`;
-
-    // ── 4. 面谈记录 ──
-    if (validBookings.length) {
-      html += `<div style="margin-bottom:16px">
-        <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;margin-bottom:8px">📋 面谈记录（${validBookings.length}条）</div>`;
-      validBookings.slice(0,3).forEach(b => {
-        html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px">
-          <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">${b.slot_date} · ${typeLabel(b.type)}${b.actual_duration?' · '+b.actual_duration+'min':''}</div>
-          <pre style="font-size:11px;line-height:1.7;white-space:pre-wrap;font-family:'DM Mono',monospace;margin:0;color:var(--text-2)">${buildRecordText(b)}</pre>
-          ${b.teacher_file_url?`<a href="${b.teacher_file_url}" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-top:8px">📎 下载老师修改文件</a>`:''}
-        </div>`;
-      });
-      if (validBookings.length > 3) html += `<div style="font-size:11px;color:var(--text-3);text-align:center">还有 ${validBookings.length-3} 条记录…</div>`;
-      html += `</div>`;
-    }
-
-    // ── 5. 作业批改 ──
-    if (validHomework.length) {
-      html += `<div style="margin-bottom:16px">
-        <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;margin-bottom:8px">✏ 作业批改（${validHomework.length}条）</div>`;
-      validHomework.slice(0,3).forEach(r => {
-        html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px">
-          <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">${r.session_date} · ${r.course_name}</div>
-          ${r.feedback_knowledge?`<div style="font-size:11px;color:var(--text-2);margin-bottom:4px">📚 ${r.feedback_knowledge}</div>`:''}
-          ${r.feedback_suggestions?`<div style="font-size:11px;color:var(--text-2);margin-bottom:6px">💡 ${r.feedback_suggestions}</div>`:''}
-          <a href="${r.teacher_file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 下载批改文件</a>
-        </div>`;
-      });
-      html += `</div>`;
-    }
-
-    result.innerHTML = html;
-    // 挂上当前学生信息供编辑使用
-    result._studentId = student.id;
-    result._studentName = name;
-    result._studentMajor = student.major;
-    result._sharedLists = sharedLists;
-
-  } catch(e) {
-    result.innerHTML = `<div style="font-size:11px;color:var(--danger)">查询失败：${e.message}</div>`;
-  }
-}
-
-// ── 志望校编辑器 ──
 async function openSchoolPlanEditor(studentId, studentName, major) {
   const result = document.getElementById('retrievalResult');
   const sharedLists = result._sharedLists || [];
