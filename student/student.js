@@ -188,7 +188,7 @@ function buildForm() {
   <div id="schoolPlanBanner" style="display:none;background:#eef3fb;border:1px solid #2c4a7c;border-radius:3px;padding:10px 14px;margin-bottom:12px">
     <div style="font-size:12px;font-weight:600;color:#2c4a7c;margin-bottom:4px">🏫 老师已共享出愿学校列表</div>
     <div id="schoolPlanBannerText" style="font-size:11px;color:var(--text-2);line-height:1.8;margin-bottom:8px"></div>
-    <button onclick="scrollToRetrieval()" style="font-size:12px;background:#2c4a7c;color:#fff;border:none;border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">→ 查看出愿信息 &amp; 填写志望校</button>
+    <a href="../student/study.html?major=${major}" style="font-size:12px;background:#2c4a7c;color:#fff;border:none;border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit;text-decoration:none;display:inline-block">→ 查看出愿信息 &amp; 填写志望校</a>
   </div>
   <div class="card">
     <div class="card-title" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between" onclick="toggleCard('basicCardBody','basicCardArrow')">
@@ -372,7 +372,7 @@ function buildForm() {
   </div>
   <div class="booking-list" id="publicBookingList"><div class="loading">加载中…</div></div>
   <div style="text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid var(--border-light)">
-    <a href="javascript:void(0)" onclick="toggleRetrievalPanel()" style="font-size:10px;color:var(--text-muted);text-decoration:underline;cursor:pointer">查询学习记录</a>
+    <a href="../student/study.html?major=${major}" style="font-size:10px;color:var(--text-muted);text-decoration:underline;cursor:pointer">查询学习记录 →</a>
     <div id="retrievalPanel" style="display:none;margin-top:10px;text-align:left;background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:12px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
         <input type="text" id="rt_name" placeholder="姓名">
