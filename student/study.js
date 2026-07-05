@@ -88,6 +88,14 @@ async function loadStudyData() {
     sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(name)}&select=*&order=session_date.desc`).catch(()=>[]),
   ]);
   studyData = { timeline, schoolPlans, planDraft: planDraftArr[0]||null, sharedLists, bookings, sessionRecs };
+
+  // 拉取共享学校详情用于直接展示
+  if (sharedLists.length) {
+    const allIds = sharedLists.flatMap(sl => sl.school_ids || []);
+    if (allIds.length) {
+      studyData._sharedSchools = await sb(`/rest/v1/admission_schools?id=in.(${allIds.map(id=>`"${id}"`).join(',')})&select=id,university,faculty,department,application_period,english_required,japanese_required&order=application_period.asc`).catch(()=>[]);
+    }
+  }
 }
 
 // ══════════════════════════════════
@@ -158,17 +166,31 @@ function renderSchoolsTab() {
     <button onclick="openStudySchoolEditor()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 12px;cursor:pointer;font-family:inherit">✏ 编辑志望校</button>
   </div>`;
 
-  // 老师共享的学校提示
-  if (sharedLists.length && schoolPlans.length < 6) {
+  // 老师共享的学校列表直接展开显示
+  if (sharedLists.length) {
     const sl = sharedLists[0];
-    html += `<div style="background:#eef3fb;border:1px solid #2c4a7c;border-radius:3px;padding:10px 12px;margin-bottom:14px;font-size:11px">
-      <div style="font-weight:600;color:#2c4a7c;margin-bottom:3px">📋 ${sl.title}</div>
-      ${sl.notes?`<div style="color:var(--text-secondary)">${sl.notes}</div>`:''}
+    const sharedSchoolsData = studyData._sharedSchools || [];
+    html += `<div style="background:#eef3fb;border:1px solid #2c4a7c;border-radius:4px;padding:12px;margin-bottom:16px">
+      <div style="font-weight:600;color:#2c4a7c;margin-bottom:4px">📋 ${sl.title}</div>
+      ${sl.notes?`<div style="font-size:11px;color:#2c4a7c;margin-bottom:10px">${sl.notes}</div>`:''}
+      <div style="font-size:10px;color:#2c4a7c;margin-bottom:8px;opacity:.7">以下为老师推荐的可出愿学校，请根据情况在下方填写你的志望校：</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px">
+        ${sharedSchoolsData.map(s=>`
+        <div style="background:#fff;border:1px solid #c5d9f0;border-radius:3px;padding:8px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:2px">${s.university}</div>
+          <div style="font-size:10px;color:#555;margin-bottom:3px">${[s.faculty,s.department].filter(Boolean).join(' · ')}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${s.application_period?`<span style="font-size:10px;color:var(--accent)">📅 ${s.application_period}</span>`:''}
+            ${s.english_required&&s.english_required!=='不要'?`<span style="font-size:10px;color:#856404">英${s.english_required==='必須'?'✓':'△'}</span>`:''}
+            ${s.japanese_required&&s.japanese_required!=='不要'?`<span style="font-size:10px;color:#2a7a4a">日${s.japanese_required==='必須'?'✓':'△'}</span>`:''}
+          </div>
+        </div>`).join('')}
+      </div>
     </div>`;
   }
 
   if (!schoolPlans.length) {
-    return html + `<div class="empty-tip">暂未填写志望校<br>点击「编辑志望校」开始填写</div>`;
+    return html + `<div class="empty-tip">暂未填写志望校<br>根据上方学校列表，点击「编辑志望校」开始填写</div>`;
   }
 
   [1,2,3].forEach(lv => {
