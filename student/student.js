@@ -791,7 +791,10 @@ async function loadSchoolPlanBanner() {
     const name = localStorage.getItem('txe_student_name') || '';
     if (!name) return;
     // 拉取该专业最新共享列表
-    const shares = await sb(`/rest/v1/teacher_school_shares?major=eq.${major}&select=*&order=created_at.desc&limit=1`).catch(()=>[]);
+    const majorFilter = major === 'shakai_group'
+      ? 'major=in.("shakai","shinpan","fukushi","shakai_group")'
+      : `major=eq.${major}`;
+    const shares = await sb(`/rest/v1/teacher_school_shares?${majorFilter}&select=*&order=created_at.desc&limit=1`).catch(()=>[]);
     if (!shares.length) return;
     const share = shares[0];
     // 检查学生是否已填写志望校
@@ -849,7 +852,7 @@ async function lookupRetrieval() {
       sb(`/rest/v1/student_progress_timeline?student_id=eq.${student.id}&select=*&order=created_at.desc&limit=5`).catch(()=>[]),
       sb(`/rest/v1/student_school_plans?student_id=eq.${student.id}&select=*&order=level.asc`).catch(()=>[]),
       sb(`/rest/v1/student_plan_drafts?student_id=eq.${student.id}&select=*&order=created_at.desc&limit=1`).catch(()=>[]),
-      sb(`/rest/v1/teacher_school_shares?major=eq.${student.major}&select=*&order=created_at.desc&limit=3`).catch(()=>[]),
+      sb(`/rest/v1/teacher_school_shares?${student.major === 'shakai_group' ? 'major=in.("shakai","shinpan","fukushi","shakai_group")' : `major=eq.${student.major}`}&select=*&order=created_at.desc&limit=3`).catch(()=>[]),
     ]);
 
     const validBookings = bookings.filter(b => b.daily_record && Object.values(b.daily_record).some(v=>v));
