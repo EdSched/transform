@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>学习记录 — 唯新教育</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../student/student.css">
+<style>
+  .study-nav { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:20px; overflow-x:auto; }
+  .study-tab { padding:8px 16px; font-size:12px; background:none; border:none; border-bottom:2px solid transparent; cursor:pointer; font-family:inherit; color:var(--text-muted); white-space:nowrap; }
+  .study-tab.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
+  .section-label { font-size:10px; color:var(--text-muted); letter-spacing:.08em; text-transform:uppercase; margin-bottom:10px; }
+  .school-chip { display:inline-flex; align-items:center; gap:6px; background:var(--surface); border:1px solid var(--border); border-radius:3px; padding:5px 10px; font-size:11px; cursor:pointer; transition:all .15s; margin:3px; }
+  .school-chip:hover { border-color:var(--accent); }
+  .school-chip.selected { background:var(--accent-light); border-color:var(--accent); }
+  .school-chip .school-period { font-size:10px; color:var(--accent); }
+  .level-section { margin-bottom:16px; }
+  .level-header { font-size:11px; font-weight:600; margin-bottom:8px; display:flex; align-items:center; gap:6px; }
+  .school-card { background:var(--surface); border:1px solid var(--border-light); border-radius:4px; padding:12px; margin-bottom:8px; }
+  .school-card-name { font-weight:600; font-size:13px; margin-bottom:4px; }
+  .school-card-sub { font-size:11px; color:var(--text-secondary); margin-bottom:6px; }
+  .school-card-detail { font-size:11px; color:var(--text-muted); }
+  .empty-tip { text-align:center; padding:32px 0; color:var(--text-muted); font-size:12px; }
+  .badge { display:inline-block; font-size:10px; padding:1px 7px; border-radius:2px; }
+  .badge-ok { background:var(--success-light); color:var(--success); }
+  .badge-warn { background:var(--warning-light); color:var(--warning); }
+  .timeline-entry { padding:10px 0; border-bottom:1px solid var(--border-light); display:flex; gap:10px; }
+  .timeline-source { font-size:10px; padding:1px 7px; border-radius:2px; white-space:nowrap; align-self:flex-start; margin-top:2px; }
+</style>
+</head>
+<body>
+<header>
+  <div id="headerContent">
+    <div class="header-major">学习记录</div>
+    <div class="header-sub">唯新教育</div>
+  </div>
+</header>
+<div class="page-wrap" id="mainWrap">
+  <div class="loading">加载中…</div>
+</div>
+<script src="../shared/supabase.js"></script>
+<script src="../shared/constants.js"></script>
+<script src="study.js"></script>
+</body>
+</html>
