@@ -72,6 +72,9 @@ function applyStoredInfo(info) {
     if (el && val) el.value = val;
   }
   updateTypeOptions();
+  // 有保存信息时自动收起步骤1和2
+  collapseCard('basicCardBody', 'basicCardArrow');
+  collapseCard('progressCardBody', 'progressCardArrow');
   // show reminder banner
   const expiry = new Date(info.ts + STORAGE_DAYS * 24 * 60 * 60 * 1000);
   const expiryStr = `${expiry.getMonth() + 1}月${expiry.getDate()}日`;
@@ -79,8 +82,36 @@ function applyStoredInfo(info) {
   if (banner) {
     banner.style.display = 'block';
     banner.innerHTML = `📋 已自动填入上次保留的信息（保留至 ${expiryStr}）。如有进度更新请修改后再提交。
-      <button onclick="clearStoredInfo()" style="margin-left:10px;font-size:10px;color:var(--text-muted);background:none;border:1px solid var(--border);border-radius:2px;padding:1px 6px;cursor:pointer;font-family:inherit">清除</button>`;
+      <button onclick="expandCards()" style="margin-left:6px;font-size:10px;color:var(--accent);background:none;border:1px solid var(--accent);border-radius:2px;padding:1px 6px;cursor:pointer;font-family:inherit">展开修改</button>
+      <button onclick="clearStoredInfo()" style="margin-left:6px;font-size:10px;color:var(--text-muted);background:none;border:1px solid var(--border);border-radius:2px;padding:1px 6px;cursor:pointer;font-family:inherit">清除</button>`;
   }
+}
+
+function toggleCard(bodyId, arrowId) {
+  const body = document.getElementById(bodyId);
+  const arrow = document.getElementById(arrowId);
+  if (!body) return;
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : '';
+  if (arrow) arrow.style.transform = isOpen ? 'rotate(-90deg)' : '';
+}
+
+function collapseCard(bodyId, arrowId) {
+  const body = document.getElementById(bodyId);
+  const arrow = document.getElementById(arrowId);
+  if (body) body.style.display = 'none';
+  if (arrow) arrow.style.transform = 'rotate(-90deg)';
+}
+
+function expandCards() {
+  const body1 = document.getElementById('basicCardBody');
+  const body2 = document.getElementById('progressCardBody');
+  const arr1 = document.getElementById('basicCardArrow');
+  const arr2 = document.getElementById('progressCardArrow');
+  if (body1) body1.style.display = '';
+  if (body2) body2.style.display = '';
+  if (arr1) arr1.style.transform = '';
+  if (arr2) arr2.style.transform = '';
 }
 
 function clearStoredInfo() {
@@ -160,7 +191,11 @@ function buildForm() {
     <button onclick="scrollToRetrieval()" style="font-size:12px;background:#2c4a7c;color:#fff;border:none;border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">→ 查看出愿信息 &amp; 填写志望校</button>
   </div>
   <div class="card">
-    <div class="card-title"><span class="step-num">${stepBasic}</span>基本信息</div>
+    <div class="card-title" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between" onclick="toggleCard('basicCardBody','basicCardArrow')">
+      <span><span class="step-num">${stepBasic}</span>基本信息</span>
+      <span id="basicCardArrow" style="font-size:12px;color:var(--text-3);transition:transform .2s">▾</span>
+    </div>
+    <div id="basicCardBody">
     <div class="form-group"><label class="form-label">姓名 <span class="required">*</span></label><input type="text" id="name" placeholder="请输入中文真实姓名">
     <div style="font-size:10px;color:var(--text-muted);margin-top:3px">⚠ 请填写中文真实姓名，使用昵称或日文名将不予预约</div></div>
     <div class="form-group"><label class="form-label">出愿期间 <span class="required">*</span></label>
@@ -254,8 +289,14 @@ function buildForm() {
       </div>
     </div>
   </div>
+    </div><!-- /basicCardBody -->
+  </div>
   <div class="card">
-    <div class="card-title"><span class="step-num">${stepProgress}</span>当前学习进程</div>
+    <div class="card-title" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between" onclick="toggleCard('progressCardBody','progressCardArrow')">
+      <span><span class="step-num">${stepProgress}</span>当前学习进程</span>
+      <span id="progressCardArrow" style="font-size:12px;color:var(--text-3);transition:transform .2s">▾</span>
+    </div>
+    <div id="progressCardBody">
     <div class="progress-grid">
       <div class="form-group"><label class="form-label">专业知识</label>
         <select id="specialtyStatus" onchange="updateTypeOptions()"><option value="">请选择</option><option>刚开始</option><option>学习中</option><option>完成一期</option></select></div>
@@ -272,6 +313,7 @@ function buildForm() {
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">面试准备 <span class="required">*</span></label>
         <select id="interviewStatus" onchange="updateTypeOptions()"><option value="">请选择</option><option>已完成面试稿</option><option>面试稿撰写中</option><option>模拟面试中</option><option>未开始</option></select></div>
     </div>
+    </div><!-- /progressCardBody -->
   </div>
   ${stepType ? `<div class="card">
     <div class="card-title"><span class="step-num">${stepType}</span>面谈类型 <span style="font-size:10px;color:var(--text-muted);font-weight:400">（点击可筛选时间槽）</span></div>
