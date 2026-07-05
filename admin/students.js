@@ -366,6 +366,7 @@ async function generateAllStudentCodes() {
 
 // ── 考学进度页面 ──
 let progressStudentFilter = '';
+let progressViewMode = 'student'; // 'student' | 'season'
 
 async function renderProgressPage(mc, focusStudentId=null){
   mc.innerHTML='<div class="loading">加载中…</div>';
@@ -439,9 +440,22 @@ async function renderProgressPage(mc, focusStudentId=null){
     </div>`;
   }).join('');
 
+  // 如果是年度出愿情报视图
+  if (progressViewMode === 'season') {
+    await renderSeasonView(mc, students, timelineMap);
+    return;
+  }
+
   mc.innerHTML = `
   <div class="page-header">
-    <div class="section-title">考学进度 <span class="badge-count">${students.length}</span></div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <div class="section-title">考学进度</div>
+      <div style="display:flex;gap:4px">
+        <button class="btn btn-sm ${progressViewMode==='student'?'btn-primary':'btn-outline'}" onclick="progressViewMode='student';renderProgressPage(document.getElementById('mainContent'))">👤 学生视角</button>
+        <button class="btn btn-sm ${progressViewMode==='season'?'btn-primary':'btn-outline'}" onclick="progressViewMode='season';renderProgressPage(document.getElementById('mainContent'))">📋 年度出愿情报</button>
+      </div>
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="openAddProgressEntry()">＋ 录入进度</button>
   </div>
   <div class="filter-row">
     ${['all','keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map((m,i)=>`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this);renderProgressPage(document.getElementById('mainContent'))">${i===0?'全部专业':majorLabel(m)}</div>`).join('')}
@@ -775,4 +789,101 @@ async function confirmImport() {
     alert('导入失败：' + e.message);
     btn.textContent = '确认导入'; btn.disabled = false;
   }
+}
+
+// ── 年度出愿情报视图 ──
+async function renderSeasonView(mc, students, timelineMap) {
+  // 拉取所有学生志望校
+  const allPlans = await sb('/rest/v1/student_school_plans?select=*&order=level.asc').catch(()=>[]);
+  const seasonLabel = { summer:'夏季', winter:'冬季', next_year:'次年' };
+  const levelLabel = { 1:'🔴 冲刺', 2:'🟡 匹配', 3:'🟢 保底' };
+  const statusLabel = { preparing:'准备中', applied:'已出愿', passed:'✅ 合格', failed:'❌ 不合格' };
+
+  // 按季度分组
+  const seasonGroups = {};
+  allPlans.forEach(p => {
+    const key = p.exam_season || 'unknown';
+    if (!seasonGroups[key]) seasonGroups[key] = {};
+    // 按学校分组
+    const schoolKey = `${p.school_name}|||${p.faculty||''}|||${p.department||''}`;
+    if (!seasonGroups[key][schoolKey]) seasonGroups[key][schoolKey] = [];
+    seasonGroups[key][schoolKey].push(p);
+  });
+
+  // 专业筛选后的学生ID集合
+  const validStudentIds = new Set(students.map(s => s.id));
+
+  const seasonOrder = ['summer','winter','next_year','unknown'];
+  let html = `
+  <div class="page-header">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <div class="section-title">考学进度</div>
+      <div style="display:flex;gap:4px">
+        <button class="btn btn-sm btn-outline" onclick="progressViewMode='student';renderProgressPage(document.getElementById('mainContent'))">👤 学生视角</button>
+        <button class="btn btn-sm btn-primary">📋 年度出愿情报</button>
+      </div>
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="openAddProgressEntry()">＋ 录入进度</button>
+  </div>
+  <div class="filter-row">
+    ${['all','keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map((m,i)=>`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this);renderProgressPage(document.getElementById('mainContent'))">${i===0?'全部专业':majorLabel(m)}</div>`).join('')}
+  </div>`;
+
+  if (!allPlans.length) {
+    html += '<div style="text-align:center;padding:40px;color:var(--text-3)">暂无学生填写志望校数据</div>';
+    mc.innerHTML = html;
+    return;
+  }
+
+  seasonOrder.forEach(season => {
+    const schools = seasonGroups[season];
+    if (!schools) return;
+    // 过滤掉不在当前专业筛选内的学生
+    const filteredSchools = {};
+    Object.entries(schools).forEach(([key, plans]) => {
+      const filtered = plans.filter(p => validStudentIds.has(p.student_id));
+      if (filtered.length) filteredSchools[key] = filtered;
+    });
+    if (!Object.keys(filteredSchools).length) return;
+
+    const totalStudents = new Set(Object.values(filteredSchools).flat().map(p=>p.student_id)).size;
+    html += `<div style="margin-bottom:20px">
+      <div style="font-size:13px;font-weight:600;color:var(--text);padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:4px 4px 0 0;display:flex;align-items:center;gap:8px">
+        📅 ${seasonLabel[season]||season}出愿
+        <span style="font-size:11px;font-weight:400;color:var(--text-3)">${totalStudents} 名学生</span>
+      </div>
+      <div style="border:1px solid var(--border);border-top:none;border-radius:0 0 4px 4px;overflow:hidden">
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead>
+            <tr style="background:var(--bg)">
+              <th style="padding:6px 10px;text-align:left;color:var(--text-3);font-weight:600;border-bottom:1px solid var(--border-light);width:140px">大学・研究科</th>
+              <th style="padding:6px 10px;text-align:left;color:var(--text-3);font-weight:600;border-bottom:1px solid var(--border-light)">教授</th>
+              <th style="padding:6px 10px;text-align:left;color:var(--text-3);font-weight:600;border-bottom:1px solid var(--border-light);width:80px">出愿期间</th>
+              <th style="padding:6px 10px;text-align:left;color:var(--text-3);font-weight:600;border-bottom:1px solid var(--border-light)">学生（等级·状态）</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${Object.entries(filteredSchools).sort().map(([key, plans]) => {
+              const [school, faculty, dept] = key.split('|||');
+              const studentCells = plans.map(p =>
+                `<span style="display:inline-block;background:${p.status==='passed'?'var(--ok-bg)':p.status==='failed'?'#fdecea':'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px;margin:2px;font-size:10px">${p.student_name} <span style="color:var(--text-3)">${levelLabel[p.level]||''}</span>${p.status&&p.status!=='preparing'?` · ${statusLabel[p.status]}`:''}</span>`
+              ).join('');
+              const firstPlan = plans[0];
+              return `<tr style="border-bottom:1px solid var(--border-light)">
+                <td style="padding:8px 10px;vertical-align:top">
+                  <div style="font-weight:600">${school}</div>
+                  <div style="color:var(--text-3);font-size:10px">${[faculty,dept].filter(Boolean).join(' · ')}</div>
+                </td>
+                <td style="padding:8px 10px;vertical-align:top;color:var(--text-2)">${[...new Set(plans.map(p=>p.professor).filter(Boolean))].join('、') || '-'}</td>
+                <td style="padding:8px 10px;vertical-align:top;color:var(--accent)">${firstPlan.application_period||'-'}</td>
+                <td style="padding:8px 10px;vertical-align:top">${studentCells}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  });
+
+  mc.innerHTML = html;
 }
