@@ -120,6 +120,7 @@ async function initMajor() {
         teachers.forEach(t => { if (t.display_name) teacherDisplayNames[t.name] = t.display_name; });
       }
       buildForm();
+      loadSchoolPlanBanner(); // 检查是否有共享的学校列表
     } catch(e) {
       document.getElementById('mainWrap').innerHTML = `<div class="no-major-banner"><div class="no-major-title">加载失败</div><div class="no-major-text">${e.message}</div></div>`;
     }
@@ -152,6 +153,12 @@ function buildForm() {
     <button onclick="scrollToHomework()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit;font-weight:600;margin-top:4px">→ 去提交作业</button>
   </div>
   <div id="infoBanner" style="display:none;background:var(--warning-light);border:1px solid var(--warning);border-radius:3px;padding:9px 12px;margin-bottom:12px;font-size:11px;color:var(--warning);line-height:1.6"></div>
+  <!-- 出愿/计划书提醒 -->
+  <div id="schoolPlanBanner" style="display:none;background:#eef3fb;border:1px solid #2c4a7c;border-radius:3px;padding:10px 14px;margin-bottom:12px">
+    <div style="font-size:12px;font-weight:600;color:#2c4a7c;margin-bottom:4px">🏫 老师已共享出愿学校列表</div>
+    <div id="schoolPlanBannerText" style="font-size:11px;color:var(--text-2);line-height:1.8;margin-bottom:8px"></div>
+    <button onclick="scrollToRetrieval()" style="font-size:12px;background:#2c4a7c;color:#fff;border:none;border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">→ 查看出愿信息 &amp; 填写志望校</button>
+  </div>
   <div class="card">
     <div class="card-title"><span class="step-num">${stepBasic}</span>基本信息</div>
     <div class="form-group"><label class="form-label">姓名 <span class="required">*</span></label><input type="text" id="name" placeholder="请输入中文真实姓名">
@@ -732,6 +739,49 @@ function renderPublicList() {
 }
 
 // ── 查询面谈记录 ──
+function scrollToRetrieval() {
+  const panel = document.getElementById('retrievalPanel');
+  if (panel) { panel.style.display = 'block'; panel.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+}
+
+async function loadSchoolPlanBanner() {
+  try {
+    const name = localStorage.getItem('txe_student_name') || '';
+    if (!name) return;
+    // 拉取该专业最新共享列表
+    const shares = await sb(`/rest/v1/teacher_school_shares?major=eq.${major}&select=*&order=created_at.desc&limit=1`).catch(()=>[]);
+    if (!shares.length) return;
+    const share = shares[0];
+    // 检查学生是否已填写志望校
+    const code = localStorage.getItem('txe_student_code') || '';
+    if (!name || !code) {
+      // 未登录，只显示提示
+      document.getElementById('schoolPlanBanner').style.display = 'block';
+      document.getElementById('schoolPlanBannerText').textContent = `${share.title}已发布，请在下方「查询学习记录」中完成志望校填写。${share.notes||''}`;
+      return;
+    }
+    const stuMatch = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(name)}&student_code=eq.${encodeURIComponent(code.toUpperCase())}&select=id`).catch(()=>[]);
+    if (!stuMatch.length) return;
+    const plans = await sb(`/rest/v1/student_school_plans?student_id=eq.${stuMatch[0].id}&select=id&limit=1`).catch(()=>[]);
+    if (plans.length) return; // 已填写，不显示提醒
+    // 显示提醒
+    document.getElementById('schoolPlanBanner').style.display = 'block';
+    // 提取部分学校出愿时间
+    const schoolIds = share.school_ids || [];
+    let periodHint = '';
+    if (schoolIds.length) {
+      const sample = await sb(`/rest/v1/admission_schools?id=in.(${schoolIds.slice(0,5).map(id=>`"${id}"`).join(',')})&select=university,application_period`).catch(()=>[]);
+      if (sample.length) {
+        periodHint = sample.filter(s=>s.application_period).map(s=>`${s.university}：${s.application_period}`).join('　');
+      }
+    }
+    document.getElementById('schoolPlanBannerText').innerHTML =
+      `${share.title}已发布，请完成志望校填写。${share.notes?`<br>${share.notes}`:''}` +
+      (periodHint ? `<br><span style="color:var(--text-3);font-size:10px">📅 出愿参考：${periodHint}…</span>` : '');
+  } catch(e) { /* 静默失败 */ }
+}
+
+
 function toggleRetrievalPanel() {
   const p = document.getElementById('retrievalPanel');
   if (p) p.style.display = p.style.display === 'none' ? 'block' : 'none';
