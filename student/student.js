@@ -650,6 +650,32 @@ async function submitBooking() {
   try {
     const res = await sb('/rest/v1/bookings', 'POST', booking);
     cachedBookings.push(Array.isArray(res) ? res[0] : booking);
+
+    // 同步进度时间线
+    try {
+      const stuMatch = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(name)}&select=id,major`).catch(()=>[]);
+      if (stuMatch.length) {
+        const stu = stuMatch[0];
+        const planMap = {'尚未开始':'未开始','初步构思阶段':'收集资料中','草稿撰写中':'撰写中','已完成初稿':'修改中','已定稿':'已完成'};
+        const applyMap = {'尚未确认志望校':'择校确认中','正在确认志望校':'择校确认中','已确认志望校':'联系教授中','正在准备出愿材料':'材料准备中','已出愿':'已出愿'};
+        const jaText = buildJapaneseText();
+        const enText = buildEnglishText();
+        const entry = makeProgressEntry({
+          studentId: stu.id, studentName: name,
+          major: booking.major || stu.major,
+          source: 'student', sourceName: name,
+          japanese: mapJapaneseScore(jaText),
+          english: mapEnglishScore(enText),
+          plan: planMap[planStatus] || '',
+          apply: applyMap[booking.application_status] || '',
+          notes: [jaText?`日语：${jaText}`:'', enText?`英语：${enText}`:'', booking.target_school?`目标：${booking.target_school}`:''].filter(Boolean).join('　'),
+        });
+        if (entry.japanese||entry.english||entry.plan||entry.apply||entry.notes) {
+          sb('/rest/v1/student_progress_timeline','POST',entry).catch(()=>{});
+        }
+      }
+    } catch(e) { /* 进度同步失败不阻断预约 */ }
+
     // 保存信息到 localStorage
     saveStudentInfo();
     document.getElementById('successBanner').classList.add('show');
