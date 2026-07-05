@@ -789,7 +789,7 @@ function scrollToRetrieval() {
 async function loadSchoolPlanBanner() {
   try {
     const name = localStorage.getItem('txe_student_name') || '';
-    if (!name) return;
+    const code = localStorage.getItem('txe_student_code') || '';
     // 拉取该专业最新共享列表
     const majorFilter = major === 'shakai_group'
       ? 'major=in.("shakai","shinpan","fukushi","shakai_group")'
@@ -797,10 +797,8 @@ async function loadSchoolPlanBanner() {
     const shares = await sb(`/rest/v1/teacher_school_shares?${majorFilter}&select=*&order=created_at.desc&limit=1`).catch(()=>[]);
     if (!shares.length) return;
     const share = shares[0];
-    // 检查学生是否已填写志望校
-    const code = localStorage.getItem('txe_student_code') || '';
+    // 没有姓名查询码 → 直接显示提醒，不检查是否已填写
     if (!name || !code) {
-      // 未登录，只显示提示
       document.getElementById('schoolPlanBanner').style.display = 'block';
       document.getElementById('schoolPlanBannerText').textContent = `${share.title}已发布，请在下方「查询学习记录」中完成志望校填写。${share.notes||''}`;
       return;
