@@ -406,19 +406,24 @@ function isVipDone(booking) {
 function mapJapaneseScore(scoreText) {
   if (!scoreText) return '';
   const t = scoreText.toString();
-  // 有具体分数数字且没有「待考/备考」关键词 → 已合格
+  // 明确写出合格
+  if (t.includes('N1合格')) return 'N1合格';
+  if (t.includes('N2合格')) return 'N2合格';
+  if (t.includes('EJU完成')) return 'EJU完成';
+  // 有分数数字且没有「待考/备考」→ 已合格
   if (/\d{2,3}/.test(t) && !t.includes('待考') && !t.includes('备考')) {
     if (t.includes('N1')) return 'N1合格';
     if (t.includes('N2')) return 'N2合格';
     if (t.includes('EJU')) return 'EJU完成';
     return '成绩待出';
   }
-  // 明确写出合格
-  if (t.includes('N1合格')) return 'N1合格';
-  if (t.includes('N2合格')) return 'N2合格';
-  if (t.includes('EJU完成')) return 'EJU完成';
-  // 待考/备考/报名 → 已报名
-  if (t.includes('待考') || t.includes('备考') || t.includes('报名')) return '已报名';
+  // 待考/备考/报名 → 区分N几
+  if (t.includes('待考') || t.includes('备考') || t.includes('报名')) {
+    if (t.includes('N1')) return '已报名(N1)';
+    if (t.includes('N2')) return '已报名(N2)';
+    if (t.includes('EJU')) return '已报名(EJU)';
+    return '已报名';
+  }
   if (t.includes('EJU')) return 'EJU完成';
   return '备考中';
 }
@@ -427,8 +432,24 @@ function mapEnglishScore(scoreText) {
   if (!scoreText) return '';
   const t = scoreText.toString();
   if (t === '不需要' || t === '无') return '不需要';
-  if (t.includes('待考') || t.includes('备考') || t.includes('报名')) return '已报名';
-  if (/\d/.test(t) && !t.includes('待考') && !t.includes('备考')) return '已完成';
+  // 待考/备考/报名 → 区分考试类型
+  if (t.includes('待考') || t.includes('备考') || t.includes('报名')) {
+    if (t.includes('TOEFL')) return '已报名(TOEFL)';
+    if (t.includes('IELTS')) return '已报名(IELTS)';
+    if (t.includes('TOEIC')) return '已报名(TOEIC)';
+    if (t.includes('GRE')) return '已报名(GRE)';
+    if (t.includes('GMAT')) return '已报名(GMAT)';
+    return '已报名';
+  }
+  // 有分数 → 显示考试类型
+  if (/\d/.test(t) && !t.includes('待考') && !t.includes('备考')) {
+    if (t.includes('TOEFL')) return 'TOEFL完成';
+    if (t.includes('IELTS')) return 'IELTS完成';
+    if (t.includes('TOEIC')) return 'TOEIC完成';
+    if (t.includes('GRE')) return 'GRE完成';
+    if (t.includes('GMAT')) return 'GMAT完成';
+    return '已完成';
+  }
   return '备考中';
 }
 
@@ -559,8 +580,8 @@ function buildAdmissionFilterDesc(opts) {
 // ══════════════════════════════════
 
 const PROGRESS_OPTIONS = {
-  japanese: ['不需要','备考中','已报名','成绩待出','N2合格','N1合格','EJU完成'],
-  english:  ['不需要','备考中','已报名','成绩待出','已完成'],
+  japanese: ['不需要','备考中','已报名(N2)','已报名(N1)','已报名(EJU)','成绩待出','N2合格','N1合格','EJU完成'],
+  english:  ['不需要','备考中','已报名(TOEFL)','已报名(IELTS)','已报名(TOEIC)','已报名(GRE)','已报名(GMAT)','成绩待出','TOEFL完成','IELTS完成','TOEIC完成','GRE完成','GMAT完成','已完成'],
   plan:     ['未开始','收集资料中','撰写中','修改中','已完成'],
   apply:    ['择校确认中','联系教授中','材料准备中','已出愿','合格发表中','已合格'],
   exam:     ['不需要','笔试练习中','面试准备中','已完成'],
