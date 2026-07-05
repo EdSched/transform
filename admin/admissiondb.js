@@ -45,6 +45,7 @@ function renderAdmissionDbPage(mc) {
       <button class="btn btn-outline btn-sm" onclick="openAdmissionAdd()">＋ 添加</button>
       <button class="btn btn-outline btn-sm" onclick="exportAdmissionExcel()">↓ 导出 Excel</button>
       <button class="btn btn-outline btn-sm" onclick="exportAdmissionHtml()">↓ 导出 PDF表格</button>
+      <button class="btn btn-primary btn-sm" onclick="openShareToStudents()">📤 共享给学生</button>
     </div>
   </div>
 
@@ -693,4 +694,87 @@ async function confirmAdmissionImport() {
   } finally {
     btn.textContent = '确认导入'; btn.disabled = false;
   }
+}
+
+
+// ── 共享学校列表给学生 ──
+function openShareToStudents() {
+  const filtered = filterAdmissionSchools();
+  if (!filtered.length) { alert('请先选择专业并筛选学校'); return; }
+  const majorLabel = adbSelectedMajors.length === 1
+    ? (ADMISSION_MAJORS[adbSelectedMajors[0]] || adbSelectedMajors[0])
+    : adbSelectedMajors.map(m => ADMISSION_MAJORS[m]||m).join('・');
+  const existing = document.getElementById('shareModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'shareModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  const yr = new Date().getFullYear();
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:460px;width:100%">
+      <div style="font-size:14px;font-weight:600;margin-bottom:14px">📤 共享学校列表给学生</div>
+      <div style="font-size:12px;color:var(--text-2);background:var(--bg);border-radius:3px;padding:10px;margin-bottom:14px">
+        <div>专业：${majorLabel}</div>
+        <div>学校数：${filtered.length} 条</div>
+        <div style="margin-top:4px;font-size:11px;color:var(--text-3)">学生将在「查询学习记录」页面看到这份列表，可从中点选自己的志望校。</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">出愿季度</label>
+        <select id="share_season">
+          <option value="summer">夏季</option>
+          <option value="winter">冬季</option>
+          <option value="next_year">次年</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">年份</label>
+        <input type="number" id="share_year" value="${yr}" min="2024" max="2030">
+      </div>
+      <div class="form-group">
+        <label class="form-label">共享说明（给学生看的提示）</label>
+        <textarea id="share_notes" rows="2" placeholder="例：请在截止日期前完成志望校填写，每个等级选2校，找到2位教授…"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button onclick="confirmShareToStudents()" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">确认共享</button>
+        <button onclick="document.getElementById('shareModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:10px 14px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  // 存储当前筛选结果供确认时使用
+  window._shareFilteredSchools = filtered;
+  window._shareMajorLabel = majorLabel;
+}
+
+async function confirmShareToStudents() {
+  const schoolIds = (window._shareFilteredSchools || []).map(s => s.id);
+  const majorLabel = window._shareMajorLabel || '';
+  const count = schoolIds.length;
+  const season = document.getElementById('share_season').value;
+  const year = parseInt(document.getElementById('share_year').value);
+  const notes = document.getElementById('share_notes').value.trim();
+  const seasonLabel = { summer:'夏季', winter:'冬季', next_year:'次年' }[season] || season;
+
+  // 检查是否已有同专业同季度同年份的共享
+  const existing = await sb(`/rest/v1/teacher_school_shares?major=in.(${adbSelectedMajors.map(m=>`"${m}"`).join(',')})&season=eq.${season}&year=eq.${year}&select=id,title`).catch(()=>[]);
+
+  const data = {
+    id: `tss-${Date.now()}-${Math.random().toString(36).slice(2,4)}`,
+    major: adbSelectedMajors.length === 1 ? adbSelectedMajors[0] : adbSelectedMajors.join(','),
+    season, year,
+    title: `${year}年${seasonLabel} ${majorLabel} 出愿学校列表`,
+    school_ids: schoolIds,
+    shared_by: '管理员',
+    notes,
+  };
+
+  try {
+    if (existing.length) {
+      if (!confirm(`已有「${existing[0].title}」，确定覆盖更新？`)) return;
+      await sb(`/rest/v1/teacher_school_shares?id=eq.${existing[0].id}`, 'PATCH', { school_ids: schoolIds, notes, title: data.title });
+    } else {
+      await sb('/rest/v1/teacher_school_shares', 'POST', data);
+    }
+    document.getElementById('shareModal').remove();
+    alert(`✓ 已共享 ${count} 所学校给学生。学生将在学习记录里看到这份列表。`);
+  } catch(e) { alert('共享失败：' + e.message); }
 }
