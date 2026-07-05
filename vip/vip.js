@@ -98,6 +98,8 @@ async function vipLogin(name, code, silent) {
 
 async function loadVipData() {
   const teachers = vipStudent.vip_teachers || [];
+  _vipSchoolPlans = null; _vipPlanDraft = null;
+  await loadVipSchoolData();
   if (!teachers.length) { vipSlots = []; vipBookings = []; return; }
   const today = new Date().toISOString().slice(0, 10);
   const teacherFilter = teachers.map(t => `"${t}"`).join(',');
@@ -311,6 +313,8 @@ function renderVipMain() {
 
   ${renderVipProfileCard()}
   ${renderVipProgressCard()}
+  ${renderVipSchoolPlanCard()}
+  ${renderVipPlanDraftCard()}
 
   ${activeBooking ? renderVipActiveBooking(activeBooking) : ''}
 
@@ -369,6 +373,205 @@ function renderVipMain() {
     ${renderVipHistory()}
   </div>`;
 }
+
+// ── 志望校卡片（VIP） ──
+let _vipSchoolPlans = null;
+let _vipPlanDraft = null;
+
+async function loadVipSchoolData() {
+  if (_vipSchoolPlans !== null) return;
+  [_vipSchoolPlans, _vipPlanDraft] = await Promise.all([
+    sb(`/rest/v1/student_school_plans?student_id=eq.${vipStudent.id}&select=*&order=level.asc`).catch(()=>[]),
+    sb(`/rest/v1/student_plan_drafts?student_id=eq.${vipStudent.id}&select=*&order=created_at.desc&limit=1`).catch(()=>[]),
+  ]);
+}
+
+function renderVipSchoolPlanCard() {
+  const plans = _vipSchoolPlans || [];
+  const levelLabel = { 1:'🔴 冲刺', 2:'🟡 匹配', 3:'🟢 保底' };
+  const planRows = plans.length ? [1,2,3].map(lv => {
+    const lvPlans = plans.filter(p => p.level === lv);
+    if (!lvPlans.length) return '';
+    return `<div style="font-size:10px;color:var(--text-muted);margin:6px 0 3px">${levelLabel[lv]}</div>` +
+      lvPlans.map(p => `<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:7px 9px;margin-bottom:5px;font-size:11px">
+        <div style="font-weight:600">${p.school_name}</div>
+        <div style="color:var(--text-muted)">${[p.faculty,p.department].filter(Boolean).join(' · ')}</div>
+        ${p.professor?`<div style="color:var(--text-secondary);margin-top:2px">👤 ${p.professor}</div>`:''}
+        ${p.application_period?`<div style="color:var(--accent);margin-top:2px;font-size:10px">📅 ${p.application_period}</div>`:''}
+      </div>`).join('');
+  }).join('') : '<div style="font-size:11px;color:var(--text-muted)">暂未填写，请点击「编辑」完成志望校填写</div>';
+
+  return `<div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div class="card-title" style="margin:0">🏫 志望校列表 (${plans.length}/6)</div>
+      <button onclick="openVipSchoolPlanEditor()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:3px 10px;cursor:pointer;font-family:inherit;color:var(--text-secondary)">编辑</button>
+    </div>
+    ${planRows}
+  </div>`;
+}
+
+function renderVipPlanDraftCard() {
+  const d = (_vipPlanDraft || [])[0];
+  return `<div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div class="card-title" style="margin:0">📄 计划书进度</div>
+      <button onclick="openVipPlanDraftEditor()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:3px 10px;cursor:pointer;font-family:inherit;color:var(--text-secondary)">${d?'更新':'开始填写'}</button>
+    </div>
+    ${d ? `
+    <div style="font-size:12px;line-height:1.8">
+      ${d.research_question?`<div><span style="color:var(--text-muted)">问题意识：</span>${d.research_question}</div>`:''}
+      ${d.prior_research?`<div><span style="color:var(--text-muted)">先行研究：</span>${d.prior_research}</div>`:''}
+      ${d.methodology?`<div><span style="color:var(--text-muted)">研究方法：</span>${d.methodology}</div>`:''}
+      ${d.draft_file_url?`<a href="${d.draft_file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 草稿文件</a>`:''}
+      ${d.teacher_comment?`<div style="background:var(--ok-bg,#e4f5ee);border-radius:3px;padding:6px;font-size:11px;color:var(--ok,#2a9e6a);margin-top:8px">💬 老师批注：${d.teacher_comment}</div>`:''}
+    </div>` : '<div style="font-size:11px;color:var(--text-muted)">请点击「开始填写」填写计划书进度</div>'}
+  </div>`;
+}
+
+function openVipSchoolPlanEditor() {
+  // 复用 student.js 的逻辑，但适配 VIP 学生
+  const plans = _vipSchoolPlans || [];
+  const levelLabel = { 1:'🔴 冲刺（挑战）', 2:'🟡 匹配（目标）', 3:'🟢 保底' };
+  const modal = document.createElement('div');
+  modal.id = 'vipSchoolModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
+  const rows = plans.map((s,i) => `
+    <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px" id="vsp_row_${i}">
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <select style="font-size:11px;padding:3px 6px;font-family:inherit">
+          ${[1,2,3].map(lv=>`<option value="${lv}" ${s.level===lv?'selected':''}>${levelLabel[lv]}</option>`).join('')}
+        </select>
+        <button onclick="this.closest('[id]').remove()" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;color:var(--danger)">删除</button>
+      </div>
+      <input placeholder="学校名 *" value="${s.school_name||''}" style="font-size:11px;width:100%;margin-bottom:5px" data-field="school_name">
+      <input placeholder="研究科" value="${s.faculty||''}" style="font-size:11px;width:100%;margin-bottom:5px" data-field="faculty">
+      <input placeholder="専攻/コース" value="${s.department||''}" style="font-size:11px;width:100%;margin-bottom:5px" data-field="department">
+      <input placeholder="志望教授名" value="${s.professor||''}" style="font-size:11px;width:100%;margin-bottom:5px" data-field="professor">
+      <input placeholder="教授研究内容URL或说明" value="${s.professor_url||''}" style="font-size:11px;width:100%;margin-bottom:5px" data-field="professor_url">
+      <input placeholder="出愿期间" value="${s.application_period||''}" style="font-size:11px;width:100%" data-field="application_period">
+      <input type="hidden" value="${s.id||''}" data-field="id">
+    </div>`).join('');
+
+  modal.innerHTML = `
+    <div style="background:var(--surface,#fff);border-radius:6px;padding:20px;max-width:460px;width:100%;margin:auto">
+      <div style="font-size:14px;font-weight:600;margin-bottom:6px">🏫 志望校列表</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px">每个等级建议2所，共最多6所。建议每校找2位教授。</div>
+      <div id="vspContainer">${rows}</div>
+      <button onclick="addVspRow()" style="width:100%;background:none;border:1px dashed var(--border);border-radius:3px;padding:8px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text-muted);margin-bottom:14px">＋ 添加学校</button>
+      <div style="display:flex;gap:8px">
+        <button onclick="saveVipSchoolPlans()" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">保存</button>
+        <button onclick="document.getElementById('vipSchoolModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:10px 14px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+function addVspRow() {
+  const c = document.getElementById('vspContainer');
+  if (c.children.length >= 6) { alert('最多6所'); return; }
+  const i = Date.now();
+  const levelLabel = { 1:'🔴 冲刺（挑战）', 2:'🟡 匹配（目标）', 3:'🟢 保底' };
+  const div = document.createElement('div');
+  div.style.cssText = 'background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px';
+  div.id = `vsp_row_${i}`;
+  div.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <select style="font-size:11px;padding:3px 6px;font-family:inherit">
+        ${[1,2,3].map(lv=>`<option value="${lv}">${levelLabel[lv]}</option>`).join('')}
+      </select>
+      <button onclick="this.closest('[id]').remove()" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;color:var(--danger)">删除</button>
+    </div>
+    <input placeholder="学校名 *" style="font-size:11px;width:100%;margin-bottom:5px" data-field="school_name">
+    <input placeholder="研究科" style="font-size:11px;width:100%;margin-bottom:5px" data-field="faculty">
+    <input placeholder="専攻/コース" style="font-size:11px;width:100%;margin-bottom:5px" data-field="department">
+    <input placeholder="志望教授名" style="font-size:11px;width:100%;margin-bottom:5px" data-field="professor">
+    <input placeholder="教授研究内容URL或说明" style="font-size:11px;width:100%;margin-bottom:5px" data-field="professor_url">
+    <input placeholder="出愿期间" style="font-size:11px;width:100%" data-field="application_period">
+    <input type="hidden" value="" data-field="id">`;
+  c.appendChild(div);
+}
+
+async function saveVipSchoolPlans() {
+  const rows = [...document.getElementById('vspContainer').children];
+  const plans = rows.map(row => {
+    const get = f => row.querySelector(`[data-field="${f}"]`)?.value?.trim()||'';
+    return { id: get('id'), school_name: get('school_name'), faculty: get('faculty'), department: get('department'), professor: get('professor'), professor_url: get('professor_url'), application_period: get('application_period'), level: parseInt(row.querySelector('select')?.value||'2') };
+  }).filter(p => p.school_name);
+  if (!plans.length) { alert('请至少填写一所学校'); return; }
+  try {
+    await sb(`/rest/v1/student_school_plans?student_id=eq.${vipStudent.id}`, 'DELETE');
+    const toInsert = plans.map(p => ({
+      id: p.id || `ssp-${Date.now()}-${Math.random().toString(36).slice(2,4)}`,
+      student_id: vipStudent.id, student_name: vipStudent.name, major: vipStudent.major,
+      school_name: p.school_name, faculty: p.faculty, department: p.department,
+      professor: p.professor, professor_url: p.professor_url,
+      application_period: p.application_period, level: p.level, status: 'preparing',
+    }));
+    await sb('/rest/v1/student_school_plans', 'POST', toInsert);
+    _vipSchoolPlans = toInsert;
+    document.getElementById('vipSchoolModal').remove();
+    renderVipMain();
+  } catch(e) { alert('保存失败：' + e.message); }
+}
+
+function openVipPlanDraftEditor() {
+  const d = (_vipPlanDraft||[])[0] || {};
+  const modal = document.createElement('div');
+  modal.id = 'vipDraftModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
+  modal.innerHTML = `
+    <div style="background:var(--surface,#fff);border-radius:6px;padding:20px;max-width:460px;width:100%;margin:auto">
+      <div style="font-size:14px;font-weight:600;margin-bottom:14px">📄 计划书进度</div>
+      <div style="margin-bottom:10px"><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">问题意识</label>
+        <textarea id="vpd_q" rows="3" placeholder="你的研究问题是什么？" style="width:100%;font-size:11px">${d.research_question||''}</textarea></div>
+      <div style="margin-bottom:10px"><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">先行研究</label>
+        <textarea id="vpd_p" rows="3" placeholder="已读过哪些相关文献？" style="width:100%;font-size:11px">${d.prior_research||''}</textarea></div>
+      <div style="margin-bottom:10px"><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">先行研究链接</label>
+        <input id="vpd_pu" value="${d.prior_research_url||''}" placeholder="相关文献链接" style="font-size:11px;width:100%"></div>
+      <div style="margin-bottom:10px"><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">研究方法</label>
+        <textarea id="vpd_m" rows="2" placeholder="打算用什么研究方法？" style="width:100%;font-size:11px">${d.methodology||''}</textarea></div>
+      <div style="margin-bottom:14px"><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">草稿文件上传</label>
+        <input type="file" id="vpd_file" accept=".doc,.docx,.pdf,.txt" style="font-size:11px">
+        ${d.draft_file_url?`<a href="${d.draft_file_url}" target="_blank" style="font-size:10px;color:var(--accent);display:block;margin-top:4px">📎 当前草稿</a>`:''}</div>
+      ${d.teacher_comment?`<div style="background:var(--ok-bg,#e4f5ee);border-radius:3px;padding:8px;font-size:11px;color:var(--ok,#2a9e6a);margin-bottom:14px">💬 老师批注：${d.teacher_comment}</div>`:''}
+      <div style="display:flex;gap:8px">
+        <button onclick="saveVipPlanDraft('${d.id||''}')" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">保存</button>
+        <button onclick="document.getElementById('vipDraftModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:10px 14px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function saveVipPlanDraft(existingId) {
+  const q = document.getElementById('vpd_q').value.trim();
+  const p = document.getElementById('vpd_p').value.trim();
+  const pu = document.getElementById('vpd_pu').value.trim();
+  const m = document.getElementById('vpd_m').value.trim();
+  if (!q && !p && !m) { alert('请至少填写一项'); return; }
+
+  let fileUrl = '';
+  const fileEl = document.getElementById('vpd_file');
+  if (fileEl?.files[0]) {
+    const f = fileEl.files[0];
+    const ext = f.name.split('.').pop().toLowerCase();
+    fileUrl = await sbUpload('student-files', `${vipStudent.major||'vip'}/${Date.now()}_draft.${ext}`, f).catch(e => { alert('上传失败：'+e.message); return ''; });
+    if (!fileUrl) return;
+  }
+
+  const data = {
+    student_id: vipStudent.id, student_name: vipStudent.name, major: vipStudent.major,
+    research_question: q, prior_research: p, prior_research_url: pu, methodology: m,
+    draft_file_url: fileUrl || undefined, status: 'drafting', updated_at: new Date().toISOString(),
+  };
+  try {
+    if (existingId) { await sb(`/rest/v1/student_plan_drafts?id=eq.${existingId}`, 'PATCH', data); }
+    else { data.id = `spd-${Date.now()}-${Math.random().toString(36).slice(2,4)}`; await sb('/rest/v1/student_plan_drafts', 'POST', data); }
+    _vipPlanDraft = [data];
+    document.getElementById('vipDraftModal').remove();
+    renderVipMain();
+  } catch(e) { alert('保存失败：' + e.message); }
+}
+
 
 function renderVipActiveBooking(b) {
   const isPending = b.status === 'pending';
