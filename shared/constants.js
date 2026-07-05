@@ -402,6 +402,36 @@ function isVipDone(booking) {
   return booking.status === 'completed' || booking.student_confirmed;
 }
 
+// ── 语言成绩文本 → 进度状态映射 ──
+function mapJapaneseScore(scoreText) {
+  if (!scoreText) return '';
+  const t = scoreText.toString();
+  // 有具体分数数字且没有「待考/备考」关键词 → 已合格
+  if (/\d{2,3}/.test(t) && !t.includes('待考') && !t.includes('备考')) {
+    if (t.includes('N1')) return 'N1合格';
+    if (t.includes('N2')) return 'N2合格';
+    if (t.includes('EJU')) return 'EJU完成';
+    return '成绩待出';
+  }
+  // 明确写出合格
+  if (t.includes('N1合格')) return 'N1合格';
+  if (t.includes('N2合格')) return 'N2合格';
+  if (t.includes('EJU完成')) return 'EJU完成';
+  // 待考/备考/报名 → 已报名
+  if (t.includes('待考') || t.includes('备考') || t.includes('报名')) return '已报名';
+  if (t.includes('EJU')) return 'EJU完成';
+  return '备考中';
+}
+
+function mapEnglishScore(scoreText) {
+  if (!scoreText) return '';
+  const t = scoreText.toString();
+  if (t === '不需要' || t === '无') return '不需要';
+  if (t.includes('待考') || t.includes('备考') || t.includes('报名')) return '已报名';
+  if (/\d/.test(t) && !t.includes('待考') && !t.includes('备考')) return '已完成';
+  return '备考中';
+}
+
 // ── 出願数据库 HTML 导出（共享） ──
 // filtered: 已筛选的学校列表
 // opts: { majorLabel, filterLine, showMajor, majorMap }
