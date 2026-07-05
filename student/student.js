@@ -409,6 +409,8 @@ function buildForm() {
   applyStoredInfo(loadStudentInfo());
   // 加载作业提醒
   loadHomeworkNotice();
+  // 检查出愿共享banner（DOM重建后重新执行）
+  setTimeout(() => loadSchoolPlanBanner(), 200);
 }
 
 function getPlanStatus() { return document.getElementById('planStatus')?.value || ''; }
