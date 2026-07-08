@@ -177,18 +177,12 @@ function buildForm() {
     <div class="success-banner-title">✓ 预约申请已提交</div>
     <div class="success-banner-text">请等待老师确认，可在下方查看预约状态。</div>
   </div>
-  <!-- 作业提醒区块 -->
-  <div id="homeworkNotice" style="display:none;background:var(--ok-bg);border:1px solid var(--ok);border-radius:3px;padding:10px 14px;margin-bottom:12px">
-    <div style="font-size:12px;font-weight:600;color:var(--ok);margin-bottom:4px">📝 近期作业提醒</div>
-    <div id="homeworkNoticeList" style="font-size:11px;color:var(--text-2);line-height:1.8;margin-bottom:8px"></div>
-    <button onclick="scrollToHomework()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit;font-weight:600;margin-top:4px">→ 去提交作业</button>
+  <!-- 统一提醒条 -->
+  <div id="reminderStrip" style="display:none;background:#eef3fb;border:1px solid #2c4a7c;border-radius:3px;padding:12px 14px;margin-bottom:12px">
+    <div id="reminderItems" style="font-size:11px;color:#2c4a7c;line-height:2;margin-bottom:10px"></div>
+    <a href="../student/study.html?major=${major}" style="font-size:12px;background:#2c4a7c;color:#fff;border-radius:3px;padding:8px 18px;text-decoration:none;display:inline-block;font-weight:500">→ 前往学习记录完成</a>
   </div>
   <div id="infoBanner" style="display:none;background:var(--warning-light);border:1px solid var(--warning);border-radius:3px;padding:9px 12px;margin-bottom:12px;font-size:11px;color:var(--warning);line-height:1.6"></div>
-  <!-- 统一提醒条 -->
-  <div id="reminderStrip" style="display:none;background:#eef3fb;border:1px solid #2c4a7c;border-radius:3px;padding:10px 14px;margin-bottom:12px">
-    <div id="reminderItems" style="font-size:11px;color:#2c4a7c;line-height:2;margin-bottom:8px"></div>
-    <a href="../student/study.html?major=${major}" style="font-size:12px;background:#2c4a7c;color:#fff;border-radius:3px;padding:7px 16px;text-decoration:none;display:inline-block">→ 前往学习记录完成</a>
-  </div>
   <div class="card">
     <div class="card-title" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between" onclick="toggleCard('basicCardBody','basicCardArrow')">
       <span><span class="step-num">${stepBasic}</span>基本信息</span>
@@ -812,10 +806,8 @@ async function loadSchoolPlanBanner() {
       if (!schoolFilled) reminders.push(`🏫 ${shares[0].title} · 待填写志望校`);
     }
 
-    // 检查近期作业提醒（从 infoBanner 里的作业提醒获取）
-    const hwBanner = document.getElementById('hwBannerItems');
-    if (hwBanner && hwBanner.children.length) {
-      reminders.push(`📝 有近期作业待提交`);
+    if (window._hwReminders && window._hwReminders.length) {
+      window._hwReminders.forEach(r => reminders.push(r));
     }
 
     if (!reminders.length) return;
@@ -1197,15 +1189,10 @@ async function loadHomeworkNotice() {
     });
 
     if (!relevant.length) return;
-
-    const notice = document.getElementById('homeworkNotice');
-    const list = document.getElementById('homeworkNoticeList');
-    if (!notice || !list) return;
-
-    list.innerHTML = relevant.map(s =>
-      `${s.session_date} · ${s.course_name}${s.session_title ? ' · ' + s.session_title : ''}`
-    ).join('<br>');
-    notice.style.display = 'block';
+    window._hwReminders = relevant.map(s =>
+      `📝 ${s.session_date} · ${s.course_name}${s.session_title?' · '+s.session_title:''}`
+    );
+    setTimeout(() => loadSchoolPlanBanner(), 100);
   } catch(e) { /* 静默失败，不影响主流程 */ }
 }
 
