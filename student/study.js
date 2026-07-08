@@ -178,7 +178,7 @@ function renderSchoolsTab() {
           <option value="japanese_required" ${schoolSortBy==='japanese_required'?'selected':''}>日语不要优先</option>
         </select>
       </div>
-      <div style="border:1px solid #c5d9f0;border-radius:4px;overflow:auto;max-height:calc(100vh - 280px)">
+      <div style="border:1px solid #c5d9f0;border-radius:4px;overflow-y:auto;max-height:calc(100vh - 200px)">
         <table style="width:100%;border-collapse:collapse;font-size:11px">
           <thead style="position:sticky;top:0;z-index:1">
             <tr style="background:#ddeaf9">
@@ -264,9 +264,9 @@ function renderSchoolsTab() {
   editHtml += `</div>`;
 
   // 左右分栏，各自独立上下滚动
-  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-    <div style="overflow-y:auto;max-height:calc(100vh - 220px);padding-right:4px">${sharedTableHtml || '<div style="font-size:11px;color:var(--text-muted)">暂无共享学校列表</div>'}</div>
-    <div style="overflow-y:auto;max-height:calc(100vh - 220px);padding-right:4px">${editHtml}</div>
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
+    <div>${sharedTableHtml || '<div style="font-size:11px;color:var(--text-muted)">暂无共享学校列表</div>'}</div>
+    <div style="overflow-y:auto;max-height:calc(100vh - 160px);padding-right:4px">${editHtml}</div>
   </div>`;
 }
 
