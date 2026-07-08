@@ -6,18 +6,17 @@ const STUDY_STORAGE_KEY = 'txe_study_login';
 const STUDY_DAYS = 30;
 
 let studyStudent = null;
-let studyTab = 'schools'; // schools | plan | progress | records
-let studyData = { timeline: [], schoolPlans: [], planDraft: null, sharedLists: [], bookings: [], sessionRecs: [] };
+let studyTab = 'schools';
+let studyData = { timeline:[], schoolPlans:[], planDraft:null, sharedLists:[], sharedSchools:[], bookings:[], sessionRecs:[] };
+let schoolSortBy = 'application_period'; // application_period | japanese_required | english_required
+let schoolFilterLang = 'all'; // all | no_english | no_japanese | no_both
 
-// ── 从URL获取专业 ──
 const studyParams = new URLSearchParams(location.search);
 const studyMajor = studyParams.get('major') || '';
 
 // ── 初始化 ──
 async function initStudy() {
   const wrap = document.getElementById('mainWrap');
-
-  // 尝试从 localStorage 恢复登录
   try {
     const raw = localStorage.getItem(STUDY_STORAGE_KEY);
     if (raw) {
@@ -28,25 +27,23 @@ async function initStudy() {
       }
     }
   } catch(e) {}
-
   renderStudyLogin(wrap);
 }
 
 function renderStudyLogin(wrap) {
   wrap.innerHTML = `
-  <div class="card" style="max-width:360px;margin:40px auto">
-    <div class="card-title" style="font-size:15px;margin-bottom:16px">学习记录查询</div>
-    <div class="form-group">
-      <label class="form-label">姓名</label>
-      <input id="sl_name" placeholder="真实姓名" autocomplete="name">
+  <div style="max-width:360px;margin:40px auto;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:24px">
+    <div style="font-size:15px;font-weight:600;margin-bottom:18px">学习记录查询</div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">姓名</label>
+      <input id="sl_name" placeholder="真实姓名" style="width:100%;font-size:13px;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg)">
     </div>
-    <div class="form-group">
-      <label class="form-label">查询码</label>
-      <input id="sl_code" placeholder="查询码" style="text-transform:uppercase" autocomplete="off"
-        onkeydown="if(event.key==='Enter')studyLoginSubmit()">
+    <div style="margin-bottom:14px">
+      <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">查询码</label>
+      <input id="sl_code" placeholder="查询码" style="width:100%;font-size:13px;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);text-transform:uppercase" onkeydown="if(event.key==='Enter')studyLoginSubmit()">
     </div>
-    <div id="sl_error" style="font-size:11px;color:var(--danger);min-height:16px;margin-bottom:8px"></div>
-    <button onclick="studyLoginSubmit()" class="btn btn-primary btn-full">查询 →</button>
+    <div id="sl_error" style="font-size:11px;color:var(--danger);min-height:16px;margin-bottom:10px"></div>
+    <button onclick="studyLoginSubmit()" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:11px;font-size:13px;cursor:pointer;font-family:inherit">查询 →</button>
     <div style="font-size:10px;color:var(--text-muted);margin-top:10px;text-align:center">查询码由老师/管理员提供</div>
   </div>`;
 }
@@ -70,10 +67,7 @@ async function studyLogin(name, code, silent) {
     await loadStudyData();
     renderStudyMain();
     return true;
-  } catch(e) {
-    if (!silent) console.error(e);
-    return false;
-  }
+  } catch(e) { if (!silent) console.error(e); return false; }
 }
 
 async function loadStudyData() {
@@ -87,61 +81,57 @@ async function loadStudyData() {
     sb(`/rest/v1/bookings?name=eq.${encodeURIComponent(name)}&status=in.("confirmed","completed")&select=*&order=slot_date.desc`).catch(()=>[]),
     sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(name)}&select=*&order=session_date.desc`).catch(()=>[]),
   ]);
-  studyData = { timeline, schoolPlans, planDraft: planDraftArr[0]||null, sharedLists, bookings, sessionRecs };
-
-  // 拉取共享学校详情用于直接展示
+  let sharedSchools = [];
   if (sharedLists.length) {
     const allIds = sharedLists.flatMap(sl => sl.school_ids || []);
     if (allIds.length) {
-      studyData._sharedSchools = await sb(`/rest/v1/admission_schools?id=in.(${allIds.map(id=>`"${id}"`).join(',')})&select=id,university,faculty,department,application_period,english_required,japanese_required&order=application_period.asc`).catch(()=>[]);
+      sharedSchools = await sb(`/rest/v1/admission_schools?id=in.(${allIds.map(id=>`"${id}"`).join(',')})&select=id,university,faculty,department,course,application_period,english_required,japanese_required,written_exam,oral_exam,result_date&order=application_period.asc`).catch(()=>[]);
     }
   }
+  studyData = { timeline, schoolPlans, planDraft: planDraftArr[0]||null, sharedLists, sharedSchools, bookings, sessionRecs };
 }
 
 // ══════════════════════════════════
-// 主页面渲染
+// 主页面
 // ══════════════════════════════════
 function renderStudyMain() {
   const s = studyStudent;
   const latest = getLatestProgress(studyData.timeline);
+  const tabs = [
+    { id:'schools', label:`🏫 志望校 (${studyData.schoolPlans.length}/6)` },
+    { id:'plan', label:'📄 计划书' },
+    { id:'progress', label:'📊 考学进度' },
+    { id:'records', label:'📋 面谈记录' },
+  ];
+
+  // 进度概览 badges
+  const badges = Object.entries(PROGRESS_LABELS).map(([k]) => {
+    const val = latest[k] || (k==='japanese'&&s.japanese_score?'有成绩':k==='english'&&s.english_score?'有成绩':'');
+    if (!val) return '';
+    const score = k==='japanese'&&s.japanese_score?` · ${s.japanese_score}`:k==='english'&&s.english_score?` · ${s.english_score}`:'';
+    const done = isProgressDone(k, latest[k]);
+    return `<span style="font-size:11px;background:${done?'var(--ok-bg)':'var(--warn-bg)'};color:${done?'var(--ok)':'var(--warn)'};padding:2px 8px;border-radius:2px">${PROGRESS_ICONS[k]} ${latest[k]||''}${score}</span>`;
+  }).filter(Boolean).join('');
 
   document.getElementById('mainWrap').innerHTML = `
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
     <div>
-      <div style="font-size:16px;font-weight:600">${s.name}</div>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${MAJORS[s.major]||s.major||''}${s.target_enrollment?` · 目标入学：${s.target_enrollment}`:''}</div>
+      <span style="font-size:16px;font-weight:600">${s.name}</span>
+      <span style="font-size:11px;color:var(--text-muted);margin-left:8px">${MAJORS[s.major]||s.major||''}${s.target_enrollment?` · 目标：${s.target_enrollment}`:''}</span>
     </div>
     <button onclick="studyLogout()" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit;color:var(--text-muted)">退出</button>
   </div>
-
-  <!-- 快速进度概览 -->
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
-    ${Object.entries(PROGRESS_LABELS).map(([k,label]) => {
-      const val = k==='japanese'&&!latest[k]&&s.japanese_score ? '有成绩' : k==='english'&&!latest[k]&&s.english_score ? '有成绩' : latest[k];
-      if (!val) return '';
-      const done = isProgressDone(k, latest[k]);
-      const score = k==='japanese'&&s.japanese_score ? ` · ${s.japanese_score}` : k==='english'&&s.english_score ? ` · ${s.english_score}` : '';
-      return `<span style="font-size:10px;background:${done?'var(--success-light)':'var(--warning-light)'};color:${done?'var(--success)':'var(--warning)'};padding:2px 8px;border-radius:2px">${PROGRESS_ICONS[k]} ${latest[k]||''}${score}</span>`;
-    }).join('')}
+  ${badges?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px">${badges}</div>`:''}
+  <div style="display:flex;gap:0;border-bottom:2px solid var(--border-light);margin-bottom:18px">
+    ${tabs.map(t=>`<button onclick="switchStudyTab('${t.id}')" style="padding:7px 14px;font-size:12px;background:none;border:none;border-bottom:2px solid ${studyTab===t.id?'var(--accent)':'transparent'};margin-bottom:-2px;cursor:pointer;font-family:inherit;color:${studyTab===t.id?'var(--accent)':'var(--text-muted)'};font-weight:${studyTab===t.id?'600':'400'};white-space:nowrap">${t.label}</button>`).join('')}
   </div>
-
-  <!-- 标签导航 -->
-  <div class="study-nav">
-    <button class="study-tab ${studyTab==='schools'?'active':''}" onclick="switchStudyTab('schools')">🏫 志望校 (${studyData.schoolPlans.length})</button>
-    <button class="study-tab ${studyTab==='plan'?'active':''}" onclick="switchStudyTab('plan')">📄 计划书</button>
-    <button class="study-tab ${studyTab==='progress'?'active':''}" onclick="switchStudyTab('progress')">📊 考学进度</button>
-    <button class="study-tab ${studyTab==='records'?'active':''}" onclick="switchStudyTab('records')">📋 面谈记录</button>
-  </div>
-
   <div id="studyTabContent"></div>`;
-
   renderStudyTab();
 }
 
 function switchStudyTab(tab) {
   studyTab = tab;
-  document.querySelectorAll('.study-tab').forEach(b => b.classList.toggle('active', b.textContent.includes(tab==='schools'?'志望':tab==='plan'?'计划':tab==='progress'?'考学':'面谈')));
-  renderStudyTab();
+  renderStudyMain();
 }
 
 function renderStudyTab() {
@@ -157,88 +147,153 @@ function renderStudyTab() {
 // 志望校 Tab
 // ══════════════════════════════════
 function renderSchoolsTab() {
-  const { schoolPlans, sharedLists } = studyData;
-  const levelLabel = { 1:'🔴 冲刺（挑战）', 2:'🟡 匹配（目标）', 3:'🟢 保底' };
-  const levelColor = { 1:'#c0392b', 2:'#d4ac0d', 3:'#27ae60' };
+  const { schoolPlans, sharedLists, sharedSchools } = studyData;
+  const levelLabel = { 1:'🔴 冲刺', 2:'🟡 匹配', 3:'🟢 保底' };
 
-  let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-    <div class="section-label" style="margin:0">志望校列表 (${schoolPlans.length}/6)</div>
-    <button onclick="openStudySchoolEditor()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 12px;cursor:pointer;font-family:inherit">✏ 编辑志望校</button>
-  </div>`;
+  // 排序+筛选共享学校
+  let displaySchools = [...sharedSchools];
+  if (schoolFilterLang === 'no_english') displaySchools = displaySchools.filter(s => s.english_required === '不要');
+  else if (schoolFilterLang === 'no_japanese') displaySchools = displaySchools.filter(s => s.japanese_required === '不要');
+  else if (schoolFilterLang === 'no_both') displaySchools = displaySchools.filter(s => s.english_required === '不要' && s.japanese_required === '不要');
 
-  // 老师共享的学校列表直接展开显示
+  if (schoolSortBy === 'application_period') displaySchools.sort((a,b) => (a.application_period||'').localeCompare(b.application_period||''));
+  else if (schoolSortBy === 'english_required') displaySchools.sort((a,b) => (a.english_required==='不要'?0:1)-(b.english_required==='不要'?0:1));
+  else if (schoolSortBy === 'japanese_required') displaySchools.sort((a,b) => (a.japanese_required==='不要'?0:1)-(b.japanese_required==='不要'?0:1));
+
+  let html = '';
+
+  // 共享学校列表（表格形式）
   if (sharedLists.length) {
     const sl = sharedLists[0];
-    const sharedSchoolsData = studyData._sharedSchools || [];
-    html += `<div style="background:#eef3fb;border:1px solid #2c4a7c;border-radius:4px;padding:12px;margin-bottom:16px">
-      <div style="font-weight:600;color:#2c4a7c;margin-bottom:4px">📋 ${sl.title}</div>
-      ${sl.notes?`<div style="font-size:11px;color:#2c4a7c;margin-bottom:10px">${sl.notes}</div>`:''}
-      <div style="font-size:10px;color:#2c4a7c;margin-bottom:8px;opacity:.7">以下为老师推荐的可出愿学校，请根据情况在下方填写你的志望校：</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px">
-        ${sharedSchoolsData.map(s=>`
-        <div style="background:#fff;border:1px solid #c5d9f0;border-radius:3px;padding:8px">
-          <div style="font-size:12px;font-weight:600;margin-bottom:2px">${s.university}</div>
-          <div style="font-size:10px;color:#555;margin-bottom:3px">${[s.faculty,s.department].filter(Boolean).join(' · ')}</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            ${s.application_period?`<span style="font-size:10px;color:var(--accent)">📅 ${s.application_period}</span>`:''}
-            ${s.english_required&&s.english_required!=='不要'?`<span style="font-size:10px;color:#856404">英${s.english_required==='必須'?'✓':'△'}</span>`:''}
-            ${s.japanese_required&&s.japanese_required!=='不要'?`<span style="font-size:10px;color:#2a7a4a">日${s.japanese_required==='必須'?'✓':'△'}</span>`:''}
-          </div>
-        </div>`).join('')}
+    html += `<div style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-size:12px;font-weight:600;color:#2c4a7c">📋 ${sl.title}</div>
+          ${sl.notes?`<div style="font-size:11px;color:#2c4a7c;opacity:.8">${sl.notes}</div>`:''}
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <select onchange="schoolFilterLang=this.value;renderStudyTab()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+            <option value="all" ${schoolFilterLang==='all'?'selected':''}>全部</option>
+            <option value="no_english" ${schoolFilterLang==='no_english'?'selected':''}>不要英语</option>
+            <option value="no_japanese" ${schoolFilterLang==='no_japanese'?'selected':''}>不要日语</option>
+            <option value="no_both" ${schoolFilterLang==='no_both'?'selected':''}>均不要</option>
+          </select>
+          <select onchange="schoolSortBy=this.value;renderStudyTab()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+            <option value="application_period" ${schoolSortBy==='application_period'?'selected':''}>按出愿期排序</option>
+            <option value="english_required" ${schoolSortBy==='english_required'?'selected':''}>英语不要优先</option>
+            <option value="japanese_required" ${schoolSortBy==='japanese_required'?'selected':''}>日语不要优先</option>
+          </select>
+        </div>
+      </div>
+      <div style="border:1px solid #c5d9f0;border-radius:4px;overflow:hidden">
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead>
+            <tr style="background:#ddeaf9">
+              <th style="padding:7px 10px;text-align:left;font-weight:600;color:#2c4a7c;border-bottom:1px solid #c5d9f0">大学</th>
+              <th style="padding:7px 10px;text-align:left;font-weight:600;color:#2c4a7c;border-bottom:1px solid #c5d9f0">研究科/専攻</th>
+              <th style="padding:7px 8px;text-align:center;font-weight:600;color:#2c4a7c;border-bottom:1px solid #c5d9f0;white-space:nowrap">出愿期间</th>
+              <th style="padding:7px 8px;text-align:center;font-weight:600;color:#2c4a7c;border-bottom:1px solid #c5d9f0">日语</th>
+              <th style="padding:7px 8px;text-align:center;font-weight:600;color:#2c4a7c;border-bottom:1px solid #c5d9f0">英语</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${displaySchools.map((s,i) => {
+              const jpColor = s.japanese_required==='不要'?'#27ae60':s.japanese_required==='必須'?'#c0392b':'#856404';
+              const enColor = s.english_required==='不要'?'#27ae60':s.english_required==='必須'?'#c0392b':'#856404';
+              return `<tr style="border-bottom:1px solid #e8f0fb;background:${i%2===0?'#fff':'#f5f9ff'}">
+                <td style="padding:7px 10px;font-weight:600">${s.university}</td>
+                <td style="padding:7px 10px;color:#444">${[s.faculty,s.department,s.course].filter(Boolean).join(' · ')}</td>
+                <td style="padding:7px 8px;text-align:center;color:var(--accent)">${s.application_period||'-'}</td>
+                <td style="padding:7px 8px;text-align:center;color:${jpColor};font-weight:600">${s.japanese_required||'-'}</td>
+                <td style="padding:7px 8px;text-align:center;color:${enColor};font-weight:600">${s.english_required||'-'}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
       </div>
     </div>`;
   }
 
+  // 已选志望校
+  html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+    <div style="font-size:12px;font-weight:600">我的志望校 (${schoolPlans.length}/6)</div>
+    <button onclick="openStudySchoolEditor()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 14px;cursor:pointer;font-family:inherit">✏ 编辑</button>
+  </div>`;
+
   if (!schoolPlans.length) {
-    return html + `<div class="empty-tip">暂未填写志望校<br>根据上方学校列表，点击「编辑志望校」开始填写</div>`;
+    html += `<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:12px;border:1px dashed var(--border);border-radius:3px">参考上方列表，点击「编辑」填写志望校</div>`;
+    return html;
   }
 
   [1,2,3].forEach(lv => {
     const lvPlans = schoolPlans.filter(p => p.level === lv);
     if (!lvPlans.length) return;
-    html += `<div class="level-section">
-      <div class="level-header"><span style="color:${levelColor[lv]}">${levelLabel[lv]}</span><span style="font-size:10px;color:var(--text-muted);font-weight:400">${lvPlans.length}所</span></div>`;
+    html += `<div style="margin-bottom:14px">
+      <div style="font-size:11px;font-weight:600;margin-bottom:8px">${levelLabel[lv]}</div>`;
     lvPlans.forEach(p => {
-      const statusMap = { preparing:'准备中', applied:'已出愿', passed:'✅ 合格', failed:'❌ 不合格' };
-      html += `<div class="school-card">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between">
-          <div class="school-card-name">${p.school_name}</div>
-          ${p.status&&p.status!=='preparing'?`<span class="badge ${p.status==='passed'?'badge-ok':'badge-warn'}">${statusMap[p.status]||p.status}</span>`:''}
+      html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:8px;font-size:11px">
+        <div style="font-weight:600;font-size:13px;margin-bottom:4px">${p.school_name}</div>
+        <div style="color:var(--text-secondary);margin-bottom:6px">${[p.faculty,p.department].filter(Boolean).join(' · ')}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;color:var(--text-muted)">
+          ${p.professor?`<div>👤 教授1：${p.professor}</div>`:''}
+          ${p.professor2?`<div>👤 教授2：${p.professor2}</div>`:''}
+          ${p.professor_url?`<div><a href="${p.professor_url}" target="_blank" style="color:var(--accent)">🔗 教授1研究内容</a></div>`:''}
+          ${p.professor2_url?`<div><a href="${p.professor2_url}" target="_blank" style="color:var(--accent)">🔗 教授2研究内容</a></div>`:''}
+          ${p.application_period?`<div>📅 出愿：${p.application_period}</div>`:''}
+          ${p.exam_date?`<div>📝 考试：${p.exam_date}</div>`:''}
+          ${p.documents_required?`<div style="grid-column:1/-1">📋 必要书类：${p.documents_required}</div>`:''}
+          ${p.plan_requirement?`<div style="grid-column:1/-1">📄 计划书要求：${p.plan_requirement}</div>`:''}
+          ${p.research_theme?`<div style="grid-column:1/-1">🔬 研究课题：${p.research_theme}</div>`:''}
         </div>
-        ${p.faculty||p.department?`<div class="school-card-sub">${[p.faculty,p.department].filter(Boolean).join(' · ')}</div>`:''}
-        ${p.professor?`<div class="school-card-detail">👤 ${p.professor}</div>`:''}
-        ${p.professor_url?`<div class="school-card-detail" style="margin-top:3px"><a href="${p.professor_url}" target="_blank" style="color:var(--accent);font-size:10px">🔗 教授研究内容</a></div>`:''}
-        ${p.application_period?`<div style="font-size:11px;color:var(--accent);margin-top:4px">📅 ${p.application_period}</div>`:''}
-        ${p.notes?`<div class="school-card-detail" style="margin-top:4px;font-style:italic">${p.notes}</div>`:''}
+        ${p.notes?`<div style="color:var(--text-muted);margin-top:4px;font-style:italic">${p.notes}</div>`:''}
       </div>`;
     });
     html += `</div>`;
   });
-
   return html;
 }
 
 // ══════════════════════════════════
-// 计划书 Tab
+// 计划书 Tab（拆成先行研究+草稿）
 // ══════════════════════════════════
 function renderPlanTab() {
   const d = studyData.planDraft;
-  let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-    <div class="section-label" style="margin:0">计划书进度</div>
-    <button onclick="openStudyPlanEditor()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 12px;cursor:pointer;font-family:inherit">${d?'✏ 更新':'＋ 开始填写'}</button>
+  let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <div style="font-size:12px;font-weight:600">计划书进度</div>
+    <button onclick="openStudyPlanEditor()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 14px;cursor:pointer;font-family:inherit">${d?'✏ 更新':'＋ 开始填写'}</button>
   </div>`;
 
-  if (!d) return html + `<div class="empty-tip">暂未填写计划书进度<br>点击「开始填写」记录你的研究进展</div>`;
+  if (!d) return html + `<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:12px;border:1px dashed var(--border);border-radius:3px">点击「开始填写」记录研究进展</div>`;
 
-  html += `<div class="card">`;
-  if (d.research_question) html += `<div style="margin-bottom:12px"><div class="section-label">问题意识</div><div style="font-size:12px;line-height:1.8">${d.research_question}</div></div>`;
-  if (d.prior_research) html += `<div style="margin-bottom:12px"><div class="section-label">先行研究</div><div style="font-size:12px;line-height:1.8">${d.prior_research}</div></div>`;
-  if (d.prior_research_url) html += `<div style="margin-bottom:12px"><div class="section-label">先行研究链接</div><a href="${d.prior_research_url}" target="_blank" style="font-size:12px;color:var(--accent)">🔗 ${d.prior_research_url}</a></div>`;
-  if (d.methodology) html += `<div style="margin-bottom:12px"><div class="section-label">研究方法</div><div style="font-size:12px;line-height:1.8">${d.methodology}</div></div>`;
-  if (d.draft_file_url) html += `<div style="margin-bottom:12px"><div class="section-label">草稿文件</div><a href="${d.draft_file_url}" target="_blank" style="font-size:12px;color:var(--accent)">📎 下载草稿文件</a></div>`;
-  if (d.teacher_comment) html += `<div style="background:var(--success-light);border-radius:3px;padding:10px 12px;margin-top:8px"><div style="font-size:10px;color:var(--success);font-weight:600;margin-bottom:4px">💬 老师批注</div><div style="font-size:12px;line-height:1.8;color:var(--success)">${d.teacher_comment}</div></div>`;
+  // 先行研究部分
+  if (d.research_question || d.prior_research || d.methodology || d.prior_research_url) {
+    html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:10px;letter-spacing:.06em">先行研究</div>
+      ${d.research_question?`<div style="margin-bottom:10px"><div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">问题意识</div><div style="font-size:12px;line-height:1.8">${d.research_question}</div></div>`:''}
+      ${d.prior_research?`<div style="margin-bottom:10px"><div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">先行研究整理</div><div style="font-size:12px;line-height:1.8">${d.prior_research}</div></div>`:''}
+      ${d.methodology?`<div style="margin-bottom:10px"><div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">研究方法</div><div style="font-size:12px;line-height:1.8">${d.methodology}</div></div>`:''}
+      ${d.prior_research_url?`<div><a href="${d.prior_research_url}" target="_blank" style="font-size:12px;color:var(--accent)">🔗 参考文献链接</a></div>`:''}
+    </div>`;
+  }
+
+  // 草稿部分
+  if (d.draft_file_url || d.draft_notes) {
+    html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:10px;letter-spacing:.06em">计划书草稿</div>
+      ${d.draft_notes?`<div style="font-size:12px;line-height:1.8;margin-bottom:8px">${d.draft_notes}</div>`:''}
+      ${d.draft_file_url?`<a href="${d.draft_file_url}" target="_blank" style="font-size:12px;color:var(--accent)">📎 下载草稿文件</a>`:''}
+    </div>`;
+  }
+
+  // 老师批注
+  if (d.teacher_comment) {
+    html += `<div style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:4px;padding:12px">
+      <div style="font-size:11px;font-weight:600;color:var(--ok);margin-bottom:6px">💬 老师批注</div>
+      <div style="font-size:12px;line-height:1.8;color:var(--ok)">${d.teacher_comment}</div>
+    </div>`;
+  }
+
   html += `<div style="font-size:10px;color:var(--text-muted);margin-top:10px">最后更新：${d.updated_at?.slice(0,10)||''}</div>`;
-  html += `</div>`;
   return html;
 }
 
@@ -250,31 +305,28 @@ function renderProgressTab() {
   const s = studyStudent;
   const latest = getLatestProgress(timeline);
 
-  let html = `<div style="margin-bottom:14px">
-    <div class="section-label">当前进度</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
-      ${Object.entries(PROGRESS_LABELS).map(([k,label]) => {
-        const val = latest[k];
-        const score = k==='japanese'&&s.japanese_score ? s.japanese_score : k==='english'&&s.english_score ? s.english_score : '';
-        return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px">
-          <div style="font-size:10px;color:var(--text-muted);margin-bottom:5px">${PROGRESS_ICONS[k]} ${label}</div>
-          ${val ? renderProgressBadge(k, val) : '<span style="font-size:11px;color:var(--text-muted)">未填写</span>'}
-          ${score?`<div style="font-size:11px;color:var(--text-secondary);margin-top:4px">${score}</div>`:''}
-        </div>`;
-      }).join('')}
-    </div>
-  </div>
-  <div class="section-label">进度时间线（${timeline.length}条）</div>`;
+  let html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px">
+    ${Object.entries(PROGRESS_LABELS).map(([k,label]) => {
+      const val = latest[k];
+      const score = k==='japanese'&&s.japanese_score?s.japanese_score:k==='english'&&s.english_score?s.english_score:'';
+      return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px">
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:5px">${PROGRESS_ICONS[k]} ${label}</div>
+        ${val?renderProgressBadge(k,val):`<span style="font-size:11px;color:var(--text-muted)">未填写</span>`}
+        ${score?`<div style="font-size:11px;color:var(--text-secondary);margin-top:4px">${score}</div>`:''}
+      </div>`;
+    }).join('')}
+  </div>`;
 
-  if (!timeline.length) return html + `<div class="empty-tip">暂无进度记录</div>`;
+  if (!timeline.length) return html + `<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px">暂无进度记录</div>`;
 
+  html += `<div style="font-size:11px;font-weight:600;margin-bottom:10px">进度时间线（${timeline.length}条）</div>`;
   html += timeline.map(entry => {
     const src = PROGRESS_SOURCE_LABEL[entry.source] || PROGRESS_SOURCE_LABEL.admin;
     const dims = ['japanese','english','plan','apply','exam'].filter(k => entry[k]);
-    return `<div class="timeline-entry">
-      <div>
-        <span class="timeline-source" style="background:${src.bg};color:${src.color}">${src.label}</span>
-        ${entry.source_name?`<div style="font-size:9px;color:var(--text-muted);margin-top:2px;text-align:center">${entry.source_name}</div>`:''}
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--border-light);display:flex;gap:10px">
+      <div style="min-width:56px;text-align:right">
+        <span style="font-size:10px;background:${src.bg};color:${src.color};padding:1px 6px;border-radius:2px">${src.label}</span>
+        ${entry.source_name?`<div style="font-size:9px;color:var(--text-muted);margin-top:2px">${entry.source_name}</div>`:''}
       </div>
       <div style="flex:1">
         <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">${entry.recorded_at||entry.created_at?.slice(0,10)||''}</div>
@@ -297,129 +349,167 @@ function renderRecordsTab() {
   const validBookings = bookings.filter(b => b.daily_record && Object.values(b.daily_record).some(v=>v));
   const validHomework = sessionRecs.filter(r => r.teacher_file_url);
 
+  if (!validBookings.length && !validHomework.length) return `<div style="text-align:center;padding:32px;color:var(--text-muted);font-size:12px">暂无面谈记录</div>`;
+
   let html = '';
-
-  if (!validBookings.length && !validHomework.length) return `<div class="empty-tip">暂无面谈记录</div>`;
-
   if (validBookings.length) {
-    html += `<div class="section-label">面谈记录（${validBookings.length}条）</div>`;
+    html += `<div style="font-size:11px;font-weight:600;margin-bottom:10px">面谈记录（${validBookings.length}条）</div>`;
     validBookings.forEach(b => {
-      html += `<div class="card" style="margin-bottom:10px">
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${b.slot_date}${b.actual_duration?' · '+b.actual_duration+'min':''} · ${b.assigned_teacher||''}老师</div>
+      html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:12px;margin-bottom:10px">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${b.slot_date}${b.actual_duration?' · '+b.actual_duration+'min':''} ${b.assigned_teacher?'· '+b.assigned_teacher+'老师':''}</div>
         <pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0;color:var(--text-secondary)">${buildRecordText(b)}</pre>
       </div>`;
     });
   }
-
   if (validHomework.length) {
-    html += `<div class="section-label" style="margin-top:16px">作业批改（${validHomework.length}条）</div>`;
+    html += `<div style="font-size:11px;font-weight:600;margin:14px 0 10px">作业批改（${validHomework.length}条）</div>`;
     validHomework.forEach(r => {
-      html += `<div class="card" style="margin-bottom:10px">
+      html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:12px;margin-bottom:10px">
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">${r.session_date} · ${r.course_name||''}</div>
         ${r.feedback_knowledge?`<div style="font-size:12px;margin-bottom:6px">${r.feedback_knowledge}</div>`:''}
-        ${r.feedback_suggestions?`<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">💡 ${r.feedback_suggestions}</div>`:''}
         <a href="${r.teacher_file_url}" target="_blank" style="font-size:12px;color:var(--accent)">📎 下载批改文件</a>
       </div>`;
     });
   }
-
   return html;
 }
 
 // ══════════════════════════════════
-// 志望校编辑器
+// 志望校编辑器（严格按Excel格式）
 // ══════════════════════════════════
 async function openStudySchoolEditor() {
   const existing = studyData.schoolPlans;
-  const sharedLists = studyData.sharedLists;
-
-  // 拉取共享学校详情
-  let sharedSchools = [];
-  if (sharedLists.length) {
-    const allIds = sharedLists.flatMap(sl => sl.school_ids || []);
-    if (allIds.length) {
-      sharedSchools = await sb(`/rest/v1/admission_schools?id=in.(${allIds.map(id=>`"${id}"`).join(',')})&select=id,university,faculty,department,application_period,english_required,japanese_required`).catch(()=>[]);
-    }
-  }
-
+  const { sharedSchools } = studyData;
   const modal = document.createElement('div');
   modal.id = 'studySchoolModal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:12px;overflow-y:auto';
 
-  const levelLabel = { 1:'🔴 冲刺（挑战）', 2:'🟡 匹配（目标）', 3:'🟢 保底' };
+  // 共享学校下拉选项
+  const schoolOptions = sharedSchools.map(s =>
+    `<option value="${s.id}" data-name="${s.university}" data-faculty="${s.faculty||''}" data-dept="${s.department||''}" data-period="${s.application_period||''}">${s.university} ${s.department||''} (${s.application_period||''})</option>`
+  ).join('');
 
-  // 共享学校区块
-  const sharedHtml = sharedSchools.length ? `
-  <div style="margin-bottom:16px">
-    <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px">老师共享的学校（点选添加，最多6所）</div>
-    <div style="display:flex;flex-wrap:wrap;gap:4px">
-      ${sharedSchools.map(s => `<button onclick="studyAddSharedSchool('${s.id}','${(s.university||'').replace(/'/g,"\\'")}','${(s.faculty||'').replace(/'/g,"\\'")}','${(s.department||'').replace(/'/g,"\\'")}','${s.application_period||''}')" class="school-chip">
-        <span>${s.university}</span>
-        <span style="color:var(--text-muted);font-size:10px">${s.department||''}</span>
-        ${s.application_period?`<span class="school-period">${s.application_period}</span>`:''}
-      </button>`).join('')}
-    </div>
-  </div>` : '';
+  // 每个等级建2行（共6行）
+  const levelGroups = [
+    { lv:1, label:'🔴 冲刺（挑战）', plans: existing.filter(p=>p.level===1) },
+    { lv:2, label:'🟡 匹配（目标）', plans: existing.filter(p=>p.level===2) },
+    { lv:3, label:'🟢 保底', plans: existing.filter(p=>p.level===3) },
+  ];
 
-  const rowsHtml = existing.map((s,i) => buildSchoolRow(s, i)).join('');
+  function buildRow(p={}, lv, idx) {
+    return `<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:12px;margin-bottom:10px" data-level="${lv}">
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;font-weight:600">第${idx+1}校（${lv===1?'冲刺':lv===2?'匹配':'保底'}）</div>
+      <div style="margin-bottom:8px">
+        <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px">从共享列表选择（或手动输入）</label>
+        <select onchange="studyApplySharedSchool(this,${lv},${idx})" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface);width:100%;margin-bottom:6px">
+          <option value="">手动输入</option>
+          ${schoolOptions}
+        </select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+        <input placeholder="学校名 *" value="${p.school_name||''}" data-field="school_name" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="研究科" value="${p.faculty||''}" data-field="faculty" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="専攻/コース" value="${p.department||''}" data-field="department" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="出愿时间（精确）" value="${p.application_period||''}" data-field="application_period" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="考试日期" value="${p.exam_date||''}" data-field="exam_date" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="必要书类（推荐信等）" value="${p.documents_required||''}" data-field="documents_required" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:5px;font-weight:600">教授信息（每校尽量找2位）</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+        <input placeholder="教授1姓名" value="${p.professor||''}" data-field="professor" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="教授1研究内容URL" value="${p.professor_url||''}" data-field="professor_url" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="教授2姓名" value="${p.professor2||''}" data-field="professor2" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="教授2研究内容URL" value="${p.professor2_url||''}" data-field="professor2_url" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <input placeholder="计划书要求（字数/格式）" value="${p.plan_requirement||''}" data-field="plan_requirement" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="研究课题（目前方向）" value="${p.research_theme||''}" data-field="research_theme" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+      </div>
+      <input type="hidden" value="${p.id||''}" data-field="id">
+    </div>`;
+  }
+
+  let rowsHtml = '';
+  levelGroups.forEach(g => {
+    rowsHtml += `<div style="margin-bottom:16px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border-light)">${g.label}（推荐2校）</div>`;
+    // 显示已有的，不足2行则补空行
+    const rows = g.plans.length ? g.plans : [{}];
+    rows.forEach((p,i) => { rowsHtml += buildRow(p, g.lv, i); });
+    if (g.plans.length < 2) rowsHtml += buildRow({}, g.lv, g.plans.length);
+    // 手动添加按钮
+    rowsHtml += `<button onclick="studyAddSchoolRowToGroup(${g.lv})" style="font-size:10px;background:none;border:1px dashed var(--border);border-radius:2px;padding:4px 10px;cursor:pointer;color:var(--text-muted);font-family:inherit">＋ 再添加一校</button>
+    </div>`;
+  });
 
   modal.innerHTML = `
-  <div style="background:var(--surface,#fff);border-radius:6px;padding:20px;max-width:520px;width:100%;margin:auto">
+  <div style="background:var(--surface,#fff);border-radius:6px;padding:20px;max-width:600px;width:100%;margin:auto">
     <div style="font-size:15px;font-weight:600;margin-bottom:4px">🏫 编辑志望校</div>
-    <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px">每个等级建议2所，共最多6所。每校建议找2位教授。</div>
-    ${sharedHtml}
-    <div class="section-label">已选志望校</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px">每个等级建议2校，共最多6所。每校务必找2位教授，填写精确出愿时间和考试日期。</div>
     <div id="studySchoolRows">${rowsHtml}</div>
-    <button onclick="studyAddSchoolRow()" style="width:100%;background:none;border:1px dashed var(--border);border-radius:3px;padding:8px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text-muted);margin-bottom:16px">＋ 手动添加学校</button>
-    <div style="display:flex;gap:8px">
-      <button onclick="saveStudySchoolPlans()" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:11px;font-size:12px;cursor:pointer;font-family:inherit">保存</button>
-      <button onclick="document.getElementById('studySchoolModal').remove()" style="background:none;border:1px solid var(--border);border-radius:4px;padding:11px 16px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button onclick="saveStudySchoolPlans()" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:11px;font-size:13px;cursor:pointer;font-family:inherit">保存</button>
+      <button onclick="document.getElementById('studySchoolModal').remove()" style="background:none;border:1px solid var(--border);border-radius:4px;padding:11px 18px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
     </div>
   </div>`;
   document.body.appendChild(modal);
 }
 
-function buildSchoolRow(s={}, i=Date.now()) {
-  const levelLabel = { 1:'🔴 冲刺（挑战）', 2:'🟡 匹配（目标）', 3:'🟢 保底' };
-  return `<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:12px;margin-bottom:10px" id="sr_${i}">
-    <div style="display:flex;gap:8px;margin-bottom:8px">
-      <select style="font-size:11px;padding:4px 6px;font-family:inherit;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        ${[1,2,3].map(lv=>`<option value="${lv}" ${(s.level||2)===lv?'selected':''}>${levelLabel[lv]}</option>`).join('')}
-      </select>
-      <button onclick="this.closest('[id]').remove()" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;color:var(--danger)">删除</button>
+function studyApplySharedSchool(sel, lv, idx) {
+  if (!sel.value) return;
+  const opt = sel.options[sel.selectedIndex];
+  const row = sel.closest('[data-level]');
+  if (!row) return;
+  const set = (f,v) => { const el = row.querySelector(`[data-field="${f}"]`); if(el) el.value = v; };
+  set('school_name', opt.dataset.name || '');
+  set('faculty', opt.dataset.faculty || '');
+  set('department', opt.dataset.dept || '');
+  set('application_period', opt.dataset.period || '');
+}
+
+function studyAddSchoolRowToGroup(lv) {
+  // Count existing rows for this level
+  const rows = document.querySelectorAll(`#studySchoolRows [data-level="${lv}"]`);
+  const totalRows = document.querySelectorAll('#studySchoolRows [data-level]').length;
+  if (totalRows >= 6) { alert('最多6所学校'); return; }
+  const div = document.createElement('div');
+  div.innerHTML = `<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:12px;margin-bottom:10px" data-level="${lv}">
+    <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px;font-weight:600">新增校（${lv===1?'冲刺':lv===2?'匹配':'保底'}）</div>
+    <select onchange="studyApplySharedSchool(this,${lv},99)" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface);width:100%;margin-bottom:6px">
+      <option value="">手动输入</option>
+      ${studyData.sharedSchools.map(s=>`<option value="${s.id}" data-name="${s.university}" data-faculty="${s.faculty||''}" data-dept="${s.department||''}" data-period="${s.application_period||''}">${s.university} ${s.department||''}</option>`).join('')}
+    </select>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+      <input placeholder="学校名 *" data-field="school_name" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+      <input placeholder="研究科" data-field="faculty" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+      <input placeholder="専攻/コース" data-field="department" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+      <input placeholder="出愿时间（精确）" data-field="application_period" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+      <input placeholder="考试日期" data-field="exam_date" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+      <input placeholder="必要书类" data-field="documents_required" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+      <input placeholder="教授1姓名" data-field="professor" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+      <input placeholder="教授1研究内容URL" data-field="professor_url" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+      <input placeholder="教授2姓名" data-field="professor2" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+      <input placeholder="教授2研究内容URL" data-field="professor2_url" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-      <input placeholder="学校名 *" value="${s.school_name||''}" data-field="school_name" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-      <input placeholder="研究科" value="${s.faculty||''}" data-field="faculty" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-      <input placeholder="専攻/コース" value="${s.department||''}" data-field="department" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-      <input placeholder="出愿期间" value="${s.application_period||''}" data-field="application_period" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+      <input placeholder="计划书要求" data-field="plan_requirement" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+      <input placeholder="研究课题" data-field="research_theme" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
     </div>
-    <input placeholder="志望教授名" value="${s.professor||''}" data-field="professor" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface);width:100%;margin-top:6px">
-    <input placeholder="教授研究内容URL或说明" value="${s.professor_url||''}" data-field="professor_url" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface);width:100%;margin-top:6px">
-    <input placeholder="备注" value="${s.notes||''}" data-field="notes" style="font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface);width:100%;margin-top:6px">
-    <input type="hidden" value="${s.id||''}" data-field="id">
+    <input type="hidden" value="" data-field="id">
   </div>`;
-}
-
-function studyAddSchoolRow(name='', faculty='', dept='', period='') {
-  const c = document.getElementById('studySchoolRows');
-  if (c.children.length >= 6) { alert('最多6所，如需更多请在备注中说明'); return; }
-  const div = document.createElement('div');
-  div.innerHTML = buildSchoolRow({ school_name:name, faculty, department:dept, application_period:period });
-  c.appendChild(div.firstElementChild);
-}
-
-function studyAddSharedSchool(id, name, faculty, dept, period) {
-  const c = document.getElementById('studySchoolRows');
-  if (c.children.length >= 6) { alert('最多6所'); return; }
-  studyAddSchoolRow(name, faculty, dept, period);
+  // Insert before the add button for this level group
+  const btn = [...document.querySelectorAll('#studySchoolRows button')].find(b => b.textContent.includes('再添加') && b.getAttribute('onclick')?.includes(`(${lv})`));
+  if (btn) btn.parentElement.insertBefore(div.firstElementChild, btn);
 }
 
 async function saveStudySchoolPlans() {
-  const rows = [...document.querySelectorAll('#studySchoolRows > div')];
+  const rows = [...document.querySelectorAll('#studySchoolRows [data-level]')];
   const plans = rows.map(row => {
     const get = f => row.querySelector(`[data-field="${f}"]`)?.value?.trim()||'';
-    return { id:get('id'), school_name:get('school_name'), faculty:get('faculty'), department:get('department'), professor:get('professor'), professor_url:get('professor_url'), application_period:get('application_period'), notes:get('notes'), level:parseInt(row.querySelector('select')?.value||'2') };
+    const lv = parseInt(row.dataset.level||'2');
+    return { id:get('id'), level:lv, school_name:get('school_name'), faculty:get('faculty'), department:get('department'), application_period:get('application_period'), exam_date:get('exam_date'), professor:get('professor'), professor_url:get('professor_url'), professor2:get('professor2'), professor2_url:get('professor2_url'), plan_requirement:get('plan_requirement'), research_theme:get('research_theme'), documents_required:get('documents_required') };
   }).filter(p => p.school_name);
 
   if (!plans.length) { alert('请至少填写一所学校'); return; }
@@ -431,42 +521,65 @@ async function saveStudySchoolPlans() {
       student_id: studyStudent.id, student_name: studyStudent.name, major: studyStudent.major,
       school_name:p.school_name, faculty:p.faculty, department:p.department,
       professor:p.professor, professor_url:p.professor_url,
-      application_period:p.application_period, notes:p.notes,
+      professor2:p.professor2, professor2_url:p.professor2_url,
+      application_period:p.application_period, exam_date:p.exam_date,
+      plan_requirement:p.plan_requirement, research_theme:p.research_theme,
+      documents_required:p.documents_required,
       level:p.level, status:'preparing',
     }));
     await sb('/rest/v1/student_school_plans', 'POST', toInsert);
     studyData.schoolPlans = toInsert;
     document.getElementById('studySchoolModal').remove();
-    renderStudyTab();
+    switchStudyTab('schools');
   } catch(e) { alert('保存失败：' + e.message); }
 }
 
 // ══════════════════════════════════
-// 计划书编辑器
+// 计划书编辑器（先行研究+草稿两部分）
 // ══════════════════════════════════
 function openStudyPlanEditor() {
   const d = studyData.planDraft || {};
   const modal = document.createElement('div');
   modal.id = 'studyPlanModal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:12px;overflow-y:auto';
   modal.innerHTML = `
-  <div style="background:var(--surface,#fff);border-radius:6px;padding:20px;max-width:500px;width:100%;margin:auto">
+  <div style="background:var(--surface,#fff);border-radius:6px;padding:20px;max-width:520px;width:100%;margin:auto">
     <div style="font-size:15px;font-weight:600;margin-bottom:14px">📄 计划书进度</div>
-    <div style="margin-bottom:10px"><label class="section-label">问题意识</label>
-      <textarea id="spd_q" rows="3" placeholder="你的研究问题是什么？" style="width:100%;font-size:12px;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${d.research_question||''}</textarea></div>
-    <div style="margin-bottom:10px"><label class="section-label">先行研究整理</label>
-      <textarea id="spd_p" rows="3" placeholder="已读过哪些相关文献？" style="width:100%;font-size:12px;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${d.prior_research||''}</textarea></div>
-    <div style="margin-bottom:10px"><label class="section-label">先行研究链接（可选）</label>
-      <input id="spd_pu" value="${d.prior_research_url||''}" placeholder="相关文献/参考资料URL" style="width:100%;font-size:12px;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg)"></div>
-    <div style="margin-bottom:10px"><label class="section-label">研究方法</label>
-      <textarea id="spd_m" rows="2" placeholder="打算用什么研究方法？" style="width:100%;font-size:12px;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${d.methodology||''}</textarea></div>
-    <div style="margin-bottom:14px"><label class="section-label">草稿文件上传（可选）</label>
+
+    <div style="font-size:11px;font-weight:600;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border-light)">先行研究</div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px">问题意识</label>
+      <textarea id="spd_q" rows="3" style="width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${d.research_question||''}</textarea>
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px">先行研究整理（已读过哪些文献？）</label>
+      <textarea id="spd_p" rows="4" style="width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${d.prior_research||''}</textarea>
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px">先行研究链接（文献URL或参考资料）</label>
+      <input id="spd_pu" value="${d.prior_research_url||''}" placeholder="https://…" style="width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg)">
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px">研究方法</label>
+      <textarea id="spd_m" rows="2" style="width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${d.methodology||''}</textarea>
+    </div>
+
+    <div style="font-size:11px;font-weight:600;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border-light)">计划书草稿</div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px">草稿说明（进展情况、遇到的问题等）</label>
+      <textarea id="spd_dn" rows="3" style="width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${d.draft_notes||''}</textarea>
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px">上传草稿文件（可选）</label>
       <input type="file" id="spd_file" accept=".doc,.docx,.pdf,.txt" style="font-size:11px">
-      ${d.draft_file_url?`<div style="margin-top:6px"><a href="${d.draft_file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 当前草稿</a></div>`:''}</div>
-    ${d.teacher_comment?`<div style="background:var(--success-light);border-radius:3px;padding:10px;font-size:11px;color:var(--success);margin-bottom:14px">💬 老师批注：${d.teacher_comment}</div>`:''}
+      ${d.draft_file_url?`<div style="margin-top:5px"><a href="${d.draft_file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 当前草稿</a></div>`:''}
+    </div>
+
+    ${d.teacher_comment?`<div style="background:var(--ok-bg);border-radius:3px;padding:10px;font-size:11px;color:var(--ok);margin-bottom:14px">💬 老师批注：${d.teacher_comment}</div>`:''}
+
     <div style="display:flex;gap:8px">
-      <button onclick="saveStudyPlanDraft('${d.id||''}')" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:11px;font-size:12px;cursor:pointer;font-family:inherit">保存</button>
-      <button onclick="document.getElementById('studyPlanModal').remove()" style="background:none;border:1px solid var(--border);border-radius:4px;padding:11px 16px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
+      <button onclick="saveStudyPlanDraft('${d.id||''}')" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:11px;font-size:13px;cursor:pointer;font-family:inherit">保存</button>
+      <button onclick="document.getElementById('studyPlanModal').remove()" style="background:none;border:1px solid var(--border);border-radius:4px;padding:11px 18px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
     </div>
   </div>`;
   document.body.appendChild(modal);
@@ -477,7 +590,8 @@ async function saveStudyPlanDraft(existingId) {
   const p = document.getElementById('spd_p').value.trim();
   const pu = document.getElementById('spd_pu').value.trim();
   const m = document.getElementById('spd_m').value.trim();
-  if (!q && !p && !m) { alert('请至少填写一项内容'); return; }
+  const dn = document.getElementById('spd_dn').value.trim();
+  if (!q && !p && !m && !dn) { alert('请至少填写一项内容'); return; }
 
   let fileUrl = '';
   const fileEl = document.getElementById('spd_file');
@@ -491,23 +605,23 @@ async function saveStudyPlanDraft(existingId) {
   const data = {
     student_id: studyStudent.id, student_name: studyStudent.name, major: studyStudent.major,
     research_question: q, prior_research: p, prior_research_url: pu, methodology: m,
-    draft_file_url: fileUrl || undefined, status: 'drafting', updated_at: new Date().toISOString(),
+    draft_notes: dn, draft_file_url: fileUrl || undefined,
+    status: 'drafting', updated_at: new Date().toISOString(),
   };
   try {
     if (existingId) { await sb(`/rest/v1/student_plan_drafts?id=eq.${existingId}`, 'PATCH', data); }
     else { data.id = `spd-${Date.now()}-${Math.random().toString(36).slice(2,4)}`; await sb('/rest/v1/student_plan_drafts', 'POST', data); }
-    studyData.planDraft = { ...studyData.planDraft, ...data };
+    studyData.planDraft = { ...(studyData.planDraft||{}), ...data };
     document.getElementById('studyPlanModal').remove();
-    renderStudyTab();
+    switchStudyTab('plan');
   } catch(e) { alert('保存失败：' + e.message); }
 }
 
 function studyLogout() {
   localStorage.removeItem(STUDY_STORAGE_KEY);
   studyStudent = null;
-  studyData = { timeline:[], schoolPlans:[], planDraft:null, sharedLists:[], bookings:[], sessionRecs:[] };
+  studyData = { timeline:[], schoolPlans:[], planDraft:null, sharedLists:[], sharedSchools:[], bookings:[], sessionRecs:[] };
   renderStudyLogin(document.getElementById('mainWrap'));
 }
 
-// 启动
 initStudy();
