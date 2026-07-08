@@ -155,10 +155,13 @@ function renderSchoolsTab() {
   if (schoolFilterLang === 'no_english') displaySchools = displaySchools.filter(s => s.english_required === '不要');
   else if (schoolFilterLang === 'no_japanese') displaySchools = displaySchools.filter(s => s.japanese_required === '不要');
   else if (schoolFilterLang === 'no_both') displaySchools = displaySchools.filter(s => s.english_required === '不要' && s.japanese_required === '不要');
+  else if (schoolFilterLang === 'opt_english') displaySchools = displaySchools.filter(s => s.english_required === '任意');
+  else if (schoolFilterLang === 'opt_japanese') displaySchools = displaySchools.filter(s => s.japanese_required === '任意');
 
+  const langOrder = v => v==='不要'?0:v==='任意'?1:2;
   if (schoolSortBy === 'application_period') displaySchools.sort((a,b) => (a.application_period||'').localeCompare(b.application_period||''));
-  else if (schoolSortBy === 'english_required') displaySchools.sort((a,b) => (a.english_required==='不要'?0:1)-(b.english_required==='不要'?0:1));
-  else if (schoolSortBy === 'japanese_required') displaySchools.sort((a,b) => (a.japanese_required==='不要'?0:1)-(b.japanese_required==='不要'?0:1));
+  else if (schoolSortBy === 'english_required') displaySchools.sort((a,b) => langOrder(a.english_required)-langOrder(b.english_required));
+  else if (schoolSortBy === 'japanese_required') displaySchools.sort((a,b) => langOrder(a.japanese_required)-langOrder(b.japanese_required));
 
   // 共享学校表格HTML
   const sharedTableHtml = sharedLists.length ? `
@@ -167,18 +170,20 @@ function renderSchoolsTab() {
       ${sharedLists[0].notes?`<div style="font-size:11px;color:#2c4a7c;opacity:.8;margin-bottom:8px">${sharedLists[0].notes}</div>`:''}
       <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
         <select onchange="schoolFilterLang=this.value;renderStudyTab()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-          <option value="all" ${schoolFilterLang==='all'?'selected':''}>全部</option>
-          <option value="no_english" ${schoolFilterLang==='no_english'?'selected':''}>不要英语</option>
-          <option value="no_japanese" ${schoolFilterLang==='no_japanese'?'selected':''}>不要日语</option>
-          <option value="no_both" ${schoolFilterLang==='no_both'?'selected':''}>均不要</option>
+          <option value="all" ${schoolFilterLang==='all'?'selected':''}>语言：全部</option>
+          <option value="no_english" ${schoolFilterLang==='no_english'?'selected':''}>英语：不要</option>
+          <option value="no_japanese" ${schoolFilterLang==='no_japanese'?'selected':''}>日语：不要</option>
+          <option value="no_both" ${schoolFilterLang==='no_both'?'selected':''}>英日：均不要</option>
+          <option value="opt_english" ${schoolFilterLang==='opt_english'?'selected':''}>英语：任意</option>
+          <option value="opt_japanese" ${schoolFilterLang==='opt_japanese'?'selected':''}>日语：任意</option>
         </select>
         <select onchange="schoolSortBy=this.value;renderStudyTab()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
           <option value="application_period" ${schoolSortBy==='application_period'?'selected':''}>按出愿期排序</option>
-          <option value="english_required" ${schoolSortBy==='english_required'?'selected':''}>英语不要优先</option>
-          <option value="japanese_required" ${schoolSortBy==='japanese_required'?'selected':''}>日语不要优先</option>
+          <option value="japanese_required" ${schoolSortBy==='japanese_required'?'selected':''}>日语要求排序</option>
+          <option value="english_required" ${schoolSortBy==='english_required'?'selected':''}>英语要求排序</option>
         </select>
       </div>
-      <div style="border:1px solid #c5d9f0;border-radius:4px;overflow:auto;max-height:calc(100vh - 280px)">
+      <div style="border:1px solid #c5d9f0;border-radius:4px;overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:11px">
           <thead style="position:sticky;top:0;z-index:1">
             <tr style="background:#ddeaf9">
@@ -263,10 +268,10 @@ function renderSchoolsTab() {
   });
   editHtml += `</div>`;
 
-  // 左右分栏布局
-  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
-    <div style="min-width:0">${sharedTableHtml || '<div style="font-size:11px;color:var(--text-muted)">暂无共享学校列表</div>'}</div>
-    <div style="min-width:0">${editHtml}</div>
+  // 左右分栏布局（整体可滚动，两栏等高）
+  return `<div style="display:flex;gap:16px;align-items:flex-start;overflow-x:auto;min-height:0">
+    <div style="min-width:320px;flex:1">${sharedTableHtml || '<div style="font-size:11px;color:var(--text-muted)">暂无共享学校列表</div>'}</div>
+    <div style="min-width:340px;flex:1">${editHtml}</div>
   </div>`;
 }
 
@@ -286,7 +291,9 @@ function studyApplySharedSchool(sel) {
 
 function studyAddSchoolRowToGroup(lv) {
   const allRows = document.querySelectorAll('#studySchoolRows [data-level]').length;
-  if (allRows >= 6) { alert('最多6所学校'); return; }
+  if (allRows >= 6) {
+    if (!confirm(`你已选择${allRows}所学校，超过建议上限6所。\n\n请注意：\n・确认出愿时间不冲突\n・合理分配准备时间和精力\n\n确认继续添加？`)) return;
+  }
   const schoolOptions = studyData.sharedSchools.map(s =>
     `<option value="${s.id}" data-name="${s.university}" data-faculty="${s.faculty||''}" data-dept="${s.department||''}" data-period="${s.application_period||''}">${s.university} ${[s.department,s.course].filter(Boolean).join(' ')}</option>`
   ).join('');
