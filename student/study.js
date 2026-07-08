@@ -328,13 +328,18 @@ function studyAddSchoolRowToGroup(lv) {
 
 async function saveStudySchoolPlans() {
   const rows = [...document.querySelectorAll('#studySchoolRows [data-level]')];
+  if (!rows.length) { alert('页面加载中，请稍后再试'); return; }
   const plans = rows.map(row => {
-    const get = f => row.querySelector(`[data-field="${f}"]`)?.value?.trim()||'';
+    const inputs = [...row.querySelectorAll('input[data-field], select[data-field]')];
+    const get = f => {
+      const el = inputs.find(i => i.dataset.field === f);
+      return el ? el.value.trim() : '';
+    };
     const lv = parseInt(row.dataset.level||'2');
     return { id:get('id'), level:lv, school_name:get('school_name'), faculty:get('faculty'), department:get('department'), application_period:get('application_period'), exam_date:get('exam_date'), professor:get('professor'), professor_url:get('professor_url'), professor2:get('professor2'), professor2_url:get('professor2_url'), plan_requirement:get('plan_requirement'), research_theme:get('research_theme'), documents_required:get('documents_required') };
   }).filter(p => p.school_name);
 
-  if (!plans.length) { alert('请至少填写一所学校'); return; }
+  if (!plans.length) { alert('请至少填写一所学校的学校名'); return; }
 
   try {
     await sb(`/rest/v1/student_school_plans?student_id=eq.${studyStudent.id}`, 'DELETE');
@@ -448,40 +453,180 @@ function studyLogout() {
 initStudy();
 
 // ══════════════════════════════════
-// 计划书 Tab
+// 计划书 Tab（三步骤）
 // ══════════════════════════════════
+
 function renderPlanTab() {
-  const d = studyData.planDraft;
-  let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-    <div style="font-size:12px;font-weight:600">计划书进度</div>
-    <button onclick="openStudyPlanEditor()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 14px;cursor:pointer;font-family:inherit">${d?'✏ 更新':'＋ 开始填写'}</button>
+  const d = studyData.planDraft || {};
+  const refs = d.prior_research_list ? JSON.parse(d.prior_research_list) : [];
+
+  return `<div>
+    <!-- 步骤1：先行研究 -->
+    <div style="margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--border-light)">
+        Step 1 · 先行研究整理
+      </div>
+
+      <!-- 添加文献 -->
+      <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px;margin-bottom:12px">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">按以下格式添加已读文献：</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+          <input id="ref_author" placeholder="作者名" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg)">
+          <input id="ref_year" placeholder="发表年份（如 2023）" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg)">
+          <input id="ref_title" placeholder="文献题目" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg)">
+          <input id="ref_journal" placeholder="期刊/出版社" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg)">
+        </div>
+        <input id="ref_note" placeholder="与研究的关联（这篇文献和你研究的关系是什么？）" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);width:100%;margin-bottom:8px">
+        <button onclick="studyAddRef()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">＋ 添加</button>
+      </div>
+
+      <!-- 文献列表 -->
+      <div id="study_ref_list">
+        ${refs.length ? `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="font-size:11px;font-weight:600">已整理文献（${refs.length}条）</div>
+          <select onchange="studySortRefs(this.value)" style="font-size:10px;padding:2px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+            <option value="order">添加顺序</option>
+            <option value="year">按年份</option>
+            <option value="author">按作者</option>
+          </select>
+        </div>
+        <div style="border:1px solid var(--border-light);border-radius:3px;overflow:hidden">
+          <table style="width:100%;border-collapse:collapse;font-size:11px">
+            <thead><tr style="background:var(--bg)">
+              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border-light)">作者</th>
+              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border-light)">年份</th>
+              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border-light)">题目</th>
+              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border-light)">期刊</th>
+              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border-light)">与研究关联</th>
+              <th style="padding:4px;border-bottom:1px solid var(--border-light)"></th>
+            </tr></thead>
+            <tbody>
+              ${refs.map((r,i) => `<tr style="border-bottom:1px solid var(--border-light);background:${i%2===0?'var(--surface)':'var(--bg)'}">
+                <td style="padding:7px 8px">${r.author||''}</td>
+                <td style="padding:7px 8px;white-space:nowrap">${r.year||''}</td>
+                <td style="padding:7px 8px">${r.title||''}</td>
+                <td style="padding:7px 8px;font-size:10px;color:var(--text-muted)">${r.journal||''}</td>
+                <td style="padding:7px 8px;font-size:10px;color:var(--text-secondary)">${r.note||''}</td>
+                <td style="padding:4px 6px"><button onclick="studyDeleteRef(${i})" style="font-size:10px;background:none;border:none;cursor:pointer;color:var(--danger)">✕</button></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>` : '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:11px;border:1px dashed var(--border);border-radius:3px">暂无文献，请在上方添加</div>'}
+      </div>
+    </div>
+
+    <!-- 步骤2：草稿撰写 -->
+    <div style="margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--border-light)">
+        Step 2 · 计划书草稿
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px">
+        <div style="margin-bottom:10px">
+          <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px">问题意识（你的研究问题是什么？）</label>
+          <textarea id="spd_q" rows="3" style="width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${d.research_question||''}</textarea>
+        </div>
+        <div style="margin-bottom:10px">
+          <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px">研究方法</label>
+          <textarea id="spd_m" rows="2" style="width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${d.methodology||''}</textarea>
+        </div>
+        <div style="margin-bottom:10px">
+          <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px">草稿进展说明</label>
+          <textarea id="spd_dn" rows="2" style="width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${d.draft_notes||''}</textarea>
+        </div>
+        <button onclick="studySaveDraft()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit">保存草稿</button>
+        <span id="spd_save_msg" style="font-size:11px;margin-left:10px"></span>
+        ${d.teacher_comment?`<div style="background:var(--ok-bg);border-radius:3px;padding:10px;margin-top:10px;font-size:11px;color:var(--ok)">💬 老师批注：${d.teacher_comment}</div>`:''}
+      </div>
+    </div>
+
+    <!-- 步骤3：完成稿上传 -->
+    <div>
+      <div style="font-size:12px;font-weight:700;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--border-light)">
+        Step 3 · 完成稿上传
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px">
+        ${d.draft_file_url?`<div style="margin-bottom:10px"><a href="${d.draft_file_url}" target="_blank" style="font-size:12px;color:var(--accent)">📎 当前上传的文件</a></div>`:''}
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">上传计划书文件（.doc / .docx / .pdf）</div>
+        <input type="file" id="spd_file" accept=".doc,.docx,.pdf" style="font-size:11px;margin-bottom:10px">
+        <button onclick="studyUploadDraft()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit">上传</button>
+        <span id="spd_upload_msg" style="font-size:11px;margin-left:10px"></span>
+      </div>
+    </div>
   </div>`;
-  if (!d) return html + `<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:12px;border:1px dashed var(--border);border-radius:3px">点击「开始填写」记录研究进展</div>`;
-  if (d.research_question || d.prior_research || d.methodology || d.prior_research_url) {
-    html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px;margin-bottom:12px">
-      <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:10px;letter-spacing:.06em">先行研究</div>
-      ${d.research_question?`<div style="margin-bottom:10px"><div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">问题意识</div><div style="font-size:12px;line-height:1.8">${d.research_question}</div></div>`:''}
-      ${d.prior_research?`<div style="margin-bottom:10px"><div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">先行研究整理</div><div style="font-size:12px;line-height:1.8">${d.prior_research}</div></div>`:''}
-      ${d.methodology?`<div style="margin-bottom:10px"><div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">研究方法</div><div style="font-size:12px;line-height:1.8">${d.methodology}</div></div>`:''}
-      ${d.prior_research_url?`<div><a href="${d.prior_research_url}" target="_blank" style="font-size:12px;color:var(--accent)">🔗 参考文献链接</a></div>`:''}
-    </div>`;
-  }
-  if (d.draft_file_url || d.draft_notes) {
-    html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px;margin-bottom:12px">
-      <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:10px;letter-spacing:.06em">计划书草稿</div>
-      ${d.draft_notes?`<div style="font-size:12px;line-height:1.8;margin-bottom:8px">${d.draft_notes}</div>`:''}
-      ${d.draft_file_url?`<a href="${d.draft_file_url}" target="_blank" style="font-size:12px;color:var(--accent)">📎 下载草稿文件</a>`:''}
-    </div>`;
-  }
-  if (d.teacher_comment) {
-    html += `<div style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:4px;padding:12px">
-      <div style="font-size:11px;font-weight:600;color:var(--ok);margin-bottom:6px">💬 老师批注</div>
-      <div style="font-size:12px;line-height:1.8;color:var(--ok)">${d.teacher_comment}</div>
-    </div>`;
-  }
-  html += `<div style="font-size:10px;color:var(--text-muted);margin-top:10px">最后更新：${d.updated_at?.slice(0,10)||''}</div>`;
-  return html;
 }
+
+async function studyAddRef() {
+  const get = id => document.getElementById(id)?.value.trim() || '';
+  const author = get('ref_author'), year = get('ref_year'), title = get('ref_title'), journal = get('ref_journal'), note = get('ref_note');
+  if (!author && !title) { alert('请至少填写作者名或题目'); return; }
+  const d = studyData.planDraft || {};
+  const refs = d.prior_research_list ? JSON.parse(d.prior_research_list) : [];
+  refs.push({ author, year, title, journal, note });
+  await studySavePlanField({ prior_research_list: JSON.stringify(refs) });
+  ['ref_author','ref_year','ref_title','ref_journal','ref_note'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+  switchStudyTab('plan');
+}
+
+async function studyDeleteRef(idx) {
+  const d = studyData.planDraft || {};
+  const refs = d.prior_research_list ? JSON.parse(d.prior_research_list) : [];
+  refs.splice(idx, 1);
+  await studySavePlanField({ prior_research_list: JSON.stringify(refs) });
+  switchStudyTab('plan');
+}
+
+function studySortRefs(by) {
+  const d = studyData.planDraft || {};
+  const refs = d.prior_research_list ? JSON.parse(d.prior_research_list) : [];
+  if (by === 'year') refs.sort((a,b) => (a.year||'').localeCompare(b.year||''));
+  else if (by === 'author') refs.sort((a,b) => (a.author||'').localeCompare(b.author||''));
+  studyData.planDraft = { ...d, prior_research_list: JSON.stringify(refs) };
+  switchStudyTab('plan');
+}
+
+async function studySaveDraft() {
+  const q = document.getElementById('spd_q')?.value.trim() || '';
+  const m = document.getElementById('spd_m')?.value.trim() || '';
+  const dn = document.getElementById('spd_dn')?.value.trim() || '';
+  const msg = document.getElementById('spd_save_msg');
+  if (msg) msg.textContent = '保存中…';
+  await studySavePlanField({ research_question:q, methodology:m, draft_notes:dn });
+  if (msg) { msg.textContent = '✓ 已保存'; setTimeout(()=>{ if(msg) msg.textContent=''; }, 2000); }
+}
+
+async function studyUploadDraft() {
+  const fileEl = document.getElementById('spd_file');
+  const msg = document.getElementById('spd_upload_msg');
+  if (!fileEl?.files[0]) { if(msg) msg.textContent = '请先选择文件'; return; }
+  if (msg) msg.textContent = '上传中…';
+  try {
+    const f = fileEl.files[0];
+    const ext = f.name.split('.').pop().toLowerCase();
+    const fileUrl = await sbUpload('student-files', `${studyStudent.major||'plan'}/${Date.now()}_draft.${ext}`, f);
+    await studySavePlanField({ draft_file_url: fileUrl });
+    if (msg) msg.textContent = '✓ 上传成功';
+    fileEl.value = '';
+    switchStudyTab('plan');
+  } catch(e) { if(msg) msg.textContent = '上传失败：' + e.message; }
+}
+
+async function studySavePlanField(fields) {
+  const d = studyData.planDraft;
+  const data = { student_id: studyStudent.id, student_name: studyStudent.name, major: studyStudent.major, updated_at: new Date().toISOString(), ...fields };
+  try {
+    if (d?.id) {
+      await sb(`/rest/v1/student_plan_drafts?id=eq.${d.id}`, 'PATCH', data);
+      studyData.planDraft = { ...d, ...data };
+    } else {
+      data.id = `spd-${Date.now()}-${Math.random().toString(36).slice(2,4)}`;
+      data.status = 'drafting';
+      await sb('/rest/v1/student_plan_drafts', 'POST', data);
+      studyData.planDraft = data;
+    }
+  } catch(e) { alert('保存失败：' + e.message); }
+}
+
 
 // ══════════════════════════════════
 // 考学进度 Tab
