@@ -351,7 +351,6 @@ async function saveStudySchoolPlans() {
     }));
     await sb('/rest/v1/student_school_plans', 'POST', toInsert);
     studyData.schoolPlans = toInsert;
-    document.getElementById('studySchoolModal').remove();
     switchStudyTab('schools');
   } catch(e) { alert('保存失败：' + e.message); }
 }
