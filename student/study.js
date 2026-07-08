@@ -101,7 +101,7 @@ function renderStudyMain() {
     { id:'schools', label:`🏫 志望校 (${studyData.schoolPlans.length}/6)` },
     { id:'plan', label:'📄 计划书' },
     { id:'progress', label:'📊 考学进度' },
-    { id:'records', label:'📋 面谈记录' },
+    { id:'records', label:'📋 面谈 & 作业' },
   ];
 
   // 进度概览 badges
@@ -447,3 +447,222 @@ function studyLogout() {
 }
 
 initStudy();
+
+// ══════════════════════════════════
+// 计划书 Tab
+// ══════════════════════════════════
+function renderPlanTab() {
+  const d = studyData.planDraft;
+  let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <div style="font-size:12px;font-weight:600">计划书进度</div>
+    <button onclick="openStudyPlanEditor()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 14px;cursor:pointer;font-family:inherit">${d?'✏ 更新':'＋ 开始填写'}</button>
+  </div>`;
+  if (!d) return html + `<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:12px;border:1px dashed var(--border);border-radius:3px">点击「开始填写」记录研究进展</div>`;
+  if (d.research_question || d.prior_research || d.methodology || d.prior_research_url) {
+    html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:10px;letter-spacing:.06em">先行研究</div>
+      ${d.research_question?`<div style="margin-bottom:10px"><div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">问题意识</div><div style="font-size:12px;line-height:1.8">${d.research_question}</div></div>`:''}
+      ${d.prior_research?`<div style="margin-bottom:10px"><div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">先行研究整理</div><div style="font-size:12px;line-height:1.8">${d.prior_research}</div></div>`:''}
+      ${d.methodology?`<div style="margin-bottom:10px"><div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">研究方法</div><div style="font-size:12px;line-height:1.8">${d.methodology}</div></div>`:''}
+      ${d.prior_research_url?`<div><a href="${d.prior_research_url}" target="_blank" style="font-size:12px;color:var(--accent)">🔗 参考文献链接</a></div>`:''}
+    </div>`;
+  }
+  if (d.draft_file_url || d.draft_notes) {
+    html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:10px;letter-spacing:.06em">计划书草稿</div>
+      ${d.draft_notes?`<div style="font-size:12px;line-height:1.8;margin-bottom:8px">${d.draft_notes}</div>`:''}
+      ${d.draft_file_url?`<a href="${d.draft_file_url}" target="_blank" style="font-size:12px;color:var(--accent)">📎 下载草稿文件</a>`:''}
+    </div>`;
+  }
+  if (d.teacher_comment) {
+    html += `<div style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:4px;padding:12px">
+      <div style="font-size:11px;font-weight:600;color:var(--ok);margin-bottom:6px">💬 老师批注</div>
+      <div style="font-size:12px;line-height:1.8;color:var(--ok)">${d.teacher_comment}</div>
+    </div>`;
+  }
+  html += `<div style="font-size:10px;color:var(--text-muted);margin-top:10px">最后更新：${d.updated_at?.slice(0,10)||''}</div>`;
+  return html;
+}
+
+// ══════════════════════════════════
+// 考学进度 Tab
+// ══════════════════════════════════
+function renderProgressTab() {
+  const { timeline } = studyData;
+  const s = studyStudent;
+  const latest = getLatestProgress(timeline);
+  let html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px">
+    ${Object.entries(PROGRESS_LABELS).map(([k,label]) => {
+      const val = latest[k];
+      const score = k==='japanese'&&s.japanese_score?s.japanese_score:k==='english'&&s.english_score?s.english_score:'';
+      return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px">
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:5px">${PROGRESS_ICONS[k]} ${label}</div>
+        ${val?renderProgressBadge(k,val):`<span style="font-size:11px;color:var(--text-muted)">未填写</span>`}
+        ${score?`<div style="font-size:11px;color:var(--text-secondary);margin-top:4px">${score}</div>`:''}
+      </div>`;
+    }).join('')}
+  </div>`;
+  if (!timeline.length) return html + `<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px">暂无进度记录</div>`;
+  html += `<div style="font-size:11px;font-weight:600;margin-bottom:10px">进度时间线（${timeline.length}条）</div>`;
+  html += timeline.map(entry => {
+    const src = PROGRESS_SOURCE_LABEL[entry.source] || PROGRESS_SOURCE_LABEL.admin;
+    const dims = ['japanese','english','plan','apply','exam'].filter(k => entry[k]);
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--border-light);display:flex;gap:10px">
+      <div style="min-width:56px;text-align:right">
+        <span style="font-size:10px;background:${src.bg};color:${src.color};padding:1px 6px;border-radius:2px">${src.label}</span>
+        ${entry.source_name?`<div style="font-size:9px;color:var(--text-muted);margin-top:2px">${entry.source_name}</div>`:''}
+      </div>
+      <div style="flex:1">
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">${entry.recorded_at||entry.created_at?.slice(0,10)||''}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:3px">
+          ${dims.map(k=>`<span style="font-size:11px">${PROGRESS_ICONS[k]} ${PROGRESS_LABELS[k]}：${renderProgressBadge(k,entry[k])}</span>`).join('')}
+        </div>
+        ${entry.notes?`<div style="font-size:11px;color:var(--text-secondary)">💬 ${entry.notes}</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+  return html;
+}
+
+// ══════════════════════════════════
+// 面谈 & 作业 Tab
+// ══════════════════════════════════
+let studyHwSession = null;
+let studyHwData = {};
+
+function renderRecordsTab() {
+  const { bookings, sessionRecs } = studyData;
+  const validBookings = bookings.filter(b => b.daily_record && Object.values(b.daily_record).some(v=>v));
+  const validHomework = sessionRecs.filter(r => r.teacher_file_url);
+
+  let html = `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px;margin-bottom:16px">
+    <div style="font-size:12px;font-weight:600;margin-bottom:10px">📝 提交作业</div>
+    <div id="study_hw_sessions_wrap"><div style="font-size:11px;color:var(--text-muted)">加载中…</div></div>
+    <div id="study_hw_upload" style="display:none;margin-top:10px">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">上传作业文件（图片 / PDF / Word，最大50MB）</div>
+      <input type="file" id="study_hw_file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="font-size:11px;margin-bottom:8px">
+      <button onclick="studySubmitHomework()" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:inherit;width:100%">提交作业</button>
+      <div id="study_hw_result" style="margin-top:8px;font-size:11px"></div>
+    </div>
+  </div>`;
+
+  if (validHomework.length) {
+    html += `<div style="font-size:11px;font-weight:600;margin-bottom:10px">✅ 已批改作业（${validHomework.length}条）</div>`;
+    validHomework.forEach(r => {
+      html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:12px;margin-bottom:8px">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">${r.session_date} · ${r.course_name||''}</div>
+        ${r.feedback_knowledge?`<div style="font-size:12px;margin-bottom:4px">${r.feedback_knowledge}</div>`:''}
+        ${r.feedback_suggestions?`<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">💡 ${r.feedback_suggestions}</div>`:''}
+        <a href="${r.teacher_file_url}" target="_blank" style="font-size:12px;color:var(--accent)">📎 下载批改文件</a>
+      </div>`;
+    });
+  }
+
+  if (validBookings.length) {
+    html += `<div style="font-size:11px;font-weight:600;margin:16px 0 10px">📋 面谈记录（${validBookings.length}条）</div>`;
+    validBookings.forEach(b => {
+      html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:12px;margin-bottom:8px">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${b.slot_date}${b.actual_duration?' · '+b.actual_duration+'min':''} ${b.assigned_teacher?'· '+b.assigned_teacher+'老师':''}</div>
+        <pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0;color:var(--text-secondary)">${buildRecordText(b)}</pre>
+      </div>`;
+    });
+  }
+
+  if (!validBookings.length && !validHomework.length) {
+    html += `<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:12px">暂无面谈记录</div>`;
+  }
+
+  // 渲染后加载课程列表
+  setTimeout(() => loadStudyHwSessions(), 100);
+  return html;
+}
+
+async function loadStudyHwSessions() {
+  const wrap = document.getElementById('study_hw_sessions_wrap');
+  if (!wrap) return;
+  const name = studyStudent.name;
+  const major = studyMajor;
+  try {
+    const today = new Date();
+    const from = new Date(today); from.setDate(today.getDate() - 7);
+    const to = new Date(today); to.setDate(today.getDate() + 14);
+    const fmt = d => d.toISOString().slice(0,10);
+    const [sessions, records] = await Promise.all([
+      sb(`/rest/v1/course_sessions?session_date=gte.${fmt(from)}&session_date=lte.${fmt(to)}&homework_enabled=is.true&select=*&order=session_date.desc`).catch(()=>[]),
+      sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(name)}&select=session_id,homework_submitted,homework_file_url`).catch(()=>[]),
+    ]);
+    const relevant = sessions.filter(s => {
+      const sm = Array.isArray(s.major) ? s.major : [s.major||''];
+      if (!major) return true;
+      if (major === 'shakai_group') return sm.some(m => ['shakai','shinpan','fukushi'].includes(m));
+      return sm.includes(major);
+    });
+    if (!relevant.length) {
+      wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">近期暂无需提交作业的课程</div>';
+      return;
+    }
+    const submittedIds = new Set(records.filter(r => r.homework_submitted || r.homework_file_url).map(r => r.session_id));
+    wrap.innerHTML = '';
+    relevant.forEach(s => {
+      const submitted = submittedIds.has(s.id);
+      const label = `${s.session_date} · ${s.course_name}${s.session_title?' · '+s.session_title:''}`;
+      const row = document.createElement('div');
+      row.style.cssText = `display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:var(--bg);border:1px solid ${submitted?'var(--ok)':'var(--border)'};border-radius:3px;cursor:${submitted?'default':'pointer'};margin-bottom:4px`;
+      row.dataset.id = s.id; row.dataset.name = s.course_name; row.dataset.date = s.session_date;
+      if (!submitted) row.addEventListener('click', function() { studySelectHwSession(this); });
+      row.innerHTML = `<span style="font-size:12px;color:var(--text-2)">${label}</span><span style="font-size:10px;color:${submitted?'var(--ok)':'var(--text-muted)'};margin-left:12px">${submitted?'✓ 已提交':'未提交'}</span>`;
+      wrap.appendChild(row);
+    });
+  } catch(e) {
+    if (wrap) wrap.innerHTML = `<div style="font-size:11px;color:var(--danger)">加载失败：${e.message}</div>`;
+  }
+}
+
+function studySelectHwSession(el) {
+  const id = el.dataset.id;
+  const upload = document.getElementById('study_hw_upload');
+  if (studyHwSession === id) {
+    studyHwSession = null; studyHwData = {};
+    el.style.background = 'var(--bg)'; el.style.borderColor = 'var(--border)';
+    if (upload) upload.style.display = 'none';
+    return;
+  }
+  studyHwSession = id;
+  studyHwData = { id, name: el.dataset.name, date: el.dataset.date };
+  el.closest('#study_hw_sessions_wrap').querySelectorAll('[data-id]').forEach(d => {
+    d.style.background = 'var(--bg)'; d.style.borderColor = 'var(--border)';
+  });
+  el.style.background = '#f0f7ff'; el.style.borderColor = 'var(--accent)';
+  if (upload) upload.style.display = 'block';
+}
+
+async function studySubmitHomework() {
+  const fileEl = document.getElementById('study_hw_file');
+  const result = document.getElementById('study_hw_result');
+  const name = studyStudent.name;
+  if (!studyHwSession) { result.innerHTML = '<span style="color:var(--danger)">请选择课程</span>'; return; }
+  if (!fileEl?.files[0]) { result.innerHTML = '<span style="color:var(--danger)">请选择文件</span>'; return; }
+  const file = fileEl.files[0];
+  result.innerHTML = '<span style="color:var(--text-muted)">上传中…</span>';
+  try {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const path = `${studyMajor||'general'}/${studyHwData.date}_${Date.now()}.${ext}`;
+    const fileUrl = await sbUpload('homework', path, file);
+    const existing = await sb(`/rest/v1/session_records?session_id=eq.${studyHwSession}&student_name=eq.${encodeURIComponent(name)}&select=id`).catch(()=>[]);
+    if (existing.length) {
+      await sb(`/rest/v1/session_records?id=eq.${existing[0].id}`, 'PATCH', { homework_submitted:true, homework_file_url:fileUrl });
+    } else {
+      const sess = await sb(`/rest/v1/course_sessions?id=eq.${studyHwSession}&select=*`).catch(()=>[]);
+      const s = sess[0] || {};
+      await sb('/rest/v1/session_records', 'POST', {
+        id: `r-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
+        session_id: studyHwSession, course_name: s.course_name||studyHwData.name,
+        session_date: studyHwData.date, student_name: name,
+        major: studyMajor||s.major||'', homework_submitted:true, homework_file_url:fileUrl,
+      });
+    }
+    result.innerHTML = '<span style="color:var(--ok)">✓ 提交成功！老师批改后可在此查看反馈。</span>';
+    fileEl.value = ''; studyHwSession = null; studyHwData = {};
+    await loadStudyHwSessions();
+  } catch(e) { result.innerHTML = `<span style="color:var(--danger)">提交失败：${e.message}</span>`; }
+}
