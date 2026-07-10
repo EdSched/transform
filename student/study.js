@@ -219,25 +219,25 @@ function renderSchoolsTab() {
         ${schoolOptions}
       </select>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:5px">
-        <input placeholder="学校名 *" value="${p.school_name||''}" data-field="school_name" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="研究科" value="${p.faculty||''}" data-field="faculty" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="専攻/コース" value="${p.department||''}" data-field="department" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="出愿时间（精确）" value="${p.application_period||''}" data-field="application_period" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="考试日期" value="${p.exam_date||''}" data-field="exam_date" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="必要书类（推荐信等）" value="${p.documents_required||''}" data-field="documents_required" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="学校名 *" value="${escA(p.school_name)}" data-field="school_name" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="研究科" value="${escA(p.faculty)}" data-field="faculty" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="専攻/コース" value="${escA(p.department)}" data-field="department" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="出愿时间（精确）" value="${escA(p.application_period)}" data-field="application_period" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="考试日期" value="${escA(p.exam_date)}" data-field="exam_date" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="必要书类（推荐信等）" value="${escA(p.documents_required)}" data-field="documents_required" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
       </div>
       <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">👤 教授（每校尽量2位）</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:5px">
-        <input placeholder="教授1姓名" value="${p.professor||''}" data-field="professor" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="教授1研究内容URL" value="${p.professor_url||''}" data-field="professor_url" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="教授2姓名" value="${p.professor2||''}" data-field="professor2" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="教授2研究内容URL" value="${p.professor2_url||''}" data-field="professor2_url" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="教授1姓名" value="${escA(p.professor)}" data-field="professor" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="教授1研究内容URL" value="${escA(p.professor_url)}" data-field="professor_url" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="教授2姓名" value="${escA(p.professor2)}" data-field="professor2" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="教授2研究内容URL" value="${escA(p.professor2_url)}" data-field="professor2_url" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
-        <input placeholder="计划书要求（字数/格式）" value="${p.plan_requirement||''}" data-field="plan_requirement" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="研究课题（目前方向）" value="${p.research_theme||''}" data-field="research_theme" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="计划书要求（字数/格式）" value="${escA(p.plan_requirement)}" data-field="plan_requirement" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="研究课题（目前方向）" value="${escA(p.research_theme)}" data-field="research_theme" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
       </div>
-      <input type="hidden" value="${p.id||''}" data-field="id">
+      <input type="hidden" value="${escA(p.id)}" data-field="id">
     </div>`;
   }
 
@@ -249,7 +249,10 @@ function renderSchoolsTab() {
 
   let editHtml = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
     <div style="font-size:12px;font-weight:600">我的志望校 (${schoolPlans.length}/6)</div>
-    <button onclick="saveStudySchoolPlans()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 16px;cursor:pointer;font-family:inherit;font-weight:500">保存</button>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span id="ssp_save_msg" style="font-size:11px;color:var(--ok)"></span>
+      <button onclick="saveStudySchoolPlans()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 16px;cursor:pointer;font-family:inherit;font-weight:500">保存</button>
+    </div>
   </div>
   <div id="studySchoolRows">`;
 
@@ -279,7 +282,7 @@ function studyApplySharedSchool(sel) {
   set('school_name', opt.dataset.name || '');
   set('faculty', opt.dataset.faculty || '');
   set('department', opt.dataset.dept || '');
-  set('application_period', opt.dataset.period || '');
+  // 出願期不自动带入：共享列表多为「8月上旬」类概略值，保留学生手填的精确日期
   // 选择后重置下拉，让用户知道已带入
   sel.value = '';
 }
@@ -327,24 +330,26 @@ function studyAddSchoolRowToGroup(lv) {
 
 
 async function saveStudySchoolPlans() {
-  const rows = [...document.querySelectorAll('#studySchoolRows [data-level]')];
-  if (!rows.length) { alert('页面加载中，请稍后再试'); return; }
-  const plans = rows.map(row => {
-    const inputs = [...row.querySelectorAll('input[data-field], select[data-field]')];
-    const get = f => {
-      const el = inputs.find(i => i.dataset.field === f);
-      return el ? el.value.trim() : '';
-    };
-    const lv = parseInt(row.dataset.level||'2');
-    return { id:get('id'), level:lv, school_name:get('school_name'), faculty:get('faculty'), department:get('department'), application_period:get('application_period'), exam_date:get('exam_date'), professor:get('professor'), professor_url:get('professor_url'), professor2:get('professor2'), professor2_url:get('professor2_url'), plan_requirement:get('plan_requirement'), research_theme:get('research_theme'), documents_required:get('documents_required') };
-  }).filter(p => p.school_name);
-
-  if (!plans.length) { alert('请至少填写一所学校的学校名'); return; }
-
+  const msg = document.getElementById('ssp_save_msg');
   try {
+    const rows = [...document.querySelectorAll('#studySchoolRows [data-level]')];
+    if (!rows.length) { alert('页面加载中，请稍后再试'); return; }
+    const plans = rows.map(row => {
+      const inputs = [...row.querySelectorAll('input[data-field], select[data-field]')];
+      const get = f => {
+        const el = inputs.find(i => i.dataset.field === f);
+        return el ? el.value.trim() : '';
+      };
+      const lv = parseInt(row.dataset.level||'2');
+      return { id:get('id'), level:lv, school_name:get('school_name'), faculty:get('faculty'), department:get('department'), application_period:get('application_period'), exam_date:get('exam_date'), professor:get('professor'), professor_url:get('professor_url'), professor2:get('professor2'), professor2_url:get('professor2_url'), plan_requirement:get('plan_requirement'), research_theme:get('research_theme'), documents_required:get('documents_required') };
+    }).filter(p => p.school_name);
+
+    if (!plans.length) { alert('请至少填写一所学校的学校名'); return; }
+
+    if (msg) msg.textContent = '保存中…';
     await sb(`/rest/v1/student_school_plans?student_id=eq.${studyStudent.id}`, 'DELETE');
-    const toInsert = plans.map(p => ({
-      id: p.id || `ssp-${Date.now()}-${Math.random().toString(36).slice(2,4)}`,
+    const toInsert = plans.map((p, i) => ({
+      id: p.id || `ssp-${Date.now()}-${i}-${Math.random().toString(36).slice(2,6)}`,
       student_id: studyStudent.id, student_name: studyStudent.name, major: studyStudent.major,
       school_name:p.school_name, faculty:p.faculty, department:p.department,
       professor:p.professor, professor_url:p.professor_url,
@@ -357,7 +362,9 @@ async function saveStudySchoolPlans() {
     await sb('/rest/v1/student_school_plans', 'POST', toInsert);
     studyData.schoolPlans = toInsert;
     switchStudyTab('schools');
-  } catch(e) { alert('保存失败：' + e.message); }
+    const m2 = document.getElementById('ssp_save_msg');
+    if (m2) { m2.textContent = '✓ 已保存'; setTimeout(()=>{ if (m2.textContent === '✓ 已保存') m2.textContent = ''; }, 2500); }
+  } catch(e) { if (msg) msg.textContent = ''; alert('保存失败：' + e.message); }
 }
 
 // ══════════════════════════════════
@@ -453,12 +460,147 @@ function studyLogout() {
 initStudy();
 
 // ══════════════════════════════════
+// 计划书：按专业区分的配置
+// ══════════════════════════════════
+
+// HTML 属性/文本转义
+function escA(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+// 专业分类：优先用页面 URL 的 major 参数，其次登录学生的 major
+function studyPlanCat() {
+  const m = studyMajor || (studyStudent && studyStudent.major) || '';
+  if (m === 'keiei') return 'keiei';
+  if (m === 'keizai') return 'keizai';
+  if (m === 'shakai_group' || (typeof SHAKAI_GROUP !== 'undefined' && SHAKAI_GROUP.includes(m))) return 'shakai';
+  return 'generic';
+}
+
+// 先行研究整理字段（经营/经济一套，社会人文一套，其余保持原有字段）
+const STUDY_REF_FIELDS = {
+  biz: [
+    { k:'keyword',    label:'先行研究分類（キーワード）' },
+    { k:'title',      label:'タイトル' },
+    { k:'author',     label:'著者' },
+    { k:'year',       label:'年' },
+    { k:'data',       label:'研究対象／分析に使用するデータ' },
+    { k:'method',     label:'研究方法／モデル／分析手法' },
+    { k:'conclusion', label:'得られた結論' },
+    { k:'note',       label:'備考（自分との研究の関連、この研究の問題点など）' },
+  ],
+  shakai: [
+    { k:'keyword',    label:'研究分野（キーワード）' },
+    { k:'title',      label:'テーマ' },
+    { k:'author',     label:'著者' },
+    { k:'year',       label:'年' },
+    { k:'journal',    label:'刊行物' },
+    { k:'summary',    label:'概要' },
+    { k:'awareness',  label:'問題意識' },
+    { k:'conclusion', label:'結論' },
+    { k:'method',     label:'研究方法・データの収集' },
+    { k:'citation',   label:'引用' },
+    { k:'evaluation', label:'評価' },
+  ],
+  generic: [
+    { k:'author',  label:'作者名' },
+    { k:'year',    label:'发表年份' },
+    { k:'title',   label:'文献题目' },
+    { k:'journal', label:'期刊/出版社' },
+    { k:'note',    label:'与研究的关联' },
+  ],
+};
+
+function studyRefFields() {
+  const cat = studyPlanCat();
+  if (cat === 'keiei' || cat === 'keizai') return STUDY_REF_FIELDS.biz;
+  if (cat === 'shakai') return STUDY_REF_FIELDS.shakai;
+  return STUDY_REF_FIELDS.generic;
+}
+
+// 计划书草稿模板（按专业；generic 为 null 时沿用原有三个文本框）
+const STUDY_DRAFT_FIELDS = {
+  keizai: [
+    { k:'theme',       label:'研究テーマ', type:'input' },
+    { k:'field',       label:'志望分野（複数選択可，点击选中/取消）', type:'chips', options:['労働','教育','開発','都市','医療','環境','産業','公共','政治','国際'] },
+    { k:'data_source', label:'データ出処', type:'input' },
+    { k:'data_type',   label:'データ種類', type:'select', options:['横断面データ','パネルデータ'] },
+    { k:'prior_lit',   label:'先行文献', type:'textarea', rows:2 },
+    { k:'hypothesis',  label:'仮説', type:'textarea', rows:2 },
+    { k:'difference',  label:'先行研究との違い', type:'textarea', rows:2 },
+    { k:'var_y',       label:'被説明変数Y', type:'input' },
+    { k:'var_x',       label:'説明変数X', type:'input' },
+    { k:'var_ctrl',    label:'その他コントロール変数', type:'input' },
+    { k:'model',       label:'モデル', type:'select', options:['固定効果モデル','RDモデル','重回帰モデル','操作変数法'] },
+    { k:'model_other', label:'その他', type:'input' },
+    { k:'regression',  label:'回帰式（添字までしっかり書くこと、添字の説明も）', type:'textarea', rows:2 },
+  ],
+  keiei: [
+    { k:'theme',       label:'研究テーマ', type:'input' },
+    { k:'field',       label:'志望分野', type:'select', options:['企業戦略','企業組織','マーケティング'] },
+    { k:'data_source', label:'データ出処', type:'input' },
+    { k:'prior_lit',   label:'先行文献', type:'textarea', rows:2 },
+    { k:'hypothesis',  label:'仮説', type:'textarea', rows:2 },
+    { k:'difference',  label:'先行研究との違い', type:'textarea', rows:2 },
+    { k:'var_y',       label:'被説明変数Y', type:'input' },
+    { k:'var_x',       label:'説明変数X', type:'input' },
+    { k:'var_ctrl',    label:'その他コントロール変数', type:'input' },
+    { k:'regression',  label:'回帰式（添字までしっかり書くこと、添字の説明も）', type:'textarea', rows:2 },
+  ],
+  shakai: [
+    { k:'theme', label:'研究テーマ', type:'input' },
+    { k:'background', label:'一、研究背景', type:'textarea', rows:4, hint:'１、現在、自分の研究対象の現状について、どのような変化があるか？\n２、特に、研究対象や背景について、何か特徴を持っているのか？\n３、問題提起（問題意識）：その現状について、あなたはどう思う？さらに、何を知りたく？明らかにしたいか？\n４、その問題提起は如何に重要なのか？' },
+    { k:'prior', label:'二、先行研究', type:'textarea', rows:3, hint:'１、現時点で、他の研究者はあなたが関心をもつ問題について、何を中心に研究を行ったか？\n２、他の研究者の研究の欠点とあなたの疑問点。（また分からないところは何か？）' },
+    { k:'purpose', label:'三、研究目的', type:'textarea', rows:3, hint:'１、先行研究を踏まえて、一体何を明らかにしたい？\n２、もしそのことを明らかにすれば、何が分かるか？' },
+    { k:'method', label:'四、研究方法', type:'textarea', rows:4, hint:'１、なぜその地域を選んだのか？\n２、どのような調査を行いたい？\n３、具体的な方法は何か？（調査対象／手順／準備調査／調査実行）\n４、予想できる困難があるか？' },
+    { k:'significance', label:'五、研究意義', type:'textarea', rows:3, hint:'１、自分の研究はどうのように位置づけられる？\n２、自分の研究はどのような価値がある？（個人的、社会的、学術的を分けて述べてみよう）' },
+  ],
+};
+
+// 单个草稿字段渲染
+function studyDraftFieldHtml(f, df) {
+  const v = df[f.k];
+  const base = 'width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
+  let ctrl = '';
+  if (f.type === 'chips') {
+    const sel = Array.isArray(v) ? v : (v ? [v] : []);
+    ctrl = `<div id="spd_f_${f.k}" style="display:flex;flex-wrap:wrap;gap:5px">` + f.options.map((o, i) => {
+      const on = sel.includes(o);
+      return `<span onclick="studyToggleChip(this)" data-val="${escA(o)}" data-on="${on?1:0}" style="font-size:11px;padding:3px 10px;border-radius:2px;cursor:pointer;user-select:none;border:1px solid ${on?'var(--accent)':'var(--border)'};background:${on?'var(--accent)':'var(--surface)'};color:${on?'#fff':'var(--text-secondary)'}">${i+1}. ${o}</span>`;
+    }).join('') + `</div>`;
+  } else if (f.type === 'select') {
+    ctrl = `<select id="spd_f_${f.k}" style="${base}"><option value="">— 選択 —</option>${f.options.map(o => `<option value="${escA(o)}" ${v===o?'selected':''}>${o}</option>`).join('')}</select>`;
+  } else if (f.type === 'textarea') {
+    ctrl = `<textarea id="spd_f_${f.k}" rows="${f.rows||2}" style="${base};resize:vertical">${escA(v||'')}</textarea>`;
+  } else {
+    ctrl = `<input id="spd_f_${f.k}" value="${escA(v||'')}" style="${base}">`;
+  }
+  return `<div style="margin-bottom:10px">
+    <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px">${f.label}</label>
+    ${f.hint?`<div style="font-size:10px;color:var(--text-muted);opacity:.75;white-space:pre-line;margin-bottom:4px">${f.hint}</div>`:''}
+    ${ctrl}
+  </div>`;
+}
+
+function studyToggleChip(el) {
+  const on = el.dataset.on === '1';
+  el.dataset.on = on ? '0' : '1';
+  el.style.border = '1px solid ' + (on ? 'var(--border)' : 'var(--accent)');
+  el.style.background = on ? 'var(--surface)' : 'var(--accent)';
+  el.style.color = on ? 'var(--text-secondary)' : '#fff';
+}
+
+// ══════════════════════════════════
 // 计划书 Tab（三步骤）
 // ══════════════════════════════════
 
 function renderPlanTab() {
   const d = studyData.planDraft || {};
-  const refs = d.prior_research_list ? JSON.parse(d.prior_research_list) : [];
+  let refs = [];
+  try { refs = d.prior_research_list ? JSON.parse(d.prior_research_list) : []; } catch(e) {}
+  const refFields = studyRefFields();
+  const cat = studyPlanCat();
+  let df = {};
+  try { df = d.draft_fields ? JSON.parse(d.draft_fields) : {}; } catch(e) {}
+  const draftDefs = STUDY_DRAFT_FIELDS[cat] || null;
 
   return `<div>
     <!-- 步骤1：先行研究 -->
@@ -470,13 +612,9 @@ function renderPlanTab() {
       <!-- 添加文献 -->
       <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px;margin-bottom:12px">
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">按以下格式添加已读文献：</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
-          <input id="ref_author" placeholder="作者名" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg)">
-          <input id="ref_year" placeholder="发表年份（如 2023）" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg)">
-          <input id="ref_title" placeholder="文献题目" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg)">
-          <input id="ref_journal" placeholder="期刊/出版社" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg)">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
+          ${refFields.map(f => `<input id="ref_f_${f.k}" placeholder="${escA(f.label)}" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg)">`).join('')}
         </div>
-        <input id="ref_note" placeholder="与研究的关联（这篇文献和你研究的关系是什么？）" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);width:100%;margin-bottom:8px">
         <button onclick="studyAddRef()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">＋ 添加</button>
       </div>
 
@@ -491,23 +629,15 @@ function renderPlanTab() {
             <option value="author">按作者</option>
           </select>
         </div>
-        <div style="border:1px solid var(--border-light);border-radius:3px;overflow:hidden">
+        <div style="border:1px solid var(--border-light);border-radius:3px;overflow-x:auto">
           <table style="width:100%;border-collapse:collapse;font-size:11px">
             <thead><tr style="background:var(--bg)">
-              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border-light)">作者</th>
-              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border-light)">年份</th>
-              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border-light)">题目</th>
-              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border-light)">期刊</th>
-              <th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border-light)">与研究关联</th>
+              ${refFields.map(f => `<th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border-light)">${f.label}</th>`).join('')}
               <th style="padding:4px;border-bottom:1px solid var(--border-light)"></th>
             </tr></thead>
             <tbody>
               ${refs.map((r,i) => `<tr style="border-bottom:1px solid var(--border-light);background:${i%2===0?'var(--surface)':'var(--bg)'}">
-                <td style="padding:7px 8px">${r.author||''}</td>
-                <td style="padding:7px 8px;white-space:nowrap">${r.year||''}</td>
-                <td style="padding:7px 8px">${r.title||''}</td>
-                <td style="padding:7px 8px;font-size:10px;color:var(--text-muted)">${r.journal||''}</td>
-                <td style="padding:7px 8px;font-size:10px;color:var(--text-secondary)">${r.note||''}</td>
+                ${refFields.map(f => `<td style="padding:7px 8px;font-size:10px">${escA(r[f.k]||'')}</td>`).join('')}
                 <td style="padding:4px 6px"><button onclick="studyDeleteRef(${i})" style="font-size:10px;background:none;border:none;cursor:pointer;color:var(--danger)">✕</button></td>
               </tr>`).join('')}
             </tbody>
@@ -522,17 +652,18 @@ function renderPlanTab() {
         Step 2 · 计划书草稿
       </div>
       <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px">
+        ${draftDefs ? draftDefs.map(f => studyDraftFieldHtml(f, df)).join('') : `
         <div style="margin-bottom:10px">
           <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px">问题意识（你的研究问题是什么？）</label>
-          <textarea id="spd_q" rows="3" style="width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${d.research_question||''}</textarea>
+          <textarea id="spd_q" rows="3" style="width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${escA(d.research_question||'')}</textarea>
         </div>
         <div style="margin-bottom:10px">
           <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px">研究方法</label>
-          <textarea id="spd_m" rows="2" style="width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${d.methodology||''}</textarea>
-        </div>
+          <textarea id="spd_m" rows="2" style="width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${escA(d.methodology||'')}</textarea>
+        </div>`}
         <div style="margin-bottom:10px">
-          <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px">草稿进展说明</label>
-          <textarea id="spd_dn" rows="2" style="width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${d.draft_notes||''}</textarea>
+          <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px">草稿进展说明（进展情况、遇到的问题等）</label>
+          <textarea id="spd_dn" rows="2" style="width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${escA(d.draft_notes||'')}</textarea>
         </div>
         <button onclick="studySaveDraft()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit">保存草稿</button>
         <span id="spd_save_msg" style="font-size:11px;margin-left:10px"></span>
@@ -557,14 +688,15 @@ function renderPlanTab() {
 }
 
 async function studyAddRef() {
-  const get = id => document.getElementById(id)?.value.trim() || '';
-  const author = get('ref_author'), year = get('ref_year'), title = get('ref_title'), journal = get('ref_journal'), note = get('ref_note');
-  if (!author && !title) { alert('请至少填写作者名或题目'); return; }
+  const fields = studyRefFields();
+  const ref = {};
+  fields.forEach(f => { const el = document.getElementById('ref_f_' + f.k); ref[f.k] = el ? el.value.trim() : ''; });
+  if (!ref.author && !ref.title) { alert('请至少填写著者或题目'); return; }
   const d = studyData.planDraft || {};
-  const refs = d.prior_research_list ? JSON.parse(d.prior_research_list) : [];
-  refs.push({ author, year, title, journal, note });
+  let refs = [];
+  try { refs = d.prior_research_list ? JSON.parse(d.prior_research_list) : []; } catch(e) {}
+  refs.push(ref);
   await studySavePlanField({ prior_research_list: JSON.stringify(refs) });
-  ['ref_author','ref_year','ref_title','ref_journal','ref_note'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
   switchStudyTab('plan');
 }
 
@@ -586,12 +718,28 @@ function studySortRefs(by) {
 }
 
 async function studySaveDraft() {
-  const q = document.getElementById('spd_q')?.value.trim() || '';
-  const m = document.getElementById('spd_m')?.value.trim() || '';
   const dn = document.getElementById('spd_dn')?.value.trim() || '';
   const msg = document.getElementById('spd_save_msg');
   if (msg) msg.textContent = '保存中…';
-  await studySavePlanField({ research_question:q, methodology:m, draft_notes:dn });
+  const cat = studyPlanCat();
+  const defs = STUDY_DRAFT_FIELDS[cat] || null;
+  const payload = { draft_notes: dn };
+  if (defs) {
+    const df = {};
+    defs.forEach(f => {
+      if (f.type === 'chips') {
+        df[f.k] = [...document.querySelectorAll(`#spd_f_${f.k} [data-on="1"]`)].map(el => el.dataset.val);
+      } else {
+        const el = document.getElementById(`spd_f_${f.k}`);
+        df[f.k] = el ? el.value.trim() : '';
+      }
+    });
+    payload.draft_fields = JSON.stringify(df);
+  } else {
+    payload.research_question = document.getElementById('spd_q')?.value.trim() || '';
+    payload.methodology = document.getElementById('spd_m')?.value.trim() || '';
+  }
+  await studySavePlanField(payload);
   if (msg) { msg.textContent = '✓ 已保存'; setTimeout(()=>{ if(msg) msg.textContent=''; }, 2000); }
 }
 
