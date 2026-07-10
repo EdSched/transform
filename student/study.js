@@ -21,7 +21,7 @@ async function initStudy() {
     const raw = localStorage.getItem(STUDY_STORAGE_KEY);
     if (raw) {
       const info = JSON.parse(raw);
-      if (Date.now() - info.ts < STUDY_DAYS * 86400000 && info.major === studyMajor) {
+      if (Date.now() - info.ts < STUDY_DAYS * 86400000) {
         const ok = await studyLogin(info.name, info.code, true);
         if (ok) return;
       }
@@ -73,11 +73,13 @@ async function studyLogin(name, code, silent) {
 async function loadStudyData() {
   const id = studyStudent.id;
   const name = studyStudent.name;
+  // 学习记录页内容绑定学生档案里的真实专业；URL 的 major 仅作后备
+  const shareMajor = studyStudent.major || studyMajor;
   const [timeline, schoolPlans, planDraftArr, sharedLists, bookings, sessionRecs] = await Promise.all([
     sb(`/rest/v1/student_progress_timeline?student_id=eq.${id}&select=*&order=created_at.desc`).catch(()=>[]),
     sb(`/rest/v1/student_school_plans?student_id=eq.${id}&select=*&order=level.asc`).catch(()=>[]),
     sb(`/rest/v1/student_plan_drafts?student_id=eq.${id}&select=*&order=updated_at.desc&limit=1`).catch(()=>[]),
-    sb(`/rest/v1/teacher_school_shares?major=eq.${studyMajor}&select=*&order=created_at.desc&limit=3`).catch(()=>[]),
+    sb(`/rest/v1/teacher_school_shares?major=eq.${shareMajor}&select=*&order=created_at.desc&limit=3`).catch(()=>[]),
     sb(`/rest/v1/bookings?name=eq.${encodeURIComponent(name)}&status=in.("confirmed","completed")&select=*&order=slot_date.desc`).catch(()=>[]),
     sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(name)}&select=*&order=session_date.desc`).catch(()=>[]),
   ]);
@@ -466,9 +468,9 @@ initStudy();
 // HTML 属性/文本转义
 function escA(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
-// 专业分类：优先用页面 URL 的 major 参数，其次登录学生的 major
+// 专业分类：优先用学生档案里的真实专业，其次页面 URL 的 major 参数
 function studyPlanCat() {
-  const m = studyMajor || (studyStudent && studyStudent.major) || '';
+  const m = (studyStudent && studyStudent.major) || studyMajor || '';
   if (m === 'keiei') return 'keiei';
   if (m === 'keizai') return 'keizai';
   if (m === 'shakai_group' || (typeof SHAKAI_GROUP !== 'undefined' && SHAKAI_GROUP.includes(m))) return 'shakai';
@@ -873,7 +875,13 @@ async function loadStudyHwSessions() {
   const wrap = document.getElementById('study_hw_sessions_wrap');
   if (!wrap) return;
   const name = studyStudent.name;
-  const major = studyMajor;
+  // 作业绑定学生真实专业；发布给「社会人文」的作业对社人三专业学生同样可见
+  const myMajor = studyStudent.major || studyMajor;
+  const acceptMajors = myMajor === 'shakai_group'
+    ? ['shakai_group', ...SHAKAI_GROUP]
+    : SHAKAI_GROUP.includes(myMajor)
+      ? [myMajor, 'shakai_group']
+      : [myMajor];
   try {
     const today = new Date();
     const from = new Date(today); from.setDate(today.getDate() - 7);
@@ -885,9 +893,8 @@ async function loadStudyHwSessions() {
     ]);
     const relevant = sessions.filter(s => {
       const sm = Array.isArray(s.major) ? s.major : [s.major||''];
-      if (!major) return true;
-      if (major === 'shakai_group') return sm.some(m => ['shakai','shinpan','fukushi'].includes(m));
-      return sm.includes(major);
+      if (!myMajor) return true;
+      return sm.some(m => acceptMajors.includes(m));
     });
     if (!relevant.length) {
       wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">近期暂无需提交作业的课程</div>';
@@ -950,7 +957,7 @@ async function studySubmitHomework() {
         id: `r-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
         session_id: studyHwSession, course_name: s.course_name||studyHwData.name,
         session_date: studyHwData.date, student_name: name,
-        major: studyMajor||s.major||'', homework_submitted:true, homework_file_url:fileUrl,
+        major: studyStudent.major || studyMajor || s.major || '', homework_submitted:true, homework_file_url:fileUrl,
       });
     }
     result.innerHTML = '<span style="color:var(--ok)">✓ 提交成功！老师批改后可在此查看反馈。</span>';
