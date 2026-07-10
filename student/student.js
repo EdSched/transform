@@ -124,6 +124,17 @@ let slotViewYear = new Date().getFullYear(), slotViewMonth = new Date().getMonth
 let cachedSlots = [], cachedBookings = [];
 let teacherDisplayNames = {};
 
+// 按 slot_id 分批拉取预约（每批100个，避免 URL 过长）
+async function fetchBookingsBySlots(slotIds) {
+  let all = [];
+  for (let i = 0; i < slotIds.length; i += 100) {
+    const chunk = slotIds.slice(i, i + 100);
+    const batch = await sb(`/rest/v1/bookings?select=*&slot_id=in.(${chunk.map(id => `"${id}"`).join(',')})&order=slot_date.asc`).catch(() => []);
+    all = all.concat(batch);
+  }
+  return all;
+}
+
 async function initMajor() {
   const p = new URLSearchParams(window.location.search);
   major = p.get('major');
@@ -135,13 +146,12 @@ async function initMajor() {
       <a href="../vip/" style="display:inline-block;margin-top:8px;font-size:11px;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:4px 12px;text-decoration:none">⭐ 我有VIP课程 →</a>`;
     try {
       teacherDisplayNames = {};
-      const slotMajorFilter = major === 'shakai_group'
-        ? 'major=in.(shakai,shinpan,fukushi,shakai_group)'
-        : `major=eq.${major}`;
-      [cachedSlots, cachedBookings] = await Promise.all([
-        sb(`/rest/v1/slots?select=*&${slotMajorFilter}&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`),
-        sb(`/rest/v1/bookings?select=*&${slotMajorFilter}&order=slot_date.asc`)
-      ]);
+      // 每个页面只显示「发布时选择了该专业」的时间槽：
+      // 社会人文页只显示发布为社会人文的槽；各专业页只显示本专业的槽，互不混排
+      cachedSlots = await sb(`/rest/v1/slots?select=*&major=eq.${major}&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`);
+      // 预约记录的 major 会被覆盖为学生真实专业，按专业过滤会漏算名额，
+      // 因此按本页时间槽的 slot_id 拉取预约，保证名额统计与公开列表准确
+      cachedBookings = await fetchBookingsBySlots(cachedSlots.map(s => s.id));
       // VIP 时间槽走独立的 /vip/ 页面预约，不在普通面谈预约里出现
       cachedSlots = cachedSlots.filter(s => !(Array.isArray(s.type) ? s.type : [s.type]).includes('vip'));
       cachedBookings = cachedBookings.filter(b => b.type !== 'vip');
@@ -613,12 +623,16 @@ async function submitBooking() {
   if (!planStatus) { alert('请选择研究计划书状态'); return; }
   if (!selectedSlotId) { alert('请选择预约时间'); return; }
 
-  // 检查是否有未完成的预约（已完成 completed 的不拦截）
-  const majorList = major === 'shakai_group' ? ['shakai','shinpan','fukushi','shakai_group'] : [major];
-  const activeBooking = cachedBookings.find(b =>
-    b.name === name && majorList.includes(b.major) &&
-    (b.status === 'pending' || b.status === 'confirmed')
-  );
+  // 检查是否有未完成的预约（按姓名实时查询，跨专业页面均可拦截；已完成 completed 的不拦截）
+  let activeBooking = null;
+  try {
+    const act = await sb(`/rest/v1/bookings?name=eq.${encodeURIComponent(name)}&status=in.("pending","confirmed")&select=slot_date,slot_time_range,status&limit=1`);
+    activeBooking = (act && act.length) ? act[0] : null;
+  } catch (e) {
+    activeBooking = cachedBookings.find(b =>
+      b.name === name && (b.status === 'pending' || b.status === 'confirmed')
+    ) || null;
+  }
   if (activeBooking) {
     alert(`您好 ${name} 同学，您有一个面谈尚未完成（${activeBooking.slot_date} ${activeBooking.slot_time_range || ''}，状态：${activeBooking.status === 'pending' ? '待确认' : '已确认'}）。\n\n请在本次面谈完成后再提交新的预约申请。`);
     return;
@@ -714,10 +728,7 @@ function urgencySpan(u) {
 
 async function reloadPublicList() {
   try {
-    const majorFilter = major === 'shakai_group'
-      ? 'major=in.(shakai,shinpan,fukushi,shakai_group)'
-      : `major=eq.${major}`;
-    cachedBookings = await sb(`/rest/v1/bookings?select=*&${majorFilter}&order=slot_date.asc`);
+    cachedBookings = await fetchBookingsBySlots(cachedSlots.map(s => s.id));
     renderSlots(); renderPublicList();
   } catch(e) { console.error(e); }
 }
@@ -767,21 +778,23 @@ async function loadSchoolPlanBanner() {
     const code = localStorage.getItem('txe_student_code') || '';
     const reminders = [];
 
-    // 检查出愿共享列表
-    const shares = await sb(`/rest/v1/teacher_school_shares?major=eq.${major}&select=*&order=created_at.desc&limit=1`).catch(()=>[]);
+    // 先查学生档案：出愿共享列表绑定学生真实专业；查不到学生时退回页面 major
+    let stu = null;
+    if (name && code) {
+      const stuMatch = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(name)}&student_code=eq.${encodeURIComponent(code.toUpperCase())}&select=id,major`).catch(()=>[]);
+      if (stuMatch.length) stu = stuMatch[0];
+    }
+    const shareMajor = (stu && stu.major) || major;
+    const shares = await sb(`/rest/v1/teacher_school_shares?major=eq.${shareMajor}&select=*&order=created_at.desc&limit=1`).catch(()=>[]);
     if (shares.length) {
       let schoolFilled = false;
-      if (name && code) {
-        const stuMatch = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(name)}&student_code=eq.${encodeURIComponent(code.toUpperCase())}&select=id`).catch(()=>[]);
-        if (stuMatch.length) {
-          const sid = stuMatch[0].id;
-          // 志望校
-          const plans = await sb(`/rest/v1/student_school_plans?student_id=eq.${sid}&select=id&limit=1`).catch(()=>[]);
-          schoolFilled = plans.length > 0;
-          // 计划书
-          const drafts = await sb(`/rest/v1/student_plan_drafts?student_id=eq.${sid}&select=id&limit=1`).catch(()=>[]);
-          if (!drafts.length) reminders.push('📄 计划书进度尚未填写');
-        }
+      if (stu) {
+        // 志望校
+        const plans = await sb(`/rest/v1/student_school_plans?student_id=eq.${stu.id}&select=id&limit=1`).catch(()=>[]);
+        schoolFilled = plans.length > 0;
+        // 计划书
+        const drafts = await sb(`/rest/v1/student_plan_drafts?student_id=eq.${stu.id}&select=id&limit=1`).catch(()=>[]);
+        if (!drafts.length) reminders.push('📄 计划书进度尚未填写');
       }
       if (!schoolFilled) reminders.push(`🏫 ${shares[0].title} · 待填写志望校`);
     }
