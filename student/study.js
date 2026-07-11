@@ -332,6 +332,22 @@ function studyAddSchoolRowToGroup(lv) {
 }
 
 
+// 从出愿时间文本推导出愿季节（5〜9月=夏季，10〜1月=冬季，2〜4月=次年；
+// 无法解析时按学生所选考试路线，再不行留空）
+function studyExamSeason(period) {
+  const t = String(period || '');
+  let mo = null, m;
+  if ((m = /(\d{4})[年\-\/\.](\d{1,2})/.exec(t))) mo = +m[2];
+  else if ((m = /(?:^|[^\d])(\d{1,2})\s*月/.exec(t))) mo = +m[1];
+  if (mo == null || mo < 1 || mo > 12) {
+    const pm = studyStudent && studyStudent.prep_model;
+    return pm === 'winter' ? 'winter' : pm === 'summer' ? 'summer' : '';
+  }
+  if (mo >= 5 && mo <= 9) return 'summer';
+  if (mo >= 10 || mo === 1) return 'winter';
+  return 'next_year';
+}
+
 async function saveStudySchoolPlans() {
   const msg = document.getElementById('ssp_save_msg');
   try {
@@ -358,6 +374,7 @@ async function saveStudySchoolPlans() {
       professor:p.professor, professor_url:p.professor_url,
       professor2:p.professor2, professor2_url:p.professor2_url,
       application_period:p.application_period, exam_date:p.exam_date,
+      exam_season: studyExamSeason(p.application_period),
       plan_requirement:p.plan_requirement, research_theme:p.research_theme,
       documents_required:p.documents_required,
       level:p.level, status:'preparing',
