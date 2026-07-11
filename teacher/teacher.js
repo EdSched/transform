@@ -99,11 +99,12 @@ function buildTabs() {
     // 记录该老师被允许查看的专业（空数组=全部）
     window._teacherAllowedAdmMajors = p.admission_majors || [];
   }
+  // 学生管理：admin 勾选后显示，具体子项由 student_mgmt_items 决定
+  if (p.student_mgmt && Array.isArray(p.student_mgmt_items) && p.student_mgmt_items.length) tabs.push({ id: 'studentmgmt', label: '👥 学生管理' });
   // 我的课表：有排班权限或有实际排到课才显示
   if (p.schedule || slots.length) tabs.push({ id: 'mycourses', label: '📚 我的课表' });
   // 工作记录：有实际教学相关权限才显示
   if (p.booking || p.slots || p.schedule || p.homework || slots.length) tabs.push({ id: 'workrecords', label: '📋 工作记录' });
-  if (p.booking) tabs.push({ id: 'studyprogress', label: '📊 考学进度' });
   const tabBar = document.getElementById('tabBar');
   tabBar.innerHTML = tabs.map(t => `<button class="tab-btn${curTab === t.id ? ' active' : ''}" onclick="switchTab('${t.id}')">${t.label}</button>`).join('');
   tabBar.style.display = tabs.length > 1 ? 'flex' : 'none';
@@ -131,6 +132,7 @@ function renderTab() {
     case 'schedule': renderScheduling(mc); break;
     case 'homework': renderHomeworkFeedback(mc); break;
     case 'admissiondb': renderTeacherAdmissionDb(mc); break;
+    case 'studentmgmt': renderStudentMgmt(mc); break;
     case 'studyprogress': renderTeacherStudyProgress(mc); break;
     case 'mycourses': renderMySchedule(mc); break;
     case 'workrecords': renderWorkRecordsTeacher(mc); break;
@@ -2388,9 +2390,9 @@ async function renderTeacherStudyProgress(mc) {
   </div>
   <div class="search-bar" style="margin-bottom:10px">
     <input placeholder="搜索学生姓名…" value="${teacherProgressFilter}"
-      oninput="if(this.dataset.composing!=='1'){teacherProgressFilter=this.value;renderTeacherStudyProgress(document.getElementById('mainContent'))}"
+      oninput="if(this.dataset.composing!=='1'){teacherProgressFilter=this.value;renderTeacherStudyProgress(document.getElementById('sm_content')||document.getElementById('mainContent'))}"
       oncompositionstart="this.dataset.composing='1'"
-      oncompositionend="this.dataset.composing='';teacherProgressFilter=this.value;renderTeacherStudyProgress(document.getElementById('mainContent'))">
+      oncompositionend="this.dataset.composing='';teacherProgressFilter=this.value;renderTeacherStudyProgress(document.getElementById('sm_content')||document.getElementById('mainContent'))">
   </div>
   <div>${cards || '<div class="empty">暂无数据</div>'}</div>`;
 }
@@ -2438,6 +2440,288 @@ async function saveTeacherDraftComment(draftId, studentId) {
       teacherProgressData.draftsMap[studentId].teacher_comment = comment;
     }
     document.getElementById('teacherDraftCommentModal').remove();
-    renderTeacherStudyProgress(document.getElementById('mainContent'));
+    renderTeacherStudyProgress(document.getElementById('sm_content')||document.getElementById('mainContent'));
   } catch(e) { alert('保存失败：' + e.message); }
+}
+
+// ══════════════════════════════════
+// 学生管理（需 admin 授予 student_mgmt 权限，子项由 student_mgmt_items 控制）
+// 子项：progress 考学进度（沿用原页面，按老师负责的面谈学生显示）
+//       records  出席・作业记录（按 student_majors 允许专业查看）
+//       profile  学生档案录入（与 admin 学生档案同一张表实时同步；按 student_majors 允许专业查看）
+// ══════════════════════════════════
+let smTab = '';
+const SM_ITEMS = [['progress','📊 考学进度'], ['records','🗒 出席・作业记录'], ['profile','👤 学生档案']];
+
+function smAllowedItems() {
+  const p = (teacherData && teacherData.permissions) || {};
+  const items = (p.student_mgmt && Array.isArray(p.student_mgmt_items)) ? p.student_mgmt_items : [];
+  return SM_ITEMS.filter(([k]) => items.includes(k));
+}
+
+function renderStudentMgmt(mc) {
+  const allowed = smAllowedItems();
+  if (!allowed.length) { mc.innerHTML = '<div class="empty">未开通任何学生管理子项，请联系管理员</div>'; return; }
+  if (!allowed.find(([k]) => k === smTab)) smTab = allowed[0][0];
+  mc.innerHTML = `<div>
+    <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+      ${allowed.map(([k, l]) => `<button onclick="smTab='${k}';renderStudentMgmt(document.getElementById('mainContent'))" style="font-size:11px;padding:5px 14px;border-radius:3px;cursor:pointer;font-family:inherit;border:1px solid ${smTab===k?'var(--accent)':'var(--border)'};background:${smTab===k?'var(--accent)':'var(--surface)'};color:${smTab===k?'#fff':'var(--text-2)'}">${l}</button>`).join('')}
+    </div>
+    <div id="sm_content"><div class="empty">加载中…</div></div>
+  </div>`;
+  const box = document.getElementById('sm_content');
+  if (smTab === 'progress') renderTeacherStudyProgress(box);
+  else if (smTab === 'records') renderTsaRecords(box);
+  else renderTeacherStudents(box);
+}
+
+// ── 共用：允许专业集合（student_majors 为空 = 全部专业） ──
+function tsaAllowedSet() {
+  const allowed = (teacherData && teacherData.permissions && teacherData.permissions.student_majors) || [];
+  if (!allowed.length) return null;
+  const set = new Set(allowed);
+  if (set.has('shakai_group') && typeof SHAKAI_GROUP !== 'undefined') SHAKAI_GROUP.forEach(m => set.add(m));
+  return set;
+}
+
+function tsaEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+
+// ══ 子项1：学生档案（录入 + 查看） ══
+let tsaStudents = [];
+let tsaFormOpen = false;
+let tsaExpandedId = null;
+let tsaSearch = '';
+
+async function renderTeacherStudents(box) {
+  box.innerHTML = '<div class="empty">加载中…</div>';
+  try {
+    const all = await sb('/rest/v1/students?select=*&order=created_at.desc&limit=2000');
+    const set = tsaAllowedSet();
+    tsaStudents = set ? (all || []).filter(s => set.has(s.major)) : (all || []);
+  } catch (e) { box.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
+  tsaRender();
+}
+
+function tsaGenCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+
+function tsaMajorOptions(sel) {
+  const set = tsaAllowedSet();
+  return Object.entries(MAJORS)
+    .filter(([k]) => k !== 'shakai_group' && (!set || set.has(k)))
+    .map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
+}
+
+function tsaListHtml() {
+  const kw = tsaSearch.trim().toLowerCase();
+  const list = kw ? tsaStudents.filter(s => (s.name || '').toLowerCase().includes(kw) || (s.university || '').toLowerCase().includes(kw)) : tsaStudents;
+  const stLabel = v => ({ active:'在籍', graduated:'已合格', expired:'已到期', stopped:'停课', withdrawn:'退学' }[v] || v || '');
+  return `<table style="width:100%;border-collapse:collapse;font-size:11px">
+    <thead><tr style="background:var(--bg)">
+      ${['姓名','专业','等级','日语','英语','目标入学','到期','状态'].map(h => `<th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border)">${h}</th>`).join('')}
+    </tr></thead>
+    <tbody>
+      ${list.length ? list.map(s => `
+      <tr onclick="tsaExpandedId=tsaExpandedId==='${s.id}'?null:'${s.id}';tsaRenderList()" style="cursor:pointer;border-bottom:1px solid var(--border)${tsaExpandedId === s.id ? ';background:var(--bg)' : ''}">
+        <td style="padding:7px 8px;font-weight:600">${tsaEsc(s.name)}</td>
+        <td style="padding:7px 8px">${MAJORS[s.major] || s.major || ''}</td>
+        <td style="padding:7px 8px">${tsaEsc(s.level)}</td>
+        <td style="padding:7px 8px">${tsaEsc(s.japanese_score)}</td>
+        <td style="padding:7px 8px">${tsaEsc(s.english_score)}</td>
+        <td style="padding:7px 8px">${tsaEsc(s.target_enrollment)}</td>
+        <td style="padding:7px 8px">${tsaEsc(s.expiry_date)}</td>
+        <td style="padding:7px 8px">${stLabel(s.status)}</td>
+      </tr>
+      ${tsaExpandedId === s.id ? `<tr><td colspan="8" style="padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--border)">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:4px 16px;font-size:11px">
+          ${[['属性',s.student_type],['来源',s.source],['课程属性',s.course_type],['出身大学',s.university],['学部/专业',s.faculty],['GPA/履历',s.gpa],['毕业论文',s.thesis],['毕业时间',s.graduation_date],['赴日时间',s.japan_arrival],['报名时间',s.signup_date],['上课方式',s.default_mode==='offline'?'线下':'线上'],['查询码',s.student_code]].map(([l,v]) => `<div><span style="color:var(--text-3)">${l}：</span>${tsaEsc(v) || '—'}</div>`).join('')}
+        </div>
+      </td></tr>` : ''}`).join('') : `<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--text-3)">暂无学生</td></tr>`}
+    </tbody>
+  </table>`;
+}
+
+function tsaRenderList() {
+  const box = document.getElementById('tsa_list');
+  if (box) box.innerHTML = tsaListHtml();
+}
+
+function tsaRender() {
+  const mc = document.getElementById('sm_content') || document.getElementById('mainContent');
+  const set = tsaAllowedSet();
+  const inpStyle = 'width:100%;font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
+  const fld = (id, label, ctrl) => `<div><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:2px">${label}</label>${ctrl}</div>`;
+  const inp = (id, label, ph) => fld(id, label, `<input id="${id}" placeholder="${ph || ''}" style="${inpStyle}">`);
+
+  mc.innerHTML = `<div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:600">👤 学生档案（${tsaStudents.length}人）<span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:6px">${set ? '可见专业：' + [...set].map(m => MAJORS[m] || m).join('・') : '可见全部专业'}</span></div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input placeholder="搜索姓名/大学…" value="${tsaEsc(tsaSearch)}" oninput="tsaSearch=this.value;tsaRenderList()" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;width:150px">
+        <button onclick="tsaFormOpen=!tsaFormOpen;tsaRender()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">${tsaFormOpen ? '收起表单' : '＋ 添加学生'}</button>
+      </div>
+    </div>
+
+    ${tsaFormOpen ? `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:600;margin-bottom:10px">添加学生（与 admin 学生档案同步，保存后自动生成查询码）</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-bottom:10px">
+        ${inp('tsa_name', '姓名 *', '学生姓名')}
+        ${fld('tsa_major', '专业 *', `<select id="tsa_major" style="${inpStyle}">${tsaMajorOptions('')}</select>`)}
+        ${fld('tsa_type', '属性', `<select id="tsa_type" style="${inpStyle}"><option value="">请选择</option><option>本科</option><option>专科</option><option>专升本</option></select>`)}
+        ${fld('tsa_source', '来源', `<select id="tsa_source" style="${inpStyle}"><option value="">请选择</option><option>唯新</option><option>新世界</option><option>校内塾</option><option>杭州校</option></select>`)}
+        ${inp('tsa_course', '课程属性', '大课 / VIP / 保录…')}
+        ${fld('tsa_level', '等级', `<select id="tsa_level" style="${inpStyle}"><option value="">请选择</option><option>A</option><option>B</option><option>C</option><option>D</option></select>`)}
+        ${inp('tsa_japanese', '日语成绩', 'N1 120 / 备考…')}
+        ${inp('tsa_english', '英语成绩', '托业 800 / 托福 90…')}
+        ${inp('tsa_university', '出身大学', '')}
+        ${inp('tsa_faculty', '学部 / 专业', '')}
+        ${inp('tsa_gpa', 'GPA / 其他履历', '')}
+        ${inp('tsa_thesis', '毕业论文方向', '论文题目或方向')}
+        ${inp('tsa_graduation', '毕业时间', '25年6月')}
+        ${inp('tsa_enrollment', '期待入学时间', '27年4月')}
+        ${inp('tsa_arrival', '赴日时间', '26年7月')}
+        ${inp('tsa_signup', '报名时间', '26年4月')}
+        ${inp('tsa_expiry', '到期时间', '27年3月')}
+        ${fld('tsa_mode', '默认上课方式', `<select id="tsa_mode" style="${inpStyle}"><option value="online">线上</option><option value="offline">线下</option></select>`)}
+      </div>
+      <button onclick="tsaSaveStudent()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit">保存</button>
+      <span id="tsa_save_msg" style="font-size:11px;margin-left:10px"></span>
+    </div>` : ''}
+
+    <div id="tsa_list" style="border:1px solid var(--border);border-radius:4px;overflow:hidden;overflow-x:auto">${tsaListHtml()}</div>
+    <div style="font-size:9px;color:var(--text-3);margin-top:6px">数据与 admin 学生档案为同一数据库、实时同步；此处可录入与查看，修改或删除请联系 admin。</div>
+  </div>`;
+}
+
+async function tsaSaveStudent() {
+  const name = document.getElementById('tsa_name').value.trim();
+  const major = document.getElementById('tsa_major').value;
+  if (!name) { alert('请填写姓名'); return; }
+  if (tsaStudents.find(s => s.name === name)) { if (!confirm(`已存在同名学生「${name}」，确定继续添加？`)) return; }
+  const msg = document.getElementById('tsa_save_msg');
+  if (msg) msg.textContent = '保存中…';
+  const g = id => document.getElementById(id).value;
+  const data = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    name, major,
+    student_type: g('tsa_type'), source: g('tsa_source'), course_type: g('tsa_course').trim(),
+    level: g('tsa_level'), japanese_score: g('tsa_japanese').trim(), english_score: g('tsa_english').trim(),
+    university: g('tsa_university').trim(), faculty: g('tsa_faculty').trim(), gpa: g('tsa_gpa').trim(),
+    thesis: g('tsa_thesis').trim(), graduation_date: g('tsa_graduation').trim(),
+    target_enrollment: g('tsa_enrollment').trim(), japan_arrival: g('tsa_arrival').trim(),
+    signup_date: g('tsa_signup').trim(), expiry_date: g('tsa_expiry').trim(),
+    default_mode: g('tsa_mode'), status: 'active',
+    student_code: tsaGenCode(),
+  };
+  try {
+    const res = await sb('/rest/v1/students', 'POST', data);
+    tsaStudents.unshift(Array.isArray(res) ? res[0] : data);
+    tsaFormOpen = false;
+    tsaRender();
+    alert(`已添加「${name}」\n查询码：${data.student_code}\n请转达学生，用于学习记录等页面登录。`);
+  } catch (e) { if (msg) msg.textContent = ''; alert('保存失败：' + e.message); }
+}
+
+// ══ 子项2：出席・作业记录 ══
+let tsrStudents = [];
+let tsrSearch = '';
+let tsrExpandedId = null;
+let tsrRecCache = {};
+
+async function renderTsaRecords(box) {
+  box.innerHTML = '<div class="empty">加载中…</div>';
+  try {
+    const all = await sb('/rest/v1/students?select=id,name,major,level,status&order=name.asc&limit=2000');
+    const set = tsaAllowedSet();
+    tsrStudents = (set ? (all || []).filter(s => set.has(s.major)) : (all || [])).filter(s => !s.status || s.status === 'active');
+  } catch (e) { box.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
+  tsrRender();
+}
+
+function tsrAtt(v) {
+  if (!v) return { t:'缺席', c:'var(--danger,#b03a2e)' };
+  return ({
+    offline: { t:'线下出席', c:'var(--ok,#2a9e6a)' },
+    online:  { t:'线上出席', c:'#2a6aad' },
+    replay:  { t:'录播回看', c:'var(--warn,#b8860b)' },
+    leave:   { t:'请假',     c:'var(--text-3,#999)' },
+  })[v] || { t:v, c:'var(--text-2,#666)' };
+}
+
+function tsrRender() {
+  const box = document.getElementById('sm_content');
+  if (!box) return;
+  const kw = tsrSearch.trim().toLowerCase();
+  const list = kw ? tsrStudents.filter(s => (s.name || '').toLowerCase().includes(kw)) : tsrStudents;
+  const set = tsaAllowedSet();
+
+  box.innerHTML = `<div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:600">🗒 出席・作业记录（在籍 ${list.length} 人）<span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:6px">${set ? '可见专业：' + [...set].map(m => MAJORS[m] || m).join('・') : '可见全部专业'}</span></div>
+      <input placeholder="搜索学生姓名…" value="${tsaEsc(tsrSearch)}" oninput="tsrSearch=this.value;tsrRender()" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;width:150px">
+    </div>
+    <div style="border:1px solid var(--border);border-radius:4px;overflow:hidden">
+      ${list.length ? list.map(s => {
+        const recs = tsrRecCache[s.id];
+        let sum = '';
+        if (recs) {
+          const present = recs.filter(r => ['offline','online','replay'].includes(r.attendance_status)).length;
+          const leave = recs.filter(r => r.attendance_status === 'leave').length;
+          const hw = recs.filter(r => r.homework_submitted || r.homework_file_url).length;
+          sum = recs.length
+            ? `共 ${recs.length} 课次 · 出席 ${present} · 请假 ${leave} · 缺席 ${recs.length - present - leave} · 作业已交 ${hw}`
+            : '暂无记录';
+        }
+        return `<div>
+        <div onclick="tsrToggle('${s.id}')" style="display:flex;align-items:center;gap:10px;padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);${tsrExpandedId === s.id ? 'background:var(--bg)' : ''}">
+          <span style="font-size:12px;font-weight:600">${tsaEsc(s.name)}</span>
+          <span style="font-size:10px;color:var(--text-3)">${MAJORS[s.major] || s.major || ''}${s.level ? ' · ' + s.level : ''}</span>
+          <span style="font-size:10px;color:var(--text-2);margin-left:auto">${sum || '点击查看记录'}</span>
+          <span style="font-size:10px;color:var(--text-3)">${tsrExpandedId === s.id ? '▲' : '▼'}</span>
+        </div>
+        ${tsrExpandedId === s.id ? `<div style="padding:8px 12px;background:var(--bg);border-bottom:1px solid var(--border)">
+          ${!recs ? '<div style="font-size:11px;color:var(--text-3);padding:6px">加载中…</div>' : !recs.length ? '<div style="font-size:11px;color:var(--text-3);padding:6px">暂无出席・作业记录</div>' : `
+          <table style="width:100%;border-collapse:collapse;font-size:11px">
+            <thead><tr>${['日期','课程','出席','作业'].map(h => `<th style="padding:4px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border)">${h}</th>`).join('')}</tr></thead>
+            <tbody>${recs.map(r => {
+              const a = tsrAtt(r.attendance_status);
+              const hw = (r.homework_submitted || r.homework_file_url)
+                ? (r.homework_file_url ? `<a href="${r.homework_file_url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent)">✓ 已交（查看）</a>` : '<span style="color:var(--ok,#2a9e6a)">✓ 已交</span>')
+                : '<span style="color:var(--text-3)">—</span>';
+              return `<tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:5px 8px;white-space:nowrap">${r.session_date || ''}</td>
+                <td style="padding:5px 8px">${tsaEsc(r.course_name || '')}</td>
+                <td style="padding:5px 8px;color:${a.c}">${a.t}</td>
+                <td style="padding:5px 8px">${hw}</td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table>`}
+        </div>` : ''}
+      </div>`;
+      }).join('') : '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:11px">暂无学生</div>'}
+    </div>
+  </div>`;
+}
+
+async function tsrToggle(id) {
+  tsrExpandedId = tsrExpandedId === id ? null : id;
+  tsrRender();
+  if (tsrExpandedId !== id || tsrRecCache[id]) return;
+  const s = tsrStudents.find(x => x.id === id);
+  if (!s) return;
+  try {
+    const recs = await sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(s.name)}&select=*&order=session_date.desc&limit=200`).catch(() => []);
+    // 补课程名（通过 session_id 查 course_sessions）
+    const sids = [...new Set(recs.map(r => r.session_id).filter(Boolean))];
+    const sesMap = {};
+    for (let i = 0; i < sids.length; i += 80) {
+      const chunk = sids.slice(i, i + 80);
+      const batch = await sb(`/rest/v1/course_sessions?id=in.(${chunk.map(x => `"${x}"`).join(',')})&select=id,course_name`).catch(() => []);
+      (batch || []).forEach(cs => sesMap[cs.id] = cs);
+    }
+    tsrRecCache[id] = recs.map(r => Object.assign({}, r, { course_name: r.course_name || (sesMap[r.session_id] && sesMap[r.session_id].course_name) || '' }));
+  } catch (e) { tsrRecCache[id] = []; }
+  if (tsrExpandedId === id) tsrRender();
 }
