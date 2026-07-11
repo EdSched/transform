@@ -235,7 +235,7 @@ function renderTeachersPage(mc){
               </div>
             </div>
             <div style="margin-left:20px">
-              <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可见的专业（适用于出席・作业记录与学生档案；不选则全部可见。考学进度仍按老师负责的面谈学生显示）</div>
+              <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可见的专业（适用于全部三个子项；不选则全部专业可见）</div>
               <div style="display:flex;flex-wrap:wrap;gap:4px" id="perm_student_majors">
                 ${[
               ['shakai','社会学'],['keiei','経営学'],['keizai','経済学'],
