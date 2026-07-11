@@ -840,9 +840,14 @@ function buildStudyRoadmap() {
   const nowIdx = now.getFullYear() * 12 + now.getMonth();
   const ymStr = i => `${Math.floor(i/12)}年${i%12+1}月`;
 
-  // 在学期间：签约月〜到期月；未登记时按本学年4月起显示12个月
-  let ws = studyParseYm(s.contract_start), we = studyParseYm(s.contract_end);
-  const contractKnown = ws != null;
+  // 在学期间：报名（档案创建 created_at）〜到期（expiry_date，档案已有字段）
+  // 到期缺失时按开始+11个月；两者都缺失时按本学年4月起显示12个月
+  let ws = studyParseYm(s.contract_start);
+  if (ws == null) ws = studyParseYm(s.created_at);
+  let we = studyParseYm(s.expiry_date);
+  if (we == null) we = studyParseYm(s.contract_end);
+  const contractKnown = ws != null || we != null;
+  if (ws == null && we != null) ws = we - 11;
   if (ws == null) { const y = now.getFullYear(), m = now.getMonth() + 1; ws = (m >= 4 ? y : y - 1) * 12 + 3; }
   if (we == null || we < ws) we = ws + 11;
   const total = we - ws + 1;
@@ -958,7 +963,7 @@ function renderStudyRoadmap() {
         ${Object.entries(STUDY_PREP_MODELS).map(([k,m]) => `<option value="${k}" ${R.modelKey===k?'selected':''}>${m.label}</option>`).join('')}
       </select></label>
     </div>
-    ${R.contractKnown ? '' : '<div style="font-size:10px;color:var(--warning);margin-bottom:6px">⚠ 尚未登记签约/到期时间，暂按本学年（4月起）显示。请联系老师在学生档案中登记。</div>'}
+    ${R.contractKnown ? '' : '<div style="font-size:10px;color:var(--warning);margin-bottom:6px">⚠ 档案中未登记到期时间，暂按本学年（4月起）显示。请联系老师在学生档案中填写「到期时间」。</div>'}
     ${R.banner ? `<div style="font-size:10px;color:var(--text-primary);background:var(--accent-light);border:1px solid var(--border-light);border-radius:3px;padding:7px 10px;margin-bottom:8px">${R.banner}</div>` : ''}
     ${R.total > (R.dispE - R.dispS + 1) ? `<div style="font-size:9px;color:var(--text-secondary);margin-bottom:6px">合同期较长，当前显示 ${R.ymStr(R.dispS)} 〜 ${R.ymStr(R.dispE)}</div>` : ''}
     <div style="overflow-x:auto">
