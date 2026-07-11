@@ -2271,24 +2271,34 @@ let teacherProgressData = { students: [], timeline: {}, schoolPlans: {}, planDra
 async function renderTeacherStudyProgress(mc) {
   mc.innerHTML = '<div class="empty">加载中…</div>';
 
-  // 拉取该老师负责的学生（通过面谈预约关联）
-  const myBookings = cachedTeacherBookings || [];
-  const myStudentNames = [...new Set(myBookings.map(b => b.name).filter(Boolean))];
+  // 与 admin 学生档案同步：显示允许专业范围内的全部在籍学生（student_majors 为空 = 全部专业）
+  let students = [];
+  try {
+    const all = await sb('/rest/v1/students?select=*&order=name.asc&limit=2000');
+    const set = (typeof tsaAllowedSet === 'function') ? tsaAllowedSet() : null;
+    students = (set ? (all || []).filter(s => set.has(s.major)) : (all || [])).filter(s => !s.status || s.status === 'active');
+  } catch (e) { mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
 
-  if (!myStudentNames.length) {
-    mc.innerHTML = '<div class="empty">暂无负责的学生数据</div>';
+  if (!students.length) {
+    mc.innerHTML = '<div class="empty">可见范围内暂无在籍学生</div>';
     return;
   }
 
-  // 拉取学生档案
-  const students = await sb(`/rest/v1/students?name=in.(${myStudentNames.map(n=>`"${n}"`).join(',')})&select=*`).catch(()=>[]);
-
-  // 拉取进度时间线
+  // 分批拉取时间线/志望校/计划书（每批80个学生，避免URL过长）
   const stuIds = students.map(s => s.id);
+  const chunkFetch = async build => {
+    let out = [];
+    for (let i = 0; i < stuIds.length; i += 80) {
+      const ids = stuIds.slice(i, i + 80).map(id => `"${id}"`).join(',');
+      const batch = await sb(build(ids)).catch(() => []);
+      out = out.concat(batch || []);
+    }
+    return out;
+  };
   const [allTimeline, allPlans, allDrafts] = await Promise.all([
-    stuIds.length ? sb(`/rest/v1/student_progress_timeline?student_id=in.(${stuIds.map(id=>`"${id}"`).join(',')})&select=*&order=created_at.asc`).catch(()=>[]) : [],
-    stuIds.length ? sb(`/rest/v1/student_school_plans?student_id=in.(${stuIds.map(id=>`"${id}"`).join(',')})&select=*&order=level.asc`).catch(()=>[]) : [],
-    stuIds.length ? sb(`/rest/v1/student_plan_drafts?student_id=in.(${stuIds.map(id=>`"${id}"`).join(',')})&select=*&order=updated_at.desc`).catch(()=>[]) : [],
+    chunkFetch(ids => `/rest/v1/student_progress_timeline?student_id=in.(${ids})&select=*&order=created_at.asc`),
+    chunkFetch(ids => `/rest/v1/student_school_plans?student_id=in.(${ids})&select=*&order=level.asc`),
+    chunkFetch(ids => `/rest/v1/student_plan_drafts?student_id=in.(${ids})&select=*&order=updated_at.desc`),
   ]);
 
   // 按学生ID分组
@@ -2351,11 +2361,10 @@ async function renderTeacherStudyProgress(mc) {
           <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px">
             <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">📄 计划书进度</div>
             ${draft ? `
-            <div style="font-size:11px;color:var(--text-2)">${draft.research_question?`问题：${draft.research_question.slice(0,40)}…`:''}</div>
-            <div style="font-size:11px;color:var(--text-2)">${draft.prior_research?`先行研究：${draft.prior_research.slice(0,30)}…`:''}</div>
+            ${tDraftSummaryHtml(draft)}
             ${draft.draft_file_url?`<a href="${draft.draft_file_url}" target="_blank" style="font-size:10px;color:var(--accent)">📎 草稿文件</a>`:''}
             <button onclick="openTeacherDraftComment('${s.id}','${s.name}')" style="margin-top:6px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;display:block">
-              ${draft.teacher_comment?'修改批注':'添加批注'}
+              ${draft.teacher_comment?'查看全文・修改批注':'查看全文・添加批注'}
             </button>
             ` : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写</div>'}
           </div>
@@ -2413,10 +2422,8 @@ function openTeacherDraftComment(studentId, studentName) {
   modal.innerHTML = `
     <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:420px;width:100%">
       <div style="font-size:13px;font-weight:600;margin-bottom:10px">📝 计划书批注 · ${studentName}</div>
-      <div style="background:var(--bg);border-radius:3px;padding:10px;font-size:11px;color:var(--text-2);margin-bottom:12px;line-height:1.8">
-        ${draft.research_question?`<div>问题意识：${draft.research_question}</div>`:''}
-        ${draft.prior_research?`<div>先行研究：${draft.prior_research}</div>`:''}
-        ${draft.methodology?`<div>研究方法：${draft.methodology}</div>`:''}
+      <div style="background:var(--bg);border-radius:3px;padding:10px;font-size:11px;color:var(--text-2);margin-bottom:12px;line-height:1.8;max-height:45vh;overflow-y:auto">
+        ${tDraftFullHtml(draft)}
         ${draft.draft_file_url?`<a href="${draft.draft_file_url}" target="_blank" style="color:var(--accent)">📎 草稿文件</a>`:''}
       </div>
       <div class="form-group">
@@ -2724,4 +2731,64 @@ async function tsrToggle(id) {
     tsrRecCache[id] = recs.map(r => Object.assign({}, r, { course_name: r.course_name || (sesMap[r.session_id] && sesMap[r.session_id].course_name) || '' }));
   } catch (e) { tsrRecCache[id] = []; }
   if (tsrExpandedId === id) tsrRender();
+}
+
+// ══ 计划书内容渲染（供考学进度卡片与批注弹窗使用） ══
+// 草稿字段标签（经济/经营/社会人文三套模板字段的并集）
+const T_DRAFT_LABELS = {
+  theme:'研究テーマ', field:'志望分野', data_source:'データ出処', data_type:'データ種類',
+  prior_lit:'先行文献', hypothesis:'仮説', difference:'先行研究との違い',
+  var_y:'被説明変数Y', var_x:'説明変数X', var_ctrl:'コントロール変数',
+  model:'モデル', model_other:'その他', regression:'回帰式',
+  background:'一、研究背景', prior:'二、先行研究', purpose:'三、研究目的',
+  method:'四、研究方法', significance:'五、研究意義',
+};
+// 先行研究字段标签（两套整理格式的并集）
+const T_REF_LABELS = {
+  keyword:'キーワード', title:'題目/テーマ', author:'著者', year:'年', journal:'刊行物',
+  data:'研究対象/データ', method:'研究方法', summary:'概要', awareness:'問題意識',
+  conclusion:'結論', citation:'引用', evaluation:'評価', note:'備考',
+};
+
+function tDraftRefs(draft) { try { return draft && draft.prior_research_list ? JSON.parse(draft.prior_research_list) : []; } catch (e) { return []; } }
+function tDraftFields(draft) { try { return draft && draft.draft_fields ? JSON.parse(draft.draft_fields) : {}; } catch (e) { return {}; } }
+function tFieldVal(v) { return Array.isArray(v) ? v.join('、') : (v == null ? '' : String(v)); }
+
+// 卡片内摘要：先行研究条数 + 前几个已填字段
+function tDraftSummaryHtml(draft) {
+  const refs = tDraftRefs(draft);
+  const filled = Object.entries(tDraftFields(draft)).filter(([k, v]) => tFieldVal(v).trim());
+  const lines = [`<div style="font-size:11px;color:var(--text-2)">📚 先行研究：${refs.length ? `已整理 ${refs.length} 条` : '未整理'}</div>`];
+  filled.slice(0, 3).forEach(([k, v]) => {
+    const t = tFieldVal(v).replace(/\n/g, ' ');
+    lines.push(`<div style="font-size:11px;color:var(--text-2)">${T_DRAFT_LABELS[k] || k}：${tsaEsc(t.length > 26 ? t.slice(0, 26) + '…' : t)}</div>`);
+  });
+  if (!filled.length) {
+    if (draft.research_question) lines.push(`<div style="font-size:11px;color:var(--text-2)">问题：${tsaEsc(draft.research_question.slice(0, 40))}…</div>`);
+    if (draft.methodology) lines.push(`<div style="font-size:11px;color:var(--text-2)">方法：${tsaEsc(draft.methodology.slice(0, 30))}…</div>`);
+  }
+  if (filled.length > 3) lines.push(`<div style="font-size:10px;color:var(--text-3)">…共 ${filled.length} 项已填，点击下方查看全文</div>`);
+  return lines.join('');
+}
+
+// 弹窗内全文：先行研究逐条 + 草稿字段逐项 + 旧字段兼容
+function tDraftFullHtml(draft) {
+  const refs = tDraftRefs(draft);
+  const filled = Object.entries(tDraftFields(draft)).filter(([k, v]) => tFieldVal(v).trim());
+  let h = '';
+  if (refs.length) {
+    h += `<div style="font-weight:600;margin-bottom:4px">📚 先行研究（${refs.length}条）</div>`;
+    h += refs.map((r, i) => {
+      const parts = Object.entries(r).filter(([k, v]) => v).map(([k, v]) => `<span style="color:var(--text-3)">${T_REF_LABELS[k] || k}：</span>${tsaEsc(v)}`).join('　');
+      return `<div style="margin-bottom:5px;padding-bottom:5px;border-bottom:1px dashed var(--border)">${i + 1}. ${parts}</div>`;
+    }).join('');
+  }
+  if (filled.length) {
+    h += `<div style="font-weight:600;margin:8px 0 4px">📄 计划书草稿</div>`;
+    h += filled.map(([k, v]) => `<div style="margin-bottom:5px"><span style="color:var(--text-3)">${T_DRAFT_LABELS[k] || k}：</span>${tsaEsc(tFieldVal(v)).replace(/\n/g, '<br>')}</div>`).join('');
+  }
+  if (draft.research_question) h += `<div style="margin-bottom:4px"><span style="color:var(--text-3)">问题意识：</span>${tsaEsc(draft.research_question)}</div>`;
+  if (draft.methodology) h += `<div style="margin-bottom:4px"><span style="color:var(--text-3)">研究方法：</span>${tsaEsc(draft.methodology)}</div>`;
+  if (draft.draft_notes) h += `<div style="margin-bottom:4px"><span style="color:var(--text-3)">进展说明：</span>${tsaEsc(draft.draft_notes)}</div>`;
+  return h || '<div style="color:var(--text-3)">暂无填写内容</div>';
 }
