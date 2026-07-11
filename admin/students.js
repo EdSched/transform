@@ -144,7 +144,7 @@ function openStudentModal(id){
     st_english:'english_score',st_university:'university',st_faculty:'faculty',
     st_gpa:'gpa',st_thesis:'thesis',st_graduation:'graduation_date',
     st_enrollment:'target_enrollment',st_arrival:'japan_arrival',
-    st_expiry:'expiry_date',st_default_mode:'default_mode',st_status:'status',
+    st_signup:'signup_date',st_expiry:'expiry_date',st_default_mode:'default_mode',st_status:'status',
     st_vip_course:'is_vip_course',st_vip_total:'vip_hours_total',st_vip_used:'vip_hours_used'
   };
   Object.entries(fields).forEach(([el,key])=>{
@@ -202,6 +202,7 @@ async function saveStudent(){
     graduation_date:document.getElementById('st_graduation').value,
     target_enrollment:document.getElementById('st_enrollment').value,
     japan_arrival:document.getElementById('st_arrival').value,
+    signup_date:document.getElementById('st_signup').value,
     expiry_date:document.getElementById('st_expiry').value,
     default_mode:document.getElementById('st_default_mode').value,
     status:document.getElementById('st_status').value,
@@ -303,6 +304,7 @@ async function openStudentDetail(id){
     ${row('毕业时间',s.graduation_date)}
     ${row('期待入学',s.target_enrollment)}
     ${row('赴日时间',s.japan_arrival)}
+    ${row('报名时间',s.signup_date)}
     ${row('到期时间',s.expiry_date)}
     ${row('上课方式',s.default_mode==='online'?'线上':'线下')}
     ${row('查询码',s.student_code)}
@@ -622,7 +624,7 @@ function exportCoursesExcel(){
 
 function exportStudents(){
   if(!cachedStudents.length){alert('暂无学生数据');return}
-  const rows=cachedStudents.map(s=>({'姓名':s.name,'专业':MAJORS[s.major]||s.major||'','等级':s.level||'','属性':s.student_type||'','来源':s.source||'','课程属性':s.course_type||'','日语成绩':s.japanese_score||'','英语成绩':s.english_score||'','出身大学':s.university||'','学部专业':s.faculty||'','GPA':s.gpa||'','毕业时间':s.graduation_date||'','入学目标':s.target_enrollment||'','赴日时间':s.japan_arrival||'','到期时间':s.expiry_date||'','状态':s.status||'','困难点':s.difficulty||'','备注':s.notes||''}));
+  const rows=cachedStudents.map(s=>({'姓名':s.name,'专业':MAJORS[s.major]||s.major||'','等级':s.level||'','属性':s.student_type||'','来源':s.source||'','课程属性':s.course_type||'','日语成绩':s.japanese_score||'','英语成绩':s.english_score||'','出身大学':s.university||'','学部专业':s.faculty||'','GPA':s.gpa||'','毕业时间':s.graduation_date||'','入学目标':s.target_enrollment||'','赴日时间':s.japan_arrival||'','报名时间':s.signup_date||'','到期时间':s.expiry_date||'','状态':s.status||'','困难点':s.difficulty||'','备注':s.notes||''}));
   const ws=XLSX.utils.json_to_sheet(rows),wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'学生档案');
   XLSX.writeFile(wb,'学生档案.xlsx');
@@ -647,6 +649,7 @@ const COL_MAP = {
   'GPA/其他履历':'gpa', 'GPA':'gpa', 'GPA/其他':'gpa',
   '毕业时间':'graduation_date',
   '期待入学时间':'target_enrollment', '進度/希望入学时间':'target_enrollment', '期待入学':'target_enrollment',
+  '报名时间':'signup_date', '签约时间':'signup_date',
   '到期时间':'expiry_date', '截至日期':'expiry_date',
   '赴日时间':'japan_arrival',
   'テーマ':'research_plan',
