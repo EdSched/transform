@@ -840,9 +840,10 @@ function buildStudyRoadmap() {
   const nowIdx = now.getFullYear() * 12 + now.getMonth();
   const ymStr = i => `${Math.floor(i/12)}年${i%12+1}月`;
 
-  // 在学期间：报名（档案创建 created_at）〜到期（expiry_date，档案已有字段）
+  // 在学期间：报名时间 signup_date（缺失时退回档案创建 created_at）〜到期 expiry_date
   // 到期缺失时按开始+11个月；两者都缺失时按本学年4月起显示12个月
-  let ws = studyParseYm(s.contract_start);
+  let ws = studyParseYm(s.signup_date);
+  if (ws == null) ws = studyParseYm(s.contract_start);
   if (ws == null) ws = studyParseYm(s.created_at);
   let we = studyParseYm(s.expiry_date);
   if (we == null) we = studyParseYm(s.contract_end);
