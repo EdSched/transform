@@ -705,7 +705,8 @@ async function submitBooking() {
           japanese: mapJapaneseScore(jaText),
           english: mapEnglishScore(enText),
           plan: planMap[planStatus] || '',
-          apply: applyMap[booking.application_status] || '',
+          // 出愿进度未填时，退回「择校状况」的映射（已择校→联系教授中，择校中→择校确认中）
+          apply: applyMap[booking.application_status] || ({'已择校':'联系教授中','择校中':'择校确认中'}[booking.target_school] || ''),
           notes: [jaText?`日语：${jaText}`:'', enText?`英语：${enText}`:'', booking.target_school?`目标：${booking.target_school}`:''].filter(Boolean).join('　'),
         });
         if (entry.japanese||entry.english||entry.plan||entry.apply||entry.notes) {
