@@ -799,6 +799,7 @@ async function renderSeasonView(mc, students, timelineMap) {
   // 拉取所有学生志望校
   const allPlans = await sb('/rest/v1/student_school_plans?select=*&order=level.asc').catch(()=>[]);
   const seasonLabel = { summer:'夏季', winter:'冬季', next_year:'次年' };
+  const seasonTitle = s => s === 'unknown' ? '出愿时期未定' : `${seasonLabel[s]||s}出愿`;
   const levelLabel = { 1:'🔴 冲刺', 2:'🟡 匹配', 3:'🟢 保底' };
   const statusLabel = { preparing:'准备中', applied:'已出愿', passed:'✅ 合格', failed:'❌ 不合格' };
 
@@ -852,7 +853,7 @@ async function renderSeasonView(mc, students, timelineMap) {
     const totalStudents = new Set(Object.values(filteredSchools).flat().map(p=>p.student_id)).size;
     html += `<div style="margin-bottom:20px">
       <div style="font-size:13px;font-weight:600;color:var(--text);padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:4px 4px 0 0;display:flex;align-items:center;gap:8px">
-        📅 ${seasonLabel[season]||season}出愿
+        📅 ${seasonTitle(season)}
         <span style="font-size:11px;font-weight:400;color:var(--text-3)">${totalStudents} 名学生</span>
       </div>
       <div style="border:1px solid var(--border);border-top:none;border-radius:0 0 4px 4px;overflow:hidden">
