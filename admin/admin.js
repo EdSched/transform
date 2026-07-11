@@ -222,6 +222,30 @@ function renderTeachersPage(mc){
               <div id="perm_homework_courses" style="display:flex;flex-wrap:wrap;gap:4px;max-height:80px;overflow-y:auto"></div>
             </div>
           </div>
+          <!-- student_mgmt row -->
+          <div style="padding:10px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;white-space:nowrap"><input type="checkbox" id="perm_student_mgmt" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">学生管理</label>
+            <div style="font-size:10px;color:var(--text-3);margin-bottom:8px;margin-left:20px">开启后老师端显示「学生管理」页，按下方勾选的子项提供对应功能</div>
+            <div style="margin-left:20px;margin-bottom:8px">
+              <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可用的子项</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px" id="perm_student_mgmt_items">
+                ${[
+              ['progress','考学进度'],['records','出席・作业记录'],['profile','学生档案录入'],
+            ].map(([k,v])=>`<div class="filter-chip" data-value="${k}" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">${v}</div>`).join('')}
+              </div>
+            </div>
+            <div style="margin-left:20px">
+              <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可见的专业（适用于出席・作业记录与学生档案；不选则全部可见。考学进度仍按老师负责的面谈学生显示）</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px" id="perm_student_majors">
+                ${[
+              ['shakai','社会学'],['keiei','経営学'],['keizai','経済学'],
+              ['shinpan','新闻传播学'],['fukushi','社会福祉学'],['nihongo','日本语教育'],
+              ['hyosho','表象文化・文学・哲学'],['seiji','政治学'],['toyo','東洋史'],
+              ['bunka','文化人类学'],['mot','MOT'],['tokei','統計・計量'],
+            ].map(([k,v])=>`<div class="filter-chip" data-value="${k}" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">${v}</div>`).join('')}
+              </div>
+            </div>
+          </div>
           <!-- admission_query row -->
           <div style="padding:10px">
             <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;white-space:nowrap"><input type="checkbox" id="perm_admission_query" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">出願数据查询</label>
@@ -278,10 +302,11 @@ function cancelEditTeacher(){
   document.getElementById('teacherFormCancelBtn').style.display='none';
   document.getElementById('new_teacher_name').value='';
   document.getElementById('new_teacher_notes').value='';
-  document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip').forEach(c=>c.classList.remove('active'));
+  document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active'));
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
   document.getElementById('perm_schedule').checked=false;
+    document.getElementById('perm_student_mgmt').checked=false;
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
   document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>c.classList.remove('active'));
@@ -291,10 +316,11 @@ function openTeacherManager(){
   // reset add form
   document.getElementById('new_teacher_name').value='';
   document.getElementById('new_teacher_notes').value='';
-  document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip').forEach(c=>c.classList.remove('active'));
+  document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active'));
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
   document.getElementById('perm_schedule').checked=false;
+    document.getElementById('perm_student_mgmt').checked=false;
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
   document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>c.classList.remove('active'));
@@ -314,6 +340,7 @@ function renderTeacherList(){
           if(p.booking) perms.push(`预约(${(p.booking_types||[]).join('/')})`);
           if(p.slots) perms.push(`时间槽(${(p.slot_types||[]).join('/')})`);
           if(p.schedule) perms.push('排班');
+          if(p.student_mgmt){const _sm={progress:'考学进度',records:'出席作业',profile:'档案录入'};perms.push('学生管理('+(((p.student_mgmt_items||[]).map(k=>_sm[k]||k).join('/'))||'—')+')');}
           const link=`${base}?teacher=${encodeURIComponent(t.name)}`;
           return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px">
@@ -355,6 +382,9 @@ function getPermissionsFromForm(){
     homework_courses:[...document.querySelectorAll('#perm_homework_courses .filter-chip.active')].map(c=>c.dataset.value),
     admission_query:document.getElementById('perm_admission_query').checked,
     admission_majors:[...document.querySelectorAll('#perm_admission_majors .filter-chip.active')].map(c=>c.dataset.value),
+    student_mgmt:document.getElementById('perm_student_mgmt').checked,
+    student_mgmt_items:[...document.querySelectorAll('#perm_student_mgmt_items .filter-chip.active')].map(c=>c.dataset.value),
+    student_majors:[...document.querySelectorAll('#perm_student_majors .filter-chip.active')].map(c=>c.dataset.value),
   };
 }
 
@@ -371,10 +401,11 @@ async function addTeacher(){
     cachedTeachers.push(Array.isArray(res)?res[0]:t);
     document.getElementById('new_teacher_name').value='';
     document.getElementById('new_teacher_notes').value='';
-    document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip').forEach(c=>c.classList.remove('active'));
+    document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active'));
     document.getElementById('perm_booking').checked=false;
     document.getElementById('perm_slots').checked=false;
     document.getElementById('perm_schedule').checked=false;
+    document.getElementById('perm_student_mgmt').checked=false;
     renderTeacherList();
   }catch(e){alert('添加失败：'+e.message)}
 }
@@ -392,6 +423,9 @@ function openEditTeacher(id){
   document.getElementById('perm_homework').checked=!!p.homework;
   document.getElementById('perm_admission_query').checked=!!p.admission_query;
   document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>{c.classList.toggle('active',(p.admission_majors||[]).includes(c.dataset.value));});
+  document.getElementById('perm_student_mgmt').checked=!!p.student_mgmt;
+  document.querySelectorAll('#perm_student_mgmt_items .filter-chip').forEach(c=>{c.classList.toggle('active',(p.student_mgmt_items||[]).includes(c.dataset.value));});
+  document.querySelectorAll('#perm_student_majors .filter-chip').forEach(c=>{c.classList.toggle('active',(p.student_majors||[]).includes(c.dataset.value));});
   document.querySelectorAll('#perm_booking_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.booking_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_slot_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.slot_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_vip_content .filter-chip').forEach(c=>{c.classList.toggle('active',(p.vip_content||[]).includes(c.dataset.value))});
