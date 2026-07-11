@@ -2482,9 +2482,13 @@ function renderStudentMgmt(mc) {
   else renderTeacherStudents(box);
 }
 
-// ── 共用：允许专业集合（student_majors 为空 = 全部专业） ──
+// ── 共用：允许专业集合（三个子项统一使用；与面谈预约逻辑完全无关） ──
+// 判定顺序：admin 显式勾选的 student_majors > 老师档案自身的 majors > 全部可见（兜底）
 function tsaAllowedSet() {
-  const allowed = (teacherData && teacherData.permissions && teacherData.permissions.student_majors) || [];
+  const p = (teacherData && teacherData.permissions) || {};
+  let allowed = (Array.isArray(p.student_majors) && p.student_majors.length)
+    ? p.student_majors
+    : (Array.isArray(teacherData && teacherData.majors) ? teacherData.majors : []);
   if (!allowed.length) return null;
   const set = new Set(allowed);
   if (set.has('shakai_group') && typeof SHAKAI_GROUP !== 'undefined') SHAKAI_GROUP.forEach(m => set.add(m));
