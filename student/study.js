@@ -782,24 +782,34 @@ async function studySavePlanField(fields) {
 // ══════════════════════════════════
 // 考学进度 Tab
 // ══════════════════════════════════
-// ── 备考规划：标准进度模型 ──
-// 相对目标入学月（E）的偏移量（月），如 [-10,-8] = 入学前10〜8个月
-const STUDY_STAGE_REQ = {
-  lit:       '精读并整理 10 篇以上相关文献',
-  plan:      '初稿完成并经老师修改 2 轮以上，出愿前 1 个月定稿',
-  school:    '确定 3〜6 所志望校，需事前联系的教授全部发信',
-  apply:     '按各校募集要项备齐材料并按期提交',
-  exam_prep: '过去问 3 年分以上，每周固定练习',
-  interview: '完成面试稿，模拟面试至少 2 次',
-};
+// ── 备考规划：考试周期模型 ──
+// 修士考试每年两轮：夏季（7月出愿・8月考试）、冬季（12月出愿・次年1月考试）。
+// 各节点相对考试月 E 偏移固定：E-3 完成计划书草稿（最晚）、E-2 针对教授修改・参加说明会、
+// E-1 出愿・过去问刷题、E 面试稿・考试、E+1〜E+2 等待结果・合格发表。
+// 夏季对应 5/6/7/8 月，冬季对应 10/11/12/1 月，与通年进度安排一致。
 const STUDY_PREP_MODELS = {
-  summer: { label:'夏季出愿型',
-    stages: { lit:[-11,-9], plan:[-10,-8], school:[-10,-8], apply:[-8,-7], exam_prep:[-9,-5], interview:[-6,-5] },
-    exams:[-7,-6] },
-  winter: { label:'冬季出愿型（二次募集）',
-    stages: { lit:[-11,-7], plan:[-8,-5], school:[-7,-5], apply:[-5,-4], exam_prep:[-6,-2], interview:[-3,-2] },
-    exams:[-3,-2] },
+  summer: { label:'夏季考试路线（7月出愿・8月考试）', examMonth: 8 },
+  winter: { label:'冬季考试路线（12月出愿・次年1月考试）', examMonth: 1 },
 };
+
+// 七个项目（与通年进度表一致）：月度节点（相对考试月E的偏移 → 内容）；red 中的偏移红底强调
+// dl = 最晚节点偏移，dlName = 节点名称（用于倒计时文案）
+const STUDY_ROADMAP_ROWS = [
+  { key:'japanese', icon:'🈴', label:'日语', dl:-1, dlName:'成绩送分最晚',
+    ms:{ '-2':'EJU 考试', '-1':'JLPT 考试・成绩送分', '0':'日语成绩确定' } },
+  { key:'english', icon:'🔤', label:'英语', dl:-1, dlName:'成绩送分最晚',
+    ms:{ '-3':'托福考试', '-2':'托业考试', '-1':'英语送分' } },
+  { key:'plan', icon:'📄', label:'研究计划书', dl:-3, dlName:'草稿完成最晚',
+    ms:{ '-4':'问题意识・先行研究', '-3':'完成草稿（最晚）', '-2':'zemi 发表・针对教授修改', '-1':'针对出愿学校修改' } },
+  { key:'school', icon:'🏫', label:'择校相关', dl:-2, dlName:'锁定教授最晚',
+    ms:{ '-4':'完成初版出愿 list', '-3':'锁定教授', '-2':'针对教授修改计划书' } },
+  { key:'apply', icon:'📮', label:'出愿相关', dl:-1, dlName:'出愿',
+    ms:{ '-4':'准备相关证明', '-3':'联系教授', '-2':'参加说明会', '-1':'出愿' }, red:['-1'] },
+  { key:'kakomon', icon:'✏️', label:'过去问备考', dl:0, dlName:'面试稿完成最晚',
+    ms:{ '-3':'阅读教授论文', '-2':'笔试练习开始', '-1':'过去问刷题', '0':'面试稿・面试训练' } },
+  { key:'exam', icon:'🎓', label:'大学院考试', dl:0, dlName:'考试',
+    ms:{ '0':'考试期间', '1':'等待结果', '2':'合格发表' }, red:['0'] },
+];
 
 function studyPrepModelKey() {
   return STUDY_PREP_MODELS[studyStudent && studyStudent.prep_model] ? studyStudent.prep_model : 'summer';
@@ -812,212 +822,163 @@ async function studySetPrepModel(v) {
   try { await sb(`/rest/v1/students?id=eq.${studyStudent.id}`, 'PATCH', { prep_model: v }); } catch(e) {}
 }
 
-// ── 备考规划月份表 ──
-// 以目标入学月为终点取12个月窗口；标准线来自所选进度模型；
-// 实际计划的出愿/笔试月份取自「志望校」填写的出愿时间与考试日期，未填写时贴合标准线；
-// 各阶段状态来自进度时间线/计划书/志望校/面谈数据自动汇总
+// 解析 "26年4月" / "2026年4月" / "2026-04" → 月序号
+function studyParseYm(str) {
+  let m = /(\d{2,4})\s*年\s*(\d{1,2})\s*月/.exec(str || '');
+  if (!m) m = /(\d{4})[\-\/\.](\d{1,2})/.exec(str || '');
+  if (!m) return null;
+  let y = +m[1]; if (y < 100) y += 2000;
+  const mo = +m[2];
+  return (mo >= 1 && mo <= 12) ? y * 12 + mo - 1 : null;
+}
+
 function buildStudyRoadmap() {
   const s = studyStudent;
   const latest = getLatestProgress(studyData.timeline);
   const plans = studyData.schoolPlans || [];
-  const d = studyData.planDraft || {};
-  let refsCount = 0;
-  try { refsCount = d.prior_research_list ? JSON.parse(d.prior_research_list).length : 0; } catch(e) {}
-
   const now = new Date();
   const nowIdx = now.getFullYear() * 12 + now.getMonth();
-  let enr = null;
-  const em = /(\d{2,4})\s*年\s*(\d{1,2})\s*月/.exec(s.target_enrollment || '');
-  if (em) { let y = +em[1]; if (y < 100) y += 2000; const mo = +em[2]; if (mo >= 1 && mo <= 12) enr = { y, m: mo }; }
-  const endIdx = enr ? enr.y * 12 + (enr.m - 1) : nowIdx + 11;
-  const startIdx = endIdx - 11;
-  const inWin = i => i >= startIdx && i <= endIdx;
-  const clamp = i => Math.min(endIdx, Math.max(startIdx, i));
   const ymStr = i => `${Math.floor(i/12)}年${i%12+1}月`;
 
+  // 在学期间：签约月〜到期月；未登记时按本学年4月起显示12个月
+  let ws = studyParseYm(s.contract_start), we = studyParseYm(s.contract_end);
+  const contractKnown = ws != null;
+  if (ws == null) { const y = now.getFullYear(), m = now.getMonth() + 1; ws = (m >= 4 ? y : y - 1) * 12 + 3; }
+  if (we == null || we < ws) we = ws + 11;
+  const total = we - ws + 1;
+  // 显示窗口：超过14个月的合同期截取当前周期附近
+  let dispS = ws, dispE = we;
+  if (total > 14) { dispS = Math.max(ws, Math.min(nowIdx - 2, we - 13)); dispE = Math.min(we, dispS + 13); }
+
+  // 当前考试周期：所选路线下一次考试月
   const modelKey = studyPrepModelKey();
-  const model = STUDY_PREP_MODELS[modelKey];
-  const stdSpan = k => [clamp(endIdx + model.stages[k][0]), clamp(endIdx + model.stages[k][1])];
+  const nextExamIdx = examMonth => { let e = now.getFullYear() * 12 + (examMonth - 1); while (e < nowIdx) e += 12; return e; };
+  const examIdx = nextExamIdx(STUDY_PREP_MODELS[modelKey].examMonth);
+  const otherKey = modelKey === 'summer' ? 'winter' : 'summer';
+  const altExamIdx = nextExamIdx(STUDY_PREP_MODELS[otherKey].examMonth);
 
-  // 从"8月上旬"/"2026-08-01"等文本提取窗口内的月份
-  function monthsFrom(text) {
-    const out = new Set(); const t = String(text || ''); let m;
-    const reY = /(\d{4})[年\-\/\.](\d{1,2})/g;
-    while ((m = reY.exec(t))) { const mo = +m[2]; if (mo >= 1 && mo <= 12) { const i = (+m[1])*12 + mo - 1; if (inWin(i)) out.add(i); } }
-    const reM = /(?:^|[^\d])(\d{1,2})\s*月/g;
-    while ((m = reM.exec(t))) { const mo = +m[1]; if (mo < 1 || mo > 12) continue; for (let i = startIdx; i <= endIdx; i++) if (i%12+1 === mo) { out.add(i); break; } }
-    return [...out];
-  }
-
-  // 出愿月（实际）：来自已选学校；无数据时贴合标准线
-  let applyMonths = [];
-  plans.forEach(p => { applyMonths = applyMonths.concat(monthsFrom(p.application_period)); });
-  applyMonths = [...new Set(applyMonths)];
-  const applyFromPlans = applyMonths.length > 0;
-  if (!applyMonths.length) applyMonths = stdSpan('apply');
-  const aFrom = clamp(Math.min(...applyMonths)), aTo = clamp(Math.max(...applyMonths));
-
-  // 笔试月（实际）：来自已选学校考试日期；无数据时贴合标准线
-  let examMonths = [];
-  plans.forEach(p => { examMonths = examMonths.concat(monthsFrom(p.exam_date)); });
-  examMonths = [...new Set(examMonths)];
-  const examFromPlans = examMonths.length > 0;
-  if (!examMonths.length) examMonths = [clamp(endIdx + model.exams[0]), clamp(endIdx + model.exams[1])];
-  const xFrom = clamp(Math.min(...examMonths)), xTo = clamp(Math.max(...examMonths));
-
-  // 阶段状态与当前进度文字
-  const plan = latest.plan || '', apply = latest.apply || '', exam = latest.exam || '';
-  const mocks = (studyData.bookings || []).filter(b => b.type === 'mock' && b.status !== 'cancelled');
-  const stages = {
-    lit: {
-      status: ['撰写中','修改中','已完成'].includes(plan) ? 'done' : (refsCount > 0 || plan === '收集资料中') ? 'active' : 'todo',
-      cur: refsCount ? `已整理 ${refsCount} 条文献` : (plan === '收集资料中' ? '收集资料中' : '未开始'),
-    },
-    plan: {
-      status: plan === '已完成' ? 'done' : ['撰写中','修改中'].includes(plan) ? 'active' : 'todo',
-      cur: plan || '未填写',
-    },
-    school: {
-      status: ['材料准备中','已出愿','已合格'].includes(apply) ? 'done' : (plans.length > 0 || ['择校确认中','联系教授中'].includes(apply)) ? 'active' : 'todo',
-      cur: (plans.length ? `已选 ${plans.length}/6 校` : '未选校') + (apply ? ` · ${apply}` : ''),
-    },
-    apply: {
-      status: ['已出愿','已合格'].includes(apply) ? 'done' : apply === '材料准备中' ? 'active' : 'todo',
-      cur: apply || '未出愿',
-    },
-    exam_prep: {
-      status: (typeof PROGRESS_DONE !== 'undefined' && (PROGRESS_DONE.exam || []).includes(exam)) ? 'done' : exam ? 'active' : 'todo',
-      cur: exam || '未填写',
-    },
-    interview: {
-      status: mocks.some(b => b.status === 'completed') ? 'done' : mocks.length ? 'active' : 'todo',
-      cur: mocks.length ? `模拟面试 ${mocks.length} 次` : '未开始',
-    },
+  // 各项目状态与当前进度文字（来自进度记录/计划书/志望校/学生档案）
+  const jp = latest.japanese || '', en = latest.english || '', plan = latest.plan || '', apply = latest.apply || '', exam = latest.exam || '';
+  const isDone = (k, v) => typeof PROGRESS_DONE !== 'undefined' && (PROGRESS_DONE[k] || []).includes(v);
+  let refsCount = 0;
+  try { refsCount = studyData.planDraft && studyData.planDraft.prior_research_list ? JSON.parse(studyData.planDraft.prior_research_list).length : 0; } catch(e) {}
+  const stateOf = {
+    japanese: { done: isDone('japanese', jp), active: !!jp, cur: [jp || '未填写', s.japanese_score || ''].filter(Boolean).join(' · ') },
+    english:  { done: isDone('english', en), active: !!en, cur: [en || '未填写', s.english_score || ''].filter(Boolean).join(' · ') },
+    plan:     { done: plan === '已完成', active: ['收集资料中','撰写中','修改中'].includes(plan), cur: [plan || '未填写', refsCount ? `文献 ${refsCount} 条` : ''].filter(Boolean).join(' · ') },
+    school:   { done: plans.length > 0, active: apply === '择校确认中', cur: plans.length ? `已选 ${plans.length}/6 校` : '未选校' },
+    apply:    { done: ['已出愿','已合格'].includes(apply), active: ['联系教授中','材料准备中'].includes(apply), cur: apply || '未开始' },
+    kakomon:  { done: isDone('exam', exam), active: !!exam, cur: exam || '未填写' },
+    exam:     { done: apply === '已合格', active: apply === '已出愿', cur: apply === '已合格' ? '已合格' : apply === '已出愿' ? '已出愿・待考试' : '—' },
   };
 
-  // 实际计划区间（出愿/笔试按志望校数据，其余阶段挂靠实际出愿/笔试月推导）
-  const actSpan = {
-    lit:       [startIdx, clamp(aFrom - 3)],
-    plan:      [clamp(aFrom - 4), clamp(aFrom - 1)],
-    school:    [clamp(aFrom - 3), clamp(aFrom - 1)],
-    apply:     [aFrom, aTo],
-    exam_prep: [clamp(xFrom - 3), xTo],
-    interview: [clamp(xTo - 1), xTo],
-  };
-
-  // 对标结论
-  function verdict(k) {
-    const st = stages[k].status;
-    const [sf, st2] = stdSpan(k);
-    if (st === 'done') return { t: nowIdx <= st2 ? '✓ 按期完成' : '✓ 已完成', c: 'var(--success)' };
-    if (nowIdx > st2) return { t: `⚠ 滞后 ${nowIdx - st2} 个月`, c: 'var(--danger)' };
-    if (nowIdx >= sf) return st === 'active' ? { t: '● 正常进行', c: 'var(--success)' } : { t: '⚠ 应开始尚未开始', c: 'var(--warning)' };
-    return st === 'active' ? { t: '✓ 提前进行', c: 'var(--success)' } : { t: '○ 未到开始时间', c: 'var(--text-muted)' };
-  }
-
-  const STAGE_META = [
-    ['lit',       '📚', '先行研究收集'],
-    ['plan',      '📄', '计划书撰写・定稿'],
-    ['school',    '🏫', '择校・联系教授'],
-    ['apply',     '📮', '出愿'],
-    ['exam_prep', '✏️', '笔试备考（过去问）'],
-    ['interview', '🎤', '面试准备（面试稿・模拟）'],
-  ];
-  const rows = STAGE_META.map(([k, icon, label]) => {
-    const [sf, st2] = stdSpan(k);
-    return { key:k, icon, label, from:actSpan[k][0], to:actSpan[k][1], stdFrom:sf, stdTo:st2,
-      status:stages[k].status, cur:stages[k].cur, req:STUDY_STAGE_REQ[k], verdict:verdict(k) };
+  // 倒计时与判定：提前完成→鼓励；剩1个月/本月→紧急提醒；超期→红色标注
+  const rows = STUDY_ROADMAP_ROWS.map(r => {
+    const st = stateOf[r.key];
+    const dlIdx = examIdx + r.dl;
+    const left = dlIdx - nowIdx;
+    let vt, vc;
+    if (st.done) {
+      vt = r.key === 'exam' ? '🎉 已合格，恭喜！' : left > 0 ? '✓ 已完成，进度领先，继续保持！' : '✓ 已完成';
+      vc = 'var(--success)';
+    }
+    else if (left > 1)   { vt = `距${r.dlName}（${ymStr(dlIdx)}）还剩 ${left} 个月`; vc = st.active ? 'var(--success)' : 'var(--text-secondary)'; }
+    else if (left === 1) { vt = `⚠ 距${r.dlName}仅剩 1 个月，请抓紧`; vc = 'var(--warning)'; }
+    else if (left === 0) { vt = `⚠ ${r.dlName}就在本月！`; vc = 'var(--danger)'; }
+    else                 { vt = `✗ 已超${r.dlName} ${-left} 个月`; vc = 'var(--danger)'; }
+    return Object.assign({}, r, { dlIdx, left, status: st.done ? 'done' : st.active ? 'active' : 'todo', cur: st.cur, vt, vc });
   });
 
   // 面谈分布（每月次数）
   const meetDots = {};
   (studyData.bookings || []).filter(b => b.status !== 'cancelled' && b.slot_date).forEach(b => {
     const m2 = /^(\d{4})-(\d{2})/.exec(b.slot_date); if (!m2) return;
-    const i = (+m2[1])*12 + (+m2[2]) - 1; if (inWin(i)) meetDots[i] = (meetDots[i] || 0) + 1;
+    const i = (+m2[1]) * 12 + (+m2[2]) - 1; if (i >= dispS && i <= dispE) meetDots[i] = (meetDots[i] || 0) + 1;
   });
 
-  return { startIdx, endIdx, nowIdx, enr, rows, meetDots, ymStr, modelKey, applyFromPlans, examFromPlans };
+  // 错过本轮时推荐更近的考试时间点
+  let banner = '';
+  if (altExamIdx < examIdx) {
+    banner = `💡 距离所选路线的下一次考试（${ymStr(examIdx)}）还有 ${examIdx - nowIdx} 个月；更近的考试机会是${STUDY_PREP_MODELS[otherKey].label}——${ymStr(altExamIdx - 1)}出愿・${ymStr(altExamIdx)}考试。如需转换请在右上角切换路线。`;
+  }
+
+  return { ws, we, total, contractKnown, dispS, dispE, nowIdx, examIdx, rows, meetDots, ymStr, modelKey, banner };
 }
 
 function renderStudyRoadmap() {
   const R = buildStudyRoadmap();
-  const months = []; for (let i = R.startIdx; i <= R.endIdx; i++) months.push(i);
-  const FILL = { done:'var(--success-light)', active:'var(--warning-light)', todo:'var(--accent-light)' };
-  const EDGE = { done:'var(--success)',       active:'var(--warning)',       todo:'var(--border)' };
+  const months = []; for (let i = R.dispS; i <= R.dispE; i++) months.push(i);
 
   const headCells = months.map(i => {
     const y = Math.floor(i/12), m = i%12+1;
     const isNow = i === R.nowIdx;
-    const yearMark = (i === R.startIdx || m === 1) ? `<div style="font-size:8px;color:var(--text-muted)">'${String(y).slice(2)}</div>` : '<div style="font-size:8px">&nbsp;</div>';
-    return `<th style="padding:4px 2px;text-align:center;font-weight:${isNow?'700':'600'};color:${isNow?'var(--accent)':'var(--text-secondary)'};border-bottom:1px solid var(--border-light);${isNow?'background:var(--accent-light)':''}">${yearMark}${m}月${isNow?'<div style="font-size:8px">本月</div>':''}</th>`;
+    const yearMark = (i === R.dispS || m === 1) ? `<div style="font-size:8px;color:var(--text-muted)">'${String(y).slice(2)}</div>` : '<div style="font-size:8px">&nbsp;</div>';
+    return `<th style="padding:4px 3px;text-align:center;font-weight:${isNow?'700':'600'};color:${isNow?'var(--accent)':'var(--text-secondary)'};border-bottom:1px solid var(--border-light);border-left:1px solid var(--border-light);${isNow?'background:var(--accent-light)':''}">${yearMark}${m}月${isNow?'<div style="font-size:8px">本月</div>':''}</th>`;
   }).join('');
 
   const bodyRows = R.rows.map(r => {
     const cells = months.map(i => {
       const isNow = i === R.nowIdx;
-      const std = i >= r.stdFrom && i <= r.stdTo;
-      const act = i >= r.from && i <= r.to;
-      const first = i === r.from, last = i === r.to;
-      const radius = first && last ? '2px' : first ? '2px 0 0 2px' : last ? '0 2px 2px 0' : '0';
-      const stdBar = `<div style="height:3px;margin:2px ${i===r.stdTo?'2px':'0'} 1px ${i===r.stdFrom?'2px':'0'};border-radius:1px;${std?'background:var(--accent-mid);opacity:.45':''}"></div>`;
-      const actBar = `<div style="height:10px;margin:0 ${last?'2px':'0'} 3px ${first?'2px':'0'};border-radius:${radius};${act?`background:${FILL[r.status]};border-top:1px solid ${EDGE[r.status]};border-bottom:1px solid ${EDGE[r.status]};${first?`border-left:1px solid ${EDGE[r.status]};`:''}${last?`border-right:1px solid ${EDGE[r.status]};`:''}`:''}"></div>`;
-      return `<td style="padding:0;border-bottom:1px solid var(--border-light);${isNow?'background:var(--accent-light)':''}">${stdBar}${actBar}</td>`;
+      const off = String(i - R.examIdx);
+      const text = r.ms[off] || '';
+      const isRed = text && (r.red || []).includes(off);
+      const cell = text
+        ? (isRed
+          ? `<div style="margin:3px 2px;padding:4px 3px;border-radius:2px;background:var(--danger);color:#fff;font-weight:700;font-size:9px;text-align:center;line-height:1.4">${text}</div>`
+          : `<div style="margin:3px 2px;padding:4px 3px;border-radius:2px;background:var(--bg);border:1px solid var(--border-light);font-size:9px;text-align:center;line-height:1.4;color:var(--text-primary)">${text}</div>`)
+        : '';
+      return `<td style="padding:0;vertical-align:middle;border-bottom:1px solid var(--border-light);border-left:1px solid var(--border-light);${isNow?'background:var(--accent-light)':''}">${cell}</td>`;
     }).join('');
     return `<tr>
       <td style="padding:6px 8px;white-space:nowrap;border-bottom:1px solid var(--border-light)">
-        <div style="font-size:11px;color:var(--text-primary)">${r.icon} ${r.label}　<span style="font-size:9px;color:${r.verdict.c}">${r.verdict.t}</span></div>
+        <div style="font-size:11px;color:var(--text-primary);font-weight:600">${r.icon} ${r.label}</div>
+        <div style="font-size:9px;color:${r.vc};margin-top:1px">${r.vt}</div>
+        <div style="font-size:9px;color:var(--text-secondary);margin-top:1px">当前：${r.cur}</div>
       </td>${cells}</tr>`;
   }).join('');
 
   const meetCells = months.map(i => {
     const n = R.meetDots[i] || 0;
     const isNow = i === R.nowIdx;
-    return `<td style="padding:4px 0;text-align:center;font-size:10px;color:var(--accent);${isNow?'background:var(--accent-light)':''}">${n ? '●' + (n>1?'×'+n:'') : ''}</td>`;
+    return `<td style="padding:4px 0;text-align:center;font-size:10px;color:var(--accent);border-left:1px solid var(--border-light);${isNow?'background:var(--accent-light)':''}">${n ? '●' + (n>1?'×'+n:'') : ''}</td>`;
   }).join('');
 
-  // 阶段对标表（文字）
   const bmRows = R.rows.map(r => `<tr>
     <td style="padding:6px 8px;white-space:nowrap;font-size:10px;border-bottom:1px solid var(--border-light)">${r.icon} ${r.label}</td>
-    <td style="padding:6px 8px;white-space:nowrap;font-size:10px;color:var(--text-secondary);border-bottom:1px solid var(--border-light)">${R.ymStr(r.stdFrom)}${r.stdTo!==r.stdFrom?'〜'+R.ymStr(r.stdTo):''}</td>
-    <td style="padding:6px 8px;font-size:10px;color:var(--text-secondary);border-bottom:1px solid var(--border-light)">${r.req}</td>
+    <td style="padding:6px 8px;white-space:nowrap;font-size:10px;color:var(--text-secondary);border-bottom:1px solid var(--border-light)">${r.dlName} · ${R.ymStr(r.dlIdx)}</td>
     <td style="padding:6px 8px;font-size:10px;border-bottom:1px solid var(--border-light)">${r.cur}</td>
-    <td style="padding:6px 8px;white-space:nowrap;font-size:10px;color:${r.verdict.c};border-bottom:1px solid var(--border-light)">${r.verdict.t}</td>
+    <td style="padding:6px 8px;font-size:10px;color:${r.vc};border-bottom:1px solid var(--border-light)">${r.vt}</td>
   </tr>`).join('');
 
+  const stayed = Math.min(Math.max(R.nowIdx - R.ws + 1, 0), R.total);
   return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:12px">
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px">
-      <div style="font-size:11px;font-weight:600">📅 备考规划　<span style="font-weight:400;color:var(--text-secondary)">${R.ymStr(R.startIdx)} 〜 ${R.ymStr(R.endIdx)}${R.enr?'（目标入学）':''}</span></div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <label style="font-size:10px;color:var(--text-secondary)">标准模型：<select onchange="studySetPrepModel(this.value)" style="font-size:10px;padding:2px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface);width:auto">
-          ${Object.entries(STUDY_PREP_MODELS).map(([k,m]) => `<option value="${k}" ${R.modelKey===k?'selected':''}>${m.label}</option>`).join('')}
-        </select></label>
-        <div style="font-size:9px;color:var(--text-secondary)">
-          <span style="display:inline-block;width:14px;height:3px;background:var(--accent-mid);opacity:.45;border-radius:1px;vertical-align:middle"></span> 标准线
-          <span style="display:inline-block;width:14px;height:8px;background:var(--success-light);border:1px solid var(--success);border-radius:2px;vertical-align:middle;margin-left:8px"></span> 已完成
-          <span style="display:inline-block;width:14px;height:8px;background:var(--warning-light);border:1px solid var(--warning);border-radius:2px;vertical-align:middle;margin-left:8px"></span> 进行中
-          <span style="display:inline-block;width:14px;height:8px;background:var(--accent-light);border:1px solid var(--border);border-radius:2px;vertical-align:middle;margin-left:8px"></span> 计划中
-        </div>
-      </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+      <div style="font-size:11px;font-weight:600">📅 备考规划　<span style="font-weight:400;color:var(--text-secondary)">在学期间：${R.ymStr(R.ws)} 〜 ${R.ymStr(R.we)}（共 ${R.total} 个月・已在学 ${stayed} 个月）</span></div>
+      <label style="font-size:10px;color:var(--text-secondary)">考试路线：<select onchange="studySetPrepModel(this.value)" style="font-size:10px;padding:2px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface);width:auto">
+        ${Object.entries(STUDY_PREP_MODELS).map(([k,m]) => `<option value="${k}" ${R.modelKey===k?'selected':''}>${m.label}</option>`).join('')}
+      </select></label>
     </div>
-    ${R.enr ? '' : '<div style="font-size:10px;color:var(--warning);margin-bottom:8px">⚠ 尚未设置目标入学时间，暂按未来12个月显示。请联系老师在学生档案中填写「目标入学」。</div>'}
+    ${R.contractKnown ? '' : '<div style="font-size:10px;color:var(--warning);margin-bottom:6px">⚠ 尚未登记签约/到期时间，暂按本学年（4月起）显示。请联系老师在学生档案中登记。</div>'}
+    ${R.banner ? `<div style="font-size:10px;color:var(--text-primary);background:var(--accent-light);border:1px solid var(--border-light);border-radius:3px;padding:7px 10px;margin-bottom:8px">${R.banner}</div>` : ''}
+    ${R.total > (R.dispE - R.dispS + 1) ? `<div style="font-size:9px;color:var(--text-secondary);margin-bottom:6px">合同期较长，当前显示 ${R.ymStr(R.dispS)} 〜 ${R.ymStr(R.dispE)}</div>` : ''}
     <div style="overflow-x:auto">
-      <table style="border-collapse:collapse;width:100%;min-width:640px;font-size:10px">
-        <thead><tr><th style="padding:4px 8px;text-align:left;font-weight:600;color:var(--text-secondary);border-bottom:1px solid var(--border-light);min-width:150px">阶段</th>${headCells}</tr></thead>
+      <table style="border-collapse:collapse;width:100%;min-width:${160 + months.length * 62}px;font-size:10px">
+        <thead><tr><th style="padding:4px 8px;text-align:left;font-weight:600;color:var(--text-secondary);border-bottom:1px solid var(--border-light);min-width:150px">项目</th>${headCells}</tr></thead>
         <tbody>${bodyRows}
           <tr><td style="padding:5px 8px;white-space:nowrap;font-size:11px;color:var(--text-primary)">💬 面谈记录</td>${meetCells}</tr>
         </tbody>
       </table>
     </div>
-    <div style="font-size:11px;font-weight:600;margin:12px 0 6px">阶段对标（标准：${STUDY_PREP_MODELS[R.modelKey].label}）</div>
+    <div style="font-size:11px;font-weight:600;margin:12px 0 6px">节点对标（${STUDY_PREP_MODELS[R.modelKey].label}）</div>
     <div style="overflow-x:auto;border:1px solid var(--border-light);border-radius:3px">
       <table style="border-collapse:collapse;width:100%;min-width:560px">
         <thead><tr style="background:var(--bg)">
-          ${['阶段','标准期间','要求','当前进度','对标'].map(h => `<th style="padding:5px 8px;text-align:left;font-size:10px;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border-light)">${h}</th>`).join('')}
+          ${['项目','最晚节点','当前进度','判定'].map(h => `<th style="padding:5px 8px;text-align:left;font-size:10px;font-weight:600;color:var(--text-muted);border-bottom:1px solid var(--border-light)">${h}</th>`).join('')}
         </tr></thead>
         <tbody>${bmRows}</tbody>
       </table>
     </div>
-    <div style="font-size:9px;color:var(--text-secondary);margin-top:6px">标准线来自所选进度模型；彩色条为实际计划——出愿・笔试月份取自「志望校」中填写的出愿时间与考试日期，未填写时贴合标准线。阶段状态由进度记录、计划书、志望校与面谈数据自动汇总。</div>
+    <div style="font-size:9px;color:var(--text-secondary);margin-top:6px">节点按所选考试路线自动排布（夏季：5月草稿・6月修改说明会・7月出愿・8月考试；冬季：10月草稿・11月修改说明会・12月出愿・1月考试）。红底为关键节点；各项目状态由进度记录、计划书、志望校与面谈数据自动汇总。</div>
   </div>`;
 }
 function renderProgressTab() {
