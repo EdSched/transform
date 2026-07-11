@@ -457,7 +457,6 @@ async function renderProgressPage(mc, focusStudentId=null){
         <button class="btn btn-sm ${progressViewMode==='season'?'btn-primary':'btn-outline'}" onclick="progressViewMode='season';renderProgressPage(document.getElementById('mainContent'))">📋 年度出愿情报</button>
       </div>
     </div>
-    <button class="btn btn-outline btn-sm" onclick="openAddProgressEntry()">＋ 录入进度</button>
   </div>
   <div class="filter-row">
     ${['all','keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map((m,i)=>`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this);renderProgressPage(document.getElementById('mainContent'))">${i===0?'全部专业':majorLabel(m)}</div>`).join('')}
@@ -827,7 +826,6 @@ async function renderSeasonView(mc, students, timelineMap) {
         <button class="btn btn-sm btn-primary">📋 年度出愿情报</button>
       </div>
     </div>
-    <button class="btn btn-outline btn-sm" onclick="openAddProgressEntry()">＋ 录入进度</button>
   </div>
   <div class="filter-row">
     ${['all','keiei','keizai','shakai_group','shakai','shinpan','fukushi'].map((m,i)=>`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this);renderProgressPage(document.getElementById('mainContent'))">${i===0?'全部专业':majorLabel(m)}</div>`).join('')}
