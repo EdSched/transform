@@ -2266,12 +2266,44 @@ function teacherAdbRender() {
 // ══════════════════════════════════
 
 let teacherProgressFilter = '';
+let tpMajorFilter = '';   // '' 全部 | keiei | keizai | shakai_group | shakai | fukushi | shinpan
+let tpSourceFilter = '';  // '' 全部 | 唯新 | 新世界 | 校内塾 | 杭州校
 let teacherProgressData = { students: [], timeline: {}, schoolPlans: {}, planDrafts: {} };
+
+// 专业筛选 chips（按老师可见范围裁剪）；setterName 为点击时调用的全局函数名
+function tpMajorChipsHtml(cur, setterName) {
+  const set = tsaAllowedSet();
+  const opts = [['','全部专业'],['keiei','経営学'],['keizai','経済学'],['shakai_group','社会人文'],['shakai','社会学'],['fukushi','社会福祉学'],['shinpan','新闻传播学']];
+  return opts.filter(([k]) => {
+    if (!k || !set) return true;
+    if (k === 'shakai_group') return SHAKAI_GROUP.some(m => set.has(m));
+    return set.has(k);
+  }).map(([k, l]) => `<div class="filter-chip ${cur === k ? 'active' : ''}" onclick="${setterName}('${k}')" style="padding:3px 10px;font-size:10px">${l}</div>`).join('');
+}
+
+const TP_SOURCES = ['唯新','新世界','校内塾','杭州校'];
+
+// 姓名搜索：先按共享 matchesPinyin 严格匹配（汉字 includes / 拼音首字母逐字），
+// 多字母拼音在名字用字上匹配不到时，退回按第一个字母匹配姓氏（如 zs 也能命中张三）
+function tpNameMatch(name, q) {
+  q = (q || '').trim();
+  if (!q) return true;
+  if (matchesPinyin(name || '', q)) return true;
+  if (/^[a-zA-Z]{2,3}$/.test(q)) return matchesPinyin(name || '', q[0].toLowerCase());
+  return false;
+}
+
+// 按专业筛选值展开成实际专业列表
+function tpMajorMatch(major, filterVal) {
+  if (!filterVal) return true;
+  if (filterVal === 'shakai_group') return SHAKAI_GROUP.includes(major) || major === 'shakai_group';
+  return major === filterVal;
+}
 
 async function renderTeacherStudyProgress(mc) {
   mc.innerHTML = '<div class="empty">加载中…</div>';
 
-  // 与 admin 学生档案同步：显示允许专业范围内的全部在籍学生（student_majors 为空 = 全部专业）
+  // 与 admin 学生档案同步：显示允许专业范围内的全部在籍学生（数据只在进入时拉取一次，筛选纯前端）
   let students = [];
   try {
     const all = await sb('/rest/v1/students?select=*&order=name.asc&limit=2000');
@@ -2301,18 +2333,90 @@ async function renderTeacherStudyProgress(mc) {
     chunkFetch(ids => `/rest/v1/student_plan_drafts?student_id=in.(${ids})&select=*&order=updated_at.desc`),
   ]);
 
-  // 按学生ID分组
   const timelineMap = {}, plansMap = {}, draftsMap = {};
   allTimeline.forEach(t => { if (!timelineMap[t.student_id]) timelineMap[t.student_id] = []; timelineMap[t.student_id].push(t); });
   allPlans.forEach(p => { if (!plansMap[p.student_id]) plansMap[p.student_id] = []; plansMap[p.student_id].push(p); });
   allDrafts.forEach(d => { if (!draftsMap[d.student_id]) draftsMap[d.student_id] = d; });
 
   teacherProgressData = { students, timelineMap, plansMap, draftsMap };
+  tpRenderShell();
+}
 
-  let filtered = students;
-  if (teacherProgressFilter.trim()) {
-    filtered = students.filter(s => s.name.includes(teacherProgressFilter));
-  }
+// 外壳：标题/搜索/专业/来源筛选 + 列表容器（切换筛选时重绘外壳，搜索输入只刷新列表保持焦点）
+function tpRenderShell() {
+  const box = document.getElementById('sm_content') || document.getElementById('mainContent');
+  if (!box || !teacherProgressData) return;
+  box.innerHTML = `
+  <div class="page-header">
+    <div class="section-title">考学进度 <span class="badge-count" id="tp_count"></span></div>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
+    ${tpMajorChipsHtml(tpMajorFilter, 'tpSetMajor')}
+    <select onchange="tpSetSource(this.value)" style="font-size:10px;padding:3px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit;width:auto;margin-left:auto">
+      <option value="">全部来源</option>
+      ${TP_SOURCES.map(x => `<option value="${x}" ${tpSourceFilter === x ? 'selected' : ''}>${x}</option>`).join('')}
+    </select>
+  </div>
+  <div class="search-bar" style="margin-bottom:10px">
+    <input placeholder="搜索学生姓名（支持汉字 / 拼音首字母，如 zs=张三）…" value="${tsaEsc(teacherProgressFilter)}"
+      oninput="teacherProgressFilter=this.value;tpRenderProgressList()">
+  </div>
+  <div id="tp_list"></div>`;
+  tpRenderProgressList();
+}
+
+function tpSetMajor(v) { tpMajorFilter = v; tpRenderShell(); }
+function tpSetSource(v) { tpSourceFilter = v; tpRenderProgressList(); }
+
+function tpFilteredStudents() {
+  const { students } = teacherProgressData;
+  let list = students.filter(s => tpMajorMatch(s.major, tpMajorFilter));
+  if (tpSourceFilter) list = list.filter(s => (s.source || '') === tpSourceFilter);
+  const q = teacherProgressFilter.trim();
+  if (q) list = list.filter(s => tpNameMatch(s.name, q));
+  return list;
+}
+
+// 备考节点文字总结（与学生学习记录页的备考规划同一套逻辑，按学生所选考试路线）
+function tpNodeSummaryHtml(s, latest, plans, draft) {
+  const now = new Date();
+  const nowIdx = now.getFullYear() * 12 + now.getMonth();
+  const examMonth = s.prep_model === 'winter' ? 1 : 8;
+  let examIdx = now.getFullYear() * 12 + (examMonth - 1);
+  while (examIdx < nowIdx) examIdx += 12;
+  const ymStr = i => `${Math.floor(i/12)}年${i%12+1}月`;
+  let refs = 0;
+  try { refs = draft && draft.prior_research_list ? JSON.parse(draft.prior_research_list).length : 0; } catch (e) {}
+  const dn = (k, v) => typeof PROGRESS_DONE !== 'undefined' && (PROGRESS_DONE[k] || []).includes(v);
+  const jp = latest.japanese || '', en = latest.english || '', plan = latest.plan || '', apply = latest.apply || '', exam = latest.exam || '';
+  const items = [
+    { label:'日语', cur:[jp || '未填写', s.japanese_score || ''].filter(Boolean).join(' · '), done: dn('japanese', jp), dl:-1, dlName:'成绩送分最晚' },
+    { label:'英语', cur:[en || '未填写', s.english_score || ''].filter(Boolean).join(' · '), done: dn('english', en), dl:-1, dlName:'成绩送分最晚' },
+    { label:'研究计划书', cur:[plan || '未填写', refs ? `文献 ${refs} 条` : ''].filter(Boolean).join(' · '), done: plan === '已完成', dl:-3, dlName:'草稿完成最晚' },
+    { label:'择校・联系教授', cur: (plans.length ? `已选 ${plans.length}/6 校` : '未选校') + (apply ? ' · ' + apply : ''), done: plans.length > 0, dl:-2, dlName:'锁定教授最晚' },
+    { label:'出愿', cur: apply || '未开始', done: ['已出愿','已合格'].includes(apply), dl:-1, dlName:'出愿' },
+    { label:'过去问・面试稿', cur: exam || '未填写', done: dn('exam', exam), dl:0, dlName:'完成最晚' },
+    { label:'大学院考试', cur: apply === '已合格' ? '已合格' : apply === '已出愿' ? '已出愿・待考试' : '—', done: apply === '已合格', dl:0, dlName:'考试' },
+  ];
+  return items.map(it => {
+    const dlIdx = examIdx + it.dl, left = dlIdx - nowIdx;
+    let v, c;
+    if (it.done) { v = it.label === '大学院考试' ? '🎉 已合格' : '✓ 已完成'; c = 'var(--ok,#2a9e6a)'; }
+    else if (left > 1)   { v = `距${it.dlName}（${ymStr(dlIdx)}）还剩 ${left} 个月`; c = 'var(--text-2,#666)'; }
+    else if (left === 1) { v = `⚠ 距${it.dlName}仅剩 1 个月`; c = 'var(--warn,#b8860b)'; }
+    else if (left === 0) { v = `⚠ ${it.dlName}就在本月`; c = 'var(--danger,#b03a2e)'; }
+    else                 { v = `✗ 已超${it.dlName} ${-left} 个月`; c = 'var(--danger,#b03a2e)'; }
+    return `<div style="font-size:11px;line-height:1.9"><span style="font-weight:600">${it.label}</span>：<span style="color:var(--text-2)">${tsaEsc(it.cur)}</span> —— <span style="color:${c}">${v}</span></div>`;
+  }).join('');
+}
+
+function tpRenderProgressList() {
+  const listBox = document.getElementById('tp_list');
+  if (!listBox || !teacherProgressData) return;
+  const { timelineMap, plansMap, draftsMap } = teacherProgressData;
+  const filtered = tpFilteredStudents();
+  const cnt = document.getElementById('tp_count');
+  if (cnt) cnt.textContent = filtered.length;
 
   const cards = filtered.map(s => {
     const timeline = timelineMap[s.id] || [];
@@ -2320,6 +2424,7 @@ async function renderTeacherStudyProgress(mc) {
     const plans = plansMap[s.id] || [];
     const draft = draftsMap[s.id];
     const levelLabel = { 1:'🔴', 2:'🟡', 3:'🟢' };
+    const routeLabel = s.prep_model === 'winter' ? '冬季路线・12月出愿1月考试' : '夏季路线・7月出愿8月考试';
 
     const statusRow = Object.entries(PROGRESS_LABELS).map(([k]) => {
       const val = k === 'japanese' ? (latest[k] || (s.japanese_score ? '有成绩' : '')) :
@@ -2331,25 +2436,25 @@ async function renderTeacherStudyProgress(mc) {
       return `<span style="font-size:10px;background:${done?'var(--ok-bg)':'var(--warn-bg)'};color:${done?'var(--ok)':'var(--warn)'};padding:1px 6px;border-radius:2px;white-space:nowrap">${PROGRESS_ICONS[k]} ${latest[k]||''}${scoreHint}</span>`;
     }).join('');
 
-    const schoolSummary = plans.length
-      ? plans.slice(0,3).map(p => `<span style="font-size:10px;color:var(--text-2)">${levelLabel[p.level]||''} ${p.school_name}${p.professor?` · ${p.professor}`:''}</span>`).join('<br>')
-      : '<span style="font-size:10px;color:var(--text-3)">未填写志望校</span>';
-
-    const draftStatus = draft
-      ? `<span style="font-size:10px;color:var(--ok)">已填写${draft.teacher_comment?' · 已批注':''}</span>`
-      : '<span style="font-size:10px;color:var(--text-3)">未填写</span>';
-
     return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:8px">
       <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer" onclick="toggleTeacherProgressCard('${s.id}')">
         <div style="flex:1">
-          <span style="font-size:13px;font-weight:600">${s.name}</span>
+          <span style="font-size:13px;font-weight:600">${tsaEsc(s.name)}</span>
           <span style="font-size:11px;color:var(--text-3);margin-left:8px">${MAJORS[s.major]||s.major||''}</span>
+          ${s.source?`<span style="font-size:10px;color:var(--accent);margin-left:6px;border:1px solid var(--border);border-radius:2px;padding:0 5px">${tsaEsc(s.source)}</span>`:''}
         </div>
         <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:60%">
           ${statusRow || '<span style="font-size:10px;color:var(--text-3)">暂无进度</span>'}
         </div>
       </div>
       <div id="tprog_${s.id}" style="display:none;border-top:1px solid var(--border-light);background:var(--bg)">
+        <!-- 备考节点文字总结 -->
+        <div style="padding:12px 14px 0">
+          <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">📅 备考节点总结（${routeLabel}）</div>
+          <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:8px 12px">
+            ${tpNodeSummaryHtml(s, latest, plans, draft)}
+          </div>
+        </div>
         <div style="padding:12px 14px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <!-- 语言成绩 -->
           <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px">
@@ -2393,17 +2498,7 @@ async function renderTeacherStudyProgress(mc) {
     </div>`;
   }).join('');
 
-  mc.innerHTML = `
-  <div class="page-header">
-    <div class="section-title">考学进度 <span class="badge-count">${filtered.length}</span></div>
-  </div>
-  <div class="search-bar" style="margin-bottom:10px">
-    <input placeholder="搜索学生姓名…" value="${teacherProgressFilter}"
-      oninput="if(this.dataset.composing!=='1'){teacherProgressFilter=this.value;renderTeacherStudyProgress(document.getElementById('sm_content')||document.getElementById('mainContent'))}"
-      oncompositionstart="this.dataset.composing='1'"
-      oncompositionend="this.dataset.composing='';teacherProgressFilter=this.value;renderTeacherStudyProgress(document.getElementById('sm_content')||document.getElementById('mainContent'))">
-  </div>
-  <div>${cards || '<div class="empty">暂无数据</div>'}</div>`;
+  listBox.innerHTML = cards || '<div class="empty">没有符合筛选条件的学生</div>';
 }
 
 function toggleTeacherProgressCard(id) {
@@ -2458,7 +2553,7 @@ async function saveTeacherDraftComment(draftId, studentId) {
 //       profile  学生档案录入（与 admin 学生档案同一张表实时同步；按 student_majors 允许专业查看）
 // ══════════════════════════════════
 let smTab = '';
-const SM_ITEMS = [['progress','📊 考学进度'], ['records','🗒 出席・作业记录'], ['profile','👤 学生档案']];
+const SM_ITEMS = [['progress','📊 考学进度'], ['records','🗒 出席・作业记录'], ['meetings','💬 面谈查询'], ['profile','👤 学生档案']];
 
 function smAllowedItems() {
   const p = (teacherData && teacherData.permissions) || {};
@@ -2479,6 +2574,7 @@ function renderStudentMgmt(mc) {
   const box = document.getElementById('sm_content');
   if (smTab === 'progress') renderTeacherStudyProgress(box);
   else if (smTab === 'records') renderTsaRecords(box);
+  else if (smTab === 'meetings') renderTsaMeetings(box);
   else renderTeacherStudents(box);
 }
 
@@ -2795,4 +2891,96 @@ function tDraftFullHtml(draft) {
   if (draft.methodology) h += `<div style="margin-bottom:4px"><span style="color:var(--text-3)">研究方法：</span>${tsaEsc(draft.methodology)}</div>`;
   if (draft.draft_notes) h += `<div style="margin-bottom:4px"><span style="color:var(--text-3)">进展说明：</span>${tsaEsc(draft.draft_notes)}</div>`;
   return h || '<div style="color:var(--text-3)">暂无填写内容</div>';
+}
+
+// ══════════════════════════════════
+// 面谈查询（学生管理子项 meetings）
+// 已完成面谈的完整文字记录 + 历史；查询逻辑与考学进度一致（汉字/拼音首字母 + 专业 + 来源）
+// ══════════════════════════════════
+let tmSearch = '';
+let tmMajorFilter = '';
+let tmSourceFilter = '';
+let tmExpandedName = null;
+let tmData = null; // { groups: [{name, major, source, list:[booking...]}] }
+
+async function renderTsaMeetings(box) {
+  box.innerHTML = '<div class="empty">加载中…</div>';
+  try {
+    const set = tsaAllowedSet();
+    const [allStu, allBk] = await Promise.all([
+      sb('/rest/v1/students?select=id,name,major,source&limit=2000').catch(() => []),
+      sb('/rest/v1/bookings?status=eq.completed&select=*&order=slot_date.desc&limit=1500').catch(() => []),
+    ]);
+    const stuByName = {};
+    (allStu || []).forEach(s => { if (!stuByName[s.name]) stuByName[s.name] = s; });
+    // 只保留有面谈记录内容的已完成预约，专业按学生档案（无档案时按预约的 major 字段）过滤
+    const withRec = (allBk || []).filter(b => b.daily_record && Object.values(b.daily_record).some(v => v && (typeof v === 'string' ? v : Object.values(v).some(x => x))));
+    const groups = {};
+    withRec.forEach(b => {
+      const stu = stuByName[b.name];
+      const major = (stu && stu.major) || b.major || '';
+      if (set && !set.has(major)) return;
+      if (!groups[b.name]) groups[b.name] = { name: b.name, major, source: (stu && stu.source) || '', list: [] };
+      groups[b.name].list.push(b);
+    });
+    tmData = { groups: Object.values(groups).sort((a, b) => (b.list[0].slot_date || '').localeCompare(a.list[0].slot_date || '')) };
+  } catch (e) { box.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
+  tmRenderShell();
+}
+
+function tmRenderShell() {
+  const box = document.getElementById('sm_content');
+  if (!box || !tmData) return;
+  box.innerHTML = `
+  <div class="page-header">
+    <div class="section-title">面谈查询 <span class="badge-count" id="tm_count"></span></div>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
+    ${tpMajorChipsHtml(tmMajorFilter, 'tmSetMajor')}
+    <select onchange="tmSetSource(this.value)" style="font-size:10px;padding:3px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit;width:auto;margin-left:auto">
+      <option value="">全部来源</option>
+      ${TP_SOURCES.map(x => `<option value="${x}" ${tmSourceFilter === x ? 'selected' : ''}>${x}</option>`).join('')}
+    </select>
+  </div>
+  <div class="search-bar" style="margin-bottom:10px">
+    <input placeholder="搜索学生姓名（支持汉字 / 拼音首字母，如 zs=张三）…" value="${tsaEsc(tmSearch)}"
+      oninput="tmSearch=this.value;tmRenderList()">
+  </div>
+  <div id="tm_list"></div>`;
+  tmRenderList();
+}
+
+function tmSetMajor(v) { tmMajorFilter = v; tmRenderShell(); }
+function tmSetSource(v) { tmSourceFilter = v; tmRenderList(); }
+function tmToggle(name) { tmExpandedName = tmExpandedName === name ? null : name; tmRenderList(); }
+
+function tmRenderList() {
+  const listBox = document.getElementById('tm_list');
+  if (!listBox || !tmData) return;
+  let list = tmData.groups.filter(g => tpMajorMatch(g.major, tmMajorFilter));
+  if (tmSourceFilter) list = list.filter(g => (g.source || '') === tmSourceFilter);
+  const q = tmSearch.trim();
+  if (q) list = list.filter(g => tpNameMatch(g.name, q));
+  const cnt = document.getElementById('tm_count');
+  if (cnt) cnt.textContent = list.length;
+
+  listBox.innerHTML = list.length ? list.map(g => {
+    const open = tmExpandedName === g.name;
+    const lastDate = g.list[0].slot_date || '';
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:8px">
+      <div onclick="tmToggle('${tsaEsc(g.name)}')" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;${open?'background:var(--bg)':''}">
+        <span style="font-size:13px;font-weight:600">${tsaEsc(g.name)}</span>
+        <span style="font-size:11px;color:var(--text-3)">${MAJORS[g.major]||g.major||''}</span>
+        ${g.source?`<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 5px">${tsaEsc(g.source)}</span>`:''}
+        <span style="font-size:10px;color:var(--text-2);margin-left:auto">共 ${g.list.length} 次面谈 · 最近 ${lastDate}</span>
+        <span style="font-size:10px;color:var(--text-3)">${open?'▲':'▼'}</span>
+      </div>
+      ${open ? `<div style="border-top:1px solid var(--border-light);background:var(--bg);padding:10px 14px">
+        ${g.list.map(b => `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:8px">
+          <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">📅 ${b.slot_date}${b.slot_time_range?' '+b.slot_time_range:''}${b.actual_duration?' · '+b.actual_duration+'min':''}${b.assigned_teacher?' · '+tsaEsc(b.assigned_teacher)+'老师':''}${b.type?' · '+(typeof typeLabel==='function'?typeLabel(b.type):b.type):''}</div>
+          <pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0;color:var(--text-2)">${tsaEsc(buildRecordText(b))}</pre>
+        </div>`).join('')}
+      </div>` : ''}
+    </div>`;
+  }).join('') : '<div class="empty">没有符合筛选条件的面谈记录</div>';
 }
