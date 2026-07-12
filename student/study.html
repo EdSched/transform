@@ -8,6 +8,20 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../student/student.css">
 <style>
+  /* 学习记录页专用：容器加宽到双倍（不影响其他页面共用的 student.css） */
+  .page-wrap { max-width:1360px; }
+  /* 宽屏双排（<900px 自动回落单列）；.sc-full 占满整行 */
+  .study-cols2 { display:grid; grid-template-columns:1fr; gap:0 24px; align-items:start; }
+  @media (min-width:900px) {
+    .study-cols2 { grid-template-columns:1fr 1fr; }
+    .study-cols2 > .sc-full { grid-column:1/-1; }
+  }
+  /* 左右分栏：宽屏并排；手机横向滑动翻页（滑动拉另一页） */
+  .study-split { display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }
+  @media (max-width:899px) {
+    .study-split { display:flex; overflow-x:auto; scroll-snap-type:x mandatory; gap:12px; -webkit-overflow-scrolling:touch; }
+    .study-split > div { flex:0 0 92%; scroll-snap-align:start; min-width:0; }
+  }
   .study-nav { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:20px; overflow-x:auto; }
   .study-tab { padding:8px 16px; font-size:12px; background:none; border:none; border-bottom:2px solid transparent; cursor:pointer; font-family:inherit; color:var(--text-muted); white-space:nowrap; }
   .study-tab.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
