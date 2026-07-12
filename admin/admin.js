@@ -230,7 +230,7 @@ function renderTeachersPage(mc){
               <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可用的子项</div>
               <div style="display:flex;flex-wrap:wrap;gap:4px" id="perm_student_mgmt_items">
                 ${[
-              ['progress','考学进度'],['records','出席・作业记录'],['meetings','面谈查询'],['profile','学生档案录入'],
+              ['progress','考学进度'],['meetings','面谈查询'],['records','出席・作业记录'],['profile','学生档案录入'],
             ].map(([k,v])=>`<div class="filter-chip" data-value="${k}" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">${v}</div>`).join('')}
               </div>
             </div>
