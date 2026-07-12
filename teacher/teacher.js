@@ -2549,11 +2549,12 @@ function tpRenderProgressList() {
             <button onclick="tpOpenMeetingRecord('${tsaEsc(s.name)}','${b.id}')" style="margin-left:auto;font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:var(--accent)">📄 查看完整记录</button>
           </div>`).join('') : '') + (bks.length > 8 ? '<div style="font-size:10px;color:var(--text-3)">更早的记录请到「面谈查询」搜索</div>' : '') : '<div style="font-size:11px;color:var(--text-3)">暂无面谈记录</div>'}
         </div>
-        <!-- 进度时间线 -->
+        <!-- 进度时间线（默认收起） -->
         <div style="padding:0 14px 12px">
-          <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">进度时间线（${timeline.length}条）</div>
-          ${timeline.length ? [...timeline].reverse().slice(0,3).map(entry => renderProgressTimelineEntry(entry, false)).join('') : '<div style="font-size:11px;color:var(--text-3)">暂无记录</div>'}
-          ${timeline.length > 3 ? `<div style="font-size:10px;color:var(--text-3);text-align:center">还有 ${timeline.length-3} 条…</div>` : ''}
+          <div onclick="event.stopPropagation();const el=document.getElementById('tptl_${s.id}');const open=el.style.display==='none';el.style.display=open?'block':'none';this.querySelector('.arr').textContent=open?'▾':'▸'" style="font-size:10px;color:var(--text-3);margin-bottom:6px;cursor:pointer;user-select:none">进度时间线（${timeline.length}条）<span class="arr" style="margin-left:4px">▸</span></div>
+          <div id="tptl_${s.id}" style="display:none">
+            ${timeline.length ? [...timeline].reverse().map(entry => renderProgressTimelineEntry(entry, false)).join('') : '<div style="font-size:11px;color:var(--text-3)">暂无记录</div>'}
+          </div>
         </div>
       </div>
     </div>`;
@@ -2614,7 +2615,7 @@ async function saveTeacherDraftComment(draftId, studentId) {
 //       profile  学生档案录入（与 admin 学生档案同一张表实时同步；按 student_majors 允许专业查看）
 // ══════════════════════════════════
 let smTab = '';
-const SM_ITEMS = [['progress','📊 考学进度'], ['records','🗒 出席・作业记录'], ['meetings','💬 面谈查询'], ['profile','👤 学生档案']];
+const SM_ITEMS = [['progress','📊 考学进度'], ['meetings','💬 面谈查询'], ['records','🗒 出席・作业记录'], ['profile','👤 学生档案']];
 
 function smAllowedItems() {
   const p = (teacherData && teacherData.permissions) || {};
@@ -2969,7 +2970,7 @@ async function renderTsaMeetings(box) {
   try {
     const set = tsaAllowedSet();
     const [allStu, allBk] = await Promise.all([
-      sb('/rest/v1/students?select=id,name,major,source&limit=2000').catch(() => []),
+      sb('/rest/v1/students?select=id,name,major,source,status&limit=2000').catch(() => []),
       sb('/rest/v1/bookings?daily_record=not.is.null&select=*&order=slot_date.desc&limit=1500').catch(() => []),
     ]);
     const stuByName = {};
@@ -2984,7 +2985,11 @@ async function renderTsaMeetings(box) {
       if (!groups[b.name]) groups[b.name] = { name: b.name, major, source: (stu && stu.source) || '', list: [] };
       groups[b.name].list.push(b);
     });
-    tmData = { groups: Object.values(groups).sort((a, b) => (b.list[0].slot_date || '').localeCompare(a.list[0].slot_date || '')) };
+    const myStudents = (allStu || []).filter(s => (!set || set.has(s.major)) && (!s.status || s.status === 'active'));
+    tmData = {
+      groups: Object.values(groups).sort((a, b) => (b.list[0].slot_date || '').localeCompare(a.list[0].slot_date || '')),
+      students: myStudents,
+    };
   } catch (e) { box.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
   tmRenderShell();
 }
@@ -3021,10 +3026,27 @@ function tmRenderList() {
   if (tmSourceFilter) list = list.filter(g => (g.source || '') === tmSourceFilter);
   const q = tmSearch.trim();
   if (q) list = list.filter(g => tpNameMatch(g.name, q) || (g.source || '').includes(q));
+  // 搜索时：命中的「没有面谈记录」的在籍学生单独提示（默认页面不显示他们）
+  let noRec = [];
+  if (q) {
+    const recNames = new Set(tmData.groups.map(g => g.name));
+    noRec = (tmData.students || []).filter(s => !recNames.has(s.name)
+      && tpMajorMatch(s.major, tmMajorFilter)
+      && (!tmSourceFilter || (s.source || '') === tmSourceFilter)
+      && (tpNameMatch(s.name, q) || (s.source || '').includes(q)));
+  }
   const cnt = document.getElementById('tm_count');
   if (cnt) cnt.textContent = list.length;
 
-  listBox.innerHTML = list.length ? list.map(g => {
+  const noRecHtml = noRec.map(s => `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface);border:1px dashed var(--border);border-radius:4px;padding:10px 14px;margin-bottom:8px">
+    <span style="font-size:13px;font-weight:600">${tsaEsc(s.name)}</span>
+    <span style="font-size:11px;color:var(--text-3)">${MAJORS[s.major]||s.major||''}</span>
+    ${s.source?`<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 5px">${tsaEsc(s.source)}</span>`:''}
+    <span style="font-size:11px;color:var(--warn,#b8860b)">⚠ 该学生近期没有预约面谈，可提醒学生预约面谈</span>
+    <button onclick="tmGenReminder('${tsaEsc(s.name)}','${s.major||''}')" style="margin-left:auto;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">✉ 生成提醒文字</button>
+  </div>`).join('');
+
+  listBox.innerHTML = (list.length || noRec.length) ? (list.map(g => {
     const open = tmExpandedName === g.name;
     const lastDate = g.list[0].slot_date || '';
     return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:8px">
@@ -3042,5 +3064,27 @@ function tmRenderList() {
         </div>`).join('')}
       </div>` : ''}
     </div>`;
-  }).join('') : '<div class="empty">没有符合筛选条件的面谈记录</div>';
+  }).join('') + noRecHtml) : '<div class="empty">没有符合筛选条件的面谈记录</div>';
+}
+
+// 生成面谈提醒文字（含该学生专业对应的预约链接），弹窗显示并自动复制
+function tmGenReminder(name, major) {
+  const link = `https://edsched.github.io/transform/student/index.html?major=${encodeURIComponent(major || '')}`;
+  const text = `${name}同学，你最近都一直没有预约面谈，学习上有什么问题吗？麻烦填写一下面谈预约噢。\n预约链接：${link}`;
+  const existing = document.getElementById('tmReminderModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'tmReminderModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:460px;width:100%">
+    <div style="font-size:13px;font-weight:600;margin-bottom:10px">✉ 面谈提醒 · ${tsaEsc(name)}</div>
+    <textarea id="tmReminderText" rows="5" style="width:100%;font-size:12px;line-height:1.8;padding:10px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;resize:vertical">${tsaEsc(text)}</textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button onclick="navigator.clipboard.writeText(document.getElementById('tmReminderText').value).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制',2000)})" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:8px 14px;cursor:pointer;font-family:inherit">📋 复制</button>
+      <button onclick="document.getElementById('tmReminderModal').remove()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 18px;cursor:pointer;font-family:inherit">关闭</button>
+    </div>
+  </div>`;
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
+  try { navigator.clipboard.writeText(text).catch(() => {}); } catch (e) {}
 }
