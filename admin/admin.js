@@ -230,7 +230,7 @@ function renderTeachersPage(mc){
               <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可用的子项</div>
               <div style="display:flex;flex-wrap:wrap;gap:4px" id="perm_student_mgmt_items">
                 ${[
-              ['progress','考学进度'],['records','出席・作业记录'],['profile','学生档案录入'],
+              ['progress','考学进度'],['records','出席・作业记录'],['meetings','面谈查询'],['profile','学生档案录入'],
             ].map(([k,v])=>`<div class="filter-chip" data-value="${k}" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">${v}</div>`).join('')}
               </div>
             </div>
@@ -340,7 +340,7 @@ function renderTeacherList(){
           if(p.booking) perms.push(`预约(${(p.booking_types||[]).join('/')})`);
           if(p.slots) perms.push(`时间槽(${(p.slot_types||[]).join('/')})`);
           if(p.schedule) perms.push('排班');
-          if(p.student_mgmt){const _sm={progress:'考学进度',records:'出席作业',profile:'档案录入'};perms.push('学生管理('+(((p.student_mgmt_items||[]).map(k=>_sm[k]||k).join('/'))||'—')+')');}
+          if(p.student_mgmt){const _sm={progress:'考学进度',records:'出席作业',meetings:'面谈查询',profile:'档案录入'};perms.push('学生管理('+(((p.student_mgmt_items||[]).map(k=>_sm[k]||k).join('/'))||'—')+')');}
           const link=`${base}?teacher=${encodeURIComponent(t.name)}`;
           return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px">
