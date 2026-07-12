@@ -2904,6 +2904,7 @@ function tDraftFullHtml(draft) {
 // 已完成面谈的完整文字记录 + 历史；查询逻辑与考学进度一致（汉字/拼音首字母 + 专业 + 来源）
 // ══════════════════════════════════
 let tmSearch = '';
+let tmView = 'has'; // has=有面谈记录 | none=无面谈记录（发提醒用）
 let tmMajorFilter = '';
 let tmSourceFilter = '';
 let tmExpandedName = null;
@@ -2946,6 +2947,12 @@ function tmRenderShell() {
     <div class="section-title">面谈查询 <span class="badge-count" id="tm_count"></span></div>
   </div>
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
+    <span style="font-size:10px;color:var(--text-3)">显示：</span>
+    <div class="filter-chip ${tmView==='has'?'active':''}" onclick="tmSetView('has')" style="padding:3px 10px;font-size:10px">有面谈记录</div>
+    <div class="filter-chip ${tmView==='none'?'active':''}" onclick="tmSetView('none')" style="padding:3px 10px;font-size:10px">⚠ 无面谈记录</div>
+    ${tmView==='none' ? `<button onclick="tmBatchReminder()" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:4px 12px;cursor:pointer;font-family:inherit;margin-left:auto">✉ 按专业批量生成提醒</button>` : ''}
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
     <span style="font-size:10px;color:var(--text-3)">专业：</span>${tpMajorChipsHtml(tmMajorFilter, 'tmSetMajor')}
   </div>
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
@@ -2960,12 +2967,39 @@ function tmRenderShell() {
 }
 
 function tmSetMajor(v) { tmMajorFilter = v; tmRenderShell(); }
+function tmSetView(v) { tmView = v; tmRenderShell(); }
+
+// 当前筛选条件下「没有任何面谈记录」的在籍学生
+function tmNoRecStudents() {
+  const recNames = new Set(tmData.groups.map(g => g.name));
+  const q = tmSearch.trim();
+  return (tmData.students || []).filter(s => !recNames.has(s.name)
+    && tpMajorMatch(s.major, tmMajorFilter)
+    && (!tmSourceFilter || (s.source || '') === tmSourceFilter)
+    && (!q || tpNameMatch(s.name, q) || (s.source || '').includes(q)));
+}
 function tmSetSource(v) { tmSourceFilter = v; tmRenderShell(); }
 function tmToggle(name) { tmExpandedName = tmExpandedName === name ? null : name; tmRenderList(); }
 
 function tmRenderList() {
   const listBox = document.getElementById('tm_list');
   if (!listBox || !tmData) return;
+
+  // 无面谈记录视图：直接列出可发提醒的学生
+  if (tmView === 'none') {
+    const noRec = tmNoRecStudents();
+    const cnt0 = document.getElementById('tm_count');
+    if (cnt0) cnt0.textContent = noRec.length;
+    listBox.innerHTML = noRec.length ? noRec.map(s => `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface);border:1px dashed var(--border);border-radius:4px;padding:10px 14px;margin-bottom:8px">
+      <span style="font-size:13px;font-weight:600">${tsaEsc(s.name)}</span>
+      <span style="font-size:11px;color:var(--text-3)">${MAJORS[s.major]||s.major||''}</span>
+      ${s.source?`<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 5px">${tsaEsc(s.source)}</span>`:''}
+      <span style="font-size:11px;color:var(--warn,#b8860b)">⚠ 近期没有预约面谈</span>
+      <button onclick="tmGenReminder('${tsaEsc(s.name)}','${s.major||''}')" style="margin-left:auto;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">✉ 生成提醒文字</button>
+    </div>`).join('') : '<div class="empty">当前筛选范围内的学生都有面谈记录 🎉</div>';
+    return;
+  }
+
   let list = tmData.groups.filter(g => tpMajorMatch(g.major, tmMajorFilter));
   if (tmSourceFilter) list = list.filter(g => (g.source || '') === tmSourceFilter);
   const q = tmSearch.trim();
@@ -3009,6 +3043,38 @@ function tmRenderList() {
       </div>` : ''}
     </div>`;
   }).join('') + noRecHtml) : '<div class="empty">没有符合筛选条件的面谈记录</div>';
+}
+
+// 批量提醒：把当前筛选下无面谈记录的学生按专业分组，每个专业一段通用文案（不带姓名）+ 对应预约链接
+function tmBatchReminder() {
+  const noRec = tmNoRecStudents();
+  if (!noRec.length) { alert('当前筛选范围内没有「无面谈记录」的学生'); return; }
+  const byMajor = {};
+  noRec.forEach(s => { const m = s.major || ''; if (!byMajor[m]) byMajor[m] = []; byMajor[m].push(s.name); });
+  const blocks = Object.entries(byMajor).map(([m, names], i) => {
+    const link = `https://edsched.github.io/transform/student/index.html?major=${encodeURIComponent(m)}`;
+    const text = `同学，你最近都一直没有预约面谈，学习上有什么问题吗？麻烦填写一下面谈预约噢。\n预约链接：${link}`;
+    return `<div style="border:1px solid var(--border-light);border-radius:4px;padding:12px;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:4px">${MAJORS[m]||m||'未设专业'}（${names.length}人未面谈）</div>
+      <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">${names.map(n=>tsaEsc(n)).join('、')}</div>
+      <textarea id="tmb_${i}" rows="3" style="width:100%;font-size:12px;line-height:1.8;padding:8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;resize:vertical">${tsaEsc(text)}</textarea>
+      <button onclick="navigator.clipboard.writeText(document.getElementById('tmb_${i}').value).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制这段',2000)})" style="margin-top:6px;font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 12px;cursor:pointer;font-family:inherit">📋 复制这段</button>
+    </div>`;
+  }).join('');
+  const existing = document.getElementById('tmBatchModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'tmBatchModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:560px;width:100%;max-height:85vh;display:flex;flex-direction:column">
+    <div style="font-size:13px;font-weight:600;margin-bottom:10px">✉ 批量面谈提醒（共 ${noRec.length} 人未面谈）</div>
+    <div style="overflow-y:auto;flex:1">${blocks}</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:8px">
+      <button onclick="document.getElementById('tmBatchModal').remove()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 18px;cursor:pointer;font-family:inherit">关闭</button>
+    </div>
+  </div>`;
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
 }
 
 // 生成面谈提醒文字（含该学生专业对应的预约链接），弹窗显示并自动复制
