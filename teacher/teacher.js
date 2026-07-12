@@ -2327,36 +2327,18 @@ async function renderTeacherStudyProgress(mc) {
     }
     return out;
   };
-  const stuNames = students.map(s => s.name);
-  const chunkFetchNames = async build => {
-    let out = [];
-    for (let i = 0; i < stuNames.length; i += 60) {
-      const ns = stuNames.slice(i, i + 60).map(n => `"${n}"`).join(',');
-      const batch = await sb(build(ns)).catch(() => []);
-      out = out.concat(batch || []);
-    }
-    return out;
-  };
-  const [allTimeline, allPlans, allDrafts, allBookings] = await Promise.all([
+  const [allTimeline, allPlans, allDrafts] = await Promise.all([
     chunkFetch(ids => `/rest/v1/student_progress_timeline?student_id=in.(${ids})&select=*&order=created_at.asc`),
     chunkFetch(ids => `/rest/v1/student_school_plans?student_id=in.(${ids})&select=*&order=level.asc`),
     chunkFetch(ids => `/rest/v1/student_plan_drafts?student_id=in.(${ids})&select=*&order=updated_at.desc`),
-    chunkFetchNames(ns => `/rest/v1/bookings?name=in.(${ns})&daily_record=not.is.null&select=*&order=slot_date.desc`),
   ]);
 
-  const timelineMap = {}, plansMap = {}, draftsMap = {}, bookingsMap = {};
+  const timelineMap = {}, plansMap = {}, draftsMap = {};
   allTimeline.forEach(t => { if (!timelineMap[t.student_id]) timelineMap[t.student_id] = []; timelineMap[t.student_id].push(t); });
   allPlans.forEach(p => { if (!plansMap[p.student_id]) plansMap[p.student_id] = []; plansMap[p.student_id].push(p); });
   allDrafts.forEach(d => { if (!draftsMap[d.student_id]) draftsMap[d.student_id] = d; });
-  // 只保留填写过记录内容的已完成面谈
-  allBookings.forEach(b => {
-    const has = b.daily_record && Object.values(b.daily_record).some(v => v && (typeof v === 'string' ? v : Object.values(v).some(x => x)));
-    if (!has) return;
-    if (!bookingsMap[b.name]) bookingsMap[b.name] = [];
-    bookingsMap[b.name].push(b);
-  });
 
-  teacherProgressData = { students, timelineMap, plansMap, draftsMap, bookingsMap };
+  teacherProgressData = { students, timelineMap, plansMap, draftsMap };
   tpRenderShell();
 }
 
@@ -2433,27 +2415,6 @@ function tpNodeSummaryHtml(s, latest, plans, draft) {
   }).join('');
 }
 
-// 完整面谈记录弹窗（与预约页查看记录同一文字格式）
-function tpOpenMeetingRecord(name, bid) {
-  const list = (teacherProgressData && teacherProgressData.bookingsMap && teacherProgressData.bookingsMap[name]) || [];
-  const b = list.find(x => String(x.id) === String(bid));
-  if (!b) return;
-  const existing = document.getElementById('tpMeetingModal');
-  if (existing) existing.remove();
-  const modal = document.createElement('div');
-  modal.id = 'tpMeetingModal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  modal.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:560px;width:100%;max-height:85vh;display:flex;flex-direction:column">
-    <pre id="tpMeetingText" style="font-size:12px;line-height:1.9;white-space:pre-wrap;font-family:inherit;color:var(--text-2);background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:14px;overflow-y:auto;flex:1;margin:0 0 12px">${tsaEsc(buildRecordText(b))}</pre>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button onclick="navigator.clipboard.writeText(document.getElementById('tpMeetingText').textContent).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制记录',2000)})" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:8px 14px;cursor:pointer;font-family:inherit">📋 复制记录</button>
-      <button onclick="document.getElementById('tpMeetingModal').remove()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 18px;cursor:pointer;font-family:inherit">关闭</button>
-    </div>
-  </div>`;
-  modal.onclick = e => { if (e.target === modal) modal.remove(); };
-  document.body.appendChild(modal);
-}
-
 function tpRenderProgressList() {
   const listBox = document.getElementById('tp_list');
   if (!listBox || !teacherProgressData) return;
@@ -2467,7 +2428,6 @@ function tpRenderProgressList() {
     const latest = getLatestProgress(timeline);
     const plans = plansMap[s.id] || [];
     const draft = draftsMap[s.id];
-    const bks = (teacherProgressData.bookingsMap || {})[s.name] || [];
     const levelLabel = { 1:'🔴', 2:'🟡', 3:'🟢' };
     const routeLabel = s.prep_model === 'winter' ? '冬季路线・12月出愿1月考试' : '夏季路线・7月出愿8月考试';
 
@@ -2532,22 +2492,6 @@ function tpRenderProgressList() {
               ${p.application_period?`<span style="color:var(--accent);margin-left:6px;font-size:10px">📅 ${p.application_period}</span>`:''}
             </div>`).join('')}
           </div>` : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写志望校</div>'}
-        </div>
-        <!-- 面谈记录（最近3次完整文字直接展示） -->
-        <div style="padding:0 14px 12px">
-          <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">💬 面谈记录（${bks.length}次）</div>
-          ${bks.length ? bks.slice(0,3).map(b => `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:6px">
-            <div style="display:flex;align-items:center;gap:8px;font-size:10px;color:var(--text-3);margin-bottom:6px">
-              <span>📅 ${b.slot_date}${b.actual_duration?' · '+b.actual_duration+'min':''}</span>
-              ${b.assigned_teacher?`<span>${tsaEsc(b.assigned_teacher)}老师</span>`:''}
-              <button onclick="tpOpenMeetingRecord('${tsaEsc(s.name)}','${b.id}')" style="margin-left:auto;font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:1px 8px;cursor:pointer;font-family:inherit;color:var(--accent)">放大查看 / 复制</button>
-            </div>
-            <pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0;color:var(--text-2)">${tsaEsc(buildRecordText(b))}</pre>
-          </div>`).join('') + (bks.length > 3 ? bks.slice(3,8).map(b => `<div style="display:flex;align-items:center;gap:8px;font-size:11px;background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:6px 8px;margin-bottom:4px">
-            <span>📅 ${b.slot_date}${b.actual_duration?' · '+b.actual_duration+'min':''}</span>
-            ${b.assigned_teacher?`<span style="color:var(--text-3)">${tsaEsc(b.assigned_teacher)}老师</span>`:''}
-            <button onclick="tpOpenMeetingRecord('${tsaEsc(s.name)}','${b.id}')" style="margin-left:auto;font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:var(--accent)">📄 查看完整记录</button>
-          </div>`).join('') : '') + (bks.length > 8 ? '<div style="font-size:10px;color:var(--text-3)">更早的记录请到「面谈查询」搜索</div>' : '') : '<div style="font-size:11px;color:var(--text-3)">暂无面谈记录</div>'}
         </div>
         <!-- 进度时间线（默认收起） -->
         <div style="padding:0 14px 12px">
