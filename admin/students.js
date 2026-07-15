@@ -420,7 +420,9 @@ async function renderProgressPage(mc, focusStudentId=null){
     else if (sPlans.length) pgDerived.apply = '择校确认中';
     if (sPlans.some(p => p.interview_draft_done)) pgDerived.exam = '在准备面试稿';
     else if (sPlans.some(p => p.kakomon_started)) pgDerived.exam = '在写过去问';
-    if (sDraftN > 0) pgDerived.plan = '撰写中';
+    const sLegacy = sDraft && ['research_question','methodology','draft_notes'].some(f => String(sDraft[f] || '').trim());
+    if (sDraft && sDraft.draft_file_url) pgDerived.plan = '已完成';
+    else if (sDraftN > 0 || sLegacy) pgDerived.plan = '撰写中';
     else if (sRefsN > 0) pgDerived.plan = '在收集材料';
 
     const pgDetail = k => {
@@ -428,6 +430,7 @@ async function renderProgressPage(mc, focusStudentId=null){
         const parts = [];
         if (sRefsN) parts.push(`📚 先行研究 ${sRefsN} 条`);
         if (sDraftN) parts.push(`草稿已填 ${sDraftN} 项`);
+        if (sDraft && sDraft.draft_file_url) parts.push('📎 完成稿已上传');
         return parts.length ? `<div style="font-size:10px;color:var(--text-2);margin-top:4px;line-height:1.7">${parts.join(' · ')}</div>` : '';
       }
       if (k === 'apply') {
@@ -918,9 +921,12 @@ async function renderSeasonView(mc, students, timelineMap) {
           <tbody>
             ${Object.entries(filteredSchools).sort().map(([key, plans]) => {
               const [school, faculty, dept] = key.split('|||');
-              const studentCells = plans.map(p =>
-                `<span style="display:inline-block;background:${p.status==='passed'?'var(--ok-bg)':p.status==='failed'?'#fdecea':'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px;margin:2px;font-size:10px">${p.student_name} <span style="color:var(--text-3)">${levelLabel[p.level]||''}</span>${p.status&&p.status!=='preparing'?` · ${statusLabel[p.status]}`:''}</span>`
-              ).join('');
+              const studentCells = plans.map(p => {
+                const st = schoolStatusLabel(p.status);
+                const flags = ['prof_ok','applied','passed'].includes(p.status)
+                  ? ` <span style="color:var(--text-3)">过去问${p.kakomon_started?'✓':'—'}・面试稿${p.interview_draft_done?'✓':'—'}</span>` : '';
+                return `<span style="display:inline-block;background:${p.status==='passed'?'var(--ok-bg)':(p.status==='failed'||p.status==='prof_ng')?'#fdecea':'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px;margin:2px;font-size:10px">${p.student_name} <span style="color:var(--text-3)">${levelLabel[p.level]||''}</span> · <span style="color:${st.c};font-weight:600">${st.t}</span>${flags}</span>`;
+              }).join('');
               const firstPlan = plans[0];
               return `<tr style="border-bottom:1px solid var(--border-light)">
                 <td style="padding:8px 10px;vertical-align:top">
