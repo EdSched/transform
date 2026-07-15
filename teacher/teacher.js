@@ -2398,6 +2398,13 @@ function tpNodeSummaryHtml(s, latest, plans, draft) {
   const ymStr = i => `${Math.floor(i/12)}年${i%12+1}月`;
   let refs = 0;
   try { refs = draft && draft.prior_research_list ? JSON.parse(draft.prior_research_list).length : 0; } catch (e) {}
+  const draftUploaded = !!(draft && draft.draft_file_url);
+  let draftFilled = false;
+  try {
+    const df1 = draft && draft.draft_fields ? JSON.parse(draft.draft_fields) : {};
+    draftFilled = Object.values(df1).some(v => Array.isArray(v) ? v.length : String(v || '').trim());
+  } catch (e) {}
+  if (!draftFilled && draft) draftFilled = ['research_question','methodology','draft_notes'].some(f => String(draft[f] || '').trim());
   const dn = (k, v) => typeof PROGRESS_DONE !== 'undefined' && (PROGRESS_DONE[k] || []).includes(v);
   const jp = latest.japanese || '', en = latest.english || '', plan = latest.plan || '', apply = latest.apply || '', exam = latest.exam || '';
   // 逐校推进统计（来自志望校的状态与过去问/面试稿标记）
@@ -2411,7 +2418,7 @@ function tpNodeSummaryHtml(s, latest, plans, draft) {
   const items = [
     { label:'日语', cur:[jp || '未填写', s.japanese_score || ''].filter(Boolean).join(' · '), done: dn('japanese', jp), dl:DL.japanese, dlName:'成绩确定最晚' + dlSuffix },
     { label:'英语', cur:[en || '未填写', s.english_score || ''].filter(Boolean).join(' · '), done: dn('english', en), dl:DL.english, dlName:'成绩确定最晚' + dlSuffix },
-    { label:'研究计划书', cur:[plan || '未填写', refs ? `文献 ${refs} 条` : ''].filter(Boolean).join(' · '), done: plan === '已完成', dl:DL.plan, dlName:'草稿完成最晚' + dlSuffix },
+    { label:'研究计划书', cur:[plan || (draftUploaded ? '已完成' : draftFilled ? '撰写中' : refs ? '在收集材料' : '未填写'), refs ? `文献 ${refs} 条` : '', draftUploaded ? '📎 完成稿已上传' : ''].filter(Boolean).join(' · '), done: plan === '已完成' || draftUploaded, dl:DL.plan, dlName:'草稿完成最晚' + dlSuffix },
     { label:'择校・联系教授', cur: (plans.length ? `已选 ${plans.length}/6 校` : '未选校') + (contactedN ? ` · 已发邮件 ${contactedN} 校` : '') + (profOkN ? ` · 教授OK ${profOkN} 校` : '') + (apply ? ' · ' + apply : ''), done: profOkN > 0, dl:DL.school, dlName:'锁定教授最晚' },
     { label:'出愿', cur: appliedN ? `已出愿 ${appliedN} 校` : (apply || '未开始'), done: appliedN > 0 || ['已出愿','已合格'].includes(apply), dl:DL.apply, dlName:'出愿' },
     { label:'过去问・面试稿', cur: [(kakomonN ? `过去问已开始 ${kakomonN} 校` : ''), (interviewN ? `面试稿完成 ${interviewN} 校` : ''), exam || ''].filter(Boolean).join(' · ') || '未开始', done: dn('exam', exam), dl:DL.kakomon, dlName:'完成最晚' },
