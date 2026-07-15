@@ -926,14 +926,35 @@ function buildStudyRoadmap() {
   const isDone = (k, v) => typeof PROGRESS_DONE !== 'undefined' && (PROGRESS_DONE[k] || []).includes(v);
   let refsCount = 0;
   try { refsCount = studyData.planDraft && studyData.planDraft.prior_research_list ? JSON.parse(studyData.planDraft.prior_research_list).length : 0; } catch(e) {}
+  // 逐校推进与计划书填写实况（与考学进度卡片同一套推导，保证两处一致）
+  const dObj = studyData.planDraft || {};
+  const draftUploaded = !!dObj.draft_file_url;
+  let draftFilled = false;
+  try {
+    const df1 = dObj.draft_fields ? JSON.parse(dObj.draft_fields) : {};
+    draftFilled = Object.values(df1).some(v => Array.isArray(v) ? v.length : String(v || '').trim());
+  } catch(e) {}
+  if (!draftFilled) draftFilled = ['research_question','methodology','draft_notes'].some(f => String(dObj[f] || '').trim());
+  const profOkN = plans.filter(p => ['prof_ok','applied','passed'].includes(p.status)).length;
+  const contactedN = plans.filter(p => p.status === 'contacted').length;
+  const appliedN = plans.filter(p => ['applied','passed'].includes(p.status)).length;
+  const passedN = plans.filter(p => p.status === 'passed').length;
+  const kakomonN = plans.filter(p => p.kakomon_started).length;
+  const interviewN = plans.filter(p => p.interview_draft_done).length;
   const stateOf = {
     japanese: { done: isDone('japanese', jp), active: !!jp, cur: [jp || '未填写', s.japanese_score || ''].filter(Boolean).join(' · ') },
     english:  { done: isDone('english', en), active: !!en, cur: [en || '未填写', s.english_score || ''].filter(Boolean).join(' · ') },
-    plan:     { done: plan === '已完成', active: ['收集资料中','撰写中','修改中'].includes(plan), cur: [plan || '未填写', refsCount ? `文献 ${refsCount} 条` : ''].filter(Boolean).join(' · ') },
-    school:   { done: plans.length > 0, active: apply === '择校确认中', cur: plans.length ? `已选 ${plans.length}/6 校` : '未选校' },
-    apply:    { done: ['已出愿','已合格'].includes(apply), active: ['联系教授中','材料准备中'].includes(apply), cur: apply || '未开始' },
-    kakomon:  { done: isDone('exam', exam), active: !!exam, cur: exam || '未填写' },
-    exam:     { done: apply === '已合格', active: apply === '已出愿', cur: apply === '已合格' ? '已合格' : apply === '已出愿' ? '已出愿・待考试' : '—' },
+    plan:     { done: plan === '已完成' || draftUploaded,
+                active: ['收集资料中','在收集材料','撰写中','修改中'].includes(plan) || draftFilled || refsCount > 0,
+                cur: [plan || (draftUploaded ? '已完成' : draftFilled ? '撰写中' : refsCount ? '在收集材料' : '未填写'), refsCount ? `文献 ${refsCount} 条` : '', draftUploaded ? '📎 完成稿已上传' : ''].filter(Boolean).join(' · ') },
+    school:   { done: profOkN > 0, active: plans.length > 0 || ['择校确认中','联系教授中'].includes(apply),
+                cur: (plans.length ? `已选 ${plans.length}/6 校` : '未选校') + (contactedN ? ` · 已发邮件 ${contactedN} 校` : '') + (profOkN ? ` · 教授OK ${profOkN} 校` : '') },
+    apply:    { done: appliedN > 0 || ['已出愿','已合格'].includes(apply), active: ['联系教授中','材料准备中'].includes(apply) || contactedN > 0,
+                cur: appliedN ? `已出愿 ${appliedN} 校` : (apply || '未开始') },
+    kakomon:  { done: isDone('exam', exam), active: !!exam || kakomonN > 0 || interviewN > 0,
+                cur: [(kakomonN ? `过去问已开始 ${kakomonN} 校` : ''), (interviewN ? `面试稿完成 ${interviewN} 校` : ''), exam || ''].filter(Boolean).join(' · ') || '未开始' },
+    exam:     { done: passedN > 0 || apply === '已合格', active: appliedN > 0 || apply === '已出愿',
+                cur: passedN ? `合格 ${passedN} 校 🎉` : apply === '已合格' ? '已合格' : appliedN ? `已出愿 ${appliedN} 校・待考试` : '—' },
   };
 
   // 倒计时与判定：提前完成→鼓励；剩1个月/本月→紧急提醒；超期→红色标注
