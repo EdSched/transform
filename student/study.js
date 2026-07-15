@@ -1073,7 +1073,10 @@ function renderProgressTab() {
   else if (plansL.length) derived.apply = '择校确认中';
   if (plansL.some(p => p.interview_draft_done)) derived.exam = '在准备面试稿';
   else if (plansL.some(p => p.kakomon_started)) derived.exam = '在写过去问';
-  if (draftN > 0) derived.plan = '撰写中';
+  const d0f = studyData.planDraft || {};
+  const legacyFilled = ['research_question','methodology','draft_notes'].some(f => String(d0f[f] || '').trim());
+  if (d0f.draft_file_url) derived.plan = '已完成';
+  else if (draftN > 0 || legacyFilled) derived.plan = '撰写中';
   else if (refsN > 0) derived.plan = '在收集材料';
 
   const cardDetail = k => {
@@ -1081,6 +1084,7 @@ function renderProgressTab() {
       const parts = [];
       if (refsN) parts.push(`📚 先行研究已整理 ${refsN} 条`);
       if (draftN) parts.push(`草稿已填 ${draftN} 项`);
+      if ((studyData.planDraft || {}).draft_file_url) parts.push('📎 完成稿已上传');
       return parts.length ? `<div style="font-size:10px;color:var(--text-secondary);margin-top:4px;line-height:1.7">${parts.join(' · ')}</div>` : '';
     }
     if (k === 'apply') {
