@@ -1065,6 +1065,17 @@ function renderProgressTab() {
     const df0 = d0.draft_fields ? JSON.parse(d0.draft_fields) : {};
     draftN = Object.values(df0).filter(v => Array.isArray(v) ? v.length : String(v || '').trim()).length;
   } catch(e) {}
+  // 时间线没有记录时，从志望校推进/计划书数据自动推导徽章（避免明明已推进却显示「未填写」）
+  const derived = {};
+  if (plansL.some(p => p.status === 'passed')) derived.apply = '已合格';
+  else if (plansL.some(p => ['applied'].includes(p.status))) derived.apply = '已出愿';
+  else if (plansL.some(p => ['prof_ok','contacted'].includes(p.status))) derived.apply = '联系教授中';
+  else if (plansL.length) derived.apply = '择校确认中';
+  if (plansL.some(p => p.interview_draft_done)) derived.exam = '在准备面试稿';
+  else if (plansL.some(p => p.kakomon_started)) derived.exam = '在写过去问';
+  if (draftN > 0) derived.plan = '撰写中';
+  else if (refsN > 0) derived.plan = '在收集材料';
+
   const cardDetail = k => {
     if (k === 'plan') {
       const parts = [];
@@ -1095,7 +1106,7 @@ function renderProgressTab() {
       const score = k==='japanese'&&s.japanese_score?s.japanese_score:k==='english'&&s.english_score?s.english_score:'';
       return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px">
         <div style="font-size:10px;color:var(--text-muted);margin-bottom:5px">${PROGRESS_ICONS[k]} ${label}</div>
-        ${val?renderProgressBadge(k,val):`<span style="font-size:11px;color:var(--text-muted)">未填写</span>`}
+        ${val?renderProgressBadge(k,val):derived[k]?renderProgressBadge(k,derived[k])+`<span style="font-size:9px;color:var(--text-muted);margin-left:4px">按填写自动判断</span>`:`<span style="font-size:11px;color:var(--text-muted)">未填写</span>`}
         ${score?`<div style="font-size:11px;color:var(--text-secondary);margin-top:4px">${score}</div>`:''}
         ${cardDetail(k)}
       </div>`;
