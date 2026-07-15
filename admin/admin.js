@@ -163,6 +163,7 @@ function renderTeachersPage(mc){
       <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:14px;letter-spacing:.05em;text-transform:uppercase" id="teacherFormTitle">添加新老师</div>
       <div class="form-group"><label class="form-label">姓名 *</label><input id="new_teacher_name" placeholder="老师姓名"></div>
       <div class="form-group"><label class="form-label">备注</label><input id="new_teacher_notes" placeholder="可选"></div>
+      <div class="form-group"><label class="form-label">分类标签（可叠加，用于搜索标记，不影响任何功能权限）</label><input id="new_teacher_tags" placeholder="用逗号或顿号分隔，如：计划书指导、模拟面试、兼职"></div>
       <div class="form-group">
         <label class="form-label">负责专业（可多选）</label>
         <div style="display:flex;flex-wrap:wrap;gap:6px" id="new_teacher_majors">
@@ -302,6 +303,7 @@ function cancelEditTeacher(){
   document.getElementById('teacherFormCancelBtn').style.display='none';
   document.getElementById('new_teacher_name').value='';
   document.getElementById('new_teacher_notes').value='';
+  document.getElementById('new_teacher_tags').value='';
   document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active'));
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
@@ -316,6 +318,7 @@ function openTeacherManager(){
   // reset add form
   document.getElementById('new_teacher_name').value='';
   document.getElementById('new_teacher_notes').value='';
+  document.getElementById('new_teacher_tags').value='';
   document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active'));
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
@@ -329,45 +332,108 @@ function openTeacherManager(){
   document.getElementById('teacherManagerModal').classList.add('open');
 }
 
+// 标签解析：逗号/顿号/空格分隔，去重去空
+function parseTeacherTags(){
+  const raw=document.getElementById('new_teacher_tags')?.value||'';
+  return [...new Set(raw.split(/[,，、\s]+/).map(x=>x.trim()).filter(Boolean))];
+}
+function escTM(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+
+let teacherSearch='';
+let teacherTagFilter='';
+let teacherExpandedId=null;
+
+function teacherFilteredList(){
+  let list=cachedTeachers;
+  if(teacherTagFilter) list=list.filter(t=>(t.tags||[]).includes(teacherTagFilter));
+  const q=teacherSearch.trim();
+  // 拼音严格匹配失败时退回首字母匹配姓氏（zs 也能命中张老师）
+  const nameMatch=n=>{
+    if(typeof matchesPinyin==='function'&&matchesPinyin(n||'',q)) return true;
+    if(/^[a-zA-Z]{2,3}$/.test(q)&&typeof matchesPinyin==='function') return matchesPinyin(n||'',q[0].toLowerCase());
+    return (n||'').includes(q);
+  };
+  if(q) list=list.filter(t=>nameMatch(t.name)
+    ||(t.notes||'').includes(q)||(t.tags||[]).some(g=>g.includes(q)));
+  return list;
+}
+
 function renderTeacherList(){
+  const el=document.getElementById('teacherList');
+  if(!el) return;
+  // 汇总现有标签作为筛选 chips
+  const allTags=[...new Set(cachedTeachers.flatMap(t=>t.tags||[]))];
+  el.innerHTML=`
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
+      <input placeholder="搜索姓名（汉字/拼音首字母）、标签、备注…" value="${escTM(teacherSearch)}"
+        oninput="teacherSearch=this.value;renderTeacherRows()"
+        style="font-size:11px;padding:6px 10px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;flex:1;min-width:180px">
+      <span style="font-size:10px;color:var(--text-3)" id="teacherCount"></span>
+    </div>
+    ${allTags.length?`<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:8px">
+      <span style="font-size:10px;color:var(--text-3)">标签：</span>
+      <div class="filter-chip ${teacherTagFilter===''?'active':''}" onclick="teacherTagFilter='';renderTeacherList()" style="padding:2px 9px;font-size:10px">全部</div>
+      ${allTags.map(g=>`<div class="filter-chip ${teacherTagFilter===g?'active':''}" onclick="teacherTagFilter='${escTM(g)}';renderTeacherList()" style="padding:2px 9px;font-size:10px">${escTM(g)}</div>`).join('')}
+    </div>`:''}
+    <div id="teacherRows"></div>`;
+  renderTeacherRows();
+}
+
+function renderTeacherRows(){
+  const box=document.getElementById('teacherRows');
+  if(!box) return;
   const base=location.origin+location.pathname.replace(/\/admin\/.*$/,'/teacher/');
-  const html=cachedTeachers.length
-    ?`<div style="display:flex;flex-direction:column;gap:8px">
-        ${cachedTeachers.map(t=>{
+  const list=teacherFilteredList();
+  const cnt=document.getElementById('teacherCount');
+  if(cnt) cnt.textContent=`${list.length} / ${cachedTeachers.length} 位`;
+  box.innerHTML=list.length
+    ?`<div style="display:flex;flex-direction:column;gap:6px">
+        ${list.map(t=>{
           const p=t.permissions||{};
-          const majors=(t.majors||[]).map(m=>MAJORS[m]||m).join('・')||'—';
           const perms=[];
-          if(p.booking) perms.push(`预约(${(p.booking_types||[]).join('/')})`);
-          if(p.slots) perms.push(`时间槽(${(p.slot_types||[]).join('/')})`);
+          if(p.booking) perms.push('预约');
+          if(p.slots) perms.push('时间槽');
           if(p.schedule) perms.push('排班');
-          if(p.student_mgmt){const _sm={progress:'考学进度',records:'出席作业',meetings:'面谈查询',profile:'档案录入'};perms.push('学生管理('+(((p.student_mgmt_items||[]).map(k=>_sm[k]||k).join('/'))||'—')+')');}
+          if(p.homework) perms.push('作业');
+          if(p.admission_query) perms.push('出願库');
+          if(p.student_mgmt) perms.push('学生管理');
+          const permsFull=[];
+          if(p.booking) permsFull.push(`预约(${(p.booking_types||[]).join('/')||'—'})`);
+          if(p.slots) permsFull.push(`时间槽(${(p.slot_types||[]).join('/')||'—'})`);
+          if(p.schedule) permsFull.push('排班');
+          if(p.homework) permsFull.push('作业反馈');
+          if(p.admission_query) permsFull.push('出願数据库');
+          if(p.student_mgmt){const _sm={progress:'考学进度',records:'出席作业',meetings:'面谈查询',profile:'档案录入'};permsFull.push('学生管理('+(((p.student_mgmt_items||[]).map(k=>_sm[k]||k).join('/'))||'—')+')');}
+          const open=teacherExpandedId===t.id;
           const link=`${base}?teacher=${encodeURIComponent(t.name)}`;
-          return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px">
-            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px">
-              <div>
-                <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:14px">${t.name}</span>
-                ${t.notes?`<span style="font-size:11px;color:var(--text-3);margin-left:6px">${t.notes}</span>`:''}
+          return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
+            <div onclick="teacherExpandedId=teacherExpandedId==='${t.id}'?null:'${t.id}';renderTeacherRows()" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;${open?'background:var(--bg)':''}">
+              <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px;white-space:nowrap">${escTM(t.name)}</span>
+              <span style="font-size:10px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:22%">${(t.majors||[]).map(m=>MAJORS[m]||m).join('・')||'—'}</span>
+              ${(t.tags||[]).map(g=>`<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 6px;white-space:nowrap">${escTM(g)}</span>`).join('')}
+              <span style="font-size:10px;color:var(--text-3);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:30%">${perms.join(' · ')||'无权限'}</span>
+              <span style="font-size:10px;color:var(--text-3)">${open?'▾':'▸'}</span>
+            </div>
+            ${open?`<div style="border-top:1px solid var(--border-light);background:var(--bg);padding:10px 12px">
+              ${t.notes?`<div style="font-size:11px;color:var(--text-2);margin-bottom:6px">备注：${escTM(t.notes)}</div>`:''}
+              <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">
+                ${(t.majors||[]).map(m=>`<span style="font-size:10px;background:var(--surface);border:1px solid var(--border-light);border-radius:2px;padding:1px 6px">${MAJORS[m]||m}</span>`).join('')}
+                ${permsFull.map(p2=>`<span style="font-size:10px;background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:1px 6px">${p2}</span>`).join('')}
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+                <span style="font-size:10px;color:var(--text-3)">链接：</span>
+                <code style="font-size:10px;color:var(--text-2);background:var(--surface);padding:1px 6px;border-radius:2px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${link}</code>
+                <button onclick="event.stopPropagation();navigator.clipboard.writeText('${link}').then(()=>alert('已复制'))" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:1px 7px;cursor:pointer;font-family:inherit;white-space:nowrap">复制</button>
               </div>
               <div style="display:flex;gap:4px">
-                <button class="btn btn-outline btn-sm" onclick="openEditTeacher('${t.id}')">编辑</button>
-                <button class="btn-ghost" onclick="deleteTeacher('${t.id}')">✕</button>
+                <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openEditTeacher('${t.id}')">编辑</button>
+                <button class="btn-ghost" onclick="event.stopPropagation();deleteTeacher('${t.id}')">✕ 删除</button>
               </div>
-            </div>
-            <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px">
-              ${(t.majors||[]).map(m=>`<span style="font-size:10px;background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 6px">${MAJORS[m]||m}</span>`).join('')}
-              ${perms.map(p2=>`<span style="font-size:10px;background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:1px 6px">${p2}</span>`).join('')}
-            </div>
-            <div style="display:flex;align-items:center;gap:6px">
-              <span style="font-size:10px;color:var(--text-3)">链接：</span>
-              <code style="font-size:10px;color:var(--text-2);background:var(--bg);padding:1px 6px;border-radius:2px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${link}</code>
-              <button onclick="navigator.clipboard.writeText('${link}').then(()=>alert('已复制'))" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:1px 7px;cursor:pointer;font-family:inherit;white-space:nowrap">复制</button>
-            </div>
+            </div>`:''}
           </div>`;
         }).join('')}
       </div>`
-    :'<div class="empty" style="padding:40px">暂无老师</div>';
-  const el=document.getElementById('teacherList');
-  if(el) el.innerHTML=html;
+    :'<div class="empty" style="padding:40px">没有符合条件的老师</div>';
 }
 
 function getPermissionsFromForm(){
@@ -395,12 +461,15 @@ async function addTeacher(){
   if(cachedTeachers.find(t=>t.name===name)){alert('该老师已存在');return}
   const majors=[...document.querySelectorAll('#new_teacher_majors .filter-chip.active')].map(c=>c.dataset.value);
   const permissions=getPermissionsFromForm();
+  const tags=parseTeacherTags();
   try{
-    const t={id:`t-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,name,notes,majors,permissions};
+    const t={id:`t-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,name,notes,majors,permissions,tags};
     const res=await sb('/rest/v1/teachers','POST',[t]);
     cachedTeachers.push(Array.isArray(res)?res[0]:t);
     document.getElementById('new_teacher_name').value='';
     document.getElementById('new_teacher_notes').value='';
+  document.getElementById('new_teacher_tags').value='';
+    document.getElementById('new_teacher_tags').value='';
     document.querySelectorAll('#new_teacher_majors .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active'));
     document.getElementById('perm_booking').checked=false;
     document.getElementById('perm_slots').checked=false;
@@ -415,6 +484,7 @@ function openEditTeacher(id){
   if(!t) return;
   document.getElementById('new_teacher_name').value=t.name;
   document.getElementById('new_teacher_notes').value=t.notes||'';
+  document.getElementById('new_teacher_tags').value=(t.tags||[]).join('、');
   document.querySelectorAll('#new_teacher_majors .filter-chip').forEach(c=>{c.classList.toggle('active',(t.majors||[]).includes(c.dataset.value))});
   const p=t.permissions||{};
   document.getElementById('perm_booking').checked=!!p.booking;
@@ -447,10 +517,11 @@ async function saveEditTeacher(id){
   const majors=[...document.querySelectorAll('#new_teacher_majors .filter-chip.active')].map(c=>c.dataset.value);
   const permissions=getPermissionsFromForm();
   const notes=document.getElementById('new_teacher_notes').value.trim();
+  const tags=parseTeacherTags();
   try{
-    await sb(`/rest/v1/teachers?id=eq.${id}`,'PATCH',{name,notes,majors,permissions});
+    await sb(`/rest/v1/teachers?id=eq.${id}`,'PATCH',{name,notes,majors,permissions,tags});
     const idx=cachedTeachers.findIndex(t=>t.id===id);
-    if(idx>=0) Object.assign(cachedTeachers[idx],{name,notes,majors,permissions});
+    if(idx>=0) Object.assign(cachedTeachers[idx],{name,notes,majors,permissions,tags});
     cancelEditTeacher();
     renderTeacherList();
   }catch(e){alert('保存失败：'+e.message)}
