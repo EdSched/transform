@@ -412,6 +412,17 @@ async function renderProgressPage(mc, focusStudentId=null){
       const df0 = sDraft && sDraft.draft_fields ? JSON.parse(sDraft.draft_fields) : {};
       sDraftN = Object.values(df0).filter(v => Array.isArray(v) ? v.length : String(v || '').trim()).length;
     } catch(e) {}
+    // 时间线没有记录时，从志望校推进/计划书数据自动推导徽章
+    const pgDerived = {};
+    if (sPlans.some(p => p.status === 'passed')) pgDerived.apply = '已合格';
+    else if (sPlans.some(p => p.status === 'applied')) pgDerived.apply = '已出愿';
+    else if (sPlans.some(p => ['prof_ok','contacted'].includes(p.status))) pgDerived.apply = '联系教授中';
+    else if (sPlans.length) pgDerived.apply = '择校确认中';
+    if (sPlans.some(p => p.interview_draft_done)) pgDerived.exam = '在准备面试稿';
+    else if (sPlans.some(p => p.kakomon_started)) pgDerived.exam = '在写过去问';
+    if (sDraftN > 0) pgDerived.plan = '撰写中';
+    else if (sRefsN > 0) pgDerived.plan = '在收集材料';
+
     const pgDetail = k => {
       if (k === 'plan') {
         const parts = [];
@@ -442,7 +453,7 @@ async function renderProgressPage(mc, focusStudentId=null){
       if (k === 'english' && s.english_score) scoreHint = `<div style="font-size:11px;color:var(--text-2);margin-top:4px">📊 ${s.english_score}</div>`;
       return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:8px">
         <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">${PROGRESS_ICONS[k]} ${label}</div>
-        ${renderProgressBadge(k, latest[k])}
+        ${latest[k]?renderProgressBadge(k, latest[k]):pgDerived[k]?renderProgressBadge(k, pgDerived[k])+`<span style="font-size:9px;color:var(--text-3);margin-left:4px">按填写自动判断</span>`:renderProgressBadge(k, latest[k])}
         ${scoreHint}
         ${pgDetail(k)}
       </div>`;
