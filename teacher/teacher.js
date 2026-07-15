@@ -2386,22 +2386,36 @@ function tpFilteredStudents() {
 function tpNodeSummaryHtml(s, latest, plans, draft) {
   const now = new Date();
   const nowIdx = now.getFullYear() * 12 + now.getMonth();
-  const examMonth = s.prep_model === 'winter' ? 1 : 8;
+  const route = s.prep_model === 'winter' ? 'winter' : s.prep_model === 'next_summer' ? 'next_summer' : 'summer';
+  const examMonth = route === 'winter' ? 1 : 8;
   let examIdx = now.getFullYear() * 12 + (examMonth - 1);
   while (examIdx < nowIdx) examIdx += 12;
+  if (route === 'next_summer') examIdx += 12; // 次年路线：跳过最近一轮
+  // 各项目最晚节点偏移（次年路线：语言按冬季要求、草稿提前到12月）
+  const DL = route === 'next_summer'
+    ? { japanese:-7, english:-7, plan:-8, school:-3, apply:-1, kakomon:0, exam:0 }
+    : { japanese:-1, english:-1, plan:-3, school:-2, apply:-1, kakomon:0, exam:0 };
   const ymStr = i => `${Math.floor(i/12)}年${i%12+1}月`;
   let refs = 0;
   try { refs = draft && draft.prior_research_list ? JSON.parse(draft.prior_research_list).length : 0; } catch (e) {}
   const dn = (k, v) => typeof PROGRESS_DONE !== 'undefined' && (PROGRESS_DONE[k] || []).includes(v);
   const jp = latest.japanese || '', en = latest.english || '', plan = latest.plan || '', apply = latest.apply || '', exam = latest.exam || '';
+  // 逐校推进统计（来自志望校的状态与过去问/面试稿标记）
+  const profOkN = plans.filter(p => ['prof_ok','applied','passed'].includes(p.status)).length;
+  const contactedN = plans.filter(p => p.status === 'contacted').length;
+  const appliedN = plans.filter(p => ['applied','passed'].includes(p.status)).length;
+  const passedN = plans.filter(p => p.status === 'passed').length;
+  const kakomonN = plans.filter(p => p.kakomon_started).length;
+  const interviewN = plans.filter(p => p.interview_draft_done).length;
+  const dlSuffix = route === 'next_summer' ? '（次年路线）' : '';
   const items = [
-    { label:'日语', cur:[jp || '未填写', s.japanese_score || ''].filter(Boolean).join(' · '), done: dn('japanese', jp), dl:-1, dlName:'成绩送分最晚' },
-    { label:'英语', cur:[en || '未填写', s.english_score || ''].filter(Boolean).join(' · '), done: dn('english', en), dl:-1, dlName:'成绩送分最晚' },
-    { label:'研究计划书', cur:[plan || '未填写', refs ? `文献 ${refs} 条` : ''].filter(Boolean).join(' · '), done: plan === '已完成', dl:-3, dlName:'草稿完成最晚' },
-    { label:'择校・联系教授', cur: (plans.length ? `已选 ${plans.length}/6 校` : '未选校') + (apply ? ' · ' + apply : ''), done: plans.length > 0, dl:-2, dlName:'锁定教授最晚' },
-    { label:'出愿', cur: apply || '未开始', done: ['已出愿','已合格'].includes(apply), dl:-1, dlName:'出愿' },
-    { label:'过去问・面试稿', cur: exam || '未填写', done: dn('exam', exam), dl:0, dlName:'完成最晚' },
-    { label:'大学院考试', cur: apply === '已合格' ? '已合格' : apply === '已出愿' ? '已出愿・待考试' : '—', done: apply === '已合格', dl:0, dlName:'考试' },
+    { label:'日语', cur:[jp || '未填写', s.japanese_score || ''].filter(Boolean).join(' · '), done: dn('japanese', jp), dl:DL.japanese, dlName:'成绩确定最晚' + dlSuffix },
+    { label:'英语', cur:[en || '未填写', s.english_score || ''].filter(Boolean).join(' · '), done: dn('english', en), dl:DL.english, dlName:'成绩确定最晚' + dlSuffix },
+    { label:'研究计划书', cur:[plan || '未填写', refs ? `文献 ${refs} 条` : ''].filter(Boolean).join(' · '), done: plan === '已完成', dl:DL.plan, dlName:'草稿完成最晚' + dlSuffix },
+    { label:'择校・联系教授', cur: (plans.length ? `已选 ${plans.length}/6 校` : '未选校') + (contactedN ? ` · 已发邮件 ${contactedN} 校` : '') + (profOkN ? ` · 教授OK ${profOkN} 校` : '') + (apply ? ' · ' + apply : ''), done: profOkN > 0, dl:DL.school, dlName:'锁定教授最晚' },
+    { label:'出愿', cur: appliedN ? `已出愿 ${appliedN} 校` : (apply || '未开始'), done: appliedN > 0 || ['已出愿','已合格'].includes(apply), dl:DL.apply, dlName:'出愿' },
+    { label:'过去问・面试稿', cur: [(kakomonN ? `过去问已开始 ${kakomonN} 校` : ''), (interviewN ? `面试稿完成 ${interviewN} 校` : ''), exam || ''].filter(Boolean).join(' · ') || '未开始', done: dn('exam', exam), dl:DL.kakomon, dlName:'完成最晚' },
+    { label:'大学院考试', cur: passedN ? `合格 ${passedN} 校` : apply === '已合格' ? '已合格' : appliedN ? `已出愿 ${appliedN} 校・待考试` : '—', done: passedN > 0 || apply === '已合格', dl:DL.exam, dlName:'考试' },
   ];
   return items.map(it => {
     const dlIdx = examIdx + it.dl, left = dlIdx - nowIdx;
@@ -2429,7 +2443,9 @@ function tpRenderProgressList() {
     const plans = plansMap[s.id] || [];
     const draft = draftsMap[s.id];
     const levelLabel = { 1:'🔴', 2:'🟡', 3:'🟢' };
-    const routeLabel = s.prep_model === 'winter' ? '冬季路线・12月出愿1月考试' : '夏季路线・7月出愿8月考试';
+    const routeLabel = s.prep_model === 'winter' ? '冬季路线・12月出愿1月考试'
+      : s.prep_model === 'next_summer' ? '次年夏季路线・语言按冬季要求・次年7月出愿8月考试'
+      : '夏季路线・7月出愿8月考试';
 
     const statusRow = Object.entries(PROGRESS_LABELS).map(([k]) => {
       const val = k === 'japanese' ? (latest[k] || (s.japanese_score ? '有成绩' : '')) :
@@ -2484,13 +2500,15 @@ function tpRenderProgressList() {
           <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">🏫 志望校（${plans.length}所）</div>
           ${plans.length ? `
           <div style="display:flex;flex-direction:column;gap:4px">
-            ${plans.map(p=>`<div style="font-size:11px;background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:6px 8px">
+            ${plans.map(p=>{const st=schoolStatusLabel(p.status);return `<div style="font-size:11px;background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:6px 8px">
               <span style="color:var(--text-3)">${levelLabel[p.level]||''}</span>
               <span style="font-weight:500;margin-left:4px">${p.school_name}</span>
               ${p.faculty?`<span style="color:var(--text-3);margin-left:4px">${p.faculty}</span>`:''}
               ${p.professor?`<span style="color:var(--text-2);margin-left:6px">👤 ${p.professor}</span>`:''}
               ${p.application_period?`<span style="color:var(--accent);margin-left:6px;font-size:10px">📅 ${p.application_period}</span>`:''}
-            </div>`).join('')}
+              <span style="color:${st.c};margin-left:6px;font-size:10px;font-weight:600">${st.t}</span>
+              ${['prof_ok','applied','passed'].includes(p.status)?`<span style="color:var(--text-3);margin-left:6px;font-size:10px">过去问${p.kakomon_started?'✓':'—'}・面试稿${p.interview_draft_done?'✓':'—'}</span>`:''}
+            </div>`;}).join('')}
           </div>` : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写志望校</div>'}
         </div>
         <!-- 进度时间线（默认收起） -->
