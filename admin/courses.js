@@ -1120,7 +1120,7 @@ async function saveAddCourse(){
           id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
           course_id:courseId,course_name:name,major:majors,
           session_date:date,session_number:i+1,
-          time_range:r.time_range||courseData.time_range,
+          time_range:detail.time_range||courseData.time_range,
           actual_hours:courseData.actual_hours,
           delivery:courseData.delivery,campus:courseData.campus,
           teacher:detail.teacher||mainTeacher,
