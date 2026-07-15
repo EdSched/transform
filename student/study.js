@@ -10,6 +10,7 @@ let studyTab = 'schools';
 let studyData = { timeline:[], schoolPlans:[], planDraft:null, sharedLists:[], sharedSchools:[], bookings:[], sessionRecs:[] };
 let schoolSortBy = 'application_period'; // application_period | japanese_required | english_required
 let studyProgressView = 'roadmap'; // roadmap（备考规划月份表） | timeline（进度时间线）
+let studySchoolListOpen = null; // 参考学校列表展开状态：null=自动（未填志望校时展开）
 let schoolFilterLang = 'all'; // all | no_english | no_japanese | no_both
 
 const studyParams = new URLSearchParams(location.search);
@@ -240,6 +241,16 @@ function renderSchoolsTab() {
         <input placeholder="计划书要求（字数/格式）" value="${escA(p.plan_requirement)}" data-field="plan_requirement" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
         <input placeholder="研究课题（目前方向）" value="${escA(p.research_theme)}" data-field="research_theme" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
       </div>
+      <div style="font-size:10px;color:var(--text-muted);margin:6px 0 4px">📌 该校进度</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">
+        <select data-field="status" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface);flex:1;min-width:180px">
+          ${Object.entries(SCHOOL_STATUS_LABELS).map(([k,v])=>`<option value="${k}" ${(p.status||'preparing')===k?'selected':''}>${v.t}</option>`).join('')}
+        </select>
+        ${[['kakomon_started','✏️ 过去问已开始'],['interview_draft_done','🎤 面试稿已完成']].map(([f,l])=>{
+          const on = !!p[f];
+          return `<span onclick="studyToggleChip(this)" data-field="${f}" data-on="${on?1:0}" style="font-size:11px;padding:4px 10px;border-radius:2px;cursor:pointer;user-select:none;border:1px solid ${on?'var(--accent)':'var(--border)'};background:${on?'var(--accent)':'var(--surface)'};color:${on?'#fff':'var(--text-secondary)'}">${l}</span>`;
+        }).join('')}
+      </div>
       <input type="hidden" value="${escA(p.id)}" data-field="id">
     </div>`;
   }
@@ -270,8 +281,19 @@ function renderSchoolsTab() {
   editHtml += `</div>`;
 
   // 左右分栏（宽屏并排，手机横向滑动翻页），右栏独立上下滚动
+  // 已填志望校后参考列表默认收起，主视图聚焦「我的志望校」的逐校推进；可手动展开查找
+  const listOpen = studySchoolListOpen === null ? schoolPlans.length === 0 : studySchoolListOpen;
+  if (!listOpen) {
+    return `<div>
+      <div onclick="studySchoolListOpen=true;switchStudyTab('schools')" style="font-size:11px;color:var(--text-secondary);background:var(--surface);border:1px dashed var(--border);border-radius:3px;padding:8px 12px;margin-bottom:10px;cursor:pointer;user-select:none">📋 参考学校列表（已收起）— 点击展开查找学校 ▸</div>
+      ${editHtml}
+    </div>`;
+  }
   return `<div class="study-split">
-    <div>${sharedTableHtml || '<div style="font-size:11px;color:var(--text-muted)">暂无共享学校列表</div>'}</div>
+    <div>
+      <div onclick="studySchoolListOpen=false;switchStudyTab('schools')" style="font-size:10px;color:var(--text-muted);text-align:right;cursor:pointer;user-select:none;margin-bottom:4px">收起列表 ◂</div>
+      ${sharedTableHtml || '<div style="font-size:11px;color:var(--text-muted)">暂无共享学校列表</div>'}
+    </div>
     <div style="overflow-y:auto;max-height:calc(100vh - 160px);padding-right:4px">${editHtml}</div>
   </div>`;
 }
@@ -360,7 +382,8 @@ async function saveStudySchoolPlans() {
         return el ? el.value.trim() : '';
       };
       const lv = parseInt(row.dataset.level||'2');
-      return { id:get('id'), level:lv, school_name:get('school_name'), faculty:get('faculty'), department:get('department'), application_period:get('application_period'), exam_date:get('exam_date'), professor:get('professor'), professor_url:get('professor_url'), professor2:get('professor2'), professor2_url:get('professor2_url'), plan_requirement:get('plan_requirement'), research_theme:get('research_theme'), documents_required:get('documents_required') };
+      const chip = f => { const el = row.querySelector(`span[data-field="${f}"]`); return el ? el.dataset.on === '1' : false; };
+      return { id:get('id'), level:lv, status:get('status')||'preparing', kakomon_started:chip('kakomon_started'), interview_draft_done:chip('interview_draft_done'), school_name:get('school_name'), faculty:get('faculty'), department:get('department'), application_period:get('application_period'), exam_date:get('exam_date'), professor:get('professor'), professor_url:get('professor_url'), professor2:get('professor2'), professor2_url:get('professor2_url'), plan_requirement:get('plan_requirement'), research_theme:get('research_theme'), documents_required:get('documents_required') };
     }).filter(p => p.school_name);
 
     if (!plans.length) { alert('请至少填写一所学校的学校名'); return; }
@@ -377,7 +400,8 @@ async function saveStudySchoolPlans() {
       exam_season: studyExamSeason(p.application_period),
       plan_requirement:p.plan_requirement, research_theme:p.research_theme,
       documents_required:p.documents_required,
-      level:p.level, status:'preparing',
+      level:p.level, status:p.status || 'preparing',
+      kakomon_started:!!p.kakomon_started, interview_draft_done:!!p.interview_draft_done,
     }));
     await sb('/rest/v1/student_school_plans', 'POST', toInsert);
     studyData.schoolPlans = toInsert;
@@ -809,19 +833,24 @@ async function studySavePlanField(fields) {
 const STUDY_PREP_MODELS = {
   summer: { label:'夏季考试路线（7月出愿・8月考试）', examMonth: 8 },
   winter: { label:'冬季考试路线（12月出愿・次年1月考试）', examMonth: 1 },
+  next_summer: { label:'次年夏季路线（先打基础・次年7月出愿8月考试）', examMonth: 8, skipOne: true },
 };
 
 // 七个项目（与通年进度表一致）：月度节点（相对考试月E的偏移 → 内容）；red 中的偏移红底强调
 // dl = 最晚节点偏移，dlName = 节点名称（用于倒计时文案）
 const STUDY_ROADMAP_ROWS = [
   { key:'japanese', icon:'🈴', label:'日语', dl:-1, dlName:'成绩送分最晚',
-    ms:{ '-2':'EJU 考试', '-1':'JLPT 考试・成绩送分', '0':'日语成绩确定' } },
+    ms:{ '-2':'EJU 考试', '-1':'JLPT 考试・成绩送分', '0':'日语成绩确定' },
+    ms2:{ '-9':'EJU 考试', '-8':'JLPT 考试（按冬季）', '-7':'日语成绩确定' }, dl2:-7, dlName2:'成绩确定最晚（按冬季要求）' },
   { key:'english', icon:'🔤', label:'英语', dl:-1, dlName:'成绩送分最晚',
-    ms:{ '-3':'托福考试', '-2':'托业考试', '-1':'英语送分' } },
+    ms:{ '-3':'托福考试', '-2':'托业考试', '-1':'英语送分' },
+    ms2:{ '-9':'托福考试', '-8':'托业考试（按冬季）', '-7':'英语成绩确定' }, dl2:-7, dlName2:'成绩确定最晚（按冬季要求）' },
   { key:'plan', icon:'📄', label:'研究计划书', dl:-3, dlName:'草稿完成最晚',
-    ms:{ '-4':'问题意识・先行研究', '-3':'完成草稿（最晚）', '-2':'zemi 发表・针对教授修改', '-1':'针对出愿学校修改' } },
+    ms:{ '-4':'问题意识・先行研究', '-3':'完成草稿（最晚）', '-2':'zemi 发表・针对教授修改', '-1':'针对出愿学校修改' },
+    ms2:{ '-10':'问题意识・先行研究', '-8':'完成草稿（最晚12月）', '-6':'反复修改・zemi 发表', '-1':'针对出愿学校修改' }, dl2:-8, dlName2:'草稿完成最晚（提前至12月）' },
   { key:'school', icon:'🏫', label:'择校相关', dl:-2, dlName:'锁定教授最晚',
-    ms:{ '-4':'完成初版出愿 list', '-3':'锁定教授', '-2':'针对教授修改计划书' } },
+    ms:{ '-4':'完成初版出愿 list', '-3':'锁定教授', '-2':'针对教授修改计划书' },
+    ms2:{ '-7':'完成初版出愿 list', '-3':'锁定教授', '-2':'针对教授修改计划书' }, dl2:-3 },
   { key:'apply', icon:'📮', label:'出愿相关', dl:-1, dlName:'出愿',
     ms:{ '-4':'准备相关证明', '-3':'联系教授', '-2':'参加说明会', '-1':'出愿' }, red:['-1'] },
   { key:'kakomon', icon:'✏️', label:'过去问备考', dl:0, dlName:'面试稿完成最晚',
@@ -831,7 +860,15 @@ const STUDY_ROADMAP_ROWS = [
 ];
 
 function studyPrepModelKey() {
-  return STUDY_PREP_MODELS[studyStudent && studyStudent.prep_model] ? studyStudent.prep_model : 'summer';
+  if (STUDY_PREP_MODELS[studyStudent && studyStudent.prep_model]) return studyStudent.prep_model;
+  // 未手动选择时：按面谈预约里填写的出愿时期推导（夏季/冬季/次年）
+  const bs = (studyData && studyData.bookings) || [];
+  for (const b of bs) {
+    if (b.exam_period === '次年出愿') return 'next_summer';
+    if (b.exam_period === '冬季出愿') return 'winter';
+    if (b.exam_period === '夏季出愿') return 'summer';
+  }
+  return 'summer';
 }
 
 async function studySetPrepModel(v) {
@@ -877,9 +914,11 @@ function buildStudyRoadmap() {
 
   // 当前考试周期：所选路线下一次考试月
   const modelKey = studyPrepModelKey();
+  const model = STUDY_PREP_MODELS[modelKey];
   const nextExamIdx = examMonth => { let e = now.getFullYear() * 12 + (examMonth - 1); while (e < nowIdx) e += 12; return e; };
-  const examIdx = nextExamIdx(STUDY_PREP_MODELS[modelKey].examMonth);
-  const otherKey = modelKey === 'summer' ? 'winter' : 'summer';
+  let examIdx = nextExamIdx(model.examMonth);
+  if (model.skipOne) examIdx += 12; // 次年路线：跳过最近一轮
+  const otherKey = modelKey === 'winter' ? 'summer' : 'winter';
   const altExamIdx = nextExamIdx(STUDY_PREP_MODELS[otherKey].examMonth);
 
   // 各项目状态与当前进度文字（来自进度记录/计划书/志望校/学生档案）
@@ -898,7 +937,13 @@ function buildStudyRoadmap() {
   };
 
   // 倒计时与判定：提前完成→鼓励；剩1个月/本月→紧急提醒；超期→红色标注
-  const rows = STUDY_ROADMAP_ROWS.map(r => {
+  const useAlt = !!model.skipOne;
+  const rows = STUDY_ROADMAP_ROWS.map(r0 => {
+    const r = Object.assign({}, r0, useAlt ? {
+      ms: r0.ms2 || r0.ms,
+      dl: (r0.dl2 != null ? r0.dl2 : r0.dl),
+      dlName: r0.dlName2 || r0.dlName,
+    } : {});
     const st = stateOf[r.key];
     const dlIdx = examIdx + r.dl;
     const left = dlIdx - nowIdx;
@@ -1003,13 +1048,47 @@ function renderStudyRoadmap() {
         <tbody>${bmRows}</tbody>
       </table>
     </div>
-    <div style="font-size:9px;color:var(--text-secondary);margin-top:6px">节点按所选考试路线自动排布（夏季：5月草稿・6月修改说明会・7月出愿・8月考试；冬季：10月草稿・11月修改说明会・12月出愿・1月考试）。红底为关键节点；各项目状态由进度记录、计划书、志望校与面谈数据自动汇总。</div>
+    <div style="font-size:9px;color:var(--text-secondary);margin-top:6px">节点按所选考试路线自动排布（夏季：5月草稿・7月出愿・8月考试；冬季：10月草稿・12月出愿・1月考试；次年夏季：语言按冬季要求、12月完成草稿、次年7月出愿8月考试）。未手动选择时按面谈填写的出愿时期自动判断。红底为关键节点；各项目状态由进度记录、计划书、志望校与面谈数据自动汇总。</div>
   </div>`;
 }
 function renderProgressTab() {
   const { timeline } = studyData;
   const s = studyStudent;
   const latest = getLatestProgress(timeline);
+
+  // 志望校流水线细节：填充进计划书/出愿/备考三张卡
+  const plansL = studyData.schoolPlans || [];
+  let refsN = 0, draftN = 0;
+  try {
+    const d0 = studyData.planDraft || {};
+    refsN = d0.prior_research_list ? JSON.parse(d0.prior_research_list).length : 0;
+    const df0 = d0.draft_fields ? JSON.parse(d0.draft_fields) : {};
+    draftN = Object.values(df0).filter(v => Array.isArray(v) ? v.length : String(v || '').trim()).length;
+  } catch(e) {}
+  const cardDetail = k => {
+    if (k === 'plan') {
+      const parts = [];
+      if (refsN) parts.push(`📚 先行研究已整理 ${refsN} 条`);
+      if (draftN) parts.push(`草稿已填 ${draftN} 项`);
+      return parts.length ? `<div style="font-size:10px;color:var(--text-secondary);margin-top:4px;line-height:1.7">${parts.join(' · ')}</div>` : '';
+    }
+    if (k === 'apply') {
+      if (!plansL.length) return '';
+      return `<div style="margin-top:4px">${plansL.map(p => {
+        const st = schoolStatusLabel(p.status);
+        return `<div style="font-size:10px;line-height:1.7"><span style="color:var(--text-secondary)">${escA(p.school_name)}${p.professor ? ' · ' + escA(p.professor) : ''}</span> — <span style="color:${st.c}">${st.t}</span></div>`;
+      }).join('')}</div>`;
+    }
+    if (k === 'exam') {
+      const rel = plansL.filter(p => ['prof_ok','applied','passed'].includes(p.status));
+      if (!rel.length) return '';
+      return `<div style="margin-top:4px">${rel.map(p =>
+        `<div style="font-size:10px;line-height:1.7;color:var(--text-secondary)">${escA(p.school_name)}：过去问 ${p.kakomon_started ? '<span style="color:var(--success)">✓ 已开始</span>' : '—'} · 面试稿 ${p.interview_draft_done ? '<span style="color:var(--success)">✓ 已完成</span>' : '—'}</div>`
+      ).join('')}</div>`;
+    }
+    return '';
+  };
+
   let html = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:16px">
     ${Object.entries(PROGRESS_LABELS).map(([k,label]) => {
       const val = latest[k];
@@ -1018,6 +1097,7 @@ function renderProgressTab() {
         <div style="font-size:10px;color:var(--text-muted);margin-bottom:5px">${PROGRESS_ICONS[k]} ${label}</div>
         ${val?renderProgressBadge(k,val):`<span style="font-size:11px;color:var(--text-muted)">未填写</span>`}
         ${score?`<div style="font-size:11px;color:var(--text-secondary);margin-top:4px">${score}</div>`:''}
+        ${cardDetail(k)}
       </div>`;
     }).join('')}
   </div>`;
