@@ -376,12 +376,19 @@ async function renderProgressPage(mc, focusStudentId=null){
   if(stMajorFilter!=='all') students=students.filter(s=>matchesMajorFilter(s.major,stMajorFilter));
   if(progressStudentFilter) students=students.filter(s=>matchesStudentSearch(s,progressStudentFilter));
 
-  const allTimeline = await sb('/rest/v1/student_progress_timeline?select=*&order=created_at.asc&limit=5000').catch(()=>[]);
+  const [allTimeline, allPlansPG, allDraftsPG] = await Promise.all([
+    sb('/rest/v1/student_progress_timeline?select=*&order=created_at.asc&limit=5000').catch(()=>[]),
+    sb('/rest/v1/student_school_plans?select=*&order=level.asc&limit=5000').catch(()=>[]),
+    sb('/rest/v1/student_plan_drafts?select=*&limit=5000').catch(()=>[]),
+  ]);
   const timelineMap = {};
   allTimeline.forEach(t => {
     if (!timelineMap[t.student_id]) timelineMap[t.student_id] = [];
     timelineMap[t.student_id].push(t);
   });
+  const plansMapPG = {}, draftsMapPG = {};
+  allPlansPG.forEach(p => { if (!plansMapPG[p.student_id]) plansMapPG[p.student_id] = []; plansMapPG[p.student_id].push(p); });
+  allDraftsPG.forEach(d => { if (!draftsMapPG[d.student_id]) draftsMapPG[d.student_id] = d; });
 
   const cards = students.map(s => {
     const timeline = timelineMap[s.id] || [];
@@ -396,6 +403,38 @@ async function renderProgressPage(mc, focusStudentId=null){
       return `<span title="${label}" style="font-size:10px;background:${done?'var(--ok-bg)':'var(--warn-bg)'};color:${done?'var(--ok)':'var(--warn)'};padding:1px 6px;border-radius:2px">${PROGRESS_ICONS[k]} ${latest[k]||''}${scoreText}</span>`;
     }).join('');
 
+    // 志望校流水线细节：填充进计划书/出愿/备考三张卡
+    const sPlans = plansMapPG[s.id] || [];
+    const sDraft = draftsMapPG[s.id];
+    let sRefsN = 0, sDraftN = 0;
+    try {
+      sRefsN = sDraft && sDraft.prior_research_list ? JSON.parse(sDraft.prior_research_list).length : 0;
+      const df0 = sDraft && sDraft.draft_fields ? JSON.parse(sDraft.draft_fields) : {};
+      sDraftN = Object.values(df0).filter(v => Array.isArray(v) ? v.length : String(v || '').trim()).length;
+    } catch(e) {}
+    const pgDetail = k => {
+      if (k === 'plan') {
+        const parts = [];
+        if (sRefsN) parts.push(`📚 先行研究 ${sRefsN} 条`);
+        if (sDraftN) parts.push(`草稿已填 ${sDraftN} 项`);
+        return parts.length ? `<div style="font-size:10px;color:var(--text-2);margin-top:4px;line-height:1.7">${parts.join(' · ')}</div>` : '';
+      }
+      if (k === 'apply') {
+        if (!sPlans.length) return '';
+        return `<div style="margin-top:4px">${sPlans.map(p => {
+          const st = schoolStatusLabel(p.status);
+          return `<div style="font-size:10px;line-height:1.7"><span style="color:var(--text-2)">${p.school_name}${p.professor ? ' · ' + p.professor : ''}</span> — <span style="color:${st.c}">${st.t}</span></div>`;
+        }).join('')}</div>`;
+      }
+      if (k === 'exam') {
+        const rel = sPlans.filter(p => ['prof_ok','applied','passed'].includes(p.status));
+        if (!rel.length) return '';
+        return `<div style="margin-top:4px">${rel.map(p =>
+          `<div style="font-size:10px;line-height:1.7;color:var(--text-2)">${p.school_name}：过去问 ${p.kakomon_started ? '<span style="color:var(--ok)">✓</span>' : '—'} · 面试稿 ${p.interview_draft_done ? '<span style="color:var(--ok)">✓</span>' : '—'}</div>`
+        ).join('')}</div>`;
+      }
+      return '';
+    };
     const dimCards = Object.entries(PROGRESS_LABELS).map(([k,label]) => {
       // 语言维度直接显示学生档案里的实际成绩
       let scoreHint = '';
@@ -405,6 +444,7 @@ async function renderProgressPage(mc, focusStudentId=null){
         <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">${PROGRESS_ICONS[k]} ${label}</div>
         ${renderProgressBadge(k, latest[k])}
         ${scoreHint}
+        ${pgDetail(k)}
       </div>`;
     }).join('');
 
