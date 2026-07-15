@@ -707,5 +707,6 @@ const SCHOOL_STATUS_LABELS = {
   prof_ng:   { t:'教授婉拒・需换校', c:'#b03a2e' },
   applied:   { t:'已出愿', c:'#2a6aad' },
   passed:    { t:'合格 🎉', c:'#2a9e6a' },
+  failed:    { t:'不合格', c:'#b03a2e' },
 };
 function schoolStatusLabel(v) { return SCHOOL_STATUS_LABELS[v] || SCHOOL_STATUS_LABELS.preparing; }
