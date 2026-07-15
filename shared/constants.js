@@ -698,3 +698,14 @@ function renderProgressTimelineEntry(entry, canEdit = false, onEdit = '') {
     ${canEdit ? `<button onclick="${onEdit}" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;color:var(--text-3);white-space:nowrap;align-self:flex-start">编辑</button>` : ''}
   </div>`;
 }
+
+// ── 志望校推进状态（学生/老师/admin 共用） ──
+const SCHOOL_STATUS_LABELS = {
+  preparing: { t:'已选定・未联系教授', c:'#8a7a68' },
+  contacted: { t:'已发邮件・待教授回复', c:'#b8860b' },
+  prof_ok:   { t:'教授回复可报考', c:'#2a9e6a' },
+  prof_ng:   { t:'教授婉拒・需换校', c:'#b03a2e' },
+  applied:   { t:'已出愿', c:'#2a6aad' },
+  passed:    { t:'合格 🎉', c:'#2a9e6a' },
+};
+function schoolStatusLabel(v) { return SCHOOL_STATUS_LABELS[v] || SCHOOL_STATUS_LABELS.preparing; }
