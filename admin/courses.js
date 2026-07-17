@@ -257,6 +257,8 @@ let coursesTypeFilter='all';
 // COURSE CLEANUP PAGE
 // ══════════════════════════════════
 let cleanupSelected=new Set();
+let cleanupOpenGroups=new Set();   // 展开的「年+期」分组
+let cleanupShowNonDup=new Set();   // 分组内展开「无重复课程」的key
 let cleanupTypeFilter='all';
 let cleanupMajorFilter='all';
 let cleanupPeriodFilter='all';
@@ -340,34 +342,49 @@ function renderCourseCleanupPage(mc){
     </div>
   </div>
 
-  <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">按年份与期数分组展示筛选后的课程，标黄的为同分组内同名重复课程。点击行可选中（再点取消），选中后可批量删除。每门课标题旁有「保存为模板」，可将课程结构（专业/课时/地点/单回明细等）存为模板，日后开新一期时直接套用。</div>
+  <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">按「年份+期数」折叠分组，标题行显示重复情况；展开后疑似重复的课程排在最前，无重复的收在一条里按需展开。点击课程行可选中批量删除；「存为模板」可把课程结构保存复用。</div>
   ${!filtered.length?`<div class="empty" style="padding:40px 0">没有符合筛选条件的课程</div>`:`
   <div id="cleanup_list">
     ${sortedKeys.map(key=>{
       const g=groups[key];
-      return `
-      <div style="margin-bottom:18px">
-        <div style="font-size:12px;font-weight:600;color:var(--text-2);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px;display:flex;align-items:center;gap:8px">
-          ${key} <span style="font-size:10px;color:var(--text-3);font-weight:400">共 ${g.courses.length} 门</span>
-        </div>
-        ${g.courses.map(c=>{
-          const sessions=cachedSessions.filter(s=>s.course_id===c.id);
-          const isDup=dupKeys.has(c.id);
-          return `
-          <div class="cleanup_row" data-id="${c.id}" data-dup="${isDup?'1':'0'}" onclick="cleanupRowClick(event,'${c.id}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid ${isDup?'#e0c060':'var(--border-light)'};background:${isDup?'#fffbe8':'var(--surface)'};border-radius:3px;margin-bottom:6px;transition:background-color .12s">
-            <div style="flex:1">
-              <div style="font-size:12px;font-weight:600">${c.name} ${isDup?'<span style="font-size:9px;background:#e0c060;color:#5a4a10;border-radius:2px;padding:1px 5px;margin-left:4px">疑似重复</span>':''}</div>
-              <div style="font-size:11px;color:var(--text-3);margin-top:2px">
-                ${(c.major||[]).map(m=>majorLabel(m)).join('/')} · ${c.teacher||''} · ${c.time_range||''} ·
-                ${sessions.length} 条课次记录（设置回数：${c.total_sessions||'-'}）·
-                首回 ${c.first_session_date||'-'}
-              </div>
+      const dups=g.courses.filter(c=>dupKeys.has(c.id));
+      const rest=g.courses.filter(c=>!dupKeys.has(c.id));
+      const open=cleanupOpenGroups.has(key);
+      const showRest=cleanupShowNonDup.has(key);
+      const rowHtml=c=>{
+        const sessions=cachedSessions.filter(s=>s.course_id===c.id);
+        const isDup=dupKeys.has(c.id);
+        const sel=cleanupSelected.has(c.id);
+        return `
+        <div class="cleanup_row" data-id="${c.id}" data-dup="${isDup?'1':'0'}" onclick="cleanupRowClick(event,'${c.id}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid ${sel?'var(--accent)':isDup?'#e0c060':'var(--border-light)'};background:${sel?'var(--accent-light, #e8e0d0)':isDup?'#fffbe8':'var(--surface)'};border-radius:3px;margin-bottom:6px;transition:background-color .12s">
+          <div style="flex:1">
+            <div style="font-size:12px;font-weight:600">${c.name} ${isDup?'<span style="font-size:9px;background:#e0c060;color:#5a4a10;border-radius:2px;padding:1px 5px;margin-left:4px">疑似重复</span>':''}</div>
+            <div style="font-size:11px;color:var(--text-3);margin-top:2px">
+              ${(c.major||[]).map(m=>majorLabel(m)).join('/')} · ${c.teacher||''} · ${c.time_range||''} ·
+              ${sessions.length} 条课次记录（设置回数：${c.total_sessions||'-'}）·
+              首回 ${c.first_session_date||'-'}
             </div>
-            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openSaveAsTemplate('${c.id}')">💾 存为模板</button>
-            <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openAddCourseModal('${c.id}')">编辑</button>
-            <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="event.stopPropagation();cleanupDeleteSingle('${c.id}')">删除</button>
-          </div>`;
-        }).join('')}
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openSaveAsTemplate('${c.id}')">💾 存为模板</button>
+          <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openAddCourseModal('${c.id}')">编辑</button>
+          <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="event.stopPropagation();cleanupDeleteSingle('${c.id}')">删除</button>
+        </div>`;
+      };
+      return `
+      <div style="margin-bottom:10px;border:1px solid var(--border);border-radius:4px;overflow:hidden">
+        <div onclick="cleanupToggleGroup('${key}')" style="display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;user-select:none;${open?'background:var(--bg)':''}">
+          <span style="font-size:12px;font-weight:600;color:var(--text-2)">${key}</span>
+          <span style="font-size:10px;color:var(--text-3)">共 ${g.courses.length} 门</span>
+          ${dups.length?`<span style="font-size:10px;background:#e0c060;color:#5a4a10;border-radius:2px;padding:1px 7px">⚠ 疑似重复 ${dups.length} 门</span>`:'<span style="font-size:10px;color:var(--ok)">✓ 无重复</span>'}
+          <span style="font-size:10px;color:var(--text-3);margin-left:auto">${open?'▾ 收起':'▸ 展开'}</span>
+        </div>
+        ${open?`<div style="padding:10px 14px;border-top:1px solid var(--border-light)">
+          ${dups.length?dups.map(rowHtml).join(''):''}
+          ${rest.length?(showRest
+            ?`<div onclick="cleanupToggleNonDup('${key}')" style="font-size:10px;color:var(--text-3);cursor:pointer;user-select:none;padding:4px 0;margin-bottom:4px">▾ 收起无重复课程</div>`+rest.map(rowHtml).join('')
+            :`<div onclick="cleanupToggleNonDup('${key}')" style="font-size:11px;color:var(--text-2);cursor:pointer;user-select:none;background:var(--bg);border:1px dashed var(--border);border-radius:3px;padding:7px 12px">▸ 其余 ${rest.length} 门无重复课程 — 点击展开</div>`)
+          :''}
+        </div>`:''}
       </div>`;
     }).join('')}
   </div>`}
@@ -381,6 +398,14 @@ function renderCourseCleanupPage(mc){
   renderTemplateList();
 }
 
+function cleanupToggleGroup(key){
+  if(cleanupOpenGroups.has(key)) cleanupOpenGroups.delete(key); else cleanupOpenGroups.add(key);
+  renderCourseCleanupPage(document.getElementById('mainContent'));
+}
+function cleanupToggleNonDup(key){
+  if(cleanupShowNonDup.has(key)) cleanupShowNonDup.delete(key); else cleanupShowNonDup.add(key);
+  renderCourseCleanupPage(document.getElementById('mainContent'));
+}
 function setCleanupType(t,el){cleanupTypeFilter=t;document.querySelectorAll('#mainContent .filter-chip').forEach(c=>c.classList.remove('active'));renderCourseCleanupPage(document.getElementById('mainContent'))}
 function setCleanupMajor(m,el){cleanupMajorFilter=m;renderCourseCleanupPage(document.getElementById('mainContent'))}
 function setCleanupPeriod(p,el){cleanupPeriodFilter=p;renderCourseCleanupPage(document.getElementById('mainContent'))}
@@ -470,36 +495,124 @@ async function saveAsTemplate(courseId,templateName){
     renderTemplateList();
   }catch(e){alert('保存模板失败：'+e.message)}
 }
+let cachedTemplates=null;
+let tplOpenMajors=new Set();
+let tplEditingId=null;
+
 async function renderTemplateList(){
   const wrap=document.getElementById('template_list');
   if(!wrap)return;
   wrap.innerHTML='<div style="font-size:11px;color:var(--text-3)">加载中…</div>';
   try{
-    const templates=await sb('/rest/v1/course_templates?select=*&order=created_at.desc');
-    if(!templates.length){
-      wrap.innerHTML='<div style="font-size:12px;color:var(--text-3);padding:8px 0">暂无保存的模板</div>';
-      return;
-    }
-    wrap.innerHTML=templates.map(t=>`
-      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border-light);border-radius:3px;margin-bottom:6px">
-        <div style="flex:1">
-          <div style="font-size:12px;font-weight:600">${t.name}</div>
-          <div style="font-size:11px;color:var(--text-3);margin-top:2px">
-            ${(t.major||[]).map(m=>majorLabel(m)).join('/')} · ${t.teacher||''} · ${t.time_range||''} · 共${t.total_sessions||'-'}回 · ${t.detail_rows?.length||0}条单回明细
-          </div>
-        </div>
-        <button class="btn btn-primary btn-sm" onclick="openApplyTemplate('${t.id}')">套用</button>
-        <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="deleteTemplate('${t.id}')">删除模板</button>
-      </div>`).join('');
+    cachedTemplates=await sb('/rest/v1/course_templates?select=*&order=created_at.desc');
+    tplRenderGroups();
   }catch(e){
     wrap.innerHTML=`<div style="font-size:12px;color:var(--danger)">加载失败：${e.message}</div>`;
   }
 }
+
+function tplRenderGroups(){
+  const wrap=document.getElementById('template_list');
+  if(!wrap||!cachedTemplates)return;
+  if(!cachedTemplates.length){
+    wrap.innerHTML='<div style="font-size:12px;color:var(--text-3);padding:8px 0">暂无保存的模板</div>';
+    return;
+  }
+  // 按专业分组（多专业模板按专业组合归为一组）
+  const groups={};
+  cachedTemplates.forEach(t=>{
+    const key=(t.major||[]).length?(t.major||[]).map(m=>majorLabel(m)).join('/'):'未设专业';
+    if(!groups[key]) groups[key]=[];
+    groups[key].push(t);
+  });
+  wrap.innerHTML=Object.entries(groups).map(([key,list])=>{
+    const open=tplOpenMajors.has(key);
+    return `<div style="margin-bottom:8px;border:1px solid var(--border);border-radius:4px;overflow:hidden">
+      <div onclick="tplToggleMajor('${key.replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:10px;padding:8px 14px;cursor:pointer;user-select:none;${open?'background:var(--bg)':''}">
+        <span style="font-size:12px;font-weight:600;color:var(--text-2)">${key}</span>
+        <span style="font-size:10px;color:var(--text-3)">${list.length} 个模板</span>
+        <span style="font-size:10px;color:var(--text-3);margin-left:auto">${open?'▾ 收起':'▸ 展开'}</span>
+      </div>
+      ${open?`<div style="padding:8px 14px;border-top:1px solid var(--border-light)">
+        ${list.map(t=>tplEditingId===t.id?tplEditFormHtml(t):`
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border-light);border-radius:3px;margin-bottom:6px;flex-wrap:wrap">
+          <div style="flex:1;min-width:200px">
+            <div style="font-size:12px;font-weight:600">${t.name}</div>
+            <div style="font-size:11px;color:var(--text-3);margin-top:2px">
+              ${t.teacher||''} · ${t.weekdays||''} ${t.time_range||''} · 共${t.total_sessions||'-'}回 · ${t.delivery||''} ${t.campus||''} · ${t.detail_rows?.length||0}条单回明细
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openApplyTemplate('${t.id}')">套用</button>
+          <button class="btn btn-outline btn-sm" onclick="tplEditingId='${t.id}';tplRenderGroups()">✏ 编辑</button>
+          <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="deleteTemplate('${t.id}')">删除</button>
+        </div>`).join('')}
+      </div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function tplToggleMajor(key){
+  if(tplOpenMajors.has(key)) tplOpenMajors.delete(key); else tplOpenMajors.add(key);
+  tplRenderGroups();
+}
+
+// 模板编辑表单（基础字段 + 单回明细「回数|标题|讲师」逐行编辑）
+function tplEditFormHtml(t){
+  const inp='width:100%;font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
+  const fld=(id,label,val,ph)=>`<div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">${label}</label><input id="${id}" value="${String(val==null?'':val).replace(/"/g,'&quot;')}" placeholder="${ph||''}" style="${inp}"></div>`;
+  const detailText=(t.detail_rows||[]).map(r=>`${r.num||''}|${r.title||''}|${r.teacher||''}`).join('\n');
+  return `<div style="border:1px solid var(--accent);border-radius:3px;padding:12px;margin-bottom:6px;background:var(--bg)">
+    <div style="font-size:11px;font-weight:600;margin-bottom:8px">✏ 编辑模板</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:8px">
+      ${fld('te_name','模板/课程名称 *',t.name)}
+      ${fld('te_teacher','主讲老师',t.teacher)}
+      ${fld('te_weekdays','星期（如 周六）',t.weekdays)}
+      ${fld('te_time','上课时间',t.time_range,'10:00-15:00')}
+      ${fld('te_total','总回数',t.total_sessions)}
+      ${fld('te_hours','课时（小时）',t.actual_hours)}
+      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">上课形式</label>
+        <select id="te_delivery" style="${inp}"><option value="">请选择</option>${['线下','线上','线下＋线上'].map(d=>`<option ${t.delivery===d?'selected':''}>${d}</option>`).join('')}</select></div>
+      ${fld('te_campus','校区/教室',t.campus)}
+      ${fld('te_type','课程属性',t.course_type,'专业课 / 共通课 / VIP')}
+    </div>
+    <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">单回明细（每行一条：回数|标题|讲师，讲师留空则用主讲）</label>
+    <textarea id="te_details" rows="${Math.min(10,Math.max(3,(t.detail_rows||[]).length))}" style="width:100%;font-size:11px;line-height:1.7;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:'DM Mono',monospace;resize:vertical">${detailText}</textarea>
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <button class="btn btn-primary btn-sm" onclick="tplSaveEdit('${t.id}')">保存修改</button>
+      <button class="btn btn-outline btn-sm" onclick="tplEditingId=null;tplRenderGroups()">取消</button>
+    </div>
+  </div>`;
+}
+
+async function tplSaveEdit(id){
+  const g=x=>(document.getElementById(x)||{}).value||'';
+  const name=g('te_name').trim();
+  if(!name){alert('请填写模板名称');return}
+  const detail_rows=g('te_details').split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{
+    const [num,title,teacher]=l.split('|').map(x=>(x||'').trim());
+    return { num: num==='休讲'?'休讲':(parseInt(num)||num), title:title||'', teacher:teacher||'' };
+  });
+  const patch={
+    name, teacher:g('te_teacher').trim(), weekdays:g('te_weekdays').trim(), time_range:g('te_time').trim(),
+    total_sessions:parseInt(g('te_total'))||null, actual_hours:parseFloat(g('te_hours'))||null,
+    delivery:g('te_delivery'), campus:g('te_campus').trim(), course_type:g('te_type').trim(),
+    detail_rows,
+  };
+  try{
+    await sb(`/rest/v1/course_templates?id=eq.${id}`,'PATCH',patch);
+    const idx=cachedTemplates.findIndex(t=>t.id===id);
+    if(idx>=0) Object.assign(cachedTemplates[idx],patch);
+    tplEditingId=null;
+    tplRenderGroups();
+  }catch(e){alert('保存失败：'+e.message)}
+}
+
 async function deleteTemplate(templateId){
   if(!confirm('确定删除这个模板？'))return;
   try{
     await sb(`/rest/v1/course_templates?id=eq.${templateId}`,'DELETE');
-    renderTemplateList();
+    if(cachedTemplates) cachedTemplates=cachedTemplates.filter(t=>t.id!==templateId);
+    tplRenderGroups();
   }catch(e){alert('删除失败：'+e.message)}
 }
 async function openApplyTemplate(templateId){
@@ -575,6 +688,8 @@ function renderCoursesPage(mc){
     <div class="section-title">课程安排</div>
     <div style="display:flex;gap:8px;align-items:center">
       <button class="btn btn-ok btn-sm" onclick="openPublishModal()" style="background:var(--ok);color:#fff;border:none">📢 发布管理</button>
+      <button class="btn btn-outline btn-sm" onclick="openWeeklyNotice()">📣 每周通知</button>
+      <button class="btn btn-outline btn-sm" onclick="openScheduleShare()">🗓 学生课表</button>
       <button class="btn btn-primary btn-sm" onclick="openAddCourseModal()">＋ 手动添加</button>
       <button class="btn btn-outline btn-sm" onclick="exportCoursesExcel()">↓ 导出 Excel</button>
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('courseImportFileInput').click()">↑ 导入 Excel</button>
@@ -2059,4 +2174,202 @@ async function completeSchedule(courseName){
     renderCoursesPage(document.getElementById('mainContent'));
     alert(`「${courseName}」排课已归档完成！`);
   }catch(e){alert('操作失败：'+e.message)}
+}
+
+// ══════════════════════════════════
+// 每周上课通知生成（admin）
+// 默认覆盖即将到来的周六 ~ 下周五；按专业生成可编辑文案，复制后发群
+// ══════════════════════════════════
+function openWeeklyNotice(){
+  const existing=document.getElementById('weeklyNoticeModal');
+  if(existing) existing.remove();
+  // 默认起始日：即将到来的周六（今天是周六则取今天）
+  const now=new Date();
+  const sat=new Date(now);
+  sat.setDate(now.getDate()+((6-now.getDay())+7)%7);
+  const defDate=`${sat.getFullYear()}-${String(sat.getMonth()+1).padStart(2,'0')}-${String(sat.getDate()).padStart(2,'0')}`;
+  const modal=document.createElement('div');
+  modal.id='weeklyNoticeModal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=`<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:640px;width:100%;max-height:88vh;display:flex;flex-direction:column">
+    <div style="font-size:13px;font-weight:600;margin-bottom:10px">📣 生成每周上课通知</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+      <div><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:2px">起始日期（覆盖该日起7天）</label>
+        <input type="date" id="wn_start" value="${defDate}" style="font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit"></div>
+      <div><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:2px">专业</label>
+        <select id="wn_major" style="font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit">
+          <option value="shakai_group">社会人文（社会学+新传+福祉）</option>
+          <option value="keiei">経営学</option>
+          <option value="keizai">経済学</option>
+          <option value="shakai">社会学</option>
+          <option value="shinpan">新闻传播学</option>
+          <option value="fukushi">社会福祉学</option>
+          <option value="all">全部专业</option>
+        </select></div>
+      <button class="btn btn-primary btn-sm" onclick="wnGenerate()">生成</button>
+      <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText(document.getElementById('wn_text').value).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制全文',2000)})">📋 复制全文</button>
+    </div>
+    <textarea id="wn_text" style="flex:1;min-height:320px;width:100%;font-size:12px;line-height:1.9;padding:12px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;resize:vertical" placeholder="点击「生成」后在此编辑（会议号等可手动补充），确认无误后复制发群"></textarea>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+      <span style="font-size:9px;color:var(--text-3)">生成内容可直接编辑；主持人密钥不会出现在通知里</span>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('weeklyNoticeModal').remove()">关闭</button>
+    </div>
+  </div>`;
+  modal.onclick=e=>{if(e.target===modal)modal.remove()};
+  document.body.appendChild(modal);
+  wnGenerate();
+}
+
+function wnGenerate(){
+  const startStr=(document.getElementById('wn_start')||{}).value;
+  const majorKey=(document.getElementById('wn_major')||{}).value||'all';
+  if(!startStr) return;
+  const majorList=majorKey==='all'?['keiei','keizai','shakai','shinpan','fukushi']
+    :majorKey==='shakai_group'?['shakai','shinpan','fukushi']:[majorKey];
+  const start=new Date(startStr+'T00:00:00');
+  const dates=[];
+  for(let i=0;i<7;i++){const d=new Date(start);d.setDate(start.getDate()+i);dates.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`)}
+  const wdLabel=['周日','周一','周二','周三','周四','周五','周六'];
+  const dLabel=ds=>{const d=new Date(ds+'T00:00:00');return `${wdLabel[d.getDay()]} ${d.getMonth()+1}月${d.getDate()}日`};
+  const dvLabel=v=>v==='线下＋线上'?'线上线下同步':(v||'');
+
+  // 该周范围内、指定专业、非休讲的课次，按日期+时间排序
+  const list=cachedSessions
+    .filter(s=>dates.includes(s.session_date))
+    .filter(s=>(s.major||[]).some(m=>majorList.includes(m)))
+    .filter(s=>s.session_title!=='休讲')
+    .sort((a,b)=>a.session_date===b.session_date?String(a.time_range||'').localeCompare(String(b.time_range||'')):a.session_date.localeCompare(b.session_date));
+
+  let text='@所有人 本周课程安排如下\n';
+  if(!list.length){
+    text+='（该周暂无排课）';
+  }else{
+    let curDate='';
+    list.forEach(s=>{
+      const c=cachedCourses.find(x=>x.id===s.course_id)||{};
+      if(s.session_date!==curDate){
+        curDate=s.session_date;
+        text+=`${dLabel(curDate)}\n`;
+      }
+      const dv=dvLabel(s.delivery||c.delivery);
+      text+=`${s.time_range||c.time_range||''} ${s.course_name||c.name||''}${dv?' '+dv:''}\n`;
+      if(c.meeting_url) text+=`${c.meeting_url}\n`;
+      const campus=s.campus||c.campus||'';
+      const isOffline=(s.delivery||c.delivery||'').includes('线下');
+      if(isOffline&&campus) text+=`线下教室：${campus}\n`;
+      text+='\n';
+    });
+    text=text.trimEnd()+'\n';
+  }
+  const ta=document.getElementById('wn_text');
+  if(ta) ta.value=text;
+}
+
+// ══════════════════════════════════
+// 学生课表生成（admin 挑选课程 → 发布给指定专业的学习记录页）
+// 表 course_schedule_shares：id, major(发布对象), title, course_ids(jsonb), created_at
+// 学生端取该专业最新一条渲染；同专业重复发布以最新为准
+// ══════════════════════════════════
+let ssSelected=new Set();
+
+async function openScheduleShare(){
+  const existing=document.getElementById('schedShareModal');
+  if(existing) existing.remove();
+  ssSelected=new Set();
+  const modal=document.createElement('div');
+  modal.id='schedShareModal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  const now=new Date();
+  const defTitle=`${now.getFullYear()}年${now.getMonth()<3?'1':now.getMonth()<6?'4':now.getMonth()<9?'7':'10'}月期课程表`;
+  modal.innerHTML=`<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:680px;width:100%;max-height:88vh;display:flex;flex-direction:column">
+    <div style="font-size:13px;font-weight:600;margin-bottom:10px">🗓 生成学生课表</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+      <div><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:2px">发布给（学生按档案专业看到对应课表）</label>
+        <select id="ss_major" onchange="ssRenderCourseList()" style="font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit">
+          <option value="shakai_group">社会人文（社会学+新传+福祉共用）</option>
+          <option value="keiei">経営学</option>
+          <option value="keizai">経済学</option>
+          <option value="shakai">社会学</option>
+          <option value="shinpan">新闻传播学</option>
+          <option value="fukushi">社会福祉学</option>
+        </select></div>
+      <div style="flex:1;min-width:160px"><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:2px">课表标题</label>
+        <input id="ss_title" value="${defTitle}" style="width:100%;font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit"></div>
+      <button class="btn btn-primary btn-sm" onclick="ssPublish()">发布课表 (<span id="ss_count">0</span>门)</button>
+    </div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">点击课程行选中/取消（高亮为已选）：</div>
+    <div id="ss_course_list" style="flex:1;overflow-y:auto;border:1px solid var(--border-light);border-radius:3px;padding:8px;min-height:200px"></div>
+    <div style="margin-top:10px">
+      <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">已发布的课表（同专业以最新为准）：</div>
+      <div id="ss_existing" style="font-size:11px"></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('schedShareModal').remove()">关闭</button>
+    </div>
+  </div>`;
+  modal.onclick=e=>{if(e.target===modal)modal.remove()};
+  document.body.appendChild(modal);
+  ssRenderCourseList();
+  ssRenderExisting();
+}
+
+function ssRenderCourseList(){
+  const box=document.getElementById('ss_course_list');
+  if(!box)return;
+  const majorKey=(document.getElementById('ss_major')||{}).value||'shakai_group';
+  const majorList=majorKey==='shakai_group'?['shakai','shinpan','fukushi']:[majorKey];
+  const list=cachedCourses
+    .filter(c=>(c.major||[]).some(m=>majorList.includes(m)))
+    .sort((a,b)=>String(b.first_session_date||'').localeCompare(String(a.first_session_date||'')));
+  box.innerHTML=list.length?list.map(c=>{
+    const sel=ssSelected.has(c.id);
+    const sessions=cachedSessions.filter(s=>s.course_id===c.id);
+    return `<div onclick="ssToggle('${c.id}')" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid ${sel?'var(--accent)':'var(--border-light)'};background:${sel?'var(--accent-light, #e8e0d0)':'var(--surface)'};border-radius:3px;margin-bottom:5px">
+      <span style="font-size:12px;font-weight:600">${c.name}</span>
+      <span style="font-size:10px;color:var(--text-3)">${c.period||''} · ${c.teacher||''} · ${c.weekdays||''} ${c.time_range||''} · ${sessions.length}回 · 首回 ${c.first_session_date||'-'}</span>
+      <span style="margin-left:auto;font-size:11px;color:${sel?'var(--accent)':'var(--text-3)'}">${sel?'✓ 已选':'选择'}</span>
+    </div>`;
+  }).join(''):'<div style="font-size:11px;color:var(--text-3);padding:12px">该专业暂无课程</div>';
+  const cnt=document.getElementById('ss_count');
+  if(cnt) cnt.textContent=ssSelected.size;
+}
+
+function ssToggle(id){
+  if(ssSelected.has(id)) ssSelected.delete(id); else ssSelected.add(id);
+  ssRenderCourseList();
+}
+
+async function ssRenderExisting(){
+  const box=document.getElementById('ss_existing');
+  if(!box)return;
+  try{
+    const shares=await sb('/rest/v1/course_schedule_shares?select=*&order=created_at.desc&limit=30');
+    box.innerHTML=(shares||[]).length?shares.map(s=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px dashed var(--border-light)">
+      <span>${majorLabel(s.major)==='shakai_group'?'社会人文':majorLabel(s.major)}</span>
+      <span style="color:var(--text-2)">${s.title||''}</span>
+      <span style="color:var(--text-3);font-size:10px">${(s.course_ids||[]).length}门 · ${(s.created_at||'').slice(0,10)}</span>
+      <button onclick="ssDelete('${s.id}')" style="margin-left:auto;font-size:10px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:2px;padding:1px 8px;cursor:pointer;font-family:inherit">删除</button>
+    </div>`).join(''):'<span style="color:var(--text-3)">暂无</span>';
+  }catch(e){box.innerHTML=`<span style="color:var(--danger)">加载失败：${e.message}</span>`}
+}
+
+async function ssDelete(id){
+  if(!confirm('删除这份课表？学生端将不再显示。'))return;
+  try{ await sb(`/rest/v1/course_schedule_shares?id=eq.${id}`,'DELETE'); ssRenderExisting(); }catch(e){alert('删除失败：'+e.message)}
+}
+
+async function ssPublish(){
+  if(!ssSelected.size){alert('请先选择要展示的课程');return}
+  const major=(document.getElementById('ss_major')||{}).value;
+  const title=(document.getElementById('ss_title')||{}).value.trim()||'课程表';
+  try{
+    await sb('/rest/v1/course_schedule_shares','POST',{
+      id:`ss-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
+      major, title, course_ids:[...ssSelected],
+    });
+    alert(`已发布「${title}」（${ssSelected.size}门课程）\n${major==='shakai_group'?'社会学/新传/福祉':majorLabel(major)} 的学生在学习记录 → 课程表中可见`);
+    ssSelected=new Set();
+    ssRenderCourseList();
+    ssRenderExisting();
+  }catch(e){alert('发布失败：'+e.message)}
 }
