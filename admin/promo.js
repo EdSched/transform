@@ -17,6 +17,25 @@ const PROMO_SECTIONS = [
 ];
 
 async function renderPromoAdminPage(mc) {
+  mc.innerHTML = '<div class="empty">加载中…</div>';
+  promoLoad();
+}
+
+async function promoLoad() {
+  try {
+    promoList = await sb(`/rest/v1/promo_content?major=eq.${promoMajor}&select=*&order=sort_order.asc,created_at.asc`);
+  } catch (e) {
+    const mc = document.getElementById('mainContent');
+    if (mc) mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
+    return;
+  }
+  promoRenderShell();
+}
+
+// 外壳：专业/板块 chips（含选中高亮）+ 内容容器；切换专业重新拉数据，切换板块只重绘
+function promoRenderShell() {
+  const mc = document.getElementById('mainContent');
+  if (!mc) return;
   mc.innerHTML = `
   <div class="page-header">
     <div class="section-title">宣传管理</div>
@@ -27,25 +46,10 @@ async function renderPromoAdminPage(mc) {
   </div>
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px">
     <span style="font-size:10px;color:var(--text-3)">板块：</span>
-    ${PROMO_SECTIONS.map(([k,l]) => `<div class="filter-chip ${promoSection===k?'active':''}" onclick="promoSection='${k}';promoEditingId=null;promoRender()" style="padding:3px 10px;font-size:11px">${l}</div>`).join('')}
+    ${PROMO_SECTIONS.map(([k,l]) => `<div class="filter-chip ${promoSection===k?'active':''}" onclick="promoSection='${k}';promoEditingId=null;promoRenderShell()" style="padding:3px 10px;font-size:11px">${l}</div>`).join('')}
   </div>
-  <div id="promo_body"><div class="empty">加载中…</div></div>`;
-  promoLoad();
-}
-
-async function promoLoad() {
-  const box = document.getElementById('promo_body');
-  if (box) box.innerHTML = '<div class="empty">加载中…</div>';
-  try {
-    promoList = await sb(`/rest/v1/promo_content?major=eq.${promoMajor}&select=*&order=sort_order.asc,created_at.asc`);
-  } catch (e) { if (box) box.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
-  // 专业chips高亮刷新
-  renderPromoAdminPageChips();
+  <div id="promo_body"></div>`;
   promoRender();
-}
-
-function renderPromoAdminPageChips() {
-  // 通过重渲染整页保持chips状态一致（数据已缓存，代价小）
 }
 
 function promoEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
