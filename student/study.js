@@ -106,6 +106,7 @@ function renderStudyMain() {
     { id:'plan', label:'📄 计划书' },
     { id:'progress', label:'📊 考学进度' },
     { id:'records', label:'📋 面谈 & 作业' },
+    { id:'schedule', label:'🗓 课程表' },
   ];
 
   // 进度概览 badges
@@ -145,6 +146,7 @@ function renderStudyTab() {
   else if (studyTab === 'plan') el.innerHTML = renderPlanTab();
   else if (studyTab === 'progress') el.innerHTML = renderProgressTab();
   else if (studyTab === 'records') el.innerHTML = renderRecordsTab();
+  else if (studyTab === 'schedule') { el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">课程表加载中…</div>'; loadStudySchedule(); }
 }
 
 // ══════════════════════════════════
@@ -1316,4 +1318,145 @@ async function studySubmitHomework() {
     fileEl.value = ''; studyHwSession = null; studyHwData = {};
     await loadStudyHwSessions();
   } catch(e) { result.innerHTML = `<span style="color:var(--danger)">提交失败：${e.message}</span>`; }
+}
+
+// ══════════════════════════════════
+// 课程表（admin 在课程安排里挑选发布；按学生专业取最新一份）
+// UI 仿 Econschedule：图例色点 + 日历视图（周网格）/ 课程汇总 切换
+// ══════════════════════════════════
+let studySchedData = null;
+let studySchedView = 'cal';
+
+const SSCHED_COLORS = [
+  ['#8a5a2b','#f5ead9'], ['#2a6aad','#e4eef8'], ['#2a9e6a','#e2f3ea'], ['#b03a2e','#f8e4dc'],
+  ['#7a4a8a','#efe4f4'], ['#b8860b','#f8f0d8'], ['#3a7a7a','#e0f0f0'], ['#6b5c4e','#eee8e0'],
+];
+
+async function loadStudySchedule() {
+  const el = document.getElementById('studyTabContent');
+  if (!el) return;
+  if (studySchedData) { el.innerHTML = renderScheduleTab(); return; }
+  try {
+    const myMajor = studyStudent.major || '';
+    const keys = [myMajor];
+    if (typeof SHAKAI_GROUP !== 'undefined' && SHAKAI_GROUP.includes(myMajor)) keys.push('shakai_group');
+    const shares = await sb(`/rest/v1/course_schedule_shares?major=in.(${keys.map(k=>`"${k}"`).join(',')})&select=*&order=created_at.desc&limit=1`);
+    const share = (shares || [])[0];
+    if (!share || !(share.course_ids || []).length) { studySchedData = { share: null, sessions: [], courses: [] }; el.innerHTML = renderScheduleTab(); return; }
+    const ids = share.course_ids;
+    let sessions = [];
+    for (let i = 0; i < ids.length; i += 40) {
+      const batch = await sb(`/rest/v1/course_sessions?course_id=in.(${ids.slice(i,i+40).map(x=>`"${x}"`).join(',')})&select=*&order=session_date.asc`).catch(() => []);
+      sessions = sessions.concat(batch || []);
+    }
+    // 课程顺序按首回日期，分配颜色
+    const byCourse = {};
+    sessions.forEach(s => { if (!byCourse[s.course_id]) byCourse[s.course_id] = []; byCourse[s.course_id].push(s); });
+    const courses = Object.entries(byCourse)
+      .map(([id, list]) => ({ id, name: list[0].course_name || '', first: list[0].session_date || '' }))
+      .sort((a, b) => a.first.localeCompare(b.first))
+      .map((c, i) => Object.assign(c, { color: SSCHED_COLORS[i % SSCHED_COLORS.length] }));
+    studySchedData = { share, sessions, courses };
+  } catch (e) {
+    studySchedData = { share: null, sessions: [], courses: [], error: e.message };
+  }
+  el.innerHTML = renderScheduleTab();
+}
+
+function sschedColor(courseId) {
+  const c = (studySchedData.courses || []).find(x => x.id === courseId);
+  return c ? c.color : SSCHED_COLORS[7];
+}
+
+function renderScheduleTab() {
+  const D = studySchedData || {};
+  if (D.error) return `<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">课程表加载失败：${D.error}</div>`;
+  if (!D.share) return '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">暂无发布的课程表，请等待教务发布</div>';
+
+  const legend = `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:10px 14px;margin-bottom:12px">
+    ${D.courses.map(c => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text-secondary)"><span style="width:10px;height:10px;border-radius:2px;background:${c.color[1]};border:1px solid ${c.color[0]};display:inline-block"></span>${escA(c.name)}</span>`).join('')}
+  </div>`;
+
+  const toggle = `<div style="display:flex;gap:0;margin-bottom:12px;border:1px solid var(--border);border-radius:3px;overflow:hidden;width:fit-content">
+    ${[['cal','日历视图'],['sum','课程汇总']].map(([k,l]) => `<button onclick="studySchedView='${k}';document.getElementById('studyTabContent').innerHTML=renderScheduleTab()" style="font-size:11px;padding:6px 16px;border:none;cursor:pointer;font-family:inherit;background:${studySchedView===k?'var(--accent)':'var(--surface)'};color:${studySchedView===k?'#fff':'var(--text-secondary)'}">${l}</button>`).join('')}
+  </div>`;
+
+  return `<div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:8px">🗓 ${escA(D.share.title || '课程表')}</div>
+    ${legend}${toggle}
+    ${studySchedView === 'cal' ? sschedCalHtml() : sschedSumHtml()}
+  </div>`;
+}
+
+// 日历视图：按周分块，列=当周有课的日期，行=时间段
+function sschedCalHtml() {
+  const sessions = studySchedData.sessions.filter(s => s.session_date);
+  if (!sessions.length) return '<div style="text-align:center;padding:30px;color:var(--text-muted);font-size:12px">暂无课次</div>';
+  const monday = ds => { const d = new Date(ds + 'T00:00:00'); const day = (d.getDay() + 6) % 7; d.setDate(d.getDate() - day); return d.toISOString().slice(0,10); };
+  const weeks = {};
+  sessions.forEach(s => { const m = monday(s.session_date); if (!weeks[m]) weeks[m] = []; weeks[m].push(s); });
+  const wd = ['日','一','二','三','四','五','六'];
+
+  return Object.keys(weeks).sort().map((mon, wi) => {
+    const list = weeks[mon];
+    const dates = [...new Set(list.map(s => s.session_date))].sort();
+    const times = [...new Set(list.map(s => s.time_range || ''))].sort();
+    const cols = `78px repeat(${dates.length}, minmax(0,1fr))`;
+    let h = `<div style="margin-bottom:20px">
+      <div style="font-size:10px;color:var(--text-muted);letter-spacing:.08em;margin-bottom:5px">第 ${wi+1} 周</div>
+      <div style="display:grid;grid-template-columns:${cols};border:1px solid var(--border);border-radius:4px;overflow:hidden;background:var(--surface)">`;
+    // 表头
+    h += `<div style="background:var(--bg);padding:6px 8px;border-bottom:1px solid var(--border)"></div>`;
+    dates.forEach(ds => {
+      const d = new Date(ds + 'T00:00:00');
+      const isWk = d.getDay() === 0 || d.getDay() === 6;
+      h += `<div style="background:var(--bg);padding:6px 4px;border-bottom:1px solid var(--border);border-left:1px solid var(--border-light);text-align:center">
+        <div style="font-size:11px;font-weight:600;color:${isWk?'var(--accent)':'var(--text-secondary)'}">${d.getMonth()+1}/${d.getDate()}</div>
+        <div style="font-size:9px;color:var(--text-muted)">周${wd[d.getDay()]}</div>
+      </div>`;
+    });
+    // 每个时间段一行
+    times.forEach(t => {
+      h += `<div style="padding:8px;border-bottom:1px solid var(--border-light);font-size:9px;color:var(--text-muted);font-family:'DM Mono',monospace;display:flex;align-items:center">${t}</div>`;
+      dates.forEach(ds => {
+        const evs = list.filter(s => s.session_date === ds && (s.time_range || '') === t);
+        h += `<div style="padding:4px 3px;border-bottom:1px solid var(--border-light);border-left:1px solid var(--border-light);display:flex;flex-direction:column;gap:3px;justify-content:center">`;
+        evs.forEach(s => {
+          const cancelled = s.session_title === '休讲';
+          const col = sschedColor(s.course_id);
+          h += cancelled
+            ? `<div style="font-size:9px;text-align:center;padding:4px 2px;border-radius:2px;background:var(--bg);color:var(--text-muted);border:1px dashed var(--border)">${escA(s.course_name||'')} 休讲</div>`
+            : `<div style="font-size:9px;text-align:center;padding:4px 2px;border-radius:2px;background:${col[1]};color:${col[0]};border:1px solid ${col[0]};line-height:1.4">${escA(s.course_name||'')}${s.session_number?`<div style="font-size:8px;opacity:.75">第${s.session_number}回${s.session_title?' '+escA(s.session_title):''}</div>`:''}</div>`;
+        });
+        h += `</div>`;
+      });
+    });
+    h += `</div></div>`;
+    return h;
+  }).join('');
+}
+
+// 课程汇总视图：每门课一张卡，逐回列出
+function sschedSumHtml() {
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
+    ${studySchedData.courses.map(c => {
+      const list = studySchedData.sessions.filter(s => s.course_id === c.id);
+      return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border-light)">
+          <span style="font-size:11px;padding:2px 10px;border-radius:2px;background:${c.color[1]};color:${c.color[0]};border:1px solid ${c.color[0]};font-weight:600">${escA(c.name)}</span>
+          <span style="font-size:10px;color:var(--text-muted);margin-left:auto">${list.filter(s=>s.session_title!=='休讲').length} 课次</span>
+        </div>
+        <div style="padding:6px 12px;max-height:260px;overflow-y:auto">
+          ${list.map(s => {
+            const d = new Date(s.session_date + 'T00:00:00');
+            const cancelled = s.session_title === '休讲';
+            return `<div style="display:flex;gap:8px;font-size:10px;padding:4px 0;border-bottom:1px dashed var(--border-light);${cancelled?'opacity:.5':''}">
+              <span style="font-family:'DM Mono',monospace;color:var(--text-muted);white-space:nowrap">${s.session_date.slice(5)}(${['日','一','二','三','四','五','六'][d.getDay()]}) ${s.time_range||''}</span>
+              <span style="color:var(--text-secondary)">${cancelled?'休讲':`${s.session_number?`第${s.session_number}回`:''}${s.session_title?' '+escA(s.session_title):''}${s.session_teacher?` · ${escA(s.session_teacher)}`:''}`}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
 }
