@@ -102,6 +102,7 @@ function buildTabs() {
   // 学生管理：admin 勾选后显示，具体子项由 student_mgmt_items 决定
   if (p.student_mgmt && Array.isArray(p.student_mgmt_items) && p.student_mgmt_items.length) tabs.push({ id: 'studentmgmt', label: '👥 学生管理' });
   if (p.progress_plan) tabs.push({ id: 'progressplan', label: '📅 进度规划' });
+  if (p.promo) tabs.push({ id: 'promo', label: '📣 宣传相关' });
   // 我的课表：有排班权限或有实际排到课才显示
   if (p.schedule || slots.length) tabs.push({ id: 'mycourses', label: '📚 我的课表' });
   // 工作记录：有实际教学相关权限才显示
@@ -135,6 +136,7 @@ function renderTab() {
     case 'admissiondb': renderTeacherAdmissionDb(mc); break;
     case 'studentmgmt': renderStudentMgmt(mc); break;
     case 'progressplan': renderProgressPlanTool(mc); break;
+    case 'promo': renderTeacherPromo(mc); break;
     case 'studyprogress': renderTeacherStudyProgress(mc); break;
     case 'mycourses': renderMySchedule(mc); break;
     case 'workrecords': renderWorkRecordsTeacher(mc); break;
