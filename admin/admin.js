@@ -93,6 +93,8 @@ async function renderPage(){
         sb('/rest/v1/course_sessions?select=*&order=session_date.asc')
       ]);
       renderCoursesPage(mc);
+    } else if(curPage==='promo'){
+      renderPromoAdminPage(mc);
     } else if(curPage==='coursecleanup'){
       [cachedCourses,cachedSessions,cachedTeachers]=await Promise.all([
         sb('/rest/v1/courses?select=*&order=created_at.desc'),
@@ -247,6 +249,11 @@ function renderTeachersPage(mc){
               </div>
             </div>
           </div>
+          <!-- promo row -->
+          <div style="padding:10px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap"><input type="checkbox" id="perm_promo" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">宣传相关（营业用）</label>
+            <div style="font-size:10px;color:var(--text-3);margin-top:4px;margin-left:20px">开启后老师端显示「宣传相关」：查看各专业的专业介绍、讲师介绍、课程介绍，课程介绍可关联当期课程安排</div>
+          </div>
           <!-- progress_plan row -->
           <div style="padding:10px">
             <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap"><input type="checkbox" id="perm_progress_plan" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">进度规划（营业用）</label>
@@ -315,6 +322,7 @@ function cancelEditTeacher(){
   document.getElementById('perm_schedule').checked=false;
     document.getElementById('perm_student_mgmt').checked=false;
     document.getElementById('perm_progress_plan').checked=false;
+    document.getElementById('perm_promo').checked=false;
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
   document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>c.classList.remove('active'));
@@ -331,6 +339,7 @@ function openTeacherManager(){
   document.getElementById('perm_schedule').checked=false;
     document.getElementById('perm_student_mgmt').checked=false;
     document.getElementById('perm_progress_plan').checked=false;
+    document.getElementById('perm_promo').checked=false;
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
   document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>c.classList.remove('active'));
@@ -405,6 +414,7 @@ function renderTeacherRows(){
           if(p.admission_query) perms.push('出願库');
           if(p.student_mgmt) perms.push('学生管理');
           if(p.progress_plan) perms.push('进度规划');
+          if(p.promo) perms.push('宣传');
           const permsFull=[];
           if(p.booking) permsFull.push(`预约(${(p.booking_types||[]).join('/')||'—'})`);
           if(p.slots) permsFull.push(`时间槽(${(p.slot_types||[]).join('/')||'—'})`);
@@ -413,6 +423,7 @@ function renderTeacherRows(){
           if(p.admission_query) permsFull.push('出願数据库');
           if(p.student_mgmt){const _sm={progress:'考学进度',records:'出席作业',meetings:'面谈查询',profile:'档案录入'};permsFull.push('学生管理('+(((p.student_mgmt_items||[]).map(k=>_sm[k]||k).join('/'))||'—')+')');}
           if(p.progress_plan) permsFull.push('进度规划（营业）');
+          if(p.promo) permsFull.push('宣传相关（营业）');
           const open=teacherExpandedId===t.id;
           const link=`${base}?teacher=${encodeURIComponent(t.name)}`;
           return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
@@ -457,6 +468,7 @@ function getPermissionsFromForm(){
     homework_courses:[...document.querySelectorAll('#perm_homework_courses .filter-chip.active')].map(c=>c.dataset.value),
     admission_query:document.getElementById('perm_admission_query').checked,
     admission_majors:[...document.querySelectorAll('#perm_admission_majors .filter-chip.active')].map(c=>c.dataset.value),
+    promo:document.getElementById('perm_promo').checked,
     progress_plan:document.getElementById('perm_progress_plan').checked,
     student_mgmt:document.getElementById('perm_student_mgmt').checked,
     student_mgmt_items:[...document.querySelectorAll('#perm_student_mgmt_items .filter-chip.active')].map(c=>c.dataset.value),
@@ -486,6 +498,7 @@ async function addTeacher(){
     document.getElementById('perm_schedule').checked=false;
     document.getElementById('perm_student_mgmt').checked=false;
     document.getElementById('perm_progress_plan').checked=false;
+    document.getElementById('perm_promo').checked=false;
     renderTeacherList();
   }catch(e){alert('添加失败：'+e.message)}
 }
@@ -504,6 +517,7 @@ function openEditTeacher(id){
   document.getElementById('perm_homework').checked=!!p.homework;
   document.getElementById('perm_admission_query').checked=!!p.admission_query;
   document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>{c.classList.toggle('active',(p.admission_majors||[]).includes(c.dataset.value));});
+  document.getElementById('perm_promo').checked=!!p.promo;
   document.getElementById('perm_progress_plan').checked=!!p.progress_plan;
   document.getElementById('perm_student_mgmt').checked=!!p.student_mgmt;
   document.querySelectorAll('#perm_student_mgmt_items .filter-chip').forEach(c=>{c.classList.toggle('active',(p.student_mgmt_items||[]).includes(c.dataset.value));});
