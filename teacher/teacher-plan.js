@@ -40,6 +40,9 @@ const PP_ROUTES = {
 };
 
 function renderProgressPlanTool(mc) {
+  // 加宽主容器：月份节点表最宽约1120px（次年路线16列），1400px 可完整展示
+  const mainEl = document.querySelector('.main');
+  if (mainEl) mainEl.style.maxWidth = '1400px';
   const inp = 'width:100%;font-size:12px;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
   const fld = (label, ctrl) => `<div><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:2px">${label}</label>${ctrl}</div>`;
   mc.innerHTML = `
