@@ -48,6 +48,11 @@ function promoRenderShell() {
     <span style="font-size:10px;color:var(--text-3)">板块：</span>
     ${PROMO_SECTIONS.map(([k,l]) => `<div class="filter-chip ${promoSection===k?'active':''}" onclick="promoSection='${k}';promoEditingId=null;promoRenderShell()" style="padding:3px 10px;font-size:11px">${l}</div>`).join('')}
   </div>
+  <div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:8px 12px;margin-bottom:12px">
+    <span style="font-size:10px;color:var(--text-3)">对外分享链接（无需登录，仅显示「公开」状态的内容）：</span>
+    <code id="promo_share_link" style="font-size:10px;color:var(--text-2);background:var(--bg);padding:2px 8px;border-radius:2px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${location.origin}${location.pathname.replace(/\/admin\/.*$/,'/promo/')}?major=${promoMajor}</code>
+    <button onclick="navigator.clipboard.writeText(document.getElementById('promo_share_link').textContent).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制',2000)})" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">📋 复制</button>
+  </div>
   <div id="promo_body"></div>`;
   promoRender();
 }
@@ -91,6 +96,7 @@ function promoRender() {
     <div style="display:flex;align-items:center;gap:8px">
       <span style="font-size:12px;font-weight:600">${promoEsc(p.title) || '（无标题）'}</span>
       <span style="font-size:9px;color:var(--text-3)">排序 ${p.sort_order || 0}</span>
+      <span onclick="promoTogglePub('${p.id}')" style="cursor:pointer;user-select:none;font-size:9px;border-radius:2px;padding:1px 8px;${p.published===false?'background:var(--bg);color:var(--text-3);border:1px dashed var(--border)':'background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok)'}">${p.published===false?'🔒 隐藏中 · 点击公开':'🌐 公开中 · 点击隐藏'}</span>
       <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="promoEditingId='${p.id}';promoRender()">✏ 编辑</button>
       <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="promoDelete('${p.id}')">删除</button>
     </div>
@@ -129,4 +135,16 @@ async function promoDelete(id) {
     promoList = promoList.filter(p => p.id !== id);
     promoRender();
   } catch (e) { alert('删除失败：' + e.message); }
+}
+
+// 公开/隐藏切换（隐藏的内容不出现在对外分享页）
+async function promoTogglePub(id) {
+  const item = promoList.find(p => p.id === id);
+  if (!item) return;
+  const next = item.published === false;
+  try {
+    await sb(`/rest/v1/promo_content?id=eq.${id}`, 'PATCH', { published: next });
+    item.published = next;
+    promoRender();
+  } catch (e) { alert('切换失败：' + e.message); }
 }
