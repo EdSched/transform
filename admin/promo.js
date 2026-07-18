@@ -76,7 +76,11 @@ function promoRender() {
       <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">排序</label>
         <input id="pm_sort" type="number" value="${editing.sort_order || 0}" style="${inp}"></div>
     </div>
-    <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">正文（空行分段；从 LaTeX 手册粘贴纯文字即可）</label>
+    <div style="font-size:9px;color:var(--text-3);background:var(--surface);border:1px dashed var(--border);border-radius:2px;padding:6px 10px;margin-bottom:6px;line-height:1.9">
+      📐 排版语法（对外宣传页会自动渲染成正式排版）：<br>
+      <code>## 小标题</code>　·　<code>**粗体**</code>　·　<code>- 无序列表</code>　·　<code>1. 有序列表</code>　·　表格每行 <code>|学校名|研究科|英语|</code>（首行为表头）　·　空行分段
+    </div>
+    <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">正文</label>
     <textarea id="pm_body" rows="10" style="width:100%;font-size:12px;line-height:1.8;padding:9px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit;resize:vertical">${promoEsc(editing.body)}</textarea>
     <div style="display:flex;gap:6px;margin-top:8px">
       <button class="btn btn-primary btn-sm" onclick="promoSave()">保存</button>
