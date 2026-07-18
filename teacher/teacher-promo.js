@@ -15,7 +15,10 @@ const PR_SECTIONS = [
   ['major_intro', '📖 专业介绍'],
   ['lecturer', '👤 讲师介绍'],
   ['course', '📚 课程介绍'],
+  ['schedule', '🗓 当期课程表'],
 ];
+const PR_COLORS = [['#5a3e28','#f5ede3'],['#2a6aad','#e4eef8'],['#2d5a3d','#e4f0e8'],['#a03a2e','#f8e4dc'],['#6a4a7a','#efe4f4'],['#8a6a1b','#f8f0d8'],['#3a7a7a','#e0f0f0'],['#5a5650','#eee8e0']];
+const PR_SHAKAI_G = ['shakai','shinpan','fukushi'];
 
 function prEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
@@ -64,11 +67,25 @@ function prMd(body) {
 async function renderTeacherPromo(mc) {
   mc.innerHTML = '<div class="empty">加载中…</div>';
   try {
-    const jobs = [ sb(`/rest/v1/promo_content?major=eq.${prMajor}&select=*&order=sort_order.asc,created_at.asc`) ];
+    const shareKeys = PR_SHAKAI_G.includes(prMajor) ? [prMajor, 'shakai_group'] : [prMajor];
+    const jobs = [
+      sb(`/rest/v1/promo_content?major=eq.${prMajor}&select=*&order=sort_order.asc,created_at.asc`),
+      sb(`/rest/v1/course_schedule_shares?major=in.(${shareKeys.map(k=>`"${k}"`).join(',')})&select=*&order=created_at.desc&limit=1`).catch(() => []),
+    ];
     if (!prCourses) jobs.push(sb('/rest/v1/courses?select=id,name,major,period,teacher,weekdays,time_range,delivery,campus,total_sessions,first_session_date&order=first_session_date.desc&limit=1000').catch(() => []));
     const res = await Promise.all(jobs);
-    prData = { list: res[0] || [] };
-    if (res[1]) prCourses = res[1];
+    prData = { list: res[0] || [], share: (res[1] || [])[0] || null, sessions: [] };
+    if (res[2]) prCourses = res[2];
+    // 拉课表课次
+    if (prData.share && (prData.share.course_ids || []).length) {
+      const ids = prData.share.course_ids;
+      let ss = [];
+      for (let i = 0; i < ids.length; i += 40) {
+        const batch = await sb(`/rest/v1/course_sessions?course_id=in.(${ids.slice(i,i+40).map(x=>`"${x}"`).join(',')})&select=course_id,course_name,session_date,time_range,session_number,session_title&order=session_date.asc`).catch(() => []);
+        ss = ss.concat(batch || []);
+      }
+      prData.sessions = ss;
+    }
   } catch (e) { mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
   prRenderShell();
 }
@@ -100,6 +117,7 @@ function prSetMajor(m) {
 }
 
 function prBodyHtml() {
+  if (prSection === 'schedule') return prScheduleHtml();
   const list = (prData.list || []).filter(p => p.section === prSection);
   if (!list.length) return '<div class="empty" style="padding:30px">该板块暂无内容（admin 可在「宣传管理」中录入）</div>';
 
@@ -151,4 +169,63 @@ function prCourseScheduleHtml(title) {
       ${prEsc(c.teacher || '')} · ${prEsc(c.weekdays || '')} ${prEsc(c.time_range || '')} · 共${c.total_sessions || '-'}回 · ${dvLabel(c.delivery)}${c.campus ? ` · ${prEsc(c.campus)}` : ''}
     </div>
   </div>`).join('')}`;
+}
+
+// ── 当期课程表（与对外宣传页同款日历；不含任何上课链接） ──
+function prScheduleHtml() {
+  const sessions = (prData && prData.sessions) || [];
+  if (!sessions.length) return '<div class="empty" style="padding:30px">该专业暂无发布的课程表（admin 可在课程安排 → 学生课表中发布）</div>';
+  const byCourse = {};
+  sessions.forEach(s => { if (!byCourse[s.course_id]) byCourse[s.course_id] = []; byCourse[s.course_id].push(s); });
+  const scs = Object.entries(byCourse)
+    .map(([id, l]) => ({ id, name: l[0].course_name || '', first: l[0].session_date || '' }))
+    .sort((a, b) => a.first.localeCompare(b.first))
+    .map((c, i) => Object.assign(c, { color: PR_COLORS[i % PR_COLORS.length], info: (prCourses || []).find(x => x.id === c.id) || {} }));
+  const colorOf = id => (scs.find(c => c.id === id) || {}).color || PR_COLORS[7];
+  const dvL = v => v === '线下＋线上' ? '线上线下同步' : (v || '');
+
+  const legend = `<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:8px 14px;margin-bottom:8px">
+    ${scs.map(c => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text-2)"><span style="width:10px;height:10px;border-radius:2px;background:${c.color[1]};border:1px solid ${c.color[0]};display:inline-block"></span>${prEsc(c.name)}</span>`).join('')}
+  </div>
+  <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:6px 14px;margin-bottom:12px">
+    ${scs.map(c => { const inf = c.info; return `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:10px;padding:3px 0;border-bottom:1px dashed var(--border-light);color:var(--text-2)">
+      <span style="display:inline-flex;align-items:center;gap:5px;min-width:110px"><span style="width:8px;height:8px;border-radius:2px;background:${c.color[1]};border:1px solid ${c.color[0]};display:inline-block"></span>${prEsc(c.name)}</span>
+      ${inf.delivery?`<span>${dvL(inf.delivery)}</span>`:''}${inf.campus?`<span>📍 ${prEsc(inf.campus)}</span>`:''}${inf.weekdays?`<span>${prEsc(inf.weekdays)} ${prEsc(inf.time_range||'')}</span>`:''}
+    </div>`; }).join('')}
+  </div>`;
+
+  const monday = ds => { const d = new Date(ds + 'T00:00:00'); const day = (d.getDay() + 6) % 7; d.setDate(d.getDate() - day); return d.toISOString().slice(0, 10); };
+  const weeks = {};
+  sessions.forEach(s => { const m = monday(s.session_date); if (!weeks[m]) weeks[m] = []; weeks[m].push(s); });
+  const wd = ['日','一','二','三','四','五','六'];
+  const cal = Object.keys(weeks).sort().map((mon, wi) => {
+    const l = weeks[mon];
+    const ds2 = [...new Set(l.map(s => s.session_date))].sort();
+    const ts2 = [...new Set(l.map(s => s.time_range || ''))].sort();
+    let g = `<div style="margin-bottom:18px"><div style="font-size:10px;color:var(--text-3);letter-spacing:.08em;margin-bottom:4px">第 ${wi+1} 周</div>
+    <div style="display:grid;grid-template-columns:74px repeat(${ds2.length},minmax(0,1fr));border:1px solid var(--border);border-radius:4px;overflow:hidden;background:var(--surface)">`;
+    g += `<div style="background:var(--bg);padding:5px 4px;border-bottom:1px solid var(--border)"></div>`;
+    ds2.forEach(dstr => {
+      const d = new Date(dstr + 'T00:00:00');
+      const isWk = d.getDay() === 0 || d.getDay() === 6;
+      g += `<div style="background:var(--bg);padding:5px 3px;border-bottom:1px solid var(--border);border-left:1px solid var(--border-light);text-align:center">
+        <div style="font-size:11px;font-weight:600;color:${isWk?'var(--accent)':'var(--text-2)'}">${d.getMonth()+1}/${d.getDate()}</div>
+        <div style="font-size:9px;color:var(--text-3)">周${wd[d.getDay()]}</div></div>`;
+    });
+    ts2.forEach(t => {
+      g += `<div style="padding:7px;border-bottom:1px solid var(--border-light);font-size:9px;color:var(--text-3);display:flex;align-items:center">${prEsc(t)}</div>`;
+      ds2.forEach(dstr => {
+        const evs = l.filter(s => s.session_date === dstr && (s.time_range || '') === t);
+        g += `<div style="padding:3px;border-bottom:1px solid var(--border-light);border-left:1px solid var(--border-light);display:flex;flex-direction:column;gap:3px;justify-content:center">${evs.map(s => {
+          if (s.session_title === '休讲') return `<div style="font-size:9px;text-align:center;padding:3px 2px;border-radius:2px;background:var(--bg);color:var(--text-3);border:1px dashed var(--border)">${prEsc(s.course_name||'')} 休讲</div>`;
+          const col = colorOf(s.course_id);
+          return `<div style="font-size:9px;text-align:center;padding:3px 2px;border-radius:2px;background:${col[1]};color:${col[0]};border:1px solid ${col[0]};line-height:1.4">${prEsc(s.course_name||'')}${s.session_number?`<div style="font-size:8px;opacity:.75">第${s.session_number}回${s.session_title?' '+prEsc(s.session_title):''}</div>`:''}</div>`;
+        }).join('')}</div>`;
+      });
+    });
+    g += `</div></div>`;
+    return g;
+  }).join('');
+
+  return `<div style="font-size:11px;color:var(--text-2);margin-bottom:8px">🗓 ${prEsc((prData.share && prData.share.title) || '当期课程表')}<span style="font-size:9px;color:var(--text-3);margin-left:8px">（不含上课链接，可放心向客户展示）</span></div>${legend}${cal}`;
 }
