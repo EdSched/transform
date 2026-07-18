@@ -19,6 +19,48 @@ const PR_SECTIONS = [
 
 function prEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
+// 与对外宣传页同款的迷你排版渲染：#小标题 / **粗体** / -列表 / 1.列表 / |表格|
+function prInline(s) { return prEsc(s).replace(/\*\*(.+?)\*\*/g, '<b style="color:var(--text-1,#1a1814);font-weight:600">$1</b>'); }
+function prMd(body) {
+  const lines = String(body || '').replace(/\r/g, '').split('\n');
+  let out = '', i = 0, buf = [];
+  const flush = () => { if (buf.length) { out += `<p style="margin:0 0 8px">${buf.map(prInline).join('<br>')}</p>`; buf = []; } };
+  while (i < lines.length) {
+    const t = lines[i].trim();
+    if (!t) { flush(); i++; continue; }
+    if (/^#{1,3}/.test(t)) { flush(); out += `<div style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;color:var(--text-1,#1a1814);margin:14px 0 6px;padding-bottom:3px;border-bottom:1px dashed var(--border)">${prInline(t.replace(/^#{1,3}\s*/, ''))}</div>`; i++; continue; }
+    if (/^\|.*\|$/.test(t)) {
+      flush();
+      const rows = [];
+      while (i < lines.length && /^\|.*\|$/.test(lines[i].trim())) { rows.push(lines[i].trim()); i++; }
+      const cells = r => r.slice(1, -1).split('|').map(c => prInline(c.trim()));
+      const body2 = rows.slice(1).filter(r => !/^\|[\s:\-|]+\|$/.test(r));
+      out += `<div style="overflow-x:auto;margin:6px 0 12px"><table style="border-collapse:collapse;width:100%;min-width:380px;background:var(--surface)">
+        <thead><tr>${cells(rows[0]).map(c => `<th style="background:var(--bg);color:var(--accent);font-size:10px;font-weight:600;text-align:left;padding:6px 10px;border:1px solid var(--border);white-space:nowrap">${c}</th>`).join('')}</tr></thead>
+        <tbody>${body2.map(r => `<tr>${cells(r).map(c => `<td style="font-size:11px;color:var(--text-2);padding:6px 10px;border:1px solid var(--border-light)">${c}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table></div>`;
+      continue;
+    }
+    if (/^[-・]\s?/.test(t)) {
+      flush();
+      const items = [];
+      while (i < lines.length && /^[-・]\s?/.test(lines[i].trim())) { items.push(lines[i].trim().replace(/^[-・]\s?/, '')); i++; }
+      out += `<ul style="margin:4px 0 10px 1.4em">${items.map(x => `<li style="margin-bottom:4px">${prInline(x)}</li>`).join('')}</ul>`;
+      continue;
+    }
+    if (/^\d+[.、]\s?/.test(t)) {
+      flush();
+      const items = [];
+      while (i < lines.length && /^\d+[.、]\s?/.test(lines[i].trim())) { items.push(lines[i].trim().replace(/^\d+[.、]\s?/, '')); i++; }
+      out += `<ol style="margin:4px 0 10px 1.4em">${items.map(x => `<li style="margin-bottom:4px">${prInline(x)}</li>`).join('')}</ol>`;
+      continue;
+    }
+    buf.push(t); i++;
+  }
+  flush();
+  return out;
+}
+
 async function renderTeacherPromo(mc) {
   mc.innerHTML = '<div class="empty">加载中…</div>';
   try {
@@ -71,7 +113,7 @@ function prBodyHtml() {
           <span style="font-size:10px;color:var(--text-3);margin-left:auto">${open?'▾ 收起':'▸ 课程详情与当期开课'}</span>
         </div>
         ${open ? `<div style="border-top:1px solid var(--border-light);padding:12px 14px">
-          <div style="font-size:12px;line-height:2;color:var(--text-2);white-space:pre-wrap;margin-bottom:12px">${prEsc(p.body || '')}</div>
+          <div style="font-size:12px;line-height:2;color:var(--text-2);margin-bottom:12px">${prMd(p.body)}</div>
           ${prCourseScheduleHtml(p.title)}
         </div>` : ''}
       </div>`;
@@ -82,7 +124,7 @@ function prBodyHtml() {
   return list.map(p => `
   <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px 16px;margin-bottom:10px">
     <div style="font-size:13px;font-weight:600;margin-bottom:8px;font-family:'Noto Serif SC',serif">${prEsc(p.title)}</div>
-    <div style="font-size:12px;line-height:2;color:var(--text-2);white-space:pre-wrap">${prEsc(p.body || '')}</div>
+    <div style="font-size:12px;line-height:2;color:var(--text-2)">${prMd(p.body)}</div>
   </div>`).join('');
 }
 
