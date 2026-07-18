@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>唯新教育 · 专业介绍</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Serif+SC:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#f7f5f0; --surface:#fff; --border:#e2ded6; --border-light:#ede9e2;
+  --text-1:#1a1814; --text-2:#5a5650; --text-3:#9a9590;
+  --accent:#5a3e28; --accent-light:#f5ede3; --green:#2d5a3d; --green-light:#e4f0e8;
+  --warn:#8a6a1b; --warn-light:#f8f0d8;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'DM Mono','Noto Serif SC',monospace; background:var(--bg); color:var(--text-1); font-size:13px; line-height:1.8; }
+.topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:14px 20px; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; position:sticky; top:0; z-index:10; }
+.brand { font-family:'Noto Serif SC',serif; font-size:14px; font-weight:700; }
+.brand span { color:var(--text-3); font-weight:400; font-size:11px; margin-left:6px; }
+.secnav { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
+.secnav a { font-size:11px; color:var(--text-2); text-decoration:none; padding:4px 12px; border:1px solid var(--border); border-radius:3px; background:var(--bg); }
+.secnav a:hover { border-color:var(--accent); color:var(--accent); }
+.wrap { max-width:960px; margin:0 auto; padding:28px 20px 80px; }
+.hero { padding:34px 0 26px; border-bottom:2px solid var(--accent); margin-bottom:34px; }
+.hero .kicker { font-size:10px; letter-spacing:.25em; color:var(--accent); margin-bottom:10px; }
+.hero h1 { font-family:'Noto Serif SC',serif; font-size:30px; font-weight:700; letter-spacing:.04em; }
+.hero .sub { font-size:12px; color:var(--text-2); margin-top:8px; }
+.sec { margin-bottom:44px; }
+.sec-head { display:flex; align-items:baseline; gap:10px; border-bottom:1px solid var(--border); padding-bottom:8px; margin-bottom:18px; }
+.sec-head .num { font-size:11px; color:var(--accent); letter-spacing:.15em; }
+.sec-head h2 { font-family:'Noto Serif SC',serif; font-size:19px; font-weight:700; }
+.block { background:var(--surface); border:1px solid var(--border-light); border-radius:5px; padding:20px 24px; margin-bottom:14px; }
+.block h3 { font-family:'Noto Serif SC',serif; font-size:15px; font-weight:600; margin-bottom:10px; padding-left:10px; border-left:3px solid var(--accent); }
+.block p { font-size:13px; color:var(--text-2); margin-bottom:10px; }
+.block p:last-child { margin-bottom:0; }
+.cards { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.lect-card { background:var(--surface); border:1px solid var(--border-light); border-radius:5px; padding:18px 20px; }
+.lect-card .name { font-family:'Noto Serif SC',serif; font-size:14px; font-weight:600; margin-bottom:2px; }
+.lect-card .cred { font-size:10px; color:var(--accent); margin-bottom:10px; }
+.lect-card p { font-size:12px; color:var(--text-2); margin-bottom:8px; }
+.course-card { background:var(--surface); border:1px solid var(--border-light); border-radius:5px; overflow:hidden; }
+.course-card .head { padding:14px 20px 10px; }
+.course-card .head h3 { font-family:'Noto Serif SC',serif; font-size:15px; font-weight:600; }
+.course-card .body { padding:0 20px 14px; font-size:12px; color:var(--text-2); }
+.course-card .body p { margin-bottom:8px; }
+.sched-box { border-top:1px dashed var(--border); background:var(--green-light); padding:10px 20px 12px; }
+.sched-box.closed { background:var(--warn-light); }
+.sched-box .tag { font-size:9px; letter-spacing:.12em; color:var(--green); margin-bottom:4px; }
+.sched-box.closed .tag { color:var(--warn); }
+.sched-box .line { font-size:11.5px; color:var(--text-1); }
+.sched-box .line b { font-weight:600; }
+.cta { text-align:center; margin-top:48px; padding:30px 20px; background:var(--surface); border:1px solid var(--border); border-radius:6px; }
+.cta .t { font-family:'Noto Serif SC',serif; font-size:15px; font-weight:600; margin-bottom:6px; }
+.cta .s { font-size:11px; color:var(--text-2); margin-bottom:16px; }
+.cta a { display:inline-block; background:var(--accent); color:#fff; text-decoration:none; font-size:13px; padding:11px 34px; border-radius:3px; letter-spacing:.08em; }
+.footer { text-align:center; font-size:10px; color:var(--text-3); margin-top:40px; }
+.empty-page { text-align:center; padding:80px 20px; color:var(--text-3); font-size:13px; }
+@media (max-width:640px) { .cards { grid-template-columns:1fr; } .hero h1 { font-size:24px; } .secnav { margin-left:0; } }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">唯新教育 <span>TRANSFORM EDUCATION</span></div>
+  <div class="secnav" id="secnav"></div>
+</div>
+<div class="wrap" id="wrap"><div class="empty-page">加载中…</div></div>
+
+<script src="../shared/supabase.js"></script>
+<script>
+const PROMO_MAJORS = { shakai:'社会学', shinpan:'新闻传播学', fukushi:'社会福祉学', keiei:'経営学', keizai:'経済学', nihongo:'日本语教育', hyosho:'表象文化・文学・哲学', seiji:'政治学', toyo:'東洋史', bunka:'文化人类学', mot:'MOT', tokei:'統計・計量' };
+const params = new URLSearchParams(location.search);
+const major = params.get('major') || 'shakai';
+document.title = `唯新教育 · ${PROMO_MAJORS[major] || ''}专业介绍`;
+
+function esc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+// 正文按空行分段
+function paras(body) { return String(body || '').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean).map(p => `<p>${esc(p).replace(/\n/g,'<br>')}</p>`).join(''); }
+const dvLabel = v => v === '线下＋线上' ? '线上线下同步' : (v || '');
+
+async function init() {
+  const wrap = document.getElementById('wrap');
+  let list = [], courses = [];
+  try {
+    [list, courses] = await Promise.all([
+      sb(`/rest/v1/promo_content?major=eq.${major}&or=(published.is.null,published.is.true)&select=*&order=sort_order.asc,created_at.asc`),
+      sb('/rest/v1/courses?select=id,name,major,period,weekdays,time_range,delivery,campus,total_sessions,first_session_date&order=first_session_date.desc&limit=1000').catch(() => []),
+    ]);
+  } catch (e) {
+    wrap.innerHTML = `<div class="empty-page">内容加载失败，请稍后重试<br><span style="font-size:10px">${esc(e.message)}</span></div>`;
+    return;
+  }
+  const intro = (list || []).filter(p => p.section === 'major_intro');
+  const lects = (list || []).filter(p => p.section === 'lecturer');
+  const crs = (list || []).filter(p => p.section === 'course');
+
+  if (!intro.length && !lects.length && !crs.length) {
+    wrap.innerHTML = '<div class="empty-page">该专业的介绍内容准备中，敬请期待</div>';
+    return;
+  }
+
+  // 顶部锚点导航
+  const secs = [];
+  if (intro.length) secs.push(['s-intro','专业介绍']);
+  if (lects.length) secs.push(['s-lect','讲师介绍']);
+  if (crs.length) secs.push(['s-course','课程介绍']);
+  document.getElementById('secnav').innerHTML = secs.map(([id,l]) => `<a href="#${id}">${l}</a>`).join('');
+
+  let n = 0;
+  const secHead = title => { n++; return `<div class="sec-head"><span class="num">0${n}</span><h2>${title}</h2></div>`; };
+
+  let h = `<div class="hero">
+    <div class="kicker">GRADUATE SCHOOL PREPARATION</div>
+    <h1>${PROMO_MAJORS[major] || ''}</h1>
+    <div class="sub">日本大学院升学 · 专业介绍</div>
+  </div>`;
+
+  if (intro.length) {
+    h += `<div class="sec" id="s-intro">${secHead('专业介绍')}
+      ${intro.map(p => `<div class="block"><h3>${esc(p.title)}</h3>${paras(p.body)}</div>`).join('')}
+    </div>`;
+  }
+
+  if (lects.length) {
+    h += `<div class="sec" id="s-lect">${secHead('讲师介绍')}
+      <div class="cards">
+      ${lects.map(p => {
+        // 标题按第一个空白拆成「姓名 / 头衔」
+        const t = String(p.title || '').trim();
+        const m = t.match(/^(\S+)[\s　]+(.+)$/);
+        return `<div class="lect-card">
+          <div class="name">${esc(m ? m[1] : t)}</div>
+          ${m ? `<div class="cred">${esc(m[2])}</div>` : ''}
+          ${paras(p.body)}
+        </div>`;
+      }).join('')}
+      </div>
+    </div>`;
+  }
+
+  if (crs.length) {
+    h += `<div class="sec" id="s-course">${secHead('课程介绍')}
+      <div class="cards">
+      ${crs.map(p => {
+        const name = String(p.title || '').trim();
+        const match = (courses || []).find(c => (c.name || '').trim() === name);
+        return `<div class="course-card">
+          <div class="head"><h3>${esc(name)}</h3></div>
+          <div class="body">${paras(p.body)}</div>
+          ${match ? `<div class="sched-box">
+            <div class="tag">CURRENT SCHEDULE · 当期开课</div>
+            <div class="line"><b>${esc(match.period || '')}</b> · ${esc(match.weekdays || '')} ${esc(match.time_range || '')} · 共${match.total_sessions || '-'}回 · ${esc(dvLabel(match.delivery))}${match.campus ? ` · ${esc(match.campus)}` : ''}</div>
+          </div>` : `<div class="sched-box closed">
+            <div class="tag">SCHEDULE</div>
+            <div class="line">本期暂未开设，开课安排请咨询顾问老师</div>
+          </div>`}
+        </div>`;
+      }).join('')}
+      </div>
+    </div>`;
+  }
+
+  h += `<div class="cta">
+    <div class="t">对${PROMO_MAJORS[major] || '该'}专业感兴趣？</div>
+    <div class="s">预约一次免费面谈，老师将结合你的背景给出具体的备考规划</div>
+    <a href="../student/index.html?major=${encodeURIComponent(major)}">预约面谈咨询 →</a>
+  </div>
+  <div class="footer">© 唯新教育 TRANSFORM EDUCATION</div>`;
+
+  wrap.innerHTML = h;
+}
+init();
+</script>
+</body>
+</html>
