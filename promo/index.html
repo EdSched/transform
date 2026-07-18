@@ -14,47 +14,80 @@
   --warn:#8a6a1b; --warn-light:#f8f0d8;
 }
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family:'DM Mono','Noto Serif SC',monospace; background:var(--bg); color:var(--text-1); font-size:13px; line-height:1.8; }
+body { font-family:'DM Mono','Noto Serif SC',monospace; background:var(--bg); color:var(--text-1); font-size:13px; line-height:1.9; }
 .topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:14px 20px; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; position:sticky; top:0; z-index:10; }
 .brand { font-family:'Noto Serif SC',serif; font-size:14px; font-weight:700; }
 .brand span { color:var(--text-3); font-weight:400; font-size:11px; margin-left:6px; }
 .secnav { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
 .secnav a { font-size:11px; color:var(--text-2); text-decoration:none; padding:4px 12px; border:1px solid var(--border); border-radius:3px; background:var(--bg); }
 .secnav a:hover { border-color:var(--accent); color:var(--accent); }
-.wrap { max-width:960px; margin:0 auto; padding:28px 20px 80px; }
+.wrap { max-width:1000px; margin:0 auto; padding:28px 20px 70px; }
 .hero { padding:34px 0 26px; border-bottom:2px solid var(--accent); margin-bottom:34px; }
 .hero .kicker { font-size:10px; letter-spacing:.25em; color:var(--accent); margin-bottom:10px; }
 .hero h1 { font-family:'Noto Serif SC',serif; font-size:30px; font-weight:700; letter-spacing:.04em; }
 .hero .sub { font-size:12px; color:var(--text-2); margin-top:8px; }
-.sec { margin-bottom:44px; }
+.sec { margin-bottom:46px; }
 .sec-head { display:flex; align-items:baseline; gap:10px; border-bottom:1px solid var(--border); padding-bottom:8px; margin-bottom:18px; }
 .sec-head .num { font-size:11px; color:var(--accent); letter-spacing:.15em; }
 .sec-head h2 { font-family:'Noto Serif SC',serif; font-size:19px; font-weight:700; }
-.block { background:var(--surface); border:1px solid var(--border-light); border-radius:5px; padding:20px 24px; margin-bottom:14px; }
-.block h3 { font-family:'Noto Serif SC',serif; font-size:15px; font-weight:600; margin-bottom:10px; padding-left:10px; border-left:3px solid var(--accent); }
-.block p { font-size:13px; color:var(--text-2); margin-bottom:10px; }
-.block p:last-child { margin-bottom:0; }
+.block { background:var(--surface); border:1px solid var(--border-light); border-radius:5px; padding:20px 26px; margin-bottom:14px; }
+.block > h3 { font-family:'Noto Serif SC',serif; font-size:15px; font-weight:600; margin-bottom:12px; padding-left:10px; border-left:3px solid var(--accent); }
+/* ── 正文排版元素（迷你语法渲染结果）── */
+.rich p { font-size:13px; color:var(--text-2); margin-bottom:10px; }
+.rich .subhead { font-family:'Noto Serif SC',serif; font-size:13.5px; font-weight:600; color:var(--text-1); margin:16px 0 8px; padding-bottom:4px; border-bottom:1px dashed var(--border); }
+.rich b { color:var(--text-1); font-weight:600; }
+.rich ul.plist, .rich ol.plist { margin:4px 0 12px 1.4em; }
+.rich .plist li { font-size:13px; color:var(--text-2); margin-bottom:6px; }
+.rich .plist li::marker { color:var(--accent); }
+.rich .tbl-wrap { overflow-x:auto; margin:8px 0 14px; }
+.rich table.ptable { border-collapse:collapse; width:100%; min-width:420px; background:var(--surface); }
+.rich .ptable th { background:var(--accent-light); color:var(--accent); font-size:11px; font-weight:600; text-align:left; padding:7px 12px; border:1px solid var(--border); white-space:nowrap; }
+.rich .ptable td { font-size:12px; color:var(--text-2); padding:7px 12px; border:1px solid var(--border-light); }
+.rich .ptable tr:nth-child(even) td { background:var(--bg); }
+/* ── 讲师 ── */
 .cards { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-.lect-card { background:var(--surface); border:1px solid var(--border-light); border-radius:5px; padding:18px 20px; }
-.lect-card .name { font-family:'Noto Serif SC',serif; font-size:14px; font-weight:600; margin-bottom:2px; }
+.lect-card { background:var(--surface); border:1px solid var(--border-light); border-radius:5px; padding:18px 22px; scroll-margin-top:70px; }
+.lect-card .name { font-family:'Noto Serif SC',serif; font-size:15px; font-weight:600; margin-bottom:2px; }
 .lect-card .cred { font-size:10px; color:var(--accent); margin-bottom:10px; }
-.lect-card p { font-size:12px; color:var(--text-2); margin-bottom:8px; }
-.course-card { background:var(--surface); border:1px solid var(--border-light); border-radius:5px; overflow:hidden; }
-.course-card .head { padding:14px 20px 10px; }
+.lect-card .rich p { font-size:12px; }
+.lect-courses { border-top:1px dashed var(--border); margin-top:12px; padding-top:10px; }
+.lect-courses .lab { font-size:9px; letter-spacing:.12em; color:var(--text-3); margin-bottom:5px; }
+.lect-courses a, .lect-courses span.c { display:inline-block; font-size:11px; color:var(--accent); background:var(--accent-light); border-radius:3px; padding:2px 10px; margin:0 5px 5px 0; text-decoration:none; cursor:pointer; }
+.lect-courses span.c { cursor:default; color:var(--text-2); background:var(--bg); border:1px solid var(--border-light); }
+/* ── 课程 ── */
+.course-card { background:var(--surface); border:1px solid var(--border-light); border-radius:5px; overflow:hidden; scroll-margin-top:70px; }
+.course-card .head { padding:14px 22px 8px; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
 .course-card .head h3 { font-family:'Noto Serif SC',serif; font-size:15px; font-weight:600; }
-.course-card .body { padding:0 20px 14px; font-size:12px; color:var(--text-2); }
-.course-card .body p { margin-bottom:8px; }
-.sched-box { border-top:1px dashed var(--border); background:var(--green-light); padding:10px 20px 12px; }
+.course-card .head .tch { font-size:11px; color:var(--text-3); }
+.course-card .head .tch a { color:var(--accent); text-decoration:none; border-bottom:1px dashed var(--accent); cursor:pointer; }
+.course-card .body { padding:0 22px 14px; }
+.course-card .body .rich p { font-size:12px; }
+.sched-box { border-top:1px dashed var(--border); background:var(--green-light); padding:10px 22px 12px; }
 .sched-box.closed { background:var(--warn-light); }
-.sched-box .tag { font-size:9px; letter-spacing:.12em; color:var(--green); margin-bottom:4px; }
+.sched-box .tag { font-size:9px; letter-spacing:.12em; color:var(--green); margin-bottom:3px; }
 .sched-box.closed .tag { color:var(--warn); }
 .sched-box .line { font-size:11.5px; color:var(--text-1); }
 .sched-box .line b { font-weight:600; }
-.cta { text-align:center; margin-top:48px; padding:30px 20px; background:var(--surface); border:1px solid var(--border); border-radius:6px; }
-.cta .t { font-family:'Noto Serif SC',serif; font-size:15px; font-weight:600; margin-bottom:6px; }
-.cta .s { font-size:11px; color:var(--text-2); margin-bottom:16px; }
-.cta a { display:inline-block; background:var(--accent); color:#fff; text-decoration:none; font-size:13px; padding:11px 34px; border-radius:3px; letter-spacing:.08em; }
-.footer { text-align:center; font-size:10px; color:var(--text-3); margin-top:40px; }
+/* ── 当期课程表（日历）── */
+.legend { display:flex; flex-wrap:wrap; gap:12px; align-items:center; background:var(--surface); border:1px solid var(--border-light); border-radius:5px; padding:10px 16px; margin-bottom:10px; }
+.legend .it { display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--text-2); }
+.legend .dot { width:10px; height:10px; border-radius:2px; display:inline-block; }
+.cinfo { background:var(--surface); border:1px solid var(--border-light); border-radius:5px; padding:8px 16px; margin-bottom:14px; }
+.cinfo .row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; font-size:10.5px; padding:4px 0; border-bottom:1px dashed var(--border-light); color:var(--text-2); }
+.cinfo .row:last-child { border-bottom:none; }
+.week { margin-bottom:20px; }
+.week .wl { font-size:10px; color:var(--text-3); letter-spacing:.08em; margin-bottom:5px; }
+.wgrid { display:grid; border:1px solid var(--border); border-radius:5px; overflow:hidden; background:var(--surface); }
+.wgrid .hd { background:var(--bg); padding:6px 4px; border-bottom:1px solid var(--border); text-align:center; }
+.wgrid .hd .d { font-size:11px; font-weight:600; color:var(--text-2); }
+.wgrid .hd .d.wk { color:var(--accent); }
+.wgrid .hd .w { font-size:9px; color:var(--text-3); }
+.wgrid .tm { padding:8px; border-bottom:1px solid var(--border-light); font-size:9px; color:var(--text-3); display:flex; align-items:center; }
+.wgrid .cell { padding:4px 3px; border-bottom:1px solid var(--border-light); border-left:1px solid var(--border-light); display:flex; flex-direction:column; gap:3px; justify-content:center; }
+.ev { font-size:9.5px; text-align:center; padding:4px 3px; border-radius:2px; line-height:1.4; }
+.ev .n { font-size:8px; opacity:.75; }
+.ev.off { background:var(--bg); color:var(--text-3); border:1px dashed var(--border); }
+.footer { text-align:center; font-size:10px; color:var(--text-3); margin-top:44px; }
 .empty-page { text-align:center; padding:80px 20px; color:var(--text-3); font-size:13px; }
 @media (max-width:640px) { .cards { grid-template-columns:1fr; } .hero h1 { font-size:24px; } .secnav { margin-left:0; } }
 </style>
@@ -69,42 +102,109 @@ body { font-family:'DM Mono','Noto Serif SC',monospace; background:var(--bg); co
 <script src="../shared/supabase.js"></script>
 <script>
 const PROMO_MAJORS = { shakai:'社会学', shinpan:'新闻传播学', fukushi:'社会福祉学', keiei:'経営学', keizai:'経済学', nihongo:'日本语教育', hyosho:'表象文化・文学・哲学', seiji:'政治学', toyo:'東洋史', bunka:'文化人类学', mot:'MOT', tokei:'統計・計量' };
+const SHAKAI_G = ['shakai','shinpan','fukushi'];
+const COLORS = [['#5a3e28','#f5ede3'],['#2a6aad','#e4eef8'],['#2d5a3d','#e4f0e8'],['#a03a2e','#f8e4dc'],['#6a4a7a','#efe4f4'],['#8a6a1b','#f8f0d8'],['#3a7a7a','#e0f0f0'],['#5a5650','#eee8e0']];
 const params = new URLSearchParams(location.search);
 const major = params.get('major') || 'shakai';
 document.title = `唯新教育 · ${PROMO_MAJORS[major] || ''}专业介绍`;
 
 function esc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
-// 正文按空行分段
-function paras(body) { return String(body || '').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean).map(p => `<p>${esc(p).replace(/\n/g,'<br>')}</p>`).join(''); }
 const dvLabel = v => v === '线下＋线上' ? '线上线下同步' : (v || '');
+const normName = s => String(s || '').replace(/老师|先生|様|さん/g, '').trim();
+
+// ── 迷你排版语法渲染 ──
+// 支持：## 小标题 / **粗体** / - 或 ・ 无序列表 / 1. 有序列表 / |表格|每行|（首行为表头）
+function inline(s) { return esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'); }
+function md(body) {
+  const lines = String(body || '').replace(/\r/g, '').split('\n');
+  let out = '', i = 0, buf = [];
+  const flush = () => { if (buf.length) { out += `<p>${buf.map(inline).join('<br>')}</p>`; buf = []; } };
+  while (i < lines.length) {
+    const t = lines[i].trim();
+    if (!t) { flush(); i++; continue; }
+    if (t.startsWith('## ')) { flush(); out += `<div class="subhead">${inline(t.slice(3))}</div>`; i++; continue; }
+    if (/^\|.*\|$/.test(t)) {
+      flush();
+      const rows = [];
+      while (i < lines.length && /^\|.*\|$/.test(lines[i].trim())) { rows.push(lines[i].trim()); i++; }
+      const cells = r => r.slice(1, -1).split('|').map(c => inline(c.trim()));
+      const body2 = rows.slice(1).filter(r => !/^\|[\s:\-|]+\|$/.test(r));
+      out += `<div class="tbl-wrap"><table class="ptable"><thead><tr>${cells(rows[0]).map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${body2.map(r => `<tr>${cells(r).map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+      continue;
+    }
+    if (/^[-・]\s?/.test(t)) {
+      flush();
+      const items = [];
+      while (i < lines.length && /^[-・]\s?/.test(lines[i].trim())) { items.push(lines[i].trim().replace(/^[-・]\s?/, '')); i++; }
+      out += `<ul class="plist">${items.map(x => `<li>${inline(x)}</li>`).join('')}</ul>`;
+      continue;
+    }
+    if (/^\d+[.、]\s?/.test(t)) {
+      flush();
+      const items = [];
+      while (i < lines.length && /^\d+[.、]\s?/.test(lines[i].trim())) { items.push(lines[i].trim().replace(/^\d+[.、]\s?/, '')); i++; }
+      out += `<ol class="plist">${items.map(x => `<li>${inline(x)}</li>`).join('')}</ol>`;
+      continue;
+    }
+    buf.push(t); i++;
+  }
+  flush();
+  return out;
+}
 
 async function init() {
   const wrap = document.getElementById('wrap');
-  let list = [], courses = [];
+  let list = [], courses = [], share = null, sessions = [];
   try {
-    [list, courses] = await Promise.all([
+    const shareKeys = SHAKAI_G.includes(major) ? [major, 'shakai_group'] : [major];
+    const [l, c, sh] = await Promise.all([
       sb(`/rest/v1/promo_content?major=eq.${major}&or=(published.is.null,published.is.true)&select=*&order=sort_order.asc,created_at.asc`),
-      sb('/rest/v1/courses?select=id,name,major,period,weekdays,time_range,delivery,campus,total_sessions,first_session_date&order=first_session_date.desc&limit=1000').catch(() => []),
+      sb('/rest/v1/courses?select=id,name,major,period,teacher,weekdays,time_range,delivery,campus,total_sessions,first_session_date&order=first_session_date.desc&limit=1000').catch(() => []),
+      sb(`/rest/v1/course_schedule_shares?major=in.(${shareKeys.map(k => `"${k}"`).join(',')})&select=*&order=created_at.desc&limit=1`).catch(() => []),
     ]);
+    list = l || []; courses = c || []; share = (sh || [])[0] || null;
+    if (share && (share.course_ids || []).length) {
+      const ids = share.course_ids;
+      for (let i = 0; i < ids.length; i += 40) {
+        const batch = await sb(`/rest/v1/course_sessions?course_id=in.(${ids.slice(i,i+40).map(x => `"${x}"`).join(',')})&select=course_id,course_name,session_date,time_range,session_number,session_title&order=session_date.asc`).catch(() => []);
+        sessions = sessions.concat(batch || []);
+      }
+    }
   } catch (e) {
     wrap.innerHTML = `<div class="empty-page">内容加载失败，请稍后重试<br><span style="font-size:10px">${esc(e.message)}</span></div>`;
     return;
   }
-  const intro = (list || []).filter(p => p.section === 'major_intro');
-  const lects = (list || []).filter(p => p.section === 'lecturer');
-  const crs = (list || []).filter(p => p.section === 'course');
 
-  if (!intro.length && !lects.length && !crs.length) {
+  const intro = list.filter(p => p.section === 'major_intro');
+  const lects = list.filter(p => p.section === 'lecturer');
+  const crs = list.filter(p => p.section === 'course');
+  const hasSched = sessions.length > 0;
+
+  if (!intro.length && !lects.length && !crs.length && !hasSched) {
     wrap.innerHTML = '<div class="empty-page">该专业的介绍内容准备中，敬请期待</div>';
     return;
   }
 
-  // 顶部锚点导航
+  // ── 讲师 / 课程 关联准备 ──
+  const lectInfos = lects.map((p, i) => {
+    const t = String(p.title || '').trim();
+    const m = t.match(/^(\S+)[\s　]+(.+)$/);
+    return { id: `lect-${i}`, raw: m ? m[1] : t, name: normName(m ? m[1] : t), cred: m ? m[2] : '', item: p };
+  });
+  const lectByName = {};
+  lectInfos.forEach(L => { if (L.name) lectByName[L.name] = L.id; });
+  const teacherParts = t => String(t || '').split(/[\/、,，]/).map(x => normName(x)).filter(Boolean);
+  const coursesOf = lectName => courses.filter(c => teacherParts(c.teacher).some(p2 => p2 === lectName || (lectName && p2.includes(lectName)) || (p2 && lectName.includes(p2))));
+  const promoCourseAnchor = {};
+  crs.forEach((p, i) => { promoCourseAnchor[String(p.title || '').trim()] = `course-${i}`; });
+  window.goAnchor = id => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+
   const secs = [];
   if (intro.length) secs.push(['s-intro','专业介绍']);
   if (lects.length) secs.push(['s-lect','讲师介绍']);
   if (crs.length) secs.push(['s-course','课程介绍']);
-  document.getElementById('secnav').innerHTML = secs.map(([id,l]) => `<a href="#${id}">${l}</a>`).join('');
+  if (hasSched) secs.push(['s-sched','当期课程表']);
+  document.getElementById('secnav').innerHTML = secs.map(([id,l2]) => `<a href="#${id}">${l2}</a>`).join('');
 
   let n = 0;
   const secHead = title => { n++; return `<div class="sec-head"><span class="num">0${n}</span><h2>${title}</h2></div>`; };
@@ -117,21 +217,28 @@ async function init() {
 
   if (intro.length) {
     h += `<div class="sec" id="s-intro">${secHead('专业介绍')}
-      ${intro.map(p => `<div class="block"><h3>${esc(p.title)}</h3>${paras(p.body)}</div>`).join('')}
+      ${intro.map(p => `<div class="block"><h3>${esc(p.title)}</h3><div class="rich">${md(p.body)}</div></div>`).join('')}
     </div>`;
   }
 
   if (lects.length) {
     h += `<div class="sec" id="s-lect">${secHead('讲师介绍')}
       <div class="cards">
-      ${lects.map(p => {
-        // 标题按第一个空白拆成「姓名 / 头衔」
-        const t = String(p.title || '').trim();
-        const m = t.match(/^(\S+)[\s　]+(.+)$/);
-        return `<div class="lect-card">
-          <div class="name">${esc(m ? m[1] : t)}</div>
-          ${m ? `<div class="cred">${esc(m[2])}</div>` : ''}
-          ${paras(p.body)}
+      ${lectInfos.map(L => {
+        const taught = coursesOf(L.name);
+        const seen = new Set(); const uniq = [];
+        taught.forEach(c => { const k = (c.name || '').trim(); if (!seen.has(k)) { seen.add(k); uniq.push(c); } });
+        return `<div class="lect-card" id="${L.id}">
+          <div class="name">${esc(L.raw)}</div>
+          ${L.cred ? `<div class="cred">${esc(L.cred)}</div>` : ''}
+          <div class="rich">${md(L.item.body)}</div>
+          ${uniq.length ? `<div class="lect-courses"><div class="lab">担当课程（自动关联课程安排）</div>
+            ${uniq.map(c => {
+              const anchor = promoCourseAnchor[(c.name || '').trim()];
+              const label = `${esc(c.name)}${c.period ? `（${esc(c.period)}）` : ''}`;
+              return anchor ? `<a onclick="goAnchor('${anchor}')">${label}</a>` : `<span class="c">${label}</span>`;
+            }).join('')}
+          </div>` : ''}
         </div>`;
       }).join('')}
       </div>
@@ -141,12 +248,17 @@ async function init() {
   if (crs.length) {
     h += `<div class="sec" id="s-course">${secHead('课程介绍')}
       <div class="cards">
-      ${crs.map(p => {
+      ${crs.map((p, i) => {
         const name = String(p.title || '').trim();
-        const match = (courses || []).find(c => (c.name || '').trim() === name);
-        return `<div class="course-card">
-          <div class="head"><h3>${esc(name)}</h3></div>
-          <div class="body">${paras(p.body)}</div>
+        const match = courses.find(c => (c.name || '').trim() === name);
+        const tParts = match ? teacherParts(match.teacher) : [];
+        const tchHtml = tParts.length ? `<span class="tch">担当：${tParts.map(t2 => {
+          const found = lectByName[t2] || (Object.entries(lectByName).find(([nm]) => nm.includes(t2) || t2.includes(nm)) || [])[1];
+          return found ? `<a onclick="goAnchor('${found}')">${esc(t2)}</a>` : esc(t2);
+        }).join(' / ')}</span>` : '';
+        return `<div class="course-card" id="course-${i}">
+          <div class="head"><h3>${esc(name)}</h3>${tchHtml}</div>
+          <div class="body"><div class="rich">${md(p.body)}</div></div>
           ${match ? `<div class="sched-box">
             <div class="tag">CURRENT SCHEDULE · 当期开课</div>
             <div class="line"><b>${esc(match.period || '')}</b> · ${esc(match.weekdays || '')} ${esc(match.time_range || '')} · 共${match.total_sessions || '-'}回 · ${esc(dvLabel(match.delivery))}${match.campus ? ` · ${esc(match.campus)}` : ''}</div>
@@ -160,13 +272,59 @@ async function init() {
     </div>`;
   }
 
-  h += `<div class="cta">
-    <div class="t">对${PROMO_MAJORS[major] || '该'}专业感兴趣？</div>
-    <div class="s">预约一次免费面谈，老师将结合你的背景给出具体的备考规划</div>
-    <a href="../student/index.html?major=${encodeURIComponent(major)}">预约面谈咨询 →</a>
-  </div>
-  <div class="footer">© 唯新教育 TRANSFORM EDUCATION</div>`;
+  // ── 当期课程表（不显示任何上课链接）──
+  if (hasSched) {
+    const byCourse = {};
+    sessions.forEach(s => { if (!byCourse[s.course_id]) byCourse[s.course_id] = []; byCourse[s.course_id].push(s); });
+    const schedCourses = Object.entries(byCourse)
+      .map(([id, l2]) => ({ id, name: l2[0].course_name || '', first: l2[0].session_date || '' }))
+      .sort((a, b) => a.first.localeCompare(b.first))
+      .map((c, i) => Object.assign(c, { color: COLORS[i % COLORS.length], info: courses.find(x => x.id === c.id) || {} }));
+    const colorOf = id => (schedCourses.find(c => c.id === id) || {}).color || COLORS[7];
 
+    const monday = ds => { const d = new Date(ds + 'T00:00:00'); const day = (d.getDay() + 6) % 7; d.setDate(d.getDate() - day); return d.toISOString().slice(0, 10); };
+    const weeks = {};
+    sessions.forEach(s => { const m2 = monday(s.session_date); if (!weeks[m2]) weeks[m2] = []; weeks[m2].push(s); });
+    const wd = ['日','一','二','三','四','五','六'];
+
+    const cal = Object.keys(weeks).sort().map((mon, wi) => {
+      const l2 = weeks[mon];
+      const ds2 = [...new Set(l2.map(s => s.session_date))].sort();
+      const ts2 = [...new Set(l2.map(s => s.time_range || ''))].sort();
+      let g = `<div class="week"><div class="wl">第 ${wi + 1} 周</div><div class="wgrid" style="grid-template-columns:76px repeat(${ds2.length},minmax(0,1fr))">`;
+      g += `<div class="hd"></div>`;
+      ds2.forEach(dstr => {
+        const d = new Date(dstr + 'T00:00:00');
+        const isWk = d.getDay() === 0 || d.getDay() === 6;
+        g += `<div class="hd" style="border-left:1px solid var(--border-light)"><div class="d ${isWk?'wk':''}">${d.getMonth()+1}/${d.getDate()}</div><div class="w">周${wd[d.getDay()]}</div></div>`;
+      });
+      ts2.forEach(t => {
+        g += `<div class="tm">${esc(t)}</div>`;
+        ds2.forEach(dstr => {
+          const evs = l2.filter(s => s.session_date === dstr && (s.time_range || '') === t);
+          g += `<div class="cell">${evs.map(s => {
+            if (s.session_title === '休讲') return `<div class="ev off">${esc(s.course_name || '')} 休讲</div>`;
+            const col = colorOf(s.course_id);
+            return `<div class="ev" style="background:${col[1]};color:${col[0]};border:1px solid ${col[0]}">${esc(s.course_name || '')}${s.session_number ? `<div class="n">第${s.session_number}回${s.session_title ? ' ' + esc(s.session_title) : ''}</div>` : ''}</div>`;
+          }).join('')}</div>`;
+        });
+      });
+      g += `</div></div>`;
+      return g;
+    }).join('');
+
+    h += `<div class="sec" id="s-sched">${secHead('当期课程表')}
+      <div style="font-size:11px;color:var(--text-2);margin-bottom:10px">🗓 ${esc(share.title || '当期课程表')}</div>
+      <div class="legend">${schedCourses.map(c => `<span class="it"><span class="dot" style="background:${c.color[1]};border:1px solid ${c.color[0]}"></span>${esc(c.name)}</span>`).join('')}</div>
+      <div class="cinfo">${schedCourses.map(c => {
+        const inf = c.info;
+        return `<div class="row"><span style="display:inline-flex;align-items:center;gap:5px;min-width:120px"><span class="dot" style="width:8px;height:8px;background:${c.color[1]};border:1px solid ${c.color[0]}"></span>${esc(c.name)}</span>${inf.delivery?`<span>${esc(dvLabel(inf.delivery))}</span>`:''}${inf.campus?`<span>📍 ${esc(inf.campus)}</span>`:''}${inf.weekdays?`<span>${esc(inf.weekdays)} ${esc(inf.time_range||'')}</span>`:''}</div>`;
+      }).join('')}</div>
+      ${cal}
+    </div>`;
+  }
+
+  h += `<div class="footer">具体开课与报名事宜请咨询顾问老师 · © 唯新教育 TRANSFORM EDUCATION</div>`;
   wrap.innerHTML = h;
 }
 init();
