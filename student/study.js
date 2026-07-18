@@ -1349,13 +1349,17 @@ async function loadStudySchedule() {
       const batch = await sb(`/rest/v1/course_sessions?course_id=in.(${ids.slice(i,i+40).map(x=>`"${x}"`).join(',')})&select=*&order=session_date.asc`).catch(() => []);
       sessions = sessions.concat(batch || []);
     }
+    // 课程详情（上课链接/校区/形式）
+    const courseInfoArr = await sb(`/rest/v1/courses?id=in.(${ids.map(x=>`"${x}"`).join(',')})&select=id,name,meeting_url,campus,delivery,weekdays,time_range`).catch(() => []);
+    const courseInfoMap = {};
+    (courseInfoArr || []).forEach(c => courseInfoMap[c.id] = c);
     // 课程顺序按首回日期，分配颜色
     const byCourse = {};
     sessions.forEach(s => { if (!byCourse[s.course_id]) byCourse[s.course_id] = []; byCourse[s.course_id].push(s); });
     const courses = Object.entries(byCourse)
       .map(([id, list]) => ({ id, name: list[0].course_name || '', first: list[0].session_date || '' }))
       .sort((a, b) => a.first.localeCompare(b.first))
-      .map((c, i) => Object.assign(c, { color: SSCHED_COLORS[i % SSCHED_COLORS.length] }));
+      .map((c, i) => Object.assign(c, { color: SSCHED_COLORS[i % SSCHED_COLORS.length], info: courseInfoMap[c.id] || {} }));
     studySchedData = { share, sessions, courses };
   } catch (e) {
     studySchedData = { share: null, sessions: [], courses: [], error: e.message };
@@ -1377,13 +1381,25 @@ function renderScheduleTab() {
     ${D.courses.map(c => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text-secondary)"><span style="width:10px;height:10px;border-radius:2px;background:${c.color[1]};border:1px solid ${c.color[0]};display:inline-block"></span>${escA(c.name)}</span>`).join('')}
   </div>`;
 
+  const dvL = v => v === '线下＋线上' ? '线上线下同步' : (v || '');
+  const infoBar = `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:8px 14px;margin-bottom:12px">
+    ${D.courses.map(c => {
+      const inf = c.info || {};
+      return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:10px;padding:4px 0;border-bottom:1px dashed var(--border-light)">
+        <span style="display:inline-flex;align-items:center;gap:5px;color:var(--text-secondary);min-width:120px"><span style="width:8px;height:8px;border-radius:2px;background:${c.color[1]};border:1px solid ${c.color[0]};display:inline-block"></span>${escA(c.name)}</span>
+        ${inf.delivery?`<span style="color:var(--text-secondary)">${dvL(inf.delivery)}</span>`:''}
+        ${inf.campus?`<span style="color:var(--text-muted)">📍 ${escA(inf.campus)}</span>`:''}
+        ${inf.meeting_url?`<a href="${escA(inf.meeting_url)}" target="_blank" style="color:var(--accent)">🔗 上课链接</a>`:''}
+      </div>`;
+    }).join('')}
+  </div>`;
   const toggle = `<div style="display:flex;gap:0;margin-bottom:12px;border:1px solid var(--border);border-radius:3px;overflow:hidden;width:fit-content">
     ${[['cal','日历视图'],['sum','课程汇总']].map(([k,l]) => `<button onclick="studySchedView='${k}';document.getElementById('studyTabContent').innerHTML=renderScheduleTab()" style="font-size:11px;padding:6px 16px;border:none;cursor:pointer;font-family:inherit;background:${studySchedView===k?'var(--accent)':'var(--surface)'};color:${studySchedView===k?'#fff':'var(--text-secondary)'}">${l}</button>`).join('')}
   </div>`;
 
   return `<div>
     <div style="font-size:13px;font-weight:600;margin-bottom:8px">🗓 ${escA(D.share.title || '课程表')}</div>
-    ${legend}${toggle}
+    ${legend}${infoBar}${toggle}
     ${studySchedView === 'cal' ? sschedCalHtml() : sschedSumHtml()}
   </div>`;
 }
@@ -1442,9 +1458,16 @@ function sschedSumHtml() {
     ${studySchedData.courses.map(c => {
       const list = studySchedData.sessions.filter(s => s.course_id === c.id);
       return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;overflow:hidden">
-        <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border-light)">
-          <span style="font-size:11px;padding:2px 10px;border-radius:2px;background:${c.color[1]};color:${c.color[0]};border:1px solid ${c.color[0]};font-weight:600">${escA(c.name)}</span>
-          <span style="font-size:10px;color:var(--text-muted);margin-left:auto">${list.filter(s=>s.session_title!=='休讲').length} 课次</span>
+        <div style="padding:9px 12px;border-bottom:1px solid var(--border-light)">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:11px;padding:2px 10px;border-radius:2px;background:${c.color[1]};color:${c.color[0]};border:1px solid ${c.color[0]};font-weight:600">${escA(c.name)}</span>
+            <span style="font-size:10px;color:var(--text-muted);margin-left:auto">${list.filter(s=>s.session_title!=='休讲').length} 课次</span>
+          </div>
+          ${(c.info&&(c.info.delivery||c.info.campus||c.info.meeting_url))?`<div style="font-size:10px;color:var(--text-muted);margin-top:4px;display:flex;flex-wrap:wrap;gap:8px">
+            ${c.info.delivery?`<span>${c.info.delivery==='线下＋线上'?'线上线下同步':c.info.delivery}</span>`:''}
+            ${c.info.campus?`<span>📍 ${escA(c.info.campus)}</span>`:''}
+            ${c.info.meeting_url?`<a href="${escA(c.info.meeting_url)}" target="_blank" style="color:var(--accent)">🔗 上课链接</a>`:''}
+          </div>`:''}
         </div>
         <div style="padding:6px 12px;max-height:260px;overflow-y:auto">
           ${list.map(s => {
@@ -1452,7 +1475,7 @@ function sschedSumHtml() {
             const cancelled = s.session_title === '休讲';
             return `<div style="display:flex;gap:8px;font-size:10px;padding:4px 0;border-bottom:1px dashed var(--border-light);${cancelled?'opacity:.5':''}">
               <span style="font-family:'DM Mono',monospace;color:var(--text-muted);white-space:nowrap">${s.session_date.slice(5)}(${['日','一','二','三','四','五','六'][d.getDay()]}) ${s.time_range||''}</span>
-              <span style="color:var(--text-secondary)">${cancelled?'休讲':`${s.session_number?`第${s.session_number}回`:''}${s.session_title?' '+escA(s.session_title):''}${s.session_teacher?` · ${escA(s.session_teacher)}`:''}`}</span>
+              <span style="color:var(--text-secondary)">${cancelled?'休讲':`${s.session_number?`第${s.session_number}回`:''}${s.session_title?' '+escA(s.session_title):''}`}</span>
             </div>`;
           }).join('')}
         </div>
