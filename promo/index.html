@@ -111,6 +111,8 @@ document.title = `唯新教育 · ${PROMO_MAJORS[major] || ''}专业介绍`;
 function esc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 const dvLabel = v => v === '线下＋线上' ? '线上线下同步' : (v || '');
 const normName = s => String(s || '').replace(/老师|先生|様|さん/g, '').trim();
+const pubMap = {}; // 真名(去敬称) → 对外宣传姓名
+const pubOf = raw => pubMap[normName(raw)] || raw;
 
 // ── 迷你排版语法渲染 ──
 // 支持：## 小标题 / **粗体** / - 或 ・ 无序列表 / 1. 有序列表 / |表格|每行|（首行为表头）
@@ -157,12 +159,15 @@ async function init() {
   let list = [], courses = [], share = null, sessions = [];
   try {
     const shareKeys = SHAKAI_G.includes(major) ? [major, 'shakai_group'] : [major];
-    const [l, c, sh] = await Promise.all([
+    const [l, c, sh, tch] = await Promise.all([
       sb(`/rest/v1/promo_content?major=eq.${major}&or=(published.is.null,published.is.true)&select=*&order=sort_order.asc,created_at.asc`),
       sb('/rest/v1/courses?select=id,name,major,period,teacher,weekdays,time_range,delivery,campus,total_sessions,first_session_date&order=first_session_date.desc&limit=1000').catch(() => []),
       sb(`/rest/v1/course_schedule_shares?major=in.(${shareKeys.map(k => `"${k}"`).join(',')})&select=*&order=created_at.desc&limit=1`).catch(() => []),
+      sb('/rest/v1/teachers?select=name,notes').catch(() => []),
     ]);
     list = l || []; courses = c || []; share = (sh || [])[0] || null;
+    // 对外宣传姓名映射：老师档案的「备注」填写宣传名（如 杨畅→周老师），显示与匹配均使用宣传名
+    (tch || []).forEach(t => { const k = normName(t.name); const pub = String(t.notes || '').trim(); if (k && pub) pubMap[k] = pub; });
     if (share && (share.course_ids || []).length) {
       const ids = share.course_ids;
       for (let i = 0; i < ids.length; i += 40) {
@@ -193,8 +198,11 @@ async function init() {
   });
   const lectByName = {};
   lectInfos.forEach(L => { if (L.name) lectByName[L.name] = L.id; });
-  const teacherParts = t => String(t || '').split(/[\/、,，]/).map(x => normName(x)).filter(Boolean);
-  const coursesOf = lectName => courses.filter(c => teacherParts(c.teacher).some(p2 => p2 === lectName || (lectName && p2.includes(lectName)) || (p2 && lectName.includes(p2))));
+  const teacherParts = t => String(t || '').split(/[\/、,，]/).map(x => x.trim()).filter(Boolean);
+  // 匹配时同时尝试真名与宣传名（去敬称）
+  const nameKeys = raw => [normName(raw), normName(pubOf(raw))].filter(Boolean);
+  const matchLect = (raw, lectName) => lectName && nameKeys(raw).some(k => k === lectName || k.includes(lectName) || lectName.includes(k));
+  const coursesOf = lectName => courses.filter(c => teacherParts(c.teacher).some(p2 => matchLect(p2, lectName)));
   const promoCourseAnchor = {};
   crs.forEach((p, i) => { promoCourseAnchor[String(p.title || '').trim()] = `course-${i}`; });
   window.goAnchor = id => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
@@ -253,8 +261,11 @@ async function init() {
         const match = courses.find(c => (c.name || '').trim() === name);
         const tParts = match ? teacherParts(match.teacher) : [];
         const tchHtml = tParts.length ? `<span class="tch">担当：${tParts.map(t2 => {
-          const found = lectByName[t2] || (Object.entries(lectByName).find(([nm]) => nm.includes(t2) || t2.includes(nm)) || [])[1];
-          return found ? `<a onclick="goAnchor('${found}')">${esc(t2)}</a>` : esc(t2);
+          const disp = pubOf(t2); // 显示宣传名
+          const keys = nameKeys(t2);
+          const found = keys.map(k => lectByName[k]).find(Boolean)
+            || (Object.entries(lectByName).find(([nm]) => keys.some(k => nm.includes(k) || k.includes(nm))) || [])[1];
+          return found ? `<a onclick="goAnchor('${found}')">${esc(disp)}</a>` : esc(disp);
         }).join(' / ')}</span>` : '';
         return `<div class="course-card" id="course-${i}">
           <div class="head"><h3>${esc(name)}</h3>${tchHtml}</div>
