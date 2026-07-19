@@ -2280,6 +2280,9 @@ function teacherAdbRender() {
 let myProfile = null;
 
 async function checkTeacherProfile() {
+  // 仅带「专业课」相关标签的老师需要提示补全档案（标签在 admin 老师管理中维护）
+  const isSenmon = (teacherData.tags || []).some(t => String(t).includes('专业课'));
+  if (!isSenmon) { const b = document.getElementById('profilePromptBox'); if (b) b.innerHTML = ''; return; }
   try {
     const rows = await sb(`/rest/v1/teacher_profiles?name=eq.${encodeURIComponent(teacherName)}&select=*&limit=1`);
     myProfile = (rows || [])[0] || null;
