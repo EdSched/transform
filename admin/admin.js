@@ -164,7 +164,7 @@ function renderTeachersPage(mc){
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:16px">
       <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:14px;letter-spacing:.05em;text-transform:uppercase" id="teacherFormTitle">添加新老师</div>
       <div class="form-group"><label class="form-label">姓名 *</label><input id="new_teacher_name" placeholder="老师姓名"></div>
-      <div class="form-group"><label class="form-label">备注</label><input id="new_teacher_notes" placeholder="可选"></div>
+      <div class="form-group"><label class="form-label">备注 / 对外宣传姓名</label><input id="new_teacher_notes" placeholder="填写后，宣传页课程担当将显示此名（如：周老师）"></div>
       <div class="form-group"><label class="form-label">分类标签（可叠加，用于搜索标记，不影响任何功能权限）</label><input id="new_teacher_tags" placeholder="用逗号或顿号分隔，如：计划书指导、模拟面试、兼职"></div>
       <div class="form-group">
         <label class="form-label">负责专业（可多选）</label>
