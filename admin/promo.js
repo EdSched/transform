@@ -10,6 +10,7 @@ let promoSection = 'major_intro';
 let promoList = [];
 let promoEditingId = null; // null=不在编辑 | 'new'=新增 | id=编辑该条
 let promoProfiles = null;  // 讲师档案缓存（讲师板块「从档案导入」用）
+let promoPubMap = {};      // 本名 → 对外宣传姓名（老师管理备注）
 
 const PROMO_SECTIONS = [
   ['major_intro', '📖 专业介绍', '概要 / 独特视角 / 优势 / 重点方向 / 研究课题例 / 重点研究科…每条一个小节'],
@@ -25,10 +26,14 @@ async function renderPromoAdminPage(mc) {
 async function promoLoad() {
   try {
     const jobs = [sb(`/rest/v1/promo_content?major=eq.${promoMajor}&select=*&order=sort_order.asc,created_at.asc`)];
-    if (promoProfiles === null) jobs.push(sb('/rest/v1/teacher_profiles?select=*&order=subject.asc,sort_order.asc').catch(() => []));
+    if (promoProfiles === null) {
+      jobs.push(sb('/rest/v1/teacher_profiles?select=*&order=subject.asc,sort_order.asc').catch(() => []));
+      jobs.push(sb('/rest/v1/teachers?select=name,notes').catch(() => []));
+    }
     const res = await Promise.all(jobs);
     promoList = res[0];
     if (res[1]) promoProfiles = res[1];
+    if (res[2]) { promoPubMap = {}; res[2].forEach(t => { const pub = String(t.notes || '').trim(); if (pub) promoPubMap[t.name] = pub; }); }
   } catch (e) {
     const mc = document.getElementById('mainContent');
     if (mc) mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
@@ -79,7 +84,7 @@ function promoRender() {
       <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">📇 从讲师档案导入（自动填入标题/正文/关联真实姓名，可再修改润色）</label>
       <select onchange="promoFillFromProfile(this.value)" style="${inp}">
         <option value="">— 选择讲师档案 —</option>
-        ${promoProfiles.map(p=>`<option value="${p.id}">${promoEsc((p.subject||'未分类'))} · ${promoEsc(p.name)}${p.real_name?`（${promoEsc(p.real_name)}）`:''}</option>`).join('')}
+        ${promoProfiles.map(p=>`<option value="${p.id}">${promoEsc((p.subject||'未分类'))} · ${promoEsc(p.name)}${promoPubMap[p.name]?`（对外：${promoEsc(promoPubMap[p.name])}）`:''}</option>`).join('')}
       </select>
     </div>`:''}
     <div style="display:grid;grid-template-columns:1fr ${promoSection==='lecturer'?'180px ':''}90px;gap:8px;margin-bottom:8px">
@@ -177,11 +182,11 @@ function promoFillFromProfile(id) {
   const t = document.getElementById('pm_title');
   const b = document.getElementById('pm_body');
   const l = document.getElementById('pm_link');
-  if (t) t.value = [p.name, p.school, p.degree].filter(Boolean).join('　');
+  if (t) t.value = [(promoPubMap[p.name] || p.name), p.school, p.degree].filter(Boolean).join('　'); // 标题用对外名
   if (b) b.value = [
     p.keywords ? `##专攻方向\n${p.keywords}` : '',
     p.feature ? `##授课特色\n${p.feature}` : '',
     p.courses ? `##担当课程\n${p.courses}` : '',
   ].filter(Boolean).join('\n\n');
-  if (l) l.value = p.real_name || '';
+  if (l) l.value = p.name || ''; // 绑定用本名（档案姓名即本名）
 }
