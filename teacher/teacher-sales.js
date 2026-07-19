@@ -17,6 +17,9 @@ function tsEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').repl
 let tsPubMap = null; // 本名 → 对外宣传姓名（老师管理备注）
 
 async function renderLectInfo(mc) {
+  // 加宽主容器：左右分栏需要横向空间（默认700px会导致两栏堆叠）
+  const mainEl = document.querySelector('.main');
+  if (mainEl) mainEl.style.maxWidth = '1400px';
   mc.innerHTML = '<div class="empty">加载中…</div>';
   try {
     const [profiles, teachers] = await Promise.all([
