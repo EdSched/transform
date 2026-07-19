@@ -194,15 +194,22 @@ async function init() {
   const lectInfos = lects.map((p, i) => {
     const t = String(p.title || '').trim();
     const m = t.match(/^(\S+)[\s　]+(.+)$/);
-    return { id: `lect-${i}`, raw: m ? m[1] : t, name: normName(m ? m[1] : t), cred: m ? m[2] : '', item: p };
+    // 身份键：优先「关联真实姓名」(link_name)；未绑定时退回标题姓名（真名或宣传名的精确匹配）
+    const linkKey = normName(p.link_name || '');
+    return { id: `lect-${i}`, raw: m ? m[1] : t, name: normName(m ? m[1] : t), linkKey, cred: m ? m[2] : '', item: p };
   });
+  // 绑定表：真名键（linkKey）优先注册且不可被标题键覆盖
   const lectByName = {};
-  lectInfos.forEach(L => { if (L.name) lectByName[L.name] = L.id; });
+  lectInfos.forEach(L => { if (L.linkKey) lectByName[L.linkKey] = L.id; });
+  lectInfos.forEach(L => { if (!L.linkKey && L.name && !lectByName[L.name]) lectByName[L.name] = L.id; });
   const teacherParts = t => String(t || '').split(/[\/、,，]/).map(x => x.trim()).filter(Boolean);
-  // 匹配时同时尝试真名与宣传名（去敬称）
+  // 匹配规则：底层按真实姓名（或该老师的宣传名）去敬称后【精确相等】才关联，避免同姓老师混淆
   const nameKeys = raw => [normName(raw), normName(pubOf(raw))].filter(Boolean);
-  const matchLect = (raw, lectName) => lectName && nameKeys(raw).some(k => k === lectName || k.includes(lectName) || lectName.includes(k));
-  const coursesOf = lectName => courses.filter(c => teacherParts(c.teacher).some(p2 => matchLect(p2, lectName)));
+  const matchLect = (raw, lectName) => !!lectName && nameKeys(raw).some(k => k === lectName);
+  // 已绑定：只按真实姓名精确匹配；未绑定：按标题姓名（真名或宣传名）精确匹配
+  const coursesOfLect = L => L.linkKey
+    ? courses.filter(c => teacherParts(c.teacher).some(p2 => normName(p2) === L.linkKey))
+    : courses.filter(c => teacherParts(c.teacher).some(p2 => matchLect(p2, L.name)));
   const promoCourseAnchor = {};
   crs.forEach((p, i) => { promoCourseAnchor[String(p.title || '').trim()] = `course-${i}`; });
   window.goAnchor = id => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
@@ -233,7 +240,7 @@ async function init() {
     h += `<div class="sec" id="s-lect">${secHead('讲师介绍')}
       <div class="cards">
       ${lectInfos.map(L => {
-        const taught = coursesOf(L.name);
+        const taught = coursesOfLect(L);
         const seen = new Set(); const uniq = [];
         taught.forEach(c => { const k = (c.name || '').trim(); if (!seen.has(k)) { seen.add(k); uniq.push(c); } });
         return `<div class="lect-card" id="${L.id}">
@@ -262,9 +269,8 @@ async function init() {
         const tParts = match ? teacherParts(match.teacher) : [];
         const tchHtml = tParts.length ? `<span class="tch">担当：${tParts.map(t2 => {
           const disp = pubOf(t2); // 显示宣传名
-          const keys = nameKeys(t2);
-          const found = keys.map(k => lectByName[k]).find(Boolean)
-            || (Object.entries(lectByName).find(([nm]) => keys.some(k => nm.includes(k) || k.includes(nm))) || [])[1];
+          // 先按真名键找（绑定条目），再退回宣传名键（未绑定条目）；均为精确匹配
+          const found = lectByName[normName(t2)] || nameKeys(t2).map(k => lectByName[k]).find(Boolean);
           return found ? `<a onclick="goAnchor('${found}')">${esc(disp)}</a>` : esc(disp);
         }).join(' / ')}</span>` : '';
         return `<div class="course-card" id="course-${i}">
