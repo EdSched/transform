@@ -9,6 +9,7 @@ let promoMajor = 'shakai';
 let promoSection = 'major_intro';
 let promoList = [];
 let promoEditingId = null; // null=不在编辑 | 'new'=新增 | id=编辑该条
+let promoProfiles = null;  // 讲师档案缓存（讲师板块「从档案导入」用）
 
 const PROMO_SECTIONS = [
   ['major_intro', '📖 专业介绍', '概要 / 独特视角 / 优势 / 重点方向 / 研究课题例 / 重点研究科…每条一个小节'],
@@ -23,7 +24,11 @@ async function renderPromoAdminPage(mc) {
 
 async function promoLoad() {
   try {
-    promoList = await sb(`/rest/v1/promo_content?major=eq.${promoMajor}&select=*&order=sort_order.asc,created_at.asc`);
+    const jobs = [sb(`/rest/v1/promo_content?major=eq.${promoMajor}&select=*&order=sort_order.asc,created_at.asc`)];
+    if (promoProfiles === null) jobs.push(sb('/rest/v1/teacher_profiles?select=*&order=subject.asc,sort_order.asc').catch(() => []));
+    const res = await Promise.all(jobs);
+    promoList = res[0];
+    if (res[1]) promoProfiles = res[1];
   } catch (e) {
     const mc = document.getElementById('mainContent');
     if (mc) mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
@@ -70,6 +75,13 @@ function promoRender() {
   const formHtml = editing !== null ? `
   <div style="border:1px solid var(--accent);border-radius:4px;padding:14px;margin-bottom:12px;background:var(--bg)">
     <div style="font-size:11px;font-weight:600;margin-bottom:8px">${promoEditingId==='new'?'＋ 新增':'✏ 编辑'}${sec[1]}条目</div>
+    ${promoSection==='lecturer'&&(promoProfiles||[]).length?`<div style="margin-bottom:8px">
+      <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">📇 从讲师档案导入（自动填入标题/正文/关联真实姓名，可再修改润色）</label>
+      <select onchange="promoFillFromProfile(this.value)" style="${inp}">
+        <option value="">— 选择讲师档案 —</option>
+        ${promoProfiles.map(p=>`<option value="${p.id}">${promoEsc((p.subject||'未分类'))} · ${promoEsc(p.name)}${p.real_name?`（${promoEsc(p.real_name)}）`:''}</option>`).join('')}
+      </select>
+    </div>`:''}
     <div style="display:grid;grid-template-columns:1fr ${promoSection==='lecturer'?'180px ':''}90px;gap:8px;margin-bottom:8px">
       <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">标题${promoSection==='course'?'（须与课程安排中的课程名一致）':promoSection==='lecturer'?'（对外显示的姓名＋头衔，可写宣传名）':''}</label>
         <input id="pm_title" value="${promoEsc(editing.title)}" style="${inp}"></div>
@@ -155,4 +167,21 @@ async function promoTogglePub(id) {
     item.published = next;
     promoRender();
   } catch (e) { alert('切换失败：' + e.message); }
+}
+
+// 从讲师档案一键填入表单（标题＝姓名＋学历；正文＝专攻方向/授课特色/担当课程；绑定＝档案真实姓名）
+function promoFillFromProfile(id) {
+  if (!id) return;
+  const p = (promoProfiles || []).find(x => x.id === id);
+  if (!p) return;
+  const t = document.getElementById('pm_title');
+  const b = document.getElementById('pm_body');
+  const l = document.getElementById('pm_link');
+  if (t) t.value = [p.name, p.school, p.degree].filter(Boolean).join('　');
+  if (b) b.value = [
+    p.keywords ? `##专攻方向\n${p.keywords}` : '',
+    p.feature ? `##授课特色\n${p.feature}` : '',
+    p.courses ? `##担当课程\n${p.courses}` : '',
+  ].filter(Boolean).join('\n\n');
+  if (l) l.value = p.real_name || '';
 }
