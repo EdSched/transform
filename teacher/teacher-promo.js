@@ -9,6 +9,7 @@ let prMajor = 'shakai';
 let prSection = 'major_intro';
 let prData = null;      // { list: promo_content rows }
 let prCourses = null;   // 课程安排缓存（全专业一次拉取）
+let prPubMap = null;    // 真名(去敬称) → 对外宣传姓名（老师档案「备注」）
 let prExpanded = null;  // 展开的课程介绍条目 id
 
 const PR_SECTIONS = [
@@ -73,9 +74,15 @@ async function renderTeacherPromo(mc) {
       sb(`/rest/v1/course_schedule_shares?major=in.(${shareKeys.map(k=>`"${k}"`).join(',')})&select=*&order=created_at.desc&limit=1`).catch(() => []),
     ];
     if (!prCourses) jobs.push(sb('/rest/v1/courses?select=id,name,major,period,teacher,weekdays,time_range,delivery,campus,total_sessions,first_session_date&order=first_session_date.desc&limit=1000').catch(() => []));
+    if (!prPubMap) jobs.push(sb('/rest/v1/teachers?select=name,notes').catch(() => []));
     const res = await Promise.all(jobs);
     prData = { list: res[0] || [], share: (res[1] || [])[0] || null, sessions: [] };
     if (res[2]) prCourses = res[2];
+    if (res[3]) {
+      prPubMap = {};
+      const nrm = s => String(s || '').replace(/老师|先生|様|さん/g, '').trim();
+      res[3].forEach(t => { const k = nrm(t.name); const pub = String(t.notes || '').trim(); if (k && pub) prPubMap[k] = pub; });
+    }
     // 拉课表课次
     if (prData.share && (prData.share.course_ids || []).length) {
       const ids = prData.share.course_ids;
@@ -151,6 +158,13 @@ function prRenderBody() {
   if (box) box.innerHTML = prBodyHtml();
 }
 
+// 老师名 → 对外宣传姓名（多位以 / 分隔逐个映射）
+function prPubTeacher(t) {
+  const nrm = s => String(s || '').replace(/老师|先生|様|さん/g, '').trim();
+  return String(t || '').split(/[\/、,，]/).map(x => x.trim()).filter(Boolean)
+    .map(x => (prPubMap && prPubMap[nrm(x)]) || x).join(' / ');
+}
+
 // 按课程名匹配课程安排，展示当期开课信息
 function prCourseScheduleHtml(title) {
   const name = (title || '').trim();
@@ -166,7 +180,7 @@ function prCourseScheduleHtml(title) {
     <span style="font-weight:600">${prEsc(c.period || '')}${c.first_session_date ? `（${c.first_session_date.slice(0,7)}开课）` : ''}</span>
     ${i===0?'<span style="font-size:9px;background:var(--ok,#2a9e6a);color:#fff;border-radius:2px;padding:0 5px;margin-left:4px">最新</span>':''}
     <div style="color:var(--text-2);margin-top:3px">
-      ${prEsc(c.teacher || '')} · ${prEsc(c.weekdays || '')} ${prEsc(c.time_range || '')} · 共${c.total_sessions || '-'}回 · ${dvLabel(c.delivery)}${c.campus ? ` · ${prEsc(c.campus)}` : ''}
+      ${prEsc(prPubTeacher(c.teacher))} · ${prEsc(c.weekdays || '')} ${prEsc(c.time_range || '')} · 共${c.total_sessions || '-'}回 · ${dvLabel(c.delivery)}${c.campus ? ` · ${prEsc(c.campus)}` : ''}
     </div>
   </div>`).join('')}`;
 }
