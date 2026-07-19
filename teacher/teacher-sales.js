@@ -14,13 +14,22 @@ let tsMode = 'info'; // info=内部信息 | card=展示卡片
 
 function tsEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
+let tsPubMap = null; // 本名 → 对外宣传姓名（老师管理备注）
+
 async function renderLectInfo(mc) {
   mc.innerHTML = '<div class="empty">加载中…</div>';
   try {
-    tsProfiles = await sb('/rest/v1/teacher_profiles?select=*&order=sort_order.asc,created_at.asc');
+    const [profiles, teachers] = await Promise.all([
+      sb('/rest/v1/teacher_profiles?select=*&order=sort_order.asc,created_at.asc'),
+      sb('/rest/v1/teachers?select=name,notes').catch(() => []),
+    ]);
+    tsProfiles = profiles;
+    tsPubMap = {};
+    (teachers || []).forEach(t => { const pub = String(t.notes || '').trim(); if (pub) tsPubMap[t.name] = pub; });
   } catch (e) { mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
   tsRenderShell();
 }
+function tsPubOf(name) { return (tsPubMap && tsPubMap[name]) || name; }
 
 function tsRenderShell() {
   const mc = document.getElementById('mainContent');
@@ -100,7 +109,7 @@ function tsInfoHtml(sel) {
   <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:12px 16px;margin-bottom:8px">
     <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:6px">
       <span style="font-size:13px;font-weight:600;font-family:'Noto Serif SC',serif">${tsEsc(p.name)}</span>
-      ${p.real_name ? `<span style="font-size:9px;color:var(--text-3)">（${tsEsc(p.real_name)}）</span>` : ''}
+      ${tsPubOf(p.name) !== p.name ? `<span style="font-size:9px;background:var(--accent-light,#f5ede3);color:var(--accent);border-radius:2px;padding:0 6px">对外：${tsEsc(tsPubOf(p.name))}</span>` : ''}
       <span style="font-size:10px;color:var(--text-3)">${tsEsc(p.department || '')} / ${tsEsc(p.subject || '')}</span>
       ${p.vip ? `<span style="font-size:9px;background:var(--accent-light,#f5ede3);color:var(--accent);border-radius:2px;padding:0 6px">VIP指导：${tsEsc(p.vip)}</span>` : ''}
       ${p.years ? `<span style="font-size:9px;color:var(--text-3)">执教 ${tsEsc(p.years)} 年</span>` : ''}
@@ -122,7 +131,7 @@ function tsCardsHtml(sel) {
     ${sel.map(p => `
     <div style="background:#fff;border:1px solid #ede9e2;border-radius:6px;padding:20px 22px;color:#1a1814">
       <div style="font-size:9px;letter-spacing:.2em;color:#5a3e28;margin-bottom:8px">${tsEsc((p.subject || '').toUpperCase() || 'LECTURER')} · 唯新教育</div>
-      <div style="font-family:'Noto Serif SC',serif;font-size:17px;font-weight:700;margin-bottom:3px">${tsEsc(p.name)}</div>
+      <div style="font-family:'Noto Serif SC',serif;font-size:17px;font-weight:700;margin-bottom:3px">${tsEsc(tsPubOf(p.name))}</div>
       <div style="font-size:11px;color:#5a3e28;margin-bottom:12px;line-height:1.7">${tsEsc(p.school || '')}${p.degree ? `　${tsEsc(p.degree)}` : ''}</div>
       ${p.keywords ? `<div style="margin-bottom:10px">
         <div style="font-size:9px;letter-spacing:.15em;color:#9a9590;margin-bottom:3px">专攻方向</div>
