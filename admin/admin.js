@@ -591,7 +591,7 @@ let profOpenSubjects=new Set();
 let profEditingId=null;
 
 const PROF_FIELDS=[
-  ['name','讲师姓名（对外，如 徐老师）*'],['real_name','绑定账号（老师认领后自动填写，一般无需手动）'],
+  ['name','讲师姓名（本名；与老师管理同名即自动关联账号）*'],
   ['department','所属学系（如 社会人文）'],['subject','所属学科（如 社会学）'],
   ['school','毕业或所属大学院研究科'],['degree','学位（含在读）'],
   ['years','执教年份'],['vip','VIP指导（可/否）'],
@@ -610,7 +610,7 @@ async function renderTeacherProfilesPage(mc){
       <button class="btn btn-primary btn-sm" onclick="profEditingId='new';profRender()">＋ 新增讲师</button>
     </div>
   </div>
-  <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">Excel 列名须与讲师信息表一致（讲师姓名 / 所属学系 / 所属学科 / 毕业或所属大学院研究科 / 学位（含在读） / 执教年份 / 担当课程 / 可指导方向（关键词） / VIP指导 / 授课特色 / 备注）。「真实姓名」用于绑定老师账号：绑定后该老师可在自己页面补全档案，缺信息时老师页会出提示。</div>
+  <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">Excel 列名须与讲师信息表一致（讲师姓名 / 所属学系 / 所属学科 / 毕业或所属大学院研究科 / 学位（含在读） / 执教年份 / 担当课程 / 可指导方向（关键词） / VIP指导 / 授课特色 / 备注）。<b>讲师姓名请填本名</b>：与老师管理中的姓名一致即自动关联账号（老师可自行补全档案，对外展示名由老师管理的「备注 / 对外宣传姓名」控制）。</div>
   <div id="prof_body"><div class="empty">加载中…</div></div>`;
   try{
     profList=await sb('/rest/v1/teacher_profiles?select=*&order=sort_order.asc,created_at.asc');
@@ -666,7 +666,7 @@ function profRender(){
         <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border-light);border-radius:3px;margin-bottom:6px;flex-wrap:wrap">
           <div style="flex:1;min-width:220px">
             <div style="font-size:12px;font-weight:600">${profEsc(p.name)}
-              ${p.real_name?`<span style="font-size:9px;color:var(--ok);margin-left:6px">🔗 ${profEsc(p.real_name)}</span>`:`<span style="font-size:9px;color:var(--text-3);margin-left:6px">未绑定账号</span>`}
+              ${cachedTeachers.some(t=>t.name===p.name)?`<span style="font-size:9px;color:var(--ok);margin-left:6px">🔗 已关联账号${(cachedTeachers.find(t=>t.name===p.name)?.notes||'').trim()?`（对外：${profEsc(cachedTeachers.find(t=>t.name===p.name).notes)}）`:''}</span>`:`<span style="font-size:9px;color:var(--text-3);margin-left:6px">无账号（不影响）</span>`}
               ${profIncomplete(p)?`<span style="font-size:9px;background:var(--warn-bg,#f8f0d8);color:var(--warn,#b8860b);border-radius:2px;padding:0 5px;margin-left:4px">信息不全</span>`:''}
             </div>
             <div style="font-size:10px;color:var(--text-3);margin-top:2px">${profEsc(p.school||'')} ${profEsc(p.degree||'')} · ${profEsc((p.courses||'').slice(0,40))}${(p.courses||'').length>40?'…':''}</div>
@@ -687,7 +687,7 @@ function profToggleSubj(s){
 async function profSave(){
   const g=id=>(document.getElementById('pf_'+id)||{}).value||'';
   const row={
-    name:g('name').trim(), real_name:g('real_name').trim(),
+    name:g('name').trim(),
     department:g('department').trim(), subject:g('subject').trim(),
     school:g('school').trim(), degree:g('degree').trim(), years:g('years').trim(),
     vip:g('vip').trim(), courses:g('courses').trim(), keywords:g('keywords').trim(),
@@ -734,7 +734,6 @@ async function profImportExcel(input){
       const mapped=rows.map(r=>({
         id:`prof-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
         name:String(r['讲师姓名']||'').trim(),
-        real_name:String(r['真实姓名']||'').trim(),
         department:String(r['所属学系']||'').trim(),
         subject:String(r['所属学科']||'').trim(),
         school:String(r['毕业或所属大学院研究科']||'').trim(),
