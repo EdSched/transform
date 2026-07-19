@@ -83,6 +83,7 @@ async function init() {
       slotState[a.slot_id] = { available: a.available, time: a.available_time || '', titles: new Set(a.preferred_titles || []) };
     });
     buildTabs();
+    checkTeacherProfile();
     switchTab('todo');
   } catch (e) { mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; }
 }
@@ -103,6 +104,7 @@ function buildTabs() {
   if (p.student_mgmt && Array.isArray(p.student_mgmt_items) && p.student_mgmt_items.length) tabs.push({ id: 'studentmgmt', label: '👥 学生管理' });
   if (p.progress_plan) tabs.push({ id: 'progressplan', label: '📅 进度规划' });
   if (p.promo) tabs.push({ id: 'promo', label: '📣 宣传相关' });
+  if (p.lect_info) tabs.push({ id: 'lectinfo', label: '👤 讲师信息' });
   // 我的课表：有排班权限或有实际排到课才显示
   if (p.schedule || slots.length) tabs.push({ id: 'mycourses', label: '📚 我的课表' });
   // 工作记录：有实际教学相关权限才显示
@@ -137,6 +139,7 @@ function renderTab() {
     case 'studentmgmt': renderStudentMgmt(mc); break;
     case 'progressplan': renderProgressPlanTool(mc); break;
     case 'promo': renderTeacherPromo(mc); break;
+    case 'lectinfo': renderLectInfo(mc); break;
     case 'studyprogress': renderTeacherStudyProgress(mc); break;
     case 'mycourses': renderMySchedule(mc); break;
     case 'workrecords': renderWorkRecordsTeacher(mc); break;
@@ -168,6 +171,7 @@ function renderTodo(mc) {
     <button onclick="saveDisplayName()" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 14px;font-size:11px;cursor:pointer;font-family:inherit">保存</button>
   </div>
 </div>
+<div id="profilePromptBox"></div>
     ${unconfirmedVip.length ? `<div class="todo-card warn">
       <div class="todo-head">⏳ 有 ${unconfirmedVip.length} 位VIP学生还未确认上课，请联系学生</div>
       ${unconfirmedVip.slice(0, 5).map(b => {
@@ -2268,3 +2272,78 @@ function teacherAdbRender() {
 // ══════════════════════════════════
 // 考学进度（老师端）
 // ══════════════════════════════════
+
+// ══════════════════════════════════
+// 讲师档案补全提示（teacher_profiles，按真实姓名绑定）
+// 档案缺失或关键字段不全时，在昵称设置下方提示老师填写；admin 亦可在讲师档案中修改补充
+// ══════════════════════════════════
+let myProfile = null;
+
+async function checkTeacherProfile() {
+  try {
+    const rows = await sb(`/rest/v1/teacher_profiles?real_name=eq.${encodeURIComponent(teacherName)}&select=*&limit=1`);
+    myProfile = (rows || [])[0] || null;
+  } catch (e) { return; } // 表未建或网络问题时静默跳过
+  const missing = !myProfile || !((myProfile.school||'').trim() && (myProfile.keywords||'').trim() && (myProfile.feature||'').trim() && (myProfile.courses||'').trim());
+  const box = document.getElementById('profilePromptBox');
+  if (!box) return;
+  box.innerHTML = missing ? `
+  <div style="background:var(--warn-bg,#f8f0d8);border:1px solid var(--warn,#b8860b);border-radius:4px;padding:12px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:12px;color:#6a5210">📋 您的讲师档案${myProfile ? '还有信息未补全' : '尚未建立'}（用于内部讲师信息库与对外介绍）</span>
+    <button onclick="openProfileForm()" style="margin-left:auto;font-size:11px;background:var(--warn,#b8860b);color:#fff;border:none;border-radius:3px;padding:5px 16px;cursor:pointer;font-family:inherit">点击填写</button>
+  </div>` : '';
+}
+
+function openProfileForm() {
+  const existing = document.getElementById('profileFormModal');
+  if (existing) existing.remove();
+  const p = myProfile || {};
+  const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  const inp = 'width:100%;font-size:12px;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
+  const modal = document.createElement('div');
+  modal.id = 'profileFormModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:560px;width:100%;max-height:88vh;overflow-y:auto">
+    <div style="font-size:13px;font-weight:600;margin-bottom:4px">📋 讲师档案填写</div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:12px">档案用于内部讲师信息库与对外介绍展示；「对外姓名」是展示给学生的名字（如 ${teacherName[0]}老师），其余请如实填写。</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">对外姓名 *</label><input id="tpf_name" value="${esc(p.name || (teacherData.notes || '').trim() || teacherName[0] + '老师')}" style="${inp}"></div>
+      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">所属学科（如 社会学）*</label><input id="tpf_subject" value="${esc(p.subject)}" style="${inp}"></div>
+      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">毕业或所属大学院研究科 *</label><input id="tpf_school" value="${esc(p.school)}" placeholder="一桥大学 社会学研究科" style="${inp}"></div>
+      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">学位（含在读）</label><input id="tpf_degree" value="${esc(p.degree)}" placeholder="博士" style="${inp}"></div>
+    </div>
+    ${[['tpf_courses','担当课程 *', p.courses, '社会学理论 现代文化论'],['tpf_keywords','可指导方向（关键词）*', p.keywords, '都市社会学，文化研究，…'],['tpf_feature','授课特色 *', p.feature, '教学风格、指导经验、擅长领域…']].map(([id,l,v,ph]) => `
+    <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">${l}</label>
+    <textarea id="${id}" rows="${id==='tpf_feature'?4:2}" placeholder="${ph}" style="width:100%;font-size:12px;line-height:1.8;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical;margin-bottom:8px">${esc(v)}</textarea>`).join('')}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
+      <button onclick="document.getElementById('profileFormModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">取消</button>
+      <button onclick="saveTeacherProfile()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存档案</button>
+    </div>
+  </div>`;
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
+}
+
+async function saveTeacherProfile() {
+  const g = id => (document.getElementById(id) || {}).value || '';
+  const row = {
+    name: g('tpf_name').trim(), subject: g('tpf_subject').trim(),
+    school: g('tpf_school').trim(), degree: g('tpf_degree').trim(),
+    courses: g('tpf_courses').trim(), keywords: g('tpf_keywords').trim(), feature: g('tpf_feature').trim(),
+    real_name: teacherName,
+  };
+  if (!row.name || !row.school || !row.courses || !row.keywords || !row.feature) { alert('请填写所有带 * 的必填项'); return; }
+  try {
+    if (myProfile && myProfile.id) {
+      await sb(`/rest/v1/teacher_profiles?id=eq.${myProfile.id}`, 'PATCH', row);
+      Object.assign(myProfile, row);
+    } else {
+      row.id = `prof-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
+      await sb('/rest/v1/teacher_profiles', 'POST', row);
+      myProfile = row;
+    }
+    document.getElementById('profileFormModal')?.remove();
+    alert('档案已保存，感谢配合！');
+    checkTeacherProfile();
+  } catch (e) { alert('保存失败：' + e.message); }
+}
