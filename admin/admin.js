@@ -591,7 +591,7 @@ let profOpenSubjects=new Set();
 let profEditingId=null;
 
 const PROF_FIELDS=[
-  ['name','讲师姓名（对外，如 徐老师）*'],['real_name','真实姓名（绑定老师账号，可空）'],
+  ['name','讲师姓名（对外，如 徐老师）*'],['real_name','绑定账号（老师认领后自动填写，一般无需手动）'],
   ['department','所属学系（如 社会人文）'],['subject','所属学科（如 社会学）'],
   ['school','毕业或所属大学院研究科'],['degree','学位（含在读）'],
   ['years','执教年份'],['vip','VIP指导（可/否）'],
