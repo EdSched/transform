@@ -70,9 +70,11 @@ function promoRender() {
   const formHtml = editing !== null ? `
   <div style="border:1px solid var(--accent);border-radius:4px;padding:14px;margin-bottom:12px;background:var(--bg)">
     <div style="font-size:11px;font-weight:600;margin-bottom:8px">${promoEditingId==='new'?'＋ 新增':'✏ 编辑'}${sec[1]}条目</div>
-    <div style="display:grid;grid-template-columns:1fr 90px;gap:8px;margin-bottom:8px">
-      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">标题${promoSection==='course'?'（须与课程安排中的课程名一致）':''}</label>
+    <div style="display:grid;grid-template-columns:1fr ${promoSection==='lecturer'?'180px ':''}90px;gap:8px;margin-bottom:8px">
+      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">标题${promoSection==='course'?'（须与课程安排中的课程名一致）':promoSection==='lecturer'?'（对外显示的姓名＋头衔，可写宣传名）':''}</label>
         <input id="pm_title" value="${promoEsc(editing.title)}" style="${inp}"></div>
+      ${promoSection==='lecturer'?`<div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">关联真实姓名（绑定课程用，不对外显示）</label>
+        <input id="pm_link" value="${promoEsc(editing.link_name)}" placeholder="与老师管理中的姓名一致" style="${inp}"></div>`:''}
       <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">排序</label>
         <input id="pm_sort" type="number" value="${editing.sort_order || 0}" style="${inp}"></div>
     </div>
@@ -100,6 +102,7 @@ function promoRender() {
     <div style="display:flex;align-items:center;gap:8px">
       <span style="font-size:12px;font-weight:600">${promoEsc(p.title) || '（无标题）'}</span>
       <span style="font-size:9px;color:var(--text-3)">排序 ${p.sort_order || 0}</span>
+      ${p.section==='lecturer'?(p.link_name?`<span style="font-size:9px;color:var(--ok)">🔗 ${promoEsc(p.link_name)}</span>`:`<span style="font-size:9px;color:var(--warn,#b8860b)">⚠ 未绑定真实姓名</span>`):''}
       <span onclick="promoTogglePub('${p.id}')" style="cursor:pointer;user-select:none;font-size:9px;border-radius:2px;padding:1px 8px;${p.published===false?'background:var(--bg);color:var(--text-3);border:1px dashed var(--border)':'background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok)'}">${p.published===false?'🔒 隐藏中 · 点击公开':'🌐 公开中 · 点击隐藏'}</span>
       <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="promoEditingId='${p.id}';promoRender()">✏ 编辑</button>
       <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="promoDelete('${p.id}')">删除</button>
@@ -112,19 +115,20 @@ async function promoSave() {
   const title = (document.getElementById('pm_title') || {}).value.trim();
   const body = (document.getElementById('pm_body') || {}).value;
   const sort_order = parseInt((document.getElementById('pm_sort') || {}).value) || 0;
+  const link_name = ((document.getElementById('pm_link') || {}).value || '').trim();
   if (!title && !body.trim()) { alert('请填写标题或正文'); return; }
   try {
     if (promoEditingId === 'new') {
       const row = {
         id: `pm-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
-        major: promoMajor, section: promoSection, title, body, sort_order,
+        major: promoMajor, section: promoSection, title, body, sort_order, link_name,
       };
       await sb('/rest/v1/promo_content', 'POST', row);
       promoList.push(row);
     } else {
-      await sb(`/rest/v1/promo_content?id=eq.${promoEditingId}`, 'PATCH', { title, body, sort_order });
+      await sb(`/rest/v1/promo_content?id=eq.${promoEditingId}`, 'PATCH', { title, body, sort_order, link_name });
       const idx = promoList.findIndex(p => p.id === promoEditingId);
-      if (idx >= 0) Object.assign(promoList[idx], { title, body, sort_order });
+      if (idx >= 0) Object.assign(promoList[idx], { title, body, sort_order, link_name });
     }
     promoList.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
     promoEditingId = null;
