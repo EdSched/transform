@@ -50,9 +50,11 @@ function tsRenderShell() {
     </div>
     <button class="btn btn-outline btn-sm" onclick="tsSelected=new Set();tsRenderShell()">清空已选 (<span id="ts_count">${tsSelected.size}</span>)</button>
   </div>
-  <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">点击讲师行选中/取消，可多选；「展示卡片」模式只显示对外内容（无执教年份/VIP/备注），可直接给学生展示或截图。</div>
-  <div id="ts_list" style="margin-bottom:14px"></div>
-  <div id="ts_display"></div>`;
+  <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">左侧点选讲师（可多选），右侧即时显示；「展示卡片」模式只含对外内容（无执教年份/VIP/备注），可直接给学生展示或截图。</div>
+  <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
+    <div id="ts_list" style="flex:0 0 250px;min-width:220px;max-height:70vh;overflow-y:auto;background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:8px"></div>
+    <div id="ts_display" style="flex:1 1 420px;min-width:0"></div>
+  </div>`;
   tsRenderList();
 }
 
@@ -72,12 +74,12 @@ function tsRenderList() {
   const box = document.getElementById('ts_list');
   if (!box) return;
   const list = tsFiltered();
-  box.innerHTML = list.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px">
+  box.innerHTML = list.length ? `<div style="display:flex;flex-direction:column;gap:4px">
     ${list.map(p => {
       const sel = tsSelected.has(p.id);
-      return `<div onclick="tsToggle('${p.id}')" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid ${sel?'var(--accent)':'var(--border-light)'};background:${sel?'var(--accent-light,#f5ede3)':'var(--surface)'};border-radius:3px">
+      return `<div onclick="tsToggle('${p.id}')" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid ${sel?'var(--accent)':'transparent'};background:${sel?'var(--accent-light,#f5ede3)':'transparent'};border-radius:3px">
         <div style="flex:1;min-width:0">
-          <div style="font-size:12px;font-weight:600">${tsEsc(p.name)}</div>
+          <div style="font-size:12px;font-weight:600">${tsEsc(p.name)}${tsPubOf(p.name)!==p.name?`<span style="font-size:9px;color:var(--text-3);font-weight:400;margin-left:4px">→${tsEsc(tsPubOf(p.name))}</span>`:''}</div>
           <div style="font-size:9px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${tsEsc(p.subject || '')} · ${tsEsc(p.school || '')}</div>
         </div>
         <span style="font-size:11px;color:${sel?'var(--accent)':'var(--text-3)'};white-space:nowrap">${sel?'✓':'＋'}</span>
@@ -98,13 +100,13 @@ function tsRenderDisplay() {
   const box = document.getElementById('ts_display');
   if (!box) return;
   const sel = tsProfiles.filter(p => tsSelected.has(p.id));
-  if (!sel.length) { box.innerHTML = ''; return; }
+  if (!sel.length) { box.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--text-3);font-size:12px;border:1px dashed var(--border);border-radius:4px">← 从左侧点选讲师查看信息（可多选）</div>'; return; }
   box.innerHTML = tsMode === 'card' ? tsCardsHtml(sel) : tsInfoHtml(sel);
 }
 
 // ── 内部信息模式：完整档案（含内部字段） ──
 function tsInfoHtml(sel) {
-  return `<div style="font-size:11px;font-weight:600;margin-bottom:8px;border-top:1px solid var(--border);padding-top:12px">📋 已选讲师 · 内部档案（${sel.length}位）</div>
+  return `<div style="font-size:11px;font-weight:600;margin-bottom:8px">📋 已选讲师 · 内部档案（${sel.length}位）</div>
   ${sel.map(p => `
   <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:12px 16px;margin-bottom:8px">
     <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:6px">
@@ -126,8 +128,8 @@ function tsInfoHtml(sel) {
 
 // ── 展示卡片模式：干净的对外宣传版（可截图给学生） ──
 function tsCardsHtml(sel) {
-  return `<div style="font-size:11px;font-weight:600;margin-bottom:8px;border-top:1px solid var(--border);padding-top:12px">🎴 展示卡片（${sel.length}位 · 仅对外内容，可截图）</div>
-  <div id="ts_cards" style="background:#f7f5f0;border-radius:6px;padding:18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px">
+  return `<div style="font-size:11px;font-weight:600;margin-bottom:8px">🎴 展示卡片（${sel.length}位 · 仅对外内容，可截图）</div>
+  <div id="ts_cards" style="background:#f7f5f0;border-radius:6px;padding:18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px">
     ${sel.map(p => `
     <div style="background:#fff;border:1px solid #ede9e2;border-radius:6px;padding:20px 22px;color:#1a1814">
       <div style="font-size:9px;letter-spacing:.2em;color:#5a3e28;margin-bottom:8px">${tsEsc((p.subject || '').toUpperCase() || 'LECTURER')} · 唯新教育</div>
