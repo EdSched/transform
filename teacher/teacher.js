@@ -116,7 +116,7 @@ function buildTabs() {
 
 function switchTab(tab) {
   // 出願・进度规划以外はmain幅をリセット
-  if (tab !== 'admissiondb' && tab !== 'progressplan') {
+  if (tab !== 'admissiondb' && tab !== 'progressplan' && tab !== 'lectinfo') {
     const mainEl = document.querySelector('.main');
     if (mainEl) mainEl.style.maxWidth = '';
   }
