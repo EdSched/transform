@@ -305,7 +305,9 @@ function renderCourseCleanupPage(mc){
   <div class="page-header">
     <div class="section-title">课程清理</div>
     <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-outline btn-sm" onclick="cleanupSelectAllFiltered()">☑ 全选当前筛选</button>
       <button class="btn btn-outline btn-sm" onclick="cleanupClearSelection()">清空选择</button>
+      <button class="btn btn-primary btn-sm" onclick="cleanupExportInfo()">📄 导出所选信息</button>
       <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="cleanupDeleteSelected()">删除已选 (<span id="cleanup_count">0</span>)</button>
     </div>
   </div>
@@ -2372,4 +2374,56 @@ async function ssPublish(){
     ssRenderCourseList();
     ssRenderExisting();
   }catch(e){alert('发布失败：'+e.message)}
+}
+
+// ══════════════════════════════════
+// 课程清理：导出所选课程的基础信息 Excel（一课一行，发给老师做纸质课程表用）
+// 字段：专业 课程 校区 讲师 开课时间 结课时间 课程回数 星期 上课时间 是否确认 备注 课程链接
+// ══════════════════════════════════
+
+// 全选当前筛选条件下显示的全部课程（沿用清理页的专业/期数筛选逻辑）
+function cleanupSelectAllFiltered(){
+  const majorList=cleanupMajorFilter==='all'
+    ?['keiei','keizai','shakai','shinpan','fukushi']
+    :cleanupMajorFilter==='shakai_group'
+      ?['shakai','shinpan','fukushi']
+      :[cleanupMajorFilter];
+  let filtered=cachedCourses.filter(c=>(c.major||[]).some(m=>majorList.includes(m)));
+  // 与清理页筛选逻辑完全一致（类型三分支 + 期数）
+  if(cleanupTypeFilter==='专业课') filtered=filtered.filter(c=>c.course_type&&!c.course_type.includes('共通')&&!c.course_type.includes('VIP'));
+  else if(cleanupTypeFilter==='共通课') filtered=filtered.filter(c=>c.course_type?.includes('共通'));
+  else if(cleanupTypeFilter==='VIP') filtered=filtered.filter(c=>c.course_type?.includes('VIP'));
+  if(typeof cleanupPeriodFilter!=='undefined'&&cleanupPeriodFilter!=='all') filtered=filtered.filter(c=>c.period===cleanupPeriodFilter);
+  filtered.forEach(c=>cleanupSelected.add(c.id));
+  renderCourseCleanupPage(document.getElementById('mainContent'));
+}
+
+function cleanupExportInfo(){
+  if(!cleanupSelected.size){alert('请先选中要导出的课程（点击课程行选中，或用「全选当前筛选」）');return}
+  if(typeof XLSX==='undefined'){alert('Excel 组件未加载，请刷新页面重试');return}
+  const list=cachedCourses.filter(c=>cleanupSelected.has(c.id));
+  const rows=list.map(c=>{
+    const ss=cachedSessions.filter(s=>s.course_id===c.id&&s.session_title!=='休讲'&&s.session_date);
+    const dates=ss.map(s=>s.session_date).sort();
+    return {
+      '专业':(c.major||[]).map(m=>majorLabel(m)).join('/'),
+      '课程':c.name||'',
+      '校区':c.campus||'',
+      '讲师':c.teacher||'',
+      '开课时间':dates[0]||c.first_session_date||'',
+      '结课时间':dates[dates.length-1]||'',
+      '课程回数':c.total_sessions||ss.length||'',
+      '星期':c.weekdays||'',
+      '上课时间':c.time_range||'',
+      '是否确认':'',
+      '备注':'',
+      '课程链接':c.meeting_url||'',
+    };
+  });
+  const ws=XLSX.utils.json_to_sheet(rows,{header:['专业','课程','校区','讲师','开课时间','结课时间','课程回数','星期','上课时间','是否确认','备注','课程链接']});
+  ws['!cols']=[{wch:22},{wch:24},{wch:14},{wch:18},{wch:12},{wch:12},{wch:8},{wch:8},{wch:12},{wch:8},{wch:14},{wch:40}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'课程信息');
+  const d=new Date();
+  XLSX.writeFile(wb,`课程信息_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}_${rows.length}门.xlsx`);
 }
