@@ -640,8 +640,12 @@ async function submitBooking() {
 
   const slot = cachedSlots.find(s => s.id === selectedSlotId);
   if (!slot) { alert('时间槽不存在，请刷新后重试'); return; }
-  if ((Array.isArray(slot.type)?slot.type:[slot.type]).includes('plan') && !canSelectPlan()) { alert('当前进程不符合计划书相关面谈的条件'); return; }
-  if ((Array.isArray(slot.type)?slot.type:[slot.type]).includes('mock') && !canSelectMock()) { alert('当前进程不符合模拟面试的条件'); return; }
+  // 资格校验只看学生选择的预约类型，与时间槽的复合类型无关
+  // （老师发布的槽可同时接受多种类型：选了日常学习面谈就按日常处理，不受计划书/模拟条件限制）
+  const slotTypes = Array.isArray(slot.type) ? slot.type : [slot.type];
+  if (selectedType && !slotTypes.includes(selectedType)) { alert('该时间槽不接受当前选择的面谈类型，请换一个时间'); return; }
+  if (selectedType === 'plan' && !canSelectPlan()) { alert('当前进程不符合计划书相关面谈的条件'); return; }
+  if (selectedType === 'mock' && !canSelectMock()) { alert('当前进程不符合模拟面试的条件'); return; }
   const cap = slotCap(slot.time_range);
   const booked = cachedBookings.filter(b => b.slot_id === selectedSlotId && b.status !== 'cancelled').length;
   if (booked >= cap) { alert('该时间段名额已满，请选择其他时间'); renderSlots(); return; }
