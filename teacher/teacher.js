@@ -2294,9 +2294,17 @@ async function checkTeacherProfile() {
   </div>` : '';
 }
 
-function openProfileForm() {
+async function openProfileForm() {
   const existing = document.getElementById('profileFormModal');
   if (existing) existing.remove();
+  // 尚未绑定档案时：先列出所有未绑定的档案供老师一键认领（admin 无需手动维护绑定）
+  if (!myProfile) {
+    let unbound = [];
+    try {
+      unbound = await sb('/rest/v1/teacher_profiles?or=(real_name.is.null,real_name.eq.)&select=id,name,subject,school,degree&order=subject.asc');
+    } catch (e) {}
+    if (unbound.length) { openProfileClaim(unbound); return; }
+  }
   const p = myProfile || {};
   const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
   const inp = 'width:100%;font-size:12px;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
@@ -2346,4 +2354,73 @@ async function saveTeacherProfile() {
     alert('档案已保存，感谢配合！');
     checkTeacherProfile();
   } catch (e) { alert('保存失败：' + e.message); }
+}
+
+// 档案认领：老师从未绑定档案中选出自己的那条，点击即绑定并进入编辑
+function openProfileClaim(unbound) {
+  const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  const modal = document.createElement('div');
+  modal.id = 'profileFormModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:520px;width:100%;max-height:88vh;overflow-y:auto">
+    <div style="font-size:13px;font-weight:600;margin-bottom:4px">📋 认领您的讲师档案</div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:12px">教务已导入了一批讲师档案。如果下面有您的档案（对外称呼），点击认领后补全即可；都不是的话选最下方新建。</div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
+      ${unbound.map(p => `<div onclick="claimProfile('${p.id}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border-light);border-radius:3px;background:var(--bg)">
+        <span style="font-size:12px;font-weight:600">${esc(p.name)}</span>
+        <span style="font-size:10px;color:var(--text-3)">${esc(p.subject || '')} · ${esc(p.school || '')} ${esc(p.degree || '')}</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--accent)">认领 →</span>
+      </div>`).join('')}
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="document.getElementById('profileFormModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">取消</button>
+      <button onclick="document.getElementById('profileFormModal').remove();myProfile=null;openProfileFormDirect()" style="font-size:12px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">都不是，新建档案</button>
+    </div>
+  </div>`;
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
+}
+
+async function claimProfile(id) {
+  try {
+    await sb(`/rest/v1/teacher_profiles?id=eq.${id}`, 'PATCH', { real_name: teacherName });
+    const rows = await sb(`/rest/v1/teacher_profiles?id=eq.${id}&select=*`);
+    myProfile = (rows || [])[0] || null;
+    document.getElementById('profileFormModal')?.remove();
+    openProfileFormDirect();
+  } catch (e) { alert('认领失败：' + e.message); }
+}
+
+// 跳过认领步骤直接开表单（认领后或新建时用）
+function openProfileFormDirect() {
+  const p0 = myProfile;
+  myProfile = p0; // 保持当前绑定状态
+  // 复用 openProfileForm 的表单部分：临时构造
+  const existing = document.getElementById('profileFormModal');
+  if (existing) existing.remove();
+  const p = myProfile || {};
+  const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  const inp = 'width:100%;font-size:12px;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
+  const modal = document.createElement('div');
+  modal.id = 'profileFormModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:560px;width:100%;max-height:88vh;overflow-y:auto">
+    <div style="font-size:13px;font-weight:600;margin-bottom:4px">📋 讲师档案${myProfile ? '补全' : '填写'}</div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:12px">档案用于内部讲师信息库与对外介绍展示；「对外姓名」是展示给学生的名字，其余请如实填写。</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">对外姓名 *</label><input id="tpf_name" value="${esc(p.name || (teacherData.notes || '').trim() || teacherName[0] + '老师')}" style="${inp}"></div>
+      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">所属学科（如 社会学）*</label><input id="tpf_subject" value="${esc(p.subject)}" style="${inp}"></div>
+      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">毕业或所属大学院研究科 *</label><input id="tpf_school" value="${esc(p.school)}" placeholder="一桥大学 社会学研究科" style="${inp}"></div>
+      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">学位（含在读）</label><input id="tpf_degree" value="${esc(p.degree)}" placeholder="博士" style="${inp}"></div>
+    </div>
+    ${[['tpf_courses','担当课程 *', p.courses, '社会学理论 现代文化论'],['tpf_keywords','可指导方向（关键词）*', p.keywords, '都市社会学，文化研究，…'],['tpf_feature','授课特色 *', p.feature, '教学风格、指导经验、擅长领域…']].map(([id,l,v,ph]) => `
+    <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">${l}</label>
+    <textarea id="${id}" rows="${id==='tpf_feature'?4:2}" placeholder="${ph}" style="width:100%;font-size:12px;line-height:1.8;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical;margin-bottom:8px">${esc(v)}</textarea>`).join('')}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
+      <button onclick="document.getElementById('profileFormModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">取消</button>
+      <button onclick="saveTeacherProfile()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存档案</button>
+    </div>
+  </div>`;
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
 }
