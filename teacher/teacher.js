@@ -82,6 +82,9 @@ async function init() {
     existingAvail.forEach(a => {
       slotState[a.slot_id] = { available: a.available, time: a.available_time || '', titles: new Set(a.preferred_titles || []) };
     });
+    // 主容器统一加宽：所有功能页至少两列宽
+    const mainWideEl = document.querySelector('.main');
+    if (mainWideEl) mainWideEl.style.maxWidth = '1400px';
     buildTabs();
     checkTeacherProfile();
     switchTab('todo');
@@ -115,11 +118,7 @@ function buildTabs() {
 }
 
 function switchTab(tab) {
-  // 出願・进度规划以外はmain幅をリセット
-  if (tab !== 'admissiondb' && tab !== 'progressplan' && tab !== 'lectinfo') {
-    const mainEl = document.querySelector('.main');
-    if (mainEl) mainEl.style.maxWidth = '';
-  }
+  // 全页面统一加宽（1400px）；出願数据库在自身渲染中进一步放宽为 none
   curTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`)?.classList.add('active');
