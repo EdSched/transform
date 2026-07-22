@@ -243,19 +243,34 @@ function tpRenderProgressList() {
         </div>
         <!-- 志望校 -->
         <div style="padding:0 14px 12px">
-          <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">🏫 志望校（${plans.length}所）</div>
+          <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">🏫 志望校（${plans.length}所）· 状态与过去问/面试稿可直接修改，即时保存并与学生端同步</div>
           ${plans.length ? `
-          <div style="display:flex;flex-direction:column;gap:4px">
-            ${plans.map(p=>{const st=schoolStatusLabel(p.status);return `<div style="font-size:11px;background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:6px 8px">
-              <span style="color:var(--text-3)">${levelLabel[p.level]||''}</span>
-              <span style="font-weight:500;margin-left:4px">${p.school_name}</span>
-              ${p.faculty?`<span style="color:var(--text-3);margin-left:4px">${p.faculty}</span>`:''}
-              ${p.professor?`<span style="color:var(--text-2);margin-left:6px">👤 ${p.professor}</span>`:''}
-              ${p.application_period?`<span style="color:var(--accent);margin-left:6px;font-size:10px">📅 ${p.application_period}</span>`:''}
-              <span style="color:${st.c};margin-left:6px;font-size:10px;font-weight:600">${st.t}</span>
-              ${['prof_ok','applied','passed'].includes(p.status)?`<span style="color:var(--text-3);margin-left:6px;font-size:10px">过去问${p.kakomon_started?'✓':'—'}・面试稿${p.interview_draft_done?'✓':'—'}</span>`:''}
-            </div>`;}).join('')}
-          </div>` : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写志望校</div>'}
+          <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px;background:var(--surface);border:1px solid var(--border-light)">
+            <thead><tr style="background:var(--bg)">
+              ${['No.','级别','学校名 · 研究科','教授','出愿期间','该校进度','过去问','面试稿'].map(h=>`<th style="padding:5px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border);white-space:nowrap">${h}</th>`).join('')}
+            </tr></thead>
+            <tbody>
+              ${plans.map((p,pi)=>{const st=schoolStatusLabel(p.status);return `<tr style="border-bottom:1px solid var(--border-light)">
+                <td style="padding:5px 8px;color:var(--text-3)">${pi+1}</td>
+                <td style="padding:5px 8px;white-space:nowrap">${levelLabel[p.level]||''}</td>
+                <td style="padding:5px 8px"><span style="font-weight:600">${tsaEsc(p.school_name)}</span>${p.faculty?`<span style="color:var(--text-3);margin-left:4px;font-size:10px">${tsaEsc(p.faculty)}</span>`:''}</td>
+                <td style="padding:5px 8px;white-space:nowrap">${tsaEsc(p.professor)||'—'}</td>
+                <td style="padding:5px 8px;font-size:10px;color:var(--accent);white-space:nowrap">${tsaEsc(p.application_period)||'—'}</td>
+                <td style="padding:5px 8px">
+                  <select onchange="tpPlanSet('${p.id}','status',this.value,this)" onclick="event.stopPropagation()" style="font-size:10px;padding:2px 4px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;color:${st.c};font-weight:600">
+                    ${Object.entries(SCHOOL_STATUS_LABELS).filter(([k])=>k!=='failed'||p.status==='failed').map(([k,v])=>`<option value="${k}" ${p.status===k?'selected':''}>${v.t}</option>`).join('')}
+                  </select>
+                </td>
+                <td style="padding:5px 8px"><button onclick="event.stopPropagation();tpPlanFlag('${p.id}','kakomon_started',this)" data-on="${p.kakomon_started?'1':'0'}" style="font-size:10px;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;border:1px solid ${p.kakomon_started?'var(--ok)':'var(--border)'};background:${p.kakomon_started?'var(--ok-bg)':'var(--bg)'};color:${p.kakomon_started?'var(--ok)':'var(--text-3)'}">${p.kakomon_started?'✓ 已开始':'未开始'}</button></td>
+                <td style="padding:5px 8px"><button onclick="event.stopPropagation();tpPlanFlag('${p.id}','interview_draft_done',this)" data-on="${p.interview_draft_done?'1':'0'}" style="font-size:10px;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;border:1px solid ${p.interview_draft_done?'var(--ok)':'var(--border)'};background:${p.interview_draft_done?'var(--ok-bg)':'var(--bg)'};color:${p.interview_draft_done?'var(--ok)':'var(--text-3)'}">${p.interview_draft_done?'✓ 已完成':'未完成'}</button></td>
+              </tr>`;}).join('')}
+            </tbody>
+          </table></div>` : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写志望校</div>'}
+        </div>
+        <!-- 老师评估记录（学生不可见） -->
+        <div style="padding:0 14px 12px">
+          <div onclick="event.stopPropagation();tpNotesToggle('${s.id}','${tsaEsc(s.name)}',this)" style="font-size:10px;color:var(--text-3);margin-bottom:6px;cursor:pointer;user-select:none">📝 老师评估记录（学生不可见，仅老师与 admin）<span class="arr" style="margin-left:4px">▸</span></div>
+          <div id="tpnotes_${s.id}" style="display:none"></div>
         </div>
         <!-- 进度时间线（默认收起） -->
         <div style="padding:0 14px 12px">
@@ -368,6 +383,7 @@ let tsaStudents = [];
 let tsaFormOpen = false;
 let tsaExpandedId = null;
 let tsaSearch = '';
+let tsaMajorFilter = 'all';
 
 async function renderTeacherStudents(box) {
   box.innerHTML = '<div class="empty">加载中…</div>';
@@ -393,7 +409,8 @@ function tsaMajorOptions(sel) {
 
 function tsaListHtml() {
   const kw = tsaSearch.trim().toLowerCase();
-  const list = kw ? tsaStudents.filter(s => (s.name || '').toLowerCase().includes(kw) || (s.university || '').toLowerCase().includes(kw)) : tsaStudents;
+  let list = tsaMajorFilter === 'all' ? tsaStudents : tsaStudents.filter(s => s.major === tsaMajorFilter);
+  if (kw) list = list.filter(s => (s.name || '').toLowerCase().includes(kw) || (s.university || '').toLowerCase().includes(kw));
   const stLabel = v => ({ active:'在籍', graduated:'已合格', expired:'已到期', stopped:'停课', withdrawn:'退学' }[v] || v || '');
   return `<table style="width:100%;border-collapse:collapse;font-size:11px">
     <thead><tr style="background:var(--bg)">
@@ -415,6 +432,7 @@ function tsaListHtml() {
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:4px 16px;font-size:11px">
           ${[['属性',s.student_type],['来源',s.source],['课程属性',s.course_type],['出身大学',s.university],['学部/专业',s.faculty],['GPA/履历',s.gpa],['毕业论文',s.thesis],['毕业时间',s.graduation_date],['赴日时间',s.japan_arrival],['报名时间',s.signup_date],['上课方式',s.default_mode==='offline'?'线下':'线上'],['查询码',s.student_code]].map(([l,v]) => `<div><span style="color:var(--text-3)">${l}：</span>${tsaEsc(v) || '—'}</div>`).join('')}
         </div>
+        ${(teacherData.permissions.student_mgmt_items||[]).includes('profile_edit')?`<button onclick="event.stopPropagation();tseOpen('${s.id}')" style="margin-top:8px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">✏ 修改档案</button>`:''}
       </td></tr>` : ''}`).join('') : `<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--text-3)">暂无学生</td></tr>`}
     </tbody>
   </table>`;
@@ -435,6 +453,10 @@ function tsaRender() {
   mc.innerHTML = `<div>
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
       <div style="font-size:12px;font-weight:600">👤 学生档案（${tsaStudents.length}人）<span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:6px">${set ? '可见专业：' + [...set].map(m => MAJORS[m] || m).join('・') : '可见全部专业'}</span></div>
+      ${(() => { const ms = [...new Set(tsaStudents.map(s => s.major).filter(Boolean))]; return ms.length > 1 ? `<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;width:100%">
+        <div class="filter-chip ${tsaMajorFilter==='all'?'active':''}" onclick="tsaMajorFilter='all';tsaRender()" style="padding:2px 9px;font-size:10px">全部</div>
+        ${ms.map(m => `<div class="filter-chip ${tsaMajorFilter===m?'active':''}" onclick="tsaMajorFilter='${m}';tsaRender()" style="padding:2px 9px;font-size:10px">${MAJORS[m]||m}</div>`).join('')}
+      </div>` : ''; })()}
       <div style="display:flex;gap:6px;align-items:center">
         <input placeholder="搜索姓名/大学…" value="${tsaEsc(tsaSearch)}" oninput="tsaSearch=this.value;tsaRenderList()" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;width:150px">
         <button onclick="tsaFormOpen=!tsaFormOpen;tsaRender()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">${tsaFormOpen ? '收起表单' : '＋ 添加学生'}</button>
@@ -861,4 +883,160 @@ function tmGenReminder(name, major) {
   modal.onclick = e => { if (e.target === modal) modal.remove(); };
   document.body.appendChild(modal);
   try { navigator.clipboard.writeText(text).catch(() => {}); } catch (e) {}
+}
+
+// ══ 志望校行内修改（老师端；与学生端同一张表即时同步） ══
+async function tpPlanSet(planId, field, value, el) {
+  try {
+    await sb(`/rest/v1/student_school_plans?id=eq.${planId}`, 'PATCH', { [field]: value });
+    Object.values(teacherProgressData.plansMap || {}).forEach(list => {
+      const p = (list || []).find(x => x.id === planId);
+      if (p) p[field] = value;
+    });
+    if (el && field === 'status') { const st = schoolStatusLabel(value); el.style.color = st.c; }
+    if (el) { el.style.outline = '1px solid var(--ok)'; setTimeout(() => el.style.outline = '', 800); }
+  } catch (e) { alert('保存失败：' + e.message); }
+}
+
+async function tpPlanFlag(planId, field, btn) {
+  const next = btn.dataset.on !== '1';
+  try {
+    await sb(`/rest/v1/student_school_plans?id=eq.${planId}`, 'PATCH', { [field]: next });
+    Object.values(teacherProgressData.plansMap || {}).forEach(list => {
+      const p = (list || []).find(x => x.id === planId);
+      if (p) p[field] = next;
+    });
+    btn.dataset.on = next ? '1' : '0';
+    btn.textContent = next ? (field === 'kakomon_started' ? '✓ 已开始' : '✓ 已完成') : (field === 'kakomon_started' ? '未开始' : '未完成');
+    btn.style.border = `1px solid ${next ? 'var(--ok)' : 'var(--border)'}`;
+    btn.style.background = next ? 'var(--ok-bg)' : 'var(--bg)';
+    btn.style.color = next ? 'var(--ok)' : 'var(--text-3)';
+  } catch (e) { alert('保存失败：' + e.message); }
+}
+
+// ══ 老师评估记录（teacher_student_notes；学生端不读取此表） ══
+const tpNotesCache = {};
+
+async function tpNotesToggle(sid, sname, head) {
+  const box = document.getElementById('tpnotes_' + sid);
+  if (!box) return;
+  const open = box.style.display === 'none';
+  box.style.display = open ? 'block' : 'none';
+  const arr = head.querySelector('.arr');
+  if (arr) arr.textContent = open ? '▾' : '▸';
+  if (open) {
+    if (!tpNotesCache[sid]) {
+      box.innerHTML = '<div style="font-size:10px;color:var(--text-3)">加载中…</div>';
+      try {
+        tpNotesCache[sid] = await sb(`/rest/v1/teacher_student_notes?student_id=eq.${sid}&select=*&order=created_at.desc`);
+      } catch (e) { box.innerHTML = `<div style="font-size:10px;color:var(--danger)">加载失败：${e.message}</div>`; return; }
+    }
+    tpNotesRender(sid, sname);
+  }
+}
+
+function tpNotesRender(sid, sname) {
+  const box = document.getElementById('tpnotes_' + sid);
+  if (!box) return;
+  const notes = tpNotesCache[sid] || [];
+  box.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px">
+    <textarea id="tpnote_input_${sid}" rows="2" placeholder="记录该学生的评估、注意事项、交接备注…（如：笔试水平待评估；临近出愿需主动跟进）" onclick="event.stopPropagation()"
+      style="width:100%;font-size:11px;line-height:1.8;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical"></textarea>
+    <button onclick="event.stopPropagation();tpNoteSave('${sid}','${tsaEsc(sname)}')" style="margin-top:5px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">保存记录</button>
+    <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px">
+      ${notes.length ? notes.map(n => `<div style="font-size:11px;border-top:1px dashed var(--border-light);padding-top:6px">
+        <span style="color:var(--accent);font-weight:600">${tsaEsc(n.teacher_name)}</span>
+        <span style="color:var(--text-3);font-size:9px;margin-left:6px">${(n.created_at || '').slice(0, 16).replace('T', ' ')}</span>
+        ${n.teacher_name === teacherData.name ? `<span onclick="event.stopPropagation();tpNoteDel('${n.id}','${sid}','${tsaEsc(sname)}')" style="float:right;font-size:9px;color:var(--danger);cursor:pointer">删除</span>` : ''}
+        <div style="color:var(--text-2);line-height:1.8;white-space:pre-wrap;margin-top:2px">${tsaEsc(n.content)}</div>
+      </div>`).join('') : '<div style="font-size:10px;color:var(--text-3)">暂无记录</div>'}
+    </div>
+  </div>`;
+}
+
+async function tpNoteSave(sid, sname) {
+  const ta = document.getElementById('tpnote_input_' + sid);
+  const content = (ta ? ta.value : '').trim();
+  if (!content) { alert('请填写记录内容'); return; }
+  const row = { id: `tn-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, student_id: sid, student_name: sname, teacher_name: teacherData.name, content };
+  try {
+    await sb('/rest/v1/teacher_student_notes', 'POST', row);
+    row.created_at = new Date().toISOString();
+    tpNotesCache[sid] = [row, ...(tpNotesCache[sid] || [])];
+    tpNotesRender(sid, sname);
+  } catch (e) { alert('保存失败：' + e.message); }
+}
+
+async function tpNoteDel(id, sid, sname) {
+  if (!confirm('删除这条评估记录？')) return;
+  try {
+    await sb(`/rest/v1/teacher_student_notes?id=eq.${id}`, 'DELETE');
+    tpNotesCache[sid] = (tpNotesCache[sid] || []).filter(n => n.id !== id);
+    tpNotesRender(sid, sname);
+  } catch (e) { alert('删除失败：' + e.message); }
+}
+
+// ══ 学生档案修改（需 admin 授予「档案修改」子项；修改留痕，admin 可恢复） ══
+const TSE_FIELDS = [
+  ['name','姓名','input'],['major','专业','major'],['level','等级','input'],
+  ['japanese_score','日语成绩','input'],['english_score','英语成绩','input'],
+  ['target_enrollment','目标入学','input'],['expiry_date','到期日(YYYY-MM-DD)','input'],
+  ['status','状态','status'],['student_type','属性','input'],['source','来源','input'],
+  ['course_type','课程属性','input'],['university','出身大学','input'],['faculty','学部/专业','input'],
+  ['gpa','GPA/履历','input'],['thesis','毕业论文','input'],['graduation_date','毕业时间','input'],
+  ['japan_arrival','赴日时间','input'],['signup_date','报名时间','input'],
+];
+
+function tseOpen(sid) {
+  const s = tsaStudents.find(x => x.id === sid);
+  if (!s) return;
+  const existing = document.getElementById('tseModal');
+  if (existing) existing.remove();
+  const inp = 'width:100%;font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
+  const ctrl = (k, type, v) => {
+    if (type === 'major') return `<select id="tse_${k}" style="${inp}">${tsaMajorOptions(v)}</select>`;
+    if (type === 'status') return `<select id="tse_${k}" style="${inp}">${[['active','在籍'],['graduated','已合格'],['expired','已到期'],['stopped','停课'],['withdrawn','退学']].map(([kk,vv])=>`<option value="${kk}" ${v===kk?'selected':''}>${vv}</option>`).join('')}</select>`;
+    return `<input id="tse_${k}" value="${tsaEsc(v)}" style="${inp}">`;
+  };
+  const modal = document.createElement('div');
+  modal.id = 'tseModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:640px;width:100%;max-height:88vh;overflow-y:auto">
+    <div style="font-size:13px;font-weight:600;margin-bottom:4px">✏ 修改学生档案 — ${tsaEsc(s.name)}</div>
+    <div style="font-size:10px;color:var(--warn,#b8860b);margin-bottom:12px">⚠ 修改将直接覆盖 admin 学生档案的数据，并留下修改记录（admin 可查看与恢复），请谨慎操作。</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:12px">
+      ${TSE_FIELDS.map(([k,l,t]) => `<div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">${l}</label>${ctrl(k, t, s[k])}</div>`).join('')}
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="document.getElementById('tseModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">取消</button>
+      <button onclick="tseSave('${sid}')" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存修改</button>
+    </div>
+  </div>`;
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
+}
+
+async function tseSave(sid) {
+  const s = tsaStudents.find(x => x.id === sid);
+  if (!s) return;
+  const patch = {}, changes = {}, prev = {};
+  TSE_FIELDS.forEach(([k]) => {
+    const v = ((document.getElementById('tse_' + k) || {}).value || '').trim();
+    const old = s[k] == null ? '' : String(s[k]);
+    if (v !== old) { patch[k] = v; changes[k] = { from: old, to: v }; prev[k] = s[k]; }
+  });
+  if (!Object.keys(patch).length) { alert('没有任何修改'); return; }
+  if (!confirm(`该修改将覆盖学生档案的数据（共 ${Object.keys(patch).length} 项变更），是否操作？`)) return;
+  try {
+    await sb(`/rest/v1/students?id=eq.${sid}`, 'PATCH', patch);
+    await sb('/rest/v1/student_profile_edits', 'POST', {
+      id: `spe-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
+      student_id: sid, student_name: s.name, teacher_name: teacherData.name,
+      changes, prev,
+    }).catch(() => {});
+    Object.assign(s, patch);
+    document.getElementById('tseModal')?.remove();
+    tsaRender();
+    alert('已保存，修改记录已同步给 admin');
+  } catch (e) { alert('保存失败：' + e.message); }
 }
