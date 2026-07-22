@@ -818,7 +818,10 @@ function renderCoursesSummary(courses){
                   </div>
                   ${titleStr}
                   <div style="font-size:10px;color:var(--text-3);margin-top:1px">${s.time_range||course.time_range||''}</div>
-                  ${hasRec?`<div style="font-size:9px;color:var(--ok);margin-top:2px">✓ ${recCount}人</div>`:''}
+                  <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
+                    ${hasRec?`<span style="font-size:9px;color:var(--ok)">✓ ${recCount}人</span>`:''}
+                    <span onclick="event.stopPropagation();openHwEditor('${s.id}')" title="布置作业" style="font-size:9px;cursor:pointer;margin-left:auto;${(s.homework_questions&&s.homework_questions.length)?'color:var(--accent);font-weight:600':'color:var(--text-3)'}">📝${(s.homework_questions&&s.homework_questions.length)?` ${s.homework_questions.length}题`:''}</span>
+                  </div>
                 </div>`;
               }).join('')}
             </div>`
@@ -2426,4 +2429,68 @@ function cleanupExportInfo(){
   XLSX.utils.book_append_sheet(wb,ws,'课程信息');
   const d=new Date();
   XLSX.writeFile(wb,`课程信息_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}_${rows.length}门.xlsx`);
+}
+
+// ══════════════════════════════════
+// 单回作业布置（题目存于 course_sessions.homework_questions）
+// 有题目的课次才会在学生端显示作业提示；学生逐题作答（文字/拍照）
+// ══════════════════════════════════
+function openHwEditor(sessionId){
+  const s=cachedSessions.find(x=>x.id===sessionId);
+  if(!s){alert('未找到该课次');return}
+  const qs=s.homework_questions||[];
+  const text=qs.map(q=>`${q.num}. ${q.text}`).join('\n');
+  const existing=document.getElementById('hwEditorModal');
+  if(existing) existing.remove();
+  const modal=document.createElement('div');
+  modal.id='hwEditorModal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML=`<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:640px;width:100%;max-height:88vh;overflow-y:auto">
+    <div style="font-size:13px;font-weight:600;margin-bottom:3px">📝 布置作业 — ${s.course_name||''} 第${s.session_number||''}回</div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">${s.session_date||''} ${s.session_title||''}　·　保存后学生端才会出现该次作业；清空题目即撤回</div>
+    <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">作业说明（可选，显示在题目上方）</label>
+    <textarea id="hw_note" rows="2" placeholder="例：请于下周三前提交，手写题请按题号顺序拍照上传" style="width:100%;font-size:12px;line-height:1.8;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical;margin-bottom:8px">${(s.homework_note||'').replace(/</g,'&lt;')}</textarea>
+    <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">题目（每题一行，以「1. 」开头；同一题内换行请用连续行，空行分题）</label>
+    <textarea id="hw_qs" rows="12" placeholder="1. 请说明韦伯的理性化理论及其在现代社会的体现。&#10;2. 计算下列各题并写出推导过程。&#10;3. 阅读所附论文，整理其问题意识与研究方法。" style="width:100%;font-size:12px;line-height:1.9;padding:9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${text.replace(/</g,'&lt;')}</textarea>
+    <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:10px">
+      <span style="font-size:9px;color:var(--text-3)">学生可对每题直接打字作答，或按题号上传手写照片（可多张）</span>
+      <span style="display:flex;gap:8px">
+        <button onclick="document.getElementById('hwEditorModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">取消</button>
+        <button onclick="hwSaveQuestions('${sessionId}')" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存作业</button>
+      </span>
+    </div>
+  </div>`;
+  modal.onclick=e=>{if(e.target===modal)modal.remove()};
+  document.body.appendChild(modal);
+}
+
+// 解析题目文本：以「数字.」或「数字、」开头为新题，其余行并入当前题
+function hwParseQuestions(raw){
+  const out=[];
+  String(raw||'').replace(/\r/g,'').split('\n').forEach(line=>{
+    const t=line.trim();
+    if(!t){return}
+    const m=t.match(/^(\d+)[.、)]\s*(.*)$/);
+    if(m){out.push({num:parseInt(m[1]),text:m[2].trim()})}
+    else if(out.length){out[out.length-1].text+='\n'+t}
+    else{out.push({num:1,text:t})}
+  });
+  return out.filter(q=>q.text).map((q,i)=>({num:i+1,text:q.text}));
+}
+
+async function hwSaveQuestions(sessionId){
+  const qs=hwParseQuestions((document.getElementById('hw_qs')||{}).value);
+  const note=((document.getElementById('hw_note')||{}).value||'').trim();
+  try{
+    await sb(`/rest/v1/course_sessions?id=eq.${sessionId}`,'PATCH',{
+      homework_questions:qs.length?qs:null,
+      homework_note:note||null,
+      homework_enabled:qs.length>0,
+    });
+    const s=cachedSessions.find(x=>x.id===sessionId);
+    if(s){s.homework_questions=qs.length?qs:null;s.homework_note=note||null;s.homework_enabled=qs.length>0}
+    document.getElementById('hwEditorModal')?.remove();
+    renderCoursesPage(document.getElementById('mainContent'));
+    alert(qs.length?`已布置 ${qs.length} 道题，学生端即可看到`:'已清空该次作业');
+  }catch(e){alert('保存失败：'+e.message)}
 }
