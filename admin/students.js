@@ -497,6 +497,37 @@ async function renderProgressPage(mc, focusStudentId=null){
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${dimCards}</div>
         </div>
+        <!-- 志望校逐校推进（可直接修改，与学生端/老师端同步） -->
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border-light)">
+          <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">🏫 志望校（${sPlans.length}所）<span style="font-size:9px;font-weight:400;color:var(--text-3);margin-left:6px">状态与过去问/面试稿可直接修改，即时保存</span></div>
+          ${sPlans.length ? `
+          <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px;background:var(--surface);border:1px solid var(--border-light)">
+            <thead><tr style="background:var(--bg)">
+              ${['No.','级别','学校名 · 研究科','教授','出愿期间','该校进度','过去问','面试稿'].map(h=>`<th style="padding:5px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border);white-space:nowrap">${h}</th>`).join('')}
+            </tr></thead>
+            <tbody>
+              ${sPlans.map((p,pi)=>{const st=schoolStatusLabel(p.status);const lvl={1:'🔴 冲刺',2:'🟡 匹配',3:'🟢 保底'};return `<tr style="border-bottom:1px solid var(--border-light)">
+                <td style="padding:5px 8px;color:var(--text-3)">${pi+1}</td>
+                <td style="padding:5px 8px;white-space:nowrap">${lvl[p.level]||''}</td>
+                <td style="padding:5px 8px"><span style="font-weight:600">${p.school_name||''}</span>${p.faculty?`<span style="color:var(--text-3);margin-left:4px;font-size:10px">${p.faculty}</span>`:''}</td>
+                <td style="padding:5px 8px;white-space:nowrap">${p.professor||'—'}</td>
+                <td style="padding:5px 8px;font-size:10px;color:var(--accent);white-space:nowrap">${p.application_period||'—'}</td>
+                <td style="padding:5px 8px">
+                  <select onchange="event.stopPropagation();spPlanSet('${p.id}','status',this.value,this)" onclick="event.stopPropagation()" style="font-size:10px;padding:2px 4px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;color:${st.c};font-weight:600">
+                    ${Object.entries(SCHOOL_STATUS_LABELS).filter(([k])=>k!=='failed'||p.status==='failed').map(([k,v])=>`<option value="${k}" ${p.status===k?'selected':''}>${v.t}</option>`).join('')}
+                  </select>
+                </td>
+                <td style="padding:5px 8px"><button onclick="event.stopPropagation();spPlanFlag('${p.id}','kakomon_started',this)" data-on="${p.kakomon_started?'1':'0'}" style="font-size:10px;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;border:1px solid ${p.kakomon_started?'var(--ok)':'var(--border)'};background:${p.kakomon_started?'var(--ok-bg)':'var(--bg)'};color:${p.kakomon_started?'var(--ok)':'var(--text-3)'}">${p.kakomon_started?'✓ 已开始':'未开始'}</button></td>
+                <td style="padding:5px 8px"><button onclick="event.stopPropagation();spPlanFlag('${p.id}','interview_draft_done',this)" data-on="${p.interview_draft_done?'1':'0'}" style="font-size:10px;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;border:1px solid ${p.interview_draft_done?'var(--ok)':'var(--border)'};background:${p.interview_draft_done?'var(--ok-bg)':'var(--bg)'};color:${p.interview_draft_done?'var(--ok)':'var(--text-3)'}">${p.interview_draft_done?'✓ 已完成':'未完成'}</button></td>
+              </tr>`;}).join('')}
+            </tbody>
+          </table></div>` : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写志望校</div>'}
+        </div>
+        <!-- 老师评估记录（汇总各老师填写，admin 亦可补充） -->
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border-light)">
+          <div onclick="event.stopPropagation();spNotesToggle('${s.id}','${(s.name||'').replace(/'/g,"")}',this)" style="font-size:11px;font-weight:600;color:var(--text-2);cursor:pointer;user-select:none">📝 老师评估记录（学生不可见）<span class="arr" style="margin-left:4px;color:var(--text-3)">▸</span></div>
+          <div id="spnotes_${s.id}" style="display:none;margin-top:8px"></div>
+        </div>
         <div style="padding:12px 14px">
           <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px">进度时间线 <span style="font-weight:400;color:var(--text-3)">${timeline.length} 条记录</span></div>
           ${timelineHtml}
@@ -1009,4 +1040,87 @@ async function speAck(id){
     speEdits=speEdits.filter(x=>x.id!==id);
     speRenderBar();
   }catch(err){alert('操作失败：'+err.message)}
+}
+
+// ══ admin 侧志望校行内修改（与老师端/学生端同一张表） ══
+async function spPlanSet(planId, field, value, el) {
+  try {
+    await sb(`/rest/v1/student_school_plans?id=eq.${planId}`, 'PATCH', { [field]: value });
+    if (el && field === 'status') { const st = schoolStatusLabel(value); el.style.color = st.c; }
+    if (el) { el.style.outline = '1px solid var(--ok)'; setTimeout(() => el.style.outline = '', 800); }
+  } catch (e) { alert('保存失败：' + e.message); }
+}
+
+async function spPlanFlag(planId, field, btn) {
+  const next = btn.dataset.on !== '1';
+  try {
+    await sb(`/rest/v1/student_school_plans?id=eq.${planId}`, 'PATCH', { [field]: next });
+    btn.dataset.on = next ? '1' : '0';
+    btn.textContent = next ? (field === 'kakomon_started' ? '✓ 已开始' : '✓ 已完成') : (field === 'kakomon_started' ? '未开始' : '未完成');
+    btn.style.border = `1px solid ${next ? 'var(--ok)' : 'var(--border)'}`;
+    btn.style.background = next ? 'var(--ok-bg)' : 'var(--bg)';
+    btn.style.color = next ? 'var(--ok)' : 'var(--text-3)';
+  } catch (e) { alert('保存失败：' + e.message); }
+}
+
+// ══ 老师评估记录（admin 汇总查看 + 可补充/删除任意条目） ══
+const spNotesCache = {};
+
+async function spNotesToggle(sid, sname, head) {
+  const box = document.getElementById('spnotes_' + sid);
+  if (!box) return;
+  const open = box.style.display === 'none';
+  box.style.display = open ? 'block' : 'none';
+  const arr = head.querySelector('.arr');
+  if (arr) arr.textContent = open ? '▾' : '▸';
+  if (open) {
+    if (!spNotesCache[sid]) {
+      box.innerHTML = '<div style="font-size:10px;color:var(--text-3)">加载中…</div>';
+      try {
+        spNotesCache[sid] = await sb(`/rest/v1/teacher_student_notes?student_id=eq.${sid}&select=*&order=created_at.desc`);
+      } catch (e) { box.innerHTML = `<div style="font-size:10px;color:var(--danger)">加载失败：${e.message}</div>`; return; }
+    }
+    spNotesRender(sid, sname);
+  }
+}
+
+function spNotesRender(sid, sname) {
+  const box = document.getElementById('spnotes_' + sid);
+  if (!box) return;
+  const notes = spNotesCache[sid] || [];
+  box.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px">
+    <textarea id="spnote_input_${sid}" rows="2" placeholder="补充评估、交接备注…" onclick="event.stopPropagation()"
+      style="width:100%;font-size:11px;line-height:1.8;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical"></textarea>
+    <button onclick="event.stopPropagation();spNoteSave('${sid}','${sname}')" style="margin-top:5px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">保存记录</button>
+    <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px">
+      ${notes.length ? notes.map(n => `<div style="font-size:11px;border-top:1px dashed var(--border-light);padding-top:6px">
+        <span style="color:var(--accent);font-weight:600">${n.teacher_name || ''}</span>
+        <span style="color:var(--text-3);font-size:9px;margin-left:6px">${(n.created_at || '').slice(0, 16).replace('T', ' ')}</span>
+        <span onclick="event.stopPropagation();spNoteDel('${n.id}','${sid}','${sname}')" style="float:right;font-size:9px;color:var(--danger);cursor:pointer">删除</span>
+        <div style="color:var(--text-2);line-height:1.8;white-space:pre-wrap;margin-top:2px">${(n.content || '').replace(/</g, '&lt;')}</div>
+      </div>`).join('') : '<div style="font-size:10px;color:var(--text-3)">暂无记录</div>'}
+    </div>
+  </div>`;
+}
+
+async function spNoteSave(sid, sname) {
+  const ta = document.getElementById('spnote_input_' + sid);
+  const content = (ta ? ta.value : '').trim();
+  if (!content) { alert('请填写记录内容'); return; }
+  const row = { id: `tn-${Date.now()}-${Math.random().toString(36).slice(2,5)}`, student_id: sid, student_name: sname, teacher_name: 'admin', content };
+  try {
+    await sb('/rest/v1/teacher_student_notes', 'POST', row);
+    row.created_at = new Date().toISOString();
+    spNotesCache[sid] = [row, ...(spNotesCache[sid] || [])];
+    spNotesRender(sid, sname);
+  } catch (e) { alert('保存失败：' + e.message); }
+}
+
+async function spNoteDel(id, sid, sname) {
+  if (!confirm('删除这条评估记录？')) return;
+  try {
+    await sb(`/rest/v1/teacher_student_notes?id=eq.${id}`, 'DELETE');
+    spNotesCache[sid] = (spNotesCache[sid] || []).filter(n => n.id !== id);
+    spNotesRender(sid, sname);
+  } catch (e) { alert('删除失败：' + e.message); }
 }
