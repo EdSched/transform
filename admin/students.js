@@ -385,11 +385,19 @@ async function renderProgressPage(mc, focusStudentId=null){
   if(stMajorFilter!=='all') students=students.filter(s=>matchesMajorFilter(s.major,stMajorFilter));
   if(progressStudentFilter) students=students.filter(s=>matchesStudentSearch(s,progressStudentFilter));
 
-  const [allTimeline, allPlansPG, allDraftsPG] = await Promise.all([
+  const [allTimeline, allPlansPG, allDraftsPG, allBkPG] = await Promise.all([
     sb('/rest/v1/student_progress_timeline?select=*&order=created_at.asc&limit=5000').catch(()=>[]),
     sb('/rest/v1/student_school_plans?select=*&order=level.asc&limit=5000').catch(()=>[]),
     sb('/rest/v1/student_plan_drafts?select=*&limit=5000').catch(()=>[]),
+    sb('/rest/v1/bookings?select=name,major,target_school,slot_date,exam_period&order=slot_date.desc&limit=5000').catch(()=>[]),
   ]);
+  // 面谈里提到的目标校（学生尚未填志望校时作为线索提取）
+  const bkHintMap = {};
+  (allBkPG||[]).forEach(b => {
+    if (!b.name || !String(b.target_school||'').trim()) return;
+    if (!bkHintMap[b.name]) bkHintMap[b.name] = { schools:new Set(), date:b.slot_date, exam_period:b.exam_period };
+    String(b.target_school).split(/[、,，\/\n]+/).map(x=>x.trim()).filter(Boolean).forEach(x=>bkHintMap[b.name].schools.add(x));
+  });
   const timelineMap = {};
   allTimeline.forEach(t => {
     if (!timelineMap[t.student_id]) timelineMap[t.student_id] = [];
@@ -397,6 +405,7 @@ async function renderProgressPage(mc, focusStudentId=null){
   });
   const plansMapPG = {}, draftsMapPG = {};
   allPlansPG.forEach(p => { if (!plansMapPG[p.student_id]) plansMapPG[p.student_id] = []; plansMapPG[p.student_id].push(p); });
+  window.__spPlansAll = allPlansPG; // 供志望校编辑弹窗读取
   allDraftsPG.forEach(d => { if (!draftsMapPG[d.student_id]) draftsMapPG[d.student_id] = d; });
 
   const cards = students.map(s => {
@@ -458,17 +467,24 @@ async function renderProgressPage(mc, focusStudentId=null){
       }
       return '';
     };
+    // 每个维度最近一条时间线的来源（用于「数据来源」列）
+    const srcOf = k => {
+      for (let i = timeline.length - 1; i >= 0; i--) if (timeline[i][k]) return timeline[i].source || '记录';
+      return null;
+    };
+    const SRC_LABEL = { student:'学生填写', teacher:'老师面谈', admin:'admin录入', booking:'面谈记录' };
     const dimCards = Object.entries(PROGRESS_LABELS).map(([k,label]) => {
-      // 语言维度直接显示学生档案里的实际成绩
-      let scoreHint = '';
-      if (k === 'japanese' && s.japanese_score) scoreHint = `<div style="font-size:11px;color:var(--text-2);margin-top:4px">📊 ${s.japanese_score}</div>`;
-      if (k === 'english' && s.english_score) scoreHint = `<div style="font-size:11px;color:var(--text-2);margin-top:4px">📊 ${s.english_score}</div>`;
-      return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:8px">
-        <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">${PROGRESS_ICONS[k]} ${label}</div>
-        ${latest[k]?renderProgressBadge(k, latest[k]):pgDerived[k]?renderProgressBadge(k, pgDerived[k])+`<span style="font-size:9px;color:var(--text-3);margin-left:4px">按填写自动判断</span>`:renderProgressBadge(k, latest[k])}
-        ${scoreHint}
-        ${pgDetail(k)}
-      </div>`;
+      const score = k === 'japanese' ? s.japanese_score : k === 'english' ? s.english_score : '';
+      const src = latest[k] ? (SRC_LABEL[srcOf(k)] || srcOf(k) || '记录') : pgDerived[k] ? '按填写推导' : '';
+      const badge = latest[k] ? renderProgressBadge(k, latest[k])
+        : pgDerived[k] ? renderProgressBadge(k, pgDerived[k])
+        : '<span style="font-size:10px;color:var(--text-3)">未填写</span>';
+      return `<tr style="border-bottom:1px solid var(--border-light)">
+        <td style="padding:5px 8px;white-space:nowrap;color:var(--text-2)">${PROGRESS_ICONS[k]} ${label}</td>
+        <td style="padding:5px 8px">${badge}${score?`<span style="font-size:10px;color:var(--text-2);margin-left:6px">${score}</span>`:''}</td>
+        <td style="padding:5px 8px;font-size:9px;color:var(--text-3);white-space:nowrap">${src||'—'}</td>
+        <td style="padding:5px 8px;font-size:10px;color:var(--text-2)">${(pgDetail(k)||'').replace(/margin-top:4px/g,'margin-top:0')||'—'}</td>
+      </tr>`;
     }).join('');
 
     const timelineHtml = timeline.length
@@ -495,15 +511,33 @@ async function renderProgressPage(mc, focusStudentId=null){
             <div style="font-size:11px;font-weight:600;color:var(--text-2)">当前进度</div>
             <button class="btn btn-primary btn-sm" onclick="openAddProgressEntry('${s.id}','${s.name}','${s.major}')">＋ 更新进度</button>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${dimCards}</div>
+          <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px;background:var(--surface);border:1px solid var(--border-light)">
+            <thead><tr style="background:var(--bg)">${['项目','现状','数据来源','详情'].map(h=>`<th style="padding:4px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border);white-space:nowrap">${h}</th>`).join('')}</tr></thead>
+            <tbody>${dimCards}</tbody>
+          </table></div>
         </div>
         <!-- 志望校逐校推进（可直接修改，与学生端/老师端同步） -->
         <div style="padding:12px 14px;border-bottom:1px solid var(--border-light)">
-          <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">🏫 志望校（${sPlans.length}所）<span style="font-size:9px;font-weight:400;color:var(--text-3);margin-left:6px">状态与过去问/面试稿可直接修改，即时保存</span></div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+            <span style="font-size:11px;font-weight:600;color:var(--text-2)">🏫 志望校（${sPlans.length}所）</span>
+            <span style="font-size:9px;color:var(--text-3)">状态与过去问/面试稿可直接修改，即时保存</span>
+            <button onclick="event.stopPropagation();spSchoolAdd('${s.id}','${(s.name||'').replace(/'/g,'')}','${s.major||''}')" style="margin-left:auto;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">＋ 添加志望校</button>
+          </div>
+          ${(() => {
+            const hint = bkHintMap[s.name];
+            if (!hint) return '';
+            const known = new Set(sPlans.map(p => (p.school_name||'').trim()));
+            const news = [...hint.schools].filter(x => ![...known].some(k => k.includes(x) || x.includes(k)));
+            if (!news.length) return '';
+            return `<div style="background:var(--warn-bg,#f8f0d8);border:1px solid var(--warn,#b8860b);border-radius:3px;padding:7px 10px;margin-bottom:6px;font-size:10px;color:#6a5210">
+              💡 面谈记录中提到过（${hint.date||''}）：${news.map(x=>`<span style="background:var(--surface);border-radius:2px;padding:1px 6px;margin:0 3px">${x}</span>`).join('')}
+              <button onclick="event.stopPropagation();spSchoolFromHint('${s.id}','${(s.name||'').replace(/'/g,'')}','${s.major||''}',${JSON.stringify(news).replace(/"/g,'&quot;')})" style="margin-left:6px;font-size:10px;background:var(--warn,#b8860b);color:#fff;border:none;border-radius:2px;padding:2px 10px;cursor:pointer;font-family:inherit">一键加入志望校</button>
+            </div>`;
+          })()}
           ${sPlans.length ? `
           <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px;background:var(--surface);border:1px solid var(--border-light)">
             <thead><tr style="background:var(--bg)">
-              ${['No.','级别','学校名 · 研究科','教授','出愿期间','该校进度','过去问','面试稿'].map(h=>`<th style="padding:5px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border);white-space:nowrap">${h}</th>`).join('')}
+              ${['No.','级别','学校名 · 研究科','教授','出愿期间','该校进度','过去问','面试稿',''].map(h=>`<th style="padding:5px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border);white-space:nowrap">${h}</th>`).join('')}
             </tr></thead>
             <tbody>
               ${sPlans.map((p,pi)=>{const st=schoolStatusLabel(p.status);const lvl={1:'🔴 冲刺',2:'🟡 匹配',3:'🟢 保底'};return `<tr style="border-bottom:1px solid var(--border-light)">
@@ -519,9 +553,10 @@ async function renderProgressPage(mc, focusStudentId=null){
                 </td>
                 <td style="padding:5px 8px"><button onclick="event.stopPropagation();spPlanFlag('${p.id}','kakomon_started',this)" data-on="${p.kakomon_started?'1':'0'}" style="font-size:10px;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;border:1px solid ${p.kakomon_started?'var(--ok)':'var(--border)'};background:${p.kakomon_started?'var(--ok-bg)':'var(--bg)'};color:${p.kakomon_started?'var(--ok)':'var(--text-3)'}">${p.kakomon_started?'✓ 已开始':'未开始'}</button></td>
                 <td style="padding:5px 8px"><button onclick="event.stopPropagation();spPlanFlag('${p.id}','interview_draft_done',this)" data-on="${p.interview_draft_done?'1':'0'}" style="font-size:10px;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;border:1px solid ${p.interview_draft_done?'var(--ok)':'var(--border)'};background:${p.interview_draft_done?'var(--ok-bg)':'var(--bg)'};color:${p.interview_draft_done?'var(--ok)':'var(--text-3)'}">${p.interview_draft_done?'✓ 已完成':'未完成'}</button></td>
+                <td style="padding:5px 8px"><span onclick="event.stopPropagation();spSchoolEdit('${p.id}')" style="font-size:10px;color:var(--accent);cursor:pointer;margin-right:6px">编辑</span><span onclick="event.stopPropagation();spSchoolDel('${p.id}')" style="font-size:10px;color:var(--danger);cursor:pointer">删除</span></td>
               </tr>`;}).join('')}
             </tbody>
-          </table></div>` : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写志望校</div>'}
+          </table></div>` : '<div style="font-size:11px;color:var(--text-3)">尚无志望校记录，可点击右上「＋ 添加志望校」录入</div>'}
         </div>
         <!-- 老师评估记录（汇总各老师填写，admin 亦可补充） -->
         <div style="padding:12px 14px;border-bottom:1px solid var(--border-light)">
@@ -1123,4 +1158,119 @@ async function spNoteDel(id, sid, sname) {
     spNotesCache[sid] = (spNotesCache[sid] || []).filter(n => n.id !== id);
     spNotesRender(sid, sname);
   } catch (e) { alert('删除失败：' + e.message); }
+}
+
+// ══ 志望校录入 / 编辑 / 删除（admin 侧；与学生端、老师端同一张表） ══
+const SP_LEVELS = [[1,'🔴 冲刺'],[2,'🟡 匹配'],[3,'🟢 保底']];
+
+function spSchoolForm(title, p, onSaveJs) {
+  const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  const inp = 'width:100%;font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
+  const existing = document.getElementById('spSchoolModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'spSchoolModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:520px;width:100%">
+    <div style="font-size:13px;font-weight:600;margin-bottom:12px">${title}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+      <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">学校名 *</label><input id="sps_school" value="${esc(p.school_name)}" placeholder="一橋大学" style="${inp}"></div>
+      <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">研究科 / 专攻</label><input id="sps_faculty" value="${esc(p.faculty)}" placeholder="社会学研究科 総合社会科学専攻" style="${inp}"></div>
+      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">教授</label><input id="sps_prof" value="${esc(p.professor)}" style="${inp}"></div>
+      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">级别</label><select id="sps_level" style="${inp}">${SP_LEVELS.map(([v,l])=>`<option value="${v}" ${String(p.level)===String(v)?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">出愿期间</label><input id="sps_period" value="${esc(p.application_period)}" placeholder="2027年7月" style="${inp}"></div>
+      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">该校进度</label><select id="sps_status" style="${inp}">${Object.entries(SCHOOL_STATUS_LABELS).map(([k,v])=>`<option value="${k}" ${(p.status||'preparing')===k?'selected':''}>${v.t}</option>`).join('')}</select></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="document.getElementById('spSchoolModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">取消</button>
+      <button onclick="${onSaveJs}" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存</button>
+    </div>
+  </div>`;
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
+}
+
+function spSchoolAdd(sid, sname, major) {
+  spSchoolForm('＋ 添加志望校 — ' + sname, {}, `spSchoolSaveNew('${sid}','${sname}','${major}')`);
+}
+
+function spSchoolEdit(planId) {
+  let plan = null;
+  (window.__spPlansAll || []).forEach(p => { if (p.id === planId) plan = p; });
+  if (!plan) { // 从 DOM 缓存兜底：重新拉一次
+    sb(`/rest/v1/student_school_plans?id=eq.${planId}&select=*`).then(r => {
+      if (r && r[0]) spSchoolForm('✏ 编辑志望校', r[0], `spSchoolSaveEdit('${planId}')`);
+    }).catch(e => alert('读取失败：' + e.message));
+    return;
+  }
+  spSchoolForm('✏ 编辑志望校', plan, `spSchoolSaveEdit('${planId}')`);
+}
+
+function spSchoolCollect() {
+  const g = id => (document.getElementById(id) || {}).value || '';
+  const school_name = g('sps_school').trim();
+  if (!school_name) { alert('请填写学校名'); return null; }
+  return {
+    school_name, faculty: g('sps_faculty').trim(), professor: g('sps_prof').trim(),
+    level: parseInt(g('sps_level')) || 2, application_period: g('sps_period').trim(),
+    status: g('sps_status') || 'preparing',
+  };
+}
+
+async function spSchoolSaveNew(sid, sname, major) {
+  const row = spSchoolCollect();
+  if (!row) return;
+  Object.assign(row, {
+    id: `ssp-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
+    student_id: sid, student_name: sname, major,
+    exam_season: spGuessSeason(row.application_period),
+  });
+  try {
+    await sb('/rest/v1/student_school_plans', 'POST', row);
+    document.getElementById('spSchoolModal')?.remove();
+    renderPage();
+  } catch (e) { alert('保存失败：' + e.message); }
+}
+
+async function spSchoolSaveEdit(planId) {
+  const row = spSchoolCollect();
+  if (!row) return;
+  row.exam_season = spGuessSeason(row.application_period);
+  try {
+    await sb(`/rest/v1/student_school_plans?id=eq.${planId}`, 'PATCH', row);
+    document.getElementById('spSchoolModal')?.remove();
+    renderPage();
+  } catch (e) { alert('保存失败：' + e.message); }
+}
+
+async function spSchoolDel(planId) {
+  if (!confirm('删除这所志望校？学生端也将同步移除。')) return;
+  try {
+    await sb(`/rest/v1/student_school_plans?id=eq.${planId}`, 'DELETE');
+    renderPage();
+  } catch (e) { alert('删除失败：' + e.message); }
+}
+
+// 出愿期间 → 考试季（与学生端保持一致）
+function spGuessSeason(period) {
+  const m = String(period || '').match(/(\d{1,2})\s*月/);
+  if (!m) return null;
+  const mo = parseInt(m[1]);
+  if (mo >= 5 && mo <= 9) return 'summer';
+  if (mo >= 10 || mo === 1) return 'winter';
+  return 'next_year';
+}
+
+// 面谈线索一键转为志望校记录
+async function spSchoolFromHint(sid, sname, major, schools) {
+  if (!confirm(`将面谈中提到的 ${schools.length} 所学校加入志望校？\n（${schools.join('、')}）\n加入后可逐校补充研究科、教授与推进状态。`)) return;
+  try {
+    const rows = schools.map(x => ({
+      id: `ssp-${Date.now()}-${Math.random().toString(36).slice(2,5)}-${x.length}`,
+      student_id: sid, student_name: sname, major,
+      school_name: x, level: 2, status: 'preparing',
+    }));
+    await sb('/rest/v1/student_school_plans', 'POST', rows);
+    renderPage();
+  } catch (e) { alert('添加失败：' + e.message); }
 }
