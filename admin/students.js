@@ -21,7 +21,14 @@ function handleProgressSearchInput(el){
   const newEl=document.getElementById('progress_search_input');
   if(newEl){ newEl.focus(); newEl.setSelectionRange(cursorPos,cursorPos); }
 }
+let speEdits=null; // 老师修改记录（未处理）
+
 function renderStudentsPage(mc){
+  if(speEdits===null){
+    speEdits=[];
+    sb('/rest/v1/student_profile_edits?restored=is.false&select=*&order=created_at.desc&limit=100')
+      .then(r=>{speEdits=r||[];speRenderBar();}).catch(()=>{});
+  }
   let list=cachedStudents;
   if(stMajorFilter!=='all') list=list.filter(s=>matchesMajorFilter(s.major,stMajorFilter));
   if(stStatus!=='all') list=list.filter(s=>s.status===stStatus);
@@ -32,6 +39,8 @@ function renderStudentsPage(mc){
   const statusColor=(v)=>v==='active'?'var(--ok)':v==='graduated'?'#1a6a9a':v==='withdrawn'?'var(--danger)':'var(--text-3)';
   const statusBg=(v)=>v==='active'?'var(--ok-bg)':v==='graduated'?'#e8f4fd':v==='withdrawn'?'#fdecea':'var(--border)';
   mc.innerHTML=`
+  <div id="spe_bar"></div>
+  ${(setTimeout(()=>speRenderBar(),0),'')}
   <div class="page-header">
     <div class="section-title">学生档案 <span class="badge-count">${cachedStudents.length}</span></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -945,4 +954,59 @@ async function renderSeasonView(mc, students, timelineMap) {
   });
 
   mc.innerHTML = html;
+}
+
+// ══ 老师修改档案的留痕提示（student_profile_edits）：admin 可恢复原值或确认知悉 ══
+let speOpen=false;
+
+function speRenderBar(){
+  const bar=document.getElementById('spe_bar');
+  if(!bar)return;
+  if(!speEdits||!speEdits.length){bar.innerHTML='';return}
+  const fieldLabel={name:'姓名',major:'专业',level:'等级',japanese_score:'日语成绩',english_score:'英语成绩',target_enrollment:'目标入学',expiry_date:'到期日',status:'状态',student_type:'属性',source:'来源',course_type:'课程属性',university:'出身大学',faculty:'学部/专业',gpa:'GPA/履历',thesis:'毕业论文',graduation_date:'毕业时间',japan_arrival:'赴日时间',signup_date:'报名时间'};
+  bar.innerHTML=`<div style="background:var(--warn-bg,#f8f0d8);border:1px solid var(--warn,#b8860b);border-radius:4px;padding:10px 14px;margin-bottom:12px">
+    <div onclick="speOpen=!speOpen;speRenderBar()" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none">
+      <span style="font-size:12px;color:#6a5210;font-weight:600">⚠ ${speEdits.length} 条老师修改档案记录待确认</span>
+      <span style="font-size:10px;color:#6a5210;margin-left:auto">${speOpen?'▾ 收起':'▸ 查看详情'}</span>
+    </div>
+    ${speOpen?`<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+      ${speEdits.map(e=>`<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:8px 12px;font-size:11px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-weight:600">${e.student_name||''}</span>
+          <span style="color:var(--text-3)">由 <span style="color:var(--accent)">${e.teacher_name||''}</span> 修改</span>
+          <span style="color:var(--text-3);font-size:9px">${(e.created_at||'').slice(0,16).replace('T',' ')}</span>
+          <span style="margin-left:auto;display:flex;gap:4px">
+            <button onclick="speRestore('${e.id}')" style="font-size:10px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:2px;padding:1px 8px;cursor:pointer;font-family:inherit">恢复原值</button>
+            <button onclick="speAck('${e.id}')" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:1px 8px;cursor:pointer;font-family:inherit">知道了</button>
+          </span>
+        </div>
+        <div style="margin-top:4px;color:var(--text-2);line-height:1.8">
+          ${Object.entries(e.changes||{}).map(([k,c])=>`<span style="margin-right:12px">${fieldLabel[k]||k}：<span style="color:var(--text-3);text-decoration:line-through">${c.from||'（空）'}</span> → <span style="font-weight:600">${c.to||'（空）'}</span></span>`).join('')}
+        </div>
+      </div>`).join('')}
+    </div>`:''}
+  </div>`;
+}
+
+async function speRestore(id){
+  const e=speEdits.find(x=>x.id===id);
+  if(!e)return;
+  if(!confirm(`将 ${e.student_name} 的档案恢复到修改前的值？`))return;
+  try{
+    await sb(`/rest/v1/students?id=eq.${e.student_id}`,'PATCH',e.prev||{});
+    await sb(`/rest/v1/student_profile_edits?id=eq.${id}`,'PATCH',{restored:true});
+    const st=cachedStudents.find(s=>s.id===e.student_id);
+    if(st)Object.assign(st,e.prev||{});
+    speEdits=speEdits.filter(x=>x.id!==id);
+    renderStudentsPage(document.getElementById('mainContent'));
+    speRenderBar();
+  }catch(err){alert('恢复失败：'+err.message)}
+}
+
+async function speAck(id){
+  try{
+    await sb(`/rest/v1/student_profile_edits?id=eq.${id}`,'PATCH',{restored:true});
+    speEdits=speEdits.filter(x=>x.id!==id);
+    speRenderBar();
+  }catch(err){alert('操作失败：'+err.message)}
 }
