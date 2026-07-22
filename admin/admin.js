@@ -237,7 +237,7 @@ function renderTeachersPage(mc){
               <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可用的子项</div>
               <div style="display:flex;flex-wrap:wrap;gap:4px" id="perm_student_mgmt_items">
                 ${[
-              ['progress','考学进度'],['meetings','面谈查询'],['records','出席・作业记录'],['profile','学生档案录入'],
+              ['progress','考学进度'],['meetings','面谈查询'],['records','出席・作业记录'],['profile','学生档案录入'],['profile_edit','档案修改（留痕，admin可恢复）'],
             ].map(([k,v])=>`<div class="filter-chip" data-value="${k}" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">${v}</div>`).join('')}
               </div>
             </div>
@@ -427,7 +427,7 @@ function renderTeacherRows(){
           if(p.schedule) permsFull.push('排班');
           if(p.homework) permsFull.push('作业反馈');
           if(p.admission_query) permsFull.push('出願数据库');
-          if(p.student_mgmt){const _sm={progress:'考学进度',records:'出席作业',meetings:'面谈查询',profile:'档案录入'};permsFull.push('学生管理('+(((p.student_mgmt_items||[]).map(k=>_sm[k]||k).join('/'))||'—')+')');}
+          if(p.student_mgmt){const _sm={progress:'考学进度',records:'出席作业',meetings:'面谈查询',profile:'档案录入',profile_edit:'档案修改'};permsFull.push('学生管理('+(((p.student_mgmt_items||[]).map(k=>_sm[k]||k).join('/'))||'—')+')');}
           if(p.progress_plan) permsFull.push('进度规划（营业）');
           if(p.promo) permsFull.push('宣传相关（营业）');
           if(p.lect_info) permsFull.push('讲师信息查询（营业）');
