@@ -1173,8 +1173,7 @@ function renderProgressTab() {
 // ══════════════════════════════════
 // 面谈 & 作业 Tab
 // ══════════════════════════════════
-let studyHwSession = null;
-let studyHwData = {};
+
 
 function renderRecordsTab() {
   const { bookings, sessionRecs } = studyData;
@@ -1183,15 +1182,11 @@ function renderRecordsTab() {
 
   // 左栏：提交作业 + 已批改作业
   let leftCol = `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px;margin-bottom:16px">
-    <div style="font-size:12px;font-weight:600;margin-bottom:10px">📝 提交作业</div>
+    <div style="font-size:12px;font-weight:600;margin-bottom:10px">📝 作业</div>
     <div id="study_hw_sessions_wrap"><div style="font-size:11px;color:var(--text-muted)">加载中…</div></div>
-    <div id="study_hw_upload" style="display:none;margin-top:10px">
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">上传作业文件（图片 / PDF / Word，最大50MB）</div>
-      <input type="file" id="study_hw_file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="font-size:11px;margin-bottom:8px">
-      <button onclick="studySubmitHomework()" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:inherit;width:100%">提交作业</button>
-      <div id="study_hw_result" style="margin-top:8px;font-size:11px"></div>
-    </div>
   </div>`;
+
+  leftCol += `<div id="study_hw_archive"></div>`;
 
   if (validHomework.length) {
     leftCol += `<div style="font-size:11px;font-weight:600;margin-bottom:10px">✅ 已批改作业（${validHomework.length}条）</div>`;
@@ -1225,101 +1220,153 @@ function renderRecordsTab() {
   return `<div class="study-cols2" style="gap:16px 24px"><div>${leftCol}</div><div>${rightCol}</div></div>`;
 }
 
+// ══════════════════════════════════
+// 作业（题目由 admin 在课程安排的单回布置；逐题作答：文字 / 按题号拍照）
+// ══════════════════════════════════
+let hwSessions = [];      // 有题目的课次
+let hwSubs = {};          // session_id → 提交记录
+let hwOpenId = null;      // 展开作答的课次
+let hwDraft = {};         // { q番号: { text, images:[{url,name}] } }
+
 async function loadStudyHwSessions() {
   const wrap = document.getElementById('study_hw_sessions_wrap');
   if (!wrap) return;
-  const name = studyStudent.name;
-  // 作业绑定学生真实专业；发布给「社会人文」的作业对社人三专业学生同样可见
   const myMajor = studyStudent.major || studyMajor;
   const acceptMajors = myMajor === 'shakai_group'
     ? ['shakai_group', ...SHAKAI_GROUP]
-    : SHAKAI_GROUP.includes(myMajor)
-      ? [myMajor, 'shakai_group']
-      : [myMajor];
+    : SHAKAI_GROUP.includes(myMajor) ? [myMajor, 'shakai_group'] : [myMajor];
   try {
     const today = new Date();
-    const from = new Date(today); from.setDate(today.getDate() - 7);
-    const to = new Date(today); to.setDate(today.getDate() + 14);
+    const from = new Date(today); from.setDate(today.getDate() - 60);
+    const to = new Date(today); to.setDate(today.getDate() + 21);
     const fmt = d => d.toISOString().slice(0,10);
-    const [sessions, records] = await Promise.all([
+    const [sessions, subs] = await Promise.all([
       sb(`/rest/v1/course_sessions?session_date=gte.${fmt(from)}&session_date=lte.${fmt(to)}&homework_enabled=is.true&select=*&order=session_date.desc`).catch(()=>[]),
-      sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(name)}&select=session_id,homework_submitted,homework_file_url`).catch(()=>[]),
+      sb(`/rest/v1/homework_submissions?student_name=eq.${encodeURIComponent(studyStudent.name)}&select=*`).catch(()=>[]),
     ]);
-    const relevant = sessions.filter(s => {
+    hwSessions = (sessions||[]).filter(s => {
+      if (!(s.homework_questions||[]).length) return false; // 只显示已布置题目的课次
       const sm = Array.isArray(s.major) ? s.major : [s.major||''];
-      if (!myMajor) return true;
-      return sm.some(m => acceptMajors.includes(m));
+      return !myMajor || sm.some(m => acceptMajors.includes(m));
     });
-    if (!relevant.length) {
-      wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">近期暂无需提交作业的课程</div>';
-      return;
-    }
-    const submittedIds = new Set(records.filter(r => r.homework_submitted || r.homework_file_url).map(r => r.session_id));
-    wrap.innerHTML = '';
-    relevant.forEach(s => {
-      const submitted = submittedIds.has(s.id);
-      const label = `${s.session_date} · ${s.course_name}${s.session_title?' · '+s.session_title:''}`;
-      const row = document.createElement('div');
-      row.style.cssText = `display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:var(--bg);border:1px solid ${submitted?'var(--ok)':'var(--border)'};border-radius:3px;cursor:${submitted?'default':'pointer'};margin-bottom:4px`;
-      row.dataset.id = s.id; row.dataset.name = s.course_name; row.dataset.date = s.session_date;
-      if (!submitted) row.addEventListener('click', function() { studySelectHwSession(this); });
-      row.innerHTML = `<span style="font-size:12px;color:var(--text-2)">${label}</span><span style="font-size:10px;color:${submitted?'var(--ok)':'var(--text-muted)'};margin-left:12px">${submitted?'✓ 已提交':'未提交'}</span>`;
-      wrap.appendChild(row);
-    });
-  } catch(e) {
-    if (wrap) wrap.innerHTML = `<div style="font-size:11px;color:var(--danger)">加载失败：${e.message}</div>`;
-  }
+    hwSubs = {};
+    (subs||[]).forEach(x => hwSubs[x.session_id] = x);
+  } catch (e) { wrap.innerHTML = `<div style="font-size:11px;color:var(--danger)">加载失败：${e.message}</div>`; return; }
+  renderHwList();
 }
 
-function studySelectHwSession(el) {
-  const id = el.dataset.id;
-  const upload = document.getElementById('study_hw_upload');
-  if (studyHwSession === id) {
-    studyHwSession = null; studyHwData = {};
-    el.style.background = 'var(--bg)'; el.style.borderColor = 'var(--border)';
-    if (upload) upload.style.display = 'none';
-    return;
-  }
-  studyHwSession = id;
-  studyHwData = { id, name: el.dataset.name, date: el.dataset.date };
-  el.closest('#study_hw_sessions_wrap').querySelectorAll('[data-id]').forEach(d => {
-    d.style.background = 'var(--bg)'; d.style.borderColor = 'var(--border)';
-  });
-  el.style.background = '#f0f7ff'; el.style.borderColor = 'var(--accent)';
-  if (upload) upload.style.display = 'block';
+function renderHwList() {
+  const wrap = document.getElementById('study_hw_sessions_wrap');
+  if (!wrap) return;
+  if (!hwSessions.length) { wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:10px 0">暂无布置的作业</div>'; return; }
+  wrap.innerHTML = hwSessions.map(s => {
+    const sub = hwSubs[s.id];
+    const open = hwOpenId === s.id;
+    const graded = sub && sub.teacher_feedback;
+    return `<div style="border:1px solid ${graded?'var(--ok)':sub?'var(--accent)':'var(--border)'};border-radius:4px;margin-bottom:6px;overflow:hidden;background:var(--surface)">
+      <div onclick="hwToggle('${s.id}')" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;${open?'background:var(--bg)':''}">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600">${escA(s.course_name||'')}${s.session_number?` 第${s.session_number}回`:''}</div>
+          <div style="font-size:10px;color:var(--text-muted)">${s.session_date||''}${s.session_title?' · '+escA(s.session_title):''} · ${(s.homework_questions||[]).length}题</div>
+        </div>
+        <span style="font-size:10px;white-space:nowrap;color:${graded?'var(--ok)':sub?'var(--accent)':'var(--text-muted)'}">${graded?'✓ 已批改':sub?'✓ 已提交':'未提交'}</span>
+        <span style="font-size:10px;color:var(--text-muted)">${open?'▾':'▸'}</span>
+      </div>
+      ${open?`<div style="border-top:1px solid var(--border-light);padding:12px 14px;background:var(--bg)">${hwDetailHtml(s, sub)}</div>`:''}
+    </div>`;
+  }).join('');
+  renderHwArchive();
 }
 
-async function studySubmitHomework() {
-  const fileEl = document.getElementById('study_hw_file');
-  const result = document.getElementById('study_hw_result');
-  const name = studyStudent.name;
-  if (!studyHwSession) { result.innerHTML = '<span style="color:var(--danger)">请选择课程</span>'; return; }
-  if (!fileEl?.files[0]) { result.innerHTML = '<span style="color:var(--danger)">请选择文件</span>'; return; }
-  const file = fileEl.files[0];
-  result.innerHTML = '<span style="color:var(--text-muted)">上传中…</span>';
+function hwToggle(sid) {
+  if (hwOpenId === sid) { hwOpenId = null; renderHwList(); return; }
+  hwOpenId = sid;
+  const sub = hwSubs[sid];
+  hwDraft = {};
+  if (sub && Array.isArray(sub.answers)) sub.answers.forEach(a => hwDraft[a.q] = { text: a.text||'', images: a.images||[] });
+  renderHwList();
+}
+
+function hwDetailHtml(s, sub) {
+  const qs = s.homework_questions || [];
+  const locked = !!sub; // 已提交：只读 + 显示反馈
+  return `
+  ${s.homework_note?`<div style="font-size:11px;color:var(--text-2);background:var(--surface);border-left:3px solid var(--accent);padding:8px 12px;margin-bottom:10px;white-space:pre-wrap">${escA(s.homework_note)}</div>`:''}
+  ${sub&&sub.teacher_feedback?`<div style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:3px;padding:10px 12px;margin-bottom:10px">
+    <div style="font-size:10px;color:var(--ok);font-weight:600;margin-bottom:4px">✓ 老师反馈${sub.score?` · ${escA(sub.score)}`:''}</div>
+    <div style="font-size:11px;color:var(--text-2);line-height:1.9;white-space:pre-wrap">${escA(sub.teacher_feedback)}</div>
+    ${sub.teacher_file_url?`<a href="${escA(sub.teacher_file_url)}" target="_blank" style="font-size:10px;color:var(--accent);display:inline-block;margin-top:6px">📎 下载批改文件</a>`:''}
+  </div>`:''}
+  ${qs.map(q => {
+    const a = (locked ? ((sub.answers||[]).find(x=>x.q===q.num)||{}) : (hwDraft[q.num]||{}));
+    const imgs = a.images || [];
+    return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:8px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:6px">${q.num}. <span style="font-weight:400;white-space:pre-wrap">${escA(q.text)}</span></div>
+      ${locked
+        ? `${a.text?`<div style="font-size:11px;color:var(--text-2);line-height:1.9;white-space:pre-wrap;background:var(--bg);border-radius:2px;padding:7px 9px">${escA(a.text)}</div>`:''}
+           ${imgs.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${imgs.map((im,i)=>`<a href="${escA(im.url)}" target="_blank" style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:2px 8px">📷 图${i+1}</a>`).join('')}</div>`:''}
+           ${!a.text&&!imgs.length?'<div style="font-size:10px;color:var(--text-muted)">未作答</div>':''}`
+        : `<textarea id="hwq_${q.num}" rows="3" placeholder="在此直接作答（也可只上传手写照片）" oninput="hwDraft[${q.num}]=hwDraft[${q.num}]||{};hwDraft[${q.num}].text=this.value"
+             style="width:100%;font-size:12px;line-height:1.9;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${escA(a.text||'')}</textarea>
+           <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
+             <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:3px 10px">📷 上传第${q.num}题照片（可多选）
+               <input type="file" accept="image/*" multiple style="display:none" onchange="hwPickImages(${q.num}, this)"></label>
+             <span id="hwimg_${q.num}" style="font-size:10px;color:var(--text-muted)">${imgs.length?imgs.map((im,i)=>`图${i+1}`).join('・'):'尚未上传'}</span>
+           </div>`}
+    </div>`;
+  }).join('')}
+  ${locked
+    ? `<div style="font-size:10px;color:var(--text-muted)">已于 ${(sub.submitted_at||'').slice(0,16).replace('T',' ')} 提交${sub.teacher_feedback?'':'，等待老师批改'}</div>`
+    : `<div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">💡 手写作业请按题号上传，同一题可传多张（按拍摄顺序）；提交后不可修改，如需补交请联系老师</div>
+       <button onclick="hwSubmit('${s.id}')" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 22px;cursor:pointer;font-family:inherit">提交作业</button>`}`;
+}
+
+async function hwPickImages(qnum, input) {
+  const files = [...(input.files||[])];
+  if (!files.length) return;
+  const tip = document.getElementById('hwimg_' + qnum);
+  if (tip) tip.textContent = '上传中…';
+  hwDraft[qnum] = hwDraft[qnum] || { text:'', images:[] };
+  hwDraft[qnum].images = hwDraft[qnum].images || [];
   try {
-    const ext = file.name.split('.').pop().toLowerCase();
-    const path = `${studyMajor||'general'}/${studyHwData.date}_${Date.now()}.${ext}`;
-    const fileUrl = await sbUpload('homework', path, file);
-    const existing = await sb(`/rest/v1/session_records?session_id=eq.${studyHwSession}&student_name=eq.${encodeURIComponent(name)}&select=id`).catch(()=>[]);
-    if (existing.length) {
-      await sb(`/rest/v1/session_records?id=eq.${existing[0].id}`, 'PATCH', { homework_submitted:true, homework_file_url:fileUrl });
-    } else {
-      const sess = await sb(`/rest/v1/course_sessions?id=eq.${studyHwSession}&select=*`).catch(()=>[]);
-      const s = sess[0] || {};
-      await sb('/rest/v1/session_records', 'POST', {
-        id: `r-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
-        session_id: studyHwSession, course_name: s.course_name||studyHwData.name,
-        session_date: studyHwData.date, student_name: name,
-        major: studyStudent.major || studyMajor || s.major || '', homework_submitted:true, homework_file_url:fileUrl,
-      });
+    for (const f of files) {
+      const ext = (f.name.split('.').pop()||'jpg').toLowerCase();
+      const path = `${studyStudent.id}/${Date.now()}-q${qnum}-${hwDraft[qnum].images.length+1}.${ext}`;
+      const url = await sbUpload('homework', path, f);
+      hwDraft[qnum].images.push({ url, name: f.name });
     }
-    result.innerHTML = '<span style="color:var(--ok)">✓ 提交成功！老师批改后可在此查看反馈。</span>';
-    fileEl.value = ''; studyHwSession = null; studyHwData = {};
-    await loadStudyHwSessions();
-  } catch(e) { result.innerHTML = `<span style="color:var(--danger)">提交失败：${e.message}</span>`; }
+    if (tip) tip.textContent = hwDraft[qnum].images.map((x,i)=>`图${i+1}`).join('・');
+  } catch (e) {
+    if (tip) tip.textContent = '上传失败：' + e.message;
+  }
+  input.value = '';
 }
 
+async function hwSubmit(sid) {
+  const s = hwSessions.find(x => x.id === sid);
+  if (!s) return;
+  const qs = s.homework_questions || [];
+  const answers = qs.map(q => ({ q: q.num, text: (hwDraft[q.num]&&hwDraft[q.num].text||'').trim(), images: (hwDraft[q.num]&&hwDraft[q.num].images)||[] }));
+  const answered = answers.filter(a => a.text || a.images.length).length;
+  if (!answered) { alert('请至少作答一题（可打字或上传照片）'); return; }
+  if (answered < qs.length && !confirm(`还有 ${qs.length-answered} 题未作答，确认提交？提交后不可修改。`)) return;
+  if (answered === qs.length && !confirm('确认提交作业？提交后不可修改。')) return;
+  try {
+    const row = {
+      id: `hws-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
+      session_id: sid, course_name: s.course_name || '', session_number: s.session_number || null,
+      session_date: s.session_date || null,
+      student_id: studyStudent.id, student_name: studyStudent.name, major: studyStudent.major || studyMajor || '',
+      answers,
+    };
+    await sb('/rest/v1/homework_submissions', 'POST', row);
+    row.submitted_at = new Date().toISOString();
+    hwSubs[sid] = row;
+    hwDraft = {};
+    renderHwList();
+    alert('作业已提交');
+  } catch (e) { alert('提交失败：' + e.message); }
+}
 // ══════════════════════════════════
 // 课程表（admin 在课程安排里挑选发布；按学生专业取最新一份）
 // UI 仿 Econschedule：图例色点 + 日历视图（周网格）/ 课程汇总 切换
@@ -1481,5 +1528,28 @@ function sschedSumHtml() {
         </div>
       </div>`;
     }).join('')}
+  </div>`;
+}
+
+// ── 作业档案（成长回顾）：按课程分组的历史作业与老师反馈 ──
+function renderHwArchive() {
+  const box = document.getElementById('study_hw_archive');
+  if (!box) return;
+  const done = Object.values(hwSubs).filter(x => x && x.teacher_feedback);
+  if (!done.length) { box.innerHTML = ''; return; }
+  const byCourse = {};
+  done.forEach(x => { (byCourse[x.course_name || '其他'] = byCourse[x.course_name || '其他'] || []).push(x); });
+  box.innerHTML = `<div style="margin-top:14px">
+    <div style="font-size:12px;font-weight:600;margin-bottom:8px">📚 作业档案（已批改 ${done.length} 次）</div>
+    ${Object.entries(byCourse).map(([cname, list]) => `
+    <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:10px 12px;margin-bottom:6px">
+      <div style="font-size:11px;font-weight:600;margin-bottom:6px">${escA(cname)}<span style="font-size:9px;color:var(--text-muted);font-weight:400;margin-left:6px">${list.length} 次</span></div>
+      ${list.sort((a,b)=>String(a.session_date).localeCompare(String(b.session_date))).map(x => `
+      <div style="font-size:10px;line-height:1.9;padding:5px 0;border-top:1px dashed var(--border-light)">
+        <span style="color:var(--text-muted)">${x.session_date||''}${x.session_number?` 第${x.session_number}回`:''}</span>
+        ${x.score?`<span style="background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:0 6px;margin-left:6px;font-weight:600">${escA(x.score)}</span>`:''}
+        <div style="color:var(--text-secondary);white-space:pre-wrap;margin-top:2px">${escA(x.teacher_feedback)}</div>
+      </div>`).join('')}
+    </div>`).join('')}
   </div>`;
 }
