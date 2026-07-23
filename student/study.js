@@ -1194,6 +1194,7 @@ function renderRecordsTab() {
 function renderHomeworkTab() {
   const validHomework = (studyData.sessionRecs || []).filter(r => r.teacher_file_url);
   return `
+  <div class="split-hint">← 左右滑动切换「资料」与「作答」 →</div>
   <div class="study-split">
     <div style="min-width:0">
       <div style="font-size:11px;font-weight:600;margin-bottom:6px">📄 资料 / 题目预览</div>
@@ -1224,6 +1225,7 @@ function hwPreview(url, name) {
   const box = document.getElementById('study_hw_viewer');
   if (!box) { window.open(url, '_blank'); return; }
   const isPdf = /\.pdf(\?|$)/i.test(url);
+  const narrow = window.innerWidth < 1200;   // 手机/窄屏：PDF 内嵌无法缩放，改为点击打开
   box.style.display = 'block';
   box.style.padding = '0';
   box.innerHTML = `
@@ -1232,8 +1234,15 @@ function hwPreview(url, name) {
       <a href="${escA(url)}" target="_blank" style="margin-left:auto;font-size:10px;color:var(--accent);white-space:nowrap">↗ 新窗口打开</a>
     </div>
     ${isPdf
-      ? `<iframe src="${escA(url)}" style="width:100%;height:72vh;border:none;display:block"></iframe>`
-      : `<img src="${escA(url)}" style="max-width:100%;display:block">`}`;
+      ? (narrow
+        ? `<div style="padding:24px 18px;text-align:center">
+             <div style="font-size:34px;margin-bottom:8px">📄</div>
+             <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px">${escA(name||'资料')}</div>
+             <div style="font-size:10px;color:var(--text-muted);margin-bottom:14px">手机上内嵌 PDF 无法缩放，请点击下方按钮打开（可放大、可保存）</div>
+             <a href="${escA(url)}" target="_blank" style="display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-size:12px;padding:9px 24px;border-radius:3px">打开 PDF 查看题目</a>
+           </div>`
+        : `<iframe src="${escA(url)}" style="width:100%;height:72vh;border:none;display:block"></iframe>`)
+      : `<img src="${escA(url)}" style="max-width:100%;display:block" onclick="window.open('${escA(url)}','_blank')">`}`;
 }
 
 // ── 作业状态 ──
