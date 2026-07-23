@@ -147,7 +147,7 @@ function renderStudyTab() {
   else if (studyTab === 'plan') el.innerHTML = renderPlanTab();
   else if (studyTab === 'progress') el.innerHTML = renderProgressTab();
   else if (studyTab === 'records') el.innerHTML = renderRecordsTab();
-  else if (studyTab === 'homework') { el.innerHTML = renderHomeworkTab(); setTimeout(() => loadStudyHwSessions(), 60); }
+  else if (studyTab === 'homework') { el.innerHTML = renderHomeworkTab(); setTimeout(() => loadStudyHwSessions(0), 50); }
   else if (studyTab === 'schedule') { el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">课程表加载中…</div>'; loadStudySchedule(); }
 }
 
@@ -1194,17 +1194,18 @@ function renderRecordsTab() {
 function renderHomeworkTab() {
   const validHomework = (studyData.sessionRecs || []).filter(r => r.teacher_file_url);
   return `
-  <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
-    <div style="flex:1 1 380px;min-width:300px;position:sticky;top:10px">
+  <div class="study-split">
+    <div style="min-width:0">
       <div style="font-size:11px;font-weight:600;margin-bottom:6px">📄 资料 / 题目预览</div>
       <div id="study_hw_viewer" style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;min-height:420px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:11px;text-align:center;padding:20px">
         点击右侧作业中的「参考资料」或「查看题目」<br>即可在此预览，边看边作答
       </div>
     </div>
-    <div style="flex:1 1 420px;min-width:320px">
+    <div style="min-width:0">
       <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px;margin-bottom:14px">
         <div style="font-size:12px;font-weight:600;margin-bottom:10px">📝 作业</div>
         <div id="study_hw_sessions_wrap"><div style="font-size:11px;color:var(--text-muted)">加载中…</div></div>
+        <div id="study_hw_err" style="font-size:10px;color:var(--danger);margin-top:6px"></div>
       </div>
       <div id="study_hw_archive"></div>
       ${validHomework.length?`<div style="font-size:11px;font-weight:600;margin:14px 0 8px">✅ 历史批改文件（${validHomework.length}条）</div>
@@ -1233,6 +1234,55 @@ function hwPreview(url, name) {
     ${isPdf
       ? `<iframe src="${escA(url)}" style="width:100%;height:72vh;border:none;display:block"></iframe>`
       : `<img src="${escA(url)}" style="max-width:100%;display:block">`}`;
+}
+
+// ── 作业状态 ──
+let hwSessions = [];      // 有题目的课次
+let hwSubs = {};          // session_id → 提交记录
+let hwOpenId = null;      // 展开作答的课次
+let hwDraft = {};         // { unitKey: { text, images:[{url,name}] } }
+let hwLevelPick = {};     // session_id → 选中的级别索引
+let hwWholeFile = null;   // 整份作业文件
+let hwLoaded = false;
+
+async function loadStudyHwSessions(retry) {
+  const wrap = document.getElementById('study_hw_sessions_wrap');
+  if (!wrap) { if ((retry || 0) < 8) setTimeout(() => loadStudyHwSessions((retry || 0) + 1), 120); return; }
+  if (hwLoaded) { renderHwList(); return; }   // 已有数据直接重绘
+  const myMajor = studyStudent.major || studyMajor;
+  const acceptMajors = myMajor === 'shakai_group'
+    ? ['shakai_group', ...SHAKAI_GROUP]
+    : SHAKAI_GROUP.includes(myMajor) ? [myMajor, 'shakai_group'] : [myMajor];
+  try {
+    const today = new Date();
+    const from = new Date(today); from.setDate(today.getDate() - 60);
+    const to = new Date(today); to.setDate(today.getDate() + 21);
+    const fmt = d => d.toISOString().slice(0, 10);
+    const [sessions, subs] = await Promise.all([
+      sb(`/rest/v1/course_sessions?session_date=gte.${fmt(from)}&session_date=lte.${fmt(to)}&homework_enabled=is.true&select=*&order=session_date.desc`).catch(() => []),
+      sb(`/rest/v1/homework_submissions?student_name=eq.${encodeURIComponent(studyStudent.name)}&select=*`).catch(() => []),
+    ]);
+    hwSessions = (sessions || []).filter(s => {
+      // 兼容新结构 {version:2,levels:[]} 与旧数组格式
+      const q = s.homework_questions;
+      const hasQ = Array.isArray(q) ? q.length > 0 : !!(q && Array.isArray(q.levels) && q.levels.length);
+      if (!hasQ) return false;
+      const sm = Array.isArray(s.major) ? s.major : [s.major || ''];
+      return !myMajor || sm.some(m => acceptMajors.includes(m));
+    });
+    hwSubs = {};
+    (subs || []).forEach(x => hwSubs[x.session_id] = x);
+    hwLoaded = true;
+  } catch (e) {
+    wrap.innerHTML = `<div style="font-size:11px;color:var(--danger)">加载失败：${e.message}</div>`;
+    return;
+  }
+  try { renderHwList(); }
+  catch (e) {
+    wrap.innerHTML = `<div style="font-size:11px;color:var(--danger)">显示出错：${e.message}</div>`;
+    const eb = document.getElementById('study_hw_err');
+    if (eb) eb.textContent = String((e && e.stack) || e).slice(0, 300);
+  }
 }
 
 function hwGraded(sub) { return !!(sub && (sub.teacher_feedback || sub.feedback_knowledge || sub.feedback_attitude || sub.feedback_suggestions)); }
