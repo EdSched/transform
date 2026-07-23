@@ -10,6 +10,7 @@
 <style>
   /* 学习记录页专用：容器加宽到双倍（不影响其他页面共用的 student.css） */
   .page-wrap { max-width:1360px; }
+  header, header > div { max-width:100%; box-sizing:border-box; }
   /* 宽屏双排（<1100px 自动回落单列）；.sc-full 占满整行 */
   .study-cols2 { display:grid; grid-template-columns:1fr; gap:0 24px; align-items:start; }
   @media (min-width:1100px) {
@@ -19,11 +20,14 @@
   /* 左右分栏：足够宽才并排；否则单列横向滑动翻页（露出边缘提示可滑） */
   .study-split { display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }
   @media (max-width:1199px) {
-    .study-split { display:flex; overflow-x:auto; scroll-snap-type:x mandatory; gap:12px; padding-bottom:8px; -webkit-overflow-scrolling:touch; }
-    .study-split > div { flex:0 0 94%; scroll-snap-align:start; min-width:0; }
-    .study-split::-webkit-scrollbar { height:6px; }
+    /* 单列整屏翻页：一屏一栏，横滑切换 */
+    .study-split { display:flex; overflow-x:auto; scroll-snap-type:x mandatory; gap:0; padding-bottom:8px; -webkit-overflow-scrolling:touch; }
+    .study-split > div { flex:0 0 100%; scroll-snap-align:start; scroll-snap-stop:always; min-width:0; padding-right:2px; }
+    .study-split::-webkit-scrollbar { height:5px; }
     .study-split::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+    .split-hint { display:block !important; }
   }
+  .split-hint { display:none; font-size:10px; color:var(--text-muted); text-align:center; margin-bottom:6px; letter-spacing:.05em; }
   /* 任何情况下都不允许内部内容撑破容器 */
   .study-split > div, .study-cols2 > div { min-width:0; max-width:100%; }
   .study-split img, .study-cols2 img, .study-split iframe { max-width:100%; }
