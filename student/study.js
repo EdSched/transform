@@ -1226,7 +1226,9 @@ function renderRecordsTab() {
 let hwSessions = [];      // 有题目的课次
 let hwSubs = {};          // session_id → 提交记录
 let hwOpenId = null;      // 展开作答的课次
-let hwDraft = {};         // { q番号: { text, images:[{url,name}] } }
+let hwDraft = {};         // { unitKey: { text, images:[{url,name}] } }
+let hwLevelPick = {};     // session_id → 选中的级别索引
+let hwWholeFile = null;   // 整份作业文件
 
 async function loadStudyHwSessions() {
   const wrap = document.getElementById('study_hw_sessions_wrap');
@@ -1255,6 +1257,8 @@ async function loadStudyHwSessions() {
   renderHwList();
 }
 
+function hwGraded(sub) { return !!(sub && (sub.teacher_feedback || sub.feedback_knowledge || sub.feedback_attitude || sub.feedback_suggestions)); }
+
 function renderHwList() {
   const wrap = document.getElementById('study_hw_sessions_wrap');
   if (!wrap) return;
@@ -1262,7 +1266,7 @@ function renderHwList() {
   wrap.innerHTML = hwSessions.map(s => {
     const sub = hwSubs[s.id];
     const open = hwOpenId === s.id;
-    const graded = sub && sub.teacher_feedback;
+    const graded = hwGraded(sub);
     return `<div style="border:1px solid ${graded?'var(--ok)':sub?'var(--accent)':'var(--border)'};border-radius:4px;margin-bottom:6px;overflow:hidden;background:var(--surface)">
       <div onclick="hwToggle('${s.id}')" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;${open?'background:var(--bg)':''}">
         <div style="flex:1;min-width:0">
@@ -1281,88 +1285,183 @@ function renderHwList() {
 function hwToggle(sid) {
   if (hwOpenId === sid) { hwOpenId = null; renderHwList(); return; }
   hwOpenId = sid;
-  const sub = hwSubs[sid];
-  hwDraft = {};
-  if (sub && Array.isArray(sub.answers)) sub.answers.forEach(a => hwDraft[a.q] = { text: a.text||'', images: a.images||[] });
+  hwDraft = {}; hwWholeFile = null;
   renderHwList();
 }
 
-function hwDetailHtml(s, sub) {
-  const qs = s.homework_questions || [];
-  const locked = !!sub; // 已提交：只读 + 显示反馈
-  return `
-  ${s.homework_note?`<div style="font-size:11px;color:var(--text-2);background:var(--surface);border-left:3px solid var(--accent);padding:8px 12px;margin-bottom:10px;white-space:pre-wrap">${escA(s.homework_note)}</div>`:''}
-  ${sub&&sub.teacher_feedback?`<div style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:3px;padding:10px 12px;margin-bottom:10px">
-    <div style="font-size:10px;color:var(--ok);font-weight:600;margin-bottom:4px">✓ 老师反馈${sub.score?` · ${escA(sub.score)}`:''}</div>
-    <div style="font-size:11px;color:var(--text-2);line-height:1.9;white-space:pre-wrap">${escA(sub.teacher_feedback)}</div>
-    ${sub.teacher_file_url?`<a href="${escA(sub.teacher_file_url)}" target="_blank" style="font-size:10px;color:var(--accent);display:inline-block;margin-top:6px">📎 下载批改文件</a>`:''}
-  </div>`:''}
-  ${qs.map(q => {
-    const a = (locked ? ((sub.answers||[]).find(x=>x.q===q.num)||{}) : (hwDraft[q.num]||{}));
-    const imgs = a.images || [];
-    return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:8px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:6px">${q.num}. <span style="font-weight:400;white-space:pre-wrap">${escA(q.text)}</span></div>
-      ${locked
-        ? `${a.text?`<div style="font-size:11px;color:var(--text-2);line-height:1.9;white-space:pre-wrap;background:var(--bg);border-radius:2px;padding:7px 9px">${escA(a.text)}</div>`:''}
-           ${imgs.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${imgs.map((im,i)=>`<a href="${escA(im.url)}" target="_blank" style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:2px 8px">📷 图${i+1}</a>`).join('')}</div>`:''}
-           ${!a.text&&!imgs.length?'<div style="font-size:10px;color:var(--text-muted)">未作答</div>':''}`
-        : `<textarea id="hwq_${q.num}" rows="3" placeholder="在此直接作答（也可只上传手写照片）" oninput="hwDraft[${q.num}]=hwDraft[${q.num}]||{};hwDraft[${q.num}].text=this.value"
-             style="width:100%;font-size:12px;line-height:1.9;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${escA(a.text||'')}</textarea>
-           <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
-             <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:3px 10px">📷 上传第${q.num}题照片（可多选）
-               <input type="file" accept="image/*" multiple style="display:none" onchange="hwPickImages(${q.num}, this)"></label>
-             <span id="hwimg_${q.num}" style="font-size:10px;color:var(--text-muted)">${imgs.length?imgs.map((im,i)=>`图${i+1}`).join('・'):'尚未上传'}</span>
-           </div>`}
-    </div>`;
-  }).join('')}
-  ${locked
-    ? `<div style="font-size:10px;color:var(--text-muted)">已于 ${(sub.submitted_at||'').slice(0,16).replace('T',' ')} 提交${sub.teacher_feedback?'':'，等待老师批改'}</div>`
-    : `<div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">💡 手写作业请按题号上传，同一题可传多张（按拍摄顺序）；提交后不可修改，如需补交请联系老师</div>
-       <button onclick="hwSubmit('${s.id}')" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 22px;cursor:pointer;font-family:inherit">提交作业</button>`}`;
+// 归一化题目结构（兼容旧的简单题目列表）
+function hwNorm(s) {
+  const q = s.homework_questions;
+  if (q && !Array.isArray(q) && q.version === 2) return { levels: q.levels || [], refs: q.refs || [] };
+  if (Array.isArray(q) && q.length) return { levels: [{ key:'', blocks:[{ type:'free', title:'', items:q.map(x=>({num:x.num,text:x.text})) }] }], refs: [] };
+  return { levels: [], refs: [] };
+}
+// 生成某级别下所有作答单元：{ key, label, allowText, allowImg }
+function hwUnits(level) {
+  const out = [];
+  (level.blocks || []).forEach((b, bi) => {
+    const T = { choice:'选择题', calc:'计算题', term:'名词解释', essay:'论述题', free:'' }[b.type] || '';
+    const head = b.title || T || `区块${bi+1}`;
+    if (b.type === 'choice') {
+      for (let i = 1; i <= (b.count || 0); i++) out.push({ key:`${bi}-${i}`, block:bi, head, label:`第${i}题`, mode:'answer' });
+    } else if (b.type === 'calc') {
+      (b.questions || []).forEach(q => {
+        for (let j = 1; j <= (q.subs || 1); j++) out.push({ key:`${bi}-${q.num}-${j}`, block:bi, head, label:`第${q.num}题 问${j}`, mode:'img' });
+      });
+    } else if (b.type === 'term') {
+      for (let i = 1; i <= (b.count || 0); i++) out.push({ key:`${bi}-${i}`, block:bi, head, label:`问${i}`, mode:'both' });
+    } else if (b.type === 'essay') {
+      for (let i = 1; i <= (b.count || 0); i++) out.push({ key:`${bi}-${i}`, block:bi, head, label:`第${i}题`, mode:'both' });
+    } else {
+      (b.items || []).forEach(it => out.push({ key:`${bi}-${it.num}`, block:bi, head, label:`${it.num}.`, text:it.text, mode:'both' }));
+    }
+  });
+  return out;
 }
 
-async function hwPickImages(qnum, input) {
+function hwDetailHtml(s, sub) {
+  const N = hwNorm(s);
+  const locked = !!sub;
+  // 级别选择
+  const levels = N.levels;
+  if (!levels.length) return '<div style="font-size:11px;color:var(--text-muted)">题目尚未设置</div>';
+  let li = 0;
+  if (locked && sub.level) { const idx = levels.findIndex(L => L.key === sub.level); if (idx >= 0) li = idx; }
+  else if (hwLevelPick[s.id] != null) li = hwLevelPick[s.id];
+  else { const my = (studyStudent.level || '').trim(); const idx = levels.findIndex(L => L.key && my.includes(L.key)); if (idx >= 0) li = idx; }
+  const L = levels[li] || levels[0];
+  const units = hwUnits(L);
+  const ansOf = k => locked ? (((sub.answers || []).find(x => x.k === k)) || {}) : (hwDraft[k] || {});
+
+  return `
+  ${s.homework_note?`<div style="font-size:11px;color:var(--text-2);background:var(--surface);border-left:3px solid var(--accent);padding:8px 12px;margin-bottom:10px;white-space:pre-wrap">${escA(s.homework_note)}</div>`:''}
+  ${N.refs.length?`<div style="font-size:11px;margin-bottom:10px">📚 参考资料：${N.refs.map(r=>`<a href="${escA(r.url)}" target="_blank" style="color:var(--accent);margin-right:10px">${escA(r.name||'资料')}</a>`).join('')}</div>`:''}
+  ${hwGraded(sub)?`<div style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:3px;padding:10px 12px;margin-bottom:10px">
+    <div style="font-size:10px;color:var(--ok);font-weight:600;margin-bottom:4px">✓ 老师批改${sub.score?` · ${escA(sub.score)}`:''}</div>
+    ${sub.feedback_knowledge?`<div style="font-size:11px;color:var(--text-2);line-height:1.9"><span style="color:var(--text-muted)">知识掌握：</span>${escA(sub.feedback_knowledge)}</div>`:''}
+    ${sub.feedback_attitude?`<div style="font-size:11px;color:var(--text-2);line-height:1.9"><span style="color:var(--text-muted)">学习态度：</span>${escA(sub.feedback_attitude)}</div>`:''}
+    ${sub.feedback_suggestions?`<div style="font-size:11px;color:var(--text-2);line-height:1.9"><span style="color:var(--text-muted)">改进建议：</span>${escA(sub.feedback_suggestions)}</div>`:''}
+    ${sub.teacher_feedback&&!sub.feedback_knowledge?`<div style="font-size:11px;color:var(--text-2);line-height:1.9;white-space:pre-wrap">${escA(sub.teacher_feedback)}</div>`:''}
+    ${sub.teacher_file_url?`<a href="${escA(sub.teacher_file_url)}" target="_blank" style="font-size:10px;color:var(--accent);display:inline-block;margin-top:6px">📎 下载批改文件</a>`:''}
+  </div>`:''}
+  ${levels.length>1?`<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+    <span style="font-size:10px;color:var(--text-muted)">作业级别：</span>
+    ${levels.map((x,i)=>`<span onclick="${locked?'':`hwLevelPick['${s.id}']=${i};renderHwList()`}" style="font-size:10px;padding:3px 10px;border-radius:2px;cursor:${locked?'default':'pointer'};border:1px solid ${i===li?'var(--accent)':'var(--border)'};background:${i===li?'var(--accent)':'var(--surface)'};color:${i===li?'#fff':'var(--text-secondary)'}">${escA(x.key||'不分级别')}</span>`).join('')}
+  </div>`:''}
+
+  ${(L.blocks||[]).map((b, bi) => {
+    const T = { choice:'选择题', calc:'计算题', term:'名词解释', essay:'论述题', free:'' }[b.type] || '';
+    const bUnits = units.filter(u => u.block === bi);
+    return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:8px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:6px">${T?`【${T}】`:''}${escA(b.title||'')}
+        ${b.file?`<a href="${escA(b.file.url)}" target="_blank" style="font-size:10px;color:var(--accent);margin-left:8px;font-weight:400">📎 查看题目（${escA(b.file.name||'文件')}）</a>`:''}
+      </div>
+      ${b.type==='choice'
+        ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px">
+            ${bUnits.map(u=>`<div style="display:flex;align-items:center;gap:4px">
+              <span style="font-size:10px;color:var(--text-muted);white-space:nowrap">${u.label}</span>
+              ${locked?`<span style="font-size:11px;font-weight:600">${escA(ansOf(u.key).text||'—')}</span>`
+                :`<input value="${escA(ansOf(u.key).text||'')}" oninput="hwSetAns('${u.key}',this.value)" placeholder="答案" style="width:100%;font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit">`}
+            </div>`).join('')}
+          </div>`
+        : bUnits.map(u => {
+            const a = ansOf(u.key); const imgs = a.images || [];
+            return `<div style="border-top:1px dashed var(--border-light);padding:7px 0">
+              <div style="font-size:11px;font-weight:600;margin-bottom:4px">${u.label}${u.text?` <span style="font-weight:400;white-space:pre-wrap">${escA(u.text)}</span>`:''}</div>
+              ${locked
+                ? `${a.text?`<div style="font-size:11px;color:var(--text-2);line-height:1.9;white-space:pre-wrap;background:var(--bg);border-radius:2px;padding:6px 8px">${escA(a.text)}</div>`:''}
+                   ${imgs.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${imgs.map((im,i)=>`<a href="${escA(im.url)}" target="_blank" style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:2px 8px">📷 图${i+1}</a>`).join('')}</div>`:''}
+                   ${!a.text&&!imgs.length?'<div style="font-size:10px;color:var(--text-muted)">未作答</div>':''}`
+                : `${u.mode!=='img'?`<textarea rows="${u.mode==='both'?3:2}" placeholder="在此作答（也可只上传照片）" oninput="hwSetAns('${u.key}',this.value)" style="width:100%;font-size:12px;line-height:1.9;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${escA(a.text||'')}</textarea>`:''}
+                   <div style="display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap">
+                     <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:3px 10px">📷 上传${u.label}照片
+                       <input type="file" accept="image/*" multiple style="display:none" onchange="hwPickImages('${u.key}', this)"></label>
+                     <span id="hwimg_${u.key}" style="font-size:10px;color:var(--text-muted)">${imgs.length?imgs.map((x,i)=>`图${i+1}`).join('・'):'尚未上传'}</span>
+                   </div>`}
+            </div>`;
+          }).join('')}
+    </div>`;
+  }).join('')}
+
+  ${locked
+    ? `<div style="font-size:10px;color:var(--text-muted)">已于 ${(sub.submitted_at||'').slice(0,16).replace('T',' ')} 提交${hwGraded(sub)?'':'，等待老师批改'}${sub.whole_file_url?` · <a href="${escA(sub.whole_file_url)}" target="_blank" style="color:var(--accent)">📎 整份作业文件</a>`:''}</div>`
+    : `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:9px 12px;margin-bottom:8px">
+         <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">或直接上传整份作业（Word / PDF / 照片），可与上方逐题作答并用</div>
+         <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:3px 10px">📎 上传整份作业
+           <input type="file" accept=".doc,.docx,.pdf,image/*" style="display:none" onchange="hwPickWhole(this)"></label>
+         <span id="hw_whole_tip" style="font-size:10px;color:var(--text-muted);margin-left:8px">${hwWholeFile?escA(hwWholeFile.name):'尚未上传'}</span>
+       </div>
+       <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">💡 手写作业请按题号/问号上传，同一题可传多张（按拍摄顺序）；提交后不可修改</div>
+       <button onclick="hwSubmit('${s.id}','${escA(L.key||'')}')" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 22px;cursor:pointer;font-family:inherit">提交作业</button>`}`;
+}
+
+function hwSetAns(key, text) {
+  hwDraft[key] = hwDraft[key] || { images: [] };
+  hwDraft[key].text = text;
+}
+
+async function hwPickWhole(input) {
+  const f = input.files[0];
+  if (!f) return;
+  const tip = document.getElementById('hw_whole_tip');
+  if (tip) tip.textContent = '上传中…';
+  try {
+    const ext = (f.name.split('.').pop()||'pdf').toLowerCase();
+    const url = await sbUpload('homework', `${studyStudent.id}/whole-${Date.now()}.${ext}`, f);
+    hwWholeFile = { url, name: f.name };
+    if (tip) tip.textContent = '✓ ' + f.name;
+  } catch (e) { if (tip) tip.textContent = '上传失败：' + e.message; }
+  input.value = '';
+}
+
+async function hwPickImages(key, input) {
   const files = [...(input.files||[])];
   if (!files.length) return;
-  const tip = document.getElementById('hwimg_' + qnum);
+  const tip = document.getElementById('hwimg_' + key);
   if (tip) tip.textContent = '上传中…';
-  hwDraft[qnum] = hwDraft[qnum] || { text:'', images:[] };
-  hwDraft[qnum].images = hwDraft[qnum].images || [];
+  hwDraft[key] = hwDraft[key] || { text:'', images:[] };
+  hwDraft[key].images = hwDraft[key].images || [];
   try {
     for (const f of files) {
       const ext = (f.name.split('.').pop()||'jpg').toLowerCase();
-      const path = `${studyStudent.id}/${Date.now()}-q${qnum}-${hwDraft[qnum].images.length+1}.${ext}`;
+      const path = `${studyStudent.id}/${Date.now()}-${key}-${hwDraft[key].images.length+1}.${ext}`;
       const url = await sbUpload('homework', path, f);
-      hwDraft[qnum].images.push({ url, name: f.name });
+      hwDraft[key].images.push({ url, name: f.name });
     }
-    if (tip) tip.textContent = hwDraft[qnum].images.map((x,i)=>`图${i+1}`).join('・');
+    if (tip) tip.textContent = hwDraft[key].images.map((x,i)=>`图${i+1}`).join('・');
   } catch (e) {
     if (tip) tip.textContent = '上传失败：' + e.message;
   }
   input.value = '';
 }
 
-async function hwSubmit(sid) {
+async function hwSubmit(sid, levelKey) {
   const s = hwSessions.find(x => x.id === sid);
   if (!s) return;
-  const qs = s.homework_questions || [];
-  const answers = qs.map(q => ({ q: q.num, text: (hwDraft[q.num]&&hwDraft[q.num].text||'').trim(), images: (hwDraft[q.num]&&hwDraft[q.num].images)||[] }));
+  const N = hwNorm(s);
+  const L = (N.levels.find(x => (x.key||'') === (levelKey||'')) || N.levels[0] || { blocks: [] });
+  const units = hwUnits(L);
+  const answers = units.map(u => ({
+    k: u.key, label: `${u.head?u.head+' ':''}${u.label}`,
+    text: (hwDraft[u.key] && hwDraft[u.key].text || '').trim(),
+    images: (hwDraft[u.key] && hwDraft[u.key].images) || [],
+  }));
   const answered = answers.filter(a => a.text || a.images.length).length;
-  if (!answered) { alert('请至少作答一题（可打字或上传照片）'); return; }
-  if (answered < qs.length && !confirm(`还有 ${qs.length-answered} 题未作答，确认提交？提交后不可修改。`)) return;
-  if (answered === qs.length && !confirm('确认提交作业？提交后不可修改。')) return;
+  if (!answered && !hwWholeFile) { alert('请至少作答一题，或上传整份作业文件'); return; }
+  if (answered < units.length && !hwWholeFile && !confirm(`还有 ${units.length-answered} 处未作答，确认提交？提交后不可修改。`)) return;
+  if ((answered === units.length || hwWholeFile) && !confirm('确认提交作业？提交后不可修改。')) return;
   try {
     const row = {
       id: `hws-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
       session_id: sid, course_name: s.course_name || '', session_number: s.session_number || null,
-      session_date: s.session_date || null,
+      session_date: s.session_date || null, level: levelKey || null,
       student_id: studyStudent.id, student_name: studyStudent.name, major: studyStudent.major || studyMajor || '',
-      answers,
+      answers, whole_file_url: hwWholeFile ? hwWholeFile.url : null,
     };
     await sb('/rest/v1/homework_submissions', 'POST', row);
     row.submitted_at = new Date().toISOString();
     hwSubs[sid] = row;
-    hwDraft = {};
+    hwDraft = {}; hwWholeFile = null;
     renderHwList();
     alert('作业已提交');
   } catch (e) { alert('提交失败：' + e.message); }
@@ -1535,7 +1634,7 @@ function sschedSumHtml() {
 function renderHwArchive() {
   const box = document.getElementById('study_hw_archive');
   if (!box) return;
-  const done = Object.values(hwSubs).filter(x => x && x.teacher_feedback);
+  const done = Object.values(hwSubs).filter(x => hwGraded(x));
   if (!done.length) { box.innerHTML = ''; return; }
   const byCourse = {};
   done.forEach(x => { (byCourse[x.course_name || '其他'] = byCourse[x.course_name || '其他'] || []).push(x); });
@@ -1548,7 +1647,7 @@ function renderHwArchive() {
       <div style="font-size:10px;line-height:1.9;padding:5px 0;border-top:1px dashed var(--border-light)">
         <span style="color:var(--text-muted)">${x.session_date||''}${x.session_number?` 第${x.session_number}回`:''}</span>
         ${x.score?`<span style="background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:0 6px;margin-left:6px;font-weight:600">${escA(x.score)}</span>`:''}
-        <div style="color:var(--text-secondary);white-space:pre-wrap;margin-top:2px">${escA(x.teacher_feedback)}</div>
+        <div style="color:var(--text-secondary);white-space:pre-wrap;margin-top:2px">${escA(x.feedback_knowledge||x.teacher_feedback||'')}${x.feedback_suggestions?`\n💡 ${escA(x.feedback_suggestions)}`:''}</div>
       </div>`).join('')}
     </div>`).join('')}
   </div>`;
