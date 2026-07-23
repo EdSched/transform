@@ -1247,7 +1247,10 @@ async function loadStudyHwSessions() {
       sb(`/rest/v1/homework_submissions?student_name=eq.${encodeURIComponent(studyStudent.name)}&select=*`).catch(()=>[]),
     ]);
     hwSessions = (sessions||[]).filter(s => {
-      if (!(s.homework_questions||[]).length) return false; // 只显示已布置题目的课次
+      // 只显示已布置题目的课次（兼容新结构 {version:2,levels:[]} 与旧的数组格式）
+      const q = s.homework_questions;
+      const hasQ = Array.isArray(q) ? q.length > 0 : !!(q && Array.isArray(q.levels) && q.levels.length);
+      if (!hasQ) return false;
       const sm = Array.isArray(s.major) ? s.major : [s.major||''];
       return !myMajor || sm.some(m => acceptMajors.includes(m));
     });
