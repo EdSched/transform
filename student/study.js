@@ -1243,6 +1243,7 @@ let hwOpenId = null;      // 展开作答的课次
 let hwDraft = {};         // { unitKey: { text, images:[{url,name}] } }
 let hwLevelPick = {};     // session_id → 选中的级别索引
 let hwWholeFile = null;   // 整份作业文件
+let hwCalcExpand = {};    // 计算题「分问上传」展开状态
 let hwLoaded = false;
 
 async function loadStudyHwSessions(retry) {
@@ -1333,8 +1334,11 @@ function hwUnits(level) {
     if (b.type === 'choice') {
       for (let i = 1; i <= (b.count || 0); i++) out.push({ key:`${bi}-${i}`, block:bi, head, label:`第${i}题`, mode:'answer' });
     } else if (b.type === 'calc') {
-      (b.questions || []).forEach(q => {
-        for (let j = 1; j <= (q.subs || 1); j++) out.push({ key:`${bi}-${q.num}-${j}`, block:bi, head, label:`第${q.num}题 问${j}`, mode:'img' });
+      // 每道大题一个上传单元，可传多张图（按顺序）；兼容旧的分问数据
+      const qs = b.count ? Array.from({length:b.count}, (_,i)=>({num:i+1, subs:1})) : (b.questions || []);
+      qs.forEach(q => {
+        out.push({ key:`${bi}-${q.num}-all`, block:bi, head, label:`第${q.num}题`, mode:'img', calcWhole:true, qnum:q.num, subs:q.subs||1 });
+        if ((q.subs || 1) > 1) for (let j = 1; j <= q.subs; j++) out.push({ key:`${bi}-${q.num}-${j}`, block:bi, head, label:`第${q.num}题 问${j}`, mode:'img', calcSub:true, qnum:q.num });
       });
     } else if (b.type === 'term') {
       for (let i = 1; i <= (b.count || 0); i++) out.push({ key:`${bi}-${i}`, block:bi, head, label:`问${i}`, mode:'both' });
@@ -1398,6 +1402,37 @@ function hwDetailHtml(s, sub) {
                 :`<input value="${escA(ansOf(u.key).text||'')}" oninput="hwSetAns('${u.key}',this.value)" placeholder="答案" style="width:100%;font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit">`}
             </div>`).join('')}
           </div>`
+        : b.type==='calc'
+        ? (b.count ? Array.from({length:b.count},(_,i)=>({num:i+1,subs:1})) : (b.questions||[])).map(q => {
+            const wu = bUnits.find(u => u.calcWhole && u.qnum === q.num);
+            const subs = bUnits.filter(u => u.calcSub && u.qnum === q.num);
+            const wa = ansOf(wu.key); const wImgs = wa.images || [];
+            const expKey = `${s.id}-${bi}-${q.num}`;
+            const expanded = !!hwCalcExpand[expKey];
+            const subHasImg = subs.some(u => (ansOf(u.key).images||[]).length);
+            return `<div style="border-top:1px dashed var(--border-light);padding:8px 0">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span style="font-size:11.5px;font-weight:600">第${q.num}题${q.subs>1?`<span style="font-weight:400;color:var(--text-muted);font-size:10px">（共${q.subs}问）</span>`:''}</span>
+                ${locked?'':`<label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:3px 10px">📷 上传照片（可多张，按顺序）
+                  <input type="file" accept="image/*" multiple style="display:none" onchange="hwPickImages('${wu.key}', this)"></label>`}
+                <span id="hwimg_${wu.key}" style="font-size:10px;color:var(--text-muted)">${wImgs.length?wImgs.map((x,i)=>`图${i+1}`).join('・'):(locked?'未上传':'尚未上传')}</span>
+                ${q.subs>1&&!locked?`<span onclick="hwCalcExpand['${expKey}']=!hwCalcExpand['${expKey}'];renderHwList()" style="margin-left:auto;font-size:10px;color:var(--text-muted);cursor:pointer">${expanded?'▾ 收起分问上传':'▸ 分问上传'}</span>`:''}
+              </div>
+              ${locked
+                ? `${wImgs.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${wImgs.map((im,i)=>`<a href="${escA(im.url)}" target="_blank" style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:2px 8px">📷 图${i+1}</a>`).join('')}</div>`:''}
+                   ${subs.filter(u=>(ansOf(u.key).images||[]).length).map(u=>`<div style="margin-top:4px"><span style="font-size:10px;color:var(--text-muted)">${u.label.replace(`第${q.num}题 `,'')}：</span>${(ansOf(u.key).images||[]).map((im,i)=>`<a href="${escA(im.url)}" target="_blank" style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:2px 8px;margin-right:4px">📷 图${i+1}</a>`).join('')}</div>`).join('')}`
+                : (expanded||subHasImg)&&q.subs>1
+                  ? `<div style="margin-top:6px;padding-left:10px;border-left:2px solid var(--border-light)">
+                      ${subs.map(u=>{const a=ansOf(u.key);const im=a.images||[];return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
+                        <span style="font-size:10px;color:var(--text-muted);min-width:32px">问${u.label.split('问')[1]||''}</span>
+                        <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:2px 9px">📷 上传
+                          <input type="file" accept="image/*" multiple style="display:none" onchange="hwPickImages('${u.key}', this)"></label>
+                        <span id="hwimg_${u.key}" style="font-size:10px;color:var(--text-muted)">${im.length?im.map((x,i)=>`图${i+1}`).join('・'):'—'}</span>
+                      </div>`;}).join('')}
+                    </div>`
+                  : ''}
+            </div>`;
+          }).join('')
         : bUnits.map(u => {
             const a = ansOf(u.key); const imgs = a.images || [];
             return `<div style="border-top:1px dashed var(--border-light);padding:7px 0">
@@ -1480,15 +1515,18 @@ async function hwSubmit(sid, levelKey) {
   const N = hwNorm(s);
   const L = (N.levels.find(x => (x.key||'') === (levelKey||'')) || N.levels[0] || { blocks: [] });
   const units = hwUnits(L);
-  const answers = units.map(u => ({
+  const answersAll = units.map(u => ({
     k: u.key, label: `${u.head?u.head+' ':''}${u.label}`,
     text: (hwDraft[u.key] && hwDraft[u.key].text || '').trim(),
     images: (hwDraft[u.key] && hwDraft[u.key].images) || [],
   }));
-  const answered = answers.filter(a => a.text || a.images.length).length;
+  // 只保留有内容的作答单元（计算题的整题/分问二选一，空的不入库）
+  const answers = answersAll.filter(a => a.text || a.images.length);
+  const answered = answers.length;
+  const totalNeed = units.filter(u => !u.calcSub).length;  // 分问为可选项，不计入必答数
   if (!answered && !hwWholeFile) { alert('请至少作答一题，或上传整份作业文件'); return; }
-  if (answered < units.length && !hwWholeFile && !confirm(`还有 ${units.length-answered} 处未作答，确认提交？提交后不可修改。`)) return;
-  if ((answered === units.length || hwWholeFile) && !confirm('确认提交作业？提交后不可修改。')) return;
+  if (answered < totalNeed && !hwWholeFile && !confirm(`还有 ${totalNeed-answered} 处未作答，确认提交？提交后不可修改。`)) return;
+  if ((answered >= totalNeed || hwWholeFile) && !confirm('确认提交作业？提交后不可修改。')) return;
   try {
     const row = {
       id: `hws-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
