@@ -131,7 +131,8 @@ function thwPaperHtml(s, sub, forPrint) {
     const label = a.label || a.k || '';
     const sp = label.indexOf(' ');
     const head = sp > 0 ? label.slice(0, sp) : '';
-    const sub2 = sp > 0 ? label.slice(sp + 1) : label;
+    let sub2 = sp > 0 ? label.slice(sp + 1) : label;
+    if (sub2 === '作答') sub2 = '';  // 整块统一作答：不重复显示「作答」二字
     let g = groups.find(x => x.head === head);
     if (!g) { g = { head, items: [] }; groups.push(g); }
     g.items.push({ ...a, sub: sub2 });
@@ -149,7 +150,7 @@ function thwPaperHtml(s, sub, forPrint) {
           ${g.items.map(it => `<div style="font-size:11px"><span style="color:#999">${thwEsc(it.sub)}</span> <b>${thwEsc(it.text||'—')}</b></div>`).join('')}
         </div>`
       : g.items.map(it => `<div style="margin-bottom:${forPrint?'12px':'8px'};page-break-inside:avoid">
-          <div style="font-size:${forPrint?'12px':'11.5px'};font-weight:600;margin-bottom:3px">${thwEsc(it.sub)}</div>
+          ${it.sub?`<div style="font-size:${forPrint?'12px':'11.5px'};font-weight:600;margin-bottom:3px">${thwEsc(it.sub)}</div>`:''}
           ${it.text ? `<div style="font-size:${forPrint?'12px':'11.5px'};line-height:1.9;white-space:pre-wrap;padding:6px 8px;background:${forPrint?'#fafafa':'var(--surface)'};border-radius:2px">${thwEsc(it.text)}</div>` : ''}
           ${(it.images||[]).map((im, i) => `<div><div style="font-size:9px;color:#999;margin-top:4px">${thwEsc(it.sub)} · 图${i+1}</div><img src="${thwEsc(im.url)}" style="${imgStyle}"></div>`).join('')}
           ${!it.text && !(it.images||[]).length ? `<div style="font-size:11px;color:#aaa">（未作答）</div>` : ''}
