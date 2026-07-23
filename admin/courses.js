@@ -2542,7 +2542,13 @@ function hwBlockHtml(b,bi){
     cfg=`<label style="font-size:10px;color:var(--text-3)">${b.type==='term'?'问数':'题数'} <input type="number" min="1" value="${b.count||3}" onchange="hwSetBlock(${bi},'count',parseInt(this.value)||1)" style="${inp};width:60px"></label>`;
   } else if(b.type==='free'){
     cfg=`<div style="font-size:10px;color:var(--text-3)">题目（每题一行，以「1. 」开头）
-      <textarea onchange="hwSetFree(${bi},this.value)" rows="4" placeholder="1. 请说明…&#10;2. 请分析…" style="${inp};width:100%;line-height:1.8;margin-top:3px;resize:vertical">${(b.items||[]).map(x=>`${x.num}. ${x.text}`).join('\n').replace(/</g,'&lt;')}</textarea></div>`;
+      <textarea onchange="hwSetFree(${bi},this.value)" rows="4" placeholder="1. 请说明…&#10;2. 请分析…" style="${inp};width:100%;line-height:1.8;margin-top:3px;resize:vertical">${(b.items||[]).map(x=>`${x.num}. ${x.text}`).join('\n').replace(/</g,'&lt;')}</textarea>
+      <label style="display:block;margin-top:5px">作答方式
+        <select onchange="hwSetBlock(${bi},'answerMode',this.value)" style="${inp};margin-left:4px">
+          <option value="whole" ${(b.answerMode||'whole')==='whole'?'selected':''}>整块统一作答（小问同属一个大题，只需一处上传/作答）</option>
+          <option value="each" ${b.answerMode==='each'?'selected':''}>每题分别作答（每题独立作答与上传）</option>
+        </select>
+      </label></div>`;
   }
   return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:9px 10px;margin-bottom:6px;background:var(--surface)">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
@@ -2562,7 +2568,7 @@ function hwBlockHtml(b,bi){
 function hwCurLevel(){ return hwEditData.levels[hwEditLevel] || (hwEditData.levels[hwEditLevel] = {key:'',blocks:[]}); }
 function hwAddLevel(k){ if(!k)return; hwEditData.levels.push({key:k,blocks:[]}); hwEditLevel=hwEditData.levels.length-1; hwEditorRender(); }
 function hwDelLevel(i){ if(hwEditData.levels.length<=1)return; if(!confirm('删除该级别及其题目？'))return; hwEditData.levels.splice(i,1); hwEditLevel=0; hwEditorRender(); }
-function hwAddBlock(t){ if(!t)return; const b={type:t,title:''}; if(t==='choice')b.count=10; if(t==='term'||t==='essay')b.count=3; if(t==='calc')b.questions=[{num:1,subs:2}]; if(t==='free')b.items=[]; hwCurLevel().blocks.push(b); hwEditorRender(); }
+function hwAddBlock(t){ if(!t)return; const b={type:t,title:''}; if(t==='choice')b.count=10; if(t==='term'||t==='essay')b.count=3; if(t==='calc')b.questions=[{num:1,subs:2}]; if(t==='free'){b.items=[];b.answerMode='whole'} hwCurLevel().blocks.push(b); hwEditorRender(); }
 function hwDelBlock(i){ hwCurLevel().blocks.splice(i,1); hwEditorRender(); }
 function hwSetBlock(i,k,v){ hwCurLevel().blocks[i][k]=v; }
 function hwSetCalc(i,raw){
