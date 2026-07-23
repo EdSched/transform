@@ -2536,8 +2536,12 @@ function hwBlockHtml(b,bi){
   if(b.type==='choice'){
     cfg=`<label style="font-size:10px;color:var(--text-3)">题数 <input type="number" min="1" value="${b.count||10}" onchange="hwSetBlock(${bi},'count',parseInt(this.value)||1)" style="${inp};width:60px"></label>`;
   } else if(b.type==='calc'){
-    cfg=`<div style="font-size:10px;color:var(--text-3)">大题与每题问数（每行一条：大题号|问数）
-      <textarea onchange="hwSetCalc(${bi},this.value)" rows="3" placeholder="1|3&#10;2|2" style="${inp};width:100%;line-height:1.7;margin-top:3px;resize:vertical">${(b.questions||[]).map(q=>`${q.num}|${q.subs}`).join('\n')}</textarea></div>`;
+    const legacy=(b.questions||[]).some(q=>(q.subs||1)>1);
+    cfg=`<div style="font-size:10px;color:var(--text-3)">
+      <label>大题数 <input type="number" min="1" value="${b.count||(b.questions||[]).length||3}" onchange="hwSetBlock(${bi},'count',parseInt(this.value)||1);hwSetBlock(${bi},'questions',null)" style="${inp};width:60px"></label>
+      <span style="margin-left:8px">学生端每道大题可上传多张图（按顺序），无需分问</span>
+      ${legacy?`<div style="margin-top:3px;color:var(--warn,#b8860b)">⚠ 此区块为旧版分问设置，修改大题数后将转为多图模式</div>`:''}
+    </div>`;
   } else if(b.type==='term'||b.type==='essay'){
     cfg=`<label style="font-size:10px;color:var(--text-3)">${b.type==='term'?'问数':'题数'} <input type="number" min="1" value="${b.count||3}" onchange="hwSetBlock(${bi},'count',parseInt(this.value)||1)" style="${inp};width:60px"></label>`;
   } else if(b.type==='free'){
@@ -2568,12 +2572,14 @@ function hwBlockHtml(b,bi){
 function hwCurLevel(){ return hwEditData.levels[hwEditLevel] || (hwEditData.levels[hwEditLevel] = {key:'',blocks:[]}); }
 function hwAddLevel(k){ if(!k)return; hwEditData.levels.push({key:k,blocks:[]}); hwEditLevel=hwEditData.levels.length-1; hwEditorRender(); }
 function hwDelLevel(i){ if(hwEditData.levels.length<=1)return; if(!confirm('删除该级别及其题目？'))return; hwEditData.levels.splice(i,1); hwEditLevel=0; hwEditorRender(); }
-function hwAddBlock(t){ if(!t)return; const b={type:t,title:''}; if(t==='choice')b.count=10; if(t==='term'||t==='essay')b.count=3; if(t==='calc')b.questions=[{num:1,subs:2}]; if(t==='free'){b.items=[];b.answerMode='whole'} hwCurLevel().blocks.push(b); hwEditorRender(); }
+function hwAddBlock(t){ if(!t)return; const b={type:t,title:''}; if(t==='choice')b.count=10; if(t==='term'||t==='essay')b.count=3; if(t==='calc')b.count=3; if(t==='free'){b.items=[];b.answerMode='whole'} hwCurLevel().blocks.push(b); hwEditorRender(); }
 function hwDelBlock(i){ hwCurLevel().blocks.splice(i,1); hwEditorRender(); }
 function hwSetBlock(i,k,v){ hwCurLevel().blocks[i][k]=v; }
 function hwSetCalc(i,raw){
   hwCurLevel().blocks[i].questions=String(raw||'').split('\n').map(l=>l.trim()).filter(Boolean).map((l,idx)=>{
-    const [a,b]=l.split(/[|｜]/); return { num: parseInt(a)||idx+1, subs: Math.max(1, parseInt(b)||1) };
+    const [a,b]=l.split(/[|｜]/);
+    const subs=parseInt(b);
+    return { num: parseInt(a)||idx+1, subs: (subs&&subs>1)?subs:1 };  // 只写题号=不分问
   });
 }
 function hwSetFree(i,raw){
