@@ -10,7 +10,17 @@
 <style>
   /* 学习记录页专用：容器加宽到双倍（不影响其他页面共用的 student.css） */
   .page-wrap { max-width:1360px; }
-  header, header > div { max-width:100%; box-sizing:border-box; }
+  /* ── 全局防溢出：任何元素都不得撑出视口，避免 iOS 触发整页缩放 ── */
+  html, body { max-width:100%; overflow-x:hidden; }
+  header { width:100%; box-sizing:border-box; }
+  .page-wrap { width:100%; box-sizing:border-box; overflow-x:clip; }
+  img, iframe, video, table, canvas { max-width:100%; }
+  pre { white-space:pre-wrap; word-break:break-word; max-width:100%; }
+  textarea, input, select { max-width:100%; box-sizing:border-box; }
+  @media (max-width:640px) {
+    header { padding:1.1rem 1.1rem .9rem; }
+    .page-wrap { padding:18px 12px 60px; }
+  }
   /* 宽屏双排（<1100px 自动回落单列）；.sc-full 占满整行 */
   .study-cols2 { display:grid; grid-template-columns:1fr; gap:0 24px; align-items:start; }
   @media (min-width:1100px) {
