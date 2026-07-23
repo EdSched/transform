@@ -820,7 +820,7 @@ function renderCoursesSummary(courses){
                   <div style="font-size:10px;color:var(--text-3);margin-top:1px">${s.time_range||course.time_range||''}</div>
                   <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
                     ${hasRec?`<span style="font-size:9px;color:var(--ok)">✓ ${recCount}人</span>`:''}
-                    <span onclick="event.stopPropagation();openHwEditor('${s.id}')" title="布置作业" style="font-size:9px;cursor:pointer;margin-left:auto;${(s.homework_questions&&s.homework_questions.length)?'color:var(--accent);font-weight:600':'color:var(--text-3)'}">📝${(s.homework_questions&&s.homework_questions.length)?` ${s.homework_questions.length}题`:''}</span>
+                    <span onclick="event.stopPropagation();openHwEditor('${s.id}')" title="布置作业" style="font-size:9px;cursor:pointer;margin-left:auto;${s.homework_enabled?'color:var(--accent);font-weight:600':'color:var(--text-3)'}">📝${s.homework_enabled?' 已布置':''}</span>
                   </div>
                 </div>`;
               }).join('')}
@@ -2432,65 +2432,195 @@ function cleanupExportInfo(){
 }
 
 // ══════════════════════════════════
-// 单回作业布置（题目存于 course_sessions.homework_questions）
-// 有题目的课次才会在学生端显示作业提示；学生逐题作答（文字/拍照）
+// 单回作业布置（结构化：级别 → 题型区块 → 小题；支持题目PDF与参考资料）
+// homework_questions 结构：{ version:2, levels:[{key,blocks:[...]}], refs:[...] }
+//   block.type: choice 选择题 | calc 计算题 | term 名词解释 | essay 论述题 | free 自由题
 // ══════════════════════════════════
+const HW_TYPES = [
+  ['choice','选择题','设定题数，学生逐题填答案（题目见附件PDF）'],
+  ['calc','计算题','设定大题数与每题问数，学生按「问」拍照上传'],
+  ['term','名词解释','设定问数，学生逐问作答或拍照'],
+  ['essay','论述题','设定题数，学生逐题作答，可多张照片'],
+  ['free','自由题','直接写题干，学生作答'],
+];
+const HW_LEVELS = [['','不分级别'],['上','上级'],['中','中级'],['下','下级']];
+let hwEditSession = null;
+let hwEditData = null;   // { levels:[{key,blocks:[]}], refs:[], note:'' }
+let hwEditLevel = 0;     // 当前编辑的级别索引
+
+function hwNormalize(s){
+  const q = s.homework_questions;
+  if (q && !Array.isArray(q) && q.version === 2) {
+    return { levels: q.levels || [{key:'',blocks:[]}], refs: q.refs || [], note: s.homework_note || '' };
+  }
+  // 兼容旧格式（简单题目列表）→ 转成自由题区块
+  if (Array.isArray(q) && q.length) {
+    return { levels: [{ key:'', blocks:[{ type:'free', title:'作业', items: q.map(x=>({num:x.num, text:x.text})) }] }], refs: [], note: s.homework_note || '' };
+  }
+  return { levels: [{ key:'', blocks: [] }], refs: [], note: s.homework_note || '' };
+}
+
 function openHwEditor(sessionId){
-  const s=cachedSessions.find(x=>x.id===sessionId);
+  const s = cachedSessions.find(x=>x.id===sessionId);
   if(!s){alert('未找到该课次');return}
-  const qs=s.homework_questions||[];
-  const text=qs.map(q=>`${q.num}. ${q.text}`).join('\n');
+  hwEditSession = s;
+  hwEditData = hwNormalize(s);
+  hwEditLevel = 0;
   const existing=document.getElementById('hwEditorModal');
   if(existing) existing.remove();
   const modal=document.createElement('div');
   modal.id='hwEditorModal';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  modal.innerHTML=`<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:640px;width:100%;max-height:88vh;overflow-y:auto">
-    <div style="font-size:13px;font-weight:600;margin-bottom:3px">📝 布置作业 — ${s.course_name||''} 第${s.session_number||''}回</div>
-    <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">${s.session_date||''} ${s.session_title||''}　·　保存后学生端才会出现该次作业；清空题目即撤回</div>
-    <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">作业说明（可选，显示在题目上方）</label>
-    <textarea id="hw_note" rows="2" placeholder="例：请于下周三前提交，手写题请按题号顺序拍照上传" style="width:100%;font-size:12px;line-height:1.8;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical;margin-bottom:8px">${(s.homework_note||'').replace(/</g,'&lt;')}</textarea>
-    <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">题目（每题一行，以「1. 」开头；同一题内换行请用连续行，空行分题）</label>
-    <textarea id="hw_qs" rows="12" placeholder="1. 请说明韦伯的理性化理论及其在现代社会的体现。&#10;2. 计算下列各题并写出推导过程。&#10;3. 阅读所附论文，整理其问题意识与研究方法。" style="width:100%;font-size:12px;line-height:1.9;padding:9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${text.replace(/</g,'&lt;')}</textarea>
-    <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:10px">
-      <span style="font-size:9px;color:var(--text-3)">学生可对每题直接打字作答，或按题号上传手写照片（可多张）</span>
-      <span style="display:flex;gap:8px">
-        <button onclick="document.getElementById('hwEditorModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">取消</button>
-        <button onclick="hwSaveQuestions('${sessionId}')" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存作业</button>
-      </span>
-    </div>
-  </div>`;
+  modal.innerHTML='<div id="hwEditorBody" style="background:var(--surface);border-radius:6px;padding:20px;max-width:760px;width:100%;max-height:90vh;overflow-y:auto"></div>';
   modal.onclick=e=>{if(e.target===modal)modal.remove()};
   document.body.appendChild(modal);
+  hwEditorRender();
 }
 
-// 解析题目文本：以「数字.」或「数字、」开头为新题，其余行并入当前题
-function hwParseQuestions(raw){
+function hwEditorRender(){
+  const box=document.getElementById('hwEditorBody');
+  if(!box)return;
+  const s=hwEditSession, D=hwEditData;
+  const inp='width:100%;font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
+  const lv=D.levels[hwEditLevel]||{key:'',blocks:[]};
+  box.innerHTML=`
+    <div style="font-size:13px;font-weight:600;margin-bottom:3px">📝 布置作业 — ${s.course_name||''} 第${s.session_number||''}回</div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">${s.session_date||''} ${s.session_title||''}　·　保存后学生端才会出现该次作业</div>
+
+    <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">作业说明（可选）</label>
+    <textarea id="hw_note" rows="2" placeholder="例：请于下周三前提交，手写题按题号顺序拍照上传" style="${inp};line-height:1.8;resize:vertical;margin-bottom:10px">${(D.note||'').replace(/</g,'&lt;')}</textarea>
+
+    <!-- 参考资料 -->
+    <div style="border:1px solid var(--border-light);border-radius:3px;padding:8px 10px;margin-bottom:10px">
+      <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">📚 参考资料 / 阅读材料（与作业题目分开，学生可下载）</div>
+      <div id="hw_refs_list" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:5px">${hwRefsHtml()}</div>
+      <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:3px 10px">＋ 上传参考资料
+        <input type="file" accept=".pdf,.doc,.docx,image/*" multiple style="display:none" onchange="hwUploadRef(this)"></label>
+    </div>
+
+    <!-- 级别切换 -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+      <span style="font-size:10px;color:var(--text-3)">作业级别：</span>
+      ${D.levels.map((L,i)=>`<div onclick="hwEditLevel=${i};hwEditorRender()" class="filter-chip ${i===hwEditLevel?'active':''}" style="padding:3px 10px;font-size:10px">${HW_LEVELS.find(x=>x[0]===L.key)?.[1]||L.key||'不分级别'}${(L.blocks||[]).length?` (${L.blocks.length})`:''}</div>`).join('')}
+      ${D.levels.length<3?`<select onchange="hwAddLevel(this.value);this.value=''" style="font-size:10px;padding:2px 6px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit">
+        <option value="">＋ 添加级别</option>
+        ${HW_LEVELS.filter(([k])=>k&&!D.levels.some(L=>L.key===k)).map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}
+      </select>`:''}
+      ${D.levels.length>1?`<span onclick="hwDelLevel(${hwEditLevel})" style="font-size:10px;color:var(--danger);cursor:pointer">删除当前级别</span>`:''}
+    </div>
+
+    <!-- 题型区块 -->
+    <div style="border:1px solid var(--border);border-radius:3px;padding:10px;background:var(--bg);margin-bottom:10px">
+      <div id="hw_blocks">${(lv.blocks||[]).map((b,bi)=>hwBlockHtml(b,bi)).join('')||'<div style="font-size:10px;color:var(--text-3);padding:8px 0">尚未添加题型，请在下方选择</div>'}</div>
+      <select onchange="hwAddBlock(this.value);this.value=''" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit;margin-top:6px">
+        <option value="">＋ 添加题型区块</option>
+        ${HW_TYPES.map(([k,l,d])=>`<option value="${k}">${l} — ${d}</option>`).join('')}
+      </select>
+    </div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="document.getElementById('hwEditorModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">取消</button>
+      <button onclick="hwSaveQuestions('${s.id}')" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存作业</button>
+    </div>`;
+}
+
+function hwRefsHtml(){
+  const refs=hwEditData.refs||[];
+  return refs.length?refs.map((r,i)=>`<span style="font-size:10px;background:var(--surface);border:1px solid var(--border-light);border-radius:2px;padding:2px 8px">📎 ${r.name||'资料'}<span onclick="hwDelRef(${i})" style="color:var(--danger);cursor:pointer;margin-left:6px">✕</span></span>`).join(''):'<span style="font-size:10px;color:var(--text-3)">尚未上传</span>';
+}
+
+function hwBlockHtml(b,bi){
+  const inp='font-size:11px;padding:4px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit';
+  const T=HW_TYPES.find(t=>t[0]===b.type)||['','题目',''];
+  let cfg='';
+  if(b.type==='choice'){
+    cfg=`<label style="font-size:10px;color:var(--text-3)">题数 <input type="number" min="1" value="${b.count||10}" onchange="hwSetBlock(${bi},'count',parseInt(this.value)||1)" style="${inp};width:60px"></label>`;
+  } else if(b.type==='calc'){
+    cfg=`<div style="font-size:10px;color:var(--text-3)">大题与每题问数（每行一条：大题号|问数）
+      <textarea onchange="hwSetCalc(${bi},this.value)" rows="3" placeholder="1|3&#10;2|2" style="${inp};width:100%;line-height:1.7;margin-top:3px;resize:vertical">${(b.questions||[]).map(q=>`${q.num}|${q.subs}`).join('\n')}</textarea></div>`;
+  } else if(b.type==='term'||b.type==='essay'){
+    cfg=`<label style="font-size:10px;color:var(--text-3)">${b.type==='term'?'问数':'题数'} <input type="number" min="1" value="${b.count||3}" onchange="hwSetBlock(${bi},'count',parseInt(this.value)||1)" style="${inp};width:60px"></label>`;
+  } else if(b.type==='free'){
+    cfg=`<div style="font-size:10px;color:var(--text-3)">题目（每题一行，以「1. 」开头）
+      <textarea onchange="hwSetFree(${bi},this.value)" rows="4" placeholder="1. 请说明…&#10;2. 请分析…" style="${inp};width:100%;line-height:1.8;margin-top:3px;resize:vertical">${(b.items||[]).map(x=>`${x.num}. ${x.text}`).join('\n').replace(/</g,'&lt;')}</textarea></div>`;
+  }
+  return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:9px 10px;margin-bottom:6px;background:var(--surface)">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+      <span style="font-size:11px;font-weight:600">### ${bi+1}　${T[1]}</span>
+      <input value="${(b.title||'').replace(/"/g,'&quot;')}" placeholder="区块标题（可选，如 ERE过去问 第3章）" onchange="hwSetBlock(${bi},'title',this.value)" style="${inp};flex:1;min-width:140px">
+      <span onclick="hwDelBlock(${bi})" style="font-size:10px;color:var(--danger);cursor:pointer">删除</span>
+    </div>
+    ${cfg}
+    <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
+      <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:2px 9px">📎 ${b.file?'更换题目文件':'上传题目 PDF / 图片'}
+        <input type="file" accept=".pdf,image/*,.doc,.docx" style="display:none" onchange="hwUploadBlockFile(${bi},this)"></label>
+      <span style="font-size:10px;color:var(--text-3)">${b.file?`已上传：${b.file.name||'文件'}`:'（选择题/计算题建议上传题目PDF）'}</span>
+    </div>
+  </div>`;
+}
+
+function hwCurLevel(){ return hwEditData.levels[hwEditLevel] || (hwEditData.levels[hwEditLevel] = {key:'',blocks:[]}); }
+function hwAddLevel(k){ if(!k)return; hwEditData.levels.push({key:k,blocks:[]}); hwEditLevel=hwEditData.levels.length-1; hwEditorRender(); }
+function hwDelLevel(i){ if(hwEditData.levels.length<=1)return; if(!confirm('删除该级别及其题目？'))return; hwEditData.levels.splice(i,1); hwEditLevel=0; hwEditorRender(); }
+function hwAddBlock(t){ if(!t)return; const b={type:t,title:''}; if(t==='choice')b.count=10; if(t==='term'||t==='essay')b.count=3; if(t==='calc')b.questions=[{num:1,subs:2}]; if(t==='free')b.items=[]; hwCurLevel().blocks.push(b); hwEditorRender(); }
+function hwDelBlock(i){ hwCurLevel().blocks.splice(i,1); hwEditorRender(); }
+function hwSetBlock(i,k,v){ hwCurLevel().blocks[i][k]=v; }
+function hwSetCalc(i,raw){
+  hwCurLevel().blocks[i].questions=String(raw||'').split('\n').map(l=>l.trim()).filter(Boolean).map((l,idx)=>{
+    const [a,b]=l.split(/[|｜]/); return { num: parseInt(a)||idx+1, subs: Math.max(1, parseInt(b)||1) };
+  });
+}
+function hwSetFree(i,raw){
   const out=[];
   String(raw||'').replace(/\r/g,'').split('\n').forEach(line=>{
-    const t=line.trim();
-    if(!t){return}
+    const t=line.trim(); if(!t)return;
     const m=t.match(/^(\d+)[.、)]\s*(.*)$/);
-    if(m){out.push({num:parseInt(m[1]),text:m[2].trim()})}
-    else if(out.length){out[out.length-1].text+='\n'+t}
-    else{out.push({num:1,text:t})}
+    if(m) out.push({num:parseInt(m[1]),text:m[2].trim()});
+    else if(out.length) out[out.length-1].text+='\n'+t;
+    else out.push({num:1,text:t});
   });
-  return out.filter(q=>q.text).map((q,i)=>({num:i+1,text:q.text}));
+  hwCurLevel().blocks[i].items=out.filter(x=>x.text).map((x,ix)=>({num:ix+1,text:x.text}));
+}
+
+async function hwUploadRef(input){
+  const files=[...(input.files||[])];
+  if(!files.length)return;
+  try{
+    for(const f of files){
+      const ext=(f.name.split('.').pop()||'pdf').toLowerCase();
+      const url=await sbUpload('homework',`refs/${hwEditSession.id}-${Date.now()}.${ext}`,f);
+      (hwEditData.refs=hwEditData.refs||[]).push({url,name:f.name});
+    }
+    hwEditorRender();
+  }catch(e){alert('上传失败：'+e.message)}
+  input.value='';
+}
+function hwDelRef(i){ hwEditData.refs.splice(i,1); hwEditorRender(); }
+
+async function hwUploadBlockFile(bi,input){
+  const f=input.files[0];
+  if(!f)return;
+  try{
+    const ext=(f.name.split('.').pop()||'pdf').toLowerCase();
+    const url=await sbUpload('homework',`q/${hwEditSession.id}-${Date.now()}.${ext}`,f);
+    hwCurLevel().blocks[bi].file={url,name:f.name};
+    hwEditorRender();
+  }catch(e){alert('上传失败：'+e.message)}
+  input.value='';
 }
 
 async function hwSaveQuestions(sessionId){
-  const qs=hwParseQuestions((document.getElementById('hw_qs')||{}).value);
   const note=((document.getElementById('hw_note')||{}).value||'').trim();
+  const levels=hwEditData.levels.filter(L=>(L.blocks||[]).length);
+  const payload=levels.length?{version:2,levels,refs:hwEditData.refs||[]}:null;
   try{
     await sb(`/rest/v1/course_sessions?id=eq.${sessionId}`,'PATCH',{
-      homework_questions:qs.length?qs:null,
-      homework_note:note||null,
-      homework_enabled:qs.length>0,
+      homework_questions:payload, homework_note:note||null, homework_enabled:!!payload,
     });
     const s=cachedSessions.find(x=>x.id===sessionId);
-    if(s){s.homework_questions=qs.length?qs:null;s.homework_note=note||null;s.homework_enabled=qs.length>0}
+    if(s){s.homework_questions=payload;s.homework_note=note||null;s.homework_enabled=!!payload}
     document.getElementById('hwEditorModal')?.remove();
     renderCoursesPage(document.getElementById('mainContent'));
-    alert(qs.length?`已布置 ${qs.length} 道题，学生端即可看到`:'已清空该次作业');
+    alert(payload?`已布置作业（${levels.length}个级别，共 ${levels.reduce((n,L)=>n+L.blocks.length,0)} 个题型区块）`:'已清空该次作业');
   }catch(e){alert('保存失败：'+e.message)}
 }
