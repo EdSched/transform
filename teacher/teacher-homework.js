@@ -20,7 +20,10 @@ async function renderHomeworkFeedback(mc) {
       ? `/rest/v1/course_sessions?homework_enabled=is.true&course_name=in.(${myCourses.map(c=>`"${c}"`).join(',')})&select=*&order=session_date.desc&limit=300`
       : `/rest/v1/course_sessions?homework_enabled=is.true&select=*&order=session_date.desc&limit=300`;
     const sessions = await sb(q);
-    thwSessions = (sessions || []).filter(s => (s.homework_questions || []).length);
+    thwSessions = (sessions || []).filter(s => {
+      const q = s.homework_questions;
+      return Array.isArray(q) ? q.length : !!(q && q.levels && q.levels.length);
+    });
     const ids = thwSessions.map(s => s.id);
     thwSubs = {};
     for (let i = 0; i < ids.length; i += 40) {
@@ -48,7 +51,7 @@ function thwRender() {
         const sel = thwOpenSession === s.id;
         return `<div onclick="thwOpenSession='${s.id}';thwOpenStudent=null;thwRender()" style="cursor:pointer;padding:7px 10px;border:1px solid ${sel?'var(--accent)':'transparent'};background:${sel?'var(--accent-light,#f5ede3)':'transparent'};border-radius:3px;margin-bottom:3px">
           <div style="font-size:12px;font-weight:600">${thwEsc(s.course_name||'')}${s.session_number?` 第${s.session_number}回`:''}</div>
-          <div style="font-size:9px;color:var(--text-3)">${s.session_date||''} · ${(s.homework_questions||[]).length}题 · 提交 ${subs.length}${ungraded?` · <span style="color:var(--warn,#b8860b)">待批 ${ungraded}</span>`:''}</div>
+          <div style="font-size:9px;color:var(--text-3)">${s.session_date||''} · 提交 ${subs.length}${ungraded?` · <span style="color:var(--warn,#b8860b)">待批 ${ungraded}</span>`:''}</div>
         </div>`;
       }).join('')}
     </div>
@@ -64,14 +67,14 @@ function thwMainHtml() {
 
   if (!thwOpenStudent) {
     return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:12px 14px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:2px">${thwEsc(s.course_name||'')} 第${s.session_number||''}回 · ${(s.homework_questions||[]).length}题</div>
+      <div style="font-size:12px;font-weight:600;margin-bottom:2px">${thwEsc(s.course_name||'')} 第${s.session_number||''}回</div>
       <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">${s.session_date||''}${s.session_title?' · '+thwEsc(s.session_title):''} · 共 ${subs.length} 份提交</div>
       <button onclick="thwPrintAll()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit;margin-bottom:10px">🖨 打印全部 / 存为 PDF</button>
       <div style="display:flex;flex-direction:column;gap:5px">
         ${subs.map(x => `<div onclick="thwOpenStudent='${x.id}';thwRenderMain()" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border-light);border-radius:3px">
           <span style="font-size:12px;font-weight:600">${thwEsc(x.student_name)}</span>
           <span style="font-size:9px;color:var(--text-3)">${(x.submitted_at||'').slice(0,16).replace('T',' ')}</span>
-          <span style="font-size:9px;color:var(--text-3)">${(x.answers||[]).filter(a=>a.text||(a.images||[]).length).length}/${(s.homework_questions||[]).length} 题</span>
+          <span style="font-size:9px;color:var(--text-3)">${x.level?`【${thwEsc(x.level)}】`:''}${(x.answers||[]).filter(a=>a.text||(a.images||[]).length).length} 处作答${x.whole_file_url?' · 📎附件':''}</span>
           <span style="margin-left:auto;font-size:10px;color:${x.teacher_feedback?'var(--ok)':'var(--warn,#b8860b)'}">${x.teacher_feedback?'✓ 已批改':'待批改'}</span>
         </div>`).join('')}
       </div>
@@ -90,14 +93,21 @@ function thwMainHtml() {
     <div style="border:1px solid var(--border-light);border-radius:3px;padding:12px;background:var(--bg);max-height:52vh;overflow-y:auto">
       ${thwPaperHtml(s, sub, false)}
     </div>
-    <div style="margin-top:12px">
-      <label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:2px">批改反馈（学生可见）</label>
-      <textarea id="thw_fb" rows="4" style="width:100%;font-size:12px;line-height:1.9;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${thwEsc(sub.teacher_feedback)}</textarea>
-      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
-        <input id="thw_score" value="${thwEsc(sub.score)}" placeholder="评价/分数（可选）" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;width:150px">
-        <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:5px 12px">📎 上传批改文件
+    <div style="margin-top:12px;border-top:1px solid var(--border-light);padding-top:10px">
+      <div style="font-size:11px;font-weight:600;margin-bottom:8px">✍ 批改反馈（学生可见）</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">📚 知识掌握情况</label>
+          <textarea id="thw_know" rows="3" placeholder="例：基本概念掌握扎实，第3题的模型推导仍有偏差" style="width:100%;font-size:11px;line-height:1.8;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${thwEsc(sub.feedback_knowledge)}</textarea></div>
+        <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">🧭 学习态度</label>
+          <textarea id="thw_att" rows="3" placeholder="例：书写工整、按时提交；部分题目略显敷衍" style="width:100%;font-size:11px;line-height:1.8;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${thwEsc(sub.feedback_attitude)}</textarea></div>
+      </div>
+      <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">💡 改进建议 / 下一步</label>
+      <textarea id="thw_sug" rows="3" placeholder="例：建议复习教材第4章，下次作业前完成过去问2015年第2题" style="width:100%;font-size:11px;line-height:1.8;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical;margin-bottom:8px">${thwEsc(sub.feedback_suggestions)}</textarea>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="thw_score" value="${thwEsc(sub.score)}" placeholder="评价/分数（可选）" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;width:140px">
+        <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:5px 12px">📎 上传批改文件（可带批注的 Word）
           <input type="file" accept=".doc,.docx,.pdf,image/*" style="display:none" onchange="thwUploadFile('${sub.id}', this)"></label>
-        <span id="thw_file_tip" style="font-size:10px;color:var(--text-3)">${sub.teacher_file_url?'已上传批改文件':''}</span>
+        <span id="thw_file_tip" style="font-size:10px;color:var(--text-3)">${sub.teacher_file_url?'✓ 已上传批改文件':''}</span>
         <button onclick="thwSaveFeedback('${sub.id}')" style="margin-left:auto;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存反馈</button>
       </div>
     </div>
@@ -109,27 +119,42 @@ function thwRenderMain() {
   if (box) box.innerHTML = thwMainHtml();
 }
 
-// ── 整合答卷：题目 + 文字答案 + 按题号顺序排列的照片（打印视图共用） ──
+// ── 整合答卷：按作答单元顺序展示（题目 + 文字答案 + 顺序照片） ──
 function thwPaperHtml(s, sub, forPrint) {
-  const qs = s.homework_questions || [];
   const imgStyle = forPrint
     ? 'max-width:100%;display:block;margin:6px 0;border:1px solid #ddd'
     : 'max-width:100%;display:block;margin:6px 0;border:1px solid var(--border-light);border-radius:2px';
+  const answers = sub.answers || [];
+  // 按 head 分组保持题型区块结构
+  const groups = [];
+  answers.forEach(a => {
+    const label = a.label || a.k || '';
+    const sp = label.indexOf(' ');
+    const head = sp > 0 ? label.slice(0, sp) : '';
+    const sub2 = sp > 0 ? label.slice(sp + 1) : label;
+    let g = groups.find(x => x.head === head);
+    if (!g) { g = { head, items: [] }; groups.push(g); }
+    g.items.push({ ...a, sub: sub2 });
+  });
   return `
   ${forPrint ? `<div style="border-bottom:2px solid #5a3e28;padding-bottom:8px;margin-bottom:14px">
-    <div style="font-size:16px;font-weight:700">${thwEsc(sub.student_name)} — ${thwEsc(s.course_name||'')} 第${s.session_number||''}回 作业</div>
+    <div style="font-size:16px;font-weight:700">${thwEsc(sub.student_name)} — ${thwEsc(s.course_name||'')} 第${s.session_number||''}回 作业${sub.level?`（${thwEsc(sub.level)}级）`:''}</div>
     <div style="font-size:11px;color:#666;margin-top:3px">${s.session_date||''}${s.session_title?' · '+thwEsc(s.session_title):''}　提交时间：${(sub.submitted_at||'').slice(0,16).replace('T',' ')}</div>
   </div>` : ''}
-  ${qs.map(q => {
-    const a = (sub.answers || []).find(x => x.q === q.num) || {};
-    const imgs = a.images || [];
-    return `<div style="margin-bottom:${forPrint?'20px':'14px'};page-break-inside:avoid">
-      <div style="font-size:${forPrint?'13px':'12px'};font-weight:600;margin-bottom:5px;padding-bottom:3px;border-bottom:1px dashed ${forPrint?'#ccc':'var(--border-light)'}">${q.num}. <span style="font-weight:400;white-space:pre-wrap">${thwEsc(q.text)}</span></div>
-      ${a.text ? `<div style="font-size:${forPrint?'12px':'11.5px'};line-height:1.9;white-space:pre-wrap;padding:6px 8px;background:${forPrint?'#fafafa':'var(--surface)'};border-radius:2px">${thwEsc(a.text)}</div>` : ''}
-      ${imgs.map((im, i) => `<div><div style="font-size:9px;color:#999;margin-top:4px">第${q.num}题 · 图${i+1}</div><img src="${thwEsc(im.url)}" style="${imgStyle}"></div>`).join('')}
-      ${!a.text && !imgs.length ? `<div style="font-size:11px;color:#aaa">（未作答）</div>` : ''}
-    </div>`;
-  }).join('')}`;
+  ${sub.whole_file_url ? `<div style="font-size:11px;margin-bottom:10px">📎 学生上传的整份作业：<a href="${thwEsc(sub.whole_file_url)}" target="_blank" style="color:#5a3e28">下载查看</a></div>` : ''}
+  ${groups.map(g => `<div style="margin-bottom:${forPrint?'16px':'12px'}">
+    ${g.head ? `<div style="font-size:${forPrint?'13px':'12px'};font-weight:700;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid ${forPrint?'#ccc':'var(--border-light)'}">${thwEsc(g.head)}</div>` : ''}
+    ${g.items.every(it => !(it.images||[]).length && (it.text||'').length <= 8)
+      ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:4px">
+          ${g.items.map(it => `<div style="font-size:11px"><span style="color:#999">${thwEsc(it.sub)}</span> <b>${thwEsc(it.text||'—')}</b></div>`).join('')}
+        </div>`
+      : g.items.map(it => `<div style="margin-bottom:${forPrint?'12px':'8px'};page-break-inside:avoid">
+          <div style="font-size:${forPrint?'12px':'11.5px'};font-weight:600;margin-bottom:3px">${thwEsc(it.sub)}</div>
+          ${it.text ? `<div style="font-size:${forPrint?'12px':'11.5px'};line-height:1.9;white-space:pre-wrap;padding:6px 8px;background:${forPrint?'#fafafa':'var(--surface)'};border-radius:2px">${thwEsc(it.text)}</div>` : ''}
+          ${(it.images||[]).map((im, i) => `<div><div style="font-size:9px;color:#999;margin-top:4px">${thwEsc(it.sub)} · 图${i+1}</div><img src="${thwEsc(im.url)}" style="${imgStyle}"></div>`).join('')}
+          ${!it.text && !(it.images||[]).length ? `<div style="font-size:11px;color:#aaa">（未作答）</div>` : ''}
+        </div>`).join('')}
+  </div>`).join('')}`;
 }
 
 function thwOpenPrintWindow(title, bodyHtml) {
@@ -180,16 +205,18 @@ async function thwUploadFile(subId, input) {
 }
 
 async function thwSaveFeedback(subId) {
-  const fb = ((document.getElementById('thw_fb') || {}).value || '').trim();
-  const score = ((document.getElementById('thw_score') || {}).value || '').trim();
-  if (!fb) { alert('请填写批改反馈'); return; }
+  const g = id => ((document.getElementById(id) || {}).value || '').trim();
+  const know = g('thw_know'), att = g('thw_att'), sug = g('thw_sug'), score = g('thw_score');
+  if (!know && !att && !sug) { alert('请至少填写一项反馈'); return; }
+  const patch = {
+    feedback_knowledge: know || null, feedback_attitude: att || null, feedback_suggestions: sug || null,
+    teacher_feedback: [know && '知识掌握：'+know, att && '学习态度：'+att, sug && '改进建议：'+sug].filter(Boolean).join('\n'),
+    score: score || null, graded_by: teacherData.name, graded_at: new Date().toISOString(),
+  };
   try {
-    await sb(`/rest/v1/homework_submissions?id=eq.${subId}`, 'PATCH', {
-      teacher_feedback: fb, score: score || null,
-      graded_by: teacherData.name, graded_at: new Date().toISOString(),
-    });
+    await sb(`/rest/v1/homework_submissions?id=eq.${subId}`, 'PATCH', patch);
     const sub = (thwSubs[thwOpenSession] || []).find(x => x.id === subId);
-    if (sub) Object.assign(sub, { teacher_feedback: fb, score, graded_by: teacherData.name });
+    if (sub) Object.assign(sub, patch);
     alert('反馈已保存，学生可见');
     thwOpenStudent = null;
     thwRender();
