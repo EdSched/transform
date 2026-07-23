@@ -105,7 +105,8 @@ function renderStudyMain() {
     { id:'schools', label:`🏫 志望校 (${studyData.schoolPlans.length}/6)` },
     { id:'plan', label:'📄 计划书' },
     { id:'progress', label:'📊 考学进度' },
-    { id:'records', label:'📋 面谈 & 作业' },
+    { id:'records', label:'📋 面谈记录' },
+    { id:'homework', label:'📝 作业' },
     { id:'schedule', label:'🗓 课程表' },
   ];
 
@@ -146,6 +147,7 @@ function renderStudyTab() {
   else if (studyTab === 'plan') el.innerHTML = renderPlanTab();
   else if (studyTab === 'progress') el.innerHTML = renderProgressTab();
   else if (studyTab === 'records') el.innerHTML = renderRecordsTab();
+  else if (studyTab === 'homework') { el.innerHTML = renderHomeworkTab(); setTimeout(() => loadStudyHwSessions(), 60); }
   else if (studyTab === 'schedule') { el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">课程表加载中…</div>'; loadStudySchedule(); }
 }
 
@@ -1176,88 +1178,61 @@ function renderProgressTab() {
 
 
 function renderRecordsTab() {
-  const { bookings, sessionRecs } = studyData;
+  const { bookings } = studyData;
   const validBookings = bookings.filter(b => b.daily_record && Object.values(b.daily_record).some(v=>v));
-  const validHomework = sessionRecs.filter(r => r.teacher_file_url);
-
-  // 左栏：提交作业 + 已批改作业
-  let leftCol = `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px;margin-bottom:16px">
-    <div style="font-size:12px;font-weight:600;margin-bottom:10px">📝 作业</div>
-    <div id="study_hw_sessions_wrap"><div style="font-size:11px;color:var(--text-muted)">加载中…</div></div>
+  if (!validBookings.length) return '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">暂无面谈记录</div>';
+  return `<div style="font-size:11px;font-weight:600;margin-bottom:10px">📋 面谈记录（${validBookings.length}条）</div>
+  <div class="study-cols2" style="gap:12px 20px">
+    ${validBookings.map(b => `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:12px;margin-bottom:8px">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${b.slot_date}${b.actual_duration?' · '+b.actual_duration+'min':''} ${b.assigned_teacher?'· '+b.assigned_teacher+'老师':''}</div>
+      <pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0;color:var(--text-secondary)">${buildRecordText(b)}</pre>
+    </div>`).join('')}
   </div>`;
-
-  leftCol += `<div id="study_hw_archive"></div>`;
-
-  if (validHomework.length) {
-    leftCol += `<div style="font-size:11px;font-weight:600;margin-bottom:10px">✅ 已批改作业（${validHomework.length}条）</div>`;
-    validHomework.forEach(r => {
-      leftCol += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:12px;margin-bottom:8px">
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">${r.session_date} · ${r.course_name||''}</div>
-        ${r.feedback_knowledge?`<div style="font-size:12px;margin-bottom:4px">${r.feedback_knowledge}</div>`:''}
-        ${r.feedback_suggestions?`<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">💡 ${r.feedback_suggestions}</div>`:''}
-        <a href="${r.teacher_file_url}" target="_blank" style="font-size:12px;color:var(--accent)">📎 下载批改文件</a>
-      </div>`;
-    });
-  }
-
-  // 右栏：面谈记录
-  let rightCol = '';
-  if (validBookings.length) {
-    rightCol += `<div style="font-size:11px;font-weight:600;margin-bottom:10px">📋 面谈记录（${validBookings.length}条）</div>`;
-    validBookings.forEach(b => {
-      rightCol += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:12px;margin-bottom:8px">
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${b.slot_date}${b.actual_duration?' · '+b.actual_duration+'min':''} ${b.assigned_teacher?'· '+b.assigned_teacher+'老师':''}</div>
-        <pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0;color:var(--text-secondary)">${buildRecordText(b)}</pre>
-      </div>`;
-    });
-  } else {
-    rightCol += `<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:12px">暂无面谈记录</div>`;
-  }
-
-  // 渲染后加载课程列表
-  setTimeout(() => loadStudyHwSessions(), 100);
-  // 宽屏双栏（左=作业相关，右=面谈记录），窄屏自动上下堆叠
-  return `<div class="study-cols2" style="gap:16px 24px"><div>${leftCol}</div><div>${rightCol}</div></div>`;
 }
 
-// ══════════════════════════════════
-// 作业（题目由 admin 在课程安排的单回布置；逐题作答：文字 / 按题号拍照）
-// ══════════════════════════════════
-let hwSessions = [];      // 有题目的课次
-let hwSubs = {};          // session_id → 提交记录
-let hwOpenId = null;      // 展开作答的课次
-let hwDraft = {};         // { unitKey: { text, images:[{url,name}] } }
-let hwLevelPick = {};     // session_id → 选中的级别索引
-let hwWholeFile = null;   // 整份作业文件
+// ── 作业页：左=资料/题目预览，右=作业列表与作答 ──
+function renderHomeworkTab() {
+  const validHomework = (studyData.sessionRecs || []).filter(r => r.teacher_file_url);
+  return `
+  <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+    <div style="flex:1 1 380px;min-width:300px;position:sticky;top:10px">
+      <div style="font-size:11px;font-weight:600;margin-bottom:6px">📄 资料 / 题目预览</div>
+      <div id="study_hw_viewer" style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;min-height:420px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:11px;text-align:center;padding:20px">
+        点击右侧作业中的「参考资料」或「查看题目」<br>即可在此预览，边看边作答
+      </div>
+    </div>
+    <div style="flex:1 1 420px;min-width:320px">
+      <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px;margin-bottom:14px">
+        <div style="font-size:12px;font-weight:600;margin-bottom:10px">📝 作业</div>
+        <div id="study_hw_sessions_wrap"><div style="font-size:11px;color:var(--text-muted)">加载中…</div></div>
+      </div>
+      <div id="study_hw_archive"></div>
+      ${validHomework.length?`<div style="font-size:11px;font-weight:600;margin:14px 0 8px">✅ 历史批改文件（${validHomework.length}条）</div>
+      ${validHomework.map(r=>`<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:6px">
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">${r.session_date} · ${r.course_name||''}</div>
+        ${r.feedback_knowledge?`<div style="font-size:11px;margin-bottom:3px">${escA(r.feedback_knowledge)}</div>`:''}
+        ${r.feedback_suggestions?`<div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">💡 ${escA(r.feedback_suggestions)}</div>`:''}
+        <a href="${escA(r.teacher_file_url)}" target="_blank" style="font-size:11px;color:var(--accent)">📎 下载批改文件</a>
+      </div>`).join('')}`:''}
+    </div>
+  </div>`;
+}
 
-async function loadStudyHwSessions() {
-  const wrap = document.getElementById('study_hw_sessions_wrap');
-  if (!wrap) return;
-  const myMajor = studyStudent.major || studyMajor;
-  const acceptMajors = myMajor === 'shakai_group'
-    ? ['shakai_group', ...SHAKAI_GROUP]
-    : SHAKAI_GROUP.includes(myMajor) ? [myMajor, 'shakai_group'] : [myMajor];
-  try {
-    const today = new Date();
-    const from = new Date(today); from.setDate(today.getDate() - 60);
-    const to = new Date(today); to.setDate(today.getDate() + 21);
-    const fmt = d => d.toISOString().slice(0,10);
-    const [sessions, subs] = await Promise.all([
-      sb(`/rest/v1/course_sessions?session_date=gte.${fmt(from)}&session_date=lte.${fmt(to)}&homework_enabled=is.true&select=*&order=session_date.desc`).catch(()=>[]),
-      sb(`/rest/v1/homework_submissions?student_name=eq.${encodeURIComponent(studyStudent.name)}&select=*`).catch(()=>[]),
-    ]);
-    hwSessions = (sessions||[]).filter(s => {
-      // 只显示已布置题目的课次（兼容新结构 {version:2,levels:[]} 与旧的数组格式）
-      const q = s.homework_questions;
-      const hasQ = Array.isArray(q) ? q.length > 0 : !!(q && Array.isArray(q.levels) && q.levels.length);
-      if (!hasQ) return false;
-      const sm = Array.isArray(s.major) ? s.major : [s.major||''];
-      return !myMajor || sm.some(m => acceptMajors.includes(m));
-    });
-    hwSubs = {};
-    (subs||[]).forEach(x => hwSubs[x.session_id] = x);
-  } catch (e) { wrap.innerHTML = `<div style="font-size:11px;color:var(--danger)">加载失败：${e.message}</div>`; return; }
-  renderHwList();
+// 在左栏预览 PDF / 图片（同页边看边写）
+function hwPreview(url, name) {
+  const box = document.getElementById('study_hw_viewer');
+  if (!box) { window.open(url, '_blank'); return; }
+  const isPdf = /\.pdf(\?|$)/i.test(url);
+  box.style.display = 'block';
+  box.style.padding = '0';
+  box.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--border-light)">
+      <span style="font-size:10px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escA(name||'资料')}</span>
+      <a href="${escA(url)}" target="_blank" style="margin-left:auto;font-size:10px;color:var(--accent);white-space:nowrap">↗ 新窗口打开</a>
+    </div>
+    ${isPdf
+      ? `<iframe src="${escA(url)}" style="width:100%;height:72vh;border:none;display:block"></iframe>`
+      : `<img src="${escA(url)}" style="max-width:100%;display:block">`}`;
 }
 
 function hwGraded(sub) { return !!(sub && (sub.teacher_feedback || sub.feedback_knowledge || sub.feedback_attitude || sub.feedback_suggestions)); }
@@ -1274,7 +1249,7 @@ function renderHwList() {
       <div onclick="hwToggle('${s.id}')" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;${open?'background:var(--bg)':''}">
         <div style="flex:1;min-width:0">
           <div style="font-size:12px;font-weight:600">${escA(s.course_name||'')}${s.session_number?` 第${s.session_number}回`:''}</div>
-          <div style="font-size:10px;color:var(--text-muted)">${s.session_date||''}${s.session_title?' · '+escA(s.session_title):''} · ${(s.homework_questions||[]).length}题</div>
+          <div style="font-size:10px;color:var(--text-muted)">${s.session_date||''}${s.session_title?' · '+escA(s.session_title):''}${hwCountLabel(s)}</div>
         </div>
         <span style="font-size:10px;white-space:nowrap;color:${graded?'var(--ok)':sub?'var(--accent)':'var(--text-muted)'}">${graded?'✓ 已批改':sub?'✓ 已提交':'未提交'}</span>
         <span style="font-size:10px;color:var(--text-muted)">${open?'▾':'▸'}</span>
@@ -1316,7 +1291,13 @@ function hwUnits(level) {
     } else if (b.type === 'essay') {
       for (let i = 1; i <= (b.count || 0); i++) out.push({ key:`${bi}-${i}`, block:bi, head, label:`第${i}题`, mode:'both' });
     } else {
-      (b.items || []).forEach(it => out.push({ key:`${bi}-${it.num}`, block:bi, head, label:`${it.num}.`, text:it.text, mode:'both' }));
+      // 自由题：默认整块统一作答（小问同属一个大题，一处作答/上传）
+      if ((b.answerMode || 'whole') === 'whole') {
+        out.push({ key:`${bi}-all`, block:bi, head, label:'作答', whole:true,
+          text:(b.items||[]).map(it=>`${it.num}. ${it.text}`).join('\n'), mode:'both' });
+      } else {
+        (b.items || []).forEach(it => out.push({ key:`${bi}-${it.num}`, block:bi, head, label:`${it.num}.`, text:it.text, mode:'both' }));
+      }
     }
   });
   return out;
@@ -1338,7 +1319,7 @@ function hwDetailHtml(s, sub) {
 
   return `
   ${s.homework_note?`<div style="font-size:11px;color:var(--text-2);background:var(--surface);border-left:3px solid var(--accent);padding:8px 12px;margin-bottom:10px;white-space:pre-wrap">${escA(s.homework_note)}</div>`:''}
-  ${N.refs.length?`<div style="font-size:11px;margin-bottom:10px">📚 参考资料：${N.refs.map(r=>`<a href="${escA(r.url)}" target="_blank" style="color:var(--accent);margin-right:10px">${escA(r.name||'资料')}</a>`).join('')}</div>`:''}
+  ${N.refs.length?`<div style="font-size:11px;margin-bottom:10px">📚 参考资料：${N.refs.map(r=>`<span onclick="hwPreview('${escA(r.url)}','${escA(r.name||'资料')}')" style="color:var(--accent);margin-right:10px;cursor:pointer;text-decoration:underline">${escA(r.name||'资料')}</span>`).join('')}</div>`:''}
   ${hwGraded(sub)?`<div style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:3px;padding:10px 12px;margin-bottom:10px">
     <div style="font-size:10px;color:var(--ok);font-weight:600;margin-bottom:4px">✓ 老师批改${sub.score?` · ${escA(sub.score)}`:''}</div>
     ${sub.feedback_knowledge?`<div style="font-size:11px;color:var(--text-2);line-height:1.9"><span style="color:var(--text-muted)">知识掌握：</span>${escA(sub.feedback_knowledge)}</div>`:''}
@@ -1357,7 +1338,7 @@ function hwDetailHtml(s, sub) {
     const bUnits = units.filter(u => u.block === bi);
     return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:8px">
       <div style="font-size:12px;font-weight:600;margin-bottom:6px">${T?`【${T}】`:''}${escA(b.title||'')}
-        ${b.file?`<a href="${escA(b.file.url)}" target="_blank" style="font-size:10px;color:var(--accent);margin-left:8px;font-weight:400">📎 查看题目（${escA(b.file.name||'文件')}）</a>`:''}
+        ${b.file?`<span onclick="hwPreview('${escA(b.file.url)}','${escA(b.file.name||'题目')}')" style="font-size:10px;color:var(--accent);margin-left:8px;font-weight:400;cursor:pointer;text-decoration:underline">📎 查看题目（${escA(b.file.name||'文件')}）</span>`:''}
       </div>
       ${b.type==='choice'
         ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px">
@@ -1370,14 +1351,16 @@ function hwDetailHtml(s, sub) {
         : bUnits.map(u => {
             const a = ansOf(u.key); const imgs = a.images || [];
             return `<div style="border-top:1px dashed var(--border-light);padding:7px 0">
-              <div style="font-size:11px;font-weight:600;margin-bottom:4px">${u.label}${u.text?` <span style="font-weight:400;white-space:pre-wrap">${escA(u.text)}</span>`:''}</div>
+              ${u.whole
+                ? `<div style="font-size:11.5px;line-height:1.9;white-space:pre-wrap;margin-bottom:6px">${escA(u.text||'')}</div>`
+                : `<div style="font-size:11px;font-weight:600;margin-bottom:4px">${u.label}${u.text?` <span style="font-weight:400;white-space:pre-wrap">${escA(u.text)}</span>`:''}</div>`}
               ${locked
                 ? `${a.text?`<div style="font-size:11px;color:var(--text-2);line-height:1.9;white-space:pre-wrap;background:var(--bg);border-radius:2px;padding:6px 8px">${escA(a.text)}</div>`:''}
                    ${imgs.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${imgs.map((im,i)=>`<a href="${escA(im.url)}" target="_blank" style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:2px 8px">📷 图${i+1}</a>`).join('')}</div>`:''}
                    ${!a.text&&!imgs.length?'<div style="font-size:10px;color:var(--text-muted)">未作答</div>':''}`
                 : `${u.mode!=='img'?`<textarea rows="${u.mode==='both'?3:2}" placeholder="在此作答（也可只上传照片）" oninput="hwSetAns('${u.key}',this.value)" style="width:100%;font-size:12px;line-height:1.9;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${escA(a.text||'')}</textarea>`:''}
                    <div style="display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap">
-                     <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:3px 10px">📷 上传${u.label}照片
+                     <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:3px 10px">📷 ${u.whole?'上传作答照片（可多张）':`上传${u.label}照片`}
                        <input type="file" accept="image/*" multiple style="display:none" onchange="hwPickImages('${u.key}', this)"></label>
                      <span id="hwimg_${u.key}" style="font-size:10px;color:var(--text-muted)">${imgs.length?imgs.map((x,i)=>`图${i+1}`).join('・'):'尚未上传'}</span>
                    </div>`}
@@ -1387,7 +1370,10 @@ function hwDetailHtml(s, sub) {
   }).join('')}
 
   ${locked
-    ? `<div style="font-size:10px;color:var(--text-muted)">已于 ${(sub.submitted_at||'').slice(0,16).replace('T',' ')} 提交${hwGraded(sub)?'':'，等待老师批改'}${sub.whole_file_url?` · <a href="${escA(sub.whole_file_url)}" target="_blank" style="color:var(--accent)">📎 整份作业文件</a>`:''}</div>`
+    ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+         <span style="font-size:10px;color:var(--text-muted)">已于 ${(sub.submitted_at||'').slice(0,16).replace('T',' ')} 提交${hwGraded(sub)?'':'，等待老师批改'}${sub.whole_file_url?` · <a href="${escA(sub.whole_file_url)}" target="_blank" style="color:var(--accent)">📎 整份作业文件</a>`:''}</span>
+         ${!hwGraded(sub)?`<button onclick="hwWithdraw('${s.id}')" style="margin-left:auto;font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit;color:var(--text-secondary)">↺ 撤回重做</button>`:''}
+       </div>`
     : `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:9px 12px;margin-bottom:8px">
          <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">或直接上传整份作业（Word / PDF / 照片），可与上方逐题作答并用</div>
          <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:3px 10px">📎 上传整份作业
@@ -1654,4 +1640,27 @@ function renderHwArchive() {
       </div>`).join('')}
     </div>`).join('')}
   </div>`;
+}
+
+// 作答单元数量标签（新旧结构通用）
+function hwCountLabel(s) {
+  const N = hwNorm(s);
+  if (!N.levels.length) return '';
+  if (N.levels.length > 1) return ` · ${N.levels.length}个级别`;
+  const n = hwUnits(N.levels[0]).length;
+  return n ? ` · ${n}题` : '';
+}
+
+// 撤回重做（老师尚未批改时可用；删除提交记录后重新作答）
+async function hwWithdraw(sid) {
+  const sub = hwSubs[sid];
+  if (!sub) return;
+  if (hwGraded(sub)) { alert('老师已批改，如需重做请联系老师'); return; }
+  if (!confirm('撤回这次提交并重新作答？已上传的内容将被清除。')) return;
+  try {
+    await sb(`/rest/v1/homework_submissions?id=eq.${sub.id}`, 'DELETE');
+    delete hwSubs[sid];
+    hwDraft = {}; hwWholeFile = null;
+    renderHwList();
+  } catch (e) { alert('撤回失败：' + e.message); }
 }
