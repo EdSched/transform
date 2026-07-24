@@ -139,6 +139,7 @@ function thwPaperHtml(s, sub, forPrint) {
     const head = sp > 0 ? label.slice(0, sp) : '';
     let sub2 = sp > 0 ? label.slice(sp + 1) : label;
     if (sub2 === '作答') sub2 = '';  // 整块统一作答：不重复显示「作答」二字
+    if (sub2 === '整题') sub2 = '手写作答';  // 名词解释的整块图片
     let g = groups.find(x => x.head === head);
     if (!g) { g = { head, items: [] }; groups.push(g); }
     g.items.push({ ...a, sub: sub2 });
