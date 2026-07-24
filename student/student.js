@@ -804,8 +804,34 @@ async function loadSchoolPlanBanner() {
       if (!schoolFilled) reminders.push(`🏫 ${shares[0].title} · 待填写志望校`);
     }
 
-    if (window._hwReminders && window._hwReminders.length) {
-      window._hwReminders.forEach(r => reminders.push(r));
+    // 未交作业提醒（题目由 admin 在课程安排单回布置；提交记录在 homework_submissions）
+    if (stu) {
+      try {
+        const today = new Date();
+        const from = new Date(today); from.setDate(today.getDate() - 30);
+        const to = new Date(today); to.setDate(today.getDate() + 14);
+        const fmt = d => d.toISOString().slice(0, 10);
+        const myMajor = stu.major || major;
+        const accept = myMajor === 'shakai_group'
+          ? ['shakai_group', 'shakai', 'shinpan', 'fukushi']
+          : ['shakai', 'shinpan', 'fukushi'].includes(myMajor) ? [myMajor, 'shakai_group'] : [myMajor];
+        const [sessions, subs] = await Promise.all([
+          sb(`/rest/v1/course_sessions?session_date=gte.${fmt(from)}&session_date=lte.${fmt(to)}&homework_enabled=is.true&select=id,course_name,session_number,session_date,major,homework_questions&order=session_date.desc`).catch(() => []),
+          sb(`/rest/v1/homework_submissions?student_name=eq.${encodeURIComponent(name)}&select=session_id`).catch(() => []),
+        ]);
+        const done = new Set((subs || []).map(x => x.session_id));
+        const pending = (sessions || []).filter(s => {
+          const q = s.homework_questions;
+          const hasQ = Array.isArray(q) ? q.length > 0 : !!(q && Array.isArray(q.levels) && q.levels.length);
+          if (!hasQ || done.has(s.id)) return false;
+          const sm = Array.isArray(s.major) ? s.major : [s.major || ''];
+          return sm.some(m => accept.includes(m));
+        });
+        if (pending.length) {
+          const first = pending[0];
+          reminders.push(`📝 ${first.course_name || ''}${first.session_number ? ` 第${first.session_number}回` : ''} 作业未提交${pending.length > 1 ? ` 等 ${pending.length} 次` : ''}`);
+        }
+      } catch (e) {}
     }
 
     if (!reminders.length) return;
