@@ -12,6 +12,20 @@
   .page-wrap { max-width:1360px; }
   /* ── 全局防溢出：任何元素都不得撑出视口，避免 iOS 触发整页缩放 ── */
   html, body { max-width:100%; overflow-x:hidden; }
+  /* tab 栏：独立横向滚动，与内容区左右滑动互不干扰 */
+  .study-tabbar {
+    overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch;
+    flex-wrap:nowrap !important; scrollbar-width:none; overscroll-behavior-x:contain;
+  }
+  .study-tabbar::-webkit-scrollbar { display:none; }
+  .study-tabbar > button { flex:0 0 auto; }
+  /* 顶部徽章行：内容多时也可横滑 */
+  .study-badgebar { overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+  .study-badgebar::-webkit-scrollbar { display:none; }
+  @media (max-width:640px) {
+    .study-badgebar { flex-wrap:nowrap !important; }
+    .study-badgebar > * { flex:0 0 auto; }
+  }
   header { width:100%; box-sizing:border-box; }
   .page-wrap { width:100%; box-sizing:border-box; overflow-x:clip; }
   img, iframe, video, table, canvas { max-width:100%; }
