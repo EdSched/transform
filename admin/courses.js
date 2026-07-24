@@ -475,7 +475,12 @@ async function saveAsTemplate(courseId,templateName){
   const c=cachedCourses.find(x=>x.id===courseId);
   if(!c)return;
   const sessions=cachedSessions.filter(s=>s.course_id===courseId).sort((a,b)=>a.session_date.localeCompare(b.session_date));
-  const detailRows=sessions.map((s,i)=>({num:s.session_number,title:s.session_title||'',teacher:s.session_teacher||c.teacher||''}));
+  const detailRows=sessions.map((s,i)=>({
+    num:s.session_number, title:s.session_title||'', teacher:s.session_teacher||c.teacher||'',
+    homework_questions:s.homework_questions||null,   // 单回作业随模板保存
+    homework_note:s.homework_note||null,
+  }));
+  const hwCount=detailRows.filter(r=>r.homework_questions).length;
   const tpl={
     id:`tpl-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
     name:templateName,
@@ -493,7 +498,7 @@ async function saveAsTemplate(courseId,templateName){
   };
   try{
     await sb('/rest/v1/course_templates','POST',tpl);
-    alert(`已保存为模板「${templateName}」`);
+    alert(`已保存为模板「${templateName}」${hwCount?`\n其中 ${hwCount} 回的作业已一并保存，套用时自动带出`:''}`);
     renderTemplateList();
   }catch(e){alert('保存模板失败：'+e.message)}
 }
@@ -541,7 +546,7 @@ function tplRenderGroups(){
           <div style="flex:1;min-width:200px">
             <div style="font-size:12px;font-weight:600">${t.name}</div>
             <div style="font-size:11px;color:var(--text-3);margin-top:2px">
-              ${t.teacher||''} · ${t.weekdays||''} ${t.time_range||''} · 共${t.total_sessions||'-'}回 · ${t.delivery||''} ${t.campus||''} · ${t.detail_rows?.length||0}条单回明细
+              ${t.teacher||''} · ${t.weekdays||''} ${t.time_range||''} · 共${t.total_sessions||'-'}回 · ${t.delivery||''} ${t.campus||''} · ${t.detail_rows?.length||0}条单回明细${(t.detail_rows||[]).filter(r=>r.homework_questions).length?` · <span style="color:var(--accent)">📝 ${(t.detail_rows||[]).filter(r=>r.homework_questions).length}回带作业</span>`:''}
             </div>
           </div>
           <button class="btn btn-primary btn-sm" onclick="openApplyTemplate('${t.id}')">套用</button>
@@ -562,7 +567,7 @@ function tplToggleMajor(key){
 function tplEditFormHtml(t){
   const inp='width:100%;font-size:11px;padding:5px 7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
   const fld=(id,label,val,ph)=>`<div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">${label}</label><input id="${id}" value="${String(val==null?'':val).replace(/"/g,'&quot;')}" placeholder="${ph||''}" style="${inp}"></div>`;
-  const detailText=(t.detail_rows||[]).map(r=>`${r.num||''}|${r.title||''}|${r.teacher||''}`).join('\n');
+  const detailText=(t.detail_rows||[]).map(r=>`${r.num||''}|${r.title||''}|${r.teacher||''}${r.homework_questions?'|📝':''}`).join('\n');
   return `<div style="border:1px solid var(--accent);border-radius:3px;padding:12px;margin-bottom:6px;background:var(--bg)">
     <div style="font-size:11px;font-weight:600;margin-bottom:8px">✏ 编辑模板</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:8px">
@@ -577,7 +582,7 @@ function tplEditFormHtml(t){
       ${fld('te_campus','校区/教室',t.campus)}
       ${fld('te_type','课程属性',t.course_type,'专业课 / 共通课 / VIP')}
     </div>
-    <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">单回明细（每行一条：回数|标题|讲师，讲师留空则用主讲）</label>
+    <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">单回明细（每行一条：回数|标题|讲师；行尾 📝 表示该回已绑定作业，编辑时保留即可）</label>
     <textarea id="te_details" rows="${Math.min(10,Math.max(3,(t.detail_rows||[]).length))}" style="width:100%;font-size:11px;line-height:1.7;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:'DM Mono',monospace;resize:vertical">${detailText}</textarea>
     <div style="display:flex;gap:6px;margin-top:8px">
       <button class="btn btn-primary btn-sm" onclick="tplSaveEdit('${t.id}')">保存修改</button>
@@ -590,9 +595,14 @@ async function tplSaveEdit(id){
   const g=x=>(document.getElementById(x)||{}).value||'';
   const name=g('te_name').trim();
   if(!name){alert('请填写模板名称');return}
+  const oldRows=((cachedTemplates||[]).find(x=>x.id===id)||{}).detail_rows||[];
   const detail_rows=g('te_details').split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{
     const [num,title,teacher]=l.split('|').map(x=>(x||'').trim());
-    return { num: num==='休讲'?'休讲':(parseInt(num)||num), title:title||'', teacher:teacher||'' };
+    const n = num==='休讲'?'休讲':(parseInt(num)||num);
+    const prev = oldRows.find(r=>String(r.num)===String(n)) || {};
+    return { num:n, title:title||'', teacher:teacher||'',
+      homework_questions: prev.homework_questions||null,   // 编辑明细不丢作业绑定
+      homework_note: prev.homework_note||null };
   });
   const patch={
     name, teacher:g('te_teacher').trim(), weekdays:g('te_weekdays').trim(), time_range:g('te_time').trim(),
@@ -649,13 +659,16 @@ async function openApplyTemplate(templateId){
         teacher:detail.teacher||t.teacher,
         session_title:detail.title||'',
         session_teacher:detail.teacher||t.teacher,
-        homework_enabled:t.homework_enabled||false
+        homework_questions:detail.homework_questions||null,
+        homework_note:detail.homework_note||null,
+        homework_enabled:!!detail.homework_questions||t.homework_enabled||false
       };
     });
     for(let i=0;i<sessions.length;i+=20){
       await sb('/rest/v1/course_sessions','POST',sessions.slice(i,i+20));
     }
-    alert(`已根据模板「${t.name}」生成新一期课程（${dates.length}回），请到「课程安排」中查看并发布`);
+    const hwN=(t.detail_rows||[]).filter(r=>r.homework_questions).length;
+    alert(`已根据模板「${t.name}」生成新一期课程（${dates.length}回）${hwN?`，其中 ${hwN} 回已自动带出作业`:''}，请到「课程安排」中查看并发布`);
     renderCourseCleanupPage(document.getElementById('mainContent'));
   }catch(e){alert('套用模板失败：'+e.message)}
 }
@@ -2520,6 +2533,7 @@ function hwEditorRender(){
 
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button onclick="document.getElementById('hwEditorModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">取消</button>
+      <button onclick="hwSaveToTemplate('${s.id}')" style="font-size:12px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:7px 14px;cursor:pointer;font-family:inherit">💾 保存并写入模板</button>
       <button onclick="hwSaveQuestions('${s.id}')" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存作业</button>
     </div>`;
 }
@@ -2645,7 +2659,7 @@ async function hwUploadBlockFile(bi,input){
   input.value='';
 }
 
-async function hwSaveQuestions(sessionId){
+async function hwSaveQuestions(sessionId, silent){
   const note=((document.getElementById('hw_note')||{}).value||'').trim();
   const levels=hwEditData.levels.filter(L=>(L.blocks||[]).length);
   const payload=levels.length?{version:2,levels,refs:hwEditData.refs||[]}:null;
@@ -2655,8 +2669,47 @@ async function hwSaveQuestions(sessionId){
     });
     const s=cachedSessions.find(x=>x.id===sessionId);
     if(s){s.homework_questions=payload;s.homework_note=note||null;s.homework_enabled=!!payload}
+    if(silent) return;
     document.getElementById('hwEditorModal')?.remove();
     renderCoursesPage(document.getElementById('mainContent'));
     alert(payload?`已布置作业（${levels.length}个级别，共 ${levels.reduce((n,L)=>n+L.blocks.length,0)} 个题型区块）`:'已清空该次作业');
   }catch(e){alert('保存失败：'+e.message)}
+}
+
+// ══ 作业写入课程模板（按模板名/课程名 + 回数绑定，套用模板时自动带出） ══
+async function hwSaveToTemplate(sessionId){
+  const s=cachedSessions.find(x=>x.id===sessionId);
+  if(!s){alert('未找到课次');return}
+  // 先保存到课次本身
+  await hwSaveQuestions(sessionId, true);
+  const payload=s.homework_questions, note=s.homework_note;
+  if(!payload){alert('该回没有作业内容，已清空课次作业；如需同步清空模板请手动编辑模板');return}
+  try{
+    if(!cachedTemplates) cachedTemplates=await sb('/rest/v1/course_templates?select=*&order=created_at.desc');
+    const cname=(s.course_name||'').trim();
+    const cands=(cachedTemplates||[]).filter(t=>(t.name||'').trim()===cname);
+    let tpl=cands[0];
+    if(!cands.length){
+      const pick=prompt(`没有找到与课程「${cname}」同名的模板。\n请输入要写入的模板名称（需与列表中的模板名完全一致）：`,cname);
+      if(!pick)return;
+      tpl=(cachedTemplates||[]).find(t=>(t.name||'').trim()===pick.trim());
+      if(!tpl){alert('未找到该模板，请先在课程清理中「存为模板」');return}
+    }else if(cands.length>1){
+      const pick=prompt(`有 ${cands.length} 个同名模板，请输入要写入的序号（1-${cands.length}）：\n`+cands.map((t,i)=>`${i+1}. ${t.name}（${(t.detail_rows||[]).length}回，创建于 ${(t.created_at||'').slice(0,10)}）`).join('\n'),'1');
+      const idx=parseInt(pick)-1;
+      if(isNaN(idx)||!cands[idx])return;
+      tpl=cands[idx];
+    }
+    const rows=[...(tpl.detail_rows||[])];
+    const n=s.session_number;
+    const i=rows.findIndex(r=>String(r.num)===String(n));
+    if(i>=0){ rows[i]={...rows[i], homework_questions:payload, homework_note:note||null}; }
+    else { rows.push({num:n,title:s.session_title||'',teacher:s.session_teacher||'',homework_questions:payload,homework_note:note||null}); }
+    await sb(`/rest/v1/course_templates?id=eq.${tpl.id}`,'PATCH',{detail_rows:rows});
+    const ci=cachedTemplates.findIndex(x=>x.id===tpl.id);
+    if(ci>=0) cachedTemplates[ci].detail_rows=rows;
+    document.getElementById('hwEditorModal')?.remove();
+    renderCoursesPage(document.getElementById('mainContent'));
+    alert(`已保存，并写入模板「${tpl.name}」第 ${n} 回\n以后用该模板开新一期，这一回的作业会自动带出`);
+  }catch(e){alert('写入模板失败：'+e.message)}
 }
