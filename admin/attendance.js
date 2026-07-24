@@ -31,7 +31,7 @@ function setAttRange(v){attRange=v;renderAttendancePage(document.getElementById(
 function setAttView(v){attView=v;renderAttendancePage(document.getElementById('mainContent'))}
 
 // 载入新作业系统的提交统计（homework_submissions）
-async function attLoadHwCounts(){
+async function attLoadHwCounts(silent){
   try{
     const rows=await sb('/rest/v1/homework_submissions?select=session_id,student_name&limit=5000');
     attHwCount={}; attHwSubs={};
@@ -39,6 +39,7 @@ async function attLoadHwCounts(){
       attHwCount[r.session_id]=(attHwCount[r.session_id]||0)+1;
       (attHwSubs[r.session_id]=attHwSubs[r.session_id]||new Set()).add(r.student_name);
     });
+    if(silent) return;
     const el=document.getElementById('mainContent');
     if(el&&curPage==='attendance') renderAttendancePage(el);
   }catch(e){}
@@ -371,6 +372,7 @@ function setAttMajor(m){
 
 // ── Session modal ──
 async function openSessionModal(sessionId){
+  if(!Object.keys(attHwSubs).length) await attLoadHwCounts(true);
   const session=cachedSessions.find(s=>s.id===sessionId);
   if(!session) return;
   const course=cachedCourses.find(c=>c.id===session.course_id)||{};
@@ -395,6 +397,7 @@ async function openSessionModal(sessionId){
   sessionEdits={};
   _currentSessionStudents = students;
   _currentSessionRecords = existing;
+  _currentSessionId = sessionId;
   const searchInput = document.getElementById('sessionStudentSearch');
   if (searchInput) searchInput.value = '';
   renderStudentRows('');
@@ -403,6 +406,7 @@ async function openSessionModal(sessionId){
 
 let _currentSessionStudents = [];
 let _currentSessionRecords = [];
+let _currentSessionId = null;
 
 function renderStudentRows(filter='') {
   const students = _currentSessionStudents;
@@ -414,16 +418,19 @@ function renderStudentRows(filter='') {
   tbody.innerHTML=filtered.map(s=>{
     const rec=existing.find(r=>r.student_id===s.id||r.student_name===s.name)||{};
     const defaultMode=rec.student_mode||s.default_mode||'offline';
+    // 学生已在学习记录中提交作业 → 自动记为已交（保存时一并写入）
+    const autoHwInit = !!(attHwSubs[_currentSessionId] && attHwSubs[_currentSessionId].has(s.name));
     sessionEdits[s.id]={
       student_mode:defaultMode,
       attendance_status:rec.attendance_status||'',
-      homework_submitted:rec.homework_submitted||!!rec.homework_file_url,
+      homework_submitted:autoHwInit||rec.homework_submitted||!!rec.homework_file_url,
     };
     const att=rec.attendance_status||'';
-    // 有上传文件的也算已交作业
-    const hw=rec.homework_submitted||!!rec.homework_file_url;
-    // 如果有文件但 homework_submitted 还是 false，自动更新
-    if(!rec.homework_submitted && rec.homework_file_url && rec.id){
+    // 作业以新系统的实际提交为准：学生提交即自动记为已交，无需手动点
+    const autoHw = autoHwInit;
+    const hw = autoHw || rec.homework_submitted || !!rec.homework_file_url;
+    // 学生已提交但旧记录未标记 → 自动补记，保持两处一致
+    if(autoHw && !rec.homework_submitted && rec.id){
       sb(`/rest/v1/session_records?id=eq.${rec.id}`,'PATCH',{homework_submitted:true}).catch(()=>{});
       rec.homework_submitted=true;
     }
@@ -450,12 +457,12 @@ function renderStudentRows(filter='') {
         ${att===''?'<div style="font-size:10px;color:var(--danger);margin-top:3px">缺席</div>':''}
       </td>
       <td>
-        <button onclick="toggleHw('${s.id}')" id="hw-${s.id}"
+        <button onclick="${autoHw?'':`toggleHw('${s.id}')`}" id="hw-${s.id}" title="${autoHw?'学生已在学习记录中提交，自动记为已交':'手动标记是否交作业'}"
           style="font-size:12px;width:28px;height:28px;border-radius:3px;border:1px solid;cursor:pointer;
           background:${hw?'var(--ok)':'var(--bg)'};
           color:${hw?'#fff':'var(--text-3)'};
           border-color:${hw?'var(--ok)':'var(--border)'}">
-          ${hw?'✓':'—'}
+          ${autoHw?'✓ 已提交':hw?'✓':'—'}
         </button>
       </td>
     </tr>`;
