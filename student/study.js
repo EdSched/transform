@@ -1307,6 +1307,17 @@ async function loadStudyHwSessions(retry) {
   }
 }
 
+
+// 时间统一按日本时间（JST）显示
+function fmtJst(ts) {
+  if (!ts) return '';
+  try {
+    const d = new Date(ts);
+    if (isNaN(d)) return String(ts).slice(0, 16).replace('T', ' ');
+    return d.toLocaleString('sv-SE', { timeZone: 'Asia/Tokyo' }).slice(0, 16);
+  } catch (e) { return String(ts).slice(0, 16).replace('T', ' '); }
+}
+
 function hwGraded(sub) { return !!(sub && (sub.teacher_feedback || sub.feedback_knowledge || sub.feedback_attitude || sub.feedback_suggestions)); }
 
 function renderHwList() {
@@ -1517,7 +1528,7 @@ function hwDetailHtml(s, sub) {
 
   ${locked
     ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-         <span style="font-size:10px;color:var(--text-muted)">已于 ${(sub.submitted_at||'').slice(0,16).replace('T',' ')} 提交${hwGraded(sub)?'':'，等待老师批改'}${sub.whole_file_url?` · <a href="${escA(sub.whole_file_url)}" target="_blank" style="color:var(--accent)">📎 整份作业文件</a>`:''}</span>
+         <span style="font-size:10px;color:var(--text-muted)">已于 ${fmtJst(sub.submitted_at)} 提交${hwGraded(sub)?'':'，等待老师批改'}${sub.whole_file_url?` · <a href="${escA(sub.whole_file_url)}" target="_blank" style="color:var(--accent)">📎 整份作业文件</a>`:''}</span>
          ${!hwGraded(sub)?`<button onclick="hwWithdraw('${s.id}')" style="margin-left:auto;font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit;color:var(--text-secondary)">↺ 撤回重做</button>`:''}
        </div>`
     : `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:9px 12px;margin-bottom:8px">
@@ -1559,7 +1570,10 @@ async function hwCompressImage(file, maxSide, quality) {
   }
   if (file.size <= 400 * 1024) return file;   // 已经很小，不必处理
   try {
-    const bitmap = await createImageBitmap(file);
+    // imageOrientation:'from-image' 让 iPhone 竖拍照片按 EXIF 正确旋转后再绘制
+    let bitmap;
+    try { bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+    catch (e) { bitmap = await createImageBitmap(file); }
     const scale = Math.min(1, (maxSide || 1600) / Math.max(bitmap.width, bitmap.height));
     const w = Math.round(bitmap.width * scale), h = Math.round(bitmap.height * scale);
     const canvas = document.createElement('canvas');
