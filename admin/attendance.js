@@ -218,76 +218,128 @@ async function toggleAdminHwPanel(sessionId) {
 async function loadAdminHwPanel(sessionId) {
   const wrap = document.getElementById(`admin_hw_content_${sessionId}`);
   if (!wrap) return;
+  wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">加载中…</div>';
+  const s = cachedSessions.find(x => x.id === sessionId) || {};
+  let subs = [];
   try {
-    const recs = await sb(`/rest/v1/session_records?session_id=eq.${sessionId}&select=*&order=student_name.asc`);
-    const submitted = recs.filter(r => r.homework_file_url);
-    if (!submitted.length) {
-      wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:4px 0">暂无提交作业</div>';
-      return;
-    }
-    window._adminHwRecs = window._adminHwRecs || {};
-    window._adminHwRecs[sessionId] = submitted;
+    subs = await sb(`/rest/v1/homework_submissions?session_id=eq.${sessionId}&select=*&order=submitted_at.asc`);
+  } catch (e) { wrap.innerHTML = `<div style="font-size:11px;color:var(--danger)">加载失败：${e.message}</div>`; return; }
+  admHwSubs[sessionId] = subs || [];
+  if (!subs.length) { wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:4px 0">暂无提交作业</div>'; return; }
 
-    wrap.innerHTML = `
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-        <span style="font-size:11px;color:var(--text-3)">${submitted.length}/${recs.length} 份已提交</span>
-        <button onclick="adminBatchDownloadHw('${sessionId}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:3px 8px;cursor:pointer;font-family:inherit">📦 批量下载（附对照表）</button>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:2px">
-        ${recs.map(r => `
-          <div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--border-light)">
-            <span style="font-size:12px;font-weight:600;min-width:60px">${r.student_name}</span>
-            ${r.homework_file_url
-              ? `<a href="${r.homework_file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 查看作业</a>`
-              : '<span style="font-size:11px;color:var(--text-muted)">未提交</span>'}
-            ${r.teacher_file_url
-              ? `<a href="${r.teacher_file_url}" target="_blank" style="font-size:11px;color:var(--ok);margin-left:6px">✓ 批改文件</a>`
-              : ''}
-            ${r.feedback_knowledge||r.feedback_suggestions
-              ? `<span style="font-size:10px;color:var(--text-2);margin-left:6px" title="${[r.feedback_knowledge,r.feedback_attitude,r.feedback_suggestions].filter(Boolean).join(' | ')}">💬 ${(r.feedback_knowledge||r.feedback_suggestions||'').slice(0,25)}…</span>`
-              : ''}
-          </div>`).join('')}
-      </div>`;
-  } catch(e) {
-    wrap.innerHTML = `<div style="font-size:11px;color:var(--danger)">加载失败：${e.message}</div>`;
-  }
+  const majors = s.major || [];
+  const students = cachedStudents.filter(x => x.status === 'active' && (
+    majors.includes(x.major) || (majors.includes('shakai_group') && ['shakai','shinpan','fukushi'].includes(x.major))
+  ));
+  const done = new Set(subs.map(x => x.student_name));
+  const missing = students.filter(x => !done.has(x.name));
+
+  wrap.innerHTML = `
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+    <span style="font-size:11px;font-weight:600">📝 作业提交（${subs.length}/${students.length}）</span>
+    <button onclick="admHwPrint('${sessionId}')" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">🖨 全部打印 / 存 PDF</button>
+    <button onclick="admHwWord('${sessionId}')" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">⬇ 全部导出 Word</button>
+    ${missing.length ? `<span style="font-size:10px;color:var(--warn,#b8860b);margin-left:auto">未交 ${missing.length} 人：${missing.slice(0,6).map(x=>x.name).join('、')}${missing.length>6?'…':''}</span>` : '<span style="font-size:10px;color:var(--ok);margin-left:auto">✓ 全员已交</span>'}
+  </div>
+  <div style="display:flex;flex-direction:column;gap:4px">
+    ${subs.map(x => `<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--border-light);border-radius:3px;background:var(--surface)">
+      <span style="font-size:11px;font-weight:600">${x.student_name}</span>
+      <span style="font-size:9px;color:var(--text-3)">${(x.submitted_at||'').slice(0,16).replace('T',' ')}</span>
+      ${x.level?`<span style="font-size:9px;color:var(--text-3)">【${x.level}】</span>`:''}
+      <span style="font-size:9px;color:var(--text-3)">${(x.answers||[]).filter(a=>a.text||(a.images||[]).length).length} 处作答${x.whole_file_url?' · 📎附件':''}</span>
+      ${x.teacher_feedback||x.feedback_knowledge?`<span style="font-size:9px;color:var(--ok)">✓ 已批改${x.graded_by?`（${x.graded_by}）`:''}</span>`:'<span style="font-size:9px;color:var(--warn,#b8860b)">待批改</span>'}
+      <span style="margin-left:auto;display:flex;gap:4px">
+        <button onclick="admHwPrint('${sessionId}','${x.id}')" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 9px;cursor:pointer;font-family:inherit">打印</button>
+        <button onclick="admHwWord('${sessionId}','${x.id}')" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 9px;cursor:pointer;font-family:inherit">Word</button>
+      </span>
+    </div>`).join('')}
+  </div>`;
 }
 
-async function adminBatchDownloadHw(sessionId) {
-  const recs = (window._adminHwRecs || {})[sessionId] || [];
-  if (!recs.length) { alert('暂无可下载的作业'); return; }
+// ══ admin 侧作业整合与导出（与老师端同一套排版） ══
+let admHwSubs = {};
 
-  // 先下载对照表
-  const listContent = ['文件ID → 学生姓名 对照表', '='.repeat(40)].join('\n') + '\n' +
-    recs.map(r => {
-      const ext = r.homework_file_url.split('.').pop().split('?')[0].slice(0,5);
-      return `${r.id}.${ext}  →  ${r.student_name}`;
-    }).join('\n');
-  const listBlob = new Blob([listContent], { type: 'text/plain;charset=utf-8' });
-  const listA = document.createElement('a');
-  listA.href = URL.createObjectURL(listBlob);
-  listA.download = `作业对照表_${sessionId}.txt`;
-  listA.click();
-  URL.revokeObjectURL(listA.href);
-  await new Promise(res => setTimeout(res, 300));
+function admEsc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
 
-  // 下载作业文件
-  for (const r of recs) {
-    try {
-      const res = await fetch(r.homework_file_url);
-      const blob = await res.blob();
-      const ext = r.homework_file_url.split('.').pop().split('?')[0].slice(0,5);
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${r.id}.${ext}`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      await new Promise(res => setTimeout(res, 400));
-    } catch(e) {
-      window.open(r.homework_file_url, '_blank');
-      await new Promise(res => setTimeout(res, 400));
-    }
-  }
+function admHwPaper(s, sub, forPrint) {
+  const imgStyle = forPrint ? 'max-width:100%;display:block;margin:6px 0;border:1px solid #ddd'
+                            : 'max-width:100%;display:block;margin:6px 0';
+  const groups = [];
+  (sub.answers || []).forEach(a => {
+    const label = a.label || a.k || '';
+    const sp = label.indexOf(' ');
+    const head = sp > 0 ? label.slice(0, sp) : '';
+    let sub2 = sp > 0 ? label.slice(sp + 1) : label;
+    if (sub2 === '作答') sub2 = '';
+    if (sub2 === '整题') sub2 = '手写作答';
+    let g = groups.find(x => x.head === head);
+    if (!g) { g = { head, items: [] }; groups.push(g); }
+    g.items.push({ ...a, sub: sub2 });
+  });
+  return `
+  <div style="border-bottom:2px solid #5a3e28;padding-bottom:8px;margin-bottom:14px">
+    <div style="font-size:16px;font-weight:700">${admEsc(sub.student_name)} — ${admEsc(s.course_name||'')} 第${s.session_number||''}回 作业${sub.level?`（${admEsc(sub.level)}级）`:''}</div>
+    <div style="font-size:11px;color:#666;margin-top:3px">${s.session_date||''}${s.session_title?' · '+admEsc(s.session_title):''}　提交：${(sub.submitted_at||'').slice(0,16).replace('T',' ')}</div>
+  </div>
+  ${sub.whole_file_url?`<div style="font-size:11px;margin-bottom:10px">📎 整份作业：<a href="${admEsc(sub.whole_file_url)}">${admEsc(sub.whole_file_url)}</a></div>`:''}
+  ${groups.map(g => `<div style="margin-bottom:16px">
+    ${g.head?`<div style="font-size:13px;font-weight:700;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #ccc">${admEsc(g.head)}</div>`:''}
+    ${g.items.every(it => !(it.images||[]).length && !(it.q||'') && (it.text||'').length <= 8)
+      ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:4px">
+          ${g.items.map(it => `<div style="font-size:11px"><span style="color:#999">${admEsc(it.sub)}</span> <b>${admEsc(it.text||'—')}</b></div>`).join('')}
+        </div>`
+      : g.items.map(it => `<div style="margin-bottom:12px;page-break-inside:avoid">
+          ${(it.sub||it.q)?`<div style="font-size:12px;font-weight:600;margin-bottom:3px">${admEsc(it.sub)}${it.q?` <span style="font-weight:400">${admEsc(it.q)}</span>`:''}</div>`:''}
+          ${it.text?`<div style="font-size:12px;line-height:1.9;white-space:pre-wrap;padding:6px 8px;background:#fafafa;border-radius:2px">${admEsc(it.text)}</div>`:''}
+          ${(it.images||[]).map((im,i)=> im.kind==='doc'
+            ? `<div style="font-size:11px;margin-top:4px">📎 <a href="${admEsc(im.url)}">${admEsc(im.name||'附件')}</a></div>`
+            : `<div><div style="font-size:9px;color:#999;margin-top:4px">${admEsc(it.sub)} · 图${i+1}</div><img src="${admEsc(im.url)}" style="${imgStyle}"></div>`).join('')}
+          ${!it.text && !(it.images||[]).length?'<div style="font-size:11px;color:#aaa">（未作答）</div>':''}
+        </div>`).join('')}
+  </div>`).join('')}
+  ${(sub.feedback_knowledge||sub.feedback_attitude||sub.feedback_suggestions||sub.teacher_feedback)?`
+  <div style="margin-top:16px;border-top:1px solid #ccc;padding-top:8px">
+    <div style="font-size:11px;font-weight:700;margin-bottom:4px">老师批改${sub.score?` · ${admEsc(sub.score)}`:''}${sub.graded_by?`（${admEsc(sub.graded_by)}）`:''}</div>
+    ${sub.feedback_knowledge?`<div style="font-size:11px">知识掌握：${admEsc(sub.feedback_knowledge)}</div>`:''}
+    ${sub.feedback_attitude?`<div style="font-size:11px">学习态度：${admEsc(sub.feedback_attitude)}</div>`:''}
+    ${sub.feedback_suggestions?`<div style="font-size:11px">改进建议：${admEsc(sub.feedback_suggestions)}</div>`:''}
+    ${(!sub.feedback_knowledge&&sub.teacher_feedback)?`<div style="font-size:11px;white-space:pre-wrap">${admEsc(sub.teacher_feedback)}</div>`:''}
+  </div>`:''}`;
+}
+
+function admHwTargets(sessionId, subId) {
+  const s = cachedSessions.find(x => x.id === sessionId) || {};
+  let subs = admHwSubs[sessionId] || [];
+  if (subId) subs = subs.filter(x => x.id === subId);
+  return { s, subs };
+}
+
+function admHwPrint(sessionId, subId) {
+  const { s, subs } = admHwTargets(sessionId, subId);
+  if (!subs.length) return;
+  const w = window.open('', '_blank');
+  if (!w) { alert('浏览器拦截了新窗口，请允许弹出后重试'); return; }
+  w.document.write(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>${s.course_name||''}_第${s.session_number||''}回作业</title>
+<style>body{font-family:'Noto Serif SC','Hiragino Sans GB',serif;background:#fff;margin:0;padding:24px;color:#1a1814}
+@media print{.noprint{display:none!important}body{padding:0}}.paper{max-width:820px;margin:0 auto 40px}</style></head><body>
+<div class="noprint" style="text-align:right;margin-bottom:12px"><button onclick="window.print()" style="font-size:13px;padding:8px 20px;cursor:pointer">🖨 打印 / 保存为 PDF</button></div>
+${subs.map(sub => `<div class="paper" style="page-break-after:always">${admHwPaper(s, sub, true)}</div>`).join('')}
+</body></html>`);
+  w.document.close();
+}
+
+function admHwWord(sessionId, subId) {
+  const { s, subs } = admHwTargets(sessionId, subId);
+  if (!subs.length) return;
+  const body = subs.map(sub => admHwPaper(s, sub, false) + '<br clear=all style="page-break-before:always">').join('');
+  const html = `<html xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8">
+<style>body{font-family:'Noto Serif SC',serif;font-size:12pt;line-height:1.8}img{max-width:520px}</style></head><body>${body}</body></html>`;
+  const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${s.course_name||''}_第${s.session_number||''}回作业${subId?'_'+subs[0].student_name:''}.doc`;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
 
 function setAttPeriod(p){
@@ -476,44 +528,29 @@ function toggleHw(studentId){
 }
 
 async function adminBatchDownloadCourse(courseId) {
-  const sessions = cachedSessions.filter(s => s.course_id === courseId && s.homework_enabled);
-  if (!sessions.length) { alert('该课程暂无开通作业的课次'); return; }
-  const sessionIds = sessions.map(s => `"${s.id}"`).join(',');
+  const sessions = cachedSessions.filter(s => s.course_id === courseId && s.homework_enabled)
+    .sort((a, b) => String(a.session_date).localeCompare(String(b.session_date)));
+  if (!sessions.length) { alert('该课程暂无布置作业的课次'); return; }
   try {
-    const recs = await sb(`/rest/v1/session_records?session_id=in.(${sessionIds})&homework_file_url=not.is.null&select=*&order=session_date.asc,student_name.asc`);
-    if (!recs.length) { alert('暂无提交的作业文件'); return; }
-    // 生成对照表
-    const listLines = ['文件ID → 课次 → 学生姓名'];
-    recs.forEach(r => {
-      const s = sessions.find(x => x.id === r.session_id);
-      const ext = r.homework_file_url.split('.').pop().split('?')[0].slice(0,5);
-      listLines.push(`${r.id}.${ext}  →  ${s ? s.session_date + ' ' + (s.session_title||'') : r.session_id}  →  ${r.student_name}`);
-    });
-    const blob = new Blob([listLines.join('\n')], {type:'text/plain;charset=utf-8'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `作业对照表.txt`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-    await new Promise(res => setTimeout(res, 300));
-    // 下载作业文件
-    for (const r of recs) {
-      try {
-        const res = await fetch(r.homework_file_url);
-        const blob2 = await res.blob();
-        const ext = r.homework_file_url.split('.').pop().split('?')[0].slice(0,5);
-        const a2 = document.createElement('a');
-        a2.href = URL.createObjectURL(blob2);
-        a2.download = `${r.id}.${ext}`;
-        a2.click();
-        URL.revokeObjectURL(a2.href);
-        await new Promise(res => setTimeout(res, 400));
-      } catch(e) {
-        window.open(r.homework_file_url, '_blank');
-        await new Promise(res => setTimeout(res, 400));
-      }
-    }
-  } catch(e) { alert('下载失败：' + e.message); }
+    const ids = sessions.map(s => `"${s.id}"`).join(',');
+    const subs = await sb(`/rest/v1/homework_submissions?session_id=in.(${ids})&select=*&order=session_date.asc,student_name.asc`);
+    if (!subs || !subs.length) { alert('该课程暂无学生提交的作业'); return; }
+    const course = cachedCourses.find(c => c.id === courseId) || {};
+    const w = window.open('', '_blank');
+    if (!w) { alert('浏览器拦截了新窗口，请允许弹出后重试'); return; }
+    const body = subs.map(sub => {
+      const s = sessions.find(x => x.id === sub.session_id) || {};
+      return `<div class="paper" style="page-break-after:always">${admHwPaper(s, sub, true)}</div>`;
+    }).join('');
+    w.document.write(`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>${course.name || ''}_全部作业</title>
+<style>body{font-family:'Noto Serif SC','Hiragino Sans GB',serif;background:#fff;margin:0;padding:24px;color:#1a1814}
+@media print{.noprint{display:none!important}body{padding:0}}.paper{max-width:820px;margin:0 auto 40px}</style></head><body>
+<div class="noprint" style="text-align:right;margin-bottom:12px">
+  <span style="font-size:12px;color:#666;margin-right:10px">${course.name || ''}　共 ${subs.length} 份</span>
+  <button onclick="window.print()" style="font-size:13px;padding:8px 20px;cursor:pointer">🖨 打印 / 保存为 PDF</button>
+</div>${body}</body></html>`);
+    w.document.close();
+  } catch (e) { alert('导出失败：' + e.message); }
 }
 
 
