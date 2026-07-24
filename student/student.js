@@ -804,35 +804,29 @@ async function loadSchoolPlanBanner() {
       if (!schoolFilled) reminders.push(`🏫 ${shares[0].title} · 待填写志望校`);
     }
 
-    // 未交作业提醒（题目由 admin 在课程安排单回布置；提交记录在 homework_submissions）
-    if (stu) {
-      try {
-        const today = new Date();
-        const from = new Date(today); from.setDate(today.getDate() - 30);
-        const to = new Date(today); to.setDate(today.getDate() + 14);
-        const fmt = d => d.toISOString().slice(0, 10);
-        const myMajor = stu.major || major;
-        const accept = myMajor === 'shakai_group'
-          ? ['shakai_group', 'shakai', 'shinpan', 'fukushi']
-          : ['shakai', 'shinpan', 'fukushi'].includes(myMajor) ? [myMajor, 'shakai_group'] : [myMajor];
-        const [sessions, subs] = await Promise.all([
-          sb(`/rest/v1/course_sessions?session_date=gte.${fmt(from)}&session_date=lte.${fmt(to)}&homework_enabled=is.true&select=id,course_name,session_number,session_date,major,homework_questions&order=session_date.desc`).catch(() => []),
-          sb(`/rest/v1/homework_submissions?student_name=eq.${encodeURIComponent(name)}&select=session_id`).catch(() => []),
-        ]);
-        const done = new Set((subs || []).map(x => x.session_id));
-        const pending = (sessions || []).filter(s => {
-          const q = s.homework_questions;
-          const hasQ = Array.isArray(q) ? q.length > 0 : !!(q && Array.isArray(q.levels) && q.levels.length);
-          if (!hasQ || done.has(s.id)) return false;
-          const sm = Array.isArray(s.major) ? s.major : [s.major || ''];
-          return sm.some(m => accept.includes(m));
-        });
-        if (pending.length) {
-          const first = pending[0];
-          reminders.push(`📝 ${first.course_name || ''}${first.session_number ? ` 第${first.session_number}回` : ''} 作业未提交${pending.length > 1 ? ` 等 ${pending.length} 次` : ''}`);
-        }
-      } catch (e) {}
-    }
+    // 作业提醒（预约页公开，不区分个人提交状态）：该专业近期已布置的作业
+    try {
+      const today = new Date();
+      const from = new Date(today); from.setDate(today.getDate() - 14);
+      const to = new Date(today); to.setDate(today.getDate() + 7);
+      const fmt = d => d.toISOString().slice(0, 10);
+      const myMajor = shareMajor;
+      const accept = myMajor === 'shakai_group'
+        ? ['shakai_group', 'shakai', 'shinpan', 'fukushi']
+        : ['shakai', 'shinpan', 'fukushi'].includes(myMajor) ? [myMajor, 'shakai_group'] : [myMajor];
+      const sessions = await sb(`/rest/v1/course_sessions?session_date=gte.${fmt(from)}&session_date=lte.${fmt(to)}&homework_enabled=is.true&select=course_name,session_number,session_date,major,homework_questions&order=session_date.desc`).catch(() => []);
+      const withHw = (sessions || []).filter(s => {
+        const q = s.homework_questions;
+        const hasQ = Array.isArray(q) ? q.length > 0 : !!(q && Array.isArray(q.levels) && q.levels.length);
+        if (!hasQ) return false;
+        const sm = Array.isArray(s.major) ? s.major : [s.major || ''];
+        return sm.some(m => accept.includes(m));
+      });
+      if (withHw.length) {
+        const f = withHw[0];
+        reminders.push(`📝 ${f.course_name || ''}${f.session_number ? ` 第${f.session_number}回` : ''} 已布置作业${withHw.length > 1 ? ` 等 ${withHw.length} 次` : ''}，请登录学习记录完成提交`);
+      }
+    } catch (e) {}
 
     if (!reminders.length) return;
     const strip = document.getElementById('reminderStrip');
