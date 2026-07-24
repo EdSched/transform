@@ -1242,7 +1242,18 @@ function hwPreview(url, name) {
              <a href="${escA(url)}" target="_blank" style="display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-size:12px;padding:9px 24px;border-radius:3px">打开 PDF 查看题目</a>
            </div>`
         : `<iframe src="${escA(url)}" style="width:100%;height:72vh;border:none;display:block"></iframe>`)
-      : `<img src="${escA(url)}" style="max-width:100%;display:block" onclick="window.open('${escA(url)}','_blank')">`}`;
+      : `<div style="padding:8px">
+           <img src="${escA(url)}" style="max-width:100%;display:block;cursor:zoom-in" onclick="window.open('${escA(url)}','_blank')">
+           <div style="text-align:center;margin-top:8px">
+             <a href="${escA(url)}" target="_blank" style="display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-size:11px;padding:7px 18px;border-radius:3px">🔍 全屏查看 / 放大</a>
+           </div>
+         </div>`}`;
+  // 窄屏：预览在左屏，自动滑过去，否则点了看不到变化
+  try {
+    const split = box.closest('.study-split');
+    if (split && window.innerWidth < 1200) split.scrollTo({ left: 0, behavior: 'smooth' });
+    else box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch (e) {}
 }
 
 // ── 作业状态 ──
@@ -1409,7 +1420,8 @@ function hwDetailHtml(s, sub) {
     const bUnits = units.filter(u => u.block === bi);
     return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:8px">
       <div style="font-size:12px;font-weight:600;margin-bottom:6px">${T?`【${T}】`:''}${escA(b.title||'')}
-        ${b.file?`<span onclick="hwPreview('${escA(b.file.url)}','${escA(b.file.name||'题目')}')" style="font-size:10px;color:var(--accent);margin-left:8px;font-weight:400;cursor:pointer;text-decoration:underline">📎 查看题目（${escA(b.file.name||'文件')}）</span>`:''}
+        ${b.file?`<span onclick="hwPreview('${escA(b.file.url)}','${escA(b.file.name||'题目')}')" style="font-size:10px;color:var(--accent);margin-left:8px;font-weight:400;cursor:pointer;text-decoration:underline">📎 查看题目（${escA(b.file.name||'文件')}）</span>
+          <a href="${escA(b.file.url)}" target="_blank" style="font-size:10px;color:var(--text-muted);margin-left:6px;font-weight:400">↗ 新窗口</a>`:''}
       </div>
       ${(b.pick||0)>0&&!locked?`<div style="font-size:10px;color:var(--warn,#b8860b);margin-bottom:6px">✍ 以上${b.type==='term'?'问':'题'}中任选 <b>${b.pick}</b> ${b.type==='term'?'问':'题'}作答，请先点左侧「选做」标记你要回答的${b.type==='term'?'问':'题'}号</div>`:''}
       ${b.type==='choice'
