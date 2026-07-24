@@ -1253,6 +1253,7 @@ let hwDraft = {};         // { unitKey: { text, images:[{url,name}] } }
 let hwLevelPick = {};     // session_id → 选中的级别索引
 let hwWholeFile = null;   // 整份作业文件
 let hwCalcExpand = {};    // 计算题「分问上传」展开状态
+let hwPicked = {};        // 选做题：勾选要作答的题号
 let hwLoaded = false;
 
 async function loadStudyHwSessions(retry) {
@@ -1349,10 +1350,14 @@ function hwUnits(level) {
         out.push({ key:`${bi}-${q.num}-all`, block:bi, head, label:`第${q.num}题`, mode:'img', calcWhole:true, qnum:q.num, subs:q.subs||1 });
         if ((q.subs || 1) > 1) for (let j = 1; j <= q.subs; j++) out.push({ key:`${bi}-${q.num}-${j}`, block:bi, head, label:`第${q.num}题 问${j}`, mode:'img', calcSub:true, qnum:q.num });
       });
-    } else if (b.type === 'term') {
-      for (let i = 1; i <= (b.count || 0); i++) out.push({ key:`${bi}-${i}`, block:bi, head, label:`问${i}`, mode:'both' });
-    } else if (b.type === 'essay') {
-      for (let i = 1; i <= (b.count || 0); i++) out.push({ key:`${bi}-${i}`, block:bi, head, label:`第${i}题`, mode:'both' });
+    } else if (b.type === 'term' || b.type === 'essay') {
+      const unit = b.type === 'term' ? '问' : '题';
+      const items = (b.items && b.items.length) ? b.items : Array.from({length:b.count||0}, (_,i)=>({num:i+1, text:''}));
+      items.forEach(it => out.push({
+        key:`${bi}-${it.num}`, block:bi, head,
+        label: b.type === 'term' ? `问${it.num}` : `第${it.num}题`,
+        text: it.text || '', mode:'both', pickable: (b.pick||0) > 0, unit,
+      }));
     } else {
       // 自由题：默认整块统一作答（小问同属一个大题，一处作答/上传）
       if ((b.answerMode || 'whole') === 'whole') {
@@ -1403,6 +1408,7 @@ function hwDetailHtml(s, sub) {
       <div style="font-size:12px;font-weight:600;margin-bottom:6px">${T?`【${T}】`:''}${escA(b.title||'')}
         ${b.file?`<span onclick="hwPreview('${escA(b.file.url)}','${escA(b.file.name||'题目')}')" style="font-size:10px;color:var(--accent);margin-left:8px;font-weight:400;cursor:pointer;text-decoration:underline">📎 查看题目（${escA(b.file.name||'文件')}）</span>`:''}
       </div>
+      ${(b.pick||0)>0&&!locked?`<div style="font-size:10px;color:var(--warn,#b8860b);margin-bottom:6px">✍ 以上${b.type==='term'?'问':'题'}中任选 <b>${b.pick}</b> ${b.type==='term'?'问':'题'}作答，请先点左侧「选做」标记你要回答的${b.type==='term'?'问':'题'}号</div>`:''}
       ${b.type==='choice'
         ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px">
             ${bUnits.map(u=>`<div style="display:flex;align-items:center;gap:4px">
@@ -1444,18 +1450,22 @@ function hwDetailHtml(s, sub) {
           }).join('')
         : bUnits.map(u => {
             const a = ansOf(u.key); const imgs = a.images || [];
-            return `<div style="border-top:1px dashed var(--border-light);padding:7px 0">
+            const picked = !locked && u.pickable ? !!hwPicked[u.key] : true;
+            return `<div style="border-top:1px dashed var(--border-light);padding:7px 0;${(!locked&&u.pickable&&!picked)?'opacity:.62':''}">
               ${u.whole
                 ? `<div style="font-size:11.5px;line-height:1.9;white-space:pre-wrap;margin-bottom:6px">${escA(u.text||'')}</div>`
-                : `<div style="font-size:11px;font-weight:600;margin-bottom:4px">${u.label}${u.text?` <span style="font-weight:400;white-space:pre-wrap">${escA(u.text)}</span>`:''}</div>`}
+                : `<div style="font-size:11px;font-weight:600;margin-bottom:4px;display:flex;gap:6px;align-items:flex-start">
+                     ${(!locked&&u.pickable)?`<span onclick="hwTogglePick('${u.key}')" style="cursor:pointer;user-select:none;font-size:10px;border:1px solid ${picked?'var(--accent)':'var(--border)'};background:${picked?'var(--accent)':'transparent'};color:${picked?'#fff':'var(--text-muted)'};border-radius:2px;padding:1px 7px;white-space:nowrap;flex-shrink:0">${picked?'✓ 作答':'选做'}</span>`:''}
+                     <span>${u.label}${u.text?` <span style="font-weight:400;white-space:pre-wrap">${escA(u.text)}</span>`:''}</span>
+                   </div>`}
               ${locked
                 ? `${a.text?`<div style="font-size:11px;color:var(--text-2);line-height:1.9;white-space:pre-wrap;background:var(--bg);border-radius:2px;padding:6px 8px">${escA(a.text)}</div>`:''}
-                   ${imgs.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${imgs.map((im,i)=>`<a href="${escA(im.url)}" target="_blank" style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:2px 8px">📷 图${i+1}</a>`).join('')}</div>`:''}
+                   ${imgs.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${imgs.map((im,i)=>`<a href="${escA(im.url)}" target="_blank" style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:2px 8px">${im.kind==='doc'?`📎 ${escA(im.name||'文件')}`:`📷 图${i+1}`}</a>`).join('')}</div>`:''}
                    ${!a.text&&!imgs.length?'<div style="font-size:10px;color:var(--text-muted)">未作答</div>':''}`
                 : `${u.mode!=='img'?`<textarea rows="${u.mode==='both'?3:2}" placeholder="在此作答（也可只上传照片）" oninput="hwSetAns('${u.key}',this.value)" style="width:100%;font-size:12px;line-height:1.9;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${escA(a.text||'')}</textarea>`:''}
                    <div style="display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap">
-                     <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:3px 10px">📷 ${u.whole?'上传作答照片（可多张）':`上传${u.label}照片`}
-                       <input type="file" accept="image/*" multiple style="display:none" onchange="hwPickImages('${u.key}', this)"></label>
+                     <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:3px 10px">📎 ${u.whole?'上传作答（图片/Word/PDF，可多份）':`上传${u.label}（图片/Word/PDF）`}
+                       <input type="file" accept="image/*,.doc,.docx,.pdf" multiple style="display:none" onchange="hwPickImages('${u.key}', this)"></label>
                      <span id="hwimg_${u.key}" style="font-size:10px;color:var(--text-muted)">${imgs.length?imgs.map((x,i)=>`图${i+1}`).join('・'):'尚未上传'}</span>
                    </div>`}
             </div>`;
@@ -1509,9 +1519,9 @@ async function hwPickImages(key, input) {
       const ext = (f.name.split('.').pop()||'jpg').toLowerCase();
       const path = `${studyStudent.id}/${Date.now()}-${key}-${hwDraft[key].images.length+1}.${ext}`;
       const url = await sbUpload('homework', path, f);
-      hwDraft[key].images.push({ url, name: f.name });
+      hwDraft[key].images.push({ url, name: f.name, kind: /\.(jpe?g|png|gif|webp|heic)$/i.test(f.name) ? 'img' : 'doc' });
     }
-    if (tip) tip.textContent = hwDraft[key].images.map((x,i)=>`图${i+1}`).join('・');
+    if (tip) tip.textContent = hwDraft[key].images.map((x,i)=> x.kind === 'doc' ? (x.name||'文件') : `图${i+1}`).join('・');
   } catch (e) {
     if (tip) tip.textContent = '上传失败：' + e.message;
   }
@@ -1526,13 +1536,20 @@ async function hwSubmit(sid, levelKey) {
   const units = hwUnits(L);
   const answersAll = units.map(u => ({
     k: u.key, label: `${u.head?u.head+' ':''}${u.label}`,
+    q: u.text || '',                       // 题干随答案一并保存，便于老师对照批改
+    picked: u.pickable ? !!hwPicked[u.key] : undefined,
     text: (hwDraft[u.key] && hwDraft[u.key].text || '').trim(),
     images: (hwDraft[u.key] && hwDraft[u.key].images) || [],
   }));
   // 只保留有内容的作答单元（计算题的整题/分问二选一，空的不入库）
   const answers = answersAll.filter(a => a.text || a.images.length);
   const answered = answers.length;
-  const totalNeed = units.filter(u => !u.calcSub).length;  // 分问为可选项，不计入必答数
+  // 必答数：选做区块按 pick 计，其余按单元数；计算题分问不计
+  let totalNeed = 0;
+  (L.blocks || []).forEach((b, bi) => {
+    if ((b.pick || 0) > 0) { totalNeed += b.pick; return; }
+    totalNeed += units.filter(u => u.block === bi && !u.calcSub).length;
+  });
   if (!answered && !hwWholeFile) { alert('请至少作答一题，或上传整份作业文件'); return; }
   if (answered < totalNeed && !hwWholeFile && !confirm(`还有 ${totalNeed-answered} 处未作答，确认提交？提交后不可修改。`)) return;
   if ((answered >= totalNeed || hwWholeFile) && !confirm('确认提交作业？提交后不可修改。')) return;
@@ -1760,4 +1777,10 @@ async function hwWithdraw(sid) {
     hwDraft = {}; hwWholeFile = null;
     renderHwList();
   } catch (e) { alert('撤回失败：' + e.message); }
+}
+
+// 选做题勾选
+function hwTogglePick(key) {
+  hwPicked[key] = !hwPicked[key];
+  renderHwList();
 }
