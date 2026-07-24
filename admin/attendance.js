@@ -244,7 +244,7 @@ async function loadAdminHwPanel(sessionId) {
   <div style="display:flex;flex-direction:column;gap:4px">
     ${subs.map(x => `<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--border-light);border-radius:3px;background:var(--surface)">
       <span style="font-size:11px;font-weight:600">${x.student_name}</span>
-      <span style="font-size:9px;color:var(--text-3)">${(x.submitted_at||'').slice(0,16).replace('T',' ')}</span>
+      <span style="font-size:9px;color:var(--text-3)">${fmtJst(x.submitted_at)}</span>
       ${x.level?`<span style="font-size:9px;color:var(--text-3)">【${x.level}】</span>`:''}
       <span style="font-size:9px;color:var(--text-3)">${(x.answers||[]).filter(a=>a.text||(a.images||[]).length).length} 处作答${x.whole_file_url?' · 📎附件':''}</span>
       ${x.teacher_feedback||x.feedback_knowledge?`<span style="font-size:9px;color:var(--ok)">✓ 已批改${x.graded_by?`（${x.graded_by}）`:''}</span>`:'<span style="font-size:9px;color:var(--warn,#b8860b)">待批改</span>'}
@@ -259,11 +259,23 @@ async function loadAdminHwPanel(sessionId) {
 // ══ admin 侧作业整合与导出（与老师端同一套排版） ══
 let admHwSubs = {};
 
+// 时间统一按日本时间（JST）显示
+function fmtJst(ts) {
+  if (!ts) return '';
+  try {
+    const d = new Date(ts);
+    if (isNaN(d)) return String(ts).slice(0, 16).replace('T', ' ');
+    return d.toLocaleString('sv-SE', { timeZone: 'Asia/Tokyo' }).slice(0, 16);
+  } catch (e) { return String(ts).slice(0, 16).replace('T', ' '); }
+}
+
+
 function admEsc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
 
 function admHwPaper(s, sub, forPrint) {
-  const imgStyle = forPrint ? 'max-width:100%;display:block;margin:6px 0;border:1px solid #ddd'
-                            : 'max-width:100%;display:block;margin:6px 0';
+  // Word 认 width 属性；打印用 max-height 防止一张图占满整页
+  const imgStyle = 'max-width:100%;max-height:16cm;width:auto;height:auto;display:block;margin:6px 0;border:1px solid #ddd';
+  const imgAttr = 'width="440"';
   const groups = [];
   (sub.answers || []).forEach(a => {
     const label = a.label || a.k || '';
@@ -279,7 +291,7 @@ function admHwPaper(s, sub, forPrint) {
   return `
   <div style="border-bottom:2px solid #5a3e28;padding-bottom:8px;margin-bottom:14px">
     <div style="font-size:16px;font-weight:700">${admEsc(sub.student_name)} — ${admEsc(s.course_name||'')} 第${s.session_number||''}回 作业${sub.level?`（${admEsc(sub.level)}级）`:''}</div>
-    <div style="font-size:11px;color:#666;margin-top:3px">${s.session_date||''}${s.session_title?' · '+admEsc(s.session_title):''}　提交：${(sub.submitted_at||'').slice(0,16).replace('T',' ')}</div>
+    <div style="font-size:11px;color:#666;margin-top:3px">${s.session_date||''}${s.session_title?' · '+admEsc(s.session_title):''}　提交：${fmtJst(sub.submitted_at)}（JST）</div>
   </div>
   ${sub.whole_file_url?`<div style="font-size:11px;margin-bottom:10px">📎 整份作业：<a href="${admEsc(sub.whole_file_url)}">${admEsc(sub.whole_file_url)}</a></div>`:''}
   ${groups.map(g => `<div style="margin-bottom:16px">
@@ -293,7 +305,7 @@ function admHwPaper(s, sub, forPrint) {
           ${it.text?`<div style="font-size:12px;line-height:1.9;white-space:pre-wrap;padding:6px 8px;background:#fafafa;border-radius:2px">${admEsc(it.text)}</div>`:''}
           ${(it.images||[]).map((im,i)=> im.kind==='doc'
             ? `<div style="font-size:11px;margin-top:4px">📎 <a href="${admEsc(im.url)}">${admEsc(im.name||'附件')}</a></div>`
-            : `<div><div style="font-size:9px;color:#999;margin-top:4px">${admEsc(it.sub)} · 图${i+1}</div><img src="${admEsc(im.url)}" style="${imgStyle}"></div>`).join('')}
+            : `<div><div style="font-size:9px;color:#999;margin-top:4px">${admEsc(it.sub)} · 图${i+1}</div><img src="${admEsc(im.url)}" ${imgAttr} style="${imgStyle}"></div>`).join('')}
           ${!it.text && !(it.images||[]).length?'<div style="font-size:11px;color:#aaa">（未作答）</div>':''}
         </div>`).join('')}
   </div>`).join('')}
