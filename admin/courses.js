@@ -2543,7 +2543,16 @@ function hwBlockHtml(b,bi){
       ${legacy?`<div style="margin-top:3px;color:var(--warn,#b8860b)">⚠ 此区块为旧版分问设置，修改大题数后将转为多图模式</div>`:''}
     </div>`;
   } else if(b.type==='term'||b.type==='essay'){
-    cfg=`<label style="font-size:10px;color:var(--text-3)">${b.type==='term'?'问数':'题数'} <input type="number" min="1" value="${b.count||3}" onchange="hwSetBlock(${bi},'count',parseInt(this.value)||1)" style="${inp};width:60px"></label>`;
+    const unit=b.type==='term'?'问':'题';
+    cfg=`<div style="font-size:10px;color:var(--text-3)">
+      题目内容（每${unit}一行，以「1. 」开头；直接粘贴即可）
+      <textarea onchange="hwSetItems(${bi},this.value)" rows="5" placeholder="1. 请解释「社会资本」这一概念&#10;2. 请解释「文化再生产」&#10;3. 请解释「象征暴力」" style="${inp};width:100%;line-height:1.8;margin-top:3px;resize:vertical">${(b.items||[]).map(x=>`${x.num}. ${x.text}`).join('\n').replace(/</g,'&lt;')}</textarea>
+      <div style="display:flex;gap:12px;align-items:center;margin-top:5px;flex-wrap:wrap">
+        <label>选做数 <input type="number" min="0" value="${b.pick||0}" onchange="hwSetBlock(${bi},'pick',parseInt(this.value)||0)" style="${inp};width:56px"></label>
+        <span>0＝全部作答；填 2 即「以上${unit}中任选 2 ${unit}作答」，学生端可勾选所答${unit}号</span>
+      </div>
+      ${(b.items||[]).length?'':`<div style="margin-top:3px">也可只设数量不写题干：<label>${unit}数 <input type="number" min="1" value="${b.count||3}" onchange="hwSetBlock(${bi},'count',parseInt(this.value)||1)" style="${inp};width:56px"></label></div>`}
+    </div>`;
   } else if(b.type==='free'){
     cfg=`<div style="font-size:10px;color:var(--text-3)">题目（每题一行，以「1. 」开头）
       <textarea onchange="hwSetFree(${bi},this.value)" rows="4" placeholder="1. 请说明…&#10;2. 请分析…" style="${inp};width:100%;line-height:1.8;margin-top:3px;resize:vertical">${(b.items||[]).map(x=>`${x.num}. ${x.text}`).join('\n').replace(/</g,'&lt;')}</textarea>
@@ -2582,6 +2591,21 @@ function hwSetCalc(i,raw){
     return { num: parseInt(a)||idx+1, subs: (subs&&subs>1)?subs:1 };  // 只写题号=不分问
   });
 }
+function hwSetItems(i,raw){
+  const out=[];
+  String(raw||'').replace(/\r/g,'').split('\n').forEach(line=>{
+    const t=line.trim(); if(!t)return;
+    const m=t.match(/^(\d+)[.、)]\s*(.*)$/);
+    if(m) out.push({num:parseInt(m[1]),text:m[2].trim()});
+    else if(out.length) out[out.length-1].text+='\n'+t;
+    else out.push({num:1,text:t});
+  });
+  const items=out.filter(x=>x.text).map((x,ix)=>({num:ix+1,text:x.text}));
+  const b=hwCurLevel().blocks[i];
+  b.items=items;
+  if(items.length) b.count=items.length;
+}
+
 function hwSetFree(i,raw){
   const out=[];
   String(raw||'').replace(/\r/g,'').split('\n').forEach(line=>{
