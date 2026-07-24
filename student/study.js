@@ -127,8 +127,8 @@ function renderStudyMain() {
     </div>
     <button onclick="studyLogout()" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit;color:var(--text-muted)">退出</button>
   </div>
-  ${badges?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px">${badges}</div>`:''}
-  <div style="display:flex;gap:0;border-bottom:2px solid var(--border-light);margin-bottom:18px">
+  ${badges?`<div class="study-badgebar" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px">${badges}</div>`:''}
+  <div class="study-tabbar" style="display:flex;gap:0;border-bottom:2px solid var(--border-light);margin-bottom:18px">
     ${tabs.map(t=>`<button onclick="switchStudyTab('${t.id}')" style="padding:7px 14px;font-size:12px;background:none;border:none;border-bottom:2px solid ${studyTab===t.id?'var(--accent)':'transparent'};margin-bottom:-2px;cursor:pointer;font-family:inherit;color:${studyTab===t.id?'var(--accent)':'var(--text-muted)'};font-weight:${studyTab===t.id?'600':'400'};white-space:nowrap">${t.label}</button>`).join('')}
   </div>
   <div id="studyTabContent"></div>`;
