@@ -1529,13 +1529,41 @@ async function hwPickWhole(input) {
   const tip = document.getElementById('hw_whole_tip');
   if (tip) tip.textContent = '上传中…';
   try {
-    const ext = (f.name.split('.').pop()||'pdf').toLowerCase();
-    const url = await sbUpload('homework', `${studyStudent.id}/whole-${Date.now()}.${ext}`, f);
+    const packed = await hwCompressImage(f, 2000, 0.85);
+    const ext = (packed.name.split('.').pop()||'pdf').toLowerCase();
+    const url = await sbUpload('homework', `${studyStudent.id}/whole-${Date.now()}.${ext}`, packed);
     hwWholeFile = { url, name: f.name };
-    if (tip) tip.textContent = '✓ ' + f.name;
+    if (tip) tip.textContent = `✓ ${f.name}（${hwSizeLabel(packed.size)}）`;
   } catch (e) { if (tip) tip.textContent = '上传失败：' + e.message; }
   input.value = '';
 }
+
+// 上传前压缩：手机直出照片常有 3-8MB，压到长边 1600px / JPEG 82% 后通常 200-500KB
+// 非图片（Word/PDF）与体积已很小的图片原样上传
+async function hwCompressImage(file, maxSide, quality) {
+  if (!/^image\//.test(file.type) || /heic|heif/i.test(file.type)) {
+    // HEIC 等浏览器无法解码的格式：原样上传（Safari 上传时通常已自动转 JPEG）
+    if (!/^image\//.test(file.type)) return file;
+  }
+  if (file.size <= 400 * 1024) return file;   // 已经很小，不必处理
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, (maxSide || 1600) / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale), h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    if (bitmap.close) bitmap.close();
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality || 0.82));
+    if (!blob || blob.size >= file.size) return file;   // 压不小就用原图
+    return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+  } catch (e) {
+    return file;   // 任何解码失败都退回原文件，保证能交上作业
+  }
+}
+
+function hwSizeLabel(n) { return n > 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + 'MB' : Math.round(n / 1024) + 'KB'; }
 
 async function hwPickImages(key, input) {
   const files = [...(input.files||[])];
@@ -1545,13 +1573,20 @@ async function hwPickImages(key, input) {
   hwDraft[key] = hwDraft[key] || { text:'', images:[] };
   hwDraft[key].images = hwDraft[key].images || [];
   try {
-    for (const f of files) {
+    let saved = 0;
+    for (let i = 0; i < files.length; i++) {
+      const raw = files[i];
+      if (tip) tip.textContent = `处理中 ${i+1}/${files.length}…`;
+      const f = await hwCompressImage(raw, 1600, 0.82);
+      saved += Math.max(0, raw.size - f.size);
+      if (tip) tip.textContent = `上传中 ${i+1}/${files.length}（${hwSizeLabel(f.size)}）…`;
       const ext = (f.name.split('.').pop()||'jpg').toLowerCase();
       const path = `${studyStudent.id}/${Date.now()}-${key}-${hwDraft[key].images.length+1}.${ext}`;
       const url = await sbUpload('homework', path, f);
-      hwDraft[key].images.push({ url, name: f.name, kind: /\.(jpe?g|png|gif|webp|heic)$/i.test(f.name) ? 'img' : 'doc' });
+      hwDraft[key].images.push({ url, name: raw.name, kind: /\.(jpe?g|png|gif|webp|heic)$/i.test(raw.name) ? 'img' : 'doc' });
     }
-    if (tip) tip.textContent = hwDraft[key].images.map((x,i)=> x.kind === 'doc' ? (x.name||'文件') : `图${i+1}`).join('・');
+    if (tip) tip.textContent = hwDraft[key].images.map((x,i)=> x.kind === 'doc' ? (x.name||'文件') : `图${i+1}`).join('・')
+      + (saved > 200*1024 ? `（已压缩，省 ${hwSizeLabel(saved)}）` : '');
   } catch (e) {
     if (tip) tip.textContent = '上传失败：' + e.message;
   }
