@@ -69,7 +69,10 @@ function thwMainHtml() {
     return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:12px 14px">
       <div style="font-size:12px;font-weight:600;margin-bottom:2px">${thwEsc(s.course_name||'')} 第${s.session_number||''}回</div>
       <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">${s.session_date||''}${s.session_title?' · '+thwEsc(s.session_title):''} · 共 ${subs.length} 份提交</div>
-      <button onclick="thwPrintAll()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit;margin-bottom:10px">🖨 打印全部 / 存为 PDF</button>
+      <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+        <button onclick="thwExportWordAll()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">⬇ 全部导出 Word（可批注）</button>
+        <button onclick="thwPrintAll()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">🖨 打印 / 存为 PDF</button>
+      </div>
       <div style="display:flex;flex-direction:column;gap:5px">
         ${subs.map(x => `<div onclick="thwOpenStudent='${x.id}';thwRenderMain()" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border-light);border-radius:3px">
           <span style="font-size:12px;font-weight:600">${thwEsc(x.student_name)}</span>
@@ -88,7 +91,10 @@ function thwMainHtml() {
       <span onclick="thwOpenStudent=null;thwRenderMain()" style="font-size:11px;color:var(--accent);cursor:pointer">← 返回列表</span>
       <span style="font-size:13px;font-weight:600">${thwEsc(sub.student_name)}</span>
       <span style="font-size:10px;color:var(--text-3)">${thwEsc(s.course_name||'')} 第${s.session_number||''}回 · ${(sub.submitted_at||'').slice(0,16).replace('T',' ')}</span>
-      <button onclick="thwPrintOne('${sub.id}')" style="margin-left:auto;font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">🖨 打印 / 存 PDF</button>
+      <span style="margin-left:auto;display:flex;gap:5px">
+        <button onclick="thwExportWord('${sub.id}')" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">⬇ 导出 Word</button>
+        <button onclick="thwPrintOne('${sub.id}')" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">🖨 打印 / PDF</button>
+      </span>
     </div>
     <div style="border:1px solid var(--border-light);border-radius:3px;padding:12px;background:var(--bg);max-height:52vh;overflow-y:auto">
       ${thwPaperHtml(s, sub, false)}
@@ -145,14 +151,16 @@ function thwPaperHtml(s, sub, forPrint) {
   ${sub.whole_file_url ? `<div style="font-size:11px;margin-bottom:10px">📎 学生上传的整份作业：<a href="${thwEsc(sub.whole_file_url)}" target="_blank" style="color:#5a3e28">下载查看</a></div>` : ''}
   ${groups.map(g => `<div style="margin-bottom:${forPrint?'16px':'12px'}">
     ${g.head ? `<div style="font-size:${forPrint?'13px':'12px'};font-weight:700;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid ${forPrint?'#ccc':'var(--border-light)'}">${thwEsc(g.head)}</div>` : ''}
-    ${g.items.every(it => !(it.images||[]).length && (it.text||'').length <= 8)
+    ${g.items.every(it => !(it.images||[]).length && !(it.q||'') && (it.text||'').length <= 8)
       ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:4px">
           ${g.items.map(it => `<div style="font-size:11px"><span style="color:#999">${thwEsc(it.sub)}</span> <b>${thwEsc(it.text||'—')}</b></div>`).join('')}
         </div>`
       : g.items.map(it => `<div style="margin-bottom:${forPrint?'12px':'8px'};page-break-inside:avoid">
-          ${it.sub?`<div style="font-size:${forPrint?'12px':'11.5px'};font-weight:600;margin-bottom:3px">${thwEsc(it.sub)}</div>`:''}
+          ${(it.sub||it.q)?`<div style="font-size:${forPrint?'12px':'11.5px'};font-weight:600;margin-bottom:3px">${thwEsc(it.sub)}${it.q?` <span style="font-weight:400">${thwEsc(it.q)}</span>`:''}</div>`:''}
           ${it.text ? `<div style="font-size:${forPrint?'12px':'11.5px'};line-height:1.9;white-space:pre-wrap;padding:6px 8px;background:${forPrint?'#fafafa':'var(--surface)'};border-radius:2px">${thwEsc(it.text)}</div>` : ''}
-          ${(it.images||[]).map((im, i) => `<div><div style="font-size:9px;color:#999;margin-top:4px">${thwEsc(it.sub)} · 图${i+1}</div><img src="${thwEsc(im.url)}" style="${imgStyle}"></div>`).join('')}
+          ${(it.images||[]).map((im, i) => im.kind==='doc'
+            ? `<div style="font-size:11px;margin-top:4px">📎 <a href="${thwEsc(im.url)}" target="_blank" style="color:#5a3e28">${thwEsc(im.name||'附件')}</a></div>`
+            : `<div><div style="font-size:9px;color:#999;margin-top:4px">${thwEsc(it.sub)} · 图${i+1}</div><img src="${thwEsc(im.url)}" style="${imgStyle}"></div>`).join('')}
           ${!it.text && !(it.images||[]).length ? `<div style="font-size:11px;color:#aaa">（未作答）</div>` : ''}
         </div>`).join('')}
   </div>`).join('')}`;
@@ -222,4 +230,78 @@ async function thwSaveFeedback(subId) {
     thwOpenStudent = null;
     thwRender();
   } catch (e) { alert('保存失败：' + e.message); }
+}
+
+// ══ 导出 Word（.doc，Word 可直接打开并批注；图片以链接嵌入，文字作答完整保留） ══
+function thwWordBlob(title, bodyHtml) {
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><title>${title}</title>
+<style>
+  body{font-family:'Noto Serif SC','MS Mincho',serif;font-size:12pt;line-height:1.8;color:#1a1814}
+  .q{font-weight:bold;margin:14pt 0 4pt}
+  .a{background:#f7f5f0;padding:8pt;margin-bottom:8pt;white-space:pre-wrap}
+  .head{border-bottom:2pt solid #5a3e28;padding-bottom:6pt;margin-bottom:12pt}
+  img{max-width:520px}
+</style></head><body>${bodyHtml}</body></html>`;
+  return new Blob(['\ufeff', html], { type: 'application/msword' });
+}
+
+function thwDownload(blob, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+// 供 Word 使用的正文（题干＋作答，图片用链接与内嵌两种方式）
+function thwWordBody(s, sub) {
+  const answers = sub.answers || [];
+  const groups = [];
+  answers.forEach(a => {
+    const label = a.label || a.k || '';
+    const sp = label.indexOf(' ');
+    const head = sp > 0 ? label.slice(0, sp) : '';
+    let sub2 = sp > 0 ? label.slice(sp + 1) : label;
+    if (sub2 === '作答') sub2 = '';
+    let g = groups.find(x => x.head === head);
+    if (!g) { g = { head, items: [] }; groups.push(g); }
+    g.items.push({ ...a, sub: sub2 });
+  });
+  return `<div class="head">
+    <div style="font-size:15pt;font-weight:bold">${thwEsc(sub.student_name)} — ${thwEsc(s.course_name||'')} 第${s.session_number||''}回 作业${sub.level?`（${thwEsc(sub.level)}级）`:''}</div>
+    <div style="font-size:10pt;color:#666">${s.session_date||''}　提交时间：${(sub.submitted_at||'').slice(0,16).replace('T',' ')}</div>
+  </div>
+  ${sub.whole_file_url?`<p style="font-size:10pt">学生上传的整份作业：<a href="${thwEsc(sub.whole_file_url)}">${thwEsc(sub.whole_file_url)}</a></p>`:''}
+  ${groups.map(g => `
+    ${g.head?`<div style="font-size:13pt;font-weight:bold;margin-top:16pt">${thwEsc(g.head)}</div>`:''}
+    ${g.items.map(it => `
+      <div class="q">${thwEsc(it.sub)}${it.q?` ${thwEsc(it.q)}`:''}</div>
+      ${it.text?`<div class="a">${thwEsc(it.text)}</div>`:''}
+      ${(it.images||[]).map((im,i) => im.kind==='doc'
+        ? `<p style="font-size:10pt">📎 附件：<a href="${thwEsc(im.url)}">${thwEsc(im.name||'文件')}</a></p>`
+        : `<p style="font-size:9pt;color:#888">${thwEsc(it.sub)} · 图${i+1}</p><p><img src="${thwEsc(im.url)}"></p>`).join('')}
+      ${!it.text && !(it.images||[]).length?`<div style="color:#aaa">（未作答）</div>`:''}
+    `).join('')}
+  `).join('')}
+  <div style="margin-top:24pt;border-top:1pt solid #ccc;padding-top:8pt;font-size:10pt;color:#888">批改栏（可直接在此处或各题下方批注）</div>
+  <div style="min-height:80pt"></div>`;
+}
+
+function thwExportWord(subId) {
+  const s = thwSessions.find(x => x.id === thwOpenSession);
+  const sub = (thwSubs[thwOpenSession] || []).find(x => x.id === subId);
+  if (!s || !sub) return;
+  const name = `${sub.student_name}_${s.course_name||''}_第${s.session_number||''}回作业.doc`;
+  thwDownload(thwWordBlob(name, thwWordBody(s, sub)), name);
+}
+
+function thwExportWordAll() {
+  const s = thwSessions.find(x => x.id === thwOpenSession);
+  const subs = thwSubs[thwOpenSession] || [];
+  if (!s || !subs.length) return;
+  const body = subs.map(sub => thwWordBody(s, sub) + '<br clear=all style="page-break-before:always">').join('');
+  const name = `${s.course_name||''}_第${s.session_number||''}回_全部作业.doc`;
+  thwDownload(thwWordBlob(name, body), name);
 }
