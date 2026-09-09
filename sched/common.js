@@ -14,27 +14,14 @@ function sbHeaders(extra){
 }
 async function sbGet(table, query){
   const url = SB_URL + '/rest/v1/' + table + '?' + (query || 'select=*');
-  const r = await fetch(url, { headers: sbHeaders(), cache:'no-store' });
+  const r = await fetch(url, { headers: sbHeaders() });
   if(!r.ok) throw new Error(table + ' 读取失败: ' + r.status + ' ' + await r.text());
   return r.json();
-}
-const _TIME_FIELDS = ['time_range','start_time','end_time'];
-function _normTimeColon(v){
-  if (Array.isArray(v)) return v.map(_normTimeColon);
-  if (v && typeof v === 'object') {
-    const o = {};
-    for (const k in v) {
-      if (_TIME_FIELDS.includes(k) && typeof v[k] === 'string') o[k] = v[k].replace(/：/g, ':');
-      else o[k] = _normTimeColon(v[k]);
-    }
-    return o;
-  }
-  return v;
 }
 async function sbInsert(table, rows){
   const r = await fetch(SB_URL + '/rest/v1/' + table, {
     method:'POST', headers: sbHeaders({ Prefer:'return=representation' }),
-    body: JSON.stringify(_normTimeColon(Array.isArray(rows)? rows : [rows]))
+    body: JSON.stringify(Array.isArray(rows)? rows : [rows])
   });
   if(!r.ok) throw new Error('写入失败: ' + r.status + ' ' + await r.text());
   return r.json();
@@ -42,7 +29,7 @@ async function sbInsert(table, rows){
 async function sbUpdate(table, id, patch){
   const r = await fetch(SB_URL + '/rest/v1/' + table + '?id=eq.' + id, {
     method:'PATCH', headers: sbHeaders({ Prefer:'return=representation' }),
-    body: JSON.stringify(_normTimeColon(patch))
+    body: JSON.stringify(patch)
   });
   if(!r.ok) throw new Error('更新失败: ' + r.status + ' ' + await r.text());
   return r.json();
@@ -69,8 +56,8 @@ function parseWeekdays(s){
   const arr = String(s).split(/[\/、,，\s;；]+/).map(x=>WD_MAP[x.trim()]).filter(Boolean);
   return [...new Set(arr)].sort((a,b)=>a-b);
 }
-function weekdaysLabel(str){ // "2,4"或"周二,周四" -> "周二/周四"
-  return parseWeekdaysSched(str).map(d=>WEEKDAYS[d]).filter(Boolean).join('/');
+function weekdaysLabel(str){ // "2,4" -> "周二/周四"
+  return String(str||'').split(',').filter(Boolean).map(d=>WEEKDAYS[Number(d)]).join('/');
 }
 const KIND_LABEL = { course:'排课', vip:'VIP', temp:'临时使用', rental:'对外出租', meeting:'开会' };
 const KIND_CLASS = { course:'k-course', vip:'k-vip', temp:'k-temp', rental:'k-rental', meeting:'k-meeting' };
@@ -91,23 +78,6 @@ function slotEnd(t){ // 某 30 分格的结束时刻
 function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function weekdayOf(dateStr){ // 1=周一...7=周日
   const d=new Date(dateStr+'T00:00:00'); const w=d.getDay(); return w===0?7:w;
-}
-// 统一解析 weekdays，返回 sched 的 1-7 数组（周一=1…周日=7，与 weekdayOf 一致）。
-// 输入兼容：中文"周日/周一…"及单字"一二三…日天"、数字1-7、以及周日既可写 0 也可写 7。
-function parseWeekdaysSched(str){
-  if(str===null||str===undefined||str==='') return [];
-  str=String(str);
-  const days=[];
-  // 中文：周X/星期X/礼拜X 及单字 一二三…日/天（日/天→7）
-  const cn={'日':7,'天':7,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6};
-  const cm=str.match(/[周星期礼拜]+\s*([日天一二三四五六])/g);
-  if(cm) cm.forEach(m=>{const ch=m.slice(-1); if(ch in cn) days.push(cn[ch]);});
-  // 若没有"周/星期"前缀，则直接扫描单字（如"一,三,日"）
-  if(!cm){ for(const ch of str){ if(ch in cn) days.push(cn[ch]); } }
-  // 数字：0 或 7 都作周日→7；1-6 原样
-  const nm=str.match(/\d+/g);
-  if(nm) nm.forEach(n=>{let v=parseInt(n,10); if(v===0||v===7) days.push(7); else if(v>=1&&v<=6) days.push(v);});
-  return [...new Set(days)];
 }
 function overlap(aS,aE,bS,bE){ return aS < bE && bS < aE; } // 时间字符串区间是否重叠
 
@@ -184,7 +154,7 @@ function schedulingReminders(courses, bookings){
 /* 推断课程"班级性质"：共通/线上/周末/下午/晚上/默认。用于课表分组显示 */
 function classKind(c){
   const name=(c.name||'');
-  const wds=parseWeekdaysSched(c.weekdays);
+  const wds=(c.weekdays||'').split(',').map(Number).filter(x=>x);
   const st=(c.start_time||'');
   if(c.course_type==='共通课' || /共通|進学指導|進学指导|高数|高數/.test(name)) return '共通课';
   if(c.mode==='线上') return '线上班';
@@ -261,7 +231,8 @@ function renderOccupancyGrid(rooms, items, keyField, opts){
         let styleAttr='', cc=null;
         if(opts.catOf && b.course_id){ const cat=opts.catOf(b.course_id); if(cat){ cc=catColor(cat); } }
         if(cc) styleAttr=` style="background:${cc.bg};border-color:${cc.bd};color:${cc.tx}"`;
-        h+=`<td class="occ ${cc?'':(KIND_CLASS[b.kind]||'')}${pend?' occ-pend':''}" data-b="${b.id}" data-kind="${esc(b.kind||'')}" rowspan="${span}"${styleAttr}>`+
+        const clickable = opts.occClickable ? ` data-occ="${b.id}" style="cursor:pointer"` : '';
+        h+=`<td class="occ ${cc?'':(KIND_CLASS[b.kind]||'')}${pend?' occ-pend':''}" rowspan="${span}"${styleAttr}${clickable}>`+
            `<div class="occ-in">${esc(label)}${mic}`+
            `<small>${esc(who)} ${b.start_time}-${b.end_time}${pend&&!(opts.hideWho||opts.labelOnly)?' · 待确认':''}</small></div></td>`;
       }else{
@@ -380,19 +351,17 @@ function toast(msg, ok){ // 顶部临时提示
 const PERM_DEFS = [
   ['board',           '教室看板',        'board.html'],
   ['timetable',       '课程表',          'timetable.html'],
-  ['roster',          '排班日历',        'roster.html'],
   ['meeting_view',    '腾讯会议账号占用', 'meeting.html'],
   ['entry_room',      '教室占用录入',    'booking.html'],      // 仅临时/租用（页面内再限制用途）
   ['entry_room_full', '教室占用录入',    'booking.html'],      // 全部用途（分配UI里隐藏，与上合并）
   ['approve',         '预约批准',        'admin.html?tab=pending'],
   ['assign',          '排教室',          'admin.html?tab=assign'],
-  ['meeting_arrange', '会议链接设定',    'meeting.html'],
+  ['meeting_arrange', '会议链接设定',    'admin.html?tab=mtgsetup'],
   ['conflict',        '冲突检查',        'admin.html?tab=conflict'],
-  ['occupy',          '教室占用管理',    'booking.html'],
+  ['occupy',          '教室占用管理',    'admin.html?tab=occupy'],
   ['room_manage',     '教室管理',        'admin.html?tab=rooms'],
   ['account_manage',  '会议账号管理',    'admin.html?tab=accounts'],
   ['course',          '课程管理',        'entry.html'],
-  ['course_audit',    '课程审查',        'entry.html'],
   ['manage',          '账号与权限管理',  'admin.html'],           // 超级权限（分配UI里隐藏，仅admin）
 ];
 const PERM_LABEL = Object.fromEntries(PERM_DEFS.map(p=>[p[0],p[1]]));
