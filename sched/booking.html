@@ -293,7 +293,8 @@ function find(){
   const use=el('use').value, campus=el('campus').value, date=el('date').value;
   const s=el('st').value, e=el('et').value, ppl=Number(el('ppl').value)||0;
   if(e<=s){ toast('结束需晚于开始', false); return; }
-  let pool=poolFor(use, campus).filter(r=>!isCosmo(r));
+  // 租用教室（東京コスモ等）：只有管理员能在此占用；普通账号仍排除（排大课不受影响）
+  let pool=poolFor(use, campus).filter(r=>CANMANAGE ? true : !isCosmo(r));
   if(ppl) pool=pool.filter(r=>r.capacity>=ppl);
   const rows=pool.map(r=>{ const conf=roomConflicts(BOOKINGS,r.id,date,s,e,null); return {r,free:conf.length===0,conf}; });
   let h=`<div class="muted" style="margin-bottom:8px">${WEEKDAYS[weekdayOf(date)]} ${date} ${s}-${e}${ppl?(' · ≥'+ppl+'人'):''} · 用途：${KIND_LABEL[use==='vip'?'vip':use]||use}</div>`;
