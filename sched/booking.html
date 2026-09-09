@@ -246,6 +246,7 @@ function occupyEditForm(id){
       '<div class="field"><label>结束</label><input type="time" id="oe_et" value="'+esc(b.end_time||'')+'"></div>'+
       '<div class="field"><label>使用人</label><input id="oe_user" value="'+esc(b.user_name||'')+'"></div>'+
       '<div class="field"><label>状态</label><select id="oe_status"><option value="confirmed"'+(b.status!=='pending'?' selected':'')+'>已确认</option><option value="pending"'+(b.status==='pending'?' selected':'')+'>待确认</option></select></div>'+
+      '<div class="field"><label>对外看板(today)显示</label><select id="oe_showtitle"><option value="0"'+(b.show_title===true?'':' selected')+'>只标类型（如VIP/临时）</option><option value="1"'+(b.show_title===true?' selected':'')+'>显示标题（如MBA课程）</option></select></div>'+
     '</div>'+
     '<div class="field" style="margin-top:8px"><label>备注</label><input id="oe_note" value="'+esc(b.note||'')+'" style="width:100%"></div>'+
     '<div id="oe_warn" style="margin-top:8px"></div>'+
@@ -260,7 +261,8 @@ function occupyEditForm(id){
   };
   el('oe_save').onclick=async()=>{
     const patch={ room_id: el('oe_room').value||null, start_time: el('oe_st').value||null, end_time: el('oe_et').value||null,
-      user_name: el('oe_user').value.trim()||null, status: el('oe_status').value, note: el('oe_note').value.trim()||null };
+      user_name: el('oe_user').value.trim()||null, status: el('oe_status').value, note: el('oe_note').value.trim()||null,
+      show_title: el('oe_showtitle') ? el('oe_showtitle').value==='1' : (b.show_title===true) };
     if(isWeekly){ patch.start_date=el('oe_sd').value||null; patch.end_date=el('oe_ed').value||null; }
     else { patch.booking_date=el('oe_date').value||null; }
     const btn=el('oe_save'); btn.disabled=true; btn.textContent='保存中…';
