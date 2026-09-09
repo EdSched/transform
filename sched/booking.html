@@ -131,7 +131,18 @@ function renderGrid(){
   if(!campus||!date||!rooms.length){ box.innerHTML='<div class="muted">该校区暂无对应教室</div>'; return; }
   const todays=BOOKINGS.filter(b=>bookingOnDate(b,date) &&
     !(b.kind==='course'&&b.course_id&&window.SKIPMAP&&window.SKIPMAP[b.course_id]&&window.SKIPMAP[b.course_id].has(date)));
-  box.innerHTML = renderOccupancyGrid(rooms, todays, 'room_id');
+  const mgr=isManager();
+  box.innerHTML = renderOccupancyGrid(rooms, todays, 'room_id', mgr?{occClickable:true}:{});
+  if(mgr){
+    box.querySelectorAll('[data-occ]').forEach(td=>td.onclick=async()=>{
+      const b=BOOKINGS.find(y=>String(y.id)===String(td.dataset.occ)); if(!b) return;
+      if(b.kind==='course'){ toast('课程占用请到课程管理里改', false); return; }
+      const rn=(ROOMS.find(r=>String(r.id)===String(b.room_id))||{}).name||'';
+      if(!confirm('删除该占用？\n'+rn+'　'+(b.title||KIND_LABEL[b.kind]||'')+'　'+(b.start_time||'')+'-'+(b.end_time||''))) return;
+      try{ await sbDelete('sched_bookings', b.id); BOOKINGS=BOOKINGS.filter(y=>String(y.id)!==String(b.id)); renderGrid(); renderMine(); toast('已删除'); }
+      catch(e){ toast(e.message, false); }
+    });
+  }
 }
 function find(){
   const use=el('use').value, campus=el('campus').value, date=el('date').value;
