@@ -24,8 +24,30 @@
       <div class="field"><label>结束</label><select id="et"></select></div>
       <div class="field"><label>人数</label><input type="number" id="ppl" min="1" style="width:80px"></div>
       <div class="field"><label>&nbsp;</label><button id="find">查空闲</button></div>
+      <div class="field" id="mgmtBtnWrap" style="display:none"><label>&nbsp;</label><button class="ghost" id="mgmtBtn">管理占用</button></div>
     </div>
     <div id="dateWarn"></div>
+  </div>
+  <!-- 教室占用管理（仅有管理权限的账号可见/可用） -->
+  <div class="card hidden" id="mgmtCard">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <b>教室占用管理</b>
+      <span class="muted" style="font-size:12px">查询已占用 → 编辑 / 删除（删除即释放教室）。课程占用请到「排教室」处理。</span>
+      <button class="ghost sm" id="mgmtClose" style="margin-left:auto">收起</button>
+    </div>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>用途</label><select id="oc_kind"><option value="">全部用途</option>
+        <option value="vip">VIP</option><option value="temp">临时使用</option><option value="rental">对外出租</option><option value="meeting">开会</option></select></div>
+      <div class="field"><label>校区</label><select id="oc_campus"></select></div>
+      <div class="field"><label>教室</label><select id="oc_room"><option value="">全部教室</option></select></div>
+      <div class="field"><label>起</label><input type="date" id="oc_from"></div>
+      <div class="field"><label>止</label><input type="date" id="oc_to" value=""></div>
+      <div class="field"><label>周几</label><select id="oc_wd"><option value="">不限</option>
+        <option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="7">周日</option></select></div>
+      <div class="field"><label>搜索使用人/备注</label><input id="oc_q" placeholder="关键词"></div>
+      <div class="field"><label>&nbsp;</label><span class="muted" id="oc_count"></span></div>
+    </div>
+    <div id="occupyTable"></div><div id="occupyEdit"></div>
   </div>
   <div class="card" id="resBox"><div class="muted">设定条件后点「查空闲」</div></div>
   <div class="card">
@@ -41,9 +63,10 @@
     <div class="board" id="gridBox"><div class="muted">选校区+日期后显示</div></div>
   </div>
 
-  <div class="card">
-    <h3 style="margin-top:2px" id="mineTitle">我录入的占用</h3>
-    <div class="muted" style="font-size:12px;margin-bottom:8px">这里显示你自己录入的教室占用，可以删除。管理员可删全部。</div>
+  <!-- 我录入的占用（非管理员：删自己的；管理员用上方完整管理面板即可，这里默认隐藏） -->
+  <div class="card" id="mineCard" style="display:none">
+    <h3 style="margin-top:2px" id="mineTitle">我在本设备录入的占用</h3>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">这里显示你自己录入的教室占用，可以删除（删除即释放教室）。</div>
     <div id="mineBox"><div class="muted">加载中…</div></div>
   </div>
 </div>
@@ -70,11 +93,40 @@
 <script src="common.js"></script>
 <script>
 el('nav').innerHTML = renderNav('booking.html');
-getRoleByCode(currentCode()).then(r=>{ if(r){ window.ROLE=r; el('nav').innerHTML = renderNav('booking.html', r); renderGrid(); renderMine(); } }).catch(()=>{});
+// 是否有「教室占用管理」权限：嵌入态由父页传 canmanage=1；独立态由 ?k= 解析角色
+let CANMANAGE = new URLSearchParams(location.search).get('canmanage')==='1';
+getRoleByCode(currentCode()).then(r=>{ if(r){ el('nav').innerHTML = renderNav('booking.html', r);
+  if(permSet(r).has('occupy')||permSet(r).has('manage')){ CANMANAGE=true; applyManageUI(); } } }).catch(()=>{});
 let ROOMS=[], ACCOUNTS=[], BOOKINGS=[], CUR=null;
+// 本设备标识：用于普通用户识别并删除"自己录入的"占用
 const BK_TKEY='sched_booking_token';
 function myToken(){ let t=localStorage.getItem(BK_TKEY); if(!t){ t='bk'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); localStorage.setItem(BK_TKEY,t); } return t; }
-function isManager(){ const ps=(window.ROLE&&window.ROLE.perms||'').split(',').map(s=>s.trim()); return (window.ROLE&&window.ROLE.role==='admin')||ps.includes('manage')||ps.includes('occupy'); }
+function applyManageUI(){ if(el('mgmtBtnWrap')) el('mgmtBtnWrap').style.display = CANMANAGE?'':'none'; renderMine(); }
+// 非管理员：显示"我在本设备录入的占用"，可删自己的。管理员用完整管理面板，这里隐藏。
+function renderMine(){
+  const card=el('mineCard'), box=el('mineBox'); if(!card||!box) return;
+  if(CANMANAGE){ card.style.display='none'; return; } // 管理员用上方完整面板
+  card.style.display='';
+  const tok=myToken();
+  const isMine=b=>String(b.created_by||'').split('|')[0]===tok;
+  const rmap={}; ROOMS.forEach(r=>rmap[r.id]=r);
+  let list=BOOKINGS.filter(b=>b.kind!=='course'&&isMine(b))
+    .sort((a,b)=>{const da=a.booking_date||a.start_date||'',db=b.booking_date||b.start_date||'';return db.localeCompare(da);});
+  let h='<table><thead><tr><th>用途</th><th>教室</th><th>日期</th><th>时段</th><th>使用人</th><th></th></tr></thead><tbody>';
+  if(!list.length) h+='<tr><td colspan="6" class="muted">暂无</td></tr>';
+  list.slice(0,60).forEach(b=>{ const r=rmap[b.room_id];
+    const when=b.recurrence==='weekly'?(weekdaysLabel(String(b.weekday))+' '+(b.start_date||'')+'~'+(b.end_date||'')):(b.booking_date||'');
+    h+=`<tr><td>${esc(KIND_LABEL[b.kind]||b.kind)}</td><td>${esc(r?r.name:'—')}</td><td>${esc(when)}</td><td>${esc(b.start_time||'')}-${esc(b.end_time||'')}</td><td>${esc(b.user_name||'')}</td><td><button class="sm danger" data-delmine="${b.id}">删除</button></td></tr>`;
+  });
+  h+='</tbody></table>';
+  box.innerHTML=h;
+  box.querySelectorAll('[data-delmine]').forEach(x=>x.onclick=async()=>{
+    const b=BOOKINGS.find(y=>String(y.id)===String(x.dataset.delmine)); if(!b||!isMine(b)) return;
+    if(!confirm('删除这条占用？删除即释放教室。')) return;
+    try{ await sbDelete('sched_bookings', b.id); BOOKINGS=BOOKINGS.filter(y=>String(y.id)!==String(b.id)); renderMine(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已删除'); }
+    catch(e){ toast(e.message,false); }
+  });
+}
 
 async function boot(){
   fillSelect(el('campus'), CAMPUSES);
@@ -104,19 +156,122 @@ async function boot(){
   el('date').onchange = renderGrid;
   el('campus').onchange = renderGrid;
   el('use').onchange = ()=>{ renderGrid(); if(el('resBox').dataset.done) find(); };
-  renderMine();
   el('m_um').onchange = ()=>{ el('m_umtip').classList.toggle('hidden', el('m_um').value!=='true'); };
   el('m_cancel').onclick = ()=>el('modal').classList.add('hidden');
   el('m_submit').onclick = submit;
+  // 教室占用管理面板
+  el('oc_from').value = todayStr();
+  fillSelect(el('oc_campus'), CAMPUSES, v=>v, v=>v, '全部校区');
+  fillMgmtRooms();
+  el('oc_campus').onchange=()=>{ fillMgmtRooms(); renderMgmtTable(); };
+  ['oc_kind','oc_room','oc_from','oc_to','oc_wd','oc_q'].forEach(id=>el(id)[id==='oc_q'?'oninput':'onchange']=renderMgmtTable);
+  el('mgmtBtn').onclick = ()=>{ const c=el('mgmtCard'); const open=!c.classList.contains('hidden'); c.classList.toggle('hidden'); if(!open){ renderMgmtTable(); c.scrollIntoView({behavior:'smooth',block:'start'}); } };
+  el('mgmtClose').onclick = ()=>el('mgmtCard').classList.add('hidden');
+  applyManageUI();
   renderGrid();
+}
+function aname(id){ const a=ACCOUNTS.find(x=>String(x.id)===String(id)); return a?(a.name+(a.note?('（'+a.note+'）'):'')):('#'+id); }
+async function reloadBookings(){ BOOKINGS = await sbGet('sched_bookings','select=*'); }
+function fillMgmtRooms(){ const cp=el('oc_campus').value; const rs=ROOMS.filter(r=>!cp||r.campus===cp);
+  el('oc_room').innerHTML='<option value="">全部教室</option>'+rs.map(r=>`<option value="${r.id}">${esc(r.name)}（${esc(r.campus)}）</option>`).join(''); }
+// 点网格里的占用格 → 直接编辑（仅非课程占用、且有管理权限）
+function wireGridClicks(){
+  if(!CANMANAGE) return;
+  el('gridBox').querySelectorAll('td.occ[data-b]').forEach(td=>{
+    if(td.dataset.kind==='course') return;   // 课程占用不在此处编辑
+    td.style.cursor='pointer'; td.title='点击编辑/删除此占用';
+    td.onclick=()=>{ if(el('mgmtCard').classList.contains('hidden')){ el('mgmtCard').classList.remove('hidden'); renderMgmtTable(); } occupyEditForm(td.dataset.b); };
+  });
+}
+function renderMgmtTable(){
+  if(!CANMANAGE) return;
+  const kind=el('oc_kind').value, campus=el('oc_campus').value, roomId=el('oc_room').value,
+        from=el('oc_from').value, to=el('oc_to').value, wd=el('oc_wd').value, q=(el('oc_q').value||'').trim().toLowerCase();
+  const rmap={}; ROOMS.forEach(r=>rmap[r.id]=r);
+  const bWd=b=>{ if(b.recurrence==='weekly'){ const w=Number(b.weekday); return w===0?7:w; } if(b.booking_date){ const w=weekdayOf(b.booking_date); return w===0?7:w; } return null; };
+  let list=BOOKINGS.filter(b=>b.kind!=='course' && b.status!=='rejected').filter(b=>{
+    if(kind && b.kind!==kind) return false;
+    if(roomId){ if(String(b.room_id)!==String(roomId)) return false; }
+    else if(campus){ const r=rmap[b.room_id]; if(!r||r.campus!==campus) return false; }
+    const s = b.recurrence==='weekly'? (b.start_date||b.booking_date||'') : (b.booking_date||'');
+    const e = b.recurrence==='weekly'? (b.end_date||b.start_date||b.booking_date||'') : (b.booking_date||'');
+    if(from && e && e<from) return false;
+    if(to && s && s>to) return false;
+    if(wd){ const w=bWd(b); if(w!==Number(wd)) return false; }
+    if(q && !((b.user_name||'').toLowerCase().includes(q)||(b.note||'').toLowerCase().includes(q)||(b.created_by||'').toLowerCase().includes(q))) return false;
+    return true;
+  }).sort((a,b)=>{ const da=a.booking_date||a.start_date||'', db=b.booking_date||b.start_date||''; return da.localeCompare(db); });
+  el('oc_count').textContent='共 '+list.length+' 条';
+  const showAll = window.OC_SHOWALL===true;
+  const LIMIT=50; const truncated = !showAll && list.length>LIMIT;
+  const shown = truncated ? list.slice(0,LIMIT) : list;
+  let h='<table><thead><tr><th>用途</th><th>校区</th><th>教室</th><th>日期/周期</th><th>时段</th><th>使用人</th><th>账号</th><th>状态</th><th>备注</th><th>操作</th></tr></thead><tbody>';
+  if(!shown.length) h+='<tr><td colspan="10" class="muted">无匹配记录</td></tr>';
+  shown.forEach(b=>{
+    const r=rmap[b.room_id];
+    const when = b.recurrence==='weekly'
+      ? (weekdaysLabel(String(b.weekday))+' '+(b.start_date||'')+'~'+(b.end_date||''))
+      : (b.booking_date||'');
+    h+=`<tr><td>${KIND_LABEL[b.kind]||esc(b.kind)}</td><td>${esc(r?r.campus:'')}</td><td>${esc(r?r.name:(b.room_id?('#'+b.room_id):'—'))}</td>`+
+      `<td>${esc(when)}</td><td>${b.start_time}-${b.end_time}</td><td>${esc(b.user_name||'')}</td>`+
+      `<td>${b.uses_meeting?esc(aname(b.meeting_account_id)):'—'}</td>`+
+      `<td>${b.status==='pending'?'<span class="badge b-warn">待确认</span>':'<span class="badge b-ok">已确认</span>'}</td>`+
+      `<td class="muted">${esc(b.note||'')}</td>`+
+      `<td><button class="sm ghost" data-edito="${b.id}">编辑</button> <button class="sm danger" data-delo="${b.id}">删</button></td></tr>`;
+  });
+  h+='</tbody></table>';
+  if(truncated) h+='<div style="text-align:center;margin-top:10px"><span class="muted" style="font-size:12px">仅显示前 '+LIMIT+' 条（共 '+list.length+' 条）。用上方筛选缩小范围，或 </span><button class="ghost sm" id="oc_showall">显示全部</button></div>';
+  else if(showAll && list.length>LIMIT) h+='<div style="text-align:center;margin-top:10px"><button class="ghost sm" id="oc_showless">收起（只看前 '+LIMIT+'）</button></div>';
+  el('occupyTable').innerHTML=h;
+  if(el('oc_showall')) el('oc_showall').onclick=()=>{ window.OC_SHOWALL=true; renderMgmtTable(); };
+  if(el('oc_showless')) el('oc_showless').onclick=()=>{ window.OC_SHOWALL=false; renderMgmtTable(); };
+  el('occupyTable').querySelectorAll('[data-delo]').forEach(x=>x.onclick=async()=>{ if(!confirm('删除该占用记录？删除即释放教室。')) return;
+    await sbDelete('sched_bookings',x.dataset.delo); await reloadBookings(); renderMgmtTable(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已删除（教室已释放）'); });
+  el('occupyTable').querySelectorAll('[data-edito]').forEach(x=>x.onclick=()=>occupyEditForm(x.dataset.edito));
+}
+function occupyEditForm(id){
+  const b=BOOKINGS.find(x=>String(x.id)===String(id)); if(!b) return;
+  if(b.kind==='course'){ toast('课程占用请到「排教室」处理', false); return; }
+  const rmap={}; ROOMS.forEach(r=>rmap[r.id]=r); const r=rmap[b.room_id];
+  const roomOpts=ROOMS.filter(x=>!r||x.campus===r.campus).map(x=>`<option value="${x.id}"${String(x.id)===String(b.room_id)?' selected':''}>${esc(x.name)}（${esc(x.campus)}）</option>`).join('');
+  const isWeekly=b.recurrence==='weekly';
+  let h='<div style="position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:60;overflow:auto;padding:40px 16px"><div class="card" style="width:520px;max-width:94vw;margin:auto">'+
+    '<h3 style="margin-top:2px">编辑占用 · '+(KIND_LABEL[b.kind]||b.kind)+'</h3>'+
+    '<div class="row">'+
+      '<div class="field"><label>教室</label><select id="oe_room">'+roomOpts+'</select></div>'+
+      (isWeekly
+        ? '<div class="field"><label>起始日</label><input type="date" id="oe_sd" value="'+esc(b.start_date||'')+'"></div><div class="field"><label>结束日</label><input type="date" id="oe_ed" value="'+esc(b.end_date||'')+'"></div>'
+        : '<div class="field"><label>日期</label><input type="date" id="oe_date" value="'+esc(b.booking_date||'')+'"></div>')+
+      '<div class="field"><label>开始</label><input type="time" id="oe_st" value="'+esc(b.start_time||'')+'"></div>'+
+      '<div class="field"><label>结束</label><input type="time" id="oe_et" value="'+esc(b.end_time||'')+'"></div>'+
+      '<div class="field"><label>使用人</label><input id="oe_user" value="'+esc(b.user_name||'')+'"></div>'+
+      '<div class="field"><label>状态</label><select id="oe_status"><option value="confirmed"'+(b.status!=='pending'?' selected':'')+'>已确认</option><option value="pending"'+(b.status==='pending'?' selected':'')+'>待确认</option></select></div>'+
+    '</div>'+
+    '<div class="field" style="margin-top:8px"><label>备注</label><input id="oe_note" value="'+esc(b.note||'')+'" style="width:100%"></div>'+
+    '<div id="oe_warn" style="margin-top:8px"></div>'+
+    '<div style="margin-top:12px;display:flex;gap:8px"><button id="oe_save">保存</button><button class="danger" id="oe_del">删除该占用</button><button class="ghost" id="oe_cancel">取消</button></div>'+
+    '</div></div>';
+  el('occupyEdit').innerHTML=h;
+  el('oe_cancel').onclick=()=>{ el('occupyEdit').innerHTML=''; };
+  el('oe_del').onclick=async()=>{
+    if(!confirm('删除该占用记录？删除即释放教室。')) return;
+    try{ await sbDelete('sched_bookings', b.id); await reloadBookings(); el('occupyEdit').innerHTML=''; renderMgmtTable(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已删除（教室已释放）'); }
+    catch(e){ el('oe_warn').innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>'; }
+  };
+  el('oe_save').onclick=async()=>{
+    const patch={ room_id: el('oe_room').value||null, start_time: el('oe_st').value||null, end_time: el('oe_et').value||null,
+      user_name: el('oe_user').value.trim()||null, status: el('oe_status').value, note: el('oe_note').value.trim()||null };
+    if(isWeekly){ patch.start_date=el('oe_sd').value||null; patch.end_date=el('oe_ed').value||null; }
+    else { patch.booking_date=el('oe_date').value||null; }
+    const btn=el('oe_save'); btn.disabled=true; btn.textContent='保存中…';
+    try{ await sbUpdate('sched_bookings', b.id, patch); await reloadBookings(); el('occupyEdit').innerHTML=''; renderMgmtTable(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已保存'); }
+    catch(e){ el('oe_warn').innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>'; btn.disabled=false; btn.textContent='保存'; }
+  };
 }
 const isCosmo=r=>/コスモ|cosmo|外借/i.test((r.name||'')+(r.campus||''));
 // 用途决定候选教室：VIP→只VIP；meeting→VIP+会议室；其它→全部
-function isRental(r){ return r.type==='租用' || /コスモ|cosmo|外借|租用/i.test((r.name||'')); }
 function poolFor(use, campus){
   let p=ROOMS.filter(r=>r.campus===campus);
-  // 租用教室（如東京コスモ）只有管理员（有教室占用管理权限）能在此占用；普通录入账号看不到
-  if(!isManager()) p=p.filter(r=>!isRental(r));
   // VIP/开会优先用专用教室，但专用不够时也可用大教室——全部列出，专用排前
   if(use==='vip'||use==='meeting'){
     const pref = use==='vip' ? (r=>r.type==='VIP') : (r=>r.type==='VIP'||r.type==='会议室');
@@ -131,18 +286,8 @@ function renderGrid(){
   if(!campus||!date||!rooms.length){ box.innerHTML='<div class="muted">该校区暂无对应教室</div>'; return; }
   const todays=BOOKINGS.filter(b=>bookingOnDate(b,date) &&
     !(b.kind==='course'&&b.course_id&&window.SKIPMAP&&window.SKIPMAP[b.course_id]&&window.SKIPMAP[b.course_id].has(date)));
-  const mgr=isManager();
-  box.innerHTML = renderOccupancyGrid(rooms, todays, 'room_id', mgr?{occClickable:true}:{});
-  if(mgr){
-    box.querySelectorAll('[data-occ]').forEach(td=>td.onclick=async()=>{
-      const b=BOOKINGS.find(y=>String(y.id)===String(td.dataset.occ)); if(!b) return;
-      if(b.kind==='course'){ toast('课程占用请到课程管理里改', false); return; }
-      const rn=(ROOMS.find(r=>String(r.id)===String(b.room_id))||{}).name||'';
-      if(!confirm('删除该占用？\n'+rn+'　'+(b.title||KIND_LABEL[b.kind]||'')+'　'+(b.start_time||'')+'-'+(b.end_time||''))) return;
-      try{ await sbDelete('sched_bookings', b.id); BOOKINGS=BOOKINGS.filter(y=>String(y.id)!==String(b.id)); renderGrid(); renderMine(); toast('已删除'); }
-      catch(e){ toast(e.message, false); }
-    });
-  }
+  box.innerHTML = renderOccupancyGrid(rooms, todays, 'room_id');
+  wireGridClicks();
 }
 function find(){
   const use=el('use').value, campus=el('campus').value, date=el('date').value;
@@ -232,45 +377,12 @@ async function submit(){
       const rec={ room_id:CUR.id, kind:use, title: el('m_title').value.trim()||KIND_LABEL[use]||null,
         user_name: el('m_user').value.trim()||null, recurrence: 'once', weekday: weekdayOf(date), booking_date:date, start_time:s, end_time:e,
         uses_meeting:um, meeting_account_id:accId, show_title: el('m_showtitle')?el('m_showtitle').value==='1':false,
-        status:'confirmed', created_by:myToken()+'|'+((window.ROLE&&(window.ROLE.label||window.ROLE.role))||''), note: el('m_note').value.trim()||null };
+        status:'confirmed', created_by:myToken()+'|'+(CANMANAGE?'管理员':'使用者'), note: el('m_note').value.trim()||null };
       const ins=await sbInsert('sched_bookings', rec); BOOKINGS.push(ins[0]);
     }
     el('modal').classList.add('hidden'); toast(weekly?('已批量录入 '+dates.length+' 条'):'已录入并生效'); find(); renderGrid(); renderMine();
   }catch(err){ warn(esc(err.message)); }
   finally{ sb.disabled=false; sb.textContent='保存占用'; }
-}
-function renderMine(){
-  const box=el('mineBox'); if(!box) return;
-  const mgr=isManager(); const tok=myToken();
-  const isMine=b=>String(b.created_by||'').split('|')[0]===tok;
-  el('mineTitle').textContent = mgr?'教室占用（管理员：可删全部）':'我在本设备录入的占用';
-  // 非课程占用；普通账号只看本设备录入的，管理员看全部
-  let list=BOOKINGS.filter(b=>b.kind!=='course');
-  if(!mgr) list=list.filter(isMine);
-  const rmap={}; ROOMS.forEach(r=>rmap[r.id]=r);
-  list=list.slice().sort((a,b)=>{ const da=a.booking_date||a.start_date||'', db=b.booking_date||b.start_date||''; return db.localeCompare(da); });
-  const LIMIT=60; const shown=list.slice(0,LIMIT);
-  const showWho=mgr;
-  let h='<table><thead><tr><th>用途</th><th>教室</th><th>日期</th><th>时段</th><th>使用人</th>'+(showWho?'<th>录入者</th>':'')+'<th></th></tr></thead><tbody>';
-  if(!shown.length) h+='<tr><td colspan="'+(showWho?7:6)+'" class="muted">暂无</td></tr>';
-  shown.forEach(b=>{ const r=rmap[b.room_id];
-    const when=b.recurrence==='weekly'?(weekdaysLabel(String(b.weekday))+' '+(b.start_date||'')+'~'+(b.end_date||'')):(b.booking_date||'');
-    const who=String(b.created_by||'').split('|')[1]||String(b.created_by||'').slice(0,8);
-    h+=`<tr><td>${esc(KIND_LABEL[b.kind]||b.kind)}</td><td>${esc(r?r.name:'—')}${r?('<span class="muted" style="font-size:11px">（'+esc(r.campus)+'）</span>'):''}</td>`+
-      `<td>${esc(when)}</td><td>${esc(b.start_time||'')}-${esc(b.end_time||'')}</td><td>${esc(b.user_name||'')}</td>`+
-      (showWho?`<td class="muted" style="font-size:11px">${esc(who)}</td>`:'')+
-      `<td><button class="sm danger" data-delmine="${b.id}">删除</button></td></tr>`;
-  });
-  h+='</tbody></table>';
-  if(list.length>LIMIT) h+='<div class="muted" style="font-size:11px;margin-top:6px">仅显示最近 '+LIMIT+' 条（共 '+list.length+' 条）</div>';
-  box.innerHTML=h;
-  box.querySelectorAll('[data-delmine]').forEach(x=>x.onclick=async()=>{
-    const b=BOOKINGS.find(y=>String(y.id)===String(x.dataset.delmine)); if(!b) return;
-    if(!mgr && !isMine(b)){ toast('只能删除本设备录入的', false); return; }
-    if(!confirm('删除这条占用？')) return;
-    try{ await sbDelete('sched_bookings', b.id); BOOKINGS=BOOKINGS.filter(y=>String(y.id)!==String(b.id)); renderMine(); renderGrid(); toast('已删除'); }
-    catch(e){ toast(e.message, false); }
-  });
 }
 boot();
 </script>
