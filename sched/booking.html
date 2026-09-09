@@ -148,7 +148,7 @@ async function boot(){
     el('dateLbl').textContent = weekly?'开始日期':'日期';
   };
   const i=SLOTS.indexOf('18:00'); if(i>0){ el('st').value='18:00'; el('et').value='21:00'; }
-  ROOMS    = await sbGet('sched_rooms','select=*&active=eq.true&order=campus,sort');
+  ROOMS    = await sbGet('sched_rooms','select=*&order=campus,sort');
   ACCOUNTS = await sbGet('sched_meeting_accounts','select=*&active=eq.true');
   BOOKINGS = await sbGet('sched_bookings','select=*');
   { const cs = await sbGet('sched_courses','select=id,skip_dates'); window.SKIPMAP={}; cs.forEach(c=>{ if(c.skip_dates) window.SKIPMAP[c.id]=new Set(c.skip_dates.split(',').map(x=>x.trim())); }); }
@@ -271,7 +271,7 @@ function occupyEditForm(id){
 const isCosmo=r=>/コスモ|cosmo|外借/i.test((r.name||'')+(r.campus||''));
 // 用途决定候选教室：VIP→只VIP；meeting→VIP+会议室；其它→全部
 function poolFor(use, campus){
-  let p=ROOMS.filter(r=>r.campus===campus);
+  let p=ROOMS.filter(r=>r.campus===campus && r.active!==false);   // 排除真正停用(active=false)；active为空的租用教室保留
   // VIP/开会优先用专用教室，但专用不够时也可用大教室——全部列出，专用排前
   if(use==='vip'||use==='meeting'){
     const pref = use==='vip' ? (r=>r.type==='VIP') : (r=>r.type==='VIP'||r.type==='会议室');
@@ -281,7 +281,7 @@ function poolFor(use, campus){
 }
 function renderGrid(){
   const campus=el('campus').value, date=el('date').value, use=el('use').value;
-  const rooms=poolFor(use, campus).map(r=>({id:r.id,name:r.name,sub:r.capacity+'人'}));
+  const rooms=poolFor(use, campus).filter(r=>CANMANAGE?true:!isCosmo(r)).map(r=>({id:r.id,name:r.name,sub:r.capacity+'人'}));
   const box=el('gridBox');
   if(!campus||!date||!rooms.length){ box.innerHTML='<div class="muted">该校区暂无对应教室</div>'; return; }
   const todays=BOOKINGS.filter(b=>bookingOnDate(b,date) &&
