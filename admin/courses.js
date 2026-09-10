@@ -2702,7 +2702,8 @@ function wnGenerate(){
         text+=`${dLabel(curDate)}\n`;
       }
       const dv=dvLabel(s.delivery||c.delivery);
-      text+=`${s.time_range||c.time_range||''} ${s.course_name||c.name||''}${dv?' '+dv:''}\n`;
+      const st=(s.session_title||'').trim();
+      text+=`${s.time_range||c.time_range||''} ${s.course_name||c.name||''}${st?'（'+st+'）':''}${dv?' '+dv:''}\n`;
       if(c.meeting_url) text+=`${c.meeting_url}\n`;
       const campus=s.campus||c.campus||'';
       const isOffline=(s.delivery||c.delivery||'').includes('线下');
