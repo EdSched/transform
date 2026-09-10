@@ -1377,8 +1377,9 @@ function acPasteImport(){
     const rows=document.querySelectorAll('#ac_details_body tr');
     if(rows[i]){
       const inputs=rows[i].querySelectorAll('input');
-      if(inputs[0]&&title) inputs[0].value=title;
-      if(inputs[1]&&teacher) inputs[1].value=teacher;
+      // input 顺序：[0]回数 [1]日期 [2]时间 [3]标题 [4]老师 —— 只改标题和老师
+      if(inputs[3]&&title) inputs[3].value=title;
+      if(inputs[4]&&teacher) inputs[4].value=teacher;
     } else {
       acAddRow({num:i+1,title,teacher});
     }
