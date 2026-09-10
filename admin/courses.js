@@ -1463,14 +1463,29 @@ function normalizeDateStr(s){
 function acApplyTextMode(){
   const text=document.getElementById('ac_text_input').value;
   const oldRows=acGetRows();
-  const newRows=text.split('\n').map(l=>l.replace(/\r$/,'')).filter(l=>l.trim()).map((l,i)=>{
+  const lines=text.split('\n').map(l=>l.replace(/\r$/,'')).filter(l=>l.trim());
+  const maxCols=Math.max(...lines.map(l=>l.split('\t').length),1);
+  const newRows=lines.map((l,i)=>{
     const p=l.split('\t').map(x=>x.trim());
+    // 简略格式(<=3列)：按行序对应旧行，只改标题/老师，日期时间回数全保留
+    if(maxCols<=3){
+      const prev=oldRows[i]||{};
+      return {
+        id: prev.id||'', num: prev.num||String(i+1),
+        date: prev.date||'', time_range: prev.time_range||'',
+        title: (p[0]!==undefined&&p[0]!=='')?p[0]:(prev.title||''),
+        teacher: (p[1]!==undefined&&p[1]!=='')?p[1]:(prev.teacher||'')
+      };
+    }
+    // 完整格式(回数|日期|时间|标题|老师)：每列为空则保留原值，不覆盖
     const num=p[0]||String(i+1);
-    // 按回数匹配旧行，继承 id（不丢单回身份/作业绑定）
-    const prev=oldRows.find(r=>String(r.num)===String(num))||{};
+    const prev=oldRows.find(r=>String(r.num)===String(num))||oldRows[i]||{};
     return {
-      id: prev.id||'',
-      num, date:normalizeDateStr(p[1]||''), time_range:p[2]||'', title:p[3]||'', teacher:p[4]||''
+      id: prev.id||'', num,
+      date: (p[1]&&p[1].trim())?normalizeDateStr(p[1]):(prev.date||''),
+      time_range: (p[2]&&p[2].trim())?p[2]:(prev.time_range||''),
+      title: p[3]!==undefined?p[3]:(prev.title||''),
+      teacher: p[4]!==undefined?p[4]:(prev.teacher||'')
     };
   });
   if(!newRows.length){ alert('文本为空，未应用'); return; }
@@ -1538,6 +1553,16 @@ async function saveAddCourse(){
 
       const rows=detailRows; // 来自 acGetRows()：[{id,num,date,title,teacher}, ...]
       if(!rows.length){ alert('单回明细不能为空，至少需要一行课次'); return; }
+      // 若首回日期变了：按新首回用 sched 算法重排所有单回日期（跳假期顺延），标题/老师保留
+      const oldFirst=(existing[0]?.session_date)||'';
+      const firstChanged = oldFirst && firstDate && oldFirst!==firstDate;
+      if(firstChanged && typeof computeSessionDates==='function'){
+        const N=rows.length;
+        const newDates=computeSessionDates({first_session_date:firstDate,weekdays:weekdayStr,skip_dates:'',holiday_except:''},N);
+        if(newDates.length===N){
+          rows.forEach((r,i)=>{ r.date=newDates[i]; });
+        }
+      }
       for(const r of rows){
         if(!r.date){ alert(`第「${r.num}」行缺少日期，请补全后再保存`); return; }
       }
