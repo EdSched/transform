@@ -518,10 +518,21 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
 <!-- ── TAB: 合格写真 ── -->
 <div id="tab-photos" style="display:none">
   <div style="display:flex;gap:10px;margin-bottom:1rem;align-items:center;flex-wrap:wrap">
-    <select id="photo-filter-type" onchange="loadPhotos()" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg)">
-      <option value="">全部</option>
-      <option value="grad">大学院</option>
-      <option value="ug">学部</option>
+    <input id="photo-search" placeholder="🔍 搜大学/学生/研究科…" oninput="loadPhotos()" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:200px">
+    <select id="photo-filter-subject" onchange="loadPhotos()" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg)">
+      <option value="">全部专业</option>
+      <option value="shakai">社会学</option>
+      <option value="fukushi">社会福祉</option>
+      <option value="shinpan">新聞伝播</option>
+      <option value="keizai">経済学</option>
+      <option value="keiei">経営学</option>
+      <option value="kyoiku">教育学</option>
+      <option value="other">その他</option>
+    </select>
+    <select id="photo-filter-era" onchange="loadPhotos()" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg)">
+      <option value="">全部年度</option>
+      <option value="new">2025-2026</option>
+      <option value="hist">2022-2024</option>
     </select>
     <button class="btn btn-secondary" onclick="loadPhotos()">↺ 刷新</button>
     <span style="font-size:11px;color:var(--text-muted)" id="photo-count"></span>
@@ -2159,42 +2170,43 @@ const PHOTO_BUCKET = 'admission-photos';
 async function loadPhotos() {
   document.getElementById('photo-grid').innerHTML = '<div class="load-state">読み込み中...</div>';
   try {
-    const typeFilter = document.getElementById('photo-filter-type').value;
-    // "全部"读 grad+ug 两个目录；否则读指定目录
-    const prefixes = typeFilter ? [typeFilter + '/'] : ['grad/', 'ug/'];
-    let items = [];
-    for (const prefix of prefixes) {
-      const res = await fetch(
-        `${SUPABASE_URL}/storage/v1/object/list/${PHOTO_BUCKET}`,
-        { method: 'POST',
-          headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prefix, limit: 500, sortBy: { column: 'created_at', order: 'desc' } })
-        }
-      );
-      const files = await res.json();
-      if (Array.isArray(files)) {
-        files.filter(f => f.name && f.name !== '.emptyFolderPlaceholder').forEach(f => items.push({ ...f, _prefix: prefix }));
+    const q = (document.getElementById('photo-search')?.value || '').trim().toLowerCase();
+    const subj = document.getElementById('photo-filter-subject')?.value || '';
+    const era = document.getElementById('photo-filter-era')?.value || '';
+    // 从数据库读有图片的合格记录（note 里含 [photo]URL）
+    let url = `${SUPABASE_URL}/rest/v1/admission_results?select=*&note=like.*%5Bphoto%5D*&order=created_at.desc`;
+    const res = await fetch(url, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY } });
+    let rows = await res.json();
+    if (!Array.isArray(rows)) rows = [];
+    // 筛选
+    rows = rows.filter(r => {
+      if (subj && r.subject !== subj) return false;
+      if (era && r.era !== era) return false;
+      if (q) {
+        const hay = [r.univ, r.student, r.dept, r.spec].filter(Boolean).join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
       }
-    }
-    document.getElementById('photo-count').textContent = items.length + ' 件';
-    if (!items.length) {
-      document.getElementById('photo-grid').innerHTML = '<div class="load-state">まだ写真がありません</div>';
+      return true;
+    });
+    document.getElementById('photo-count').textContent = rows.length + ' 件';
+    if (!rows.length) {
+      document.getElementById('photo-grid').innerHTML = '<div class="load-state">该条件下暂无合格照片</div>';
       return;
     }
+    const subjLabel = { shakai:'社会学', fukushi:'社会福祉', shinpan:'新聞伝播', keizai:'経済学', keiei:'経営学', kyoiku:'教育学', other:'その他' };
     let html = '<div class="photo-grid">';
-    for (const f of items) {
-      const fullPath = f._prefix + f.name;
-      const url = `${SUPABASE_URL}/storage/v1/object/public/${PHOTO_BUCKET}/${fullPath}`;
-      const parts = f.name.replace(/\.[^.]+$/, '').split('_');
-      const title = parts[0] || f.name;
-      const sub = parts.slice(1).join(' ');
+    for (const r of rows) {
+      // 从 note 提取图片URL（[photo]https://...）
+      const m = (r.note || '').match(/\[photo\](\S+)/);
+      const purl = m ? m[1] : '';
+      const noteText = (r.note || '').replace(/\s*\|\s*\[photo\]\S+/, '').replace(/\[photo\]\S+/, '').trim();
       html += `<div class="photo-card">
-        <img src="${url}" alt="${f.name}" onerror="this.style.display='none'">
+        <img src="${purl}" alt="${r.univ||''}" onerror="this.style.display='none'" style="cursor:pointer" onclick="window.open('${purl}','_blank')">
         <div class="photo-card-info">
-          <div class="photo-card-title">${title}
-            <button class="photo-card-del" onclick="deletePhoto('${fullPath}')">削除</button>
+          <div class="photo-card-title">${r.univ || '（未知大学）'} ${r.student ? '· '+r.student : ''}
+            <button class="photo-card-del" onclick="deletePhotoRecord('${r.id}','${purl}')">削除</button>
           </div>
-          <div class="photo-card-sub">${sub}</div>
+          <div class="photo-card-sub">${r.dept||''}${r.spec?' '+r.spec:''}　${subjLabel[r.subject]||r.subject||''}${noteText?'　'+noteText:''}</div>
         </div>
       </div>`;
     }
@@ -2203,6 +2215,30 @@ async function loadPhotos() {
   } catch(e) {
     document.getElementById('photo-grid').innerHTML = `<div class="load-state" style="color:var(--red)">エラー: ${e.message}</div>`;
   }
+}
+// 删除：清掉这条记录 note 里的图片URL（数据保留，只去图）+ 删Storage文件
+async function deletePhotoRecord(id, purl) {
+  if (!confirm('删除这张合格照片？（合格数据保留，只删照片）')) return;
+  try {
+    // 读原记录
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/admission_results?id=eq.${id}&select=note`, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY } });
+    const rows = await r.json();
+    const oldNote = (rows[0]?.note) || '';
+    const newNote = oldNote.replace(/\s*\|\s*\[photo\]\S+/, '').replace(/\[photo\]\S+/, '').trim() || null;
+    await fetch(`${SUPABASE_URL}/rest/v1/admission_results?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note: newNote })
+    });
+    // 删Storage文件（从URL提取路径）
+    const pm = purl.match(/admission-photos\/(.+)$/);
+    if (pm) {
+      await fetch(`${SUPABASE_URL}/storage/v1/object/${PHOTO_BUCKET}/${pm[1]}`, {
+        method: 'DELETE', headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
+      });
+    }
+    loadPhotos();
+  } catch(e) { alert('删除失败: ' + e.message); }
 }
 
 async function deletePhoto(path) {
