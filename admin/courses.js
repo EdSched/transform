@@ -1952,7 +1952,7 @@ async function confirmReschedule(){
 // ── 出席・作业（see attendance.js）──
 
 // ── Shared ──
-document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open')}));
+document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',function(e){/* 点遮罩不再关闭，避免编辑时误触关闭；请用取消/关闭按钮 */}));
 
 // ══════════════════════════════════
 // SCHEDULE (课程预定) PAGE
@@ -2653,8 +2653,7 @@ function openWeeklyNotice(){
         <input type="date" id="wn_start" value="${defDate}" style="font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit"></div>
       <div><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:2px">专业</label>
         <select id="wn_major" style="font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit">
-          <option value="shakai_group">社会人文（社会学+新传+福祉）</option>
-          ${allMajorKeys().map(k=>`<option value="${k}">${majorLabel(k)}</option>`).join('')}
+          ${majorFilterKeys().map(k=>`<option value="${k}">${k==='shakai_group'?'社会人文（社会学+新传+福祉）':majorLabel(k)}</option>`).join('')}
           <option value="all">全部专业</option>
         </select></div>
       <button class="btn btn-primary btn-sm" onclick="wnGenerate()">生成</button>
@@ -2666,7 +2665,7 @@ function openWeeklyNotice(){
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('weeklyNoticeModal').remove()">关闭</button>
     </div>
   </div>`;
-  modal.onclick=e=>{if(e.target===modal)modal.remove()};
+  /* 点外不关闭，避免误触 */
   document.body.appendChild(modal);
   wnGenerate();
 }
@@ -2754,7 +2753,7 @@ async function openScheduleShare(){
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('schedShareModal').remove()">关闭</button>
     </div>
   </div>`;
-  modal.onclick=e=>{if(e.target===modal)modal.remove()};
+  /* 点外不关闭，避免误触 */
   document.body.appendChild(modal);
   ssRenderCourseList();
   ssRenderExisting();
@@ -2915,7 +2914,7 @@ function openHwEditor(sessionId){
   modal.id='hwEditorModal';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   modal.innerHTML='<div id="hwEditorBody" style="background:var(--surface);border-radius:6px;padding:20px;max-width:760px;width:100%;max-height:90vh;overflow-y:auto"></div>';
-  modal.onclick=e=>{if(e.target===modal)modal.remove()};
+  /* 点外不关闭，避免误触 */
   document.body.appendChild(modal);
   hwEditorRender();
 }
