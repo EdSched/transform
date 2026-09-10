@@ -2160,13 +2160,22 @@ async function loadPhotos() {
   document.getElementById('photo-grid').innerHTML = '<div class="load-state">読み込み中...</div>';
   try {
     const typeFilter = document.getElementById('photo-filter-type').value;
-    const path = typeFilter ? `${typeFilter}/` : '';
-    const res = await fetch(
-      `${SUPABASE_URL}/storage/v1/object/list/${PHOTO_BUCKET}${path ? '/'+path.slice(0,-1) : ''}`,
-      { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY } }
-    );
-    const files = await res.json();
-    const items = Array.isArray(files) ? files.filter(f => f.name && f.name !== '.emptyFolderPlaceholder') : [];
+    // "全部"读 grad+ug 两个目录；否则读指定目录
+    const prefixes = typeFilter ? [typeFilter + '/'] : ['grad/', 'ug/'];
+    let items = [];
+    for (const prefix of prefixes) {
+      const res = await fetch(
+        `${SUPABASE_URL}/storage/v1/object/list/${PHOTO_BUCKET}`,
+        { method: 'POST',
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prefix, limit: 500, sortBy: { column: 'created_at', order: 'desc' } })
+        }
+      );
+      const files = await res.json();
+      if (Array.isArray(files)) {
+        files.filter(f => f.name && f.name !== '.emptyFolderPlaceholder').forEach(f => items.push({ ...f, _prefix: prefix }));
+      }
+    }
     document.getElementById('photo-count').textContent = items.length + ' 件';
     if (!items.length) {
       document.getElementById('photo-grid').innerHTML = '<div class="load-state">まだ写真がありません</div>';
@@ -2174,7 +2183,7 @@ async function loadPhotos() {
     }
     let html = '<div class="photo-grid">';
     for (const f of items) {
-      const fullPath = path ? path + f.name : f.name;
+      const fullPath = f._prefix + f.name;
       const url = `${SUPABASE_URL}/storage/v1/object/public/${PHOTO_BUCKET}/${fullPath}`;
       const parts = f.name.replace(/\.[^.]+$/, '').split('_');
       const title = parts[0] || f.name;
