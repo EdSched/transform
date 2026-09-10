@@ -701,13 +701,21 @@ function teacherFilteredList(){
   if(isDomainAccount){
     list=list.filter(t=>{ const tags=t.tags||[]; return !tags.includes('营业老师') && !tags.includes('保录老师'); });
   }
-  // 专业链接（限定专业）：只看"负责专业含该专业"的老师（教这个专业的，如英语链接只看教英语的）
-  if(typeof CURRENT_MAJOR!=='undefined' && CURRENT_MAJOR){
-    list=list.filter(t=>(t.majors||[]).includes(CURRENT_MAJOR));
-  }
-  // 领域链接（无专业锁）：按"隶属领域"(managed_by)过滤；没设隶属的老师(如营业)只admin显示，不进任何领域
-  else if(typeof CURRENT_DOMAIN!=='undefined' && CURRENT_DOMAIN && CURRENT_DOMAIN!=='all'){
-    list=list.filter(t=>(t.managed_by||[]).includes(CURRENT_DOMAIN));
+  // 视角过滤
+  if(isDomainAccount){
+    // 领域端账号：严格按隶属/负责专业过滤
+    if(typeof CURRENT_MAJOR!=='undefined' && CURRENT_MAJOR){
+      list=list.filter(t=>(t.majors||[]).includes(CURRENT_MAJOR));
+    } else if(typeof CURRENT_DOMAIN!=='undefined' && CURRENT_DOMAIN && CURRENT_DOMAIN!=='all'){
+      list=list.filter(t=>(t.managed_by||[]).includes(CURRENT_DOMAIN));
+    }
+  } else {
+    // admin/中枢切换到某领域视角：显示该领域老师 + 没设隶属的老师(归admin管，不漏)
+    if(typeof CURRENT_MAJOR!=='undefined' && CURRENT_MAJOR){
+      list=list.filter(t=>(t.majors||[]).includes(CURRENT_MAJOR) || !(t.managed_by||[]).length);
+    } else if(typeof CURRENT_DOMAIN!=='undefined' && CURRENT_DOMAIN && CURRENT_DOMAIN!=='all'){
+      list=list.filter(t=>(t.managed_by||[]).includes(CURRENT_DOMAIN) || !(t.managed_by||[]).length);
+    }
   }
   if(teacherTagFilter) list=list.filter(t=>(t.tags||[]).includes(teacherTagFilter));
   if(teacherTypeFilter) list=list.filter(t=>(t.staff_type||'')===teacherTypeFilter);
