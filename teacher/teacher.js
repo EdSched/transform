@@ -110,6 +110,7 @@ function buildTabs() {
   if (p.student_mgmt && Array.isArray(p.student_mgmt_items) && p.student_mgmt_items.length) tabs.push({ id: 'studentmgmt', label: '👥 学生管理' });
   if (p.progress_plan) tabs.push({ id: 'progressplan', label: '📅 进度规划' });
   if (p.promo) tabs.push({ id: 'promo', label: '📣 宣传相关' });
+  if (p.promo) tabs.push({ id: 'admissions', label: '🏆 合格实绩' });
   if (p.lect_info) tabs.push({ id: 'lectinfo', label: '👤 讲师信息' });
   // 我的课表：有排班权限或有实际排到课才显示
   if (p.schedule || slots.length) tabs.push({ id: 'mycourses', label: '📚 我的课表' });
@@ -144,6 +145,7 @@ function renderTab() {
     case 'studentmgmt': renderStudentMgmt(mc); break;
     case 'progressplan': renderProgressPlanTool(mc); break;
     case 'promo': renderTeacherPromo(mc); break;
+    case 'admissions': renderTeacherAdmissions(mc); break;
     case 'lectinfo': renderLectInfo(mc); break;
     case 'studyprogress': renderTeacherStudyProgress(mc); break;
     case 'mycourses': renderMySchedule(mc); break;
@@ -2435,3 +2437,13 @@ async function saveAdmissionEntry(){
   }catch(e){ alert('保存失败：'+e.message); if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} }
 }
 function stEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+// 合格实绩（营业老师）：嵌入对外展示页，只看不录入
+function renderTeacherAdmissions(mc){
+  mc.innerHTML = `
+  <div style="margin-bottom:10px;display:flex;align-items:center;gap:10px">
+    <div style="font-size:14px;font-weight:600">🏆 合格实绩</div>
+    <a href="../results/index.html" target="_blank" style="font-size:11px;color:var(--accent,#8b5cf6);text-decoration:none">在新窗口打开 ↗</a>
+  </div>
+  <iframe src="../results/index.html" style="width:100%;height:calc(100vh - 160px);border:1px solid var(--border);border-radius:6px" title="合格实绩"></iframe>`;
+}
