@@ -580,7 +580,8 @@ async function renderProgressPage(mc, focusStudentId=null){
         if (!sPlans.length) return '';
         return `<div style="margin-top:4px">${sPlans.map(p => {
           const st = schoolStatusLabel(p.status);
-          return `<div style="font-size:10px;line-height:1.7"><span style="color:var(--text-2)">${p.school_name}${p.professor ? ' · ' + p.professor : ''}</span> — <span style="color:${st.c}">${st.t}</span></div>`;
+          const passBtn = p.status==='passed' ? ` <button onclick='openAdmissionEntry(${JSON.stringify({school:p.school_name||'',faculty:p.faculty||'',dept:p.department||'',student:s.name||'',jp:s.japanese_score||'',en:s.english_score||'',major:s.major||''}).replace(/'/g,"&#39;")})' style="font-size:9px;padding:1px 6px;border:1px solid var(--accent,#8b5cf6);color:var(--accent,#8b5cf6);background:none;border-radius:3px;cursor:pointer;margin-left:4px">📝录入合格实绩</button>` : '';
+          return `<div style="font-size:10px;line-height:1.7"><span style="color:var(--text-2)">${p.school_name}${p.professor ? ' · ' + p.professor : ''}</span> — <span style="color:${st.c}">${st.t}</span>${passBtn}</div>`;
         }).join('')}</div>`;
       }
       if (k === 'exam') {
@@ -1490,3 +1491,64 @@ async function gsDel(sid,idx){
   try{ await sb(`/rest/v1/students?id=eq.${sid}`,'PATCH',{guaranteed_schools:list}); s.guaranteed_schools=list; const el=document.getElementById('gs_list_'+sid); if(el) el.innerHTML=gsRenderList(sid); }
   catch(e){ alert('删除失败：'+e.message); }
 }
+
+// ══════════ 录入合格实绩（考学进度→合格数据库联动）══════════
+function openAdmissionEntry(data){
+  // data: {school,faculty,dept,student,jp,en,major}
+  const subjMap={shakai:'shakai',shinpan:'shinpan',fukushi:'fukushi',keizai:'keizai',keiei:'keiei',kyouiku:'kyoiku'};
+  const guessSubj=subjMap[data.major]||'other';
+  let ov=document.getElementById('admissionEntryOverlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='admissionEntryOverlay'; ov.style.cssText='position:fixed;inset:0;z-index:970;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center'; document.body.appendChild(ov); }
+  ov.style.display='flex';
+  ov.innerHTML=`
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:22px 26px;width:min(500px,94vw);max-height:88vh;overflow:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="font-family:'Noto Serif SC',serif;font-size:1.05rem;font-weight:600">📝 录入合格实绩</div>
+      <button onclick="document.getElementById('admissionEntryOverlay').style.display='none'" class="btn btn-outline btn-sm">取消</button>
+    </div>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">已从考学进度预填，可补充/修改后保存到合格数据库。</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">大学名 *</label><input id="ae_univ" value="${stEsc(data.school)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
+      <div><label style="font-size:9px;color:var(--text-3)">研究科</label><input id="ae_dept" value="${stEsc(data.faculty)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
+      <div><label style="font-size:9px;color:var(--text-3)">专攻</label><input id="ae_spec" value="${stEsc(data.dept)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
+      <div><label style="font-size:9px;color:var(--text-3)">学生名</label><input id="ae_student" value="${stEsc(data.student)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
+      <div><label style="font-size:9px;color:var(--text-3)">专业分类</label>
+        <select id="ae_subject" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px">
+          ${[['shakai','社会学'],['fukushi','社会福祉'],['shinpan','新聞伝播'],['keizai','経済学'],['keiei','経営学'],['kyoiku','教育学'],['other','その他']].map(([v,l])=>`<option value="${v}" ${guessSubj===v?'selected':''}>${l}</option>`).join('')}
+        </select></div>
+      <div><label style="font-size:9px;color:var(--text-3)">年度</label>
+        <select id="ae_era" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px">
+          <option value="new">2025-2026</option><option value="hist">2022-2024</option>
+        </select></div>
+      <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">备注（成绩等，已带入）</label><input id="ae_note" value="${stEsc([data.jp?'日语'+data.jp:'',data.en?'英语'+data.en:''].filter(Boolean).join(' '))}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
+      <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">合格通知书照片（可选）</label><input type="file" id="ae_photo" accept="image/*" style="width:100%;font-size:11px"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button onclick="saveAdmissionEntry()" id="ae_save_btn" style="flex:1;background:var(--accent,#8b5cf6);color:#fff;border:none;border-radius:5px;padding:9px;cursor:pointer;font-family:inherit">保存到合格数据库</button>
+    </div>
+  </div>`;
+}
+async function saveAdmissionEntry(){
+  const g=id=>(document.getElementById(id)||{}).value||'';
+  const univ=g('ae_univ').trim();
+  if(!univ){ alert('请填大学名'); return; }
+  const btn=document.getElementById('ae_save_btn'); if(btn){ btn.textContent='保存中…'; btn.disabled=true; }
+  try{
+    let note=g('ae_note').trim();
+    // 上传图片（文件名纯安全字符）
+    const file=document.getElementById('ae_photo')?.files?.[0];
+    if(file){
+      let ext=(file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,''); if(!ext||ext.length>5)ext='jpg';
+      const path='grad/'+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'.'+ext;
+      const up=await fetch(`${SB_URL}/storage/v1/object/admission-photos/${path}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':file.type,'x-upsert':'true'},body:file});
+      if(up.ok){ note=(note?note+' | ':'')+'[photo]'+`${SB_URL}/storage/v1/object/public/admission-photos/${path}`; }
+      else { const e=await up.text(); if(!confirm('图片上传失败：'+e+'\n\n仍要保存合格数据（不含图片）吗？')){ if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} return; } }
+    }
+    const row={ univ, dept:g('ae_dept').trim()||null, spec:g('ae_spec').trim()||null, student:g('ae_student').trim()||null, subject:g('ae_subject'), era:g('ae_era'), note:note||null };
+    const res=await fetch(`${SB_URL}/rest/v1/admission_results`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify(row)});
+    if(!res.ok){ throw new Error(await res.text()); }
+    document.getElementById('admissionEntryOverlay').style.display='none';
+    alert('✅ 已录入合格实绩到合格数据库');
+  }catch(e){ alert('保存失败：'+e.message); if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} }
+}
+function stEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
