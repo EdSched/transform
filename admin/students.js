@@ -580,7 +580,7 @@ async function renderProgressPage(mc, focusStudentId=null){
         if (!sPlans.length) return '';
         return `<div style="margin-top:4px">${sPlans.map(p => {
           const st = schoolStatusLabel(p.status);
-          const passBtn = p.status==='passed' ? ` <button onclick='openAdmissionEntry(${JSON.stringify({school:p.school_name||'',faculty:p.faculty||'',dept:p.department||'',student:s.name||'',jp:s.japanese_score||'',en:s.english_score||'',major:s.major||''}).replace(/'/g,"&#39;")})' style="font-size:9px;padding:1px 6px;border:1px solid var(--accent,#8b5cf6);color:var(--accent,#8b5cf6);background:none;border-radius:3px;cursor:pointer;margin-left:4px">📝录入合格实绩</button>` : '';
+          const passBtn = p.status==='passed' ? ` <button onclick='openAdmissionEntry(${JSON.stringify({school:p.school_name||'',faculty:p.faculty||'',dept:p.department||'',student:s.name||'',jp:s.japanese_score||'',en:s.english_score||'',major:s.major||'',enroll:s.target_enrollment||''}).replace(/'/g,"&#39;")})' style="font-size:9px;padding:1px 6px;border:1px solid var(--accent,#8b5cf6);color:var(--accent,#8b5cf6);background:none;border-radius:3px;cursor:pointer;margin-left:4px">📝录入合格实绩</button>` : '';
           return `<div style="font-size:10px;line-height:1.7"><span style="color:var(--text-2)">${p.school_name}${p.professor ? ' · ' + p.professor : ''}</span> — <span style="color:${st.c}">${st.t}</span>${passBtn}</div>`;
         }).join('')}</div>`;
       }
@@ -1516,10 +1516,7 @@ function openAdmissionEntry(data){
         <select id="ae_subject" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px">
           ${[['shakai','社会学'],['fukushi','社会福祉'],['shinpan','新聞伝播'],['keizai','経済学'],['keiei','経営学'],['kyoiku','教育学'],['other','その他']].map(([v,l])=>`<option value="${v}" ${guessSubj===v?'selected':''}>${l}</option>`).join('')}
         </select></div>
-      <div><label style="font-size:9px;color:var(--text-3)">年度</label>
-        <select id="ae_era" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px">
-          <option value="new">2025-2026</option><option value="hist">2022-2024</option>
-        </select></div>
+      <div><label style="font-size:9px;color:var(--text-3)">入学年份 *</label><input id="ae_enroll" value="${stEsc((data.enroll||'').match(/\d{4}/)?.[0]||'')}" placeholder="如 2027" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
       <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">备注（成绩等，已带入）</label><input id="ae_note" value="${stEsc([data.jp?'日语'+data.jp:'',data.en?'英语'+data.en:''].filter(Boolean).join(' '))}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
       <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">合格通知书照片（可选）</label><input type="file" id="ae_photo" accept="image/*" style="width:100%;font-size:11px"></div>
     </div>
@@ -1544,7 +1541,11 @@ async function saveAdmissionEntry(){
       if(up.ok){ note=(note?note+' | ':'')+'[photo]'+`${SB_URL}/storage/v1/object/public/admission-photos/${path}`; }
       else { const e=await up.text(); if(!confirm('图片上传失败：'+e+'\n\n仍要保存合格数据（不含图片）吗？')){ if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} return; } }
     }
-    const row={ univ, dept:g('ae_dept').trim()||null, spec:g('ae_spec').trim()||null, student:g('ae_student').trim()||null, subject:g('ae_subject'), era:g('ae_era'), note:note||null };
+    const enrollYear=parseInt(g('ae_enroll'),10);
+    if(!enrollYear){ alert('请填入学年份（如 2027）'); if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} return; }
+    // 入学年份 >=2026 算新数据(new)，否则旧数据(hist)——与合格实绩展示口径一致
+    const era = enrollYear>=2026 ? 'new' : 'hist';
+    const row={ univ, dept:g('ae_dept').trim()||null, spec:g('ae_spec').trim()||null, student:g('ae_student').trim()||null, subject:g('ae_subject'), era, note:note||null };
     const res=await fetch(`${SB_URL}/rest/v1/admission_results`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify(row)});
     if(!res.ok){ throw new Error(await res.text()); }
     document.getElementById('admissionEntryOverlay').style.display='none';
