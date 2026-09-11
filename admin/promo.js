@@ -108,6 +108,7 @@ function promoRenderShell() {
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px">
     <span style="font-size:10px;color:var(--text-3)">板块：</span>
     ${PROMO_SECTIONS.map(([k,l]) => `<div class="filter-chip ${promoSection===k?'active':''}" onclick="promoSection='${k}';promoEditingId=null;promoRenderShell()" style="padding:3px 10px;font-size:11px">${l}</div>`).join('')}
+    <a href="../results/admin.html" target="_blank" class="filter-chip" style="padding:3px 10px;font-size:11px;text-decoration:none;border-left:2px solid var(--accent,#8b5cf6)">🏆 合格实绩管理 ↗</a>
   </div>
   <div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:8px 12px;margin-bottom:12px">
     <span style="font-size:10px;color:var(--text-3)">对外分享链接（无需登录，仅显示「公开」状态的内容）：</span>
