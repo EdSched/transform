@@ -1,3 +1,7 @@
+// 兜底：若 shared/constants.js 尚未更新到含 schoolLevelHtml，就地补一个，避免整页卡「加载中」
+if (typeof window !== "undefined" && typeof window.schoolLevelHtml !== "function") {
+  window.schoolLevelHtml = function (lv) { var m = ({1:{t:"冲刺",c:"#c0392b"},2:{t:"匹配",c:"#b8860b"},3:{t:"保底",c:"#2a7a3a"}})[lv]; return m ? "<span style=\"color:" + m.c + ";font-weight:600\">" + m.t + "</span>" : ""; };
+}
 // ══════════════════════════════════
 // 学习记录独立页面 study.js
 // ══════════════════════════════════
