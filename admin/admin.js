@@ -422,6 +422,7 @@ async function renderPage(){
       ]);
       renderSchedulePage(mc);
     } else if(curPage==='teachers'){
+      if(typeof loadAdmissionMajorsFromDB==='function') await loadAdmissionMajorsFromDB();
       [cachedTeachers, cachedSessions]=await Promise.all([
         sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[]),
         sbAll('/rest/v1/course_sessions?homework_enabled=is.true&select=id,course_name&order=course_name.asc').catch(()=>[]),
@@ -431,6 +432,7 @@ async function renderPage(){
       cachedTeachers=await sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[]);
       renderPayrollPage(mc);
     } else if(curPage==='admissiondb'){
+      if(typeof loadAdmissionMajorsFromDB==='function') await loadAdmissionMajorsFromDB();
       // 只拉 major 字段用于渲染专业筛选按钮，点专业后再拉完整数据
       const majorRows=await sb('/rest/v1/admission_schools?select=major&limit=10000').catch(()=>[]);
       cachedAdmissionSchools=[];
