@@ -1213,6 +1213,7 @@ function renderRecordsTab() {
 
 // ── 作业页：左=资料/题目预览，右=作业列表与作答 ──
 function renderHomeworkTab() {
+  hwMode = 'course';
   const validHomework = (studyData.sessionRecs || []).filter(r => r.teacher_file_url);
   return `
   <div class="split-hint">← 左右滑动切换「资料」与「作答」 →</div>
@@ -1287,6 +1288,18 @@ let hwWholeFile = null;   // 整份作业文件
 let hwCalcExpand = {};    // 计算题「分问上传」展开状态
 let hwPicked = {};        // 选做题：勾选要作答的题号
 let hwLoaded = false;
+// —— VIP 复用同一作答引擎（伪课次 = 一条 VIP 预约）——
+let hwMode = 'course';      // 'course' | 'vip'
+let hwVipSession = null;    // 伪课次对象（含 _vipBookingId）
+let hwVipCb = null;         // { onSubmitted(row|null), rerender() }
+function hwRerender() { return (hwMode === 'vip' && hwVipCb && hwVipCb.rerender) ? hwVipCb.rerender() : renderHwList(); }
+function hwEnterVip(session, sub, cb) {   // vip.js 首次打开某条 VIP 作业作答时调用
+  hwMode = 'vip'; hwVipSession = session; hwVipCb = cb || null;
+  hwDraft = {}; hwWholeFile = null; hwPicked = {}; hwCalcExpand = {}; hwLevelPick = {};
+  if (sub) hwSubs[session.id] = sub; else delete hwSubs[session.id];
+}
+function hwVipHtml() { if (!hwVipSession) return ''; hwMode = 'vip'; return hwDetailHtml(hwVipSession, hwSubs[hwVipSession.id] || null); }
+function hwCloseVip() { hwMode = 'course'; hwVipSession = null; hwVipCb = null; }
 
 async function loadStudyHwSessions(retry) {
   const wrap = document.getElementById('study_hw_sessions_wrap');
@@ -1444,7 +1457,7 @@ function hwDetailHtml(s, sub) {
   </div>`:''}
   ${levels.length>1?`<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
     <span style="font-size:10px;color:var(--text-muted)">作业级别：</span>
-    ${levels.map((x,i)=>`<span onclick="${locked?'':`hwLevelPick['${s.id}']=${i};renderHwList()`}" style="font-size:10px;padding:3px 10px;border-radius:2px;cursor:${locked?'default':'pointer'};border:1px solid ${i===li?'var(--accent)':'var(--border)'};background:${i===li?'var(--accent)':'var(--surface)'};color:${i===li?'#fff':'var(--text-secondary)'}">${escA(x.key||'不分级别')}</span>`).join('')}
+    ${levels.map((x,i)=>`<span onclick="${locked?'':`hwLevelPick['${s.id}']=${i};hwRerender()`}" style="font-size:10px;padding:3px 10px;border-radius:2px;cursor:${locked?'default':'pointer'};border:1px solid ${i===li?'var(--accent)':'var(--border)'};background:${i===li?'var(--accent)':'var(--surface)'};color:${i===li?'#fff':'var(--text-secondary)'}">${escA(x.key||'不分级别')}</span>`).join('')}
   </div>`:''}
 
   ${(L.blocks||[]).map((b, bi) => {
@@ -1505,7 +1518,7 @@ function hwDetailHtml(s, sub) {
                 ${locked?'':`<label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:3px 10px">📷 上传照片（可多张，按顺序）
                   <input type="file" accept="image/*" multiple style="display:none" onchange="hwPickImages('${wu.key}', this)"></label>`}
                 <span id="hwimg_${wu.key}" style="font-size:10px;color:var(--text-muted)">${wImgs.length?wImgs.map((x,i)=>`图${i+1}`).join('・'):(locked?'未上传':'尚未上传')}</span>
-                ${q.subs>1&&!locked?`<span onclick="hwCalcExpand['${expKey}']=!hwCalcExpand['${expKey}'];renderHwList()" style="margin-left:auto;font-size:10px;color:var(--text-muted);cursor:pointer">${expanded?'▾ 收起分问上传':'▸ 分问上传'}</span>`:''}
+                ${q.subs>1&&!locked?`<span onclick="hwCalcExpand['${expKey}']=!hwCalcExpand['${expKey}'];hwRerender()" style="margin-left:auto;font-size:10px;color:var(--text-muted);cursor:pointer">${expanded?'▾ 收起分问上传':'▸ 分问上传'}</span>`:''}
               </div>
               ${locked
                 ? `${wImgs.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${wImgs.map((im,i)=>`<a href="${escA(im.url)}" target="_blank" style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:2px 8px">📷 图${i+1}</a>`).join('')}</div>`:''}
@@ -1641,7 +1654,7 @@ async function hwPickImages(key, input) {
 }
 
 async function hwSubmit(sid, levelKey) {
-  const s = hwSessions.find(x => x.id === sid);
+  const s = hwSessions.find(x => x.id === sid) || (hwVipSession && hwVipSession.id === sid ? hwVipSession : null);
   if (!s) return;
   const N = hwNorm(s);
   const L = (N.levels.find(x => (x.key||'') === (levelKey||'')) || N.levels[0] || { blocks: [] });
@@ -1666,9 +1679,11 @@ async function hwSubmit(sid, levelKey) {
   if (answered < totalNeed && !hwWholeFile && !confirm(`还有 ${totalNeed-answered} 处未作答，确认提交？提交后不可修改。`)) return;
   if ((answered >= totalNeed || hwWholeFile) && !confirm('确认提交作业？提交后不可修改。')) return;
   try {
+    const _vipBk = s._vipBookingId || null;
     const row = {
       id: `hws-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
-      session_id: sid, course_name: s.course_name || '', session_number: s.session_number || null,
+      session_id: _vipBk ? null : sid, booking_id: _vipBk,
+      course_name: s.course_name || '', session_number: s.session_number || null,
       session_date: s.session_date || null, level: levelKey || null,
       student_id: studyStudent.id, student_name: studyStudent.name, major: studyStudent.major || studyMajor || '',
       answers, whole_file_url: hwWholeFile ? hwWholeFile.url : null,
@@ -1677,7 +1692,8 @@ async function hwSubmit(sid, levelKey) {
     row.submitted_at = new Date().toISOString();
     hwSubs[sid] = row;
     hwDraft = {}; hwWholeFile = null;
-    renderHwList();
+    if (_vipBk && hwVipCb && hwVipCb.onSubmitted) hwVipCb.onSubmitted(row);
+    hwRerender();
     alert('作业已提交');
   } catch (e) { alert('提交失败：' + e.message); }
 }
@@ -1887,12 +1903,13 @@ async function hwWithdraw(sid) {
     await sb(`/rest/v1/homework_submissions?id=eq.${sub.id}`, 'DELETE');
     delete hwSubs[sid];
     hwDraft = {}; hwWholeFile = null;
-    renderHwList();
+    if (hwMode === 'vip' && hwVipCb && hwVipCb.onSubmitted) hwVipCb.onSubmitted(null);
+    hwRerender();
   } catch (e) { alert('撤回失败：' + e.message); }
 }
 
 // 选做题勾选
 function hwTogglePick(key) {
   hwPicked[key] = !hwPicked[key];
-  renderHwList();
+  hwRerender();
 }
