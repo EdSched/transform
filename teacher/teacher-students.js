@@ -47,8 +47,7 @@ async function renderTeacherStudyProgress(mc) {
   try {
     const all = await sb('/rest/v1/students?select=*&order=name.asc&limit=2000');
     const set = (typeof tsaAllowedSet === 'function') ? tsaAllowedSet() : null;
-    // 与 admin 考学进度一致：显示在籍/停课/已合格（已合格学生才能录入合格实绩），退学不显示
-    students = (set ? (all || []).filter(s => set.has(s.major)) : (all || [])).filter(s => !s.status || s.status === 'active' || s.status === 'stopped' || s.status === 'graduated');
+    students = (set ? (all || []).filter(s => set.has(s.major)) : (all || [])).filter(s => !s.status || s.status === 'active');
     if (tsaGuaranteedLock()) students = students.filter(tsaIsGuaranteed);
   } catch (e) { mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
 
@@ -195,100 +194,108 @@ function tpRenderProgressList() {
       : s.prep_model === 'next_summer' ? '次年夏季路线・语言按冬季要求・次年7月出愿8月考试'
       : '夏季路线・7月出愿8月考试';
 
+    // 「出愿/合格」阶段以志望校为准：有合格→已合格（修正合格学生顶部仍显示已出愿的问题）
+    const anyPassed = plans.some(p => p.status === 'passed');
+    const anyApplied = plans.some(p => ['applied', 'passed'].includes(p.status));
+    const applyDisplay = anyPassed ? '已合格' : (latest.apply || (anyApplied ? '已出愿' : ''));
+    const applyDone = anyPassed || latest.apply === '已合格';
+
+    // 统一风格的状态芯片：完成=绿，进行中=中性
+    const tpChip = (icon, text, done) => `<span style="font-size:10px;padding:2px 9px;border-radius:10px;white-space:nowrap;background:${done ? 'var(--ok-bg,#e8f4ea)' : 'var(--bg,#f7f5f0)'};color:${done ? 'var(--ok,#2a5a30)' : 'var(--text-2,#5a5650)'};border:1px solid ${done ? 'var(--ok,#b8d8bc)' : 'var(--border-light,#ede9e2)'}">${icon} ${text}</span>`;
     const statusRow = Object.entries(PROGRESS_LABELS).map(([k]) => {
-      const val = k === 'japanese' ? (latest[k] || (s.japanese_score ? '有成绩' : '')) :
-                  k === 'english' ? (latest[k] || (s.english_score ? '有成绩' : '')) :
-                  latest[k];
+      let val, done;
+      if (k === 'apply') { val = applyDisplay; done = applyDone; }
+      else if (k === 'japanese') { val = latest[k] || (s.japanese_score ? '有成绩' : ''); done = isProgressDone(k, latest[k]); }
+      else if (k === 'english') { val = latest[k] || (s.english_score ? '有成绩' : ''); done = isProgressDone(k, latest[k]); }
+      else { val = latest[k]; done = isProgressDone(k, latest[k]); }
       if (!val) return '';
-      const done = isProgressDone(k, latest[k]);
-      const scoreHint = k==='japanese'&&s.japanese_score ? ` · ${s.japanese_score}` : k==='english'&&s.english_score ? ` · ${s.english_score}` : '';
-      return `<span style="font-size:10px;background:${done?'var(--ok-bg)':'var(--warn-bg)'};color:${done?'var(--ok)':'var(--warn)'};padding:1px 6px;border-radius:2px;white-space:nowrap">${PROGRESS_ICONS[k]} ${latest[k]||''}${scoreHint}</span>`;
+      const scoreHint = k === 'japanese' && s.japanese_score ? ` · ${s.japanese_score}` : k === 'english' && s.english_score ? ` · ${s.english_score}` : '';
+      return tpChip(PROGRESS_ICONS[k], val + scoreHint, done);
     }).join('');
 
-    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:8px">
-      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer" onclick="toggleTeacherProgressCard('${s.id}')">
-        <div style="flex:1">
+    // ── 统一视觉：所有区块用同一套 frame + title ──
+    const secTitle = t => `<div style="font-size:11px;font-weight:600;color:var(--text-2);letter-spacing:.02em;margin-bottom:10px">${t}</div>`;
+    const secFrame = inner => `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:6px;padding:12px 14px">${inner}</div>`;
+
+    // 备考节点
+    const secNodes = secFrame(secTitle(`📅 备考节点 <span style="font-weight:400;color:var(--text-3)">· ${routeLabel}</span>`) + tpNodeSummaryHtml(s, latest, plans, draft));
+
+    // 语言成绩 + 计划书（两列）
+    const jpTxt = s.japanese_score ? tsaEsc(s.japanese_score) : '<span style="color:var(--text-3)">未填写</span>';
+    const enTxt = s.english_score ? tsaEsc(s.english_score) : '<span style="color:var(--text-3)">未填写</span>';
+    const secLang = secFrame(secTitle('🗣 语言成绩') +
+      `<div style="font-size:12px;line-height:2"><div><span style="color:var(--text-3)">日语</span>　${jpTxt}</div><div><span style="color:var(--text-3)">英语</span>　${enTxt}</div></div>`);
+    const secPlan = secFrame(secTitle('📄 研究计划书') + (draft
+      ? `${tDraftSummaryHtml(draft)}${draft.draft_file_url ? `<a href="${draft.draft_file_url}" target="_blank" style="font-size:10px;color:var(--accent);display:inline-block;margin-top:4px">📎 草稿文件</a>` : ''}<button onclick="event.stopPropagation();openTeacherDraftComment('${s.id}','${tsaEsc(s.name)}')" style="margin-top:8px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:5px 12px;cursor:pointer;font-family:inherit;display:block">查看・评估计划书/先行研究</button>`
+      : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写</div>'));
+
+    // 志望校
+    const schoolTable = plans.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead><tr style="background:var(--bg)">
+          ${['No.', '级别', '学校名 · 研究科', '教授', '出愿期间', '该校进度', '过去问', '面试稿'].map(h => `<th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border-light);white-space:nowrap">${h}</th>`).join('')}
+        </tr></thead>
+        <tbody>
+          ${plans.map((p, pi) => { const st = schoolStatusLabel(p.status); return `<tr style="border-bottom:1px solid var(--border-light)">
+            <td style="padding:6px 8px;color:var(--text-3)">${pi + 1}</td>
+            <td style="padding:6px 8px;white-space:nowrap">${levelLabel[p.level] || ''}</td>
+            <td style="padding:6px 8px"><span style="font-weight:600">${tsaEsc(p.school_name)}</span>${p.faculty ? `<span style="color:var(--text-3);margin-left:4px;font-size:10px">${tsaEsc(p.faculty)}</span>` : ''}</td>
+            <td style="padding:6px 8px;white-space:nowrap">${tsaEsc(p.professor) || '—'}</td>
+            <td style="padding:6px 8px;font-size:10px;color:var(--accent);white-space:nowrap">${tsaEsc(p.application_period) || '—'}</td>
+            <td style="padding:6px 8px">
+              <select onchange="tpPlanSet('${p.id}','status',this.value,this)" onclick="event.stopPropagation()" style="font-size:10px;padding:3px 5px;border:1px solid var(--border);border-radius:3px;background:var(--surface);font-family:inherit;color:${st.c};font-weight:600">
+                ${Object.entries(SCHOOL_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${p.status === k ? 'selected' : ''}>${v.t}</option>`).join('')}
+              </select>
+            </td>
+            <td style="padding:6px 8px"><button onclick="event.stopPropagation();tpPlanFlag('${p.id}','kakomon_started',this)" data-on="${p.kakomon_started ? '1' : '0'}" style="font-size:10px;border-radius:3px;padding:3px 9px;cursor:pointer;font-family:inherit;border:1px solid ${p.kakomon_started ? 'var(--ok)' : 'var(--border)'};background:${p.kakomon_started ? 'var(--ok-bg)' : 'var(--surface)'};color:${p.kakomon_started ? 'var(--ok)' : 'var(--text-3)'}">${p.kakomon_started ? '✓ 已开始' : '未开始'}</button></td>
+            <td style="padding:6px 8px"><button onclick="event.stopPropagation();tpPlanFlag('${p.id}','interview_draft_done',this)" data-on="${p.interview_draft_done ? '1' : '0'}" style="font-size:10px;border-radius:3px;padding:3px 9px;cursor:pointer;font-family:inherit;border:1px solid ${p.interview_draft_done ? 'var(--ok)' : 'var(--border)'};background:${p.interview_draft_done ? 'var(--ok-bg)' : 'var(--surface)'};color:${p.interview_draft_done ? 'var(--ok)' : 'var(--text-3)'}">${p.interview_draft_done ? '✓ 已完成' : '未完成'}</button></td>
+          </tr>`; }).join('')}
+        </tbody>
+      </table></div>` : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写志望校</div>';
+    const secSchools = secFrame(
+      `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:11px;font-weight:600;color:var(--text-2)">🏫 志望校 <span style="font-weight:400;color:var(--text-3)">（${plans.length}所）· 状态/过去问/面试稿可直接改，即时与学生端同步</span></span>
+        <button onclick="event.stopPropagation();tpAddSchool('${s.id}','${(s.name || '').replace(/'/g, '')}','${s.major || ''}')" style="margin-left:auto;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-family:inherit;white-space:nowrap">＋ 添加志望校</button>
+      </div>${schoolTable}`);
+
+    // 保录（仅保录学生）
+    const secGuaranteed = (s.course_type || '').includes('保录') ? secFrame(
+      secTitle('🎓 保录学校') +
+      ((Array.isArray(s.guaranteed_schools) && s.guaranteed_schools.length)
+        ? `<div style="display:flex;flex-direction:column;gap:5px">${s.guaranteed_schools.map(g => `<div style="font-size:11px;padding:6px 10px;border:1px solid #e8d9b8;border-radius:4px;background:#fdfaf5"><span style="font-weight:600">${tsaEsc(g.university)}</span>${g.program ? ` <span style="color:var(--text-3)">· ${tsaEsc(g.program)}</span>` : ''}</div>`).join('')}</div>`
+        : '<div style="font-size:11px;color:var(--text-3)">尚无保录学校（可在管理端录入）</div>')) : '';
+
+    // 老师评估（收起）
+    const secNotes = secFrame(
+      `<div onclick="event.stopPropagation();tpNotesToggle('${s.id}','${tsaEsc(s.name)}',this)" style="font-size:11px;font-weight:600;color:var(--text-2);cursor:pointer;user-select:none">📝 老师评估记录 <span style="font-weight:400;color:var(--text-3)">（学生不可见，仅老师与 admin）</span><span class="arr" style="margin-left:4px;color:var(--text-3)">▸</span></div>
+       <div id="tpnotes_${s.id}" style="display:none;margin-top:10px"></div>`);
+
+    // 时间线（收起）
+    const secTimeline = secFrame(
+      `<div onclick="event.stopPropagation();const el=document.getElementById('tptl_${s.id}');const open=el.style.display==='none';el.style.display=open?'block':'none';this.querySelector('.arr').textContent=open?'▾':'▸'" style="font-size:11px;font-weight:600;color:var(--text-2);cursor:pointer;user-select:none">🕑 进度时间线 <span style="font-weight:400;color:var(--text-3)">（${timeline.length}条）</span><span class="arr" style="margin-left:4px;color:var(--text-3)">▸</span></div>
+       <div id="tptl_${s.id}" style="display:none;margin-top:10px">
+         ${timeline.length ? [...timeline].reverse().map(entry => renderProgressTimelineEntry(entry, false)).join('') : '<div style="font-size:11px;color:var(--text-3)">暂无记录</div>'}
+       </div>`);
+
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 2px rgba(0,0,0,.03)">
+      <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer" onclick="toggleTeacherProgressCard('${s.id}')">
+        <div style="flex:1;min-width:0">
           <span style="font-size:13px;font-weight:600">${tsaEsc(s.name)}</span>
-          <span style="font-size:11px;color:var(--text-3);margin-left:8px">${MAJORS[s.major]||s.major||''}</span>
-          ${s.source?`<span style="font-size:10px;color:var(--accent);margin-left:6px;border:1px solid var(--border);border-radius:2px;padding:0 5px">${tsaEsc(s.source)}</span>`:''}
+          <span style="font-size:11px;color:var(--text-3);margin-left:8px">${MAJORS[s.major] || s.major || ''}</span>
+          ${s.source ? `<span style="font-size:10px;color:var(--text-3);margin-left:6px;border:1px solid var(--border-light);border-radius:3px;padding:0 6px">${tsaEsc(s.source)}</span>` : ''}
         </div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:60%">
+        <div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;max-width:62%">
           ${statusRow || '<span style="font-size:10px;color:var(--text-3)">暂无进度</span>'}
         </div>
+        <span class="tp-arr" style="font-size:11px;color:var(--text-3);flex-shrink:0">▸</span>
       </div>
       <div id="tprog_${s.id}" style="display:none;border-top:1px solid var(--border-light);background:var(--bg)">
-        <!-- 备考节点文字总结 -->
-        <div style="padding:12px 14px 0">
-          <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">📅 备考节点总结（${routeLabel}）</div>
-          <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:8px 12px">
-            ${tpNodeSummaryHtml(s, latest, plans, draft)}
-          </div>
-        </div>
-        <div style="padding:12px 14px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <!-- 语言成绩 -->
-          <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px">
-            <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">🗣 日语　📝 英语</div>
-            <div style="font-size:11px">${s.japanese_score||'未填写'}</div>
-            <div style="font-size:11px;color:var(--text-2)">${s.english_score||'未填写'}</div>
-          </div>
-          <!-- 计划书 -->
-          <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px">
-            <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">📄 计划书进度</div>
-            ${draft ? `
-            ${tDraftSummaryHtml(draft)}
-            ${draft.draft_file_url?`<a href="${draft.draft_file_url}" target="_blank" style="font-size:10px;color:var(--accent)">📎 草稿文件</a>`:''}
-            <button onclick="openTeacherDraftComment('${s.id}','${s.name}')" style="margin-top:6px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;display:block">
-              ${draft.teacher_comment?'查看・评估计划书/先行研究':'查看・评估计划书/先行研究'}
-            </button>
-            ` : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写</div>'}
-          </div>
-        </div>
-        <!-- 志望校 -->
-        <div style="padding:0 14px 12px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-            <div style="font-size:10px;color:var(--text-3)">🏫 志望校（${plans.length}所）· 状态与过去问/面试稿可直接修改，即时保存并与学生端同步</div>
-            <button onclick="event.stopPropagation();tpAddSchool('${s.id}','${(s.name||'').replace(/'/g,'')}','${s.major||''}')" style="margin-left:auto;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit;white-space:nowrap">＋ 添加志望校</button>
-          </div>
-          ${plans.length ? `
-          <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px;background:var(--surface);border:1px solid var(--border-light)">
-            <thead><tr style="background:var(--bg)">
-              ${['No.','级别','学校名 · 研究科','教授','出愿期间','该校进度','过去问','面试稿'].map(h=>`<th style="padding:5px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border);white-space:nowrap">${h}</th>`).join('')}
-            </tr></thead>
-            <tbody>
-              ${plans.map((p,pi)=>{const st=schoolStatusLabel(p.status);return `<tr style="border-bottom:1px solid var(--border-light)">
-                <td style="padding:5px 8px;color:var(--text-3)">${pi+1}</td>
-                <td style="padding:5px 8px;white-space:nowrap">${levelLabel[p.level]||''}</td>
-                <td style="padding:5px 8px"><span style="font-weight:600">${tsaEsc(p.school_name)}</span>${p.faculty?`<span style="color:var(--text-3);margin-left:4px;font-size:10px">${tsaEsc(p.faculty)}</span>`:''}</td>
-                <td style="padding:5px 8px;white-space:nowrap">${tsaEsc(p.professor)||'—'}</td>
-                <td style="padding:5px 8px;font-size:10px;color:var(--accent);white-space:nowrap">${tsaEsc(p.application_period)||'—'}</td>
-                <td style="padding:5px 8px">
-                  <select onchange="tpPlanSet('${p.id}','status',this.value,this)" onclick="event.stopPropagation()" style="font-size:10px;padding:2px 4px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;color:${st.c};font-weight:600">
-                    ${Object.entries(SCHOOL_STATUS_LABELS).map(([k,v])=>`<option value="${k}" ${p.status===k?'selected':''}>${v.t}</option>`).join('')}
-                  </select>
-                </td>
-                <td style="padding:5px 8px"><button onclick="event.stopPropagation();tpPlanFlag('${p.id}','kakomon_started',this)" data-on="${p.kakomon_started?'1':'0'}" style="font-size:10px;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;border:1px solid ${p.kakomon_started?'var(--ok)':'var(--border)'};background:${p.kakomon_started?'var(--ok-bg)':'var(--bg)'};color:${p.kakomon_started?'var(--ok)':'var(--text-3)'}">${p.kakomon_started?'✓ 已开始':'未开始'}</button></td>
-                <td style="padding:5px 8px"><button onclick="event.stopPropagation();tpPlanFlag('${p.id}','interview_draft_done',this)" data-on="${p.interview_draft_done?'1':'0'}" style="font-size:10px;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;border:1px solid ${p.interview_draft_done?'var(--ok)':'var(--border)'};background:${p.interview_draft_done?'var(--ok-bg)':'var(--bg)'};color:${p.interview_draft_done?'var(--ok)':'var(--text-3)'}">${p.interview_draft_done?'✓ 已完成':'未完成'}</button></td>
-              </tr>`;}).join('')}
-            </tbody>
-          </table></div>` : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写志望校</div>'}
-        </div>
-        ${(s.course_type||'').includes('保录') ? `
-        <!-- 保录学校 -->
-        <div style="padding:0 14px 12px">
-          <div style="font-size:10px;color:#8a5010;margin-bottom:6px;font-weight:600">🎓 保录学校（${(Array.isArray(s.guaranteed_schools)?s.guaranteed_schools.length:0)}所）</div>
-          ${(Array.isArray(s.guaranteed_schools)&&s.guaranteed_schools.length) ? `<div style="display:flex;flex-direction:column;gap:4px">${s.guaranteed_schools.map(g=>`<div style="font-size:11px;padding:5px 10px;border:1px solid #e8d9b8;border-radius:4px;background:#fdfaf5"><span style="font-weight:600">${tsaEsc(g.university)}</span>${g.program?` <span style="color:var(--text-3)">· ${tsaEsc(g.program)}</span>`:''}</div>`).join('')}</div>` : '<div style="font-size:11px;color:var(--text-3)">尚无保录学校（可在管理端录入）</div>'}
-        </div>` : ''}
-        <!-- 老师评估记录（学生不可见） -->
-        <div style="padding:0 14px 12px">
-          <div onclick="event.stopPropagation();tpNotesToggle('${s.id}','${tsaEsc(s.name)}',this)" style="font-size:10px;color:var(--text-3);margin-bottom:6px;cursor:pointer;user-select:none">📝 老师评估记录（学生不可见，仅老师与 admin）<span class="arr" style="margin-left:4px">▸</span></div>
-          <div id="tpnotes_${s.id}" style="display:none"></div>
-        </div>
-        <!-- 进度时间线（默认收起） -->
-        <div style="padding:0 14px 12px">
-          <div onclick="event.stopPropagation();const el=document.getElementById('tptl_${s.id}');const open=el.style.display==='none';el.style.display=open?'block':'none';this.querySelector('.arr').textContent=open?'▾':'▸'" style="font-size:10px;color:var(--text-3);margin-bottom:6px;cursor:pointer;user-select:none">进度时间线（${timeline.length}条）<span class="arr" style="margin-left:4px">▸</span></div>
-          <div id="tptl_${s.id}" style="display:none">
-            ${timeline.length ? [...timeline].reverse().map(entry => renderProgressTimelineEntry(entry, false)).join('') : '<div style="font-size:11px;color:var(--text-3)">暂无记录</div>'}
-          </div>
+        <div style="padding:14px;display:flex;flex-direction:column;gap:12px">
+          ${secNodes}
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">${secLang}${secPlan}</div>
+          ${secSchools}
+          ${secGuaranteed}
+          ${secNotes}
+          ${secTimeline}
         </div>
       </div>
     </div>`;
@@ -299,7 +306,12 @@ function tpRenderProgressList() {
 
 function toggleTeacherProgressCard(id) {
   const el = document.getElementById(`tprog_${id}`);
-  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+  if (!el) return;
+  const open = el.style.display === 'none';
+  el.style.display = open ? 'block' : 'none';
+  const hdr = el.previousElementSibling;
+  const arr = hdr && hdr.querySelector('.tp-arr');
+  if (arr) arr.textContent = open ? '▾' : '▸';
 }
 
 // ══ 老师侧：计划书 / 先行研究 查看・评估 ══
