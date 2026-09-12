@@ -31,9 +31,29 @@ async function renderHomeworkFeedback(mc) {
       ? `/rest/v1/course_sessions?homework_enabled=is.true&course_name=in.(${myCourses.map(c=>`"${c}"`).join(',')})&select=*&order=session_date.desc&limit=300`
       : `/rest/v1/course_sessions?homework_enabled=is.true&select=*&order=session_date.desc&limit=300`;
     const sessions = await sb(q);
+    // 只显示本老师负责领域/专业（或本人任课、教务显式授权）的作业课次，
+    // 避免任何老师都能看到全部提交（尤其 homework_courses 未配置时查询会返回全部）
+    const myMajors = new Set(teacherData.majors || []);
+    const myDomains = new Set([
+      ...(teacherData.domains || []),
+      ...[...myMajors].map(m => (typeof MAJOR_DOMAIN !== 'undefined' ? MAJOR_DOMAIN[m] : null)).filter(Boolean)
+    ]);
+    const nm = teacherName;
     thwSessions = (sessions || []).filter(s => {
       const q = s.homework_questions;
-      return Array.isArray(q) ? q.length : !!(q && q.levels && q.levels.length);
+      const hasHw = Array.isArray(q) ? q.length : !!(q && q.levels && q.levels.length);
+      if (!hasHw) return false;
+      // 教务显式授权的课程 → 直接可见
+      if (myCourses.length && myCourses.includes(s.course_name)) return true;
+      // 本人任课的课次 → 可见
+      if ((s.session_teacher && s.session_teacher.includes(nm)) || (s.teacher && s.teacher.includes(nm))) return true;
+      // 其余：按老师负责的专业/领域过滤
+      const sm = s.major || [];
+      if (sm.length) {
+        if (sm.some(m => myMajors.has(m))) return true;
+        if (sm.some(m => myDomains.has(typeof MAJOR_DOMAIN !== 'undefined' ? MAJOR_DOMAIN[m] : null))) return true;
+      }
+      return false;
     });
     const ids = thwSessions.map(s => s.id);
     thwSubs = {};
