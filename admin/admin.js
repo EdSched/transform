@@ -617,12 +617,7 @@ function renderTeachersPage(mc){
             <div style="margin-left:20px">
               <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可查看的专业（不选则全部可查看）</div>
               <div style="display:flex;flex-wrap:wrap;gap:4px" id="perm_admission_majors">
-                ${[
-              ['shakai','社会学'],['keiei','経営学'],['keizai','経済学'],
-              ['shinpan','新闻传播学'],['fukushi','社会福祉学'],['nihongo','日本语教育'],
-              ['hyosho','表象文化・文学・哲学'],['seiji','政治学'],['toyo','東洋史'],
-              ['bunka','文化人类学'],['mot','MOT'],['tokei','統計・計量'],
-            ].map(([k,v])=>`<div class="filter-chip" data-value="${k}" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">${v}</div>`).join('')}
+                ${Object.entries(typeof ADMISSION_MAJORS!=='undefined'?ADMISSION_MAJORS:{shakai:'社会学',keiei:'経営学',keizai:'経済学',shinpan:'新闻传播学',fukushi:'社会福祉学',nihongo:'日本语教育',hyosho:'表象文化・文学・哲学',seiji:'政治学',toyo:'東洋史',bunka:'文化人类学',mot:'MOT',tokei:'統計・計量',kyoiku:'教育学'}).map(([k,v])=>`<div class="filter-chip" data-value="${k}" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">${v}</div>`).join('')}
               </div>
             </div>
           </div>
