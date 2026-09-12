@@ -145,12 +145,14 @@ function majorKeyFromText(text) {
 // 从数据库加载专业字典，合并进全局 MAJORS（不会清空/覆盖已有的核心专业）
 // 各页面应在初始化阶段调用一次：await loadMajorsFromDB();
 let majorsLoadedFromDB = false;
+const MAJORS_JA = {};   // key → 日文专业名（人工填写，用于精确生成罗马音代号，也可用于对照日本大学院官方专业名）
 async function loadMajorsFromDB() {
   try {
-    const rows = await sb('/rest/v1/majors?select=key,label,domain');
+    const rows = await sb('/rest/v1/majors?select=key,label,domain,label_ja');
     (rows || []).forEach(r => {
       if (r.key && r.label) MAJORS[r.key] = r.label;
       if (r.key && r.domain) MAJOR_DOMAIN[r.key] = r.domain;
+      if (r.key && r.label_ja) MAJORS_JA[r.key] = r.label_ja;
     });
     majorsLoadedFromDB = true;
   } catch (e) {
@@ -242,6 +244,23 @@ function generateMajorKey(label) {
     }
     return out;
   }
+  // 常见「多音字」复合词：整体读音固定，优先按词匹配，避免拆单字读错
+  // （如「画」在「計画=keikaku」读 kaku，在「絵画=kaiga」读 ga；「省」在「反省=hansei」读 sei，在「省庁=shouchou」读 shou）
+  const COMPOUND = {
+    '計画':'keikaku','企画':'kikaku','絵画':'kaiga','区画':'kukaku','映画':'eiga',
+    '銀行':'ginkou','行政':'gyousei','旅行':'ryokou','行動':'koudou','施行':'shikou',
+    '反省':'hansei','省略':'shouryaku','文部科学省':'monbukagakushou',
+    '陶芸':'tougei','陶磁器':'toujiki','陶器':'touki',
+    '市場':'shijou','立場':'tachiba','工場':'koujou',
+    '経済産業':'keizaisangyou','電子商取引':'denshishoutorihiki',
+    '都市計画':'toshikeikaku','地域計画':'chiikikeikaku',
+  };
+  {
+    const src = String(label);
+    for (const w of Object.keys(COMPOUND).sort((a,b)=>b.length-a.length)) {
+      if (src.includes(w)) return COMPOUND[w];
+    }
+  }
   // 去掉常见词尾（不影响区分度），再逐字/逐音节转写
   let s = String(label).replace(/[\s\u3000]+/g, '')
     .replace(/(大学院|研究科|学部|学科|専攻|専修|专攻|专修|专业|课程|コース|学|科|論|论)/g, '');
@@ -261,9 +280,10 @@ function generateMajorKey(label) {
 }
 // 新增一个专业到数据库，返回生成的 key（重名/已存在则直接返回已有 key，不重复创建）
 // 新增专业。keyArg 可选：传入则用你指定的英文代号（如 kannkou），留空则按拼音自动生成
-async function createMajor(label, keyArg, domainArg) {
+async function createMajor(label, keyArg, domainArg, labelJaArg) {
   label = String(label || '').trim();
   if (!label) return null;
+  const labelJa = String(labelJaArg || '').trim();
   const existing = Object.entries(MAJORS).find(([k, v]) => v === label);
   if (existing) return existing[0];
   let key = String(keyArg || '').trim().toLowerCase();
@@ -272,14 +292,19 @@ async function createMajor(label, keyArg, domainArg) {
     if (key === 'all' || key === 'shakai_group') { alert(`「${key}」是系统保留字，请换一个`); return null; }
     if (MAJORS[key]) { alert(`英文代号「${key}」已被专业「${MAJORS[key]}」占用，请换一个`); return null; }
   } else {
-    key = generateMajorKey(label);
+    // 有日文专业名 → 按日文生成，准确得多（中文名常与日本大学院官方叫法不同，如「陶瓷」→「陶芸」）
+    key = generateMajorKey(labelJa || label);
     if (MAJORS[key]) key = key + Date.now().toString(36).slice(-3);
   }
   const domain = String(domainArg || '').trim();
   try {
-    await sb('/rest/v1/majors', 'POST', domain ? { key, label, domain } : { key, label });
+    const row = { key, label };
+    if (domain) row.domain = domain;
+    if (labelJa) row.label_ja = labelJa;
+    await sb('/rest/v1/majors', 'POST', row);
     MAJORS[key] = label;
     if (domain) MAJOR_DOMAIN[key] = domain;
+    if (labelJa) MAJORS_JA[key] = labelJa;
     return key;
   } catch (e) {
     alert('新增专业失败：' + e.message);
