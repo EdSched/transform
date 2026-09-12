@@ -274,8 +274,7 @@ function generateMajorKey(label) {
   }
   key = key.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (key && !/^[a-z]/.test(key)) key = 'm' + key;  // 必须字母开头
-  // 完全无法转写（极生僻/纯符号）→ 退回短唯一码，保证可用
-  if (!key) key = 'm' + Date.now().toString(36).slice(-5);
+  // 识别不出任何有效汉字/假名 → 返回空字符串，交给调用方决定（不再静默生成乱码）
   return key;
 }
 // 新增一个专业到数据库，返回生成的 key（重名/已存在则直接返回已有 key，不重复创建）
@@ -293,7 +292,20 @@ async function createMajor(label, keyArg, domainArg, labelJaArg) {
     if (MAJORS[key]) { alert(`英文代号「${key}」已被专业「${MAJORS[key]}」占用，请换一个`); return null; }
   } else {
     // 有日文专业名 → 按日文生成，准确得多（中文名常与日本大学院官方叫法不同，如「陶瓷」→「陶芸」）
-    key = generateMajorKey(labelJa || label);
+    const guessed = generateMajorKey(labelJa || label);
+    if (!guessed) {
+      // 识别不出任何有效日语汉字/假名（常见原因：日文名那栏也填成了中文，或用了生僻字）
+      const manual = prompt(
+        `没能从「${labelJa || label}」识别出有效的日语读音，无法自动生成代号。\n\n`+
+        `常见原因：日文专业名一栏填的还是中文（请填该专业在日语里的实际写法，如「陶瓷」应填「陶芸」），或用到了生僻汉字。\n\n`+
+        `请直接输入一个代号（小写字母/数字/下划线，字母开头，如 tougei）：`, ''
+      );
+      const m = String(manual || '').trim().toLowerCase();
+      if (!m || !/^[a-z][a-z0-9_]*$/.test(m)) { alert('未输入有效代号，已取消新建。'); return null; }
+      key = m;
+    } else {
+      key = guessed;
+    }
     if (MAJORS[key]) key = key + Date.now().toString(36).slice(-3);
   }
   const domain = String(domainArg || '').trim();
