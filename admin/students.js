@@ -677,7 +677,7 @@ async function renderProgressPage(mc, focusStudentId=null){
                 <td style="padding:5px 8px;font-size:10px;color:var(--accent);white-space:nowrap">${p.application_period||'—'}</td>
                 <td style="padding:5px 8px">
                   <select onchange="event.stopPropagation();spPlanSet('${p.id}','status',this.value,this)" onclick="event.stopPropagation()" style="font-size:10px;padding:2px 4px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;color:${st.c};font-weight:600">
-                    ${Object.entries(SCHOOL_STATUS_LABELS).filter(([k])=>k!=='failed'||p.status==='failed').map(([k,v])=>`<option value="${k}" ${p.status===k?'selected':''}>${v.t}</option>`).join('')}
+                    ${Object.entries(SCHOOL_STATUS_LABELS).map(([k,v])=>`<option value="${k}" ${p.status===k?'selected':''}>${v.t}</option>`).join('')}
                   </select>
                 </td>
                 <td style="padding:5px 8px"><button onclick="event.stopPropagation();spPlanFlag('${p.id}','kakomon_started',this)" data-on="${p.kakomon_started?'1':'0'}" style="font-size:10px;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;border:1px solid ${p.kakomon_started?'var(--ok)':'var(--border)'};background:${p.kakomon_started?'var(--ok-bg)':'var(--bg)'};color:${p.kakomon_started?'var(--ok)':'var(--text-3)'}">${p.kakomon_started?'✓ 已开始':'未开始'}</button></td>
@@ -723,6 +723,7 @@ async function renderProgressPage(mc, focusStudentId=null){
         <button class="btn btn-sm ${progressViewMode==='student'?'btn-primary':'btn-outline'}" onclick="progressViewMode='student';renderProgressPage(document.getElementById('mainContent'))">👤 学生视角</button>
         <button class="btn btn-sm ${progressViewMode==='season'?'btn-primary':'btn-outline'}" onclick="progressViewMode='season';renderProgressPage(document.getElementById('mainContent'))">📋 年度出愿情报</button>
         <button class="btn btn-sm btn-outline" onclick="exportAllPlanDrafts()" title="导出当前筛选范围内所有学生的先行研究与计划书信息">⬇ 导出计划书数据</button>
+        <button class="btn btn-sm btn-outline" onclick="renderAdmissionResultsDedup(document.getElementById('mainContent'))" title="查看合格数据库中疑似重复录入的记录（姓名+大学名+语言成绩任一项重复）">🔍 合格记录查重</button>
       </div>
     </div>
   </div>
@@ -1191,7 +1192,7 @@ async function renderSeasonView(mc, students, timelineMap) {
                 const st = schoolStatusLabel(p.status);
                 const flags = ['prof_ok','applied','passed'].includes(p.status)
                   ? ` <span style="color:var(--text-3)">过去问${p.kakomon_started?'✓':'—'}・面试稿${p.interview_draft_done?'✓':'—'}</span>` : '';
-                return `<span style="display:inline-block;background:${p.status==='passed'?'var(--ok-bg)':(p.status==='failed'||p.status==='prof_ng')?'#fdecea':'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px;margin:2px;font-size:10px">${p.student_name} <span style="color:var(--text-3)">${levelLabel[p.level]||''}</span> · <span style="color:${st.c};font-weight:600">${st.t}</span>${flags}</span>`;
+                return `<span style="display:inline-block;background:${p.status==='passed'?'var(--ok-bg)':(isSchoolFailed(p.status)||p.status==='prof_ng')?'#fdecea':'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px;margin:2px;font-size:10px">${p.student_name} <span style="color:var(--text-3)">${levelLabel[p.level]||''}</span> · <span style="color:${st.c};font-weight:600">${st.t}</span>${flags}</span>`;
               }).join('');
               const firstPlan = plans[0];
               return `<tr style="border-bottom:1px solid var(--border-light)">
@@ -1510,7 +1511,7 @@ function openAdmissionEntry(data){
       <div style="font-family:'Noto Serif SC',serif;font-size:1.05rem;font-weight:600">📝 录入合格实绩</div>
       <button onclick="document.getElementById('admissionEntryOverlay').style.display='none'" class="btn btn-outline btn-sm">取消</button>
     </div>
-    <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">已从考学进度预填，可补充/修改后保存到合格数据库。</div>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">大学/研究科/专攻/学生名已从考学进度预填；日语/英语成绩已按学生档案原文带入（不是猜的，如需修改请去档案改）。</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">大学名 *</label><input id="ae_univ" value="${stEsc(data.school)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
       <div><label style="font-size:9px;color:var(--text-3)">研究科</label><input id="ae_dept" value="${stEsc(data.faculty)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
@@ -1521,7 +1522,9 @@ function openAdmissionEntry(data){
           ${[['shakai','社会学'],['fukushi','社会福祉'],['shinpan','新聞伝播'],['keizai','経済学'],['keiei','経営学'],['kyoiku','教育学'],['other','その他']].map(([v,l])=>`<option value="${v}" ${guessSubj===v?'selected':''}>${l}</option>`).join('')}
         </select></div>
       <div><label style="font-size:9px;color:var(--text-3)">入学年份 *</label><input id="ae_enroll" value="${stEsc((data.enroll||'').match(/\d{4}/)?.[0]||'')}" placeholder="如 2027" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
-      <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">备注（成绩等，已带入）</label><input id="ae_note" value="${stEsc([data.jp?'日语'+data.jp:'',data.en?'英语'+data.en:''].filter(Boolean).join(' '))}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
+      <div><label style="font-size:9px;color:var(--text-3)">日语成绩<span style="color:var(--text-3);font-weight:400">（按学生档案原文带入）</span></label><input id="ae_jp" value="${stEsc(data.jp)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
+      <div><label style="font-size:9px;color:var(--text-3)">英语成绩<span style="color:var(--text-3);font-weight:400">（按学生档案原文带入）</span></label><input id="ae_en" value="${stEsc(data.en)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
+      <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">备注（自由填写，如：该项目为研究生・非修士）</label><textarea id="ae_note" rows="2" placeholder="与语言成绩无关的补充说明" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px;font-family:inherit;resize:vertical"></textarea></div>
       <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">合格通知书照片（可选）</label><input type="file" id="ae_photo" accept="image/*" style="width:100%;font-size:11px"></div>
     </div>
     <div style="display:flex;gap:8px;margin-top:16px">
@@ -1532,24 +1535,42 @@ function openAdmissionEntry(data){
 async function saveAdmissionEntry(){
   const g=id=>(document.getElementById(id)||{}).value||'';
   const univ=g('ae_univ').trim();
+  const student=g('ae_student').trim();
+  const jpVal=g('ae_jp').trim(), enVal=g('ae_en').trim();
   if(!univ){ alert('请填大学名'); return; }
   const btn=document.getElementById('ae_save_btn'); if(btn){ btn.textContent='保存中…'; btn.disabled=true; }
   try{
+    // 防重复录入：姓名 + 大学名 一致，且日语/英语成绩任一项也一致 → 视为疑似重复
+    if(student){
+      try{
+        const dupRes=await fetch(`${SB_URL}/rest/v1/admission_results?student=ilike.${encodeURIComponent(student)}&univ=ilike.${encodeURIComponent(univ)}&select=*`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
+        const cands=dupRes.ok?await dupRes.json():[];
+        const dup=cands.find(r=>(jpVal&&String(r.japanese_score||'').trim()===jpVal)||(enVal&&String(r.english_score||'').trim()===enVal));
+        if(dup){
+          const ok=confirm(`检测到疑似重复记录：\n\n${dup.student||''} · ${dup.univ||''}${dup.dept?(' · '+dup.dept):''}${dup.spec?('/'+dup.spec):''}\n日语成绩：${dup.japanese_score||'—'}　英语成绩：${dup.english_score||'—'}\n录入于 ${(dup.created_at||'').slice(0,10)}\n\n仍要继续录入这条新记录吗？`);
+          if(!ok){ if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} return; }
+        }
+      }catch(e){ /* 查重失败不阻塞录入，仅跳过提示 */ }
+    }
     let note=g('ae_note').trim();
-    // 上传图片（文件名纯安全字符）
+    let photoUrl='';
+    // 上传图片（文件名纯安全字符），存入独立的 photo_url 字段，不再混进备注
     const file=document.getElementById('ae_photo')?.files?.[0];
     if(file){
       let ext=(file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,''); if(!ext||ext.length>5)ext='jpg';
       const path='grad/'+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'.'+ext;
       const up=await fetch(`${SB_URL}/storage/v1/object/admission-photos/${path}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':file.type,'x-upsert':'true'},body:file});
-      if(up.ok){ note=(note?note+' | ':'')+'[photo]'+`${SB_URL}/storage/v1/object/public/admission-photos/${path}`; }
+      if(up.ok){ photoUrl=`${SB_URL}/storage/v1/object/public/admission-photos/${path}`; }
       else { const e=await up.text(); if(!confirm('图片上传失败：'+e+'\n\n仍要保存合格数据（不含图片）吗？')){ if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} return; } }
     }
     const enrollYear=parseInt(g('ae_enroll'),10);
     if(!enrollYear){ alert('请填入学年份（如 2027）'); if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} return; }
     // 入学年份 >=2026 算新数据(new)，否则旧数据(hist)——与合格实绩展示口径一致
     const era = enrollYear>=2026 ? 'new' : 'hist';
-    const row={ univ, dept:g('ae_dept').trim()||null, spec:g('ae_spec').trim()||null, student:g('ae_student').trim()||null, subject:g('ae_subject'), era, note:note||null };
+    const row={
+      univ, dept:g('ae_dept').trim()||null, spec:g('ae_spec').trim()||null, student:student||null, subject:g('ae_subject'), era,
+      japanese_score: jpVal||null, english_score: enVal||null, note:note||null, photo_url: photoUrl||null,
+    };
     const res=await fetch(`${SB_URL}/rest/v1/admission_results`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify(row)});
     if(!res.ok){ throw new Error(await res.text()); }
     document.getElementById('admissionEntryOverlay').style.display='none';
@@ -1675,4 +1696,100 @@ function exportAllPlanDrafts() {
   adCsvDownload(`计划书汇总_${stamp}.csv`, sumHead, sumRows);
   if (refRows.length) setTimeout(() => adCsvDownload(`先行研究明细_${stamp}.csv`, refHead, refRows), 600);
   alert(`已导出 ${list.length} 名学生的计划书汇总${refRows.length ? `，以及 ${refRows.length} 条先行研究明细（两个 CSV 文件）` : ''}。\n完成稿文件请用汇总表中的链接下载。`);
+}
+
+
+// ══════════════════════════════════
+// 合格记录查重：admin 集中查看 admission_results，找出姓名+大学名+语言成绩任一项都重复的疑似重复录入
+// （录入时已有即时查重提醒，这里补一道"事后筛查"，覆盖多方分别录入导致漏检的情况）
+// ══════════════════════════════════
+let admDedupRows = null;
+let admDedupOnlyDup = true;
+
+async function renderAdmissionResultsDedup(mc) {
+  mc.innerHTML = '<div class="loading">加载中…</div>';
+  try {
+    admDedupRows = await sb('/rest/v1/admission_results?select=*&order=created_at.desc&limit=5000') || [];
+  } catch (e) {
+    mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
+    return;
+  }
+  admDedupRender(mc);
+}
+
+// 规整用于比对的字符串：去空白、转小写，避免"东京大学 "与"东京大学"这种误判
+function admNorm(s) { return String(s || '').trim().toLowerCase(); }
+
+function admFindDupGroups(rows) {
+  const groups = [];
+  const used = new Set();
+  for (let i = 0; i < rows.length; i++) {
+    if (used.has(i)) continue;
+    const a = rows[i];
+    const nameA = admNorm(a.student), univA = admNorm(a.univ);
+    if (!nameA || !univA) continue;
+    const jpA = admNorm(a.japanese_score), enA = admNorm(a.english_score);
+    const members = [i];
+    for (let j = i + 1; j < rows.length; j++) {
+      if (used.has(j)) continue;
+      const b = rows[j];
+      if (admNorm(b.student) !== nameA || admNorm(b.univ) !== univA) continue;
+      const jpB = admNorm(b.japanese_score), enB = admNorm(b.english_score);
+      const scoreMatch = (jpA && jpA === jpB) || (enA && enA === enB);
+      if (scoreMatch) members.push(j);
+    }
+    if (members.length > 1) {
+      members.forEach(m => used.add(m));
+      groups.push(members.map(m => rows[m]));
+    }
+  }
+  return groups;
+}
+
+function admDedupRender(mc) {
+  const rows = admDedupRows || [];
+  const groups = admFindDupGroups(rows);
+  const dupIds = new Set(groups.flat().map(r => r.id));
+  const shown = admDedupOnlyDup ? groups.flat() : rows;
+
+  const rowHtml = r => {
+    const isDup = dupIds.has(r.id);
+    return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:9px 12px;border:1px solid ${isDup ? '#e0a0a0' : 'var(--border-light)'};background:${isDup ? '#fdecea' : 'var(--surface)'};border-radius:4px;margin-bottom:6px">
+      <div style="min-width:70px"><span style="font-size:12px;font-weight:600">${stEsc(r.student || '—')}</span></div>
+      <div style="min-width:120px;font-size:11px">${stEsc(r.univ || '')}${r.dept ? '　' + stEsc(r.dept) : ''}${r.spec ? '/' + stEsc(r.spec) : ''}</div>
+      <div style="font-size:11px;color:var(--text-2)">日语 ${stEsc(r.japanese_score || '—')}　英语 ${stEsc(r.english_score || '—')}</div>
+      <div style="font-size:10px;color:var(--text-3)">${(r.era === 'new') ? '新数据' : '历史数据'}　${(r.created_at || '').slice(0, 10)}</div>
+      ${r.note ? `<div style="font-size:10px;color:var(--text-3);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${stEsc(r.note)}">📝 ${stEsc(r.note)}</div>` : ''}
+      ${r.photo_url ? `<a href="${r.photo_url}" target="_blank" style="font-size:10px;color:var(--accent)">📷 照片</a>` : ''}
+      <div style="margin-left:auto;display:flex;gap:6px">
+        ${isDup ? `<span style="font-size:9px;background:#e0a0a0;color:#fff;border-radius:2px;padding:1px 7px">疑似重复</span>` : ''}
+        <button onclick="admDedupDelete('${r.id}')" style="font-size:10px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:3px;padding:2px 9px;cursor:pointer;font-family:inherit">删除此条</button>
+      </div>
+    </div>`;
+  };
+
+  mc.innerHTML = `
+  <div class="page-header">
+    <div class="section-title">🔍 合格记录查重</div>
+    <button class="btn btn-sm btn-outline" onclick="renderProgressPage(document.getElementById('mainContent'))">← 返回考学进度</button>
+  </div>
+  <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;line-height:1.8">
+    判定规则：<b>姓名 + 大学名</b>一致，且<b>日语成绩或英语成绩</b>至少一项也一致 → 视为疑似重复录入（多人分别录入同一学生同一学校时常见）。<br>
+    共 ${rows.length} 条合格记录，发现 <b style="color:${groups.length ? '#b03a2e' : 'inherit'}">${groups.length}</b> 组疑似重复（涉及 ${dupIds.size} 条记录）。
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:12px">
+    <button class="btn btn-sm ${admDedupOnlyDup ? 'btn-primary' : 'btn-outline'}" onclick="admDedupOnlyDup=true;admDedupRender(document.getElementById('mainContent'))">仅显示疑似重复（${dupIds.size}）</button>
+    <button class="btn btn-sm ${!admDedupOnlyDup ? 'btn-primary' : 'btn-outline'}" onclick="admDedupOnlyDup=false;admDedupRender(document.getElementById('mainContent'))">显示全部（${rows.length}）</button>
+  </div>
+  <div>${shown.length ? shown.map(rowHtml).join('') : `<div style="font-size:12px;color:var(--text-3);padding:20px 0;text-align:center">${admDedupOnlyDup ? '暂未发现疑似重复记录 🎉' : '合格数据库为空'}</div>`}</div>`;
+}
+
+async function admDedupDelete(id) {
+  const r = (admDedupRows || []).find(x => x.id === id);
+  if (!confirm(`确认删除这条合格记录？\n\n${r ? (r.student || '') + ' · ' + (r.univ || '') : ''}\n\n删除后不可恢复。`)) return;
+  try {
+    await sb(`/rest/v1/admission_results?id=eq.${id}`, 'DELETE');
+    admDedupRows = (admDedupRows || []).filter(x => x.id !== id);
+    admDedupRender(document.getElementById('mainContent'));
+  } catch (e) { alert('删除失败：' + e.message); }
 }
