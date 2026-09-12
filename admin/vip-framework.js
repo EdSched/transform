@@ -142,7 +142,10 @@ function renderVipFrameworkEditor(mc) {
       <div style="border-top:1px solid var(--border-light);padding:8px 10px;display:grid;grid-template-columns:1.1fr 2fr 1.4fr 64px 28px;gap:8px;align-items:start">
         <input value="${vfEsc(it.name)}" placeholder="课程名" onchange="vfEditItem('${it.id}','name',this.value)" style="font-size:11px;font-weight:500">
         <textarea onchange="vfEditItem('${it.id}','content',this.value)" placeholder="内容说明" style="font-size:11px;resize:vertical;min-height:34px;line-height:1.5">${vfEsc(it.content)}</textarea>
-        <input value="${vfEsc(it.homework)}" placeholder="课后作业" onchange="vfEditItem('${it.id}','homework',this.value)" style="font-size:11px">
+        <div>
+          <input value="${vfEsc(it.homework)}" placeholder="课后作业（一句话说明）" onchange="vfEditItem('${it.id}','homework',this.value)" style="font-size:11px;width:100%;box-sizing:border-box">
+          <button onclick="vfOpenHwEditor('${it.id}')" style="margin-top:3px;font-size:9px;background:none;border:1px solid ${vfHasHw(it) ? 'var(--accent)' : 'var(--border)'};color:${vfHasHw(it) ? 'var(--accent)' : 'var(--text-3)'};border-radius:3px;padding:1px 8px;cursor:pointer;font-family:inherit">${vfHasHw(it) ? '📝 已设作业（编辑）' : '📝 设置作业'}</button>
+        </div>
         <input type="number" step="0.5" min="0" value="${it.default_hours != null ? it.default_hours : 2}" onchange="vfEditItem('${it.id}','default_hours',this.value)" style="font-size:11px;text-align:center" title="课时">
         <button onclick="vfRemoveItem('${it.id}')" title="删除此条" style="background:none;border:1px solid var(--border);border-radius:3px;color:var(--text-3);cursor:pointer;font-size:12px;height:28px">×</button>
       </div>`).join('') || '<div style="padding:8px 10px;font-size:11px;color:var(--text-3);border-top:1px solid var(--border-light)">该分类暂无条目</div>';
@@ -151,7 +154,7 @@ function renderVipFrameworkEditor(mc) {
       <div style="border-top:1px solid var(--border-light);padding:5px 10px;display:grid;grid-template-columns:1.1fr 2fr 1.4fr 64px 28px;gap:8px;background:var(--surface)">
         <div style="font-size:9px;color:var(--text-3);letter-spacing:.04em">课程主题</div>
         <div style="font-size:9px;color:var(--text-3);letter-spacing:.04em">内容说明</div>
-        <div style="font-size:9px;color:var(--text-3);letter-spacing:.04em">课后作业</div>
+        <div style="font-size:9px;color:var(--text-3);letter-spacing:.04em">课后作业（可设结构化题目）</div>
         <div style="font-size:9px;color:var(--text-3);text-align:center">课时</div>
         <div></div>
       </div>` : '';
@@ -236,6 +239,25 @@ function renderVipFrameworkEditor(mc) {
 
 function vfSetView(v) { vfView = v; renderVipFrameworkEditor(document.getElementById('mainContent')); }
 
+// ── 每回课的结构化作业（复用 shared/hw-core.js 的 HWC 编辑器，与大课/VIP上课记录同一套）──
+function vfHasHw(it) {
+  const q = it && it.homework_questions;
+  return !!(q && Array.isArray(q.levels) && q.levels.length);
+}
+function vfOpenHwEditor(itemId) {
+  if (typeof HWC === 'undefined' || !HWC.openEditor) { alert('作业模块未加载，请刷新页面后重试'); return; }
+  const it = vfItems.find(x => x.id === itemId);
+  if (!it) return;
+  HWC.openEditor({
+    title: '布置作业', subtitle: 'VIP框架 · ' + (it.category_label || '') + ' · ' + (it.name || ''),
+    questions: it.homework_questions, note: it.homework_note, storageDir: 'vffw-' + itemId,
+    onSave: async (payload, note) => {
+      it.homework_questions = payload; it.homework_note = note || '';
+      renderVipFrameworkEditor(document.getElementById('mainContent'));
+    },
+  });
+}
+
 // ══════════════════════════════════
 // 文本批量录入：分类用 # 开头，其余每行「课程主题<Tab>内容说明<Tab>课后作业」
 // 课时不进文本（套餐要按课时算上限），按名称匹配保留；新条目默认 2 课时
@@ -318,6 +340,7 @@ function vfApplyText() {
     if (hit && !usedIds.has(hit.id)) {
       usedIds.add(hit.id);
       nUpd++;
+      // 保留该条已设置的结构化作业（homework_questions）与课时
       return { ...hit, category: r.catKey, category_label: r.catLabel, name: r.name, content: r.content, homework: r.homework, sort_order: idx + 1 };
     }
     nAdd++;
@@ -349,6 +372,7 @@ async function vfSaveAsTemplate() {
   const items = vfItems.map(it => ({
     category: it.category, category_label: it.category_label,
     name: it.name || '', content: it.content || '', homework: it.homework || '',
+    homework_questions: it.homework_questions || null, homework_note: it.homework_note || null,
     default_hours: it.default_hours != null ? it.default_hours : 2,
   }));
   try {
@@ -406,6 +430,7 @@ function vfImportTemplate(tid) {
       id: 'vfi-new-' + Date.now() + '-' + i + '-' + Math.random().toString(36).slice(2, 5),
       framework_id: vfCurrentId, category: it.category, category_label: it.category_label,
       name: it.name || '', content: it.content || '', homework: it.homework || '',
+      homework_questions: it.homework_questions || null, homework_note: it.homework_note || null,
       default_hours: it.default_hours != null ? it.default_hours : 2,
       sort_order: ++maxOrder, source: 'template', filled: false, _new: true,
     });
@@ -571,6 +596,7 @@ async function saveVipFramework() {
     for (const it of existing) {
       await sb(`/rest/v1/vip_framework_items?id=eq.${it.id}`, 'PATCH', {
         name: it.name, content: it.content, homework: it.homework,
+        homework_questions: it.homework_questions || null, homework_note: it.homework_note || null,
         default_hours: it.default_hours, sort_order: it.sort_order,
       });
     }
