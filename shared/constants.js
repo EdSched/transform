@@ -161,33 +161,104 @@ async function loadMajorsFromDB() {
 // 中文专业名 → 生成一个安全的英文 key（拼音首字母不可行时退回时间戳后缀，保证唯一）
 function generateMajorKey(label) {
   // 常见专业汉字 → 日语罗马字读音（中/日两种写法都映射到同一个 key，风格与 keiei/shakai 一致）
-  const romaji = {
-    '経':'kei','经':'kei','営':'ei','营':'ei','済':'zai','济':'zai',
-    '社':'sha','会':'kai','福':'fuku','祉':'shi',
-    '新':'shin','聞':'bun','闻':'bun','伝':'den','传':'den','播':'pa','報':'hou','报':'hou','情':'jou',
-    '観':'kan','观':'kan','光':'kou',
-    '心':'shin','理':'ri','認':'nin','认':'nin','知':'chi','臨':'rin','临':'rin','床':'shou','発':'hatsu','達':'tatsu','达':'tatsu',
-    '教':'kyou','育':'iku',
-    '法':'hou','律':'ritsu','政':'sei','治':'ji',
-    '国':'koku','際':'sai','际':'sai','関':'kan','关':'kan',
-    '文':'bun','化':'ka','言':'gen','語':'go','语':'go','歴':'reki','歷':'reki','历':'reki','史':'shi',
-    '芸':'gei','艺':'gei','術':'jutsu','术':'jutsu','美':'bi','建':'ken','築':'chiku','筑':'chiku','都':'to','市':'shi','域':'iki','地':'chi',
-    '環':'kan','环':'kan','境':'kyou',
-    '数':'suu','統':'tou','统':'tou','計':'kei','计':'kei','量':'ryou',
+  const kanji = {
+    // 経済・経営・商
+    '経':'kei','经':'kei','済':'zai','济':'zai','営':'ei','营':'ei','商':'shou',
+    '会':'kai','計':'kei','计':'kei','金':'kin','融':'yuu','貿':'bou','贸':'bou','易':'eki',
+    '産':'san','产':'san','業':'gyou','业':'gyou','労':'rou','劳':'rou','働':'dou','動':'dou',
+    '財':'zai','财':'zai','税':'zei','銀':'gin','银':'gin','券':'ken','流':'ryuu','販':'han','贩':'han','売':'bai',
+    // 社会・人文
+    '社':'sha','福':'fuku','祉':'shi','人':'jin','類':'rui','类':'rui','民':'min','俗':'zoku','族':'zoku',
+    '家':'ka','差':'sa','別':'betsu','别':'betsu','女':'jo','性':'sei','老':'rou','児':'ji','儿':'ji','障':'shou','碍':'gai','害':'gai',
+    // 心理
+    '心':'shin','理':'ri','臨':'rin','临':'rin','床':'shou','認':'nin','认':'nin','知':'chi',
+    '発':'hatsu','发':'hatsu','達':'tatsu','达':'tatsu','精':'sei','神':'shin','脳':'nou','脑':'nou',
+    // 教育
+    '教':'kyou','育':'iku','員':'in','员':'in','職':'shoku','职':'shoku','幼':'you',
+    // 法・政治
+    '法':'hou','律':'ritsu','政':'sei','治':'ji','公':'kou','共':'kyou','権':'ken','权':'ken',
+    '刑':'kei','訴':'so','诉':'so','訟':'shou','讼':'shou','憲':'ken','宪':'ken','行':'gyou',
+    // 国際・地域
+    '国':'koku','際':'sai','际':'sai','関':'kan','関':'kan','关':'kan','係':'kei','地':'chi','域':'iki',
+    '比':'hi','較':'kaku','较':'kaku','東':'tou','东':'tou','亜':'a','亚':'a','洋':'you','欧':'ou','米':'bei',
+    '係':'kei','系':'kei','媒':'bai','体':'tai','技':'gi',
+    // 文化・言語・歴史
+    '文':'bun','化':'ka','言':'gen','語':'go','语':'go','英':'ei','独':'doku','仏':'futsu','佛':'futsu',
+    '中':'chuu','日':'nichi','韓':'kan','韩':'kan','露':'ro','漢':'kan','汉':'kan',
+    '歴':'reki','歷':'reki','历':'reki','史':'shi','哲':'tetsu','宗':'shuu','倫':'rin','伦':'rin',
+    '思':'shi','想':'sou','宇':'u','宙':'chuu','空':'kuu',
+    // 芸術・デザイン・建築
+    '芸':'gei','艺':'gei','術':'jutsu','术':'jutsu','美':'bi','建':'ken','築':'chiku','筑':'chiku',
+    '都':'to','市':'shi','造':'zou','匠':'shou','図':'zu','图':'zu','画':'ga','絵':'e','绘':'e',
+    '映':'ei','像':'zou','音':'on','楽':'gaku','乐':'gaku','演':'en','劇':'geki','剧':'geki','舞':'bu','踊':'you','写':'sha','真':'shin',
+    // 情報・工学・理数
+    '情':'jou','報':'hou','报':'hou','通':'tsuu','信':'shin','息':'soku','算':'san',
+    '機':'ki','机':'ki','械':'kai','電':'den','电':'den','気':'ki','子':'shi','数':'suu','統':'tou','统':'tou',
+    '量':'ryou','確':'kaku','率':'ritsu','工':'kou','材':'zai','料':'ryou','土':'do','木':'boku',
+    '設':'setsu','设':'setsu','交':'kou','航':'kou','船':'sen','舶':'haku','資':'shi','资':'shi','源':'gen',
+    // 理学・生命・医
     '物':'butsu','質':'shitsu','质':'shitsu','生':'sei','命':'mei','医':'i','薬':'yaku','药':'yaku',
-    '工':'kou','機':'ki','机':'ki','械':'kai','電':'den','电':'den','気':'ki','材':'zai','料':'ryou','土':'do','木':'boku','交':'kou','通':'tsuu',
-    '農':'nou','农':'nou','商':'shou','情':'jou','報':'hou',
-    '哲':'tetsu','宗':'shuu','人':'jin','間':'kan','间':'kan','民':'min','俗':'zoku','精':'sei','神':'shin',
+    '看':'kan','護':'go','护':'go','保':'ho','健':'ken','栄':'ei','养':'you','養':'you','康':'kou',
+    '化':'ka','学':'gaku','素':'so','分':'bun',
+    // 農・環境
+    '農':'nou','农':'nou','森':'shin','林':'rin','水':'sui','獣':'juu','兽':'juu','園':'en','园':'en',
+    '環':'kan','环':'kan','境':'kyou','生態':'seitai',
+    // 観光・メディア
+    '観':'kan','观':'kan','光':'kou','旅':'ryo','放':'hou','送':'sou','新':'shin','聞':'bun','闻':'bun',
+    '伝':'den','传':'den','播':'pa','編':'hen','编':'hen','集':'shuu',
   };
-  // 去掉常见词尾（不影响区分度），再逐字转写
-  let s = String(label).replace(/(学科|学部|研究科|専攻|专业|学|科|系|論|论)/g, '');
+  // 假名（片/平）→ 罗马字：片假名先转平假名，逐音节转写，处理拗音(ゃゅょ)、促音(っ)、长音(ー)
+  const kana = {
+    'あ':'a','い':'i','う':'u','え':'e','お':'o',
+    'か':'ka','き':'ki','く':'ku','け':'ke','こ':'ko','が':'ga','ぎ':'gi','ぐ':'gu','げ':'ge','ご':'go',
+    'さ':'sa','し':'shi','す':'su','せ':'se','そ':'so','ざ':'za','じ':'ji','ず':'zu','ぜ':'ze','ぞ':'zo',
+    'た':'ta','ち':'chi','つ':'tsu','て':'te','と':'to','だ':'da','ぢ':'ji','づ':'zu','で':'de','ど':'do',
+    'な':'na','に':'ni','ぬ':'nu','ね':'ne','の':'no',
+    'は':'ha','ひ':'hi','ふ':'fu','へ':'he','ほ':'ho','ば':'ba','び':'bi','ぶ':'bu','べ':'be','ぼ':'bo',
+    'ぱ':'pa','ぴ':'pi','ぷ':'pu','ぺ':'pe','ぽ':'po',
+    'ま':'ma','み':'mi','む':'mu','め':'me','も':'mo','や':'ya','ゆ':'yu','よ':'yo',
+    'ら':'ra','り':'ri','る':'ru','れ':'re','ろ':'ro','わ':'wa','を':'o','ん':'n',
+    'ぁ':'a','ぃ':'i','ぅ':'u','ぇ':'e','ぉ':'o','ゔ':'vu',
+  };
+  const smallY = { 'ゃ':'ya','ゅ':'yu','ょ':'yo' };          // 孤立小假名兜底
+  const yoonV = { 'ゃ':'a','ゅ':'u','ょ':'o' };              // 拗音时只取元音（きゃ=ky+a）
+  const yoonBase = { 'き':'ky','ぎ':'gy','し':'sh','じ':'j','ち':'ch','ぢ':'j','に':'ny','ひ':'hy','び':'by','ぴ':'py','み':'my','り':'ry' };
+  const kataToHira = ch => { const c = ch.charCodeAt(0); return (c >= 0x30A1 && c <= 0x30F6) ? String.fromCharCode(c - 0x60) : ch; };
+  const isKana = ch => { const c = ch.charCodeAt(0); return (c >= 0x3040 && c <= 0x30FF) || c === 0x30FC; };
+  function romajiFromKana(str) {
+    const arr = [...str].map(kataToHira);
+    let out = '', sokuon = false;
+    for (let i = 0; i < arr.length; i++) {
+      const ch = arr[i], nxt = arr[i + 1];
+      if (ch === 'ー' || ch === '・' || ch === '･') continue;   // 长音/中点忽略
+      if (ch === 'っ') { sokuon = true; continue; }             // 促音
+      let r = '';
+      if (yoonBase[ch] && yoonV[nxt] != null) { r = yoonBase[ch] + yoonV[nxt]; i++; } // 拗音 きゃ=kya
+      else if (smallY[ch]) { r = smallY[ch]; }
+      else if (kana[ch] != null) { r = kana[ch]; }
+      else continue;
+      if (sokuon) { r = (r[0] || '') + r; sokuon = false; }     // 促音重复下一辅音
+      out += r;
+    }
+    return out;
+  }
+  // 去掉常见词尾（不影响区分度），再逐字/逐音节转写
+  let s = String(label).replace(/[\s\u3000]+/g, '')
+    .replace(/(大学院|研究科|学部|学科|専攻|専修|专攻|专修|专业|课程|コース|学|科|論|论)/g, '');
   let key = '';
-  for (const ch of s) key += romaji[ch] || '';
-  // 没匹配到足够字符（生僻字多）→ 退回 base36 短哈希，保证可用且唯一
-  if (key.length < 2) key = 'm' + Date.now().toString(36).slice(-6);
+  for (let i = 0; i < s.length;) {
+    const ch = s[i];
+    if (kanji[ch] != null) { key += kanji[ch]; i++; continue; }
+    if (/[A-Za-z0-9]/.test(ch)) { key += ch.toLowerCase(); i++; continue; } // MBA / MOT / AI 等保留
+    if (isKana(ch)) { let j = i; while (j < s.length && isKana(s[j])) j++; key += romajiFromKana(s.slice(i, j)); i = j; continue; }
+    i++; // 其余字符（生僻字/符号）跳过
+  }
+  key = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (key && !/^[a-z]/.test(key)) key = 'm' + key;  // 必须字母开头
+  // 完全无法转写（极生僻/纯符号）→ 退回短唯一码，保证可用
+  if (!key) key = 'm' + Date.now().toString(36).slice(-5);
   return key;
 }
-
 // 新增一个专业到数据库，返回生成的 key（重名/已存在则直接返回已有 key，不重复创建）
 // 新增专业。keyArg 可选：传入则用你指定的英文代号（如 kannkou），留空则按拼音自动生成
 async function createMajor(label, keyArg, domainArg) {
