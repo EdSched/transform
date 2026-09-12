@@ -648,10 +648,10 @@ function cancelEditTeacher(){
   document.getElementById('perm_schedule').checked=false;
     document.getElementById('perm_student_mgmt').checked=false;
     {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.checked=false;}
-    document.getElementById('perm_progress_plan').checked=false;
-    document.getElementById('perm_promo').checked=false;
-    document.getElementById('perm_lect_info').checked=false;
-    document.getElementById('perm_vip_sales').checked=false;
+    {const _e=document.getElementById('perm_progress_plan'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_promo'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_lect_info'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_vip_sales'); if(_e)_e.checked=false;}
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
   document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>c.classList.remove('active'));
@@ -671,10 +671,10 @@ function openTeacherManager(){
   document.getElementById('perm_schedule').checked=false;
     document.getElementById('perm_student_mgmt').checked=false;
     {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.checked=false;}
-    document.getElementById('perm_progress_plan').checked=false;
-    document.getElementById('perm_promo').checked=false;
-    document.getElementById('perm_lect_info').checked=false;
-    document.getElementById('perm_vip_sales').checked=false;
+    {const _e=document.getElementById('perm_progress_plan'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_promo'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_lect_info'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_vip_sales'); if(_e)_e.checked=false;}
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
   document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>c.classList.remove('active'));
@@ -836,7 +836,11 @@ function renderTeacherRows(){
     :'<div class="empty" style="padding:40px">没有符合条件的老师</div>';
 }
 
-function getPermissionsFromForm(){
+function getPermissionsFromForm(prev){
+  prev=prev||{};
+  // 营业功能 4 个勾选项仅在 admin/中枢渲染；领域端链接下这些元素不存在，
+  // 读取 .checked 会抛错导致「添加/保存老师」点击无反应。缺失时回退到已有值（编辑时不清空）。
+  const _chk=(id,fb)=>{ const el=document.getElementById(id); return el?el.checked:(fb||false); };
   return {
     booking:document.getElementById('perm_booking').checked,
     booking_types:[...document.querySelectorAll('#perm_booking_types .filter-chip.active')].map(c=>c.dataset.value),
@@ -848,10 +852,10 @@ function getPermissionsFromForm(){
     homework_courses:[...document.querySelectorAll('#perm_homework_courses .filter-chip.active')].map(c=>c.dataset.value),
     admission_query:document.getElementById('perm_admission_query').checked,
     admission_majors:[...document.querySelectorAll('#perm_admission_majors .filter-chip.active')].map(c=>c.dataset.value),
-    promo:document.getElementById('perm_promo').checked,
-    lect_info:document.getElementById('perm_lect_info').checked,
-    progress_plan:document.getElementById('perm_progress_plan').checked,
-    vip_sales:document.getElementById('perm_vip_sales').checked,
+    promo:_chk('perm_promo',prev.promo),
+    lect_info:_chk('perm_lect_info',prev.lect_info),
+    progress_plan:_chk('perm_progress_plan',prev.progress_plan),
+    vip_sales:_chk('perm_vip_sales',prev.vip_sales),
     student_mgmt:document.getElementById('perm_student_mgmt').checked,
     guaranteed_only:document.getElementById('perm_guaranteed_only')?.checked||false,
     student_mgmt_items:[...document.querySelectorAll('#perm_student_mgmt_items .filter-chip.active')].map(c=>c.dataset.value),
@@ -920,10 +924,10 @@ async function addTeacher(){
     document.getElementById('perm_schedule').checked=false;
     document.getElementById('perm_student_mgmt').checked=false;
     {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.checked=false;}
-    document.getElementById('perm_progress_plan').checked=false;
-    document.getElementById('perm_promo').checked=false;
-    document.getElementById('perm_lect_info').checked=false;
-    document.getElementById('perm_vip_sales').checked=false;
+    {const _e=document.getElementById('perm_progress_plan'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_promo'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_lect_info'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_vip_sales'); if(_e)_e.checked=false;}
     renderTeacherList();
   }catch(e){alert('添加失败：'+e.message)}
 }
@@ -965,10 +969,10 @@ function openEditTeacher(id){
   document.getElementById('perm_homework').checked=!!p.homework;
   document.getElementById('perm_admission_query').checked=!!p.admission_query;
   document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>{c.classList.toggle('active',(p.admission_majors||[]).includes(c.dataset.value));});
-  document.getElementById('perm_promo').checked=!!p.promo;
-  document.getElementById('perm_lect_info').checked=!!p.lect_info;
-  document.getElementById('perm_progress_plan').checked=!!p.progress_plan;
-  document.getElementById('perm_vip_sales').checked=!!p.vip_sales;
+  {const _e=document.getElementById('perm_promo'); if(_e)_e.checked=!!p.promo;}
+  {const _e=document.getElementById('perm_lect_info'); if(_e)_e.checked=!!p.lect_info;}
+  {const _e=document.getElementById('perm_progress_plan'); if(_e)_e.checked=!!p.progress_plan;}
+  {const _e=document.getElementById('perm_vip_sales'); if(_e)_e.checked=!!p.vip_sales;}
   document.getElementById('perm_student_mgmt').checked=!!p.student_mgmt;
   {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.checked=!!p.guaranteed_only;}
   document.querySelectorAll('#perm_student_mgmt_items .filter-chip').forEach(c=>{c.classList.toggle('active',(p.student_mgmt_items||[]).includes(c.dataset.value));});
@@ -992,7 +996,7 @@ async function saveEditTeacher(id){
   const name=document.getElementById('new_teacher_name').value.trim();
   if(!name){alert('请填写姓名');return}
   const majors=[...document.querySelectorAll('#new_teacher_majors .filter-chip.active')].map(c=>c.dataset.value);
-  const permissions=getPermissionsFromForm();
+  const permissions=getPermissionsFromForm(cachedTeachers.find(t=>t.id===id)?.permissions);
   const notes=document.getElementById('new_teacher_notes').value.trim();
   const tags=parseTeacherTags();
   try{
