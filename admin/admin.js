@@ -452,6 +452,8 @@ function teacherPageHost(){
   return document.getElementById('mainContent');
 }
 function renderTeachersPage(mc){
+  const _isDom = (typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && typeof CURRENT_DOMAIN!=='undefined' && CURRENT_DOMAIN && CURRENT_DOMAIN!=='all');
+  const _lockDom = _isDom ? CURRENT_DOMAIN : '';
   mc.innerHTML=`
   <div class="page-header">
     <div class="section-title">老师管理 <span class="badge-count">${cachedTeachers.length}</span></div>
@@ -466,7 +468,7 @@ function renderTeachersPage(mc){
       <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:14px;letter-spacing:.05em;text-transform:uppercase" id="teacherFormTitle">添加新老师</div>
       <div class="form-group"><label class="form-label">姓名 *</label><input id="new_teacher_name" placeholder="老师姓名"></div>
       <div class="form-group"><label class="form-label">备注 / 对外宣传姓名</label><input id="new_teacher_notes" placeholder="填写后，宣传页课程担当将显示此名（如：周老师）"></div>
-      <div class="form-group">
+      ${_isDom ? '' : `<div class="form-group">
         <label class="form-label">类型 *</label>
         <div style="display:flex;gap:6px" id="new_teacher_stafftype">
           <div class="filter-chip" data-value="正社员" onclick="selectStaffType(this)" style="padding:4px 14px">正社员</div>
@@ -483,9 +485,9 @@ function renderTeachersPage(mc){
           <option>美术部</option>
           <option>综合事业本部</option>
         </select>
-      </div>
+      </div>`}
       <div class="form-group"><label class="form-label">分类标签（可叠加，用于搜索标记，不影响任何功能权限）</label><input id="new_teacher_tags" placeholder="用逗号或顿号分隔，如：计划书指导、模拟面试、兼职"></div>
-      <div class="form-group" style="border:1px solid var(--accent);border-radius:3px;padding:8px;background:var(--bg)">
+      ${_isDom ? `<div class="form-group"><label class="form-label">领域</label><div style="font-size:12px;color:var(--text-2);border:1px solid var(--border);border-radius:3px;padding:7px 10px;background:var(--bg)">${_lockDom}<span style="font-size:10px;color:var(--text-3);margin-left:6px">本领域账号：新建老师自动归属本领域，负责专业在下方选择</span></div></div>` : `<div class="form-group" style="border:1px solid var(--accent);border-radius:3px;padding:8px;background:var(--bg)">
         <label class="form-label" style="color:var(--accent)">隶属领域（可多选，决定"哪个领域账号能在老师管理里看到/编辑这个老师"）</label>
         <div style="display:flex;flex-wrap:wrap;gap:6px" id="new_teacher_managed">
           ${DOMAINS.map(d=>`<div class="filter-chip" data-value="${d.label}" onclick="toggleChip(this)" style="padding:4px 10px">${d.label}</div>`).join('')}
@@ -497,7 +499,7 @@ function renderTeachersPage(mc){
         <div style="display:flex;flex-wrap:wrap;gap:6px" id="new_teacher_domains">
           ${DOMAINS.map(d=>`<div class="filter-chip" data-value="${d.label}" onclick="toggleDomainChip(this)" style="padding:4px 10px">${d.label}</div>`).join('')}
         </div>
-      </div>
+      </div>`}
       <div class="form-group">
         <label class="form-label">负责专业（可多选，按已选领域展开）</label>
         <div id="new_teacher_majors" style="min-height:20px"></div>
@@ -539,8 +541,12 @@ function renderTeachersPage(mc){
           </div>
           <!-- schedule row -->
           <div style="padding:10px;border-bottom:1px solid var(--border-light)">
-            <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap"><input type="checkbox" id="perm_schedule" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">课程排班</label>
-            <div style="font-size:10px;color:var(--text-3);margin-top:4px;margin-left:20px">排班确认 + 我的课表</div>
+            <label style="display:block;font-size:11px;font-weight:600;margin-bottom:6px">课程排班 / 我的课表</label>
+            <select id="perm_schedule_mode" style="width:100%;font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;background:var(--surface)">
+              <option value="">不开启</option>
+              <option value="full">排班确认 + 我的课表（可接收排课、填写排班）</option>
+              <option value="timetable">仅我的课表（本人任课 + VIP，跨领域集中显示）</option>
+            </select>
           </div>
           <!-- homework row -->
           <div style="padding:10px;border-bottom:1px solid var(--border-light)">
@@ -645,7 +651,7 @@ function cancelEditTeacher(){
   document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
-  document.getElementById('perm_schedule').checked=false;
+  {const _e=document.getElementById('perm_schedule_mode'); if(_e)_e.value='';}
     document.getElementById('perm_student_mgmt').checked=false;
     {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.checked=false;}
     {const _e=document.getElementById('perm_progress_plan'); if(_e)_e.checked=false;}
@@ -668,7 +674,7 @@ function openTeacherManager(){
   document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
-  document.getElementById('perm_schedule').checked=false;
+  {const _e=document.getElementById('perm_schedule_mode'); if(_e)_e.value='';}
     document.getElementById('perm_student_mgmt').checked=false;
     {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.checked=false;}
     {const _e=document.getElementById('perm_progress_plan'); if(_e)_e.checked=false;}
@@ -787,7 +793,7 @@ function renderTeacherRows(){
           const perms=[];
           if(p.booking) perms.push('预约');
           if(p.slots) perms.push('时间槽');
-          if(p.schedule) perms.push('排班');
+          if(p.schedule) perms.push(p.schedule==='timetable'?'课表':'排班');
           if(p.homework) perms.push('作业');
           if(p.admission_query) perms.push('出願库');
           if(p.student_mgmt) perms.push('学生管理');
@@ -797,7 +803,7 @@ function renderTeacherRows(){
           const permsFull=[];
           if(p.booking) permsFull.push(`预约(${(p.booking_types||[]).join('/')||'—'})`);
           if(p.slots) permsFull.push(`时间槽(${(p.slot_types||[]).join('/')||'—'})`);
-          if(p.schedule) permsFull.push('排班');
+          if(p.schedule) permsFull.push(p.schedule==='timetable'?'我的课表':'排班+课表');
           if(p.homework) permsFull.push('作业反馈');
           if(p.admission_query) permsFull.push('出願数据库');
           if(p.student_mgmt){const _sm={progress:'考学进度',records:'出席作业',meetings:'面谈查询',profile:'档案录入',profile_edit:'档案修改'};permsFull.push('学生管理('+(((p.student_mgmt_items||[]).map(k=>_sm[k]||k).join('/'))||'—')+')');}
@@ -847,7 +853,7 @@ function getPermissionsFromForm(prev){
     slots:document.getElementById('perm_slots').checked,
     slot_types:[...document.querySelectorAll('#perm_slot_types .filter-chip.active')].map(c=>c.dataset.value),
     vip_content:[...document.querySelectorAll('#perm_vip_content .filter-chip.active')].map(c=>c.dataset.value),
-    schedule:document.getElementById('perm_schedule').checked,
+    schedule:(function(){const e=document.getElementById('perm_schedule_mode');return e&&e.value?e.value:false;})(),
     homework:document.getElementById('perm_homework').checked,
     homework_courses:[...document.querySelectorAll('#perm_homework_courses .filter-chip.active')].map(c=>c.dataset.value),
     admission_query:document.getElementById('perm_admission_query').checked,
@@ -871,7 +877,8 @@ function toggleDomainChip(el){
 // 按已选领域展开专业 chip（按领域分组显示）；保留已勾选的专业状态
 function renderTeacherMajorChips(){
   const box=document.getElementById('new_teacher_majors'); if(!box) return;
-  const selDomains=[...new Set([...document.querySelectorAll('#new_teacher_domains .filter-chip.active')].map(c=>c.dataset.value))];
+  const _isDom=(typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && typeof CURRENT_DOMAIN!=='undefined' && CURRENT_DOMAIN && CURRENT_DOMAIN!=='all');
+  const selDomains = _isDom ? [CURRENT_DOMAIN] : [...new Set([...document.querySelectorAll('#new_teacher_domains .filter-chip.active')].map(c=>c.dataset.value))];
   // 记住当前已选专业，重绘后恢复
   const prevSel=new Set([...box.querySelectorAll('.filter-chip.active')].map(c=>c.dataset.value));
   if(!selDomains.length){ box.innerHTML='<div style="font-size:11px;color:var(--text-3)">请先选择领域，上方选定后这里展开对应专业</div>'; return; }
@@ -896,17 +903,50 @@ function selectStaffType(el){
   if(!isRegular){ const d=document.getElementById('new_teacher_department'); if(d) d.value=''; }
 }
 async function addTeacher(){
+  const _isDom = (typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && typeof CURRENT_DOMAIN!=='undefined' && CURRENT_DOMAIN && CURRENT_DOMAIN!=='all');
+  const _lockDom = _isDom ? CURRENT_DOMAIN : '';
   const name=document.getElementById('new_teacher_name').value.trim();
   const notes=document.getElementById('new_teacher_notes').value.trim();
   if(!name){alert('请填写姓名');return}
-  if(cachedTeachers.find(t=>t.name===name)){alert('该老师已存在');return}
   const majors=[...document.querySelectorAll('#new_teacher_majors .filter-chip.active')].map(c=>c.dataset.value);
-  const domains=[...document.querySelectorAll('#new_teacher_domains .filter-chip.active')].map(c=>c.dataset.value);
-    const managed_by=[...document.querySelectorAll('#new_teacher_managed .filter-chip.active')].map(c=>c.dataset.value);
+  // 负责/隶属领域：领域端自动锁定为本领域；中枢端按表单勾选
+  let domains, managed_by;
+  if(_isDom){ domains=[_lockDom]; managed_by=[_lockDom]; }
+  else {
+    domains=[...document.querySelectorAll('#new_teacher_domains .filter-chip.active')].map(c=>c.dataset.value);
+    managed_by=[...document.querySelectorAll('#new_teacher_managed .filter-chip.active')].map(c=>c.dataset.value);
+  }
+  // 同名老师已存在：领域端提示「叠加本领域」（同一账号/ID）；中枢端沿用原「已存在」拦截
+  const _existing=cachedTeachers.find(t=>t.name===name);
+  if(_existing){
+    if(_isDom){
+      const curManaged=_existing.managed_by||[], curDomains=_existing.domains||[], curMajors=_existing.majors||[];
+      if(curManaged.includes(_lockDom)){ alert(`老师「${name}」已在本领域，请直接在下方列表中编辑。`); return; }
+      const others=curManaged.filter(d=>d!==_lockDom);
+      if(!confirm(`老师「${name}」已有账号${others.length?`（隶属领域：${others.join('、')}）`:''}。
+是否把本领域「${_lockDom}」叠加到其负责/管理领域？
+（姓名与账号 ID 不变，仅追加本领域及所选专业；其它设置保持不变）`)) return;
+      const willManaged=[...new Set([...curManaged,_lockDom])];
+      const willDomains=[...new Set([...curDomains,_lockDom])];
+      const willMajors=[...new Set([...curMajors,...majors])];
+      try{
+        await sb(`/rest/v1/teachers?id=eq.${_existing.id}`,'PATCH',{managed_by:willManaged,domains:willDomains,majors:willMajors});
+        Object.assign(_existing,{managed_by:willManaged,domains:willDomains,majors:willMajors});
+        document.getElementById('new_teacher_name').value='';
+        document.querySelectorAll('#new_teacher_majors .filter-chip').forEach(c=>c.classList.remove('active'));
+        if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
+        renderTeacherList();
+        alert(`已把「${_lockDom}」叠加到老师「${name}」，本领域现在可管理该老师。`);
+      }catch(e){ alert('叠加失败：'+e.message); }
+      return;
+    }
+    alert('该老师已存在'); return;
+  }
   const permissions=getPermissionsFromForm();
   const tags=parseTeacherTags();
   try{
-    const staff_type=document.querySelector('#new_teacher_stafftype .filter-chip.active')?.dataset.value||'';
+    let staff_type=document.querySelector('#new_teacher_stafftype .filter-chip.active')?.dataset.value||'';
+    if(!staff_type && _isDom) staff_type='兼职';   // 领域端不区分正社员/兼职，默认兼职（仍记录，保证账号/出勤信息完整）
     const department=staff_type==='正社员'?(document.getElementById('new_teacher_department')?.value||''):'';
     const t={id:`t-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,name,notes,majors,domains,managed_by,staff_type,department,permissions,tags};
     const res=await sb('/rest/v1/teachers','POST',[t]);
@@ -921,7 +961,7 @@ async function addTeacher(){
     document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
     document.getElementById('perm_booking').checked=false;
     document.getElementById('perm_slots').checked=false;
-    document.getElementById('perm_schedule').checked=false;
+    {const _e=document.getElementById('perm_schedule_mode'); if(_e)_e.value='';}
     document.getElementById('perm_student_mgmt').checked=false;
     {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.checked=false;}
     {const _e=document.getElementById('perm_progress_plan'); if(_e)_e.checked=false;}
@@ -965,7 +1005,7 @@ function openEditTeacher(id){
   const p=t.permissions||{};
   document.getElementById('perm_booking').checked=!!p.booking;
   document.getElementById('perm_slots').checked=!!p.slots;
-  document.getElementById('perm_schedule').checked=!!p.schedule;
+  {const _e=document.getElementById('perm_schedule_mode'); if(_e)_e.value=(p.schedule===true?'full':(p.schedule||''));}
   document.getElementById('perm_homework').checked=!!p.homework;
   document.getElementById('perm_admission_query').checked=!!p.admission_query;
   document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>{c.classList.toggle('active',(p.admission_majors||[]).includes(c.dataset.value));});
@@ -993,17 +1033,32 @@ function openEditTeacher(id){
 }
 
 async function saveEditTeacher(id){
+  const _isDom=(typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && typeof CURRENT_DOMAIN!=='undefined' && CURRENT_DOMAIN && CURRENT_DOMAIN!=='all');
+  const _lockDom=_isDom?CURRENT_DOMAIN:'';
+  const cur=cachedTeachers.find(t=>t.id===id)||{};
   const name=document.getElementById('new_teacher_name').value.trim();
   if(!name){alert('请填写姓名');return}
-  const majors=[...document.querySelectorAll('#new_teacher_majors .filter-chip.active')].map(c=>c.dataset.value);
-  const permissions=getPermissionsFromForm(cachedTeachers.find(t=>t.id===id)?.permissions);
+  const selMajors=[...document.querySelectorAll('#new_teacher_majors .filter-chip.active')].map(c=>c.dataset.value);
+  const permissions=getPermissionsFromForm(cur.permissions);
   const notes=document.getElementById('new_teacher_notes').value.trim();
   const tags=parseTeacherTags();
+  // 领域端编辑：不清空领域归属/正社员属性/他领域专业（表单里这些控件不渲染），避免跨领域数据丢失
+  let domains, managed_by, majors, staff_type, department;
+  if(_isDom){
+    domains=cur.domains||[];
+    managed_by=cur.managed_by||[];
+    const otherMajors=(cur.majors||[]).filter(m=>(typeof MAJOR_DOMAIN!=='undefined'?MAJOR_DOMAIN[m]:'')!==_lockDom);
+    majors=[...new Set([...otherMajors,...selMajors])];
+    staff_type=cur.staff_type||'兼职';
+    department=cur.department||'';
+  } else {
+    domains=[...document.querySelectorAll('#new_teacher_domains .filter-chip.active')].map(c=>c.dataset.value);
+    managed_by=[...document.querySelectorAll('#new_teacher_managed .filter-chip.active')].map(c=>c.dataset.value);
+    majors=selMajors;
+    staff_type=document.querySelector('#new_teacher_stafftype .filter-chip.active')?.dataset.value||'';
+    department=staff_type==='正社员'?(document.getElementById('new_teacher_department')?.value||''):'';
+  }
   try{
-    const domains=[...document.querySelectorAll('#new_teacher_domains .filter-chip.active')].map(c=>c.dataset.value);
-    const managed_by=[...document.querySelectorAll('#new_teacher_managed .filter-chip.active')].map(c=>c.dataset.value);
-    const staff_type=document.querySelector('#new_teacher_stafftype .filter-chip.active')?.dataset.value||'';
-    const department=staff_type==='正社员'?(document.getElementById('new_teacher_department')?.value||''):'';
     await sb(`/rest/v1/teachers?id=eq.${id}`,'PATCH',{name,notes,majors,domains,managed_by,staff_type,department,permissions,tags});
     const idx=cachedTeachers.findIndex(t=>t.id===id);
     if(idx>=0) Object.assign(cachedTeachers[idx],{name,notes,majors,domains,managed_by,staff_type,department,permissions,tags});
