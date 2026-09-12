@@ -205,17 +205,19 @@ function renderTvEditor(mc) {
   });
 
   const groupsHtml = groups.map(g => {
-    const open = tvOpenCats[g.key] !== false;
-    const rows = g.items.map(it => `
-      <div style="border-top:1px solid var(--border-light);padding:8px 10px;display:grid;grid-template-columns:1.1fr 2fr 1.4fr 64px 28px;gap:8px;align-items:start">
-        <input value="${tvEsc(it.name)}" placeholder="课程名" onchange="tvEditItem('${it.id}','name',this.value)" style="font-size:11px;font-weight:500">
-        <textarea onchange="tvEditItem('${it.id}','content',this.value)" placeholder="内容说明（请按您实际授课补充）" style="font-size:11px;resize:vertical;min-height:34px;line-height:1.5">${tvEsc(it.content)}</textarea>
+    const open = tvOpenCats[g.key] === true; // 默认收起，点击才展开
+    const TV_CELL = 'font-size:11px;width:100%;box-sizing:border-box;padding:5px 7px;border:1px solid var(--border);border-radius:3px;background:var(--surface);font-family:inherit';
+    const rows = g.items.map((it, ri) => `
+      <div style="border-top:1px solid var(--border-light);padding:7px 10px;display:grid;grid-template-columns:26px 1.1fr 2fr 1.4fr 64px 28px;gap:8px;align-items:start;background:${ri % 2 ? 'var(--bg)' : 'transparent'}">
+        <div style="font-size:10px;color:var(--text-3);text-align:center;padding-top:6px">${ri + 1}</div>
+        <input value="${tvEsc(it.name)}" placeholder="课程主题" onchange="tvEditItem('${it.id}','name',this.value)" style="${TV_CELL};font-weight:500">
+        <textarea onchange="tvEditItem('${it.id}','content',this.value)" placeholder="内容说明（请按您实际授课补充）" rows="2" style="${TV_CELL};resize:vertical;line-height:1.5">${tvEsc(it.content)}</textarea>
         <div>
-          <input value="${tvEsc(it.homework)}" placeholder="课后作业（一句话说明）" onchange="tvEditItem('${it.id}','homework',this.value)" style="font-size:11px;width:100%;box-sizing:border-box">
-          <button onclick="tvOpenHwEditor('${it.id}')" style="margin-top:3px;font-size:9px;background:none;border:1px solid ${tvHasHw(it) ? 'var(--accent)' : 'var(--border)'};color:${tvHasHw(it) ? 'var(--accent)' : 'var(--text-3)'};border-radius:3px;padding:1px 8px;cursor:pointer;font-family:inherit">${tvHasHw(it) ? '📝 已设作业（编辑）' : '📝 设置作业'}</button>
+          <input value="${tvEsc(it.homework)}" placeholder="课后作业（一句话）" onchange="tvEditItem('${it.id}','homework',this.value)" style="${TV_CELL}">
+          <button onclick="tvOpenHwEditor('${it.id}')" style="margin-top:4px;font-size:9px;background:${tvHasHw(it) ? 'var(--accent)' : 'none'};border:1px solid ${tvHasHw(it) ? 'var(--accent)' : 'var(--border)'};color:${tvHasHw(it) ? '#fff' : 'var(--text-3)'};border-radius:3px;padding:2px 8px;cursor:pointer;font-family:inherit">${tvHasHw(it) ? '📝 已设作业' : '📝 设置作业'}</button>
         </div>
-        <input type="number" step="0.5" min="0" value="${it.default_hours != null ? it.default_hours : 2}" onchange="tvEditItem('${it.id}','default_hours',this.value)" style="font-size:11px;text-align:center" title="课时">
-        <button onclick="tvRemoveItem('${it.id}')" title="删除此条" style="background:none;border:1px solid var(--border);border-radius:3px;color:var(--text-3);cursor:pointer;font-size:12px;height:28px">×</button>
+        <input type="number" step="0.5" min="0" value="${it.default_hours != null ? it.default_hours : 2}" onchange="tvEditItem('${it.id}','default_hours',this.value)" style="${TV_CELL};text-align:center" title="课时">
+        <button onclick="tvRemoveItem('${it.id}')" title="删除此条" style="background:none;border:1px solid var(--border);border-radius:3px;color:var(--text-3);cursor:pointer;font-size:12px;height:30px;width:100%">×</button>
       </div>`).join('') || '<div style="padding:8px 10px;font-size:11px;color:var(--text-3);border-top:1px solid var(--border-light)">该分类暂无条目</div>';
 
     return `
@@ -261,7 +263,7 @@ function backToTvList() {
   renderTeacherVipFrameworks(document.getElementById('mainContent'));
 }
 function tvToggleCat(key) {
-  tvOpenCats[key] = tvOpenCats[key] === false ? true : false;
+  tvOpenCats[key] = tvOpenCats[key] === true ? false : true;
   renderTvEditor(document.getElementById('mainContent'));
 }
 function tvEditItem(id, field, value) {
