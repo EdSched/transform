@@ -15,6 +15,7 @@ const ADMISSION_MAJORS = {
   bunka: '文化人类学',
   mot: 'MOT',
   tokei: '統計・計量',
+  kyoiku: '教育学',
 };
 
 const SHEET_TO_MAJOR = {
@@ -23,6 +24,7 @@ const SHEET_TO_MAJOR = {
   '表象文化・文学・哲学': 'hyosho', '政治学': 'seiji', '东洋史': 'toyo',
   '文化人类学': 'bunka', 'MOT': 'mot', 'MOT（复制用）': 'mot',
   '統計・計量在籍': 'tokei', '经营学专升硕': 'keiei', '社会学各分': 'shakai',
+  '教育学': 'kyoiku', '教育': 'kyoiku', '教育学在籍': 'kyoiku',
 };
 
 // 当前选中的专业列表（支持多选）
@@ -663,9 +665,9 @@ document.addEventListener('change', function(e) {
             oral_exam: (row['口述試験時間'] || '').toString().trim(),
             result_date: (row['合格発表時間'] || '').toString().trim(),
             english_required: normalizeReq(row['英語成績']),
-            english_detail: '',
+            english_detail: (row['英語詳細'] || '').toString().trim(),
             japanese_required: normalizeReq(row['日本語成績']),
-            japanese_detail: '',
+            japanese_detail: (row['日本語詳細'] || '').toString().trim(),
             recommendation: normalizeReq(row['推薦状']),
             thesis: normalizeReq(row['卒業論文']),
             other_docs: (row['その他書類'] || '').toString().trim(),
