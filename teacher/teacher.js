@@ -99,7 +99,8 @@ function buildTabs() {
   const hasRegularBk = (typeof cachedTeacherBookings !== 'undefined') && cachedTeacherBookings.some(b => b.type !== 'vip');
   if (p.booking && hasRegularBk) tabs.push({ id: 'booking', label: '📅 面谈预约' });
   if (p.slots) tabs.push({ id: 'slots', label: '⏰ 时间槽设定' });
-  if (p.schedule || slots.length) tabs.push({ id: 'schedule', label: '🗓 排课确认' });
+  // 排课确认仅「排班+我的课表」(full) 显示；「仅我的课表」(timetable) 不接收排班
+  if (p.schedule === true || p.schedule === 'full' || slots.length) tabs.push({ id: 'schedule', label: '🗓 排课确认' });
   if (p.homework) tabs.push({ id: 'homework', label: '📝 作业反馈' });
   if (p.admission_query) {
     tabs.push({ id: 'admissiondb', label: '🏫 出願数据库' });
