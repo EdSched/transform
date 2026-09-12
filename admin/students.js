@@ -532,6 +532,8 @@ async function renderProgressPage(mc, focusStudentId=null){
   allPlansPG.forEach(p => { if (!plansMapPG[p.student_id]) plansMapPG[p.student_id] = []; plansMapPG[p.student_id].push(p); });
   window.__spPlansAll = allPlansPG; // 供志望校编辑弹窗读取
   allDraftsPG.forEach(d => { if (!draftsMapPG[d.student_id]) draftsMapPG[d.student_id] = d; });
+  window.__pgDraftsMap = draftsMapPG;   // 供计划书查看/导出使用
+  window.__pgStudents = students;
 
   const cards = students.map(s => {
     const timeline = timelineMap[s.id] || [];
@@ -574,7 +576,8 @@ async function renderProgressPage(mc, focusStudentId=null){
         if (sRefsN) parts.push(`📚 先行研究 ${sRefsN} 条`);
         if (sDraftN) parts.push(`草稿已填 ${sDraftN} 项`);
         if (sDraft && sDraft.draft_file_url) parts.push('📎 完成稿已上传');
-        return parts.length ? `<div style="font-size:10px;color:var(--text-2);margin-top:4px;line-height:1.7">${parts.join(' · ')}</div>` : '';
+        const btn = sDraft ? `<button onclick="openAdminDraftView('${s.id}')" style="font-size:9px;margin-top:4px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:1px 8px;cursor:pointer;font-family:inherit">查看/下载计划书</button>` : '';
+        return (parts.length || btn) ? `<div style="font-size:10px;color:var(--text-2);margin-top:4px;line-height:1.7">${parts.join(' · ')}${btn ? '<br>' + btn : ''}</div>` : '';
       }
       if (k === 'apply') {
         if (!sPlans.length) return '';
@@ -719,6 +722,7 @@ async function renderProgressPage(mc, focusStudentId=null){
       <div style="display:flex;gap:4px">
         <button class="btn btn-sm ${progressViewMode==='student'?'btn-primary':'btn-outline'}" onclick="progressViewMode='student';renderProgressPage(document.getElementById('mainContent'))">👤 学生视角</button>
         <button class="btn btn-sm ${progressViewMode==='season'?'btn-primary':'btn-outline'}" onclick="progressViewMode='season';renderProgressPage(document.getElementById('mainContent'))">📋 年度出愿情报</button>
+        <button class="btn btn-sm btn-outline" onclick="exportAllPlanDrafts()" title="导出当前筛选范围内所有学生的先行研究与计划书信息">⬇ 导出计划书数据</button>
       </div>
     </div>
   </div>
@@ -1553,3 +1557,122 @@ async function saveAdmissionEntry(){
   }catch(e){ alert('保存失败：'+e.message); if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} }
 }
 function stEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+
+// ══════════════════════════════════
+// 计划书 / 先行研究：admin 查看・下载・批量导出
+// 数据源 student_plan_drafts（学生端填写），老师标注在 teacher_ref_notes
+// ══════════════════════════════════
+const AD_REF_LABELS = {
+  keyword:'キーワード', title:'題目/テーマ', author:'著者', year:'年', journal:'刊行物',
+  data:'研究対象/データ', method:'研究方法', summary:'概要', awareness:'問題意識',
+  conclusion:'結論', citation:'引用', evaluation:'評価', note:'備考',
+};
+const AD_DRAFT_LABELS = {
+  theme:'研究テーマ', field:'志望分野', data_source:'データ出処', data_type:'データ種類',
+  prior_lit:'先行文献', hypothesis:'仮説', difference:'先行研究との違い',
+  var_y:'被説明変数Y', var_x:'説明変数X', var_ctrl:'コントロール変数',
+  model:'モデル', model_other:'その他', regression:'回帰式',
+  background:'一、研究背景', prior:'二、先行研究', purpose:'三、研究目的',
+  method:'四、研究方法', significance:'五、研究意義',
+};
+function adJson(v) { if (!v) return null; try { return typeof v === 'string' ? JSON.parse(v) : v; } catch (e) { return null; } }
+function adRefs(d) { return adJson(d && d.prior_research_list) || []; }
+function adFields(d) { return adJson(d && d.draft_fields) || {}; }
+function adNotes(d) { return adJson(d && d.teacher_ref_notes) || {}; }
+function adRefKey(r, i) { return String((r && (r.title || r.keyword)) || '').trim() || ('#' + i); }
+function adVal(v) { return Array.isArray(v) ? v.join('、') : (v == null ? '' : String(v)); }
+
+function openAdminDraftView(studentId) {
+  const d = (window.__pgDraftsMap || {})[studentId];
+  const stu = (cachedStudents || []).find(x => x.id === studentId) || {};
+  if (!d) { alert('该学生尚无计划书数据'); return; }
+  const refs = adRefs(d), notes = adNotes(d), fields = adFields(d);
+  const existing = document.getElementById('adminDraftViewModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'adminDraftViewModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
+  const refsHtml = refs.length ? refs.map((r, i) => {
+    const n = notes[adRefKey(r, i)] || {};
+    const info = Object.entries(r).filter(([k, v]) => v).map(([k, v]) => `<span style="color:var(--text-3)">${AD_REF_LABELS[k] || k}：</span>${stEsc(v)}`).join('　');
+    const tag = (n.tags || []).length || n.comment
+      ? `<div style="margin-top:3px;font-size:10px;color:var(--ok)">老师标注：${(n.tags || []).map(t => stEsc(t)).join('、')}${n.comment ? '　' + stEsc(n.comment) : ''}</div>` : '';
+    return `<div style="padding:6px 0;border-bottom:1px dashed var(--border)">${i + 1}. ${info}${tag}</div>`;
+  }).join('') : '<div style="color:var(--text-3)">尚未整理先行研究</div>';
+  const filled = Object.entries(fields).filter(([k, v]) => adVal(v).trim());
+  const draftHtml = filled.length
+    ? filled.map(([k, v]) => `<div style="margin-bottom:5px"><span style="color:var(--text-3)">${AD_DRAFT_LABELS[k] || k}：</span>${stEsc(adVal(v)).replace(/\n/g, '<br>')}</div>`).join('')
+    : ['research_question', 'methodology', 'draft_notes'].filter(f => d[f]).map(f => `<div style="margin-bottom:5px"><span style="color:var(--text-3)">${f}：</span>${stEsc(d[f])}</div>`).join('') || '<div style="color:var(--text-3)">尚未填写草稿</div>';
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto">
+      <div style="font-size:13px;font-weight:600;margin-bottom:3px">📄 ${stEsc(stu.name || '')} 的研究计划书</div>
+      <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">${majorLabel(stu.major) || ''}${d.updated_at ? '　·　更新于 ' + String(d.updated_at).slice(0, 10) : ''}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        ${d.draft_file_url ? `<a href="${d.draft_file_url}" target="_blank" style="font-size:11px;background:var(--accent);color:#fff;border-radius:3px;padding:6px 14px;text-decoration:none">⬇ 下载完成稿</a>` : '<span style="font-size:11px;color:var(--text-3)">尚未上传完成稿</span>'}
+        ${refs.length ? `<button onclick="exportOneStudentRefs('${studentId}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">⬇ 导出先行研究(CSV)</button>` : ''}
+      </div>
+      <div style="font-weight:600;font-size:12px;margin-bottom:4px">📚 先行研究（${refs.length}条）</div>
+      <div style="background:var(--bg);border-radius:3px;padding:10px;font-size:11px;line-height:1.8;margin-bottom:12px;max-height:34vh;overflow-y:auto">${refsHtml}</div>
+      <div style="font-weight:600;font-size:12px;margin-bottom:4px">📝 计划书草稿</div>
+      <div style="background:var(--bg);border-radius:3px;padding:10px;font-size:11px;line-height:1.8;margin-bottom:12px;max-height:30vh;overflow-y:auto">${draftHtml}</div>
+      ${d.teacher_comment ? `<div style="background:var(--ok-bg);border-radius:3px;padding:10px;font-size:11px;color:var(--ok);margin-bottom:12px">💬 老师批注${d.teacher_comment_by ? '（' + stEsc(d.teacher_comment_by) + '）' : ''}：${stEsc(d.teacher_comment)}</div>` : ''}
+      <div style="display:flex;justify-content:flex-end">
+        <button onclick="document.getElementById('adminDraftViewModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:8px 18px;font-size:12px;cursor:pointer;font-family:inherit">关闭</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+function adCsvDownload(name, head, rows) {
+  const esc = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const csv = '\ufeff' + [head.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+
+function exportOneStudentRefs(studentId) {
+  const d = (window.__pgDraftsMap || {})[studentId];
+  const stu = (cachedStudents || []).find(x => x.id === studentId) || {};
+  const refs = adRefs(d), notes = adNotes(d);
+  if (!refs.length) { alert('该学生尚无先行研究'); return; }
+  const cols = [...new Set(refs.flatMap(r => Object.keys(r)))];
+  const head = [...cols.map(c => AD_REF_LABELS[c] || c), '老师关键词', '老师评语'];
+  const rows = refs.map((r, i) => {
+    const n = notes[adRefKey(r, i)] || {};
+    return [...cols.map(c => r[c] || ''), (n.tags || []).join('、'), n.comment || ''];
+  });
+  adCsvDownload(`${stu.name || '学生'}_先行研究整理.csv`, head, rows);
+}
+
+// 批量导出：当前筛选范围内所有学生的先行研究（一行一条）+ 计划书汇总（一行一人，含完成稿链接）
+function exportAllPlanDrafts() {
+  const map = window.__pgDraftsMap || {};
+  const list = (window.__pgStudents || []).filter(s => map[s.id]);
+  if (!list.length) { alert('当前筛选范围内没有计划书数据'); return; }
+  // ① 先行研究明细
+  const refCols = ['keyword', 'title', 'author', 'year', 'journal', 'data', 'method', 'summary', 'awareness', 'conclusion', 'citation', 'evaluation', 'note'];
+  const refHead = ['学生', '专业', ...refCols.map(c => AD_REF_LABELS[c] || c), '老师关键词', '老师评语'];
+  const refRows = [];
+  list.forEach(s => {
+    const d = map[s.id], notes = adNotes(d);
+    adRefs(d).forEach((r, i) => {
+      const n = notes[adRefKey(r, i)] || {};
+      refRows.push([s.name, majorLabel(s.major) || s.major || '', ...refCols.map(c => r[c] || ''), (n.tags || []).join('、'), n.comment || '']);
+    });
+  });
+  // ② 计划书汇总
+  const sumHead = ['学生', '专业', '先行研究条数', '草稿已填项', '完成稿链接', '老师批注', '批注老师', '更新时间'];
+  const sumRows = list.map(s => {
+    const d = map[s.id];
+    const nFilled = Object.entries(adFields(d)).filter(([k, v]) => adVal(v).trim()).length;
+    return [s.name, majorLabel(s.major) || s.major || '', adRefs(d).length, nFilled, d.draft_file_url || '', d.teacher_comment || '', d.teacher_comment_by || '', String(d.updated_at || '').slice(0, 10)];
+  });
+  const stamp = new Date().toISOString().slice(0, 10);
+  adCsvDownload(`计划书汇总_${stamp}.csv`, sumHead, sumRows);
+  if (refRows.length) setTimeout(() => adCsvDownload(`先行研究明细_${stamp}.csv`, refHead, refRows), 600);
+  alert(`已导出 ${list.length} 名学生的计划书汇总${refRows.length ? `，以及 ${refRows.length} 条先行研究明细（两个 CSV 文件）` : ''}。\n完成稿文件请用汇总表中的链接下载。`);
+}
