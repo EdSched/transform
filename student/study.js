@@ -705,10 +705,13 @@ function renderPlanTab() {
               <th style="padding:4px;border-bottom:1px solid var(--border-light)"></th>
             </tr></thead>
             <tbody>
-              ${refs.map((r,i) => `<tr style="border-bottom:1px solid var(--border-light);background:${i%2===0?'var(--surface)':'var(--bg)'}">
+              ${refs.map((r,i) => {
+                const note = studyRefNoteHtml(r, i);
+                return `<tr style="border-bottom:${note?'none':'1px solid var(--border-light)'};background:${i%2===0?'var(--surface)':'var(--bg)'}">
                 ${refFields.map(f => `<td style="padding:7px 8px;font-size:10px">${escA(r[f.k]||'')}</td>`).join('')}
-                <td style="padding:4px 6px"><button onclick="studyDeleteRef(${i})" style="font-size:10px;background:none;border:none;cursor:pointer;color:var(--danger)">✕</button></td>
-              </tr>`).join('')}
+                <td style="padding:4px 6px"><button onclick="studyDeleteRef(${i})" title="删除该条文献" style="font-size:10px;background:none;border:none;cursor:pointer;color:var(--danger)">✕</button></td>
+              </tr>${note?`<tr style="border-bottom:1px solid var(--border-light);background:${i%2===0?'var(--surface)':'var(--bg)'}"><td colspan="${refFields.length+1}" style="padding:0 8px 7px">${note}</td></tr>`:''}`;
+              }).join('')}
             </tbody>
           </table>
         </div>` : '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:11px;border:1px dashed var(--border);border-radius:3px">暂无文献，请在上方添加</div>'}
@@ -774,9 +777,35 @@ async function studyAddRef() {
 async function studyDeleteRef(idx) {
   const d = studyData.planDraft || {};
   const refs = d.prior_research_list ? JSON.parse(d.prior_research_list) : [];
+  const r = refs[idx];
+  if (!r) return;
+  // 防误删：确认后才删除
+  const who = [r.author, r.year].filter(Boolean).join(' ');
+  const what = r.title || r.keyword || '';
+  const label = [who, what].filter(Boolean).join('《') + (what ? '》' : '');
+  if (!confirm(`确定删除第 ${idx + 1} 条文献吗？\n\n${label || '（该条文献）'}\n\n删除后不可恢复。`)) return;
   refs.splice(idx, 1);
   await studySavePlanField({ prior_research_list: JSON.stringify(refs) });
   switchStudyTab('plan');
+}
+
+// 老师标注（只读）：teacher_ref_notes = { refKey: {tags:[],comment,rating,by,at} }
+function studyRefKey(r, i) { return String(r && (r.title || r.keyword) || '') .trim() || ('#' + i); }
+function studyTeacherRefNotes() {
+  const d = studyData.planDraft || {};
+  const v = d.teacher_ref_notes;
+  if (!v) return {};
+  try { return typeof v === 'string' ? JSON.parse(v) : v; } catch (e) { return {}; }
+}
+function studyRefNoteHtml(r, i) {
+  const n = studyTeacherRefNotes()[studyRefKey(r, i)];
+  if (!n || (!(n.tags || []).length && !n.comment && !n.rating)) return '';
+  return `<div style="margin-top:4px;font-size:10px;color:var(--text-2);background:var(--ok-bg,#eef7f0);border-left:2px solid var(--ok,#2e7d52);border-radius:2px;padding:4px 7px">
+    <span style="color:var(--ok,#2e7d52);font-weight:600">老师标注</span>
+    ${n.rating ? `<span style="margin-left:6px">${escA(n.rating)}</span>` : ''}
+    ${(n.tags || []).map(t => `<span style="display:inline-block;background:var(--surface);border:1px solid var(--border-light);border-radius:2px;padding:0 5px;margin-left:4px">${escA(t)}</span>`).join('')}
+    ${n.comment ? `<div style="margin-top:2px">${escA(n.comment)}</div>` : ''}
+  </div>`;
 }
 
 function studySortRefs(by) {
