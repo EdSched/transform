@@ -1042,4 +1042,7 @@ const SCHOOL_STATUS_LABELS = {
 };
 const SCHOOL_FAILED_STATUSES = ['failed_written', 'failed_interview', 'failed'];
 function schoolStatusLabel(v) { return SCHOOL_STATUS_LABELS[v] || SCHOOL_STATUS_LABELS.preparing; }
+// 志望校级别：只用颜色区分，不用红黄绿圆圈
+const SCHOOL_LEVEL_META = { 1:{t:'冲刺',c:'#c0392b'}, 2:{t:'匹配',c:'#b8860b'}, 3:{t:'保底',c:'#2a7a3a'} };
+function schoolLevelHtml(lv){ const m=SCHOOL_LEVEL_META[lv]; return m ? `<span style="color:${m.c};font-weight:600">${m.t}</span>` : ''; }
 function isSchoolFailed(v) { return SCHOOL_FAILED_STATUSES.includes(v); }
