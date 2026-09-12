@@ -147,6 +147,14 @@ function renderVipFrameworkEditor(mc) {
         <button onclick="vfRemoveItem('${it.id}')" title="删除此条" style="background:none;border:1px solid var(--border);border-radius:3px;color:var(--text-3);cursor:pointer;font-size:12px;height:28px">×</button>
       </div>`).join('') || '<div style="padding:8px 10px;font-size:11px;color:var(--text-3);border-top:1px solid var(--border-light)">该分类暂无条目</div>';
 
+    const headRow = g.items.length ? `
+      <div style="border-top:1px solid var(--border-light);padding:5px 10px;display:grid;grid-template-columns:1.1fr 2fr 1.4fr 64px 28px;gap:8px;background:var(--surface)">
+        <div style="font-size:9px;color:var(--text-3);letter-spacing:.04em">课程主题</div>
+        <div style="font-size:9px;color:var(--text-3);letter-spacing:.04em">内容说明</div>
+        <div style="font-size:9px;color:var(--text-3);letter-spacing:.04em">课后作业</div>
+        <div style="font-size:9px;color:var(--text-3);text-align:center">课时</div>
+        <div></div>
+      </div>` : '';
     return `
     <div style="border:1px solid var(--border);border-radius:5px;overflow:hidden">
       <div onclick="vfToggleCat('${g.key}')" style="cursor:pointer;padding:9px 12px;background:var(--bg);display:flex;align-items:center;justify-content:space-between;user-select:none">
@@ -154,6 +162,7 @@ function renderVipFrameworkEditor(mc) {
         <span style="font-size:10px;color:var(--text-3)">${open ? '收起 ▾' : '展开 ▸'}</span>
       </div>
       <div style="display:${open ? 'block' : 'none'}">
+        ${headRow}
         ${rows}
         <div style="border-top:1px solid var(--border-light);padding:6px 10px">
           <button onclick="vfAddItem('${g.key}','${g.label}')" style="font-size:10px;background:none;border:1px dashed var(--border);border-radius:3px;padding:3px 10px;cursor:pointer;color:var(--text-3);font-family:inherit">＋ 添加一条</button>
@@ -174,7 +183,25 @@ function renderVipFrameworkEditor(mc) {
   const contentBody = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
       <button class="btn btn-primary" onclick="saveVipFramework()">保存框架</button>
+      <button class="btn btn-outline" onclick="vfToggleTextMode()">📝 文本批量录入</button>
+      <button class="btn btn-outline" onclick="vfSaveAsTemplate()">💾 另存为模板</button>
+      <button class="btn btn-outline" onclick="vfOpenTemplateImport()">📥 从模板导入</button>
       <button class="btn btn-outline" onclick="deleteVipFramework()" style="color:#a33">删除框架</button>
+    </div>
+    <div id="vf_text_area" style="display:${vfTextOpen ? 'block' : 'none'};border:1px solid var(--accent);border-radius:5px;padding:12px;margin-bottom:12px;background:var(--bg)">
+      <div style="font-size:11px;font-weight:600;margin-bottom:4px">文本批量录入 / 导出</div>
+      <div style="font-size:10px;color:var(--text-3);line-height:1.8;margin-bottom:6px">
+        · 以 <b>#</b> 开头的行 ＝ 分类标题（写分类名即可，如 <b># 研究计划书</b>）<br>
+        · 其余每行一条课，用 <b>Tab</b> 分隔三列：<b>课程主题　→　内容说明　→　课后作业</b>（可直接从 Excel 三列复制粘贴）<br>
+        · <b>课时不在文本里编辑</b>：已有课程保留原课时，新增课程默认 2 课时，请在下方表格中调整（避免影响套餐课时计算）<br>
+        · 应用时按「分类＋课程主题」匹配：同名的更新内容、新出现的新增、文本中没有的会被删除
+      </div>
+      <textarea id="vf_text_input" rows="14" style="width:100%;font-size:11px;line-height:1.7;font-family:'DM Mono',monospace;padding:8px;border:1px solid var(--border);border-radius:3px;background:var(--surface);resize:vertical"></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-primary btn-sm" onclick="vfApplyText()">应用文本</button>
+        <button class="btn btn-outline btn-sm" onclick="vfCopyText()">复制全部</button>
+        <span style="font-size:10px;color:var(--text-3)">应用后仍需点「保存框架」才会写入数据库</span>
+      </div>
     </div>
     <div style="display:flex;flex-direction:column;gap:10px">${groupsHtml}</div>
     <div style="margin-top:18px;padding:14px;border:1px solid var(--border);border-radius:5px;background:var(--bg)">
@@ -208,6 +235,196 @@ function renderVipFrameworkEditor(mc) {
 }
 
 function vfSetView(v) { vfView = v; renderVipFrameworkEditor(document.getElementById('mainContent')); }
+
+// ══════════════════════════════════
+// 文本批量录入：分类用 # 开头，其余每行「课程主题<Tab>内容说明<Tab>课后作业」
+// 课时不进文本（套餐要按课时算上限），按名称匹配保留；新条目默认 2 课时
+// ══════════════════════════════════
+let vfTextOpen = false;
+
+function vfCatByName(s) {
+  const t = String(s || '').trim();
+  if (!t) return null;
+  const list = (typeof VIP_CATEGORIES !== 'undefined' ? VIP_CATEGORIES : []);
+  return list.find(c => c.label === t || c.key === t) || null;
+}
+
+function vfBuildText() {
+  const list = (typeof VIP_CATEGORIES !== 'undefined' ? VIP_CATEGORIES : []);
+  const out = [];
+  list.forEach(c => {
+    const its = vfItems.filter(i => i.category === c.key).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    if (!its.length) return;
+    out.push('# ' + c.label);
+    its.forEach(it => out.push([it.name || '', it.content || '', it.homework || ''].join('\t')));
+    out.push('');
+  });
+  return out.join('\n');
+}
+
+function vfToggleTextMode() {
+  vfTextOpen = !vfTextOpen;
+  renderVipFrameworkEditor(document.getElementById('mainContent'));
+  if (vfTextOpen) {
+    const el = document.getElementById('vf_text_input');
+    if (el) { el.value = vfBuildText(); el.focus(); }
+  }
+}
+
+function vfCopyText() {
+  const el = document.getElementById('vf_text_input');
+  if (!el) return;
+  el.select();
+  try { document.execCommand('copy'); alert('已复制，可粘贴到 Excel 或其他框架'); }
+  catch (e) { alert('复制失败，请手动全选复制'); }
+}
+
+// 解析文本 → [{catKey,catLabel,name,content,homework}]
+function vfParseText(text) {
+  const rows = [];
+  let cur = null;
+  String(text || '').replace(/\r/g, '').split('\n').forEach(line => {
+    const t = line.trim();
+    if (!t) return;
+    if (t.startsWith('#')) {
+      const c = vfCatByName(t.replace(/^#+/, '').trim());
+      if (c) cur = c;          // 已知分类 → 切换当前分类
+      return;                   // 未知的 # 行当注释忽略
+    }
+    const parts = line.split(/\t|\s*[|｜]\s*/).map(x => x.trim());
+    const name = parts[0] || '';
+    if (!name) return;
+    // 行首若直接写了分类名（不带#），也识别为分类切换
+    const asCat = vfCatByName(name);
+    if (asCat && parts.length === 1) { cur = asCat; return; }
+    if (!cur) return;           // 还没出现任何分类的行，跳过
+    rows.push({ catKey: cur.key, catLabel: cur.label, name, content: parts[1] || '', homework: parts[2] || '' });
+  });
+  return rows;
+}
+
+function vfApplyText() {
+  const text = (document.getElementById('vf_text_input') || {}).value || '';
+  const parsed = vfParseText(text);
+  if (!parsed.length) { alert('未解析到任何课程。\n请确认：分类行以 # 开头，课程行用 Tab 分隔三列。'); return; }
+
+  // 按「分类+课程主题」匹配旧条目，保留 id / 课时 / 其它字段
+  const oldByKey = {};
+  vfItems.forEach(it => { oldByKey[(it.category || '') + '\u0000' + (it.name || '').trim()] = it; });
+  const usedIds = new Set();
+  let nAdd = 0, nUpd = 0;
+  const next = parsed.map((r, idx) => {
+    const hit = oldByKey[r.catKey + '\u0000' + r.name];
+    if (hit && !usedIds.has(hit.id)) {
+      usedIds.add(hit.id);
+      nUpd++;
+      return { ...hit, category: r.catKey, category_label: r.catLabel, name: r.name, content: r.content, homework: r.homework, sort_order: idx + 1 };
+    }
+    nAdd++;
+    return {
+      id: 'vfi-new-' + Date.now() + '-' + idx + '-' + Math.random().toString(36).slice(2, 5),
+      framework_id: vfCurrentId, category: r.catKey, category_label: r.catLabel,
+      name: r.name, content: r.content, homework: r.homework, default_hours: 2,
+      sort_order: idx + 1, source: 'custom', filled: false, _new: true,
+    };
+  });
+  const nDel = vfItems.filter(it => !usedIds.has(it.id)).length;
+  const cats = [...new Set(parsed.map(r => r.catLabel))];
+  if (!confirm(`解析结果：${parsed.length} 条课程，${cats.length} 个分类\n\n新增 ${nAdd} 条 · 更新 ${nUpd} 条 · 删除 ${nDel} 条\n\n（课时：更新的条目保留原课时，新增默认 2）\n确定应用到下方表格吗？应用后还需点「保存框架」才写入数据库。`)) return;
+  vfItems = next;
+  vfTextOpen = false;
+  renderVipFrameworkEditor(document.getElementById('mainContent'));
+  alert(`已应用：新增 ${nAdd} · 更新 ${nUpd} · 删除 ${nDel}\n请检查课时后点「保存框架」。`);
+}
+
+// ══════════════════════════════════
+// 框架模板：把当前条目整套存下来，之后可导入任意框架（跨专业复用）
+// 表：vip_framework_templates(id,name,major,items jsonb,created_by,created_at)
+// ══════════════════════════════════
+async function vfSaveAsTemplate() {
+  if (!vfItems.length) { alert('当前框架没有条目'); return; }
+  const fw = vfFrameworks.find(f => f.id === vfCurrentId);
+  const name = (prompt('模板名称（如「社会学 标准框架」）：', (fw && fw.title) || '') || '').trim();
+  if (!name) return;
+  const items = vfItems.map(it => ({
+    category: it.category, category_label: it.category_label,
+    name: it.name || '', content: it.content || '', homework: it.homework || '',
+    default_hours: it.default_hours != null ? it.default_hours : 2,
+  }));
+  try {
+    await sb('/rest/v1/vip_framework_templates', 'POST', [{
+      id: 'vft-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5),
+      name, major: (fw && fw.major) || '', items, created_by: 'admin',
+    }]);
+    alert(`已保存模板「${name}」（${items.length} 条），之后可在任意框架里「从模板导入」。`);
+  } catch (e) { alert('保存模板失败：' + e.message); }
+}
+
+async function vfOpenTemplateImport() {
+  let list = [];
+  try { list = await sb('/rest/v1/vip_framework_templates?select=*&order=created_at.desc') || []; }
+  catch (e) { alert('读取模板失败：' + e.message); return; }
+  if (!list.length) { alert('还没有保存过框架模板。\n可在某个框架里点「另存为模板」先保存一份。'); return; }
+  const existing = document.getElementById('vfTplModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'vfTplModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `
+    <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:520px;width:100%;max-height:80vh;overflow-y:auto">
+      <div style="font-size:13px;font-weight:600;margin-bottom:3px">📥 从模板导入</div>
+      <div style="font-size:10px;color:var(--text-3);margin-bottom:12px">导入会「追加」到当前框架（同分类同名的课程会跳过，不覆盖已有内容）</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${list.map(t => `<div style="border:1px solid var(--border);border-radius:4px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <div><div style="font-size:12px;font-weight:600">${vfEsc(t.name || '未命名模板')}</div>
+            <div style="font-size:10px;color:var(--text-3)">${(t.items || []).length} 条${t.major ? ' · ' + vfEsc(majorLabel(t.major) || t.major) : ''} · ${String(t.created_at || '').slice(0, 10)}</div></div>
+          <div style="display:flex;gap:6px;flex-shrink:0">
+            <button onclick="vfImportTemplate('${t.id}')" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 12px;cursor:pointer;font-family:inherit">导入</button>
+            <button onclick="vfDeleteTemplate('${t.id}')" style="font-size:11px;background:none;border:1px solid var(--border);color:#a33;border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit">删除</button>
+          </div>
+        </div>`).join('')}
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:14px">
+        <button onclick="document.getElementById('vfTplModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:8px 18px;font-size:12px;cursor:pointer;font-family:inherit">关闭</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  window.__vfTpls = list;
+}
+
+function vfImportTemplate(tid) {
+  const t = (window.__vfTpls || []).find(x => x.id === tid);
+  if (!t) return;
+  const have = new Set(vfItems.map(i => (i.category || '') + '\u0000' + (i.name || '').trim()));
+  let maxOrder = vfItems.reduce((m, i) => Math.max(m, i.sort_order || 0), 0);
+  let added = 0, skipped = 0;
+  (t.items || []).forEach((it, i) => {
+    const k = (it.category || '') + '\u0000' + (it.name || '').trim();
+    if (have.has(k)) { skipped++; return; }
+    have.add(k);
+    vfItems.push({
+      id: 'vfi-new-' + Date.now() + '-' + i + '-' + Math.random().toString(36).slice(2, 5),
+      framework_id: vfCurrentId, category: it.category, category_label: it.category_label,
+      name: it.name || '', content: it.content || '', homework: it.homework || '',
+      default_hours: it.default_hours != null ? it.default_hours : 2,
+      sort_order: ++maxOrder, source: 'template', filled: false, _new: true,
+    });
+    added++;
+  });
+  document.getElementById('vfTplModal')?.remove();
+  renderVipFrameworkEditor(document.getElementById('mainContent'));
+  alert(`已导入 ${added} 条${skipped ? `，跳过同名 ${skipped} 条` : ''}。\n请检查课时后点「保存框架」写入。`);
+}
+
+async function vfDeleteTemplate(tid) {
+  const t = (window.__vfTpls || []).find(x => x.id === tid);
+  if (!confirm(`确认删除模板「${t ? t.name : ''}」？（不影响已建好的框架）`)) return;
+  try {
+    await sb(`/rest/v1/vip_framework_templates?id=eq.${tid}`, 'DELETE');
+    document.getElementById('vfTplModal')?.remove();
+    vfOpenTemplateImport();
+  } catch (e) { alert('删除失败：' + e.message); }
+}
 
 // 课程套餐视图：新建套餐 + 已保存套餐列表
 function renderVfTemplatesBody(fw) {
