@@ -137,26 +137,29 @@ function renderVipFrameworkEditor(mc) {
   });
 
   const groupsHtml = groups.map(g => {
-    const open = vfOpenCats[g.key] !== false; // 默认展开
-    const rows = g.items.map(it => `
-      <div style="border-top:1px solid var(--border-light);padding:8px 10px;display:grid;grid-template-columns:1.1fr 2fr 1.4fr 64px 28px;gap:8px;align-items:start">
-        <input value="${vfEsc(it.name)}" placeholder="课程名" onchange="vfEditItem('${it.id}','name',this.value)" style="font-size:11px;font-weight:500">
-        <textarea onchange="vfEditItem('${it.id}','content',this.value)" placeholder="内容说明" style="font-size:11px;resize:vertical;min-height:34px;line-height:1.5">${vfEsc(it.content)}</textarea>
+    const open = vfOpenCats[g.key] === true; // 默认收起，点击才展开
+    const VF_CELL = 'font-size:11px;width:100%;box-sizing:border-box;padding:5px 7px;border:1px solid var(--border);border-radius:3px;background:var(--surface);font-family:inherit';
+    const rows = g.items.map((it, ri) => `
+      <div style="border-top:1px solid var(--border-light);padding:7px 10px;display:grid;grid-template-columns:26px 1.1fr 2fr 1.4fr 64px 28px;gap:8px;align-items:start;background:${ri % 2 ? 'var(--bg)' : 'transparent'}">
+        <div style="font-size:10px;color:var(--text-3);text-align:center;padding-top:6px">${ri + 1}</div>
+        <input value="${vfEsc(it.name)}" placeholder="课程主题" onchange="vfEditItem('${it.id}','name',this.value)" style="${VF_CELL};font-weight:500">
+        <textarea onchange="vfEditItem('${it.id}','content',this.value)" placeholder="内容说明" rows="2" style="${VF_CELL};resize:vertical;line-height:1.5">${vfEsc(it.content)}</textarea>
         <div>
-          <input value="${vfEsc(it.homework)}" placeholder="课后作业（一句话说明）" onchange="vfEditItem('${it.id}','homework',this.value)" style="font-size:11px;width:100%;box-sizing:border-box">
-          <button onclick="vfOpenHwEditor('${it.id}')" style="margin-top:3px;font-size:9px;background:none;border:1px solid ${vfHasHw(it) ? 'var(--accent)' : 'var(--border)'};color:${vfHasHw(it) ? 'var(--accent)' : 'var(--text-3)'};border-radius:3px;padding:1px 8px;cursor:pointer;font-family:inherit">${vfHasHw(it) ? '📝 已设作业（编辑）' : '📝 设置作业'}</button>
+          <input value="${vfEsc(it.homework)}" placeholder="课后作业（一句话）" onchange="vfEditItem('${it.id}','homework',this.value)" style="${VF_CELL}">
+          <button onclick="vfOpenHwEditor('${it.id}')" style="margin-top:4px;font-size:9px;background:${vfHasHw(it) ? 'var(--accent)' : 'none'};border:1px solid ${vfHasHw(it) ? 'var(--accent)' : 'var(--border)'};color:${vfHasHw(it) ? '#fff' : 'var(--text-3)'};border-radius:3px;padding:2px 8px;cursor:pointer;font-family:inherit">${vfHasHw(it) ? '📝 已设作业' : '📝 设置作业'}</button>
         </div>
-        <input type="number" step="0.5" min="0" value="${it.default_hours != null ? it.default_hours : 2}" onchange="vfEditItem('${it.id}','default_hours',this.value)" style="font-size:11px;text-align:center" title="课时">
-        <button onclick="vfRemoveItem('${it.id}')" title="删除此条" style="background:none;border:1px solid var(--border);border-radius:3px;color:var(--text-3);cursor:pointer;font-size:12px;height:28px">×</button>
+        <input type="number" step="0.5" min="0" value="${it.default_hours != null ? it.default_hours : 2}" onchange="vfEditItem('${it.id}','default_hours',this.value)" style="${VF_CELL};text-align:center" title="课时">
+        <button onclick="vfRemoveItem('${it.id}')" title="删除此条" style="background:none;border:1px solid var(--border);border-radius:3px;color:var(--text-3);cursor:pointer;font-size:12px;height:30px;width:100%">×</button>
       </div>`).join('') || '<div style="padding:8px 10px;font-size:11px;color:var(--text-3);border-top:1px solid var(--border-light)">该分类暂无条目</div>';
 
     const headRow = g.items.length ? `
-      <div style="border-top:1px solid var(--border-light);padding:5px 10px;display:grid;grid-template-columns:1.1fr 2fr 1.4fr 64px 28px;gap:8px;background:var(--surface)">
-        <div style="font-size:9px;color:var(--text-3);letter-spacing:.04em">课程主题</div>
-        <div style="font-size:9px;color:var(--text-3);letter-spacing:.04em">内容说明</div>
-        <div style="font-size:9px;color:var(--text-3);letter-spacing:.04em">课后作业（可设结构化题目）</div>
-        <div style="font-size:9px;color:var(--text-3);text-align:center">课时</div>
-        <div></div>
+      <div style="border-top:1px solid var(--border-light);padding:6px 10px;display:grid;grid-template-columns:26px 1.1fr 2fr 1.4fr 64px 28px;gap:8px;background:var(--surface)">
+        <div style="font-size:9px;color:var(--text-3);text-align:center">#</div>
+        <div style="font-size:9px;color:var(--text-3);letter-spacing:.04em;font-weight:600">课程主题</div>
+        <div style="font-size:9px;color:var(--text-3);letter-spacing:.04em;font-weight:600">内容说明</div>
+        <div style="font-size:9px;color:var(--text-3);letter-spacing:.04em;font-weight:600">课后作业</div>
+        <div style="font-size:9px;color:var(--text-3);text-align:center;font-weight:600">课时</div>
+        <div style="font-size:9px;color:var(--text-3);text-align:center">删除</div>
       </div>` : '';
     return `
     <div style="border:1px solid var(--border);border-radius:5px;overflow:hidden">
@@ -205,6 +208,10 @@ function renderVipFrameworkEditor(mc) {
         <button class="btn btn-outline btn-sm" onclick="vfCopyText()">复制全部</button>
         <span style="font-size:10px;color:var(--text-3)">应用后仍需点「保存框架」才会写入数据库</span>
       </div>
+    </div>
+    <div style="font-size:10px;color:var(--text-2);background:var(--bg);border:1px solid var(--border-light);border-left:3px solid var(--accent);border-radius:3px;padding:7px 10px;margin-bottom:10px;line-height:1.8">
+      ✏️ 下面是<b>可编辑表格</b>：白色输入框都能直接点进去改（课程主题 / 内容说明 / 课后作业 / 课时），改完点上方 <b>「保存框架」</b> 才会写入数据库。<br>
+      条目很多时建议用 <b>「📝 文本批量录入」</b> 一次性粘贴；<b>「📝 设置作业」</b> 可给该回课出结构化题目（学生逐题作答），排课时会自动带到上课记录。
     </div>
     <div style="display:flex;flex-direction:column;gap:10px">${groupsHtml}</div>
     <div style="margin-top:18px;padding:14px;border:1px solid var(--border);border-radius:5px;background:var(--bg)">
@@ -552,7 +559,7 @@ function backToVipFrameworkList() {
   renderVipFrameworkPage(document.getElementById('mainContent'));
 }
 function vfToggleCat(key) {
-  vfOpenCats[key] = vfOpenCats[key] === false ? true : false;
+  vfOpenCats[key] = vfOpenCats[key] === true ? false : true;
   renderVipFrameworkEditor(document.getElementById('mainContent'));
 }
 function vfEditItem(id, field, value) {
