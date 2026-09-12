@@ -1035,6 +1035,11 @@ const SCHOOL_STATUS_LABELS = {
   prof_ng:   { t:'教授婉拒・需换校', c:'#b03a2e' },
   applied:   { t:'已出愿', c:'#2a6aad' },
   passed:    { t:'合格 🎉', c:'#2a9e6a' },
-  failed:    { t:'不合格', c:'#b03a2e' },
+  // 日本考试笔试/面试常分开进行，细分记录不合格发生在哪个阶段（旧数据的 failed 仍兼容显示）
+  failed_written:   { t:'笔试不合格', c:'#b03a2e' },
+  failed_interview: { t:'笔试合格・面试不合格', c:'#b03a2e' },
+  failed:    { t:'不合格（未注明阶段）', c:'#b03a2e' },
 };
+const SCHOOL_FAILED_STATUSES = ['failed_written', 'failed_interview', 'failed'];
 function schoolStatusLabel(v) { return SCHOOL_STATUS_LABELS[v] || SCHOOL_STATUS_LABELS.preparing; }
+function isSchoolFailed(v) { return SCHOOL_FAILED_STATUSES.includes(v); }
