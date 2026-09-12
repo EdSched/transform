@@ -39,10 +39,19 @@ async function renderHomeworkFeedback(mc) {
       ...[...myMajors].map(m => (typeof MAJOR_DOMAIN !== 'undefined' ? MAJOR_DOMAIN[m] : null)).filter(Boolean)
     ]);
     const nm = teacherName;
+    // 只显示「当期」的作业课次：按单回日期落在当前期数(1/4/7/10月期)+同年，
+    // 避免把之后期数、还没开始上的课全带进来（helpers 缺失或无日期时不过滤，避免误伤）
+    const curPeriod = (typeof currentPeriodKey === 'function') ? currentPeriodKey() : null;
+    const curYear = new Date().getFullYear();
+    const inCurrentTerm = s => {
+      if (!s.session_date || !curPeriod || typeof periodFromDate !== 'function') return true;
+      return periodFromDate(s.session_date) === curPeriod && parseInt(s.session_date.slice(0, 4)) === curYear;
+    };
     thwSessions = (sessions || []).filter(s => {
       const q = s.homework_questions;
       const hasHw = Array.isArray(q) ? q.length : !!(q && q.levels && q.levels.length);
       if (!hasHw) return false;
+      if (!inCurrentTerm(s)) return false;
       // 教务显式授权的课程 → 直接可见
       if (myCourses.length && myCourses.includes(s.course_name)) return true;
       // 本人任课的课次 → 可见
