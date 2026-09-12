@@ -36,6 +36,7 @@ function renderAdmissionDbPage(mc) {
       <button class="btn btn-outline btn-sm" onclick="openAdmissionAdd()">＋ 添加</button>
       <button class="btn btn-outline btn-sm" onclick="exportAdmissionExcel()">↓ 导出 Excel</button>
       <button class="btn btn-outline btn-sm" onclick="exportAdmissionHtml()">↓ 导出 PDF表格</button>
+      <button class="btn btn-outline btn-sm" onclick="openAdmMajorMgr()">🏷 出愿专业管理</button>
       <button class="btn btn-primary btn-sm" onclick="openShareToStudents()">📤 共享给学生</button>
     </div>
   </div>
@@ -803,4 +804,104 @@ async function confirmShareToStudents() {
     document.getElementById('shareModal').remove();
     alert(`✓ 已共享 ${count} 所学校给学生。学生将在学习记录里看到这份列表。`);
   } catch(e) { alert('共享失败：' + e.message); }
+}
+
+
+// ══════════════════════════════════
+// 出愿专业管理：从「专业管理」已建专业中选取加入（自带 key/日文名/领域），
+// 特殊类型（MOT / 統計・計量 等专业管理里没有的）可手填 key。存表 admission_majors。
+// ══════════════════════════════════
+function openAdmMajorMgr() {
+  const ex = document.getElementById('admMajorMgrModal'); if (ex) ex.remove();
+  const m = document.createElement('div');
+  m.id = 'admMajorMgrModal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
+  m.innerHTML = '<div id="admMajorMgrBody" style="background:var(--surface);border-radius:6px;padding:20px;max-width:560px;width:100%;max-height:88vh;overflow-y:auto"></div>';
+  document.body.appendChild(m);
+  admMajorMgrRender();
+}
+function admMajorMgrRender() {
+  const box = document.getElementById('admMajorMgrBody'); if (!box) return;
+  // 现有出愿专业
+  const cur = Object.entries(typeof ADMISSION_MAJORS !== 'undefined' ? ADMISSION_MAJORS : {});
+  const curKeys = new Set(cur.map(([k]) => k));
+  // 「专业管理」里还没加入出愿库的专业，供下拉选择
+  const allMajors = (typeof MAJORS !== 'undefined') ? MAJORS : {};
+  const pickable = Object.keys(allMajors)
+    .filter(k => k !== 'shakai_group' && !curKeys.has(k))
+    .map(k => ({ key: k, label: allMajors[k] }))
+    .sort((a, b) => String(a.label).localeCompare(String(b.label)));
+  box.innerHTML = `
+    <div style="font-size:14px;font-weight:600;margin-bottom:3px">🏷 出愿专业管理</div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:14px">这里决定「出愿数据库 / 老师权限 / 老师端出愿查询」显示哪些专业。新增后即时生效、无需改代码。</div>
+
+    <div style="border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:16px;background:var(--bg,#faf9f7)">
+      <div style="font-size:12px;font-weight:600;margin-bottom:8px">＋ 新增出愿专业</div>
+      <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">从已建专业里选（代号自动带出）：</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        <select id="adm_pick_major" style="flex:1;min-width:180px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px">
+          <option value="">— 选择专业 —</option>
+          ${pickable.map(x => `<option value="${adbEsc(x.key)}">${adbEsc(x.label)}（${adbEsc(x.key)}）</option>`).join('')}
+        </select>
+        <button class="btn btn-primary btn-sm" onclick="admMajorAddFromPick()">加入</button>
+      </div>
+      <div style="font-size:10px;color:var(--text-3);border-top:1px dashed var(--border-light);padding-top:8px;margin-top:2px">特殊类型（如 MOT，专业管理里没有）手动添加：</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">
+        <input id="adm_new_label" placeholder="显示名（如 MOT）" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:140px">
+        <input id="adm_new_key" placeholder="代号（如 mot）" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:120px">
+        <button class="btn btn-outline btn-sm" onclick="admMajorAddManual()">添加</button>
+      </div>
+    </div>
+
+    <div style="font-size:12px;font-weight:600;margin-bottom:8px">已有出愿专业（${cur.length}）</div>
+    <div style="display:flex;flex-direction:column;gap:5px">
+      ${cur.length ? cur.map(([k, v]) => `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border-light);border-radius:4px">
+        <span style="font-size:12px;font-weight:500">${adbEsc(v)}</span>
+        <span style="font-size:10px;color:var(--text-3)">${adbEsc(k)}</span>
+        <button class="btn btn-outline btn-sm" style="margin-left:auto;color:#a33" onclick="admMajorDelete('${adbEsc(k)}','${adbEsc(v)}')">移除</button>
+      </div>`).join('') : '<div style="font-size:11px;color:var(--text-3)">暂无</div>'}
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('admMajorMgrModal').remove()">关闭</button>
+    </div>`;
+}
+function adbEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }
+
+async function admMajorUpsert(key, label, domain) {
+  const row = { key, label, sort_order: Object.keys(ADMISSION_MAJORS || {}).length + 1 };
+  if (domain) row.domain = domain;
+  await sb('/rest/v1/admission_majors', 'POST', [row]);   // 表以 key 为主键；已存在会报错，调用前先判重
+}
+async function admMajorAddFromPick() {
+  const key = (document.getElementById('adm_pick_major') || {}).value || '';
+  if (!key) { alert('请选择一个专业'); return; }
+  if (ADMISSION_MAJORS[key]) { alert('该专业已在出愿库中'); return; }
+  const label = (typeof MAJORS !== 'undefined' && MAJORS[key]) || key;
+  const domain = (typeof MAJOR_DOMAIN !== 'undefined' && MAJOR_DOMAIN[key]) || '';
+  try {
+    await admMajorUpsert(key, label, domain);
+    if (typeof loadAdmissionMajorsFromDB === 'function') await loadAdmissionMajorsFromDB();
+    admMajorMgrRender();
+  } catch (e) { alert('添加失败：' + e.message); }
+}
+async function admMajorAddManual() {
+  const label = ((document.getElementById('adm_new_label') || {}).value || '').trim();
+  let key = ((document.getElementById('adm_new_key') || {}).value || '').trim().toLowerCase();
+  if (!label) { alert('请填显示名'); return; }
+  if (!key) { alert('请填代号（小写字母/数字/下划线）'); return; }
+  if (!/^[a-z][a-z0-9_]*$/.test(key)) { alert('代号只能小写字母/数字/下划线，且以字母开头'); return; }
+  if (ADMISSION_MAJORS[key]) { alert('该代号已存在'); return; }
+  try {
+    await admMajorUpsert(key, label, '');
+    if (typeof loadAdmissionMajorsFromDB === 'function') await loadAdmissionMajorsFromDB();
+    admMajorMgrRender();
+  } catch (e) { alert('添加失败：' + e.message); }
+}
+async function admMajorDelete(key, label) {
+  if (!confirm(`从出愿库移除专业「${label}」？\n\n注意：只是不再在出愿库/权限里显示该专业；已录入的该专业学校数据不会被删除。`)) return;
+  try {
+    await sb(`/rest/v1/admission_majors?key=eq.${key}`, 'DELETE');
+    if (typeof loadAdmissionMajorsFromDB === 'function') await loadAdmissionMajorsFromDB();
+    admMajorMgrRender();
+  } catch (e) { alert('移除失败：' + e.message); }
 }
