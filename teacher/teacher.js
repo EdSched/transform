@@ -1219,6 +1219,7 @@ function vipPlanPickRowsHtml() {
 // —— VIP 结构化作业（复用大课 HWC 编辑器）——
 let vipHwEditQ = null;      // 暂存的 homework_questions（保存上课记录时一并写入 booking）
 let vipHwEditNote = '';
+let vipHwAutoVal = null;    // 上次「自动带入」的作业指纹，用于判断老师是否手动改过
 function vipHwStatusText() {
   const q = vipHwEditQ;
   if (q && Array.isArray(q.levels) && q.levels.length) {
@@ -1239,7 +1240,7 @@ function openVipHwEditor(bookingId) {
 async function openVipSessionRecord(bookingId) {
   const b = cachedTeacherBookings.find(x => x.id === bookingId);
   if (!b) return;
-  vipHwEditQ = b.vip_homework_questions || null; vipHwEditNote = b.vip_homework_note || '';
+  vipHwEditQ = b.vip_homework_questions || null; vipHwEditNote = b.vip_homework_note || ''; vipHwAutoVal = null;
   const slot = cachedTeacherSlots.find(x => x.id === b.slot_id);
   // 查该学生的 VIP 规划（签约/已确认），把规划课程带出来供点选
   vipRecordPlanItems = [];
@@ -1252,6 +1253,12 @@ async function openVipSessionRecord(bookingId) {
   if (vipRecordPickIdx < 0) vipRecordPickIdx = null;
   const savedNotes = b.vip_session_notes || '';
   const selItem = vipRecordPickIdx != null ? vipRecordPlanItems[vipRecordPickIdx] : null;
+  // 该回在 VIP 排课/框架里预设过作业，且本次记录尚未设过 → 自动带入
+  if (!vipHwEditQ && selItem && selItem.homework_questions) {
+    vipHwEditQ = selItem.homework_questions;
+    vipHwEditNote = selItem.homework_note || '';
+    vipHwAutoVal = JSON.stringify(vipHwEditQ);
+  }
   vipNotesAutoVal = (selItem && savedNotes === selItem.content) ? savedNotes : '';
   // 解析已保存的学生状态：已知标签回填选中，其余入"其他补充"
   vipStatusSet = new Set(); vipStatusFree = '';
@@ -1305,11 +1312,13 @@ async function openVipSessionRecord(bookingId) {
         <div id="vip_status_tags" style="display:flex;flex-wrap:wrap;gap:6px">${vipStatusRowsHtml()}</div>
         <input id="vip_status_note" value="${vipRecEsc(vipStatusFree)}" placeholder="其他补充（可选）" style="font-size:11px;margin-top:8px;width:100%">
       </div>
-      <div class="form-group"><label class="form-label">布置作业（结构化：学生在VIP页面逐题作答 / 拍照提交，与大课一致）</label>
+      <div class="form-group"><label class="form-label">布置作业（学生将在VIP页面看到并提交）</label>
+        <input id="vip_homework_text" value="${vipRecEsc(b.vip_homework || '')}" placeholder="一句话说明（如：下节课前完成过去问2015第2题）" style="font-size:11px;width:100%;margin-bottom:6px">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <button type="button" onclick="openVipHwEditor('${b.id}')" style="font-size:12px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">📝 设置作业</button>
-          <span id="vip_hw_status" style="font-size:11px;color:var(--text-3)">${vipHwStatusText()}</span>
+          <button type="button" onclick="openVipHwEditor('${b.id}')" style="font-size:12px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">📝 设置作业（结构化）</button>
+          <span id="vip_hw_status" style="font-size:11px;color:var(--text-3)">${vipHwStatusText()}${vipHwAutoVal ? '（已从课程规划自动带入）' : ''}</span>
         </div>
+        <div style="font-size:10px;color:var(--text-3);margin-top:4px">结构化作业＝学生逐题作答/拍照提交；若该回在「VIP排课」里预设过作业，这里会自动带出，可直接用或修改。</div>
       </div>
       <div class="form-group"><label class="form-label">本次耗时（小时，保存后将自动从学生VIP总课时中扣除）</label>
         <input type="number" id="vip_hours" step="0.5" min="0" value="${b.vip_hours_used || ''}" placeholder="例：1.5"></div>
@@ -1347,6 +1356,20 @@ function vipPickPlanItem(i) {
     notes.value = it.content;
     vipNotesAutoVal = it.content;
   }
+  // 作业：该回在「VIP排课/框架」里预设过结构化作业 → 自动带入本次上课记录
+  // 老师若已在本弹窗手动设过（且不是上次自动带入的那份），不覆盖
+  const planQ = it.homework_questions || null;
+  const autoIsCurrent = vipHwAutoVal != null && JSON.stringify(vipHwEditQ || null) === vipHwAutoVal;
+  if (planQ && (!vipHwEditQ || autoIsCurrent)) {
+    vipHwEditQ = planQ;
+    vipHwEditNote = it.homework_note || '';
+    vipHwAutoVal = JSON.stringify(planQ);
+    const el = document.getElementById('vip_hw_status');
+    if (el) el.textContent = vipHwStatusText() + '（已从课程规划自动带入）';
+  }
+  // 规划里这回只写了一句话作业 → 填进文字说明栏
+  const hwText = document.getElementById('vip_homework_text');
+  if (hwText && it.homework && !hwText.value.trim()) hwText.value = it.homework;
 }
 // 切换"未按规划"：显示理由框，并清除规划课程选择
 function vipToggleOffplan(cb) {
@@ -1393,7 +1416,7 @@ async function saveVipSessionRecord(bookingId) {
       const newUsed = Math.max(0, (stu.vip_hours_used || 0) - prevHours + newHours);
       await sb(`/rest/v1/students?id=eq.${stu.id}`, 'PATCH', { vip_hours_used: newUsed });
     }
-    const homework = document.getElementById('vip_homework')?.value.trim() || b.vip_homework || '';
+    const homework = document.getElementById('vip_homework_text')?.value.trim() || document.getElementById('vip_homework')?.value.trim() || b.vip_homework || '';
     const hwFeedback = document.getElementById('vip_hw_feedback')?.value.trim() || '';
 
     // 上传批改文件（如果有）
