@@ -540,15 +540,7 @@ async function renderProgressPage(mc, focusStudentId=null){
     const latest = getLatestProgress(timeline);
     const isFocus = focusStudentId === s.id;
 
-    const statusRow = Object.entries(PROGRESS_LABELS).map(([k,label]) => {
-      if (!latest[k] && !((k==='japanese'&&s.japanese_score)||(k==='english'&&s.english_score))) return '';
-      const done = isProgressDone(k, latest[k]);
-      const scoreText = k==='japanese'&&s.japanese_score ? ` · ${s.japanese_score}` : k==='english'&&s.english_score ? ` · ${s.english_score}` : '';
-      const val = latest[k] || (k==='japanese'?'有成绩':'有成绩');
-      return `<span title="${label}" style="font-size:10px;background:${done?'var(--ok-bg)':'var(--warn-bg)'};color:${done?'var(--ok)':'var(--warn)'};padding:1px 6px;border-radius:2px">${PROGRESS_ICONS[k]} ${latest[k]||''}${scoreText}</span>`;
-    }).join('');
-
-    // 志望校流水线细节：填充进计划书/出愿/备考三张卡
+    // 志望校/计划书数据先算好（供状态推导用）
     const sPlans = plansMapPG[s.id] || [];
     const sDraft = draftsMapPG[s.id];
     let sRefsN = 0, sDraftN = 0;
@@ -557,18 +549,34 @@ async function renderProgressPage(mc, focusStudentId=null){
       const df0 = sDraft && sDraft.draft_fields ? JSON.parse(sDraft.draft_fields) : {};
       sDraftN = Object.values(df0).filter(v => Array.isArray(v) ? v.length : String(v || '').trim()).length;
     } catch(e) {}
-    // 时间线没有记录时，从志望校推进/计划书数据自动推导徽章
+    const anyPassed = sPlans.some(p => p.status === 'passed');
+    const anyApplied = sPlans.some(p => ['applied', 'passed'].includes(p.status));
     const pgDerived = {};
-    if (sPlans.some(p => p.status === 'passed')) pgDerived.apply = '已合格';
-    else if (sPlans.some(p => p.status === 'applied')) pgDerived.apply = '已出愿';
-    else if (sPlans.some(p => ['prof_ok','contacted'].includes(p.status))) pgDerived.apply = '联系教授中';
+    if (anyPassed) pgDerived.apply = '已合格';
+    else if (anyApplied) pgDerived.apply = '已出愿';
+    else if (sPlans.some(p => ['prof_ok', 'contacted'].includes(p.status))) pgDerived.apply = '联系教授中';
     else if (sPlans.length) pgDerived.apply = '择校确认中';
     if (sPlans.some(p => p.interview_draft_done)) pgDerived.exam = '在准备面试稿';
     else if (sPlans.some(p => p.kakomon_started)) pgDerived.exam = '在写过去问';
-    const sLegacy = sDraft && ['research_question','methodology','draft_notes'].some(f => String(sDraft[f] || '').trim());
+    const sLegacy = sDraft && ['research_question', 'methodology', 'draft_notes'].some(f => String(sDraft[f] || '').trim());
     if (sDraft && sDraft.draft_file_url) pgDerived.plan = '已完成';
     else if (sDraftN > 0 || sLegacy) pgDerived.plan = '撰写中';
     else if (sRefsN > 0) pgDerived.plan = '在收集材料';
+
+    const spChip = (icon, text, done) => `<span style="font-size:10px;padding:2px 9px;border-radius:10px;white-space:nowrap;background:${done ? 'var(--ok-bg,#e8f4ea)' : 'var(--bg,#f7f5f0)'};color:${done ? 'var(--ok,#2a5a30)' : 'var(--text-2,#5a5650)'};border:1px solid ${done ? 'var(--ok,#b8d8bc)' : 'var(--border-light,#ede9e2)'}">${icon} ${text}</span>`;
+    const statusRow = Object.entries(PROGRESS_LABELS).map(([k]) => {
+      let val, done;
+      if (k === 'apply') { val = anyPassed ? '已合格' : (latest.apply || pgDerived.apply || ''); done = anyPassed || latest.apply === '已合格'; }
+      else if (k === 'japanese') { val = latest[k] || (s.japanese_score ? '有成绩' : ''); done = isProgressDone(k, latest[k]); }
+      else if (k === 'english') { val = latest[k] || (s.english_score ? '有成绩' : ''); done = isProgressDone(k, latest[k]); }
+      else { val = latest[k] || pgDerived[k] || ''; done = isProgressDone(k, latest[k]); }
+      if (!val) return '';
+      const scoreText = k === 'japanese' && s.japanese_score ? ` · ${s.japanese_score}` : k === 'english' && s.english_score ? ` · ${s.english_score}` : '';
+      return spChip(PROGRESS_ICONS[k], val + scoreText, done);
+    }).join('');
+    const secTitle = t => `<div style="font-size:11px;font-weight:600;color:var(--text-2);letter-spacing:.02em;margin-bottom:10px">${t}</div>`;
+    const secFrame = inner => `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:6px;padding:12px 14px">${inner}</div>`;
+
 
     const pgDetail = k => {
       if (k === 'plan') {
@@ -622,88 +630,74 @@ async function renderProgressPage(mc, focusStudentId=null){
         ).join('')
       : '<div style="font-size:11px;color:var(--text-3);padding:8px 0">暂无进度记录</div>';
 
-    return `<div style="background:var(--surface);border:1px solid ${isFocus?'var(--accent)':'var(--border)'};border-radius:4px;overflow:hidden">
-      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer" onclick="toggleProgressCard('${s.id}')">
-        <div style="flex:1">
+    const hintHtml = (() => {
+      const hint = bkHintMap[s.name];
+      if (!hint) return '';
+      const known = new Set(sPlans.map(p => (p.school_name || '').trim()));
+      const news = [...hint.schools].filter(x => ![...known].some(k => k.includes(x) || x.includes(k)));
+      if (!news.length) return '';
+      return `<div style="background:var(--warn-bg,#f8f0d8);border:1px solid var(--warn,#b8860b);border-radius:4px;padding:7px 10px;margin-bottom:8px;font-size:10px;color:#6a5210">
+        💡 面谈记录中提到过（${hint.date || ''}）：${news.map(x => `<span style="background:var(--surface);border-radius:3px;padding:1px 6px;margin:0 3px">${x}</span>`).join('')}
+        <button onclick="event.stopPropagation();spSchoolFromHint('${s.id}','${(s.name || '').replace(/'/g, '')}','${s.major || ''}',${JSON.stringify(news).replace(/"/g, '&quot;')})" style="margin-left:6px;font-size:10px;background:var(--warn,#b8860b);color:#fff;border:none;border-radius:3px;padding:2px 10px;cursor:pointer;font-family:inherit">一键加入志望校</button>
+      </div>`;
+    })();
+    const schoolTable = sPlans.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead><tr style="background:var(--bg)">
+          ${['No.', '级别', '学校名 · 研究科', '教授', '出愿期间', '该校进度', '过去问', '面试稿', ''].map(h => `<th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border-light);white-space:nowrap">${h}</th>`).join('')}
+        </tr></thead>
+        <tbody>
+          ${sPlans.map((p, pi) => { const st = schoolStatusLabel(p.status); const lvl = { 1: '🔴 冲刺', 2: '🟡 匹配', 3: '🟢 保底' }; return `<tr style="border-bottom:1px solid var(--border-light)">
+            <td style="padding:6px 8px;color:var(--text-3)">${pi + 1}</td>
+            <td style="padding:6px 8px;white-space:nowrap">${lvl[p.level] || ''}</td>
+            <td style="padding:6px 8px"><span style="font-weight:600">${p.school_name || ''}</span>${p.faculty ? `<span style="color:var(--text-3);margin-left:4px;font-size:10px">${p.faculty}</span>` : ''}</td>
+            <td style="padding:6px 8px;white-space:nowrap">${p.professor || '—'}</td>
+            <td style="padding:6px 8px;font-size:10px;color:var(--accent);white-space:nowrap">${p.application_period || '—'}</td>
+            <td style="padding:6px 8px">
+              <select onchange="event.stopPropagation();spPlanSet('${p.id}','status',this.value,this)" onclick="event.stopPropagation()" style="font-size:10px;padding:3px 5px;border:1px solid var(--border);border-radius:3px;background:var(--surface);font-family:inherit;color:${st.c};font-weight:600">
+                ${Object.entries(SCHOOL_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${p.status === k ? 'selected' : ''}>${v.t}</option>`).join('')}
+              </select>
+            </td>
+            <td style="padding:6px 8px"><button onclick="event.stopPropagation();spPlanFlag('${p.id}','kakomon_started',this)" data-on="${p.kakomon_started ? '1' : '0'}" style="font-size:10px;border-radius:3px;padding:3px 9px;cursor:pointer;font-family:inherit;border:1px solid ${p.kakomon_started ? 'var(--ok)' : 'var(--border)'};background:${p.kakomon_started ? 'var(--ok-bg)' : 'var(--surface)'};color:${p.kakomon_started ? 'var(--ok)' : 'var(--text-3)'}">${p.kakomon_started ? '✓ 已开始' : '未开始'}</button></td>
+            <td style="padding:6px 8px"><button onclick="event.stopPropagation();spPlanFlag('${p.id}','interview_draft_done',this)" data-on="${p.interview_draft_done ? '1' : '0'}" style="font-size:10px;border-radius:3px;padding:3px 9px;cursor:pointer;font-family:inherit;border:1px solid ${p.interview_draft_done ? 'var(--ok)' : 'var(--border)'};background:${p.interview_draft_done ? 'var(--ok-bg)' : 'var(--surface)'};color:${p.interview_draft_done ? 'var(--ok)' : 'var(--text-3)'}">${p.interview_draft_done ? '✓ 已完成' : '未完成'}</button></td>
+            <td style="padding:6px 8px;white-space:nowrap"><span onclick="event.stopPropagation();spSchoolEdit('${p.id}')" style="font-size:10px;color:var(--accent);cursor:pointer;margin-right:6px">编辑</span><span onclick="event.stopPropagation();spSchoolDel('${p.id}')" style="font-size:10px;color:var(--danger);cursor:pointer">删除</span></td>
+          </tr>`; }).join('')}
+        </tbody>
+      </table></div>` : '<div style="font-size:11px;color:var(--text-3)">尚无志望校记录，可点击右上「＋ 添加志望校」录入</div>';
+    const guaranteedFrame = (s.course_type || '').includes('保录') ? secFrame(
+      `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <span style="font-size:11px;font-weight:600;color:#8a5010">🎓 保录学校 <span style="font-weight:400;color:var(--text-3)">保录方案专用名单，独立于志望校</span></span>
+        <button onclick="event.stopPropagation();gsAdd('${s.id}')" style="margin-left:auto;font-size:10px;background:#8a5010;color:#fff;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-family:inherit">＋ 添加保录学校</button>
+      </div><div id="gs_list_${s.id}">${gsRenderList(s.id)}</div>`) : '';
+
+    return `<div style="background:var(--surface);border:1px solid ${isFocus ? 'var(--accent)' : 'var(--border)'};border-radius:6px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 2px rgba(0,0,0,.03)">
+      <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer" onclick="toggleProgressCard('${s.id}')">
+        <div style="flex:1;min-width:0">
           <span style="font-size:13px;font-weight:600">${s.name}</span>
-          <span style="font-size:11px;color:var(--text-3);margin-left:8px">${MAJORS[s.major]||s.major||''}</span>
-          ${s.target_enrollment?`<span style="font-size:10px;color:var(--text-3);margin-left:8px">目标：${s.target_enrollment}</span>`:''}
+          <span style="font-size:11px;color:var(--text-3);margin-left:8px">${MAJORS[s.major] || s.major || ''}</span>
+          ${s.target_enrollment ? `<span style="font-size:10px;color:var(--text-3);margin-left:8px">目标 ${s.target_enrollment}</span>` : ''}
         </div>
-        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+        <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;justify-content:flex-end;max-width:60%">
           ${statusRow || '<span style="font-size:10px;color:var(--text-3)">暂无记录</span>'}
-          <span style="font-size:11px;color:var(--text-3);margin-left:4px">▾</span>
         </div>
+        <span class="sp-arr" style="font-size:11px;color:var(--text-3);flex-shrink:0">${isFocus ? '▾' : '▸'}</span>
       </div>
-      <div id="prog_${s.id}" style="display:${isFocus?'block':'none'};border-top:1px solid var(--border-light);background:var(--bg)">
-        <div style="padding:12px 14px;border-bottom:1px solid var(--border-light)">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <div style="font-size:11px;font-weight:600;color:var(--text-2)">当前进度</div>
-            <button class="btn btn-primary btn-sm" onclick="openAddProgressEntry('${s.id}','${s.name}','${s.major}')">＋ 更新进度</button>
-          </div>
-          <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px;background:var(--surface);border:1px solid var(--border-light)">
-            <thead><tr style="background:var(--bg)">${['项目','现状','数据来源','详情'].map(h=>`<th style="padding:4px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border);white-space:nowrap">${h}</th>`).join('')}</tr></thead>
-            <tbody>${dimCards}</tbody>
-          </table></div>
-        </div>
-        <!-- 志望校逐校推进（可直接修改，与学生端/老师端同步） -->
-        <div style="padding:12px 14px;border-bottom:1px solid var(--border-light)">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-            <span style="font-size:11px;font-weight:600;color:var(--text-2)">🏫 志望校（${sPlans.length}所）</span>
-            <span style="font-size:9px;color:var(--text-3)">状态与过去问/面试稿可直接修改，即时保存</span>
-            <button onclick="event.stopPropagation();spSchoolAdd('${s.id}','${(s.name||'').replace(/'/g,'')}','${s.major||''}')" style="margin-left:auto;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">＋ 添加志望校</button>
-          </div>
-          ${(() => {
-            const hint = bkHintMap[s.name];
-            if (!hint) return '';
-            const known = new Set(sPlans.map(p => (p.school_name||'').trim()));
-            const news = [...hint.schools].filter(x => ![...known].some(k => k.includes(x) || x.includes(k)));
-            if (!news.length) return '';
-            return `<div style="background:var(--warn-bg,#f8f0d8);border:1px solid var(--warn,#b8860b);border-radius:3px;padding:7px 10px;margin-bottom:6px;font-size:10px;color:#6a5210">
-              💡 面谈记录中提到过（${hint.date||''}）：${news.map(x=>`<span style="background:var(--surface);border-radius:2px;padding:1px 6px;margin:0 3px">${x}</span>`).join('')}
-              <button onclick="event.stopPropagation();spSchoolFromHint('${s.id}','${(s.name||'').replace(/'/g,'')}','${s.major||''}',${JSON.stringify(news).replace(/"/g,'&quot;')})" style="margin-left:6px;font-size:10px;background:var(--warn,#b8860b);color:#fff;border:none;border-radius:2px;padding:2px 10px;cursor:pointer;font-family:inherit">一键加入志望校</button>
-            </div>`;
-          })()}
-          ${sPlans.length ? `
-          <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px;background:var(--surface);border:1px solid var(--border-light)">
-            <thead><tr style="background:var(--bg)">
-              ${['No.','级别','学校名 · 研究科','教授','出愿期间','该校进度','过去问','面试稿',''].map(h=>`<th style="padding:5px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border);white-space:nowrap">${h}</th>`).join('')}
-            </tr></thead>
-            <tbody>
-              ${sPlans.map((p,pi)=>{const st=schoolStatusLabel(p.status);const lvl={1:'🔴 冲刺',2:'🟡 匹配',3:'🟢 保底'};return `<tr style="border-bottom:1px solid var(--border-light)">
-                <td style="padding:5px 8px;color:var(--text-3)">${pi+1}</td>
-                <td style="padding:5px 8px;white-space:nowrap">${lvl[p.level]||''}</td>
-                <td style="padding:5px 8px"><span style="font-weight:600">${p.school_name||''}</span>${p.faculty?`<span style="color:var(--text-3);margin-left:4px;font-size:10px">${p.faculty}</span>`:''}</td>
-                <td style="padding:5px 8px;white-space:nowrap">${p.professor||'—'}</td>
-                <td style="padding:5px 8px;font-size:10px;color:var(--accent);white-space:nowrap">${p.application_period||'—'}</td>
-                <td style="padding:5px 8px">
-                  <select onchange="event.stopPropagation();spPlanSet('${p.id}','status',this.value,this)" onclick="event.stopPropagation()" style="font-size:10px;padding:2px 4px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;color:${st.c};font-weight:600">
-                    ${Object.entries(SCHOOL_STATUS_LABELS).map(([k,v])=>`<option value="${k}" ${p.status===k?'selected':''}>${v.t}</option>`).join('')}
-                  </select>
-                </td>
-                <td style="padding:5px 8px"><button onclick="event.stopPropagation();spPlanFlag('${p.id}','kakomon_started',this)" data-on="${p.kakomon_started?'1':'0'}" style="font-size:10px;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;border:1px solid ${p.kakomon_started?'var(--ok)':'var(--border)'};background:${p.kakomon_started?'var(--ok-bg)':'var(--bg)'};color:${p.kakomon_started?'var(--ok)':'var(--text-3)'}">${p.kakomon_started?'✓ 已开始':'未开始'}</button></td>
-                <td style="padding:5px 8px"><button onclick="event.stopPropagation();spPlanFlag('${p.id}','interview_draft_done',this)" data-on="${p.interview_draft_done?'1':'0'}" style="font-size:10px;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;border:1px solid ${p.interview_draft_done?'var(--ok)':'var(--border)'};background:${p.interview_draft_done?'var(--ok-bg)':'var(--bg)'};color:${p.interview_draft_done?'var(--ok)':'var(--text-3)'}">${p.interview_draft_done?'✓ 已完成':'未完成'}</button></td>
-                <td style="padding:5px 8px"><span onclick="event.stopPropagation();spSchoolEdit('${p.id}')" style="font-size:10px;color:var(--accent);cursor:pointer;margin-right:6px">编辑</span><span onclick="event.stopPropagation();spSchoolDel('${p.id}')" style="font-size:10px;color:var(--danger);cursor:pointer">删除</span></td>
-              </tr>`;}).join('')}
-            </tbody>
-          </table></div>` : '<div style="font-size:11px;color:var(--text-3)">尚无志望校记录，可点击右上「＋ 添加志望校」录入</div>'}
-        </div>
-        ${(s.course_type||'').includes('保录') ? `
-        <div style="padding:12px 14px;border-bottom:1px solid var(--border-light);background:#fdfaf5">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-            <span style="font-size:11px;font-weight:600;color:#8a5010">🎓 保录学校</span>
-            <span style="font-size:10px;color:var(--text-3)">保录方案专用名单，独立于志望校</span>
-            <button onclick="event.stopPropagation();gsAdd('${s.id}')" style="margin-left:auto;font-size:10px;background:#8a5010;color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">＋ 添加保录学校</button>
-          </div>
-          <div id="gs_list_${s.id}">${gsRenderList(s.id)}</div>
-        </div>` : ''}
-        <!-- 老师评估记录（汇总各老师填写，admin 亦可补充） -->
-        <div style="padding:12px 14px;border-bottom:1px solid var(--border-light)">
-          <div onclick="event.stopPropagation();spNotesToggle('${s.id}','${(s.name||'').replace(/'/g,"")}',this)" style="font-size:11px;font-weight:600;color:var(--text-2);cursor:pointer;user-select:none">📝 老师评估记录（学生不可见）<span class="arr" style="margin-left:4px;color:var(--text-3)">▸</span></div>
-          <div id="spnotes_${s.id}" style="display:none;margin-top:8px"></div>
-        </div>
-        <div style="padding:12px 14px">
-          <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px">进度时间线 <span style="font-weight:400;color:var(--text-3)">${timeline.length} 条记录</span></div>
-          ${timelineHtml}
+      <div id="prog_${s.id}" style="display:${isFocus ? 'block' : 'none'};border-top:1px solid var(--border-light);background:var(--bg)">
+        <div style="padding:14px;display:flex;flex-direction:column;gap:12px">
+          ${secFrame(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <span style="font-size:11px;font-weight:600;color:var(--text-2)">📊 当前进度</span>
+              <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openAddProgressEntry('${s.id}','${s.name}','${s.major}')">＋ 更新进度</button>
+            </div>
+            <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">
+              <thead><tr style="background:var(--bg)">${['项目', '现状', '数据来源', '详情'].map(h => `<th style="padding:5px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border-light);white-space:nowrap">${h}</th>`).join('')}</tr></thead>
+              <tbody>${dimCards}</tbody>
+            </table></div>`)}
+          ${secFrame(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+              <span style="font-size:11px;font-weight:600;color:var(--text-2)">🏫 志望校 <span style="font-weight:400;color:var(--text-3)">（${sPlans.length}所）· 状态/过去问/面试稿可直接改，即时保存</span></span>
+              <button onclick="event.stopPropagation();spSchoolAdd('${s.id}','${(s.name || '').replace(/'/g, '')}','${s.major || ''}')" style="margin-left:auto;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-family:inherit">＋ 添加志望校</button>
+            </div>${hintHtml}${schoolTable}`)}
+          ${guaranteedFrame}
+          ${secFrame(`<div onclick="event.stopPropagation();spNotesToggle('${s.id}','${(s.name || '').replace(/'/g, '')}',this)" style="font-size:11px;font-weight:600;color:var(--text-2);cursor:pointer;user-select:none">📝 老师评估记录 <span style="font-weight:400;color:var(--text-3)">（学生不可见）</span><span class="arr" style="margin-left:4px;color:var(--text-3)">▸</span></div><div id="spnotes_${s.id}" style="display:none;margin-top:10px"></div>`)}
+          ${secFrame(`<div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:10px">🕑 进度时间线 <span style="font-weight:400;color:var(--text-3)">${timeline.length} 条</span></div>${timelineHtml}`)}
         </div>
       </div>
     </div>`;
@@ -770,7 +764,12 @@ async function renderProgressPage(mc, focusStudentId=null){
 
 function toggleProgressCard(id){
   const el=document.getElementById(`prog_${id}`);
-  if(el) el.style.display=el.style.display==='none'?'block':'none';
+  if(!el) return;
+  const open=el.style.display==='none';
+  el.style.display=open?'block':'none';
+  const hdr=el.previousElementSibling;
+  const arr=hdr&&hdr.querySelector('.sp-arr');
+  if(arr) arr.textContent=open?'▾':'▸';
 }
 
 function openAddProgressEntry(studentId='', studentName='', major='') {
