@@ -116,11 +116,13 @@ async function renderMajorManager(body){
           <select id="mm_domain" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px">${domainOpts}</select></div>
         <div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">专业中文名</div>
           <input id="mm_label" placeholder="如 机械工学" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:130px"></div>
-        <div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">日语罗马音代号（可留空，自动生成）</div>
+        <div><div style="font-size:10px;color:var(--accent);margin-bottom:3px">日文专业名（强烈建议填写）</div>
+          <input id="mm_label_ja" placeholder="如 機械工学" style="padding:6px 8px;border:1px solid var(--accent);border-radius:4px;font-size:12px;width:130px"></div>
+        <div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">代号（可留空，自动生成）</div>
           <input id="mm_key" placeholder="留空则自动生成" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:130px"></div>
         <button class="btn btn-primary btn-sm" onclick="mmCreate()">新建</button>
       </div>
-      <div style="font-size:9px;color:var(--text-3);margin-top:6px">代号只能小写字母/数字/下划线，以字母开头。与全站专业代码风格统一。</div>
+      <div style="font-size:9px;color:var(--text-3);margin-top:6px">代号只能小写字母/数字/下划线，以字母开头，按「日文专业名」的罗马音自动生成（更准确）；不填日文名则退回按中文名生成，可能不准，建议之后手动补上日文名。</div>
     </div>`;
   // 按 DOMAINS 顺序 + 未设领域，列出每个领域的专业
   const domOrder=[...DOMAINS.map(d=>d.label),'（未设领域）'];
@@ -130,8 +132,15 @@ async function renderMajorManager(body){
       <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:${dom==='（未设领域）'?'var(--danger)':'var(--text)'}">${dom} <span style="font-size:10px;color:var(--text-3)">(${list.length})</span></div>
       <div style="display:flex;flex-direction:column;gap:4px">`;
     list.forEach(m=>{
-      html+=`<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--border-light);border-radius:4px">
+      const jaCell = m.label_ja
+        ? `<span style="font-size:11px;color:var(--text-2)">JP：${majorEsc(m.label_ja)}</span>`
+        : `<span style="display:flex;align-items:center;gap:3px">
+             <input id="mm_ja_${m.key}" placeholder="补充日文名" style="font-size:10px;padding:2px 5px;border:1px solid var(--accent);border-radius:3px;width:90px">
+             <button onclick="mmSetLabelJa('${m.key}')" title="仅补充日文名用于对照参考，不会修改该专业已在用的代号" style="font-size:9px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:2px 7px;cursor:pointer;font-family:inherit">保存</button>
+           </span>`;
+      html+=`<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--border-light);border-radius:4px;flex-wrap:wrap">
         <span style="font-size:12px;font-weight:500">${majorEsc(m.label)}</span>
+        ${jaCell}
         <span style="font-size:10px;color:var(--text-3)">${m.key}</span>
         ${dom==='（未设领域）'?`<select onchange="mmSetDomain('${m.key}',this.value)" style="font-size:10px;padding:2px 4px;border:1px solid var(--border);border-radius:3px"><option value="">归到领域…</option>${domainOpts}</select>`:''}
         <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="mmDelete('${m.key}','${majorEsc(m.label)}')">删除</button>
@@ -146,14 +155,28 @@ function majorEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&
 async function mmCreate(){
   const domain=document.getElementById('mm_domain').value;
   const label=document.getElementById('mm_label').value.trim();
+  const labelJa=document.getElementById('mm_label_ja').value.trim();
   const key=document.getElementById('mm_key').value.trim();
   if(!label){ alert('请填专业中文名'); return; }
-  // 代号留空 → createMajor 会按中文自动生成罗马音并自动避重复
-  const res=await createMajor(label,key,domain);
+  if(!labelJa && !key && !confirm('未填写日文专业名，代号将按中文名猜测生成，可能不准确（多音字/非日语汉字都会出错）。\n\n确定要跳过日文名，直接新建吗？')) return;
+  // 代号留空 → createMajor 会优先按日文名生成罗马音（更准确），无日文名则退回中文名
+  const res=await createMajor(label,key,domain,labelJa);
   if(res){
     if(!key) alert(`已新建专业「${label}」，自动生成代号：${res}`);
+    document.getElementById('mm_label_ja').value='';
     await loadMajorsFromDB(); renderMajorManager(document.getElementById('consoleBody'));
   }
+}
+async function mmSetLabelJa(key){
+  const el=document.getElementById('mm_ja_'+key);
+  const labelJa=(el&&el.value||'').trim();
+  if(!labelJa){ alert('请填写日文专业名'); return; }
+  try{
+    await sb(`/rest/v1/majors?key=eq.${key}`,'PATCH',{label_ja:labelJa});
+    MAJORS_JA[key]=labelJa;
+    await loadMajorsFromDB();
+    renderMajorManager(document.getElementById('consoleBody'));
+  }catch(e){ alert('保存失败：'+e.message); }
 }
 async function mmSetDomain(key,domain){
   if(!domain) return;
