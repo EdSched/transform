@@ -177,7 +177,6 @@ function renderStudyTab() {
 // ══════════════════════════════════
 function renderSchoolsTab() {
   const { schoolPlans, sharedLists, sharedSchools } = studyData;
-  const levelLabel = { 1:'🔴 冲刺', 2:'🟡 匹配', 3:'🟢 保底' };
 
   // 排序+筛选共享学校
   let displaySchools = [...sharedSchools];
@@ -281,9 +280,9 @@ function renderSchoolsTab() {
   }
 
   const levelGroups = [
-    { lv:1, label:'🔴 冲刺（挑战）', plans: schoolPlans.filter(p=>p.level===1) },
-    { lv:2, label:'🟡 匹配（目标）', plans: schoolPlans.filter(p=>p.level===2) },
-    { lv:3, label:'🟢 保底', plans: schoolPlans.filter(p=>p.level===3) },
+    { lv:1, label:'<span style="color:#c0392b;font-weight:600">冲刺（挑战）</span>', plans: schoolPlans.filter(p=>p.level===1) },
+    { lv:2, label:'<span style="color:#b8860b;font-weight:600">匹配（目标）</span>', plans: schoolPlans.filter(p=>p.level===2) },
+    { lv:3, label:'<span style="color:#2a7a3a;font-weight:600">保底</span>', plans: schoolPlans.filter(p=>p.level===3) },
   ];
 
   let editHtml = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
