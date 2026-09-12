@@ -189,7 +189,6 @@ function tpRenderProgressList() {
     const latest = getLatestProgress(timeline);
     const plans = plansMap[s.id] || [];
     const draft = draftsMap[s.id];
-    const levelLabel = { 1:'🔴', 2:'🟡', 3:'🟢' };
     const routeLabel = s.prep_model === 'winter' ? '冬季路线・12月出愿1月考试'
       : s.prep_model === 'next_summer' ? '次年夏季路线・语言按冬季要求・次年7月出愿8月考试'
       : '夏季路线・7月出愿8月考试';
@@ -237,7 +236,7 @@ function tpRenderProgressList() {
         <tbody>
           ${plans.map((p, pi) => { const st = schoolStatusLabel(p.status); return `<tr style="border-bottom:1px solid var(--border-light)">
             <td style="padding:6px 8px;color:var(--text-3)">${pi + 1}</td>
-            <td style="padding:6px 8px;white-space:nowrap">${levelLabel[p.level] || ''}</td>
+            <td style="padding:6px 8px;white-space:nowrap">${schoolLevelHtml(p.level)}</td>
             <td style="padding:6px 8px"><span style="font-weight:600">${tsaEsc(p.school_name)}</span>${p.faculty ? `<span style="color:var(--text-3);margin-left:4px;font-size:10px">${tsaEsc(p.faculty)}</span>` : ''}</td>
             <td style="padding:6px 8px;white-space:nowrap">${tsaEsc(p.professor) || '—'}</td>
             <td style="padding:6px 8px;font-size:10px;color:var(--accent);white-space:nowrap">${tsaEsc(p.application_period) || '—'}</td>
@@ -1524,12 +1523,11 @@ async function focusOpenSummary(sid) {
   const months = focusMonthsUntil(s.expiry_date);
   const u = focusBucket(months) ? FOCUS_URG[focusBucket(months)] : null;
   const kv = (k, v) => v ? `<div style="font-size:12px;padding:3px 0"><span style="color:#888;display:inline-block;width:78px">${k}</span>${tsaEsc(v)}</div>` : '';
-  const lvl = { 1: '🔴 冲刺', 2: '🟡 匹配', 3: '🟢 保底' };
 
   // 志望校
   const schoolsHtml = plans.length ? plans.map(p => {
     const st = (typeof SCHOOL_STATUS_LABELS !== 'undefined' && SCHOOL_STATUS_LABELS[p.status]) ? SCHOOL_STATUS_LABELS[p.status].t : (p.status || '');
-    return `<div style="font-size:12px;padding:5px 0;border-top:1px solid #eee"><span style="font-weight:600">${tsaEsc(p.school_name)}</span>${p.faculty ? ' · ' + tsaEsc(p.faculty) : ''}${p.professor ? ' · ' + tsaEsc(p.professor) : ''} <span style="color:#888">[${lvl[p.level] || p.level || ''}]</span> <span style="color:#2a6a9a">${st}</span>${p.application_period ? ' <span style="color:#888;font-size:11px">出愿 ' + tsaEsc(p.application_period) + '</span>' : ''}</div>`;
+    return `<div style="font-size:12px;padding:5px 0;border-top:1px solid #eee"><span style="font-weight:600">${tsaEsc(p.school_name)}</span>${p.faculty ? ' · ' + tsaEsc(p.faculty) : ''}${p.professor ? ' · ' + tsaEsc(p.professor) : ''} ${schoolLevelHtml(p.level)} <span style="color:#2a6a9a">${st}</span>${p.application_period ? ' <span style="color:#888;font-size:11px">出愿 ' + tsaEsc(p.application_period) + '</span>' : ''}</div>`;
   }).join('') : '<div style="font-size:11px;color:#aaa">暂无志望校</div>';
 
   // 考学进度时间线
