@@ -1043,6 +1043,13 @@ const SCHOOL_STATUS_LABELS = {
 const SCHOOL_FAILED_STATUSES = ['failed_written', 'failed_interview', 'failed'];
 function schoolStatusLabel(v) { return SCHOOL_STATUS_LABELS[v] || SCHOOL_STATUS_LABELS.preparing; }
 // 志望校级别：只用颜色区分，不用红黄绿圆圈
+// 出愿数据库专业清单（唯一数据源：以后新增出愿专业只改这里，老师权限/出愿库/老师端出愿查询都会自动跟上）
+const ADMISSION_MAJORS = {
+  shakai:'社会学', keiei:'経営学', keizai:'経済学', shinpan:'新闻传播学',
+  fukushi:'社会福祉学', nihongo:'日本语教育', hyosho:'表象文化・文学・哲学',
+  seiji:'政治学', toyo:'東洋史', bunka:'文化人类学', mot:'MOT', tokei:'統計・計量',
+  kyoiku:'教育学',
+};
 const SCHOOL_LEVEL_META = { 1:{t:'冲刺',c:'#c0392b'}, 2:{t:'匹配',c:'#b8860b'}, 3:{t:'保底',c:'#2a7a3a'} };
 function schoolLevelHtml(lv){ const m=SCHOOL_LEVEL_META[lv]; return m ? `<span style="color:${m.c};font-weight:600">${m.t}</span>` : ''; }
 function isSchoolFailed(v) { return SCHOOL_FAILED_STATUSES.includes(v); }
