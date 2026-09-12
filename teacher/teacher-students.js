@@ -83,7 +83,8 @@ async function renderTeacherStudyProgress(mc) {
   allDrafts.forEach(d => { if (!draftsMap[d.student_id]) draftsMap[d.student_id] = d; });
 
   teacherProgressData = { students, timelineMap, plansMap, draftsMap };
-  tpRenderShell();
+  try { tpRenderShell(); }
+  catch (e) { mc.innerHTML = `<div class="empty" style="color:var(--danger)">考学进度渲染失败：${(e && e.message) || e}</div>`; console.error('tpRenderShell error:', e); }
 }
 
 // 外壳：标题/搜索/专业/来源筛选 + 列表容器（切换筛选时重绘外壳，搜索输入只刷新列表保持焦点）
@@ -1453,17 +1454,23 @@ const FOCUS_URG = {
 
 async function renderTeacherFocus(box) {
   box.innerHTML = '<div class="empty">加载中…</div>';
-  const all = await sb('/rest/v1/students?select=*&order=created_at.desc&limit=2000').catch(() => []);
-  const set = tsaAllowedSet();
-  let list = (set ? (all || []).filter(s => set.has(s.major)) : (all || [])).filter(s => !s.status || s.status === 'active');
-  if (tsaGuaranteedLock()) list = list.filter(tsaIsGuaranteed);
-  focusStudents = list;
-  focusRender();
+  try {
+    const all = await sb('/rest/v1/students?select=*&order=created_at.desc&limit=2000').catch(() => []);
+    const set = tsaAllowedSet();
+    let list = (set ? (all || []).filter(s => set.has(s.major)) : (all || [])).filter(s => !s.status || s.status === 'active');
+    if (tsaGuaranteedLock()) list = list.filter(tsaIsGuaranteed);
+    focusStudents = list;
+    focusRender();
+  } catch (e) {
+    box.innerHTML = `<div class="empty" style="color:var(--danger)">重点关注加载失败：${(e && e.message) || e}</div>`;
+    console.error('renderTeacherFocus error:', e);
+  }
 }
 
 function focusRender() {
   const box = document.getElementById('sm_content') || document.getElementById('mainContent');
   if (!box) return;
+  try {
   const rows = focusStudents.map(s => { const months = focusMonthsUntil(s.expiry_date); return { s, months, bucket: focusBucket(months) }; });
   const q = focusSearch.trim();
   let filtered = rows.filter(r => {
@@ -1498,6 +1505,10 @@ function focusRender() {
     </div>
     <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">共 ${filtered.length} 人 · 点学生查看完整学习概要（可打印）。到期依据「到期时间」自动推算。</div>
     <div>${cards}</div>`;
+  } catch (e) {
+    box.innerHTML = `<div class="empty" style="color:var(--danger)">重点关注渲染失败：${(e && e.message) || e}</div>`;
+    console.error('focusRender error:', e);
+  }
 }
 
 async function focusOpenSummary(sid) {
