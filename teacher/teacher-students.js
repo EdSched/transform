@@ -47,7 +47,8 @@ async function renderTeacherStudyProgress(mc) {
   try {
     const all = await sb('/rest/v1/students?select=*&order=name.asc&limit=2000');
     const set = (typeof tsaAllowedSet === 'function') ? tsaAllowedSet() : null;
-    students = (set ? (all || []).filter(s => set.has(s.major)) : (all || [])).filter(s => !s.status || s.status === 'active');
+    // 与 admin 考学进度一致：显示在籍/停课/已合格（已合格学生才能录入合格实绩），退学不显示
+    students = (set ? (all || []).filter(s => set.has(s.major)) : (all || [])).filter(s => !s.status || s.status === 'active' || s.status === 'stopped' || s.status === 'graduated');
     if (tsaGuaranteedLock()) students = students.filter(tsaIsGuaranteed);
   } catch (e) { mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
 
