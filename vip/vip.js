@@ -21,6 +21,30 @@ let vipStudent = null; // 登录后的学生档案 {id,name,student_code,vip_hou
 let vipSlots = [];     // 该学生绑定的老师开放的VIP时间槽
 let vipBookings = [];  // 该学生的VIP预约记录
 let vipSelectedSlotId = null;
+let vipHwSubs = {};        // booking_id → 该学生的结构化作业提交（复用大课 homework_submissions）
+let vipHwOpenId = null;    // 当前展开作答的预约 id
+
+// 一条 VIP 预约 → 伪课次对象（喂给 study.js 的作答引擎）
+function vipHwSessionOf(b) {
+  return {
+    id: 'vipbk_' + b.id, _vipBookingId: b.id,
+    homework_questions: b.vip_homework_questions, homework_note: b.vip_homework_note || '',
+    course_name: (b.vip_content || b.name || 'VIP课'), session_number: null, session_date: b.slot_date || null,
+  };
+}
+function vipHwToggle(bid) {
+  const b = vipBookings.find(x => x.id === bid);
+  if (!b) return;
+  if (vipHwOpenId === bid) { vipHwOpenId = null; if (typeof hwCloseVip === 'function') hwCloseVip(); renderVipMain(); return; }
+  vipHwOpenId = bid;
+  if (typeof hwEnterVip === 'function') {
+    hwEnterVip(vipHwSessionOf(b), vipHwSubs[bid] || null, {
+      rerender: () => { const el = document.getElementById('vip_hw_panel'); if (el && typeof hwVipHtml === 'function') el.innerHTML = hwVipHtml(); },
+      onSubmitted: (row) => { if (row) vipHwSubs[bid] = row; else delete vipHwSubs[bid]; renderVipMain(); },
+    });
+  }
+  renderVipMain();
+}
 
 function saveVipLogin(name, code) {
   localStorage.setItem(STORAGE_KEY_VIP, JSON.stringify({ name, code, ts: Date.now() }));
@@ -115,6 +139,12 @@ async function loadVipData() {
     ? vipStudent.is_vip_course === 'VIP'
     : vipStudent.is_vip_course === '大课+VIP');
   vipBookings = bookings;
+  // 结构化 VIP 作业提交（booking_id 关联；与大课共用 homework_submissions 表）
+  try {
+    const subs = await sb(`/rest/v1/homework_submissions?student_name=eq.${encodeURIComponent(vipStudent.name)}&booking_id=not.is.null&select=*`).catch(() => []);
+    vipHwSubs = {};
+    (subs || []).forEach(x => { if (x.booking_id) vipHwSubs[x.booking_id] = x; });
+  } catch (e) { vipHwSubs = {}; }
 }
 
 
@@ -667,10 +697,25 @@ function renderVipHistory() {
   if (!done.length) return '<div class="no-slots">暂无已完成的课程记录</div>';
   return done.map(b => {
     // 作业区块
+    const hwq = b.vip_homework_questions;
+    const structured = hwq && Array.isArray(hwq.levels) && hwq.levels.length;
     const hasHomework = !!b.vip_homework;
     const hasSubmitted = !!b.vip_homework_file_url;
     const hasFeedback = !!b.vip_homework_feedback || !!b.vip_homework_feedback_file_url;
-    const homeworkBlock = hasHomework ? `
+    // 结构化作业（复用大课作答引擎）：逐题作答 / 拍照上传 / 撤回重做，与大课体验一致
+    const structuredBlock = structured ? (() => {
+      const sub = vipHwSubs[b.id];
+      const open = vipHwOpenId === b.id;
+      const status = sub ? '<span style="font-size:10px;color:#856404;margin-left:6px">已提交，待批改</span>' : '<span style="font-size:10px;color:var(--danger);margin-left:6px">待作答</span>';
+      return `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div style="font-size:11px;font-weight:600;color:var(--text-secondary)">📝 作业${status}</div>
+          <button onclick="vipHwToggle('${b.id}')" style="font-size:11px;background:${open ? 'none' : 'var(--accent)'};color:${open ? 'var(--text-secondary)' : '#fff'};border:1px solid ${open ? 'var(--border)' : 'var(--accent)'};border-radius:3px;padding:5px 12px;cursor:pointer;font-family:inherit">${open ? '收起' : (sub ? '查看作业' : '去作答')}</button>
+        </div>
+        ${open ? `<div id="vip_hw_panel" style="margin-top:8px">${typeof hwVipHtml === 'function' ? hwVipHtml() : '<div style="font-size:11px;color:var(--danger)">作答模块未加载</div>'}</div>` : ''}
+      </div>`;
+    })() : '';
+    const homeworkBlock = structured ? structuredBlock : hasHomework ? `
       <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
         <div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:6px">📝 作业</div>
         <div style="font-size:12px;color:var(--text);background:var(--bg);border-radius:3px;padding:8px 10px;margin-bottom:8px;white-space:pre-wrap">${b.vip_homework}</div>
