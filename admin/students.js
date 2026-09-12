@@ -521,7 +521,7 @@ async function renderProgressPage(mc, focusStudentId=null){
   (allBkPG||[]).forEach(b => {
     if (!b.name || !String(b.target_school||'').trim()) return;
     if (!bkHintMap[b.name]) bkHintMap[b.name] = { schools:new Set(), date:b.slot_date, exam_period:b.exam_period };
-    String(b.target_school).split(/[、,，\/\n]+/).map(x=>x.trim()).filter(Boolean).forEach(x=>bkHintMap[b.name].schools.add(x));
+    String(b.target_school).split(/[、,，\/\n]+/).map(x=>x.trim()).filter(x=>x && /大学|学院/.test(x)).forEach(x=>bkHintMap[b.name].schools.add(x));
   });
   const timelineMap = {};
   allTimeline.forEach(t => {
@@ -646,9 +646,9 @@ async function renderProgressPage(mc, focusStudentId=null){
           ${['No.', '级别', '学校名 · 研究科', '教授', '出愿期间', '该校进度', '过去问', '面试稿', ''].map(h => `<th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border-light);white-space:nowrap">${h}</th>`).join('')}
         </tr></thead>
         <tbody>
-          ${sPlans.map((p, pi) => { const st = schoolStatusLabel(p.status); const lvl = { 1: '🔴 冲刺', 2: '🟡 匹配', 3: '🟢 保底' }; return `<tr style="border-bottom:1px solid var(--border-light)">
+          ${sPlans.map((p, pi) => { const st = schoolStatusLabel(p.status); return `<tr style="border-bottom:1px solid var(--border-light)">
             <td style="padding:6px 8px;color:var(--text-3)">${pi + 1}</td>
-            <td style="padding:6px 8px;white-space:nowrap">${lvl[p.level] || ''}</td>
+            <td style="padding:6px 8px;white-space:nowrap">${schoolLevelHtml(p.level)}</td>
             <td style="padding:6px 8px"><span style="font-weight:600">${p.school_name || ''}</span>${p.faculty ? `<span style="color:var(--text-3);margin-left:4px;font-size:10px">${p.faculty}</span>` : ''}</td>
             <td style="padding:6px 8px;white-space:nowrap">${p.professor || '—'}</td>
             <td style="padding:6px 8px;font-size:10px;color:var(--accent);white-space:nowrap">${p.application_period || '—'}</td>
@@ -1119,7 +1119,6 @@ async function renderSeasonView(mc, students, timelineMap) {
   const allPlans = await sb('/rest/v1/student_school_plans?select=*&order=level.asc').catch(()=>[]);
   const seasonLabel = { summer:'夏季', winter:'冬季', next_year:'次年' };
   const seasonTitle = s => s === 'unknown' ? '出愿时期未定' : `${seasonLabel[s]||s}出愿`;
-  const levelLabel = { 1:'🔴 冲刺', 2:'🟡 匹配', 3:'🟢 保底' };
   const statusLabel = { preparing:'准备中', applied:'已出愿', passed:'✅ 合格', failed:'❌ 不合格' };
 
   // 按季度分组
@@ -1191,7 +1190,7 @@ async function renderSeasonView(mc, students, timelineMap) {
                 const st = schoolStatusLabel(p.status);
                 const flags = ['prof_ok','applied','passed'].includes(p.status)
                   ? ` <span style="color:var(--text-3)">过去问${p.kakomon_started?'✓':'—'}・面试稿${p.interview_draft_done?'✓':'—'}</span>` : '';
-                return `<span style="display:inline-block;background:${p.status==='passed'?'var(--ok-bg)':(isSchoolFailed(p.status)||p.status==='prof_ng')?'#fdecea':'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px;margin:2px;font-size:10px">${p.student_name} <span style="color:var(--text-3)">${levelLabel[p.level]||''}</span> · <span style="color:${st.c};font-weight:600">${st.t}</span>${flags}</span>`;
+                return `<span style="display:inline-block;background:${p.status==='passed'?'var(--ok-bg)':(isSchoolFailed(p.status)||p.status==='prof_ng')?'#fdecea':'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px;margin:2px;font-size:10px">${p.student_name} ${schoolLevelHtml(p.level)} · <span style="color:${st.c};font-weight:600">${st.t}</span>${flags}</span>`;
               }).join('');
               const firstPlan = plans[0];
               return `<tr style="border-bottom:1px solid var(--border-light)">
@@ -1352,7 +1351,7 @@ async function spNoteDel(id, sid, sname) {
 }
 
 // ══ 志望校录入 / 编辑 / 删除（admin 侧；与学生端、老师端同一张表） ══
-const SP_LEVELS = [[1,'🔴 冲刺'],[2,'🟡 匹配'],[3,'🟢 保底']];
+const SP_LEVELS = [[1,'冲刺'],[2,'匹配'],[3,'保底']];
 
 function spSchoolForm(title, p, onSaveJs) {
   const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
