@@ -2442,7 +2442,7 @@ function openAdmissionEntry(data){
       <div style="font-family:'Noto Serif SC',serif;font-size:1.05rem;font-weight:600">📝 录入合格实绩</div>
       <button onclick="document.getElementById('admissionEntryOverlay').style.display='none'" class="btn btn-outline btn-sm">取消</button>
     </div>
-    <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">已从考学进度预填，可补充/修改后保存到合格数据库。</div>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">大学/研究科/专攻/学生名已从考学进度预填；日语/英语成绩已按学生档案原文带入（不是猜的，如需修改请去档案改）。</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">大学名 *</label><input id="ae_univ" value="${stEsc(data.school)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
       <div><label style="font-size:9px;color:var(--text-3)">研究科</label><input id="ae_dept" value="${stEsc(data.faculty)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
@@ -2453,7 +2453,9 @@ function openAdmissionEntry(data){
           ${[['shakai','社会学'],['fukushi','社会福祉'],['shinpan','新聞伝播'],['keizai','経済学'],['keiei','経営学'],['kyoiku','教育学'],['other','その他']].map(([v,l])=>`<option value="${v}" ${guessSubj===v?'selected':''}>${l}</option>`).join('')}
         </select></div>
       <div><label style="font-size:9px;color:var(--text-3)">入学年份 *</label><input id="ae_enroll" value="${stEsc((data.enroll||'').match(/\d{4}/)?.[0]||'')}" placeholder="如 2027" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
-      <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">备注（成绩等，已带入）</label><input id="ae_note" value="${stEsc([data.jp?'日语'+data.jp:'',data.en?'英语'+data.en:''].filter(Boolean).join(' '))}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
+      <div><label style="font-size:9px;color:var(--text-3)">日语成绩<span style="color:var(--text-3);font-weight:400">（按学生档案原文带入）</span></label><input id="ae_jp" value="${stEsc(data.jp)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
+      <div><label style="font-size:9px;color:var(--text-3)">英语成绩<span style="color:var(--text-3);font-weight:400">（按学生档案原文带入）</span></label><input id="ae_en" value="${stEsc(data.en)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
+      <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">备注（自由填写，如：该项目为研究生・非修士）</label><textarea id="ae_note" rows="2" placeholder="与语言成绩无关的补充说明" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px;font-family:inherit;resize:vertical"></textarea></div>
       <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">合格通知书照片（可选）</label><input type="file" id="ae_photo" accept="image/*" style="width:100%;font-size:11px"></div>
     </div>
     <div style="display:flex;gap:8px;margin-top:16px">
@@ -2464,24 +2466,42 @@ function openAdmissionEntry(data){
 async function saveAdmissionEntry(){
   const g=id=>(document.getElementById(id)||{}).value||'';
   const univ=g('ae_univ').trim();
+  const student=g('ae_student').trim();
+  const jpVal=g('ae_jp').trim(), enVal=g('ae_en').trim();
   if(!univ){ alert('请填大学名'); return; }
   const btn=document.getElementById('ae_save_btn'); if(btn){ btn.textContent='保存中…'; btn.disabled=true; }
   try{
+    // 防重复录入：姓名 + 大学名 一致，且日语/英语成绩任一项也一致 → 视为疑似重复
+    if(student){
+      try{
+        const dupRes=await fetch(`${SB_URL}/rest/v1/admission_results?student=ilike.${encodeURIComponent(student)}&univ=ilike.${encodeURIComponent(univ)}&select=*`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
+        const cands=dupRes.ok?await dupRes.json():[];
+        const dup=cands.find(r=>(jpVal&&String(r.japanese_score||'').trim()===jpVal)||(enVal&&String(r.english_score||'').trim()===enVal));
+        if(dup){
+          const ok=confirm(`检测到疑似重复记录：\n\n${dup.student||''} · ${dup.univ||''}${dup.dept?(' · '+dup.dept):''}${dup.spec?('/'+dup.spec):''}\n日语成绩：${dup.japanese_score||'—'}　英语成绩：${dup.english_score||'—'}\n录入于 ${(dup.created_at||'').slice(0,10)}\n\n仍要继续录入这条新记录吗？`);
+          if(!ok){ if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} return; }
+        }
+      }catch(e){ /* 查重失败不阻塞录入，仅跳过提示 */ }
+    }
     let note=g('ae_note').trim();
-    // 上传图片（文件名纯安全字符）
+    let photoUrl='';
+    // 上传图片（文件名纯安全字符），存入独立的 photo_url 字段，不再混进备注
     const file=document.getElementById('ae_photo')?.files?.[0];
     if(file){
       let ext=(file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,''); if(!ext||ext.length>5)ext='jpg';
       const path='grad/'+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'.'+ext;
       const up=await fetch(`${SB_URL}/storage/v1/object/admission-photos/${path}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':file.type,'x-upsert':'true'},body:file});
-      if(up.ok){ note=(note?note+' | ':'')+'[photo]'+`${SB_URL}/storage/v1/object/public/admission-photos/${path}`; }
+      if(up.ok){ photoUrl=`${SB_URL}/storage/v1/object/public/admission-photos/${path}`; }
       else { const e=await up.text(); if(!confirm('图片上传失败：'+e+'\n\n仍要保存合格数据（不含图片）吗？')){ if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} return; } }
     }
     const enrollYear=parseInt(g('ae_enroll'),10);
     if(!enrollYear){ alert('请填入学年份（如 2027）'); if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} return; }
     // 入学年份 >=2026 算新数据(new)，否则旧数据(hist)——与合格实绩展示口径一致
     const era = enrollYear>=2026 ? 'new' : 'hist';
-    const row={ univ, dept:g('ae_dept').trim()||null, spec:g('ae_spec').trim()||null, student:g('ae_student').trim()||null, subject:g('ae_subject'), era, note:note||null };
+    const row={
+      univ, dept:g('ae_dept').trim()||null, spec:g('ae_spec').trim()||null, student:student||null, subject:g('ae_subject'), era,
+      japanese_score: jpVal||null, english_score: enVal||null, note:note||null, photo_url: photoUrl||null,
+    };
     const res=await fetch(`${SB_URL}/rest/v1/admission_results`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify(row)});
     if(!res.ok){ throw new Error(await res.text()); }
     document.getElementById('admissionEntryOverlay').style.display='none';
