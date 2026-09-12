@@ -1096,11 +1096,13 @@ function renderMySchedule(mc) {
     }));
   const allSessions = [...confirmedSessions, ...vipSessions];
 
-  if (!allSessions.length) { mc.innerHTML = '<div class="empty">暂无已确定的课程<br><span style="font-size:11px">排课确认后这里会显示您的完整课表</span></div>'; return; }
+  // 即使暂无已排/已确认课次，也照常展示课表（空日历 / 空列表），不再整页隐藏日历
   if (!myScheduleCalMonth) {
-    const today = new Date().toISOString().slice(0,7);
-    const future = allSessions.filter(s => s.session_date >= today);
-    myScheduleCalMonth = (future.length ? future.sort((a,b)=>a.session_date.localeCompare(b.session_date))[0].session_date : allSessions[0].session_date).slice(0,7);
+    const todayM = new Date().toISOString().slice(0,7);
+    const future = allSessions.filter(s => s.session_date >= todayM);
+    myScheduleCalMonth = future.length
+      ? future.sort((a,b)=>a.session_date.localeCompare(b.session_date))[0].session_date.slice(0,7)
+      : (allSessions.length ? allSessions[0].session_date.slice(0,7) : todayM);
   }
   const monthNames = { '01': '一月', '02': '二月', '03': '三月', '04': '四月', '05': '五月', '06': '六月', '07': '七月', '08': '八月', '09': '九月', '10': '十月', '11': '十一月', '12': '十二月' };
 
