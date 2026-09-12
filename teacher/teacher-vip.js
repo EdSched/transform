@@ -30,6 +30,38 @@ const VIP_CAT_ORDER = [
 const VIP_CAT_RANK = {}; VIP_CAT_ORDER.forEach(([k], i) => { VIP_CAT_RANK[k] = i; });
 function vipCatRank(key) { return VIP_CAT_RANK[key] != null ? VIP_CAT_RANK[key] : 99; }
 
+// ── 每回课的结构化作业（复用 shared/hw-core.js，与大课/VIP上课记录同一套）──
+function tvHasHw(it) {
+  const q = it && it.homework_questions;
+  return !!(q && Array.isArray(q.levels) && q.levels.length);
+}
+function tvOpenHwEditor(itemId) {
+  if (typeof HWC === 'undefined' || !HWC.openEditor) { alert('作业模块未加载，请刷新页面后重试'); return; }
+  const it = tvItems.find(x => x.id === itemId);
+  if (!it) return;
+  HWC.openEditor({
+    title: '布置作业', subtitle: 'VIP框架 · ' + (it.category_label || '') + ' · ' + (it.name || ''),
+    questions: it.homework_questions, note: it.homework_note, storageDir: 'vffw-' + itemId,
+    onSave: async (payload, note) => {
+      it.homework_questions = payload; it.homework_note = note || '';
+      renderTvEditor(document.getElementById('mainContent'));
+    },
+  });
+}
+function tspOpenHwEditor(i) {
+  if (typeof HWC === 'undefined' || !HWC.openEditor) { alert('作业模块未加载，请刷新页面后重试'); return; }
+  const it = tspItems[i];
+  if (!it) return;
+  HWC.openEditor({
+    title: '布置作业', subtitle: 'VIP排课 · ' + (it.category_label || '') + ' · ' + (it.name || ''),
+    questions: it.homework_questions, note: it.homework_note, storageDir: 'vipplan-' + (tspPlan ? tspPlan.id : 'x') + '-' + i,
+    onSave: async (payload, note) => {
+      it.homework_questions = payload; it.homework_note = note || '';
+      renderTspEditor(document.getElementById('mainContent'));
+    },
+  });
+}
+
 // teacher.js 的 init 会调用它（若存在）
 async function loadTeacherVipFrameworks() {
   if (!teacherName) { teacherVipFrameworks = []; teacherVipPlans = []; return; }
@@ -178,7 +210,10 @@ function renderTvEditor(mc) {
       <div style="border-top:1px solid var(--border-light);padding:8px 10px;display:grid;grid-template-columns:1.1fr 2fr 1.4fr 64px 28px;gap:8px;align-items:start">
         <input value="${tvEsc(it.name)}" placeholder="课程名" onchange="tvEditItem('${it.id}','name',this.value)" style="font-size:11px;font-weight:500">
         <textarea onchange="tvEditItem('${it.id}','content',this.value)" placeholder="内容说明（请按您实际授课补充）" style="font-size:11px;resize:vertical;min-height:34px;line-height:1.5">${tvEsc(it.content)}</textarea>
-        <input value="${tvEsc(it.homework)}" placeholder="课后作业" onchange="tvEditItem('${it.id}','homework',this.value)" style="font-size:11px">
+        <div>
+          <input value="${tvEsc(it.homework)}" placeholder="课后作业（一句话说明）" onchange="tvEditItem('${it.id}','homework',this.value)" style="font-size:11px;width:100%;box-sizing:border-box">
+          <button onclick="tvOpenHwEditor('${it.id}')" style="margin-top:3px;font-size:9px;background:none;border:1px solid ${tvHasHw(it) ? 'var(--accent)' : 'var(--border)'};color:${tvHasHw(it) ? 'var(--accent)' : 'var(--text-3)'};border-radius:3px;padding:1px 8px;cursor:pointer;font-family:inherit">${tvHasHw(it) ? '📝 已设作业（编辑）' : '📝 设置作业'}</button>
+        </div>
         <input type="number" step="0.5" min="0" value="${it.default_hours != null ? it.default_hours : 2}" onchange="tvEditItem('${it.id}','default_hours',this.value)" style="font-size:11px;text-align:center" title="课时">
         <button onclick="tvRemoveItem('${it.id}')" title="删除此条" style="background:none;border:1px solid var(--border);border-radius:3px;color:var(--text-3);cursor:pointer;font-size:12px;height:28px">×</button>
       </div>`).join('') || '<div style="padding:8px 10px;font-size:11px;color:var(--text-3);border-top:1px solid var(--border-light)">该分类暂无条目</div>';
@@ -269,6 +304,7 @@ async function saveTvFramework(silent) {
     for (const it of existing) {
       await sb(`/rest/v1/vip_framework_items?id=eq.${it.id}`, 'PATCH', {
         name: it.name, content: it.content, homework: it.homework,
+        homework_questions: it.homework_questions || null, homework_note: it.homework_note || null,
         default_hours: it.default_hours, sort_order: it.sort_order, filled: it.filled || false,
       });
     }
@@ -449,7 +485,13 @@ function renderTspEditor(mc) {
         <div style="margin-bottom:3px"><span style="border-radius:2px;padding:1px 6px;font-size:9px;background:${col.bg};color:${col.color}">${tvEsc(it.category_label || '')}</span>${done ? '<span style="font-size:9px;color:#1a7a3a;margin-left:6px">✓ 已上</span>' : ''}</div>
         <input value="${tvEsc(it.name)}" onchange="tspEdit(${i},'name',this.value)" style="font-size:11px;font-weight:500;width:100%"${done ? ' disabled' : ''}>
       </div>
-      <textarea onchange="tspEdit(${i},'content',this.value)" placeholder="内容" style="font-size:11px;resize:vertical;min-height:34px;line-height:1.5"${done ? ' disabled' : ''}>${tvEsc(it.content)}</textarea>
+      <div>
+        <textarea onchange="tspEdit(${i},'content',this.value)" placeholder="内容" style="font-size:11px;resize:vertical;min-height:34px;line-height:1.5;width:100%;box-sizing:border-box"${done ? ' disabled' : ''}>${tvEsc(it.content)}</textarea>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px;flex-wrap:wrap">
+          <input value="${tvEsc(it.homework || '')}" onchange="tspEdit(${i},'homework',this.value)" placeholder="课后作业（一句话）" style="font-size:10px;flex:1;min-width:110px"${done ? ' disabled' : ''}>
+          <button onclick="tspOpenHwEditor(${i})" style="font-size:9px;background:none;border:1px solid ${tvHasHw(it) ? 'var(--accent)' : 'var(--border)'};color:${tvHasHw(it) ? 'var(--accent)' : 'var(--text-3)'};border-radius:3px;padding:1px 8px;cursor:pointer;font-family:inherit;white-space:nowrap">${tvHasHw(it) ? '📝 已设作业' : '📝 设置作业'}</button>
+        </div>
+      </div>
       <input type="number" step="0.5" min="0" value="${it.hours != null ? it.hours : 2}" onchange="tspEdit(${i},'hours',this.value)" style="font-size:11px;text-align:center"${done ? ' disabled' : ''}>
     </div>`;
   }).join('');
@@ -580,7 +622,7 @@ async function tspSave() {
 async function tspSaveAsTemplate() {
   const name = (prompt('套餐名称（如 20H / 30小时）：', (tspPlan.total_hours || '') + 'H') || '').trim();
   if (!name) return;
-  const items = tspItems.map(it => ({ category: it.category, category_label: it.category_label, name: it.name, content: it.content, homework: it.homework, hours: parseFloat(it.hours) || 0 }));
+  const items = tspItems.map(it => ({ category: it.category, category_label: it.category_label, name: it.name, content: it.content, homework: it.homework, homework_questions: it.homework_questions || null, homework_note: it.homework_note || null, hours: parseFloat(it.hours) || 0 }));
   const total = items.reduce((a, it) => a + (it.hours || 0), 0);
   try {
     await sb('/rest/v1/vip_plan_templates', 'POST', [{
