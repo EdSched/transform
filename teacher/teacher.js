@@ -1980,11 +1980,10 @@ let teacherAdbData = [];
 let teacherAdbSortCol = '', teacherAdbSortDir = 1;
 let teacherAdbColFilters = {};
 
-const TEACHER_ADB_MAJORS = {
-  shakai: '社会学', keiei: '経営学', keizai: '経済学',
-  shinpan: '新闻传播学', fukushi: '社会福祉学', nihongo: '日本语教育',
-  hyosho: '表象文化・文学・哲学', seiji: '政治学', toyo: '東洋史',
-  bunka: '文化人类学', mot: 'MOT', tokei: '統計・計量',
+// 统一取 shared/constants.js 的 ADMISSION_MAJORS（唯一数据源）；constants 未更新时兜底
+const TEACHER_ADB_MAJORS = (typeof ADMISSION_MAJORS !== 'undefined') ? ADMISSION_MAJORS : {
+  shakai:'社会学', keiei:'経営学', keizai:'経済学', shinpan:'新闻传播学', fukushi:'社会福祉学', nihongo:'日本语教育',
+  hyosho:'表象文化・文学・哲学', seiji:'政治学', toyo:'東洋史', bunka:'文化人类学', mot:'MOT', tokei:'統計・計量', kyoiku:'教育学',
 };
 
 const TEACHER_ADB_COLS = [
