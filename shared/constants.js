@@ -1050,6 +1050,19 @@ const ADMISSION_MAJORS = {
   seiji:'政治学', toyo:'東洋史', bunka:'文化人类学', mot:'MOT', tokei:'統計・計量',
   kyoiku:'教育学',
 };
+// 出愿专业改由数据库表 admission_majors 维护（有则以表为准，可在出愿数据库页面「＋新增出愿专业」增删）；
+// 表为空/加载失败时退回上面的内置清单。各页面 init 里调用一次即可。
+let admissionMajorsLoaded = false;
+async function loadAdmissionMajorsFromDB() {
+  try {
+    const rows = await sb('/rest/v1/admission_majors?select=key,label,domain&order=sort_order.asc,label.asc');
+    if (rows && rows.length) {
+      Object.keys(ADMISSION_MAJORS).forEach(k => delete ADMISSION_MAJORS[k]);
+      rows.forEach(r => { if (r.key && r.label) { ADMISSION_MAJORS[r.key] = r.label; if (r.domain) MAJOR_DOMAIN[r.key] = r.domain; } });
+    }
+    admissionMajorsLoaded = true;
+  } catch (e) { /* 加载失败保留内置清单 */ }
+}
 const SCHOOL_LEVEL_META = { 1:{t:'冲刺',c:'#c0392b'}, 2:{t:'匹配',c:'#b8860b'}, 3:{t:'保底',c:'#2a7a3a'} };
 function schoolLevelHtml(lv){ const m=SCHOOL_LEVEL_META[lv]; return m ? `<span style="color:${m.c};font-weight:600">${m.t}</span>` : ''; }
 function isSchoolFailed(v) { return SCHOOL_FAILED_STATUSES.includes(v); }
