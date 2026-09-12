@@ -262,7 +262,7 @@ function tpRenderProgressList() {
                 <td style="padding:5px 8px;font-size:10px;color:var(--accent);white-space:nowrap">${tsaEsc(p.application_period)||'—'}</td>
                 <td style="padding:5px 8px">
                   <select onchange="tpPlanSet('${p.id}','status',this.value,this)" onclick="event.stopPropagation()" style="font-size:10px;padding:2px 4px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;color:${st.c};font-weight:600">
-                    ${Object.entries(SCHOOL_STATUS_LABELS).filter(([k])=>k!=='failed'||p.status==='failed').map(([k,v])=>`<option value="${k}" ${p.status===k?'selected':''}>${v.t}</option>`).join('')}
+                    ${Object.entries(SCHOOL_STATUS_LABELS).map(([k,v])=>`<option value="${k}" ${p.status===k?'selected':''}>${v.t}</option>`).join('')}
                   </select>
                 </td>
                 <td style="padding:5px 8px"><button onclick="event.stopPropagation();tpPlanFlag('${p.id}','kakomon_started',this)" data-on="${p.kakomon_started?'1':'0'}" style="font-size:10px;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;border:1px solid ${p.kakomon_started?'var(--ok)':'var(--border)'};background:${p.kakomon_started?'var(--ok-bg)':'var(--bg)'};color:${p.kakomon_started?'var(--ok)':'var(--text-3)'}">${p.kakomon_started?'✓ 已开始':'未开始'}</button></td>
@@ -1226,7 +1226,7 @@ async function tseSave(sid) {
 function tpAddSchool(sid, sname, major) {
   const ex = document.getElementById('tpSchoolModal'); if (ex) ex.remove();
   const statusOpts = (typeof SCHOOL_STATUS_LABELS !== 'undefined')
-    ? Object.entries(SCHOOL_STATUS_LABELS).filter(([k]) => k !== 'failed').map(([k, v]) => `<option value="${k}">${v.t}</option>`).join('')
+    ? Object.entries(SCHOOL_STATUS_LABELS).filter(([k]) => !(typeof SCHOOL_FAILED_STATUSES !== 'undefined' && SCHOOL_FAILED_STATUSES.includes(k))).map(([k, v]) => `<option value="${k}">${v.t}</option>`).join('')
     : '<option value="preparing">准备中</option>';
   const m = document.createElement('div');
   m.id = 'tpSchoolModal';
