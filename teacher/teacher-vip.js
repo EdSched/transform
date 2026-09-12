@@ -5,6 +5,7 @@
 let teacherVipFrameworks = [];   // 分享给本老师的框架列表
 let teacherVipPlans = [];        // 待本老师确认的学生方案（场景2）
 let teacherVipMyPlans = [];      // 已确认/签约、指导老师是本人的 VIP 学生方案
+let teacherVipAssignedStudents = []; // admin 在学生档案里指定「VIP指导老师」含本人的学生（students.vip_teachers）
 let tspPlan = null;              // 当前编辑的学生方案
 let tspItems = [];               // 工作副本
 let tspStudent = null;           // 关联学生（取课时上限）
@@ -44,6 +45,10 @@ async function loadTeacherVipFrameworks() {
   teacherVipMyPlans = await sb(
     `/rest/v1/vip_student_plans?assigned_teachers=cs.{"${teacherName}"}&status=in.("signed","confirmed")&select=*&order=created_at.desc`
   ).catch(() => []);
+  // admin 在学生档案里把本老师设为「VIP指导老师」的学生（即便还没有营业下发的 VIP 方案，也应在此可见）
+  teacherVipAssignedStudents = await sb(
+    `/rest/v1/students?vip_teachers=cs.{"${teacherName}"}&select=id,name,major,is_vip_course,vip_hours_total,vip_hours_used&order=name.asc`
+  ).catch(() => []);
 }
 
 const TV_STATUS_LABEL = { shared: '待补充', done: '已完成' };
@@ -56,19 +61,33 @@ function renderTeacherVipFrameworks(mc) {
   const hasPlans = teacherVipPlans.length;
   const hasMine = teacherVipMyPlans.length;
   const hasVipBk = (typeof cachedTeacherBookings !== 'undefined') && cachedTeacherBookings.some(b => b.type === 'vip');
-  if (!hasFw && !hasPlans && !hasMine && !hasVipBk) {
+  // 学生档案里指派给本老师、但尚无课程方案的 VIP 学生（按姓名去重，已有方案的不重复列）
+  const _myPlanNames = new Set(teacherVipMyPlans.map(p => p.student_name));
+  const assignedOnly = (teacherVipAssignedStudents || []).filter(s => !_myPlanNames.has(s.name));
+  const hasAssigned = assignedOnly.length;
+  if (!hasFw && !hasPlans && !hasMine && !hasVipBk && !hasAssigned) {
     mc.innerHTML = '<div class="empty">暂无需要处理的 VIP 事项<br><span style="font-size:11px">收到 VIP 预约、指导的 VIP 学生或课程框架后，会在这里出现</span></div>';
     return;
   }
 
-  const mineBody = hasMine ? `<div style="display:flex;flex-direction:column;gap:8px">${teacherVipMyPlans.map(p => {
+  const assignedBody = hasAssigned ? `
+      <div style="font-size:12px;font-weight:600;color:#8a6d3b;margin-bottom:8px">已分配给你的 VIP 学生 <span style="font-size:10px;color:var(--text-3);font-weight:400">教务已指派，营业下发方案后即可排课</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px">${assignedOnly.map(s => {
+        const used = parseFloat(s.vip_hours_used) || 0, tot = parseFloat(s.vip_hours_total) || 0;
+        return `<div style="border:1px solid var(--border);border-radius:5px;padding:12px 14px;background:var(--surface);display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div style="min-width:0"><div style="font-size:13px;font-weight:600">${tvEsc(s.name)}<span style="font-size:10px;color:var(--text-3);font-weight:400;margin-left:8px">${tvEsc(majorLabel(s.major))}${tot ? ` · 已用 ${used}/${tot} 课时` : ''}</span></div><div style="font-size:10px;color:var(--text-3);margin-top:2px">${tvEsc(s.is_vip_course || 'VIP')}</div></div>
+          <span style="flex-shrink:0;font-size:10px;padding:2px 10px;border-radius:3px;background:#faf0dc;color:#8a6d3b">待方案</span>
+        </div>`;
+      }).join('')}</div>` : '';
+  const mineListHtml = hasMine ? `<div style="display:flex;flex-direction:column;gap:8px">${teacherVipMyPlans.map(p => {
         const done = (Array.isArray(p.items) ? p.items : []).filter(it => it.planned_date).length;
         const total = (Array.isArray(p.items) ? p.items : []).length;
         return `<div onclick="openTspEditor('${p.id}')" style="cursor:pointer;border:1px solid var(--border);border-radius:5px;padding:12px 14px;background:var(--surface);display:flex;align-items:center;justify-content:space-between;gap:12px" onmouseover="this.style.borderColor='var(--text-2)'" onmouseout="this.style.borderColor='var(--border)'">
           <div><div style="font-size:13px;font-weight:600">${tvEsc(p.student_name)}<span style="font-size:10px;color:var(--text-3);font-weight:400;margin-left:8px">${tvEsc(majorLabel(p.major))} · ${p.total_sessions || 0}回/${p.total_hours || 0}课时</span></div>${p.start_date ? `<div style="font-size:10px;color:var(--text-3);margin-top:2px">已排期 ${done}/${total} · 起始 ${tvEsc(p.start_date)}</div>` : '<div style="font-size:10px;color:#8a6d3b;margin-top:2px">尚未排期</div>'}</div>
           <span style="font-size:11px;color:#1a3a6a">排课 ›</span>
         </div>`;
-      }).join('')}</div>` : '<div style="font-size:12px;color:var(--text-3);padding:16px 0">暂无你指导的 VIP 学生</div>';
+      }).join('')}</div>` : '';
+  const mineBody = (assignedBody + mineListHtml) || '<div style="font-size:12px;color:var(--text-3);padding:16px 0">暂无你指导的 VIP 学生</div>';
 
   const plansHtml = hasPlans ? `
     <div style="margin-bottom:22px">
@@ -115,7 +134,7 @@ function renderTeacherVipFrameworks(mc) {
     </div>
     <div style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px">
       ${tab('booking', '预约', pendingVipBk)}
-      ${tab('students', '学生进度')}
+      ${tab('students', '学生进度', (teacherVipMyPlans.length + assignedOnly.length) || 0)}
       ${tab('framework', 'VIP框架', fwCount)}
     </div>
     ${body}
