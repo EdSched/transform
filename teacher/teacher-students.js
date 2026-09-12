@@ -237,7 +237,7 @@ function tpRenderProgressList() {
             ${tDraftSummaryHtml(draft)}
             ${draft.draft_file_url?`<a href="${draft.draft_file_url}" target="_blank" style="font-size:10px;color:var(--accent)">📎 草稿文件</a>`:''}
             <button onclick="openTeacherDraftComment('${s.id}','${s.name}')" style="margin-top:6px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;display:block">
-              ${draft.teacher_comment?'查看全文・修改批注':'查看全文・添加批注'}
+              ${draft.teacher_comment?'查看・评估计划书/先行研究':'查看・评估计划书/先行研究'}
             </button>
             ` : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写</div>'}
           </div>
@@ -301,40 +301,139 @@ function toggleTeacherProgressCard(id) {
   if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
+// ══ 老师侧：计划书 / 先行研究 查看・评估 ══
+// 老师标注存 student_plan_drafts.teacher_ref_notes（与学生自填的 prior_research_list 分离，互不覆盖）
+const T_REF_TAG_LIB = [
+  ['重要度', ['核心文献', '重要参考', '一般参考']],
+  ['研究方法', ['量的研究', '质的研究', '理论研究', '个案研究', '比较研究']],
+  ['阅读建议', ['需精读', '可略读', '仅看结论', '需补充同类文献']],
+];
+let tdcStudentId = null, tdcDraft = null, tdcNotes = {}, tdcTab = 'refs';
+
+function tRefKey(r, i) { return String((r && (r.title || r.keyword)) || '').trim() || ('#' + i); }
+function tParseNotes(draft) {
+  const v = draft && draft.teacher_ref_notes;
+  if (!v) return {};
+  try { return typeof v === 'string' ? JSON.parse(v) : v; } catch (e) { return {}; }
+}
+function tdcNoteOf(key) { return tdcNotes[key] || (tdcNotes[key] = { tags: [], comment: '', rating: '' }); }
+
 function openTeacherDraftComment(studentId, studentName) {
   const draft = teacherProgressData.draftsMap?.[studentId];
   if (!draft) return;
+  tdcStudentId = studentId; tdcDraft = draft; tdcNotes = tParseNotes(draft); tdcTab = 'refs';
   const existing = document.getElementById('teacherDraftCommentModal');
   if (existing) existing.remove();
   const modal = document.createElement('div');
   modal.id = 'teacherDraftCommentModal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  modal.innerHTML = `
-    <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:420px;width:100%">
-      <div style="font-size:13px;font-weight:600;margin-bottom:10px">📝 计划书批注 · ${studentName}</div>
-      <div style="background:var(--bg);border-radius:3px;padding:10px;font-size:11px;color:var(--text-2);margin-bottom:12px;line-height:1.8;max-height:45vh;overflow-y:auto">
-        ${tDraftFullHtml(draft)}
-        ${draft.draft_file_url?`<a href="${draft.draft_file_url}" target="_blank" style="color:var(--accent)">📎 草稿文件</a>`:''}
+  modal.innerHTML = '<div id="tdcBody" style="background:var(--surface);border-radius:6px;padding:20px;max-width:760px;width:100%;max-height:90vh;overflow-y:auto"></div>';
+  document.body.appendChild(modal);
+  tdcRender(studentName);
+}
+
+function tdcRender(studentName) {
+  const box = document.getElementById('tdcBody');
+  if (!box) return;
+  const draft = tdcDraft;
+  const refs = tDraftRefs(draft);
+  const tab = (id, label, n) => `<button onclick="tdcTab='${id}';tdcRender('${tsaEsc(studentName)}')" style="font-size:12px;padding:6px 16px;border:none;border-bottom:2px solid ${tdcTab === id ? 'var(--accent)' : 'transparent'};background:none;cursor:pointer;font-family:inherit;color:${tdcTab === id ? 'var(--text)' : 'var(--text-3)'};font-weight:${tdcTab === id ? '600' : '400'}">${label}${n ? ` <span style="font-size:10px;color:var(--text-3)">${n}</span>` : ''}</button>`;
+
+  const refsHtml = refs.length ? refs.map((r, i) => {
+    const key = tRefKey(r, i);
+    const n = tdcNotes[key] || { tags: [], comment: '', rating: '' };
+    const info = Object.entries(r).filter(([k, v]) => v).map(([k, v]) => `<span style="color:var(--text-3)">${T_REF_LABELS[k] || k}：</span>${tsaEsc(v)}`).join('　');
+    return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:9px 11px;margin-bottom:7px;background:var(--bg)">
+      <div style="font-size:11px;line-height:1.9;margin-bottom:6px">${i + 1}. ${info}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:5px">
+        ${T_REF_TAG_LIB.map(([grp, tags]) => `<span style="font-size:9px;color:var(--text-3)">${grp}</span>` + tags.map(t => `<span onclick="tdcToggleTag('${tsaEsc(key)}','${tsaEsc(t)}','${tsaEsc(studentName)}')" style="cursor:pointer;font-size:10px;border:1px solid ${(n.tags || []).includes(t) ? 'var(--accent)' : 'var(--border)'};background:${(n.tags || []).includes(t) ? 'var(--accent)' : 'transparent'};color:${(n.tags || []).includes(t) ? '#fff' : 'var(--text-2)'};border-radius:2px;padding:1px 8px">${t}</span>`).join('')).join('')}
       </div>
-      <div class="form-group">
-        <label class="form-label">批注内容</label>
-        <textarea id="tdc_comment" rows="4" placeholder="针对计划书内容的反馈和建议…">${draft.teacher_comment||''}</textarea>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button onclick="saveTeacherDraftComment('${draft.id}','${studentId}')" style="flex:1;background:var(--ok);color:#fff;border:none;border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">保存批注</button>
-        <button onclick="document.getElementById('teacherDraftCommentModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:10px 14px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
+      ${(n.tags || []).filter(t => !T_REF_TAG_LIB.some(([, ts]) => ts.includes(t))).length ? `<div style="margin-bottom:5px">${(n.tags || []).filter(t => !T_REF_TAG_LIB.some(([, ts]) => ts.includes(t))).map(t => `<span style="font-size:10px;background:var(--accent);color:#fff;border-radius:2px;padding:1px 8px;margin-right:4px">${tsaEsc(t)}<span onclick="tdcToggleTag('${tsaEsc(key)}','${tsaEsc(t)}','${tsaEsc(studentName)}')" style="cursor:pointer;margin-left:5px">✕</span></span>`).join('')}</div>` : ''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <input id="tdc_newtag_${i}" placeholder="自定义关键词" style="font-size:10px;padding:3px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface);width:130px">
+        <button onclick="tdcAddTag('${tsaEsc(key)}',${i},'${tsaEsc(studentName)}')" style="font-size:10px;border:1px solid var(--border);background:none;border-radius:2px;padding:3px 9px;cursor:pointer;font-family:inherit">＋ 添加</button>
+        <input value="${tsaEsc(n.comment || '')}" onchange="tdcSetComment('${tsaEsc(key)}',this.value)" placeholder="对该文献的评语（可选）" style="flex:1;min-width:160px;font-size:10px;padding:3px 7px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
       </div>
     </div>`;
-  document.body.appendChild(modal);
+  }).join('') : '<div style="font-size:11px;color:var(--text-3);padding:10px 0">学生尚未整理先行研究</div>';
+
+  box.innerHTML = `
+    <div style="font-size:13px;font-weight:600;margin-bottom:3px">📄 计划书 · 先行研究　—　${tsaEsc(studentName)}</div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">关键词与评语会同步显示给学生；学生自己的文献列表不会被覆盖</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      ${draft.draft_file_url ? `<a href="${draft.draft_file_url}" target="_blank" style="font-size:11px;background:var(--accent);color:#fff;border-radius:3px;padding:6px 14px;text-decoration:none">⬇ 下载完成稿</a>` : '<span style="font-size:11px;color:var(--text-3)">学生尚未上传完成稿</span>'}
+      ${refs.length ? `<button onclick="tdcExportRefs('${tsaEsc(studentName)}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">⬇ 导出先行研究(CSV)</button>` : ''}
+    </div>
+    <div style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:12px">
+      ${tab('refs', '先行研究', refs.length)}
+      ${tab('draft', '计划书全文')}
+    </div>
+    ${tdcTab === 'refs' ? refsHtml : `<div style="background:var(--bg);border-radius:3px;padding:12px;font-size:11px;color:var(--text-2);line-height:1.9;max-height:46vh;overflow-y:auto">${tDraftFullHtml(draft)}</div>`}
+    <div class="form-group" style="margin-top:12px">
+      <label class="form-label">整体批注（针对计划书）</label>
+      <textarea id="tdc_comment" rows="3" placeholder="针对计划书内容的反馈和建议…">${tsaEsc(draft.teacher_comment || '')}</textarea>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="saveTeacherDraftComment('${draft.id}','${tdcStudentId}')" style="flex:1;background:var(--ok);color:#fff;border:none;border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">保存批注与标注</button>
+      <button onclick="document.getElementById('teacherDraftCommentModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:10px 14px;font-size:12px;cursor:pointer;font-family:inherit">关闭</button>
+    </div>`;
+}
+
+function tdcToggleTag(key, tag, studentName) {
+  const n = tdcNoteOf(key);
+  n.tags = n.tags || [];
+  const i = n.tags.indexOf(tag);
+  if (i >= 0) n.tags.splice(i, 1); else n.tags.push(tag);
+  tdcRender(studentName);
+}
+function tdcAddTag(key, idx, studentName) {
+  const el = document.getElementById('tdc_newtag_' + idx);
+  const v = el ? el.value.trim() : '';
+  if (!v) return;
+  const n = tdcNoteOf(key);
+  n.tags = n.tags || [];
+  if (!n.tags.includes(v)) n.tags.push(v);
+  tdcRender(studentName);
+}
+function tdcSetComment(key, v) { tdcNoteOf(key).comment = v; }
+
+// 先行研究导出 CSV（含老师标注），Excel 可直接打开
+function tdcExportRefs(studentName) {
+  const refs = tDraftRefs(tdcDraft);
+  if (!refs.length) return;
+  const cols = [...new Set(refs.flatMap(r => Object.keys(r)))];
+  const head = [...cols.map(c => T_REF_LABELS[c] || c), '老师关键词', '老师评语'];
+  const esc = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const rows = refs.map((r, i) => {
+    const n = tdcNotes[tRefKey(r, i)] || {};
+    return [...cols.map(c => r[c] || ''), (n.tags || []).join('、'), n.comment || ''].map(esc).join(',');
+  });
+  const csv = '\ufeff' + [head.map(esc).join(','), ...rows].join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `${studentName}_先行研究整理.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
 }
 
 async function saveTeacherDraftComment(draftId, studentId) {
-  const comment = document.getElementById('tdc_comment').value.trim();
-  if (!comment) { alert('请填写批注内容'); return; }
+  const comment = (document.getElementById('tdc_comment')?.value || '').trim();
+  // 清掉空标注，避免存一堆空对象
+  const notes = {};
+  Object.entries(tdcNotes || {}).forEach(([k, v]) => {
+    if (v && ((v.tags || []).length || (v.comment || '').trim() || (v.rating || '').trim())) notes[k] = v;
+  });
+  if (!comment && !Object.keys(notes).length) { alert('请填写批注内容，或为文献添加关键词/评语'); return; }
   try {
-    await sb(`/rest/v1/student_plan_drafts?id=eq.${draftId}`, 'PATCH', { teacher_comment: comment, updated_at: new Date().toISOString() });
+    const patch = {
+      teacher_comment: comment, teacher_ref_notes: notes,
+      teacher_comment_by: (typeof teacherName !== 'undefined' ? teacherName : null),
+      teacher_comment_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    await sb(`/rest/v1/student_plan_drafts?id=eq.${draftId}`, 'PATCH', patch);
     if (teacherProgressData.draftsMap?.[studentId]) {
-      teacherProgressData.draftsMap[studentId].teacher_comment = comment;
+      Object.assign(teacherProgressData.draftsMap[studentId], patch);
     }
     document.getElementById('teacherDraftCommentModal').remove();
     renderTeacherStudyProgress(document.getElementById('sm_content')||document.getElementById('mainContent'));
