@@ -1214,9 +1214,30 @@ function vipPlanPickRowsHtml() {
   }).join('');
 }
 
+// —— VIP 结构化作业（复用大课 HWC 编辑器）——
+let vipHwEditQ = null;      // 暂存的 homework_questions（保存上课记录时一并写入 booking）
+let vipHwEditNote = '';
+function vipHwStatusText() {
+  const q = vipHwEditQ;
+  if (q && Array.isArray(q.levels) && q.levels.length) {
+    const nb = q.levels.reduce((n, L) => n + (L.blocks || []).length, 0);
+    return `✅ 已设置（${q.levels.length} 级 · ${nb} 个题型区块）`;
+  }
+  return '未设置（点击「设置作业」创建，可逐题作答/拍照）';
+}
+function openVipHwEditor(bookingId) {
+  if (typeof HWC === 'undefined' || !HWC.openEditor) { alert('作业模块未加载，请刷新页面后重试'); return; }
+  const b = cachedTeacherBookings.find(x => x.id === bookingId) || {};
+  HWC.openEditor({
+    title: '布置作业', subtitle: 'VIP · ' + (b.name || '') + '　' + (b.slot_date || ''),
+    questions: vipHwEditQ, note: vipHwEditNote, storageDir: 'vipbk-' + bookingId,
+    onSave: async (payload, note) => { vipHwEditQ = payload; vipHwEditNote = note || ''; const el = document.getElementById('vip_hw_status'); if (el) el.textContent = vipHwStatusText(); },
+  });
+}
 async function openVipSessionRecord(bookingId) {
   const b = cachedTeacherBookings.find(x => x.id === bookingId);
   if (!b) return;
+  vipHwEditQ = b.vip_homework_questions || null; vipHwEditNote = b.vip_homework_note || '';
   const slot = cachedTeacherSlots.find(x => x.id === b.slot_id);
   // 查该学生的 VIP 规划（签约/已确认），把规划课程带出来供点选
   vipRecordPlanItems = [];
@@ -1282,8 +1303,11 @@ async function openVipSessionRecord(bookingId) {
         <div id="vip_status_tags" style="display:flex;flex-wrap:wrap;gap:6px">${vipStatusRowsHtml()}</div>
         <input id="vip_status_note" value="${vipRecEsc(vipStatusFree)}" placeholder="其他补充（可选）" style="font-size:11px;margin-top:8px;width:100%">
       </div>
-      <div class="form-group"><label class="form-label">布置作业（学生将在VIP页面看到并提交）</label>
-        <textarea id="vip_homework" rows="3" placeholder="下节课前请完成…">${vipRecEsc(b.vip_homework || '')}</textarea>
+      <div class="form-group"><label class="form-label">布置作业（结构化：学生在VIP页面逐题作答 / 拍照提交，与大课一致）</label>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button type="button" onclick="openVipHwEditor('${b.id}')" style="font-size:12px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">📝 设置作业</button>
+          <span id="vip_hw_status" style="font-size:11px;color:var(--text-3)">${vipHwStatusText()}</span>
+        </div>
       </div>
       <div class="form-group"><label class="form-label">本次耗时（小时，保存后将自动从学生VIP总课时中扣除）</label>
         <input type="number" id="vip_hours" step="0.5" min="0" value="${b.vip_hours_used || ''}" placeholder="例：1.5"></div>
@@ -1387,12 +1411,14 @@ async function saveVipSessionRecord(bookingId) {
       vip_student_status: studentStatus || null,
       vip_hours_used: newHours,
       vip_homework: homework,
+      vip_homework_questions: vipHwEditQ,
+      vip_homework_note: vipHwEditNote || null,
       vip_homework_feedback: hwFeedback,
       vip_homework_feedback_file_url: hwFeedbackFileUrl,
       student_confirmed: false,
       status: 'completed',
     });
-    Object.assign(b, { vip_content: content, vip_offplan_reason: offplanReason || null, vip_session_notes: notes, vip_student_status: studentStatus || null, vip_hours_used: newHours, vip_homework: homework, vip_homework_feedback: hwFeedback, vip_homework_feedback_file_url: hwFeedbackFileUrl, student_confirmed: false, status: 'completed' });
+    Object.assign(b, { vip_content: content, vip_offplan_reason: offplanReason || null, vip_session_notes: notes, vip_student_status: studentStatus || null, vip_hours_used: newHours, vip_homework: homework, vip_homework_questions: vipHwEditQ, vip_homework_note: vipHwEditNote || null, vip_homework_feedback: hwFeedback, vip_homework_feedback_file_url: hwFeedbackFileUrl, student_confirmed: false, status: 'completed' });
     document.getElementById('vipRecordModal').remove();
     renderTab();
     alert('上课记录已保存，课时已扣除。建议点击「生成确认链接文案」发给学生确认。');
