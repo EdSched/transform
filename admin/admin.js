@@ -1,5 +1,5 @@
 // ── Auth ──
-const ADMIN_PW='weixin$2026';
+// admin 已改为 Supabase 邮箱免密登录，原明文密码已移除
 
 // 当前访问钥匙（从 URL ?k=xxx 解析并查库）。null=按老方式(admin密码→中枢台)
 let ACCESS_KEY=null; // {k, password, domain, is_admin, label, active}
@@ -78,9 +78,8 @@ function doLogin(){
     } else { loginErr('密码错误，请重试'); }
     return;
   }
-  // 默认：管理员密码 → 中枢台
-  if(pw===ADMIN_PW){localStorage.setItem('txe_login',JSON.stringify({ts:Date.now()}));document.getElementById('loginOverlay').style.display='none';showHub()}
-  else{ loginErr('密码错误，请重试'); }
+  // admin：不再用密码，请用下方「邮箱免密登录」
+  loginErr('管理员请使用下方邮箱登录');
 }
 function loginErr(msg){document.getElementById('loginErr').textContent=msg;document.getElementById('loginPw').value='';document.getElementById('loginPw').focus();}
 function doLogout(){localStorage.removeItem('txe_login');localStorage.removeItem('txe_domain');location.reload()}
