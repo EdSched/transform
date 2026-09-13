@@ -1307,6 +1307,7 @@ function openAddCourseModal(editId){
     acSetMajors([]);
     toggleAcDetails(false);
   }
+  if(typeof acRenderHolidayExcept==='function') acRenderHolidayExcept();
   document.getElementById('addCourseModal').classList.add('open');
 }
 
@@ -1436,6 +1437,63 @@ function acGetRows(){
   });
 }
 // 文本模式：把当前明细表格转成「回数|日期|时间|标题|老师」文本，显示文本区供批量修改
+// ── 假期豁免：直接读写 sched_courses.holiday_except（与排课系统同一字段，两边同步）──
+function acNextDay(d){ const nd=new Date(d+'T12:00:00'); nd.setDate(nd.getDate()+1); return nd.getFullYear()+'-'+String(nd.getMonth()+1).padStart(2,'0')+'-'+String(nd.getDate()).padStart(2,'0'); }
+function acHolidayDates(h){ const out=[]; let d=h.start_date, g=0; const e=h.end_date||h.start_date; while(d&&d<=e&&g++<400){ out.push(d); d=acNextDay(d); } return out; }
+function acRenderHolidayExcept(){
+  const box=document.getElementById('ac_holiday_except'); if(!box) return;
+  const editingId=document.getElementById('ac_editing_id').value;
+  const co=editingId?cachedCourses.find(c=>c.id===editingId):null;
+  if(!editingId){ box.innerHTML='<span style="font-size:10px;color:var(--text-3)">新课请先保存，再设置假期豁免</span>'; return; }
+  const first=document.getElementById('ac_first_date').value||'';
+  const end=(co&&co.end_date)||'';
+  let hols=(typeof HOLIDAYS!=='undefined'?HOLIDAYS:[]).slice().sort((a,b)=>(a.start_date||'').localeCompare(b.start_date||''));
+  if(first){ hols=hols.filter(h=>{ const he=h.end_date||h.start_date; return (end? h.start_date<=end : true) && he>=first; }); }
+  if(!hols.length){ box.innerHTML='<span style="font-size:10px;color:var(--text-3)">该课时间段内暂无全局假期</span>'; return; }
+  const cur=new Set(((co&&co.holiday_except)||'').split(',').map(x=>x.trim()).filter(Boolean));
+  box.innerHTML=hols.map(h=>{
+    const on=acHolidayDates(h).some(x=>cur.has(x));
+    const e=h.end_date||h.start_date;
+    const range=h.start_date+(e!==h.start_date?('~'+e):'');
+    return `<span onclick="acToggleHolidayExcept('${h.id}')" title="点击切换：这门课在该假期是否照常上课" style="cursor:pointer;font-size:10px;border:1px solid ${on?'var(--ok,#2a7a3a)':'var(--border)'};background:${on?'var(--ok-bg,#e8f4ea)':'transparent'};color:${on?'var(--ok,#2a7a3a)':'var(--text-2)'};border-radius:10px;padding:2px 10px;white-space:nowrap">${on?'✓ 照常上课':'放假'} · ${h.label||'假期'} <span style="opacity:.6">${range}</span></span>`;
+  }).join('');
+}
+async function acToggleHolidayExcept(holId){
+  const editingId=document.getElementById('ac_editing_id').value;
+  const co=editingId?cachedCourses.find(c=>c.id===editingId):null;
+  if(!co){ alert('请先保存课程，再设置假期豁免'); return; }
+  if(!co._sched_id){ alert('这门课还没同步到排课系统，暂时无法设置豁免。\n请先在课程安排里保存一次（会同步到 sched），再回来设置。'); return; }
+  const hol=(typeof HOLIDAYS!=='undefined'?HOLIDAYS:[]).find(h=>String(h.id)===String(holId));
+  if(!hol) return;
+  const exDates=acHolidayDates(hol);
+  const cur=new Set((co.holiday_except||'').split(',').map(x=>x.trim()).filter(Boolean));
+  const isOn=exDates.some(x=>cur.has(x));
+  if(isOn){ exDates.forEach(x=>cur.delete(x)); } else { exDates.forEach(x=>cur.add(x)); }
+  const newVal=[...cur].sort().join(',');
+  try{
+    await sb(`/rest/v1/sched_courses?id=eq.${co._sched_id}`,'PATCH',{holiday_except:newVal||null});
+    co.holiday_except=newVal;
+    acRenderHolidayExcept();
+  }catch(e){ alert('保存豁免失败：'+e.message); }
+}
+// 按「休讲日 + 假期豁免」重算所有单回日期（豁免的假期照常上课、被顺延的课次拉回）。仅改表格，保存后写库。
+function acRecomputeDates(){
+  const firstDate=document.getElementById('ac_first_date').value;
+  const weekdayStr=(typeof acGetWeekdayChips==='function')?acGetWeekdayChips():'';
+  if(!firstDate||!weekdayStr){ alert('请先填「第一回日期」和「星期」再重算'); return; }
+  const editingId=document.getElementById('ac_editing_id').value;
+  const co=cachedCourses.find(c=>c.id===editingId)||{};
+  const rows=acGetRows();
+  const N=rows.length;
+  if(!N){ alert('请先「同步行数」生成课次再重算'); return; }
+  if(typeof computeSessionDates!=='function'){ alert('日期算法未加载'); return; }
+  const dates=computeSessionDates({first_session_date:firstDate,weekdays:weekdayStr,skip_dates:co.skip_dates||'',holiday_except:co.holiday_except||''},N);
+  if(dates.length!==N){ alert(`重算失败：算出 ${dates.length} 个日期、需要 ${N} 个（可能假期太多排不下，或星期设置有误）`); return; }
+  const exN=(co.holiday_except||'').split(',').filter(Boolean).length;
+  rows.forEach((r,i)=>{ r.date=dates[i]; });
+  acSetRowsFromData(rows);
+  alert(`已按休讲/豁免重算 ${N} 个单回日期${exN?`（含 ${exN} 个豁免日：照常上课不顺延）`:''}。\n请核对后点保存写入。`);
+}
 function acToggleTextMode(){
   const area=document.getElementById('ac_text_area');
   if(!area) return;
@@ -1559,7 +1617,8 @@ async function saveAddCourse(){
       const firstChanged = oldFirst && firstDate && oldFirst!==firstDate;
       if(firstChanged && typeof computeSessionDates==='function'){
         const N=rows.length;
-        const newDates=computeSessionDates({first_session_date:firstDate,weekdays:weekdayStr,skip_dates:'',holiday_except:''},N);
+        const _co=cachedCourses.find(c=>c.id===editingId)||{};
+        const newDates=computeSessionDates({first_session_date:firstDate,weekdays:weekdayStr,skip_dates:_co.skip_dates||'',holiday_except:_co.holiday_except||''},N);
         if(newDates.length===N){
           rows.forEach((r,i)=>{ r.date=newDates[i]; });
         }
