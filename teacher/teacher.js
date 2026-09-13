@@ -14,6 +14,92 @@ function locationLong(loc) {
   if (loc === 'both_ichigaya') return '线上 / 线下均可 · 市谷';
   return '';
 }
+
+// ── VIP 教室 ↔ 排课系统(sched) 联动 ──
+// 老师确认线下 VIP 预约时直接写入 sched_bookings（status=confirmed），不再生成文案让管理员手动预约。
+// 数据库触发器 trg_sched_bookings_overlap 负责最终防撞；这里只做展示和友好提示。
+function vipCampusOf(loc) { if (!loc) return ''; if (loc.endsWith('ichigaya')) return '市谷'; if (loc.endsWith('takadanobaba')) return '高马'; return ''; }
+function vipTimeParts(range) {
+  const m = String(range || '').match(/(\d{1,2}:\d{2})\s*[-–~～]\s*(\d{1,2}:\d{2})/);
+  if (!m) return null;
+  const pad = t => t.length === 4 ? '0' + t : t;
+  return [pad(m[1]), pad(m[2])];
+}
+function vipWeekday(dateStr) { const w = new Date(dateStr + 'T12:00:00').getDay(); return w === 0 ? 7 : w; }
+function vipSchedErr(e) { try { const j = JSON.parse(e.message); if (j.message) return j.message; } catch (_) {} return e.message; }
+function vipMajorLabel(b) { return (typeof MAJORS !== 'undefined' ? MAJORS[b.major] || b.major : b.major) || ''; }
+
+// 取某校区 VIP 教室 + 该日该时段的占用情况（与触发器口径一致：pending/confirmed 都占位，休讲日课程不占）
+async function vipLoadRooms(campus, date, start, end, excludeSchedId) {
+  const all = await sb(`/rest/v1/sched_rooms?campus=eq.${encodeURIComponent(campus)}&type=eq.VIP&select=id,name,capacity,active,sort&order=sort`);
+  const rooms = (all || []).filter(r => r.active !== false && !/コスモ|cosmo|外借/i.test(r.name || ''));
+  if (!rooms.length) return { rooms: [], mineRoomId: null };
+  const ids = rooms.map(r => r.id).join(',');
+  const wd = vipWeekday(date);
+  const bks = await sb(`/rest/v1/sched_bookings?room_id=in.(${ids})&status=neq.rejected&or=(booking_date.eq.${date},recurrence.eq.weekly)&select=id,room_id,course_id,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status,title,kind,user_name`);
+  const mine = excludeSchedId ? (bks || []).find(x => String(x.id) === String(excludeSchedId)) : null;
+  const overlap = (aS, aE, bS, bE) => aS < bE && bS < aE;
+  const onDate = x => {
+    if (x.recurrence === 'weekly') {
+      const w = Number(x.weekday); if ((w === 0 ? 7 : w) !== wd) return false;
+      if (x.start_date && date < x.start_date) return false;
+      if (x.end_date && date > x.end_date) return false;
+      return true;
+    }
+    return x.booking_date === date;
+  };
+  let hits = (bks || []).filter(x => !(mine && String(x.id) === String(mine.id)) && onDate(x) && overlap(start, end, x.start_time, x.end_time));
+  // 周循环课程：休讲日不占教室
+  const cids = [...new Set(hits.filter(x => x.recurrence === 'weekly' && x.course_id).map(x => x.course_id))];
+  if (cids.length) {
+    try {
+      const cs = await sb(`/rest/v1/sched_courses?id=in.(${cids.join(',')})&select=id,skip_dates`);
+      const skip = new Set((cs || []).filter(c => c.skip_dates && c.skip_dates.split(',').map(s => s.trim()).includes(date)).map(c => String(c.id)));
+      hits = hits.filter(x => !(x.recurrence === 'weekly' && skip.has(String(x.course_id))));
+    } catch (_) {}
+  }
+  return { rooms: rooms.map(r => ({ ...r, conf: hits.filter(x => String(x.room_id) === String(r.id)) })), mineRoomId: mine ? mine.room_id : null };
+}
+function vipRoomOptionsHtml(info, currentName) {
+  if (!info.rooms.length) return '<option value="">该校区暂无 VIP 教室</option>';
+  let h = '<option value="">请选择教室</option>';
+  info.rooms.forEach(r => {
+    const busy = r.conf.length > 0;
+    const sel = info.mineRoomId != null ? String(r.id) === String(info.mineRoomId) : (!!currentName && r.name === currentName && !busy);
+    const tag = busy ? '占用：' + r.conf.map(c => (c.title || c.kind || '') + (c.status === 'pending' ? '·待审批' : '')).join('、') : '空闲';
+    h += `<option value="${r.id}"${busy && !sel ? ' disabled' : ''}${sel ? ' selected' : ''}>${escapeHtmlVcm(r.name)}（${escapeHtmlVcm(tag)}）</option>`;
+  });
+  return h;
+}
+function vipSchedRecord(b, roomId, date, start, end, content) {
+  return {
+    room_id: roomId, kind: 'vip',
+    title: 'VIP·' + (content || vipMajorLabel(b) || b.name),
+    user_name: teacherName, student_name: b.name,
+    recurrence: 'once', weekday: vipWeekday(date), booking_date: date, start_time: start, end_time: end,
+    uses_meeting: false, meeting_account_id: null, show_title: false,
+    status: 'confirmed', created_by: teacherName, note: '老师端VIP预约',
+  };
+}
+// 新建或更新该预约对应的 sched 占用记录，返回 sched_bookings.id；撞车时抛出触发器的中文错误
+async function vipSchedUpsert(b, roomId, date, start, end, content) {
+  const rec = vipSchedRecord(b, roomId, date, start, end, content);
+  if (b.sched_booking_id) {
+    const rows = await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`, 'PATCH', rec);
+    if (rows && rows.length) return rows[0].id;   // 旧记录已不存在（可能被管理员删除）→ 下面重建
+  }
+  const ins = await sb('/rest/v1/sched_bookings', 'POST', rec);
+  return ins[0].id;
+}
+async function vipSchedRelease(b) {
+  if (!b || !b.sched_booking_id) return;
+  try { await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`, 'DELETE'); } catch (_) {}
+}
+async function vipRoomIdByName(campus, name) {
+  if (!campus || !name) return null;
+  const rs = await sb(`/rest/v1/sched_rooms?campus=eq.${encodeURIComponent(campus)}&name=eq.${encodeURIComponent(name)}&select=id`).catch(() => []);
+  return rs && rs.length ? rs[0].id : null;
+}
 function locationColor(loc) {
   if (!loc || loc === 'online') return '#2a6aad';
   if (loc.startsWith('both')) return '#2a7a4a';
@@ -620,6 +706,7 @@ async function cancelBookingTeacher(id) {
   if (!confirm('确定取消此预约？')) return;
   try {
     await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { status: 'cancelled' });
+    await vipSchedRelease(cachedTeacherBookings.find(b => b.id === id));   // 释放排课系统里占的教室
     cachedTeacherBookings = cachedTeacherBookings.filter(b => b.id !== id);
     renderTab();
   } catch (e) { alert('操作失败：' + e.message); }
@@ -1535,6 +1622,22 @@ async function saveVipReschedule(bookingId) {
   if (!date || !start || !end) { alert('请填写完整的新日期和时间'); return; }
   if (!reason) { alert('请填写调整原因'); return; }
   const timeRange = `${start}\u2013${end}`;
+  // 已占教室的：先把排课系统里的占用挪过去，撞车就不调整
+  if (b.sched_booking_id || (b.vip_room && vipCampusOf(b.location))) {
+    try {
+      const rec = { booking_date: date, start_time: start, end_time: end, weekday: vipWeekday(date) };
+      let rows = b.sched_booking_id ? await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`, 'PATCH', rec) : [];
+      if (!rows || !rows.length) {
+        // 占用记录不存在（旧数据或被管理员删除）：按教室名重建
+        const rid = await vipRoomIdByName(vipCampusOf(b.location), b.vip_room);
+        if (rid != null) {
+          const ins = await sb('/rest/v1/sched_bookings', 'POST', vipSchedRecord(b, rid, date, start, end, b.vip_content));
+          b.sched_booking_id = ins[0].id;
+          await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', { sched_booking_id: b.sched_booking_id });
+        }
+      }
+    } catch (e) { alert('新时段教室已被占用，时间未调整：' + vipSchedErr(e)); return; }
+  }
   try {
     // 生成系统留言通知学生
     const d = new Date(date + 'T12:00:00');
@@ -1640,7 +1743,6 @@ function renderMyVipRow(b, s) {
     ${b.vip_meeting_url ? `<div style="font-size:11px;color:#1a6a9a;margin-top:3px">💻 <a href="${b.vip_meeting_url}" target="_blank" style="color:#1a6a9a">${b.vip_meeting_url}</a></div>` : ''}
     <div style="margin-top:8px;padding-top:8px;border-top:1px solid #ddd5f0;display:flex;gap:6px;flex-wrap:wrap">
       ${b.status === 'pending' ? `<button class="btn btn-sm" style="background:var(--ok);color:#fff;border:none;border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit" onclick="openVipConfirmModal('${b.id}')">✓ 确认预约</button>` : ''}
-      ${b.status === 'pending' ? `<button class="btn btn-outline btn-sm" onclick="openVipRoomBookText('${b.id}')">🏫 预约教室文案</button>` : ''}
       <button class="btn btn-outline btn-sm" onclick="openVipSessionRecord('${b.id}')">${b.student_confirmed ? '查看上课记录' : hasRecord ? '编辑上课记录' : '填写上课记录'}</button>
       ${hasRecord && !b.student_confirmed ? `<button class="btn btn-outline btn-sm" onclick="openVipConfirmText('${b.id}')">📋 生成确认链接文案</button>` : ''}
       ${!hasRecord && b.status !== 'completed' ? `<button class="btn btn-outline btn-sm" onclick="openVipReschedule('${b.id}')">🔄 调整时间</button>` : ''}
@@ -1649,60 +1751,12 @@ function renderMyVipRow(b, s) {
   </div>`;
 }
 
-// ── 预约教室文案 ──
-function openVipRoomBookText(bookingId) {
-  const b = cachedTeacherBookings.find(x => x.id === bookingId);
-  if (!b) return;
-  const d = new Date(b.slot_date + 'T12:00:00');
-  const dow = DAYS_CN[d.getDay()];
-  const month = d.getMonth() + 1, day = d.getDate();
-  const campus = b.location === 'offline_takadanobaba' ? '高田马场' :
-                 b.location === 'offline_ichigaya' ? '市谷' :
-                 b.location === 'both_takadanobaba' ? '高田马场' :
-                 b.location === 'both_ichigaya' ? '市谷' : '校区';
-  const major = (typeof MAJORS !== 'undefined' ? MAJORS[b.major] || b.major : b.major) || '';
-  const text = `老师好！麻烦预约${campus}，${month}月${day}日${dow}，${b.slot_time_range || ''}，${major}，${b.name}同学的VIP教室。谢谢！`;
-
-  const existing = document.getElementById('vipRoomBookModal');
-  if (existing) existing.remove();
-  const modal = document.createElement('div');
-  modal.id = 'vipRoomBookModal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  modal.innerHTML = `
-    <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:420px;width:100%">
-      <div style="font-size:13px;font-weight:600;margin-bottom:10px">📋 预约教室文案</div>
-      <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:10px;font-size:12px;line-height:1.7;margin-bottom:12px">${text}</div>
-      <div style="margin-bottom:12px">
-        <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">预约好后填写教室号：</div>
-        <input id="vip_room_input" placeholder="例：VIP1、高马VIP2…" style="font-size:12px;width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
-      </div>
-      <div style="display:flex;gap:8px">
-        <button onclick="navigator.clipboard.writeText('${text.replace(/'/g,"\'")}').then(()=>{const b=this;b.textContent='✓ 已复制';setTimeout(()=>b.textContent='复制文案',1500)})" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:9px;font-size:12px;cursor:pointer;font-family:inherit">复制文案</button>
-        <button onclick="saveVipRoom('${bookingId}')" style="flex:1;background:var(--ok);color:#fff;border:none;border-radius:3px;padding:9px;font-size:12px;cursor:pointer;font-family:inherit">保存教室号</button>
-        <button onclick="document.getElementById('vipRoomBookModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:9px 14px;font-size:12px;cursor:pointer;font-family:inherit">关闭</button>
-      </div>
-    </div>`;
-  document.body.appendChild(modal);
-  const existing_room = b.vip_room || '';
-  document.getElementById('vip_room_input').value = existing_room;
-}
-
-async function saveVipRoom(bookingId) {
-  const room = document.getElementById('vip_room_input').value.trim();
-  const b = cachedTeacherBookings.find(x => x.id === bookingId);
-  if (!b) return;
-  try {
-    await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', { vip_room: room });
-    b.vip_room = room;
-    document.getElementById('vipRoomBookModal').remove();
-    renderTab();
-  } catch(e) { alert('保存失败：' + e.message); }
-}
-
 // ── VIP确认modal（线下填教室，线上填会议链接）──
 let vcmPlanItems = [];
 let vcmPickIdx = null;
 let vcmDoneNames = new Set();
+let vcmRooms = { rooms: [], mineRoomId: null };
+let vcmTime = null;
 function vcmPickRowsHtml() {
   if (!vcmPlanItems.length) return '<div style="font-size:11px;color:var(--text-3)">该学生暂无 VIP 规划，可在上课后填写内容</div>';
   return vcmPlanItems.map((it, i) => {
@@ -1733,6 +1787,13 @@ async function openVipConfirmModal(bookingId) {
     if (b.vip_content) { const j = vcmPlanItems.findIndex(it => it.name === b.vip_content); if (j >= 0) vcmPickIdx = j; }
     if (vcmPickIdx == null) { const j = vcmPlanItems.findIndex(it => !vcmDoneNames.has(it.name)); if (j >= 0) vcmPickIdx = j; }
   } catch (e) {}
+  // 线下：拉该校区 VIP 教室与当日占用，供下拉选择（直接写入排课系统）
+  vcmRooms = { rooms: [], mineRoomId: null }; vcmTime = null;
+  if (isOffline) {
+    vcmTime = vipTimeParts(b.slot_time_range);
+    const campus = vipCampusOf(b.location);
+    if (vcmTime && campus) { try { vcmRooms = await vipLoadRooms(campus, b.slot_date, vcmTime[0], vcmTime[1], b.sched_booking_id); } catch (e) { vcmRooms = { rooms: [], mineRoomId: null }; } }
+  }
 
   const existing = document.getElementById('vipConfirmModal');
   if (existing) existing.remove();
@@ -1750,8 +1811,9 @@ async function openVipConfirmModal(bookingId) {
       </div>
       ${isOffline ? `
       <div class="form-group">
-        <label class="form-label">教室号（线下上课必填）</label>
-        <input id="vcm_room" value="${b.vip_room||''}" placeholder="例：VIP1、高马VIP2…">
+        <label class="form-label">教室（线下上课必选 · 确认后直接写入排课系统）</label>
+        <select id="vcm_room_sel">${vipRoomOptionsHtml(vcmRooms, b.vip_room || '')}</select>
+        ${!vcmTime ? '<div style="font-size:10px;color:var(--danger);margin-top:4px">时间段格式无法识别（需形如 14:00-16:00），无法自动预约教室</div>' : '<div style="font-size:10px;color:var(--text-3);margin-top:4px">灰色为该时段已占用（含他人待审批预约）</div>'}
       </div>` : ''}
       ${isOnline ? `
       <div class="form-group">
@@ -1770,21 +1832,35 @@ async function confirmVipWithDetails(bookingId) {
   const b = cachedTeacherBookings.find(x => x.id === bookingId);
   if (!b) return;
   const isOffline = b.location && (b.location.startsWith('offline') || b.location.startsWith('both'));
-  const room = document.getElementById('vcm_room')?.value.trim() || '';
+  const sel = document.getElementById('vcm_room_sel');
+  const roomId = sel ? sel.value : '';
+  const roomName = roomId ? ((vcmRooms.rooms.find(r => String(r.id) === String(roomId)) || {}).name || '') : '';
   const meeting = document.getElementById('vcm_meeting')?.value.trim() || '';
-  if (isOffline && !room) { alert('线下课程请填写教室号'); return; }
+  if (isOffline && !roomId) { alert('线下课程请选择教室'); return; }
+  if (isOffline && !vcmTime) { alert('时间段格式无法识别，无法预约教室'); return; }
+  const lockedContent = (vcmPickIdx != null && vcmPlanItems[vcmPickIdx]) ? vcmPlanItems[vcmPickIdx].name : (b.vip_content || '');
+  // ① 先占教室（会被数据库触发器拦截的是这一步）
+  let schedId = b.sched_booking_id || null, createdNow = false;
+  if (isOffline) {
+    try { const before = schedId; schedId = await vipSchedUpsert(b, roomId, b.slot_date, vcmTime[0], vcmTime[1], lockedContent); createdNow = String(before) !== String(schedId); }
+    catch (e) { alert('教室预约失败：' + vipSchedErr(e)); return; }
+  }
+  // ② 再确认预约
   try {
-    const lockedContent = (vcmPickIdx != null && vcmPlanItems[vcmPickIdx]) ? vcmPlanItems[vcmPickIdx].name : (b.vip_content || '');
     await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', {
       status: 'confirmed',
-      vip_room: room,
+      vip_room: roomName,
       vip_meeting_url: meeting,
       vip_content: lockedContent,
+      sched_booking_id: schedId,
     });
-    Object.assign(b, { status: 'confirmed', vip_room: room, vip_meeting_url: meeting, vip_content: lockedContent });
+    Object.assign(b, { status: 'confirmed', vip_room: roomName, vip_meeting_url: meeting, vip_content: lockedContent, sched_booking_id: schedId });
     document.getElementById('vipConfirmModal').remove();
     renderTab();
-  } catch(e) { alert('确认失败：' + e.message); }
+  } catch(e) {
+    if (createdNow) await vipSchedRelease({ sched_booking_id: schedId });   // 预约没确认成功，释放刚占的教室
+    alert('确认失败：' + e.message);
+  }
 }
 
 function renderMySessionRow(s) {
