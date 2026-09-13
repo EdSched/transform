@@ -463,6 +463,11 @@
       <div class="form-group" style="margin:0"><label class="form-label">课时（小时，用于工资核算）</label><input type="number" id="ac_actual_hours" step="0.5" min="0" placeholder="例：4"></div>
       <div class="form-group" style="margin:0"><label class="form-label">课程回数 *</label><input type="number" id="ac_total" min="1" placeholder="10"></div>
       <div class="form-group" style="margin:0"><label class="form-label">第一回日期 *</label><input type="date" id="ac_first_date"></div>
+      <div class="form-group" id="ac_holiday_except_section" style="margin:0;grid-column:1/-1">
+        <label class="form-label">假期豁免 <span style="font-weight:400;color:var(--text-3);font-size:10px">点亮＝这门课在该假期照常上课（与排课系统同一份数据，两边同步）</span></label>
+        <div id="ac_holiday_except" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+        <div style="font-size:9px;color:var(--text-3);margin-top:3px">改完点下方「🗓 按假期/豁免重算日期」把课次拉回，再保存。</div>
+      </div>
       <div class="form-group" style="margin:0"><label class="form-label">备注</label><input id="ac_notes"></div>
       <div class="form-group" style="margin:0"><label class="form-label">布置作业</label>
         <select id="ac_homework_enabled">
@@ -498,6 +503,7 @@
         <div style="display:flex;gap:6px">
           <button class="btn btn-outline btn-sm" onclick="acToggleTextMode()">📝 文本编辑</button>
           <button class="btn btn-outline btn-sm" onclick="document.getElementById('ac_paste_area').style.display=document.getElementById('ac_paste_area').style.display==='none'?'block':'none'">📋 从Excel粘贴</button>
+          <button class="btn btn-outline btn-sm" onclick="acRecomputeDates()" title="按全局假期＋该课的豁免重算所有单回日期：豁免的假期照常上课，被顺延的课次拉回">🗓 按假期/豁免重算日期</button>
           <button class="btn btn-outline btn-sm" onclick="acSyncRows()">↺ 同步行数</button>
         </div>
       </div>
@@ -711,7 +717,6 @@
 <script src="../shared/supabase.js"></script>
 <script src="../shared/constants.js"></script>
 <script src="../shared/vip-catalog.js"></script>
-<script src="../shared/hw-core.js"></script>
 <script src="attendance.js"></script>
 <script src="payroll.js"></script>
 <script src="admissiondb.js"></script>
