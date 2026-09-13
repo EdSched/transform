@@ -15,6 +15,55 @@ async function loadAccessKey(){
   }catch(e){ ACCESS_KEY=null; }
 }
 
+// ═══════════════════════════════════════════════
+// 邮箱免密登录（Supabase Auth Magic Link）—— 与密码登录并存
+// 只有 pinnyxu@gmail.com 这个 Auth 用户能通过；其他人发了也进不来
+// ═══════════════════════════════════════════════
+let _sbAuth = null;
+function sbAuthClient(){
+  if(_sbAuth) return _sbAuth;
+  if(typeof supabase==='undefined' || !supabase.createClient){ return null; }
+  _sbAuth = supabase.createClient(SB_URL, SB_KEY);
+  return _sbAuth;
+}
+async function sendMagicLink(){
+  const email=(document.getElementById('magicEmail').value||'').trim();
+  const msg=document.getElementById('magicMsg');
+  if(!email){ msg.style.color='var(--danger)'; msg.textContent='请填写邮箱'; return; }
+  const c=sbAuthClient();
+  if(!c){ msg.style.color='var(--danger)'; msg.textContent='登录组件未加载，请刷新页面重试'; return; }
+  msg.style.color='var(--text-3)'; msg.textContent='正在发送…';
+  try{
+    const { error } = await c.auth.signInWithOtp({
+      email,
+      options:{ emailRedirectTo:'https://edsched.github.io/transform/admin/index.html', shouldCreateUser:false }
+    });
+    if(error) throw error;
+    msg.style.color='var(--ok,#2a7a3a)';
+    msg.innerHTML='✅ 登录链接已发到你的邮箱，请去邮箱点击链接（约 1 小时内有效）。<br>点开后会自动跳回本页并登录。';
+  }catch(e){
+    msg.style.color='var(--danger)';
+    msg.textContent='发送失败：'+(e.message||e);
+  }
+}
+// 页面加载时：若是从邮件链接回来的，完成登录
+async function handleMagicCallback(){
+  const c=sbAuthClient();
+  if(!c) return false;
+  // 链接回跳后，token 在 URL 的 #hash 里；supabase-js 会自动解析并建立 session
+  try{
+    const { data } = await c.auth.getSession();
+    if(data && data.session && data.session.user){
+      // 已通过 Auth 登录 → 和原来一样写本地登录态，进中枢台
+      localStorage.setItem('txe_login',JSON.stringify({ts:Date.now(),auth:data.session.user.email}));
+      // 清掉 URL 里的 token hash，避免刷新残留
+      if(location.hash.includes('access_token')){ history.replaceState(null,'',location.pathname+location.search); }
+      return true;
+    }
+  }catch(e){}
+  return false;
+}
+
 function checkLogin(){const r=localStorage.getItem('txe_login');if(r){const{ts}=JSON.parse(r);if(Date.now()-ts<30*24*60*60*1000)return true}return false}
 
 function doLogin(){
@@ -1123,6 +1172,10 @@ async function initApp(){
     document.getElementById('loginOverlay').style.display='flex';
     loginErr('此访问链接无效或已停用');
     return;
+  }
+  // 若从邮件魔法链接回来 → 完成 Auth 登录（无 k 的 admin 场景）
+  if(!ACCESS_KEY){
+    try{ if(await handleMagicCallback()){ showHub(); return; } }catch(e){}
   }
   // 已登录：admin钥匙/无k → 中枢台；领域钥匙 → 直达该领域
   if(checkLogin()){
