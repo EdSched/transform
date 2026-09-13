@@ -280,7 +280,7 @@ function findNearby(bookings, roomId, dateStr, s, e, days){
   days = days||5;
   const dur = durationMin(s,e);
   const occupied = (d, ss, ee) => bookings.some(b =>
-    b.status!=='pending' && String(b.room_id)===String(roomId) &&
+    b.status!=='rejected' && String(b.room_id)===String(roomId) &&
     bookingOnDate(b, d) && overlap(ss, ee, b.start_time, b.end_time));
   // 当天其他空时段（按开始时刻找能放下 dur 的连续空档起点）
   const sameDay=[];
@@ -313,11 +313,11 @@ function bookingOnDate(b, dateStr){
 }
 
 /* ---------- 冲突检测 ---------- */
-// 教室冲突：同教室、同日期、时间重叠（排除自身）；休讲日该课不占教室
+// 教室冲突：同教室、同日期、时间重叠（排除自身）；休讲日该课不占教室。pending（待审批）同样占位，只排除 rejected
 function roomConflicts(bookings, roomId, dateStr, s, e, excludeId){
   const skip = (typeof window!=='undefined' && window.SKIPMAP) ? window.SKIPMAP : {};
   return bookings.filter(b =>
-    b.id !== excludeId && b.status !== 'pending' &&
+    b.id !== excludeId && b.status !== 'rejected' &&
     String(b.room_id) === String(roomId) &&
     bookingOnDate(b, dateStr) && overlap(s, e, b.start_time, b.end_time) &&
     !(b.kind==='course' && b.course_id && skip[b.course_id] && skip[b.course_id].has(dateStr)));
@@ -326,7 +326,7 @@ function roomConflicts(bookings, roomId, dateStr, s, e, excludeId){
 function accountConflicts(bookings, accId, dateStr, s, e, excludeId){
   const skip = (typeof window!=='undefined' && window.SKIPMAP) ? window.SKIPMAP : {};
   return bookings.filter(b =>
-    b.id !== excludeId && b.status !== 'pending' &&
+    b.id !== excludeId && b.status !== 'rejected' &&
     b.uses_meeting && String(b.meeting_account_id) === String(accId) &&
     bookingOnDate(b, dateStr) && overlap(s, e, b.start_time, b.end_time) &&
     !(b.kind==='course' && b.course_id && skip[b.course_id] && skip[b.course_id].has(dateStr)));
