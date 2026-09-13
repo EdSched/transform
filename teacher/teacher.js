@@ -16,7 +16,7 @@ function locationLong(loc) {
 }
 
 // ── VIP 教室 ↔ 排课系统(sched) 联动 ──
-// 老师确认线下 VIP 预约时直接写入 sched_bookings（status=confirmed），不再生成文案让管理员手动预约。
+// 老师确认线下 VIP 预约时直接写入 sched_bookings（status=pending，等管理员在 sched「预约批准」里通过），不再生成文案。
 // 数据库触发器 trg_sched_bookings_overlap 负责最终防撞；这里只做展示和友好提示。
 function vipCampusOf(loc) { if (!loc) return ''; if (loc.endsWith('ichigaya')) return '市谷'; if (loc.endsWith('takadanobaba')) return '高马'; return ''; }
 function vipTimeParts(range) {
@@ -78,7 +78,7 @@ function vipSchedRecord(b, roomId, date, start, end, content) {
     user_name: teacherName, student_name: b.name,
     recurrence: 'once', weekday: vipWeekday(date), booking_date: date, start_time: start, end_time: end,
     uses_meeting: false, meeting_account_id: null, show_title: false,
-    status: 'confirmed', created_by: teacherName, note: '老师端VIP预约',
+    status: 'pending', created_by: teacherName, note: '老师端VIP预约',
   };
 }
 // 新建或更新该预约对应的 sched 占用记录，返回 sched_bookings.id；撞车时抛出触发器的中文错误
@@ -1627,6 +1627,7 @@ async function saveVipReschedule(bookingId) {
     try {
       const rec = { booking_date: date, start_time: start, end_time: end, weekday: vipWeekday(date) };
       let rows = b.sched_booking_id ? await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`, 'PATCH', rec) : [];
+      if (rows && rows.length && rows[0].status === 'rejected') alert('注意：这次课的教室申请已被管理员驳回' + (rows[0].reject_reason ? '（' + rows[0].reject_reason + '）' : '') + '，时间会照改，但教室需要重新安排。');
       if (!rows || !rows.length) {
         // 占用记录不存在（旧数据或被管理员删除）：按教室名重建
         const rid = await vipRoomIdByName(vipCampusOf(b.location), b.vip_room);
@@ -1811,7 +1812,7 @@ async function openVipConfirmModal(bookingId) {
       </div>
       ${isOffline ? `
       <div class="form-group">
-        <label class="form-label">教室（线下上课必选 · 确认后直接写入排课系统）</label>
+        <label class="form-label">教室（线下上课必选 · 确认后提交排课系统，待管理员审批）</label>
         <select id="vcm_room_sel">${vipRoomOptionsHtml(vcmRooms, b.vip_room || '')}</select>
         ${!vcmTime ? '<div style="font-size:10px;color:var(--danger);margin-top:4px">时间段格式无法识别（需形如 14:00-16:00），无法自动预约教室</div>' : '<div style="font-size:10px;color:var(--text-3);margin-top:4px">灰色为该时段已占用（含他人待审批预约）</div>'}
       </div>` : ''}
