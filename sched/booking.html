@@ -303,7 +303,7 @@ function find(){
   h+='<table><thead><tr><th>教室</th><th>容量</th><th>状态</th><th>操作</th></tr></thead><tbody>';
   rows.forEach(({r,free,conf})=>{
     h+=`<tr><td>${esc(r.name)}</td><td>${r.capacity}人</td>`+
-      (free?'<td><span class="badge b-ok">空闲</span></td>':`<td><span class="badge b-err">占用</span> <small class="muted">${conf.map(c=>c.title||KIND_LABEL[c.kind]).join('、')}</small></td>`)+
+      (free?'<td><span class="badge b-ok">空闲</span></td>':`<td><span class="badge b-err">占用</span> <small class="muted">${conf.map(c=>(c.title||KIND_LABEL[c.kind])+(c.status==='pending'?'（待审批）':'')).join('、')}</small></td>`)+
       `<td>${free?`<button class="sm" data-r="${r.id}">录入占用</button>`:`<button class="sm ghost" data-near="${r.id}">就近空档</button>`}</td></tr>`+
       `<tr id="near-${r.id}" class="hidden"><td colspan="4"></td></tr>`;
   });
