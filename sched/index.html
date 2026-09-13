@@ -1216,7 +1216,7 @@ function runConflict(){
   let pool, headLabel, rangeLo, rangeHi;
   if(mode==='date'){
     const date=el('cf_date').value;
-    pool=BOOKINGS.filter(b=>b.status!=='pending' && bookingOnDate(b,date));
+    pool=BOOKINGS.filter(b=>b.status!=='rejected' && bookingOnDate(b,date));
     headLabel=WEEKDAYS[weekdayOf(date)]+' '+date;
     rangeLo=date; rangeHi=date;
   } else {
@@ -1225,7 +1225,7 @@ function runConflict(){
     rangeLo=from; rangeHi=to;
     // 该区间内活跃的占用（weekly 跨度与区间有交集；once 落在区间内）
     pool=BOOKINGS.filter(b=>{
-      if(b.status==='pending') return false;
+      if(b.status==='rejected') return false;
       const [s,e]=bSpan(b); if(!s) return false;
       return !(e<from || s>to);
     });
@@ -1254,13 +1254,13 @@ function runConflict(){
     const wds=x.shared.map(w=>WD_NAME[w]).join('、');
     const ovTxt = x.ovLo===x.ovHi ? x.ovLo : (x.ovLo+' ~ '+x.ovHi);
     const side=(d,bk)=>`<div style="flex:1;min-width:200px;border:1px solid var(--line);border-radius:8px;padding:8px 10px">`+
-      `<div style="font-weight:600">${esc(d.name)} <span class="badge b-mute" style="font-size:10px">${esc(d.kind)}</span></div>`+
+      `<div style="font-weight:600">${esc(d.name)} <span class="badge b-mute" style="font-size:10px">${esc(d.kind)}</span>${bk&&bk.status==='pending'?' <span class="badge b-warn" style="font-size:10px">待审批</span>':''}</div>`+
       `<div class="muted" style="font-size:12px;margin-top:3px">${d.who?('老师：'+esc(d.who)+' · '):''}${esc(d.campus||'')}</div>`+
       `<div class="muted" style="font-size:12px">时段 ${esc(d.time)} · 日期 ${esc(d.span[0]||'')}${d.span[1]&&d.span[1]!==d.span[0]?('~'+esc(d.span[1])):''}</div>`+
       `</div>`;
     return `<div style="border:1px solid #f2c9ba;background:#fdf6f3;border-radius:10px;padding:10px 12px;margin-bottom:10px">`+
       `<div style="font-size:13px;margin-bottom:6px"><b>${esc(x.label)}</b> · ${esc(wds)} · <span style="color:#c0392b">冲突日期：${esc(ovTxt)}</span></div>`+
-      `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:stretch">${side(da)}${side(db)}</div>`+
+      `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:stretch">${side(da,x.a)}${side(db,x.b)}</div>`+
       `</div>`;
   };
   let h=`<div class="muted" style="margin-bottom:8px">${esc(headLabel)}${campus?('· '+esc(campus)):''}</div>`;
