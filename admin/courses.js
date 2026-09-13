@@ -1688,10 +1688,7 @@ async function saveAddCourse(){
         else { dateChanged=true; } // 新增的行也算变动
       }
       if(dateChanged){
-        if(confirm('课程已更新。\n\n检测到单回日期有变动（改期/休讲顺延/新增课次），这可能影响排课系统里的教室占用与腾讯会议安排。\n\n是否现在前往排课系统，为变动的日期确认/补上临时教室占用？')){
-          const schedUrl=location.origin+location.pathname.replace(/admin\/.*$/,'sched/index.html');
-          window.open(schedUrl,'_blank');
-        }
+        alert('课程已更新。\n\n检测到单回日期有变动（改期/休讲顺延/新增课次），这可能影响排课系统里的教室占用与腾讯会议安排。\n\n请记得到排课系统，为变动的日期确认/补上临时教室占用。');
       } else {
         alert('课程信息已更新，已同步到所有相关页面');
       }
@@ -2001,10 +1998,7 @@ async function confirmReschedule(){
 
     closeModal('rescheduleModal');
     renderCoursesPage(document.getElementById('mainContent'));
-    if(confirm(`已将 ${target.session_date} 标记为休讲，内容顺延，末尾 ${newDateStr} 补第${newSession.session_number}回。\n\n新增的补课日期需要在排课系统确认教室占用（可能与其他课撞车）。是否现在前往排课系统确认？`)){
-      const schedUrl=location.origin+location.pathname.replace(/admin\/.*$/,'sched/index.html');
-      window.open(schedUrl,'_blank');
-    }
+    alert(`已将 ${target.session_date} 标记为休讲，内容顺延，末尾 ${newDateStr} 补第${newSession.session_number}回。\n\n新增的补课日期请到排课系统确认教室占用（可能与其他课撞车）。`);
   }catch(e){alert('操作失败：'+e.message)}
 }
 
