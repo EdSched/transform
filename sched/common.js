@@ -56,6 +56,12 @@ function parseWeekdays(s){
   const arr = String(s).split(/[\/、,，\s;；]+/).map(x=>WD_MAP[x.trim()]).filter(Boolean);
   return [...new Set(arr)].sort((a,b)=>a-b);
 }
+// sched 专用：同上，但额外兼容 0（=周日，与管理端 0–6 编码对齐）。先把 0 归一成 7 再过滤，避免被 filter(Boolean) 吞掉
+function parseWeekdaysSched(s){
+  if(s==null || s==='') return [];
+  const arr = String(s).split(/[\/、,，\s;；]+/).map(x=>{ x=x.trim(); return (x==='0'||x==='周0') ? 7 : WD_MAP[x]; }).filter(Boolean);
+  return [...new Set(arr)].sort((a,b)=>a-b);
+}
 function weekdaysLabel(str){ // "2,4" -> "周二/周四"
   return String(str||'').split(',').filter(Boolean).map(d=>WEEKDAYS[Number(d)]).join('/');
 }
