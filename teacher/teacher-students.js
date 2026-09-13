@@ -1535,6 +1535,7 @@ async function focusOpenSummary(sid) {
     sb(`/rest/v1/student_contact_logs?student_name=eq.${enc(s.name)}&select=*&order=created_at.desc`).catch(() => []),
   ]);
 
+  try {
   const months = focusMonthsUntil(s.expiry_date);
   const u = focusBucket(months) ? FOCUS_URG[focusBucket(months)] : null;
   const kv = (k, v) => v ? `<div style="font-size:12px;padding:3px 0"><span style="color:#888;display:inline-block;width:78px">${k}</span>${tsaEsc(v)}</div>` : '';
@@ -1580,7 +1581,7 @@ async function focusOpenSummary(sid) {
     </div>
 
     ${sec('基本信息', `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px">
-      ${kv('等级', lvl[s.level] || s.level)}${kv('属性', s.course_type)}
+      ${kv('等级', ({1:'冲刺',2:'匹配',3:'保底'}[s.level] || s.level || ''))}${kv('属性', s.course_type)}
       ${kv('出身大学', s.university)}${kv('GPA', s.gpa)}
       ${kv('毕业时间', s.graduation_date)}${kv('期待入学', s.target_enrollment)}
       ${kv('赴日', s.japan_arrival)}${kv('来源', s.source)}
@@ -1596,6 +1597,10 @@ async function focusOpenSummary(sid) {
 
     <div style="margin-top:20px;font-size:10px;color:#aaa;text-align:center;border-top:1px solid #eee;padding-top:8px">唯新教育 · 学生学习概要 · 生成于 ${new Date().toLocaleDateString('zh-CN')}</div>
   </div>`;
+  } catch (e) {
+    o.innerHTML = `<div style="background:#fff;border-radius:8px;max-width:520px;width:100%;padding:24px;margin:auto"><div style="color:#b03a2e;font-size:13px;margin-bottom:12px">概要生成失败：${(e && e.message) || e}</div><button onclick="document.getElementById('focusSummary').remove()" style="font-size:12px;border:1px solid #ccc;background:none;border-radius:4px;padding:6px 16px;cursor:pointer">关闭</button></div>`;
+    console.error('focusOpenSummary error:', e);
+  }
 }
 
 // 学生名下的"补充记录"块（追加按钮 + 已有联系/补充记录）——用于「有面谈记录」展开处
