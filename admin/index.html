@@ -22,6 +22,15 @@
     <div id="loginErr" style="font-size:11px;color:var(--danger);min-height:18px;margin-bottom:10px;text-align:left"></div>
     <button class="btn btn-primary btn-full" onclick="doLogin()">进入管理系统</button>
     <div style="font-size:10px;color:var(--text-3);margin-top:14px">登录后自动保持 30 天</div>
+
+    <!-- 邮箱免密登录（新，与密码并存；跑通后再撤密码） -->
+    <div style="border-top:1px solid var(--border-light,#eee);margin:18px 0 12px"></div>
+    <div id="magicBox" style="text-align:left">
+      <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:5px">或用邮箱免密登录</label>
+      <input type="email" id="magicEmail" placeholder="pinnyxu@gmail.com" autocomplete="email" style="margin-bottom:8px">
+      <button class="btn btn-outline btn-full" onclick="sendMagicLink()">📧 发送登录链接</button>
+      <div id="magicMsg" style="font-size:11px;color:var(--text-3);min-height:16px;margin-top:8px;line-height:1.6"></div>
+    </div>
   </div>
 </div>
 
@@ -714,6 +723,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
 <script src="../shared/supabase.js"></script>
 <script src="../shared/constants.js"></script>
 <script src="../shared/vip-catalog.js"></script>
