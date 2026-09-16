@@ -83,6 +83,17 @@ async function studyLogin(name, code, silent) {
     }
     // 身份锚定到 id：以后一切以 studyStudent.id 为准（姓名仍用于显示/检索，不变）
     localStorage.setItem(STUDY_STORAGE_KEY, JSON.stringify({ id: studyStudent.id, name, code, major: studyMajor, ts: Date.now() }));
+    // ── 静默 Auth 登录（试点：拿到真 token，为 RLS 铺路）──
+    // 账号=学生id@student.local，密码=查询码；只有已开通账号的学生会成功，失败不影响进入
+    try {
+      if (studyStudent.id && typeof supabase !== 'undefined' && supabase.createClient) {
+        const _c = supabase.createClient(SB_URL, SB_KEY);
+        const { data: _sess } = await _c.auth.getSession();
+        if (!_sess || !_sess.session) {
+          await _c.auth.signInWithPassword({ email: `${studyStudent.id}@student.local`, password: code });
+        }
+      }
+    } catch (e) { /* Auth 失败不挡人：学生照常进 */ }
     await loadStudyData();
     renderStudyMain();
     return true;
