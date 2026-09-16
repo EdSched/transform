@@ -69,8 +69,20 @@ async function studyLogin(name, code, silent) {
   try {
     const students = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(name)}&student_code=eq.${encodeURIComponent(code)}&select=*`);
     if (!students.length) return false;
-    studyStudent = students[0];
-    localStorage.setItem(STUDY_STORAGE_KEY, JSON.stringify({ name, code, major: studyMajor, ts: Date.now() }));
+    // 同名同码理论上不该出现（查询码已保证唯一）；万一出现多条，优先用上次登录记住的 id 精确匹配，避免取错人
+    if (students.length > 1) {
+      let chosen = null;
+      try {
+        const raw = localStorage.getItem(STUDY_STORAGE_KEY);
+        const savedId = raw ? (JSON.parse(raw) || {}).id : '';
+        if (savedId) chosen = students.find(x => x.id === savedId);
+      } catch (e) {}
+      studyStudent = chosen || students[0];
+    } else {
+      studyStudent = students[0];
+    }
+    // 身份锚定到 id：以后一切以 studyStudent.id 为准（姓名仍用于显示/检索，不变）
+    localStorage.setItem(STUDY_STORAGE_KEY, JSON.stringify({ id: studyStudent.id, name, code, major: studyMajor, ts: Date.now() }));
     await loadStudyData();
     renderStudyMain();
     return true;
