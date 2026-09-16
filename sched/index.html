@@ -326,22 +326,45 @@ function tabPending(){
         `<td>${midCell}</td><td>${opCell}</td></tr>`;
     });
     h+='</tbody></table>'; }
-  h+='<div id="pendGrid"></div><div id="pendReply"></div></div>'; render(h);
-  bind('[data-ok]', async id=>{ await sbUpdate('sched_bookings',id,{status:'confirmed'}); await reloadAll(); show('pending'); toast('已确认'); });
+  h+='<div id="pendGrid"></div><div id="pendReply"></div></div>';
+  h+=pendHistoryHtml();
+  render(h);
+  bind('[data-ok]', async id=>{ await sbUpdate('sched_bookings',id,{status:'confirmed', reviewed_at:new Date().toISOString()}); await reloadAll(); show('pending'); toast('已确认'); });
   bind('[data-no]', async id=>{
     const b=BOOKINGS.find(x=>String(x.id)===String(id)); if(!b) return;
     const reason=prompt('驳回理由（老师会在「我的预约」看到）：','该时段/教室不可用，请重新预约'); if(reason===null) return;
     const r=ROOMS.find(x=>String(x.id)===String(b.room_id)); const campus=r?r.campus:(b.req_campus||'');
-    await sbUpdate('sched_bookings',id,{status:'rejected', room_id:null, req_campus:campus||null, reject_reason:reason||'管理员驳回'});
+    await sbUpdate('sched_bookings',id,{status:'rejected', room_id:null, req_campus:campus||null, reject_reason:reason||'管理员驳回', reviewed_at:new Date().toISOString()});
     await reloadAll(); show('pending'); toast('已驳回（老师可在「我的预约」看到理由）');
   });
   bind('[data-assign]', async id=>{
     const sel=document.querySelector('.asgRoom[data-b="'+id+'"]'); if(!sel){ toast('无可指派教室', false); return; }
-    await sbUpdate('sched_bookings',id,{room_id:sel.value, req_other:false, status:'confirmed'});
+    await sbUpdate('sched_bookings',id,{room_id:sel.value, req_other:false, status:'confirmed', reviewed_at:new Date().toISOString()});
     await reloadAll(); show('pending'); toast('已指派大教室并确认');
   });
   bind('[data-noreason]', id=>pendReject(id));
   bind('[data-view]', id=>pendViewRooms(id));
+}
+// 审批历史：已通过/已驳回的老师预约申请（有 reviewed_at 的；旧数据按 created_by 为老师姓名判断）
+function pendHistoryHtml(){
+  const isReq=b=>b.reviewed_at || (b.created_by && b.created_by!=='admin' && !String(b.created_by).includes('|'));
+  const list=BOOKINGS.filter(b=>(b.status==='confirmed'||b.status==='rejected') && isReq(b))
+    .sort((a,b)=>String(b.reviewed_at||'').localeCompare(String(a.reviewed_at||'')) || String(b.created_at||'').localeCompare(String(a.created_at||'')))
+    .slice(0,60);
+  const fmt=t=>{ if(!t) return '<span class="muted">—</span>'; const d=new Date(t); return isNaN(d)?esc(t):d.toLocaleString('zh-CN',{hour12:false,month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); };
+  let h='<div class="card" style="margin-top:14px"><h3 style="margin-top:2px">审批历史 <small class="muted" style="font-weight:400">最近 '+list.length+' 条</small></h3>';
+  if(!list.length) return h+'<div class="muted">还没有审批记录</div></div>';
+  h+='<table><thead><tr><th>审批时间</th><th>日期</th><th>时段</th><th>教室</th><th>用途</th><th>人</th><th>结果</th></tr></thead><tbody>';
+  list.forEach(b=>{
+    const res = b.status==='confirmed'
+      ? '<span class="badge b-ok">已通过</span>'
+      : '<span class="badge b-err">已驳回</span>'+(b.reject_reason?' <small class="muted">'+esc(b.reject_reason)+'</small>':'');
+    const room = b.room_id ? esc(rname(b.room_id)) : '<span class="muted">'+esc(b.req_campus||'')+'</span>';
+    h+=`<tr><td>${fmt(b.reviewed_at)}</td><td>${b.booking_date||''}</td><td>${b.start_time||''}-${b.end_time||''}</td><td>${room}</td>`+
+       `<td>${esc(b.title||KIND_LABEL[b.kind]||'')}${b.student_name?(' <small class="muted">学生:'+esc(b.student_name)+'</small>'):''}</td>`+
+       `<td>${esc(b.user_name||'')}</td><td>${res}</td></tr>`;
+  });
+  return h+'</tbody></table></div>';
 }
 function pendViewRooms(id){
   const b=BOOKINGS.find(x=>String(x.id)===String(id)); if(!b) return;
@@ -387,7 +410,7 @@ function pendReject(id){
   box.scrollIntoView({behavior:'smooth',block:'end'});
   el('copyReply').onclick=()=>navigator.clipboard.writeText(reply).then(()=>toast('已复制'));
   el('cancelReject').onclick=()=>{ box.innerHTML=''; };
-  el('doReject').onclick=async()=>{ await sbUpdate('sched_bookings',id,{status:'rejected', reject_reason:reply}); await reloadAll(); show('pending'); toast('已驳回（回复已随记录留给老师）'); };
+  el('doReject').onclick=async()=>{ await sbUpdate('sched_bookings',id,{status:'rejected', reject_reason:reply, reviewed_at:new Date().toISOString()}); await reloadAll(); show('pending'); toast('已驳回（回复已随记录留给老师）'); };
 }
 
 /* ---------- 排教室：课程 -> 生成 weekly 占用 ---------- */
