@@ -22,6 +22,15 @@
     <div id="loginErr" style="font-size:11px;color:var(--danger);min-height:18px;margin-bottom:10px;text-align:left"></div>
     <button class="btn btn-primary btn-full" onclick="doLogin()">进入管理系统</button>
     <div style="font-size:10px;color:var(--text-3);margin-top:14px">登录后自动保持 30 天</div>
+
+    <!-- 邮箱免密登录（新，与密码并存；跑通后再撤密码） -->
+    <div style="border-top:1px solid var(--border-light,#eee);margin:18px 0 12px"></div>
+    <div id="magicBox" style="text-align:left">
+      <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:5px">或用邮箱免密登录</label>
+      <input type="email" id="magicEmail" placeholder="pinnyxu@gmail.com" autocomplete="email" style="margin-bottom:8px">
+      <button class="btn btn-outline btn-full" onclick="sendMagicLink()">📧 发送登录链接</button>
+      <div id="magicMsg" style="font-size:11px;color:var(--text-3);min-height:16px;margin-top:8px;line-height:1.6"></div>
+    </div>
   </div>
 </div>
 
@@ -462,7 +471,10 @@
       <div class="form-group" style="margin:0"><label class="form-label">上课时间</label><input id="ac_time_range" placeholder="14:00-18:00"></div>
       <div class="form-group" style="margin:0"><label class="form-label">课时（小时，用于工资核算）</label><input type="number" id="ac_actual_hours" step="0.5" min="0" placeholder="例：4"></div>
       <div class="form-group" style="margin:0"><label class="form-label">课程回数 *</label><input type="number" id="ac_total" min="1" placeholder="10"></div>
-      <div class="form-group" style="margin:0"><label class="form-label">第一回日期 *</label><input type="date" id="ac_first_date"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">第一回日期 *</label><input type="date" id="ac_first_date" onchange="if(typeof acRenderHolidayExcept==='"'"'function')acRenderHolidayExcept()"></div>
+      <div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">假期豁免（该课在这些假期照常上课，不顺延）</label>
+        <div id="ac_holiday_except" style="display:flex;flex-wrap:wrap;gap:6px;padding:7px 9px;border:1px solid var(--border);border-radius:3px;background:var(--bg);min-height:32px;font-size:11px"></div>
+      </div>
       <div class="form-group" style="margin:0"><label class="form-label">备注</label><input id="ac_notes"></div>
       <div class="form-group" style="margin:0"><label class="form-label">布置作业</label>
         <select id="ac_homework_enabled">
@@ -498,6 +510,7 @@
         <div style="display:flex;gap:6px">
           <button class="btn btn-outline btn-sm" onclick="acToggleTextMode()">📝 文本编辑</button>
           <button class="btn btn-outline btn-sm" onclick="document.getElementById('ac_paste_area').style.display=document.getElementById('ac_paste_area').style.display==='none'?'block':'none'">📋 从Excel粘贴</button>
+          <button class="btn btn-outline btn-sm" onclick="acRecomputeDates()" title="按全局假期＋该课的豁免重算所有单回日期：豁免的假期照常上课，被顺延的课次拉回">🗓 按假期/豁免重算日期</button>
           <button class="btn btn-outline btn-sm" onclick="acSyncRows()">↺ 同步行数</button>
         </div>
       </div>
@@ -708,6 +721,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
 <script src="../shared/supabase.js"></script>
 <script src="../shared/constants.js"></script>
 <script src="../shared/vip-catalog.js"></script>
