@@ -20,6 +20,7 @@ const DOMAINS = [
   { code: 'daigakuin_bijutsu', label: '大学院美术' },
   { code: 'gakubu_bunka',      label: '学部文科' },
   { code: 'gakubu_rika',       label: '学部理科' },
+  { code: 'gakubu_bijutsu',    label: '学部美术' },
   { code: 'gengo',             label: '语言' },
 ];
 // 领域中文 → 代码
