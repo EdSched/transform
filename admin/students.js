@@ -477,11 +477,28 @@ function genCode() {
   return Array.from({length:6}, ()=>chars[Math.floor(Math.random()*chars.length)]).join('');
 }
 
+// 生成保证唯一的查询码：先避开本地已加载的、再查库确认没被占用（防同名同码导致登录取错人）
+async function genUniqueCode(extraUsed) {
+  const localUsed = new Set((cachedStudents || []).map(x => x.student_code).filter(Boolean));
+  (extraUsed || []).forEach(c => localUsed.add(c));
+  for (let i = 0; i < 30; i++) {
+    const code = genCode();
+    if (localUsed.has(code)) continue;
+    try {
+      const hit = await sb(`/rest/v1/students?student_code=eq.${code}&select=id`);
+      if (hit && hit.length) continue;   // 库里已有 → 换一个
+    } catch (e) { /* 查库失败就退回只用本地去重 */ }
+    return code;
+  }
+  // 极端情况兜底（30 次都撞，几乎不可能）：加时间戳后缀
+  return genCode().slice(0, 4) + Date.now().toString(36).slice(-2).toUpperCase();
+}
+
 async function generateStudentCode(id) {
   const s = cachedStudents.find(x => x.id === id);
   if (!s) return;
   if (s.student_code && !confirm(`${s.name} 已有查询码 ${s.student_code}，确定重新生成？`)) return;
-  const code = genCode();
+  const code = await genUniqueCode();
   try {
     await sb(`/rest/v1/students?id=eq.${id}`, 'PATCH', { student_code: code });
     s.student_code = code;
@@ -494,8 +511,10 @@ async function generateAllStudentCodes() {
   if (!noCode.length) { alert('所有学生已有查询码'); return; }
   if (!confirm(`将为 ${noCode.length} 名学生生成查询码，继续？`)) return;
   try {
+    const usedThisBatch = [];
     for (const s of noCode) {
-      const code = genCode();
+      const code = await genUniqueCode(usedThisBatch);
+      usedThisBatch.push(code);
       await sb(`/rest/v1/students?id=eq.${s.id}`, 'PATCH', { student_code: code });
       s.student_code = code;
     }
