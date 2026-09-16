@@ -12,9 +12,11 @@ function sbHeaders(extra){
     'Content-Type': 'application/json'
   }, extra || {});
 }
+// PostgREST 报错体 → 只取 message（触发器抛的中文原因就在这里）
+function sbErrMsg(t){ try{ const j=JSON.parse(t); return j && j.message ? j.message : ''; }catch(e){ return ''; } }
 async function sbGet(table, query){
   const url = SB_URL + '/rest/v1/' + table + '?' + (query || 'select=*');
-  const r = await fetch(url, { headers: sbHeaders() });
+  const r = await fetch(url, { headers: sbHeaders(), cache: 'no-store' });
   if(!r.ok) throw new Error(table + ' 读取失败: ' + r.status + ' ' + await r.text());
   return r.json();
 }
@@ -23,7 +25,7 @@ async function sbInsert(table, rows){
     method:'POST', headers: sbHeaders({ Prefer:'return=representation' }),
     body: JSON.stringify(Array.isArray(rows)? rows : [rows])
   });
-  if(!r.ok) throw new Error('写入失败: ' + r.status + ' ' + await r.text());
+  if(!r.ok){ const t=await r.text(); throw new Error(sbErrMsg(t) || ('写入失败: ' + r.status + ' ' + t)); }
   return r.json();
 }
 async function sbUpdate(table, id, patch){
