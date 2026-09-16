@@ -135,6 +135,19 @@ async function init() {
       if (!teachers.length) teachers = byName;
     }
     teacherData = teachers[0] || { name: teacherName, permissions: {}, majors: [], display_name: '' };
+    // ── 静默 Auth 登录（试点：拿到数据库认得的真 token，为 RLS 铺路）──
+    // 用老师 id 作为 Auth 账号(id@teacher.local)与密码；只有已在后台开通账号的老师会成功，
+    // 未开通/失败都不影响进入（登录方式完全不变，token 只是额外附加）
+    try {
+      const _tid = teacherData.id || teacherId;
+      if (_tid && typeof supabase !== 'undefined' && supabase.createClient) {
+        const _c = supabase.createClient(SB_URL, SB_KEY);
+        const { data: _sess } = await _c.auth.getSession();
+        if (!_sess || !_sess.session) {
+          await _c.auth.signInWithPassword({ email: `${_tid}@teacher.local`, password: _tid });
+        }
+      }
+    } catch (e) { /* Auth 失败不挡人：老师照常进 */ }
     const p = teacherData.permissions || {};
     const majors = teacherData.majors || [];
     const fetches = [
