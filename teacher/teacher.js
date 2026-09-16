@@ -110,6 +110,7 @@ function locationColor(loc) {
 
 const params = new URLSearchParams(location.search);
 const teacherName = decodeURIComponent(params.get('teacher') || '');
+const teacherId = (params.get('tid') || '').trim();   // 新链接带老师 id：内部认 id，防同名；老链接无 tid 时退回按名字
 
 let teacherData = null;
 let slots = [], existingAvail = [], confirmedSessions = [];
@@ -123,7 +124,16 @@ async function init() {
   if (typeof loadAdmissionMajorsFromDB === 'function') await loadAdmissionMajorsFromDB();
   document.getElementById('headerName').textContent = teacherName + ' 老师';
   try {
-    const teachers = await sb(`/rest/v1/teachers?name=eq.${encodeURIComponent(teacherName)}&select=*`);
+    let teachers = [];
+    if (teacherId) {
+      teachers = await sb(`/rest/v1/teachers?id=eq.${encodeURIComponent(teacherId)}&select=*`);   // 优先按 id 精确认人
+    }
+    if (!teachers.length) {
+      // 无 tid（老链接）或按 id 没查到 → 退回按名字；同名多条时优先用 tid 匹配，避免取错人
+      const byName = await sb(`/rest/v1/teachers?name=eq.${encodeURIComponent(teacherName)}&select=*`);
+      teachers = (teacherId && byName.length > 1) ? byName.filter(t => t.id === teacherId) : byName;
+      if (!teachers.length) teachers = byName;
+    }
     teacherData = teachers[0] || { name: teacherName, permissions: {}, majors: [], display_name: '' };
     const p = teacherData.permissions || {};
     const majors = teacherData.majors || [];
