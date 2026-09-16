@@ -1,7 +1,3 @@
-// 兜底：若 shared/constants.js 尚未更新到含 schoolLevelHtml，就地补一个，避免整页卡「加载中」
-if (typeof window !== "undefined" && typeof window.schoolLevelHtml !== "function") {
-  window.schoolLevelHtml = function (lv) { var m = ({1:{t:"冲刺",c:"#c0392b"},2:{t:"匹配",c:"#b8860b"},3:{t:"保底",c:"#2a7a3a"}})[lv]; return m ? "<span style=\"color:" + m.c + ";font-weight:600\">" + m.t + "</span>" : ""; };
-}
 // ══════════════════════════════════
 // STUDENTS PAGE
 // ══════════════════════════════════
@@ -123,7 +119,14 @@ function populateVipTeachers(selectedTeachers){
 function renderVipTeacherTags(){
   const wrap=document.getElementById('st_vip_teachers');
   if(!wrap) return;
-  const datalistOptions=(cachedTeachers||[]).map(t=>`<option value="${t.name}">`).join('');
+  // 只列本领域/专业负责的老师（老师负责领域含当前领域，或负责专业属于当前领域）
+  const teacherPool=(cachedTeachers||[]).filter(t=>{
+    if(!CURRENT_DOMAIN||CURRENT_DOMAIN==='all') return true;
+    if(CURRENT_MAJOR) return (t.majors||[]).includes(CURRENT_MAJOR);
+    if((t.domains||[]).includes(CURRENT_DOMAIN)) return true;
+    return (t.majors||[]).some(m=>MAJOR_DOMAIN[m]===CURRENT_DOMAIN);
+  });
+  const datalistOptions=teacherPool.map(t=>`<option value="${t.name}">`).join('');
   wrap.innerHTML=`
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
       ${vipTeacherTags.map(name=>`
@@ -525,7 +528,7 @@ async function renderProgressPage(mc, focusStudentId=null){
   (allBkPG||[]).forEach(b => {
     if (!b.name || !String(b.target_school||'').trim()) return;
     if (!bkHintMap[b.name]) bkHintMap[b.name] = { schools:new Set(), date:b.slot_date, exam_period:b.exam_period };
-    String(b.target_school).split(/[、,，\/\n]+/).map(x=>x.trim()).filter(x=>x && /大学|学院/.test(x)).forEach(x=>bkHintMap[b.name].schools.add(x));
+    String(b.target_school).split(/[、,，\/\n]+/).map(x=>x.trim()).filter(Boolean).forEach(x=>bkHintMap[b.name].schools.add(x));
   });
   const timelineMap = {};
   allTimeline.forEach(t => {
@@ -536,15 +539,21 @@ async function renderProgressPage(mc, focusStudentId=null){
   allPlansPG.forEach(p => { if (!plansMapPG[p.student_id]) plansMapPG[p.student_id] = []; plansMapPG[p.student_id].push(p); });
   window.__spPlansAll = allPlansPG; // 供志望校编辑弹窗读取
   allDraftsPG.forEach(d => { if (!draftsMapPG[d.student_id]) draftsMapPG[d.student_id] = d; });
-  window.__pgDraftsMap = draftsMapPG;   // 供计划书查看/导出使用
-  window.__pgStudents = students;
 
   const cards = students.map(s => {
     const timeline = timelineMap[s.id] || [];
     const latest = getLatestProgress(timeline);
     const isFocus = focusStudentId === s.id;
 
-    // 志望校/计划书数据先算好（供状态推导用）
+    const statusRow = Object.entries(PROGRESS_LABELS).map(([k,label]) => {
+      if (!latest[k] && !((k==='japanese'&&s.japanese_score)||(k==='english'&&s.english_score))) return '';
+      const done = isProgressDone(k, latest[k]);
+      const scoreText = k==='japanese'&&s.japanese_score ? ` · ${s.japanese_score}` : k==='english'&&s.english_score ? ` · ${s.english_score}` : '';
+      const val = latest[k] || (k==='japanese'?'有成绩':'有成绩');
+      return `<span title="${label}" style="font-size:10px;background:${done?'var(--ok-bg)':'var(--warn-bg)'};color:${done?'var(--ok)':'var(--warn)'};padding:1px 6px;border-radius:2px">${PROGRESS_ICONS[k]} ${latest[k]||''}${scoreText}</span>`;
+    }).join('');
+
+    // 志望校流水线细节：填充进计划书/出愿/备考三张卡
     const sPlans = plansMapPG[s.id] || [];
     const sDraft = draftsMapPG[s.id];
     let sRefsN = 0, sDraftN = 0;
@@ -553,34 +562,18 @@ async function renderProgressPage(mc, focusStudentId=null){
       const df0 = sDraft && sDraft.draft_fields ? JSON.parse(sDraft.draft_fields) : {};
       sDraftN = Object.values(df0).filter(v => Array.isArray(v) ? v.length : String(v || '').trim()).length;
     } catch(e) {}
-    const anyPassed = sPlans.some(p => p.status === 'passed');
-    const anyApplied = sPlans.some(p => ['applied', 'passed'].includes(p.status));
+    // 时间线没有记录时，从志望校推进/计划书数据自动推导徽章
     const pgDerived = {};
-    if (anyPassed) pgDerived.apply = '已合格';
-    else if (anyApplied) pgDerived.apply = '已出愿';
-    else if (sPlans.some(p => ['prof_ok', 'contacted'].includes(p.status))) pgDerived.apply = '联系教授中';
+    if (sPlans.some(p => p.status === 'passed')) pgDerived.apply = '已合格';
+    else if (sPlans.some(p => p.status === 'applied')) pgDerived.apply = '已出愿';
+    else if (sPlans.some(p => ['prof_ok','contacted'].includes(p.status))) pgDerived.apply = '联系教授中';
     else if (sPlans.length) pgDerived.apply = '择校确认中';
     if (sPlans.some(p => p.interview_draft_done)) pgDerived.exam = '在准备面试稿';
     else if (sPlans.some(p => p.kakomon_started)) pgDerived.exam = '在写过去问';
-    const sLegacy = sDraft && ['research_question', 'methodology', 'draft_notes'].some(f => String(sDraft[f] || '').trim());
+    const sLegacy = sDraft && ['research_question','methodology','draft_notes'].some(f => String(sDraft[f] || '').trim());
     if (sDraft && sDraft.draft_file_url) pgDerived.plan = '已完成';
     else if (sDraftN > 0 || sLegacy) pgDerived.plan = '撰写中';
     else if (sRefsN > 0) pgDerived.plan = '在收集材料';
-
-    const spChip = (icon, text, done) => `<span style="font-size:10px;padding:2px 9px;border-radius:10px;white-space:nowrap;background:${done ? 'var(--ok-bg,#e8f4ea)' : 'var(--bg,#f7f5f0)'};color:${done ? 'var(--ok,#2a5a30)' : 'var(--text-2,#5a5650)'};border:1px solid ${done ? 'var(--ok,#b8d8bc)' : 'var(--border-light,#ede9e2)'}">${icon} ${text}</span>`;
-    const statusRow = Object.entries(PROGRESS_LABELS).map(([k]) => {
-      let val, done;
-      if (k === 'apply') { val = anyPassed ? '已合格' : (latest.apply || pgDerived.apply || ''); done = anyPassed || latest.apply === '已合格'; }
-      else if (k === 'japanese') { val = latest[k] || (s.japanese_score ? '有成绩' : ''); done = isProgressDone(k, latest[k]); }
-      else if (k === 'english') { val = latest[k] || (s.english_score ? '有成绩' : ''); done = isProgressDone(k, latest[k]); }
-      else { val = latest[k] || pgDerived[k] || ''; done = isProgressDone(k, latest[k]); }
-      if (!val) return '';
-      const scoreText = k === 'japanese' && s.japanese_score ? ` · ${s.japanese_score}` : k === 'english' && s.english_score ? ` · ${s.english_score}` : '';
-      return spChip(PROGRESS_ICONS[k], val + scoreText, done);
-    }).join('');
-    const secTitle = t => `<div style="font-size:11px;font-weight:600;color:var(--text-2);letter-spacing:.02em;margin-bottom:10px">${t}</div>`;
-    const secFrame = inner => `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:6px;padding:12px 14px">${inner}</div>`;
-
 
     const pgDetail = k => {
       if (k === 'plan') {
@@ -588,8 +581,7 @@ async function renderProgressPage(mc, focusStudentId=null){
         if (sRefsN) parts.push(`📚 先行研究 ${sRefsN} 条`);
         if (sDraftN) parts.push(`草稿已填 ${sDraftN} 项`);
         if (sDraft && sDraft.draft_file_url) parts.push('📎 完成稿已上传');
-        const btn = sDraft ? `<button onclick="openAdminDraftView('${s.id}')" style="font-size:9px;margin-top:4px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:1px 8px;cursor:pointer;font-family:inherit">查看/下载计划书</button>` : '';
-        return (parts.length || btn) ? `<div style="font-size:10px;color:var(--text-2);margin-top:4px;line-height:1.7">${parts.join(' · ')}${btn ? '<br>' + btn : ''}</div>` : '';
+        return parts.length ? `<div style="font-size:10px;color:var(--text-2);margin-top:4px;line-height:1.7">${parts.join(' · ')}</div>` : '';
       }
       if (k === 'apply') {
         if (!sPlans.length) return '';
@@ -634,74 +626,88 @@ async function renderProgressPage(mc, focusStudentId=null){
         ).join('')
       : '<div style="font-size:11px;color:var(--text-3);padding:8px 0">暂无进度记录</div>';
 
-    const hintHtml = (() => {
-      const hint = bkHintMap[s.name];
-      if (!hint) return '';
-      const known = new Set(sPlans.map(p => (p.school_name || '').trim()));
-      const news = [...hint.schools].filter(x => ![...known].some(k => k.includes(x) || x.includes(k)));
-      if (!news.length) return '';
-      return `<div style="background:var(--warn-bg,#f8f0d8);border:1px solid var(--warn,#b8860b);border-radius:4px;padding:7px 10px;margin-bottom:8px;font-size:10px;color:#6a5210">
-        💡 面谈记录中提到过（${hint.date || ''}）：${news.map(x => `<span style="background:var(--surface);border-radius:3px;padding:1px 6px;margin:0 3px">${x}</span>`).join('')}
-        <button onclick="event.stopPropagation();spSchoolFromHint('${s.id}','${(s.name || '').replace(/'/g, '')}','${s.major || ''}',${JSON.stringify(news).replace(/"/g, '&quot;')})" style="margin-left:6px;font-size:10px;background:var(--warn,#b8860b);color:#fff;border:none;border-radius:3px;padding:2px 10px;cursor:pointer;font-family:inherit">一键加入志望校</button>
-      </div>`;
-    })();
-    const schoolTable = sPlans.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">
-        <thead><tr style="background:var(--bg)">
-          ${['No.', '级别', '学校名 · 研究科', '教授', '出愿期间', '该校进度', '过去问', '面试稿', ''].map(h => `<th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border-light);white-space:nowrap">${h}</th>`).join('')}
-        </tr></thead>
-        <tbody>
-          ${sPlans.map((p, pi) => { const st = schoolStatusLabel(p.status); return `<tr style="border-bottom:1px solid var(--border-light)">
-            <td style="padding:6px 8px;color:var(--text-3)">${pi + 1}</td>
-            <td style="padding:6px 8px;white-space:nowrap">${schoolLevelHtml(p.level)}</td>
-            <td style="padding:6px 8px"><span style="font-weight:600">${p.school_name || ''}</span>${p.faculty ? `<span style="color:var(--text-3);margin-left:4px;font-size:10px">${p.faculty}</span>` : ''}</td>
-            <td style="padding:6px 8px;white-space:nowrap">${p.professor || '—'}</td>
-            <td style="padding:6px 8px;font-size:10px;color:var(--accent);white-space:nowrap">${p.application_period || '—'}</td>
-            <td style="padding:6px 8px">
-              <select onchange="event.stopPropagation();spPlanSet('${p.id}','status',this.value,this)" onclick="event.stopPropagation()" style="font-size:10px;padding:3px 5px;border:1px solid var(--border);border-radius:3px;background:var(--surface);font-family:inherit;color:${st.c};font-weight:600">
-                ${Object.entries(SCHOOL_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${p.status === k ? 'selected' : ''}>${v.t}</option>`).join('')}
-              </select>
-            </td>
-            <td style="padding:6px 8px"><button onclick="event.stopPropagation();spPlanFlag('${p.id}','kakomon_started',this)" data-on="${p.kakomon_started ? '1' : '0'}" style="font-size:10px;border-radius:3px;padding:3px 9px;cursor:pointer;font-family:inherit;border:1px solid ${p.kakomon_started ? 'var(--ok)' : 'var(--border)'};background:${p.kakomon_started ? 'var(--ok-bg)' : 'var(--surface)'};color:${p.kakomon_started ? 'var(--ok)' : 'var(--text-3)'}">${p.kakomon_started ? '✓ 已开始' : '未开始'}</button></td>
-            <td style="padding:6px 8px"><button onclick="event.stopPropagation();spPlanFlag('${p.id}','interview_draft_done',this)" data-on="${p.interview_draft_done ? '1' : '0'}" style="font-size:10px;border-radius:3px;padding:3px 9px;cursor:pointer;font-family:inherit;border:1px solid ${p.interview_draft_done ? 'var(--ok)' : 'var(--border)'};background:${p.interview_draft_done ? 'var(--ok-bg)' : 'var(--surface)'};color:${p.interview_draft_done ? 'var(--ok)' : 'var(--text-3)'}">${p.interview_draft_done ? '✓ 已完成' : '未完成'}</button></td>
-            <td style="padding:6px 8px;white-space:nowrap"><span onclick="event.stopPropagation();spSchoolEdit('${p.id}')" style="font-size:10px;color:var(--accent);cursor:pointer;margin-right:6px">编辑</span><span onclick="event.stopPropagation();spSchoolDel('${p.id}')" style="font-size:10px;color:var(--danger);cursor:pointer">删除</span></td>
-          </tr>`; }).join('')}
-        </tbody>
-      </table></div>` : '<div style="font-size:11px;color:var(--text-3)">尚无志望校记录，可点击右上「＋ 添加志望校」录入</div>';
-    const guaranteedFrame = (s.course_type || '').includes('保录') ? secFrame(
-      `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-        <span style="font-size:11px;font-weight:600;color:#8a5010">🎓 保录学校 <span style="font-weight:400;color:var(--text-3)">保录方案专用名单，独立于志望校</span></span>
-        <button onclick="event.stopPropagation();gsAdd('${s.id}')" style="margin-left:auto;font-size:10px;background:#8a5010;color:#fff;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-family:inherit">＋ 添加保录学校</button>
-      </div><div id="gs_list_${s.id}">${gsRenderList(s.id)}</div>`) : '';
-
-    return `<div style="background:var(--surface);border:1px solid ${isFocus ? 'var(--accent)' : 'var(--border)'};border-radius:6px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 2px rgba(0,0,0,.03)">
-      <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer" onclick="toggleProgressCard('${s.id}')">
-        <div style="flex:1;min-width:0">
+    return `<div style="background:var(--surface);border:1px solid ${isFocus?'var(--accent)':'var(--border)'};border-radius:4px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer" onclick="toggleProgressCard('${s.id}')">
+        <div style="flex:1">
           <span style="font-size:13px;font-weight:600">${s.name}</span>
-          <span style="font-size:11px;color:var(--text-3);margin-left:8px">${MAJORS[s.major] || s.major || ''}</span>
-          ${s.target_enrollment ? `<span style="font-size:10px;color:var(--text-3);margin-left:8px">目标 ${s.target_enrollment}</span>` : ''}
+          <span style="font-size:11px;color:var(--text-3);margin-left:8px">${MAJORS[s.major]||s.major||''}</span>
+          ${s.target_enrollment?`<span style="font-size:10px;color:var(--text-3);margin-left:8px">目标：${s.target_enrollment}</span>`:''}
         </div>
-        <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;justify-content:flex-end;max-width:60%">
+        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
           ${statusRow || '<span style="font-size:10px;color:var(--text-3)">暂无记录</span>'}
+          <span style="font-size:11px;color:var(--text-3);margin-left:4px">▾</span>
         </div>
-        <span class="sp-arr" style="font-size:11px;color:var(--text-3);flex-shrink:0">${isFocus ? '▾' : '▸'}</span>
       </div>
-      <div id="prog_${s.id}" style="display:${isFocus ? 'block' : 'none'};border-top:1px solid var(--border-light);background:var(--bg)">
-        <div style="padding:14px;display:flex;flex-direction:column;gap:12px">
-          ${secFrame(`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-              <span style="font-size:11px;font-weight:600;color:var(--text-2)">📊 当前进度</span>
-              <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openAddProgressEntry('${s.id}','${s.name}','${s.major}')">＋ 更新进度</button>
-            </div>
-            <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">
-              <thead><tr style="background:var(--bg)">${['项目', '现状', '数据来源', '详情'].map(h => `<th style="padding:5px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border-light);white-space:nowrap">${h}</th>`).join('')}</tr></thead>
-              <tbody>${dimCards}</tbody>
-            </table></div>`)}
-          ${secFrame(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-              <span style="font-size:11px;font-weight:600;color:var(--text-2)">🏫 志望校 <span style="font-weight:400;color:var(--text-3)">（${sPlans.length}所）· 状态/过去问/面试稿可直接改，即时保存</span></span>
-              <button onclick="event.stopPropagation();spSchoolAdd('${s.id}','${(s.name || '').replace(/'/g, '')}','${s.major || ''}')" style="margin-left:auto;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-family:inherit">＋ 添加志望校</button>
-            </div>${hintHtml}${schoolTable}`)}
-          ${guaranteedFrame}
-          ${secFrame(`<div onclick="event.stopPropagation();spNotesToggle('${s.id}','${(s.name || '').replace(/'/g, '')}',this)" style="font-size:11px;font-weight:600;color:var(--text-2);cursor:pointer;user-select:none">📝 老师评估记录 <span style="font-weight:400;color:var(--text-3)">（学生不可见）</span><span class="arr" style="margin-left:4px;color:var(--text-3)">▸</span></div><div id="spnotes_${s.id}" style="display:none;margin-top:10px"></div>`)}
-          ${secFrame(`<div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:10px">🕑 进度时间线 <span style="font-weight:400;color:var(--text-3)">${timeline.length} 条</span></div>${timelineHtml}`)}
+      <div id="prog_${s.id}" style="display:${isFocus?'block':'none'};border-top:1px solid var(--border-light);background:var(--bg)">
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border-light)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div style="font-size:11px;font-weight:600;color:var(--text-2)">当前进度</div>
+            <button class="btn btn-primary btn-sm" onclick="openAddProgressEntry('${s.id}','${s.name}','${s.major}')">＋ 更新进度</button>
+          </div>
+          <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px;background:var(--surface);border:1px solid var(--border-light)">
+            <thead><tr style="background:var(--bg)">${['项目','现状','数据来源','详情'].map(h=>`<th style="padding:4px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border);white-space:nowrap">${h}</th>`).join('')}</tr></thead>
+            <tbody>${dimCards}</tbody>
+          </table></div>
+        </div>
+        <!-- 志望校逐校推进（可直接修改，与学生端/老师端同步） -->
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border-light)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+            <span style="font-size:11px;font-weight:600;color:var(--text-2)">🏫 志望校（${sPlans.length}所）</span>
+            <span style="font-size:9px;color:var(--text-3)">状态与过去问/面试稿可直接修改，即时保存</span>
+            <button onclick="event.stopPropagation();spSchoolAdd('${s.id}','${(s.name||'').replace(/'/g,'')}','${s.major||''}')" style="margin-left:auto;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">＋ 添加志望校</button>
+          </div>
+          ${(() => {
+            const hint = bkHintMap[s.name];
+            if (!hint) return '';
+            const known = new Set(sPlans.map(p => (p.school_name||'').trim()));
+            const news = [...hint.schools].filter(x => ![...known].some(k => k.includes(x) || x.includes(k)));
+            if (!news.length) return '';
+            return `<div style="background:var(--warn-bg,#f8f0d8);border:1px solid var(--warn,#b8860b);border-radius:3px;padding:7px 10px;margin-bottom:6px;font-size:10px;color:#6a5210">
+              💡 面谈记录中提到过（${hint.date||''}）：${news.map(x=>`<span style="background:var(--surface);border-radius:2px;padding:1px 6px;margin:0 3px">${x}</span>`).join('')}
+              <button onclick="event.stopPropagation();spSchoolFromHint('${s.id}','${(s.name||'').replace(/'/g,'')}','${s.major||''}',${JSON.stringify(news).replace(/"/g,'&quot;')})" style="margin-left:6px;font-size:10px;background:var(--warn,#b8860b);color:#fff;border:none;border-radius:2px;padding:2px 10px;cursor:pointer;font-family:inherit">一键加入志望校</button>
+            </div>`;
+          })()}
+          ${sPlans.length ? `
+          <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px;background:var(--surface);border:1px solid var(--border-light)">
+            <thead><tr style="background:var(--bg)">
+              ${['No.','级别','学校名 · 研究科','教授','出愿期间','该校进度','过去问','面试稿',''].map(h=>`<th style="padding:5px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border);white-space:nowrap">${h}</th>`).join('')}
+            </tr></thead>
+            <tbody>
+              ${sPlans.map((p,pi)=>{const st=schoolStatusLabel(p.status);const lvl={1:'🔴 冲刺',2:'🟡 匹配',3:'🟢 保底'};return `<tr style="border-bottom:1px solid var(--border-light)">
+                <td style="padding:5px 8px;color:var(--text-3)">${pi+1}</td>
+                <td style="padding:5px 8px;white-space:nowrap">${lvl[p.level]||''}</td>
+                <td style="padding:5px 8px"><span style="font-weight:600">${p.school_name||''}</span>${p.faculty?`<span style="color:var(--text-3);margin-left:4px;font-size:10px">${p.faculty}</span>`:''}</td>
+                <td style="padding:5px 8px;white-space:nowrap">${p.professor||'—'}</td>
+                <td style="padding:5px 8px;font-size:10px;color:var(--accent);white-space:nowrap">${p.application_period||'—'}</td>
+                <td style="padding:5px 8px">
+                  <select onchange="event.stopPropagation();spPlanSet('${p.id}','status',this.value,this)" onclick="event.stopPropagation()" style="font-size:10px;padding:2px 4px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;color:${st.c};font-weight:600">
+                    ${Object.entries(SCHOOL_STATUS_LABELS).filter(([k])=>k!=='failed'||p.status==='failed').map(([k,v])=>`<option value="${k}" ${p.status===k?'selected':''}>${v.t}</option>`).join('')}
+                  </select>
+                </td>
+                <td style="padding:5px 8px"><button onclick="event.stopPropagation();spPlanFlag('${p.id}','kakomon_started',this)" data-on="${p.kakomon_started?'1':'0'}" style="font-size:10px;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;border:1px solid ${p.kakomon_started?'var(--ok)':'var(--border)'};background:${p.kakomon_started?'var(--ok-bg)':'var(--bg)'};color:${p.kakomon_started?'var(--ok)':'var(--text-3)'}">${p.kakomon_started?'✓ 已开始':'未开始'}</button></td>
+                <td style="padding:5px 8px"><button onclick="event.stopPropagation();spPlanFlag('${p.id}','interview_draft_done',this)" data-on="${p.interview_draft_done?'1':'0'}" style="font-size:10px;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;border:1px solid ${p.interview_draft_done?'var(--ok)':'var(--border)'};background:${p.interview_draft_done?'var(--ok-bg)':'var(--bg)'};color:${p.interview_draft_done?'var(--ok)':'var(--text-3)'}">${p.interview_draft_done?'✓ 已完成':'未完成'}</button></td>
+                <td style="padding:5px 8px"><span onclick="event.stopPropagation();spSchoolEdit('${p.id}')" style="font-size:10px;color:var(--accent);cursor:pointer;margin-right:6px">编辑</span><span onclick="event.stopPropagation();spSchoolDel('${p.id}')" style="font-size:10px;color:var(--danger);cursor:pointer">删除</span></td>
+              </tr>`;}).join('')}
+            </tbody>
+          </table></div>` : '<div style="font-size:11px;color:var(--text-3)">尚无志望校记录，可点击右上「＋ 添加志望校」录入</div>'}
+        </div>
+        ${(s.course_type||'').includes('保录') ? `
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border-light);background:#fdfaf5">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="font-size:11px;font-weight:600;color:#8a5010">🎓 保录学校</span>
+            <span style="font-size:10px;color:var(--text-3)">保录方案专用名单，独立于志望校</span>
+            <button onclick="event.stopPropagation();gsAdd('${s.id}')" style="margin-left:auto;font-size:10px;background:#8a5010;color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">＋ 添加保录学校</button>
+          </div>
+          <div id="gs_list_${s.id}">${gsRenderList(s.id)}</div>
+        </div>` : ''}
+        <!-- 老师评估记录（汇总各老师填写，admin 亦可补充） -->
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border-light)">
+          <div onclick="event.stopPropagation();spNotesToggle('${s.id}','${(s.name||'').replace(/'/g,"")}',this)" style="font-size:11px;font-weight:600;color:var(--text-2);cursor:pointer;user-select:none">📝 老师评估记录（学生不可见）<span class="arr" style="margin-left:4px;color:var(--text-3)">▸</span></div>
+          <div id="spnotes_${s.id}" style="display:none;margin-top:8px"></div>
+        </div>
+        <div style="padding:12px 14px">
+          <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px">进度时间线 <span style="font-weight:400;color:var(--text-3)">${timeline.length} 条记录</span></div>
+          ${timelineHtml}
         </div>
       </div>
     </div>`;
@@ -720,8 +726,6 @@ async function renderProgressPage(mc, focusStudentId=null){
       <div style="display:flex;gap:4px">
         <button class="btn btn-sm ${progressViewMode==='student'?'btn-primary':'btn-outline'}" onclick="progressViewMode='student';renderProgressPage(document.getElementById('mainContent'))">👤 学生视角</button>
         <button class="btn btn-sm ${progressViewMode==='season'?'btn-primary':'btn-outline'}" onclick="progressViewMode='season';renderProgressPage(document.getElementById('mainContent'))">📋 年度出愿情报</button>
-        <button class="btn btn-sm btn-outline" onclick="exportAllPlanDrafts()" title="导出当前筛选范围内所有学生的先行研究与计划书信息">⬇ 导出计划书数据</button>
-        <button class="btn btn-sm btn-outline" onclick="renderAdmissionResultsDedup(document.getElementById('mainContent'))" title="查看合格数据库中疑似重复录入的记录（姓名+大学名+语言成绩任一项重复）">🔍 合格记录查重</button>
       </div>
     </div>
   </div>
@@ -768,12 +772,7 @@ async function renderProgressPage(mc, focusStudentId=null){
 
 function toggleProgressCard(id){
   const el=document.getElementById(`prog_${id}`);
-  if(!el) return;
-  const open=el.style.display==='none';
-  el.style.display=open?'block':'none';
-  const hdr=el.previousElementSibling;
-  const arr=hdr&&hdr.querySelector('.sp-arr');
-  if(arr) arr.textContent=open?'▾':'▸';
+  if(el) el.style.display=el.style.display==='none'?'block':'none';
 }
 
 function openAddProgressEntry(studentId='', studentName='', major='') {
@@ -1123,6 +1122,7 @@ async function renderSeasonView(mc, students, timelineMap) {
   const allPlans = await sb('/rest/v1/student_school_plans?select=*&order=level.asc').catch(()=>[]);
   const seasonLabel = { summer:'夏季', winter:'冬季', next_year:'次年' };
   const seasonTitle = s => s === 'unknown' ? '出愿时期未定' : `${seasonLabel[s]||s}出愿`;
+  const levelLabel = { 1:'🔴 冲刺', 2:'🟡 匹配', 3:'🟢 保底' };
   const statusLabel = { preparing:'准备中', applied:'已出愿', passed:'✅ 合格', failed:'❌ 不合格' };
 
   // 按季度分组
@@ -1194,7 +1194,7 @@ async function renderSeasonView(mc, students, timelineMap) {
                 const st = schoolStatusLabel(p.status);
                 const flags = ['prof_ok','applied','passed'].includes(p.status)
                   ? ` <span style="color:var(--text-3)">过去问${p.kakomon_started?'✓':'—'}・面试稿${p.interview_draft_done?'✓':'—'}</span>` : '';
-                return `<span style="display:inline-block;background:${p.status==='passed'?'var(--ok-bg)':(isSchoolFailed(p.status)||p.status==='prof_ng')?'#fdecea':'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px;margin:2px;font-size:10px">${p.student_name} ${schoolLevelHtml(p.level)} · <span style="color:${st.c};font-weight:600">${st.t}</span>${flags}</span>`;
+                return `<span style="display:inline-block;background:${p.status==='passed'?'var(--ok-bg)':(p.status==='failed'||p.status==='prof_ng')?'#fdecea':'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px;margin:2px;font-size:10px">${p.student_name} <span style="color:var(--text-3)">${levelLabel[p.level]||''}</span> · <span style="color:${st.c};font-weight:600">${st.t}</span>${flags}</span>`;
               }).join('');
               const firstPlan = plans[0];
               return `<tr style="border-bottom:1px solid var(--border-light)">
@@ -1355,7 +1355,7 @@ async function spNoteDel(id, sid, sname) {
 }
 
 // ══ 志望校录入 / 编辑 / 删除（admin 侧；与学生端、老师端同一张表） ══
-const SP_LEVELS = [[1,'冲刺'],[2,'匹配'],[3,'保底']];
+const SP_LEVELS = [[1,'🔴 冲刺'],[2,'🟡 匹配'],[3,'🟢 保底']];
 
 function spSchoolForm(title, p, onSaveJs) {
   const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
@@ -1500,72 +1500,10 @@ async function gsDel(sid,idx){
 }
 
 // ══════════ 录入合格实绩（考学进度→合格数据库联动）══════════
-// 合格库专业分类（与 results/submit-grad 完全一致：文科14 + 理科8）
-const AE_SUBJECTS = [
-  ['shakai','社会学'],['fukushi','社会福祉'],['shinpan','新聞伝播'],['keizai','経済学'],
-  ['keiei','経営学'],['kyoiku','教育学'],['hougaku','法学'],['seiji','政治学/国際関係'],
-  ['bungaku','文学'],['rekishi','歴史学'],['hyosho','表象文化'],['nihongo','日本語教育'],
-  ['shinri','心理学'],['other','その他（文科）'],
-  ['rika_kikai','機械工学'],['rika_denki','電気電子工学'],['rika_kagaku','化学・化学工学'],
-  ['rika_joho','情報工学'],['rika_kenchiku','建築・土木工学'],['rika_bio','生命科学・医学'],
-  ['rika_keiei','経営工学'],['rika_other','その他（理科）'],
-];
-// 学生的 major → 合格库 subject 的智能默认（能对上就选中，不写死，可在弹窗里改）
-function aeGuessSubject(major, isRika){
-  const m = String(major||'').toLowerCase();
-  const label = (typeof MAJORS!=='undefined' && MAJORS[major]) ? String(MAJORS[major]) : '';
-  const hay = m + ' ' + label.toLowerCase();
-  const test = (kw)=> kw.some(k=>hay.includes(k));
-  if(isRika){
-    if(test(['機械','机械','kikai'])) return 'rika_kikai';
-    if(test(['電気','电气','電子','电子','denki'])) return 'rika_denki';
-    if(test(['化学','kagaku'])) return 'rika_kagaku';
-    if(test(['情報','情报','joho','jouhou'])) return 'rika_joho';
-    if(test(['建築','建筑','土木','kenchiku','doboku'])) return 'rika_kenchiku';
-    if(test(['生命','医','bio','iryou'])) return 'rika_bio';
-    if(test(['経営工','经营工'])) return 'rika_keiei';
-    return 'rika_other';
-  }
-  if(test(['社会学','shakai'])) return 'shakai';
-  if(test(['福祉','fukushi'])) return 'fukushi';
-  if(test(['新聞','新闻','伝播','传播','メディア','shinpan'])) return 'shinpan';
-  if(test(['経済','经济','keizai'])) return 'keizai';
-  if(test(['経営','经营','keiei'])) return 'keiei';
-  if(test(['教育','kyoiku','kyouiku'])) return 'kyoiku';
-  if(test(['法','hou'])) return 'hougaku';
-  if(test(['政治','国際関係','国际','seiji'])) return 'seiji';
-  if(test(['文学','bungaku'])) return 'bungaku';
-  if(test(['歴史','历史','rekishi'])) return 'rekishi';
-  if(test(['表象','hyosho'])) return 'hyosho';
-  if(test(['日本語','日本语','nihongo'])) return 'nihongo';
-  if(test(['心理','shinri'])) return 'shinri';
-  return 'other';
-}
-// 从档案里的语言成绩文本拆出结构化字段（复用合格库口径）
-function aeParseJlpt(raw){
-  if(!raw) return {jlpt:'',score:''};
-  const m=String(raw).match(/N\s*([1-3])/i);
-  const jlpt=m?('N'+m[1]):'';
-  const sm=String(raw).match(/(\d{2,3})\s*[点分]?/);
-  return {jlpt, score:(sm?sm[1]:'')};
-}
-function aeParseEng(raw){
-  if(!raw) return {type:'',score:''};
-  const u=String(raw).toUpperCase();
-  let type=''; if(u.includes('TOEIC'))type='TOEIC'; else if(u.includes('TOEFL'))type='TOEFL'; else if(u.includes('IELTS'))type='IELTS';
-  const sm=String(raw).match(/[\d.]+/);
-  return {type, score:(sm?sm[0]:'')};
-}
-
 function openAdmissionEntry(data){
-  // data: {school,faculty,dept,student,jp,en,major,enroll}
-  // 学生所在领域 → 文/理科 track（领域中文名与合格库 track 对应）
-  const dom = (typeof MAJOR_DOMAIN!=='undefined' && MAJOR_DOMAIN[data.major]) ? String(MAJOR_DOMAIN[data.major]) : '';
-  const isRika = /理科/.test(dom);
-  const guessSubj = aeGuessSubject(data.major, isRika);
-  const jp = aeParseJlpt(data.jp), en = aeParseEng(data.en);
-  const enrollYear = (String(data.enroll||'').match(/\d{4}/)||[''])[0];
-
+  // data: {school,faculty,dept,student,jp,en,major}
+  const subjMap={shakai:'shakai',shinpan:'shinpan',fukushi:'fukushi',keizai:'keizai',keiei:'keiei',kyouiku:'kyoiku'};
+  const guessSubj=subjMap[data.major]||'other';
   let ov=document.getElementById('admissionEntryOverlay');
   if(!ov){ ov=document.createElement('div'); ov.id='admissionEntryOverlay'; ov.style.cssText='position:fixed;inset:0;z-index:970;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center'; document.body.appendChild(ov); }
   ov.style.display='flex';
@@ -1575,28 +1513,18 @@ function openAdmissionEntry(data){
       <div style="font-family:'Noto Serif SC',serif;font-size:1.05rem;font-weight:600">📝 录入合格实绩</div>
       <button onclick="document.getElementById('admissionEntryOverlay').style.display='none'" class="btn btn-outline btn-sm">取消</button>
     </div>
-    <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">已从考学进度预填。语言成绩已按学生档案自动拆成级别+分数；专业分类已按学生所在专业智能选中（文/理科按领域自动判定），可下拉修改。字段与合格库完全一致。</div>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">已从考学进度预填，可补充/修改后保存到合格数据库。</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">大学名 *</label><input id="ae_univ" value="${stEsc(data.school)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
       <div><label style="font-size:9px;color:var(--text-3)">研究科</label><input id="ae_dept" value="${stEsc(data.faculty)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
       <div><label style="font-size:9px;color:var(--text-3)">专攻</label><input id="ae_spec" value="${stEsc(data.dept)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
       <div><label style="font-size:9px;color:var(--text-3)">学生名</label><input id="ae_student" value="${stEsc(data.student)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
-      <div><label style="font-size:9px;color:var(--text-3)">专业分类<span style="color:var(--text-3);font-weight:400">（${isRika?'理科':'文科'}，按学生专业默认）</span></label>
+      <div><label style="font-size:9px;color:var(--text-3)">专业分类</label>
         <select id="ae_subject" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px">
-          ${AE_SUBJECTS.map(([v,l])=>`<option value="${v}" ${guessSubj===v?'selected':''}>${l}</option>`).join('')}
+          ${[['shakai','社会学'],['fukushi','社会福祉'],['shinpan','新聞伝播'],['keizai','経済学'],['keiei','経営学'],['kyoiku','教育学'],['other','その他']].map(([v,l])=>`<option value="${v}" ${guessSubj===v?'selected':''}>${l}</option>`).join('')}
         </select></div>
-      <div><label style="font-size:9px;color:var(--text-3)">入学年份 *<span style="color:var(--text-3);font-weight:400">（学生档案预计入学）</span></label><input id="ae_enroll" value="${stEsc(enrollYear)}" placeholder="如 2027" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
-      <div><label style="font-size:9px;color:var(--text-3)">JLPT 级别</label>
-        <select id="ae_jlpt" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px">
-          ${['','N1','N2','N3'].map(v=>`<option value="${v}" ${jp.jlpt===v?'selected':''}>${v||'—'}</option>`).join('')}
-        </select></div>
-      <div><label style="font-size:9px;color:var(--text-3)">JLPT 分数</label><input id="ae_jlpt_score" type="number" value="${stEsc(jp.score)}" placeholder="如 145" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
-      <div><label style="font-size:9px;color:var(--text-3)">英语类型</label>
-        <select id="ae_eng_type" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px">
-          ${['','TOEIC','TOEFL','IELTS'].map(v=>`<option value="${v}" ${en.type===v?'selected':''}>${v||'—'}</option>`).join('')}
-        </select></div>
-      <div><label style="font-size:9px;color:var(--text-3)">英语分数</label><input id="ae_eng_score" type="number" value="${stEsc(en.score)}" placeholder="如 820" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
-      <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">备注（自由填写，如：该项目为研究生・非修士）</label><textarea id="ae_note" rows="2" placeholder="与语言成绩无关的补充说明" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px;font-family:inherit;resize:vertical"></textarea></div>
+      <div><label style="font-size:9px;color:var(--text-3)">入学年份 *</label><input id="ae_enroll" value="${stEsc((data.enroll||'').match(/\d{4}/)?.[0]||'')}" placeholder="如 2027" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
+      <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">备注（成绩等，已带入）</label><input id="ae_note" value="${stEsc([data.jp?'日语'+data.jp:'',data.en?'英语'+data.en:''].filter(Boolean).join(' '))}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
       <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">合格通知书照片（可选）</label><input type="file" id="ae_photo" accept="image/*" style="width:100%;font-size:11px"></div>
     </div>
     <div style="display:flex;gap:8px;margin-top:16px">
@@ -1607,29 +1535,11 @@ function openAdmissionEntry(data){
 async function saveAdmissionEntry(){
   const g=id=>(document.getElementById(id)||{}).value||'';
   const univ=g('ae_univ').trim();
-  const student=g('ae_student').trim();
-  const subject=g('ae_subject');
-  const jlpt=g('ae_jlpt')||null;
-  const jlptScore=g('ae_jlpt_score').trim();
-  const engType=g('ae_eng_type')||null;
-  const engScore=g('ae_eng_score').trim();
   if(!univ){ alert('请填大学名'); return; }
   const btn=document.getElementById('ae_save_btn'); if(btn){ btn.textContent='保存中…'; btn.disabled=true; }
   try{
-    // 防重复录入：姓名 + 大学名 一致，且 JLPT 分数 或 英语分数 任一项也一致 → 疑似重复
-    if(student){
-      try{
-        const dupRes=await fetch(`${SB_URL}/rest/v1/admission_results?student=ilike.${encodeURIComponent(student)}&univ=ilike.${encodeURIComponent(univ)}&select=*`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
-        const cands=dupRes.ok?await dupRes.json():[];
-        const dup=cands.find(r=>(jlptScore&&String(r.jlpt_score==null?'':r.jlpt_score)===jlptScore)||(engScore&&String(r.eng_score==null?'':r.eng_score)===engScore));
-        if(dup){
-          const ok=confirm(`检测到疑似重复记录：\n\n${dup.student||''} · ${dup.univ||''}${dup.dept?(' · '+dup.dept):''}${dup.spec?('/'+dup.spec):''}\nJLPT：${dup.jlpt||'—'} ${dup.jlpt_score||''}　英语：${dup.eng_type||'—'} ${dup.eng_score||''}\n录入于 ${(dup.created_at||'').slice(0,10)}\n\n仍要继续录入这条新记录吗？`);
-          if(!ok){ if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} return; }
-        }
-      }catch(e){ /* 查重失败不阻塞录入 */ }
-    }
     let note=g('ae_note').trim();
-    // 照片：走 admission-photos bucket，URL 以 [photo] 前缀拼进 note（与合格库一致）
+    // 上传图片（文件名纯安全字符）
     const file=document.getElementById('ae_photo')?.files?.[0];
     if(file){
       let ext=(file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,''); if(!ext||ext.length>5)ext='jpg';
@@ -1640,17 +1550,9 @@ async function saveAdmissionEntry(){
     }
     const enrollYear=parseInt(g('ae_enroll'),10);
     if(!enrollYear){ alert('请填入学年份（如 2027）'); if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} return; }
-    // 入学年份 >=2026 算新数据(new)，否则旧数据(hist)——仅供合格实绩展示分区用
+    // 入学年份 >=2026 算新数据(new)，否则旧数据(hist)——与合格实绩展示口径一致
     const era = enrollYear>=2026 ? 'new' : 'hist';
-    // track：理科专业(rika_ 开头)→rika，否则 bunka（与合格库展示的文/理分栏一致）
-    const track = String(subject||'').startsWith('rika_') ? 'rika' : 'bunka';
-    const row={
-      univ, dept:g('ae_dept').trim()||null, spec:g('ae_spec').trim()||null, student:student||null,
-      subject, track, era,
-      jlpt, jlpt_score: jlptScore?parseInt(jlptScore):null,
-      eng_type: engType, eng_score: engScore?parseInt(engScore):null,
-      note:note||null,
-    };
+    const row={ univ, dept:g('ae_dept').trim()||null, spec:g('ae_spec').trim()||null, student:g('ae_student').trim()||null, subject:g('ae_subject'), era, note:note||null };
     const res=await fetch(`${SB_URL}/rest/v1/admission_results`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify(row)});
     if(!res.ok){ throw new Error(await res.text()); }
     document.getElementById('admissionEntryOverlay').style.display='none';
@@ -1658,218 +1560,3 @@ async function saveAdmissionEntry(){
   }catch(e){ alert('保存失败：'+e.message); if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} }
 }
 function stEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-
-
-// ══════════════════════════════════
-// 计划书 / 先行研究：admin 查看・下载・批量导出
-// 数据源 student_plan_drafts（学生端填写），老师标注在 teacher_ref_notes
-// ══════════════════════════════════
-const AD_REF_LABELS = {
-  keyword:'キーワード', title:'題目/テーマ', author:'著者', year:'年', journal:'刊行物',
-  data:'研究対象/データ', method:'研究方法', summary:'概要', awareness:'問題意識',
-  conclusion:'結論', citation:'引用', evaluation:'評価', note:'備考',
-};
-const AD_DRAFT_LABELS = {
-  theme:'研究テーマ', field:'志望分野', data_source:'データ出処', data_type:'データ種類',
-  prior_lit:'先行文献', hypothesis:'仮説', difference:'先行研究との違い',
-  var_y:'被説明変数Y', var_x:'説明変数X', var_ctrl:'コントロール変数',
-  model:'モデル', model_other:'その他', regression:'回帰式',
-  background:'一、研究背景', prior:'二、先行研究', purpose:'三、研究目的',
-  method:'四、研究方法', significance:'五、研究意義',
-};
-function adJson(v) { if (!v) return null; try { return typeof v === 'string' ? JSON.parse(v) : v; } catch (e) { return null; } }
-function adRefs(d) { return adJson(d && d.prior_research_list) || []; }
-function adFields(d) { return adJson(d && d.draft_fields) || {}; }
-function adNotes(d) { return adJson(d && d.teacher_ref_notes) || {}; }
-function adRefKey(r, i) { return String((r && (r.title || r.keyword)) || '').trim() || ('#' + i); }
-function adVal(v) { return Array.isArray(v) ? v.join('、') : (v == null ? '' : String(v)); }
-
-function openAdminDraftView(studentId) {
-  const d = (window.__pgDraftsMap || {})[studentId];
-  const stu = (cachedStudents || []).find(x => x.id === studentId) || {};
-  if (!d) { alert('该学生尚无计划书数据'); return; }
-  const refs = adRefs(d), notes = adNotes(d), fields = adFields(d);
-  const existing = document.getElementById('adminDraftViewModal');
-  if (existing) existing.remove();
-  const modal = document.createElement('div');
-  modal.id = 'adminDraftViewModal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
-  const refsHtml = refs.length ? refs.map((r, i) => {
-    const n = notes[adRefKey(r, i)] || {};
-    const info = Object.entries(r).filter(([k, v]) => v).map(([k, v]) => `<span style="color:var(--text-3)">${AD_REF_LABELS[k] || k}：</span>${stEsc(v)}`).join('　');
-    const tag = (n.tags || []).length || n.comment
-      ? `<div style="margin-top:3px;font-size:10px;color:var(--ok)">老师标注：${(n.tags || []).map(t => stEsc(t)).join('、')}${n.comment ? '　' + stEsc(n.comment) : ''}</div>` : '';
-    return `<div style="padding:6px 0;border-bottom:1px dashed var(--border)">${i + 1}. ${info}${tag}</div>`;
-  }).join('') : '<div style="color:var(--text-3)">尚未整理先行研究</div>';
-  const filled = Object.entries(fields).filter(([k, v]) => adVal(v).trim());
-  const draftHtml = filled.length
-    ? filled.map(([k, v]) => `<div style="margin-bottom:5px"><span style="color:var(--text-3)">${AD_DRAFT_LABELS[k] || k}：</span>${stEsc(adVal(v)).replace(/\n/g, '<br>')}</div>`).join('')
-    : ['research_question', 'methodology', 'draft_notes'].filter(f => d[f]).map(f => `<div style="margin-bottom:5px"><span style="color:var(--text-3)">${f}：</span>${stEsc(d[f])}</div>`).join('') || '<div style="color:var(--text-3)">尚未填写草稿</div>';
-  modal.innerHTML = `
-    <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto">
-      <div style="font-size:13px;font-weight:600;margin-bottom:3px">📄 ${stEsc(stu.name || '')} 的研究计划书</div>
-      <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">${majorLabel(stu.major) || ''}${d.updated_at ? '　·　更新于 ' + String(d.updated_at).slice(0, 10) : ''}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-        ${d.draft_file_url ? `<a href="${d.draft_file_url}" target="_blank" style="font-size:11px;background:var(--accent);color:#fff;border-radius:3px;padding:6px 14px;text-decoration:none">⬇ 下载完成稿</a>` : '<span style="font-size:11px;color:var(--text-3)">尚未上传完成稿</span>'}
-        ${refs.length ? `<button onclick="exportOneStudentRefs('${studentId}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">⬇ 导出先行研究(CSV)</button>` : ''}
-      </div>
-      <div style="font-weight:600;font-size:12px;margin-bottom:4px">📚 先行研究（${refs.length}条）</div>
-      <div style="background:var(--bg);border-radius:3px;padding:10px;font-size:11px;line-height:1.8;margin-bottom:12px;max-height:34vh;overflow-y:auto">${refsHtml}</div>
-      <div style="font-weight:600;font-size:12px;margin-bottom:4px">📝 计划书草稿</div>
-      <div style="background:var(--bg);border-radius:3px;padding:10px;font-size:11px;line-height:1.8;margin-bottom:12px;max-height:30vh;overflow-y:auto">${draftHtml}</div>
-      ${d.teacher_comment ? `<div style="background:var(--ok-bg);border-radius:3px;padding:10px;font-size:11px;color:var(--ok);margin-bottom:12px">💬 老师批注${d.teacher_comment_by ? '（' + stEsc(d.teacher_comment_by) + '）' : ''}：${stEsc(d.teacher_comment)}</div>` : ''}
-      <div style="display:flex;justify-content:flex-end">
-        <button onclick="document.getElementById('adminDraftViewModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:8px 18px;font-size:12px;cursor:pointer;font-family:inherit">关闭</button>
-      </div>
-    </div>`;
-  document.body.appendChild(modal);
-}
-
-function adCsvDownload(name, head, rows) {
-  const esc = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
-  const csv = '\ufeff' + [head.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\r\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-}
-
-function exportOneStudentRefs(studentId) {
-  const d = (window.__pgDraftsMap || {})[studentId];
-  const stu = (cachedStudents || []).find(x => x.id === studentId) || {};
-  const refs = adRefs(d), notes = adNotes(d);
-  if (!refs.length) { alert('该学生尚无先行研究'); return; }
-  const cols = [...new Set(refs.flatMap(r => Object.keys(r)))];
-  const head = [...cols.map(c => AD_REF_LABELS[c] || c), '老师关键词', '老师评语'];
-  const rows = refs.map((r, i) => {
-    const n = notes[adRefKey(r, i)] || {};
-    return [...cols.map(c => r[c] || ''), (n.tags || []).join('、'), n.comment || ''];
-  });
-  adCsvDownload(`${stu.name || '学生'}_先行研究整理.csv`, head, rows);
-}
-
-// 批量导出：当前筛选范围内所有学生的先行研究（一行一条）+ 计划书汇总（一行一人，含完成稿链接）
-function exportAllPlanDrafts() {
-  const map = window.__pgDraftsMap || {};
-  const list = (window.__pgStudents || []).filter(s => map[s.id]);
-  if (!list.length) { alert('当前筛选范围内没有计划书数据'); return; }
-  // ① 先行研究明细
-  const refCols = ['keyword', 'title', 'author', 'year', 'journal', 'data', 'method', 'summary', 'awareness', 'conclusion', 'citation', 'evaluation', 'note'];
-  const refHead = ['学生', '专业', ...refCols.map(c => AD_REF_LABELS[c] || c), '老师关键词', '老师评语'];
-  const refRows = [];
-  list.forEach(s => {
-    const d = map[s.id], notes = adNotes(d);
-    adRefs(d).forEach((r, i) => {
-      const n = notes[adRefKey(r, i)] || {};
-      refRows.push([s.name, majorLabel(s.major) || s.major || '', ...refCols.map(c => r[c] || ''), (n.tags || []).join('、'), n.comment || '']);
-    });
-  });
-  // ② 计划书汇总
-  const sumHead = ['学生', '专业', '先行研究条数', '草稿已填项', '完成稿链接', '老师批注', '批注老师', '更新时间'];
-  const sumRows = list.map(s => {
-    const d = map[s.id];
-    const nFilled = Object.entries(adFields(d)).filter(([k, v]) => adVal(v).trim()).length;
-    return [s.name, majorLabel(s.major) || s.major || '', adRefs(d).length, nFilled, d.draft_file_url || '', d.teacher_comment || '', d.teacher_comment_by || '', String(d.updated_at || '').slice(0, 10)];
-  });
-  const stamp = new Date().toISOString().slice(0, 10);
-  adCsvDownload(`计划书汇总_${stamp}.csv`, sumHead, sumRows);
-  if (refRows.length) setTimeout(() => adCsvDownload(`先行研究明细_${stamp}.csv`, refHead, refRows), 600);
-  alert(`已导出 ${list.length} 名学生的计划书汇总${refRows.length ? `，以及 ${refRows.length} 条先行研究明细（两个 CSV 文件）` : ''}。\n完成稿文件请用汇总表中的链接下载。`);
-}
-
-
-// ══════════════════════════════════
-// 合格记录查重：admin 集中查看 admission_results，找出姓名+大学名+语言成绩任一项都重复的疑似重复录入
-// （录入时已有即时查重提醒，这里补一道"事后筛查"，覆盖多方分别录入导致漏检的情况）
-// ══════════════════════════════════
-let admDedupRows = null;
-let admDedupOnlyDup = true;
-
-async function renderAdmissionResultsDedup(mc) {
-  mc.innerHTML = '<div class="loading">加载中…</div>';
-  try {
-    admDedupRows = await sb('/rest/v1/admission_results?select=*&order=created_at.desc&limit=5000') || [];
-  } catch (e) {
-    mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
-    return;
-  }
-  admDedupRender(mc);
-}
-
-// 规整用于比对的字符串：去空白、转小写，避免"东京大学 "与"东京大学"这种误判
-function admNorm(s) { return String(s || '').trim().toLowerCase(); }
-
-function admFindDupGroups(rows) {
-  const groups = [];
-  const used = new Set();
-  for (let i = 0; i < rows.length; i++) {
-    if (used.has(i)) continue;
-    const a = rows[i];
-    const nameA = admNorm(a.student), univA = admNorm(a.univ);
-    if (!nameA || !univA) continue;
-    const jpA = admNorm(a.jlpt_score), enA = admNorm(a.eng_score);
-    const members = [i];
-    for (let j = i + 1; j < rows.length; j++) {
-      if (used.has(j)) continue;
-      const b = rows[j];
-      if (admNorm(b.student) !== nameA || admNorm(b.univ) !== univA) continue;
-      const jpB = admNorm(b.jlpt_score), enB = admNorm(b.eng_score);
-      const scoreMatch = (jpA && jpA === jpB) || (enA && enA === enB);
-      if (scoreMatch) members.push(j);
-    }
-    if (members.length > 1) {
-      members.forEach(m => used.add(m));
-      groups.push(members.map(m => rows[m]));
-    }
-  }
-  return groups;
-}
-
-function admDedupRender(mc) {
-  const rows = admDedupRows || [];
-  const groups = admFindDupGroups(rows);
-  const dupIds = new Set(groups.flat().map(r => r.id));
-  const shown = admDedupOnlyDup ? groups.flat() : rows;
-
-  const rowHtml = r => {
-    const isDup = dupIds.has(r.id);
-    return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:9px 12px;border:1px solid ${isDup ? '#e0a0a0' : 'var(--border-light)'};background:${isDup ? '#fdecea' : 'var(--surface)'};border-radius:4px;margin-bottom:6px">
-      <div style="min-width:70px"><span style="font-size:12px;font-weight:600">${stEsc(r.student || '—')}</span></div>
-      <div style="min-width:120px;font-size:11px">${stEsc(r.univ || '')}${r.dept ? '　' + stEsc(r.dept) : ''}${r.spec ? '/' + stEsc(r.spec) : ''}</div>
-      <div style="font-size:11px;color:var(--text-2)">JLPT ${stEsc(r.jlpt || '')} ${stEsc(r.jlpt_score || '')}　英语 ${stEsc(r.eng_type || '')} ${stEsc(r.eng_score || '')}</div>
-      <div style="font-size:10px;color:var(--text-3)">${(r.era === 'new') ? '新数据' : '历史数据'}　${(r.created_at || '').slice(0, 10)}</div>
-      ${(function(){const t=String(r.note||'').replace(/\s*\|?\s*\[photo\]\S+/,'').trim();return t?`<div style="font-size:10px;color:var(--text-3);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${stEsc(t)}">📝 ${stEsc(t)}</div>`:'';})()}
-      ${(function(){const m=String(r.note||'').match(/\[photo\](\S+)/);return m?`<a href="${m[1]}" target="_blank" style="font-size:10px;color:var(--accent)">📷 照片</a>`:'';})()}
-      <div style="margin-left:auto;display:flex;gap:6px">
-        ${isDup ? `<span style="font-size:9px;background:#e0a0a0;color:#fff;border-radius:2px;padding:1px 7px">疑似重复</span>` : ''}
-        <button onclick="admDedupDelete('${r.id}')" style="font-size:10px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:3px;padding:2px 9px;cursor:pointer;font-family:inherit">删除此条</button>
-      </div>
-    </div>`;
-  };
-
-  mc.innerHTML = `
-  <div class="page-header">
-    <div class="section-title">🔍 合格记录查重</div>
-    <button class="btn btn-sm btn-outline" onclick="renderProgressPage(document.getElementById('mainContent'))">← 返回考学进度</button>
-  </div>
-  <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;line-height:1.8">
-    判定规则：<b>姓名 + 大学名</b>一致，且<b>日语成绩或英语成绩</b>至少一项也一致 → 视为疑似重复录入（多人分别录入同一学生同一学校时常见）。<br>
-    共 ${rows.length} 条合格记录，发现 <b style="color:${groups.length ? '#b03a2e' : 'inherit'}">${groups.length}</b> 组疑似重复（涉及 ${dupIds.size} 条记录）。
-  </div>
-  <div style="display:flex;gap:8px;margin-bottom:12px">
-    <button class="btn btn-sm ${admDedupOnlyDup ? 'btn-primary' : 'btn-outline'}" onclick="admDedupOnlyDup=true;admDedupRender(document.getElementById('mainContent'))">仅显示疑似重复（${dupIds.size}）</button>
-    <button class="btn btn-sm ${!admDedupOnlyDup ? 'btn-primary' : 'btn-outline'}" onclick="admDedupOnlyDup=false;admDedupRender(document.getElementById('mainContent'))">显示全部（${rows.length}）</button>
-  </div>
-  <div>${shown.length ? shown.map(rowHtml).join('') : `<div style="font-size:12px;color:var(--text-3);padding:20px 0;text-align:center">${admDedupOnlyDup ? '暂未发现疑似重复记录 🎉' : '合格数据库为空'}</div>`}</div>`;
-}
-
-async function admDedupDelete(id) {
-  const r = (admDedupRows || []).find(x => x.id === id);
-  if (!confirm(`确认删除这条合格记录？\n\n${r ? (r.student || '') + ' · ' + (r.univ || '') : ''}\n\n删除后不可恢复。`)) return;
-  try {
-    await sb(`/rest/v1/admission_results?id=eq.${id}`, 'DELETE');
-    admDedupRows = (admDedupRows || []).filter(x => x.id !== id);
-    admDedupRender(document.getElementById('mainContent'));
-  } catch (e) { alert('删除失败：' + e.message); }
-}
