@@ -363,7 +363,8 @@ async function submit(){
     if(!el('date').value){ warn('请选日期'); return; }
     dates=[el('date').value];
   }
-  // 逐日期检查冲突
+  // 先从服务器重拉最新占用（别人刚录的、其它标签页录的都能看到），再逐日期检查冲突
+  try{ await reloadBookings(); find(); renderGrid(); }catch(e){}
   const conflictDates=[];
   for(const date of dates){
     const rc=roomConflicts(BOOKINGS, CUR.id, date, s, e, null);
@@ -384,7 +385,7 @@ async function submit(){
       const ins=await sbInsert('sched_bookings', rec); BOOKINGS.push(ins[0]);
     }
     el('modal').classList.add('hidden'); toast(weekly?('已批量录入 '+dates.length+' 条'):'已录入并生效'); find(); renderGrid(); renderMine();
-  }catch(err){ warn(esc(err.message)); }
+  }catch(err){ warn(esc(err.message)); try{ await reloadBookings(); find(); renderGrid(); renderMine(); }catch(e){} }
   finally{ sb.disabled=false; sb.textContent='保存占用'; }
 }
 boot();
