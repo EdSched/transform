@@ -14,11 +14,29 @@ function sbHeaders(extra){
 }
 // PostgREST 报错体 → 只取 message（触发器抛的中文原因就在这里）
 function sbErrMsg(t){ try{ const j=JSON.parse(t); return j && j.message ? j.message : ''; }catch(e){ return ''; } }
+// 读取：自动翻页。Supabase 每次最多返回 1000 行（项目设置 Max rows），裸 select=* 会把超出部分静默截掉；
+// 这里用 Content-Range 拿总数、按页拉齐。查询里自己写了 limit 的按原样返回（不翻页）。
 async function sbGet(table, query){
-  const url = SB_URL + '/rest/v1/' + table + '?' + (query || 'select=*');
-  const r = await fetch(url, { headers: sbHeaders(), cache: 'no-store' });
-  if(!r.ok) throw new Error(table + ' 读取失败: ' + r.status + ' ' + await r.text());
-  return r.json();
+  const q = query || 'select=*';
+  const base = SB_URL + '/rest/v1/' + table + '?' + q;
+  if(/(^|&)limit=/.test(q)){
+    const r = await fetch(base, { headers: sbHeaders(), cache: 'no-store' });
+    if(!r.ok) throw new Error(table + ' 读取失败: ' + r.status + ' ' + await r.text());
+    return r.json();
+  }
+  const ord = /(^|&)order=/.test(q) ? '' : '&order=id.asc';   // 翻页需要稳定顺序
+  const PAGE = 1000; let all = [], off = 0;
+  for(let guard=0; guard<100; guard++){
+    const r = await fetch(base + ord + '&limit=' + PAGE + '&offset=' + off,
+      { headers: Object.assign({}, sbHeaders(), { 'Prefer': 'count=exact' }), cache: 'no-store' });
+    if(!r.ok) throw new Error(table + ' 读取失败: ' + r.status + ' ' + await r.text());
+    const rows = await r.json();
+    all = all.concat(rows); off += rows.length;
+    const cr = r.headers.get('content-range') || '';           // 形如 0-999/1234
+    const total = cr.includes('/') ? parseInt(cr.split('/')[1], 10) : NaN;
+    if(!rows.length || isNaN(total) || off >= total) break;
+  }
+  return all;
 }
 async function sbInsert(table, rows){
   const r = await fetch(SB_URL + '/rest/v1/' + table, {
