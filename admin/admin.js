@@ -887,7 +887,7 @@ function renderTeacherRows(){
           if(p.promo) permsFull.push('宣传相关（营业）');
           if(p.lect_info) permsFull.push('讲师信息查询（营业）');
           const open=teacherExpandedId===t.id;
-          const link=`${base}?teacher=${encodeURIComponent(t.name)}`;
+          const link=`${base}?teacher=${encodeURIComponent(t.name)}&tid=${encodeURIComponent(t.id)}`;
           return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
             <div onclick="teacherExpandedId=teacherExpandedId==='${t.id}'?null:'${t.id}';renderTeacherRows()" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;${open?'background:var(--bg)':''}">
               <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px;white-space:nowrap">${escTM(t.name)}</span>
