@@ -87,7 +87,7 @@ async function studyLogin(name, code, silent) {
     // 账号=学生id@student.local，密码=查询码；只有已开通账号的学生会成功，失败不影响进入
     try {
       if (studyStudent.id && typeof supabase !== 'undefined' && supabase.createClient) {
-        const _c = supabase.createClient(SB_URL, SB_KEY);
+        const _c = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: 'sb-student', persistSession: true, autoRefreshToken: true } });
         const { data: _sess } = await _c.auth.getSession();
         if (!_sess || !_sess.session) {
           await _c.auth.signInWithPassword({ email: `${studyStudent.id}@student.local`, password: code });
