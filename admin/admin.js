@@ -23,7 +23,7 @@ let _sbAuth = null;
 function sbAuthClient(){
   if(_sbAuth) return _sbAuth;
   if(typeof supabase==='undefined' || !supabase.createClient){ return null; }
-  _sbAuth = supabase.createClient(SB_URL, SB_KEY);
+  _sbAuth = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: 'sb-admin', persistSession: true, autoRefreshToken: true } });
   return _sbAuth;
 }
 async function sendMagicLink(){
