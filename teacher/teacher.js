@@ -141,7 +141,7 @@ async function init() {
     try {
       const _tid = teacherData.id || teacherId;
       if (_tid && typeof supabase !== 'undefined' && supabase.createClient) {
-        const _c = supabase.createClient(SB_URL, SB_KEY);
+        const _c = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: 'sb-teacher', persistSession: true, autoRefreshToken: true } });
         const { data: _sess } = await _c.auth.getSession();
         if (!_sess || !_sess.session) {
           await _c.auth.signInWithPassword({ email: `${_tid}@teacher.local`, password: _tid });
