@@ -55,6 +55,7 @@ function renderStudentsPage(mc){
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('importFileInput').click()">↑ 导入 Excel</button>
       <button class="btn btn-outline btn-sm" onclick="generateAllStudentCodes()">🔑 批量生成查询码</button>
       <button class="btn btn-outline btn-sm" onclick="batchChangeStatus()">批量改状态</button>
+      <button class="btn btn-outline btn-sm" onclick="batchAssignOwner()">批量指派负责老师</button>
       <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleImportFile(this)">
       <button class="btn btn-primary btn-sm" onclick="openStudentModal()">＋ 添加学生</button>
     </div>
@@ -457,6 +458,54 @@ async function applyBatchStatus(status, selected){
     }
     renderStudentsPage(document.getElementById('mainContent'));
   }catch(e){alert('批量更新失败：'+e.message)}
+}
+
+// ── 批量指派专业负责老师（owner_teachers；姓名数组，与 VIP 独立）──
+function batchAssignOwner(){
+  const selected=[...document.querySelectorAll('.student-select:checked')].map(c=>c.value);
+  if(!selected.length){alert('请先勾选学生');return}
+  // 候选老师池：按当前领域/专业过滤（与 VIP/单个指派一致）
+  const pool=(cachedTeachers||[]).filter(t=>{
+    if(!CURRENT_DOMAIN||CURRENT_DOMAIN==='all') return true;
+    if(CURRENT_MAJOR) return (t.majors||[]).includes(CURRENT_MAJOR);
+    if((t.domains||[]).includes(CURRENT_DOMAIN)) return true;
+    return (t.majors||[]).some(m=>MAJOR_DOMAIN[m]===CURRENT_DOMAIN);
+  });
+  let ov=document.getElementById('batchOwnerOverlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='batchOwnerOverlay'; ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center'; document.body.appendChild(ov); }
+  ov.innerHTML=`
+    <div style="background:var(--surface);border-radius:6px;padding:20px;width:340px;max-height:80vh;overflow:auto">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">批量指派负责老师（已选 ${selected.length} 人）</div>
+      <div style="font-size:10px;color:var(--text-3);margin-bottom:12px">负责关系仅用于「我负责的」筛选，不改变老师能看到哪些学生。</div>
+      <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:5px">选择老师</label>
+      <input list="batch_owner_list" id="batch_owner_input" placeholder="输入或选择老师姓名" style="width:100%;font-size:12px;padding:7px 9px;border:1px solid var(--border);border-radius:3px;margin-bottom:10px">
+      <datalist id="batch_owner_list">${pool.map(t=>`<option value="${t.name}">`).join('')}</datalist>
+      <div style="display:flex;gap:6px;margin-bottom:12px">
+        <button onclick="applyBatchOwner('add',${JSON.stringify(selected).replace(/"/g,'&quot;')})" style="flex:1;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:8px;cursor:pointer;font-family:inherit">追加（保留原有）</button>
+        <button onclick="applyBatchOwner('replace',${JSON.stringify(selected).replace(/"/g,'&quot;')})" style="flex:1;font-size:12px;background:none;border:1px solid var(--border);border-radius:4px;padding:8px;cursor:pointer;font-family:inherit">替换（清空重设）</button>
+      </div>
+      <button onclick="applyBatchOwner('clear',${JSON.stringify(selected).replace(/"/g,'&quot;')})" style="width:100%;font-size:11px;background:none;border:1px solid #e0b0a0;color:#a33;border-radius:3px;padding:6px;cursor:pointer;font-family:inherit;margin-bottom:6px">移除这些学生的全部负责老师</button>
+      <button onclick="document.getElementById('batchOwnerOverlay').remove()" style="width:100%;padding:7px;background:none;border:1px solid var(--border);border-radius:3px;cursor:pointer;font-size:12px;font-family:inherit">取消</button>
+    </div>`;
+}
+
+async function applyBatchOwner(mode, selected){
+  const name=(document.getElementById('batch_owner_input')||{}).value?.trim()||'';
+  if(mode!=='clear' && !name){ alert('请先选择/输入老师姓名'); return; }
+  document.getElementById('batchOwnerOverlay')?.remove();
+  try{
+    for(const id of selected){
+      const s=cachedStudents.find(x=>x.id===id); if(!s) continue;
+      let arr=Array.isArray(s.owner_teachers)?[...s.owner_teachers]:[];
+      if(mode==='add'){ if(!arr.includes(name)) arr.push(name); }
+      else if(mode==='replace'){ arr=[name]; }
+      else if(mode==='clear'){ arr=[]; }
+      await sb(`/rest/v1/students?id=eq.${id}`,'PATCH',{owner_teachers:arr});
+      s.owner_teachers=arr;
+    }
+    renderStudentsPage(document.getElementById('mainContent'));
+    alert(mode==='clear'?`已移除 ${selected.length} 名学生的负责老师`:`已为 ${selected.length} 名学生${mode==='add'?'追加':'设置'}负责老师：${name}`);
+  }catch(e){alert('批量指派失败：'+e.message)}
 }
 
 async function openStudentDetail(id){
