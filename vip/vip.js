@@ -111,10 +111,12 @@ async function vipLogin(name, code, silent) {
     try {
       if (typeof supabase !== 'undefined' && supabase.createClient) {
         const _c = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: 'sb-student', persistSession: true, autoRefreshToken: true } });
-        const { data: _sess } = await _c.auth.getSession();
+        let { data: _sess } = await _c.auth.getSession();
         if (!(_sess && _sess.session && _sess.session.user && _sess.session.user.email === `${sid}@student.local`)) {
           await _c.auth.signInWithPassword({ email: `${sid}@student.local`, password: code });
+          _sess = (await _c.auth.getSession()).data;
         }
+        if (_sess && _sess.session && typeof __setSbToken === 'function') __setSbToken(_sess.session.access_token);
       }
     } catch (e) {}
     // ③ 用 token 读自己档案，再判断是否开通 VIP
