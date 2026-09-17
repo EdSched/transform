@@ -82,7 +82,21 @@ function doLogin(){
   loginErr('管理员请使用下方邮箱登录');
 }
 function loginErr(msg){document.getElementById('loginErr').textContent=msg;document.getElementById('loginPw').value='';document.getElementById('loginPw').focus();}
-function doLogout(){localStorage.removeItem('txe_login');localStorage.removeItem('txe_domain');location.reload()}
+async function doLogout(){
+  localStorage.removeItem('txe_login');localStorage.removeItem('txe_domain');
+  // 真正登出 Supabase Auth（清 token），否则重开会被自动登回、无法换账号/重登
+  try{ const c=sbAuthClient(); if(c) await c.auth.signOut(); }catch(e){}
+  location.reload();
+}
+// 强制重新邮箱登录：随时可用的"逃生门"（排查 RLS / token 过期时用）
+async function forceRelogin(){
+  try{ const c=sbAuthClient(); if(c) await c.auth.signOut(); }catch(e){}
+  localStorage.removeItem('txe_login');
+  document.getElementById('loginOverlay').style.display='flex';
+  const box=document.getElementById('magicBox'); if(box) box.scrollIntoView({behavior:'smooth'});
+  const em=document.getElementById('magicEmail'); if(em){ em.value='pinnyxu@gmail.com'; em.focus(); }
+  const msg=document.getElementById('magicMsg'); if(msg){ msg.style.color='var(--text-3)'; msg.textContent='点「发送登录链接」重新登录以刷新身份。'; }
+}
 
 // ── 中枢层：选择领域视角 ──
 // 第一步骨架：admin 登录后到这里，选一个领域视角（或总览）再进入系统。
