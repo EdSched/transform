@@ -95,6 +95,11 @@ function tpRenderShell() {
   <div class="page-header">
     <div class="section-title">考学进度 <span class="badge-count" id="tp_count"></span></div>
   </div>
+  ${tpHasMine() ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
+    <span style="font-size:10px;color:var(--text-3)">范围：</span>
+    <div class="filter-chip ${tpOwnerFilter==='mine'?'active':''}" onclick="tpSetOwner('mine')" style="padding:3px 10px;font-size:10px">⭐ 我负责的</div>
+    <div class="filter-chip ${tpOwnerFilter==='all'?'active':''}" onclick="tpSetOwner('all')" style="padding:3px 10px;font-size:10px">全部（可见范围）</div>
+  </div>` : ''}
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
     <span style="font-size:10px;color:var(--text-3)">专业：</span>${tpMajorChipsHtml(tpMajorFilter, 'tpSetMajor')}
   </div>
@@ -118,14 +123,29 @@ function tpSourceChipsHtml(cur, setterName) {
     .map(([k, l]) => `<div class="filter-chip ${cur === k ? 'active' : ''}" onclick="${setterName}('${k}')" style="padding:3px 10px;font-size:10px">${l}</div>`).join('');
 }
 
+// 「我负责的」：owner_teachers 或 vip_teachers 含当前老师姓名（两者平级，均在可读范围内）
+let tpOwnerFilter = '';   // '' 未初始化 | 'mine' | 'all'
+function tpIsMine(s) {
+  const me = (teacherData && teacherData.name) || '';
+  if (!me) return false;
+  return (Array.isArray(s.owner_teachers) && s.owner_teachers.includes(me))
+      || (Array.isArray(s.vip_teachers) && s.vip_teachers.includes(me));
+}
+// 当前老师在可读范围内是否有被指派/带VIP的学生（决定默认档）
+function tpHasMine() { return (teacherProgressData.students || []).some(tpIsMine); }
+
 function tpFilteredStudents() {
   const { students } = teacherProgressData;
+  // 首次进入时定默认档：有负责/VIP学生 → 我负责的，否则 全部
+  if (tpOwnerFilter === '') tpOwnerFilter = tpHasMine() ? 'mine' : 'all';
   let list = students.filter(s => tpMajorMatch(s.major, tpMajorFilter));
+  if (tpOwnerFilter === 'mine') list = list.filter(tpIsMine);
   if (tpSourceFilter) list = list.filter(s => (s.source || '') === tpSourceFilter);
   const q = teacherProgressFilter.trim();
   if (q) list = list.filter(s => tpNameMatch(s.name, q) || (s.source || '').includes(q));
   return list;
 }
+function tpSetOwner(v) { tpOwnerFilter = v; tpRenderShell(); }
 
 // 备考节点文字总结（与学生学习记录页的备考规划同一套逻辑，按学生所选考试路线）
 function tpNodeSummaryHtml(s, latest, plans, draft) {
