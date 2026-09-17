@@ -23,7 +23,7 @@ let _sbAuth = null;
 function sbAuthClient(){
   if(_sbAuth) return _sbAuth;
   if(typeof supabase==='undefined' || !supabase.createClient){ return null; }
-  _sbAuth = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: 'sb-admin', persistSession: true, autoRefreshToken: true } });
+  _sbAuth = supabase.createClient(SB_URL, SB_KEY);
   return _sbAuth;
 }
 async function sendMagicLink(){
@@ -93,7 +93,8 @@ async function forceRelogin(){
   try{ const c=sbAuthClient(); if(c) await c.auth.signOut(); }catch(e){}
   localStorage.removeItem('txe_login');
   document.getElementById('loginOverlay').style.display='flex';
-  const box=document.getElementById('magicBox'); if(box) box.scrollIntoView({behavior:'smooth'});
+  const box=document.getElementById('magicBox'); if(box){ box.style.display='block'; box.scrollIntoView({behavior:'smooth'}); }
+  const pw=document.getElementById('pwBox'); if(pw) pw.style.display='none';
   const em=document.getElementById('magicEmail'); if(em){ em.value='pinnyxu@gmail.com'; em.focus(); }
   const msg=document.getElementById('magicMsg'); if(msg){ msg.style.color='var(--text-3)'; msg.textContent='点「发送登录链接」重新登录以刷新身份。'; }
 }
@@ -1196,8 +1197,15 @@ async function initApp(){
     else { showHub(); }
     return;
   }
-  // 未登录：显示登录框（领域钥匙可提示其领域）
+  // 未登录：显示登录框。有 ?k=（领域钥匙）→ 显示密码框；admin 直接访问 → 只显示邮箱免密登录
   document.getElementById('loginOverlay').style.display='flex';
+  {
+    const isKey = ACCESS_KEY && !ACCESS_KEY.invalid;
+    const pwBox = document.getElementById('pwBox');
+    const magicBox = document.getElementById('magicBox');
+    if(pwBox) pwBox.style.display = isKey ? 'block' : 'none';
+    if(magicBox) magicBox.style.display = isKey ? 'none' : 'block';  // 领域钥匙用密码；admin 用邮箱
+  }
   if(ACCESS_KEY && !ACCESS_KEY.is_admin){
     const hint=document.getElementById('loginHint');
     if(hint) hint.textContent=`${ACCESS_KEY.label||ACCESS_KEY.domain} · 请输入访问密码`;
