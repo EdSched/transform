@@ -14,22 +14,22 @@
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:36px 40px;width:320px;text-align:center">
     <div style="font-family:'Noto Serif SC',serif;font-size:1.2rem;font-weight:600;margin-bottom:4px">唯新教育 管理系统</div>
     <div style="font-size:10px;color:var(--text-3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:28px">Transform Education</div>
-    <div style="text-align:left;margin-bottom:8px">
-      <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:5px">管理密码</label>
-      <div id="loginHint" style="font-size:11px;color:var(--primary,#8b5cf6);margin-bottom:6px;min-height:0"></div>
-      <input type="password" id="loginPw" placeholder="请输入密码">
-    </div>
-    <div id="loginErr" style="font-size:11px;color:var(--danger);min-height:18px;margin-bottom:10px;text-align:left"></div>
-    <button class="btn btn-primary btn-full" onclick="doLogin()">进入管理系统</button>
-    <div style="font-size:10px;color:var(--text-3);margin-top:14px">登录后自动保持 30 天</div>
-
-    <!-- 邮箱免密登录（新，与密码并存；跑通后再撤密码） -->
-    <div style="border-top:1px solid var(--border-light,#eee);margin:18px 0 12px"></div>
+    <!-- 邮箱免密登录（admin 主入口）-->
     <div id="magicBox" style="text-align:left">
-      <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:5px">或用邮箱免密登录</label>
+      <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:5px">邮箱免密登录</label>
       <input type="email" id="magicEmail" placeholder="pinnyxu@gmail.com" autocomplete="email" style="margin-bottom:8px">
-      <button class="btn btn-outline btn-full" onclick="sendMagicLink()">📧 发送登录链接</button>
+      <button class="btn btn-primary btn-full" onclick="sendMagicLink()">📧 发送登录链接</button>
       <div id="magicMsg" style="font-size:11px;color:var(--text-3);min-height:16px;margin-top:8px;line-height:1.6"></div>
+    </div>
+
+    <!-- 领域钥匙密码登录（仅通过 ?k= 领域链接访问时显示；admin 直接访问时隐藏）-->
+    <div id="pwBox" style="text-align:left;display:none">
+      <div style="border-top:1px solid var(--border-light,#eee);margin:18px 0 12px"></div>
+      <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:5px">领域链接密码</label>
+      <div id="loginHint" style="font-size:11px;color:var(--primary,#8b5cf6);margin-bottom:6px;min-height:0"></div>
+      <input type="password" id="loginPw" placeholder="请输入该链接的密码">
+      <div id="loginErr" style="font-size:11px;color:var(--danger);min-height:18px;margin:8px 0;text-align:left"></div>
+      <button class="btn btn-outline btn-full" onclick="doLogin()">进入</button>
     </div>
   </div>
 </div>
