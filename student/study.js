@@ -67,33 +67,29 @@ async function studyLoginSubmit() {
 
 async function studyLogin(name, code, silent) {
   try {
-    const students = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(name)}&student_code=eq.${encodeURIComponent(code)}&select=*`);
-    if (!students.length) return false;
-    // 同名同码理论上不该出现（查询码已保证唯一）；万一出现多条，优先用上次登录记住的 id 精确匹配，避免取错人
-    if (students.length > 1) {
-      let chosen = null;
-      try {
-        const raw = localStorage.getItem(STUDY_STORAGE_KEY);
-        const savedId = raw ? (JSON.parse(raw) || {}).id : '';
-        if (savedId) chosen = students.find(x => x.id === savedId);
-      } catch (e) {}
-      studyStudent = chosen || students[0];
-    } else {
-      studyStudent = students[0];
-    }
-    // 身份锚定到 id：以后一切以 studyStudent.id 为准（姓名仍用于显示/检索，不变）
-    localStorage.setItem(STUDY_STORAGE_KEY, JSON.stringify({ id: studyStudent.id, name, code, major: studyMajor, ts: Date.now() }));
-    // ── 静默 Auth 登录（试点：拿到真 token，为 RLS 铺路）──
-    // 账号=学生id@student.local，密码=查询码；只有已开通账号的学生会成功，失败不影响进入
+    // ① 姓名+码 → 换出 student_id（走锁死的对照表函数，不直接读 students 表）
+    const idRes = await sb(`/rest/v1/rpc/resolve_student_login`, 'POST', { p_name: name, p_code: code });
+    const sid = Array.isArray(idRes) ? idRes[0] : idRes;
+    if (!sid) return false;   // 姓名或码不对
+    // ② 用 id + 码 走 Auth 登录，拿到真 token（这样才能读到自己那条 students）
+    let authed = false;
     try {
-      if (studyStudent.id && typeof supabase !== 'undefined' && supabase.createClient) {
+      if (typeof supabase !== 'undefined' && supabase.createClient) {
         const _c = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: 'sb-student', persistSession: true, autoRefreshToken: true } });
         const { data: _sess } = await _c.auth.getSession();
-        if (!_sess || !_sess.session) {
-          await _c.auth.signInWithPassword({ email: `${studyStudent.id}@student.local`, password: code });
+        if (_sess && _sess.session && _sess.session.user && _sess.session.user.email === `${sid}@student.local`) {
+          authed = true;   // 已是本人 session
+        } else {
+          const { error } = await _c.auth.signInWithPassword({ email: `${sid}@student.local`, password: code });
+          authed = !error;
         }
       }
-    } catch (e) { /* Auth 失败不挡人：学生照常进 */ }
+    } catch (e) {}
+    // ③ 用 token 读自己那条档案（students 锁上后，RLS 放行"看自己"）
+    const rows = await sb(`/rest/v1/students?id=eq.${encodeURIComponent(sid)}&select=*`).catch(() => []);
+    if (!rows || !rows.length) return false;
+    studyStudent = rows[0];
+    localStorage.setItem(STUDY_STORAGE_KEY, JSON.stringify({ id: studyStudent.id, name, code, major: studyMajor, ts: Date.now() }));
     await loadStudyData();
     renderStudyMain();
     return true;
