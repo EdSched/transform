@@ -142,10 +142,12 @@ async function init() {
       const _tid = teacherData.id || teacherId;
       if (_tid && typeof supabase !== 'undefined' && supabase.createClient) {
         const _c = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: 'sb-teacher', persistSession: true, autoRefreshToken: true } });
-        const { data: _sess } = await _c.auth.getSession();
+        let { data: _sess } = await _c.auth.getSession();
         if (!_sess || !_sess.session) {
           await _c.auth.signInWithPassword({ email: `${_tid}@teacher.local`, password: _tid });
+          _sess = (await _c.auth.getSession()).data;
         }
+        if (_sess && _sess.session && typeof __setSbToken === 'function') __setSbToken(_sess.session.access_token);
       }
     } catch (e) { /* Auth 失败不挡人：老师照常进 */ }
     const p = teacherData.permissions || {};
