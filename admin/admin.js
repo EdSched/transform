@@ -54,6 +54,7 @@ async function handleMagicCallback(){
   try{
     const { data } = await c.auth.getSession();
     if(data && data.session && data.session.user){
+      if(typeof __setSbToken==='function') __setSbToken(data.session.access_token);  // 让 sb() 立刻带上 admin token
       // 已通过 Auth 登录 → 和原来一样写本地登录态，进中枢台
       localStorage.setItem('txe_login',JSON.stringify({ts:Date.now(),auth:data.session.user.email}));
       // 清掉 URL 里的 token hash，避免刷新残留
