@@ -18,12 +18,36 @@ function _normTimeColon(v){
   return v;
 }
 
+// ── 当前登录 token（RLS 用）──
+// 各端登录后可设 window.__SB_TOKEN；未设时自动从 localStorage 的 storageKey 里找已存的 session token。
+// 读到 token 就用它（数据库按身份放行 RLS），读不到就退回公钥（不影响未锁的表）。
+let __SB_TOKEN = null;
+function __setSbToken(t){ __SB_TOKEN = t || null; }
+function __getSbToken(){
+  if (__SB_TOKEN) return __SB_TOKEN;
+  try {
+    // 依次尝试各端的 storageKey（admin/teacher/student），谁有有效 token 用谁
+    const keys = ['sb-admin','sb-teacher','sb-student'];
+    for (const k of keys) {
+      const raw = localStorage.getItem(k);
+      if (!raw) continue;
+      const o = JSON.parse(raw);
+      const at = o && (o.access_token || (o.currentSession && o.currentSession.access_token));
+      const exp = o && (o.expires_at || (o.currentSession && o.currentSession.expires_at));
+      if (at && (!exp || exp * 1000 > Date.now())) return at;  // 没过期才用
+    }
+  } catch (e) {}
+  return null;
+}
+
 async function sb(path, method = 'GET', body = null) {
+  const _tok = __getSbToken();
+  const _auth = _tok ? ('Bearer ' + _tok) : ('Bearer ' + SB_KEY);
   const opts = {
     method,
     headers: {
       'apikey': SB_KEY,
-      'Authorization': 'Bearer ' + SB_KEY,
+      'Authorization': _auth,
       'Content-Type': 'application/json',
       'Prefer': 'return=representation'
     }
