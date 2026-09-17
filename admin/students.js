@@ -155,6 +155,51 @@ function removeVipTeacherTag(name){
   renderVipTeacherTags();
 }
 
+// ── 专业负责老师（owner_teachers，与 VIP 平级独立；存姓名数组）──
+let ownerTeacherTags = [];
+function populateOwnerTeachers(selected){
+  ownerTeacherTags = [...(selected||[])];
+  renderOwnerTeacherTags();
+}
+function renderOwnerTeacherTags(){
+  const wrap=document.getElementById('st_owner_teachers');
+  if(!wrap) return;
+  // 候选老师池：与 VIP 一致，按当前领域/专业过滤
+  const teacherPool=(cachedTeachers||[]).filter(t=>{
+    if(!CURRENT_DOMAIN||CURRENT_DOMAIN==='all') return true;
+    if(CURRENT_MAJOR) return (t.majors||[]).includes(CURRENT_MAJOR);
+    if((t.domains||[]).includes(CURRENT_DOMAIN)) return true;
+    return (t.majors||[]).some(m=>MAJOR_DOMAIN[m]===CURRENT_DOMAIN);
+  });
+  const datalistOptions=teacherPool.map(t=>`<option value="${t.name}">`).join('');
+  wrap.innerHTML=`
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+      ${ownerTeacherTags.map(name=>`
+        <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;background:#eaf3ea;border:1px solid #6a9e6a;border-radius:3px;padding:3px 8px">
+          ${name}
+          <span onclick="removeOwnerTeacherTag('${name.replace(/'/g,"\\'")}')" style="cursor:pointer;color:var(--text-3);font-weight:600">✕</span>
+        </span>`).join('') || '<span style="font-size:11px;color:var(--text-3)">尚未分配负责老师</span>'}
+    </div>
+    <div style="display:flex;gap:6px">
+      <input list="owner_teacher_suggestions" id="st_owner_teacher_input" placeholder="输入老师姓名，回车添加" style="flex:1;font-size:11px" onkeydown="if(event.key==='Enter'){event.preventDefault();addOwnerTeacherTag()}">
+      <datalist id="owner_teacher_suggestions">${datalistOptions}</datalist>
+      <button type="button" class="btn btn-outline btn-sm" onclick="addOwnerTeacherTag()">添加</button>
+    </div>`;
+}
+function addOwnerTeacherTag(){
+  const input=document.getElementById('st_owner_teacher_input');
+  const name=input.value.trim();
+  if(!name) return;
+  if(!ownerTeacherTags.includes(name)) ownerTeacherTags.push(name);
+  input.value='';
+  renderOwnerTeacherTags();
+  document.getElementById('st_owner_teacher_input')?.focus();
+}
+function removeOwnerTeacherTag(name){
+  ownerTeacherTags=ownerTeacherTags.filter(n=>n!==name);
+  renderOwnerTeacherTags();
+}
+
 // 学生档案-语言附加选择（与主专业叠加）。存进 extra_majors 数组。
 let stExtraLangs = [];
 function toggleStLang(code){
@@ -180,6 +225,7 @@ function openStudentModal(id){
   populateMajorSelect('st_major', s?.major||'');
   setStLangs(s?.extra_majors||[]);
   populateVipTeachers(s?.vip_teachers||[]);
+  populateOwnerTeachers(s?.owner_teachers||[]);
   const fields={
     st_name:'name',st_type:'student_type',st_source:'source',
     st_course:'course_type',st_level:'level',st_japanese:'japanese_score',
@@ -348,7 +394,8 @@ async function saveStudent(){
     is_vip_course:document.getElementById('st_vip_course').value,
     vip_hours_total:parseFloat(document.getElementById('st_vip_total').value)||0,
     vip_hours_used:parseFloat(document.getElementById('st_vip_used').value)||0,
-    vip_teachers:[...vipTeacherTags]
+    vip_teachers:[...vipTeacherTags],
+    owner_teachers:[...ownerTeacherTags]
   };
   try{
     if(id){
