@@ -76,6 +76,7 @@
     <div style="display:flex;align-items:center;gap:8px">
       <span id="domainTag" style="font-size:11px;color:var(--text-2);background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:2px 8px"></span>
       <button id="switchViewBtn" class="btn btn-outline btn-sm" onclick="backToHub()">切换视角</button>
+      <button class="btn btn-outline btn-sm" onclick="forceRelogin()" title="token过期或排查权限时，用这个重新邮箱登录">🔑 重新登录</button>
       <button class="btn btn-outline btn-sm" onclick="doLogout()">退出登录</button>
     </div>
   </div>
