@@ -103,9 +103,24 @@ async function handleVipLoginClick() {
 
 async function vipLogin(name, code, silent) {
   try {
-    const students = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(name)}&student_code=eq.${encodeURIComponent(code)}&select=*`);
-    if (!students.length) return false;
-    const s = students[0];
+    // ① 姓名+码 → 换出 student_id（走锁死的对照表函数，不直接读 students 表）
+    const idRes = await sb(`/rest/v1/rpc/resolve_student_login`, 'POST', { p_name: name, p_code: code });
+    const sid = Array.isArray(idRes) ? idRes[0] : idRes;
+    if (!sid) return false;   // 姓名或码不对
+    // ② 用 id + 码 走 Auth 登录拿 token
+    try {
+      if (typeof supabase !== 'undefined' && supabase.createClient) {
+        const _c = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: 'sb-student', persistSession: true, autoRefreshToken: true } });
+        const { data: _sess } = await _c.auth.getSession();
+        if (!(_sess && _sess.session && _sess.session.user && _sess.session.user.email === `${sid}@student.local`)) {
+          await _c.auth.signInWithPassword({ email: `${sid}@student.local`, password: code });
+        }
+      }
+    } catch (e) {}
+    // ③ 用 token 读自己档案，再判断是否开通 VIP
+    const rows = await sb(`/rest/v1/students?id=eq.${encodeURIComponent(sid)}&select=*`).catch(() => []);
+    if (!rows || !rows.length) return false;
+    const s = rows[0];
     if (!(s.is_vip_course === 'VIP' || s.is_vip_course === '大课+VIP')) {
       if (!silent) document.getElementById('vip_login_error').textContent = '该学生档案未开通VIP课程';
       return false;
