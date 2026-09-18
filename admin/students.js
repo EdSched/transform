@@ -121,12 +121,7 @@ function renderVipTeacherTags(){
   const wrap=document.getElementById('st_vip_teachers');
   if(!wrap) return;
   // 只列本领域/专业负责的老师（老师负责领域含当前领域，或负责专业属于当前领域）
-  const teacherPool=(cachedTeachers||[]).filter(t=>{
-    if(!CURRENT_DOMAIN||CURRENT_DOMAIN==='all') return true;
-    if(CURRENT_MAJOR) return (t.majors||[]).includes(CURRENT_MAJOR);
-    if((t.domains||[]).includes(CURRENT_DOMAIN)) return true;
-    return (t.majors||[]).some(m=>MAJOR_DOMAIN[m]===CURRENT_DOMAIN);
-  });
+  const teacherPool=(typeof teacherInView==='function'?(cachedTeachers||[]).filter(teacherInView):(cachedTeachers||[]));
   const datalistOptions=teacherPool.map(t=>`<option value="${t.name}">`).join('');
   wrap.innerHTML=`
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
@@ -166,12 +161,7 @@ function renderOwnerTeacherTags(){
   const wrap=document.getElementById('st_owner_teachers');
   if(!wrap) return;
   // 候选老师池：与 VIP 一致，按当前领域/专业过滤
-  const teacherPool=(cachedTeachers||[]).filter(t=>{
-    if(!CURRENT_DOMAIN||CURRENT_DOMAIN==='all') return true;
-    if(CURRENT_MAJOR) return (t.majors||[]).includes(CURRENT_MAJOR);
-    if((t.domains||[]).includes(CURRENT_DOMAIN)) return true;
-    return (t.majors||[]).some(m=>MAJOR_DOMAIN[m]===CURRENT_DOMAIN);
-  });
+  const teacherPool=(typeof teacherInView==='function'?(cachedTeachers||[]).filter(teacherInView):(cachedTeachers||[]));
   const datalistOptions=teacherPool.map(t=>`<option value="${t.name}">`).join('');
   wrap.innerHTML=`
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
@@ -465,12 +455,7 @@ function batchAssignOwner(){
   const selected=[...document.querySelectorAll('.student-select:checked')].map(c=>c.value);
   if(!selected.length){alert('请先勾选学生');return}
   // 候选老师池：按当前领域/专业过滤（与 VIP/单个指派一致）
-  const pool=(cachedTeachers||[]).filter(t=>{
-    if(!CURRENT_DOMAIN||CURRENT_DOMAIN==='all') return true;
-    if(CURRENT_MAJOR) return (t.majors||[]).includes(CURRENT_MAJOR);
-    if((t.domains||[]).includes(CURRENT_DOMAIN)) return true;
-    return (t.majors||[]).some(m=>MAJOR_DOMAIN[m]===CURRENT_DOMAIN);
-  });
+  const pool=(typeof teacherInView==='function'?(cachedTeachers||[]).filter(teacherInView):(cachedTeachers||[]));
   let ov=document.getElementById('batchOwnerOverlay');
   if(!ov){ ov=document.createElement('div'); ov.id='batchOwnerOverlay'; ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center'; document.body.appendChild(ov); }
   ov.innerHTML=`
