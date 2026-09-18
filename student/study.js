@@ -84,6 +84,7 @@ async function studyLogin(name, code, silent) {
           authed = !error;
           _sess = (await _c.auth.getSession()).data;
         }
+        if (typeof __setSbStorageKey === 'function') __setSbStorageKey('sb-student');
         if (_sess && _sess.session && typeof __setSbToken === 'function') __setSbToken(_sess.session.access_token, _c);  // 传客户端→自动续期
       }
     } catch (e) {}
