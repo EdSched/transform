@@ -84,7 +84,7 @@ async function studyLogin(name, code, silent) {
           authed = !error;
           _sess = (await _c.auth.getSession()).data;
         }
-        if (_sess && _sess.session && typeof __setSbToken === 'function') __setSbToken(_sess.session.access_token);  // 让 sb() 立刻带 token 去读自己那条
+        if (_sess && _sess.session && typeof __setSbToken === 'function') __setSbToken(_sess.session.access_token, _c);  // 传客户端→自动续期
       }
     } catch (e) {}
     // ③ 用 token 读自己那条档案（students 锁上后，RLS 放行"看自己"）
