@@ -33,20 +33,21 @@ function __setSbToken(t, client){
     try { client.auth.onAuthStateChange((_evt, session) => { __SB_TOKEN = (session && session.access_token) || null; }); } catch(e){}
   }
 }
+// 每个页面声明自己的身份 storageKey（admin/teacher/student），sb() 只认这一个，
+// 绝不去翻别人的 token —— 否则同一浏览器里多身份 token 会互相串（admin 抓到老师/学生的）。
+let __SB_STORAGEKEY = null;
+function __setSbStorageKey(k){ __SB_STORAGEKEY = k || null; }
 function __getSbToken(){
-  // 优先用缓存 token；onAuthStateChange 会在续期时把它更新成最新的，所以这里返回的始终是当前有效 token
   if (__SB_TOKEN) return __SB_TOKEN;
   try {
-    // 依次尝试各端的 storageKey（admin/teacher/student），谁有有效 token 用谁
-    const keys = ['sb-admin','sb-teacher','sb-student'];
-    for (const k of keys) {
-      const raw = localStorage.getItem(k);
-      if (!raw) continue;
-      const o = JSON.parse(raw);
-      const at = o && (o.access_token || (o.currentSession && o.currentSession.access_token));
-      const exp = o && (o.expires_at || (o.currentSession && o.currentSession.expires_at));
-      if (at && (!exp || exp * 1000 > Date.now())) return at;  // 没过期才用
-    }
+    const k = __SB_STORAGEKEY;                    // 只读当前页面自己的那个 key
+    if (!k) return null;                          // 没声明身份就只用公钥（未锁表不受影响）
+    const raw = localStorage.getItem(k);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    const at = o && (o.access_token || (o.currentSession && o.currentSession.access_token));
+    const exp = o && (o.expires_at || (o.currentSession && o.currentSession.expires_at));
+    if (at && (!exp || exp * 1000 > Date.now())) return at;   // 只用自己的、没过期的
   } catch (e) {}
   return null;
 }
