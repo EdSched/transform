@@ -1071,11 +1071,10 @@ const SCHOOL_LEVEL_META = { 1:{t:'冲刺',c:'#c0392b'}, 2:{t:'匹配',c:'#b8860b
 function teacherInView(t){
   const dom = (typeof CURRENT_DOMAIN!=='undefined') ? CURRENT_DOMAIN : 'all';
   const maj = (typeof CURRENT_MAJOR!=='undefined') ? CURRENT_MAJOR : '';
-  if(!dom || dom==='all') return true;                       // 中枢台：全部
+  if(!dom || dom==='all') return true;                       // 中枢台：显示全部老师
   if(maj) return (t.majors||[]).includes(maj);               // 专业锁：只看负责该专业的
-  if((t.managed_by||[]).includes(dom)) return true;          // 归该领域管
-  if((t.domains||[]).includes(dom)) return true;             // 隶属该领域
-  return (t.majors||[]).some(m => (typeof MAJOR_DOMAIN!=='undefined' && MAJOR_DOMAIN[m])===dom); // 负责该领域专业
+  // 领域视角：严格只认「归谁管」(managed_by)。没设 managed_by 的老师 → 不在任何领域视角出现，只在中枢台。
+  return (t.managed_by||[]).includes(dom);
 }
 function schoolLevelHtml(lv){ const m=SCHOOL_LEVEL_META[lv]; return m ? `<span style="color:${m.c};font-weight:600">${m.t}</span>` : ''; }
 function isSchoolFailed(v) { return SCHOOL_FAILED_STATUSES.includes(v); }
