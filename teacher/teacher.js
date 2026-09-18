@@ -151,6 +151,7 @@ async function init() {
           await _c.auth.signInWithPassword({ email: `${_tid}@teacher.local`, password: _tid });
           _sess = (await _c.auth.getSession()).data;
         }
+        if (typeof __setSbStorageKey === 'function') __setSbStorageKey('sb-teacher');
         if (_sess && _sess.session && typeof __setSbToken === 'function') __setSbToken(_sess.session.access_token, _c);  // 传客户端→自动续期
       }
     } catch (e) { /* Auth 失败不挡人：老师照常进 */ }
