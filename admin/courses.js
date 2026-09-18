@@ -1477,6 +1477,25 @@ async function acToggleHolidayExcept(holId){
   }catch(e){ alert('保存豁免失败：'+e.message); }
 }
 // 按「休讲日 + 假期豁免」重算所有单回日期（豁免的假期照常上课、被顺延的课次拉回）。仅改表格，保存后写库。
+// 一键同步：把主表最新的「上课时间」刷到所有单回 + 按最新日期规则重算单回日期（0/7 都=周日）
+function acSyncAll(){
+  const firstDate=document.getElementById('ac_first_date').value;
+  const weekdayStr=(typeof acGetWeekdayChips==='function')?acGetWeekdayChips():'';
+  const timeRange=(document.getElementById('ac_time_range')||{}).value||'';
+  if(!firstDate||!weekdayStr){ alert('请先填「第一回日期」和「星期」再同步'); return; }
+  const editingId=document.getElementById('ac_editing_id').value;
+  const co=cachedCourses.find(c=>c.id===editingId)||{};
+  const rows=acGetRows();
+  const N=rows.length;
+  if(!N){ alert('请先「同步行数」生成课次再同步'); return; }
+  if(typeof computeSessionDates!=='function'){ alert('日期算法未加载'); return; }
+  const dates=computeSessionDates({first_session_date:firstDate,weekdays:weekdayStr,skip_dates:co.skip_dates||'',holiday_except:co.holiday_except||''},N);
+  if(dates.length!==N){ alert(`同步失败：算出 ${dates.length} 个日期、需要 ${N} 个（可能假期太多排不下，或星期设置有误）`); return; }
+  const exN=(co.holiday_except||'').split(',').filter(Boolean).length;
+  rows.forEach((r,i)=>{ r.date=dates[i]; if(timeRange) r.time_range=timeRange; });  // 日期重算 + 时间刷新
+  acSetRowsFromData(rows);
+  alert(`已同步 ${N} 个单回：\n· 日期按休讲/豁免重算${exN?`（含 ${exN} 个豁免日）`:''}\n${timeRange?`· 时间统一刷成「${timeRange}」`:'· （上课时间为空，未刷时间）'}\n请核对后点保存写入。`);
+}
 function acRecomputeDates(){
   const firstDate=document.getElementById('ac_first_date').value;
   const weekdayStr=(typeof acGetWeekdayChips==='function')?acGetWeekdayChips():'';
