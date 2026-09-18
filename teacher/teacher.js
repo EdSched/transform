@@ -109,7 +109,7 @@ function locationColor(loc) {
 // Depends on: shared/supabase.js, shared/constants.js
 
 const params = new URLSearchParams(location.search);
-const teacherName = decodeURIComponent(params.get('teacher') || '');
+let teacherName = decodeURIComponent(params.get('teacher') || '');   // 可能为空（新链接只带 tid），init 里按 tid 查出真名回填
 const teacherId = (params.get('tid') || '').trim();   // 新链接带老师 id：内部认 id，防同名；老链接无 tid 时退回按名字
 
 let teacherData = null;
@@ -119,10 +119,10 @@ let curTab = 'todo';
 
 async function init() {
   const mc = document.getElementById('mainContent');
-  if (!teacherName) { mc.innerHTML = '<div class="empty">无效链接，请联系学科负责人</div>'; return; }
+  if (!teacherName && !teacherId) { mc.innerHTML = '<div class="empty">无效链接，请联系学科负责人</div>'; return; }
   if (typeof loadMajorsFromDB === 'function') await loadMajorsFromDB();
   if (typeof loadAdmissionMajorsFromDB === 'function') await loadAdmissionMajorsFromDB();
-  document.getElementById('headerName').textContent = teacherName + ' 老师';
+  document.getElementById('headerName').textContent = (teacherName || '老师') + (teacherName ? ' 老师' : '');
   try {
     let teachers = [];
     if (teacherId) {
@@ -135,6 +135,10 @@ async function init() {
       if (!teachers.length) teachers = byName;
     }
     teacherData = teachers[0] || { name: teacherName, permissions: {}, majors: [], display_name: '' };
+    if (teacherData && teacherData.name) {   // 用查出的真名回填（新链接只带 tid 时，标题此刻才显示真名）
+      teacherName = teacherData.name;
+      const hn = document.getElementById('headerName'); if (hn) hn.textContent = teacherName + ' 老师';
+    }
     // ── 静默 Auth 登录（试点：拿到数据库认得的真 token，为 RLS 铺路）──
     // 用老师 id 作为 Auth 账号(id@teacher.local)与密码；只有已在后台开通账号的老师会成功，
     // 未开通/失败都不影响进入（登录方式完全不变，token 只是额外附加）
