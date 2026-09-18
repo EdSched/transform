@@ -124,6 +124,24 @@ async function init() {
   if (typeof loadAdmissionMajorsFromDB === 'function') await loadAdmissionMajorsFromDB();
   document.getElementById('headerName').textContent = (teacherName || '老师') + (teacherName ? ' 老师' : '');
   try {
+    // ── 先静默 Auth 登录拿 token，再读 teachers 表查自己 ──
+    // 关键顺序：teachers 表已开 RLS，读表需要 token；tid 从链接直接来（已知），无需先读表即可登录。
+    // 只有已开通账号的老师会登录成功；失败不挡人（未开通老师若表未锁仍能读，锁了则读不到——但全部老师已开通）。
+    try {
+      const _tid = teacherId;   // 链接带来的 tid，登录只靠它，不依赖读表
+      if (_tid && typeof supabase !== 'undefined' && supabase.createClient) {
+        const _c = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: 'sb-teacher', persistSession: true, autoRefreshToken: true } });
+        let { data: _sess } = await _c.auth.getSession();
+        if (!_sess || !_sess.session || (_sess.session.user && _sess.session.user.email !== `${_tid}@teacher.local`)) {
+          await _c.auth.signInWithPassword({ email: `${_tid}@teacher.local`, password: _tid });
+          _sess = (await _c.auth.getSession()).data;
+        }
+        if (typeof __setSbStorageKey === 'function') __setSbStorageKey('sb-teacher');
+        if (_sess && _sess.session && typeof __setSbToken === 'function') __setSbToken(_sess.session.access_token, _c);  // 传客户端→自动续期
+      }
+    } catch (e) { /* Auth 失败不挡人：老师照常进（老链接无 tid 时走下面的按名字查） */ }
+
+    // 现在有 token 了，再读 teachers 表查自己（RLS 放行登录老师）
     let teachers = [];
     if (teacherId) {
       teachers = await sb(`/rest/v1/teachers?id=eq.${encodeURIComponent(teacherId)}&select=*`);   // 优先按 id 精确认人
@@ -139,22 +157,6 @@ async function init() {
       teacherName = teacherData.name;
       const hn = document.getElementById('headerName'); if (hn) hn.textContent = teacherName + ' 老师';
     }
-    // ── 静默 Auth 登录（试点：拿到数据库认得的真 token，为 RLS 铺路）──
-    // 用老师 id 作为 Auth 账号(id@teacher.local)与密码；只有已在后台开通账号的老师会成功，
-    // 未开通/失败都不影响进入（登录方式完全不变，token 只是额外附加）
-    try {
-      const _tid = teacherData.id || teacherId;
-      if (_tid && typeof supabase !== 'undefined' && supabase.createClient) {
-        const _c = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: 'sb-teacher', persistSession: true, autoRefreshToken: true } });
-        let { data: _sess } = await _c.auth.getSession();
-        if (!_sess || !_sess.session) {
-          await _c.auth.signInWithPassword({ email: `${_tid}@teacher.local`, password: _tid });
-          _sess = (await _c.auth.getSession()).data;
-        }
-        if (typeof __setSbStorageKey === 'function') __setSbStorageKey('sb-teacher');
-        if (_sess && _sess.session && typeof __setSbToken === 'function') __setSbToken(_sess.session.access_token, _c);  // 传客户端→自动续期
-      }
-    } catch (e) { /* Auth 失败不挡人：老师照常进 */ }
     const p = teacherData.permissions || {};
     const majors = teacherData.majors || [];
     const fetches = [
