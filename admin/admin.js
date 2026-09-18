@@ -813,21 +813,10 @@ function teacherFilteredList(){
   if(isDomainAccount){
     list=list.filter(t=>{ const tags=t.tags||[]; return !tags.includes('营业老师') && !tags.includes('保录老师'); });
   }
-  // 视角过滤
-  if(isDomainAccount){
-    // 领域端账号：严格按隶属/负责专业过滤
-    if(typeof CURRENT_MAJOR!=='undefined' && CURRENT_MAJOR){
-      list=list.filter(t=>(t.majors||[]).includes(CURRENT_MAJOR));
-    } else if(typeof CURRENT_DOMAIN!=='undefined' && CURRENT_DOMAIN && CURRENT_DOMAIN!=='all'){
-      list=list.filter(t=>(t.managed_by||[]).includes(CURRENT_DOMAIN));
-    }
-  } else {
-    // admin/中枢切换到某领域视角：显示该领域老师 + 没设隶属的老师(归admin管，不漏)
-    if(typeof CURRENT_MAJOR!=='undefined' && CURRENT_MAJOR){
-      list=list.filter(t=>(t.majors||[]).includes(CURRENT_MAJOR) || !(t.managed_by||[]).length);
-    } else if(typeof CURRENT_DOMAIN!=='undefined' && CURRENT_DOMAIN && CURRENT_DOMAIN!=='all'){
-      list=list.filter(t=>(t.managed_by||[]).includes(CURRENT_DOMAIN) || !(t.managed_by||[]).length);
-    }
+  // 视角过滤：统一用 teacherInView —— 领域视角严格按 归谁管(managed_by)/负责专业(majors)，
+  // 没设 managed_by 的老师只在中枢台出现（不再用"没设也显示"把它们漏进领域视角）
+  if(typeof teacherInView==='function'){
+    list=list.filter(teacherInView);
   }
   if(teacherTagFilter) list=list.filter(t=>(t.tags||[]).includes(teacherTagFilter));
   if(teacherTypeFilter) list=list.filter(t=>(t.staff_type||'')===teacherTypeFilter);
@@ -914,7 +903,7 @@ function renderTeacherRows(){
           if(p.promo) permsFull.push('宣传相关（营业）');
           if(p.lect_info) permsFull.push('讲师信息查询（营业）');
           const open=teacherExpandedId===t.id;
-          const link=`${base}?teacher=${encodeURIComponent(t.name)}&tid=${encodeURIComponent(t.id)}`;
+          const link=`${base}?tid=${encodeURIComponent(t.id)}`;  // 只带 id，不暴露老师真名（真名由老师端按 id 查出）
           return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
             <div onclick="teacherExpandedId=teacherExpandedId==='${t.id}'?null:'${t.id}';renderTeacherRows()" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;${open?'background:var(--bg)':''}">
               <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px;white-space:nowrap">${escTM(t.name)}</span>
