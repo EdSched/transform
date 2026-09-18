@@ -22,8 +22,19 @@ function _normTimeColon(v){
 // 各端登录后可设 window.__SB_TOKEN；未设时自动从 localStorage 的 storageKey 里找已存的 session token。
 // 读到 token 就用它（数据库按身份放行 RLS），读不到就退回公钥（不影响未锁的表）。
 let __SB_TOKEN = null;
-function __setSbToken(t){ __SB_TOKEN = t || null; }
+let __SB_AUTHCLIENT = null;   // 登录端交进来的"活客户端"（带 autoRefreshToken，会自动续期）
+// 登录后调用：可传 token 字符串（即时用），也传入客户端（后续自动取新鲜 token）
+function __setSbToken(t, client){
+  __SB_TOKEN = t || null;
+  if (client) __SB_AUTHCLIENT = client;
+  // 客户端会在 token 刷新时通知我们，实时更新缓存的 token
+  if (client && client.auth && client.auth.onAuthStateChange && !client.__hooked) {
+    client.__hooked = true;
+    try { client.auth.onAuthStateChange((_evt, session) => { __SB_TOKEN = (session && session.access_token) || null; }); } catch(e){}
+  }
+}
 function __getSbToken(){
+  // 优先用缓存 token；onAuthStateChange 会在续期时把它更新成最新的，所以这里返回的始终是当前有效 token
   if (__SB_TOKEN) return __SB_TOKEN;
   try {
     // 依次尝试各端的 storageKey（admin/teacher/student），谁有有效 token 用谁
