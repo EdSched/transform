@@ -2366,8 +2366,9 @@ function onCreateSlotCourseChange(){
 
   // 老师列表：有明细的自动勾选，没有的显示全部让手动选
   const autoTeachers=Object.keys(teacherTitleMap);
-  document.getElementById('cs_teachers_list').innerHTML=cachedTeachers.length
-    ?cachedTeachers.map(t=>{
+  const _tpool=(typeof teacherInView==='function')?cachedTeachers.filter(teacherInView):cachedTeachers;
+  document.getElementById('cs_teachers_list').innerHTML=_tpool.length
+    ?_tpool.map(t=>{
         const isAuto=autoTeachers.includes(t.name);
         const titles=teacherTitleMap[t.name]?[...teacherTitleMap[t.name]]:[];
         return `<label style="display:flex;align-items:center;gap:5px;padding:4px 8px;background:${isAuto?'var(--ok-bg)':'var(--bg)'};border:1px solid ${isAuto?'var(--ok)':'var(--border-light)'};border-radius:2px;cursor:pointer;font-size:11px">
