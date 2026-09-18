@@ -455,7 +455,7 @@ function parseWeekdays(str) {
   if (cnMatches) { cnMatches.forEach(m => { const ch = m.slice(-1); if (ch in cnMap) days.push(cnMap[ch]); }); }
   // ② 数字：1-7（ISO：周一=1…周日=7），转 JS getDay()（周日=0）；7→0，1-6 原样
   const numMatches = str.match(/\d+/g);
-  if (numMatches) { numMatches.forEach(n => { let v = parseInt(n, 10); if (v >= 1 && v <= 7) days.push(v === 7 ? 0 : v); }); }
+  if (numMatches) { numMatches.forEach(n => { let v = parseInt(n, 10); if (v === 0 || v === 7) days.push(0); else if (v >= 1 && v <= 6) days.push(v); }); }  // 0 和 7 都=周日
   return [...new Set(days)];
 }
 function generateSessionDatesFromFirst(firstDate, weekdays, totalSessions) {
