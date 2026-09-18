@@ -24,6 +24,8 @@ function sbAuthClient(){
   if(_sbAuth) return _sbAuth;
   if(typeof supabase==='undefined' || !supabase.createClient){ return null; }
   _sbAuth = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: 'sb-admin', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
+  // 把客户端交给 sb()：token 自动续期后会实时更新，sb() 永远拿到新鲜 token（修"1小时断掉/切视角卡死"）
+  try { if (typeof __setSbToken === 'function') __setSbToken(null, _sbAuth); } catch(e){}
   return _sbAuth;
 }
 async function sendMagicLink(){
