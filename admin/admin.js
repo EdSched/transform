@@ -357,7 +357,17 @@ async function deleteKey(k){
   try{ await sb(`/rest/v1/access_keys?k=eq.${k}`,'DELETE'); await loadConsole(); }
   catch(e){ alert('删除失败：'+e.message); }
 }
+// 切换视角/返回中枢时清空所有缓存与页面，避免下个视角闪现上个视角的旧数据
+function clearDomainCaches(){
+  try{
+    cachedStudents=[]; cachedCourses=[]; cachedSessions=[]; cachedTeachers=[];
+    cachedSlots=[]; cachedBookings=[]; cachedAttendance=[]; cachedSessionRecords=[];
+  }catch(e){}
+  const mc=document.getElementById('mainContent'); if(mc) mc.innerHTML='<div class="loading">加载中…</div>';
+}
+
 async function enterDomain(domain, major){
+  clearDomainCaches();   // 进新视角前先清空,确保重新拉取、不带旧数据
   CURRENT_DOMAIN = (domain==='all'||!domain) ? 'all' : domain;
   CURRENT_MAJOR = major || '';   // 专业锁（专业钥匙才有）
   try{ localStorage.setItem('txe_domain', CURRENT_DOMAIN); }catch(e){}
@@ -377,6 +387,7 @@ async function enterDomain(domain, major){
 function backToHub(){ // 从系统内返回中枢层重新选领域
   // 领域钥匙用户被锁定在自己领域，不能切换视角
   if(ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin) return;
+  clearDomainCaches();   // 清掉当前视角数据,避免 hub 底下/下个视角残留旧数据
   const el=document.getElementById('hubOverlay'); if(el) el.style.display='flex';
 }
 // 按当前领域视角过滤课程数组（总览时原样返回）
