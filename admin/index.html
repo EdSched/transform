@@ -514,6 +514,7 @@
         <div style="display:flex;gap:6px">
           <button class="btn btn-outline btn-sm" onclick="acToggleTextMode()">📝 文本编辑</button>
           <button class="btn btn-outline btn-sm" onclick="document.getElementById('ac_paste_area').style.display=document.getElementById('ac_paste_area').style.display==='none'?'block':'none'">📋 从Excel粘贴</button>
+          <button class="btn btn-primary btn-sm" onclick="acSyncAll()" title="把当前的上课时间刷到所有单回，并按最新日期/星期/假期重算单回日期——改了时间/日期后点这个一键同步">↻ 一键同步时间·日期到单回</button>
           <button class="btn btn-outline btn-sm" onclick="acRecomputeDates()" title="按全局假期＋该课的豁免重算所有单回日期：豁免的假期照常上课，被顺延的课次拉回">🗓 按假期/豁免重算日期</button>
           <button class="btn btn-outline btn-sm" onclick="acSyncRows()">↺ 同步行数</button>
         </div>
