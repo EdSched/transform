@@ -116,7 +116,7 @@ async function vipLogin(name, code, silent) {
           await _c.auth.signInWithPassword({ email: `${sid}@student.local`, password: code });
           _sess = (await _c.auth.getSession()).data;
         }
-        if (_sess && _sess.session && typeof __setSbToken === 'function') __setSbToken(_sess.session.access_token);
+        if (_sess && _sess.session && typeof __setSbToken === 'function') __setSbToken(_sess.session.access_token, _c);  // 传客户端→自动续期
       }
     } catch (e) {}
     // ③ 用 token 读自己档案，再判断是否开通 VIP
