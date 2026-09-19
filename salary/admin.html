@@ -67,6 +67,7 @@ th{background:#f7f9fc;font-weight:600;color:var(--sub);white-space:nowrap;}
       <div class="fld"><label>时段</label><select id="fTime"><option value="">全部时段</option></select></div>
       <div class="fld"><label>老师姓名</label><input id="fName" placeholder="输入姓名筛选"></div>
       <button class="ghost sm" id="fClear">清除筛选</button>
+      <button class="sm" id="export">导出日历(.ics)</button>
       <div class="spacer" style="margin-left:auto;"></div>
       <span class="muted" id="shown"></span>
     </div>
@@ -118,14 +119,13 @@ function buildFilterOptions(){
   if([...ft.options].some(o=>o.value===tv)) ft.value=tv;
 }
 
-function applyFilter(){
+function filteredRows(){
   const fd=$('#fDate').value, ft=$('#fTime').value, fn=$('#fName').value.trim().toLowerCase();
-  let rows=ALLROWS.filter(r=>
-    (!fd || r.slot_date===fd) &&
-    (!ft || r.slot_time===ft) &&
-    (!fn || (r.teacher_name||'').toLowerCase().includes(fn))
-  );
-  const filtered=(fd||ft||fn);
+  return ALLROWS.filter(r=>(!fd||r.slot_date===fd)&&(!ft||r.slot_time===ft)&&(!fn||(r.teacher_name||'').toLowerCase().includes(fn)));
+}
+function applyFilter(){
+  const rows=filteredRows();
+  const filtered=($('#fDate').value||$('#fTime').value||$('#fName').value.trim());
   $('#shown').textContent=filtered?('筛选后 '+rows.length+' / '+ALLROWS.length+' 条'):'';
   if(!ALLROWS.length){ $('#tbox').innerHTML='<div class="muted">本月暂无老师预约。把上方"老师预约链接"发给老师即可。</div>'; return; }
   if(!rows.length){ $('#tbox').innerHTML='<div class="muted">没有符合筛选条件的记录。</div>'; return; }
@@ -149,6 +149,34 @@ $('#fDate').onchange=applyFilter;
 $('#fTime').onchange=applyFilter;
 $('#fName').oninput=applyFilter;
 $('#fClear').onclick=()=>{ $('#fDate').value=''; $('#fTime').value=''; $('#fName').value=''; applyFilter(); };
+
+// ===== 导出 .ics 日历（导出当前筛选后的记录，可直接导入 Outlook 日历）=====
+const EVT_MIN=30; // 每条日程时长（分钟）
+function icsEsc(s){return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n');}
+function dtLocal(date,time){return date.replace(/-/g,'')+'T'+time.replace(':','')+'00';}
+function addMin(time,min){const p=time.split(':').map(Number);let t=p[0]*60+p[1]+min;return pad(Math.floor(t/60))+':'+pad(t%60);}
+function exportICS(){
+  const rows=filteredRows();
+  if(!rows.length){ alert('当前没有可导出的记录'); return; }
+  const d=new Date();
+  const stamp=d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'T'+pad(d.getHours())+pad(d.getMinutes())+pad(d.getSeconds());
+  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//weixin//salary//CN','CALSCALE:GREGORIAN','METHOD:PUBLISH'];
+  rows.forEach(r=>{
+    L.push('BEGIN:VEVENT');
+    L.push('UID:'+icsEsc(r.id)+'@salary');
+    L.push('DTSTAMP:'+stamp);
+    L.push('DTSTART:'+dtLocal(r.slot_date,r.slot_time));
+    L.push('DTEND:'+dtLocal(r.slot_date,addMin(r.slot_time,EVT_MIN)));
+    L.push('SUMMARY:'+icsEsc('领工资 · '+r.teacher_name));
+    if(r.note) L.push('DESCRIPTION:'+icsEsc('备注：'+r.note));
+    L.push('END:VEVENT');
+  });
+  L.push('END:VCALENDAR');
+  const blob=new Blob([L.join('\r\n')],{type:'text/calendar;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='salary-'+YM+'.ics'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+$('#export').onclick=exportICS;
 function teacherLink(){ const u=new URL('book.html',location.href); if(YM!==curYm()) u.search='?ym='+YM; return u.href; }
 function refreshLink(){
   $('#linktext').textContent=teacherLink();
