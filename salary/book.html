@@ -50,7 +50,7 @@ button.sm{padding:5px 10px;font-size:13px;}
   <h1>唯新 · 领取工资预约</h1>
   <div class="tip">
     请填写<b>真实姓名</b>，选择一个来领取现金工资的<b>时间</b>，如有需要可留言。<br>
-    时段为本月 <b><span id="rangeTxt">10 日至月末</span></b>，每天 <b>12:00–19:00</b>。先选日期，再选具体时间。
+    预约时段为 <b><span id="rangeTxt">10 日至月末</span></b>，每天 <b>12:00–19:00</b>。先选日期，再选具体时间。
   </div>
 
   <div id="bannerBox"></div>
@@ -107,11 +107,12 @@ function slotPassed(date,time){const dp=date.split('-').map(Number),tp=time.spli
 const TKEY='salary_client_token', NKEY='salary_last_name';
 function myToken(){let t=localStorage.getItem(TKEY);if(!t){t='st'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);localStorage.setItem(TKEY,t);}return t;}
 
-const YM=curYm();
+function readYm(){const p=new URLSearchParams(location.search).get('ym');return (p&&/^\d{4}-\d{2}$/.test(p))?p:curYm();}
+const YM=readYm();
 const TIMES=times();
 let MINE=null, selDate=null, sel=null;
 
-$('#rangeTxt').textContent=START_DAY+' 日至月末';
+$('#rangeTxt').textContent=Number(YM.split('-')[1])+' 月 '+START_DAY+' 日至月末';
 
 async function load(){
   let rows;
@@ -126,7 +127,7 @@ async function load(){
 function renderBanner(){
   const box=$('#bannerBox');
   if(MINE){
-    box.innerHTML='<div class="banner">你本月已预约：<b>'+mdOf(MINE.slot_date)+'（'+wdOf(MINE.slot_date)+'）'+esc(MINE.slot_time)+'</b>　姓名：'+esc(MINE.teacher_name)+
+    box.innerHTML='<div class="banner">你已预约：<b>'+mdOf(MINE.slot_date)+'（'+wdOf(MINE.slot_date)+'）'+esc(MINE.slot_time)+'</b>　姓名：'+esc(MINE.teacher_name)+
       (MINE.note?'<br><span class="muted">备注：'+esc(MINE.note)+'</span>':'')+
       '<div style="margin-top:10px;"><button class="danger sm" id="cancelMine">取消预约</button> <span class="muted" style="margin-left:6px;">如需改时间，取消后重新选一个时段即可</span></div></div>';
     $('#cancelMine').onclick=cancelMine;
