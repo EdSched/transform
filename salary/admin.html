@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>工资领取预约 · 管理</title>
+<style>
+:root{--green:#2f6b4f;--green-d:#245740;--bg:#f4f6f9;--line:#e2e6ec;--ink:#1f2733;--sub:#6b7480;--ok:#0f9d58;--err:#e97457;}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.55;}
+.wrap{max-width:900px;margin:0 auto;padding:16px;}
+.topbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
+.topbar h1{font-size:18px;margin:0;font-weight:700;}
+.spacer{margin-left:auto;}
+.mnav{display:inline-flex;align-items:center;gap:10px;}
+.mnav .ym{font-weight:600;min-width:96px;text-align:center;}
+.card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px;}
+.tip{background:#fff;border:1px solid var(--line);border-left:3px solid var(--green);border-radius:6px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:var(--sub);}
+button{padding:8px 14px;border:none;border-radius:6px;background:var(--green);color:#fff;font-size:14px;cursor:pointer;font-family:inherit;}
+button:hover{background:var(--green-d);}
+button.ghost{background:#fff;color:var(--ink);border:1px solid var(--line);}
+button.ghost:hover{background:#f0f3f7;}
+button.danger{background:var(--err);}
+button.sm{padding:5px 10px;font-size:13px;}
+button.icon{padding:6px 12px;font-size:16px;line-height:1;}
+table{border-collapse:collapse;width:100%;font-size:13px;}
+th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top;}
+th{background:#f7f9fc;font-weight:600;color:var(--sub);white-space:nowrap;}
+.muted{color:var(--sub);}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;background:#eef1f5;color:var(--sub);}
+.linkline{font-size:12px;color:var(--sub);word-break:break-all;margin-top:8px;}
+.linkline code{background:#f4f6f9;padding:2px 6px;border-radius:4px;color:var(--ink);}
+</style>
+</head><body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>工资领取预约 · 管理</h1>
+    <div class="spacer"></div>
+    <div class="mnav">
+      <button class="ghost icon" id="prev" title="上个月">‹</button>
+      <span class="ym" id="ymLabel">—</span>
+      <button class="ghost icon" id="next" title="下个月">›</button>
+    </div>
+    <button class="ghost sm" id="refresh">刷新</button>
+  </div>
+
+  <div class="tip">
+    时段为每月 <b>10 日至月末</b>，每天 <b>12:00–19:00</b>，每 30 分钟一档，一档限一位老师。
+    下面这张表就是"几号、星期几、几点、哪位老师来领、有什么叮嘱"。把老师预约链接发给老师即可，链接长期有效（自动显示当月）。
+  </div>
+
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <b id="count">已预约 0 人</b>
+      <div class="spacer" style="margin-left:auto;"></div>
+      <button id="copy">复制老师预约链接</button>
+    </div>
+    <div class="linkline">老师预约页：<code id="linktext"></code></div>
+  </div>
+
+  <div class="card">
+    <div id="tbox"><div class="muted">加载中…</div></div>
+  </div>
+</div>
+
+<script>
+const SB_URL='https://vwntezfvqbrkeovnseku.supabase.co';
+const SB_KEY='sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
+const H={apikey:SB_KEY,Authorization:'Bearer '+SB_KEY};
+async function sbGet(q){const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,cache:'no-store'});if(!r.ok)throw new Error(await r.text());return r.json();}
+async function sbDel(id){const r=await fetch(SB_URL+'/rest/v1/salary_bookings?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:H});if(!r.ok)throw new Error(await r.text());}
+const $=s=>document.querySelector(s);
+const pad=n=>String(n).padStart(2,'0');
+const WD=['周日','周一','周二','周三','周四','周五','周六'];
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function wdOf(date){const p=date.split('-').map(Number);return WD[new Date(p[0],p[1]-1,p[2]).getDay()];}
+function curYm(){const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1);}
+function ymLabel(ym){const p=ym.split('-');return p[0]+'年'+Number(p[1])+'月';}
+function shiftYm(ym,delta){let p=ym.split('-').map(Number),y=p[0],m=p[1]+delta;while(m<1){m+=12;y--;}while(m>12){m-=12;y++;}return y+'-'+pad(m);}
+
+let YM = new URLSearchParams(location.search).get('ym') || curYm();
+
+async function load(){
+  $('#ymLabel').textContent=ymLabel(YM);
+  $('#tbox').innerHTML='<div class="muted">加载中…</div>';
+  let rows;
+  try{ rows=await sbGet('salary_bookings?ym=eq.'+YM+'&order=slot_date.asc,slot_time.asc'); }
+  catch(e){ $('#tbox').innerHTML='<div class="badge">读取失败：'+esc(e.message)+'</div>'; return; }
+  $('#count').textContent='已预约 '+rows.length+' 人';
+  if(!rows.length){ $('#tbox').innerHTML='<div class="muted">本月暂无老师预约。把上方"老师预约链接"发给老师即可。</div>'; return; }
+  let h='<table><thead><tr><th>日期</th><th>星期</th><th>时间</th><th>老师</th><th>备注</th><th>操作</th></tr></thead><tbody>';
+  rows.forEach(r=>{
+    const p=r.slot_date.split('-');
+    h+='<tr><td>'+Number(p[1])+'月'+Number(p[2])+'日</td><td>'+wdOf(r.slot_date)+'</td><td>'+esc(r.slot_time)+'</td><td>'+esc(r.teacher_name)+'</td><td>'+(r.note?esc(r.note):'<span class="muted">—</span>')+'</td><td><button class="sm danger" data-del="'+esc(r.id)+'">删除</button></td></tr>';
+  });
+  h+='</tbody></table>';
+  $('#tbox').innerHTML=h;
+  $('#tbox').querySelectorAll('button[data-del]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('删除这条预约？删除后该时段将重新开放。')) return;
+    try{ await sbDel(b.dataset.del); load(); }catch(e){ alert('删除失败：'+e.message); }
+  });
+}
+function nav(delta){ YM=shiftYm(YM,delta); const u=new URL(location.href); u.searchParams.set('ym',YM); history.replaceState(null,'',u); load(); }
+$('#prev').onclick=()=>nav(-1);
+$('#next').onclick=()=>nav(1);
+$('#refresh').onclick=load;
+const bookLink=new URL('book.html',location.href).href;
+$('#linktext').textContent=bookLink;
+$('#copy').onclick=()=>{
+  navigator.clipboard.writeText(bookLink).then(()=>{ $('#copy').textContent='已复制'; setTimeout(()=>$('#copy').textContent='复制老师预约链接',1500); })
+  .catch(()=>{ prompt('复制这个链接发给老师：',bookLink); });
+};
+load();
+</script>
+</body></html>
