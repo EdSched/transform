@@ -60,6 +60,9 @@ async function reloadAll(){
   ]);
   DELETED_COURSES = COURSES.filter(c=>c.deleted_at);
   COURSES = COURSES.filter(c=>!c.deleted_at);
+  // 已上完的课（结课日已过）不再参与排课/教室占用/提醒——过去的期不需要占用显示
+  // 只过滤 end_date 有值且已过的；没填 end_date 的不误伤
+  { const _today=new Date().toISOString().slice(0,10); COURSES = COURSES.filter(c=>!(c.end_date && c.end_date < _today)); }
   try{ MTEMPLATES = await sbGet('sched_meeting_templates','select=*&order=created_at.desc'); }catch(e){ MTEMPLATES=[]; }
   try{ HOLIDAYS = await sbGet('sched_holidays','select=*&order=start_date'); }catch(e){ HOLIDAYS=[]; }
   try{ CHANGELOG = await sbGet('sched_change_log','select=*&order=created_at.desc&limit=50'); }catch(e){ CHANGELOG=[]; }
