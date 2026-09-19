@@ -1127,7 +1127,9 @@ function meetingLinkStep(c, accId){
     h+='<div style="border-top:1px solid var(--line);margin:12px 0;padding-top:10px"><b>③ 粘贴会议邀请，解析完成</b>'+
        '<div class="field" style="margin-top:6px"><textarea id="mk_txt" rows="6" placeholder="把腾讯会议 App 生成的邀请文字整段粘贴进来">'+(chosenTpl?'':'')+'</textarea></div>'+
        '<button type="button" class="ghost sm" id="mk_parse">解析</button>'+
-       '<div id="mk_prev" style="margin-top:8px"></div></div>';
+       '<div id="mk_prev" style="margin-top:8px"></div>'+
+       '<div class="field" style="margin-top:8px"><label>主持人密钥（可留空；粘贴邀请含密钥会自动带出）</label><input id="mk_hostkey" placeholder="如 123456"></div>'+
+       '</div>';
 
     h+='<div id="mk_warn" class="hidden" style="margin-top:8px"></div>'+
        '<div style="margin-top:12px;display:flex;gap:8px"><button id="mk_save" '+((chosenTpl||parsed)?'':'disabled')+'>完成占用</button>'+
@@ -1155,23 +1157,26 @@ function meetingLinkStep(c, accId){
         `<tr><td class="muted">会议链接</td><td>${parsed.link?esc(parsed.link):'—'}</td></tr>`+
         `<tr><td class="muted">会议号</td><td>${parsed.id?esc(parsed.id):'—'}</td></tr>`+
         `<tr><td class="muted">时段</td><td>${parsed.start_time?parsed.start_time+'-'+parsed.end_time:'—'}</td></tr>`+
+        (parsed.host_key?`<tr><td class="muted">主持人密钥</td><td>${esc(parsed.host_key)}</td></tr>`:'')+
         '</tbody></table>';
+      if(parsed.host_key && el('mk_hostkey') && !el('mk_hostkey').value) el('mk_hostkey').value=parsed.host_key;
       el('mk_save').disabled=false;
     };
     el('mk_cancel').onclick=()=>{ el('asForm').innerHTML=''; toast('已取消：本次教室占用未完成（未绑定会议）', false); };
     el('mk_save').onclick=async()=>{
       // 复用模板：直接套用模板的会议信息
-      let link, mid, title=el('mk_title')?el('mk_title').value.trim():'';
-      if(chosenTpl){ link=chosenTpl.meeting_link; mid=chosenTpl.meeting_id; }
-      else { if(!parsed){ warn('请先解析会议邀请，或选一个已有通用会议'); return; } link=parsed.link||null; mid=parsed.id||null; }
+      let link, mid, hkey, title=el('mk_title')?el('mk_title').value.trim():'';
+      if(chosenTpl){ link=chosenTpl.meeting_link; mid=chosenTpl.meeting_id; hkey=chosenTpl.host_key||null; }
+      else { if(!parsed){ warn('请先解析会议邀请，或选一个已有通用会议'); return; } link=parsed.link||null; mid=parsed.id||null; hkey=(parsed&&parsed.host_key)||null; }
+      const _hkInput=el('mk_hostkey')?el('mk_hostkey').value.trim():''; if(_hkInput) hkey=_hkInput;  // 手填优先
       const btn=el('mk_save'); if(btn.disabled) return; btn.disabled=true; btn.textContent='保存中…';
       try{
-        await sbUpdate('sched_courses', c.id, { meeting_link:link||null, meeting_id:mid||null });
+        await sbUpdate('sched_courses', c.id, { meeting_link:link||null, meeting_id:mid||null, host_key:hkey||null });
         // 通用标题且是新建 → 存入模板库，供本期同专业复用
         if(useGeneric && !chosenTpl){
           const majorName = el('mk_major')?el('mk_major').value.trim():'';
           await sbInsert('sched_meeting_templates', { term:c.term||null, major:majorName||null, title:title||null,
-            meeting_link:link||null, meeting_id:mid||null, account_id:accId||null,
+            meeting_link:link||null, meeting_id:mid||null, host_key:hkey||null, account_id:accId||null,
             start_time:c.start_time||null, end_time:c.end_time||null });
           try{ MTEMPLATES = await sbGet('sched_meeting_templates','select=*&order=created_at.desc'); }catch(e){}
         }
