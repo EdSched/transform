@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>领取工资预约 · 唯新</title>
+<style>
+:root{--green:#2f6b4f;--green-d:#245740;--bg:#f4f6f9;--line:#e2e6ec;--ink:#1f2733;--sub:#6b7480;--ok:#0f9d58;--err:#e97457;}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.55;}
+.wrap{max-width:680px;margin:0 auto;padding:16px 16px 96px;}
+h1{font-size:18px;margin:0 0 12px;font-weight:700;}
+.tip{background:#fff;border:1px solid var(--line);border-left:3px solid var(--green);border-radius:6px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:var(--sub);}
+.card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px;}
+label{font-size:12px;color:var(--sub);display:block;margin-bottom:4px;}
+.field{margin-bottom:12px;}
+.field:last-child{margin-bottom:0;}
+input,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:14px;background:#fff;color:var(--ink);font-family:inherit;}
+input:focus,textarea:focus{outline:none;border-color:var(--green);}
+textarea{resize:vertical;min-height:56px;}
+button{padding:8px 14px;border:none;border-radius:6px;background:var(--green);color:#fff;font-size:14px;cursor:pointer;font-family:inherit;}
+button:hover{background:var(--green-d);}
+button:disabled{background:#c7ccd3;cursor:not-allowed;}
+button.ghost{background:#fff;color:var(--ink);border:1px solid var(--line);}
+button.ghost:hover{background:#f0f3f7;}
+button.danger{background:var(--err);}
+button.sm{padding:5px 10px;font-size:13px;}
+.muted{color:var(--sub);}
+.sec-h{font-weight:600;margin:4px 0 10px;}
+.dayblk{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:10px;}
+.dayhd{font-weight:600;margin-bottom:8px;}
+.dayhd .wd{color:var(--sub);font-weight:400;font-size:13px;margin-left:6px;}
+.chips{display:flex;flex-wrap:wrap;gap:8px;}
+.chip{padding:6px 12px;border:1px solid var(--line);border-radius:16px;font-size:13px;cursor:pointer;background:#fff;color:var(--ink);user-select:none;}
+.chip:hover{border-color:var(--green);color:var(--green);}
+.chip.sel{background:var(--green);color:#fff;border-color:var(--green);}
+.chip.sel:hover{color:#fff;}
+.chip.taken{background:#f0f2f5;color:#aeb4bd;cursor:not-allowed;border-style:dashed;}
+.chip.taken:hover{border-color:var(--line);color:#aeb4bd;}
+.chip.past{background:#f7f8fa;color:#c6cbd2;cursor:not-allowed;}
+.chip.past:hover{border-color:var(--line);color:#c6cbd2;}
+.banner{border:1px solid var(--line);border-left:3px solid var(--ok);background:#f2faf5;border-radius:6px;padding:12px 14px;margin-bottom:14px;}
+.banner b{color:var(--green-d);}
+.warn{color:var(--err);font-size:13px;margin-top:6px;}
+.selbar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 16px;display:none;align-items:center;gap:12px;box-shadow:0 -2px 8px rgba(0,0,0,.05);}
+.selbar.show{display:flex;}
+.selbar .txt{flex:1;font-size:14px;}
+.selbar .txt b{color:var(--green-d);}
+.finder{font-size:13px;}
+.finder input{display:inline-block;width:auto;max-width:180px;padding:5px 9px;}
+</style>
+</head><body>
+<div class="wrap">
+  <h1>唯新 · 领取工资预约</h1>
+  <div class="tip">
+    请填写<b>真实姓名</b>，选择一个来领取现金工资的<b>时间</b>，如有需要可留言。<br>
+    时段为本月 <b><span id="rangeTxt">10 日至月末</span></b>，每天 <b>12:00–19:00</b>；<b>每个时段仅限一位老师</b>，已被约的会显示"已约"。
+  </div>
+
+  <div id="bannerBox"></div>
+
+  <div class="card" id="formCard">
+    <div class="field">
+      <label>真实姓名 *</label>
+      <input id="name" placeholder="请输入你的真实姓名">
+    </div>
+    <div class="field">
+      <label>备注 / 叮嘱事项（选填）</label>
+      <textarea id="note" placeholder="例如：只能这个点来 / 需要开收据 / 委托他人代领 等"></textarea>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="sec-h">选择时段</div>
+    <div id="pickWrap"><div class="muted">加载中…</div></div>
+  </div>
+
+  <div class="card finder">
+    <span class="muted">换了手机/电脑找不到自己的预约？输入姓名找回：</span>
+    <input id="findName" placeholder="真实姓名">
+    <button class="ghost sm" id="findBtn">找回</button>
+    <div id="findBox" style="margin-top:8px;"></div>
+  </div>
+</div>
+
+<div class="selbar" id="selbar">
+  <div class="txt" id="selTxt"></div>
+  <button id="submit">提交预约</button>
+</div>
+
+<script>
+const SB_URL='https://vwntezfvqbrkeovnseku.supabase.co';
+const SB_KEY='sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
+const H={apikey:SB_KEY,Authorization:'Bearer '+SB_KEY};
+async function sbGet(q){const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,cache:'no-store'});if(!r.ok)throw new Error(await r.text());return r.json();}
+async function sbInsert(row){const r=await fetch(SB_URL+'/rest/v1/salary_bookings',{method:'POST',headers:Object.assign({'Content-Type':'application/json',Prefer:'return=representation'},H),body:JSON.stringify(row)});if(!r.ok){const t=await r.text();const e=new Error(t);e.status=r.status;throw e;}return r.json();}
+async function sbDel(id){const r=await fetch(SB_URL+'/rest/v1/salary_bookings?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:H});if(!r.ok)throw new Error(await r.text());}
+
+const $=s=>document.querySelector(s);
+const pad=n=>String(n).padStart(2,'0');
+const WD=['周日','周一','周二','周三','周四','周五','周六'];
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function dateStr(y,m,d){return y+'-'+pad(m)+'-'+pad(d);}
+function todayStr(){const d=new Date();return dateStr(d.getFullYear(),d.getMonth()+1,d.getDate());}
+function curYm(){const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1);}
+function wdOf(date){const p=date.split('-').map(Number);return WD[new Date(p[0],p[1]-1,p[2]).getDay()];}
+function mdOf(date){const p=date.split('-');return Number(p[1])+'月'+Number(p[2])+'日';}
+
+// ===== 可调参数 =====
+const STEP_MIN=30, START_H=12, END_H=19, START_DAY=10;
+function times(){const arr=[];for(let t=START_H*60;t+STEP_MIN<=END_H*60;t+=STEP_MIN)arr.push(pad(Math.floor(t/60))+':'+pad(t%60));return arr;}
+function daysOfMonth(ym){const p=ym.split('-').map(Number),y=p[0],m=p[1],last=new Date(y,m,0).getDate();const a=[];for(let d=START_DAY;d<=last;d++)a.push(dateStr(y,m,d));return a;}
+function slotPassed(date,time){const dp=date.split('-').map(Number),tp=time.split(':').map(Number);return new Date(dp[0],dp[1]-1,dp[2],tp[0],tp[1],0,0).getTime()<Date.now();}
+
+const TKEY='salary_client_token', NKEY='salary_last_name';
+function myToken(){let t=localStorage.getItem(TKEY);if(!t){t='st'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);localStorage.setItem(TKEY,t);}return t;}
+
+const YM=curYm();
+let TAKEN=new Set(), MINE=null, sel=null;
+
+const TIMES=times();
+$('#rangeTxt').textContent=START_DAY+' 日至月末';
+
+async function load(){
+  let rows;
+  try{ rows=await sbGet('salary_bookings?ym=eq.'+YM+'&select=id,slot_date,slot_time,teacher_name,note,client_token'); }
+  catch(e){ $('#pickWrap').innerHTML='<div class="warn">读取失败：'+esc(e.message)+'</div>'; return; }
+  TAKEN=new Set(rows.map(r=>r.slot_date+'|'+r.slot_time));
+  const tok=myToken();
+  MINE=rows.find(r=>r.client_token===tok)||null;
+  sel=null;
+  renderBanner();
+  renderPicker();
+  renderSelbar();
+}
+
+function renderBanner(){
+  const box=$('#bannerBox');
+  if(MINE){
+    box.innerHTML='<div class="banner">你本月已预约：<b>'+mdOf(MINE.slot_date)+'（'+wdOf(MINE.slot_date)+'）'+esc(MINE.slot_time)+'</b>　姓名：'+esc(MINE.teacher_name)+
+      (MINE.note?'<br><span class="muted">备注：'+esc(MINE.note)+'</span>':'')+
+      '<div style="margin-top:10px;"><button class="danger sm" id="cancelMine">取消预约</button> <span class="muted" style="margin-left:6px;">如需改时间，取消后重新选一个时段即可</span></div></div>';
+    $('#cancelMine').onclick=cancelMine;
+    $('#formCard').style.display='none';
+  }else{
+    box.innerHTML='';
+    $('#formCard').style.display='';
+  }
+}
+
+function renderPicker(){
+  const wrap=$('#pickWrap');
+  if(MINE){ wrap.innerHTML='<div class="muted">你已预约本月时段（见上方）。要改时间请先取消，再重新选择。</div>'; return; }
+  const days=daysOfMonth(YM).filter(d=>d>=todayStr()); // 过去的日期不再显示
+  let anyDayHtml='', shown=0;
+  days.forEach(date=>{
+    // 该日仍可约的时段（未过时 & 未被约）至少要有一个，或即使满/过时也展示以便老师看到状态
+    let chips='', hasAny=false;
+    TIMES.forEach(t=>{
+      const passed=slotPassed(date,t), taken=TAKEN.has(date+'|'+t);
+      let cls='chip', attr='';
+      if(passed){ cls+=' past'; }
+      else if(taken){ cls+=' taken'; }
+      else { attr='data-slot="'+date+'|'+t+'"'; hasAny=true; }
+      const label=taken?(t+' 已约'):t;
+      chips+='<span class="'+cls+'" '+attr+'>'+label+'</span>';
+    });
+    // 全部过时的当天（比如今天的所有时段都过了）就不显示了
+    const allPassed=TIMES.every(t=>slotPassed(date,t));
+    if(allPassed) return;
+    shown++;
+    anyDayHtml+='<div class="dayblk"><div class="dayhd">'+mdOf(date)+'<span class="wd">'+wdOf(date)+'</span></div><div class="chips">'+chips+'</div></div>';
+  });
+  if(!shown){ wrap.innerHTML='<div class="muted">本月的预约时段已全部结束。</div>'; return; }
+  wrap.innerHTML=anyDayHtml;
+  wrap.querySelectorAll('.chip[data-slot]').forEach(c=>c.onclick=()=>{
+    const v=c.dataset.slot.split('|'); sel={date:v[0],time:v[1]};
+    wrap.querySelectorAll('.chip.sel').forEach(x=>x.classList.remove('sel'));
+    c.classList.add('sel');
+    renderSelbar();
+    $('#selbar').scrollIntoView({behavior:'smooth',block:'nearest'});
+  });
+}
+
+function renderSelbar(){
+  const bar=$('#selbar');
+  if(MINE || !sel){ bar.classList.remove('show'); return; }
+  $('#selTxt').innerHTML='已选：<b>'+mdOf(sel.date)+'（'+wdOf(sel.date)+'）'+esc(sel.time)+'</b>';
+  bar.classList.add('show');
+}
+
+async function submit(){
+  const name=$('#name').value.trim();
+  const note=$('#note').value.trim();
+  if(!name){ alert('请先填写真实姓名'); $('#name').focus(); return; }
+  if(!sel){ alert('请选择一个时段'); return; }
+  const btn=$('#submit'); btn.disabled=true; btn.textContent='提交中…';
+  try{
+    // 提交前重新核对，避免时段刚被别人约走
+    const rows=await sbGet('salary_bookings?ym=eq.'+YM+'&select=id,slot_date,slot_time,client_token');
+    const tok=myToken();
+    if(rows.find(r=>r.client_token===tok)){ alert('你本月已有预约，请刷新后在上方管理。'); await load(); return; }
+    if(rows.find(r=>r.slot_date===sel.date && r.slot_time===sel.time)){ alert('抱歉，这个时段刚被约走了，请另选一个。'); await load(); return; }
+    const id='sal-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
+    await sbInsert({id:id,teacher_name:name,slot_date:sel.date,slot_time:sel.time,ym:YM,note:note||null,client_token:tok});
+    localStorage.setItem(NKEY,name);
+    await load();
+    $('#bannerBox').scrollIntoView({behavior:'smooth',block:'start'});
+  }catch(e){
+    if(e.status===409){ alert('抱歉，这个时段刚被约走了，请另选一个。'); await load(); }
+    else alert('提交失败：'+e.message);
+  }finally{ btn.disabled=false; btn.textContent='提交预约'; }
+}
+
+async function cancelMine(){
+  if(!MINE) return;
+  if(!confirm('确定取消这条预约？取消后该时段会重新开放。')) return;
+  try{ await sbDel(MINE.id); await load(); }
+  catch(e){ alert('取消失败：'+e.message); }
+}
+
+async function findByName(){
+  const nm=$('#findName').value.trim();
+  const box=$('#findBox');
+  if(!nm){ box.innerHTML='<span class="muted">请输入姓名</span>'; return; }
+  box.innerHTML='<span class="muted">查找中…</span>';
+  try{
+    const rows=await sbGet('salary_bookings?ym=eq.'+YM+'&teacher_name=eq.'+encodeURIComponent(nm)+'&order=slot_date.asc,slot_time.asc');
+    if(!rows.length){ box.innerHTML='<span class="muted">没找到"'+esc(nm)+'"本月的预约。</span>'; return; }
+    let h='';
+    rows.forEach(r=>{
+      h+='<div style="padding:8px 0;border-top:1px solid var(--line);">'+mdOf(r.slot_date)+'（'+wdOf(r.slot_date)+'）'+esc(r.slot_time)+
+         (r.note?'　<span class="muted">'+esc(r.note)+'</span>':'')+
+         '　<button class="danger sm" data-fdel="'+esc(r.id)+'">取消</button></div>';
+    });
+    box.innerHTML=h;
+    box.querySelectorAll('button[data-fdel]').forEach(b=>b.onclick=async()=>{
+      if(!confirm('取消这条预约？')) return;
+      try{ await sbDel(b.dataset.fdel); await load(); findByName(); }
+      catch(e){ alert('取消失败：'+e.message); }
+    });
+  }catch(e){ box.innerHTML='<span class="warn">查找失败：'+esc(e.message)+'</span>'; }
+}
+
+$('#submit').onclick=submit;
+$('#findBtn').onclick=findByName;
+const last=localStorage.getItem(NKEY); if(last){ $('#name').value=last; $('#findName').value=last; }
+load();
+</script>
+</body></html>
