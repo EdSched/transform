@@ -6,7 +6,7 @@
 :root{--green:#2f6b4f;--green-d:#245740;--bg:#f4f6f9;--line:#e2e6ec;--ink:#1f2733;--sub:#6b7480;--ok:#0f9d58;--err:#e97457;}
 *{box-sizing:border-box}
 body{margin:0;font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.55;}
-.wrap{max-width:900px;margin:0 auto;padding:16px;}
+.wrap{max-width:920px;margin:0 auto;padding:16px;}
 .topbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
 .topbar h1{font-size:18px;margin:0;font-weight:700;}
 .spacer{margin-left:auto;}
@@ -14,6 +14,9 @@ body{margin:0;font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHe
 .mnav .ym{font-weight:600;min-width:96px;text-align:center;}
 .card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px;}
 .tip{background:#fff;border:1px solid var(--line);border-left:3px solid var(--green);border-radius:6px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:var(--sub);}
+label{font-size:12px;color:var(--sub);display:block;margin-bottom:4px;}
+select,input{padding:7px 9px;border:1px solid var(--line);border-radius:6px;font-size:14px;background:#fff;color:var(--ink);font-family:inherit;}
+select:focus,input:focus{outline:none;border-color:var(--green);}
 button{padding:8px 14px;border:none;border-radius:6px;background:var(--green);color:#fff;font-size:14px;cursor:pointer;font-family:inherit;}
 button:hover{background:var(--green-d);}
 button.ghost{background:#fff;color:var(--ink);border:1px solid var(--line);}
@@ -21,6 +24,8 @@ button.ghost:hover{background:#f0f3f7;}
 button.danger{background:var(--err);}
 button.sm{padding:5px 10px;font-size:13px;}
 button.icon{padding:6px 12px;font-size:16px;line-height:1;}
+.filters{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;}
+.filters .fld{display:flex;flex-direction:column;}
 table{border-collapse:collapse;width:100%;font-size:13px;}
 th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top;}
 th{background:#f7f9fc;font-weight:600;color:var(--sub);white-space:nowrap;}
@@ -43,8 +48,8 @@ th{background:#f7f9fc;font-weight:600;color:var(--sub);white-space:nowrap;}
   </div>
 
   <div class="tip">
-    时段为每月 <b>10 日至月末</b>，每天 <b>12:00–19:00</b>，每 30 分钟一档，一档限一位老师。
-    下面这张表就是"几号、星期几、几点、哪位老师来领、有什么叮嘱"。把老师预约链接发给老师即可，链接长期有效（自动显示当月）。
+    时段为每月 <b>10 日至月末</b>，每天 <b>12:00–19:00</b>，同一时段可多位老师预约。
+    下表按<b>日期、时间</b>顺序排列；可按日期 / 时段 / 姓名筛选。把老师预约链接发给老师即可，链接长期有效（自动显示当月）。
   </div>
 
   <div class="card">
@@ -54,6 +59,17 @@ th{background:#f7f9fc;font-weight:600;color:var(--sub);white-space:nowrap;}
       <button id="copy">复制老师预约链接</button>
     </div>
     <div class="linkline">老师预约页：<code id="linktext"></code></div>
+  </div>
+
+  <div class="card">
+    <div class="filters">
+      <div class="fld"><label>日期</label><select id="fDate"><option value="">全部日期</option></select></div>
+      <div class="fld"><label>时段</label><select id="fTime"><option value="">全部时段</option></select></div>
+      <div class="fld"><label>老师姓名</label><input id="fName" placeholder="输入姓名筛选"></div>
+      <button class="ghost sm" id="fClear">清除筛选</button>
+      <div class="spacer" style="margin-left:auto;"></div>
+      <span class="muted" id="shown"></span>
+    </div>
   </div>
 
   <div class="card">
@@ -72,24 +88,49 @@ const pad=n=>String(n).padStart(2,'0');
 const WD=['周日','周一','周二','周三','周四','周五','周六'];
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function wdOf(date){const p=date.split('-').map(Number);return WD[new Date(p[0],p[1]-1,p[2]).getDay()];}
+function mdOf(date){const p=date.split('-');return Number(p[1])+'月'+Number(p[2])+'日';}
 function curYm(){const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1);}
 function ymLabel(ym){const p=ym.split('-');return p[0]+'年'+Number(p[1])+'月';}
 function shiftYm(ym,delta){let p=ym.split('-').map(Number),y=p[0],m=p[1]+delta;while(m<1){m+=12;y--;}while(m>12){m-=12;y++;}return y+'-'+pad(m);}
 
 let YM = new URLSearchParams(location.search).get('ym') || curYm();
+let ALLROWS=[];
 
 async function load(){
   $('#ymLabel').textContent=ymLabel(YM);
   $('#tbox').innerHTML='<div class="muted">加载中…</div>';
-  let rows;
-  try{ rows=await sbGet('salary_bookings?ym=eq.'+YM+'&order=slot_date.asc,slot_time.asc'); }
-  catch(e){ $('#tbox').innerHTML='<div class="badge">读取失败：'+esc(e.message)+'</div>'; return; }
-  $('#count').textContent='已预约 '+rows.length+' 人';
-  if(!rows.length){ $('#tbox').innerHTML='<div class="muted">本月暂无老师预约。把上方"老师预约链接"发给老师即可。</div>'; return; }
+  try{ ALLROWS=await sbGet('salary_bookings?ym=eq.'+YM+'&order=slot_date.asc,slot_time.asc'); }
+  catch(e){ $('#tbox').innerHTML='<div class="badge">读取失败：'+esc(e.message)+'</div>'; ALLROWS=[]; return; }
+  $('#count').textContent='已预约 '+ALLROWS.length+' 人';
+  buildFilterOptions();
+  applyFilter();
+}
+
+function buildFilterOptions(){
+  const dates=[...new Set(ALLROWS.map(r=>r.slot_date))].sort();
+  const timesArr=[...new Set(ALLROWS.map(r=>r.slot_time))].sort();
+  const fd=$('#fDate'), ft=$('#fTime');
+  const dv=fd.value, tv=ft.value;
+  fd.innerHTML='<option value="">全部日期</option>'+dates.map(d=>'<option value="'+d+'">'+mdOf(d)+' '+wdOf(d)+'</option>').join('');
+  ft.innerHTML='<option value="">全部时段</option>'+timesArr.map(t=>'<option value="'+t+'">'+esc(t)+'</option>').join('');
+  if([...fd.options].some(o=>o.value===dv)) fd.value=dv;
+  if([...ft.options].some(o=>o.value===tv)) ft.value=tv;
+}
+
+function applyFilter(){
+  const fd=$('#fDate').value, ft=$('#fTime').value, fn=$('#fName').value.trim().toLowerCase();
+  let rows=ALLROWS.filter(r=>
+    (!fd || r.slot_date===fd) &&
+    (!ft || r.slot_time===ft) &&
+    (!fn || (r.teacher_name||'').toLowerCase().includes(fn))
+  );
+  const filtered=(fd||ft||fn);
+  $('#shown').textContent=filtered?('筛选后 '+rows.length+' / '+ALLROWS.length+' 条'):'';
+  if(!ALLROWS.length){ $('#tbox').innerHTML='<div class="muted">本月暂无老师预约。把上方"老师预约链接"发给老师即可。</div>'; return; }
+  if(!rows.length){ $('#tbox').innerHTML='<div class="muted">没有符合筛选条件的记录。</div>'; return; }
   let h='<table><thead><tr><th>日期</th><th>星期</th><th>时间</th><th>老师</th><th>备注</th><th>操作</th></tr></thead><tbody>';
   rows.forEach(r=>{
-    const p=r.slot_date.split('-');
-    h+='<tr><td>'+Number(p[1])+'月'+Number(p[2])+'日</td><td>'+wdOf(r.slot_date)+'</td><td>'+esc(r.slot_time)+'</td><td>'+esc(r.teacher_name)+'</td><td>'+(r.note?esc(r.note):'<span class="muted">—</span>')+'</td><td><button class="sm danger" data-del="'+esc(r.id)+'">删除</button></td></tr>';
+    h+='<tr><td>'+mdOf(r.slot_date)+'</td><td>'+wdOf(r.slot_date)+'</td><td>'+esc(r.slot_time)+'</td><td>'+esc(r.teacher_name)+'</td><td>'+(r.note?esc(r.note):'<span class="muted">—</span>')+'</td><td><button class="sm danger" data-del="'+esc(r.id)+'">删除</button></td></tr>';
   });
   h+='</tbody></table>';
   $('#tbox').innerHTML=h;
@@ -98,10 +139,15 @@ async function load(){
     try{ await sbDel(b.dataset.del); load(); }catch(e){ alert('删除失败：'+e.message); }
   });
 }
+
 function nav(delta){ YM=shiftYm(YM,delta); const u=new URL(location.href); u.searchParams.set('ym',YM); history.replaceState(null,'',u); load(); }
 $('#prev').onclick=()=>nav(-1);
 $('#next').onclick=()=>nav(1);
 $('#refresh').onclick=load;
+$('#fDate').onchange=applyFilter;
+$('#fTime').onchange=applyFilter;
+$('#fName').oninput=applyFilter;
+$('#fClear').onclick=()=>{ $('#fDate').value=''; $('#fTime').value=''; $('#fName').value=''; applyFilter(); };
 const bookLink=new URL('book.html',location.href).href;
 $('#linktext').textContent=bookLink;
 $('#copy').onclick=()=>{
