@@ -244,7 +244,7 @@ function renderOverview(){
 function aname(id){ const a=ACCOUNTS.find(x=>String(x.id)===String(id)); return a?acctName(a):('#'+id); }
 function detailText(b){
   const when=b.recurrence==='weekly'?(weekdaysLabel(String(b.weekday))+' '+(b.start_date||'')+'~'+(b.end_date||'')):(b.booking_date||'');
-  const link=(b.meeting_link||b.meeting_id)?('　链接:'+(b.meeting_id||'')+(b.meeting_link?(' '+b.meeting_link):'')):'　（未设链接）';
+  const link=(b.meeting_link||b.meeting_id)?('　'+(b.meeting_link?('链接:'+b.meeting_link):'')+(b.meeting_id?('　会议号:'+b.meeting_id):'')):'　（未设链接）';
   return when+' '+(b.start_time||'')+'-'+(b.end_time||'')+'　'+(b.note||'')+link+'　录入:'+(b.created_by||'');
 }
 function editOccupy(id){
@@ -345,7 +345,7 @@ function renderOnlineMtg(){
     onlineCourses.forEach(({c,b})=>{ const hasLink=!!(c.meeting_link||c.meeting_id);
       h+=`<tr><td><b>${esc((c.term?c.term+' ':'')+(c.name||''))}</b>${c.category?(' <small class="muted">'+esc(c.category)+'</small>'):''}</td><td>${esc(aname(b.meeting_account_id))}</td><td>${weekdaysLabel(String(b.weekday||c.weekdays||''))} ${esc(b.start_time||'')}-${esc(b.end_time||'')}${(c.start_date||c.end_date)?('<br><small class="muted">'+esc((c.start_date||'')+'~'+(c.end_date||''))+'</small>'):''}</td>`+
         `<td>${b.status==='reserved'?'<span class="badge b-warn">预留</span>':'<span class="badge b-ok">正式</span>'}</td>`+
-        `<td>${hasLink?('<span class="badge b-ok" style="font-size:10px">已设</span>'+(c.meeting_id?(' '+esc(c.meeting_id)):'')):'<span class="muted">—</span>'}</td>`+
+        `<td>${hasLink?('<span class="badge b-ok" style="font-size:10px">已设</span>'+(c.meeting_link?(' <a href="'+esc(c.meeting_link)+'" target="_blank" style="font-size:10px">链接</a>'):'')+(c.meeting_id?(' <span class="muted" style="font-size:10px">'+esc(c.meeting_id)+'</span>'):'')+(c.host_key?(' <span class="muted" style="font-size:10px">密钥'+esc(c.host_key)+'</span>'):'')):'<span class="muted">—</span>'}</td>`+
         `<td><button class="sm ghost" data-msonline="${c.id}">${hasLink?'重设链接':'设链接'}</button></td></tr>`;
     });
     h+='</tbody></table>';
@@ -376,18 +376,21 @@ function onlineMtgForm(courseId){
     '<div class="field"><label>会议标题</label><input id="mo_title" value="'+esc([c.term,c.category,c.name].filter(Boolean).join('-'))+'" style="width:100%"></div>'+
     '<div class="field" style="margin-top:8px"><label>粘贴会议邀请解析</label><textarea id="mo_txt" rows="5" placeholder="把腾讯会议邀请整段粘贴进来" style="width:100%"></textarea></div>'+
     '<button type="button" class="ghost sm" id="mo_parse">解析</button><div id="mo_prev" style="margin-top:8px"></div>'+
+    '<div class="field" style="margin-top:8px"><label>主持人密钥（可留空，粘贴邀请含密钥会自动带出）</label><input id="mo_hostkey" placeholder="如 123456" style="width:100%"></div>'+
     '<div style="margin-top:12px;display:flex;gap:8px"><button id="mo_save" disabled>保存链接（预留转正式）</button><button class="ghost" id="mo_cancel">取消</button></div>'+
     '</div></div>';
   el('ms_form').innerHTML=html;
   el('mo_cancel').onclick=()=>{ el('ms_form').innerHTML=''; };
   el('mo_parse').onclick=()=>{ parsed=parseTencent(el('mo_txt').value);
     if(!parsed.link&&!parsed.id){ el('mo_prev').innerHTML='<span class="badge b-err">没识别到链接或会议号</span>'; el('mo_save').disabled=true; return; }
-    el('mo_prev').innerHTML='<table><tbody><tr><td class="muted">链接</td><td>'+(parsed.link?esc(parsed.link):'—')+'</td></tr><tr><td class="muted">会议号</td><td>'+(parsed.id?esc(parsed.id):'—')+'</td></tr></tbody></table>';
+    el('mo_prev').innerHTML='<table><tbody><tr><td class="muted">链接</td><td>'+(parsed.link?esc(parsed.link):'—')+'</td></tr><tr><td class="muted">会议号</td><td>'+(parsed.id?esc(parsed.id):'—')+'</td></tr>'+(parsed.host_key?('<tr><td class="muted">主持人密钥</td><td>'+esc(parsed.host_key)+'</td></tr>'):'')+'</tbody></table>';
+    if(parsed.host_key && el('mo_hostkey') && !el('mo_hostkey').value) el('mo_hostkey').value=parsed.host_key;  // 自动带出，可改
     el('mo_save').disabled=false; };
   el('mo_save').onclick=async()=>{
     if(!parsed) return; const btn=el('mo_save'); btn.disabled=true; btn.textContent='保存中…';
     try{
-      await sbUpdate('sched_courses', c.id, {meeting_link:parsed.link||null, meeting_id:parsed.id||null});
+      const _hk=(el('mo_hostkey')&&el('mo_hostkey').value.trim())||parsed.host_key||null;
+      await sbUpdate('sched_courses', c.id, {meeting_link:parsed.link||null, meeting_id:parsed.id||null, host_key:_hk});
       // 预留转正式
       const bs=BOOKINGS.filter(b=>b.kind==='course'&&String(b.course_id)===String(c.id)&&b.uses_meeting&&b.meeting_account_id);
       for(const b of bs) await sbUpdate('sched_bookings', b.id, {status:'confirmed'});
