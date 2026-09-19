@@ -25,16 +25,13 @@ button.danger{background:var(--err);}
 button.sm{padding:5px 10px;font-size:13px;}
 .muted{color:var(--sub);}
 .sec-h{font-weight:600;margin:4px 0 10px;}
-.dayblk{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:10px;}
-.dayhd{font-weight:600;margin-bottom:8px;}
-.dayhd .wd{color:var(--sub);font-weight:400;font-size:13px;margin-left:6px;}
+.step{font-size:13px;color:var(--sub);margin:0 0 8px;}
+.step b{color:var(--ink);}
 .chips{display:flex;flex-wrap:wrap;gap:8px;}
 .chip{padding:6px 12px;border:1px solid var(--line);border-radius:16px;font-size:13px;cursor:pointer;background:#fff;color:var(--ink);user-select:none;}
 .chip:hover{border-color:var(--green);color:var(--green);}
 .chip.sel{background:var(--green);color:#fff;border-color:var(--green);}
 .chip.sel:hover{color:#fff;}
-.chip.taken{background:#f0f2f5;color:#aeb4bd;cursor:not-allowed;border-style:dashed;}
-.chip.taken:hover{border-color:var(--line);color:#aeb4bd;}
 .chip.past{background:#f7f8fa;color:#c6cbd2;cursor:not-allowed;}
 .chip.past:hover{border-color:var(--line);color:#c6cbd2;}
 .banner{border:1px solid var(--line);border-left:3px solid var(--ok);background:#f2faf5;border-radius:6px;padding:12px 14px;margin-bottom:14px;}
@@ -52,7 +49,7 @@ button.sm{padding:5px 10px;font-size:13px;}
   <h1>唯新 · 领取工资预约</h1>
   <div class="tip">
     请填写<b>真实姓名</b>，选择一个来领取现金工资的<b>时间</b>，如有需要可留言。<br>
-    时段为本月 <b><span id="rangeTxt">10 日至月末</span></b>，每天 <b>12:00–19:00</b>；<b>每个时段仅限一位老师</b>，已被约的会显示"已约"。
+    时段为本月 <b><span id="rangeTxt">10 日至月末</span></b>，每天 <b>12:00–19:00</b>。先选日期，再选具体时间。
   </div>
 
   <div id="bannerBox"></div>
@@ -114,19 +111,17 @@ const TKEY='salary_client_token', NKEY='salary_last_name';
 function myToken(){let t=localStorage.getItem(TKEY);if(!t){t='st'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);localStorage.setItem(TKEY,t);}return t;}
 
 const YM=curYm();
-let TAKEN=new Set(), MINE=null, sel=null;
-
 const TIMES=times();
+let MINE=null, selDate=null, sel=null;
+
 $('#rangeTxt').textContent=START_DAY+' 日至月末';
 
 async function load(){
   let rows;
-  try{ rows=await sbGet('salary_bookings?ym=eq.'+YM+'&select=id,slot_date,slot_time,teacher_name,note,client_token'); }
+  try{ rows=await sbGet('salary_bookings?ym=eq.'+YM+'&select=id,slot_date,slot_time,teacher_name,note,client_token&client_token=eq.'+encodeURIComponent(myToken())); }
   catch(e){ $('#pickWrap').innerHTML='<div class="warn">读取失败：'+esc(e.message)+'</div>'; return; }
-  TAKEN=new Set(rows.map(r=>r.slot_date+'|'+r.slot_time));
-  const tok=myToken();
-  MINE=rows.find(r=>r.client_token===tok)||null;
-  sel=null;
+  MINE=rows[0]||null;
+  selDate=null; sel=null;
   renderBanner();
   renderPicker();
   renderSelbar();
@@ -146,34 +141,43 @@ function renderBanner(){
   }
 }
 
+function eligibleDates(){
+  return daysOfMonth(YM).filter(date=>{
+    if(date<todayStr()) return false;
+    return !TIMES.every(t=>slotPassed(date,t)); // 全部时段都过了的当天不显示
+  });
+}
+
 function renderPicker(){
   const wrap=$('#pickWrap');
   if(MINE){ wrap.innerHTML='<div class="muted">你已预约本月时段（见上方）。要改时间请先取消，再重新选择。</div>'; return; }
-  const days=daysOfMonth(YM).filter(d=>d>=todayStr()); // 过去的日期不再显示
-  let anyDayHtml='', shown=0;
-  days.forEach(date=>{
-    // 该日仍可约的时段（未过时 & 未被约）至少要有一个，或即使满/过时也展示以便老师看到状态
-    let chips='', hasAny=false;
-    TIMES.forEach(t=>{
-      const passed=slotPassed(date,t), taken=TAKEN.has(date+'|'+t);
-      let cls='chip', attr='';
-      if(passed){ cls+=' past'; }
-      else if(taken){ cls+=' taken'; }
-      else { attr='data-slot="'+date+'|'+t+'"'; hasAny=true; }
-      const label=taken?(t+' 已约'):t;
-      chips+='<span class="'+cls+'" '+attr+'>'+label+'</span>';
-    });
-    // 全部过时的当天（比如今天的所有时段都过了）就不显示了
-    const allPassed=TIMES.every(t=>slotPassed(date,t));
-    if(allPassed) return;
-    shown++;
-    anyDayHtml+='<div class="dayblk"><div class="dayhd">'+mdOf(date)+'<span class="wd">'+wdOf(date)+'</span></div><div class="chips">'+chips+'</div></div>';
+  const dates=eligibleDates();
+  if(!dates.length){ wrap.innerHTML='<div class="muted">本月的预约时段已全部结束。</div>'; return; }
+  let dh='';
+  dates.forEach(date=>{ dh+='<span class="chip" data-date="'+date+'">'+mdOf(date)+' '+wdOf(date)+'</span>'; });
+  wrap.innerHTML='<div class="step"><b>第一步</b>　选择日期</div><div class="chips" id="dateChips">'+dh+'</div>'+
+    '<div class="step" style="margin-top:16px"><b>第二步</b>　选择时间</div><div id="timeArea"><div class="muted">请先选择上面的日期</div></div>';
+  wrap.querySelectorAll('.chip[data-date]').forEach(c=>c.onclick=()=>{
+    selDate=c.dataset.date; sel=null;
+    wrap.querySelectorAll('.chip[data-date]').forEach(x=>x.classList.remove('sel'));
+    c.classList.add('sel');
+    renderTimes();
+    renderSelbar();
   });
-  if(!shown){ wrap.innerHTML='<div class="muted">本月的预约时段已全部结束。</div>'; return; }
-  wrap.innerHTML=anyDayHtml;
-  wrap.querySelectorAll('.chip[data-slot]').forEach(c=>c.onclick=()=>{
-    const v=c.dataset.slot.split('|'); sel={date:v[0],time:v[1]};
-    wrap.querySelectorAll('.chip.sel').forEach(x=>x.classList.remove('sel'));
+}
+
+function renderTimes(){
+  const area=$('#timeArea');
+  if(!selDate){ area.innerHTML='<div class="muted">请先选择上面的日期</div>'; return; }
+  let th='';
+  TIMES.forEach(t=>{
+    if(slotPassed(selDate,t)){ th+='<span class="chip past">'+t+'</span>'; }
+    else { th+='<span class="chip" data-time="'+t+'">'+t+'</span>'; }
+  });
+  area.innerHTML='<div class="chips">'+th+'</div>';
+  area.querySelectorAll('.chip[data-time]').forEach(c=>c.onclick=()=>{
+    sel={date:selDate,time:c.dataset.time};
+    area.querySelectorAll('.chip.sel').forEach(x=>x.classList.remove('sel'));
     c.classList.add('sel');
     renderSelbar();
     $('#selbar').scrollIntoView({behavior:'smooth',block:'nearest'});
@@ -191,23 +195,19 @@ async function submit(){
   const name=$('#name').value.trim();
   const note=$('#note').value.trim();
   if(!name){ alert('请先填写真实姓名'); $('#name').focus(); return; }
-  if(!sel){ alert('请选择一个时段'); return; }
+  if(!sel){ alert('请选择一个时段（先选日期，再选时间）'); return; }
   const btn=$('#submit'); btn.disabled=true; btn.textContent='提交中…';
   try{
-    // 提交前重新核对，避免时段刚被别人约走
-    const rows=await sbGet('salary_bookings?ym=eq.'+YM+'&select=id,slot_date,slot_time,client_token');
-    const tok=myToken();
-    if(rows.find(r=>r.client_token===tok)){ alert('你本月已有预约，请刷新后在上方管理。'); await load(); return; }
-    if(rows.find(r=>r.slot_date===sel.date && r.slot_time===sel.time)){ alert('抱歉，这个时段刚被约走了，请另选一个。'); await load(); return; }
+    // 防止同一台机器重复提交
+    const mine=await sbGet('salary_bookings?ym=eq.'+YM+'&select=id&client_token=eq.'+encodeURIComponent(myToken()));
+    if(mine.length){ alert('你本月已有预约，请刷新后在上方管理。'); await load(); return; }
     const id='sal-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
-    await sbInsert({id:id,teacher_name:name,slot_date:sel.date,slot_time:sel.time,ym:YM,note:note||null,client_token:tok});
+    await sbInsert({id:id,teacher_name:name,slot_date:sel.date,slot_time:sel.time,ym:YM,note:note||null,client_token:myToken()});
     localStorage.setItem(NKEY,name);
     await load();
     $('#bannerBox').scrollIntoView({behavior:'smooth',block:'start'});
-  }catch(e){
-    if(e.status===409){ alert('抱歉，这个时段刚被约走了，请另选一个。'); await load(); }
-    else alert('提交失败：'+e.message);
-  }finally{ btn.disabled=false; btn.textContent='提交预约'; }
+  }catch(e){ alert('提交失败：'+e.message); }
+  finally{ btn.disabled=false; btn.textContent='提交预约'; }
 }
 
 async function cancelMine(){
