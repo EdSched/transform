@@ -58,7 +58,7 @@ th{background:#f7f9fc;font-weight:600;color:var(--sub);white-space:nowrap;}
       <div class="spacer" style="margin-left:auto;"></div>
       <button id="copy">复制老师预约链接</button>
     </div>
-    <div class="linkline">老师预约页：<code id="linktext"></code></div>
+    <div class="linkline">老师预约页：<code id="linktext"></code> <span id="pinNote"></span></div>
   </div>
 
   <div class="card">
@@ -98,6 +98,7 @@ let ALLROWS=[];
 
 async function load(){
   $('#ymLabel').textContent=ymLabel(YM);
+  refreshLink();
   $('#tbox').innerHTML='<div class="muted">加载中…</div>';
   try{ ALLROWS=await sbGet('salary_bookings?ym=eq.'+YM+'&order=slot_date.asc,slot_time.asc'); }
   catch(e){ $('#tbox').innerHTML='<div class="badge">读取失败：'+esc(e.message)+'</div>'; ALLROWS=[]; return; }
@@ -148,11 +149,15 @@ $('#fDate').onchange=applyFilter;
 $('#fTime').onchange=applyFilter;
 $('#fName').oninput=applyFilter;
 $('#fClear').onclick=()=>{ $('#fDate').value=''; $('#fTime').value=''; $('#fName').value=''; applyFilter(); };
-const bookLink=new URL('book.html',location.href).href;
-$('#linktext').textContent=bookLink;
+function teacherLink(){ const u=new URL('book.html',location.href); if(YM!==curYm()) u.search='?ym='+YM; return u.href; }
+function refreshLink(){
+  $('#linktext').textContent=teacherLink();
+  $('#pinNote').textContent = (YM!==curYm()) ? ('（此链接已指定为 '+ymLabel(YM)+'，老师看到的是该月时段）') : '（长期有效，自动显示当月）';
+}
 $('#copy').onclick=()=>{
-  navigator.clipboard.writeText(bookLink).then(()=>{ $('#copy').textContent='已复制'; setTimeout(()=>$('#copy').textContent='复制老师预约链接',1500); })
-  .catch(()=>{ prompt('复制这个链接发给老师：',bookLink); });
+  const link=teacherLink();
+  navigator.clipboard.writeText(link).then(()=>{ $('#copy').textContent='已复制'; setTimeout(()=>$('#copy').textContent='复制老师预约链接',1500); })
+  .catch(()=>{ prompt('复制这个链接发给老师：',link); });
 };
 load();
 </script>
