@@ -768,6 +768,20 @@ async function openApplyTemplate(templateId){
   }catch(e){alert('套用模板失败：'+e.message)}
 }
 
+// 课程归档筛选：'active'=进行中(默认) | 'ended'=已结课 | 'all'=全部
+let coursesArchiveFilter='active';
+// 整门课是否已结课：最后一个单回日期 < 今天（无单回则退回 end_date）
+function courseIsEnded(c){
+  const today=new Date().toISOString().slice(0,10);
+  const ss=(typeof cachedSessions!=='undefined')?cachedSessions.filter(s=>s.course_id===c.id&&s.session_date):[];
+  if(ss.length){
+    const last=ss.map(s=>s.session_date).sort().pop();
+    return last < today;
+  }
+  return c.end_date ? (c.end_date < today) : false;  // 没单回又没end_date → 当作进行中(不误藏)
+}
+function setCoursesArchive(v){ coursesArchiveFilter=v; renderCoursesPage(document.getElementById('mainContent')); }
+
 function renderCoursesPage(mc){
   // 专业钥匙锁定：强制默认选中锁定的专业（用户不能改）
   if(CURRENT_MAJOR) coursesMajorFilter=CURRENT_MAJOR;
@@ -800,6 +814,9 @@ function renderCoursesPage(mc){
   else if(coursesTypeFilter==='共通课') filtered=filtered.filter(c=>c.course_type?.includes('共通'));
   else if(coursesTypeFilter==='VIP') filtered=filtered.filter(c=>c.course_type?.includes('VIP'));
   if(coursesCampusFilter!=='all') filtered=filtered.filter(c=>(c.campus||'')===coursesCampusFilter);
+  // 归档过滤：默认只看进行中（已结课的收进"已结课"，不占课程安排显示）
+  if(coursesArchiveFilter==='active') filtered=filtered.filter(c=>!courseIsEnded(c));
+  else if(coursesArchiveFilter==='ended') filtered=filtered.filter(c=>courseIsEnded(c));
 
   const allPeriods=[...new Map(cachedCourses
     .filter(c=>c.first_session_date)
@@ -821,6 +838,12 @@ function renderCoursesPage(mc){
   </div>
 
   <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap">
+    <div>
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">状态</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        ${[['active','进行中'],['ended','已结课'],['all','全部']].map(([v,l])=>`<div class="filter-chip${coursesArchiveFilter===v?' active':''}" onclick="setCoursesArchive('${v}')" style="font-size:11px;padding:3px 10px">${l}</div>`).join('')}
+      </div>
+    </div>
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">课程属性</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
