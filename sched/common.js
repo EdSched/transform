@@ -146,9 +146,11 @@ function termStartDate(term){
 /* 统计各期"未排教室"的课程：未排 = 该课在 bookings 里没有 kind=course 记录 */
 function unscheduledByTerm(courses, bookings){
   const scheduled = new Set(bookings.filter(b=>b.kind==='course'&&b.course_id).map(b=>String(b.course_id)));
+  const _today = todayStr();
   const byTerm = {};
   courses.forEach(c=>{
     if(scheduled.has(String(c.id))) return;
+    if(c.end_date && c.end_date < _today) return;   // 已上完的课（结课日已过）不再提醒排教室
     const term = c.term||'未分期';
     (byTerm[term]=byTerm[term]||[]).push(c);
   });
