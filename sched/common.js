@@ -203,10 +203,11 @@ function langType(c){
 /* 解析腾讯会议邀请文字，抽取链接/会议号/起止日/时段/周几 */
 function parseTencent(text){
   const t=String(text||'');
-  const out={ link:null, id:null, subject:null, start_date:null, end_date:null, start_time:null, end_time:null, weekday:null };
+  const out={ link:null, id:null, host_key:null, subject:null, start_date:null, end_date:null, start_time:null, end_time:null, weekday:null };
   let m=t.match(/https?:\/\/meeting\.tencent\.com\/\S+/);
   if(m) out.link=m[0].replace(/[)）。,，、\s]+$/,'');
   m=t.match(/腾讯会议[:：]?\s*([\d\-\s]{9,})/); if(m) out.id=m[1].replace(/\s/g,'').trim();
+  m=t.match(/主持人密钥[:：]?\s*(\d{4,})/); if(m) out.host_key=m[1].trim();
   m=t.match(/会议主题[:：]\s*(.+)/); if(m) out.subject=m[1].trim();
   m=t.match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})\s+(\d{1,2}:\d{2})\s*[-~至]\s*(\d{1,2}:\d{2})/);
   if(m){ out.start_date=m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0');
