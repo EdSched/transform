@@ -160,7 +160,7 @@ async function init() {
     // 专属小标：只有这位老师的页面，名字变粉色 + 亲亲猫+爱心
     if (teacherData && teacherData.id === 't-1781145083097-agx') {
       const hn = document.getElementById('headerName');
-      if (hn) hn.innerHTML = '<span style="color:#ffb3d1">' + teacherName + ' 老师</span> <span style="font-size:0.9em">😽💕</span>';
+      if (hn) hn.innerHTML = '<span style="color:#ff6fa5">' + teacherName + ' 老师</span> <span style="font-size:0.9em">😽💕</span>';
     }
     const p = teacherData.permissions || {};
     const majors = teacherData.majors || [];
