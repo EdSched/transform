@@ -17,7 +17,7 @@ async function loadAccessKey(){
 
 // ═══════════════════════════════════════════════
 // 邮箱免密登录（Supabase Auth Magic Link）—— 与密码登录并存
-// 只有 pinnyxu@gmail.com 这个 Auth 用户能通过；其他人发了也进不来
+// 只有 Supabase Auth 里存在的 admin 邮箱能通过（目前：pinnyxu@gmail.com、douhongyun@transform-edu.com）；其他人发了也进不来
 // ═══════════════════════════════════════════════
 let _sbAuth = null;
 function sbAuthClient(){
@@ -98,7 +98,7 @@ async function forceRelogin(){
   document.getElementById('loginOverlay').style.display='flex';
   const box=document.getElementById('magicBox'); if(box){ box.style.display='block'; box.scrollIntoView({behavior:'smooth'}); }
   const pw=document.getElementById('pwBox'); if(pw) pw.style.display='none';
-  const em=document.getElementById('magicEmail'); if(em){ em.value='pinnyxu@gmail.com'; em.focus(); }
+  const em=document.getElementById('magicEmail'); if(em){ em.value=''; em.focus(); }  // 不预填：多个 admin 邮箱，自己输
   const msg=document.getElementById('magicMsg'); if(msg){ msg.style.color='var(--text-3)'; msg.textContent='点「发送登录链接」重新登录以刷新身份。'; }
 }
 
