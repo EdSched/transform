@@ -53,7 +53,10 @@ function __getSbToken(){
 }
 
 async function sb(path, method = 'GET', body = null) {
-  const _tok = __getSbToken();
+  // 登录前的 resolve（换id）必须用匿名公钥调：此时还没有合法 token，
+  // 若误带了别的端残留/过期的 token，会被当成"已登录但token无效"而拒绝（返回 null）。
+  const _isLoginResolve = /rpc\/resolve_student_login/.test(path);
+  const _tok = _isLoginResolve ? null : __getSbToken();
   const _auth = _tok ? ('Bearer ' + _tok) : ('Bearer ' + SB_KEY);
   const opts = {
     method,
