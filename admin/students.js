@@ -575,6 +575,26 @@ async function genUniqueCode(extraUsed) {
   return genCode().slice(0, 4) + Date.now().toString(36).slice(-2).toUpperCase();
 }
 
+// 把某学生的 姓名+码 同步进锁死的对照表 student_login（登录靠它 resolve 出 id）
+// admin 有权限写这张锁表；生成/改码后必须调它，否则新学生/改码后登不了（resolve 查不到）
+async function syncStudentLogin(id, name, code){
+  if(!id || !code) return;
+  try{
+    // upsert：有则更新、无则插入（on_conflict=student_id）。sb() 不支持自定义 Prefer，故直接 fetch。
+    const tok = (typeof __getSbToken==='function') ? __getSbToken() : null;
+    await fetch(`${SB_URL}/rest/v1/student_login?on_conflict=student_id`, {
+      method:'POST',
+      headers:{
+        'apikey':SB_KEY,
+        'Authorization':'Bearer '+(tok||SB_KEY),   // admin token 才写得进锁表
+        'Content-Type':'application/json',
+        'Prefer':'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify({ student_id:id, name:name||'', code })
+    });
+  }catch(e){ console.warn('同步对照表失败(不影响档案保存):', e.message); }
+}
+
 async function generateStudentCode(id) {
   const s = cachedStudents.find(x => x.id === id);
   if (!s) return;
@@ -583,6 +603,7 @@ async function generateStudentCode(id) {
   try {
     await sb(`/rest/v1/students?id=eq.${id}`, 'PATCH', { student_code: code });
     s.student_code = code;
+    await syncStudentLogin(id, s.name, code);   // 同步对照表，学生才能登录
     renderStudentsPage(document.getElementById('mainContent'));
   } catch(e) { alert('生成失败：' + e.message); }
 }
@@ -598,6 +619,7 @@ async function generateAllStudentCodes() {
       usedThisBatch.push(code);
       await sb(`/rest/v1/students?id=eq.${s.id}`, 'PATCH', { student_code: code });
       s.student_code = code;
+      await syncStudentLogin(s.id, s.name, code);   // 同步对照表
     }
     renderStudentsPage(document.getElementById('mainContent'));
     alert(`✓ 已为 ${noCode.length} 名学生生成查询码`);
