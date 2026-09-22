@@ -98,6 +98,7 @@ let CANMANAGE = new URLSearchParams(location.search).get('canmanage')==='1';
 getRoleByCode(currentCode()).then(r=>{ if(r){ el('nav').innerHTML = renderNav('booking.html', r);
   if(permSet(r).has('occupy')||permSet(r).has('manage')){ CANMANAGE=true; applyManageUI(); } } }).catch(()=>{});
 let ROOMS=[], ACCOUNTS=[], BOOKINGS=[], CUR=null;
+function rname(id){ const r=ROOMS.find(x=>String(x.id)===String(id)); return r?r.name:('#'+id); }
 // 本设备标识：用于普通用户识别并删除"自己录入的"占用
 const BK_TKEY='sched_booking_token';
 function myToken(){ let t=localStorage.getItem(BK_TKEY); if(!t){ t='bk'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); localStorage.setItem(BK_TKEY,t); } return t; }
@@ -265,6 +266,15 @@ function occupyEditForm(id){
       show_title: el('oe_showtitle') ? el('oe_showtitle').value==='1' : (b.show_title===true) };
     if(isWeekly){ patch.start_date=el('oe_sd').value||null; patch.end_date=el('oe_ed').value||null; }
     else { patch.booking_date=el('oe_date').value||null; }
+    if(!isWeekly && patch.user_name && patch.booking_date && patch.start_time && patch.end_time){
+      const hits=teacherOverlaps(BOOKINGS, patch.user_name, patch.booking_date, patch.start_time, patch.end_time, b.id)
+        .filter(x=>String(x.room_id)!==String(patch.room_id));   // 同教室的撞车由教室检查负责
+      if(hits.length){
+        const lines=hits.slice(0,4).map(x=>(x.room_id?rname(x.room_id):'（未指定教室）')+' '+(x.start_time||'')+'-'+(x.end_time||'')+'「'+(x.title||KIND_LABEL[x.kind]||'')+'」'+(x.status==='pending'?'（待审批）':''));
+        if(!confirm(patch.user_name+' 已经在同一时段预约了：\n'+lines.join('\n')+'\n\n仍要保存吗？')) return;
+        patch.allow_multi=true;
+      } else patch.allow_multi=false;
+    }
     const btn=el('oe_save'); btn.disabled=true; btn.textContent='保存中…';
     try{ await sbUpdate('sched_bookings', b.id, patch); await reloadBookings(); el('occupyEdit').innerHTML=''; renderMgmtTable(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已保存'); }
     catch(e){ el('oe_warn').innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>'; btn.disabled=false; btn.textContent='保存'; }
@@ -375,10 +385,20 @@ async function submit(){
     warn('以下日期该教室/账号已被占用，请调整：'+conflictDates.slice(0,8).join('、')+(conflictDates.length>8?' 等':''));
     return;
   }
+  // 同一使用人在同一时段已有其它教室的占用：提示确认，不直接拦
+  let allowMulti=false;
+  { const nm=el('m_user').value.trim(); const hits=[];
+    if(nm) for(const date of dates){ teacherOverlaps(BOOKINGS, nm, date, s, e, null).forEach(b=>hits.push({date, b})); }
+    if(hits.length){
+      const lines=hits.slice(0,4).map(x=>x.date+' '+(x.b.room_id?rname(x.b.room_id):'（未指定教室）')+' '+(x.b.start_time||'')+'-'+(x.b.end_time||'')+'「'+(x.b.title||KIND_LABEL[x.b.kind]||'')+'」'+(x.b.status==='pending'?'（待审批）':''));
+      if(!confirm(nm+' 已经在同一时段预约了：\n'+lines.join('\n')+(hits.length>4?'\n…等 '+hits.length+' 条':'')+'\n\n还需要再预约一间吗？')) return;
+      allowMulti=true;
+    }
+  }
   const sb=el('m_submit'); if(sb.disabled) return; sb.disabled=true; sb.textContent='保存中…';
   try{
     for(const date of dates){
-      const rec={ room_id:CUR.id, kind:use, title: el('m_title').value.trim()||KIND_LABEL[use]||null,
+      const rec={ room_id:CUR.id, kind:use, title: el('m_title').value.trim()||KIND_LABEL[use]||null, allow_multi:allowMulti,
         user_name: el('m_user').value.trim()||null, recurrence: 'once', weekday: weekdayOf(date), booking_date:date, start_time:s, end_time:e,
         uses_meeting:um, meeting_account_id:accId, show_title: el('m_showtitle')?el('m_showtitle').value==='1':false,
         status:'confirmed', created_by:myToken()+'|'+(CANMANAGE?'管理员':'使用者'), note: el('m_note').value.trim()||null };
