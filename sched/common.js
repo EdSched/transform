@@ -345,6 +345,16 @@ function roomConflicts(bookings, roomId, dateStr, s, e, excludeId){
     bookingOnDate(b, dateStr) && overlap(s, e, b.start_time, b.end_time) &&
     !(b.kind==='course' && b.course_id && skip[b.course_id] && skip[b.course_id].has(dateStr)));
 }
+// 老师冲突：同一使用人、同日期、时间重叠，不管教室（排除自身）；休讲日该课不算。用于"再预约一间？"的确认提示
+function teacherOverlaps(bookings, userName, dateStr, s, e, excludeId){
+  const nm=String(userName||'').trim(); if(!nm) return [];
+  const skip = (typeof window!=='undefined' && window.SKIPMAP) ? window.SKIPMAP : {};
+  return bookings.filter(b =>
+    b.id !== excludeId && (b.status==='pending' || b.status==='confirmed') &&
+    String(b.user_name||'').trim() === nm &&
+    bookingOnDate(b, dateStr) && overlap(s, e, b.start_time, b.end_time) &&
+    !(b.kind==='course' && b.course_id && skip[b.course_id] && skip[b.course_id].has(dateStr)));
+}
 // 账号冲突：同账号、同日期、时间重叠（排除自身）；休讲日该课不占账号
 function accountConflicts(bookings, accId, dateStr, s, e, excludeId){
   const skip = (typeof window!=='undefined' && window.SKIPMAP) ? window.SKIPMAP : {};
