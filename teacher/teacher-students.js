@@ -484,7 +484,7 @@ async function saveTeacherDraftComment(draftId, studentId) {
 //       profile  学生档案录入（与 admin 学生档案同一张表实时同步；按 student_majors 允许专业查看）
 // ══════════════════════════════════
 let smTab = '';
-const SM_ITEMS = [['progress','📊 考学进度'], ['meetings','💬 面谈查询'], ['records','🗒 出席・作业记录'], ['monthly','📅 月度学习情况'], ['profile','👤 学生档案']];
+const SM_ITEMS = [['progress','📊 考学进度'], ['meetings','💬 面谈查询'], ['records','🗒 出席・作业记录'], ['profile','👤 学生档案']];
 
 function smAllowedItems() {
   const p = (teacherData && teacherData.permissions) || {};
@@ -493,7 +493,10 @@ function smAllowedItems() {
   // 重点关注：汇总已有数据的另一种展示，只要有考学进度/学生档案/面谈任一权限就提供
   if (items.includes('progress') || items.includes('profile') || items.includes('meetings')) {
     allowed.push(['focus', '⭐ 重点关注']);
+    allowed.push(['monthly', '📅 月度学习情况']);  // 月度：跟重点关注一样自动出现
   }
+  // 若已在 student_mgmt_items 显式勾了 monthly 也不重复
+
   return allowed;
 }
 
@@ -695,6 +698,7 @@ let mrStudentId = '';   // 当前选中学生
 let mrYearMonth = '';   // 当前选中月份 YYYY-MM
 let mrCache = {};       // student_id -> session_records
 let mrReviewCache = {}; // `${sid}|${ym}` -> monthly_reviews row
+let mrStudentsCache = [];
 
 function renderMonthlyReport(mc){
   const set = tsaAllowedSet();
@@ -713,7 +717,7 @@ function renderMonthlyReport(mc){
         <input type="month" id="mr_ym" value="${mrYearMonth}" onchange="mrYearMonth=this.value;renderMonthlyReport(document.getElementById('mainContent'))" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:4px">
       </div>
       <div id="mr_body"><div style="font-size:11px;color:var(--text-3);padding:20px">加载中…</div></div>`;
-    if (mrStudentId) mrLoadAndRender(list.find(x=>x.id===mrStudentId));
+    mrStudentsCache = list; if (mrStudentId) mrLoadAndRender(list.find(x=>x.id===mrStudentId));
   }).catch(e=>{ mc.innerHTML=`<div class="empty" style="color:var(--danger)">加载失败：${e.message}</div>`; });
 }
 
@@ -744,6 +748,11 @@ async function mrLoadAndRender(stu){
   }
   const rev = mrReviewCache[key];
   const esc = v => String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  // 谁能填：班主任=我负责的学生(owner/vip含我)；专业老师=有"专业课"标签且该生在我可见专业范围
+  const canHome = (typeof tpIsMine==='function') ? tpIsMine(stu) : false;
+  const isProfTeacher = !!(teacherData && Array.isArray(teacherData.tags) && teacherData.tags.some(t=>String(t).includes('专业课')));
+  const set = tsaAllowedSet();
+  const canProf = isProfTeacher && (!set || set.has(stu.major));
   body.innerHTML = `
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px 20px">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
@@ -762,18 +771,123 @@ async function mrLoadAndRender(stu){
     </div>` : '<div style="font-size:11px;color:var(--text-3);padding:8px 0 16px">本月暂无提交作品</div>'}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:6px;padding:12px">
-        <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">专业老师评价</div>
-        <div style="font-size:12px;line-height:1.7;color:var(--text-2);white-space:pre-wrap;min-height:40px">${rev&&rev.teacher_review?esc(rev.teacher_review):'<span style=\'color:var(--text-3)\'>（待专业老师填写）</span>'}</div>
+        <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">专业老师评价 ${canProf?'<span style="font-size:9px;color:var(--accent,#b8953a)">· 你可填写</span>':''}</div>
+        ${canProf ? `<textarea id="mr_teacher_review" rows="5" style="width:100%;font-size:12px;line-height:1.7;padding:8px;border:1px solid var(--border);border-radius:4px;background:var(--surface);font-family:inherit;resize:vertical" placeholder="填写本月专业指导评价…">${rev&&rev.teacher_review?esc(rev.teacher_review):''}</textarea>`
+          : `<div style="font-size:12px;line-height:1.7;color:var(--text-2);white-space:pre-wrap;min-height:40px">${rev&&rev.teacher_review?esc(rev.teacher_review):'<span style="color:var(--text-3)">（待专业老师填写）</span>'}</div>`}
         ${rev&&rev.teacher_review_by?`<div style="font-size:10px;color:var(--text-3);margin-top:6px;text-align:right">— ${esc(rev.teacher_review_by)}</div>`:''}
       </div>
       <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:6px;padding:12px">
-        <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">班主任评价</div>
-        <div style="font-size:12px;line-height:1.7;color:var(--text-2);white-space:pre-wrap;min-height:40px">${rev&&rev.homeroom_review?esc(rev.homeroom_review):'<span style=\'color:var(--text-3)\'>（待班主任填写）</span>'}</div>
+        <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">班主任评价 ${canHome?'<span style="font-size:9px;color:var(--accent,#b8953a)">· 你可填写</span>':''}</div>
+        ${canHome ? `<textarea id="mr_homeroom_review" rows="5" style="width:100%;font-size:12px;line-height:1.7;padding:8px;border:1px solid var(--border);border-radius:4px;background:var(--surface);font-family:inherit;resize:vertical" placeholder="填写本月班主任评价…">${rev&&rev.homeroom_review?esc(rev.homeroom_review):''}</textarea>`
+          : `<div style="font-size:12px;line-height:1.7;color:var(--text-2);white-space:pre-wrap;min-height:40px">${rev&&rev.homeroom_review?esc(rev.homeroom_review):'<span style="color:var(--text-3)">（待班主任填写）</span>'}</div>`}
         ${rev&&rev.homeroom_review_by?`<div style="font-size:10px;color:var(--text-3);margin-top:6px;text-align:right">— ${esc(rev.homeroom_review_by)}</div>`:''}
       </div>
     </div>
-    <div style="font-size:10px;color:var(--text-3);margin-top:12px">💡 阶段1：先展示汇总。下一步加「填写评价 / 挑选作品 / 生成PDF」。</div>
+    ${(canProf||canHome) ? `<div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+      <button onclick="mrSaveReview('${stu.id}','${esc(stu.name)}')" style="background:var(--accent,#b8953a);color:#fff;border:none;border-radius:5px;padding:8px 18px;font-size:12px;cursor:pointer;font-family:inherit">💾 保存评价</button>
+      <button onclick="mrGeneratePdf('${stu.id}')" class="btn btn-outline btn-sm">📄 生成家长版PDF</button>
+      <span id="mr_save_hint" style="font-size:11px;color:var(--ok,#2a9e6a)"></span>
+    </div>` : `<div style="margin-top:12px"><button onclick="mrGeneratePdf('${stu.id}')" class="btn btn-outline btn-sm">📄 生成家长版PDF</button></div>`}
   </div>`;
+}
+
+// 保存月度评价（按身份只写自己那栏 + 署名；upsert monthly_reviews）
+async function mrSaveReview(sid, sname){
+  const me = (teacherData && teacherData.name) || '';
+  const key = `${sid}|${mrYearMonth}`;
+  const existing = mrReviewCache[key] || null;
+  const tEl = document.getElementById('mr_teacher_review');
+  const hEl = document.getElementById('mr_homeroom_review');
+  const row = {
+    id: (existing && existing.id) || `mr-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
+    student_id: sid, student_name: sname, year_month: mrYearMonth,
+    updated_at: new Date().toISOString(),
+  };
+  // 保留另一栏已有内容，只覆盖自己能填的
+  row.teacher_review = existing ? existing.teacher_review : null;
+  row.teacher_review_by = existing ? existing.teacher_review_by : null;
+  row.homeroom_review = existing ? existing.homeroom_review : null;
+  row.homeroom_review_by = existing ? existing.homeroom_review_by : null;
+  row.selected_works = existing ? existing.selected_works : [];
+  if (tEl){ row.teacher_review = tEl.value.trim() || null; row.teacher_review_by = row.teacher_review ? me : row.teacher_review_by; }
+  if (hEl){ row.homeroom_review = hEl.value.trim() || null; row.homeroom_review_by = row.homeroom_review ? me : row.homeroom_review_by; }
+  const hint = document.getElementById('mr_save_hint');
+  try{
+    // upsert：有则 PATCH，无则 POST
+    if (existing){
+      await sb(`/rest/v1/monthly_reviews?id=eq.${existing.id}`, 'PATCH', row);
+    } else {
+      await sb('/rest/v1/monthly_reviews', 'POST', row);
+    }
+    mrReviewCache[key] = row;
+    if(hint){ hint.textContent='✓ 已保存'; setTimeout(()=>{if(hint)hint.textContent='';},2000); }
+  }catch(e){ alert('保存失败：'+e.message); }
+}
+
+// 生成家长版月度学习情况 PDF（米色系，完整）
+async function mrGeneratePdf(sid){
+  const stu = (mrStudentsCache||[]).find(x=>x.id===sid) || {id:sid, name:''};
+  const recs = mrCache[sid] || [];
+  const monthRecs = recs.filter(r => (r.session_date||'').slice(0,7) === mrYearMonth);
+  const attended = monthRecs.filter(r => ['offline','online','replay'].includes(r.attendance_status));
+  const leave = monthRecs.filter(r => r.attendance_status === 'leave');
+  const required = monthRecs.length, actual = attended.length;
+  const rate = required ? Math.round(actual/required*100) : 0;
+  const works = monthRecs.filter(r => r.homework_file_url).map(r => ({url:r.homework_file_url, date:r.session_date}));
+  const key = `${sid}|${mrYearMonth}`;
+  const rev = mrReviewCache[key] || {};
+  const esc = v => String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const ym = mrYearMonth.replace('-','年')+'月';
+  // 家长版 HTML（米色系 style.css 配色）→ 新窗口打印为 PDF
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(stu.name)} ${ym} 学习情况</title>
+  <style>
+    @page{size:A4;margin:16mm}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Noto Serif SC','Songti SC',serif;color:#1a1814;background:#fff;line-height:1.7}
+    .wrap{max-width:760px;margin:0 auto}
+    .head{text-align:center;padding:18px 0 14px;border-bottom:2px solid #b8953a;margin-bottom:20px}
+    .head .sub{font-size:12px;color:#9a9590;letter-spacing:.15em;margin-bottom:6px}
+    .head h1{font-size:22px;font-weight:600;color:#1a1814}
+    .head .stu{font-size:14px;color:#5a5650;margin-top:6px}
+    .sec-label{font-size:11px;letter-spacing:.1em;color:#b8953a;text-transform:uppercase;margin:18px 0 8px;font-weight:600}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:8px}
+    .stat{background:#f7f5f0;border:1px solid #ede9e2;border-radius:8px;padding:12px;text-align:center}
+    .stat .n{font-size:22px;font-weight:700;color:#b8953a}
+    .stat .l{font-size:11px;color:#9a9590;margin-top:3px}
+    .works{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+    .works img{width:100%;height:130px;object-fit:cover;border:1px solid #e2ded6;border-radius:6px}
+    .review{background:#f7f5f0;border:1px solid #ede9e2;border-radius:8px;padding:14px 16px;margin-bottom:10px}
+    .review .t{font-size:12px;font-weight:600;color:#b8953a;margin-bottom:6px}
+    .review .c{font-size:13px;line-height:1.9;color:#3a352e;white-space:pre-wrap}
+    .review .by{font-size:11px;color:#9a9590;text-align:right;margin-top:8px}
+    .foot{text-align:center;font-size:11px;color:#9a9590;margin-top:24px;padding-top:12px;border-top:1px solid #e2ded6}
+  </style></head><body><div class="wrap">
+    <div class="head">
+      <div class="sub">唯新教育 · 学部美术</div>
+      <h1>${esc(ym)} 学习情况</h1>
+      <div class="stu">${esc(stu.name)}${stu.faculty?' · '+esc(stu.faculty):''}</div>
+    </div>
+    <div class="sec-label">出勤情况</div>
+    <div class="stats">
+      <div class="stat"><div class="n">${required}</div><div class="l">规定出勤（次）</div></div>
+      <div class="stat"><div class="n">${actual}</div><div class="l">实际出勤（次）</div></div>
+      <div class="stat"><div class="n">${rate}%</div><div class="l">出勤率</div></div>
+      <div class="stat"><div class="n">${leave.length}</div><div class="l">请假</div></div>
+      <div class="stat"><div class="n">${required-actual-leave.length}</div><div class="l">缺席</div></div>
+      <div class="stat"><div class="n">${works.length}</div><div class="l">练习作品</div></div>
+    </div>
+    ${works.length?`<div class="sec-label">练习作品（部分）</div><div class="works">${works.slice(0,9).map(w=>`<img src="${w.url}">`).join('')}</div>`:''}
+    <div class="sec-label">专业老师评价</div>
+    <div class="review"><div class="c">${rev.teacher_review?esc(rev.teacher_review):'—'}</div>${rev.teacher_review_by?`<div class="by">— ${esc(rev.teacher_review_by)} 老师</div>`:''}</div>
+    <div class="sec-label">班主任评价</div>
+    <div class="review"><div class="c">${rev.homeroom_review?esc(rev.homeroom_review):'—'}</div>${rev.homeroom_review_by?`<div class="by">— ${esc(rev.homeroom_review_by)} 老师</div>`:''}</div>
+    <div class="foot">唯新教育　Unique New Education　·　${esc(ym)}</div>
+  </div>
+  <script>window.onload=function(){setTimeout(function(){window.print()},600)}<\/script>
+  </body></html>`;
+  const w = window.open('', '_blank');
+  if(!w){ alert('请允许弹出窗口以生成PDF'); return; }
+  w.document.write(html); w.document.close();
 }
 
 // ══ 子项2：出席・作业记录 ══
