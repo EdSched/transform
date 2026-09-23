@@ -35,6 +35,15 @@ let CURRENT_DOMAIN = '';
 // CURRENT_MAJOR：专业锁。空=不锁（看整个领域）；有值=锁定到某专业（专业钥匙用户）。
 // 与 CURRENT_DOMAIN 并列的全局锁，任何页面需要时按它过滤即可（先课程页，以后可扩展）。
 let CURRENT_MAJOR = '';
+// 判断某专业(major)是否属于「学部」领域（学部文科/理科/美术）——学部走志望理由书等专属机制
+function isGakubuMajor(majorKey){
+  if(!majorKey) return false;
+  const dom = (typeof MAJOR_DOMAIN!=='undefined' && MAJOR_DOMAIN[majorKey]) || '';
+  return dom.indexOf('学部') === 0;   // 领域label 以"学部"开头
+}
+// 判断某学生是否学部生
+function isGakubuStudent(stu){ return stu && isGakubuMajor(stu.major); }
+
 // MAJOR_DOMAIN：专业 key → 所属领域。
 // 初始给 5 个写死的核心专业兜底 domain（都属大学院文科），保证 DB 未加载完/加载失败时领域也不错位；
 // loadMajorsFromDB() 会用 DB majors.domain 覆盖/补充，日常修改一律走 DB，此处不锁死。
