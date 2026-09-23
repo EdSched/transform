@@ -304,8 +304,6 @@ function renderConsole(){
         <select id="nk_domain" onchange="updateConsoleMajorOpts()" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px">${domainOpts}</select></div>
       <div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">限定专业（选填）</div>
         <select id="nk_major" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px"><option value="">整个领域</option></select></div>
-      <div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">密码</div>
-        <input id="nk_pw" placeholder="设置访问密码" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:130px"></div>
       <div style="flex:1;min-width:120px"><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">备注（如负责人名）</div>
         <input id="nk_label" placeholder="选填" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:100%"></div>
       <button class="btn btn-primary btn-sm" onclick="createAccessKey()">生成链接</button>
@@ -323,7 +321,7 @@ function renderConsole(){
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="font-weight:600;font-size:13px">${kk.domain}${kk.major?' · '+(MAJORS[kk.major]||kk.major):''}</span>
           ${kk.label?`<span style="font-size:11px;color:var(--text-2)">${kk.label}</span>`:''}
-          <span style="font-size:11px;color:var(--text-3)">密码：${kk.password}</span>
+          <span style="font-size:10px;color:var(--text-3)">🔗 链接即登录</span>
           ${kk.active?'':'<span style="font-size:10px;color:var(--danger)">已停用</span>'}
           <span style="margin-left:auto;display:flex;gap:6px">
             <button class="btn btn-outline btn-sm" onclick="copyKeyLink('${kk.k}')">复制链接</button>
@@ -342,17 +340,16 @@ function renderConsole(){
 async function createAccessKey(){
   const domain=document.getElementById('nk_domain').value;
   const major=document.getElementById('nk_major').value;
-  const pw=document.getElementById('nk_pw').value.trim();
   const label=document.getElementById('nk_label').value.trim();
-  if(!pw){ alert('请设置访问密码'); return; }
-  // 标识 = 领域代码(+专业代码) + 短随机后缀
+  // 不再需要密码：链接即登录（k@access.local 由触发器自动建 Auth，登录靠链接的 k）
+  const pw='auto-'+Math.random().toString(36).slice(2,10);  // password 字段保留非空，但不用于登录
   const code=domainCode(domain)||'dom';
   const k=code+(major?'_'+major:'')+'-'+Date.now().toString(36).slice(-4);
   try{
     await sb('/rest/v1/access_keys','POST',{k,password:pw,domain,major:major||null,is_admin:false,label:label||null,active:true});
-    document.getElementById('nk_pw').value=''; document.getElementById('nk_label').value='';
+    document.getElementById('nk_label').value='';
     await loadConsole();
-    alert(`已生成「${domain}${major?' · '+(MAJORS[major]||major):''}」访问链接，密码：${pw}`);
+    alert(`已生成「${domain}${major?' · '+(MAJORS[major]||major):''}」访问链接。\n发送链接给负责人即可，点开直接进，无需密码。`);
   }catch(e){ alert('生成失败：'+e.message); }
 }
 // 领域下拉变化时，联动更新「限定专业」选项（只出该领域的专业）
