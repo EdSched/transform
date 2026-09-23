@@ -550,6 +550,9 @@ async function renderPage(){
         sbAll('/rest/v1/session_records?select=*')
       ]);
       renderAttendancePage(mc);
+    } else if(curPage==='monthly'){
+      cachedStudents=await sbAll('/rest/v1/students?select=*&order=name.asc');
+      renderMonthlyPage(mc);
     } else if(curPage==='progress'){
       cachedStudents=await sbAll('/rest/v1/students?select=*&order=name.asc');
       renderProgressPage(mc);
