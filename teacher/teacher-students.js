@@ -148,57 +148,14 @@ function tpFilteredStudents() {
 function tpSetOwner(v) { tpOwnerFilter = v; tpRenderShell(); }
 
 // 备考节点文字总结（与学生学习记录页的备考规划同一套逻辑，按学生所选考试路线）
-// 从"期待入学时间"解析入学年份（兼容 27年4月 / 2027年4月 / 2027/4 / 2027 等）
-function tpParseEnrollYear(str){
-  if(!str) return null;
-  const m = String(str).match(/(20\d{2}|\d{2})\s*年?/);
-  if(!m) return null;
-  let y = parseInt(m[1]);
-  if(y < 100) y += 2000;                 // 27 → 2027
-  if(y < 2020 || y > 2100) return null;  // 合理范围校验
-  return y;
-}
-
 function tpNodeSummaryHtml(s, latest, plans, draft) {
   const now = new Date();
   const nowIdx = now.getFullYear() * 12 + now.getMonth();
-  const enrollY = tpParseEnrollYear(s.target_enrollment);
-  const manualRoute = s.prep_model === 'winter' ? 'winter' : s.prep_model === 'next_summer' ? 'next_summer' : (s.prep_model === 'summer' ? 'summer' : null);
-  let route, examIdx;
-
-  if (enrollY) {
-    // 基准年 = 期待入学年 - 1（4月入学：前一年出愿）
-    const baseY = enrollY - 1;
-    const summerExamIdx = baseY * 12 + (8 - 1);          // 基准年 8月考试（夏季）
-    const winterExamIdx = (baseY + 1) * 12 + (1 - 1);    // 基准年冬→次年1月考试（冬季）
-    const nextSummerIdx = (baseY + 1) * 12 + (8 - 1);    // 次年夏天
-
-    if (manualRoute) {
-      // 学生手动设了路线 → 用学生的
-      route = manualRoute;
-      examIdx = route === 'winter' ? winterExamIdx : route === 'next_summer' ? nextSummerIdx : summerExamIdx;
-    } else {
-      // 没设 → 自动：基准年内 当前月<8走夏、≥8走冬；基准年夏冬都过了 → 次年夏
-      if (winterExamIdx < nowIdx) {
-        // 基准年的夏、冬都已过 → 次年夏天
-        route = 'summer'; examIdx = nextSummerIdx;
-      } else if (now.getMonth() + 1 < 8 && summerExamIdx >= nowIdx) {
-        // 当前月<8 且 夏季还没过 → 夏季
-        route = 'summer'; examIdx = summerExamIdx;
-      } else {
-        // 当前月≥8（或夏季已过）但冬季还没过 → 冬季
-        route = 'winter'; examIdx = winterExamIdx;
-      }
-    }
-  } else {
-    // 没有期待入学时间 → 退回原逻辑（按当前日期推算）
-    route = manualRoute || 'summer';
-    const examMonth = route === 'winter' ? 1 : 8;
-    examIdx = now.getFullYear() * 12 + (examMonth - 1);
-    while (examIdx < nowIdx) examIdx += 12;
-    if (route === 'next_summer') examIdx += 12;
-  }
-  try { s._computedRoute = route; s._computedExamIdx = examIdx; } catch(e){}
+  const route = s.prep_model === 'winter' ? 'winter' : s.prep_model === 'next_summer' ? 'next_summer' : 'summer';
+  const examMonth = route === 'winter' ? 1 : 8;
+  let examIdx = now.getFullYear() * 12 + (examMonth - 1);
+  while (examIdx < nowIdx) examIdx += 12;
+  if (route === 'next_summer') examIdx += 12; // 次年路线：跳过最近一轮
   // 各项目最晚节点偏移（次年路线：语言按冬季要求、草稿提前到12月）
   const DL = route === 'next_summer'
     ? { japanese:-7, english:-7, plan:-8, school:-3, apply:-1, kakomon:0, exam:0 }
@@ -257,12 +214,9 @@ function tpRenderProgressList() {
     const latest = getLatestProgress(timeline);
     const plans = plansMap[s.id] || [];
     const draft = draftsMap[s.id];
-    const _nodesHtml = tpNodeSummaryHtml(s, latest, plans, draft);   // 先算，填充 s._computedRoute
-    const _rt = s._computedRoute || (s.prep_model || 'summer');
-    const _isAuto = !s.prep_model;
-    const routeLabel = (_rt === 'winter' ? '冬季路线・12月出愿1月考试'
-      : _rt === 'next_summer' ? '次年夏季路线・语言按冬季要求・次年7月出愿8月考试'
-      : '夏季路线・7月出愿8月考试') + (_isAuto ? '（按入学时间自动）' : '');
+    const routeLabel = s.prep_model === 'winter' ? '冬季路线・12月出愿1月考试'
+      : s.prep_model === 'next_summer' ? '次年夏季路线・语言按冬季要求・次年7月出愿8月考试'
+      : '夏季路线・7月出愿8月考试';
 
     // 「出愿/合格」阶段以志望校为准：有合格→已合格（修正合格学生顶部仍显示已出愿的问题）
     const anyPassed = plans.some(p => p.status === 'passed');
@@ -288,7 +242,7 @@ function tpRenderProgressList() {
     const secFrame = inner => `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:6px;padding:12px 14px">${inner}</div>`;
 
     // 备考节点
-    const secNodes = secFrame(secTitle(`📅 备考节点 <span style="font-weight:400;color:var(--text-3)">· ${routeLabel}</span>`) + _nodesHtml);
+    const secNodes = secFrame(secTitle(`📅 备考节点 <span style="font-weight:400;color:var(--text-3)">· ${routeLabel}</span>`) + tpNodeSummaryHtml(s, latest, plans, draft));
 
     // 语言成绩 + 计划书（两列）
     const jpTxt = s.japanese_score ? tsaEsc(s.japanese_score) : '<span style="color:var(--text-3)">未填写</span>';
@@ -530,7 +484,7 @@ async function saveTeacherDraftComment(draftId, studentId) {
 //       profile  学生档案录入（与 admin 学生档案同一张表实时同步；按 student_majors 允许专业查看）
 // ══════════════════════════════════
 let smTab = '';
-const SM_ITEMS = [['progress','📊 考学进度'], ['meetings','💬 面谈查询'], ['records','🗒 出席・作业记录'], ['profile','👤 学生档案']];
+const SM_ITEMS = [['progress','📊 考学进度'], ['meetings','💬 面谈查询'], ['records','🗒 出席・作业记录'], ['monthly','📅 月度学习情况'], ['profile','👤 学生档案']];
 
 function smAllowedItems() {
   const p = (teacherData && teacherData.permissions) || {};
@@ -557,6 +511,7 @@ function renderStudentMgmt(mc) {
   if (smTab === 'progress') renderTeacherStudyProgress(box);
   else if (smTab === 'records') renderTsaRecords(box);
   else if (smTab === 'meetings') renderTsaMeetings(box);
+  else if (smTab === 'monthly') renderMonthlyReport(box);
   else if (smTab === 'focus') renderTeacherFocus(box);
   else renderTeacherStudents(box);
 }
@@ -733,6 +688,92 @@ async function tsaSaveStudent() {
     tsaRender();
     alert(`已添加「${name}」\n查询码：${data.student_code}\n请转达学生，用于学习记录等页面登录。`);
   } catch (e) { if (msg) msg.textContent = ''; alert('保存失败：' + e.message); }
+}
+
+// ══ 子项：月度学习情况（学部美术）——汇总出勤/作业 + 老师评价 + 作品展示 ══
+let mrStudentId = '';   // 当前选中学生
+let mrYearMonth = '';   // 当前选中月份 YYYY-MM
+let mrCache = {};       // student_id -> session_records
+let mrReviewCache = {}; // `${sid}|${ym}` -> monthly_reviews row
+
+function renderMonthlyReport(mc){
+  const set = tsaAllowedSet();
+  sb('/rest/v1/students?select=id,name,major,level,status,course_type,student_type&order=name.asc&limit=2000').then(all=>{
+    // 只列该老师可见的学生（沿用 records 的可见范围）
+    let list = (all||[]).filter(s => s.status !== 'graduated' && s.status !== 'withdrawn');
+    if (set) list = list.filter(s => set.has(s.major));
+    if (!mrStudentId && list.length) mrStudentId = list[0].id;
+    if (!mrYearMonth){ const d=new Date(); mrYearMonth = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+    mc.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+        <div style="font-size:12px;font-weight:600">📅 月度学习情况</div>
+        <select id="mr_stu" onchange="mrStudentId=this.value;renderMonthlyReport(document.getElementById('mainContent'))" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:4px">
+          ${list.map(s=>`<option value="${s.id}" ${mrStudentId===s.id?'selected':''}>${s.name}${s.student_type?' · '+s.student_type:''}</option>`).join('')}
+        </select>
+        <input type="month" id="mr_ym" value="${mrYearMonth}" onchange="mrYearMonth=this.value;renderMonthlyReport(document.getElementById('mainContent'))" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:4px">
+      </div>
+      <div id="mr_body"><div style="font-size:11px;color:var(--text-3);padding:20px">加载中…</div></div>`;
+    if (mrStudentId) mrLoadAndRender(list.find(x=>x.id===mrStudentId));
+  }).catch(e=>{ mc.innerHTML=`<div class="empty" style="color:var(--danger)">加载失败：${e.message}</div>`; });
+}
+
+async function mrLoadAndRender(stu){
+  if(!stu) return;
+  const body = document.getElementById('mr_body'); if(!body) return;
+  // 拉该生所有 session_records（按名字）+ 该月评价
+  if(!mrCache[stu.id]){
+    mrCache[stu.id] = await sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(stu.name)}&select=*&order=session_date.desc&limit=500`).catch(()=>[]);
+  }
+  const recs = mrCache[stu.id] || [];
+  // 过滤本月
+  const monthRecs = recs.filter(r => (r.session_date||'').slice(0,7) === mrYearMonth);
+  // 出勤聚合
+  const attended = monthRecs.filter(r => ['offline','online','replay'].includes(r.attendance_status));
+  const leave = monthRecs.filter(r => r.attendance_status === 'leave');
+  const absent = monthRecs.filter(r => r.attendance_status === 'absent' || (!r.attendance_status && !['offline','online','replay','leave'].includes(r.attendance_status)));
+  const required = monthRecs.length;  // 该月排到的课次数 = 规定出勤
+  const actual = attended.length;
+  const rate = required ? Math.round(actual/required*100) : 0;
+  // 作业图（本月交的、有图的）
+  const works = monthRecs.filter(r => r.homework_file_url).map(r => ({url:r.homework_file_url, date:r.session_date, name:r.course_name||''}));
+  // 拉评价
+  const key = `${stu.id}|${mrYearMonth}`;
+  if(mrReviewCache[key]===undefined){
+    const rv = await sb(`/rest/v1/monthly_reviews?student_id=eq.${encodeURIComponent(stu.id)}&year_month=eq.${mrYearMonth}&select=*&limit=1`).catch(()=>[]);
+    mrReviewCache[key] = (rv&&rv[0])||null;
+  }
+  const rev = mrReviewCache[key];
+  const esc = v => String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  body.innerHTML = `
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px 20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+      <div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">${esc(stu.name)} · ${mrYearMonth.replace('-','年')}月 学习情况</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:16px">
+      ${[['规定出勤',required+' 次'],['实际出勤',actual+' 次'],['出勤率',rate+'%'],['请假',leave.length+' 次'],['缺席/未记录',(required-actual-leave.length)+' 次'],['交作业',works.length+' 份']].map(([l,v])=>`
+        <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:6px;padding:8px 10px;text-align:center">
+          <div style="font-size:16px;font-weight:700;color:var(--accent,#b8953a)">${v}</div>
+          <div style="font-size:10px;color:var(--text-3);margin-top:2px">${l}</div>
+        </div>`).join('')}
+    </div>
+    <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px">练习作品（学生本月提交）</div>
+    ${works.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-bottom:16px">
+      ${works.map(w=>`<a href="${w.url}" target="_blank" style="display:block;border:1px solid var(--border);border-radius:6px;overflow:hidden"><img src="${w.url}" style="width:100%;height:90px;object-fit:cover;display:block" loading="lazy"><div style="font-size:9px;color:var(--text-3);padding:3px 5px">${(w.date||'').slice(5)}</div></a>`).join('')}
+    </div>` : '<div style="font-size:11px;color:var(--text-3);padding:8px 0 16px">本月暂无提交作品</div>'}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:6px;padding:12px">
+        <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">专业老师评价</div>
+        <div style="font-size:12px;line-height:1.7;color:var(--text-2);white-space:pre-wrap;min-height:40px">${rev&&rev.teacher_review?esc(rev.teacher_review):'<span style=\'color:var(--text-3)\'>（待专业老师填写）</span>'}</div>
+        ${rev&&rev.teacher_review_by?`<div style="font-size:10px;color:var(--text-3);margin-top:6px;text-align:right">— ${esc(rev.teacher_review_by)}</div>`:''}
+      </div>
+      <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:6px;padding:12px">
+        <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">班主任评价</div>
+        <div style="font-size:12px;line-height:1.7;color:var(--text-2);white-space:pre-wrap;min-height:40px">${rev&&rev.homeroom_review?esc(rev.homeroom_review):'<span style=\'color:var(--text-3)\'>（待班主任填写）</span>'}</div>
+        ${rev&&rev.homeroom_review_by?`<div style="font-size:10px;color:var(--text-3);margin-top:6px;text-align:right">— ${esc(rev.homeroom_review_by)}</div>`:''}
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--text-3);margin-top:12px">💡 阶段1：先展示汇总。下一步加「填写评价 / 挑选作品 / 生成PDF」。</div>
+  </div>`;
 }
 
 // ══ 子项2：出席・作业记录 ══
