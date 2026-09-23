@@ -843,7 +843,7 @@ async function mrGeneratePdf(sid){
   <style>
     @page{size:A4;margin:16mm}
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:'Noto Serif SC','Songti SC',serif;color:#1a1814;background:#fff;line-height:1.7}
+    body{font-family:-apple-system,'PingFang SC','Microsoft YaHei','Hiragino Sans GB','Source Han Sans SC','Noto Sans SC',sans-serif;color:#1a1814;background:#fff;line-height:1.7}
     .wrap{max-width:760px;margin:0 auto}
     .head{text-align:center;padding:18px 0 14px;border-bottom:2px solid #b8953a;margin-bottom:20px}
     .head .sub{font-size:12px;color:#9a9590;letter-spacing:.15em;margin-bottom:6px}
