@@ -1737,6 +1737,33 @@ async function saveAdmissionEntry(){
 }
 function stEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
+// 左侧菜单「月度学习情况」列表页：列出学生，点开看月度（复用 openMonthlyReport 弹窗）
+let mpMajorFilter = 'all';
+function renderMonthlyPage(mc){
+  const students = (cachedStudents||[]).filter(s=>s.status!=='withdrawn');
+  const keys = majorFilterKeys({includeAll:true});
+  let list = students;
+  if(mpMajorFilter!=='all'){
+    const grp = (typeof MAJOR_GROUPS!=='undefined' && MAJOR_GROUPS[mpMajorFilter]) || null;
+    list = students.filter(s=> grp ? grp.includes(s.major) : s.major===mpMajorFilter);
+  }
+  list = list.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','zh'));
+  mc.innerHTML = `
+  <div class="page-header"><div class="section-title">📅 月度学习情况</div></div>
+  <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">点学生查看/填写每月学习情况汇总，可生成家长版 PDF。学部与大学院通用。</div>
+  <div class="filter-row" style="margin-bottom:12px">
+    ${keys.map((m,i)=>`<div class="filter-chip${mpMajorFilter===m?' active':''}" onclick="mpMajorFilter='${m}';renderMonthlyPage(document.getElementById('mainContent'))">${i===0?'全部专业':(m==='shakai_group'?'社会人文':majorLabel(m))}</div>`).join('')}
+  </div>
+  <div style="display:flex;flex-direction:column;gap:6px">
+    ${list.length? list.map(s=>`
+      <div onclick="openMonthlyReport('${s.id}','${(s.name||'').replace(/'/g,"&#39;")}')" style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:6px;cursor:pointer">
+        <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px">${stEsc(s.name)}</span>
+        <span style="font-size:11px;color:var(--text-3)">${MAJORS[s.major]||s.major||''}${s.student_type?' · '+s.student_type:''}</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--accent,#b8953a)">查看月度 →</span>
+      </div>`).join('') : '<div style="padding:20px;color:var(--text-3);font-size:12px">该专业暂无学生</div>'}
+  </div>`;
+}
+
 // ══════════════ admin 月度学习情况（学部+大学院都有；admin 全权限填写/生成PDF）══════════════
 let amrYearMonth = '';
 let amrData = {};   // sid -> session_records
