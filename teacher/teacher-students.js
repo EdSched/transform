@@ -148,14 +148,57 @@ function tpFilteredStudents() {
 function tpSetOwner(v) { tpOwnerFilter = v; tpRenderShell(); }
 
 // 备考节点文字总结（与学生学习记录页的备考规划同一套逻辑，按学生所选考试路线）
+// 从"期待入学时间"解析入学年份（兼容 27年4月 / 2027年4月 / 2027/4 / 2027 等）
+function tpParseEnrollYear(str){
+  if(!str) return null;
+  const m = String(str).match(/(20\d{2}|\d{2})\s*年?/);
+  if(!m) return null;
+  let y = parseInt(m[1]);
+  if(y < 100) y += 2000;                 // 27 → 2027
+  if(y < 2020 || y > 2100) return null;  // 合理范围校验
+  return y;
+}
+
 function tpNodeSummaryHtml(s, latest, plans, draft) {
   const now = new Date();
   const nowIdx = now.getFullYear() * 12 + now.getMonth();
-  const route = s.prep_model === 'winter' ? 'winter' : s.prep_model === 'next_summer' ? 'next_summer' : 'summer';
-  const examMonth = route === 'winter' ? 1 : 8;
-  let examIdx = now.getFullYear() * 12 + (examMonth - 1);
-  while (examIdx < nowIdx) examIdx += 12;
-  if (route === 'next_summer') examIdx += 12; // 次年路线：跳过最近一轮
+  const enrollY = tpParseEnrollYear(s.target_enrollment);
+  const manualRoute = s.prep_model === 'winter' ? 'winter' : s.prep_model === 'next_summer' ? 'next_summer' : (s.prep_model === 'summer' ? 'summer' : null);
+  let route, examIdx;
+
+  if (enrollY) {
+    // 基准年 = 期待入学年 - 1（4月入学：前一年出愿）
+    const baseY = enrollY - 1;
+    const summerExamIdx = baseY * 12 + (8 - 1);          // 基准年 8月考试（夏季）
+    const winterExamIdx = (baseY + 1) * 12 + (1 - 1);    // 基准年冬→次年1月考试（冬季）
+    const nextSummerIdx = (baseY + 1) * 12 + (8 - 1);    // 次年夏天
+
+    if (manualRoute) {
+      // 学生手动设了路线 → 用学生的
+      route = manualRoute;
+      examIdx = route === 'winter' ? winterExamIdx : route === 'next_summer' ? nextSummerIdx : summerExamIdx;
+    } else {
+      // 没设 → 自动：基准年内 当前月<8走夏、≥8走冬；基准年夏冬都过了 → 次年夏
+      if (winterExamIdx < nowIdx) {
+        // 基准年的夏、冬都已过 → 次年夏天
+        route = 'summer'; examIdx = nextSummerIdx;
+      } else if (now.getMonth() + 1 < 8 && summerExamIdx >= nowIdx) {
+        // 当前月<8 且 夏季还没过 → 夏季
+        route = 'summer'; examIdx = summerExamIdx;
+      } else {
+        // 当前月≥8（或夏季已过）但冬季还没过 → 冬季
+        route = 'winter'; examIdx = winterExamIdx;
+      }
+    }
+  } else {
+    // 没有期待入学时间 → 退回原逻辑（按当前日期推算）
+    route = manualRoute || 'summer';
+    const examMonth = route === 'winter' ? 1 : 8;
+    examIdx = now.getFullYear() * 12 + (examMonth - 1);
+    while (examIdx < nowIdx) examIdx += 12;
+    if (route === 'next_summer') examIdx += 12;
+  }
+  try { s._computedRoute = route; s._computedExamIdx = examIdx; } catch(e){}
   // 各项目最晚节点偏移（次年路线：语言按冬季要求、草稿提前到12月）
   const DL = route === 'next_summer'
     ? { japanese:-7, english:-7, plan:-8, school:-3, apply:-1, kakomon:0, exam:0 }
@@ -214,9 +257,12 @@ function tpRenderProgressList() {
     const latest = getLatestProgress(timeline);
     const plans = plansMap[s.id] || [];
     const draft = draftsMap[s.id];
-    const routeLabel = s.prep_model === 'winter' ? '冬季路线・12月出愿1月考试'
-      : s.prep_model === 'next_summer' ? '次年夏季路线・语言按冬季要求・次年7月出愿8月考试'
-      : '夏季路线・7月出愿8月考试';
+    const _nodesHtml = tpNodeSummaryHtml(s, latest, plans, draft);   // 先算，填充 s._computedRoute
+    const _rt = s._computedRoute || (s.prep_model || 'summer');
+    const _isAuto = !s.prep_model;
+    const routeLabel = (_rt === 'winter' ? '冬季路线・12月出愿1月考试'
+      : _rt === 'next_summer' ? '次年夏季路线・语言按冬季要求・次年7月出愿8月考试'
+      : '夏季路线・7月出愿8月考试') + (_isAuto ? '（按入学时间自动）' : '');
 
     // 「出愿/合格」阶段以志望校为准：有合格→已合格（修正合格学生顶部仍显示已出愿的问题）
     const anyPassed = plans.some(p => p.status === 'passed');
@@ -242,7 +288,7 @@ function tpRenderProgressList() {
     const secFrame = inner => `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:6px;padding:12px 14px">${inner}</div>`;
 
     // 备考节点
-    const secNodes = secFrame(secTitle(`📅 备考节点 <span style="font-weight:400;color:var(--text-3)">· ${routeLabel}</span>`) + tpNodeSummaryHtml(s, latest, plans, draft));
+    const secNodes = secFrame(secTitle(`📅 备考节点 <span style="font-weight:400;color:var(--text-3)">· ${routeLabel}</span>`) + _nodesHtml);
 
     // 语言成绩 + 计划书（两列）
     const jpTxt = s.japanese_score ? tsaEsc(s.japanese_score) : '<span style="color:var(--text-3)">未填写</span>';
