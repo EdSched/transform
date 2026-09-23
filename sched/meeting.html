@@ -391,10 +391,11 @@ function onlineMtgForm(courseId){
     try{
       const _hk=(el('mo_hostkey')&&el('mo_hostkey').value.trim())||parsed.host_key||null;
       await sbUpdate('sched_courses', c.id, {meeting_link:parsed.link||null, meeting_id:parsed.id||null, host_key:_hk});
+      const syncMsg=await trySyncMgmt(c, parsed.link||null, parsed.id||null, _hk);
       // 预留转正式
       const bs=BOOKINGS.filter(b=>b.kind==='course'&&String(b.course_id)===String(c.id)&&b.uses_meeting&&b.meeting_account_id);
       for(const b of bs) await sbUpdate('sched_bookings', b.id, {status:'confirmed'});
-      await reloadMtg(); el('ms_form').innerHTML=''; renderOnlineMtg(); toast('已绑定链接，线上课排课完成');
+      await reloadMtg(); el('ms_form').innerHTML=''; renderOnlineMtg(); toast('已绑定链接，线上课排课完成'+syncMsg, !syncMsg.includes('失败'));
     }catch(e){ el('mo_prev').innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>'; btn.disabled=false; btn.textContent='保存链接（预留转正式）'; }
   };
 }
@@ -461,7 +462,21 @@ function renderMtgRoom(){
     catch(e){ toast('失败：'+e.message, false); btn.disabled=false; btn.textContent='一键补绑本教室账号'; }
   };
 }
-/* 给单门课设链接：标题(可选已有通用会议) → 会议设定详细信息 → 粘贴解析/直接用通用链接 → 保存 */
+/* 把会议链接/会议号/主持人密钥同步写进管理系统的 courses 表（先按 id，找不到再按课名）。失败不阻断排课侧保存，只提示 */
+async function syncMeetingToMgmt(c, link, mid, hkey){
+  const patch={ meeting_url:link||null, meeting_id:mid||null, host_key:hkey||null };
+  const doPatch=async q=>{ const r=await fetch(SB_URL+'/rest/v1/courses?'+q,{ method:'PATCH', headers:sbHeaders({Prefer:'return=representation'}), body:JSON.stringify(patch) });
+    if(!r.ok){ const t=await r.text(); throw new Error(sbErrMsg(t)||(r.status+' '+t)); } return r.json(); };
+  let rows=await doPatch('id=eq.'+encodeURIComponent(c.id));
+  if(!rows.length && c.name) rows=await doPatch('name=eq.'+encodeURIComponent(String(c.name).trim()));
+  return rows.length;
+}
+async function trySyncMgmt(c, link, mid, hkey){
+  try{ const n=await syncMeetingToMgmt(c, link, mid, hkey); return n?'（已同步到管理系统）':'（管理系统里没找到这门课，未同步）'; }
+  catch(e){ return '（同步到管理系统失败：'+e.message+'）'; }
+}
+
+/* 给单门课设链接：标题(可选已有通用会议) → 会议设定详细信息 → 链接/会议号/密钥（可粘贴邀请自动填） → 保存 */
 function mtgSetForm(courseId, room){
   const c=COURSES.find(x=>String(x.id)===String(courseId)); if(!c) return;
   const title=[c.term,c.category,c.name].filter(Boolean).join('-');
@@ -488,16 +503,21 @@ function mtgSetForm(courseId, room){
         '</tbody></table>'+
         '<div class="muted" style="font-size:11px;margin-top:4px">按上面的周几、时段、起止日期在腾讯会议里建「周期会议」。</div>'+
       '</div>';
-    if(chosenTpl && (chosenTpl.meeting_link||chosenTpl.meeting_id)){
-      h+='<div style="border-top:1px solid var(--line);margin:10px 0;padding-top:10px"><b>③ 使用该通用会议的链接</b>'+
-        '<table style="margin-top:6px"><tbody>'+
-        `<tr><td class="muted" style="width:90px">链接</td><td>${chosenTpl.meeting_link?esc(chosenTpl.meeting_link):'—'}</td></tr>`+
-        `<tr><td class="muted">会议号</td><td>${chosenTpl.meeting_id?esc(chosenTpl.meeting_id):'—'}</td></tr>`+
-        '</tbody></table><div class="muted" style="font-size:11px;margin-top:4px">直接用这个通用链接，无需再粘贴解析。</div></div>';
-    } else {
-      h+='<div style="border-top:1px solid var(--line);margin:10px 0;padding-top:10px"><b>③ 粘贴会议邀请解析</b><div class="field" style="margin-top:6px"><textarea id="ms_txt" rows="5" placeholder="把腾讯会议邀请整段粘贴进来"></textarea></div><button type="button" class="ghost sm" id="ms_parse">解析</button><div id="ms_prev" style="margin-top:8px"></div></div>';
-    }
-    const canSave = chosenTpl ? !!(chosenTpl.meeting_link||chosenTpl.meeting_id) : !!parsed;
+    // ③ 链接 / 会议号 / 主持人密钥：直接填；选了通用会议就预填；也可粘贴邀请自动填
+    const v = chosenTpl ? { link:chosenTpl.meeting_link||'', mid:chosenTpl.meeting_id||'', hkey:chosenTpl.host_key||'' }
+                        : { link:c.meeting_link||'', mid:c.meeting_id||'', hkey:c.host_key||'' };
+    h+='<div style="border-top:1px solid var(--line);margin:10px 0;padding-top:10px"><b>③ 会议链接 · 会议号 · 主持人密钥</b>'+
+      (chosenTpl?'<div class="muted" style="font-size:11px;margin-top:4px">已按所选通用会议预填，可直接保存或修改。</div>':'')+
+      '<div class="field" style="margin-top:6px"><label>会议链接</label><input id="ms_link" value="'+esc(v.link)+'" placeholder="https://meeting.tencent.com/…" style="width:100%"></div>'+
+      '<div style="display:flex;gap:8px;margin-top:6px">'+
+        '<div class="field" style="flex:1"><label>会议号</label><input id="ms_mid" value="'+esc(v.mid)+'" placeholder="如 774-8151-4063" style="width:100%"></div>'+
+        '<div class="field" style="flex:1"><label>主持人密钥（可留空）</label><input id="ms_hkey" value="'+esc(v.hkey)+'" placeholder="如 123456" style="width:100%"></div>'+
+      '</div>'+
+      '<details style="margin-top:8px"><summary class="muted" style="cursor:pointer;font-size:12px">粘贴腾讯会议邀请，自动填入上面三项</summary>'+
+        '<div class="field" style="margin-top:6px"><textarea id="ms_txt" rows="4" placeholder="把腾讯会议邀请整段粘贴进来" style="width:100%"></textarea></div>'+
+        '<button type="button" class="ghost sm" id="ms_parse">解析并填入</button><div id="ms_prev" style="margin-top:6px"></div>'+
+      '</details></div>';
+    const canSave = !!(v.link||v.mid);
     if(!chosenTpl){
       h+='<div style="border-top:1px solid var(--line);margin:10px 0;padding-top:10px"><b>④ 存为本期通用会议（可选）</b>'+
         '<div style="display:flex;gap:8px;align-items:center;margin-top:6px">'+
@@ -514,18 +534,21 @@ function mtgSetForm(courseId, room){
       el('ms_tplTitle').style.display=on==='1'?'':'none'; };
     if(el('ms_tpl')) el('ms_tpl').onchange=()=>{ const id=el('ms_tpl').value; chosenTpl=id?MTEMPLATES.find(t=>String(t.id)===String(id)):null; parsed=null; render(); };
     el('ms_ctitle').onclick=()=>navigator.clipboard.writeText(el('ms_title').value).then(()=>toast('标题已复制'));
+    const refreshSave=()=>{ el('ms_save').disabled=!(el('ms_link').value.trim()||el('ms_mid').value.trim()); };
+    ['ms_link','ms_mid'].forEach(id=>el(id).oninput=refreshSave);
     if(el('ms_parse')) el('ms_parse').onclick=()=>{ parsed=parseTencent(el('ms_txt').value);
-      if(!parsed.link&&!parsed.id){ el('ms_prev').innerHTML='<span class="badge b-err">没识别到链接或会议号</span>'; el('ms_save').disabled=true; return; }
-      el('ms_prev').innerHTML='<table><tbody>'+`<tr><td class="muted">链接</td><td>${parsed.link?esc(parsed.link):'—'}</td></tr><tr><td class="muted">会议号</td><td>${parsed.id?esc(parsed.id):'—'}</td></tr></tbody></table>`;
-      el('ms_save').disabled=false; };
+      if(!parsed.link&&!parsed.id){ el('ms_prev').innerHTML='<span class="badge b-err">没识别到链接或会议号</span>'; return; }
+      if(parsed.link) el('ms_link').value=parsed.link; if(parsed.id) el('ms_mid').value=parsed.id; if(parsed.host_key) el('ms_hkey').value=parsed.host_key;
+      el('ms_prev').innerHTML='<span class="badge b-ok">已填入</span>'+(parsed.host_key?'':' <span class="muted" style="font-size:11px">邀请里没有主持人密钥，需要的话手动填</span>');
+      refreshSave(); };
     el('ms_cancel').onclick=()=>{ el('ms_form').innerHTML=''; };
     el('ms_save').onclick=async()=>{
-      let link,mid;
-      if(chosenTpl){ link=chosenTpl.meeting_link||null; mid=chosenTpl.meeting_id||null; }
-      else { if(!parsed) return; link=parsed.link||null; mid=parsed.id||null; }
+      const link=el('ms_link').value.trim()||null, mid=el('ms_mid').value.trim()||null, hkey=el('ms_hkey').value.trim()||null;
+      if(!link&&!mid){ toast('请填会议链接或会议号', false); return; }
       const btn=el('ms_save'); btn.disabled=true; btn.textContent='保存中…';
       try{
-        await sbUpdate('sched_courses', c.id, {meeting_link:link, meeting_id:mid});
+        await sbUpdate('sched_courses', c.id, {meeting_link:link, meeting_id:mid, host_key:hkey});
+        const syncMsg=await trySyncMgmt(c, link, mid, hkey);
         // 同步该课在本教室的占用：标记占用教室绑定的会议账号，看板/搜索才显示网络与账号
         if(room && room.meeting_account_id){
           const bs=BOOKINGS.filter(b=>b.kind==='course'&&String(b.course_id)===String(c.id)&&String(b.room_id)===String(room.id));
@@ -535,9 +558,9 @@ function mtgSetForm(courseId, room){
         if(!chosenTpl && el('ms_saveTplChip') && el('ms_saveTplChip').dataset.on==='1'){
           const tplTitle=(el('ms_tplTitle').value.trim())||el('ms_title').value.trim()||null;
           await sbInsert('sched_meeting_templates', { term:c.term||null, major:c.major||null, title:tplTitle,
-            meeting_link:link, meeting_id:mid, start_time:c.start_time||null, end_time:c.end_time||null });
+            meeting_link:link, meeting_id:mid, host_key:hkey, start_time:c.start_time||null, end_time:c.end_time||null });
         }
-        await reloadMtg(); el('ms_form').innerHTML=''; renderMtgRoom(); toast('已保存会议链接'+(room&&room.meeting_account_id?'（已绑定教室账号）':''));
+        await reloadMtg(); el('ms_form').innerHTML=''; renderMtgRoom(); toast('已保存会议链接'+(room&&room.meeting_account_id?'（已绑定教室账号）':'')+syncMsg, !syncMsg.includes('失败'));
       }
       catch(e){ toast(esc(e.message), false); btn.disabled=false; btn.textContent='保存链接'; }
     };
@@ -555,7 +578,7 @@ function mtgCopyForm(courseId, room){
   function render(){
     let h='<div style="position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:60;overflow:auto;padding:40px 16px"><div class="card" style="width:520px;max-width:94vw;margin:auto">'+
       '<h3 style="margin-top:2px">统一覆盖会议链接</h3>'+
-      '<div class="tip">把「'+esc(src.name)+'」的会议链接/会议号，覆盖到本教室下面勾选的课程（默认勾选同专业）。上课时段各课不变。</div>'+
+      '<div class="tip">把「'+esc(src.name)+'」的会议链接/会议号/主持人密钥，覆盖到本教室下面勾选的课程（默认勾选同专业），并同步到管理系统。上课时段各课不变。</div>'+
       '<div style="max-height:300px;overflow:auto;margin:8px 0">'+
       others.map(c=>{ const on=sel.has(String(c.id)); const same=(c.major||'')===(src.major||'');
         return `<div class="mscov" data-cov="${c.id}" style="cursor:pointer;border:1px solid ${on?'#2c8a4f':'var(--line)'};background:${on?'#e7f6ec':'#fff'};border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:13px">${on?'✓ ':''}<b>${esc((c.term?c.term+' ':'')+(c.name||''))}</b> <small class="muted">${esc(c.major||c.category||'')}${same?'':' · 非同专业'} · ${weekdaysLabel(c.weekdays)} ${c.start_time||''}-${c.end_time||''}</small></div>`;
@@ -567,10 +590,11 @@ function mtgCopyForm(courseId, room){
     el('ms_covdo').onclick=async()=>{
       if(!sel.size){ toast('未选择', false); return; }
       const btn=el('ms_covdo'); btn.disabled=true; btn.textContent='覆盖中…';
-      try{ for(const id of sel){ await sbUpdate('sched_courses', id, {meeting_link:src.meeting_link||null, meeting_id:src.meeting_id||null});
+      try{ let failed=0; for(const id of sel){ await sbUpdate('sched_courses', id, {meeting_link:src.meeting_link||null, meeting_id:src.meeting_id||null, host_key:src.host_key||null});
+          const tc=COURSES.find(x=>String(x.id)===String(id)); if(tc){ const m=await trySyncMgmt(tc, src.meeting_link, src.meeting_id, src.host_key); if(m.includes('失败')) failed++; }
           if(room && room.meeting_account_id){ const bs=BOOKINGS.filter(b=>b.kind==='course'&&String(b.course_id)===String(id)&&String(b.room_id)===String(room.id));
             for(const b of bs) await sbUpdate('sched_bookings', b.id, {uses_meeting:true, meeting_account_id:room.meeting_account_id}); } }
-        await reloadMtg(); el('ms_form').innerHTML=''; renderMtgRoom(); toast('已覆盖 '+sel.size+' 门课'); }
+        await reloadMtg(); el('ms_form').innerHTML=''; renderMtgRoom(); toast('已覆盖 '+sel.size+' 门课'+(failed?('，其中 '+failed+' 门同步管理系统失败'):'（已同步管理系统）'), !failed); }
       catch(e){ toast('失败：'+e.message, false); btn.disabled=false; btn.textContent='覆盖到所选'; }
     };
   }
