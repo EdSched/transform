@@ -1740,7 +1740,9 @@ function stEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp
 // 左侧菜单「月度学习情况」列表页：列出学生，点开看月度（复用 openMonthlyReport 弹窗）
 let mpMajorFilter = 'all';
 function renderMonthlyPage(mc){
-  const students = (cachedStudents||[]).filter(s=>s.status!=='withdrawn');
+  let students = (cachedStudents||[]).filter(s=>s.status!=='withdrawn');
+  // 按当前视角过滤：admin看全部，领域账号只看自己领域（跟学生档案页一致）
+  if(typeof studentInCurrentView==='function') students = students.filter(s=>studentInCurrentView(s));
   const keys = majorFilterKeys({includeAll:true});
   let list = students;
   if(mpMajorFilter!=='all'){
