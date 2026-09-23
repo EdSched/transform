@@ -16,6 +16,27 @@ async function loadAccessKey(){
 }
 
 // ═══════════════════════════════════════════════
+// 领域账号静默 Auth 登录：用 k@access.local + k 登录，拿 token（跟老师链接一样，纯链接进）
+// access_keys 触发器已自动为每个 k 建好 Auth 账号；登录靠链接的 k，不用密码
+// ═══════════════════════════════════════════════
+async function silentAccessKeyLogin(){
+  try{
+    if(!ACCESS_KEY || ACCESS_KEY.invalid || ACCESS_KEY.is_admin || !ACCESS_KEY.k) return false;
+    if(typeof supabase==='undefined' || !supabase.createClient) return false;
+    const _c = supabase.createClient(SB_URL, SB_KEY, { auth:{ storageKey:'sb-admin', persistSession:true, autoRefreshToken:true } });
+    let { data:_sess } = await _c.auth.getSession();
+    const wantEmail = ACCESS_KEY.k + '@access.local';
+    if(!_sess || !_sess.session || (_sess.session.user && _sess.session.user.email !== wantEmail)){
+      await _c.auth.signInWithPassword({ email: wantEmail, password: ACCESS_KEY.k });
+      _sess = (await _c.auth.getSession()).data;
+    }
+    if(typeof __setSbStorageKey==='function') __setSbStorageKey('sb-admin');
+    if(_sess && _sess.session && typeof __setSbToken==='function') __setSbToken(_sess.session.access_token, _c);
+    return !!(_sess && _sess.session);
+  }catch(e){ console.warn('领域账号登录失败:', e.message); return false; }
+}
+
+// ═══════════════════════════════════════════════
 // 邮箱免密登录（Supabase Auth Magic Link）—— 与密码登录并存
 // 只有 Supabase Auth 里存在的 admin 邮箱能通过（目前：pinnyxu@gmail.com、douhongyun@transform-edu.com）；其他人发了也进不来
 // ═══════════════════════════════════════════════
@@ -1190,13 +1211,20 @@ async function initApp(){
     loginErr('此访问链接无效或已停用');
     return;
   }
+  // 领域钥匙（非admin）：纯链接登录——静默 Auth 拿 token → 直接进领域，不再输密码
+  if(ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin){
+    await silentAccessKeyLogin();
+    localStorage.setItem('txe_login', JSON.stringify({ ts: Date.now() }));
+    enterDomain(ACCESS_KEY.domain, ACCESS_KEY.major);
+    return;
+  }
   // 若从邮件魔法链接回来 → 完成 Auth 登录（无 k 的 admin 场景）
   if(!ACCESS_KEY){
     try{ if(await handleMagicCallback()){ showHub(); return; } }catch(e){}
   }
-  // 已登录：admin钥匙/无k → 中枢台；领域钥匙 → 直达该领域
+  // 已登录：admin钥匙/无k → 中枢台
   if(checkLogin()){
-    if(ACCESS_KEY && !ACCESS_KEY.is_admin){ enterDomain(ACCESS_KEY.domain, ACCESS_KEY.major); }
+    if(ACCESS_KEY && ACCESS_KEY.is_admin){ showHub(); }
     else { showHub(); }
     return;
   }
