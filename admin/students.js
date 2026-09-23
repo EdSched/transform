@@ -1829,14 +1829,14 @@ async function amrPdf(sid,sname){
   const rev=amrRev[`${sid}|${amrYearMonth}`]||{};
   const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const ym=amrYearMonth.replace('-','年')+'月';
-  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(sname)} ${ym}</title><style>
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600&family=Noto+Sans+SC:wght@400;500&display=swap" rel="stylesheet"><title>${esc(sname)} ${ym}</title><style>
     @page{size:A4;margin:16mm}*{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:'Noto Serif SC','Songti SC',serif;color:#1a1814;line-height:1.7}.wrap{max-width:760px;margin:0 auto}
+    body{font-family:'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif;color:#1a1814;line-height:1.7}.wrap{max-width:760px;margin:0 auto}
     .head{text-align:center;padding:18px 0 14px;border-bottom:2px solid #b8953a;margin-bottom:20px}
-    .head .sub{font-size:12px;color:#9a9590;letter-spacing:.15em;margin-bottom:6px}.head h1{font-size:22px;font-weight:600}.head .stu{font-size:14px;color:#5a5650;margin-top:6px}
+    .head .sub{font-size:12px;color:#9a9590;letter-spacing:.15em;margin-bottom:6px}.head h1{font-family:'Noto Serif SC',serif;font-size:24px;font-weight:600;letter-spacing:.03em}.head .stu{font-size:14px;color:#5a5650;margin-top:6px}
     .sec-label{font-size:11px;letter-spacing:.1em;color:#b8953a;text-transform:uppercase;margin:18px 0 8px;font-weight:600}
     .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.stat{background:#f7f5f0;border:1px solid #ede9e2;border-radius:8px;padding:12px;text-align:center}
-    .stat .n{font-size:22px;font-weight:700;color:#b8953a}.stat .l{font-size:11px;color:#9a9590;margin-top:3px}
+    .stat .n{font-family:'Noto Serif SC',serif;font-size:26px;font-weight:300;color:#b8953a;line-height:1}.stat .l{font-size:11px;color:#9a9590;margin-top:3px}
     .works{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.works img{width:100%;height:130px;object-fit:cover;border:1px solid #e2ded6;border-radius:6px}
     .review{background:#f7f5f0;border:1px solid #ede9e2;border-radius:8px;padding:14px 16px;margin-bottom:10px}
     .review .c{font-size:13px;line-height:1.9;color:#3a352e;white-space:pre-wrap}.review .by{font-size:11px;color:#9a9590;text-align:right;margin-top:8px}
