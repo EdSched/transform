@@ -678,17 +678,17 @@
     <div class="modal-sub" id="sessionModalSub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:10px"></div>
     <input type="hidden" id="sessionModalId">
     <!-- 状态切换器：出席/迟到/请假（三选一）；出席·迟到时再选线上/线下 -->
-    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">
-      <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:6px;overflow:hidden">
-        <button id="att_st_present" onclick="attPickState('present')" style="font-size:13px;padding:7px 16px;border:none;cursor:pointer;font-family:inherit;background:var(--accent,#b8953a);color:#fff">出席</button>
-        <button id="att_st_late" onclick="attPickState('late')" style="font-size:13px;padding:7px 16px;border:none;border-left:1px solid var(--border);cursor:pointer;font-family:inherit;background:var(--bg);color:var(--text-2)">迟到</button>
-        <button id="att_st_leave" onclick="attPickState('leave')" style="font-size:13px;padding:7px 16px;border:none;border-left:1px solid var(--border);cursor:pointer;font-family:inherit;background:var(--bg);color:var(--text-2)">请假</button>
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:5px;overflow:hidden">
+        <button id="att_st_present" onclick="attPickState('present')" style="font-size:12px;padding:5px 12px;border:none;cursor:pointer;font-family:inherit;background:var(--accent,#b8953a);color:#fff">出席</button>
+        <button id="att_st_late" onclick="attPickState('late')" style="font-size:12px;padding:5px 12px;border:none;border-left:1px solid var(--border);cursor:pointer;font-family:inherit;background:var(--bg);color:var(--text-2)">迟到</button>
+        <button id="att_st_leave" onclick="attPickState('leave')" style="font-size:12px;padding:5px 12px;border:none;border-left:1px solid var(--border);cursor:pointer;font-family:inherit;background:var(--bg);color:var(--text-2)">请假</button>
       </div>
-      <div id="att_mode_wrap" style="display:flex;gap:0;border:1px solid var(--border);border-radius:6px;overflow:hidden">
-        <button id="att_md_offline" onclick="attPickMode('offline')" style="font-size:13px;padding:7px 16px;border:none;cursor:pointer;font-family:inherit;background:#2a6aad;color:#fff">线下</button>
-        <button id="att_md_online" onclick="attPickMode('online')" style="font-size:13px;padding:7px 16px;border:none;border-left:1px solid var(--border);cursor:pointer;font-family:inherit;background:var(--bg);color:var(--text-2)">线上</button>
+      <div id="att_mode_wrap" style="display:flex;gap:0;border:1px solid var(--border);border-radius:5px;overflow:hidden">
+        <button id="att_md_offline" onclick="attPickMode('offline')" style="font-size:12px;padding:5px 12px;border:none;cursor:pointer;font-family:inherit;background:#2a6aad;color:#fff">线下</button>
+        <button id="att_md_online" onclick="attPickMode('online')" style="font-size:12px;padding:5px 12px;border:none;border-left:1px solid var(--border);cursor:pointer;font-family:inherit;background:var(--bg);color:var(--text-2)">线上</button>
       </div>
-      <div style="font-size:11px;color:var(--text-3)">👆 选好状态，直接点下方学生名字即签到</div>
+      <button onclick="attShowSummary()" style="font-size:11px;padding:5px 10px;border:1px solid var(--border);border-radius:5px;background:var(--bg);cursor:pointer;font-family:inherit;color:var(--text-2);margin-left:auto">📋 汇总</button>
     </div>
     <input id="sessionStudentSearch" placeholder="搜索姓名或拼音首字母…" autocomplete="off" oninput="if(this.dataset.composing!=='1')renderStudentRows(this.value)" oncompositionstart="this.dataset.composing='1'" oncompositionend="this.dataset.composing='';renderStudentRows(this.value)" style="font-size:12px;padding:6px 10px;width:100%;box-sizing:border-box;margin-bottom:10px">
     <!-- 未点名单（点名字即签到） -->
