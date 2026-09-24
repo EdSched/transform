@@ -505,9 +505,9 @@ function renderRecordForm(id, r) {
     const xun = m ? m[3] : '';
     return `<div class="form-group" style="margin-bottom:0"><label class="form-label">期限</label>
       <div style="display:flex;align-items:center;gap:4px">
-        <input type="number" id="rf_${k}_deadline_y_${id}" value="${yr}" placeholder="年" min="2024" max="2030" style="font-size:11px;width:58px;text-align:center">
+        <input type="text" inputmode="numeric" maxlength="4" id="rf_${k}_deadline_y_${id}" value="${yr}" placeholder="年" style="font-size:11px;width:56px;text-align:center">
         <span style="font-size:11px;color:var(--text-2)">年</span>
-        <input type="number" id="rf_${k}_deadline_m_${id}" value="${mo}" placeholder="月" min="1" max="12" style="font-size:11px;width:54px;text-align:center">
+        <input type="text" inputmode="numeric" maxlength="2" id="rf_${k}_deadline_m_${id}" value="${mo}" placeholder="月" style="font-size:11px;width:48px;text-align:center">
         <span style="font-size:11px;color:var(--text-2)">月</span>
         <select id="rf_${k}_deadline_x_${id}" style="font-size:11px;width:60px">
           <option value="">旬</option>
@@ -528,7 +528,7 @@ function renderRecordForm(id, r) {
       <div class="form-group" style="margin-bottom:6px"><label class="form-label">解决建议</label><textarea id="rf_issue_advice_${id}" rows="2" style="font-size:11px">${r.issue_advice || ''}</textarea></div>
       <div class="form-group" style="margin-bottom:0"><label class="form-label">期限</label>
       <div style="display:flex;align-items:center;gap:4px">
-        ${(() => { const val=r.issue_deadline||''; const m=val.match(/^(\d{4})年(\d{1,2})月(上旬|中旬|下旬)$/); const yr=m?m[1]:(val?'':new Date().getFullYear()); const mo=m?m[2]:''; const xun=m?m[3]:''; return `<input type="number" id="rf_issue_deadline_y_${id}" value="${yr}" placeholder="年" min="2024" max="2030" style="font-size:11px;width:58px;text-align:center"><span style="font-size:11px;color:var(--text-2)">年</span><input type="number" id="rf_issue_deadline_m_${id}" value="${mo}" placeholder="月" min="1" max="12" style="font-size:11px;width:54px;text-align:center"><span style="font-size:11px;color:var(--text-2)">月</span><select id="rf_issue_deadline_x_${id}" style="font-size:11px;width:60px"><option value="">旬</option><option ${xun==='上旬'?'selected':''}>上旬</option><option ${xun==='中旬'?'selected':''}>中旬</option><option ${xun==='下旬'?'selected':''}>下旬</option></select>`; })()}
+        ${(() => { const val=r.issue_deadline||''; const m=val.match(/^(\d{4})年(\d{1,2})月(上旬|中旬|下旬)$/); const yr=m?m[1]:(val?'':new Date().getFullYear()); const mo=m?m[2]:''; const xun=m?m[3]:''; return `<input type="text" inputmode="numeric" maxlength="4" id="rf_issue_deadline_y_${id}" value="${yr}" placeholder="年" style="font-size:11px;width:56px;text-align:center"><span style="font-size:11px;color:var(--text-2)">年</span><input type="text" inputmode="numeric" maxlength="2" id="rf_issue_deadline_m_${id}" value="${mo}" placeholder="月" style="font-size:11px;width:48px;text-align:center"><span style="font-size:11px;color:var(--text-2)">月</span><select id="rf_issue_deadline_x_${id}" style="font-size:11px;width:60px"><option value="">旬</option><option ${xun==='上旬'?'selected':''}>上旬</option><option ${xun==='中旬'?'selected':''}>中旬</option><option ${xun==='下旬'?'selected':''}>下旬</option></select>`; })()}
       </div></div>
     `)}
     <div style="padding:10px;background:var(--bg);border-radius:3px;border:1px solid var(--border-light)">
