@@ -35,15 +35,6 @@ let CURRENT_DOMAIN = '';
 // CURRENT_MAJOR：专业锁。空=不锁（看整个领域）；有值=锁定到某专业（专业钥匙用户）。
 // 与 CURRENT_DOMAIN 并列的全局锁，任何页面需要时按它过滤即可（先课程页，以后可扩展）。
 let CURRENT_MAJOR = '';
-// 判断某专业(major)是否属于「学部」领域（学部文科/理科/美术）——学部走志望理由书等专属机制
-function isGakubuMajor(majorKey){
-  if(!majorKey) return false;
-  const dom = (typeof MAJOR_DOMAIN!=='undefined' && MAJOR_DOMAIN[majorKey]) || '';
-  return dom.indexOf('学部') === 0;   // 领域label 以"学部"开头
-}
-// 判断某学生是否学部生
-function isGakubuStudent(stu){ return stu && isGakubuMajor(stu.major); }
-
 // MAJOR_DOMAIN：专业 key → 所属领域。
 // 初始给 5 个写死的核心专业兜底 domain（都属大学院文科），保证 DB 未加载完/加载失败时领域也不错位；
 // loadMajorsFromDB() 会用 DB majors.domain 覆盖/补充，日常修改一律走 DB，此处不锁死。
@@ -516,7 +507,7 @@ function renderRecordForm(id, r) {
       <div style="display:flex;align-items:center;gap:4px">
         <input type="number" id="rf_${k}_deadline_y_${id}" value="${yr}" placeholder="年" min="2024" max="2030" style="font-size:11px;width:58px;text-align:center">
         <span style="font-size:11px;color:var(--text-2)">年</span>
-        <input type="number" id="rf_${k}_deadline_m_${id}" value="${mo}" placeholder="月" min="1" max="12" style="font-size:11px;width:40px;text-align:center">
+        <input type="number" id="rf_${k}_deadline_m_${id}" value="${mo}" placeholder="月" min="1" max="12" style="font-size:11px;width:54px;text-align:center">
         <span style="font-size:11px;color:var(--text-2)">月</span>
         <select id="rf_${k}_deadline_x_${id}" style="font-size:11px;width:60px">
           <option value="">旬</option>
@@ -537,7 +528,7 @@ function renderRecordForm(id, r) {
       <div class="form-group" style="margin-bottom:6px"><label class="form-label">解决建议</label><textarea id="rf_issue_advice_${id}" rows="2" style="font-size:11px">${r.issue_advice || ''}</textarea></div>
       <div class="form-group" style="margin-bottom:0"><label class="form-label">期限</label>
       <div style="display:flex;align-items:center;gap:4px">
-        ${(() => { const val=r.issue_deadline||''; const m=val.match(/^(\d{4})年(\d{1,2})月(上旬|中旬|下旬)$/); const yr=m?m[1]:(val?'':new Date().getFullYear()); const mo=m?m[2]:''; const xun=m?m[3]:''; return `<input type="number" id="rf_issue_deadline_y_${id}" value="${yr}" placeholder="年" min="2024" max="2030" style="font-size:11px;width:58px;text-align:center"><span style="font-size:11px;color:var(--text-2)">年</span><input type="number" id="rf_issue_deadline_m_${id}" value="${mo}" placeholder="月" min="1" max="12" style="font-size:11px;width:40px;text-align:center"><span style="font-size:11px;color:var(--text-2)">月</span><select id="rf_issue_deadline_x_${id}" style="font-size:11px;width:60px"><option value="">旬</option><option ${xun==='上旬'?'selected':''}>上旬</option><option ${xun==='中旬'?'selected':''}>中旬</option><option ${xun==='下旬'?'selected':''}>下旬</option></select>`; })()}
+        ${(() => { const val=r.issue_deadline||''; const m=val.match(/^(\d{4})年(\d{1,2})月(上旬|中旬|下旬)$/); const yr=m?m[1]:(val?'':new Date().getFullYear()); const mo=m?m[2]:''; const xun=m?m[3]:''; return `<input type="number" id="rf_issue_deadline_y_${id}" value="${yr}" placeholder="年" min="2024" max="2030" style="font-size:11px;width:58px;text-align:center"><span style="font-size:11px;color:var(--text-2)">年</span><input type="number" id="rf_issue_deadline_m_${id}" value="${mo}" placeholder="月" min="1" max="12" style="font-size:11px;width:54px;text-align:center"><span style="font-size:11px;color:var(--text-2)">月</span><select id="rf_issue_deadline_x_${id}" style="font-size:11px;width:60px"><option value="">旬</option><option ${xun==='上旬'?'selected':''}>上旬</option><option ${xun==='中旬'?'selected':''}>中旬</option><option ${xun==='下旬'?'selected':''}>下旬</option></select>`; })()}
       </div></div>
     `)}
     <div style="padding:10px;background:var(--bg);border-radius:3px;border:1px solid var(--border-light)">
@@ -552,7 +543,7 @@ function getRecordFromForm(id) {
     const y = document.getElementById(`rf_${k}_deadline_y_${id}`)?.value || '';
     const m = document.getElementById(`rf_${k}_deadline_m_${id}`)?.value || '';
     const x = document.getElementById(`rf_${k}_deadline_x_${id}`)?.value || '';
-    return (y && m && x) ? `${y}年${m}月${x}` : '';
+    return (y && m) ? `${y}年${m}月${x||'上旬'}` : '';
   };
   return {
     study_status: v('study_status'), study_advice: v('study_advice'), study_deadline: dl('study'),
@@ -564,7 +555,7 @@ function getRecordFromForm(id) {
       const y = document.getElementById(`rf_issue_deadline_y_${id}`)?.value || '';
       const m = document.getElementById(`rf_issue_deadline_m_${id}`)?.value || '';
       const x = document.getElementById(`rf_issue_deadline_x_${id}`)?.value || '';
-      return (y && m && x) ? `${y}年${m}月${x}` : '';
+      return (y && m) ? `${y}年${m}月${x||'上旬'}` : '';
     })(),
     extra: v('extra'),
   };
