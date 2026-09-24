@@ -427,6 +427,13 @@ async function openSessionModal(sessionId){
   _currentSessionId = sessionId;
   const searchInput = document.getElementById('sessionStudentSearch');
   if (searchInput) searchInput.value = '';
+  // 预填已有记录到 sessionEdits（这样重新打开能看到之前点的）
+  existing.forEach(r=>{
+    const stu = students.find(x=>x.id===r.student_id || x.name===r.student_name);
+    if(stu){ sessionEdits[stu.id]={ attendance_status:r.attendance_status||'', student_mode:r.student_mode||'offline', homework_submitted:r.homework_submitted||false }; }
+  });
+  attState='present'; attMode='offline';
+  if(typeof attPickState==='function'){ attPickState('present'); attPickMode('offline'); }
   renderStudentRows('');
   document.getElementById('sessionModal').classList.add('open');
 }
@@ -435,65 +442,89 @@ let _currentSessionStudents = [];
 let _currentSessionRecords = [];
 let _currentSessionId = null;
 
+// ── 签到状态切换（出席/迟到/请假 + 线上/线下）──
+let attState = 'present';   // present | late | leave
+let attMode  = 'offline';   // offline | online （仅 present/late 用）
+
+function attPickState(st){
+  attState = st;
+  ['present','late','leave'].forEach(k=>{
+    const b=document.getElementById('att_st_'+k);
+    if(b){ const on=k===st; b.style.background=on?'var(--accent,#b8953a)':'var(--bg)'; b.style.color=on?'#fff':'var(--text-2)'; }
+  });
+  // 请假不需要线上线下
+  const mw=document.getElementById('att_mode_wrap');
+  if(mw) mw.style.display = (st==='leave') ? 'none' : 'flex';
+}
+function attPickMode(md){
+  attMode = md;
+  ['offline','online'].forEach(k=>{
+    const b=document.getElementById('att_md_'+k);
+    if(b){ const on=k===md; b.style.background=on?(k==='online'?'#2a6aad':'#2a6aad'):'var(--bg)'; b.style.color=on?'#fff':'var(--text-2)'; }
+  });
+}
+// 当前切换 → 存进 attendance_status 的值
+function attCurrentStatus(){
+  if(attState==='leave') return 'leave';
+  if(attState==='late')  return attMode==='online' ? 'online_late' : 'offline_late';
+  return attMode==='online' ? 'online' : 'offline';   // present
+}
+// 某个状态值 → 中文标签 + 颜色（含迟到）
+function attStatusFull(v){
+  const map={
+    online:{t:'线上出席',c:'#2a6aad'}, offline:{t:'线下出席',c:'var(--ok,#2a9e6a)'},
+    online_late:{t:'线上迟到',c:'#b8860b'}, offline_late:{t:'线下迟到',c:'#b8860b'},
+    leave:{t:'请假',c:'var(--text-3,#999)'}, replay:{t:'录播回看',c:'var(--warn,#b8860b)'},
+  };
+  return map[v]||{t:v||'缺席',c:'var(--danger,#b03a2e)'};
+}
+
+// 点名字 = 记为当前状态
+function attMark(sid){
+  const s=_currentSessionStudents.find(x=>x.id===sid); if(!s) return;
+  if(!sessionEdits[sid]) sessionEdits[sid]={};
+  sessionEdits[sid].attendance_status = attCurrentStatus();
+  // 上课方式属性沿用（不在签到里管）：present/late 时也顺带记这次是线上/线下形式
+  sessionEdits[sid].student_mode = (attState==='leave') ? (sessionEdits[sid].student_mode||s.default_mode||'offline') : attMode;
+  renderStudentRows(document.getElementById('sessionStudentSearch')?.value||'');
+}
+// 撤回 = 从已点退回未点
+function attUnmark(sid){
+  if(sessionEdits[sid]) sessionEdits[sid].attendance_status='';
+  renderStudentRows(document.getElementById('sessionStudentSearch')?.value||'');
+}
+
 function renderStudentRows(filter='') {
   const students = _currentSessionStudents;
-  const existing = _currentSessionRecords;
-  const filtered = filter
-    ? students.filter(s => matchesStudentSearch(s, filter))
-    : students;
-  const tbody=document.getElementById('sessionRecordBody');
-  tbody.innerHTML=filtered.map(s=>{
-    const rec=existing.find(r=>r.student_id===s.id||r.student_name===s.name)||{};
-    const defaultMode=rec.student_mode||s.default_mode||'offline';
-    // 学生已在学习记录中提交作业 → 自动记为已交（保存时一并写入）
-    const autoHwInit = !!(attHwSubs[_currentSessionId] && attHwSubs[_currentSessionId].has(s.name));
-    sessionEdits[s.id]={
-      student_mode:defaultMode,
-      attendance_status:rec.attendance_status||'',
-      homework_submitted:autoHwInit||rec.homework_submitted||!!rec.homework_file_url,
-    };
-    const att=rec.attendance_status||'';
-    // 作业以新系统的实际提交为准：学生提交即自动记为已交，无需手动点
-    const autoHw = autoHwInit;
-    const hw = autoHw || rec.homework_submitted || !!rec.homework_file_url;
-    // 学生已提交但旧记录未标记 → 自动补记，保持两处一致
-    if(autoHw && !rec.homework_submitted && rec.id){
-      sb(`/rest/v1/session_records?id=eq.${rec.id}`,'PATCH',{homework_submitted:true}).catch(()=>{});
-      rec.homework_submitted=true;
-    }
-    return `<tr id="srow-${s.id}">
-      <td style="font-size:12px;font-family:'Noto Serif SC',serif;font-weight:600">${s.name}</td>
-      <td>
-        <button onclick="toggleMode('${s.id}')" id="mode-${s.id}"
-          style="font-size:10px;padding:3px 10px;border-radius:2px;border:1px solid;cursor:pointer;font-family:inherit;
-          background:${defaultMode==='online'?'#e8eef8':'var(--bg)'};
-          color:${defaultMode==='online'?'#1a3a6a':'var(--text-2)'};
-          border-color:${defaultMode==='online'?'#2a6aad':'var(--border)'}">
-          ${defaultMode==='online'?'线上':'线下'}
-        </button>
-      </td>
-      <td>
-        <div style="display:flex;gap:4px;flex-wrap:wrap">
-          ${ATT_STATUS.map(a=>`<button onclick="setAtt('${s.id}','${a.value}')" id="att-${s.id}-${a.value}"
-            style="font-size:10px;padding:3px 9px;border-radius:2px;border:1px solid;cursor:pointer;font-family:inherit;
-            background:${att===a.value?a.color:'var(--bg)'};
-            color:${att===a.value?'#fff':'var(--text-2)'};
-            border-color:${att===a.value?a.color:'var(--border)'}">${a.label}
-          </button>`).join('')}
-        </div>
-        ${att===''?'<div style="font-size:10px;color:var(--danger);margin-top:3px">缺席</div>':''}
-      </td>
-      <td>
-        <button onclick="${autoHw?'':`toggleHw('${s.id}')`}" id="hw-${s.id}" title="${autoHw?'学生已在学习记录中提交，自动记为已交':'手动标记是否交作业'}"
-          style="font-size:12px;width:28px;height:28px;border-radius:3px;border:1px solid;cursor:pointer;
-          background:${hw?'var(--ok)':'var(--bg)'};
-          color:${hw?'#fff':'var(--text-3)'};
-          border-color:${hw?'var(--ok)':'var(--border)'}">
-          ${autoHw?'✓ 已提交':hw?'✓':'—'}
-        </button>
-      </td>
-    </tr>`;
-    }).join('');
+  const kw=(filter||'').trim().toLowerCase();
+  // 未点 = 还没有 attendance_status 的
+  const marked = students.filter(s=>sessionEdits[s.id] && sessionEdits[s.id].attendance_status);
+  let unmarked = students.filter(s=>!(sessionEdits[s.id] && sessionEdits[s.id].attendance_status));
+  const unmarkedShown = kw ? unmarked.filter(s=>matchesStudentSearch(s,kw)) : unmarked;
+
+  // 未点名单（名字卡片，点=签到）
+  const body=document.getElementById('sessionRecordBody');
+  body.innerHTML = unmarkedShown.length ? unmarkedShown.map(s=>`
+    <button onclick="attMark('${s.id}')" style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;padding:12px 6px;border:1px solid var(--border);border-radius:8px;background:var(--surface);cursor:pointer;color:var(--text);transition:.1s" onmousedown="this.style.background='var(--bg)'">${s.name}</button>
+  `).join('') : `<div style="grid-column:1/-1;font-size:12px;color:var(--text-3);padding:16px;text-align:center">${kw?'无匹配':'全部已点 ✓'}</div>`;
+  const cnt=document.getElementById('att_unmarked_count'); if(cnt) cnt.textContent=`剩 ${unmarked.length} 人`;
+
+  // 已点区：按状态分组，可撤回；未点的算缺席
+  const area=document.getElementById('att_marked_area');
+  if(area){
+    const groups={};
+    marked.forEach(s=>{ const st=sessionEdits[s.id].attendance_status; (groups[st]=groups[st]||[]).push(s); });
+    const order=['offline','online','offline_late','online_late','leave','replay'];
+    const keys=Object.keys(groups).sort((a,b)=>order.indexOf(a)-order.indexOf(b));
+    area.innerHTML = `<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">已点 ${marked.length} 人 · 未点 ${unmarked.length} 人将记为缺席</div>`+
+      keys.map(st=>{
+        const info=attStatusFull(st);
+        return `<div style="margin-bottom:8px"><span style="font-size:11px;font-weight:600;color:${info.c}">${info.t}（${groups[st].length}）</span>
+          <span style="display:inline-flex;flex-wrap:wrap;gap:6px;margin-left:8px">${groups[st].map(s=>`
+            <span onclick="attUnmark('${s.id}')" title="点击撤回" style="font-size:12px;padding:3px 10px;border-radius:12px;background:var(--bg);border:1px solid ${info.c};color:${info.c};cursor:pointer">${s.name} ✕</span>
+          `).join('')}</span></div>`;
+      }).join('') || '<div style="font-size:11px;color:var(--text-3)">还没点名</div>';
+  }
 }
 
 function getPinyinInitials(str) {
