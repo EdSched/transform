@@ -896,6 +896,148 @@ let tsrSearch = '';
 let tsrExpandedId = null;
 let tsrRecCache = {};
 
+// ══════════ 出席签到（老师端，复刻 admin：选课→点名字签到）══════════
+let tatRange='today';       // today | week | all
+let tatSessions=[];         // 可见专业下待记出席的课次
+let tatCurSession=null;     // 当前签到的课次
+let tatStudents=[];         // 当前课次的学生
+let tatEdits={};            // student_id -> {attendance_status, student_mode}
+let tatState='present', tatMode='offline';
+
+// 顶部：课次签到区（渲染进 renderTsaRecords 顶部）
+async function tatRenderSessionBar(){
+  const bar=document.getElementById('tat_session_bar'); if(!bar) return;
+  const set=tsaAllowedSet();
+  const today=new Date(); const todayStr=today.toISOString().slice(0,10);
+  const weekEnd=new Date(today.getTime()+6*864e5).toISOString().slice(0,10);
+  // 拉可见专业的课次（course_sessions），按范围过滤
+  let q='/rest/v1/course_sessions?select=id,course_name,course_id,session_number,session_date,session_title,time_range,major&order=session_date.asc&limit=1000';
+  if(tatRange==='today') q+=`&session_date=eq.${todayStr}`;
+  else if(tatRange==='week') q+=`&session_date=gte.${todayStr}&session_date=lte.${weekEnd}`;
+  let all=await sb(q).catch(()=>[]);
+  // 专业过滤（可见专业）
+  if(set){ all=all.filter(se=>{ const mj=se.major||[]; return (Array.isArray(mj)?mj:[mj]).some(m=>set.has(m)|| (m==='shakai_group'&&['shakai','shinpan','fukushi'].some(x=>set.has(x)))); }); }
+  // 排除已记过出席的课次
+  const ids=all.map(se=>`"${se.id}"`).join(',')||'""';
+  const recorded=new Set();
+  try{ const rr=await sb(`/rest/v1/session_records?session_id=in.(${ids})&select=session_id&limit=2000`); (rr||[]).forEach(r=>recorded.add(r.session_id)); }catch(e){}
+  tatSessions=all.filter(se=>!recorded.has(se.id));
+  bar.innerHTML=`
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      ${[['today','今天'],['week','本周'],['all','全部']].map(([k,l])=>`<button onclick="tatRange='${k}';tatRenderSessionBar()" style="font-size:12px;padding:5px 14px;border:1px solid var(--border);border-radius:5px;cursor:pointer;font-family:inherit;background:${tatRange===k?'var(--accent,#b8953a)':'var(--bg)'};color:${tatRange===k?'#fff':'var(--text-2)'}">${l}</button>`).join('')}
+      <span style="font-size:11px;color:var(--text-3);align-self:center;margin-left:6px">待记出席 ${tatSessions.length} 节</span>
+    </div>
+    ${tatSessions.length? `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">${tatSessions.map(se=>{
+      const d=new Date(se.session_date+'T12:00:00'); const dow='日一二三四五六'[d.getDay()];
+      return `<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--surface);border:1px solid var(--border);border-radius:6px">
+        <span style="font-size:12px;font-weight:600;color:var(--text)">${(d.getMonth()+1)}/${d.getDate()} <span style="font-size:10px;color:var(--text-3)">周${dow}</span></span>
+        <span style="font-size:12px">${tsaEsc(se.course_name)} <span style="font-size:10px;color:var(--text-3)">第${se.session_number}回${se.session_title?' · '+tsaEsc(se.session_title):''}</span></span>
+        <button onclick="tatOpen('${se.id}')" style="margin-left:auto;font-size:12px;padding:5px 14px;background:var(--accent,#b8953a);color:#fff;border:none;border-radius:5px;cursor:pointer;font-family:inherit">📝 记录出席</button>
+      </div>`;
+    }).join('')}</div>` : `<div style="font-size:12px;color:var(--text-3);padding:12px;text-align:center;margin-bottom:14px">${tatRange==='today'?'今天':tatRange==='week'?'本周':''}没有待记出席的课次${tatRange!=='all'?'（记过的不再显示；补记请切「全部」）':''}</div>`}
+  `;
+}
+
+async function tatOpen(sessionId){
+  const se=tatSessions.find(x=>x.id===sessionId)||await sb(`/rest/v1/course_sessions?id=eq.${sessionId}&select=*`).then(r=>r&&r[0]).catch(()=>null);
+  if(!se){ alert('课次未找到'); return; }
+  tatCurSession=se;
+  // 该课专业的在籍学生（全部，不受可见范围限制——记出席要全班）
+  const majors=Array.isArray(se.major)?se.major:(se.major?[se.major]:[]);
+  const all=await sb('/rest/v1/students?select=id,name,major,default_mode,status&status=eq.active&order=name.asc&limit=2000').catch(()=>[]);
+  tatStudents=all.filter(s=>majors.includes(s.major)||(majors.includes('shakai_group')&&['shakai','shinpan','fukushi'].includes(s.major))).sort((a,b)=>a.name.localeCompare(b.name,'zh'));
+  tatEdits={}; tatState='present'; tatMode='offline';
+  tatRenderModal();
+}
+
+function tatCurStatus(){ if(tatState==='leave')return'leave'; if(tatState==='late')return tatMode==='online'?'online_late':'offline_late'; return tatMode==='online'?'online':'offline'; }
+function tatStatusFull(v){const m={online:{t:'线上出席',c:'#2a6aad'},offline:{t:'线下出席',c:'var(--ok,#2a9e6a)'},online_late:{t:'线上迟到',c:'#b8860b'},offline_late:{t:'线下迟到',c:'#b8860b'},leave:{t:'请假',c:'var(--text-3,#999)'}};return m[v]||{t:v||'缺席',c:'var(--danger,#b03a2e)'};}
+function tatPickState(st){tatState=st;['present','late','leave'].forEach(k=>{const b=document.getElementById('tat_st_'+k);if(b){const on=k===st;b.style.background=on?'var(--accent,#b8953a)':'var(--bg)';b.style.color=on?'#fff':'var(--text-2)';}});const mw=document.getElementById('tat_mode_wrap');if(mw)mw.style.display=(st==='leave')?'none':'flex';}
+function tatPickMode(md){tatMode=md;['offline','online'].forEach(k=>{const b=document.getElementById('tat_md_'+k);if(b){const on=k===md;b.style.background=on?'#2a6aad':'var(--bg)';b.style.color=on?'#fff':'var(--text-2)';}});}
+function tatMark(sid){const s=tatStudents.find(x=>x.id===sid);if(!s)return;if(!tatEdits[sid])tatEdits[sid]={};tatEdits[sid].attendance_status=tatCurStatus();tatEdits[sid].student_mode=(tatState==='leave')?(s.default_mode||'offline'):tatMode;tatRenderRows();}
+function tatUnmark(sid){if(tatEdits[sid])tatEdits[sid].attendance_status='';tatRenderRows();}
+
+function tatRenderModal(){
+  let ov=document.getElementById('tatOverlay');
+  if(!ov){ov=document.createElement('div');ov.id='tatOverlay';ov.style.cssText='position:fixed;inset:0;z-index:980;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:16px';document.body.appendChild(ov);}
+  ov.style.display='flex';
+  const se=tatCurSession; const d=new Date(se.session_date+'T12:00:00');
+  ov.innerHTML=`<div style="background:var(--surface);border-radius:10px;padding:16px 18px;width:min(560px,96vw);margin:auto">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+      <div><div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">${tsaEsc(se.course_name)} 第${se.session_number}回</div>
+      <div style="font-size:11px;color:var(--text-3)">${se.session_date} ${se.time_range||''}</div></div>
+      <button onclick="document.getElementById('tatOverlay').style.display='none'" style="font-size:12px;padding:4px 10px;border:1px solid var(--border);border-radius:5px;background:var(--bg);cursor:pointer;font-family:inherit">关闭</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      <div style="display:flex;border:1px solid var(--border);border-radius:5px;overflow:hidden">
+        <button id="tat_st_present" onclick="tatPickState('present')" style="font-size:12px;padding:5px 12px;border:none;cursor:pointer;font-family:inherit;background:var(--accent,#b8953a);color:#fff">出席</button>
+        <button id="tat_st_late" onclick="tatPickState('late')" style="font-size:12px;padding:5px 12px;border:none;border-left:1px solid var(--border);cursor:pointer;font-family:inherit;background:var(--bg);color:var(--text-2)">迟到</button>
+        <button id="tat_st_leave" onclick="tatPickState('leave')" style="font-size:12px;padding:5px 12px;border:none;border-left:1px solid var(--border);cursor:pointer;font-family:inherit;background:var(--bg);color:var(--text-2)">请假</button>
+      </div>
+      <div id="tat_mode_wrap" style="display:flex;border:1px solid var(--border);border-radius:5px;overflow:hidden">
+        <button id="tat_md_offline" onclick="tatPickMode('offline')" style="font-size:12px;padding:5px 12px;border:none;cursor:pointer;font-family:inherit;background:#2a6aad;color:#fff">线下</button>
+        <button id="tat_md_online" onclick="tatPickMode('online')" style="font-size:12px;padding:5px 12px;border:none;border-left:1px solid var(--border);cursor:pointer;font-family:inherit;background:var(--bg);color:var(--text-2)">线上</button>
+      </div>
+      <button onclick="tatSummary()" style="font-size:11px;padding:5px 10px;border:1px solid var(--border);border-radius:5px;background:var(--bg);cursor:pointer;font-family:inherit;margin-left:auto">📋汇总</button>
+    </div>
+    <input id="tat_search" placeholder="搜索姓名/拼音…" oninput="tatRenderRows()" style="font-size:12px;padding:6px 10px;width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:4px;margin-bottom:8px">
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">未点名 <span id="tat_cnt"></span>（点名字=当前状态）</div>
+    <div id="tat_body" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px;max-height:42vh;overflow-y:auto"></div>
+    <div id="tat_marked" style="border-top:1px solid var(--border);padding-top:8px;margin-bottom:12px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="document.getElementById('tatOverlay').style.display='none'" style="font-size:12px;padding:8px 16px;border:1px solid var(--border);border-radius:5px;background:var(--bg);cursor:pointer;font-family:inherit">关闭</button>
+      <button onclick="tatSave()" id="tat_save" style="font-size:12px;padding:8px 18px;border:none;border-radius:5px;background:var(--accent,#b8953a);color:#fff;cursor:pointer;font-family:inherit">保存全部</button>
+    </div>
+  </div>`;
+  tatPickState('present'); tatPickMode('offline'); tatRenderRows();
+}
+
+function tatRenderRows(){
+  const kw=(document.getElementById('tat_search')?.value||'').trim().toLowerCase();
+  const marked=tatStudents.filter(s=>tatEdits[s.id]&&tatEdits[s.id].attendance_status);
+  const unmarked=tatStudents.filter(s=>!(tatEdits[s.id]&&tatEdits[s.id].attendance_status));
+  const shown=kw?unmarked.filter(s=>matchesStudentSearch?matchesStudentSearch(s,kw):(s.name||'').toLowerCase().includes(kw)):unmarked;
+  const body=document.getElementById('tat_body');
+  if(body) body.innerHTML=shown.length?shown.map(s=>`<button onclick="tatMark('${s.id}')" style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;padding:11px 4px;border:1px solid var(--border);border-radius:8px;background:var(--surface);cursor:pointer;color:var(--text)">${s.name}</button>`).join(''):`<div style="grid-column:1/-1;font-size:12px;color:var(--text-3);padding:16px;text-align:center">${kw?'无匹配':'全部已点 ✓'}</div>`;
+  const cnt=document.getElementById('tat_cnt'); if(cnt)cnt.textContent=`剩 ${unmarked.length} 人`;
+  const area=document.getElementById('tat_marked');
+  if(area){const g={};marked.forEach(s=>{const st=tatEdits[s.id].attendance_status;(g[st]=g[st]||[]).push(s);});
+    const order=['offline','online','offline_late','online_late','leave'];const keys=Object.keys(g).sort((a,b)=>order.indexOf(a)-order.indexOf(b));
+    area.innerHTML=`<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">已点 ${marked.length} · 未点 ${unmarked.length}（记为缺席）</div>`+(keys.map(st=>{const i=tatStatusFull(st);return `<div style="margin-bottom:8px"><span style="font-size:11px;font-weight:600;color:${i.c}">${i.t}（${g[st].length}）</span> <span style="display:inline-flex;flex-wrap:wrap;gap:6px">${g[st].map(s=>`<span onclick="tatUnmark('${s.id}')" style="font-size:12px;padding:3px 10px;border-radius:12px;background:var(--bg);border:1px solid ${i.c};color:${i.c};cursor:pointer">${s.name} ✕</span>`).join('')}</span></div>`;}).join('')||'<div style="font-size:11px;color:var(--text-3)">还没点名</div>');}
+}
+
+function tatSummary(){
+  const g={present_off:[],present_on:[],late:[],leave:[],absent:[]};
+  tatStudents.forEach(s=>{const st=(tatEdits[s.id]||{}).attendance_status||'';if(st==='offline')g.present_off.push(s.name);else if(st==='online')g.present_on.push(s.name);else if(st==='offline_late'||st==='online_late')g.late.push(s.name);else if(st==='leave')g.leave.push(s.name);else g.absent.push(s.name);});
+  let ov=document.getElementById('tatSumOv');if(!ov){ov=document.createElement('div');ov.id='tatSumOv';ov.style.cssText='position:fixed;inset:0;z-index:995;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px';document.body.appendChild(ov);}
+  ov.style.display='flex';
+  ov.innerHTML=`<div style="background:#fff;border-radius:8px;padding:20px;max-width:520px;width:100%;max-height:82vh;overflow:auto">
+    <div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600;margin-bottom:4px">${tsaEsc(tatCurSession.course_name)} 第${tatCurSession.session_number}回</div>
+    <div style="font-size:11px;color:#999;margin-bottom:12px">📸 可截图对照</div>
+    ${[['线下出席',g.present_off,'#2a9e6a'],['线上出席',g.present_on,'#2a6aad'],['迟到',g.late,'#b8860b'],['请假',g.leave,'#999'],['缺席',g.absent,'#b03a2e']].map(([l,a,c])=>`<div style="margin-bottom:10px"><div style="font-size:12px;font-weight:600;color:${c};margin-bottom:3px">${l}（${a.length}人）</div><div style="font-size:13px;line-height:1.9;color:#333">${a.join('、')||'—'}</div></div>`).join('')}
+    <button onclick="document.getElementById('tatSumOv').style.display='none'" style="font-size:12px;padding:7px 16px;border:none;border-radius:5px;background:var(--accent,#b8953a);color:#fff;cursor:pointer;font-family:inherit">关闭</button>
+  </div>`;
+}
+
+async function tatSave(){
+  const se=tatCurSession; const btn=document.getElementById('tat_save');
+  if(btn){btn.textContent='保存中…';btn.disabled=true;}
+  try{
+    const rows=tatStudents.map(s=>{const e=tatEdits[s.id]||{};return{
+      id:`r-${Date.now()}-${Math.random().toString(36).slice(2,5)}-${s.id.slice(-3)}`,
+      session_id:se.id, course_name:se.course_name, session_date:se.session_date,
+      student_id:s.id, student_name:s.name, major:s.major,
+      student_mode:e.student_mode||s.default_mode||'offline',
+      attendance_status:e.attendance_status||'',
+    };});
+    // 分批 POST
+    for(let i=0;i<rows.length;i+=20){ await sb('/rest/v1/session_records','POST',rows.slice(i,i+20)); }
+    document.getElementById('tatOverlay').style.display='none';
+    alert(`✓ 已保存 ${se.course_name} 第${se.session_number}回 出席（${rows.length} 人）`);
+    tatRenderSessionBar();  // 刷新课次列表（记过的消失）
+  }catch(e){ alert('保存失败：'+e.message); if(btn){btn.textContent='保存全部';btn.disabled=false;} }
+}
+
 async function renderTsaRecords(box) {
   box.innerHTML = '<div class="empty">加载中…</div>';
   try {
@@ -907,6 +1049,7 @@ async function renderTsaRecords(box) {
   tsrRender();
 }
 
+let tsrHistOpen=false;
 function tsrAtt(v) {
   if (!v) return { t:'缺席', c:'var(--danger,#b03a2e)' };
   return ({
@@ -925,6 +1068,11 @@ function tsrRender() {
   const set = tsaAllowedSet();
 
   box.innerHTML = `<div>
+    <!-- 签到区（选课→点名字记出席）-->
+    <div id="tat_session_bar" style="margin-bottom:6px"></div>
+    <!-- 学生出席历史（可收起）-->
+    <div onclick="tsrHistOpen=!tsrHistOpen;tsrRender()" style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-2);padding:8px 0;border-top:1px solid var(--border);user-select:none">${tsrHistOpen?'▾':'▸'} 学生出席历史（${list.length} 人，点击${tsrHistOpen?'收起':'展开'}）</div>
+    <div style="display:${tsrHistOpen?'block':'none'}">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
       <div style="font-size:12px;font-weight:600">🗒 出席・作业记录（在籍 ${list.length} 人）<span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:6px">${set ? '可见专业：' + [...set].map(m => MAJORS[m] || m).join('・') : '可见全部专业'}</span></div>
       <input placeholder="搜索学生姓名…" value="${tsaEsc(tsrSearch)}" oninput="tsrSearch=this.value;tsrRender()" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;width:150px">
@@ -969,7 +1117,9 @@ function tsrRender() {
       </div>`;
       }).join('') : '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:11px">暂无学生</div>'}
     </div>
+  </div>
   </div>`;
+  if(typeof tatRenderSessionBar==='function') tatRenderSessionBar();
 }
 
 async function tsrToggle(id) {
