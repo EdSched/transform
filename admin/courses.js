@@ -768,20 +768,6 @@ async function openApplyTemplate(templateId){
   }catch(e){alert('套用模板失败：'+e.message)}
 }
 
-// 课程归档筛选：'active'=进行中(默认) | 'ended'=已结课 | 'all'=全部
-let coursesArchiveFilter='active';
-// 整门课是否已结课：最后一个单回日期 < 今天（无单回则退回 end_date）
-function courseIsEnded(c){
-  const today=new Date().toISOString().slice(0,10);
-  const ss=(typeof cachedSessions!=='undefined')?cachedSessions.filter(s=>s.course_id===c.id&&s.session_date):[];
-  if(ss.length){
-    const last=ss.map(s=>s.session_date).sort().pop();
-    return last < today;
-  }
-  return c.end_date ? (c.end_date < today) : false;  // 没单回又没end_date → 当作进行中(不误藏)
-}
-function setCoursesArchive(v){ coursesArchiveFilter=v; renderCoursesPage(document.getElementById('mainContent')); }
-
 function renderCoursesPage(mc){
   // 专业钥匙锁定：强制默认选中锁定的专业（用户不能改）
   if(CURRENT_MAJOR) coursesMajorFilter=CURRENT_MAJOR;
@@ -814,9 +800,6 @@ function renderCoursesPage(mc){
   else if(coursesTypeFilter==='共通课') filtered=filtered.filter(c=>c.course_type?.includes('共通'));
   else if(coursesTypeFilter==='VIP') filtered=filtered.filter(c=>c.course_type?.includes('VIP'));
   if(coursesCampusFilter!=='all') filtered=filtered.filter(c=>(c.campus||'')===coursesCampusFilter);
-  // 归档过滤：默认只看进行中（已结课的收进"已结课"，不占课程安排显示）
-  if(coursesArchiveFilter==='active') filtered=filtered.filter(c=>!courseIsEnded(c));
-  else if(coursesArchiveFilter==='ended') filtered=filtered.filter(c=>courseIsEnded(c));
 
   const allPeriods=[...new Map(cachedCourses
     .filter(c=>c.first_session_date)
@@ -838,12 +821,6 @@ function renderCoursesPage(mc){
   </div>
 
   <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap">
-    <div>
-      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">状态</div>
-      <div style="display:flex;gap:4px;flex-wrap:wrap">
-        ${[['active','进行中'],['ended','已结课'],['all','全部']].map(([v,l])=>`<div class="filter-chip${coursesArchiveFilter===v?' active':''}" onclick="setCoursesArchive('${v}')" style="font-size:11px;padding:3px 10px">${l}</div>`).join('')}
-      </div>
-    </div>
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">课程属性</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
@@ -1186,7 +1163,14 @@ async function deleteCourse(id){
     cachedSessionRecords=cachedSessionRecords.filter(r=>!cachedSessions.find(s=>s.id===r.session_id));
     cachedCourses=cachedCourses.filter(c=>c.id!==id);
     renderCoursesPage(document.getElementById('mainContent'));
-  }catch(e){alert('删除失败：'+e.message)}
+  }catch(e){
+    // 外键约束：该课的单回还被排班(schedule_slots)引用 → 友好提示，不强删排班
+    if(/foreign key|violates|schedule_slots|23503/i.test(e.message||'')){
+      alert('该课程正在排课中，无法直接删除。\n请先将该课程的排课归档，再删除课程。');
+    } else {
+      alert('删除失败：'+e.message);
+    }
+  }
 }
 
 // ── 发布管理 ──
