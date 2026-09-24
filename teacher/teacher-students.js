@@ -148,14 +148,38 @@ function tpFilteredStudents() {
 function tpSetOwner(v) { tpOwnerFilter = v; tpRenderShell(); }
 
 // 备考节点文字总结（与学生学习记录页的备考规划同一套逻辑，按学生所选考试路线）
+// 从期待入学时间解析入学年份（27年4月/2027年4月/2027 等）
+function tpParseEnrollYear(str){
+  if(!str) return null;
+  const m=String(str).match(/(20\d{2}|\d{2})\s*年?/);
+  if(!m) return null;
+  let y=parseInt(m[1]); if(y<100) y+=2000;
+  return (y<2020||y>2100)?null:y;
+}
 function tpNodeSummaryHtml(s, latest, plans, draft) {
   const now = new Date();
   const nowIdx = now.getFullYear() * 12 + now.getMonth();
-  const route = s.prep_model === 'winter' ? 'winter' : s.prep_model === 'next_summer' ? 'next_summer' : 'summer';
-  const examMonth = route === 'winter' ? 1 : 8;
-  let examIdx = now.getFullYear() * 12 + (examMonth - 1);
-  while (examIdx < nowIdx) examIdx += 12;
-  if (route === 'next_summer') examIdx += 12; // 次年路线：跳过最近一轮
+  const enrollY = tpParseEnrollYear(s.target_enrollment);
+  const manualRoute = s.prep_model==='winter'?'winter':s.prep_model==='next_summer'?'next_summer':(s.prep_model==='summer'?'summer':null);
+  let route, examIdx;
+  if(enrollY){
+    const baseY=enrollY-1;
+    const summerIdx=baseY*12+(8-1), winterIdx=(baseY+1)*12+(1-1), nextSummerIdx=(baseY+1)*12+(8-1);
+    if(manualRoute){ route=manualRoute; examIdx=route==='winter'?winterIdx:route==='next_summer'?nextSummerIdx:summerIdx; }
+    else {
+      if(winterIdx<nowIdx){ route='summer'; examIdx=nextSummerIdx; }
+      else if(now.getMonth()+1<8 && summerIdx>=nowIdx){ route='summer'; examIdx=summerIdx; }
+      else { route='winter'; examIdx=winterIdx; }
+    }
+    s._computedRoute=route;
+  } else {
+    route = manualRoute || 'summer';
+    const examMonth = route === 'winter' ? 1 : 8;
+    examIdx = now.getFullYear() * 12 + (examMonth - 1);
+    while (examIdx < nowIdx) examIdx += 12;
+    if (route === 'next_summer') examIdx += 12;
+    s._computedRoute=route;
+  }
   // 各项目最晚节点偏移（次年路线：语言按冬季要求、草稿提前到12月）
   const DL = route === 'next_summer'
     ? { japanese:-7, english:-7, plan:-8, school:-3, apply:-1, kakomon:0, exam:0 }
@@ -214,9 +238,11 @@ function tpRenderProgressList() {
     const latest = getLatestProgress(timeline);
     const plans = plansMap[s.id] || [];
     const draft = draftsMap[s.id];
-    const routeLabel = s.prep_model === 'winter' ? '冬季路线・12月出愿1月考试'
-      : s.prep_model === 'next_summer' ? '次年夏季路线・语言按冬季要求・次年7月出愿8月考试'
-      : '夏季路线・7月出愿8月考试';
+    const _nodesHtml = tpNodeSummaryHtml(s, latest, plans, draft);  // 先算，填充 s._computedRoute
+    const _rt = s._computedRoute || s.prep_model || 'summer';
+    const routeLabel = (_rt === 'winter' ? '冬季路线・12月出愿1月考试'
+      : _rt === 'next_summer' ? '次年夏季路线・语言按冬季要求・次年7月出愿8月考试'
+      : '夏季路线・7月出愿8月考试') + (!s.prep_model ? '（按入学时间自动）' : '');
 
     // 「出愿/合格」阶段以志望校为准：有合格→已合格（修正合格学生顶部仍显示已出愿的问题）
     const anyPassed = plans.some(p => p.status === 'passed');
@@ -242,7 +268,7 @@ function tpRenderProgressList() {
     const secFrame = inner => `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:6px;padding:12px 14px">${inner}</div>`;
 
     // 备考节点
-    const secNodes = secFrame(secTitle(`📅 备考节点 <span style="font-weight:400;color:var(--text-3)">· ${routeLabel}</span>`) + tpNodeSummaryHtml(s, latest, plans, draft));
+    const secNodes = secFrame(secTitle(`📅 备考节点 <span style="font-weight:400;color:var(--text-3)">· ${routeLabel}</span>`) + _nodesHtml);
 
     // 语言成绩 + 计划书（两列）
     const jpTxt = s.japanese_score ? tsaEsc(s.japanese_score) : '<span style="color:var(--text-3)">未填写</span>';
