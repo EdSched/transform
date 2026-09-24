@@ -693,7 +693,7 @@
     <input id="sessionStudentSearch" placeholder="搜索姓名或拼音首字母…" autocomplete="off" oninput="if(this.dataset.composing!=='1')renderStudentRows(this.value)" oncompositionstart="this.dataset.composing='1'" oncompositionend="this.dataset.composing='';renderStudentRows(this.value)" style="font-size:12px;padding:6px 10px;width:100%;box-sizing:border-box;margin-bottom:10px">
     <!-- 未点名单（点名字即签到） -->
     <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">未点名 <span id="att_unmarked_count"></span>（点名字 = 记为当前状态）</div>
-    <div id="sessionRecordBody" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-bottom:14px;max-height:38vh;overflow-y:auto"></div>
+    <div id="sessionRecordBody" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px;max-height:46vh;overflow-y:auto"></div>
     <!-- 已点区（分状态，可撤回） -->
     <div id="att_marked_area" style="border-top:1px solid var(--border);padding-top:10px"></div>
     <div class="modal-actions">
