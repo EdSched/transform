@@ -847,12 +847,12 @@ async function mrGeneratePdf(sid){
     .wrap{max-width:760px;margin:0 auto}
     .head{text-align:center;padding:18px 0 14px;border-bottom:2px solid #b8953a;margin-bottom:20px}
     .head .sub{font-size:12px;color:#9a9590;letter-spacing:.15em;margin-bottom:6px}
-    .head h1{font-family:'Noto Sans SC',system-ui,sans-serif;font-size:26px;font-weight:700;letter-spacing:.04em;color:#2b2822;color:#1a1814}
+    .head h1{font-family:'Noto Serif SC',serif;font-size:28px;font-weight:700;letter-spacing:.05em;color:#2b2822;color:#1a1814}
     .head .stu{font-size:14px;color:#5a5650;margin-top:6px}
-    .sec-label{font-size:11px;letter-spacing:.1em;color:#b8953a;text-transform:uppercase;margin:18px 0 8px;font-weight:600}
+    .sec-label{font-family:'Noto Serif SC',serif;font-size:13px;letter-spacing:.05em;color:#b8953a;margin:18px 0 8px;font-weight:600}
     .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:8px}
     .stat{background:#f7f5f0;border:1px solid #ede9e2;border-radius:8px;padding:12px;text-align:center}
-    .stat .n{font-family:'Noto Sans SC',system-ui,sans-serif;font-size:28px;font-weight:700;color:#b8953a;line-height:1}
+    .stat .n{font-family:'Noto Serif SC',serif;font-size:30px;font-weight:600;color:#b8953a;line-height:1}
     .stat .l{font-size:11px;color:#9a9590;margin-top:3px}
     .works{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
     .works img{width:100%;height:130px;object-fit:cover;border:1px solid #e2ded6;border-radius:6px}
@@ -883,7 +883,7 @@ async function mrGeneratePdf(sid){
     <div class="review"><div class="c">${rev.homeroom_review?esc(rev.homeroom_review):'—'}</div>${rev.homeroom_review_by?`<div class="by">— ${esc(rev.homeroom_review_by)} 老师</div>`:''}</div>
     <div class="foot">唯新教育　Unique New Education　·　${esc(ym)}</div>
   </div>
-  <script>window.onload=function(){setTimeout(function(){window.print()},600)}<\/script>
+  <script>window.onload=function(){ if(document.fonts&&document.fonts.ready){document.fonts.ready.then(function(){setTimeout(function(){window.print()},400)})}else{setTimeout(function(){window.print()},1200)} }<\/script>
   </body></html>`;
   const w = window.open('', '_blank');
   if(!w){ alert('请允许弹出窗口以生成PDF'); return; }
