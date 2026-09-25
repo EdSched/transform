@@ -351,8 +351,8 @@ function renderVipMain() {
 
   // 按日期分组未预约的可选时间槽
   const bookedSlotIds = new Set(vipBookings.filter(b => b.status !== 'cancelled').map(b => b.slot_id));
-  const _curMonth = new Date().toISOString().slice(0, 7); // 只显示本月时间槽，避免一次性放太多需长距离下拉
-  const availableSlots = vipSlots.filter(s => !bookedSlotIds.has(s.id) && (s.date || '').slice(0, 7) === _curMonth);
+  const _curMonth = new Date().toISOString().slice(0, 7); // 显示本月及以后的所有未来时间槽（vipSlots 已按 date≥今天拉取），含下个月，避免临近月底看不到下月槽
+  const availableSlots = vipSlots.filter(s => !bookedSlotIds.has(s.id) && (s.date || '').slice(0, 7) >= _curMonth);
   const byDate = {};
   availableSlots.forEach(s => { (byDate[s.date] = byDate[s.date] || []).push(s); });
   const dateKeys = Object.keys(byDate).sort();
@@ -875,8 +875,8 @@ async function loadStudentVipPlan() {
 function renderVipBookingSection() {
   const activeBooking = vipBookings.find(b => b.status === 'pending' || b.status === 'confirmed');
   const bookedSlotIds = new Set(vipBookings.filter(b => b.status !== 'cancelled').map(b => b.slot_id));
-  const _curMonth = new Date().toISOString().slice(0, 7); // 只显示本月时间槽，避免一次性放太多需长距离下拉
-  const availableSlots = vipSlots.filter(s => !bookedSlotIds.has(s.id) && (s.date || '').slice(0, 7) === _curMonth);
+  const _curMonth = new Date().toISOString().slice(0, 7); // 显示本月及以后的所有未来时间槽（vipSlots 已按 date≥今天拉取），含下个月，避免临近月底看不到下月槽
+  const availableSlots = vipSlots.filter(s => !bookedSlotIds.has(s.id) && (s.date || '').slice(0, 7) >= _curMonth);
   const byDate = {};
   availableSlots.forEach(s => { (byDate[s.date] = byDate[s.date] || []).push(s); });
   const dateKeys = Object.keys(byDate).sort();
