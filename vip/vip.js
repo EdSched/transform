@@ -682,6 +682,19 @@ function renderVipActiveBooking(b) {
   </div>`;
 }
 
+// 学生修改自己的预约（留言 / 上传作业 / 确认上课）：走数据库函数 student_patch_booking，
+// 只允许改这几个字段、只能改自己 student_id 的预约（bookings 上锁后学生不能直接 PATCH）。
+// 函数还没建好时退回直接 PATCH（上锁前的旧方式）
+async function vipPatchOwnBooking(bookingId, patch) {
+  try {
+    await sb('/rest/v1/rpc/student_patch_booking', 'POST', { p_id: bookingId, p_patch: patch });
+  } catch (e) {
+    if (!/PGRST202|Could not find the function|404|booking not found/.test(e.message || '')) throw e;
+    const rows = await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', patch);
+    if (Array.isArray(rows) && !rows.length) throw new Error('没有修改成功，请刷新后重试');
+  }
+}
+
 async function sendVipMessage(bookingId) {
   const input = document.getElementById('vip_message_input');
   const text = input.value.trim();
@@ -690,7 +703,7 @@ async function sendVipMessage(bookingId) {
   if (!b) return;
   const newMessages = [...(b.messages || []), { from: 'student', text, ts: Date.now() }];
   try {
-    await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', { messages: newMessages });
+    await vipPatchOwnBooking(bookingId, { messages: newMessages });
     b.messages = newMessages;
     input.value = '';
     renderVipMain();
@@ -769,7 +782,7 @@ async function submitVipHomework(bookingId) {
     const ext = file.name.split('.').pop().toLowerCase();
     const path = `${vipStudent.major || 'vip'}/${Date.now()}_hw.${ext}`;
     const url = await sbUpload('student-files', path, file);
-    await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', { vip_homework_file_url: url });
+    await vipPatchOwnBooking(bookingId, { vip_homework_file_url: url });
     const b = vipBookings.find(x => x.id === bookingId);
     if (b) b.vip_homework_file_url = url;
     renderVipMain();
@@ -828,7 +841,8 @@ async function submitVipBooking() {
       id: Date.now().toString(), name: vipStudent.name, major: vipStudent.major,
       type: 'vip', slot_id: vipSelectedSlotId, slot_date: slot.date, slot_time_range: slot.time_range,
       assigned_teacher: slot.teacher_name, location: finalLocation, duration: null, status: 'pending', needs: '',
-      student_content: studentContent, student_file_url: studentFileUrl
+      student_content: studentContent, student_file_url: studentFileUrl,
+      student_id: vipStudent.id   // 按学生 id 关联（bookings 上锁后，学生只能新增/查看自己 id 的预约）
     };
     await sb('/rest/v1/bookings', 'POST', booking);
     vipSelectedSlotId = null;
@@ -840,7 +854,7 @@ async function submitVipBooking() {
 
 async function confirmVipSession(bookingId, rating) {
   try {
-    await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', { student_confirmed: true, student_rating: rating, status: 'completed' });
+    await vipPatchOwnBooking(bookingId, { student_confirmed: true, student_rating: rating, status: 'completed' });
     const b = vipBookings.find(x => x.id === bookingId);
     if (b) { b.student_confirmed = true; b.student_rating = rating; b.status = 'completed'; }
     renderVipMain();

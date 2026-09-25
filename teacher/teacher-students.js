@@ -1280,14 +1280,15 @@ async function renderTsaMeetings(box) {
     ]);
     tmContactByName = {};
     (allContact || []).forEach(c => { (tmContactByName[c.student_name] = tmContactByName[c.student_name] || []).push(c); });
-    const stuByName = {};
-    (allStu || []).forEach(s => { if (!stuByName[s.name]) stuByName[s.name] = s; });
+    const stuByName = {}, stuById = {};
+    (allStu || []).forEach(s => { if (!stuByName[s.name]) stuByName[s.name] = s; stuById[s.id] = s; });
     // 只保留填写过记录内容的面谈（不限定预约状态，批量同步的历史记录同样纳入），专业按学生档案（无档案时按预约的 major 字段）过滤
     const withRec = (allBk || []).filter(b => b.daily_record && Object.values(b.daily_record).some(v => v && (typeof v === 'string' ? v : Object.values(v).some(x => x))));
     const groups = {};
     withRec.forEach(b => {
-      const stu = stuByName[b.name];
-      const major = (stu && stu.major) || b.major || '';
+      // 已绑定学生（student_id）的预约以档案专业为准；未绑定时用 bookings.major（姓名匹配仅用于来源/保录标记）
+      const stu = b.student_id ? stuById[b.student_id] : stuByName[b.name];
+      const major = (b.student_id && stu && stu.major) || b.major || '';
       if (set && !set.has(major)) return;
       if (tsaGuaranteedLock() && !tsaIsGuaranteed(stu)) return;
       if (!groups[b.name]) groups[b.name] = { name: b.name, major, source: (stu && stu.source) || '', list: [] };

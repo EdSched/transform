@@ -27,7 +27,7 @@ function vipTimeParts(range) {
 }
 function vipWeekday(dateStr) { const w = new Date(dateStr + 'T12:00:00').getDay(); return w === 0 ? 7 : w; }
 function vipSchedErr(e) { try { const j = JSON.parse(e.message); if (j.message) return j.message; } catch (_) {} return e.message; }
-function vipMajorLabel(b) { return (typeof MAJORS !== 'undefined' ? MAJORS[b.major] || b.major : b.major) || ''; }
+function vipMajorLabel(b) { const m = (typeof tBkMajor === 'function') ? tBkMajor(b) : b.major; return (typeof MAJORS !== 'undefined' ? MAJORS[m] || m : m) || ''; }
 
 // 取某校区 VIP 教室 + 该日该时段的占用情况（与触发器口径一致：pending/confirmed 都占位，休讲日课程不占）
 async function vipLoadRooms(campus, date, start, end, excludeSchedId) {
@@ -214,6 +214,7 @@ async function init() {
           ? b.assigned_teacher === teacherName
           : mySlotIds.includes(b.slot_id)
       );
+      await tLoadBookingStudents().catch(() => {});   // 已绑定学生的预约按档案专业显示
     }
     existingAvail.forEach(a => {
       slotState[a.slot_id] = { available: a.available, time: a.available_time || '', titles: new Set(a.preferred_titles || []) };
@@ -426,7 +427,7 @@ function renderBookingCardCollapsed(b) {
     <div id="${rowId}" style="display:none;padding:0 14px 14px">
       <div style="font-size:11px;margin-bottom:8px">
         <span style="cursor:pointer;color:var(--accent);text-decoration:underline" onclick="showStudentInfoTeacher('${b.name}')">${b.name}</span>
-        <span style="color:var(--text-3);margin-left:6px">${MAJORS[b.major] || b.major}</span>
+        <span style="color:var(--text-3);margin-left:6px">${MAJORS[tBkMajor(b)] || tBkMajor(b)}</span>${!b.student_id && b.type !== 'vip' ? '<span style="font-size:9px;color:var(--warn);border:1px solid var(--warn);border-radius:2px;padding:0 5px;margin-left:6px">未关联档案·确认时认领</span>' : ''}
       </div>
       ${renderBookingCardBody(b)}
     </div>
@@ -446,7 +447,7 @@ function renderBookingCard(b) {
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px">
       <div>
         <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:14px;cursor:pointer;color:var(--accent);text-decoration:underline" onclick="showStudentInfoTeacher('${b.name}')">${b.name}</span>
-        <span style="font-size:11px;color:var(--text-3);margin-left:6px">${MAJORS[b.major] || b.major}</span>
+        <span style="font-size:11px;color:var(--text-3);margin-left:6px">${MAJORS[tBkMajor(b)] || tBkMajor(b)}</span>
       </div>
       <span style="font-size:10px;background:${b.status === 'pending' ? 'var(--warn-bg)' : 'var(--ok-bg)'};color:${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'};padding:2px 7px;border-radius:2px;white-space:nowrap">${b.status === 'pending' ? '待确认' : b.status === 'completed' ? '已完成' : '已确认'}</span>
     </div>
@@ -546,6 +547,26 @@ async function bkPatch(id, body) {
   return rows;
 }
 
+// 预约 → 学生档案（按 student_id）。已绑定学生的预约，专业以档案为准；未绑定时才用 bookings.major
+let tStuById = {};
+async function tLoadBookingStudents() {
+  const ids = [...new Set((cachedTeacherBookings || []).map(b => b.student_id).filter(Boolean))];
+  tStuById = {};
+  for (let i = 0; i < ids.length; i += 80) {
+    const rows = await sb(`/rest/v1/students?id=in.(${ids.slice(i, i + 80).map(x => `"${x}"`).join(',')})&select=id,name,major,student_code`).catch(() => []);
+    (rows || []).forEach(s => { tStuById[s.id] = s; });
+  }
+}
+function tBkMajor(b) { const s = b && b.student_id && tStuById[b.student_id]; return (s && s.major) || (b && b.major) || ''; }
+// 认领时「已有学生」的候选：这位老师能看到的学生（规则同学生管理 tsaAllowedSet / 保录锁）
+async function tClaimStudents() {
+  const all = await sbAll('/rest/v1/students?select=id,name,major,status,course_type,student_code&order=name.asc');
+  const set = (typeof tsaAllowedSet === 'function') ? tsaAllowedSet() : null;
+  let list = (all || []).filter(s => !set || set.has(s.major));
+  if (typeof tsaGuaranteedLock === 'function' && tsaGuaranteedLock()) list = list.filter(tsaIsGuaranteed);
+  return list;
+}
+
 async function uploadTeacherFile(id) {
   const input = document.getElementById(`teacherfile_${id}`);
   const file = input?.files?.[0];
@@ -572,7 +593,9 @@ async function generateCode(id) {
   const span = document.getElementById(`code_${id}`);
   try {
     // 查学生档案里的 student_code
-    const students = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(b.name)}&select=id,name,student_code`);
+    const students = b.student_id
+      ? await sb(`/rest/v1/students?id=eq.${encodeURIComponent(b.student_id)}&select=id,name,student_code`)
+      : await sb(`/rest/v1/students?name=eq.${encodeURIComponent(b.name)}&select=id,name,student_code`);
     const student = students[0];
     if (!student) {
       alert(`未在学生档案中找到「${b.name}」，请先在学生管理中建立档案并生成查询码`);
@@ -664,7 +687,9 @@ async function saveBookingRecord(id) {
     if (booking) { booking.daily_record = record; booking.actual_duration = actual_duration; booking.actual_time = actual_time; booking.status = 'completed'; }
 
     // 自动追加进度时间线
-    const stuRes = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(booking?.name||'')}&select=id,major`).catch(()=>[]);
+    const stuRes = booking?.student_id
+      ? await sb(`/rest/v1/students?id=eq.${encodeURIComponent(booking.student_id)}&select=id,major`).catch(()=>[])
+      : await sb(`/rest/v1/students?name=eq.${encodeURIComponent(booking?.name||'')}&select=id,major`).catch(()=>[]);
     if (stuRes.length && booking) {
       const stu = stuRes[0];
       const entry = makeProgressEntry({
@@ -767,6 +792,16 @@ async function confirmBookingTeacher(id) {
   const d = document.getElementById('actual_date_' + id)?.value || '';
   const t = document.getElementById('actual_time_' + id)?.value || '';
   const actualTime = d && t ? `${d}T${t}` : d || '';
+  // 没有绑定学生的预约（新同学 / 名字写法不一致）：确认前先认领——挂到已有学生，或当场建档发查询码
+  const _bk = cachedTeacherBookings.find(x => x.id === id);
+  if (_bk && !_bk.student_id && _bk.type !== 'vip') {
+    let stus = [];
+    try { stus = await tClaimStudents(); } catch (e) { alert('读取学生列表失败：' + e.message); return; }
+    const r = await openBookingClaim(_bk, { students: stus });
+    if (!r) return;
+    _bk.student_id = r.student_id; _bk.name = r.name;
+    tStuById[r.student_id] = { id: r.student_id, name: r.name, major: r.major };
+  }
   try {
     await bkPatch(id, { status: 'confirmed', actual_time: actualTime });
     const b = cachedTeacherBookings.find(x => x.id === id);

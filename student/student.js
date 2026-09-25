@@ -124,15 +124,36 @@ let slotViewYear = new Date().getFullYear(), slotViewMonth = new Date().getMonth
 let cachedSlots = [], cachedBookings = [];
 let teacherDisplayNames = {};
 
-// 按 slot_id 分批拉取预约（每批100个，避免 URL 过长）——只取名额统计需要的字段，不取姓名/需求
+// 各时间槽已占名额：优先调用数据库函数 slot_booking_counts（只返回 slot_id 和数量，不含姓名；bookings 上锁后匿名也能用）
+// 函数还没建好时退回直接读 bookings（只取 slot_id/status/type）。返回与旧逻辑兼容的数组：每个占位一条 {slot_id,status}
 async function fetchBookingsBySlots(slotIds) {
   let all = [];
+  if (!slotIds.length) return all;
+  try {
+    for (let i = 0; i < slotIds.length; i += 200) {
+      const rows = await sb('/rest/v1/rpc/slot_booking_counts', 'POST', { p_slot_ids: slotIds.slice(i, i + 200) });
+      (rows || []).forEach(r => { for (let n = 0; n < (r.cnt || 0); n++) all.push({ slot_id: r.slot_id, status: 'pending', type: '' }); });
+    }
+    return all;
+  } catch (e) { all = []; }
   for (let i = 0; i < slotIds.length; i += 100) {
     const chunk = slotIds.slice(i, i + 100);
     const batch = await sb(`/rest/v1/bookings?select=slot_id,status,type&slot_id=in.(${chunk.map(id => `"${id}"`).join(',')})&order=slot_date.asc`).catch(() => []);
     all = all.concat(batch);
   }
   return all;
+}
+
+// 新增预约：不要求数据库把新行返回（return=minimal）。
+// bookings 上锁后，新同学（匿名）能写入但读不到自己这行，要求返回会被当成违反权限而整条失败
+async function bkInsertBooking(row) {
+  const tok = (typeof __getSbToken === 'function') ? __getSbToken() : null;
+  const r = await fetch(SB_URL + '/rest/v1/bookings', {
+    method: 'POST',
+    headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + (tok || SB_KEY), 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+    body: JSON.stringify(row),
+  });
+  if (!r.ok) throw new Error(await r.text());
 }
 
 // 页面模式：login=登录框 | new=新同学预约（手填姓名，不绑定学生）| member=已登录学生（内嵌在学习页）
@@ -777,8 +798,8 @@ async function submitBooking() {
   // 已登录学生写入 student_id；新同学不带该字段（留空，老师确认时再认领/建档）
   if (isMember) booking.student_id = bkStudent.id;
   try {
-    const res = await sb('/rest/v1/bookings', 'POST', booking);
-    cachedBookings.push(Array.isArray(res) ? res[0] : booking);
+    await bkInsertBooking(booking);
+    cachedBookings.push(booking);
 
     // 同步进度时间线（仅已登录学生：用当前学生 id 写入；新同学没有档案，跳过）
     try {
