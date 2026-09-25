@@ -1000,9 +1000,13 @@ function renderTeacherMajorChips(){
   let html='';
   selDomains.forEach(dom=>{
     const majorsInDom=allMajorKeys().filter(m=>MAJOR_DOMAIN[m]===dom);
-    if(!majorsInDom.length) return;
+    // 社会人文（shakai_group）是三专业合并的虚拟专业：成员在本领域时，额外给一个可分配的「社会人文」
+    // 老师分配到它后，开面谈时间槽能选「社会人文」，槽会显示在社会人文的学生预约页
+    const groupHere = (typeof SHAKAI_GROUP!=='undefined') && SHAKAI_GROUP.some(m=>MAJOR_DOMAIN[m]===dom);
+    if(!majorsInDom.length && !groupHere) return;
+    const chipKeys = (groupHere ? ['shakai_group'] : []).concat(majorsInDom);
     html+=`<div style="margin-bottom:8px"><div style="font-size:10px;color:var(--text-3);margin-bottom:4px">${dom}</div><div style="display:flex;flex-wrap:wrap;gap:6px">`;
-    html+=majorsInDom.map(m=>`<div class="filter-chip${prevSel.has(m)?' active':''}" data-value="${m}" onclick="toggleChip(this)" style="padding:4px 10px">${majorLabel(m)}</div>`).join('');
+    html+=chipKeys.map(m=>`<div class="filter-chip${prevSel.has(m)?' active':''}" data-value="${m}" onclick="toggleChip(this)" style="padding:4px 10px">${majorLabel(m)}${m==='shakai_group'?'<span style="font-size:9px;color:var(--text-3);margin-left:3px">(合并)</span>':''}</div>`).join('');
     html+='</div></div>';
   });
   box.innerHTML=html||'<div style="font-size:11px;color:var(--text-3)">所选领域下暂无专业</div>';
