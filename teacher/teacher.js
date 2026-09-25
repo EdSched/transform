@@ -535,6 +535,17 @@ function downloadStudentContent(id) {
   downloadAsWord(`${b.name}_${b.slot_date}_${typeLabel(b.type)}`, `${b.name} · ${typeLabel(b.type)}（${b.slot_date}）`, b.student_content);
 }
 
+// 修改一条面谈预约，并确认数据库真的改到了。
+// 数据库权限规则拦下修改时，Supabase 不报错、只返回 0 行——页面会以为成功，刷新后又恢复原样
+// （新同学、没有档案的预约就出现过「看得到但改不了」）。这里把 0 行当作失败明确提示。
+async function bkPatch(id, body) {
+  const rows = await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(id)}`, 'PATCH', body);
+  if (Array.isArray(rows) && rows.length === 0) {
+    throw new Error('数据库没有允许修改这条预约（0 行被更新）。请把这条预约的学生姓名和日期告诉管理员处理。');
+  }
+  return rows;
+}
+
 async function uploadTeacherFile(id) {
   const input = document.getElementById(`teacherfile_${id}`);
   const file = input?.files?.[0];
@@ -545,7 +556,7 @@ async function uploadTeacherFile(id) {
     const ext = file.name.split('.').pop();
     const path = `${id}-${Date.now()}.${ext}`;
     const url = await sbUpload('teacher-files', path, file);
-    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { teacher_file_url: url });
+    await bkPatch(id, { teacher_file_url: url });
     const b = cachedTeacherBookings.find(x => x.id === id);
     if (b) b.teacher_file_url = url;
     renderBookingManagement(document.getElementById('mainContent'));
@@ -572,7 +583,7 @@ async function generateCode(id) {
       return;
     }
     // 同步写入 booking，方便兼容旧查询逻辑
-    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { retrieval_code: student.student_code });
+    await bkPatch(id, { retrieval_code: student.student_code });
     b.retrieval_code = student.student_code;
     if (span) { span.textContent = student.student_code; span.style.color = 'var(--accent)'; }
   } catch(e) { alert('操作失败：' + e.message); }
@@ -649,7 +660,7 @@ async function saveBookingRecord(id) {
   const timeInput = document.getElementById(`actual_time_rec_${id}`)?.value || '';
   const actual_time = timeInput || booking?.actual_time || booking?.slot_date || '';
   try {
-    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { daily_record: record, actual_duration, actual_time, status: 'completed' });
+    await bkPatch(id, { daily_record: record, actual_duration, actual_time, status: 'completed' });
     if (booking) { booking.daily_record = record; booking.actual_duration = actual_duration; booking.actual_time = actual_time; booking.status = 'completed'; }
 
     // 自动追加进度时间线
@@ -757,7 +768,7 @@ async function confirmBookingTeacher(id) {
   const t = document.getElementById('actual_time_' + id)?.value || '';
   const actualTime = d && t ? `${d}T${t}` : d || '';
   try {
-    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { status: 'confirmed', actual_time: actualTime });
+    await bkPatch(id, { status: 'confirmed', actual_time: actualTime });
     const b = cachedTeacherBookings.find(x => x.id === id);
     if (b) { b.status = 'confirmed'; b.actual_time = actualTime; }
     renderTab();
@@ -769,7 +780,7 @@ async function cancelBookingTeacher(id) {
   const _desc = _b ? `\n\n${_b.name} · ${_b.slot_date || ''} ${_b.slot_time_range || ''}` : '';
   if (!confirm('确定取消此预约？' + _desc)) return;
   try {
-    await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { status: 'cancelled' });
+    await bkPatch(id, { status: 'cancelled' });
     await vipSchedRelease(cachedTeacherBookings.find(b => b.id === id));   // 释放排课系统里占的教室
     cachedTeacherBookings = cachedTeacherBookings.filter(b => b.id !== id);
     renderTab();

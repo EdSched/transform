@@ -6,8 +6,8 @@ if (typeof window !== "undefined" && typeof window.schoolLevelHtml !== "function
 // 学习记录独立页面 study.js
 // ══════════════════════════════════
 
-const STUDY_STORAGE_KEY = 'txe_study_login';
-const STUDY_DAYS = 30;
+const STUDY_STORAGE_KEY = STUDENT_LOGIN_STORAGE_KEY;   // 与面谈预约页共用（定义在 shared/supabase.js）
+const STUDY_DAYS = STUDENT_LOGIN_DAYS;
 
 let studyStudent = null;
 let studyTab = 'schools';
@@ -23,6 +23,9 @@ const studyMajor = studyParams.get('major') || '';
 // ── 初始化 ──
 async function initStudy() {
   if (typeof loadMajorsFromDB === 'function') await loadMajorsFromDB();
+  // ?tab=reserve 等：登录后直接打开指定标签（面谈预约链接登录后跳过来用）
+  const _tab = studyParams.get('tab');
+  if (_tab && ['schools','plan','progress','records','reserve','homework','schedule'].includes(_tab)) studyTab = _tab;
   const wrap = document.getElementById('mainWrap');
   try {
     const raw = localStorage.getItem(STUDY_STORAGE_KEY);
@@ -143,8 +146,8 @@ function renderStudyMain() {
     { id:'homework', label:'📝 作业' },
     { id:'schedule', label:'🗓 课程表' },
   ];
-  // VIP 学生页：在「面谈记录」后加一个「面谈预约」入口（复用各专业已做好的预约链接，自动带入本人专业+姓名，无需再填姓名）
-  if (window.__VIP_PAGE__) {
+  // 所有学生：在「面谈记录」后加「面谈预约」（内嵌本专业预约页，按登录身份自动带入姓名/专业，无需再填姓名）
+  {
     const _ri = tabs.findIndex(t => t.id === 'records');
     tabs.splice(_ri >= 0 ? _ri + 1 : tabs.length, 0, { id:'reserve', label:'📅 面谈预约' });
   }
@@ -1376,7 +1379,8 @@ function renderReserveTab() {
     return `<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">
       未能识别你的专业，暂时无法自动预约，请联系老师获取本专业预约链接。</div>`;
   }
-  const url = `../student/?major=${encodeURIComponent(key)}&name=${encodeURIComponent((studyStudent && studyStudent.name) || '')}&embed=1`;
+  // 内嵌页从本机登录信息读取身份（同源 localStorage），URL 不再带姓名
+  const url = `../student/?major=${encodeURIComponent(key)}&embed=1`;
   return `
   <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;display:flex;align-items:center;flex-wrap:wrap;gap:8px">
     <span>📅 预约面谈${label?` · ${label}`:''}（已自动匹配你的专业与姓名，直接选择时间提交即可）</span>
