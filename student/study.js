@@ -700,27 +700,11 @@ function studyIsGakubu() {
   return /^gakubu_/.test(m);
 }
 
-// 三部分框架
-const RIYU_SECTIONS = [
-  { k:'motive', label:'入学を志望する動機', hint:'・「なぜこの学校・学部学科コースに入りたいのか」「入学を志望したきっかけ」を明確に伝えましょう。\n・高校までに取り組んだことや自分の考え、志向などをもとに、その根拠をしっかり示しましょう。' },
-  { k:'will',   label:'入学を志望する意志', hint:'・「この学校・学部学科コースのどこが魅力なのか」「入学後にやりたいこと、身につけたいこと」を伝えましょう。\n・志望する分野や学問への理解度が深いことをアピールしましょう。' },
-  { k:'vision', label:'卒業後の展望',       hint:'・「将来の夢や就きたい仕事・職業」「その仕事で実現したいこと」を伝えましょう。\n・進学先での学び・経験とつなげて伝えましょう。' },
-];
-
-// 每所学校的稳定 key（不依赖会被重建的 ssp id）
-function riyuKey(p) { return [p.school_name||'', p.faculty||'', p.department||''].join('|'); }
-
-// 从 planDraft.draft_fields.riyu 取已保存内容
-function riyuStore() {
-  const d = studyData.planDraft || {};
-  let df = {};
-  try { df = d.draft_fields ? JSON.parse(d.draft_fields) : {}; } catch(e) {}
-  return (df && df.riyu) ? df.riyu : {};
-}
+// RIYU_SECTIONS / riyuKeyOf / riyuMap 定义在 shared/constants.js（老师端、admin 共用），此处直接使用
 
 function renderRiyuTab() {
   const plans = (studyData.schoolPlans || []).slice().sort((a,b)=>(a.level||2)-(b.level||2));
-  const store = riyuStore();
+  const store = riyuMap(studyData.planDraft);
   const intro = `
     <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:12px 14px;margin-bottom:14px;font-size:11px;color:var(--text-secondary);line-height:1.9">
       <div style="font-weight:600;color:var(--text-primary);margin-bottom:4px">📄 志望理由书 · 三个部分</div>
@@ -733,7 +717,7 @@ function renderRiyuTab() {
     return `<div>${intro}<div style="text-align:center;padding:36px;color:var(--text-muted);font-size:12px">还没有志望校。请先到「🏫 志望校」标签添加要报考的学校，这里会自动为每所学校生成一份志望理由书。</div></div>`;
   }
   const cards = plans.map((p, idx) => {
-    const key = riyuKey(p);
+    const key = riyuKeyOf(p);
     const saved = store[key] || {};
     const title = [p.school_name, p.faculty, p.department].filter(Boolean).join(' · ');
     const lvLabel = p.level===1?'冲刺':p.level===3?'保底':'匹配';
