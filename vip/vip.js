@@ -383,6 +383,8 @@ function renderVipMain() {
     <div class="card-title">预约VIP课程时间</div>
     ${!(vipStudent.vip_teachers || []).length
       ? '<div class="no-slots">尚未分配指导老师，请联系管理员</div>'
+      : vipRemainHours() <= 0
+      ? '<div class="no-slots">VIP 课时已用完，暂时不能预约<br><span style="font-size:11px">如需继续上课，请联系顾问老师续课</span></div>'
       : (dateKeys.length ? `
         <div class="slot-grid" style="grid-template-columns:1fr">
           ${dateKeys.map(date => {
@@ -797,12 +799,18 @@ function vipRenderLocationChoice(slotId) {
   if (el) el.style.display = 'block';
 }
 
+// 剩余 VIP 课时（总课时 − 已用）；≤0 时不能预约
+function vipRemainHours() {
+  const t = parseFloat(vipStudent && vipStudent.vip_hours_total) || 0;
+  const u = parseFloat(vipStudent && vipStudent.vip_hours_used) || 0;
+  return Math.round((t - u) * 100) / 100;
+}
+
 async function submitVipBooking() {
   if (!vipSelectedSlotId) { alert('请选择预约时间'); return; }
   const slot = vipSlots.find(s => s.id === vipSelectedSlotId);
   if (!slot) { alert('时间槽不存在，请刷新后重试'); return; }
-  const remainH = (vipStudent.vip_hours_total || 0) - (vipStudent.vip_hours_used || 0);
-  if (remainH <= 0) { alert('您的VIP课时已用完，请联系管理员充值'); return; }
+  if (vipRemainHours() <= 0) { alert('您的VIP课时已用完，暂时不能预约。如需继续上课，请联系顾问老师续课'); return; }
 
   // 若该时间槽是「线上/线下均可」，必须读取学生的选择并转换成确定的地点值
   let finalLocation = slot.location;
@@ -887,6 +895,8 @@ function renderVipBookingSection() {
     <div class="card-title">预约VIP课程时间</div>
     ${!(vipStudent.vip_teachers || []).length
       ? '<div class="no-slots">尚未分配指导老师，请联系管理员</div>'
+      : vipRemainHours() <= 0
+      ? '<div class="no-slots">VIP 课时已用完，暂时不能预约<br><span style="font-size:11px">如需继续上课，请联系顾问老师续课</span></div>'
       : (dateKeys.length ? `
         <div class="slot-grid" style="grid-template-columns:1fr">
           ${dateKeys.map(date => {
