@@ -277,6 +277,16 @@ function fmtSessionDate(dateStr){
 
 let coursesTypeFilter='all';
 let coursesCampusFilter='all'; // 校区筛选：all/高马/市谷/线上
+let coursesArchiveFilter='active'; // 状态筛选：active 进行中 | ended 已结课 | all 全部（默认只看进行中，隐藏已上完的课）
+
+// 课程是否已结课：以该课最后一个课次日期判断，无课次则看 end_date；两者都无 → 视为进行中
+function courseIsEnded(c){
+  const today=new Date().toISOString().slice(0,10);
+  const dates=cachedSessions.filter(s=>s.course_id===c.id&&s.session_date).map(s=>s.session_date).sort();
+  const last=dates.length?dates[dates.length-1]:(c.end_date||'');
+  if(!last) return false;
+  return last<today;
+}
 
 // ══════════════════════════════════
 // COURSE CLEANUP PAGE
@@ -800,6 +810,9 @@ function renderCoursesPage(mc){
   else if(coursesTypeFilter==='共通课') filtered=filtered.filter(c=>c.course_type?.includes('共通'));
   else if(coursesTypeFilter==='VIP') filtered=filtered.filter(c=>c.course_type?.includes('VIP'));
   if(coursesCampusFilter!=='all') filtered=filtered.filter(c=>(c.campus||'')===coursesCampusFilter);
+  // 状态筛选：默认「进行中」隐藏已结课的课程
+  if(coursesArchiveFilter==='active') filtered=filtered.filter(c=>!courseIsEnded(c));
+  else if(coursesArchiveFilter==='ended') filtered=filtered.filter(c=>courseIsEnded(c));
 
   const allPeriods=[...new Map(cachedCourses
     .filter(c=>c.first_session_date)
@@ -842,6 +855,12 @@ function renderCoursesPage(mc){
         <div class="filter-chip${coursesPeriodFilter==='current'?' active':''}" onclick="setCoursesPeriod('current',this)" style="font-size:11px;padding:3px 10px">当前期（${curPeriod}）</div>
         ${allPeriods.map(p=>`<div class="filter-chip${coursesPeriodFilter===p.key?' active':''}" onclick="setCoursesPeriod('${p.key}',this)" style="font-size:11px;padding:3px 10px">${p.key}</div>`).join('')}
         <div class="filter-chip${coursesPeriodFilter==='all'?' active':''}" onclick="setCoursesPeriod('all',this)" style="font-size:11px;padding:3px 10px">全部</div>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">状态</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        ${[['active','进行中'],['ended','已结课'],['all','全部']].map(([v,l])=>`<div class="filter-chip${coursesArchiveFilter===v?' active':''}" onclick="setCoursesArchive('${v}',this)" style="font-size:11px;padding:3px 10px">${l}</div>`).join('')}
       </div>
     </div>
     <div>
@@ -980,6 +999,10 @@ function setCoursesPeriod(p,el){
 }
 function setCoursesCampus(c,el){
   coursesCampusFilter=c;
+  renderCoursesPage(document.getElementById('mainContent'));
+}
+function setCoursesArchive(v,el){
+  coursesArchiveFilter=v;
   renderCoursesPage(document.getElementById('mainContent'));
 }
 function setCoursesDomain(d,el){
