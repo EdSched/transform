@@ -1225,7 +1225,9 @@ async function confirmImport() {
     // ① 新增
     const records = newRows.map((r, i) => {
       const rec = { id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 5)}`, name: r.name, major: r.major || '', status: r.status || 'active' };
-      FIELDS.forEach(f => { if (r[f]) rec[f] = r[f]; });
+      // 每条记录都带上全部字段的 key（没值填 null），保证同批各行 key 一致，
+      // 否则 PostgREST 批量插入会报 PGRST102「All object keys must match」
+      FIELDS.forEach(f => { rec[f] = (r[f] !== undefined && r[f] !== '') ? r[f] : null; });
       return rec;
     });
     for (let i = 0; i < records.length; i += 50) {
