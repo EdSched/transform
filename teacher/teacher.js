@@ -127,40 +127,19 @@ async function init() {
     // ── 先静默 Auth 登录拿 token，再读 teachers 表查自己 ──
     // 关键顺序：teachers 表已开 RLS，读表需要 token；tid 从链接直接来（已知），无需先读表即可登录。
     // 只有已开通账号的老师会登录成功；失败不挡人（未开通老师若表未锁仍能读，锁了则读不到——但全部老师已开通）。
-    let authOk = false;
     try {
       const _tid = teacherId;   // 链接带来的 tid，登录只靠它，不依赖读表
-      if (_tid) {
-        // supabase-js 没加载成功（微信内置浏览器 / 国内网络对第三方 CDN 时通时不通）→ 抛错走下面的重试提示，而不是静默渲染空壳
-        if (typeof supabase === 'undefined' || !supabase.createClient) throw new Error('supabase-js 未加载');
+      if (_tid && typeof supabase !== 'undefined' && supabase.createClient) {
         const _c = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: 'sb-teacher', persistSession: true, autoRefreshToken: true } });
         let { data: _sess } = await _c.auth.getSession();
-        const emailOf = d => d && d.session && d.session.user && d.session.user.email;
-        if (emailOf(_sess) !== `${_tid}@teacher.local`) {
-          // 本地残留了别的老师 / 过期的 session → 先登出清掉，避免显示上一个人的残留数据
-          if (_sess && _sess.session) { try { await _c.auth.signOut(); } catch (e) {} }
+        if (!_sess || !_sess.session || (_sess.session.user && _sess.session.user.email !== `${_tid}@teacher.local`)) {
           await _c.auth.signInWithPassword({ email: `${_tid}@teacher.local`, password: _tid });
           _sess = (await _c.auth.getSession()).data;
         }
-        if (emailOf(_sess) === `${_tid}@teacher.local`) {
-          if (typeof __setSbStorageKey === 'function') __setSbStorageKey('sb-teacher');
-          if (typeof __setSbToken === 'function') __setSbToken(_sess.session.access_token, _c);  // 传客户端→自动续期
-          authOk = true;
-        }
-      } else {
-        authOk = true;   // 老链接无 tid：按名字走，不强制 Auth（保持旧行为）
+        if (typeof __setSbStorageKey === 'function') __setSbStorageKey('sb-teacher');
+        if (_sess && _sess.session && typeof __setSbToken === 'function') __setSbToken(_sess.session.access_token, _c);  // 传客户端→自动续期
       }
-    } catch (e) { authOk = false; }
-
-    // 需要登录（新链接带 tid）却没登录成功 → 别渲染没数据的空壳，给出可重试的明确提示
-    if (teacherId && !authOk) {
-      mc.innerHTML = `<div class="empty" style="text-align:center;padding:44px 20px">
-        <div style="font-size:15px;font-weight:600;margin-bottom:10px">页面没能加载出来</div>
-        <div style="font-size:12px;color:#888;line-height:1.9;margin-bottom:18px">可能是网络不稳定，或脚本没加载完<br>（微信里打开偶尔会这样）。<br>请点下方重试，或改用手机自带浏览器打开本链接。</div>
-        <button onclick="location.reload()" style="font-size:13px;background:var(--accent,#b8953a);color:#fff;border:none;border-radius:6px;padding:10px 28px;cursor:pointer;font-family:inherit">🔄 重新加载</button>
-      </div>`;
-      return;
-    }
+    } catch (e) { /* Auth 失败不挡人：老师照常进（老链接无 tid 时走下面的按名字查） */ }
 
     // 现在有 token 了，再读 teachers 表查自己（RLS 放行登录老师）
     let teachers = [];
