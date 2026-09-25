@@ -131,8 +131,16 @@ function tsInfoHtml(sel) {
 
 // ── 展示卡片模式：干净的对外宣传版（可截图给学生） ──
 function tsCardsHtml(sel) {
-  return `<div style="font-size:11px;font-weight:600;margin-bottom:8px">🎴 展示卡片（${sel.length}位 · 仅对外内容，可截图）</div>
-  <div id="ts_cards" style="background:#f7f5f0;border-radius:6px;padding:18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px">
+  return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+    <span style="font-size:11px;font-weight:600">🎴 展示卡片（${sel.length}位 · 仅对外内容，可截图）</span>
+    ${typeof pkAdd === 'function' ? `<button onclick="tsAddCardsToPack()" style="margin-left:auto;font-size:10px;background:var(--surface);border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:3px 12px;cursor:pointer;font-family:inherit">➕ 加入宣传资料</button>` : ''}
+  </div>
+  ${tsCardsGridHtml(sel, 'ts_cards')}`;
+}
+
+// 讲师展示卡片网格（页面展示与「宣传资料整合」共用；全部内联配色，可直接打印）
+function tsCardsGridHtml(sel, domId) {
+  return `<div ${domId ? `id="${domId}" ` : ''}style="background:#f7f5f0;border-radius:6px;padding:18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px">
     ${sel.map(p => `
     <div style="background:#fff;border:1px solid #ede9e2;border-radius:6px;padding:20px 22px;color:#1a1814">
       <div style="font-size:9px;letter-spacing:.2em;color:#5a3e28;margin-bottom:8px">${tsEsc((p.subject || '').toUpperCase() || 'LECTURER')} · 唯新教育</div>
@@ -152,4 +160,16 @@ function tsCardsHtml(sel) {
       </div>` : ''}
     </div>`).join('')}
   </div>`;
+}
+
+// 把当前选中的讲师展示卡片加入「宣传资料整合」
+function tsAddCardsToPack() {
+  const sel = (tsProfiles || []).filter(p => tsSelected.has(p.id));
+  if (!sel.length) { alert('请先点选讲师'); return; }
+  const names = sel.map(p => tsPubOf(p.name));
+  pkAdd({
+    type: 'lecturers',
+    title: `讲师介绍（${names.slice(0, 4).join('・')}${names.length > 4 ? ` 等${names.length}位` : ''}）`,
+    html: tsCardsGridHtml(sel).replace('grid-template-columns:repeat(auto-fill,minmax(290px,1fr))', 'grid-template-columns:1fr 1fr'),
+  });
 }

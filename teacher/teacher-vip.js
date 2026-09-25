@@ -803,6 +803,7 @@ function openSvPlan(id) {
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <div style="font-size:12px;color:#5a5650">${p.total_sessions || 0} 回 · ${p.total_hours || 0} 课时${(p.subject_hours && p.subject_hours > 0) ? '　·　专业知识 ' + p.subject_hours + ' 课时' : ''}</div>
         <button onclick="svPlanToTemplate('${p.id}')" style="font-size:11px;background:#fff;border:1px solid #c9b896;border-radius:3px;padding:4px 12px;cursor:pointer;font-family:inherit;color:#5a3010">保存成套餐</button>
+        ${typeof pkAdd === 'function' ? `<button onclick="svAddPlanToPack('${p.id}')" style="font-size:11px;background:#fff;border:1px solid #5a3e28;border-radius:3px;padding:4px 12px;cursor:pointer;font-family:inherit;color:#5a3e28">➕ 加入宣传资料</button>` : ''}
       </div>
     </div>
     ${groupsHtml || '<div style="font-size:12px;color:#9a9590">此方案暂无课程</div>'}
@@ -967,6 +968,7 @@ function renderSvSelect(mc) {
       <div style="display:flex;gap:8px">
         <button onclick="svClearSel()" style="font-size:11px;background:transparent;border:1px solid #e2ded6;border-radius:3px;padding:5px 14px;cursor:pointer;font-family:inherit;color:#9a9590">清空</button>
         <button onclick="svSaveAsTemplate()" style="font-size:11px;background:#fff;border:1px solid #c9b896;border-radius:3px;padding:5px 14px;cursor:pointer;font-family:inherit;color:#5a3010">保存为套餐</button>
+        ${typeof pkAdd === 'function' ? `<button onclick="svAddSelToPack()" style="font-size:11px;background:#fff;border:1px solid #5a3e28;border-radius:3px;padding:5px 14px;cursor:pointer;font-family:inherit;color:#5a3e28">➕ 加入宣传资料</button>` : ''}
         <button onclick="svGenerateReport()" style="font-size:11px;background:#fff;border:1px solid #1a1814;border-radius:3px;padding:5px 14px;cursor:pointer;font-family:inherit;color:#1a1814">生成 PDF</button>
         <button onclick="svSavePlan('signed')" style="font-size:11px;background:#1a1814;color:#f7f5f0;border:1px solid #1a1814;border-radius:3px;padding:5px 16px;cursor:pointer;font-family:inherit;font-weight:500">保存签约 →</button>
       </div>
@@ -1175,3 +1177,40 @@ function svGenerateReport() {
   w.document.close();
 }
 function svGenEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+// ── 加入「宣传资料整合」：当前点选的方案 / 已保存的学生方案 ──
+function svPackGroups(items) {
+  const catMap = {};
+  items.forEach(it => {
+    const k = it.category || 'other';
+    if (!catMap[k]) catMap[k] = { key: k, label: it.category_label || k, items: [] };
+    catMap[k].items.push(it);
+  });
+  return Object.values(catMap).sort((a, b) => vipCatRank(a.key) - vipCatRank(b.key))
+    .map(g => Object.assign(g, { color: VIP_CAT_COLOR[g.key] || { bg: '#f0f0f0', color: '#333' } }));
+}
+function svAddSelToPack() {
+  if (!svSel.size) { alert('请先点选课程'); return; }
+  const student = (document.getElementById('sv_student').value || '').trim();
+  const items = svItems.filter(it => svSel.has(it.id))
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+    .map(it => ({ category: it.category, category_label: it.category_label, name: it.name, content: it.content, homework: it.homework, hours: svHoursOf(it) }));
+  const c = svCalc();
+  pkAdd({
+    type: 'vip',
+    title: `VIP课程方案${student ? '（' + student + '）' : ''} · ${c.hours}课时`,
+    html: pkVipHtml({ groups: svPackGroups(items), sessions: c.sessions, hours: c.hours, subjectHours: svSubjectHours }),
+    student,
+  });
+}
+function svAddPlanToPack(id) {
+  const p = salesStudentPlans.find(x => x.id === id);
+  if (!p) return;
+  const items = Array.isArray(p.items) ? p.items : [];
+  pkAdd({
+    type: 'vip',
+    title: `VIP课程方案（${p.student_name || '—'}） · ${p.total_hours || 0}课时`,
+    html: pkVipHtml({ groups: svPackGroups(items), sessions: p.total_sessions || 0, hours: p.total_hours || 0, subjectHours: p.subject_hours || 0 }),
+    student: p.student_name || '',
+  });
+}

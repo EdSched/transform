@@ -60,6 +60,7 @@ function renderProgressPlanTool(mc) {
     </div>
     <button onclick="ppGenerate()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 20px;cursor:pointer;font-family:inherit">生成规划</button>
     <button id="pp_print_btn" onclick="ppOpenPrint()" style="display:none;font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:8px 16px;cursor:pointer;font-family:inherit;margin-left:8px">🖨 打印 / 保存 PDF</button>
+    ${typeof pkAdd === 'function' ? `<button id="pp_pack_btn" onclick="ppAddToPack()" style="display:none;font-size:12px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:8px 16px;cursor:pointer;font-family:inherit;margin-left:8px">➕ 加入宣传资料</button>` : ''}
   </div>
   <div id="pp_out"></div>`;
 }
@@ -178,6 +179,20 @@ function ppGenerate() {
   if (out) out.innerHTML = ppPlanHtml(ppLast);
   const btn = document.getElementById('pp_print_btn');
   if (btn) btn.style.display = 'inline-block';
+  const pbtn = document.getElementById('pp_pack_btn');
+  if (pbtn) pbtn.style.display = 'inline-block';
+}
+
+// 把当前生成的规划加入「宣传资料整合」（快照当下内容；表格较宽，按横版页面排版）
+function ppAddToPack() {
+  if (!ppLast) return;
+  pkAdd({
+    type: 'plan',
+    title: `考学进度规划${ppLast.name ? '（' + ppLast.name + '）' : ''} · ${ppLast.period}`,
+    html: ppPlanHtml(ppLast).replace(/overflow-x:auto/g, 'overflow:visible').replace(/min-width:\d+px;/g, ''),
+    wide: true,
+    student: ppLast.name || '',
+  });
 }
 
 function ppOpenPrint() {

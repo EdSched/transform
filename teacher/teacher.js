@@ -246,6 +246,8 @@ function buildTabs() {
   if (p.student_mgmt && Array.isArray(p.student_mgmt_items) && p.student_mgmt_items.length) tabs.push({ id: 'studentmgmt', label: '👥 学生管理' });
   if (p.progress_plan) tabs.push({ id: 'progressplan', label: '📅 进度规划' });
   if (p.promo) tabs.push({ id: 'promo', label: '📣 宣传相关' });
+  // 宣传资料整合：把出愿学校 / 学科介绍 / 进度规划等营业资料合成一份 PDF（有任一营业工具权限即显示）
+  if (p.promo || p.admission_query || p.progress_plan || p.lect_info || p.vip_sales) tabs.push({ id: 'promopack', label: '📦 宣传资料整合' });
   if (p.promo) tabs.push({ id: 'admissions', label: '🏆 合格实绩' });
   if (p.lect_info) tabs.push({ id: 'lectinfo', label: '👤 讲师信息' });
   // 我的课表：有排班权限或有实际排到课才显示
@@ -258,6 +260,7 @@ function buildTabs() {
   const tabBar = document.getElementById('tabBar');
   tabBar.innerHTML = tabs.map(t => `<button class="tab-btn${curTab === t.id ? ' active' : ''}" onclick="switchTab('${t.id}')">${t.label}</button>`).join('');
   tabBar.style.display = tabs.length > 1 ? 'flex' : 'none';
+  if (typeof pkLoad === 'function') { pkLoad(); pkUpdateTabBadge(); }
 }
 
 function switchTab(tab) {
@@ -281,6 +284,7 @@ function renderTab() {
     case 'studentmgmt': renderStudentMgmt(mc); break;
     case 'progressplan': renderProgressPlanTool(mc); break;
     case 'promo': renderTeacherPromo(mc); break;
+    case 'promopack': renderPromoPack(mc); break;
     case 'admissions': renderTeacherAdmissions(mc); break;
     case 'lectinfo': renderLectInfo(mc); break;
     case 'studyprogress': renderTeacherStudyProgress(mc); break;
@@ -2142,7 +2146,10 @@ async function renderTeacherAdmissionDb(mc) {
   mc.innerHTML = `
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
     <div style="font-size:15px;font-weight:600;font-family:'Noto Serif SC',serif">出願数据库</div>
-    <button class="btn btn-sm btn-outline" onclick="teacherAdbExportHtml()" style="border:1px solid var(--border)">↓ 导出 PDF表格</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${typeof pkAdd === 'function' ? `<button class="btn btn-sm btn-outline" onclick="teacherAdbAddToPack()" style="border:1px solid var(--accent);color:var(--accent)">➕ 加入宣传资料</button>` : ''}
+      <button class="btn btn-sm btn-outline" onclick="teacherAdbExportHtml()" style="border:1px solid var(--border)">↓ 导出 PDF表格</button>
+    </div>
   </div>
 
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px;margin-bottom:12px">
@@ -2411,6 +2418,25 @@ function teacherAdbExportHtml() {
     filtered,
   });
   exportAdmissionHtmlShared(filtered, { majorLabel, filterLine, showMajor, majorMap: TEACHER_ADB_MAJORS });
+}
+
+// 把当前筛选结果（出愿学校名单）加入「宣传资料整合」
+function teacherAdbAddToPack() {
+  const filtered = teacherAdbFilter();
+  if (!filtered.length) { alert('请先选择专业并筛选出要放入资料的学校'); return; }
+  if (filtered.length > 300 && !confirm(`当前筛选结果共 ${filtered.length} 条，放入资料会有很多页。建议先用筛选缩小范围，仍要加入吗？`)) return;
+  const majorLabel = teacherAdbMajors.map(m => TEACHER_ADB_MAJORS[m] || m).join('・');
+  const filterLine = buildAdmissionFilterDesc({
+    english: teacherAdbEnglish, japanese: teacherAdbJapanese,
+    search: teacherAdbSearch, monthFrom: teacherAdbMonthFrom, monthTo: teacherAdbMonthTo,
+    filtered,
+  });
+  pkAdd({
+    type: 'admission',
+    title: `${majorLabel} 出愿学校名单（${filtered.length}所）`,
+    html: pkAdmissionHtml(filtered, { filterLine, showMajor: teacherAdbMajors.length !== 1, majorMap: TEACHER_ADB_MAJORS }),
+    wide: true,
+  });
 }
 
 
