@@ -17,9 +17,9 @@
 <div id="tabBar" style="display:none;background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;gap:0;overflow-x:auto"></div>
 <div class="main" id="mainContent"><div class="loading">加载中…</div></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<!-- supabase-js：优先本仓库自托管（同源，最稳，避免微信/国内网络对第三方 CDN 时通时不通导致跳空）；万一本地缺失再回退 jsdelivr -->
+<!-- supabase-js：先走 jsdelivr（原样，保证在能连的网络下和以前一致）；紧跟一份本仓库同源副本兜底：jsdelivr 没加载出来时用它，避免依赖第三方 CDN 导致跳空。两个都是普通 script 标签，无 document.write（手机浏览器会拦截 document.write 注入的跨域脚本）。 -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
 <script src="../shared/vendor/supabase.min.js"></script>
-<script>window.supabase||document.write('<scr'+'ipt src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"><\/scr'+'ipt>')</script>
 <script src="../shared/supabase.js"></script>
 <script src="../shared/constants.js"></script>
 <script src="../shared/hw-core.js"></script>
