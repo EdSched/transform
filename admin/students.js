@@ -679,11 +679,14 @@ async function renderProgressPage(mc, focusStudentId=null){
     // 志望校流水线细节：填充进计划书/出愿/备考三张卡
     const sPlans = plansMapPG[s.id] || [];
     const sDraft = draftsMapPG[s.id];
-    let sRefsN = 0, sDraftN = 0;
+    const sGakubu = (typeof isGakubuStudent === 'function') && isGakubuStudent(s);  // 学部：计划书 = 志望理由书
+    let sRefsN = 0, sDraftN = 0, sRiyuN = 0;
     try {
       sRefsN = sDraft && sDraft.prior_research_list ? JSON.parse(sDraft.prior_research_list).length : 0;
       const df0 = sDraft && sDraft.draft_fields ? JSON.parse(sDraft.draft_fields) : {};
-      sDraftN = Object.values(df0).filter(v => Array.isArray(v) ? v.length : String(v || '').trim()).length;
+      sRiyuN = (df0 && df0.riyu) ? Object.keys(df0.riyu).length : 0;  // 已写志望理由书的学校数
+      // 大学院研究计划书草稿的已填项数（学部下 riyu 对象不计入）
+      sDraftN = Object.entries(df0).filter(([k,v]) => k !== 'riyu' && (Array.isArray(v) ? v.length : String(v || '').trim())).length;
     } catch(e) {}
     // 时间线没有记录时，从志望校推进/计划书数据自动推导徽章
     const pgDerived = {};
@@ -694,16 +697,25 @@ async function renderProgressPage(mc, focusStudentId=null){
     if (sPlans.some(p => p.interview_draft_done)) pgDerived.exam = '在准备面试稿';
     else if (sPlans.some(p => p.kakomon_started)) pgDerived.exam = '在写过去问';
     const sLegacy = sDraft && ['research_question','methodology','draft_notes'].some(f => String(sDraft[f] || '').trim());
-    if (sDraft && sDraft.draft_file_url) pgDerived.plan = '已完成';
-    else if (sDraftN > 0 || sLegacy) pgDerived.plan = '撰写中';
-    else if (sRefsN > 0) pgDerived.plan = '在收集材料';
+    if (sGakubu) {
+      // 学部志望理由书：按已写学校数推导（占 sPlans 的几所）
+      if (sRiyuN > 0) pgDerived.plan = sPlans.length && sRiyuN >= sPlans.length ? '已完成' : '撰写中';
+    } else {
+      if (sDraft && sDraft.draft_file_url) pgDerived.plan = '已完成';
+      else if (sDraftN > 0 || sLegacy) pgDerived.plan = '撰写中';
+      else if (sRefsN > 0) pgDerived.plan = '在收集材料';
+    }
 
     const pgDetail = k => {
       if (k === 'plan') {
         const parts = [];
-        if (sRefsN) parts.push(`📚 先行研究 ${sRefsN} 条`);
-        if (sDraftN) parts.push(`草稿已填 ${sDraftN} 项`);
-        if (sDraft && sDraft.draft_file_url) parts.push('📎 完成稿已上传');
+        if (sGakubu) {
+          if (sRiyuN) parts.push(`✍️ 已写 ${sRiyuN}${sPlans.length?'/'+sPlans.length:''} 校志望理由书`);
+        } else {
+          if (sRefsN) parts.push(`📚 先行研究 ${sRefsN} 条`);
+          if (sDraftN) parts.push(`草稿已填 ${sDraftN} 项`);
+          if (sDraft && sDraft.draft_file_url) parts.push('📎 完成稿已上传');
+        }
         return parts.length ? `<div style="font-size:10px;color:var(--text-2);margin-top:4px;line-height:1.7">${parts.join(' · ')}</div>` : '';
       }
       if (k === 'apply') {
@@ -730,13 +742,14 @@ async function renderProgressPage(mc, focusStudentId=null){
     };
     const SRC_LABEL = { student:'学生填写', teacher:'老师面谈', admin:'admin录入', booking:'面谈记录' };
     const dimCards = Object.entries(PROGRESS_LABELS).map(([k,label]) => {
+      const dispLabel = (sGakubu && k === 'plan') ? '志望理由书' : label;  // 学部：计划书→志望理由书
       const score = k === 'japanese' ? s.japanese_score : k === 'english' ? s.english_score : '';
       const src = latest[k] ? (SRC_LABEL[srcOf(k)] || srcOf(k) || '记录') : pgDerived[k] ? '按填写推导' : '';
       const badge = latest[k] ? renderProgressBadge(k, latest[k])
         : pgDerived[k] ? renderProgressBadge(k, pgDerived[k])
         : '<span style="font-size:10px;color:var(--text-3)">未填写</span>';
       return `<tr style="border-bottom:1px solid var(--border-light)">
-        <td style="padding:5px 8px;white-space:nowrap;color:var(--text-2)">${PROGRESS_ICONS[k]} ${label}</td>
+        <td style="padding:5px 8px;white-space:nowrap;color:var(--text-2)">${PROGRESS_ICONS[k]} ${dispLabel}</td>
         <td style="padding:5px 8px">${badge}${score?`<span style="font-size:10px;color:var(--text-2);margin-left:6px">${score}</span>`:''}</td>
         <td style="padding:5px 8px;font-size:9px;color:var(--text-3);white-space:nowrap">${src||'—'}</td>
         <td style="padding:5px 8px;font-size:10px;color:var(--text-2)">${(pgDetail(k)||'').replace(/margin-top:4px/g,'margin-top:0')||'—'}</td>
