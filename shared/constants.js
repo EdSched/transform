@@ -50,6 +50,17 @@ function majorInCurrentDomain(key) {
   if (!CURRENT_DOMAIN || CURRENT_DOMAIN === 'all') return true;
   return MAJOR_DOMAIN[key] === CURRENT_DOMAIN;
 }
+// 学部判定：专业所属领域标签以「学部」开头（MAJOR_DOMAIN 由 DB 加载），兜底看 major key 前缀 gakubu_
+// 学部学生的「计划书」= 志望理由书（按志望校逐校写），与大学院的研究计划书区分
+function isGakubuMajor(key) {
+  const k = key || '';
+  const dom = (typeof MAJOR_DOMAIN !== 'undefined' && MAJOR_DOMAIN[k]) || '';
+  if (dom) return dom.indexOf('学部') === 0;
+  return /^gakubu_/.test(k);
+}
+function isGakubuStudent(stu) {
+  return !!stu && isGakubuMajor(stu.major);
+}
 // 学生可见性（叠加逻辑，仅用于学生管理/学生页）：
 // 学生的完整专业 = major(主) + extra_majors(附加，如日语/英语)。
 // 只要任一专业属于当前视角（领域或专业锁），学生就可见——支持跨领域学生在多个领域被看到。
