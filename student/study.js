@@ -143,7 +143,7 @@ function renderStudyMain() {
   const latest = getLatestProgress(studyData.timeline);
   const tabs = [
     { id:'schools', label:`🏫 志望校 (${studyData.schoolPlans.length}/6)` },
-    { id:'plan', label:'📄 计划书' },
+    { id:'plan', label: studyIsGakubu() ? '📄 志望理由书' : '📄 计划书' },
     { id:'progress', label:'📊 考学进度' },
     { id:'records', label:'📋 面谈记录' },
     { id:'homework', label:'📝 作业' },
@@ -294,7 +294,7 @@ function renderSchoolsTab() {
         <input placeholder="教授2研究内容URL" value="${escA(p.professor2_url)}" data-field="professor2_url" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
-        <input placeholder="计划书要求（字数/格式）" value="${escA(p.plan_requirement)}" data-field="plan_requirement" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+        <input placeholder="${studyIsGakubu()?'志望理由书要求（字数/格式）':'计划书要求（字数/格式）'}" value="${escA(p.plan_requirement)}" data-field="plan_requirement" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
         <input placeholder="研究课题（目前方向）" value="${escA(p.research_theme)}" data-field="research_theme" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
       </div>
       <div style="font-size:10px;color:var(--text-muted);margin:6px 0 4px">📌 该校进度</div>
@@ -400,7 +400,7 @@ function studyAddSchoolRowToGroup(lv) {
       <input placeholder="教授2研究内容URL" data-field="professor2_url" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
-      <input placeholder="计划书要求" data-field="plan_requirement" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
+      <input placeholder="${studyIsGakubu()?'志望理由书要求':'计划书要求'}" data-field="plan_requirement" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
       <input placeholder="研究课题" data-field="research_theme" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
     </div>
     <input type="hidden" value="" data-field="id">`;
@@ -689,10 +689,117 @@ function studyToggleChip(el) {
 }
 
 // ══════════════════════════════════
+// 学部 · 志望理由书 Tab（按志望校逐校填写）
+// ══════════════════════════════════
+
+// 学部判定：优先按 major 所属领域（MAJOR_DOMAIN 标签以「学部」开头），兜底看 major key 前缀 gakubu_
+function studyIsGakubu() {
+  const m = (studyStudent && studyStudent.major) || studyMajor || '';
+  const dom = (typeof MAJOR_DOMAIN !== 'undefined' && MAJOR_DOMAIN[m]) || '';
+  if (dom) return dom.indexOf('学部') === 0;
+  return /^gakubu_/.test(m);
+}
+
+// 三部分框架
+const RIYU_SECTIONS = [
+  { k:'motive', label:'入学を志望する動機', hint:'・「なぜこの学校・学部学科コースに入りたいのか」「入学を志望したきっかけ」を明確に伝えましょう。\n・高校までに取り組んだことや自分の考え、志向などをもとに、その根拠をしっかり示しましょう。' },
+  { k:'will',   label:'入学を志望する意志', hint:'・「この学校・学部学科コースのどこが魅力なのか」「入学後にやりたいこと、身につけたいこと」を伝えましょう。\n・志望する分野や学問への理解度が深いことをアピールしましょう。' },
+  { k:'vision', label:'卒業後の展望',       hint:'・「将来の夢や就きたい仕事・職業」「その仕事で実現したいこと」を伝えましょう。\n・進学先での学び・経験とつなげて伝えましょう。' },
+];
+
+// 每所学校的稳定 key（不依赖会被重建的 ssp id）
+function riyuKey(p) { return [p.school_name||'', p.faculty||'', p.department||''].join('|'); }
+
+// 从 planDraft.draft_fields.riyu 取已保存内容
+function riyuStore() {
+  const d = studyData.planDraft || {};
+  let df = {};
+  try { df = d.draft_fields ? JSON.parse(d.draft_fields) : {}; } catch(e) {}
+  return (df && df.riyu) ? df.riyu : {};
+}
+
+function renderRiyuTab() {
+  const plans = (studyData.schoolPlans || []).slice().sort((a,b)=>(a.level||2)-(b.level||2));
+  const store = riyuStore();
+  const intro = `
+    <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:12px 14px;margin-bottom:14px;font-size:11px;color:var(--text-secondary);line-height:1.9">
+      <div style="font-weight:600;color:var(--text-primary);margin-bottom:4px">📄 志望理由书 · 三个部分</div>
+      按「志望校」逐校填写——每选一所学校，就为它写一份。围绕以下三点展开：<br>
+      ① <b>入学を志望する動機</b>（为什么想进这所学校 / 学部学科）<br>
+      ② <b>入学を志望する意志</b>（这所学校的魅力、入学后想做什么）<br>
+      ③ <b>卒業後の展望</b>（毕业后的目标，与所学如何衔接）
+    </div>`;
+  if (!plans.length) {
+    return `<div>${intro}<div style="text-align:center;padding:36px;color:var(--text-muted);font-size:12px">还没有志望校。请先到「🏫 志望校」标签添加要报考的学校，这里会自动为每所学校生成一份志望理由书。</div></div>`;
+  }
+  const cards = plans.map((p, idx) => {
+    const key = riyuKey(p);
+    const saved = store[key] || {};
+    const title = [p.school_name, p.faculty, p.department].filter(Boolean).join(' · ');
+    const lvLabel = p.level===1?'冲刺':p.level===3?'保底':'匹配';
+    return `<div data-riyu-key="${escA(key)}" style="border:1px solid var(--border-light);border-radius:5px;padding:14px;margin-bottom:14px;background:var(--surface)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="font-size:13px;font-weight:600">${escA(title||'（未命名学校）')}</div>
+        <span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:2px;padding:1px 7px">${lvLabel}</span>
+      </div>
+      ${p.plan_requirement
+        ? `<div style="font-size:11px;color:var(--accent);background:var(--bg);border-radius:3px;padding:6px 9px;margin-bottom:10px">📋 志望理由书要求：${escA(p.plan_requirement)}</div>`
+        : `<div style="font-size:10px;color:var(--text-muted);margin-bottom:10px">（该校的志望理由书要求可在「志望校」标签里填写）</div>`}
+      ${RIYU_SECTIONS.map((s,si)=>`
+        <div style="margin-bottom:10px">
+          <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px">${si+1}. ${s.label}</label>
+          <div style="font-size:10px;color:var(--text-secondary);white-space:pre-line;line-height:1.7;margin-bottom:4px">${s.hint}</div>
+          <textarea id="riyu_${idx}_${s.k}" rows="4" style="width:100%;font-size:12px;padding:8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;resize:vertical">${escA(saved[s.k]||'')}</textarea>
+        </div>`).join('')}
+    </div>`;
+  }).join('');
+  return `<div>
+    ${intro}
+    <div id="studyRiyuCards">${cards}</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
+      <button onclick="saveStudyRiyu()" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:11px 22px;font-size:13px;cursor:pointer;font-family:inherit">保存志望理由书</button>
+      <span id="riyu_save_msg" style="font-size:11px;color:var(--ok)"></span>
+    </div>
+  </div>`;
+}
+
+async function saveStudyRiyu() {
+  const cards = [...document.querySelectorAll('#studyRiyuCards [data-riyu-key]')];
+  const riyu = {};
+  cards.forEach((card, idx) => {
+    const key = card.dataset.riyuKey;
+    const obj = {};
+    RIYU_SECTIONS.forEach(s => {
+      const el = document.getElementById(`riyu_${idx}_${s.k}`);
+      if (el && el.value.trim()) obj[s.k] = el.value.trim();
+    });
+    if (Object.keys(obj).length) riyu[key] = obj;
+  });
+  const d = studyData.planDraft || {};
+  let df = {};
+  try { df = d.draft_fields ? JSON.parse(d.draft_fields) : {}; } catch(e) {}
+  df.riyu = riyu;
+  const data = {
+    student_id: studyStudent.id, student_name: studyStudent.name, major: studyStudent.major,
+    draft_fields: JSON.stringify(df), status: 'drafting', updated_at: new Date().toISOString(),
+  };
+  const msg = document.getElementById('riyu_save_msg');
+  if (msg) msg.textContent = '保存中…';
+  try {
+    if (d.id) { await sb(`/rest/v1/student_plan_drafts?id=eq.${d.id}`, 'PATCH', data); }
+    else { data.id = `spd-${Date.now()}-${Math.random().toString(36).slice(2,4)}`; await sb('/rest/v1/student_plan_drafts', 'POST', data); }
+    studyData.planDraft = { ...(studyData.planDraft||{}), ...data };
+    if (msg) { msg.textContent = '✓ 已保存'; setTimeout(()=>{ if (msg.textContent==='✓ 已保存') msg.textContent=''; }, 2500); }
+  } catch(e) { if (msg) msg.textContent = ''; alert('保存失败：' + e.message); }
+}
+
+// ══════════════════════════════════
 // 计划书 Tab（三步骤）
 // ══════════════════════════════════
 
 function renderPlanTab() {
+  // 学部学生：本 tab 是「志望理由书」，按志望校逐校填写（大学院仍是研究计划书）
+  if (studyIsGakubu()) return renderRiyuTab();
   const d = studyData.planDraft || {};
   let refs = [];
   try { refs = d.prior_research_list ? JSON.parse(d.prior_research_list) : []; } catch(e) {}
