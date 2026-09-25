@@ -132,12 +132,23 @@ async function init() {
       if (_tid && typeof supabase !== 'undefined' && supabase.createClient) {
         const _c = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: 'sb-teacher', persistSession: true, autoRefreshToken: true } });
         let { data: _sess } = await _c.auth.getSession();
-        if (!_sess || !_sess.session || (_sess.session.user && _sess.session.user.email !== `${_tid}@teacher.local`)) {
-          await _c.auth.signInWithPassword({ email: `${_tid}@teacher.local`, password: _tid });
-          _sess = (await _c.auth.getSession()).data;
+        const _okSess = () => _sess && _sess.session && _sess.session.user && _sess.session.user.email === `${_tid}@teacher.local`;
+        // 已有本人有效 session 直接用；否则登录，并对偶发失败重试几次
+        // （手机弱网 / 微信内置浏览器网络抖动时，单次登录请求可能失败——不重试就会静默跳空）
+        if (!_okSess()) {
+          for (let _try = 0; _try < 3 && !_okSess(); _try++) {
+            try {
+              const { error } = await _c.auth.signInWithPassword({ email: `${_tid}@teacher.local`, password: _tid });
+              _sess = (await _c.auth.getSession()).data;
+              if (!error && _okSess()) break;
+            } catch (e) { /* 网络抖动等，下面退避后重试 */ }
+            if (!_okSess()) await new Promise(r => setTimeout(r, 400 * (_try + 1)));
+          }
         }
-        if (typeof __setSbStorageKey === 'function') __setSbStorageKey('sb-teacher');
-        if (_sess && _sess.session && typeof __setSbToken === 'function') __setSbToken(_sess.session.access_token, _c);  // 传客户端→自动续期
+        if (_okSess()) {
+          if (typeof __setSbStorageKey === 'function') __setSbStorageKey('sb-teacher');
+          if (typeof __setSbToken === 'function') __setSbToken(_sess.session.access_token, _c);  // 传客户端→自动续期
+        }
       }
     } catch (e) { /* Auth 失败不挡人：老师照常进（老链接无 tid 时走下面的按名字查） */ }
 
