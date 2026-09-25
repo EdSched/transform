@@ -139,12 +139,15 @@ async function initMajor() {
   if (typeof loadMajorsFromDB === 'function') await loadMajorsFromDB();
   const p = new URLSearchParams(window.location.search);
   major = p.get('major');
+  // 从 VIP 学生页内嵌打开：带 name（自动填入并锁定姓名）与 embed=1（隐藏「我有VIP课程」返回入口，避免嵌套跳转）
+  const embedName = p.get('name');
+  const isEmbed = p.get('embed') === '1';
   if (major && (MAJORS[major] || major === 'shakai_group')) {
     document.getElementById('headerContent').innerHTML = `
       <div class="header-major">面谈预约</div>
       <div class="header-sub">唯新教育</div>
       <div class="header-locked">📌 ${major === 'shakai_group' ? '社会人文' : MAJORS[major]}</div>
-      <a href="../vip/" style="display:inline-block;margin-top:8px;font-size:11px;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:4px 12px;text-decoration:none">⭐ 我有VIP课程 →</a>`;
+      ${isEmbed ? '' : `<a href="../vip/" style="display:inline-block;margin-top:8px;font-size:11px;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:4px 12px;text-decoration:none">⭐ 我有VIP课程 →</a>`}`;
     try {
       teacherDisplayNames = {};
       // 每个页面只显示「发布时选择了该专业」的时间槽：
@@ -162,6 +165,18 @@ async function initMajor() {
         teachers.forEach(t => { if (t.display_name) teacherDisplayNames[t.name] = t.display_name; });
       }
       buildForm();
+      // 已登录学生从 VIP 页内嵌预约：自动填入姓名并锁定，无需再手填（buildForm 内已执行 applyStoredInfo，这里覆盖以本人档案为准）
+      if (embedName) {
+        const nameEl = document.getElementById('name');
+        if (nameEl) {
+          nameEl.value = embedName;
+          nameEl.readOnly = true;
+          nameEl.style.background = 'var(--bg)';
+          nameEl.style.cursor = 'not-allowed';
+          const hint = nameEl.parentElement && nameEl.parentElement.querySelector('div');
+          if (hint) hint.textContent = '✓ 已自动填入你的姓名（无需修改）';
+        }
+      }
       loadSchoolPlanBanner(); // 检查是否有共享的学校列表
     } catch(e) {
       document.getElementById('mainWrap').innerHTML = `<div class="no-major-banner"><div class="no-major-title">加载失败</div><div class="no-major-text">${e.message}</div></div>`;
