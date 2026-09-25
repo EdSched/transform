@@ -204,10 +204,16 @@ function tpNodeSummaryHtml(s, latest, plans, draft) {
   const kakomonN = plans.filter(p => p.kakomon_started).length;
   const interviewN = plans.filter(p => p.interview_draft_done).length;
   const dlSuffix = route === 'next_summer' ? '（次年路线）' : '';
+  // 学部：计划书节点 = 志望理由书（按志望校逐校写），进度按已写学校数
+  const tGakubu = (typeof isGakubuStudent === 'function') && isGakubuStudent(s);
+  const riyuN = (typeof riyuFilledCount === 'function') ? riyuFilledCount(draft, plans) : 0;
+  const planItem = tGakubu
+    ? { label:'志望理由书', cur: (plans.length ? (riyuN>=plans.length ? '已完成' : riyuN>0 ? `已写 ${riyuN}/${plans.length} 校` : '未开始') : '请先选志望校'), done: plans.length>0 && riyuN>=plans.length, dl:DL.plan, dlName:'完成最晚' + dlSuffix }
+    : { label:'研究计划书', cur:[plan || (draftUploaded ? '已完成' : draftFilled ? '撰写中' : refs ? '在收集材料' : '未填写'), refs ? `文献 ${refs} 条` : '', draftUploaded ? '📎 完成稿已上传' : ''].filter(Boolean).join(' · '), done: plan === '已完成' || draftUploaded, dl:DL.plan, dlName:'草稿完成最晚' + dlSuffix };
   const items = [
     { label:'日语', cur:[jp || '未填写', s.japanese_score || ''].filter(Boolean).join(' · '), done: dn('japanese', jp), dl:DL.japanese, dlName:'成绩确定最晚' + dlSuffix },
     { label:'英语', cur:[en || '未填写', s.english_score || ''].filter(Boolean).join(' · '), done: dn('english', en), dl:DL.english, dlName:'成绩确定最晚' + dlSuffix },
-    { label:'研究计划书', cur:[plan || (draftUploaded ? '已完成' : draftFilled ? '撰写中' : refs ? '在收集材料' : '未填写'), refs ? `文献 ${refs} 条` : '', draftUploaded ? '📎 完成稿已上传' : ''].filter(Boolean).join(' · '), done: plan === '已完成' || draftUploaded, dl:DL.plan, dlName:'草稿完成最晚' + dlSuffix },
+    planItem,
     { label:'择校・联系教授', cur: (plans.length ? `已选 ${plans.length}/6 校` : '未选校') + (contactedN ? ` · 已发邮件 ${contactedN} 校` : '') + (profOkN ? ` · 教授OK ${profOkN} 校` : '') + (apply ? ' · ' + apply : ''), done: profOkN > 0, dl:DL.school, dlName:'锁定教授最晚' },
     { label:'出愿', cur: appliedN ? `已出愿 ${appliedN} 校` : (apply || '未开始'), done: appliedN > 0 || ['已出愿','已合格'].includes(apply), dl:DL.apply, dlName:'出愿' },
     { label:'过去问・面试稿', cur: [(kakomonN ? `过去问已开始 ${kakomonN} 校` : ''), (interviewN ? `面试稿完成 ${interviewN} 校` : ''), exam || ''].filter(Boolean).join(' · ') || '未开始', done: dn('exam', exam), dl:DL.kakomon, dlName:'完成最晚' },
@@ -275,9 +281,13 @@ function tpRenderProgressList() {
     const enTxt = s.english_score ? tsaEsc(s.english_score) : '<span style="color:var(--text-3)">未填写</span>';
     const secLang = secFrame(secTitle('🗣 语言成绩') +
       `<div style="font-size:12px;line-height:2"><div><span style="color:var(--text-3)">日语</span>　${jpTxt}</div><div><span style="color:var(--text-3)">英语</span>　${enTxt}</div></div>`);
-    const secPlan = secFrame(secTitle('📄 研究计划书') + (draft
-      ? `${tDraftSummaryHtml(draft)}${draft.draft_file_url ? `<a href="${draft.draft_file_url}" target="_blank" style="font-size:10px;color:var(--accent);display:inline-block;margin-top:4px">📎 草稿文件</a>` : ''}<button onclick="event.stopPropagation();openTeacherDraftComment('${s.id}','${tsaEsc(s.name)}')" style="margin-top:8px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:5px 12px;cursor:pointer;font-family:inherit;display:block">查看・评估计划书/先行研究</button>`
-      : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写</div>'));
+    const tpGakubu = (typeof isGakubuStudent === 'function') && isGakubuStudent(s);
+    const secPlan = tpGakubu
+      ? secFrame(secTitle('📄 志望理由书') + (typeof renderRiyuView === 'function' ? renderRiyuView(draft, plans, tsaEsc) : '') +
+          `<button onclick="event.stopPropagation();openTeacherDraftComment('${s.id}','${tsaEsc(s.name)}')" style="margin-top:8px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:5px 12px;cursor:pointer;font-family:inherit;display:block">查看・评估志望理由书</button>`)
+      : secFrame(secTitle('📄 研究计划书') + (draft
+        ? `${tDraftSummaryHtml(draft)}${draft.draft_file_url ? `<a href="${draft.draft_file_url}" target="_blank" style="font-size:10px;color:var(--accent);display:inline-block;margin-top:4px">📎 草稿文件</a>` : ''}<button onclick="event.stopPropagation();openTeacherDraftComment('${s.id}','${tsaEsc(s.name)}')" style="margin-top:8px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:5px 12px;cursor:pointer;font-family:inherit;display:block">查看・评估计划书/先行研究</button>`
+        : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写</div>'));
 
     // 志望校
     const schoolTable = plans.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">
@@ -399,6 +409,24 @@ function tdcRender(studentName) {
   const box = document.getElementById('tdcBody');
   if (!box) return;
   const draft = tdcDraft;
+  // 学部：查看・评估志望理由书（逐校只读展示 + 整体评语）
+  const _stu = ((teacherProgressData && teacherProgressData.students) || []).find(x => x.id === tdcStudentId);
+  const _plans = ((teacherProgressData && teacherProgressData.plansMap) || {})[tdcStudentId] || [];
+  if ((typeof isGakubuStudent === 'function') && isGakubuStudent(_stu)) {
+    box.innerHTML = `
+      <div style="font-size:13px;font-weight:600;margin-bottom:3px">📄 志望理由书　—　${tsaEsc(studentName)}</div>
+      <div style="font-size:10px;color:var(--text-3);margin-bottom:12px">按志望校逐校展示学生填写的志望理由书；整体评语会同步显示给学生</div>
+      <div style="max-height:52vh;overflow-y:auto;margin-bottom:12px">${(typeof renderRiyuView === 'function') ? renderRiyuView(draft, _plans, tsaEsc) : ''}</div>
+      <div class="form-group">
+        <label class="form-label">整体评语（针对志望理由书）</label>
+        <textarea id="tdc_comment" rows="3" placeholder="针对志望理由书内容的反馈和建议…">${tsaEsc((draft && draft.teacher_comment) || '')}</textarea>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="saveTeacherDraftComment('${(draft && draft.id) || ''}','${tdcStudentId}')" style="flex:1;background:var(--ok);color:#fff;border:none;border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">保存评语</button>
+        <button onclick="document.getElementById('teacherDraftCommentModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:10px 14px;font-size:12px;cursor:pointer;font-family:inherit">关闭</button>
+      </div>`;
+    return;
+  }
   const refs = tDraftRefs(draft);
   const tab = (id, label, n) => `<button onclick="tdcTab='${id}';tdcRender('${tsaEsc(studentName)}')" style="font-size:12px;padding:6px 16px;border:none;border-bottom:2px solid ${tdcTab === id ? 'var(--accent)' : 'transparent'};background:none;cursor:pointer;font-family:inherit;color:${tdcTab === id ? 'var(--text)' : 'var(--text-3)'};font-weight:${tdcTab === id ? '600' : '400'}">${label}${n ? ` <span style="font-size:10px;color:var(--text-3)">${n}</span>` : ''}</button>`;
 
