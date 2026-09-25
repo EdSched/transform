@@ -72,7 +72,7 @@ async function initVip() {
   const saved = loadVipLogin();
   if (saved) {
     const ok = await vipLogin(saved.name, saved.code, true);
-    if (ok) return;
+    if (ok === true) return;
   }
   renderVipLogin();
 }
@@ -95,38 +95,23 @@ async function handleVipLoginClick() {
   const name = document.getElementById('vip_login_name').value.trim();
   const code = document.getElementById('vip_login_code').value.trim().toUpperCase();
   const errEl = document.getElementById('vip_login_error');
-  if (!name || !code) { errEl.textContent = '请填写姓名和查询码'; return; }
-  errEl.textContent = '查询中…';
-  const ok = await vipLogin(name, code, false);
-  if (!ok) errEl.textContent = '未找到匹配的学生信息，请确认姓名和查询码是否正确';
+  if (!name || !code) { errEl.style.color = 'var(--danger)'; errEl.textContent = '请填写姓名和查询码'; return; }
+  const res = await vipLogin(name, code, false, t => { errEl.style.color = 'var(--text-muted)'; errEl.textContent = '⏳ ' + t; });
+  if (res === true) return;
+  errEl.style.color = 'var(--danger)';
+  if (res === 'not_found') errEl.textContent = '未找到匹配的学生信息，请确认姓名和查询码是否正确';
+  else if (res === 'network') errEl.textContent = '网络连接不稳定，账号验证未完成，请稍后再点一次登录（多次失败请联系老师）';
 }
 
-async function vipLogin(name, code, silent) {
+// 返回 true=成功 | 'not_found' | 'network' | 'not_vip'
+async function vipLogin(name, code, silent, onStatus) {
   try {
-    // ① 姓名+码 → 换出 student_id（走锁死的对照表函数，不直接读 students 表）
-    const idRes = await sb(`/rest/v1/rpc/resolve_student_login`, 'POST', { p_name: name, p_code: code });
-    const sid = Array.isArray(idRes) ? idRes[0] : idRes;
-    if (!sid) return false;   // 姓名或码不对
-    // ② 用 id + 码 走 Auth 登录拿 token
-    try {
-      if (typeof supabase !== 'undefined' && supabase.createClient) {
-        const _c = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: 'sb-student', persistSession: true, autoRefreshToken: true } });
-        let { data: _sess } = await _c.auth.getSession();
-        if (!(_sess && _sess.session && _sess.session.user && _sess.session.user.email === `${sid}@student.local`)) {
-          await _c.auth.signInWithPassword({ email: `${sid}@student.local`, password: code });
-          _sess = (await _c.auth.getSession()).data;
-        }
-        if (typeof __setSbStorageKey === 'function') __setSbStorageKey('sb-student');
-        if (_sess && _sess.session && typeof __setSbToken === 'function') __setSbToken(_sess.session.access_token, _c);  // 传客户端→自动续期
-      }
-    } catch (e) {}
-    // ③ 用 token 读自己档案，再判断是否开通 VIP
-    const rows = await sb(`/rest/v1/students?id=eq.${encodeURIComponent(sid)}&select=*`).catch(() => []);
-    if (!rows || !rows.length) return false;
-    const s = rows[0];
+    const r = await studentLogin(name, code, onStatus);
+    if (!r.ok) return r.reason;
+    const s = r.student;
     if (!(s.is_vip_course === 'VIP' || s.is_vip_course === '大课+VIP')) {
       if (!silent) document.getElementById('vip_login_error').textContent = '该学生档案未开通VIP课程';
-      return false;
+      return 'not_vip';
     }
     vipStudent = s;
     saveVipLogin(name, code);
@@ -135,7 +120,7 @@ async function vipLogin(name, code, silent) {
     return true;
   } catch (e) {
     if (!silent) document.getElementById('vip_login_error').textContent = '查询失败：' + e.message;
-    return false;
+    return 'network';
   }
 }
 
