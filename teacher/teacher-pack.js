@@ -26,6 +26,8 @@ const PK_MAJOR_PARTS = [
 ];
 
 function pkEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+// 是否开通「宣传资料整合」（admin 老师管理 → 营业功能 勾选）；未开通时各工具不显示「➕ 加入宣传资料」
+function pkEnabled() { return !!pkPerm().promo_pack; }
 function pkPerm() { return (typeof teacherData !== 'undefined' && teacherData && teacherData.permissions) || {}; }
 function pkConsultantName() {
   const pub = String((teacherData && teacherData.notes) || '').trim();

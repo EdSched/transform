@@ -121,7 +121,7 @@ function prRenderShell() {
     <code id="pr_share_link" style="font-size:10px;color:var(--text-2);background:var(--bg);padding:2px 8px;border-radius:2px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${location.origin}${location.pathname.replace(/\/teacher\/.*$/,'/promo/')}?major=${prMajor}</code>
     <button onclick="navigator.clipboard.writeText(document.getElementById('pr_share_link').textContent).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制链接',2000)})" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit;white-space:nowrap">📋 复制链接</button>
   </div>
-  ${typeof pkAddMajorFromPromo === 'function' ? `<div style="display:flex;align-items:center;gap:8px;margin:-4px 0 12px;flex-wrap:wrap">
+  ${typeof pkEnabled === 'function' && pkEnabled() ? `<div style="display:flex;align-items:center;gap:8px;margin:-4px 0 12px;flex-wrap:wrap">
     <button onclick="pkAddMajorFromPromo()" style="font-size:11px;background:var(--surface);border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:4px 14px;cursor:pointer;font-family:inherit">➕ 将「${MAJORS[prMajor]||prMajor}」学科介绍加入宣传资料</button>
     <span style="font-size:10px;color:var(--text-3)">加入后可在「📦 宣传资料整合」与出愿学校、进度规划等一起生成一份完整 PDF</span>
   </div>` : ''}
