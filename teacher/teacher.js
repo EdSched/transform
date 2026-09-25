@@ -246,8 +246,8 @@ function buildTabs() {
   if (p.student_mgmt && Array.isArray(p.student_mgmt_items) && p.student_mgmt_items.length) tabs.push({ id: 'studentmgmt', label: '👥 学生管理' });
   if (p.progress_plan) tabs.push({ id: 'progressplan', label: '📅 进度规划' });
   if (p.promo) tabs.push({ id: 'promo', label: '📣 宣传相关' });
-  // 宣传资料整合：把出愿学校 / 学科介绍 / 进度规划等营业资料合成一份 PDF（有任一营业工具权限即显示）
-  if (p.promo || p.admission_query || p.progress_plan || p.lect_info || p.vip_sales) tabs.push({ id: 'promopack', label: '📦 宣传资料整合' });
+  // 宣传资料整合：把出愿学校 / 学科介绍 / 进度规划等营业资料合成一份 PDF（需 admin 在营业功能中单独勾选）
+  if (p.promo_pack) tabs.push({ id: 'promopack', label: '📦 宣传资料整合' });
   if (p.promo) tabs.push({ id: 'admissions', label: '🏆 合格实绩' });
   if (p.lect_info) tabs.push({ id: 'lectinfo', label: '👤 讲师信息' });
   // 我的课表：有排班权限或有实际排到课才显示
@@ -2153,7 +2153,7 @@ async function renderTeacherAdmissionDb(mc) {
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
     <div style="font-size:15px;font-weight:600;font-family:'Noto Serif SC',serif">出願数据库</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      ${typeof pkAdd === 'function' ? `<button class="btn btn-sm btn-outline" onclick="teacherAdbAddToPack()" style="border:1px solid var(--accent);color:var(--accent)">➕ 加入宣传资料</button>` : ''}
+      ${typeof pkEnabled === 'function' && pkEnabled() ? `<button class="btn btn-sm btn-outline" onclick="teacherAdbAddToPack()" style="border:1px solid var(--accent);color:var(--accent)">➕ 加入宣传资料</button>` : ''}
       <button class="btn btn-sm btn-outline" onclick="teacherAdbExportHtml()" style="border:1px solid var(--border)">↓ 导出 PDF表格</button>
     </div>
   </div>

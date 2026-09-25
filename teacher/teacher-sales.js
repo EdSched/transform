@@ -133,7 +133,7 @@ function tsInfoHtml(sel) {
 function tsCardsHtml(sel) {
   return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
     <span style="font-size:11px;font-weight:600">🎴 展示卡片（${sel.length}位 · 仅对外内容，可截图）</span>
-    ${typeof pkAdd === 'function' ? `<button onclick="tsAddCardsToPack()" style="margin-left:auto;font-size:10px;background:var(--surface);border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:3px 12px;cursor:pointer;font-family:inherit">➕ 加入宣传资料</button>` : ''}
+    ${typeof pkEnabled === 'function' && pkEnabled() ? `<button onclick="tsAddCardsToPack()" style="margin-left:auto;font-size:10px;background:var(--surface);border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:3px 12px;cursor:pointer;font-family:inherit">➕ 加入宣传资料</button>` : ''}
   </div>
   ${tsCardsGridHtml(sel, 'ts_cards')}`;
 }

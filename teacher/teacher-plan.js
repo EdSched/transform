@@ -60,7 +60,7 @@ function renderProgressPlanTool(mc) {
     </div>
     <button onclick="ppGenerate()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 20px;cursor:pointer;font-family:inherit">生成规划</button>
     <button id="pp_print_btn" onclick="ppOpenPrint()" style="display:none;font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:8px 16px;cursor:pointer;font-family:inherit;margin-left:8px">🖨 打印 / 保存 PDF</button>
-    ${typeof pkAdd === 'function' ? `<button id="pp_pack_btn" onclick="ppAddToPack()" style="display:none;font-size:12px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:8px 16px;cursor:pointer;font-family:inherit;margin-left:8px">➕ 加入宣传资料</button>` : ''}
+    ${typeof pkEnabled === 'function' && pkEnabled() ? `<button id="pp_pack_btn" onclick="ppAddToPack()" style="display:none;font-size:12px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:8px 16px;cursor:pointer;font-family:inherit;margin-left:8px">➕ 加入宣传资料</button>` : ''}
   </div>
   <div id="pp_out"></div>`;
 }
