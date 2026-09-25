@@ -149,6 +149,11 @@ function renderStudyMain() {
     { id:'homework', label:'📝 作业' },
     { id:'schedule', label:'🗓 课程表' },
   ];
+  // VIP 学生页：在「面谈记录」后加一个「面谈预约」入口（复用各专业已做好的预约链接，自动带入本人专业+姓名，无需再填姓名）
+  if (window.__VIP_PAGE__) {
+    const _ri = tabs.findIndex(t => t.id === 'records');
+    tabs.splice(_ri >= 0 ? _ri + 1 : tabs.length, 0, { id:'reserve', label:'📅 面谈预约' });
+  }
   // VIP 学生：额外两个 tab（预约 + 课程安排）
   if (window.__VIP_PAGE__ && (s.is_vip_course === 'VIP' || s.is_vip_course === '大课+VIP')) {
     tabs.push({ id:'vipbook', label:'⭐ VIP预约' });
@@ -192,6 +197,7 @@ function renderStudyTab() {
   else if (studyTab === 'plan') el.innerHTML = renderPlanTab();
   else if (studyTab === 'progress') el.innerHTML = renderProgressTab();
   else if (studyTab === 'records') el.innerHTML = renderRecordsTab();
+  else if (studyTab === 'reserve') el.innerHTML = renderReserveTab();
   else if (studyTab === 'homework') { el.innerHTML = renderHomeworkTab(); setTimeout(() => loadStudyHwSessions(0), 50); }
   else if (studyTab === 'schedule') { el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">课程表加载中…</div>'; loadStudySchedule(); }
   else if (studyTab === 'vipbook') el.innerHTML = (typeof renderVipBookingSection === 'function') ? renderVipBookingSection() : '<div class="no-slots">VIP预约模块未加载</div>';
@@ -1263,6 +1269,36 @@ function renderRecordsTab() {
       <pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0;color:var(--text-secondary)">${buildRecordText(b)}</pre>
     </div>`).join('')}
   </div>`;
+}
+
+// ── 面谈预约页：复用各专业已做好的预约页（student/?major=KEY），
+//    学生已登录，自动带入本人专业与姓名，页面内嵌无需再填写姓名 ──
+function studyMajorKey() {
+  const m = studyStudent && studyStudent.major;
+  // majorKeyFromText 兼容「本身是 key」「中文名」「别名」三种情况
+  if (typeof majorKeyFromText === 'function') {
+    const k = majorKeyFromText(m) || majorKeyFromText(studyMajor);
+    if (k) return k;
+  }
+  if (m && typeof MAJORS !== 'undefined' && MAJORS[m]) return m;  // 本身就是 key
+  return studyMajor || m || '';
+}
+
+function renderReserveTab() {
+  const key = studyMajorKey();
+  const label = (studyStudent && (MAJORS[studyStudent.major] || studyStudent.major)) || '';
+  if (!key) {
+    return `<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">
+      未能识别你的专业，暂时无法自动预约，请联系老师获取本专业预约链接。</div>`;
+  }
+  const url = `../student/?major=${encodeURIComponent(key)}&name=${encodeURIComponent((studyStudent && studyStudent.name) || '')}&embed=1`;
+  return `
+  <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;display:flex;align-items:center;flex-wrap:wrap;gap:8px">
+    <span>📅 预约面谈${label?` · ${label}`:''}（已自动匹配你的专业与姓名，直接选择时间提交即可）</span>
+    <a href="${url}" target="_blank" style="color:var(--accent);white-space:nowrap">↗ 在新窗口打开</a>
+  </div>
+  <iframe src="${url}" title="面谈预约" loading="lazy"
+    style="width:100%;min-height:82vh;border:1px solid var(--border-light);border-radius:4px;background:var(--surface)"></iframe>`;
 }
 
 // ── 作业页：左=资料/题目预览，右=作业列表与作答 ──
