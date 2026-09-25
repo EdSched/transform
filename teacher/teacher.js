@@ -856,7 +856,7 @@ function renderSlotManagement(mc) {
         <div id="ts_interview_fields" style="${onlyAttendance?'display:none':''}">
         <div class="form-group" style="margin-bottom:0"><label class="form-label">专业</label>
           <select id="ts_major">
-            ${majors.map(m => `<option value="${m}">${m === 'shakai_group' ? '社会人文' : MAJORS[m] || m}</option>`).join('')}
+            ${[...new Set(majors)].map(m => `<option value="${m}">${m === 'shakai_group' ? '社会人文' : MAJORS[m] || m}</option>`).join('')}
           </select>
         </div>
         <div class="form-group" style="margin-bottom:0;margin-top:8px"><label class="form-label">面谈地点（可选）</label>
