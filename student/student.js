@@ -124,69 +124,146 @@ let slotViewYear = new Date().getFullYear(), slotViewMonth = new Date().getMonth
 let cachedSlots = [], cachedBookings = [];
 let teacherDisplayNames = {};
 
-// 按 slot_id 分批拉取预约（每批100个，避免 URL 过长）
+// 按 slot_id 分批拉取预约（每批100个，避免 URL 过长）——只取名额统计需要的字段，不取姓名/需求
 async function fetchBookingsBySlots(slotIds) {
   let all = [];
   for (let i = 0; i < slotIds.length; i += 100) {
     const chunk = slotIds.slice(i, i + 100);
-    const batch = await sb(`/rest/v1/bookings?select=*&slot_id=in.(${chunk.map(id => `"${id}"`).join(',')})&order=slot_date.asc`).catch(() => []);
+    const batch = await sb(`/rest/v1/bookings?select=slot_id,status,type&slot_id=in.(${chunk.map(id => `"${id}"`).join(',')})&order=slot_date.asc`).catch(() => []);
     all = all.concat(batch);
   }
   return all;
+}
+
+// 页面模式：login=登录框 | new=新同学预约（手填姓名，不绑定学生）| member=已登录学生（内嵌在学习页）
+let bkMode = 'login';
+let bkStudent = null;   // member 模式下的学生档案 { id, name, major, ... }
+let bkIsEmbed = false;
+
+function bkEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function bkStudyUrl() { return `../student/study.html?major=${encodeURIComponent(major)}&tab=reserve`; }
+function bkMsg(title, text) {
+  document.getElementById('mainWrap').innerHTML = `<div class="no-major-banner"><div class="no-major-title">${title}</div><div class="no-major-text">${text}</div></div>`;
 }
 
 async function initMajor() {
   if (typeof loadMajorsFromDB === 'function') await loadMajorsFromDB();
   const p = new URLSearchParams(window.location.search);
   major = p.get('major');
-  // 从 VIP 学生页内嵌打开：带 name（自动填入并锁定姓名）与 embed=1（隐藏「我有VIP课程」返回入口，避免嵌套跳转）
-  const embedName = p.get('name');
-  const isEmbed = p.get('embed') === '1';
-  if (major && (MAJORS[major] || major === 'shakai_group')) {
-    document.getElementById('headerContent').innerHTML = `
-      <div class="header-major">面谈预约</div>
-      <div class="header-sub">唯新教育</div>
-      <div class="header-locked">📌 ${major === 'shakai_group' ? '社会人文' : MAJORS[major]}</div>
-      ${isEmbed ? '' : `<a href="../vip/" style="display:inline-block;margin-top:8px;font-size:11px;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:4px 12px;text-decoration:none">⭐ 我有VIP课程 →</a>`}`;
-    try {
-      teacherDisplayNames = {};
-      // 每个页面只显示「发布时选择了该专业」的时间槽：
-      // 社会人文页只显示发布为社会人文的槽；各专业页只显示本专业的槽，互不混排
-      cachedSlots = await sb(`/rest/v1/slots?select=*&major=eq.${major}&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`);
-      // 预约记录的 major 会被覆盖为学生真实专业，按专业过滤会漏算名额，
-      // 因此按本页时间槽的 slot_id 拉取预约，保证名额统计与公开列表准确
-      cachedBookings = await fetchBookingsBySlots(cachedSlots.map(s => s.id));
-      // VIP 时间槽走独立的 /vip/ 页面预约，不在普通面谈预约里出现
-      cachedSlots = cachedSlots.filter(s => !(Array.isArray(s.type) ? s.type : [s.type]).includes('vip'));
-      cachedBookings = cachedBookings.filter(b => b.type !== 'vip');
-      const teacherNames = [...new Set(cachedSlots.map(s => s.teacher_name).filter(Boolean))];
-      if (teacherNames.length) {
-        const teachers = await sb(`/rest/v1/teachers?name=in.(${teacherNames.map(n=>`"${n}"`).join(',')})&select=name,display_name`).catch(() => []);
-        teachers.forEach(t => { if (t.display_name) teacherDisplayNames[t.name] = t.display_name; });
-      }
-      buildForm();
-      // 已登录学生从 VIP 页内嵌预约：自动填入姓名并锁定，无需再手填（buildForm 内已执行 applyStoredInfo，这里覆盖以本人档案为准）
-      if (embedName) {
-        const nameEl = document.getElementById('name');
-        if (nameEl) {
-          nameEl.value = embedName;
-          nameEl.readOnly = true;
-          nameEl.style.background = 'var(--bg)';
-          nameEl.style.cursor = 'not-allowed';
-          const hint = nameEl.parentElement && nameEl.parentElement.querySelector('div');
-          if (hint) hint.textContent = '✓ 已自动填入你的姓名（无需修改）';
-        }
-      }
-      loadSchoolPlanBanner(); // 检查是否有共享的学校列表
-    } catch(e) {
-      document.getElementById('mainWrap').innerHTML = `<div class="no-major-banner"><div class="no-major-title">加载失败</div><div class="no-major-text">${e.message}</div></div>`;
+  // embed=1：内嵌在学习页「面谈预约」标签里，身份从本机登录信息读取（同源 localStorage）
+  bkIsEmbed = p.get('embed') === '1';
+  if (!(major && (MAJORS[major] || major === 'shakai_group'))) {
+    bkMsg('请通过专业链接访问', '请联系老师获取您所在专业的预约链接');
+    return;
+  }
+  document.getElementById('headerContent').innerHTML = `
+    <div class="header-major">面谈预约</div>
+    <div class="header-sub">唯新教育</div>
+    <div class="header-locked">📌 ${major === 'shakai_group' ? '社会人文' : MAJORS[major]}</div>
+    ${bkIsEmbed ? '' : `<a href="../vip/" style="display:inline-block;margin-top:8px;font-size:11px;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:4px 12px;text-decoration:none">⭐ 我有VIP课程 →</a>`}`;
+
+  if (bkIsEmbed) {
+    const info = studentLoginLoad();
+    if (!info) { bkMsg('请先登录', `<a href="${bkStudyUrl()}" target="_top" style="color:var(--accent)">点这里用姓名＋查询码登录</a>`); return; }
+    const say = t => { document.getElementById('mainWrap').innerHTML = `<div class="loading">${t}</div>`; };
+    const r = await studentLogin(info.name, info.code, say);
+    if (!r.ok) {
+      if (r.reason === 'not_found') bkMsg('登录信息已失效', `<a href="${bkStudyUrl()}" target="_top" style="color:var(--accent)">请重新登录</a>`);
+      else bkMsg('网络连接不稳定', '身份验证未完成，请稍后刷新页面重试');
+      return;
     }
-  } else {
-    document.getElementById('mainWrap').innerHTML = `
-      <div class="no-major-banner">
-        <div class="no-major-title">请通过专业链接访问</div>
-        <div class="no-major-text">请联系老师获取您所在专业的预约链接</div>
-      </div>`;
+    bkStudent = r.student;
+    bkMode = 'member';
+    await loadBookingPage();
+    return;
+  }
+
+  // 本机已登录过 → 直接进入学习页的「面谈预约」标签
+  if (studentLoginLoad()) { location.replace(bkStudyUrl()); return; }
+  renderBookingLogin();
+}
+
+function renderBookingLogin() {
+  bkMode = 'login';
+  const inp = 'width:100%;font-size:13px;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg)';
+  document.getElementById('mainWrap').innerHTML = `
+  <div class="card" style="max-width:380px;margin:20px auto 12px">
+    <div class="card-title">登录后预约面谈</div>
+    <div class="form-group"><label class="form-label">姓名</label><input id="bl_name" placeholder="真实姓名" style="${inp}"></div>
+    <div class="form-group"><label class="form-label">查询码</label><input id="bl_code" placeholder="查询码" style="${inp};text-transform:uppercase" onkeydown="if(event.key==='Enter')bookingLoginSubmit()"></div>
+    <div id="bl_error" style="font-size:11px;color:var(--danger);min-height:16px;margin-bottom:10px"></div>
+    <button id="bl_btn" class="btn btn-primary" style="width:100%" onclick="bookingLoginSubmit()">登录 →</button>
+    <div style="font-size:10px;color:var(--text-muted);margin-top:8px;text-align:center">查询码由老师/管理员提供；登录一次后，本机以后打开预约链接会自动进入</div>
+  </div>
+  <div onclick="enterNewStudentMode()" style="max-width:380px;margin:0 auto;cursor:pointer;background:var(--surface);border:1px dashed var(--accent);border-radius:4px;padding:14px 16px">
+    <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:4px">新同学第一次面谈？</div>
+    <div style="font-size:11px;color:var(--text-secondary);line-height:1.7">直接在这里预约，面谈时向老师领取查询码，以后就能登录查看学习记录。</div>
+    <div style="font-size:11px;color:var(--accent);margin-top:6px">进入新同学预约 →</div>
+  </div>`;
+}
+
+async function bookingLoginSubmit() {
+  const name = document.getElementById('bl_name').value.trim();
+  const code = document.getElementById('bl_code').value.trim().toUpperCase();
+  const errEl = document.getElementById('bl_error');
+  const btn = document.getElementById('bl_btn');
+  if (!name || !code) { errEl.style.color = 'var(--danger)'; errEl.textContent = '请填写姓名和查询码'; return; }
+  if (btn) { btn.disabled = true; btn.style.opacity = '.6'; }
+  const r = await studentLogin(name, code, t => { errEl.style.color = 'var(--text-muted)'; errEl.textContent = t; });
+  if (r.ok) {
+    studentLoginSave({ id: r.student.id, name, code, major });   // 与学习页同一个 key、同一格式
+    errEl.textContent = '登录成功，正在进入…';
+    location.href = bkStudyUrl();
+    return;
+  }
+  if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+  errEl.style.color = 'var(--danger)';
+  errEl.textContent = r.reason === 'not_found'
+    ? '未找到匹配记录，请确认姓名和查询码是否正确'
+    : '网络连接不稳定，账号验证未完成，请稍后再点一次「登录」';
+}
+
+async function enterNewStudentMode() {
+  bkMode = 'new';
+  bkStudent = null;
+  document.getElementById('mainWrap').innerHTML = '<div class="loading">加载中…</div>';
+  await loadBookingPage();
+  window.scrollTo({ top: 0 });
+}
+
+// 拉取本专业时间槽与名额，并显示预约表单
+async function loadBookingPage() {
+  try {
+    teacherDisplayNames = {};
+    // 每个页面只显示「发布时选择了该专业」的时间槽：
+    // 社会人文页只显示发布为社会人文的槽；各专业页只显示本专业的槽，互不混排
+    cachedSlots = await sb(`/rest/v1/slots?select=*&major=eq.${major}&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`);
+    // 按本页时间槽的 slot_id 拉取预约（只用于名额统计）
+    cachedBookings = await fetchBookingsBySlots(cachedSlots.map(s => s.id));
+    // VIP 时间槽走独立的 /vip/ 页面预约，不在普通面谈预约里出现
+    cachedSlots = cachedSlots.filter(s => !(Array.isArray(s.type) ? s.type : [s.type]).includes('vip'));
+    cachedBookings = cachedBookings.filter(b => b.type !== 'vip');
+    const teacherNames = [...new Set(cachedSlots.map(s => s.teacher_name).filter(Boolean))];
+    if (teacherNames.length) {
+      const teachers = await sb(`/rest/v1/teachers?name=in.(${teacherNames.map(n=>`"${n}"`).join(',')})&select=name,display_name`).catch(() => []);
+      teachers.forEach(t => { if (t.display_name) teacherDisplayNames[t.name] = t.display_name; });
+    }
+    buildForm();
+    // 已登录学生：姓名以本人档案为准并锁定（buildForm 内已执行 applyStoredInfo，这里覆盖）
+    if (bkMode === 'member' && bkStudent) {
+      const nameEl = document.getElementById('name');
+      if (nameEl) {
+        nameEl.value = bkStudent.name || '';
+        nameEl.readOnly = true;
+        nameEl.style.background = 'var(--bg)';
+        nameEl.style.cursor = 'not-allowed';
+        const hint = nameEl.parentElement && nameEl.parentElement.querySelector('div');
+        if (hint) hint.textContent = '已按你的登录身份自动填入姓名';
+      }
+    }
+    loadSchoolPlanBanner(); // 检查是否有共享的学校列表
+  } catch(e) {
+    bkMsg('加载失败', bkEsc(e.message));
   }
 }
 
@@ -201,8 +278,15 @@ function buildForm() {
   document.getElementById('mainWrap').innerHTML = `
   <div class="success-banner" id="successBanner">
     <div class="success-banner-title">✓ 预约申请已提交</div>
-    <div class="success-banner-text">请等待老师确认，可在下方查看预约状态。</div>
+    <div class="success-banner-text">${bkMode === 'new'
+      ? '请等待老师确认。面谈时请向老师领取查询码，以后用姓名＋查询码登录，就能查看预约状态和学习记录。'
+      : '请等待老师确认，可在「面谈记录」标签查看。'}</div>
   </div>
+  ${bkMode === 'new' ? `<div style="background:var(--surface);border:1px solid var(--accent);border-radius:4px;padding:12px 14px;margin-bottom:12px">
+    <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:4px">新同学预约</div>
+    <div style="font-size:11px;color:var(--text-secondary);line-height:1.7">请填写中文真实姓名。面谈时向老师领取查询码，以后就能登录查看学习记录。</div>
+    <a onclick="renderBookingLogin()" style="display:inline-block;margin-top:6px;font-size:11px;color:var(--accent);cursor:pointer;text-decoration:underline">已有查询码？请登录</a>
+  </div>` : ''}
   <!-- 统一提醒条 -->
   <div id="reminderStrip" style="display:none;background:#eef3fb;border:1px solid #2c4a7c;border-radius:3px;padding:12px 14px;margin-bottom:12px">
     <div id="reminderItems" style="font-size:11px;color:#2c4a7c;line-height:2;margin-bottom:10px"></div>
@@ -384,28 +468,13 @@ function buildForm() {
     </div>
   </div>
   <button class="btn btn-primary" onclick="submitBooking()">提交预约申请 →</button>
-  <div class="section-sep"><div class="section-sep-line"></div><div class="section-sep-label">本月预约情况</div><div class="section-sep-line"></div></div>
-  <div class="refresh-row">
-    <div class="refresh-meta" id="refreshMeta"></div>
-    <button class="btn btn-outline" style="font-size:11px;padding:5px 10px" onclick="reloadPublicList()">↺ 刷新</button>
-  </div>
-  <div class="booking-list" id="publicBookingList"><div class="loading">加载中…</div></div>
-  <div style="text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid var(--border-light)">
-    <a href="../student/study.html?major=${major}" style="font-size:10px;color:var(--text-muted);text-decoration:underline;cursor:pointer">查询学习记录 →</a>
-    <div id="retrievalPanel" style="display:none;margin-top:10px;text-align:left;background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:12px">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
-        <input type="text" id="rt_name" placeholder="姓名">
-        <input type="text" id="rt_code" placeholder="查询码" style="text-transform:uppercase">
-      </div>
-      <button class="btn btn-outline btn-full" onclick="lookupRetrieval()">查询</button>
-      <div id="retrievalResult" style="margin-top:10px"></div>
-    </div>
-  </div>
+  ${bkMode === 'new' ? `<div style="text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid var(--border-light)">
+    <a onclick="renderBookingLogin()" style="font-size:11px;color:var(--text-muted);text-decoration:underline;cursor:pointer">已有查询码？请登录</a>
+  </div>` : ''}
   </div>`;
 
   updateTypeOptions();
   renderSlots();
-  renderPublicList();
   // restore saved info
   applyStoredInfo(loadStudentInfo());
   // 检查出愿共享banner（DOM重建后重新执行）
@@ -628,7 +697,9 @@ function toggleDateSlots(date) {
 }
 
 async function submitBooking() {
-  const name = document.getElementById('name').value.trim();
+  const isMember = bkMode === 'member' && bkStudent;
+  // 已登录学生：姓名以档案为准；新同学：手填
+  const name = isMember ? (bkStudent.name || '') : document.getElementById('name').value.trim();
   const examPeriod = document.querySelector('input[name=examPeriod]:checked')?.value;
   const planStatus = getPlanStatus(), interviewStatus = getInterviewStatus();
   const duration = document.querySelector('input[name=duration]:checked')?.value;
@@ -639,10 +710,14 @@ async function submitBooking() {
   if (!planStatus) { alert('请选择研究计划书状态'); return; }
   if (!selectedSlotId) { alert('请选择预约时间'); return; }
 
-  // 检查是否有未完成的预约（按姓名实时查询，跨专业页面均可拦截；已完成 completed 的不拦截）
+  // 检查是否有未完成的预约（已完成 completed 的不拦截）
+  // 已登录：按学生 id 查（旧记录还没补 student_id，同时按档案姓名兜底）；新同学：按手填姓名查
   let activeBooking = null;
   try {
-    const act = await sb(`/rest/v1/bookings?name=eq.${encodeURIComponent(name)}&status=in.("pending","confirmed")&select=slot_date,slot_time_range,status&limit=1`);
+    const who = isMember
+      ? `or=(student_id.eq.${encodeURIComponent(bkStudent.id)},name.eq.${encodeURIComponent(name)})`
+      : `name=eq.${encodeURIComponent(name)}`;
+    const act = await sb(`/rest/v1/bookings?${who}&status=in.("pending","confirmed")&select=slot_date,slot_time_range,status&limit=1`);
     activeBooking = (act && act.length) ? act[0] : null;
   } catch (e) {
     activeBooking = cachedBookings.find(b =>
@@ -666,14 +741,8 @@ async function submitBooking() {
   const booked = cachedBookings.filter(b => b.slot_id === selectedSlotId && b.status !== 'cancelled').length;
   if (booked >= cap) { alert('该时间段名额已满，请选择其他时间'); renderSlots(); return; }
 
-  // 若该学生在学生档案中已有真实专业记录，优先使用真实专业（避免社会人文分组链接覆盖真实专业）
-  let bookingMajor = slot.major || major;
-  try {
-    const existingStudent = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(name)}&select=major&limit=1`);
-    if (existingStudent && existingStudent.length && existingStudent[0].major) {
-      bookingMajor = existingStudent[0].major;
-    }
-  } catch (e) { /* 查询失败时退回原逻辑，不阻断预约流程 */ }
+  // 已登录学生用档案里的真实专业（避免社会人文分组链接覆盖真实专业）；新同学用时间槽/页面的专业
+  const bookingMajor = (isMember && bkStudent.major) || slot.major || major;
 
   // 若学生选择了上传文件，先上传（文件名用专业+时间戳拼接，避免中文文件名导致的存储路径问题）
   let studentFileUrl = null;
@@ -705,15 +774,16 @@ async function submitBooking() {
     student_file_url: studentFileUrl,
     teacher_file_url: null, retrieval_code: null
   };
+  // 已登录学生写入 student_id；新同学不带该字段（留空，老师确认时再认领/建档）
+  if (isMember) booking.student_id = bkStudent.id;
   try {
     const res = await sb('/rest/v1/bookings', 'POST', booking);
     cachedBookings.push(Array.isArray(res) ? res[0] : booking);
 
-    // 同步进度时间线
+    // 同步进度时间线（仅已登录学生：用当前学生 id 写入；新同学没有档案，跳过）
     try {
-      const stuMatch = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(name)}&select=id,major`).catch(()=>[]);
-      if (stuMatch.length) {
-        const stu = stuMatch[0];
+      if (isMember) {
+        const stu = bkStudent;
         const planMap = {'尚未开始':'未开始','初步构思阶段':'收集资料中','草稿撰写中':'撰写中','已完成初稿':'修改中','已定稿':'已完成'};
         const applyMap = {'尚未确认志望校':'择校确认中','正在确认志望校':'择校确认中','已确认志望校':'联系教授中','正在准备出愿材料':'材料准备中','已出愿':'已出愿'};
         const jaText = buildJapaneseText();
@@ -739,58 +809,8 @@ async function submitBooking() {
     saveStudentInfo();
     document.getElementById('successBanner').classList.add('show');
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    renderSlots(); renderPublicList();
+    renderSlots();
   } catch(e) { alert('提交失败：' + e.message); }
-}
-
-function urgencySpan(u) {
-  return u === 'high' ? '<span class="urgency-high">紧急</span>' : u === 'mid' ? '<span class="urgency-mid">适中</span>' : '<span class="urgency-low">一般</span>';
-}
-
-async function reloadPublicList() {
-  try {
-    cachedBookings = await fetchBookingsBySlots(cachedSlots.map(s => s.id));
-    renderSlots(); renderPublicList();
-  } catch(e) { console.error(e); }
-}
-
-function renderPublicList() {
-  const now = new Date();
-  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const bookings = cachedBookings.filter(b => b.slot_date && b.slot_date.startsWith(ym));
-  bookings.sort((a, b) => (a.slot_date + a.slot_time_range).localeCompare(b.slot_date + b.slot_time_range));
-  const meta = document.getElementById('refreshMeta');
-  if (meta) meta.textContent = `共 ${bookings.length} 条 · ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')} 更新`;
-  const list = document.getElementById('publicBookingList');
-  if (!list) return;
-  if (!bookings.length) { list.innerHTML = '<div class="no-slots">暂无预约记录</div>'; return; }
-  list.innerHTML = bookings.map(b => {
-    const confirmedTime = b.status === 'confirmed' && b.actual_time
-      ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border-light);font-size:11px;color:var(--success)">✓ 确认面谈时间：${b.actual_time.replace('T', ' ')}</div>`
-      : b.status === 'confirmed'
-      ? '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border-light);font-size:11px;color:var(--text-muted)">⏳ 老师将尽快确认具体时间</div>'
-      : '';
-    return `<div class="booking-row">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-        <div>
-          <span class="booking-row-name">${b.name}</span>
-          <div class="booking-row-meta">${b.slot_date.slice(5).replace('-', '/')} ${b.slot_time_range || ''} · ${b.duration}min · ${urgencySpan(b.urgency)}</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:5px">
-          <span class="tag ${typeTag(b.type)}">${typeLabel(b.type)}</span>
-          <span class="status-badge status-${b.status}">${b.status === 'pending' ? '待确认' : b.status === 'completed' ? '已完成' : b.status === 'confirmed' ? '已确认' : '已取消'}</span>
-        </div>
-      </div>
-      ${b.needs ? `<div class="booking-row-needs">💬 ${b.needs}</div>` : ''}
-      ${confirmedTime}
-    </div>`;
-  }).join('');
-}
-
-// ── 查询面谈记录 ──
-function scrollToRetrieval() {
-  const panel = document.getElementById('retrievalPanel');
-  if (panel) { panel.style.display = 'block'; panel.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 }
 
 async function loadSchoolPlanBanner() {
@@ -852,346 +872,6 @@ async function loadSchoolPlanBanner() {
       items.innerHTML = reminders.map(r => `· ${r}`).join('<br>');
     }
   } catch(e) { /* 静默失败 */ }
-}
-
-function toggleRetrievalPanel() {
-  const p = document.getElementById('retrievalPanel');
-  if (p) p.style.display = p.style.display === 'none' ? 'block' : 'none';
-}
-
-async function openSchoolPlanEditor(studentId, studentName, major) {
-  const result = document.getElementById('retrievalResult');
-  const sharedLists = result._sharedLists || [];
-  const existing = await sb(`/rest/v1/student_school_plans?student_id=eq.${studentId}&select=*&order=level.asc`).catch(()=>[]);
-
-  // 拉取TA共享的学校详情
-  let sharedSchools = [];
-  if (sharedLists.length) {
-    const allIds = sharedLists.flatMap(sl => sl.school_ids || []);
-    if (allIds.length) {
-      sharedSchools = await sb(`/rest/v1/admission_schools?id=in.(${allIds.map(id=>`"${id}"`).join(',')})&select=*`).catch(()=>[]);
-    }
-  }
-
-  const modal = document.createElement('div');
-  modal.id = 'schoolPlanModal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
-
-  const levelLabel = { 1:'🔴 冲刺（挑战）', 2:'🟡 匹配（目标）', 3:'🟢 保底' };
-
-  const schoolRows = existing.map((s,i) => `
-    <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px" id="school_row_${i}">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        <select onchange="this.closest('[id]').dataset.level=this.value" style="font-size:11px;padding:3px 6px;font-family:inherit">
-          ${[1,2,3].map(lv=>`<option value="${lv}" ${s.level===lv?'selected':''}>${levelLabel[lv]}</option>`).join('')}
-        </select>
-        <button onclick="this.closest('[id]').remove()" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;color:var(--danger)">删除</button>
-      </div>
-      <input placeholder="学校名 *" value="${s.school_name||''}" style="font-size:11px;width:100%;margin-bottom:6px" data-field="school_name">
-      <input placeholder="研究科" value="${s.faculty||''}" style="font-size:11px;width:100%;margin-bottom:6px" data-field="faculty">
-      <input placeholder="専攻/コース" value="${s.department||''}" style="font-size:11px;width:100%;margin-bottom:6px" data-field="department">
-      <input placeholder="志望教授名" value="${s.professor||''}" style="font-size:11px;width:100%;margin-bottom:6px" data-field="professor">
-      <input placeholder="教授研究内容URL或说明" value="${s.professor_url||''}" style="font-size:11px;width:100%;margin-bottom:6px" data-field="professor_url">
-      <input placeholder="出愿期间（当年实际时间）" value="${s.application_period||''}" style="font-size:11px;width:100%;margin-bottom:6px" data-field="application_period">
-      <input placeholder="备注" value="${s.notes||''}" style="font-size:11px;width:100%" data-field="notes">
-      <input type="hidden" value="${s.id||''}" data-field="id">
-    </div>
-  `).join('');
-
-  modal.innerHTML = `
-    <div style="background:var(--surface,#fff);border-radius:6px;padding:20px;max-width:480px;width:100%;margin:auto">
-      <div style="font-size:14px;font-weight:600;margin-bottom:6px">🏫 志望校列表 · ${studentName}</div>
-      <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">每个等级建议2所，共最多6所。教授建议每校找2位。</div>
-      ${sharedSchools.length ? `
-      <div style="margin-bottom:14px">
-        <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">老师共享的学校（点选添加）</div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px">
-          ${sharedSchools.map(s=>`<button onclick="addSharedSchool('${s.id}','${s.university}','${(s.faculty||'').replace(/'/g,"\'")}','${(s.department||'').replace(/'/g,"\'")}','${s.english_required||''}','${s.japanese_required||''}','${s.application_period||''}')" style="font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:3px 8px;cursor:pointer;font-family:inherit">${s.university} ${s.department||''}</button>`).join('')}
-        </div>
-      </div>` : ''}
-      <div id="schoolRowsContainer">${schoolRows}</div>
-      <button onclick="addSchoolRow()" style="width:100%;background:none;border:1px dashed var(--border);border-radius:3px;padding:8px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text-3);margin-bottom:14px">＋ 手动添加学校</button>
-      <div style="display:flex;gap:8px">
-        <button onclick="saveSchoolPlans('${studentId}','${studentName}','${major}')" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">保存</button>
-        <button onclick="document.getElementById('schoolPlanModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:10px 14px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
-      </div>
-    </div>`;
-  document.body.appendChild(modal);
-}
-
-function addSchoolRow(schoolName='', faculty='', department='', engReq='', jpReq='', appPeriod='') {
-  const container = document.getElementById('schoolRowsContainer');
-  const count = container.children.length;
-  if (count >= 6) { alert('最多6所学校，如需更多请在备注中说明理由'); return; }
-  const i = Date.now();
-  const levelLabel = { 1:'🔴 冲刺（挑战）', 2:'🟡 匹配（目标）', 3:'🟢 保底' };
-  const div = document.createElement('div');
-  div.style.cssText = 'background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px';
-  div.id = `school_row_${i}`;
-  div.innerHTML = `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-      <select style="font-size:11px;padding:3px 6px;font-family:inherit">
-        ${[1,2,3].map(lv=>`<option value="${lv}">${levelLabel[lv]}</option>`).join('')}
-      </select>
-      <button onclick="this.closest('[id]').remove()" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;color:var(--danger)">删除</button>
-    </div>
-    <input placeholder="学校名 *" value="${schoolName}" style="font-size:11px;width:100%;margin-bottom:6px" data-field="school_name">
-    <input placeholder="研究科" value="${faculty}" style="font-size:11px;width:100%;margin-bottom:6px" data-field="faculty">
-    <input placeholder="専攻/コース" value="${department}" style="font-size:11px;width:100%;margin-bottom:6px" data-field="department">
-    <input placeholder="志望教授名" value="" style="font-size:11px;width:100%;margin-bottom:6px" data-field="professor">
-    <input placeholder="教授研究内容URL或说明" value="" style="font-size:11px;width:100%;margin-bottom:6px" data-field="professor_url">
-    <input placeholder="出愿期间" value="${appPeriod}" style="font-size:11px;width:100%;margin-bottom:6px" data-field="application_period">
-    <input placeholder="备注" value="" style="font-size:11px;width:100%" data-field="notes">
-    <input type="hidden" value="" data-field="id">`;
-  container.appendChild(div);
-}
-
-function addSharedSchool(schoolId, name, faculty, department, engReq, jpReq, appPeriod) {
-  const container = document.getElementById('schoolRowsContainer');
-  if (container.children.length >= 6) { alert('最多6所，如需更多请手动添加并在备注说明理由'); return; }
-  addSchoolRow(name, faculty, department, engReq, jpReq, appPeriod);
-}
-
-async function saveSchoolPlans(studentId, studentName, major) {
-  const container = document.getElementById('schoolRowsContainer');
-  const rows = [...container.children];
-  const plans = rows.map(row => {
-    const get = f => row.querySelector(`[data-field="${f}"]`)?.value?.trim() || '';
-    const level = parseInt(row.querySelector('select')?.value || '2');
-    return { id: get('id'), school_name: get('school_name'), faculty: get('faculty'), department: get('department'), professor: get('professor'), professor_url: get('professor_url'), application_period: get('application_period'), notes: get('notes'), level };
-  }).filter(p => p.school_name);
-
-  if (!plans.length) { alert('请至少填写一所学校'); return; }
-
-  try {
-    // 先删除该学生所有旧记录，再全量插入
-    await sb(`/rest/v1/student_school_plans?student_id=eq.${studentId}`, 'DELETE');
-    const toInsert = plans.map(p => ({
-      id: p.id || `ssp-${Date.now()}-${Math.random().toString(36).slice(2,4)}`,
-      student_id: studentId, student_name: studentName, major,
-      school_name: p.school_name, faculty: p.faculty, department: p.department,
-      professor: p.professor, professor_url: p.professor_url,
-      application_period: p.application_period, notes: p.notes,
-      level: p.level, status: 'preparing',
-    }));
-    await sb('/rest/v1/student_school_plans', 'POST', toInsert);
-    document.getElementById('schoolPlanModal').remove();
-    lookupRetrieval();
-  } catch(e) { alert('保存失败：' + e.message); }
-}
-
-// ── 计划书进度编辑器 ──
-async function openPlanDraftEditor(studentId, studentName, major) {
-  const existing = await sb(`/rest/v1/student_plan_drafts?student_id=eq.${studentId}&select=*&order=created_at.desc&limit=1`).catch(()=>[]);
-  const d = existing[0] || {};
-  const modal = document.createElement('div');
-  modal.id = 'planDraftModal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
-  modal.innerHTML = `
-    <div style="background:var(--surface,#fff);border-radius:6px;padding:20px;max-width:480px;width:100%;margin:auto">
-      <div style="font-size:14px;font-weight:600;margin-bottom:14px">📄 计划书进度 · ${studentName}</div>
-      <div class="form-group"><label style="font-size:11px;color:var(--text-3);display:block;margin-bottom:4px">问题意识</label>
-        <textarea id="pd_question" rows="3" placeholder="你的研究问题是什么？">${d.research_question||''}</textarea></div>
-      <div class="form-group"><label style="font-size:11px;color:var(--text-3);display:block;margin-bottom:4px">先行研究整理</label>
-        <textarea id="pd_prior" rows="3" placeholder="已读过哪些相关文献？">${d.prior_research||''}</textarea></div>
-      <div class="form-group"><label style="font-size:11px;color:var(--text-3);display:block;margin-bottom:4px">先行研究链接（可选）</label>
-        <input id="pd_prior_url" value="${d.prior_research_url||''}" placeholder="相关文献/参考资料链接"></div>
-      <div class="form-group"><label style="font-size:11px;color:var(--text-3);display:block;margin-bottom:4px">研究方法</label>
-        <textarea id="pd_method" rows="2" placeholder="打算用什么研究方法？">${d.methodology||''}</textarea></div>
-      <div class="form-group"><label style="font-size:11px;color:var(--text-3);display:block;margin-bottom:4px">草稿文件上传（可选）</label>
-        <input type="file" id="pd_file" accept=".doc,.docx,.pdf,.txt"></div>
-      ${d.draft_file_url?`<div style="margin-bottom:10px"><a href="${d.draft_file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 当前草稿文件</a></div>`:''}
-      ${d.teacher_comment?`<div style="background:var(--ok-bg);border-radius:3px;padding:8px;font-size:11px;color:var(--ok);margin-bottom:10px">💬 老师批注：${d.teacher_comment}</div>`:''}
-      <div style="display:flex;gap:8px">
-        <button onclick="savePlanDraft('${studentId}','${studentName}','${major}','${d.id||''}')" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">保存</button>
-        <button onclick="document.getElementById('planDraftModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:10px 14px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
-      </div>
-    </div>`;
-  document.body.appendChild(modal);
-}
-
-async function savePlanDraft(studentId, studentName, major, existingId) {
-  const question = document.getElementById('pd_question').value.trim();
-  const prior = document.getElementById('pd_prior').value.trim();
-  const priorUrl = document.getElementById('pd_prior_url').value.trim();
-  const method = document.getElementById('pd_method').value.trim();
-  if (!question && !prior && !method) { alert('请至少填写一项内容'); return; }
-
-  let draftFileUrl = '';
-  const fileEl = document.getElementById('pd_file');
-  if (fileEl?.files[0]) {
-    const f = fileEl.files[0];
-    const ext = f.name.split('.').pop().toLowerCase();
-    const path = `${major||'plan'}/${Date.now()}_draft.${ext}`;
-    draftFileUrl = await sbUpload('student-files', path, f).catch(e => { alert('文件上传失败：' + e.message); return ''; });
-    if (!draftFileUrl) return;
-  }
-
-  const data = {
-    student_id: studentId, student_name: studentName, major,
-    research_question: question, prior_research: prior,
-    prior_research_url: priorUrl, methodology: method,
-    draft_file_url: draftFileUrl || undefined,
-    status: 'drafting', updated_at: new Date().toISOString(),
-  };
-
-  try {
-    if (existingId) {
-      await sb(`/rest/v1/student_plan_drafts?id=eq.${existingId}`, 'PATCH', data);
-    } else {
-      data.id = `spd-${Date.now()}-${Math.random().toString(36).slice(2,4)}`;
-      await sb('/rest/v1/student_plan_drafts', 'POST', data);
-    }
-    document.getElementById('planDraftModal').remove();
-    lookupRetrieval();
-  } catch(e) { alert('保存失败：' + e.message); }
-}
-
-
-function toggleRetrievalPanel() {
-  const p = document.getElementById('retrievalPanel');
-  if (p) p.style.display = p.style.display === 'none' ? 'block' : 'none';
-}
-async function lookupRetrieval() {
-  const name = document.getElementById('rt_name').value.trim();
-  const code = document.getElementById('rt_code').value.trim().toUpperCase();
-  const result = document.getElementById('retrievalResult');
-  if (!name || !code) { result.innerHTML = '<div style="font-size:11px;color:var(--danger)">请输入姓名和查询码</div>'; return; }
-  result.innerHTML = '<div class="loading">查询中…</div>';
-  try {
-    const students = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(name)}&student_code=eq.${encodeURIComponent(code)}&select=*`);
-    if (!students.length) {
-      result.innerHTML = '<div style="font-size:11px;color:var(--danger)">未找到匹配记录，请确认姓名和查询码是否正确</div>';
-      return;
-    }
-    const student = students[0];
-
-    const [bookings, sessionRecs, timeline, schoolPlans, planDrafts, sharedLists] = await Promise.all([
-      sb(`/rest/v1/bookings?name=eq.${encodeURIComponent(name)}&status=in.("confirmed","completed")&select=*&order=slot_date.desc`).catch(()=>[]),
-      sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(name)}&select=*&order=session_date.desc`).catch(()=>[]),
-      sb(`/rest/v1/student_progress_timeline?student_id=eq.${student.id}&select=*&order=created_at.desc&limit=5`).catch(()=>[]),
-      sb(`/rest/v1/student_school_plans?student_id=eq.${student.id}&select=*&order=level.asc`).catch(()=>[]),
-      sb(`/rest/v1/student_plan_drafts?student_id=eq.${student.id}&select=*&order=created_at.desc&limit=1`).catch(()=>[]),
-      sb(`/rest/v1/teacher_school_shares?major=eq.${major}&select=*&order=created_at.desc&limit=3`).catch(()=>[]),
-    ]);
-
-    const validBookings = bookings.filter(b => b.daily_record && Object.values(b.daily_record).some(v=>v));
-    const validHomework = sessionRecs.filter(r => r.teacher_file_url);
-    const examSeasons = [...new Set(bookings.map(b => b.exam_period).filter(Boolean))];
-
-    let html = `<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:14px;padding-bottom:10px;border-top:1px solid var(--border-light);padding-top:14px">👤 ${name} 的学习记录</div>`;
-
-    // ── 1. 考学进度快照 ──
-    if (timeline.length || student.japanese_score || student.english_score) {
-      html += `<div style="margin-bottom:16px">
-        <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;margin-bottom:8px">📊 考学进度</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px">
-          ${student.japanese_score?`<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:6px 8px"><span style="color:var(--text-3)">🗣 日语</span><br>${student.japanese_score}</div>`:''}
-          ${student.english_score?`<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:6px 8px"><span style="color:var(--text-3)">📝 英语</span><br>${student.english_score}</div>`:''}
-        </div>
-        ${timeline.length?`<div style="margin-top:8px;font-size:11px;color:var(--text-2)">${timeline[0].plan?`📄 计划书：${timeline[0].plan}　`:''}${timeline[0].apply?`🏫 出愿：${timeline[0].apply}`:''}${timeline[0].notes?`<br>💬 ${timeline[0].notes}`:''}</div>`:''}
-        ${examSeasons.length?`<div style="margin-top:6px;font-size:10px;color:var(--accent)">📅 出愿季度：${examSeasons.join('、')}</div>`:''}
-      </div>`;
-    }
-
-    // ── 2. 志望校列表 ──
-    html += `<div style="margin-bottom:16px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em">🏫 志望校列表 <span style="font-weight:400">(${schoolPlans.length}/6)</span></div>
-        <button onclick="openSchoolPlanEditor('${student.id}','${name}','${student.major}')" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">＋ 编辑志望校</button>
-      </div>`;
-    if (schoolPlans.length) {
-      const levelLabel = { 1:'🔴 冲刺', 2:'🟡 匹配', 3:'🟢 保底' };
-      [1,2,3].forEach(lv => {
-        const lvSchools = schoolPlans.filter(s => s.level === lv);
-        if (!lvSchools.length) return;
-        html += `<div style="font-size:10px;color:var(--text-3);margin:6px 0 4px">${levelLabel[lv]}</div>`;
-        lvSchools.forEach(s => {
-          html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:8px;margin-bottom:6px;font-size:11px">
-            <div style="font-weight:600">${s.school_name}</div>
-            <div style="color:var(--text-2)">${[s.faculty,s.department].filter(Boolean).join(' · ')}</div>
-            ${s.professor?`<div style="color:var(--text-3);margin-top:2px">👤 ${s.professor}</div>`:''}
-            ${s.application_period?`<div style="color:var(--accent);margin-top:2px">📅 ${s.application_period}</div>`:''}
-          </div>`;
-        });
-      });
-    } else if (sharedLists.length) {
-      const sl = sharedLists[0];
-      html += `<div style="background:var(--warn-bg);border:1px solid var(--warn);border-radius:3px;padding:10px;font-size:11px;color:var(--warn)">
-        ⚠ 老师已共享「${sl.title}」，请点击「编辑志望校」完成填写${sl.notes?`<br><span style="font-size:10px">${sl.notes}</span>`:''}
-      </div>`;
-    } else {
-      html += `<div style="font-size:11px;color:var(--text-3);padding:8px 0">暂无志望校记录，请等待老师共享学校列表</div>`;
-    }
-    html += `</div>`;
-
-    // ── 3. 计划书进度 ──
-    const d = planDrafts[0];
-    html += `<div style="margin-bottom:16px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em">📄 计划书进度</div>
-        <button onclick="openPlanDraftEditor('${student.id}','${name}','${student.major}')" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">${d?'更新':'开始填写'}</button>
-      </div>
-      ${d ? `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px;font-size:11px">
-        ${d.research_question?`<div style="margin-bottom:6px"><span style="color:var(--text-3)">问题意识：</span>${d.research_question}</div>`:''}
-        ${d.prior_research?`<div style="margin-bottom:6px"><span style="color:var(--text-3)">先行研究：</span>${d.prior_research}</div>`:''}
-        ${d.methodology?`<div style="margin-bottom:6px"><span style="color:var(--text-3)">研究方法：</span>${d.methodology}</div>`:''}
-        ${d.draft_file_url?`<a href="${d.draft_file_url}" target="_blank" style="color:var(--accent)">📎 草稿文件</a>`:''}
-        ${d.teacher_comment?`<div style="background:var(--ok-bg);border-radius:2px;padding:6px;color:var(--ok);margin-top:6px">💬 老师批注：${d.teacher_comment}</div>`:''}
-      </div>` : `<div style="font-size:11px;color:var(--text-3)">暂无计划书记录，点击「开始填写」</div>`}
-    </div>`;
-
-    // ── 4. 面谈记录 ──
-    if (validBookings.length) {
-      html += `<div style="margin-bottom:16px">
-        <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;margin-bottom:8px">📋 面谈记录（${validBookings.length}条）</div>`;
-      validBookings.slice(0,3).forEach(b => {
-        html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px">
-          <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">${b.slot_date} · ${b.actual_duration?b.actual_duration+'min':''}</div>
-          <pre style="font-size:11px;line-height:1.7;white-space:pre-wrap;font-family:inherit;margin:0;color:var(--text-2)">${buildRecordText(b)}</pre>
-        </div>`;
-      });
-      if (validBookings.length > 3) html += `<div style="font-size:11px;color:var(--text-3);text-align:center">还有 ${validBookings.length-3} 条…</div>`;
-      html += `</div>`;
-    }
-
-    // ── 5. 作业批改 ──
-    if (validHomework.length) {
-      html += `<div style="margin-bottom:16px">
-        <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;margin-bottom:8px">✏ 作业批改（${validHomework.length}条）</div>`;
-      validHomework.slice(0,3).forEach(r => {
-        html += `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px">
-          <div style="font-size:11px;color:var(--text-3);margin-bottom:4px">${r.session_date} · ${r.course_name||''}</div>
-          ${r.feedback_knowledge?`<div style="font-size:11px;color:var(--text-2);margin-bottom:4px">${r.feedback_knowledge}</div>`:''}
-          <a href="${r.teacher_file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 下载批改文件</a>
-        </div>`;
-      });
-      html += `</div>`;
-    }
-
-    result.innerHTML = html;
-    result._studentId = student.id;
-    result._studentName = name;
-    result._studentMajor = student.major;
-    result._sharedLists = sharedLists;
-
-  } catch(e) {
-    result.innerHTML = `<div style="font-size:11px;color:var(--danger)">查询失败：${e.message}</div>`;
-  }
-}
-
-
-function renderSingleBookingResult(b) {
-  let html = `<div style="font-size:11px;color:var(--text-2);margin-bottom:8px">${b.slot_date} · ${typeLabel(b.type)}</div>`;
-  if (b.daily_record) {
-    html += `<pre style="font-size:11px;line-height:1.7;white-space:pre-wrap;background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:8px;margin-bottom:8px;font-family:'DM Mono',monospace">${buildRecordText(b)}</pre>`;
-  }
-  if (b.teacher_file_url) {
-    html += `<a href="${b.teacher_file_url}" target="_blank" class="btn btn-primary btn-full" style="text-decoration:none;display:block;text-align:center;box-sizing:border-box">📎 下载老师修改文件</a>`;
-  } else {
-    html += `<div style="font-size:11px;color:var(--text-muted)">老师暂未上传修改文件</div>`;
-  }
-  return html;
 }
 
 initMajor();

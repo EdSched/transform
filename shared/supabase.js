@@ -157,3 +157,21 @@ async function studentLogin(name, code, onStatus) {
   }
   return { ok: false, reason: 'network' };
 }
+
+// ── 学生本机登录记录（学习页 study.html 与面谈预约页 student/ 共用同一个 key）──
+// 内容：{ id, name, code, major, ts }；30 天内有效
+const STUDENT_LOGIN_STORAGE_KEY = 'txe_study_login';
+const STUDENT_LOGIN_DAYS = 30;
+function studentLoginLoad() {
+  try {
+    const raw = localStorage.getItem(STUDENT_LOGIN_STORAGE_KEY);
+    if (!raw) return null;
+    const info = JSON.parse(raw);
+    if (!info || !info.name || !info.code) return null;
+    if (Date.now() - (info.ts || 0) >= STUDENT_LOGIN_DAYS * 86400000) return null;
+    return info;
+  } catch (e) { return null; }
+}
+function studentLoginSave(info) {
+  try { localStorage.setItem(STUDENT_LOGIN_STORAGE_KEY, JSON.stringify(Object.assign({}, info, { ts: Date.now() }))); } catch (e) {}
+}
