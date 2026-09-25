@@ -818,10 +818,17 @@ function renderSlotManagement(mc) {
           </div>
         </div>
         <div id="ts_vip_content_panel" style="display:none;margin-top:8px">
-          <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;margin-bottom:10px;padding:7px 9px;border:1px solid var(--border);border-radius:4px;background:var(--bg)">
-            <input type="checkbox" id="ts_vip_exclusive" onchange="tsToggleExclusive(this)" style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0">
-            <span>仅限「只有VIP」的学生<span style="font-size:10px;color:var(--text-3)">（区别大课+VIP；勾选后此时间槽只对应纯VIP学生）</span></span>
-          </label>
+          <label class="form-label" style="margin-bottom:6px">这个 VIP 时间槽面向哪种学生？<span style="font-size:10px;color:var(--text-3);font-weight:400">（两种学生的槽是分开的，请务必选对）</span></label>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">
+            <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer;padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg)">
+              <input type="radio" name="ts_vip_mode" value="combo" checked onchange="tsToggleExclusive()" style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0;margin-top:1px">
+              <span><b>大课 + VIP 学生</b>　由老师手动勾选本次指导内容<span style="display:block;font-size:10px;color:var(--text-3);margin-top:2px">在下方选择本次时间槽提供的 VIP 指导内容</span></span>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer;padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg)">
+              <input type="radio" name="ts_vip_mode" value="pure" onchange="tsToggleExclusive()" style="accent-color:var(--accent);width:16px;height:16px;flex-shrink:0;margin-top:1px">
+              <span><b>纯 VIP 学生</b>　内容跟随该学生的 VIP 规划自动带出<span style="display:block;font-size:10px;color:var(--text-3);margin-top:2px">无需在下方勾选内容，预约后由老师修改确认</span></span>
+            </label>
+          </div>
           <div id="ts_vip_exclusive_note" style="display:none;font-size:11px;color:var(--text-3);padding:8px 10px;border:1px dashed var(--border);border-radius:4px;background:var(--bg)">上课内容将按该学生的 VIP 规划自动带出，预约后由老师修改确认，无需在此勾选。</div>
           <div id="ts_vip_content_wrap">
           <label class="form-label">VIP内容（本次时间槽提供的指导内容，可多选）</label>
@@ -904,12 +911,13 @@ function tsToggleVipPanel(checkbox) {
   if (panel) panel.style.display = checkbox.checked ? 'block' : 'none';
 }
 
-// 勾「仅VIP」时：隐藏 VIP内容勾选（内容跟随学生 VIP 规划），显示提示
-function tsToggleExclusive(checkbox) {
+// 选「纯VIP」时：隐藏 VIP内容勾选（内容跟随学生 VIP 规划），显示提示；选「大课+VIP」时相反
+function tsToggleExclusive() {
+  const pure = document.querySelector('input[name=ts_vip_mode]:checked')?.value === 'pure';
   const wrap = document.getElementById('ts_vip_content_wrap');
   const note = document.getElementById('ts_vip_exclusive_note');
-  if (wrap) wrap.style.display = checkbox.checked ? 'none' : 'block';
-  if (note) note.style.display = checkbox.checked ? 'block' : 'none';
+  if (wrap) wrap.style.display = pure ? 'none' : 'block';
+  if (note) note.style.display = pure ? 'block' : 'none';
 }
 function tsToggleWd(btn) {
   btn.classList.toggle('active');
@@ -959,7 +967,7 @@ async function addTeacherSlot() {
   const alsoInterview = false;
   const needTypes = purpose==='interview';
   if (needTypes && !types.length) { alert('请至少选择一个类型'); return; }
-  const vipExclusive = types.includes('vip') && !!document.getElementById('ts_vip_exclusive')?.checked;
+  const vipExclusive = types.includes('vip') && document.querySelector('input[name=ts_vip_mode]:checked')?.value === 'pure';
   let vipContent = [];
   if (types.includes('vip') && !vipExclusive) {
     vipContent = [...document.querySelectorAll('#ts_vip_content_group input:checked')].map(c => c.value);
