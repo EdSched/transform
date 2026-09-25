@@ -827,6 +827,11 @@ async function renderProgressPage(mc, focusStudentId=null){
             </tbody>
           </table></div>` : '<div style="font-size:11px;color:var(--text-3)">尚无志望校记录，可点击右上「＋ 添加志望校」录入</div>'}
         </div>
+        ${sGakubu ? `
+        <div style="padding:12px 14px;border-bottom:1px solid var(--border-light)">
+          <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px">📄 志望理由书 <span style="font-weight:400;color:var(--text-3)">（学生按志望校逐校填写）</span></div>
+          ${(typeof renderRiyuView === 'function') ? renderRiyuView(sDraft, sPlans) : ''}
+        </div>` : ''}
         ${(s.course_type||'').includes('保录') ? `
         <div style="padding:12px 14px;border-bottom:1px solid var(--border-light);background:#fdfaf5">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
