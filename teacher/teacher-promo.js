@@ -65,34 +65,41 @@ function prMd(body) {
   return out;
 }
 
+// 拉取某专业的宣传数据（宣传相关页与「宣传资料整合」共用）
+// 返回 { list, share, sessions }；同时确保 prCourses / prPubMap 缓存已加载
+async function prFetchMajor(major) {
+  const shareKeys = PR_SHAKAI_G.includes(major) ? [major, 'shakai_group'] : [major];
+  const jobs = [
+    sb(`/rest/v1/promo_content?major=eq.${major}&select=*&order=sort_order.asc,created_at.asc`),
+    sb(`/rest/v1/course_schedule_shares?major=in.(${shareKeys.map(k=>`"${k}"`).join(',')})&select=*&order=created_at.desc&limit=1`).catch(() => []),
+    prCourses ? Promise.resolve(null) : sb('/rest/v1/courses?select=id,name,major,period,teacher,weekdays,time_range,delivery,campus,total_sessions,first_session_date&order=first_session_date.desc&limit=1000').catch(() => []),
+    prPubMap ? Promise.resolve(null) : sb('/rest/v1/teachers?select=name,notes').catch(() => []),
+  ];
+  const res = await Promise.all(jobs);
+  const data = { list: res[0] || [], share: (res[1] || [])[0] || null, sessions: [] };
+  if (res[2]) prCourses = res[2];
+  if (res[3]) {
+    prPubMap = {};
+    const nrm = s => String(s || '').replace(/老师|先生|様|さん/g, '').trim();
+    res[3].forEach(t => { const k = nrm(t.name); const pub = String(t.notes || '').trim(); if (k && pub) prPubMap[k] = pub; });
+  }
+  // 拉课表课次
+  if (data.share && (data.share.course_ids || []).length) {
+    const ids = data.share.course_ids;
+    let ss = [];
+    for (let i = 0; i < ids.length; i += 40) {
+      const batch = await sb(`/rest/v1/course_sessions?course_id=in.(${ids.slice(i,i+40).map(x=>`"${x}"`).join(',')})&select=course_id,course_name,session_date,time_range,session_number,session_title&order=session_date.asc`).catch(() => []);
+      ss = ss.concat(batch || []);
+    }
+    data.sessions = ss;
+  }
+  return data;
+}
+
 async function renderTeacherPromo(mc) {
   mc.innerHTML = '<div class="empty">加载中…</div>';
   try {
-    const shareKeys = PR_SHAKAI_G.includes(prMajor) ? [prMajor, 'shakai_group'] : [prMajor];
-    const jobs = [
-      sb(`/rest/v1/promo_content?major=eq.${prMajor}&select=*&order=sort_order.asc,created_at.asc`),
-      sb(`/rest/v1/course_schedule_shares?major=in.(${shareKeys.map(k=>`"${k}"`).join(',')})&select=*&order=created_at.desc&limit=1`).catch(() => []),
-    ];
-    if (!prCourses) jobs.push(sb('/rest/v1/courses?select=id,name,major,period,teacher,weekdays,time_range,delivery,campus,total_sessions,first_session_date&order=first_session_date.desc&limit=1000').catch(() => []));
-    if (!prPubMap) jobs.push(sb('/rest/v1/teachers?select=name,notes').catch(() => []));
-    const res = await Promise.all(jobs);
-    prData = { list: res[0] || [], share: (res[1] || [])[0] || null, sessions: [] };
-    if (res[2]) prCourses = res[2];
-    if (res[3]) {
-      prPubMap = {};
-      const nrm = s => String(s || '').replace(/老师|先生|様|さん/g, '').trim();
-      res[3].forEach(t => { const k = nrm(t.name); const pub = String(t.notes || '').trim(); if (k && pub) prPubMap[k] = pub; });
-    }
-    // 拉课表课次
-    if (prData.share && (prData.share.course_ids || []).length) {
-      const ids = prData.share.course_ids;
-      let ss = [];
-      for (let i = 0; i < ids.length; i += 40) {
-        const batch = await sb(`/rest/v1/course_sessions?course_id=in.(${ids.slice(i,i+40).map(x=>`"${x}"`).join(',')})&select=course_id,course_name,session_date,time_range,session_number,session_title&order=session_date.asc`).catch(() => []);
-        ss = ss.concat(batch || []);
-      }
-      prData.sessions = ss;
-    }
+    prData = await prFetchMajor(prMajor);
   } catch (e) { mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
   prRenderShell();
 }
@@ -114,6 +121,10 @@ function prRenderShell() {
     <code id="pr_share_link" style="font-size:10px;color:var(--text-2);background:var(--bg);padding:2px 8px;border-radius:2px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${location.origin}${location.pathname.replace(/\/teacher\/.*$/,'/promo/')}?major=${prMajor}</code>
     <button onclick="navigator.clipboard.writeText(document.getElementById('pr_share_link').textContent).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制链接',2000)})" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit;white-space:nowrap">📋 复制链接</button>
   </div>
+  ${typeof pkAddMajorFromPromo === 'function' ? `<div style="display:flex;align-items:center;gap:8px;margin:-4px 0 12px;flex-wrap:wrap">
+    <button onclick="pkAddMajorFromPromo()" style="font-size:11px;background:var(--surface);border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:4px 14px;cursor:pointer;font-family:inherit">➕ 将「${MAJORS[prMajor]||prMajor}」学科介绍加入宣传资料</button>
+    <span style="font-size:10px;color:var(--text-3)">加入后可在「📦 宣传资料整合」与出愿学校、进度规划等一起生成一份完整 PDF</span>
+  </div>` : ''}
   <div id="pr_body">${prBodyHtml()}</div>`;
 }
 
@@ -186,8 +197,10 @@ function prCourseScheduleHtml(title) {
 }
 
 // ── 当期课程表（与对外宣传页同款日历；不含任何上课链接） ──
-function prScheduleHtml() {
-  const sessions = (prData && prData.sessions) || [];
+// data：{ share, sessions }（默认当前页 prData）；forClient=true 时去掉内部提示语（用于对外资料）
+function prScheduleHtml(data, forClient) {
+  data = data || prData;
+  const sessions = (data && data.sessions) || [];
   if (!sessions.length) return '<div class="empty" style="padding:30px">该专业暂无发布的课程表（admin 可在课程安排 → 学生课表中发布）</div>';
   const byCourse = {};
   sessions.forEach(s => { if (!byCourse[s.course_id]) byCourse[s.course_id] = []; byCourse[s.course_id].push(s); });
@@ -241,5 +254,5 @@ function prScheduleHtml() {
     return g;
   }).join('');
 
-  return `<div style="font-size:11px;color:var(--text-2);margin-bottom:8px">🗓 ${prEsc((prData.share && prData.share.title) || '当期课程表')}<span style="font-size:9px;color:var(--text-3);margin-left:8px">（不含上课链接，可放心向客户展示）</span></div>${legend}${cal}`;
+  return `<div style="font-size:11px;color:var(--text-2);margin-bottom:8px">🗓 ${prEsc((data.share && data.share.title) || '当期课程表')}${forClient ? '' : '<span style="font-size:9px;color:var(--text-3);margin-left:8px">（不含上课链接，可放心向客户展示）</span>'}</div>${legend}${cal}`;
 }
