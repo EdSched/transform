@@ -29,8 +29,15 @@ async function initStudy() {
     if (raw) {
       const info = JSON.parse(raw);
       if (Date.now() - info.ts < STUDY_DAYS * 86400000) {
-        const ok = await studyLogin(info.name, info.code, true);
-        if (ok) return;
+        const say = t => { wrap.innerHTML = `<div style="text-align:center;padding:60px 20px;color:var(--text-muted);font-size:13px">⏳ ${t}</div>`; };
+        const res = await studyLogin(info.name, info.code, true, say);
+        if (res === true) return;
+        renderStudyLogin(wrap);
+        // 自动登录没完成：把姓名/查询码填回去，网络问题时提示再点一次，不误报查询码错误
+        const n = document.getElementById('sl_name'), c = document.getElementById('sl_code'), e = document.getElementById('sl_error');
+        if (n) n.value = info.name || ''; if (c) c.value = info.code || '';
+        if (e && res === 'network') e.textContent = '网络连接不稳定，请点「查询」重试';
+        return;
       }
     }
   } catch(e) {}
@@ -59,44 +66,31 @@ async function studyLoginSubmit() {
   const name = document.getElementById('sl_name').value.trim();
   const code = document.getElementById('sl_code').value.trim().toUpperCase();
   const errEl = document.getElementById('sl_error');
-  if (!name || !code) { errEl.textContent = '请填写姓名和查询码'; return; }
-  errEl.textContent = '查询中…';
-  const ok = await studyLogin(name, code, false);
-  if (!ok) errEl.textContent = '未找到匹配记录，请确认姓名和查询码是否正确';
+  if (!name || !code) { errEl.style.color = 'var(--danger)'; errEl.textContent = '请填写姓名和查询码'; return; }
+  const btn = document.querySelector('button[onclick="studyLoginSubmit()"]');
+  if (btn) { btn.disabled = true; btn.style.opacity = '.6'; }
+  errEl.style.color = 'var(--text-muted)';
+  const res = await studyLogin(name, code, false, t => { errEl.style.color = 'var(--text-muted)'; errEl.textContent = '⏳ ' + t; });
+  if (res === true) return;
+  if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+  errEl.style.color = 'var(--danger)';
+  errEl.textContent = res === 'not_found'
+    ? '未找到匹配记录，请确认姓名和查询码是否正确'
+    : '网络连接不稳定，账号验证未完成，请稍后再点一次「查询」（多次失败请联系老师）';
 }
 
-async function studyLogin(name, code, silent) {
+// 返回 true=登录成功 | 'not_found'=姓名或查询码不对 | 'network'=网络/验证未完成
+async function studyLogin(name, code, silent, onStatus) {
   try {
-    // ① 姓名+码 → 换出 student_id（走锁死的对照表函数，不直接读 students 表）
-    const idRes = await sb(`/rest/v1/rpc/resolve_student_login`, 'POST', { p_name: name, p_code: code });
-    const sid = Array.isArray(idRes) ? idRes[0] : idRes;
-    if (!sid) return false;   // 姓名或码不对
-    // ② 用 id + 码 走 Auth 登录，拿到真 token（这样才能读到自己那条 students）
-    let authed = false;
-    try {
-      if (typeof supabase !== 'undefined' && supabase.createClient) {
-        const _c = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: 'sb-student', persistSession: true, autoRefreshToken: true } });
-        const { data: _sess } = await _c.auth.getSession();
-        if (_sess && _sess.session && _sess.session.user && _sess.session.user.email === `${sid}@student.local`) {
-          authed = true;   // 已是本人 session
-        } else {
-          const { error } = await _c.auth.signInWithPassword({ email: `${sid}@student.local`, password: code });
-          authed = !error;
-          _sess = (await _c.auth.getSession()).data;
-        }
-        if (typeof __setSbStorageKey === 'function') __setSbStorageKey('sb-student');
-        if (_sess && _sess.session && typeof __setSbToken === 'function') __setSbToken(_sess.session.access_token, _c);  // 传客户端→自动续期
-      }
-    } catch (e) {}
-    // ③ 用 token 读自己那条档案（students 锁上后，RLS 放行"看自己"）
-    const rows = await sb(`/rest/v1/students?id=eq.${encodeURIComponent(sid)}&select=*`).catch(() => []);
-    if (!rows || !rows.length) return false;
-    studyStudent = rows[0];
-    localStorage.setItem(STUDY_STORAGE_KEY, JSON.stringify({ id: studyStudent.id, name, code, major: studyMajor, ts: Date.now() }));
+    const r = await studentLogin(name, code, onStatus);
+    if (!r.ok) return r.reason;
+    studyStudent = r.student;
+    try { localStorage.setItem(STUDY_STORAGE_KEY, JSON.stringify({ id: studyStudent.id, name, code, major: studyMajor, ts: Date.now() })); } catch (e) {}
+    if (onStatus) onStatus('正在加载学习记录…');
     await loadStudyData();
     renderStudyMain();
     return true;
-  } catch(e) { if (!silent) console.error(e); return false; }
+  } catch(e) { if (!silent) console.error(e); return 'network'; }
 }
 
 async function loadStudyData() {

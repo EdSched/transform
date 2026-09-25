@@ -105,3 +105,55 @@ async function sbUpload(bucket, path, file) {
   if (!r.ok) { const e = await r.text(); throw new Error(e); }
   return `${SB_URL}/storage/v1/object/public/${bucket}/${path}`;
 }
+
+// ── 学生登录（姓名 + 查询码）共用流程：学习记录页 / VIP 页 ──
+// ① RPC 用姓名+码换出 student_id（只有这一步明确查不到，才算「姓名或查询码不对」）
+// ② 用 id+码 走 Auth 登录拿 token；③ 带 token 读自己那条 students
+// ②③ 在网络抖动、token 刚签发未生效时会失败，这里自动重试，不再误报「查不到」。
+// onStatus(text) 用来在页面上显示「正在查找账号…」等进度。
+// 返回 { ok:true, student } | { ok:false, reason:'not_found' | 'network' }
+let __STUDENT_AUTH_CLIENT = null;
+async function studentLogin(name, code, onStatus) {
+  const say = t => { try { if (onStatus) onStatus(t); } catch (e) {} };
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+
+  let sid = null;
+  for (let i = 0; i < 3; i++) {
+    say(i ? '网络较慢，正在重新查找账号…' : '正在查找账号…');
+    try {
+      const r = await sb('/rest/v1/rpc/resolve_student_login', 'POST', { p_name: name, p_code: code });
+      sid = Array.isArray(r) ? r[0] : r;
+      if (!sid) return { ok: false, reason: 'not_found' };
+      break;
+    } catch (e) {
+      if (i === 2) return { ok: false, reason: 'network' };
+      await wait(600 * (i + 1));
+    }
+  }
+
+  const email = `${sid}@student.local`;
+  for (let i = 0; i < 4; i++) {
+    say(i ? `正在验证身份…（第 ${i + 1} 次尝试）` : '正在验证身份…');
+    try {
+      if (typeof supabase !== 'undefined' && supabase.createClient) {
+        if (!__STUDENT_AUTH_CLIENT) __STUDENT_AUTH_CLIENT = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: 'sb-student', persistSession: true, autoRefreshToken: true } });
+        const c = __STUDENT_AUTH_CLIENT;
+        let sess = (await c.auth.getSession()).data;
+        const mine = () => sess && sess.session && sess.session.user && sess.session.user.email === email;
+        if (!mine()) {
+          await c.auth.signInWithPassword({ email, password: code });
+          sess = (await c.auth.getSession()).data;
+        }
+        __setSbStorageKey('sb-student');
+        if (mine()) __setSbToken(sess.session.access_token, c);   // 传客户端→自动续期
+      }
+    } catch (e) { /* 网络抖动等：下面读档案失败后退避重试 */ }
+    try {
+      say('正在读取学生档案…');
+      const rows = await sb(`/rest/v1/students?id=eq.${encodeURIComponent(sid)}&select=*`);
+      if (rows && rows.length) return { ok: true, student: rows[0] };
+    } catch (e) {}
+    await wait(700 * (i + 1));
+  }
+  return { ok: false, reason: 'network' };
+}
