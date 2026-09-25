@@ -252,8 +252,14 @@ function buildTabs() {
   if (p.lect_info) tabs.push({ id: 'lectinfo', label: '👤 讲师信息' });
   // 我的课表：有排班权限或有实际排到课才显示
   if (p.schedule || slots.length) tabs.push({ id: 'mycourses', label: '📚 我的课表' });
+  // VIP管理：满足任一即显示 ——
+  //   ① admin 给了 VIP 权限（预约管理或时间槽设定里勾了 VIP）
+  //   ② 在学生档案里被设为「VIP指导老师」的学生（纯VIP、大课+VIP 都算）
+  //   ③ 实际有 VIP 预约 / 分享来的框架 / 待确认或已签约的方案
   const hasVipBk = (typeof cachedTeacherBookings !== 'undefined') && cachedTeacherBookings.some(b => b.type === 'vip');
-  if (hasVipBk || (typeof teacherVipFrameworks !== 'undefined' && teacherVipFrameworks.length) || (typeof teacherVipPlans !== 'undefined' && teacherVipPlans.length) || (typeof teacherVipMyPlans !== 'undefined' && teacherVipMyPlans.length)) tabs.push({ id: 'vipframework', label: '⭐ VIP管理' });
+  const hasVipPerm = (p.booking && (p.booking_types || []).includes('vip')) || (p.slots && (p.slot_types || []).includes('vip'));
+  const hasVipStu = typeof teacherVipAssignedStudents !== 'undefined' && teacherVipAssignedStudents.length;
+  if (hasVipPerm || hasVipStu || hasVipBk || (typeof teacherVipFrameworks !== 'undefined' && teacherVipFrameworks.length) || (typeof teacherVipPlans !== 'undefined' && teacherVipPlans.length) || (typeof teacherVipMyPlans !== 'undefined' && teacherVipMyPlans.length)) tabs.push({ id: 'vipframework', label: '⭐ VIP管理' });
   if (p.vip_sales) tabs.push({ id: 'vipsales', label: '🗂 VIP规划' });
   // 工作记录：有实际教学相关权限才显示
   if (p.booking || p.slots || p.schedule || p.homework || slots.length) tabs.push({ id: 'workrecords', label: '📋 工作记录' });
