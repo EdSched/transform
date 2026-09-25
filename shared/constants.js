@@ -61,6 +61,41 @@ function isGakubuMajor(key) {
 function isGakubuStudent(stu) {
   return !!stu && isGakubuMajor(stu.major);
 }
+
+// ── 学部 · 志望理由书：三部分框架 + 展示（学生填写页、老师端、admin 共用）──
+const RIYU_SECTIONS = [
+  { k:'motive', label:'入学を志望する動機', hint:'・「なぜこの学校・学部学科コースに入りたいのか」「入学を志望したきっかけ」を明確に伝えましょう。\n・高校までに取り組んだことや自分の考え、志向などをもとに、その根拠をしっかり示しましょう。' },
+  { k:'will',   label:'入学を志望する意志', hint:'・「この学校・学部学科コースのどこが魅力なのか」「入学後にやりたいこと、身につけたいこと」を伝えましょう。\n・志望する分野や学問への理解度が深いことをアピールしましょう。' },
+  { k:'vision', label:'卒業後の展望',       hint:'・「将来の夢や就きたい仕事・職業」「その仕事で実現したいこと」を伝えましょう。\n・進学先での学び・経験とつなげて伝えましょう。' },
+];
+// 每所志望校的稳定 key（不依赖会被重建的 ssp id）
+function riyuKeyOf(p){ return [(p&&p.school_name)||'', (p&&p.faculty)||'', (p&&p.department)||''].join('|'); }
+// 从 student_plan_drafts 记录里取 riyu 映射 {schoolKey:{motive,will,vision}}
+function riyuMap(draft){ try { const df = draft && draft.draft_fields ? JSON.parse(draft.draft_fields) : {}; return (df&&df.riyu)||{}; } catch(e){ return {}; } }
+// 已写志望理由书（至少填一段）的学校数
+function riyuFilledCount(draft, plans){
+  const m = riyuMap(draft);
+  return (plans||[]).filter(p=>{ const v=m[riyuKeyOf(p)]||{}; return RIYU_SECTIONS.some(s=>String(v[s.k]||'').trim()); }).length;
+}
+// 只读展示：逐校志望理由书（老师端 / admin 查看用）
+function renderRiyuView(draft, plans, esc){
+  const e = esc || (v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'));
+  const m = riyuMap(draft);
+  const list = (plans||[]).slice().sort((a,b)=>((a.level||2)-(b.level||2)));
+  if(!list.length) return '<div style="font-size:11px;color:var(--text-3,#999)">尚无志望校，学生添加志望校后即可逐校填写志望理由书</div>';
+  return list.map(p=>{
+    const v = m[riyuKeyOf(p)] || {};
+    const title = [p.school_name,p.faculty,p.department].filter(Boolean).join(' · ') || '（未命名学校）';
+    const any = RIYU_SECTIONS.some(s=>String(v[s.k]||'').trim());
+    return `<div style="border:1px solid var(--border-light,#ede9e2);border-radius:5px;padding:10px 12px;margin-bottom:8px;background:var(--surface,#fff)">
+      <div style="font-size:12px;font-weight:600;margin-bottom:6px">${e(title)}${p.plan_requirement?`<span style="font-size:10px;font-weight:400;color:var(--accent,#b8953a);margin-left:8px">要求：${e(p.plan_requirement)}</span>`:''}</div>
+      ${any ? RIYU_SECTIONS.map((s,i)=>{
+        const txt = String(v[s.k]||'').trim();
+        return `<div style="margin-bottom:6px"><div style="font-size:10px;font-weight:600;color:var(--text-2,#5a5650)">${i+1}. ${s.label}</div><div style="font-size:11px;line-height:1.7;color:var(--text-2,#5a5650);white-space:pre-wrap">${txt?e(txt):'<span style=\'color:#bbb\'>（未填写）</span>'}</div></div>`;
+      }).join('') : '<div style="font-size:11px;color:#bbb">该校志望理由书尚未填写</div>'}
+    </div>`;
+  }).join('');
+}
 // 学生可见性（叠加逻辑，仅用于学生管理/学生页）：
 // 学生的完整专业 = major(主) + extra_majors(附加，如日语/英语)。
 // 只要任一专业属于当前视角（领域或专业锁），学生就可见——支持跨领域学生在多个领域被看到。
