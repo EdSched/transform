@@ -472,6 +472,11 @@ function renderBookingCardBody(b) {
       <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:6px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text-3)">取消</button>
     </div>` : `
     <div>
+      ${b.status === 'confirmed' ? `
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;padding:8px 10px;border:1px solid var(--danger-bg,#fceaea);background:#fdf6f6;border-radius:3px">
+        <span style="font-size:11px;color:var(--text-2)">面谈有变动、无法进行？</span>
+        <button onclick="cancelBookingTeacher('${b.id}')" style="margin-left:auto;background:#fff;border:1px solid var(--danger);color:var(--danger);border-radius:3px;padding:5px 14px;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap">✕ 取消此预约</button>
+      </div>` : ''}
       <div style="margin-bottom:8px;background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:8px">
         <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">📎 上传修改文件（学生可通过查询码下载）</div>
         <div style="display:flex;gap:6px;margin-bottom:6px">
@@ -506,7 +511,7 @@ function renderBookingCardBody(b) {
           ${renderRecordForm(b.id, b.daily_record || {})}
           <div style="display:flex;gap:6px;margin-top:10px">
             <button onclick="saveBookingRecord('${b.id}')" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit">保存记录</button>
-            <button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--danger)">取消预约</button>
+            ${b.status !== 'confirmed' ? `<button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--danger)">取消预约</button>` : ''}
           </div>
         </div>
       </div>
@@ -760,7 +765,9 @@ async function confirmBookingTeacher(id) {
 }
 
 async function cancelBookingTeacher(id) {
-  if (!confirm('确定取消此预约？')) return;
+  const _b = cachedTeacherBookings.find(x => x.id === id);
+  const _desc = _b ? `\n\n${_b.name} · ${_b.slot_date || ''} ${_b.slot_time_range || ''}` : '';
+  if (!confirm('确定取消此预约？' + _desc)) return;
   try {
     await sb(`/rest/v1/bookings?id=eq.${id}`, 'PATCH', { status: 'cancelled' });
     await vipSchedRelease(cachedTeacherBookings.find(b => b.id === id));   // 释放排课系统里占的教室
