@@ -3119,6 +3119,7 @@ function openHwEditor(sessionId){
   hwEditSession = s;
   hwEditData = hwNormalize(s);
   hwEditLevel = 0;
+  hwPickLoaded = '';
   const existing=document.getElementById('hwEditorModal');
   if(existing) existing.remove();
   const modal=document.createElement('div');
@@ -3137,8 +3138,14 @@ function hwEditorRender(){
   const inp='width:100%;font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
   const lv=D.levels[hwEditLevel]||{key:'',blocks:[]};
   box.innerHTML=`
-    <div style="font-size:13px;font-weight:600;margin-bottom:3px">📝 布置作业 — ${s.course_name||''} 第${s.session_number||''}回</div>
-    <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">${s.session_date||''} ${s.session_title||''}　·　保存后学生端才会出现该次作业</div>
+    <div style="display:flex;align-items:flex-start;gap:8px">
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600;margin-bottom:3px">📝 布置作业 — ${s.course_name||''} 第${s.session_number||''}回</div>
+        <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">${s.session_date||''} ${s.session_title||''}　·　保存后学生端才会出现该次作业</div>
+      </div>
+      <button onclick="hwPickOpen()" title="从往期单回或模板里找一份作业载入到这里" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">📥 从往期作业选…</button>
+    </div>
+    ${hwPickLoaded?`<div style="font-size:11px;color:var(--ok,#2a9e6a);background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:6px 10px;margin-bottom:10px">已载入：${hwPickLoaded}。确认内容后点「保存作业」才会生效。</div>`:''}
 
     <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">作业说明（可选）</label>
     <textarea id="hw_note" rows="2" placeholder="例：请于下周三前提交，手写题按题号顺序拍照上传" style="${inp};line-height:1.8;resize:vertical;margin-bottom:10px">${(D.note||'').replace(/</g,'&lt;')}</textarea>
@@ -3297,6 +3304,73 @@ async function hwUploadBlockFile(bi,input){
     hwEditorRender();
   }catch(e){alert('上传失败：'+e.message)}
   input.value='';
+}
+
+// ── 从往期作业选：列出所有有作业的单回（及模板里的作业），选一份载入编辑器 ──
+let hwPickLoaded = '', hwPickKw = '';
+function hwPickSummary(q){
+  const n=hwNormalize({homework_questions:q});
+  const T={choice:'选择',calc:'计算',term:'名词',essay:'论述',free:'自由'};
+  const lv=n.levels.filter(L=>(L.blocks||[]).length);
+  const bl=lv.flatMap(L=>L.blocks||[]);
+  return `${lv.length>1?lv.length+'个级别 · ':''}${bl.length}个区块（${[...new Set(bl.map(b=>T[b.type]||b.type))].join('/')}）`;
+}
+function hwPickItems(){
+  const me=hwEditSession||{};
+  const title=(me.session_title||'').trim(), cname=(me.course_name||'').trim();
+  const items=[];
+  cachedSessions.forEach(x=>{
+    if(x.id===me.id||!hwHasQ(x.homework_questions)) return;
+    const c=cachedCourses.find(cc=>cc.id===x.course_id)||{};
+    items.push({kind:'s',id:x.id,course:(x.course_name||c.name||'').trim(),period:c.first_session_date?c.first_session_date.slice(0,4)+'年'+effectivePeriod(c):'',
+      num:x.session_number,title:(x.session_title||'').trim(),date:x.session_date||'',q:x.homework_questions,note:x.homework_note||''});
+  });
+  (cachedTemplates||[]).forEach(t=>(t.detail_rows||[]).forEach((r,ri)=>{
+    if(!hwHasQ(r.homework_questions)) return;
+    items.push({kind:'t',id:t.id+'#'+ri,course:(t.name||'').trim(),period:'模板',num:r.num,title:(r.title||'').trim(),date:'',q:r.homework_questions,note:r.homework_note||''});
+  }));
+  const score=i=>(title&&i.title===title?0:2)+(cname&&i.course===cname?0:1);
+  return items.sort((a,b)=>score(a)-score(b)||(b.date||'').localeCompare(a.date||''));
+}
+async function hwPickOpen(){
+  if(!Array.isArray(cachedTemplates)) cachedTemplates=await sb('/rest/v1/course_templates?select=*&order=created_at.desc').catch(()=>null);
+  hwPickKw='';
+  hwPickRender();
+}
+function hwPickRender(){
+  const box=document.getElementById('hwEditorBody'); if(!box) return;
+  const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const me=hwEditSession||{};
+  const kw=hwPickKw.trim().toLowerCase();
+  let list=hwPickItems();
+  if(kw) list=list.filter(i=>(i.course+' '+i.title+' '+i.period).toLowerCase().includes(kw));
+  const total=list.length; list=list.slice(0,100);
+  const t=(me.session_title||'').trim();
+  box.innerHTML=`
+    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px">
+      <div style="font-size:13px;font-weight:600;flex:1">📥 从往期作业选 — 载入到 第${me.session_number||''}回「${esc(me.session_title||'')}」</div>
+      <button onclick="hwEditorRender()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:4px 10px;cursor:pointer;font-family:inherit">← 返回编辑</button>
+    </div>
+    <input id="hwPickSearch" value="${esc(hwPickKw)}" placeholder="搜索课程名 / 单回标题 / 期数" oninput="hwPickKw=this.value;hwPickRender();const e=document.getElementById('hwPickSearch');e.focus();e.setSelectionRange(e.value.length,e.value.length)" style="width:100%;box-sizing:border-box;font-size:12px;padding:7px 10px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;margin-bottom:6px">
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">同标题的单回排在最前，其次是同名课程。点一行即载入（会替换编辑器里当前的内容，保存前不会生效）。${total>100?` 共 ${total} 条，只显示前 100 条，请用搜索缩小范围。`:''}</div>
+    <div style="max-height:60vh;overflow-y:auto;border:1px solid var(--border-light);border-radius:3px">
+      ${list.length?list.map(i=>`<div onclick="hwPickUse('${esc(i.id)}')" style="display:flex;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid var(--border-light);cursor:pointer;font-size:12px" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
+        <div style="flex:1;min-width:0">
+          <div><span style="font-weight:600">${esc(i.course)}</span> <span style="font-size:10px;color:var(--text-3)">${esc(i.period)}</span> 第${i.num??'-'}回「${esc(i.title||'（无标题）')}」${t&&i.title===t?'<span style="font-size:9px;color:var(--accent);margin-left:4px">同标题</span>':''}</div>
+          <div style="font-size:10px;color:var(--text-3)">${i.date?esc(i.date)+' · ':''}${esc(hwPickSummary(i.q))}${i.note?' · '+esc(i.note.slice(0,30)):''}</div>
+        </div>
+        <span style="font-size:10px;color:${i.kind==='t'?'var(--accent)':'var(--text-3)'};white-space:nowrap">${i.kind==='t'?'模板':'单回'}</span>
+      </div>`).join(''):`<div style="font-size:12px;color:var(--text-3);padding:16px;text-align:center">${kw?'无匹配':'没有找到其他有作业的单回'}</div>`}
+    </div>`;
+}
+function hwPickUse(id){
+  const i=hwPickItems().find(x=>x.id===id); if(!i) return;
+  const n=hwNormalize({homework_questions:JSON.parse(JSON.stringify(i.q)),homework_note:i.note});
+  const hasNow=(hwEditData.levels||[]).some(L=>(L.blocks||[]).length);
+  if(hasNow&&!confirm('编辑器里已有作业内容，载入后会被替换（保存前不会生效）。继续？')) return;
+  hwEditData=n; hwEditLevel=0;
+  hwPickLoaded=`${i.course} ${i.period} 第${i.num??'-'}回「${i.title||'（无标题）'}」`;
+  hwEditorRender();
 }
 
 async function hwSaveQuestions(sessionId, silent){
