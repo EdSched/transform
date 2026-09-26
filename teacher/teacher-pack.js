@@ -21,7 +21,7 @@ const PK_MAJOR_PARTS = [
   ['major_intro', '专业介绍'],
   ['lecturer', '讲师介绍'],
   ['course', '课程介绍'],
-  ['schedule', '当期课程表'],
+  ['schedule', '课程表'],
 ];
 
 function pkEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
@@ -145,7 +145,7 @@ function pkMajorHtml(major, data, parts) {
     }).join('')}</div>`;
   }
   if (parts.includes('schedule') && hasSched) {
-    h += sub('当期课程表') + prScheduleHtml(data, true);
+    h += sub('课程表') + prScheduleHtml(data, true);
   }
   return h;
 }
@@ -240,6 +240,7 @@ function pkRender(mc) {
             <select id="pk_major" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit">
               ${majorKeys.map(k => `<option value="${k}" ${k === (typeof prMajor !== 'undefined' ? prMajor : '') ? 'selected' : ''}>${MAJORS[k]}</option>`).join('')}
             </select>
+            ${prSchedModeSelect('prSchedMode=this.value')}
             ${PK_MAJOR_PARTS.map(([k, l]) => `<label style="font-size:11px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="pk_part_${k}" checked style="accent-color:var(--accent)">${l}</label>`).join('')}
           </div>
           <button id="pk_major_btn" onclick="pkAddMajor()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 14px;cursor:pointer;font-family:inherit">➕ 添加学科介绍</button>

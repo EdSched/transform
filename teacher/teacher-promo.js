@@ -11,12 +11,29 @@ let prData = null;      // { list: promo_content rows }
 let prCourses = null;   // 课程安排缓存（全专业一次拉取）
 let prPubMap = null;    // 真名(去敬称) → 对外宣传姓名（老师档案「备注」）
 let prExpanded = null;  // 展开的课程介绍条目 id
+let prSchedMode = 'next';   // 课程表用哪一期：next 下一期（默认，学生报名后上的课）| cur 当期 | share 已发布的学生课表
+
+// 当期 / 下一期（按月份：1-3月=1月期，4-6月=4月期，7-9月=7月期，10-12月=10月期）
+function prPeriodKeys() {
+  const order = ['1月期', '4月期', '7月期', '10月期'];
+  const y = new Date().getFullYear();
+  const cur = currentPeriodKey(), i = order.indexOf(cur);
+  const ny = i === 3 ? y + 1 : y, next = order[(i + 1) % 4];
+  return { cur: { year: y, name: cur, label: `${y}年${cur}` }, next: { year: ny, name: next, label: `${ny}年${next}` } };
+}
+function prSchedModeSelect(onchange) {
+  const k = prPeriodKeys();
+  return `<select onchange="${onchange}" style="font-size:11px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
+    ${[['next', `下一期（${k.next.label}）`], ['cur', `当期（${k.cur.label}）`], ['share', '已发布的学生课表']].map(([v, l]) => `<option value="${v}" ${prSchedMode === v ? 'selected' : ''}>${l}</option>`).join('')}
+  </select>`;
+}
+function prSetSchedMode(v) { prSchedMode = v; renderTeacherPromo(document.getElementById('mainContent')); }
 
 const PR_SECTIONS = [
   ['major_intro', '📖 专业介绍'],
   ['lecturer', '👤 讲师介绍'],
   ['course', '📚 课程介绍'],
-  ['schedule', '🗓 当期课程表'],
+  ['schedule', '🗓 课程表'],
 ];
 const PR_COLORS = [['#5a3e28','#f5ede3'],['#2a6aad','#e4eef8'],['#2d5a3d','#e4f0e8'],['#a03a2e','#f8e4dc'],['#6a4a7a','#efe4f4'],['#8a6a1b','#f8f0d8'],['#3a7a7a','#e0f0f0'],['#5a5650','#eee8e0']];
 const PR_SHAKAI_G = ['shakai','shinpan','fukushi'];
@@ -67,12 +84,13 @@ function prMd(body) {
 
 // 拉取某专业的宣传数据（宣传相关页与「宣传资料整合」共用）
 // 返回 { list, share, sessions }；同时确保 prCourses / prPubMap 缓存已加载
-async function prFetchMajor(major) {
+async function prFetchMajor(major, mode) {
+  mode = mode || prSchedMode;
   const shareKeys = PR_SHAKAI_G.includes(major) ? [major, 'shakai_group'] : [major];
   const jobs = [
     sb(`/rest/v1/promo_content?major=eq.${major}&select=*&order=sort_order.asc,created_at.asc`),
     sb(`/rest/v1/course_schedule_shares?major=in.(${shareKeys.map(k=>`"${k}"`).join(',')})&select=*&order=created_at.desc&limit=1`).catch(() => []),
-    prCourses ? Promise.resolve(null) : sb('/rest/v1/courses?select=id,name,major,period,teacher,weekdays,time_range,delivery,campus,total_sessions,first_session_date&order=first_session_date.desc&limit=1000').catch(() => []),
+    prCourses ? Promise.resolve(null) : sbAll('/rest/v1/courses?select=id,name,major,period,period_override,course_type,teacher,weekdays,time_range,delivery,campus,total_sessions,first_session_date&order=first_session_date.desc').catch(() => []),
     prPubMap ? Promise.resolve(null) : sb('/rest/v1/teachers?select=name,notes').catch(() => []),
   ];
   const res = await Promise.all(jobs);
@@ -82,6 +100,14 @@ async function prFetchMajor(major) {
     prPubMap = {};
     const nrm = s => String(s || '').replace(/老师|先生|様|さん/g, '').trim();
     res[3].forEach(t => { const k = nrm(t.name); const pub = String(t.notes || '').trim(); if (k && pub) prPubMap[k] = pub; });
+  }
+  // 当期 / 下一期：直接按课程安排里这个专业、这一期的课（不含 VIP 课）
+  if (mode === 'cur' || mode === 'next') {
+    const p = prPeriodKeys()[mode];
+    const ids = (prCourses || []).filter(c => c.first_session_date && c.first_session_date.startsWith(String(p.year))
+      && effectivePeriod(c) === p.name && !String(c.course_type || '').includes('VIP')
+      && (Array.isArray(c.major) ? c.major : [c.major]).some(m => shareKeys.includes(m))).map(c => c.id);
+    data.share = { title: `${p.label} 课程表`, course_ids: ids, empty: `${p.label} 该专业暂无课程（可在上方切换到其他期）` };
   }
   // 拉课表课次
   if (data.share && (data.share.course_ids || []).length) {
@@ -135,7 +161,7 @@ function prSetMajor(m) {
 }
 
 function prBodyHtml() {
-  if (prSection === 'schedule') return prScheduleHtml();
+  if (prSection === 'schedule') return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:10px;color:var(--text-3)">课程表期数：</span>${prSchedModeSelect('prSetSchedMode(this.value)')}</div>` + prScheduleHtml();
   const list = (prData.list || []).filter(p => p.section === prSection);
   if (!list.length) return '<div class="empty" style="padding:30px">该板块暂无内容（admin 可在「宣传管理」中录入）</div>';
 
@@ -196,12 +222,12 @@ function prCourseScheduleHtml(title) {
   </div>`).join('')}`;
 }
 
-// ── 当期课程表（与对外宣传页同款日历；不含任何上课链接） ──
+// ── 课程表（当期 / 下一期 / 已发布；与对外宣传页同款日历；不含任何上课链接） ──
 // data：{ share, sessions }（默认当前页 prData）；forClient=true 时去掉内部提示语（用于对外资料）
 function prScheduleHtml(data, forClient) {
   data = data || prData;
   const sessions = (data && data.sessions) || [];
-  if (!sessions.length) return '<div class="empty" style="padding:30px">该专业暂无发布的课程表（admin 可在课程安排 → 学生课表中发布）</div>';
+  if (!sessions.length) return `<div class="empty" style="padding:30px">${prEsc((data && data.share && data.share.empty) || '该专业暂无发布的课程表（admin 可在课程安排 → 学生课表中发布）')}</div>`;
   // 课程配色：按首次上课日期排序后依次取 PR_COLORS（[文字色, 底色]）
   const byCourse = {};
   sessions.forEach(s => { if (!byCourse[s.course_id]) byCourse[s.course_id] = []; byCourse[s.course_id].push(s); });
