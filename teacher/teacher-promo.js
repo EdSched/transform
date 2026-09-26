@@ -27,6 +27,21 @@ function prSchedModeSelect(onchange) {
     ${[['next', `下一期（${k.next.label}）`], ['cur', `当期（${k.cur.label}）`], ['share', '已发布的学生课表']].map(([v, l]) => `<option value="${v}" ${prSchedMode === v ? 'selected' : ''}>${l}</option>`).join('')}
   </select>`;
 }
+// 有已发布宣传内容的专业（跟随 admin 宣传管理；「宣传相关」「宣传资料整合」共用，进入页面时查一次后缓存）
+let prMajorsCache = null;
+const PR_MAJORS_FALLBACK = ['shakai', 'shinpan', 'fukushi', 'keiei', 'keizai'];
+async function prAvailableMajors() {
+  if (prMajorsCache) return prMajorsCache;
+  let rows;
+  try { rows = await sbAll('/rest/v1/promo_content?or=(published.is.null,published.is.true)&select=major'); }
+  catch (e) { return PR_MAJORS_FALLBACK; }   // 查询失败不缓存，下次再试
+  const order = majorFilterKeys();
+  const idx = k => { const i = order.indexOf(k); return i < 0 ? 9999 : i; };
+  prMajorsCache = [...new Set((rows || []).map(r => r.major).filter(Boolean))].sort((a, b) => idx(a) - idx(b) || a.localeCompare(b));
+  return prMajorsCache;
+}
+function prMajorName(k) { return k === 'shakai_group' ? '社会人文' : (MAJORS[k] || (typeof majorLabel === 'function' ? majorLabel(k) : '') || k); }
+
 function prSetSchedMode(v) { prSchedMode = v; renderTeacherPromo(document.getElementById('mainContent')); }
 
 const PR_SECTIONS = [
@@ -138,6 +153,8 @@ async function prFetchMajor(major, mode) {
 async function renderTeacherPromo(mc) {
   mc.innerHTML = '<div class="empty">加载中…</div>';
   try {
+    const majors = await prAvailableMajors();
+    if (majors.length && !majors.includes(prMajor)) prMajor = majors[0];
     prData = await prFetchMajor(prMajor);
   } catch (e) { mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
   prRenderShell();
@@ -150,7 +167,7 @@ function prRenderShell() {
   <div class="page-header"><div class="section-title">📣 宣传相关</div></div>
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
     <span style="font-size:10px;color:var(--text-3)">专业：</span>
-    ${['shakai','shinpan','fukushi','keiei','keizai'].map(m => `<div class="filter-chip ${prMajor===m?'active':''}" onclick="prSetMajor('${m}')" style="padding:3px 10px;font-size:10px">${MAJORS[m]||m}</div>`).join('')}
+    ${(prMajorsCache || PR_MAJORS_FALLBACK).map(m => `<div class="filter-chip ${prMajor===m?'active':''}" onclick="prSetMajor('${m}')" style="padding:3px 10px;font-size:10px">${prEsc(prMajorName(m))}</div>`).join('') || '<span style="font-size:10px;color:var(--text-3)">admin 还没有录入任何专业的宣传内容</span>'}
   </div>
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px">
     ${PR_SECTIONS.map(([k,l]) => `<button onclick="prSection='${k}';prExpanded=null;prRenderShell()" style="font-size:11px;padding:5px 14px;border-radius:3px;cursor:pointer;font-family:inherit;border:1px solid ${prSection===k?'var(--accent)':'var(--border)'};background:${prSection===k?'var(--accent)':'var(--surface)'};color:${prSection===k?'#fff':'var(--text-2)'}">${l}</button>`).join('')}
