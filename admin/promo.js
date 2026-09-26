@@ -29,11 +29,110 @@ function promoParseTpl(body){
   });
   return vals;
 }
+// ── 「重点研究科」表格编辑器（模板模式）──
+const PROMO_JT_COLS = ['学校名', '研究科', '专攻/分野', '英语', '日语'];
+let promoJt = { rows: [], note: '', converted: false, pasteOpen: false };
+function promoJtIsHeader(cells){ return cells.some(c=>/^(学校名?|大学名?|研究科|专攻|専攻|分野)/.test(String(c).trim())) && cells.some(c=>/研究科|英语|英語|日语|日語/.test(String(c).trim())); }
+function promoJtFit(cells){
+  const c=cells.map(x=>String(x==null?'':x).trim()).map(x=>x==='—'||x==='-'?'':x);
+  if(c.length>5) c.splice(4, c.length-4, c.slice(4).join(' '));
+  while(c.length<5) c.push('');
+  return c;
+}
+// 粘贴 / 旧文字：有 Tab 按 Tab 分列，否则按连续 2 个以上空格（含全角空格）分列
+function promoJtSplit(line){
+  return /\t/.test(line) ? line.split('\t') : line.trim().split(/[ \u3000]{2,}|\u3000/);
+}
+// 按表头把各列对应到固定 5 列；对不上的列并入「专攻/分野」；表头一列都对不上时按位置
+function promoJtByHead(head, body){
+  const key=[/学校|大学/, /研究科/, /专攻|専攻|分野|专业|方向/, /英/, /日/];
+  const map=head.map(h=>key.findIndex(k=>k.test(h)));
+  return body.map(r=>{
+    if(!map.some(x=>x>=0)) return promoJtFit(r);
+    const out=['','','','',''];
+    r.forEach((v,i)=>{ const v2=String(v||'').trim(); if(!v2||v2==='—'||v2==='-') return; const k=i<map.length?map[i]:-1; if(k>=0&&!out[k]) out[k]=v2; else out[2]=out[2]?out[2]+' / '+v2:v2; });
+    return out;
+  });
+}
+// 把字段文本解析成 { rows, note, converted }
+function promoJtParse(text){
+  const lines=String(text||'').replace(/\r/g,'').split('\n');
+  const isPipe=l=>/^\|.*\|$/.test(l.trim());
+  if(lines.some(isPipe)){
+    const pipe=lines.filter(isPipe).map(l=>l.trim()).filter(l=>!/^\|[\s:\-|]+\|$/.test(l));
+    const note=lines.filter(l=>!isPipe(l)).join('\n').trim();
+    const cells=l=>l.slice(1,-1).split('|').map(x=>x.trim());
+    const head=pipe.length?cells(pipe[0]):[];
+    return { rows: promoJtByHead(head, pipe.slice(1).map(cells)), note, converted:false };
+  }
+  const ls=lines.map(l=>l.replace(/\s+$/,'')).filter(l=>l.trim());
+  if(!ls.length) return { rows:[], note:'', converted:false };
+  const rows=ls.map(l=>promoJtSplit(l));
+  if(promoJtIsHeader(rows[0])) return { rows: promoJtByHead(rows[0], rows.slice(1)), note:'', converted:true };
+  return { rows: rows.map(promoJtFit), note:'', converted:true };
+}
+function promoJtToMarkdown(){
+  const rows=promoJt.rows.filter(r=>r.some(c=>String(c||'').trim()));
+  const note=(promoJt.note||'').trim();
+  const cell=v=>{ const t=String(v||'').trim().replace(/\|/g,'／').replace(/\n/g,' '); return t||'—'; };
+  const parts=[];
+  if(rows.length){
+    parts.push('| '+PROMO_JT_COLS.join(' | ')+' |\n|'+PROMO_JT_COLS.map(()=>'---').join('|')+'|\n'+rows.map(r=>'| '+r.map(cell).join(' | ')+' |').join('\n'));
+  }
+  if(note) parts.push(note);
+  return parts.join('\n\n');
+}
+function promoJtHtml(){
+  const inp='width:100%;box-sizing:border-box;font-size:12px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit';
+  const rows=promoJt.rows.length?promoJt.rows:[['','','','','']];
+  if(!promoJt.rows.length) promoJt.rows=rows;
+  const grid='grid-template-columns:1.4fr 1.4fr 1.4fr .8fr .8fr 26px';
+  return `
+    ${promoJt.converted?'<div style="font-size:11px;color:var(--warn,#b8860b);background:#fff8e6;border:1px solid #e8d4a0;border-radius:2px;padding:5px 10px;margin-bottom:6px">已从旧格式转换，请检查每一列是否对得上（拆不开的整行放在「学校名」里）</div>':''}
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+      <button type="button" class="btn btn-outline btn-sm" onclick="promoJt.pasteOpen=!promoJt.pasteOpen;promoJtRender()">📋 从 Excel 粘贴</button>
+      <span style="font-size:10px;color:var(--text-3)">从 Excel 复制几行直接粘贴，自动分列；第一行是表头会自动跳过</span>
+    </div>
+    ${promoJt.pasteOpen?`<div style="border:1px dashed var(--border);border-radius:3px;padding:8px;margin-bottom:8px;background:var(--bg)">
+      <textarea id="tpl_jt_paste" rows="5" placeholder="在这里粘贴（Excel 复制的内容按 Tab 分列；没有 Tab 时按 2 个以上空格分列）" style="${inp};line-height:1.6;resize:vertical"></textarea>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button type="button" class="btn btn-primary btn-sm" onclick="promoJtPaste()">填入表格</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="promoJt.pasteOpen=false;promoJtRender()">取消</button>
+      </div>
+    </div>`:''}
+    <div style="display:grid;${grid};gap:4px;margin-bottom:3px">
+      ${PROMO_JT_COLS.map(c=>`<div style="font-size:10px;color:var(--text-3);font-weight:600">${c}</div>`).join('')}<div></div>
+    </div>
+    ${rows.map((r,ri)=>`<div style="display:grid;${grid};gap:4px;margin-bottom:4px;align-items:center">
+      ${r.map((v,ci)=>`<input value="${promoEsc(v)}" oninput="promoJt.rows[${ri}][${ci}]=this.value" style="${inp}">`).join('')}
+      <span onclick="promoJt.rows.splice(${ri},1);promoJtRender()" title="删除这一行" style="cursor:pointer;color:var(--danger);font-size:13px;text-align:center">✕</span>
+    </div>`).join('')}
+    <button type="button" class="btn btn-outline btn-sm" onclick="promoJt.rows.push(['','','','','']);promoJtRender()">＋ 添加一行</button>
+    <label style="font-size:10px;color:var(--text-3);display:block;margin:8px 0 3px">补充说明（可选，显示在表格下方）</label>
+    <textarea rows="2" oninput="promoJt.note=this.value" placeholder="例：英语/日语为合格数据中最低成绩" style="${inp};line-height:1.6;resize:vertical">${promoEsc(promoJt.note)}</textarea>`;
+}
+function promoJtRender(){ const el=document.getElementById('tpl_juuten_box'); if(el) el.innerHTML=promoJtHtml(); }
+function promoJtPaste(){
+  const text=((document.getElementById('tpl_jt_paste')||{}).value||'').replace(/\r/g,'');
+  let rows=text.split('\n').filter(l=>l.trim()).map(promoJtSplit);
+  let fitted;
+  if(rows.length&&promoJtIsHeader(rows[0])) fitted=promoJtByHead(rows[0], rows.slice(1));
+  else fitted=rows.map(promoJtFit);
+  if(!fitted.length){ alert('没有可填入的内容'); return; }
+  promoJt.rows=promoJt.rows.filter(r=>r.some(c=>String(c||'').trim())).concat(fitted);
+  promoJt.pasteOpen=false;
+  promoJtRender();
+}
+
 // 6字段填写表单
 function promoTemplateFields(editing){
   const vals=promoParseTpl(editing.body);
+  promoJt=Object.assign(promoJtParse(vals.juuten), { pasteOpen:false });
   return `<div style="display:flex;flex-direction:column;gap:8px" id="promo_tpl_wrap">
-    ${PROMO_TPL_FIELDS.map(f=>`<div>
+    ${PROMO_TPL_FIELDS.map(f=>f[0]==='juuten'?`<div>
+      <label style="font-size:10px;color:var(--accent,#8b5cf6);font-weight:600;display:block;margin-bottom:3px">${f[1]}</label>
+      <div id="tpl_juuten_box" style="border:1px solid var(--border-light);border-radius:3px;padding:8px 10px">${promoJtHtml()}</div>
+    </div>`:`<div>
       <label style="font-size:10px;color:var(--accent,#8b5cf6);font-weight:600;display:block;margin-bottom:3px">${f[1]}</label>
       <textarea id="tpl_${f[0]}" rows="3" style="width:100%;font-size:12px;line-height:1.7;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit;resize:vertical" placeholder="${promoEsc(f[2]||('填写「'+f[1]+'」的内容'))}">${promoEsc(vals[f[0]]||'')}</textarea>
     </div>`).join('')}
@@ -43,7 +142,7 @@ function promoTemplateFields(editing){
 // 把6字段拼成 markdown（供保存）
 function promoTplToMarkdown(){
   return PROMO_TPL_FIELDS.map(f=>{
-    const v=(document.getElementById('tpl_'+f[0])||{}).value||'';
+    const v=f[0]==='juuten'?promoJtToMarkdown():((document.getElementById('tpl_'+f[0])||{}).value||'');
     if(!v.trim()) return '';
     return '## '+f[1]+'\n'+v.trim();
   }).filter(Boolean).join('\n\n');

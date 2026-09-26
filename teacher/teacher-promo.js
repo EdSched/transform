@@ -62,6 +62,19 @@ function prMd(body) {
       </table></div>`;
       continue;
     }
+    // 兜底：连续两行以上、每行都含 Tab 的文字（如从 Excel 粘贴）也显示成表格，按 Tab 分列，首行作表头
+    if (/\t/.test(lines[i]) && i + 1 < lines.length && /\t/.test(lines[i + 1]) && lines[i + 1].trim()) {
+      flush();
+      const rows = [];
+      while (i < lines.length && lines[i].trim() && /\t/.test(lines[i])) { rows.push(lines[i].replace(/\s+$/, '').split('\t').map(c => prInline(c.trim()))); i++; }
+      const n = Math.max(...rows.map(r => r.length));
+      const pad = r => r.concat(Array(n - r.length).fill(''));
+      out += `<div style="overflow-x:auto;margin:6px 0 12px"><table style="border-collapse:collapse;width:100%;min-width:380px;background:var(--surface)">
+        <thead><tr>${pad(rows[0]).map(c => `<th style="background:var(--bg);color:var(--accent);font-size:10px;font-weight:600;text-align:left;padding:6px 10px;border:1px solid var(--border);white-space:nowrap">${c}</th>`).join('')}</tr></thead>
+        <tbody>${rows.slice(1).map(r => `<tr>${pad(r).map(c => `<td style="font-size:11px;color:var(--text-2);padding:6px 10px;border:1px solid var(--border-light)">${c}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table></div>`;
+      continue;
+    }
     if (/^[-・]\s?/.test(t)) {
       flush();
       const items = [];
