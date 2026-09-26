@@ -54,7 +54,7 @@ Sensis 经常在多个窗口/对话里同时改同一批文件，**已经多次�
   - **任何写入/修改学生查询码的代码，都必须同时 upsert `student_login`**（见 `admin/students.js` 的 `syncStudentLogin`）。
 - 领域访问链接 `admin/?k=<key>`：链接即登录，无密码，走 `<k>@access.local`。
 - 所有做 Auth 登录的页面都必须加载 supabase-js：先 jsdelivr，再本仓库副本 `shared/vendor/supabase.min.js` 兜底（国内/微信里 jsdelivr 时通时不通，加载失败会表现为"页面空白/没数据"）。
-- 已开启 RLS：`students`、`student_login`、`teachers`、`teacher_profiles`、`periods`、`monthly_reviews` 等。
+- 已开启 RLS：`students`、`student_login`、`teachers`、`teacher_profiles`、`periods`、`monthly_reviews`、`bookings`（学生只能读/新增自己 `student_id` 的预约，新同学匿名只能新增 `student_id` 为空的；学生改自己预约走 `rpc/student_patch_booking`，匿名统计名额走 `rpc/slot_booking_counts`）等。
   - 给新表开 RLS 前：先 `select * from pg_policies where tablename='xxx'` 查有没有遗留的 `public all` 宽松策略；先确认前端/登录流程依赖哪条读取路径；每一步都附回滚语句 `alter table ... disable row level security;`。
   - sched 系统的表原则上不锁。
 - 老师能看到哪些学生：以 `teacher/teacher-students.js` 的 `tsaAllowedSet()` 为准（按 `students.major` 单值过滤，集合为空=看全部）。不要凭记忆重写这套逻辑。
