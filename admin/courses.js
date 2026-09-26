@@ -298,6 +298,7 @@ let cleanupTypeFilter='all';
 let cleanupCampusFilter='all';
 let cleanupMajorFilter='all';
 let cleanupPeriodFilter='all';
+let cleanupHwFilter=false;   // 只看「作业未存模板」的课
 let cachedCourseMembers=[];   // course_members 全部行（课程清理页加载）
 let cleanupYearFilter='all';
 
@@ -320,6 +321,7 @@ function renderCourseCleanupPage(mc){
   if(cleanupPeriodFilter!=='all') filtered=filtered.filter(c=>effectivePeriod(c)===cleanupPeriodFilter);
   if(cleanupCampusFilter!=='all') filtered=filtered.filter(c=>(c.campus||'')===cleanupCampusFilter);
   if(cleanupYearFilter!=='all') filtered=filtered.filter(c=>c.first_session_date?.startsWith(cleanupYearFilter));
+  if(cleanupHwFilter) filtered=filtered.filter(c=>{ const st=hwTplStatus(c); return st&&(st.noTpl||st.missing>0); });
 
   // 视角过滤后的全部课（筛选项来源，因地制宜——只列本视角实际有的期数/年份/校区）
   const viewCourses=cachedCourses.filter(c=>{
@@ -365,6 +367,12 @@ function renderCourseCleanupPage(mc){
   </div>
 
   <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap">
+    <div>
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">作业</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        <div class="filter-chip${cleanupHwFilter?' active':''}" onclick="cleanupHwFilter=!cleanupHwFilter;renderCourseCleanupPage(document.getElementById('mainContent'))" style="font-size:11px;padding:3px 10px">⚠ 作业未存模板</div>
+      </div>
+    </div>
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">课程属性</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
@@ -419,13 +427,14 @@ function renderCourseCleanupPage(mc){
         return `
         <div class="cleanup_row" data-id="${c.id}" data-dup="${isDup?'1':'0'}" onclick="cleanupRowClick(event,'${c.id}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid ${sel?'var(--accent)':isDup?'#e0c060':'var(--border-light)'};background:${sel?'var(--accent-light, #e8e0d0)':isDup?'#fffbe8':'var(--surface)'};border-radius:3px;margin-bottom:6px;transition:background-color .12s">
           <div style="flex:1">
-            <div style="font-size:12px;font-weight:600">${c.name} ${isDup?'<span style="font-size:9px;background:#e0c060;color:#5a4a10;border-radius:2px;padding:1px 5px;margin-left:4px">疑似重复</span>':''}${cmRowTag(c)}</div>
+            <div style="font-size:12px;font-weight:600">${c.name} ${isDup?'<span style="font-size:9px;background:#e0c060;color:#5a4a10;border-radius:2px;padding:1px 5px;margin-left:4px">疑似重复</span>':''}${cmRowTag(c)}${hwTplTag(c)}</div>
             <div style="font-size:11px;color:var(--text-3);margin-top:2px">
               ${(c.major||[]).map(m=>majorLabel(m)).join('/')} · ${c.teacher||''} · ${c.time_range||''} ·
               ${sessions.length} 条课次记录（设置回数：${c.total_sessions||'-'}）·
               首回 ${c.first_session_date||'-'}
             </div>
           </div>
+          ${(()=>{const st=hwTplStatus(c);return st&&!st.noTpl&&st.missing>0?`<button class="btn btn-outline btn-sm" onclick="event.stopPropagation();hwSaveAllToTemplate('${c.id}')">📝 作业全部存入模板</button>`:''})()}
           <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openSaveAsTemplate('${c.id}')">💾 存为模板</button>
           <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openAddCourseModal('${c.id}')">编辑</button>
           <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="event.stopPropagation();cleanupDeleteSingle('${c.id}')">删除</button>
@@ -595,7 +604,9 @@ async function saveAsTemplate(courseId,templateName){
   try{
     await sb('/rest/v1/course_templates','POST',tpl);
     alert(`已保存为模板「${templateName}」${hwCount?`\n其中 ${hwCount} 回的作业已一并保存，套用时自动带出`:''}`);
-    renderTemplateList();
+    if(Array.isArray(cachedTemplates)) cachedTemplates.unshift(tpl);
+    if(curPage==='coursecleanup') renderCourseCleanupPage(document.getElementById('mainContent'));
+    else renderTemplateList();
   }catch(e){alert('保存模板失败：'+e.message)}
 }
 let cachedTemplates=null;
@@ -801,6 +812,16 @@ function renderCoursesPage(mc){
     if(c.major&&c.major.length) return c.major.some(m=>majorList.includes(m));
     return false; // 选了具体专业时，无专业的课不匹配
   });
+  // 期数标签只从符合当前「状态」筛选的课里取（进行中=还有没上完的课的期）
+  const statusOk=c=>coursesArchiveFilter==='all'||(coursesArchiveFilter==='ended'?courseIsEnded(c):!courseIsEnded(c));
+  const allPeriods=[...new Map(cachedCourses
+    .filter(c=>c.first_session_date&&statusOk(c))
+    .map(c=>{const year=c.first_session_date.slice(0,4);const per=effectivePeriod(c);const key=`${year}年${per}`;return [key,{key,period:per,year}]})
+  ).values()].sort((a,b)=>a.key.localeCompare(b.key));
+  // 选中的期因切换状态不在列表里了：回到当前期（当前期也没有这种状态的课就回到全部）
+  if(coursesPeriodFilter!=='current'&&coursesPeriodFilter!=='all'&&!allPeriods.some(p=>p.key===coursesPeriodFilter)){
+    coursesPeriodFilter=cachedCourses.some(c=>statusOk(c)&&effectivePeriod(c)===curPeriod)?'current':'all';
+  }
   if(coursesPeriodFilter==='current') filtered=filtered.filter(c=>effectivePeriod(c)===curPeriod);
   else if(coursesPeriodFilter!=='all'){
     const [filterYear,filterPeriod]=coursesPeriodFilter.match(/(\d{4})年(.+)/)?.slice(1)||[];
@@ -815,11 +836,6 @@ function renderCoursesPage(mc){
   // 状态筛选：默认「进行中」隐藏已结课的课程
   if(coursesArchiveFilter==='active') filtered=filtered.filter(c=>!courseIsEnded(c));
   else if(coursesArchiveFilter==='ended') filtered=filtered.filter(c=>courseIsEnded(c));
-
-  const allPeriods=[...new Map(cachedCourses
-    .filter(c=>c.first_session_date)
-    .map(c=>{const year=c.first_session_date.slice(0,4);const per=effectivePeriod(c);const key=`${year}年${per}`;return [key,{key,period:per,year}]})
-  ).values()].sort((a,b)=>a.key.localeCompare(b.key));
 
   mc.innerHTML=`
   <div class="page-header">
@@ -1208,10 +1224,12 @@ function openPublishModal(){
 }
 
 function renderPublishModal(){
+  // 只列还有课没上完的期（已全部结课的期不再显示，「全部」里仍可看到）
   const allPeriods=[...new Map(cachedCourses
-    .filter(c=>c.period&&c.first_session_date)
+    .filter(c=>c.period&&c.first_session_date&&!courseIsEnded(c))
     .map(c=>{const year=c.first_session_date.slice(0,4);const key=`${year}年${c.period}`;return[key,key]})
   ).values()].sort();
+  if(publishPeriodFilter!=='all'&&!allPeriods.includes(publishPeriodFilter)) publishPeriodFilter='all';
 
   document.getElementById('publishFilters').innerHTML=`
     <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">
@@ -1695,6 +1713,13 @@ async function saveAddCourse(){
 
       const confirmed=document.getElementById('ac_confirm_publish')?.checked ?? (existing[0]?.confirmed||false);
       const mainTeacher=courseData.teacher;
+      // 作业跟着「单回标题 + 担当老师」走：保存前记下每份作业的归属
+      const hwKey=(title,teacher)=>(title||'').trim()+'\u0001'+(teacher||'').trim();
+      const hwItems=existing.filter(x=>hwHasQ(x.homework_questions)).map(x=>({
+        fromId:x.id, fromNum:x.session_number, title:(x.session_title||'').trim(),
+        key:hwKey(x.session_title,x.session_teacher||x.teacher),
+        questions:x.homework_questions, note:x.homework_note||null, enabled:true,
+      }));
 
       for(const r of rows){
         const isCancelled = r.num==='休讲' || r.title==='休讲';
@@ -1705,7 +1730,8 @@ async function saveAddCourse(){
           time_range:r.time_range||courseData.time_range,
           actual_hours:courseData.actual_hours,
           delivery:courseData.delivery,campus:courseData.campus,
-          homework_enabled:courseData.homework_enabled,
+          // 已布置作业的回次保持开启，不被课程级开关覆盖
+          homework_enabled:(r.id&&existingMap[r.id]&&hwHasQ(existingMap[r.id].homework_questions))?true:courseData.homework_enabled,
           teacher:r.teacher||mainTeacher,
           session_title:r.title||'',
           session_teacher:r.teacher||mainTeacher,
@@ -1730,6 +1756,8 @@ async function saveAddCourse(){
         }
       }
 
+      const hwMsg=await hwFollowTitles(editingId, hwItems, hwKey, courseData.homework_enabled);
+
       closeModal('addCourseModal');
       renderCoursesPage(document.getElementById('mainContent'));
       // 检测单回日期是否有变动（改日期 / 休讲顺延 / 新增行）
@@ -1738,6 +1766,7 @@ async function saveAddCourse(){
         if(r.id && oldDateById[r.id]!==undefined){ if(oldDateById[r.id]!==r.date) dateChanged=true; }
         else { dateChanged=true; } // 新增的行也算变动
       }
+      if(hwMsg) alert(hwMsg);
       if(dateChanged){
         alert('课程已更新。\n\n检测到单回日期有变动（改期/休讲顺延/新增课次），这可能影响排课系统里的教室占用与腾讯会议安排。\n\n请记得到排课系统，为变动的日期确认/补上临时教室占用。');
       } else {
@@ -1778,6 +1807,75 @@ async function saveAddCourse(){
     renderCoursesPage(document.getElementById('mainContent'));
     alert('添加成功！已生成 ' + dates.length + ' 个课次');
   }catch(e){alert('保存失败：'+e.message)}
+}
+
+// 保存单回明细后：原来那一行的标题或老师变了、且另一行「标题+老师」完全一致 → 作业搬过去（可互换）
+// 返回要提示的文字（没有移动也没有问题时为空）
+async function hwFollowTitles(courseId, items, hwKey, courseHwEnabled){
+  if(!items.length) return '';
+  const after=cachedSessions.filter(s=>s.course_id===courseId);
+  const byId={}; after.forEach(s=>byId[s.id]=s);
+  const keyOf=s=>hwKey(s.session_title,s.session_teacher||s.teacher);
+  const usable=s=>{ const t=(s.session_title||'').trim(); return t&&t!=='休讲'&&!s.is_cancelled; };
+  const warns=[], plan=new Map();   // fromId -> target session
+  const movers=[];
+  items.forEach(it=>{
+    const src=byId[it.fromId];
+    if(src&&keyOf(src)===it.key) return;   // 原位的标题/老师没变，不动
+    movers.push(it);
+  });
+  if(!movers.length) return '';
+  // 原课次已有学生提交的，不移动
+  let subCount={};
+  const srcIds=movers.filter(it=>byId[it.fromId]).map(it=>it.fromId);
+  if(srcIds.length){
+    const subs=await sb(`/rest/v1/homework_submissions?session_id=in.(${srcIds.map(x=>`"${x}"`).join(',')})&select=session_id`).catch(()=>[]);
+    (subs||[]).forEach(x=>{ subCount[x.session_id]=(subCount[x.session_id]||0)+1; });
+  }
+  const numLabel=n=>n!=null?`第 ${n} 回`:'原回次';
+  movers.forEach(it=>{
+    const src=byId[it.fromId];
+    if(subCount[it.fromId]){ warns.push(`${numLabel(it.fromNum)}已有 ${subCount[it.fromId]} 份学生提交，作业保留在原位，没有移动`); return; }
+    const t=it.title;
+    const cands=(t&&t!=='休讲')?after.filter(s=>usable(s)&&keyOf(s)===it.key):[];
+    if(cands.length!==1||cands[0].id===it.fromId){
+      warns.push(src?`${numLabel(it.fromNum)}的作业没有找到对应的单回，仍保留在原位，请手动检查`:`${numLabel(it.fromNum)}已删除，它的作业没有找到对应的单回（已随课次删除）`);
+      return;
+    }
+    plan.set(it.fromId,{it,target:cands[0]});
+  });
+  // 目标行原来有作业、而那份作业不跟着走 → 这次也不能移（反复检查直到稳定，处理互换/连锁）
+  const hasOwnHw=new Set(items.map(it=>it.fromId).filter(id=>byId[id]));
+  let changed=true;
+  while(changed){
+    changed=false;
+    for(const [fromId,{it,target}] of [...plan]){
+      if(hasOwnHw.has(target.id)&&!plan.has(target.id)){
+        plan.delete(fromId); changed=true;
+        warns.push(`${numLabel(it.fromNum)}的作业没有找到对应的单回，仍保留在原位，请手动检查（目标 第 ${target.session_number} 回已有作业）`);
+      }
+    }
+    // 两份作业指向同一行也不能移
+    const cnt={}; plan.forEach(({target})=>cnt[target.id]=(cnt[target.id]||0)+1);
+    for(const [fromId,{it,target}] of [...plan]){
+      if(cnt[target.id]>1){ plan.delete(fromId); changed=true; warns.push(`${numLabel(it.fromNum)}的作业没有找到对应的单回，仍保留在原位，请手动检查`); }
+    }
+  }
+  if(!plan.size) return warns.join('\n');
+  // 执行：目标写入搬来的作业；搬走后没有新作业进来的原行清空
+  const incoming=new Set([...plan.values()].map(p=>p.target.id));
+  const patches=[];
+  plan.forEach(({it,target})=>patches.push([target,{homework_questions:it.questions,homework_note:it.note,homework_enabled:true}]));
+  plan.forEach(({it})=>{ const src=byId[it.fromId]; if(src&&!incoming.has(src.id)) patches.push([src,{homework_questions:null,homework_note:null,homework_enabled:!!courseHwEnabled}]); });
+  const moved=[];
+  try{
+    for(const [row,patch] of patches){
+      await sb(`/rest/v1/course_sessions?id=eq.${row.id}`,'PATCH',patch);
+      Object.assign(row,patch);
+    }
+    plan.forEach(({it,target})=>moved.push(`${numLabel(it.fromNum)} → 第 ${target.session_number} 回「${target.session_title}」`));
+  }catch(e){ warns.push('移动作业时出错：'+e.message+'（请到对应回次检查作业）'); }
+  return [moved.length?'已按标题自动移动作业：\n'+moved.join('\n'):'', warns.join('\n')].filter(Boolean).join('\n\n');
 }
 
 function acPopulateRows(rows){
@@ -2072,10 +2170,12 @@ function renderSchedulePage(mc){
     return true;
   });
   // 带年份的期数列表（用季度 effectivePeriod，和其他页统一）
+  // 只列还有课没上完的期（已全部结课的期不再显示，「全部」里仍可看到）
   const allPeriods=[...new Map(viewCourses
-    .filter(c=>c.first_session_date)
+    .filter(c=>c.first_session_date&&!courseIsEnded(c))
     .map(c=>{const year=c.first_session_date.slice(0,4);const per=effectivePeriod(c);const key=`${year}年${per}`;return [key,{key,period:per,year}]})
   ).values()].sort((a,b)=>a.key.localeCompare(b.key));
+  if(schedPeriodFilter!=='all'&&!allPeriods.some(p=>p.key===schedPeriodFilter)) schedPeriodFilter='all';
 
   // 按属性+期数+课程筛选
   let filteredCourses=viewCourses;
@@ -2944,6 +3044,7 @@ function cleanupSelectAllFiltered(){
   else if(cleanupTypeFilter==='共通课') filtered=filtered.filter(c=>c.course_type?.includes('共通'));
   else if(cleanupTypeFilter==='VIP') filtered=filtered.filter(c=>c.course_type?.includes('VIP'));
   if(typeof cleanupPeriodFilter!=='undefined'&&cleanupPeriodFilter!=='all') filtered=filtered.filter(c=>effectivePeriod(c)===cleanupPeriodFilter);
+  if(cleanupHwFilter) filtered=filtered.filter(c=>{ const st=hwTplStatus(c); return st&&(st.noTpl||st.missing>0); });
   filtered.forEach(c=>cleanupSelected.add(c.id));
   renderCourseCleanupPage(document.getElementById('mainContent'));
 }
@@ -3211,6 +3312,68 @@ async function hwSaveQuestions(sessionId, silent){
 }
 
 // ══ 作业写入课程模板（按模板名/课程名 + 回数绑定，套用模板时自动带出） ══
+// ── 作业是否已存入同名模板（课程清理页标签 / 批量写入）──
+function hwHasQ(q){ return Array.isArray(q) ? q.length>0 : !!(q && Array.isArray(q.levels) && q.levels.length); }
+function hwStableJson(v){
+  if(Array.isArray(v)) return '['+v.map(hwStableJson).join(',')+']';
+  if(v&&typeof v==='object') return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+hwStableJson(v[k])).join(',')+'}';
+  return JSON.stringify(v===undefined?null:v);
+}
+function hwTplCands(name){ const n=(name||'').trim(); return (cachedTemplates||[]).filter(t=>(t.name||'').trim()===n); }
+// 返回 null=没有作业或模板未加载；{noTpl:true,total}；{missing,total,tpl}（多个同名模板取差得最少的那个）
+function hwTplStatus(c){
+  if(!Array.isArray(cachedTemplates)) return null;
+  const hs=cachedSessions.filter(s=>s.course_id===c.id&&hwHasQ(s.homework_questions)&&s.session_number!=null);
+  if(!hs.length) return null;
+  const cands=hwTplCands(c.name);
+  if(!cands.length) return {noTpl:true,total:hs.length};
+  let best=null;
+  cands.forEach(t=>{
+    const rows=t.detail_rows||[];
+    const missing=hs.filter(s=>{
+      const r=rows.find(r=>String(r.num)===String(s.session_number));
+      return !r||!hwHasQ(r.homework_questions)||hwStableJson(r.homework_questions)!==hwStableJson(s.homework_questions);
+    }).length;
+    if(!best||missing<best.missing) best={missing,total:hs.length,tpl:t};
+  });
+  return best;
+}
+function hwTplTag(c){
+  const st=hwTplStatus(c); if(!st) return '';
+  const ended=courseIsEnded(c);
+  const sty=ended?'background:#f8e4dc;color:#8a2a1a;border:1px solid #d9a08a':'background:var(--bg);color:var(--text-3);border:1px solid var(--border)';
+  if(st.noTpl) return `<span onclick="event.stopPropagation();if(confirm('这门课没有同名模板，作业无法带到下一期。\\n现在「💾 存为模板」吗？（模板名请保持与课程名相同）'))openSaveAsTemplate('${c.id}')" title="点击去存为模板" style="font-size:9px;border-radius:2px;padding:1px 5px;margin-left:4px;cursor:pointer;${sty}">⚠ 无模板，作业无法带到下一期</span>`;
+  if(!st.missing) return '';
+  return `<span title="有作业的回次中，模板里没有或是旧版本的回数" style="font-size:9px;border-radius:2px;padding:1px 5px;margin-left:4px;${sty}">⚠ ${st.missing}回作业未存入模板</span>`;
+}
+// 把一门课所有有作业的回次，按回数一次性写入同名模板
+async function hwSaveAllToTemplate(courseId){
+  const c=cachedCourses.find(x=>x.id===courseId); if(!c) return;
+  const hs=cachedSessions.filter(s=>s.course_id===courseId&&hwHasQ(s.homework_questions)&&s.session_number!=null);
+  if(!hs.length){ alert('这门课没有布置作业的回次'); return; }
+  const cands=hwTplCands(c.name);
+  if(!cands.length){ alert(`没有找到与课程「${c.name}」同名的模板，请先点「💾 存为模板」`); return; }
+  let tpl=cands[0];
+  if(cands.length>1){
+    const pick=prompt(`有 ${cands.length} 个同名模板，请输入要写入的序号（1-${cands.length}）：\n`+cands.map((t,i)=>`${i+1}. ${t.name}（${(t.detail_rows||[]).length}回，创建于 ${(t.created_at||'').slice(0,10)}）`).join('\n'),'1');
+    const idx=parseInt(pick)-1;
+    if(isNaN(idx)||!cands[idx]) return;
+    tpl=cands[idx];
+  }
+  const rows=[...(tpl.detail_rows||[])];
+  hs.forEach(s=>{
+    const i=rows.findIndex(r=>String(r.num)===String(s.session_number));
+    if(i>=0) rows[i]={...rows[i], homework_questions:s.homework_questions, homework_note:s.homework_note||null};
+    else rows.push({num:s.session_number,title:s.session_title||'',teacher:s.session_teacher||'',homework_questions:s.homework_questions,homework_note:s.homework_note||null});
+  });
+  try{
+    await sb(`/rest/v1/course_templates?id=eq.${tpl.id}`,'PATCH',{detail_rows:rows});
+    tpl.detail_rows=rows;
+    renderCourseCleanupPage(document.getElementById('mainContent'));
+    alert(`已把 ${hs.length} 回作业写入模板「${tpl.name}」\n以后用该模板开新一期，这些作业会自动带出`);
+  }catch(e){ alert('写入模板失败：'+e.message); }
+}
+
 async function hwSaveToTemplate(sessionId){
   const s=cachedSessions.find(x=>x.id===sessionId);
   if(!s){alert('未找到课次');return}

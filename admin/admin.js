@@ -514,8 +514,9 @@ async function renderPage(){
         sbAll('/rest/v1/course_sessions?select=*&order=session_date.asc'),
         sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[]),
         sbAll('/rest/v1/students?select=*&order=name.asc').catch(()=>cachedStudents||[]),
-        sbAll('/rest/v1/course_members?select=*').catch(()=>[])   // 课程学生成员（表未建时为空）
-      ]);
+        sbAll('/rest/v1/course_members?select=*').catch(()=>[]),   // 课程学生成员（表未建时为空）
+        sb('/rest/v1/course_templates?select=*&order=created_at.desc').catch(()=>null)   // 作业是否已存入模板的检查用
+      ]).then(r=>{ cachedTemplates=r.pop(); return r; });
       renderCourseCleanupPage(mc);
     } else if(curPage==='schedule'){
       [cachedCourses,cachedSessions,cachedScheduleSlots,cachedTeacherAvail,cachedTeachers]=await Promise.all([
