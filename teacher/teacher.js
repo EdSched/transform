@@ -2175,6 +2175,9 @@ let teacherAdbEreOnly = false;
 let teacherAdbData = [];
 let teacherAdbSortCol = '', teacherAdbSortDir = 1;
 let teacherAdbColFilters = {};
+// 老师点选的学校（跨专业累积）：key=学校 id，value=整行数据。切换专业/筛选/标签页都不清空
+let teacherAdbSelected = new Map();   // key 统一用 String(id)
+let teacherAdbShowSel = false;   // true=只看已选
 
 // 统一取 shared/constants.js 的 ADMISSION_MAJORS（唯一数据源）；constants 未更新时兜底
 const TEACHER_ADB_MAJORS = (typeof ADMISSION_MAJORS !== 'undefined') ? ADMISSION_MAJORS : {
@@ -2266,6 +2269,8 @@ async function renderTeacherAdmissionDb(mc) {
     <span id="tadbEreHint" style="font-size:10px;color:var(--text-3);display:none">仅显示ERE可代替笔试的学校</span>
   </div>
 
+  <style>#tadbBody tr.tadb-row{cursor:pointer}#tadbBody tr.tadb-sel td{background:#f3ead9 !important}</style>
+  <div id="tadbSelBar" style="display:none"></div>
   <div style="font-size:11px;color:var(--text-3);margin-bottom:6px" id="tadbCount">请选择专业查看数据</div>
   <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">💡 点击列标题可排序，列标题右侧的 ▾ 可筛选该列内容</div>
   <div style="overflow-x:auto">
@@ -2274,6 +2279,9 @@ async function renderTeacherAdmissionDb(mc) {
       <tbody id="tadbBody"></tbody>
     </table>
   </div>`;
+  // 切回本页：恢复已选专业的高亮，并按现有数据/已选重新渲染
+  document.querySelectorAll('#tadbMajorRow [data-key]').forEach(c => c.classList.toggle('active', teacherAdbMajors.includes(c.dataset.key)));
+  teacherAdbRender();
 }
 
 async function teacherAdbToggleMajor(key, el) {
@@ -2402,111 +2410,108 @@ function teacherAdbClearColFilter(col) {
   teacherAdbRender();
 }
 
-function teacherAdbRender() {
-  const thead = document.getElementById('tadbThead');
-  const tbody = document.getElementById('tadbBody');
-  const countEl = document.getElementById('tadbCount');
-  if (!thead || !tbody) return;
-
-  const showMajor = teacherAdbMajors.length !== 1;
-  const filtered = teacherAdbFilter();
-
-  // ERE按钮动态控制
-  const ereContainer = document.getElementById('tadbEreContainer');
-  const ereBtn = document.getElementById('tadbEreBtn');
-  const ereHint = document.getElementById('tadbEreHint');
-  if (ereContainer) {
-    const showEre = teacherAdbMajors.includes('keizai');
-    ereContainer.style.display = showEre ? 'flex' : 'none';
-    if (ereBtn) ereBtn.className = `btn btn-sm ${teacherAdbEreOnly ? 'btn-primary' : 'btn-outline'}`;
-    if (ereHint) ereHint.style.display = teacherAdbEreOnly ? 'inline' : 'none';
-    if (!showEre && teacherAdbEreOnly) teacherAdbEreOnly = false;
+// ── 点选学校 ──
+function teacherAdbToggleSel(id) {
+  id = String(id);
+  if (teacherAdbSelected.has(id)) teacherAdbSelected.delete(id);
+  else {
+    const row = teacherAdbData.find(x => String(x.id) === id);
+    if (row) teacherAdbSelected.set(id, row);
   }
-
-  if (!teacherAdbData.length) {
-    if (countEl) countEl.textContent = '请选择专业查看数据';
-    thead.innerHTML = '';
-    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:40px;color:var(--text-3)">← 请先选择专业</td></tr>';
-    return;
-  }
-  if (countEl) countEl.innerHTML = `筛选结果 <strong style="color:var(--text)">${filtered.length}</strong> 条`;
-
-  const cols = showMajor ? [{ key:'major', label:'专业' }, ...TEACHER_ADB_COLS] : TEACHER_ADB_COLS;
-  const engCol = v => v==='必須'?'var(--accent)':v==='任意'?'var(--warn)':'var(--text-3)';
-
-  thead.innerHTML = `<tr>${cols.map(c => {
-    const arrow = teacherAdbSortCol===c.key ? (teacherAdbSortDir===1?'▲':'▼') : '⇅';
-    const hasFilter = teacherAdbColFilters[c.key] && teacherAdbColFilters[c.key].size;
-    const filterBtn = `<span onclick="event.stopPropagation();teacherAdbOpenColFilter('${c.key}',this)" style="cursor:pointer;color:${hasFilter?'#fff':'rgba(255,255,255,.5)'};margin-left:2px;font-size:10px;${hasFilter?'background:rgba(255,255,255,.2);border-radius:2px;padding:0 2px':''}">▾</span>`;
-    return `<th style="cursor:pointer;white-space:nowrap;padding:6px 8px" onclick="teacherAdbSort('${c.key}')">
-      ${c.label}<span style="font-size:9px;color:rgba(255,255,255,.5);margin-left:2px">${arrow}</span>${filterBtn}
-    </th>`;
-  }).join('')}</tr>`;
-
-  if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="${cols.length}" style="text-align:center;padding:20px;color:var(--text-3)">暂无数据</td></tr>`;
-    return;
-  }
-
-  tbody.innerHTML = filtered.map(s => `<tr>
-    ${showMajor ? `<td style="font-size:10px;color:var(--text-2)">${TEACHER_ADB_MAJORS[s.major]||s.major}</td>` : ''}
-    <td style="font-weight:500">${s.university||''}</td>
-    <td><span style="font-size:10px;background:${s.type==='国立'?'#e8f0fb':s.type==='公立'?'#e8f5e9':'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 4px">${s.type||''}</span></td>
-    <td>${s.faculty||''}</td>
-    <td>${s.department||''}</td>
-    <td style="color:var(--text-2)">${s.admission_type||''}</td>
-    <td style="color:var(--text-2)">${s.doc_review_period||''}</td>
-    <td>${s.application_period||''}</td>
-    <td style="color:var(--text-2)">${s.written_exam||''}</td>
-    <td style="color:var(--text-2)">${s.oral_exam||''}</td>
-    <td style="color:var(--text-2)">${s.result_date||''}</td>
-    <td style="text-align:center;font-weight:700;color:${engCol(s.english_required)}">${s.english_required||'-'}</td>
-    <td style="text-align:center;font-weight:700;color:${engCol(s.japanese_required)}">${s.japanese_required||'-'}</td>
-  </tr>`).join('');
+  teacherAdbRender();
 }
+function teacherAdbSelectAll() {
+  teacherAdbFilter().forEach(r => { const k = String(r.id); if (!teacherAdbSelected.has(k)) teacherAdbSelected.set(k, r); });
+  teacherAdbRender();
+}
+function teacherAdbClearSel() {
+  if (!teacherAdbSelected.size) return;
+  if (!confirm(`清空已选的 ${teacherAdbSelected.size} 所学校？`)) return;
+  teacherAdbSelected.clear();
+  teacherAdbShowSel = false;
+  teacherAdbRender();
+}
+// 「经营 7・经济 5」
+function teacherAdbMajorSummary(rows) {
+  const cnt = {};
+  rows.forEach(r => { cnt[r.major] = (cnt[r.major] || 0) + 1; });
+  return Object.entries(cnt).map(([m, n]) => `${TEACHER_ADB_MAJORS[m] || m} ${n}`).join('・');
+}
+// 已选学校的排列：有列排序时按列排序，否则按专业、大学名
+function teacherAdbSortRows(rows) {
+  if (teacherAdbSortCol) return [...rows].sort((a, b) => (a[teacherAdbSortCol]||'').localeCompare(b[teacherAdbSortCol]||'', 'ja') * teacherAdbSortDir);
+  return [...rows].sort((a, b) => (a.major||'').localeCompare(b.major||'') || (a.university||'').localeCompare(b.university||'', 'ja'));
+}
+function teacherAdbRenderSelBar() {
+  const bar = document.getElementById('tadbSelBar');
+  if (!bar) return;
+  const n = teacherAdbSelected.size;
+  if (!n) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  const btn = 'font-size:11px;padding:3px 12px;border:1px solid var(--border);border-radius:3px;background:var(--surface);cursor:pointer;font-family:inherit';
+  bar.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#f3ead9;border:1px solid var(--border);border-radius:4px;padding:8px 12px;margin-bottom:10px;font-size:12px';
+  bar.innerHTML = `<span>已选 <strong>${n}</strong> 所（${teacherAdbMajorSummary([...teacherAdbSelected.values()])}）</span>
+    <button onclick="teacherAdbShowSel=!teacherAdbShowSel;teacherAdbRender()" style="${btn}">${teacherAdbShowSel ? '返回筛选结果' : '查看已选'}</button>
+    ${teacherAdbShowSel ? '' : `<button onclick="teacherAdbSelectAll()" style="${btn}">全选当前结果</button>`}
+    <button onclick="teacherAdbClearSel()" style="${btn};color:var(--danger)">清空</button>`;
+}
+
+// 加入宣传资料 / 导出共用：有已选 → 只用已选；没选 → 用当前全部筛选结果。先弹确认框写清条数
+function teacherAdbPickRows(actionText, onlyText) {
+  const sel = [...teacherAdbSelected.values()];
+  if (sel.length) {
+    const sum = teacherAdbMajorSummary(sel);
+    if (!confirm(`将把已选的 ${sel.length} 所学校（${sum}）${actionText}，确定吗？`)) return null;
+    return { rows: teacherAdbSortRows(sel), filterLine: `老师点选 ${sel.length} 所（${sum}）` };
+  }
+  const filtered = teacherAdbFilter();
+  if (!filtered.length) { alert('请先选择专业并筛选，或点选需要的学校'); return null; }
+  const many = filtered.length > 300 ? `\n条数较多，生成的表格会有很多页。` : '';
+  if (!confirm(`你还没有点选学校，将把当前筛选结果全部 ${filtered.length} 所${actionText}，确定吗？\n（可以先点选需要的学校，只${onlyText}选中的）${many}`)) return null;
+  return {
+    rows: filtered,
+    filterLine: buildAdmissionFilterDesc({
+      english: teacherAdbEnglish, japanese: teacherAdbJapanese,
+      search: teacherAdbSearch, monthFrom: teacherAdbMonthFrom, monthTo: teacherAdbMonthTo,
+      filtered,
+    }),
+  };
+}
+// 表格是否带专业列、标题里的专业名：按实际用到的学校涉及的专业
+function teacherAdbRowsMajors(rows) { return [...new Set(rows.map(r => r.major).filter(Boolean))]; }
 
 function teacherAdbExportHtml() {
-  const filtered = teacherAdbFilter();
-  const showMajor = teacherAdbMajors.length !== 1;
-  const majorLabel = teacherAdbMajors.length === 1
-    ? (TEACHER_ADB_MAJORS[teacherAdbMajors[0]] || teacherAdbMajors[0])
-    : teacherAdbMajors.map(m => TEACHER_ADB_MAJORS[m]||m).join('・');
-  const filterLine = buildAdmissionFilterDesc({
-    english: teacherAdbEnglish, japanese: teacherAdbJapanese,
-    search: teacherAdbSearch, monthFrom: teacherAdbMonthFrom, monthTo: teacherAdbMonthTo,
-    filtered,
-  });
-  exportAdmissionHtmlShared(filtered, { majorLabel, filterLine, showMajor, majorMap: TEACHER_ADB_MAJORS });
+  const pick = teacherAdbPickRows('导出为 PDF表格', '导出');
+  if (!pick) return;
+  const majors = teacherAdbRowsMajors(pick.rows);
+  const majorLabel = majors.map(m => TEACHER_ADB_MAJORS[m] || m).join('・');
+  exportAdmissionHtmlShared(pick.rows, { majorLabel, filterLine: pick.filterLine, showMajor: majors.length > 1, majorMap: TEACHER_ADB_MAJORS });
 }
 
-// 把当前筛选结果（出愿学校名单）加入「宣传资料整合」
+// 把学校名单加入「宣传资料整合」（加入后保留已选，方便继续导出或调整）
 function teacherAdbAddToPack() {
-  const filtered = teacherAdbFilter();
-  if (!filtered.length) { alert('请先选择专业并筛选出要放入资料的学校'); return; }
-  if (filtered.length > 300 && !confirm(`当前筛选结果共 ${filtered.length} 条，放入资料会有很多页。建议先用筛选缩小范围，仍要加入吗？`)) return;
-  const majorLabel = teacherAdbMajors.map(m => TEACHER_ADB_MAJORS[m] || m).join('・');
-  const filterLine = buildAdmissionFilterDesc({
-    english: teacherAdbEnglish, japanese: teacherAdbJapanese,
-    search: teacherAdbSearch, monthFrom: teacherAdbMonthFrom, monthTo: teacherAdbMonthTo,
-    filtered,
-  });
+  const pick = teacherAdbPickRows('加入宣传资料', '加入');
+  if (!pick) return;
+  const majors = teacherAdbRowsMajors(pick.rows);
+  const majorLabel = majors.map(m => TEACHER_ADB_MAJORS[m] || m).join('・');
   pkAdd({
     type: 'admission',
-    title: `${majorLabel} 出愿学校名单（${filtered.length}所）`,
-    html: pkAdmissionHtml(filtered, { filterLine, showMajor: teacherAdbMajors.length !== 1, majorMap: TEACHER_ADB_MAJORS }),
+    title: `${majorLabel} 出愿学校名单（${pick.rows.length}所）`,
+    html: pkAdmissionHtml(pick.rows, { filterLine: pick.filterLine, showMajor: majors.length > 1, majorMap: TEACHER_ADB_MAJORS }),
     wide: true,
   });
 }
 
-
 function teacherAdbRender() {
   const thead = document.getElementById('tadbThead');
   const tbody = document.getElementById('tadbBody');
   const countEl = document.getElementById('tadbCount');
   if (!thead || !tbody) return;
 
-  const showMajor = teacherAdbMajors.length !== 1;
-  const filtered = teacherAdbFilter();
+  if (teacherAdbShowSel && !teacherAdbSelected.size) teacherAdbShowSel = false;
+  teacherAdbRenderSelBar();
+  // 已选视图：跨专业显示已选学校，固定带专业列
+  const showMajor = teacherAdbShowSel || teacherAdbMajors.length !== 1;
+  const filtered = teacherAdbShowSel ? teacherAdbSortRows([...teacherAdbSelected.values()]) : teacherAdbFilter();
 
   // ERE按钮动态控制
   const ereContainer = document.getElementById('tadbEreContainer');
@@ -2520,13 +2525,15 @@ function teacherAdbRender() {
     if (!showEre && teacherAdbEreOnly) teacherAdbEreOnly = false;
   }
 
-  if (!teacherAdbData.length) {
+  if (!teacherAdbData.length && !teacherAdbShowSel) {
     if (countEl) countEl.textContent = '请选择专业查看数据';
     thead.innerHTML = '';
     tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:40px;color:var(--text-3)">← 请先选择专业</td></tr>';
     return;
   }
-  if (countEl) countEl.innerHTML = `筛选结果 <strong style="color:var(--text)">${filtered.length}</strong> 条`;
+  if (countEl) countEl.innerHTML = teacherAdbShowSel
+    ? `已选学校 <strong style="color:var(--text)">${filtered.length}</strong> 所 <span style="color:var(--text-3)">（点某一行即可取消选中）</span>`
+    : `筛选结果 <strong style="color:var(--text)">${filtered.length}</strong> 条 <span style="color:var(--text-3)">· 点一行即可选中 / 取消</span>`;
 
   const cols = showMajor ? [{ key:'major', label:'专业' }, ...TEACHER_ADB_COLS] : TEACHER_ADB_COLS;
   const engCol = v => v==='必須'?'var(--accent)':v==='任意'?'var(--warn)':'var(--text-3)';
@@ -2545,7 +2552,7 @@ function teacherAdbRender() {
     return;
   }
 
-  tbody.innerHTML = filtered.map(s => `<tr>
+  tbody.innerHTML = filtered.map(s => `<tr class="tadb-row${teacherAdbSelected.has(String(s.id)) ? ' tadb-sel' : ''}" onclick="teacherAdbToggleSel('${String(s.id).replace(/'/g, "\\'")}')">
     ${showMajor ? `<td style="font-size:10px;color:var(--text-2)">${TEACHER_ADB_MAJORS[s.major]||s.major}</td>` : ''}
     <td style="font-weight:500">${s.university||''}</td>
     <td><span style="font-size:10px;background:${s.type==='国立'?'#e8f0fb':s.type==='公立'?'#e8f5e9':'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 4px">${s.type||''}</span></td>
