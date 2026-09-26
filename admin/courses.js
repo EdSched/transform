@@ -298,6 +298,7 @@ let cleanupTypeFilter='all';
 let cleanupCampusFilter='all';
 let cleanupMajorFilter='all';
 let cleanupPeriodFilter='all';
+let cachedCourseMembers=[];   // course_members 全部行（课程清理页加载）
 let cleanupYearFilter='all';
 
 function renderCourseCleanupPage(mc){
@@ -357,6 +358,7 @@ function renderCourseCleanupPage(mc){
       <button class="btn btn-outline btn-sm" onclick="cleanupSelectAllFiltered()">☑ 全选当前筛选</button>
       <button class="btn btn-outline btn-sm" onclick="cleanupClearSelection()">清空选择</button>
       ${(!ACCESS_KEY||ACCESS_KEY.is_admin)?`<button class="btn btn-outline btn-sm" onclick="openHolidayManager()" title="全局假期（与排课系统共用，这段时间所有课放假顺延）">⚙ 全局假期</button>`:''}
+      <button class="btn btn-outline btn-sm" onclick="openCourseMembers()" title="设置所选课程的学生成员（至少选中一门课）">👥 学生成员</button>
       <button class="btn btn-primary btn-sm" onclick="cleanupExportInfo()">📄 导出所选信息</button>
       <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="cleanupDeleteSelected()">删除已选 (<span id="cleanup_count">0</span>)</button>
     </div>
@@ -417,7 +419,7 @@ function renderCourseCleanupPage(mc){
         return `
         <div class="cleanup_row" data-id="${c.id}" data-dup="${isDup?'1':'0'}" onclick="cleanupRowClick(event,'${c.id}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid ${sel?'var(--accent)':isDup?'#e0c060':'var(--border-light)'};background:${sel?'var(--accent-light, #e8e0d0)':isDup?'#fffbe8':'var(--surface)'};border-radius:3px;margin-bottom:6px;transition:background-color .12s">
           <div style="flex:1">
-            <div style="font-size:12px;font-weight:600">${c.name} ${isDup?'<span style="font-size:9px;background:#e0c060;color:#5a4a10;border-radius:2px;padding:1px 5px;margin-left:4px">疑似重复</span>':''}</div>
+            <div style="font-size:12px;font-weight:600">${c.name} ${isDup?'<span style="font-size:9px;background:#e0c060;color:#5a4a10;border-radius:2px;padding:1px 5px;margin-left:4px">疑似重复</span>':''}${cmRowTag(c)}</div>
             <div style="font-size:11px;color:var(--text-3);margin-top:2px">
               ${(c.major||[]).map(m=>majorLabel(m)).join('/')} · ${c.teacher||''} · ${c.time_range||''} ·
               ${sessions.length} 条课次记录（设置回数：${c.total_sessions||'-'}）·
@@ -3244,4 +3246,219 @@ async function hwSaveToTemplate(sessionId){
     renderCoursesPage(document.getElementById('mainContent'));
     alert(`已保存，并写入模板「${tpl.name}」第 ${n} 回\n以后用该模板开新一期，这一回的作业会自动带出`);
   }catch(e){alert('写入模板失败：'+e.message)}
+}
+
+// ══════════════════════════════════
+// 课程学生成员（课程清理 →「👥 学生成员」）
+// 规则与判断函数见 shared/constants.js（courseMemberIds / courseDefaultMember / studentInCourse）
+// major 模式：点掉默认成员 → exclude；点上非默认的人 → include；恢复默认状态时删掉对应行
+// list  模式：点上 → include；点掉 → 删除该行
+// 同时选中多门课时，名字按钮对所有选中的课统一操作
+// ══════════════════════════════════
+let cmCourseIds=[];      // 弹窗里正在编辑的课程 id
+let cmScopeAll=false;    // 名字列表：false=本课涉及专业；true=全部学生
+let cmSearch='';
+
+function cmEsc(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function cmActiveStudents(){ return (cachedStudents||[]).filter(s=>!s.status||s.status==='active'); }
+function cmRowsOf(cid){ return (cachedCourseMembers||[]).filter(r=>String(r.course_id)===String(cid)); }
+function cmCourse(cid){ return (cachedCourses||[]).find(c=>String(c.id)===String(cid)); }
+function cmMemberSet(c){ return courseMemberIds(c, cmActiveStudents(), cmRowsOf(c.id)); }
+
+// 课程行上的小标签：指定名单 N人 / 按专业有增减时 +a / −b
+function cmRowTag(c){
+  const rows=cmRowsOf(c.id);
+  const tag=t=>`<span style="font-size:9px;background:#e8eef8;color:#2c4a7c;border-radius:2px;padding:1px 6px;margin-left:6px;font-weight:500">${t}</span>`;
+  if(courseMemberMode(c)==='list') return tag(`指定名单 ${rows.filter(r=>r.kind==='include').length}人`);
+  const inc=rows.filter(r=>r.kind==='include').length, exc=rows.filter(r=>r.kind==='exclude').length;
+  return (inc||exc)?tag(`${inc?'+'+inc:''}${inc&&exc?' / ':''}${exc?'−'+exc:''}`):'';
+}
+
+function openCourseMembers(){
+  if(!cleanupSelected.size){ alert('请先在列表里选中至少一门课'); return; }
+  cmCourseIds=[...cleanupSelected].filter(id=>cmCourse(id));
+  if(!cmCourseIds.length){ alert('找不到所选课程'); return; }
+  cmScopeAll=false; cmSearch='';
+  document.getElementById('cmModal')?.remove();
+  const ov=document.createElement('div');
+  ov.id='cmModal';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:30px 16px;overflow-y:auto';
+  ov.innerHTML='<div id="cmBox" style="background:var(--surface);border-radius:6px;padding:18px 20px;max-width:760px;width:100%"></div>';
+  ov.onclick=e=>{ if(e.target===ov) cmClose(); };
+  document.body.appendChild(ov);
+  cmRender();
+}
+function cmClose(){
+  document.getElementById('cmModal')?.remove();
+  renderCourseCleanupPage(document.getElementById('mainContent'));
+}
+
+function cmRender(){
+  const box=document.getElementById('cmBox'); if(!box) return;
+  const courses=cmCourseIds.map(cmCourse).filter(Boolean);
+  const modes=[...new Set(courses.map(courseMemberMode))];
+  const multi=courses.length>1;
+  const sets=courses.map(cmMemberSet);
+  const counts=courses.map((c,i)=>`${multi?cmEsc(c.name)+' ':''}${sets[i].size} 人`);
+  box.innerHTML=`
+    <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
+      <div style="font-size:15px;font-weight:600">学生成员</div>
+      <div style="font-size:11px;color:var(--text-3);flex:1">${multi?`同时编辑 ${courses.length} 门课：点名字会对所有选中的课统一加入 / 移除`:cmEsc(courses[0].name)}</div>
+      <button onclick="cmClose()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-3)">×</button>
+    </div>
+    <div style="font-size:12px;margin-bottom:10px">当前成员 <b>${counts.join('　·　')}</b></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <span style="font-size:11px;color:var(--text-3)">成员模式</span>
+      <select onchange="cmSetMode(this.value)" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
+        ${modes.length>1?'<option value="" selected>（混合）</option>':''}
+        <option value="major" ${modes.length===1&&modes[0]==='major'?'selected':''}>按专业（同专业在读学生，不含纯VIP）</option>
+        <option value="list" ${modes.length===1&&modes[0]==='list'?'selected':''}>指定名单（只有名单里的人）</option>
+      </select>
+      <button class="btn btn-outline btn-sm" onclick="cmQuickAdd('vip')">＋ 同专业纯 VIP 学生</button>
+      <button class="btn btn-outline btn-sm" onclick="cmQuickAdd('all')">＋ 同专业全部学生</button>
+      <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="cmClearList()">清空名单</button>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <input id="cmSearchInput" value="${cmEsc(cmSearch)}" placeholder="搜索姓名（汉字 / 拼音首字母）" oninput="if(this.dataset.composing!=='1'){cmSearch=this.value;cmRenderNames()}" oncompositionstart="this.dataset.composing='1'" oncompositionend="this.dataset.composing='';cmSearch=this.value;cmRenderNames()" style="flex:1;min-width:180px;font-size:13px;padding:7px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg);font-family:inherit">
+      <div class="filter-chip${cmScopeAll?'':' active'}" onclick="cmScopeAll=false;cmRender()" style="font-size:11px;padding:3px 10px">本课专业</div>
+      <div class="filter-chip${cmScopeAll?' active':''}" onclick="cmScopeAll=true;cmRender()" style="font-size:11px;padding:3px 10px">全部学生</div>
+    </div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">点名字切换是否成员：<span style="color:var(--accent);font-weight:600">深色</span>=成员${multi?'，<span style="color:var(--accent)">虚线框「部分」</span>=只在部分选中的课里是成员':''}；标「纯VIP」的学生按专业模式下默认不是成员。</div>
+    <div id="cmNames" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px;max-height:52vh;overflow-y:auto"></div>
+    <div id="cmMsg" style="font-size:11px;color:var(--danger);min-height:14px;margin-top:6px"></div>`;
+  cmRenderNames();
+}
+
+function cmRenderNames(){
+  const el=document.getElementById('cmNames'); if(!el) return;
+  const courses=cmCourseIds.map(cmCourse).filter(Boolean);
+  const sets=courses.map(cmMemberSet);
+  const majors=new Set(); courses.forEach(c=>courseMajorSet(c).forEach(m=>majors.add(m)));
+  const rowIds=new Set(); courses.forEach(c=>cmRowsOf(c.id).forEach(r=>rowIds.add(String(r.student_id))));
+  let pool=cmActiveStudents().filter(s=>cmScopeAll||majors.has(s.major)||rowIds.has(String(s.id)));
+  if(cmSearch.trim()) pool=pool.filter(s=>matchesStudentSearch(s,cmSearch));
+  const n=courses.length;
+  el.innerHTML=pool.length?pool.map(s=>{
+    const k=sets.filter(st=>st.has(String(s.id))).length;
+    const full=k===n, part=k>0&&k<n;
+    const vip=isPureVipStudent(s);
+    const outMajor=!majors.has(s.major);
+    const bd=full?'1px solid var(--accent)':part?'1px dashed var(--accent)':'1px solid var(--border)';
+    const bg=full?'var(--accent)':part?'var(--accent-light,#f3ead9)':'var(--surface)';
+    const fg=full?'#fff':'var(--text)';
+    return `<button onclick="cmToggle('${cmEsc(s.id)}')" style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;padding:9px 4px;border:${bd};border-radius:8px;background:${bg};cursor:pointer;color:${fg};line-height:1.3">
+      ${cmEsc(s.name)}
+      ${(vip||part||outMajor)?`<span style="display:block;font-size:9px;font-weight:400;margin-top:2px;opacity:.85">${[vip?'纯VIP':'',outMajor?(MAJORS[s.major]||s.major||'外专业'):'',part?`部分 ${k}/${n}`:''].filter(Boolean).join(' · ')}</span>`:''}
+    </button>`;
+  }).join(''):`<div style="grid-column:1/-1;font-size:12px;color:var(--text-3);padding:16px;text-align:center">${cmSearch?'无匹配':'没有学生'}</div>`;
+}
+
+// ── 数据写入 ──
+// 把某学生在某课的状态改为「成员 / 非成员」，返回需要执行的操作（不直接写库）
+function cmPlan(c, s, wantMember){
+  const sid=String(s.id), cid=String(c.id);
+  const row=cmRowsOf(cid).find(r=>String(r.student_id)===sid);
+  const isMember=cmMemberSet(c).has(sid);
+  if(isMember===wantMember) return null;
+  if(courseMemberMode(c)==='list'){
+    return wantMember ? {op:'upsert',course_id:cid,student_id:sid,kind:'include'} : {op:'delete',course_id:cid,student_id:sid};
+  }
+  const isDefault=courseDefaultMember(s,c)&&cmActiveStudents().some(x=>String(x.id)===sid);
+  if(wantMember) return isDefault ? {op:'delete',course_id:cid,student_id:sid} : {op:'upsert',course_id:cid,student_id:sid,kind:'include'};
+  return isDefault ? {op:'upsert',course_id:cid,student_id:sid,kind:'exclude'} : (row?{op:'delete',course_id:cid,student_id:sid}:null);
+}
+async function cmExec(ops){
+  ops=ops.filter(Boolean);
+  if(!ops.length) return;
+  const ups=ops.filter(o=>o.op==='upsert').map(o=>({course_id:o.course_id,student_id:o.student_id,kind:o.kind}));
+  const dels=ops.filter(o=>o.op==='delete');
+  const msg=document.getElementById('cmMsg');
+  try{
+    if(ups.length){
+      const tok=(typeof __getSbToken==='function')?__getSbToken():null;
+      const r=await fetch(`${SB_URL}/rest/v1/course_members?on_conflict=course_id,student_id`,{method:'POST',headers:{
+        'apikey':SB_KEY,'Authorization':'Bearer '+(tok||SB_KEY),'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(ups)});
+      if(!r.ok) throw new Error(await r.text());
+    }
+    const byCourse={};
+    dels.forEach(o=>{ (byCourse[o.course_id]=byCourse[o.course_id]||[]).push(o.student_id); });
+    for(const [cid,sids] of Object.entries(byCourse)){
+      for(let i=0;i<sids.length;i+=100){
+        await sb(`/rest/v1/course_members?course_id=eq.${encodeURIComponent(cid)}&student_id=in.(${sids.slice(i,i+100).map(x=>`"${x}"`).join(',')})`,'DELETE');
+      }
+    }
+    // 本地缓存同步
+    const key=(c,s)=>c+'|'+s;
+    const delKeys=new Set(dels.map(o=>key(o.course_id,o.student_id)));
+    const upMap=new Map(ups.map(u=>[key(u.course_id,u.student_id),u]));
+    cachedCourseMembers=(cachedCourseMembers||[]).filter(r=>{ const k=key(String(r.course_id),String(r.student_id)); return !delKeys.has(k)&&!upMap.has(k); }).concat([...upMap.values()]);
+    if(msg) msg.textContent='';
+  }catch(e){ if(msg) msg.textContent='保存失败：'+e.message; throw e; }
+}
+
+async function cmToggle(sid){
+  const s=(cachedStudents||[]).find(x=>String(x.id)===String(sid)); if(!s) return;
+  const courses=cmCourseIds.map(cmCourse).filter(Boolean);
+  const allIn=courses.every(c=>cmMemberSet(c).has(String(sid)));
+  try{ await cmExec(courses.map(c=>cmPlan(c,s,!allIn))); }catch(e){}
+  cmRender();
+}
+
+async function cmQuickAdd(kind){
+  const courses=cmCourseIds.map(cmCourse).filter(Boolean);
+  const ops=[];
+  courses.forEach(c=>{
+    const ms=courseMajorSet(c);
+    cmActiveStudents().filter(s=>ms.has(s.major)&&(kind==='all'||isPureVipStudent(s))).forEach(s=>ops.push(cmPlan(c,s,true)));
+  });
+  if(!ops.filter(Boolean).length){ alert('没有需要加入的学生'); return; }
+  try{ await cmExec(ops); }catch(e){}
+  cmRender();
+}
+
+async function cmClearList(){
+  const courses=cmCourseIds.map(cmCourse).filter(Boolean);
+  const hasList=courses.some(c=>courseMemberMode(c)==='list');
+  const hasMajor=courses.some(c=>courseMemberMode(c)==='major');
+  const txt=[hasList?'「指定名单」的课：名单清空，这门课将没有任何成员':'',hasMajor?'「按专业」的课：去掉所有单独添加 / 移除，恢复成同专业默认成员':''].filter(Boolean).join('\n');
+  if(!confirm('清空名单？\n'+txt)) return;
+  const ops=[];
+  courses.forEach(c=>cmRowsOf(c.id).forEach(r=>ops.push({op:'delete',course_id:String(c.id),student_id:String(r.student_id)})));
+  try{ await cmExec(ops); }catch(e){}
+  cmRender();
+}
+
+async function cmSetMode(mode){
+  if(mode!=='major'&&mode!=='list'){ cmRender(); return; }
+  const courses=cmCourseIds.map(cmCourse).filter(Boolean);
+  const toChange=courses.filter(c=>courseMemberMode(c)!==mode);
+  if(!toChange.length) return;
+  let copy=false;
+  if(mode==='list'){
+    copy=confirm('切换为指定名单后，只有名单里的人能看到这门课，新生不会自动加入。\n是否先把当前成员全部加入名单？\n（确定＝加入；取消＝不加入，名单从现有的单独添加开始）');
+  }
+  const msg=document.getElementById('cmMsg');
+  try{
+    // 先把当前成员写成 include（在切换模式前计算，按专业模式下的成员）
+    if(copy){
+      const ops=[];
+      toChange.forEach(c=>cmMemberSet(c).forEach(sid=>ops.push({op:'upsert',course_id:String(c.id),student_id:sid,kind:'include'})));
+      await cmExec(ops);
+    }
+    // 切回按专业：本来就是默认成员的 include 行已经多余，删掉，避免「+N」标签虚高
+    if(mode==='major'){
+      const act=cmActiveStudents();
+      const ops=[];
+      toChange.forEach(c=>cmRowsOf(c.id).filter(r=>r.kind==='include').forEach(r=>{
+        const st=act.find(x=>String(x.id)===String(r.student_id));
+        if(st&&courseDefaultMember(st,c)) ops.push({op:'delete',course_id:String(c.id),student_id:String(r.student_id)});
+      }));
+      await cmExec(ops);
+    }
+    const ids=toChange.map(c=>String(c.id));
+    const rows=await sb(`/rest/v1/courses?id=in.(${ids.map(x=>`"${x}"`).join(',')})`,'PATCH',{member_mode:mode});
+    if(Array.isArray(rows)&&rows.length<ids.length) throw new Error('部分课程没有更新成功（数据库权限或 member_mode 列未建）');
+    toChange.forEach(c=>{ c.member_mode=mode; });
+  }catch(e){ if(msg) msg.textContent='保存失败：'+e.message; }
+  cmRender();
 }

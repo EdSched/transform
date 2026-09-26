@@ -509,10 +509,12 @@ async function renderPage(){
       ]);
       renderPromoAdminPage(mc);
     } else if(curPage==='coursecleanup'){
-      [cachedCourses,cachedSessions,cachedTeachers]=await Promise.all([
+      [cachedCourses,cachedSessions,cachedTeachers,cachedStudents,cachedCourseMembers]=await Promise.all([
         sbAll('/rest/v1/courses?select=*&order=created_at.desc'),
         sbAll('/rest/v1/course_sessions?select=*&order=session_date.asc'),
-        sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[])
+        sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[]),
+        sbAll('/rest/v1/students?select=*&order=name.asc').catch(()=>cachedStudents||[]),
+        sbAll('/rest/v1/course_members?select=*').catch(()=>[])   // 课程学生成员（表未建时为空）
       ]);
       renderCourseCleanupPage(mc);
     } else if(curPage==='schedule'){
