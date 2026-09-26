@@ -299,6 +299,7 @@ let cleanupCampusFilter='all';
 let cleanupMajorFilter='all';
 let cleanupPeriodFilter='all';
 let cleanupHwFilter=false;   // 只看「作业未存模板」的课
+let cleanupLastFiltered=[];  // 当前筛选出的课（一键存模板用）
 let cachedCourseMembers=[];   // course_members 全部行（课程清理页加载）
 let cleanupYearFilter='all';
 
@@ -322,6 +323,7 @@ function renderCourseCleanupPage(mc){
   if(cleanupCampusFilter!=='all') filtered=filtered.filter(c=>(c.campus||'')===cleanupCampusFilter);
   if(cleanupYearFilter!=='all') filtered=filtered.filter(c=>c.first_session_date?.startsWith(cleanupYearFilter));
   if(cleanupHwFilter) filtered=filtered.filter(c=>{ const st=hwTplStatus(c); return st&&(st.noTpl||st.missing>0); });
+  cleanupLastFiltered=filtered;
 
   // 视角过滤后的全部课（筛选项来源，因地制宜——只列本视角实际有的期数/年份/校区）
   const viewCourses=cachedCourses.filter(c=>{
@@ -371,6 +373,7 @@ function renderCourseCleanupPage(mc){
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">作业</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
         <div class="filter-chip${cleanupHwFilter?' active':''}" onclick="cleanupHwFilter=!cleanupHwFilter;renderCourseCleanupPage(document.getElementById('mainContent'))" style="font-size:11px;padding:3px 10px">⚠ 作业未存模板</div>
+        <button class="btn btn-outline btn-sm" onclick="hwSaveAllCoursesToTemplates()" title="把当前列表里所有作业没存进模板的课，一次全部存入同名模板" style="font-size:11px;padding:3px 10px">📝 一键全部存入模板</button>
       </div>
     </div>
     <div>
@@ -576,9 +579,9 @@ function openSaveAsTemplate(courseId){
   if(!name)return;
   saveAsTemplate(courseId,name);
 }
-async function saveAsTemplate(courseId,templateName){
+async function saveAsTemplate(courseId,templateName,silent){
   const c=cachedCourses.find(x=>x.id===courseId);
-  if(!c)return;
+  if(!c)return null;
   const sessions=cachedSessions.filter(s=>s.course_id===courseId).sort((a,b)=>a.session_date.localeCompare(b.session_date));
   const detailRows=sessions.map((s,i)=>({
     num:s.session_number, title:s.session_title||'', teacher:s.session_teacher||c.teacher||'',
@@ -603,11 +606,12 @@ async function saveAsTemplate(courseId,templateName){
   };
   try{
     await sb('/rest/v1/course_templates','POST',tpl);
-    alert(`已保存为模板「${templateName}」${hwCount?`\n其中 ${hwCount} 回的作业已一并保存，套用时自动带出`:''}`);
     if(Array.isArray(cachedTemplates)) cachedTemplates.unshift(tpl);
+    if(silent) return tpl;   // 批量补存时不弹窗、不重绘
+    alert(`已保存为模板「${templateName}」${hwCount?`\n其中 ${hwCount} 回的作业已一并保存，套用时自动带出`:''}`);
     if(curPage==='coursecleanup') renderCourseCleanupPage(document.getElementById('mainContent'));
     else renderTemplateList();
-  }catch(e){alert('保存模板失败：'+e.message)}
+  }catch(e){ if(silent) throw e; alert('保存模板失败：'+e.message); }
 }
 let cachedTemplates=null;
 let tplOpenMajors=new Set();
@@ -3320,10 +3324,17 @@ function hwStableJson(v){
   return JSON.stringify(v===undefined?null:v);
 }
 function hwTplCands(name){ const n=(name||'').trim(); return (cachedTemplates||[]).filter(t=>(t.name||'').trim()===n); }
+// 这门课需要存进模板的作业回次：同名的更新一期如果同一回也有作业，以新一期为准（旧课不再提示、也不会覆盖）
+function hwTplSessions(c){
+  const n=(c.name||'').trim(), d=c.first_session_date||'';
+  const newer=cachedCourses.filter(x=>x.id!==c.id&&(x.name||'').trim()===n&&(x.first_session_date||'')>d).map(x=>x.id);
+  const taken=new Set(cachedSessions.filter(s=>newer.includes(s.course_id)&&hwHasQ(s.homework_questions)).map(s=>String(s.session_number)));
+  return cachedSessions.filter(s=>s.course_id===c.id&&hwHasQ(s.homework_questions)&&s.session_number!=null&&!taken.has(String(s.session_number)));
+}
 // 返回 null=没有作业或模板未加载；{noTpl:true,total}；{missing,total,tpl}（多个同名模板取差得最少的那个）
 function hwTplStatus(c){
   if(!Array.isArray(cachedTemplates)) return null;
-  const hs=cachedSessions.filter(s=>s.course_id===c.id&&hwHasQ(s.homework_questions)&&s.session_number!=null);
+  const hs=hwTplSessions(c);
   if(!hs.length) return null;
   const cands=hwTplCands(c.name);
   if(!cands.length) return {noTpl:true,total:hs.length};
@@ -3346,11 +3357,54 @@ function hwTplTag(c){
   if(!st.missing) return '';
   return `<span title="有作业的回次中，模板里没有或是旧版本的回数" style="font-size:9px;border-radius:2px;padding:1px 5px;margin-left:4px;${sty}">⚠ ${st.missing}回作业未存入模板</span>`;
 }
+// 把作业按回数写进模板（不弹窗），返回写入回数
+async function hwWriteToTpl(c, tpl){
+  const hs=hwTplSessions(c);
+  const rows=[...(tpl.detail_rows||[])];
+  hs.forEach(s=>{
+    const i=rows.findIndex(r=>String(r.num)===String(s.session_number));
+    if(i>=0) rows[i]={...rows[i], homework_questions:s.homework_questions, homework_note:s.homework_note||null};
+    else rows.push({num:s.session_number,title:s.session_title||'',teacher:s.session_teacher||'',homework_questions:s.homework_questions,homework_note:s.homework_note||null});
+  });
+  await sb(`/rest/v1/course_templates?id=eq.${tpl.id}`,'PATCH',{detail_rows:rows});
+  tpl.detail_rows=rows;
+  return hs.length;
+}
+// 一键：当前列表里所有「作业未存模板」的课，一次全部存进同名模板（旧课程补存用）
+async function hwSaveAllCoursesToTemplates(){
+  if(!Array.isArray(cachedTemplates)){ alert('模板还没加载完，请稍后再点'); return; }
+  const list=(cleanupLastFiltered||[]).filter(c=>{ const st=hwTplStatus(c); return st&&(st.noTpl||st.missing>0); })
+    .sort((a,b)=>(a.first_session_date||'').localeCompare(b.first_session_date||''));   // 旧的先写，新一期后写
+  if(!list.length){ alert('当前列表里没有需要存入模板的作业'); return; }
+  const noTpl=list.filter(c=>hwTplStatus(c).noTpl);
+  const withTpl=list.filter(c=>!hwTplStatus(c).noTpl);
+  const multi=withTpl.filter(c=>hwTplCands(c.name).length>1);
+  if(!confirm(`当前列表里有 ${list.length} 门课的作业没存进模板：\n· ${withTpl.length} 门有同名模板，直接写入${multi.length?`（其中 ${multi.length} 门有多个同名模板，自动写入差别最少的那个）`:''}\n· ${noTpl.length} 门没有同名模板\n\n确定开始？`)) return;
+  let makeNew=false;
+  if(noTpl.length) makeNew=confirm(`${noTpl.length} 门课没有同名模板：\n${[...new Set(noTpl.map(c=>c.name))].slice(0,15).join('、')}${noTpl.length>15?' …':''}\n\n要自动用课程名新建模板吗？（确定＝新建；取消＝跳过这些课）`);
+  let okC=0, okN=0, created=0; const errs=[];
+  for(const c of list){
+    try{
+      let st=hwTplStatus(c);
+      if(!st||(!st.noTpl&&!st.missing)) continue;   // 同名课刚刚已处理过
+      if(st.noTpl){
+        if(!makeNew) continue;
+        const tpl=await saveAsTemplate(c.id,(c.name||'').trim(),true);
+        if(!tpl) throw new Error('新建模板失败');
+        created++; okC++; okN+=hwTplSessions(c).length;
+        continue;
+      }
+      okN+=await hwWriteToTpl(c, st.tpl); okC++;
+    }catch(e){ errs.push(`${c.name}：${e.message}`); }
+  }
+  renderCourseCleanupPage(document.getElementById('mainContent'));
+  alert(`完成：${okC} 门课、共 ${okN} 回作业已存入模板${created?`（新建模板 ${created} 个）`:''}${errs.length?`\n\n失败 ${errs.length} 门：\n`+errs.join('\n'):''}`);
+}
 // 把一门课所有有作业的回次，按回数一次性写入同名模板
 async function hwSaveAllToTemplate(courseId){
   const c=cachedCourses.find(x=>x.id===courseId); if(!c) return;
-  const hs=cachedSessions.filter(s=>s.course_id===courseId&&hwHasQ(s.homework_questions)&&s.session_number!=null);
-  if(!hs.length){ alert('这门课没有布置作业的回次'); return; }
+  const hs=hwTplSessions(c);
+  if(!hs.length){ alert('这门课没有需要存的作业回次'); return; }
   const cands=hwTplCands(c.name);
   if(!cands.length){ alert(`没有找到与课程「${c.name}」同名的模板，请先点「💾 存为模板」`); return; }
   let tpl=cands[0];
@@ -3360,15 +3414,8 @@ async function hwSaveAllToTemplate(courseId){
     if(isNaN(idx)||!cands[idx]) return;
     tpl=cands[idx];
   }
-  const rows=[...(tpl.detail_rows||[])];
-  hs.forEach(s=>{
-    const i=rows.findIndex(r=>String(r.num)===String(s.session_number));
-    if(i>=0) rows[i]={...rows[i], homework_questions:s.homework_questions, homework_note:s.homework_note||null};
-    else rows.push({num:s.session_number,title:s.session_title||'',teacher:s.session_teacher||'',homework_questions:s.homework_questions,homework_note:s.homework_note||null});
-  });
   try{
-    await sb(`/rest/v1/course_templates?id=eq.${tpl.id}`,'PATCH',{detail_rows:rows});
-    tpl.detail_rows=rows;
+    await hwWriteToTpl(c, tpl);
     renderCourseCleanupPage(document.getElementById('mainContent'));
     alert(`已把 ${hs.length} 回作业写入模板「${tpl.name}」\n以后用该模板开新一期，这些作业会自动带出`);
   }catch(e){ alert('写入模板失败：'+e.message); }
