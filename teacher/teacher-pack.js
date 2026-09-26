@@ -1,8 +1,7 @@
 // ══════════════════════════════════
 // teacher-pack.js — 宣传资料整合（营业用）
 // 把各营业工具里已经做好的内容（出愿学校名单 / 学科介绍 / 进度规划 / 讲师卡片 / VIP方案）
-// 收集到一个「资料包」里，排好顺序后一次性生成一份完整的 PDF（打印窗口另存为 PDF），
-// 或下载成可直接发给客户的网页版 .html。
+// 收集到一个「资料包」里，排好顺序后一次性生成一份完整的 PDF（打开打印页面，另存为 PDF）。
 // 各工具页面的「➕ 加入宣传资料」按钮调用 pkAdd() 放入当下内容的快照；学科介绍也可在本页直接添加。
 // 资料包存在本浏览器 localStorage（按老师区分），刷新页面不丢；不落库。
 // 依赖：shared/constants.js、shared/supabase.js、teacher.js、teacher-promo.js（须在其后加载）
@@ -157,6 +156,7 @@ function pkAdmissionHtml(rows, opts) {
   const head = [...(showMajor ? ['专业'] : []), '大学名', '設置', '研究科', '専攻', 'コース', '出願類型', '資格審査', '出願期間', '筆記試験', '口述試験', '合格発表', '英語', '日語'];
   return `<div class="pk-filter">筛选条件：${pkEsc(filterLine || '全部')}　·　共 ${rows.length} 条</div>
   <table class="pk-adb">
+    <colgroup>${(showMajor ? [6] : []).concat([10, 4, 11, 9, 8, 7, 7, 8, 7, 7, 7, 4, 4]).map(w => `<col style="width:${w}%">`).join('')}</colgroup>
     <thead><tr>${head.map(t => `<th>${t}</th>`).join('')}</tr></thead>
     <tbody>${rows.map(s => `<tr>
       ${showMajor ? `<td>${pkEsc((majorMap && majorMap[s.major]) || s.major)}</td>` : ''}
@@ -217,7 +217,7 @@ function pkRender(mc) {
   mc.innerHTML = `
   <div class="page-header"><div class="section-title">📦 宣传资料整合</div></div>
   <div style="font-size:11px;color:var(--text-3);margin-bottom:12px;line-height:1.8">
-    在各工具里做好的内容点「➕ 加入宣传资料」就会收进这里；排好顺序、勾选要用的部分，即可一次性生成一份带封面和目录的完整 PDF，或下载网页版发给客户。资料只保存在本浏览器中。
+    在各工具里做好的内容点「➕ 加入宣传资料」就会收进这里；排好顺序、勾选要用的部分，即可一次性生成一份带封面和目录的完整 PDF。资料只保存在本浏览器中。
   </div>
 
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;align-items:start">
@@ -275,10 +275,8 @@ function pkRender(mc) {
 
       <div style="border-top:1px solid var(--border-light);margin-top:12px;padding-top:12px;display:flex;gap:8px;flex-wrap:wrap">
         <button onclick="pkOpenDoc(true)" ${incl.length ? '' : 'disabled'} style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 18px;cursor:${incl.length ? 'pointer' : 'not-allowed'};font-family:inherit;opacity:${incl.length ? 1 : .5}">🖨 生成完整 PDF</button>
-        <button onclick="pkOpenDoc(false)" ${incl.length ? '' : 'disabled'} style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:8px 14px;cursor:${incl.length ? 'pointer' : 'not-allowed'};font-family:inherit">🌐 打开网页版</button>
-        <button onclick="pkDownload()" ${incl.length ? '' : 'disabled'} style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:8px 14px;cursor:${incl.length ? 'pointer' : 'not-allowed'};font-family:inherit">⬇ 下载网页版 (.html)</button>
       </div>
-      <div style="font-size:10px;color:var(--text-3);margin-top:8px;line-height:1.7">生成 PDF：在打印对话框的「目标打印机」选「另存为 PDF」，并勾选「背景图形」以保留配色。网页版 .html 可直接发给客户用浏览器打开。</div>
+      <div style="font-size:10px;color:var(--text-3);margin-top:8px;line-height:1.7">生成 PDF：在打印对话框的「目标打印机」选「另存为 PDF」，并勾选「背景图形」以保留配色。</div>
     </div>
   </div>`;
   pkUpdateTabBadge();
@@ -356,18 +354,25 @@ body { font-family:'Noto Serif SC','Hiragino Sans GB','Microsoft YaHei',serif; c
 .toolbar { position:sticky; top:0; z-index:5; background:#3a2e24; color:#f7f5f0; padding:10px 16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:12px; }
 .toolbar button { font-family:inherit; font-size:12px; padding:6px 16px; border:none; border-radius:3px; background:#f7f5f0; color:#3a2e24; cursor:pointer; }
 .toolbar .tip { font-size:10px; opacity:.75; }
-.pk-page { background:#fff; width:100%; max-width:210mm; margin:16px auto; padding:14mm 13mm; box-shadow:0 2px 10px rgba(0,0,0,.08); }
-.pk-page.wide { max-width:297mm; }
+/* 屏幕上每张纸 = 打印时的纸：纵向 A4（210mm，页边距 12mm/11mm → 内容宽 188mm），横向 A4（297mm，页边距 10mm → 277mm） */
+.pk-page { background:#fff; width:210mm; max-width:calc(100% - 16px); margin:16px auto; padding:12mm 11mm; box-shadow:0 2px 10px rgba(0,0,0,.08); overflow-wrap:anywhere; }
+.pk-page.wide { width:297mm; padding:10mm; }
+/* 内容不得撑出纸张：长英文/长链接自动换行，网格与卡片的子项允许收窄，图片不超宽（不使用 overflow:hidden 藏内容） */
+.pk-page img { max-width:100%; height:auto; }
+.pk-cards > *, .pk-block, .pk-page [style*="display:grid"] > * { min-width:0; }
+.pk-page [style*="grid-template-columns:repeat(7"] > div { overflow:visible !important; }
+.pk-rich table { min-width:0 !important; table-layout:fixed; }
+.pk-rich div[style*="overflow-x"] { overflow-x:visible !important; }
 @page { size:A4; margin:12mm 11mm; }
 @page wide { size:A4 landscape; margin:10mm; }
 @media print {
   body { background:#fff; }
   .toolbar { display:none !important; }
-  .pk-page { margin:0; padding:0; box-shadow:none; max-width:none; break-after:page; }
+  .pk-page, .pk-page.wide { width:auto; margin:0; padding:0; box-shadow:none; max-width:none; break-after:page; }
   .pk-page:last-child { break-after:auto; }
   .pk-page.wide { page:wide; }
 }
-@media (max-width:640px) { .pk-page { padding:18px 16px; margin:0 0 10px; } .pk-cards { grid-template-columns:1fr !important; } }
+@media screen and (max-width:640px) { .pk-page, .pk-page.wide { width:auto; max-width:none; padding:18px 16px; margin:0 0 10px; } .pk-cards { grid-template-columns:1fr !important; } }
 /* 封面 */
 .pk-cover { min-height:250mm; display:flex; flex-direction:column; }
 .pk-kicker { font-size:10px; letter-spacing:.3em; color:var(--accent); margin-top:30mm; }
@@ -401,9 +406,9 @@ body { font-family:'Noto Serif SC','Hiragino Sans GB','Microsoft YaHei',serif; c
 .pk-sched.closed { background:#f8f0d8; color:var(--warn); }
 /* 出愿名单 */
 .pk-filter { font-size:10.5px; color:#2c4a7c; background:#eef3fb; border-radius:3px; padding:4px 10px; display:inline-block; margin-bottom:8px; }
-table.pk-adb { border-collapse:collapse; width:100%; font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif; }
-.pk-adb th { background:#2c4a7c; color:#fff; font-size:9px; font-weight:700; text-align:left; padding:5px 4px; border:1px solid #1e3560; white-space:nowrap; }
-.pk-adb td { font-size:9.5px; padding:4px; border:1px solid #ddd; vertical-align:top; line-height:1.45; word-break:break-all; }
+table.pk-adb { border-collapse:collapse; width:100%; table-layout:fixed; font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif; }
+.pk-adb th { background:#2c4a7c; color:#fff; font-size:9px; font-weight:700; text-align:left; padding:5px 4px; border:1px solid #1e3560; white-space:normal; overflow-wrap:anywhere; }
+.pk-adb td { font-size:9.5px; padding:4px; border:1px solid #ddd; vertical-align:top; line-height:1.45; word-break:break-all; overflow-wrap:anywhere; }
 .pk-adb tr:nth-child(even) td { background:#f4f7fb; }
 .pk-adb thead { display:table-header-group; }
 .pk-adb tr { break-inside:avoid; }
@@ -412,7 +417,9 @@ table.pk-adb { border-collapse:collapse; width:100%; font-family:'Hiragino Sans'
 /* VIP */
 .pk-stats { display:flex; gap:22px; align-items:baseline; background:var(--bg); border:1px solid var(--border); border-radius:3px; padding:8px 14px; margin-bottom:12px; font-size:11px; color:var(--text-2); }
 .pk-stats b { font-family:'DM Mono',monospace; font-size:18px; font-weight:500; color:var(--text-1); }
-table.pk-vip { width:100%; border-collapse:collapse; font-size:10px; }
+table.pk-vip { width:100%; border-collapse:collapse; font-size:10px; table-layout:fixed; }
+.pk-vip th:nth-child(1) { width:26px; } .pk-vip th:nth-child(2) { width:22px; } .pk-vip th:nth-child(3) { width:22%; } .pk-vip th:nth-child(6) { width:44px; }
+.pk-vip td { overflow-wrap:anywhere; }
 .pk-vip thead tr { background:#1a1814; color:#f7f5f0; }
 .pk-vip th { padding:6px 8px; text-align:left; font-weight:500; font-size:9px; }
 .pk-vip td { padding:5px 8px; border-bottom:1px solid #ede9e2; vertical-align:top; line-height:1.5; color:var(--text-2); }
@@ -444,16 +451,4 @@ function pkOpenDoc(autoPrint) {
   const items = pkItems.filter(x => x.include);
   if (!items.length) { alert('请先勾选要放入资料的内容'); return; }
   pkWriteWindow(pkDocHtml(items, { autoPrint }));
-}
-
-function pkDownload() {
-  const items = pkItems.filter(x => x.include);
-  if (!items.length) { alert('请先勾选要放入资料的内容'); return; }
-  const blob = new Blob([pkDocHtml(items, { autoPrint: false })], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = pkDocTitle().replace(/[\\/:*?"<>|\s]+/g, '_') + '.html';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

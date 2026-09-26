@@ -716,7 +716,7 @@ function renderTeachersPage(mc){
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_progress_plan" style="accent-color:var(--accent);width:15px;height:15px">进度规划<span style="font-size:9px;color:var(--text-3)">咨询学生考学规划生成，可打印 PDF</span></label>
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_lect_info" style="accent-color:var(--accent);width:15px;height:15px">讲师信息查询<span style="font-size:9px;color:var(--text-3)">内部检索讲师档案，可切换展示卡片给客户看/截图</span></label>
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_vip_sales" style="accent-color:var(--accent);width:15px;height:15px">VIP营业规划<span style="font-size:9px;color:var(--text-3)">看到全部 VIP 框架模板，可转分享给上课老师（营业角色）</span></label>
-              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_promo_pack" style="accent-color:var(--accent);width:15px;height:15px">宣传资料整合<span style="font-size:9px;color:var(--text-3)">把出愿学校/学科介绍/进度规划/讲师卡片/VIP方案合成一份完整 PDF 或网页版</span></label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_promo_pack" style="accent-color:var(--accent);width:15px;height:15px">宣传资料整合<span style="font-size:9px;color:var(--text-3)">把出愿学校/学科介绍/进度规划/讲师卡片/VIP方案合成一份完整 PDF</span></label>
             </div>
           </div>`:''}
           <!-- admission_query row -->
