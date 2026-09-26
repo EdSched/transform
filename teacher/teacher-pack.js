@@ -134,7 +134,7 @@ function pkMajorHtml(major, data, parts) {
   }
   if (parts.includes('course') && crs.length) {
     const dvLabel = v => v === '线下＋线上' ? '线上线下同步' : (v || '');
-    h += sub('课程介绍') + `<div class="pk-cards">${crs.map(p => {
+    h += sub('课程介绍') + `<div class="pk-cards pk-courses">${crs.map(p => {
       const name = String(p.title || '').trim();
       const c = (prCourses || []).find(x => (x.name || '').trim() === name);
       return `<div class="pk-card">
@@ -409,6 +409,13 @@ body { font-family:'Noto Serif SC','Hiragino Sans GB','Microsoft YaHei',serif; c
 .pk-cred { font-size:10px; color:var(--accent); margin-bottom:6px; }
 .pk-sched { margin-top:8px; font-size:10.5px; background:var(--ok-bg); border-radius:3px; padding:5px 10px; color:var(--text-1); }
 .pk-sched.closed { background:#f8f0d8; color:var(--warn); }
+/* 课程介绍：一门课占一整行（横向铺开），课程安排表格按内容自动分配列宽、居中；旧资料（无 pk-courses 类）用 :has 识别 */
+.pk-courses, .pk-cards:has(.pk-sched) { grid-template-columns:1fr; }
+.pk-courses .pk-rich table, .pk-cards:has(.pk-sched) .pk-rich table { table-layout:auto; width:100%; margin:0 auto; }
+.pk-courses .pk-rich th, .pk-cards:has(.pk-sched) .pk-rich th { white-space:nowrap !important; text-align:center !important; padding:5px 10px !important; }
+.pk-courses .pk-rich td, .pk-cards:has(.pk-sched) .pk-rich td { padding:5px 10px !important; vertical-align:middle; line-height:1.6; }
+.pk-courses .pk-rich td:first-child, .pk-cards:has(.pk-sched) .pk-rich td:first-child,
+.pk-courses .pk-rich td:last-child, .pk-cards:has(.pk-sched) .pk-rich td:last-child { text-align:center; white-space:nowrap; }
 /* 出愿名单 */
 .pk-filter { font-size:10.5px; color:#2c4a7c; background:#eef3fb; border-radius:3px; padding:4px 10px; display:inline-block; margin-bottom:8px; }
 table.pk-adb { border-collapse:collapse; width:100%; table-layout:fixed; font-family:'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif; }
