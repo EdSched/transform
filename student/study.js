@@ -1480,6 +1480,15 @@ function hwEnterVip(session, sub, cb) {   // vip.js 首次打开某条 VIP 作�
 function hwVipHtml() { if (!hwVipSession) return ''; hwMode = 'vip'; return hwDetailHtml(hwVipSession, hwSubs[hwVipSession.id] || null); }
 function hwCloseVip() { hwMode = 'course'; hwVipSession = null; hwVipCb = null; }
 
+// 自己的课程成员行（单独添加 / 移除 / 指定名单），读不到时按默认规则
+let studyMyMembers = null;
+async function studyLoadMyMembers() {
+  if (studyMyMembers) return studyMyMembers;
+  studyMyMembers = await sb(`/rest/v1/course_members?student_id=eq.${encodeURIComponent(studyStudent.id)}&select=course_id,student_id,kind`).catch(() => []) || [];
+  return studyMyMembers;
+}
+function studyMe() { return Object.assign({}, studyStudent, { major: studyStudent.major || studyMajor }); }
+
 async function loadStudyHwSessions(retry) {
   const wrap = document.getElementById('study_hw_sessions_wrap');
   if (!wrap) { if ((retry || 0) < 8) setTimeout(() => loadStudyHwSessions((retry || 0) + 1), 120); return; }
@@ -1493,15 +1502,26 @@ async function loadStudyHwSessions(retry) {
     const from = new Date(today); from.setDate(today.getDate() - 60);
     const to = new Date(today); to.setDate(today.getDate() + 21);
     const fmt = d => d.toISOString().slice(0, 10);
-    const [sessions, subs] = await Promise.all([
+    const [sessions, subs, myMembers] = await Promise.all([
       sb(`/rest/v1/course_sessions?session_date=gte.${fmt(from)}&session_date=lte.${fmt(to)}&homework_enabled=is.true&select=*&order=session_date.desc`).catch(() => []),
       sb(`/rest/v1/homework_submissions?student_name=eq.${encodeURIComponent(studyStudent.name)}&select=*`).catch(() => []),
+      studyLoadMyMembers(),
     ]);
+    // 课程成员：只留自己是成员的课（纯 VIP 默认不在大课里；单独添加的外专业课也能看到）
+    const cids = [...new Set((sessions || []).map(s => s.course_id).filter(Boolean))];
+    const cMap = {};
+    for (let i = 0; i < cids.length; i += 40) {
+      const arr = await sb(`/rest/v1/courses?id=in.(${cids.slice(i, i + 40).map(x => `"${x}"`).join(',')})&select=id,major,member_mode`).catch(() => []);
+      (arr || []).forEach(c => cMap[c.id] = c);
+    }
+    const me = studyMe();
     hwSessions = (sessions || []).filter(s => {
       // 兼容新结构 {version:2,levels:[]} 与旧数组格式
       const q = s.homework_questions;
       const hasQ = Array.isArray(q) ? q.length > 0 : !!(q && Array.isArray(q.levels) && q.levels.length);
       if (!hasQ) return false;
+      const c = cMap[s.course_id];
+      if (c) return studentInCourse(me, Object.assign({}, c, { major: (c.major && c.major.length) ? c.major : s.major }), myMembers);
       const sm = Array.isArray(s.major) ? s.major : [s.major || ''];
       return !myMajor || sm.some(m => acceptMajors.includes(m));
     });
@@ -1896,19 +1916,41 @@ async function loadStudySchedule() {
     const myMajor = studyStudent.major || '';
     const keys = [myMajor];
     if (typeof SHAKAI_GROUP !== 'undefined' && SHAKAI_GROUP.includes(myMajor)) keys.push('shakai_group');
-    const shares = await sb(`/rest/v1/course_schedule_shares?major=in.(${keys.map(k=>`"${k}"`).join(',')})&select=*&order=created_at.desc&limit=1`);
-    const share = (shares || [])[0];
-    if (!share || !(share.course_ids || []).length) { studySchedData = { share: null, sessions: [], courses: [] }; el.innerHTML = renderScheduleTab(); return; }
-    const ids = share.course_ids;
+    const [shares, myMembers] = await Promise.all([
+      sb(`/rest/v1/course_schedule_shares?major=in.(${keys.map(k=>`"${k}"`).join(',')})&select=*&order=created_at.desc&limit=1`),
+      studyLoadMyMembers(),
+    ]);
+    const share0 = (shares || [])[0];
+    // 课表里的课 + 单独把自己加进去的课（如外专业课 / 指定名单课）
+    const incIds = myMembers.filter(r => r.kind === 'include').map(r => String(r.course_id));
+    const candIds = [...new Set([...((share0 && share0.course_ids) || []).map(String), ...incIds])];
+    if (!candIds.length) { studySchedData = { share: share0 || null, sessions: [], courses: [] }; el.innerHTML = renderScheduleTab(); return; }
+    // 课程详情（上课链接/校区/形式 + 成员判断用的专业/模式）
+    let courseInfoArr = [];
+    for (let i = 0; i < candIds.length; i += 40) {
+      const arr = await sb(`/rest/v1/courses?id=in.(${candIds.slice(i,i+40).map(x=>`"${x}"`).join(',')})&select=id,name,meeting_url,campus,delivery,weekdays,time_range,major,member_mode`).catch(() => []);
+      courseInfoArr = courseInfoArr.concat(arr || []);
+    }
+    const me = studyMe();
+    const courseInfoMap = {};
+    (courseInfoArr || []).forEach(c => courseInfoMap[c.id] = c);
+    const inShare = new Set(((share0 && share0.course_ids) || []).map(String));
+    const ids = candIds.filter(id => {
+      const c = courseInfoMap[id]; if (!c) return false;
+      // 课程没填专业时，已发布在本专业课表里的课按本专业算
+      const mj = (c.major && c.major.length) ? c.major : (inShare.has(id) ? [me.major] : []);
+      return studentInCourse(me, Object.assign({}, c, { major: mj }), myMembers);
+    });
     let sessions = [];
     for (let i = 0; i < ids.length; i += 40) {
       const batch = await sb(`/rest/v1/course_sessions?course_id=in.(${ids.slice(i,i+40).map(x=>`"${x}"`).join(',')})&select=*&order=session_date.asc`).catch(() => []);
       sessions = sessions.concat(batch || []);
     }
-    // 课程详情（上课链接/校区/形式）
-    const courseInfoArr = await sb(`/rest/v1/courses?id=in.(${ids.map(x=>`"${x}"`).join(',')})&select=id,name,meeting_url,campus,delivery,weekdays,time_range`).catch(() => []);
-    const courseInfoMap = {};
-    (courseInfoArr || []).forEach(c => courseInfoMap[c.id] = c);
+    // 单独添加、但不在已发布课表里的课：只显示还没结束（最近 30 天内仍有课次）的，避免旧课一直挂着
+    const cutoff = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+    const liveExtra = new Set(sessions.filter(s => !inShare.has(String(s.course_id)) && (s.session_date || '') >= cutoff).map(s => String(s.course_id)));
+    sessions = sessions.filter(s => inShare.has(String(s.course_id)) || liveExtra.has(String(s.course_id)));
+    const share = share0 || (sessions.length ? { title: '课程表' } : null);
     // 课程顺序按首回日期，分配颜色
     const byCourse = {};
     sessions.forEach(s => { if (!byCourse[s.course_id]) byCourse[s.course_id] = []; byCourse[s.course_id].push(s); });
@@ -1932,6 +1974,7 @@ function renderScheduleTab() {
   const D = studySchedData || {};
   if (D.error) return `<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">课程表加载失败：${D.error}</div>`;
   if (!D.share) return '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">暂无发布的课程表，请等待教务发布</div>';
+  if (!(D.courses || []).length) return '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">暂无你参加的课程</div>';
 
   const legend = `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:10px 14px;margin-bottom:12px">
     ${D.courses.map(c => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text-secondary)"><span style="width:10px;height:10px;border-radius:2px;background:${c.color[1]};border:1px solid ${c.color[0]};display:inline-block"></span>${escA(c.name)}</span>`).join('')}

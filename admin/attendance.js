@@ -17,6 +17,27 @@ function attStatusColor(v){
 }
 function attPresent(v){return v==='offline'||v==='online'||v==='replay';}
 
+// 课程成员（规则见 shared/constants.js 的 courseMemberIds）：纯 VIP 默认不算，指定名单课只算名单里的人
+function attActiveStudents(){ return (cachedStudents||[]).filter(s=>s.status==='active'||!s.status); }
+function attMembers(courseId, majors){
+  const c=cachedCourses.find(x=>x.id===courseId)||{};
+  const mj=(majors&&majors.length)?majors:(c.major||[]);
+  const course=Object.assign({id:courseId},c,{major:mj});
+  const act=attActiveStudents();
+  const ids=courseMemberIds(course, act, (typeof cachedCourseMembers!=='undefined'?cachedCourseMembers:[]));
+  return act.filter(s=>ids.has(String(s.id)));
+}
+// 已有出席记录但已不是成员的学生（不删记录，标「非成员」照常显示）
+function attNonMembersWithRecords(records, members){
+  const memberIds=new Set(members.map(s=>String(s.id)));
+  const out=[];
+  records.forEach(r=>{
+    const stu=cachedStudents.find(x=>x.id===r.student_id)||cachedStudents.find(x=>x.name===r.student_name);
+    if(stu&&!memberIds.has(String(stu.id))&&!out.some(x=>x.id===stu.id)) out.push(Object.assign({},stu,{_nonMember:true}));
+  });
+  return out;
+}
+
 let attPeriodFilter='';
 let attTypeFilter='';
 let attCampusFilter='';
@@ -171,13 +192,7 @@ function renderSessionList(filteredCourses){
   return Object.entries(byCourse).map(([cid,sess])=>{
     const course=courses.find(c=>c.id===cid)||{name:sess[0]?.course_name||''};
     const color=courseColor(course.name);
-    const majors=sess[0]?.major||course.major||[];
-    const totalStudents=cachedStudents.filter(s=>
-      s.status==='active'&&(
-        majors.includes(s.major)||
-        (majors.includes('shakai_group')&&['shakai','shinpan','fukushi'].includes(s.major))
-      )
-    ).length;
+    const totalStudents=attMembers(cid, sess[0]?.major).length;
 
     return `<div style="margin-bottom:20px;background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
       <div style="background:${color.bg};color:${color.text};padding:8px 14px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
@@ -251,10 +266,7 @@ async function loadAdminHwPanel(sessionId) {
   admHwSubs[sessionId] = subs || [];
   if (!subs.length) { wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:4px 0">暂无提交作业</div>'; return; }
 
-  const majors = s.major || [];
-  const students = cachedStudents.filter(x => x.status === 'active' && (
-    majors.includes(x.major) || (majors.includes('shakai_group') && ['shakai','shinpan','fukushi'].includes(x.major))
-  ));
+  const students = attMembers(s.course_id, s.major);
   const done = new Set(subs.map(x => x.student_name));
   const missing = students.filter(x => !done.has(x.name));
 
@@ -407,19 +419,13 @@ async function openSessionModal(sessionId){
   document.getElementById('sessionModalTitle').textContent=`${session.course_name} 第${session.session_number}回`;
   document.getElementById('sessionModalSub').textContent=`${session.session_date} · ${session.time_range||''} · ${session.session_title||''}`;
 
-  const majors=session.major||course.major||[];
-  const students=cachedStudents.filter(s=>
-    s.status==='active'&&(
-      majors.includes(s.major)||
-      (majors.includes('shakai_group')&&['shakai','shinpan','fukushi'].includes(s.major))
-    )
-  ).sort((a,b)=>a.name.localeCompare(b.name,'zh'));
-
   let existing=cachedSessionRecords.filter(r=>r.session_id===sessionId);
   if(!existing.length){
     try{existing=await sb(`/rest/v1/session_records?session_id=eq.${sessionId}&select=*`)}catch(e){}
     existing.forEach(r=>{if(!cachedSessionRecords.find(x=>x.id===r.id))cachedSessionRecords.push(r)});
   }
+  const members=attMembers(session.course_id, session.major).sort((a,b)=>a.name.localeCompare(b.name,'zh'));
+  const students=members.concat(attNonMembersWithRecords(existing, members));
 
   sessionEdits={};
   _currentSessionStudents = students;
@@ -525,7 +531,7 @@ function renderStudentRows(filter='') {
   const unmarkedShown=kw?unmarked.filter(s=>matchesStudentSearch(s,kw)):unmarked;
   const body=document.getElementById('sessionRecordBody');
   body.innerHTML=unmarkedShown.length?unmarkedShown.map(s=>`
-    <button onclick="attMark('${s.id}')" style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;padding:11px 4px;border:1px solid var(--border);border-radius:8px;background:var(--surface);cursor:pointer;color:var(--text)">${s.name}</button>
+    <button onclick="attMark('${s.id}')" style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;padding:11px 4px;border:1px solid var(--border);border-radius:8px;background:var(--surface);cursor:pointer;color:var(--text)">${s.name}${s._nonMember?'<span style="display:block;font-size:9px;font-weight:400;color:var(--text-3)">非成员</span>':''}</button>
   `).join(''):`<div style="grid-column:1/-1;font-size:12px;color:var(--text-3);padding:16px;text-align:center">${kw?'无匹配':'全部已点 ✓'}</div>`;
   const cnt=document.getElementById('att_unmarked_count'); if(cnt) cnt.textContent=`剩 ${unmarked.length} 人`;
   const area=document.getElementById('att_marked_area');
@@ -538,7 +544,7 @@ function renderStudentRows(filter='') {
       (keys.map(st=>{const info=attStatusFull(st);
         return `<div style="margin-bottom:8px"><span style="font-size:11px;font-weight:600;color:${info.c}">${info.t}（${groups[st].length}）</span>
           <span style="display:inline-flex;flex-wrap:wrap;gap:6px;margin-left:8px">${groups[st].map(s=>`
-            <span onclick="attUnmark('${s.id}')" title="点击撤回" style="font-size:12px;padding:3px 10px;border-radius:12px;background:var(--bg);border:1px solid ${info.c};color:${info.c};cursor:pointer">${s.name} ✕</span>`).join('')}</span></div>`;
+            <span onclick="attUnmark('${s.id}')" title="点击撤回" style="font-size:12px;padding:3px 10px;border-radius:12px;background:var(--bg);border:1px solid ${info.c};color:${info.c};cursor:pointer">${s.name}${s._nonMember?'（非成员）':''} ✕</span>`).join('')}</span></div>`;
       }).join('')||'<div style="font-size:11px;color:var(--text-3)">还没点名</div>');
   }
 }
@@ -636,13 +642,7 @@ async function saveSessionRecords(){
   const sessionId=document.getElementById('sessionModalId').value;
   const session=cachedSessions.find(s=>s.id===sessionId);
   if(!session) return;
-  const majors=session.major||[];
-  const students=cachedStudents.filter(s=>
-    s.status==='active'&&(
-      majors.includes(s.major)||
-      (majors.includes('shakai_group')&&['shakai','shinpan','fukushi'].includes(s.major))
-    )
-  );
+  const students=(_currentSessionId===sessionId)?_currentSessionStudents:attMembers(session.course_id, session.major);
   const btn=document.querySelector('#sessionModal .btn-primary');
   btn.textContent='保存中…';btn.disabled=true;
   try{
@@ -714,16 +714,15 @@ function renderAttStatusView(sessions, courses){
   return Object.entries(byCourse).map(([cid,sess])=>{
     const course=courses.find(c=>c.id===cid)||{name:sess[0]?.course_name||''};
     const color=courseColor(course.name);
-    const majors=sess[0]?.major||course.major||[];
-    const students=cachedStudents.filter(s=>s.status==='active'&&(
-      majors.includes(s.major)||(majors.includes('shakai_group')&&['shakai','shinpan','fukushi'].includes(s.major))
-    )).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    const members=attMembers(cid, sess[0]?.major).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    const sessIds=new Set(sess.map(s=>s.id));
+    const students=members.concat(attNonMembersWithRecords(cachedSessionRecords.filter(r=>sessIds.has(r.session_id)), members));
     if(!students.length) return '';
     const hwSess=sess.filter(s=>s.homework_enabled);
     return `<div style="margin-bottom:18px;background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
       <div style="background:${color.bg};color:${color.text};padding:8px 14px;font-size:12px;font-weight:600;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
         <span>${course.name}</span>
-        <span style="font-size:10px;opacity:.75">${sess.length}回 · ${students.length}人　✓出席 ✗缺席 ─未记录 · 📝已交作业</span>
+        <span style="font-size:10px;opacity:.75">${sess.length}回 · ${members.length}人　✓出席 ✗缺席 ─未记录 · 📝已交作业</span>
       </div>
       <div class="table-scroll"><table class="student-table" style="margin:0">
         <thead><tr>
@@ -747,7 +746,7 @@ function renderAttStatusView(sessions, courses){
             }).join('');
             const rate=rec?Math.round(att/rec*100):0;
             return `<tr>
-              <td style="font-size:11px;font-weight:600;position:sticky;left:0;background:var(--surface)">${stu.name}</td>
+              <td style="font-size:11px;font-weight:600;position:sticky;left:0;background:var(--surface)">${stu.name}${stu._nonMember?'<span style="font-size:9px;font-weight:400;color:var(--text-3);margin-left:4px">非成员</span>':''}</td>
               ${cells}
               <td style="text-align:center;font-size:11px;color:${!rec?'var(--text-3)':rate>=80?'var(--ok)':rate>=60?'var(--warn)':'var(--danger)'}">${rec?rate+'%':'—'}</td>
               ${hwSess.length?`<td style="text-align:center;font-size:11px;color:${hw>=hwSess.length?'var(--ok)':hw?'var(--warn)':'var(--text-3)'}">${hw}/${hwSess.length}</td>`:''}
