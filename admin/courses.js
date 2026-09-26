@@ -438,6 +438,7 @@ function renderCourseCleanupPage(mc){
             </div>
           </div>
           ${(()=>{const st=hwTplStatus(c);return st&&!st.noTpl&&st.missing>0?`<button class="btn btn-outline btn-sm" onclick="event.stopPropagation();hwSaveAllToTemplate('${c.id}')">📝 作业全部存入模板</button>`:''})()}
+          ${cachedSessions.some(s=>s.course_id===c.id&&hwHasQ(s.homework_questions))?`<button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openHwInherit('${c.id}')" title="把这门课的作业按单回标题复制到另一期的课">📤 作业继承到…</button>`:''}
           <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openSaveAsTemplate('${c.id}')">💾 存为模板</button>
           <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openAddCourseModal('${c.id}')">编辑</button>
           <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="event.stopPropagation();cleanupDeleteSingle('${c.id}')">删除</button>
@@ -3419,6 +3420,112 @@ async function hwSaveAllToTemplate(courseId){
     renderCourseCleanupPage(document.getElementById('mainContent'));
     alert(`已把 ${hs.length} 回作业写入模板「${tpl.name}」\n以后用该模板开新一期，这些作业会自动带出`);
   }catch(e){ alert('写入模板失败：'+e.message); }
+}
+
+// ── 作业继承：把一门课（往期）的作业，按单回标题复制到另一门课（如新一期）──
+let hwInhSrc=null, hwInhTgt='', hwInhOverwrite=false;
+function hwInhUsable(s){ const t=(s.session_title||'').trim(); return t&&t!=='休讲'&&!s.is_cancelled; }
+function hwInhSessions(cid){ return cachedSessions.filter(s=>s.course_id===cid).sort((a,b)=>(a.session_date||'').localeCompare(b.session_date||'')||((a.session_number||0)-(b.session_number||0))); }
+// 按标题配对：同一标题出现多次时按先后顺序一一对应
+function hwInhPlan(srcId, tgtId, overwrite){
+  const occ=list=>{ const cnt={}; return list.filter(hwInhUsable).map(s=>{ const t=s.session_title.trim(); cnt[t]=(cnt[t]||0)+1; return {s,key:t+'#'+cnt[t]}; }); };
+  const tgtMap={}; occ(hwInhSessions(tgtId)).forEach(x=>tgtMap[x.key]=x.s);
+  const srcAll=hwInhSessions(srcId);
+  const plan=[];
+  const usableOcc=occ(srcAll); const keyOf=new Map(usableOcc.map(x=>[x.s.id,x.key]));
+  srcAll.filter(s=>hwHasQ(s.homework_questions)).forEach(s=>{
+    const k=keyOf.get(s.id);
+    const t=k?tgtMap[k]:null;
+    let act;
+    if(!t) act='none';
+    else if(hwHasQ(t.homework_questions)) act=hwStableJson(t.homework_questions)===hwStableJson(s.homework_questions)?'same':(overwrite?'overwrite':'skip');
+    else act='copy';
+    plan.push({src:s,tgt:t,act});
+  });
+  return plan;
+}
+function openHwInherit(srcId){
+  const src=cachedCourses.find(c=>c.id===srcId); if(!src) return;
+  hwInhSrc=srcId; hwInhOverwrite=false;
+  const n=(src.name||'').trim();
+  const same=cachedCourses.filter(c=>c.id!==srcId&&(c.name||'').trim()===n).sort((a,b)=>(b.first_session_date||'').localeCompare(a.first_session_date||''));
+  hwInhTgt=(same.find(c=>(c.first_session_date||'')>(src.first_session_date||''))||same[0]||{}).id||'';
+  document.getElementById('hwInhModal')?.remove();
+  const ov=document.createElement('div');
+  ov.id='hwInhModal';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:30px 16px;overflow-y:auto';
+  ov.innerHTML='<div id="hwInhBox" style="background:var(--surface);border-radius:6px;padding:18px 20px;max-width:720px;width:100%"></div>';
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  document.body.appendChild(ov);
+  hwInhRender();
+}
+function hwInhRender(){
+  const box=document.getElementById('hwInhBox'); if(!box) return;
+  const src=cachedCourses.find(c=>c.id===hwInhSrc); if(!src) return;
+  const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const n=(src.name||'').trim();
+  const lab=c=>`${esc(c.name)}（${c.first_session_date?c.first_session_date.slice(0,4)+'年'+effectivePeriod(c):'未排期'}${c.campus?' · '+esc(c.campus):''}${courseIsEnded(c)?' · 已结课':''}）`;
+  const byDate=(a,b)=>(b.first_session_date||'').localeCompare(a.first_session_date||'');
+  const same=cachedCourses.filter(c=>c.id!==hwInhSrc&&(c.name||'').trim()===n).sort(byDate);
+  const others=cachedCourses.filter(c=>c.id!==hwInhSrc&&(c.name||'').trim()!==n&&!courseIsEnded(c)).sort(byDate);
+  const plan=hwInhTgt?hwInhPlan(hwInhSrc,hwInhTgt,hwInhOverwrite):[];
+  const cnt=a=>plan.filter(p=>p.act===a).length;
+  const todo=cnt('copy')+cnt('overwrite');
+  const tagOf={copy:['继承','var(--ok,#2a9e6a)'],overwrite:['覆盖','#b8860b'],skip:['已有作业 · 跳过','var(--text-3)'],same:['内容相同','var(--text-3)'],none:['找不到同名单回','var(--danger,#b03a2e)']};
+  const selSty='font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit';
+  box.innerHTML=`
+    <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">
+      <div style="font-size:15px;font-weight:600">作业继承</div>
+      <div style="font-size:11px;color:var(--text-3);flex:1">从 ${lab(src)}，按单回标题复制作业</div>
+      <button onclick="document.getElementById('hwInhModal').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-3)">×</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <span style="font-size:11px;color:var(--text-3)">继承到</span>
+      <select onchange="hwInhTgt=this.value;hwInhRender()" style="${selSty};flex:1;min-width:240px">
+        <option value="" ${hwInhTgt?'':'selected'}>— 选择目标课程 —</option>
+        ${same.length?`<optgroup label="同名课程">${same.map(c=>`<option value="${c.id}" ${c.id===hwInhTgt?'selected':''}>${lab(c)}</option>`).join('')}</optgroup>`:''}
+        ${others.length?`<optgroup label="其他进行中的课程">${others.map(c=>`<option value="${c.id}" ${c.id===hwInhTgt?'selected':''}>${lab(c)}</option>`).join('')}</optgroup>`:''}
+      </select>
+      <span style="font-size:11px;color:var(--text-3)">目标回次已有作业时</span>
+      <select onchange="hwInhOverwrite=this.value==='1';hwInhRender()" style="${selSty}">
+        <option value="0" ${hwInhOverwrite?'':'selected'}>跳过</option>
+        <option value="1" ${hwInhOverwrite?'selected':''}>覆盖</option>
+      </select>
+    </div>
+    ${!hwInhTgt?'<div style="font-size:12px;color:var(--text-3);padding:16px;text-align:center">请先选择目标课程</div>':`
+    <div style="font-size:11px;color:var(--text-2);margin-bottom:6px">将继承 <b>${todo}</b> 回${cnt('none')?` · 找不到同名单回 ${cnt('none')} 回`:''}${cnt('skip')?` · 跳过 ${cnt('skip')} 回`:''}${cnt('same')?` · 内容相同 ${cnt('same')} 回`:''}</div>
+    <div style="max-height:46vh;overflow-y:auto;border:1px solid var(--border-light);border-radius:3px">
+      ${plan.map(p=>{const [t,col]=tagOf[p.act];return `<div style="display:flex;gap:8px;align-items:center;padding:5px 10px;border-bottom:1px solid var(--border-light);font-size:12px">
+        <span style="flex:1;min-width:0">第 ${p.src.session_number??'-'} 回「${esc(p.src.session_title||'（无标题）')}」${p.tgt?` <span style="color:var(--text-3)">→ 第 ${p.tgt.session_number??'-'} 回 ${esc(p.tgt.session_date||'')}</span>`:''}</span>
+        <span style="font-size:10px;color:${col};white-space:nowrap">${t}</span></div>`;}).join('')}
+    </div>`}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('hwInhModal').remove()">取消</button>
+      <button class="btn btn-primary btn-sm" ${todo?'':'disabled'} onclick="hwInhRun()">继承 ${todo} 回作业</button>
+    </div>`;
+}
+async function hwInhRun(){
+  const plan=hwInhPlan(hwInhSrc,hwInhTgt,hwInhOverwrite).filter(p=>p.act==='copy'||p.act==='overwrite');
+  if(!plan.length) return;
+  // 要覆盖的回次如果已有学生提交，不动
+  const skipped=[];
+  const ow=plan.filter(p=>p.act==='overwrite').map(p=>p.tgt.id);
+  let subbed=new Set();
+  if(ow.length){
+    const subs=await sb(`/rest/v1/homework_submissions?session_id=in.(${ow.map(x=>`"${x}"`).join(',')})&select=session_id`).catch(()=>[]);
+    subbed=new Set((subs||[]).map(x=>x.session_id));
+  }
+  let done=0; const errs=[];
+  for(const p of plan){
+    if(subbed.has(p.tgt.id)){ skipped.push(`第 ${p.tgt.session_number} 回已有学生提交，没有覆盖`); continue; }
+    const patch={homework_questions:p.src.homework_questions,homework_note:p.src.homework_note||null,homework_enabled:true};
+    try{ await sb(`/rest/v1/course_sessions?id=eq.${p.tgt.id}`,'PATCH',patch); Object.assign(p.tgt,patch); done++; }
+    catch(e){ errs.push(`第 ${p.tgt.session_number} 回：${e.message}`); }
+  }
+  document.getElementById('hwInhModal')?.remove();
+  if(curPage==='coursecleanup') renderCourseCleanupPage(document.getElementById('mainContent'));
+  const tgt=cachedCourses.find(c=>c.id===hwInhTgt)||{};
+  alert(`已把 ${done} 回作业继承到「${tgt.name||''}」${[...skipped,...errs].length?'\n\n'+[...skipped,...errs].join('\n'):''}`);
 }
 
 async function hwSaveToTemplate(sessionId){
