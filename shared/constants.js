@@ -1124,3 +1124,123 @@ function teacherInView(t){
 }
 function schoolLevelHtml(lv){ const m=SCHOOL_LEVEL_META[lv]; return m ? `<span style="color:${m.c};font-weight:600">${m.t}</span>` : ''; }
 function isSchoolFailed(v) { return SCHOOL_FAILED_STATUSES.includes(v); }
+
+// ══════════════════════════════════
+// 发给学生的文字：查询码通知（文案 A）/ 面谈提醒（文案 B）
+// 管理端学生管理、老师端学生管理、老师端面谈提醒共用。文字里只放该学生本人的查询码；群发文字不能带查询码。
+// ══════════════════════════════════
+const STUDENT_PORTAL_BASE = 'https://edsched.github.io/transform/student/index.html';
+function studentPortalLink(major) {
+  const k = (typeof majorKeyFromText === 'function' ? majorKeyFromText(major) : '') || major || '';
+  return `${STUDENT_PORTAL_BASE}?major=${encodeURIComponent(k)}`;
+}
+const STUDENT_CODE_MISSING = '（未生成，请联系老师）';
+// 文案 A：查询码通知
+function studentCodeNoticeText(name, major, code) {
+  return `${name}同学，你好！
+以后你的学习记录和面谈预约都统一在这个链接里：
+${studentPortalLink(major)}
+第一次打开时，请输入你的姓名和查询码登录。
+查询码：${code || STUDENT_CODE_MISSING}
+（在同一台手机上登录一次后，再打开就会自动进入。）
+⚠ 查询码相当于你的个人账号密码，请妥善保存，不要告诉他人。
+学习记录、作业、面谈记录、志望校和计划书都可以在这里查看和更新，请好好利用～`;
+}
+// 文案 B：面谈提醒（逐人，含查询码）
+function bookingReminderText(name, major, code) {
+  return `${name}同学，你最近都一直没有预约面谈，学习上有什么问题吗？麻烦预约一下面谈噢。
+预约链接：${studentPortalLink(major)}
+登录时请输入你的姓名和查询码：${code || STUDENT_CODE_MISSING}
+⚠ 查询码请妥善保存，不要告诉他人。`;
+}
+
+// 确保学生有查询码：已有就直接用（绝不重新生成，否则学生手上的码会失效）；
+// 没有才调用 rpc/issue_student_code 生成（服务端同时写入 student_login，触发器自动建登录账号）。
+// student 对象会被就地更新 student_code。返回 { code, error }
+async function ensureStudentCode(student) {
+  if (!student) return { code: '', error: '找不到该学生' };
+  if (student.student_code) return { code: student.student_code, error: '' };
+  try {
+    const r = await sb('/rest/v1/rpc/issue_student_code', 'POST', { p_student_id: student.id });
+    let code = Array.isArray(r) ? (r[0] || '') : (r || '');
+    if (code && typeof code === 'object') code = code.issue_student_code || '';
+    if (!code) return { code: '', error: '生成查询码失败（没有返回查询码）' };
+    student.student_code = code;
+    return { code, error: '' };
+  } catch (e) { return { code: '', error: '生成查询码失败：' + (e.message || '').slice(0, 120) }; }
+}
+
+function stTextEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+// 逐人文字块：每人一段 + 「📋 复制」，复制后标「✓ 已复制」（一直保留，方便记住发到哪了）
+// entries: [{ name, sub, text, error }]
+function studentTextBlocksHtml(entries, prefix) {
+  return entries.map((e, i) => `<div id="${prefix}_blk_${i}" style="border:1px solid var(--border-light,#ede9e2);border-radius:4px;padding:10px 12px;margin-bottom:8px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:600">${stTextEsc(e.name)}</span>
+      ${e.sub ? `<span style="font-size:10px;color:var(--text-3,#9a9590)">${stTextEsc(e.sub)}</span>` : ''}
+      <span id="${prefix}_done_${i}" style="font-size:10px;color:var(--ok,#2a9e6a);display:none">✓ 已复制</span>
+      <button onclick="studentTextCopy('${prefix}',${i})" style="margin-left:auto;font-size:11px;background:none;border:1px solid var(--border,#e2ded6);border-radius:3px;padding:3px 12px;cursor:pointer;font-family:inherit">📋 复制</button>
+    </div>
+    ${e.error ? `<div style="font-size:11px;color:var(--danger,#b03030);margin-bottom:6px">${stTextEsc(e.error)}</div>` : ''}
+    <textarea id="${prefix}_txt_${i}" rows="${Math.min(9, String(e.text).split('\n').length + 1)}" style="width:100%;font-size:12px;line-height:1.7;padding:8px;border:1px solid var(--border,#e2ded6);border-radius:3px;background:var(--bg,#f7f5f0);font-family:inherit;resize:vertical">${stTextEsc(e.text)}</textarea>
+  </div>`).join('');
+}
+function studentTextCopy(prefix, i) {
+  const ta = document.getElementById(`${prefix}_txt_${i}`);
+  if (!ta) return;
+  const mark = () => {
+    const d = document.getElementById(`${prefix}_done_${i}`); if (d) d.style.display = 'inline';
+    const b = document.getElementById(`${prefix}_blk_${i}`); if (b) b.style.borderColor = 'var(--ok,#2a9e6a)';
+  };
+  try { navigator.clipboard.writeText(ta.value).then(mark, () => { ta.select(); document.execCommand('copy'); mark(); }); }
+  catch (e) { ta.select(); document.execCommand('copy'); mark(); }
+}
+// 通用弹窗：title + 自定义 body HTML；返回 body 容器，方便后续更新内容
+function studentTextModal(id, title, bodyHtml) {
+  document.getElementById(id)?.remove();
+  const modal = document.createElement('div');
+  modal.id = id;
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `<div style="background:var(--surface,#fff);border-radius:6px;padding:18px 20px;max-width:580px;width:100%;max-height:88vh;display:flex;flex-direction:column">
+    <div style="font-size:13px;font-weight:600;margin-bottom:10px">${title}</div>
+    <div id="${id}_body" style="overflow-y:auto;flex:1">${bodyHtml}</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px">
+      <button onclick="document.getElementById('${id}').remove()" style="font-size:12px;background:var(--accent,#5a3e28);color:#fff;border:none;border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit">关闭</button>
+    </div>
+  </div>`;
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
+  return document.getElementById(id + '_body');
+}
+
+// 单人查询码通知（文案 A）：没有码先生成 → 弹窗显示并自动复制
+async function openStudentCodeNotice(student, onCodeIssued) {
+  const body = studentTextModal('stNoticeModal', `✉ 查询码通知 · ${stTextEsc(student && student.name)}`, '<div style="font-size:12px;color:var(--text-3,#9a9590);padding:12px">正在准备…</div>');
+  const had = !!(student && student.student_code);
+  const r = await ensureStudentCode(student);
+  if (!had && r.code && typeof onCodeIssued === 'function') onCodeIssued(student);
+  const text = studentCodeNoticeText(student.name, student.major, r.code);
+  body.innerHTML = studentTextBlocksHtml([{ name: student.name, sub: (!had && r.code) ? '已自动生成查询码' : '', text, error: r.error }], 'stn');
+  if (!r.error) studentTextCopy('stn', 0);
+}
+
+// 批量逐人文字：对每个学生（没有码的先生成）生成一段；kind='notice' 用文案 A，'reminder' 用文案 B
+async function studentTextBatch(students, kind, bodyEl, prefix, onCodeIssued) {
+  const need = students.filter(s => !s.student_code).length;
+  let done = 0, issued = false;
+  const entries = [];
+  for (const s of students) {
+    let r = { code: s.student_code || '', error: '' };
+    if (!s.student_code) {
+      if (bodyEl) bodyEl.innerHTML = `<div style="font-size:12px;color:var(--text-3,#9a9590);padding:12px">正在为没有查询码的学生生成查询码… ${++done}/${need}</div>`;
+      r = await ensureStudentCode(s);
+      if (r.code) issued = true;
+    }
+    const text = kind === 'reminder' ? bookingReminderText(s.name, s.major, r.code) : studentCodeNoticeText(s.name, s.major, r.code);
+    const majorLbl = (typeof MAJORS !== 'undefined' && MAJORS[s.major]) || s.major || '';
+    entries.push({ name: s.name, sub: majorLbl, text, error: r.error });
+  }
+  if (issued && typeof onCodeIssued === 'function') onCodeIssued();
+  if (bodyEl) bodyEl.innerHTML = studentTextBlocksHtml(entries, prefix);
+  return entries;
+}

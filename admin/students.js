@@ -23,6 +23,7 @@ function handleProgressSearchInput(el){
 }
 let speEdits=null; // 老师修改记录（未处理）
 
+let stLastList=[];
 function renderStudentsPage(mc){
   if(speEdits===null){
     speEdits=[];
@@ -42,6 +43,7 @@ function renderStudentsPage(mc){
   if(stVipFilter==='vip_only') list=list.filter(s=>s.is_vip_course==='VIP'||s.is_vip_course==='大课+VIP');
   if(stVipFilter==='vip_exclusive') list=list.filter(s=>s.is_vip_course==='VIP');
   if(stSearch) list=list.filter(s=>matchesStudentSearch(s,stSearch));
+  stLastList=list; // 「批量生成查询码通知」用当前筛选结果
   const statusLabel=(v)=>({active:'在籍',graduated:'已合格',expired:'已到期',stopped:'停课',withdrawn:'退学'}[v]||v);
   const statusColor=(v)=>v==='active'?'var(--ok)':v==='graduated'?'#1a6a9a':v==='withdrawn'?'var(--danger)':'var(--text-3)';
   const statusBg=(v)=>v==='active'?'var(--ok-bg)':v==='graduated'?'#e8f4fd':v==='withdrawn'?'#fdecea':'var(--border)';
@@ -54,6 +56,7 @@ function renderStudentsPage(mc){
       <button class="btn btn-outline btn-sm" onclick="exportStudents()">↓ 导出 Excel</button>
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('importFileInput').click()">↑ 导入 Excel</button>
       <button class="btn btn-outline btn-sm" onclick="generateAllStudentCodes()">🔑 批量生成查询码</button>
+      <button class="btn btn-outline btn-sm" onclick="stBatchCodeNotice()">✉ 批量生成查询码通知</button>
       <button class="btn btn-outline btn-sm" onclick="batchChangeStatus()">批量改状态</button>
       <button class="btn btn-outline btn-sm" onclick="batchAssignOwner()">批量指派负责老师</button>
       <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleImportFile(this)">
@@ -98,6 +101,7 @@ function renderStudentsPage(mc){
             : `<button class="btn btn-outline btn-sm" onclick="generateStudentCode('${s.id}')">生成</button>`}
         </td>
         <td style="display:flex;gap:4px">
+          <button class="btn btn-outline btn-sm" onclick="stCodeNotice('${s.id}')" style="white-space:nowrap">✉ 查询码通知</button>
           <button class="btn btn-outline btn-sm" onclick="openStudentModal('${s.id}')">编辑</button>
           <button class="btn btn-danger btn-sm" onclick="deleteStudent('${s.id}')">删除</button>
         </td>
@@ -594,6 +598,22 @@ async function syncStudentLogin(id, name, code){
       body: JSON.stringify({ student_id:id, name:name||'', code })
     });
   }catch(e){ console.warn('同步对照表失败(不影响档案保存):', e.message); }
+}
+
+// ── 查询码通知（文案 A，见 shared/constants.js）──
+function stRerender(){ if(curPage==='students') renderStudentsPage(document.getElementById('mainContent')); }
+function stCodeNotice(id){
+  const s=cachedStudents.find(x=>x.id===id);
+  if(!s) return;
+  openStudentCodeNotice(s, stRerender);   // 没有查询码时自动生成（同时写入登录表），生成后刷新列表显示新码
+}
+async function stBatchCodeNotice(){
+  const list=[...(stLastList||[])];
+  if(!list.length){ alert('当前筛选结果里没有学生'); return; }
+  const noCode=list.filter(s=>!s.student_code).length;
+  if(!confirm(`将为当前筛选出的 ${list.length} 名学生逐人生成查询码通知${noCode?`（其中 ${noCode} 人还没有查询码，会先自动生成）`:''}，继续？`)) return;
+  const body=studentTextModal('stBatchNoticeModal',`✉ 批量查询码通知（${list.length} 人，每人一段，逐段复制）`,'');
+  await studentTextBatch(list,'notice',body,'stbn',stRerender);
 }
 
 async function generateStudentCode(id) {

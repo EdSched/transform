@@ -615,11 +615,6 @@ async function renderTeacherStudents(box) {
   tsaRender();
 }
 
-function tsaGenCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-}
-
 function tsaMajorOptions(sel) {
   const set = tsaAllowedSet();
   return Object.entries(MAJORS)
@@ -653,10 +648,18 @@ function tsaListHtml() {
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:4px 16px;font-size:11px">
           ${[['属性',s.student_type],['来源',s.source],['课程属性',s.course_type],['出身大学',s.university],['学部/专业',s.faculty],['GPA/履历',s.gpa],['毕业论文',s.thesis],['毕业时间',s.graduation_date],['赴日时间',s.japan_arrival],['报名时间',s.signup_date],['上课方式',s.default_mode==='offline'?'线下':'线上'],['查询码',s.student_code]].map(([l,v]) => `<div><span style="color:var(--text-3)">${l}：</span>${tsaEsc(v) || '—'}</div>`).join('')}
         </div>
+        <button onclick="event.stopPropagation();tsaCodeNotice('${s.id}')" style="margin-top:8px;margin-right:6px;font-size:10px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">✉ 查询码通知</button>
         ${(teacherData.permissions.student_mgmt_items||[]).includes('profile_edit')?`<button onclick="event.stopPropagation();tseOpen('${s.id}')" style="margin-top:8px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">✏ 修改档案</button>`:''}
       </td></tr>` : ''}`).join('') : `<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--text-3)">暂无学生</td></tr>`}
     </tbody>
   </table>`;
+}
+
+// 查询码通知（文案 A）：只对本老师能看到的学生（tsaStudents 已按可见范围过滤）
+function tsaCodeNotice(id) {
+  const st = tsaStudents.find(x => x.id === id);
+  if (!st) return;
+  openStudentCodeNotice(st, () => tsaRenderList());
 }
 
 function tsaRenderList() {
@@ -736,14 +739,17 @@ async function tsaSaveStudent() {
     target_enrollment: g('tsa_enrollment').trim(), japan_arrival: g('tsa_arrival').trim(),
     signup_date: g('tsa_signup').trim(), expiry_date: g('tsa_expiry').trim(),
     default_mode: g('tsa_mode'), status: 'active',
-    student_code: tsaGenCode(),
   };
   try {
     const res = await sb('/rest/v1/students', 'POST', data);
-    tsaStudents.unshift(Array.isArray(res) ? res[0] : data);
+    const row = Array.isArray(res) && res[0] ? res[0] : data;
+    // 查询码交给服务端生成：同时写入 student_login（触发器自动建登录账号），学生才能登录
+    const r = await ensureStudentCode(row);
+    tsaStudents.unshift(row);
     tsaFormOpen = false;
     tsaRender();
-    alert(`已添加「${name}」\n查询码：${data.student_code}\n请转达学生，用于学习记录等页面登录。`);
+    if (r.code) alert(`已添加「${name}」\n查询码：${r.code}\n请转达学生，用于学习记录、面谈预约等页面登录。`);
+    else alert(`已添加「${name}」，但${r.error || '查询码生成失败'}。\n请稍后在学生详情里点「✉ 查询码通知」重试，或联系管理员生成。`);
   } catch (e) { if (msg) msg.textContent = ''; alert('保存失败：' + e.message); }
 }
 
@@ -1274,7 +1280,7 @@ async function renderTsaMeetings(box) {
   try {
     const set = tsaAllowedSet();
     const [allStu, allBk, allContact] = await Promise.all([
-      sb('/rest/v1/students?select=id,name,major,source,status,course_type&limit=2000').catch(() => []),
+      sb('/rest/v1/students?select=id,name,major,source,status,course_type,student_code&limit=2000').catch(() => []),
       sb('/rest/v1/bookings?daily_record=not.is.null&select=*&order=slot_date.desc&limit=1500').catch(() => []),
       sb('/rest/v1/student_contact_logs?select=*&order=created_at.desc&limit=3000').catch(() => []),
     ]);
@@ -1374,7 +1380,7 @@ function tmRenderList() {
       ${s.source?`<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 5px">${tsaEsc(s.source)}</span>`:''}
       <span style="font-size:11px;color:var(--warn,#b8860b)">⚠ 近期没有预约面谈</span>
       <button onclick="tmContactModal('${s.id||''}','${tsaEsc(s.name)}','${s.major||''}')" style="margin-left:auto;font-size:10px;background:#1a6d3a;color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">✓ 记录已联系</button>
-      <button onclick="tmGenReminder('${tsaEsc(s.name)}','${s.major||''}')" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">✉ 生成提醒文字</button>
+      <button onclick="tmGenReminder('${s.id||''}')" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">✉ 生成提醒文字</button>
     </div>`).join('') : '<div class="empty">当前筛选范围内的学生都已有面谈或联系记录 🎉</div>';
     return;
   }
@@ -1429,7 +1435,7 @@ function tmRenderList() {
     <span style="font-size:11px;color:var(--text-3)">${MAJORS[s.major]||s.major||''}</span>
     ${s.source?`<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 5px">${tsaEsc(s.source)}</span>`:''}
     <span style="font-size:11px;color:var(--warn,#b8860b)">⚠ 该学生近期没有预约面谈，可提醒学生预约面谈</span>
-    <button onclick="tmGenReminder('${tsaEsc(s.name)}','${s.major||''}')" style="margin-left:auto;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">✉ 生成提醒文字</button>
+    <button onclick="tmGenReminder('${s.id||''}')" style="margin-left:auto;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">✉ 生成提醒文字</button>
   </div>`).join('');
 
   listBox.innerHTML = (list.length || noRec.length) ? (list.map(g => {
@@ -1454,58 +1460,55 @@ function tmRenderList() {
   }).join('') + noRecHtml) : '<div class="empty">没有符合筛选条件的面谈记录</div>';
 }
 
-// 批量提醒：把当前筛选下无面谈记录的学生按专业分组，每个专业一段通用文案（不带姓名）+ 对应预约链接
-function tmBatchReminder() {
+// 批量提醒：当前筛选下「无面谈记录」的学生。两种模式（chip 切换）：
+//   逐人（默认，含查询码）：每人一段文案 B，各自复制
+//   按专业群发（不含查询码）：每个专业一段通用文字 —— 群发文字里绝不能带查询码
+let tmBatchMode = 'each';
+let tmBatchCache = null;   // 逐人模式生成的文字（避免切换模式时重复生成查询码）
+async function tmBatchReminder() {
   const noRec = tmNoRecStudents();
   if (!noRec.length) { alert('当前筛选范围内没有「无面谈记录」的学生'); return; }
-  const byMajor = {};
-  noRec.forEach(s => { const m = s.major || ''; if (!byMajor[m]) byMajor[m] = []; byMajor[m].push(s.name); });
-  const blocks = Object.entries(byMajor).map(([m, names], i) => {
-    const link = `https://edsched.github.io/transform/student/index.html?major=${encodeURIComponent(m)}`;
-    const text = `同学，你最近都一直没有预约面谈，学习上有什么问题吗？麻烦填写一下面谈预约噢。\n预约链接：${link}`;
-    return `<div style="border:1px solid var(--border-light);border-radius:4px;padding:12px;margin-bottom:10px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:4px">${MAJORS[m]||m||'未设专业'}（${names.length}人未面谈）</div>
-      <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">${names.map(n=>tsaEsc(n)).join('、')}</div>
-      <textarea id="tmb_${i}" rows="3" style="width:100%;font-size:12px;line-height:1.8;padding:8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;resize:vertical">${tsaEsc(text)}</textarea>
-      <button onclick="navigator.clipboard.writeText(document.getElementById('tmb_${i}').value).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制这段',2000)})" style="margin-top:6px;font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 12px;cursor:pointer;font-family:inherit">📋 复制这段</button>
-    </div>`;
-  }).join('');
-  const existing = document.getElementById('tmBatchModal');
-  if (existing) existing.remove();
-  const modal = document.createElement('div');
-  modal.id = 'tmBatchModal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  modal.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:560px;width:100%;max-height:85vh;display:flex;flex-direction:column">
-    <div style="font-size:13px;font-weight:600;margin-bottom:10px">✉ 批量面谈提醒（共 ${noRec.length} 人未面谈）</div>
-    <div style="overflow-y:auto;flex:1">${blocks}</div>
-    <div style="display:flex;justify-content:flex-end;margin-top:8px">
-      <button onclick="document.getElementById('tmBatchModal').remove()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 18px;cursor:pointer;font-family:inherit">关闭</button>
-    </div>
-  </div>`;
-  modal.onclick = e => { if (e.target === modal) modal.remove(); };
-  document.body.appendChild(modal);
+  tmBatchMode = 'each';
+  tmBatchCache = null;
+  studentTextModal('tmBatchModal', `✉ 批量面谈提醒（共 ${noRec.length} 人未面谈）`, '');
+  await tmBatchRender(noRec);
+}
+async function tmBatchRender(noRec) {
+  noRec = noRec || tmNoRecStudents();
+  const body = document.getElementById('tmBatchModal_body');
+  if (!body) return;
+  const chip = (k, l) => `<div class="filter-chip ${tmBatchMode === k ? 'active' : ''}" onclick="tmBatchMode='${k}';tmBatchRender()" style="padding:3px 12px;font-size:11px;cursor:pointer">${l}</div>`;
+  const head = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${chip('each', '逐人（含查询码）')}${chip('group', '按专业群发（不含查询码）')}</div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">${tmBatchMode === 'each' ? '每人一段，只含本人的查询码，请逐个私信发送；复制后会标「✓ 已复制」。' : '可以发到专业群里；群发文字不含查询码，登录查询码请另外私信学生。'}</div>`;
+  if (tmBatchMode === 'group') {
+    const byMajor = {};
+    noRec.forEach(s => { const m = s.major || ''; (byMajor[m] = byMajor[m] || []).push(s.name); });
+    const entries = Object.entries(byMajor).map(([m, names]) => ({
+      name: `${MAJORS[m] || m || '未设专业'}（${names.length}人未面谈）`,
+      sub: names.join('、'),
+      text: `同学，你最近都一直没有预约面谈，学习上有什么问题吗？麻烦预约一下面谈噢。\n预约链接：${studentPortalLink(m)}\n登录查询码请查看老师私信，请妥善保存。`,
+    }));
+    body.innerHTML = head + studentTextBlocksHtml(entries, 'tmbg');
+    return;
+  }
+  if (tmBatchCache) { body.innerHTML = head + studentTextBlocksHtml(tmBatchCache, 'tmbe'); return; }
+  body.innerHTML = head + '<div id="tmBatchEach"></div>';
+  const entries = await studentTextBatch(noRec, 'reminder', document.getElementById('tmBatchEach'), 'tmbe');
+  tmBatchCache = entries;
+  if (tmBatchMode !== 'each') return;   // 生成期间切到了群发模式
+  body.innerHTML = head + studentTextBlocksHtml(entries, 'tmbe');
 }
 
-// 生成面谈提醒文字（含该学生专业对应的预约链接），弹窗显示并自动复制
-function tmGenReminder(name, major) {
-  const link = `https://edsched.github.io/transform/student/index.html?major=${encodeURIComponent(major || '')}`;
-  const text = `${name}同学，你最近都一直没有预约面谈，学习上有什么问题吗？麻烦填写一下面谈预约噢。\n预约链接：${link}`;
-  const existing = document.getElementById('tmReminderModal');
-  if (existing) existing.remove();
-  const modal = document.createElement('div');
-  modal.id = 'tmReminderModal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  modal.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:460px;width:100%">
-    <div style="font-size:13px;font-weight:600;margin-bottom:10px">✉ 面谈提醒 · ${tsaEsc(name)}</div>
-    <textarea id="tmReminderText" rows="5" style="width:100%;font-size:12px;line-height:1.8;padding:10px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;resize:vertical">${tsaEsc(text)}</textarea>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
-      <button onclick="navigator.clipboard.writeText(document.getElementById('tmReminderText').value).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制',2000)})" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:8px 14px;cursor:pointer;font-family:inherit">📋 复制</button>
-      <button onclick="document.getElementById('tmReminderModal').remove()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 18px;cursor:pointer;font-family:inherit">关闭</button>
-    </div>
-  </div>`;
-  modal.onclick = e => { if (e.target === modal) modal.remove(); };
-  document.body.appendChild(modal);
-  try { navigator.clipboard.writeText(text).catch(() => {}); } catch (e) {}
+// 单人面谈提醒（文案 B，含本人查询码；没有查询码时先自动生成），弹窗显示并自动复制
+async function tmGenReminder(id) {
+  let st = ((tmData && tmData.students) || []).find(x => x.id === id);
+  if (!st && id) st = ((await sb(`/rest/v1/students?id=eq.${encodeURIComponent(id)}&select=id,name,major,student_code`).catch(() => [])) || [])[0];
+  if (!st) { alert('找不到该学生档案'); return; }
+  const body = studentTextModal('tmReminderModal', `✉ 面谈提醒 · ${tsaEsc(st.name)}`, '<div style="font-size:12px;color:var(--text-3);padding:12px">正在准备…</div>');
+  const had = !!st.student_code;
+  const r = await ensureStudentCode(st);
+  body.innerHTML = studentTextBlocksHtml([{ name: st.name, sub: (!had && r.code) ? '已自动生成查询码' : '', text: bookingReminderText(st.name, st.major, r.code), error: r.error }], 'tmr');
+  if (!r.error) studentTextCopy('tmr', 0);
 }
 
 // ══ 志望校行内修改（老师端；与学生端同一张表即时同步） ══
