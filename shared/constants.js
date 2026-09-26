@@ -1244,3 +1244,49 @@ async function studentTextBatch(students, kind, bodyEl, prefix, onCodeIssued) {
   if (bodyEl) bodyEl.innerHTML = studentTextBlocksHtml(entries, prefix);
   return entries;
 }
+
+// ══════════════════════════════════
+// 课程学生成员（courses.member_mode + course_members 表）
+// 课程表、作业、管理端签到、老师端签到四处统一用这里判断，不要在别处另写一套。
+//   major（按专业，默认）：同专业在读学生（shakai_group 展开成三个成员专业）排除纯 VIP，
+//                        再加上 include、去掉 exclude；同专业新生自动成为成员
+//   list（指定名单）    ：只有 include 的人
+// 纯 VIP = is_vip_course === 'VIP'（「大课+VIP」不算纯 VIP）
+// ══════════════════════════════════
+function isPureVipStudent(s) { return !!s && s.is_vip_course === 'VIP'; }
+function courseMemberMode(course) { return (course && course.member_mode) === 'list' ? 'list' : 'major'; }
+// 课程涉及的真实专业（含分组展开，分组代码本身也保留）
+function courseMajorSet(course) {
+  const raw = course && course.major;
+  const ms = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+  const set = new Set();
+  ms.forEach(m => {
+    set.add(m);
+    if (typeof MAJOR_GROUPS !== 'undefined' && MAJOR_GROUPS[m]) MAJOR_GROUPS[m].forEach(x => set.add(x));
+  });
+  return set;
+}
+// 按专业模式下的「默认成员」：同专业、不是纯 VIP（是否在读由调用方传入的学生列表决定）
+function courseDefaultMember(student, course) {
+  return !!student && courseMajorSet(course).has(student.major) && !isPureVipStudent(student);
+}
+// 这门课的成员学生 id 集合。students：在读学生列表；members：这门课在 course_members 里的行
+function courseMemberIds(course, students, members) {
+  const rows = (members || []).filter(r => !course || r.course_id == null || String(r.course_id) === String(course.id));
+  const inc = rows.filter(r => r.kind === 'include').map(r => String(r.student_id));
+  if (courseMemberMode(course) === 'list') return new Set(inc);
+  const exc = new Set(rows.filter(r => r.kind === 'exclude').map(r => String(r.student_id)));
+  const ids = new Set((students || []).filter(s => courseDefaultMember(s, course)).map(s => String(s.id)));
+  inc.forEach(id => ids.add(id));
+  exc.forEach(id => ids.delete(id));
+  return ids;
+}
+// 学生端：「我」是不是这门课的成员。myMembers：这个学生自己在 course_members 里的行（可含多门课）
+function studentInCourse(student, course, myMembers) {
+  if (!student || !course) return false;
+  const row = (myMembers || []).find(r => String(r.course_id) === String(course.id) && String(r.student_id) === String(student.id));
+  if (courseMemberMode(course) === 'list') return !!row && row.kind === 'include';
+  if (row && row.kind === 'exclude') return false;
+  if (row && row.kind === 'include') return true;
+  return courseDefaultMember(student, course);
+}
