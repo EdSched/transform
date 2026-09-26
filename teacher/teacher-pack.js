@@ -9,6 +9,7 @@
 let pkItems = [];        // [{ id, type, title, html, wide, include, addedAt, student }]
 let pkCover = null;      // { title, student, consultant, message }
 let pkPreviewOpen = false;
+let pkMajorList = null;  // 学科介绍下拉的专业（prAvailableMajors 查询失败时的兜底结果）
 
 const PK_TYPES = {
   major:     { label: '学科介绍', color: '#5a3e28', bg: '#f5ede3' },
@@ -192,6 +193,8 @@ function renderPromoPack(mc) {
   pkLoad();
   if (!pkCover.consultant) pkCover.consultant = pkConsultantName();
   pkRender(mc);
+  // 专业列表跟随 admin 宣传管理（有已发布内容的专业），查完再刷新一次
+  if (!prMajorsCache && typeof prAvailableMajors === 'function') prAvailableMajors().then(list => { pkMajorList = list; if (curTab === 'promopack') pkRender(); });
 }
 
 function pkRender(mc) {
@@ -212,7 +215,8 @@ function pkRender(mc) {
   if (p.vip_sales) sources.push(linkBtn('vipsales', '🗂 VIP规划 → 方案加入'));
   if (p.promo) sources.push(linkBtn('promo', '📣 宣传相关 → 专业介绍加入'));
 
-  const majorKeys = ['shakai','shinpan','fukushi','keiei','keizai'].filter(k => MAJORS[k]);
+  const majorKeys = prMajorsCache || pkMajorList || [];
+  const selMajor = majorKeys.includes(prMajor) ? prMajor : majorKeys[0];
 
   mc.innerHTML = `
   <div class="page-header"><div class="section-title">📦 宣传资料整合</div></div>
@@ -238,7 +242,7 @@ function pkRender(mc) {
           <div style="font-size:11px;font-weight:600;margin-bottom:8px">📖 学科介绍（直接添加）</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
             <select id="pk_major" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit">
-              ${majorKeys.map(k => `<option value="${k}" ${k === (typeof prMajor !== 'undefined' ? prMajor : '') ? 'selected' : ''}>${MAJORS[k]}</option>`).join('')}
+              ${majorKeys.length ? majorKeys.map(k => `<option value="${k}" ${k === selMajor ? 'selected' : ''}>${pkEsc(prMajorName(k))}</option>`).join('') : `<option value="">${(prMajorsCache || pkMajorList) ? '暂无专业宣传内容' : '读取中…'}</option>`}
             </select>
             ${prSchedModeSelect('prSchedMode=this.value')}
             ${PK_MAJOR_PARTS.map(([k, l]) => `<label style="font-size:11px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="pk_part_${k}" checked style="accent-color:var(--accent)">${l}</label>`).join('')}
