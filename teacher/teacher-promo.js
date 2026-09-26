@@ -238,7 +238,7 @@ function prScheduleHtml(data, forClient) {
       const ds = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const w = new Date(y, m - 1, d).getDay();
       const evs = (byDate[ds] || []).slice().sort((a, b) => String(a.time_range || '').localeCompare(String(b.time_range || '')));
-      return `<div style="min-height:72px;padding:4px;border-top:1px solid #ede9e2;${bl}display:flex;flex-direction:column;gap:2px;overflow:hidden">
+      return `<div style="min-height:72px;min-width:0;padding:4px;border-top:1px solid #ede9e2;${bl}display:flex;flex-direction:column;gap:2px;overflow-wrap:anywhere">
         <div style="font-size:10px;font-weight:500;color:${w === 6 ? SAT : w === 0 ? SUN : '#9a9590'}">${d}</div>
         ${evs.map(s => {
           const sub = s.session_number ? `第${s.session_number}回${s.session_title && s.session_title !== '休讲' ? ' ' + prEsc(s.session_title) : ''}` : '';
