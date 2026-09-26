@@ -5,31 +5,32 @@ let bkSection='regular'; // 'regular' | 'vip'
 let slotFilterTeacher=''; // 时间槽按填写人筛选
 let slotFilterPurpose=''; // 时间槽按用途筛选(''/attendance/interview)
 
+// 预约 → 学生档案：有 student_id 按 id 找；专业以档案为准，没有 student_id 时才用 bookings.major
+function bkStudentOf(b){ return (b&&b.student_id)?((cachedStudents||[]).find(s=>s.id===b.student_id)||null):null; }
+function bkRealMajor(b){ const s=bkStudentOf(b); return (s&&s.major)||(b&&b.major)||''; }
+// 视角判断：还没认领、major 仍是分组代码（shakai_group）的预约，组内任一成员在视角内就显示
+function bkMajorInView(m){
+  if(typeof MAJOR_GROUPS!=='undefined'&&MAJOR_GROUPS[m]) return majorInCurrentView(m)||MAJOR_GROUPS[m].some(x=>majorInCurrentView(x));
+  return majorInCurrentView(m);
+}
+// 专业筛选：选「社会人文」时，组内成员 + 分组代码本身（未认领的社会人文链接预约）都能筛出来
+function bkMajorMatch(m,f){ return f==='all'||expandMajorFilter(f).includes(m); }
+function bkIsAdmin(){ return typeof ACCESS_KEY==='undefined'||!ACCESS_KEY||!!ACCESS_KEY.is_admin; }
+
 function renderBookingPage(mc){
   if(bkSection==='vip'){ renderVipBookingPage(mc); return; }
+  if(bkSection==='unlinked'){ if(bkIsAdmin()){ renderUnlinkedBookingPage(mc); return; } bkSection='regular'; }
   const ym=`${bkYear}-${String(bkMonth+1).padStart(2,'0')}`;
   let filtered=cachedBookings.filter(b=>b.slot_date&&b.slot_date.startsWith(ym)&&b.type!=='vip');
   // 视角过滤（跟随链接）：非总览时，按学生真实专业判断是否属于当前领域/专业
-  filtered=filtered.filter(b=>{
-    const stu=cachedStudents?.find(s=>s.name===b.name);
-    const realMajor=stu?.major||b.major;
-    return majorInCurrentView(realMajor);
-  });
+  filtered=filtered.filter(b=>bkMajorInView(bkRealMajor(b)));
   // 视角过滤（跟随链接）：非总览时，按学生真实专业判断是否属于当前领域/专业
-  filtered=filtered.filter(b=>{
-    const stu=cachedStudents?.find(s=>s.name===b.name);
-    const realMajor=stu?.major||b.major;
-    return majorInCurrentView(realMajor);
-  });
+  filtered=filtered.filter(b=>bkMajorInView(bkRealMajor(b)));
   const total=filtered.length; // 当月·本视角预约总数（不受下方 tab/type/专业下拉影响）
   if(bkTab!=='all') filtered=filtered.filter(b=>b.status===bkTab);
   if(bkType!=='all') filtered=filtered.filter(b=>b.type===bkType);
-  if(bkMajor!=='all') filtered=filtered.filter(b=>{
-    // 按学生档案中的真实专业筛选，与该预约的入口标记（bookings.major，如「社会人文」分组链接）无关
-    const studentRecord=cachedStudents?.find(s=>s.name===b.name);
-    const realMajor=studentRecord?.major||b.major; // 找不到学生档案时退回用 bookings.major，避免数据完全消失
-    return matchesMajorFilter(realMajor,bkMajor);
-  });
+  // 已绑定学生的按档案专业筛选；未绑定的按 bookings.major（社会人文分组链接的预约在「社会人文」下可见）
+  if(bkMajor!=='all') filtered=filtered.filter(b=>bkMajorMatch(bkRealMajor(b),bkMajor));
 
   mc.innerHTML=`
   <div class="page-header">
@@ -43,6 +44,7 @@ function renderBookingPage(mc){
   <div class="btn-group" style="margin-bottom:10px">
     <button class="${bkSection==='regular'?'active':''}" onclick="setBkSection('regular')">面谈预约</button>
     <button class="${bkSection==='vip'?'active':''}" onclick="setBkSection('vip')">VIP预约</button>
+    ${bkIsAdmin()?`<button class="${bkSection==='unlinked'?'active':''}" onclick="setBkSection('unlinked')">未关联记录</button>`:''}
   </div>
   <div class="export-bar">
     <div style="font-size:12px;color:var(--text-3)">当月 <strong style="color:var(--text)">${total}</strong> 条预约</div>
@@ -88,11 +90,7 @@ function renderVipBookingPage(mc){
   const ym=`${bkYear}-${String(bkMonth+1).padStart(2,'0')}`;
   let filtered=cachedBookings.filter(b=>b.type==='vip'&&b.slot_date&&b.slot_date.startsWith(ym));
   // 视角过滤（跟随链接）：按学生真实专业判断领域/专业归属
-  filtered=filtered.filter(b=>{
-    const stu=cachedStudents?.find(s=>s.name===b.name);
-    const realMajor=stu?.major||b.major;
-    return majorInCurrentView(realMajor);
-  });
+  filtered=filtered.filter(b=>bkMajorInView(bkRealMajor(b)));
   const total=filtered.length; // 当月·本视角VIP预约总数（不受tab影响）
   if(bkTab!=='all') filtered=filtered.filter(b=>b.status===bkTab);
 
@@ -108,6 +106,7 @@ function renderVipBookingPage(mc){
   <div class="btn-group" style="margin-bottom:10px">
     <button class="${bkSection==='regular'?'active':''}" onclick="setBkSection('regular')">面谈预约</button>
     <button class="${bkSection==='vip'?'active':''}" onclick="setBkSection('vip')">VIP预约</button>
+    ${bkIsAdmin()?`<button class="${bkSection==='unlinked'?'active':''}" onclick="setBkSection('unlinked')">未关联记录</button>`:''}
   </div>
   <div class="export-bar">
     <div style="font-size:12px;color:var(--text-3)">当月 <strong style="color:var(--text)">${total}</strong> 条VIP预约</div>
@@ -186,7 +185,7 @@ async function saveAdminVipReschedule(bookingId) {
 function renderVipBookingCard(b){
   const slot=cachedSlots.find(s=>s.id===b.slot_id);
   const teacherName=b.assigned_teacher||slot?.teacher_name||'';
-  const studentRecord=cachedStudents?.find(s=>s.name===b.name);
+  const studentRecord=bkStudentOf(b)||cachedStudents?.find(s=>s.name===b.name);
   const totalH=studentRecord?.vip_hours_total||0;
   const usedH=studentRecord?.vip_hours_used||0;
   const remainH=totalH-usedH;
@@ -254,12 +253,11 @@ function renderBookingCard(b){
   // 若该预约从未单独分配过，则退回显示时间槽默认的老师
   const teacherName=b.assigned_teacher||slot?.teacher_name||'';
   // 优先显示学生档案中的真实专业；若 booking.major 是社会人文分组标记或学生档案找不到，则退回显示 booking.major
-  const studentRecord=cachedStudents?.find(s=>s.name===b.name);
-  const displayMajor=studentRecord?.major ? (MAJORS[studentRecord.major]||studentRecord.major) : (MAJORS[b.major]||'');
+  const displayMajor=MAJORS[bkRealMajor(b)]||bkRealMajor(b)||'';
   return `<div class="booking-card status-${b.status}">
     <div class="booking-header">
       <div>
-        <div class="booking-name">${b.name} <span style="font-size:11px;color:var(--text-3);font-weight:400">${displayMajor}</span></div>
+        <div class="booking-name">${b.name} <span style="font-size:11px;color:var(--text-3);font-weight:400">${displayMajor}</span>${(!b.student_id&&b.type!=='vip')?'<span style="font-size:10px;color:var(--warn);border:1px solid var(--warn);border-radius:2px;padding:0 5px;margin-left:6px;font-weight:400">未关联档案</span>':''}</div>
         <div class="booking-meta">${b.slot_date} ${b.slot_time_range||''} · ${b.duration}min · ${urgLabel(b.urgency)}</div>
         ${teacherName
           ? `<div style="font-size:11px;color:var(--text-2);margin-top:2px">👤 ${teacherName} <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="openReassignTeacher('${b.id}','${b.slot_id}')">重新分配</button></div>`
@@ -286,11 +284,13 @@ function renderBookingCard(b){
       <div class="note-label" style="margin-bottom:6px">学生查询码</div>
       ${b.teacher_file_url?`<a href="${b.teacher_file_url}" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-bottom:6px">📎 查看老师修改文件</a>`:''}
       ${(()=>{
-        const studentRecord=cachedStudents?.find(s=>s.name===b.name);
+        const studentRecord=bkStudentOf(b);
         const code=studentRecord?.student_code;
         return code
           ? `<span style="font-size:13px;font-weight:600;letter-spacing:2px;color:var(--accent)">${code}</span>`
-          : `<span style="font-size:11px;color:var(--text-3)">该学生档案尚未生成查询码，请前往「学生档案」生成</span>`;
+          : studentRecord
+            ? `<span style="font-size:11px;color:var(--text-3)">该学生档案尚未生成查询码，请前往「学生档案」生成</span>`
+            : `<span style="font-size:11px;color:var(--text-3)">这条预约还没有关联学生档案（可在「未关联记录」里合并或建档）</span>`;
       })()}
       <div style="font-size:10px;color:var(--text-muted);margin-top:4px">凭学生姓名＋此查询码可查看面谈记录及作业反馈</div>
     </div>`:''}
@@ -321,8 +321,22 @@ function toggleStudentLinks(){
   if(p) p.style.display=p.style.display==='none'?'block':'none';
 }
 function setBkMajor(m,el){bkMajor=m;document.querySelectorAll('#majorFilterRow .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderBookingPage(document.getElementById('mainContent'))}
+// 认领后同步本地缓存
+function bkApplyClaim(ids,r){
+  if(!r) return;
+  if(r.created&&r.student&&!(cachedStudents||[]).some(s=>s.id===r.student_id)) cachedStudents.push(r.student);
+  (cachedBookings||[]).forEach(x=>{ if(ids.includes(x.id)){ x.student_id=r.student_id; x.name=r.name; } });
+}
+function bkClaimStudents(){ return (cachedStudents||[]).filter(s=>typeof studentInCurrentView!=='function'||studentInCurrentView(s)); }
 async function confirmBooking(id){
-  try{await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',{status:'confirmed'});const b=cachedBookings.find(x=>x.id===id);if(b)b.status='confirmed';renderBookingPage(document.getElementById('mainContent'))}catch(e){alert('操作失败：'+e.message)}
+  // 没有绑定学生的预约：确认前先认领（挂到已有学生，或建档发查询码）
+  const _b=cachedBookings.find(x=>x.id===id);
+  if(_b&&!_b.student_id&&_b.type!=='vip'){
+    const r=await openBookingClaim(_b,{students:bkClaimStudents()});
+    if(!r) return;
+    bkApplyClaim([id],r);
+  }
+  try{const _rows=await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',{status:'confirmed'});if(Array.isArray(_rows)&&!_rows.length)throw new Error('数据库没有允许修改这条预约（0 行被更新）');const b=cachedBookings.find(x=>x.id===id);if(b)b.status='confirmed';renderBookingPage(document.getElementById('mainContent'))}catch(e){alert('操作失败：'+e.message)}
 }
 async function cancelBooking(id){
   if(!confirm('确定取消？'))return;
@@ -338,8 +352,7 @@ async function clearCancelledBookings(){
 async function openReassignTeacher(bookingId, slotId) {
   const b = cachedBookings.find(x => x.id === bookingId);
   // 学生档案里的真实专业/领域（与预约入口标记 booking.major 无关）
-  const stu = cachedStudents?.find(s => s.name === b?.name);
-  const realMajor = (stu?.major || b?.major || '');
+  const realMajor = bkRealMajor(b);
   const domOf = m => (typeof MAJOR_DOMAIN !== 'undefined' ? MAJOR_DOMAIN[m] : '') || '';
   const stuDomain = domOf(realMajor);
 
@@ -411,7 +424,9 @@ async function syncLangScore(id){
   if(btn){btn.textContent='同步中…';btn.disabled=true}
   try{
     // 按姓名匹配学生档案（不限定专业，因为面谈记录的专业可能是社会人文分组标记，与学生真实专业不同）
-    const matches=await sb(`/rest/v1/students?name=eq.${encodeURIComponent(b.name)}&select=id,name,major`);
+    const matches=b.student_id
+      ? await sb(`/rest/v1/students?id=eq.${encodeURIComponent(b.student_id)}&select=id,name,major`)
+      : await sb(`/rest/v1/students?name=eq.${encodeURIComponent(b.name)}&select=id,name,major`);
     if(!matches.length){
       alert(`未在学生档案中找到「${b.name}」，未同步。`);
       if(btn){btn.textContent='↻ 同步到学生档案';btn.disabled=false}
@@ -534,7 +549,7 @@ async function saveRecord(){
     b.actual_time=actual_time;b.daily_record=daily_record;b.status='completed';
 
     // 自动追加进度时间线（从面谈记录映射）
-    const stu = cachedStudents?.find(s=>s.name===b.name);
+    const stu = b.student_id ? bkStudentOf(b) : cachedStudents?.find(s=>s.name===b.name);
     if (stu) {
       const entry = makeProgressEntry({
         studentId: stu.id,
@@ -856,4 +871,58 @@ async function revertToConfirmed(id){
     if(b) b.status='confirmed';
     renderBookingPage(document.getElementById('mainContent'));
   }catch(e){alert('操作失败：'+e.message)}
+}
+
+// ══════════════════════════════════
+// 未关联记录（仅管理员）：student_id 为空的预约，按姓名分组；可合并到已有学生，或建档
+// ══════════════════════════════════
+let bkUnlinkedOpen=null; // 展开的姓名
+function bkUnlinkedGroups(){
+  const groups={};
+  (cachedBookings||[]).filter(b=>!b.student_id).forEach(b=>{
+    const k=b.name||'（未填姓名）';
+    (groups[k]=groups[k]||{name:k,list:[]}).list.push(b);
+  });
+  return Object.values(groups).map(g=>{
+    g.list.sort((a,b)=>(b.slot_date||'').localeCompare(a.slot_date||''));
+    g.majors=[...new Set(g.list.map(b=>b.major).filter(Boolean))];
+    g.sameName=(cachedStudents||[]).filter(s=>s.name===g.name).length;
+    return g;
+  }).sort((a,b)=>(b.list[0].slot_date||'').localeCompare(a.list[0].slot_date||''));
+}
+function renderUnlinkedBookingPage(mc){
+  const groups=bkUnlinkedGroups();
+  const total=groups.reduce((n,g)=>n+g.list.length,0);
+  mc.innerHTML=`
+  <div class="page-header"><div class="section-title">预约管理</div></div>
+  <div class="btn-group" style="margin-bottom:10px">
+    <button onclick="setBkSection('regular')">面谈预约</button>
+    <button onclick="setBkSection('vip')">VIP预约</button>
+    <button class="active" onclick="setBkSection('unlinked')">未关联记录</button>
+  </div>
+  <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">没有关联学生档案的预约（全部月份） <strong style="color:var(--text)">${total}</strong> 条 · ${groups.length} 个姓名。点一行展开明细；「合并到学生 / 建档」会把这一组全部挂到同一个学生名下。</div>
+  ${groups.length?groups.map(g=>{
+    const open=bkUnlinkedOpen===g.name;
+    const nm=g.name.replace(/'/g,"\\'");
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;margin-bottom:6px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 12px;cursor:pointer" onclick="bkUnlinkedOpen=bkUnlinkedOpen==='${nm}'?null:'${nm}';renderUnlinkedBookingPage(document.getElementById('mainContent'))">
+        <span style="font-size:13px;font-weight:600">${g.name}</span>
+        <span style="font-size:11px;color:var(--text-3)">${g.list.length} 条 · ${g.list[g.list.length-1].slot_date||''} ～ ${g.list[0].slot_date||''}</span>
+        <span style="font-size:11px;color:var(--text-2)">${g.majors.map(m=>MAJORS[m]||m).join('・')||'未填专业'}</span>
+        ${g.sameName?`<span style="font-size:10px;color:var(--warn);border:1px solid var(--warn);border-radius:2px;padding:0 5px">档案里有 ${g.sameName} 个同名学生</span>`:''}
+        <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="event.stopPropagation();bkMergeGroup('${nm}')">合并到学生 / 建档</button>
+      </div>
+      ${open?`<div style="border-top:1px solid var(--border-light);padding:6px 12px">${g.list.map(b=>`<div style="font-size:11px;color:var(--text-2);padding:4px 0;border-bottom:1px dashed var(--border-light)">${b.slot_date||''} ${b.slot_time_range||''} · ${typeLabel(b.type)||b.type||''} · ${MAJORS[b.major]||b.major||''} · ${bookingStatusLabel(b)}</div>`).join('')}</div>`:''}
+    </div>`;
+  }).join(''):'<div class="empty">没有未关联的预约记录</div>'}`;
+}
+async function bkMergeGroup(name){
+  const g=bkUnlinkedGroups().find(x=>x.name===name);
+  if(!g) return;
+  const ids=g.list.map(b=>b.id);
+  const r=await openBookingClaim(g.list[0],{students:bkClaimStudents(),bookingIds:ids,searchAll:true,title:`「${g.name}」的 ${ids.length} 条记录：合并到学生 / 建档`});
+  if(!r) return;
+  bkApplyClaim(ids,r);
+  bkUnlinkedOpen=null;
+  renderUnlinkedBookingPage(document.getElementById('mainContent'));
 }
