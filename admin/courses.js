@@ -3316,7 +3316,8 @@ function cmRender(){
       </select>
       <button class="btn btn-outline btn-sm" onclick="cmQuickAdd('vip')">＋ 同专业纯 VIP 学生</button>
       <button class="btn btn-outline btn-sm" onclick="cmQuickAdd('all')">＋ 同专业全部学生</button>
-      <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="cmClearList()">清空名单</button>
+      <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="cmDeselectAll()">全部取消选择</button>
+      ${modes.includes('major')?'<button class="btn btn-outline btn-sm" onclick="cmClearList()">恢复专业默认</button>':''}
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
       <input id="cmSearchInput" value="${cmEsc(cmSearch)}" placeholder="搜索姓名（汉字 / 拼音首字母）" oninput="if(this.dataset.composing!=='1'){cmSearch=this.value;cmRenderNames()}" oncompositionstart="this.dataset.composing='1'" oncompositionend="this.dataset.composing='';cmSearch=this.value;cmRenderNames()" style="flex:1;min-width:180px;font-size:13px;padding:7px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg);font-family:inherit">
@@ -3416,12 +3417,28 @@ async function cmQuickAdd(kind){
   cmRender();
 }
 
+// 把选中课程的当前成员全部取消，之后再逐个点选
+async function cmDeselectAll(){
+  const courses=cmCourseIds.map(cmCourse).filter(Boolean);
+  const total=courses.reduce((n,c)=>n+cmMemberSet(c).size,0);
+  if(!total){ alert('当前没有成员'); return; }
+  const hasMajor=courses.some(c=>courseMemberMode(c)==='major');
+  if(!confirm(`取消全部 ${total} 个成员的选择？之后可以再逐个点选。${hasMajor?'\n（「按专业」的课会把同专业学生逐个标为移除；新入学的同专业学生仍会自动成为成员，如不想要请改成「指定名单」）':''}`)) return;
+  const ops=[];
+  courses.forEach(c=>cmMemberSet(c).forEach(sid=>{
+    const st=(cachedStudents||[]).find(x=>String(x.id)===sid)||{id:sid};
+    ops.push(cmPlan(c,st,false));
+  }));
+  try{ await cmExec(ops); }catch(e){}
+  cmRender();
+}
+
 async function cmClearList(){
   const courses=cmCourseIds.map(cmCourse).filter(Boolean);
   const hasList=courses.some(c=>courseMemberMode(c)==='list');
   const hasMajor=courses.some(c=>courseMemberMode(c)==='major');
   const txt=[hasList?'「指定名单」的课：名单清空，这门课将没有任何成员':'',hasMajor?'「按专业」的课：去掉所有单独添加 / 移除，恢复成同专业默认成员':''].filter(Boolean).join('\n');
-  if(!confirm('清空名单？\n'+txt)) return;
+  if(!confirm('恢复专业默认？\n'+txt)) return;
   const ops=[];
   courses.forEach(c=>cmRowsOf(c.id).forEach(r=>ops.push({op:'delete',course_id:String(c.id),student_id:String(r.student_id)})));
   try{ await cmExec(ops); }catch(e){}
