@@ -1002,10 +1002,17 @@ async function tatOpen(sessionId){
   const se=tatSessions.find(x=>x.id===sessionId)||await sb(`/rest/v1/course_sessions?id=eq.${sessionId}&select=*`).then(r=>r&&r[0]).catch(()=>null);
   if(!se){ alert('课次未找到'); return; }
   tatCurSession=se;
-  // 该课专业的在籍学生（全部，不受可见范围限制——记出席要全班）
+  // 该课的成员学生（全部，不受可见范围限制——记出席要全班；成员规则见 shared/constants.js 的 courseMemberIds）
   const majors=Array.isArray(se.major)?se.major:(se.major?[se.major]:[]);
-  const all=await sb('/rest/v1/students?select=id,name,major,default_mode,status&status=eq.active&order=name.asc&limit=2000').catch(()=>[]);
-  tatStudents=all.filter(s=>majors.includes(s.major)||(majors.includes('shakai_group')&&['shakai','shinpan','fukushi'].includes(s.major))).sort((a,b)=>a.name.localeCompare(b.name,'zh'));
+  const [all,crs,cms]=await Promise.all([
+    sbAll('/rest/v1/students?select=id,name,major,default_mode,status,is_vip_course&status=eq.active&order=name.asc').catch(()=>[]),
+    se.course_id?sb(`/rest/v1/courses?id=eq.${encodeURIComponent(se.course_id)}&select=id,major,member_mode`).catch(()=>[]):Promise.resolve([]),
+    se.course_id?sb(`/rest/v1/course_members?course_id=eq.${encodeURIComponent(se.course_id)}&select=course_id,student_id,kind`).catch(()=>[]):Promise.resolve([])
+  ]);
+  const c=(crs||[])[0]||{};
+  const course=Object.assign({id:se.course_id},c,{major:majors.length?majors:(c.major||[])});
+  const ids=courseMemberIds(course,all||[],cms||[]);
+  tatStudents=(all||[]).filter(s=>ids.has(String(s.id))).sort((a,b)=>a.name.localeCompare(b.name,'zh'));
   tatEdits={}; tatState='present'; tatMode='offline';
   tatRenderModal();
 }

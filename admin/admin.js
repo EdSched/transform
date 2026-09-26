@@ -545,11 +545,12 @@ async function renderPage(){
       majorRows.forEach(r=>{ cachedAdmissionMajorCounts[r.major]=(cachedAdmissionMajorCounts[r.major]||0)+1; });
       renderAdmissionDbPage(mc);
     } else if(curPage==='attendance'){
-      [cachedStudents,cachedCourses,cachedSessions,cachedSessionRecords]=await Promise.all([
+      [cachedStudents,cachedCourses,cachedSessions,cachedSessionRecords,cachedCourseMembers]=await Promise.all([
         sbAll('/rest/v1/students?select=*&order=name.asc'),
         sbAll('/rest/v1/courses?select=*&order=created_at.desc'),
         sbAll('/rest/v1/course_sessions?select=*&order=session_date.asc,session_number.asc'),
-        sbAll('/rest/v1/session_records?select=*')
+        sbAll('/rest/v1/session_records?select=*'),
+        sbAll('/rest/v1/course_members?select=*').catch(()=>[])
       ]);
       renderAttendancePage(mc);
     } else if(curPage==='monthly'){
