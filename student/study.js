@@ -2166,7 +2166,7 @@ function sschedCalHtml() {
   return Object.keys(weeks).sort().map((mon, wi) => {
     const list = weeks[mon];
     const dates = [...new Set(list.map(s => s.session_date))].sort();
-    const times = [...new Set(list.map(s => s.time_range || ''))].sort();
+    const times = [...new Set(list.map(s => s.time_range || ''))].sort((a, b) => timeRangesSortKey(a).localeCompare(timeRangesSortKey(b)) || a.localeCompare(b));
     const cols = `78px repeat(${dates.length}, minmax(0,1fr))`;
     let h = `<div style="margin-bottom:20px">
       <div style="font-size:10px;color:var(--text-muted);letter-spacing:.08em;margin-bottom:5px">第 ${wi+1} 周</div>

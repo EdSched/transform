@@ -277,7 +277,7 @@ function prScheduleHtml(data, forClient) {
   const byDate = {};
   sessions.forEach(s => { (byDate[s.session_date] = byDate[s.session_date] || []).push(s); });
   const months = [...new Set(sessions.map(s => (s.session_date || '').slice(0, 7)).filter(Boolean))].sort();
-  const tm = t => String(t || '').replace(/\s*[-~〜～]\s*/, '–');
+  const tm = t => parseTimeRanges(t).map(r => r.end ? `${r.start}–${r.end}` : r.start).join(' / ');   // 多个时间段都显示
   const cal = months.map(mon => {
     const [y, m] = mon.split('-').map(Number);
     const startCol = (new Date(y, m - 1, 1).getDay() + 6) % 7;   // 0=周一
@@ -293,7 +293,7 @@ function prScheduleHtml(data, forClient) {
       if (d === null) return `<div style="min-height:72px;background:#faf8f4;border-top:1px solid #ede9e2;${bl}"></div>`;
       const ds = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const w = new Date(y, m - 1, d).getDay();
-      const evs = (byDate[ds] || []).slice().sort((a, b) => String(a.time_range || '').localeCompare(String(b.time_range || '')));
+      const evs = (byDate[ds] || []).slice().sort((a, b) => timeRangesSortKey(a.time_range).localeCompare(timeRangesSortKey(b.time_range)));
       return `<div style="min-height:72px;min-width:0;padding:4px;border-top:1px solid #ede9e2;${bl}display:flex;flex-direction:column;gap:2px;overflow-wrap:anywhere">
         <div style="font-size:10px;font-weight:500;color:${w === 6 ? SAT : w === 0 ? SUN : '#9a9590'}">${d}</div>
         ${evs.map(s => {

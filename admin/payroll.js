@@ -27,6 +27,13 @@ function payrollLocation(loc, campus) {
 // ── 时间段解析 → 开始/结束/时长 ──
 function parseTimeRange(dateStr, timeRange, actualHours) {
   if (!dateStr || !timeRange) return { start: '', end: '', hours: actualHours || 0 };
+  // 同一单回多个时间段（14:00-17:00/18:00-21:00）：开始=第一段开始，结束=最后一段结束，时长=各段相加
+  if (typeof parseTimeRanges === 'function' && parseTimeRanges(timeRange).length > 1) {
+    const d0 = new Date(dateStr + 'T12:00:00');
+    const pre = `${d0.getFullYear()}年${String(d0.getMonth() + 1).padStart(2, '0')}月${String(d0.getDate()).padStart(2, '0')}日 `;
+    const sp = timeRangesSpan(timeRange);
+    return { start: pre + sp.start, end: pre + sp.end, hours: timeRangesHours(timeRange) };
+  }
   const parts = timeRange.split(/[–\-]/);
   if (parts.length < 2) return { start: timeRange, end: '', hours: actualHours || 0 };
   const startT = parts[0].trim();

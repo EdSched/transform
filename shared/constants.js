@@ -380,6 +380,40 @@ function matchesMajorFilter(major, filter) {
   return major === filter;
 }
 
+// ── 上课时间段：同一单回可以有多个时间段，存在 time_range 文本里，用 / 分隔（例：14:00-17:00/18:00-21:00）──
+// 输入时也接受全角「／」「、」「,」「，」；每段的起止支持 - – ~ 〜 ～
+function parseTimeRanges(str) {
+  return String(str == null ? '' : str).replace(/：/g, ':')
+    .split(/[\/／、,，]/).map(x => x.trim()).filter(Boolean)
+    .map(x => { const p = x.split(/\s*[-–—~〜～]\s*/); return { start: (p[0] || '').trim(), end: (p[1] || '').trim() }; });
+}
+function formatTimeRanges(list) {
+  return (list || []).map(r => r.end ? `${r.start}-${r.end}` : r.start).filter(Boolean).join('/');
+}
+// 保存前统一格式：多段用 / 连接；只有一段时保持原样（不改动旧数据的写法）
+function normalizeTimeRanges(str) {
+  const list = parseTimeRanges(str);
+  return list.length > 1 ? formatTimeRanges(list) : String(str == null ? '' : str).trim();
+}
+function _trMin(t) { const m = /^(\d{1,2})[:：](\d{2})/.exec(String(t || '').trim()); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+// 总小时数（各段相加）
+function timeRangesHours(str) {
+  let min = 0;
+  parseTimeRanges(str).forEach(r => { const a = _trMin(r.start), b = _trMin(r.end); if (a != null && b != null && b > a) min += b - a; });
+  return Math.round(min / 60 * 100) / 100;
+}
+// 排序用：第一段的开始时间（补零成 HH:MM）
+function timeRangesSortKey(str) {
+  const r = parseTimeRanges(str)[0]; const m = r && _trMin(r.start);
+  return m == null ? '99:99' : String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+}
+// 最早开始 ~ 最晚结束（排课系统只有一组开始/结束时间时用）
+function timeRangesSpan(str) {
+  let s = null, e = null, ss = '', es = '';
+  parseTimeRanges(str).forEach(r => { const a = _trMin(r.start), b = _trMin(r.end); if (a != null && (s == null || a < s)) { s = a; ss = r.start; } if (b != null && (e == null || b > e)) { e = b; es = r.end; } });
+  return { start: ss, end: es };
+}
+
 // ── 期数工具 ──
 function currentPeriodKey() {
   const m = new Date().getMonth() + 1;

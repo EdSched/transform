@@ -15,7 +15,7 @@ function mcxCancelled(s) { return !!s.is_cancelled || (s.session_title || '').tr
 // 单回的时间段（多个时间段用 / 分隔）
 function mcxRanges(s, c) {
   const tr = (s && s.time_range) || (c && c.time_range) || '';
-  return (typeof parseTimeRanges === 'function') ? parseTimeRanges(tr) : String(tr).split(/[\/／、,，]/).map(x => x.trim()).filter(Boolean).map(x => { const p = x.split(/\s*[-–~〜～]\s*/); return { start: p[0] || '', end: p[1] || '' }; });
+  return parseTimeRanges(tr);
 }
 // 这个月里有单回（不含休讲）的课程（受当前领域视角限制：cachedCourses 已按领域过滤；专业钥匙再按专业过滤）
 function mcxCoursesOfMonth(ym) {
@@ -120,7 +120,7 @@ function mcxGenerate() {
       name: (s.session_title || '').trim() || c.name || s.course_name || '',
       ranges, teacher: s.session_teacher || s.teacher || c.teacher || '',
       color: (MCX_COLORS.find(x => x[0] === (mcxState.colors[c.id] || 'black')) || MCX_COLORS[0])[2],
-      sortKey: (ranges[0] && ranges[0].start) || '99:99',
+      sortKey: timeRangesSortKey((s && s.time_range) || c.time_range),
     });
   }));
   Object.values(byDate).forEach(l => l.sort((a, b) => String(a.sortKey).localeCompare(String(b.sortKey))));

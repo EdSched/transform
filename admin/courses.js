@@ -728,7 +728,7 @@ async function tplSaveEdit(id){
       homework_note: prev.homework_note||null };
   });
   const patch={
-    name, teacher:g('te_teacher').trim(), weekdays:g('te_weekdays').trim(), time_range:g('te_time').trim(),
+    name, teacher:g('te_teacher').trim(), weekdays:g('te_weekdays').trim(), time_range:normalizeTimeRanges(g('te_time')),
     total_sessions:parseInt(g('te_total'))||null, actual_hours:parseFloat(g('te_hours'))||null,
     delivery:g('te_delivery'), campus:g('te_campus').trim(), course_type:g('te_type').trim(),
     detail_rows,
@@ -1367,6 +1367,19 @@ function openAddCourseModal(editId){
   document.getElementById('addCourseModal').classList.add('open');
 }
 
+// 上课时间：「＋ 时间段」在文本末尾加 /，接着输入下一段；多段时课时自动按各段相加
+function trAddSeg(id){
+  const el=document.getElementById(id); if(!el) return;
+  const v=el.value.trim();
+  el.value=v&&!/[\/／]$/.test(v)?v+'/':v;
+  el.focus();
+}
+function trAutoHours(trId,hId){
+  const tr=(document.getElementById(trId)||{}).value||'', h=document.getElementById(hId);
+  if(h&&parseTimeRanges(tr).length>1) h.value=timeRangesHours(tr)||'';
+}
+// 单回的课时：多个时间段时按各段相加，否则沿用课程的课时
+function trSessionHours(tr,courseHours){ return parseTimeRanges(tr).length>1?timeRangesHours(tr):courseHours; }
 function acOnTypeChange(val){
   if(val==='共通课'){
     document.querySelectorAll('#ac_major_checkboxes input').forEach(cb=>cb.checked=true);
@@ -1461,7 +1474,7 @@ function acAddRow(data){
   tr.innerHTML=`
     <td style="width:64px"><input value="${rowNum}" placeholder="第几回" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);text-align:center;font-family:'DM Mono',monospace"></td>
     <td style="width:120px"><input type="date" value="${data?.date||''}" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg)"></td>
-    <td style="width:100px"><input value="${data?.time_range||''}" placeholder="时间（如 10:00-12:00）" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
+    <td style="width:150px"><input value="${data?.time_range||''}" placeholder="时间（多段用 / 分隔）" title="同一天多个时间段用 / 分隔，例：14:00-17:00/18:00-21:00" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
     <td><input value="${data?.title||''}" placeholder="单回名称（可留空，也可填「休讲」）" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
     <td><input value="${data?.teacher||''}" placeholder="任课老师（可留空）" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
     <td><button class="btn-ghost" onclick="this.closest('tr').remove()">✕</button></td>`;
@@ -1486,7 +1499,7 @@ function acGetRows(){
       id: tr.dataset.id||'',
       num: inputs[0]?.value.trim()||'',
       date: inputs[1]?.value||'',
-      time_range: inputs[2]?.value.trim()||'',
+      time_range: normalizeTimeRanges(inputs[2]?.value||''),
       title: inputs[3]?.value.trim()||'',
       teacher: inputs[4]?.value.trim()||''
     };
@@ -1659,7 +1672,7 @@ async function saveAddCourse(){
     campus:document.getElementById('ac_campus').value.trim(),
     delivery:document.getElementById('ac_delivery').value,
     weekdays:weekdayStr,
-    time_range:document.getElementById('ac_time_range').value.trim(),
+    time_range:normalizeTimeRanges(document.getElementById('ac_time_range').value),
     actual_hours:parseFloat(document.getElementById('ac_actual_hours').value)||null,
     total_sessions:total,
     first_session_date:firstDate,
@@ -1734,7 +1747,7 @@ async function saveAddCourse(){
           session_date:r.date,
           session_number: isCancelled ? (existingMap[r.id]?.session_number ?? null) : (parseInt(r.num)||null),
           time_range:r.time_range||courseData.time_range,
-          actual_hours:courseData.actual_hours,
+          actual_hours:trSessionHours(r.time_range||courseData.time_range,courseData.actual_hours),
           delivery:courseData.delivery,campus:courseData.campus,
           // 已布置作业的回次保持开启，不被课程级开关覆盖
           homework_enabled:(r.id&&existingMap[r.id]&&hwHasQ(existingMap[r.id].homework_questions))?true:courseData.homework_enabled,
@@ -1795,7 +1808,7 @@ async function saveAddCourse(){
           course_id:courseId,course_name:name,major:majors,
           session_date:date,session_number:i+1,
           time_range:detail.time_range||courseData.time_range,
-          actual_hours:courseData.actual_hours,
+          actual_hours:trSessionHours(detail.time_range||courseData.time_range,courseData.actual_hours),
           delivery:courseData.delivery,campus:courseData.campus,
           teacher:detail.teacher||mainTeacher,
           session_title:detail.title||'',
@@ -1920,7 +1933,7 @@ async function saveEditCourse(){
     campus:document.getElementById('ec_campus').value.trim(),
     delivery:document.getElementById('ec_delivery').value,
     weekdays:document.getElementById('ec_weekdays').value.trim(),
-    time_range:document.getElementById('ec_time_range').value.trim(),
+    time_range:normalizeTimeRanges(document.getElementById('ec_time_range').value),
     actual_hours:parseFloat(document.getElementById('ec_actual_hours').value)||null,
     total_sessions:parseInt(document.getElementById('ec_total').value)||0,
     first_session_date:document.getElementById('ec_first_date').value||null,
@@ -1946,7 +1959,7 @@ async function regenerateSessions(){
   const total=parseInt(document.getElementById('ec_total').value)||0;
   const wdStr=document.getElementById('ec_weekdays').value;
   const weekdays=parseWeekdays(wdStr);
-  const timeRange=document.getElementById('ec_time_range').value.trim();
+  const timeRange=normalizeTimeRanges(document.getElementById('ec_time_range').value);
   if(!firstDate||!weekdays.length||!total){alert('请填写第一回日期、星期和回数');return}
   if(!confirm(`将删除该课程现有 ${cachedSessions.filter(s=>s.course_id===id).length} 个课次并重新生成 ${total} 个，是否继续？`))return;
   try{
@@ -2898,7 +2911,7 @@ function wnGenerate(){
     .filter(s=>dates.includes(s.session_date))
     .filter(s=>(s.major||[]).some(m=>majorList.includes(m)))
     .filter(s=>s.session_title!=='休讲')
-    .sort((a,b)=>a.session_date===b.session_date?String(a.time_range||'').localeCompare(String(b.time_range||'')):a.session_date.localeCompare(b.session_date));
+    .sort((a,b)=>a.session_date===b.session_date?timeRangesSortKey(a.time_range).localeCompare(timeRangesSortKey(b.time_range)):a.session_date.localeCompare(b.session_date));
 
   let text='@所有人 本周课程安排如下\n';
   if(!list.length){
