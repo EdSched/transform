@@ -666,13 +666,17 @@ async function renderProgressPage(mc, focusStudentId=null){
   if(stMajorFilter!=='all') students=students.filter(s=>matchesMajorFilter(s.major,stMajorFilter));
   if(progressStudentFilter) students=students.filter(s=>matchesStudentSearch(s,progressStudentFilter));
 
-  const [allTimeline, allPlansPG, allDraftsPG, allBkPG, allRiyuPG] = await Promise.all([
+  const [allTimeline, allPlansPG, allDraftsPG, allBkPG, allRiyuPG, matItemsPG, allMatsPG] = await Promise.all([
     sb('/rest/v1/student_progress_timeline?select=*&order=created_at.asc&limit=5000').catch(()=>[]),
     sb('/rest/v1/student_school_plans?select=*&order=level.asc&limit=5000').catch(()=>[]),
     sb('/rest/v1/student_plan_drafts?select=*&limit=5000').catch(()=>[]),
     sb('/rest/v1/bookings?select=name,major,target_school,slot_date,exam_period&order=slot_date.desc&limit=5000').catch(()=>[]),
     sbAll('/rest/v1/riyu_submissions?select=*').catch(()=>[]),   // 新版志望理由书（表未建时为空）
+    (typeof matLoadItems === 'function' ? matLoadItems('') : Promise.resolve([])).catch(()=>[]),   // 出愿材料清单
+    sbAll('/rest/v1/student_materials?select=*').catch(()=>[]),
   ]);
+  const matsMapPG = {};
+  (allMatsPG||[]).forEach(r => { (matsMapPG[r.student_id] = matsMapPG[r.student_id] || []).push(r); });
   const riyuSubsMapPG = {};
   (allRiyuPG||[]).forEach(r => { (riyuSubsMapPG[r.student_id] = riyuSubsMapPG[r.student_id] || []).push(r); });
   window.__pgRiyuSubs = riyuSubsMapPG;
@@ -863,6 +867,13 @@ async function renderProgressPage(mc, focusStudentId=null){
           ${riyuStaffListHtml(s, sPlans, riyuSubsMapPG[s.id] || [], 'gakubu_riyu', ()=>renderProgressPage(document.getElementById('mainContent'), s.id))}
           ${(typeof riyuFilledCount === 'function' && riyuFilledCount(sDraft, sPlans)) ? `<details style="margin-top:6px;font-size:11px"><summary style="cursor:pointer;color:var(--text-3)">旧版草稿（参考）</summary>${renderRiyuView(sDraft, sPlans)}</details>` : ''}
         </div>` : ''}
+        ${(typeof matStaffNodeHtml === 'function') ? (() => {
+          const track = matTrackOf(s);
+          const items = (matItemsPG||[]).filter(it => it.track === track);
+          return `<div style="padding:12px 14px;border-bottom:1px solid var(--border-light)">
+          <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px">📁 出愿材料</div>
+          ${matStaffNodeHtml(s, items, (matsMapPG[s.id] = matsMapPG[s.id] || []), sPlans, (riyuSubsMapPG[s.id] = riyuSubsMapPG[s.id] || []))}
+        </div>`; })() : ''}
         ${(s.course_type||'').includes('保录') ? `
         <div style="padding:12px 14px;border-bottom:1px solid var(--border-light);background:#fdfaf5">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
