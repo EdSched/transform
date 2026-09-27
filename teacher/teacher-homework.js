@@ -22,48 +22,44 @@ function fmtJst(ts) {
 
 function thwEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
+// 可见范围 = ①（homework_own_sessions）本人担当的单回 ∪ ②（homework_course_ids）负责课程的全部单回；admin 老师管理里分配
+let thwAssigned = true;   // 是否有任何分配（没有时显示「还没有给你安排作业批改」）
 async function renderHomeworkFeedback(mc) {
   const p = teacherData.permissions || {};
-  const myCourses = p.homework_courses || [];
+  const own = !!p.homework_own_sessions && !!(teacherName || '').trim();
+  const courseIds = (p.homework_course_ids || []).map(String).filter(Boolean);
+  thwAssigned = own || courseIds.length > 0;
   mc.innerHTML = '<div class="empty">加载中…</div>';
+  if (!thwAssigned) { thwSessions = []; thwSubs = {}; thwRender(); return; }
   try {
-    const q = myCourses.length
-      ? `/rest/v1/course_sessions?homework_enabled=is.true&course_name=in.(${myCourses.map(c=>`"${c}"`).join(',')})&select=*&order=session_date.desc&limit=300`
-      : `/rest/v1/course_sessions?homework_enabled=is.true&select=*&order=session_date.desc&limit=300`;
-    const sessions = await sb(q);
-    // 只显示本老师负责领域/专业（或本人任课、教务显式授权）的作业课次，
-    // 避免任何老师都能看到全部提交（尤其 homework_courses 未配置时查询会返回全部）
-    const myMajors = new Set(teacherData.majors || []);
-    const myDomains = new Set([
-      ...(teacherData.domains || []),
-      ...[...myMajors].map(m => (typeof MAJOR_DOMAIN !== 'undefined' ? MAJOR_DOMAIN[m] : null)).filter(Boolean)
-    ]);
-    const nm = teacherName;
-    // 只显示「当期」的作业课次：按单回日期落在当前期数(1/4/7/10月期)+同年，
-    // 避免把之后期数、还没开始上的课全带进来（helpers 缺失或无日期时不过滤，避免误伤）
+    const nm = teacherName.trim();
+    const base = '/rest/v1/course_sessions?homework_enabled=is.true&homework_questions=not.is.null&select=*&order=session_date.desc';
+    const jobs = [];
+    // ① 本人担当的单回（session_teacher / teacher 含老师名；只到单回，不带出同一课里别人的回次）
+    if (own) {
+      const enc = encodeURIComponent(nm);
+      jobs.push(sbAll(`${base}&or=(session_teacher.ilike.*${enc}*,teacher.ilike.*${enc}*)`).then(r =>
+        (r || []).filter(x => String(x.session_teacher || '').includes(nm) || String(x.teacher || '').includes(nm))));
+    }
+    // ② 负责课程的全部单回
+    for (let i = 0; i < courseIds.length; i += 40) {
+      jobs.push(sbAll(`${base}&course_id=in.(${courseIds.slice(i, i + 40).map(x => `"${x}"`).join(',')})`));
+    }
+    const sessions = [].concat(...await Promise.all(jobs));
+    // 只显示「当期」的作业课次：按单回日期落在当前期数(1/4/7/10月期)+同年
     const curPeriod = (typeof currentPeriodKey === 'function') ? currentPeriodKey() : null;
     const curYear = new Date().getFullYear();
     const inCurrentTerm = s => {
       if (!s.session_date || !curPeriod || typeof periodFromDate !== 'function') return true;
       return periodFromDate(s.session_date) === curPeriod && parseInt(s.session_date.slice(0, 4)) === curYear;
     };
-    thwSessions = (sessions || []).filter(s => {
+    const seen = new Set();
+    thwSessions = sessions.filter(s => {
+      if (seen.has(s.id)) return false; seen.add(s.id);
       const q = s.homework_questions;
       const hasHw = Array.isArray(q) ? q.length : !!(q && q.levels && q.levels.length);
-      if (!hasHw) return false;
-      if (!inCurrentTerm(s)) return false;
-      // 教务显式授权的课程 → 直接可见
-      if (myCourses.length && myCourses.includes(s.course_name)) return true;
-      // 本人任课的课次 → 可见
-      if ((s.session_teacher && s.session_teacher.includes(nm)) || (s.teacher && s.teacher.includes(nm))) return true;
-      // 其余：按老师负责的专业/领域过滤
-      const sm = s.major || [];
-      if (sm.length) {
-        if (sm.some(m => myMajors.has(m))) return true;
-        if (sm.some(m => myDomains.has(typeof MAJOR_DOMAIN !== 'undefined' ? MAJOR_DOMAIN[m] : null))) return true;
-      }
-      return false;
-    });
+      return hasHw && inCurrentTerm(s);
+    }).sort((a, b) => String(b.session_date || '').localeCompare(String(a.session_date || '')));
     const ids = thwSessions.map(s => s.id);
     thwSubs = {};
     for (let i = 0; i < ids.length; i += 40) {
@@ -77,8 +73,12 @@ async function renderHomeworkFeedback(mc) {
 function thwRender() {
   const mc = document.getElementById('mainContent');
   if (!mc) return;
+  if (!thwAssigned) {
+    mc.innerHTML = '<div class="empty">还没有给你安排作业批改，请联系教务</div>';
+    return;
+  }
   if (!thwSessions.length) {
-    mc.innerHTML = '<div class="empty">暂无布置作业的课次<br><span style="font-size:11px">作业由教务在课程安排的单回中布置</span></div>';
+    mc.innerHTML = '<div class="empty">当期暂无分配给你的作业课次<br><span style="font-size:11px">作业由教务在课程安排的单回中布置</span></div>';
     return;
   }
   mc.innerHTML = `
