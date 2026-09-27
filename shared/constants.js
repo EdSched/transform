@@ -1290,3 +1290,60 @@ function studentInCourse(student, course, myMembers) {
   if (row && row.kind === 'include') return true;
   return courseDefaultMember(student, course);
 }
+
+// ── 作业：统一的时间概念（学生端 / 老师端 / 管理端共用）──
+// 日本时间的今天 'YYYY-MM-DD'
+function jstToday() { return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Tokyo' }).slice(0, 10); }
+// 本周 = 日本时间的周一到周日：weekRange(date?) → {start, end, label:'9/22（一）– 9/28（日）'}
+function weekRange(date) {
+  let ds;
+  if (!date) ds = jstToday();
+  else if (typeof date === 'string') ds = date.slice(0, 10);
+  else ds = date.toLocaleString('sv-SE', { timeZone: 'Asia/Tokyo' }).slice(0, 10);
+  const [y, m, d] = ds.split('-').map(Number);
+  const base = new Date(Date.UTC(y, m - 1, d));
+  const dow = (base.getUTCDay() + 6) % 7;   // 0=周一
+  const add = n => { const t = new Date(base); t.setUTCDate(t.getUTCDate() + n); return t; };
+  const s = add(-dow), e = add(6 - dow);
+  const iso = t => t.toISOString().slice(0, 10);
+  const lab = (t, w) => `${t.getUTCMonth() + 1}/${t.getUTCDate()}（${w}）`;
+  return { start: iso(s), end: iso(e), label: `${lab(s, '一')} – ${lab(e, '日')}` };
+}
+// 某日期是否在「当期」（currentPeriodKey + 同一年）；下一期及以后都算 false
+function inCurrentPeriod(ds) {
+  if (!ds) return false;
+  const today = jstToday();
+  return periodFromDate(ds) === periodFromDate(today) && String(ds).slice(0, 4) === today.slice(0, 4);
+}
+
+// ── 作业：多位老师的批改（homework_submissions.feedbacks / art_works.feedbacks）──
+// 每条 {id, by, at, knowledge, attitude, suggestions, score, file_url, file_name, text?}
+// feedbacks 为空时，把旧的单条批改字段（feedback_* / teacher_feedback / graded_by …）当作一条
+function hwFeedbacks(sub) {
+  if (!sub) return [];
+  let fb = sub.feedbacks;
+  if (typeof fb === 'string') { try { fb = JSON.parse(fb); } catch (e) { fb = []; } }
+  if (Array.isArray(fb) && fb.length) return fb.slice().sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
+  if (!(sub.teacher_feedback || sub.feedback_knowledge || sub.feedback_attitude || sub.feedback_suggestions)) return [];
+  return [{
+    id: 'legacy', by: sub.graded_by || '', at: sub.graded_at || '',
+    knowledge: sub.feedback_knowledge || '', attitude: sub.feedback_attitude || '', suggestions: sub.feedback_suggestions || '',
+    text: (!sub.feedback_knowledge && !sub.feedback_attitude && !sub.feedback_suggestions) ? (sub.teacher_feedback || '') : '',
+    score: sub.score || '', file_url: sub.teacher_file_url || '', file_name: '',
+  }];
+}
+function hwGradedBy(sub) { return [...new Set(hwFeedbacks(sub).map(f => f.by).filter(Boolean))]; }
+// 批改卡片（按时间顺序叠加，每位老师一张）
+function hwFeedbackCardsHtml(sub, opts) {
+  const list = Array.isArray(sub) ? sub : hwFeedbacks(sub);
+  if (!list.length) return '';
+  const e = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const t = ts => { if (!ts) return ''; try { return new Date(ts).toLocaleString('sv-SE', { timeZone: 'Asia/Tokyo' }).slice(0, 16); } catch (x) { return String(ts).slice(0, 16); } };
+  const row = (k, v) => v ? `<div style="font-size:11px;color:#5a5650;line-height:1.9;white-space:pre-wrap"><span style="color:#9a9590">${k}：</span>${e(v)}</div>` : '';
+  return list.map(f => `<div style="background:#eef6f0;border:1px solid #b8d8bc;border-radius:4px;padding:8px 11px;margin-bottom:6px">
+    <div style="font-size:10px;color:#2a7a4a;font-weight:600;margin-bottom:3px">✓ ${e(f.by || '老师')}${f.at ? ` · ${e(t(f.at))}` : ''}${f.score ? ` · <span style="background:#fff;border-radius:2px;padding:0 6px">${e(f.score)}</span>` : ''}${opts && opts.mine && f.by === opts.mine ? ' <span style="color:#9a9590;font-weight:400">（我的）</span>' : ''}</div>
+    ${row('知识掌握', f.knowledge)}${row('学习态度', f.attitude)}${row('改进建议', f.suggestions)}
+    ${f.text ? `<div style="font-size:11px;color:#5a5650;line-height:1.9;white-space:pre-wrap">${e(f.text)}</div>` : ''}
+    ${f.file_url ? `<a href="${e(f.file_url)}" target="_blank" style="font-size:10px;color:#b8953a;display:inline-block;margin-top:4px">📎 下载批改文件${f.file_name ? '（' + e(f.file_name) + '）' : ''}</a>` : ''}
+  </div>`).join('');
+}

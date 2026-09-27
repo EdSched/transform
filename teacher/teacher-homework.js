@@ -8,6 +8,8 @@ let thwSessions = null;   // 有作业的课次
 let thwSubs = {};         // session_id → 提交数组
 let thwOpenSession = null;
 let thwOpenStudent = null;
+let thwShowPast = false, thwShowDone = false;   // 左栏「以前·未批改」「已批完的以前作业」是否展开
+let thwPendingFile = null;   // 本次批改待保存的批改文件 {url, name}
 
 
 // 时间统一按日本时间（JST）显示
@@ -46,13 +48,8 @@ async function renderHomeworkFeedback(mc) {
       jobs.push(sbAll(`${base}&course_id=in.(${courseIds.slice(i, i + 40).map(x => `"${x}"`).join(',')})`));
     }
     const sessions = [].concat(...await Promise.all(jobs));
-    // 只显示「当期」的作业课次：按单回日期落在当前期数(1/4/7/10月期)+同年
-    const curPeriod = (typeof currentPeriodKey === 'function') ? currentPeriodKey() : null;
-    const curYear = new Date().getFullYear();
-    const inCurrentTerm = s => {
-      if (!s.session_date || !curPeriod || typeof periodFromDate !== 'function') return true;
-      return periodFromDate(s.session_date) === curPeriod && parseInt(s.session_date.slice(0, 4)) === curYear;
-    };
+    // 只显示「当期」的作业课次（shared/constants.js 的 inCurrentPeriod；下一期及以后不显示）
+    const inCurrentTerm = s => inCurrentPeriod(s.session_date);
     const seen = new Set();
     thwSessions = sessions.filter(s => {
       if (seen.has(s.id)) return false; seen.add(s.id);
@@ -81,19 +78,36 @@ function thwRender() {
     mc.innerHTML = '<div class="empty">当期暂无分配给你的作业课次<br><span style="font-size:11px">作业由教务在课程安排的单回中布置</span></div>';
     return;
   }
+  // 按周分块：本周（展开）/ 以前·未批改（有才显示，醒目）/ 提前提交（未来单回有人提前交才显示）
+  const wk = weekRange();
+  const ungradedOf = s => (thwSubs[s.id] || []).filter(x => !hwFeedbacks(x).length).length;
+  const byDate = (a, b) => String(a.session_date || '').localeCompare(String(b.session_date || ''));
+  const cur = thwSessions.filter(s => s.session_date >= wk.start && s.session_date <= wk.end).sort(byDate);
+  const past = thwSessions.filter(s => s.session_date < wk.start).sort((a, b) => byDate(b, a));
+  const pastTodo = past.filter(s => ungradedOf(s) > 0), pastDone = past.filter(s => !ungradedOf(s));
+  const early = thwSessions.filter(s => s.session_date > wk.end && (thwSubs[s.id] || []).length).sort(byDate);
+  const pastN = pastTodo.reduce((n, s) => n + ungradedOf(s), 0);
+  if (thwOpenSession && pastTodo.some(s => s.id === thwOpenSession)) thwShowPast = true;
+  if (thwOpenSession && pastDone.some(s => s.id === thwOpenSession)) thwShowDone = true;
+  const item = s => {
+    const subs = thwSubs[s.id] || [];
+    const ungraded = ungradedOf(s);
+    const sel = thwOpenSession === s.id;
+    return `<div onclick="thwOpenSession='${s.id}';thwOpenStudent=null;thwRender()" style="cursor:pointer;padding:7px 10px;border:1px solid ${sel?'var(--accent)':'transparent'};background:${sel?'var(--accent-light,#f5ede3)':'transparent'};border-radius:3px;margin-bottom:3px">
+      <div style="font-size:12px;font-weight:600">${thwEsc(s.course_name||'')}${s.session_number?` 第${s.session_number}回`:''}</div>
+      <div style="font-size:9px;color:var(--text-3)">${s.session_date||''} · 提交 ${subs.length}${ungraded?` · <span style="color:var(--warn,#b8860b)">待批 ${ungraded}</span>`:subs.length?' · <span style="color:var(--ok)">已批完</span>':''}</div>
+    </div>`;
+  };
+  const sec = t => `<div style="font-size:11px;font-weight:600;color:var(--text-2);padding:6px 4px 4px">${t}</div>`;
   mc.innerHTML = `
   <div class="page-header"><div class="section-title">📝 作业批改</div></div>
   <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
     <div style="flex:0 0 250px;min-width:220px;max-height:74vh;overflow-y:auto;background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:8px">
-      ${thwSessions.map(s => {
-        const subs = thwSubs[s.id] || [];
-        const ungraded = subs.filter(x => !x.teacher_feedback).length;
-        const sel = thwOpenSession === s.id;
-        return `<div onclick="thwOpenSession='${s.id}';thwOpenStudent=null;thwRender()" style="cursor:pointer;padding:7px 10px;border:1px solid ${sel?'var(--accent)':'transparent'};background:${sel?'var(--accent-light,#f5ede3)':'transparent'};border-radius:3px;margin-bottom:3px">
-          <div style="font-size:12px;font-weight:600">${thwEsc(s.course_name||'')}${s.session_number?` 第${s.session_number}回`:''}</div>
-          <div style="font-size:9px;color:var(--text-3)">${s.session_date||''} · 提交 ${subs.length}${ungraded?` · <span style="color:var(--warn,#b8860b)">待批 ${ungraded}</span>`:''}</div>
-        </div>`;
-      }).join('')}
+      ${sec(`本周 <span style="font-weight:400;color:var(--text-3)">${wk.label}</span>`)}
+      ${cur.length ? cur.map(item).join('') : '<div style="font-size:10px;color:var(--text-3);padding:2px 10px 6px">本周没有分配给你的作业</div>'}
+      ${pastTodo.length ? `<div onclick="thwShowPast=!thwShowPast;thwRender()" style="cursor:pointer;margin:8px 0 4px;padding:7px 10px;border-radius:3px;background:#fdf1e6;border:1px solid #e8c9a8;color:#a0521a;font-size:11px;font-weight:600">⚠ 以前的作业还有 ${pastN} 份未批改 <span style="float:right;font-weight:400">${thwShowPast?'▾':'▸'}</span></div>${thwShowPast ? pastTodo.map(item).join('') : ''}` : ''}
+      ${early.length ? sec('提前提交') + early.map(item).join('') : ''}
+      ${pastDone.length ? `<div onclick="thwShowDone=!thwShowDone;thwRender()" style="cursor:pointer;font-size:10px;color:var(--text-3);padding:8px 4px 2px;text-decoration:underline">${thwShowDone?'收起':'查看'}已批完的以前作业（${pastDone.length}）</div>${thwShowDone ? pastDone.map(item).join('') : ''}` : ''}
     </div>
     <div style="flex:1 1 460px;min-width:0" id="thw_main">${thwMainHtml()}</div>
   </div>`;
@@ -114,11 +128,11 @@ function thwMainHtml() {
         <button onclick="thwPrintAll()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">🖨 打印 / 存为 PDF</button>
       </div>
       <div style="display:flex;flex-direction:column;gap:5px">
-        ${subs.map(x => `<div onclick="thwOpenStudent='${x.id}';thwRenderMain()" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border-light);border-radius:3px">
+        ${subs.map(x => `<div onclick="thwOpenStudent='${x.id}';thwPendingFile=null;thwRenderMain()" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border-light);border-radius:3px">
           <span style="font-size:12px;font-weight:600">${thwEsc(x.student_name)}</span>
           <span style="font-size:9px;color:var(--text-3)">${fmtJst(x.submitted_at)}</span>
           <span style="font-size:9px;color:var(--text-3)">${x.level?`【${thwEsc(x.level)}】`:''}${(x.answers||[]).filter(a=>a.text||(a.images||[]).length).length} 处作答${x.whole_file_url?' · 📎附件':''}</span>
-          <span style="margin-left:auto;font-size:10px;color:${x.teacher_feedback?'var(--ok)':'var(--warn,#b8860b)'}">${x.teacher_feedback?'✓ 已批改':'待批改'}</span>
+          <span style="margin-left:auto;font-size:10px;color:${hwFeedbacks(x).length?'var(--ok)':'var(--warn,#b8860b)'}">${hwFeedbacks(x).length?'✓ '+thwEsc(hwGradedBy(x).join('、')||'已批改'):'待批改'}</span>
         </div>`).join('')}
       </div>
     </div>`;
@@ -140,22 +154,31 @@ function thwMainHtml() {
       ${thwPaperHtml(s, sub, false)}
     </div>
     <div style="margin-top:12px;border-top:1px solid var(--border-light);padding-top:10px">
-      <div style="font-size:11px;font-weight:600;margin-bottom:8px">✍ 批改反馈（学生可见）</div>
+      ${(() => {
+        const all = hwFeedbacks(sub);
+        return all.length ? `<div style="font-size:11px;font-weight:600;margin-bottom:6px">已有批改（${all.length}）</div>${hwFeedbackCardsHtml(all, { mine: teacherData.name })}` : '';
+      })()}
+      ${(() => {
+        const mine = hwFeedbacks(sub).filter(f => f.by === teacherData.name).pop() || null;
+        const v = k => thwEsc(mine ? (mine[k] || '') : '');
+        const hasFile = thwPendingFile || (mine && mine.file_url);
+        return `<div style="font-size:11px;font-weight:600;margin:8px 0">${mine ? '✍ 编辑我的批改（学生可见）' : '✍ 添加我的批改（学生可见）'}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
         <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">📚 知识掌握情况</label>
-          <textarea id="thw_know" rows="3" placeholder="例：基本概念掌握扎实，第3题的模型推导仍有偏差" style="width:100%;font-size:11px;line-height:1.8;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${thwEsc(sub.feedback_knowledge)}</textarea></div>
+          <textarea id="thw_know" rows="3" placeholder="例：基本概念掌握扎实，第3题的模型推导仍有偏差" style="width:100%;font-size:11px;line-height:1.8;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${v('knowledge')}</textarea></div>
         <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">🧭 学习态度</label>
-          <textarea id="thw_att" rows="3" placeholder="例：书写工整、按时提交；部分题目略显敷衍" style="width:100%;font-size:11px;line-height:1.8;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${thwEsc(sub.feedback_attitude)}</textarea></div>
+          <textarea id="thw_att" rows="3" placeholder="例：书写工整、按时提交；部分题目略显敷衍" style="width:100%;font-size:11px;line-height:1.8;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${v('attitude')}</textarea></div>
       </div>
       <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">💡 改进建议 / 下一步</label>
-      <textarea id="thw_sug" rows="3" placeholder="例：建议复习教材第4章，下次作业前完成过去问2015年第2题" style="width:100%;font-size:11px;line-height:1.8;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical;margin-bottom:8px">${thwEsc(sub.feedback_suggestions)}</textarea>
+      <textarea id="thw_sug" rows="3" placeholder="例：建议复习教材第4章，下次作业前完成过去问2015年第2题" style="width:100%;font-size:11px;line-height:1.8;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical;margin-bottom:8px">${v('suggestions')}</textarea>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <input id="thw_score" value="${thwEsc(sub.score)}" placeholder="评价/分数（可选）" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;width:140px">
+        <input id="thw_score" value="${v('score')}" placeholder="评价/分数（可选）" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;width:140px">
         <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:5px 12px">📎 上传批改文件（可带批注的 Word）
           <input type="file" accept=".doc,.docx,.pdf,image/*" style="display:none" onchange="thwUploadFile('${sub.id}', this)"></label>
-        <span id="thw_file_tip" style="font-size:10px;color:var(--text-3)">${sub.teacher_file_url?'✓ 已上传批改文件':''}</span>
-        <button onclick="thwSaveFeedback('${sub.id}')" style="margin-left:auto;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存反馈</button>
-      </div>
+        <span id="thw_file_tip" style="font-size:10px;color:var(--text-3)">${hasFile ? '✓ 已上传批改文件' + (thwPendingFile ? '（保存后生效）' : '') : ''}</span>
+        <button onclick="thwSaveFeedback('${sub.id}')" style="margin-left:auto;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">${mine ? '保存修改' : '保存我的批改'}</button>
+      </div>`;
+      })()}
     </div>
   </div>`;
 }
@@ -244,30 +267,49 @@ async function thwUploadFile(subId, input) {
   const tip = document.getElementById('thw_file_tip');
   if (tip) tip.textContent = '上传中…';
   try {
-    const ext = (f.name.split('.').pop() || 'docx').toLowerCase();
+    const ext = (f.name.split('.').pop() || 'docx').toLowerCase().replace(/[^a-z0-9]/g, '') || 'docx';
     const url = await sbUpload('teacher-files', `hw/${subId}-${Date.now()}.${ext}`, f);
-    await sb(`/rest/v1/homework_submissions?id=eq.${subId}`, 'PATCH', { teacher_file_url: url });
-    const sub = (thwSubs[thwOpenSession] || []).find(x => x.id === subId);
-    if (sub) sub.teacher_file_url = url;
-    if (tip) tip.textContent = '✓ 已上传批改文件';
+    thwPendingFile = { url, name: f.name };   // 点「保存」时写进我的这条批改
+    if (tip) tip.textContent = '✓ 已上传批改文件（保存后生效）';
   } catch (e) { if (tip) tip.textContent = '上传失败：' + e.message; }
   input.value = '';
 }
 
+// 多位老师共同批改：每位老师一条（feedbacks 追加；自己的那条可修改），旧字段同步写入最新一条，兼容别处的读取
 async function thwSaveFeedback(subId) {
   const g = id => ((document.getElementById(id) || {}).value || '').trim();
   const know = g('thw_know'), att = g('thw_att'), sug = g('thw_sug'), score = g('thw_score');
   if (!know && !att && !sug) { alert('请至少填写一项反馈'); return; }
-  const patch = {
-    feedback_knowledge: know || null, feedback_attitude: att || null, feedback_suggestions: sug || null,
-    teacher_feedback: [know && '知识掌握：'+know, att && '学习态度：'+att, sug && '改进建议：'+sug].filter(Boolean).join('\n'),
-    score: score || null, graded_by: teacherData.name, graded_at: new Date().toISOString(),
+  const sub = (thwSubs[thwOpenSession] || []).find(x => x.id === subId);
+  if (!sub) return;
+  const me = teacherData.name, now = new Date().toISOString();
+  const list = hwFeedbacks(sub).map(f => Object.assign({}, f));
+  let mine = null;
+  for (let i = list.length - 1; i >= 0; i--) if (list[i].by === me) { mine = list[i]; break; }
+  const fields = { knowledge: know, attitude: att, suggestions: sug, score, text: '' };
+  if (thwPendingFile) { fields.file_url = thwPendingFile.url; fields.file_name = thwPendingFile.name; }
+  if (mine) Object.assign(mine, fields, { edited_at: now });
+  else list.push(Object.assign({ id: 'fb-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), by: me, at: now, file_url: '', file_name: '' }, fields));
+  if (mine && mine.id === 'legacy') mine.id = 'fb-legacy';
+  const latest = list.slice().sort((a, b) => String(a.edited_at || a.at || '').localeCompare(String(b.edited_at || b.at || ''))).pop();
+  const legacy = {
+    feedback_knowledge: latest.knowledge || null, feedback_attitude: latest.attitude || null, feedback_suggestions: latest.suggestions || null,
+    teacher_feedback: [latest.knowledge && '知识掌握：' + latest.knowledge, latest.attitude && '学习态度：' + latest.attitude, latest.suggestions && '改进建议：' + latest.suggestions].filter(Boolean).join('\n') || latest.text || '',
+    score: latest.score || null, graded_by: latest.by, graded_at: latest.edited_at || latest.at,
   };
+  if (latest.file_url) legacy.teacher_file_url = latest.file_url;
   try {
-    await sb(`/rest/v1/homework_submissions?id=eq.${subId}`, 'PATCH', patch);
-    const sub = (thwSubs[thwOpenSession] || []).find(x => x.id === subId);
-    if (sub) Object.assign(sub, patch);
-    alert('反馈已保存，学生可见');
+    let patch = Object.assign({ feedbacks: list }, legacy);
+    try { await sb(`/rest/v1/homework_submissions?id=eq.${subId}`, 'PATCH', patch); }
+    catch (e) {
+      // feedbacks 字段还没建（SQL 未执行）时，退回只写旧字段
+      if (!/feedbacks/.test(e.message)) throw e;
+      patch = legacy;
+      await sb(`/rest/v1/homework_submissions?id=eq.${subId}`, 'PATCH', patch);
+    }
+    Object.assign(sub, patch);
+    thwPendingFile = null;
+    alert('批改已保存，学生可见');
     thwOpenStudent = null;
     thwRender();
   } catch (e) { alert('保存失败：' + e.message); }
