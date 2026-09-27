@@ -174,13 +174,13 @@ async function confirmCourseImport(){
   try{
     for(const r of newRows){
       const courseId=`c-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
-      const course={
+      const course=withCourseDomain({
         id:courseId,name:r.name,major:r.major,period:r.period,
         course_type:r.course_type,teacher:r.teacher,campus:r.campus,
         delivery:r.delivery,weekdays:r.weekdays,time_range:r.time_range,
         total_sessions:r.total_sessions,first_session_date:r.first_session_date||null,
         notes:r.notes
-      };
+      },r.major);
       const res=await sb('/rest/v1/courses','POST',[course]);
       cachedCourses.push(Array.isArray(res)?res[0]:course);
 
@@ -764,12 +764,12 @@ async function openApplyTemplate(templateId){
     const courseId=`c-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
     const fdMonth=parseInt(firstDate.slice(5,7));
     const period=fdMonth<=3?'1月期':fdMonth<=6?'4月期':fdMonth<=9?'7月期':'10月期';
-    await sb('/rest/v1/courses','POST',{
+    await sb('/rest/v1/courses','POST',withCourseDomain({
       id:courseId,name:t.name,major:t.major,course_type:t.course_type,
       weekdays:t.weekdays,time_range:t.time_range,total_sessions:t.total_sessions,
       actual_hours:t.actual_hours,delivery:t.delivery,campus:t.campus,teacher:t.teacher,
       homework_enabled:t.homework_enabled,first_session_date:firstDate,period
-    });
+    },t.major));
 
     const sessions=dates.map((date,i)=>{
       const detail=(t.detail_rows||[]).find(r=>r.num===i+1)||{};
@@ -1311,6 +1311,20 @@ async function publishSelected(confirm_val){
     alert(`已${action} ${ids.length} 门课程`);
   }catch(e){alert('操作失败：'+e.message)}
 }
+// 课程的领域：具体领域视角下 = 当前领域；总览下 = 第一个专业所属的领域（取不到就不写，交给数据库）
+// （数据库 courses.domain 默认是「大学院文科」，不写的话在别的领域新建的课会被标错、在自己的视角里看不到）
+function majorDomainOf(majors){
+  const list=(Array.isArray(majors)?majors:[majors]).filter(Boolean)
+    .flatMap(k=>(typeof MAJOR_GROUPS!=='undefined'&&MAJOR_GROUPS[k])?MAJOR_GROUPS[k]:[k]);
+  const k=list.find(x=>MAJOR_DOMAIN[x]);
+  return k?MAJOR_DOMAIN[k]:'';
+}
+function courseDomainFor(majors){
+  if(CURRENT_DOMAIN&&CURRENT_DOMAIN!=='all') return CURRENT_DOMAIN;
+  return majorDomainOf(majors);
+}
+function withCourseDomain(obj,majors){ const d=courseDomainFor(majors); if(d) obj.domain=d; return obj; }
+
 function openAddCourseModal(editId){
   document.getElementById('addCourseModalTitle').textContent=editId?'编辑课程':'手动添加课程';
   document.getElementById('ac_editing_id').value=editId||'';
@@ -1706,7 +1720,8 @@ async function saveAddCourse(){
   if(!total||!firstDate||!weekdayStr){alert('请填写回数、第一回日期和星期');return}
 
   const majors=acGetMajors();
-  if(!majors.length){alert('请至少选择一个专业');return}
+  // 具体领域视角下可以不选专业（领域按当前视角写入）；总览下必须选专业，才能知道课属于哪个领域
+  if(!majors.length&&!(CURRENT_DOMAIN&&CURRENT_DOMAIN!=='all')){alert('请至少选择一个专业');return}
   const weekdays=parseWeekdays(weekdayStr);
   const dates=generateSessionDatesFromFirst(firstDate,weekdays,total);
   const hasDetails=document.getElementById('ac_has_details').checked;
@@ -1731,6 +1746,11 @@ async function saveAddCourse(){
     needs_recording:document.getElementById('ac_recording').value==='yes',
   };
   // 学部美术：成员模式和班级在这里直接选（其他领域仍在「课程清理 → 学生成员」里管理）
+  if(editingId){
+    // 编辑：专业改到了另一个领域时，领域跟着改
+    const nd=majorDomainOf(majors), cur=cachedCourses.find(c=>c.id===editingId);
+    if(nd&&(!cur||cur.domain!==nd)) courseData.domain=nd;
+  } else withCourseDomain(courseData,majors);
   if(artCourse){
     courseData.member_mode=document.getElementById('ac_member_mode').value||'class';
     courseData.class_ids=courseData.member_mode==='class'?acClassPick.slice():[];
