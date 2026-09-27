@@ -476,6 +476,7 @@
           <div class="filter-chip" data-wd="周六" onclick="this.classList.toggle('active')" style="font-size:12px;padding:5px 12px;cursor:pointer">周六</div>
           <div class="filter-chip" data-wd="周日" onclick="this.classList.toggle('active')" style="font-size:12px;padding:5px 12px;cursor:pointer">周日</div>
         </div>
+        <div id="ac_weekday_actual" style="font-size:10px;color:var(--text-3);margin-top:3px"></div>
       </div>
       <div class="form-group" style="margin:0"><label class="form-label">上课时间 <span style="font-weight:400;color:var(--text-3)">（多个时间段用 / 分隔）</span></label><div style="display:flex;gap:4px"><input id="ac_time_range" placeholder="14:00-18:00" oninput="trAutoHours('ac_time_range','ac_actual_hours')" style="flex:1;min-width:0"><button type="button" onclick="trAddSeg('ac_time_range')" style="font-size:11px;white-space:nowrap;background:none;border:1px solid var(--border);border-radius:2px;padding:0 8px;cursor:pointer;font-family:inherit">＋ 时间段</button></div></div>
       <div class="form-group" style="margin:0"><label class="form-label">课时（小时，用于工资核算）</label><input type="number" id="ac_actual_hours" step="0.5" min="0" placeholder="例：4"></div>
