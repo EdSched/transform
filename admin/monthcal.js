@@ -147,7 +147,9 @@ function mcxGenerate() {
         ${it.teacher ? `<div>${mcxEsc(it.teacher)}老师</div>` : ''}
       </div>`).join('')}</div></td>`;
   };
-  const logo = new URL('../sched/logo.png', location.href).href;
+  // 学部美术用「唯新美術」的 logo，其他领域用唯新 logo
+  const artLogo = isGakubuArtDomain(CURRENT_DOMAIN) || chosen.every(x => isGakubuArtCourse(x.c));
+  const logo = new URL(artLogo ? '../sched/artlogo.png' : '../sched/logo.png', location.href).href;
   const dots = (pos, cols) => `<div class="dots" style="${pos}">${cols.map(c => `<i style="background:${c}"></i>`).join('')}</div>`;
   const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>${mcxEsc(title)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
