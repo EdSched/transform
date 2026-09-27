@@ -1347,3 +1347,91 @@ function hwFeedbackCardsHtml(sub, opts) {
     ${f.file_url ? `<a href="${e(f.file_url)}" target="_blank" style="font-size:10px;color:#b8953a;display:inline-block;margin-top:4px">📎 下载批改文件${f.file_name ? '（' + e(f.file_name) + '）' : ''}</a>` : ''}
   </div>`).join('');
 }
+
+// ══════════════════════════════════
+// 通用月历方格（选择日期的地方一律用它：VIP 预约、面谈预约）
+// opts: {
+//   year, month(1-12), byDate: { 'YYYY-MM-DD': [时段...] }, selected: 'YYYY-MM-DD',
+//   onPick: '全局函数名'（点有时段的日期时调用 fn('YYYY-MM-DD')）,
+//   nav: { prev: bool, next: bool, onShift: '全局函数名' }（可选；传了就在右上角显示「‹ 年月 ›」，调用 fn(-1/1)）,
+//   cellNote: (date, list) => ({ text, full })（可选；格子下方的小字，默认「N个」）,
+//   emptyText: 本月没有任何时段时的提示
+// }
+// ══════════════════════════════════
+function slotCalStyle() {
+  if (typeof document === 'undefined' || document.getElementById('slotCalStyle')) return;
+  const st = document.createElement('style');
+  st.id = 'slotCalStyle';
+  st.textContent = `
+.scal-nav{display:flex;align-items:center;justify-content:flex-end;margin:-4px 0 8px}
+.scal-arrow{font-size:16px;padding:0 8px;user-select:none;color:var(--accent,#3a2e24);cursor:pointer}
+.scal-arrow.off{color:var(--border,#e2ded6);cursor:default}
+.scal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.scal-head{text-align:center;font-size:10px;font-weight:600;color:var(--text-muted,#9a9080);padding:2px 0}
+.scal-head.sat,.scal-cell.sat .scal-d{color:var(--sat,#2a5a9a)}
+.scal-head.sun,.scal-cell.sun .scal-d{color:var(--sun,#9a2a3c)}
+.scal-cell{height:clamp(40px,11vw,52px);border:1px solid transparent;border-radius:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;box-sizing:border-box}
+.scal-d{font-size:13px;font-family:'DM Mono',monospace;line-height:1.1}
+.scal-n{font-size:9px;line-height:1.2;margin-top:2px;white-space:nowrap;overflow:hidden;max-width:100%}
+.scal-cell.none .scal-d{color:var(--text-muted,#9a9080) !important;opacity:.7}
+.scal-cell.past .scal-d{color:var(--border,#e2ded6) !important;opacity:1}
+.scal-cell.has{border-color:var(--accent-mid,#8a7a6e);background:var(--accent-light,#f2ede8);cursor:pointer}
+.scal-cell.has .scal-d{font-weight:600}
+.scal-cell.has .scal-n{color:var(--accent,#3a2e24)}
+.scal-cell.has.full{border-color:var(--border,#e2ded6);background:var(--bg,#f7f5f0)}
+.scal-cell.has.full .scal-n{color:var(--danger,#9a2a3c)}
+.scal-cell.on{border-color:var(--accent,#3a2e24);background:var(--accent,#3a2e24)}
+.scal-cell.on .scal-d,.scal-cell.on .scal-n{color:#fff !important}
+.scal-empty{font-size:12px;color:var(--text-muted,#9a9080);text-align:center;padding:12px 0 4px}
+.scal-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.scal-chip{font-size:12px;padding:6px 10px;border:1px solid var(--border,#e2ded6);border-radius:14px;background:var(--surface,#fff);cursor:pointer;font-family:inherit;color:var(--text-primary,#1a1814);line-height:1.3;text-align:left}
+.scal-chip:hover{border-color:var(--accent-mid,#8a7a6e)}
+.scal-chip.on{border-color:var(--accent,#3a2e24);background:var(--accent,#3a2e24);color:#fff}
+.scal-chip.off{opacity:.45;cursor:not-allowed;background:var(--bg,#f7f5f0)}
+.scal-day-title{font-size:12px;font-weight:600;margin-top:12px}`;
+  document.head.appendChild(st);
+}
+function renderSlotCalendar(opts) {
+  slotCalStyle();
+  const y = +opts.year, m = +opts.month, byDate = opts.byDate || {};
+  const pad = n => String(n).padStart(2, '0');
+  const ym = `${y}-${pad(m)}`;
+  const today = (typeof jstToday === 'function') ? jstToday() : new Date().toISOString().slice(0, 10);
+  const nav = opts.nav
+    ? `<div class="scal-nav"><span class="scal-arrow${opts.nav.prev ? '' : ' off'}" onclick="${opts.nav.prev ? `${opts.nav.onShift}(-1)` : ''}">‹</span><span style="font-size:13px;font-weight:600">${y}年${m}月</span><span class="scal-arrow${opts.nav.next ? '' : ' off'}" onclick="${opts.nav.next ? `${opts.nav.onShift}(1)` : ''}">›</span></div>`
+    : '';
+  const heads = ['一', '二', '三', '四', '五', '六', '日'].map((t, i) => `<div class="scal-head${i === 5 ? ' sat' : i === 6 ? ' sun' : ''}">${t}</div>`).join('');
+  const first = new Date(y, m - 1, 1), days = new Date(y, m, 0).getDate();
+  const lead = (first.getDay() + 6) % 7;   // 周一开头
+  let cells = '';
+  for (let i = 0; i < lead; i++) cells += '<div></div>';
+  let any = false;
+  for (let d = 1; d <= days; d++) {
+    const date = `${ym}-${pad(d)}`, dow = (lead + d - 1) % 7;
+    const list = byDate[date] || [];
+    const wk = dow === 5 ? ' sat' : dow === 6 ? ' sun' : '';
+    if (!list.length) { cells += `<div class="scal-cell ${date < today ? 'past' : 'none'}${wk}"><span class="scal-d">${d}</span></div>`; continue; }
+    any = true;
+    const note = opts.cellNote ? opts.cellNote(date, list) : { text: `${list.length}个` };
+    cells += `<div class="scal-cell has${note.full ? ' full' : ''}${opts.selected === date ? ' on' : ''}${wk}" onclick="${opts.onPick}('${date}')"><span class="scal-d">${d}</span><span class="scal-n">${note.text}</span></div>`;
+  }
+  const trail = (7 - (lead + days) % 7) % 7;
+  for (let i = 0; i < trail; i++) cells += '<div></div>';
+  return `${nav}<div class="scal-grid">${heads}${cells}</div>${any ? '' : `<div class="scal-empty">${opts.emptyText || '本月暂无可预约时间'}</div>`}`;
+}
+// 选中日期下方的时段按钮：opts { date, slots, selectedId, onPick:'全局函数名', text:s=>'', disabled:s=>bool }
+function renderSlotChips(opts) {
+  slotCalStyle();
+  if (!opts.date) return '';
+  const d = new Date(opts.date + 'T12:00:00');
+  return `<div class="scal-day-title">${d.getMonth() + 1}月${d.getDate()}日 ${DAYS_CN[d.getDay()]} 的时段</div>
+  <div class="scal-chips">${(opts.slots || []).map(s => {
+    const off = opts.disabled ? opts.disabled(s) : false;
+    return `<button type="button" class="scal-chip${off ? ' off' : ''}${opts.selectedId === s.id ? ' on' : ''}" data-sid="${s.id}" ${off ? 'disabled' : `onclick="${opts.onPick}('${s.id}')"`}>${opts.text(s)}</button>`;
+  }).join('')}</div>`;
+}
+// 选中某个时段后只切换按钮高亮，不重绘（避免把已填内容冲掉）
+function slotChipsMark(container, id) {
+  if (!container) return;
+  container.querySelectorAll('.scal-chip').forEach(b => b.classList.toggle('on', b.dataset.sid === String(id)));
+}
