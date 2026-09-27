@@ -407,21 +407,65 @@ function renderBookingManagement(mc) {
 }
 
 // VIP 预约渲染（供「VIP管理 → 预约」调用）
+let tvbWaitOpen = true, tvbDoneOpen = false, tvbDoneStu = '', tvbDoneYM = '';
 function renderTeacherVipBookingsBody() {
-  const vipBookings = cachedTeacherBookings.filter(b => b.type === 'vip');
-  return `
+  const vipBookings = cachedTeacherBookings.filter(b => b.type === 'vip' && b.status !== 'cancelled');
+  // 待学生确认：已填上课记录、学生还没确认；已完成：学生已确认（或旧数据里已完成但没有记录的）
+  const waiting = vipBookings.filter(b => b.vip_session_notes && !b.student_confirmed);
+  const waitIds = new Set(waiting.map(b => b.id));
+  const done = vipBookings.filter(b => isVipDone(b) && !waitIds.has(b.id)).sort((x, y) => (y.slot_date || '').localeCompare(x.slot_date || ''));
+  const confirmed = vipBookings.filter(b => b.status === 'confirmed' && !waitIds.has(b.id) && !b.student_confirmed);
+  const head = (t) => `<div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">${t}</div>`;
+  const empty = (t) => `<div style="font-size:12px;color:var(--text-3);padding:12px 0">${t}</div>`;
+  const fold = (open, fn, t) => `<div onclick="${fn}" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-weight:600;padding:8px 0;border-top:1px solid var(--border);user-select:none"><span style="color:var(--text-3);width:10px">${open ? '▾' : '▸'}</span>${t}</div>`;
+  // 已完成：学生 + 月份筛选
+  if (!tvbDoneYM) tvbDoneYM = new Date().toISOString().slice(0, 7);
+  const stuKey = b => b.student_id || ('n:' + (b.name || ''));
+  const stuMap = {}; done.forEach(b => { if (!stuMap[stuKey(b)]) stuMap[stuKey(b)] = b.name || '（未命名）'; });
+  if (tvbDoneStu && !stuMap[tvbDoneStu]) tvbDoneStu = '';
+  const doneShown = done.filter(b => (!tvbDoneStu || stuKey(b) === tvbDoneStu) && (b.slot_date || '').startsWith(tvbDoneYM));
+  const [dy, dm] = tvbDoneYM.split('-').map(Number);
+  const arrow = (d, t) => `<span onclick="tvbDoneShift(${d})" style="cursor:pointer;color:var(--accent);font-size:15px;padding:0 8px;user-select:none">${t}</span>`;
+  return `<div id="tvbk_body">
     <div style="margin-bottom:16px">
-      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">待确认VIP预约</div>
-      ${vipBookings.filter(b => b.status === 'pending').length ? vipBookings.filter(b => b.status === 'pending').map(b => renderMyVipRow(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无待确认VIP预约</div>'}
+      ${head('待确认VIP预约')}
+      ${vipBookings.filter(b => b.status === 'pending').length ? vipBookings.filter(b => b.status === 'pending').map(b => renderMyVipRow(b)).join('') : empty('暂无待确认VIP预约')}
+    </div>
+    <div style="margin-bottom:16px">
+      ${head('已确认VIP预约')}
+      ${confirmed.length ? confirmed.map(b => renderMyVipRow(b)).join('') : empty('暂无已确认VIP预约')}
+    </div>
+    <div style="margin-bottom:8px">
+      ${fold(tvbWaitOpen, 'tvbToggle(\'wait\')', `⏳ 待学生确认 <span style="font-weight:400;color:var(--text-3)">${waiting.length} 节</span>`)}
+      ${tvbWaitOpen ? (waiting.length ? waiting.map(b => renderMyVipRow(b)).join('') : empty('没有等待学生确认的课程')) : ''}
     </div>
     <div>
-      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">已确认VIP预约</div>
-      ${vipBookings.filter(b => b.status === 'confirmed').length ? vipBookings.filter(b => b.status === 'confirmed').map(b => renderMyVipRow(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已确认VIP预约</div>'}
+      ${fold(tvbDoneOpen, 'tvbToggle(\'done\')', `✓ 已完成（学生已确认） <span style="font-weight:400;color:var(--text-3)">共 ${done.length} 节</span>`)}
+      ${tvbDoneOpen ? `
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 0 10px">
+        <select onchange="tvbDoneStu=this.value;tvbRerender()" style="font-size:12px;padding:4px 8px;font-family:inherit">
+          <option value="">全部学生</option>
+          ${Object.entries(stuMap).sort((x, y) => x[1].localeCompare(y[1], 'zh')).map(([k, n]) => `<option value="${String(k).replace(/"/g, '&quot;')}"${k === tvbDoneStu ? ' selected' : ''}>${String(n).replace(/</g, '&lt;')}</option>`).join('')}
+        </select>
+        <div style="margin-left:auto;display:flex;align-items:center">${arrow(-1, '‹')}<span style="font-size:13px;font-weight:600">${dy}年${dm}月</span>${arrow(1, '›')}</div>
+      </div>
+      ${doneShown.length ? `<div style="font-size:11px;color:var(--text-3);margin-bottom:6px">本月 ${doneShown.length} 节</div>` + doneShown.map(b => renderMyVipRow(b)).join('') : empty('这个月没有已完成的课程')}` : ''}
     </div>
-    <div style="margin-top:16px">
-      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">已完成VIP预约</div>
-      ${vipBookings.filter(b => isVipDone(b)).length ? vipBookings.filter(b => isVipDone(b)).map(b => renderMyVipRow(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已完成VIP预约</div>'}
-    </div>`;
+  </div>`;
+}
+function tvbRerender() {
+  const el = document.getElementById('tvbk_body');
+  if (el) el.outerHTML = renderTeacherVipBookingsBody();
+}
+function tvbToggle(k) {
+  if (k === 'wait') tvbWaitOpen = !tvbWaitOpen; else tvbDoneOpen = !tvbDoneOpen;
+  tvbRerender();
+}
+function tvbDoneShift(d) {
+  const [y, m] = (tvbDoneYM || new Date().toISOString().slice(0, 7)).split('-').map(Number);
+  const dt = new Date(y, m - 1 + d, 1);
+  tvbDoneYM = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
+  tvbRerender();
 }
 
 function setTeacherBkSection(s) {
