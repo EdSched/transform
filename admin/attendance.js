@@ -283,7 +283,7 @@ async function loadAdminHwPanel(sessionId) {
       <span style="font-size:9px;color:var(--text-3)">${fmtJst(x.submitted_at)}</span>
       ${x.level?`<span style="font-size:9px;color:var(--text-3)">【${x.level}】</span>`:''}
       <span style="font-size:9px;color:var(--text-3)">${(x.answers||[]).filter(a=>a.text||(a.images||[]).length).length} 处作答${x.whole_file_url?' · 📎附件':''}</span>
-      ${x.teacher_feedback||x.feedback_knowledge?`<span style="font-size:9px;color:var(--ok)">✓ 已批改${x.graded_by?`（${x.graded_by}）`:''}</span>`:'<span style="font-size:9px;color:var(--warn,#b8860b)">待批改</span>'}
+      ${hwFeedbacks(x).length?`<span style="font-size:9px;color:var(--ok)">✓ 已批改${hwGradedBy(x).length?`（${admEsc(hwGradedBy(x).join('、'))}）`:''}</span>`:'<span style="font-size:9px;color:var(--warn,#b8860b)">待批改</span>'}
       <span style="margin-left:auto;display:flex;gap:4px">
         <button onclick="admHwPrint('${sessionId}','${x.id}')" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 9px;cursor:pointer;font-family:inherit">打印</button>
         <button onclick="admHwWord('${sessionId}','${x.id}')" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 9px;cursor:pointer;font-family:inherit">Word</button>
@@ -345,13 +345,17 @@ function admHwPaper(s, sub, forPrint) {
           ${!it.text && !(it.images||[]).length?'<div style="font-size:11px;color:#aaa">（未作答）</div>':''}
         </div>`).join('')}
   </div>`).join('')}
-  ${(sub.feedback_knowledge||sub.feedback_attitude||sub.feedback_suggestions||sub.teacher_feedback)?`
+  ${hwFeedbacks(sub).length?`
   <div style="margin-top:16px;border-top:1px solid #ccc;padding-top:8px">
-    <div style="font-size:11px;font-weight:700;margin-bottom:4px">老师批改${sub.score?` · ${admEsc(sub.score)}`:''}${sub.graded_by?`（${admEsc(sub.graded_by)}）`:''}</div>
-    ${sub.feedback_knowledge?`<div style="font-size:11px">知识掌握：${admEsc(sub.feedback_knowledge)}</div>`:''}
-    ${sub.feedback_attitude?`<div style="font-size:11px">学习态度：${admEsc(sub.feedback_attitude)}</div>`:''}
-    ${sub.feedback_suggestions?`<div style="font-size:11px">改进建议：${admEsc(sub.feedback_suggestions)}</div>`:''}
-    ${(!sub.feedback_knowledge&&sub.teacher_feedback)?`<div style="font-size:11px;white-space:pre-wrap">${admEsc(sub.teacher_feedback)}</div>`:''}
+    <div style="font-size:11px;font-weight:700;margin-bottom:4px">老师批改（${hwFeedbacks(sub).length}）</div>
+    ${hwFeedbacks(sub).map(f=>`<div style="margin-bottom:8px;padding-left:8px;border-left:2px solid #b8d8bc">
+      <div style="font-size:11px;font-weight:700">${admEsc(f.by||'老师')}${f.at?` · ${admEsc(fmtJst(f.at))}`:''}${f.score?` · ${admEsc(f.score)}`:''}</div>
+      ${f.knowledge?`<div style="font-size:11px">知识掌握：${admEsc(f.knowledge)}</div>`:''}
+      ${f.attitude?`<div style="font-size:11px">学习态度：${admEsc(f.attitude)}</div>`:''}
+      ${f.suggestions?`<div style="font-size:11px">改进建议：${admEsc(f.suggestions)}</div>`:''}
+      ${f.text?`<div style="font-size:11px;white-space:pre-wrap">${admEsc(f.text)}</div>`:''}
+      ${f.file_url?`<div style="font-size:11px">批改文件：<a href="${admEsc(f.file_url)}">${admEsc(f.file_name||'下载')}</a></div>`:''}
+    </div>`).join('')}
   </div>`:''}`;
 }
 

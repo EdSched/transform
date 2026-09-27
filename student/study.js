@@ -1565,8 +1565,9 @@ async function loadStudyHwSessions(retry) {
     : SHAKAI_GROUP.includes(myMajor) ? [myMajor, 'shakai_group'] : [myMajor];
   try {
     const today = new Date();
-    const from = new Date(today); from.setDate(today.getDate() - 60);
-    const to = new Date(today); to.setDate(today.getDate() + 21);
+    // 只要「当期」：先取前后约 100 天，再按 inCurrentPeriod 精确过滤（下一期的作业不显示）
+    const from = new Date(today); from.setDate(today.getDate() - 100);
+    const to = new Date(today); to.setDate(today.getDate() + 100);
     const fmt = d => d.toISOString().slice(0, 10);
     const [sessions, subs, myMembers] = await Promise.all([
       sb(`/rest/v1/course_sessions?session_date=gte.${fmt(from)}&session_date=lte.${fmt(to)}&homework_enabled=is.true&select=*&order=session_date.desc`).catch(() => []),
@@ -1586,6 +1587,7 @@ async function loadStudyHwSessions(retry) {
       const q = s.homework_questions;
       const hasQ = Array.isArray(q) ? q.length > 0 : !!(q && Array.isArray(q.levels) && q.levels.length);
       if (!hasQ) return false;
+      if (!inCurrentPeriod(s.session_date)) return false;
       const c = cMap[s.course_id];
       if (c) return studentInCourse(me, Object.assign({}, c, { major: (c.major && c.major.length) ? c.major : s.major }), myMembers);
       const sm = Array.isArray(s.major) ? s.major : [s.major || ''];
@@ -1617,29 +1619,50 @@ function fmtJst(ts) {
   } catch (e) { return String(ts).slice(0, 16).replace('T', ' '); }
 }
 
-function hwGraded(sub) { return !!(sub && (sub.teacher_feedback || sub.feedback_knowledge || sub.feedback_attitude || sub.feedback_suggestions)); }
+function hwGraded(sub) { return hwFeedbacks(sub).length > 0; }
 
+// 作业按周分三块：本周（展开）/ 以前的作业（折叠，可补交）/ 之后的作业（折叠，可提前完成）；每周自动轮换
+let hwShowPast = false, hwShowFuture = false;
 function renderHwList() {
   const wrap = document.getElementById('study_hw_sessions_wrap');
   if (!wrap) return;
-  if (!hwSessions.length) { wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:10px 0">暂无布置的作业</div>'; return; }
-  wrap.innerHTML = hwSessions.map(s => {
+  if (!hwSessions.length) { wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:10px 0">当期暂无布置的作业</div>'; return; }
+  const wk = weekRange();
+  const byDate = (a, b) => String(a.session_date || '').localeCompare(String(b.session_date || ''));
+  const cur = hwSessions.filter(s => s.session_date >= wk.start && s.session_date <= wk.end).sort(byDate);
+  const past = hwSessions.filter(s => s.session_date < wk.start).sort((a, b) => byDate(b, a));
+  const future = hwSessions.filter(s => s.session_date > wk.end).sort(byDate);
+  if (hwOpenId && past.some(s => s.id === hwOpenId)) hwShowPast = true;
+  if (hwOpenId && future.some(s => s.id === hwOpenId)) hwShowFuture = true;
+  const missing = past.filter(s => !hwSubs[s.id]).length;
+  const head = (label, on, fn, sub) => `<div onclick="${fn}" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:7px 2px;margin:8px 0 4px;border-bottom:1px solid var(--border-light)">
+      <span style="font-size:12px;font-weight:600">${label}</span>${sub || ''}<span style="margin-left:auto;font-size:10px;color:var(--text-muted)">${on ? '▾ 收起' : '▸ 展开'}</span></div>`;
+  wrap.innerHTML = `
+    <div style="font-size:12px;font-weight:600;padding:2px 2px 6px">本周作业 <span style="font-size:11px;font-weight:400;color:var(--text-muted)">${wk.label}</span></div>
+    ${cur.length ? cur.map(hwRowHtml).join('') : '<div style="font-size:11px;color:var(--text-muted);padding:4px 2px 8px">本周没有布置作业</div>'}
+    ${past.length ? head(`以前的作业`, hwShowPast, 'hwShowPast=!hwShowPast;renderHwList()', ` <span style="font-size:11px;color:${missing ? 'var(--danger)' : 'var(--text-muted)'}">· 未交 ${missing} 份</span>`) + (hwShowPast ? past.map(hwRowHtml).join('') : '') : ''}
+    ${future.length ? head('之后的作业（可提前完成）', hwShowFuture, 'hwShowFuture=!hwShowFuture;renderHwList()', ` <span style="font-size:11px;color:var(--text-muted)">· ${future.length} 份</span>`) + (hwShowFuture ? future.map(hwRowHtml).join('') : '') : ''}`;
+  renderHwArchive();
+}
+function hwRowHtml(s) {
     const sub = hwSubs[s.id];
     const open = hwOpenId === s.id;
     const graded = hwGraded(sub);
+    const wk = weekRange();
+    const late = !sub && s.session_date < wk.start;
+    const statusTxt = graded ? '✓ 已批改' : sub ? '✓ 已提交' : late ? '补交' : '未提交';
+    const statusSty = late ? 'color:#fff;background:var(--danger);border-radius:3px;padding:2px 9px' : `color:${graded?'var(--ok)':sub?'var(--accent)':'var(--text-muted)'}`;
     return `<div style="border:1px solid ${graded?'var(--ok)':sub?'var(--accent)':'var(--border)'};border-radius:4px;margin-bottom:6px;overflow:hidden;background:var(--surface)">
       <div onclick="hwToggle('${s.id}')" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;${open?'background:var(--bg)':''}">
         <div style="flex:1;min-width:0">
           <div style="font-size:12px;font-weight:600">${escA(s.course_name||'')}${s.session_number?` 第${s.session_number}回`:''}</div>
           <div style="font-size:10px;color:var(--text-muted)">${s.session_date||''}${s.session_title?' · '+escA(s.session_title):''}${hwCountLabel(s)}</div>
         </div>
-        <span style="font-size:10px;white-space:nowrap;color:${graded?'var(--ok)':sub?'var(--accent)':'var(--text-muted)'}">${graded?'✓ 已批改':sub?'✓ 已提交':'未提交'}</span>
+        <span style="font-size:10px;white-space:nowrap;${statusSty}">${statusTxt}${graded && hwGradedBy(sub).length ? ` <span style="color:var(--text-muted)">${escA(hwGradedBy(sub).join('、'))}</span>` : ''}</span>
         <span style="font-size:10px;color:var(--text-muted)">${open?'▾':'▸'}</span>
       </div>
       ${open?`<div style="border-top:1px solid var(--border-light);padding:12px 14px;background:var(--bg)">${hwDetailHtml(s, sub)}</div>`:''}
     </div>`;
-  }).join('');
-  renderHwArchive();
 }
 
 function hwToggle(sid) {
@@ -1712,14 +1735,7 @@ function hwDetailHtml(s, sub) {
   return `
   ${s.homework_note?`<div style="font-size:11px;color:var(--text-2);background:var(--surface);border-left:3px solid var(--accent);padding:8px 12px;margin-bottom:10px;white-space:pre-wrap">${escA(s.homework_note)}</div>`:''}
   ${N.refs.length?`<div style="font-size:11px;margin-bottom:10px">📚 参考资料：${N.refs.map(r=>`<span onclick="hwPreview('${escA(r.url)}','${escA(r.name||'资料')}')" style="color:var(--accent);margin-right:10px;cursor:pointer;text-decoration:underline">${escA(r.name||'资料')}</span>`).join('')}</div>`:''}
-  ${hwGraded(sub)?`<div style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:3px;padding:10px 12px;margin-bottom:10px">
-    <div style="font-size:10px;color:var(--ok);font-weight:600;margin-bottom:4px">✓ 老师批改${sub.score?` · ${escA(sub.score)}`:''}</div>
-    ${sub.feedback_knowledge?`<div style="font-size:11px;color:var(--text-2);line-height:1.9"><span style="color:var(--text-muted)">知识掌握：</span>${escA(sub.feedback_knowledge)}</div>`:''}
-    ${sub.feedback_attitude?`<div style="font-size:11px;color:var(--text-2);line-height:1.9"><span style="color:var(--text-muted)">学习态度：</span>${escA(sub.feedback_attitude)}</div>`:''}
-    ${sub.feedback_suggestions?`<div style="font-size:11px;color:var(--text-2);line-height:1.9"><span style="color:var(--text-muted)">改进建议：</span>${escA(sub.feedback_suggestions)}</div>`:''}
-    ${sub.teacher_feedback&&!sub.feedback_knowledge?`<div style="font-size:11px;color:var(--text-2);line-height:1.9;white-space:pre-wrap">${escA(sub.teacher_feedback)}</div>`:''}
-    ${sub.teacher_file_url?`<a href="${escA(sub.teacher_file_url)}" target="_blank" style="font-size:10px;color:var(--accent);display:inline-block;margin-top:6px">📎 下载批改文件</a>`:''}
-  </div>`:''}
+  ${hwGraded(sub)?`<div style="margin-bottom:10px"><div style="font-size:10px;color:var(--ok);font-weight:600;margin-bottom:4px">老师批改（${hwFeedbacks(sub).length}）</div>${hwFeedbackCardsHtml(sub)}</div>`:''}
   ${levels.length>1?`<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
     <span style="font-size:10px;color:var(--text-muted)">作业级别：</span>
     ${levels.map((x,i)=>`<span onclick="${locked?'':`hwLevelPick['${s.id}']=${i};hwRerender()`}" style="font-size:10px;padding:3px 10px;border-radius:2px;cursor:${locked?'default':'pointer'};border:1px solid ${i===li?'var(--accent)':'var(--border)'};background:${i===li?'var(--accent)':'var(--surface)'};color:${i===li?'#fff':'var(--text-secondary)'}">${escA(x.key||'不分级别')}</span>`).join('')}
@@ -2165,8 +2181,7 @@ function renderHwArchive() {
       ${list.sort((a,b)=>String(a.session_date).localeCompare(String(b.session_date))).map(x => `
       <div style="font-size:10px;line-height:1.9;padding:5px 0;border-top:1px dashed var(--border-light)">
         <span style="color:var(--text-muted)">${x.session_date||''}${x.session_number?` 第${x.session_number}回`:''}</span>
-        ${x.score?`<span style="background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:0 6px;margin-left:6px;font-weight:600">${escA(x.score)}</span>`:''}
-        <div style="color:var(--text-secondary);white-space:pre-wrap;margin-top:2px">${escA(x.feedback_knowledge||x.teacher_feedback||'')}${x.feedback_suggestions?`\n💡 ${escA(x.feedback_suggestions)}`:''}</div>
+        ${hwFeedbacks(x).map(f => `<div style="color:var(--text-secondary);white-space:pre-wrap;margin-top:2px"><span style="color:var(--ok)">${escA(f.by||'老师')}</span>${f.score?`<span style="background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:0 6px;margin-left:6px;font-weight:600">${escA(f.score)}</span>`:''}：${escA(f.knowledge||f.text||'')}${f.suggestions?`\n💡 ${escA(f.suggestions)}`:''}</div>`).join('')}
       </div>`).join('')}
     </div>`).join('')}
   </div>`;
