@@ -76,10 +76,7 @@ function renderAttendancePage(mc){
   });
   // 期数：用季度(effectivePeriod)+年份，只列本视角课实际有的
   const periods=[...new Set(
-    viewCourses.filter(c=>c.first_session_date).map(c=>{
-      const y=c.first_session_date.slice(0,4);
-      return y+'年'+effectivePeriod(c);
-    })
+    viewCourses.filter(c=>c.first_session_date).map(c=>periodKeyOf(c))
   )].sort();
   const types=[...new Set(viewCourses.map(c=>c.course_type).filter(Boolean))];
   // 校区：只列本视角课实际有的
@@ -96,10 +93,7 @@ function renderAttendancePage(mc){
   if(attTypeFilter) filteredCourses=filteredCourses.filter(c=>c.course_type===attTypeFilter);
   if(attCampusFilter) filteredCourses=filteredCourses.filter(c=>c.campus===attCampusFilter);
   if(attPeriodFilter){
-    filteredCourses=filteredCourses.filter(c=>{
-      const y=c.first_session_date?.slice(0,4)||'';
-      return y+'年'+effectivePeriod(c)===attPeriodFilter;
-    });
+    filteredCourses=filteredCourses.filter(c=>periodKeyOf(c)===attPeriodFilter);
   }
   const seen=new Set();
   filteredCourses=filteredCourses.filter(c=>{if(seen.has(c.id))return false;seen.add(c.id);return true});

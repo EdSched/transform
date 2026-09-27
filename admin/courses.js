@@ -339,7 +339,7 @@ function renderCourseCleanupPage(mc){
   filtered.forEach(c=>{
     const year=c.first_session_date?c.first_session_date.slice(0,4):'未知年份';
     const period=effectivePeriod(c)||'未设期数';
-    const key=`${year}年 ${period}`;
+    const key=/^\d{4}年/.test(period)?period:`${year}年 ${period}`;   // 学部美术的期数本身就是「2026年9月」
     if(!groups[key]) groups[key]={key,year,period,courses:[]};
     groups[key].courses.push(c);
   });
@@ -728,7 +728,7 @@ async function tplSaveEdit(id){
       homework_note: prev.homework_note||null };
   });
   const patch={
-    name, teacher:g('te_teacher').trim(), weekdays:g('te_weekdays').trim(), time_range:g('te_time').trim(),
+    name, teacher:g('te_teacher').trim(), weekdays:g('te_weekdays').trim(), time_range:normalizeTimeRanges(g('te_time')),
     total_sessions:parseInt(g('te_total'))||null, actual_hours:parseFloat(g('te_hours'))||null,
     delivery:g('te_delivery'), campus:g('te_campus').trim(), course_type:g('te_type').trim(),
     detail_rows,
@@ -802,7 +802,9 @@ function renderCoursesPage(mc){
   // 锁定在具体领域（领域账号/切换视角进入）：默认显示该领域全部课（不管领域有没有建专业）
   else if(CURRENT_DOMAIN && CURRENT_DOMAIN!=='all' && coursesMajorFilter==='none') coursesMajorFilter='all';
 
-  const curPeriod=currentPeriodKey();
+  // 学部美术视角下「期数」按月份：当前期 = 本月
+  const artView=isGakubuArtDomain(CURRENT_DOMAIN);
+  const curPeriod=artView?monthPeriodOf(new Date().toISOString().slice(0,10)):currentPeriodKey();
   // 领域感知筛选：
   //  - coursesMajorFilter==='none'：未选专业，不显示任何课（初始态，避免满屏）
   //  - 非总览视角：先限定在当前领域 CURRENT_DOMAIN 的课
@@ -821,17 +823,15 @@ function renderCoursesPage(mc){
   const statusOk=c=>coursesArchiveFilter==='all'||(coursesArchiveFilter==='ended'?courseIsEnded(c):!courseIsEnded(c));
   const allPeriods=[...new Map(cachedCourses
     .filter(c=>c.first_session_date&&statusOk(c))
-    .map(c=>{const year=c.first_session_date.slice(0,4);const per=effectivePeriod(c);const key=`${year}年${per}`;return [key,{key,period:per,year}]})
-  ).values()].sort((a,b)=>a.key.localeCompare(b.key));
+    .map(c=>{const year=c.first_session_date.slice(0,4);const per=effectivePeriod(c);const key=periodKeyOf(c);return [key,{key,period:per,year}]})
+  ).values()].sort((a,b)=>a.key.localeCompare(b.key,'zh',{numeric:true}));
   // 选中的期因切换状态不在列表里了：回到当前期（当前期也没有这种状态的课就回到全部）
   if(coursesPeriodFilter!=='current'&&coursesPeriodFilter!=='all'&&!allPeriods.some(p=>p.key===coursesPeriodFilter)){
-    coursesPeriodFilter=cachedCourses.some(c=>statusOk(c)&&effectivePeriod(c)===curPeriod)?'current':'all';
+    coursesPeriodFilter=cachedCourses.some(c=>statusOk(c)&&courseInCurrentPeriod(c))?'current':'all';
   }
-  if(coursesPeriodFilter==='current') filtered=filtered.filter(c=>effectivePeriod(c)===curPeriod);
+  if(coursesPeriodFilter==='current') filtered=filtered.filter(c=>courseInCurrentPeriod(c));
   else if(coursesPeriodFilter!=='all'){
-    const [filterYear,filterPeriod]=coursesPeriodFilter.match(/(\d{4})年(.+)/)?.slice(1)||[];
-    if(filterYear&&filterPeriod) filtered=filtered.filter(c=>effectivePeriod(c)===filterPeriod&&c.first_session_date?.startsWith(filterYear));
-    else filtered=filtered.filter(c=>effectivePeriod(c)===coursesPeriodFilter);
+    filtered=filtered.filter(c=>periodKeyOf(c)===coursesPeriodFilter||effectivePeriod(c)===coursesPeriodFilter);
   }
   // 课程属性筛选
   if(coursesTypeFilter==='专业课') filtered=filtered.filter(c=>c.course_type&&!c.course_type.includes('共通')&&!c.course_type.includes('VIP'));
@@ -848,6 +848,7 @@ function renderCoursesPage(mc){
     <div style="display:flex;gap:8px;align-items:center">
       <button class="btn btn-ok btn-sm" onclick="openPublishModal()" style="background:var(--ok);color:#fff;border:none">📢 发布管理</button>
       <button class="btn btn-outline btn-sm" onclick="openWeeklyNotice()">📣 每周通知</button>
+      <button class="btn btn-outline btn-sm" onclick="openMonthCalExport()">🗓 导出月课表</button>
       <button class="btn btn-outline btn-sm" onclick="openScheduleShare()">🗓 学生课表</button>
       <button class="btn btn-primary btn-sm" onclick="openAddCourseModal()">＋ 手动添加</button>
       <button class="btn btn-outline btn-sm" onclick="exportCoursesExcel()">↓ 导出 Excel</button>
@@ -873,9 +874,9 @@ function renderCoursesPage(mc){
       </div>
     </div>
     <div>
-      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">期数</div>
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">${artView?'月份':'期数'}</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
-        <div class="filter-chip${coursesPeriodFilter==='current'?' active':''}" onclick="setCoursesPeriod('current',this)" style="font-size:11px;padding:3px 10px">当前期（${curPeriod}）</div>
+        <div class="filter-chip${coursesPeriodFilter==='current'?' active':''}" onclick="setCoursesPeriod('current',this)" style="font-size:11px;padding:3px 10px">${artView?'本月':'当前期'}（${curPeriod}）</div>
         ${allPeriods.map(p=>`<div class="filter-chip${coursesPeriodFilter===p.key?' active':''}" onclick="setCoursesPeriod('${p.key}',this)" style="font-size:11px;padding:3px 10px">${p.key}</div>`).join('')}
         <div class="filter-chip${coursesPeriodFilter==='all'?' active':''}" onclick="setCoursesPeriod('all',this)" style="font-size:11px;padding:3px 10px">全部</div>
       </div>
@@ -949,6 +950,7 @@ function renderCoursesSummary(courses){
             ${course.first_session_date?`<span style="font-size:10px;opacity:.6;background:rgba(0,0,0,.08);border-radius:2px;padding:1px 5px">${course.first_session_date.slice(0,4)}年</span>`:''}
             ${(course.major||[]).length>1?`<span style="font-size:9px;opacity:.6">${(course.major||[]).map(m=>MAJORS[m]||m).join('・')}</span>`:''}
             ${course.teacher?`<span style="font-size:10px;opacity:.75">👤 ${course.teacher}</span>`:''}
+            ${typeof classTagsHtml==='function'?classTagsHtml(course.class_ids):''}
             ${course.campus?`<span style="font-size:10px;opacity:.75">📍 ${course.campus}</span>`:''}
             ${course.delivery?`<span style="font-size:10px;opacity:.75">${course.delivery.includes('线下')&&course.delivery.includes('线上')?'🔀':course.delivery==='线下'?'🏫':'💻'} ${course.delivery}</span>`:''}
             ${course.time_range?`<span style="font-size:10px;opacity:.75">⏰ ${course.time_range}</span>`:''}
@@ -1363,9 +1365,64 @@ function openAddCourseModal(editId){
     toggleAcDetails(false);
   }
   if(typeof acRenderHolidayExcept==='function') acRenderHolidayExcept();
+  acArtSetup(editId?cachedCourses.find(x=>x.id===editId):null);
   document.getElementById('addCourseModal').classList.add('open');
 }
 
+// ── 学部美术：期数换成月份、成员默认按班级 ──
+let acArtEditing=null;
+// 当前弹窗里的课是不是学部美术：勾了专业就看专业；没勾专业看正在编辑的课 / 当前领域视角
+function acIsArt(){
+  const ms=acGetMajors();
+  if(ms.length) return ms.every(isGakubuArtMajor);
+  if(acArtEditing) return isGakubuArtCourse(acArtEditing);
+  return isGakubuArtDomain(CURRENT_DOMAIN);
+}
+function acMonthOptions(sel){
+  const now=new Date(), out=[];
+  for(let i=-3;i<=12;i++){ const d=new Date(now.getFullYear(),now.getMonth()+i,1); out.push(`${d.getFullYear()}年${d.getMonth()+1}月`); }
+  if(sel&&!out.includes(sel)) out.unshift(sel);
+  return out;
+}
+function acArtSetup(c){
+  acArtEditing=c||null;
+  const mSel=document.getElementById('ac_month');
+  const cur=c?effectivePeriod(Object.assign({},c,{domain:c.domain||'学部美术'})):'';
+  const def=cur&&/^\d{4}年\d+月$/.test(cur)?cur:monthPeriodOf((document.getElementById('ac_first_date').value)||new Date().toISOString().slice(0,10));
+  if(mSel) mSel.innerHTML=acMonthOptions(def).map(x=>`<option ${x===def?'selected':''}>${x}</option>`).join('');
+  document.getElementById('ac_member_mode').value=c?(courseMemberMode(c)):'class';
+  acClassPick=c?courseClassIds(c):[];
+  if(typeof loadClasses==='function') loadClasses().then(acArtUI); else acArtUI();
+}
+function acArtUI(){
+  const art=acIsArt();
+  document.getElementById('ac_period').style.display=art?'none':'';
+  document.getElementById('ac_month').style.display=art?'':'none';
+  document.getElementById('ac_period_label').textContent=art?'月份 *':'期数 *';
+  document.getElementById('ac_member_box').style.display=art?'':'none';
+  if(art) acMemberRender();
+}
+// 选了月份：首回日期默认这个月 1 号（可以再改）
+function acMonthChange(){
+  const m=/^(\d{4})年(\d+)月$/.exec(document.getElementById('ac_month').value||''); if(!m) return;
+  const ym=`${m[1]}-${String(m[2]).padStart(2,'0')}`;
+  const fd=document.getElementById('ac_first_date');
+  if(!fd.value||!fd.value.startsWith(ym)){ fd.value=ym+'-01'; if(typeof acRenderHolidayExcept==='function') acRenderHolidayExcept(); }
+}
+
+// 上课时间：「＋ 时间段」在文本末尾加 /，接着输入下一段；多段时课时自动按各段相加
+function trAddSeg(id){
+  const el=document.getElementById(id); if(!el) return;
+  const v=el.value.trim();
+  el.value=v&&!/[\/／]$/.test(v)?v+'/':v;
+  el.focus();
+}
+function trAutoHours(trId,hId){
+  const tr=(document.getElementById(trId)||{}).value||'', h=document.getElementById(hId);
+  if(h&&parseTimeRanges(tr).length>1) h.value=timeRangesHours(tr)||'';
+}
+// 单回的课时：多个时间段时按各段相加，否则沿用课程的课时
+function trSessionHours(tr,courseHours){ return parseTimeRanges(tr).length>1?timeRangesHours(tr):courseHours; }
 function acOnTypeChange(val){
   if(val==='共通课'){
     document.querySelectorAll('#ac_major_checkboxes input').forEach(cb=>cb.checked=true);
@@ -1377,7 +1434,7 @@ function acRenderMajorCheckboxes(){
   const box=document.getElementById('ac_major_checkboxes');
   if(!box) return;
   box.innerHTML=majorFilterKeys().map(m=>
-    `<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="${m}" style="accent-color:var(--accent)">${majorLabel(m)}</label>`
+    `<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="${m}" onchange="acArtUI()" style="accent-color:var(--accent)">${majorLabel(m)}</label>`
   ).join('');
 }
 
@@ -1460,7 +1517,7 @@ function acAddRow(data){
   tr.innerHTML=`
     <td style="width:64px"><input value="${rowNum}" placeholder="第几回" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);text-align:center;font-family:'DM Mono',monospace"></td>
     <td style="width:120px"><input type="date" value="${data?.date||''}" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg)"></td>
-    <td style="width:100px"><input value="${data?.time_range||''}" placeholder="时间（如 10:00-12:00）" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
+    <td style="width:150px"><input value="${data?.time_range||''}" placeholder="时间（多段用 / 分隔）" title="同一天多个时间段用 / 分隔，例：14:00-17:00/18:00-21:00" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
     <td><input value="${data?.title||''}" placeholder="单回名称（可留空，也可填「休讲」）" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
     <td><input value="${data?.teacher||''}" placeholder="任课老师（可留空）" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
     <td><button class="btn-ghost" onclick="this.closest('tr').remove()">✕</button></td>`;
@@ -1485,7 +1542,7 @@ function acGetRows(){
       id: tr.dataset.id||'',
       num: inputs[0]?.value.trim()||'',
       date: inputs[1]?.value||'',
-      time_range: inputs[2]?.value.trim()||'',
+      time_range: normalizeTimeRanges(inputs[2]?.value||''),
       title: inputs[3]?.value.trim()||'',
       teacher: inputs[4]?.value.trim()||''
     };
@@ -1635,12 +1692,17 @@ function acSetRowsFromData(rows){
 
 async function saveAddCourse(){
   const name=document.getElementById('ac_name').value.trim();
-  const period=document.getElementById('ac_period').value;
+  let period=document.getElementById('ac_period').value;
   const total=parseInt(document.getElementById('ac_total').value)||0;
   const firstDate=document.getElementById('ac_first_date').value;
   const weekdayStr=acGetWeekdayChips();
   if(!name){alert('请填写课程名称');return}
-  if(!period){alert('请选择期数');return}
+  const artCourse=acIsArt();
+  if(artCourse){
+    period=document.getElementById('ac_month').value;
+    if((document.getElementById('ac_member_mode')||{}).value==='class'&&!acClassPick.length){alert('请选择班级（学生成员按班级编入）');return}
+  }
+  if(!period){alert(artCourse?'请选择月份':'请选择期数');return}
   if(!total||!firstDate||!weekdayStr){alert('请填写回数、第一回日期和星期');return}
 
   const majors=acGetMajors();
@@ -1658,7 +1720,7 @@ async function saveAddCourse(){
     campus:document.getElementById('ac_campus').value.trim(),
     delivery:document.getElementById('ac_delivery').value,
     weekdays:weekdayStr,
-    time_range:document.getElementById('ac_time_range').value.trim(),
+    time_range:normalizeTimeRanges(document.getElementById('ac_time_range').value),
     actual_hours:parseFloat(document.getElementById('ac_actual_hours').value)||null,
     total_sessions:total,
     first_session_date:firstDate,
@@ -1668,6 +1730,11 @@ async function saveAddCourse(){
     host_key:document.getElementById('ac_host_key').value.trim(),
     needs_recording:document.getElementById('ac_recording').value==='yes',
   };
+  // 学部美术：成员模式和班级在这里直接选（其他领域仍在「课程清理 → 学生成员」里管理）
+  if(artCourse){
+    courseData.member_mode=document.getElementById('ac_member_mode').value||'class';
+    courseData.class_ids=courseData.member_mode==='class'?acClassPick.slice():[];
+  }
 
   try{
     let courseId;
@@ -1733,7 +1800,7 @@ async function saveAddCourse(){
           session_date:r.date,
           session_number: isCancelled ? (existingMap[r.id]?.session_number ?? null) : (parseInt(r.num)||null),
           time_range:r.time_range||courseData.time_range,
-          actual_hours:courseData.actual_hours,
+          actual_hours:trSessionHours(r.time_range||courseData.time_range,courseData.actual_hours),
           delivery:courseData.delivery,campus:courseData.campus,
           // 已布置作业的回次保持开启，不被课程级开关覆盖
           homework_enabled:(r.id&&existingMap[r.id]&&hwHasQ(existingMap[r.id].homework_questions))?true:courseData.homework_enabled,
@@ -1794,7 +1861,7 @@ async function saveAddCourse(){
           course_id:courseId,course_name:name,major:majors,
           session_date:date,session_number:i+1,
           time_range:detail.time_range||courseData.time_range,
-          actual_hours:courseData.actual_hours,
+          actual_hours:trSessionHours(detail.time_range||courseData.time_range,courseData.actual_hours),
           delivery:courseData.delivery,campus:courseData.campus,
           teacher:detail.teacher||mainTeacher,
           session_title:detail.title||'',
@@ -1919,7 +1986,7 @@ async function saveEditCourse(){
     campus:document.getElementById('ec_campus').value.trim(),
     delivery:document.getElementById('ec_delivery').value,
     weekdays:document.getElementById('ec_weekdays').value.trim(),
-    time_range:document.getElementById('ec_time_range').value.trim(),
+    time_range:normalizeTimeRanges(document.getElementById('ec_time_range').value),
     actual_hours:parseFloat(document.getElementById('ec_actual_hours').value)||null,
     total_sessions:parseInt(document.getElementById('ec_total').value)||0,
     first_session_date:document.getElementById('ec_first_date').value||null,
@@ -1945,7 +2012,7 @@ async function regenerateSessions(){
   const total=parseInt(document.getElementById('ec_total').value)||0;
   const wdStr=document.getElementById('ec_weekdays').value;
   const weekdays=parseWeekdays(wdStr);
-  const timeRange=document.getElementById('ec_time_range').value.trim();
+  const timeRange=normalizeTimeRanges(document.getElementById('ec_time_range').value);
   if(!firstDate||!weekdays.length||!total){alert('请填写第一回日期、星期和回数');return}
   if(!confirm(`将删除该课程现有 ${cachedSessions.filter(s=>s.course_id===id).length} 个课次并重新生成 ${total} 个，是否继续？`))return;
   try{
@@ -2178,7 +2245,7 @@ function renderSchedulePage(mc){
   // 只列还有课没上完的期（已全部结课的期不再显示，「全部」里仍可看到）
   const allPeriods=[...new Map(viewCourses
     .filter(c=>c.first_session_date&&!courseIsEnded(c))
-    .map(c=>{const year=c.first_session_date.slice(0,4);const per=effectivePeriod(c);const key=`${year}年${per}`;return [key,{key,period:per,year}]})
+    .map(c=>{const year=c.first_session_date.slice(0,4);const per=effectivePeriod(c);const key=periodKeyOf(c);return [key,{key,period:per,year}]})
   ).values()].sort((a,b)=>a.key.localeCompare(b.key));
   if(schedPeriodFilter!=='all'&&!allPeriods.some(p=>p.key===schedPeriodFilter)) schedPeriodFilter='all';
 
@@ -2189,8 +2256,7 @@ function renderSchedulePage(mc){
   else if(schedTypeFilter==='VIP') filteredCourses=filteredCourses.filter(c=>c.course_type?.includes('VIP'));
 
   if(schedPeriodFilter!=='all'){
-    const [filterYear,filterPeriod]=schedPeriodFilter.match(/(\d{4})年(.+)/)?.slice(1)||[];
-    if(filterYear&&filterPeriod) filteredCourses=filteredCourses.filter(c=>effectivePeriod(c)===filterPeriod&&c.first_session_date?.startsWith(filterYear));
+    filteredCourses=filteredCourses.filter(c=>periodKeyOf(c)===schedPeriodFilter);
   }
   if(schedCourseFilter!=='all') filteredCourses=filteredCourses.filter(c=>c.id===schedCourseFilter);
 
@@ -2897,7 +2963,7 @@ function wnGenerate(){
     .filter(s=>dates.includes(s.session_date))
     .filter(s=>(s.major||[]).some(m=>majorList.includes(m)))
     .filter(s=>s.session_title!=='休讲')
-    .sort((a,b)=>a.session_date===b.session_date?String(a.time_range||'').localeCompare(String(b.time_range||'')):a.session_date.localeCompare(b.session_date));
+    .sort((a,b)=>a.session_date===b.session_date?timeRangesSortKey(a.time_range).localeCompare(timeRangesSortKey(b.time_range)):a.session_date.localeCompare(b.session_date));
 
   let text='@所有人 本周课程安排如下\n';
   if(!list.length){
@@ -3661,6 +3727,7 @@ function cmRowTag(c){
   const rows=cmRowsOf(c.id);
   const tag=t=>`<span style="font-size:9px;background:#e8eef8;color:#2c4a7c;border-radius:2px;padding:1px 6px;margin-left:6px;font-weight:500">${t}</span>`;
   if(courseMemberMode(c)==='list') return tag(`指定名单 ${rows.filter(r=>r.kind==='include').length}人`);
+  if(courseMemberMode(c)==='class') return tag(`按班级${typeof classNamesOf==='function'&&classNamesOf(c.class_ids).length?'：'+classNamesOf(c.class_ids).join('・'):''}`);
   const inc=rows.filter(r=>r.kind==='include').length, exc=rows.filter(r=>r.kind==='exclude').length;
   return (inc||exc)?tag(`${inc?'+'+inc:''}${inc&&exc?' / ':''}${exc?'−'+exc:''}`):'';
 }
@@ -3703,13 +3770,16 @@ function cmRender(){
       <select onchange="cmSetMode(this.value)" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
         ${modes.length>1?'<option value="" selected>（混合）</option>':''}
         <option value="major" ${modes.length===1&&modes[0]==='major'?'selected':''}>按专业（同专业在读学生，不含纯VIP）</option>
+        <option value="class" ${modes.length===1&&modes[0]==='class'?'selected':''}>按班级（所属班级的在读学生）</option>
         <option value="list" ${modes.length===1&&modes[0]==='list'?'selected':''}>指定名单（只有名单里的人）</option>
       </select>
+      ${modes.includes('list')&&typeof classesInView==='function'&&classesInView().length?`<select onchange="cmAddWholeClass(this.value)" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit"><option value="">＋ 整个班级…</option>${classesInView().map(k=>`<option value="${cmEsc(k.id)}">${cmEsc(k.name)}</option>`).join('')}</select>`:''}
       <button class="btn btn-outline btn-sm" onclick="cmQuickAdd('vip')">＋ 同专业纯 VIP 学生</button>
       <button class="btn btn-outline btn-sm" onclick="cmQuickAdd('all')">＋ 同专业全部学生</button>
       <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="cmDeselectAll()">全部取消选择</button>
-      ${modes.includes('major')?'<button class="btn btn-outline btn-sm" onclick="cmClearList()">恢复专业默认</button>':''}
+      ${modes.includes('major')||modes.includes('class')?'<button class="btn btn-outline btn-sm" onclick="cmClearList()">恢复默认成员</button>':''}
     </div>
+    ${typeof cmClassBarHtml==='function'?cmClassBarHtml(courses):''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
       <input id="cmSearchInput" value="${cmEsc(cmSearch)}" placeholder="搜索姓名（汉字 / 拼音首字母）" oninput="if(this.dataset.composing!=='1'){cmSearch=this.value;cmRenderNames()}" oncompositionstart="this.dataset.composing='1'" oncompositionend="this.dataset.composing='';cmSearch=this.value;cmRenderNames()" style="flex:1;min-width:180px;font-size:13px;padding:7px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg);font-family:inherit">
       <div class="filter-chip${cmScopeAll?'':' active'}" onclick="cmScopeAll=false;cmRender()" style="font-size:11px;padding:3px 10px">本课专业</div>
@@ -3727,7 +3797,8 @@ function cmRenderNames(){
   const sets=courses.map(cmMemberSet);
   const majors=new Set(); courses.forEach(c=>courseMajorSet(c).forEach(m=>majors.add(m)));
   const rowIds=new Set(); courses.forEach(c=>cmRowsOf(c.id).forEach(r=>rowIds.add(String(r.student_id))));
-  let pool=cmActiveStudents().filter(s=>cmScopeAll||majors.has(s.major)||rowIds.has(String(s.id)));
+  const clsIds=new Set(); courses.forEach(c=>courseClassIds(c).forEach(x=>clsIds.add(x)));
+  let pool=cmActiveStudents().filter(s=>cmScopeAll||majors.has(s.major)||rowIds.has(String(s.id))||studentClassIds(s).some(x=>clsIds.has(x)));
   if(cmSearch.trim()) pool=pool.filter(s=>matchesStudentSearch(s,cmSearch));
   const n=courses.length;
   el.innerHTML=pool.length?pool.map(s=>{
@@ -3828,8 +3899,9 @@ async function cmClearList(){
   const courses=cmCourseIds.map(cmCourse).filter(Boolean);
   const hasList=courses.some(c=>courseMemberMode(c)==='list');
   const hasMajor=courses.some(c=>courseMemberMode(c)==='major');
-  const txt=[hasList?'「指定名单」的课：名单清空，这门课将没有任何成员':'',hasMajor?'「按专业」的课：去掉所有单独添加 / 移除，恢复成同专业默认成员':''].filter(Boolean).join('\n');
-  if(!confirm('恢复专业默认？\n'+txt)) return;
+  const hasClass=courses.some(c=>courseMemberMode(c)==='class');
+  const txt=[hasList?'「指定名单」的课：名单清空，这门课将没有任何成员':'',hasMajor?'「按专业」的课：去掉所有单独添加 / 移除，恢复成同专业默认成员':'',hasClass?'「按班级」的课：去掉所有单独添加 / 移除，恢复成所属班级的学生':''].filter(Boolean).join('\n');
+  if(!confirm('恢复默认成员？\n'+txt)) return;
   const ops=[];
   courses.forEach(c=>cmRowsOf(c.id).forEach(r=>ops.push({op:'delete',course_id:String(c.id),student_id:String(r.student_id)})));
   try{ await cmExec(ops); }catch(e){}
@@ -3837,7 +3909,7 @@ async function cmClearList(){
 }
 
 async function cmSetMode(mode){
-  if(mode!=='major'&&mode!=='list'){ cmRender(); return; }
+  if(mode!=='major'&&mode!=='list'&&mode!=='class'){ cmRender(); return; }
   const courses=cmCourseIds.map(cmCourse).filter(Boolean);
   const toChange=courses.filter(c=>courseMemberMode(c)!==mode);
   if(!toChange.length) return;
@@ -3853,13 +3925,13 @@ async function cmSetMode(mode){
       toChange.forEach(c=>cmMemberSet(c).forEach(sid=>ops.push({op:'upsert',course_id:String(c.id),student_id:sid,kind:'include'})));
       await cmExec(ops);
     }
-    // 切回按专业：本来就是默认成员的 include 行已经多余，删掉，避免「+N」标签虚高
-    if(mode==='major'){
+    // 切回按专业 / 按班级：本来就是默认成员的 include 行已经多余，删掉，避免「+N」标签虚高
+    if(mode==='major'||mode==='class'){
       const act=cmActiveStudents();
       const ops=[];
       toChange.forEach(c=>cmRowsOf(c.id).filter(r=>r.kind==='include').forEach(r=>{
         const st=act.find(x=>String(x.id)===String(r.student_id));
-        if(st&&courseDefaultMember(st,c)) ops.push({op:'delete',course_id:String(c.id),student_id:String(r.student_id)});
+        if(st&&courseDefaultMember(st,Object.assign({},c,{member_mode:mode}))) ops.push({op:'delete',course_id:String(c.id),student_id:String(r.student_id)});
       }));
       await cmExec(ops);
     }

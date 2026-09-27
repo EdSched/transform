@@ -295,6 +295,7 @@
       <div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">专业负责老师（学生管理里"我负责的"筛选用；与 VIP 独立，不影响可读权限）</label>
         <div id="st_owner_teachers" style="display:flex;flex-wrap:wrap;gap:6px"></div>
       </div>
+      <div class="form-group" style="margin:0;grid-column:1/-1;display:none" id="st_class_wrap"><label class="form-label">所属班级 <span style="font-weight:400;color:var(--text-3)">（点选，可以多个；和专业分开）</span></label><div id="st_class_chips"></div></div>
       <div class="form-group" style="margin:0;grid-column:1/-1" id="st_vip_plan_wrap"><label class="form-label">VIP课程方案（营业保存的方案，按姓名匹配）</label>
         <div id="st_vip_plan_section" style="font-size:11px"></div>
       </div>
@@ -454,8 +455,11 @@
           <!-- 由 acRenderMajorCheckboxes() 动态填充（含 shakai_group + 全部专业，新增专业自动出现） -->
         </div>
       </div>
-      <div class="form-group" style="margin:0"><label class="form-label">期数 *</label>
-        <select id="ac_period"><option value="">请选择</option><option>7月期</option><option>10月期</option><option>1月期</option><option>4月期</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label" id="ac_period_label">期数 *</label>
+        <select id="ac_period"><option value="">请选择</option><option>7月期</option><option>10月期</option><option>1月期</option><option>4月期</option></select>
+        <select id="ac_month" style="display:none" onchange="acMonthChange()"></select></div>
+      <div class="form-group" id="ac_member_box" style="margin:0;grid-column:1/-1;display:none"><label class="form-label">学生成员</label>
+        <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap"><select id="ac_member_mode" onchange="acMemberRender()" style="width:auto"><option value="class">按班级</option><option value="major">按专业</option><option value="list">指定名单</option></select><div id="ac_class_chips" style="flex:1;min-width:200px;padding-top:3px"></div></div></div>
       <div class="form-group" style="margin:0"><label class="form-label">课程属性</label>
         <select id="ac_course_type" onchange="acOnTypeChange(this.value)"><option value="">请选择</option><option>专业课</option><option>共通课</option><option>VIP课程</option></select></div>
       <div class="form-group" style="margin:0"><label class="form-label">讲师</label><input id="ac_teacher" placeholder="多人用 / 分隔"></div>
@@ -473,7 +477,7 @@
           <div class="filter-chip" data-wd="周日" onclick="this.classList.toggle('active')" style="font-size:12px;padding:5px 12px;cursor:pointer">周日</div>
         </div>
       </div>
-      <div class="form-group" style="margin:0"><label class="form-label">上课时间</label><input id="ac_time_range" placeholder="14:00-18:00"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">上课时间 <span style="font-weight:400;color:var(--text-3)">（多个时间段用 / 分隔）</span></label><div style="display:flex;gap:4px"><input id="ac_time_range" placeholder="14:00-18:00" oninput="trAutoHours('ac_time_range','ac_actual_hours')" style="flex:1;min-width:0"><button type="button" onclick="trAddSeg('ac_time_range')" style="font-size:11px;white-space:nowrap;background:none;border:1px solid var(--border);border-radius:2px;padding:0 8px;cursor:pointer;font-family:inherit">＋ 时间段</button></div></div>
       <div class="form-group" style="margin:0"><label class="form-label">课时（小时，用于工资核算）</label><input type="number" id="ac_actual_hours" step="0.5" min="0" placeholder="例：4"></div>
       <div class="form-group" style="margin:0"><label class="form-label">课程回数 *</label><input type="number" id="ac_total" min="1" placeholder="10"></div>
       <div class="form-group" style="margin:0"><label class="form-label">第一回日期 *</label><input type="date" id="ac_first_date" onchange="if(typeof acRenderHolidayExcept==='"'"'function')acRenderHolidayExcept()"></div>
@@ -571,7 +575,7 @@
       <div class="form-group" style="margin:0"><label class="form-label">授课形式</label>
         <select id="ec_delivery"><option value="">请选择</option><option>线下</option><option>线上</option><option>线下＋线上</option></select></div>
       <div class="form-group" style="margin:0"><label class="form-label">星期</label><input id="ec_weekdays" placeholder="周六"></div>
-      <div class="form-group" style="margin:0"><label class="form-label">上课时间</label><input id="ec_time_range" placeholder="14:00-18:00"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">上课时间 <span style="font-weight:400;color:var(--text-3)">（多个时间段用 / 分隔）</span></label><div style="display:flex;gap:4px"><input id="ec_time_range" placeholder="14:00-18:00" oninput="trAutoHours('ec_time_range','ec_actual_hours')" style="flex:1;min-width:0"><button type="button" onclick="trAddSeg('ec_time_range')" style="font-size:11px;white-space:nowrap;background:none;border:1px solid var(--border);border-radius:2px;padding:0 8px;cursor:pointer;font-family:inherit">＋ 时间段</button></div></div>
       <div class="form-group" style="margin:0"><label class="form-label">课时（小时，用于工资核算）</label><input type="number" id="ec_actual_hours" step="0.5" min="0" placeholder="例：4"></div>
       <div class="form-group" style="margin:0"><label class="form-label">课程回数</label><input type="number" id="ec_total" min="1"></div>
       <div class="form-group" style="margin:0"><label class="form-label">第一回日期</label><input type="date" id="ec_first_date"></div>
@@ -745,10 +749,12 @@
 <script src="attendance.js"></script>
 <script src="payroll.js"></script>
 <script src="admissiondb.js"></script>
+<script src="classes.js"></script>
 <script src="students.js"></script>
 <script src="materials.js"></script>
 <script src="booking.js"></script>
 <script src="courses.js"></script>
+<script src="monthcal.js"></script>
 <script src="vip-framework.js"></script>
 <script src="promo.js"></script>
 <script src="admin.js"></script>

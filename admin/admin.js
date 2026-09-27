@@ -481,12 +481,14 @@ async function renderPage(){
       ]);
       curPage==='booking'?renderBookingPage(mc):renderSlotsPage(mc);
     } else if(curPage==='students'){
+      if(typeof loadClasses==='function') await loadClasses(true);
       [cachedStudents,cachedTeachers]=await Promise.all([
         sbAll('/rest/v1/students?select=*&order=name.asc'),
         sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[])
       ]);
       renderStudentsPage(mc);
     } else if(curPage==='courses'){
+      if(typeof loadClasses==='function') await loadClasses(true);
       [cachedStudents,cachedCourses,cachedSessions]=await Promise.all([
         sbAll('/rest/v1/students?select=*&order=name.asc'),
         sbAll('/rest/v1/courses?select=*&order=created_at.desc'),
@@ -509,6 +511,7 @@ async function renderPage(){
       ]);
       renderPromoAdminPage(mc);
     } else if(curPage==='coursecleanup'){
+      if(typeof loadClasses==='function') await loadClasses(true);
       [cachedCourses,cachedSessions,cachedTeachers,cachedStudents,cachedCourseMembers]=await Promise.all([
         sbAll('/rest/v1/courses?select=*&order=created_at.desc'),
         sbAll('/rest/v1/course_sessions?select=*&order=session_date.asc'),
@@ -774,7 +777,7 @@ async function hwaEnsureData() {
   });
   const courses = (crs || []).filter(c => hwN[c.id]).map(c => ({
     id: c.id, name: c.name || '', teacher: c.teacher || '', hwN: hwN[c.id], first: c.first_session_date || '',
-    pkey: c.first_session_date ? `${c.first_session_date.slice(0, 4)}年${effectivePeriod(c)}` : '未排期',
+    pkey: c.first_session_date ? periodKeyOf(c) : '未排期',
   })).sort((a, b) => b.first.localeCompare(a.first) || a.name.localeCompare(b.name, 'zh'));
   hwaData = Object.assign({ courses }, hwaPeriodKeys());
   return hwaData;

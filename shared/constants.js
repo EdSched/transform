@@ -380,6 +380,40 @@ function matchesMajorFilter(major, filter) {
   return major === filter;
 }
 
+// ── 上课时间段：同一单回可以有多个时间段，存在 time_range 文本里，用 / 分隔（例：14:00-17:00/18:00-21:00）──
+// 输入时也接受全角「／」「、」「,」「，」；每段的起止支持 - – ~ 〜 ～
+function parseTimeRanges(str) {
+  return String(str == null ? '' : str).replace(/：/g, ':')
+    .split(/[\/／、,，]/).map(x => x.trim()).filter(Boolean)
+    .map(x => { const p = x.split(/\s*[-–—~〜～]\s*/); return { start: (p[0] || '').trim(), end: (p[1] || '').trim() }; });
+}
+function formatTimeRanges(list) {
+  return (list || []).map(r => r.end ? `${r.start}-${r.end}` : r.start).filter(Boolean).join('/');
+}
+// 保存前统一格式：多段用 / 连接；只有一段时保持原样（不改动旧数据的写法）
+function normalizeTimeRanges(str) {
+  const list = parseTimeRanges(str);
+  return list.length > 1 ? formatTimeRanges(list) : String(str == null ? '' : str).trim();
+}
+function _trMin(t) { const m = /^(\d{1,2})[:：](\d{2})/.exec(String(t || '').trim()); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+// 总小时数（各段相加）
+function timeRangesHours(str) {
+  let min = 0;
+  parseTimeRanges(str).forEach(r => { const a = _trMin(r.start), b = _trMin(r.end); if (a != null && b != null && b > a) min += b - a; });
+  return Math.round(min / 60 * 100) / 100;
+}
+// 排序用：第一段的开始时间（补零成 HH:MM）
+function timeRangesSortKey(str) {
+  const r = parseTimeRanges(str)[0]; const m = r && _trMin(r.start);
+  return m == null ? '99:99' : String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+}
+// 最早开始 ~ 最晚结束（排课系统只有一组开始/结束时间时用）
+function timeRangesSpan(str) {
+  let s = null, e = null, ss = '', es = '';
+  parseTimeRanges(str).forEach(r => { const a = _trMin(r.start), b = _trMin(r.end); if (a != null && (s == null || a < s)) { s = a; ss = r.start; } if (b != null && (e == null || b > e)) { e = b; es = r.end; } });
+  return { start: ss, end: es };
+}
+
 // ── 期数工具 ──
 function currentPeriodKey() {
   const m = new Date().getMonth() + 1;
@@ -443,7 +477,42 @@ async function loadPeriodsFromDB() {
 // 某课的「有效期数」：手动指定(period_override)优先，否则按开课月份自动落入 PERIODS
 function effectivePeriod(c) {
   if (c && c.period_override) return c.period_override;
+  // 学部美术不分期，按月份：首回日期所在的月（2026年9月）
+  if (isGakubuArtCourse(c)) return monthPeriodOf(c && c.first_session_date);
   return periodFromDate(c && c.first_session_date);
+}
+// 'YYYY-MM-DD' → '2026年9月'
+function monthPeriodOf(ds) {
+  const m = /^(\d{4})-(\d{2})/.exec(String(ds || ''));
+  return m ? `${m[1]}年${+m[2]}月` : '未分期';
+}
+
+// 带年份的期数键：大学院等「2026年10月期」；学部美术本身就是「2026年9月」
+function periodKeyOf(c) {
+  const p = effectivePeriod(c);
+  if (/^\d{4}年/.test(p)) return p;
+  return (c && c.first_session_date) ? `${c.first_session_date.slice(0, 4)}年${p}` : p;
+}
+// 课程是否属于「当前期」：学部美术=本月，其他=当前期（1/4/7/10月期）
+function courseInCurrentPeriod(c) {
+  if (isGakubuArtCourse(c)) return effectivePeriod(c) === monthPeriodOf(new Date().toISOString().slice(0, 10));
+  return effectivePeriod(c) === currentPeriodKey();
+}
+
+// ── 学部美术：按月建课、有班级（领域名以「学部」开头且含「美术」；领域来自 MAJOR_DOMAIN / courses.domain）──
+function isGakubuArtDomain(dom) { return /^学部/.test(String(dom || '')) && /美术|美術/.test(String(dom || '')); }
+function isGakubuArtMajor(key) {
+  if (!key) return false;
+  const dom = (typeof MAJOR_DOMAIN !== 'undefined' && MAJOR_DOMAIN[key]) || '';
+  if (dom) return isGakubuArtDomain(dom);
+  return /^gakubu_/.test(key) && /bijutsu|art|design/i.test(key);
+}
+// 课程是不是学部美术：领域是学部美术；或者课程的专业全部属于学部美术
+function isGakubuArtCourse(c) {
+  if (!c) return false;
+  if (c.domain) return isGakubuArtDomain(c.domain);
+  const ms = Array.isArray(c.major) ? c.major : (c.major ? [c.major] : []);
+  return ms.length > 0 && ms.every(isGakubuArtMajor);
 }
 
 // 某月份 m(1-12) 是否落在期 p 的范围内（支持跨年：end<start 表示跨年，如 9→1 = 9,10,11,12,1）
@@ -1250,11 +1319,19 @@ async function studentTextBatch(students, kind, bodyEl, prefix, onCodeIssued) {
 // 课程表、作业、管理端签到、老师端签到四处统一用这里判断，不要在别处另写一套。
 //   major（按专业，默认）：同专业在读学生（shakai_group 展开成三个成员专业）排除纯 VIP，
 //                        再加上 include、去掉 exclude；同专业新生自动成为成员
+//   class（按班级）     ：所属班级（students.class_ids）和课程班级（courses.class_ids）有交集的在读学生，
+//                        再加上 include、去掉 exclude；学生被编入班级后自动成为成员
 //   list（指定名单）    ：只有 include 的人
 // 纯 VIP = is_vip_course === 'VIP'（「大课+VIP」不算纯 VIP）
 // ══════════════════════════════════
 function isPureVipStudent(s) { return !!s && s.is_vip_course === 'VIP'; }
-function courseMemberMode(course) { return (course && course.member_mode) === 'list' ? 'list' : 'major'; }
+function courseMemberMode(course) {
+  const m = course && course.member_mode;
+  return m === 'list' ? 'list' : m === 'class' ? 'class' : 'major';
+}
+function _arrOf(v) { if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = v.replace(/^\{|\}$/g, '').split(',').filter(Boolean); } } return Array.isArray(v) ? v.map(String) : []; }
+function courseClassIds(course) { return _arrOf(course && course.class_ids); }
+function studentClassIds(student) { return _arrOf(student && student.class_ids); }
 // 课程涉及的真实专业（含分组展开，分组代码本身也保留）
 function courseMajorSet(course) {
   const raw = course && course.major;
@@ -1268,7 +1345,12 @@ function courseMajorSet(course) {
 }
 // 按专业模式下的「默认成员」：同专业、不是纯 VIP（是否在读由调用方传入的学生列表决定）
 function courseDefaultMember(student, course) {
-  return !!student && courseMajorSet(course).has(student.major) && !isPureVipStudent(student);
+  if (!student) return false;
+  if (courseMemberMode(course) === 'class') {
+    const cls = new Set(courseClassIds(course));
+    return studentClassIds(student).some(id => cls.has(id));
+  }
+  return courseMajorSet(course).has(student.major) && !isPureVipStudent(student);
 }
 // 这门课的成员学生 id 集合。students：在读学生列表；members：这门课在 course_members 里的行
 function courseMemberIds(course, students, members) {
