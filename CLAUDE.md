@@ -80,6 +80,7 @@ Sensis 经常在多个窗口/对话里同时改同一批文件，**已经多次�
 
 - **不用单选按钮（radio），不用复选框式多选。** 用下拉框 `select` 或可点击高亮的行/卡片/标签（chip）。
 - 新组件里不用 emoji 图标（原有的中枢导航卡片 emoji 保留）；用纯文字+颜色区分，不用彩色圆点 emoji。
+- 选择日期的地方一律用月历方格 + 月份切换，不要一行一个日期的长列表（共用组件：`shared/constants.js` 的 `renderSlotCalendar` / `renderSlotChips`）。
 - 界面默认不要展开长表格，优先折叠/可展开。
 - 信息密度优先，少留白、少装饰。
 - 打印/PDF 类输出：照抄 `results/grad.html` 的字体和排版方案（务必真正加载 Noto Serif SC / Noto Sans SC 网络字体，不能只写字体名）。配色参考 `style.css`：底色 `#f7f5f0`、文字 `#1a1814`、边框 `#e2ded6`、强调金棕 `#b8953a`。
