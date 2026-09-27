@@ -1755,7 +1755,7 @@ async function saveAddCourse(){
     if(!detailRows.length){ alert('单回明细不能为空，至少需要一行课次'); return; }
     for(const r of detailRows){ if(!r.date){ alert(`第「${r.num}」行缺少日期，请补全后再保存`); return; } }
     const real=detailRows.filter(r=>!(r.num==='休讲'||r.title==='休讲'));
-    const ds=(real.length?real:detailRows).map(r=>r.date).sort();
+    var ds=(real.length?real:detailRows).map(r=>r.date).sort();
     firstDate=ds[0];
     total=real.length||detailRows.length;
     if(!weekdayStr){alert('请选择星期（排课系统按星期占教室）');return}
@@ -1786,6 +1786,8 @@ async function saveAddCourse(){
     host_key:document.getElementById('ac_host_key').value.trim(),
     needs_recording:document.getElementById('ac_recording').value==='yes',
   };
+  // 单回表反推框架：开课日 = 最早的单回日期，结课日 = 最晚的单回日期（排课系统按这两个日期显示区间）
+  if(hasDetails){ courseData.start_date=ds[0]; courseData.end_date=ds[ds.length-1]; }
   // 学部美术：成员模式和班级在这里直接选（其他领域仍在「课程清理 → 学生成员」里管理）
   if(editingId){
     // 编辑：专业改到了另一个领域时，领域跟着改
