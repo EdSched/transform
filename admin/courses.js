@@ -848,6 +848,7 @@ function renderCoursesPage(mc){
     <div style="display:flex;gap:8px;align-items:center">
       <button class="btn btn-ok btn-sm" onclick="openPublishModal()" style="background:var(--ok);color:#fff;border:none">📢 发布管理</button>
       <button class="btn btn-outline btn-sm" onclick="openWeeklyNotice()">📣 每周通知</button>
+      <button class="btn btn-outline btn-sm" onclick="openMonthCalExport()">🗓 导出月课表</button>
       <button class="btn btn-outline btn-sm" onclick="openScheduleShare()">🗓 学生课表</button>
       <button class="btn btn-primary btn-sm" onclick="openAddCourseModal()">＋ 手动添加</button>
       <button class="btn btn-outline btn-sm" onclick="exportCoursesExcel()">↓ 导出 Excel</button>
