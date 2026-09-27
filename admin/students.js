@@ -43,6 +43,7 @@ function renderStudentsPage(mc){
   if(stVipFilter==='vip_only') list=list.filter(s=>s.is_vip_course==='VIP'||s.is_vip_course==='大课+VIP');
   if(stVipFilter==='vip_exclusive') list=list.filter(s=>s.is_vip_course==='VIP');
   if(stSearch) list=list.filter(s=>matchesStudentSearch(s,stSearch));
+  if(typeof stClassFilterApply==='function') list=stClassFilterApply(list);
   stLastList=list; // 「批量生成查询码通知」用当前筛选结果
   const statusLabel=(v)=>({active:'在籍',graduated:'已合格',expired:'已到期',stopped:'停课',withdrawn:'退学'}[v]||v);
   const statusColor=(v)=>v==='active'?'var(--ok)':v==='graduated'?'#1a6a9a':v==='withdrawn'?'var(--danger)':'var(--text-3)';
@@ -59,6 +60,8 @@ function renderStudentsPage(mc){
       <button class="btn btn-outline btn-sm" onclick="stBatchCodeNotice()">✉ 批量生成查询码通知</button>
       <button class="btn btn-outline btn-sm" onclick="batchChangeStatus()">批量改状态</button>
       <button class="btn btn-outline btn-sm" onclick="batchAssignOwner()">批量指派负责老师</button>
+      <button class="btn btn-outline btn-sm" onclick="openClassAssign()">🏷 编入班级</button>
+      <button class="btn btn-outline btn-sm" onclick="openClassManager()">🏷 班级管理</button>
       <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleImportFile(this)">
       <button class="btn btn-primary btn-sm" onclick="openStudentModal()">＋ 添加学生</button>
     </div>
@@ -72,6 +75,7 @@ function renderStudentsPage(mc){
   <div class="filter-row">
     ${[['all','全部学生'],['vip_only','含VIP（含大课+VIP）'],['vip_exclusive','仅VIP（不含大课）']].map(([v,l])=>`<div class="filter-chip${stVipFilter===v?' active':''}" onclick="setStVip('${v}',this)">${l}</div>`).join('')}
   </div>
+  ${typeof stClassFilterHtml==='function'?stClassFilterHtml():''}
   <div class="search-bar"><input id="st_search_input" placeholder="搜索姓名 / 学校 / 备注…" value="${stSearch}" oninput="handleStSearchInput(this)" oncompositionstart="this.dataset.composing='1'" oncompositionend="this.dataset.composing='';handleStSearchInput(this)"></div>
   <div class="table-scroll"><table class="student-table">
     <thead><tr>
@@ -84,7 +88,7 @@ function renderStudentsPage(mc){
         const vipRemain = (s.vip_hours_total||0)-(s.vip_hours_used||0);
         return `<tr>
         <td><input type="checkbox" class="student-select" value="${s.id}"></td>
-        <td class="student-name-cell" onclick="openStudentDetail('${s.id}')" style="cursor:pointer;color:var(--accent);text-decoration:underline">${s.name}</td>
+        <td class="student-name-cell" onclick="openStudentDetail('${s.id}')" style="cursor:pointer;color:var(--accent)"><span style="text-decoration:underline">${s.name}</span>${typeof classTagsHtml==='function'?classTagsHtml(s.class_ids):''}</td>
         <td>${MAJORS[s.major]||s.major||''}</td>
         <td>${s.level?`<span class="level-badge level-${s.level}">${s.level}</span>`:''}</td>
         <td style="font-size:11px">${s.student_type||''}</td>
@@ -238,6 +242,7 @@ function openStudentModal(id){
     else if(el==='st_vip_course'){ e.value='大课'; }
     else { e.value=''; }
   });
+  if(typeof stClassOpen==='function') stClassOpen(s);
   document.getElementById('studentModal').classList.add('open');
   renderStudentVipPlans(s);
 }
@@ -390,7 +395,8 @@ async function saveStudent(){
     vip_hours_total:parseFloat(document.getElementById('st_vip_total').value)||0,
     vip_hours_used:parseFloat(document.getElementById('st_vip_used').value)||0,
     vip_teachers:[...vipTeacherTags],
-    owner_teachers:[...ownerTeacherTags]
+    owner_teachers:[...ownerTeacherTags],
+    ...(typeof stClassPatch==='function'?stClassPatch():{})
   };
   try{
     if(id){

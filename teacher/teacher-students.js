@@ -1040,8 +1040,8 @@ async function tatOpen(sessionId){
   // 该课的成员学生（全部，不受可见范围限制——记出席要全班；成员规则见 shared/constants.js 的 courseMemberIds）
   const majors=Array.isArray(se.major)?se.major:(se.major?[se.major]:[]);
   const [all,crs,cms]=await Promise.all([
-    sbAll('/rest/v1/students?select=id,name,major,default_mode,status,is_vip_course&status=eq.active&order=name.asc').catch(()=>[]),
-    se.course_id?sb(`/rest/v1/courses?id=eq.${encodeURIComponent(se.course_id)}&select=id,major,member_mode`).catch(()=>[]):Promise.resolve([]),
+    sbAll('/rest/v1/students?select=*&status=eq.active&order=name.asc').catch(()=>[]),
+    se.course_id?sb(`/rest/v1/courses?id=eq.${encodeURIComponent(se.course_id)}&select=*`).catch(()=>[]):Promise.resolve([]),
     se.course_id?sb(`/rest/v1/course_members?course_id=eq.${encodeURIComponent(se.course_id)}&select=course_id,student_id,kind`).catch(()=>[]):Promise.resolve([])
   ]);
   const c=(crs||[])[0]||{};

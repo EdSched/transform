@@ -295,6 +295,7 @@
       <div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">专业负责老师（学生管理里"我负责的"筛选用；与 VIP 独立，不影响可读权限）</label>
         <div id="st_owner_teachers" style="display:flex;flex-wrap:wrap;gap:6px"></div>
       </div>
+      <div class="form-group" style="margin:0;grid-column:1/-1;display:none" id="st_class_wrap"><label class="form-label">所属班级 <span style="font-weight:400;color:var(--text-3)">（点选，可以多个；和专业分开）</span></label><div id="st_class_chips"></div></div>
       <div class="form-group" style="margin:0;grid-column:1/-1" id="st_vip_plan_wrap"><label class="form-label">VIP课程方案（营业保存的方案，按姓名匹配）</label>
         <div id="st_vip_plan_section" style="font-size:11px"></div>
       </div>
@@ -454,8 +455,11 @@
           <!-- 由 acRenderMajorCheckboxes() 动态填充（含 shakai_group + 全部专业，新增专业自动出现） -->
         </div>
       </div>
-      <div class="form-group" style="margin:0"><label class="form-label">期数 *</label>
-        <select id="ac_period"><option value="">请选择</option><option>7月期</option><option>10月期</option><option>1月期</option><option>4月期</option></select></div>
+      <div class="form-group" style="margin:0"><label class="form-label" id="ac_period_label">期数 *</label>
+        <select id="ac_period"><option value="">请选择</option><option>7月期</option><option>10月期</option><option>1月期</option><option>4月期</option></select>
+        <select id="ac_month" style="display:none" onchange="acMonthChange()"></select></div>
+      <div class="form-group" id="ac_member_box" style="margin:0;grid-column:1/-1;display:none"><label class="form-label">学生成员</label>
+        <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap"><select id="ac_member_mode" onchange="acMemberRender()" style="width:auto"><option value="class">按班级</option><option value="major">按专业</option><option value="list">指定名单</option></select><div id="ac_class_chips" style="flex:1;min-width:200px;padding-top:3px"></div></div></div>
       <div class="form-group" style="margin:0"><label class="form-label">课程属性</label>
         <select id="ac_course_type" onchange="acOnTypeChange(this.value)"><option value="">请选择</option><option>专业课</option><option>共通课</option><option>VIP课程</option></select></div>
       <div class="form-group" style="margin:0"><label class="form-label">讲师</label><input id="ac_teacher" placeholder="多人用 / 分隔"></div>
@@ -745,6 +749,7 @@
 <script src="attendance.js"></script>
 <script src="payroll.js"></script>
 <script src="admissiondb.js"></script>
+<script src="classes.js"></script>
 <script src="students.js"></script>
 <script src="materials.js"></script>
 <script src="booking.js"></script>
