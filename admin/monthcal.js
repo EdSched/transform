@@ -252,7 +252,7 @@ function mcxBuildDoc(opts) {
   // 学部美术用「唯新美術」的 logo，其他领域用唯新 logo
   const artLogo = isGakubuArtDomain(CURRENT_DOMAIN) || chosen.every(x => isGakubuArtCourse(x.c));
   const logo = new URL(artLogo ? '../sched/artlogo.png' : '../sched/logo.png', location.href).href;
-  const dots = (pos, cols) => `<div class="dots" style="${pos}">${cols.map(c => `<i style="background:${c}"></i>`).join('')}</div>`;
+  const logoColor = artLogo ? '#f3b800' : '#f0a810';   // 表头直接用 logo 的黄色
   const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>${mcxEsc(title)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@500;700&family=Noto+Serif+SC:wght@700&display=swap" rel="stylesheet">
@@ -261,19 +261,12 @@ function mcxBuildDoc(opts) {
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:#fcf8f4;color:#3a342e;font-family:'Noto Sans SC',sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .page{width:281mm;height:192mm;display:flex;flex-direction:column;position:relative}
-.head{display:flex;flex-direction:column;align-items:center;margin-bottom:3mm;position:relative;z-index:1}
-.ttl{display:flex;align-items:center;gap:3mm}
-.ttl img{height:11mm;width:auto}
-h1{margin:0;font-family:'Noto Serif SC',serif;font-size:25px;font-weight:700;color:#2e2924;letter-spacing:.06em}
-.rule{display:flex;align-items:center;width:62%;margin-top:2mm}
-.rule span{flex:1;height:1px;background:#d9cfc4}
-.rule b{width:6px;height:6px;display:block;flex-shrink:0}
-.dots{position:absolute;display:grid;grid-template-columns:repeat(3,5px);gap:4px}
-.dots i{width:5px;height:5px;border-radius:50%;display:block}
+.head{position:relative;height:17mm;display:flex;align-items:center;justify-content:center;margin-bottom:2mm}
+.head img{position:absolute;left:0;top:0;height:17mm;width:auto}
+h1{margin:0;font-family:'Noto Serif SC',serif;font-size:26px;font-weight:700;color:#2e2924;letter-spacing:.06em}
 .wrap{flex:1;min-height:0;overflow:hidden}
 table{width:100%;height:100%;border-collapse:collapse;table-layout:fixed;border:1.2px solid #d9cfc4;background:#fffdfa}
-th{background:#f8eac2;color:#2e2924;font-size:14px;font-weight:700;padding:4px 0;border:0.8px solid #e8dfd5;border-bottom:2px solid #f2a93b}
-th.we{color:#c4646a}
+th{background:${logoColor};color:#fff;font-size:14px;font-weight:700;padding:4px 0;border:0.8px solid ${logoColor};letter-spacing:.1em}
 td{border:0.8px solid #e8dfd5;vertical-align:top;padding:2px 3px;position:relative}
 td.empty{background:#f7f1ea}
 .dn{text-align:right;font-weight:700;font-size:.85em;line-height:1.1;color:#8a7f74}
@@ -287,11 +280,9 @@ ${opts.preview ? 'body{padding:8mm}.it{cursor:pointer}.it:hover{outline:1.5px so
 </style></head><body>
 ${opts.preview ? '' : '<div class="noprint"><button onclick="window.print()" style="font-size:13px;padding:8px 20px;cursor:pointer">🖨 打印 / 保存为 PDF</button></div>'}
 <div class="page">
-  ${dots('top:0;left:0', ['#efc9cc', '#c4d2e0', '#e6d6bf', '#d7cde6', '#efc9cc', '#c4d2e0'])}
-  ${dots('top:0;right:0', ['#c4d2e0', '#e6d6bf', '#efc9cc', '#e6d6bf', '#d7cde6', '#c4d2e0'])}
   <div class="head">
-    <div class="ttl"><img src="${logo}" alt="" onerror="this.style.display='none'"><h1>${mcxEsc(title)}</h1></div>
-    <div class="rule"><b style="background:#efc9cc"></b><span></span><b style="background:#c4d2e0"></b></div>
+    <img src="${logo}" alt="" onerror="this.style.display='none'">
+    <h1>${mcxEsc(title)}</h1>
   </div>
   <div class="wrap" id="wrap"><table id="cal">
     <thead><tr>${['月', '火', '水', '木', '金', '土', '日'].map((t, i) => `<th class="${i >= 5 ? 'we' : ''}">${t}</th>`).join('')}</tr></thead>
