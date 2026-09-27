@@ -125,11 +125,18 @@ async function loadStudyData() {
     }
   }
   studyData = { timeline, schoolPlans, planDraft: planDraftArr[0]||null, sharedLists, sharedSchools, bookings, sessionRecs };
-  // VIP 学生页：额外加载 VIP 预约数据与绑定的课程规划
-  if (window.__VIP_PAGE__ && studyStudent && (studyStudent.is_vip_course === 'VIP' || studyStudent.is_vip_course === '大课+VIP')) {
+  // VIP：额外加载 VIP 预约数据与绑定的课程规划（VIP 页面：纯VIP和大课+VIP；学习页面：只有大课+VIP）
+  if (studyShowVip(studyStudent)) {
     if (typeof loadVipData === 'function') { vipStudent = studyStudent; await loadVipData(); }
     if (typeof loadStudentVipPlan === 'function') await loadStudentVipPlan();
   }
+}
+
+// 是否显示 VIP 标签：VIP 页面 → 纯VIP、大课+VIP 都显示；学习页面（嵌入 vip.js）→ 只有大课+VIP 显示
+function studyShowVip(s) {
+  if (!s || typeof loadVipData !== 'function') return false;
+  if (window.__VIP_PAGE__) return s.is_vip_course === 'VIP' || s.is_vip_course === '大课+VIP';
+  return !!window.__VIP_EMBED__ && s.is_vip_course === '大课+VIP';
 }
 
 // ══════════════════════════════════
@@ -152,10 +159,11 @@ function renderStudyMain() {
     const _ri = tabs.findIndex(t => t.id === 'records');
     tabs.splice(_ri >= 0 ? _ri + 1 : tabs.length, 0, { id:'reserve', label:'📅 面谈预约' });
   }
-  // VIP 学生：额外两个 tab（预约 + 课程安排）
-  if (window.__VIP_PAGE__ && (s.is_vip_course === 'VIP' || s.is_vip_course === '大课+VIP')) {
+  // VIP 学生：「⭐ VIP预约」；「📋 VIP课程安排」只在有课程规划时显示（纯 VIP 在 VIP 页面照旧一直显示）
+  if (studyShowVip(s)) {
     tabs.push({ id:'vipbook', label:'⭐ VIP预约' });
-    tabs.push({ id:'vipplan', label:'📋 VIP课程安排' });
+    const hasPlan = (typeof vipStudentPlan !== 'undefined') && !!vipStudentPlan;
+    if (hasPlan || (window.__VIP_PAGE__ && s.is_vip_course === 'VIP')) tabs.push({ id:'vipplan', label:'📋 VIP课程安排' });
   }
 
   // 进度概览 badges
