@@ -9,6 +9,13 @@
 <link rel="stylesheet" href="student.css">
 </head>
 <body>
+<script>
+// 内嵌在学习页「面谈预约」标签里（embed=1）：不显示页头，高度由学习页按内容自适应
+if (new URLSearchParams(location.search).get('embed') === '1') {
+  document.documentElement.className += ' bk-embed';
+  document.write('<style>.bk-embed header{display:none}.bk-embed body{min-height:0;background:transparent}.bk-embed .page-wrap{padding:0 0 12px;max-width:none}</style>');
+}
+</script>
 <header>
   <div id="headerContent">
     <div class="header-major">面谈预约</div>

@@ -325,7 +325,7 @@ async function saveVipProgress() {
 
 function renderVipMain() {
   // VIP 学生页由 study.js 主体驱动：任何调用 renderVipMain 的操作都改为重渲染 study 主页
-  if (window.__VIP_PAGE__ && typeof renderStudyMain === 'function' && typeof studyStudent !== 'undefined' && studyStudent) {
+  if ((window.__VIP_PAGE__ || window.__VIP_EMBED__) && typeof renderStudyMain === 'function' && typeof studyStudent !== 'undefined' && studyStudent) {
     renderStudyMain();
     return;
   }
@@ -371,39 +371,7 @@ function renderVipMain() {
       : vipRemainHours() <= 0
       ? '<div class="no-slots">VIP 课时已用完，暂时不能预约<br><span style="font-size:11px">如需继续上课，请联系顾问老师续课</span></div>'
       : (dateKeys.length ? `
-        <div class="slot-grid" style="grid-template-columns:1fr">
-          ${dateKeys.map(date => {
-            const d = new Date(date + 'T12:00:00');
-            const dow = DAYS_CN[d.getDay()];
-            return byDate[date].map(s => {
-              const needsLocationChoice = s.location === 'both_takadanobaba' || s.location === 'both_ichigaya';
-              const campusLabel = s.location === 'both_takadanobaba' ? '高田马场' : s.location === 'both_ichigaya' ? '市谷' : '';
-              return `
-              <div class="slot-option">
-                <input type="radio" name="vipSlotPick" id="vipslot-${s.id}" value="${s.id}" onchange="vipSelectedSlotId='${s.id}';vipRenderLocationChoice('${s.id}')">
-                <label for="vipslot-${s.id}">
-                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                    <span class="slot-date-r">${d.getMonth() + 1}/${d.getDate()}</span>
-                    <span class="slot-dow-r">${dow}</span>
-                    <span class="slot-time-r">${s.time_range}</span>
-                    <span style="font-size:10px;color:var(--text-muted);margin-left:auto">👤 ${s.teacher_name}</span>
-                  </div>
-                  ${s.vip_content && s.vip_content.length ? `<div style="font-size:10px;color:var(--text-secondary);margin-top:3px">可指导：${s.vip_content.join('・')}</div>` : ''}
-                  ${needsLocationChoice
-                    ? `<div style="font-size:10px;color:var(--text-secondary);margin-top:2px">📍 线上 / 线下均可・${campusLabel}（需选择）</div>`
-                    : (locationLong(s.location) ? `<div style="font-size:10px;color:${locationColor(s.location)};margin-top:2px">📍 ${locationLong(s.location)}</div>` : '')}
-                </label>
-              </div>
-              ${needsLocationChoice ? `
-              <div id="vip_location_choice_${s.id}" style="display:none;padding:8px 10px 4px;margin-top:-2px">
-                <div class="radio-group">
-                  <div class="radio-option"><input type="radio" name="vipLocationChoice" id="vloc_online_${s.id}" value="online" checked><label for="vloc_online_${s.id}">线上</label></div>
-                  <div class="radio-option"><input type="radio" name="vipLocationChoice" id="vloc_offline_${s.id}" value="offline"><label for="vloc_offline_${s.id}">线下・${campusLabel}</label></div>
-                </div>
-              </div>` : ''}`;
-            }).join('');
-          }).join('')}
-        </div>
+        <div id="vip_slot_area">${vipSlotAreaHtml()}</div>
         <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border-light)">
           <div class="sub-label" style="margin-bottom:6px">提交内容（可选，老师课前可参考）</div>
           <textarea id="vipStudentContent" rows="4" placeholder="计划书草稿、需要讨论的问题等文字内容…" style="margin-bottom:8px"></textarea>
@@ -415,6 +383,7 @@ function renderVipMain() {
     }
   </div>` : ''}
 
+  ${vipCancelledHtml()}
   <div class="card">
     <div class="card-title">历史课程</div>
     ${renderVipHistory()}
@@ -657,6 +626,7 @@ function renderVipActiveBooking(b) {
       ${b.location ? `<div>📍 ${locationLong(b.location) || '线上'}</div>` : ''}
     </div>` : ''}
     ${confirmedInfo}
+    ${vipStuReqHtml(b)}
     <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:11px;font-weight:600;color:var(--text-secondary)">💬 与老师留言</div><div style="font-size:10px;color:${messages.length >= VIP_MSG_LIMIT ? 'var(--danger)' : 'var(--text-muted)'}">${messages.length}/${VIP_MSG_LIMIT}</div></div>
       <div id="vip_messages_list" style="max-height:160px;overflow-y:auto;margin-bottom:8px">
@@ -682,7 +652,85 @@ function renderVipActiveBooking(b) {
   </div>`;
 }
 
-// 学生修改自己的预约（留言 / 上传作业 / 确认上课）：走数据库函数 student_patch_booking，
+// ── 学生申请取消 / 改期（bookings.change_request；老师在老师端处理）──
+function vipStuReqOf(b) { let r = b && b.change_request; if (typeof r === 'string') { try { r = JSON.parse(r); } catch (e) { r = null; } } return r && typeof r === 'object' ? r : null; }
+function vipStuEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+function vipStuReqHtml(b) {
+  const r = vipStuReqOf(b);
+  const kind = r && r.type === 'cancel' ? '取消' : '改期';
+  let box = '';
+  if (r && r.status === 'pending') {
+    box = `<div style="background:#fdf1e6;border:1px solid #e8c9a8;border-radius:4px;padding:8px 10px;margin:8px 0;font-size:12px">
+      <div style="font-weight:600;color:#a0521a">已申请${kind}，等待老师处理</div>
+      <div style="font-size:11px;color:var(--text-secondary);white-space:pre-wrap;margin-top:2px">原因：${vipStuEsc(r.reason || '—')}${r.type === 'change' && r.wish ? '\n希望时间：' + vipStuEsc(r.wish) : ''}</div>
+    </div>`;
+  } else if (r && r.status === 'rejected') {
+    box = `<div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin:8px 0;font-size:12px">
+      <div style="font-weight:600">${kind}申请未通过${r.handled_by ? '（' + vipStuEsc(r.handled_by) + '）' : ''}</div>
+      ${r.reply ? `<div style="font-size:11px;color:var(--text-secondary);white-space:pre-wrap;margin-top:2px">老师回复：${vipStuEsc(r.reply)}</div>` : ''}
+    </div>`;
+  } else if (r && r.status === 'accepted' && r.type === 'change') {
+    box = `<div style="background:var(--ok-bg,#e4f5ee);border:1px solid var(--ok,#2a9e6a);border-radius:4px;padding:8px 10px;margin:8px 0;font-size:12px;color:var(--ok,#2a9e6a)">改期申请已处理，上面是新的时间${r.handled_by ? '（' + vipStuEsc(r.handled_by) + '）' : ''}</div>`;
+  }
+  const canReq = !(r && r.status === 'pending') && !b.vip_session_notes && ['pending', 'confirmed'].includes(b.status);
+  return box + (canReq ? `<div style="display:flex;gap:6px;margin:8px 0">
+      <button class="btn btn-outline btn-sm" onclick="vipStuReqOpen('${b.id}','change')">申请改期</button>
+      <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="vipStuReqOpen('${b.id}','cancel')">申请取消</button>
+    </div>` : '');
+}
+// 最近 30 天内被取消的预约：显示「已取消 · 原因」
+function vipCancelledHtml() {
+  const since = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+  const list = (vipBookings || []).filter(b => b.status === 'cancelled' && (b.slot_date || '') >= since);
+  if (!list.length) return '';
+  return `<div class="card"><div class="card-title">已取消的预约</div>
+    ${list.map(b => `<div style="font-size:12px;padding:6px 0;border-bottom:1px dashed var(--border-light)">
+      <span style="text-decoration:line-through;color:var(--text-muted)">${vipStuEsc(b.slot_date)} ${vipStuEsc(b.slot_time_range || '')}</span>
+      <span style="color:var(--danger);margin-left:6px">已取消${b.cancel_reason ? ' · ' + vipStuEsc(b.cancel_reason) : ''}</span>
+      ${b.cancelled_by ? `<span style="font-size:10px;color:var(--text-muted);margin-left:6px">${vipStuEsc(b.cancelled_by)}</span>` : ''}
+    </div>`).join('')}</div>`;
+}
+function vipStuReqOpen(id, type) {
+  document.getElementById('vipStuReqModal')?.remove();
+  const m = document.createElement('div');
+  m.id = 'vipStuReqModal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  const ta = 'width:100%;box-sizing:border-box;font-size:12px;padding:8px;border:1px solid var(--border);border-radius:3px;font-family:inherit;resize:vertical;margin-bottom:10px';
+  m.innerHTML = `<div style="background:var(--surface,#fff);border-radius:6px;padding:18px 20px;max-width:400px;width:100%">
+    <div style="font-size:14px;font-weight:600;margin-bottom:10px">${type === 'cancel' ? '申请取消这次课' : '申请改期'}</div>
+    <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">原因（必填）</div>
+    <textarea id="vsr_reason" rows="3" style="${ta}" placeholder="例：临时有考试 / 身体不舒服"></textarea>
+    ${type === 'change' ? `<div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">希望的日期 / 时间 / 上课方式（可以写多个候选）</div>
+    <textarea id="vsr_wish" rows="3" style="${ta}" placeholder="例：10/5（周六）14:00 以后，线上；或 10/6 全天都可以"></textarea>` : ''}
+    <div id="vsr_msg" style="font-size:11px;color:var(--danger);min-height:14px;margin-bottom:6px"></div>
+    <div style="display:flex;gap:8px">
+      <button id="vsr_btn" class="btn btn-primary btn-sm" style="flex:1" onclick="vipStuReqSubmit('${id}','${type}')">提交申请</button>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('vipStuReqModal').remove()">返回</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+async function vipStuReqSubmit(id, type) {
+  const b = vipBookings.find(x => x.id === id); if (!b) return;
+  const reason = ((document.getElementById('vsr_reason') || {}).value || '').trim();
+  const wish = ((document.getElementById('vsr_wish') || {}).value || '').trim();
+  const msg = document.getElementById('vsr_msg');
+  if (!reason) { msg.textContent = '请填写原因'; return; }
+  if (type === 'change' && !wish) { msg.textContent = '请写下希望的时间'; return; }
+  const cr = { type, reason, wish: type === 'change' ? wish : '', at: new Date().toISOString(), status: 'pending' };
+  const btn = document.getElementById('vsr_btn'); btn.disabled = true;
+  try {
+    await vipPatchOwnBooking(id, { change_request: cr });
+    b.change_request = cr;
+    document.getElementById('vipStuReqModal').remove();
+    renderVipMain();
+  } catch (e) {
+    btn.disabled = false;
+    msg.textContent = /change_request|field not allowed/.test(e.message || '') ? '系统还没开通这个功能，请先用留言联系老师' : '提交失败：' + e.message;
+  }
+}
+
+// 学生修改自己的预约（留言 / 上传作业 / 确认上课 / 申请取消·改期）：走数据库函数 student_patch_booking，
 // 只允许改这几个字段、只能改自己 student_id 的预约（bookings 上锁后学生不能直接 PATCH）。
 // 函数还没建好时退回直接 PATCH（上锁前的旧方式）
 async function vipPatchOwnBooking(bookingId, patch) {
@@ -862,7 +910,8 @@ async function confirmVipSession(bookingId, rating) {
 }
 
 // 在 VIP 学生页由 study.js 作为主体驱动；此处仅在独立使用时自启动
-if (!window.__VIP_PAGE__) initVip();
+// VIP 页面（__VIP_PAGE__）和学习页面嵌入（__VIP_EMBED__）都由 study.js 负责登录，不启动 VIP 自己的登录流程
+if (!window.__VIP_PAGE__ && !window.__VIP_EMBED__) initVip();
 
 
 // ════════════════════════════════════════════════════════════════
@@ -876,6 +925,76 @@ async function loadStudentVipPlan() {
   let plans = await sb(`/rest/v1/vip_student_plans?student_id=eq.${vipStudent.id}&status=in.("signed","confirmed")&select=*&order=created_at.desc`).catch(() => []);
   if (!plans.length) plans = await sb(`/rest/v1/vip_student_plans?student_name=eq.${encodeURIComponent(vipStudent.name)}&status=in.("signed","confirmed")&select=*&order=created_at.desc`).catch(() => []);
   vipStudentPlan = plans[0] || null;
+}
+
+// ── VIP 时间槽：按月显示（和面谈预约一样：一个月一屏，点日期再展开当天的时间段）──
+let vipSlotYM = '', vipOpenDate = null;
+function vipAvailSlots() {
+  const bookedSlotIds = new Set(vipBookings.filter(b => b.status !== 'cancelled').map(b => b.slot_id));
+  const curMonth = new Date().toISOString().slice(0, 7);
+  return vipSlots.filter(s => !bookedSlotIds.has(s.id) && (s.date || '').slice(0, 7) >= curMonth);
+}
+function vipSlotMonths() { return [...new Set(vipAvailSlots().map(s => (s.date || '').slice(0, 7)))].sort(); }
+function vipSlotShift(d) {
+  const ms = vipSlotMonths(), i = ms.indexOf(vipSlotYM);
+  const j = i < 0 ? (d > 0 ? ms.findIndex(m => m > vipSlotYM) : ms.map(m => m < vipSlotYM).lastIndexOf(true)) : i + d;
+  if (j < 0 || j >= ms.length) return;
+  vipSlotYM = ms[j]; vipOpenDate = null; vipSelectedSlotId = null;
+  const el = document.getElementById('vip_slot_area'); if (el) el.innerHTML = vipSlotAreaHtml();
+}
+function vipToggleDate(date) {
+  vipOpenDate = vipOpenDate === date ? null : date; vipSelectedSlotId = null;
+  const el = document.getElementById('vip_slot_area'); if (el) el.innerHTML = vipSlotAreaHtml();
+}
+function vipSlotAreaHtml() {
+  const ms = vipSlotMonths();
+  const curMonth = new Date().toISOString().slice(0, 7);
+  // 默认本月；本月已经没有可约时间槽时，跳到下一个有时间槽的月份
+  if (!vipSlotYM || !ms.includes(vipSlotYM)) vipSlotYM = ms.includes(curMonth) ? curMonth : (ms[0] || curMonth);
+  const i = ms.indexOf(vipSlotYM), hasPrev = i > 0, hasNext = i >= 0 && i < ms.length - 1;
+  const [y, m] = vipSlotYM.split('-').map(Number);
+  const arrow = (on, d, t) => `<span onclick="${on ? `vipSlotShift(${d})` : ''}" style="cursor:${on ? 'pointer' : 'default'};color:${on ? 'var(--accent)' : 'var(--border)'};font-size:16px;padding:0 8px;user-select:none">${t}</span>`;
+  const byDate = {};
+  vipAvailSlots().filter(s => (s.date || '').startsWith(vipSlotYM)).forEach(s => { (byDate[s.date] = byDate[s.date] || []).push(s); });
+  const dates = Object.keys(byDate).sort();
+  return `<div style="display:flex;align-items:center;justify-content:flex-end;margin:-4px 0 8px">${arrow(hasPrev, -1, '‹')}<span style="font-size:13px;font-weight:600">${y}年${m}月</span>${arrow(hasNext, 1, '›')}</div>
+  ${dates.length ? dates.map(date => {
+    const d = new Date(date + 'T12:00:00'), dow = DAYS_CN[d.getDay()], open = vipOpenDate === date;
+    const dowColor = d.getDay() === 6 ? 'var(--sat,#1a4a8a)' : d.getDay() === 0 ? 'var(--sun,#8a1a2c)' : 'var(--text-secondary)';
+    const list = byDate[date];
+    return `<div style="border:1px solid ${open ? 'var(--accent)' : 'var(--border)'};border-radius:4px;overflow:hidden;margin-bottom:6px">
+      <div onclick="vipToggleDate('${date}')" style="display:flex;align-items:center;padding:11px 14px;cursor:pointer;background:${open ? 'var(--accent-light)' : 'var(--surface)'}">
+        <span style="font-size:15px;font-weight:600;font-family:'DM Mono',monospace;min-width:44px">${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}</span>
+        <span style="font-size:12px;font-weight:600;color:${dowColor};margin-left:6px">${dow}</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--text-muted)">${list.length} 个时段 ${open ? '▾' : '›'}</span>
+      </div>
+      ${open ? `<div class="slot-grid" style="grid-template-columns:1fr;background:var(--bg);padding:6px">${list.map(s => {
+        const needsLocationChoice = s.location === 'both_takadanobaba' || s.location === 'both_ichigaya';
+        const campusLabel = s.location === 'both_takadanobaba' ? '高田马场' : s.location === 'both_ichigaya' ? '市谷' : '';
+        return `
+        <div class="slot-option">
+          <input type="radio" name="vipSlotPick" id="vipslot-${s.id}" value="${s.id}" onchange="vipSelectedSlotId='${s.id}';vipRenderLocationChoice('${s.id}')">
+          <label for="vipslot-${s.id}">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span class="slot-time-r">${s.time_range}</span>
+              <span style="font-size:10px;color:var(--text-muted);margin-left:auto">👤 ${s.teacher_name}</span>
+            </div>
+            ${s.vip_content && s.vip_content.length ? `<div style="font-size:10px;color:var(--text-secondary);margin-top:3px">可指导：${s.vip_content.join('・')}</div>` : ''}
+            ${needsLocationChoice
+              ? `<div style="font-size:10px;color:var(--text-secondary);margin-top:2px">📍 线上 / 线下均可・${campusLabel}（需选择）</div>`
+              : (locationLong(s.location) ? `<div style="font-size:10px;color:${locationColor(s.location)};margin-top:2px">📍 ${locationLong(s.location)}</div>` : '')}
+          </label>
+        </div>
+        ${needsLocationChoice ? `
+        <div id="vip_location_choice_${s.id}" style="display:none;padding:8px 10px 4px;margin-top:-2px">
+          <div class="radio-group">
+            <div class="radio-option"><input type="radio" name="vipLocationChoice" id="vloc_online_${s.id}" value="online" checked><label for="vloc_online_${s.id}">线上</label></div>
+            <div class="radio-option"><input type="radio" name="vipLocationChoice" id="vloc_offline_${s.id}" value="offline"><label for="vloc_offline_${s.id}">线下・${campusLabel}</label></div>
+          </div>
+        </div>` : ''}`;
+      }).join('')}</div>` : ''}
+    </div>`;
+  }).join('') : '<div class="no-slots">这个月没有可预约的时间</div>'}`;
 }
 
 // VIP 预约区（活动预约 或 时间槽点选 + 历史课程）
@@ -897,39 +1016,7 @@ function renderVipBookingSection() {
       : vipRemainHours() <= 0
       ? '<div class="no-slots">VIP 课时已用完，暂时不能预约<br><span style="font-size:11px">如需继续上课，请联系顾问老师续课</span></div>'
       : (dateKeys.length ? `
-        <div class="slot-grid" style="grid-template-columns:1fr">
-          ${dateKeys.map(date => {
-            const d = new Date(date + 'T12:00:00');
-            const dow = DAYS_CN[d.getDay()];
-            return byDate[date].map(s => {
-              const needsLocationChoice = s.location === 'both_takadanobaba' || s.location === 'both_ichigaya';
-              const campusLabel = s.location === 'both_takadanobaba' ? '高田马场' : s.location === 'both_ichigaya' ? '市谷' : '';
-              return `
-              <div class="slot-option">
-                <input type="radio" name="vipSlotPick" id="vipslot-${s.id}" value="${s.id}" onchange="vipSelectedSlotId='${s.id}';vipRenderLocationChoice('${s.id}')">
-                <label for="vipslot-${s.id}">
-                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                    <span class="slot-date-r">${d.getMonth() + 1}/${d.getDate()}</span>
-                    <span class="slot-dow-r">${dow}</span>
-                    <span class="slot-time-r">${s.time_range}</span>
-                    <span style="font-size:10px;color:var(--text-muted);margin-left:auto">👤 ${s.teacher_name}</span>
-                  </div>
-                  ${s.vip_content && s.vip_content.length ? `<div style="font-size:10px;color:var(--text-secondary);margin-top:3px">可指导：${s.vip_content.join('・')}</div>` : ''}
-                  ${needsLocationChoice
-                    ? `<div style="font-size:10px;color:var(--text-secondary);margin-top:2px">📍 线上 / 线下均可・${campusLabel}（需选择）</div>`
-                    : (locationLong(s.location) ? `<div style="font-size:10px;color:${locationColor(s.location)};margin-top:2px">📍 ${locationLong(s.location)}</div>` : '')}
-                </label>
-              </div>
-              ${needsLocationChoice ? `
-              <div id="vip_location_choice_${s.id}" style="display:none;padding:8px 10px 4px;margin-top:-2px">
-                <div class="radio-group">
-                  <div class="radio-option"><input type="radio" name="vipLocationChoice" id="vloc_online_${s.id}" value="online" checked><label for="vloc_online_${s.id}">线上</label></div>
-                  <div class="radio-option"><input type="radio" name="vipLocationChoice" id="vloc_offline_${s.id}" value="offline"><label for="vloc_offline_${s.id}">线下・${campusLabel}</label></div>
-                </div>
-              </div>` : ''}`;
-            }).join('');
-          }).join('')}
-        </div>
+        <div id="vip_slot_area">${vipSlotAreaHtml()}</div>
         <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border-light)">
           <div class="sub-label" style="margin-bottom:6px">提交内容（可选，老师课前可参考）</div>
           <textarea id="vipStudentContent" rows="4" placeholder="计划书草稿、需要讨论的问题等文字内容…" style="margin-bottom:8px"></textarea>
@@ -940,6 +1027,7 @@ function renderVipBookingSection() {
       ` : '<div class="no-slots">暂无可预约的时间，请稍后再来查看</div>')
     }
   </div>`}
+  ${vipCancelledHtml()}
   <div class="card">
     <div class="card-title">历史课程</div>
     ${renderVipHistory()}

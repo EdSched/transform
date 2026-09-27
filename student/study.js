@@ -92,6 +92,7 @@ async function studyLogin(name, code, silent, onStatus) {
     if (onStatus) onStatus('正在加载学习记录…');
     await loadStudyData();
     renderStudyMain();
+    studyRemindersLoad();
     return true;
   } catch(e) { if (!silent) console.error(e); return 'network'; }
 }
@@ -125,11 +126,18 @@ async function loadStudyData() {
     }
   }
   studyData = { timeline, schoolPlans, planDraft: planDraftArr[0]||null, sharedLists, sharedSchools, bookings, sessionRecs };
-  // VIP 学生页：额外加载 VIP 预约数据与绑定的课程规划
-  if (window.__VIP_PAGE__ && studyStudent && (studyStudent.is_vip_course === 'VIP' || studyStudent.is_vip_course === '大课+VIP')) {
+  // VIP：额外加载 VIP 预约数据与绑定的课程规划（VIP 页面：纯VIP和大课+VIP；学习页面：只有大课+VIP）
+  if (studyShowVip(studyStudent)) {
     if (typeof loadVipData === 'function') { vipStudent = studyStudent; await loadVipData(); }
     if (typeof loadStudentVipPlan === 'function') await loadStudentVipPlan();
   }
+}
+
+// 是否显示 VIP 标签：VIP 页面 → 纯VIP、大课+VIP 都显示；学习页面（嵌入 vip.js）→ 只有大课+VIP 显示
+function studyShowVip(s) {
+  if (!s || typeof loadVipData !== 'function') return false;
+  if (window.__VIP_PAGE__) return s.is_vip_course === 'VIP' || s.is_vip_course === '大课+VIP';
+  return !!window.__VIP_EMBED__ && s.is_vip_course === '大课+VIP';
 }
 
 // ══════════════════════════════════
@@ -152,10 +160,11 @@ function renderStudyMain() {
     const _ri = tabs.findIndex(t => t.id === 'records');
     tabs.splice(_ri >= 0 ? _ri + 1 : tabs.length, 0, { id:'reserve', label:'📅 面谈预约' });
   }
-  // VIP 学生：额外两个 tab（预约 + 课程安排）
-  if (window.__VIP_PAGE__ && (s.is_vip_course === 'VIP' || s.is_vip_course === '大课+VIP')) {
+  // VIP 学生：「⭐ VIP预约」；「📋 VIP课程安排」只在有课程规划时显示（纯 VIP 在 VIP 页面照旧一直显示）
+  if (studyShowVip(s)) {
     tabs.push({ id:'vipbook', label:'⭐ VIP预约' });
-    tabs.push({ id:'vipplan', label:'📋 VIP课程安排' });
+    const hasPlan = (typeof vipStudentPlan !== 'undefined') && !!vipStudentPlan;
+    if (hasPlan || (window.__VIP_PAGE__ && s.is_vip_course === 'VIP')) tabs.push({ id:'vipplan', label:'📋 VIP课程安排' });
   }
 
   // 进度概览 badges
@@ -176,6 +185,7 @@ function renderStudyMain() {
     <button onclick="studyLogout()" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit;color:var(--text-muted)">退出</button>
   </div>
   ${badges?`<div class="study-badgebar" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px">${badges}</div>`:''}
+  <div id="study_reminders">${studyRemindersHtml()}</div>
   <div class="study-tabbar" style="display:flex;gap:0;border-bottom:2px solid var(--border-light);margin-bottom:18px">
     ${tabs.map(t=>`<button onclick="switchStudyTab('${t.id}')" style="padding:7px 14px;font-size:12px;background:none;border:none;border-bottom:2px solid ${studyTab===t.id?'var(--accent)':'transparent'};margin-bottom:-2px;cursor:pointer;font-family:inherit;color:${studyTab===t.id?'var(--accent)':'var(--text-muted)'};font-weight:${studyTab===t.id?'600':'400'};white-space:nowrap">${t.label}</button>`).join('')}
   </div>
@@ -183,9 +193,53 @@ function renderStudyMain() {
   renderStudyTab();
 }
 
+// ── 学习页顶部「提醒」：志望校未填 / 计划书·志望理由书未开始 / 本周作业未交；点一下跳到对应标签，完成后自动消失 ──
+let studyRemState = { riyuStarted: null, loading: false };
+function studyRemindersHtml() {
+  if (!studyStudent) return '';
+  const items = [];
+  const sl = studyData.sharedLists || [];
+  if (sl.length && !(studyData.schoolPlans || []).length)
+    items.push({ t: `🏫 ${sl[0].title || '出愿学校列表'} · 待填写志望校`, go: "switchStudyTab('schools')" });
+  if (studyIsGakubu()) {
+    if (studyRemState.riyuStarted === false) items.push({ t: '📄 志望理由书 · 还没有开始', go: "switchStudyTab('plan')" });
+  } else if (!studyData.planDraft) items.push({ t: '📄 计划书 · 还没有开始', go: "switchStudyTab('plan')" });
+  if (hwLoaded) {
+    const wk = weekRange();
+    hwSessions.filter(x => x.session_date >= wk.start && x.session_date <= wk.end && !hwSubs[x.id])
+      .sort((x, y) => String(x.session_date || '').localeCompare(String(y.session_date || '')))
+      .forEach(x => items.push({ t: `📝 ${x.course_name || '课程'}${x.session_number ? ` 第${x.session_number}回` : ''} 作业未提交`, go: `hwOpenId='${x.id}';switchStudyTab('homework')` }));
+  }
+  if (!items.length) return '';
+  return `<div style="background:#eef3fb;border:1px solid #2c4a7c;border-radius:3px;padding:8px 12px;margin-bottom:12px">
+    <div style="font-size:11px;font-weight:600;color:#2c4a7c;margin-bottom:4px">提醒</div>
+    ${items.map(i => `<div onclick="${i.go}" style="font-size:12px;color:#2c4a7c;padding:3px 0;cursor:pointer;display:flex;align-items:center;gap:6px"><span>${i.t.replace(/</g, '&lt;')}</span><span style="margin-left:auto;font-size:11px;white-space:nowrap">去完成 →</span></div>`).join('')}
+  </div>`;
+}
+function studyRemindersRender() {
+  const el = document.getElementById('study_reminders');
+  if (el) el.innerHTML = studyRemindersHtml();
+}
+// 读取提醒需要的数据（作业、志望理由书），读完只重绘提醒区块
+async function studyRemindersLoad() {
+  if (!studyStudent || studyRemState.loading) return;
+  studyRemState.loading = true;
+  try {
+    await Promise.all([
+      studyHwFetch().catch(() => {}),
+      studyIsGakubu()
+        ? sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=eq.gakubu_riyu&select=id&limit=1`)
+            .then(r => { studyRemState.riyuStarted = !!(r && r.length) || !!studyData.planDraft; }).catch(() => {})
+        : null,
+    ]);
+  } finally { studyRemState.loading = false; }
+  studyRemindersRender();
+}
+
 function switchStudyTab(tab) {
   studyTab = tab;
   renderStudyMain();
+  if (studyIsGakubu() && studyRemState.riyuStarted === false) studyRemindersLoad();
 }
 
 function renderStudyTab() {
@@ -1533,21 +1587,23 @@ function studyMajorKey() {
 
 function renderReserveTab() {
   const key = studyMajorKey();
-  const label = (studyStudent && (MAJORS[studyStudent.major] || studyStudent.major)) || '';
   if (!key) {
     return `<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">
       未能识别你的专业，暂时无法自动预约，请联系老师获取本专业预约链接。</div>`;
   }
   // 内嵌页从本机登录信息读取身份（同源 localStorage），URL 不再带姓名
   const url = `../student/?major=${encodeURIComponent(key)}&embed=1`;
-  return `
-  <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;display:flex;align-items:center;flex-wrap:wrap;gap:8px">
-    <span>📅 预约面谈${label?` · ${label}`:''}（已自动匹配你的专业与姓名，直接选择时间提交即可）</span>
-    <a href="${url}" target="_blank" style="color:var(--accent);white-space:nowrap">↗ 在新窗口打开</a>
-  </div>
-  <iframe src="${url}" title="面谈预约" loading="lazy"
-    style="width:100%;min-height:82vh;border:1px solid var(--border-light);border-radius:4px;background:var(--surface)"></iframe>`;
+  return `<iframe id="study_reserve_frame" src="${url}" title="面谈预约" scrolling="no"
+    style="display:block;width:100%;height:70vh;border:none;background:transparent;overflow:hidden"></iframe>`;
 }
+// 面谈预约 iframe 按内容自动调整高度（内嵌页通过 postMessage 报告高度）
+window.addEventListener('message', e => {
+  const d = e.data;
+  const f = document.getElementById('study_reserve_frame');
+  if (!d || !f || e.source !== f.contentWindow) return;
+  if (d.type === 'bk-embed-height' && d.h > 0) f.style.height = Math.max(200, d.h) + 'px';
+  else if (d.type === 'bk-embed-top') f.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
 
 // ── 作业页：左=资料/题目预览，右=作业列表与作答 ──
 function renderHomeworkTab() {
@@ -1660,15 +1716,16 @@ async function studyLoadMyMembers() {
 }
 function studyMe() { return Object.assign({}, studyStudent, { major: studyStudent.major || studyMajor }); }
 
-async function loadStudyHwSessions(retry) {
-  const wrap = document.getElementById('study_hw_sessions_wrap');
-  if (!wrap) { if ((retry || 0) < 8) setTimeout(() => loadStudyHwSessions((retry || 0) + 1), 120); return; }
-  if (hwLoaded) { renderHwList(); return; }   // 已有数据直接重绘
-  const myMajor = studyStudent.major || studyMajor;
-  const acceptMajors = myMajor === 'shakai_group'
-    ? ['shakai_group', ...SHAKAI_GROUP]
-    : SHAKAI_GROUP.includes(myMajor) ? [myMajor, 'shakai_group'] : [myMajor];
-  try {
+// 读取当期作业和本人提交记录（作业标签和学习页顶部提醒共用，只读一次）
+let _hwFetchP = null;
+function studyHwFetch() {
+  if (hwLoaded) return Promise.resolve();
+  if (_hwFetchP) return _hwFetchP;
+  _hwFetchP = (async () => {
+    const myMajor = studyStudent.major || studyMajor;
+    const acceptMajors = myMajor === 'shakai_group'
+      ? ['shakai_group', ...SHAKAI_GROUP]
+      : SHAKAI_GROUP.includes(myMajor) ? [myMajor, 'shakai_group'] : [myMajor];
     const today = new Date();
     // 只要「当期」：先取前后约 100 天，再按 inCurrentPeriod 精确过滤（下一期的作业不显示）
     const from = new Date(today); from.setDate(today.getDate() - 100);
@@ -1698,9 +1755,19 @@ async function loadStudyHwSessions(retry) {
       const sm = Array.isArray(s.major) ? s.major : [s.major || ''];
       return !myMajor || sm.some(m => acceptMajors.includes(m));
     });
-    hwSubs = {};
     (subs || []).forEach(x => hwSubs[x.session_id] = x);
     hwLoaded = true;
+  })();
+  _hwFetchP.catch(() => {}).then(() => { _hwFetchP = null; });
+  return _hwFetchP;
+}
+
+async function loadStudyHwSessions(retry) {
+  const wrap = document.getElementById('study_hw_sessions_wrap');
+  if (!wrap) { if ((retry || 0) < 8) setTimeout(() => loadStudyHwSessions((retry || 0) + 1), 120); return; }
+  if (hwLoaded) { renderHwList(); return; }   // 已有数据直接重绘
+  try {
+    await studyHwFetch();
   } catch (e) {
     wrap.innerHTML = `<div style="font-size:11px;color:var(--danger)">加载失败：${e.message}</div>`;
     return;
@@ -1712,7 +1779,6 @@ async function loadStudyHwSessions(retry) {
     if (eb) eb.textContent = String((e && e.stack) || e).slice(0, 300);
   }
 }
-
 
 // 时间统一按日本时间（JST）显示
 function fmtJst(ts) {
@@ -2078,6 +2144,7 @@ async function hwSubmit(sid, levelKey) {
     await sb('/rest/v1/homework_submissions', 'POST', row);
     row.submitted_at = new Date().toISOString();
     hwSubs[sid] = row;
+    studyRemindersRender();
     hwDraft = {}; hwWholeFile = null;
     if (_vipBk && hwVipCb && hwVipCb.onSubmitted) hwVipCb.onSubmitted(row);
     hwRerender();

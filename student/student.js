@@ -184,6 +184,7 @@ async function initMajor() {
     ${bkIsEmbed ? '' : `<a href="../vip/" style="display:inline-block;margin-top:8px;font-size:11px;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:4px 12px;text-decoration:none">⭐ 我有VIP课程 →</a>`}`;
 
   if (bkIsEmbed) {
+    bkEmbedAutoHeight();
     const info = studentLoginLoad();
     if (!info) { bkMsg('请先登录', `<a href="${bkStudyUrl()}" target="_top" style="color:var(--accent)">点这里用姓名＋查询码登录</a>`); return; }
     const say = t => { document.getElementById('mainWrap').innerHTML = `<div class="loading">${t}</div>`; };
@@ -202,6 +203,23 @@ async function initMajor() {
   // 本机已登录过 → 直接进入学习页的「面谈预约」标签
   if (studentLoginLoad()) { location.replace(bkStudyUrl()); return; }
   renderBookingLogin();
+}
+
+// 内嵌时把页面实际高度告诉学习页，由学习页调整 iframe 高度（避免出现两层滚动条）
+function bkEmbedAutoHeight() {
+  if (window.parent === window) return;
+  let last = 0;
+  const send = () => {
+    const mw = document.getElementById('mainWrap');
+    const h = Math.ceil(mw ? mw.getBoundingClientRect().bottom + (window.scrollY || 0) : document.body.scrollHeight) + 16;
+    if (Math.abs(h - last) < 2) return;
+    last = h;
+    try { window.parent.postMessage({ type: 'bk-embed-height', h }, '*'); } catch (e) {}
+  };
+  if (window.ResizeObserver) new ResizeObserver(send).observe(document.body);
+  setInterval(send, 800);
+  window.addEventListener('load', send);
+  send();
 }
 
 function renderBookingLogin() {
@@ -282,7 +300,7 @@ async function loadBookingPage() {
         if (hint) hint.textContent = '已按你的登录身份自动填入姓名';
       }
     }
-    loadSchoolPlanBanner(); // 检查是否有共享的学校列表
+    if (!bkIsEmbed) loadSchoolPlanBanner(); // 检查是否有共享的学校列表（内嵌时由学习页顶部提醒代替）
   } catch(e) {
     bkMsg('加载失败', bkEsc(e.message));
   }
@@ -308,11 +326,11 @@ function buildForm() {
     <div style="font-size:11px;color:var(--text-secondary);line-height:1.7">请填写中文真实姓名。面谈时向老师领取查询码，以后就能登录查看学习记录。</div>
     <a onclick="renderBookingLogin()" style="display:inline-block;margin-top:6px;font-size:11px;color:var(--accent);cursor:pointer;text-decoration:underline">已有查询码？请登录</a>
   </div>` : ''}
-  <!-- 统一提醒条 -->
-  <div id="reminderStrip" style="display:none;background:#eef3fb;border:1px solid #2c4a7c;border-radius:3px;padding:12px 14px;margin-bottom:12px">
+  <!-- 统一提醒条（只在公开入口显示；内嵌在学习页时，提醒改由学习页顶部显示） -->
+  ${bkIsEmbed ? '' : `<div id="reminderStrip" style="display:none;background:#eef3fb;border:1px solid #2c4a7c;border-radius:3px;padding:12px 14px;margin-bottom:12px">
     <div id="reminderItems" style="font-size:11px;color:#2c4a7c;line-height:2;margin-bottom:10px"></div>
     <a href="../student/study.html?major=${major}" style="font-size:12px;background:#2c4a7c;color:#fff;border-radius:3px;padding:8px 18px;text-decoration:none;display:inline-block;font-weight:500">→ 前往学习记录完成</a>
-  </div>
+  </div>`}
   <div id="infoBanner" style="display:none;background:var(--warning-light);border:1px solid var(--warning);border-radius:3px;padding:9px 12px;margin-bottom:12px;font-size:11px;color:var(--warning);line-height:1.6"></div>
   <div class="card">
     <div class="card-title" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between" onclick="toggleCard('basicCardBody','basicCardArrow')">
@@ -499,7 +517,7 @@ function buildForm() {
   // restore saved info
   applyStoredInfo(loadStudentInfo());
   // 检查出愿共享banner（DOM重建后重新执行）
-  setTimeout(() => loadSchoolPlanBanner(), 200);
+  if (!bkIsEmbed) setTimeout(() => loadSchoolPlanBanner(), 200);
 }
 
 function getPlanStatus() { return document.getElementById('planStatus')?.value || ''; }
@@ -830,6 +848,7 @@ async function submitBooking() {
     saveStudentInfo();
     document.getElementById('successBanner').classList.add('show');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (bkIsEmbed && window.parent !== window) { try { window.parent.postMessage({ type: 'bk-embed-top' }, '*'); } catch (e) {} }
     renderSlots();
   } catch(e) { alert('提交失败：' + e.message); }
 }
