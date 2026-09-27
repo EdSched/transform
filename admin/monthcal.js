@@ -1,10 +1,18 @@
 // ══════════════════════════════════
 // monthcal.js — 课程安排「🗓 导出月课表」：按月把选中课程的单回排成月历，打印 / 另存为 PDF
 // 数据：cachedCourses / cachedSessions（课程安排页已加载，已按领域视角过滤）
-// 样式参照「2026年9月课表 · 纯艺设计班」：A4 横向一页，周一开始，表头浅黄，土日红字
+// 排版参照「2026年9月课表 · 纯艺设计班」（A4 横向一页，周一开始）；配色照 Sensis 课表封面：暖白底、细浅线、柔和黄表头、衬线标题
 // ══════════════════════════════════
 
-const MCX_COLORS = [['black', '黑', '#111111'], ['blue', '蓝', '#1f4fd1'], ['pink', '粉', '#e0457b'], ['green', '绿', '#1e8a4c'], ['orange', '橙', '#e07b12']];
+// [key, 名称, 文字色, 课程块底色（约 10% 浓度）]
+const MCX_COLORS = [
+  ['black', '深灰（默认）', '#3a342e', '#f3ece4'],
+  ['blue', '雾蓝', '#4f7194', '#e9eef3'],
+  ['pink', '豆沙粉', '#b25a74', '#f6e8ec'],
+  ['green', '苔绿', '#5b7f55', '#ebf0e8'],
+  ['orange', '橘黄', '#c9831f', '#f8eedd'],
+  ['purple', '淡紫', '#7a68a3', '#eeebf4'],
+];
 let mcxState = { ym: '', sel: new Set(), colors: {}, titleEdited: false, filter: '' };
 
 function mcxEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
@@ -86,7 +94,7 @@ function mcxRender() {
       const col = mcxState.colors[c.id] || 'black';
       return `<div onclick="mcxToggle('${mcxEsc(c.id)}')" style="display:flex;align-items:center;gap:8px;padding:6px 9px;margin-bottom:4px;border-radius:3px;cursor:pointer;border:1px solid ${on ? 'var(--accent)' : 'var(--border-light)'};background:${on ? 'var(--accent-light,#f5efe0)' : 'var(--surface)'};${on ? '' : 'opacity:.6'}">
         <span style="flex:1;min-width:0;font-size:12px"><b>${mcxEsc(c.name)}</b> <span style="color:var(--text-3);font-size:11px">· ${mcxEsc(c.teacher || '')} · 本月 ${sessions.length} 回${typeof mcxClassTagHtml === 'function' ? mcxClassTagHtml(c) : ''}</span></span>
-        <select onclick="event.stopPropagation()" onchange="mcxState.colors['${mcxEsc(c.id)}']=this.value" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:2px;background:var(--bg);color:${MCX_COLORS.find(x => x[0] === col)[2]}">
+        <select onclick="event.stopPropagation()" onchange="mcxState.colors['${mcxEsc(c.id)}']=this.value;this.style.color=this.options[this.selectedIndex].style.color" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:2px;background:var(--bg);color:${MCX_COLORS.find(x => x[0] === col)[2]}">
           ${MCX_COLORS.map(([k, l, hex]) => `<option value="${k}" ${k === col ? 'selected' : ''} style="color:${hex}">${l}</option>`).join('')}
         </select>
       </div>`;
@@ -119,7 +127,7 @@ function mcxGenerate() {
     (byDate[s.session_date] = byDate[s.session_date] || []).push({
       name: (s.session_title || '').trim() || c.name || s.course_name || '',
       ranges, teacher: s.session_teacher || s.teacher || c.teacher || '',
-      color: (MCX_COLORS.find(x => x[0] === (mcxState.colors[c.id] || 'black')) || MCX_COLORS[0])[2],
+      pal: MCX_COLORS.find(x => x[0] === (mcxState.colors[c.id] || 'black')) || MCX_COLORS[0],
       sortKey: timeRangesSortKey((s && s.time_range) || c.time_range),
     });
   }));
@@ -133,37 +141,53 @@ function mcxGenerate() {
   const cellHtml = (d, col) => {
     if (!d) return '<td class="empty"></td>';
     const list = byDate[`${ym}-${String(d).padStart(2, '0')}`] || [];
-    return `<td class="${col >= 5 ? 'we' : ''}"><div class="dn">${d}</div><div class="items">${list.map(it => `<div class="it" style="color:${it.color}">
+    return `<td class="${col >= 5 ? 'we' : ''}"><div class="dn">${d}</div><div class="items">${list.map(it => `<div class="it" style="color:${it.pal[2]};background:${it.pal[3]}">
         <div>${mcxEsc(it.name)}</div>
         ${it.ranges.map(r => `<div>${mcxEsc(r.end ? `${r.start}-${r.end}` : r.start)}</div>`).join('')}
         ${it.teacher ? `<div>${mcxEsc(it.teacher)}老师</div>` : ''}
       </div>`).join('')}</div></td>`;
   };
+  const logo = new URL('../sched/logo.png', location.href).href;
+  const dots = (pos, cols) => `<div class="dots" style="${pos}">${cols.map(c => `<i style="background:${c}"></i>`).join('')}</div>`;
   const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>${mcxEsc(title)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@500;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@500;700&family=Noto+Serif+SC:wght@700&display=swap" rel="stylesheet">
 <style>
 @page{size:A4 landscape;margin:8mm}
 *{box-sizing:border-box}
-html,body{margin:0;padding:0;background:#fff;color:#111;font-family:'Noto Sans SC',sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.page{width:281mm;height:192mm;display:flex;flex-direction:column}
-h1{margin:0 0 3mm;text-align:center;font-size:26px;font-weight:900;letter-spacing:.04em}
+html,body{margin:0;padding:0;background:#fcf8f4;color:#3a342e;font-family:'Noto Sans SC',sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.page{width:281mm;height:192mm;display:flex;flex-direction:column;position:relative}
+.head{display:flex;flex-direction:column;align-items:center;margin-bottom:3mm;position:relative;z-index:1}
+.ttl{display:flex;align-items:center;gap:3mm}
+.ttl img{height:11mm;width:auto}
+h1{margin:0;font-family:'Noto Serif SC',serif;font-size:25px;font-weight:700;color:#2e2924;letter-spacing:.06em}
+.rule{display:flex;align-items:center;width:62%;margin-top:2mm}
+.rule span{flex:1;height:1px;background:#d9cfc4}
+.rule b{width:6px;height:6px;display:block;flex-shrink:0}
+.dots{position:absolute;display:grid;grid-template-columns:repeat(3,5px);gap:4px}
+.dots i{width:5px;height:5px;border-radius:50%;display:block}
 .wrap{flex:1;min-height:0;overflow:hidden}
-table{width:100%;height:100%;border-collapse:collapse;table-layout:fixed;border:2.5px solid #111}
-th{background:#fdf98c;font-size:15px;font-weight:900;padding:4px 0;border:1.5px solid #111}
-th.we{color:#e0201b}
-td{border:1.5px solid #111;vertical-align:top;padding:2px 3px;position:relative}
-td.empty{background:#fff}
-.dn{text-align:right;font-weight:900;font-size:1em;line-height:1.1}
-td.we .dn{color:#e0201b}
+table{width:100%;height:100%;border-collapse:collapse;table-layout:fixed;border:1.2px solid #d9cfc4;background:#fffdfa}
+th{background:#f8eac2;color:#2e2924;font-size:14px;font-weight:700;padding:4px 0;border:0.8px solid #e8dfd5;border-bottom:2px solid #f2a93b}
+th.we{color:#c4646a}
+td{border:0.8px solid #e8dfd5;vertical-align:top;padding:2px 3px;position:relative}
+td.empty{background:#f7f1ea}
+.dn{text-align:right;font-weight:700;font-size:.85em;line-height:1.1;color:#8a7f74}
+td.we .dn{color:#c4646a}
 .items{text-align:center;font-weight:700;line-height:1.25}
-.it+.it{margin-top:.5em}
-.noprint{position:fixed;top:8px;right:8px}
+.it{border-radius:4px;padding:.25em .3em;margin:.15em .1em 0}
+.it+.it{margin-top:.35em}
+.noprint{position:fixed;top:8px;right:8px;z-index:5}
 @media print{.noprint{display:none}}
 </style></head><body>
 <div class="noprint"><button onclick="window.print()" style="font-size:13px;padding:8px 20px;cursor:pointer">🖨 打印 / 保存为 PDF</button></div>
 <div class="page">
-  <h1>${mcxEsc(title)}</h1>
+  ${dots('top:0;left:0', ['#efc9cc', '#c4d2e0', '#e6d6bf', '#d7cde6', '#efc9cc', '#c4d2e0'])}
+  ${dots('top:0;right:0', ['#c4d2e0', '#e6d6bf', '#efc9cc', '#e6d6bf', '#d7cde6', '#c4d2e0'])}
+  <div class="head">
+    <div class="ttl"><img src="${logo}" alt="" onerror="this.style.display='none'"><h1>${mcxEsc(title)}</h1></div>
+    <div class="rule"><b style="background:#efc9cc"></b><span></span><b style="background:#c4d2e0"></b></div>
+  </div>
   <div class="wrap" id="wrap"><table id="cal">
     <thead><tr>${['月', '火', '水', '木', '金', '土', '日'].map((t, i) => `<th class="${i >= 5 ? 'we' : ''}">${t}</th>`).join('')}</tr></thead>
     <tbody>${weeks.map(w => `<tr style="height:${(100 / weeks.length).toFixed(2)}%">${w.map((d, i) => cellHtml(d, i)).join('')}</tr>`).join('')}</tbody>
