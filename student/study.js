@@ -319,49 +319,9 @@ function renderSchoolsTab() {
       </div>
     </div>` : '';
 
-  // 志望校编辑区（内联，不弹窗）
-  const schoolOptions = sharedSchools.map(s =>
-    `<option value="${s.id}" data-name="${s.university}" data-faculty="${s.faculty||''}" data-dept="${s.department||''}" data-period="${s.application_period||''}">${s.university} ${[s.department,s.course].filter(Boolean).join(' ')}</option>`
-  ).join('');
-
+  // 志望校编辑区（内联，不弹窗）：单所表单与老师端 / 管理端共用（shared/schoolplan.js）
   function buildRow(p={}, lv, idx) {
-    return `<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px" data-level="${lv}" id="sr_${lv}_${idx}">
-      <div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:6px">第${idx+1}校</div>
-      <select onchange="studyApplySharedSchool(this)" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface);width:100%;margin-bottom:6px">
-        <option value="">— 从共享列表选择 —</option>
-        ${schoolOptions}
-      </select>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:5px">
-        <input placeholder="学校名 *" value="${escA(p.school_name)}" data-field="school_name" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="研究科" value="${escA(p.faculty)}" data-field="faculty" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="専攻/コース" value="${escA(p.department)}" data-field="department" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="出愿时间（精确）" value="${escA(p.application_period)}" data-field="application_period" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="考试日期" value="${escA(p.exam_date)}" data-field="exam_date" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="必要书类（推荐信等）" value="${escA(p.documents_required)}" data-field="documents_required" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-      </div>
-      <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">👤 教授（每校尽量2位）</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:5px">
-        <input placeholder="教授1姓名" value="${escA(p.professor)}" data-field="professor" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="教授1研究内容URL" value="${escA(p.professor_url)}" data-field="professor_url" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="教授2姓名" value="${escA(p.professor2)}" data-field="professor2" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="教授2研究内容URL" value="${escA(p.professor2_url)}" data-field="professor2_url" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
-        <input placeholder="${studyIsGakubu()?'志望理由书要求（字数/格式）':'计划书要求（字数/格式）'}" value="${escA(p.plan_requirement)}" data-field="plan_requirement" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-        <input placeholder="研究课题（目前方向）" value="${escA(p.research_theme)}" data-field="research_theme" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-      </div>
-      <div style="font-size:10px;color:var(--text-muted);margin:6px 0 4px">📌 该校进度</div>
-      <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">
-        <select data-field="status" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface);flex:1;min-width:180px">
-          ${Object.entries(SCHOOL_STATUS_LABELS).map(([k,v])=>`<option value="${k}" ${(p.status||'preparing')===k?'selected':''}>${v.t}</option>`).join('')}
-        </select>
-        ${[['kakomon_started','✏️ 过去问已开始'],['interview_draft_done','🎤 面试稿已完成']].map(([f,l])=>{
-          const on = !!p[f];
-          return `<span onclick="studyToggleChip(this)" data-field="${f}" data-on="${on?1:0}" style="font-size:11px;padding:4px 10px;border-radius:2px;cursor:pointer;user-select:none;border:1px solid ${on?'var(--accent)':'var(--border)'};background:${on?'var(--accent)':'var(--surface)'};color:${on?'#fff':'var(--text-secondary)'}">${l}</span>`;
-        }).join('')}
-      </div>
-      <input type="hidden" value="${escA(p.id)}" data-field="id">
-    </div>`;
+    return spFormHtml(p, { sharedSchools, gakubu: studyIsGakubu(), level: lv, idx });
   }
 
   const levelGroups = [
@@ -407,56 +367,16 @@ function renderSchoolsTab() {
   </div>`;
 }
 
-function studyApplySharedSchool(sel) {
-  if (!sel.value) return;
-  const opt = sel.options[sel.selectedIndex];
-  const row = sel.closest('[data-level]');
-  if (!row) return;
-  const set = (f,v) => { const el = row.querySelector(`[data-field="${f}"]`); if(el) el.value = v; };
-  set('school_name', opt.dataset.name || '');
-  set('faculty', opt.dataset.faculty || '');
-  set('department', opt.dataset.dept || '');
-  // 出願期不自动带入：共享列表多为「8月上旬」类概略值，保留学生手填的精确日期
-  // 选择后重置下拉，让用户知道已带入
-  sel.value = '';
-}
+function studyApplySharedSchool(sel) { spApplyShared(sel); }
 
 function studyAddSchoolRowToGroup(lv) {
   const allRows = document.querySelectorAll('#studySchoolRows [data-level]').length;
-  if (allRows >= 6) { alert('最多6所学校'); return; }
-  const schoolOptions = studyData.sharedSchools.map(s =>
-    `<option value="${s.id}" data-name="${s.university}" data-faculty="${s.faculty||''}" data-dept="${s.department||''}" data-period="${s.application_period||''}">${s.university} ${[s.department,s.course].filter(Boolean).join(' ')}</option>`
-  ).join('');
+  if (allRows >= SP_MAX_SCHOOLS) { alert('最多6所学校'); return; }
   const lvRows = document.querySelectorAll(`#studySchoolRows [data-level="${lv}"]`).length;
-  const div = document.createElement('div');
-  div.setAttribute('data-level', lv);
-  div.style.cssText = 'background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px';
-  div.innerHTML = `
-    <div style="font-size:10px;font-weight:600;color:var(--text-muted);margin-bottom:6px">第${lvRows+1}校</div>
-    <select onchange="studyApplySharedSchool(this)" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface);width:100%;margin-bottom:6px">
-      <option value="">— 从共享列表选择 —</option>
-      ${schoolOptions}
-    </select>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:5px">
-      <input placeholder="学校名 *" data-field="school_name" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-      <input placeholder="研究科" data-field="faculty" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-      <input placeholder="専攻/コース" data-field="department" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-      <input placeholder="出愿时间（精确）" data-field="application_period" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-      <input placeholder="考试日期" data-field="exam_date" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-      <input placeholder="必要书类" data-field="documents_required" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-    </div>
-    <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">👤 教授</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:5px">
-      <input placeholder="教授1姓名" data-field="professor" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-      <input placeholder="教授1研究内容URL" data-field="professor_url" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-      <input placeholder="教授2姓名" data-field="professor2" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-      <input placeholder="教授2研究内容URL" data-field="professor2_url" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
-      <input placeholder="${studyIsGakubu()?'志望理由书要求':'计划书要求'}" data-field="plan_requirement" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-      <input placeholder="研究课题" data-field="research_theme" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-    </div>
-    <input type="hidden" value="" data-field="id">`;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = spFormHtml({}, { sharedSchools: studyData.sharedSchools, gakubu: studyIsGakubu(), level: lv, idx: lvRows });
+  const div = tmp.firstElementChild;
+  div.removeAttribute('id');
   // Insert before add button
   const btn = [...document.querySelectorAll('#studySchoolRows button')].find(b => b.onclick?.toString().includes(`(${lv})`));
   if (btn) btn.parentElement.insertBefore(div, btn);
@@ -484,16 +404,7 @@ async function saveStudySchoolPlans() {
   try {
     const rows = [...document.querySelectorAll('#studySchoolRows [data-level]')];
     if (!rows.length) { alert('页面加载中，请稍后再试'); return; }
-    const plans = rows.map(row => {
-      const inputs = [...row.querySelectorAll('input[data-field], select[data-field]')];
-      const get = f => {
-        const el = inputs.find(i => i.dataset.field === f);
-        return el ? el.value.trim() : '';
-      };
-      const lv = parseInt(row.dataset.level||'2');
-      const chip = f => { const el = row.querySelector(`span[data-field="${f}"]`); return el ? el.dataset.on === '1' : false; };
-      return { id:get('id'), level:lv, status:get('status')||'preparing', kakomon_started:chip('kakomon_started'), interview_draft_done:chip('interview_draft_done'), school_name:get('school_name'), faculty:get('faculty'), department:get('department'), application_period:get('application_period'), exam_date:get('exam_date'), professor:get('professor'), professor_url:get('professor_url'), professor2:get('professor2'), professor2_url:get('professor2_url'), plan_requirement:get('plan_requirement'), research_theme:get('research_theme'), documents_required:get('documents_required') };
-    }).filter(p => p.school_name);
+    const plans = rows.map(row => spFormCollect(row)).filter(p => p.school_name);
 
     if (!plans.length) { alert('请至少填写一所学校的学校名'); return; }
 
@@ -513,6 +424,9 @@ async function saveStudySchoolPlans() {
       kakomon_started:!!p.kakomon_started, interview_draft_done:!!p.interview_draft_done,
     }));
     await sb('/rest/v1/student_school_plans', 'POST', toInsert);
+    // 学生自己删掉（清空学校名）的志望校：在考学进度时间线里留一条记录
+    const keep = new Set(toInsert.map(p => p.id));
+    (studyData.schoolPlans || []).filter(p => p.id && !keep.has(p.id)).forEach(p => spDeleteLog(studyStudent, p, 'student', studyStudent.name));
     studyData.schoolPlans = toInsert;
     switchStudyTab('schools');
     const m2 = document.getElementById('ssp_save_msg');
@@ -899,7 +813,7 @@ async function riyuStudentSave(idx, submit) {
 // ══════════════════════════════════
 // 出愿材料 Tab（清单 material_items + 自己的准备情况 student_materials；见 shared/materials.js）
 // ══════════════════════════════════
-let smState = { track: '', items: [], rows: [], subs: [], err: '', open: {}, flash: {} };
+let smState = { track: '', items: [], rows: [], subs: [], err: '', openItem: null };
 async function studyMatLoad() {
   const track = matTrackOf(studyStudent);
   let items = [], rows = [], subs = [], err = '';
@@ -908,9 +822,10 @@ async function studyMatLoad() {
     sb(`/rest/v1/student_materials?student_id=eq.${encodeURIComponent(studyStudent.id)}&select=*`).then(r => { rows = r || []; }).catch(() => {}),
     sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=eq.${matRiyuKind(track)}&select=*`).then(r => { subs = r || []; }).catch(() => {}),
   ]);
-  smState = { track, items, rows, subs, err, open: smState.open || {}, flash: {} };
+  smState = { track, items, rows, subs, err, openItem: smState.openItem || null };
   studyMatRender();
 }
+// 出愿材料：默认只显示小方框；点一个方框，在网格下方展开「如何准备 / 参考例子 / 样本」和编辑项（一次只展开一项）
 function studyMatRender() {
   const wrap = document.getElementById('study_mat_wrap'); if (!wrap) return;
   const { track, items, rows, subs } = smState;
@@ -920,71 +835,52 @@ function studyMatRender() {
   const riyuC = riyuCounts(studyData.schoolPlans || [], subs, kind);
   const pg = matProgress(items, rows, riyuC);
   const inp = 'font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit';
-  wrap.innerHTML = `
-    <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <div style="font-size:13px;font-weight:600">📁 出愿材料</div>
-      <div style="font-size:12px;color:var(--text-secondary)">已准备 <b style="color:var(--accent)">${pg.ready} / ${pg.total}</b> 项</div>
-      <div style="flex:1;min-width:120px;height:6px;background:var(--bg);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pg.total ? Math.round(pg.ready / pg.total * 100) : 0}%;background:var(--ok)"></div></div>
-    </div>
-    ${items.map((it, idx) => {
-      const files = matFiles(it);
-      const guide = (it.guide || '').trim() || (it.example || '').trim() || files.length;
-      const open = smState.open[it.id] != null ? smState.open[it.id] : false;
-      const guideBlock = guide ? `<details ${open ? 'open' : ''} ontoggle="smState.open['${escA(it.id)}']=this.open" style="margin:6px 0 8px;font-size:11px;color:var(--text-secondary)">
-          <summary style="cursor:pointer;color:var(--accent)">如何准备 / 参考例子</summary>
-          ${(it.guide || '').trim() ? `<div style="margin-top:6px;line-height:1.8"><div style="font-weight:600;color:var(--text-primary);margin-bottom:2px">如何准备</div>${matMd(it.guide)}</div>` : ''}
-          ${(it.example || '').trim() ? `<div style="margin-top:6px;line-height:1.8"><div style="font-weight:600;color:var(--text-primary);margin-bottom:2px">参考例子</div>${matMd(it.example)}</div>` : ''}
-          ${files.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${files.map(f => /\.pdf(\?|$)/i.test(f.url || f.name || '')
-            ? `<a href="${escA(f.url)}" target="_blank" style="font-size:11px;color:var(--accent);border:1px solid var(--border);border-radius:3px;padding:4px 10px">📄 ${escA(f.name || '样本 PDF')}</a>`
-            : `<a href="${escA(f.url)}" target="_blank" title="点开看大图"><img src="${escA(f.url)}" loading="lazy" style="width:96px;height:96px;object-fit:cover;border-radius:4px;border:1px solid var(--border)"></a>`).join('')}</div>` : ''}
-        </details>` : '';
-      if (it.kind === 'riyu') {
-        return `<div style="border:1px solid var(--border-light);border-radius:5px;padding:12px 14px;margin-bottom:12px;background:var(--surface)">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-size:13px;font-weight:600">${escA(it.name)}</div>
-            <span style="font-size:10px;padding:1px 9px;border-radius:10px;background:var(--bg);color:var(--text-secondary);margin-left:auto">${escA(riyuCountText(riyuC))}</span></div>
-          ${guideBlock}
-          ${riyuStudentShell(kind)}
-        </div>`;
-      }
+  const it = items.find(x => x.id === smState.openItem);
+  let edit = '';
+  if (it) {
+    const files = matFiles(it);
+    const guide = `${(it.guide || '').trim() ? `<div style="line-height:1.8;margin-bottom:6px"><div style="font-weight:600;color:var(--text-primary);margin-bottom:2px">如何准备</div>${matMd(it.guide)}</div>` : ''}
+      ${(it.example || '').trim() ? `<div style="line-height:1.8;margin-bottom:6px"><div style="font-weight:600;color:var(--text-primary);margin-bottom:2px">参考例子</div>${matMd(it.example)}</div>` : ''}
+      ${files.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${files.map(f => /\.pdf(\?|$)/i.test(f.url || f.name || '')
+        ? `<a href="${escA(f.url)}" target="_blank" style="font-size:11px;color:var(--accent);border:1px solid var(--border);border-radius:3px;padding:4px 10px">📄 ${escA(f.name || '样本 PDF')}</a>`
+        : `<a href="${escA(f.url)}" target="_blank" title="点开看大图"><img src="${escA(f.url)}" loading="lazy" style="width:96px;height:96px;object-fit:cover;border-radius:4px;border:1px solid var(--border)"></a>`).join('')}</div>` : ''}`;
+    const guideBlock = guide.trim() ? `<div style="font-size:11px;color:var(--text-secondary);border-bottom:1px solid var(--border-light);padding-bottom:6px;margin-bottom:8px">${guide}</div>` : '';
+    if (it.kind === 'riyu') {
+      edit = `<div style="font-size:13px;font-weight:600;margin-bottom:6px">${escA(it.name)}</div>${guideBlock}${riyuStudentShell(kind)}`;
+    } else {
       const r = rows.find(x => x.item_id === it.id) || {};
-      const st = r.status || 'todo', info = matStatusInfo(st);
-      return `<div style="border:1px solid var(--border-light);border-radius:5px;padding:12px 14px;margin-bottom:12px;background:var(--surface)">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-size:13px;font-weight:600">${escA(it.name)}</div>
-          <span style="font-size:10px;padding:1px 9px;border-radius:10px;background:${info.bg};color:${info.c};margin-left:auto">${escA(matStatusText(r))}</span></div>
-        ${guideBlock}
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
-          <select id="sm_${idx}_st" onchange="studyMatFields(${idx})" style="${inp}">${MAT_STATUS.map(([k, l]) => `<option value="${k}" ${st === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
-          <span id="sm_${idx}_ap" style="display:${st === 'applying' ? 'inline-flex' : 'none'};gap:4px;align-items:center;font-size:11px">预计开出日期 <input id="sm_${idx}_exp" value="${escA(r.expected_date)}" placeholder="如 10/15" style="${inp};width:100px"></span>
-          <span id="sm_${idx}_rd" style="display:${st === 'ready' ? 'inline-flex' : 'none'};gap:4px;align-items:center;font-size:11px">开出日期 <input id="sm_${idx}_iss" value="${escA(r.issued_date)}" placeholder="如 10/12" style="${inp};width:100px"> 目前有 <input id="sm_${idx}_cp" type="number" min="0" value="${r.copies == null ? '' : escA(r.copies)}" style="${inp};width:60px"> 份</span>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
-          <input id="sm_${idx}_note" value="${escA(r.note)}" placeholder="备注（可选）" style="${inp};flex:1">
-          <button onclick="studyMatSave(${idx})" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:7px 16px;font-size:12px;cursor:pointer;font-family:inherit">保存</button>
-          <span id="sm_${idx}_msg" style="font-size:11px;color:var(--ok)">${escA(smState.flash[it.id] || '')}</span>
-        </div>
-      </div>`;
-    }).join('')}`;
+      edit = `<div style="font-size:13px;font-weight:600;margin-bottom:6px">${escA(it.name)}</div>${guideBlock}
+        ${matEditFieldsHtml('sm_ed', r, "matFieldsToggle('sm_ed')", inp)}
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+          <button onclick="studyMatOpen('')" style="font-size:12px;border:1px solid var(--border);background:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-family:inherit">收起</button>
+          <button id="sm_ed_btn" onclick="studyMatSave('${escA(it.id)}')" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:6px 16px;font-size:12px;cursor:pointer;font-family:inherit">保存</button>
+        </div>`;
+    }
+  }
+  wrap.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <div style="font-size:12px;color:var(--text-secondary)">已准备 <b style="color:var(--accent)">${pg.ready} / ${pg.total}</b> 项</div>
+      <div style="flex:1;min-width:120px;height:3px;background:var(--border-light);border-radius:2px;overflow:hidden"><div style="height:100%;width:${pg.total ? Math.round(pg.ready / pg.total * 100) : 0}%;background:var(--ok)"></div></div>
+    </div>
+    ${matBoxesHtml(items, rows, riyuC, smState.openItem, id => `studyMatOpen('${escA(id)}')`)}
+    ${edit ? `<div style="border:1px solid var(--accent);border-radius:5px;padding:12px 14px;margin-top:10px;background:var(--surface)">${edit}</div>` : ''}`;
 }
-function studyMatFields(idx) {
-  const st = (document.getElementById(`sm_${idx}_st`) || {}).value;
-  const ap = document.getElementById(`sm_${idx}_ap`), rd = document.getElementById(`sm_${idx}_rd`);
-  if (ap) ap.style.display = st === 'applying' ? 'inline-flex' : 'none';
-  if (rd) rd.style.display = st === 'ready' ? 'inline-flex' : 'none';
+function studyMatOpen(id) {
+  if (typeof riyuStudentCollect === 'function') riyuStudentCollect();   // 志望理由书还没保存的内容先记下
+  smState.openItem = (!id || smState.openItem === id) ? null : id;
+  studyMatRender();
 }
-async function studyMatSave(idx) {
-  const it = smState.items[idx]; if (!it) return;
-  const v = k => ((document.getElementById(`sm_${idx}_${k}`) || {}).value || '').trim();
-  const cp = v('cp');
-  const row = { student_id: studyStudent.id, item_id: it.id, status: v('st') || 'todo', expected_date: v('exp') || null, issued_date: v('iss') || null, copies: cp === '' ? null : parseInt(cp), note: v('note') || null };
-  const msg = document.getElementById(`sm_${idx}_msg`); if (msg) msg.textContent = '保存中…';
+async function studyMatSave(itemId) {
+  const it = smState.items.find(x => x.id === itemId); if (!it) return;
+  const row = matFieldsRow('sm_ed', studyStudent.id, it.id);
+  const btn = document.getElementById('sm_ed_btn'); if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
   try {
     const saved = await matUpsert(row);
     const i = smState.rows.findIndex(x => x.item_id === it.id);
     if (i >= 0) smState.rows[i] = saved; else smState.rows.push(saved);
-    smState.flash = {}; smState.flash[it.id] = '✓ 已更新';
-    if (typeof riyuStudentCollect === 'function') riyuStudentCollect();   // 同页的志望理由书还没保存的内容先记下
+    smState.openItem = null;
     studyMatRender();
-  } catch (e) { if (msg) msg.textContent = ''; alert('保存失败：' + e.message); }
+  } catch (e) { if (btn) { btn.disabled = false; btn.textContent = '保存'; } alert('保存失败：' + e.message); }
 }
 
 // ══════════════════════════════════

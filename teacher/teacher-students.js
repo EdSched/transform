@@ -84,6 +84,10 @@ async function renderTeacherStudyProgress(mc) {
   ]);
   const matsMap = {};
   (allMats || []).forEach(r => { (matsMap[r.student_id] = matsMap[r.student_id] || []).push(r); });
+  // 面谈预约里的「目标校」栏是择校状态（已择校 / 择校中 / 未择校）：用于「已择校但没填志望校」提醒
+  const allBk = await chunkFetch(ids => `/rest/v1/bookings?student_id=in.(${ids})&target_school=not.is.null&select=student_id,target_school,slot_date&order=slot_date.desc`);
+  const bkMap = {};
+  (allBk || []).forEach(b => { (bkMap[b.student_id] = bkMap[b.student_id] || []).push(b); });
 
   const timelineMap = {}, plansMap = {}, draftsMap = {}, riyuSubsMap = {};
   (allRiyu || []).forEach(r => { (riyuSubsMap[r.student_id] = riyuSubsMap[r.student_id] || []).push(r); });
@@ -91,7 +95,7 @@ async function renderTeacherStudyProgress(mc) {
   allPlans.forEach(p => { if (!plansMap[p.student_id]) plansMap[p.student_id] = []; plansMap[p.student_id].push(p); });
   allDrafts.forEach(d => { if (!draftsMap[d.student_id]) draftsMap[d.student_id] = d; });
 
-  teacherProgressData = { students, timelineMap, plansMap, draftsMap, riyuSubsMap, matItems: matItems || [], matsMap };
+  teacherProgressData = { students, timelineMap, plansMap, draftsMap, riyuSubsMap, matItems: matItems || [], matsMap, bkMap };
   try { tpRenderShell(); }
   catch (e) { mc.innerHTML = `<div class="empty" style="color:var(--danger)">考学进度渲染失败：${(e && e.message) || e}</div>`; console.error('tpRenderShell error:', e); }
 }
@@ -311,7 +315,7 @@ function tpRenderProgressList() {
     // 志望校
     const schoolTable = plans.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">
         <thead><tr style="background:var(--bg)">
-          ${['No.', '级别', '学校名 · 研究科', '教授', '出愿期间', '该校进度', '过去问', '面试稿'].map(h => `<th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border-light);white-space:nowrap">${h}</th>`).join('')}
+          ${['No.', '级别', '学校名 · 研究科', '教授', '出愿期间', '该校进度', '过去问', '面试稿', ''].map(h => `<th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border-light);white-space:nowrap">${h}</th>`).join('')}
         </tr></thead>
         <tbody>
           ${plans.map((p, pi) => { const st = schoolStatusLabel(p.status); return `<tr style="border-bottom:1px solid var(--border-light)">
@@ -327,14 +331,15 @@ function tpRenderProgressList() {
             </td>
             <td style="padding:6px 8px"><button onclick="event.stopPropagation();tpPlanFlag('${p.id}','kakomon_started',this)" data-on="${p.kakomon_started ? '1' : '0'}" style="font-size:10px;border-radius:3px;padding:3px 9px;cursor:pointer;font-family:inherit;border:1px solid ${p.kakomon_started ? 'var(--ok)' : 'var(--border)'};background:${p.kakomon_started ? 'var(--ok-bg)' : 'var(--surface)'};color:${p.kakomon_started ? 'var(--ok)' : 'var(--text-3)'}">${p.kakomon_started ? '✓ 已开始' : '未开始'}</button></td>
             <td style="padding:6px 8px"><button onclick="event.stopPropagation();tpPlanFlag('${p.id}','interview_draft_done',this)" data-on="${p.interview_draft_done ? '1' : '0'}" style="font-size:10px;border-radius:3px;padding:3px 9px;cursor:pointer;font-family:inherit;border:1px solid ${p.interview_draft_done ? 'var(--ok)' : 'var(--border)'};background:${p.interview_draft_done ? 'var(--ok-bg)' : 'var(--surface)'};color:${p.interview_draft_done ? 'var(--ok)' : 'var(--text-3)'}">${p.interview_draft_done ? '✓ 已完成' : '未完成'}</button></td>
+            <td style="padding:6px 8px;white-space:nowrap"><span onclick="event.stopPropagation();tpEditSchool('${p.id}')" style="font-size:10px;color:var(--accent);cursor:pointer;margin-right:8px">编辑</span><span onclick="event.stopPropagation();tpDelSchool('${p.id}')" style="font-size:10px;color:var(--danger);cursor:pointer">删除</span></td>
           </tr>`; }).join('')}
         </tbody>
       </table></div>` : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写志望校</div>';
     const secSchools = secFrame(
       `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
         <span style="font-size:11px;font-weight:600;color:var(--text-2)">🏫 志望校 <span style="font-weight:400;color:var(--text-3)">（${plans.length}所）· 状态/过去问/面试稿可直接改，即时与学生端同步</span></span>
-        <button onclick="event.stopPropagation();tpAddSchool('${s.id}','${(s.name || '').replace(/'/g, '')}','${s.major || ''}')" style="margin-left:auto;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-family:inherit;white-space:nowrap">＋ 添加志望校</button>
-      </div>${schoolTable}`);
+        <button onclick="event.stopPropagation();tpAddSchool('${s.id}')" style="margin-left:auto;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-family:inherit;white-space:nowrap">＋ 添加志望校</button>
+      </div>${(typeof spChosenWarnHtml === 'function') ? spChosenWarnHtml((teacherProgressData.bkMap || {})[s.id], plans.length, `tpAddSchool('${s.id}')`) : ''}${schoolTable}`);
 
     // 保录（仅保录学生）
     // 出愿材料（学部 / 大学院各自的清单；大学院的志望理由书在这里下载 Word、上传批复版）
@@ -1707,48 +1712,39 @@ async function tseSave(sid) {
 }
 
 
-// ── 老师端：考学进度里添加志望校（沿用 admin 的 student_school_plans 表与字段）──
-function tpAddSchool(sid, sname, major) {
-  const ex = document.getElementById('tpSchoolModal'); if (ex) ex.remove();
-  const statusOpts = (typeof SCHOOL_STATUS_LABELS !== 'undefined')
-    ? Object.entries(SCHOOL_STATUS_LABELS).filter(([k]) => !(typeof SCHOOL_FAILED_STATUSES !== 'undefined' && SCHOOL_FAILED_STATUSES.includes(k))).map(([k, v]) => `<option value="${k}">${v.t}</option>`).join('')
-    : '<option value="preparing">准备中</option>';
-  const m = document.createElement('div');
-  m.id = 'tpSchoolModal';
-  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  m.innerHTML = `
-    <div style="background:var(--surface);border-radius:6px;padding:18px;max-width:420px;width:100%;max-height:90vh;overflow-y:auto">
-      <div style="font-size:13px;font-weight:600;margin-bottom:12px">＋ 添加志望校 — ${tsaEsc(sname)}</div>
-      <div class="form-group"><label class="form-label">级别</label><select id="tps_level" style="font-size:12px;width:100%"><option value="1">1（冲刺）</option><option value="2" selected>2（适中）</option><option value="3">3（保底）</option></select></div>
-      <div class="form-group"><label class="form-label">学校名 *</label><input id="tps_school" placeholder="如 東京大学" style="width:100%"></div>
-      <div class="form-group"><label class="form-label">研究科 / 学部</label><input id="tps_faculty" placeholder="如 総合文化研究科" style="width:100%"></div>
-      <div class="form-group"><label class="form-label">教授</label><input id="tps_prof" style="width:100%"></div>
-      <div class="form-group"><label class="form-label">出愿期间</label><input id="tps_period" placeholder="如 2026/7" style="width:100%"></div>
-      <div class="form-group"><label class="form-label">该校进度</label><select id="tps_status" style="font-size:12px;width:100%">${statusOpts}</select></div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
-        <button onclick="document.getElementById('tpSchoolModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 14px;cursor:pointer;font-family:inherit">取消</button>
-        <button onclick="tpSaveSchool('${sid}','${(sname || '').replace(/'/g, '')}','${major || ''}')" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit;font-weight:500">保存</button>
-      </div>
-    </div>`;
-  document.body.appendChild(m);
+// ── 老师端：考学进度里的志望校（添加 / 编辑 / 删除；表单与学生端共用 shared/schoolplan.js）──
+function tpStudentOf(sid) { return ((teacherProgressData && teacherProgressData.students) || []).find(x => x.id === sid) || null; }
+function tpPlanOf(planId) {
+  let hit = null;
+  Object.values((teacherProgressData && teacherProgressData.plansMap) || {}).forEach(list => { list.forEach(p => { if (p.id === planId) hit = p; }); });
+  return hit;
 }
-
-async function tpSaveSchool(sid, sname, major) {
-  const g = id => (document.getElementById(id) || {}).value || '';
-  const school_name = g('tps_school').trim();
-  if (!school_name) { alert('请填写学校名'); return; }
-  const row = {
-    id: `ssp-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-    student_id: sid, student_name: sname, major,
-    school_name, faculty: g('tps_faculty').trim(), professor: g('tps_prof').trim(),
-    level: parseInt(g('tps_level')) || 2, application_period: g('tps_period').trim(),
-    status: g('tps_status') || 'preparing',
-  };
-  try {
-    await sb('/rest/v1/student_school_plans', 'POST', row);
-    document.getElementById('tpSchoolModal')?.remove();
-    renderTeacherStudyProgress(document.getElementById('sm_content') || document.getElementById('mainContent'));
-  } catch (e) { alert('保存失败：' + e.message); }
+function tpOperatorName() { return (typeof teacherData !== 'undefined' && teacherData && teacherData.name) || (typeof teacherName !== 'undefined' ? teacherName : '') || '老师'; }
+// 保存 / 删除后只重读这个学生的志望校和时间线，重绘列表并保持卡片展开
+async function tpReloadStudentPlans(sid) {
+  const [plans, tl] = await Promise.all([
+    sb(`/rest/v1/student_school_plans?student_id=eq.${encodeURIComponent(sid)}&select=*&order=level.asc`).catch(() => null),
+    sb(`/rest/v1/student_progress_timeline?student_id=eq.${encodeURIComponent(sid)}&select=*&order=created_at.asc`).catch(() => null),
+  ]);
+  if (plans) teacherProgressData.plansMap[sid] = plans;
+  if (tl) teacherProgressData.timelineMap[sid] = tl;
+  tpRenderProgressList();
+  const el = document.getElementById(`tprog_${sid}`);
+  if (el && el.style.display === 'none') toggleTeacherProgressCard(sid);
+}
+function tpAddSchool(sid) {
+  const stu = tpStudentOf(sid); if (!stu) return;
+  spOpenModal({ student: stu, plans: teacherProgressData.plansMap[sid] || [], onDone: () => tpReloadStudentPlans(sid) });
+}
+function tpEditSchool(planId) {
+  const plan = tpPlanOf(planId), stu = plan && tpStudentOf(plan.student_id);
+  if (!plan || !stu) return;
+  spOpenModal({ student: stu, plan, plans: teacherProgressData.plansMap[stu.id] || [], onDone: () => tpReloadStudentPlans(stu.id) });
+}
+function tpDelSchool(planId) {
+  const plan = tpPlanOf(planId), stu = plan && tpStudentOf(plan.student_id);
+  if (!plan || !stu) return;
+  spDeletePlan(stu, plan, 'teacher', tpOperatorName(), () => tpReloadStudentPlans(stu.id));
 }
 
 
