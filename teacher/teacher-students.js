@@ -812,6 +812,8 @@ async function mrLoadAndRender(stu){
   const rate = required ? Math.round(actual/required*100) : 0;
   // 作业图（本月交的、有图的）
   const works = monthRecs.filter(r => r.homework_file_url).map(r => ({url:r.homework_file_url, date:r.session_date, name:r.course_name||''}));
+  // 学部美术「作业收集」的作品照片（art_works，按 week_start 落在该月）
+  if (typeof awMonthWorks === 'function') works.push(...(await awMonthWorks(stu.id, mrYearMonth)));
   // 拉评价
   const key = `${stu.id}|${mrYearMonth}`;
   if(mrReviewCache[key]===undefined){
@@ -906,6 +908,7 @@ async function mrGeneratePdf(sid){
   const required = monthRecs.length, actual = attended.length;
   const rate = required ? Math.round(actual/required*100) : 0;
   const works = monthRecs.filter(r => r.homework_file_url).map(r => ({url:r.homework_file_url, date:r.session_date}));
+  if (typeof awMonthWorks === 'function') works.push(...(await awMonthWorks(sid, mrYearMonth)));   // + 作业收集的作品照片
   const key = `${sid}|${mrYearMonth}`;
   const rev = mrReviewCache[key] || {};
   const esc = v => String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -1149,6 +1152,7 @@ function tsrRender() {
   box.innerHTML = `<div>
     <!-- 签到区（选课→点名字记出席）-->
     <div id="tat_session_bar" style="margin-bottom:6px"></div>
+    ${(typeof awTeacherIsArt === 'function' && awTeacherIsArt()) ? '<div id="aw_teacher_box"></div>' : ''}
     <!-- 学生出席历史（可收起）-->
     <div onclick="tsrHistOpen=!tsrHistOpen;tsrRender()" style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-2);padding:8px 0;border-top:1px solid var(--border);user-select:none">${tsrHistOpen?'▾':'▸'} 学生出席历史（${list.length} 人，点击${tsrHistOpen?'收起':'展开'}）</div>
     <div style="display:${tsrHistOpen?'block':'none'}">
@@ -1199,6 +1203,7 @@ function tsrRender() {
   </div>
   </div>`;
   if(typeof tatRenderSessionBar==='function') tatRenderSessionBar();
+  if(document.getElementById('aw_teacher_box')) awTeacherMount('aw_teacher_box', tsrStudents);   // 学部美术：🎨 作业收集
 }
 
 async function tsrToggle(id) {

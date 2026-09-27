@@ -1845,6 +1845,7 @@ async function amrRenderBody(sid, sname){
   const leave = monthRecs.filter(r=>r.attendance_status==='leave');
   const required=monthRecs.length, actual=attended.length, rate=required?Math.round(actual/required*100):0;
   const works = monthRecs.filter(r=>r.homework_file_url).map(r=>({url:r.homework_file_url,date:r.session_date}));
+  if (typeof awMonthWorks === 'function') works.push(...(await awMonthWorks(sid, amrYearMonth)));   // + 学部美术作业收集的作品照片
   const key=`${sid}|${amrYearMonth}`;
   if(amrRev[key]===undefined){
     const rv=await sb(`/rest/v1/monthly_reviews?student_id=eq.${encodeURIComponent(sid)}&year_month=eq.${amrYearMonth}&select=*&limit=1`).catch(()=>[]);
@@ -1900,6 +1901,7 @@ async function amrPdf(sid,sname){
   const leave=monthRecs.filter(r=>r.attendance_status==='leave');
   const required=monthRecs.length,actual=attended.length,rate=required?Math.round(actual/required*100):0;
   const works=monthRecs.filter(r=>r.homework_file_url).map(r=>({url:r.homework_file_url}));
+  if (typeof awMonthWorks === 'function') works.push(...(await awMonthWorks(sid, amrYearMonth)));   // + 作业收集的作品照片
   const rev=amrRev[`${sid}|${amrYearMonth}`]||{};
   const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const ym=amrYearMonth.replace('-','年')+'月';

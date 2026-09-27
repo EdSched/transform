@@ -195,7 +195,7 @@ function renderStudyTab() {
   else if (studyTab === 'progress') el.innerHTML = renderProgressTab();
   else if (studyTab === 'records') el.innerHTML = renderRecordsTab();
   else if (studyTab === 'reserve') el.innerHTML = renderReserveTab();
-  else if (studyTab === 'homework') { el.innerHTML = renderHomeworkTab(); setTimeout(() => loadStudyHwSessions(0), 50); }
+  else if (studyTab === 'homework') { el.innerHTML = renderHomeworkTab(); setTimeout(() => loadStudyHwSessions(0), 50); if (document.getElementById('aw_student_box')) awStudentMount('aw_student_box', studyStudent); }
   else if (studyTab === 'schedule') { el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">课程表加载中…</div>'; loadStudySchedule(); }
   else if (studyTab === 'vipbook') el.innerHTML = (typeof renderVipBookingSection === 'function') ? renderVipBookingSection() : '<div class="no-slots">VIP预约模块未加载</div>';
   else if (studyTab === 'vipplan') el.innerHTML = (typeof renderVipPlanSection === 'function') ? renderVipPlanSection() : '<div class="no-slots">VIP课程安排未加载</div>';
@@ -1470,6 +1470,7 @@ function renderHomeworkTab() {
       </div>
     </div>
     <div style="min-width:0">
+      ${(typeof awIsArtMajor === 'function' && awIsArtMajor(studyStudent.major)) ? '<div id="aw_student_box"></div>' : ''}
       <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px;margin-bottom:14px">
         <div style="font-size:12px;font-weight:600;margin-bottom:10px">📝 作业</div>
         <div id="study_hw_sessions_wrap"><div style="font-size:11px;color:var(--text-muted)">加载中…</div></div>
