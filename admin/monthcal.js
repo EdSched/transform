@@ -187,7 +187,7 @@ td.we .dn{color:#c4646a}
   ${dots('top:0;left:0', ['#efc9cc', '#c4d2e0', '#e6d6bf', '#d7cde6', '#efc9cc', '#c4d2e0'])}
   ${dots('top:0;right:0', ['#c4d2e0', '#e6d6bf', '#efc9cc', '#e6d6bf', '#d7cde6', '#c4d2e0'])}
   <div class="head">
-    <div class="ttl"><img id="logo" src="${logo}" alt=""${artLogo ? ' data-clean="1"' : ''} onerror="this.style.display='none'"><h1>${mcxEsc(title)}</h1></div>
+    <div class="ttl"><img src="${logo}" alt="" onerror="this.style.display='none'"><h1>${mcxEsc(title)}</h1></div>
     <div class="rule"><b style="background:#efc9cc"></b><span></span><b style="background:#c4d2e0"></b></div>
   </div>
   <div class="wrap" id="wrap"><table id="cal">
@@ -202,28 +202,7 @@ function fit(){
   cal.style.fontSize=fs+'px';
   while(fs>6 && cal.offsetHeight>wrap.clientHeight+1){ fs-=0.5; cal.style.fontSize=fs+'px'; }
 }
-// 美术 logo 的图片自带灰白格子底：去掉浅灰/白色背景、裁掉四周空白（原文件不动）
-function cleanLogo(){
-  var img=document.getElementById('logo'); if(!img||!img.dataset.clean||!img.naturalWidth) return;
-  try{
-    var w=img.naturalWidth,h=img.naturalHeight,c=document.createElement('canvas'); c.width=w; c.height=h;
-    var x=c.getContext('2d'); x.drawImage(img,0,0);
-    var d=x.getImageData(0,0,w,h),p=d.data,x0=w,y0=h,x1=-1,y1=-1;
-    for(var i=0;i<p.length;i+=4){
-      var mx=Math.max(p[i],p[i+1],p[i+2]),mn=Math.min(p[i],p[i+1],p[i+2]);
-      if(mx-mn<45&&mn>150){ p[i+3]=0; continue; }
-      var k=i/4,px=k%w,py=(k-px)/w; if(px<x0)x0=px; if(px>x1)x1=px; if(py<y0)y0=py; if(py>y1)y1=py;
-    }
-    if(x1<0) return;
-    x.putImageData(d,0,0);
-    var pad=6; x0=Math.max(0,x0-pad); y0=Math.max(0,y0-pad); x1=Math.min(w-1,x1+pad); y1=Math.min(h-1,y1+pad);
-    var o=document.createElement('canvas'); o.width=x1-x0+1; o.height=y1-y0+1;
-    o.getContext('2d').drawImage(c,x0,y0,o.width,o.height,0,0,o.width,o.height);
-    img.removeAttribute('data-clean'); img.src=o.toDataURL('image/png');
-  }catch(e){}
-}
 window.onload=function(){
-  cleanLogo();
   var done=false, go=function(){ if(done) return; done=true; fit(); setTimeout(function(){ window.print(); }, 400); };
   fit();
   if(document.fonts&&document.fonts.ready){ document.fonts.ready.then(go); }
