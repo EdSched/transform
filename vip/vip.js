@@ -840,14 +840,9 @@ async function submitVipHomework(bookingId) {
 }
 
 function vipRenderLocationChoice(slotId) {
-  document.querySelectorAll('.vip-slot-note').forEach(el => { el.style.display = el.dataset.sid === String(slotId) ? 'block' : 'none'; });
-  const box = document.getElementById('vip_location_choice'); if (!box) return;
-  const s = vipSlots.find(x => x.id === slotId);
-  if (!s || !(s.location === 'both_takadanobaba' || s.location === 'both_ichigaya')) { box.innerHTML = ''; return; }
-  const campus = s.location === 'both_takadanobaba' ? '高田马场' : '市谷';
-  const chip = (v, t) => `<button type="button" class="scal-chip${vipLocChoice === v ? ' on' : ''}" onclick="vipSetLoc('${v}')">${t}</button>`;
-  box.innerHTML = `<div style="font-size:11px;color:var(--text-secondary);margin-top:10px">这个时段线上、线下都可以，请选择：</div>
-    <div class="scal-chips" style="margin-top:6px">${chip('online', '线上')}${chip('offline', '线下・' + campus)}</div>`;
+  document.querySelectorAll('[id^="vip_location_choice_"]').forEach(el => { el.style.display = 'none'; });
+  const el = document.getElementById(`vip_location_choice_${slotId}`);
+  if (el) el.style.display = 'block';
 }
 
 // 剩余 VIP 课时（总课时 − 已用）；≤0 时不能预约
@@ -867,7 +862,7 @@ async function submitVipBooking() {
   let finalLocation = slot.location;
   const needsChoice = slot.location === 'both_takadanobaba' || slot.location === 'both_ichigaya';
   if (needsChoice) {
-    const choice = vipLocChoice;
+    const choice = document.querySelector(`input[name="vipLocationChoice"]:checked`)?.value;
     if (!choice) { alert('请选择线上还是线下上课'); return; }
     const campus = slot.location === 'both_takadanobaba' ? 'takadanobaba' : 'ichigaya';
     finalLocation = choice === 'online' ? 'online' : `offline_${campus}`;
@@ -948,46 +943,65 @@ function vipSlotShift(d) {
   const el = document.getElementById('vip_slot_area'); if (el) el.innerHTML = vipSlotAreaHtml();
 }
 function vipToggleDate(date) {
-  vipOpenDate = vipOpenDate === date ? null : date; vipSelectedSlotId = null; vipLocChoice = 'online';
+  vipOpenDate = vipOpenDate === date ? null : date; vipSelectedSlotId = null;
   const el = document.getElementById('vip_slot_area'); if (el) el.innerHTML = vipSlotAreaHtml();
 }
-// 「线上/线下均可」的时段：学生选线上还是线下（默认线上）
-let vipLocChoice = 'online';
-function vipLocChip(loc) {
-  if (!loc || loc === 'online') return '线上';
-  if (loc === 'offline_takadanobaba') return '线下高马';
-  if (loc === 'offline_ichigaya') return '线下市谷';
-  if (loc === 'both_takadanobaba') return '线上/线下·高马';
-  if (loc === 'both_ichigaya') return '线上/线下·市谷';
-  return '';
-}
-function vipPickSlot(id) {
-  vipSelectedSlotId = id; vipLocChoice = 'online';
-  slotChipsMark(document.getElementById('vip_slot_area'), id);
-  vipRenderLocationChoice(id);
-}
-function vipSetLoc(v) { vipLocChoice = v; vipRenderLocationChoice(vipSelectedSlotId); }
+// 样式与面谈预约（student/student.js 的 renderSlots）一致：只列有时间槽的日期，每个日期一个小方框（slot-grid），点开看当天时段
 function vipSlotAreaHtml() {
   const ms = vipSlotMonths();
   const curMonth = new Date().toISOString().slice(0, 7);
   // 默认本月；本月已经没有可约时间槽时，跳到下一个有时间槽的月份
   if (!vipSlotYM || !ms.includes(vipSlotYM)) vipSlotYM = ms.includes(curMonth) ? curMonth : (ms[0] || curMonth);
-  const i = ms.indexOf(vipSlotYM);
+  const i = ms.indexOf(vipSlotYM), hasPrev = i > 0, hasNext = i >= 0 && i < ms.length - 1;
   const [y, m] = vipSlotYM.split('-').map(Number);
+  const btn = (on, d, t) => `<button onclick="vipSlotShift(${d})" ${on ? '' : 'disabled'} style="background:none;border:1px solid var(--border);border-radius:2px;width:24px;height:24px;cursor:${on ? 'pointer' : 'default'};font-size:12px;color:${on ? 'var(--text-primary)' : 'var(--border)'};display:flex;align-items:center;justify-content:center">${t}</button>`;
   const byDate = {};
   vipAvailSlots().filter(s => (s.date || '').startsWith(vipSlotYM)).forEach(s => { (byDate[s.date] = byDate[s.date] || []).push(s); });
   Object.values(byDate).forEach(l => l.sort((a, b) => String(a.time_range).localeCompare(String(b.time_range))));
-  if (vipOpenDate && !byDate[vipOpenDate]) vipOpenDate = null;
-  const open = vipOpenDate ? byDate[vipOpenDate] : null;
-  return renderSlotCalendar({
-    year: y, month: m, byDate, selected: vipOpenDate, onPick: 'vipToggleDate',
-    nav: { prev: i > 0, next: i >= 0 && i < ms.length - 1, onShift: 'vipSlotShift' },
-    emptyText: '本月暂无可预约时间',
-  }) + (open ? renderSlotChips({
-    date: vipOpenDate, slots: open, selectedId: vipSelectedSlotId, onPick: 'vipPickSlot',
-    text: s => [String(s.time_range || '').replace('-', '–'), s.teacher_name, vipLocChip(s.location)].filter(Boolean).join(' · '),
-  }) + open.map(s => (s.vip_content && s.vip_content.length) ? `<div class="vip-slot-note" data-sid="${s.id}" style="display:none;font-size:11px;color:var(--text-secondary);margin-top:8px">可指导：${s.vip_content.join('・')}</div>` : '').join('')
-    + '<div id="vip_location_choice"></div>' : '');
+  const dates = Object.keys(byDate).sort();
+  const boxes = dates.map(date => {
+    const d = new Date(date + 'T12:00:00'), dow = DAYS_CN[d.getDay()], isOpen = vipOpenDate === date;
+    const dowColor = d.getDay() === 6 ? 'var(--sat)' : d.getDay() === 0 ? 'var(--sun)' : 'var(--text-secondary)';
+    const slots = byDate[date];
+    const slotItems = slots.map(s => {
+      const needsLocationChoice = s.location === 'both_takadanobaba' || s.location === 'both_ichigaya';
+      const campusLabel = s.location === 'both_takadanobaba' ? '高田马场' : s.location === 'both_ichigaya' ? '市谷' : '';
+      return `<div class="slot-option" style="border:none;border-top:1px solid var(--border-light);border-radius:0;padding:10px 14px">
+        <input type="radio" name="vipSlotPick" id="vipslot-${s.id}" value="${s.id}" onchange="vipSelectedSlotId='${s.id}';vipRenderLocationChoice('${s.id}')">
+        <label for="vipslot-${s.id}" style="display:flex;flex-direction:column;gap:3px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:13px;font-weight:600;font-family:'DM Mono',monospace">${s.time_range}</span>
+          </div>
+          ${s.teacher_name ? `<div style="font-size:10px;color:var(--text-muted)">👤 ${s.teacher_name}</div>` : ''}
+          ${needsLocationChoice
+            ? `<div style="font-size:10px;color:var(--text-secondary)">📍 线上 / 线下均可・${campusLabel}（需选择）</div>`
+            : `<div style="font-size:10px;color:${locationColor(s.location)}">📍 ${locationLong(s.location) || '线上'}</div>`}
+          ${s.vip_content && s.vip_content.length ? `<div style="font-size:10px;color:var(--text-secondary)">可指导：${s.vip_content.join('・')}</div>` : ''}
+        </label>
+      </div>
+      ${needsLocationChoice ? `
+      <div id="vip_location_choice_${s.id}" style="display:none;padding:4px 14px 8px">
+        <div class="radio-group">
+          <div class="radio-option"><input type="radio" name="vipLocationChoice" id="vloc_online_${s.id}" value="online" checked><label for="vloc_online_${s.id}">线上</label></div>
+          <div class="radio-option"><input type="radio" name="vipLocationChoice" id="vloc_offline_${s.id}" value="offline"><label for="vloc_offline_${s.id}">线下・${campusLabel}</label></div>
+        </div>
+      </div>` : ''}`;
+    }).join('');
+    return `<div style="border:1px solid ${isOpen ? 'var(--accent)' : 'var(--border)'};border-radius:4px;overflow:hidden;margin-bottom:6px">
+      <div onclick="vipToggleDate('${date}')" style="display:flex;align-items:center;padding:11px 14px;cursor:pointer;background:${isOpen ? 'var(--accent-light)' : 'var(--surface)'}">
+        <span style="font-size:15px;font-weight:600;font-family:'DM Mono',monospace;min-width:44px">${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}</span>
+        <span style="font-size:12px;font-weight:600;color:${dowColor};margin-left:6px">${dow}</span>
+        <span style="margin-left:10px;font-size:11px;color:var(--text-muted)">${slots.length}个时段</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--text-muted)">${isOpen ? '▾' : '›'}</span>
+      </div>
+      ${isOpen ? `<div style="background:var(--bg)">${slotItems}</div>` : ''}
+    </div>`;
+  });
+  return `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.04em">${y}年${m}月</div>
+      <div style="display:flex;gap:4px">${btn(hasPrev, -1, '‹')}${btn(hasNext, 1, '›')}</div>
+    </div>
+    ${boxes.length ? `<div class="slot-grid">${boxes.join('')}</div>` : '<div class="no-slots">本月暂无可预约时间</div>'}`;
 }
 
 // VIP 预约区（活动预约 或 时间槽点选 + 历史课程）
