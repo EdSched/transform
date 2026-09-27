@@ -25,7 +25,7 @@ async function initStudy() {
   if (typeof loadMajorsFromDB === 'function') await loadMajorsFromDB();
   // ?tab=reserve 等：登录后直接打开指定标签（面谈预约链接登录后跳过来用）
   const _tab = studyParams.get('tab');
-  if (_tab && ['schools','plan','progress','records','reserve','homework','schedule'].includes(_tab)) studyTab = _tab;
+  if (_tab && ['schools','plan','materials','progress','records','reserve','homework','schedule'].includes(_tab)) studyTab = _tab;
   const wrap = document.getElementById('mainWrap');
   try {
     const raw = localStorage.getItem(STUDY_STORAGE_KEY);
@@ -141,6 +141,7 @@ function renderStudyMain() {
   const tabs = [
     { id:'schools', label:`🏫 志望校 (${studyData.schoolPlans.length}/6)` },
     { id:'plan', label: studyIsGakubu() ? '📄 志望理由书' : '📄 计划书' },
+    { id:'materials', label:'📁 出愿材料' },
     { id:'progress', label:'📊 考学进度' },
     { id:'records', label:'📋 面谈记录' },
     { id:'homework', label:'📝 作业' },
@@ -192,6 +193,7 @@ function renderStudyTab() {
   if (!el) return;
   if (studyTab === 'schools') el.innerHTML = renderSchoolsTab();
   else if (studyTab === 'plan') el.innerHTML = renderPlanTab();
+  else if (studyTab === 'materials') { el.innerHTML = '<div id="study_mat_wrap"><div style="text-align:center;padding:36px;color:var(--text-muted);font-size:12px">加载中…</div></div>'; studyMatLoad(); }
   else if (studyTab === 'progress') el.innerHTML = renderProgressTab();
   else if (studyTab === 'records') el.innerHTML = renderRecordsTab();
   else if (studyTab === 'reserve') el.innerHTML = renderReserveTab();
@@ -841,6 +843,97 @@ async function riyuStudentSave(idx, submit) {
 }
 
 // ══════════════════════════════════
+// 出愿材料 Tab（清单 material_items + 自己的准备情况 student_materials；见 shared/materials.js）
+// ══════════════════════════════════
+let smState = { track: '', items: [], rows: [], subs: [], err: '', open: {}, flash: {} };
+async function studyMatLoad() {
+  const track = matTrackOf(studyStudent);
+  let items = [], rows = [], subs = [], err = '';
+  await Promise.all([
+    matLoadItems(track).then(r => { items = r || []; }).catch(e => { err = e.message; }),
+    sb(`/rest/v1/student_materials?student_id=eq.${encodeURIComponent(studyStudent.id)}&select=*`).then(r => { rows = r || []; }).catch(() => {}),
+    sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=eq.${matRiyuKind(track)}&select=*`).then(r => { subs = r || []; }).catch(() => {}),
+  ]);
+  smState = { track, items, rows, subs, err, open: smState.open || {}, flash: {} };
+  studyMatRender();
+}
+function studyMatRender() {
+  const wrap = document.getElementById('study_mat_wrap'); if (!wrap) return;
+  const { track, items, rows, subs } = smState;
+  if (smState.err) { wrap.innerHTML = `<div style="font-size:12px;color:var(--danger);padding:16px">读取失败：${escA(smState.err)}（请刷新重试）</div>`; return; }
+  if (!items.length) { wrap.innerHTML = `<div style="text-align:center;padding:36px;color:var(--text-muted);font-size:12px">${track === 'gakubu' ? '学部' : '大学院'}的出愿材料清单还没有发布，请等待老师通知</div>`; return; }
+  const kind = matRiyuKind(track);
+  const riyuC = riyuCounts(studyData.schoolPlans || [], subs, kind);
+  const pg = matProgress(items, rows, riyuC);
+  const inp = 'font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit';
+  wrap.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="font-size:13px;font-weight:600">📁 出愿材料</div>
+      <div style="font-size:12px;color:var(--text-secondary)">已准备 <b style="color:var(--accent)">${pg.ready} / ${pg.total}</b> 项</div>
+      <div style="flex:1;min-width:120px;height:6px;background:var(--bg);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pg.total ? Math.round(pg.ready / pg.total * 100) : 0}%;background:var(--ok)"></div></div>
+    </div>
+    ${items.map((it, idx) => {
+      const files = matFiles(it);
+      const guide = (it.guide || '').trim() || (it.example || '').trim() || files.length;
+      const open = smState.open[it.id] != null ? smState.open[it.id] : false;
+      const guideBlock = guide ? `<details ${open ? 'open' : ''} ontoggle="smState.open['${escA(it.id)}']=this.open" style="margin:6px 0 8px;font-size:11px;color:var(--text-secondary)">
+          <summary style="cursor:pointer;color:var(--accent)">如何准备 / 参考例子</summary>
+          ${(it.guide || '').trim() ? `<div style="margin-top:6px;line-height:1.8"><div style="font-weight:600;color:var(--text-primary);margin-bottom:2px">如何准备</div>${matMd(it.guide)}</div>` : ''}
+          ${(it.example || '').trim() ? `<div style="margin-top:6px;line-height:1.8"><div style="font-weight:600;color:var(--text-primary);margin-bottom:2px">参考例子</div>${matMd(it.example)}</div>` : ''}
+          ${files.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${files.map(f => /\.pdf(\?|$)/i.test(f.url || f.name || '')
+            ? `<a href="${escA(f.url)}" target="_blank" style="font-size:11px;color:var(--accent);border:1px solid var(--border);border-radius:3px;padding:4px 10px">📄 ${escA(f.name || '样本 PDF')}</a>`
+            : `<a href="${escA(f.url)}" target="_blank" title="点开看大图"><img src="${escA(f.url)}" loading="lazy" style="width:96px;height:96px;object-fit:cover;border-radius:4px;border:1px solid var(--border)"></a>`).join('')}</div>` : ''}
+        </details>` : '';
+      if (it.kind === 'riyu') {
+        return `<div style="border:1px solid var(--border-light);border-radius:5px;padding:12px 14px;margin-bottom:12px;background:var(--surface)">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-size:13px;font-weight:600">${escA(it.name)}</div>
+            <span style="font-size:10px;padding:1px 9px;border-radius:10px;background:var(--bg);color:var(--text-secondary);margin-left:auto">${escA(riyuCountText(riyuC))}</span></div>
+          ${guideBlock}
+          ${riyuStudentShell(kind)}
+        </div>`;
+      }
+      const r = rows.find(x => x.item_id === it.id) || {};
+      const st = r.status || 'todo', info = matStatusInfo(st);
+      return `<div style="border:1px solid var(--border-light);border-radius:5px;padding:12px 14px;margin-bottom:12px;background:var(--surface)">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-size:13px;font-weight:600">${escA(it.name)}</div>
+          <span style="font-size:10px;padding:1px 9px;border-radius:10px;background:${info.bg};color:${info.c};margin-left:auto">${escA(matStatusText(r))}</span></div>
+        ${guideBlock}
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">
+          <select id="sm_${idx}_st" onchange="studyMatFields(${idx})" style="${inp}">${MAT_STATUS.map(([k, l]) => `<option value="${k}" ${st === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+          <span id="sm_${idx}_ap" style="display:${st === 'applying' ? 'inline-flex' : 'none'};gap:4px;align-items:center;font-size:11px">预计开出日期 <input id="sm_${idx}_exp" value="${escA(r.expected_date)}" placeholder="如 10/15" style="${inp};width:100px"></span>
+          <span id="sm_${idx}_rd" style="display:${st === 'ready' ? 'inline-flex' : 'none'};gap:4px;align-items:center;font-size:11px">开出日期 <input id="sm_${idx}_iss" value="${escA(r.issued_date)}" placeholder="如 10/12" style="${inp};width:100px"> 目前有 <input id="sm_${idx}_cp" type="number" min="0" value="${r.copies == null ? '' : escA(r.copies)}" style="${inp};width:60px"> 份</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+          <input id="sm_${idx}_note" value="${escA(r.note)}" placeholder="备注（可选）" style="${inp};flex:1">
+          <button onclick="studyMatSave(${idx})" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:7px 16px;font-size:12px;cursor:pointer;font-family:inherit">保存</button>
+          <span id="sm_${idx}_msg" style="font-size:11px;color:var(--ok)">${escA(smState.flash[it.id] || '')}</span>
+        </div>
+      </div>`;
+    }).join('')}`;
+}
+function studyMatFields(idx) {
+  const st = (document.getElementById(`sm_${idx}_st`) || {}).value;
+  const ap = document.getElementById(`sm_${idx}_ap`), rd = document.getElementById(`sm_${idx}_rd`);
+  if (ap) ap.style.display = st === 'applying' ? 'inline-flex' : 'none';
+  if (rd) rd.style.display = st === 'ready' ? 'inline-flex' : 'none';
+}
+async function studyMatSave(idx) {
+  const it = smState.items[idx]; if (!it) return;
+  const v = k => ((document.getElementById(`sm_${idx}_${k}`) || {}).value || '').trim();
+  const cp = v('cp');
+  const row = { student_id: studyStudent.id, item_id: it.id, status: v('st') || 'todo', expected_date: v('exp') || null, issued_date: v('iss') || null, copies: cp === '' ? null : parseInt(cp), note: v('note') || null };
+  const msg = document.getElementById(`sm_${idx}_msg`); if (msg) msg.textContent = '保存中…';
+  try {
+    const saved = await matUpsert(row);
+    const i = smState.rows.findIndex(x => x.item_id === it.id);
+    if (i >= 0) smState.rows[i] = saved; else smState.rows.push(saved);
+    smState.flash = {}; smState.flash[it.id] = '✓ 已更新';
+    if (typeof riyuStudentCollect === 'function') riyuStudentCollect();   // 同页的志望理由书还没保存的内容先记下
+    studyMatRender();
+  } catch (e) { if (msg) msg.textContent = ''; alert('保存失败：' + e.message); }
+}
+
+// ══════════════════════════════════
 // 计划书 Tab（三步骤）
 // ══════════════════════════════════
 
@@ -1461,9 +1554,9 @@ function renderHomeworkTab() {
   hwMode = 'course';
   const validHomework = (studyData.sessionRecs || []).filter(r => r.teacher_file_url);
   return `
-  <div class="split-hint">← 左右滑动切换「资料」与「作答」 →</div>
-  <div class="study-split">
-    <div style="min-width:0">
+  <div class="split-hint" id="study_hw_hint" style="display:none !important">← 左右滑动切换「资料」与「作答」 →</div>
+  <div class="study-split" id="study_hw_split" style="display:block">
+    <div style="min-width:0;display:none" id="study_hw_viewer_col">
       <div style="font-size:11px;font-weight:600;margin-bottom:6px">📄 资料 / 题目预览</div>
       <div id="study_hw_viewer" style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;min-height:420px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:11px;text-align:center;padding:20px">
         点击右侧作业中的「参考资料」或「查看题目」<br>即可在此预览，边看边作答
@@ -1486,6 +1579,17 @@ function renderHomeworkTab() {
       </div>`).join('')}`:''}
     </div>
   </div>`;
+}
+
+// 作业里有参考资料或题目文件时才显示左边的「资料 / 题目预览」栏（如学部美术作业没有可预览的资料，就只显示作答区）
+function hwHasPreview(s) { const N = hwNorm(s); return N.refs.length > 0 || N.levels.some(L => (L.blocks || []).some(b => b.file)); }
+function hwUpdatePreviewPane() {
+  const col = document.getElementById('study_hw_viewer_col'), split = document.getElementById('study_hw_split'), hint = document.getElementById('study_hw_hint');
+  if (!col || !split) return;
+  const show = (hwSessions || []).some(hwHasPreview);
+  col.style.display = show ? '' : 'none';
+  split.style.display = show ? '' : 'block';
+  if (hint) hint.style.setProperty('display', show ? '' : 'none', show ? '' : 'important');
 }
 
 // 在左栏预览 PDF / 图片（同页边看边写）
@@ -1627,6 +1731,7 @@ let hwShowPast = false, hwShowFuture = false;
 function renderHwList() {
   const wrap = document.getElementById('study_hw_sessions_wrap');
   if (!wrap) return;
+  hwUpdatePreviewPane();
   if (!hwSessions.length) { wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:10px 0">当期暂无布置的作业</div>'; return; }
   const wk = weekRange();
   const byDate = (a, b) => String(a.session_date || '').localeCompare(String(b.session_date || ''));

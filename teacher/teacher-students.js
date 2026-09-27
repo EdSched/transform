@@ -77,6 +77,13 @@ async function renderTeacherStudyProgress(mc) {
     chunkFetch(ids => `/rest/v1/student_plan_drafts?student_id=in.(${ids})&select=*&order=updated_at.desc`),
     chunkFetch(ids => `/rest/v1/riyu_submissions?student_id=in.(${ids})&select=*`),   // 新版志望理由书（表未建时为空）
   ]);
+  // 出愿材料：清单 + 各学生准备情况（表未建时为空）
+  const [matItems, allMats] = await Promise.all([
+    (typeof matLoadItems === 'function' ? matLoadItems('') : Promise.resolve([])).catch(() => []),
+    chunkFetch(ids => `/rest/v1/student_materials?student_id=in.(${ids})&select=*`),
+  ]);
+  const matsMap = {};
+  (allMats || []).forEach(r => { (matsMap[r.student_id] = matsMap[r.student_id] || []).push(r); });
 
   const timelineMap = {}, plansMap = {}, draftsMap = {}, riyuSubsMap = {};
   (allRiyu || []).forEach(r => { (riyuSubsMap[r.student_id] = riyuSubsMap[r.student_id] || []).push(r); });
@@ -84,7 +91,7 @@ async function renderTeacherStudyProgress(mc) {
   allPlans.forEach(p => { if (!plansMap[p.student_id]) plansMap[p.student_id] = []; plansMap[p.student_id].push(p); });
   allDrafts.forEach(d => { if (!draftsMap[d.student_id]) draftsMap[d.student_id] = d; });
 
-  teacherProgressData = { students, timelineMap, plansMap, draftsMap, riyuSubsMap };
+  teacherProgressData = { students, timelineMap, plansMap, draftsMap, riyuSubsMap, matItems: matItems || [], matsMap };
   try { tpRenderShell(); }
   catch (e) { mc.innerHTML = `<div class="empty" style="color:var(--danger)">考学进度渲染失败：${(e && e.message) || e}</div>`; console.error('tpRenderShell error:', e); }
 }
@@ -330,6 +337,13 @@ function tpRenderProgressList() {
       </div>${schoolTable}`);
 
     // 保录（仅保录学生）
+    // 出愿材料（学部 / 大学院各自的清单；大学院的志望理由书在这里下载 Word、上传批复版）
+    const secMaterials = (typeof matStaffNodeHtml === 'function') ? (() => {
+      const track = matTrackOf(s);
+      const items = (teacherProgressData.matItems || []).filter(it => it.track === track);
+      return secFrame(secTitle('📁 出愿材料') +
+        matStaffNodeHtml(s, items, (teacherProgressData.matsMap[s.id] = teacherProgressData.matsMap[s.id] || []), plans, (teacherProgressData.riyuSubsMap[s.id] = teacherProgressData.riyuSubsMap[s.id] || [])));
+    })() : '';
     const secGuaranteed = (s.course_type || '').includes('保录') ? secFrame(
       secTitle('🎓 保录学校') +
       ((Array.isArray(s.guaranteed_schools) && s.guaranteed_schools.length)
@@ -365,6 +379,7 @@ function tpRenderProgressList() {
           ${secNodes}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">${secLang}${secPlan}</div>
           ${secSchools}
+          ${secMaterials}
           ${secGuaranteed}
           ${secNotes}
           ${secTimeline}

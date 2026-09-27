@@ -125,14 +125,14 @@ function riyuFmtTime(ts) {
 // 老师端 / 管理端：逐校列表 + 查看 / 下载 Word / 上传批复版
 // ══════════════════════════════════
 // 当前页面登记的数据（按钮用 id 找回学生、学校、提交记录）
-const RIYU_STAFF = { subs: {}, students: {}, plans: {}, onChange: null };
+const RIYU_STAFF = { subs: {}, students: {}, plans: {}, onChange: null, onChangeBy: {} };   // onChangeBy：按学生 id 记回调（同页多个学生时各用各的）
 function riyuReviewerName() { return (typeof teacherName !== 'undefined' && teacherName) ? teacherName : '管理员'; }
 
 // student：学生对象；plans：志望校；subs：该生的提交记录；kind；onChange：批复后回调（重绘）
 function riyuStaffListHtml(student, plans, subs, kind, onChange) {
   if (!student) return '';
   RIYU_STAFF.students[student.id] = student;
-  if (onChange) RIYU_STAFF.onChange = onChange;
+  if (onChange) { RIYU_STAFF.onChange = onChange; RIYU_STAFF.onChangeBy[student.id] = onChange; }
   const list = (plans || []).slice().sort((a, b) => (a.level || 2) - (b.level || 2));
   if (!list.length) return '<div style="font-size:11px;color:var(--text-3,#999)">尚无志望校，学生添加志望校后即可逐校撰写</div>';
   const btn = 'font-size:10px;border:1px solid var(--border,#e2ded6);border-radius:3px;background:var(--surface,#fff);padding:2px 8px;cursor:pointer;font-family:inherit;white-space:nowrap';
@@ -263,7 +263,8 @@ async function riyuStaffUploadDo(subId) {
     await sb(`/rest/v1/riyu_submissions?id=eq.${encodeURIComponent(sub.id)}`, 'PATCH', patch);
     Object.assign(sub, patch);
     document.getElementById('riyuUpModal')?.remove();
-    if (typeof RIYU_STAFF.onChange === 'function') RIYU_STAFF.onChange(sub);
+    const cb = RIYU_STAFF.onChangeBy[sub.student_id] || RIYU_STAFF.onChange;
+    if (typeof cb === 'function') cb(sub);
     alert('已上传批复版，学生端这所学校会显示「已批复」和下载链接');
   } catch (e) {
     if (msg) msg.textContent = '上传失败：' + e.message;
