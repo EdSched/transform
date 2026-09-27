@@ -953,6 +953,7 @@ function renderCoursesSummary(courses){
             ${typeof classTagsHtml==='function'?classTagsHtml(course.class_ids):''}
             ${course.campus?`<span style="font-size:10px;opacity:.75">📍 ${course.campus}</span>`:''}
             ${course.delivery?`<span style="font-size:10px;opacity:.75">${course.delivery.includes('线下')&&course.delivery.includes('线上')?'🔀':course.delivery==='线下'?'🏫':'💻'} ${course.delivery}</span>`:''}
+            ${(()=>{ const a=sessionWeekdaysLabel(sessions), f=frameWeekdaysLabel(course.weekdays); return a?`<span style="font-size:10px;opacity:.75">📅 周${a}${f&&a!==f?`<span style="opacity:.7">（框架 周${f}）</span>`:''}</span>`:''; })()}
             ${course.time_range?`<span style="font-size:10px;opacity:.75">⏰ ${course.time_range}</span>`:''}
           </div>
           <div style="display:flex;align-items:center;gap:8px">
@@ -1311,6 +1312,16 @@ async function publishSelected(confirm_val){
     alert(`已${action} ${ids.length} 门课程`);
   }catch(e){alert('操作失败：'+e.message)}
 }
+// 按实际单回汇总上课星期（周一开头），例：多了一个周四的课 → '一二三四五六'；休讲不算
+function sessionWeekdaysLabel(sessions){
+  const set=new Set((sessions||[]).filter(x=>x.session_date&&!x.is_cancelled).map(x=>(new Date(x.session_date+'T12:00:00').getDay()+6)%7));
+  return [0,1,2,3,4,5,6].filter(i=>set.has(i)).map(i=>'一二三四五六日'[i]).join('');
+}
+function frameWeekdaysLabel(str){
+  const set=new Set(parseWeekdays(str||'').map(d=>(d+6)%7));
+  return [0,1,2,3,4,5,6].filter(i=>set.has(i)).map(i=>'一二三四五六日'[i]).join('');
+}
+
 // 课程的领域：具体领域视角下 = 当前领域；总览下 = 第一个专业所属的领域（取不到就不写，交给数据库）
 // （数据库 courses.domain 默认是「大学院文科」，不写的话在别的领域新建的课会被标错、在自己的视角里看不到）
 function majorDomainOf(majors){
@@ -1375,11 +1386,15 @@ function openAddCourseModal(editId){
     document.getElementById('ac_total').value='';
     document.getElementById('ac_first_date').value='';
     document.getElementById('ac_has_details').checked=false;
+    document.getElementById('ac_details_body').innerHTML='';   // 新建：不带上一门课的单回表
     acSetMajors([]);
     toggleAcDetails(false);
   }
   if(typeof acRenderHolidayExcept==='function') acRenderHolidayExcept();
   acArtSetup(editId?cachedCourses.find(x=>x.id===editId):null);
+  { const h=document.getElementById('ac_weekday_actual');
+    if(h){ const a=editId?sessionWeekdaysLabel(cachedSessions.filter(x=>x.course_id===editId)):'', f=frameWeekdaysLabel(editId?(cachedCourses.find(x=>x.id===editId)||{}).weekdays:'');
+      h.textContent=a&&a!==f?`实际上课（按单回汇总）：周${a}`:''; } }
   document.getElementById('addCourseModal').classList.add('open');
 }
 
@@ -1475,12 +1490,25 @@ function acSyncRows(){
       `<tr><td colspan="4" style="text-align:center;padding:12px;color:var(--text-3);font-size:11px">请先填写课程回数，再点「↺ 同步行数」</td></tr>`;
     return;
   }
+  // 已有的行原样保留（日期、时间、标题、老师都不动）；只有新增的行按框架（第一回日期 + 星期）补上日期
   const teacher=document.getElementById('ac_teacher').value.trim();
-  const existing=acGetRows().filter(r=>r.title||r.teacher);
+  const existing=acGetRows().filter(r=>r.id||r.date||r.title||r.teacher||r.time_range);
+  const firstDate=document.getElementById('ac_first_date').value;
+  const weekdayStr=acGetWeekdayChips();
+  const editingId=document.getElementById('ac_editing_id').value;
+  const co=cachedCourses.find(c=>c.id===editingId)||{};
+  const fw=(firstDate&&weekdayStr&&typeof computeSessionDates==='function')
+    ?computeSessionDates({first_session_date:firstDate,weekdays:weekdayStr,skip_dates:co.skip_dates||'',holiday_except:co.holiday_except||''},total):[];
   document.getElementById('ac_details_body').innerHTML='';
+  const used=new Set(existing.map(r=>r.date).filter(Boolean));
+  let k=0;
   for(let i=1;i<=total;i++){
-    const ex=existing.find(r=>r.num===i)||{num:i,title:'',teacher};
-    acAddRow(ex);
+    const ex=existing[i-1];
+    if(ex){ acAddRow(ex); continue; }
+    while(k<fw.length&&used.has(fw[k])) k++;   // 跳过表里已经有的日期
+    acAddRow({num:i,title:'',teacher,date:fw[k]||''});
+    if(fw[k]) used.add(fw[k]);
+    k++;
   }
 }
 
@@ -1614,6 +1642,7 @@ function acSyncAll(){
   const rows=acGetRows();
   const N=rows.length;
   if(!N){ alert('请先「同步行数」生成课次再同步'); return; }
+  if(!confirm(`将按框架重新排列全部 ${N} 个单回的日期，手动调整过的日期会被覆盖，确定吗？`)) return;
   if(typeof computeSessionDates!=='function'){ alert('日期算法未加载'); return; }
   const dates=computeSessionDates({first_session_date:firstDate,weekdays:weekdayStr,skip_dates:co.skip_dates||'',holiday_except:co.holiday_except||''},N);
   if(dates.length!==N){ alert(`同步失败：算出 ${dates.length} 个日期、需要 ${N} 个（可能假期太多排不下，或星期设置有误）`); return; }
@@ -1631,6 +1660,7 @@ function acRecomputeDates(){
   const rows=acGetRows();
   const N=rows.length;
   if(!N){ alert('请先「同步行数」生成课次再重算'); return; }
+  if(!confirm(`将按框架重新排列全部 ${N} 个单回的日期，手动调整过的日期会被覆盖，确定吗？`)) return;
   if(typeof computeSessionDates!=='function'){ alert('日期算法未加载'); return; }
   const dates=computeSessionDates({first_session_date:firstDate,weekdays:weekdayStr,skip_dates:co.skip_dates||'',holiday_except:co.holiday_except||''},N);
   if(dates.length!==N){ alert(`重算失败：算出 ${dates.length} 个日期、需要 ${N} 个（可能假期太多排不下，或星期设置有误）`); return; }
@@ -1707,8 +1737,8 @@ function acSetRowsFromData(rows){
 async function saveAddCourse(){
   const name=document.getElementById('ac_name').value.trim();
   let period=document.getElementById('ac_period').value;
-  const total=parseInt(document.getElementById('ac_total').value)||0;
-  const firstDate=document.getElementById('ac_first_date').value;
+  let total=parseInt(document.getElementById('ac_total').value)||0;
+  let firstDate=document.getElementById('ac_first_date').value;
   const weekdayStr=acGetWeekdayChips();
   if(!name){alert('请填写课程名称');return}
   const artCourse=acIsArt();
@@ -1717,15 +1747,26 @@ async function saveAddCourse(){
     if((document.getElementById('ac_member_mode')||{}).value==='class'&&!acClassPick.length){alert('请选择班级（学生成员按班级编入）');return}
   }
   if(!period){alert(artCourse?'请选择月份':'请选择期数');return}
-  if(!total||!firstDate||!weekdayStr){alert('请填写回数、第一回日期和星期');return}
+  // 开了「单回明细」的课：单回表是唯一依据——日期、时间、标题、老师、回数都以表为准；
+  // 第一回日期 = 表里最早的日期，回数 = 表里的行数（不含休讲行）。没开的课照旧按框架生成课次。
+  const hasDetails=document.getElementById('ac_has_details').checked;
+  const detailRows=hasDetails?acGetRows():[];
+  if(hasDetails){
+    if(!detailRows.length){ alert('单回明细不能为空，至少需要一行课次'); return; }
+    for(const r of detailRows){ if(!r.date){ alert(`第「${r.num}」行缺少日期，请补全后再保存`); return; } }
+    const real=detailRows.filter(r=>!(r.num==='休讲'||r.title==='休讲'));
+    var ds=(real.length?real:detailRows).map(r=>r.date).sort();
+    firstDate=ds[0];
+    total=real.length||detailRows.length;
+    if(!weekdayStr){alert('请选择星期（排课系统按星期占教室）');return}
+  } else if(!total||!firstDate||!weekdayStr){alert('请填写回数、第一回日期和星期');return}
 
   const majors=acGetMajors();
   // 具体领域视角下可以不选专业（领域按当前视角写入）；总览下必须选专业，才能知道课属于哪个领域
   if(!majors.length&&!(CURRENT_DOMAIN&&CURRENT_DOMAIN!=='all')){alert('请至少选择一个专业');return}
   const weekdays=parseWeekdays(weekdayStr);
-  const dates=generateSessionDatesFromFirst(firstDate,weekdays,total);
-  const hasDetails=document.getElementById('ac_has_details').checked;
-  const detailRows=hasDetails?acGetRows():[];
+  // 只有没开单回明细的新课才按框架生成日期
+  const dates=hasDetails?[]:generateSessionDatesFromFirst(firstDate,weekdays,total);
   const editingId=document.getElementById('ac_editing_id').value;
 
   const courseData={
@@ -1745,6 +1786,8 @@ async function saveAddCourse(){
     host_key:document.getElementById('ac_host_key').value.trim(),
     needs_recording:document.getElementById('ac_recording').value==='yes',
   };
+  // 单回表反推框架：开课日 = 最早的单回日期，结课日 = 最晚的单回日期（排课系统按这两个日期显示区间）
+  if(hasDetails){ courseData.start_date=ds[0]; courseData.end_date=ds[ds.length-1]; }
   // 学部美术：成员模式和班级在这里直接选（其他领域仍在「课程清理 → 学生成员」里管理）
   if(editingId){
     // 编辑：专业改到了另一个领域时，领域跟着改
@@ -1771,19 +1814,18 @@ async function saveAddCourse(){
       // 记录保存前的日期（按id），保存后对比，检测单回日期变动
       const oldDateById={}; existing.forEach(s=>{ oldDateById[s.id]=s.session_date; });
 
-      const rows=detailRows; // 来自 acGetRows()：[{id,num,date,title,teacher}, ...]
-      if(!rows.length){ alert('单回明细不能为空，至少需要一行课次'); return; }
-      // 若首回日期变了：按新首回用 sched 算法重排所有单回日期（跳假期顺延），标题/老师保留
-      const oldFirst=(existing[0]?.session_date)||'';
-      const firstChanged = oldFirst && firstDate && oldFirst!==firstDate;
-      if(firstChanged && typeof computeSessionDates==='function'){
-        const N=rows.length;
+      // 开了单回明细：单回表是唯一依据，不再按框架重排日期（来自 acGetRows()：[{id,num,date,title,teacher}, ...]）
+      let rows=detailRows;
+      if(!hasDetails){
+        // 没开单回明细：按框架（第一回日期 + 星期 + 回数）排课次；已有课次按先后保留 id / 标题 / 老师，只改日期；休讲行原样保留
         const _co=cachedCourses.find(c=>c.id===editingId)||{};
-        const newDates=computeSessionDates({first_session_date:firstDate,weekdays:weekdayStr,skip_dates:_co.skip_dates||'',holiday_except:_co.holiday_except||''},N);
-        if(newDates.length===N){
-          rows.forEach((r,i)=>{ r.date=newDates[i]; });
-        }
+        const fw=computeSessionDates({first_session_date:firstDate,weekdays:weekdayStr,skip_dates:_co.skip_dates||'',holiday_except:_co.holiday_except||''},total);
+        if(fw.length!==total){ alert(`按框架算出 ${fw.length} 个日期、需要 ${total} 个（可能假期太多排不下，或星期设置有误）`); return; }
+        const ex=existing.filter(x=>!x.is_cancelled).sort((a,b)=>(a.session_date||'').localeCompare(b.session_date||'')||((a.session_number||0)-(b.session_number||0)));
+        rows=fw.map((d,i)=>{ const e=ex[i]||{}; return { id:e.id||'', num:String(i+1), date:d, time_range:'', title:e.session_title||'', teacher:e.session_teacher||'' }; });
+        existing.filter(x=>x.is_cancelled).forEach(x=>rows.push({ id:x.id, num:'休讲', date:x.session_date, time_range:x.time_range||'', title:x.cancel_reason||'休讲', teacher:x.session_teacher||'' }));
       }
+      if(!rows.length){ alert('单回明细不能为空，至少需要一行课次'); return; }
       for(const r of rows){
         if(!r.date){ alert(`第「${r.num}」行缺少日期，请补全后再保存`); return; }
       }
@@ -1870,7 +1912,38 @@ async function saveAddCourse(){
       const res=await sb('/rest/v1/courses','POST',[{...courseData,id:courseId}]);
       cachedCourses.push(Array.isArray(res)?res[0]:{...courseData,id:courseId});
     }
-    // 新增课程时生成课次
+    // 新增课程、开了单回明细：按单回表逐行生成课次（日期、时间、标题、老师、回数都以表为准）
+    if(hasDetails){
+      const confirmed=document.getElementById('ac_confirm_publish')?.checked||false;
+      const mainTeacher=courseData.teacher;
+      const sessions=detailRows.map((r,i)=>{
+        const isCancelled=r.num==='休讲'||r.title==='休讲';
+        return {
+          id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
+          course_id:courseId,course_name:name,major:majors,
+          session_date:r.date,session_number:isCancelled?null:(parseInt(r.num)||i+1),
+          time_range:r.time_range||courseData.time_range,
+          actual_hours:trSessionHours(r.time_range||courseData.time_range,courseData.actual_hours),
+          delivery:courseData.delivery,campus:courseData.campus,
+          teacher:r.teacher||mainTeacher,
+          session_title:r.title||'',
+          session_teacher:r.teacher||mainTeacher,
+          is_cancelled:isCancelled,
+          cancel_reason:isCancelled?(r.title||'休讲'):null,
+          confirmed,homework_enabled:courseData.homework_enabled||false,
+        };
+      });
+      for(let i=0;i<sessions.length;i+=20){
+        const chunk=sessions.slice(i,i+20);
+        const sres=await sb('/rest/v1/course_sessions','POST',chunk);
+        cachedSessions.push(...(Array.isArray(sres)?sres:chunk));
+      }
+      closeModal('addCourseModal');
+      renderCoursesPage(document.getElementById('mainContent'));
+      alert('添加成功！已按单回明细生成 ' + sessions.length + ' 个课次');
+      return;
+    }
+    // 新增课程时生成课次（没开单回明细：按框架）
     if(dates.length){
       const confirmed=document.getElementById('ac_confirm_publish')?.checked||false;
       const sessions=dates.map((date,i)=>{
