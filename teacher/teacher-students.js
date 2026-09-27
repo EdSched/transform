@@ -71,18 +71,20 @@ async function renderTeacherStudyProgress(mc) {
     }
     return out;
   };
-  const [allTimeline, allPlans, allDrafts] = await Promise.all([
+  const [allTimeline, allPlans, allDrafts, allRiyu] = await Promise.all([
     chunkFetch(ids => `/rest/v1/student_progress_timeline?student_id=in.(${ids})&select=*&order=created_at.asc`),
     chunkFetch(ids => `/rest/v1/student_school_plans?student_id=in.(${ids})&select=*&order=level.asc`),
     chunkFetch(ids => `/rest/v1/student_plan_drafts?student_id=in.(${ids})&select=*&order=updated_at.desc`),
+    chunkFetch(ids => `/rest/v1/riyu_submissions?student_id=in.(${ids})&select=*`),   // 新版志望理由书（表未建时为空）
   ]);
 
-  const timelineMap = {}, plansMap = {}, draftsMap = {};
+  const timelineMap = {}, plansMap = {}, draftsMap = {}, riyuSubsMap = {};
+  (allRiyu || []).forEach(r => { (riyuSubsMap[r.student_id] = riyuSubsMap[r.student_id] || []).push(r); });
   allTimeline.forEach(t => { if (!timelineMap[t.student_id]) timelineMap[t.student_id] = []; timelineMap[t.student_id].push(t); });
   allPlans.forEach(p => { if (!plansMap[p.student_id]) plansMap[p.student_id] = []; plansMap[p.student_id].push(p); });
   allDrafts.forEach(d => { if (!draftsMap[d.student_id]) draftsMap[d.student_id] = d; });
 
-  teacherProgressData = { students, timelineMap, plansMap, draftsMap };
+  teacherProgressData = { students, timelineMap, plansMap, draftsMap, riyuSubsMap };
   try { tpRenderShell(); }
   catch (e) { mc.innerHTML = `<div class="empty" style="color:var(--danger)">考学进度渲染失败：${(e && e.message) || e}</div>`; console.error('tpRenderShell error:', e); }
 }
@@ -204,11 +206,11 @@ function tpNodeSummaryHtml(s, latest, plans, draft) {
   const kakomonN = plans.filter(p => p.kakomon_started).length;
   const interviewN = plans.filter(p => p.interview_draft_done).length;
   const dlSuffix = route === 'next_summer' ? '（次年路线）' : '';
-  // 学部：计划书节点 = 志望理由书（按志望校逐校写），进度按已写学校数
+  // 学部：计划书节点 = 志望理由书（新版逐校提交/批复，见 shared/riyu.js）
   const tGakubu = (typeof isGakubuStudent === 'function') && isGakubuStudent(s);
-  const riyuN = (typeof riyuFilledCount === 'function') ? riyuFilledCount(draft, plans) : 0;
+  const riyuC = (typeof riyuCounts === 'function') ? riyuCounts(plans, ((teacherProgressData && teacherProgressData.riyuSubsMap) || {})[s.id], 'gakubu_riyu') : { total: plans.length, submitted: 0, reviewed: 0 };
   const planItem = tGakubu
-    ? { label:'志望理由书', cur: (plans.length ? (riyuN>=plans.length ? '已完成' : riyuN>0 ? `已写 ${riyuN}/${plans.length} 校` : '未开始') : '请先选志望校'), done: plans.length>0 && riyuN>=plans.length, dl:DL.plan, dlName:'完成最晚' + dlSuffix }
+    ? { label:'志望理由书', cur: riyuCountText(riyuC), done: riyuC.total>0 && riyuC.reviewed>=riyuC.total, dl:DL.plan, dlName:'完成最晚' + dlSuffix }
     : { label:'研究计划书', cur:[plan || (draftUploaded ? '已完成' : draftFilled ? '撰写中' : refs ? '在收集材料' : '未填写'), refs ? `文献 ${refs} 条` : '', draftUploaded ? '📎 完成稿已上传' : ''].filter(Boolean).join(' · '), done: plan === '已完成' || draftUploaded, dl:DL.plan, dlName:'草稿完成最晚' + dlSuffix };
   const items = [
     { label:'日语', cur:[jp || '未填写', s.japanese_score || ''].filter(Boolean).join(' · '), done: dn('japanese', jp), dl:DL.japanese, dlName:'成绩确定最晚' + dlSuffix },
@@ -229,6 +231,15 @@ function tpNodeSummaryHtml(s, latest, plans, draft) {
     else                 { v = `✗ 已超${it.dlName} ${-left} 个月`; c = 'var(--danger,#b03a2e)'; }
     return `<div style="font-size:11px;line-height:1.9"><span style="font-weight:600">${it.label}</span>：<span style="color:var(--text-2)">${tsaEsc(it.cur)}</span> —— <span style="color:${c}">${v}</span></div>`;
   }).join('');
+}
+
+// 上传批复版后：更新缓存里的提交记录并重绘列表
+function tpRiyuChanged(sub) {
+  const m = (teacherProgressData && teacherProgressData.riyuSubsMap) || {};
+  const list = m[sub.student_id] || (m[sub.student_id] = []);
+  const i = list.findIndex(x => x.id === sub.id);
+  if (i >= 0) list[i] = sub; else list.push(sub);
+  tpRenderProgressList();
 }
 
 function tpRenderProgressList() {
@@ -283,8 +294,9 @@ function tpRenderProgressList() {
       `<div style="font-size:12px;line-height:2"><div><span style="color:var(--text-3)">日语</span>　${jpTxt}</div><div><span style="color:var(--text-3)">英语</span>　${enTxt}</div></div>`);
     const tpGakubu = (typeof isGakubuStudent === 'function') && isGakubuStudent(s);
     const secPlan = tpGakubu
-      ? secFrame(secTitle('📄 志望理由书') + (typeof renderRiyuView === 'function' ? renderRiyuView(draft, plans, tsaEsc) : '') +
-          `<button onclick="event.stopPropagation();openTeacherDraftComment('${s.id}','${tsaEsc(s.name)}')" style="margin-top:8px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:5px 12px;cursor:pointer;font-family:inherit;display:block">查看・评估志望理由书</button>`)
+      ? secFrame(secTitle(`📄 志望理由书 <span style="font-weight:400;color:var(--text-3)">· ${tsaEsc(riyuCountText(riyuCounts(plans, (teacherProgressData.riyuSubsMap || {})[s.id], 'gakubu_riyu')))}</span>`) +
+          riyuStaffListHtml(s, plans, (teacherProgressData.riyuSubsMap || {})[s.id] || [], 'gakubu_riyu', tpRiyuChanged) +
+          `<button onclick="event.stopPropagation();openTeacherDraftComment('${s.id}','${tsaEsc(s.name)}')" style="margin-top:8px;font-size:10px;background:none;color:var(--text-2);border:1px solid var(--border);border-radius:4px;padding:4px 12px;cursor:pointer;font-family:inherit;display:block">整体评语・旧版草稿</button>`)
       : secFrame(secTitle('📄 研究计划书') + (draft
         ? `${tDraftSummaryHtml(draft)}${draft.draft_file_url ? `<a href="${draft.draft_file_url}" target="_blank" style="font-size:10px;color:var(--accent);display:inline-block;margin-top:4px">📎 草稿文件</a>` : ''}<button onclick="event.stopPropagation();openTeacherDraftComment('${s.id}','${tsaEsc(s.name)}')" style="margin-top:8px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:5px 12px;cursor:pointer;font-family:inherit;display:block">查看・评估计划书/先行研究</button>`
         : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写</div>'));

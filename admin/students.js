@@ -650,22 +650,32 @@ async function generateAllStudentCodes() {
 
 // ── 考学进度页面 ──
 let progressStudentFilter = '';
-let progressViewMode = 'student'; // 'student' | 'season'
+let progressViewMode = 'student'; // 'student' | 'season' | 'materials'
+// 考学进度顶部的视图切换按钮（学生视角 / 年度出愿情报 / 出愿材料准备）
+function progressViewButtons(){
+  return [['student','👤 学生视角'],['season','📋 年度出愿情报'],['materials','📁 出愿材料准备']].map(([k,l])=>
+    `<button class="btn btn-sm ${progressViewMode===k?'btn-primary':'btn-outline'}" onclick="progressViewMode='${k}';renderProgressPage(document.getElementById('mainContent'))">${l}</button>`).join('');
+}
 
 async function renderProgressPage(mc, focusStudentId=null){
   mc.innerHTML='<div class="loading">加载中…</div>';
+  if (progressViewMode === 'materials' && typeof renderMaterialsView === 'function') { await renderMaterialsView(mc); return; }
   let students=cachedStudents.filter(s=>s.status==='active'||s.status==='stopped'||s.status==='graduated');
   // 视角过滤（叠加逻辑）：非总览时按学生主专业+附加专业判断
   students=students.filter(s=>studentInCurrentView(s));
   if(stMajorFilter!=='all') students=students.filter(s=>matchesMajorFilter(s.major,stMajorFilter));
   if(progressStudentFilter) students=students.filter(s=>matchesStudentSearch(s,progressStudentFilter));
 
-  const [allTimeline, allPlansPG, allDraftsPG, allBkPG] = await Promise.all([
+  const [allTimeline, allPlansPG, allDraftsPG, allBkPG, allRiyuPG] = await Promise.all([
     sb('/rest/v1/student_progress_timeline?select=*&order=created_at.asc&limit=5000').catch(()=>[]),
     sb('/rest/v1/student_school_plans?select=*&order=level.asc&limit=5000').catch(()=>[]),
     sb('/rest/v1/student_plan_drafts?select=*&limit=5000').catch(()=>[]),
     sb('/rest/v1/bookings?select=name,major,target_school,slot_date,exam_period&order=slot_date.desc&limit=5000').catch(()=>[]),
+    sbAll('/rest/v1/riyu_submissions?select=*').catch(()=>[]),   // 新版志望理由书（表未建时为空）
   ]);
+  const riyuSubsMapPG = {};
+  (allRiyuPG||[]).forEach(r => { (riyuSubsMapPG[r.student_id] = riyuSubsMapPG[r.student_id] || []).push(r); });
+  window.__pgRiyuSubs = riyuSubsMapPG;
   // 面谈里提到的目标校（学生尚未填志望校时作为线索提取）
   const bkHintMap = {};
   (allBkPG||[]).forEach(b => {
@@ -700,11 +710,11 @@ async function renderProgressPage(mc, focusStudentId=null){
     const sPlans = plansMapPG[s.id] || [];
     const sDraft = draftsMapPG[s.id];
     const sGakubu = (typeof isGakubuStudent === 'function') && isGakubuStudent(s);  // 学部：计划书 = 志望理由书
-    let sRefsN = 0, sDraftN = 0, sRiyuN = 0;
+    let sRefsN = 0, sDraftN = 0;
+    const sRiyuC = riyuCounts(sPlans, riyuSubsMapPG[s.id], 'gakubu_riyu');   // 新版志望理由书：已提交 / 已批复校数
     try {
       sRefsN = sDraft && sDraft.prior_research_list ? JSON.parse(sDraft.prior_research_list).length : 0;
       const df0 = sDraft && sDraft.draft_fields ? JSON.parse(sDraft.draft_fields) : {};
-      sRiyuN = (df0 && df0.riyu) ? Object.keys(df0.riyu).length : 0;  // 已写志望理由书的学校数
       // 大学院研究计划书草稿的已填项数（学部下 riyu 对象不计入）
       sDraftN = Object.entries(df0).filter(([k,v]) => k !== 'riyu' && (Array.isArray(v) ? v.length : String(v || '').trim())).length;
     } catch(e) {}
@@ -718,8 +728,8 @@ async function renderProgressPage(mc, focusStudentId=null){
     else if (sPlans.some(p => p.kakomon_started)) pgDerived.exam = '在写过去问';
     const sLegacy = sDraft && ['research_question','methodology','draft_notes'].some(f => String(sDraft[f] || '').trim());
     if (sGakubu) {
-      // 学部志望理由书：按已写学校数推导（占 sPlans 的几所）
-      if (sRiyuN > 0) pgDerived.plan = sPlans.length && sRiyuN >= sPlans.length ? '已完成' : '撰写中';
+      // 学部志望理由书：按已提交 / 已批复学校数推导
+      if (sRiyuC.submitted > 0) pgDerived.plan = sRiyuC.total && sRiyuC.reviewed >= sRiyuC.total ? '已完成' : '撰写中';
     } else {
       if (sDraft && sDraft.draft_file_url) pgDerived.plan = '已完成';
       else if (sDraftN > 0 || sLegacy) pgDerived.plan = '撰写中';
@@ -730,7 +740,7 @@ async function renderProgressPage(mc, focusStudentId=null){
       if (k === 'plan') {
         const parts = [];
         if (sGakubu) {
-          if (sRiyuN) parts.push(`✍️ 已写 ${sRiyuN}${sPlans.length?'/'+sPlans.length:''} 校志望理由书`);
+          if (sPlans.length) parts.push(riyuCountText(sRiyuC));
         } else {
           if (sRefsN) parts.push(`📚 先行研究 ${sRefsN} 条`);
           if (sDraftN) parts.push(`草稿已填 ${sDraftN} 项`);
@@ -849,8 +859,9 @@ async function renderProgressPage(mc, focusStudentId=null){
         </div>
         ${sGakubu ? `
         <div style="padding:12px 14px;border-bottom:1px solid var(--border-light)">
-          <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px">📄 志望理由书 <span style="font-weight:400;color:var(--text-3)">（学生按志望校逐校填写）</span></div>
-          ${(typeof renderRiyuView === 'function') ? renderRiyuView(sDraft, sPlans) : ''}
+          <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px">📄 志望理由书 <span style="font-weight:400;color:var(--text-3)">· ${riyuCountText(sRiyuC)}</span></div>
+          ${riyuStaffListHtml(s, sPlans, riyuSubsMapPG[s.id] || [], 'gakubu_riyu', ()=>renderProgressPage(document.getElementById('mainContent'), s.id))}
+          ${(typeof riyuFilledCount === 'function' && riyuFilledCount(sDraft, sPlans)) ? `<details style="margin-top:6px;font-size:11px"><summary style="cursor:pointer;color:var(--text-3)">旧版草稿（参考）</summary>${renderRiyuView(sDraft, sPlans)}</details>` : ''}
         </div>` : ''}
         ${(s.course_type||'').includes('保录') ? `
         <div style="padding:12px 14px;border-bottom:1px solid var(--border-light);background:#fdfaf5">
@@ -884,10 +895,7 @@ async function renderProgressPage(mc, focusStudentId=null){
   <div class="page-header">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <div class="section-title">考学进度</div>
-      <div style="display:flex;gap:4px">
-        <button class="btn btn-sm ${progressViewMode==='student'?'btn-primary':'btn-outline'}" onclick="progressViewMode='student';renderProgressPage(document.getElementById('mainContent'))">👤 学生视角</button>
-        <button class="btn btn-sm ${progressViewMode==='season'?'btn-primary':'btn-outline'}" onclick="progressViewMode='season';renderProgressPage(document.getElementById('mainContent'))">📋 年度出愿情报</button>
-      </div>
+      <div style="display:flex;gap:4px">${progressViewButtons()}</div>
     </div>
   </div>
   <div class="filter-row">
@@ -1307,10 +1315,7 @@ async function renderSeasonView(mc, students, timelineMap) {
   <div class="page-header">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <div class="section-title">考学进度</div>
-      <div style="display:flex;gap:4px">
-        <button class="btn btn-sm btn-outline" onclick="progressViewMode='student';renderProgressPage(document.getElementById('mainContent'))">👤 学生视角</button>
-        <button class="btn btn-sm btn-primary">📋 年度出愿情报</button>
-      </div>
+      <div style="display:flex;gap:4px">${progressViewButtons()}</div>
     </div>
   </div>
   <div class="filter-row">

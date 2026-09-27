@@ -697,81 +697,147 @@ function studyIsGakubu() {
   return /^gakubu_/.test(m);
 }
 
-// RIYU_SECTIONS / riyuKeyOf / riyuMap 定义在 shared/constants.js（老师端、admin 共用），此处直接使用
+// 新版志望理由书（riyu_submissions + writing_guides，见 shared/riyu.js）：按志望校逐校撰写 → 提交给老师 → 老师上传批复版
+// 学部用 gakubu_riyu；大学院（出愿材料里）用 grad_riyu，共用同一个组件
+// 旧版 draft_fields.riyu（動機/意志/展望）不删除，只在还没有新记录的学校上方作为「旧版草稿（参考）」只读显示
+let rsState = { kind: '', wrapId: '', guide: null, subs: [], drafts: {}, flash: {}, err: '' };
 
-function renderRiyuTab() {
-  const plans = (studyData.schoolPlans || []).slice().sort((a,b)=>(a.level||2)-(b.level||2));
-  const store = riyuMap(studyData.planDraft);
-  const intro = `
-    <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:12px 14px;margin-bottom:14px;font-size:11px;color:var(--text-secondary);line-height:1.9">
-      <div style="font-weight:600;color:var(--text-primary);margin-bottom:4px">📄 志望理由书 · 三个部分</div>
-      按「志望校」逐校填写——每选一所学校，就为它写一份。围绕以下三点展开：<br>
-      ① <b>入学を志望する動機</b>（为什么想进这所学校 / 学部学科）<br>
-      ② <b>入学を志望する意志</b>（这所学校的魅力、入学后想做什么）<br>
-      ③ <b>卒業後の展望</b>（毕业后的目标，与所学如何衔接）
+function renderRiyuTab() { return riyuStudentShell('gakubu_riyu'); }
+
+function riyuStudentShell(kind) {
+  const wrapId = 'rsWrap_' + kind;
+  setTimeout(() => riyuStudentLoad(kind, wrapId), 0);
+  return `<div id="${wrapId}"><div style="text-align:center;padding:36px;color:var(--text-muted);font-size:12px">加载中…</div></div>`;
+}
+async function riyuStudentLoad(kind, wrapId) {
+  let subs = [], err = '';
+  const [g] = await Promise.all([
+    riyuLoadGuide(kind),
+    sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=eq.${kind}&select=*`)
+      .then(r => { subs = r || []; }).catch(e => { err = e.message; }),
+  ]);
+  rsState = { kind, wrapId, guide: g, subs, drafts: rsState.kind === kind ? rsState.drafts : {}, flash: {}, err };
+  riyuStudentRender();
+}
+function riyuStudentPlans() { return (studyData.schoolPlans || []).slice().sort((a, b) => (a.level || 2) - (b.level || 2)); }
+// 重绘前先记下各文本框里还没保存的内容，避免保存 A 校时把 B 校正在写的内容冲掉
+function riyuStudentCollect() {
+  const g = rsState.guide; if (!g) return;
+  riyuStudentPlans().forEach((p, idx) => {
+    const key = riyuKeyOf(p);
+    g.sections.forEach(sec => {
+      const el = document.getElementById(`rs_${idx}_${sec.key}`);
+      if (el) { (rsState.drafts[key] = rsState.drafts[key] || {})[sec.key] = el.value; }
+    });
+  });
+}
+function riyuStudentRender() {
+  const wrap = document.getElementById(rsState.wrapId); if (!wrap) return;
+  const g = rsState.guide || { title: '志望理由书', intro: '', sections: [] };
+  const plans = riyuStudentPlans();
+  const oldMap = (typeof riyuMap === 'function') ? riyuMap(studyData.planDraft) : {};
+  const head = `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:12px 14px;margin-bottom:14px;font-size:11px;color:var(--text-secondary);line-height:1.9">
+      <div style="font-weight:600;color:var(--text-primary);margin-bottom:4px">📄 ${escA(g.title || '志望理由书')}</div>
+      ${riyuMd(g.intro)}
     </div>`;
-  if (!plans.length) {
-    return `<div>${intro}<div style="text-align:center;padding:36px;color:var(--text-muted);font-size:12px">还没有志望校。请先到「🏫 志望校」标签添加要报考的学校，这里会自动为每所学校生成一份志望理由书。</div></div>`;
-  }
+  if (rsState.err) { wrap.innerHTML = head + `<div style="font-size:12px;color:var(--danger);padding:16px">读取失败：${escA(rsState.err)}（请刷新重试）</div>`; return; }
+  if (!plans.length) { wrap.innerHTML = head + '<div style="text-align:center;padding:36px;color:var(--text-muted);font-size:12px">请先在「🏫 志望校」标签填写志望校，这里会为每所学校生成一份志望理由书。</div>'; return; }
   const cards = plans.map((p, idx) => {
     const key = riyuKeyOf(p);
-    const saved = store[key] || {};
-    const title = [p.school_name, p.faculty, p.department].filter(Boolean).join(' · ');
-    const lvLabel = p.level===1?'冲刺':p.level===3?'保底':'匹配';
-    return `<div data-riyu-key="${escA(key)}" style="border:1px solid var(--border-light);border-radius:5px;padding:14px;margin-bottom:14px;background:var(--surface)">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <div style="font-size:13px;font-weight:600">${escA(title||'（未命名学校）')}</div>
+    const sub = rsState.subs.find(x => x.school_key === key) || null;
+    const saved = riyuSecs(sub);
+    const dr = rsState.drafts[key] || {};
+    const st = riyuStatusInfo(sub && sub.status);
+    const title = [p.school_name, p.faculty, p.department].filter(Boolean).join(' · ') || '（未命名学校）';
+    const lvLabel = p.level === 1 ? '冲刺' : p.level === 3 ? '保底' : '匹配';
+    // 批复版本：当前（已批复时）+ 历史
+    const reviews = riyuHistory(sub).filter(h => h.action === 'review' && h.file_url);
+    const isCur = h => sub && sub.status === 'reviewed' && h.file_url === sub.reviewed_file_url;
+    const past = reviews.filter(h => !isCur(h)).reverse();
+    const curBlock = sub && sub.status === 'reviewed' && sub.reviewed_file_url ? `<div style="background:#e4f0e8;border:1px solid #b8d8bc;border-radius:4px;padding:9px 12px;margin-bottom:10px;font-size:12px;color:#1f5a36">
+        <div style="font-weight:600;margin-bottom:3px">老师批复版本</div>
+        <a href="${escA(sub.reviewed_file_url)}" target="_blank" style="color:#1f5a36;font-weight:600">⬇ 下载</a>
+        <span style="font-size:11px">（${escA(sub.reviewed_file_name || '批复文件')} · ${escA(riyuFmtTime(sub.reviewed_at))}${sub.reviewed_by ? ' · ' + escA(sub.reviewed_by) : ''}）</span>
+        ${sub.review_note ? `<div style="font-size:11px;margin-top:4px;white-space:pre-wrap">老师备注：${escA(sub.review_note)}</div>` : ''}
+      </div>` : '';
+    const pastBlock = past.length ? `<details style="margin-bottom:10px;font-size:11px"><summary style="cursor:pointer;color:var(--text-secondary)">历史批复（${past.length}）</summary>
+        ${past.map(h => `<div style="padding:4px 0 4px 12px;border-left:2px solid var(--border-light);margin-top:4px"><a href="${escA(h.file_url)}" target="_blank" style="color:var(--accent)">⬇ ${escA(h.file_name || '批复文件')}</a> · ${escA(riyuFmtTime(h.at))}${h.by ? ' · ' + escA(h.by) : ''}${h.note ? `<div style="color:var(--text-secondary)">${escA(h.note)}</div>` : ''}</div>`).join('')}
+      </details>` : '';
+    const old = oldMap[key] || {};
+    const oldHas = !sub && typeof RIYU_SECTIONS !== 'undefined' && RIYU_SECTIONS.some(x => String(old[x.k] || '').trim());
+    const oldBlock = oldHas ? `<details style="margin-bottom:10px;font-size:11px;background:var(--bg);border-radius:3px;padding:6px 10px"><summary style="cursor:pointer;color:var(--text-secondary)">旧版草稿（参考）</summary>
+        ${RIYU_SECTIONS.map(x => String(old[x.k] || '').trim() ? `<div style="margin-top:6px"><div style="font-weight:600">${escA(x.label)}</div><div style="white-space:pre-wrap;line-height:1.8;color:var(--text-secondary)">${escA(old[x.k])}</div></div>` : '').join('')}
+      </details>` : '';
+    const secs = g.sections.map((sec, si) => {
+      const val = dr[sec.key] != null ? dr[sec.key] : (saved[sec.key] || '');
+      return `<div style="margin-bottom:12px">
+        <div style="font-size:12px;font-weight:600;margin-bottom:2px">${si + 1}. ${escA(sec.title)}</div>
+        ${sec.subtitle ? `<div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:4px">${escA(sec.subtitle)}</div>` : ''}
+        ${sec.tips.length ? `<details ${String(val).trim() ? '' : 'open'} style="background:#faf6ec;border:1px solid #efe4c8;border-radius:3px;padding:5px 10px;margin-bottom:5px;font-size:11px;color:var(--text-secondary)">
+          <summary style="cursor:pointer;color:#8a6a1b">写作要点（${sec.tips.length}）</summary>
+          <ol style="margin:4px 0 2px 1.3em;line-height:1.8">${sec.tips.map(t => `<li>${escA(t)}</li>`).join('')}</ol>
+        </details>` : ''}
+        <textarea id="rs_${idx}_${escA(sec.key)}" rows="3" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" style="width:100%;box-sizing:border-box;font-size:12px;line-height:1.8;padding:8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;resize:vertical;overflow:hidden">${escA(val)}</textarea>
+      </div>`;
+    }).join('');
+    const flash = rsState.flash[key] || '';
+    return `<div style="border:1px solid var(--border-light);border-radius:5px;padding:14px;margin-bottom:14px;background:var(--surface)">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+        <div style="font-size:13px;font-weight:600">${escA(title)}</div>
         <span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:2px;padding:1px 7px">${lvLabel}</span>
+        <span style="font-size:10px;padding:1px 9px;border-radius:10px;background:${st.bg};color:${st.c};margin-left:auto">${sub ? st.t : '草稿'}</span>
       </div>
-      ${p.plan_requirement
-        ? `<div style="font-size:11px;color:var(--accent);background:var(--bg);border-radius:3px;padding:6px 9px;margin-bottom:10px">📋 志望理由书要求：${escA(p.plan_requirement)}</div>`
-        : `<div style="font-size:10px;color:var(--text-muted);margin-bottom:10px">（该校的志望理由书要求可在「志望校」标签里填写）</div>`}
-      ${RIYU_SECTIONS.map((s,si)=>`
-        <div style="margin-bottom:10px">
-          <label style="font-size:11px;font-weight:600;display:block;margin-bottom:3px">${si+1}. ${s.label}</label>
-          <div style="font-size:10px;color:var(--text-secondary);white-space:pre-line;line-height:1.7;margin-bottom:4px">${s.hint}</div>
-          <textarea id="riyu_${idx}_${s.k}" rows="4" style="width:100%;font-size:12px;padding:8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;resize:vertical">${escA(saved[s.k]||'')}</textarea>
-        </div>`).join('')}
+      <div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">志望理由书要求：${p.plan_requirement ? `<span style="color:var(--accent)">${escA(p.plan_requirement)}</span>` : '<span style="color:var(--text-muted)">暂未填写要求</span>'}</div>
+      ${curBlock}${pastBlock}${oldBlock}
+      ${g.sections.length ? secs : '<div style="font-size:11px;color:var(--text-muted);padding:8px 0">写作指导还没有设置，请联系老师</div>'}
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <button onclick="riyuStudentSave(${idx},false)" style="background:var(--surface);color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:inherit">💾 保存草稿</button>
+        <button onclick="riyuStudentSave(${idx},true)" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:inherit">📤 提交给老师</button>
+        <span id="rs_msg_${idx}" style="font-size:11px;color:var(--ok)">${escA(flash)}</span>
+      </div>
     </div>`;
   }).join('');
-  return `<div>
-    ${intro}
-    <div id="studyRiyuCards">${cards}</div>
-    <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
-      <button onclick="saveStudyRiyu()" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:11px 22px;font-size:13px;cursor:pointer;font-family:inherit">保存志望理由书</button>
-      <span id="riyu_save_msg" style="font-size:11px;color:var(--ok)"></span>
-    </div>
-  </div>`;
+  wrap.innerHTML = head + cards;
+  wrap.querySelectorAll('textarea[id^="rs_"]').forEach(t => { t.style.height = 'auto'; t.style.height = Math.max(t.scrollHeight, 60) + 'px'; });
 }
-
-async function saveStudyRiyu() {
-  const cards = [...document.querySelectorAll('#studyRiyuCards [data-riyu-key]')];
-  const riyu = {};
-  cards.forEach((card, idx) => {
-    const key = card.dataset.riyuKey;
-    const obj = {};
-    RIYU_SECTIONS.forEach(s => {
-      const el = document.getElementById(`riyu_${idx}_${s.k}`);
-      if (el && el.value.trim()) obj[s.k] = el.value.trim();
-    });
-    if (Object.keys(obj).length) riyu[key] = obj;
+async function riyuStudentSave(idx, submit) {
+  const g = rsState.guide; if (!g) return;
+  const p = riyuStudentPlans()[idx]; if (!p) return;
+  const key = riyuKeyOf(p);
+  const sub = rsState.subs.find(x => x.school_key === key) || null;
+  const sections = Object.assign({}, riyuSecs(sub));
+  g.sections.forEach(sec => {
+    const el = document.getElementById(`rs_${idx}_${sec.key}`);
+    if (el) { if (el.value.trim()) sections[sec.key] = el.value; else delete sections[sec.key]; }
   });
-  const d = studyData.planDraft || {};
-  let df = {};
-  try { df = d.draft_fields ? JSON.parse(d.draft_fields) : {}; } catch(e) {}
-  df.riyu = riyu;
-  const data = {
-    student_id: studyStudent.id, student_name: studyStudent.name, major: studyStudent.major,
-    draft_fields: JSON.stringify(df), status: 'drafting', updated_at: new Date().toISOString(),
-  };
-  const msg = document.getElementById('riyu_save_msg');
-  if (msg) msg.textContent = '保存中…';
+  if (submit && !Object.values(sections).some(v => String(v || '').trim())) { alert('还没有写任何内容，写完再提交吧'); return; }
+  const msg = document.getElementById('rs_msg_' + idx);
+  if (msg) { msg.style.color = 'var(--text-muted)'; msg.textContent = submit ? '提交中…' : '保存中…'; }
+  const now = new Date().toISOString();
+  const data = { sections, school_name: p.school_name || '', faculty: p.faculty || '', department: p.department || '', requirement: p.plan_requirement || null, updated_at: now };
+  if (submit) {
+    data.status = 'submitted'; data.submitted_at = now;
+    data.history = riyuHistory(sub).concat([{ at: now, by: studyStudent.name, action: 'submit' }]);
+  }
   try {
-    if (d.id) { await sb(`/rest/v1/student_plan_drafts?id=eq.${d.id}`, 'PATCH', data); }
-    else { data.id = `spd-${Date.now()}-${Math.random().toString(36).slice(2,4)}`; await sb('/rest/v1/student_plan_drafts', 'POST', data); }
-    studyData.planDraft = { ...(studyData.planDraft||{}), ...data };
-    if (msg) { msg.textContent = '✓ 已保存'; setTimeout(()=>{ if (msg.textContent==='✓ 已保存') msg.textContent=''; }, 2500); }
-  } catch(e) { if (msg) msg.textContent = ''; alert('保存失败：' + e.message); }
+    let row;
+    if (sub) {
+      const r = await sb(`/rest/v1/riyu_submissions?id=eq.${encodeURIComponent(sub.id)}`, 'PATCH', data);
+      row = Object.assign(sub, data, (r || [])[0] || {});
+    } else {
+      const ins = Object.assign({ id: `rs-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, student_id: studyStudent.id, kind: rsState.kind, school_key: key, status: 'draft', history: [] }, data);
+      const r = await sb('/rest/v1/riyu_submissions', 'POST', ins);
+      row = (r || [])[0] || ins;
+      rsState.subs.push(row);
+    }
+    riyuStudentCollect();
+    rsState.flash = {};
+    rsState.flash[key] = submit ? '已提交！老师会修改后给你批复，批复版本会出现在这里。' : '✓ 草稿已保存';
+    riyuStudentRender();
+  } catch (e) {
+    if (msg) msg.textContent = '';
+    alert((submit ? '提交' : '保存') + '失败：' + e.message);
+  }
 }
 
 // ══════════════════════════════════
