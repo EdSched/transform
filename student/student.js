@@ -468,7 +468,14 @@ function buildForm() {
   </div>` : ''}
   <div class="card">
     <div class="card-title"><span class="step-num">${stepSlot}</span>选择预约时间</div>
-    <div id="slotGrid"><div class="no-slots">加载中…</div></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.04em" id="slotMonthLabel"></div>
+      <div style="display:flex;gap:4px">
+        <button onclick="slotMonthShift(-1)" style="background:none;border:1px solid var(--border);border-radius:2px;width:24px;height:24px;cursor:pointer;font-size:12px;color:var(--text-primary);display:flex;align-items:center;justify-content:center">‹</button>
+        <button onclick="slotMonthShift(1)"  style="background:none;border:1px solid var(--border);border-radius:2px;width:24px;height:24px;cursor:pointer;font-size:12px;color:var(--text-primary);display:flex;align-items:center;justify-content:center">›</button>
+      </div>
+    </div>
+    <div class="slot-grid" id="slotGrid"><div class="no-slots">加载中…</div></div>
     <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div class="form-group" style="margin:0"><label class="form-label">面谈时长</label>
         <div class="radio-group">
@@ -647,53 +654,85 @@ function slotMonthShift(d) {
 let expandedDateKey = null;
 
 function renderSlots() {
-  const grid = document.getElementById('slotGrid');
-  if (!grid) return;
+  const lbl = document.getElementById('slotMonthLabel'), grid = document.getElementById('slotGrid');
+  if (!lbl || !grid) return;
+  lbl.textContent = `${slotViewYear}年${slotViewMonth + 1}月`;
   const ym = `${slotViewYear}-${String(slotViewMonth + 1).padStart(2, '0')}`;
   let allSlots = cachedSlots.filter(s => s.date.startsWith(ym));
   allSlots.sort((a, b) => a.date.localeCompare(b.date) || a.time_range.localeCompare(b.time_range));
   const slotBookedCount = {};
   cachedBookings.filter(b => b.status !== 'cancelled').forEach(b => { slotBookedCount[b.slot_id] = (slotBookedCount[b.slot_id] || 0) + 1; });
-  const remainOf = s => slotCap(s.time_range) - (slotBookedCount[s.id] || 0);
+  if (!allSlots.length) { grid.innerHTML = '<div class="no-slots">本月暂无可预约时间槽<br><span style="font-size:10px">请联系老师确认排期</span></div>'; return; }
 
   // 筛选类型
   const filtered = selectedType
     ? allSlots.filter(s => Array.isArray(s.type) ? s.type.includes(selectedType) : s.type === selectedType)
     : allSlots;
 
+  if (!filtered.length) { grid.innerHTML = '<div class="no-slots">该类型暂无可预约时间槽</div>'; return; }
+
   // 按日期分组
   const byDate = {};
-  filtered.forEach(s => { (byDate[s.date] = byDate[s.date] || []).push(s); });
-  if (expandedDateKey && !byDate[expandedDateKey]) expandedDateKey = null;
+  filtered.forEach(s => {
+    if (!byDate[s.date]) byDate[s.date] = [];
+    byDate[s.date].push(s);
+  });
 
-  // 已选的时段如果还在当前显示的日期里（例如只是改了上面的表单），保留选择
-  if (!(expandedDateKey && selectedSlotId && byDate[expandedDateKey].some(s => s.id === selectedSlotId && remainOf(s) > 0))) selectedSlotId = null;
-  const typeName = t => t === 'daily' ? '日常' : t === 'plan' ? '计划书' : t === 'vip' ? 'VIP' : '模拟';
-  grid.innerHTML = renderSlotCalendar({
-    year: slotViewYear, month: slotViewMonth + 1, byDate, selected: expandedDateKey, onPick: 'toggleDateSlots',
-    nav: { prev: true, next: true, onShift: 'slotMonthShift' },
-    cellNote: (date, list) => list.every(s => remainOf(s) <= 0) ? { text: '已满', full: true } : { text: `${list.length}个` },
-    emptyText: allSlots.length ? '该类型本月暂无可预约时间' : '本月暂无可预约时间',
-  }) + (expandedDateKey ? renderSlotChips({
-    date: expandedDateKey, slots: byDate[expandedDateKey], selectedId: selectedSlotId, onPick: 'bkPickSlot',
-    disabled: s => remainOf(s) <= 0,
-    text: s => {
+  selectedSlotId = null;
+
+  const rows = Object.entries(byDate).map(([date, slots]) => {
+    const d = new Date(date + 'T12:00:00');
+    const dow = DAYS_CN[d.getDay()];
+    const dowColor = d.getDay() === 6 ? 'var(--sat)' : d.getDay() === 0 ? 'var(--sun)' : 'var(--text-secondary)';
+    const allFull = slots.every(s => {
+      const cap = slotCap(s.time_range), booked = slotBookedCount[s.id] || 0;
+      return booked >= cap;
+    });
+    const totalRemaining = slots.reduce((sum, s) => {
+      const cap = slotCap(s.time_range), booked = slotBookedCount[s.id] || 0;
+      return sum + Math.max(0, cap - booked);
+    }, 0);
+    const isOpen = expandedDateKey === date;
+
+    const slotItems = slots.map(s => {
+      const cap = slotCap(s.time_range), booked = slotBookedCount[s.id] || 0, remaining = cap - booked, full = remaining <= 0;
       const types = Array.isArray(s.type) ? s.type : [s.type];
-      const r = remainOf(s);
-      return [String(s.time_range || '').replace('-', '–'), s.teacher_name ? (teacherDisplayNames[s.teacher_name] || s.teacher_name) : '', locationShort(s.location) || '线上', types.map(typeName).join('・'), r <= 0 ? '已满' : `剩${r}`].filter(Boolean).join(' · ');
-    },
-  }) : '');
+      return `<div class="slot-option${full ? ' taken' : ''}" style="border:none;border-top:1px solid var(--border-light);border-radius:0;padding:10px 14px">
+        <input type="radio" name="slotPick" id="slot-${s.id}" value="${s.id}" ${full ? 'disabled' : ''} onchange="selectedSlotId='${s.id}'">
+        <label for="slot-${s.id}" style="display:flex;flex-direction:column;gap:3px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:13px;font-weight:600;font-family:'DM Mono',monospace">${s.time_range}</span>
+            <span class="tag ${typeTag(types[0])}" style="font-size:9px">${types.map(t=>t==='daily'?'日常':t==='plan'?'计划书':t==='vip'?'VIP':'模拟').join('・')}</span>
+            <span style="margin-left:auto;font-size:10px;color:${full?'var(--danger)':'var(--success)'}">${full?'已满':`剩余 ${remaining}`}</span>
+          </div>
+          ${s.teacher_name ? `<div style="font-size:10px;color:var(--text-muted)">👤 ${teacherDisplayNames[s.teacher_name] || s.teacher_name}</div>` : ''}
+          ${locationLong(s.location)?`<div style="font-size:10px;color:${locationColor(s.location)}">📍 ${locationLong(s.location)}</div>`:''}
+        </label>
+      </div>`;
+    }).join('');
+
+    return `<div style="border:1px solid ${isOpen?'var(--accent)':'var(--border)'};border-radius:4px;overflow:hidden;margin-bottom:6px${allFull?';opacity:.55':''}">
+      <div onclick="toggleDateSlots('${date}')" style="display:flex;align-items:center;padding:11px 14px;cursor:${allFull?'default':'pointer'};background:${isOpen?'var(--accent-light)':'var(--surface)'}">
+        <span style="font-size:15px;font-weight:600;font-family:'DM Mono',monospace;min-width:44px">${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}</span>
+        <span style="font-size:12px;font-weight:600;color:${dowColor};margin-left:6px">${dow}</span>
+        <span style="margin-left:10px;font-size:11px;color:var(--text-muted)">${slots.length}个时段</span>
+        <span style="margin-left:auto;font-size:11px;color:${allFull?'var(--danger)':'var(--text-2)'}">
+          ${allFull ? '全部已满' : `${totalRemaining} 名额 ›`}
+        </span>
+      </div>
+      ${isOpen ? `<div style="background:var(--bg)">${slotItems}</div>` : ''}
+    </div>`;
+  });
+
+  grid.innerHTML = rows.join('');
 }
 
 function toggleDateSlots(date) {
-  // 点击已选中的日期 → 收起；点击新日期 → 显示当天时段
+  // 点击已展开的 → 收起；点击新日期 → 展开
   expandedDateKey = (expandedDateKey === date) ? null : date;
-  selectedSlotId = null;
+  // 清除已选时间槽（切换日期时重置）
+  if (expandedDateKey !== date) selectedSlotId = null;
   renderSlots();
-}
-function bkPickSlot(id) {
-  selectedSlotId = id;
-  slotChipsMark(document.getElementById('slotGrid'), id);
 }
 
 async function submitBooking() {
