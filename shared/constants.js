@@ -502,6 +502,8 @@ function monthPeriodOf(ds) {
   return m ? `${m[1]}年${+m[2]}月` : '未分期';
 }
 
+// 写入 courses.period 前用：学部美术的月份「2026年9月」只存「9月」（年份由首回日期决定；数据库触发器会按 年份+年+period 拼出排课系统的期数）。其他值原样返回
+function stripPeriodYear(p) { return String(p == null ? '' : p).replace(/^\d{4}年(?=\d{1,2}月$)/, ''); }
 // 带年份的期数键：大学院等「2026年10月期」；学部美术本身就是「2026年9月」
 function periodKeyOf(c) {
   const p = effectivePeriod(c);
