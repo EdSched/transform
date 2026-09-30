@@ -60,26 +60,12 @@ function renderVipFrameworkPage(mc) {
       <div style="display:flex;align-items:center;gap:8px">
         <button class="btn btn-outline" onclick="renderVipPlanLogs()" style="white-space:nowrap">📋 变更记录</button>
         <select id="vf_new_major" style="font-size:12px">${majorOpts}</select>
-        <button class="btn btn-outline" onclick="vfAddMajor()" style="white-space:nowrap">＋新增专业</button>
         <button class="btn btn-primary" onclick="createVipFramework()" style="white-space:nowrap">＋新建框架</button>
       </div>
     </div>
+    <div style="font-size:10px;color:var(--text-3);margin:-8px 0 12px;text-align:right">找不到专业？请联系管理员在中枢「专业管理中心」新建</div>
     <div style="display:flex;flex-direction:column;gap:8px">${cards}</div>
   </div>`;
-}
-
-// 在 VIP 框架页直接新增专业（复用 constants 的 createMajor + 自动生成代号）
-async function vfAddMajor() {
-  const label = prompt('请输入新专业名称（中文），例如：観光学');
-  if (!label || !label.trim()) return;
-  const suggested = (typeof generateMajorKey === 'function') ? generateMajorKey(label.trim()) : '';
-  const keyInput = prompt('英文代号（系统内部使用）已自动生成，可直接确认或修改：\n\n规则：只能小写字母/数字/下划线，以字母开头。', suggested);
-  if (keyInput === null) return;
-  const key = await createMajor(label.trim(), keyInput.trim());
-  if (key) {
-    alert(`已新增专业「${label.trim()}」，代号：${key}\n现在可在下拉里选它建框架，全站也已可用。`);
-    renderVipFrameworkPage(document.getElementById('mainContent'));
-  }
 }
 
 async function createVipFramework() {
