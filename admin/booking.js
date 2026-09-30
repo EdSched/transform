@@ -56,18 +56,15 @@ function renderBookingPage(mc){
     </div>
   </div>
   <div id="studentLinksPanel" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:12px 14px;margin-bottom:10px">
-    <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px">学生预约链接</div>
-    <div style="display:flex;flex-direction:column;gap:5px">
-      ${majorFilterKeys().map(key=>{
-        const label=majorLabel(key);
-        const url=`https://edsched.github.io/transform/student/?major=${key}`;
-        return `<div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:11px;min-width:130px;white-space:nowrap">${label}</span>
-          <code style="font-size:10px;color:var(--text-2);background:var(--surface);padding:2px 8px;border-radius:2px;flex:1;border:1px solid var(--border-light);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${url}</code>
-          <button onclick="navigator.clipboard.writeText('${url}').then(()=>{this.textContent='✓';setTimeout(()=>this.textContent='复制',1500)})" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;white-space:nowrap">复制</button>
-        </div>`;
-      }).join('')}
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn btn-outline btn-sm" onclick="bkCopyLink('https://edsched.github.io/transform/student/study.html','已复制学习页面链接')">📋 复制学习页面链接（已有查询码的学生通用）</button>
+      <span style="font-size:10px;color:var(--text-3)">专业链接只给第一次面谈的新同学用</span>
     </div>
+    <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">新同学预约链接（点专业复制）</div>
+    ${bkLinkGroups().map(g=>`<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+      <span style="font-size:10px;color:var(--text-3);white-space:nowrap;min-width:64px">${g.domain}</span>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">${g.keys.map(k=>`<div class="filter-chip" style="margin:0" onclick="bkCopyLink('https://edsched.github.io/transform/student/?major=${k}','已复制「${majorLabel(k)}」预约链接')">${majorLabel(k)}</div>`).join('')}</div>
+    </div>`).join('')}
   </div>
   <div class="filter-row" id="majorFilterRow">
     ${majorFilterKeys({includeAll:true}).map((m,i)=>`<div class="filter-chip${bkMajor===m?' active':''}" onclick="setBkMajor('${m}',this)">${i===0?'全部专业':majorLabel(m)}</div>`).join('')}
@@ -925,4 +922,24 @@ async function bkMergeGroup(name){
   bkApplyClaim(ids,r);
   bkUnlinkedOpen=null;
   renderUnlinkedBookingPage(document.getElementById('mainContent'));
+}
+
+// 学生预约链接面板：专业按领域分组（顺序同 DOMAINS；分组标签如「社会人文」排在成员专业前面）
+function bkLinkGroups(){
+  const domOf=k=>MAJOR_DOMAIN[k]||(MAJOR_GROUPS[k]?MAJOR_DOMAIN[(MAJOR_GROUPS[k]||[])[0]]:'')||'其他';
+  const map={};
+  majorFilterKeys().forEach(k=>{ const d=domOf(k); (map[d]=map[d]||[]).push(k); });
+  const order=DOMAINS.map(d=>d.label);
+  return Object.keys(map).sort((a,b)=>{ const ia=order.indexOf(a), ib=order.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib); }).map(d=>({domain:d,keys:map[d]}));
+}
+function bkCopyLink(url,msg){
+  const done=()=>bkToast(msg);
+  const fallback=()=>{ const t=document.createElement('textarea'); t.value=url; t.style.cssText='position:fixed;opacity:0'; document.body.appendChild(t); t.select(); let ok=false; try{ ok=document.execCommand('copy'); }catch(e){} t.remove(); ok?done():prompt('请手动复制链接：',url); };
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done).catch(fallback); else fallback();
+}
+function bkToast(msg){
+  let el=document.getElementById('bkToast');
+  if(!el){ el=document.createElement('div'); el.id='bkToast'; el.style.cssText='position:fixed;left:50%;bottom:40px;transform:translateX(-50%);background:#1a1814;color:#fff;font-size:12px;padding:8px 16px;border-radius:4px;z-index:9999;pointer-events:none;transition:opacity .2s'; document.body.appendChild(el); }
+  el.textContent=msg; el.style.opacity='1';
+  clearTimeout(el._t); el._t=setTimeout(()=>{ el.style.opacity='0'; },2000);
 }
