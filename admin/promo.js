@@ -479,6 +479,9 @@ function pcRender() {
     </span>
   </div>
   ${pcImport ? pcImportHtml() : ''}
+  ${!pcList.length && PC_SEEDS[pcDomain] ? `<div style="border:1px dashed var(--accent);border-radius:4px;padding:12px 14px;margin-bottom:12px;background:var(--bg);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:12px">「${promoEsc(pcDomain)}」还没有通用宣传内容。可以一键导入宣传册转好的初始内容（前 8 块发布，后 6 块隐藏，之后都能改）：</span>
+    <button class="btn btn-primary btn-sm" onclick="pcImportSeed()">导入初始内容</button></div>` : ''}
   ${formHtml}
   ${pcList.length ? pcList.map((r, i) => `
   <div style="border:1px solid var(--border-light);border-radius:3px;padding:8px 12px;margin-bottom:6px;background:var(--surface);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -491,6 +494,22 @@ function pcRender() {
     <button class="btn btn-outline btn-sm" onclick="pcEditing='${r.id}';pcImport=null;pcRender();document.getElementById('pc_title')?.scrollIntoView({block:'center'})">✏ 编辑</button>
     <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="pcDelete('${r.id}')">删除</button>
   </div>`).join('') : '<div class="empty" style="padding:30px">该领域还没有通用宣传内容，可以「＋ 新增内容块」或「📄 从 Word 导入」</div>'}`;
+}
+// 初始内容（宣传册转好的）：仓库里 seed/ 下的 json，和 seed/*.sql 是同一份数据（SQL 编辑器粘贴长度有限，所以提供一键导入）
+const PC_SEEDS = { '大学院文科': '../seed/promo_common_seed_大学院文科.json' };
+async function pcImportSeed() {
+  const url = PC_SEEDS[pcDomain]; if (!url) return;
+  if (pcList.length && !confirm('这个领域已经有内容了，导入只会补上还没有的初始块。继续吗？')) return;
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error('读取初始内容失败（' + r.status + '）。刚合并的话请等 10 分钟左右再试');
+    const data = await r.json(), have = new Set(pcList.map(x => x.id)), now = new Date().toISOString();
+    const rows = data.map(x => ({ id: `pc-seed-${domainCode(x.domain)}-${String(x.sort_order).padStart(2, '0')}`, domain: x.domain, title: x.title, body: x.body, sort_order: x.sort_order, published: x.published !== false, updated_at: now }))
+      .filter(x => x.domain === pcDomain && !have.has(x.id));
+    for (let i = 0; i < rows.length; i += 4) await sb('/rest/v1/promo_common', 'POST', rows.slice(i, i + 4));
+    pcList = pcList.concat(rows).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)); pcRender();
+    alert(`已导入 ${rows.length} 块。`);
+  } catch (e) { alert('导入失败：' + e.message); pcLoad(); }
 }
 function pcPreview() {
   const el = document.getElementById('pc_preview'), b = document.getElementById('pc_body');

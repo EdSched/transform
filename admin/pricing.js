@@ -71,7 +71,11 @@ function prcRender() {
       ${prcOpen.has(p.id) ? prcIncludedView(p.included || []) : ''}`, p.active === false)).join('');
   }).join('') : '<div style="font-size:11px;color:var(--text-3);padding:10px">还没有大课套餐</div>';
 
+  const empty = !prcPk.length && !prcVip.length && !prcTa.length;
   box.innerHTML = `
+  ${empty ? `<div style="border:1px dashed var(--accent);border-radius:4px;padding:12px 14px;margin-bottom:12px;background:var(--bg);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:12px">价目还是空的。可以一键导入初始价目（学部理科 / 学部文科各 5 个套餐、3 种 VIP 单价、2 档 TA，之后都能改）：</span>
+    <button class="btn btn-primary btn-sm" onclick="prcImportSeed()">导入初始价目</button></div>` : ''}
   <div style="font-size:10px;color:var(--text-3);margin-bottom:12px;line-height:1.8">价目只有勾选了「课程方案（含价格）」的营业老师看得到。停用的项目老师端不再出现，但已保存的方案不受影响。大学院文科 / 理科的大课套餐暂时是空的，直接在下面「＋ 新增」。</div>
   ${form('pk')}
   ${sec('大课套餐', '“包含课程”只在后台查看，不会输出到宣传资料', 'pk', pkHtml)}
@@ -235,4 +239,23 @@ async function prcMove(kind, id, d) {
     all.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
     prcRender();
   } catch (e) { alert('调整顺序失败：' + e.message); prcLoad(); }
+}
+
+// 初始价目：仓库里 seed/pricing_seed.json（和 seed/pricing_seed.sql 是同一份数据；SQL 编辑器粘贴长度有限，所以提供一键导入）
+async function prcImportSeed() {
+  try {
+    const r = await fetch('../seed/pricing_seed.json', { cache: 'no-store' });
+    if (!r.ok) throw new Error('读取初始价目失败（' + r.status + '）。刚合并的话请等 10 分钟左右再试');
+    const d = await r.json(), code = { '学部理科': 'gakubu_rika', '学部文科': 'gakubu_bunka' };
+    const two = n => String(n).padStart(2, '0');
+    const pk = d.packages.map(p => ({ id: `pkg-${code[p.track] || 'other'}-${two(p.sort_order)}`, track: p.track, name: p.name, price_man_yen: p.price_man_yen, period: p.period, included: p.included, sort_order: p.sort_order, active: true }));
+    const vip = d.vip_rates.map((v, i) => ({ id: `vip-rate-${two(i + 1)}`, track: v.track, name: v.name, yen_per_hour: v.yen_per_hour, items: v.items, sort_order: i + 1, active: true }));
+    const ta = d.ta_options.map((t, i) => ({ id: `ta-opt-${two(i + 1)}`, track: t.track, name: t.name, descr: t.desc, hours: t.hours, price_man_yen: t.price_man_yen, sort_order: i + 1, active: true }));
+    const put = async (table, rows, have) => { const add = rows.filter(x => !have.some(h => h.id === x.id)); for (let i = 0; i < add.length; i += 3) await sb(`/rest/v1/${table}`, 'POST', add.slice(i, i + 3)); return add; };
+    prcPk = prcPk.concat(await put('price_packages', pk, prcPk));
+    prcVip = prcVip.concat(await put('price_vip_rates', vip, prcVip));
+    prcTa = prcTa.concat(await put('price_ta_options', ta, prcTa));
+    prcRender();
+    alert(`已导入：${pk.length} 个套餐、${vip.length} 种 VIP 单价、${ta.length} 档 TA。`);
+  } catch (e) { alert('导入失败：' + e.message); prcLoad(); }
 }
