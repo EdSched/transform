@@ -467,7 +467,15 @@
       <div class="form-group" style="margin:0"><label class="form-label">校区</label><input id="ac_campus" placeholder="市谷 / 高马 / 腾讯会议…"></div>
       <div class="form-group" style="margin:0"><label class="form-label">授课形式</label>
         <select id="ac_delivery"><option value="">请选择</option><option>线下</option><option>线上</option><option>线下＋线上</option></select></div>
-      <div class="form-group" style="margin:0"><label class="form-label">星期（可多选）</label>
+      <div class="form-group" id="ac_mode_box" style="margin:0;grid-column:1/-1;display:none"><label class="form-label">排课方式</label>
+        <select id="ac_mode" onchange="acModeChange(true)" style="width:auto"><option value="week">按周排（第一回日期＋星期＋回数）</option><option value="month">按月排（按星期设定每周的内容和老师，一次生成整月）</option></select></div>
+      <div class="form-group" id="ac_month_plan_box" style="margin:0;grid-column:1/-1;display:none">
+        <label class="form-label">每周安排 <span style="font-weight:400;color:var(--text-3)">（从起始日到月底，每一行按星期生成单回；同一星期可加多行）</span></label>
+        <div id="ac_mp_rows" style="display:flex;flex-direction:column;gap:5px"></div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="acMpAddRow()" style="margin-top:6px">＋ 添加一行</button>
+        <div id="ac_mp_preview" style="font-size:11px;color:var(--text-2);margin-top:8px"></div>
+      </div>
+      <div class="form-group" id="ac_weekday_box" style="margin:0"><label class="form-label">星期（可多选）</label>
         <div id="ac_weekday_chips" style="display:flex;flex-wrap:wrap;gap:5px">
           <div class="filter-chip" data-wd="周一" onclick="this.classList.toggle('active')" style="font-size:12px;padding:5px 12px;cursor:pointer">周一</div>
           <div class="filter-chip" data-wd="周二" onclick="this.classList.toggle('active')" style="font-size:12px;padding:5px 12px;cursor:pointer">周二</div>
@@ -481,8 +489,8 @@
       </div>
       <div class="form-group" style="margin:0"><label class="form-label">上课时间 <span style="font-weight:400;color:var(--text-3)">（多个时间段用 / 分隔）</span></label><div style="display:flex;gap:4px"><input id="ac_time_range" placeholder="14:00-18:00" oninput="trAutoHours('ac_time_range','ac_actual_hours')" style="flex:1;min-width:0"><button type="button" onclick="trAddSeg('ac_time_range')" style="font-size:11px;white-space:nowrap;background:none;border:1px solid var(--border);border-radius:2px;padding:0 8px;cursor:pointer;font-family:inherit">＋ 时间段</button></div></div>
       <div class="form-group" style="margin:0"><label class="form-label">课时（小时，用于工资核算）</label><input type="number" id="ac_actual_hours" step="0.5" min="0" placeholder="例：4"></div>
-      <div class="form-group" style="margin:0"><label class="form-label">课程回数 *</label><input type="number" id="ac_total" min="1" placeholder="10"></div>
-      <div class="form-group" style="margin:0"><label class="form-label">第一回日期 *</label><input type="date" id="ac_first_date" onchange="if(typeof acRenderHolidayExcept==='"'"'function')acRenderHolidayExcept()"></div>
+      <div class="form-group" id="ac_total_box" style="margin:0"><label class="form-label">课程回数 *</label><input type="number" id="ac_total" min="1" placeholder="10"></div>
+      <div class="form-group" style="margin:0"><label class="form-label" id="ac_first_label">第一回日期 *</label><input type="date" id="ac_first_date" onchange="acFirstDateChange()"></div>
       <div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">假期豁免（该课在这些假期照常上课，不顺延）</label>
         <div id="ac_holiday_except" style="display:flex;flex-wrap:wrap;gap:6px;padding:7px 9px;border:1px solid var(--border);border-radius:3px;background:var(--bg);min-height:32px;font-size:11px"></div>
       </div>

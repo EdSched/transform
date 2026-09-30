@@ -1406,6 +1406,7 @@ function openAddCourseModal(editId){
     document.getElementById('ac_first_date').value='';
     document.getElementById('ac_has_details').checked=false;
     document.getElementById('ac_details_body').innerHTML='';   // 新建：不带上一门课的单回表
+    document.getElementById('ac_mp_rows').innerHTML=''; acModeTouched=false; acMpConverted=false;   // 按月排：每周安排重来
     acSetMajors([]);
     toggleAcDetails(false);
   }
@@ -1444,10 +1445,26 @@ function acArtSetup(c){
 }
 function acArtUI(){
   const art=acIsArt();
-  document.getElementById('ac_period').style.display=art?'none':'';
-  document.getElementById('ac_month').style.display=art?'':'none';
-  document.getElementById('ac_period_label').textContent=art?'月份 *':'期数 *';
+  const editing=!!document.getElementById('ac_editing_id').value;
+  const mb=document.getElementById('ac_mode_box');
+  if(mb) mb.style.display=editing?'none':'';   // 只用于新建课程
+  // 没手动切换过：学部美术默认按月排，其他领域默认按周排
+  if(!editing&&!acModeTouched) document.getElementById('ac_mode').value=art?'month':'week';
+  const month=!editing&&document.getElementById('ac_mode').value==='month';
+  const monthUI=art||month;
+  document.getElementById('ac_period').style.display=monthUI?'none':'';
+  document.getElementById('ac_month').style.display=monthUI?'':'none';
+  document.getElementById('ac_period_label').textContent=monthUI?'月份 *':'期数 *';
   document.getElementById('ac_member_box').style.display=art?'':'none';
+  document.getElementById('ac_weekday_box').style.display=month?'none':'';
+  document.getElementById('ac_total_box').style.display=month?'none':'';
+  document.getElementById('ac_month_plan_box').style.display=month?'':'none';
+  document.getElementById('ac_first_label').textContent=month?'起始日 *':'第一回日期 *';
+  if(month){
+    if(!document.querySelector('#ac_mp_rows .acmp-row')) acMpAddRow();
+    if(!document.getElementById('ac_first_date').value) acMonthChange();
+    acMpPreview();
+  }
   if(art) acMemberRender();
 }
 // 选了月份：首回日期默认这个月 1 号（可以再改）
@@ -1456,6 +1473,107 @@ function acMonthChange(){
   const ym=`${m[1]}-${String(m[2]).padStart(2,'0')}`;
   const fd=document.getElementById('ac_first_date');
   if(!fd.value||!fd.value.startsWith(ym)){ fd.value=ym+'-01'; if(typeof acRenderHolidayExcept==='function') acRenderHolidayExcept(); }
+  acMpPreview();
+}
+function acFirstDateChange(){
+  if(typeof acRenderHolidayExcept==='function') acRenderHolidayExcept();
+  acMpPreview();
+}
+
+// ── 新建课程「按月排」：按星期设定每周固定的内容和老师，保存时一次生成整月的单回 ──
+let acModeTouched=false, acMpSeq=0, acMpConverted=false;
+const AC_WD_LABELS=['周一','周二','周三','周四','周五','周六','周日'];
+function acMode(){
+  if(document.getElementById('ac_editing_id').value) return 'week';
+  return document.getElementById('ac_mode').value==='month'?'month':'week';
+}
+function acModeChange(byUser){
+  if(byUser) acModeTouched=true;
+  if(acMode()==='month'){ acMonthChange(); }
+  else if(acMpConverted){   // 切回按周排：清掉按月排生成的明细，回到原来的填法
+    document.getElementById('ac_has_details').checked=false;
+    document.getElementById('ac_details_body').innerHTML='';
+    acSetWeekdayChips(''); document.getElementById('ac_total').value='';
+    toggleAcDetails(false); acMpConverted=false;
+  }
+  acArtUI();
+}
+function acMpAddRow(d){
+  const box=document.getElementById('ac_mp_rows'); if(!box) return;
+  const id='acmp_t'+(++acMpSeq);
+  const teacher=d&&d.teacher!=null?d.teacher:document.getElementById('ac_teacher').value.trim();
+  const inp='font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
+  const div=document.createElement('div');
+  div.className='acmp-row'; div.style.cssText='display:flex;gap:5px;align-items:center;flex-wrap:wrap';
+  div.innerHTML=`<select onchange="acMpPreview()" style="${inp};width:76px"><option value="">星期</option>${AC_WD_LABELS.map(w=>`<option${d&&d.wd===w?' selected':''}>${w}</option>`).join('')}</select>
+    <span style="display:flex;gap:3px"><input id="${id}" value="${escTM(d&&d.time||'')}" placeholder="时间 14:00-17:00" title="多段用 / 分隔" oninput="acMpPreview()" style="${inp};width:150px;font-family:'DM Mono',monospace"><button type="button" onclick="trAddSeg('${id}')" style="font-size:11px;white-space:nowrap;background:none;border:1px solid var(--border);border-radius:2px;padding:0 6px;cursor:pointer;font-family:inherit">＋ 时间段</button></span>
+    <input value="${escTM(d&&d.title||'')}" placeholder="课程内容（单回标题）" oninput="acMpPreview()" style="${inp};flex:1;min-width:120px">
+    <input value="${escTM(teacher)}" placeholder="老师" oninput="acMpPreview()" style="${inp};width:90px">
+    <button type="button" class="btn-ghost" onclick="this.closest('.acmp-row').remove();acMpPreview()">✕</button>`;
+  box.appendChild(div);
+  acMpPreview();
+}
+function acMpRows(){
+  return [...document.querySelectorAll('#ac_mp_rows .acmp-row')].map(r=>{
+    const sel=r.querySelector('select'), ins=r.querySelectorAll('input');
+    return { wd:sel.value, time:ins[0].value.trim(), title:ins[1].value.trim(), teacher:ins[2].value.trim() };
+  });
+}
+// 按每周安排生成整月单回：起始日～月底，每行按它的星期取日期；全局假期跳过（另列出来）
+function acMpGen(){
+  const m=/^(\d{4})年(\d+)月$/.exec(document.getElementById('ac_month').value||'');
+  const start=document.getElementById('ac_first_date').value;
+  if(!m||!start) return { err:'请选择月份和起始日' };
+  const y=+m[1], mo=+m[2], pad=n=>String(n).padStart(2,'0'), ym=`${y}-${pad(mo)}`;
+  if(!start.startsWith(ym)) return { err:'起始日必须在所选月份内' };
+  const last=new Date(y,mo,0).getDate();
+  const sessions=[], skipped=[];
+  acMpRows().forEach((r,ri)=>{
+    if(!r.wd) return;
+    const wdn=parseWeekdays(r.wd)[0];
+    for(let day=+start.slice(8,10);day<=last;day++){
+      const ds=`${ym}-${pad(day)}`;
+      if(new Date(ds+'T12:00:00').getDay()!==wdn) continue;
+      const it={ date:ds, wd:r.wd, time_range:normalizeTimeRanges(r.time), title:r.title, teacher:r.teacher, ri };
+      (dateInHoliday(ds)?skipped:sessions).push(it);
+    }
+  });
+  const cmp=(a,b)=>a.date.localeCompare(b.date)||timeRangesSortKey(a.time_range).localeCompare(timeRangesSortKey(b.time_range))||a.ri-b.ri;
+  sessions.sort(cmp); skipped.sort(cmp);
+  sessions.forEach((x,i)=>x.num=i+1);
+  return { sessions, skipped };
+}
+function acMpFmt(x){
+  return `${+x.date.slice(5,7)}/${+x.date.slice(8,10)}（${x.wd}）${x.title||'（未填内容）'}${x.time_range?' '+x.time_range:''}${x.teacher?' · '+x.teacher:''}`;
+}
+function acMpPreview(){
+  const box=document.getElementById('ac_mp_preview'); if(!box||acMode()!=='month') return;
+  const g=acMpGen();
+  if(g.err){ box.textContent=g.err; return; }
+  if(!acMpRows().some(r=>r.wd)){ box.textContent='请添加每周安排，并为每一行选择星期'; return; }
+  const list=g.sessions.map(x=>`<div>${escTM(acMpFmt(x))}</div>`).join('');
+  const sk=g.skipped.map(x=>`<div style="color:var(--text-3)">${escTM(acMpFmt(x))} — 假期跳过</div>`).join('');
+  if(!g.sessions.length&&!g.skipped.length){ box.textContent='这个月从起始日开始没有可上课的日期'; return; }
+  const head=g.sessions.slice(0,3).map(x=>`${+x.date.slice(5,7)}/${+x.date.slice(8,10)}（${x.wd}）${x.title||''}`).join('、');
+  box.innerHTML=`将生成 <b>${g.sessions.length}</b> 回${head?'：'+escTM(head)+(g.sessions.length>3?' …':''):''}${g.skipped.length?`（另有 ${g.skipped.length} 天因假期跳过）`:''}
+    <details style="margin-top:4px"><summary style="cursor:pointer;color:var(--text-3)">展开完整列表</summary><div style="margin-top:4px;line-height:1.7">${list}${sk}</div></details>`;
+}
+// 保存前：把按月排生成的结果写成单回明细的行，后面走原来「有单回明细」的保存路径。返回 false 表示校验没通过
+function acMpConvert(){
+  const rows=acMpRows();
+  if(!rows.length){ alert('每周安排至少要有一行'); return false; }
+  if(rows.some(r=>!r.wd)){ alert('每一行都要选择星期'); return false; }
+  const g=acMpGen();
+  if(g.err){ alert(g.err); return false; }
+  if(!g.sessions.length){ alert('这个月从起始日开始没有可上课的日期'); return false; }
+  acPopulateRows(g.sessions.map(x=>({num:x.num,date:x.date,time_range:x.time_range,title:x.title,teacher:x.teacher})));
+  document.getElementById('ac_has_details').checked=true;   // 不展开明细表，保存时直接按它生成
+  acSetWeekdayChips(AC_WD_LABELS.filter(w=>rows.some(r=>r.wd===w)).join(','));
+  document.getElementById('ac_total').value=g.sessions.length;
+  if(!document.getElementById('ac_time_range').value.trim()){ const t=rows.find(r=>r.time); if(t) document.getElementById('ac_time_range').value=normalizeTimeRanges(t.time); }
+  if(!acIsArt()&&!document.getElementById('ac_period').value) document.getElementById('ac_period').value=periodFromDate(g.sessions[0].date);
+  acMpConverted=true;
+  return true;
 }
 
 // 上课时间：「＋ 时间段」在文本末尾加 /，接着输入下一段；多段时课时自动按各段相加
@@ -1775,6 +1893,10 @@ function acSetRowsFromData(rows){
 }
 
 async function saveAddCourse(){
+  if(acMode()==='month'){
+    if(!document.getElementById('ac_name').value.trim()){alert('请填写课程名称');return}
+    if(!acMpConvert()) return;
+  }
   const name=document.getElementById('ac_name').value.trim();
   let period=document.getElementById('ac_period').value;
   let total=parseInt(document.getElementById('ac_total').value)||0;
