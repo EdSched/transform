@@ -131,6 +131,21 @@ const MAJOR_GROUPS = { shakai_group: SHAKAI_GROUP };
 // 核心专业的固定展示顺序；数据库新增的专业会自动追加到其后
 const CORE_MAJOR_ORDER = ['keiei', 'keizai', 'shakai', 'shinpan', 'fukushi'];
 
+// 面谈预约：学生能看到哪些专业 / 分组的时间槽
+//   已登录学生（传学生档案）：主专业 + extra_majors，再加上包含这些专业的分组（shakai / shinpan / fukushi → shakai_group）
+//   新同学（传链接的专业 key）：链接专业 + 包含它的分组；链接本身是分组时 = 分组 + 组内专业
+function bookingMajorsFor(x) {
+  const out = new Set();
+  const isStu = x && typeof x === 'object';
+  const base = isStu ? [x.major, ...(Array.isArray(x.extra_majors) ? x.extra_majors : [])] : [x];
+  base.filter(Boolean).forEach(m => {
+    out.add(m);
+    if (!isStu && MAJOR_GROUPS[m]) MAJOR_GROUPS[m].forEach(k => out.add(k));   // 链接是分组：带上组内专业
+    Object.entries(MAJOR_GROUPS).forEach(([g, ms]) => { if (ms.includes(m)) out.add(g); });
+  });
+  return [...out];
+}
+
 // 所有「真实」专业 key（核心在前，DB 新增在后），不含虚拟分组 shakai_group
 function allMajorKeys() {
   const keys = [...CORE_MAJOR_ORDER];
