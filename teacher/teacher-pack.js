@@ -17,6 +17,8 @@ const PK_TYPES = {
   plan:      { label: '进度规划', color: '#2d5a3d', bg: '#e4f0e8' },
   lecturers: { label: '讲师介绍', color: '#6a4a7a', bg: '#efe4f4' },
   common:    { label: '宣传收尾', color: '#8a6a1b', bg: '#f8f0d8' },
+  plan_price: { label: '课程方案', color: '#a03a2e', bg: '#f8e4dc' },
+  cases:     { label: '合格案例', color: '#2d5a3d', bg: '#e4f0e8' },
   vip:       { label: 'VIP方案', color: '#a03a2e', bg: '#f8e4dc' },
 };
 const PK_MAJOR_PARTS = [
@@ -44,7 +46,7 @@ function pkLoad() {
     const raw = localStorage.getItem(pkStoreKey());
     if (raw) {
       const d = JSON.parse(raw);
-      if (Array.isArray(d.items)) pkItems = d.items;
+      if (Array.isArray(d.items)) pkItems = d.items.filter(x => x.type !== 'plan_price' || (typeof pricingEnabled === 'function' && pricingEnabled()));   // 没有课程方案权限时，本地遗留的价格章节不再带出
       if (d.cover) { pkCover = Object.assign(pkCover, d.cover); delete pkCover.title; }   // 旧版的自定义封面标题不再使用
     }
   } catch (e) { /* 隐私模式等读不到时从空资料包开始 */ }
@@ -57,6 +59,7 @@ function pkSave() {
 // ── 对外入口：各工具页面调用 ──
 function pkAdd(item, opts) {
   pkLoad();
+  if (item.type === 'plan_price' && !(typeof pricingEnabled === 'function' && pricingEnabled())) return;   // 课程方案（含价格）只有开通权限的老师能加入
   const it = Object.assign({ wide: false, include: true }, item, {
     id: 'pk-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
     addedAt: new Date().toISOString(),
@@ -262,6 +265,8 @@ function pkRender(mc) {
   if (p.lect_info) sources.push(linkBtn('lectinfo', '👤 讲师信息 → 展示卡片加入'));
   if (p.vip_sales) sources.push(linkBtn('vipsales', '🗂 VIP规划 → 方案加入'));
   if (p.promo) sources.push(linkBtn('promo', '📣 宣传相关 → 专业介绍加入'));
+  if (p.promo) sources.push(`<button onclick="prSection='cases';switchTab('promo')" style="font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:5px 12px;cursor:pointer;font-family:inherit;color:var(--text-2)">🏆 合格案例 → 选用后加入</button>`);
+  if (p.promo && p.promo_pricing) sources.push(`<button onclick="prSection='plan';switchTab('promo')" style="font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:5px 12px;cursor:pointer;font-family:inherit;color:var(--text-2)">💴 课程方案 → 配好后加入</button>`);
 
   const majorKeys = prMajorsCache || pkMajorList || [];
   const selMajor = majorKeys.includes(prMajor) ? prMajor : majorKeys[0];
@@ -479,6 +484,28 @@ table.pk-adb { border-collapse:collapse; width:100%; table-layout:fixed; font-fa
 .pk-adb tr { break-inside:avoid; }
 .pk-adb .b { font-weight:700; } .pk-adb .c { text-align:center; font-weight:700; }
 .pk-note { margin-top:10px; font-size:9.5px; color:#666; line-height:1.8; }
+/* 合格案例 */
+.pk-case { border:1px solid var(--border); border-radius:5px; padding:14px 18px; margin-bottom:14px; break-inside:avoid; }
+.pk-case-h { font-size:14px; font-weight:700; color:var(--accent); margin-bottom:8px; }
+.pk-case-t { width:100%; border-collapse:collapse; font-size:11.5px; margin:4px 0 !important; }
+.pk-case-t th { background:var(--accent) !important; color:#fff !important; padding:5px 10px !important; font-size:10px; letter-spacing:.06em; border-color:var(--accent) !important; }
+.pk-case-t td { padding:5px 10px !important; border:1px solid var(--border) !important; line-height:1.7; }
+.pk-case-t tr:last-child td { background:var(--accent-light); }
+.pk-case-q { border-left:3px solid var(--accent); background:var(--bg); padding:6px 12px; margin:8px 0 2px; color:var(--text-2); font-size:11.5px; line-height:1.9; }
+.pk-case-s { font-size:10.5px; font-weight:600; color:var(--accent); margin:10px 0 4px; }
+/* 课程方案（带价格） */
+table.pk-price { width:100%; border-collapse:collapse; font-size:12px; }
+.pk-price thead tr { background:var(--accent); color:#fff; }
+.pk-price th { padding:8px 12px; text-align:left; font-weight:600; font-size:11px; letter-spacing:.06em; }
+.pk-price td { padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:top; line-height:1.7; color:var(--text-2); }
+.pk-price td.nm { font-weight:600; color:var(--text-1); width:24%; }
+.pk-price td.dt { width:24%; white-space:normal; }
+.pk-price td.yen { text-align:right; white-space:nowrap; font-family:'DM Mono',monospace; color:var(--text-1); width:20%; }
+.pk-price td.yen.neg { color:#a03a2e; }
+.pk-price tfoot td { border-top:2px solid var(--accent); border-bottom:none; background:var(--accent-light); padding:12px; }
+.pk-price td.tt { font-size:14px; font-weight:700; color:var(--accent); text-align:right; letter-spacing:.2em; }
+.pk-price td.tot { font-size:20px; font-weight:700; color:var(--accent); }
+.pk-price td.tot .man { display:block; font-family:'Noto Serif SC',serif; font-size:11px; font-weight:400; color:var(--text-2); }
 /* VIP */
 .pk-stats { display:flex; gap:22px; align-items:baseline; background:var(--bg); border:1px solid var(--border); border-radius:3px; padding:8px 14px; margin-bottom:12px; font-size:11px; color:var(--text-2); }
 .pk-stats b { font-family:'DM Mono',monospace; font-size:18px; font-weight:500; color:var(--text-1); }
