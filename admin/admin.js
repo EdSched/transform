@@ -195,7 +195,10 @@ async function renderMajorManager(body){
   const domainOpts=DOMAINS.map(d=>`<option value="${d.label}">${d.label}</option>`).join('');
   let html=`
   <div style="max-width:900px">
-    <div style="font-size:12px;color:var(--text-3);margin-bottom:14px">各领域的专业清单。这是学生档案、课程、老师、宣传等所有"专业"选择的统一数据源。新建/删除在此集中管理。</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <div style="font-size:12px;color:var(--text-3);flex:1;min-width:240px">各领域的专业清单。这是学生档案、课程、老师、宣传等所有"专业"选择的统一数据源。新建/删除在此集中管理。</div>
+      <button class="btn btn-outline btn-sm" onclick="mmCleanup()" title="找出没有任何学生、课程、老师、预约、宣传等在使用的专业，一次清掉">清理无用专业</button>
+    </div>
     <div style="border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:18px;background:var(--bg,#faf9f7)">
       <div style="font-size:12px;font-weight:600;margin-bottom:10px">＋ 新建专业</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
@@ -273,6 +276,68 @@ async function mmSetDomain(key,domain){
     await loadMajorsFromDB();
     renderMajorManager(document.getElementById('consoleBody'));
   }catch(e){ alert('设置失败：'+e.message); }
+}
+// ── 清理无用专业：扫一遍所有用到专业的数据，没有任何地方在用的专业列出来，选好后一次删除 ──
+const MM_USAGE_SOURCES=[   // [表, 专业字段, 是否数组]
+  ['students','major',false],['students','extra_majors',true],['courses','major',true],['teachers','majors',true],
+  ['slots','major',false],['bookings','major',false],['promo_content','major',false],['vip_frameworks','major',true],
+  ['admission_schools','major',false],['teacher_school_shares','major',false],['course_schedule_shares','major',false],
+  ['success_cases','majors',true],['access_keys','majors',true],['admission_majors','key',false],
+];
+let _mmCleanSel=new Set(), _mmCleanCand=[], _mmCleanFailed=[];
+async function mmCleanup(){
+  let ov=document.getElementById('mmCleanModal');
+  if(!ov){ ov=document.createElement('div'); ov.id='mmCleanModal'; ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px'; document.body.appendChild(ov); }
+  ov.innerHTML='<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:560px;width:100%"><div style="font-size:12px;color:var(--text-3)">正在检查各处数据，请稍等…</div></div>';
+  const rows=window._majorRows||[];
+  const used=new Set(), failed=[];
+  const cnt={};
+  for(const [t,col] of MM_USAGE_SOURCES){
+    try{
+      const data=await sbAll(`/rest/v1/${t}?select=${col}`)||[];
+      data.forEach(r=>{ const v=r[col]; (Array.isArray(v)?v:[v]).forEach(k=>{ if(k){ used.add(k); cnt[k]=(cnt[k]||0)+1; } }); });
+    }catch(e){ failed.push(t+'.'+col); }
+  }
+  const core=new Set(CORE_MAJOR_ORDER.concat(['shakai_group']));
+  _mmCleanCand=rows.filter(r=>!used.has(r.key)&&!core.has(r.key));
+  _mmCleanSel=new Set(_mmCleanCand.map(r=>r.key));
+  _mmCleanFailed=failed;
+  mmCleanRender(rows.length, rows.length-_mmCleanCand.length);
+}
+function mmCleanRender(total,inUse){
+  const ov=document.getElementById('mmCleanModal'); if(!ov) return;
+  const row=r=>{ const on=_mmCleanSel.has(r.key), dom=r.domain||'（未设领域）';
+    return `<div onclick="mmCleanToggle('${r.key}')" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid ${on?'var(--accent)':'var(--border-light)'};background:${on?'var(--accent-light,#f5ede3)':'transparent'};border-radius:4px;font-size:12px">
+      <span style="font-weight:500">${majorEsc(r.label)}</span><span style="font-size:10px;color:var(--text-3)">${r.key} · ${majorEsc(dom)}</span>
+      <span style="margin-left:auto;font-size:10px;color:${on?'var(--accent)':'var(--text-3)'}">${on?'将删除':'保留'}</span></div>`; };
+  const blocked=_mmCleanFailed.length;
+  ov.firstElementChild.innerHTML=`<div style="font-size:14px;font-weight:600;margin-bottom:4px">清理无用专业</div>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">共 ${total} 个专业，${inUse} 个正在使用（学生、课程、老师、时间槽、预约、宣传、出愿库、VIP 框架、合格案例、访问链接等）。下面是没有任何地方在用的专业，点一行可切换删除 / 保留。经营、经济、社会、新传、福祉和「社会人文」不会被列出。</div>
+    ${blocked?`<div style="font-size:11px;color:var(--danger);margin-bottom:10px">有 ${blocked} 处数据没能检查（${_mmCleanFailed.map(majorEsc).join('、')}），为安全起见暂不能删除，请刷新后重试。</div>`:''}
+    <div style="display:flex;flex-direction:column;gap:5px;max-height:50vh;overflow-y:auto;margin-bottom:12px">
+      ${_mmCleanCand.length?_mmCleanCand.map(row).join(''):'<div style="font-size:12px;color:var(--text-3);padding:12px;text-align:center">没有无用的专业，不需要清理</div>'}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('mmCleanModal').remove()">关闭</button>
+      ${_mmCleanCand.length?`<button class="btn btn-outline btn-sm" onclick="mmCleanAll(${_mmCleanSel.size<_mmCleanCand.length})">${_mmCleanSel.size<_mmCleanCand.length?'全部选中':'全部取消'}</button>
+      <button class="btn btn-primary btn-sm" ${blocked||!_mmCleanSel.size?'disabled':''} onclick="mmCleanRun()">删除选中的 ${_mmCleanSel.size} 个</button>`:''}
+    </div>`;
+  ov.dataset.total=total; ov.dataset.inuse=inUse;
+}
+function mmCleanRefresh(){ const ov=document.getElementById('mmCleanModal'); mmCleanRender(+ov.dataset.total,+ov.dataset.inuse); }
+function mmCleanToggle(k){ if(_mmCleanSel.has(k)) _mmCleanSel.delete(k); else _mmCleanSel.add(k); mmCleanRefresh(); }
+function mmCleanAll(on){ _mmCleanSel=on?new Set(_mmCleanCand.map(r=>r.key)):new Set(); mmCleanRefresh(); }
+async function mmCleanRun(){
+  const keys=[..._mmCleanSel]; if(!keys.length||_mmCleanFailed.length) return;
+  const names=_mmCleanCand.filter(r=>_mmCleanSel.has(r.key)).map(r=>r.label+'('+r.key+')').join('、');
+  if(!confirm(`确定删除这 ${keys.length} 个没人在用的专业吗？\n\n${names}\n\n删除后专业选项里不再出现；误删了可以在本页重新新建。`)) return;
+  try{
+    await sb(`/rest/v1/majors?key=in.(${keys.map(k=>`"${k}"`).join(',')})`,'DELETE');
+    keys.forEach(k=>{ delete MAJORS[k]; delete MAJOR_DOMAIN[k]; });
+    await loadMajorsFromDB();
+    document.getElementById('mmCleanModal').remove();
+    renderMajorManager(document.getElementById('consoleBody'));
+    alert(`已清理 ${keys.length} 个无用专业`);
+  }catch(e){ alert('删除失败：'+e.message); }
 }
 async function mmDelete(key,label){
   if(!confirm(`删除专业「${label}」(${key})？\n\n注意：已用此专业的学生/课程/老师不会自动清除，只是专业选项消失。确定删除？`)) return;
