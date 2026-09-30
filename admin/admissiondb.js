@@ -820,7 +820,10 @@ function openAdmMajorMgr() {
   document.body.appendChild(m);
   admMajorMgrRender();
 }
+// 只有管理员能增删出愿专业；领域链接只能看
+function adbIsAdmin() { return typeof ACCESS_KEY === 'undefined' || !ACCESS_KEY || !!ACCESS_KEY.is_admin; }
 function admMajorMgrRender() {
+  const isAdmin = adbIsAdmin();
   const box = document.getElementById('admMajorMgrBody'); if (!box) return;
   // 现有出愿专业
   const cur = Object.entries(typeof ADMISSION_MAJORS !== 'undefined' ? ADMISSION_MAJORS : {});
@@ -835,7 +838,7 @@ function admMajorMgrRender() {
     <div style="font-size:14px;font-weight:600;margin-bottom:3px">🏷 出愿专业管理</div>
     <div style="font-size:10px;color:var(--text-3);margin-bottom:14px">这里决定「出愿数据库 / 老师权限 / 老师端出愿查询」显示哪些专业。新增后即时生效、无需改代码。</div>
 
-    <div style="border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:16px;background:var(--bg,#faf9f7)">
+    ${!isAdmin ? '<div style="font-size:11px;color:var(--text-3);margin-bottom:12px">只有管理员可以新增或移除出愿专业</div>' : `<div style="border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:16px;background:var(--bg,#faf9f7)">
       <div style="font-size:12px;font-weight:600;margin-bottom:8px">＋ 新增出愿专业</div>
       <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">从已建专业里选（代号自动带出）：</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
@@ -851,14 +854,14 @@ function admMajorMgrRender() {
         <input id="adm_new_key" placeholder="代号（如 mot）" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:120px">
         <button class="btn btn-outline btn-sm" onclick="admMajorAddManual()">添加</button>
       </div>
-    </div>
+    </div>`}
 
     <div style="font-size:12px;font-weight:600;margin-bottom:8px">已有出愿专业（${cur.length}）</div>
     <div style="display:flex;flex-direction:column;gap:5px">
       ${cur.length ? cur.map(([k, v]) => `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border-light);border-radius:4px">
         <span style="font-size:12px;font-weight:500">${adbEsc(v)}</span>
         <span style="font-size:10px;color:var(--text-3)">${adbEsc(k)}</span>
-        <button class="btn btn-outline btn-sm" style="margin-left:auto;color:#a33" onclick="admMajorDelete('${adbEsc(k)}','${adbEsc(v)}')">移除</button>
+        ${isAdmin ? `<button class="btn btn-outline btn-sm" style="margin-left:auto;color:#a33" onclick="admMajorDelete('${adbEsc(k)}','${adbEsc(v)}')">移除</button>` : ''}
       </div>`).join('') : '<div style="font-size:11px;color:var(--text-3)">暂无</div>'}
     </div>
     <div style="display:flex;justify-content:flex-end;margin-top:16px">
@@ -873,6 +876,7 @@ async function admMajorUpsert(key, label, domain) {
   await sb('/rest/v1/admission_majors', 'POST', [row]);   // 表以 key 为主键；已存在会报错，调用前先判重
 }
 async function admMajorAddFromPick() {
+  if (!adbIsAdmin()) return;
   const key = (document.getElementById('adm_pick_major') || {}).value || '';
   if (!key) { alert('请选择一个专业'); return; }
   if (ADMISSION_MAJORS[key]) { alert('该专业已在出愿库中'); return; }
@@ -885,6 +889,7 @@ async function admMajorAddFromPick() {
   } catch (e) { alert('添加失败：' + e.message); }
 }
 async function admMajorAddManual() {
+  if (!adbIsAdmin()) return;
   const label = ((document.getElementById('adm_new_label') || {}).value || '').trim();
   let key = ((document.getElementById('adm_new_key') || {}).value || '').trim().toLowerCase();
   if (!label) { alert('请填显示名'); return; }
@@ -898,6 +903,7 @@ async function admMajorAddManual() {
   } catch (e) { alert('添加失败：' + e.message); }
 }
 async function admMajorDelete(key, label) {
+  if (!adbIsAdmin()) return;
   if (!confirm(`从出愿库移除专业「${label}」？\n\n注意：只是不再在出愿库/权限里显示该专业；已录入的该专业学校数据不会被删除。`)) return;
   try {
     await sb(`/rest/v1/admission_majors?key=eq.${key}`, 'DELETE');
