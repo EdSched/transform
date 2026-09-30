@@ -10,6 +10,12 @@ let thwOpenSession = null;
 let thwOpenStudent = null;
 let thwShowPast = false, thwShowDone = false;   // 左栏「以前·未批改」「已批完的以前作业」是否展开
 let thwPendingFile = null;   // 本次批改待保存的批改文件 {url, name}
+// 学部美术「作品收集」：分配给我的美术课（②），或我担当的美术课（①），按周批改 art_works
+let thwArt = [];          // [{course, weeks:[{start,label,works}], showPast, showDone}]
+let thwArtWorks = {};     // art_works.id → 作品（shared/artworks.js 的 awFind 会先从这里找）
+let thwOpenArt = null;    // {cid, week}
+let thwArtOpenWork = null;
+let thwNoQ = [];          // 设置了布置作业、但还没出题的课（非美术），只提示不报错
 
 
 // 时间统一按日本时间（JST）显示
@@ -32,7 +38,7 @@ async function renderHomeworkFeedback(mc) {
   const courseIds = (p.homework_course_ids || []).map(String).filter(Boolean);
   thwAssigned = own || courseIds.length > 0;
   mc.innerHTML = '<div class="empty">加载中…</div>';
-  if (!thwAssigned) { thwSessions = []; thwSubs = {}; thwRender(); return; }
+  if (!thwAssigned) { thwSessions = []; thwSubs = {}; thwArt = []; thwNoQ = []; thwRender(); return; }
   try {
     const nm = teacherName.trim();
     const base = '/rest/v1/course_sessions?homework_enabled=is.true&homework_questions=not.is.null&select=*&order=session_date.desc';
@@ -63,6 +69,7 @@ async function renderHomeworkFeedback(mc) {
       const batch = await sb(`/rest/v1/homework_submissions?session_id=in.(${ids.slice(i,i+40).map(x=>`"${x}"`).join(',')})&select=*&order=submitted_at.asc`).catch(() => []);
       (batch || []).forEach(x => { (thwSubs[x.session_id] = thwSubs[x.session_id] || []).push(x); });
     }
+    await thwArtLoad(own, nm, courseIds, sessions);
   } catch (e) { mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
   thwRender();
 }
@@ -74,7 +81,7 @@ function thwRender() {
     mc.innerHTML = '<div class="empty">还没有给你安排作业批改，请联系教务</div>';
     return;
   }
-  if (!thwSessions.length) {
+  if (!thwSessions.length && !thwArt.length && !thwNoQ.length) {
     mc.innerHTML = '<div class="empty">当期暂无分配给你的作业课次<br><span style="font-size:11px">作业由教务在课程安排的单回中布置</span></div>';
     return;
   }
@@ -93,7 +100,7 @@ function thwRender() {
     const subs = thwSubs[s.id] || [];
     const ungraded = ungradedOf(s);
     const sel = thwOpenSession === s.id;
-    return `<div onclick="thwOpenSession='${s.id}';thwOpenStudent=null;thwRender()" style="cursor:pointer;padding:7px 10px;border:1px solid ${sel?'var(--accent)':'transparent'};background:${sel?'var(--accent-light,#f5ede3)':'transparent'};border-radius:3px;margin-bottom:3px">
+    return `<div onclick="thwOpenSession='${s.id}';thwOpenArt=null;thwOpenStudent=null;thwRender()" style="cursor:pointer;padding:7px 10px;border:1px solid ${sel?'var(--accent)':'transparent'};background:${sel?'var(--accent-light,#f5ede3)':'transparent'};border-radius:3px;margin-bottom:3px">
       <div style="font-size:12px;font-weight:600">${thwEsc(s.course_name||'')}${s.session_number?` 第${s.session_number}回`:''}</div>
       <div style="font-size:9px;color:var(--text-3)">${s.session_date||''} · 提交 ${subs.length}${ungraded?` · <span style="color:var(--warn,#b8860b)">待批 ${ungraded}</span>`:subs.length?' · <span style="color:var(--ok)">已批完</span>':''}</div>
     </div>`;
@@ -103,17 +110,20 @@ function thwRender() {
   <div class="page-header"><div class="section-title">📝 作业批改</div></div>
   <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
     <div style="flex:0 0 250px;min-width:220px;max-height:74vh;overflow-y:auto;background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:8px">
-      ${sec(`本周 <span style="font-weight:400;color:var(--text-3)">${wk.label}</span>`)}
-      ${cur.length ? cur.map(item).join('') : '<div style="font-size:10px;color:var(--text-3);padding:2px 10px 6px">本周没有分配给你的作业</div>'}
+      ${thwSessions.length || !thwArt.length ? `${sec(`本周 <span style="font-weight:400;color:var(--text-3)">${wk.label}</span>`)}
+      ${cur.length ? cur.map(item).join('') : '<div style="font-size:10px;color:var(--text-3);padding:2px 10px 6px">本周没有分配给你的作业</div>'}` : ''}
       ${pastTodo.length ? `<div onclick="thwShowPast=!thwShowPast;thwRender()" style="cursor:pointer;margin:8px 0 4px;padding:7px 10px;border-radius:3px;background:#fdf1e6;border:1px solid #e8c9a8;color:#a0521a;font-size:11px;font-weight:600">⚠ 以前的作业还有 ${pastN} 份未批改 <span style="float:right;font-weight:400">${thwShowPast?'▾':'▸'}</span></div>${thwShowPast ? pastTodo.map(item).join('') : ''}` : ''}
       ${early.length ? sec('提前提交') + early.map(item).join('') : ''}
       ${pastDone.length ? `<div onclick="thwShowDone=!thwShowDone;thwRender()" style="cursor:pointer;font-size:10px;color:var(--text-3);padding:8px 4px 2px;text-decoration:underline">${thwShowDone?'收起':'查看'}已批完的以前作业（${pastDone.length}）</div>${thwShowDone ? pastDone.map(item).join('') : ''}` : ''}
+      ${thwArt.map(thwArtBlockHtml).join('')}
+      ${thwNoQ.length ? `<div style="font-size:10px;color:var(--text-3);padding:8px 4px 2px;line-height:1.7">尚未出题：${thwNoQ.map(c => thwEsc(c.name)).join('、')}</div>` : ''}
     </div>
     <div style="flex:1 1 460px;min-width:0" id="thw_main">${thwMainHtml()}</div>
   </div>`;
 }
 
 function thwMainHtml() {
+  if (thwOpenArt) return thwArtMainHtml();
   if (!thwOpenSession) return '<div style="text-align:center;padding:60px 20px;color:var(--text-3);font-size:12px;border:1px dashed var(--border);border-radius:4px">← 从左侧选择课次</div>';
   const s = thwSessions.find(x => x.id === thwOpenSession);
   const subs = thwSubs[thwOpenSession] || [];
@@ -181,6 +191,131 @@ function thwMainHtml() {
       })()}
     </div>
   </div>`;
+}
+
+// ══════════════════════════════════
+// 学部美术：🎨 作品收集（art_works；成员 = 课程成员规则 courseMemberIds：班级 / 名单）
+// ══════════════════════════════════
+async function thwArtLoad(own, nm, courseIds, hwSessions) {
+  thwArt = []; thwNoQ = []; thwArtWorks = {};
+  const inList = ids => ids.map(x => `"${x}"`).join(',');
+  const byIds = async ids => {
+    const out = [];
+    for (let i = 0; i < ids.length; i += 40) out.push(...(await sb(`/rest/v1/courses?id=in.(${inList(ids.slice(i, i + 40))})&select=*`).catch(() => []) || []));
+    return out;
+  };
+  const assigned = await byIds(courseIds);
+  // ②里设置了布置作业、但还没有任何单回出题的非美术课（当期）：只提示「尚未出题」
+  const hasQ = new Set((hwSessions || []).map(x => String(x.course_id)));
+  thwNoQ = assigned.filter(c => !isGakubuArtCourse(c) && c.homework_enabled === true && !hasQ.has(String(c.id)) && courseInCurrentPeriod(c));
+  const art = {};
+  assigned.filter(isGakubuArtCourse).forEach(c => { art[c.id] = c; });
+  // ① 我担当的美术课（课程老师 或 单回担当老师），且设置了布置作业
+  if (own) {
+    const enc = encodeURIComponent(nm);
+    const [crs, ss] = await Promise.all([
+      sbAll(`/rest/v1/courses?teacher=ilike.*${enc}*&select=*`).catch(() => []),
+      sbAll(`/rest/v1/course_sessions?or=(session_teacher.ilike.*${enc}*,teacher.ilike.*${enc}*)&select=course_id,session_teacher,teacher`).catch(() => []),
+    ]);
+    const mine = (crs || []).filter(c => String(c.teacher || '').includes(nm));
+    const sIds = [...new Set((ss || []).filter(x => String(x.session_teacher || '').includes(nm) || String(x.teacher || '').includes(nm)).map(x => String(x.course_id)).filter(Boolean))];
+    const have = new Set(mine.map(c => String(c.id)));
+    const more = await byIds(sIds.filter(id => !have.has(id) && !art[id]));
+    mine.concat(more).filter(c => isGakubuArtCourse(c) && c.homework_enabled === true).forEach(c => { art[c.id] = art[c.id] || c; });
+  }
+  let courses = Object.values(art);
+  if (!courses.length) return;
+  // 每门课的上课范围（单回首尾；没有单回用开课日 / 结课日）
+  const ids = courses.map(c => String(c.id));
+  const sess = [];
+  for (let i = 0; i < ids.length; i += 40) sess.push(...(await sbAll(`/rest/v1/course_sessions?course_id=in.(${inList(ids.slice(i, i + 40))})&select=course_id,session_date,is_cancelled`).catch(() => []) || []));
+  const range = {};
+  sess.filter(x => !x.is_cancelled && x.session_date).forEach(x => {
+    const r = range[x.course_id] = range[x.course_id] || { s: x.session_date, e: x.session_date };
+    if (x.session_date < r.s) r.s = x.session_date; if (x.session_date > r.e) r.e = x.session_date;
+  });
+  const wk = weekRange();
+  const cutoff = weekRange(new Date(Date.now() - 91 * 864e5)).start;   // 只看最近约三个月内还在上的课
+  courses = courses.map(c => {
+    const r = range[c.id] || {}, s0 = r.s || c.start_date || c.first_session_date || '', e0 = r.e || c.end_date || s0;
+    return { c, s: s0, e: e0 };
+  }).filter(x => x.s && x.s <= wk.end && x.e >= cutoff);
+  if (!courses.length) return;
+  const [students, cms] = await Promise.all([
+    sbAll('/rest/v1/students?select=*&status=eq.active&order=name.asc').catch(() => []),
+    sbAll(`/rest/v1/course_members?course_id=in.(${inList(courses.map(x => String(x.c.id)))})&select=course_id,student_id,kind`).catch(() => []),
+  ]);
+  const members = {}, allIds = new Set();
+  courses.forEach(x => {
+    const m = courseMemberIds(x.c, students || [], (cms || []).filter(r => String(r.course_id) === String(x.c.id)));
+    members[x.c.id] = m; m.forEach(id => allIds.add(id));
+  });
+  const from = courses.reduce((a, x) => { const st = weekRange(x.s).start; return !a || st < a ? st : a; }, '');
+  const sids = [...allIds], works = [];
+  for (let i = 0; i < sids.length; i += 40) {
+    works.push(...(await sb(`/rest/v1/art_works?student_id=in.(${inList(sids.slice(i, i + 40))})&week_start=gte.${from}&week_start=lte.${wk.start}&select=*&order=created_at.desc`).catch(() => []) || []));
+  }
+  works.forEach(w => { thwArtWorks[w.id] = w; });
+  thwArt = courses.sort((a, b) => b.s.localeCompare(a.s)).map(x => {
+    const weeks = [], last = weekRange(x.e).start < wk.start ? weekRange(x.e).start : wk.start;
+    for (let st = weekRange(x.s).start, g = 0; st <= last && g < 60; st = awShiftWeek(st, 1).start, g++) {
+      const w = weekRange(st);
+      weeks.push({ start: w.start, label: w.label, works: works.filter(a => a.week_start === w.start && members[x.c.id].has(String(a.student_id))) });
+    }
+    return { course: x.c, weeks, showPast: false, showDone: false, n: members[x.c.id].size };
+  });
+}
+function thwArtUngraded(w) { return w.works.filter(x => !hwFeedbacks(x).length).length; }
+function thwArtBlockHtml(a) {
+  const wk = weekRange(), cid = thwEsc(a.course.id);
+  const cur = a.weeks.find(w => w.start === wk.start);
+  const past = a.weeks.filter(w => w.start < wk.start).reverse();
+  const todo = past.filter(w => thwArtUngraded(w) > 0), done = past.filter(w => !thwArtUngraded(w));
+  const openHere = thwOpenArt && String(thwOpenArt.cid) === String(a.course.id);
+  if (openHere && todo.some(w => w.start === thwOpenArt.week)) a.showPast = true;
+  if (openHere && done.some(w => w.start === thwOpenArt.week)) a.showDone = true;
+  const item = w => {
+    const sel = openHere && thwOpenArt.week === w.start, un = thwArtUngraded(w);
+    return `<div onclick="thwOpenArt={cid:'${cid}',week:'${w.start}'};thwOpenSession=null;thwArtOpenWork=null;thwRender()" style="cursor:pointer;padding:7px 10px;border:1px solid ${sel ? 'var(--accent)' : 'transparent'};background:${sel ? 'var(--accent-light,#f5ede3)' : 'transparent'};border-radius:3px;margin-bottom:3px">
+      <div style="font-size:12px;font-weight:600">${w.start === wk.start ? '本周 · ' : ''}${w.label}</div>
+      <div style="font-size:9px;color:var(--text-3)">作品 ${w.works.length}${un ? ` · <span style="color:var(--warn,#b8860b)">待评价 ${un}</span>` : w.works.length ? ' · <span style="color:var(--ok)">已评完</span>' : ''}</div>
+    </div>`;
+  };
+  const idx = thwArt.indexOf(a), todoN = todo.reduce((n, w) => n + thwArtUngraded(w), 0);
+  return `<div style="border-top:1px solid var(--border-light);margin-top:8px;padding-top:4px">
+    <div style="font-size:11px;font-weight:600;color:var(--text-2);padding:6px 4px 4px">🎨 作品收集 · ${thwEsc(a.course.name || '')}</div>
+    ${cur ? item(cur) : '<div style="font-size:10px;color:var(--text-3);padding:2px 10px 6px">本周不在这门课的上课期间</div>'}
+    ${todo.length ? `<div onclick="thwArt[${idx}].showPast=!thwArt[${idx}].showPast;thwRender()" style="cursor:pointer;margin:6px 0 4px;padding:7px 10px;border-radius:3px;background:#fdf1e6;border:1px solid #e8c9a8;color:#a0521a;font-size:11px;font-weight:600">⚠ 以前还有 ${todoN} 份作品未评价 <span style="float:right;font-weight:400">${a.showPast ? '▾' : '▸'}</span></div>${a.showPast ? todo.map(item).join('') : ''}` : ''}
+    ${done.length ? `<div onclick="thwArt[${idx}].showDone=!thwArt[${idx}].showDone;thwRender()" style="cursor:pointer;font-size:10px;color:var(--text-3);padding:6px 4px 2px;text-decoration:underline">${a.showDone ? '收起' : '查看'}以前的周（${done.length}）</div>${a.showDone ? done.map(item).join('') : ''}` : ''}
+  </div>`;
+}
+function thwArtMainHtml() {
+  const a = thwArt.find(x => String(x.course.id) === String(thwOpenArt.cid));
+  const w = a && a.weeks.find(x => x.start === thwOpenArt.week);
+  if (!w) return '<div style="text-align:center;padding:60px 20px;color:var(--text-3);font-size:12px;border:1px dashed var(--border);border-radius:4px">← 从左侧选择</div>';
+  const list = w.works.filter(x => thwArtWorks[x.id]);
+  return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:12px 14px">
+    <div style="font-size:12px;font-weight:600;margin-bottom:2px">🎨 作品收集 · ${thwEsc(a.course.name || '')}</div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">${w.label} · 成员 ${a.n} 人 · 已收集 ${list.length} 份</div>
+    ${list.length ? list.map(x => {
+      const imgs = awImgs(x), fbs = hwFeedbacks(x), open = thwArtOpenWork === x.id;
+      return `<div style="border:1px solid ${open ? 'var(--accent,#b8953a)' : 'var(--border-light)'};border-radius:5px;padding:7px 9px;margin-bottom:6px">
+        <div onclick="thwArtOpenWork=${open ? 'null' : `'${thwEsc(x.id)}'`};thwRenderMain()" style="display:flex;align-items:center;gap:8px;cursor:pointer;flex-wrap:wrap">
+          <span style="font-size:12px;font-weight:600">${thwEsc(x.student_name)}</span>
+          <span style="font-size:10px;color:var(--text-3)">${imgs.length} 张 · ${x.source === 'student' ? '学生上传' : '老师上传' + (x.uploaded_by ? '（' + thwEsc(x.uploaded_by) + '）' : '')}</span>
+          ${fbs.length ? `<span style="font-size:10px;color:var(--ok,#2a9e6a)">✓ ${thwEsc([...new Set(fbs.map(f => f.by))].join('、'))}</span>` : '<span style="font-size:10px;color:var(--warn,#b8860b)">待评价</span>'}
+          <span style="margin-left:auto;display:flex;gap:3px">${imgs.slice(0, 4).map(im => `<img src="${thwEsc(im.url)}" loading="lazy" style="width:34px;height:34px;object-fit:cover;border-radius:3px">`).join('')}</span>
+        </div>
+        ${open ? awTDetailHtml(x) : ''}
+      </div>`;
+    }).join('') : '<div style="font-size:11px;color:var(--text-3);padding:20px;text-align:center">这周还没有收集到作品<br><span style="font-size:10px">拍照上传在「出席·作业」的「🎨 作业收集」</span></div>'}
+  </div>`;
+}
+// shared/artworks.js 保存评价 / 追加照片 / 删除后回调：只在作业批改页打开时重画
+function thwArtRerender() { if (document.getElementById('thw_main') && thwOpenArt) thwRender(); }
+function thwArtDrop(id) {
+  delete thwArtWorks[id];
+  thwArt.forEach(a => a.weeks.forEach(w => { w.works = w.works.filter(x => x.id !== id); }));
 }
 
 function thwRenderMain() {

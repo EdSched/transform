@@ -754,20 +754,24 @@ function renderTeachersPage(mc){
 
 // ── 作业批改分配（老师编辑框）──
 // ① homework_own_sessions：自己担当的单回（按 session_teacher / teacher 精确到单回）
-// ② homework_course_ids：负责整个课程（按 course_id；只列出已绑定作业的课）
+// ② homework_course_ids：负责整个课程（按 course_id；列出「布置作业：是」的课 ∪ 有单回出了题的课；学部美术 = 作品收集）
 // 旧设置 homework_courses（课程名）：打开时按名字换成当期同名课程，保存后删除
 let hwaOwn = false, hwaCoursesOn = false, hwaIds = new Set(), hwaAllPeriods = false, hwaSearch = '', hwaNotice = '';
-let hwaData = null;   // { courses:[{id,name,teacher,pkey,hwN,first}], cur, next }
+let hwaDom = '', hwaClass = '', hwaMajor = '';   // 筛选：领域（''=全部）/ 班级 / 专业
+let hwaData = null;   // { courses:[{id,name,teacher,pkey,hwN,first,domain,majors,classIds,art,hwOn}], cur, next, curM, nextM }
 function hwaPeriodKeys() {
   const order = ['1月期', '4月期', '7月期', '10月期'];
   const y = new Date().getFullYear(), cur = currentPeriodKey(), i = order.indexOf(cur);
-  return { cur: `${y}年${cur}`, next: `${i === 3 ? y + 1 : y}年${order[(i + 1) % 4]}` };
+  const now = new Date(), nm = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  return { cur: `${y}年${cur}`, next: `${i === 3 ? y + 1 : y}年${order[(i + 1) % 4]}`,
+    curM: `${now.getFullYear()}年${now.getMonth() + 1}月`, nextM: `${nm.getFullYear()}年${nm.getMonth() + 1}月` };
 }
 async function hwaEnsureData() {
   if (hwaData) return hwaData;
   const [sess, crs] = await Promise.all([
     sbAll('/rest/v1/course_sessions?homework_questions=not.is.null&select=course_id,homework_questions').catch(() => []),
-    sbAll('/rest/v1/courses?select=id,name,teacher,period,period_override,first_session_date').catch(() => []),
+    sbAll('/rest/v1/courses?select=id,name,teacher,period,period_override,first_session_date,domain,major,class_ids,member_mode,homework_enabled').catch(() => []),
+    (typeof loadClasses === 'function' ? loadClasses().catch(() => []) : Promise.resolve([])),
   ]);
   const hwN = {};
   (sess || []).forEach(x => {
@@ -775,20 +779,27 @@ async function hwaEnsureData() {
     const has = Array.isArray(q) ? q.length : !!(q && Array.isArray(q.levels) && q.levels.length);
     if (has && x.course_id) hwN[x.course_id] = (hwN[x.course_id] || 0) + 1;
   });
-  const courses = (crs || []).filter(c => hwN[c.id]).map(c => ({
-    id: c.id, name: c.name || '', teacher: c.teacher || '', hwN: hwN[c.id], first: c.first_session_date || '',
-    pkey: c.first_session_date ? periodKeyOf(c) : '未排期',
-  })).sort((a, b) => b.first.localeCompare(a.first) || a.name.localeCompare(b.name, 'zh'));
+  const courses = (crs || []).filter(c => hwN[c.id] || c.homework_enabled === true).map(c => {
+    const majors = Array.isArray(c.major) ? c.major : (c.major ? [c.major] : []);
+    const dom = c.domain || majors.map(m => MAJOR_DOMAIN[m] || (MAJOR_GROUPS[m] ? MAJOR_DOMAIN[MAJOR_GROUPS[m][0]] : '')).find(Boolean) || '其他';
+    return {
+      id: c.id, name: c.name || '', teacher: c.teacher || '', hwN: hwN[c.id] || 0, first: c.first_session_date || '',
+      pkey: c.first_session_date ? periodKeyOf(c) : '未排期', domain: dom, majors, classIds: courseClassIds(c),
+      art: isGakubuArtCourse(c), hwOn: c.homework_enabled === true,
+    };
+  }).sort((a, b) => b.first.localeCompare(a.first) || a.name.localeCompare(b.name, 'zh'));
   hwaData = Object.assign({ courses }, hwaPeriodKeys());
   return hwaData;
 }
-// 打开老师编辑框 / 新建时调用：p = 老师的 permissions
-function hwaInit(p) {
+// 打开老师编辑框 / 新建时调用：p = 老师的 permissions，t = 老师（用来默认选中他所属的领域）
+function hwaInit(p, t) {
   p = p || {};
   hwaOwn = !!p.homework_own_sessions;
   hwaIds = new Set((p.homework_course_ids || []).map(String));
   hwaCoursesOn = hwaIds.size > 0;
-  hwaAllPeriods = false; hwaSearch = ''; hwaNotice = '';
+  hwaAllPeriods = false; hwaSearch = ''; hwaNotice = ''; hwaClass = ''; hwaMajor = '';
+  const lock = CURRENT_DOMAIN && CURRENT_DOMAIN !== 'all' ? CURRENT_DOMAIN : '';
+  hwaDom = lock || ((t && ((t.managed_by || [])[0] || (t.domains || [])[0])) || '');
   const oldNames = (p.homework_courses || []).filter(Boolean);
   renderHomeworkAssign();
   if (oldNames.length || hwaCoursesOn) {
@@ -811,12 +822,13 @@ function renderHomeworkCoursesChips(selected) { hwaInit({ homework_courses: sele
 function renderHomeworkAssign() {
   const wrap = document.getElementById('perm_hw_assign'); if (!wrap) return;
   const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const js = v => esc(String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
   const chip = (on, label, fn) => `<div class="filter-chip${on ? ' active' : ''}" onclick="${fn}" style="padding:3px 10px;font-size:10px">${label}</div>`;
   let h = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
     ${chip(hwaOwn, '① 自己上课的单回', 'hwaOwn=!hwaOwn;renderHomeworkAssign()')}
     ${chip(hwaCoursesOn, '② 负责整个课程' + (hwaIds.size ? `（${hwaIds.size}）` : ''), 'hwaCoursesOn=!hwaCoursesOn;renderHomeworkAssign()')}
   </div>
-  <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">${hwaOwn ? '① 这位老师担当的单回（单回明细里的担当老师）上的作业，自动分给他批改；同一门课里别的老师上的回次不算。' : ''}${!hwaOwn && !hwaCoursesOn ? '两种都不开：老师端看不到任何作业。' : ''}</div>`;
+  <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">${hwaOwn ? '① 这位老师担当的单回（单回明细里的担当老师）上的作业，自动分给他批改；同一门课里别的老师上的回次不算。学部美术课：担当老师可批改这门课的作品收集。' : ''}${!hwaOwn && !hwaCoursesOn ? '两种都不开：老师端看不到任何作业。' : ''}</div>`;
   if (hwaNotice) h += `<div style="font-size:10px;color:var(--warn,#b8860b);background:#fff8e6;border:1px solid #e8d4a0;border-radius:3px;padding:4px 8px;margin-bottom:6px">${esc(hwaNotice)}</div>`;
   if (hwaCoursesOn) {
     if (!hwaData) { h += '<div style="font-size:10px;color:var(--text-3)">课程读取中…</div>'; wrap.innerHTML = h; hwaEnsureData().then(renderHomeworkAssign); return; }
@@ -825,27 +837,49 @@ function renderHomeworkAssign() {
     const sel = [...hwaIds];
     h += `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px">${sel.length ? sel.map(id => {
       const c = byId[id];
-      return `<span style="font-size:10px;background:var(--accent);color:#fff;border-radius:10px;padding:2px 4px 2px 9px;display:inline-flex;align-items:center;gap:4px">${esc(c ? c.name + ' · ' + c.pkey : '（课程已删除）' + id)}<span onclick="hwaIds.delete('${esc(id)}');renderHomeworkAssign()" style="cursor:pointer;padding:0 4px">✕</span></span>`;
+      return `<span style="font-size:10px;background:var(--accent);color:#fff;border-radius:10px;padding:2px 4px 2px 9px;display:inline-flex;align-items:center;gap:4px">${esc(c ? c.name + ' · ' + c.pkey : '（课程已删除）' + id)}<span onclick="hwaIds.delete('${js(id)}');renderHomeworkAssign()" style="cursor:pointer;padding:0 4px">✕</span></span>`;
     }).join('') + `<span onclick="if(confirm('移除全部已选课程？')){hwaIds.clear();renderHomeworkAssign()}" style="font-size:10px;color:var(--danger);cursor:pointer;align-self:center">全部移除</span>` : '<span style="font-size:10px;color:var(--text-3)">还没选课程，在下面点选</span>'}</div>`;
+    // ── 筛选：先领域，再班级 / 专业 / 期（月）/ 搜索 ──
+    const lock = CURRENT_DOMAIN && CURRENT_DOMAIN !== 'all' ? CURRENT_DOMAIN : '';
+    if (lock) hwaDom = lock;
+    const order = DOMAINS.map(x => x.label);
+    const doms = [...new Set(d.courses.map(c => c.domain))].sort((a, b) => { const ia = order.indexOf(a), ib = order.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
+    if (!lock && hwaDom && !doms.includes(hwaDom)) hwaDom = '';
+    const inDom = d.courses.filter(c => !hwaDom || c.domain === hwaDom);
+    const clsIds = [...new Set(inDom.flatMap(c => c.classIds))];
+    const clsName = id => { const c = (typeof classById === 'function') ? classById(id) : null; return c ? c.name : id; };
+    const majorKeys = [...new Set(inDom.flatMap(c => c.majors))].filter(Boolean);
+    if (hwaClass && !clsIds.includes(hwaClass)) hwaClass = '';
+    if (hwaMajor && !majorKeys.includes(hwaMajor)) hwaMajor = '';
+    const artDom = hwaDom ? isGakubuArtDomain(hwaDom) : null;   // null = 全部领域（混合）
+    const recentLabel = artDom === true ? '本月＋下个月' : artDom === false ? '当期＋下一期' : '当期 / 本月起';
+    const isRecent = c => c.art ? (c.pkey === d.curM || c.pkey === d.nextM) : (c.pkey === d.cur || c.pkey === d.next);
     const kw = hwaSearch.trim().toLowerCase();
-    let list = d.courses.filter(c => hwaAllPeriods || c.pkey === d.cur || c.pkey === d.next);
+    let list = inDom.filter(c => hwaAllPeriods || isRecent(c));
+    if (hwaClass) list = list.filter(c => c.classIds.includes(hwaClass));
+    if (hwaMajor) list = list.filter(c => c.majors.includes(hwaMajor));
     if (kw) list = list.filter(c => (c.name + ' ' + c.teacher + ' ' + c.pkey).toLowerCase().includes(kw));
     const groups = {};
     list.forEach(c => (groups[c.pkey] = groups[c.pkey] || []).push(c));
     const keys = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+    const row = (label, inner) => `<div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px"><span style="font-size:10px;color:var(--text-3);min-width:28px">${label}</span><div style="display:flex;gap:4px;flex-wrap:wrap">${inner}</div></div>`;
+    if (!lock && doms.length) h += row('领域', chip(!hwaDom, '全部', "hwaDom='';renderHomeworkAssign()") + doms.map(x => chip(hwaDom === x, esc(x), `hwaDom='${js(x)}';hwaClass='';hwaMajor='';renderHomeworkAssign()`)).join(''));
+    if (clsIds.length) h += row('班级', chip(!hwaClass, '全部', "hwaClass='';renderHomeworkAssign()") + clsIds.map(id => chip(hwaClass === id, esc(clsName(id)), `hwaClass='${js(id)}';renderHomeworkAssign()`)).join(''));
+    if (majorKeys.length > 1) h += row('专业', chip(!hwaMajor, '全部', "hwaMajor='';renderHomeworkAssign()") + majorKeys.map(m => chip(hwaMajor === m, esc(majorLabel(m)), `hwaMajor='${js(m)}';renderHomeworkAssign()`)).join(''));
     h += `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:5px">
       <input id="hwa_search" value="${esc(hwaSearch)}" placeholder="搜索课程名 / 老师" oninput="hwaSearch=this.value;renderHomeworkAssign();const e=document.getElementById('hwa_search');e.focus();e.setSelectionRange(e.value.length,e.value.length)" style="flex:1;min-width:140px;font-size:11px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--surface);font-family:inherit">
-      ${chip(!hwaAllPeriods, `当期＋下一期`, 'hwaAllPeriods=false;renderHomeworkAssign()')}${chip(hwaAllPeriods, '全部期', 'hwaAllPeriods=true;renderHomeworkAssign()')}
+      ${chip(!hwaAllPeriods, recentLabel, 'hwaAllPeriods=false;renderHomeworkAssign()')}${chip(hwaAllPeriods, artDom === true ? '全部月' : '全部期', 'hwaAllPeriods=true;renderHomeworkAssign()')}
     </div>
     <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border-light);border-radius:3px;background:var(--surface)">
-      ${keys.length ? keys.map(k => `<div style="font-size:10px;font-weight:600;color:var(--text-3);background:var(--bg);padding:3px 8px;position:sticky;top:0">${esc(k)}${k === d.cur ? '（当期）' : k === d.next ? '（下一期）' : ''}</div>` + groups[k].map(c => {
+      ${keys.length ? keys.map(k => `<div style="font-size:10px;font-weight:600;color:var(--text-3);background:var(--bg);padding:3px 8px;position:sticky;top:0">${esc(k)}${k === d.cur || k === d.curM ? (k === d.curM ? '（本月）' : '（当期）') : k === d.next ? '（下一期）' : k === d.nextM ? '（下个月）' : ''}</div>` + groups[k].map(c => {
         const on = hwaIds.has(String(c.id));
-        return `<div onclick="hwaToggle('${esc(c.id)}')" style="cursor:pointer;display:flex;gap:8px;align-items:center;padding:5px 8px;border-bottom:1px solid var(--border-light);font-size:11px;background:${on ? 'var(--accent-light,#f5ede3)' : ''};${on ? 'font-weight:600;color:var(--accent)' : ''}">
+        const tag = c.hwN ? `作业 ${c.hwN} 回` : c.art ? '作品收集' : '<span style="opacity:.6">布置作业 · 未出题</span>';
+        return `<div onclick="hwaToggle('${js(c.id)}')" style="cursor:pointer;display:flex;gap:8px;align-items:center;padding:5px 8px;border-bottom:1px solid var(--border-light);font-size:11px;background:${on ? 'var(--accent-light,#f5ede3)' : ''};${on ? 'font-weight:600;color:var(--accent)' : ''}">
           <span style="flex:1;min-width:0">${esc(c.name)} <span style="font-weight:400;color:var(--text-3)">· ${esc(c.pkey)} · ${esc(c.teacher || '—')}</span></span>
-          <span style="font-size:10px;color:var(--text-3);white-space:nowrap">作业 ${c.hwN} 回</span>
+          <span style="font-size:10px;color:var(--text-3);white-space:nowrap">${tag}</span>
           <span style="font-size:10px;white-space:nowrap">${on ? '已选' : ''}</span>
         </div>`;
-      }).join('')).join('') : `<div style="font-size:11px;color:var(--text-3);padding:12px;text-align:center">${kw ? '无匹配' : '这个范围内没有绑定了作业的课程'}${hwaAllPeriods ? '' : '（可切换「全部期」）'}</div>`}
+      }).join('')).join('') : `<div style="font-size:11px;color:var(--text-3);padding:12px;text-align:center">${kw || hwaClass || hwaMajor ? '无匹配' : '这个范围内没有设置了布置作业的课程'}${hwaAllPeriods ? '' : '（可切换「全部」）'}</div>`}
     </div>`;
   }
   wrap.innerHTML = h;
@@ -1241,7 +1275,7 @@ function openEditTeacher(id){
   document.querySelectorAll('#perm_booking_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.booking_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_slot_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.slot_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_vip_content .filter-chip').forEach(c=>{c.classList.toggle('active',(p.vip_content||[]).includes(c.dataset.value))});
-  hwaInit(p);
+  hwaInit(p, t);
   const btn=document.getElementById('teacherFormBtn');
   if(btn){btn.textContent='保存修改';btn.setAttribute('onclick',`saveEditTeacher('${id}')`);}
   const cancelBtn=document.getElementById('teacherFormCancelBtn');

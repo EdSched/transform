@@ -187,9 +187,11 @@ function awTDetailHtml(w) {
 
 // ── 共用操作（老师端 / 学生端）──
 function awFind(id) {
+  // 老师端「作业批改」页里的作品收集（teacher-homework.js）优先用那边的数据
+  if (typeof thwArtWorks !== 'undefined' && thwArtWorks[id] && document.getElementById('thw_main')) return thwArtWorks[id];
   return (awT.works || []).find(x => x.id === id) || (awS.works || []).find(x => x.id === id) || null;
 }
-function awRerender() { if (typeof awTRender === 'function') awTRender(); if (typeof awSRender === 'function') awSRender(); }
+function awRerender() { if (typeof awTRender === 'function') awTRender(); if (typeof awSRender === 'function') awSRender(); if (typeof thwArtRerender === 'function') thwArtRerender(); }
 async function awAddPhotos(id, input, bucket) {
   const w = awFind(id); if (!w) return;
   const files = [...(input.files || [])]; input.value = '';
@@ -219,6 +221,7 @@ async function awDelWork(id) {
     await sb(`/rest/v1/art_works?id=eq.${encodeURIComponent(id)}`, 'DELETE');
     if (awT.works) awT.works = awT.works.filter(x => x.id !== id);
     if (awS.works) awS.works = awS.works.filter(x => x.id !== id);
+    if (typeof thwArtDrop === 'function') thwArtDrop(id);
     awRerender();
   } catch (e) { alert('删除失败：' + e.message); }
 }
