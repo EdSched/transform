@@ -4,6 +4,13 @@
 <title>唯新 · 今日教室课表</title>
 <link rel="stylesheet" href="style.css">
 <style>
+  /* VIP 占用：中性暖灰 + 很淡的斜线纹，一眼看出是「被占用」而不是某一类课程；只显示「VIP」，不露信息 */
+  #gridBox td.occ-vip{ background:repeating-linear-gradient(135deg,#efeae4 0,#efeae4 7px,#e3dbd2 7px,#e3dbd2 9px); border-color:#d9cfc4; color:#8a7f74; }
+  #gridBox td.occ-vip .occ-in{ font-size:21px; font-weight:800; letter-spacing:.06em; color:#8a7f74; }
+  /* VIP 教室列：比大教室窄（约一半宽），表头小一号；与大教室之间用稍粗的竖线隔开 */
+  #gridBox thead th.vipcol{ font-size:clamp(12px,1.05vw,18px); font-weight:800; overflow:hidden; }
+  #gridBox thead th.vipcol small{ font-size:clamp(9px,.6vw,11px); }
+  #gridBox th.vipfirst,#gridBox td.vipfirst{ border-left:3px solid #b9aea1; }
   html,body{ height:100%; margin:0; overflow:hidden; }
   .wrap{ height:100vh; max-width:none; width:100%; padding:6px 14px 4px; box-sizing:border-box; display:flex; flex-direction:column; gap:5px; }
   .wrap > .card{ margin:0; }
@@ -20,11 +27,23 @@
   #gridBox thead th small{ font-size:13px; font-weight:600; }
   #gridBox td.tcol,#gridBox th.tcol{ width:80px; font-size:16px; font-weight:700; color:var(--sub); white-space:nowrap; }
   #gridBox td{ text-align:center; vertical-align:middle; padding:1px 3px; }
+  #gridBox td.cell{ min-width:0; }   /* style.css 里给空格设了 96px 最小宽，VIP 窄列放不下 */
   #gridBox td.tcol{ padding:1px 4px; }
   #gridBox .occ-in{ font-size:21px; font-weight:800; line-height:1.15; }
   #gridBox .occ-in small{ display:block; font-size:19px; font-weight:700; opacity:.9; }
   #gridBox .freetag{ font-size:11px; color:#c8ccd2; }
   .foot-note{ font-size:10px; text-align:center; color:var(--sub); margin:0; }
+  /* 矮屏（如 1366×768）：表头和时段列缩一点，让 28 行时段整张表放进一屏；课程格里的字号不变 */
+  @media (max-height:820px) and (min-width:901px){
+    #gridBox thead th{ font-size:20px; padding:3px 2px; line-height:1.15; }
+    #gridBox thead th small{ font-size:11px; }
+    #gridBox td.tcol,#gridBox th.tcol{ font-size:12px; padding:0 3px; }
+    #gridBox td{ padding:0 3px; }
+    #gridBox tr,#gridBox td.cell{ height:17px; }   /* style.css 里每行最小 24px，28 行放不进 768 高的屏 */
+    #gridBox .occ-in{ line-height:1.05; }
+    #gridBox .occ-in small{ font-size:14px; }
+    #gridBox thead th.vipcol{ font-size:clamp(12px,1.05vw,15px); }
+  }
   @media (max-width:900px){ html,body{ overflow:auto; } .wrap{ height:auto; } #boardCard{ display:block; } #gridBox{ height:auto; } #gridBox table{ height:auto; } }
 </style>
 </head><body>
@@ -43,13 +62,17 @@
 </div>
 <script src="common.js"></script>
 <script>
+// 是否在教室列里显示 VIP 教室：true = 方案 A（VIP 教室放在右边、列较窄）；false = 方案 B（只在大教室被 VIP 占用时显示灰色「VIP」）
+const SHOW_VIP_ROOMS = true;
+// VIP 教室（外借的教室不显示，和 sched/index.html 的 isVIPRoom 判断一致）
+const isVIPRoom = r=>r.type==='VIP' && !/コスモ|cosmo|外借/i.test((r.name||'')+(r.campus||''));
 let ROOMS=[], BOOKINGS=[];
 let followToday=true;                       // 是否跟随「今天」（用于跨零点自动滚动）
 const REFRESH_MS = 5*60*1000;               // 自动刷新间隔：5 分钟。想改成半小时用 30*60*1000
 async function loadData(){
   ROOMS = await sbGet('sched_rooms','select=*&active=eq.true&order=campus,sort');
-  // 课程+临时+租借等所有占用（排除 VIP 和待审批预约）
-  BOOKINGS = await sbGet('sched_bookings','select=*&kind=in.(course,temp,rental,meeting)&status=neq.pending');
+  // 课程+临时+租借+VIP 等所有占用（排除待审批预约）；VIP 只用来占位，显示时不露任何信息
+  BOOKINGS = await sbGet('sched_bookings','select=*&kind=in.(course,temp,rental,meeting,vip)&status=neq.pending');
   const cs = (await sbGet('sched_courses','select=id,skip_dates,category,name,merge_name,deleted_at')).filter(c=>!c.deleted_at);
   window.SKIPMAP={}; window.CATMAP={}; window.CNAME={};
   cs.forEach(c=>{ if(c.skip_dates) window.SKIPMAP[c.id]=new Set(c.skip_dates.split(',').map(x=>x.trim())); window.CATMAP[c.id]=c.category; window.CNAME[c.id]=c.merge_name||c.name; });
@@ -75,7 +98,17 @@ async function boot(){
 }
 function render(){
   const campus=el('campus').value, date=el('date').value;
-  const rooms=ROOMS.filter(r=>r.campus===campus && r.type!=='VIP').map(r=>({id:r.id,name:r.name,sub:(r.type==='大课'?(r.size_label+'·'+r.capacity+'人'):(r.capacity+'人'))}));
+  const fmt=r=>({id:r.id,name:r.name,sub:(r.type==='大课'?(r.size_label+'·'+r.capacity+'人'):(r.capacity+'人'))});
+  const big=ROOMS.filter(r=>r.campus===campus && r.type!=='VIP').map(fmt);
+  const vipRooms=SHOW_VIP_ROOMS ? ROOMS.filter(r=>r.campus===campus && isVIPRoom(r)).map(fmt) : [];
+  // 列宽：时段列固定 80px，其余按「大教室 2 份、VIP 教室 1 份」分（VIP 格子里只有「VIP」两个字，用不着太宽）
+  // 表格是 fixed 布局，calc() 里带百分比的宽度会被当成 auto，所以按当前容器宽度算成百分比
+  if(vipRooms.length){
+    const total = Math.max(el('gridBox').clientWidth, 600), timePct = 80/total*100, units = big.length*2 + vipRooms.length, one = (100-timePct)/units;
+    big.forEach(r=>{ r.w = (one*2).toFixed(3)+'%'; });
+    vipRooms.forEach((r,i)=>{ r.cls = 'vipcol'+(i===0&&big.length?' vipfirst':''); r.w = one.toFixed(3)+'%'; });
+  }
+  const rooms = big.concat(vipRooms);
   el('meta').textContent = WEEKDAYS[weekdayOf(date)]+' '+date;
   if(!rooms.length){ el('gridBox').innerHTML='<div class="muted">该校区暂无教室</div>'; return; }
   const todays = BOOKINGS.filter(b => bookingOnDate(b, date) &&
@@ -83,11 +116,13 @@ function render(){
   // 对外：隐藏使用人/事由，只显示课名+时间
   el('gridBox').innerHTML = renderOccupancyGrid(rooms, todays, 'room_id', {
     hideWho:true,
+    vipMask:true,        // VIP 占用只显示「VIP」
     perItemTitle:true,   // 非课程占用按每条记录的 show_title 决定露不露标题
     catOf:(cid)=>window.CATMAP?window.CATMAP[cid]:'',
     nameOf:(cid)=>window.CNAME?window.CNAME[cid]:''
   });
 }
+let _rz; window.addEventListener('resize', ()=>{ clearTimeout(_rz); _rz=setTimeout(()=>{ if(ROOMS.length) render(); }, 200); });
 boot();
 </script>
 </body></html>
