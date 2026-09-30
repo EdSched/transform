@@ -1258,12 +1258,30 @@ const ADMISSION_MAJORS = {
 // 出愿专业改由数据库表 admission_majors 维护（有则以表为准，可在出愿数据库页面「＋新增出愿专业」增删）；
 // 表为空/加载失败时退回上面的内置清单。各页面 init 里调用一次即可。
 let admissionMajorsLoaded = false;
+// 出愿专业 → 领域（来自 admission_majors.domain；没填的退回 MAJOR_DOMAIN，都没有就不属于任何领域）
+const ADMISSION_MAJOR_DOMAIN = {};
+function admissionMajorDomain(key) { return ADMISSION_MAJOR_DOMAIN[key] || MAJOR_DOMAIN[key] || ''; }
+// 老师"所在领域"：归谁管(managed_by)；没设就用负责专业(majors)所属领域
+function teacherAdmDomains(t) {
+  const mb = (t && t.managed_by) || [];
+  if (mb.length) return [...new Set(mb)];
+  return [...new Set(((t && t.majors) || []).map(m => MAJOR_DOMAIN[m]).filter(Boolean))];
+}
+// 老师在出愿数据库里被允许查看的专业：
+// 权限里明确选了的（没选则用老师自己负责的专业）→ 只保留是出愿专业、且属于老师所在领域的
+function teacherAdmAllowed(t) {
+  const perm = (t && t.permissions && t.permissions.admission_majors) || [];
+  const base = perm.length ? perm : ((t && t.majors) || []);
+  const doms = teacherAdmDomains(t);
+  return base.filter(k => ADMISSION_MAJORS[k] && doms.includes(admissionMajorDomain(k)));
+}
 async function loadAdmissionMajorsFromDB() {
   try {
     const rows = await sb('/rest/v1/admission_majors?select=key,label,domain&order=sort_order.asc,label.asc');
     if (rows && rows.length) {
       Object.keys(ADMISSION_MAJORS).forEach(k => delete ADMISSION_MAJORS[k]);
-      rows.forEach(r => { if (r.key && r.label) { ADMISSION_MAJORS[r.key] = r.label; if (r.domain) MAJOR_DOMAIN[r.key] = r.domain; } });
+      Object.keys(ADMISSION_MAJOR_DOMAIN).forEach(k => delete ADMISSION_MAJOR_DOMAIN[k]);
+      rows.forEach(r => { if (r.key && r.label) { ADMISSION_MAJORS[r.key] = r.label; if (r.domain) { MAJOR_DOMAIN[r.key] = r.domain; ADMISSION_MAJOR_DOMAIN[r.key] = r.domain; } } });
     }
     admissionMajorsLoaded = true;
   } catch (e) { /* 加载失败保留内置清单 */ }

@@ -240,8 +240,8 @@ function buildTabs() {
   if (p.homework) tabs.push({ id: 'homework', label: '📝 作业反馈' });
   if (p.admission_query) {
     tabs.push({ id: 'admissiondb', label: '🏫 出願数据库' });
-    // 记录该老师被允许查看的专业（空数组=全部）
-    window._teacherAllowedAdmMajors = p.admission_majors || [];
+    // 记录该老师被允许查看的专业：权限里选了的；没选则只有自己负责的专业；再限定在所在领域内
+    window._teacherAllowedAdmMajors = teacherAdmAllowed(teacherData);
   }
   // 学生管理：admin 勾选后显示，具体子项由 student_mgmt_items 决定
   if (p.student_mgmt && Array.isArray(p.student_mgmt_items) && p.student_mgmt_items.length) tabs.push({ id: 'studentmgmt', label: '👥 学生管理' });
@@ -2469,6 +2469,10 @@ async function renderTeacherAdmissionDb(mc) {
   // 出願ページは全幅表示
   const mainEl = document.querySelector('.main');
   if (mainEl) mainEl.style.maxWidth = 'none';
+  if (!(window._teacherAllowedAdmMajors || []).length) {
+    mc.innerHTML = '<div class="empty">暂无可查看的专业，请联系管理员开通</div>';
+    return;
+  }
 
   mc.innerHTML = `
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
@@ -2485,14 +2489,12 @@ async function renderTeacherAdmissionDb(mc) {
       ${(() => {
       const allowed = window._teacherAllowedAdmMajors || [];
       const group = ['shakai','shinpan','fukushi'];
-      const show = !allowed.length || group.every(k => allowed.includes(k));
+      const show = group.every(k => allowed.includes(k));
       return show ? '<div class="filter-chip" onclick="teacherAdbToggleGroup(this)">社会人文</div>' : '';
     })()}
       ${(() => {
       const allowed = window._teacherAllowedAdmMajors || [];
-      const entries = allowed.length
-        ? Object.entries(TEACHER_ADB_MAJORS).filter(([k]) => allowed.includes(k))
-        : Object.entries(TEACHER_ADB_MAJORS);
+      const entries = Object.entries(TEACHER_ADB_MAJORS).filter(([k]) => allowed.includes(k));
       return entries.map(([k,v]) => `<div class="filter-chip" data-key="${k}" onclick="teacherAdbToggleMajor('${k}',this)">${v}</div>`).join('');
     })()}
       <div class="filter-chip" style="opacity:.6" onclick="teacherAdbClear()">✕ 清除</div>
@@ -2578,6 +2580,9 @@ async function teacherAdbClear() {
 }
 
 async function teacherAdbLoad() {
+  // 查询只用允许的专业（不靠页面上有没有显示来限制）
+  const _allowed = window._teacherAllowedAdmMajors || [];
+  teacherAdbMajors = teacherAdbMajors.filter(k => _allowed.includes(k));
   if (!teacherAdbMajors.length) { teacherAdbData = []; teacherAdbColFilters = {}; teacherAdbRender(); return; }
   const body = document.getElementById('tadbBody');
   if (body) body.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:20px;color:var(--text-3)">加载中…</td></tr>';
