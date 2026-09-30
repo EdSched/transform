@@ -162,7 +162,7 @@ let bkStudent = null;   // member 模式下的学生档案 { id, name, major, ..
 let bkIsEmbed = false;
 
 function bkEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
-function bkStudyUrl() { return `../student/study.html?major=${encodeURIComponent(major)}&tab=reserve`; }
+function bkStudyUrl() { return `../student/study.html?${major ? `major=${encodeURIComponent(major)}&` : ''}tab=reserve`; }
 function bkMsg(title, text) {
   document.getElementById('mainWrap').innerHTML = `<div class="no-major-banner"><div class="no-major-title">${title}</div><div class="no-major-text">${text}</div></div>`;
 }
@@ -173,14 +173,12 @@ async function initMajor() {
   major = p.get('major');
   // embed=1：内嵌在学习页「面谈预约」标签里，身份从本机登录信息读取（同源 localStorage）
   bkIsEmbed = p.get('embed') === '1';
-  if (!(major && (MAJORS[major] || major === 'shakai_group'))) {
-    bkMsg('请通过专业链接访问', '请联系老师获取您所在专业的预约链接');
-    return;
-  }
+  // 不带 ?major= 也能用：照常显示登录框；只有新同学预约需要专业链接
+  if (!(major && (MAJORS[major] || MAJOR_GROUPS[major]))) major = null;
   document.getElementById('headerContent').innerHTML = `
     <div class="header-major">面谈预约</div>
     <div class="header-sub">唯新教育</div>
-    <div class="header-locked">📌 ${major === 'shakai_group' ? '社会人文' : MAJORS[major]}</div>
+    ${major ? `<div class="header-locked">📌 ${majorLabel(major)}</div>` : ''}
     ${bkIsEmbed ? '' : `<a href="../vip/" style="display:inline-block;margin-top:8px;font-size:11px;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:4px 12px;text-decoration:none">⭐ 我有VIP课程 →</a>`}`;
 
   if (bkIsEmbed) {
@@ -234,11 +232,14 @@ function renderBookingLogin() {
     <button id="bl_btn" class="btn btn-primary" style="width:100%" onclick="bookingLoginSubmit()">登录 →</button>
     <div style="font-size:10px;color:var(--text-muted);margin-top:8px;text-align:center">查询码由老师/管理员提供；登录一次后，本机以后打开预约链接会自动进入</div>
   </div>
-  <div onclick="enterNewStudentMode()" style="max-width:380px;margin:0 auto;cursor:pointer;background:var(--surface);border:1px dashed var(--accent);border-radius:4px;padding:14px 16px">
+  ${!major ? `<div style="max-width:380px;margin:0 auto;background:var(--surface);border:1px dashed var(--border);border-radius:4px;padding:14px 16px">
+    <div style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:4px">新同学第一次面谈？</div>
+    <div style="font-size:11px;color:var(--text-secondary);line-height:1.7">新同学请使用老师发给你的专业预约链接。</div>
+  </div>` : `<div onclick="enterNewStudentMode()" style="max-width:380px;margin:0 auto;cursor:pointer;background:var(--surface);border:1px dashed var(--accent);border-radius:4px;padding:14px 16px">
     <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:4px">新同学第一次面谈？</div>
     <div style="font-size:11px;color:var(--text-secondary);line-height:1.7">直接在这里预约，面谈时向老师领取查询码，以后就能登录查看学习记录。</div>
     <div style="font-size:11px;color:var(--accent);margin-top:6px">进入新同学预约 →</div>
-  </div>`;
+  </div>`}`;
 }
 
 async function bookingLoginSubmit() {
@@ -263,6 +264,7 @@ async function bookingLoginSubmit() {
 }
 
 async function enterNewStudentMode() {
+  if (!major) { alert('新同学请使用老师发给你的专业预约链接'); return; }
   bkMode = 'new';
   bkStudent = null;
   document.getElementById('mainWrap').innerHTML = '<div class="loading">加载中…</div>';
@@ -274,9 +276,10 @@ async function enterNewStudentMode() {
 async function loadBookingPage() {
   try {
     teacherDisplayNames = {};
-    // 每个页面只显示「发布时选择了该专业」的时间槽：
-    // 社会人文页只显示发布为社会人文的槽；各专业页只显示本专业的槽，互不混排
-    cachedSlots = await sb(`/rest/v1/slots?select=*&major=eq.${major}&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`);
+    // 能看到的时间槽 = 学生全部专业（主专业 + 附加专业）及其所属分组；新同学按链接专业（规则见 shared/constants.js 的 bookingMajorsFor）
+    const bkMajors = (bkMode === 'member' && bkStudent) ? bookingMajorsFor(bkStudent) : bookingMajorsFor(major);
+    if (!bkMajors.length) { bkMsg('没有找到你的专业', '请联系老师确认学生档案里的专业'); return; }
+    cachedSlots = await sb(`/rest/v1/slots?select=*&major=in.(${bkMajors.map(m => `"${m}"`).join(',')})&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`);
     // 按本页时间槽的 slot_id 拉取预约（只用于名额统计）
     cachedBookings = await fetchBookingsBySlots(cachedSlots.map(s => s.id));
     // VIP 时间槽走独立的 /vip/ 页面预约，不在普通面谈预约里出现
@@ -703,6 +706,7 @@ function renderSlots() {
           <div style="display:flex;align-items:center;gap:6px">
             <span style="font-size:13px;font-weight:600;font-family:'DM Mono',monospace">${s.time_range}</span>
             <span class="tag ${typeTag(types[0])}" style="font-size:9px">${types.map(t=>t==='daily'?'日常':t==='plan'?'计划书':t==='vip'?'VIP':'模拟').join('・')}</span>
+            ${s.major ? `<span style="font-size:9px;border:1px solid var(--border);border-radius:2px;padding:0 5px;color:var(--text-secondary)">${majorLabel(s.major)}</span>` : ''}
             <span style="margin-left:auto;font-size:10px;color:${full?'var(--danger)':'var(--success)'}">${full?'已满':`剩余 ${remaining}`}</span>
           </div>
           ${s.teacher_name ? `<div style="font-size:10px;color:var(--text-muted)">👤 ${teacherDisplayNames[s.teacher_name] || s.teacher_name}</div>` : ''}
