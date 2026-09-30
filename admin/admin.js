@@ -464,7 +464,10 @@ async function enterScope(sc){
   }
   // 领域/专业钥匙用户：隐藏「切换视角」（锁定）
   const sw=document.getElementById('switchViewBtn');
-  if(sw) sw.style.display=(ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin)?'none':'';
+  const keyOnly=!!(ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin);
+  if(sw) sw.style.display=keyOnly?'none':'';
+  // 访问链接进来的不需要登录，「重新登录」没有意义：隐藏
+  const rl=document.getElementById('reloginBtn'); if(rl) rl.style.display=keyOnly?'none':'';
   await initApp();
 }
 // 兼容旧调用：enterDomain('all') 总览；enterDomain('大学院文科') 一个完整领域；enterDomain(领域, 专业) 单个专业
