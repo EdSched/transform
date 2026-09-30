@@ -18,6 +18,7 @@ const PK_TYPES = {
   lecturers: { label: '讲师介绍', color: '#6a4a7a', bg: '#efe4f4' },
   common:    { label: '宣传收尾', color: '#8a6a1b', bg: '#f8f0d8' },
   plan_price: { label: '课程方案', color: '#a03a2e', bg: '#f8e4dc' },
+  cases:     { label: '合格案例', color: '#2d5a3d', bg: '#e4f0e8' },
   vip:       { label: 'VIP方案', color: '#a03a2e', bg: '#f8e4dc' },
 };
 const PK_MAJOR_PARTS = [
@@ -264,6 +265,7 @@ function pkRender(mc) {
   if (p.lect_info) sources.push(linkBtn('lectinfo', '👤 讲师信息 → 展示卡片加入'));
   if (p.vip_sales) sources.push(linkBtn('vipsales', '🗂 VIP规划 → 方案加入'));
   if (p.promo) sources.push(linkBtn('promo', '📣 宣传相关 → 专业介绍加入'));
+  if (p.promo) sources.push(`<button onclick="prSection='cases';switchTab('promo')" style="font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:5px 12px;cursor:pointer;font-family:inherit;color:var(--text-2)">🏆 合格案例 → 选用后加入</button>`);
   if (p.promo && p.promo_pricing) sources.push(`<button onclick="prSection='plan';switchTab('promo')" style="font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:5px 12px;cursor:pointer;font-family:inherit;color:var(--text-2)">💴 课程方案 → 配好后加入</button>`);
 
   const majorKeys = prMajorsCache || pkMajorList || [];
@@ -482,6 +484,15 @@ table.pk-adb { border-collapse:collapse; width:100%; table-layout:fixed; font-fa
 .pk-adb tr { break-inside:avoid; }
 .pk-adb .b { font-weight:700; } .pk-adb .c { text-align:center; font-weight:700; }
 .pk-note { margin-top:10px; font-size:9.5px; color:#666; line-height:1.8; }
+/* 合格案例 */
+.pk-case { border:1px solid var(--border); border-radius:5px; padding:14px 18px; margin-bottom:14px; break-inside:avoid; }
+.pk-case-h { font-size:14px; font-weight:700; color:var(--accent); margin-bottom:8px; }
+.pk-case-t { width:100%; border-collapse:collapse; font-size:11.5px; margin:4px 0 !important; }
+.pk-case-t th { background:var(--accent) !important; color:#fff !important; padding:5px 10px !important; font-size:10px; letter-spacing:.06em; border-color:var(--accent) !important; }
+.pk-case-t td { padding:5px 10px !important; border:1px solid var(--border) !important; line-height:1.7; }
+.pk-case-t tr:last-child td { background:var(--accent-light); }
+.pk-case-q { border-left:3px solid var(--accent); background:var(--bg); padding:6px 12px; margin:8px 0 2px; color:var(--text-2); font-size:11.5px; line-height:1.9; }
+.pk-case-s { font-size:10.5px; font-weight:600; color:var(--accent); margin:10px 0 4px; }
 /* 课程方案（带价格） */
 table.pk-price { width:100%; border-collapse:collapse; font-size:12px; }
 .pk-price thead tr { background:var(--accent); color:#fff; }

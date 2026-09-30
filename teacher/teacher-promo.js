@@ -50,6 +50,7 @@ const PR_SECTIONS = [
   ['course', '📚 课程介绍'],
   ['schedule', '🗓 课程表'],
   ['common', '🏫 通用宣传'],
+  ['cases', '🏆 合格案例'],
   ['plan', '💴 课程方案'],   // 需 promo_pricing 权限（teacher-pricing.js）
 ];
 const prSections = () => PR_SECTIONS.filter(([k]) => k !== 'plan' || (typeof pricingEnabled === 'function' && pricingEnabled()));
@@ -132,7 +133,7 @@ function prRenderShell() {
   if (!mc || !prData) return;
   mc.innerHTML = `
   <div class="page-header"><div class="section-title">📣 宣传相关</div></div>
-  ${prSection === 'plan' ? '' : prSection === 'common' ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
+  ${prSection === 'plan' || prSection === 'cases' ? '' : prSection === 'common' ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
     <span style="font-size:10px;color:var(--text-3)">领域：</span>
     ${prCommonDomains().map(d => `<div class="filter-chip ${prCommonDomain===d?'active':''}" onclick="prCommonDomain='${prEsc(d)}';prRenderShell()" style="padding:3px 10px;font-size:10px">${prEsc(d)}</div>`).join('') || '<span style="font-size:10px;color:var(--text-3)">admin 还没有发布任何通用宣传内容</span>'}
   </div>` : `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
@@ -142,17 +143,18 @@ function prRenderShell() {
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px">
     ${prSections().map(([k,l]) => `<button onclick="prSection='${k}';prExpanded=null;prRenderShell()" style="font-size:11px;padding:5px 14px;border-radius:3px;cursor:pointer;font-family:inherit;border:1px solid ${prSection===k?'var(--accent)':'var(--border)'};background:${prSection===k?'var(--accent)':'var(--surface)'};color:${prSection===k?'#fff':'var(--text-2)'}">${l}</button>`).join('')}
   </div>
-  ${prSection === 'common' || prSection === 'plan' ? '' : `<div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:8px 12px;margin-bottom:12px">
+  ${prSection === 'common' || prSection === 'plan' || prSection === 'cases' ? '' : `<div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:8px 12px;margin-bottom:12px">
     <span style="font-size:10px;color:var(--text-3)">发给客户的宣传页链接：</span>
     <code id="pr_share_link" style="font-size:10px;color:var(--text-2);background:var(--bg);padding:2px 8px;border-radius:2px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${location.origin}${location.pathname.replace(/\/teacher\/.*$/,'/promo/')}?major=${prMajor}</code>
     <button onclick="navigator.clipboard.writeText(document.getElementById('pr_share_link').textContent).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制链接',2000)})" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit;white-space:nowrap">📋 复制链接</button>
   </div>`}
-  ${prSection !== 'common' && prSection !== 'plan' && typeof pkEnabled === 'function' && pkEnabled() ? `<div style="display:flex;align-items:center;gap:8px;margin:-4px 0 12px;flex-wrap:wrap">
+  ${prSection !== 'common' && prSection !== 'plan' && prSection !== 'cases' && typeof pkEnabled === 'function' && pkEnabled() ? `<div style="display:flex;align-items:center;gap:8px;margin:-4px 0 12px;flex-wrap:wrap">
     <button onclick="pkAddMajorFromPromo()" style="font-size:11px;background:var(--surface);border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:4px 14px;cursor:pointer;font-family:inherit">➕ 将「${MAJORS[prMajor]||prMajor}」学科介绍加入宣传资料</button>
     <span style="font-size:10px;color:var(--text-3)">加入后可在「📦 宣传资料整合」与出愿学校、进度规划等一起生成一份完整 PDF</span>
   </div>` : ''}
   <div id="pr_body">${prBodyHtml()}</div>`;
   if (prSection === 'plan' && typeof tpMount === 'function') tpMount();
+  if (prSection === 'cases' && typeof scMountTeacher === 'function') scMountTeacher('sc_root');
 }
 
 function prSetMajor(m) {
@@ -162,6 +164,7 @@ function prSetMajor(m) {
 }
 
 function prBodyHtml() {
+  if (prSection === 'cases') return '<div id="sc_root"><div class="empty">加载中…</div></div>';
   if (prSection === 'plan') return '<div id="tp_root"><div class="empty">加载中…</div></div>';
   if (prSection === 'common') {
     const list = (prCommon || []).filter(r => r.domain === prCommonDomain);
