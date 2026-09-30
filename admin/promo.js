@@ -157,6 +157,7 @@ const PROMO_SECTIONS = [
   ['major_intro', '📖 专业介绍', '概要 / 独特视角 / 优势 / 重点方向 / 研究课题例 / 重点研究科…每条一个小节'],
   ['lecturer', '👤 讲师介绍', '每位讲师一条：标题填「姓名＋头衔」（如 徐老师　一桥大学社会学研究科　博士），正文填介绍'],
   ['course', '📚 课程介绍', '每门课一条：标题需与课程安排中的课程名完全一致，老师端才能自动关联当期开课信息'],
+  ['common', '🏫 通用宣传', '按领域维护的通用宣传内容（核心理念、师资、实绩数据…），营业老师在宣传资料整合里作为「宣传收尾」加入资料'],
 ];
 
 async function renderPromoAdminPage(mc) {
@@ -165,9 +166,14 @@ async function renderPromoAdminPage(mc) {
   if (CURRENT_MAJOR) promoMajor = CURRENT_MAJOR;
   else if (!keys.includes(promoMajor)) promoMajor = keys[0] || '';
   mc.innerHTML = '<div class="empty">加载中…</div>';
-  promoLoad();
+  if (promoSection === 'common') pcLoad(); else promoLoad();
 }
 
+// 切换板块：通用宣传按领域单独加载，其余板块按专业
+function promoPickSection(k) {
+  promoSection = k; promoEditingId = null; pcEditing = null;
+  if (k === 'common') pcLoad(); else if (promoMajor && promoList) promoRenderShell(); else promoLoad();
+}
 async function promoLoad() {
   if(!promoMajor){
     const mc=document.getElementById('mainContent');
@@ -200,21 +206,24 @@ function promoRenderShell() {
   <div class="page-header">
     <div class="section-title">宣传管理</div>
   </div>
-  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
+  ${promoSection === 'common' ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
+    <span style="font-size:10px;color:var(--text-3)">领域：</span>
+    ${pcDomains().map(d => `<div class="filter-chip ${pcDomain===d?'active':''}" onclick="pcDomain='${d}';pcEditing=null;pcImport=null;pcLoad()" style="padding:3px 10px;font-size:11px">${d}</div>`).join('')}
+  </div>` : `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
     <span style="font-size:10px;color:var(--text-3)">专业：</span>
     ${majorFilterKeys().map(m => `<div class="filter-chip ${promoMajor===m?'active':''}" onclick="promoMajor='${m}';promoEditingId=null;promoLoad()" style="padding:3px 10px;font-size:11px">${m==='shakai_group'?'社会人文':majorLabel(m)}</div>`).join('')}
-  </div>
+  </div>`}
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px">
     <span style="font-size:10px;color:var(--text-3)">板块：</span>
-    ${PROMO_SECTIONS.map(([k,l]) => `<div class="filter-chip ${promoSection===k?'active':''}" onclick="promoSection='${k}';promoEditingId=null;promoRenderShell()" style="padding:3px 10px;font-size:11px">${l}</div>`).join('')}
+    ${PROMO_SECTIONS.map(([k,l]) => `<div class="filter-chip ${promoSection===k?'active':''}" onclick="promoPickSection('${k}')" style="padding:3px 10px;font-size:11px">${l}</div>`).join('')}
   </div>
-  <div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:8px 12px;margin-bottom:12px">
+  ${promoSection === 'common' ? '' : `<div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:8px 12px;margin-bottom:12px">
     <span style="font-size:10px;color:var(--text-3)">对外分享链接（无需登录，仅显示「公开」状态的内容）：</span>
     <code id="promo_share_link" style="font-size:10px;color:var(--text-2);background:var(--bg);padding:2px 8px;border-radius:2px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${location.origin}${location.pathname.replace(/\/admin\/.*$/,'/promo/')}?major=${promoMajor}</code>
     <button onclick="navigator.clipboard.writeText(document.getElementById('promo_share_link').textContent).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制',2000)})" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">📋 复制</button>
-  </div>
+  </div>`}
   <div id="promo_body"></div>`;
-  promoRender();
+  if (promoSection === 'common') pcRender(); else promoRender();
 }
 
 function promoEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
@@ -404,4 +413,234 @@ function promoFillFromProfile(id) {
     p.courses ? `##担当课程\n${p.courses}` : '',
   ].filter(Boolean).join('\n\n');
   if (l) l.value = p.name || ''; // 绑定用本名（档案姓名即本名）
+}
+
+
+// ══════════════════════════════════
+// 🏫 通用宣传（表 promo_common，按领域）
+// 字段：id, domain, title, body(markdown), sort_order, published, updated_at
+// 老师端「宣传相关 → 通用宣传」浏览；「宣传资料整合 → 宣传收尾」按块加入资料最后
+// ══════════════════════════════════
+let pcDomain = '', pcList = [], pcEditing = null;   // pcEditing: null | 'new' | id
+let pcImport = null;   // Word 导入预览 { blocks:[{title,body,on}], mode:'append'|'replace', file }
+function pcDomains() {
+  const lock = CURRENT_DOMAIN && CURRENT_DOMAIN !== 'all' ? CURRENT_DOMAIN : '';
+  return lock ? [lock] : DOMAINS.map(d => d.label);
+}
+async function pcLoad() {
+  const mc = document.getElementById('mainContent');
+  const doms = pcDomains();
+  if (!doms.includes(pcDomain)) pcDomain = doms.includes('大学院文科') ? '大学院文科' : doms[0];
+  try {
+    pcList = await sbAll(`/rest/v1/promo_common?domain=eq.${encodeURIComponent(pcDomain)}&select=*&order=sort_order.asc,updated_at.asc`);
+  } catch (e) {
+    if (mc) mc.innerHTML = `<div class="empty">加载失败：${promoEsc(e.message)}<br><span style="font-size:11px">（如果提示表不存在，请先执行「通用宣传」的建表 SQL）</span></div>`;
+    return;
+  }
+  promoRenderShell();
+}
+function pcRender() {
+  const box = document.getElementById('promo_body'); if (!box) return;
+  const sec = PROMO_SECTIONS.find(([k]) => k === 'common');
+  const inp = 'width:100%;box-sizing:border-box;font-size:12px;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
+  const editing = pcEditing ? (pcEditing === 'new' ? { title: '', body: '' } : pcList.find(r => r.id === pcEditing) || {}) : null;
+  const formHtml = editing !== null ? `
+  <div style="border:1px solid var(--accent);border-radius:4px;padding:14px;margin-bottom:12px;background:var(--bg)">
+    <div style="font-size:11px;font-weight:600;margin-bottom:8px">${pcEditing === 'new' ? '＋ 新增内容块' : '✏ 编辑内容块'}</div>
+    <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">标题（在资料里作为章节名）</label>
+    <input id="pc_title" value="${promoEsc(editing.title)}" style="${inp};margin-bottom:8px">
+    <div style="font-size:9px;color:var(--text-3);background:var(--surface);border:1px dashed var(--border);border-radius:2px;padding:6px 10px;margin-bottom:8px;line-height:1.9">
+      📐 排版语法：<code>## 小标题</code>　·　<code>**粗体**</code>　·　<code>- 列表</code>　·　<code>1. 有序列表</code>　·　表格每行 <code>| 列1 | 列2 |</code>（首行为表头，第二行 <code>|---|---|</code>）
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start">
+      <div style="flex:1 1 320px;min-width:0">
+        <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">正文</label>
+        <textarea id="pc_body" rows="18" oninput="pcPreview()" style="${inp};font-family:'DM Mono','Menlo','Consolas',monospace;line-height:1.7;resize:vertical">${promoEsc(editing.body)}</textarea>
+      </div>
+      <div style="flex:1 1 320px;min-width:0">
+        <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">预览（和老师端 / 资料里的显示一致）</label>
+        <div id="pc_preview" style="border:1px solid var(--border-light);border-radius:2px;background:var(--surface);padding:10px 14px;max-height:430px;overflow:auto;font-size:12px;line-height:1.9;color:var(--text-2)">${prMd(editing.body)}</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <button class="btn btn-primary btn-sm" onclick="pcSave()">保存</button>
+      <button class="btn btn-outline btn-sm" onclick="pcEditing=null;pcRender()">取消</button>
+    </div>
+  </div>` : '';
+  box.innerHTML = `
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+    <div style="font-size:12px;font-weight:600">${promoEsc(pcDomain)} · ${sec[1]}（${pcList.length}块）</div>
+    <span style="font-size:10px;color:var(--text-3)">${sec[2]}</span>
+    <span style="margin-left:auto;display:flex;gap:6px">
+      <label class="btn btn-outline btn-sm" style="cursor:pointer">📄 从 Word 导入<input type="file" accept=".docx" onchange="pcImportFile(this)" style="display:none"></label>
+      <button class="btn btn-primary btn-sm" onclick="pcEditing='new';pcImport=null;pcRender()">＋ 新增内容块</button>
+    </span>
+  </div>
+  ${pcImport ? pcImportHtml() : ''}
+  ${formHtml}
+  ${pcList.length ? pcList.map((r, i) => `
+  <div style="border:1px solid var(--border-light);border-radius:3px;padding:8px 12px;margin-bottom:6px;background:var(--surface);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <span style="font-size:10px;color:var(--text-3);width:18px;text-align:right">${i + 1}</span>
+    <span style="font-size:12px;font-weight:600;flex:1;min-width:160px">${promoEsc(r.title) || '（无标题）'}</span>
+    <span style="font-size:9px;color:var(--text-3)">${(r.body || '').length} 字</span>
+    <span onclick="pcTogglePub('${r.id}')" title="点击切换" style="cursor:pointer;user-select:none;font-size:9px;border-radius:2px;padding:1px 8px;${r.published === false ? 'background:var(--bg);color:var(--text-3);border:1px dashed var(--border)' : 'background:var(--ok-bg,#e4f0e8);color:var(--ok,#2a9e6a);border:1px solid transparent'}">${r.published === false ? '隐藏' : '已发布'}</span>
+    <button class="btn btn-outline btn-sm" ${i === 0 ? 'disabled' : ''} onclick="pcMove('${r.id}',-1)" title="上移">↑</button>
+    <button class="btn btn-outline btn-sm" ${i === pcList.length - 1 ? 'disabled' : ''} onclick="pcMove('${r.id}',1)" title="下移">↓</button>
+    <button class="btn btn-outline btn-sm" onclick="pcEditing='${r.id}';pcImport=null;pcRender();document.getElementById('pc_title')?.scrollIntoView({block:'center'})">✏ 编辑</button>
+    <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="pcDelete('${r.id}')">删除</button>
+  </div>`).join('') : '<div class="empty" style="padding:30px">该领域还没有通用宣传内容，可以「＋ 新增内容块」或「📄 从 Word 导入」</div>'}`;
+}
+function pcPreview() {
+  const el = document.getElementById('pc_preview'), b = document.getElementById('pc_body');
+  if (el && b) el.innerHTML = prMd(b.value);
+}
+async function pcSave() {
+  const title = ((document.getElementById('pc_title') || {}).value || '').trim();
+  const body = (document.getElementById('pc_body') || {}).value || '';
+  if (!title) { alert('请填写标题'); return; }
+  const now = new Date().toISOString();
+  try {
+    if (pcEditing === 'new') {
+      const row = { id: `pc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, domain: pcDomain, title, body,
+        sort_order: pcList.reduce((m, r) => Math.max(m, r.sort_order || 0), 0) + 1, published: true, updated_at: now };
+      await sb('/rest/v1/promo_common', 'POST', row);
+      pcList.push(row);
+    } else {
+      await sb(`/rest/v1/promo_common?id=eq.${encodeURIComponent(pcEditing)}`, 'PATCH', { title, body, updated_at: now });
+      const r = pcList.find(x => x.id === pcEditing); if (r) Object.assign(r, { title, body, updated_at: now });
+    }
+    pcEditing = null; pcRender();
+  } catch (e) { alert('保存失败：' + e.message); }
+}
+async function pcDelete(id) {
+  const r = pcList.find(x => x.id === id); if (!r) return;
+  if (!confirm(`删除内容块「${r.title}」？`)) return;
+  try { await sb(`/rest/v1/promo_common?id=eq.${encodeURIComponent(id)}`, 'DELETE'); pcList = pcList.filter(x => x.id !== id); pcRender(); }
+  catch (e) { alert('删除失败：' + e.message); }
+}
+async function pcTogglePub(id) {
+  const r = pcList.find(x => x.id === id); if (!r) return;
+  const next = r.published === false;
+  try { await sb(`/rest/v1/promo_common?id=eq.${encodeURIComponent(id)}`, 'PATCH', { published: next }); r.published = next; pcRender(); }
+  catch (e) { alert('切换失败：' + e.message); }
+}
+// 上移 / 下移：和相邻的一块交换 sort_order（顺序号不连续或重复时先整体重排成 1..n）
+async function pcMove(id, d) {
+  const i = pcList.findIndex(x => x.id === id), j = i + d;
+  if (i < 0 || j < 0 || j >= pcList.length) return;
+  const arr = pcList.slice(); [arr[i], arr[j]] = [arr[j], arr[i]];
+  try {
+    for (let k = 0; k < arr.length; k++) {
+      if (arr[k].sort_order !== k + 1) { await sb(`/rest/v1/promo_common?id=eq.${encodeURIComponent(arr[k].id)}`, 'PATCH', { sort_order: k + 1 }); arr[k].sort_order = k + 1; }
+    }
+    pcList = arr; pcRender();
+  } catch (e) { alert('调整顺序失败：' + e.message); pcLoad(); }
+}
+
+// ── 从 Word 导入：mammoth（docx→HTML）→ 表格首行转表头 → turndown（HTML→markdown，表格转竖线格式）→ 按一级标题拆块 ──
+function pcLoadScript(urls) {
+  return new Promise((resolve, reject) => {
+    const tryNext = i => {
+      if (i >= urls.length) return reject(new Error('脚本加载失败：' + urls[urls.length - 1]));
+      const el = document.createElement('script'); el.src = urls[i];
+      el.onload = () => resolve(); el.onerror = () => { el.remove(); tryNext(i + 1); };
+      document.head.appendChild(el);
+    };
+    tryNext(0);
+  });
+}
+async function pcEnsureConverters() {
+  if (typeof mammoth === 'undefined') await pcLoadScript(['https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js', '../shared/vendor/mammoth.browser.min.js']);
+  if (typeof TurndownService === 'undefined') await pcLoadScript(['https://cdn.jsdelivr.net/npm/turndown@7.2.0/dist/turndown.js', '../shared/vendor/turndown.js']);
+  if (typeof turndownPluginGfm === 'undefined') await pcLoadScript(['https://cdn.jsdelivr.net/npm/turndown-plugin-gfm@1.0.2/dist/turndown-plugin-gfm.js', '../shared/vendor/turndown-plugin-gfm.js']);
+}
+// docx 的 HTML → markdown。Word 表格首行不是表头元素，先改成 th，否则 gfm 不会输出竖线表格
+function pcHtmlToMd(html) {
+  const doc = new DOMParser().parseFromString('<body>' + html + '</body>', 'text/html');
+  doc.querySelectorAll('img').forEach(im => im.remove());
+  doc.querySelectorAll('table').forEach(t => {
+    const rows = [...t.rows]; if (!rows.length) return;
+    rows.forEach((tr, ri) => [...tr.cells].forEach(c => {
+      const ps = [...c.querySelectorAll('p')];
+      const inner = ps.length ? ps.map(p => p.innerHTML).filter(x => x.replace(/<[^>]*>|&nbsp;/g, '').trim()).join(' ') : c.innerHTML;
+      const n = doc.createElement(ri === 0 ? 'th' : 'td'); n.innerHTML = inner.replace(/<br\s*\/?>/g, ' ').replace(/\|/g, '／');   // 单元格里的竖线会把表格拆列，换成全角斜线
+      c.replaceWith(n);
+    }));
+    if (rows[0].parentNode.tagName !== 'THEAD') { const th = doc.createElement('thead'); rows[0].parentNode.insertBefore(th, rows[0]); th.appendChild(rows[0]); }
+  });
+  const td = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-', emDelimiter: '*', strongDelimiter: '**' });
+  td.use(turndownPluginGfm.gfm);
+  let md = td.turndown(doc.body.innerHTML);
+  md = md.replace(/\\([\\`*_{}\[\]()#+\-.!~>])/g, '$1').replace(/\\\|/g, '／')   // turndown 会给特殊字符加反斜杠，这里去掉
+    .replace(/^(\s*)-\s{2,}/gm, '$1- ').replace(/^(\s*\d+\.)\s{2,}/gm, '$1 ')      // 列表标记后只留一个空格
+    .replace(/\n{3,}/g, '\n\n');
+  return md.trim();
+}
+// 按一级标题（# 标题）拆成内容块；第一个标题之前的内容放进「（开头）」块
+function pcSplitBlocks(md) {
+  const blocks = []; let cur = null;
+  md.split('\n').forEach(line => {
+    const m = line.match(/^#\s+(.+?)\s*#*$/);
+    if (m) { cur = { title: m[1].replace(/\*\*/g, '').trim(), lines: [] }; blocks.push(cur); return; }
+    if (!cur) { cur = { title: '（开头）', lines: [] }; blocks.push(cur); }
+    cur.lines.push(line);
+  });
+  return blocks.map(b => { const body = b.lines.join('\n').trim(); return { title: b.title, body, on: !!body }; }).filter(b => b.body || b.title !== '（开头）');   // 没有正文的块默认不导入
+}
+async function pcImportFile(input) {
+  const file = (input.files || [])[0]; input.value = '';
+  if (!file) return;
+  if (!/\.docx$/i.test(file.name)) { alert('请选择 .docx 文件（.doc 请先在 Word 里另存为 .docx）'); return; }
+  const box = document.getElementById('promo_body');
+  if (box) box.insertAdjacentHTML('afterbegin', '<div id="pc_importing" style="font-size:11px;color:var(--text-3);margin-bottom:8px">正在读取 Word…</div>');
+  try {
+    await pcEnsureConverters();
+    const r = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() }, {
+      styleMap: ["p[style-name='标题 1'] => h1:fresh", "p[style-name='标题 2'] => h2:fresh", "p[style-name='标题 3'] => h3:fresh", "p[style-name='Title'] => h1:fresh"],
+      convertImage: mammoth.images.imgElement(() => Promise.resolve({ src: '' })),
+    });
+    const blocks = pcSplitBlocks(pcHtmlToMd(r.value));
+    if (!blocks.length) { alert('没有读到内容。请确认 Word 里用了「标题 1」样式作为章节标题。'); document.getElementById('pc_importing')?.remove(); return; }
+    pcImport = { blocks, mode: 'append', file: file.name }; pcEditing = null;
+    pcRender();
+  } catch (e) { document.getElementById('pc_importing')?.remove(); alert('导入失败：' + e.message); }
+}
+function pcImportHtml() {
+  const im = pcImport, n = im.blocks.filter(b => b.on).length;
+  const chip = (on, label, fn) => `<div class="filter-chip${on ? ' active' : ''}" onclick="${fn}" style="padding:3px 10px;font-size:11px">${label}</div>`;
+  return `<div style="border:1px solid var(--accent);border-radius:4px;padding:12px 14px;margin-bottom:12px;background:var(--bg)">
+    <div style="font-size:11px;font-weight:600;margin-bottom:4px">📄 从 Word 导入：${promoEsc(im.file)}（按「标题 1」拆成 ${im.blocks.length} 块）</div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">点选要导入的块（高亮 = 导入）；图片不会导入。</div>
+    <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px;max-height:300px;overflow:auto">
+      ${im.blocks.map((b, i) => `<div onclick="pcImport.blocks[${i}].on=!pcImport.blocks[${i}].on;pcRender()" style="cursor:pointer;display:flex;gap:8px;align-items:baseline;padding:6px 10px;border:1px solid ${b.on ? 'var(--accent)' : 'var(--border-light)'};background:${b.on ? 'var(--accent-light,#f5ede3)' : 'var(--surface)'};border-radius:3px;${b.on ? '' : 'opacity:.55'}">
+        <span style="font-size:10px;color:var(--text-3);width:18px;text-align:right">${i + 1}</span>
+        <span style="font-size:12px;font-weight:600;flex:1;min-width:0">${promoEsc(b.title)}</span>
+        <span style="font-size:9px;color:var(--text-3);white-space:nowrap">${b.body.length} 字${/^\|.*\|$/m.test(b.body) ? ' · 含表格' : ''}</span>
+      </div>`).join('')}
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:10px;color:var(--text-3)">导入方式：</span>
+      ${chip(im.mode === 'append', '追加到现有内容后面', "pcImport.mode='append';pcRender()")}${chip(im.mode === 'replace', `替换「${promoEsc(pcDomain)}」的全部内容`, "pcImport.mode='replace';pcRender()")}
+      <button class="btn btn-primary btn-sm" style="margin-left:auto" ${n ? '' : 'disabled'} onclick="pcImportSave()">导入 ${n} 块</button>
+      <button class="btn btn-outline btn-sm" onclick="pcImport=null;pcRender()">取消</button>
+    </div>
+  </div>`;
+}
+async function pcImportSave() {
+  const im = pcImport; if (!im) return;
+  const pick = im.blocks.filter(b => b.on); if (!pick.length) return;
+  if (im.mode === 'replace' && !confirm(`将删除「${pcDomain}」现有的 ${pcList.length} 块内容，换成导入的 ${pick.length} 块。确定吗？`)) return;
+  const base = im.mode === 'replace' ? 0 : pcList.reduce((m, r) => Math.max(m, r.sort_order || 0), 0);
+  const now = new Date().toISOString(), stamp = Date.now();
+  const rows = pick.map((b, i) => ({ id: `pc-${stamp}-${i}-${Math.random().toString(36).slice(2, 5)}`, domain: pcDomain, title: b.title, body: b.body, sort_order: base + i + 1, published: true, updated_at: now }));
+  try {
+    await sb('/rest/v1/promo_common', 'POST', rows);   // 先写入新内容，成功后才删旧的，避免中途失败丢数据
+    if (im.mode === 'replace' && pcList.length) {
+      const old = pcList.map(r => `"${r.id}"`).join(',');
+      await sb(`/rest/v1/promo_common?id=in.(${old})`, 'DELETE');
+      pcList = [];
+    }
+    pcList = pcList.concat(rows); pcImport = null; pcRender();
+    alert(`已导入 ${rows.length} 块。`);
+  } catch (e) { alert('导入失败：' + e.message); }
 }

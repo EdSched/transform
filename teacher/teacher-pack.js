@@ -7,7 +7,7 @@
 // 依赖：shared/constants.js、shared/supabase.js、teacher.js、teacher-promo.js（须在其后加载）
 // ══════════════════════════════════
 let pkItems = [];        // [{ id, type, title, html, wide, include, addedAt, student }]
-let pkCover = null;      // { title, student, consultant, message }
+let pkCover = null;      // { extra, student, consultant, message }（封面大标题固定「<学生> 升学专属方案」，extra = 标题补充）
 let pkPreviewOpen = false;
 let pkMajorList = null;  // 学科介绍下拉的专业（prAvailableMajors 查询失败时的兜底结果）
 
@@ -16,6 +16,7 @@ const PK_TYPES = {
   admission: { label: '出愿学校', color: '#2c4a7c', bg: '#e8f0fb' },
   plan:      { label: '进度规划', color: '#2d5a3d', bg: '#e4f0e8' },
   lecturers: { label: '讲师介绍', color: '#6a4a7a', bg: '#efe4f4' },
+  common:    { label: '宣传收尾', color: '#8a6a1b', bg: '#f8f0d8' },
   vip:       { label: 'VIP方案', color: '#a03a2e', bg: '#f8e4dc' },
 };
 const PK_MAJOR_PARTS = [
@@ -38,13 +39,13 @@ function pkConsultantName() {
 function pkStoreKey() { return 'teacherPromoPack:v1:' + ((teacherData && teacherData.id) || teacherName || 'anon'); }
 function pkLoad() {
   if (pkCover) return;
-  pkCover = { title: '日本大学院升学 · 咨询资料', student: '', consultant: '', message: '' };
+  pkCover = { extra: '', student: '', consultant: '', message: '' };
   try {
     const raw = localStorage.getItem(pkStoreKey());
     if (raw) {
       const d = JSON.parse(raw);
       if (Array.isArray(d.items)) pkItems = d.items;
-      if (d.cover) pkCover = Object.assign(pkCover, d.cover);
+      if (d.cover) { pkCover = Object.assign(pkCover, d.cover); delete pkCover.title; }   // 旧版的自定义封面标题不再使用
     }
   } catch (e) { /* 隐私模式等读不到时从空资料包开始 */ }
 }
@@ -54,17 +55,63 @@ function pkSave() {
 }
 
 // ── 对外入口：各工具页面调用 ──
-function pkAdd(item) {
+function pkAdd(item, opts) {
   pkLoad();
   const it = Object.assign({ wide: false, include: true }, item, {
     id: 'pk-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
     addedAt: new Date().toISOString(),
   });
-  pkItems.push(it);
+  // 宣传收尾默认排在资料最后：之后再加入的其他内容插在收尾章节之前
+  const firstCommon = pkItems.findIndex(x => x.type === 'common');
+  if (it.type !== 'common' && firstCommon >= 0) pkItems.splice(firstCommon, 0, it); else pkItems.push(it);
   if (it.student && !pkCover.student) pkCover.student = it.student;
   pkSave();
   pkUpdateTabBadge();
+  if (opts && opts.silent) return;
   pkToast(`已加入宣传资料：${it.title}（共 ${pkItems.length} 项）`, true);
+  if (typeof curTab !== 'undefined' && curTab === 'promopack') pkRender();
+}
+
+// ── 宣传收尾：admin「通用宣传」里按领域维护的内容块（表 promo_common），每块作为一章放到资料最后 ──
+let pkCommon = { rows: null, domain: '', off: new Set(), err: '' };   // off = 被点掉（不加入）的块 id
+async function pkCommonLoad() {
+  try {
+    pkCommon.rows = await sbAll('/rest/v1/promo_common?or=(published.is.null,published.is.true)&select=*&order=sort_order.asc,updated_at.asc');
+    pkCommon.err = '';
+  } catch (e) { pkCommon.rows = []; pkCommon.err = e.message; }
+  const doms = pkCommonDomains();
+  if (!doms.includes(pkCommon.domain)) {
+    const mine = [...((teacherData && teacherData.managed_by) || []), ...((teacherData && teacherData.domains) || [])];
+    pkCommon.domain = mine.find(d => doms.includes(d)) || doms[0] || '';
+  }
+  if (typeof curTab !== 'undefined' && curTab === 'promopack') pkRender();
+}
+function pkCommonDomains() {
+  const order = DOMAINS.map(d => d.label), have = [...new Set((pkCommon.rows || []).map(r => r.domain))];
+  return have.sort((a, b) => { const ia = order.indexOf(a), ib = order.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
+}
+function pkCommonSetDomain(d) { pkCommon.domain = d; pkCommon.off = new Set(); pkRender(); }
+function pkCommonToggle(id) { if (pkCommon.off.has(id)) pkCommon.off.delete(id); else pkCommon.off.add(id); pkRender(); }
+function pkCommonHtml() {
+  const chip = (on, label, fn) => `<div class="filter-chip${on ? ' active' : ''}" onclick="${fn}" style="padding:3px 10px;font-size:10px">${label}</div>`;
+  const head = '<div style="font-size:11px;font-weight:600;margin-bottom:8px">🏫 宣传收尾（通用宣传内容）</div>';
+  if (pkCommon.rows === null) return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:10px">${head}<div style="font-size:11px;color:var(--text-3)">读取中…</div></div>`;
+  const doms = pkCommonDomains();
+  if (!doms.length) return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:10px">${head}<div style="font-size:11px;color:var(--text-3)">${pkCommon.err ? '读取失败：' + pkEsc(pkCommon.err) : '还没有已发布的通用宣传内容（admin 可在「宣传管理 → 通用宣传」中维护）'}</div></div>`;
+  const rows = pkCommon.rows.filter(r => r.domain === pkCommon.domain);
+  const n = rows.filter(r => !pkCommon.off.has(r.id)).length;
+  return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:10px">${head}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${doms.map(d => chip(d === pkCommon.domain, pkEsc(d), `pkCommonSetDomain('${pkEsc(d)}')`)).join('')}</div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:5px">点选要放进资料的内容块（高亮 = 加入），每块作为一章，排在资料最后</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${rows.map(r => chip(!pkCommon.off.has(r.id), pkEsc(r.title), `pkCommonToggle('${pkEsc(r.id)}')`)).join('')}</div>
+    <button onclick="pkAddCommon()" ${n ? '' : 'disabled'} style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 14px;cursor:${n ? 'pointer' : 'not-allowed'};opacity:${n ? 1 : .5};font-family:inherit">➕ 加入宣传资料（${n} 块）</button>
+  </div>`;
+}
+function pkAddCommon() {
+  const rows = (pkCommon.rows || []).filter(r => r.domain === pkCommon.domain && !pkCommon.off.has(r.id));
+  if (!rows.length) return;
+  rows.forEach(r => pkAdd({ type: 'common', title: r.title || '（无标题）', html: `<div class="pk-rich">${prMd(r.body)}</div>` }, { silent: true }));
+  pkToast(`已加入 ${rows.length} 章宣传收尾（共 ${pkItems.length} 项）`, true);
   if (typeof curTab !== 'undefined' && curTab === 'promopack') pkRender();
 }
 
@@ -193,6 +240,7 @@ function renderPromoPack(mc) {
   pkLoad();
   if (!pkCover.consultant) pkCover.consultant = pkConsultantName();
   pkRender(mc);
+  if (pkCommon.rows === null) pkCommonLoad();
   // 专业列表跟随 admin 宣传管理（有已发布内容的专业），查完再刷新一次
   if (!prMajorsCache && typeof prAvailableMajors === 'function') prAvailableMajors().then(list => { pkMajorList = list; if (curTab === 'promopack') pkRender(); });
 }
@@ -229,8 +277,8 @@ function pkRender(mc) {
       <div style="${box}">
         ${h2('① 封面信息')}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          ${fld('资料标题', `<input id="pk_c_title" value="${pkEsc(pkCover.title)}" oninput="pkSetCover('title',this.value)" style="${inp}">`, true)}
-          ${fld('学生姓名（可不填）', `<input id="pk_c_student" value="${pkEsc(pkCover.student)}" oninput="pkSetCover('student',this.value)" placeholder="咨询学生姓名" style="${inp}">`)}
+          ${fld('学生姓名（可不填）', `<input id="pk_c_student" value="${pkEsc(pkCover.student)}" oninput="pkSetCover('student',this.value)" placeholder="封面标题：姓名 升学专属方案" style="${inp}">`)}
+          ${fld('标题补充（可不填）', `<input id="pk_c_extra" value="${pkEsc(pkCover.extra)}" oninput="pkSetCover('extra',this.value)" placeholder="显示在封面小标题下方" style="${inp}">`)}
           ${fld('顾问老师', `<input id="pk_c_consultant" value="${pkEsc(pkCover.consultant)}" oninput="pkSetCover('consultant',this.value)" style="${inp}">`)}
           ${fld('封面寄语（可不填）', `<textarea id="pk_c_message" rows="2" oninput="pkSetCover('message',this.value)" placeholder="例：根据面谈内容为你整理了以下资料，有任何问题欢迎随时联系。" style="${inp};resize:vertical;line-height:1.7">${pkEsc(pkCover.message)}</textarea>`, true)}
         </div>
@@ -249,6 +297,7 @@ function pkRender(mc) {
           </div>
           <button id="pk_major_btn" onclick="pkAddMajor()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 14px;cursor:pointer;font-family:inherit">➕ 添加学科介绍</button>
         </div>` : ''}
+        ${pkCommonHtml()}
         ${sources.length ? `<div style="font-size:10px;color:var(--text-3);margin-bottom:6px">其他内容请到对应工具里操作后点「➕ 加入宣传资料」：</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px">${sources.join('')}</div>` : ''}
       </div>
@@ -319,10 +368,12 @@ function pkPreviewOne(id) {
 // ══════════════════════════════════
 // 生成整份资料（封面 + 目录 + 各章节；每章另起一页，出愿名单/进度规划为横版页）
 // ══════════════════════════════════
+// 封面大标题：<学生姓名> 升学专属方案（没填姓名时只有「升学专属方案」）
+function pkCoverTitle() { const n = String(pkCover.student || '').trim(); return n ? `${n} 升学专属方案` : '升学专属方案'; }
 function pkDocTitle() {
   const d = new Date();
   const ds = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-  return `${pkCover.title || '宣传资料'}${pkCover.student ? '_' + pkCover.student : ''}_${ds}`;
+  return `${pkCoverTitle()}_${ds}`;
 }
 
 function pkDocHtml(items, opts) {
@@ -332,8 +383,9 @@ function pkDocHtml(items, opts) {
   const num = i => String(i + 1).padStart(2, '0');
   const cover = !o.cover ? '' : `<section class="pk-page pk-cover">
     <div class="pk-kicker">TRANSFORM EDUCATION · 唯新教育</div>
-    <h1>${pkEsc(pkCover.title || '宣传资料')}</h1>
-    ${pkCover.student ? `<div class="pk-for">为 <b>${pkEsc(pkCover.student)}</b> 同学整理</div>` : ''}
+    <h1>${pkEsc(pkCoverTitle())}</h1>
+    <div class="pk-for">本资料由唯新学院提供</div>
+    ${String(pkCover.extra || '').trim() ? `<div class="pk-extra">${pkEsc(pkCover.extra)}</div>` : ''}
     ${pkCover.message ? `<div class="pk-msg">${pkEsc(pkCover.message).replace(/\n/g, '<br>')}</div>` : ''}
     <div class="pk-toc">
       <div class="pk-toc-h">CONTENTS · 目录</div>
@@ -383,6 +435,7 @@ body { font-family:'Noto Serif SC','Hiragino Sans GB','Microsoft YaHei',serif; c
 .pk-kicker { font-size:10px; letter-spacing:.3em; color:var(--accent); margin-top:30mm; }
 .pk-cover h1 { font-size:30px; font-weight:700; letter-spacing:.04em; margin:12px 0 8px; padding-bottom:16px; border-bottom:2px solid var(--accent); }
 .pk-for { font-size:15px; color:var(--text-2); margin-top:6px; }
+.pk-extra { font-size:12.5px; color:var(--text-3); margin-top:4px; }
 .pk-msg { font-size:12.5px; color:var(--text-2); background:var(--bg); border-left:3px solid var(--accent); padding:12px 16px; margin-top:18px; line-height:2; }
 .pk-toc { margin-top:28px; }
 .pk-toc-h { font-size:10px; letter-spacing:.2em; color:var(--text-3); margin-bottom:8px; }
