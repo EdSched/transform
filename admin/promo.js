@@ -158,6 +158,7 @@ const PROMO_SECTIONS = [
   ['lecturer', '👤 讲师介绍', '每位讲师一条：标题填「姓名＋头衔」（如 徐老师　一桥大学社会学研究科　博士），正文填介绍'],
   ['course', '📚 课程介绍', '每门课一条：标题需与课程安排中的课程名完全一致，老师端才能自动关联当期开课信息'],
   ['common', '🏫 通用宣传', '按领域维护的通用宣传内容（核心理念、师资、实绩数据…），营业老师在宣传资料整合里作为「宣传收尾」加入资料'],
+  ['price', '💴 价目', '课程方案用的价格：大课套餐 / VIP 单价 / TA 助教（营业老师在「宣传相关 → 课程方案」里选用，需勾选「课程方案（含价格）」权限）'],
 ];
 
 async function renderPromoAdminPage(mc) {
@@ -166,13 +167,13 @@ async function renderPromoAdminPage(mc) {
   if (CURRENT_MAJOR) promoMajor = CURRENT_MAJOR;
   else if (!keys.includes(promoMajor)) promoMajor = keys[0] || '';
   mc.innerHTML = '<div class="empty">加载中…</div>';
-  if (promoSection === 'common') pcLoad(); else promoLoad();
+  if (promoSection === 'common') pcLoad(); else if (promoSection === 'price') prcLoad(); else promoLoad();
 }
 
 // 切换板块：通用宣传按领域单独加载，其余板块按专业
 function promoPickSection(k) {
   promoSection = k; promoEditingId = null; pcEditing = null;
-  if (k === 'common') pcLoad(); else if (promoMajor && promoList) promoRenderShell(); else promoLoad();
+  if (k === 'common') pcLoad(); else if (k === 'price') prcLoad(); else if (promoMajor && promoList) promoRenderShell(); else promoLoad();
 }
 async function promoLoad() {
   if(!promoMajor){
@@ -206,7 +207,7 @@ function promoRenderShell() {
   <div class="page-header">
     <div class="section-title">宣传管理</div>
   </div>
-  ${promoSection === 'common' ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
+  ${promoSection === 'price' ? '' : promoSection === 'common' ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
     <span style="font-size:10px;color:var(--text-3)">领域：</span>
     ${pcDomains().map(d => `<div class="filter-chip ${pcDomain===d?'active':''}" onclick="pcDomain='${d}';pcEditing=null;pcImport=null;pcLoad()" style="padding:3px 10px;font-size:11px">${d}</div>`).join('')}
   </div>` : `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
@@ -217,13 +218,13 @@ function promoRenderShell() {
     <span style="font-size:10px;color:var(--text-3)">板块：</span>
     ${PROMO_SECTIONS.map(([k,l]) => `<div class="filter-chip ${promoSection===k?'active':''}" onclick="promoPickSection('${k}')" style="padding:3px 10px;font-size:11px">${l}</div>`).join('')}
   </div>
-  ${promoSection === 'common' ? '' : `<div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:8px 12px;margin-bottom:12px">
+  ${promoSection === 'common' || promoSection === 'price' ? '' : `<div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:8px 12px;margin-bottom:12px">
     <span style="font-size:10px;color:var(--text-3)">对外分享链接（无需登录，仅显示「公开」状态的内容）：</span>
     <code id="promo_share_link" style="font-size:10px;color:var(--text-2);background:var(--bg);padding:2px 8px;border-radius:2px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${location.origin}${location.pathname.replace(/\/admin\/.*$/,'/promo/')}?major=${promoMajor}</code>
     <button onclick="navigator.clipboard.writeText(document.getElementById('promo_share_link').textContent).then(()=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='📋 复制',2000)})" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">📋 复制</button>
   </div>`}
   <div id="promo_body"></div>`;
-  if (promoSection === 'common') pcRender(); else promoRender();
+  if (promoSection === 'common') pcRender(); else if (promoSection === 'price') prcRender(); else promoRender();
 }
 
 function promoEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }

@@ -722,6 +722,7 @@ function renderTeachersPage(mc){
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_lect_info" style="accent-color:var(--accent);width:15px;height:15px">讲师信息查询<span style="font-size:9px;color:var(--text-3)">内部检索讲师档案，可切换展示卡片给客户看/截图</span></label>
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_vip_sales" style="accent-color:var(--accent);width:15px;height:15px">VIP营业规划<span style="font-size:9px;color:var(--text-3)">看到全部 VIP 框架模板，可转分享给上课老师（营业角色）</span></label>
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_promo_pack" style="accent-color:var(--accent);width:15px;height:15px">宣传资料整合<span style="font-size:9px;color:var(--text-3)">把出愿学校/学科介绍/进度规划/讲师卡片/VIP方案合成一份完整 PDF</span></label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_promo_pricing" style="accent-color:var(--accent);width:15px;height:15px">课程方案（含价格）<span style="font-size:9px;color:var(--text-3)">在宣传相关里给学生配带价格的课程方案并加入资料；价目在 宣传管理→价目；需同时勾选「宣传相关」</span></label>
             </div>
           </div>`:''}
           <!-- admission_query row -->
@@ -912,6 +913,7 @@ function cancelEditTeacher(){
     {const _e=document.getElementById('perm_lect_info'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_vip_sales'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_promo_pack'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_promo_pricing'); if(_e)_e.checked=false;}
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
   document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>c.classList.remove('active'));
@@ -937,6 +939,7 @@ function openTeacherManager(){
     {const _e=document.getElementById('perm_lect_info'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_vip_sales'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_promo_pack'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_promo_pricing'); if(_e)_e.checked=false;}
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
   document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>c.classList.remove('active'));
@@ -1046,6 +1049,7 @@ function renderTeacherRows(){
           if(p.promo) perms.push('宣传');
           if(p.lect_info) perms.push('讲师信息');
           if(p.promo_pack) perms.push('资料整合');
+          if(p.promo_pricing) perms.push('课程方案');
           const permsFull=[];
           if(p.booking) permsFull.push(`预约(${(p.booking_types||[]).join('/')||'—'})`);
           if(p.slots) permsFull.push(`时间槽(${(p.slot_types||[]).join('/')||'—'})`);
@@ -1057,6 +1061,7 @@ function renderTeacherRows(){
           if(p.promo) permsFull.push('宣传相关（营业）');
           if(p.lect_info) permsFull.push('讲师信息查询（营业）');
           if(p.promo_pack) permsFull.push('宣传资料整合（营业）');
+          if(p.promo_pricing) permsFull.push('课程方案（含价格）');
           const open=teacherExpandedId===t.id;
           const link=`${base}?tid=${encodeURIComponent(t.id)}`;  // 只带 id，不暴露老师真名（真名由老师端按 id 查出）
           return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
@@ -1111,6 +1116,7 @@ function getPermissionsFromForm(prev){
     progress_plan:_chk('perm_progress_plan',prev.progress_plan),
     vip_sales:_chk('perm_vip_sales',prev.vip_sales),
     promo_pack:_chk('perm_promo_pack',prev.promo_pack),
+    promo_pricing:_chk('perm_promo_pricing',prev.promo_pricing),
     student_mgmt:document.getElementById('perm_student_mgmt').checked,
     guaranteed_only:document.getElementById('perm_guaranteed_only')?.checked||false,
     student_mgmt_items:[...document.querySelectorAll('#perm_student_mgmt_items .filter-chip.active')].map(c=>c.dataset.value),
@@ -1222,6 +1228,7 @@ async function addTeacher(){
     {const _e=document.getElementById('perm_lect_info'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_vip_sales'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_promo_pack'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_promo_pricing'); if(_e)_e.checked=false;}
     renderTeacherList();
   }catch(e){alert('添加失败：'+e.message)}
 }
@@ -1268,6 +1275,7 @@ function openEditTeacher(id){
   {const _e=document.getElementById('perm_progress_plan'); if(_e)_e.checked=!!p.progress_plan;}
   {const _e=document.getElementById('perm_vip_sales'); if(_e)_e.checked=!!p.vip_sales;}
   {const _e=document.getElementById('perm_promo_pack'); if(_e)_e.checked=!!p.promo_pack;}
+  {const _e=document.getElementById('perm_promo_pricing'); if(_e)_e.checked=!!p.promo_pricing;}
   document.getElementById('perm_student_mgmt').checked=!!p.student_mgmt;
   {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.checked=!!p.guaranteed_only;}
   document.querySelectorAll('#perm_student_mgmt_items .filter-chip').forEach(c=>{c.classList.toggle('active',(p.student_mgmt_items||[]).includes(c.dataset.value));});
