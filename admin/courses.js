@@ -1699,6 +1699,7 @@ function acApplyTextMode(){
   const oldRows=acGetRows();
   const lines=text.split('\n').map(l=>l.replace(/\r$/,'')).filter(l=>l.trim());
   const maxCols=Math.max(...lines.map(l=>l.split('\t').length),1);
+  const usedIds=new Set();   // 一个旧行的 id 只能给一条新行，避免两行保存到同一个单回、前一行被覆盖
   const newRows=lines.map((l,i)=>{
     const p=l.split('\t').map(x=>x.trim());
     // 简略格式(<=3列)：按行序对应旧行，只改标题/老师，日期时间回数全保留
@@ -1712,8 +1713,11 @@ function acApplyTextMode(){
       };
     }
     // 完整格式(回数|日期|时间|标题|老师)：每列为空则保留原值，不覆盖
+    // 按回数找旧行；找不到、或者那个旧行的 id 已经给了别的行 → 当作新行（id 留空，保存时新建）
     const num=p[0]||String(i+1);
-    const prev=oldRows.find(r=>String(r.num)===String(num))||oldRows[i]||{};
+    const hit=oldRows.find(r=>String(r.num)===String(num)&&!(r.id&&usedIds.has(r.id)));
+    const prev=hit||{};
+    if(prev.id) usedIds.add(prev.id);
     return {
       id: prev.id||'', num,
       date: (p[1]&&p[1].trim())?normalizeDateStr(p[1]):(prev.date||''),
@@ -1754,6 +1758,8 @@ async function saveAddCourse(){
   if(hasDetails){
     if(!detailRows.length){ alert('单回明细不能为空，至少需要一行课次'); return; }
     for(const r of detailRows){ if(!r.date){ alert(`第「${r.num}」行缺少日期，请补全后再保存`); return; } }
+    const seenIds=new Set();
+    for(const r of detailRows){ if(!r.id) continue; if(seenIds.has(r.id)){ alert('单回表有重复行，请检查'); return; } seenIds.add(r.id); }
     const real=detailRows.filter(r=>!(r.num==='休讲'||r.title==='休讲'));
     var ds=(real.length?real:detailRows).map(r=>r.date).sort();
     firstDate=ds[0];
