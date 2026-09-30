@@ -295,6 +295,46 @@ function termOf(dateStr){
   const s = m<=3?1 : m<=6?4 : m<=9?7 : 10;
   return y+'年'+s+'月期';
 }
+/* 期数的两种写法：大学院等按期「2026年10月期」；学部美术按月「2026年9月」（没有「期」字） */
+function isMonthTerm(t){ return /^\s*\d{4}\s*年\s*\d{1,2}\s*月\s*$/.test(String(t||'')); }
+/* 期数排序键（越大越新）：2026年10月期 / 2026年9月 → 202610 / 202609；上学期≈4月、下学期≈10月 */
+function termSortKey(t){
+  t=String(t||'');
+  const ym=t.match(/(\d{4})\D+(\d{1,2})\s*月/);
+  if(ym) return Number(ym[1])*100 + Number(ym[2]);
+  const y=t.match(/(\d{4})/);
+  const year=y?Number(y[1]):0;
+  if(/下学期|後期|后期/.test(t)) return year*100 + 10;
+  if(/上学期|前期/.test(t))     return year*100 + 4;
+  if(year) return year*100 + 6;
+  return 999999;
+}
+/* YYYYMM 键加减 n 个月 */
+function shiftYM(key, n){
+  let y=Math.floor(key/100), m=key%100 + n;
+  while(m>12){ m-=12; y++; } while(m<1){ m+=12; y--; }
+  return y*100+m;
+}
+/* 「最近」的期数键：期 = 上一期 / 当前期 / 下一期（每期 3 个月，当期起点用 termOf）；月 = 上个月 / 本月 / 下个月 / 下下个月 */
+function recentTermKeys(kind, today){
+  const d=today||new Date();
+  const ds=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  if(kind==='month'){ const cur=d.getFullYear()*100+d.getMonth()+1; return [-1,0,1,2].map(n=>shiftYM(cur,n)); }
+  const cur=termSortKey(termOf(ds));
+  return [-3,0,3].map(n=>shiftYM(cur,n));
+}
+/* 期数下拉框（其他页面用）：分「期」「月（学部美术）」两组，新的在前；某一组为空就不显示该组 */
+function fillTermSelect(sel, terms, placeholder){
+  sel.innerHTML='';
+  if(placeholder) sel.appendChild(opt('', placeholder));
+  const sorted=[...new Set(terms.filter(Boolean))].sort((a,b)=>termSortKey(b)-termSortKey(a) || String(b).localeCompare(String(a)));
+  [['期', sorted.filter(t=>!isMonthTerm(t))], ['月（学部美术）', sorted.filter(isMonthTerm)]].forEach(([label,list])=>{
+    if(!list.length) return;
+    const g=document.createElement('optgroup'); g.label=label;
+    list.forEach(t=>g.appendChild(opt(t,t)));
+    sel.appendChild(g);
+  });
+}
 /* 时长（分钟） */
 function durationMin(s,e){ const p=t=>{const[a,b]=t.split(':').map(Number);return a*60+b;}; return p(e)-p(s); }
 

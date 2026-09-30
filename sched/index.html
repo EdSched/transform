@@ -460,8 +460,7 @@ function tabAssign(){
     '</div>'+
     '<div id="assignTable"></div></div><div id="asForm"></div>';
   render(h);
-  const terms=[...new Set(COURSES.map(c=>c.term).filter(Boolean))].sort().reverse();
-  fillSelect(el('af_term'), terms, v=>v, v=>v, '全部期');
+  fillTermSelect(el('af_term'), COURSES.map(c=>c.term), '全部期');
   fillSelect(el('af_cat'), CATEGORIES, v=>v, v=>v, '全部类别');
   fillSelect(el('af_campus'), ['高马','市谷'], v=>v, v=>v, '全部校区');
   // 恢复上次筛选（操作后不重置）；首次进入默认「全部期」——按周排课靠日期区间定位，不锁某一期
@@ -1527,7 +1526,6 @@ function tabAccounts(){
 
 /* ---------- 课程：筛选 + 编辑 + 删除 ---------- */
 function tabCourses(){
-  const terms=[...new Set(COURSES.map(c=>c.term).filter(Boolean))].sort().reverse();
   const majors=[...new Set(COURSES.map(c=>c.major).filter(Boolean))].sort();
   let h='<div class="card"><h3 style="margin-top:2px">课程（共 '+COURSES.length+'）'+
     '<button class="sm" id="cf_new" style="margin-left:10px">+ 新增课程</button>'+
@@ -1545,7 +1543,7 @@ function tabCourses(){
     '</div>'+
     '<div class="row" style="margin-bottom:10px">'+
       '<div class="field"><label>搜索课名/讲师</label><input id="cf_q" placeholder="关键词"></div>'+
-      '<div class="field"><label>期</label><select id="cf_term"><option value="">全部期</option>'+terms.map(t=>`<option>${esc(t)}</option>`).join('')+'</select></div>'+
+      '<div class="field"><label>期</label><select id="cf_term"></select></div>'+
       '<div class="field"><label>类别</label><select id="cf_cat"></select></div>'+
       '<div class="field"><label>专业</label><select id="cf_major"><option value="">全部专业</option>'+majors.map(m=>`<option>${esc(m)}</option>`).join('')+'</select></div>'+
       '<div class="field"><label>属性</label><select id="cf_type"><option value="">全部属性</option><option>共通课</option><option>专业课</option><option>大课</option></select></div>'+
@@ -1553,6 +1551,7 @@ function tabCourses(){
       '<div class="field"><label>&nbsp;</label><span class="muted" id="cf_count"></span></div>'+
     '</div><div id="coursesTable"></div></div><div id="cEdit"></div>';
   render(h);
+  fillTermSelect(el('cf_term'), COURSES.map(c=>c.term), '全部期');
   fillSelect(el('cf_cat'), CATEGORIES, v=>v, v=>v, '全部类别');
   fillSelect(el('cf_campus'), ['高马','市谷','线上'], v=>v, v=>v, '全部校区');
   // 恢复上次筛选（编辑后不重置）
