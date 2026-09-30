@@ -354,7 +354,7 @@ async function openKeyEditor(k){
   const sc=kk?scopeFromKey(kk):{};
   _keyDraft={k:kk?kk.k:'', domains:(sc.domains||[]).slice(), majors:(sc.majors||[]).slice(), classIds:(sc.classIds||[]).map(String), label:kk?(kk.label||''):''};
   let ov=document.getElementById('keyEditModal');
-  if(!ov){ ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='keyEditModal'; document.body.appendChild(ov); }
+  if(!ov){ ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='keyEditModal'; ov.style.zIndex='1000'; document.body.appendChild(ov); }
   ov.classList.add('open'); renderKeyEditor();
 }
 function closeKeyEditor(){ const ov=document.getElementById('keyEditModal'); if(ov) ov.classList.remove('open'); _keyDraft=null; }
