@@ -96,7 +96,7 @@ function handleCourseImportFile(input){
 
         const majorStr=String(row['专业']||'').trim();
         const majors=detectMajorsFromField(majorStr);
-        const period=String(row['期数']||'').trim();
+        const period=stripPeriodYear(String(row['期数']||'').trim());
         const course_type=String(row['课程属性']||'').trim();
         const teacher=String(row['讲师']||'').trim();
         const campus=String(row['校区']||'').trim();
@@ -1235,7 +1235,7 @@ function renderPublishModal(){
   // 只列还有课没上完的期（已全部结课的期不再显示，「全部」里仍可看到）
   const allPeriods=[...new Map(cachedCourses
     .filter(c=>c.period&&c.first_session_date&&!courseIsEnded(c))
-    .map(c=>{const year=c.first_session_date.slice(0,4);const key=`${year}年${c.period}`;return[key,key]})
+    .map(c=>{const key=periodKeyOf(c);return[key,key]})
   ).values()].sort();
   if(publishPeriodFilter!=='all'&&!allPeriods.includes(publishPeriodFilter)) publishPeriodFilter='all';
 
@@ -1257,8 +1257,7 @@ function renderPublishModal(){
     courses=courses.filter(c=>(c.major||[]).some(m=>ml.includes(m)));
   }
   if(publishPeriodFilter!=='all'){
-    const[y,p]=publishPeriodFilter.match(/(\d{4})年(.+)/)?.slice(1)||[];
-    if(y&&p) courses=courses.filter(c=>c.period===p&&c.first_session_date?.startsWith(y));
+    courses=courses.filter(c=>c.period&&c.first_session_date&&periodKeyOf(c)===publishPeriodFilter);
   }
   // deduplicate
   const seen=new Set();
@@ -1280,7 +1279,7 @@ function renderPublishModal(){
             return `<tr>
               <td><input type="checkbox" class="pub-course-cb" value="${c.id}" style="accent-color:var(--accent)" ${isConfirmed?'checked':''}></td>
               <td style="font-size:12px;font-weight:600">${c.name}</td>
-              <td style="font-size:11px">${year?year+'年':''}${c.period||''}</td>
+              <td style="font-size:11px">${c.first_session_date?periodKeyOf(c):(c.period||'')}</td>
               <td style="font-size:11px">${(c.major||[]).map(m=>MAJORS[m]||m).join('・')}</td>
               <td style="font-size:11px">${c.course_type||''}</td>
               <td>${statusLabel}</td>
@@ -1786,7 +1785,7 @@ async function saveAddCourse(){
   const editingId=document.getElementById('ac_editing_id').value;
 
   const courseData={
-    name,major:majors,period,
+    name,major:majors,period:stripPeriodYear(period),   // 学部美术只存月份（9月），年份由首回日期决定
     course_type:document.getElementById('ac_course_type').value,
     teacher:document.getElementById('ac_teacher').value.trim(),
     campus:document.getElementById('ac_campus').value.trim(),
@@ -2192,7 +2191,7 @@ async function confirmCopyPeriod(){
     // 用生成的课次首尾日期设置 start_date/end_date（sched 靠这两个显示日期区间）
     const newStart=dates[0];
     const newEnd=dates[dates.length-1];
-    const newCourse={...src,id:newId,period:newPeriod,first_session_date:newFirstDate,start_date:newStart,end_date:newEnd,period_override:null};
+    const newCourse={...src,id:newId,period:stripPeriodYear(newPeriod),first_session_date:newFirstDate,start_date:newStart,end_date:newEnd,period_override:null};
     delete newCourse.created_at;
     const res=await sb('/rest/v1/courses','POST',[newCourse]);
     cachedCourses.push(Array.isArray(res)?res[0]:newCourse);
@@ -2407,7 +2406,7 @@ function renderSchedulePage(mc){
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">课程</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
         <div class="filter-chip${schedCourseFilter==='all'?' active':''}" onclick="setSchedCourse('all',this)" style="font-size:11px;padding:3px 10px">全部</div>
-        ${filteredCourses.slice(0,20).map(c=>`<div class="filter-chip${schedCourseFilter===c.id?' active':''}" onclick="setSchedCourse('${c.id}',this)" style="font-size:11px;padding:3px 10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.name}（${c.first_session_date?.slice(0,4)||''}年${c.period||''}）">${c.name}</div>`).join('')}
+        ${filteredCourses.slice(0,20).map(c=>`<div class="filter-chip${schedCourseFilter===c.id?' active':''}" onclick="setSchedCourse('${c.id}',this)" style="font-size:11px;padding:3px 10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.name}（${c.first_session_date?periodKeyOf(c):(c.period||'')}）">${c.name}</div>`).join('')}
       </div>
     </div>
   </div>
@@ -2433,7 +2432,7 @@ function renderScheduleSlots(slots){
       const course=cachedCourses.find(c=>c.name===courseName)||{};
       const color=courseColor(courseName,course);
       const yearStr=course.first_session_date?.slice(0,4)||'';
-      const periodStr=course.period||'';
+      const periodStr=course.first_session_date?periodKeyOf(course):(course.period||'');
       // 按日期去重
       const byDate={};
       courseSlots.forEach(slot=>{
@@ -2451,7 +2450,7 @@ function renderScheduleSlots(slots){
         <div style="background:${color.bg};color:${color.text};padding:8px 14px;display:flex;align-items:center;justify-content:space-between">
           <div style="display:flex;align-items:center;gap:8px">
             <span style="font-size:12px;font-weight:600">${courseName}</span>
-            ${yearStr?`<span style="font-size:10px;opacity:.6;background:rgba(0,0,0,.08);border-radius:2px;padding:1px 5px">${yearStr}年${periodStr}</span>`:''}
+            ${yearStr?`<span style="font-size:10px;opacity:.6;background:rgba(0,0,0,.08);border-radius:2px;padding:1px 5px">${periodStr}</span>`:''}
             <span style="font-size:10px;opacity:.7">已确认 ${confirmedCount}/${totalCount} 回</span>
             ${allConfirmed?`<span style="font-size:10px;background:rgba(42,158,106,.25);color:#1a5a3a;border-radius:2px;padding:1px 6px;font-weight:600">✓ 排课完成</span>`:''}
           </div>
@@ -2619,8 +2618,7 @@ function csPopulatePeriods(){
     else if(csTypeFilter==='VIP') courses=courses.filter(c=>c.course_type?.includes('VIP'));
   }
   const periods=[...new Map(courses.filter(c=>c.period&&c.first_session_date).map(c=>{
-    const year=c.first_session_date.slice(0,4);
-    const key=`${year}年${c.period}`;
+    const key=periodKeyOf(c);
     return [key,key];
   })).values()].sort();
   const sel=document.getElementById('cs_period');
@@ -2642,12 +2640,11 @@ function csFilterCourses(){
   }
   const periodVal=document.getElementById('cs_period').value;
   if(periodVal){
-    const [filterYear,filterPeriod]=periodVal.match(/(\d{4})年(.+)/)?.slice(1)||[];
-    if(filterYear&&filterPeriod) courses=courses.filter(c=>c.period===filterPeriod&&c.first_session_date?.startsWith(filterYear));
+    courses=courses.filter(c=>c.period&&c.first_session_date&&periodKeyOf(c)===periodVal);
   }
   const sel=document.getElementById('cs_course');
   sel.innerHTML=courses.length
-    ?courses.map(c=>`<option value="${c.id}">${c.name}（${c.first_session_date?.slice(0,4)||''}年${c.period||''}）</option>`).join('')
+    ?courses.map(c=>`<option value="${c.id}">${c.name}（${c.first_session_date?periodKeyOf(c):(c.period||'')}）</option>`).join('')
     :'<option value="">暂无匹配课程</option>';
   onCreateSlotCourseChange();
 }
@@ -2767,7 +2764,7 @@ function openScheduleSummary(courseName){
   const course=cachedCourses.find(c=>c.name===courseName)||{};
   const year=course.first_session_date?.slice(0,4)||'';
   const uniqueDates=[...new Map(slots.map(s=>[s.session_date,s])).values()];
-  document.getElementById('scheduleSummarySub').textContent=`${courseName}\u3000${year}年${course.period||''}\u3000共${uniqueDates.length}课次`;
+  document.getElementById('scheduleSummarySub').textContent=`${courseName}\u3000${course.first_session_date?periodKeyOf(course):(course.period||'')}\u3000共${uniqueDates.length}课次`;
   arrangementDraft={};
   // 只恢复本次排课汇总手动确认的（不从course_sessions读旧数据）
   renderSummaryBody(slots,courseName);
