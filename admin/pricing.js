@@ -39,8 +39,7 @@ const prcBtn = (label, fn, extra) => `<button class="btn btn-outline btn-sm" onc
 
 // 领域视角下只显示本领域的大课套餐（VIP 单价 / TA 为通用价目，全部显示）
 function prcVisiblePk() {
-  const lock = CURRENT_DOMAIN && CURRENT_DOMAIN !== 'all' ? CURRENT_DOMAIN : '';
-  return lock ? prcPk.filter(p => p.track === lock) : prcPk;
+  return scopeAll() ? prcPk : prcPk.filter(p => scopeHasDomain(p.track));   // 没有专业的东西：只有完整选中的领域才算
 }
 
 function prcRender() {
@@ -126,9 +125,10 @@ function prcFormHtml() {
   const wrap = inner => `<div style="border:1px solid var(--accent);border-radius:4px;padding:14px;margin-bottom:14px;background:var(--bg)">${head}${inner}${foot}</div>`;
   const inp = (fid, val, ph, type) => `<input id="${fid}" ${type ? `type="${type}" step="any"` : ''} value="${prcE(val == null ? '' : val)}" placeholder="${prcE(ph || '')}" style="${PRC_INP}">`;
   if (kind === 'pk') {
-    const tracks = [...new Set(DOMAINS.map(d => d.label).concat(cur.track ? [cur.track] : []))];
+    const tracks = [...new Set(DOMAINS.map(d => d.label).filter(d => scopeDomainOnly(d)).concat(cur.track ? [cur.track] : []))];
+    const defTrack = cur.track || viewLockDomain() || (scopeAll() ? '学部理科' : (tracks.length === 1 ? tracks[0] : ''));   // 组合范围：有多个可选领域时必须自己选
     return wrap(`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">
-      <div>${prcLbl('类型（领域）')}<select id="prc_track" style="${PRC_INP}">${tracks.map(t => `<option value="${prcE(t)}" ${(cur.track || (CURRENT_DOMAIN && CURRENT_DOMAIN !== 'all' ? CURRENT_DOMAIN : '学部理科')) === t ? 'selected' : ''}>${prcE(t)}</option>`).join('')}</select></div>
+      <div>${prcLbl('类型（领域）')}<select id="prc_track" style="${PRC_INP}">${defTrack ? '' : '<option value="">请选择领域</option>'}${tracks.map(t => `<option value="${prcE(t)}" ${defTrack === t ? 'selected' : ''}>${prcE(t)}</option>`).join('')}</select></div>
       <div>${prcLbl('套餐名')}${inp('prc_name', cur.name, '例：EJU半年冲刺课程')}</div>
       <div>${prcLbl('价格（万日元）')}${inp('prc_price', cur.price_man_yen, '例：45', 'number')}</div>
       <div>${prcLbl('周期 / 说明')}${inp('prc_period', cur.period, '例：约六个月（物理、化学、生物3选2）')}</div>
@@ -193,6 +193,7 @@ async function prcSave() {
   if (kind === 'pk') {
     const price = parseFloat(v('prc_price'));
     if (isNaN(price)) { alert('请填写价格（万日元）'); return; }
+    if (!v('prc_track')) { alert('请选择领域'); return; }
     rec = { track: v('prc_track'), name, price_man_yen: price, period: v('prc_period'), included: prcInc.filter(r => r.item.trim()).map(r => ({ group: r.group.trim(), item: r.item.trim(), mark: r.mark })) };
   } else if (kind === 'vip') {
     const yen = parseInt(v('prc_yen'));

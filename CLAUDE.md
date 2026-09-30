@@ -53,6 +53,9 @@ Sensis 经常在多个窗口/对话里同时改同一批文件，**已经多次�
   - 学生能登录需要三样都在：`students` 行、`student_login` 行、`auth.users` 账号。
   - **任何写入/修改学生查询码的代码，都必须同时 upsert `student_login`**（见 `admin/students.js` 的 `syncStudentLogin`）。
 - 领域访问链接 `admin/?k=<key>`：链接即登录，无密码，走 `<k>@access.local`。
+  - 链接的范围 = 完整领域（`domains`，可多个）＋ 单独专业（`majors`，可跨领域）＋ 班级（`class_ids`），三部分取并集；登录后存进 `VIEW_SCOPE`（`shared/constants.js`）。
+  - **页面按范围过滤一律调用 `scopeCourse(c)` / `scopeStudent(s)` / `scopeMajor(key)` / `scopeDomainOnly(dom)` / `scopeDomainList()` 等函数，不要再比较 `CURRENT_DOMAIN` 字符串**（组合范围时它是 `'multi'`；要"正好一个领域"用 `viewLockDomain()`）。
+  - 组合范围的链接里新建课程 / 学生 / 班级 / 价目套餐等，领域和专业下拉只列范围内的，且必须明确选择。
 - 所有做 Auth 登录的页面都必须加载 supabase-js：先 jsdelivr，再本仓库副本 `shared/vendor/supabase.min.js` 兜底（国内/微信里 jsdelivr 时通时不通，加载失败会表现为"页面空白/没数据"）。
 - 已开启 RLS：`students`、`student_login`、`teachers`、`teacher_profiles`、`periods`、`monthly_reviews`、`bookings`（学生只能读/新增自己 `student_id` 的预约，新同学匿名只能新增 `student_id` 为空的；学生改自己预约走 `rpc/student_patch_booking`，匿名统计名额走 `rpc/slot_booking_counts`）等。
   - 给新表开 RLS 前：先 `select * from pg_policies where tablename='xxx'` 查有没有遗留的 `public all` 宽松策略；先确认前端/登录流程依赖哪条读取路径；每一步都附回滚语句 `alter table ... disable row level security;`。

@@ -16,8 +16,9 @@ function clsEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').re
 function classById(id) { return CLASSES.find(c => String(c.id) === String(id)) || null; }
 // 当前领域视角下的班级（总览=全部；领域视角=本领域 + 没填领域的）
 function classesInView(includeInactive) {
+  // 范围内的班级：总览全部；所属领域完整选中，或班级本身被单独选中；没填领域的班级在有完整领域的范围里也显示（和以前一样）
   return CLASSES.filter(c => (includeInactive || c.active !== false) &&
-    (!CURRENT_DOMAIN || CURRENT_DOMAIN === 'all' || !c.domain || c.domain === CURRENT_DOMAIN));
+    (scopeAll() || scopeClass(c) || (!c.domain && VIEW_SCOPE.domains.length > 0)));
 }
 function classNamesOf(ids) { return _arrOf(ids).map(id => (classById(id) || {}).name).filter(Boolean); }
 function classTagsHtml(ids) {
@@ -34,7 +35,8 @@ function classChipsHtml(selectedIds, onClickJs, list) {
   }).join('');
 }
 function clsDefaultDomain() {
-  if (CURRENT_DOMAIN && CURRENT_DOMAIN !== 'all') return CURRENT_DOMAIN;
+  if (viewLockDomain()) return viewLockDomain();
+  if (CURRENT_DOMAIN === 'multi') { const l = scopeDomainList(); return l.length === 1 ? l[0] : ''; }   // 组合范围：只有一个选项才自动选中，否则必须自己选
   const art = (typeof DOMAINS !== 'undefined' ? DOMAINS : []).find(d => isGakubuArtDomain(d.label));
   return art ? art.label : '';
 }
@@ -59,8 +61,8 @@ function clsRender() {
   const box = document.getElementById('clsBox'); if (!box) return;
   const list = classesInView(true);
   const inp = 'font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit';
-  const doms = (typeof DOMAINS !== 'undefined' ? DOMAINS : []).map(d => d.label);
-  const lockDom = CURRENT_DOMAIN && CURRENT_DOMAIN !== 'all';
+  const doms = CURRENT_DOMAIN === 'multi' ? scopeDomainList() : (typeof DOMAINS !== 'undefined' ? DOMAINS : []).map(d => d.label);
+  const lockDom = !!viewLockDomain();
   box.innerHTML = `
     <div style="display:flex;align-items:center;margin-bottom:10px"><div style="font-size:14px;font-weight:600;flex:1">🏷 班级管理</div>
       <button onclick="clsClose()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-3)">×</button></div>
@@ -79,7 +81,7 @@ function clsRender() {
     }).join('') : '<div style="font-size:12px;color:var(--text-3);padding:10px 0">还没有班级</div>'}
     <div style="display:flex;gap:6px;align-items:center;margin-top:12px">
       <input id="cls_new_name" placeholder="新班级名，例：纯艺设计班" style="${inp};flex:1;min-width:0" onkeydown="if(event.key==='Enter')clsAdd()">
-      ${lockDom ? '' : `<select id="cls_new_domain" style="${inp}">${doms.map(d => `<option ${d === clsDefaultDomain() ? 'selected' : ''}>${clsEsc(d)}</option>`).join('')}</select>`}
+      ${lockDom ? '' : `<select id="cls_new_domain" style="${inp}">${CURRENT_DOMAIN === 'multi' && doms.length > 1 ? '<option value="">选择领域</option>' : ''}${doms.map(d => `<option ${d === clsDefaultDomain() ? 'selected' : ''}>${clsEsc(d)}</option>`).join('')}</select>`}
       <button class="btn btn-primary btn-sm" onclick="clsAdd()">＋ 新建</button>
     </div>
     <div id="cls_msg" style="font-size:11px;color:var(--danger);min-height:14px;margin-top:6px"></div>`;
@@ -88,6 +90,7 @@ async function clsAdd() {
   const name = ((document.getElementById('cls_new_name') || {}).value || '').trim();
   if (!name) return;
   const domain = (document.getElementById('cls_new_domain') || {}).value || clsDefaultDomain() || null;
+  if (CURRENT_DOMAIN === 'multi' && !domain) { const m = document.getElementById('cls_msg'); if (m) m.textContent = '请先选择班级所属的领域'; return; }
   const row = { id: `cls-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name, domain, sort_order: CLASSES.length + 1, active: true };
   try { await sb('/rest/v1/classes', 'POST', row); CLASSES.push(row); clsRender(); }
   catch (e) { const m = document.getElementById('cls_msg'); if (m) m.textContent = '保存失败：' + e.message + '（请确认已执行 SQL）'; }
@@ -203,7 +206,7 @@ function acMemberRender() {
   const box = document.getElementById('ac_member_box'); if (!box) return;
   const mode = (document.getElementById('ac_member_mode') || {}).value || 'class';
   const chips = document.getElementById('ac_class_chips');
-  if (chips) chips.innerHTML = mode === 'class' ? classChipsHtml(acClassPick, id => `acClassToggle('${clsEsc(id)}')`) + (acClassPick.length ? '' : '<div style="font-size:11px;color:#a0521a;margin-top:2px">请选择班级：班级里的在读学生会自动成为这门课的成员</div>') : `<span style="font-size:11px;color:var(--text-3)">${mode === 'list' ? '保存后到「课程清理 → 👥 学生成员」里点选名单' : '同专业在读学生（不含纯VIP）'}</span>`;
+  if (chips) chips.innerHTML = mode === 'class' ? classChipsHtml(acClassPick, id => `acClassToggle('${clsEsc(id)}')`, (CURRENT_DOMAIN === 'multi' && acCurDomain()) ? classesInView().filter(c => !c.domain || c.domain === acCurDomain()) : undefined) + (acClassPick.length ? '' : '<div style="font-size:11px;color:#a0521a;margin-top:2px">请选择班级：班级里的在读学生会自动成为这门课的成员</div>') : `<span style="font-size:11px;color:var(--text-3)">${mode === 'list' ? '保存后到「课程清理 → 👥 学生成员」里点选名单' : '同专业在读学生（不含纯VIP）'}</span>`;
 }
 function acClassToggle(id) {
   id = String(id);

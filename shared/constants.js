@@ -35,6 +35,95 @@ let CURRENT_DOMAIN = '';
 // CURRENT_MAJOR：专业锁。空=不锁（看整个领域）；有值=锁定到某专业（专业钥匙用户）。
 // 与 CURRENT_DOMAIN 并列的全局锁，任何页面需要时按它过滤即可（先课程页，以后可扩展）。
 let CURRENT_MAJOR = '';
+
+// ── 访问范围 VIEW_SCOPE（访问链接可以组合：多个完整领域 + 单独专业 + 班级，三部分取并集）──
+//  domains ：完整领域——这个领域的所有东西都能看到（含没有专业的东西）
+//  majors  ：单独专业（可跨领域）——只看到这些专业的东西，没有专业的东西不显示
+//  classIds：班级——只看到属于这些班级的东西（班级成员学生、按班级编入的课程）
+// 三个都空 = 总览（管理员）。管理员自己在中枢切换视角时：选一个领域 → domains=[它]；总览 → 全空。
+// 所有页面请调用下面的 scope* 函数，不要再各自比较 CURRENT_DOMAIN 字符串。
+// CURRENT_DOMAIN / CURRENT_MAJOR 仍保留（兼容旧代码）：
+//   范围正好是一个完整领域 → CURRENT_DOMAIN = 该领域；正好是一个专业 → CURRENT_DOMAIN = 该专业所属领域、CURRENT_MAJOR = 该专业；
+//   总览 → 'all'；其他任何组合 → CURRENT_DOMAIN = 'multi'（这时凡是比较 CURRENT_DOMAIN 的地方都必须改用 scope* 函数）
+let VIEW_SCOPE = { domains: [], majors: [], classIds: [] };
+function setViewScope(sc) {
+  const uniq = a => [...new Set((a || []).map(String).filter(Boolean))];
+  VIEW_SCOPE = { domains: uniq(sc && sc.domains), majors: uniq(sc && sc.majors), classIds: uniq(sc && sc.classIds) };
+  const { domains, majors, classIds } = VIEW_SCOPE;
+  CURRENT_MAJOR = '';
+  if (!domains.length && !majors.length && !classIds.length) CURRENT_DOMAIN = 'all';
+  else if (domains.length === 1 && !majors.length && !classIds.length) CURRENT_DOMAIN = domains[0];
+  else if (!domains.length && majors.length === 1 && !classIds.length) {
+    CURRENT_MAJOR = majors[0];
+    CURRENT_DOMAIN = MAJOR_DOMAIN[majors[0]] || (sc && sc.domainHint) || 'multi';   // 旧的专业链接：领域 = 该专业所属领域
+  } else CURRENT_DOMAIN = 'multi';
+  return VIEW_SCOPE;
+}
+// 当前是不是「正好一个领域」的视角：是则返回该领域名；总览 / 组合范围（'multi'）返回 ''。
+// 原来写成 `CURRENT_DOMAIN && CURRENT_DOMAIN !== 'all' ? CURRENT_DOMAIN : ''` 的地方都改用它（'multi' 不是领域名）
+function viewLockDomain() { return (CURRENT_DOMAIN && CURRENT_DOMAIN !== 'all' && CURRENT_DOMAIN !== 'multi') ? CURRENT_DOMAIN : ''; }
+// 总览（没有范围限制）
+function scopeAll() { return !VIEW_SCOPE.domains.length && !VIEW_SCOPE.majors.length && !VIEW_SCOPE.classIds.length; }
+// 这个领域是不是「完整选中」
+function scopeHasDomain(dom) { return !!dom && VIEW_SCOPE.domains.includes(dom); }
+// 专业在范围内 = 所属领域完整选中，或这个专业被单独选中；分组代码（社会人文）按成员展开
+function scopeMajor(key) {
+  if (scopeAll()) return true;
+  if (!key) return false;
+  if (typeof MAJOR_GROUPS !== 'undefined' && MAJOR_GROUPS[key]) return VIEW_SCOPE.majors.includes(key) || MAJOR_GROUPS[key].some(scopeMajor);
+  return scopeHasDomain(MAJOR_DOMAIN[key]) || VIEW_SCOPE.majors.includes(key);
+}
+// 课程在范围内 = 领域完整选中；或任一专业在范围内；或 class_ids 和范围班级有交集
+function scopeCourse(c) {
+  if (scopeAll()) return true;
+  if (!c) return false;
+  if (c.domain && scopeHasDomain(c.domain)) return true;
+  const ms = Array.isArray(c.major) ? c.major : (c.major ? [c.major] : []);
+  if (ms.some(scopeMajor)) return true;
+  return VIEW_SCOPE.classIds.length > 0 && courseClassIds(c).some(id => VIEW_SCOPE.classIds.includes(id));
+}
+// 学生在范围内 = 主专业 / 附加专业任一在范围内；或学生班级和范围班级有交集
+function scopeStudent(st) {
+  if (scopeAll()) return true;
+  if (!st) return false;
+  const ms = [st.major, ...(Array.isArray(st.extra_majors) ? st.extra_majors : [])].filter(Boolean);
+  if (ms.some(scopeMajor)) return true;
+  return VIEW_SCOPE.classIds.length > 0 && studentClassIds(st).some(id => VIEW_SCOPE.classIds.includes(id));
+}
+// 给「没有专业的东西」用（通用宣传、价目、班级列表、无专业课程等）：只有完整领域选中才算
+function scopeDomainOnly(dom) { return scopeAll() || scopeHasDomain(dom); }
+// 班级在范围内：所属领域完整选中，或班级被单独选中
+function scopeClass(cls) {
+  if (scopeAll()) return true;
+  if (!cls) return false;
+  return scopeHasDomain(cls.domain) || VIEW_SCOPE.classIds.includes(String(cls.id));
+}
+// 范围涉及的领域（完整领域 + 单独专业 / 班级所属的领域），按 DOMAINS 顺序；下拉框用
+function scopeDomainList() {
+  const order = DOMAINS.map(d => d.label);
+  if (scopeAll()) return order.slice();
+  const set = new Set(VIEW_SCOPE.domains);
+  VIEW_SCOPE.majors.forEach(m => { const d = (typeof MAJOR_GROUPS !== 'undefined' && MAJOR_GROUPS[m]) ? MAJOR_DOMAIN[MAJOR_GROUPS[m][0]] : MAJOR_DOMAIN[m]; if (d) set.add(d); });
+  VIEW_SCOPE.classIds.forEach(id => { const c = (typeof classById === 'function') ? classById(id) : null; if (c && c.domain) set.add(c.domain); });
+  return [...set].sort((a, b) => { const ia = order.indexOf(a), ib = order.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
+}
+// 某个领域下，范围内可选的专业：领域完整选中 = 该领域全部专业；否则只有被单独选中的专业
+function scopeMajorsIn(dom) {
+  const all = (typeof allMajorKeys === 'function' ? allMajorKeys() : Object.keys(MAJORS)).filter(k => MAJOR_DOMAIN[k] === dom);
+  return scopeAll() || scopeHasDomain(dom) ? all : all.filter(k => VIEW_SCOPE.majors.includes(k));
+}
+// 当前视角是不是「只有学部美术」（课程页的期数按月、导出月课表用美术 logo 等）
+function viewIsArt() { if (scopeAll()) return false; const ds = scopeDomainList(); return ds.length > 0 && ds.every(isGakubuArtDomain); }
+// 范围摘要（顶栏 / 链接列表）：大学院美术 ＋ 表象文化 ＋ 班级：纯艺设计班
+function scopeSummary(sc, opts) {
+  sc = sc || VIEW_SCOPE;
+  const parts = [];
+  (sc.domains || []).forEach(d => parts.push(d));
+  (sc.majors || []).forEach(m => parts.push(MAJORS[m] || m));
+  (sc.classIds || []).forEach(id => { const c = (typeof classById === 'function') ? classById(id) : null; parts.push(c ? c.name : id); });
+  if (!parts.length) return (opts && opts.emptyText) || '总览·全部领域';
+  return parts.join(' ＋ ');
+}
 // MAJOR_DOMAIN：专业 key → 所属领域。
 // 初始给 5 个写死的核心专业兜底 domain（都属大学院文科），保证 DB 未加载完/加载失败时领域也不错位；
 // loadMajorsFromDB() 会用 DB majors.domain 覆盖/补充，日常修改一律走 DB，此处不锁死。
@@ -47,8 +136,7 @@ let MAJOR_DOMAIN = {
 };
 // 判断某专业是否属于当前视角领域（总览时永远 true）
 function majorInCurrentDomain(key) {
-  if (!CURRENT_DOMAIN || CURRENT_DOMAIN === 'all') return true;
-  return MAJOR_DOMAIN[key] === CURRENT_DOMAIN;
+  return scopeMajor(key);   // 领域完整选中，或该专业被单独选中（总览时永远 true）
 }
 // 学部判定：专业所属领域标签以「学部」开头（MAJOR_DOMAIN 由 DB 加载），兜底看 major key 前缀 gakubu_
 // 学部学生的「计划书」= 志望理由书（按志望校逐校写），与大学院的研究计划书区分
@@ -100,29 +188,14 @@ function renderRiyuView(draft, plans, esc){
 // 学生的完整专业 = major(主) + extra_majors(附加，如日语/英语)。
 // 只要任一专业属于当前视角（领域或专业锁），学生就可见——支持跨领域学生在多个领域被看到。
 function studentInCurrentView(student) {
-  if (!CURRENT_DOMAIN || CURRENT_DOMAIN === 'all') {
-    if (!CURRENT_MAJOR) return true; // 总览无锁：全部可见
-  }
-  if (!student) return false;
-  const majors = [];
-  if (student.major) majors.push(student.major);
-  (student.extra_majors || []).forEach(m => majors.push(m));
-  // 主专业若是分组代码（社会人文组），展开成成员一起判断
-  const expanded = [];
-  majors.forEach(m => {
-    if (typeof MAJOR_GROUPS !== 'undefined' && MAJOR_GROUPS[m]) expanded.push(...MAJOR_GROUPS[m]);
-    else expanded.push(m);
-  });
-  return expanded.some(m => majorInCurrentView(m));
+  return scopeStudent(student);   // 主专业 / 附加专业任一在范围内（分组代码按成员展开），或学生班级在范围内
 }
 
 // 统一视角判断：某专业是否在「当前登录视角」内（跟随链接：领域链接=看整个领域；专业链接=只看该专业）
 // 所有功能页（预约/时间槽/出勤等）都用它做数据过滤，标准一致。
 // 空 major 的处理由调用方决定（如学部无专业课靠 domain 显示）。
 function majorInCurrentView(major) {
-  if (CURRENT_MAJOR) return major === CURRENT_MAJOR;       // 专业链接：锁定该专业
-  if (!CURRENT_DOMAIN || CURRENT_DOMAIN === 'all') return true; // 总览：全部可见
-  return majorInCurrentDomain(major);                       // 领域链接：该专业属于当前领域
+  return scopeMajor(major);
 }
 
 // ── 专业派生工具（单一数据源；新增专业只需写入 DB majors 表，即可自动流通全站）──
@@ -166,15 +239,14 @@ function expandMajorFilter(key) {
 // 筛选栏 chip 顺序：经营 经济 [社会人文组] 社会 新传 福祉 …新增专业追加末尾
 //   opts.includeAll=true 时在最前面加入 'all'
 function majorFilterKeys(opts = {}) {
-  // 专业锁（专业钥匙用户）：只显示锁定的那一个专业，不能切换
-  if (CURRENT_MAJOR) return [CURRENT_MAJOR];
   let ordered = ['keiei', 'keizai', 'shakai_group', 'shakai', 'shinpan', 'fukushi'];
   allMajorKeys().forEach(k => { if (!ordered.includes(k)) ordered.push(k); });
-  // 领域视角过滤：非总览时，只保留属于当前领域的专业（shakai_group 组只要有成员在领域内就保留）
-  if (CURRENT_DOMAIN && CURRENT_DOMAIN !== 'all') {
+  // 范围过滤：非总览时，只保留范围内的专业（领域完整选中的全部专业 + 被单独选中的专业）；
+  // 社会人文组只在成员所属领域完整选中时才保留（只单独选了某一个成员专业时不出现组）
+  if (!scopeAll()) {
     ordered = ordered.filter(k => {
-      if (k === 'shakai_group') return SHAKAI_GROUP.some(m => majorInCurrentDomain(m));
-      return majorInCurrentDomain(k);
+      if (k === 'shakai_group') return SHAKAI_GROUP.some(m => scopeHasDomain(MAJOR_DOMAIN[m]));
+      return scopeMajor(k);
     });
   }
   return opts.includeAll ? ['all', ...ordered] : ordered;
@@ -1201,12 +1273,11 @@ const SCHOOL_LEVEL_META = { 1:{t:'冲刺',c:'#c0392b'}, 2:{t:'匹配',c:'#b8860b
 // 规则：中枢台(all)显示全部；领域视角下 = 归该领域管(managed_by) 或 负责该领域专业(majors)。
 // 没设 managed_by 的老师 → 只在中枢台出现，不进任何领域视角（符合"归谁管没选就只在中枢显示"）。
 function teacherInView(t){
-  const dom = (typeof CURRENT_DOMAIN!=='undefined') ? CURRENT_DOMAIN : 'all';
-  const maj = (typeof CURRENT_MAJOR!=='undefined') ? CURRENT_MAJOR : '';
-  if(!dom || dom==='all') return true;                       // 中枢台：显示全部老师
-  if(maj) return (t.majors||[]).includes(maj);               // 专业锁：只看负责该专业的
-  // 领域视角：严格只认「归谁管」(managed_by)。没设 managed_by 的老师 → 不在任何领域视角出现，只在中枢台。
-  return (t.managed_by||[]).includes(dom);
+  if(scopeAll()) return true;                                                       // 中枢台：显示全部老师
+  // 完整领域：严格只认「归谁管」(managed_by)。没设 managed_by 的老师 → 不在任何领域视角出现，只在中枢台。
+  if((t.managed_by||[]).some(scopeHasDomain)) return true;
+  // 单独专业：负责该专业的老师
+  return (t.majors||[]).some(m => VIEW_SCOPE.majors.includes(m));
 }
 function schoolLevelHtml(lv){ const m=SCHOOL_LEVEL_META[lv]; return m ? `<span style="color:${m.c};font-weight:600">${m.t}</span>` : ''; }
 function isSchoolFailed(v) { return SCHOOL_FAILED_STATUSES.includes(v); }

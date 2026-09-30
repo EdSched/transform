@@ -2,7 +2,7 @@
 // admin 已改为 Supabase 邮箱免密登录，原明文密码已移除
 
 // 当前访问钥匙（从 URL ?k=xxx 解析并查库）。null=按老方式(admin密码→中枢台)
-let ACCESS_KEY=null; // {k, password, domain, is_admin, label, active}
+let ACCESS_KEY=null; // {k, password, domain, major(旧), domains[], majors[], class_ids[], is_admin, label, active}
 
 // 读取 URL 的 ?k= 并查钥匙表；页面加载时调用一次
 async function loadAccessKey(){
@@ -98,7 +98,7 @@ function doLogin(){
       localStorage.setItem('txe_login',JSON.stringify({ts:Date.now()}));
       document.getElementById('loginOverlay').style.display='none';
       if(ACCESS_KEY.is_admin){ showHub(); }           // admin钥匙 → 中枢台
-      else { enterDomain(ACCESS_KEY.domain, ACCESS_KEY.major); } // 领域/专业钥匙 → 直达
+      else { enterFromKey(); } // 领域/专业/组合钥匙 → 直达
     } else { loginErr('密码错误，请重试'); }
     return;
   }
@@ -294,20 +294,11 @@ async function loadConsole(){
 function renderConsole(){
   const body=document.getElementById('consoleBody');
   const base=location.origin+location.pathname.replace(/[^/]*$/,'')+'index.html';
-  // 新建区（用 select 选领域，不用 radio）
-  const domainOpts=DOMAINS.map(d=>`<option value="${d.label}">${d.label}</option>`).join('');
   let html=`
-  <div style="border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:18px;background:var(--bg,#faf9f7)">
-    <div style="font-size:12px;font-weight:600;margin-bottom:10px">＋ 新建访问链接</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
-      <div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">领域</div>
-        <select id="nk_domain" onchange="updateConsoleMajorOpts()" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px">${domainOpts}</select></div>
-      <div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">限定专业（选填）</div>
-        <select id="nk_major" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px"><option value="">整个领域</option></select></div>
-      <div style="flex:1;min-width:120px"><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">备注（如负责人名）</div>
-        <input id="nk_label" placeholder="选填" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:100%"></div>
-      <button class="btn btn-primary btn-sm" onclick="createAccessKey()">生成链接</button>
-    </div>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+    <div style="font-size:12px;font-weight:600">访问链接</div>
+    <span style="font-size:10px;color:var(--text-3)">一个链接的范围 = 完整领域（可多个）＋ 单独专业（可跨领域）＋ 班级，三部分取并集</span>
+    <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="openKeyEditor()">＋ 新建访问链接</button>
   </div>`;
   // 钥匙列表
   if(!_consoleKeys.length){
@@ -319,12 +310,13 @@ function renderConsole(){
       const url=`${base}?k=${kk.k}`;
       html+=`<div style="border:1px solid var(--border);border-radius:6px;padding:10px 12px;${kk.active?'':'opacity:.5'}">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-weight:600;font-size:13px">${kk.domain}${kk.major?' · '+(MAJORS[kk.major]||kk.major):''}</span>
+          <span style="font-weight:600;font-size:13px">${keyScopeText(kk)}</span>
           ${kk.label?`<span style="font-size:11px;color:var(--text-2)">${kk.label}</span>`:''}
           <span style="font-size:10px;color:var(--text-3)">🔗 链接即登录</span>
           ${kk.active?'':'<span style="font-size:10px;color:var(--danger)">已停用</span>'}
           <span style="margin-left:auto;display:flex;gap:6px">
             <button class="btn btn-outline btn-sm" onclick="copyKeyLink('${kk.k}')">复制链接</button>
+            <button class="btn btn-outline btn-sm" onclick="openKeyEditor('${kk.k}')">编辑</button>
             <button class="btn btn-outline btn-sm" onclick="toggleKey('${kk.k}',${kk.active})">${kk.active?'停用':'启用'}</button>
             <button class="btn btn-outline btn-sm" onclick="deleteKey('${kk.k}')">删除</button>
           </span>
@@ -335,33 +327,103 @@ function renderConsole(){
     html+='</div>';
   }
   body.innerHTML=html;
-  updateConsoleMajorOpts(); // 初始化「限定专业」下拉为默认领域的专业
 }
-async function createAccessKey(){
-  const domain=document.getElementById('nk_domain').value;
-  const major=document.getElementById('nk_major').value;
-  const label=document.getElementById('nk_label').value.trim();
-  // 不再需要密码：链接即登录（k@access.local 由触发器自动建 Auth，登录靠链接的 k）
-  const pw='auto-'+Math.random().toString(36).slice(2,10);  // password 字段保留非空，但不用于登录
-  const code=domainCode(domain)||'dom';
-  const k=code+(major?'_'+major:'')+'-'+Date.now().toString(36).slice(-4);
+// ── 访问链接的范围：完整领域 + 单独专业 + 班级（新字段 domains / majors / class_ids；旧链接退回用 domain / major）──
+function scopeFromKey(kk){
+  const d=kk.domains||[], m=kk.majors||[], c=kk.class_ids||[];
+  if(d.length||m.length||c.length) return {domains:d, majors:m, classIds:c, domainHint:kk.domain};
+  if(kk.major) return {majors:[kk.major], domainHint:kk.domain};
+  if(kk.domain) return {domains:[kk.domain]};
+  return {};
+}
+// 组合范围的链接（非 admin）：老师管理里的领域 / 专业只能选范围内的；其他情况返回 null（不限制）
+function teacherMultiDoms(){
+  const keyUser=(typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin);
+  return (keyUser && CURRENT_DOMAIN==='multi') ? scopeDomainList() : null;
+}
+function keyScopeText(kk){
+  const sc=scopeFromKey(kk);
+  if(!(sc.domains||[]).length && !(sc.majors||[]).length && !(sc.classIds||[]).length) return '（没有设置范围）';
+  return escTM(scopeSummary(sc));
+}
+// 新建 / 编辑共用的弹窗（全部 chip 点选，不用复选框）
+let _keyDraft=null;   // {k:'' 新建 | 链接的 k, domains:[], majors:[], classIds:[], label}
+async function openKeyEditor(k){
+  try{ if(typeof loadClasses==='function') await loadClasses(); }catch(e){}
+  const kk=k?_consoleKeys.find(x=>x.k===k):null;
+  const sc=kk?scopeFromKey(kk):{};
+  _keyDraft={k:kk?kk.k:'', domains:(sc.domains||[]).slice(), majors:(sc.majors||[]).slice(), classIds:(sc.classIds||[]).map(String), label:kk?(kk.label||''):''};
+  let ov=document.getElementById('keyEditModal');
+  if(!ov){ ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='keyEditModal'; document.body.appendChild(ov); }
+  ov.classList.add('open'); renderKeyEditor();
+}
+function closeKeyEditor(){ const ov=document.getElementById('keyEditModal'); if(ov) ov.classList.remove('open'); _keyDraft=null; }
+function keyDraftSummary(){
+  const d=_keyDraft, parts=[];
+  d.domains.forEach(x=>parts.push(x+'（整个领域）'));
+  d.majors.forEach(m=>parts.push((MAJOR_DOMAIN[m]?MAJOR_DOMAIN[m]+'·':'')+(MAJORS[m]||m)));
+  d.classIds.forEach(id=>{ const c=(typeof classById==='function')?classById(id):null; parts.push('班级：'+(c?c.name:id)); });
+  return parts.length?parts.join(' ＋ '):'（还没有选任何范围）';
+}
+function renderKeyEditor(){
+  const ov=document.getElementById('keyEditModal'), d=_keyDraft; if(!ov||!d) return;
+  const chip=(on,label,fn,dis)=>`<div class="filter-chip${on?' active':''}" ${dis?'':`onclick="${fn}"`} style="padding:3px 10px;font-size:11px;${dis?'opacity:.4;cursor:default':''}" ${dis?'title="这个领域已经整个选中，不用再单选专业"':''}>${label}</div>`;
+  const sec=(t,inner)=>`<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">${t}</div>${inner}</div>`;
+  const majorsHtml=DOMAINS.map(dm=>{
+    const ks=allMajorKeys().filter(k=>MAJOR_DOMAIN[k]===dm.label); if(!ks.length) return '';
+    const full=d.domains.includes(dm.label);
+    return `<div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px"><span style="font-size:10px;color:var(--text-3);min-width:64px">${dm.label}</span>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">${ks.map(k=>chip(d.majors.includes(k), escTM(MAJORS[k]||k), `keyDraftToggle('majors','${k}')`, full)).join('')}</div></div>`;
+  }).join('');
+  const cls=(typeof CLASSES!=='undefined'?CLASSES:[]).filter(c=>c.active!==false);
+  const clsHtml=cls.length?DOMAINS.map(dm=>{
+    const cs=cls.filter(c=>c.domain===dm.label); if(!cs.length) return '';
+    return `<div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px"><span style="font-size:10px;color:var(--text-3);min-width:64px">${dm.label}</span>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">${cs.map(c=>chip(d.classIds.includes(String(c.id)), escTM(c.name), `keyDraftToggle('classIds','${String(c.id).replace(/'/g,"\\'")}')`, d.domains.includes(dm.label))).join('')}</div></div>`;
+  }).join('')+((cls.filter(c=>!DOMAINS.some(dm=>dm.label===c.domain)).length)?`<div style="display:flex;gap:4px;flex-wrap:wrap">${cls.filter(c=>!DOMAINS.some(dm=>dm.label===c.domain)).map(c=>chip(d.classIds.includes(String(c.id)), escTM(c.name), `keyDraftToggle('classIds','${String(c.id).replace(/'/g,"\\'")}')`)).join('')}</div>`:''):'<span style="font-size:10px;color:var(--text-3)">还没有班级（在「班级管理」里建）</span>';
+  ov.innerHTML=`<div class="modal" style="width:640px">
+    <div class="modal-title">${d.k?'编辑访问链接':'新建访问链接'}</div>
+    <div class="modal-sub">${d.k?`链接地址不变（${escTM(d.k)}），改完后已经发出去的链接对方刷新即生效`:'范围 = 完整领域（可多个）＋ 单独专业（可跨领域）＋ 班级，三部分取并集'}</div>
+    ${sec('完整领域（这个领域的所有东西都能看到，包括没有专业的）',`<div style="display:flex;gap:6px;flex-wrap:wrap">${DOMAINS.map(dm=>chip(d.domains.includes(dm.label), dm.label, `keyDraftToggle('domains','${dm.label}')`)).join('')}</div>`)}
+    ${sec('单独专业（只看这些专业的东西；没有专业的东西不显示）',majorsHtml||'<span style="font-size:10px;color:var(--text-3)">还没有专业</span>')}
+    ${sec('班级（只看属于这些班级的学生和按班级编入的课）',clsHtml)}
+    ${sec('备注',`<input id="kd_label" value="${escTM(d.label)}" oninput="_keyDraft.label=this.value" placeholder="如负责人名（选填）" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:100%;box-sizing:border-box">`)}
+    <div style="font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 12px;line-height:1.7">这个链接可以看到：<b>${escTM(keyDraftSummary())}</b></div>
+    <div class="modal-actions"><button class="btn btn-outline" onclick="closeKeyEditor()">取消</button><button class="btn btn-primary" onclick="saveKeyEditor()">${d.k?'保存修改':'生成链接'}</button></div>
+  </div>`;
+}
+function keyDraftToggle(field,val){
+  const a=_keyDraft[field], i=a.indexOf(val); if(i>=0) a.splice(i,1); else a.push(val);
+  if(field==='domains'&&i<0){   // 整个领域选中后，它下面单独选的专业 / 班级已经包含了，去掉
+    _keyDraft.majors=_keyDraft.majors.filter(m=>MAJOR_DOMAIN[m]!==val);
+    _keyDraft.classIds=_keyDraft.classIds.filter(id=>{ const c=(typeof classById==='function')?classById(id):null; return !(c&&c.domain===val); });
+  }
+  renderKeyEditor();
+}
+async function saveKeyEditor(){
+  const d=_keyDraft; if(!d) return;
+  if(!d.domains.length&&!d.majors.length&&!d.classIds.length){ alert('请至少选一个范围（领域、专业或班级）'); return; }
+  const label=(d.label||'').trim();
+  // 旧字段 domain / major 先保留（回滚兜底）：domain = 第一个涉及的领域；major = 范围正好是一个专业时才填
+  const cls0=(typeof classById==='function'&&d.classIds.length)?classById(d.classIds[0]):null;
+  const domain=d.domains[0]||(d.majors[0]&&MAJOR_DOMAIN[d.majors[0]])||(cls0&&cls0.domain)||'';
+  const major=(!d.domains.length&&d.majors.length===1&&!d.classIds.length)?d.majors[0]:null;
+  const rec={domain, major, domains:d.domains, majors:d.majors, class_ids:d.classIds, label:label||null};
   try{
-    await sb('/rest/v1/access_keys','POST',{k,password:pw,domain,major:major||null,is_admin:false,label:label||null,active:true});
-    document.getElementById('nk_label').value='';
-    await loadConsole();
-    alert(`已生成「${domain}${major?' · '+(MAJORS[major]||major):''}」访问链接。\n发送链接给负责人即可，点开直接进，无需密码。`);
-  }catch(e){ alert('生成失败：'+e.message); }
-}
-// 领域下拉变化时，联动更新「限定专业」选项（只出该领域的专业）
-function updateConsoleMajorOpts(){
-  const domain=document.getElementById('nk_domain').value;
-  const sel=document.getElementById('nk_major');
-  if(!sel) return;
-  let opts='<option value="">整个领域</option>';
-  allMajorKeys().forEach(k=>{
-    if(MAJOR_DOMAIN[k]===domain) opts+=`<option value="${k}">${MAJORS[k]||k}</option>`;
-  });
-  sel.innerHTML=opts;
+    if(d.k){
+      await sb(`/rest/v1/access_keys?k=eq.${encodeURIComponent(d.k)}`,'PATCH',rec);
+      closeKeyEditor(); await loadConsole();
+      alert('已保存。链接地址不变，已经发出去的链接对方刷新页面即按新范围生效。');
+    } else {
+      // 不再需要密码：链接即登录（k@access.local 由触发器自动建 Auth，登录靠链接的 k）
+      const pw='auto-'+Math.random().toString(36).slice(2,10);  // password 字段保留非空，但不用于登录
+      const code=domainCode(d.domains[0]||domain)||'key';
+      const k=code+(major?'_'+major:'')+'-'+Date.now().toString(36).slice(-4);
+      await sb('/rest/v1/access_keys','POST',Object.assign({k,password:pw,is_admin:false,active:true},rec));
+      closeKeyEditor(); await loadConsole();
+      alert(`已生成访问链接：${d.domains.concat(d.majors.map(m=>MAJORS[m]||m)).join(' ＋ ')||'班级范围'}。\n发送链接给负责人即可，点开直接进，无需密码。`);
+    }
+  }catch(e){ alert('保存失败：'+e.message); }
 }
 function copyKeyLink(k){
   const base=location.origin+location.pathname.replace(/[^/]*$/,'')+'index.html';
@@ -386,23 +448,38 @@ function clearDomainCaches(){
   const mc=document.getElementById('mainContent'); if(mc) mc.innerHTML='<div class="loading">加载中…</div>';
 }
 
-async function enterDomain(domain, major){
+async function enterScope(sc){
   clearDomainCaches();   // 进新视角前先清空,确保重新拉取、不带旧数据
-  CURRENT_DOMAIN = (domain==='all'||!domain) ? 'all' : domain;
-  CURRENT_MAJOR = major || '';   // 专业锁（专业钥匙才有）
+  setViewScope(sc||{});
+  // 范围里有班级：先把班级读进来（顶栏摘要要班级名、班级所属领域要参与下拉框）
+  if((VIEW_SCOPE.classIds||[]).length && typeof loadClasses==='function'){ try{ await loadClasses(); }catch(e){} }
   try{ localStorage.setItem('txe_domain', CURRENT_DOMAIN); }catch(e){}
   const el=document.getElementById('hubOverlay'); if(el) el.style.display='none';
-  // 在顶栏显示当前视角（专业锁时附带专业名）
+  // 在顶栏显示当前视角（范围摘要，太长时省略，鼠标移上去显示全部）
   const tag=document.getElementById('domainTag');
   if(tag){
-    let t = CURRENT_DOMAIN==='all' ? '总览·全部领域' : CURRENT_DOMAIN;
-    if(CURRENT_MAJOR) t += ' · '+(MAJORS[CURRENT_MAJOR]||CURRENT_MAJOR);
-    tag.textContent = t;
+    const t=scopeSummary(VIEW_SCOPE);
+    tag.textContent=t; tag.title=t;
+    tag.style.cssText+=';max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle';
   }
   // 领域/专业钥匙用户：隐藏「切换视角」（锁定）
   const sw=document.getElementById('switchViewBtn');
   if(sw) sw.style.display=(ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin)?'none':'';
   await initApp();
+}
+// 兼容旧调用：enterDomain('all') 总览；enterDomain('大学院文科') 一个完整领域；enterDomain(领域, 专业) 单个专业
+function enterDomain(domain, major){
+  return enterScope(major?{majors:[major], domainHint:domain}:((domain==='all'||!domain)?{}:{domains:[domain]}));
+}
+// 领域 / 专业 / 组合钥匙进入：范围为空的非 admin 钥匙不能放行（否则等于总览）
+function enterFromKey(){
+  const sc=scopeFromKey(ACCESS_KEY);
+  if(!(sc.domains||[]).length&&!(sc.majors||[]).length&&!(sc.classIds||[]).length){
+    document.getElementById('loginOverlay').style.display='flex';
+    loginErr('此访问链接没有设置范围，请联系管理员');
+    return;
+  }
+  return enterScope(sc);
 }
 function backToHub(){ // 从系统内返回中枢层重新选领域
   // 领域钥匙用户被锁定在自己领域，不能切换视角
@@ -412,8 +489,8 @@ function backToHub(){ // 从系统内返回中枢层重新选领域
 }
 // 按当前领域视角过滤课程数组（总览时原样返回）
 function filterByDomain(list){
-  if(!CURRENT_DOMAIN || CURRENT_DOMAIN==='all') return list;
-  return (list||[]).filter(c => c.domain === CURRENT_DOMAIN);
+  if(scopeAll()) return list;
+  return (list||[]).filter(c => scopeCourse(c));
 }
 document.getElementById('loginPw').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 
@@ -591,8 +668,8 @@ function teacherPageHost(){
 }
 function renderTeachersPage(mc){
   hwaData=null;   // 作业分配的课程列表：每次进入老师管理重新读取
-  const _isDom = (typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && typeof CURRENT_DOMAIN!=='undefined' && CURRENT_DOMAIN && CURRENT_DOMAIN!=='all');
-  const _lockDom = _isDom ? CURRENT_DOMAIN : '';
+  const _isDom = (typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && !!viewLockDomain());
+  const _lockDom = _isDom ? viewLockDomain() : '';
   mc.innerHTML=`
   <div class="page-header">
     <div class="section-title">老师管理 <span class="badge-count">${cachedTeachers.length}</span></div>
@@ -629,14 +706,14 @@ function renderTeachersPage(mc){
       ${_isDom ? `<div class="form-group"><label class="form-label">领域</label><div style="font-size:12px;color:var(--text-2);border:1px solid var(--border);border-radius:3px;padding:7px 10px;background:var(--bg)">${_lockDom}<span style="font-size:10px;color:var(--text-3);margin-left:6px">本领域账号：新建老师自动归属本领域，负责专业在下方选择</span></div></div>` : `<div class="form-group" style="border:1px solid var(--accent);border-radius:3px;padding:8px;background:var(--bg)">
         <label class="form-label" style="color:var(--accent)">隶属领域（可多选，决定"哪个领域账号能在老师管理里看到/编辑这个老师"）</label>
         <div style="display:flex;flex-wrap:wrap;gap:6px" id="new_teacher_managed">
-          ${DOMAINS.map(d=>`<div class="filter-chip" data-value="${d.label}" onclick="toggleChip(this)" style="padding:4px 10px">${d.label}</div>`).join('')}
+          ${DOMAINS.filter(d=>!teacherMultiDoms()||teacherMultiDoms().includes(d.label)).map(d=>`<div class="filter-chip" data-value="${d.label}" onclick="toggleChip(this)" style="padding:4px 10px">${d.label}</div>`).join('')}
         </div>
         <div style="font-size:9px;color:var(--text-3);margin-top:4px">留空则默认用下方"负责领域"。这是"归谁管"，和下方"能看到/教什么"分开。</div>
       </div>
       <div class="form-group">
         <label class="form-label">负责领域（可多选，老师自己页面能看到的领域；选后下方展开对应专业）</label>
         <div style="display:flex;flex-wrap:wrap;gap:6px" id="new_teacher_domains">
-          ${DOMAINS.map(d=>`<div class="filter-chip" data-value="${d.label}" onclick="toggleDomainChip(this)" style="padding:4px 10px">${d.label}</div>`).join('')}
+          ${DOMAINS.filter(d=>!teacherMultiDoms()||teacherMultiDoms().includes(d.label)).map(d=>`<div class="filter-chip" data-value="${d.label}" onclick="toggleDomainChip(this)" style="padding:4px 10px">${d.label}</div>`).join('')}
         </div>
       </div>`}
       <div class="form-group">
@@ -781,7 +858,7 @@ async function hwaEnsureData() {
     const has = Array.isArray(q) ? q.length : !!(q && Array.isArray(q.levels) && q.levels.length);
     if (has && x.course_id) hwN[x.course_id] = (hwN[x.course_id] || 0) + 1;
   });
-  const courses = (crs || []).filter(c => hwN[c.id] || c.homework_enabled === true).map(c => {
+  const courses = (crs || []).filter(c => scopeCourse(c)).filter(c => hwN[c.id] || c.homework_enabled === true).map(c => {
     const majors = Array.isArray(c.major) ? c.major : (c.major ? [c.major] : []);
     const dom = c.domain || majors.map(m => MAJOR_DOMAIN[m] || (MAJOR_GROUPS[m] ? MAJOR_DOMAIN[MAJOR_GROUPS[m][0]] : '')).find(Boolean) || '其他';
     return {
@@ -800,7 +877,7 @@ function hwaInit(p, t) {
   hwaIds = new Set((p.homework_course_ids || []).map(String));
   hwaCoursesOn = hwaIds.size > 0;
   hwaAllPeriods = false; hwaSearch = ''; hwaNotice = ''; hwaClass = ''; hwaMajor = '';
-  const lock = CURRENT_DOMAIN && CURRENT_DOMAIN !== 'all' ? CURRENT_DOMAIN : '';
+  const lock = viewLockDomain();
   hwaDom = lock || ((t && ((t.managed_by || [])[0] || (t.domains || [])[0])) || '');
   const oldNames = (p.homework_courses || []).filter(Boolean);
   renderHomeworkAssign();
@@ -842,7 +919,7 @@ function renderHomeworkAssign() {
       return `<span style="font-size:10px;background:var(--accent);color:#fff;border-radius:10px;padding:2px 4px 2px 9px;display:inline-flex;align-items:center;gap:4px">${esc(c ? c.name + ' · ' + c.pkey : '（课程已删除）' + id)}<span onclick="hwaIds.delete('${js(id)}');renderHomeworkAssign()" style="cursor:pointer;padding:0 4px">✕</span></span>`;
     }).join('') + `<span onclick="if(confirm('移除全部已选课程？')){hwaIds.clear();renderHomeworkAssign()}" style="font-size:10px;color:var(--danger);cursor:pointer;align-self:center">全部移除</span>` : '<span style="font-size:10px;color:var(--text-3)">还没选课程，在下面点选</span>'}</div>`;
     // ── 筛选：先领域，再班级 / 专业 / 期（月）/ 搜索 ──
-    const lock = CURRENT_DOMAIN && CURRENT_DOMAIN !== 'all' ? CURRENT_DOMAIN : '';
+    const lock = viewLockDomain();
     if (lock) hwaDom = lock;
     const order = DOMAINS.map(x => x.label);
     const doms = [...new Set(d.courses.map(c => c.domain))].sort((a, b) => { const ia = order.indexOf(a), ib = order.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
@@ -1138,17 +1215,18 @@ function toggleDomainChip(el){
 // 按已选领域展开专业 chip（按领域分组显示）；保留已勾选的专业状态
 function renderTeacherMajorChips(){
   const box=document.getElementById('new_teacher_majors'); if(!box) return;
-  const _isDom=(typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && typeof CURRENT_DOMAIN!=='undefined' && CURRENT_DOMAIN && CURRENT_DOMAIN!=='all');
-  const selDomains = _isDom ? [CURRENT_DOMAIN] : [...new Set([...document.querySelectorAll('#new_teacher_domains .filter-chip.active')].map(c=>c.dataset.value))];
+  const _isDom=(typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && !!viewLockDomain());
+  const _lockDom=_isDom?viewLockDomain():'';
+  const selDomains = _isDom ? [_lockDom] : [...new Set([...document.querySelectorAll('#new_teacher_domains .filter-chip.active')].map(c=>c.dataset.value))];
   // 记住当前已选专业，重绘后恢复
   const prevSel=new Set([...box.querySelectorAll('.filter-chip.active')].map(c=>c.dataset.value));
   if(!selDomains.length){ box.innerHTML='<div style="font-size:11px;color:var(--text-3)">请先选择领域，上方选定后这里展开对应专业</div>'; return; }
   let html='';
   selDomains.forEach(dom=>{
-    const majorsInDom=allMajorKeys().filter(m=>MAJOR_DOMAIN[m]===dom);
+    const majorsInDom=teacherMultiDoms()?scopeMajorsIn(dom):allMajorKeys().filter(m=>MAJOR_DOMAIN[m]===dom);
     // 社会人文（shakai_group）是三专业合并的虚拟专业：成员在本领域时，额外给一个可分配的「社会人文」
     // 老师分配到它后，开面谈时间槽能选「社会人文」，槽会显示在社会人文的学生预约页
-    const groupHere = (typeof SHAKAI_GROUP!=='undefined') && SHAKAI_GROUP.some(m=>MAJOR_DOMAIN[m]===dom);
+    const groupHere = (typeof SHAKAI_GROUP!=='undefined') && SHAKAI_GROUP.some(m=>MAJOR_DOMAIN[m]===dom) && (!teacherMultiDoms()||scopeHasDomain(dom));
     if(!majorsInDom.length && !groupHere) return;
     const chipKeys = (groupHere ? ['shakai_group'] : []).concat(majorsInDom);
     html+=`<div style="margin-bottom:8px"><div style="font-size:10px;color:var(--text-3);margin-bottom:4px">${dom}</div><div style="display:flex;flex-wrap:wrap;gap:6px">`;
@@ -1168,8 +1246,8 @@ function selectStaffType(el){
   if(!isRegular){ const d=document.getElementById('new_teacher_department'); if(d) d.value=''; }
 }
 async function addTeacher(){
-  const _isDom = (typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && typeof CURRENT_DOMAIN!=='undefined' && CURRENT_DOMAIN && CURRENT_DOMAIN!=='all');
-  const _lockDom = _isDom ? CURRENT_DOMAIN : '';
+  const _isDom = (typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && !!viewLockDomain());
+  const _lockDom = _isDom ? viewLockDomain() : '';
   const name=document.getElementById('new_teacher_name').value.trim();
   const notes=document.getElementById('new_teacher_notes').value.trim();
   if(!name){alert('请填写姓名');return}
@@ -1180,6 +1258,7 @@ async function addTeacher(){
   else {
     domains=[...document.querySelectorAll('#new_teacher_domains .filter-chip.active')].map(c=>c.dataset.value);
     managed_by=[...document.querySelectorAll('#new_teacher_managed .filter-chip.active')].map(c=>c.dataset.value);
+    if(teacherMultiDoms() && !domains.length && !managed_by.length){ alert('请选择领域（只能选这个链接范围内的领域）'); return; }
   }
   // 同名老师已存在：领域端提示「叠加本领域」（同一账号/ID）；中枢端沿用原「已存在」拦截
   const _existing=cachedTeachers.find(t=>t.name===name);
@@ -1304,8 +1383,8 @@ function openEditTeacher(id){
 }
 
 async function saveEditTeacher(id){
-  const _isDom=(typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && typeof CURRENT_DOMAIN!=='undefined' && CURRENT_DOMAIN && CURRENT_DOMAIN!=='all');
-  const _lockDom=_isDom?CURRENT_DOMAIN:'';
+  const _isDom=(typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && !!viewLockDomain());
+  const _lockDom=_isDom?viewLockDomain():'';
   const cur=cachedTeachers.find(t=>t.id===id)||{};
   const name=document.getElementById('new_teacher_name').value.trim();
   if(!name){alert('请填写姓名');return}
@@ -1326,6 +1405,13 @@ async function saveEditTeacher(id){
     domains=[...document.querySelectorAll('#new_teacher_domains .filter-chip.active')].map(c=>c.dataset.value);
     managed_by=[...document.querySelectorAll('#new_teacher_managed .filter-chip.active')].map(c=>c.dataset.value);
     majors=selMajors;
+    const _md=teacherMultiDoms();
+    if(_md){   // 组合范围的链接：表单里只有范围内的领域 / 专业，范围外已有的归属和专业原样保留，避免误删
+      if(!domains.length&&!managed_by.length){ alert('请选择领域（只能选这个链接范围内的领域）'); return; }
+      domains=[...new Set([...(cur.domains||[]).filter(d=>!_md.includes(d)),...domains])];
+      managed_by=[...new Set([...(cur.managed_by||[]).filter(d=>!_md.includes(d)),...managed_by])];
+      majors=[...new Set([...(cur.majors||[]).filter(m=>!scopeMajor(m)),...selMajors])];
+    }
     staff_type=document.querySelector('#new_teacher_stafftype .filter-chip.active')?.dataset.value||'';
     department=staff_type==='正社员'?(document.getElementById('new_teacher_department')?.value||''):'';
   }
@@ -1371,7 +1457,7 @@ async function initApp(){
   if(ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin){
     await silentAccessKeyLogin();
     localStorage.setItem('txe_login', JSON.stringify({ ts: Date.now() }));
-    enterDomain(ACCESS_KEY.domain, ACCESS_KEY.major);
+    enterFromKey();
     return;
   }
   // 若从邮件魔法链接回来 → 完成 Auth 登录（无 k 的 admin 场景）
@@ -1395,7 +1481,7 @@ async function initApp(){
   }
   if(ACCESS_KEY && !ACCESS_KEY.is_admin){
     const hint=document.getElementById('loginHint');
-    if(hint) hint.textContent=`${ACCESS_KEY.label||ACCESS_KEY.domain} · 请输入访问密码`;
+    if(hint) hint.textContent=`${ACCESS_KEY.label||keyScopeText(ACCESS_KEY)} · 请输入访问密码`;
   }
 })();
 
@@ -1485,11 +1571,10 @@ function profRender(){
 
   // 视角过滤：专业链接→只看该专业档案；领域链接→只看该领域档案；admin→全部
   let viewProfs=profList;
-  if(typeof CURRENT_MAJOR!=='undefined' && CURRENT_MAJOR){
-    const cn=MAJORS[CURRENT_MAJOR]||CURRENT_MAJOR;
-    viewProfs=profList.filter(p=>(p.subject||'').trim()===cn);
-  } else if(typeof CURRENT_DOMAIN!=='undefined' && CURRENT_DOMAIN && CURRENT_DOMAIN!=='all'){
-    viewProfs=profList.filter(p=>(p.domain||'')===CURRENT_DOMAIN);
+  if(!scopeAll()){
+    // 完整领域：按档案的领域；单独专业：按档案的学科（专业中文名）
+    const subs=VIEW_SCOPE.majors.map(m=>MAJORS[m]||m);
+    viewProfs=profList.filter(p=>scopeHasDomain((p.domain||'')) || subs.includes((p.subject||'').trim()));
   }
   if(cnt) cnt.textContent=viewProfs.length;
 

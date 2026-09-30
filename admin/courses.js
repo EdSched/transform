@@ -308,8 +308,7 @@ function renderCourseCleanupPage(mc){
   // 领域感知筛选（与课程安排页一致）：先限定当前领域；专业筛选='all'时显示领域内全部课，
   // 选了具体专业才按 major 匹配；无专业的课（学部/语言）靠 domain 显示，不被专业滤掉
   let filtered=cachedCourses.filter(c=>{
-    if(CURRENT_DOMAIN&&CURRENT_DOMAIN!=='all'&&c.domain!==CURRENT_DOMAIN) return false;
-    if(CURRENT_MAJOR) return (c.major||[]).some(m=>m===CURRENT_MAJOR);
+    if(!scopeCourse(c)) return false;
     if(cleanupMajorFilter==='all') return true;
     const majorList=expandMajorFilter(cleanupMajorFilter);
     return (c.major||[]).some(m=>majorList.includes(m));
@@ -327,8 +326,7 @@ function renderCourseCleanupPage(mc){
 
   // 视角过滤后的全部课（筛选项来源，因地制宜——只列本视角实际有的期数/年份/校区）
   const viewCourses=cachedCourses.filter(c=>{
-    if(CURRENT_DOMAIN&&CURRENT_DOMAIN!=='all'&&c.domain!==CURRENT_DOMAIN) return false;
-    if(CURRENT_MAJOR) return (c.major||[]).some(m=>m===CURRENT_MAJOR);
+    if(!scopeCourse(c)) return false;
     return true;
   });
   const allYears=[...new Set(viewCourses.filter(c=>c.first_session_date).map(c=>c.first_session_date.slice(0,4)))].sort((a,b)=>b.localeCompare(a));
@@ -639,10 +637,8 @@ function tplRenderGroups(){
   }
   // 视角过滤（跟随链接）：非总览只看当前领域/专业的模板（模板任一专业匹配即显示；无专业模板总览才显示）
   let tpls=cachedTemplates;
-  if(CURRENT_MAJOR){
-    tpls=tpls.filter(t=>(t.major||[]).some(m=>m===CURRENT_MAJOR));
-  }else if(CURRENT_DOMAIN&&CURRENT_DOMAIN!=='all'){
-    tpls=tpls.filter(t=>(t.major||[]).some(m=>majorInCurrentView(m)));
+  if(!scopeAll()){
+    tpls=tpls.filter(t=>(t.major||[]).some(m=>scopeMajor(m)));
   }
   if(!tpls.length){
     wrap.innerHTML='<div style="font-size:12px;color:var(--text-3);padding:8px 0">暂无匹配当前领域的模板</div>';
@@ -800,10 +796,10 @@ function renderCoursesPage(mc){
   // 专业钥匙锁定：强制默认选中锁定的专业（用户不能改）
   if(CURRENT_MAJOR) coursesMajorFilter=CURRENT_MAJOR;
   // 锁定在具体领域（领域账号/切换视角进入）：默认显示该领域全部课（不管领域有没有建专业）
-  else if(CURRENT_DOMAIN && CURRENT_DOMAIN!=='all' && coursesMajorFilter==='none') coursesMajorFilter='all';
+  else if(!scopeAll() && coursesMajorFilter==='none') coursesMajorFilter='all';
 
   // 学部美术视角下「期数」按月份：当前期 = 本月
-  const artView=isGakubuArtDomain(CURRENT_DOMAIN);
+  const artView=viewIsArt();
   const curPeriod=artView?monthPeriodOf(new Date().toISOString().slice(0,10)):currentPeriodKey();
   // 领域感知筛选：
   //  - coursesMajorFilter==='none'：未选专业，不显示任何课（初始态，避免满屏）
@@ -811,7 +807,7 @@ function renderCoursesPage(mc){
   //  - 有专业的课按专业 majorList 筛；无专业的课（学部/语言）靠 domain 圈定，不被专业滤掉
   let majorList=coursesMajorFilter==='none'?[]:expandMajorFilter(coursesMajorFilter);
   let filtered=coursesMajorFilter==='none'?[]:cachedCourses.filter(c=>{
-    if(CURRENT_DOMAIN&&CURRENT_DOMAIN!=='all'&&c.domain!==CURRENT_DOMAIN) return false;
+    if(!scopeCourse(c)) return false;
     if(coursesMajorFilter==='all'){
       // 「全部」：本视角内所有课都要（含无专业的学部/语言课）
       return true;
@@ -1330,14 +1326,37 @@ function majorDomainOf(majors){
   return k?MAJOR_DOMAIN[k]:'';
 }
 function courseDomainFor(majors){
-  if(CURRENT_DOMAIN&&CURRENT_DOMAIN!=='all') return CURRENT_DOMAIN;
+  if(viewLockDomain()) return viewLockDomain();
+  if(CURRENT_DOMAIN==='multi') return acCurDomain();   // 组合范围的链接：领域必须在弹窗里明确选择
   return majorDomainOf(majors);
+}
+// 弹窗里当前的领域：组合范围 = 领域下拉框的值；单一领域视角 = 该领域；总览 = ''
+function acCurDomain(){
+  if(CURRENT_DOMAIN==='multi') return (document.getElementById('ac_domain')||{}).value||'';
+  return viewLockDomain();
+}
+// 组合范围的链接才显示「领域」下拉框：只列范围内的领域，只有一个时自动选中；专业 / 班级也跟着领域缩小
+let acHiddenMajors=[];   // 编辑时，课程已有但不在可选范围内的专业（保存时原样保留）
+function acDomainSetup(course){
+  const box=document.getElementById('ac_domain_box'), sel=document.getElementById('ac_domain');
+  const multi=CURRENT_DOMAIN==='multi';
+  if(box) box.style.display=multi?'':'none';
+  acHiddenMajors=[];
+  if(!multi||!sel) return;
+  const list=scopeDomainList();
+  const cur=course&&course.domain&&list.includes(course.domain)?course.domain:(list.length===1?list[0]:'');
+  sel.innerHTML=(cur?'':'<option value="">请选择领域</option>')+list.map(d=>`<option ${d===cur?'selected':''}>${d}</option>`).join('');
+}
+function acDomainChange(){
+  acHiddenMajors=[];   // 换了领域：原来那个领域里的专业不再适用
+  acRenderMajorCheckboxes(); acArtUI();
 }
 function withCourseDomain(obj,majors){ const d=courseDomainFor(majors); if(d) obj.domain=d; return obj; }
 
 function openAddCourseModal(editId){
   document.getElementById('addCourseModalTitle').textContent=editId?'编辑课程':'手动添加课程';
   document.getElementById('ac_editing_id').value=editId||'';
+  acDomainSetup(editId?cachedCourses.find(x=>x.id===editId):null);
   acRenderMajorCheckboxes();
   if(editId){
     const c=cachedCourses.find(x=>x.id===editId);
@@ -1345,6 +1364,7 @@ function openAddCourseModal(editId){
     document.getElementById('ac_name').value=c.name||'';
     // set majors
     acSetMajors(c.major||[]);
+    if(CURRENT_DOMAIN==='multi') acHiddenMajors=(c.major||[]).filter(m=>![...document.querySelectorAll('#ac_major_checkboxes input')].some(cb=>cb.value===m));
     document.getElementById('ac_period').value=c.period||'';
     document.getElementById('ac_course_type').value=c.course_type||'';
     document.getElementById('ac_teacher').value=c.teacher||'';
@@ -1404,7 +1424,7 @@ function acIsArt(){
   const ms=acGetMajors();
   if(ms.length) return ms.every(isGakubuArtMajor);
   if(acArtEditing) return isGakubuArtCourse(acArtEditing);
-  return isGakubuArtDomain(CURRENT_DOMAIN);
+  return CURRENT_DOMAIN==='multi'?isGakubuArtDomain(acCurDomain()):viewIsArt();
 }
 function acMonthOptions(sel){
   const now=new Date(), out=[];
@@ -1461,8 +1481,15 @@ function acOnTypeChange(val){
 function acRenderMajorCheckboxes(){
   const box=document.getElementById('ac_major_checkboxes');
   if(!box) return;
-  box.innerHTML=majorFilterKeys().map(m=>
-    `<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="${m}" onchange="acArtUI()" style="accent-color:var(--accent)">${majorLabel(m)}</label>`
+  let keys=majorFilterKeys();
+  if(CURRENT_DOMAIN==='multi'){   // 组合范围：只列所选领域里范围内的专业（领域没选就先不列）
+    const dom=acCurDomain(), ok=new Set(dom?scopeMajorsIn(dom):[]);
+    if(dom&&scopeHasDomain(dom)&&SHAKAI_GROUP.some(m=>MAJOR_DOMAIN[m]===dom)) ok.add('shakai_group');
+    keys=keys.filter(k=>ok.has(k));
+  }
+  const keep=new Set(acGetMajors());
+  box.innerHTML=(CURRENT_DOMAIN==='multi'&&!keys.length?`<span style="font-size:11px;color:var(--text-3)">${acCurDomain()?'这个领域里没有可选的专业':'先选择领域'}</span>`:'')+keys.map(m=>
+    `<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="${m}" ${keep.has(m)?'checked':''} onchange="acArtUI()" style="accent-color:var(--accent)">${majorLabel(m)}</label>`
   ).join('');
 }
 
@@ -1776,9 +1803,19 @@ async function saveAddCourse(){
     if(!weekdayStr){alert('请选择星期（排课系统按星期占教室）');return}
   } else if(!total||!firstDate||!weekdayStr){alert('请填写回数、第一回日期和星期');return}
 
-  const majors=acGetMajors();
-  // 具体领域视角下可以不选专业（领域按当前视角写入）；总览下必须选专业，才能知道课属于哪个领域
-  if(!majors.length&&!(CURRENT_DOMAIN&&CURRENT_DOMAIN!=='all')){alert('请至少选择一个专业');return}
+  const majors=[...acGetMajors(),...acHiddenMajors];
+  if(CURRENT_DOMAIN==='multi'){
+    // 组合范围的链接：新建 / 编辑必须明确选领域；领域只开放了部分专业 / 班级时，至少要选一个范围内的专业或班级，否则保存后自己也看不到这门课
+    const dom=acCurDomain();
+    if(!dom){alert('请选择领域');return}
+    if(!scopeHasDomain(dom)){
+      const classOk=artCourse&&((document.getElementById('ac_member_mode')||{}).value||'class')==='class'&&acClassPick.some(id=>VIEW_SCOPE.classIds.includes(String(id)));
+      if(!majors.some(scopeMajor)&&!classOk){alert('这个领域只开放了部分专业 / 班级，请至少选择一个专业或班级');return}
+    }
+  } else if(!majors.length&&!viewLockDomain()){
+    // 具体领域视角下可以不选专业（领域按当前视角写入）；总览下必须选专业，才能知道课属于哪个领域
+    alert('请至少选择一个专业');return
+  }
   const weekdays=parseWeekdays(weekdayStr);
   // 只有没开单回明细的新课才按框架生成日期
   const dates=hasDetails?[]:generateSessionDatesFromFirst(firstDate,weekdays,total);
@@ -1806,7 +1843,7 @@ async function saveAddCourse(){
   // 学部美术：成员模式和班级在这里直接选（其他领域仍在「课程清理 → 学生成员」里管理）
   if(editingId){
     // 编辑：专业改到了另一个领域时，领域跟着改
-    const nd=majorDomainOf(majors), cur=cachedCourses.find(c=>c.id===editingId);
+    const nd=CURRENT_DOMAIN==='multi'?acCurDomain():majorDomainOf(majors), cur=cachedCourses.find(c=>c.id===editingId);
     if(nd&&(!cur||cur.domain!==nd)) courseData.domain=nd;
   } else withCourseDomain(courseData,majors);
   if(artCourse){
@@ -2348,8 +2385,7 @@ let schedPeriodFilter='all', schedTypeFilter='all', schedCourseFilter='all';
 function renderSchedulePage(mc){
   // 视角过滤后的课（筛选项来源，因地制宜——只列本视角实际有的期数）
   const viewCourses=cachedCourses.filter(c=>{
-    if(CURRENT_DOMAIN&&CURRENT_DOMAIN!=='all'&&c.domain!==CURRENT_DOMAIN) return false;
-    if(CURRENT_MAJOR) return (c.major||[]).some(m=>m===CURRENT_MAJOR);
+    if(!scopeCourse(c)) return false;
     return true;
   });
   // 带年份的期数列表（用季度 effectivePeriod，和其他页统一）
@@ -2608,8 +2644,7 @@ function csSetType(t,el){
 function csPopulatePeriods(){
   let courses=cachedCourses;
   courses=courses.filter(c=>{
-    if(CURRENT_DOMAIN&&CURRENT_DOMAIN!=='all'&&c.domain!==CURRENT_DOMAIN) return false;
-    if(CURRENT_MAJOR) return (c.major||[]).some(m=>m===CURRENT_MAJOR);
+    if(!scopeCourse(c)) return false;
     return true;
   });
   if(csTypeFilter!=='全部'){
@@ -2629,8 +2664,7 @@ function csFilterCourses(){
   let courses=cachedCourses;
   // 视角过滤（跟随链接）：非总览只看当前领域/专业的课
   courses=courses.filter(c=>{
-    if(CURRENT_DOMAIN&&CURRENT_DOMAIN!=='all'&&c.domain!==CURRENT_DOMAIN) return false;
-    if(CURRENT_MAJOR) return (c.major||[]).some(m=>m===CURRENT_MAJOR);
+    if(!scopeCourse(c)) return false;
     return true;
   });
   if(csTypeFilter!=='全部'){
@@ -3213,8 +3247,7 @@ async function ssPublish(){
 // 全选当前筛选条件下显示的全部课程（沿用清理页的专业/期数筛选逻辑）
 function cleanupSelectAllFiltered(){
   let filtered=cachedCourses.filter(c=>{
-    if(CURRENT_DOMAIN&&CURRENT_DOMAIN!=='all'&&c.domain!==CURRENT_DOMAIN) return false;
-    if(CURRENT_MAJOR) return (c.major||[]).some(m=>m===CURRENT_MAJOR);
+    if(!scopeCourse(c)) return false;
     if(cleanupMajorFilter==='all') return true;
     const majorList=expandMajorFilter(cleanupMajorFilter);
     return (c.major||[]).some(m=>majorList.includes(m));

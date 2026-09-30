@@ -45,7 +45,7 @@ function mcxCoursesOfMonth(ym) {
     if (!s.session_date || !s.session_date.startsWith(ym) || mcxCancelled(s)) return;
     (byCourse[s.course_id] = byCourse[s.course_id] || []).push(s);
   });
-  return (cachedCourses || []).filter(c => byCourse[c.id] && (!CURRENT_MAJOR || (c.major || []).includes(CURRENT_MAJOR)))
+  return (cachedCourses || []).filter(c => byCourse[c.id] && scopeCourse(c))
     .map(c => ({ c, sessions: byCourse[c.id] }))
     .sort((a, b) => String(a.c.name || '').localeCompare(String(b.c.name || ''), 'zh'));
 }
@@ -250,7 +250,7 @@ function mcxBuildDoc(opts) {
       </div>`).join('')}</div></td>`;
   };
   // 学部美术用「唯新美術」的 logo，其他领域用唯新 logo
-  const artLogo = isGakubuArtDomain(CURRENT_DOMAIN) || chosen.every(x => isGakubuArtCourse(x.c));
+  const artLogo = viewIsArt() || chosen.every(x => isGakubuArtCourse(x.c));
   const logo = new URL(artLogo ? '../sched/artlogo.png' : '../sched/logo.png', location.href).href;
   const logoColor = artLogo ? '#f3b800' : '#f0a810';   // 表头直接用 logo 的黄色
   const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>${mcxEsc(title)}</title>

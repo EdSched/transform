@@ -36,7 +36,7 @@ function scRender() {
 
 // ── 权限 ──
 function scCanEdit(r) { return !!(sc.ctx && sc.ctx.canWrite && sc.ctx.canEditRow(r)); }
-function scVisible() { return (sc.rows || []).filter(r => r.published === true || scCanEdit(r)); }
+function scVisible() { return (sc.rows || []).filter(r => (!sc.ctx.inScope || sc.ctx.inScope(r)) && (r.published === true || scCanEdit(r))); }
 
 // ══════════ 列表 / 筛选 ══════════
 function scSchoolsOf(r) { return String(r.result || '').split(/\s*[·、,，\/／;；]\s*/).map(x => x.replace(/[✓✔]/g, '').trim()).filter(Boolean); }
@@ -442,12 +442,15 @@ async function scDelete(id) {
 
 // ══════════ 各端入口 ══════════
 // admin：全部领域（领域视角下只本领域）、可写
+const scopeArrOf = v => Array.isArray(v) ? v : [];
 function scMountAdmin(boxId) {
-  const lock = CURRENT_DOMAIN && CURRENT_DOMAIN !== 'all' ? CURRENT_DOMAIN : '';
+  const lock = viewLockDomain();
   if (lock) sc.f.domain = lock;
+  // 范围：领域完整选中 / 案例的专业在范围内（案例没有专业时只看领域）
+  const inScope = r => scopeAll() || scopeHasDomain(r.domain) || scopeArrOf(r.majors).some(scopeMajor);
   scMount(boxId, {
-    mode: 'admin', canWrite: true, canPack: false, me: 'admin', lockDomain: lock,
-    allowDomain: d => !lock || d === lock, allowMajor: () => true, canEditRow: r => !lock || r.domain === lock,
+    mode: 'admin', canWrite: true, canPack: false, me: 'admin', lockDomain: lock, inScope,
+    allowDomain: d => scopeAll() || scopeDomainList().includes(d), allowMajor: m => scopeMajor(m), canEditRow: inScope,
     loadStudents: async () => (await sbAll('/rest/v1/students?select=id,name,major,extra_majors,status&order=name.asc')).filter(s => typeof studentInCurrentView !== 'function' || studentInCurrentView(s)),
   });
 }
