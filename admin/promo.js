@@ -426,12 +426,13 @@ function promoFillFromProfile(id) {
 let pcDomain = '', pcList = [], pcEditing = null;   // pcEditing: null | 'new' | id
 let pcImport = null;   // Word 导入预览 { blocks:[{title,body,on}], mode:'append'|'replace', file }
 function pcDomains() {
-  const lock = CURRENT_DOMAIN && CURRENT_DOMAIN !== 'all' ? CURRENT_DOMAIN : '';
-  return lock ? [lock] : DOMAINS.map(d => d.label);
+  // 通用宣传是「没有专业的东西」：只有完整选中的领域才能管理
+  return DOMAINS.map(d => d.label).filter(d => scopeDomainOnly(d));
 }
 async function pcLoad() {
   const mc = document.getElementById('mainContent');
   const doms = pcDomains();
+  if (!doms.length) { if (mc) mc.innerHTML = '<div class="empty">这个链接的范围里没有完整的领域。通用宣传是按整个领域管理的。</div>'; return; }
   if (!doms.includes(pcDomain)) pcDomain = doms.includes('大学院文科') ? '大学院文科' : doms[0];
   try {
     pcList = await sbAll(`/rest/v1/promo_common?domain=eq.${encodeURIComponent(pcDomain)}&select=*&order=sort_order.asc,updated_at.asc`);

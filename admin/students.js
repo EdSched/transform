@@ -343,8 +343,12 @@ function populateMajorSelect(selectId, selectedValue){
   const sel=document.getElementById(selectId);
   if(!sel) return;
   // 排除 shakai_group（这是筛选用的分组标记，不是真实可选专业）
-  const entries=Object.entries(MAJORS).filter(([k])=>k!=='shakai_group');
-  sel.innerHTML=entries.map(([k,v])=>`<option value="${k}" ${k===selectedValue?'selected':''}>${v}</option>`).join('');
+  let entries=Object.entries(MAJORS).filter(([k])=>k!=='shakai_group');
+  // 组合范围的链接：新建时专业只列范围内的，并且必须选（只有一个选项时自动选中）
+  const multi=(CURRENT_DOMAIN==='multi'&&selectId==='st_major');
+  if(multi) entries=entries.filter(([k])=>scopeMajor(k));
+  const autoOne=multi&&!selectedValue&&entries.length===1;
+  sel.innerHTML=(multi&&!selectedValue&&entries.length>1?'<option value="">请选择专业</option>':'')+entries.map(([k,v])=>`<option value="${k}" ${(k===selectedValue||autoOne)?'selected':''}>${v}</option>`).join('');
   // 若学生当前专业不在 MAJORS 里（理论上不该发生，但做个保险），追加一个临时选项避免下拉显示为空
   if(selectedValue && !MAJORS[selectedValue]){
     sel.insertAdjacentHTML('beforeend', `<option value="${selectedValue}" selected>${selectedValue}</option>`);
@@ -370,6 +374,7 @@ async function saveStudent(){
   const name=document.getElementById('st_name').value.trim();
   const major=document.getElementById('st_major').value;
   if(!name){alert('请填写姓名');return}
+  if(!major){alert('请选择专业');return}
   const id=document.getElementById('studentId').value;
   const data={
     name,major,

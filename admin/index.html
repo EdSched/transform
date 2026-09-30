@@ -450,6 +450,7 @@
     <input type="hidden" id="ac_editing_id">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div class="form-group" style="margin:0"><label class="form-label">课程名称 *</label><input id="ac_name" placeholder="例：社会人文大课"></div>
+      <div class="form-group" id="ac_domain_box" style="margin:0;display:none"><label class="form-label">领域 *</label><select id="ac_domain" onchange="acDomainChange()"></select></div>
       <div class="form-group" style="margin:0"><label class="form-label">专业（可多选）</label>
         <div id="ac_major_checkboxes" style="display:flex;flex-wrap:wrap;gap:6px;padding:7px 9px;border:1px solid var(--border);border-radius:3px;background:var(--bg)">
           <!-- 由 acRenderMajorCheckboxes() 动态填充（含 shakai_group + 全部专业，新增专业自动出现） -->

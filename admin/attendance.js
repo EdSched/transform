@@ -70,8 +70,7 @@ async function attLoadHwCounts(silent){
 function renderAttendancePage(mc){
   // 先按视角（领域/专业）过滤出本视角的课，筛选项都基于这些课生成——因地制宜
   const viewCourses=cachedCourses.filter(c=>{
-    if(CURRENT_DOMAIN&&CURRENT_DOMAIN!=='all'&&c.domain!==CURRENT_DOMAIN) return false;
-    if(CURRENT_MAJOR) return (c.major||[]).some(m=>m===CURRENT_MAJOR);
+    if(!scopeCourse(c)) return false;
     return true;
   });
   // 期数：用季度(effectivePeriod)+年份，只列本视角课实际有的
@@ -86,8 +85,7 @@ function renderAttendancePage(mc){
   let filteredCourses=cachedCourses;
   // 视角过滤（跟随链接）：非总览时只看当前领域/专业的课
   filteredCourses=filteredCourses.filter(c=>{
-    if(CURRENT_DOMAIN&&CURRENT_DOMAIN!=='all'&&c.domain!==CURRENT_DOMAIN) return false;
-    if(CURRENT_MAJOR) return (c.major||[]).some(m=>m===CURRENT_MAJOR);
+    if(!scopeCourse(c)) return false;
     return true;
   });
   if(attTypeFilter) filteredCourses=filteredCourses.filter(c=>c.course_type===attTypeFilter);
