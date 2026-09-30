@@ -3,7 +3,7 @@
 :root{
   --blue:#2f6b4f; --blue-d:#245740; --bg:#f4f6f9; --line:#e2e6ec;
   --ink:#1f2733; --sub:#6b7480; --ok:#0f9d58; --warn:#e0a800; --err:#e97457;
-  --course:#dbeafe; --vip:#fde2e2; --temp:#fff3cd; --rental:#e6f4ea; --meeting:#ede7f6;
+  --course:#dbeafe; --vip:#efeae4; --temp:#fff3cd; --rental:#e6f4ea; --meeting:#ede7f6;
 }
 body{ margin:0; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
   background:var(--bg); color:var(--ink); font-size:14px; }

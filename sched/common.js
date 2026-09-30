@@ -229,7 +229,8 @@ function renderOccupancyGrid(rooms, items, keyField, opts){
   // 每列一个“跳过计数”：>0 表示这格被上面的 rowspan 占了，不输出
   const skip = rooms.map(()=>0);
   let h='<table><thead><tr><th class="tcol">时段</th>';
-  rooms.forEach(r=>h+=`<th>${esc(r.name)}${r.sub?('<br><small class="muted">'+esc(r.sub)+'</small>'):''}</th>`);
+  // r.cls：列的额外 class（如今日课表里较窄的 VIP 教室列）；r.w：表头宽度（CSS 值）
+  rooms.forEach(r=>h+=`<th${r.cls?` class="${esc(r.cls)}"`:''}${r.w?` style="width:${esc(r.w)}"`:''}>${esc(r.name)}${r.sub?('<br><small class="muted">'+esc(r.sub)+'</small>'):''}</th>`);
   h+='</tr></thead><tbody>';
   SLOTS.forEach((slot,si)=>{
     h+=`<tr><td class="tcol">${slot}</td>`;
@@ -243,9 +244,13 @@ function renderOccupancyGrid(rooms, items, keyField, opts){
         const who = (opts.hideWho||opts.labelOnly) ? '' : (b.user_name||b.student_name||'');
         const pend = b.status==='pending';
         const mic = ((opts.hideWho||opts.labelOnly) ? false : b.uses_meeting) ? ' <span class="mic">📶</span>' : '';
+        // vipMask：所有 VIP 占用（不管在哪种教室）只显示「VIP」两个字，不带学生/老师/事由/时间。用于今日课表大屏
+        const vipMask = !!opts.vipMask && b.kind==='vip';
         // labelOnly：只显示占用类型标签（如“VIP”），不带课名/事由/人名。用于 VIP 页对外展示
         let label;
-        if(opts.labelOnly){
+        if(vipMask){
+          label = KIND_LABEL.vip;
+        } else if(opts.labelOnly){
           label = KIND_LABEL[b.kind]||'占用';
         } else if(b.course_id){
           label = b.title||KIND_LABEL[b.kind]||'占用';
@@ -258,17 +263,17 @@ function renderOccupancyGrid(rooms, items, keyField, opts){
         }
         // 按类别上色（opts.catOf 传入 course_id→category 的查找）
         let styleAttr='', cc=null;
-        if(opts.catOf && b.course_id){ const cat=opts.catOf(b.course_id); if(cat){ cc=catColor(cat); } }
+        if(!vipMask && opts.catOf && b.course_id){ const cat=opts.catOf(b.course_id); if(cat){ cc=catColor(cat); } }
         if(cc) styleAttr=` style="background:${cc.bg};border-color:${cc.bd};color:${cc.tx}"`;
-        h+=`<td class="occ ${cc?'':(KIND_CLASS[b.kind]||'')}${pend?' occ-pend':''}" data-b="${b.id}" data-kind="${esc(b.kind||'')}" rowspan="${span}"${styleAttr}>`+
-           `<div class="occ-in">${esc(label)}${mic}`+
-           `<small>${esc(who)} ${b.start_time}-${b.end_time}${pend&&!(opts.hideWho||opts.labelOnly)?' · 待确认':''}</small></div></td>`;
+        h+=`<td class="occ ${cc?'':(KIND_CLASS[b.kind]||'')}${vipMask?' occ-vip':''}${pend?' occ-pend':''}${r.cls?' '+esc(r.cls):''}" data-b="${b.id}" data-kind="${esc(b.kind||'')}" rowspan="${span}"${styleAttr}>`+
+           `<div class="occ-in">${esc(label)}${vipMask?'':mic}`+
+           (vipMask?'':`<small>${esc(who)} ${b.start_time}-${b.end_time}${pend&&!(opts.hideWho||opts.labelOnly)?' · 待确认':''}</small>`)+`</div></td>`;
       }else{
         // 空格：连续空档起点标“空”
         const prevSlot = si>0?SLOTS[si-1]:null;
         const prevCovered = prevSlot ? items.some(x=>String(x[keyField])===String(r.id) && x.start_time<=prevSlot && prevSlot<x.end_time) : false;
         const spanStart = !prevSlot || prevCovered;
-        h+='<td class="cell">'+(spanStart?'<span class="freetag">空</span>':'')+'</td>';
+        h+=`<td class="cell${r.cls?' '+esc(r.cls):''}">`+(spanStart?'<span class="freetag">空</span>':'')+'</td>';
       }
     });
     h+='</tr>';
