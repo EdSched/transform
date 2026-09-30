@@ -808,10 +808,9 @@ function renderTeachersPage(mc){
             <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;white-space:nowrap"><input type="checkbox" id="perm_admission_query" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">出願数据查询</label>
             <div style="font-size:10px;color:var(--text-3);margin-bottom:8px;margin-left:20px">开启后可在老师端查看出願学校数据库（只读）</div>
             <div style="margin-left:20px">
-              <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可查看的专业（不选则全部可查看）</div>
-              <div style="display:flex;flex-wrap:wrap;gap:4px" id="perm_admission_majors">
-                ${Object.entries(typeof ADMISSION_MAJORS!=='undefined'?ADMISSION_MAJORS:{shakai:'社会学',keiei:'経営学',keizai:'経済学',shinpan:'新闻传播学',fukushi:'社会福祉学',nihongo:'日本语教育',hyosho:'表象文化・文学・哲学',seiji:'政治学',toyo:'東洋史',bunka:'文化人类学',mot:'MOT',tokei:'統計・計量',kyoiku:'教育学'}).map(([k,v])=>`<div class="filter-chip" data-value="${k}" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">${v}</div>`).join('')}
-              </div>
+              <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可查看的专业（不选则只能查看该老师自己负责的专业）</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px" id="perm_admission_majors"></div>
+              <div id="perm_admission_removed" style="font-size:10px;color:var(--text-3);margin-top:4px"></div>
             </div>
           </div>
         </div>
@@ -968,6 +967,52 @@ function hwaToggle(id) { id = String(id); if (hwaIds.has(id)) hwaIds.delete(id);
 
 function toggleChip(el){
   el.classList.toggle('active');
+  if(el.closest && el.closest('#new_teacher_managed,#new_teacher_majors')) renderPermAdmMajors();   // 老师所在领域变了，出愿专业清单跟着变
+}
+// ── 老师权限「出願数据查询」的可查看专业：只列老师所在领域的出愿专业 ──
+let _admSel=new Set();   // 当前勾选（含可能不属于本领域的旧数据，保存时才清掉）
+function admFormDomains(){
+  const _isDom=(typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && !!viewLockDomain());
+  if(_isDom) return [viewLockDomain()];
+  const mb=[...document.querySelectorAll('#new_teacher_managed .filter-chip.active')].map(c=>c.dataset.value);
+  if(mb.length) return [...new Set(mb)];
+  const ms=[...document.querySelectorAll('#new_teacher_majors .filter-chip.active')].map(c=>c.dataset.value);
+  return [...new Set(ms.map(m=>MAJOR_DOMAIN[m]).filter(Boolean))];
+}
+function admListedKeys(){
+  const doms=admFormDomains();
+  return Object.keys(ADMISSION_MAJORS).filter(k=>doms.includes(admissionMajorDomain(k)));
+}
+function admSelectedForSave(){
+  if(!admFormDomains().length) return [..._admSel];   // 还没定领域：原样保留，不误清
+  const ok=new Set(admListedKeys());
+  return [..._admSel].filter(k=>ok.has(k));
+}
+function renderPermAdmMajors(){
+  const box=document.getElementById('perm_admission_majors'); if(!box) return;
+  const doms=admFormDomains(), keys=admListedKeys();
+  const rm=document.getElementById('perm_admission_removed');
+  if(!doms.length){ box.innerHTML='<div style="font-size:11px;color:var(--text-3)">请先选择该老师的隶属领域或负责专业，这里再列出对应领域的出愿专业</div>'; if(rm) rm.textContent=''; return; }
+  if(!keys.length){ box.innerHTML='<div style="font-size:11px;color:var(--text-3)">'+escTM(doms.join('、'))+' 暂无出愿专业</div>'; }
+  else {
+    const allOn=keys.every(k=>_admSel.has(k));
+    box.innerHTML=`<div class="filter-chip${allOn?' active':''}" onclick="admToggleAll()" style="padding:3px 9px;font-size:10px">全选</div>`+
+      keys.map(k=>`<div class="filter-chip${_admSel.has(k)?' active':''}" onclick="admToggleOne('${k}')" style="padding:3px 9px;font-size:10px">${escTM(ADMISSION_MAJORS[k])}</div>`).join('');
+  }
+  if(rm){
+    const ok=new Set(keys), gone=[..._admSel].filter(k=>!ok.has(k));
+    rm.textContent=gone.length?'已移除不属于本领域的专业：'+gone.map(k=>ADMISSION_MAJORS[k]||k).join('、')+'（保存后清掉）':'';
+  }
+}
+function admToggleOne(k){ if(_admSel.has(k)) _admSel.delete(k); else _admSel.add(k); renderPermAdmMajors(); }
+function admToggleAll(){
+  const keys=admListedKeys(); if(!keys.length) return;
+  if(keys.every(k=>_admSel.has(k))){ keys.forEach(k=>_admSel.delete(k)); }
+  else {
+    if(!confirm('要让这位老师查看〈'+admFormDomains().join('、')+'〉的全部出愿数据吗？')) return;
+    keys.forEach(k=>_admSel.add(k));
+  }
+  renderPermAdmMajors();
 }
 function cancelEditTeacher(){
   document.getElementById('teacherFormTitle').textContent='添加新老师';
@@ -995,7 +1040,7 @@ function cancelEditTeacher(){
     {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=false;}
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
-  document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>c.classList.remove('active'));
+  _admSel=new Set(); renderPermAdmMajors();
   renderHomeworkCoursesChips([]);
 }
 function openTeacherManager(){
@@ -1022,7 +1067,7 @@ function openTeacherManager(){
     {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=false;}
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
-  document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>c.classList.remove('active'));
+  _admSel=new Set(); renderPermAdmMajors();
   renderHomeworkCoursesChips([]);
   renderTeacherList();
   document.getElementById('teacherManagerModal').classList.add('open');
@@ -1192,7 +1237,7 @@ function getPermissionsFromForm(prev){
     homework_own_sessions:hwaOwn,
     homework_course_ids:hwaCoursesOn?[...hwaIds]:[],   // 旧的 homework_courses（课程名）不再写入，保存即删除
     admission_query:document.getElementById('perm_admission_query').checked,
-    admission_majors:[...document.querySelectorAll('#perm_admission_majors .filter-chip.active')].map(c=>c.dataset.value),
+    admission_majors:admSelectedForSave(),
     promo:_chk('perm_promo',prev.promo),
     lect_info:_chk('perm_lect_info',prev.lect_info),
     progress_plan:_chk('perm_progress_plan',prev.progress_plan),
@@ -1213,7 +1258,8 @@ function toggleDomainChip(el){
   renderTeacherMajorChips();
 }
 // 按已选领域展开专业 chip（按领域分组显示）；保留已勾选的专业状态
-function renderTeacherMajorChips(){
+function renderTeacherMajorChips(){ _renderTeacherMajorChipsInner(); renderPermAdmMajors(); }
+function _renderTeacherMajorChipsInner(){
   const box=document.getElementById('new_teacher_majors'); if(!box) return;
   const _isDom=(typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && !!viewLockDomain());
   const _lockDom=_isDom?viewLockDomain():'';
@@ -1355,7 +1401,7 @@ function openEditTeacher(id){
   {const _e=document.getElementById('perm_schedule_mode'); if(_e)_e.value=(p.schedule===true?'full':(p.schedule||''));}
   document.getElementById('perm_homework').checked=!!p.homework;
   document.getElementById('perm_admission_query').checked=!!p.admission_query;
-  document.querySelectorAll('#perm_admission_majors .filter-chip').forEach(c=>{c.classList.toggle('active',(p.admission_majors||[]).includes(c.dataset.value));});
+  _admSel=new Set(p.admission_majors||[]); renderPermAdmMajors();
   {const _e=document.getElementById('perm_promo'); if(_e)_e.checked=!!p.promo;}
   {const _e=document.getElementById('perm_lect_info'); if(_e)_e.checked=!!p.lect_info;}
   {const _e=document.getElementById('perm_progress_plan'); if(_e)_e.checked=!!p.progress_plan;}
