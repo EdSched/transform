@@ -279,17 +279,29 @@ function fillMajors(){
   if(hasShakaiGroup && !majors.includes('社会人文')) majors=['社会人文',...majors];
   fillSelect(el('major'), majors, v=>v, v=>v, majors.length?'全部专业':'（无专业细分）');
 }
-/* 期多选标签 */
+/* 期 / 月多选标签：期显示上一期·当前期·下一期，月显示上个月·本月·下个月·下下个月，其余收进「更多」；已选中的一直显示在外面 */
+let TERM_MORE={period:false, month:false};
 function renderTermTags(){
   const box=el('termTags'); if(!box) return;
-  box.innerHTML = ALL_TERMS.length ? ALL_TERMS.map(t=>{
-    const on=SEL_TERMS.has(t);
-    return `<button type="button" class="ghost sm termbtn" data-t="${esc(t)}" style="${on?'background:var(--blue);color:#fff':''}">${on?'✓ ':''}${esc(t)}</button>`;
-  }).join('') : '<span class="muted">无</span>';
+  const periods=ALL_TERMS.filter(t=>!isMonthTerm(t)), months=ALL_TERMS.filter(isMonthTerm);
+  const row=(kind,label,list)=>{
+    if(!list.length) return '';
+    const keys=new Set(recentTermKeys(kind));
+    const isRecent=t=>keys.has(termSortKey(t));
+    const shown=list.filter(t=>isRecent(t)||SEL_TERMS.has(t)), hidden=list.filter(t=>!shown.includes(t));
+    const open=TERM_MORE[kind];
+    const btn=t=>{ const on=SEL_TERMS.has(t); return `<button type="button" class="ghost sm termbtn" data-t="${esc(t)}" style="${on?'background:var(--blue);color:#fff':''}">${on?'✓ ':''}${esc(t)}</button>`; };
+    const more=hidden.length?`<button type="button" class="ghost sm termmore" data-k="${kind}" style="border-style:dashed">${open?'收起 ▴':'更多 ▾ ('+hidden.length+')'}</button>`:'';
+    return `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="muted" style="min-width:16px">${label}</span>${shown.map(btn).join('')}${open?hidden.map(btn).join(''):''}${more}</div>`;
+  };
+  const html=row('period','期',periods)+row('month','月',months);
+  box.style.flexDirection='column'; box.style.gap='6px';
+  box.innerHTML = html || '<span class="muted">无</span>';
   box.querySelectorAll('.termbtn').forEach(b=>b.onclick=()=>{
     const t=b.dataset.t; if(SEL_TERMS.has(t)) SEL_TERMS.delete(t); else SEL_TERMS.add(t);
     renderTermTags(); SELECTED_IDS.clear(); refreshCourseTags(); refreshExtraList(); if(SHARE) gen();
   });
+  box.querySelectorAll('.termmore').forEach(b=>b.onclick=()=>{ TERM_MORE[b.dataset.k]=!TERM_MORE[b.dataset.k]; renderTermTags(); });
 }
 function termLabel(){ return SEL_TERMS.size? [...SEL_TERMS].join('、') : '全部期'; }
 function fillXMajors(){
@@ -424,17 +436,6 @@ function selectedCourses(){
   return out;
 }
 /* 模板 */
-function termSortKey(t){
-  t=String(t||'');
-  const ym=t.match(/(\d{4})\D+(\d{1,2})\s*月/);        // 2026年10月期
-  if(ym) return Number(ym[1])*100 + Number(ym[2]);
-  const y=t.match(/(\d{4})/);                            // 有年份的学期
-  const year=y?Number(y[1]):0;
-  if(/下学期|後期|后期/.test(t)) return year*100 + 10;   // 下学期≈10月
-  if(/上学期|前期/.test(t))     return year*100 + 4;     // 上学期≈4月
-  if(year) return year*100 + 6;                          // 只有年份，放中间
-  return 999999;                                         // 无法解析放最后
-}
 async function fillTplSelect(){
   TEMPLATES = await sbGet('sched_timetable_templates','select=*&order=created_at.desc');
   const sel=el('tpl'); sel.innerHTML='<option value="">（不使用）</option>'+TEMPLATES.map(t=>`<option value="${t.id}">${esc(t.label)}</option>`).join('');
