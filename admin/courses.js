@@ -1498,18 +1498,28 @@ function acSyncRows(){
   const editingId=document.getElementById('ac_editing_id').value;
   const co=cachedCourses.find(c=>c.id===editingId)||{};
   const fw=(firstDate&&weekdayStr&&typeof computeSessionDates==='function')
-    ?computeSessionDates({first_session_date:firstDate,weekdays:weekdayStr,skip_dates:co.skip_dates||'',holiday_except:co.holiday_except||''},total):[];
+    ?computeSessionDates({first_session_date:firstDate,weekdays:weekdayStr,skip_dates:co.skip_dates||'',holiday_except:co.holiday_except||''},total+existing.length):[];
+  // 回数只数正常上课的行，休讲行不占回数、也不会被删掉
+  const isOff=r=>r.num==='休讲'||r.title==='休讲';
+  let realN=existing.filter(r=>!isOff(r)).length;
+  const keep=[];
+  // 行多于回数：从末尾删多出来的正常行（休讲行保留）
+  for(let j=existing.length-1;j>=0;j--){ const r=existing[j]; if(!isOff(r)&&realN>total){ realN--; continue; } keep.unshift(r); }
   document.getElementById('ac_details_body').innerHTML='';
-  const used=new Set(existing.map(r=>r.date).filter(Boolean));
+  keep.forEach(r=>acAddRow(r));
+  const used=new Set(keep.map(r=>r.date).filter(Boolean));
   let k=0;
-  for(let i=1;i<=total;i++){
-    const ex=existing[i-1];
-    if(ex){ acAddRow(ex); continue; }
+  while(realN<total){
     while(k<fw.length&&used.has(fw[k])) k++;   // 跳过表里已经有的日期
-    acAddRow({num:i,title:'',teacher,date:fw[k]||''});
+    acAddRow({num:acNextNum(),title:'',teacher,date:fw[k]||''});
     if(fw[k]) used.add(fw[k]);
-    k++;
+    k++; realN++;
   }
+}
+// 新增一行的回数 = 现有正常行里最大的回数 + 1（休讲行不算，避免跳号）
+function acNextNum(){
+  const nums=acGetRows().filter(r=>!(r.num==='休讲'||r.title==='休讲')).map(r=>parseInt(r.num)).filter(n=>!isNaN(n));
+  return nums.length?Math.max(...nums)+1:1;
 }
 
 function acPasteImport(){
@@ -1553,7 +1563,7 @@ function acPasteImport(){
 
 function acAddRow(data){
   const tbody=document.getElementById('ac_details_body');
-  const rowNum=data?.num??(tbody.children.length+1);
+  const rowNum=data?.num??acNextNum();
   const tr=document.createElement('tr');
   tr.dataset.id=data?.id||'';
   tr.innerHTML=`
@@ -2229,13 +2239,16 @@ async function confirmReschedule(){
   if(!target){alert('找不到该课次');return}
 
   const courseId=target.course_id;
-  const allSessions=cachedSessions.filter(s=>s.course_id===courseId).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+  if(target.is_cancelled){alert('该课次已经是休讲');return}
+  // 只看正常上课的课次：之前已休讲的日期不参与顺延，也不改它的回数
+  const allSessions=cachedSessions.filter(s=>s.course_id===courseId&&!s.is_cancelled).sort((a,b)=>a.session_date.localeCompare(b.session_date));
   const idx=allSessions.findIndex(s=>s.id===id);
   if(idx===-1){alert('找不到该课次');return}
 
   const course=cachedCourses.find(c=>c.id===courseId);
   const weekdays=parseWeekdays(course?.weekdays||'');
   const lastSession=allSessions[allSessions.length-1];
+  const lastNum=lastSession.session_number;   // 顺延前的最后回数（下面第 2 步会把 lastSession 的回数减 1，先记下来）
   const after=allSessions.slice(idx+1); // 休讲之后的所有课次（日期固定，等待填入顺延后的内容）
 
   if(!confirm(`确认将 ${target.session_date}（第${target.session_number}回）标记为休讲？\n该日期作废、不计入回数。被休讲掉的内容（连同之后所有内容）整体顺延一位，末尾新增一个日期承接原本最后一回的内容。\n\n如需更精细的手动调整（如改回数、改日期），可在「编辑课程」的单回明细表中直接修改。`)) return;
@@ -2294,7 +2307,7 @@ async function confirmReschedule(){
     const newSession={
       id:`s-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
       course_id:courseId,course_name:lastSession.course_name,major:lastSession.major,
-      session_date:newDateStr,session_number:lastSession.session_number, // 原始最后编号（顺延前）
+      session_date:newDateStr,session_number:lastNum, // 原始最后编号（顺延前）
       time_range:lastSession.time_range,actual_hours:lastSession.actual_hours,
       delivery:lastSession.delivery,campus:lastSession.campus,
       teacher:newTeacherVal,
