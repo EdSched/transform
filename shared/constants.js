@@ -1535,3 +1535,32 @@ function hwFeedbackCardsHtml(sub, opts) {
     ${f.file_url ? `<a href="${e(f.file_url)}" target="_blank" style="font-size:10px;color:#b8953a;display:inline-block;margin-top:4px">📎 下载批改文件${f.file_name ? '（' + e(f.file_name) + '）' : ''}</a>` : ''}
   </div>`).join('');
 }
+
+// ══════════ 讲师介绍（teacher_profiles）共用判断 ══════════
+// 一位老师每个负责专业一行介绍，subject 存专业中文名；name 与 teachers.name 对应
+const PROFILE_REQUIRED = [['school', '毕业或所属研究科'], ['keywords', '专攻方向'], ['feature', '授课特色'], ['courses', '担当课程']];   // 特色亮点(highlights)不必填
+function profileComplete(p) { return !!p && PROFILE_REQUIRED.every(([k]) => String(p[k] || '').trim()); }
+function profileMissing(p) { return PROFILE_REQUIRED.filter(([k]) => !p || !String(p[k] || '').trim()).map(([, l]) => l); }
+// 标签含「专业课」的老师需要填写讲师介绍
+function isSenmonTeacher(t) { return !!t && (t.tags || []).some(g => String(g).includes('专业课')); }
+// 专业中文名 → 专业 key（对不上返回 ''）
+function subjectToMajorKey(subject) {
+  const s = String(subject || '').trim(); if (!s) return '';
+  return Object.keys(MAJORS).find(k => k !== 'shakai_group' && MAJORS[k] === s) || '';
+}
+// 介绍行所属领域：用 domain，为空时按 subject 对应专业所属领域补（只用于显示，不写库）
+function profileDomain(p) { return (p && p.domain) || MAJOR_DOMAIN[subjectToMajorKey(p && p.subject)] || ''; }
+// 老师需要填介绍的专业 key 列表（teachers.majors；社会人文组展开成成员专业，去重）
+function teacherProfileMajors(t) {
+  const out = [];
+  ((t && t.majors) || []).forEach(m => { (MAJOR_GROUPS[m] || [m]).forEach(k => { if (k && !out.includes(k)) out.push(k); }); });
+  return out;
+}
+// 逐个专业的完成情况：[{key,label,row,missing:[字段名],done}]；rows = 这位老师的全部介绍行
+function teacherProfileStatus(t, rows) {
+  return teacherProfileMajors(t).map(key => {
+    const label = MAJORS[key] || key;
+    const row = (rows || []).find(r => String(r.subject || '').trim() === label) || null;
+    return { key, label, row, missing: row ? profileMissing(row) : PROFILE_REQUIRED.map(([, l]) => l), done: profileComplete(row) };
+  });
+}

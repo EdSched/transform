@@ -318,10 +318,10 @@ function renderTodo(mc) {
     .slice(0, 3);
   // VIP 已上完课、老师已填记录、但学生还没确认的——需要提醒老师去联系学生
   const unconfirmedVip = cachedTeacherBookings.filter(b => b.type === 'vip' && b.status === 'confirmed' && b.vip_session_notes && !b.student_confirmed);
-  const hasTodo = pendingBookings.length > 0 || pendingVip.length > 0 || vipRequests.length > 0 || pendingSlots.length > 0 || unconfirmedVip.length > 0;
+  const hasTodo = pendingBookings.length > 0 || pendingVip.length > 0 || vipRequests.length > 0 || pendingSlots.length > 0 || unconfirmedVip.length > 0 || profPendingCount > 0;
   mc.innerHTML = `
   <div style="display:flex;flex-direction:column;gap:12px">
-    ${hasTodo ? '' : '<div style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:4px;padding:12px 16px;font-size:12px;color:#1a5a3a">✓ 暂无待处理事项</div>'}
+    ${hasTodo ? '' : '<div class="todo-ok" style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:4px;padding:12px 16px;font-size:12px;color:#1a5a3a">✓ 暂无待处理事项</div>'}
 <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px">
   <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px">显示昵称设置</div>
   <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">学生预约页面显示的名字，留空则显示真实姓名「${teacherName}」</div>
@@ -330,7 +330,6 @@ function renderTodo(mc) {
     <button onclick="saveDisplayName()" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 14px;font-size:11px;cursor:pointer;font-family:inherit">保存</button>
   </div>
 </div>
-<div id="profilePromptBox"></div>
     ${unconfirmedVip.length ? `<div class="todo-card warn">
       <div class="todo-head">⏳ 有 ${unconfirmedVip.length} 位VIP学生还未确认上课，请联系学生</div>
       ${unconfirmedVip.slice(0, 5).map(b => {
@@ -2847,76 +2846,143 @@ function teacherAdbRender() {
 // 讲师档案补全提示（teacher_profiles，档案姓名＝本名，与账号同名自动关联）
 // 对外展示名不在此处填写：由老师管理的「备注 / 对外宣传姓名」统一控制
 // ══════════════════════════════════
-let myProfile = null;
+let myProfiles = [];        // 这位老师的全部讲师介绍行（每个专业一行）
+let profPendingCount = 0;   // 还没填完的专业数（>0 时待处理页不显示"暂无待处理事项"）
+let profDrafts = {};        // 表单里切换专业时暂存各专业没保存的输入
+let profCurKey = '';        // 表单当前编辑的专业 key
 
+function profStatusNow() { return teacherProfileStatus(teacherData, myProfiles); }
+
+// 每个页面顶部固定提醒（不能关闭）：还有没填完的专业就一直显示
 async function checkTeacherProfile() {
-  // 仅带「专业课」相关标签的老师需要提示补全档案（标签在 admin 老师管理中维护）
-  const isSenmon = (teacherData.tags || []).some(t => String(t).includes('专业课'));
-  if (!isSenmon) { const b = document.getElementById('profilePromptBox'); if (b) b.innerHTML = ''; return; }
+  let box = document.getElementById('profileBanner');
+  if (!box) {
+    const mc = document.getElementById('mainContent');
+    if (!mc || !mc.parentNode) return;
+    box = document.createElement('div'); box.id = 'profileBanner';
+    mc.parentNode.insertBefore(box, mc);
+  }
+  // 仅带「专业课」相关标签的老师需要填写讲师介绍（标签在 admin 老师管理中维护）
+  if (!isSenmonTeacher(teacherData)) { box.innerHTML = ''; profPendingCount = 0; return; }
   try {
-    const rows = await sb(`/rest/v1/teacher_profiles?name=eq.${encodeURIComponent(teacherName)}&select=*&limit=1`);
-    myProfile = (rows || [])[0] || null;
+    myProfiles = await sb(`/rest/v1/teacher_profiles?name=eq.${encodeURIComponent(teacherName)}&select=*&order=sort_order.asc,created_at.asc`) || [];
   } catch (e) { return; } // 表未建或网络问题时静默跳过
-  const missing = !myProfile || !((myProfile.school||'').trim() && (myProfile.keywords||'').trim() && (myProfile.feature||'').trim() && (myProfile.courses||'').trim());
-  const box = document.getElementById('profilePromptBox');
-  if (!box) return;
-  box.innerHTML = missing ? `
-  <div style="background:var(--warn-bg,#f8f0d8);border:1px solid var(--warn,#b8860b);border-radius:4px;padding:12px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-    <span style="font-size:12px;color:#6a5210">📋 您的讲师档案${myProfile ? '还有信息未补全' : '尚未建立'}（用于内部讲师信息库与对外介绍）</span>
-    <button onclick="openProfileForm()" style="margin-left:auto;font-size:11px;background:var(--warn,#b8860b);color:#fff;border:none;border-radius:3px;padding:5px 16px;cursor:pointer;font-family:inherit">点击填写</button>
-  </div>` : '';
+  const st = profStatusNow(), todo = st.filter(x => !x.done);
+  profPendingCount = st.length ? todo.length : 1;
+  const box2 = document.getElementById('profileBanner'); if (!box2) return;
+  if (!st.length) {
+    box2.innerHTML = `<div style="background:var(--warn-bg,#f8f0d8);border:1px solid var(--warn,#b8860b);border-radius:4px;padding:10px 16px;margin-bottom:12px;font-size:12px;color:#6a5210">📋 讲师介绍：还没有设置负责专业，请联系管理员在老师管理里设置</div>`;
+  } else if (todo.length) {
+    const txt = todo.map(x => `${stEsc(x.label)}（${x.row ? '缺：' + x.missing.join('、') : '未填'}）`).join('、');
+    box2.innerHTML = `<div style="background:var(--warn-bg,#f8f0d8);border:1px solid var(--warn,#b8860b);border-radius:4px;padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:12px;color:#6a5210;flex:1;min-width:200px">📋 讲师介绍还没完成：${txt}</span>
+      <button onclick="openProfileForm('${todo[0].key}')" style="font-size:11px;background:var(--warn,#b8860b);color:#fff;border:none;border-radius:3px;padding:5px 16px;cursor:pointer;font-family:inherit">去填写</button>
+    </div>`;
+  } else box2.innerHTML = '';
+  // 待处理页已经打开时，把"暂无待处理事项"刷新掉
+  if (curTab === 'todo') { const mc = document.getElementById('mainContent'); if (mc && mc.querySelector('.todo-ok')) renderTodo(mc); }
 }
 
-function openProfileForm() {
-  const existing = document.getElementById('profileFormModal');
-  if (existing) existing.remove();
-  const p = myProfile || {};
-  const esc = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+const PROF_TP_FIELDS = [['courses', '担当课程 *', '社会学理论 现代文化论', 2], ['keywords', '可指导方向（关键词）*', '都市社会学，文化研究，…', 2], ['feature', '授课特色 *', '教学风格、指导经验、擅长领域…', 4], ['highlights', '特色亮点（选填）', '最想让学生记住的亮点', 3]];
+function profEscT(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+function profReadForm() {
+  const g = id => (document.getElementById(id) || {}).value || '';
+  return { school: g('tpf_school').trim(), degree: g('tpf_degree').trim(), courses: g('tpf_courses').trim(), keywords: g('tpf_keywords').trim(), feature: g('tpf_feature').trim(), highlights: g('tpf_highlights').trim() };
+}
+
+// 打开 / 刷新讲师介绍表单：顶部是各负责专业的 chip（✓ / 未完成），点哪个编辑哪个
+function openProfileForm(key) {
+  const st = profStatusNow();
+  const modalOld = document.getElementById('profileFormModal');
+  if (modalOld && profCurKey && document.getElementById('tpf_school')) profDrafts[profCurKey] = profReadForm();   // 切换前暂存
+  if (!st.length) { alert('还没有设置负责专业，请联系管理员在老师管理里设置'); return; }
+  if (!key || !st.some(x => x.key === key)) key = (st.find(x => !x.done) || st[0]).key;
+  profCurKey = key;
+  const cur = st.find(x => x.key === key), row = cur.row || {};
+  const d = profDrafts[key] || {};
+  const val = f => d[f] !== undefined ? d[f] : (row[f] || '');
+  const others = st.filter(x => x.key !== key && x.row);
   const inp = 'width:100%;font-size:12px;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
   const pubName = (teacherData.notes || '').trim();
-  const modal = document.createElement('div');
+  const modal = modalOld || document.createElement('div');
   modal.id = 'profileFormModal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  modal.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:560px;width:100%;max-height:88vh;overflow-y:auto">
-    <div style="font-size:13px;font-weight:600;margin-bottom:4px">📋 讲师档案${myProfile ? '补全' : '填写'}</div>
-    <div style="font-size:10px;color:var(--text-3);margin-bottom:12px">档案登记姓名：<b>${esc(teacherName)}</b>${pubName ? `（对外展示为「${esc(pubName)}」）` : ''}。对外展示名如需设置或修改请联系教务，此处只需如实填写档案内容。</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">所属学科（如 社会学）*</label><input id="tpf_subject" value="${esc(p.subject)}" style="${inp}"></div>
-      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">学位（含在读）</label><input id="tpf_degree" value="${esc(p.degree)}" placeholder="博士" style="${inp}"></div>
-      <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">毕业或所属大学院研究科 *</label><input id="tpf_school" value="${esc(p.school)}" placeholder="一桥大学 社会学研究科" style="${inp}"></div>
+  const fieldBox = (id, l, v, ph, rows) => `<label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">${l}</label>
+    <textarea id="${id}" rows="${rows}" placeholder="${ph}" style="width:100%;font-size:12px;line-height:1.8;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical;margin-bottom:8px">${profEscT(v)}</textarea>`;
+  const bringFields = [['courses', '担当课程'], ['keywords', '可指导方向'], ['feature', '授课特色'], ['highlights', '特色亮点']];
+  modal.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto">
+    <div style="font-size:13px;font-weight:600;margin-bottom:4px">📋 讲师介绍</div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">档案登记姓名：<b>${profEscT(teacherName)}</b>${pubName ? `（对外展示为「${profEscT(pubName)}」）` : ''}。每个负责专业一份介绍，点下面的专业切换。对外展示名如需修改请联系教务。</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+      ${st.map(x => `<div class="filter-chip${x.key === key ? ' active' : ''}" onclick="openProfileForm('${x.key}')" style="padding:4px 12px;font-size:11px">${profEscT(x.label)} <span style="font-size:10px;color:${x.done ? 'var(--ok,#2a9e6a)' : 'var(--warn,#b8860b)'}">${x.done ? '✓' : '未完成'}</span></div>`).join('')}
     </div>
-    ${[['tpf_courses','担当课程 *', p.courses, '社会学理论 现代文化论'],['tpf_keywords','可指导方向（关键词）*', p.keywords, '都市社会学，文化研究，…'],['tpf_feature','授课特色 *', p.feature, '教学风格、指导经验、擅长领域…']].map(([id,l,v,ph]) => `
-    <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">${l}</label>
-    <textarea id="${id}" rows="${id==='tpf_feature'?4:2}" placeholder="${ph}" style="width:100%;font-size:12px;line-height:1.8;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical;margin-bottom:8px">${esc(v)}</textarea>`).join('')}
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
+    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:1 1 440px;min-width:0">
+        <div style="font-size:12px;font-weight:600;margin-bottom:8px">${profEscT(cur.label)} 的介绍</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+          <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">学位（含在读）</label><input id="tpf_degree" value="${profEscT(val('degree'))}" placeholder="博士" style="${inp}"></div>
+          <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">毕业或所属大学院研究科 *</label><input id="tpf_school" value="${profEscT(val('school'))}" placeholder="一桥大学 社会学研究科" style="${inp}"></div>
+        </div>
+        ${PROF_TP_FIELDS.map(([f, l, ph, r]) => fieldBox('tpf_' + f, l, val(f), ph, r)).join('')}
+      </div>
+      <div style="flex:1 1 280px;min-width:240px">
+        <div style="font-size:12px;font-weight:600;margin-bottom:8px">我在其他专业的介绍</div>
+        ${others.length ? others.map(o => `<div style="border:1px solid var(--border-light);border-radius:4px;padding:8px 10px;margin-bottom:6px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="font-size:11px;font-weight:600">${profEscT(o.label)}</span>
+            <button onclick="profBringAllT('${o.key}')" style="margin-left:auto;font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:1px 8px;cursor:pointer;font-family:inherit">全部带入（只填空白）</button></div>
+          ${bringFields.map(([f, l]) => (o.row[f] || '').trim() ? `<div style="font-size:10px;margin-bottom:3px"><div style="display:flex;align-items:center;gap:6px"><span style="color:var(--text-3)">${l}</span><button onclick="profBringT('${o.key}','${f}')" style="margin-left:auto;font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:0 6px;cursor:pointer;font-family:inherit">⤵ 带入</button></div><div style="color:var(--text-2);line-height:1.6;white-space:pre-wrap">${profEscT((o.row[f] || '').slice(0, 120))}${(o.row[f] || '').length > 120 ? '…' : ''}</div></div>` : '').join('')}
+        </div>`).join('') : '<div style="font-size:10px;color:var(--text-3);border:1px dashed var(--border);border-radius:4px;padding:10px">你在其他专业还没有填好的介绍；填完一个专业后，这里可以把内容带到别的专业</div>'}
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
       <button onclick="document.getElementById('profileFormModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">取消</button>
-      <button onclick="saveTeacherProfile()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存档案</button>
+      <button onclick="saveTeacherProfile()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存「${profEscT(cur.label)}」</button>
     </div>
   </div>`;
   modal.onclick = e => { if (e.target === modal) modal.remove(); };
-  document.body.appendChild(modal);
+  if (!modalOld) document.body.appendChild(modal);
+}
+function profBringT(srcKey, field) {
+  const src = profStatusNow().find(x => x.key === srcKey), el = document.getElementById('tpf_' + field); if (!src || !src.row || !el) return;
+  if (el.value.trim() && el.value.trim() !== (src.row[field] || '').trim() && !confirm('当前这一项已经有内容，要用另一个专业的内容覆盖吗？')) return;
+  el.value = src.row[field] || '';
+}
+function profBringAllT(srcKey) {
+  const src = profStatusNow().find(x => x.key === srcKey); if (!src || !src.row) return;
+  ['courses', 'keywords', 'feature', 'highlights'].forEach(f => { const el = document.getElementById('tpf_' + f); if (el && !el.value.trim() && (src.row[f] || '').trim()) el.value = src.row[f]; });
 }
 
 async function saveTeacherProfile() {
-  const g = id => (document.getElementById(id) || {}).value || '';
+  const st = profStatusNow(), cur = st.find(x => x.key === profCurKey); if (!cur) return;
+  const f = profReadForm();
   const row = {
     name: teacherName, // 本名，与账号一致即自动关联
-    subject: g('tpf_subject').trim(),
-    school: g('tpf_school').trim(), degree: g('tpf_degree').trim(),
-    courses: g('tpf_courses').trim(), keywords: g('tpf_keywords').trim(), feature: g('tpf_feature').trim(),
+    subject: cur.label, domain: MAJOR_DOMAIN[cur.key] || '',
+    school: f.school, degree: f.degree, courses: f.courses, keywords: f.keywords, feature: f.feature, highlights: f.highlights,
   };
   if (!row.school || !row.courses || !row.keywords || !row.feature) { alert('请填写所有带 * 的必填项'); return; }
   try {
-    if (myProfile && myProfile.id) {
-      await sb(`/rest/v1/teacher_profiles?id=eq.${myProfile.id}`, 'PATCH', row);
-      Object.assign(myProfile, row);
+    // 学校、学位是固定信息：和其他专业的不一致时，问要不要一起更新
+    const others = myProfiles.filter(r => !(cur.row && r.id === cur.row.id));
+    const diff = [['school', '毕业或所属研究科'], ['degree', '学位']].filter(([k]) => row[k] && others.some(o => (o[k] || '').trim() !== row[k]));
+    let syncOthers = false;
+    if (others.length && diff.length) syncOthers = confirm(`你在其他专业还有 ${others.length} 份介绍，其中「${diff.map(d => d[1]).join('、')}」和这里不一致。\n\n要同时更新其他专业的这几项吗？（确定 = 一起更新，取消 = 只改这一份）`);
+    if (cur.row && cur.row.id) {
+      await sb(`/rest/v1/teacher_profiles?id=eq.${cur.row.id}`, 'PATCH', row);
+      Object.assign(cur.row, row);
     } else {
       row.id = `prof-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
       await sb('/rest/v1/teacher_profiles', 'POST', row);
-      myProfile = row;
+      myProfiles.push(row);
     }
+    if (syncOthers) for (const o of others) {
+      const patch = {}; diff.forEach(([k]) => { if ((o[k] || '').trim() !== row[k]) patch[k] = row[k]; });
+      if (Object.keys(patch).length) { await sb(`/rest/v1/teacher_profiles?id=eq.${o.id}`, 'PATCH', patch); Object.assign(o, patch); }
+    }
+    delete profDrafts[profCurKey];
+    const left = profStatusNow().filter(x => !x.done);
     document.getElementById('profileFormModal')?.remove();
-    alert('档案已保存，感谢配合！');
+    alert(left.length ? `「${cur.label}」已保存。还有 ${left.length} 个专业没填完：${left.map(x => x.label).join('、')}` : '讲师介绍已全部完成，感谢配合！');
     checkTeacherProfile();
   } catch (e) { alert('保存失败：' + e.message); }
 }
