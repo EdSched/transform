@@ -4,7 +4,9 @@
 
 create table if not exists public.price_packages (      -- 大课套餐
   id text primary key,
-  track text not null,             -- 学部理科 / 学部文科 / 大学院文科 / 大学院理科 …
+  domain text,                     -- 领域：学部理科 / 学部文科 / 大学院文科 / 大学院理科 …
+  track text not null,             -- 价目表名：学部理科 / 大学院经济学 …
+  majors text[] not null default '{}',  -- 这张价目表对应的专业代号（老师端选学生后自动带出）
   name text not null,              -- EJU半年冲刺课程
   price_man_yen numeric not null,  -- 45（万日元）
   period text,                     -- 约六个月（物理、化学、生物3选2）
@@ -45,7 +47,7 @@ create table if not exists public.sales_plans (         -- 营业老师做好的
 );
 create index if not exists sales_plans_created_by_idx on public.sales_plans (created_by, updated_at desc);
 
--- RLS：价目表 读 = 管理员、登录老师、领域链接；写 = 管理员、领域链接。sales_plans 读写 = 管理员 + 登录老师
+-- RLS：见 seed/pricing_upgrade_2026-10.sql（价目只有管理员能改；只有 promo_pricing 的老师能读）。下面是升级前的旧策略，仅供回滚参考
 alter table public.price_packages  enable row level security;
 alter table public.price_vip_rates enable row level security;
 alter table public.price_ta_options enable row level security;
