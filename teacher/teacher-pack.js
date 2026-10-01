@@ -17,16 +17,27 @@ const PK_TYPES = {
   plan:      { label: '进度规划', color: '#2d5a3d', bg: '#e4f0e8' },
   lecturers: { label: '讲师介绍', color: '#6a4a7a', bg: '#efe4f4' },
   common:    { label: '宣传收尾', color: '#8a6a1b', bg: '#f8f0d8' },
-  plan_price: { label: '课程方案', color: '#a03a2e', bg: '#f8e4dc' },
+  plan_price: { label: '套餐服务', color: '#a03a2e', bg: '#f8e4dc' },
+  price_table: { label: '价格表', color: '#a03a2e', bg: '#f8e4dc' },
+  major_intro:    { label: '专业介绍', color: '#5a3e28', bg: '#f5ede3' },
+  major_course:   { label: '课程介绍', color: '#5a3e28', bg: '#f5ede3' },
+  major_schedule: { label: '课程表', color: '#5a3e28', bg: '#f5ede3' },
+  major_lecturer: { label: '讲师介绍', color: '#6a4a7a', bg: '#efe4f4' },
   cases:     { label: '合格案例', color: '#2d5a3d', bg: '#e4f0e8' },
   vip:       { label: 'VIP方案', color: '#a03a2e', bg: '#f8e4dc' },
 };
 const PK_MAJOR_PARTS = [
   ['major_intro', '专业介绍'],
-  ['lecturer', '讲师介绍'],
   ['course', '课程介绍'],
   ['schedule', '课程表'],
+  ['lecturer', '讲师介绍'],
 ];
+// 学科介绍的板块 → 资料里的独立条目类型（拆开后每个板块各占自己的默认位置）
+const PK_PART_TYPE = { major_intro: 'major_intro', course: 'major_course', schedule: 'major_schedule', lecturer: 'major_lecturer' };
+// 默认顺序（Sensis 定）：价格表 → 专业介绍 → 课程介绍 → 套餐服务 → 课程表 → 讲师介绍 → 出愿学校 → 进度规划 → VIP规划 → 合格案例 → 宣传收尾（永远最后）
+// 旧资料里没拆开的「学科介绍」(major) 整份排在专业介绍的位置
+const PK_ORDER = { price_table: 1, major: 2, major_intro: 2, major_course: 3, plan_price: 4, major_schedule: 5, major_lecturer: 6, lecturers: 6, admission: 7, plan: 8, vip: 9, cases: 10, common: 99 };
+function pkOrderOf(type) { return PK_ORDER[type] != null ? PK_ORDER[type] : 50; }
 
 function pkEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 // 是否开通「宣传资料整合」（admin 老师管理 → 营业功能 勾选）；未开通时各工具不显示「➕ 加入宣传资料」
@@ -46,7 +57,7 @@ function pkLoad() {
     const raw = localStorage.getItem(pkStoreKey());
     if (raw) {
       const d = JSON.parse(raw);
-      if (Array.isArray(d.items)) pkItems = d.items.filter(x => x.type !== 'plan_price' || (typeof pricingEnabled === 'function' && pricingEnabled()));   // 没有课程方案权限时，本地遗留的价格章节不再带出
+      if (Array.isArray(d.items)) pkItems = d.items.filter(x => !(x.type === 'plan_price' || x.type === 'price_table') || (typeof pricingEnabled === 'function' && pricingEnabled()));   // 没有课程方案权限时，本地遗留的价格章节不再带出
       if (d.cover) { pkCover = Object.assign(pkCover, d.cover); delete pkCover.title; }   // 旧版的自定义封面标题不再使用
     }
   } catch (e) { /* 隐私模式等读不到时从空资料包开始 */ }
@@ -59,14 +70,16 @@ function pkSave() {
 // ── 对外入口：各工具页面调用 ──
 function pkAdd(item, opts) {
   pkLoad();
-  if (item.type === 'plan_price' && !(typeof pricingEnabled === 'function' && pricingEnabled())) return;   // 课程方案（含价格）只有开通权限的老师能加入
+  if ((item.type === 'plan_price' || item.type === 'price_table') && !(typeof pricingEnabled === 'function' && pricingEnabled())) return;   // 套餐服务 / 价格表（含价格）只有开通权限的老师能加入
   const it = Object.assign({ wide: false, include: true }, item, {
     id: 'pk-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
     addedAt: new Date().toISOString(),
   });
-  // 宣传收尾默认排在资料最后：之后再加入的其他内容插在收尾章节之前
-  const firstCommon = pkItems.findIndex(x => x.type === 'common');
-  if (it.type !== 'common' && firstCommon >= 0) pkItems.splice(firstCommon, 0, it); else pkItems.push(it);
+  // 按默认顺序自动插位：插在「最后一个序号不大于它」的条目后面（同类型按加入先后）；老师手动调整过的顺序不会被打乱，宣传收尾永远在最后
+  const ord = pkOrderOf(it.type);
+  let at = -1;
+  pkItems.forEach((x, i) => { if (pkOrderOf(x.type) <= ord) at = i; });
+  pkItems.splice(at + 1, 0, it);
   if (it.student && !pkCover.student) pkCover.student = it.student;
   pkSave();
   pkUpdateTabBadge();
@@ -75,6 +88,62 @@ function pkAdd(item, opts) {
   if (typeof curTab !== 'undefined' && curTab === 'promopack') pkRender();
 }
 
+// ── 价格表（通用价目，不针对某个学生；需要「课程方案（含价格）」权限）──
+// 选 领域 → 价目表（如「大学院经济学」），把这张价目表的全部启用套餐排成一张表：每个套餐一列，左边按分组列课程名，格子里是 ○ 包含 / △ 可选
+let pkPrice = { rows: null, domain: '', track: '', err: '' };
+async function pkPriceLoad() {
+  if (pkPrice.rows !== null && !pkPrice.err) return;
+  try { pkPrice.rows = await sbAll('/rest/v1/price_packages?active=is.true&select=*&order=sort_order.asc'); pkPrice.err = ''; }
+  catch (e) { pkPrice.rows = []; pkPrice.err = e.message; }
+  pkPriceBarRender();
+}
+const pkPriceDom = p => p.domain || (DOMAINS.some(d => d.label === p.track) ? p.track : '');
+function pkPriceDomains() {
+  const have = new Set((pkPrice.rows || []).map(pkPriceDom).filter(Boolean));
+  return DOMAINS.map(d => d.label).filter(d => have.has(d));
+}
+function pkPriceTracks() { return [...new Set((pkPrice.rows || []).filter(p => pkPriceDom(p) === pkPrice.domain).map(p => p.track))]; }
+function pkPriceSetDomain(d) { pkPrice.domain = d; pkPrice.track = pkPriceTracks()[0] || ''; pkPriceBarRender(); }
+function pkPriceSetTrack(t) { pkPrice.track = t; }
+// 入口小块：宣传资料整合页和课程方案页共用（容器 class="pk-price-bar"，状态共用 pkPrice）
+function pkPriceBarHtml() {
+  const sel = 'font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
+  if (pkPrice.rows === null) return '<span style="font-size:11px;color:var(--text-3)">读取中…</span>';
+  if (pkPrice.err) return `<span style="font-size:11px;color:var(--text-3)">读取失败：${pkEsc(pkPrice.err)}</span>`;
+  const doms = pkPriceDomains();
+  if (!doms.length) return '<span style="font-size:11px;color:var(--text-3)">还没有启用中的价目（由管理员在中枢「💴 价目」维护）</span>';
+  if (!doms.includes(pkPrice.domain)) { pkPrice.domain = doms[0]; pkPrice.track = ''; }
+  const tracks = pkPriceTracks();
+  if (!tracks.includes(pkPrice.track)) pkPrice.track = tracks[0] || '';
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <select onchange="pkPriceSetDomain(this.value)" style="${sel}">${doms.map(d => `<option value="${pkEsc(d)}" ${d === pkPrice.domain ? 'selected' : ''}>${pkEsc(d)}</option>`).join('')}</select>
+    <select onchange="pkPriceSetTrack(this.value)" style="${sel}">${tracks.map(t => `<option value="${pkEsc(t)}" ${t === pkPrice.track ? 'selected' : ''}>${pkEsc(t)}</option>`).join('')}</select>
+    <button onclick="pkAddPriceTable()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 14px;cursor:pointer;font-family:inherit">➕ 加入价格表</button></div>`;
+}
+function pkPriceBarRender() { document.querySelectorAll('.pk-price-bar').forEach(el => { el.innerHTML = pkPriceBarHtml(); }); }
+// 价目表 → 一张对照表：套餐为列；课程按分组（共有的分组在前）列在左边
+function pkPriceTableHtml(pkgs) {
+  const groups = [], cell = {};
+  pkgs.forEach((p, ci) => (p.included || []).forEach(x => {
+    const g = x.group || '其他'; let gr = groups.find(y => y.name === g); if (!gr) groups.push(gr = { name: g, items: [] });
+    if (!gr.items.includes(x.item)) gr.items.push(x.item);
+    cell[ci + '\u0001' + g + '\u0001' + x.item] = x.mark === '△' ? '△' : '○';
+  }));
+  const nRows = groups.reduce((n, g) => n + g.items.length, 0);
+  const fs = nRows > 44 ? 8.5 : nRows > 32 ? 9.5 : 11;   // 行多时缩小字号，尽量放进 A4
+  const colW = Math.floor(60 / Math.max(pkgs.length, 1));
+  return `<table class="pk-pt" style="font-size:${fs}px">
+    <colgroup><col style="width:14%"><col style="width:${100 - 14 - colW * pkgs.length}%">${pkgs.map(() => `<col style="width:${colW}%">`).join('')}</colgroup>
+    <thead><tr><th colspan="2" class="l">课程内容</th>${pkgs.map(p => `<th><div class="pn">${pkEsc(p.name)}</div><div class="pp">${Number(p.price_man_yen)} 万日元</div><div class="pd">${pkEsc(p.period || '')}</div></th>`).join('')}</tr></thead>
+    <tbody>${groups.map(g => g.items.map((it, i) => `<tr>${i === 0 ? `<td class="g" rowspan="${g.items.length}">${pkEsc(g.name)}</td>` : ''}<td class="i">${pkEsc(it)}</td>${pkgs.map((p, ci) => { const m = cell[ci + '\u0001' + g.name + '\u0001' + it] || ''; return `<td class="m${m === '△' ? ' opt' : ''}">${m}</td>`; }).join('')}</tr>`).join('')).join('')}</tbody></table>
+    <div class="pk-note">○ 包含　△ 可选</div>`;
+}
+function pkAddPriceTable() {
+  if (!(typeof pricingEnabled === 'function' && pricingEnabled())) return;
+  const pkgs = (pkPrice.rows || []).filter(p => pkPriceDom(p) === pkPrice.domain && p.track === pkPrice.track);
+  if (!pkgs.length) { alert('这张价目表没有启用中的套餐'); return; }
+  pkAdd({ type: 'price_table', title: `价格表 · ${pkPrice.track}`, html: pkPriceTableHtml(pkgs) });
+}
 // ── 宣传收尾：admin「通用宣传」里按领域维护的内容块（表 promo_common），每块作为一章放到资料最后 ──
 let pkCommon = { rows: null, domain: '', off: new Set(), err: '' };   // off = 被点掉（不加入）的块 id
 async function pkCommonLoad() {
@@ -133,13 +202,27 @@ function pkUpdateTabBadge() {
   if (btn) btn.textContent = '📦 宣传资料整合' + (pkItems.length ? ` (${pkItems.length})` : '');
 }
 
+// 学科介绍按板块拆成独立条目加入（专业介绍 / 课程介绍 / 课程表 / 讲师介绍各自按默认顺序排位）；返回加入的条目数
+function pkAddMajorParts(major, data, parts, silent) {
+  const name = MAJORS[major] || major;
+  let n = 0;
+  PK_MAJOR_PARTS.forEach(([k, label]) => {
+    if (!parts.includes(k)) return;
+    const html = pkMajorHtml(major, data, [k]);
+    if (!html) return;
+    pkAdd({ type: PK_PART_TYPE[k], title: `${name} ${label}`, html }, { silent: true }); n++;
+  });
+  if (n && !silent) {
+    pkToast(`已加入宣传资料：${name} 学科介绍（${n} 项，共 ${pkItems.length} 项）`, true);
+    if (typeof curTab !== 'undefined' && curTab === 'promopack') pkRender();
+  }
+  return n;
+}
+
 // 宣传相关页：把当前专业（全部板块）加入
 function pkAddMajorFromPromo() {
   if (!prData) return;
-  const parts = PK_MAJOR_PARTS.map(p => p[0]);
-  const html = pkMajorHtml(prMajor, prData, parts);
-  if (!html) { alert('该专业暂无宣传内容'); return; }
-  pkAdd({ type: 'major', title: `${MAJORS[prMajor] || prMajor} 学科介绍`, html });
+  if (!pkAddMajorParts(prMajor, prData, PK_MAJOR_PARTS.map(p => p[0]))) alert('该专业暂无宣传内容');
 }
 
 // 本页：选专业 + 板块后直接添加
@@ -152,10 +235,7 @@ async function pkAddMajor() {
   if (btn) { btn.disabled = true; btn.textContent = '读取中…'; }
   try {
     const data = await prFetchMajor(major);
-    const html = pkMajorHtml(major, data, parts);
-    if (!html) { alert('该专业所选板块暂无内容（admin 可在「宣传管理」中录入）'); return; }
-    const partLabel = parts.length === PK_MAJOR_PARTS.length ? '' : '（' + parts.map(k => PK_MAJOR_PARTS.find(p => p[0] === k)[1]).join('・') + '）';
-    pkAdd({ type: 'major', title: `${MAJORS[major] || major} 学科介绍${partLabel}`, html });
+    if (!pkAddMajorParts(major, data, parts)) alert('该专业所选板块暂无内容（admin 可在「宣传管理」中录入）');
   } catch (e) { alert('读取失败：' + e.message); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '➕ 添加学科介绍'; } }
 }
@@ -175,13 +255,6 @@ function pkMajorHtml(major, data, parts) {
   if (parts.includes('major_intro') && intro.length) {
     h += sub('专业介绍') + intro.map(p => `<div class="pk-block"><h3>${pkEsc(p.title)}</h3><div class="pk-rich">${prMd(p.body)}</div></div>`).join('');
   }
-  if (parts.includes('lecturer') && lects.length) {
-    h += sub('讲师介绍') + `<div class="pk-cards">${lects.map(p => {
-      const t = String(p.title || '').trim();
-      const m = t.match(/^(\S+)[\s　]+(.+)$/);
-      return `<div class="pk-card"><div class="pk-name">${pkEsc(m ? m[1] : t)}</div>${m ? `<div class="pk-cred">${pkEsc(m[2])}</div>` : ''}<div class="pk-rich">${prMd(p.body)}</div></div>`;
-    }).join('')}</div>`;
-  }
   if (parts.includes('course') && crs.length) {
     const dvLabel = v => v === '线下＋线上' ? '线上线下同步' : (v || '');
     h += sub('课程介绍') + `<div class="pk-cards pk-courses">${crs.map(p => {
@@ -197,6 +270,13 @@ function pkMajorHtml(major, data, parts) {
   }
   if (parts.includes('schedule') && hasSched) {
     h += sub('课程表') + prScheduleHtml(data, true);
+  }
+  if (parts.includes('lecturer') && lects.length) {
+    h += sub('讲师介绍') + `<div class="pk-cards">${lects.map(p => {
+      const t = String(p.title || '').trim();
+      const m = t.match(/^(\S+)[\s　]+(.+)$/);
+      return `<div class="pk-card"><div class="pk-name">${pkEsc(m ? m[1] : t)}</div>${m ? `<div class="pk-cred">${pkEsc(m[2])}</div>` : ''}<div class="pk-rich">${prMd(p.body)}</div></div>`;
+    }).join('')}</div>`;
   }
   return h;
 }
@@ -244,6 +324,7 @@ function renderPromoPack(mc) {
   if (!pkCover.consultant) pkCover.consultant = pkConsultantName();
   pkRender(mc);
   if (pkCommon.rows === null) pkCommonLoad();
+  if (typeof pricingEnabled === 'function' && pricingEnabled()) pkPriceLoad();
   // 专业列表跟随 admin 宣传管理（有已发布内容的专业），查完再刷新一次
   if (!prMajorsCache && typeof prAvailableMajors === 'function') prAvailableMajors().then(list => { pkMajorList = list; if (curTab === 'promopack') pkRender(); });
 }
@@ -266,7 +347,7 @@ function pkRender(mc) {
   if (p.vip_sales) sources.push(linkBtn('vipsales', '🗂 VIP规划 → 方案加入'));
   if (p.promo) sources.push(linkBtn('promo', '📣 宣传相关 → 专业介绍加入'));
   if (p.promo) sources.push(`<button onclick="prSection='cases';switchTab('promo')" style="font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:5px 12px;cursor:pointer;font-family:inherit;color:var(--text-2)">🏆 合格案例 → 选用后加入</button>`);
-  if (p.promo && p.promo_pricing) sources.push(`<button onclick="prSection='plan';switchTab('promo')" style="font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:5px 12px;cursor:pointer;font-family:inherit;color:var(--text-2)">💴 课程方案 → 配好后加入</button>`);
+  if (p.promo && p.promo_pricing) sources.push(`<button onclick="prSection='plan';switchTab('promo')" style="font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:5px 12px;cursor:pointer;font-family:inherit;color:var(--text-2)">💴 套餐服务（课程方案） → 配好后加入</button>`);
 
   const majorKeys = prMajorsCache || pkMajorList || [];
   const selMajor = majorKeys.includes(prMajor) ? prMajor : majorKeys[0];
@@ -302,6 +383,11 @@ function pkRender(mc) {
           </div>
           <button id="pk_major_btn" onclick="pkAddMajor()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 14px;cursor:pointer;font-family:inherit">➕ 添加学科介绍</button>
         </div>` : ''}
+        ${typeof pricingEnabled === 'function' && pricingEnabled() ? `<div style="border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:10px">
+          <div style="font-size:11px;font-weight:600;margin-bottom:8px">💴 价格表（通用价目，排在资料最前）</div>
+          <div class="pk-price-bar">${pkPriceBarHtml()}</div>
+          <div style="font-size:10px;color:var(--text-3);margin-top:6px">选领域和价目表，把这张价目表的全部套餐（价格、周期、包含的课程 ○ / △）做成一张对照表；可以加入多张。</div>
+        </div>` : ''}
         ${pkCommonHtml()}
         ${sources.length ? `<div style="font-size:10px;color:var(--text-3);margin-bottom:6px">其他内容请到对应工具里操作后点「➕ 加入宣传资料」：</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px">${sources.join('')}</div>` : ''}
@@ -312,7 +398,8 @@ function pkRender(mc) {
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
         <div style="font-size:12px;font-weight:600">③ 资料内容与顺序</div>
         <span style="font-size:10px;color:var(--text-3)">已选 ${incl.length} / ${pkItems.length} 项</span>
-        ${pkItems.length ? `<button onclick="pkClear()" style="margin-left:auto;font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 10px;cursor:pointer;font-family:inherit;color:var(--text-3)">清空</button>` : ''}
+        ${pkItems.length > 1 ? `<button onclick="pkSortDefault()" title="价格表→专业介绍→课程介绍→套餐服务→课程表→讲师介绍→出愿学校→进度规划→VIP规划→合格案例→宣传收尾" style="margin-left:auto;font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 10px;cursor:pointer;font-family:inherit;color:var(--text-2)">⇅ 按默认顺序排列</button>` : ''}
+        ${pkItems.length ? `<button onclick="pkClear()" style="${pkItems.length > 1 ? '' : 'margin-left:auto;'}font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 10px;cursor:pointer;font-family:inherit;color:var(--text-3)">清空</button>` : ''}
       </div>
       ${pkItems.length ? pkItems.map((it, i) => {
         const t = PK_TYPES[it.type] || { label: it.type, color: '#5a5650', bg: '#eee' };
@@ -360,6 +447,11 @@ function pkRemove(id) {
   const it = pkFind(id); if (!it) return;
   if (!confirm(`从资料中删除「${it.title}」？`)) return;
   pkItems = pkItems.filter(x => x.id !== id); pkSave(); pkRender();
+}
+// 按默认顺序重排全部条目（同类型保持现在的相对顺序）
+function pkSortDefault() {
+  pkItems = pkItems.map((x, i) => [x, i]).sort((a, b) => pkOrderOf(a[0].type) - pkOrderOf(b[0].type) || a[1] - b[1]).map(x => x[0]);
+  pkSave(); pkRender();
 }
 function pkClear() {
   if (!confirm('清空资料包里的全部内容？')) return;
@@ -493,6 +585,16 @@ table.pk-adb { border-collapse:collapse; width:100%; table-layout:fixed; font-fa
 .pk-case-t tr:last-child td { background:var(--accent-light); }
 .pk-case-q { border-left:3px solid var(--accent); background:var(--bg); padding:6px 12px; margin:8px 0 2px; color:var(--text-2); font-size:11.5px; line-height:1.9; }
 .pk-case-s { font-size:10.5px; font-weight:600; color:var(--accent); margin:10px 0 4px; }
+/* 价格表（套餐对照） */
+table.pk-pt { width:100%; border-collapse:collapse; table-layout:fixed; }
+.pk-pt thead { display:table-header-group; }
+.pk-pt tr { break-inside:avoid; }
+.pk-pt th { background:var(--accent) !important; color:#fff !important; padding:7px 6px; text-align:center; border:1px solid var(--accent); font-weight:600; vertical-align:middle; }
+.pk-pt th.l { text-align:left; padding-left:10px; }
+.pk-pt .pn { font-size:1.05em; } .pk-pt .pp { font-family:'DM Mono',monospace; font-size:1.25em; margin-top:2px; } .pk-pt .pd { font-size:.82em; font-weight:400; opacity:.9; margin-top:2px; line-height:1.4; }
+.pk-pt td { border:1px solid var(--border); padding:3px 6px; line-height:1.5; color:var(--text-2); }
+.pk-pt td.g { background:var(--accent-light) !important; color:var(--accent); font-weight:600; vertical-align:middle; text-align:center; }
+.pk-pt td.m { text-align:center; color:var(--ok); font-weight:700; } .pk-pt td.m.opt { color:#b8860b; }
 /* 课程方案（带价格） */
 table.pk-price { width:100%; border-collapse:collapse; font-size:12px; }
 .pk-price thead tr { background:var(--accent); color:#fff; }

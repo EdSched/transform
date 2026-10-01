@@ -38,6 +38,7 @@ async function tpLoad() {
 // 在「宣传相关」里点开「💴 课程方案」后调用（容器 #tp_root 由 teacher-promo.js 输出）
 async function tpMount() {
   const box = document.getElementById('tp_root'); if (!box) return;
+  if (pricingEnabled() && typeof pkPriceLoad === 'function') pkPriceLoad();
   if (!pricingEnabled()) { box.innerHTML = '<div class="empty" style="padding:30px">没有课程方案权限</div>'; return; }
   if (!tp.loaded) { box.innerHTML = '<div class="empty">加载中…</div>'; await tpLoad(); }
   tpRender();
@@ -67,7 +68,8 @@ function tpListHtml() {
       <div style="font-size:12px;font-weight:600">我的课程方案（${tp.saved.length}）</div>
       <span style="font-size:10px;color:var(--text-3)">给学生配好大课套餐、VIP、TA，自动算总价，再放进宣传资料</span>
       <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="tpNew()">＋ 新建方案</button>
-    </div>${rows || '<div class="empty" style="padding:30px">还没有保存过的方案，点「＋ 新建方案」开始</div>'}`;
+    </div>
+    ${typeof pkEnabled === 'function' && pkEnabled() && typeof pkPriceBarHtml === 'function' ? `<div style="border:1px solid var(--border-light);border-radius:3px;padding:8px 12px;margin-bottom:10px;background:var(--surface)"><div style="font-size:11px;font-weight:600;margin-bottom:6px">💴 价格表（通用价目，不针对某个学生）</div><div class="pk-price-bar">${pkPriceBarHtml()}</div></div>` : ''}${rows || '<div class="empty" style="padding:30px">还没有保存过的方案，点「＋ 新建方案」开始</div>'}`;
 }
 
 // ── 编辑器 ──
