@@ -197,10 +197,20 @@ async function scEnsureStudents() {
   try { sc.stu = await sc.ctx.loadStudents(); } catch (e) { sc.stu = []; }
   if (sc.view === 'edit') scRerenderStuSelect();
 }
+// 合格案例只关联已合格的学生：学生档案状态为「已合格」(graduated)，或志望校里有任一所是合格(passed)；给每人带上合格校名
+async function scOnlyPassed(all) {
+  const plans = await sbAll('/rest/v1/student_school_plans?status=eq.passed&select=student_id,school_name');
+  const by = {};
+  (plans || []).forEach(p => { const k = String(p.student_id); (by[k] = by[k] || []); if (p.school_name && !by[k].includes(p.school_name)) by[k].push(p.school_name); });
+  return (all || []).filter(s => s.status === 'graduated' || by[String(s.id)]).map(s => Object.assign({}, s, { passedSchools: by[String(s.id)] || [] }));
+}
 function scStuOptions() {
   const c = sc.cur, kw = (c.stuSearch || '').trim(), all = sc.stu || [];
   const list = all.filter(s => !kw || (typeof matchesStudentSearch === 'function' ? matchesStudentSearch(s, kw) : (s.name || '').includes(kw)));
-  return `<option value="">${sc.stu ? `— 先选学生，自动带出数据（${list.length}）—` : '学生列表读取中…'}</option>` + list.map(s => `<option value="${scE(s.id)}" ${String(c.student_id) === String(s.id) ? 'selected' : ''}>${scE(s.name)} · ${scE(typeof majorLabel === 'function' ? majorLabel(s.major) : s.major)}</option>`).join('');
+  const none = sc.stu && !all.length;
+  const head = !sc.stu ? '学生列表读取中…' : none ? '— 还没有已合格的学生（学生档案状态为「已合格」，或志望校里有合格的学校）—' : `— 选择已合格的学生（${list.length}）—`;
+  const sch = s => { const t = (s.passedSchools || []).join('、'); return t ? ' · ' + (t.length > 24 ? t.slice(0, 24) + '…' : t) : ''; };
+  return `<option value="">${scE(head)}</option>` + list.map(s => `<option value="${scE(s.id)}" ${String(c.student_id) === String(s.id) ? 'selected' : ''}>${scE(s.name)} · ${scE(typeof majorLabel === 'function' ? majorLabel(s.major) : s.major)}${scE(sch(s))}</option>`).join('');
 }
 function scRerenderStuSelect() { const el = document.getElementById('sc_stu'); if (el) el.innerHTML = scStuOptions(); }
 
@@ -222,7 +232,7 @@ function scEditHtml() {
     <div style="${box}">${h('① 关联学生（可不选）')}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
         <div>${lbl('搜索学生')}<input value="${scE(c.stuSearch)}" placeholder="姓名 / 拼音首字母" oninput="sc.cur.stuSearch=this.value;scRerenderStuSelect()" style="${inp}"></div>
-        <div>${lbl('选择学生（自动带出背景、合格校、时间线草稿）')}<select id="sc_stu" onchange="scPickStudent(this.value)" style="${inp}">${scStuOptions()}</select></div>
+        <div>${lbl('选择已合格的学生（自动带出背景、合格校、时间线草稿）')}<select id="sc_stu" onchange="scPickStudent(this.value)" style="${inp}">${scStuOptions()}</select></div>
       </div>
       ${c.student_id ? `<div style="margin-top:8px"><button class="btn btn-outline btn-sm" onclick="scRefill()">↻ 重新带出（覆盖背景 / 合格 / 时间线）</button></div>` : ''}
     </div>
@@ -451,7 +461,7 @@ function scMountAdmin(boxId) {
   scMount(boxId, {
     mode: 'admin', canWrite: true, canPack: false, me: 'admin', lockDomain: lock, inScope,
     allowDomain: d => scopeAll() || scopeDomainList().includes(d), allowMajor: m => scopeMajor(m), canEditRow: inScope,
-    loadStudents: async () => (await sbAll('/rest/v1/students?select=id,name,major,extra_majors,status&order=name.asc')).filter(s => typeof studentInCurrentView !== 'function' || studentInCurrentView(s)),
+    loadStudents: async () => scOnlyPassed((await sbAll('/rest/v1/students?select=id,name,major,extra_majors,status&order=name.asc')).filter(s => typeof studentInCurrentView !== 'function' || studentInCurrentView(s))),
   });
 }
 // 老师端：所有营业老师可浏览已发布的案例；有 success_cases 权限的才能写，且只能写自己负责的领域 / 专业
@@ -467,8 +477,8 @@ function scMountTeacher(boxId) {
     allowDomain, allowMajor,
     canEditRow: r => allowDomain(r.domain) && (!set || !scArr(r.majors).length || scArr(r.majors).some(allowMajor)),
     loadStudents: async () => {
-      const all = await sbAll('/rest/v1/students?select=id,name,major,extra_majors,course_type,status&status=eq.active&order=name.asc');
-      return all.filter(s => !set || set.has(s.major)).filter(s => !(typeof tsaGuaranteedLock === 'function' && tsaGuaranteedLock()) || tsaIsGuaranteed(s));
+      const all = await sbAll('/rest/v1/students?select=id,name,major,extra_majors,course_type,status&order=name.asc');
+      return scOnlyPassed(all.filter(s => !set || set.has(s.major)).filter(s => !(typeof tsaGuaranteedLock === 'function' && tsaGuaranteedLock()) || tsaIsGuaranteed(s)));
     },
   });
 }
