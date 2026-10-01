@@ -3,7 +3,7 @@
 // 给某位学生配一个带价格的方案：大课套餐 + VIP 课程 + TA 助教 + 其他/优惠 → 自动算总价
 // 可保存到 sales_plans（按老师自己的名字列出，能打开/修改/复制/删除），也可「加入宣传资料」（资料类型 plan_price）
 // 资料里只显示方案的组成和价格，套餐里包含的详细课程清单不输出
-// 价目由 admin「宣传管理 → 💴 价目」维护（price_packages / price_vip_rates / price_ta_options）
+// 价目由管理员在中枢「💴 价目」维护（只读展示给有 promo_pricing 权限的老师）（price_packages / price_vip_rates / price_ta_options）
 // 依赖：shared/constants.js、shared/supabase.js、teacher.js、teacher-students.js（tsaAllowedSet）、teacher-promo.js、teacher-pack.js
 // ══════════════════════════════════
 let tp = { loaded: false, err: '', pk: [], vip: [], ta: [], vplans: [], vtpls: [], students: [], saved: [], cur: null };
@@ -76,19 +76,22 @@ function tpListHtml() {
 
 // ── 编辑器 ──
 function tpBlank() {
-  return { id: '', student_id: '', student_name: '', track: '', pkgId: '', vipMode: 'none', vipRateId: '', vipHours: '', vipPlanRef: '', vipItems: [], taId: '', extras: [], note: '', stuSearch: '' };
+  return { id: '', student_id: '', student_name: '', domain: '', track: '', pkgId: '', vipMode: 'none', vipRateId: '', vipHours: '', vipPlanRef: '', vipItems: [], taId: '', extras: [], note: '', stuSearch: '' };
 }
 function tpNew() { tp.cur = tpBlank(); tpRender(); }
 function tpOpen(id, asCopy) {
   const p = tp.saved.find(x => x.id === id); if (!p) return;
   const c = tpBlank();
-  c.id = asCopy ? '' : p.id; c.student_id = p.student_id || ''; c.student_name = p.student_name || ''; c.track = p.track || ''; c.note = p.note || '';
+  c.id = asCopy ? '' : p.id; c.student_id = p.student_id || ''; c.student_name = p.student_name || ''; c.note = p.note || '';
+  c.domain = DOMAINS.some(d => d.label === p.track) ? p.track : ''; c.track = c.domain ? '' : (p.track || '');
   (p.items || []).forEach(x => {
     if (x.kind === 'package') c.pkgId = x.ref || '';
     else if (x.kind === 'vip') { c.vipMode = x.mode || 'custom'; c.vipRateId = x.rate_id || ''; c.vipHours = x.hours != null ? String(x.hours) : ''; c.vipPlanRef = x.plan_ref || ''; c.vipItems = x.content_items || []; }
     else if (x.kind === 'ta') c.taId = x.ref || '';
     else if (x.kind === 'other') c.extras.push({ name: x.name || '', man: tpMan(x.yen) });
   });
+  const opened = tp.pk.find(x => x.id === c.pkgId);   // 旧方案：以套餐本身为准还原领域 / 价目表
+  if (opened) { c.domain = tpPkDom(opened); c.track = opened.track; }
   if (asCopy) c.student_id = '', c.student_name = '';
   tp.cur = c; tpRender();
 }
@@ -98,10 +101,13 @@ async function tpDelete(id) {
   try { await sb(`/rest/v1/sales_plans?id=eq.${encodeURIComponent(id)}`, 'DELETE'); tp.saved = tp.saved.filter(x => x.id !== id); tpRender(); }
   catch (e) { alert('删除失败：' + e.message); }
 }
-function tpTracks() {
-  const dl = DOMAINS.map(d => d.label);
-  return [...new Set(tp.pk.map(p => p.track).concat(dl))];
+// 价目分三级：领域（domain）→ 价目表（track，如「大学院经济学」）→ 套餐
+const tpPkDom = p => p.domain || (DOMAINS.some(d => d.label === p.track) ? p.track : '');
+function tpDomains() {
+  const doms = [...new Set(tp.pk.map(tpPkDom).filter(Boolean))];
+  return doms.sort((a, b) => { const ia = DOMAINS.findIndex(d => d.label === a), ib = DOMAINS.findIndex(d => d.label === b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
 }
+function tpTracksOf(dom) { return [...new Set(tp.pk.filter(p => !dom || tpPkDom(p) === dom).map(p => p.track))]; }
 function tpRateFor(track) {
   const head = /^学部/.test(track || '') ? '学部' : /^大学院/.test(track || '') ? '大学院' : /语言/.test(track || '') ? '语言' : '';
   return (head && tp.vip.find(r => (r.track || '').includes(head))) || tp.vip[0] || null;
@@ -145,7 +151,7 @@ function tpEditorHtml() {
   const chip = (on, label, fn) => `<div class="filter-chip${on ? ' active' : ''}" onclick="${fn}" style="padding:4px 12px;font-size:11px">${label}</div>`;
   const kw = (c.stuSearch || '').trim();
   const stuList = tp.students.filter(s => !kw || (typeof matchesStudentSearch === 'function' ? matchesStudentSearch(s, kw) : (s.name || '').includes(kw)));
-  const tracks = tpTracks(), pkgs = tp.pk.filter(p => !c.track || p.track === c.track);
+  const doms = tpDomains(), tracks = tpTracksOf(c.domain), pkgs = tp.pk.filter(p => (!c.domain || tpPkDom(p) === c.domain) && (!c.track || p.track === c.track));
   const pkg = tp.pk.find(x => x.id === c.pkgId);
   const rate = tp.vip.find(x => x.id === c.vipRateId);
   const { lines, total } = tpLines();
@@ -170,19 +176,21 @@ function tpEditorHtml() {
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;align-items:start">
     <div>
-      <div style="${box}">${h('① 学生与方案类型')}
+      <div style="${box}">${h('① 学生与价目表')}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div>${lbl('搜索我能看到的学生')}<input value="${tpE(c.stuSearch)}" placeholder="姓名 / 拼音首字母" oninput="tp.cur.stuSearch=this.value;tpRerenderStu()" style="${inp}"></div>
           <div>${lbl('选择学生')}<select id="tp_stu" style="${inp}" onchange="tpPickStudent(this.value)">${tpStuOptions(stuList)}</select></div>
           <div>${lbl('或手填姓名（还没建档的潜在学生）')}<input value="${tpE(c.student_id ? '' : c.student_name)}" placeholder="姓名" oninput="tpManualName(this.value)" style="${inp}"></div>
-          <div>${lbl('方案类型')}<select style="${inp}" onchange="tp.cur.track=this.value;tp.cur.pkgId='';tpRender()">
+          <div>${lbl('领域')}<select style="${inp}" onchange="tp.cur.domain=this.value;tp.cur.track='';tp.cur.pkgId='';tpRender()">
+            <option value="">— 全部 —</option>${doms.map(t => `<option value="${tpE(t)}" ${t === c.domain ? 'selected' : ''}>${tpE(t)}</option>`).join('')}</select></div>
+          <div>${lbl('价目表')}<select style="${inp}" onchange="tp.cur.track=this.value;tp.cur.pkgId='';tpRender()">
             <option value="">— 全部 —</option>${tracks.map(t => `<option value="${tpE(t)}" ${t === c.track ? 'selected' : ''}>${tpE(t)}</option>`).join('')}</select></div>
         </div>
       </div>
       <div style="${box}">${h('② 大课套餐')}
         <select style="${inp}" onchange="tp.cur.pkgId=this.value;tpRender()"><option value="">不选</option>
           ${pkgs.map(p => `<option value="${tpE(p.id)}" ${p.id === c.pkgId ? 'selected' : ''}>${tpE(p.track)} · ${tpE(p.name)}（${Number(p.price_man_yen)}万）</option>`).join('')}</select>
-        ${pkg ? `<div style="font-size:10px;color:var(--text-3);margin-top:5px">${tpE(pkg.period || '')} · ${Number(pkg.price_man_yen)} 万日元</div>` : (!pkgs.length ? `<div style="font-size:10px;color:var(--text-3);margin-top:5px">这个类型下还没有大课套餐（admin 可在 宣传管理→价目 新增）</div>` : '')}
+        ${pkg ? `<div style="font-size:10px;color:var(--text-3);margin-top:5px">${tpE(pkg.period || '')} · ${Number(pkg.price_man_yen)} 万日元</div>` : (!pkgs.length ? `<div style="font-size:10px;color:var(--text-3);margin-top:5px">这个类型下还没有大课套餐（请联系管理员在中枢「💴 价目」新增）</div>` : '')}
       </div>
       <div style="${box}">${h('③ VIP 课程')}
         <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -221,13 +229,20 @@ function tpRerenderStu() {
 }
 function tpPickStudent(id) {
   const c = tp.cur, s = tp.students.find(x => String(x.id) === String(id));
-  c.student_id = s ? s.id : ''; if (s) { c.student_name = s.name; const d = MAJOR_DOMAIN[s.major]; if (d && !c.track) { c.track = d; c.pkgId = ''; } }
+  c.student_id = s ? s.id : '';
+  if (s) {
+    c.student_name = s.name;
+    // 按学生专业自动选价目表：价目表的「对应专业」包含这个专业；没有匹配就只按专业所属领域选领域
+    const hit = tp.pk.find(p => (p.majors || []).includes(s.major));
+    if (hit) { c.domain = tpPkDom(hit); c.track = hit.track; c.pkgId = ''; }
+    else { const d = MAJOR_DOMAIN[s.major]; if (d && tpDomains().includes(d)) { c.domain = d; c.track = ''; c.pkgId = ''; } }
+  }
   tpRender();
 }
 function tpManualName(v) { tp.cur.student_id = ''; tp.cur.student_name = v; }
 function tpSetVipMode(m) {
   const c = tp.cur; c.vipMode = m;
-  if (m !== 'none' && !c.vipRateId) { const r = tpRateFor(c.track); c.vipRateId = r ? r.id : ''; }
+  if (m !== 'none' && !c.vipRateId) { const r = tpRateFor(c.domain || c.track); c.vipRateId = r ? r.id : ''; }
   tpRender();
 }
 function tpPickVipPlan(ref) {
@@ -261,7 +276,7 @@ async function tpSave() {
   const { lines, total } = tpLines();
   if (!lines.length) { alert('方案里还没有内容'); return null; }
   const now = new Date().toISOString();
-  const rec = { student_id: c.student_id || null, student_name: name, track: c.track || null, items: lines, total_yen: total, note: c.note || null, updated_at: now };
+  const rec = { student_id: c.student_id || null, student_name: name, track: c.track || c.domain || null, items: lines, total_yen: total, note: c.note || null, updated_at: now };
   try {
     if (c.id) {
       await sb(`/rest/v1/sales_plans?id=eq.${encodeURIComponent(c.id)}`, 'PATCH', rec);

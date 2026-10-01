@@ -154,7 +154,7 @@ function openConsole(){
 let consoleTab='keys';
 async function switchConsoleTab(tab){
   consoleTab=tab;
-  ['keys','teachers','payroll','majors'].forEach(t=>{
+  ['keys','teachers','payroll','majors','pricing'].forEach(t=>{
     const b=document.getElementById('ctab_'+t);
     if(b){ b.style.borderBottomColor = t===tab?'var(--primary,#8b5cf6)':'transparent'; b.style.color = t===tab?'var(--text)':'var(--text-3)'; b.style.fontWeight = t===tab?'600':'400'; }
   });
@@ -162,6 +162,7 @@ async function switchConsoleTab(tab){
   if(!body) return;
   if(tab==='keys'){ loadConsole(); }
   else if(tab==='majors'){ renderMajorManager(body); }
+  else if(tab==='pricing'){ prcMount(body); }
   else if(tab==='teachers'){
     body.innerHTML='<div style="padding:20px;color:var(--text-3);font-size:12px">加载中…</div>';
     [cachedTeachers, cachedSessions]=await Promise.all([
@@ -867,7 +868,7 @@ function renderTeachersPage(mc){
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_lect_info" style="accent-color:var(--accent);width:15px;height:15px">讲师信息查询<span style="font-size:9px;color:var(--text-3)">内部检索讲师档案，可切换展示卡片给客户看/截图</span></label>
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_vip_sales" style="accent-color:var(--accent);width:15px;height:15px">VIP营业规划<span style="font-size:9px;color:var(--text-3)">看到全部 VIP 框架模板，可转分享给上课老师（营业角色）</span></label>
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_promo_pack" style="accent-color:var(--accent);width:15px;height:15px">宣传资料整合<span style="font-size:9px;color:var(--text-3)">把出愿学校/学科介绍/进度规划/讲师卡片/VIP方案合成一份完整 PDF</span></label>
-              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_promo_pricing" style="accent-color:var(--accent);width:15px;height:15px">课程方案（含价格）<span style="font-size:9px;color:var(--text-3)">在宣传相关里给学生配带价格的课程方案并加入资料；价目在 宣传管理→价目；需同时勾选「宣传相关」</span></label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_promo_pricing" style="accent-color:var(--accent);width:15px;height:15px">课程方案（含价格）<span style="font-size:9px;color:var(--text-3)">在宣传相关里给学生配带价格的课程方案并加入资料；价目在中枢『💴 价目』维护；需同时勾选「宣传相关」</span></label>
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_success_cases" style="accent-color:var(--accent);width:15px;height:15px">合格案例（填写）<span style="font-size:9px;color:var(--text-3)">在宣传相关里新建、修改合格案例（只能改自己负责的领域/专业）；不勾也能浏览已发布的案例，需同时勾选「宣传相关」</span></label>
             </div>
           </div>`:''}
