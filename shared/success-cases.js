@@ -60,7 +60,7 @@ function scListHtml() {
   const selN = [...sc.sel].filter(id => list.some(r => r.id === id) || (sc.rows || []).some(r => r.id === id)).length;
   return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
       <div style="font-size:12px;font-weight:600">合格案例（${list.length}${list.length !== all.length ? ' / ' + all.length : ''}）</div>
-      <span style="font-size:10px;color:var(--text-3)">${sc.ctx.canWrite ? '对外只显示称呼，不显示学生真名' : '按领域 / 专业 / 标签 / 合格学校筛选，选用后加入宣传资料'}</span>
+      <span style="font-size:10px;color:var(--text-3)">${scTopNote(packOn)}</span>
       ${sc.ctx.canWrite ? `<button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="scNew()">＋ 新建案例</button>` : ''}
     </div>
     ${doms.length > 1 || (doms.length && !sc.ctx.lockDomain) ? row('领域', chip(!f.domain, '全部', "sc.f.domain='';scRender()") + doms.map(d => chip(f.domain === d, scE(d), `sc.f.domain='${scE(d)}';scRender()`)).join('')) : ''}
@@ -74,6 +74,28 @@ function scListHtml() {
     ${list.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px">${list.map(r => scCardHtml(r, packOn)).join('')}</div>`
       : '<div class="empty" style="padding:30px">没有符合条件的案例</div>'}
     ${packOn ? scPackBar(selN) : ''}`;
+}
+// 顶部说明：只有开通了「宣传资料整合」的老师才提「选用后加入宣传资料」，没开通的写清楚原因
+function scTopNote(packOn) {
+  const noPerm = sc.ctx.canPack && !packOn ? '只能浏览；加入宣传资料需要开通「宣传资料整合」权限' : '';
+  if (sc.ctx.canWrite) return '对外只显示称呼，不显示学生真名' + (packOn ? '；已发布的案例可「选用」后加入宣传资料' : noPerm ? '；' + noPerm : '');
+  return packOn ? '按领域 / 专业 / 标签 / 合格学校筛选，选用后加入宣传资料' : (noPerm || '按领域 / 专业 / 标签 / 合格学校筛选');
+}
+function scPackOn() { return !!(sc.ctx && sc.ctx.canPack && typeof pkEnabled === 'function' && pkEnabled()); }
+// 草稿发布：把 published 改成 true 并保存（有编辑权限的老师才会看到）
+async function scPublish(id) {
+  const r = (sc.rows || []).find(x => x.id === id); if (!r || !scCanEdit(r)) return;
+  try {
+    const now = new Date().toISOString();
+    await sb(`/rest/v1/success_cases?id=eq.${encodeURIComponent(id)}`, 'PATCH', { published: true, updated_at: now });
+    r.published = true; r.updated_at = now;
+    sc.rows.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+    scRender();
+  } catch (e) { alert('发布失败：' + e.message); }
+}
+// 草稿时的说明：不能加入的原因 + 能编辑的老师直接给「发布」
+function scDraftNote(r) {
+  return `<span style="font-size:10px;color:var(--text-3)">草稿，发布后才能加入</span>${scCanEdit(r) ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 10px" onclick="scPublish('${scE(r.id)}')">发布</button>` : ''}`;
 }
 function scCardHtml(r, packOn) {
   const on = sc.sel.has(r.id), tags = scArr(r.tags);
@@ -90,6 +112,7 @@ function scCardHtml(r, packOn) {
       <button class="btn btn-outline btn-sm" onclick="sc.openId='${scE(r.id)}';sc.view='detail';scRender()">查看</button>
       ${scCanEdit(r) ? `<button class="btn btn-outline btn-sm" onclick="scEdit('${scE(r.id)}')">✏ 编辑</button>` : ''}
       ${packOn && r.published ? `<div class="filter-chip${on ? ' active' : ''}" onclick="scToggleSel('${scE(r.id)}')" style="margin-left:auto;padding:3px 12px;font-size:10px">${on ? '✓ 已选用' : '选用'}</div>` : ''}
+      ${packOn && !r.published ? `<span style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end"><span class="filter-chip" style="padding:3px 12px;font-size:10px;opacity:.45;cursor:not-allowed;pointer-events:none">选用</span>${scDraftNote(r)}</span>` : ''}
     </div></div>`;
 }
 function scPackBar(n) {
@@ -115,7 +138,12 @@ function scDetailHtml() {
   const works = scArr(r.works), plans = scArr(r.plan_files);
   return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" onclick="sc.view='list';scRender()">← 返回</button>
-      ${scCanEdit(r) ? `<button class="btn btn-outline btn-sm" onclick="scEdit('${scE(r.id)}')">✏ 编辑</button>` : ''}</div>
+      ${scCanEdit(r) ? `<button class="btn btn-outline btn-sm" onclick="scEdit('${scE(r.id)}')">✏ 编辑</button>` : ''}
+      ${scPackOn() ? (r.published ? `<span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto"><span style="font-size:10px;color:var(--text-3)">可一起放：</span>
+        <div class="filter-chip${sc.opt.works ? ' active' : ''}" onclick="sc.opt.works=!sc.opt.works;scRender()" style="padding:3px 10px;font-size:10px">作业图片</div>
+        <div class="filter-chip${sc.opt.plans ? ' active' : ''}" onclick="sc.opt.plans=!sc.opt.plans;scRender()" style="padding:3px 10px;font-size:10px">计划书 / 志望理由书</div>
+        <button class="btn btn-primary btn-sm" onclick="scAddOne('${scE(r.id)}')">➕ 加入宣传资料</button></span>`
+        : `<span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto"><button class="btn btn-primary btn-sm" disabled style="opacity:.45">➕ 加入宣传资料</button>${scDraftNote(r)}</span>`) : ''}</div>
     <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:5px;padding:16px 18px;max-width:820px">
       <div style="font-size:16px;font-weight:600;font-family:'Noto Serif SC',serif">${scE(r.alias)} — ${scE(r.tagline || '')}</div>
       <div style="font-size:10px;color:var(--text-3);margin:3px 0 10px">${scE(r.domain)} · ${scArr(r.majors).map(m => scE(typeof majorLabel === 'function' ? majorLabel(m) : m)).join('、')} ${scArr(r.tags).length ? ' · ' + scArr(r.tags).map(scE).join('、') : ''}</div>
@@ -161,6 +189,12 @@ function scDocHtml(cases, opt) {
       ${plans.length ? `<div class="pk-case-s">计划书 / 志望理由书（老师批改版）</div>${scPlansHtml(plans, true)}` : ''}
     </div>`;
   }).join('');
+}
+// 详情页：把这一个案例直接加入资料（选项用当前的 作业图片 / 计划书 开关）
+function scAddOne(id) {
+  if (typeof pkAdd !== 'function') return;
+  const r = (sc.rows || []).find(x => x.id === id); if (!r || !r.published) return;
+  pkAdd({ type: 'cases', title: `合格案例 · ${r.alias}`, html: scDocHtml([r], sc.opt) });
 }
 function scAddToPack() {
   if (typeof pkAdd !== 'function') return;
@@ -278,6 +312,7 @@ function scEditHtml() {
       ${chip(c.published, c.published ? '已发布（营业老师可见）' : '草稿（暂不发布）', 'sc.cur.published=!sc.cur.published;scRender()')}
       <button class="btn btn-primary" onclick="scSave()">💾 保存</button>
       <button class="btn btn-outline" onclick="scCancelEdit()">取消</button>
+      ${!c.published ? `<span style="font-size:10px;color:var(--text-3)">草稿不会出现在宣传资料里，营业老师也看不到</span>` : ''}
       ${c.id ? `<button class="btn" style="margin-left:auto;color:var(--danger);border:1px solid var(--danger);background:none" onclick="scDelete('${scE(c.id)}')">删除案例</button>` : ''}
     </div></div>`;
 }
