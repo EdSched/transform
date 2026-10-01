@@ -411,6 +411,7 @@ function promoFillFromProfile(id) {
   if (b) b.value = [
     p.keywords ? `##专攻方向\n${p.keywords}` : '',
     p.feature ? `##授课特色\n${p.feature}` : '',
+    (p.highlights||'').trim() ? `## 特色亮点\n${p.highlights.trim()}` : '',
     p.courses ? `##担当课程\n${p.courses}` : '',
   ].filter(Boolean).join('\n\n');
   if (l) l.value = p.name || ''; // 绑定用本名（档案姓名即本名）

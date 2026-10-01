@@ -771,7 +771,12 @@ function renderTeachersPage(mc){
           <option>综合事业本部</option>
         </select>
       </div>`}
-      <div class="form-group"><label class="form-label">分类标签（可叠加，用于搜索标记，不影响任何功能权限）</label><input id="new_teacher_tags" placeholder="用逗号或顿号分隔，如：计划书指导、模拟面试、兼职"></div>
+      <div class="form-group"><label class="form-label">分类标签（可叠加，用于搜索标记，不影响任何功能权限）</label>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+          <div id="new_teacher_senmon" class="filter-chip" onclick="senmonChipToggle()" style="padding:4px 12px;font-size:11px">📚 专业课老师</div>
+          <span style="font-size:10px;color:var(--text-3)">勾选后，系统会提醒这位老师完成每个负责专业的讲师介绍</span>
+        </div>
+        <input id="new_teacher_tags" oninput="senmonChipSync()" placeholder="用逗号或顿号分隔，如：计划书指导、模拟面试、兼职"></div>
       ${_isDom ? `<div class="form-group"><label class="form-label">领域</label><div style="font-size:12px;color:var(--text-2);border:1px solid var(--border);border-radius:3px;padding:7px 10px;background:var(--bg)">${_lockDom}<span style="font-size:10px;color:var(--text-3);margin-left:6px">本领域账号：新建老师自动归属本领域，负责专业在下方选择</span></div></div>` : `<div class="form-group" style="border:1px solid var(--accent);border-radius:3px;padding:8px;background:var(--bg)">
         <label class="form-label" style="color:var(--accent)">隶属领域（可多选，决定"哪个领域账号能在老师管理里看到/编辑这个老师"）</label>
         <div style="display:flex;flex-wrap:wrap;gap:6px" id="new_teacher_managed">
@@ -1093,7 +1098,7 @@ function cancelEditTeacher(){
   if(document.getElementById('new_teacher_dept_wrap')) document.getElementById('new_teacher_dept_wrap').style.display='none';
   if(document.getElementById('new_teacher_department')) document.getElementById('new_teacher_department').value='';
   document.getElementById('new_teacher_notes').value='';
-  document.getElementById('new_teacher_tags').value='';
+  document.getElementById('new_teacher_tags').value=''; if(typeof senmonChipSync==='function') senmonChipSync();
   document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
@@ -1120,7 +1125,7 @@ function openTeacherManager(){
   if(document.getElementById('new_teacher_dept_wrap')) document.getElementById('new_teacher_dept_wrap').style.display='none';
   if(document.getElementById('new_teacher_department')) document.getElementById('new_teacher_department').value='';
   document.getElementById('new_teacher_notes').value='';
-  document.getElementById('new_teacher_tags').value='';
+  document.getElementById('new_teacher_tags').value=''; if(typeof senmonChipSync==='function') senmonChipSync();
   document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
@@ -1143,6 +1148,17 @@ function openTeacherManager(){
 }
 
 // 标签解析：逗号/顿号/空格分隔，去重去空
+// 「专业课老师」chip：就是在标签输入框里加 / 去掉「专业课老师」；已有含「专业课」字样的标签视为已点亮
+function senmonChipSync(){
+  const chip=document.getElementById('new_teacher_senmon'); if(!chip) return;
+  chip.classList.toggle('active', parseTeacherTags().some(g=>g.includes('专业课')));
+}
+function senmonChipToggle(){
+  const tags=parseTeacherTags(), on=tags.some(g=>g.includes('专业课'));
+  const next=on?tags.filter(g=>!g.includes('专业课')):[...tags,'专业课老师'];
+  document.getElementById('new_teacher_tags').value=next.join('、');
+  senmonChipSync();
+}
 function parseTeacherTags(){
   const raw=document.getElementById('new_teacher_tags')?.value||'';
   return [...new Set(raw.split(/[,，、\s]+/).map(x=>x.trim()).filter(Boolean))];
@@ -1221,9 +1237,26 @@ function renderTeacherList(){
   renderTeacherRows();
 }
 
+// 老师列表上的「介绍 x/y」：读一次讲师介绍的简表，之后保存 / 删除介绍时清空重读
+let profBrief=null, profBriefLoading=false, profBriefOk=false;
+function profBriefLoad(){
+  if(profBrief||profBriefLoading) return;
+  profBriefLoading=true;
+  sbAll('/rest/v1/teacher_profiles?select=id,name,subject,school,keywords,feature,courses').then(r=>{ profBrief=r||[]; profBriefOk=true; }).catch(()=>{ profBrief=[]; profBriefOk=false; }).finally(()=>{ profBriefLoading=false; renderTeacherRows(); });
+}
+function profBadgeHtml(t){
+  if(!isSenmonTeacher(t)) return '';
+  if(!profBrief||!profBriefOk) return '';
+  const st=teacherProfileStatus(t,profBrief.filter(r=>r.name===t.name));
+  if(!st.length) return `<span title="专业课老师，但还没有设置负责专业" style="font-size:10px;color:var(--warn,#b8860b);border:1px solid var(--warn,#b8860b);border-radius:2px;padding:0 6px;white-space:nowrap">介绍：未设负责专业</span>`;
+  const n=st.filter(x=>x.done).length, ok=n===st.length;
+  const tip=st.map(x=>x.label+(x.done?' ✓':x.row?'（缺：'+x.missing.join('、')+'）':'（未填）')).join('；');
+  return `<span title="${escTM(tip)}" style="font-size:10px;border-radius:2px;padding:0 6px;white-space:nowrap;${ok?'color:var(--ok,#2a9e6a);border:1px solid var(--ok,#2a9e6a)':'color:var(--warn,#b8860b);border:1px solid var(--warn,#b8860b);background:var(--warn-bg,#f8f0d8)'}">介绍 ${n}/${st.length}</span>`;
+}
 function renderTeacherRows(){
   const box=document.getElementById('teacherRows');
   if(!box) return;
+  profBriefLoad();
   const base=location.origin+location.pathname.replace(/\/admin\/.*$/,'/teacher/');
   const list=teacherFilteredList();
   const cnt=document.getElementById('teacherCount');
@@ -1265,6 +1298,7 @@ function renderTeacherRows(){
               <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px;white-space:nowrap">${escTM(t.name)}</span>
               <span style="font-size:10px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:22%">${(t.majors||[]).map(m=>MAJORS[m]||m).join('・')||'—'}</span>
               ${(t.tags||[]).map(g=>`<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 6px;white-space:nowrap">${escTM(g)}</span>`).join('')}
+              ${profBadgeHtml(t)}
               <span style="font-size:10px;color:var(--text-3);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:30%">${perms.join(' · ')||'无权限'}</span>
               <span style="font-size:10px;color:var(--text-3)">${open?'▾':'▸'}</span>
             </div>
@@ -1415,8 +1449,8 @@ async function addTeacher(){
   if(document.getElementById('new_teacher_dept_wrap')) document.getElementById('new_teacher_dept_wrap').style.display='none';
   if(document.getElementById('new_teacher_department')) document.getElementById('new_teacher_department').value='';
     document.getElementById('new_teacher_notes').value='';
-  document.getElementById('new_teacher_tags').value='';
-    document.getElementById('new_teacher_tags').value='';
+  document.getElementById('new_teacher_tags').value=''; if(typeof senmonChipSync==='function') senmonChipSync();
+    document.getElementById('new_teacher_tags').value=''; if(typeof senmonChipSync==='function') senmonChipSync();
     document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
     document.getElementById('perm_booking').checked=false;
     document.getElementById('perm_slots').checked=false;
@@ -1447,7 +1481,7 @@ function openEditTeacher(id){
   const _dept=document.getElementById('new_teacher_department');
   if(_dept) _dept.value=t.department||'';
   document.getElementById('new_teacher_notes').value=t.notes||'';
-  document.getElementById('new_teacher_tags').value=(t.tags||[]).join('、');
+  document.getElementById('new_teacher_tags').value=(t.tags||[]).join('、'); if(typeof senmonChipSync==='function') senmonChipSync();
   document.querySelectorAll('#new_teacher_majors .filter-chip').forEach(c=>{c.classList.toggle('active',(t.majors||[]).includes(c.dataset.value))});
   // 回填隶属领域 chip
   const teacherManaged=t.managed_by||[];
@@ -1613,7 +1647,7 @@ let profNewPreset=null; // "为某老师添加介绍"时预填的固定信息
 function profAddFor(id){
   const src=profList.find(p=>p.id===id); if(!src) return;
   profNewPreset={ _addFor:true, name:src.name, school:src.school, degree:src.degree, years:src.years, vip:src.vip,
-    domain:'', subject:'', courses:'', keywords:'', feature:'', notes:'' };
+    domain:'', subject:'', courses:'', keywords:'', feature:'', highlights:'', notes:'' };
   profEditingId='new';
   profRender();
 }
@@ -1637,7 +1671,7 @@ async function renderTeacherProfilesPage(mc){
       <button class="btn btn-primary btn-sm" onclick="profEditingId='new';profRender()">＋ 新增讲师</button>
     </div>
   </div>
-  <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">Excel 列名须与讲师信息表一致（讲师姓名 / 所属学系 / 所属学科 / 毕业或所属大学院研究科 / 学位（含在读） / 执教年份 / 担当课程 / 可指导方向（关键词） / VIP指导 / 授课特色 / 备注）。<b>讲师姓名请填本名</b>：与老师管理中的姓名一致即自动关联账号（老师可自行补全档案，对外展示名由老师管理的「备注 / 对外宣传姓名」控制）。</div>
+  <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">Excel 列名须与讲师信息表一致（讲师姓名 / 所属学系 / 所属学科 / 毕业或所属大学院研究科 / 学位（含在读） / 执教年份 / 担当课程 / 可指导方向（关键词） / VIP指导 / 授课特色 / 特色亮点（选填） / 备注）。<b>讲师姓名请填本名</b>：与老师管理中的姓名一致即自动关联账号（老师可自行补全档案，对外展示名由老师管理的「备注 / 对外宣传姓名」控制）。</div>
   <div id="prof_body"><div class="empty">加载中…</div></div>`;
   try{
     profList=await sb('/rest/v1/teacher_profiles?select=*&order=sort_order.asc,created_at.asc');
@@ -1659,10 +1693,11 @@ function profRender(){
   const inp='width:100%;font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
 
   const formHtml=(p)=>`
-  <div style="border:1px solid var(--accent);border-radius:4px;padding:14px;margin-bottom:10px;background:var(--bg)">
+  <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:10px">
+  <div style="flex:1 1 460px;min-width:0;border:1px solid var(--accent);border-radius:4px;padding:14px;background:var(--bg)">
     <div style="font-size:11px;font-weight:600;margin-bottom:8px">${profEditingId==='new'?'＋ 新增讲师档案':(p._addFor?`＋ 为「${profEsc(p.name)}」添加介绍`:'✏ 编辑讲师档案')}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;margin-bottom:8px">
-      ${PROF_FIELDS.map(([k,l])=>`<div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">${l}</label><input id="pf_${k}" value="${profEsc(p[k])}" style="${inp}"></div>`).join('')}
+      ${PROF_FIELDS.map(([k,l])=>`<div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">${l}</label><input id="pf_${k}" value="${profEsc(p[k])}" ${k==='name'?'oninput="profOthersRefresh()"':''} style="${inp}"></div>`).join('')}
       <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">领域 *</label>
         <select id="pf_domain" onchange="profDomainChange()" style="${inp}">
           <option value="">选择领域</option>
@@ -1672,14 +1707,16 @@ function profRender(){
         <select id="pf_subject" style="${inp}"><option value="">请先选领域</option></select></div>
       <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">排序</label><input id="pf_sort" type="number" value="${p.sort_order||0}" style="${inp}"></div>
     </div>
-    ${[['courses','担当课程'],['keywords','可指导方向（关键词）'],['feature','授课特色'],['notes','备注']].map(([k,l])=>`
+    ${[['courses','担当课程'],['keywords','可指导方向（关键词）'],['feature','授课特色'],['highlights','特色亮点（选填）'],['notes','备注']].map(([k,l])=>`
     <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">${l}</label>
-    <textarea id="pf_${k}" rows="${k==='feature'?4:2}" style="width:100%;font-size:11px;line-height:1.7;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit;resize:vertical;margin-bottom:6px">${profEsc(p[k])}</textarea>`).join('')}
+    <textarea id="pf_${k}" rows="${k==='feature'||k==='highlights'?4:2}" style="width:100%;font-size:11px;line-height:1.7;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit;resize:vertical;margin-bottom:6px">${profEsc(p[k])}</textarea>`).join('')}
     <div style="display:flex;gap:6px;margin-top:4px">
       <button class="btn btn-primary btn-sm" onclick="profSave()">保存</button>
       <button class="btn btn-outline btn-sm" onclick="profEditingId=null;profNewPreset=null;profRender()">取消</button>
     </div>
     <input type="hidden" id="pf_subject_preset" value="${profEsc(p.subject||'')}">
+  </div>
+  <div id="pf_others" style="flex:1 1 300px;min-width:240px">${profOthersHtml(p.name,p.id)}</div>
   </div>`;
 
   if(profEditingId==='new'){box.innerHTML=formHtml(profNewPreset||{});setTimeout(profDomainChange,0);return}
@@ -1715,6 +1752,7 @@ function profRender(){
               ${profIncomplete(p)?`<span style="font-size:9px;background:var(--warn-bg,#f8f0d8);color:var(--warn,#b8860b);border-radius:2px;padding:0 5px;margin-left:4px">信息不全</span>`:''}
             </div>
             <div style="font-size:10px;color:var(--text-3);margin-top:2px">${profEsc(p.school||'')} ${profEsc(p.degree||'')} · ${profEsc((p.courses||'').slice(0,40))}${(p.courses||'').length>40?'…':''}</div>
+            ${(p.highlights||'').trim()?`<div style="font-size:10px;color:var(--text-2);margin-top:2px">特色亮点：${profEsc((p.highlights||'').slice(0,60))}${(p.highlights||'').length>60?'…':''}</div>`:''}
           </div>
           <button class="btn btn-outline btn-sm" onclick="profAddFor('${p.id}')" title="用该老师的固定信息，新增另一个领域/专业的介绍">＋ 添加介绍</button>
           <button class="btn btn-outline btn-sm" onclick="profEditingId='${p.id}';profRender()">✏ 编辑</button>
@@ -1724,6 +1762,44 @@ function profRender(){
     </div>`;
   }).join('')||'<div class="empty" style="padding:30px">暂无讲师档案，可导入 Excel 或手动新增</div>';
   if(profEditingId&&profEditingId!=='new') setTimeout(profDomainChange,0);
+}
+
+// 这位老师（同名）其他专业的介绍：每个字段旁有「⤵ 带入」，把那段文字填进当前正在编辑的同一字段
+const PROF_BRING=[['courses','担当课程'],['keywords','可指导方向'],['feature','授课特色'],['highlights','特色亮点']];
+function profOthersHtml(name,excludeId){
+  const others=(profList||[]).filter(x=>x.id!==excludeId&&name&&x.name===String(name).trim());
+  if(!others.length) return `<div style="font-size:10px;color:var(--text-3);border:1px dashed var(--border);border-radius:4px;padding:10px">这位老师还没有其他专业的介绍</div>`;
+  return `<div style="font-size:11px;font-weight:600;margin-bottom:6px">其他专业的介绍（可带入）</div>`+others.map(o=>`
+    <div style="border:1px solid var(--border-light);border-radius:4px;padding:8px 10px;margin-bottom:6px;background:var(--surface)">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="font-size:11px;font-weight:600">${profEsc(o.subject||'未分类')}</span>
+        <button class="btn btn-outline btn-sm" style="margin-left:auto;font-size:10px" onclick="profBringAll('${o.id}')">全部带入（只填空白）</button></div>
+      ${PROF_BRING.map(([k,l])=>(o[k]||'').trim()?`<div style="font-size:10px;margin-bottom:3px"><div style="display:flex;align-items:center;gap:6px"><span style="color:var(--text-3)">${l}</span><button class="btn btn-outline btn-sm" style="font-size:10px;padding:0 6px;margin-left:auto" onclick="profBring('${o.id}','${k}')">⤵ 带入</button></div><div style="color:var(--text-2);line-height:1.6;white-space:pre-wrap">${profEsc((o[k]||'').slice(0,120))}${(o[k]||'').length>120?'…':''}</div></div>`:'').join('')}
+    </div>`).join('');
+}
+function profOthersRefresh(){
+  const box=document.getElementById('pf_others'); if(!box) return;
+  box.innerHTML=profOthersHtml((document.getElementById('pf_name')||{}).value||'', profEditingId==='new'?'':profEditingId);
+}
+function profBring(srcId,field){
+  const src=profList.find(x=>x.id===srcId), el=document.getElementById('pf_'+field); if(!src||!el) return;
+  if(el.value.trim()&&el.value.trim()!==(src[field]||'').trim()&&!confirm('当前这一项已经有内容，要用另一个专业的内容覆盖吗？')) return;
+  el.value=src[field]||'';
+}
+function profBringAll(srcId){
+  const src=profList.find(x=>x.id===srcId); if(!src) return;
+  PROF_BRING.forEach(([k])=>{ const el=document.getElementById('pf_'+k); if(el&&!el.value.trim()&&(src[k]||'').trim()) el.value=src[k]; });
+}
+// 学校、学位、年限等固定信息：和这位老师其他专业的行不一致时，问是否一起更新（空值不会覆盖别人的内容）
+const PROF_FIXED=[['school','毕业或所属研究科'],['degree','学位'],['years','执教年份'],['vip','VIP指导']];
+async function profSyncFixed(row,excludeId){
+  const others=(profList||[]).filter(x=>x.id!==excludeId&&x.name===row.name);
+  const diff=PROF_FIXED.filter(([k])=>(row[k]||'').trim()&&others.some(o=>(o[k]||'').trim()!==row[k]));
+  if(!others.length||!diff.length) return;
+  if(!confirm(`这位老师在其他专业还有 ${others.length} 份介绍，其中「${diff.map(d=>d[1]).join('、')}」和这里不一致。\n\n要同时更新其他专业的这几项吗？（确定 = 一起更新，取消 = 只改这一份）`)) return;
+  for(const o of others){
+    const patch={}; diff.forEach(([k])=>{ if((o[k]||'').trim()!==row[k]) patch[k]=row[k]; });
+    if(Object.keys(patch).length){ await sb(`/rest/v1/teacher_profiles?id=eq.${o.id}`,'PATCH',patch); Object.assign(o,patch); }
+  }
 }
 
 function profToggleSubj(s){
@@ -1752,12 +1828,13 @@ async function profSave(){
     domain:g('domain').trim(), subject:g('subject').trim(),
     school:g('school').trim(), degree:g('degree').trim(), years:g('years').trim(),
     vip:g('vip').trim(), courses:g('courses').trim(), keywords:g('keywords').trim(),
-    feature:g('feature').trim(), notes:g('notes').trim(),
+    feature:g('feature').trim(), highlights:g('highlights').trim(), notes:g('notes').trim(),
     sort_order:parseInt((document.getElementById('pf_sort')||{}).value)||0,
   };
   if(!row.name){alert('请填写讲师姓名');return}
   if(!row.domain){alert('请选择领域');return}
   try{
+    await profSyncFixed(row, profEditingId==='new'?'':profEditingId);
     if(profEditingId==='new'){
       row.id=`prof-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
       await sb('/rest/v1/teacher_profiles','POST',row);
@@ -1770,6 +1847,7 @@ async function profSave(){
     }
     profEditingId=null;
     profNewPreset=null;
+    profBrief=null;
     profRender();
   }catch(e){alert('保存失败：'+e.message)}
 }
@@ -1779,6 +1857,7 @@ async function profDelete(id){
   try{
     await sb(`/rest/v1/teacher_profiles?id=eq.${id}`,'DELETE');
     profList=profList.filter(p=>p.id!==id);
+    profBrief=null;
     profRender();
   }catch(e){alert('删除失败：'+e.message)}
 }
@@ -1806,6 +1885,7 @@ async function profImportExcel(input){
         keywords:String(r['可指导方向（关键词）']||r['可指导方向']||'').trim(),
         vip:String(r['VIP指导']||'').trim(),
         feature:String(r['授课特色']||'').trim(),
+        highlights:String(r['特色亮点']||'').trim(),
         notes:String(r['备注']||'').trim(),
         sort_order:0,
       })).filter(r=>r.name);
@@ -1815,6 +1895,7 @@ async function profImportExcel(input){
         await sb('/rest/v1/teacher_profiles','POST',mapped.slice(i,i+20));
       }
       profList=profList.concat(mapped);
+      profBrief=null;
       alert(`已导入 ${mapped.length} 位讲师`);
       profRender();
     }catch(err){alert('导入失败：'+err.message)}
