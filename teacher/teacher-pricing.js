@@ -4,9 +4,9 @@
 // 可保存到 sales_plans（按老师自己的名字列出，能打开/修改/复制/删除），也可「加入宣传资料」（资料类型 plan_price）
 // 资料里只显示方案的组成和价格，套餐里包含的详细课程清单不输出
 // 价目由管理员在中枢「💴 价目」维护（只读展示给有 promo_pricing 权限的老师）（price_packages / price_vip_rates / price_ta_options）
-// 依赖：shared/constants.js、shared/supabase.js、teacher.js、teacher-students.js（tsaAllowedSet）、teacher-promo.js、teacher-pack.js
+// 依赖：shared/constants.js、shared/supabase.js、teacher.js、teacher-promo.js、teacher-pack.js
 // ══════════════════════════════════
-let tp = { loaded: false, err: '', pk: [], vip: [], ta: [], vplans: [], vtpls: [], students: [], saved: [], cur: null };
+let tp = { loaded: false, err: '', pk: [], vip: [], ta: [], vplans: [], vtpls: [], saved: [], cur: null };
 
 function pricingEnabled() { return !!((typeof teacherData !== 'undefined' && teacherData && teacherData.permissions) || {}).promo_pricing; }
 const tpE = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -27,15 +27,11 @@ async function tpLoad() {
     tp.pk = pk; tp.vip = vip; tp.ta = ta; tp.saved = saved;
   } catch (e) { tp.err = e.message; }
   // 已有的 VIP 规划（营业「VIP规划」里的学生方案 / 套餐）：读不到就只能用自定义
-  const [vplans, vtpls, stu] = await Promise.all([
+  const [vplans, vtpls] = await Promise.all([
     sbAll('/rest/v1/vip_student_plans?select=id,student_name,total_sessions,total_hours,items&order=created_at.desc').catch(() => []),
     sbAll('/rest/v1/vip_plan_templates?select=id,name,major,total_sessions,total_hours,items&order=major.asc,created_at.desc').catch(() => []),
-    sbAll('/rest/v1/students?select=id,name,major,course_type,status&status=eq.active&order=name.asc').catch(() => []),
   ]);
   tp.vplans = vplans; tp.vtpls = vtpls;
-  const set = typeof tsaAllowedSet === 'function' ? tsaAllowedSet() : null;
-  tp.students = (stu || []).filter(s => !set || set.has(s.major))
-    .filter(s => !(typeof tsaGuaranteedLock === 'function' && tsaGuaranteedLock()) || tsaIsGuaranteed(s));
   tp.loaded = true;
 }
 
@@ -57,7 +53,7 @@ function tpListHtml() {
   const rows = tp.saved.map(p => {
     const d = new Date(p.updated_at || p.created_at || Date.now());
     return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:9px 12px;margin-bottom:6px">
-      <span style="font-size:13px;font-weight:600;min-width:90px">${tpE(p.student_name)}</span>
+      <span style="font-size:13px;font-weight:600;min-width:90px">${tpE(tpPlanName(p))}</span>
       <span style="font-size:10px;color:var(--text-3)">${tpE(p.track || '')}</span>
       <span style="font-size:12px;color:var(--accent);font-family:'DM Mono',monospace">${tpYen(p.total_yen)} 日元<span style="color:var(--text-3);font-size:10px"> · 约 ${tpMan(p.total_yen)} 万</span></span>
       <span style="font-size:10px;color:var(--text-3);flex:1;min-width:120px">${(p.items || []).map(x => tpE(x.name)).join(' + ')}</span>
@@ -75,14 +71,20 @@ function tpListHtml() {
 }
 
 // ── 编辑器 ──
+// 方案名称：填了用填的；旧方案用学生名；都没有就自动用「价目表名 · 套餐名 · 总价万」
+function tpPlanName(p) {
+  const t = (p.title || '').trim() || (p.student_name || '').trim(); if (t) return t;
+  const pk = (p.items || []).find(x => x.kind === 'package'), src = pk && tp.pk.find(x => x.id === pk.ref);
+  return [(src && src.track) || p.track || '', pk ? pk.name : '', tpMan(p.total_yen) + '万'].filter(Boolean).join(' · ');
+}
 function tpBlank() {
-  return { id: '', student_id: '', student_name: '', domain: '', track: '', pkgId: '', vipMode: 'none', vipRateId: '', vipHours: '', vipPlanRef: '', vipItems: [], taId: '', extras: [], note: '', stuSearch: '' };
+  return { id: '', title: '', domain: '', track: '', pkgId: '', vipMode: 'none', vipRateId: '', vipHours: '', vipPlanRef: '', vipItems: [], taId: '', extras: [], note: '', };
 }
 function tpNew() { tp.cur = tpBlank(); tpRender(); }
 function tpOpen(id, asCopy) {
   const p = tp.saved.find(x => x.id === id); if (!p) return;
   const c = tpBlank();
-  c.id = asCopy ? '' : p.id; c.student_id = p.student_id || ''; c.student_name = p.student_name || ''; c.note = p.note || '';
+  c.id = asCopy ? '' : p.id; c.title = asCopy ? '' : ((p.title || '').trim() || (p.student_name || '').trim()); c.note = p.note || '';
   c.domain = DOMAINS.some(d => d.label === p.track) ? p.track : ''; c.track = c.domain ? '' : (p.track || '');
   (p.items || []).forEach(x => {
     if (x.kind === 'package') c.pkgId = x.ref || '';
@@ -92,12 +94,11 @@ function tpOpen(id, asCopy) {
   });
   const opened = tp.pk.find(x => x.id === c.pkgId);   // 旧方案：以套餐本身为准还原领域 / 价目表
   if (opened) { c.domain = tpPkDom(opened); c.track = opened.track; }
-  if (asCopy) c.student_id = '', c.student_name = '';
   tp.cur = c; tpRender();
 }
 async function tpDelete(id) {
   const p = tp.saved.find(x => x.id === id); if (!p) return;
-  if (!confirm(`删除「${p.student_name}」的这份方案？`)) return;
+  if (!confirm('删除这份方案？')) return;
   try { await sb(`/rest/v1/sales_plans?id=eq.${encodeURIComponent(id)}`, 'DELETE'); tp.saved = tp.saved.filter(x => x.id !== id); tpRender(); }
   catch (e) { alert('删除失败：' + e.message); }
 }
@@ -149,8 +150,6 @@ function tpEditorHtml() {
   const lbl = t => `<label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:3px">${t}</label>`;
   const h = t => `<div style="font-size:12px;font-weight:600;margin-bottom:8px">${t}</div>`;
   const chip = (on, label, fn) => `<div class="filter-chip${on ? ' active' : ''}" onclick="${fn}" style="padding:4px 12px;font-size:11px">${label}</div>`;
-  const kw = (c.stuSearch || '').trim();
-  const stuList = tp.students.filter(s => !kw || (typeof matchesStudentSearch === 'function' ? matchesStudentSearch(s, kw) : (s.name || '').includes(kw)));
   const doms = tpDomains(), tracks = tpTracksOf(c.domain), pkgs = tp.pk.filter(p => (!c.domain || tpPkDom(p) === c.domain) && (!c.track || p.track === c.track));
   const pkg = tp.pk.find(x => x.id === c.pkgId);
   const rate = tp.vip.find(x => x.id === c.vipRateId);
@@ -176,11 +175,9 @@ function tpEditorHtml() {
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;align-items:start">
     <div>
-      <div style="${box}">${h('① 学生与价目表')}
+      <div style="${box}">${h('① 价目表')}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <div>${lbl('搜索我能看到的学生')}<input value="${tpE(c.stuSearch)}" placeholder="姓名 / 拼音首字母" oninput="tp.cur.stuSearch=this.value;tpRerenderStu()" style="${inp}"></div>
-          <div>${lbl('选择学生')}<select id="tp_stu" style="${inp}" onchange="tpPickStudent(this.value)">${tpStuOptions(stuList)}</select></div>
-          <div>${lbl('或手填姓名（还没建档的潜在学生）')}<input value="${tpE(c.student_id ? '' : c.student_name)}" placeholder="姓名" oninput="tpManualName(this.value)" style="${inp}"></div>
+          <div style="grid-column:1/-1">${lbl('方案名称（选填，只给自己在列表里区分用，不输出到资料；留空自动用「价目表名 · 套餐名 · 总价」）')}<input value="${tpE(c.title)}" placeholder="例：王同学家长咨询" oninput="tp.cur.title=this.value" style="${inp}"></div>
           <div>${lbl('领域')}<select style="${inp}" onchange="tp.cur.domain=this.value;tp.cur.track='';tp.cur.pkgId='';tpRender()">
             <option value="">— 全部 —</option>${doms.map(t => `<option value="${tpE(t)}" ${t === c.domain ? 'selected' : ''}>${tpE(t)}</option>`).join('')}</select></div>
           <div>${lbl('价目表')}<select style="${inp}" onchange="tp.cur.track=this.value;tp.cur.pkgId='';tpRender()">
@@ -219,27 +216,6 @@ function tpEditorHtml() {
       </div>
     </div></div>`;
 }
-function tpStuOptions(list) {
-  const c = tp.cur;
-  return `<option value="">— 选择学生（${list.length}）—</option>` + list.map(s => `<option value="${tpE(s.id)}" ${String(c.student_id) === String(s.id) ? 'selected' : ''}>${tpE(s.name)} · ${tpE(typeof majorLabel === 'function' ? majorLabel(s.major) : s.major)}</option>`).join('');
-}
-function tpRerenderStu() {
-  const c = tp.cur, kw = (c.stuSearch || '').trim(), el = document.getElementById('tp_stu'); if (!el) return;
-  el.innerHTML = tpStuOptions(tp.students.filter(s => !kw || (typeof matchesStudentSearch === 'function' ? matchesStudentSearch(s, kw) : (s.name || '').includes(kw))));
-}
-function tpPickStudent(id) {
-  const c = tp.cur, s = tp.students.find(x => String(x.id) === String(id));
-  c.student_id = s ? s.id : '';
-  if (s) {
-    c.student_name = s.name;
-    // 按学生专业自动选价目表：价目表的「对应专业」包含这个专业；没有匹配就只按专业所属领域选领域
-    const hit = tp.pk.find(p => (p.majors || []).includes(s.major));
-    if (hit) { c.domain = tpPkDom(hit); c.track = hit.track; c.pkgId = ''; }
-    else { const d = MAJOR_DOMAIN[s.major]; if (d && tpDomains().includes(d)) { c.domain = d; c.track = ''; c.pkgId = ''; } }
-  }
-  tpRender();
-}
-function tpManualName(v) { tp.cur.student_id = ''; tp.cur.student_name = v; }
 function tpSetVipMode(m) {
   const c = tp.cur; c.vipMode = m;
   if (m !== 'none' && !c.vipRateId) { const r = tpRateFor(c.domain || c.track); c.vipRateId = r ? r.id : ''; }
@@ -271,18 +247,17 @@ function tpPreviewHtml() {
 
 // ── 保存 ──
 async function tpSave() {
-  const c = tp.cur, name = (c.student_name || '').trim();
-  if (!name) { alert('请选择学生或手填姓名'); return null; }
+  const c = tp.cur;
   const { lines, total } = tpLines();
   if (!lines.length) { alert('方案里还没有内容'); return null; }
   const now = new Date().toISOString();
-  const rec = { student_id: c.student_id || null, student_name: name, track: c.track || c.domain || null, items: lines, total_yen: total, note: c.note || null, updated_at: now };
+  const rec = { title: (c.title || '').trim() || null, track: c.track || c.domain || null, items: lines, total_yen: total, note: c.note || null, updated_at: now };
   try {
     if (c.id) {
       await sb(`/rest/v1/sales_plans?id=eq.${encodeURIComponent(c.id)}`, 'PATCH', rec);
       const p = tp.saved.find(x => x.id === c.id); if (p) Object.assign(p, rec);
     } else {
-      const row = Object.assign({ id: `sp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, created_by: tpMe(), created_at: now }, rec);
+      const row = Object.assign({ id: `sp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, created_by: tpMe(), created_at: now, student_id: null, student_name: null }, rec);
       await sb('/rest/v1/sales_plans', 'POST', row);
       tp.saved.unshift(row); c.id = row.id;
     }
@@ -303,8 +278,7 @@ function tpDocHtml(lines, total) {
 async function tpAddToPack() {
   if (!pricingEnabled() || typeof pkAdd !== 'function') return;
   const c = tp.cur, { lines, total } = tpLines();
-  if (!(c.student_name || '').trim() && !lines.length) { alert('请先选择学生并配好方案'); return; }
   if (!lines.length) { alert('方案里还没有内容'); return; }
-  if (c.student_name.trim() && await tpSave() === null) return;   // 先存一份，之后在列表里还能找到
-  pkAdd({ type: 'plan_price', title: `课程方案${c.student_name.trim() ? '（' + c.student_name.trim() + '）' : ''} · ${tpMan(total)}万`, html: tpDocHtml(lines, total), student: c.student_name.trim() });
+  if (await tpSave() === null) return;   // 先存一份，之后在列表里还能找到
+  pkAdd({ type: 'plan_price', title: `课程方案 · ${tpMan(total)}万`, html: tpDocHtml(lines, total) });
 }
