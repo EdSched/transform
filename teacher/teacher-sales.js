@@ -7,7 +7,9 @@
 // 依赖：shared/constants.js、shared/supabase.js、teacher.js（须在其后加载）
 // ══════════════════════════════════
 let tsProfiles = null;
-let tsSubject = 'all';
+let tsDomain = 'all';     // 领域筛选
+let tsSubject = 'all';    // 专业（中文名）筛选；只在选了领域后出现
+let tsPick = {};          // 本名 → 当前显示哪一份介绍（多专业老师在卡片上切换）
 let tsSearch = '';
 let tsSelected = new Set();
 let tsMode = 'info'; // info=内部信息 | card=展示卡片
@@ -37,14 +39,27 @@ function tsPubOf(name) { return (tsPubMap && tsPubMap[name]) || name; }
 function tsRenderShell() {
   const mc = document.getElementById('mainContent');
   if (!mc || !tsProfiles) return;
-  const subjects = [...new Set(tsProfiles.map(p => (p.subject || '未分类').trim() || '未分类'))];
+  // 领域：按 DOMAINS 顺序，只列有讲师介绍的领域；专业：只列所选领域里有介绍的专业（顺序跟随 majorFilterKeys）
+  const domPresent = new Set(tsProfiles.map(p => profileDomain(p)).filter(Boolean));
+  const doms = DOMAINS.map(d => d.label).filter(d => domPresent.has(d));
+  if (tsDomain !== 'all' && !doms.includes(tsDomain)) tsDomain = 'all';
+  const inDom = tsDomain === 'all' ? [] : tsProfiles.filter(p => profileDomain(p) === tsDomain);
+  const order = (typeof majorFilterKeys === 'function' ? majorFilterKeys() : []).map(k => MAJORS[k]).filter(Boolean);
+  const subjects = [...new Set(inDom.map(p => (p.subject || '').trim()).filter(Boolean))]
+    .sort((a, b) => { const ia = order.indexOf(a), ib = order.indexOf(b); return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || a.localeCompare(b); });
+  if (tsSubject !== 'all' && !subjects.includes(tsSubject)) tsSubject = 'all';
   mc.innerHTML = `
   <div class="page-header"><div class="section-title">👤 讲师信息查询</div></div>
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
-    <span style="font-size:10px;color:var(--text-3)">学科：</span>
-    <div class="filter-chip ${tsSubject==='all'?'active':''}" onclick="tsSubject='all';tsRenderShell()" style="padding:3px 10px;font-size:10px">全部</div>
-    ${subjects.map(s => `<div class="filter-chip ${tsSubject===s?'active':''}" onclick="tsSubject='${tsEsc(s)}';tsRenderShell()" style="padding:3px 10px;font-size:10px">${tsEsc(s)}</div>`).join('')}
+    <span style="font-size:10px;color:var(--text-3)">领域：</span>
+    <div class="filter-chip ${tsDomain==='all'?'active':''}" onclick="tsDomain='all';tsSubject='all';tsPick={};tsRenderShell()" style="padding:3px 10px;font-size:10px">全部</div>
+    ${doms.map(d => `<div class="filter-chip ${tsDomain===d?'active':''}" onclick="tsDomain='${tsEsc(d)}';tsSubject='all';tsPick={};tsRenderShell()" style="padding:3px 10px;font-size:10px">${tsEsc(d)}</div>`).join('')}
   </div>
+  ${tsDomain !== 'all' ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
+    <span style="font-size:10px;color:var(--text-3)">专业：</span>
+    <div class="filter-chip ${tsSubject==='all'?'active':''}" onclick="tsSubject='all';tsPick={};tsRenderShell()" style="padding:3px 10px;font-size:10px">全部</div>
+    ${subjects.map(s => `<div class="filter-chip ${tsSubject===s?'active':''}" onclick="tsSubject='${tsEsc(s)}';tsPick={};tsRenderShell()" style="padding:3px 10px;font-size:10px">${tsEsc(s)}</div>`).join('')}
+  </div>` : ''}
   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px">
     <input placeholder="搜索姓名 / 方向 / 课程…" value="${tsEsc(tsSearch)}" oninput="tsSearch=this.value;tsRenderList()"
       style="font-size:11px;padding:6px 10px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;flex:1;min-width:180px">
@@ -63,14 +78,33 @@ function tsRenderShell() {
 
 function tsFiltered() {
   let list = tsProfiles;
-  if (tsSubject !== 'all') list = list.filter(p => ((p.subject || '未分类').trim() || '未分类') === tsSubject);
+  if (tsDomain !== 'all') list = list.filter(p => profileDomain(p) === tsDomain);
+  if (tsSubject !== 'all') list = list.filter(p => (p.subject || '').trim() === tsSubject);
   const q = tsSearch.trim();
   if (q) list = list.filter(p =>
     (p.name || '').includes(q) || (p.real_name || '').includes(q)
     || (p.keywords || '').includes(q) || (p.courses || '').includes(q)
     || (p.school || '').includes(q)
     || (typeof matchesPinyin === 'function' && matchesPinyin(p.name || '', q)));
-  return list;
+  // 没选具体专业时，同一位老师只显示一张（第一个专业的介绍），卡片上可以切换到他负责的其他专业
+  if (tsSubject === 'all') { const seen = new Set(); list = list.filter(p => !seen.has(p.name) && seen.add(p.name)); }
+  return list.map(tsShown);
+}
+// 当前显示的那一份：老师在卡片上点过别的专业就用点的那份，否则用筛选出来的
+function tsShown(p) {
+  const id = tsPick[p.name];
+  return (id && (tsProfiles || []).find(x => x.id === id && x.name === p.name)) || p;
+}
+// 切到同一位老师的另一个专业（不改变上面的筛选）；已勾选的会跟着换成新的那一份
+function tsSwitch(name, fromId, id) {
+  tsPick[name] = id;
+  if (tsSelected.has(fromId)) { tsSelected.delete(fromId); tsSelected.add(id); }
+  tsRenderList();
+}
+function tsOthersHtml(p) {
+  const others = (tsProfiles || []).filter(x => x.name === p.name && x.id !== p.id);
+  if (!others.length) return '';
+  return `<div style="margin-top:8px;padding-top:6px;border-top:1px dashed #ede9e2;font-size:10px;color:var(--text-3)">这位老师还负责：${others.map(o => `<span onclick="tsSwitch('${tsEsc(p.name)}','${tsEsc(p.id)}','${tsEsc(o.id)}')" style="cursor:pointer;color:var(--accent);margin-right:8px;text-decoration:underline">${tsEsc((o.subject || '未分类').trim())} →</span>`).join('')}</div>`;
 }
 
 function tsRenderList() {
@@ -124,8 +158,10 @@ function tsInfoHtml(sel) {
       <div><span style="color:var(--text-3)">担当课程：</span>${tsEsc(p.courses || '—')}</div>
       <div style="grid-column:1/-1"><span style="color:var(--text-3)">可指导方向：</span>${tsEsc(p.keywords || '—')}</div>
       ${p.feature ? `<div style="grid-column:1/-1"><span style="color:var(--text-3)">授课特色：</span>${tsEsc(p.feature)}</div>` : ''}
+      ${(p.highlights || '').trim() ? `<div style="grid-column:1/-1"><span style="color:var(--text-3)">特色亮点：</span>${tsEsc(p.highlights)}</div>` : ''}
       ${p.notes ? `<div style="grid-column:1/-1;color:var(--text-3)">备注：${tsEsc(p.notes)}</div>` : ''}
     </div>
+    ${tsOthersHtml(p)}
   </div>`).join('')}`;
 }
 
@@ -135,11 +171,11 @@ function tsCardsHtml(sel) {
     <span style="font-size:11px;font-weight:600">🎴 展示卡片（${sel.length}位 · 仅对外内容，可截图）</span>
     ${typeof pkEnabled === 'function' && pkEnabled() ? `<button onclick="tsAddCardsToPack()" style="margin-left:auto;font-size:10px;background:var(--surface);border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:3px 12px;cursor:pointer;font-family:inherit">➕ 加入宣传资料</button>` : ''}
   </div>
-  ${tsCardsGridHtml(sel, 'ts_cards')}`;
+  ${tsCardsGridHtml(sel, 'ts_cards', true)}`;
 }
 
 // 讲师展示卡片网格（页面展示与「宣传资料整合」共用；全部内联配色，可直接打印）
-function tsCardsGridHtml(sel, domId) {
+function tsCardsGridHtml(sel, domId, switcher) {
   return `<div ${domId ? `id="${domId}" ` : ''}style="background:#f7f5f0;border-radius:6px;padding:18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px">
     ${sel.map(p => `
     <div style="background:#fff;border:1px solid #ede9e2;border-radius:6px;padding:20px 22px;color:#1a1814">
@@ -154,10 +190,15 @@ function tsCardsGridHtml(sel, domId) {
         <div style="font-size:9px;letter-spacing:.15em;color:#9a9590;margin-bottom:3px">授课特色</div>
         <div style="font-size:12px;color:#5a5650;line-height:1.9">${tsEsc(p.feature)}</div>
       </div>` : ''}
+      ${(p.highlights || '').trim() ? `<div style="margin-bottom:10px">
+        <div style="font-size:9px;letter-spacing:.15em;color:#9a9590;margin-bottom:3px">特色亮点</div>
+        <div style="font-size:12px;color:#5a5650;line-height:1.9">${tsEsc(p.highlights)}</div>
+      </div>` : ''}
       ${p.courses ? `<div>
         <div style="font-size:9px;letter-spacing:.15em;color:#9a9590;margin-bottom:4px">担当课程</div>
         <div style="display:flex;flex-wrap:wrap;gap:5px">${String(p.courses).split(/[,，、\/\s]+/).filter(Boolean).map(c => `<span style="font-size:10px;background:#f5ede3;color:#5a3e28;border-radius:2px;padding:2px 9px">${tsEsc(c)}</span>`).join('')}</div>
       </div>` : ''}
+      ${switcher ? tsOthersHtml(p) : ''}
     </div>`).join('')}
   </div>`;
 }
