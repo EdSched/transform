@@ -16,7 +16,7 @@ const PK_TYPES = {
   admission: { label: '出愿学校', color: '#2c4a7c', bg: '#e8f0fb' },
   plan:      { label: '进度规划', color: '#2d5a3d', bg: '#e4f0e8' },
   lecturers: { label: '讲师介绍', color: '#6a4a7a', bg: '#efe4f4' },
-  common:    { label: '宣传收尾', color: '#8a6a1b', bg: '#f8f0d8' },
+  common:    { label: '关于唯新', color: '#8a6a1b', bg: '#f8f0d8' },
   plan_price: { label: '套餐服务', color: '#a03a2e', bg: '#f8e4dc' },
   price_table: { label: '价格表', color: '#a03a2e', bg: '#f8e4dc' },
   major_intro:    { label: '专业介绍', color: '#5a3e28', bg: '#f5ede3' },
@@ -34,7 +34,7 @@ const PK_MAJOR_PARTS = [
 ];
 // 学科介绍的板块 → 资料里的独立条目类型（拆开后每个板块各占自己的默认位置）
 const PK_PART_TYPE = { major_intro: 'major_intro', course: 'major_course', schedule: 'major_schedule', lecturer: 'major_lecturer' };
-// 默认顺序（Sensis 定）：价格表 → 专业介绍 → 课程介绍 → 套餐服务 → 课程表 → 讲师介绍 → 出愿学校 → 进度规划 → VIP规划 → 合格案例 → 宣传收尾（永远最后）
+// 默认顺序（Sensis 定）：价格表 → 专业介绍 → 课程介绍 → 套餐服务 → 课程表 → 讲师介绍 → 出愿学校 → 进度规划 → VIP规划 → 合格案例 → 关于唯新（永远最后）
 // 旧资料里没拆开的「学科介绍」(major) 整份排在专业介绍的位置
 const PK_ORDER = { price_table: 1, major: 2, major_intro: 2, major_course: 3, plan_price: 4, major_schedule: 5, major_lecturer: 6, lecturers: 6, admission: 7, plan: 8, vip: 9, cases: 10, common: 99 };
 function pkOrderOf(type) { return PK_ORDER[type] != null ? PK_ORDER[type] : 50; }
@@ -75,7 +75,7 @@ function pkAdd(item, opts) {
     id: 'pk-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
     addedAt: new Date().toISOString(),
   });
-  // 按默认顺序自动插位：插在「最后一个序号不大于它」的条目后面（同类型按加入先后）；老师手动调整过的顺序不会被打乱，宣传收尾永远在最后
+  // 按默认顺序自动插位：插在「最后一个序号不大于它」的条目后面（同类型按加入先后）；老师手动调整过的顺序不会被打乱，关于唯新永远在最后
   const ord = pkOrderOf(it.type);
   let at = -1;
   pkItems.forEach((x, i) => { if (pkOrderOf(x.type) <= ord) at = i; });
@@ -144,7 +144,7 @@ function pkAddPriceTable() {
   if (!pkgs.length) { alert('这张价目表没有启用中的套餐'); return; }
   pkAdd({ type: 'price_table', title: `价格表 · ${pkPrice.track}`, html: pkPriceTableHtml(pkgs) });
 }
-// ── 宣传收尾：admin「通用宣传」里按领域维护的内容块（表 promo_common），每块作为一章放到资料最后 ──
+// ── 关于唯新：admin「通用宣传」里按领域维护的内容块（表 promo_common），每块作为一章放到资料最后 ──
 let pkCommon = { rows: null, domain: '', off: new Set(), err: '' };   // off = 被点掉（不加入）的块 id
 async function pkCommonLoad() {
   try {
@@ -166,7 +166,7 @@ function pkCommonSetDomain(d) { pkCommon.domain = d; pkCommon.off = new Set(); p
 function pkCommonToggle(id) { if (pkCommon.off.has(id)) pkCommon.off.delete(id); else pkCommon.off.add(id); pkRender(); }
 function pkCommonHtml() {
   const chip = (on, label, fn) => `<div class="filter-chip${on ? ' active' : ''}" onclick="${fn}" style="padding:3px 10px;font-size:10px">${label}</div>`;
-  const head = '<div style="font-size:11px;font-weight:600;margin-bottom:8px">🏫 宣传收尾（通用宣传内容）</div>';
+  const head = '<div style="font-size:11px;font-weight:600;margin-bottom:8px">🏫 关于唯新（通用资料，排在最后）</div>';
   if (pkCommon.rows === null) return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:10px">${head}<div style="font-size:11px;color:var(--text-3)">读取中…</div></div>`;
   const doms = pkCommonDomains();
   if (!doms.length) return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:10px">${head}<div style="font-size:11px;color:var(--text-3)">${pkCommon.err ? '读取失败：' + pkEsc(pkCommon.err) : '还没有已发布的通用宣传内容（admin 可在「宣传管理 → 通用宣传」中维护）'}</div></div>`;
@@ -183,7 +183,7 @@ function pkAddCommon() {
   const rows = (pkCommon.rows || []).filter(r => r.domain === pkCommon.domain && !pkCommon.off.has(r.id));
   if (!rows.length) return;
   rows.forEach(r => pkAdd({ type: 'common', title: r.title || '（无标题）', html: `<div class="pk-rich">${prMd(r.body)}</div>` }, { silent: true }));
-  pkToast(`已加入 ${rows.length} 章宣传收尾（共 ${pkItems.length} 项）`, true);
+  pkToast(`已加入 ${rows.length} 章关于唯新（共 ${pkItems.length} 项）`, true);
   if (typeof curTab !== 'undefined' && curTab === 'promopack') pkRender();
 }
 
@@ -398,7 +398,7 @@ function pkRender(mc) {
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
         <div style="font-size:12px;font-weight:600">③ 资料内容与顺序</div>
         <span style="font-size:10px;color:var(--text-3)">已选 ${incl.length} / ${pkItems.length} 项</span>
-        ${pkItems.length > 1 ? `<button onclick="pkSortDefault()" title="价格表→专业介绍→课程介绍→套餐服务→课程表→讲师介绍→出愿学校→进度规划→VIP规划→合格案例→宣传收尾" style="margin-left:auto;font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 10px;cursor:pointer;font-family:inherit;color:var(--text-2)">⇅ 按默认顺序排列</button>` : ''}
+        ${pkItems.length > 1 ? `<button onclick="pkSortDefault()" title="价格表→专业介绍→课程介绍→套餐服务→课程表→讲师介绍→出愿学校→进度规划→VIP规划→合格案例→关于唯新" style="margin-left:auto;font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 10px;cursor:pointer;font-family:inherit;color:var(--text-2)">⇅ 按默认顺序排列</button>` : ''}
         ${pkItems.length ? `<button onclick="pkClear()" style="${pkItems.length > 1 ? '' : 'margin-left:auto;'}font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 10px;cursor:pointer;font-family:inherit;color:var(--text-3)">清空</button>` : ''}
       </div>
       ${pkItems.length ? pkItems.map((it, i) => {

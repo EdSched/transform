@@ -169,7 +169,7 @@ function prBodyHtml() {
   if (prSection === 'common') {
     const list = (prCommon || []).filter(r => r.domain === prCommonDomain);
     if (!list.length) return '<div class="empty" style="padding:30px">该领域暂无通用宣传内容（admin 可在「宣传管理 → 通用宣传」中录入）</div>';
-    return `<div style="font-size:10px;color:var(--text-3);margin-bottom:8px">${prEsc(prCommonDomain)} 通用宣传共 ${list.length} 块；要放进资料请到「📦 宣传资料整合」选择「宣传收尾」</div>` + list.map(p => `
+    return `<div style="font-size:10px;color:var(--text-3);margin-bottom:8px">${prEsc(prCommonDomain)} 通用宣传共 ${list.length} 块；要放进资料请到「📦 宣传资料整合」选择「关于唯新」</div>` + list.map(p => `
   <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px 16px;margin-bottom:10px">
     <div style="font-size:13px;font-weight:600;margin-bottom:8px;font-family:'Noto Serif SC',serif">${prEsc(p.title)}</div>
     <div style="font-size:12px;line-height:2;color:var(--text-2)">${prMd(p.body)}</div>
