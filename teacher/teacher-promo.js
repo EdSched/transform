@@ -37,12 +37,15 @@ async function prAvailableMajors() {
   let rows;
   try { rows = await sbAll('/rest/v1/promo_content?or=(published.is.null,published.is.true)&select=major'); }
   catch (e) { return PR_MAJORS_FALLBACK; }   // 查询失败不缓存，下次再试
+  // 只有宣传视频、还没有其他宣传内容的专业（如教育学）也要能选到
+  const vids = await sbAll('/rest/v1/promo_videos?published=is.true&select=major').catch(() => []);
+  rows = (rows || []).concat(vids || []);
   const order = majorFilterKeys();
   const idx = k => { const i = order.indexOf(k); return i < 0 ? 9999 : i; };
   prMajorsCache = [...new Set((rows || []).map(r => r.major).filter(Boolean))].sort((a, b) => idx(a) - idx(b) || a.localeCompare(b));
   return prMajorsCache;
 }
-function prMajorName(k) { return k === 'shakai_group' ? '社会人文' : (MAJORS[k] || (typeof majorLabel === 'function' ? majorLabel(k) : '') || k); }
+function prMajorName(k) { return k === 'shakai_group' ? '社会人文' : (MAJORS[k] || (typeof majorLabel === 'function' ? majorLabel(k) : '') || (typeof ADMISSION_MAJORS !== 'undefined' && ADMISSION_MAJORS[k]) || k); }
 
 // ── 语言课（只读，合并进同一张课程表）──
 // 判断：语言领域的课，或专业代号为 nihongo / eigo（该专业属于语言领域时）；语言领域里没填专业的按课程名判断
@@ -277,8 +280,8 @@ function prRenderShell() {
   </div>`}
   ${prSection !== 'common' && prSection !== 'plan' && prSection !== 'cases' && typeof pkEnabled === 'function' && pkEnabled() ? `<div style="display:flex;align-items:center;gap:8px;margin:-4px 0 12px;flex-wrap:wrap">
     ${(() => { const pt = PK_MAJOR_PARTS.find(x => x[0] === prSection); const btn = 'font-size:11px;background:var(--surface);border:1px solid var(--accent);color:var(--accent);border-radius:3px;cursor:pointer;font-family:inherit';
-      return (pt ? `<button onclick="pkAddMajorFromPromo('${pt[0]}')" style="${btn};padding:4px 14px">➕ 将「${MAJORS[prMajor]||prMajor}」${pt[1]}加入宣传资料</button>` : '')
-        + `<button onclick="pkAddMajorFromPromo()" style="${btn};padding:${pt ? '3px 10px;font-size:10px' : '4px 14px'}">${pt ? '加入全部 4 项' : `➕ 将「${MAJORS[prMajor]||prMajor}」学科介绍（全部 4 项）加入宣传资料`}</button>`; })()}
+      return (pt ? `<button onclick="pkAddMajorFromPromo('${pt[0]}')" style="${btn};padding:4px 14px">➕ 将「${prMajorName(prMajor)}」${pt[1]}加入宣传资料</button>` : '')
+        + `<button onclick="pkAddMajorFromPromo()" style="${btn};padding:${pt ? '3px 10px;font-size:10px' : '4px 14px'}">${pt ? '加入全部 4 项' : `➕ 将「${prMajorName(prMajor)}」学科介绍（全部 4 项）加入宣传资料`}</button>`; })()}
     <span style="font-size:10px;color:var(--text-3)">加入后可在「📦 宣传资料整合」与出愿学校、进度规划等一起生成一份完整 PDF</span>
   </div>` : ''}
   <div id="pr_body">${prBodyHtml()}</div>`;
