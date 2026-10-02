@@ -67,7 +67,7 @@ function renderStudentsPage(mc){
     </div>
   </div>
   <div class="filter-row">
-    ${majorFilterKeys({includeAll:true}).map((m,i)=>`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this)">${i===0?'全部专业':majorLabel(m)}</div>`).join('')}
+    ${chipFold(majorFilterKeys({includeAll:true}).map((m,i)=>({on:stMajorFilter===m,html:`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this)">${i===0?'全部专业':majorLabel(m)}</div>`})))}
   </div>
   <div class="filter-row">
     ${[['active','在籍'],['graduated','已合格'],['expired','已到期'],['stopped','停课'],['withdrawn','退学'],['all','全部']].map(([v,l])=>`<div class="filter-chip${stStatus===v?' active':''}" onclick="setStStatus('${v}',this)">${l}</div>`).join('')}
@@ -895,7 +895,7 @@ async function renderProgressPage(mc, focusStudentId=null){
     </div>
   </div>
   <div class="filter-row">
-    ${majorFilterKeys({includeAll:true}).map((m,i)=>`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this);renderProgressPage(document.getElementById('mainContent'))">${i===0?'全部专业':majorLabel(m)}</div>`).join('')}
+    ${chipFold(majorFilterKeys({includeAll:true}).map((m,i)=>({on:stMajorFilter===m,html:`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this);renderProgressPage(document.getElementById('mainContent'))">${i===0?'全部专业':majorLabel(m)}</div>`})))}
   </div>
   <div class="search-bar"><input id="progress_search_input" placeholder="搜索学生姓名…" value="${progressStudentFilter}" oninput="handleProgressSearchInput(this)" oncompositionstart="this.dataset.composing='1'" oncompositionend="this.dataset.composing='';handleProgressSearchInput(this)"></div>
   <div style="display:flex;flex-direction:column;gap:8px">${cards}</div>
@@ -1315,7 +1315,7 @@ async function renderSeasonView(mc, students, timelineMap) {
     </div>
   </div>
   <div class="filter-row">
-    ${majorFilterKeys({includeAll:true}).map((m,i)=>`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this);renderProgressPage(document.getElementById('mainContent'))">${i===0?'全部专业':majorLabel(m)}</div>`).join('')}
+    ${chipFold(majorFilterKeys({includeAll:true}).map((m,i)=>({on:stMajorFilter===m,html:`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this);renderProgressPage(document.getElementById('mainContent'))">${i===0?'全部专业':majorLabel(m)}</div>`})))}
   </div>`;
 
   if (!allPlans.length) {
@@ -1702,7 +1702,7 @@ function renderMonthlyPage(mc){
   <div class="page-header"><div class="section-title">📅 月度学习情况</div></div>
   <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">点学生查看/填写每月学习情况汇总，可生成家长版 PDF。学部与大学院通用。</div>
   <div class="filter-row" style="margin-bottom:12px">
-    ${keys.map((m,i)=>`<div class="filter-chip${mpMajorFilter===m?' active':''}" onclick="mpMajorFilter='${m}';renderMonthlyPage(document.getElementById('mainContent'))">${i===0?'全部专业':(m==='shakai_group'?'社会人文':majorLabel(m))}</div>`).join('')}
+    ${chipFold(keys.map((m,i)=>({on:mpMajorFilter===m,html:`<div class="filter-chip${mpMajorFilter===m?' active':''}" onclick="mpMajorFilter='${m}';renderMonthlyPage(document.getElementById('mainContent'))">${i===0?'全部专业':(m==='shakai_group'?'社会人文':majorLabel(m))}</div>`})))}
   </div>
   <div style="display:flex;flex-direction:column;gap:6px">
     ${list.length? list.map(s=>`

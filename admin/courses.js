@@ -383,24 +383,22 @@ function renderCourseCleanupPage(mc){
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">专业</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
-        ${majorFilterKeys({includeAll:true}).map((m,i)=>`
+        ${chipFold(majorFilterKeys({includeAll:true}).map((m,i)=>({on:cleanupMajorFilter===m,html:`
           <div class="filter-chip${cleanupMajorFilter===m?' active':''}" onclick="setCleanupMajor('${m}',this)" style="font-size:11px;padding:3px 10px">
             ${i===0?'全部':majorLabel(m)}
-          </div>`).join('')}
+          </div>`})))}
       </div>
     </div>
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">期数</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
-        <div class="filter-chip${cleanupPeriodFilter==='all'?' active':''}" onclick="setCleanupPeriod('all',this)" style="font-size:11px;padding:3px 10px">全部</div>
-        ${allCleanupPeriods.map(p=>`<div class="filter-chip${cleanupPeriodFilter===p?' active':''}" onclick="setCleanupPeriod('${p}',this)" style="font-size:11px;padding:3px 10px">${p}</div>`).join('')}
+        ${chipFold([{on:cleanupPeriodFilter==='all',html:`<div class="filter-chip${cleanupPeriodFilter==='all'?' active':''}" onclick="setCleanupPeriod('all',this)" style="font-size:11px;padding:3px 10px">全部</div>`}].concat(allCleanupPeriods.map(p=>({on:cleanupPeriodFilter===p,html:`<div class="filter-chip${cleanupPeriodFilter===p?' active':''}" onclick="setCleanupPeriod('${p}',this)" style="font-size:11px;padding:3px 10px">${p}</div>`}))))}
       </div>
     </div>
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">年份</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
-        <div class="filter-chip${cleanupYearFilter==='all'?' active':''}" onclick="setCleanupYear('all',this)" style="font-size:11px;padding:3px 10px">全部</div>
-        ${allYears.map(y=>`<div class="filter-chip${cleanupYearFilter===y?' active':''}" onclick="setCleanupYear('${y}',this)" style="font-size:11px;padding:3px 10px">${y}年</div>`).join('')}
+        ${chipFold([{on:cleanupYearFilter==='all',html:`<div class="filter-chip${cleanupYearFilter==='all'?' active':''}" onclick="setCleanupYear('all',this)" style="font-size:11px;padding:3px 10px">全部</div>`}].concat(allYears.map(y=>({on:cleanupYearFilter===y,html:`<div class="filter-chip${cleanupYearFilter===y?' active':''}" onclick="setCleanupYear('${y}',this)" style="font-size:11px;padding:3px 10px">${y}年</div>`}))))}
       </div>
     </div>
     ${allCleanupCampuses.length>1?`<div>
@@ -863,18 +861,16 @@ function renderCoursesPage(mc){
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">专业</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
-        ${majorFilterKeys({includeAll:true}).map((m,i)=>`
+        ${chipFold(majorFilterKeys({includeAll:true}).map((m,i)=>({on:coursesMajorFilter===m,html:`
           <div class="filter-chip${coursesMajorFilter===m?' active':''}" onclick="setCoursesMajor('${m}',this)" style="font-size:11px;padding:3px 10px">
             ${i===0?'全部':majorLabel(m)}
-          </div>`).join('')}
+          </div>`})))}
       </div>
     </div>
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">${artView?'月份':'期数'}</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
-        <div class="filter-chip${coursesPeriodFilter==='current'?' active':''}" onclick="setCoursesPeriod('current',this)" style="font-size:11px;padding:3px 10px">${artView?'本月':'当前期'}（${curPeriod}）</div>
-        ${allPeriods.map(p=>`<div class="filter-chip${coursesPeriodFilter===p.key?' active':''}" onclick="setCoursesPeriod('${p.key}',this)" style="font-size:11px;padding:3px 10px">${p.key}</div>`).join('')}
-        <div class="filter-chip${coursesPeriodFilter==='all'?' active':''}" onclick="setCoursesPeriod('all',this)" style="font-size:11px;padding:3px 10px">全部</div>
+        ${chipFold([{on:coursesPeriodFilter==='current',html:`<div class="filter-chip${coursesPeriodFilter==='current'?' active':''}" onclick="setCoursesPeriod('current',this)" style="font-size:11px;padding:3px 10px">${artView?'本月':'当前期'}（${curPeriod}）</div>`}].concat(allPeriods.map(p=>({on:coursesPeriodFilter===p.key,html:`<div class="filter-chip${coursesPeriodFilter===p.key?' active':''}" onclick="setCoursesPeriod('${p.key}',this)" style="font-size:11px;padding:3px 10px">${p.key}</div>`})),[{on:coursesPeriodFilter==='all',html:`<div class="filter-chip${coursesPeriodFilter==='all'?' active':''}" onclick="setCoursesPeriod('all',this)" style="font-size:11px;padding:3px 10px">全部</div>`}]))}
       </div>
     </div>
     <div>
@@ -1238,13 +1234,12 @@ function renderPublishModal(){
   document.getElementById('publishFilters').innerHTML=`
     <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">
       <span style="font-size:10px;color:var(--text-3);margin-right:2px">专业</span>
-      ${majorFilterKeys({includeAll:true}).map((m,i)=>`
-        <div class="filter-chip${publishMajorFilter===m?' active':''}" onclick="setPubMajor('${m}',this)" style="font-size:11px;padding:2px 8px">${i===0?'全部':majorLabel(m)}</div>`).join('')}
+      ${chipFold(majorFilterKeys({includeAll:true}).map((m,i)=>({on:publishMajorFilter===m,html:`
+        <div class="filter-chip${publishMajorFilter===m?' active':''}" onclick="setPubMajor('${m}',this)" style="font-size:11px;padding:2px 8px">${i===0?'全部':majorLabel(m)}</div>`})))}
     </div>
     <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-top:6px">
       <span style="font-size:10px;color:var(--text-3);margin-right:2px">期数</span>
-      <div class="filter-chip${publishPeriodFilter==='all'?' active':''}" onclick="setPubPeriod('all',this)" style="font-size:11px;padding:2px 8px">全部</div>
-      ${allPeriods.map(p=>`<div class="filter-chip${publishPeriodFilter===p?' active':''}" onclick="setPubPeriod('${p}',this)" style="font-size:11px;padding:2px 8px">${p}</div>`).join('')}
+      ${chipFold([{on:publishPeriodFilter==='all',html:`<div class="filter-chip${publishPeriodFilter==='all'?' active':''}" onclick="setPubPeriod('all',this)" style="font-size:11px;padding:2px 8px">全部</div>`}].concat(allPeriods.map(p=>({on:publishPeriodFilter===p,html:`<div class="filter-chip${publishPeriodFilter===p?' active':''}" onclick="setPubPeriod('${p}',this)" style="font-size:11px;padding:2px 8px">${p}</div>`}))))}
     </div>`;
 
   let courses=cachedCourses;
@@ -2556,15 +2551,13 @@ function renderSchedulePage(mc){
     ${showPeriod?`<div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">期数</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
-        <div class="filter-chip${schedPeriodFilter==='all'?' active':''}" onclick="setSchedPeriod('all',this)" style="font-size:11px;padding:3px 10px">全部</div>
-        ${allPeriods.map(p=>`<div class="filter-chip${schedPeriodFilter===p.key?' active':''}" onclick="setSchedPeriod('${p.key}',this)" style="font-size:11px;padding:3px 10px">${p.key}</div>`).join('')}
+        ${chipFold([{on:schedPeriodFilter==='all',html:`<div class="filter-chip${schedPeriodFilter==='all'?' active':''}" onclick="setSchedPeriod('all',this)" style="font-size:11px;padding:3px 10px">全部</div>`}].concat(allPeriods.map(p=>({on:schedPeriodFilter===p.key,html:`<div class="filter-chip${schedPeriodFilter===p.key?' active':''}" onclick="setSchedPeriod('${p.key}',this)" style="font-size:11px;padding:3px 10px">${p.key}</div>`}))))}
       </div>
     </div>`:''}
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">课程</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
-        <div class="filter-chip${schedCourseFilter==='all'?' active':''}" onclick="setSchedCourse('all',this)" style="font-size:11px;padding:3px 10px">全部</div>
-        ${filteredCourses.slice(0,20).map(c=>`<div class="filter-chip${schedCourseFilter===c.id?' active':''}" onclick="setSchedCourse('${c.id}',this)" style="font-size:11px;padding:3px 10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.name}（${c.first_session_date?periodKeyOf(c):(c.period||'')}）">${c.name}</div>`).join('')}
+        ${chipFold([{on:schedCourseFilter==='all',html:`<div class="filter-chip${schedCourseFilter==='all'?' active':''}" onclick="setSchedCourse('all',this)" style="font-size:11px;padding:3px 10px">全部</div>`}].concat(filteredCourses.slice(0,20).map(c=>({on:schedCourseFilter===c.id,html:`<div class="filter-chip${schedCourseFilter===c.id?' active':''}" onclick="setSchedCourse('${c.id}',this)" style="font-size:11px;padding:3px 10px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.name}（${c.first_session_date?periodKeyOf(c):(c.period||'')}）">${c.name}</div>`}))))}
       </div>
     </div>
   </div>

@@ -44,15 +44,14 @@ function renderAdmissionDbPage(mc) {
   <!-- 专业筛选（支持多选） -->
   <div style="margin-bottom:6px;font-size:10px;color:var(--text-3)">点击选择专业（可多选）；点「社会人文」同时加载社会学+新闻传播+社会福祉</div>
   <div class="filter-row" style="margin-bottom:8px" id="adbMajorRow">
-    ${(scopeAll()||SHAKAI_GROUP.some(m=>scopeHasDomain(MAJOR_DOMAIN[m]||'大学院文科')))?`<div class="filter-chip" onclick="toggleAdbMajor('shakai_group',this)" id="adb_chip_shakai_group">社会人文</div>`:''}
-    ${Object.entries(ADMISSION_MAJORS).filter(([k,v])=>{
+    ${chipFold([].concat((scopeAll()||SHAKAI_GROUP.some(m=>scopeHasDomain(MAJOR_DOMAIN[m]||'大学院文科')))?[{on:['shakai','shinpan','fukushi'].every(k=>adbSelectedMajors.includes(k)),html:`<div class="filter-chip${['shakai','shinpan','fukushi'].every(k=>adbSelectedMajors.includes(k))?' active':''}" onclick="toggleAdbMajor('shakai_group',this)" id="adb_chip_shakai_group">社会人文</div>`}]:[]).concat(Object.entries(ADMISSION_MAJORS).filter(([k,v])=>{
       if(scopeAll()) return true;
       // 已知领域的按领域判断；出愿专用未登记的key默认当大学院文科；单独选中的专业也算
       const dom = MAJOR_DOMAIN[k] || '大学院文科';
       return scopeHasDomain(dom) || VIEW_SCOPE.majors.includes(k);
-    }).map(([k,v])=>`
-      <div class="filter-chip" onclick="toggleAdbMajor('${k}',this)" id="adb_chip_${k}">${v}${majorCounts[k]?` <span style="font-size:9px;opacity:.6">${majorCounts[k]}</span>`:''}</div>
-    `).join('')}
+    }).map(([k,v])=>({on:adbSelectedMajors.includes(k),html:`
+      <div class="filter-chip${adbSelectedMajors.includes(k)?' active':''}" onclick="toggleAdbMajor('${k}',this)" id="adb_chip_${k}">${v}${majorCounts[k]?` <span style="font-size:9px;opacity:.6">${majorCounts[k]}</span>`:''}</div>
+    `}))))}
     <div class="filter-chip" onclick="clearAdbMajors()" style="color:var(--text-3)">清除</div>
   </div>
 
