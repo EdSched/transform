@@ -168,7 +168,7 @@ function scTableHtml(r, forDoc) {
 function scWorksHtml(works, small) {
   const sz = small ? 90 : 130;
   return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(${sz}px,1fr));gap:8px">${works.map(w => `<div style="min-width:0">
-    <a href="${scE(w.url)}" target="_blank"><img src="${scE(w.url)}" loading="lazy" style="width:100%;height:${sz}px;object-fit:cover;border:1px solid var(--border);border-radius:3px"></a>
+    ${w.kind === 'file' ? `<a href="${scE(w.url)}" target="_blank" style="display:block;height:${sz}px;box-sizing:border-box;border:1px solid var(--border);border-radius:3px;background:var(--bg);padding:6px;font-size:11px;color:var(--accent);overflow:hidden;word-break:break-all">📎 ${scE(w.name || '文件')}</a>` : `<a href="${scE(w.url)}" target="_blank"><img src="${scE(w.url)}" loading="lazy" style="width:100%;height:${sz}px;object-fit:cover;border:1px solid var(--border);border-radius:3px"></a>`}
     ${w.caption ? `<div style="font-size:9px;color:var(--text-3);margin-top:2px">${scE(w.caption)}</div>` : ''}
     ${w.feedback ? `<div style="font-size:9px;color:var(--text-2);line-height:1.5;margin-top:1px">${scE(w.feedback)}</div>` : ''}</div>`).join('')}</div>`;
 }
@@ -493,40 +493,56 @@ async function scLoadCandidates() {
     q(`/rest/v1/art_works?student_id=eq.${encodeURIComponent(id)}&select=*&order=week_start.desc&limit=200`),
     q(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(id)}&select=*`),
   ]);
-  const hwOk = (hw || []).filter(x => hwFeedbacks(x).length);
-  const sids = [...new Set(hwOk.map(x => x.session_id).filter(Boolean))], sess = {};
+  // 旧的作业提交：出席记录里有 homework_file_url 的（按学生姓名；同一回在新作业表里已有就不重复）
+  const stuRow = (sc.stu || []).find(x => String(x.id) === String(id)) || ((await q(`/rest/v1/students?id=eq.${encodeURIComponent(id)}&select=name`))[0]);
+  const recs = stuRow && stuRow.name ? (await q(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(stuRow.name)}&select=*&order=session_date.desc&limit=500`) || []).filter(r => r.homework_file_url) : [];
+  const hwSess = new Set((hw || []).map(x => x.session_id).filter(Boolean));
+  const recsNew = recs.filter(r => !(r.session_id && hwSess.has(r.session_id)));
+  const hwOk = hw || [];
+  const sids = [...new Set(hwOk.map(x => x.session_id).concat(recsNew.map(r => r.session_id)).filter(Boolean))], sess = {};
   for (let i = 0; i < sids.length; i += 40) (await q(`/rest/v1/course_sessions?id=in.(${sids.slice(i, i + 40).map(x => `"${x}"`).join(',')})&select=id,course_name,session_number,session_title`) || []).forEach(x => { sess[x.id] = x; });
   const fbText = o => { const f = hwFeedbacks(o).filter(x => x.knowledge || x.attitude || x.suggestions || x.text)[0]; if (!f) return ''; return [f.knowledge, f.attitude, f.suggestions].filter(Boolean).join('；').slice(0, 200) || String(f.text || '').slice(0, 200); };
   if (sc.cur !== c) return;
   c.cand = {
     loading: false,
     hw: hwOk.map(x => {
-      const imgs = [];
-      scArr(x.answers).forEach(a => scArr(a.images).forEach(im => { if (im && im.url && im.kind !== 'doc') imgs.push(im.url); }));
+      const imgs = [], files = [];
+      const add = (url, name, isDoc) => { if (!url) return; if (isDoc || scIsFileUrl(url)) files.push({ url, name: name || scFileName(url) }); else imgs.push(url); };
+      scArr(x.answers).forEach(a => scArr(a.images).forEach(im => { if (im && im.url) add(im.url, im.name, im.kind === 'doc'); }));
+      add(x.whole_file_url, '整份作业', false);
       const se = sess[x.session_id] || {};
-      return { src: 'hw:' + x.id, label: `${se.course_name || '作业'}${se.session_number ? ' 第' + se.session_number + '回' : ''}`, imgs, feedback: fbText(x) };
-    }).filter(x => x.imgs.length),
-    art: (art || []).map(w => ({ src: 'art:' + w.id, label: `作品收集 ${w.week_start || ''}`, imgs: awImgs(w).map(im => im.url).filter(Boolean), feedback: fbText(w) })).filter(x => x.imgs.length),
+      return { src: 'hw:' + x.id, label: `${se.course_name || '作业'}${se.session_number ? ' 第' + se.session_number + '回' : ''}`, imgs, files, feedback: fbText(x), tag: hwFeedbacks(x).length ? '有反馈' : '未批改' };
+    }).filter(x => x.imgs.length || x.files.length).concat(recsNew.map(r => {
+      const se = sess[r.session_id] || {}, name = se.course_name || r.course_name || '作业';
+      const isF = scIsFileUrl(r.homework_file_url);
+      return { src: 'rec:' + r.id, label: `${name}${se.session_number ? ' 第' + se.session_number + '回' : ''}${r.session_date ? ' ' + r.session_date : ''}`, imgs: isF ? [] : [r.homework_file_url], files: isF ? [{ url: r.homework_file_url, name: scFileName(r.homework_file_url) }] : [], feedback: '', tag: '出席记录' };
+    })),
+    art: (art || []).map(w => ({ src: 'art:' + w.id, label: `作品收集 ${w.week_start || ''}`, imgs: awImgs(w).map(im => im.url).filter(Boolean), files: [], feedback: fbText(w), tag: hwFeedbacks(w).length ? '有反馈' : '' })).filter(x => x.imgs.length),
     riyu: (riyu || []).filter(x => x.reviewed_file_url).map(x => ({ src: 'riyu:' + x.id, url: x.reviewed_file_url, name: x.reviewed_file_name || '批复版', note: [x.school_name, x.faculty, x.department].filter(Boolean).join(' · ') })),
   };
   scRender();
 }
+const scIsFileUrl = u => /\.(pdf|docx?|xlsx?|pptx?|zip|txt)(\?|$)/i.test(u || '');
+const scFileName = u => { try { return decodeURIComponent(String(u || '').split('?')[0].split('/').pop()) || '附件'; } catch (e) { return '附件'; } };
 function scWorksPickHtml() {
   const cand = sc.cur.cand;
   if (!cand) return '';
   if (cand.loading) return '<div style="font-size:11px;color:var(--text-3)">读取作业…</div>';
   const sel = new Set(sc.cur.works.map(w => w.src));
   const item = (g, i, kind) => `<div onclick="scToggleWork('${kind}',${i})" style="cursor:pointer;width:118px;border:1px solid ${sel.has(g.src) ? 'var(--accent)' : 'var(--border-light)'};${sel.has(g.src) ? 'box-shadow:0 0 0 1px var(--accent);background:var(--accent-light,#f5ede3);' : ''}border-radius:4px;padding:5px">
-    <img src="${scE(g.imgs[0])}" loading="lazy" style="width:100%;height:76px;object-fit:cover;border-radius:2px">
-    <div style="font-size:9px;margin-top:3px;color:var(--text-2);line-height:1.4">${scE(g.label)}<br>${g.imgs.length} 张${g.feedback ? ' · 有反馈' : ''}${sel.has(g.src) ? ' · ✓' : ''}</div></div>`;
+    ${g.imgs.length ? `<img src="${scE(g.imgs[0])}" loading="lazy" style="width:100%;height:76px;object-fit:cover;border-radius:2px">` : `<div style="height:76px;display:flex;align-items:center;justify-content:center;background:var(--bg);border-radius:2px;font-size:11px;color:var(--text-2);padding:0 4px;overflow:hidden;text-align:center;line-height:1.3">📎 ${scE(g.files[0].name)}</div>`}
+    <div style="font-size:9px;margin-top:3px;color:var(--text-2);line-height:1.4">${scE(g.label)}<br>${[g.imgs.length ? g.imgs.length + ' 张' : '', g.files.length ? '📎 ' + g.files.length + ' 个文件' : '', g.tag].filter(Boolean).join(' · ')}${sel.has(g.src) ? ' · ✓' : ''}</div></div>`;
   const a = cand.hw.map((g, i) => item(g, i, 'hw')).join(''), b = cand.art.map((g, i) => item(g, i, 'art')).join('');
-  if (!a && !b) return '<div style="font-size:11px;color:var(--text-3)">这位学生还没有老师批改过的作业，也没有作品收集。</div>';
+  if (!a && !b) return '<div style="font-size:11px;color:var(--text-3)">这位学生没有提交过作业（或作业里没有图片 / 文件）</div>';
   return `<div style="font-size:10px;color:var(--text-3);margin-bottom:4px">点选要展示的作业（高亮 = 选中）：</div><div style="display:flex;gap:8px;flex-wrap:wrap">${a}${b}</div>`;
 }
 function scToggleWork(kind, i) {
   const c = sc.cur, g = c.cand[kind][i]; if (!g) return;
   if (c.works.some(w => w.src === g.src)) c.works = c.works.filter(w => w.src !== g.src);
-  else g.imgs.forEach((u, k) => c.works.push({ src: g.src, url: u, caption: g.label, feedback: k === 0 ? g.feedback : '' }));
+  else {
+    g.imgs.forEach((u, k) => c.works.push({ src: g.src, url: u, caption: g.label, feedback: k === 0 ? g.feedback : '' }));
+    (g.files || []).forEach(f => c.works.push({ src: g.src, url: f.url, kind: 'file', name: f.name, caption: g.label, feedback: !g.imgs.length && f === g.files[0] ? g.feedback : '' }));
+  }
   scRender();
 }
 function scPlansPickHtml() {
