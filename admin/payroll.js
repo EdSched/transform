@@ -200,9 +200,9 @@ function renderPayrollSection(container) {
     <div style="margin-bottom:14px;padding-top:10px;border-top:1px solid var(--border-light)">
       <label class="form-label">按专业批量生成（自动覆盖该专业所有老师）</label>
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
-        ${majorFilterKeys().map(key =>
-          `<button class="btn btn-outline btn-sm" onclick="runPayrollByMajor('${key}')">${key==='shakai_group'?'社会人文':majorLabel(key)}</button>`
-        ).join('')}
+        ${chipFold(majorFilterKeys().map(key =>
+          ({ on: false, html: `<button class="btn btn-outline btn-sm" onclick="runPayrollByMajor('${key}')">${key==='shakai_group'?'社会人文':majorLabel(key)}</button>` })
+        ))}
         <button class="btn btn-outline btn-sm" onclick="runPayrollByMajor('all')">全部老师</button>
       </div>
     </div>

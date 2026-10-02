@@ -191,8 +191,8 @@ let stClassFilter = 'all';
 function stClassFilterHtml() {
   const list = classesInView();
   if (!list.length) return '';
-  return `<div class="filter-row">${[['all', '全部班级'], ...list.map(c => [String(c.id), c.name]), ['none', '未编班']].map(([v, l]) =>
-    `<div class="filter-chip${stClassFilter === v ? ' active' : ''}" onclick="stClassFilter='${clsEsc(v)}';renderStudentsPage(document.getElementById('mainContent'))">${clsEsc(l)}</div>`).join('')}</div>`;
+  return `<div class="filter-row">${chipFold([['all', '全部班级'], ...list.map(c => [String(c.id), c.name]), ['none', '未编班']].map(([v, l]) =>
+    ({ on: stClassFilter === v, html: `<div class="filter-chip${stClassFilter === v ? ' active' : ''}" onclick="stClassFilter='${clsEsc(v)}';renderStudentsPage(document.getElementById('mainContent'))">${clsEsc(l)}</div>` })))}</div>`;
 }
 function stClassFilterApply(list) {
   if (stClassFilter === 'all') return list;

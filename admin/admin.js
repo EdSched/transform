@@ -439,13 +439,13 @@ function renderKeyEditor(){
     const ks=allMajorKeys().filter(k=>MAJOR_DOMAIN[k]===dm.label); if(!ks.length) return '';
     const full=d.domains.includes(dm.label);
     return `<div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px"><span style="font-size:10px;color:var(--text-3);min-width:64px">${dm.label}</span>
-      <div style="display:flex;gap:4px;flex-wrap:wrap">${ks.map(k=>chip(d.majors.includes(k), escTM(MAJORS[k]||k), `keyDraftToggle('majors','${k}')`, full)).join('')}</div></div>`;
+      <div style="display:flex;gap:4px;flex-wrap:wrap">${chipFold(ks.map(k=>({on:d.majors.includes(k),html:chip(d.majors.includes(k), escTM(MAJORS[k]||k), `keyDraftToggle('majors','${k}')`, full)})))}</div></div>`;
   }).join('');
   const cls=(typeof CLASSES!=='undefined'?CLASSES:[]).filter(c=>c.active!==false);
   const clsHtml=cls.length?DOMAINS.map(dm=>{
     const cs=cls.filter(c=>c.domain===dm.label); if(!cs.length) return '';
     return `<div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px"><span style="font-size:10px;color:var(--text-3);min-width:64px">${dm.label}</span>
-      <div style="display:flex;gap:4px;flex-wrap:wrap">${cs.map(c=>chip(d.classIds.includes(String(c.id)), escTM(c.name), `keyDraftToggle('classIds','${String(c.id).replace(/'/g,"\\'")}')`, d.domains.includes(dm.label))).join('')}</div></div>`;
+      <div style="display:flex;gap:4px;flex-wrap:wrap">${chipFold(cs.map(c=>({on:d.classIds.includes(String(c.id)),html:chip(d.classIds.includes(String(c.id)), escTM(c.name), `keyDraftToggle('classIds','${String(c.id).replace(/'/g,"\\'")}')`, d.domains.includes(dm.label))})))}</div></div>`;
   }).join('')+((cls.filter(c=>!DOMAINS.some(dm=>dm.label===c.domain)).length)?`<div style="display:flex;gap:4px;flex-wrap:wrap">${cls.filter(c=>!DOMAINS.some(dm=>dm.label===c.domain)).map(c=>chip(d.classIds.includes(String(c.id)), escTM(c.name), `keyDraftToggle('classIds','${String(c.id).replace(/'/g,"\\'")}')`)).join('')}</div>`:''):'<span style="font-size:10px;color:var(--text-3)">还没有班级（在「班级管理」里建）</span>';
   ov.innerHTML=`<div class="modal" style="width:640px">
     <div class="modal-title">${d.k?'编辑访问链接':'新建访问链接'}</div>
@@ -464,7 +464,7 @@ function keyDraftToggle(field,val){
     _keyDraft.majors=_keyDraft.majors.filter(m=>MAJOR_DOMAIN[m]!==val);
     _keyDraft.classIds=_keyDraft.classIds.filter(id=>{ const c=(typeof classById==='function')?classById(id):null; return !(c&&c.domain===val); });
   }
-  renderKeyEditor();
+  admKeepFold(document.getElementById('keyEditModal'),renderKeyEditor);
 }
 async function saveKeyEditor(){
   const d=_keyDraft; if(!d) return;
@@ -864,7 +864,7 @@ function renderTeachersPage(mc){
             <div style="margin-left:20px">
               <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可见的专业（适用于全部三个子项；不选则默认按该老师自身的专业显示，老师档案无专业时全部可见）</div>
               <div style="display:flex;flex-wrap:wrap;gap:4px" id="perm_student_majors">
-                ${majorFilterKeys().map(m=>`<div class="filter-chip" data-value="${m}" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">${majorLabel(m)}</div>`).join('')}
+                ${chipFold(majorFilterKeys().map(m=>({on:false,html:`<div class="filter-chip" data-value="${m}" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">${majorLabel(m)}</div>`})))}
               </div>
             </div>
           </div>
@@ -1020,8 +1020,8 @@ function renderHomeworkAssign() {
     const keys = Object.keys(groups).sort((a, b) => b.localeCompare(a));
     const row = (label, inner) => `<div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px"><span style="font-size:10px;color:var(--text-3);min-width:28px">${label}</span><div style="display:flex;gap:4px;flex-wrap:wrap">${inner}</div></div>`;
     if (!lock && doms.length) h += row('领域', chip(!hwaDom, '全部', "hwaDom='';renderHomeworkAssign()") + doms.map(x => chip(hwaDom === x, esc(x), `hwaDom='${js(x)}';hwaClass='';hwaMajor='';renderHomeworkAssign()`)).join(''));
-    if (clsIds.length) h += row('班级', chip(!hwaClass, '全部', "hwaClass='';renderHomeworkAssign()") + clsIds.map(id => chip(hwaClass === id, esc(clsName(id)), `hwaClass='${js(id)}';renderHomeworkAssign()`)).join(''));
-    if (majorKeys.length > 1) h += row('专业', chip(!hwaMajor, '全部', "hwaMajor='';renderHomeworkAssign()") + majorKeys.map(m => chip(hwaMajor === m, esc(majorLabel(m)), `hwaMajor='${js(m)}';renderHomeworkAssign()`)).join(''));
+    if (clsIds.length) h += row('班级', chipFold([{ on: !hwaClass, html: chip(!hwaClass, '全部', "hwaClass='';renderHomeworkAssign()") }].concat(clsIds.map(id => ({ on: hwaClass === id, html: chip(hwaClass === id, esc(clsName(id)), `hwaClass='${js(id)}';renderHomeworkAssign()`) })))));
+    if (majorKeys.length > 1) h += row('专业', chipFold([{ on: !hwaMajor, html: chip(!hwaMajor, '全部', "hwaMajor='';renderHomeworkAssign()") }].concat(majorKeys.map(m => ({ on: hwaMajor === m, html: chip(hwaMajor === m, esc(majorLabel(m)), `hwaMajor='${js(m)}';renderHomeworkAssign()`) })))));
     h += `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:5px">
       <input id="hwa_search" value="${esc(hwaSearch)}" placeholder="搜索课程名 / 老师" oninput="hwaSearch=this.value;renderHomeworkAssign();const e=document.getElementById('hwa_search');e.focus();e.setSelectionRange(e.value.length,e.value.length)" style="flex:1;min-width:140px;font-size:11px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--surface);font-family:inherit">
       ${chip(!hwaAllPeriods, recentLabel, 'hwaAllPeriods=false;renderHomeworkAssign()')}${chip(hwaAllPeriods, artDom === true ? '全部月' : '全部期', 'hwaAllPeriods=true;renderHomeworkAssign()')}
@@ -1043,6 +1043,20 @@ function renderHomeworkAssign() {
 function hwaToggle(id) { id = String(id); if (hwaIds.has(id)) hwaIds.delete(id); else hwaIds.add(id); renderHomeworkAssign(); }
 
 
+// chip 折叠辅助：程序点亮 chip 后，把含已选 chip 的「更多」自动展开；重绘时保持原来的展开状态
+function admFoldSync(root){
+  (root||document).querySelectorAll('.cf-more').forEach(w=>{
+    if(w.style.display==='none' && w.querySelector('.filter-chip.active')){
+      const b=w.parentNode.querySelector('.cf-btn'); if(b) chipFoldToggle(b);
+    }
+  });
+}
+function admKeepFold(box,fn){
+  const open=box?[...box.querySelectorAll('.cf-more')].map(w=>w.style.display!=='none'):[];
+  fn();
+  if(box) box.querySelectorAll('.cf-more').forEach((w,i)=>{ if(open[i]){ const b=w.parentNode.querySelector('.cf-btn'); if(b) chipFoldToggle(b); } });
+  admFoldSync(box);
+}
 function toggleChip(el){
   el.classList.toggle('active');
   if(el.closest && el.closest('#new_teacher_managed,#new_teacher_majors')) renderPermAdmMajors();   // 老师所在领域变了，出愿专业清单跟着变
@@ -1078,15 +1092,15 @@ function renderPermAdmMajors(){
   if(!keys.length){ box.innerHTML='<div style="font-size:11px;color:var(--text-3)">'+escTM(doms.join('、'))+' 暂无出愿专业</div>'; }
   else {
     const allOn=keys.every(k=>_admSel.has(k));
-    box.innerHTML=`<div class="filter-chip${allOn?' active':''}" onclick="admToggleAll()" style="padding:3px 9px;font-size:10px">全选</div>`+
-      keys.map(k=>`<div class="filter-chip${_admSel.has(k)?' active':''}" onclick="admToggleOne('${k}')" style="padding:3px 9px;font-size:10px">${escTM(ADMISSION_MAJORS[k])}</div>`).join('');
+    box.innerHTML=chipFold([{on:allOn,html:`<div class="filter-chip${allOn?' active':''}" onclick="admToggleAll()" style="padding:3px 9px;font-size:10px">全选</div>`}].concat(
+      keys.map(k=>({on:_admSel.has(k),html:`<div class="filter-chip${_admSel.has(k)?' active':''}" onclick="admToggleOne('${k}')" style="padding:3px 9px;font-size:10px">${escTM(ADMISSION_MAJORS[k])}</div>`}))));
   }
   if(rm){
     const ok=new Set(keys), gone=[..._admSel].filter(k=>!ok.has(k));
     rm.textContent=gone.length?'已移除不属于本领域的专业：'+gone.map(k=>ADMISSION_MAJORS[k]||k).join('、')+'（保存后清掉）':'';
   }
 }
-function admToggleOne(k){ if(_admSel.has(k)) _admSel.delete(k); else _admSel.add(k); renderPermAdmMajors(); }
+function admToggleOne(k){ if(_admSel.has(k)) _admSel.delete(k); else _admSel.add(k); admKeepFold(document.getElementById('perm_admission_majors'),renderPermAdmMajors); }
 function admToggleAll(){
   const keys=admListedKeys(); if(!keys.length) return;
   if(keys.every(k=>_admSel.has(k))){ keys.forEach(k=>_admSel.delete(k)); }
@@ -1247,7 +1261,7 @@ function renderTeacherList(){
     ${allTags.length?`<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:8px">
       <span style="font-size:10px;color:var(--text-3)">标签：</span>
       <div class="filter-chip ${teacherTagFilter===''?'active':''}" onclick="teacherTagFilter='';renderTeacherList()" style="padding:2px 9px;font-size:10px">全部</div>
-      ${allTags.map(g=>`<div class="filter-chip ${teacherTagFilter===g?'active':''}" onclick="teacherTagFilter='${escTM(g)}';renderTeacherList()" style="padding:2px 9px;font-size:10px">${escTM(g)}</div>`).join('')}
+      ${chipFold(allTags.map(g=>({on:teacherTagFilter===g,html:`<div class="filter-chip ${teacherTagFilter===g?'active':''}" onclick="teacherTagFilter='${escTM(g)}';renderTeacherList()" style="padding:2px 9px;font-size:10px">${escTM(g)}</div>`})))}
     </div>`:''}
     <div id="teacherRows"></div>`;
   renderTeacherRows();
@@ -1395,7 +1409,7 @@ function _renderTeacherMajorChipsInner(){
     if(!majorsInDom.length && !groupHere) return;
     const chipKeys = (groupHere ? ['shakai_group'] : []).concat(majorsInDom);
     html+=`<div style="margin-bottom:8px"><div style="font-size:10px;color:var(--text-3);margin-bottom:4px">${dom}</div><div style="display:flex;flex-wrap:wrap;gap:6px">`;
-    html+=chipKeys.map(m=>`<div class="filter-chip${prevSel.has(m)?' active':''}" data-value="${m}" onclick="toggleChip(this)" style="padding:4px 10px">${majorLabel(m)}${m==='shakai_group'?'<span style="font-size:9px;color:var(--text-3);margin-left:3px">(合并)</span>':''}</div>`).join('');
+    html+=chipFold(chipKeys.map(m=>({on:prevSel.has(m),html:`<div class="filter-chip${prevSel.has(m)?' active':''}" data-value="${m}" onclick="toggleChip(this)" style="padding:4px 10px">${majorLabel(m)}${m==='shakai_group'?'<span style="font-size:9px;color:var(--text-3);margin-left:3px">(合并)</span>':''}</div>`})));
     html+='</div></div>';
   });
   box.innerHTML=html||'<div style="font-size:11px;color:var(--text-3)">所选领域下暂无专业</div>';
@@ -1514,6 +1528,7 @@ function openEditTeacher(id){
   renderTeacherMajorChips();
   const myMajors=new Set(t.majors||[]);
   document.querySelectorAll('#new_teacher_majors .filter-chip').forEach(c=>c.classList.toggle('active', myMajors.has(c.dataset.value)));
+  admFoldSync(document.getElementById('new_teacher_majors'));
   const p=t.permissions||{};
   document.getElementById('perm_booking').checked=!!p.booking;
   document.getElementById('perm_slots').checked=!!p.slots;
@@ -1532,6 +1547,7 @@ function openEditTeacher(id){
   {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.checked=!!p.guaranteed_only;}
   document.querySelectorAll('#perm_student_mgmt_items .filter-chip').forEach(c=>{c.classList.toggle('active',(p.student_mgmt_items||[]).includes(c.dataset.value));});
   document.querySelectorAll('#perm_student_majors .filter-chip').forEach(c=>{c.classList.toggle('active',(p.student_majors||[]).includes(c.dataset.value));});
+  admFoldSync(document.getElementById('perm_student_majors'));
   document.querySelectorAll('#perm_booking_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.booking_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_slot_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.slot_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_vip_content .filter-chip').forEach(c=>{c.classList.toggle('active',(p.vip_content||[]).includes(c.dataset.value))});
