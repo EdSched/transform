@@ -44,6 +44,16 @@ body { font-family:'DM Mono','Noto Serif SC',monospace; background:var(--bg); co
 .rich .ptable th { background:var(--accent-light); color:var(--accent); font-size:11px; font-weight:600; text-align:left; padding:7px 12px; border:1px solid var(--border); white-space:nowrap; }
 .rich .ptable td { font-size:12px; color:var(--text-2); padding:7px 12px; border:1px solid var(--border-light); }
 .rich .ptable tr:nth-child(even) td { background:var(--bg); }
+/* ── 宣传视频 ── */
+.video-block { background:var(--surface); border:1px solid var(--border); border-radius:4px; overflow:hidden; margin-bottom:14px; scroll-margin-top:70px; }
+.video-block.hl { animation:vhl 2.4s ease-out 1; }
+@keyframes vhl { 0%,40% { box-shadow:0 0 0 3px var(--accent); } 100% { box-shadow:0 0 0 0 transparent; } }
+.video-header { padding:10px 16px; border-bottom:1px solid var(--border-light); display:flex; align-items:center; justify-content:space-between; }
+.video-header-label { font-size:12px; font-weight:500; display:flex; align-items:center; gap:8px; }
+.video-dot { width:7px; height:7px; border-radius:50%; background:#c06080; }
+.video-block:nth-child(even) .video-dot { background:var(--accent); }
+.video-duration { font-size:10px; color:var(--text-3); }
+.video-block video { width:100%; aspect-ratio:16/9; display:block; background:#000; }
 /* ── 讲师 ── */
 .cards { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
 .lect-card { background:var(--surface); border:1px solid var(--border-light); border-radius:5px; padding:18px 22px; scroll-margin-top:70px; }
@@ -101,11 +111,12 @@ body { font-family:'DM Mono','Noto Serif SC',monospace; background:var(--bg); co
 
 <script src="../shared/supabase.js"></script>
 <script>
-const PROMO_MAJORS = { shakai:'社会学', shinpan:'新闻传播学', fukushi:'社会福祉学', keiei:'経営学', keizai:'経済学', nihongo:'日本语教育', hyosho:'表象文化・文学・哲学', seiji:'政治学', toyo:'東洋史', bunka:'文化人类学', mot:'MOT', tokei:'統計・計量' };
+const PROMO_MAJORS = { shakai:'社会学', shinpan:'新闻传播学', fukushi:'社会福祉学', keiei:'経営学', keizai:'経済学', kyoiku:'教育学', nihongo:'日本语教育', hyosho:'表象文化・文学・哲学', seiji:'政治学', toyo:'東洋史', bunka:'文化人类学', mot:'MOT', tokei:'統計・計量' };
 const SHAKAI_G = ['shakai','shinpan','fukushi'];
 const COLORS = [['#5a3e28','#f5ede3'],['#2a6aad','#e4eef8'],['#2d5a3d','#e4f0e8'],['#a03a2e','#f8e4dc'],['#6a4a7a','#efe4f4'],['#8a6a1b','#f8f0d8'],['#3a7a7a','#e0f0f0'],['#5a5650','#eee8e0']];
 const params = new URLSearchParams(location.search);
 const major = params.get('major') || 'shakai';
+const wantVideo = params.get('v') || '';   // 定位到某个视频：对应 promo_videos.kind，找不到就对应 id
 document.title = `唯新教育 · ${PROMO_MAJORS[major] || ''}专业介绍`;
 
 function esc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
@@ -156,15 +167,23 @@ function md(body) {
 
 async function init() {
   const wrap = document.getElementById('wrap');
-  let list = [], courses = [], share = null, sessions = [];
+  let list = [], courses = [], share = null, sessions = [], videos = [];
+  // 专业名以数据库专业表为准（上面写死的清单只做兜底，新专业如教育学不用再改代码）
+  try {
+    const mj = await sb('/rest/v1/majors?select=key,label');
+    (mj || []).forEach(r => { if (r.key && r.label) PROMO_MAJORS[r.key] = r.label; });
+    document.title = `唯新教育 · ${PROMO_MAJORS[major] || ''}专业介绍`;
+  } catch (e) { /* 读不到就用兜底清单 */ }
   try {
     const shareKeys = SHAKAI_G.includes(major) ? [major, 'shakai_group'] : [major];
-    const [l, c, sh, tch] = await Promise.all([
+    const [l, c, sh, tch, vd] = await Promise.all([
       sb(`/rest/v1/promo_content?major=eq.${major}&or=(published.is.null,published.is.true)&select=*&order=sort_order.asc,created_at.asc`),
       sb('/rest/v1/courses?select=id,name,major,period,teacher,weekdays,time_range,delivery,campus,total_sessions,first_session_date&order=first_session_date.desc&limit=1000').catch(() => []),
       sb(`/rest/v1/course_schedule_shares?major=in.(${shareKeys.map(k => `"${k}"`).join(',')})&select=*&order=created_at.desc&limit=1`).catch(() => []),
       sb('/rest/v1/teachers?select=name,notes').catch(() => []),
+      sb(`/rest/v1/promo_videos?major=eq.${encodeURIComponent(major)}&published=is.true&select=*&order=sort_order.asc`).catch(() => []),
     ]);
+    videos = vd || [];
     list = l || []; courses = c || []; share = (sh || [])[0] || null;
     // 对外宣传姓名映射：老师档案的「备注」填写宣传名（如 杨畅→周老师），显示与匹配均使用宣传名
     (tch || []).forEach(t => { const k = normName(t.name); const pub = String(t.notes || '').trim(); if (k && pub) pubMap[k] = pub; });
@@ -185,7 +204,7 @@ async function init() {
   const crs = list.filter(p => p.section === 'course');
   const hasSched = sessions.length > 0;
 
-  if (!intro.length && !lects.length && !crs.length && !hasSched) {
+  if (!intro.length && !lects.length && !crs.length && !hasSched && !videos.length) {
     wrap.innerHTML = '<div class="empty-page">该专业的介绍内容准备中，敬请期待</div>';
     return;
   }
@@ -215,6 +234,7 @@ async function init() {
   window.goAnchor = id => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
 
   const secs = [];
+  if (videos.length) secs.push(['s-video','视频']);
   if (intro.length) secs.push(['s-intro','专业介绍']);
   if (lects.length) secs.push(['s-lect','讲师介绍']);
   if (crs.length) secs.push(['s-course','课程介绍']);
@@ -229,6 +249,14 @@ async function init() {
     <h1>${PROMO_MAJORS[major] || ''}</h1>
     <div class="sub">日本大学院升学 · 专业介绍</div>
   </div>`;
+
+  // 视频：专业名下面、专业介绍之前；不自动播放（手机浏览器一般不允许带声音自动播放）
+  if (videos.length) {
+    h += `<div class="sec" id="s-video" style="margin-bottom:34px">${videos.map((v, i) => `<div class="video-block" id="video-${esc(v.id)}" data-kind="${esc(v.kind || '')}">
+      <div class="video-header"><div class="video-header-label"><div class="video-dot"></div>${esc(v.title)}</div>${v.duration ? `<span class="video-duration">${esc(v.duration)}</span>` : ''}</div>
+      <video controls controlsList="nodownload" preload="metadata" playsinline src="${esc(v.url)}"></video>
+    </div>`).join('')}</div>`;
+  }
 
   if (intro.length) {
     h += `<div class="sec" id="s-intro">${secHead('专业介绍')}
@@ -343,6 +371,12 @@ async function init() {
 
   h += `<div class="footer">具体开课与报名事宜请咨询顾问老师 · © 唯新教育 TRANSFORM EDUCATION</div>`;
   wrap.innerHTML = h;
+  // 定位到指定视频并短暂高亮（?v=intro / ?v=lesson）
+  if (wantVideo && videos.length) {
+    const hit = videos.find(v => v.kind === wantVideo) || videos.find(v => v.id === wantVideo);
+    const el = hit && document.getElementById('video-' + hit.id);
+    if (el) setTimeout(() => { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.classList.add('hl'); }, 300);
+  }
 }
 init();
 </script>
