@@ -10,11 +10,12 @@ const sc = {
   f: { domain: '', major: '', tag: '', school: '', q: '' },
   view: 'list',            // list | detail | edit
   openId: null, cur: null,
-  sel: new Set(), opt: { works: false, plans: false },
+  sel: new Set(), opt: { works: false, plans: false, others: false },
   stu: null,               // 编辑时可选的学生 [{id,name,major,...}]
 };
 const SC_TAG_HINTS = ['跨专业', '零基础', '专科', '大专', '转专业', '短期', '低分逆袭'];
 const scE = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const SC_OTHER_CATS = ['课堂笔记', '老师解答', '其他'];
 const scArr = v => Array.isArray(v) ? v : (typeof v === 'string' && v ? (() => { try { const a = JSON.parse(v); return Array.isArray(a) ? a : []; } catch (e) { return []; } })() : []);
 
 // host: 'promo_body'（admin）或 'sc_root'（老师端）；ctx 见下面 scCtxAdmin / scCtxTeacher
@@ -120,7 +121,7 @@ function scPackBar(n) {
   return `<div style="position:sticky;bottom:8px;margin-top:14px;background:#3a2e24;color:#f7f5f0;border-radius:6px;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
     <span style="font-size:12px">已选 <b>${n}</b> 个案例</span>
     <span style="font-size:10px;opacity:.75">默认只放时间线和感言；可一起放：</span>
-    ${chip(sc.opt.works, '作业图片', 'sc.opt.works=!sc.opt.works;scRender()')}${chip(sc.opt.plans, '计划书 / 志望理由书', 'sc.opt.plans=!sc.opt.plans;scRender()')}
+    ${chip(sc.opt.works, '作业图片', 'sc.opt.works=!sc.opt.works;scRender()')}${chip(sc.opt.plans, '计划书 / 志望理由书', 'sc.opt.plans=!sc.opt.plans;scRender()')}${chip(sc.opt.others, '其他展示', 'sc.opt.others=!sc.opt.others;scRender()')}
     <button onclick="scAddToPack()" ${n ? '' : 'disabled'} style="margin-left:auto;font-size:12px;background:#f7f5f0;color:#3a2e24;border:none;border-radius:3px;padding:6px 16px;cursor:${n ? 'pointer' : 'not-allowed'};opacity:${n ? 1 : .5};font-family:inherit">➕ 加入宣传资料</button></div>`;
 }
 function scToggleSel(id) { if (sc.sel.has(id)) sc.sel.delete(id); else sc.sel.add(id); scRender(); }
@@ -135,13 +136,14 @@ function scTableRows(r) {
 }
 function scDetailHtml() {
   const r = (sc.rows || []).find(x => x.id === sc.openId); if (!r) { sc.view = 'list'; return scListHtml(); }
-  const works = scArr(r.works), plans = scArr(r.plan_files);
+  const works = scArr(r.works), plans = scArr(r.plan_files), others = scArr(r.others);
   return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" onclick="sc.view='list';scRender()">← 返回</button>
       ${scCanEdit(r) ? `<button class="btn btn-outline btn-sm" onclick="scEdit('${scE(r.id)}')">✏ 编辑</button>` : ''}
       ${scPackOn() ? (r.published ? `<span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto"><span style="font-size:10px;color:var(--text-3)">可一起放：</span>
         <div class="filter-chip${sc.opt.works ? ' active' : ''}" onclick="sc.opt.works=!sc.opt.works;scRender()" style="padding:3px 10px;font-size:10px">作业图片</div>
         <div class="filter-chip${sc.opt.plans ? ' active' : ''}" onclick="sc.opt.plans=!sc.opt.plans;scRender()" style="padding:3px 10px;font-size:10px">计划书 / 志望理由书</div>
+        <div class="filter-chip${sc.opt.others ? ' active' : ''}" onclick="sc.opt.others=!sc.opt.others;scRender()" style="padding:3px 10px;font-size:10px">其他展示</div>
         <button class="btn btn-primary btn-sm" onclick="scAddOne('${scE(r.id)}')">➕ 加入宣传资料</button></span>`
         : `<span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto"><button class="btn btn-primary btn-sm" disabled style="opacity:.45">➕ 加入宣传资料</button>${scDraftNote(r)}</span>`) : ''}</div>
     <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:5px;padding:16px 18px;max-width:820px">
@@ -151,6 +153,7 @@ function scDetailHtml() {
       ${(r.quote || '').trim() ? `<div style="border-left:3px solid var(--accent);padding:4px 12px;margin:10px 0;color:var(--text-2);font-size:12px;line-height:1.9">“${scE(r.quote)}”</div>` : ''}
       ${works.length ? `<div style="font-size:11px;font-weight:600;margin:12px 0 6px">作业展示</div>${scWorksHtml(works, false)}` : ''}
       ${plans.length ? `<div style="font-size:11px;font-weight:600;margin:12px 0 6px">计划书 / 志望理由书（老师批改版）</div>${scPlansHtml(plans, false)}` : ''}
+      ${others.length ? `<div style="font-size:11px;font-weight:600;margin:12px 0 2px">其他展示</div>${scOthersHtml(others, false)}` : ''}
     </div>`;
 }
 function scTableHtml(r, forDoc) {
@@ -165,9 +168,20 @@ function scTableHtml(r, forDoc) {
 function scWorksHtml(works, small) {
   const sz = small ? 90 : 130;
   return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(${sz}px,1fr));gap:8px">${works.map(w => `<div style="min-width:0">
-    <a href="${scE(w.url)}" target="_blank"><img src="${scE(w.url)}" loading="lazy" style="width:100%;height:${sz}px;object-fit:cover;border:1px solid var(--border);border-radius:3px"></a>
+    ${w.kind === 'file' ? `<a href="${scE(w.url)}" target="_blank" style="display:block;height:${sz}px;box-sizing:border-box;border:1px solid var(--border);border-radius:3px;background:var(--bg);padding:6px;font-size:11px;color:var(--accent);overflow:hidden;word-break:break-all">📎 ${scE(w.name || '文件')}</a>` : `<a href="${scE(w.url)}" target="_blank"><img src="${scE(w.url)}" loading="lazy" style="width:100%;height:${sz}px;object-fit:cover;border:1px solid var(--border);border-radius:3px"></a>`}
     ${w.caption ? `<div style="font-size:9px;color:var(--text-3);margin-top:2px">${scE(w.caption)}</div>` : ''}
     ${w.feedback ? `<div style="font-size:9px;color:var(--text-2);line-height:1.5;margin-top:1px">${scE(w.feedback)}</div>` : ''}</div>`).join('')}</div>`;
+}
+// 其他展示：按类型分组；图片显示缩略图，文件显示 📎 文件名链接
+function scOthersHtml(others, forDoc) {
+  const cats = [...SC_OTHER_CATS, ...new Set(others.map(o => o.category || '课堂笔记').filter(k => !SC_OTHER_CATS.includes(k)))];
+  return cats.map(k => {
+    const list = others.filter(o => (o.category || '课堂笔记') === k); if (!list.length) return '';
+    const imgs = list.filter(o => o.kind === 'image'), files = list.filter(o => o.kind !== 'image');
+    return `<div class="${forDoc ? 'pk-case-s' : ''}" style="font-size:10px;color:var(--text-3);margin:8px 0 4px">${scE(k)}</div>
+      ${imgs.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(${forDoc ? 90 : 130}px,1fr));gap:8px;margin-bottom:4px">${imgs.map(o => `<div style="min-width:0"><a href="${scE(o.url)}" target="_blank"><img src="${scE(o.url)}" loading="lazy" style="width:100%;height:${forDoc ? 90 : 130}px;object-fit:cover;border:1px solid var(--border);border-radius:3px"></a>${o.note ? `<div style="font-size:9px;color:var(--text-3);margin-top:2px">${scE(o.note)}</div>` : ''}</div>`).join('')}</div>` : ''}
+      ${files.map(o => `<div style="font-size:11px;margin-bottom:4px">📎 <a href="${scE(o.url)}" target="_blank" style="color:var(--accent)">${scE(o.name || '文件')}</a>${o.note ? `<span style="color:var(--text-3)"> · ${scE(o.note)}</span>` : ''}</div>`).join('')}`;
+  }).join('');
 }
 function scPlansHtml(plans, forDoc) {
   const isImg = u => /\.(jpe?g|png|gif|webp)(\?|$)/i.test(u || '');
@@ -180,13 +194,14 @@ function scPlansHtml(plans, forDoc) {
 // 每个案例一个卡片：标题「小A — 一句话标签」+ 时期|内容表 + 感言（引用）+（可选）作业小图 / 计划书
 function scDocHtml(cases, opt) {
   return cases.map(r => {
-    const works = opt.works ? scArr(r.works) : [], plans = opt.plans ? scArr(r.plan_files) : [];
+    const works = opt.works ? scArr(r.works) : [], plans = opt.plans ? scArr(r.plan_files) : [], others = opt.others ? scArr(r.others) : [];
     return `<div class="pk-case">
       <div class="pk-case-h">${scE(r.alias)}${r.tagline ? ' — ' + scE(r.tagline) : ''}</div>
       ${scTableHtml(r, true)}
       ${(r.quote || '').trim() ? `<div class="pk-case-q">“${scE(r.quote)}”</div>` : ''}
       ${works.length ? `<div class="pk-case-s">作业展示</div>${scWorksHtml(works, true)}` : ''}
       ${plans.length ? `<div class="pk-case-s">计划书 / 志望理由书（老师批改版）</div>${scPlansHtml(plans, true)}` : ''}
+      ${others.length ? `<div class="pk-case-s">其他展示</div>${scOthersHtml(others, true)}` : ''}
     </div>`;
   }).join('');
 }
@@ -214,7 +229,7 @@ function scNextAlias() {
 function scBlank() {
   const lock = sc.ctx.lockDomain || '';
   const doms = scAllowedDomains();
-  return { id: '', domain: lock || doms[0] || '', majors: [], student_id: '', alias: scNextAlias(), tagline: '', background: '', timeline: [], schools: [], schoolInput: '', schoolNew: 0, quote: '', works: [], plan_files: [], tags: [], published: false,
+  return { id: '', domain: lock || doms[0] || '', majors: [], student_id: '', alias: scNextAlias(), tagline: '', background: '', timeline: [], schools: [], schoolInput: '', schoolNew: 0, quote: '', works: [], plan_files: [], others: [], tags: [], published: false,
     stuSearch: '', cand: null, tagInput: '' };
 }
 function scAllowedDomains() { return DOMAINS.map(d => d.label).filter(d => sc.ctx.allowDomain(d)); }
@@ -222,7 +237,7 @@ function scNew() { sc.cur = scBlank(); sc.view = 'edit'; scRender(); scEnsureStu
 function scEdit(id) {
   const r = (sc.rows || []).find(x => x.id === id); if (!r) return;
   sc.cur = { id: r.id, domain: r.domain, majors: scArr(r.majors).slice(), student_id: r.student_id || '', alias: r.alias || '', tagline: r.tagline || '', background: r.background || '', timeline: scArr(r.timeline).map(t => ({ period: t.period || '', content: t.content || '' })),
-    schools: scSplitResult(r.result).map(l => ({ label: l, on: true })), schoolInput: '', schoolNew: 0, quote: r.quote || '', works: scArr(r.works).map(w => Object.assign({}, w)), plan_files: scArr(r.plan_files).map(p => Object.assign({}, p)), tags: scArr(r.tags).slice(), published: r.published === true, stuSearch: '', cand: null, tagInput: '' };
+    schools: scSplitResult(r.result).map(l => ({ label: l, on: true })), schoolInput: '', schoolNew: 0, quote: r.quote || '', works: scArr(r.works).map(w => Object.assign({}, w)), plan_files: scArr(r.plan_files).map(p => Object.assign({}, p)), others: scArr(r.others).map(o => Object.assign({}, o)), tags: scArr(r.tags).slice(), published: r.published === true, stuSearch: '', cand: null, tagInput: '' };
   sc.view = 'edit'; scRender(); scEnsureStudents();
   if (sc.cur.student_id) { scLoadCandidates(); scMergeSchools(sc.cur); }
 }
@@ -285,11 +300,12 @@ function scEditHtml() {
       ${lbl('背景')}<input value="${scE(c.background)}" placeholder="例：N1 130分 / TOEIC 700+ / 有兴趣但方向不清" oninput="sc.cur.background=this.value" style="${inp};margin-bottom:10px">
       ${lbl('时间线（时期 | 内容）')}
       ${c.timeline.map((t, i) => `<div style="display:grid;grid-template-columns:100px 1fr 26px 26px;gap:6px;margin-bottom:5px;align-items:center">
-        <input value="${scE(t.period)}" placeholder="如 5月" oninput="sc.cur.timeline[${i}].period=this.value" style="${inp}">
+        <input value="${scE(t.period)}" placeholder="如 5月" oninput="sc.cur.timeline[${i}].period=this.value" onblur="scTlBlur(${i},this.value)" style="${inp}">
         <input value="${scE(t.content)}" placeholder="如 报名社会人文学系课程" oninput="sc.cur.timeline[${i}].content=this.value" style="${inp}">
         <span onclick="scMoveRow(${i},-1)" style="cursor:pointer;text-align:center;color:var(--text-3)">↑</span>
         <span onclick="sc.cur.timeline.splice(${i},1);scRender()" style="cursor:pointer;text-align:center;color:var(--danger)">✕</span></div>`).join('')}
-      <button class="btn btn-outline btn-sm" onclick="sc.cur.timeline.push({period:'',content:''});scRender()">＋ 添加一行</button>
+      <button class="btn btn-outline btn-sm" onclick="sc.cur.timeline.push({period:'',content:''});scSortTimeline(sc.cur);scRender()">＋ 添加一行</button>
+      <div style="font-size:10px;color:var(--text-3);margin-top:4px">按时期自动排序；时期写成『2026年3月』这种格式最准确</div>
       <div style="margin-top:10px">${lbl('合格学校（选了学生会自动带出；点一下取消不想对外展示的学校）')}
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           ${c.schools.map((x, i) => chip(x.on, scE(x.label), `sc.cur.schools[${i}].on=!sc.cur.schools[${i}].on;scRender()`)).join('') || '<span style="font-size:10px;color:var(--text-3)">还没有合格学校</span>'}
@@ -321,6 +337,16 @@ function scEditHtml() {
         <span onclick="sc.cur.plan_files.splice(${i},1);scRender()" style="cursor:pointer;text-align:center;color:var(--danger)">✕</span></div>`).join('')}
       <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block">＋ 上传文件<input type="file" multiple onchange="scUploadPlan(this)" style="display:none"></label>
       <span id="sc_up_tip" style="font-size:10px;color:var(--text-3);margin-left:6px"></span>
+    </div>
+    <div style="${box}">${h('⑥ 其他展示（课堂笔记、老师解答等）')}
+      <div style="font-size:10px;color:var(--warn,#b8860b);background:#fff8e6;border:1px solid #e8d4a0;border-radius:3px;padding:4px 8px;margin-bottom:8px">请确认文件 / 图片中没有学生真实姓名。</div>
+      ${c.others.map((o, i) => `<div style="display:grid;grid-template-columns:1.1fr 110px 1.2fr 26px;gap:6px;margin-bottom:5px;align-items:center">
+        <a href="${scE(o.url)}" target="_blank" style="font-size:11px;color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.kind === 'image' ? `<img src="${scE(o.url)}" style="width:40px;height:30px;object-fit:cover;vertical-align:middle;border:1px solid var(--border);border-radius:2px"> ` : '📎 '}${scE(o.name || '文件')}</a>
+        <select onchange="sc.cur.others[${i}].category=this.value" style="${inp}">${SC_OTHER_CATS.map(k => `<option value="${k}" ${(o.category || '课堂笔记') === k ? 'selected' : ''}>${k}</option>`).join('')}</select>
+        <input value="${scE(o.note || '')}" placeholder="说明" oninput="sc.cur.others[${i}].note=this.value" style="${inp}">
+        <span onclick="sc.cur.others.splice(${i},1);scRender()" style="cursor:pointer;text-align:center;color:var(--danger)">✕</span></div>`).join('')}
+      <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block">＋ 上传<input type="file" multiple accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt" onchange="scUploadOther(this)" style="display:none"></label>
+      <span id="sc_upo_tip" style="font-size:10px;color:var(--text-3);margin-left:6px"></span>
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:30px">
       ${chip(c.published, '发布（营业老师可见）', 'sc.cur.published=!sc.cur.published;scRender()')}
@@ -367,8 +393,36 @@ async function scAutoFill(overwrite) {
   if (overwrite) { c.schools = sys.map(l => ({ label: l, on: true })); c.schoolNew = 0; }
   else if (!c.schools.length) c.schools = sys.map(l => ({ label: l, on: true }));
   if (overwrite || !c.timeline.length) c.timeline = timeline;
+  scSortTimeline(c);
   scRender();
 }
+// ── 时间线按时期自动排序 ──
+// 「时期」文字 → 排序键（年*100+月）：2024年4月 / 2024/4 / 2024-04 / 2024.4 → 年月；2024年 / 2024-2025年 → 取第一个年份、月 0；
+// 4月（没写年份）→ 沿用上一行的年份；解析不出来的返回 null
+function scPeriodKey(t, prevYear) {
+  t = String(t || '');
+  let m = /(\d{4})\s*(?:年\s*(\d{1,2})\s*月?|[\/\-.](\d{1,2})(?!\d))/.exec(t);
+  if (m) { const mo = +(m[2] || m[3]); return { y: +m[1], m: mo >= 1 && mo <= 12 ? mo : 0 }; }
+  m = /(\d{4})/.exec(t);
+  if (m) return { y: +m[1], m: 0 };
+  m = /(\d{1,2})\s*月/.exec(t);
+  if (m && prevYear && +m[1] >= 1 && +m[1] <= 12) return { y: prevYear, m: +m[1] };
+  return null;
+}
+// 解析不出的行（保持原相对位置）排在能解析的行前面，空白的新行放最后；同一年月保持原来的先后。返回顺序是否变了
+function scSortTimeline(c) {
+  const rows = c.timeline || [];
+  let py = 0;
+  const items = rows.map((r, i) => { const k = scPeriodKey(r.period, py); if (k) py = k.y; return { r, i, k, blank: !String(r.period || '').trim() }; });
+  const front = items.filter(x => !x.k && !x.blank), back = items.filter(x => !x.k && x.blank);
+  const ok = items.filter(x => x.k).sort((a, b) => (a.k.y * 100 + a.k.m) - (b.k.y * 100 + b.k.m) || a.i - b.i);
+  const next = front.concat(ok, back);
+  const changed = next.some((x, j) => x.i !== j);
+  if (changed) c.timeline = next.map(x => x.r);
+  return changed;
+}
+function scTlBlur(i, v) { sc.cur.timeline[i].period = v; if (scSortTimeline(sc.cur)) scRender(); }
+
 // ── 合格学校 chip ──
 // 结果文本 ↔ chip：保存时选中的学校用「 · 」连接；回显时把紧跟在学校名后面的「研究科 / 学部」等片段并回上一所
 const scSchoolKey = l => String(l || '').split(' · ')[0].trim();
@@ -439,40 +493,56 @@ async function scLoadCandidates() {
     q(`/rest/v1/art_works?student_id=eq.${encodeURIComponent(id)}&select=*&order=week_start.desc&limit=200`),
     q(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(id)}&select=*`),
   ]);
-  const hwOk = (hw || []).filter(x => hwFeedbacks(x).length);
-  const sids = [...new Set(hwOk.map(x => x.session_id).filter(Boolean))], sess = {};
+  // 旧的作业提交：出席记录里有 homework_file_url 的（按学生姓名；同一回在新作业表里已有就不重复）
+  const stuRow = (sc.stu || []).find(x => String(x.id) === String(id)) || ((await q(`/rest/v1/students?id=eq.${encodeURIComponent(id)}&select=name`))[0]);
+  const recs = stuRow && stuRow.name ? (await q(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(stuRow.name)}&select=*&order=session_date.desc&limit=500`) || []).filter(r => r.homework_file_url) : [];
+  const hwSess = new Set((hw || []).map(x => x.session_id).filter(Boolean));
+  const recsNew = recs.filter(r => !(r.session_id && hwSess.has(r.session_id)));
+  const hwOk = hw || [];
+  const sids = [...new Set(hwOk.map(x => x.session_id).concat(recsNew.map(r => r.session_id)).filter(Boolean))], sess = {};
   for (let i = 0; i < sids.length; i += 40) (await q(`/rest/v1/course_sessions?id=in.(${sids.slice(i, i + 40).map(x => `"${x}"`).join(',')})&select=id,course_name,session_number,session_title`) || []).forEach(x => { sess[x.id] = x; });
   const fbText = o => { const f = hwFeedbacks(o).filter(x => x.knowledge || x.attitude || x.suggestions || x.text)[0]; if (!f) return ''; return [f.knowledge, f.attitude, f.suggestions].filter(Boolean).join('；').slice(0, 200) || String(f.text || '').slice(0, 200); };
   if (sc.cur !== c) return;
   c.cand = {
     loading: false,
     hw: hwOk.map(x => {
-      const imgs = [];
-      scArr(x.answers).forEach(a => scArr(a.images).forEach(im => { if (im && im.url && im.kind !== 'doc') imgs.push(im.url); }));
+      const imgs = [], files = [];
+      const add = (url, name, isDoc) => { if (!url) return; if (isDoc || scIsFileUrl(url)) files.push({ url, name: name || scFileName(url) }); else imgs.push(url); };
+      scArr(x.answers).forEach(a => scArr(a.images).forEach(im => { if (im && im.url) add(im.url, im.name, im.kind === 'doc'); }));
+      add(x.whole_file_url, '整份作业', false);
       const se = sess[x.session_id] || {};
-      return { src: 'hw:' + x.id, label: `${se.course_name || '作业'}${se.session_number ? ' 第' + se.session_number + '回' : ''}`, imgs, feedback: fbText(x) };
-    }).filter(x => x.imgs.length),
-    art: (art || []).map(w => ({ src: 'art:' + w.id, label: `作品收集 ${w.week_start || ''}`, imgs: awImgs(w).map(im => im.url).filter(Boolean), feedback: fbText(w) })).filter(x => x.imgs.length),
+      return { src: 'hw:' + x.id, label: `${se.course_name || '作业'}${se.session_number ? ' 第' + se.session_number + '回' : ''}`, imgs, files, feedback: fbText(x), tag: hwFeedbacks(x).length ? '有反馈' : '未批改' };
+    }).filter(x => x.imgs.length || x.files.length).concat(recsNew.map(r => {
+      const se = sess[r.session_id] || {}, name = se.course_name || r.course_name || '作业';
+      const isF = scIsFileUrl(r.homework_file_url);
+      return { src: 'rec:' + r.id, label: `${name}${se.session_number ? ' 第' + se.session_number + '回' : ''}${r.session_date ? ' ' + r.session_date : ''}`, imgs: isF ? [] : [r.homework_file_url], files: isF ? [{ url: r.homework_file_url, name: scFileName(r.homework_file_url) }] : [], feedback: '', tag: '出席记录' };
+    })),
+    art: (art || []).map(w => ({ src: 'art:' + w.id, label: `作品收集 ${w.week_start || ''}`, imgs: awImgs(w).map(im => im.url).filter(Boolean), files: [], feedback: fbText(w), tag: hwFeedbacks(w).length ? '有反馈' : '' })).filter(x => x.imgs.length),
     riyu: (riyu || []).filter(x => x.reviewed_file_url).map(x => ({ src: 'riyu:' + x.id, url: x.reviewed_file_url, name: x.reviewed_file_name || '批复版', note: [x.school_name, x.faculty, x.department].filter(Boolean).join(' · ') })),
   };
   scRender();
 }
+const scIsFileUrl = u => /\.(pdf|docx?|xlsx?|pptx?|zip|txt)(\?|$)/i.test(u || '');
+const scFileName = u => { try { return decodeURIComponent(String(u || '').split('?')[0].split('/').pop()) || '附件'; } catch (e) { return '附件'; } };
 function scWorksPickHtml() {
   const cand = sc.cur.cand;
   if (!cand) return '';
   if (cand.loading) return '<div style="font-size:11px;color:var(--text-3)">读取作业…</div>';
   const sel = new Set(sc.cur.works.map(w => w.src));
   const item = (g, i, kind) => `<div onclick="scToggleWork('${kind}',${i})" style="cursor:pointer;width:118px;border:1px solid ${sel.has(g.src) ? 'var(--accent)' : 'var(--border-light)'};${sel.has(g.src) ? 'box-shadow:0 0 0 1px var(--accent);background:var(--accent-light,#f5ede3);' : ''}border-radius:4px;padding:5px">
-    <img src="${scE(g.imgs[0])}" loading="lazy" style="width:100%;height:76px;object-fit:cover;border-radius:2px">
-    <div style="font-size:9px;margin-top:3px;color:var(--text-2);line-height:1.4">${scE(g.label)}<br>${g.imgs.length} 张${g.feedback ? ' · 有反馈' : ''}${sel.has(g.src) ? ' · ✓' : ''}</div></div>`;
+    ${g.imgs.length ? `<img src="${scE(g.imgs[0])}" loading="lazy" style="width:100%;height:76px;object-fit:cover;border-radius:2px">` : `<div style="height:76px;display:flex;align-items:center;justify-content:center;background:var(--bg);border-radius:2px;font-size:11px;color:var(--text-2);padding:0 4px;overflow:hidden;text-align:center;line-height:1.3">📎 ${scE(g.files[0].name)}</div>`}
+    <div style="font-size:9px;margin-top:3px;color:var(--text-2);line-height:1.4">${scE(g.label)}<br>${[g.imgs.length ? g.imgs.length + ' 张' : '', g.files.length ? '📎 ' + g.files.length + ' 个文件' : '', g.tag].filter(Boolean).join(' · ')}${sel.has(g.src) ? ' · ✓' : ''}</div></div>`;
   const a = cand.hw.map((g, i) => item(g, i, 'hw')).join(''), b = cand.art.map((g, i) => item(g, i, 'art')).join('');
-  if (!a && !b) return '<div style="font-size:11px;color:var(--text-3)">这位学生还没有老师批改过的作业，也没有作品收集。</div>';
+  if (!a && !b) return '<div style="font-size:11px;color:var(--text-3)">这位学生没有提交过作业（或作业里没有图片 / 文件）</div>';
   return `<div style="font-size:10px;color:var(--text-3);margin-bottom:4px">点选要展示的作业（高亮 = 选中）：</div><div style="display:flex;gap:8px;flex-wrap:wrap">${a}${b}</div>`;
 }
 function scToggleWork(kind, i) {
   const c = sc.cur, g = c.cand[kind][i]; if (!g) return;
   if (c.works.some(w => w.src === g.src)) c.works = c.works.filter(w => w.src !== g.src);
-  else g.imgs.forEach((u, k) => c.works.push({ src: g.src, url: u, caption: g.label, feedback: k === 0 ? g.feedback : '' }));
+  else {
+    g.imgs.forEach((u, k) => c.works.push({ src: g.src, url: u, caption: g.label, feedback: k === 0 ? g.feedback : '' }));
+    (g.files || []).forEach(f => c.works.push({ src: g.src, url: f.url, kind: 'file', name: f.name, caption: g.label, feedback: !g.imgs.length && f === g.files[0] ? g.feedback : '' }));
+  }
   scRender();
 }
 function scPlansPickHtml() {
@@ -518,6 +588,21 @@ async function scUploadWork(input) {
   } catch (e) { if (tip) tip.textContent = '上传失败：' + e.message; }
 }
 
+async function scUploadOther(input) {
+  const files = [...(input.files || [])]; input.value = ''; if (!files.length) return;
+  const c = sc.cur, tip = document.getElementById('sc_upo_tip');
+  try {
+    for (let i = 0; i < files.length; i++) {
+      if (tip) tip.textContent = `上传中 ${i + 1}/${files.length}…`;
+      const f = files[i];
+      let ext = (f.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, ''); if (!ext || ext.length > 5) ext = 'bin';
+      const url = await sbUpload('admission-photos', `cases/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`, f);
+      c.others.push({ url, name: f.name, kind: /^image\//.test(f.type) ? 'image' : 'file', category: '课堂笔记', note: '' });
+    }
+    if (sc.cur === c) scRender();
+  } catch (e) { if (tip) tip.textContent = '上传失败：' + e.message; }
+}
+
 // ── 保存 / 删除 ──
 async function scSave() {
   const c = sc.cur;
@@ -527,6 +612,7 @@ async function scSave() {
   const stu = (sc.stu || []).find(x => String(x.id) === String(c.student_id));
   const pending = (c.schoolInput || '').trim();
   if (pending && !c.schools.some(x => x.label === pending)) c.schools.push({ label: pending, on: true });
+  scSortTimeline(c);
   c.result = c.schools.filter(x => x.on).map(x => x.label).join(' · ');
   if (stu && stu.name) {
     const nm = String(stu.name).trim(), keys = nm.length >= 3 ? [nm, nm.slice(0, 2)] : [nm];
@@ -536,7 +622,7 @@ async function scSave() {
   }
   const rec = { domain: c.domain, majors: c.majors, student_id: c.student_id || null, alias: c.alias.trim(), tagline: c.tagline.trim(), background: c.background.trim(),
     timeline: c.timeline.filter(t => (t.period || '').trim() || (t.content || '').trim()).map(t => ({ period: t.period.trim(), content: t.content.trim() })),
-    result: c.result.trim(), quote: c.quote.trim(), works: c.works, plan_files: c.plan_files, tags: c.tags, published: !!c.published, updated_at: new Date().toISOString() };
+    result: c.result.trim(), quote: c.quote.trim(), works: c.works, plan_files: c.plan_files, others: c.others, tags: c.tags, published: !!c.published, updated_at: new Date().toISOString() };
   try {
     if (c.id) {
       await sb(`/rest/v1/success_cases?id=eq.${encodeURIComponent(c.id)}`, 'PATCH', rec);
