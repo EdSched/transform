@@ -217,7 +217,7 @@ function promoRenderShell() {
     ${pcDomains().map(d => `<div class="filter-chip ${pcDomain===d?'active':''}" onclick="pcDomain='${d}';pcEditing=null;pcImport=null;pcLoad()" style="padding:3px 10px;font-size:11px">${d}</div>`).join('')}
   </div>` : `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
     <span style="font-size:10px;color:var(--text-3)">专业：</span>
-    ${majorFilterKeys().map(m => `<div class="filter-chip ${promoMajor===m?'active':''}" onclick="promoMajor='${m}';promoEditingId=null;promoLoad()" style="padding:3px 10px;font-size:11px">${m==='shakai_group'?'社会人文':majorLabel(m)}</div>`).join('')}
+    ${chipFold(majorFilterKeys().map(m => ({ on: promoMajor===m, html: `<div class="filter-chip ${promoMajor===m?'active':''}" onclick="promoMajor='${m}';promoEditingId=null;promoLoad()" style="padding:3px 10px;font-size:11px">${m==='shakai_group'?'社会人文':majorLabel(m)}</div>` })))}
   </div>`}
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px">
     <span style="font-size:10px;color:var(--text-3)">板块：</span>

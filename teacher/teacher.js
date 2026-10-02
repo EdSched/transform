@@ -2495,12 +2495,13 @@ async function renderTeacherAdmissionDb(mc) {
       const allowed = window._teacherAllowedAdmMajors || [];
       const entries = Object.entries(TEACHER_ADB_MAJORS).filter(([k]) => allowed.includes(k));
       const chipOf = ([k,v]) => `<div class="filter-chip" data-key="${k}" onclick="teacherAdbToggleMajor('${k}',this)">${v}</div>`;
-      if (!(typeof isSalesTeacher === 'function' && isSalesTeacher(teacherData))) return entries.map(chipOf).join('');
+      const foldOf = list => chipFold(list.map(e => ({ on: teacherAdbMajors.includes(e[0]), html: chipOf(e) })));
+      if (!(typeof isSalesTeacher === 'function' && isSalesTeacher(teacherData))) return foldOf(entries);
       // 营业老师：看全部领域，按领域分组显示
       const order = DOMAINS.map(d => d.label), by = {};
       entries.forEach(e => { const d = admissionMajorDomain(e[0]) || '其他'; (by[d] = by[d] || []).push(e); });
       return Object.keys(by).sort((a, b) => { const ia = order.indexOf(a), ib = order.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); })
-        .map(d => `<div style="width:100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:4px"><span style="font-size:10px;color:var(--text-3);min-width:64px">${d}</span>${by[d].map(chipOf).join('')}</div>`).join('');
+        .map(d => `<div style="width:100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:4px"><span style="font-size:10px;color:var(--text-3);min-width:64px">${d}</span>${foldOf(by[d])}</div>`).join('');
     })()}
       <div class="filter-chip" style="opacity:.6" onclick="teacherAdbClear()">✕ 清除</div>
     </div>

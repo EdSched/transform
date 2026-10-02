@@ -146,7 +146,7 @@ function prcCapture() {
   prcDraft.keep = keep;
 }
 function prcDomainChange() { prcCapture(); prcDraft.majors = prcDraft.majors.filter(m => MAJOR_DOMAIN[m] === prcDraft.domain); prcRender(); }
-function prcToggleMajor(m) { prcCapture(); const a = prcDraft.majors, i = a.indexOf(m); if (i >= 0) a.splice(i, 1); else a.push(m); prcRender(); }
+function prcToggleMajor(m) { prcCapture(); const a = prcDraft.majors, i = a.indexOf(m); if (i >= 0) a.splice(i, 1); else a.push(m); (typeof admKeepFold === 'function' ? admKeepFold(prcBodyEl, prcRender) : prcRender()); }
 function prcFormHtml() {
   const { kind, id } = prcEdit;
   const cur = id === 'new' ? {} : (PRC_KIND[kind].arr().find(x => x.id === id) || {});
@@ -168,7 +168,7 @@ function prcFormHtml() {
       <div>${prcLbl('周期 / 说明')}${inp('prc_period', val('prc_period', 'period'), '例：约六个月（物理、化学、生物3选2）')}</div>
     </div>
     <div style="margin-top:10px">${prcLbl('对应专业（可多选；老师端选了学生后，按学生专业自动带出这张价目表。改的是整张价目表：同一价目表名下的套餐会一起更新）')}
-      <div style="display:flex;flex-wrap:wrap;gap:6px">${dom ? (majorKeys.length ? majorKeys.map(m => `<div class="filter-chip${prcDraft.majors.includes(m) ? ' active' : ''}" onclick="prcToggleMajor('${m}')" style="padding:3px 10px;font-size:11px">${prcE(majorLabel(m))}</div>`).join('') : '<span style="font-size:10px;color:var(--text-3)">这个领域下还没有专业</span>') : '<span style="font-size:10px;color:var(--text-3)">先选择领域</span>'}</div></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${dom ? (majorKeys.length ? chipFold(majorKeys.map(m => ({ on: prcDraft.majors.includes(m), html: `<div class="filter-chip${prcDraft.majors.includes(m) ? ' active' : ''}" onclick="prcToggleMajor('${m}')" style="padding:3px 10px;font-size:11px">${prcE(majorLabel(m))}</div>` }))) : '<span style="font-size:10px;color:var(--text-3)">这个领域下还没有专业</span>') : '<span style="font-size:10px;color:var(--text-3)">先选择领域</span>'}</div></div>
     <div style="margin-top:10px">${prcLbl('包含课程（只在后台查看，不输出到资料）')}${prcIncEditorHtml()}</div>`);
   }
   if (kind === 'vip') {

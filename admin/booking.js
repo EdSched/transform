@@ -63,11 +63,11 @@ function renderBookingPage(mc){
     <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">新同学预约链接（点专业复制）</div>
     ${bkLinkGroups().map(g=>`<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
       <span style="font-size:10px;color:var(--text-3);white-space:nowrap;min-width:64px">${g.domain}</span>
-      <div style="display:flex;flex-wrap:wrap;gap:5px">${g.keys.map(k=>`<div class="filter-chip" style="margin:0" onclick="bkCopyLink('https://edsched.github.io/transform/student/?major=${k}','已复制「${majorLabel(k)}」预约链接')">${majorLabel(k)}</div>`).join('')}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">${chipFold(g.keys.map(k=>({on:false,html:`<div class="filter-chip" style="margin:0" onclick="bkCopyLink('https://edsched.github.io/transform/student/?major=${k}','已复制「${majorLabel(k)}」预约链接')">${majorLabel(k)}</div>`})))}</div>
     </div>`).join('')}
   </div>
   <div class="filter-row" id="majorFilterRow">
-    ${majorFilterKeys({includeAll:true}).map((m,i)=>`<div class="filter-chip${bkMajor===m?' active':''}" onclick="setBkMajor('${m}',this)">${i===0?'全部专业':majorLabel(m)}</div>`).join('')}
+    ${chipFold(majorFilterKeys({includeAll:true}).map((m,i)=>({on:bkMajor===m,html:`<div class="filter-chip${bkMajor===m?' active':''}" onclick="setBkMajor('${m}',this)">${i===0?'全部专业':majorLabel(m)}</div>`})))}
   </div>
   <div class="btn-group" style="margin-bottom:10px">
     ${['all','pending','confirmed','completed','cancelled'].map((t,i)=>`<button class="${bkTab===t?'active':''}" onclick="setBkTab('${t}',this)">${['全部','待确认','已确认','已完成','已取消'][i]}</button>`).join('')}

@@ -122,7 +122,7 @@ function renderAttendancePage(mc){
       <div>
         <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">期数</div>
         <div style="display:flex;gap:5px;flex-wrap:wrap">
-          ${periods.map(p=>`<div class="filter-chip${attPeriodFilter===p?' active':''}" onclick="setAttPeriod('${p}')">${p}</div>`).join('')}
+          ${chipFold(periods.map(p=>({on:attPeriodFilter===p,html:`<div class="filter-chip${attPeriodFilter===p?' active':''}" onclick="setAttPeriod('${p}')">${p}</div>`})))}
         </div>
       </div>
       ${campuses.length>1?`<div>
@@ -134,8 +134,7 @@ function renderAttendancePage(mc){
       ${attTypeFilter&&availMajors.length?`<div>
         <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">专业</div>
         <div style="display:flex;gap:5px;flex-wrap:wrap">
-          <div class="filter-chip${attMajorFilter==='all'?' active':''}" onclick="setAttMajor('all')">全部</div>
-          ${availMajors.map(m=>`<div class="filter-chip${attMajorFilter===m?' active':''}" onclick="setAttMajor('${m}')">${MAJORS[m]||m}</div>`).join('')}
+          ${chipFold([{on:attMajorFilter==='all',html:`<div class="filter-chip${attMajorFilter==='all'?' active':''}" onclick="setAttMajor('all')">全部</div>`}].concat(availMajors.map(m=>({on:attMajorFilter===m,html:`<div class="filter-chip${attMajorFilter===m?' active':''}" onclick="setAttMajor('${m}')">${MAJORS[m]||m}</div>`}))))}
         </div>
       </div>`:''}
     </div>

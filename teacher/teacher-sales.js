@@ -58,7 +58,7 @@ function tsRenderShell() {
   ${tsDomain !== 'all' ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
     <span style="font-size:10px;color:var(--text-3)">专业：</span>
     <div class="filter-chip ${tsSubject==='all'?'active':''}" onclick="tsSubject='all';tsPick={};tsRenderShell()" style="padding:3px 10px;font-size:10px">全部</div>
-    ${subjects.map(s => `<div class="filter-chip ${tsSubject===s?'active':''}" onclick="tsSubject='${tsEsc(s)}';tsPick={};tsRenderShell()" style="padding:3px 10px;font-size:10px">${tsEsc(s)}</div>`).join('')}
+    ${chipFold(subjects.map(s => ({ on: tsSubject===s, html: `<div class="filter-chip ${tsSubject===s?'active':''}" onclick="tsSubject='${tsEsc(s)}';tsPick={};tsRenderShell()" style="padding:3px 10px;font-size:10px">${tsEsc(s)}</div>` })))}
   </div>` : ''}
   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px">
     <input placeholder="搜索姓名 / 方向 / 课程…" value="${tsEsc(tsSearch)}" oninput="tsSearch=this.value;tsRenderList()"
