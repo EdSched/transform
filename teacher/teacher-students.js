@@ -557,7 +557,7 @@ const TSM_STATUS = [['active', '在籍'], ['graduated', '已合格'], ['expired'
 const tsmDefault = () => ({ domain: tsmDefaultDomain(), major: '', status: 'active', source: '', q: '' });
 let tsm = tsmDefault();
 let tsmDomainInited = false;   // 首次加载学生池后，才能按可见学生判断默认领域
-// 默认领域：老师自己的领域（managed_by 第一个；没有就取负责专业所属领域里人数最多的）；都没有（营业老师等）→ 人数最多的领域。不默认「全部」
+// 默认领域：老师自己的领域（managed_by 第一个；没有就取负责专业所属领域里人数最多的）；都没有（营业老师等）→ 留空，让老师自己选。绝不默认「全部」
 function tsmDefaultDomain() {
   if (typeof teacherData === 'undefined' || !teacherData) return '';
   const pool = tsmPool || [];
@@ -572,11 +572,12 @@ function tsmDefaultDomain() {
     const best = Object.keys(cntBy).sort((a, b) => cntBy[b] - cntBy[a])[0];
     if (ok(best)) return best;
   }
-  // 营业老师 / 没有所属领域：也不默认「全部」，选可见学生里人数最多的领域（想看全部可手动点「全部」）
-  const byDom = {};
-  pool.forEach(s => { const d = tsmDomainOf(s.major); if (d) byDom[d] = (byDom[d] || 0) + 1; });
-  return Object.keys(byDom).sort((a, b) => byDom[b] - byDom[a])[0] || '';
+  // 没有所属领域（营业老师等）：不替他选，留空，页面提示「请先选择领域」（见 tsmNeedDomain）
+  return '';
 }
+let tsmNeedDomain = false;   // true = 还没选领域：不显示任何学生，只提示请先选择领域
+function tsmDomCount() { return new Set((tsmPool || []).map(s => tsmDomainOf(s.major)).filter(Boolean)).size; }
+const TSM_PICK_HTML = '<div class="empty" style="padding:40px">请先在上面选择领域（或点「全部」）后再查看学生</div>';
 // 学生列表分页：每次先显示 30 人，「显示更多」再加 30；筛选/切页时重置
 const TSM_PAGE = 30;
 let tsmShown = TSM_PAGE;
@@ -613,7 +614,7 @@ async function tsmLoadPool(force) {
   let list = set ? all.filter(s => set.has(s.major)) : all;
   if (tsaGuaranteedLock()) list = list.filter(tsaIsGuaranteed);
   tsmPool = list; tsmPoolAt = Date.now();
-  if (!tsmDomainInited) { tsmDomainInited = true; tsm.domain = tsmDefaultDomain(); }
+  if (!tsmDomainInited) { tsmDomainInited = true; tsm.domain = tsmDefaultDomain(); tsmNeedDomain = !tsm.domain && tsmDomCount() > 1; }
   return tsmPool;
 }
 
@@ -625,7 +626,7 @@ function tsmBarHtml() {
   let h = '';
   // 领域：只列可见学生里实际出现的；只有一个领域时不显示
   const doms = DOMAINS.map(d => d.label).filter(d => pool.some(s => tsmDomainOf(s.major) === d));
-  if (doms.length > 1) h += row('领域', chipFold([{ on: !tsm.domain, html: chip(!tsm.domain, '全部', cnt('domain', () => true), `tsmSet('domain','')`) }]
+  if (doms.length > 1) h += row('领域', chipFold([{ on: !tsm.domain && !tsmNeedDomain, html: chip(!tsm.domain && !tsmNeedDomain, '全部', cnt('domain', () => true), `tsmSet('domain','')`) }]
     .concat(doms.map(d => ({ on: tsm.domain === d, html: chip(tsm.domain === d, d, cnt('domain', s => tsmDomainOf(s.major) === d), `tsmSet('domain','${d}')`) })))));
   // 专业：逐级展开——选了具体领域才显示，只列该领域的专业；领域选「全部」时只给一行提示（只有一个领域时直接列该领域专业）
   const effDom = tsm.domain || (doms.length === 1 ? doms[0] : '');
@@ -652,11 +653,20 @@ function tsmBarHtml() {
 }
 function tsmRenderBar() { const el = document.getElementById('sm_filter'); if (el) el.innerHTML = tsmBarHtml(); }
 function tsmSet(k, v) {
+  if (k === 'domain' && tsmNeedDomain) {   // 第一次选领域：学生页数据还没加载，整页走一遍加载
+    tsmNeedDomain = false; tsm.domain = v; tsm.major = '';
+    renderStudentMgmt(document.getElementById('mainContent'));
+    return;
+  }
   tsm[k] = v;
   if (k === 'domain' && tsm.major && (!v || tsmDomainOf(tsm.major) !== v)) tsm.major = '';   // 换领域时，不属于该领域的专业选择清掉
   tsmChanged();
 }
-function tsmClear() { tsm = tsmDefault(); tsmChanged(); }
+function tsmClear() {
+  tsm = tsmDefault(); tsmNeedDomain = !tsm.domain && tsmDomCount() > 1;
+  if (tsmNeedDomain) { tsmRenderBar(); const b = document.getElementById('sm_content'); if (b) b.innerHTML = TSM_PICK_HTML; }
+  else tsmChanged();
+}
 function tsmChanged() { tsmShown = TSM_PAGE; tsmRenderBar(); tsmRefreshPage(false); }
 function tsmSearchInput(v) {   // 输入搜索时不重画筛选栏（保持输入焦点），只更新人数和当前页
   tsm.q = v; tsmShown = TSM_PAGE;
@@ -666,6 +676,7 @@ function tsmSearchInput(v) {   // 输入搜索时不重画筛选栏（保持输�
 // 筛选变化后刷新当前子页面（数据已缓存，不重新拉取）；light=只刷新列表，保持页头不动
 function tsmRefreshPage(light) {
   const box = document.getElementById('sm_content'); if (!box) return;
+  if (tsmNeedDomain) { box.innerHTML = TSM_PICK_HTML; return; }
   if (smTab === 'progress') { if (light && document.getElementById('tp_list')) tpRenderProgressList(); else tpRenderShell(); }
   else if (smTab === 'meetings') { if (light && document.getElementById('tm_list')) tmRenderList(); else tmRenderShell(); }
   else if (smTab === 'records') tsrRender();
@@ -692,6 +703,7 @@ function renderStudentMgmt(mc) {
   tsmLoadPool(true).then(() => {
     if (smTab !== tab || !document.getElementById('sm_content')) return;   // 加载期间已切走
     tsmRenderBar();
+    if (tsmNeedDomain) { box.innerHTML = TSM_PICK_HTML; return; }
     if (tab === 'progress') renderTeacherStudyProgress(box);
     else if (tab === 'records') renderTsaRecords(box);
     else if (tab === 'meetings') renderTsaMeetings(box);
