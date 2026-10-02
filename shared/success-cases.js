@@ -285,11 +285,12 @@ function scEditHtml() {
       ${lbl('背景')}<input value="${scE(c.background)}" placeholder="例：N1 130分 / TOEIC 700+ / 有兴趣但方向不清" oninput="sc.cur.background=this.value" style="${inp};margin-bottom:10px">
       ${lbl('时间线（时期 | 内容）')}
       ${c.timeline.map((t, i) => `<div style="display:grid;grid-template-columns:100px 1fr 26px 26px;gap:6px;margin-bottom:5px;align-items:center">
-        <input value="${scE(t.period)}" placeholder="如 5月" oninput="sc.cur.timeline[${i}].period=this.value" style="${inp}">
+        <input value="${scE(t.period)}" placeholder="如 5月" oninput="sc.cur.timeline[${i}].period=this.value" onblur="scTlBlur(${i},this.value)" style="${inp}">
         <input value="${scE(t.content)}" placeholder="如 报名社会人文学系课程" oninput="sc.cur.timeline[${i}].content=this.value" style="${inp}">
         <span onclick="scMoveRow(${i},-1)" style="cursor:pointer;text-align:center;color:var(--text-3)">↑</span>
         <span onclick="sc.cur.timeline.splice(${i},1);scRender()" style="cursor:pointer;text-align:center;color:var(--danger)">✕</span></div>`).join('')}
-      <button class="btn btn-outline btn-sm" onclick="sc.cur.timeline.push({period:'',content:''});scRender()">＋ 添加一行</button>
+      <button class="btn btn-outline btn-sm" onclick="sc.cur.timeline.push({period:'',content:''});scSortTimeline(sc.cur);scRender()">＋ 添加一行</button>
+      <div style="font-size:10px;color:var(--text-3);margin-top:4px">按时期自动排序；时期写成『2026年3月』这种格式最准确</div>
       <div style="margin-top:10px">${lbl('合格学校（选了学生会自动带出；点一下取消不想对外展示的学校）')}
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           ${c.schools.map((x, i) => chip(x.on, scE(x.label), `sc.cur.schools[${i}].on=!sc.cur.schools[${i}].on;scRender()`)).join('') || '<span style="font-size:10px;color:var(--text-3)">还没有合格学校</span>'}
@@ -367,8 +368,36 @@ async function scAutoFill(overwrite) {
   if (overwrite) { c.schools = sys.map(l => ({ label: l, on: true })); c.schoolNew = 0; }
   else if (!c.schools.length) c.schools = sys.map(l => ({ label: l, on: true }));
   if (overwrite || !c.timeline.length) c.timeline = timeline;
+  scSortTimeline(c);
   scRender();
 }
+// ── 时间线按时期自动排序 ──
+// 「时期」文字 → 排序键（年*100+月）：2024年4月 / 2024/4 / 2024-04 / 2024.4 → 年月；2024年 / 2024-2025年 → 取第一个年份、月 0；
+// 4月（没写年份）→ 沿用上一行的年份；解析不出来的返回 null
+function scPeriodKey(t, prevYear) {
+  t = String(t || '');
+  let m = /(\d{4})\s*(?:年\s*(\d{1,2})\s*月?|[\/\-.](\d{1,2})(?!\d))/.exec(t);
+  if (m) { const mo = +(m[2] || m[3]); return { y: +m[1], m: mo >= 1 && mo <= 12 ? mo : 0 }; }
+  m = /(\d{4})/.exec(t);
+  if (m) return { y: +m[1], m: 0 };
+  m = /(\d{1,2})\s*月/.exec(t);
+  if (m && prevYear && +m[1] >= 1 && +m[1] <= 12) return { y: prevYear, m: +m[1] };
+  return null;
+}
+// 解析不出的行（保持原相对位置）排在能解析的行前面，空白的新行放最后；同一年月保持原来的先后。返回顺序是否变了
+function scSortTimeline(c) {
+  const rows = c.timeline || [];
+  let py = 0;
+  const items = rows.map((r, i) => { const k = scPeriodKey(r.period, py); if (k) py = k.y; return { r, i, k, blank: !String(r.period || '').trim() }; });
+  const front = items.filter(x => !x.k && !x.blank), back = items.filter(x => !x.k && x.blank);
+  const ok = items.filter(x => x.k).sort((a, b) => (a.k.y * 100 + a.k.m) - (b.k.y * 100 + b.k.m) || a.i - b.i);
+  const next = front.concat(ok, back);
+  const changed = next.some((x, j) => x.i !== j);
+  if (changed) c.timeline = next.map(x => x.r);
+  return changed;
+}
+function scTlBlur(i, v) { sc.cur.timeline[i].period = v; if (scSortTimeline(sc.cur)) scRender(); }
+
 // ── 合格学校 chip ──
 // 结果文本 ↔ chip：保存时选中的学校用「 · 」连接；回显时把紧跟在学校名后面的「研究科 / 学部」等片段并回上一所
 const scSchoolKey = l => String(l || '').split(' · ')[0].trim();
@@ -527,6 +556,7 @@ async function scSave() {
   const stu = (sc.stu || []).find(x => String(x.id) === String(c.student_id));
   const pending = (c.schoolInput || '').trim();
   if (pending && !c.schools.some(x => x.label === pending)) c.schools.push({ label: pending, on: true });
+  scSortTimeline(c);
   c.result = c.schools.filter(x => x.on).map(x => x.label).join(' · ');
   if (stu && stu.name) {
     const nm = String(stu.name).trim(), keys = nm.length >= 3 ? [nm, nm.slice(0, 2)] : [nm];
