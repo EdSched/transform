@@ -1269,7 +1269,10 @@ function teacherAdmDomains(t) {
 }
 // 老师在出愿数据库里被允许查看的专业：
 // 权限里明确选了的（没选则用老师自己负责的专业）→ 只保留是出愿专业、且属于老师所在领域的
+// 营业老师：标签里有「营业老师」（teachers.tags）。可查看所有领域的全部学生和出愿数据
+function isSalesTeacher(t) { return !!t && Array.isArray(t.tags) && t.tags.includes('营业老师'); }
 function teacherAdmAllowed(t) {
+  if (isSalesTeacher(t)) return Object.keys(ADMISSION_MAJORS);
   const perm = (t && t.permissions && t.permissions.admission_majors) || [];
   const base = perm.length ? perm : ((t && t.majors) || []);
   const doms = teacherAdmDomains(t);

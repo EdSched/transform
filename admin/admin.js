@@ -771,10 +771,14 @@ function renderTeachersPage(mc){
           <option>综合事业本部</option>
         </select>
       </div>`}
-      <div class="form-group"><label class="form-label">分类标签（可叠加，用于搜索标记，不影响任何功能权限）</label>
+      <div class="form-group"><label class="form-label">分类标签（可叠加；『专业课老师』『营业老师』会影响功能，其他标签只用于搜索标记）</label>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
           <div id="new_teacher_senmon" class="filter-chip" onclick="senmonChipToggle()" style="padding:4px 12px;font-size:11px">📚 专业课老师</div>
           <span style="font-size:10px;color:var(--text-3)">勾选后，系统会提醒这位老师完成每个负责专业的讲师介绍</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+          <div id="new_teacher_sales" class="filter-chip" onclick="salesChipToggle()" style="padding:4px 12px;font-size:11px">💼 营业老师</div>
+          <span style="font-size:10px;color:var(--text-3)">营业老师可以查看所有领域的学生和出愿数据</span>
         </div>
         <input id="new_teacher_tags" oninput="senmonChipSync()" placeholder="用逗号或顿号分隔，如：计划书指导、模拟面试、兼职"></div>
       ${_isDom ? `<div class="form-group"><label class="form-label">领域</label><div style="font-size:12px;color:var(--text-2);border:1px solid var(--border);border-radius:3px;padding:7px 10px;background:var(--bg)">${_lockDom}<span style="font-size:10px;color:var(--text-3);margin-left:6px">本领域账号：新建老师自动归属本领域，负责专业在下方选择</span></div></div>` : `<div class="form-group" style="border:1px solid var(--accent);border-radius:3px;padding:8px;background:var(--bg)">
@@ -1066,6 +1070,10 @@ function renderPermAdmMajors(){
   const box=document.getElementById('perm_admission_majors'); if(!box) return;
   const doms=admFormDomains(), keys=admListedKeys();
   const rm=document.getElementById('perm_admission_removed');
+  if(parseTeacherTags().includes('营业老师')){
+    box.innerHTML='<div style="font-size:11px;color:var(--accent)">营业老师：可查看全部出愿数据</div>'+(keys.length?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;opacity:.4;pointer-events:none">'+keys.map(k=>`<div class="filter-chip${_admSel.has(k)?' active':''}" style="padding:3px 9px;font-size:10px">${escTM(ADMISSION_MAJORS[k])}</div>`).join('')+'</div>':'');
+    if(rm) rm.textContent=''; return;
+  }
   if(!doms.length){ box.innerHTML='<div style="font-size:11px;color:var(--text-3)">请先选择该老师的隶属领域或负责专业，这里再列出对应领域的出愿专业</div>'; if(rm) rm.textContent=''; return; }
   if(!keys.length){ box.innerHTML='<div style="font-size:11px;color:var(--text-3)">'+escTM(doms.join('、'))+' 暂无出愿专业</div>'; }
   else {
@@ -1152,6 +1160,14 @@ function openTeacherManager(){
 function senmonChipSync(){
   const chip=document.getElementById('new_teacher_senmon'); if(!chip) return;
   chip.classList.toggle('active', parseTeacherTags().some(g=>g.includes('专业课')));
+  const sc=document.getElementById('new_teacher_sales');
+  if(sc){ const was=sc.classList.contains('active'), now=parseTeacherTags().includes('营业老师'); sc.classList.toggle('active', now); if(was!==now && typeof renderPermAdmMajors==='function') renderPermAdmMajors(); }
+}
+// 「营业老师」chip：在标签里加 / 去掉「营业老师」
+function salesChipToggle(){
+  const tags=parseTeacherTags(), on=tags.includes('营业老师');
+  document.getElementById('new_teacher_tags').value=(on?tags.filter(g=>g!=='营业老师'):[...tags,'营业老师']).join('、');
+  senmonChipSync();
 }
 function senmonChipToggle(){
   const tags=parseTeacherTags(), on=tags.some(g=>g.includes('专业课'));
