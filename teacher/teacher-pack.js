@@ -242,17 +242,26 @@ function pkAddMajorParts(major, data, parts, silent) {
 // key 里的板块名（major:shakai:lecturer）
 const PK_PART_KEY = { major_intro: 'major_intro', course: 'course', schedule: 'schedule', lecturer: 'lecturer' };
 
-// 宣传相关页：把当前板块（part）加入；不传 part = 加入全部 4 项
+// 宣传相关页：把当前板块（part）加入；不传 part = 加入全部 3 项（专业介绍 / 课程介绍 / 讲师介绍，不含课程表：课程表要先调好期数和语言课，在课程表板块单独加入）
+const PK_MAJOR_ALL3 = ['major_intro', 'course', 'lecturer'];
 function pkAddMajorFromPromo(part) {
   if (!prData) return;
-  const parts = part ? [part] : PK_MAJOR_PARTS.map(p => p[0]);
+  const parts = part ? [part] : PK_MAJOR_ALL3;
   if (!pkAddMajorParts(prMajor, prData, parts)) alert('该专业所选板块暂无内容');
+}
+
+// 课程表要先调整期数 / 加语言课：带着所选专业跳到宣传相关的课程表板块
+function pkGoSchedule() {
+  const m = (document.getElementById('pk_major') || {}).value;
+  if (m) prMajor = m;
+  prSection = 'schedule'; prExpanded = null;
+  switchTab('promo');
 }
 
 // 本页：选专业 + 板块后直接添加
 async function pkAddMajor() {
   const major = (document.getElementById('pk_major') || {}).value;
-  const parts = PK_MAJOR_PARTS.map(p => p[0]).filter(k => (document.getElementById('pk_part_' + k) || {}).checked);
+  const parts = PK_MAJOR_ALL3.filter(k => (document.getElementById('pk_part_' + k) || {}).checked);
   if (!major) return;
   if (!parts.length) { alert('请至少勾选一个板块'); return; }
   const btn = document.getElementById('pk_major_btn');
@@ -403,10 +412,10 @@ function pkRender(mc) {
             <select id="pk_major" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit">
               ${majorKeys.length ? majorKeys.map(k => `<option value="${k}" ${k === selMajor ? 'selected' : ''}>${pkEsc(prMajorName(k))}</option>`).join('') : `<option value="">${(prMajorsCache || pkMajorList) ? '暂无专业宣传内容' : '读取中…'}</option>`}
             </select>
-            ${prSchedModeSelect('prSchedMode=this.value')}
-            ${PK_MAJOR_PARTS.map(([k, l]) => `<label style="font-size:11px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="pk_part_${k}" checked style="accent-color:var(--accent)">${l}</label>`).join('')}
+            ${PK_MAJOR_PARTS.filter(([k]) => PK_MAJOR_ALL3.includes(k)).map(([k, l]) => `<label style="font-size:11px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="pk_part_${k}" checked style="accent-color:var(--accent)">${l}</label>`).join('')}
           </div>
           <button id="pk_major_btn" onclick="pkAddMajor()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 14px;cursor:pointer;font-family:inherit">➕ 添加学科介绍</button>
+          <a onclick="pkGoSchedule()" style="margin-left:10px;font-size:11px;color:var(--accent);cursor:pointer;text-decoration:underline">课程表 → 去宣传相关调整后加入</a>
         </div>` : ''}
         ${typeof pricingEnabled === 'function' && pricingEnabled() ? `<div style="border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:10px">
           <div style="font-size:11px;font-weight:600;margin-bottom:8px">💴 价格表（通用价目，排在资料最前）</div>
