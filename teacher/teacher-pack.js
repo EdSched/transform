@@ -221,7 +221,7 @@ function pkUpdateTabBadge() {
 
 // 学科介绍按板块拆成独立条目加入（专业介绍 / 课程介绍 / 课程表 / 讲师介绍各自按默认顺序排位）；返回加入的条目数
 function pkAddMajorParts(major, data, parts, silent) {
-  const name = MAJORS[major] || major;
+  const name = prMajorName(major);
   let added = 0, updated = 0, lastTitle = '';
   PK_MAJOR_PARTS.forEach(([k, label]) => {
     if (!parts.includes(k)) return;
