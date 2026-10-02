@@ -216,6 +216,14 @@ function prVideosHtml(videos, major) {
   </div>`;
 }
 
+// 课程表当前设置摘要（加入宣传资料时用的就是这个设置）：例「2027年1月期 · +日语 2 门」
+function prSchedSummary() {
+  const k = prPeriodKeys();
+  const base = prSchedMode === 'cur' ? k.cur.label : prSchedMode === 'share' ? '已发布的学生课表' : k.next.label;
+  const by = {};
+  Object.values((prData && prData.langOf) || {}).forEach(l => { by[l] = (by[l] || 0) + 1; });
+  return [base].concat(Object.entries(by).map(([l, n]) => `+${l} ${n} 门`)).join(' · ');
+}
 function prSetSchedMode(v) { prSchedMode = v; renderTeacherPromo(document.getElementById('mainContent')); }
 
 const PR_SECTIONS = [
@@ -343,8 +351,11 @@ function prRenderShell() {
   </div>`}
   ${prSection !== 'common' && prSection !== 'plan' && prSection !== 'cases' && typeof pkEnabled === 'function' && pkEnabled() ? `<div style="display:flex;align-items:center;gap:8px;margin:-4px 0 12px;flex-wrap:wrap">
     ${(() => { const pt = PK_MAJOR_PARTS.find(x => x[0] === prSection); const btn = 'font-size:11px;background:var(--surface);border:1px solid var(--accent);color:var(--accent);border-radius:3px;cursor:pointer;font-family:inherit';
+      const isSched = prSection === 'schedule';
       return (pt ? `<button onclick="pkAddMajorFromPromo('${pt[0]}')" style="${btn};padding:4px 14px">➕ 将「${prMajorName(prMajor)}」${pt[1]}加入宣传资料</button>` : '')
-        + `<button onclick="pkAddMajorFromPromo()" style="${btn};padding:${pt ? '3px 10px;font-size:10px' : '4px 14px'}">${pt ? '加入全部 4 项' : `➕ 将「${prMajorName(prMajor)}」学科介绍（全部 4 项）加入宣传资料`}</button>`; })()}
+        + (isSched ? `<span style="font-size:10px;color:var(--text-2)">当前设置：${prEsc(prSchedSummary())}</span>` : '')
+        + `<button onclick="pkAddMajorFromPromo()" style="${btn};padding:${pt ? '3px 10px;font-size:10px' : '4px 14px'}">${pt ? '加入全部 3 项' : `➕ 将「${prMajorName(prMajor)}」学科介绍（专业介绍 / 课程介绍 / 讲师介绍）加入宣传资料`}</button>`
+        + (isSched ? '' : '<span style="font-size:10px;color:var(--text-3)">课程表请在『课程表』板块调整好期数和语言课后单独加入</span>'); })()}
     <span style="font-size:10px;color:var(--text-3)">加入后可在「📦 宣传资料整合」与出愿学校、进度规划等一起生成一份完整 PDF</span>
   </div>` : ''}
   <div id="pr_body">${prBodyHtml()}</div>`;
