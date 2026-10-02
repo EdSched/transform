@@ -252,6 +252,25 @@ function majorFilterKeys(opts = {}) {
   return opts.includeAll ? ['all', ...ordered] : ordered;
 }
 
+// 筛选 chip 折叠：同一行超过 max（默认 12）个时，只显示前面的，其余收进「更多 ▾」；已选中的始终显示在外面。
+//   items = [{ on: 是否选中, html: 该 chip 的完整 HTML }]；只改显示，不影响筛选结果
+const CHIP_FOLD_MAX = 12;
+function chipFold(items, max) {
+  max = max || CHIP_FOLD_MAX;
+  if (items.length <= max) return items.map(i => i.html).join('');
+  const shown = [], hidden = [];
+  items.forEach((it, idx) => { (idx < max || it.on ? shown : hidden).push(it.html); });
+  if (!hidden.length) return shown.join('');
+  return shown.join('') + `<span class="cf-more" style="display:none;gap:inherit;flex-wrap:wrap;align-items:center">${hidden.join('')}</span>`
+    + `<div class="filter-chip cf-btn" data-n="${hidden.length}" onclick="chipFoldToggle(this)" style="padding:3px 10px;font-size:10px;color:var(--text-3)">更多 ▾ ${hidden.length}</div>`;
+}
+function chipFoldToggle(btn) {
+  const w = btn.parentNode.querySelector('.cf-more'); if (!w) return;
+  const open = w.style.display === 'none';
+  w.style.display = open ? 'contents' : 'none';
+  btn.textContent = open ? '收起 ▴' : '更多 ▾ ' + btn.dataset.n;
+}
+
 // 生成 <option> 列表（默认所有真实专业，不含 all/分组）
 function majorOptionsHtml(selectedKey, opts = {}) {
   const keys = opts.keys || allMajorKeys();
