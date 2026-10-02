@@ -152,6 +152,9 @@ let promoList = [];
 let promoEditingId = null; // null=不在编辑 | 'new'=新增 | id=编辑该条
 let promoProfiles = null;  // 讲师档案缓存（讲师板块「从档案导入」用）
 let promoPubMap = {};      // 本名 → 对外宣传姓名（老师管理备注）
+let pvList = [];           // 当前专业的宣传视频（表 promo_videos）
+let pvEditing = null;      // null | 'new' | 视频 id
+const PV_KINDS = [['intro', '学科介绍'], ['lesson', '正课体验'], ['other', '其他']];
 
 const PROMO_SECTIONS = [
   ['major_intro', '📖 专业介绍', '概要 / 独特视角 / 优势 / 重点方向 / 研究课题例 / 重点研究科…每条一个小节'],
@@ -182,15 +185,17 @@ async function promoLoad() {
     return;
   }
   try {
-    const jobs = [sb(`/rest/v1/promo_content?major=eq.${promoMajor}&select=*&order=sort_order.asc,created_at.asc`)];
+    const jobs = [sb(`/rest/v1/promo_content?major=eq.${promoMajor}&select=*&order=sort_order.asc,created_at.asc`),
+      sb(`/rest/v1/promo_videos?major=eq.${promoMajor}&select=*&order=sort_order.asc,updated_at.asc`).catch(() => [])];
     if (promoProfiles === null) {
       jobs.push(sb('/rest/v1/teacher_profiles?select=*&order=subject.asc,sort_order.asc').catch(() => []));
       jobs.push(sb('/rest/v1/teachers?select=name,notes').catch(() => []));
     }
     const res = await Promise.all(jobs);
     promoList = res[0];
-    if (res[1]) promoProfiles = res[1];
-    if (res[2]) { promoPubMap = {}; res[2].forEach(t => { const pub = String(t.notes || '').trim(); if (pub) promoPubMap[t.name] = pub; }); }
+    pvList = res[1] || []; pvEditing = null;
+    if (res[2]) promoProfiles = res[2];
+    if (res[3]) { promoPubMap = {}; res[3].forEach(t => { const pub = String(t.notes || '').trim(); if (pub) promoPubMap[t.name] = pub; }); }
   } catch (e) {
     const mc = document.getElementById('mainContent');
     if (mc) mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
@@ -278,6 +283,7 @@ function promoRender() {
   </div>` : '';
 
   box.innerHTML = `
+  ${promoSection === 'major_intro' ? pvBlockHtml() : ''}
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
     <div style="font-size:12px;font-weight:600">${majorLabel(promoMajor)} · ${sec[1]}（${list.length}条）</div>
     <span style="font-size:10px;color:var(--text-3)">${sec[2]}</span>
@@ -296,6 +302,92 @@ function promoRender() {
     </div>
     <div style="font-size:11px;color:var(--text-2);margin-top:6px;line-height:1.8;white-space:pre-wrap;max-height:120px;overflow:hidden;text-overflow:ellipsis">${promoEsc((p.body || '').slice(0, 300))}${(p.body || '').length > 300 ? '…' : ''}</div>
   </div>`).join('') : '<div class="empty" style="padding:30px">该板块暂无内容，点击「＋ 新增条目」开始录入</div>'}`;
+}
+
+// ══ 🎬 宣传视频（表 promo_videos；只存链接，不上传文件）══
+// 对外宣传页顶部播放；宣传资料里用二维码扫码打开宣传页并定位到对应视频（kind 对应 &v= 参数）
+function pvBlockHtml() {
+  const inp = 'width:100%;font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
+  const ed = pvEditing === 'new' ? {} : (pvEditing ? pvList.find(v => v.id === pvEditing) || {} : null);
+  const form = ed !== null ? `<div style="border:1px solid var(--accent);border-radius:4px;padding:10px;margin-bottom:8px;background:var(--bg)">
+    <div style="display:grid;grid-template-columns:130px 1fr 90px;gap:8px;margin-bottom:8px">
+      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">种类</label>
+        <select id="pv_kind" onchange="pvKindChanged()" style="${inp}">${PV_KINDS.map(([k, l]) => `<option value="${k}" ${(ed.kind || 'intro') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">标题</label>
+        <input id="pv_title" value="${promoEsc(ed.title || '学科介绍')}" style="${inp}"></div>
+      <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">时长</label>
+        <input id="pv_dur" value="${promoEsc(ed.duration || '')}" placeholder="30 min" style="${inp}"></div>
+    </div>
+    <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">视频链接（mp4 直链）</label>
+    <input id="pv_url" value="${promoEsc(ed.url || '')}" placeholder="https://…" style="${inp};margin-bottom:8px">
+    <div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="pvSave()">保存</button><button class="btn btn-outline btn-sm" onclick="pvEditing=null;promoRender()">取消</button></div>
+  </div>` : '';
+  const kindLabel = k => (PV_KINDS.find(x => x[0] === k) || [0, '其他'])[1];
+  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px;margin-bottom:14px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+      <div style="font-size:12px;font-weight:600">🎬 宣传视频（${pvList.length}）</div>
+      <span style="font-size:10px;color:var(--text-3)">只填链接；对外宣传页顶部可播放，宣传资料里放二维码扫码观看</span>
+      <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="pvEditing='new';promoRender()">＋ 添加视频</button>
+    </div>
+    ${form}
+    ${pvList.length ? pvList.map((v, i) => `<div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border-light);border-radius:3px;padding:7px 10px;margin-bottom:5px;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:600">${promoEsc(v.title)}</span>
+      <span style="font-size:9px;color:var(--text-3)">${promoEsc(kindLabel(v.kind))}${v.duration ? ' · ' + promoEsc(v.duration) : ''}</span>
+      <a href="${promoEsc(v.url)}" target="_blank" style="font-size:10px;color:var(--accent);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">▶ 预览</a>
+      <span onclick="pvTogglePub('${promoEsc(v.id)}')" style="cursor:pointer;user-select:none;font-size:9px;border-radius:2px;padding:1px 8px;${v.published === false ? 'background:var(--bg);color:var(--text-3);border:1px dashed var(--border)' : 'background:var(--ok-bg);color:var(--ok)'}">${v.published === false ? '已停用' : '已发布'}</span>
+      <span style="margin-left:auto;display:flex;gap:4px">
+        <button class="btn btn-outline btn-sm" ${i === 0 ? 'disabled' : ''} onclick="pvMove('${promoEsc(v.id)}',-1)">↑</button>
+        <button class="btn btn-outline btn-sm" ${i === pvList.length - 1 ? 'disabled' : ''} onclick="pvMove('${promoEsc(v.id)}',1)">↓</button>
+        <button class="btn btn-outline btn-sm" onclick="pvEditing='${promoEsc(v.id)}';promoRender()">✏ 编辑</button>
+        <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="pvDelete('${promoEsc(v.id)}')">删除</button></span>
+    </div>`).join('') : '<div style="font-size:11px;color:var(--text-3)">这个专业还没有视频</div>'}
+  </div>`;
+}
+// 种类变化时，标题还是默认名的话跟着换
+function pvKindChanged() {
+  const k = document.getElementById('pv_kind').value, t = document.getElementById('pv_title');
+  const defs = PV_KINDS.map(x => x[1]);
+  if (t && (!t.value.trim() || defs.includes(t.value.trim())) && k !== 'other') t.value = (PV_KINDS.find(x => x[0] === k) || [0, ''])[1];
+}
+async function pvSave() {
+  const kind = document.getElementById('pv_kind').value, title = document.getElementById('pv_title').value.trim();
+  const url = document.getElementById('pv_url').value.trim(), duration = document.getElementById('pv_dur').value.trim();
+  if (!title || !url) { alert('请填写标题和视频链接'); return; }
+  if (!/^https?:\/\//i.test(url)) { alert('视频链接需以 http:// 或 https:// 开头'); return; }
+  try {
+    if (pvEditing === 'new') {
+      const taken = new Set(pvList.map(v => v.id)), base = `pv-${promoMajor}-${kind}`;
+      const id = kind !== 'other' && !taken.has(base) ? base : `${base}-${Math.random().toString(36).slice(2, 6)}`;
+      const row = { id, major: promoMajor, kind, title, url, duration, sort_order: (pvList.reduce((m, v) => Math.max(m, v.sort_order || 0), 0)) + 1, published: true };
+      await sb('/rest/v1/promo_videos', 'POST', row);
+      pvList.push(row);
+    } else {
+      const patch = { kind, title, url, duration, updated_at: new Date().toISOString() };
+      await sb(`/rest/v1/promo_videos?id=eq.${encodeURIComponent(pvEditing)}`, 'PATCH', patch);
+      const v = pvList.find(x => x.id === pvEditing); if (v) Object.assign(v, patch);
+    }
+    pvEditing = null; promoRender();
+  } catch (e) { alert('保存失败：' + e.message); }
+}
+async function pvDelete(id) {
+  if (!confirm('删除这个视频？（已印出去的二维码会打不开这个视频）')) return;
+  try { await sb(`/rest/v1/promo_videos?id=eq.${encodeURIComponent(id)}`, 'DELETE'); pvList = pvList.filter(v => v.id !== id); promoRender(); }
+  catch (e) { alert('删除失败：' + e.message); }
+}
+async function pvTogglePub(id) {
+  const v = pvList.find(x => x.id === id); if (!v) return;
+  const next = v.published === false;
+  try { await sb(`/rest/v1/promo_videos?id=eq.${encodeURIComponent(id)}`, 'PATCH', { published: next }); v.published = next; promoRender(); }
+  catch (e) { alert('切换失败：' + e.message); }
+}
+async function pvMove(id, d) {
+  const i = pvList.findIndex(v => v.id === id), j = i + d;
+  if (i < 0 || j < 0 || j >= pvList.length) return;
+  [pvList[i], pvList[j]] = [pvList[j], pvList[i]];
+  try {
+    await Promise.all(pvList.map((v, k) => { if ((v.sort_order || 0) === k + 1) return null; v.sort_order = k + 1; return sb(`/rest/v1/promo_videos?id=eq.${encodeURIComponent(v.id)}`, 'PATCH', { sort_order: k + 1 }); }));
+  } catch (e) { alert('排序失败：' + e.message); await promoLoad(); return; }
+  promoRender();
 }
 
 async function promoSave() {

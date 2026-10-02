@@ -116,6 +116,49 @@ function prLangPanelHtml() {
   </div>`;
 }
 
+// ── 宣传视频（表 promo_videos）：老师端播放 + 扫码观看二维码（宣传资料里只放二维码）──
+// 二维码内容 = 宣传页链接 ?major=<专业>&v=<kind>，扫码后打开宣传页并定位到对应视频；以后视频链接改了，只在管理端改，已印出去的二维码不会失效
+const PV_BASE = 'https://edsched.github.io/transform/promo/index.html';
+function pvLink(major, v) { return `${PV_BASE}?major=${encodeURIComponent(major)}&v=${encodeURIComponent(v.kind || v.id)}`; }
+let pvQrLoading = null;
+function pvEnsureQr() {
+  if (typeof qrcode === 'function') return Promise.resolve(true);
+  if (pvQrLoading) return pvQrLoading;
+  const load = src => new Promise(res => { const el = document.createElement('script'); el.src = src; el.onload = () => res(true); el.onerror = () => res(false); document.head.appendChild(el); });
+  pvQrLoading = load('https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js')
+    .then(() => typeof qrcode === 'function' || load('https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js'))
+    .then(() => { const ok = typeof qrcode === 'function'; if (!ok) pvQrLoading = null; return ok; });
+  return pvQrLoading;
+}
+// 二维码 → 内嵌 SVG（矢量，打印 / 另存 PDF 都清晰）
+function pvQrSvg(text) {
+  if (typeof qrcode !== 'function') return '';
+  const q = qrcode(0, 'M'); q.addData(text); q.make();
+  const n = q.getModuleCount(), m = 2; let d = '';
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c + m} ${r + m}h1v1h-1z`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n + m * 2} ${n + m * 2}" shape-rendering="crispEdges" style="width:100%;height:100%;display:block"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+}
+// 「扫码观看课程视频」块：每个视频一个二维码（约 28mm），下面写标题和时长
+function pvQrBlockHtml(major, videos) {
+  if (!videos || !videos.length) return '';
+  return `<div class="pk-qr" style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;border:1px solid #e2ded6;border-radius:4px;padding:10px 14px;margin:0 0 12px;break-inside:avoid;background:#fff">
+    <div style="width:100%;font-size:12px;font-weight:600;color:#1a1814">🎬 扫码观看课程视频</div>
+    ${videos.map(v => { const url = pvLink(major, v), svg = pvQrSvg(url);
+      return `<div style="text-align:center;font-size:10px;color:#1a1814"><div style="width:28mm;height:28mm;margin:0 auto 3px;border:1px solid #e2ded6">${svg || `<span style="font-size:8px;word-break:break-all;color:#5a5650">${prEsc(url)}</span>`}</div>${prEsc(v.title)}${v.duration ? ' · ' + prEsc(v.duration) : ''}</div>`; }).join('')}
+    <div style="flex:1;min-width:120px;font-size:10px;color:#5a5650;line-height:1.7">用手机扫码，可观看视频并查看完整的专业介绍</div>
+  </div>`;
+}
+// 老师端「专业介绍」页顶部：可播放的视频 + 二维码（面谈时直接给学生扫）
+function prVideosHtml(videos, major) {
+  if (!videos || !videos.length) return '';
+  const players = videos.map(v => `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border-light);font-size:12px"><span style="font-weight:500">${prEsc(v.title)}</span><span style="font-size:10px;color:var(--text-3)">${prEsc(v.duration || '')}</span></div>
+    <video controls controlsList="nodownload" preload="metadata" playsinline src="${prEsc(v.url)}" style="width:100%;aspect-ratio:16/9;display:block;background:#000"></video></div>`).join('');
+  return `<div style="margin-bottom:14px"><div style="font-size:12px;font-weight:600;margin-bottom:8px">🎬 宣传视频</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-bottom:10px">${players}</div>
+    ${pvQrBlockHtml(major, videos)}</div>`;
+}
+
 function prSetSchedMode(v) { prSchedMode = v; renderTeacherPromo(document.getElementById('mainContent')); }
 
 const PR_SECTIONS = [
@@ -161,9 +204,11 @@ async function prFetchMajor(major, mode) {
     sb(`/rest/v1/course_schedule_shares?major=in.(${shareKeys.map(k=>`"${k}"`).join(',')})&select=*&order=created_at.desc&limit=1`).catch(() => []),
     prCourses ? Promise.resolve(null) : sbAll('/rest/v1/courses?select=id,name,major,period,period_override,course_type,domain,teacher,weekdays,time_range,delivery,campus,total_sessions,first_session_date&order=first_session_date.desc').catch(() => []),
     prPubMap ? Promise.resolve(null) : sb('/rest/v1/teachers?select=name,notes').catch(() => []),
+    sb(`/rest/v1/promo_videos?major=eq.${encodeURIComponent(major)}&published=is.true&select=*&order=sort_order.asc`).catch(() => []),
   ];
   const res = await Promise.all(jobs);
-  const data = { list: res[0] || [], share: (res[1] || [])[0] || null, sessions: [] };
+  const data = { list: res[0] || [], share: (res[1] || [])[0] || null, sessions: [], videos: res[4] || [] };
+  if (data.videos.length) await pvEnsureQr();   // 二维码库就绪后，资料里的二维码才能同步生成
   if (res[2]) prCourses = res[2];
   if (res[3]) {
     prPubMap = {};
@@ -261,7 +306,8 @@ function prBodyHtml() {
   }
   if (prSection === 'schedule') return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:10px;color:var(--text-3)">课程表期数：</span>${prSchedModeSelect('prSetSchedMode(this.value)')}</div>` + prLangPanelHtml() + prScheduleHtml();
   const list = (prData.list || []).filter(p => p.section === prSection);
-  if (!list.length) return '<div class="empty" style="padding:30px">该板块暂无内容（admin 可在「宣传管理」中录入）</div>';
+  const vids = prSection === 'major_intro' ? prVideosHtml(prData.videos, prMajor) : '';
+  if (!list.length) return vids + '<div class="empty" style="padding:30px">该板块暂无内容（admin 可在「宣传管理」中录入）</div>';
 
   if (prSection === 'course') {
     // 课程介绍：可点击展开关联的课程安排
@@ -281,7 +327,7 @@ function prBodyHtml() {
   }
 
   // 专业介绍 / 讲师介绍：直接铺开阅读
-  return list.map(p => `
+  return vids + list.map(p => `
   <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px 16px;margin-bottom:10px">
     <div style="font-size:13px;font-weight:600;margin-bottom:8px;font-family:'Noto Serif SC',serif">${prEsc(p.title)}</div>
     <div style="font-size:12px;line-height:2;color:var(--text-2)">${prMd(p.body)}</div>
