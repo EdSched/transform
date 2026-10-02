@@ -8,21 +8,7 @@ if (typeof window !== "undefined" && typeof window.schoolLevelHtml !== "function
 // 依赖：shared/constants.js、shared/supabase.js、teacher.js（须在其后加载）
 // ══════════════════════════════════
 
-let teacherProgressFilter = '';
-let tpMajorFilter = '';   // '' 全部 | keiei | keizai | shakai_group | shakai | fukushi | shinpan
-let tpSourceFilter = '';  // '' 全部 | 唯新 | 新世界 | 校内塾 | 杭州校
 let teacherProgressData = { students: [], timeline: {}, schoolPlans: {}, planDrafts: {} };
-
-// 专业筛选 chips（按老师可见范围裁剪）；setterName 为点击时调用的全局函数名
-function tpMajorChipsHtml(cur, setterName) {
-  const set = tsaAllowedSet();
-  const opts = [['','全部专业'], ...majorFilterKeys().map(k => [k, majorLabel(k)])];
-  return opts.filter(([k]) => {
-    if (!k || !set) return true;
-    if (k === 'shakai_group') return SHAKAI_GROUP.some(m => set.has(m));
-    return set.has(k);
-  }).map(([k, l]) => `<div class="filter-chip ${cur === k ? 'active' : ''}" onclick="${setterName}('${k}')" style="padding:3px 10px;font-size:10px">${l}</div>`).join('');
-}
 
 const TP_SOURCES = ['唯新','新世界','校内塾','杭州校'];
 
@@ -51,12 +37,12 @@ async function renderTeacherStudyProgress(mc) {
   try {
     const all = await sb('/rest/v1/students?select=*&order=name.asc&limit=2000');
     const set = (typeof tsaAllowedSet === 'function') ? tsaAllowedSet() : null;
-    students = (set ? (all || []).filter(s => set.has(s.major)) : (all || [])).filter(s => !s.status || s.status === 'active');
+    students = (set ? (all || []).filter(s => set.has(s.major)) : (all || []));   // 全部状态；由全局「状态」筛选
     if (tsaGuaranteedLock()) students = students.filter(tsaIsGuaranteed);
   } catch (e) { mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
 
   if (!students.length) {
-    mc.innerHTML = '<div class="empty">可见范围内暂无在籍学生</div>';
+    mc.innerHTML = '<div class="empty">可见范围内暂无学生</div>';
     return;
   }
 
@@ -113,27 +99,8 @@ function tpRenderShell() {
     <div class="filter-chip ${tpOwnerFilter==='mine'?'active':''}" onclick="tpSetOwner('mine')" style="padding:3px 10px;font-size:10px">⭐ 我负责的</div>
     <div class="filter-chip ${tpOwnerFilter==='all'?'active':''}" onclick="tpSetOwner('all')" style="padding:3px 10px;font-size:10px">全部（可见范围）</div>
   </div>` : ''}
-  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
-    <span style="font-size:10px;color:var(--text-3)">专业：</span>${tpMajorChipsHtml(tpMajorFilter, 'tpSetMajor')}
-  </div>
-  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
-    <span style="font-size:10px;color:var(--text-3)">来源：</span>${tpSourceChipsHtml(tpSourceFilter, 'tpSetSource')}
-  </div>
-  <div class="search-bar" style="margin-bottom:10px">
-    <input placeholder="搜索学生姓名（汉字 / 拼音首字母）或来源…" value="${tsaEsc(teacherProgressFilter)}"
-      oninput="teacherProgressFilter=this.value;tpRenderProgressList()">
-  </div>
   <div id="tp_list"></div>`;
   tpRenderProgressList();
-}
-
-function tpSetMajor(v) { tpMajorFilter = v; tpRenderShell(); }
-function tpSetSource(v) { tpSourceFilter = v; tpRenderShell(); }
-
-// 来源筛选 chips
-function tpSourceChipsHtml(cur, setterName) {
-  return [['','全部'], ...TP_SOURCES.map(x => [x, x])]
-    .map(([k, l]) => `<div class="filter-chip ${cur === k ? 'active' : ''}" onclick="${setterName}('${k}')" style="padding:3px 10px;font-size:10px">${l}</div>`).join('');
 }
 
 // 「我负责的」：owner_teachers 或 vip_teachers 含当前老师姓名（两者平级，均在可读范围内）
@@ -151,11 +118,8 @@ function tpFilteredStudents() {
   const { students } = teacherProgressData;
   // 首次进入时定默认档：有负责/VIP学生 → 我负责的，否则 全部
   if (tpOwnerFilter === '') tpOwnerFilter = tpHasMine() ? 'mine' : 'all';
-  let list = students.filter(s => tpMajorMatch(s.major, tpMajorFilter));
+  let list = tsmFilterStudents(students);   // 领域 / 专业 / 状态 / 来源 / 搜索：全局筛选
   if (tpOwnerFilter === 'mine') list = list.filter(tpIsMine);
-  if (tpSourceFilter) list = list.filter(s => (s.source || '') === tpSourceFilter);
-  const q = teacherProgressFilter.trim();
-  if (q) list = list.filter(s => tpNameMatch(s.name, q) || (s.source || '').includes(q));
   return list;
 }
 function tpSetOwner(v) { tpOwnerFilter = v; tpRenderShell(); }
@@ -586,6 +550,97 @@ function smAllowedItems() {
   return allowed;
 }
 
+// ══ 全局筛选（学生管理所有子页面共用）：领域 / 专业 / 状态 / 来源 / 搜索，五个条件取交集 ══
+// 筛选只缩小范围：学生池 tsmPool 已按 tsaAllowedSet()（以及保录限定）裁剪，筛选不会超出权限。
+const TSM_STATUS = [['active', '在籍'], ['graduated', '已合格'], ['expired', '已到期'], ['stopped', '停课'], ['withdrawn', '退学'], ['', '全部']];
+const tsmDefault = () => ({ domain: '', major: '', status: 'active', source: '', q: '' });
+let tsm = tsmDefault();
+let tsmPool = null, tsmPoolAt = 0;   // 可见学生（全部状态）[{id,name,major,level,status,course_type,student_type,source}]
+
+function tsmDomainOf(major) {
+  if (!major) return '';
+  if (major === 'shakai_group') return MAJOR_DOMAIN[SHAKAI_GROUP[0]] || '';
+  return MAJOR_DOMAIN[major] || '';
+}
+// 一个学生（或带 name/major/source/status 的对象，如面谈分组）是否符合全局筛选；skip = 统计某一行人数时忽略的那一项，noQ = 忽略搜索
+function tsmMatch(s, skip, noQ) {
+  if (skip !== 'domain' && tsm.domain && tsmDomainOf(s.major) !== tsm.domain) return false;
+  if (skip !== 'major' && tsm.major && !tpMajorMatch(s.major, tsm.major)) return false;
+  if (skip !== 'status' && tsm.status && (s.status || 'active') !== tsm.status) return false;
+  if (skip !== 'source' && tsm.source && (s.source || '') !== tsm.source) return false;
+  const q = tsm.q.trim();
+  if (!noQ && q && !(tpNameMatch(s.name, q) || (s.source || '').includes(q))) return false;
+  return true;
+}
+function tsmFilterStudents(list) { return (list || []).filter(s => tsmMatch(s)); }
+
+async function tsmLoadPool(force) {
+  if (!force && tsmPool && Date.now() - tsmPoolAt < 60000) return tsmPool;
+  let all = [];
+  try { all = await sbAll('/rest/v1/students?select=id,name,major,level,status,course_type,student_type,source&order=name.asc'); } catch (e) { all = tsmPool || []; }
+  const set = tsaAllowedSet();
+  let list = set ? all.filter(s => set.has(s.major)) : all;
+  if (tsaGuaranteedLock()) list = list.filter(tsaIsGuaranteed);
+  tsmPool = list; tsmPoolAt = Date.now();
+  return tsmPool;
+}
+
+function tsmBarHtml() {
+  const pool = tsmPool || [];
+  const chip = (on, label, n, fn) => `<div class="filter-chip ${on ? 'active' : ''}" onclick="${fn}" style="padding:3px 10px;font-size:10px;${n === 0 && !on ? 'opacity:.45' : ''}">${label}${n == null ? '' : ' ' + n}</div>`;
+  const cnt = (skip, test) => pool.filter(s => tsmMatch(s, skip, true) && test(s)).length;
+  const row = (label, inner) => `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px"><span style="font-size:10px;color:var(--text-3);min-width:30px">${label}</span>${inner}</div>`;
+  let h = '';
+  // 领域：只列可见学生里实际出现的；只有一个领域时不显示
+  const doms = DOMAINS.map(d => d.label).filter(d => pool.some(s => tsmDomainOf(s.major) === d));
+  if (doms.length > 1) h += row('领域', chip(!tsm.domain, '全部', cnt('domain', () => true), `tsmSet('domain','')`) + doms.map(d => chip(tsm.domain === d, d, cnt('domain', s => tsmDomainOf(s.major) === d), `tsmSet('domain','${d}')`)).join(''));
+  // 专业：只列实际出现的；选了领域只列该领域的，没选领域按领域分组显示；只有一个专业时不显示
+  const present = new Set(pool.map(s => s.major).filter(Boolean));
+  const keys = majorFilterKeys().filter(k => k === 'shakai_group' ? SHAKAI_GROUP.some(m => present.has(m)) : present.has(k));
+  [...present].forEach(k => { if (!keys.includes(k)) keys.push(k); });
+  if (present.size > 1) {
+    const mchip = k => chip(tsm.major === k, majorLabel(k), cnt('major', s => tpMajorMatch(s.major, k)), `tsmSet('major','${k}')`);
+    let inner = chip(!tsm.major, '全部', cnt('major', () => true), `tsmSet('major','')`);
+    if (tsm.domain) inner += keys.filter(k => tsmDomainOf(k) === tsm.domain).map(mchip).join('');
+    else {
+      const groups = DOMAINS.map(d => d.label).concat(['']);
+      inner += groups.map(d => { const ks = keys.filter(k => tsmDomainOf(k) === d); return ks.length ? `<span style="display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center"><span style="font-size:9px;color:var(--text-3);margin-left:4px">${d || '其他'}</span>${ks.map(mchip).join('')}</span>` : ''; }).join('');
+    }
+    h += row('专业', inner);
+  }
+  h += row('状态', TSM_STATUS.map(([k, l]) => chip(tsm.status === k, l, cnt('status', s => !k || (s.status || 'active') === k), `tsmSet('status','${k}')`)).join(''));
+  h += row('来源', chip(!tsm.source, '全部', cnt('source', () => true), `tsmSet('source','')`) + TP_SOURCES.map(x => chip(tsm.source === x, x, cnt('source', s => (s.source || '') === x), `tsmSet('source','${x}')`)).join(''));
+  const n = pool.filter(s => tsmMatch(s)).length;
+  h += `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px">
+    <input id="tsm_q" placeholder="搜索姓名（汉字 / 拼音首字母）或来源…" value="${tsaEsc(tsm.q)}" oninput="tsmSearchInput(this.value)" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;width:240px;max-width:100%">
+    <span style="margin-left:auto;font-size:11px;color:var(--text-2)">符合条件 <b id="tsm_n">${n}</b> 人</span>
+    <span onclick="tsmClear()" style="font-size:10px;color:var(--accent);cursor:pointer">清除筛选</span></div>`;
+  return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:10px 12px;margin-bottom:12px">${h}</div>`;
+}
+function tsmRenderBar() { const el = document.getElementById('sm_filter'); if (el) el.innerHTML = tsmBarHtml(); }
+function tsmSet(k, v) {
+  tsm[k] = v;
+  if (k === 'domain' && v && tsm.major && tsmDomainOf(tsm.major) !== v) tsm.major = '';   // 换领域时，不属于该领域的专业选择清掉
+  tsmChanged();
+}
+function tsmClear() { tsm = tsmDefault(); tsmChanged(); }
+function tsmChanged() { tsmRenderBar(); tsmRefreshPage(false); }
+function tsmSearchInput(v) {   // 输入搜索时不重画筛选栏（保持输入焦点），只更新人数和当前页
+  tsm.q = v;
+  const n = document.getElementById('tsm_n'); if (n) n.textContent = (tsmPool || []).filter(s => tsmMatch(s)).length;
+  tsmRefreshPage(true);
+}
+// 筛选变化后刷新当前子页面（数据已缓存，不重新拉取）；light=只刷新列表，保持页头不动
+function tsmRefreshPage(light) {
+  const box = document.getElementById('sm_content'); if (!box) return;
+  if (smTab === 'progress') { if (light && document.getElementById('tp_list')) tpRenderProgressList(); else tpRenderShell(); }
+  else if (smTab === 'meetings') { if (light && document.getElementById('tm_list')) tmRenderList(); else tmRenderShell(); }
+  else if (smTab === 'records') tsrRender();
+  else if (smTab === 'monthly') renderMonthlyReport(box);
+  else if (smTab === 'focus') focusRender();
+  else tsaRender();
+}
+
 function renderStudentMgmt(mc) {
   const allowed = smAllowedItems();
   if (!allowed.length) { mc.innerHTML = '<div class="empty">未开通任何学生管理子项，请联系管理员</div>'; return; }
@@ -594,15 +649,21 @@ function renderStudentMgmt(mc) {
     <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
       ${allowed.map(([k, l]) => `<button onclick="smTab='${k}';renderStudentMgmt(document.getElementById('mainContent'))" style="font-size:11px;padding:5px 14px;border-radius:3px;cursor:pointer;font-family:inherit;border:1px solid ${smTab===k?'var(--accent)':'var(--border)'};background:${smTab===k?'var(--accent)':'var(--surface)'};color:${smTab===k?'#fff':'var(--text-2)'}">${l}</button>`).join('')}
     </div>
+    <div id="sm_filter"></div>
     <div id="sm_content"><div class="empty">加载中…</div></div>
   </div>`;
   const box = document.getElementById('sm_content');
-  if (smTab === 'progress') renderTeacherStudyProgress(box);
-  else if (smTab === 'records') renderTsaRecords(box);
-  else if (smTab === 'meetings') renderTsaMeetings(box);
-  else if (smTab === 'monthly') renderMonthlyReport(box);
-  else if (smTab === 'focus') renderTeacherFocus(box);
-  else renderTeacherStudents(box);
+  const tab = smTab;
+  tsmLoadPool(true).then(() => {
+    if (smTab !== tab || !document.getElementById('sm_content')) return;   // 加载期间已切走
+    tsmRenderBar();
+    if (tab === 'progress') renderTeacherStudyProgress(box);
+    else if (tab === 'records') renderTsaRecords(box);
+    else if (tab === 'meetings') renderTsaMeetings(box);
+    else if (tab === 'monthly') renderMonthlyReport(box);
+    else if (tab === 'focus') renderTeacherFocus(box);
+    else renderTeacherStudents(box);
+  });
 }
 
 // ── 共用：允许专业集合（三个子项统一使用；与面谈预约逻辑完全无关） ──
@@ -629,8 +690,6 @@ function tsaEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').rep
 let tsaStudents = [];
 let tsaFormOpen = false;
 let tsaExpandedId = null;
-let tsaSearch = '';
-let tsaMajorFilter = 'all';
 let tsaGuaranteedOnly = false;  // 只看保录学生（course_type 含"保录"），与专业筛选平级
 
 async function renderTeacherStudents(box) {
@@ -638,7 +697,7 @@ async function renderTeacherStudents(box) {
   try {
     const all = await sb('/rest/v1/students?select=*&order=created_at.desc&limit=2000');
     const set = tsaAllowedSet();
-    tsaStudents = set ? (all || []).filter(s => set.has(s.major)) : (all || []);
+    tsaStudents = set ? (all || []).filter(s => set.has(s.major)) : (all || []);   // 全部状态；由全局「状态」筛选
     // admin 限定"仅保录"：数据层就只保留保录学生，彻底看不到其他学生
     if (teacherData && teacherData.permissions && teacherData.permissions.guaranteed_only) {
       tsaStudents = tsaStudents.filter(s => (s.course_type || '').includes('保录'));
@@ -656,10 +715,8 @@ function tsaMajorOptions(sel) {
 }
 
 function tsaListHtml() {
-  const kw = tsaSearch.trim().toLowerCase();
-  let list = tsaMajorFilter === 'all' ? tsaStudents : tsaStudents.filter(s => s.major === tsaMajorFilter);
+  let list = tsmFilterStudents(tsaStudents);
   if (tsaGuaranteedOnly) list = list.filter(s => (s.course_type || '').includes('保录'));
-  if (kw) list = list.filter(s => (s.name || '').toLowerCase().includes(kw) || (s.university || '').toLowerCase().includes(kw));
   const stLabel = v => ({ active:'在籍', graduated:'已合格', expired:'已到期', stopped:'停课', withdrawn:'退学' }[v] || v || '');
   return `<table style="width:100%;border-collapse:collapse;font-size:11px">
     <thead><tr style="background:var(--bg)">
@@ -709,16 +766,11 @@ function tsaRender() {
 
   mc.innerHTML = `<div>
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-      <div style="font-size:12px;font-weight:600">👤 学生档案（${tsaStudents.length}人）<span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:6px">${set ? '可见专业：' + [...set].map(m => MAJORS[m] || m).join('・') : '可见全部专业'}</span></div>
-      ${(() => { const ms = [...new Set(tsaStudents.map(s => s.major).filter(Boolean))]; return ms.length > 1 ? `<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;width:100%">
-        <div class="filter-chip ${tsaMajorFilter==='all'?'active':''}" onclick="tsaMajorFilter='all';tsaRender()" style="padding:2px 9px;font-size:10px">全部</div>
-        ${ms.map(m => `<div class="filter-chip ${tsaMajorFilter===m?'active':''}" onclick="tsaMajorFilter='${m}';tsaRender()" style="padding:2px 9px;font-size:10px">${MAJORS[m]||m}</div>`).join('')}
-      </div>` : ''; })()}
+      <div style="font-size:12px;font-weight:600">👤 学生档案（${tsmFilterStudents(tsaStudents).length}人）<span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:6px">${set ? '可见专业：' + [...set].map(m => MAJORS[m] || m).join('・') : '可见全部专业'}</span></div>
       <div style="display:flex;gap:6px;align-items:center">
         ${(teacherData && teacherData.permissions && teacherData.permissions.guaranteed_only)
           ? `<div style="font-size:10px;padding:2px 10px;border-radius:12px;background:#8a5010;color:#fff;white-space:nowrap">🎓 仅保录学生（管理员限定）</div>`
           : `<div class="filter-chip ${tsaGuaranteedOnly?'active':''}" onclick="tsaGuaranteedOnly=!tsaGuaranteedOnly;tsaRender()" style="padding:2px 10px;font-size:10px;white-space:nowrap;${tsaGuaranteedOnly?'background:#8a5010;color:#fff;border-color:#8a5010':''}">🎓 只看保录</div>`}
-        <input placeholder="搜索姓名/大学…" value="${tsaEsc(tsaSearch)}" oninput="tsaSearch=this.value;tsaRenderList()" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;width:150px">
         <button onclick="tsaFormOpen=!tsaFormOpen;tsaRender()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">${tsaFormOpen ? '收起表单' : '＋ 添加学生'}</button>
       </div>
     </div>
@@ -794,24 +846,21 @@ let mrReviewCache = {}; // `${sid}|${ym}` -> monthly_reviews row
 let mrStudentsCache = [];
 
 function renderMonthlyReport(mc){
-  const set = tsaAllowedSet();
-  sb('/rest/v1/students?select=id,name,major,level,status,course_type,student_type&order=name.asc&limit=2000').then(all=>{
-    // 只列该老师可见的学生（沿用 records 的可见范围）
-    let list = (all||[]).filter(s => s.status !== 'graduated' && s.status !== 'withdrawn');
-    if (set) list = list.filter(s => set.has(s.major));
-    if (!mrStudentId && list.length) mrStudentId = list[0].id;
-    if (!mrYearMonth){ const d=new Date(); mrYearMonth = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
-    mc.innerHTML = `
+  // 学生范围 = 全局筛选后的学生（pool 已按老师可见范围裁剪）
+  const list = tsmFilterStudents(tsmPool || []);
+  if (!list.some(x => x.id === mrStudentId)) mrStudentId = list.length ? list[0].id : '';
+  if (!mrYearMonth){ const d=new Date(); mrYearMonth = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+  if (!list.length) { mc.innerHTML = '<div class="empty">当前筛选下没有学生</div>'; mrStudentsCache = []; return; }
+  mc.innerHTML = `
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
         <div style="font-size:12px;font-weight:600">📅 月度学习情况</div>
-        <select id="mr_stu" onchange="mrStudentId=this.value;renderMonthlyReport(document.getElementById('mainContent'))" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:4px">
+        <select id="mr_stu" onchange="mrStudentId=this.value;renderMonthlyReport(document.getElementById('sm_content')||document.getElementById('mainContent'))" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:4px">
           ${list.map(s=>`<option value="${s.id}" ${mrStudentId===s.id?'selected':''}>${s.name}${s.student_type?' · '+s.student_type:''}</option>`).join('')}
         </select>
-        <input type="month" id="mr_ym" value="${mrYearMonth}" onchange="mrYearMonth=this.value;renderMonthlyReport(document.getElementById('mainContent'))" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:4px">
+        <input type="month" id="mr_ym" value="${mrYearMonth}" onchange="mrYearMonth=this.value;renderMonthlyReport(document.getElementById('sm_content')||document.getElementById('mainContent'))" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:4px">
       </div>
       <div id="mr_body"><div style="font-size:11px;color:var(--text-3);padding:20px">加载中…</div></div>`;
-    mrStudentsCache = list; if (mrStudentId) mrLoadAndRender(list.find(x=>x.id===mrStudentId));
-  }).catch(e=>{ mc.innerHTML=`<div class="empty" style="color:var(--danger)">加载失败：${e.message}</div>`; });
+  mrStudentsCache = list; if (mrStudentId) mrLoadAndRender(list.find(x=>x.id===mrStudentId));
 }
 
 async function mrLoadAndRender(stu){
@@ -988,7 +1037,6 @@ async function mrGeneratePdf(sid){
 
 // ══ 子项2：出席・作业记录 ══
 let tsrStudents = [];
-let tsrSearch = '';
 let tsrExpandedId = null;
 let tsrRecCache = {};
 
@@ -1144,10 +1192,7 @@ async function tatSave(){
 async function renderTsaRecords(box) {
   box.innerHTML = '<div class="empty">加载中…</div>';
   try {
-    const all = await sb('/rest/v1/students?select=id,name,major,level,status,course_type&order=name.asc&limit=2000');
-    const set = tsaAllowedSet();
-    tsrStudents = (set ? (all || []).filter(s => set.has(s.major)) : (all || [])).filter(s => !s.status || s.status === 'active');
-    if (tsaGuaranteedLock()) tsrStudents = tsrStudents.filter(tsaIsGuaranteed);
+    tsrStudents = (await tsmLoadPool()).slice();   // 全部状态（已按可见范围裁剪）；由全局「状态」筛选
   } catch (e) { box.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
   tsrRender();
 }
@@ -1166,8 +1211,7 @@ function tsrAtt(v) {
 function tsrRender() {
   const box = document.getElementById('sm_content');
   if (!box) return;
-  const kw = tsrSearch.trim().toLowerCase();
-  const list = kw ? tsrStudents.filter(s => (s.name || '').toLowerCase().includes(kw)) : tsrStudents;
+  const list = tsmFilterStudents(tsrStudents);
   const set = tsaAllowedSet();
 
   box.innerHTML = `<div>
@@ -1178,8 +1222,7 @@ function tsrRender() {
     <div onclick="tsrHistOpen=!tsrHistOpen;tsrRender()" style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-2);padding:8px 0;border-top:1px solid var(--border);user-select:none">${tsrHistOpen?'▾':'▸'} 学生出席历史（${list.length} 人，点击${tsrHistOpen?'收起':'展开'}）</div>
     <div style="display:${tsrHistOpen?'block':'none'}">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-      <div style="font-size:12px;font-weight:600">🗒 出席・作业记录（在籍 ${list.length} 人）<span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:6px">${set ? '可见专业：' + [...set].map(m => MAJORS[m] || m).join('・') : '可见全部专业'}</span></div>
-      <input placeholder="搜索学生姓名…" value="${tsaEsc(tsrSearch)}" oninput="tsrSearch=this.value;tsrRender()" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;width:150px">
+      <div style="font-size:12px;font-weight:600">🗒 出席・作业记录（${list.length} 人）<span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:6px">${set ? '可见专业：' + [...set].map(m => MAJORS[m] || m).join('・') : '可见全部专业'}</span></div>
     </div>
     <div style="border:1px solid var(--border);border-radius:4px;overflow:hidden">
       ${list.length ? list.map(s => {
@@ -1224,7 +1267,7 @@ function tsrRender() {
   </div>
   </div>`;
   if(typeof tatRenderSessionBar==='function') tatRenderSessionBar();
-  if(document.getElementById('aw_teacher_box')) awTeacherMount('aw_teacher_box', tsrStudents);   // 学部美术：🎨 作业收集
+  if(document.getElementById('aw_teacher_box')) awTeacherMount('aw_teacher_box', tsmFilterStudents(tsrStudents));   // 学部美术：🎨 作业收集
 }
 
 async function tsrToggle(id) {
@@ -1312,11 +1355,8 @@ function tDraftFullHtml(draft) {
 // 面谈查询（学生管理子项 meetings）
 // 已完成面谈的完整文字记录 + 历史；查询逻辑与考学进度一致（汉字/拼音首字母 + 专业 + 来源）
 // ══════════════════════════════════
-let tmSearch = '';
 let tmView = 'has'; // has=有面谈记录 | none=无面谈记录（发提醒用）| contacted=已联系确认
 let tmContactByName = {}; // 学生姓名 → 联系确认记录[]
-let tmMajorFilter = '';
-let tmSourceFilter = '';
 let tmExpandedName = null;
 let tmData = null; // { groups: [{name, major, source, list:[booking...]}] }
 
@@ -1342,10 +1382,10 @@ async function renderTsaMeetings(box) {
       const major = (b.student_id && stu && stu.major) || b.major || '';
       if (set && !set.has(major)) return;
       if (tsaGuaranteedLock() && !tsaIsGuaranteed(stu)) return;
-      if (!groups[b.name]) groups[b.name] = { name: b.name, major, source: (stu && stu.source) || '', list: [] };
+      if (!groups[b.name]) groups[b.name] = { name: b.name, major, source: (stu && stu.source) || '', status: (stu && stu.status) || '', list: [] };
       groups[b.name].list.push(b);
     });
-    let myStudents = (allStu || []).filter(s => (!set || set.has(s.major)) && (!s.status || s.status === 'active'));
+    let myStudents = (allStu || []).filter(s => (!set || set.has(s.major)));   // 全部状态；由全局「状态」筛选
     if (tsaGuaranteedLock()) myStudents = myStudents.filter(tsaIsGuaranteed);
     tmData = {
       groups: Object.values(groups).sort((a, b) => (b.list[0].slot_date || '').localeCompare(a.list[0].slot_date || '')),
@@ -1369,45 +1409,25 @@ function tmRenderShell() {
     <div class="filter-chip ${tmView==='contacted'?'active':''}" onclick="tmSetView('contacted')" style="padding:3px 10px;font-size:10px;${tmView==='contacted'?'background:#1a6d3a;color:#fff;border-color:#1a6d3a':''}">✓ 已联系确认</div>
     ${tmView==='none' ? `<button onclick="tmBatchReminder()" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:4px 12px;cursor:pointer;font-family:inherit;margin-left:auto">✉ 按专业批量生成提醒</button>` : `<button onclick="tmContactModal('','','')" style="font-size:10px;background:#1a6d3a;color:#fff;border:none;border-radius:2px;padding:4px 12px;cursor:pointer;font-family:inherit;margin-left:auto">＋ 补充记录（手输姓名）</button>`}
   </div>
-  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
-    <span style="font-size:10px;color:var(--text-3)">专业：</span>${tpMajorChipsHtml(tmMajorFilter, 'tmSetMajor')}
-  </div>
-  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
-    <span style="font-size:10px;color:var(--text-3)">来源：</span>${tpSourceChipsHtml(tmSourceFilter, 'tmSetSource')}
-  </div>
-  <div class="search-bar" style="margin-bottom:10px">
-    <input placeholder="搜索学生姓名（汉字 / 拼音首字母）或来源…" value="${tsaEsc(tmSearch)}"
-      oninput="tmSearch=this.value;tmRenderList()">
-  </div>
   <div id="tm_list"></div>`;
   tmRenderList();
 }
 
-function tmSetMajor(v) { tmMajorFilter = v; tmRenderShell(); }
 function tmSetView(v) { tmView = v; tmRenderShell(); }
 
 // 当前筛选条件下「没有任何面谈记录、且没有联系确认记录」的在籍学生（真正被忽略的）
 function tmNoRecStudents() {
   const recNames = new Set(tmData.groups.map(g => g.name));
-  const q = tmSearch.trim();
-  return (tmData.students || []).filter(s => !recNames.has(s.name)
-    && !(tmContactByName[s.name] && tmContactByName[s.name].length)
-    && tpMajorMatch(s.major, tmMajorFilter)
-    && (!tmSourceFilter || (s.source || '') === tmSourceFilter)
-    && (!q || tpNameMatch(s.name, q) || (s.source || '').includes(q)));
+  return tsmFilterStudents(tmData.students || []).filter(s => !recNames.has(s.name)
+    && !(tmContactByName[s.name] && tmContactByName[s.name].length));
 }
 
 // 无面谈、但已有联系确认记录的学生
 function tmContactedStudents() {
   const recNames = new Set(tmData.groups.map(g => g.name));
-  const q = tmSearch.trim();
-  return (tmData.students || []).filter(s => !recNames.has(s.name)
-    && (tmContactByName[s.name] && tmContactByName[s.name].length)
-    && tpMajorMatch(s.major, tmMajorFilter)
-    && (!tmSourceFilter || (s.source || '') === tmSourceFilter)
-    && (!q || tpNameMatch(s.name, q) || (s.source || '').includes(q)));
+  return tsmFilterStudents(tmData.students || []).filter(s => !recNames.has(s.name)
+    && (tmContactByName[s.name] && tmContactByName[s.name].length));
 }
-function tmSetSource(v) { tmSourceFilter = v; tmRenderShell(); }
 function tmToggle(name) { tmExpandedName = tmExpandedName === name ? null : name; tmRenderList(); }
 
 function tmRenderList() {
@@ -1459,18 +1479,12 @@ function tmRenderList() {
     return;
   }
 
-  let list = tmData.groups.filter(g => tpMajorMatch(g.major, tmMajorFilter));
-  if (tmSourceFilter) list = list.filter(g => (g.source || '') === tmSourceFilter);
-  const q = tmSearch.trim();
-  if (q) list = list.filter(g => tpNameMatch(g.name, q) || (g.source || '').includes(q));
-  // 搜索时：命中的「没有面谈记录」的在籍学生单独提示（默认页面不显示他们）
+  const list = tsmFilterStudents(tmData.groups);
+  // 搜索时：命中的「没有面谈记录」的学生单独提示（默认页面不显示他们）
   let noRec = [];
-  if (q) {
+  if (tsm.q.trim()) {
     const recNames = new Set(tmData.groups.map(g => g.name));
-    noRec = (tmData.students || []).filter(s => !recNames.has(s.name)
-      && tpMajorMatch(s.major, tmMajorFilter)
-      && (!tmSourceFilter || (s.source || '') === tmSourceFilter)
-      && (tpNameMatch(s.name, q) || (s.source || '').includes(q)));
+    noRec = tsmFilterStudents(tmData.students || []).filter(s => !recNames.has(s.name));
   }
   const cnt = document.getElementById('tm_count');
   if (cnt) cnt.textContent = list.length;
@@ -1885,7 +1899,6 @@ function tmImgLightbox(url) {
 // ══════════════════════════════════════════════════════════
 let focusStudents = [];
 let focusUrgency = 'all';   // all | half | q3 | near | expired
-let focusSearch = '';
 
 function focusParseDate(str) {
   if (!str) return null;
@@ -1922,7 +1935,7 @@ async function renderTeacherFocus(box) {
   try {
     const all = await sb('/rest/v1/students?select=*&order=created_at.desc&limit=2000').catch(() => []);
     const set = tsaAllowedSet();
-    let list = (set ? (all || []).filter(s => set.has(s.major)) : (all || [])).filter(s => !s.status || s.status === 'active');
+    let list = (set ? (all || []).filter(s => set.has(s.major)) : (all || []));   // 全部状态；由全局「状态」筛选
     if (tsaGuaranteedLock()) list = list.filter(tsaIsGuaranteed);
     focusStudents = list;
     focusRender();
@@ -1936,10 +1949,8 @@ function focusRender() {
   const box = document.getElementById('sm_content') || document.getElementById('mainContent');
   if (!box) return;
   try {
-  const rows = focusStudents.map(s => { const months = focusMonthsUntil(s.expiry_date); return { s, months, bucket: focusBucket(months) }; });
-  const q = focusSearch.trim();
+  const rows = tsmFilterStudents(focusStudents).map(s => { const months = focusMonthsUntil(s.expiry_date); return { s, months, bucket: focusBucket(months) }; });
   let filtered = rows.filter(r => {
-    if (q) return tpNameMatch(r.s.name, q) || (r.s.university || '').includes(q);
     if (focusUrgency === 'all') return true;
     if (focusUrgency === 'expired') return r.bucket === 'expired';
     if (focusUrgency === 'near') return ['near', 'expired'].includes(r.bucket);
@@ -1950,7 +1961,7 @@ function focusRender() {
   const ord = { expired: 0, near: 1, q3: 2, half: 3, far: 4 };
   filtered.sort((a, b) => ((ord[a.bucket] ?? 5) - (ord[b.bucket] ?? 5)) || ((a.months ?? 9999) - (b.months ?? 9999)));
 
-  const chip = (k, l) => `<div class="filter-chip ${focusUrgency === k ? 'active' : ''}" onclick="focusUrgency='${k}';focusSearch='';focusRender()" style="padding:3px 10px;font-size:10px;cursor:pointer">${l}</div>`;
+  const chip = (k, l) => `<div class="filter-chip ${focusUrgency === k ? 'active' : ''}" onclick="focusUrgency='${k}';focusRender()" style="padding:3px 10px;font-size:10px;cursor:pointer">${l}</div>`;
   const cards = filtered.length ? filtered.map(r => {
     const u = r.bucket ? FOCUS_URG[r.bucket] : null;
     const badge = u ? `<span style="font-size:10px;padding:1px 8px;border-radius:10px;background:${u.bg};color:${u.c};white-space:nowrap">${u.t}${r.months != null && r.months >= 0 ? '·' + r.months + '个月' : (r.months != null ? '·超' + (-r.months) + '月' : '')}</span>` : '<span style="font-size:10px;color:var(--text-3)">无到期时间</span>';
@@ -1966,7 +1977,6 @@ function focusRender() {
   box.innerHTML = `
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
       ${chip('all', '全部')}${chip('half', '半年内')}${chip('q3', '三个月内')}${chip('near', '临近')}${chip('expired', '已过期')}
-      <input placeholder="搜索姓名查看概要…" value="${tsaEsc(focusSearch)}" oninput="focusSearch=this.value;focusRender()" style="margin-left:auto;font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;width:170px">
     </div>
     <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">共 ${filtered.length} 人 · 点学生查看完整学习概要（可打印）。到期依据「到期时间」自动推算。</div>
     <div>${cards}</div>`;
