@@ -10,7 +10,7 @@ const sc = {
   f: { domain: '', major: '', tag: '', school: '', q: '' },
   view: 'list',            // list | detail | edit
   openId: null, cur: null,
-  sel: new Set(), opt: { works: false, plans: false, others: false },
+  sel: new Set(), packDlg: null,
   stu: null,               // 编辑时可选的学生 [{id,name,major,...}]
 };
 const SC_TAG_HINTS = ['跨专业', '零基础', '专科', '大专', '转专业', '短期', '低分逆袭'];
@@ -120,8 +120,7 @@ function scPackBar(n) {
   const chip = (on, label, fn) => `<div class="filter-chip${on ? ' active' : ''}" onclick="${fn}" style="padding:3px 10px;font-size:10px">${label}</div>`;
   return `<div style="position:sticky;bottom:8px;margin-top:14px;background:#3a2e24;color:#f7f5f0;border-radius:6px;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
     <span style="font-size:12px">已选 <b>${n}</b> 个案例</span>
-    <span style="font-size:10px;opacity:.75">默认只放时间线和感言；可一起放：</span>
-    ${chip(sc.opt.works, '作业图片', 'sc.opt.works=!sc.opt.works;scRender()')}${chip(sc.opt.plans, '计划书 / 志望理由书', 'sc.opt.plans=!sc.opt.plans;scRender()')}${chip(sc.opt.others, '其他展示', 'sc.opt.others=!sc.opt.others;scRender()')}
+    <span style="font-size:10px;opacity:.75">点「加入宣传资料」时再选要不要带作业 / 计划书 / 其他展示</span>
     <button onclick="scAddToPack()" ${n ? '' : 'disabled'} style="margin-left:auto;font-size:12px;background:#f7f5f0;color:#3a2e24;border:none;border-radius:3px;padding:6px 16px;cursor:${n ? 'pointer' : 'not-allowed'};opacity:${n ? 1 : .5};font-family:inherit">➕ 加入宣传资料</button></div>`;
 }
 function scToggleSel(id) { if (sc.sel.has(id)) sc.sel.delete(id); else sc.sel.add(id); scRender(); }
@@ -140,11 +139,7 @@ function scDetailHtml() {
   return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" onclick="sc.view='list';scRender()">← 返回</button>
       ${scCanEdit(r) ? `<button class="btn btn-outline btn-sm" onclick="scEdit('${scE(r.id)}')">✏ 编辑</button>` : ''}
-      ${scPackOn() ? (r.published ? `<span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto"><span style="font-size:10px;color:var(--text-3)">可一起放：</span>
-        <div class="filter-chip${sc.opt.works ? ' active' : ''}" onclick="sc.opt.works=!sc.opt.works;scRender()" style="padding:3px 10px;font-size:10px">作业图片</div>
-        <div class="filter-chip${sc.opt.plans ? ' active' : ''}" onclick="sc.opt.plans=!sc.opt.plans;scRender()" style="padding:3px 10px;font-size:10px">计划书 / 志望理由书</div>
-        <div class="filter-chip${sc.opt.others ? ' active' : ''}" onclick="sc.opt.others=!sc.opt.others;scRender()" style="padding:3px 10px;font-size:10px">其他展示</div>
-        <button class="btn btn-primary btn-sm" onclick="scAddOne('${scE(r.id)}')">➕ 加入宣传资料</button></span>`
+      ${scPackOn() ? (r.published ? `<span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto"><button class="btn btn-primary btn-sm" onclick="scAddOne('${scE(r.id)}')">➕ 加入宣传资料</button></span>`
         : `<span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto"><button class="btn btn-primary btn-sm" disabled style="opacity:.45">➕ 加入宣传资料</button>${scDraftNote(r)}</span>`) : ''}</div>
     <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:5px;padding:16px 18px;max-width:820px">
       <div style="font-size:16px;font-weight:600;font-family:'Noto Serif SC',serif">${scE(r.alias)} — ${scE(r.tagline || '')}</div>
@@ -191,33 +186,103 @@ function scPlansHtml(plans, forDoc) {
 }
 
 // ══════════ 加入宣传资料 ══════════
-// 每个案例一个卡片：标题「小A — 一句话标签」+ 时期|内容表 + 感言（引用）+（可选）作业小图 / 计划书
+// 每个案例一个卡片：标题「小A — 一句话标签」+ 时期|内容表 + 感言（引用）+（可选）作业 / 计划书 / 其他展示
+// 图片缩成小图排版：每行 3 张、每张最高约 55mm、不裁切；一个案例最多放 6 张图，其余注明「另有 N 张」；文件只显示 📎 文件名
+const SC_DOC_MAX_IMG = 6;
+function scDocImgCell(u, cap) {
+  return `<div style="min-width:0"><a href="${scE(u)}" target="_blank"><img src="${scE(u)}" loading="lazy" style="display:block;width:100%;max-height:55mm;object-fit:contain;border:1px solid var(--border);border-radius:2px;background:#fff"></a>
+    ${cap ? `<div style="font-size:9px;line-height:1.4;color:var(--text-3);margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${scE(cap)}</div>` : ''}</div>`;
+}
+function scDocFileRow(f) { return `<div style="font-size:11px;margin-bottom:3px">📎 <a href="${scE(f.url)}" target="_blank" style="color:var(--accent)">${scE(f.name || '文件')}</a></div>`; }
+function scDocMedia(r, opt) {
+  let left = SC_DOC_MAX_IMG, extra = 0, h = '';
+  const block = (title, items) => {   // items: [{url,name,kind,cap}]
+    const imgs = items.filter(x => x.kind !== 'file' && x.kind !== 'doc'), files = items.filter(x => x.kind === 'file' || x.kind === 'doc');
+    const take = imgs.slice(0, left); left -= take.length; extra += imgs.length - take.length;
+    if (!take.length && !files.length) return '';
+    return `<div class="pk-case-s">${scE(title)}</div>${take.length ? `<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-bottom:4px">${take.map(x => scDocImgCell(x.url, x.cap)).join('')}</div>` : ''}${files.map(scDocFileRow).join('')}`;
+  };
+  const cap = o => [o.caption || o.note, o.feedback].filter(Boolean).join(' · ');
+  if (opt.works) h += block('作业展示', scArr(r.works).map(w => ({ url: w.url, name: w.name, kind: w.kind, cap: cap(w) })));
+  if (opt.others) {
+    const os = scArr(r.others), cats = [...SC_OTHER_CATS, ...new Set(os.map(o => o.category || '课堂笔记').filter(k => !SC_OTHER_CATS.includes(k)))];
+    cats.forEach(k => { h += block(k, os.filter(o => (o.category || '课堂笔记') === k).map(o => ({ url: o.url, name: o.name, kind: o.kind === 'image' ? 'image' : 'file', cap: cap(o) }))); });
+  }
+  if (extra > 0) h += `<div style="font-size:9.5px;color:var(--text-3);margin-top:2px">另有 ${extra} 张图片未放入</div>`;
+  return h;
+}
 function scDocHtml(cases, opt) {
   return cases.map(r => {
-    const works = opt.works ? scArr(r.works) : [], plans = opt.plans ? scArr(r.plan_files) : [], others = opt.others ? scArr(r.others) : [];
+    const plans = opt.plans ? scArr(r.plan_files) : [];
     return `<div class="pk-case">
       <div class="pk-case-h">${scE(r.alias)}${r.tagline ? ' — ' + scE(r.tagline) : ''}</div>
       ${scTableHtml(r, true)}
       ${(r.quote || '').trim() ? `<div class="pk-case-q">“${scE(r.quote)}”</div>` : ''}
-      ${works.length ? `<div class="pk-case-s">作业展示</div>${scWorksHtml(works, true)}` : ''}
+      ${scDocMedia(r, opt)}
       ${plans.length ? `<div class="pk-case-s">计划书 / 志望理由书（老师批改版）</div>${scPlansHtml(plans, true)}` : ''}
-      ${others.length ? `<div class="pk-case-s">其他展示</div>${scOthersHtml(others, true)}` : ''}
     </div>`;
   }).join('');
 }
-// 详情页：把这一个案例直接加入资料（选项用当前的 作业图片 / 计划书 开关）
+// ── 加入前的确认框：要不要带 作业展示 / 计划书 / 其他展示（默认都不选；没有内容的灰掉）──
+// 两种用法：新加入（cases + 加入）；资料整合页里已有条目点 ⚙ 重新选择（regenId）
+function scPackDialog(cases, opts) {
+  opts = opts || {};
+  sc.packDlg = { cases, regenId: opts.regenId || '', opt: Object.assign({ works: false, plans: false, others: false }, opts.opt || {}) };
+  scPackDialogRender();
+}
+function scPackDialogRender() {
+  const d = sc.packDlg; document.getElementById('scPackDlg')?.remove(); if (!d) return;
+  const has = { works: d.cases.some(r => scArr(r.works).length), plans: d.cases.some(r => scArr(r.plan_files).length), others: d.cases.some(r => scArr(r.others).length) };
+  const chip = (k, label) => has[k]
+    ? `<div class="filter-chip${d.opt[k] ? ' active' : ''}" onclick="sc.packDlg.opt.${k}=!sc.packDlg.opt.${k};scPackDialogRender()" style="padding:5px 14px;font-size:12px">${label}</div>`
+    : `<div class="filter-chip" style="padding:5px 14px;font-size:12px;opacity:.45;cursor:not-allowed;pointer-events:none">${label}（无）</div>`;
+  const m = document.createElement('div'); m.id = 'scPackDlg';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px';
+  m.onclick = e => { if (e.target === m) scPackDialogClose(); };
+  m.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:18px;max-width:420px;width:100%">
+    <div style="font-size:14px;font-weight:600;margin-bottom:12px">${d.regenId ? '重新选择要带的内容' : `加入 ${d.cases.length} 个合格案例`}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">${chip('works', '作业展示')}${chip('plans', '计划书 / 志望理由书')}${chip('others', '其他展示')}</div>
+    <div style="font-size:10px;color:var(--text-3);line-height:1.7;margin-bottom:14px">默认只放时间线、合格学校和感言；图片会缩成小图排版</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-outline btn-sm" onclick="scPackDialogClose()">取消</button>
+      <button class="btn btn-primary btn-sm" onclick="scPackDialogOk()">${d.regenId ? '更新' : '加入'}</button></div></div>`;
+  document.body.appendChild(m);
+}
+function scPackDialogClose() { sc.packDlg = null; document.getElementById('scPackDlg')?.remove(); }
+function scPackDialogOk() {
+  const d = sc.packDlg; if (!d) return;
+  const opt = Object.assign({}, d.opt), html = scDocHtml(d.cases, opt);
+  scPackDialogClose();
+  if (d.regenId) {
+    const it = pkItems.find(x => x.id === d.regenId); if (!it) return;
+    it.html = html; it.caseOpt = opt; pkSave();
+    pkToast('已按新的选择更新这项合格案例');
+    if (typeof curTab !== 'undefined' && curTab === 'promopack') pkRender();
+    return;
+  }
+  const one = d.cases.length === 1;
+  pkAdd({ type: 'cases', title: one ? `合格案例 · ${d.cases[0].alias}` : `合格案例（${d.cases.length} 个）`, html, caseIds: d.cases.map(r => r.id), caseOpt: opt });
+  sc.sel = new Set(); if (sc.box && document.getElementById(sc.box)) scRender();
+}
+// 资料整合页：重新选择已加入的合格案例要带的内容（案例数据没加载过时先读一次）
+async function scRegenPackItem(itemId) {
+  const it = (typeof pkItems !== 'undefined' ? pkItems : []).find(x => x.id === itemId); if (!it || !it.caseIds) return;
+  if (sc.rows === null) { try { sc.rows = await sbAll('/rest/v1/success_cases?select=*&order=updated_at.desc'); } catch (e) { alert('读取合格案例失败：' + e.message); return; } }
+  const cases = it.caseIds.map(id => (sc.rows || []).find(r => r.id === id)).filter(r => r && r.published);
+  if (!cases.length) { alert('这些合格案例已被删除或取消发布，无法重新生成'); return; }
+  scPackDialog(cases, { regenId: itemId, opt: it.caseOpt });
+}
+// 详情页：把这一个案例加入资料（先弹确认框）
 function scAddOne(id) {
   if (typeof pkAdd !== 'function') return;
   const r = (sc.rows || []).find(x => x.id === id); if (!r || !r.published) return;
-  pkAdd({ type: 'cases', title: `合格案例 · ${r.alias}`, html: scDocHtml([r], sc.opt) });
+  scPackDialog([r]);
 }
 function scAddToPack() {
   if (typeof pkAdd !== 'function') return;
   const cases = (sc.rows || []).filter(r => sc.sel.has(r.id) && r.published);
   if (!cases.length) return;
-  const one = cases.length === 1;
-  pkAdd({ type: 'cases', title: one ? `合格案例 · ${cases[0].alias}` : `合格案例（${cases.length} 个）`, html: scDocHtml(cases, sc.opt) });
-  sc.sel = new Set(); scRender();
+  scPackDialog(cases);
 }
 
 // ══════════ 编辑 ══════════

@@ -437,7 +437,7 @@ function pkRender(mc) {
             <div style="font-size:9px;color:var(--text-3)">${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} 加入${it.wide ? ' · 横版页面' : ''}</div>
           </div>
           <div style="display:flex;gap:2px;flex-shrink:0">
-            ${[['↑', `pkMove('${it.id}',-1)`, '上移', i === 0], ['↓', `pkMove('${it.id}',1)`, '下移', i === pkItems.length - 1], ['✎', `pkRename('${it.id}')`, '改标题'], ['👁', `pkPreviewOne('${it.id}')`, '单独预览'], ['✕', `pkRemove('${it.id}')`, '删除']]
+            ${[['↑', `pkMove('${it.id}',-1)`, '上移', i === 0], ['↓', `pkMove('${it.id}',1)`, '下移', i === pkItems.length - 1], ...(it.type === 'cases' && it.caseIds ? [['⚙', `scRegenPackItem('${it.id}')`, '重新选择要带的内容（作业 / 计划书 / 其他展示）']] : []), ['✎', `pkRename('${it.id}')`, '改标题'], ['👁', `pkPreviewOne('${it.id}')`, '单独预览'], ['✕', `pkRemove('${it.id}')`, '删除']]
               .map(([s, fn, tip, dis]) => `<button onclick="${fn}" title="${tip}" ${dis ? 'disabled' : ''} style="font-size:11px;width:24px;height:24px;background:none;border:1px solid var(--border);border-radius:2px;cursor:${dis ? 'default' : 'pointer'};color:${dis ? 'var(--border)' : 'var(--text-2)'};font-family:inherit">${s}</button>`).join('')}
           </div>
         </div>`;
