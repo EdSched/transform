@@ -189,15 +189,31 @@ function pvQrBlockHtml(major, videos) {
     <div style="flex:1;min-width:120px;font-size:10px;color:#5a5650;line-height:1.7">用手机扫码，可观看视频并查看完整的专业介绍</div>
   </div>`;
 }
-// 老师端「专业介绍」页顶部：可播放的视频 + 二维码（面谈时直接给学生扫）
+// 老师端「专业介绍」页最下面：课程视频（默认收起，点开才显示播放器）；收起时也有「二维码」按钮，弹出二维码方便面谈时给学生扫
+let prVideoOpen = false;
+function prVideoToggle() { prVideoOpen = !prVideoOpen; prRenderBody(); }
+function prQrPopup() {
+  document.getElementById('prQrPop')?.remove();
+  const videos = (prData && prData.videos) || []; if (!videos.length) return;
+  const m = document.createElement('div'); m.id = 'prQrPop';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px';
+  m.onclick = e => { if (e.target === m) m.remove(); };
+  m.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:16px;max-width:560px;width:100%">${pvQrBlockHtml(prMajor, videos)}
+    <div style="text-align:right"><button onclick="document.getElementById('prQrPop').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:6px 16px;cursor:pointer;font-family:inherit">关闭</button></div></div>`;
+  document.body.appendChild(m);
+}
 function prVideosHtml(videos, major) {
   if (!videos || !videos.length) return '';
   const players = videos.map(v => `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border-light);font-size:12px"><span style="font-weight:500">${prEsc(v.title)}</span><span style="font-size:10px;color:var(--text-3)">${prEsc(v.duration || '')}</span></div>
     <video controls controlsList="nodownload" preload="metadata" playsinline src="${prEsc(v.url)}" style="width:100%;aspect-ratio:16/9;display:block;background:#000"></video></div>`).join('');
-  return `<div style="margin-bottom:14px"><div style="font-size:12px;font-weight:600;margin-bottom:8px">🎬 宣传视频</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-bottom:10px">${players}</div>
-    ${pvQrBlockHtml(major, videos)}</div>`;
+  return `<div style="margin-top:14px;border:1px solid var(--border-light);border-radius:4px;background:var(--surface)">
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px">
+      <span onclick="prVideoToggle()" style="cursor:pointer;user-select:none;font-size:12px;font-weight:600">🎬 课程视频（${videos.length}）${prVideoOpen ? '▾' : '▸'}</span>
+      <button onclick="prQrPopup()" style="font-size:10px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:2px 10px;cursor:pointer;font-family:inherit">📱 二维码</button>
+    </div>
+    ${prVideoOpen ? `<div style="border-top:1px solid var(--border-light);padding:10px 12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px">${players}</div>` : ''}
+  </div>`;
 }
 
 function prSetSchedMode(v) { prSchedMode = v; renderTeacherPromo(document.getElementById('mainContent')); }
@@ -338,7 +354,7 @@ function prRenderShell() {
 
 function prSetMajor(m) {
   prMajor = m;
-  prExpanded = null; prBlockLimit = 30;
+  prExpanded = null; prBlockLimit = 30; prVideoOpen = false;
   renderTeacherPromo(document.getElementById('mainContent'));
 }
 
@@ -353,7 +369,7 @@ function prBodyHtml() {
   if (prSection === 'schedule') return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:10px;color:var(--text-3)">课程表期数：</span>${prSchedModeSelect('prSetSchedMode(this.value)')}</div>` + prLangPanelHtml() + prScheduleHtml();
   const list = (prData.list || []).filter(p => p.section === prSection);
   const vids = prSection === 'major_intro' ? prVideosHtml(prData.videos, prMajor) : '';
-  if (!list.length) return vids + '<div class="empty" style="padding:30px">该板块暂无内容（admin 可在「宣传管理」中录入）</div>';
+  if (!list.length) return '<div class="empty" style="padding:30px">该板块暂无内容（admin 可在「宣传管理」中录入）</div>' + vids;
 
   if (prSection === 'course') {
     // 课程介绍：可点击展开关联的课程安排
@@ -373,7 +389,7 @@ function prBodyHtml() {
   }
 
   // 专业介绍 / 讲师介绍：块多时默认收起标题，点开阅读
-  return vids + prBlocksHtml(list);
+  return prBlocksHtml(list) + vids;
 }
 
 function prRenderBody() {
