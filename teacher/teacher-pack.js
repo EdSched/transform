@@ -276,6 +276,7 @@ function pkMajorHtml(major, data, parts) {
   let h = '';
   const sub = t => `<div class="pk-sub">${t}</div>`;
 
+  if (parts.includes('major_intro') && ((data && data.videos) || []).length) h += pvQrBlockHtml(major, data.videos);   // 扫码观看课程视频
   if (parts.includes('major_intro') && intro.length) {
     h += sub('专业介绍') + intro.map(p => `<div class="pk-block"><h3>${pkEsc(p.title)}</h3><div class="pk-rich">${prMd(p.body)}</div></div>`).join('');
   }
