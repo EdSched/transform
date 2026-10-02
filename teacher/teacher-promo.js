@@ -11,6 +11,10 @@ let prData = null;      // { list: promo_content rows }
 let prCourses = null;   // 课程安排缓存（全专业一次拉取）
 let prPubMap = null;    // 真名(去敬称) → 对外宣传姓名（老师档案「备注」）
 let prExpanded = null;  // 展开的课程介绍条目 id
+let prDomain = '';      // 专业行上一级：领域（逐级展开：先选领域，再列该领域的专业）
+let prDomainInited = false;
+let prBlockOpen = {};   // 宣传内容块的展开状态 id → true/false（未设置时：块数 ≤3 默认展开，更多则默认收起）
+let prBlockLimit = 30;  // 内容块一次显示的条数
 let prLangIds = [];         // 课程表里额外加入的语言课（给某个咨询者个人搭配，切换专业时保留）
 let prLang = { open: false, kind: 'nihongo', period: '', campus: '' };   // 语言课选择面板状态；period ''=跟随上面课程表的期数
 let prSchedMode = 'next';   // 课程表用哪一期：next 下一期（默认，学生报名后上的课）| cur 当期 | share 已发布的学生课表
@@ -45,6 +49,40 @@ async function prAvailableMajors() {
   prMajorsCache = [...new Set((rows || []).map(r => r.major).filter(Boolean))].sort((a, b) => idx(a) - idx(b) || a.localeCompare(b));
   return prMajorsCache;
 }
+function prMajorDomain(k) { return k === 'shakai_group' ? (MAJOR_DOMAIN[SHAKAI_GROUP[0]] || '') : (MAJOR_DOMAIN[k] || ''); }
+function prMajorList() { return prMajorsCache || PR_MAJORS_FALLBACK; }
+// 可选领域：按 DOMAINS 顺序，只列有宣传内容的专业所属的领域（没有领域的专业归「其他」）
+function prDomainList() {
+  const have = new Set(prMajorList().map(m => prMajorDomain(m)));
+  const list = DOMAINS.map(d => d.label).filter(d => have.has(d));
+  if (have.has('')) list.push('其他');
+  return list;
+}
+function prCurDomain() { return prDomain || prMajorDomain(prMajor) || '其他'; }
+function prSetDomain(d) {
+  prDomain = d;
+  const first = prMajorList().find(m => (prMajorDomain(m) || '其他') === d);
+  if (first && first !== prMajor) prSetMajor(first); else prRenderShell();
+}
+function prBlockToggle(id, dflt) { prBlockOpen[id] = !(id in prBlockOpen ? prBlockOpen[id] : dflt); prRenderBody(); }
+function prBlockMore() { prBlockLimit += 30; prRenderBody(); }
+// 宣传内容块（专业介绍 / 讲师介绍 / 通用宣传）：块多时默认收起，只露标题；超过 30 块分页
+function prBlocksHtml(list) {
+  const dflt = list.length <= 3;
+  const cards = list.slice(0, prBlockLimit).map(p => {
+    const open = p.id in prBlockOpen ? prBlockOpen[p.id] : dflt;
+    return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;margin-bottom:10px">
+    <div onclick="prBlockToggle('${p.id}',${dflt})" style="display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;user-select:none">
+      <span style="font-size:13px;font-weight:600;font-family:'Noto Serif SC',serif">${prEsc(p.title)}</span>
+      <span style="font-size:10px;color:var(--text-3);margin-left:auto">${open ? '▾ 收起' : '▸ 展开'}</span>
+    </div>
+    ${open ? `<div style="font-size:12px;line-height:2;color:var(--text-2);padding:0 16px 14px">${prMd(p.body)}</div>` : ''}
+  </div>`;
+  }).join('');
+  const more = list.length > prBlockLimit ? `<div onclick="prBlockMore()" style="text-align:center;padding:10px;margin:6px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">显示更多（还有 ${list.length - prBlockLimit} 项）</div>` : '';
+  return cards + more;
+}
+
 function prMajorName(k) { return k === 'shakai_group' ? '社会人文' : (MAJORS[k] || (typeof majorLabel === 'function' ? majorLabel(k) : '') || (typeof ADMISSION_MAJORS !== 'undefined' && ADMISSION_MAJORS[k]) || k); }
 
 // ── 语言课（只读，合并进同一张课程表）──
@@ -251,6 +289,12 @@ async function renderTeacherPromo(mc) {
   mc.innerHTML = '<div class="empty">加载中…</div>';
   try {
     const majors = await prAvailableMajors();
+    if (!prDomainInited && majors.length) {   // 首次进入：默认老师自己的领域，专业选该领域的第一个
+      prDomainInited = true;
+      const mine = (typeof teacherAdmDomains === 'function' ? teacherAdmDomains(teacherData) : []).find(d => majors.some(m => prMajorDomain(m) === d));
+      const inMine = mine && majors.find(m => prMajorDomain(m) === mine);
+      if (inMine) { prDomain = mine; if (prMajorDomain(prMajor) !== mine || !majors.includes(prMajor)) prMajor = inMine; }
+    }
     if (majors.length && !majors.includes(prMajor)) prMajor = majors[0];
     prData = await prFetchMajor(prMajor);
     await prCommonEnsure();
@@ -265,13 +309,16 @@ function prRenderShell() {
   <div class="page-header"><div class="section-title">📣 宣传相关</div></div>
   ${prSection === 'plan' || prSection === 'cases' ? '' : prSection === 'common' ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
     <span style="font-size:10px;color:var(--text-3)">领域：</span>
-    ${prCommonDomains().map(d => `<div class="filter-chip ${prCommonDomain===d?'active':''}" onclick="prCommonDomain='${prEsc(d)}';prRenderShell()" style="padding:3px 10px;font-size:10px">${prEsc(d)}</div>`).join('') || '<span style="font-size:10px;color:var(--text-3)">admin 还没有发布任何通用宣传内容</span>'}
-  </div>` : `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
+    ${prCommonDomains().map(d => `<div class="filter-chip ${prCommonDomain===d?'active':''}" onclick="prCommonDomain='${prEsc(d)}';prBlockLimit=30;prRenderShell()" style="padding:3px 10px;font-size:10px">${prEsc(d)}</div>`).join('') || '<span style="font-size:10px;color:var(--text-3)">admin 还没有发布任何通用宣传内容</span>'}
+  </div>` : `${prDomainList().length > 1 ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
+    <span style="font-size:10px;color:var(--text-3)">领域：</span>
+    ${prDomainList().map(d => `<div class="filter-chip ${prCurDomain()===d?'active':''}" onclick="prSetDomain('${prEsc(d)}')" style="padding:3px 10px;font-size:10px">${prEsc(d)}</div>`).join('')}
+  </div>` : ''}<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
     <span style="font-size:10px;color:var(--text-3)">专业：</span>
-    ${chipFold((prMajorsCache || PR_MAJORS_FALLBACK).map(m => ({ on: prMajor===m, html: `<div class="filter-chip ${prMajor===m?'active':''}" onclick="prSetMajor('${m}')" style="padding:3px 10px;font-size:10px">${prEsc(prMajorName(m))}</div>` }))) || '<span style="font-size:10px;color:var(--text-3)">admin 还没有录入任何专业的宣传内容</span>'}
+    ${chipFold(prMajorList().filter(m => prDomainList().length <= 1 || (prMajorDomain(m) || '其他') === prCurDomain()).map(m => ({ on: prMajor===m, html: `<div class="filter-chip ${prMajor===m?'active':''}" onclick="prSetMajor('${m}')" style="padding:3px 10px;font-size:10px">${prEsc(prMajorName(m))}</div>` }))) || '<span style="font-size:10px;color:var(--text-3)">admin 还没有录入任何专业的宣传内容</span>'}
   </div>`}
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px">
-    ${prSections().map(([k,l]) => `<button onclick="prSection='${k}';prExpanded=null;prRenderShell()" style="font-size:11px;padding:5px 14px;border-radius:3px;cursor:pointer;font-family:inherit;border:1px solid ${prSection===k?'var(--accent)':'var(--border)'};background:${prSection===k?'var(--accent)':'var(--surface)'};color:${prSection===k?'#fff':'var(--text-2)'}">${l}</button>`).join('')}
+    ${prSections().map(([k,l]) => `<button onclick="prSection='${k}';prExpanded=null;prBlockLimit=30;prRenderShell()" style="font-size:11px;padding:5px 14px;border-radius:3px;cursor:pointer;font-family:inherit;border:1px solid ${prSection===k?'var(--accent)':'var(--border)'};background:${prSection===k?'var(--accent)':'var(--surface)'};color:${prSection===k?'#fff':'var(--text-2)'}">${l}</button>`).join('')}
   </div>
   ${prSection === 'common' || prSection === 'plan' || prSection === 'cases' ? '' : `<div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:8px 12px;margin-bottom:12px">
     <span style="font-size:10px;color:var(--text-3)">发给客户的宣传页链接：</span>
@@ -291,7 +338,7 @@ function prRenderShell() {
 
 function prSetMajor(m) {
   prMajor = m;
-  prExpanded = null;
+  prExpanded = null; prBlockLimit = 30;
   renderTeacherPromo(document.getElementById('mainContent'));
 }
 
@@ -301,11 +348,7 @@ function prBodyHtml() {
   if (prSection === 'common') {
     const list = (prCommon || []).filter(r => r.domain === prCommonDomain);
     if (!list.length) return '<div class="empty" style="padding:30px">该领域暂无通用宣传内容（admin 可在「宣传管理 → 通用宣传」中录入）</div>';
-    return `<div style="font-size:10px;color:var(--text-3);margin-bottom:8px">${prEsc(prCommonDomain)} 通用宣传共 ${list.length} 块；要放进资料请到「📦 宣传资料整合」选择「关于唯新」</div>` + list.map(p => `
-  <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px 16px;margin-bottom:10px">
-    <div style="font-size:13px;font-weight:600;margin-bottom:8px;font-family:'Noto Serif SC',serif">${prEsc(p.title)}</div>
-    <div style="font-size:12px;line-height:2;color:var(--text-2)">${prMd(p.body)}</div>
-  </div>`).join('');
+    return `<div style="font-size:10px;color:var(--text-3);margin-bottom:8px">${prEsc(prCommonDomain)} 通用宣传共 ${list.length} 块；要放进资料请到「📦 宣传资料整合」选择「关于唯新」</div>` + prBlocksHtml(list);
   }
   if (prSection === 'schedule') return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:10px;color:var(--text-3)">课程表期数：</span>${prSchedModeSelect('prSetSchedMode(this.value)')}</div>` + prLangPanelHtml() + prScheduleHtml();
   const list = (prData.list || []).filter(p => p.section === prSection);
@@ -329,12 +372,8 @@ function prBodyHtml() {
     }).join('');
   }
 
-  // 专业介绍 / 讲师介绍：直接铺开阅读
-  return vids + list.map(p => `
-  <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px 16px;margin-bottom:10px">
-    <div style="font-size:13px;font-weight:600;margin-bottom:8px;font-family:'Noto Serif SC',serif">${prEsc(p.title)}</div>
-    <div style="font-size:12px;line-height:2;color:var(--text-2)">${prMd(p.body)}</div>
-  </div>`).join('');
+  // 专业介绍 / 讲师介绍：块多时默认收起标题，点开阅读
+  return vids + prBlocksHtml(list);
 }
 
 function prRenderBody() {
