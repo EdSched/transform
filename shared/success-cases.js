@@ -214,7 +214,7 @@ function scNextAlias() {
 function scBlank() {
   const lock = sc.ctx.lockDomain || '';
   const doms = scAllowedDomains();
-  return { id: '', domain: lock || doms[0] || '', majors: [], student_id: '', alias: scNextAlias(), tagline: '', background: '', timeline: [], result: '', quote: '', works: [], plan_files: [], tags: [], published: false,
+  return { id: '', domain: lock || doms[0] || '', majors: [], student_id: '', alias: scNextAlias(), tagline: '', background: '', timeline: [], schools: [], schoolInput: '', schoolNew: 0, quote: '', works: [], plan_files: [], tags: [], published: false,
     stuSearch: '', cand: null, tagInput: '' };
 }
 function scAllowedDomains() { return DOMAINS.map(d => d.label).filter(d => sc.ctx.allowDomain(d)); }
@@ -222,9 +222,9 @@ function scNew() { sc.cur = scBlank(); sc.view = 'edit'; scRender(); scEnsureStu
 function scEdit(id) {
   const r = (sc.rows || []).find(x => x.id === id); if (!r) return;
   sc.cur = { id: r.id, domain: r.domain, majors: scArr(r.majors).slice(), student_id: r.student_id || '', alias: r.alias || '', tagline: r.tagline || '', background: r.background || '', timeline: scArr(r.timeline).map(t => ({ period: t.period || '', content: t.content || '' })),
-    result: r.result || '', quote: r.quote || '', works: scArr(r.works).map(w => Object.assign({}, w)), plan_files: scArr(r.plan_files).map(p => Object.assign({}, p)), tags: scArr(r.tags).slice(), published: r.published === true, stuSearch: '', cand: null, tagInput: '' };
+    schools: scSplitResult(r.result).map(l => ({ label: l, on: true })), schoolInput: '', schoolNew: 0, quote: r.quote || '', works: scArr(r.works).map(w => Object.assign({}, w)), plan_files: scArr(r.plan_files).map(p => Object.assign({}, p)), tags: scArr(r.tags).slice(), published: r.published === true, stuSearch: '', cand: null, tagInput: '' };
   sc.view = 'edit'; scRender(); scEnsureStudents();
-  if (sc.cur.student_id) scLoadCandidates();
+  if (sc.cur.student_id) { scLoadCandidates(); scMergeSchools(sc.cur); }
 }
 async function scEnsureStudents() {
   if (sc.stu) return;
@@ -290,13 +290,27 @@ function scEditHtml() {
         <span onclick="scMoveRow(${i},-1)" style="cursor:pointer;text-align:center;color:var(--text-3)">↑</span>
         <span onclick="sc.cur.timeline.splice(${i},1);scRender()" style="cursor:pointer;text-align:center;color:var(--danger)">✕</span></div>`).join('')}
       <button class="btn btn-outline btn-sm" onclick="sc.cur.timeline.push({period:'',content:''});scRender()">＋ 添加一行</button>
-      <div style="margin-top:10px">${lbl('合格结果（多所用 · 分开）')}<input value="${scE(c.result)}" placeholder="例：筑波大学 · 一桥大学" oninput="sc.cur.result=this.value" style="${inp}"></div>
+      <div style="margin-top:10px">${lbl('合格学校（选了学生会自动带出；点一下取消不想对外展示的学校）')}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          ${c.schools.map((x, i) => chip(x.on, scE(x.label), `sc.cur.schools[${i}].on=!sc.cur.schools[${i}].on;scRender()`)).join('') || '<span style="font-size:10px;color:var(--text-3)">还没有合格学校</span>'}
+        </div>
+        ${c.schoolNew ? `<div style="font-size:10px;color:var(--accent);margin-top:4px">新带出 ${c.schoolNew} 所</div>` : ''}
+        <div style="display:flex;gap:6px;margin-top:6px"><input value="${scE(c.schoolInput)}" placeholder="＋ 手动添加（系统里没有的学校），回车添加" oninput="sc.cur.schoolInput=this.value" onkeydown="if(event.key==='Enter'){event.preventDefault();scAddSchool()}" style="${inp}"></div></div>
       <div style="margin-top:10px">${lbl('学生感言')}<textarea rows="2" oninput="sc.cur.quote=this.value" style="${inp};line-height:1.7;resize:vertical" placeholder="例：有热爱支持着就不会觉得苦，拿到合格通知书的那一刻激动得不能自已。">${scE(c.quote)}</textarea></div>
     </div>
     <div style="${box}">${h('④ 作业展示')}
       <div style="font-size:10px;color:var(--warn,#b8860b);background:#fff8e6;border:1px solid #e8d4a0;border-radius:3px;padding:4px 8px;margin-bottom:8px">请确认图片中没有学生真实姓名（对外只显示称呼）。</div>
-      ${c.student_id ? scWorksPickHtml() : '<div style="font-size:11px;color:var(--text-3)">先在上面选一个学生，才能从他的作业里点选。</div>'}
-      ${c.works.length ? `<div style="font-size:10px;color:var(--text-3);margin:8px 0 4px">已选 ${c.works.length} 张：</div>${scWorksHtml(c.works, true)}` : ''}
+      ${c.student_id ? scWorksPickHtml() : '<div style="font-size:11px;color:var(--text-3)">先在上面选一个学生，才能从他的作业里点选；也可以直接上传图片。</div>'}
+      ${c.works.some(w => w.src !== 'upload') ? `<div style="font-size:10px;color:var(--text-3);margin:8px 0 4px">已选 ${c.works.filter(w => w.src !== 'upload').length} 张：</div>${scWorksHtml(c.works.filter(w => w.src !== 'upload'), true)}` : ''}
+      <div style="margin-top:10px">
+        ${c.works.map((w, i) => w.src !== 'upload' ? '' : `<div style="display:grid;grid-template-columns:70px 1fr 1fr 26px;gap:6px;margin-bottom:5px;align-items:center">
+          <a href="${scE(w.url)}" target="_blank"><img src="${scE(w.url)}" style="width:70px;height:50px;object-fit:cover;border:1px solid var(--border);border-radius:3px"></a>
+          <input value="${scE(w.caption || '')}" placeholder="说明" oninput="sc.cur.works[${i}].caption=this.value" style="${inp}">
+          <input value="${scE(w.feedback || '')}" placeholder="老师点评" oninput="sc.cur.works[${i}].feedback=this.value" style="${inp}">
+          <span onclick="sc.cur.works.splice(${i},1);scRender()" style="cursor:pointer;text-align:center;color:var(--danger)">✕</span></div>`).join('')}
+        <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block">＋ 上传作业图片<input type="file" accept="image/*" multiple onchange="scUploadWork(this)" style="display:none"></label>
+        <span id="sc_upw_tip" style="font-size:10px;color:var(--text-3);margin-left:6px"></span>
+      </div>
     </div>
     <div style="${box}">${h('⑤ 计划书 / 志望理由书（老师批改版）')}
       <div style="font-size:10px;color:var(--warn,#b8860b);background:#fff8e6;border:1px solid #e8d4a0;border-radius:3px;padding:4px 8px;margin-bottom:8px">请确认文件 / 图片中没有学生真实姓名。</div>
@@ -309,10 +323,10 @@ function scEditHtml() {
       <span id="sc_up_tip" style="font-size:10px;color:var(--text-3);margin-left:6px"></span>
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:30px">
-      ${chip(c.published, c.published ? '已发布（营业老师可见）' : '草稿（暂不发布）', 'sc.cur.published=!sc.cur.published;scRender()')}
+      ${chip(c.published, '发布（营业老师可见）', 'sc.cur.published=!sc.cur.published;scRender()')}
       <button class="btn btn-primary" onclick="scSave()">💾 保存</button>
       <button class="btn btn-outline" onclick="scCancelEdit()">取消</button>
-      ${!c.published ? `<span style="font-size:10px;color:var(--text-3)">草稿不会出现在宣传资料里，营业老师也看不到</span>` : ''}
+      <span style="font-size:10px;color:var(--text-3)">${c.published ? '保存后营业老师可以看到并选用' : '当前是草稿：不会出现在宣传资料里，营业老师也看不到'}</span>
       ${c.id ? `<button class="btn" style="margin-left:auto;color:var(--danger);border:1px solid var(--danger);background:none" onclick="scDelete('${scE(c.id)}')">删除案例</button>` : ''}
     </div></div>`;
 }
@@ -337,7 +351,7 @@ async function scPickStudent(id) {
   scLoadCandidates();
 }
 async function scRefill() {
-  if (!confirm('重新带出会覆盖当前的「背景 / 合格结果 / 时间线」，确定吗？')) return;
+  if (!confirm('重新带出会覆盖当前的「背景 / 合格学校 / 时间线」（手动添加的学校也会清掉），确定吗？')) return;
   await scAutoFill(true);
 }
 async function scAutoFill(overwrite) {
@@ -345,14 +359,55 @@ async function scAutoFill(overwrite) {
   const q = p => sb(p).catch(() => []);
   const [st, tl] = await Promise.all([q(`/rest/v1/students?id=eq.${encodeURIComponent(id)}&select=*`), q(`/rest/v1/student_progress_timeline?student_id=eq.${encodeURIComponent(id)}&select=*&order=created_at.asc`)]);
   const s = (st || [])[0]; if (!s) return;
-  const res = await q(`/rest/v1/admission_results?student=eq.${encodeURIComponent(s.name)}&select=univ,dept,created_at&order=created_at.asc`);
+  const sys = await scSystemSchools(id, s.name);
   if (sc.cur !== c || c.student_id !== id) return;   // 期间换了学生 / 退出编辑
   const bg = [s.japanese_score ? `日语 ${s.japanese_score}` : '', s.english_score ? `英语 ${s.english_score}` : '', [s.university, s.faculty].filter(Boolean).join(' ')].filter(Boolean).join(' / ');
-  const result = [...new Set((res || []).map(r => r.univ).filter(Boolean))].join(' · ');
   const timeline = scTimelineDraft(s, tl || []);
   if (overwrite || !c.background.trim()) c.background = bg;
-  if (overwrite || !c.result.trim()) c.result = result;
+  if (overwrite) { c.schools = sys.map(l => ({ label: l, on: true })); c.schoolNew = 0; }
+  else if (!c.schools.length) c.schools = sys.map(l => ({ label: l, on: true }));
   if (overwrite || !c.timeline.length) c.timeline = timeline;
+  scRender();
+}
+// ── 合格学校 chip ──
+// 结果文本 ↔ chip：保存时选中的学校用「 · 」连接；回显时把紧跟在学校名后面的「研究科 / 学部」等片段并回上一所
+const scSchoolKey = l => String(l || '').split(' · ')[0].trim();
+function scSplitResult(t) {
+  const out = [];
+  String(t || '').split(/\s*·\s*/).map(x => x.trim()).filter(Boolean).forEach(x => {
+    if (out.length && /(研究科|学部|学環|学府|専攻|学科)$/.test(x) && !out[out.length - 1].includes(' · ')) out[out.length - 1] += ' · ' + x;
+    else out.push(x);
+  });
+  return out;
+}
+// 系统里的合格学校：志望校里状态为合格的 + admission_results 按姓名找到的（同一所学校去重）
+async function scSystemSchools(id, name) {
+  const q = p => sb(p).catch(() => []);
+  const [plans, res] = await Promise.all([
+    q(`/rest/v1/student_school_plans?student_id=eq.${encodeURIComponent(id)}&status=eq.passed&select=school_name,faculty&order=level.asc`),
+    name ? q(`/rest/v1/admission_results?student=eq.${encodeURIComponent(name)}&select=univ,dept,created_at&order=created_at.asc`) : Promise.resolve([]),
+  ]);
+  const out = [], seen = new Set();
+  (plans || []).forEach(p => { const n = String(p.school_name || '').trim(); if (!n) return; const l = p.faculty ? `${n} · ${String(p.faculty).trim()}` : n; if (!out.includes(l)) { out.push(l); seen.add(n); } });
+  (res || []).forEach(r => { const n = String(r.univ || '').trim(); if (n && !seen.has(n)) { seen.add(n); out.push(n); } });
+  return out;
+}
+// 编辑已有案例：把系统里新增的合格校补上（默认选中并提示）
+async function scMergeSchools(c) {
+  const id = c.student_id; if (!id) return;
+  const st = await sb(`/rest/v1/students?id=eq.${encodeURIComponent(id)}&select=name`).catch(() => []);
+  const sys = await scSystemSchools(id, (st[0] || {}).name);
+  if (sc.cur !== c || c.student_id !== id) return;
+  const have = new Set(c.schools.map(x => scSchoolKey(x.label)));
+  const add = sys.filter(l => !have.has(scSchoolKey(l)));
+  if (!add.length) return;
+  add.forEach(l => c.schools.push({ label: l, on: true }));
+  c.schoolNew = add.length;
+  if (sc.view === 'edit') scRender();
+}
+function scAddSchool() {
+  const c = sc.cur, t = (c.schoolInput || '').trim(); c.schoolInput = '';
+  if (t && !c.schools.some(x => x.label === t)) c.schools.push({ label: t, on: true });
   scRender();
 }
 // 时间线草稿：报名时间 + 进度记录里的关键节点（同一个月合并成一行）
@@ -448,6 +503,21 @@ async function scUploadPlan(input) {
   } catch (e) { if (tip) tip.textContent = '上传失败：' + e.message; }
 }
 
+async function scUploadWork(input) {
+  const files = [...(input.files || [])].filter(f => /^image\//.test(f.type)); input.value = ''; if (!files.length) return;
+  const c = sc.cur, tip = document.getElementById('sc_upw_tip');
+  try {
+    for (let i = 0; i < files.length; i++) {
+      if (tip) tip.textContent = `上传中 ${i + 1}/${files.length}…`;
+      const f = files[i];
+      let ext = (f.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, ''); if (!ext || ext.length > 5) ext = 'jpg';
+      const url = await sbUpload('admission-photos', `cases/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`, f);
+      c.works.push({ src: 'upload', url, caption: '', feedback: '' });
+    }
+    if (sc.cur === c) scRender();
+  } catch (e) { if (tip) tip.textContent = '上传失败：' + e.message; }
+}
+
 // ── 保存 / 删除 ──
 async function scSave() {
   const c = sc.cur;
@@ -455,6 +525,9 @@ async function scSave() {
   if (!c.domain) { alert('请选择领域'); return; }
   // 对外内容里不能出现学生真实姓名（含姓）
   const stu = (sc.stu || []).find(x => String(x.id) === String(c.student_id));
+  const pending = (c.schoolInput || '').trim();
+  if (pending && !c.schools.some(x => x.label === pending)) c.schools.push({ label: pending, on: true });
+  c.result = c.schools.filter(x => x.on).map(x => x.label).join(' · ');
   if (stu && stu.name) {
     const nm = String(stu.name).trim(), keys = nm.length >= 3 ? [nm, nm.slice(0, 2)] : [nm];
     const fields = { '对外称呼': c.alias, '一句话标签': c.tagline, '背景': c.background, '合格结果': c.result, '学生感言': c.quote, '时间线': c.timeline.map(t => t.period + t.content).join(' ') };
