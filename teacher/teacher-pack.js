@@ -71,7 +71,23 @@ function pkSave() {
 function pkAdd(item, opts) {
   pkLoad();
   if ((item.type === 'plan_price' || item.type === 'price_table') && !(typeof pricingEnabled === 'function' && pricingEnabled())) return;   // 套餐服务 / 价格表（含价格）只有开通权限的老师能加入
+  // 带 key 的条目按 key 去重：已有就用新内容替换（位置不变；标题被老师改过就保留），返回 'updated'；否则新增并返回 'added'
+  if (item.key) {
+    const old = pkItems.find(x => x.key === item.key);
+    if (old) {
+      const edited = old.autoTitle != null && old.title !== old.autoTitle;
+      old.html = item.html; old.autoTitle = item.title; if (!edited) old.title = item.title;
+      if (item.wide != null) old.wide = item.wide;
+      pkSave(); pkUpdateTabBadge();
+      if (!(opts && opts.silent)) {
+        pkToast(`资料里已有「${old.title}」，已更新为最新内容`, true);
+        if (typeof curTab !== 'undefined' && curTab === 'promopack') pkRender();
+      }
+      return 'updated';
+    }
+  }
   const it = Object.assign({ wide: false, include: true }, item, {
+    autoTitle: item.title,
     id: 'pk-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
     addedAt: new Date().toISOString(),
   });
@@ -83,9 +99,10 @@ function pkAdd(item, opts) {
   if (it.student && !pkCover.student) pkCover.student = it.student;
   pkSave();
   pkUpdateTabBadge();
-  if (opts && opts.silent) return;
+  if (opts && opts.silent) return 'added';
   pkToast(`已加入宣传资料：${it.title}（共 ${pkItems.length} 项）`, true);
   if (typeof curTab !== 'undefined' && curTab === 'promopack') pkRender();
+  return 'added';
 }
 
 // ── 价格表（通用价目，不针对某个学生；需要「课程方案（含价格）」权限）──
@@ -205,24 +222,31 @@ function pkUpdateTabBadge() {
 // 学科介绍按板块拆成独立条目加入（专业介绍 / 课程介绍 / 课程表 / 讲师介绍各自按默认顺序排位）；返回加入的条目数
 function pkAddMajorParts(major, data, parts, silent) {
   const name = MAJORS[major] || major;
-  let n = 0;
+  let added = 0, updated = 0, lastTitle = '';
   PK_MAJOR_PARTS.forEach(([k, label]) => {
     if (!parts.includes(k)) return;
     const html = pkMajorHtml(major, data, [k]);
     if (!html) return;
-    pkAdd({ type: PK_PART_TYPE[k], title: `${name} ${label}`, html }, { silent: true }); n++;
+    const title = `${name} ${label}`;
+    const r = pkAdd({ type: PK_PART_TYPE[k], key: `major:${major}:${PK_PART_KEY[k]}`, title, html }, { silent: true });
+    if (r === 'updated') { updated++; lastTitle = (pkItems.find(x => x.key === `major:${major}:${PK_PART_KEY[k]}`) || {}).title || title; } else { added++; lastTitle = title; }
   });
+  const n = added + updated;
   if (n && !silent) {
-    pkToast(`已加入宣传资料：${name} 学科介绍（${n} 项，共 ${pkItems.length} 项）`, true);
+    if (n === 1) pkToast(updated ? `资料里已有「${lastTitle}」，已更新为最新内容` : `已加入宣传资料：${lastTitle}（共 ${pkItems.length} 项）`, true);
+    else pkToast(`${name} 学科介绍：新增 ${added} 项、更新 ${updated} 项（共 ${pkItems.length} 项）`, true);
     if (typeof curTab !== 'undefined' && curTab === 'promopack') pkRender();
   }
   return n;
 }
+// key 里的板块名（major:shakai:lecturer）
+const PK_PART_KEY = { major_intro: 'major_intro', course: 'course', schedule: 'schedule', lecturer: 'lecturer' };
 
-// 宣传相关页：把当前专业（全部板块）加入
-function pkAddMajorFromPromo() {
+// 宣传相关页：把当前板块（part）加入；不传 part = 加入全部 4 项
+function pkAddMajorFromPromo(part) {
   if (!prData) return;
-  if (!pkAddMajorParts(prMajor, prData, PK_MAJOR_PARTS.map(p => p[0]))) alert('该专业暂无宣传内容');
+  const parts = part ? [part] : PK_MAJOR_PARTS.map(p => p[0]);
+  if (!pkAddMajorParts(prMajor, prData, parts)) alert('该专业所选板块暂无内容');
 }
 
 // 本页：选专业 + 板块后直接添加
