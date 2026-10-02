@@ -65,8 +65,8 @@ function scListHtml() {
       ${sc.ctx.canWrite ? `<button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="scNew()">＋ 新建案例</button>` : ''}
     </div>
     ${doms.length > 1 || (doms.length && !sc.ctx.lockDomain) ? row('领域', chip(!f.domain, '全部', "sc.f.domain='';scRender()") + doms.map(d => chip(f.domain === d, scE(d), `sc.f.domain='${scE(d)}';scRender()`)).join('')) : ''}
-    ${majors.length ? row('专业', chip(!f.major, '全部', "sc.f.major='';scRender()") + majors.map(m => chip(f.major === m, scE(typeof majorLabel === 'function' ? majorLabel(m) : m), `sc.f.major='${scE(m)}';scRender()`)).join('')) : ''}
-    ${tags.length ? row('标签', chip(!f.tag, '全部', "sc.f.tag='';scRender()") + tags.map(t => chip(f.tag === t, scE(t), `sc.f.tag='${scE(t)}';scRender()`)).join('')) : ''}
+    ${majors.length ? row('专业', chipFold([{ on: !f.major, html: chip(!f.major, '全部', "sc.f.major='';scRender()") }].concat(majors.map(m => ({ on: f.major === m, html: chip(f.major === m, scE(typeof majorLabel === 'function' ? majorLabel(m) : m), `sc.f.major='${scE(m)}';scRender()`) }))))) : ''}
+    ${tags.length ? row('标签', chipFold([{ on: !f.tag, html: chip(!f.tag, '全部', "sc.f.tag='';scRender()") }].concat(tags.map(t => ({ on: f.tag === t, html: chip(f.tag === t, scE(t), `sc.f.tag='${scE(t)}';scRender()`) }))))) : ''}
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px">
       <select onchange="sc.f.school=this.value;scRender()" style="font-size:11px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
         <option value="">合格学校：全部</option>${schools.map(s => `<option value="${scE(s)}" ${f.school === s ? 'selected' : ''}>${scE(s)}</option>`).join('')}</select>

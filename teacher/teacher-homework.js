@@ -9,6 +9,11 @@ let thwSubs = {};         // session_id → 提交数组
 let thwOpenSession = null;
 let thwOpenStudent = null;
 let thwShowPast = false, thwShowDone = false;   // 左栏「以前·未批改」「已批完的以前作业」是否展开
+let thwLimit = { todo: 30, done: 30 };   // 左栏「以前」两个展开列表先显示的条数
+function thwLimited(list, key, itemFn) {
+  const n = thwLimit[key] || 30;
+  return list.slice(0, n).map(itemFn).join('') + (list.length > n ? `<div onclick="thwLimit['${key}']=${n}+30;thwRender()" style="cursor:pointer;text-align:center;padding:7px;font-size:11px;color:var(--accent)">显示更多（还有 ${list.length - n} 项）</div>` : '');
+}
 let thwPendingFile = null;   // 本次批改待保存的批改文件 {url, name}
 // 学部美术「作品收集」：分配给我的美术课（②），或我担当的美术课（①），按周批改 art_works
 let thwArt = [];          // [{course, weeks:[{start,label,works}], showPast, showDone}]
@@ -112,9 +117,9 @@ function thwRender() {
     <div style="flex:0 0 250px;min-width:220px;max-height:74vh;overflow-y:auto;background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:8px">
       ${thwSessions.length || !thwArt.length ? `${sec(`本周 <span style="font-weight:400;color:var(--text-3)">${wk.label}</span>`)}
       ${cur.length ? cur.map(item).join('') : '<div style="font-size:10px;color:var(--text-3);padding:2px 10px 6px">本周没有分配给你的作业</div>'}` : ''}
-      ${pastTodo.length ? `<div onclick="thwShowPast=!thwShowPast;thwRender()" style="cursor:pointer;margin:8px 0 4px;padding:7px 10px;border-radius:3px;background:#fdf1e6;border:1px solid #e8c9a8;color:#a0521a;font-size:11px;font-weight:600">⚠ 以前的作业还有 ${pastN} 份未批改 <span style="float:right;font-weight:400">${thwShowPast?'▾':'▸'}</span></div>${thwShowPast ? pastTodo.map(item).join('') : ''}` : ''}
+      ${pastTodo.length ? `<div onclick="thwShowPast=!thwShowPast;thwRender()" style="cursor:pointer;margin:8px 0 4px;padding:7px 10px;border-radius:3px;background:#fdf1e6;border:1px solid #e8c9a8;color:#a0521a;font-size:11px;font-weight:600">⚠ 以前的作业还有 ${pastN} 份未批改 <span style="float:right;font-weight:400">${thwShowPast?'▾':'▸'}</span></div>${thwShowPast ? thwLimited(pastTodo, 'todo', item) : ''}` : ''}
       ${early.length ? sec('提前提交') + early.map(item).join('') : ''}
-      ${pastDone.length ? `<div onclick="thwShowDone=!thwShowDone;thwRender()" style="cursor:pointer;font-size:10px;color:var(--text-3);padding:8px 4px 2px;text-decoration:underline">${thwShowDone?'收起':'查看'}已批完的以前作业（${pastDone.length}）</div>${thwShowDone ? pastDone.map(item).join('') : ''}` : ''}
+      ${pastDone.length ? `<div onclick="thwShowDone=!thwShowDone;thwRender()" style="cursor:pointer;font-size:10px;color:var(--text-3);padding:8px 4px 2px;text-decoration:underline">${thwShowDone?'收起':'查看'}已批完的以前作业（${pastDone.length}）</div>${thwShowDone ? thwLimited(pastDone, 'done', item) : ''}` : ''}
       ${thwArt.map(thwArtBlockHtml).join('')}
       ${thwNoQ.length ? `<div style="font-size:10px;color:var(--text-3);padding:8px 4px 2px;line-height:1.7">尚未出题：${thwNoQ.map(c => thwEsc(c.name)).join('、')}</div>` : ''}
     </div>

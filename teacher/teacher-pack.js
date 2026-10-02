@@ -192,7 +192,7 @@ function pkCommonHtml() {
   return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:10px">${head}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${doms.map(d => chip(d === pkCommon.domain, pkEsc(d), `pkCommonSetDomain('${pkEsc(d)}')`)).join('')}</div>
     <div style="font-size:10px;color:var(--text-3);margin-bottom:5px">点选要放进资料的内容块（高亮 = 加入），每块作为一章，排在资料最后</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${rows.map(r => chip(!pkCommon.off.has(r.id), pkEsc(r.title), `pkCommonToggle('${pkEsc(r.id)}')`)).join('')}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${chipFold(rows.map(r => ({ on: !pkCommon.off.has(r.id), html: chip(!pkCommon.off.has(r.id), pkEsc(r.title), `pkCommonToggle('${pkEsc(r.id)}')`) })))}</div>
     <button onclick="pkAddCommon()" ${n ? '' : 'disabled'} style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 14px;cursor:${n ? 'pointer' : 'not-allowed'};opacity:${n ? 1 : .5};font-family:inherit">➕ 加入宣传资料（${n} 块）</button>
   </div>`;
 }

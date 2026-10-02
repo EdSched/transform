@@ -77,7 +77,7 @@ async function prLangRefresh() {
   try { prData = await prFetchMajor(prMajor); } catch (e) { alert('读取失败：' + e.message); }
   prRenderBody();
 }
-function prLangSet(k, v) { prLang[k] = v; if (k === 'kind' || k === 'period') prLang.campus = ''; prRenderBody(); }
+function prLangSet(k, v) { prLang.limit = 30; prLang[k] = v; if (k === 'kind' || k === 'period') prLang.campus = ''; prRenderBody(); }
 function prLangToggle(id) {
   const i = prLangIds.indexOf(id);
   if (i >= 0) prLangIds.splice(i, 1); else prLangIds.push(id);
@@ -109,8 +109,8 @@ function prLangPanelHtml() {
       <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px"><span style="font-size:10px;color:var(--text-3)">期数：</span>
         ${chip(pv === 'next', `prLangSet('period','next')`, `下一期（${k.next.label}）`)}${chip(pv === 'cur', `prLangSet('period','cur')`, `当期（${k.cur.label}）`)}</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px"><span style="font-size:10px;color:var(--text-3)">校区：</span>
-        ${chip(!prLang.campus, `prLangSet('campus','')`, '全部')}${campuses.map(c => chip(prLang.campus === c, `prLangSet('campus','${prEsc(c)}')`, c)).join('')}</div>
-      ${list.length ? list.map(row).join('') : '<div style="font-size:11px;color:var(--text-3);padding:8px 0">该期没有符合条件的语言课</div>'}
+        ${chip(!prLang.campus, `prLangSet('campus','')`, '全部')}${chipFold(campuses.map(c => ({ on: prLang.campus === c, html: chip(prLang.campus === c, `prLangSet('campus','${prEsc(c)}')`, c) })))}</div>
+      ${list.length ? list.slice(0, prLang.limit || 30).map(row).join('') + (list.length > (prLang.limit || 30) ? `<div onclick="prLang.limit=(prLang.limit||30)+30;prRenderBody()" style="cursor:pointer;text-align:center;padding:7px;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:3px">显示更多（还有 ${list.length - (prLang.limit || 30)} 项）</div>` : '') : '<div style="font-size:11px;color:var(--text-3);padding:8px 0">该期没有符合条件的语言课</div>'}
       ${n ? `<div style="margin-top:6px"><button onclick="prLangClear()" style="font-size:10px;background:var(--surface);border:1px solid var(--border);color:var(--text-2);border-radius:3px;padding:3px 12px;cursor:pointer;font-family:inherit">清空语言课（已选 ${n} 门）</button></div>` : ''}
     </div>` : ''}
   </div>`;
@@ -220,7 +220,7 @@ function prRenderShell() {
     ${prCommonDomains().map(d => `<div class="filter-chip ${prCommonDomain===d?'active':''}" onclick="prCommonDomain='${prEsc(d)}';prRenderShell()" style="padding:3px 10px;font-size:10px">${prEsc(d)}</div>`).join('') || '<span style="font-size:10px;color:var(--text-3)">admin 还没有发布任何通用宣传内容</span>'}
   </div>` : `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
     <span style="font-size:10px;color:var(--text-3)">专业：</span>
-    ${(prMajorsCache || PR_MAJORS_FALLBACK).map(m => `<div class="filter-chip ${prMajor===m?'active':''}" onclick="prSetMajor('${m}')" style="padding:3px 10px;font-size:10px">${prEsc(prMajorName(m))}</div>`).join('') || '<span style="font-size:10px;color:var(--text-3)">admin 还没有录入任何专业的宣传内容</span>'}
+    ${chipFold((prMajorsCache || PR_MAJORS_FALLBACK).map(m => ({ on: prMajor===m, html: `<div class="filter-chip ${prMajor===m?'active':''}" onclick="prSetMajor('${m}')" style="padding:3px 10px;font-size:10px">${prEsc(prMajorName(m))}</div>` }))) || '<span style="font-size:10px;color:var(--text-3)">admin 还没有录入任何专业的宣传内容</span>'}
   </div>`}
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px">
     ${prSections().map(([k,l]) => `<button onclick="prSection='${k}';prExpanded=null;prRenderShell()" style="font-size:11px;padding:5px 14px;border-radius:3px;cursor:pointer;font-family:inherit;border:1px solid ${prSection===k?'var(--accent)':'var(--border)'};background:${prSection===k?'var(--accent)':'var(--surface)'};color:${prSection===k?'#fff':'var(--text-2)'}">${l}</button>`).join('')}

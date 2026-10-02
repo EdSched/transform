@@ -168,7 +168,7 @@ function tpEditorHtml() {
       <div>${lbl('课时（小时）')}<input type="number" min="0" step="0.5" value="${tpE(c.vipHours)}" oninput="tp.cur.vipHours=this.value;tpRefresh()" style="${inp}"></div>
     </div>
     ${c.vipMode === 'custom' && rate ? `<div style="margin-top:8px">${lbl('授课内容（点选，可多选）')}<div style="display:flex;gap:6px;flex-wrap:wrap">
-      ${(rate.items || []).map((it, i) => chip(c.vipItems.includes(it), tpE(it), `tpToggleVipItem(${i})`)).join('') || '<span style="font-size:10px;color:var(--text-3)">这个单价类型没有设置授课内容</span>'}</div></div>` : ''}
+      ${chipFold((rate.items || []).map((it, i) => ({ on: c.vipItems.includes(it), html: chip(c.vipItems.includes(it), tpE(it), `tpToggleVipItem(${i})`) }))) || '<span style="font-size:10px;color:var(--text-3)">这个单价类型没有设置授课内容</span>'}</div></div>` : ''}
     ${c.vipMode === 'plan' && c.vipPlanRef ? `<div style="font-size:10px;color:var(--text-3);margin-top:6px">内容：${tpE(lines.find(l => l.kind === 'vip')?.content || '—')}</div>` : ''}`;
 
   return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
