@@ -557,18 +557,25 @@ const TSM_STATUS = [['active', '在籍'], ['graduated', '已合格'], ['expired'
 const tsmDefault = () => ({ domain: tsmDefaultDomain(), major: '', status: 'active', source: '', q: '' });
 let tsm = tsmDefault();
 let tsmDomainInited = false;   // 首次加载学生池后，才能按可见学生判断默认领域
-// 默认领域：老师自己的领域（managed_by 第一个；没有就取负责专业所属领域里人数最多的）；营业老师等没有所属领域的 → 全部
+// 默认领域：老师自己的领域（managed_by 第一个；没有就取负责专业所属领域里人数最多的）；都没有（营业老师等）→ 人数最多的领域。不默认「全部」
 function tsmDefaultDomain() {
   if (typeof teacherData === 'undefined' || !teacherData) return '';
-  if (typeof isSalesTeacher === 'function' && isSalesTeacher(teacherData)) return '';
-  const present = new Set((tsmPool || []).map(s => tsmDomainOf(s.major)).filter(Boolean));
+  const pool = tsmPool || [];
+  const present = new Set(pool.map(s => tsmDomainOf(s.major)).filter(Boolean));
   const ok = d => d && (!tsmPool || present.has(d));
-  const mb = (teacherData.managed_by || []).filter(Boolean);
-  if (mb.length) return ok(mb[0]) ? mb[0] : '';
-  const cntBy = {};
-  (teacherData.majors || []).forEach(m => { const d = tsmDomainOf(m); if (d) cntBy[d] = (cntBy[d] || 0) + (tsmPool || []).filter(s => tpMajorMatch(s.major, m)).length + 0.001; });
-  const best = Object.keys(cntBy).sort((a, b) => cntBy[b] - cntBy[a])[0];
-  return ok(best) ? best : '';
+  const isSales = typeof isSalesTeacher === 'function' && isSalesTeacher(teacherData);
+  if (!isSales) {
+    const mb = (teacherData.managed_by || []).filter(Boolean);
+    if (mb.length && ok(mb[0])) return mb[0];
+    const cntBy = {};
+    (teacherData.majors || []).forEach(m => { const d = tsmDomainOf(m); if (d) cntBy[d] = (cntBy[d] || 0) + pool.filter(s => tpMajorMatch(s.major, m)).length + 0.001; });
+    const best = Object.keys(cntBy).sort((a, b) => cntBy[b] - cntBy[a])[0];
+    if (ok(best)) return best;
+  }
+  // 营业老师 / 没有所属领域：也不默认「全部」，选可见学生里人数最多的领域（想看全部可手动点「全部」）
+  const byDom = {};
+  pool.forEach(s => { const d = tsmDomainOf(s.major); if (d) byDom[d] = (byDom[d] || 0) + 1; });
+  return Object.keys(byDom).sort((a, b) => byDom[b] - byDom[a])[0] || '';
 }
 // 学生列表分页：每次先显示 30 人，「显示更多」再加 30；筛选/切页时重置
 const TSM_PAGE = 30;
