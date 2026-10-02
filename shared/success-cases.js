@@ -729,8 +729,9 @@ function scMountTeacher(boxId) {
   const set = typeof tsaAllowedSet === 'function' ? tsaAllowedSet() : null;            // 专业范围（null = 不限）
   const doms = new Set([...(t.managed_by || []), ...(t.domains || [])]);
   if (set) set.forEach(m => { if (MAJOR_DOMAIN[m]) doms.add(MAJOR_DOMAIN[m]); });
-  const allowDomain = d => (!set && !doms.size) || doms.has(d);
-  const allowMajor = m => !set || set.has(m) || (m === 'shakai_group' && [...set].some(x => (MAJOR_GROUPS.shakai_group || []).includes(x)));
+  const sales = typeof isSalesTeacher === 'function' && isSalesTeacher(t);   // 营业老师：所有领域 / 专业都算在范围内
+  const allowDomain = d => sales || (!set && !doms.size) || doms.has(d);
+  const allowMajor = m => sales || !set || set.has(m) || (m === 'shakai_group' && [...set].some(x => (MAJOR_GROUPS.shakai_group || []).includes(x)));
   scMount(boxId, {
     mode: 'teacher', canWrite: !!p.success_cases, canPack: true, me: (t.name || (typeof teacherName !== 'undefined' ? teacherName : '') || '').trim(), lockDomain: '',
     allowDomain, allowMajor,

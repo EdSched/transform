@@ -612,6 +612,7 @@ function tsaGuaranteedLock() { return !!(teacherData && teacherData.permissions 
 function tsaIsGuaranteed(s) { return ((s && s.course_type) || '').includes('保录'); }
 
 function tsaAllowedSet() {
+  if (typeof isSalesTeacher === 'function' && isSalesTeacher(teacherData)) return null;   // 营业老师：看全部学生
   const p = (teacherData && teacherData.permissions) || {};
   let allowed = (Array.isArray(p.student_majors) && p.student_majors.length)
     ? p.student_majors
