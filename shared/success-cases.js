@@ -10,11 +10,12 @@ const sc = {
   f: { domain: '', major: '', tag: '', school: '', q: '' },
   view: 'list',            // list | detail | edit
   openId: null, cur: null,
-  sel: new Set(), opt: { works: false, plans: false },
+  sel: new Set(), opt: { works: false, plans: false, others: false },
   stu: null,               // 编辑时可选的学生 [{id,name,major,...}]
 };
 const SC_TAG_HINTS = ['跨专业', '零基础', '专科', '大专', '转专业', '短期', '低分逆袭'];
 const scE = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const SC_OTHER_CATS = ['课堂笔记', '老师解答', '其他'];
 const scArr = v => Array.isArray(v) ? v : (typeof v === 'string' && v ? (() => { try { const a = JSON.parse(v); return Array.isArray(a) ? a : []; } catch (e) { return []; } })() : []);
 
 // host: 'promo_body'（admin）或 'sc_root'（老师端）；ctx 见下面 scCtxAdmin / scCtxTeacher
@@ -120,7 +121,7 @@ function scPackBar(n) {
   return `<div style="position:sticky;bottom:8px;margin-top:14px;background:#3a2e24;color:#f7f5f0;border-radius:6px;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
     <span style="font-size:12px">已选 <b>${n}</b> 个案例</span>
     <span style="font-size:10px;opacity:.75">默认只放时间线和感言；可一起放：</span>
-    ${chip(sc.opt.works, '作业图片', 'sc.opt.works=!sc.opt.works;scRender()')}${chip(sc.opt.plans, '计划书 / 志望理由书', 'sc.opt.plans=!sc.opt.plans;scRender()')}
+    ${chip(sc.opt.works, '作业图片', 'sc.opt.works=!sc.opt.works;scRender()')}${chip(sc.opt.plans, '计划书 / 志望理由书', 'sc.opt.plans=!sc.opt.plans;scRender()')}${chip(sc.opt.others, '其他展示', 'sc.opt.others=!sc.opt.others;scRender()')}
     <button onclick="scAddToPack()" ${n ? '' : 'disabled'} style="margin-left:auto;font-size:12px;background:#f7f5f0;color:#3a2e24;border:none;border-radius:3px;padding:6px 16px;cursor:${n ? 'pointer' : 'not-allowed'};opacity:${n ? 1 : .5};font-family:inherit">➕ 加入宣传资料</button></div>`;
 }
 function scToggleSel(id) { if (sc.sel.has(id)) sc.sel.delete(id); else sc.sel.add(id); scRender(); }
@@ -135,13 +136,14 @@ function scTableRows(r) {
 }
 function scDetailHtml() {
   const r = (sc.rows || []).find(x => x.id === sc.openId); if (!r) { sc.view = 'list'; return scListHtml(); }
-  const works = scArr(r.works), plans = scArr(r.plan_files);
+  const works = scArr(r.works), plans = scArr(r.plan_files), others = scArr(r.others);
   return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <button class="btn btn-outline btn-sm" onclick="sc.view='list';scRender()">← 返回</button>
       ${scCanEdit(r) ? `<button class="btn btn-outline btn-sm" onclick="scEdit('${scE(r.id)}')">✏ 编辑</button>` : ''}
       ${scPackOn() ? (r.published ? `<span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto"><span style="font-size:10px;color:var(--text-3)">可一起放：</span>
         <div class="filter-chip${sc.opt.works ? ' active' : ''}" onclick="sc.opt.works=!sc.opt.works;scRender()" style="padding:3px 10px;font-size:10px">作业图片</div>
         <div class="filter-chip${sc.opt.plans ? ' active' : ''}" onclick="sc.opt.plans=!sc.opt.plans;scRender()" style="padding:3px 10px;font-size:10px">计划书 / 志望理由书</div>
+        <div class="filter-chip${sc.opt.others ? ' active' : ''}" onclick="sc.opt.others=!sc.opt.others;scRender()" style="padding:3px 10px;font-size:10px">其他展示</div>
         <button class="btn btn-primary btn-sm" onclick="scAddOne('${scE(r.id)}')">➕ 加入宣传资料</button></span>`
         : `<span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto"><button class="btn btn-primary btn-sm" disabled style="opacity:.45">➕ 加入宣传资料</button>${scDraftNote(r)}</span>`) : ''}</div>
     <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:5px;padding:16px 18px;max-width:820px">
@@ -151,6 +153,7 @@ function scDetailHtml() {
       ${(r.quote || '').trim() ? `<div style="border-left:3px solid var(--accent);padding:4px 12px;margin:10px 0;color:var(--text-2);font-size:12px;line-height:1.9">“${scE(r.quote)}”</div>` : ''}
       ${works.length ? `<div style="font-size:11px;font-weight:600;margin:12px 0 6px">作业展示</div>${scWorksHtml(works, false)}` : ''}
       ${plans.length ? `<div style="font-size:11px;font-weight:600;margin:12px 0 6px">计划书 / 志望理由书（老师批改版）</div>${scPlansHtml(plans, false)}` : ''}
+      ${others.length ? `<div style="font-size:11px;font-weight:600;margin:12px 0 2px">其他展示</div>${scOthersHtml(others, false)}` : ''}
     </div>`;
 }
 function scTableHtml(r, forDoc) {
@@ -169,6 +172,17 @@ function scWorksHtml(works, small) {
     ${w.caption ? `<div style="font-size:9px;color:var(--text-3);margin-top:2px">${scE(w.caption)}</div>` : ''}
     ${w.feedback ? `<div style="font-size:9px;color:var(--text-2);line-height:1.5;margin-top:1px">${scE(w.feedback)}</div>` : ''}</div>`).join('')}</div>`;
 }
+// 其他展示：按类型分组；图片显示缩略图，文件显示 📎 文件名链接
+function scOthersHtml(others, forDoc) {
+  const cats = [...SC_OTHER_CATS, ...new Set(others.map(o => o.category || '课堂笔记').filter(k => !SC_OTHER_CATS.includes(k)))];
+  return cats.map(k => {
+    const list = others.filter(o => (o.category || '课堂笔记') === k); if (!list.length) return '';
+    const imgs = list.filter(o => o.kind === 'image'), files = list.filter(o => o.kind !== 'image');
+    return `<div class="${forDoc ? 'pk-case-s' : ''}" style="font-size:10px;color:var(--text-3);margin:8px 0 4px">${scE(k)}</div>
+      ${imgs.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(${forDoc ? 90 : 130}px,1fr));gap:8px;margin-bottom:4px">${imgs.map(o => `<div style="min-width:0"><a href="${scE(o.url)}" target="_blank"><img src="${scE(o.url)}" loading="lazy" style="width:100%;height:${forDoc ? 90 : 130}px;object-fit:cover;border:1px solid var(--border);border-radius:3px"></a>${o.note ? `<div style="font-size:9px;color:var(--text-3);margin-top:2px">${scE(o.note)}</div>` : ''}</div>`).join('')}</div>` : ''}
+      ${files.map(o => `<div style="font-size:11px;margin-bottom:4px">📎 <a href="${scE(o.url)}" target="_blank" style="color:var(--accent)">${scE(o.name || '文件')}</a>${o.note ? `<span style="color:var(--text-3)"> · ${scE(o.note)}</span>` : ''}</div>`).join('')}`;
+  }).join('');
+}
 function scPlansHtml(plans, forDoc) {
   const isImg = u => /\.(jpe?g|png|gif|webp)(\?|$)/i.test(u || '');
   return plans.map(p => isImg(p.url)
@@ -180,13 +194,14 @@ function scPlansHtml(plans, forDoc) {
 // 每个案例一个卡片：标题「小A — 一句话标签」+ 时期|内容表 + 感言（引用）+（可选）作业小图 / 计划书
 function scDocHtml(cases, opt) {
   return cases.map(r => {
-    const works = opt.works ? scArr(r.works) : [], plans = opt.plans ? scArr(r.plan_files) : [];
+    const works = opt.works ? scArr(r.works) : [], plans = opt.plans ? scArr(r.plan_files) : [], others = opt.others ? scArr(r.others) : [];
     return `<div class="pk-case">
       <div class="pk-case-h">${scE(r.alias)}${r.tagline ? ' — ' + scE(r.tagline) : ''}</div>
       ${scTableHtml(r, true)}
       ${(r.quote || '').trim() ? `<div class="pk-case-q">“${scE(r.quote)}”</div>` : ''}
       ${works.length ? `<div class="pk-case-s">作业展示</div>${scWorksHtml(works, true)}` : ''}
       ${plans.length ? `<div class="pk-case-s">计划书 / 志望理由书（老师批改版）</div>${scPlansHtml(plans, true)}` : ''}
+      ${others.length ? `<div class="pk-case-s">其他展示</div>${scOthersHtml(others, true)}` : ''}
     </div>`;
   }).join('');
 }
@@ -214,7 +229,7 @@ function scNextAlias() {
 function scBlank() {
   const lock = sc.ctx.lockDomain || '';
   const doms = scAllowedDomains();
-  return { id: '', domain: lock || doms[0] || '', majors: [], student_id: '', alias: scNextAlias(), tagline: '', background: '', timeline: [], schools: [], schoolInput: '', schoolNew: 0, quote: '', works: [], plan_files: [], tags: [], published: false,
+  return { id: '', domain: lock || doms[0] || '', majors: [], student_id: '', alias: scNextAlias(), tagline: '', background: '', timeline: [], schools: [], schoolInput: '', schoolNew: 0, quote: '', works: [], plan_files: [], others: [], tags: [], published: false,
     stuSearch: '', cand: null, tagInput: '' };
 }
 function scAllowedDomains() { return DOMAINS.map(d => d.label).filter(d => sc.ctx.allowDomain(d)); }
@@ -222,7 +237,7 @@ function scNew() { sc.cur = scBlank(); sc.view = 'edit'; scRender(); scEnsureStu
 function scEdit(id) {
   const r = (sc.rows || []).find(x => x.id === id); if (!r) return;
   sc.cur = { id: r.id, domain: r.domain, majors: scArr(r.majors).slice(), student_id: r.student_id || '', alias: r.alias || '', tagline: r.tagline || '', background: r.background || '', timeline: scArr(r.timeline).map(t => ({ period: t.period || '', content: t.content || '' })),
-    schools: scSplitResult(r.result).map(l => ({ label: l, on: true })), schoolInput: '', schoolNew: 0, quote: r.quote || '', works: scArr(r.works).map(w => Object.assign({}, w)), plan_files: scArr(r.plan_files).map(p => Object.assign({}, p)), tags: scArr(r.tags).slice(), published: r.published === true, stuSearch: '', cand: null, tagInput: '' };
+    schools: scSplitResult(r.result).map(l => ({ label: l, on: true })), schoolInput: '', schoolNew: 0, quote: r.quote || '', works: scArr(r.works).map(w => Object.assign({}, w)), plan_files: scArr(r.plan_files).map(p => Object.assign({}, p)), others: scArr(r.others).map(o => Object.assign({}, o)), tags: scArr(r.tags).slice(), published: r.published === true, stuSearch: '', cand: null, tagInput: '' };
   sc.view = 'edit'; scRender(); scEnsureStudents();
   if (sc.cur.student_id) { scLoadCandidates(); scMergeSchools(sc.cur); }
 }
@@ -322,6 +337,16 @@ function scEditHtml() {
         <span onclick="sc.cur.plan_files.splice(${i},1);scRender()" style="cursor:pointer;text-align:center;color:var(--danger)">✕</span></div>`).join('')}
       <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block">＋ 上传文件<input type="file" multiple onchange="scUploadPlan(this)" style="display:none"></label>
       <span id="sc_up_tip" style="font-size:10px;color:var(--text-3);margin-left:6px"></span>
+    </div>
+    <div style="${box}">${h('⑥ 其他展示（课堂笔记、老师解答等）')}
+      <div style="font-size:10px;color:var(--warn,#b8860b);background:#fff8e6;border:1px solid #e8d4a0;border-radius:3px;padding:4px 8px;margin-bottom:8px">请确认文件 / 图片中没有学生真实姓名。</div>
+      ${c.others.map((o, i) => `<div style="display:grid;grid-template-columns:1.1fr 110px 1.2fr 26px;gap:6px;margin-bottom:5px;align-items:center">
+        <a href="${scE(o.url)}" target="_blank" style="font-size:11px;color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.kind === 'image' ? `<img src="${scE(o.url)}" style="width:40px;height:30px;object-fit:cover;vertical-align:middle;border:1px solid var(--border);border-radius:2px"> ` : '📎 '}${scE(o.name || '文件')}</a>
+        <select onchange="sc.cur.others[${i}].category=this.value" style="${inp}">${SC_OTHER_CATS.map(k => `<option value="${k}" ${(o.category || '课堂笔记') === k ? 'selected' : ''}>${k}</option>`).join('')}</select>
+        <input value="${scE(o.note || '')}" placeholder="说明" oninput="sc.cur.others[${i}].note=this.value" style="${inp}">
+        <span onclick="sc.cur.others.splice(${i},1);scRender()" style="cursor:pointer;text-align:center;color:var(--danger)">✕</span></div>`).join('')}
+      <label class="btn btn-outline btn-sm" style="cursor:pointer;display:inline-block">＋ 上传<input type="file" multiple accept="image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt" onchange="scUploadOther(this)" style="display:none"></label>
+      <span id="sc_upo_tip" style="font-size:10px;color:var(--text-3);margin-left:6px"></span>
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:30px">
       ${chip(c.published, '发布（营业老师可见）', 'sc.cur.published=!sc.cur.published;scRender()')}
@@ -547,6 +572,21 @@ async function scUploadWork(input) {
   } catch (e) { if (tip) tip.textContent = '上传失败：' + e.message; }
 }
 
+async function scUploadOther(input) {
+  const files = [...(input.files || [])]; input.value = ''; if (!files.length) return;
+  const c = sc.cur, tip = document.getElementById('sc_upo_tip');
+  try {
+    for (let i = 0; i < files.length; i++) {
+      if (tip) tip.textContent = `上传中 ${i + 1}/${files.length}…`;
+      const f = files[i];
+      let ext = (f.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, ''); if (!ext || ext.length > 5) ext = 'bin';
+      const url = await sbUpload('admission-photos', `cases/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`, f);
+      c.others.push({ url, name: f.name, kind: /^image\//.test(f.type) ? 'image' : 'file', category: '课堂笔记', note: '' });
+    }
+    if (sc.cur === c) scRender();
+  } catch (e) { if (tip) tip.textContent = '上传失败：' + e.message; }
+}
+
 // ── 保存 / 删除 ──
 async function scSave() {
   const c = sc.cur;
@@ -566,7 +606,7 @@ async function scSave() {
   }
   const rec = { domain: c.domain, majors: c.majors, student_id: c.student_id || null, alias: c.alias.trim(), tagline: c.tagline.trim(), background: c.background.trim(),
     timeline: c.timeline.filter(t => (t.period || '').trim() || (t.content || '').trim()).map(t => ({ period: t.period.trim(), content: t.content.trim() })),
-    result: c.result.trim(), quote: c.quote.trim(), works: c.works, plan_files: c.plan_files, tags: c.tags, published: !!c.published, updated_at: new Date().toISOString() };
+    result: c.result.trim(), quote: c.quote.trim(), works: c.works, plan_files: c.plan_files, others: c.others, tags: c.tags, published: !!c.published, updated_at: new Date().toISOString() };
   try {
     if (c.id) {
       await sb(`/rest/v1/success_cases?id=eq.${encodeURIComponent(c.id)}`, 'PATCH', rec);
