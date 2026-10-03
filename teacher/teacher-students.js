@@ -536,11 +536,18 @@ async function saveTeacherDraftComment(draftId, studentId) {
 // ══════════════════════════════════
 let smTab = '';
 const SM_ITEMS = [['progress','📊 考学进度'], ['meetings','💬 面谈查询'], ['records','🗒 出席・作业记录'], ['profile','👤 学生档案']];
+// 出席・作业记录拆成两项：records_view 查看 / records_entry 登记；旧的 records 当作两项都开
+function smRecPerm(items) {
+  const it = Array.isArray(items) ? items : ((((teacherData && teacherData.permissions) || {}).student_mgmt_items) || []);
+  const legacy = it.includes('records');
+  return { view: legacy || it.includes('records_view'), entry: legacy || it.includes('records_entry') };
+}
 
 function smAllowedItems() {
   const p = (teacherData && teacherData.permissions) || {};
   const items = (p.student_mgmt && Array.isArray(p.student_mgmt_items)) ? p.student_mgmt_items : [];
-  const allowed = SM_ITEMS.filter(([k]) => items.includes(k));
+  const rp = smRecPerm(items);
+  const allowed = SM_ITEMS.filter(([k]) => k === 'records' ? (rp.view || rp.entry) : items.includes(k));
   // 重点关注：汇总已有数据的另一种展示，只要有考学进度/学生档案/面谈任一权限就提供
   if (items.includes('progress') || items.includes('profile') || items.includes('meetings')) {
     allowed.push(['focus', '⭐ 重点关注']);
@@ -1325,13 +1332,14 @@ function tsrRender() {
   const listAll = tsmFilterStudents(tsrStudents);
   const list = tsmSlice(listAll);
   const set = tsaAllowedSet();
+  const rp = smRecPerm();   // view 查看 / entry 登记
 
   box.innerHTML = `<div>
-    <!-- 签到区（选课→点名字记出席）-->
-    <div id="tat_session_bar" style="margin-bottom:6px"></div>
-    ${(typeof awTeacherIsArt === 'function' && awTeacherIsArt()) ? '<div id="aw_teacher_box"></div>' : ''}
-    <!-- 学生出席历史（可收起）-->
-    <div onclick="tsrHistOpen=!tsrHistOpen;tsrRender()" style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-2);padding:8px 0;border-top:1px solid var(--border);user-select:none">${tsrHistOpen?'▾':'▸'} 学生出席历史（${listAll.length} 人，点击${tsrHistOpen?'收起':'展开'}）</div>
+    <!-- 签到区（选课→点名字记出席），只有登记权限才显示 -->
+    ${rp.entry ? '<div id="tat_session_bar" style="margin-bottom:6px"></div>' : ''}
+    ${(rp.entry && typeof awTeacherIsArt === 'function' && awTeacherIsArt()) ? '<div id="aw_teacher_box"></div>' : ''}
+    <!-- 学生出席历史（可收起），只有查看权限才显示 -->
+    ${rp.view ? `<div onclick="tsrHistOpen=!tsrHistOpen;tsrRender()" style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-2);padding:8px 0;border-top:1px solid var(--border);user-select:none">${tsrHistOpen?'▾':'▸'} 学生出席历史（${listAll.length} 人，点击${tsrHistOpen?'收起':'展开'}）</div>
     <div style="display:${tsrHistOpen?'block':'none'}">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
       <div style="font-size:12px;font-weight:600">🗒 出席・作业记录（${listAll.length} 人）<span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:6px">${set ? '可见专业：' + [...set].map(m => MAJORS[m] || m).join('・') : '可见全部专业'}</span></div>
@@ -1377,9 +1385,9 @@ function tsrRender() {
       }).join('') : '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:11px">暂无学生</div>'}
     </div>
     ${tsmMoreHtml(listAll.length)}
-  </div>
+  </div>` : ''}
   </div>`;
-  if(typeof tatRenderSessionBar==='function') tatRenderSessionBar();
+  if(rp.entry && typeof tatRenderSessionBar==='function') tatRenderSessionBar();
   if(document.getElementById('aw_teacher_box')) awTeacherMount('aw_teacher_box', tsmFilterStudents(tsrStudents));   // 学部美术：🎨 作业收集
 }
 
