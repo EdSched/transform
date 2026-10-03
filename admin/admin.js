@@ -857,8 +857,8 @@ function renderTeachersPage(mc){
               <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可用的子项</div>
               <div style="display:flex;flex-wrap:wrap;gap:4px" id="perm_student_mgmt_items">
                 ${[
-              ['progress','考学进度'],['meetings','面谈查询'],['records','出席・作业记录'],['monthly','月度学习情况'],['profile','学生档案录入'],['profile_edit','档案修改（留痕，admin可恢复）'],
-            ].map(([k,v])=>`<div class="filter-chip" data-value="${k}" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">${v}</div>`).join('')}
+              ['progress','考学进度'],['meetings','面谈查询'],['records_view','出席・作业 查看'],['records_entry','出席 登记'],['monthly','月度学习情况'],['profile','学生档案录入'],['profile_edit','档案修改（留痕，admin可恢复）'],
+            ].map(([k,v])=>(k==='records_view'?'<span style="font-size:10px;color:var(--text-3);align-self:center;margin-left:4px">出席・作业：</span>':'')+`<div class="filter-chip" data-value="${k}" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">${v}</div>`).join('')}
               </div>
             </div>
             <div style="margin-left:20px">
@@ -1314,7 +1314,7 @@ function renderTeacherRows(){
           if(p.schedule) permsFull.push(p.schedule==='timetable'?'我的课表':'排班+课表');
           if(p.homework) permsFull.push('作业反馈');
           if(p.admission_query) permsFull.push('出願数据库');
-          if(p.student_mgmt){const _sm={progress:'考学进度',records:'出席作业',meetings:'面谈查询',monthly:'月度学习',profile:'档案录入',profile_edit:'档案修改'};permsFull.push('学生管理('+(((p.student_mgmt_items||[]).map(k=>_sm[k]||k).join('/'))||'—')+')');}
+          if(p.student_mgmt){const _sm={progress:'考学进度',records:'出席查看/出席登记',records_view:'出席查看',records_entry:'出席登记',meetings:'面谈查询',monthly:'月度学习',profile:'档案录入',profile_edit:'档案修改'};permsFull.push('学生管理('+(((p.student_mgmt_items||[]).map(k=>_sm[k]||k).join('/'))||'—')+')');}
           if(p.progress_plan) permsFull.push('进度规划（营业）');
           if(p.promo) permsFull.push('宣传相关（营业）');
           if(p.lect_info) permsFull.push('讲师信息查询（营业）');
@@ -1545,7 +1545,7 @@ function openEditTeacher(id){
   {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=!!p.success_cases;}
   document.getElementById('perm_student_mgmt').checked=!!p.student_mgmt;
   {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.checked=!!p.guaranteed_only;}
-  document.querySelectorAll('#perm_student_mgmt_items .filter-chip').forEach(c=>{c.classList.toggle('active',(p.student_mgmt_items||[]).includes(c.dataset.value));});
+  document.querySelectorAll('#perm_student_mgmt_items .filter-chip').forEach(c=>{c.classList.toggle('active',((p.student_mgmt_items||[]).includes(c.dataset.value)||((p.student_mgmt_items||[]).includes('records')&&/^records_(view|entry)$/.test(c.dataset.value))));});   // 旧的 records = 查看+登记都开
   document.querySelectorAll('#perm_student_majors .filter-chip').forEach(c=>{c.classList.toggle('active',(p.student_majors||[]).includes(c.dataset.value));});
   admFoldSync(document.getElementById('perm_student_majors'));
   document.querySelectorAll('#perm_booking_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.booking_types||[]).includes(c.dataset.value))});
