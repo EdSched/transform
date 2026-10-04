@@ -32,6 +32,7 @@ Sensis 经常在多个窗口/对话里同时改同一批文件，**已经多次�
 - `vip/index.html` 先加载 `vip.js`，再加载 `../student/study.js`——VIP 页面主体由 `study.js` 驱动（用 `window.__VIP_PAGE__` 区分）。
 - 老师端脚本按顺序加载：`teacher.js` → `teacher-students.js` → `teacher-plan.js` → `teacher-promo.js` → `teacher-sales.js` → `teacher-homework.js` → `teacher-vip.js` → `teacher-pack.js`。
 - `shared/constants.js` 在所有页面脚本之前加载，是公共常量/工具函数的唯一来源（如 `isGakubuMajor`、`RIYU_SECTIONS`、`majorKeyFromText`、`teacherInView`）。**不要在别的文件里重复声明同名 `const`，会直接报错。**
+- **新增任何全局名字（`let` / `const` / `function` / `class`）前，先全仓库搜一下有没有同名的**（尤其是 `tm*`、`tk*`、`tsa*` 这类短前缀，很容易撞）。同一个页面里 `let` / `const` / `class` 重名会让整个 js 文件加载失败（老师端曾因此整页「加载失败」）；`function` 重名不报错，但后加载的会悄悄覆盖先加载的。改完跑一遍 `node scripts/check-globals.js`（按各 `index.html` 的加载顺序检查，有致命重名会返回非 0）。
 
 ## 3. 数据访问规则
 
