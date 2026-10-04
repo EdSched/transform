@@ -92,6 +92,36 @@ async function handleMagicCallback(){
 
 function checkLogin(){const r=localStorage.getItem('txe_login');if(r){const{ts}=JSON.parse(r);if(Date.now()-ts<30*24*60*60*1000)return true}return false}
 
+// ── 中枢只认「数据库那边认得的管理员身份」：Supabase 会话 + 邮箱在管理员名单里 ──
+// 名单和数据库 is_admin() 是同一份。页面自己的 txe_login 只是 30 天的"看过登录框"标记，不等于数据库认你；
+// 会话失效时页面照样显示中枢，所有「只有管理员能写」的表就会报 42501（new row violates row-level security policy）
+const ADMIN_EMAILS=['pinnyxu@gmail.com','douhongyun@transform-edu.com'];
+let ADMIN_EMAIL='';
+async function adminSessionCheck(){
+  try{
+    const c=sbAuthClient(); if(!c) return {ok:false};
+    const { data }=await c.auth.getSession();
+    const u=data && data.session && data.session.user;
+    if(u && ADMIN_EMAILS.includes(String(u.email||'').toLowerCase())){
+      if(typeof __setSbToken==='function') __setSbToken(data.session.access_token, c);
+      return {ok:true,email:u.email};
+    }
+  }catch(e){}
+  return {ok:false};
+}
+// 进中枢：数据库身份没问题才进；否则清掉 txe_login，停在邮箱登录框并提示
+async function enterHubChecked(msg){
+  const r=await adminSessionCheck();
+  if(r.ok){ ADMIN_EMAIL=r.email; document.getElementById('loginOverlay').style.display='none'; showHub(); return true; }
+  localStorage.removeItem('txe_login');
+  document.getElementById('loginOverlay').style.display='flex';
+  const pw=document.getElementById('pwBox'); if(pw) pw.style.display='none';
+  const mg=document.getElementById('magicBox'); if(mg) mg.style.display='block';
+  const hint=document.getElementById('loginHint'); if(hint) hint.textContent='管理员登录';
+  const m=document.getElementById('magicMsg'); if(m){ m.style.color='var(--danger)'; m.textContent=msg||'登录已过期，请用邮箱重新登录'; }
+  return false;
+}
+
 async function doLogin(){
   const pw=document.getElementById('loginPw').value;
   // 领域钥匙登录：验证该钥匙的密码（密码不再下发到浏览器，交给数据库 rpc 比对）
@@ -101,7 +131,7 @@ async function doLogin(){
     if(pwOk){
       localStorage.setItem('txe_login',JSON.stringify({ts:Date.now()}));
       document.getElementById('loginOverlay').style.display='none';
-      if(ACCESS_KEY.is_admin){ showHub(); }           // admin钥匙 → 中枢台
+      if(ACCESS_KEY.is_admin){ await enterHubChecked('管理员请用邮箱登录'); }           // admin钥匙 → 还要有邮箱登录的数据库身份才进中枢台
       else { enterFromKey(); } // 领域/专业/组合钥匙 → 直达
     } else { loginErr('密码错误，请重试'); }
     return;
@@ -132,6 +162,7 @@ async function forceRelogin(){
 const HUB_DOMAINS=['大学院文科','大学院理科','学部文科','学部理科','语言-日语','语言-英语'];
 function showHub(){
   const el=document.getElementById('hubOverlay');
+  const he=document.getElementById('hubEmail'); if(he) he.textContent=ADMIN_EMAIL?('当前登录：'+ADMIN_EMAIL):'';
   if(el){ renderHubCards(); el.style.display='flex'; }
   else { enterDomain('all'); } // 兜底：没有中枢层界面则直接进总览，保证系统始终可用
 }
@@ -1955,12 +1986,11 @@ function backToTeacherPage(){
   }
   // 若从邮件魔法链接回来 → 完成 Auth 登录（无 k 的 admin 场景）
   if(!ACCESS_KEY){
-    try{ if(await handleMagicCallback()){ showHub(); return; } }catch(e){}
+    try{ if(await handleMagicCallback()){ await enterHubChecked('这个邮箱不是管理员邮箱，请换管理员邮箱登录'); return; } }catch(e){}
   }
   // 已登录：admin钥匙/无k → 中枢台
   if(checkLogin()){
-    if(ACCESS_KEY && ACCESS_KEY.is_admin){ showHub(); }
-    else { showHub(); }
+    await enterHubChecked('登录已过期，请用邮箱重新登录');   // 检查数据库身份：会话没了 / 邮箱不对就回到邮箱登录
     return;
   }
   // 未登录：显示登录框。有 ?k=（领域钥匙）→ 显示密码框；admin 直接访问 → 只显示邮箱免密登录
@@ -1969,8 +1999,10 @@ function backToTeacherPage(){
     const isKey = ACCESS_KEY && !ACCESS_KEY.invalid;
     const pwBox = document.getElementById('pwBox');
     const magicBox = document.getElementById('magicBox');
-    if(pwBox) pwBox.style.display = isKey ? 'block' : 'none';
-    if(magicBox) magicBox.style.display = isKey ? 'none' : 'block';  // 领域钥匙用密码；admin 用邮箱
+    const adminKey = isKey && ACCESS_KEY.is_admin;   // admin 钥匙链接：密码登录没有数据库身份，改用邮箱
+    if(pwBox) pwBox.style.display = (isKey && !adminKey) ? 'block' : 'none';
+    if(magicBox) magicBox.style.display = (isKey && !adminKey) ? 'none' : 'block';  // 领域钥匙用密码；admin 用邮箱
+    if(adminKey){ const m=document.getElementById('magicMsg'); if(m){ m.style.color='var(--text-3)'; m.textContent='管理员请用邮箱登录'; } }
   }
   if(ACCESS_KEY && !ACCESS_KEY.is_admin){
     const hint=document.getElementById('loginHint');

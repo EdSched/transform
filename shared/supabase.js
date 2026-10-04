@@ -69,7 +69,12 @@ async function sb(path, method = 'GET', body = null) {
   };
   if (body) opts.body = JSON.stringify(_normTimeColon(body));
   const r = await fetch(SB_URL + path, opts);
-  if (!r.ok) { const e = await r.text(); throw new Error(e); }
+  if (!r.ok) {
+    const e = await r.text();
+    // 管理端没带登录 token（用的是公钥）写入被数据库拒绝：多半是 Supabase 会话已失效，给出能照着做的提示
+    if (!_tok && __SB_STORAGEKEY === 'sb-admin' && /"code"\s*:\s*"42501"/.test(e)) throw new Error('登录身份已失效，请退出后用邮箱重新登录');
+    throw new Error(e);
+  }
   const t = await r.text();
   return t ? JSON.parse(t) : [];
 }
