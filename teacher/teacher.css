@@ -13,8 +13,6 @@ body{font-family:'DM Mono','Noto Serif SC',monospace;background:var(--bg);color:
 .header-sub{font-size:11px;color:var(--text-3);margin-top:2px}
 .header{gap:12px}
 #headerBtns{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;flex:0 1 auto}
-.hbtn{font-size:12px;color:#fff;background:var(--accent);border:none;border-radius:4px;padding:6px 12px;text-decoration:none;white-space:nowrap;cursor:pointer;font-family:inherit}
-.hbtn.on{background:var(--warn)}
 /* 首页快捷卡片：手机每行 2 张，宽屏每行 4 张 */
 .homeGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 @media (min-width:700px){.homeGrid{grid-template-columns:repeat(4,minmax(0,1fr))}}

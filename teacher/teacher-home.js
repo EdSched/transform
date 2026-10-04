@@ -15,26 +15,37 @@ const homeEsc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/
 const homeJs = v => homeEsc(String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
 const homePlain = s => String(s || '').replace(/^[^一-龥A-Za-z0-9]+\s*/, '');   // 去掉标签名前面的 emoji
 
-// ── 顶部按钮：管理模式（负责人）/ 资源管理（有资源权限）──
+// ── 顶部按钮：「管理模式」（负责人；进管理端，用本页已登录的老师会话）──
 function homeHeaderBtns() {
   const box = document.getElementById('headerBtns'); if (!box || !teacherData || !teacherData.id) return;
   if (managerScopeNonEmpty(teacherData.manage_scope) && !document.getElementById('mgrModeBtn')) {
     const a = document.createElement('a');
-    a.id = 'mgrModeBtn'; a.className = 'hbtn'; a.href = '../admin/index.html?as=teacher'; a.textContent = '管理模式';
+    a.id = 'mgrModeBtn'; a.href = '../admin/index.html?as=teacher'; a.textContent = '🛠 管理模式';
+    a.style.cssText = 'font-size:12px;color:#fff;background:var(--accent,#b8953a);border-radius:4px;padding:6px 12px;text-decoration:none;white-space:nowrap';
     box.appendChild(a);
-  }
-  if (homeResourceOk() && !document.getElementById('resBtn')) {
-    const b = document.createElement('button');
-    b.id = 'resBtn'; b.className = 'hbtn' + (curTab === 'resource' ? ' on' : ''); b.textContent = '资源管理'; b.onclick = () => switchTab('resource');
-    box.appendChild(b);
   }
 }
 function homeResourceOk() { return !!(teacherData && Array.isArray(teacherData.resource_perms) && teacherData.resource_perms.length); }
-// 「资源管理」：留在老师端，主区域换成排课系统（用本页的 sb-teacher 会话取身份，权限按 resource_perms）
+// 「资源管理」标签：留在老师端，主区域换成排课系统（用本页的 sb-teacher 会话取身份，权限按 resource_perms）
+// homeResCard：从首页快捷卡片点进来时，直接打开排课系统里的某个功能（排课首页支持 ?tab=<功能>）
+let homeResCard = '';
+const HOME_RES_CARDS = [['board', '教室看板'], ['timetable', '课程表'], ['courseview', '课程查询'], ['roster', '排班日历'], ['meeting', '腾讯会议账号占用'], ['bookingf', '教室占用录入'],
+  ['pending', '预约批准'], ['assign', '排教室'], ['conflict', '冲突检查'], ['rooms', '教室管理'], ['accounts', '会议账号管理'], ['courses', '课程管理']];
+// 这位老师能不能用排课系统里的某个功能（和 sched/index.html 的 canSee 同一套规则）
+function homeResCardOk(key) {
+  const ps = new Set((teacherData && teacherData.resource_perms) || []);
+  if (ps.has('manage')) return true;
+  if (key === 'courseview') return ps.has('course_view') || ps.has('timetable') || ps.has('course');
+  if (key === 'bookingf') return ps.has('entry_room') || ps.has('entry_room_full');
+  if (key === 'meeting') return ps.has('meeting_view') || ps.has('meeting_arrange');
+  const need = { board: 'board', timetable: 'timetable', roster: 'roster', pending: 'approve', assign: 'assign', conflict: 'conflict', rooms: 'room_manage', accounts: 'account_manage', courses: 'course' }[key];
+  return need ? ps.has(need) : true;
+}
 async function renderResourceFrame(mc) {
   if (!homeResourceOk()) { mc.innerHTML = '<div class="empty">没有资源管理权限</div>'; return; }
   try { if (window.__teacherAuthClient) await window.__teacherAuthClient.auth.getSession(); } catch (e) {}   // 先让会话续期，免得嵌入页读到过期 token
-  mc.innerHTML = '<iframe src="../sched/index.html?embed=admin&as=teacher" style="width:100%;height:calc(100vh - 150px);min-height:480px;border:0;display:block"></iframe>';
+  const card = homeResCard; homeResCard = '';
+  mc.innerHTML = `<iframe src="../sched/index.html?embed=admin&as=teacher${card ? '&tab=' + encodeURIComponent(card) : ''}" style="width:100%;height:calc(100vh - 150px);min-height:480px;border:0;display:block"></iframe>`;
 }
 
 // ── 昵称：名字旁的小字 + 点开的小框 ──
@@ -75,14 +86,14 @@ function homeTabIds() { return new Set(teacherTabList.map(t => t.id)); }
 function homeTabLabel(id) { const t = teacherTabList.find(x => x.id === id); return t ? homePlain(t.label) : id; }
 function homeDefaults() { return teacherTabList.filter(t => t.id !== 'todo').slice(0, 4).map(t => ({ type: 'tab', tab: t.id })); }
 function homeShown() { return homeCustom ? homeList : homeDefaults(); }
-function homeKey(it) { return [it.type, it.tab || '', it.sub || '', it.id || ''].join('|'); }
+function homeKey(it) { return [it.type, it.tab || '', it.sub || '', it.id || '', it.card || ''].join('|'); }
 function homeAllowed(it) {
   const ids = homeTabIds();
   if (it.type === 'tab') return ids.has(it.tab);
   if (it.type === 'sub') return ids.has(it.tab) && !!HOME_SUBS[it.tab] && HOME_SUBS[it.tab].list().some(([k]) => k === it.sub);
   if (it.type === 'student') return ids.has('studentmgmt') || ids.has('booking');
   if (it.type === 'course') return ids.has('mycourses');
-  if (it.type === 'resource') return homeResourceOk();
+  if (it.type === 'resource') return homeResourceOk() && (!it.card || homeResCardOk(it.card));
   return false;
 }
 function homeGone(it) {
@@ -95,6 +106,7 @@ function homeText(it) {
   if (it.type === 'sub') { const s = HOME_SUBS[it.tab].list().find(([k]) => k === it.sub); return [homePlain(s ? s[1] : it.sub), homeTabLabel(it.tab) + ' · 分页']; }
   if (it.type === 'student') { const i = homeStuInfo[it.id]; return [it.label || (i && i.name) || '学生', '学生' + (i && i.major ? ' · ' + (typeof majorLabel === 'function' ? majorLabel(i.major) : i.major) : '')]; }
   if (it.type === 'course') return [it.label || '课程', '课程'];
+  if (it.card) { const c = HOME_RES_CARDS.find(([k]) => k === it.card); return [c ? c[1] : it.card, '资源管理 · 功能']; }
   return ['资源管理', '排课系统'];
 }
 const HOME_STRIPE = { student: '#9bb0a0', course: '#c9a27a', resource: '#b9a9c9', tab: '', sub: '' };
@@ -138,7 +150,7 @@ async function homeAddPick(kind, tab, sub) {
   const ok = await homeAdd(kind === 'sub' ? { type: 'sub', tab, sub } : { type: 'tab', tab });
   if (ok) homeRender();
 }
-async function homeAddResource() { if (await homeAdd({ type: 'resource' })) homeRender(); }
+async function homeAddResource(card) { if (await homeAdd(card ? { type: 'resource', card } : { type: 'resource' })) homeRender(); }
 
 // 「加到首页」小按钮（学生详情、课表上课次的标题旁）：已加过显示「已在首页」，再点取消
 function homePinHtml(type, id, label) {
@@ -177,13 +189,14 @@ async function homeRender() {
   const chip = (on, label, fn) => `<span onclick="${on ? '' : fn}" style="display:inline-block;font-size:11px;padding:3px 10px;margin:0 6px 6px 0;border:1px solid ${on ? 'var(--accent)' : 'var(--border)'};border-radius:3px;${on ? 'background:var(--accent);color:#fff;cursor:default' : 'cursor:pointer;color:var(--text-2)'}">${homeEsc(label)}</span>`;
   let panel = '';
   if (homeEditing && homeAddOpen) {
-    const tabs = teacherTabList.filter(t => t.id !== 'todo');
+    const tabs = teacherTabList.filter(t => t.id !== 'todo' && t.id !== 'resource');
     const subRows = tabs.filter(t => HOME_SUBS[t.id]).map(t => `<div style="margin-top:6px"><span style="font-size:10px;color:var(--text-3);margin-right:6px">${homeEsc(homePlain(t.label))} 的分页</span>${HOME_SUBS[t.id].list().map(([k, l]) => chip(homeHas({ type: 'sub', tab: t.id, sub: k }), homePlain(l), `homeAddPick('sub','${homeJs(t.id)}','${homeJs(k)}')`)).join('')}</div>`).join('');
     panel = `<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:4px;padding:10px 12px;margin-top:8px">
       <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">页面</div>
       ${tabs.map(t => chip(homeHas({ type: 'tab', tab: t.id }), homePlain(t.label), `homeAddPick('tab','${homeJs(t.id)}')`)).join('')}
       ${homeResourceOk() ? chip(homeHas({ type: 'resource' }), '资源管理', 'homeAddResource()') : ''}
       ${subRows}
+      ${homeResourceOk() ? `<div style="margin-top:6px"><span style="font-size:10px;color:var(--text-3);margin-right:6px">资源管理的功能</span>${HOME_RES_CARDS.filter(([k]) => homeResCardOk(k)).map(([k, l]) => chip(homeHas({ type: 'resource', card: k }), l, `homeAddResource('${k}')`)).join('')}</div>` : ''}
       <div style="font-size:10px;color:var(--text-3);margin-top:8px">学生、课程请在学生详情 / 课表里点「加到首页」</div></div>`;
   }
   const head = `<div style="display:flex;align-items:center;margin-bottom:6px"><span style="font-size:11px;color:var(--text-3)">快捷入口${homeEditing ? `（${items.length}/${HOME_MAX}）` : ''}</span>
@@ -195,7 +208,7 @@ function homeOpen(i) {
   const it = homeShownVisible()[i]; if (!it || homeGone(it)) return;
   if (it.type === 'tab') switchTab(it.tab);
   else if (it.type === 'sub') { HOME_SUBS[it.tab].set(it.sub); switchTab(it.tab); }
-  else if (it.type === 'resource') switchTab('resource');
+  else if (it.type === 'resource') { homeResCard = it.card || ''; switchTab('resource'); }
   else if (it.type === 'student') showStudentInfoTeacher((homeStuInfo[it.id] && homeStuInfo[it.id].name) || it.label, it.id);
   else if (it.type === 'course') {
     switchTab('mycourses');
