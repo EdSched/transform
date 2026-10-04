@@ -10,6 +10,14 @@
   cursor:pointer; background:#fff; color:var(--sub); user-select:none; }
 .chip.on{ background:var(--blue); color:#fff; border-color:var(--blue); }
 .chip.more{ border-style:dashed; }
+.sbox{ width:100%; box-sizing:border-box; font-size:16px; padding:11px 14px; border:1px solid var(--line); border-radius:8px; }
+.srow{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.chip small{ margin-left:4px; font-size:11px; opacity:.65; }
+.chip.on small{ opacity:.9; }
+.chip.zero{ opacity:.4; }
+.glabel{ font-size:11px; color:var(--sub); background:#eef1f5; border-radius:4px; padding:1px 6px; margin-left:6px; }
+#filters.dim .fl{ opacity:.45; }
+.ccard.ended{ opacity:.6; }
 .topline{ display:flex; justify-content:space-between; align-items:center; gap:10px; margin:2px 0 10px; flex-wrap:wrap; }
 .topline .cnt{ font-size:14px; font-weight:600; }
 .ccard{ background:#fff; border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-bottom:10px; cursor:pointer; }
@@ -36,27 +44,38 @@
 </head><body>
 <div id="nav"></div>
 <div class="wrap">
+  <div class="card">
+    <input id="q" class="sbox" type="search" placeholder="搜课程名、老师、专业、校区、星期…（例：N1、周一、市谷）" autocomplete="off">
+    <div class="srow"><span class="chip" id="onlyChip">只在筛选结果里搜</span><span class="muted" id="sNote" style="font-size:12px"></span></div>
+  </div>
   <div class="card" id="filters">
     <div class="fl" id="fCat"><span class="lbl">类别</span></div>
-    <div class="fl hidden" id="fLang"><span class="lbl">语种</span></div>
+    <div class="fl" id="fLang"><span class="lbl">语种</span></div>
+    <div class="fl" id="fMajor"><span class="lbl">专业</span></div>
     <div class="fl" id="fTerm"><span class="lbl">期数</span></div>
     <div class="fl" id="fTermM"><span class="lbl">月</span></div>
     <div class="fl" id="fStatus"><span class="lbl">状态</span></div>
     <div class="fl" id="fCampus"><span class="lbl">校区</span></div>
     <div class="fl" id="fWd"><span class="lbl">星期</span></div>
-    <div class="fl"><span class="lbl">搜索</span><input id="q" placeholder="课程名 / 老师 / 专业" style="flex:1;min-width:180px;max-width:360px"></div>
+    <div class="fl" id="fKw"><span class="lbl">关键词</span></div>
   </div>
-  <div class="topline"><span class="muted" id="hint"></span><span class="cnt" id="cnt"></span></div>
+  <div class="topline"><span class="muted" id="hint"></span><span><span class="cnt" id="cnt"></span> <button class="ghost sm hidden" id="clearBtn">清除筛选</button></span></div>
   <div id="list"></div>
 </div>
 <script src="common.js"></script>
 <script>
 const PAGE_SIZE = 30;
 const STATUSES = ['未开课','进行中','已结课'];
+const STATUS_ORDER = {'进行中':0,'未开课':1,'已结课':2};
+// 关键词快捷筛选的词表：只显示课程名里实际出现过的词；以后加词直接往这里加
+const KEYWORDS = ['N1','N2','N3','N4','N5','EJU','TOEIC','TOEFL','过去问','面试','小论文','研究计划书','共通课'];
+const SHAKAI_GROUP = ['社会人文','社会学','新闻传播学','新聞传播学','社会福祉学'];   // 与 timetable.html 一致
+const MAJOR_FOLD = 12;
 let COURSES=[], HOLIDAYS=[], BOOKINGS=[], ROOMS=[], SESS={};
-let INFO = {};           // course id -> {dates:[{date,s,e,off,why,room}], total, done, status, next}
-const F = { cat:'', lang:'', terms:new Set(), status:new Set(['未开课','进行中']), campus:new Set(), wd:new Set(), q:'' };
-const MORE_OPEN = { term:false, termM:false };
+let INFO = {}, WDS = {}, HAY = {};
+const ROWS = ['cat','lang','major','term','status','campus','wd','kw'];
+const F = { cat:new Set(), lang:new Set(), major:new Set(), term:new Set(), status:new Set(['未开课','进行中']), campus:new Set(), wd:new Set(), kw:new Set(), q:'', only:false };
+const MORE_OPEN = { term:false, termM:false, major:false };
 let SHOWN = PAGE_SIZE;
 const OPENED = new Set();
 
@@ -140,64 +159,102 @@ function buildInfo(c){
   return { dates, total, done, status, next, isPast };
 }
 
-/* ---------- 筛选 ---------- */
+/* ---------- 筛选（每一行互相独立；行内多选取并集，行间取交集）---------- */
 function catOf(c){ return c.category||''; }
 function termKeyOf(c){ return c.term || termOf(c.start_date); }
 function campusOf(c){ return c.mode==='线上' && !c.campus ? '线上' : (c.campus||''); }
-function filtered(){
-  const q=F.q.trim().toLowerCase();
-  return COURSES.filter(c=>{
-    if(!F.cat || catOf(c)!==F.cat) return false;
-    if(F.cat==='语言' && F.lang && langType(c)!==F.lang) return false;
-    if(F.terms.size && !F.terms.has(termKeyOf(c))) return false;
-    if(F.status.size && !F.status.has(INFO[c.id].status)) return false;
-    if(F.campus.size && !F.campus.has(campusOf(c))) return false;
-    if(F.wd.size){ const w=parseWeekdaysSched(c.weekdays); if(![...F.wd].some(d=>w.includes(d))) return false; }
-    if(q && !((c.name||'')+' '+(c.merge_name||'')+' '+(c.teacher||'')+' '+(c.major||'')).toLowerCase().includes(q)) return false;
-    return true;
-  }).sort((a,b)=> (a.start_time||'').localeCompare(b.start_time||'') || (a.name||'').localeCompare(b.name||''));
+function majorOf(c){ return (c.major||'').trim(); }
+function nameHay(c){ return ((c.name||'')+' '+(c.merge_name||'')).toLowerCase(); }
+function rowTest(key, c, v){
+  switch(key){
+    case 'cat': return catOf(c)===v;
+    case 'lang': return /语言|語学/.test(catOf(c)) && langType(c)===v;
+    case 'major': return v==='社会人文' ? SHAKAI_GROUP.includes(majorOf(c)) : majorOf(c)===v;
+    case 'term': return termKeyOf(c)===v;
+    case 'status': return INFO[c.id].status===v;
+    case 'campus': return campusOf(c)===v;
+    case 'wd': return WDS[c.id].includes(v);
+    case 'kw': return nameHay(c).includes(String(v).toLowerCase());
+  }
+  return true;
+}
+function passRow(key, c){ const s=F[key]; return !s.size || [...s].some(v=>rowTest(key,c,v)); }
+function passAll(c, except){ return ROWS.every(k=>k===except || passRow(k,c)); }
+function anyFilter(){ return ROWS.some(k=>F[k].size>0); }
+function filtered(){ return COURSES.filter(c=>passAll(c)); }
+function sortCourses(list, byStatus){
+  return list.sort((a,b)=>
+    (byStatus ? STATUS_ORDER[INFO[a.id].status]-STATUS_ORDER[INFO[b.id].status] : 0) ||
+    (a.start_time||'').localeCompare(b.start_time||'') || (a.name||'').localeCompare(b.name||''));
+}
+
+/* ---------- 搜索 ---------- */
+const CN_NUM='一二三四五六日', JP_DAY='月火水木金土日';
+function buildHay(c){
+  const wd=WDS[c.id].map(d=>['周'+CN_NUM[d-1],'星期'+CN_NUM[d-1],'礼拜'+CN_NUM[d-1],JP_DAY[d-1]+'曜',JP_DAY[d-1]+'曜日'].join(' ')).join(' ');
+  const lang = /语言|語学/.test(catOf(c)) ? langType(c) : '';
+  return [c.name,c.merge_name,c.teacher,c.major,c.category,c.campus,c.mode,c.term,termKeyOf(c),lang,wd].filter(Boolean).join(' ').toLowerCase();
+}
+function tokens(){ return F.q.trim().toLowerCase().split(/[\s　]+/).filter(Boolean); }
+function searching(){ return tokens().length>0; }
+function currentList(){
+  if(!searching()) return sortCourses(filtered(), false);
+  const toks=tokens();
+  const base = F.only ? filtered() : COURSES.slice();
+  return sortCourses(base.filter(c=>toks.every(t=>HAY[c.id].includes(t))), true);
 }
 
 /* ---------- 渲染 ---------- */
-function chipsHtml(items, isOn, attr, fold){
-  // fold: 前面直接显示的个数；已选中的始终在外面，其余收进「更多 ▾」
-  const outer=[], inner=[];
-  items.forEach((it,i)=>{ (fold==null || isOn(it.v) || it.pin || i<fold ? outer : inner).push(it); });
-  const mk=it=>`<span class="chip${isOn(it.v)?' on':''}" data-${attr}="${esc(it.v)}">${esc(it.t)}</span>`;
-  return {outer:outer.map(mk).join(''), inner:inner.map(mk).join(''), n:inner.length};
-}
 function setRow(id, html){ const row=el(id); const lbl=row.querySelector('.lbl'); row.innerHTML=''; row.appendChild(lbl); row.insertAdjacentHTML('beforeend', html); }
-function termItems(month){
-  const kind=month?'month':'term';
-  const all=[...new Set(COURSES.filter(c=>F.cat && catOf(c)===F.cat).map(termKeyOf).filter(Boolean))].filter(t=>isMonthTerm(t)===month)
-    .sort((a,b)=>termSortKey(b)-termSortKey(a));
-  const recent=new Set(recentTermKeys(kind));
-  return all.map(t=>({v:t,t:t,pin:recent.has(termSortKey(t))}));
-}
 function renderFilters(){
-  const cats=CATEGORIES.filter(c=>COURSES.some(x=>catOf(x)===c));
-  setRow('fCat', cats.map(c=>`<span class="chip${F.cat===c?' on':''}" data-cat="${esc(c)}">${esc(c)}</span>`).join(''));
-  el('fLang').classList.toggle('hidden', F.cat!=='语言');
-  setRow('fLang', ['日语','英语'].map(l=>`<span class="chip${F.lang===l?' on':''}" data-lang="${l}">${l}</span>`).join(''));
-  [['fTerm',false,'term'],['fTermM',true,'termM']].forEach(([id,month,key])=>{
-    const items=termItems(month);
-    el(id).classList.toggle('hidden', !F.cat || !items.length);
-    const r=chipsHtml(items, v=>F.terms.has(v), 'term', 0);   // 近期(pin)和已选在外，其余收起
-    setRow(id, r.outer + (r.n ? (MORE_OPEN[key]? r.inner : '') + `<span class="chip more" data-more="${key}">${MORE_OPEN[key]?'收起 ▴':'更多 ▾ ('+r.n+')'}</span>` : ''));
+  // 每一行的「其他行都满足」的课程集合，用来给每个 chip 算门数
+  const bases={}; ROWS.forEach(k=>{ bases[k]=COURSES.filter(c=>passAll(c,k)); });
+  const cnt=(k,v)=>bases[k].filter(c=>rowTest(k,c,v)).length;
+  const chip=(k,v,text)=>{
+    const on=F[k].has(v), n=cnt(k,v);
+    return `<span class="chip${on?' on':''}${n===0&&!on?' zero':''}" data-k="${k}" data-v="${esc(v)}">${esc(text==null?v:text)}<small>${n}</small></span>`;
+  };
+  const moreChip=(key,open,n)=> n||open ? `<span class="chip more" data-more="${key}">${open?'收起 ▴':'更多 ▾ ('+n+')'}</span>` : '';
+
+  setRow('fCat', CATEGORIES.map(c=>chip('cat',c)).join(''));
+  setRow('fLang', ['日语','英语'].map(c=>chip('lang',c)).join(''));
+
+  // 专业：按类别分组（组名是小标签），只列实际出现的专业；前 12 个外 + 已选中的在外面，其余「更多」
+  const cats=[...new Set([...CATEGORIES, ...COURSES.map(c=>catOf(c)||'其他')])];
+  const items=[];
+  cats.forEach(cat=>{
+    const ms=[...new Set(COURSES.filter(c=>(catOf(c)||'其他')===cat).map(majorOf).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'zh'));
+    if(!ms.length) return;
+    if(!ms.includes('社会人文') && ms.some(m=>SHAKAI_GROUP.includes(m))) ms.unshift('社会人文');
+    ms.forEach(m=>items.push({g:cat, v:m}));
   });
-  el('fTermM').querySelector('.lbl').textContent='月';
-  el('fTerm').querySelector('.lbl').textContent='期数';
-  setRow('fStatus', STATUSES.map(s=>`<span class="chip${F.status.has(s)?' on':''}" data-status="${s}">${s}</span>`).join(''));
-  const camps=[...new Set(COURSES.filter(c=>catOf(c)===F.cat).map(campusOf).filter(Boolean))].sort((a,b)=>['高马','市谷','线上'].indexOf(a)-['高马','市谷','线上'].indexOf(b));
-  el('fCampus').classList.toggle('hidden', !F.cat);
-  setRow('fCampus', camps.map(s=>`<span class="chip${F.campus.has(s)?' on':''}" data-campus="${esc(s)}">${esc(s)}</span>`).join(''));
-  el('fWd').classList.toggle('hidden', !F.cat);
-  setRow('fWd', [1,2,3,4,5,6,7].map(d=>`<span class="chip${F.wd.has(d)?' on':''}" data-wd="${d}">${WEEKDAYS[d]}</span>`).join(''));
+  const showAll=MORE_OPEN.major;
+  const vis=items.filter((it,i)=>showAll || i<MAJOR_FOLD || F.major.has(it.v));
+  let mh='', lastG=null;
+  vis.forEach(it=>{ if(it.g!==lastG){ mh+=`<span class="glabel">${esc(it.g)}</span>`; lastG=it.g; } mh+=chip('major',it.v); });
+  setRow('fMajor', mh + moreChip('major', showAll, items.length-vis.length));
+
+  // 期数：近期的在外面，其余「更多」；期 / 月两行
+  [['fTerm',false,'term'],['fTermM',true,'termM']].forEach(([id,month,key])=>{
+    const all=[...new Set(COURSES.map(termKeyOf).filter(Boolean))].filter(t=>isMonthTerm(t)===month).sort((a,b)=>termSortKey(b)-termSortKey(a));
+    el(id).classList.toggle('hidden', !all.length);
+    const recent=new Set(recentTermKeys(month?'month':'term'));
+    const outer=all.filter(t=>MORE_OPEN[key] || recent.has(termSortKey(t)) || F.term.has(t));
+    const inner=all.length-outer.length;
+    setRow(id, outer.map(t=>chip('term',t)).join('') + moreChip(key, MORE_OPEN[key], inner));
+  });
+  setRow('fStatus', STATUSES.map(v=>chip('status',v)).join(''));
+  const camps=['高马','市谷','线上'].filter(x=>COURSES.some(c=>campusOf(c)===x));
+  setRow('fCampus', camps.map(v=>chip('campus',v)).join(''));
+  setRow('fWd', [1,2,3,4,5,6,7].map(d=>chip('wd',d,WEEKDAYS[d])).join(''));
+  const kws=KEYWORDS.filter(k=>COURSES.some(c=>nameHay(c).includes(k.toLowerCase())));
+  el('fKw').classList.toggle('hidden', !kws.length);
+  setRow('fKw', kws.map(k=>chip('kw',k)).join(''));
 }
 function md(date){ const [,m,d]=date.split('-').map(Number); return m+'/'+d; }
 function cardHtml(c){
   const i=INFO[c.id], cc=catColor(c.category);
-  const wl=weekdaysLabel(parseWeekdaysSched(c.weekdays).join(','));
+  const wl=weekdaysLabel(WDS[c.id].join(','));
   const time=(c.start_time&&c.end_time)? c.start_time.slice(0,5)+'–'+c.end_time.slice(0,5) : '';
   const stTxt = i.status==='进行中' ? `进行中 · 已上 ${i.done}/${i.total} 回` : i.status;
   const sep='<span class="sep">|</span>';
@@ -205,7 +262,7 @@ function cardHtml(c){
   const l3=[ (wl||time)? esc((wl+' '+time).trim()):'', (c.start_date||c.end_date)? esc((c.start_date||'?')+' ~ '+(c.end_date||'?')):'', `共 ${i.total} 回`, stTxt ].filter(Boolean).join(sep);
   const nx=i.next ? `<div class="l4">下次：${md(i.next.date)}（${WEEKDAYS[weekdayOf(i.next.date)]}）${esc(i.next.s)} · ${esc(i.next.room)}</div>` : '';
   const open=OPENED.has(String(c.id));
-  return `<div class="ccard" data-id="${c.id}">`+
+  return `<div class="ccard${searching()&&i.status==='已结课'?' ended':''}" data-id="${c.id}">`+
     `<div class="l1"><span class="nm">${esc(c.merge_name||c.name)}</span>`+
     `<span class="tag" style="background:${cc.bg};border-color:${cc.bd};color:${cc.tx}">${esc(c.category||'')}</span>`+
     (termKeyOf(c)?`<span class="badge b-mute">${esc(termKeyOf(c))}</span>`:'')+
@@ -225,38 +282,39 @@ function detailHtml(c){
   }).join('')+'</div>';
 }
 function renderList(){
-  if(!F.cat){ el('cnt').textContent=''; el('hint').textContent=''; el('list').innerHTML='<div class="tip">先选类别。</div>'; return; }
-  const list=filtered();
+  const sr=searching(), list=currentList();
+  el('filters').classList.toggle('dim', sr && !F.only);
+  el('onlyChip').classList.toggle('on', F.only);
+  el('sNote').textContent = sr && !F.only ? '正在搜索全部课程，筛选暂不生效' : (sr ? '只在筛选结果里搜' : '');
+  el('clearBtn').classList.toggle('hidden', !anyFilter());
   el('cnt').textContent='共 '+list.length+' 门';
-  el('hint').textContent='点卡片展开全部上课日期';
+  el('hint').textContent= list.length ? '点卡片展开全部上课日期' : '';
   const shown=list.slice(0,SHOWN);
   el('list').innerHTML = shown.length ? shown.map(cardHtml).join('') +
       (list.length>shown.length ? `<div style="text-align:center"><button class="ghost" id="moreBtn">显示更多（还有 ${list.length-shown.length} 门）</button></div>` : '')
-    : '<div class="tip">没有符合条件的课程，试试放宽期数 / 状态筛选。</div>';
+    : '<div class="tip">'+(sr?'没有搜到符合的课程。':'没有符合条件的课程，试试放宽期数 / 状态筛选。')+'</div>';
 }
 function renderAll(){ renderFilters(); renderList(); }
-function toggle(set, v){ set.has(v) ? set.delete(v) : set.add(v); SHOWN=PAGE_SIZE; renderAll(); }
 
 function defaultTerms(){
-  F.terms.clear();
+  F.term.clear();
   const ts=[...new Set(COURSES.map(termKeyOf).filter(Boolean))];
   [['term',false],['month',true]].forEach(([kind,month])=>{
-    const keys=recentTermKeys(kind), want = month ? [keys[1],keys[2]] : [keys[1],keys[2]];
-    ts.filter(t=>isMonthTerm(t)===month && want.includes(termSortKey(t))).forEach(t=>F.terms.add(t));
+    const keys=recentTermKeys(kind), want=[keys[1],keys[2]];
+    ts.filter(t=>isMonthTerm(t)===month && want.includes(termSortKey(t))).forEach(t=>F.term.add(t));
   });
 }
 function bind(){
   el('filters').addEventListener('click', e=>{
     const t=e.target.closest('.chip'); if(!t) return;
     const d=t.dataset;
-    if(d.cat!==undefined){ F.cat = F.cat===d.cat ? '' : d.cat; F.lang=''; F.campus.clear(); SHOWN=PAGE_SIZE; renderAll(); }
-    else if(d.lang!==undefined){ F.lang = F.lang===d.lang ? '' : d.lang; SHOWN=PAGE_SIZE; renderAll(); }
-    else if(d.term!==undefined) toggle(F.terms, d.term);
-    else if(d.more!==undefined){ MORE_OPEN[d.more]=!MORE_OPEN[d.more]; renderFilters(); }
-    else if(d.status!==undefined) toggle(F.status, d.status);
-    else if(d.campus!==undefined) toggle(F.campus, d.campus);
-    else if(d.wd!==undefined) toggle(F.wd, Number(d.wd));
+    if(d.more!==undefined){ MORE_OPEN[d.more]=!MORE_OPEN[d.more]; renderFilters(); return; }
+    const k=d.k, v=k==='wd'?Number(d.v):d.v;
+    F[k].has(v)?F[k].delete(v):F[k].add(v);
+    SHOWN=PAGE_SIZE; renderAll();
   });
+  el('clearBtn').onclick=()=>{ ROWS.forEach(k=>F[k].clear()); SHOWN=PAGE_SIZE; renderAll(); };
+  el('onlyChip').onclick=()=>{ F.only=!F.only; SHOWN=PAGE_SIZE; renderList(); };
   el('q').oninput=()=>{ F.q=el('q').value; SHOWN=PAGE_SIZE; renderList(); };
   el('list').addEventListener('click', e=>{
     if(e.target.id==='moreBtn'){ SHOWN+=PAGE_SIZE; renderList(); return; }
@@ -279,11 +337,9 @@ async function boot(){
     ]);
     COURSES=cs.filter(c=>!c.deleted_at); HOLIDAYS=hol; BOOKINGS=bks.map(b=>Object.assign({kind:'course'},b)); ROOMS=rooms;
     ses.forEach(s=>{ if(s.course_id!=null && s.session_date) (SESS[String(s.course_id)]=SESS[String(s.course_id)]||[]).push(s.session_date); });
-    COURSES.forEach(c=>{ INFO[c.id]=buildInfo(c); });
+    COURSES.forEach(c=>{ WDS[c.id]=parseWeekdaysSched(c.weekdays); INFO[c.id]=buildInfo(c); HAY[c.id]=buildHay(c); });
   }catch(e){ el('list').innerHTML='<div class="tip">读取失败：'+esc(e.message)+'</div>'; return; }
   defaultTerms();
-  // 默认选中第一个「在默认期数/状态下有课」的类别
-  F.cat = CATEGORIES.find(cat=>COURSES.some(c=>catOf(c)===cat && F.terms.has(termKeyOf(c)) && F.status.has(INFO[c.id].status))) || '';
   bind(); renderAll();
 }
 </script>
