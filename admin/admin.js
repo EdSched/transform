@@ -1604,6 +1604,7 @@ function profBadgeHtml(t){
   if(!isSenmonTeacher(t)) return '';
   if(!profBrief||!profBriefOk) return '';
   const st=teacherProfileStatus(t,profBrief.filter(r=>r.name===t.name));
+  if(!st.length && teacherProfileAllSkipped(t)) return '';   // 负责专业都被设为「不需要」讲师介绍
   if(!st.length) return `<span title="专业课老师，但还没有设置负责专业" style="font-size:10px;color:var(--warn,#b8860b);border:1px solid var(--warn,#b8860b);border-radius:2px;padding:0 6px;white-space:nowrap">介绍：未设负责专业</span>`;
   const n=st.filter(x=>x.done).length, ok=n===st.length;
   const tip=st.map(x=>x.label+(x.done?' ✓':x.row?'（缺：'+x.missing.join('、')+'）':'（未填）')).join('；');
@@ -1675,10 +1676,12 @@ function renderTeacherRows(){
 
 function getPermissionsFromForm(prev){
   prev=prev||{};
+  // profile_skip_majors（任务明细里设的「不需要讲师介绍」）表单里没有，保存时原样带上，不能被冲掉
+  const _keep=Array.isArray(prev.profile_skip_majors)?{profile_skip_majors:prev.profile_skip_majors}:{};
   // 营业功能 4 个勾选项仅在 admin/中枢渲染；领域端链接下这些元素不存在，
   // 读取 .checked 会抛错导致「添加/保存老师」点击无反应。缺失时回退到已有值（编辑时不清空）。
   const _chk=(id,fb)=>{ const el=document.getElementById(id); return el?el.checked:(fb||false); };
-  return {
+  return Object.assign(_keep,{
     booking:document.getElementById('perm_booking').checked,
     booking_types:[...document.querySelectorAll('#perm_booking_types .filter-chip.active')].map(c=>c.dataset.value),
     slots:document.getElementById('perm_slots').checked,
@@ -1701,7 +1704,7 @@ function getPermissionsFromForm(prev){
     guaranteed_only:document.getElementById('perm_guaranteed_only')?.checked||false,
     student_mgmt_items:[...document.querySelectorAll('#perm_student_mgmt_items .filter-chip.active')].map(c=>c.dataset.value),
     student_majors:[...document.querySelectorAll('#perm_student_majors .filter-chip.active')].map(c=>c.dataset.value),
-  };
+  });
 }
 
 // 老师表单：点领域 chip → 切换选中 → 刷新专业区（只展开已选领域下的专业）

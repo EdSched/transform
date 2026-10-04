@@ -194,8 +194,8 @@ const TASK_CHECK_FN = {
     if (typeof isSenmonTeacher !== 'function' || !isSenmonTeacher(t)) return { count: 0, items: [] };
     const rows = (await taskProfiles(D)).filter(r => r.name === t.name);
     const st = teacherProfileStatus(t, rows);
-    if (!st.length) return { count: 1, items: [{ name: '还没有设置负责专业', note: '' }] };
-    const items = st.filter(x => !x.done).map(x => ({ name: x.label, note: x.row ? '缺：' + x.missing.join('、') : '未填' }));
+    if (!st.length) return teacherProfileAllSkipped(t) ? { count: 0, items: [] } : { count: 1, items: [{ name: '还没有设置负责专业', note: '' }] };
+    const items = st.filter(x => !x.done).map(x => ({ key: x.key, name: x.label, note: x.row ? '缺：' + x.missing.join('、') : '未填' }));
     return { count: items.length, items };
   },
   async payroll_pending() { return { count: 0, items: [], na: true }; },   // 系统里暂时没有工资审批
