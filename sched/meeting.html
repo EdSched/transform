@@ -138,7 +138,7 @@ function prefillFromCourse(id){
   PICKED=String(id); renderPickList();
   const c=COURSES.find(x=>String(x.id)===String(id)); if(!c) return;
   el('r_rec').value='weekly'; syncRec();
-  WDSEL=new Set((c.weekdays||'').split(',').map(s=>s.trim()).filter(Boolean));
+  WDSEL=new Set(parseWeekdaysSched(c.weekdays).map(String));
   el('r_wd').querySelectorAll('.chip').forEach(ch=>ch.classList.toggle('on', WDSEL.has(ch.dataset.d)));
   if(c.start_time) el('r_st').value=c.start_time; if(c.end_time) el('r_et').value=c.end_time;
   if(c.start_date) el('r_sd').value=c.start_date; if(c.end_date) el('r_ed').value=c.end_date;
