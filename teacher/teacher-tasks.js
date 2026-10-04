@@ -26,11 +26,11 @@ function tmPeriod(sel) {
   const d = new Date(now.getFullYear(), now.getMonth() + (sel === 'next' ? 1 : 0), 1);
   return { period: taskPeriod(d), month: d.getMonth() + 1, label: `${d.getFullYear()}年${d.getMonth() + 1}月` };
 }
-function tmData() { if (!tmD || Date.now() - tmDAt > 60000) { tmD = taskDataNew(); tmDAt = Date.now(); } return tmD; }
+function tmTaskData() { if (!tmD || Date.now() - tmDAt > 60000) { tmD = taskDataNew(); tmDAt = Date.now(); } return tmD; }
 async function tmList(sel) {
   const pi = tmPeriod(sel);
   const done = await sbAll(`/rest/v1/task_done?period=eq.${pi.period}&teacher_id=eq.${encodeURIComponent(teacherData.id)}&select=*`).catch(() => []);
-  const list = await taskBuildList(tmData(), teacherData, tmTemplates, pi.month, done);
+  const list = await taskBuildList(tmTaskData(), teacherData, tmTemplates, pi.month, done);
   list.sort((a, b) => (a.state === 'done') - (b.state === 'done') || (a.tpl.sort_order || 0) - (b.tpl.sort_order || 0));
   return { pi, list };
 }
@@ -63,7 +63,7 @@ function tmCard(x) {
   const badge = done ? (x.rec ? `<span style="font-size:10px;color:var(--ok,#2a9e6a)">✓ 已处理 ${tmE(String(x.rec.done_at || '').slice(0, 10))}</span>` : '<span style="font-size:10px;color:var(--ok,#2a9e6a)">✓ 无需处理</span>') : '';
   const id = tmE(t.id).replace(/'/g, "\\'");
   return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;${done ? 'opacity:.6' : ''}">
-    <div onclick="tmToggle('${id}')" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;${open ? 'background:var(--bg)' : ''}">
+    <div onclick="tmTaskToggle('${id}')" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;${open ? 'background:var(--bg)' : ''}">
       <span style="font-size:10px;color:var(--text-3)">${open ? '▾' : '▸'}</span>
       <span style="font-size:12px;font-weight:600;${done ? 'text-decoration:line-through' : ''}">${tmE(t.title)}</span>
       ${num}${badge}
@@ -79,7 +79,7 @@ function tmCard(x) {
     </div>` : ''}
   </div>`;
 }
-function tmToggle(id) { if (tmOpen.has(id)) tmOpen.delete(id); else tmOpen.add(id); renderMyTasks(document.getElementById('mainContent')); }
+function tmTaskToggle(id) { if (tmOpen.has(id)) tmOpen.delete(id); else tmOpen.add(id); renderMyTasks(document.getElementById('mainContent')); }
 async function tmDone(tplId) {
   const note = prompt('备注（可留空）：');
   if (note === null) return;
