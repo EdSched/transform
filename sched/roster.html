@@ -125,7 +125,7 @@ function shiftFromTime(tr){
 }
 
 async function boot(){
-  try{ if(typeof currentCode==='function'){ getRoleByCode(currentCode()).then(r=>{ if(r) document.getElementById('nav').innerHTML=renderNav('roster.html',r); }).catch(()=>{}); } }catch(e){}
+  try{ if(typeof pageRole==='function'){ pageRole().then(r=>{ if(r) document.getElementById('nav').innerHTML=renderNav('roster.html',r); }).catch(()=>{}); } }catch(e){}
   weekStart=mondayOf(new Date());
   await loadData();
   render();

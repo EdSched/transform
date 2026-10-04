@@ -3,6 +3,8 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>管理后台 · 唯新</title>
 <link rel="stylesheet" href="style.css">
+<script>if(new URLSearchParams(location.search).get('embed')==='admin') document.documentElement.classList.add('embedadmin');</script>
+<style>.embedadmin header.top{display:none}</style>
 </head><body>
 <header class="top"><div class="wrap" style="display:flex;align-items:center;flex-wrap:wrap;gap:14px">
   <h1 style="margin:0;font-size:17px">唯新 · 教学资源调度</h1>
@@ -36,14 +38,18 @@
 <script src="common.js"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], CODES=[], ROLE=null;
+const EMBED_ADMIN = new URLSearchParams(location.search).get('embed')==='admin';   // 嵌在管理端「资源管理」里
 
 /* 口令登录（口令即 access_codes 的 code，需 manage 权限）。admin-7910 可直接进 */
 /* 凭 ?k= 进入：任何有效角色都进，按其权限显示功能。无效才拦。 */
 (async function gate(){
   const rec = await currentRole();
-  if(!rec){ el('gate').classList.remove('hidden'); el('main').classList.add('hidden'); return; }
+  if(!rec){
+    if(EMBED_ADMIN) el('gate').textContent='请从管理端进入（没有取到登录身份，或没有资源管理权限）。';
+    el('gate').classList.remove('hidden'); el('main').classList.add('hidden'); return;
+  }
   ROLE=rec;
-  try{ sessionStorage.setItem('sched_role', JSON.stringify(rec)); }catch(e){}
+  if(!EMBED_ADMIN){ try{ sessionStorage.setItem('sched_role', JSON.stringify(rec)); }catch(e){} }   // 嵌入管理端的身份不写 sched_role，免得串到旧口令链接
   const who=el('whoami'); if(who) who.innerHTML = rec ? `<span style="background:#eef4f0;color:#2f6b4f;padding:2px 10px;border-radius:12px;font-size:12px">当前身份 · ${esc(rec.label||rec.role||'')}</span>` : '';
   el('gate').classList.add('hidden'); el('main').classList.remove('hidden');
   await reloadAll();
@@ -269,7 +275,7 @@ function openCard(key){
     const ps=permSet(ROLE); let cap='';
     if(target==='booking.html' && (ps.has('occupy')||ps.has('manage'))) cap='&canmanage=1';
     if(target==='meeting.html' && (ps.has('meeting_arrange')||ps.has('manage'))) cap='&canarrange=1';
-    frame.style.display='block'; frame.src = target + (target.includes('?')?'&':'?') + 'embed=1' + cap;
+    frame.style.display='block'; frame.src = target + (target.includes('?')?'&':'?') + 'embed=1' + cap + (EMBED_ADMIN ? '&via=admin' : '');
   }else{
     frame.style.display='none'; frame.src='about:blank';
     panel.style.display='block';

@@ -29,7 +29,7 @@
 <script src="common.js"></script>
 <script>
 el('nav').innerHTML = renderNav('board.html');
-getRoleByCode(currentCode()).then(r=>{ if(r) el('nav').innerHTML = renderNav('board.html', r); }).catch(()=>{});
+pageRole().then(r=>{ if(r) el('nav').innerHTML = renderNav('board.html', r); }).catch(()=>{});
 let ROOMS=[], BOOKINGS=[];
 
 async function boot(){

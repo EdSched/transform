@@ -95,7 +95,7 @@
 el('nav').innerHTML = renderNav('booking.html');
 // 是否有「教室占用管理」权限：嵌入态由父页传 canmanage=1；独立态由 ?k= 解析角色
 let CANMANAGE = new URLSearchParams(location.search).get('canmanage')==='1';
-getRoleByCode(currentCode()).then(r=>{ if(r){ el('nav').innerHTML = renderNav('booking.html', r);
+pageRole().then(r=>{ if(r){ el('nav').innerHTML = renderNav('booking.html', r);
   if(permSet(r).has('occupy')||permSet(r).has('manage')){ CANMANAGE=true; applyManageUI(); } } }).catch(()=>{});
 let ROOMS=[], ACCOUNTS=[], BOOKINGS=[], CUR=null;
 function rname(id){ const r=ROOMS.find(x=>String(x.id)===String(id)); return r?r.name:('#'+id); }

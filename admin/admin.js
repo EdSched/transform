@@ -861,7 +861,30 @@ function closeDrawer(){
   document.getElementById('sidebar')?.classList.remove('open');
   document.getElementById('drawerOverlay')?.classList.remove('open');
 }
+// ── 资源管理（嵌入排课系统）──
+// 谁能看到入口：管理员（邮箱登录）；管理模式的负责人老师（resource_perms 不为空）；领域访问链接不显示
+function resourceNavAllowed(){
+  if(ACCESS_KEY && ACCESS_KEY.invalid) return false;
+  if(ACCESS_KEY && ACCESS_KEY._asTeacher) return (ACCESS_KEY._asTeacher.resource_perms||[]).length>0;
+  return isHubAdminUser();
+}
+function syncResourceNav(){
+  const ok=resourceNavAllowed(), b=document.getElementById('nav-resource');
+  if(b) b.style.display=ok?'':'none';
+  return ok;
+}
+async function renderResourcePage(mc){
+  if(!syncResourceNav()){ mc.innerHTML='<div class="empty" style="padding:40px">没有资源管理权限</div>'; return; }
+  const asT=ACCESS_KEY && ACCESS_KEY._asTeacher;
+  // 嵌入的排课系统要读登录 token：先让会话续期，免得读到过期的
+  try{
+    const c=asT ? window.__teacherAuthClient : sbAuthClient();
+    if(c) await c.auth.getSession();
+  }catch(e){}
+  mc.innerHTML=`<iframe id="resourceFrame" src="../sched/index.html?embed=admin${asT?'&as=teacher':''}" style="width:100%;height:calc(100vh - 100px);min-height:520px;border:0;display:block"></iframe>`;
+}
 async function renderPage(){
+  syncResourceNav();
   const mc=document.getElementById('mainContent');
   mc.innerHTML='<div class="loading">加载中…</div>';
   try{
@@ -881,6 +904,8 @@ async function renderPage(){
       renderStudentsPage(mc);
     } else if(curPage==='tasks'){
       await tkRenderTeamPage(mc);
+    } else if(curPage==='resource'){
+      await renderResourcePage(mc);
     } else if(curPage==='courses'){
       if(typeof loadClasses==='function') await loadClasses(true);
       [cachedStudents,cachedCourses,cachedSessions]=await Promise.all([
@@ -1946,11 +1971,12 @@ async function bootAsTeacher(){
     if(!m){ teacherModeBlock('请从你的老师链接进入'); return; }
     __setSbStorageKey('sb-teacher');
     __setSbToken(ses.access_token, c);
+    window.__teacherAuthClient=c;   // 「资源管理」嵌入前用它让会话续期
     const rows=await sb(`/rest/v1/teachers?id=eq.${encodeURIComponent(m[1])}&select=*`).catch(()=>[]);
     const t=rows && rows[0];
     if(!t || !managerScopeNonEmpty(t.manage_scope)){ teacherModeBlock(t?'你还不是负责人，没有管理模式。请联系管理员开通':'请从你的老师链接进入'); return; }
     const ms=t.manage_scope;
-    ACCESS_KEY={ k:'teacher:'+t.id, domains:ms.domains||[], majors:ms.majors||[], class_ids:ms.class_ids||[], is_admin:false, active:true, label:'管理模式 · '+t.name, _asTeacher:{ id:t.id, name:t.name } };
+    ACCESS_KEY={ k:'teacher:'+t.id, domains:ms.domains||[], majors:ms.majors||[], class_ids:ms.class_ids||[], is_admin:false, active:true, label:'管理模式 · '+t.name, _asTeacher:{ id:t.id, name:t.name, resource_perms:t.resource_perms||[] } };
     await loadMajorsFromDB();
     await loadPeriodsFromDB(); await loadHolidaysFromDB();
     await enterFromKey();
