@@ -235,6 +235,7 @@ async function init() {
     const mainWideEl = document.querySelector('.main');
     if (mainWideEl) mainWideEl.style.maxWidth = '1400px';
     if (typeof loadTeacherVipFrameworks === 'function') await loadTeacherVipFrameworks();
+    if (typeof tmLoad === 'function') await tmLoad();   // 任务模板（没建表 / 读不到时静默当作没有）
     buildTabs();
     checkTeacherProfile();
     switchTab('todo');
@@ -244,6 +245,7 @@ async function init() {
 function buildTabs() {
   const p = teacherData?.permissions || {};
   const tabs = [{ id: 'todo', label: '⚡ 待处理' }];
+  if (typeof tmShowTab === 'function' && tmShowTab()) tabs.push({ id: 'mytasks', label: '📋 我的任务' });
   const hasRegularBk = (typeof cachedTeacherBookings !== 'undefined') && cachedTeacherBookings.some(b => b.type !== 'vip');
   if (p.booking && hasRegularBk) tabs.push({ id: 'booking', label: '📅 面谈预约' });
   if (p.slots) tabs.push({ id: 'slots', label: '⏰ 时间槽设定' });
@@ -295,6 +297,7 @@ function renderTab() {
   mc.innerHTML = '<div class="loading">加载中…</div>';
   switch (curTab) {
     case 'todo': renderTodo(mc); break;
+    case 'mytasks': renderMyTasks(mc); break;
     case 'booking': renderBookingManagement(mc); break;
     case 'slots': renderSlotManagement(mc); break;
     case 'schedule': renderScheduling(mc); break;
@@ -315,6 +318,7 @@ function renderTab() {
 }
 
 function renderTodo(mc) {
+  setTimeout(() => { if (typeof tmTodoLine === 'function') tmTodoLine(); }, 0);   // 顶部「本月任务：还有 N 项未完成」
   // 普通面谈 → 面谈预约；VIP → VIP 管理（预约子标签），两者分开提示
   const pendingBookings = cachedTeacherBookings.filter(b => b.status === 'pending' && b.type !== 'vip');
   const pendingVip = cachedTeacherBookings.filter(b => b.status === 'pending' && b.type === 'vip');
@@ -333,6 +337,7 @@ function renderTodo(mc) {
   const hasTodo = pendingBookings.length > 0 || pendingVip.length > 0 || vipRequests.length > 0 || pendingSlots.length > 0 || unconfirmedVip.length > 0 || profPendingCount > 0;
   mc.innerHTML = `
   <div style="display:flex;flex-direction:column;gap:12px">
+    <div id="tmTodoLine"></div>
     ${hasTodo ? '' : '<div class="todo-ok" style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:4px;padding:12px 16px;font-size:12px;color:#1a5a3a">✓ 暂无待处理事项</div>'}
 <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px">
   <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px">显示昵称设置</div>
