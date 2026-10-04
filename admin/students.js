@@ -494,62 +494,21 @@ async function applyBatchOwner(mode, selected){
 }
 
 async function openStudentDetail(id){
-  const s=cachedStudents.find(x=>x.id===id);
-  if(!s) return;
-  // 拉取该学生最新面谈记录和考学进度
-  const [bookings, progress] = await Promise.all([
-    sb(`/rest/v1/bookings?name=eq.${encodeURIComponent(s.name)}&status=eq.confirmed&select=*&order=slot_date.desc&limit=5`).catch(()=>[]),
-    sb(`/rest/v1/student_progress?student_id=eq.${s.id}&select=*`).catch(()=>[])
-  ]);
-  const p=progress[0]||{};
-  const statusLabel=(v)=>({active:'在籍',graduated:'已合格',expired:'已到期',stopped:'停课',withdrawn:'退学'}[v]||v);
-  const row=(label,val)=>val?`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border-light)"><span style="font-size:11px;color:var(--text-3);min-width:90px">${label}</span><span style="font-size:11px;color:var(--text-2)">${val}</span></div>`:'';
-  const latest=bookings[0];
-  const r=latest?.daily_record||{};
-
-  const html=`
-    <div style="font-size:16px;font-weight:700;margin-bottom:4px">${s.name}</div>
-    <div style="font-size:11px;color:var(--text-3);margin-bottom:16px">${MAJORS[s.major]||s.major||''} · ${statusLabel(s.status)}</div>
-    <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">基础档案</div>
-    ${row('学生属性',s.student_type)}
-    ${row('来源',s.source)}
-    ${row('课程属性',s.course_type)}
-    ${row('等级',s.level)}
-    ${row('日语成绩',s.japanese_score)}
-    ${row('英语成绩',s.english_score)}
-    ${row('出身大学',s.university)}
-    ${row('学部/专业',s.faculty)}
-    ${row('GPA/履历',s.gpa)}
-    ${row('毕业论文',s.thesis)}
-    ${row('毕业时间',s.graduation_date)}
-    ${row('期待入学',s.target_enrollment)}
-    ${row('赴日时间',s.japan_arrival)}
-    ${row('报名时间',s.signup_date)}
-    ${row('到期时间',s.expiry_date)}
-    ${row('上课方式',s.default_mode==='online'?'线上':'线下')}
-    ${row('查询码',s.student_code)}
-    ${p.target_schools||p.difficulties||p.research_plan?`
-    <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin:14px 0 8px">考学进度</div>
-    ${row('志望校',p.target_schools)}
-    ${row('困难点',p.difficulties)}
-    ${row('研究计划书',p.research_plan)}
-    ${row('知识进展',r.study_status?r.study_status+(r.study_advice?' · '+r.study_advice:''):'')}
-    ${row('计划书进展',r.plan_status?r.plan_status+(r.plan_advice?' · '+r.plan_advice:''):'')}
-    ${row('出愿情况',r.apply_status?r.apply_status+(r.apply_advice?' · '+r.apply_advice:''):'')}
-    ${row('备考情况',r.exam_status?r.exam_status+(r.exam_advice?' · '+r.exam_advice:''):'')}
-    `:''}
-    ${bookings.length?`
-    <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin:14px 0 8px">最近面谈（${bookings.length}条）</div>
-    ${bookings.map(b=>`<div style="font-size:11px;padding:6px 0;border-bottom:1px solid var(--border-light);color:var(--text-2)">${b.slot_date} ${b.slot_time_range||''} · ${typeLabel(b.type)||b.type}</div>`).join('')}
-    `:''}
-    <div style="margin-top:16px;display:flex;gap:8px">
-      <button class="btn btn-outline btn-sm" onclick="closeModal('studentDetailModal');openStudentModal('${s.id}')">✏ 编辑档案</button>
-      <button class="btn btn-outline btn-sm" onclick="closeModal('studentDetailModal');renderProgressPage(document.getElementById('mainContent'),'${s.id}')">📊 考学进度</button>
-      <button class="btn btn-outline btn-sm" onclick="openMonthlyReport('${s.id}','${(s.name||'').replace(/'/g,"&#39;")}')">📅 月度学习情况</button>
-    </div>`;
-
-  document.getElementById('studentDetailContent').innerHTML=html;
+  const box=document.getElementById('studentDetailContent');
+  box.innerHTML='<div class="loading">加载中…</div>';
   document.getElementById('studentDetailModal').classList.add('open');
+  try{
+    // 每次打开都重新读数据库（不用缓存的学生列表）；共用函数见 shared/student-detail.js
+    const { html, student:s } = await renderStudentDetailCard(id, { actionsHtml:`
+      <button class="btn btn-outline btn-sm" onclick="closeModal('studentDetailModal');openStudentModal('${id}')">✏ 编辑档案</button>
+      <button class="btn btn-outline btn-sm" onclick="closeModal('studentDetailModal');renderProgressPage(document.getElementById('mainContent'),'${id}')">📊 考学进度</button>
+      <button class="btn btn-outline btn-sm" onclick="openMonthlyReport('${id}',this.dataset.n)" data-n="">📅 月度学习情况</button>` });
+    if(!s){ box.innerHTML='<div style="font-size:12px;color:var(--text-3)">未找到该学生档案</div>'; return; }
+    const cached=cachedStudents.find(x=>x.id===id);
+    if(cached) Object.assign(cached,s);   // 顺便把缓存列表也刷成最新
+    box.innerHTML=html;
+    const mb=box.querySelector('[data-n]'); if(mb) mb.dataset.n=s.name||'';
+  }catch(e){ box.innerHTML='<div style="font-size:12px;color:var(--danger)">读取失败：'+(e.message||e)+'</div>'; }
 }
 
 
