@@ -254,7 +254,7 @@ function prCommonDomains() {
   const order = DOMAINS.map(d => d.label);
   return [...new Set((prCommon || []).map(r => r.domain))].sort((a, b) => { const ia = order.indexOf(a), ib = order.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
 }
-const PR_COLORS = [['#5a3e28','#f5ede3'],['#2a6aad','#e4eef8'],['#2d5a3d','#e4f0e8'],['#a03a2e','#f8e4dc'],['#6a4a7a','#efe4f4'],['#8a6a1b','#f8f0d8'],['#3a7a7a','#e0f0f0'],['#5a5650','#eee8e0']];
+const PR_COLORS = PMR_COLORS;   // 课程色块：和对外宣传页 / 月课表同一组柔和色（shared/promo-render.js）
 const PR_SHAKAI_G = ['shakai','shinpan','fukushi'];
 
 // prEsc / prInline / prMd 已移到 shared/promo-md.js（admin 通用宣传预览也要用）
@@ -382,25 +382,13 @@ function prBodyHtml() {
   const vids = prSection === 'major_intro' ? prVideosHtml(prData.videos, prMajor) : '';
   if (!list.length) return '<div class="empty" style="padding:30px">该板块暂无内容（admin 可在「宣传管理」中录入）</div>' + vids;
 
+  // 专业介绍 / 课程介绍 / 讲师介绍：和对外宣传页、宣传资料 PDF 同一套版式（shared/promo-render.js）
+  pmrEnsureCss();
   if (prSection === 'course') {
-    // 课程介绍：可点击展开关联的课程安排
-    return list.map(p => {
-      const open = prExpanded === p.id;
-      return `<div style="border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:8px;background:var(--surface)">
-        <div onclick="prExpanded=prExpanded==='${p.id}'?null:'${p.id}';prRenderBody()" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;user-select:none;${open?'background:var(--bg)':''}">
-          <span style="font-size:13px;font-weight:600">${prEsc(p.title)}</span>
-          <span style="font-size:10px;color:var(--text-3);margin-left:auto">${open?'▾ 收起':'▸ 课程详情与当期开课'}</span>
-        </div>
-        ${open ? `<div style="border-top:1px solid var(--border-light);padding:12px 14px">
-          <div style="font-size:12px;line-height:2;color:var(--text-2);margin-bottom:12px">${prMd(p.body)}</div>
-          ${prCourseScheduleHtml(p.title)}
-        </div>` : ''}
-      </div>`;
-    }).join('');
+    return `<div class="pm">${pmrCoursesHtml(list, { boxFor: title => prCourseScheduleHtml(title) })}</div>`;
   }
-
-  // 专业介绍 / 讲师介绍：块多时默认收起标题，点开阅读
-  return prBlocksHtml(list) + vids;
+  if (prSection === 'lecturer') return `<div class="pm">${pmrLecturersHtml(list)}</div>`;
+  return `<div class="pm">${pmrIntroHtml(list, { name: prMajorName(prMajor) })}</div>` + vids;
 }
 
 function prRenderBody() {
@@ -449,7 +437,7 @@ function prScheduleHtml(data, forClient) {
     .sort((a, b) => a.first.localeCompare(b.first));
   let ci = 0;   // 语言课用固定的语言色；其余课依次取 PR_COLORS
   scs.forEach(c => { c.color = c.lang ? (PR_LANG_COLORS[c.lang === '英语' ? 'eigo' : 'nihongo']) : PR_COLORS[ci++ % PR_COLORS.length]; });
-  const colorOf = id => (scs.find(c => c.id === id) || {}).color || PR_COLORS[7];
+  const colorOf = id => (scs.find(c => c.id === id) || {}).color || PR_COLORS[PR_COLORS.length - 1];
 
   // 图例：色块 + 课程名，一行排开（放不下自动换行）
   const legend = `<div style="display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #e2ded6">
