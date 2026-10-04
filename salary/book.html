@@ -84,9 +84,10 @@ button.sm{padding:5px 10px;font-size:13px;}
 const SB_URL='https://vwntezfvqbrkeovnseku.supabase.co';
 const SB_KEY='sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
 const H={apikey:SB_KEY,Authorization:'Bearer '+SB_KEY};
-async function sbGet(q){const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,cache:'no-store'});if(!r.ok)throw new Error(await r.text());return r.json();}
-async function sbInsert(row){const r=await fetch(SB_URL+'/rest/v1/salary_bookings',{method:'POST',headers:Object.assign({'Content-Type':'application/json',Prefer:'return=representation'},H),body:JSON.stringify(row)});if(!r.ok){const t=await r.text();const e=new Error(t);e.status=r.status;throw e;}return r.json();}
-async function sbDel(id){const r=await fetch(SB_URL+'/rest/v1/salary_bookings?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:H});if(!r.ok)throw new Error(await r.text());}
+// 表 salary_bookings 对匿名只开放「新增」；读取/取消全部走数据库函数（只返回自己的、不返回别人姓名）
+async function sbRpc(fn,args){const r=await fetch(SB_URL+'/rest/v1/rpc/'+fn,{method:'POST',headers:Object.assign({'Content-Type':'application/json'},H),cache:'no-store',body:JSON.stringify(args||{})});if(!r.ok)throw new Error(await r.text());const t=await r.text();return t?JSON.parse(t):null;}
+async function sbInsert(row){const r=await fetch(SB_URL+'/rest/v1/salary_bookings',{method:'POST',headers:Object.assign({'Content-Type':'application/json',Prefer:'return=minimal'},H),body:JSON.stringify(row)});if(!r.ok){const t=await r.text();const e=new Error(t);e.status=r.status;throw e;}}
+const SLOT_CAP=1; // 每个时段最多几人（已被约满的时段不可选）
 
 const $=s=>document.querySelector(s);
 const pad=n=>String(n).padStart(2,'0');
@@ -110,13 +111,25 @@ function myToken(){let t=localStorage.getItem(TKEY);if(!t){t='st'+Date.now().toS
 function readYm(){const p=new URLSearchParams(location.search).get('ym');return (p&&/^\d{4}-\d{2}$/.test(p))?p:curYm();}
 const YM=readYm();
 const TIMES=times();
-let MINE=null, selDate=null, sel=null;
+let MINE=null, selDate=null, sel=null, TAKEN={}; // TAKEN: 'YYYY-MM-DD HH:MM' -> 已约人数
 
 $('#rangeTxt').textContent=Number(YM.split('-')[1])+' 月 '+START_DAY+' 日至月末';
 
+async function loadTaken(){
+  const days=daysOfMonth(YM);
+  const rows=await sbRpc('salary_taken_slots',{p_from:days[0],p_to:days[days.length-1]});
+  TAKEN={};
+  (rows||[]).forEach(r=>{ TAKEN[String(r.slot_date).slice(0,10)+' '+String(r.slot_time).slice(0,5)]=Number(r.cnt)||0; });
+}
+function isFull(date,time){ return (TAKEN[date+' '+time]||0)>=SLOT_CAP; }
+
 async function load(){
   let rows;
-  try{ rows=await sbGet('salary_bookings?ym=eq.'+YM+'&select=id,slot_date,slot_time,teacher_name,note,client_token&client_token=eq.'+encodeURIComponent(myToken())); }
+  try{
+    rows=(await sbRpc('salary_my_bookings',{p_token:myToken()}))||[];
+    rows=rows.filter(r=>r.ym===YM);
+    await loadTaken();
+  }
   catch(e){ $('#pickWrap').innerHTML='<div class="warn">读取失败：'+esc(e.message)+'</div>'; return; }
   MINE=rows[0]||null;
   selDate=null; sel=null;
@@ -168,6 +181,7 @@ function renderTimes(){
   let th='';
   TIMES.forEach(t=>{
     if(slotPassed(selDate,t)){ th+='<span class="chip past">'+t+'</span>'; }
+    else if(isFull(selDate,t)){ th+='<span class="chip past" title="已被预约">'+t+' 已约</span>'; }
     else { th+='<span class="chip" data-time="'+t+'">'+t+'</span>'; }
   });
   area.innerHTML='<div class="chips">'+th+'</div><div id="confirmRow"></div>';
@@ -197,8 +211,10 @@ async function submit(){
   const btn=$('#submit'); btn.disabled=true; btn.textContent='提交中…';
   try{
     // 防止同一台机器重复提交
-    const mine=await sbGet('salary_bookings?ym=eq.'+YM+'&select=id&client_token=eq.'+encodeURIComponent(myToken()));
+    const mine=((await sbRpc('salary_my_bookings',{p_token:myToken()}))||[]).filter(r=>r.ym===YM);
     if(mine.length){ alert('你本月已有预约，请刷新后在上方管理。'); await load(); return; }
+    await loadTaken();
+    if(isFull(sel.date,sel.time)){ alert('这个时段刚刚被别人约走了，请重新选择。'); await load(); return; }
     const id='sal-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
     await sbInsert({id:id,teacher_name:name,slot_date:sel.date,slot_time:sel.time,ym:YM,note:note||null,client_token:myToken()});
     localStorage.setItem(NKEY,name);
@@ -210,7 +226,7 @@ async function submit(){
 async function cancelMine(){
   if(!MINE) return;
   if(!confirm('确定取消这条预约？取消后该时段会重新开放。')) return;
-  try{ await sbDel(MINE.id); await load(); }
+  try{ await sbRpc('salary_cancel',{p_token:myToken(),p_id:MINE.id}); await load(); }
   catch(e){ alert('取消失败：'+e.message); }
 }
 
@@ -220,7 +236,7 @@ async function findByName(){
   if(!nm){ box.innerHTML='<span class="muted">请输入姓名</span>'; return; }
   box.innerHTML='<span class="muted">查找中…</span>';
   try{
-    const rows=await sbGet('salary_bookings?ym=eq.'+YM+'&teacher_name=eq.'+encodeURIComponent(nm)+'&order=slot_date.asc,slot_time.asc');
+    const rows=(await sbRpc('salary_find_by_name',{p_ym:YM,p_name:nm}))||[];
     if(!rows.length){ box.innerHTML='<span class="muted">没找到"'+esc(nm)+'"本月的预约。</span>'; return; }
     let h='';
     rows.forEach(r=>{
@@ -231,7 +247,7 @@ async function findByName(){
     box.innerHTML=h;
     box.querySelectorAll('button[data-fdel]').forEach(b=>b.onclick=async()=>{
       if(!confirm('取消这条预约？')) return;
-      try{ await sbDel(b.dataset.fdel); await load(); findByName(); }
+      try{ await sbRpc('salary_cancel_by_name',{p_name:nm,p_id:b.dataset.fdel}); await load(); findByName(); }
       catch(e){ alert('取消失败：'+e.message); }
     });
   }catch(e){ box.innerHTML='<span class="warn">查找失败：'+esc(e.message)+'</span>'; }

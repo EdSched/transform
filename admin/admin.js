@@ -9,8 +9,10 @@ async function loadAccessKey(){
   const k=new URLSearchParams(location.search).get('k');
   if(!k || k==='admin'){ ACCESS_KEY=null; return; } // 无k或admin → 走管理员流程
   try{
-    const rows=await sb(`/rest/v1/access_keys?k=eq.${encodeURIComponent(k)}&select=*`);
-    if(rows && rows[0] && rows[0].active){ ACCESS_KEY=rows[0]; }
+    // 登录前读取：走 rpc（只返回这一把钥匙、不含 password），access_keys 表本身只有管理员能读
+    const rows=await sb('/rest/v1/rpc/resolve_access_key','POST',{p_k:k});
+    const row=Array.isArray(rows)?rows[0]:rows;
+    if(row && row.k && row.active){ ACCESS_KEY=row; }
     else { ACCESS_KEY={invalid:true}; } // 钥匙不存在或已停用
   }catch(e){ ACCESS_KEY=null; }
 }
@@ -90,11 +92,13 @@ async function handleMagicCallback(){
 
 function checkLogin(){const r=localStorage.getItem('txe_login');if(r){const{ts}=JSON.parse(r);if(Date.now()-ts<30*24*60*60*1000)return true}return false}
 
-function doLogin(){
+async function doLogin(){
   const pw=document.getElementById('loginPw').value;
-  // 领域钥匙登录：验证该钥匙的密码
+  // 领域钥匙登录：验证该钥匙的密码（密码不再下发到浏览器，交给数据库 rpc 比对）
   if(ACCESS_KEY && !ACCESS_KEY.invalid){
-    if(pw===ACCESS_KEY.password){
+    let pwOk=false;
+    try{ pwOk=(await sb('/rest/v1/rpc/check_access_key_password','POST',{p_k:ACCESS_KEY.k,p_pw:pw}))===true; }catch(e){ pwOk=false; }
+    if(pwOk){
       localStorage.setItem('txe_login',JSON.stringify({ts:Date.now()}));
       document.getElementById('loginOverlay').style.display='none';
       if(ACCESS_KEY.is_admin){ showHub(); }           // admin钥匙 → 中枢台
