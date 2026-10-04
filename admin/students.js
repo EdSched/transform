@@ -1636,8 +1636,7 @@ async function saveAdmissionEntry(){
       photo_url:photoUrl,
       note:g('ae_note').trim()||null
     };
-    const res=await fetch(`${SB_URL}/rest/v1/admission_results`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify(row)});
-    if(!res.ok){ throw new Error(await res.text()); }
+    await sb('/rest/v1/admission_results','POST',row);
     document.getElementById('admissionEntryOverlay').style.display='none';
     alert('✅ 已录入合格实绩（含语言分数与照片）');
   }catch(e){ alert('保存失败：'+e.message); if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} }

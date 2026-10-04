@@ -78,12 +78,15 @@ th{background:#f7f9fc;font-weight:600;color:var(--sub);white-space:nowrap;}
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
+<script src="../shared/vendor/supabase.min.js"></script>
+<script src="../shared/supabase.js"></script>
+<script src="../shared/admin-gate.js"></script>
 <script>
-const SB_URL='https://vwntezfvqbrkeovnseku.supabase.co';
-const SB_KEY='sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
-const H={apikey:SB_KEY,Authorization:'Bearer '+SB_KEY};
-async function sbGet(q){const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:H,cache:'no-store'});if(!r.ok)throw new Error(await r.text());return r.json();}
-async function sbDel(id){const r=await fetch(SB_URL+'/rest/v1/salary_bookings?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:H});if(!r.ok)throw new Error(await r.text());}
+// 本页只有管理员能用（表 salary_bookings 的读/删只开放给 is_admin()）；SB_URL/SB_KEY 来自 shared/supabase.js
+const GATE=adminGate({adminOnly:true});
+async function sbGet(q){const r=await fetch(SB_URL+'/rest/v1/'+q,{headers:adminAuthHeaders(),cache:'no-store'});if(!r.ok)throw new Error(await r.text());return r.json();}
+async function sbDel(id){const r=await fetch(SB_URL+'/rest/v1/salary_bookings?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:adminAuthHeaders()});if(!r.ok)throw new Error(await r.text());}
 const $=s=>document.querySelector(s);
 const pad=n=>String(n).padStart(2,'0');
 const WD=['周日','周一','周二','周三','周四','周五','周六'];
@@ -101,6 +104,7 @@ async function load(){
   $('#ymLabel').textContent=ymLabel(YM);
   refreshLink();
   $('#tbox').innerHTML='<div class="muted">加载中…</div>';
+  if(!(await GATE)){ $('#tbox').innerHTML='<div class="muted">请先登录管理端。</div>'; return; }
   try{ ALLROWS=await sbGet('salary_bookings?ym=eq.'+YM+'&order=slot_date.asc,slot_time.asc'); }
   catch(e){ $('#tbox').innerHTML='<div class="badge">读取失败：'+esc(e.message)+'</div>'; ALLROWS=[]; return; }
   $('#count').textContent='已预约 '+ALLROWS.length+' 人';
