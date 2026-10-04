@@ -335,21 +335,19 @@ function tkTeamShow(tid, tplId) {
   const t = tkTeamTeachers.find(y => y.id === tid) || {};
   let ov = document.getElementById('tkItemsModal');
   if (!ov) { ov = document.createElement('div'); ov.className = 'modal-overlay'; ov.id = 'tkItemsModal'; ov.style.zIndex = '1000'; document.body.appendChild(ov); }
-  ov.classList.add('open');
-  // 「讲师介绍完善」：管理员 / 管理模式的负责人可以把某个专业设为「不需要」（teachers.permissions.profile_skip_majors），老师端自己的明细里没有这个按钮
+  // 「讲师介绍完善」：能改的人（管理员 / 管理模式的负责人）走独立的 profSkipOpen 弹窗，老师列表的「介绍 n/m」小标签也用同一个
   const isProf = x.tpl.check_key === 'profile_incomplete';
-  const canSkip = isProf && (tkIsAdmin() || !!(typeof ACCESS_KEY !== 'undefined' && ACCESS_KEY && ACCESS_KEY._asTeacher));
+  if (isProf && profSkipCan() && x.tpl.kind === 'auto' && !x.na) {
+    ov.classList.remove('open');
+    profSkipOpen(tid, async () => { tkTeamRes[tid] = await taskBuildList(tkTeamD, t, tkTeamTpl, parseInt(tkTeamPeriod.slice(5), 10), tkTeamDone); tkTeamDraw(null, false); });
+    return;
+  }
+  ov.classList.add('open');
   let body;
   if (x.tpl.kind === 'auto' && x.tpl.check_key) {
     if (x.na) body = '<div style="font-size:11px;color:var(--text-3)">系统里暂时没有对应数据</div>';
-    else if (canSkip) {
-      body = (x.items.length ? x.items.map(i => `<div style="display:flex;gap:8px;align-items:center;padding:4px 6px;border-bottom:1px solid var(--border-light);font-size:11px">
-          <span style="font-weight:600">${tkE(i.name)}</span><span style="color:var(--text-3)">${tkE(i.note)}</span>
-          ${i.key ? `<span onclick="tkProfSkip('${tid}','${tplId}','${tkE(i.key)}',true)" style="margin-left:auto;cursor:pointer;color:var(--accent);text-decoration:underline">不需要</span>` : ''}</div>`).join('')
-        : '<div style="font-size:11px;color:var(--text-3);padding:4px 0">没有需要处理的</div>');
-      const all = teacherProfileMajorsAll(t), sk = teacherProfileSkipped(t).filter(k => all.includes(k));
-      if (sk.length) body += `<div style="font-size:10px;color:var(--text-3);margin-top:10px">已设为不需要：${sk.map(k => `${tkE(MAJORS[k] || k)} <span onclick="tkProfSkip('${tid}','${tplId}','${tkE(k)}',false)" style="cursor:pointer;color:var(--accent);text-decoration:underline">[恢复]</span>`).join('、')}</div>`;
-    } else body = taskItemsHtml(x.items);
+    else body = taskItemsHtml(x.items);
+    
   } else body = '<div style="font-size:11px;color:var(--text-3)">手动任务：由老师自己在「我的任务」里点完成</div>';
   ov.innerHTML = `<div class="modal" style="width:560px;max-height:85vh;overflow:auto">
     <div class="modal-title">${tkE(x.tpl.title)}</div><div class="modal-sub">${tkE(t.name || '')}${x.tpl.when_text ? ' · ' + tkE(x.tpl.when_text) : ''}${x.tpl.detail ? '<br>' + tkE(x.tpl.detail) : ''}</div>
@@ -357,9 +355,37 @@ function tkTeamShow(tid, tplId) {
     ${body}
     <div class="modal-actions"><button class="btn btn-outline" onclick="document.getElementById('tkItemsModal').classList.remove('open')">关闭</button></div></div>`;
 }
+// 「不需要讲师介绍」只有管理员 / 管理模式的负责人能改
+function profSkipCan() { return tkIsAdmin() || !!(typeof ACCESS_KEY !== 'undefined' && ACCESS_KEY && ACCESS_KEY._asTeacher); }
+function profSkipTeacher(tid) {
+  return (typeof cachedTeachers !== 'undefined' && (cachedTeachers || []).find(y => y.id === tid)) || (typeof tkTeamTeachers !== 'undefined' && (tkTeamTeachers || []).find(y => y.id === tid)) || null;
+}
+let _profSkipAfter = null;
+// 讲师介绍状态弹窗（任务明细和老师列表的「介绍 n/m」共用）；onSaved：保存后额外要刷新的东西
+async function profSkipOpen(tid, onSaved) {
+  const t = profSkipTeacher(tid); if (!t) return;
+  if (onSaved !== undefined) _profSkipAfter = onSaved;
+  let ov = document.getElementById('profSkipModal');
+  if (!ov) { ov = document.createElement('div'); ov.className = 'modal-overlay'; ov.id = 'profSkipModal'; ov.style.zIndex = '1001'; document.body.appendChild(ov); }
+  ov.classList.add('open');
+  let rows = (typeof profBrief !== 'undefined' && profBrief && profBriefOk) ? profBrief : null;
+  if (!rows) { ov.innerHTML = '<div class="modal" style="width:560px"><div class="empty" style="padding:30px">加载中…</div></div>'; try { rows = await sbAll('/rest/v1/teacher_profiles?select=id,name,subject,school,keywords,feature,courses'); } catch (e) { rows = []; } }
+  const st = teacherProfileStatus(t, rows.filter(r => r.name === t.name));
+  const can = profSkipCan();
+  const stateTxt = x => x.done ? '✓ 已完成' : x.row ? '缺：' + x.missing.join('、') : '未填';
+  let body = st.length ? st.map(x => `<div style="display:flex;gap:8px;align-items:center;padding:4px 6px;border-bottom:1px solid var(--border-light);font-size:11px">
+      <span style="font-weight:600">${tkE(x.label)}</span><span style="color:${x.done ? 'var(--ok,#2a9e6a)' : 'var(--text-3)'}">${tkE(stateTxt(x))}</span>
+      ${!x.done && can ? `<span onclick="profSkipSave('${tid}','${tkE(x.key)}',true)" style="margin-left:auto;cursor:pointer;color:var(--accent);text-decoration:underline">不需要</span>` : ''}</div>`).join('')
+    : '<div style="font-size:11px;color:var(--text-3);padding:4px 0">没有需要填写讲师介绍的专业</div>';
+  const all = teacherProfileMajorsAll(t), sk = teacherProfileSkipped(t).filter(k => all.includes(k));
+  if (sk.length) body += `<div style="font-size:10px;color:var(--text-3);margin-top:10px">已设为不需要：${sk.map(k => `${tkE(MAJORS[k] || k)}${can ? ` <span onclick="profSkipSave('${tid}','${tkE(k)}',false)" style="cursor:pointer;color:var(--accent);text-decoration:underline">[恢复]</span>` : ''}`).join('、')}</div>`;
+  ov.innerHTML = `<div class="modal" style="width:560px;max-height:85vh;overflow:auto">
+    <div class="modal-title">讲师介绍</div><div class="modal-sub">${tkE(t.name || '')}</div>${body}
+    <div class="modal-actions"><button class="btn btn-outline" onclick="document.getElementById('profSkipModal').classList.remove('open')">关闭</button></div></div>`;
+}
 // 设为 / 恢复「不需要讲师介绍」：先读这位老师最新的 permissions 再只合并这一个键写回，不覆盖其他内容
-async function tkProfSkip(tid, tplId, key, skip) {
-  const t = tkTeamTeachers.find(y => y.id === tid); if (!t) return;
+async function profSkipSave(tid, key, skip) {
+  const t = profSkipTeacher(tid); if (!t) return;
   try {
     const rows = await sb(`/rest/v1/teachers?id=eq.${encodeURIComponent(tid)}&select=permissions`);
     const perms = (rows && rows[0] && rows[0].permissions) || {};
@@ -368,11 +394,12 @@ async function tkProfSkip(tid, tplId, key, skip) {
     const merged = Object.assign({}, perms, { profile_skip_majors: next });
     const res = await sb(`/rest/v1/teachers?id=eq.${encodeURIComponent(tid)}`, 'PATCH', { permissions: merged });
     if (Array.isArray(res) && !res.length) throw new Error('数据库没有允许修改（0 行被更新）');
-    t.permissions = merged;
-    if (typeof cachedTeachers !== 'undefined') { const c = cachedTeachers.find(y => y.id === tid); if (c) c.permissions = merged; }   // 老师管理页缓存同步，免得之后保存老师时用旧的冲掉
-    Object.keys(tkTeamD.res).forEach(k => { if (k.startsWith(tid + '|profile_incomplete|')) delete tkTeamD.res[k]; });
-    tkTeamRes[tid] = await taskBuildList(tkTeamD, t, tkTeamTpl, parseInt(tkTeamPeriod.slice(5), 10), tkTeamDone);
-    tkTeamDraw(null, false); tkTeamShow(tid, tplId);
+    // 各处缓存里的这位老师都同步，免得之后保存老师时用旧的冲掉
+    [typeof cachedTeachers !== 'undefined' ? cachedTeachers : null, typeof tkTeamTeachers !== 'undefined' ? tkTeamTeachers : null].forEach(l => { const c = (l || []).find(y => y.id === tid); if (c) c.permissions = merged; });
+    if (typeof tkTeamD !== 'undefined' && tkTeamD && tkTeamD.res) Object.keys(tkTeamD.res).forEach(k => { if (k.startsWith(tid + '|profile_incomplete|')) delete tkTeamD.res[k]; });
+    if (typeof renderTeacherRows === 'function') renderTeacherRows();
+    if (typeof _profSkipAfter === 'function') await _profSkipAfter();
+    profSkipOpen(tid);
   } catch (e) { alert('保存失败：' + (e.message || e)); }
 }
 // 「去设置」：打开这位老师的编辑页，展开对应区块、滚动并高亮那一项

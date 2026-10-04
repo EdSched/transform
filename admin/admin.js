@@ -1605,11 +1605,12 @@ function profBadgeHtml(t){
   if(!isSenmonTeacher(t)) return '';
   if(!profBrief||!profBriefOk) return '';
   const st=teacherProfileStatus(t,profBrief.filter(r=>r.name===t.name));
-  if(!st.length && teacherProfileAllSkipped(t)) return '';   // 负责专业都被设为「不需要」讲师介绍
+  const clk=`onclick="event.stopPropagation();profSkipOpen('${t.id}',null)" style="cursor:pointer;`;
+  if(!st.length && teacherProfileAllSkipped(t)) return `<span ${clk}font-size:10px;color:var(--text-3);border:1px solid var(--border);border-radius:2px;padding:0 6px;white-space:nowrap" title="负责专业都被设为不需要讲师介绍，点开可恢复">介绍：不需要</span>`;   // 负责专业都被设为「不需要」讲师介绍
   if(!st.length) return `<span title="专业课老师，但还没有设置负责专业" style="font-size:10px;color:var(--warn,#b8860b);border:1px solid var(--warn,#b8860b);border-radius:2px;padding:0 6px;white-space:nowrap">介绍：未设负责专业</span>`;
   const n=st.filter(x=>x.done).length, ok=n===st.length;
   const tip=st.map(x=>x.label+(x.done?' ✓':x.row?'（缺：'+x.missing.join('、')+'）':'（未填）')).join('；');
-  return `<span title="${escTM(tip)}" style="font-size:10px;border-radius:2px;padding:0 6px;white-space:nowrap;${ok?'color:var(--ok,#2a9e6a);border:1px solid var(--ok,#2a9e6a)':'color:var(--warn,#b8860b);border:1px solid var(--warn,#b8860b);background:var(--warn-bg,#f8f0d8)'}">介绍 ${n}/${st.length}</span>`;
+  return `<span title="${escTM(tip)}" ${clk}font-size:10px;border-radius:2px;padding:0 6px;white-space:nowrap;${ok?'color:var(--ok,#2a9e6a);border:1px solid var(--ok,#2a9e6a)':'color:var(--warn,#b8860b);border:1px solid var(--warn,#b8860b);background:var(--warn-bg,#f8f0d8)'}">介绍 ${n}/${st.length}</span>`;
 }
 function renderTeacherRows(){
   const box=document.getElementById('teacherRows');
