@@ -103,6 +103,7 @@ const HUB_CARDS = [
   // key, 图标, 名称, 说明, 类型('tab'内部函数 / 'iframe'嵌页), 目标
   ['board',    '📋','教室看板','选校区+日期，看当天各教室占用','iframe','board.html'],
   ['timetable','🎓','课程表','按专业/期生成课表，可分享只读链接','iframe','timetable.html'],
+  ['courseview','🔍','课程查询','只读查课：按类别/期数/校区/星期看每门课的上课日期和教室','iframe','courses.html'],
   ['roster',   '🗓️','排班日历','正社员/兼职出勤与休假，自动标早中晚','iframe','roster.html'],
   ['meeting',  '📶','腾讯会议账号占用','查账号空闲/预留，给线上课预留账号','iframe','meeting.html'],
   ['bookingf', '🏫','教室占用录入','查空闲→点教室→录入临时/租用/开会','iframe','booking.html'],
@@ -115,7 +116,7 @@ const HUB_CARDS = [
 ];
 /* 每张卡片需要的权限；manage(管理员)看到全部 */
 const CARD_PERM = {
-  board:'board', timetable:'timetable', roster:'roster', meeting:'meeting_view', bookingf:'entry_room',
+  board:'board', timetable:'timetable', courseview:'course_view', roster:'roster', meeting:'meeting_view', bookingf:'entry_room',
   pending:'approve', assign:'assign', conflict:'conflict',
   rooms:'room_manage', accounts:'account_manage', courses:'course'
 };
@@ -123,6 +124,7 @@ function canSee(key){
   if(!ROLE) return false;
   const ps = permSet(ROLE);
   if(ps.has('manage')) return true;                 // 管理员看到全部
+  if(key==='courseview') return ps.has('course_view')||ps.has('timetable')||ps.has('course');   // 有课程表/课程管理权限默认可见
   if(key==='bookingf') return ps.has('entry_room')||ps.has('entry_room_full');
   if(key==='meeting') return ps.has('meeting_view')||ps.has('meeting_arrange');
   const need = CARD_PERM[key];
