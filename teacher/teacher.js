@@ -259,7 +259,7 @@ function buildTabs() {
   // 我的课表：有排班权限或有实际排到课才显示
   if (p.schedule || slots.length) tabs.push({ id: 'mycourses', label: '📚 我的课表' });
   // 资源管理：有排课 / 资源权限（resource_perms 不为空）就显示，和是不是负责人无关；内容是嵌入的排课系统，功能按 resource_perms
-  if (Array.isArray(teacherData?.resource_perms) && teacherData.resource_perms.length) tabs.push({ id: 'resource', label: '资源管理' });
+  if (Array.isArray(teacherData?.resource_perms) && teacherData.resource_perms.length) tabs.push({ id: 'resource', label: '🏢 资源管理' });
   // VIP管理：满足任一即显示 ——
   //   ① admin 给了 VIP 权限（预约管理或时间槽设定里勾了 VIP）
   //   ② 在学生档案里被设为「VIP指导老师」的学生（纯VIP、大课+VIP 都算）

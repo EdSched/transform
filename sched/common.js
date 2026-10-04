@@ -466,6 +466,7 @@ function currentCode(){ return new URLSearchParams(location.search).get('k') || 
 // 地址上带 &as=teacher）的登录 token。只有「问我是谁」这一个请求带 token（rpc/sched_session_role），其余读写照旧用公钥。
 // 嵌入得到的身份存在 sessionStorage.sched_role_embed（不碰 sched_role），首页再给内层页面的地址加 via=admin，内层页面按 via=admin 读它——
 // 所以同一个浏览器标签页里之后打开旧口令链接，读的还是 sched_role / ?k=，不会串身份。
+(function(){ const q=new URLSearchParams(location.search); if(q.get('embed')==='admin'||q.get('via')==='admin'||q.get('embed')==='1') document.documentElement.classList.add('sched-embed'); })();
 function schedEmbedVia(){ const q=new URLSearchParams(location.search); return q.get('embed')==='admin' || q.get('via')==='admin'; }
 function schedReadToken(key){
   try{

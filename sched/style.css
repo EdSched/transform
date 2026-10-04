@@ -106,3 +106,9 @@ html,body{ max-width:100%; overflow-x:hidden; }
 .hub a span{ font-size:12px; color:var(--sub); }
 .hub a.alert-card{ background:#eef4f0; border-color:#cfe3d6; }
 .hub a.alert-card b{ color:var(--blue); }
+
+/* 嵌入老师端 / 管理端时：去掉蓝灰底色，换成暖色系（绿色主色、课程分类色不变） */
+html.sched-embed{ --bg:#faf7f2; --line:#e8e0d4; }
+.sched-embed th, .sched-embed .board .tcol, .sched-embed .board thead th{ background:#faf6f0; }
+.sched-embed button.ghost:hover{ background:#f3ede4; }
+.sched-embed .b-mute{ background:#f1ebe3; }
