@@ -17,16 +17,22 @@ const PROMO_TPL_FIELDS = [
   ['kadai', '研究课题例', '例：\n- 都市青年的居住选择与社会网络\n- 社交媒体对青少年自我认同的影响'],
   ['juuten', '重点研究科', '例：一桥大学社会学研究科、东京大学人文社会系研究科、早稻田大学文学研究科'],
 ];
-// 从已有 body（模板拼成的 markdown）反解出各字段值，供编辑回填
+// 课程介绍模板的 4 个字段（课时摘要显示在课程卡片标题右侧；课程大纲是表格）
+const PROMO_COURSE_FIELDS = [
+  ['summary', '课时摘要', '例：56H · 7回 · 4月期 / 10月期'],
+  ['desc', '课程描述', '例：从企业顶层到基层，系统讲解企业为实现经营目标所执行的所有策略及方法论。'],
+  ['goal', '课程目标', '例：\n- 知识：完整掌握经营战略的理论框架与核心机制。\n- 技能：具备分析战略问题、梳理理论逻辑并应对考试的能力。'],
+  ['outline', '课程大纲', ''],
+];
+const promoTplFieldsOf = () => promoSection === 'course' ? PROMO_COURSE_FIELDS : PROMO_TPL_FIELDS;
+const promoTplActive = () => promoTplMode && (promoSection === 'major_intro' || promoSection === 'course');
+// 从已有 body（模板拼成的 markdown）反解出各字段值，供编辑回填；不属于模板字段的内容放进 _rest（自由书写部分，保存时原样接在后面，不丢）
 function promoParseTpl(body){
-  const vals={}; const b=String(body||'');
-  PROMO_TPL_FIELDS.forEach((f,i)=>{
-    const label=f[1];
-    // 匹配 "## 标签\n内容...（到下一个 ## 或结尾）"
-    const re=new RegExp('##\\s*'+label+'\\s*\\n([\\s\\S]*?)(?=\\n##\\s|$)');
-    const m=b.match(re);
-    vals[f[0]]=m?m[1].trim():'';
-  });
+  const fields=promoTplFieldsOf();
+  const sp=pmSplit(body, fields.map(f=>f[1]));
+  const vals={};
+  fields.forEach(f=>{ vals[f[0]]=(sp.vals[f[1]]||'').trim(); });
+  vals._rest=sp.rest;
   return vals;
 }
 // ── 「重点研究科」表格编辑器（模板模式）──
@@ -124,28 +130,135 @@ function promoJtPaste(){
   promoJtRender();
 }
 
-// 6字段填写表单
+// ── 「课程大纲」表格编辑器（课程模板）：回 / 主题 / 重点内容 / 课时，支持从 Excel 粘贴 ──
+const PROMO_CO_COLS = ['回', '主题', '重点内容', '课时'];
+let promoCo = { rows: [], note: '', converted: false, pasteOpen: false };
+function promoCoIsHeader(cells){ return cells.some(c=>/主题/.test(String(c))) && cells.some(c=>/重点|内容|课时|^H$/i.test(String(c).trim())); }
+function promoCoFit(cells){
+  const c=cells.map(x=>String(x==null?'':x).trim()).map(x=>x==='—'||x==='-'?'':x);
+  if(c.length>4) c.splice(3, c.length-3, c.slice(3).join(' '));
+  while(c.length<4) c.push('');
+  return c;
+}
+function promoCoSplit(line){ return /\t/.test(line) ? line.split('\t') : line.trim().split(/[ \u3000]{2,}|\u3000/); }
+// 按表头把各列对应到固定 4 列；对不上的列并入「重点内容」
+function promoCoByHead(head, body){
+  const key=[/^(回|#|次|序)/, /主题|题目/, /重点|内容/, /课时|^H$|时数/i];
+  const map=head.map(h=>key.findIndex(k=>k.test(String(h).trim())));
+  return body.map(r=>{
+    if(!map.some(x=>x>=0)) return promoCoFit(r);
+    const out=['','','',''];
+    r.forEach((v,i)=>{ const v2=String(v||'').trim(); if(!v2||v2==='—'||v2==='-') return; const k=i<map.length?map[i]:-1; if(k>=0&&!out[k]) out[k]=v2; else out[2]=out[2]?out[2]+' / '+v2:v2; });
+    return out;
+  });
+}
+function promoCoParse(text){
+  const lines=String(text||'').replace(/\r/g,'').split('\n');
+  const isPipe=l=>/^\|.*\|$/.test(l.trim());
+  if(lines.some(isPipe)){
+    const pipe=lines.filter(isPipe).map(l=>l.trim()).filter(l=>!/^\|[\s:\-|]+\|$/.test(l));
+    const note=lines.filter(l=>!isPipe(l)).join('\n').trim();
+    const cells=l=>l.slice(1,-1).split('|').map(x=>x.trim());
+    const head=pipe.length?cells(pipe[0]):[];
+    return { rows: promoCoByHead(head, pipe.slice(1).map(cells)), note, converted:false };
+  }
+  const ls=lines.map(l=>l.replace(/\s+$/,'')).filter(l=>l.trim());
+  if(!ls.length) return { rows:[], note:'', converted:false };
+  const rows=ls.map(promoCoSplit);
+  if(promoCoIsHeader(rows[0])) return { rows: promoCoByHead(rows[0], rows.slice(1)), note:'', converted:true };
+  return { rows: rows.map(promoCoFit), note:'', converted:true };
+}
+function promoCoToMarkdown(){
+  const rows=promoCo.rows.filter(r=>r.some(c=>String(c||'').trim()));
+  const note=(promoCo.note||'').trim();
+  const cell=v=>{ const t=String(v||'').trim().replace(/\|/g,'／').replace(/\n/g,' '); return t||'—'; };
+  const parts=[];
+  if(rows.length) parts.push('| '+PROMO_CO_COLS.join(' | ')+' |\n|'+PROMO_CO_COLS.map(()=>'---').join('|')+'|\n'+rows.map(r=>'| '+r.map(cell).join(' | ')+' |').join('\n'));
+  if(note) parts.push(note);
+  return parts.join('\n\n');
+}
+function promoCoHtml(){
+  const inp='width:100%;box-sizing:border-box;font-size:12px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit';
+  if(!promoCo.rows.length) promoCo.rows=[['','','','']];
+  const grid='grid-template-columns:48px 1.2fr 3fr 56px 26px';
+  return `
+    ${promoCo.converted?'<div style="font-size:11px;color:var(--warn,#b8860b);background:#fff8e6;border:1px solid #e8d4a0;border-radius:2px;padding:5px 10px;margin-bottom:6px">已从旧格式转换，请检查每一列是否对得上</div>':''}
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+      <button type="button" class="btn btn-outline btn-sm" onclick="promoCo.pasteOpen=!promoCo.pasteOpen;promoCoRender()">📋 从 Excel 粘贴</button>
+      <span style="font-size:10px;color:var(--text-3)">从 Excel 复制「回 / 主题 / 重点内容 / 课时」几行直接粘贴，自动分列；第一行是表头会自动跳过</span>
+    </div>
+    ${promoCo.pasteOpen?`<div style="border:1px dashed var(--border);border-radius:3px;padding:8px;margin-bottom:8px;background:var(--bg)">
+      <textarea id="tpl_co_paste" rows="5" placeholder="在这里粘贴（Excel 复制的内容按 Tab 分列；没有 Tab 时按 2 个以上空格分列）" style="${inp};line-height:1.6;resize:vertical"></textarea>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button type="button" class="btn btn-primary btn-sm" onclick="promoCoPaste()">填入表格</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="promoCo.pasteOpen=false;promoCoRender()">取消</button>
+      </div>
+    </div>`:''}
+    <div style="display:grid;${grid};gap:4px;margin-bottom:3px">
+      ${PROMO_CO_COLS.map(c=>`<div style="font-size:10px;color:var(--text-3);font-weight:600">${c}</div>`).join('')}<div></div>
+    </div>
+    ${promoCo.rows.map((r,ri)=>`<div style="display:grid;${grid};gap:4px;margin-bottom:4px;align-items:center">
+      ${r.map((v,ci)=>`<input value="${promoEsc(v)}" oninput="promoCo.rows[${ri}][${ci}]=this.value" style="${inp}">`).join('')}
+      <span onclick="promoCo.rows.splice(${ri},1);promoCoRender()" title="删除这一行" style="cursor:pointer;color:var(--danger);font-size:13px;text-align:center">✕</span>
+    </div>`).join('')}
+    <button type="button" class="btn btn-outline btn-sm" onclick="promoCo.rows.push(['','','','']);promoCoRender()">＋ 添加一行</button>
+    <label style="font-size:10px;color:var(--text-3);display:block;margin:8px 0 3px">补充说明（可选，显示在表格下方）</label>
+    <textarea rows="2" oninput="promoCo.note=this.value" style="${inp};line-height:1.6;resize:vertical">${promoEsc(promoCo.note)}</textarea>`;
+}
+function promoCoRender(){ const el=document.getElementById('tpl_outline_box'); if(el) el.innerHTML=promoCoHtml(); }
+function promoCoPaste(){
+  const text=((document.getElementById('tpl_co_paste')||{}).value||'').replace(/\r/g,'');
+  const rows=text.split('\n').filter(l=>l.trim()).map(promoCoSplit);
+  const fitted=(rows.length&&promoCoIsHeader(rows[0]))?promoCoByHead(rows[0], rows.slice(1)):rows.map(promoCoFit);
+  if(!fitted.length){ alert('没有可填入的内容'); return; }
+  promoCo.rows=promoCo.rows.filter(r=>r.some(c=>String(c||'').trim())).concat(fitted);
+  promoCo.pasteOpen=false;
+  promoCoRender();
+}
+
+// 模板填写表单（专业介绍 6 字段 / 课程介绍 4 字段）
 function promoTemplateFields(editing){
   const vals=promoParseTpl(editing.body);
+  const fields=promoTplFieldsOf();
   promoJt=Object.assign(promoJtParse(vals.juuten), { pasteOpen:false });
+  promoCo=Object.assign(promoCoParse(vals.outline), { pasteOpen:false });
+  const lab=t=>`<label style="font-size:10px;color:var(--accent,#8b5cf6);font-weight:600;display:block;margin-bottom:3px">${t}</label>`;
+  const area='width:100%;font-size:12px;line-height:1.7;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit;resize:vertical';
   return `<div style="display:flex;flex-direction:column;gap:8px" id="promo_tpl_wrap">
-    ${PROMO_TPL_FIELDS.map(f=>f[0]==='juuten'?`<div>
-      <label style="font-size:10px;color:var(--accent,#8b5cf6);font-weight:600;display:block;margin-bottom:3px">${f[1]}</label>
+    ${fields.map(f=>f[0]==='juuten'?`<div>${lab(f[1])}
       <div id="tpl_juuten_box" style="border:1px solid var(--border-light);border-radius:3px;padding:8px 10px">${promoJtHtml()}</div>
-    </div>`:`<div>
-      <label style="font-size:10px;color:var(--accent,#8b5cf6);font-weight:600;display:block;margin-bottom:3px">${f[1]}</label>
-      <textarea id="tpl_${f[0]}" rows="3" style="width:100%;font-size:12px;line-height:1.7;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit;resize:vertical" placeholder="${promoEsc(f[2]||('填写「'+f[1]+'」的内容'))}">${promoEsc(vals[f[0]]||'')}</textarea>
+    </div>`:f[0]==='outline'?`<div>${lab(f[1])}
+      <div id="tpl_outline_box" style="border:1px solid var(--border-light);border-radius:3px;padding:8px 10px">${promoCoHtml()}</div>
+    </div>`:f[0]==='summary'?`<div>${lab(f[1])}
+      <input id="tpl_summary" value="${promoEsc(vals.summary||'')}" placeholder="${promoEsc(f[2])}" style="width:100%;font-size:12px;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit">
+    </div>`:`<div>${lab(f[1])}
+      <textarea id="tpl_${f[0]}" rows="3" style="${area}" placeholder="${promoEsc(f[2]||('填写「'+f[1]+'」的内容'))}">${promoEsc(vals[f[0]]||'')}</textarea>
     </div>`).join('')}
-    <div style="font-size:9px;color:var(--text-3)">填完保存，系统会自动拼成带排版的介绍页。每个字段内可用 <code>- 列表</code>、<code>**粗体**</code>、表格。</div>
+    ${vals._rest?`<div>${lab('其他内容（模板以外的自由书写，保存时原样保留）')}
+      <textarea id="tpl__rest" rows="6" style="${area}">${promoEsc(vals._rest)}</textarea>
+    </div>`:''}
+    <div style="font-size:9px;color:var(--text-3)">填完保存，系统会自动拼成带排版的介绍页（没填的字段不会输出）。每个字段内可用 <code>- 列表</code>、<code>**粗体**</code>、表格。${promoSection==='course'?'课程目标每行写成 <code>- 知识：…</code>，冒号前会变成小标签。':'优势每行写成 <code>- 标题：说明</code>，会变成编号卡片。'}</div>
   </div>`;
 }
-// 把6字段拼成 markdown（供保存）
+// 把模板字段拼成 markdown（供保存）：填了的字段才输出「## 标签」段落，最后接上自由书写部分
 function promoTplToMarkdown(){
-  return PROMO_TPL_FIELDS.map(f=>{
-    const v=f[0]==='juuten'?promoJtToMarkdown():((document.getElementById('tpl_'+f[0])||{}).value||'');
+  const parts=promoTplFieldsOf().map(f=>{
+    const v=f[0]==='juuten'?promoJtToMarkdown():f[0]==='outline'?promoCoToMarkdown():((document.getElementById('tpl_'+f[0])||{}).value||'');
     if(!v.trim()) return '';
     return '## '+f[1]+'\n'+v.trim();
-  }).filter(Boolean).join('\n\n');
+  }).filter(Boolean);
+  const rest=((document.getElementById('tpl__rest')||{}).value||'').trim();
+  if(rest) parts.push(rest);
+  return parts.join('\n\n');
+}
+// 切换「模板填写 / 自由书写」：先把当前表单里的内容拼成正文暂存，切换后用它回填，已填的内容不丢
+let promoDraft = null;   // { forId, title, sort_order, link_name, body }
+function promoToggleTpl(){
+  const g=id=>(document.getElementById(id)||{}).value;
+  promoDraft={ forId:promoEditingId, title:g('pm_title')||'', sort_order:parseInt(g('pm_sort'))||0, link_name:g('pm_link')||'',
+    body: promoTplActive() ? promoTplToMarkdown() : (g('pm_body')||'') };
+  promoTplMode=!promoTplMode;
+  promoRender();
 }
 let promoSection = 'major_intro';
 let promoList = [];
@@ -159,7 +272,7 @@ const PV_KINDS = [['intro', '学科介绍'], ['lesson', '正课体验'], ['other
 const PROMO_SECTIONS = [
   ['major_intro', '📖 专业介绍', '概要 / 独特视角 / 优势 / 重点方向 / 研究课题例 / 重点研究科…每条一个小节'],
   ['lecturer', '👤 讲师介绍', '每位讲师一条：标题填「姓名＋头衔」（如 徐老师　一桥大学社会学研究科　博士），正文填介绍'],
-  ['course', '📚 课程介绍', '每门课一条：标题需与课程安排中的课程名完全一致，老师端才能自动关联当期开课信息'],
+  ['course', '📚 课程介绍', '每门课一条：标题需与课程安排中的课程名完全一致，老师端才能自动关联当期开课信息；可用「用模板填写」填课时摘要 / 描述 / 目标 / 大纲'],
   ['common', '🏫 通用宣传', '按领域维护的通用宣传内容（核心理念、师资、实绩数据…），营业老师在宣传资料整合里作为「关于唯新」加入资料'],
   ['cases', '🏆 合格案例', '合格学生的案例（时间线、作业展示、批复版计划书）；对外只显示称呼。发布后营业老师可在宣传相关里筛选并加入宣传资料'],
 ];
@@ -239,12 +352,14 @@ function promoRender() {
   if (!box) return;
   const sec = PROMO_SECTIONS.find(([k]) => k === promoSection);
   const list = promoList.filter(p => p.section === promoSection);
-  const editing = promoEditingId ? (promoEditingId === 'new' ? {} : list.find(p => p.id === promoEditingId) || {}) : null;
+  if (!promoEditingId || (promoDraft && promoDraft.forId !== promoEditingId)) promoDraft = null;
+  let editing = promoEditingId ? (promoEditingId === 'new' ? {} : list.find(p => p.id === promoEditingId) || {}) : null;
+  if (editing !== null && promoDraft) editing = Object.assign({}, editing, { title: promoDraft.title, sort_order: promoDraft.sort_order, link_name: promoDraft.link_name, body: promoDraft.body });
 
   const inp = 'width:100%;font-size:12px;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
   const formHtml = editing !== null ? `
   <div style="border:1px solid var(--accent);border-radius:4px;padding:14px;margin-bottom:12px;background:var(--bg)">
-    <div style="font-size:11px;font-weight:600;margin-bottom:8px">${promoEditingId==='new'?'＋ 新增':'✏ 编辑'}${sec[1]}条目${promoSection==='major_intro'?`<button class="btn btn-outline btn-sm" style="margin-left:10px;font-weight:400;font-size:10px" onclick="promoTplMode=!promoTplMode;promoRender()">${promoTplMode?'← 切换自由编辑':'📋 用模板填写'}</button>`:''}</div>
+    <div style="font-size:11px;font-weight:600;margin-bottom:8px">${promoEditingId==='new'?'＋ 新增':'✏ 编辑'}${sec[1]}条目${promoSection==='major_intro'||promoSection==='course'?`<button class="btn btn-outline btn-sm" style="margin-left:10px;font-weight:400;font-size:10px" onclick="promoToggleTpl()">${promoTplMode?'← 切换自由编辑':'📋 用模板填写'}</button>`:''}</div>
     ${promoSection==='course'?`<div style="margin-bottom:8px">
       <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">📚 从课程安排选择（本${CURRENT_MAJOR?'专业':'领域'}的课，选后自动填入课程名；有单回明细可一键生成课程安排表）</label>
       <div style="display:flex;gap:6px">
@@ -252,7 +367,7 @@ function promoRender() {
           <option value="">— 选择现有课程 —</option>
           ${promoAvailCourses().map(nm=>`<option value="${promoEsc(nm)}">${promoEsc(nm)}</option>`).join('')}
         </select>
-        <button class="btn btn-outline btn-sm" style="white-space:nowrap" onclick="promoGenCourseTable()">↓ 生成课程安排表</button>
+        ${promoTplMode?'':`<button class="btn btn-outline btn-sm" style="white-space:nowrap" onclick="promoGenCourseTable()">↓ 生成课程安排表</button>`}
       </div>
     </div>`:''}
     ${promoSection==='lecturer'&&(promoProfiles||[]).length?`<div style="margin-bottom:8px">
@@ -275,10 +390,10 @@ function promoRender() {
       <code>## 小标题</code>　·　<code>**粗体**</code>　·　<code>- 无序列表</code>　·　<code>1. 有序列表</code>　·　表格每行 <code>|学校名|研究科|英语|</code>（首行为表头）　·　空行分段
     </div>
     <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">正文</label>
-    ${promoSection==='major_intro'&&promoTplMode?promoTemplateFields(editing):`<textarea id="pm_body" rows="10" style="width:100%;font-size:12px;line-height:1.8;padding:9px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit;resize:vertical">${promoEsc(editing.body)}</textarea>`}
+    ${promoTplActive()?promoTemplateFields(editing):`<textarea id="pm_body" rows="10" style="width:100%;font-size:12px;line-height:1.8;padding:9px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit;resize:vertical">${promoEsc(editing.body)}</textarea>`}
     <div style="display:flex;gap:6px;margin-top:8px">
       <button class="btn btn-primary btn-sm" onclick="promoSave()">保存</button>
-      <button class="btn btn-outline btn-sm" onclick="promoEditingId=null;promoRender()">取消</button>
+      <button class="btn btn-outline btn-sm" onclick="promoEditingId=null;promoDraft=null;promoRender()">取消</button>
     </div>
   </div>` : '';
 
@@ -287,7 +402,7 @@ function promoRender() {
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
     <div style="font-size:12px;font-weight:600">${majorLabel(promoMajor)} · ${sec[1]}（${list.length}条）</div>
     <span style="font-size:10px;color:var(--text-3)">${sec[2]}</span>
-    <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="promoEditingId='new';promoRender()">＋ 新增条目</button>
+    <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="promoEditingId='new';promoDraft=null;promoRender()">＋ 新增条目</button>
   </div>
   ${formHtml}
   ${list.length ? list.map(p => `
@@ -297,7 +412,7 @@ function promoRender() {
       <span style="font-size:9px;color:var(--text-3)">排序 ${p.sort_order || 0}</span>
       ${p.section==='lecturer'?(p.link_name?`<span style="font-size:9px;color:var(--ok)">🔗 ${promoEsc(p.link_name)}</span>`:`<span style="font-size:9px;color:var(--warn,#b8860b)">⚠ 未绑定真实姓名</span>`):''}
       <span onclick="promoTogglePub('${p.id}')" style="cursor:pointer;user-select:none;font-size:9px;border-radius:2px;padding:1px 8px;${p.published===false?'background:var(--bg);color:var(--text-3);border:1px dashed var(--border)':'background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok)'}">${p.published===false?'🔒 隐藏中 · 点击公开':'🌐 公开中 · 点击隐藏'}</span>
-      <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="promoEditingId='${p.id}';promoRender()">✏ 编辑</button>
+      <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="promoEditingId='${p.id}';promoDraft=null;promoRender()">✏ 编辑</button>
       <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="promoDelete('${p.id}')">删除</button>
     </div>
     <div style="font-size:11px;color:var(--text-2);margin-top:6px;line-height:1.8;white-space:pre-wrap;max-height:120px;overflow:hidden;text-overflow:ellipsis">${promoEsc((p.body || '').slice(0, 300))}${(p.body || '').length > 300 ? '…' : ''}</div>
@@ -392,7 +507,7 @@ async function pvMove(id, d) {
 
 async function promoSave() {
   const title = (document.getElementById('pm_title') || {}).value.trim();
-  const body = (promoSection==='major_intro'&&promoTplMode) ? promoTplToMarkdown() : (document.getElementById('pm_body') || {}).value;
+  const body = promoTplActive() ? promoTplToMarkdown() : (document.getElementById('pm_body') || {}).value;
   const sort_order = parseInt((document.getElementById('pm_sort') || {}).value) || 0;
   const link_name = ((document.getElementById('pm_link') || {}).value || '').trim();
   if (!title && !body.trim()) { alert('请填写标题或正文'); return; }
@@ -410,7 +525,7 @@ async function promoSave() {
       if (idx >= 0) Object.assign(promoList[idx], { title, body, sort_order, link_name });
     }
     promoList.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-    promoEditingId = null;
+    promoEditingId = null; promoDraft = null;
     promoRender();
   } catch (e) { alert('保存失败：' + e.message); }
 }

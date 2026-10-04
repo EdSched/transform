@@ -286,32 +286,23 @@ function pkMajorHtml(major, data, parts) {
   const sub = t => `<div class="pk-sub">${t}</div>`;
 
   if (parts.includes('major_intro') && ((data && data.videos) || []).length) h += pvQrBlockHtml(major, data.videos);   // 扫码观看课程视频
-  if (parts.includes('major_intro') && intro.length) {
-    h += sub('专业介绍') + intro.map(p => `<div class="pk-block"><h3>${pkEsc(p.title)}</h3><div class="pk-rich">${prMd(p.body)}</div></div>`).join('');
-  }
+  // 专业介绍 / 课程介绍：和对外宣传页同一套版式（shared/promo-render.js）；纸上不能点，课程卡片全部展开
+  if (parts.includes('major_intro') && intro.length) h += `<div class="pm pm-print">${pmrIntroHtml(intro, { name: prMajorName(major) })}</div>`;
   if (parts.includes('course') && crs.length) {
     const dvLabel = v => v === '线下＋线上' ? '线上线下同步' : (v || '');
-    h += sub('课程介绍') + `<div class="pk-cards pk-courses">${crs.map(p => {
-      const name = String(p.title || '').trim();
-      const c = (prCourses || []).find(x => (x.name || '').trim() === name);
-      return `<div class="pk-card">
-        <div class="pk-name">${pkEsc(name)}${c && c.teacher ? `<span class="pk-tch">担当：${pkEsc(prPubTeacher(c.teacher))}</span>` : ''}</div>
-        <div class="pk-rich">${prMd(p.body)}</div>
-        ${c ? `<div class="pk-sched"><b>当期开课</b>　${pkEsc(c.period || '')} · ${pkEsc(c.weekdays || '')} ${pkEsc(c.time_range || '')} · 共${c.total_sessions || '-'}回 · ${pkEsc(dvLabel(c.delivery))}${c.campus ? ' · ' + pkEsc(c.campus) : ''}</div>`
-            : `<div class="pk-sched closed">本期暂未开设，开课安排请咨询顾问老师</div>`}
-      </div>`;
-    }).join('')}</div>`;
+    h += `<div class="pm pm-print">${pmrCoursesHtml(crs, {
+      print: true,
+      tchFor: name => { const c = (prCourses || []).find(x => (x.name || '').trim() === name); return c && c.teacher ? `担当：${pkEsc(prPubTeacher(c.teacher))}` : ''; },
+      boxFor: name => {
+        const c = (prCourses || []).find(x => (x.name || '').trim() === name);
+        return c ? pmrSchedBox(`<b>${pkEsc(c.period || '')}</b> · ${pkEsc(c.weekdays || '')} ${pkEsc(c.time_range || '')} · 共${c.total_sessions || '-'}回 · ${pkEsc(dvLabel(c.delivery))}${c.campus ? ' · ' + pkEsc(c.campus) : ''}`) : pmrSchedBox('', true);
+      },
+    })}</div>`;
   }
   if (parts.includes('schedule') && hasSched) {
     h += sub('课程表') + prScheduleHtml(data, true);
   }
-  if (parts.includes('lecturer') && lects.length) {
-    h += sub('讲师介绍') + `<div class="pk-cards">${lects.map(p => {
-      const t = String(p.title || '').trim();
-      const m = t.match(/^(\S+)[\s　]+(.+)$/);
-      return `<div class="pk-card"><div class="pk-name">${pkEsc(m ? m[1] : t)}</div>${m ? `<div class="pk-cred">${pkEsc(m[2])}</div>` : ''}<div class="pk-rich">${prMd(p.body)}</div></div>`;
-    }).join('')}</div>`;
-  }
+  if (parts.includes('lecturer') && lects.length) h += `<div class="pm pm-print">${pmrLecturersHtml(lects)}</div>`;
   return h;
 }
 
@@ -658,6 +649,7 @@ table.pk-vip { width:100%; border-collapse:collapse; font-size:10px; table-layou
 .pk-vip .h { width:44px; text-align:center; font-weight:500; color:var(--text-1); }
 .pk-page tr { break-inside:avoid; }
 .pk-end { text-align:center; font-size:10px; color:var(--text-3); margin-top:24px; padding-top:10px; border-top:1px solid var(--border-light); }
+${pmrCss(false)}
 </style></head><body>
 <div class="toolbar">
   <button onclick="window.print()">🖨 打印 / 保存为 PDF</button>
