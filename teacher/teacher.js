@@ -173,6 +173,18 @@ async function init() {
       const hn = document.getElementById('headerName');
       if (hn) hn.innerHTML = '<span style="color:#ff6fa5">' + teacherName + ' 老师</span> <span style="font-size:0.9em">😽💕</span>';
     }
+    // 负责人：中枢给这位老师设了管理范围 → 顶部出现「管理模式」按钮，一键进管理端（用本页已登录的老师会话，不用另外登录）
+    if (teacherData.id && managerScopeNonEmpty(teacherData.manage_scope) && !document.getElementById('mgrModeBtn')) {
+      const hdr = document.querySelector('.header');
+      if (hdr) {
+        const a = document.createElement('a');
+        a.id = 'mgrModeBtn';
+        a.href = '../admin/index.html?as=teacher';
+        a.textContent = '🛠 管理模式';
+        a.style.cssText = 'font-size:12px;color:#fff;background:var(--accent,#b8953a);border-radius:4px;padding:6px 12px;text-decoration:none;white-space:nowrap';
+        hdr.appendChild(a);
+      }
+    }
     const p = teacherData.permissions || {};
     const majors = teacherData.majors || [];
     const fetches = [

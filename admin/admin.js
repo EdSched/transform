@@ -1706,7 +1706,50 @@ async function initApp(){
   await renderPage();
 }
 // 页面启动：先解析访问钥匙，再决定登录流程
+// ═══════════════════════════════════════════════
+// 老师「管理模式」：admin/index.html?as=teacher
+// 不走管理员邮箱、不读 access_keys，直接用老师端已登录的会话（storageKey 'sb-teacher'，同一网站），
+// 按这位老师的 manage_scope 建立范围（和组合范围的访问链接完全一样的处理：ACCESS_KEY 伪装成一把非 admin 钥匙，
+// 所有「领域链接用户」的限制——隐藏中枢/切换视角、范围过滤——自动适用）。数据库侧由 is_domain_key()→is_teacher_manager() 放行写入。
+// ═══════════════════════════════════════════════
+function teacherModeBlock(msg){
+  document.getElementById('loginOverlay').style.display='flex';
+  const pw=document.getElementById('pwBox'); if(pw) pw.style.display='none';
+  const mg=document.getElementById('magicBox'); if(mg) mg.style.display='none';
+  const hint=document.getElementById('loginHint'); if(hint) hint.textContent='管理模式';
+  const er=document.getElementById('loginErr'); if(er) er.textContent=msg;
+}
+async function bootAsTeacher(){
+  try{
+    if(typeof supabase==='undefined' || !supabase.createClient){ teacherModeBlock('登录组件未加载，请刷新页面重试'); return; }
+    const c=supabase.createClient(SB_URL, SB_KEY, { auth:{ storageKey:'sb-teacher', persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });
+    const { data } = await c.auth.getSession();   // token 过期会在这里自动续期
+    const ses=data && data.session;
+    const m=ses && ses.user && /^(.+)@teacher\.local$/.exec(ses.user.email||'');
+    if(!m){ teacherModeBlock('请从你的老师链接进入'); return; }
+    __setSbStorageKey('sb-teacher');
+    __setSbToken(ses.access_token, c);
+    const rows=await sb(`/rest/v1/teachers?id=eq.${encodeURIComponent(m[1])}&select=*`).catch(()=>[]);
+    const t=rows && rows[0];
+    if(!t || !managerScopeNonEmpty(t.manage_scope)){ teacherModeBlock(t?'你还不是负责人，没有管理模式。请联系管理员开通':'请从你的老师链接进入'); return; }
+    const ms=t.manage_scope;
+    ACCESS_KEY={ k:'teacher:'+t.id, domains:ms.domains||[], majors:ms.majors||[], class_ids:ms.class_ids||[], is_admin:false, active:true, label:'管理模式 · '+t.name, _asTeacher:{ id:t.id, name:t.name } };
+    await loadMajorsFromDB();
+    await loadPeriodsFromDB(); await loadHolidaysFromDB();
+    await enterFromKey();
+    // 顶栏：标明管理模式 + 回到老师端；退出登录没有意义（会话属于老师端）
+    const tag=document.getElementById('domainTag');
+    if(tag){ const t0=scopeSummary(VIEW_SCOPE); tag.textContent='管理模式 · '+t.name+' · '+t0; tag.title=tag.textContent; }
+    const lo=document.querySelector('.topbar button[onclick="doLogout()"]'); 
+    if(lo){ lo.textContent='← 回到老师端'; lo.setAttribute('onclick','backToTeacherPage()'); }
+  }catch(e){ console.warn('管理模式进入失败:', e); teacherModeBlock('进入失败：'+(e&&e.message||e)); }
+}
+function backToTeacherPage(){
+  const id=ACCESS_KEY && ACCESS_KEY._asTeacher && ACCESS_KEY._asTeacher.id;
+  location.href=location.origin+location.pathname.replace(/\/admin\/[^/]*$/,'/teacher/')+(id?('?tid='+encodeURIComponent(id)):'');
+}
 (async function bootAuth(){
+  if(new URLSearchParams(location.search).get('as')==='teacher'){ await bootAsTeacher(); return; }
   await loadAccessKey();
   // 基础数据（专业、期数）在任何分支前先加载，保证中枢台/各页面都能用
   await loadMajorsFromDB();
