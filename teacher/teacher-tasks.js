@@ -99,11 +99,13 @@ async function tmUndo(tplId) {
 // 「⚡ 待处理」页顶部：本月任务还有 N 项未完成 →
 async function tmTodoLine() {
   const box = document.getElementById('tmTodoLine');
-  if (!box || !tmShowTab()) return;
+  if (!box) return;
+  if (!tmShowTab()) { tmTodoOkShow(false); return; }
   try {
     const { list } = await tmList('cur');
     const left = list.filter(x => x.state !== 'done').length;
     const el = document.getElementById('tmTodoLine'); if (!el) return;
+    tmTodoOkShow(true, left);
     el.innerHTML = left ? `<div onclick="switchTab('mytasks')" style="cursor:pointer;background:#fff8e6;border:1px solid #e8d4a0;border-radius:4px;padding:10px 14px;font-size:12px;color:var(--warn,#b8860b)">本月任务：还有 ${left} 项未完成 →</div>` : '';
-  } catch (e) {}
+  } catch (e) { tmTodoOkShow(false); }
 }

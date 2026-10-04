@@ -312,8 +312,14 @@ function renderTab() {
   }
 }
 
+// 「暂无待处理事项」绿色框默认隐藏，等本月任务数算完再决定显不显示（有任务未完成时不显示）
+function tmTodoOkShow(hasTasks, left) {
+  const ok = document.querySelector('#mainContent .todo-ok'); if (!ok) return;
+  ok.style.display = left > 0 ? 'none' : '';
+  ok.textContent = hasTasks && !left ? '✓ 暂无待处理事项，本月任务已全部完成' : '✓ 暂无待处理事项';
+}
 function renderTodo(mc) {
-  setTimeout(() => { if (typeof homeRender === 'function') homeRender(); if (typeof tmTodoLine === 'function') tmTodoLine(); }, 0);   // 快捷卡片 + 顶部「本月任务：还有 N 项未完成」
+  setTimeout(() => { if (typeof homeRender === 'function') homeRender(); if (typeof tmTodoLine === 'function') tmTodoLine(); else tmTodoOkShow(false); }, 0);   // 快捷卡片 + 顶部「本月任务：还有 N 项未完成」
   // 普通面谈 → 面谈预约；VIP → VIP 管理（预约子标签），两者分开提示
   const pendingBookings = cachedTeacherBookings.filter(b => b.status === 'pending' && b.type !== 'vip');
   const pendingVip = cachedTeacherBookings.filter(b => b.status === 'pending' && b.type === 'vip');
@@ -334,7 +340,7 @@ function renderTodo(mc) {
   <div style="display:flex;flex-direction:column;gap:12px">
     <div id="homeBox"></div>
     <div id="tmTodoLine"></div>
-    ${hasTodo ? '' : '<div class="todo-ok" style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:4px;padding:12px 16px;font-size:12px;color:#1a5a3a">✓ 暂无待处理事项</div>'}
+    ${hasTodo ? '' : '<div class="todo-ok" style="display:none;background:var(--ok-bg);border:1px solid var(--ok);border-radius:4px;padding:12px 16px;font-size:12px;color:#1a5a3a">✓ 暂无待处理事项</div>'}
     ${unconfirmedVip.length ? `<div class="todo-card warn">
       <div class="todo-head">⏳ 有 ${unconfirmedVip.length} 位VIP学生还未确认上课，请联系学生</div>
       ${unconfirmedVip.slice(0, 5).map(b => {
