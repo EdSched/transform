@@ -158,7 +158,7 @@ function openConsole(){
 let consoleTab='keys';
 async function switchConsoleTab(tab){
   consoleTab=tab;
-  ['keys','teachers','payroll','majors','pricing'].forEach(t=>{
+  ['keys','teachers','payroll','majors','pricing','tasks'].forEach(t=>{
     const b=document.getElementById('ctab_'+t);
     if(b){ b.style.borderBottomColor = t===tab?'var(--primary,#8b5cf6)':'transparent'; b.style.color = t===tab?'var(--text)':'var(--text-3)'; b.style.fontWeight = t===tab?'600':'400'; }
   });
@@ -167,6 +167,7 @@ async function switchConsoleTab(tab){
   if(tab==='keys'){ loadConsole(); }
   else if(tab==='majors'){ renderMajorManager(body); }
   else if(tab==='pricing'){ prcMount(body); }
+  else if(tab==='tasks'){ tkMount(body); }
   else if(tab==='teachers'){
     body.innerHTML='<div style="padding:20px;color:var(--text-3);font-size:12px">加载中…</div>';
     [cachedTeachers, cachedSessions]=await Promise.all([
@@ -598,6 +599,7 @@ function tsecWrap(key,title,inner,pad){
       <span style="font-size:12px;font-weight:600;white-space:nowrap">${title}</span>
       <span id="tsec_dot_${key}" style="display:none;width:6px;height:6px;border-radius:50%;background:var(--accent);flex-shrink:0"></span>
       <span id="tsec_warn_${key}" style="display:none;font-size:10px;color:var(--warn,#b8860b);white-space:nowrap"></span>
+      <span id="tsec_task_${key}" style="display:none;font-size:10px;color:var(--warn,#b8860b);white-space:nowrap"></span>
       <span id="tsec_sum_${key}" style="font-size:10px;color:var(--text-3);margin-left:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
     </div>
     <div id="tsec_body_${key}" style="${open?'':'display:none;'}padding:${pad||0}px;border-top:1px solid var(--border-light)">${inner}</div>
@@ -658,6 +660,30 @@ function tsecRefresh(){
     const w=document.getElementById('tsec_warn_'+k);
     w.style.display=(hide.has(k)&&st.has)?'':'none'; w.textContent=`⚠ ${ty}通常不需要`;
   });
+  tfTaskHintRender();
+}
+// ── 任务联动：这位老师有职能标签、该职能下的任务需要某项功能、却还没开 → 提示 + 「去设置」──
+let _tfTaskTpl=null, _tfEditId='';
+async function tfTaskLoad(){
+  if(_tfTaskTpl!==null) return;
+  try{ _tfTaskTpl=await sbAll('/rest/v1/task_templates?select=*&active=is.true'); }catch(e){ _tfTaskTpl=[]; }   // 表还没建时静默当作没有任务
+  tsecRefresh(); if(typeof renderTeacherRows==='function') renderTeacherRows();
+}
+function tfTaskHintRender(){
+  const box=document.getElementById('tf_task_hint');
+  TEACHER_SECTION_DEFS.forEach(([k])=>{ const e=document.getElementById('tsec_task_'+k); if(e) e.style.display='none'; });
+  if(!box) return;
+  const cur=cachedTeachers.find(x=>x.id===_tfEditId);
+  if(!cur||!_tfTaskTpl||typeof taskMissingFeatures!=='function'){ box.style.display='none'; return; }
+  // 按表单当前内容判断（标签、功能勾选），领域 / 专业用已保存的
+  const live=Object.assign({},cur,{tags:parseTeacherTags(),permissions:getPermissionsFromForm(cur.permissions)});
+  const miss=taskMissingFeatures(live,_tfTaskTpl);
+  if(!miss.length){ box.style.display='none'; return; }
+  box.style.display='';
+  box.innerHTML=miss.map(m=>`<div>⚠ 需要开启：${escTM(m.tpl.requires_label||m.tpl.requires)}（任务「${escTM(m.tpl.title)}」）${m.spot?` <a href="javascript:void(0)" onclick="openTeacherEdit('${_tfEditId}','${m.spot[0]}','${m.spot[1]||''}')" style="color:var(--accent)">[去设置]</a>`:''}</div>`).join('');
+  const bySec={};
+  miss.forEach(m=>{ if(m.spot) (bySec[m.spot[0]]=bySec[m.spot[0]]||[]).push(m.tpl.requires_label||m.tpl.requires); });
+  Object.keys(bySec).forEach(k=>{ const e=document.getElementById('tsec_task_'+k); if(e){ e.style.display=''; e.textContent='⚠ 任务需要：'+bySec[k].join('、'); } });
 }
 function tsecRefreshSoon(){ setTimeout(tsecRefresh,0); }
 // 按类型决定哪些区块显示（打开老师 / 切换类型 / 切换「显示全部选项」时才重新判断，避免编辑中区块突然消失）
@@ -672,6 +698,7 @@ function tsecApply(){
 function tsecShowAllToggle(el){ _tsecShowAll=!_tsecShowAll; el.classList.toggle('active',_tsecShowAll); tsecApply(); }
 // 重置表单（新建 / 取消 / 添加成功后）：区块收起、负责人草稿清空
 function tfFormReset(){
+  _tfEditId='';
   tsecCollapse();
   tfMgrInit(null);
   tsecApply();
@@ -679,7 +706,7 @@ function tfFormReset(){
 // 供任务管理「去设置」调用：打开某位老师的编辑页，展开指定区块，滚动到并高亮其中一项
 // item 可以是 perm_xxx 的 id 后缀（如 'promo_pricing'）或学生管理子项（如 'records_entry'）
 function openTeacherEdit(id,sec,item){
-  openEditTeacher(id);
+  if(_tfEditId!==id) openEditTeacher(id);   // 已经在编辑这位老师就不重开（不丢没保存的改动）
   if(sec){ const el=document.getElementById('tsec_'+sec); if(el){ el.style.display=''; tsecToggle(sec,true); } }
   if(item){
     setTimeout(()=>{
@@ -939,6 +966,7 @@ function renderTeachersPage(mc){
     <!-- 添加/编辑老师 -->
     <div onclick="tsecRefreshSoon()" oninput="tsecRefreshSoon()" onchange="tsecRefreshSoon()" style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:16px;min-width:0">
       <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:14px;letter-spacing:.05em;text-transform:uppercase" id="teacherFormTitle">添加新老师</div>
+      <div id="tf_task_hint" style="display:none;font-size:11px;line-height:1.7;background:#fff8e6;border:1px solid #e8d4a0;border-radius:3px;padding:6px 10px;margin-bottom:10px;color:var(--warn,#b8860b)"></div>
       ${tsecWrap('basic','基本信息',`
       <div class="form-group"><label class="form-label">姓名 *</label><input id="new_teacher_name" placeholder="老师姓名"></div>
       <div class="form-group"><label class="form-label">备注 / 对外宣传姓名</label><input id="new_teacher_notes" placeholder="填写后，宣传页课程担当将显示此名（如：周老师）"></div>
@@ -1560,6 +1588,7 @@ function renderTeacherRows(){
               <span style="font-size:10px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:26%">${[(t.domains||[]).join('・'),(t.majors||[]).map(m=>MAJORS[m]||m).join('・')].filter(Boolean).join(' · ')||'—'}</span>
               ${(t.tags||[]).map(g=>`<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 6px;white-space:nowrap">${escTM(g)}</span>`).join('')}
               ${profBadgeHtml(t)}
+              ${(()=>{ const m=(_tfTaskTpl&&typeof taskMissingFeatures==='function')?taskMissingFeatures(t,_tfTaskTpl):[]; return m.length?`<span title="${escTM(m.map(x=>x.tpl.requires_label||x.tpl.requires).join('、'))}" style="font-size:10px;color:var(--warn,#b8860b);border:1px solid var(--warn,#b8860b);border-radius:2px;padding:0 6px;white-space:nowrap">⚠ 任务需要开功能 ${m.length}</span>`:''; })()}
               ${managerScopeNonEmpty(t.manage_scope)?`<span title="${escTM(scopeSummary(managerScopeToView(t.manage_scope)))}" style="font-size:10px;color:#fff;background:var(--accent);border-radius:2px;padding:0 6px;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis">负责人：${escTM(scopeSummary(managerScopeToView(t.manage_scope)))}</span>`:''}
               <span title="${escTM(featTip)}" style="font-size:10px;color:var(--text-3);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:30%">${escTM(featShort)||'无权限'}</span>
               <span style="font-size:10px;color:var(--text-3)">${open?'▾':'▸'}</span>
@@ -1787,7 +1816,7 @@ function openEditTeacher(id){
   document.querySelectorAll('#perm_slot_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.slot_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_vip_content .filter-chip').forEach(c=>{c.classList.toggle('active',(p.vip_content||[]).includes(c.dataset.value))});
   hwaInit(p, t);
-  tsecCollapse(); tfMgrInit(t); tsecApply();
+  _tfEditId=t.id; tsecCollapse(); tfMgrInit(t); tsecApply(); tfTaskLoad();
   const btn=document.getElementById('teacherFormBtn');
   if(btn){btn.textContent='保存修改';btn.setAttribute('onclick',`saveEditTeacher('${id}')`);}
   const cancelBtn=document.getElementById('teacherFormCancelBtn');
