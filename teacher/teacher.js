@@ -235,7 +235,7 @@ async function init() {
 
 function buildTabs() {
   const p = teacherData?.permissions || {};
-  const tabs = [{ id: 'todo', label: '⚡ 待处理' }];
+  const tabs = [{ id: 'todo', label: '🏠 首页' }];
   if (typeof tmShowTab === 'function' && tmShowTab()) tabs.push({ id: 'mytasks', label: '📋 我的任务' });
   const hasRegularBk = (typeof cachedTeacherBookings !== 'undefined') && cachedTeacherBookings.some(b => b.type !== 'vip');
   if (p.booking && hasRegularBk) tabs.push({ id: 'booking', label: '📅 面谈预约' });
@@ -273,7 +273,7 @@ function buildTabs() {
   if (p.booking || p.slots || p.schedule || p.homework || slots.length) tabs.push({ id: 'workrecords', label: '📋 工作记录' });
   teacherTabList = tabs;   // 首页快捷卡片要知道这位老师有哪些标签
   const tabBar = document.getElementById('tabBar');
-  tabBar.innerHTML = tabs.map(t => `<button class="tab-btn${curTab === t.id ? ' active' : ''}" onclick="switchTab('${t.id}')">${t.label}</button>`).join('');
+  tabBar.innerHTML = tabs.map(t => `<button class="tab-btn${t.id === 'todo' ? ' tab-home' : ''}${curTab === t.id ? ' active' : ''}" onclick="switchTab('${t.id}')">${t.label}</button>`).join('');
   tabBar.style.display = tabs.length > 1 ? 'flex' : 'none';
   if (typeof pkLoad === 'function') { pkLoad(); pkUpdateTabBadge(); }
 }
@@ -282,7 +282,8 @@ function switchTab(tab) {
   // 全页面统一加宽（1400px）；出願数据库在自身渲染中进一步放宽为 none
   curTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`)?.classList.add('active');
+  const tb = document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`);
+  if (tb) { tb.classList.add('active'); try { tb.scrollIntoView({ inline: 'nearest', block: 'nearest' }); } catch (e) {} }   // 标签栏横向滚动时让当前标签露出来
   renderTab();
 }
 
@@ -2822,7 +2823,7 @@ function teacherAdbRender() {
 // 对外展示名不在此处填写：由老师管理的「备注 / 对外宣传姓名」统一控制
 // ══════════════════════════════════
 let myProfiles = [];        // 这位老师的全部讲师介绍行（每个专业一行）
-let profPendingCount = 0;   // 还没填完的专业数（>0 时待处理页不显示"暂无待处理事项"）
+let profPendingCount = 0;   // 还没填完的专业数（>0 时首页不显示"暂无待处理事项"）
 let profDrafts = {};        // 表单里切换专业时暂存各专业没保存的输入
 let profCurKey = '';        // 表单当前编辑的专业 key
 
@@ -2854,7 +2855,7 @@ async function checkTeacherProfile() {
       <button onclick="openProfileForm('${todo[0].key}')" style="font-size:11px;background:var(--warn,#b8860b);color:#fff;border:none;border-radius:3px;padding:5px 16px;cursor:pointer;font-family:inherit">去填写</button>
     </div>`;
   } else box2.innerHTML = '';
-  // 待处理页已经打开时，把"暂无待处理事项"刷新掉
+  // 首页已经打开时，把"暂无待处理事项"刷新掉
   if (curTab === 'todo') { const mc = document.getElementById('mainContent'); if (mc && mc.querySelector('.todo-ok')) renderTodo(mc); }
 }
 

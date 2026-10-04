@@ -168,7 +168,7 @@ async function homePinToggle(el) {
   document.querySelectorAll('.homePin').forEach(e => { if (e.dataset.type === it.type && e.dataset.id === it.id) { const on = homeHas(it); e.textContent = on ? '已在首页' : '加到首页'; e.style.color = on ? 'var(--text-3)' : 'var(--warn)'; } });
 }
 
-// ── 渲染（待处理页顶部）──
+// ── 渲染（首页顶部）──
 async function homeRender() {
   const box = document.getElementById('homeBox'); if (!box || !teacherData) return;
   const items = homeShownVisible();
