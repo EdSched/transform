@@ -9,10 +9,11 @@
 </head>
 <body>
 <div class="header">
-  <div>
+  <div id="headerLeft" style="position:relative;min-width:0;flex:1 1 auto">
     <div class="header-title">唯新教育</div>
-    <div class="header-sub" id="headerName">加载中…</div>
+    <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><div class="header-sub" id="headerName">加载中…</div><span id="headerNick"></span></div>
   </div>
+  <div id="headerBtns"></div>
 </div>
 <div id="tabBar" style="display:none;background:var(--surface);border-bottom:1px solid var(--border);padding:0 16px;gap:0;overflow-x:auto"></div>
 <div class="main" id="mainContent"><div class="loading">加载中…</div></div>
@@ -43,6 +44,7 @@
 <script src="teacher-vip.js"></script>
 <script src="teacher-pack.js"></script>
 <script src="teacher-tasks.js"></script>
+<script src="teacher-home.js"></script>
 <script src="teacher-pricing.js"></script>
 </body>
 </html>

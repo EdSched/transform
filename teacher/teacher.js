@@ -148,6 +148,7 @@ async function init() {
         if (_okSess()) {
           if (typeof __setSbStorageKey === 'function') __setSbStorageKey('sb-teacher');
           if (typeof __setSbToken === 'function') __setSbToken(_sess.session.access_token, _c);  // 传客户端→自动续期
+          window.__teacherAuthClient = _c;   // 「资源管理」嵌入前用它让会话续期
         }
       }
     } catch (e) { /* Auth 失败不挡人：老师照常进（老链接无 tid 时走下面的按名字查） */ }
@@ -173,18 +174,8 @@ async function init() {
       const hn = document.getElementById('headerName');
       if (hn) hn.innerHTML = '<span style="color:#ff6fa5">' + teacherName + ' 老师</span> <span style="font-size:0.9em">😽💕</span>';
     }
-    // 负责人：中枢给这位老师设了管理范围 → 顶部出现「管理模式」按钮，一键进管理端（用本页已登录的老师会话，不用另外登录）
-    if (teacherData.id && managerScopeNonEmpty(teacherData.manage_scope) && !document.getElementById('mgrModeBtn')) {
-      const hdr = document.querySelector('.header');
-      if (hdr) {
-        const a = document.createElement('a');
-        a.id = 'mgrModeBtn';
-        a.href = '../admin/index.html?as=teacher';
-        a.textContent = '🛠 管理模式';
-        a.style.cssText = 'font-size:12px;color:#fff;background:var(--accent,#b8953a);border-radius:4px;padding:6px 12px;text-decoration:none;white-space:nowrap';
-        hdr.appendChild(a);
-      }
-    }
+    // 顶部按钮：负责人 →「管理模式」（进管理端，用本页已登录的老师会话）；有资源权限 →「资源管理」（留在老师端）
+    homeLoad(); homeHeaderBtns(); homeNickRender();
     const p = teacherData.permissions || {};
     const majors = teacherData.majors || [];
     const fetches = [
@@ -278,6 +269,7 @@ function buildTabs() {
   if (p.vip_sales) tabs.push({ id: 'vipsales', label: '🗂 VIP规划' });
   // 工作记录：有实际教学相关权限才显示
   if (p.booking || p.slots || p.schedule || p.homework || slots.length) tabs.push({ id: 'workrecords', label: '📋 工作记录' });
+  teacherTabList = tabs;   // 首页快捷卡片要知道这位老师有哪些标签
   const tabBar = document.getElementById('tabBar');
   tabBar.innerHTML = tabs.map(t => `<button class="tab-btn${curTab === t.id ? ' active' : ''}" onclick="switchTab('${t.id}')">${t.label}</button>`).join('');
   tabBar.style.display = tabs.length > 1 ? 'flex' : 'none';
@@ -289,6 +281,7 @@ function switchTab(tab) {
   curTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`)?.classList.add('active');
+  const _rb = document.getElementById('resBtn'); if (_rb) _rb.classList.toggle('on', tab === 'resource');
   renderTab();
 }
 
@@ -298,6 +291,7 @@ function renderTab() {
   switch (curTab) {
     case 'todo': renderTodo(mc); break;
     case 'mytasks': renderMyTasks(mc); break;
+    case 'resource': renderResourceFrame(mc); break;
     case 'booking': renderBookingManagement(mc); break;
     case 'slots': renderSlotManagement(mc); break;
     case 'schedule': renderScheduling(mc); break;
@@ -318,7 +312,7 @@ function renderTab() {
 }
 
 function renderTodo(mc) {
-  setTimeout(() => { if (typeof tmTodoLine === 'function') tmTodoLine(); }, 0);   // 顶部「本月任务：还有 N 项未完成」
+  setTimeout(() => { if (typeof homeRender === 'function') homeRender(); if (typeof tmTodoLine === 'function') tmTodoLine(); }, 0);   // 快捷卡片 + 顶部「本月任务：还有 N 项未完成」
   // 普通面谈 → 面谈预约；VIP → VIP 管理（预约子标签），两者分开提示
   const pendingBookings = cachedTeacherBookings.filter(b => b.status === 'pending' && b.type !== 'vip');
   const pendingVip = cachedTeacherBookings.filter(b => b.status === 'pending' && b.type === 'vip');
@@ -337,16 +331,9 @@ function renderTodo(mc) {
   const hasTodo = pendingBookings.length > 0 || pendingVip.length > 0 || vipRequests.length > 0 || pendingSlots.length > 0 || unconfirmedVip.length > 0 || profPendingCount > 0;
   mc.innerHTML = `
   <div style="display:flex;flex-direction:column;gap:12px">
+    <div id="homeBox"></div>
     <div id="tmTodoLine"></div>
     ${hasTodo ? '' : '<div class="todo-ok" style="background:var(--ok-bg);border:1px solid var(--ok);border-radius:4px;padding:12px 16px;font-size:12px;color:#1a5a3a">✓ 暂无待处理事项</div>'}
-<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px">
-  <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:8px">显示昵称设置</div>
-  <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">学生预约页面显示的名字，留空则显示真实姓名「${teacherName}」</div>
-  <div style="display:flex;gap:8px;align-items:center">
-    <input id="displayNameInput" type="text" value="${teacherData.display_name||''}" placeholder="输入昵称（可留空）" style="flex:1;font-size:12px;padding:6px 9px">
-    <button onclick="saveDisplayName()" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 14px;font-size:11px;cursor:pointer;font-family:inherit">保存</button>
-  </div>
-</div>
     ${unconfirmedVip.length ? `<div class="todo-card warn">
       <div class="todo-head">⏳ 有 ${unconfirmedVip.length} 位VIP学生还未确认上课，请联系学生</div>
       ${unconfirmedVip.slice(0, 5).map(b => {
@@ -599,11 +586,13 @@ function renderBookingCardBody(b) {
 }
 async function saveDisplayName() {
   const val = document.getElementById('displayNameInput')?.value.trim() || '';
+  // 按 id 更新（防同名）；老链接没有 id 时才退回按名字
+  const q = teacherData.id ? `id=eq.${encodeURIComponent(teacherData.id)}` : `name=eq.${encodeURIComponent(teacherName)}`;
   try {
-    await sb(`/rest/v1/teachers?name=eq.${encodeURIComponent(teacherName)}`, 'PATCH', { display_name: val });
+    await sb(`/rest/v1/teachers?${q}`, 'PATCH', { display_name: val });
     teacherData.display_name = val;
-    const btn = document.querySelector('[onclick="saveDisplayName()"]');
-    if (btn) { btn.textContent = '✓ 已保存'; setTimeout(() => btn.textContent = '保存', 1500); }
+    document.getElementById('nickBox')?.remove();
+    homeNickRender();
   } catch(e) { alert('保存失败：' + e.message); }
 }
 // saveFileUrl removed - using Supabase Storage instead
@@ -814,7 +803,7 @@ async function showStudentInfoTeacher(name, studentId) {
   try {
     const { html, student } = await renderStudentDetailCard(studentId || '', { name });
     if (!student) { overlay.remove(); alert(`未找到学生档案：${name}`); return; }
-    overlay.innerHTML = wrap(html);
+    overlay.innerHTML = wrap((typeof homePinHtml === 'function' ? `<div style="margin-bottom:8px">${homePinHtml('student', student.id, student.name)}</div>` : '') + html);
   } catch (e) {
     overlay.innerHTML = wrap('<div style="font-size:12px;color:var(--danger)">读取失败：' + (e.message || e) + '</div>');
   }
@@ -2247,7 +2236,7 @@ function renderMySessionRow(s) {
       </div>
     </div>`;
   }
-  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;margin-bottom:8px;cursor:pointer" onclick="toggleSessionDetail('${rowId}')">
+  return `<div data-course="${s.course_id == null ? '' : s.course_id}" style="background:var(--surface);border:1px solid var(--border);border-radius:4px;margin-bottom:8px;cursor:pointer" onclick="toggleSessionDetail('${rowId}')">
     <div style="padding:12px 14px;display:flex;align-items:flex-start;gap:14px">
       <div style="text-align:center;min-width:44px">
         <div style="font-size:17px;font-weight:700;font-family:'DM Mono',monospace;color:${dowColor}">${d.getMonth() + 1}/${d.getDate()}</div>
@@ -2260,7 +2249,7 @@ function renderMySessionRow(s) {
           <span style="font-size:9px;color:var(--text-3);background:var(--bg);border-radius:2px;padding:1px 5px">${(()=>{const m2=d.getMonth()+1;return m2<=3?'1月期':m2<=6?'4月期':m2<=9?'7月期':'10月期'})()}</span>
           <span style="margin-left:auto;font-size:10px;color:var(--text-3)" id="${rowId}_arrow">▾ 详情</span>
         </div>
-        <div style="font-size:11px;color:var(--text-3)">第${s.session_number}回 · ${s.time_range || ''} · ${locationText}</div>
+        <div style="font-size:11px;color:var(--text-3)">第${s.session_number}回 · ${s.time_range || ''} · ${locationText}${s.course_id != null && typeof homePinHtml === 'function' ? ' · ' + homePinHtml('course', s.course_id, s.course_name) : ''}</div>
         ${s.session_title ? `<div style="font-size:11px;color:var(--text-2);margin-top:3px">📌 ${s.session_title}</div>` : ''}
       </div>
     </div>
