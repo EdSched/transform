@@ -96,7 +96,7 @@ async function tmUndo(tplId) {
   try { await sb(`/rest/v1/task_done?id=eq.${encodeURIComponent(`${tplId}|${pi.period}|${teacherData.id}`)}`, 'DELETE'); } catch (e) { alert('操作失败：' + e.message); return; }
   renderMyTasks(document.getElementById('mainContent'));
 }
-// 「⚡ 待处理」页顶部：本月任务还有 N 项未完成 →
+// 「🏠 首页」顶部：本月任务还有 N 项未完成 →
 async function tmTodoLine() {
   const box = document.getElementById('tmTodoLine');
   if (!box) return;

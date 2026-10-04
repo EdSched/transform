@@ -22,6 +22,10 @@ body{font-family:'DM Mono','Noto Serif SC',monospace;background:var(--bg);color:
 .tab-btn{padding:10px 14px;background:none;border:none;border-bottom:2px solid transparent;font-family:'DM Mono',monospace;font-size:12px;color:var(--text-3);cursor:pointer;white-space:nowrap;transition:all .15s}
 .tab-btn:hover{color:var(--text)}
 .tab-btn.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:500}
+/* 「首页」固定在标签栏最左边，横向滚动时不跟着滚走 */
+.tab-btn.tab-home{position:sticky;left:0;z-index:2;background:var(--surface);border-right:1px solid var(--border)}
+/* 手机：标签栏吸顶（弹窗层级 ≥980，在它上面） */
+@media (max-width:700px){#tabBar{position:sticky;top:0;z-index:40}}
 
 /* Main content */
 .main{max-width:700px;margin:0 auto;padding:20px 16px 80px}
