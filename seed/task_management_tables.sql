@@ -44,11 +44,13 @@ drop policy if exists tt_read  on public.task_templates;  drop policy if exists 
 drop policy if exists tc_read  on public.task_calendar;   drop policy if exists tc_write  on public.task_calendar;
 drop policy if exists td_read  on public.task_done;       drop policy if exists td_write  on public.task_done;
 
-create policy tt_read  on public.task_templates for select using (is_staff());
-create policy tt_write on public.task_templates for all    using (is_admin()) with check (is_admin());
-create policy tc_read  on public.task_calendar  for select using (is_staff());
-create policy tc_write on public.task_calendar  for all    using (is_admin()) with check (is_admin());
-create policy td_read  on public.task_done      for select using (is_staff());
+-- 读取规则必须包含 is_admin()：网页写入时会把新行读回来显示（return=representation），
+-- 读取规则不含 is_admin() 时，管理员写入会被判成违规（42501）。
+create policy tt_read  on public.task_templates for select using (public.is_admin() or public.is_staff());
+create policy tt_write on public.task_templates for all    using (public.is_admin()) with check (public.is_admin());
+create policy tc_read  on public.task_calendar  for select using (public.is_admin() or public.is_staff());
+create policy tc_write on public.task_calendar  for all    using (public.is_admin()) with check (public.is_admin());
+create policy td_read  on public.task_done      for select using (public.is_admin() or public.is_staff() or teacher_id = public.current_teacher_id());
 create policy td_write on public.task_done      for all
   using      (is_admin() or teacher_id = current_teacher_id())
   with check (is_admin() or teacher_id = current_teacher_id());

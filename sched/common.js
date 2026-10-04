@@ -461,13 +461,52 @@ async function getRoleByCode(code){
 }
 // 当前 URL 的 code
 function currentCode(){ return new URLSearchParams(location.search).get('k') || ''; }
-// 统一获取当前身份：已登录(session)优先，其次 URL 的 ?k=
+// ── 嵌入管理端（?embed=admin）：身份来自管理端 / 老师端的登录会话，不用口令 ──
+// 管理端「资源管理」把排课首页嵌进 iframe：同一网站，localStorage 里有 sb-admin（管理员）或 sb-teacher（管理模式的负责人老师，
+// 地址上带 &as=teacher）的登录 token。只有「问我是谁」这一个请求带 token（rpc/sched_session_role），其余读写照旧用公钥。
+// 嵌入得到的身份存在 sessionStorage.sched_role_embed（不碰 sched_role），首页再给内层页面的地址加 via=admin，内层页面按 via=admin 读它——
+// 所以同一个浏览器标签页里之后打开旧口令链接，读的还是 sched_role / ?k=，不会串身份。
+function schedEmbedVia(){ const q=new URLSearchParams(location.search); return q.get('embed')==='admin' || q.get('via')==='admin'; }
+function schedReadToken(key){
+  try{
+    const o=JSON.parse(localStorage.getItem(key)||'null');
+    const at=o&&(o.access_token||(o.currentSession&&o.currentSession.access_token));
+    const exp=o&&(o.expires_at||(o.currentSession&&o.currentSession.expires_at));
+    if(at && (!exp || exp*1000>Date.now()+5000)) return at;
+  }catch(e){}
+  return null;
+}
+async function schedEmbedRole(){
+  const asTeacher=new URLSearchParams(location.search).get('as')==='teacher';
+  const tok=schedReadToken(asTeacher?'sb-teacher':'sb-admin'); if(!tok) return null;
+  try{
+    const r=await fetch(SB_URL+'/rest/v1/rpc/sched_session_role',{method:'POST',headers:{apikey:SB_KEY,Authorization:'Bearer '+tok,'Content-Type':'application/json'},body:'{}'});
+    if(!r.ok) return null;
+    const j=await r.json(); if(!j) return null;
+    if(j.kind==='admin') return { role:'admin', perms:[...ALL_PERMS,'course_audit','manage'].join(','), label:'管理员' };
+    if(j.kind==='teacher'){
+      const perms=(j.perms||[]).filter(Boolean);
+      return perms.length ? { role:'teacher', perms:perms.join(','), label:'负责人 · '+(j.name||'') } : null;
+    }
+  }catch(e){}
+  return null;
+}
+// 统一获取当前身份：嵌入管理端时用登录会话；否则已登录(session)优先，其次 URL 的 ?k=（旧口令逻辑原样不变）
 async function currentRole(){
+  const q=new URLSearchParams(location.search);
+  if(q.get('embed')==='admin'){
+    const r=await schedEmbedRole();
+    try{ if(r) sessionStorage.setItem('sched_role_embed',JSON.stringify(r)); else sessionStorage.removeItem('sched_role_embed'); }catch(e){}
+    return r;
+  }
+  if(q.get('via')==='admin'){ try{ const s=sessionStorage.getItem('sched_role_embed'); if(s) return JSON.parse(s); }catch(e){} return null; }
   try{ const s=sessionStorage.getItem('sched_role'); if(s) return JSON.parse(s); }catch(e){}
   const code=currentCode();
   if(code){ const r=await getRoleByCode(code); if(r){ try{ sessionStorage.setItem('sched_role',JSON.stringify(r)); }catch(e){} } return r; }
   return null;
 }
+// 各功能页拿「这个页面的身份」：嵌入管理端时用 currentRole()；独立打开时和以前一样只看 ?k=
+function pageRole(){ return schedEmbedVia() ? currentRole() : getRoleByCode(currentCode()); }
 function isAdminRole(r){ return !!(r && (r.role==='admin' || (r.perms&&r.perms.split(',').map(s=>s.trim()).includes('manage')))); }
 // 角色的权限集合
 function permSet(roleRec){ return new Set((roleRec&&roleRec.perms?roleRec.perms.split(','):[]).map(s=>s.trim()).filter(Boolean)); }

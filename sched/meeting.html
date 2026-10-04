@@ -83,7 +83,7 @@
 <script>
 el('nav').innerHTML = renderNav('meeting.html');
 let CANARRANGE = new URLSearchParams(location.search).get('canarrange')==='1';
-getRoleByCode(currentCode()).then(r=>{ if(r){ window.ROLE=r; el('nav').innerHTML = renderNav('meeting.html', r);
+pageRole().then(r=>{ if(r){ window.ROLE=r; el('nav').innerHTML = renderNav('meeting.html', r);
   if(permSet(r).has('meeting_arrange')||permSet(r).has('manage')){ CANARRANGE=true; applyPerm(); } } }).catch(()=>{});
 let ROOMS=[], ACCOUNTS=[], BOOKINGS=[], COURSES=[], MTEMPLATES=[], WDSEL=new Set(), PICKED=null;
 async function boot(){

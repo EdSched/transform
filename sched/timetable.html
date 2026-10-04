@@ -161,7 +161,7 @@ html.shareview #calBody:empty::after{ content:'课表加载中…'; color:#9a959
 <script src="common.js"></script>
 <script>
 el('nav').innerHTML = renderNav('timetable.html');
-getRoleByCode(currentCode()).then(r=>{ if(r) el('nav').innerHTML = renderNav('timetable.html', r); }).catch(()=>{});
+pageRole().then(r=>{ if(r) el('nav').innerHTML = renderNav('timetable.html', r); }).catch(()=>{});
 let COURSES=[], EVENTS=[], curView='month', SELECTED_IDS=new Set(), EXTRA_IDS=new Set(), LANG_IDS=new Set(), TEMPLATES=[], MULTI=false, ALL_TERMS=[], SEL_TERMS=new Set(), HOLIDAYS=[];
 const DOW=['周日','周一','周二','周三','周四','周五','周六'];
 

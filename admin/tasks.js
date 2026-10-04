@@ -269,7 +269,7 @@ let tkTeamPeriod = '', tkTeamRole = '', tkTeamQ = '', tkTeamRes = {}, tkTeamBox 
 function tkRenderProg() { return tkTeamMount(document.getElementById('tkMain'), null); }
 // 管理端「📋 任务」页：自己范围内的老师（管理员 = 全部；负责人 / 领域链接 = 范围内）
 async function tkRenderTeamPage(mc) {
-  mc.innerHTML = '<div class="section-title" style="margin-bottom:12px">任务</div><div id="tkTeamHost"></div>';
+  mc.innerHTML = '<div class="section-title" style="margin-bottom:12px">任务安排</div><div id="tkTeamHost"></div>';
   await tkTeamMount(document.getElementById('tkTeamHost'), t => typeof teacherInView !== 'function' || teacherInView(t));
 }
 async function tkTeamMount(box, teacherFilter) {
