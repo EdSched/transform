@@ -435,39 +435,48 @@ function keyDraftSummary(){
   d.classIds.forEach(id=>{ const c=(typeof classById==='function')?classById(id):null; parts.push('班级：'+(c?c.name:id)); });
   return parts.length?parts.join(' ＋ '):'（还没有选任何范围）';
 }
-function renderKeyEditor(){
-  const ov=document.getElementById('keyEditModal'), d=_keyDraft; if(!ov||!d) return;
+// 范围选择器（领域 / 专业 / 班级三块 chip，访问链接和「负责人范围」共用）：d={domains,majors,classIds}，fn=点 chip 时调用的函数名（fn(field,val)）
+function scopePickerHtml(d,fn){
   const chip=(on,label,fn,dis)=>`<div class="filter-chip${on?' active':''}" ${dis?'':`onclick="${fn}"`} style="padding:3px 10px;font-size:11px;${dis?'opacity:.4;cursor:default':''}" ${dis?'title="这个领域已经整个选中，不用再单选专业"':''}>${label}</div>`;
   const sec=(t,inner)=>`<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">${t}</div>${inner}</div>`;
   const majorsHtml=DOMAINS.map(dm=>{
     const ks=allMajorKeys().filter(k=>MAJOR_DOMAIN[k]===dm.label); if(!ks.length) return '';
     const full=d.domains.includes(dm.label);
     return `<div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px"><span style="font-size:10px;color:var(--text-3);min-width:64px">${dm.label}</span>
-      <div style="display:flex;gap:4px;flex-wrap:wrap">${chipFold(ks.map(k=>({on:d.majors.includes(k),html:chip(d.majors.includes(k), escTM(MAJORS[k]||k), `keyDraftToggle('majors','${k}')`, full)})))}</div></div>`;
+      <div style="display:flex;gap:4px;flex-wrap:wrap">${chipFold(ks.map(k=>({on:d.majors.includes(k),html:chip(d.majors.includes(k), escTM(MAJORS[k]||k), `${fn}('majors','${k}')`, full)})))}</div></div>`;
   }).join('');
   const cls=(typeof CLASSES!=='undefined'?CLASSES:[]).filter(c=>c.active!==false);
   const clsHtml=cls.length?DOMAINS.map(dm=>{
     const cs=cls.filter(c=>c.domain===dm.label); if(!cs.length) return '';
     return `<div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px"><span style="font-size:10px;color:var(--text-3);min-width:64px">${dm.label}</span>
-      <div style="display:flex;gap:4px;flex-wrap:wrap">${chipFold(cs.map(c=>({on:d.classIds.includes(String(c.id)),html:chip(d.classIds.includes(String(c.id)), escTM(c.name), `keyDraftToggle('classIds','${String(c.id).replace(/'/g,"\\'")}')`, d.domains.includes(dm.label))})))}</div></div>`;
-  }).join('')+((cls.filter(c=>!DOMAINS.some(dm=>dm.label===c.domain)).length)?`<div style="display:flex;gap:4px;flex-wrap:wrap">${cls.filter(c=>!DOMAINS.some(dm=>dm.label===c.domain)).map(c=>chip(d.classIds.includes(String(c.id)), escTM(c.name), `keyDraftToggle('classIds','${String(c.id).replace(/'/g,"\\'")}')`)).join('')}</div>`:''):'<span style="font-size:10px;color:var(--text-3)">还没有班级（在「班级管理」里建）</span>';
+      <div style="display:flex;gap:4px;flex-wrap:wrap">${chipFold(cs.map(c=>({on:d.classIds.includes(String(c.id)),html:chip(d.classIds.includes(String(c.id)), escTM(c.name), `${fn}('classIds','${String(c.id).replace(/'/g,"\\'")}')`, d.domains.includes(dm.label))})))}</div></div>`;
+  }).join('')+((cls.filter(c=>!DOMAINS.some(dm=>dm.label===c.domain)).length)?`<div style="display:flex;gap:4px;flex-wrap:wrap">${cls.filter(c=>!DOMAINS.some(dm=>dm.label===c.domain)).map(c=>chip(d.classIds.includes(String(c.id)), escTM(c.name), `${fn}('classIds','${String(c.id).replace(/'/g,"\\'")}')`)).join('')}</div>`:''):'<span style="font-size:10px;color:var(--text-3)">还没有班级（在「班级管理」里建）</span>';
+  return sec('完整领域（这个领域的所有东西都能看到，包括没有专业的）',`<div style="display:flex;gap:6px;flex-wrap:wrap">${DOMAINS.map(dm=>chip(d.domains.includes(dm.label), dm.label, `${fn}('domains','${dm.label}')`)).join('')}</div>`)
+    +sec('单独专业（只看这些专业的东西；没有专业的东西不显示）',majorsHtml||'<span style="font-size:10px;color:var(--text-3)">还没有专业</span>')
+    +sec('班级（只看属于这些班级的学生和按班级编入的课）',clsHtml);
+}
+// 点 chip 的公共逻辑：切换选中；整个领域选中后，它下面单独选的专业 / 班级已经包含了，去掉
+function scopeDraftToggle(d,field,val){
+  const a=d[field], i=a.indexOf(val); if(i>=0) a.splice(i,1); else a.push(val);
+  if(field==='domains'&&i<0){
+    d.majors=d.majors.filter(m=>MAJOR_DOMAIN[m]!==val);
+    d.classIds=d.classIds.filter(id=>{ const c=(typeof classById==='function')?classById(id):null; return !(c&&c.domain===val); });
+  }
+}
+function renderKeyEditor(){
+  const ov=document.getElementById('keyEditModal'), d=_keyDraft; if(!ov||!d) return;
+  const sec=(t,inner)=>`<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">${t}</div>${inner}</div>`;
   ov.innerHTML=`<div class="modal" style="width:640px">
     <div class="modal-title">${d.k?'编辑访问链接':'新建访问链接'}</div>
     <div class="modal-sub">${d.k?`链接地址不变（${escTM(d.k)}），改完后已经发出去的链接对方刷新即生效`:'范围 = 完整领域（可多个）＋ 单独专业（可跨领域）＋ 班级，三部分取并集'}</div>
-    ${sec('完整领域（这个领域的所有东西都能看到，包括没有专业的）',`<div style="display:flex;gap:6px;flex-wrap:wrap">${DOMAINS.map(dm=>chip(d.domains.includes(dm.label), dm.label, `keyDraftToggle('domains','${dm.label}')`)).join('')}</div>`)}
-    ${sec('单独专业（只看这些专业的东西；没有专业的东西不显示）',majorsHtml||'<span style="font-size:10px;color:var(--text-3)">还没有专业</span>')}
-    ${sec('班级（只看属于这些班级的学生和按班级编入的课）',clsHtml)}
+    ${scopePickerHtml(d,'keyDraftToggle')}
     ${sec('备注',`<input id="kd_label" value="${escTM(d.label)}" oninput="_keyDraft.label=this.value" placeholder="如负责人名（选填）" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:100%;box-sizing:border-box">`)}
     <div style="font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 12px;line-height:1.7">这个链接可以看到：<b>${escTM(keyDraftSummary())}</b></div>
     <div class="modal-actions"><button class="btn btn-outline" onclick="closeKeyEditor()">取消</button><button class="btn btn-primary" onclick="saveKeyEditor()">${d.k?'保存修改':'生成链接'}</button></div>
   </div>`;
 }
 function keyDraftToggle(field,val){
-  const a=_keyDraft[field], i=a.indexOf(val); if(i>=0) a.splice(i,1); else a.push(val);
-  if(field==='domains'&&i<0){   // 整个领域选中后，它下面单独选的专业 / 班级已经包含了，去掉
-    _keyDraft.majors=_keyDraft.majors.filter(m=>MAJOR_DOMAIN[m]!==val);
-    _keyDraft.classIds=_keyDraft.classIds.filter(id=>{ const c=(typeof classById==='function')?classById(id):null; return !(c&&c.domain===val); });
-  }
+  scopeDraftToggle(_keyDraft,field,val);
   admKeepFold(document.getElementById('keyEditModal'),renderKeyEditor);
 }
 async function saveKeyEditor(){
@@ -509,6 +518,74 @@ async function deleteKey(k){
   try{ await sb(`/rest/v1/access_keys?k=eq.${k}`,'DELETE'); await loadConsole(); }
   catch(e){ alert('删除失败：'+e.message); }
 }
+// ═══════════════════════════════════════════════
+// 负责人与权限（只有管理员）：老师链接绑定「负责人」身份 + 排课/资源权限
+//  - manage_scope（teachers 表）：管理范围，空 = 不是负责人；老师端出现「管理模式」按钮，进管理端 ?as=teacher
+//  - resource_perms（teachers 表）：排课/资源权限代号（sched/common.js PERM_DEFS 同一套）
+//  - 权限模板：读 sched_access_codes 里现有的口令角色，选了就把它的 perms 填进 chip
+// ═══════════════════════════════════════════════
+let _mgrDraft=null;      // {id,name,domains,majors,classIds,perms:[]}
+let _mgrTemplates=null;  // [{label,perms:[]}]
+function isHubAdminUser(){ return !ACCESS_KEY || (!ACCESS_KEY.invalid && ACCESS_KEY.is_admin); }
+async function openMgrEditor(tid){
+  const t=cachedTeachers.find(x=>x.id===tid); if(!t) return;
+  try{ if(typeof loadClasses==='function') await loadClasses(); }catch(e){}
+  if(_mgrTemplates===null){
+    try{
+      const rows=await sb('/rest/v1/sched_access_codes?select=label,role,perms,sort,active&order=sort.asc,id.asc');
+      _mgrTemplates=(rows||[]).filter(r=>r.active!==false).map(r=>({label:r.label||r.role||'',perms:String(r.perms||'').split(',').map(x=>x.trim()).filter(Boolean)})).filter(r=>r.label);
+    }catch(e){ _mgrTemplates=[]; }
+  }
+  const ms=t.manage_scope||{};
+  _mgrDraft={id:t.id,name:t.name,domains:(ms.domains||[]).slice(),majors:(ms.majors||[]).slice(),classIds:(ms.class_ids||[]).map(String),perms:(t.resource_perms||[]).slice()};
+  let ov=document.getElementById('mgrEditModal');
+  if(!ov){ ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='mgrEditModal'; ov.style.zIndex='1000'; document.body.appendChild(ov); }
+  ov.classList.add('open'); renderMgrEditor();
+}
+function closeMgrEditor(){ const ov=document.getElementById('mgrEditModal'); if(ov) ov.classList.remove('open'); _mgrDraft=null; }
+function renderMgrEditor(){
+  const ov=document.getElementById('mgrEditModal'), d=_mgrDraft; if(!ov||!d) return;
+  const sec=(t,inner)=>`<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">${t}</div>${inner}</div>`;
+  const permChips=RESOURCE_PERM_DEFS.map(([code,label])=>`<div class="filter-chip${d.perms.includes(code)?' active':''}" onclick="mgrPermToggle('${code}')" style="padding:3px 10px;font-size:11px">${escTM(label)}</div>`).join('');
+  const tplOpts='<option value="">选择权限模板（选了会覆盖下面已选的权限，之后可再增减）</option>'+(_mgrTemplates||[]).map((r,i)=>`<option value="${i}">${escTM(r.label)}</option>`).join('');
+  const isMgr=d.domains.length||d.majors.length||d.classIds.length;
+  ov.innerHTML=`<div class="modal" style="width:640px">
+    <div class="modal-title">负责人与权限：${escTM(d.name)}</div>
+    <div class="modal-sub">管理范围为空 = 不是负责人。设了范围后，这位老师用自己的老师链接登录，会多出「管理模式」按钮，一键进管理端（只看到范围内的东西），不用另外的访问链接。</div>
+    ${scopePickerHtml(d,'mgrDraftToggle')}
+    ${sec('排课 / 资源权限',`<select onchange="mgrPickTemplate(this.value)" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:100%;box-sizing:border-box;margin-bottom:8px">${tplOpts}</select><div style="display:flex;gap:6px;flex-wrap:wrap">${permChips}</div>`)}
+    <div style="font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 12px;line-height:1.7">${isMgr?`负责人，管理范围：<b>${escTM(scopeSummary(d))}</b>`:'<b>不是负责人</b>（没有设置管理范围）'}　·　资源权限 <b>${d.perms.length}</b> 项</div>
+    <div class="modal-actions"><button class="btn btn-outline" onclick="closeMgrEditor()">取消</button><button class="btn btn-primary" onclick="saveMgrEditor()">保存</button></div>
+  </div>`;
+}
+function mgrDraftToggle(field,val){
+  scopeDraftToggle(_mgrDraft,field,val);
+  admKeepFold(document.getElementById('mgrEditModal'),renderMgrEditor);
+}
+function mgrPermToggle(code){
+  const a=_mgrDraft.perms, i=a.indexOf(code); if(i>=0) a.splice(i,1); else a.push(code);
+  admKeepFold(document.getElementById('mgrEditModal'),renderMgrEditor);
+}
+function mgrPickTemplate(i){
+  if(i===''||!_mgrDraft) return;
+  const tpl=(_mgrTemplates||[])[+i]; if(!tpl) return;
+  const known=new Set(RESOURCE_PERM_DEFS.map(x=>x[0]));
+  _mgrDraft.perms=tpl.perms.filter(p=>known.has(p));
+  admKeepFold(document.getElementById('mgrEditModal'),renderMgrEditor);
+}
+async function saveMgrEditor(){
+  const d=_mgrDraft; if(!d) return;
+  const isMgr=d.domains.length||d.majors.length||d.classIds.length;
+  const manage_scope=isMgr?{domains:d.domains,majors:d.majors,class_ids:d.classIds}:null;
+  const resource_perms=d.perms.slice();
+  if(isMgr && !confirm(`把「${d.name}」设为负责人（${scopeSummary(d)}）？\n\n负责人在管理模式里，对范围内的数据拥有和访问链接一样的新建 / 编辑权限。`)) return;
+  try{
+    await sb(`/rest/v1/teachers?id=eq.${encodeURIComponent(d.id)}`,'PATCH',{manage_scope,resource_perms});
+    const t=cachedTeachers.find(x=>x.id===d.id); if(t) Object.assign(t,{manage_scope,resource_perms});
+    closeMgrEditor(); renderTeacherRows();
+  }catch(e){ alert('保存失败：'+e.message+'\n\n（如果提示找不到 manage_scope 字段，说明准备 SQL 还没执行）'); }
+}
+
 // 切换视角/返回中枢时清空所有缓存与页面，避免下个视角闪现上个视角的旧数据
 function clearDomainCaches(){
   try{
@@ -1333,6 +1410,7 @@ function renderTeacherRows(){
               <span style="font-size:10px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:22%">${(t.majors||[]).map(m=>MAJORS[m]||m).join('・')||'—'}</span>
               ${(t.tags||[]).map(g=>`<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 6px;white-space:nowrap">${escTM(g)}</span>`).join('')}
               ${profBadgeHtml(t)}
+              ${managerScopeNonEmpty(t.manage_scope)?`<span title="${escTM(scopeSummary(managerScopeToView(t.manage_scope)))}" style="font-size:10px;color:#fff;background:var(--accent);border-radius:2px;padding:0 6px;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis">负责人：${escTM(scopeSummary(managerScopeToView(t.manage_scope)))}</span>`:''}
               <span style="font-size:10px;color:var(--text-3);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:30%">${perms.join(' · ')||'无权限'}</span>
               <span style="font-size:10px;color:var(--text-3)">${open?'▾':'▸'}</span>
             </div>
@@ -1349,6 +1427,7 @@ function renderTeacherRows(){
               </div>
               <div style="display:flex;gap:4px">
                 <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openEditTeacher('${t.id}')">编辑</button>
+                ${isHubAdminUser()?`<button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openMgrEditor('${t.id}')">负责人与权限</button>`:''}
                 <button class="btn-ghost" onclick="event.stopPropagation();deleteTeacher('${t.id}')">✕ 删除</button>
               </div>
             </div>`:''}
