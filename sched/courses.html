@@ -181,6 +181,9 @@ function rowTest(key, c, v){
 function passRow(key, c){ const s=F[key]; return !s.size || [...s].some(v=>rowTest(key,c,v)); }
 function passAll(c, except){ return ROWS.every(k=>k===except || passRow(k,c)); }
 function anyFilter(){ return ROWS.some(k=>F[k].size>0); }
+// 「状态」默认带着「未开课 / 进行中」（把已结课的挡在外面）；那是默认值不是用户点的，不算「点选了条件」，用户自己点过状态或点过「清除」才算
+let STATUS_DEFAULT=true;
+function userFiltering(){ return ROWS.some(k=>F[k].size>0 && !(k==='status' && STATUS_DEFAULT)); }
 function filtered(){ return COURSES.filter(c=>passAll(c)); }
 function sortCourses(list, byStatus){
   return list.sort((a,b)=>
@@ -282,7 +285,16 @@ function detailHtml(c){
   }).join('')+'</div>';
 }
 function renderList(){
-  const sr=searching(), list=currentList();
+  const sr=searching();
+  // 打开时不列课程：输入了搜索词，或点选了任意筛选条件才出结果
+  if(!sr && !userFiltering()){
+    el('filters').classList.remove('dim'); el('onlyChip').classList.toggle('on', F.only); el('sNote').textContent='';
+    el('clearBtn').classList.toggle('hidden', !anyFilter());
+    el('cnt').textContent=''; el('hint').textContent='';
+    el('list').innerHTML='<div class="tip">输入关键词，或点选上面的条件查看课程</div>';
+    return;
+  }
+  const list=currentList();
   el('filters').classList.toggle('dim', sr && !F.only);
   el('onlyChip').classList.toggle('on', F.only);
   el('sNote').textContent = sr && !F.only ? '正在搜索全部课程，筛选暂不生效' : (sr ? '只在筛选结果里搜' : '');
@@ -296,24 +308,17 @@ function renderList(){
 }
 function renderAll(){ renderFilters(); renderList(); }
 
-function defaultTerms(){
-  F.term.clear();
-  const ts=[...new Set(COURSES.map(termKeyOf).filter(Boolean))];
-  [['term',false],['month',true]].forEach(([kind,month])=>{
-    const keys=recentTermKeys(kind), want=[keys[1],keys[2]];
-    ts.filter(t=>isMonthTerm(t)===month && want.includes(termSortKey(t))).forEach(t=>F.term.add(t));
-  });
-}
 function bind(){
   el('filters').addEventListener('click', e=>{
     const t=e.target.closest('.chip'); if(!t) return;
     const d=t.dataset;
     if(d.more!==undefined){ MORE_OPEN[d.more]=!MORE_OPEN[d.more]; renderFilters(); return; }
     const k=d.k, v=k==='wd'?Number(d.v):d.v;
+    if(k==='status') STATUS_DEFAULT=false;
     F[k].has(v)?F[k].delete(v):F[k].add(v);
     SHOWN=PAGE_SIZE; renderAll();
   });
-  el('clearBtn').onclick=()=>{ ROWS.forEach(k=>F[k].clear()); SHOWN=PAGE_SIZE; renderAll(); };
+  el('clearBtn').onclick=()=>{ ROWS.forEach(k=>F[k].clear()); STATUS_DEFAULT=false; SHOWN=PAGE_SIZE; renderAll(); };
   el('onlyChip').onclick=()=>{ F.only=!F.only; SHOWN=PAGE_SIZE; renderList(); };
   el('q').oninput=()=>{ F.q=el('q').value; SHOWN=PAGE_SIZE; renderList(); };
   el('list').addEventListener('click', e=>{
@@ -339,7 +344,6 @@ async function boot(){
     ses.forEach(s=>{ if(s.course_id!=null && s.session_date) (SESS[String(s.course_id)]=SESS[String(s.course_id)]||[]).push(s.session_date); });
     COURSES.forEach(c=>{ WDS[c.id]=parseWeekdaysSched(c.weekdays); INFO[c.id]=buildInfo(c); HAY[c.id]=buildHay(c); });
   }catch(e){ el('list').innerHTML='<div class="tip">读取失败：'+esc(e.message)+'</div>'; return; }
-  defaultTerms();
   bind(); renderAll();
 }
 </script>
