@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>课程查询 · 唯新</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.fl{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-bottom:8px; }
+.fl > .lbl{ font-size:12px; color:var(--sub); min-width:42px; }
+.chip{ display:inline-block; padding:3px 10px; border:1px solid var(--line); border-radius:14px; font-size:13px;
+  cursor:pointer; background:#fff; color:var(--sub); user-select:none; }
+.chip.on{ background:var(--blue); color:#fff; border-color:var(--blue); }
+.chip.more{ border-style:dashed; }
+.topline{ display:flex; justify-content:space-between; align-items:center; gap:10px; margin:2px 0 10px; flex-wrap:wrap; }
+.topline .cnt{ font-size:14px; font-weight:600; }
+.ccard{ background:#fff; border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-bottom:10px; cursor:pointer; }
+.ccard .l1{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.ccard .nm{ font-weight:700; font-size:15px; }
+.ccard .tag{ display:inline-block; padding:1px 8px; border-radius:10px; font-size:12px; border:1px solid; }
+.ccard .l2,.ccard .l3,.ccard .l4{ font-size:13px; color:var(--sub); margin-top:4px; }
+.ccard .l4{ color:var(--blue); font-weight:600; }
+.ccard .arrow{ margin-left:auto; color:var(--sub); font-size:12px; }
+.ccard .sep{ color:#c5cad2; margin:0 5px; }
+.detail{ margin-top:8px; border-top:1px dashed var(--line); padding-top:6px; }
+.detail .r{ display:flex; gap:10px; padding:3px 4px; font-size:13px; flex-wrap:wrap; border-radius:4px; }
+.detail .r .n{ width:34px; color:var(--sub); }
+.detail .r .d{ width:104px; }
+.detail .r .t{ width:100px; }
+.detail .past{ color:#b4b9c1; }
+.detail .off{ color:#9aa0a8; text-decoration:line-through; }
+.detail .off .why{ text-decoration:none; display:inline-block; margin-left:4px; }
+.detail .next{ background:#eef4f0; color:var(--blue); font-weight:600; }
+@media (max-width:600px){
+  .detail .r .d{ width:auto; min-width:92px; } .detail .r .t{ width:auto; }
+}
+</style>
+</head><body>
+<div id="nav"></div>
+<div class="wrap">
+  <div class="card" id="filters">
+    <div class="fl" id="fCat"><span class="lbl">类别</span></div>
+    <div class="fl hidden" id="fLang"><span class="lbl">语种</span></div>
+    <div class="fl" id="fTerm"><span class="lbl">期数</span></div>
+    <div class="fl" id="fTermM"><span class="lbl">月</span></div>
+    <div class="fl" id="fStatus"><span class="lbl">状态</span></div>
+    <div class="fl" id="fCampus"><span class="lbl">校区</span></div>
+    <div class="fl" id="fWd"><span class="lbl">星期</span></div>
+    <div class="fl"><span class="lbl">搜索</span><input id="q" placeholder="课程名 / 老师 / 专业" style="flex:1;min-width:180px;max-width:360px"></div>
+  </div>
+  <div class="topline"><span class="muted" id="hint"></span><span class="cnt" id="cnt"></span></div>
+  <div id="list"></div>
+</div>
+<script src="common.js"></script>
+<script>
+const PAGE_SIZE = 30;
+const STATUSES = ['未开课','进行中','已结课'];
+let COURSES=[], HOLIDAYS=[], BOOKINGS=[], ROOMS=[], SESS={};
+let INFO = {};           // course id -> {dates:[{date,s,e,off,why,room}], total, done, status, next}
+const F = { cat:'', lang:'', terms:new Set(), status:new Set(['未开课','进行中']), campus:new Set(), wd:new Set(), q:'' };
+const MORE_OPEN = { term:false, termM:false };
+let SHOWN = PAGE_SIZE;
+const OPENED = new Set();
+
+el('nav').innerHTML = renderNav('courses.html');
+currentRole().then(r=>{
+  if(r) el('nav').innerHTML = renderNav('courses.html', r);
+  if(r && !(isAdminRole(r) || hasPerm(r,'course_view') || hasPerm(r,'timetable') || hasPerm(r,'course'))){
+    document.querySelector('.wrap').innerHTML = '<div class="card">当前账号没有「课程查询」权限。</div>'; return;
+  }
+  boot();
+}).catch(()=>boot());
+
+/* ---------- 日期推算（复用 timetable.html 的算法）---------- */
+function holidayOf(d){
+  for(const h of HOLIDAYS){ const s=h.start_date, e=h.end_date||h.start_date; if(s && d>=s && d<=e) return h; }
+  return null;
+}
+function csv(s){ return new Set(String(s||'').split(',').map(x=>x.trim()).filter(Boolean)); }
+function reasonMap(c){ const m={}; (c.skip_reasons||'').split(';').forEach(p=>{ const i=p.indexOf('='); if(i>0) m[p.slice(0,i).trim()]=p.slice(i+1); }); return m; }
+// 推算：weekdays + 开课日 + 休讲日 + 全局假期（未豁免）；合并组按 merge_order 轮流
+function calcDates(c){
+  const out=[];
+  const grp = c.merge_group ? COURSES.filter(x=>x.merge_group===c.merge_group).sort((a,b)=>(a.merge_order||99)-(b.merge_order||99)) : [c];
+  const ref = grp[0];
+  if(!ref.weekdays) return out;
+  const wds = parseWeekdaysSched(ref.weekdays);
+  const starts = grp.map(x=>x.start_date).filter(Boolean).sort(), ends = grp.map(x=>x.end_date).filter(Boolean).sort();
+  if(!starts.length || !ends.length) return out;
+  let d=starts[0], guard=0, idx=0;
+  while(d<=ends[ends.length-1] && guard++<500){
+    if(wds.includes(weekdayOf(d))){
+      const cur = grp[idx % grp.length]; idx++;
+      if(cur===c && (!c.start_date||d>=c.start_date) && (!c.end_date||d<=c.end_date)){
+        const hol=holidayOf(d), skip=csv(c.skip_dates), except=csv(c.holiday_except);
+        if(hol && !except.has(d)) out.push({date:d, off:'假期', why:hol.label||''});
+        else if(skip.has(d)) out.push({date:d, off:'休讲', why:reasonMap(c)[d]||''});
+        else out.push({date:d});
+      }
+    }
+    d=addDays(d,1);
+  }
+  return out;
+}
+// 优先用课程安排里的单回（course_sessions，course_id 与 sched_courses.id 一致）；没有再推算
+function datesOf(c){
+  const real = SESS[String(c.id)];
+  let list;
+  if(real && real.length){
+    const set=new Set(real); list=[...set].sort().map(d=>({date:d}));
+    const skip=csv(c.skip_dates), rm=reasonMap(c);
+    list.forEach(x=>{ if(skip.has(x.date)){ x.off='休讲'; x.why=rm[x.date]||''; } });
+    skip.forEach(d=>{ if(!set.has(d) && (!c.start_date||d>=c.start_date) && (!c.end_date||d<=c.end_date)) list.push({date:d, off:'休讲', why:rm[d]||''}); });
+    list.sort((a,b)=>a.date<b.date?-1:1);
+  }else list=calcDates(c);
+  return list;
+}
+function roomOn(c, date){
+  const wd=weekdayOf(date);
+  const bs=BOOKINGS.filter(b=>String(b.course_id)===String(c.id) && b.status!=='rejected' && bookingOnDate(b,date) && (b.recurrence!=='weekly' || Number(b.weekday)===wd));
+  if(!bs.length) return '';
+  const r=ROOMS.find(x=>String(x.id)===String(bs[0].room_id));
+  if(!r) return '';
+  return (r.campus && !String(r.name).includes(r.campus) ? r.campus+' ' : '') + r.name;
+}
+function placeOf(c, date){
+  return roomOn(c,date) || (c.mode==='线上' || c.campus==='线上' ? '线上' : (c.campus||''));
+}
+function buildInfo(c){
+  const today=todayStr(), nowT=new Date().toTimeString().slice(0,5);
+  const dates=datesOf(c).map(x=>Object.assign(x,{ s:c.start_time||'', e:c.end_time||'', room: x.off?'':placeOf(c,x.date) }));
+  const act=dates.filter(x=>!x.off);
+  const isPast=x=> x.date<today || (x.date===today && x.e && x.e<=nowT);
+  const done=act.filter(isPast).length;
+  const next=act.find(x=>!isPast(x))||null;
+  const total = c.sessions!=null ? c.sessions : act.length;
+  const first=c.start_date||(act[0]&&act[0].date)||'', last=c.end_date||(act.length&&act[act.length-1].date)||'';
+  let status='进行中';
+  if(first && today<first) status='未开课';
+  else if(last && today>last) status='已结课';
+  else if(act.length && done>=act.length) status='已结课';
+  return { dates, total, done, status, next, isPast };
+}
+
+/* ---------- 筛选 ---------- */
+function catOf(c){ return c.category||''; }
+function termKeyOf(c){ return c.term || termOf(c.start_date); }
+function campusOf(c){ return c.mode==='线上' && !c.campus ? '线上' : (c.campus||''); }
+function filtered(){
+  const q=F.q.trim().toLowerCase();
+  return COURSES.filter(c=>{
+    if(!F.cat || catOf(c)!==F.cat) return false;
+    if(F.cat==='语言' && F.lang && langType(c)!==F.lang) return false;
+    if(F.terms.size && !F.terms.has(termKeyOf(c))) return false;
+    if(F.status.size && !F.status.has(INFO[c.id].status)) return false;
+    if(F.campus.size && !F.campus.has(campusOf(c))) return false;
+    if(F.wd.size){ const w=parseWeekdaysSched(c.weekdays); if(![...F.wd].some(d=>w.includes(d))) return false; }
+    if(q && !((c.name||'')+' '+(c.merge_name||'')+' '+(c.teacher||'')+' '+(c.major||'')).toLowerCase().includes(q)) return false;
+    return true;
+  }).sort((a,b)=> (a.start_time||'').localeCompare(b.start_time||'') || (a.name||'').localeCompare(b.name||''));
+}
+
+/* ---------- 渲染 ---------- */
+function chipsHtml(items, isOn, attr, fold){
+  // fold: 前面直接显示的个数；已选中的始终在外面，其余收进「更多 ▾」
+  const outer=[], inner=[];
+  items.forEach((it,i)=>{ (fold==null || isOn(it.v) || it.pin || i<fold ? outer : inner).push(it); });
+  const mk=it=>`<span class="chip${isOn(it.v)?' on':''}" data-${attr}="${esc(it.v)}">${esc(it.t)}</span>`;
+  return {outer:outer.map(mk).join(''), inner:inner.map(mk).join(''), n:inner.length};
+}
+function setRow(id, html){ const row=el(id); const lbl=row.querySelector('.lbl'); row.innerHTML=''; row.appendChild(lbl); row.insertAdjacentHTML('beforeend', html); }
+function termItems(month){
+  const kind=month?'month':'term';
+  const all=[...new Set(COURSES.filter(c=>F.cat && catOf(c)===F.cat).map(termKeyOf).filter(Boolean))].filter(t=>isMonthTerm(t)===month)
+    .sort((a,b)=>termSortKey(b)-termSortKey(a));
+  const recent=new Set(recentTermKeys(kind));
+  return all.map(t=>({v:t,t:t,pin:recent.has(termSortKey(t))}));
+}
+function renderFilters(){
+  const cats=CATEGORIES.filter(c=>COURSES.some(x=>catOf(x)===c));
+  setRow('fCat', cats.map(c=>`<span class="chip${F.cat===c?' on':''}" data-cat="${esc(c)}">${esc(c)}</span>`).join(''));
+  el('fLang').classList.toggle('hidden', F.cat!=='语言');
+  setRow('fLang', ['日语','英语'].map(l=>`<span class="chip${F.lang===l?' on':''}" data-lang="${l}">${l}</span>`).join(''));
+  [['fTerm',false,'term'],['fTermM',true,'termM']].forEach(([id,month,key])=>{
+    const items=termItems(month);
+    el(id).classList.toggle('hidden', !F.cat || !items.length);
+    const r=chipsHtml(items, v=>F.terms.has(v), 'term', 0);   // 近期(pin)和已选在外，其余收起
+    setRow(id, r.outer + (r.n ? (MORE_OPEN[key]? r.inner : '') + `<span class="chip more" data-more="${key}">${MORE_OPEN[key]?'收起 ▴':'更多 ▾ ('+r.n+')'}</span>` : ''));
+  });
+  el('fTermM').querySelector('.lbl').textContent='月';
+  el('fTerm').querySelector('.lbl').textContent='期数';
+  setRow('fStatus', STATUSES.map(s=>`<span class="chip${F.status.has(s)?' on':''}" data-status="${s}">${s}</span>`).join(''));
+  const camps=[...new Set(COURSES.filter(c=>catOf(c)===F.cat).map(campusOf).filter(Boolean))].sort((a,b)=>['高马','市谷','线上'].indexOf(a)-['高马','市谷','线上'].indexOf(b));
+  el('fCampus').classList.toggle('hidden', !F.cat);
+  setRow('fCampus', camps.map(s=>`<span class="chip${F.campus.has(s)?' on':''}" data-campus="${esc(s)}">${esc(s)}</span>`).join(''));
+  el('fWd').classList.toggle('hidden', !F.cat);
+  setRow('fWd', [1,2,3,4,5,6,7].map(d=>`<span class="chip${F.wd.has(d)?' on':''}" data-wd="${d}">${WEEKDAYS[d]}</span>`).join(''));
+}
+function md(date){ const [,m,d]=date.split('-').map(Number); return m+'/'+d; }
+function cardHtml(c){
+  const i=INFO[c.id], cc=catColor(c.category);
+  const wl=weekdaysLabel(parseWeekdaysSched(c.weekdays).join(','));
+  const time=(c.start_time&&c.end_time)? c.start_time.slice(0,5)+'–'+c.end_time.slice(0,5) : '';
+  const stTxt = i.status==='进行中' ? `进行中 · 已上 ${i.done}/${i.total} 回` : i.status;
+  const sep='<span class="sep">|</span>';
+  const l2=[c.teacher, c.major, c.mode, campusOf(c)].filter(Boolean).map(esc).join(sep);
+  const l3=[ (wl||time)? esc((wl+' '+time).trim()):'', (c.start_date||c.end_date)? esc((c.start_date||'?')+' ~ '+(c.end_date||'?')):'', `共 ${i.total} 回`, stTxt ].filter(Boolean).join(sep);
+  const nx=i.next ? `<div class="l4">下次：${md(i.next.date)}（${WEEKDAYS[weekdayOf(i.next.date)]}）${esc(i.next.s)} · ${esc(i.next.room)}</div>` : '';
+  const open=OPENED.has(String(c.id));
+  return `<div class="ccard" data-id="${c.id}">`+
+    `<div class="l1"><span class="nm">${esc(c.merge_name||c.name)}</span>`+
+    `<span class="tag" style="background:${cc.bg};border-color:${cc.bd};color:${cc.tx}">${esc(c.category||'')}</span>`+
+    (termKeyOf(c)?`<span class="badge b-mute">${esc(termKeyOf(c))}</span>`:'')+
+    `<span class="arrow">${open?'收起 ▴':'展开 ▾'}</span></div>`+
+    `<div class="l2">${l2}</div><div class="l3">${l3}</div>${nx}`+
+    (open?detailHtml(c):'')+`</div>`;
+}
+function detailHtml(c){
+  const i=INFO[c.id];
+  if(!i.dates.length) return '<div class="detail muted">没有可推算的上课日期（缺少开课日 / 结课日 / 星期）。</div>';
+  let n=0;
+  return '<div class="detail">'+i.dates.map(x=>{
+    if(x.off) return `<div class="r off"><span class="n"></span><span class="d">${md(x.date)}（${WEEKDAYS[weekdayOf(x.date)]}）</span><span class="t">${x.off}${x.why?'<span class="why"> · '+esc(x.why)+'</span>':''}</span></div>`;
+    n++;
+    const cls = x===i.next ? 'next' : (i.isPast(x) ? 'past' : '');
+    return `<div class="r ${cls}"><span class="n">${n}</span><span class="d">${md(x.date)}（${WEEKDAYS[weekdayOf(x.date)]}）</span><span class="t">${esc(x.s)}–${esc(x.e)}</span><span>${esc(x.room)}</span></div>`;
+  }).join('')+'</div>';
+}
+function renderList(){
+  if(!F.cat){ el('cnt').textContent=''; el('hint').textContent=''; el('list').innerHTML='<div class="tip">先选类别。</div>'; return; }
+  const list=filtered();
+  el('cnt').textContent='共 '+list.length+' 门';
+  el('hint').textContent='点卡片展开全部上课日期';
+  const shown=list.slice(0,SHOWN);
+  el('list').innerHTML = shown.length ? shown.map(cardHtml).join('') +
+      (list.length>shown.length ? `<div style="text-align:center"><button class="ghost" id="moreBtn">显示更多（还有 ${list.length-shown.length} 门）</button></div>` : '')
+    : '<div class="tip">没有符合条件的课程，试试放宽期数 / 状态筛选。</div>';
+}
+function renderAll(){ renderFilters(); renderList(); }
+function toggle(set, v){ set.has(v) ? set.delete(v) : set.add(v); SHOWN=PAGE_SIZE; renderAll(); }
+
+function defaultTerms(){
+  F.terms.clear();
+  const ts=[...new Set(COURSES.map(termKeyOf).filter(Boolean))];
+  [['term',false],['month',true]].forEach(([kind,month])=>{
+    const keys=recentTermKeys(kind), want = month ? [keys[1],keys[2]] : [keys[1],keys[2]];
+    ts.filter(t=>isMonthTerm(t)===month && want.includes(termSortKey(t))).forEach(t=>F.terms.add(t));
+  });
+}
+function bind(){
+  el('filters').addEventListener('click', e=>{
+    const t=e.target.closest('.chip'); if(!t) return;
+    const d=t.dataset;
+    if(d.cat!==undefined){ F.cat = F.cat===d.cat ? '' : d.cat; F.lang=''; F.campus.clear(); SHOWN=PAGE_SIZE; renderAll(); }
+    else if(d.lang!==undefined){ F.lang = F.lang===d.lang ? '' : d.lang; SHOWN=PAGE_SIZE; renderAll(); }
+    else if(d.term!==undefined) toggle(F.terms, d.term);
+    else if(d.more!==undefined){ MORE_OPEN[d.more]=!MORE_OPEN[d.more]; renderFilters(); }
+    else if(d.status!==undefined) toggle(F.status, d.status);
+    else if(d.campus!==undefined) toggle(F.campus, d.campus);
+    else if(d.wd!==undefined) toggle(F.wd, Number(d.wd));
+  });
+  el('q').oninput=()=>{ F.q=el('q').value; SHOWN=PAGE_SIZE; renderList(); };
+  el('list').addEventListener('click', e=>{
+    if(e.target.id==='moreBtn'){ SHOWN+=PAGE_SIZE; renderList(); return; }
+    const card=e.target.closest('.ccard'); if(!card) return;
+    const id=card.dataset.id; OPENED.has(id)?OPENED.delete(id):OPENED.add(id);
+    const c=COURSES.find(x=>String(x.id)===id); card.outerHTML=cardHtml(c);
+  });
+}
+
+async function boot(){
+  el('list').innerHTML='<div class="tip">加载中…</div>';
+  try{
+    const CF='id,name,merge_name,merge_group,merge_order,category,major,course_type,teacher,campus,mode,term,weekdays,start_time,end_time,start_date,end_date,sessions,skip_dates,skip_reasons,holiday_except,deleted_at';
+    const [cs, hol, bks, rooms, ses] = await Promise.all([
+      sbGet('sched_courses','select='+CF),
+      sbGet('sched_holidays','select=*&order=start_date').catch(()=>[]),
+      sbGet('sched_bookings','select=id,room_id,course_id,recurrence,weekday,start_date,end_date,booking_date,start_time,end_time,status&kind=eq.course').catch(()=>[]),
+      sbGet('sched_rooms','select=id,name,campus').catch(()=>[]),
+      sbGet('course_sessions','select=course_id,session_date').catch(()=>[])
+    ]);
+    COURSES=cs.filter(c=>!c.deleted_at); HOLIDAYS=hol; BOOKINGS=bks.map(b=>Object.assign({kind:'course'},b)); ROOMS=rooms;
+    ses.forEach(s=>{ if(s.course_id!=null && s.session_date) (SESS[String(s.course_id)]=SESS[String(s.course_id)]||[]).push(s.session_date); });
+    COURSES.forEach(c=>{ INFO[c.id]=buildInfo(c); });
+  }catch(e){ el('list').innerHTML='<div class="tip">读取失败：'+esc(e.message)+'</div>'; return; }
+  defaultTerms();
+  // 默认选中第一个「在默认期数/状态下有课」的类别
+  F.cat = CATEGORIES.find(cat=>COURSES.some(c=>catOf(c)===cat && F.terms.has(termKeyOf(c)) && F.status.has(INFO[c.id].status))) || '';
+  bind(); renderAll();
+}
+</script>
+</body></html>

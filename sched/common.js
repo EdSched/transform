@@ -434,6 +434,7 @@ function toast(msg, ok){ // 顶部临时提示
 const PERM_DEFS = [
   ['board',           '教室看板',        'board.html'],
   ['timetable',       '课程表',          'timetable.html'],
+  ['course_view',     '课程查询',        'courses.html'],         // 只读；有 timetable 或 course 权限的角色默认也能看
   ['meeting_view',    '腾讯会议账号占用', 'meeting.html'],
   ['entry_room',      '教室占用录入',    'booking.html'],      // 仅临时/租用（页面内再限制用途）
   ['entry_room_full', '教室占用录入',    'booking.html'],      // 全部用途（分配UI里隐藏，与上合并）
@@ -492,6 +493,7 @@ function renderNav(active, roleRec){
   if(roleRec){
     const ADMIN_ONLY = new Set(['assign','approve','meeting_arrange','conflict','manage']);
     const ps = permSet(roleRec);
+    if(ps.has('timetable') || ps.has('course')) ps.add('course_view');   // 课程查询：有课程表/课程管理权限的角色默认可见
     const seen = new Set();
     items = [];
     PERM_DEFS.forEach(([perm,label,page])=>{
@@ -504,7 +506,7 @@ function renderNav(active, roleRec){
     items.unshift(['index.html','首页']);
   }else{
     items = [
-      ['index.html','首页'],['board.html','教室看板'],['timetable.html','课程表'],
+      ['index.html','首页'],['board.html','教室看板'],['timetable.html','课程表'],['courses.html','课程查询'],
       ['booking.html','教室占用录入'],['meeting.html','会议账号'],
       ['entry.html','录入'],['admin.html','管理']
     ];
