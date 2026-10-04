@@ -455,9 +455,17 @@ const ALL_PERMS  = PERM_DEFS.map(p=>p[0]);
 // 用 code 读取角色记录（含 perms）
 async function getRoleByCode(code){
   if(!code) return null;
-  const rows = await sbGet('sched_access_codes',
-    'select=*&code=eq.'+encodeURIComponent(code)+'&active=eq.true');
+  const rows = await schedResolveCode(code);
   return rows.length ? rows[0] : null;
+}
+// 口令表已上锁（只有管理员能直接读）：用口令换角色记录只能走 rpc/resolve_sched_code，一次只返回这一个启用中的口令
+async function schedResolveCode(code){
+  const r = await fetch(SB_URL + '/rest/v1/rpc/resolve_sched_code', {
+    method:'POST', headers: sbHeaders({ 'Content-Type':'application/json' }), body: JSON.stringify({ p_code: code }), cache:'no-store'
+  });
+  if(!r.ok) throw new Error('口令校验失败: ' + r.status + ' ' + await r.text());
+  const j = await r.json();
+  return Array.isArray(j) ? j : (j ? [j] : []);
 }
 // 当前 URL 的 code
 function currentCode(){ return new URLSearchParams(location.search).get('k') || ''; }
@@ -515,8 +523,7 @@ function hasPerm(roleRec, p){ return permSet(roleRec).has(p); }
 
 /* ---------- 口令校验（旧版兼容，逐步弃用）---------- */
 async function checkCode(code, needRole){
-  const rows = await sbGet('sched_access_codes',
-    'select=*&code=eq.'+encodeURIComponent(code)+'&active=eq.true');
+  const rows = await schedResolveCode(code);
   if(!rows.length) return null;
   const rec = rows[0];
   if(needRole === 'entry') return (rec.role==='entry'||rec.role==='admin'||hasPerm(rec,'course')||hasPerm(rec,'entry_room')||hasPerm(rec,'entry_room_full')) ? rec : null;

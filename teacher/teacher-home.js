@@ -29,7 +29,7 @@ function homeResourceOk() { return !!(teacherData && Array.isArray(teacherData.r
 // 「资源管理」标签：留在老师端，主区域换成排课系统（用本页的 sb-teacher 会话取身份，权限按 resource_perms）
 // homeResCard：从首页快捷卡片点进来时，直接打开排课系统里的某个功能（排课首页支持 ?tab=<功能>）
 let homeResCard = '';
-const HOME_RES_CARDS = [['board', '教室看板'], ['timetable', '课程表'], ['courseview', '课程查询'], ['roster', '排班日历'], ['meeting', '腾讯会议账号占用'], ['bookingf', '教室占用录入'],
+const HOME_RES_CARDS = [['board', '教室看板'], ['timetable', '课程表'], ['courseview', '课程查询'], ['meeting', '腾讯会议账号占用'], ['bookingf', '教室占用录入'],
   ['pending', '预约批准'], ['assign', '排教室'], ['conflict', '冲突检查'], ['rooms', '教室管理'], ['accounts', '会议账号管理'], ['courses', '课程管理']];
 // 这位老师能不能用排课系统里的某个功能（和 sched/index.html 的 canSee 同一套规则）
 function homeResCardOk(key) {

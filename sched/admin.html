@@ -18,16 +18,16 @@
   <div id="panel" class="hidden"></div>
 </div>
 
-<script src="common.js"></script>
+<script src="common.js?v=20261005"></script>
 <script>
-let CODES=[], ROLE=null;
+let ROLE=null;
 
 el('enter').onclick = doEnter;
 el('code').addEventListener('keydown',e=>{ if(e.key==='Enter') doEnter(); });
 el('logout').onclick = ()=>{ try{ sessionStorage.removeItem('sched_role'); }catch(e){}
   el('panel').classList.add('hidden'); el('gate').classList.remove('hidden'); el('logout').style.display='none'; el('code').value=''; };
 
-/* 只用口令进入（需 manage 权限或 admin 角色） */
+/* 只用口令进入（需 manage 权限或 admin 角色）；口令的增删改已移到管理端 → 中枢 → 排课口令，这里只显示提示 */
 async function doEnter(){
   const code=el('code').value.trim(); if(!code) return;
   try{
@@ -36,82 +36,13 @@ async function doEnter(){
     if(!ok){ el('gerr').textContent='口令无效或非管理员'; el('gerr').classList.remove('hidden'); return; }
     ROLE=rec;
     el('gate').classList.add('hidden'); el('panel').classList.remove('hidden'); el('logout').style.display='';
-    CODES = await sbGet('sched_access_codes','select=*&order=id');
     tabCodes();
   }catch(e){ el('gerr').textContent=e.message; el('gerr').classList.remove('hidden'); }
 }
-async function reloadCodes(){ CODES = await sbGet('sched_access_codes','select=*&order=id'); }
-
-/* 所有角色的专属链接都指向 index（功能都在 index，按权限显示） */
-function landingFor(role){ return 'index.html'; }
 
 function tabCodes(){
-  const base = location.origin + location.pathname.replace(/[^/]*$/,'');  // 取目录，避免拼出 index.htmlindex.html
-  let h='<div class="card"><h3 style="margin-top:2px">角色权限</h3>'+
-    '<div class="tip">每个角色一条：<b>点击功能标签即时保存</b>（点亮=有权限，再点=取消），无需再点保存。把「专属链接」发给对应的人，他们打开就只看到自己有权限的功能。</div>'+
-    '<table><thead><tr><th>角色</th><th>功能权限（点击切换）</th><th>专属链接</th><th>状态</th><th></th></tr></thead><tbody>';
-  CODES.slice().sort((a,b)=>(a.sort||100)-(b.sort||100)).forEach(c=>{
-    const ps = new Set((c.perms?c.perms.split(','):[]).map(s=>s.trim()).filter(Boolean));
-    const chips = PERM_DEFS
-      .filter(([perm])=>perm!=='entry_room_full')     // 合并为单一“教室占用录入”
-      .filter(([perm])=>perm!=='manage')              // 角色管理不对外发放，只 admin 独立入口
-      .map(([perm,label])=>{
-        const on = ps.has(perm);
-        const nm = perm==='entry_room'?'教室占用录入':label;
-        return `<span class="permchip${on?' on':''}" data-perm="${perm}" data-cid="${c.id}">${on?'✓ ':''}${esc(nm)}</span>`;
-      }).join(' ');
-    const link = base+landingFor(c)+'?k='+encodeURIComponent(c.code);
-    const catScope=new Set((c.lead_cats?c.lead_cats.split(','):[]).map(s=>s.trim()).filter(Boolean));
-    const catchips = LEAD_SCOPES.map(sc=>{
-      const on=catScope.has(sc);
-      return `<span class="permchip${on?' on':''}" data-catscope="${sc}" data-ccid="${c.id}" style="font-size:11px">${on?'✓ ':''}${esc(sc)}</span>`;
-    }).join(' ');
-    h+=`<tr><td><b>${esc(c.label||c.role||'')}</b><br><small class="muted">${esc(c.role||'')}</small></td>`+
-      `<td style="max-width:520px">${chips}`+
-      `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)"><small class="muted">课程类别范围（留空=不限，可管全部；选了则只能管这几类）：</small><br>${catchips}</div></td>`+
-      `<td style="max-width:220px"><input readonly value="${esc(link)}" style="width:190px;font-size:11px" data-link="${c.id}"> <button class="sm ghost" data-copy="${c.id}">复制</button></td>`+
-      `<td>${c.active?'<span class="badge b-ok">启用</span>':'<span class="badge b-mute">停用</span>'}</td>`+
-      `<td><button class="sm ghost" data-savep="${c.id}">保存</button> <button class="sm ghost" data-togc="${c.id}">${c.active?'停用':'启用'}</button> <button class="sm danger" data-delc2="${c.id}">删</button></td></tr>`;
-  });
-  h+='</tbody></table>'+
-    '<h4 style="margin:16px 0 8px">新增角色</h4><div class="row">'+
-    '<div class="field"><label>角色显示名</label><input id="nc_label" placeholder="如 教务助理"></div>'+
-    '<div class="field"><label>角色标识</label><input id="nc_role" placeholder="如 assistant" style="width:120px"></div>'+
-    '<div class="field"><label>编码(链接用,留空自动生成)</label><input id="nc_code" placeholder="留空自动" style="width:140px"></div>'+
-    '<div class="field"><label>&nbsp;</label><button id="nc_add">新增</button></div></div>'+
-    '<p class="muted" style="font-size:12px;margin-top:6px">新增后在上表勾选它的权限并保存。</p></div>';
-  el('panel').innerHTML=h;
-
-  const draft={}; CODES.forEach(c=>draft[c.id]=new Set((c.perms?c.perms.split(','):[]).map(s=>s.trim()).filter(Boolean)));
-  const catDraft={}; CODES.forEach(c=>catDraft[c.id]=new Set((c.lead_cats?c.lead_cats.split(','):[]).map(s=>s.trim()).filter(Boolean)));
-  async function saveCode(cid){ try{ await sbUpdate('sched_access_codes',cid,{perms:[...draft[cid]].join(','), lead_cats:[...catDraft[cid]].join(',')}); toast('已保存'); }catch(e){ toast('保存失败：'+e.message,false); } }
-  document.querySelectorAll('.permchip[data-perm]').forEach(chip=>{
-    chip.onclick=async()=>{
-      const cid=chip.getAttribute('data-cid'), perm=chip.getAttribute('data-perm');
-      if(draft[cid].has(perm)){ draft[cid].delete(perm); chip.classList.remove('on'); chip.textContent=chip.textContent.replace('✓ ',''); }
-      else { draft[cid].add(perm); chip.classList.add('on'); if(!chip.textContent.startsWith('✓')) chip.textContent='✓ '+chip.textContent; }
-      await saveCode(cid);
-    };
-  });
-  document.querySelectorAll('.permchip[data-catscope]').forEach(chip=>{
-    chip.onclick=async()=>{
-      const cid=chip.getAttribute('data-ccid'), sc=chip.getAttribute('data-catscope');
-      if(catDraft[cid].has(sc)){ catDraft[cid].delete(sc); chip.classList.remove('on'); chip.textContent=chip.textContent.replace('✓ ',''); }
-      else { catDraft[cid].add(sc); chip.classList.add('on'); if(!chip.textContent.startsWith('✓')) chip.textContent='✓ '+chip.textContent; }
-      await saveCode(cid);
-    };
-  });
-  bind('[data-savep]', async id=>{ await saveCode(id); await reloadCodes(); });
-  bind('[data-togc]', async id=>{ const c=CODES.find(x=>String(x.id)===String(id)); await sbUpdate('sched_access_codes',id,{active:!c.active}); await reloadCodes(); tabCodes(); });
-  bind('[data-delc2]', async id=>{ if(confirm('删除该角色？其链接将失效。')){ await sbDelete('sched_access_codes',id); await reloadCodes(); tabCodes(); } });
-  bind('[data-copy]', id=>{ const inp=document.querySelector(`[data-link="${id}"]`); navigator.clipboard.writeText(inp.value).then(()=>toast('链接已复制')); });
-  el('nc_add').onclick=async()=>{
-    const label=el('nc_label').value.trim(), role=el('nc_role').value.trim();
-    if(!label){ toast('填角色显示名',false); return; }
-    let code=el('nc_code').value.trim(); if(!code){ code=(role||'r')+'-'+Math.random().toString(36).slice(2,8); }
-    await sbInsert('sched_access_codes',{code,role:role||label,label,perms:'timetable',sort:100,active:true});
-    await reloadCodes(); tabCodes(); toast('已新增，请勾选权限并保存');
-  };
+  el('panel').innerHTML='<div class="card"><h3 style="margin-top:2px">角色权限</h3>'+
+    '<div class="tip">口令请到管理端 → 中枢 → 排课口令 管理（新增、改权限、停用、复制链接都在那里）。</div></div>';
 }
 
 /* helpers */

@@ -158,7 +158,7 @@ html.shareview #calBody:empty::after{ content:'课表加载中…'; color:#9a959
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="common.js"></script>
+<script src="common.js?v=20261005"></script>
 <script>
 el('nav').innerHTML = renderNav('timetable.html');
 pageRole().then(r=>{ if(r) el('nav').innerHTML = renderNav('timetable.html', r); }).catch(()=>{});
