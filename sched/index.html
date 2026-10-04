@@ -35,9 +35,9 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="common.js"></script>
+<script src="common.js?v=20261005"></script>
 <script>
-let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], CODES=[], ROLE=null;
+let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], ROLE=null;
 const EMBED_ADMIN = new URLSearchParams(location.search).get('embed')==='admin';   // 嵌在管理端「资源管理」里
 
 /* 口令登录（口令即 access_codes 的 code，需 manage 权限）。admin-7910 可直接进 */
@@ -57,12 +57,11 @@ const EMBED_ADMIN = new URLSearchParams(location.search).get('embed')==='admin';
   if(tab){ openCard(tab); } else { renderHub(); }
 })();
 async function reloadAll(){
-  [ROOMS,ACCOUNTS,COURSES,BOOKINGS,CODES] = await Promise.all([
+  [ROOMS,ACCOUNTS,COURSES,BOOKINGS] = await Promise.all([
     sbGet('sched_rooms','select=*&order=campus,sort'),
     sbGet('sched_meeting_accounts','select=*&order=id'),
     sbGet('sched_courses','select=*&order=created_at.desc'),
-    sbGet('sched_bookings','select=*&order=created_at.desc'),
-    sbGet('sched_access_codes','select=*&order=id')
+    sbGet('sched_bookings','select=*&order=created_at.desc')
   ]);
   DELETED_COURSES = COURSES.filter(c=>c.deleted_at);
   COURSES = COURSES.filter(c=>!c.deleted_at);
@@ -2469,65 +2468,7 @@ function computeEndByCount(c){
   }
   return last;
 }
-/* 角色链接统一指向 index 分发板（进去后按权限看到自己的功能） */
-function landingFor(role){
-  const ps=(role.perms||'').split(',').map(s=>s.trim());
-  return (ps.includes('manage')||role.role==='admin') ? 'admin.html' : 'index.html';
-}
-/* ---------- 角色权限 ---------- */
-function tabCodes(){
-  const base = location.origin + location.pathname.replace(/[^/]*$/,'');  // 取目录（去掉当前文件名），避免拼出 index.htmlindex.html
-  let h='<div class="card"><h3 style="margin-top:2px">角色权限</h3>'+
-    '<div class="tip">每个角色一条：勾选它能用的功能（点击标签切换），保存后生效。把「专属链接」发给对应的人，他们打开就只看到自己有权限的功能。</div>'+
-    '<table><thead><tr><th>角色</th><th>功能权限（点击切换）</th><th>专属链接</th><th>状态</th><th></th></tr></thead><tbody>';
-  CODES.slice().sort((a,b)=>(a.sort||100)-(b.sort||100)).forEach(c=>{
-    const ps = new Set((c.perms?c.perms.split(','):[]).map(s=>s.trim()).filter(Boolean));
-    const chips = PERM_DEFS
-      .filter(([perm])=>perm!=='entry_room_full')     // 去掉“录入(全部)”，合并为单一“教室占用录入”
-      .map(([perm,label])=>{
-        const on = ps.has(perm);
-        const nm = perm==='entry_room'?'教室占用录入':label;
-        return `<span class="permchip${on?' on':''}" data-perm="${perm}" data-cid="${c.id}">${on?'✓ ':''}${esc(nm)}</span>`;
-      }).join(' ');
-    const link = base+landingFor(c)+'?k='+encodeURIComponent(c.code);
-    h+=`<tr><td><b>${esc(c.label||c.role||'')}</b><br><small class="muted">${esc(c.role||'')}</small></td>`+
-      `<td style="max-width:520px">${chips}</td>`+
-      `<td style="max-width:220px"><input readonly value="${esc(link)}" style="width:190px;font-size:11px" data-link="${c.id}"> <button class="sm ghost" data-copy="${c.id}">复制</button></td>`+
-      `<td>${c.active?'<span class="badge b-ok">启用</span>':'<span class="badge b-mute">停用</span>'}</td>`+
-      `<td><button class="sm ghost" data-savep="${c.id}">保存</button> <button class="sm ghost" data-togc="${c.id}">${c.active?'停用':'启用'}</button> <button class="sm danger" data-delc2="${c.id}">删</button></td></tr>`;
-  });
-  h+='</tbody></table>'+
-    '<h4 style="margin:16px 0 8px">新增角色</h4><div class="row">'+
-    '<div class="field"><label>角色显示名</label><input id="nc_label" placeholder="如 教务助理"></div>'+
-    '<div class="field"><label>角色标识</label><input id="nc_role" placeholder="如 assistant" style="width:120px"></div>'+
-    '<div class="field"><label>编码(链接用,留空自动生成)</label><input id="nc_code" placeholder="留空自动" style="width:140px"></div>'+
-    '<div class="field"><label>&nbsp;</label><button id="nc_add">新增</button></div></div>'+
-    '<p class="muted" style="font-size:12px;margin-top:6px">新增后在上表勾选它的权限并保存。</p></div>';
-  render(h);
-
-  // 本地暂存每行勾选状态
-  const draft={}; CODES.forEach(c=>draft[c.id]=new Set((c.perms?c.perms.split(','):[]).map(s=>s.trim()).filter(Boolean)));
-  async function saveCodePerms(cid){ try{ await sbUpdate('sched_access_codes',cid,{perms:[...draft[cid]].join(',')}); toast('已保存'); }catch(e){ toast('保存失败：'+e.message,false); } }
-  document.querySelectorAll('.permchip').forEach(chip=>{
-    chip.onclick=async()=>{
-      const cid=chip.getAttribute('data-cid'), perm=chip.getAttribute('data-perm');
-      if(draft[cid].has(perm)){ draft[cid].delete(perm); chip.classList.remove('on'); chip.textContent=chip.textContent.replace('✓ ',''); }
-      else { draft[cid].add(perm); chip.classList.add('on'); if(!chip.textContent.startsWith('✓')) chip.textContent='✓ '+chip.textContent; }
-      await saveCodePerms(cid);
-    };
-  });
-  bind('[data-savep]', async id=>{ await saveCodePerms(id); await reloadAll(); toast('权限已保存'); });
-  bind('[data-togc]', async id=>{ const c=CODES.find(x=>String(x.id)===String(id)); await sbUpdate('sched_access_codes',id,{active:!c.active}); await reloadAll(); show('codes'); });
-  bind('[data-delc2]', async id=>{ if(confirm('删除该角色？其链接将失效。')){ await sbDelete('sched_access_codes',id); await reloadAll(); show('codes'); } });
-  bind('[data-copy]', id=>{ const inp=document.querySelector(`[data-link="${id}"]`); navigator.clipboard.writeText(inp.value).then(()=>toast('链接已复制')); });
-  el('nc_add').onclick=async()=>{
-    const label=el('nc_label').value.trim(), role=el('nc_role').value.trim();
-    if(!label){ toast('填角色显示名',false); return; }
-    let code=el('nc_code').value.trim(); if(!code){ code=(role||'r')+'-'+Math.random().toString(36).slice(2,8); }
-    await sbInsert('sched_access_codes',{code,role:role||label,label,perms:'timetable',sort:100,active:true});
-    await reloadAll(); show('codes'); toast('已新增，请勾选权限并保存');
-  };
-}
+/* 角色权限 / 口令的增删改已移到管理端 → 中枢 → 排课口令（口令表只有管理员能读写），这里不再读口令表 */
 
 /* helpers */
 function render(html){ el('panel').innerHTML=html; }
