@@ -271,6 +271,25 @@ function chipFoldToggle(btn) {
   btn.textContent = open ? '收起 ▴' : '更多 ▾ ' + btn.dataset.n;
 }
 
+// ── 排课 / 资源权限（teachers.resource_perms 用；代号沿用 sched/common.js 的 PERM_DEFS）──
+// [代号, 显示名]。整合后「资源管理」按这些代号放行；sched 旧口令链接仍读 sched_access_codes.perms，互不影响。
+const RESOURCE_PERM_DEFS = [
+  ['board', '教室看板'], ['timetable', '课程表'], ['course_view', '课程查询'], ['meeting_view', '腾讯会议账号占用'],
+  ['entry_room', '教室占用录入（临时/租用）'], ['entry_room_full', '教室占用录入（全部用途）'],
+  ['approve', '预约批准'], ['assign', '排教室'], ['meeting_arrange', '会议链接设定'], ['conflict', '冲突检查'],
+  ['occupy', '教室占用管理'], ['room_manage', '教室管理'], ['account_manage', '会议账号管理'],
+  ['course', '课程管理'], ['course_audit', '课程审查'], ['manage', '账号与权限管理（超级）'],
+];
+// 负责人管理范围（teachers.manage_scope）是否非空：{domains:[],majors:[],class_ids:[]}
+function managerScopeNonEmpty(ms) {
+  return !!ms && ['domains', 'majors', 'class_ids'].some(k => Array.isArray(ms[k]) && ms[k].length > 0);
+}
+// manage_scope（数据库格式 class_ids）→ setViewScope 用的格式（classIds）
+function managerScopeToView(ms) {
+  ms = ms || {};
+  return { domains: ms.domains || [], majors: ms.majors || [], classIds: ms.class_ids || [] };
+}
+
 // 生成 <option> 列表（默认所有真实专业，不含 all/分组）
 function majorOptionsHtml(selectedKey, opts = {}) {
   const keys = opts.keys || allMajorKeys();
