@@ -6,17 +6,119 @@ const SB_KEY = 'sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
 
 /* ---------- Supabase REST 封装 ---------- */
 function sbHeaders(extra){
+  const tok = schedAuthToken();   // 有登录身份就带 token，没有才用公钥
   return Object.assign({
     apikey: SB_KEY,
-    Authorization: 'Bearer ' + SB_KEY,
+    Authorization: 'Bearer ' + (tok || SB_KEY),
     'Content-Type': 'application/json'
   }, extra || {});
 }
+/* ---------- 排课系统的登录身份 ----------
+   口令用户：打开带 ?k=口令 的页面时静默登录（和领域访问链接的 silentAccessKeyLogin 同一思路）：
+     邮箱 'c_'+md5(口令)+'@sched.local'，密码 'sched:'+口令；账号由数据库触发器在新增/修改口令时自动建好。
+     会话存在 localStorage 的 sb-sched（不和 sb-admin / sb-teacher 混用），有效期内换页不再重新登录，快过期才用口令重新登录一次。
+     登录失败自动重试 2 次（只重试网络/服务端错误）；仍失败不挡页面，退回公钥继续用，并在页面顶部提示。
+   嵌入管理端 / 老师端（embed=admin / via=admin）：每次请求都现读管理端 sb-admin 或老师端 sb-teacher 里的 token（父页面会自动续期）。 */
+const SCHED_STORE = 'sb-sched';
+let SCHED_TOKEN = null, SCHED_TOKEN_EXP = 0, SCHED_LOGIN_P = null, SCHED_LOGIN_CODE = '', SCHED_LOGIN_ERR = '', SCHED_RELOGIN_P = null;
+function schedMd5(str){   // 与数据库 md5(text) 一致（UTF-8）
+  const b=new TextEncoder().encode(str), n=b.length, len=((n+8>>6)+1)*16, w=new Int32Array(len);
+  for(let i=0;i<n;i++) w[i>>2]|=b[i]<<((i%4)*8);
+  w[n>>2]|=0x80<<((n%4)*8); w[len-2]=n*8;
+  const K=[], S=[7,12,17,22,5,9,14,20,4,11,16,23,6,10,15,21];
+  for(let i=0;i<64;i++) K[i]=Math.floor(Math.abs(Math.sin(i+1))*4294967296)|0;
+  let a0=0x67452301,b0=0xefcdab89|0,c0=0x98badcfe|0,d0=0x10325476;
+  for(let o=0;o<len;o+=16){
+    let A=a0,B=b0,C=c0,D=d0;
+    for(let i=0;i<64;i++){
+      let F,g;
+      if(i<16){F=(B&C)|(~B&D);g=i;} else if(i<32){F=(D&B)|(~D&C);g=(5*i+1)%16;}
+      else if(i<48){F=B^C^D;g=(3*i+5)%16;} else {F=C^(B|~D);g=(7*i)%16;}
+      F=(F+A+K[i]+w[o+g])|0; A=D; D=C; C=B;
+      const sh=S[(i>>4)*4+(i%4)]; B=(B+((F<<sh)|(F>>>(32-sh))))|0;
+    }
+    a0=(a0+A)|0; b0=(b0+B)|0; c0=(c0+C)|0; d0=(d0+D)|0;
+  }
+  return [a0,b0,c0,d0].map(v=>{ let h=''; for(let i=0;i<4;i++) h+=((v>>>(i*8))&255).toString(16).padStart(2,'0'); return h; }).join('');
+}
+function schedEmbedStoreKey(){   // 嵌入时用哪份登录：老师端（as=teacher / 首页记下的 embed 身份是老师）还是管理端
+  const q=new URLSearchParams(location.search);
+  if(q.get('as')==='teacher') return 'sb-teacher';
+  if(q.get('embed')==='admin') return 'sb-admin';
+  try{ const r=JSON.parse(sessionStorage.getItem('sched_role_embed')||'null'); if(r && r.role==='teacher') return 'sb-teacher'; }catch(e){}
+  return 'sb-admin';
+}
+function schedAuthToken(){
+  if(schedEmbedVia()){ const t=schedReadToken(schedEmbedStoreKey()); if(t) return t; }
+  if(SCHED_TOKEN && SCHED_TOKEN_EXP*1000 > Date.now()+5000) return SCHED_TOKEN;
+  return null;
+}
+function schedAuthCode(){
+  const k=new URLSearchParams(location.search).get('k'); if(k) return k;
+  try{ const r=JSON.parse(sessionStorage.getItem('sched_role')||'null'); if(r && r.code) return r.code; }catch(e){}
+  return '';
+}
+async function schedPasswordLogin(code){
+  const email='c_'+schedMd5(code)+'@sched.local';
+  let lastErr='';
+  for(let i=0;i<3;i++){   // 1 次 + 重试 2 次
+    try{
+      const r=await fetch(SB_URL+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:SB_KEY,'Content-Type':'application/json'},body:JSON.stringify({email,password:'sched:'+code})});
+      if(r.ok){ const j=await r.json(); if(j.access_token) return {ok:true,tok:j.access_token,exp:j.expires_at||Math.floor(Date.now()/1000)+(j.expires_in||3600)}; }
+      lastErr='登录失败 '+r.status;
+      if(r.status>=400 && r.status<500 && r.status!==429) break;   // 账号不存在 / 口令错：重试没用
+    }catch(e){ lastErr='网络错误 '+e.message; }
+    await new Promise(res=>setTimeout(res,600*(i+1)));
+  }
+  return {ok:false,err:lastErr};
+}
+async function schedLogin(code){
+  try{   // 先看 localStorage 里同一口令、还没过期的会话
+    const o=JSON.parse(localStorage.getItem(SCHED_STORE)||'null');
+    if(o && o.code===code && o.access_token && o.expires_at*1000>Date.now()+120000){ SCHED_TOKEN=o.access_token; SCHED_TOKEN_EXP=o.expires_at; schedArmRelogin(code); return true; }
+  }catch(e){}
+  const r=await schedPasswordLogin(code);
+  if(!r.ok){ SCHED_LOGIN_ERR=r.err||'登录失败'; console.warn('排课系统静默登录失败:',SCHED_LOGIN_ERR); schedShowLoginWarn(); return false; }
+  SCHED_TOKEN=r.tok; SCHED_TOKEN_EXP=r.exp; SCHED_LOGIN_ERR='';
+  try{ localStorage.setItem(SCHED_STORE,JSON.stringify({code,access_token:r.tok,expires_at:r.exp})); }catch(e){}
+  schedArmRelogin(code);
+  return true;
+}
+function schedArmRelogin(code){   // 快过期前用口令重新登录一次
+  const ms=Math.max(30000, SCHED_TOKEN_EXP*1000-Date.now()-120000);
+  setTimeout(()=>{ SCHED_LOGIN_P=schedLogin(code); SCHED_LOGIN_P.catch(()=>{}); }, Math.min(ms,2147483000));
+}
+function schedEnsureLogin(code){
+  if(!code || schedEmbedVia()) return Promise.resolve(false);
+  if(SCHED_LOGIN_P && SCHED_LOGIN_CODE===code) return SCHED_LOGIN_P;
+  SCHED_LOGIN_CODE=code; SCHED_LOGIN_P=schedLogin(code); return SCHED_LOGIN_P;
+}
+// 读写前等登录完成（睡眠回来 token 过期了就重新登录一次）；任何情况下都不抛错、不挡页面
+async function schedAuthReady(){
+  try{
+    if(SCHED_LOGIN_P) await SCHED_LOGIN_P;
+    if(SCHED_LOGIN_CODE && !schedEmbedVia() && !(SCHED_TOKEN && SCHED_TOKEN_EXP*1000>Date.now()+5000)){
+      if(!SCHED_RELOGIN_P) SCHED_RELOGIN_P=schedLogin(SCHED_LOGIN_CODE).finally(()=>{ SCHED_RELOGIN_P=null; });
+      await SCHED_RELOGIN_P;
+    }
+  }catch(e){}
+}
+function schedShowLoginWarn(){
+  const show=()=>{ if(document.getElementById('schedLoginWarn')||!document.body) return;
+    const d=document.createElement('div'); d.id='schedLoginWarn';
+    d.style.cssText='background:#fff4d6;color:#7a5b00;border-bottom:1px solid #ecd48a;padding:6px 12px;font-size:12px';
+    d.textContent='排课系统身份登录失败（'+SCHED_LOGIN_ERR+'），部分数据可能读不到或无法保存，请刷新页面重试；仍不行请联系管理员。';
+    document.body.insertBefore(d,document.body.firstChild); };
+  if(document.body) show(); else document.addEventListener('DOMContentLoaded',show);
+}
+// 页面一加载：带口令（?k= 或已在本标签页验证过的口令）就开始静默登录；嵌入模式不用口令
+(function(){ const c=schedAuthCode(); if(c && !schedEmbedVia()) schedEnsureLogin(c); })();
 // PostgREST 报错体 → 只取 message（触发器抛的中文原因就在这里）
 function sbErrMsg(t){ try{ const j=JSON.parse(t); return j && j.message ? j.message : ''; }catch(e){ return ''; } }
 // 读取：自动翻页。Supabase 每次最多返回 1000 行（项目设置 Max rows），裸 select=* 会把超出部分静默截掉；
 // 这里用 Content-Range 拿总数、按页拉齐。查询里自己写了 limit 的按原样返回（不翻页）。
 async function sbGet(table, query){
+  await schedAuthReady();
   const q = query || 'select=*';
   const base = SB_URL + '/rest/v1/' + table + '?' + q;
   if(/(^|&)limit=/.test(q)){
@@ -39,6 +141,7 @@ async function sbGet(table, query){
   return all;
 }
 async function sbInsert(table, rows){
+  await schedAuthReady();
   const r = await fetch(SB_URL + '/rest/v1/' + table, {
     method:'POST', headers: sbHeaders({ Prefer:'return=representation' }),
     body: JSON.stringify(Array.isArray(rows)? rows : [rows])
@@ -47,6 +150,7 @@ async function sbInsert(table, rows){
   return r.json();
 }
 async function sbUpdate(table, id, patch){
+  await schedAuthReady();
   const r = await fetch(SB_URL + '/rest/v1/' + table + '?id=eq.' + id, {
     method:'PATCH', headers: sbHeaders({ Prefer:'return=representation' }),
     body: JSON.stringify(patch)
@@ -55,6 +159,7 @@ async function sbUpdate(table, id, patch){
   return r.json();
 }
 async function sbDelete(table, id){
+  await schedAuthReady();
   const r = await fetch(SB_URL + '/rest/v1/' + table + '?id=eq.' + id, {
     method:'DELETE', headers: sbHeaders()
   });
@@ -456,12 +561,13 @@ const ALL_PERMS  = PERM_DEFS.map(p=>p[0]);
 async function getRoleByCode(code){
   if(!code) return null;
   const rows = await schedResolveCode(code);
+  if(rows.length) await schedEnsureLogin(code);   // 口令有效：顺便用它登录（手动输入口令的页面也能带上身份）
   return rows.length ? rows[0] : null;
 }
 // 口令表已上锁（只有管理员能直接读）：用口令换角色记录只能走 rpc/resolve_sched_code，一次只返回这一个启用中的口令
 async function schedResolveCode(code){
   const r = await fetch(SB_URL + '/rest/v1/rpc/resolve_sched_code', {
-    method:'POST', headers: sbHeaders({ 'Content-Type':'application/json' }), body: JSON.stringify({ p_code: code }), cache:'no-store'
+    method:'POST', headers:{ apikey:SB_KEY, Authorization:'Bearer '+SB_KEY, 'Content-Type':'application/json' }, body: JSON.stringify({ p_code: code }), cache:'no-store'   // 登录前就要用，必须匿名
   });
   if(!r.ok) throw new Error('口令校验失败: ' + r.status + ' ' + await r.text());
   const j = await r.json();
@@ -471,7 +577,7 @@ async function schedResolveCode(code){
 function currentCode(){ return new URLSearchParams(location.search).get('k') || ''; }
 // ── 嵌入管理端（?embed=admin）：身份来自管理端 / 老师端的登录会话，不用口令 ──
 // 管理端「资源管理」把排课首页嵌进 iframe：同一网站，localStorage 里有 sb-admin（管理员）或 sb-teacher（管理模式的负责人老师，
-// 地址上带 &as=teacher）的登录 token。只有「问我是谁」这一个请求带 token（rpc/sched_session_role），其余读写照旧用公钥。
+// 地址上带 &as=teacher）的登录 token。「问我是谁」（rpc/sched_session_role）和所有读写（sbHeaders）都带这个 token。
 // 嵌入得到的身份存在 sessionStorage.sched_role_embed（不碰 sched_role），首页再给内层页面的地址加 via=admin，内层页面按 via=admin 读它——
 // 所以同一个浏览器标签页里之后打开旧口令链接，读的还是 sched_role / ?k=，不会串身份。
 (function(){ const q=new URLSearchParams(location.search); if(q.get('embed')==='admin'||q.get('via')==='admin'||q.get('embed')==='1') document.documentElement.classList.add('sched-embed'); })();
