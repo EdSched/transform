@@ -524,11 +524,16 @@ async function deleteKey(k){
 //  - resource_perms（teachers 表）：排课/资源权限代号（sched/common.js PERM_DEFS 同一套）
 //  - 权限模板：读 sched_access_codes 里现有的口令角色，选了就把它的 perms 填进 chip
 // ═══════════════════════════════════════════════
-let _mgrDraft=null;      // {id,name,domains,majors,classIds,perms:[]}
+let _mgrDraft=null;      // {domains,majors,classIds,perms:[]}：老师编辑表单里「资源管理权限」「负责人」两个区块的草稿
 let _mgrTemplates=null;  // [{label,perms:[]}]
 function isHubAdminUser(){ return !ACCESS_KEY || (!ACCESS_KEY.invalid && ACCESS_KEY.is_admin); }
-async function openMgrEditor(tid){
-  const t=cachedTeachers.find(x=>x.id===tid); if(!t) return;
+// 打开 / 重置老师表单时调用：t=老师（新建传 null）。两个区块只在管理员的表单里渲染
+async function tfMgrInit(t){
+  if(!document.getElementById('tf_manager_box')){ _mgrDraft=null; return; }
+  const ms=(t&&t.manage_scope)||{};
+  _mgrDraft={domains:(ms.domains||[]).slice(),majors:(ms.majors||[]).slice(),classIds:(ms.class_ids||[]).map(String),perms:((t&&t.resource_perms)||[]).slice()};
+  const draft=_mgrDraft;
+  tfMgrRender();
   try{ if(typeof loadClasses==='function') await loadClasses(); }catch(e){}
   if(_mgrTemplates===null){
     try{
@@ -536,54 +541,156 @@ async function openMgrEditor(tid){
       _mgrTemplates=(rows||[]).filter(r=>r.active!==false).map(r=>({label:r.label||r.role||'',perms:String(r.perms||'').split(',').map(x=>x.trim()).filter(Boolean)})).filter(r=>r.label);
     }catch(e){ _mgrTemplates=[]; }
   }
-  const ms=t.manage_scope||{};
-  _mgrDraft={id:t.id,name:t.name,domains:(ms.domains||[]).slice(),majors:(ms.majors||[]).slice(),classIds:(ms.class_ids||[]).map(String),perms:(t.resource_perms||[]).slice()};
-  let ov=document.getElementById('mgrEditModal');
-  if(!ov){ ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='mgrEditModal'; ov.style.zIndex='1000'; document.body.appendChild(ov); }
-  ov.classList.add('open'); renderMgrEditor();
+  if(_mgrDraft===draft) tfMgrRender();
 }
-function closeMgrEditor(){ const ov=document.getElementById('mgrEditModal'); if(ov) ov.classList.remove('open'); _mgrDraft=null; }
-function renderMgrEditor(){
-  const ov=document.getElementById('mgrEditModal'), d=_mgrDraft; if(!ov||!d) return;
-  const sec=(t,inner)=>`<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">${t}</div>${inner}</div>`;
+function tfMgrRender(){
+  const d=_mgrDraft, rb=document.getElementById('tf_resource_box'), mb=document.getElementById('tf_manager_box'); if(!d||!rb||!mb) return;
   const permChips=RESOURCE_PERM_DEFS.map(([code,label])=>`<div class="filter-chip${d.perms.includes(code)?' active':''}" onclick="mgrPermToggle('${code}')" style="padding:3px 10px;font-size:11px">${escTM(label)}</div>`).join('');
   const tplOpts='<option value="">选择权限模板（选了会覆盖下面已选的权限，之后可再增减）</option>'+(_mgrTemplates||[]).map((r,i)=>`<option value="${i}">${escTM(r.label)}</option>`).join('');
+  rb.innerHTML=`<select onchange="mgrPickTemplate(this.value)" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:100%;box-sizing:border-box;margin-bottom:8px">${tplOpts}</select><div style="display:flex;gap:6px;flex-wrap:wrap">${permChips}</div>`;
   const isMgr=d.domains.length||d.majors.length||d.classIds.length;
-  ov.innerHTML=`<div class="modal" style="width:640px">
-    <div class="modal-title">负责人与权限：${escTM(d.name)}</div>
-    <div class="modal-sub">管理范围为空 = 不是负责人。设了范围后，这位老师用自己的老师链接登录，会多出「管理模式」按钮，一键进管理端（只看到范围内的东西），不用另外的访问链接。</div>
+  mb.innerHTML=`<div style="font-size:10px;color:var(--text-3);margin-bottom:8px">管理范围为空 = 不是负责人。设了范围后，这位老师用自己的老师链接登录，会多出「管理模式」按钮，一键进管理端（只看到范围内的东西），不用另外的访问链接。</div>
     ${scopePickerHtml(d,'mgrDraftToggle')}
-    ${sec('排课 / 资源权限',`<select onchange="mgrPickTemplate(this.value)" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:100%;box-sizing:border-box;margin-bottom:8px">${tplOpts}</select><div style="display:flex;gap:6px;flex-wrap:wrap">${permChips}</div>`)}
-    <div style="font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 12px;line-height:1.7">${isMgr?`负责人，管理范围：<b>${escTM(scopeSummary(d))}</b>`:'<b>不是负责人</b>（没有设置管理范围）'}　·　资源权限 <b>${d.perms.length}</b> 项</div>
-    <div class="modal-actions"><button class="btn btn-outline" onclick="closeMgrEditor()">取消</button><button class="btn btn-primary" onclick="saveMgrEditor()">保存</button></div>
-  </div>`;
+    <div style="font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 12px;line-height:1.7">${isMgr?`负责人，管理范围：<b>${escTM(scopeSummary(d))}</b>`:'<b>不是负责人</b>（没有设置管理范围）'}</div>`;
+  tsecRefresh();
 }
 function mgrDraftToggle(field,val){
   scopeDraftToggle(_mgrDraft,field,val);
-  admKeepFold(document.getElementById('mgrEditModal'),renderMgrEditor);
+  admKeepFold(document.getElementById('tf_manager_box'),tfMgrRender);
 }
 function mgrPermToggle(code){
   const a=_mgrDraft.perms, i=a.indexOf(code); if(i>=0) a.splice(i,1); else a.push(code);
-  admKeepFold(document.getElementById('mgrEditModal'),renderMgrEditor);
+  admKeepFold(document.getElementById('tf_resource_box'),tfMgrRender);
 }
 function mgrPickTemplate(i){
   if(i===''||!_mgrDraft) return;
   const tpl=(_mgrTemplates||[])[+i]; if(!tpl) return;
   const known=new Set(RESOURCE_PERM_DEFS.map(x=>x[0]));
   _mgrDraft.perms=tpl.perms.filter(p=>known.has(p));
-  admKeepFold(document.getElementById('mgrEditModal'),renderMgrEditor);
+  admKeepFold(document.getElementById('tf_resource_box'),tfMgrRender);
 }
-async function saveMgrEditor(){
-  const d=_mgrDraft; if(!d) return;
+// 保存时取负责人范围 + 资源权限（表单里没有这两个区块就返回 {}，不动原有值）；管理员取消确认返回 null
+function tfMgrCollect(cur,isNew){
+  const d=_mgrDraft; if(!d||!document.getElementById('tf_manager_box')) return {};
   const isMgr=d.domains.length||d.majors.length||d.classIds.length;
   const manage_scope=isMgr?{domains:d.domains,majors:d.majors,class_ids:d.classIds}:null;
   const resource_perms=d.perms.slice();
-  if(isMgr && !confirm(`把「${d.name}」设为负责人（${scopeSummary(d)}）？\n\n负责人在管理模式里，对范围内的数据拥有和访问链接一样的新建 / 编辑权限。`)) return;
-  try{
-    await sb(`/rest/v1/teachers?id=eq.${encodeURIComponent(d.id)}`,'PATCH',{manage_scope,resource_perms});
-    const t=cachedTeachers.find(x=>x.id===d.id); if(t) Object.assign(t,{manage_scope,resource_perms});
-    closeMgrEditor(); renderTeacherRows();
-  }catch(e){ alert('保存失败：'+e.message+'\n\n（如果提示找不到 manage_scope 字段，说明准备 SQL 还没执行）'); }
+  if(isNew && !manage_scope && !resource_perms.length) return {};   // 新建且没设：不写这两个字段（准备 SQL 没执行时也能新建）
+  const changed=JSON.stringify(manage_scope)!==JSON.stringify(cur&&cur.manage_scope||null);
+  if(isMgr && changed && !confirm(`把「${document.getElementById('new_teacher_name').value.trim()}」设为负责人（${scopeSummary(d)}）？\n\n负责人在管理模式里，对范围内的数据拥有和访问链接一样的新建 / 编辑权限。`)) return null;
+  return {manage_scope,resource_perms};
+}
+
+// ═══════════════════════════════════════════════
+// 老师编辑表单的分区（只管「怎么显示」，不改任何权限逻辑）
+//  - 区块默认收起，标题行显示当前配置摘要；有配置的区块标题旁有小圆点
+//  - 兼职 / 正社员 按 TEACHER_SECTION_RULES 隐藏不常用的区块；已经有配置的照样显示并提示；「显示全部选项」打开后全显示
+//  - 隐藏的区块只是 display:none，里面的值照样随表单保存
+// ═══════════════════════════════════════════════
+const TEACHER_SECTION_DEFS=[['basic','基本信息'],['area','负责领域与专业'],['features','老师端功能'],['sales','营业功能'],['homework','作业批改分配'],['resource','资源管理权限'],['manager','负责人']];
+const TEACHER_SECTION_RULES={ '兼职':{ hide:['resource','manager','sales'] }, '正社员':{ hide:[] } };
+let _tsecShowAll=false;
+function tsecWrap(key,title,inner,pad){
+  const open=key==='basic';
+  return `<div class="tsec" id="tsec_${key}" style="border:1px solid var(--border-light);border-radius:3px;margin-bottom:8px;overflow:hidden">
+    <div onclick="tsecToggle('${key}')" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;background:var(--bg)">
+      <span id="tsec_arrow_${key}" style="font-size:10px;color:var(--text-3)">${open?'▾':'▸'}</span>
+      <span style="font-size:12px;font-weight:600;white-space:nowrap">${title}</span>
+      <span id="tsec_dot_${key}" style="display:none;width:6px;height:6px;border-radius:50%;background:var(--accent);flex-shrink:0"></span>
+      <span id="tsec_warn_${key}" style="display:none;font-size:10px;color:var(--warn,#b8860b);white-space:nowrap"></span>
+      <span id="tsec_sum_${key}" style="font-size:10px;color:var(--text-3);margin-left:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    </div>
+    <div id="tsec_body_${key}" style="${open?'':'display:none;'}padding:${pad||0}px;border-top:1px solid var(--border-light)">${inner}</div>
+  </div>`;
+}
+function tsecToggle(key,force){
+  const b=document.getElementById('tsec_body_'+key); if(!b) return;
+  const open=force==null?b.style.display==='none':!!force;
+  b.style.display=open?'':'none';
+  const ar=document.getElementById('tsec_arrow_'+key); if(ar) ar.textContent=open?'▾':'▸';
+}
+function tsecCollapse(){ TEACHER_SECTION_DEFS.forEach(([k])=>tsecToggle(k,k==='basic')); }
+// 某区块当前的摘要 / 是否有配置（直接读表单）
+function tsecState(key){
+  const $=id=>document.getElementById(id), chk=id=>{const e=$(id);return !!(e&&e.checked)};
+  const _isDom=(typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && !!viewLockDomain());
+  if(key==='basic'){
+    const ty=document.querySelector('#new_teacher_stafftype .filter-chip.active')?.dataset.value||'';
+    const dept=ty==='正社员'?($('new_teacher_department')?.value||''):'';
+    const tags=parseTeacherTags().length;
+    return {has:false,sum:[ty,dept,tags?tags+' 个标签':''].filter(Boolean).join(' · ')||'未填写'};
+  }
+  if(key==='area'){
+    const doms=_isDom?[viewLockDomain()]:[...document.querySelectorAll('#new_teacher_domains .filter-chip.active')].map(c=>c.dataset.value);
+    const ms=[...document.querySelectorAll('#new_teacher_majors .filter-chip.active')].map(c=>majorLabel(c.dataset.value));
+    return {has:!!(doms.length||ms.length),sum:[doms.join('、'),ms.join('、')].filter(Boolean).join(' · ')||'未设置'};
+  }
+  if(key==='features'){
+    const n=['perm_booking','perm_slots','perm_student_mgmt','perm_admission_query'].filter(chk).length+(($('perm_schedule_mode')?.value)?1:0);
+    return {has:n>0,sum:n?`已开 ${n} 项`:'未开启'};
+  }
+  if(key==='sales'){
+    const ids=['perm_promo','perm_progress_plan','perm_lect_info','perm_vip_sales','perm_promo_pack','perm_promo_pricing','perm_success_cases'];
+    const n=ids.filter(chk).length;
+    return {has:n>0,sum:n?`已开 ${n} 项`:'未开启'};
+  }
+  if(key==='homework'){
+    const parts=[hwaOwn?'自己上课的单回':'',hwaCoursesOn?`负责课程 ${hwaIds.size} 门`:''].filter(Boolean);
+    const on=chk('perm_homework');
+    return {has:on||parts.length>0,sum:on?(parts.join(' · ')||'已开启（未分配）'):(parts.length?parts.join(' · ')+'（批改未开）':'未开启')};
+  }
+  if(key==='resource'){ const n=_mgrDraft?_mgrDraft.perms.length:0; return {has:n>0,sum:n?`${n} 项权限`:'无'}; }
+  if(key==='manager'){
+    const d=_mgrDraft, on=!!d&&(d.domains.length||d.majors.length||d.classIds.length);
+    return {has:!!on,sum:on?'负责人：'+scopeSummary(d):'不是负责人'};
+  }
+  return {has:false,sum:''};
+}
+function tsecCurType(){ return document.querySelector('#new_teacher_stafftype .filter-chip.active')?.dataset.value||''; }
+// 只更新标题行的摘要 / 圆点 / 提示，不动显示隐藏
+function tsecRefresh(){
+  const ty=tsecCurType(), hide=new Set(((TEACHER_SECTION_RULES[ty]||{}).hide)||[]);
+  TEACHER_SECTION_DEFS.forEach(([k])=>{
+    const el=document.getElementById('tsec_'+k); if(!el) return;
+    const st=tsecState(k);
+    document.getElementById('tsec_sum_'+k).textContent=st.sum;
+    document.getElementById('tsec_dot_'+k).style.display=st.has?'inline-block':'none';
+    const w=document.getElementById('tsec_warn_'+k);
+    w.style.display=(hide.has(k)&&st.has)?'':'none'; w.textContent=`⚠ ${ty}通常不需要`;
+  });
+}
+function tsecRefreshSoon(){ setTimeout(tsecRefresh,0); }
+// 按类型决定哪些区块显示（打开老师 / 切换类型 / 切换「显示全部选项」时才重新判断，避免编辑中区块突然消失）
+function tsecApply(){
+  const ty=tsecCurType(), hide=new Set(((TEACHER_SECTION_RULES[ty]||{}).hide)||[]);
+  TEACHER_SECTION_DEFS.forEach(([k])=>{
+    const el=document.getElementById('tsec_'+k); if(!el) return;
+    el.style.display=(!hide.has(k)||_tsecShowAll||tsecState(k).has)?'':'none';
+  });
+  tsecRefresh();
+}
+function tsecShowAllToggle(el){ _tsecShowAll=!_tsecShowAll; el.classList.toggle('active',_tsecShowAll); tsecApply(); }
+// 重置表单（新建 / 取消 / 添加成功后）：区块收起、负责人草稿清空
+function tfFormReset(){
+  tsecCollapse();
+  tfMgrInit(null);
+  tsecApply();
+}
+// 供任务管理「去设置」调用：打开某位老师的编辑页，展开指定区块，滚动到并高亮其中一项
+// item 可以是 perm_xxx 的 id 后缀（如 'promo_pricing'）或学生管理子项（如 'records_entry'）
+function openTeacherEdit(id,sec,item){
+  openEditTeacher(id);
+  if(sec){ const el=document.getElementById('tsec_'+sec); if(el){ el.style.display=''; tsecToggle(sec,true); } }
+  if(item){
+    setTimeout(()=>{
+      let t=document.getElementById('perm_'+item)||document.querySelector(`#perm_student_mgmt_items [data-value="${item}"]`);
+      if(!t) return;
+      if(t.tagName==='INPUT'&&t.closest('label')) t=t.closest('label');
+      t.scrollIntoView({behavior:'smooth',block:'center'});
+      const old=t.style.outline; t.style.outline='2px solid var(--accent)';
+      setTimeout(()=>{ t.style.outline=old; },2500);
+    },80);
+  }
 }
 
 // 切换视角/返回中枢时清空所有缓存与页面，避免下个视角闪现上个视角的旧数据
@@ -830,8 +937,9 @@ function renderTeachersPage(mc){
   </div>
   <div class="swipe-row" style="grid-template-columns:minmax(240px,1fr) minmax(0,1.6fr)">
     <!-- 添加/编辑老师 -->
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:16px;min-width:0">
+    <div onclick="tsecRefreshSoon()" oninput="tsecRefreshSoon()" onchange="tsecRefreshSoon()" style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:16px;min-width:0">
       <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:14px;letter-spacing:.05em;text-transform:uppercase" id="teacherFormTitle">添加新老师</div>
+      ${tsecWrap('basic','基本信息',`
       <div class="form-group"><label class="form-label">姓名 *</label><input id="new_teacher_name" placeholder="老师姓名"></div>
       <div class="form-group"><label class="form-label">备注 / 对外宣传姓名</label><input id="new_teacher_notes" placeholder="填写后，宣传页课程担当将显示此名（如：周老师）"></div>
       ${_isDom ? '' : `<div class="form-group">
@@ -852,16 +960,16 @@ function renderTeachersPage(mc){
           <option>综合事业本部</option>
         </select>
       </div>`}
-      <div class="form-group"><label class="form-label">分类标签（可叠加；『专业课老师』『营业老师』会影响功能，其他标签只用于搜索标记）</label>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-          <div id="new_teacher_senmon" class="filter-chip" onclick="senmonChipToggle()" style="padding:4px 12px;font-size:11px">📚 专业课老师</div>
-          <span style="font-size:10px;color:var(--text-3)">勾选后，系统会提醒这位老师完成每个负责专业的讲师介绍</span>
+      <div class="form-group"><label class="form-label">功能标签（点选；会影响老师端功能和任务）</label>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:4px">
+          ${TEACHER_FUNC_TAGS.map((g,i)=>`${i===2?'<span style="font-size:10px;color:var(--text-3);margin-left:6px">职能：</span>':''}<div class="filter-chip" data-ftag="${g}" onclick="ftagToggle('${g}')" style="padding:4px 12px;font-size:11px">${g==='专业课老师'?'📚 ':g==='营业老师'?'💼 ':''}${g}</div>`).join('')}
         </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-          <div id="new_teacher_sales" class="filter-chip" onclick="salesChipToggle()" style="padding:4px 12px;font-size:11px">💼 营业老师</div>
-          <span style="font-size:10px;color:var(--text-3)">营业老师可以查看所有领域的学生和出愿数据</span>
-        </div>
+        <div style="font-size:10px;color:var(--text-3)">专业课老师：系统会提醒完成每个负责专业的讲师介绍；营业老师：可以查看所有领域的学生和出愿数据</div>
+      </div>
+      <div class="form-group"><label class="form-label">其他标签（自由填写，只用于搜索标记；写的和功能标签一样会自动当作功能标签）</label>
         <input id="new_teacher_tags" oninput="senmonChipSync()" placeholder="用逗号或顿号分隔，如：计划书指导、模拟面试、兼职"></div>
+      `,10)}
+      ${tsecWrap('area','负责领域与专业',`
       ${_isDom ? `<div class="form-group"><label class="form-label">领域</label><div style="font-size:12px;color:var(--text-2);border:1px solid var(--border);border-radius:3px;padding:7px 10px;background:var(--bg)">${_lockDom}<span style="font-size:10px;color:var(--text-3);margin-left:6px">本领域账号：新建老师自动归属本领域，负责专业在下方选择</span></div></div>` : `<div class="form-group" style="border:1px solid var(--accent);border-radius:3px;padding:8px;background:var(--bg)">
         <label class="form-label" style="color:var(--accent)">隶属领域（可多选，决定"哪个领域账号能在老师管理里看到/编辑这个老师"）</label>
         <div style="display:flex;flex-wrap:wrap;gap:6px" id="new_teacher_managed">
@@ -879,9 +987,9 @@ function renderTeachersPage(mc){
         <label class="form-label">负责专业（可多选，按已选领域展开）</label>
         <div id="new_teacher_majors" style="min-height:20px"></div>
       </div>
-      <div class="form-group">
-        <label class="form-label">权限配置</label>
-        <div style="border:1px solid var(--border-light);border-radius:3px;overflow:hidden">
+      `,10)}
+      ${tsecWrap('features','老师端功能',`
+        <div>
           <!-- booking row -->
           <div style="padding:10px;border-bottom:1px solid var(--border-light)">
             <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;white-space:nowrap"><input type="checkbox" id="perm_booking" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">预约管理</label>
@@ -923,12 +1031,6 @@ function renderTeachersPage(mc){
               <option value="timetable">仅我的课表（本人任课 + VIP，跨领域集中显示）</option>
             </select>
           </div>
-          <!-- homework row -->
-          <div style="padding:10px;border-bottom:1px solid var(--border-light)">
-            <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;white-space:nowrap"><input type="checkbox" id="perm_homework" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">批改作业</label>
-            <div style="font-size:10px;color:var(--text-3);margin-bottom:8px;margin-left:20px">开启后可在老师端查看并批改作业；只看得到下面分配给他的作业（两种方式可同时开启）</div>
-            <div style="margin-left:20px" id="perm_hw_assign"></div>
-          </div>
           <!-- student_mgmt row -->
           <div style="padding:10px">
             <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;white-space:nowrap"><input type="checkbox" id="perm_student_mgmt" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">学生管理</label>
@@ -949,19 +1051,6 @@ function renderTeachersPage(mc){
               </div>
             </div>
           </div>
-          <!-- 营业功能大类 row（仅 admin/中枢可见；营业管理归中枢，领域端不显示） -->
-          ${(!ACCESS_KEY||ACCESS_KEY.is_admin)?`<div style="padding:10px" id="sales_perm_block">
-            <div style="font-size:11px;font-weight:600;margin-bottom:6px">💼 营业功能（按需勾选子项 · 中枢管理）</div>
-            <div style="margin-left:4px;display:flex;flex-direction:column;gap:6px">
-              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_promo" style="accent-color:var(--accent);width:15px;height:15px">宣传相关<span style="font-size:9px;color:var(--text-3)">专业/讲师/课程介绍与当期课程表，含对外分享链接</span></label>
-              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_progress_plan" style="accent-color:var(--accent);width:15px;height:15px">进度规划<span style="font-size:9px;color:var(--text-3)">咨询学生考学规划生成，可打印 PDF</span></label>
-              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_lect_info" style="accent-color:var(--accent);width:15px;height:15px">讲师信息查询<span style="font-size:9px;color:var(--text-3)">内部检索讲师档案，可切换展示卡片给客户看/截图</span></label>
-              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_vip_sales" style="accent-color:var(--accent);width:15px;height:15px">VIP营业规划<span style="font-size:9px;color:var(--text-3)">看到全部 VIP 框架模板，可转分享给上课老师（营业角色）</span></label>
-              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_promo_pack" style="accent-color:var(--accent);width:15px;height:15px">宣传资料整合<span style="font-size:9px;color:var(--text-3)">把出愿学校/学科介绍/进度规划/讲师卡片/VIP方案合成一份完整 PDF</span></label>
-              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_promo_pricing" style="accent-color:var(--accent);width:15px;height:15px">课程方案（含价格）<span style="font-size:9px;color:var(--text-3)">在宣传相关里给学生配带价格的课程方案并加入资料；价目在中枢『💴 价目』维护；需同时勾选「宣传相关」</span></label>
-              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_success_cases" style="accent-color:var(--accent);width:15px;height:15px">合格案例（填写）<span style="font-size:9px;color:var(--text-3)">在宣传相关里新建、修改合格案例（只能改自己负责的领域/专业）；不勾也能浏览已发布的案例，需同时勾选「宣传相关」</span></label>
-            </div>
-          </div>`:''}
           <!-- admission_query row -->
           <div style="padding:10px">
             <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;white-space:nowrap"><input type="checkbox" id="perm_admission_query" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">出願数据查询</label>
@@ -973,7 +1062,30 @@ function renderTeachersPage(mc){
             </div>
           </div>
         </div>
-      </div>
+      `,0)}
+          <!-- 营业功能大类 row（仅 admin/中枢可见；营业管理归中枢，领域端不显示） -->
+          ${(!ACCESS_KEY||ACCESS_KEY.is_admin)?tsecWrap('sales','营业功能',`<div style="padding:10px" id="sales_perm_block">
+            <div style="font-size:11px;font-weight:600;margin-bottom:6px">💼 营业功能（按需勾选子项 · 中枢管理）</div>
+            <div style="margin-left:4px;display:flex;flex-direction:column;gap:6px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_promo" style="accent-color:var(--accent);width:15px;height:15px">宣传相关<span style="font-size:9px;color:var(--text-3)">专业/讲师/课程介绍与当期课程表，含对外分享链接</span></label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_progress_plan" style="accent-color:var(--accent);width:15px;height:15px">进度规划<span style="font-size:9px;color:var(--text-3)">咨询学生考学规划生成，可打印 PDF</span></label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_lect_info" style="accent-color:var(--accent);width:15px;height:15px">讲师信息查询<span style="font-size:9px;color:var(--text-3)">内部检索讲师档案，可切换展示卡片给客户看/截图</span></label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_vip_sales" style="accent-color:var(--accent);width:15px;height:15px">VIP营业规划<span style="font-size:9px;color:var(--text-3)">看到全部 VIP 框架模板，可转分享给上课老师（营业角色）</span></label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_promo_pack" style="accent-color:var(--accent);width:15px;height:15px">宣传资料整合<span style="font-size:9px;color:var(--text-3)">把出愿学校/学科介绍/进度规划/讲师卡片/VIP方案合成一份完整 PDF</span></label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_promo_pricing" style="accent-color:var(--accent);width:15px;height:15px">课程方案（含价格）<span style="font-size:9px;color:var(--text-3)">在宣传相关里给学生配带价格的课程方案并加入资料；价目在中枢『💴 价目』维护；需同时勾选「宣传相关」</span></label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_success_cases" style="accent-color:var(--accent);width:15px;height:15px">合格案例（填写）<span style="font-size:9px;color:var(--text-3)">在宣传相关里新建、修改合格案例（只能改自己负责的领域/专业）；不勾也能浏览已发布的案例，需同时勾选「宣传相关」</span></label>
+            </div>
+          </div>`,0):''}
+      ${tsecWrap('homework','作业批改分配',`
+          <!-- homework row -->
+          <div style="padding:10px;border-bottom:1px solid var(--border-light)">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;white-space:nowrap"><input type="checkbox" id="perm_homework" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">批改作业</label>
+            <div style="font-size:10px;color:var(--text-3);margin-bottom:8px;margin-left:20px">开启后可在老师端查看并批改作业；只看得到下面分配给他的作业（两种方式可同时开启）</div>
+            <div style="margin-left:20px" id="perm_hw_assign"></div>
+          </div>
+      `,0)}
+      ${isHubAdminUser()&&!_isDom?tsecWrap('resource','资源管理权限','<div id="tf_resource_box"></div>',10)+tsecWrap('manager','负责人（管理范围）','<div id="tf_manager_box"></div>',10):''}
+      <div style="display:flex;align-items:center;gap:6px;margin:4px 0 10px"><div class="filter-chip${_tsecShowAll?' active':''}" onclick="tsecShowAllToggle(this)" style="padding:3px 10px;font-size:10px">显示全部选项</div><span style="font-size:10px;color:var(--text-3)">打开后不管类型，所有区块都显示（隐藏的区块里原有设置照样保存）</span></div>
       <div style="display:flex;gap:6px">
         <button class="btn btn-primary btn-sm" id="teacherFormBtn" onclick="addTeacher()">＋ 添加老师</button>
         <button class="btn btn-outline btn-sm" id="teacherFormCancelBtn" style="display:none" onclick="cancelEditTeacher()">取消</button>
@@ -986,6 +1098,7 @@ function renderTeachersPage(mc){
   renderTeacherList();
   if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
   hwaInit({});   // 作业批改分配区（新建老师：默认都不开）
+  setTeacherTags([]); tfFormReset();
 }
 
 
@@ -1201,7 +1314,7 @@ function cancelEditTeacher(){
   if(document.getElementById('new_teacher_dept_wrap')) document.getElementById('new_teacher_dept_wrap').style.display='none';
   if(document.getElementById('new_teacher_department')) document.getElementById('new_teacher_department').value='';
   document.getElementById('new_teacher_notes').value='';
-  document.getElementById('new_teacher_tags').value=''; if(typeof senmonChipSync==='function') senmonChipSync();
+  setTeacherTags([]);
   document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
@@ -1219,6 +1332,7 @@ function cancelEditTeacher(){
   document.getElementById('perm_admission_query').checked=false;
   _admSel=new Set(); renderPermAdmMajors();
   renderHomeworkCoursesChips([]);
+  tfFormReset();
 }
 function openTeacherManager(){
   hwaData=null;   // 作业分配的课程列表每次打开重新读取
@@ -1228,7 +1342,7 @@ function openTeacherManager(){
   if(document.getElementById('new_teacher_dept_wrap')) document.getElementById('new_teacher_dept_wrap').style.display='none';
   if(document.getElementById('new_teacher_department')) document.getElementById('new_teacher_department').value='';
   document.getElementById('new_teacher_notes').value='';
-  document.getElementById('new_teacher_tags').value=''; if(typeof senmonChipSync==='function') senmonChipSync();
+  setTeacherTags([]);
   document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
@@ -1250,29 +1364,40 @@ function openTeacherManager(){
   document.getElementById('teacherManagerModal').classList.add('open');
 }
 
-// 标签解析：逗号/顿号/空格分隔，去重去空
-// 「专业课老师」chip：就是在标签输入框里加 / 去掉「专业课老师」；已有含「专业课」字样的标签视为已点亮
-function senmonChipSync(){
-  const chip=document.getElementById('new_teacher_senmon'); if(!chip) return;
-  chip.classList.toggle('active', parseTeacherTags().some(g=>g.includes('专业课')));
-  const sc=document.getElementById('new_teacher_sales');
-  if(sc){ const was=sc.classList.contains('active'), now=parseTeacherTags().includes('营业老师'); sc.classList.toggle('active', now); if(was!==now && typeof renderPermAdmMajors==='function') renderPermAdmMajors(); }
-}
-// 「营业老师」chip：在标签里加 / 去掉「营业老师」
-function salesChipToggle(){
-  const tags=parseTeacherTags(), on=tags.includes('营业老师');
-  document.getElementById('new_teacher_tags').value=(on?tags.filter(g=>g!=='营业老师'):[...tags,'营业老师']).join('、');
-  senmonChipSync();
-}
-function senmonChipToggle(){
-  const tags=parseTeacherTags(), on=tags.some(g=>g.includes('专业课'));
-  const next=on?tags.filter(g=>!g.includes('专业课')):[...tags,'专业课老师'];
-  document.getElementById('new_teacher_tags').value=next.join('、');
-  senmonChipSync();
-}
-function parseTeacherTags(){
+// ── 标签：功能标签（固定按钮，点选）+ 其他标签（自由填写）；两部分都写进同一个 teachers.tags ──
+// 功能标签：专业课老师 / 营业老师（影响功能）+ 职能（影响以后的任务）。其他标签只用于搜索标记
+const TEACHER_FUNC_TAGS=['专业课老师','营业老师','全学科负责人','学科负责人','任课讲师','学科TA','全学科TA'];
+const TEACHER_DUTY_TAGS=TEACHER_FUNC_TAGS.slice(2);   // 职能（老师列表按它筛选）
+let _tfFuncTags=new Set(), _tfSalesPrev=false;
+function parseOtherTags(){
   const raw=document.getElementById('new_teacher_tags')?.value||'';
   return [...new Set(raw.split(/[,，、\s]+/).map(x=>x.trim()).filter(Boolean))];
+}
+// 保存用：功能标签 + 其他标签（输入的文字和功能标签一模一样时合并成同一个，等于自动当作功能标签）
+function parseTeacherTags(){ return [...new Set([..._tfFuncTags,...parseOtherTags()])]; }
+// 回填 / 清空：和功能标签完全一致的进按钮，其余进输入框
+function setTeacherTags(arr){
+  arr=arr||[];
+  _tfFuncTags=new Set(arr.filter(g=>TEACHER_FUNC_TAGS.includes(g)));
+  const inp=document.getElementById('new_teacher_tags');
+  if(inp) inp.value=arr.filter(g=>!TEACHER_FUNC_TAGS.includes(g)).join('、');
+  senmonChipSync();
+}
+// 「专业课老师」：已有含「专业课」字样的旧标签也视为已点亮
+function ftagOn(g){ const all=parseTeacherTags(); return g==='专业课老师'?all.some(x=>x.includes('专业课')):all.includes(g); }
+function senmonChipSync(){
+  document.querySelectorAll('#tsec_body_basic [data-ftag]').forEach(c=>c.classList.toggle('active',ftagOn(c.dataset.ftag)));
+  const now=ftagOn('营业老师');
+  if(now!==_tfSalesPrev){ _tfSalesPrev=now; if(typeof renderPermAdmMajors==='function') renderPermAdmMajors(); }   // 营业老师决定出愿专业可选范围
+}
+function ftagToggle(g){
+  if(ftagOn(g)){
+    const test=x=>g==='专业课老师'?x.includes('专业课'):x===g;
+    [..._tfFuncTags].filter(test).forEach(x=>_tfFuncTags.delete(x));
+    const inp=document.getElementById('new_teacher_tags');
+    if(inp) inp.value=parseOtherTags().filter(x=>!test(x)).join('、');
+  } else _tfFuncTags.add(g);
+  senmonChipSync();
 }
 function escTM(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
 
@@ -1281,7 +1406,30 @@ let teacherTagFilter='';
 let teacherDomainFilter='';
 let teacherTypeFilter='';
 let teacherDeptFilter='';
+let teacherDutyFilter='';      // 职能（功能标签里的职能）
+let teacherFeatureFilter='';   // 开了某项功能（TEACHER_FEATURE_DEFS 的 key）
 let teacherExpandedId=null;
+
+// 老师开了哪些功能：[key, 列表简称, 完整名称, 判断(老师,permissions)]；列表行显示 / 功能筛选共用
+const TEACHER_FEATURE_DEFS=[
+  ['booking','预约','预约管理',(t,p)=>!!p.booking],
+  ['slots','时间槽','时间槽设定',(t,p)=>!!p.slots],
+  ['schedule','排班/课表','课程排班 / 我的课表',(t,p)=>!!p.schedule],
+  ['homework','作业','批改作业',(t,p)=>!!p.homework],
+  ['admission_query','出願库','出願数据查询',(t,p)=>!!p.admission_query],
+  ['student_mgmt','学生管理','学生管理',(t,p)=>!!p.student_mgmt],
+  ['records_entry','出席登记','出席登记',(t,p)=>!!p.student_mgmt&&(p.student_mgmt_items||[]).some(k=>k==='records'||k==='records_entry')],
+  ['progress_plan','进度规划','进度规划（营业）',(t,p)=>!!p.progress_plan],
+  ['promo','宣传','宣传相关（营业）',(t,p)=>!!p.promo],
+  ['lect_info','讲师信息','讲师信息查询（营业）',(t,p)=>!!p.lect_info],
+  ['vip_sales','VIP规划','VIP营业规划（营业）',(t,p)=>!!p.vip_sales],
+  ['promo_pack','资料整合','宣传资料整合（营业）',(t,p)=>!!p.promo_pack],
+  ['promo_pricing','课程方案','课程方案（含价格）',(t,p)=>!!p.promo_pricing],
+  ['success_cases','合格案例','合格案例（填写）',(t,p)=>!!p.success_cases],
+  ['resource','资源权限','资源管理权限',(t)=>(t.resource_perms||[]).length>0],
+  ['manager','负责人','负责人',(t)=>managerScopeNonEmpty(t.manage_scope)],
+];
+function teacherFeatures(t){ const p=t.permissions||{}; return TEACHER_FEATURE_DEFS.filter(d=>d[3](t,p)); }
 
 function teacherFilteredList(){
   let list=cachedTeachers;
@@ -1296,6 +1444,8 @@ function teacherFilteredList(){
     list=list.filter(teacherInView);
   }
   if(teacherTagFilter) list=list.filter(t=>(t.tags||[]).includes(teacherTagFilter));
+  if(teacherDutyFilter) list=list.filter(t=>(t.tags||[]).includes(teacherDutyFilter));
+  if(teacherFeatureFilter) list=list.filter(t=>teacherFeatures(t).some(d=>d[0]===teacherFeatureFilter));
   if(teacherTypeFilter) list=list.filter(t=>(t.staff_type||'')===teacherTypeFilter);
   if(teacherDeptFilter) list=list.filter(t=>(t.department||'')===teacherDeptFilter);
   if(teacherDomainFilter) list=list.filter(t=>{
@@ -1319,7 +1469,7 @@ function renderTeacherList(){
   const el=document.getElementById('teacherList');
   if(!el) return;
   // 汇总现有标签作为筛选 chips
-  const allTags=[...new Set(cachedTeachers.flatMap(t=>t.tags||[]))];
+  const allTags=[...new Set(cachedTeachers.flatMap(t=>t.tags||[]))].filter(g=>!TEACHER_DUTY_TAGS.includes(g));
   el.innerHTML=`
     <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
       <input placeholder="搜索姓名（汉字/拼音首字母）、标签、备注…" value="${escTM(teacherSearch)}"
@@ -1338,6 +1488,15 @@ function renderTeacherList(){
       <span style="font-size:10px;color:var(--text-3)">领域：</span>
       <div class="filter-chip ${teacherDomainFilter===''?'active':''}" onclick="teacherDomainFilter='';renderTeacherList()" style="padding:2px 9px;font-size:10px">全部</div>
       ${DOMAINS.map(d=>`<div class="filter-chip ${teacherDomainFilter===d.label?'active':''}" onclick="teacherDomainFilter='${escTM(d.label)}';renderTeacherList()" style="padding:2px 9px;font-size:10px">${escTM(d.label)}</div>`).join('')}
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:8px">
+      <span style="font-size:10px;color:var(--text-3)">职能：</span>
+      <div class="filter-chip ${teacherDutyFilter===''?'active':''}" onclick="teacherDutyFilter='';renderTeacherList()" style="padding:2px 9px;font-size:10px">全部</div>
+      ${TEACHER_DUTY_TAGS.map(g=>`<div class="filter-chip ${teacherDutyFilter===g?'active':''}" onclick="teacherDutyFilter='${g}';renderTeacherList()" style="padding:2px 9px;font-size:10px">${g}</div>`).join('')}
+      <span style="font-size:10px;color:var(--text-3);margin-left:8px">功能：</span>
+      <select onchange="teacherFeatureFilter=this.value;renderTeacherList()" style="font-size:10px;padding:3px 6px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
+        <option value="">全部</option>${TEACHER_FEATURE_DEFS.map(d=>`<option value="${d[0]}"${teacherFeatureFilter===d[0]?' selected':''}>${d[2]}</option>`).join('')}
+      </select>
     </div>
     ${allTags.length?`<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:8px">
       <span style="font-size:10px;color:var(--text-3)">标签：</span>
@@ -1376,19 +1535,9 @@ function renderTeacherRows(){
     ?`<div style="display:flex;flex-direction:column;gap:6px">
         ${list.map(t=>{
           const p=t.permissions||{};
-          const perms=[];
-          if(p.booking) perms.push('预约');
-          if(p.slots) perms.push('时间槽');
-          if(p.schedule) perms.push(p.schedule==='timetable'?'课表':'排班');
-          if(p.homework) perms.push('作业');
-          if(p.admission_query) perms.push('出願库');
-          if(p.student_mgmt) perms.push('学生管理');
-          if(p.progress_plan) perms.push('进度规划');
-          if(p.promo) perms.push('宣传');
-          if(p.lect_info) perms.push('讲师信息');
-          if(p.promo_pack) perms.push('资料整合');
-          if(p.promo_pricing) perms.push('课程方案');
-          if(p.success_cases) perms.push('合格案例');
+          const feats=teacherFeatures(t).filter(d=>d[0]!=='manager');
+          const featShort=feats.slice(0,4).map(d=>d[1]).join(' · ')+(feats.length>4?` +${feats.length-4}`:'');
+          const featTip=feats.map(d=>d[2]).join('、');
           const permsFull=[];
           if(p.booking) permsFull.push(`预约(${(p.booking_types||[]).join('/')||'—'})`);
           if(p.slots) permsFull.push(`时间槽(${(p.slot_types||[]).join('/')||'—'})`);
@@ -1407,11 +1556,12 @@ function renderTeacherRows(){
           return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
             <div onclick="teacherExpandedId=teacherExpandedId==='${t.id}'?null:'${t.id}';renderTeacherRows()" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;${open?'background:var(--bg)':''}">
               <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px;white-space:nowrap">${escTM(t.name)}</span>
-              <span style="font-size:10px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:22%">${(t.majors||[]).map(m=>MAJORS[m]||m).join('・')||'—'}</span>
+              ${t.staff_type?`<span style="font-size:10px;color:var(--text-2);border:1px solid var(--border);border-radius:2px;padding:0 6px;white-space:nowrap">${escTM(t.staff_type)}${t.department?'・'+escTM(t.department):''}</span>`:''}
+              <span style="font-size:10px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:26%">${[(t.domains||[]).join('・'),(t.majors||[]).map(m=>MAJORS[m]||m).join('・')].filter(Boolean).join(' · ')||'—'}</span>
               ${(t.tags||[]).map(g=>`<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 6px;white-space:nowrap">${escTM(g)}</span>`).join('')}
               ${profBadgeHtml(t)}
               ${managerScopeNonEmpty(t.manage_scope)?`<span title="${escTM(scopeSummary(managerScopeToView(t.manage_scope)))}" style="font-size:10px;color:#fff;background:var(--accent);border-radius:2px;padding:0 6px;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis">负责人：${escTM(scopeSummary(managerScopeToView(t.manage_scope)))}</span>`:''}
-              <span style="font-size:10px;color:var(--text-3);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:30%">${perms.join(' · ')||'无权限'}</span>
+              <span title="${escTM(featTip)}" style="font-size:10px;color:var(--text-3);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:30%">${escTM(featShort)||'无权限'}</span>
               <span style="font-size:10px;color:var(--text-3)">${open?'▾':'▸'}</span>
             </div>
             ${open?`<div style="border-top:1px solid var(--border-light);background:var(--bg);padding:10px 12px">
@@ -1427,7 +1577,6 @@ function renderTeacherRows(){
               </div>
               <div style="display:flex;gap:4px">
                 <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openEditTeacher('${t.id}')">编辑</button>
-                ${isHubAdminUser()?`<button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openMgrEditor('${t.id}')">负责人与权限</button>`:''}
                 <button class="btn-ghost" onclick="event.stopPropagation();deleteTeacher('${t.id}')">✕ 删除</button>
               </div>
             </div>`:''}
@@ -1506,6 +1655,7 @@ function selectStaffType(el){
   const wrap=document.getElementById('new_teacher_dept_wrap');
   if(wrap) wrap.style.display = isRegular?'block':'none';
   if(!isRegular){ const d=document.getElementById('new_teacher_department'); if(d) d.value=''; }
+  tsecApply();
 }
 async function addTeacher(){
   const _isDom = (typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && !!viewLockDomain());
@@ -1554,7 +1704,8 @@ async function addTeacher(){
     let staff_type=document.querySelector('#new_teacher_stafftype .filter-chip.active')?.dataset.value||'';
     if(!staff_type && _isDom) staff_type='兼职';   // 领域端不区分正社员/兼职，默认兼职（仍记录，保证账号/出勤信息完整）
     const department=staff_type==='正社员'?(document.getElementById('new_teacher_department')?.value||''):'';
-    const t={id:`t-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,name,notes,majors,domains,managed_by,staff_type,department,permissions,tags};
+    const mg=tfMgrCollect(null,true); if(mg===null) return;
+    const t=Object.assign({id:`t-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,name,notes,majors,domains,managed_by,staff_type,department,permissions,tags},mg);
     const res=await sb('/rest/v1/teachers','POST',[t]);
     cachedTeachers.push(Array.isArray(res)?res[0]:t);
     document.getElementById('new_teacher_name').value='';
@@ -1562,8 +1713,8 @@ async function addTeacher(){
   if(document.getElementById('new_teacher_dept_wrap')) document.getElementById('new_teacher_dept_wrap').style.display='none';
   if(document.getElementById('new_teacher_department')) document.getElementById('new_teacher_department').value='';
     document.getElementById('new_teacher_notes').value='';
-  document.getElementById('new_teacher_tags').value=''; if(typeof senmonChipSync==='function') senmonChipSync();
-    document.getElementById('new_teacher_tags').value=''; if(typeof senmonChipSync==='function') senmonChipSync();
+  setTeacherTags([]);
+    setTeacherTags([]);
     document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
     document.getElementById('perm_booking').checked=false;
     document.getElementById('perm_slots').checked=false;
@@ -1577,6 +1728,7 @@ async function addTeacher(){
     {const _e=document.getElementById('perm_promo_pack'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_promo_pricing'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=false;}
+    tfFormReset();
     renderTeacherList();
   }catch(e){alert('添加失败：'+e.message)}
 }
@@ -1594,7 +1746,7 @@ function openEditTeacher(id){
   const _dept=document.getElementById('new_teacher_department');
   if(_dept) _dept.value=t.department||'';
   document.getElementById('new_teacher_notes').value=t.notes||'';
-  document.getElementById('new_teacher_tags').value=(t.tags||[]).join('、'); if(typeof senmonChipSync==='function') senmonChipSync();
+  setTeacherTags(t.tags||[]);
   document.querySelectorAll('#new_teacher_majors .filter-chip').forEach(c=>{c.classList.toggle('active',(t.majors||[]).includes(c.dataset.value))});
   // 回填隶属领域 chip
   const teacherManaged=t.managed_by||[];
@@ -1635,6 +1787,7 @@ function openEditTeacher(id){
   document.querySelectorAll('#perm_slot_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.slot_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_vip_content .filter-chip').forEach(c=>{c.classList.toggle('active',(p.vip_content||[]).includes(c.dataset.value))});
   hwaInit(p, t);
+  tsecCollapse(); tfMgrInit(t); tsecApply();
   const btn=document.getElementById('teacherFormBtn');
   if(btn){btn.textContent='保存修改';btn.setAttribute('onclick',`saveEditTeacher('${id}')`);}
   const cancelBtn=document.getElementById('teacherFormCancelBtn');
@@ -1679,10 +1832,12 @@ async function saveEditTeacher(id){
     staff_type=document.querySelector('#new_teacher_stafftype .filter-chip.active')?.dataset.value||'';
     department=staff_type==='正社员'?(document.getElementById('new_teacher_department')?.value||''):'';
   }
+  const mg=tfMgrCollect(cur,false); if(mg===null) return;
   try{
-    await sb(`/rest/v1/teachers?id=eq.${id}`,'PATCH',{name,notes,majors,domains,managed_by,staff_type,department,permissions,tags});
+    const body=Object.assign({name,notes,majors,domains,managed_by,staff_type,department,permissions,tags},mg);
+    await sb(`/rest/v1/teachers?id=eq.${id}`,'PATCH',body);
     const idx=cachedTeachers.findIndex(t=>t.id===id);
-    if(idx>=0) Object.assign(cachedTeachers[idx],{name,notes,majors,domains,managed_by,staff_type,department,permissions,tags});
+    if(idx>=0) Object.assign(cachedTeachers[idx],body);
     cancelEditTeacher();
     renderTeacherList();
   }catch(e){alert('保存失败：'+e.message)}
