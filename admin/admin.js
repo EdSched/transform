@@ -848,6 +848,8 @@ async function renderPage(){
         sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[])
       ]);
       renderStudentsPage(mc);
+    } else if(curPage==='tasks'){
+      await tkRenderTeamPage(mc);
     } else if(curPage==='courses'){
       if(typeof loadClasses==='function') await loadClasses(true);
       [cachedStudents,cachedCourses,cachedSessions]=await Promise.all([

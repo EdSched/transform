@@ -264,50 +264,82 @@ async function tkCalEdit(id) {
   } catch (e) { alert('保存失败：' + e.message); }
 }
 
-// ── 本月进度：按职能 → 人；自动任务的数字在 PR ② 接入检测模块后显示 ──
-async function tkRenderProg() {
-  const main = document.getElementById('tkMain');
+// ── 本月进度 / 团队进度：人 × 任务；自动任务显示当前数字（shared/task-checks.js），手动任务显示是否完成 ──
+let tkTeamPeriod = '', tkTeamRole = '', tkTeamQ = '', tkTeamRes = {}, tkTeamBox = null, tkTeamTeachers = [], tkTeamD = null;
+function tkRenderProg() { return tkTeamMount(document.getElementById('tkMain'), null); }
+// 管理端「📋 任务」页：自己范围内的老师（管理员 = 全部；负责人 / 领域链接 = 范围内）
+async function tkRenderTeamPage(mc) {
+  mc.innerHTML = '<div class="section-title" style="margin-bottom:12px">任务</div><div id="tkTeamHost"></div>';
+  await tkTeamMount(document.getElementById('tkTeamHost'), t => typeof teacherInView !== 'function' || teacherInView(t));
+}
+async function tkTeamMount(box, teacherFilter) {
+  tkTeamBox = box; tkTeamFilterFn = teacherFilter;
+  box.innerHTML = '<div style="padding:20px;color:var(--text-3);font-size:12px">加载中…</div>';
   const now = new Date();
   const periods = [-1, 0, 1].map(d => taskPeriod(new Date(now.getFullYear(), now.getMonth() + d, 1)));
-  if (!tkProgPeriod) tkProgPeriod = periods[1];
-  main.innerHTML = '<div style="padding:20px;color:var(--text-3);font-size:12px">加载中…</div>';
+  if (!tkTeamPeriod) tkTeamPeriod = periods[1];
   try {
-    const [teachers, done] = await Promise.all([
-      sbAll('/rest/v1/teachers?select=id,name,tags,permissions,domains,managed_by,majors,staff_type&order=name.asc'),
-      sbAll(`/rest/v1/task_done?period=eq.${tkProgPeriod}&select=*`),
+    const [teachers, tpls, done] = await Promise.all([
+      sbAll('/rest/v1/teachers?select=*&order=name.asc'),
+      sbAll('/rest/v1/task_templates?select=*&active=is.true&order=sort_order.asc'),
+      sbAll(`/rest/v1/task_done?period=eq.${tkTeamPeriod}&select=*`),
     ]);
-    tkProg = { teachers, done };
-  } catch (e) { main.innerHTML = `<div class="empty">加载失败：${tkE(e.message)}</div>`; return; }
-  const month = parseInt(tkProgPeriod.slice(5), 10);
-  const doneKey = new Set(tkProg.done.map(x => x.template_id + '|' + x.teacher_id));
-  const rows = tkProg.teachers.map(t => ({ t, tasks: taskApplicable(t, tkTpl, month), missing: taskMissingFeatures(t, tkTpl) }))
-    .filter(r => r.tasks.length || r.missing.length);
-  const section = (label, list) => !list.length ? '' : `<div style="margin-bottom:14px">
-    <div style="font-size:12px;font-weight:600;margin-bottom:6px">${tkE(label)} <span class="badge-count">${list.length}</span></div>
-    ${list.map(r => tkProgRow(r, doneKey)).join('')}</div>`;
-  const tagOf = k => TASK_ROLE_LABEL[k];
-  const used = new Set();
-  const byRole = TASK_ROLES.map(role => {
-    const list = rows.filter(r => (r.t.tags || []).includes(tagOf(role.key))); list.forEach(r => used.add(r.t.id));
-    return section(role.label, list);
-  }).join('');
-  const rest = section('只有功能任务（没有职能标签）', rows.filter(r => !used.has(r.t.id)));
-  main.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <select onchange="tkProgPeriod=this.value;tkRenderProg()" style="font-size:11px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">${periods.map(p => `<option value="${p}"${p === tkProgPeriod ? ' selected' : ''}>${p}</option>`).join('')}</select>
-      <span style="font-size:10px;color:var(--text-3)">自动任务的当前数字将在老师端「我的任务」上线后一起显示；这里先显示手动完成情况和缺少的功能</span></div>
-    ${byRole + rest || '<div class="empty" style="padding:40px">这个月没有分配到任何人的任务（给老师打职能标签，或开启对应功能后会出现）</div>'}`;
+    tkTeamTeachers = teacherFilter ? teachers.filter(teacherFilter) : teachers;
+    tkTeamTpl = tpls; tkTeamDone = done;
+  } catch (e) { box.innerHTML = `<div class="empty">加载失败：${tkE(e.message)}<br><span style="font-size:11px">（如果提示表不存在，请先执行 seed/task_management_tables.sql）</span></div>`; return; }
+  tkTeamD = taskDataNew(); tkTeamRes = {};
+  return tkTeamDraw(periods, true);
 }
-function tkProgRow(r, doneKey) {
-  const t = r.t;
+let tkTeamTpl = [], tkTeamDone = [];
+async function tkTeamDraw(periods, compute) {
+  const box = tkTeamBox; if (!box) return;
+  const month = parseInt(tkTeamPeriod.slice(5), 10);
+  if (compute) {
+    box.innerHTML = '<div style="padding:20px;color:var(--text-3);font-size:12px">检测中…（人多时稍慢）</div>';
+    const cand = tkTeamTeachers.filter(t => taskApplicable(t, tkTeamTpl, month).length || taskMissingFeatures(t, tkTeamTpl).length);
+    await Promise.all(cand.map(async t => { tkTeamRes[t.id] = await taskBuildList(tkTeamD, t, tkTeamTpl, month, tkTeamDone); }));
+  }
+  const roleTags = TASK_ROLES.map(r => r.label);
+  const q = tkTeamQ.trim();
+  let rows = tkTeamTeachers.filter(t => tkTeamRes[t.id] !== undefined || taskMissingFeatures(t, tkTeamTpl).length)
+    .filter(t => !tkTeamRole || (t.tags || []).includes(tkTeamRole)).filter(t => !q || (t.name || '').includes(q));
+  const sel = `font-size:11px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit`;
+  box.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <select onchange="tkTeamPeriod=this.value;tkTeamMount(tkTeamBox,tkTeamFilterFn)" style="${sel}">${periods.map(p => `<option value="${p}"${p === tkTeamPeriod ? ' selected' : ''}>${p}</option>`).join('')}</select>
+      <select onchange="tkTeamRole=this.value;tkTeamDraw(null,false)" style="${sel}"><option value="">全部职能</option>${roleTags.map(r => `<option value="${r}"${tkTeamRole === r ? ' selected' : ''}>${r}</option>`).join('')}</select>
+      <input placeholder="搜索老师…" value="${tkE(tkTeamQ)}" oninput="tkTeamQ=this.value;tkTeamDraw(null,false)" style="${sel};min-width:140px">
+      <span style="font-size:10px;color:var(--text-3)">自动任务显示当前数字（0 = 完成）；点任务看名单；✓ = 已处理</span>
+      <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="tkTeamMount(tkTeamBox,tkTeamFilterFn)">刷新</button></div>
+    ${rows.length ? rows.map(tkTeamRow).join('') : '<div class="empty" style="padding:40px">这个月没有分配到任何人的任务（给老师打职能标签，或开启对应功能后会出现）</div>'}`;
+}
+let tkTeamFilterFn = null;
+function tkTeamRow(t) {
+  const list = tkTeamRes[t.id] || [];
+  const nDone = list.filter(x => x.state === 'done').length;
   const chip = x => {
-    const ok = doneKey.has(x.tpl.id + '|' + t.id);
-    const st = ok ? 'background:var(--ok-bg,#e4f0e8);color:var(--ok,#2a9e6a)' : x.tpl.kind === 'auto' ? 'border:1px dashed var(--border);color:var(--text-3)' : 'border:1px solid var(--warn,#b8860b);color:var(--warn,#b8860b)';
-    return `<span title="${tkE(x.tpl.when_text || '')}" style="font-size:10px;border-radius:2px;padding:1px 7px;white-space:nowrap;${st}">${ok ? '✓ ' : ''}${tkE(x.tpl.title)}${x.via === 'feature' ? '（功能）' : ''}</span>`;
+    const done = x.state === 'done', auto = x.tpl.kind === 'auto' && x.tpl.check_key;
+    const st = done ? 'background:var(--ok-bg,#e4f0e8);color:var(--ok,#2a9e6a)' : 'border:1px solid var(--warn,#b8860b);color:var(--warn,#b8860b)';
+    const tail = auto && !x.na ? (x.count ? ` ${x.count}` : '') : '';
+    return `<span onclick="tkTeamShow('${t.id}','${x.tpl.id}')" title="${tkE(x.tpl.when_text || '')}" style="cursor:pointer;font-size:10px;border-radius:2px;padding:1px 7px;white-space:nowrap;${st}">${done ? '✓ ' : ''}${tkE(x.tpl.title)}${tail}${x.via === 'feature' ? '（功能）' : ''}</span>`;
   };
-  const miss = r.missing.map(m => `<span style="font-size:10px;color:var(--warn,#b8860b)">⚠ 需要开启：${tkE(m.tpl.requires_label || m.tpl.requires)}${m.spot ? ` <a href="javascript:void(0)" onclick="tkGoSetting('${t.id}','${m.spot[0]}','${m.spot[1] || ''}')" style="color:var(--accent)">[去设置]</a>` : ''}</span>`).join('<br>');
+  const miss = taskMissingFeatures(t, tkTeamTpl).map(m => `<span style="font-size:10px;color:var(--warn,#b8860b)">⚠ 需要开启：${tkE(m.tpl.requires_label || m.tpl.requires)}${m.spot && tkIsAdmin() ? ` <a href="javascript:void(0)" onclick="tkGoSetting('${t.id}','${m.spot[0]}','${m.spot[1] || ''}')" style="color:var(--accent)">[去设置]</a>` : ''}</span>`).join('<br>');
   return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:7px 10px;margin-bottom:5px;background:var(--surface)">
-    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="font-size:12px;font-weight:600;margin-right:4px">${tkE(t.name)}</span>${r.tasks.map(chip).join('')}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="font-size:12px;font-weight:600;margin-right:2px">${tkE(t.name)}</span>
+      ${(t.tags || []).filter(g => TASK_ROLES.some(r => r.label === g)).map(g => `<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 6px">${tkE(g)}</span>`).join('')}
+      <span style="font-size:10px;color:var(--text-3);margin-right:4px">${list.length ? `完成 ${nDone}/${list.length}` : ''}</span>${list.map(chip).join('')}</div>
     ${miss ? `<div style="margin-top:4px;line-height:1.7">${miss}</div>` : ''}</div>`;
+}
+function tkTeamShow(tid, tplId) {
+  const x = (tkTeamRes[tid] || []).find(y => y.tpl.id === tplId); if (!x) return;
+  const t = tkTeamTeachers.find(y => y.id === tid) || {};
+  let ov = document.getElementById('tkItemsModal');
+  if (!ov) { ov = document.createElement('div'); ov.className = 'modal-overlay'; ov.id = 'tkItemsModal'; ov.style.zIndex = '1000'; document.body.appendChild(ov); }
+  ov.classList.add('open');
+  ov.innerHTML = `<div class="modal" style="width:560px;max-height:85vh;overflow:auto">
+    <div class="modal-title">${tkE(x.tpl.title)}</div><div class="modal-sub">${tkE(t.name || '')}${x.tpl.when_text ? ' · ' + tkE(x.tpl.when_text) : ''}${x.tpl.detail ? '<br>' + tkE(x.tpl.detail) : ''}</div>
+    ${x.rec ? `<div style="font-size:11px;color:var(--ok,#2a9e6a);margin-bottom:6px">✓ 已处理 ${tkE(String(x.rec.done_at || '').slice(0, 10))}${x.rec.note ? '：' + tkE(x.rec.note) : ''}</div>` : ''}
+    ${x.tpl.kind === 'auto' && x.tpl.check_key ? (x.na ? '<div style="font-size:11px;color:var(--text-3)">系统里暂时没有对应数据</div>' : taskItemsHtml(x.items)) : '<div style="font-size:11px;color:var(--text-3)">手动任务：由老师自己在「我的任务」里点完成</div>'}
+    <div class="modal-actions"><button class="btn btn-outline" onclick="document.getElementById('tkItemsModal').classList.remove('open')">关闭</button></div></div>`;
 }
 // 「去设置」：打开这位老师的编辑页，展开对应区块、滚动并高亮那一项
 async function tkGoSetting(tid, sec, item) {
