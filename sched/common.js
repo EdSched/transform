@@ -82,8 +82,8 @@ function parseWeekdaysSched(s){
   const arr = String(s).split(/[\/、,，\s;；]+/).map(x=>{ x=x.trim(); return (x==='0'||x==='周0') ? 7 : WD_MAP[x]; }).filter(Boolean);
   return [...new Set(arr)].sort((a,b)=>a-b);
 }
-function weekdaysLabel(str){ // "2,4" -> "周二/周四"
-  return String(str||'').split(',').filter(Boolean).map(d=>WEEKDAYS[Number(d)]).join('/');
+function weekdaysLabel(str){ // "2,4" / "周二,周四" -> "周二/周四"
+  return parseWeekdaysSched(str).map(d=>WEEKDAYS[d]).join('/');
 }
 const KIND_LABEL = { course:'排课', vip:'VIP', temp:'临时使用', rental:'对外出租', meeting:'开会' };
 const KIND_CLASS = { course:'k-course', vip:'k-vip', temp:'k-temp', rental:'k-rental', meeting:'k-meeting' };
@@ -182,7 +182,7 @@ function schedulingReminders(courses, bookings){
 /* 推断课程"班级性质"：共通/线上/周末/下午/晚上/默认。用于课表分组显示 */
 function classKind(c){
   const name=(c.name||'');
-  const wds=(c.weekdays||'').split(',').map(Number).filter(x=>x);
+  const wds=parseWeekdaysSched(c.weekdays);
   const st=(c.start_time||'');
   if(c.course_type==='共通课' || /共通|進学指導|進学指导|高数|高數/.test(name)) return '共通课';
   if(c.mode==='线上') return '线上班';
