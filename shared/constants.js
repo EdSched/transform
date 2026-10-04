@@ -1592,10 +1592,25 @@ function subjectToMajorKey(subject) {
 // 介绍行所属领域：用 domain，为空时按 subject 对应专业所属领域补（只用于显示，不写库）
 function profileDomain(p) { return (p && p.domain) || MAJOR_DOMAIN[subjectToMajorKey(p && p.subject)] || ''; }
 // 老师需要填介绍的专业 key 列表（teachers.majors；社会人文组展开成成员专业，去重）
-function teacherProfileMajors(t) {
+// 全部负责专业（社会人文组展开成成员专业），不排除「不需要」的
+function teacherProfileMajorsAll(t) {
   const out = [];
   ((t && t.majors) || []).forEach(m => { (MAJOR_GROUPS[m] || [m]).forEach(k => { if (k && !out.includes(k)) out.push(k); }); });
   return out;
+}
+// 管理员 / 负责人在任务明细里设为「不需要」的专业（teachers.permissions.profile_skip_majors）：不要求这位老师填这些专业的讲师介绍
+function teacherProfileSkipped(t) {
+  const a = t && t.permissions && t.permissions.profile_skip_majors;
+  return Array.isArray(a) ? a : [];
+}
+// 要求填写讲师介绍的专业（提醒、待处理、「讲师介绍完善」任务、老师列表都用这个；只影响要不要求填，不影响看学生的权限）
+function teacherProfileMajors(t) {
+  const skip = teacherProfileSkipped(t);
+  return teacherProfileMajorsAll(t).filter(k => !skip.includes(k));
+}
+// 有负责专业，但全部被设为「不需要」：提醒和任务都不出现（和「还没有设置负责专业」区分开）
+function teacherProfileAllSkipped(t) {
+  return teacherProfileMajorsAll(t).length > 0 && teacherProfileMajors(t).length === 0;
 }
 // 逐个专业的完成情况：[{key,label,row,missing:[字段名],done}]；rows = 这位老师的全部介绍行
 function teacherProfileStatus(t, rows) {

@@ -2837,9 +2837,9 @@ async function checkTeacherProfile() {
     myProfiles = await sb(`/rest/v1/teacher_profiles?name=eq.${encodeURIComponent(teacherName)}&select=*&order=sort_order.asc,created_at.asc`) || [];
   } catch (e) { return; } // 表未建或网络问题时静默跳过
   const st = profStatusNow(), todo = st.filter(x => !x.done);
-  profPendingCount = st.length ? todo.length : 1;
+  profPendingCount = st.length ? todo.length : (teacherProfileAllSkipped(teacherData) ? 0 : 1);
   const box2 = document.getElementById('profileBanner'); if (!box2) return;
-  if (!st.length) {
+  if (!st.length && !teacherProfileAllSkipped(teacherData)) {
     box2.innerHTML = `<div style="background:var(--warn-bg,#f8f0d8);border:1px solid var(--warn,#b8860b);border-radius:4px;padding:10px 16px;margin-bottom:12px;font-size:12px;color:#6a5210">📋 讲师介绍：还没有设置负责专业，请联系管理员在老师管理里设置</div>`;
   } else if (todo.length) {
     const txt = todo.map(x => `${stEsc(x.label)}（${x.row ? '缺：' + x.missing.join('、') : '未填'}）`).join('、');
