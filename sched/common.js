@@ -449,6 +449,7 @@ const PERM_DEFS = [
   ['manage',          '账号与权限管理',  'admin.html'],           // 超级权限（分配UI里隐藏，仅admin）
 ];
 const PERM_LABEL = Object.fromEntries(PERM_DEFS.map(p=>[p[0],p[1]]));
+PERM_LABEL.course_audit = '课程审查';   // course_audit 只在 index.html 里判断、不进导航，这里只补显示名
 const ALL_PERMS  = PERM_DEFS.map(p=>p[0]);
 
 // 用 code 读取角色记录（含 perms）
