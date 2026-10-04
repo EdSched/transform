@@ -9,6 +9,7 @@
 - **一次改完。** 已经说清楚的需求不要反复确认；自己检查代码，不要让 Sensis 去跑诊断。
 - **改完必须自检：** 每个改过的 `.js` 都跑 `node --check <file>`；HTML 里的内联脚本也要确认没有语法错误。
 - **所有 SQL 由 Sensis 在 Supabase SQL Editor 手动执行。** Claude 只给出 SQL 文本（附回滚语句），不要尝试直连数据库。
+- **改了 js/css 就更新版本号：** `teacher/index.html`、`admin/index.html`、`student/index.html` 里所有本站 `<script src>` / `<link href>` 都带 `?v=日期`（如 `?v=20261004`）。改了这些文件，就把对应页面里的版本号换成新日期，否则手机（尤其微信内置浏览器）会一直用旧缓存文件。
 - **上线方式：** GitHub Pages 从 `main` 部署（edsched.github.io/transform/），CDN 约 10 分钟延迟，测试要用无痕窗口 + 强制刷新。
 
 ## 1. 最重要的一条：改之前先同步

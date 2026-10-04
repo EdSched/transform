@@ -21,7 +21,7 @@ function homeHeaderBtns() {
   if (managerScopeNonEmpty(teacherData.manage_scope) && !document.getElementById('mgrModeBtn')) {
     const a = document.createElement('a');
     a.id = 'mgrModeBtn'; a.href = '../admin/index.html?as=teacher'; a.textContent = '🛠 管理模式';
-    a.style.cssText = 'font-size:12px;color:#fff;background:var(--accent,#b8953a);border-radius:4px;padding:6px 12px;text-decoration:none;white-space:nowrap';
+    a.style.cssText = 'font-size:12px;color:#fff;background:var(--warn);border-radius:4px;padding:6px 12px;text-decoration:none;white-space:nowrap';
     box.appendChild(a);
   }
 }
@@ -109,7 +109,12 @@ function homeText(it) {
   if (it.card) { const c = HOME_RES_CARDS.find(([k]) => k === it.card); return [c ? c[1] : it.card, '资源管理 · 功能']; }
   return ['资源管理', '排课系统'];
 }
-const HOME_STRIPE = { student: '#9bb0a0', course: '#c9a27a', resource: '#b9a9c9', tab: '', sub: '' };
+// 卡片配色：按卡片 key 算固定序号取色（跟着卡片走，不跟位置走）
+const HOME_PALETTE = ['#647C88', '#83758D', '#738772', '#b9a9c9', '#b07a86', '#c9a27a', '#7f9bb5', '#9bb0a0'];
+function homeColorIdx(it) { let h = 0; const k = homeKey(it); for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0; return h % HOME_PALETTE.length; }
+function homeColors(items) {   // 相邻两张不同色：和前一张相同就顺延一个
+  const out = []; items.forEach((it, i) => { let n = homeColorIdx(it); if (i && out[i - 1] === HOME_PALETTE[n]) n = (n + 1) % HOME_PALETTE.length; out.push(HOME_PALETTE[n]); }); return out;
+}
 
 async function homeSave() {
   const payload = homeList.length ? homeList : [{ type: 'empty' }];
@@ -176,27 +181,28 @@ async function homeRender() {
     } catch (e) { ids.forEach(i => { homeStuInfo[i] = { name: '', major: '' }; }); }
     if (!document.getElementById('homeBox')) return;
   }
+  const colors = homeColors(items);
   const card = (it, i) => {
-    const gone = homeGone(it), [name, sub] = homeText(it), stripe = HOME_STRIPE[it.type] || '';
+    const gone = homeGone(it), [name, sub] = homeText(it), stripe = colors[i];
     const edit = homeEditing ? `<span style="position:absolute;top:2px;right:4px;display:flex;gap:2px" onclick="event.stopPropagation()">
         ${i > 0 ? `<span onclick="homeMove(${i},-1)" style="cursor:pointer;color:var(--text-3);padding:0 3px">←</span>` : ''}${i < items.length - 1 ? `<span onclick="homeMove(${i},1)" style="cursor:pointer;color:var(--text-3);padding:0 3px">→</span>` : ''}
         <span onclick="homeRemove(${i})" style="cursor:pointer;color:var(--danger);padding:0 3px">×</span></span>` : '';
-    return `<div ${gone || homeEditing ? '' : `onclick="homeOpen(${i})"`} style="position:relative;background:var(--surface);border:1px solid var(--border);${stripe ? `border-left:3px solid ${stripe};` : ''}border-radius:4px;padding:9px 12px;min-height:54px;${gone ? 'opacity:.55;' : (homeEditing ? '' : 'cursor:pointer;')}">
+    return `<div ${gone || homeEditing ? '' : `onclick="homeOpen(${i})"`} style="position:relative;background:linear-gradient(${stripe}14,${stripe}14),var(--surface);border:1px solid var(--border);border-left:3px solid ${stripe};border-radius:4px;padding:9px 12px;min-height:54px;${gone ? 'opacity:.55;' : (homeEditing ? '' : 'cursor:pointer;')}">
       <div style="font-size:12px;font-weight:600;padding-right:${homeEditing ? 44 : 0}px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${homeEsc(name)}</div>
       <div style="font-size:10px;color:var(--text-3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${gone ? '已不存在' : homeEsc(sub)}</div>${edit}</div>`;
   };
   const addCard = homeEditing ? `<div onclick="homeAddOpen=!homeAddOpen;homeRender()" style="border:1px dashed var(--border);border-radius:4px;padding:9px 12px;min-height:54px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;color:var(--text-3)">＋ 添加</div>` : '';
-  const chip = (on, label, fn) => `<span onclick="${on ? '' : fn}" style="display:inline-block;font-size:11px;padding:3px 10px;margin:0 6px 6px 0;border:1px solid ${on ? 'var(--accent)' : 'var(--border)'};border-radius:3px;${on ? 'background:var(--accent);color:#fff;cursor:default' : 'cursor:pointer;color:var(--text-2)'}">${homeEsc(label)}</span>`;
+  const chip = (on, label, fn, it) => { const cc = on && it ? (colors[items.findIndex(x => homeKey(x) === homeKey(it))] || 'var(--accent)') : 'var(--accent)'; return `<span onclick="${on ? '' : fn}" style="display:inline-block;font-size:11px;padding:3px 10px;margin:0 6px 6px 0;border:1px solid ${on ? cc : 'var(--border)'};border-radius:3px;${on ? `background:${cc};color:#fff;cursor:default` : 'cursor:pointer;color:var(--text-2)'}">${homeEsc(label)}</span>`; };
   let panel = '';
   if (homeEditing && homeAddOpen) {
     const tabs = teacherTabList.filter(t => t.id !== 'todo' && t.id !== 'resource');
-    const subRows = tabs.filter(t => HOME_SUBS[t.id]).map(t => `<div style="margin-top:6px"><span style="font-size:10px;color:var(--text-3);margin-right:6px">${homeEsc(homePlain(t.label))} 的分页</span>${HOME_SUBS[t.id].list().map(([k, l]) => chip(homeHas({ type: 'sub', tab: t.id, sub: k }), homePlain(l), `homeAddPick('sub','${homeJs(t.id)}','${homeJs(k)}')`)).join('')}</div>`).join('');
+    const subRows = tabs.filter(t => HOME_SUBS[t.id]).map(t => `<div style="margin-top:6px"><span style="font-size:10px;color:var(--text-3);margin-right:6px">${homeEsc(homePlain(t.label))} 的分页</span>${HOME_SUBS[t.id].list().map(([k, l]) => chip(homeHas({ type: 'sub', tab: t.id, sub: k }), homePlain(l), `homeAddPick('sub','${homeJs(t.id)}','${homeJs(k)}')`, { type: 'sub', tab: t.id, sub: k })).join('')}</div>`).join('');
     panel = `<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:4px;padding:10px 12px;margin-top:8px">
       <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">页面</div>
-      ${tabs.map(t => chip(homeHas({ type: 'tab', tab: t.id }), homePlain(t.label), `homeAddPick('tab','${homeJs(t.id)}')`)).join('')}
-      ${homeResourceOk() ? chip(homeHas({ type: 'resource' }), '资源管理', 'homeAddResource()') : ''}
+      ${tabs.map(t => chip(homeHas({ type: 'tab', tab: t.id }), homePlain(t.label), `homeAddPick('tab','${homeJs(t.id)}')`, { type: 'tab', tab: t.id })).join('')}
+      ${homeResourceOk() ? chip(homeHas({ type: 'resource' }), '资源管理', 'homeAddResource()', { type: 'resource' }) : ''}
       ${subRows}
-      ${homeResourceOk() ? `<div style="margin-top:6px"><span style="font-size:10px;color:var(--text-3);margin-right:6px">资源管理的功能</span>${HOME_RES_CARDS.filter(([k]) => homeResCardOk(k)).map(([k, l]) => chip(homeHas({ type: 'resource', card: k }), l, `homeAddResource('${k}')`)).join('')}</div>` : ''}
+      ${homeResourceOk() ? `<div style="margin-top:6px"><span style="font-size:10px;color:var(--text-3);margin-right:6px">资源管理的功能</span>${HOME_RES_CARDS.filter(([k]) => homeResCardOk(k)).map(([k, l]) => chip(homeHas({ type: 'resource', card: k }), l, `homeAddResource('${k}')`, { type: 'resource', card: k })).join('')}</div>` : ''}
       <div style="font-size:10px;color:var(--text-3);margin-top:8px">学生、课程请在学生详情 / 课表里点「加到首页」</div></div>`;
   }
   const head = `<div style="display:flex;align-items:center;margin-bottom:6px"><span style="font-size:11px;color:var(--text-3)">快捷入口${homeEditing ? `（${items.length}/${HOME_MAX}）` : ''}</span>
