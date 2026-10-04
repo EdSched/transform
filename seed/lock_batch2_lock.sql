@@ -18,6 +18,8 @@ begin
     join pg_proc p on p.oid = t.tgfoid
     where not t.tgisinternal
       and not p.prosecdef
+      -- 已人工确认：这两个函数对本批的表只有「读」(select ... from course_sessions)，写的是 sched_courses / sched_course_id_map（不在本批），读对所有人开放，不受影响
+      and p.proname not in ('sync_courses_to_sched', 'sync_new_course_to_sched')
       and p.prosrc ~* '(access_keys|admission_results|undergrad_results|salary_bookings|promo_content|course_schedule_shares|course_sessions|teacher_school_shares)'
   loop
     bad := bad || format(E'\n  表 %s 上的触发器函数 %s()', r.on_table, r.proname);
