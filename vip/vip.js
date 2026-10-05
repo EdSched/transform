@@ -609,6 +609,10 @@ function renderVipActiveBooking(b) {
         ⚠ 请准时进入课堂。如需调整请提前联系老师。<br>
         上课后30分钟内未联系且未上课，将自动扣除30分钟课时。
       </div>
+    </div>` : (b.self_booked ? `
+    <div style="background:var(--warn-bg,#fff8e1);border:1px solid var(--warn,#e6a817);border-radius:4px;padding:10px 12px;margin:10px 0">
+      <div style="font-size:12px;font-weight:600;color:var(--warn,#b45309);margin-bottom:4px">自主预约 · ${b.teacher_ok ? '老师已确认 ✓' : '等待老师确认'} · ${b.admin_review === 'approved' ? '教务已审核 ✓' : '等待教务审核'}</div>
+      <div style="font-size:11px;color:var(--text-muted);line-height:1.7">两项都通过后预约才算成立，通过后会显示${isOffline ? '教室号' : '腾讯会议链接'}。<br>如需调整请通过下方留言联系老师。</div>
     </div>` : `
     <div style="background:var(--warn-bg,#fff8e1);border:1px solid var(--warn,#e6a817);border-radius:4px;padding:10px 12px;margin:10px 0">
       <div style="font-size:12px;font-weight:600;color:var(--warn,#b45309);margin-bottom:4px">⏳ 等待老师确认</div>
@@ -616,7 +620,7 @@ function renderVipActiveBooking(b) {
         老师确认后将显示${isOffline ? '教室号' : '腾讯会议链接'}。<br>
         如需调整请通过下方留言联系老师。
       </div>
-    </div>`;
+    </div>`);
 
   return `<div class="card" style="border-color:${isConfirmed ? 'var(--ok,#2a9e6a)' : 'var(--accent)'}">
     <div class="card-title">当前预约</div>
@@ -683,10 +687,10 @@ function vipCancelledHtml() {
   const since = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
   const list = (vipBookings || []).filter(b => b.status === 'cancelled' && (b.slot_date || '') >= since);
   if (!list.length) return '';
-  return `<div class="card"><div class="card-title">已取消的预约</div>
+  return `<div class="card"><div class="card-title">已取消的预约</div>${list.some(b => b.self_booked) ? '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">被退回的自主预约，可以改好后重新填写</div>' : ''}
     ${list.map(b => `<div style="font-size:12px;padding:6px 0;border-bottom:1px dashed var(--border-light)">
       <span style="text-decoration:line-through;color:var(--text-muted)">${vipStuEsc(b.slot_date)} ${vipStuEsc(b.slot_time_range || '')}</span>
-      <span style="color:var(--danger);margin-left:6px">已取消${b.cancel_reason ? ' · ' + vipStuEsc(b.cancel_reason) : ''}</span>
+      <span style="color:var(--danger);margin-left:6px">${b.self_booked ? '已退回' : '已取消'}${b.cancel_reason ? ' · ' + vipStuEsc(b.cancel_reason) : ''}</span>
       ${b.cancelled_by ? `<span style="font-size:10px;color:var(--text-muted);margin-left:6px">${vipStuEsc(b.cancelled_by)}</span>` : ''}
     </div>`).join('')}</div>`;
 }
@@ -1004,7 +1008,7 @@ function vipSlotAreaHtml() {
     ${boxes.length ? `<div class="slot-grid">${boxes.join('')}</div>` : '<div class="no-slots">本月暂无可预约时间</div>'}`;
 }
 
-// VIP 预约区（活动预约 或 时间槽点选 + 历史课程）
+// VIP 预约区（活动预约 或 时间槽点选 / 自主填写 + 历史课程）
 function renderVipBookingSection() {
   const activeBooking = vipBookings.find(b => b.status === 'pending' || b.status === 'confirmed');
   const bookedSlotIds = new Set(vipBookings.filter(b => b.status !== 'cancelled').map(b => b.slot_id));
@@ -1013,6 +1017,9 @@ function renderVipBookingSection() {
   const byDate = {};
   availableSlots.forEach(s => { (byDate[s.date] = byDate[s.date] || []).push(s); });
   const dateKeys = Object.keys(byDate).sort();
+  // 默认方式：有开放时间槽 → 选时间槽；一个都没有 → 自主填写
+  if (!vipBookMode) vipBookMode = dateKeys.length ? 'slot' : 'self';
+  const modeBtn = (m, t) => `<button onclick="vipSetBookMode('${m}')" style="flex:1;font-size:12px;padding:8px 6px;border:1px solid ${vipBookMode === m ? 'var(--accent)' : 'var(--border)'};background:${vipBookMode === m ? 'var(--accent)' : 'var(--surface)'};color:${vipBookMode === m ? '#fff' : 'var(--text-secondary)'};border-radius:3px;cursor:pointer;font-family:inherit">${t}</button>`;
 
   return `
   ${activeBooking ? renderVipActiveBooking(activeBooking) : `
@@ -1022,7 +1029,8 @@ function renderVipBookingSection() {
       ? '<div class="no-slots">尚未分配指导老师，请联系管理员</div>'
       : vipRemainHours() <= 0
       ? '<div class="no-slots">VIP 课时已用完，暂时不能预约<br><span style="font-size:11px">如需继续上课，请联系顾问老师续课</span></div>'
-      : (dateKeys.length ? `
+      : `<div style="display:flex;gap:6px;margin-bottom:12px">${modeBtn('slot', '选老师开放的时间')}${modeBtn('self', '已和老师商量好，自己填写')}</div>
+      ${vipBookMode === 'self' ? vipSelfFormHtml(!dateKeys.length) : (dateKeys.length ? `
         <div id="vip_slot_area">${vipSlotAreaHtml()}</div>
         <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border-light)">
           <div class="sub-label" style="margin-bottom:6px">提交内容（可选，老师课前可参考）</div>
@@ -1031,7 +1039,7 @@ function renderVipBookingSection() {
           <input type="file" id="vipStudentFileUpload" accept=".doc,.docx,.pdf,image/*">
         </div>
         <button class="btn btn-primary btn-full" style="margin-top:14px" onclick="submitVipBooking()">提交预约申请 →</button>
-      ` : '<div class="no-slots">暂无可预约的时间，请稍后再来查看</div>')
+      ` : '<div class="no-slots">暂无可预约的时间，请稍后再来查看</div>')}`
     }
   </div>`}
   ${vipCancelledHtml()}
@@ -1039,6 +1047,102 @@ function renderVipBookingSection() {
     <div class="card-title">历史课程</div>
     ${renderVipHistory()}
   </div>`;
+}
+
+// ── 自主填写预约：和老师口头商量好时间地点后，学生自己填；老师确认 + 教务审核，两边都通过才算成立 ──
+let vipBookMode = null;                       // 'slot' | 'self'；null = 按有无开放时间槽自动选
+let vipSelf = { teacher: '', loc: '' };
+const VIP_SELF_LOCS = [['online', '线上'], ['offline_takadanobaba', '线下 · 高田马场'], ['offline_ichigaya', '线下 · 市谷']];
+function vipSetBookMode(m) { vipBookMode = m; vipSelectedSlotId = null; renderVipMain(); }
+function vipSelfChipHtml(key, val, label, on) {
+  return `<div data-vsk="${key}" data-vsv="${vipStuEsc(val)}" onclick="vipSelfPick('${key}',this.dataset.vsv)" style="padding:6px 12px;border:1px solid ${on ? 'var(--accent)' : 'var(--border)'};background:${on ? 'var(--accent)' : 'var(--surface)'};color:${on ? '#fff' : 'var(--text-primary)'};border-radius:2px;font-size:12px;cursor:pointer">${vipStuEsc(label)}</div>`;
+}
+function vipSelfPick(key, val) {
+  vipSelf[key] = val;
+  document.querySelectorAll(`[data-vsk="${key}"]`).forEach(el => {
+    const on = el.dataset.vsv === val;
+    el.style.background = on ? 'var(--accent)' : 'var(--surface)';
+    el.style.color = on ? '#fff' : 'var(--text-primary)';
+    el.style.borderColor = on ? 'var(--accent)' : 'var(--border)';
+  });
+}
+function vipSelfTimeOpts(ph) {
+  let h = `<option value="">${ph}</option>`;
+  for (let m = 7 * 60; m <= 23 * 60; m += 30) { const t = String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); h += `<option value="${t}">${t}</option>`; }
+  return h;
+}
+function vipSelfFormHtml(noSlots) {
+  const ts = vipStudent.vip_teachers || [];
+  if (ts.length === 1) vipSelf.teacher = ts[0];
+  if (!ts.includes(vipSelf.teacher)) vipSelf.teacher = '';
+  const today = new Date().toISOString().slice(0, 10);
+  const lab = t => `<div class="sub-label" style="margin:12px 0 6px">${t}</div>`;
+  const sel = 'width:100%;box-sizing:border-box;font-size:13px;padding:8px;border:1px solid var(--border);border-radius:3px;font-family:inherit;background:var(--surface)';
+  return `
+    ${noSlots ? '<div style="font-size:11px;color:var(--text-secondary);background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:8px 10px;margin-bottom:4px">老师还没开放时间？如果已经和老师商量好，可以直接填写</div>' : ''}
+    ${lab('指导老师')}
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${ts.map(t => vipSelfChipHtml('teacher', t, t + ' 老师', vipSelf.teacher === t)).join('')}</div>
+    ${lab('日期')}
+    <input type="date" id="vipSelfDate" min="${today}" style="${sel}">
+    ${lab('时间')}
+    <div style="display:grid;grid-template-columns:1fr 16px 1fr;gap:4px;align-items:center">
+      <select id="vipSelfStart" style="${sel}">${vipSelfTimeOpts('开始')}</select><div style="text-align:center;font-size:11px;color:var(--text-muted)">—</div><select id="vipSelfEnd" style="${sel}">${vipSelfTimeOpts('结束')}</select>
+    </div>
+    ${lab('上课方式')}
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${VIP_SELF_LOCS.map(([k, l]) => vipSelfChipHtml('loc', k, l, vipSelf.loc === k)).join('')}</div>
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border-light)">
+      <div class="sub-label" style="margin-bottom:6px">提交内容（可选，老师课前可参考）</div>
+      <textarea id="vipStudentContent" rows="4" placeholder="计划书草稿、需要讨论的问题等文字内容…" style="margin-bottom:8px"></textarea>
+      <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">或上传文件（Word / PDF / 图片，最大50MB）</div>
+      <input type="file" id="vipStudentFileUpload" accept=".doc,.docx,.pdf,image/*">
+    </div>
+    <div style="font-size:11px;color:var(--text-secondary);margin-top:12px">请先和老师商量好再填写。提交后需要老师确认和教务审核，通过后才算预约成功。</div>
+    <button id="vipSelfBtn" class="btn btn-primary btn-full" style="margin-top:10px" onclick="submitVipSelfBooking()">提交预约 →</button>`;
+}
+async function submitVipSelfBooking() {
+  const g = id => (document.getElementById(id) || {}).value || '';
+  const date = g('vipSelfDate'), st = g('vipSelfStart'), en = g('vipSelfEnd');
+  const today = new Date().toISOString().slice(0, 10);
+  if (!vipSelf.teacher) { alert('请选择指导老师'); return; }
+  if (!date) { alert('请选择日期'); return; }
+  if (date < today) { alert('日期不能早于今天'); return; }
+  if (!st || !en) { alert('请选择开始和结束时间'); return; }
+  if (st >= en) { alert('结束时间必须晚于开始时间'); return; }
+  if (!vipSelf.loc) { alert('请选择上课方式'); return; }
+  if (vipRemainHours() <= 0) { alert('您的VIP课时已用完，暂时不能预约。如需继续上课，请联系顾问老师续课'); return; }
+  const btn = document.getElementById('vipSelfBtn'); if (btn) btn.disabled = true;
+  try {
+    // 还有没结束的预约时不能再约（以数据库为准，避免页面数据过期）
+    const act = await sb(`/rest/v1/bookings?student_id=eq.${vipStudent.id}&type=eq.vip&status=in.(pending,confirmed)&select=id`).catch(() => null);
+    if ((act && act.length) || vipBookings.some(b => b.status === 'pending' || b.status === 'confirmed')) {
+      alert('您还有一个VIP预约没有结束，请在本次课程完成后再预约下一次');
+      if (btn) btn.disabled = false; return;
+    }
+    let studentFileUrl = null;
+    const file = (document.getElementById('vipStudentFileUpload') || {}).files?.[0];
+    if (file) {
+      try {
+        const ext = file.name.split('.').pop().toLowerCase();
+        studentFileUrl = await sbUpload('student-files', `${vipStudent.major || 'general'}/${Date.now()}.${ext}`, file);
+      } catch (e) { alert('文件上传失败：' + e.message + '\n您可以改为粘贴文字内容，或稍后重试'); if (btn) btn.disabled = false; return; }
+    }
+    const booking = {
+      id: Date.now().toString(), name: vipStudent.name, major: vipStudent.major,
+      type: 'vip', slot_id: null, slot_date: date, slot_time_range: `${st}\u2013${en}`,
+      assigned_teacher: vipSelf.teacher, location: vipSelf.loc, duration: null, status: 'pending', needs: '',
+      student_content: document.getElementById('vipStudentContent')?.value.trim() || null, student_file_url: studentFileUrl,
+      student_id: vipStudent.id,
+      self_booked: true, admin_review: 'pending',
+    };
+    await sb('/rest/v1/bookings', 'POST', booking);
+    vipSelf = { teacher: '', loc: '' }; vipBookMode = null;
+    await loadVipData();
+    renderVipMain();
+    alert('预约已提交，请等待老师确认和教务审核');
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    alert(/self_booked|admin_review|teacher_ok/.test(e.message || '') ? '系统还没开通「自主填写预约」，请联系管理员' : '提交失败：' + e.message);
+  }
 }
 
 // VIP 课程安排区（绑定的规划 + 课时进度）
