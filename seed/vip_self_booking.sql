@@ -38,15 +38,41 @@ alter table public.bookings alter column slot_id drop not null;
 -- 只管 anon / authenticated 角色；在 SQL Editor（postgres）里手动改不受影响。
 -- 管理员、管理模式的负责人老师可以改 admin_review*；老师（任何老师）可以改 teacher_ok；学生两者都不能改。
 -- 学生新增预约时：自主预约只能是 admin_review='pending'，普通预约必须是 null。
+
+-- 3a. 当前登录的是不是「负责人老师」（teachers.manage_scope 非空）。security definer：读 teachers 不受 RLS 影响
+create or replace function public.bookings_is_manager()
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from public.teachers t
+    where t.id = public.current_teacher_id()
+      and t.manage_scope is not null
+      and (
+        (case when jsonb_typeof(t.manage_scope->'domains')   = 'array' then jsonb_array_length(t.manage_scope->'domains')   else 0 end) +
+        (case when jsonb_typeof(t.manage_scope->'majors')    = 'array' then jsonb_array_length(t.manage_scope->'majors')    else 0 end) +
+        (case when jsonb_typeof(t.manage_scope->'class_ids') = 'array' then jsonb_array_length(t.manage_scope->'class_ids') else 0 end)
+      ) > 0
+  );
+$$;
+revoke all on function public.bookings_is_manager() from public;
+grant execute on function public.bookings_is_manager() to anon, authenticated;
+
+-- 3b. 触发器函数
 create or replace function public.bookings_guard_review_cols()
 returns trigger
 language plpgsql
 set search_path = public
 as $$
 declare
-  v_priv boolean := (public.is_admin() or public.is_teacher_manager());
-  v_teacher boolean := (public.current_teacher_id() is not null);
+  v_priv boolean := false;
+  v_teacher boolean := false;
 begin
+  v_priv := coalesce(public.is_admin(), false) or coalesce(public.bookings_is_manager(), false);
+  v_teacher := (public.current_teacher_id() is not null);
   if current_user in ('anon', 'authenticated') and not v_priv then
     if tg_op = 'INSERT' then
       if new.admin_review is distinct from (case when new.self_booked then 'pending' else null end)
@@ -86,6 +112,7 @@ create trigger bookings_guard_review_cols
 -- ============================================================
 -- drop trigger if exists bookings_guard_review_cols on public.bookings;
 -- drop function if exists public.bookings_guard_review_cols();
+-- drop function if exists public.bookings_is_manager();
 -- alter table public.bookings drop column if exists teacher_ok;
 -- alter table public.bookings drop column if exists admin_review_note;
 -- alter table public.bookings drop column if exists admin_review_at;
