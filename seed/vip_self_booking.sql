@@ -36,7 +36,7 @@ alter table public.bookings alter column slot_id drop not null;
 
 -- ── 3. 防止学生自己改审核状态 ──
 -- 只管 anon / authenticated 角色；在 SQL Editor（postgres）里手动改不受影响。
--- 管理员、管理模式的负责人老师可以改 admin_review*；老师（任何老师）可以改 teacher_ok；学生两者都不能改。
+-- 管理员、管理模式的负责人老师、领域访问链接可以改 admin_review*；老师（任何老师）可以改 teacher_ok；学生两者都不能改。
 -- 学生新增预约时：自主预约只能是 admin_review='pending'，普通预约必须是 null。
 
 -- 3a. 当前登录的是不是「负责人老师」（teachers.manage_scope 非空）。security definer：读 teachers 不受 RLS 影响
@@ -69,9 +69,15 @@ set search_path = public
 as $$
 declare
   v_priv boolean := false;
+  v_key boolean := false;
   v_teacher boolean := false;
 begin
   v_priv := coalesce(public.is_admin(), false) or coalesce(public.bookings_is_manager(), false);
+  -- 领域访问链接（admin/?k=...）登录的账号也算教务（is_domain_key() 在库里没有时跳过，不报错）
+  if not v_priv and to_regprocedure('public.is_domain_key()') is not null then
+    execute 'select public.is_domain_key()' into v_key;
+    v_priv := coalesce(v_key, false);
+  end if;
   v_teacher := (public.current_teacher_id() is not null);
   if current_user in ('anon', 'authenticated') and not v_priv then
     if tg_op = 'INSERT' then
