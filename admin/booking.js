@@ -172,12 +172,19 @@ async function bkSelfApproveDo(id,room){
   let schedId=null;
   if(room){
     const tp=bkvTimeParts(b.slot_time_range);
+    const rec={
+      room_id:room.id,kind:'vip',title:'VIP·'+((typeof majorLabel==='function'&&majorLabel(bkRealMajor(b)))||b.name),
+      user_name:b.assigned_teacher||'',student_name:b.name,recurrence:'once',weekday:bkvWeekday(b.slot_date),booking_date:b.slot_date,
+      start_time:tp[0],end_time:tp[1],uses_meeting:false,meeting_account_id:null,show_title:false,
+      status:'confirmed',reviewed_at:now,created_by:who,note:'学生自主预约·教务安排'};
     try{
-      const ins=await sb('/rest/v1/sched_bookings','POST',{
-        room_id:room.id,kind:'vip',title:'VIP·'+((typeof majorLabel==='function'&&majorLabel(bkRealMajor(b)))||b.name),
-        user_name:b.assigned_teacher||'',student_name:b.name,recurrence:'once',weekday:bkvWeekday(b.slot_date),booking_date:b.slot_date,
-        start_time:tp[0],end_time:tp[1],uses_meeting:false,meeting_account_id:null,show_title:false,
-        status:'confirmed',reviewed_at:now,created_by:who,note:'学生自主预约·教务安排'});
+      let ins;
+      try{ ins=await sb('/rest/v1/sched_bookings','POST',rec); }
+      catch(e1){
+        // 这个账号没有权限直接写成「已确认」时，退回成「待审批」（和老师端 VIP 预约一样，之后在排课系统「预约批准」里通过）
+        if(!/42501|row-level security/i.test(e1.message||'')) throw e1;
+        ins=await sb('/rest/v1/sched_bookings','POST',Object.assign({},rec,{status:'pending',reviewed_at:null}));
+      }
       schedId=ins[0].id;
     }catch(e){ alert('教室预约失败，未通过：'+bkvErr(e)); return false; }
   }
