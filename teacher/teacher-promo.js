@@ -17,6 +17,8 @@ let prBlockOpen = {};   // 宣传内容块的展开状态 id → true/false（�
 let prBlockLimit = 30;  // 内容块一次显示的条数
 let prLangIds = [];         // 课程表里额外加入的语言课（给某个咨询者个人搭配，切换专业时保留）
 let prLang = { open: false, kind: 'nihongo', period: '', campus: '' };   // 语言课选择面板状态；period ''=跟随上面课程表的期数
+let prOtherIds = [];        // 课程表里额外加入的同领域其他专业课（切换到同领域专业时保留，换领域清空）
+let prOther = { open: false, major: '', period: '', campus: '' };   // 其他专业课选择面板状态；period ''=跟随上面课程表的期数
 let prSchedMode = 'next';   // 课程表用哪一期：next 下一期（默认，学生报名后上的课）| cur 当期 | share 已发布的学生课表
 
 // 当期 / 下一期（按月份：1-3月=1月期，4-6月=4月期，7-9月=7月期，10-12月=10月期）
@@ -157,6 +159,72 @@ function prLangPanelHtml() {
   </div>`;
 }
 
+// ── 其他专业课（只读，同领域，合并进同一张课程表；用法同语言课）──
+function prOtherMajors() {
+  const dom = prCurDomain();
+  const all = typeof allMajorKeys === 'function' ? allMajorKeys() : Object.keys(MAJORS);
+  return all.filter(k => k !== prMajor && MAJOR_DOMAIN[k] === dom && k !== 'shakai_group' && !(prMajor === 'shakai_group' && SHAKAI_GROUP.includes(k)));
+}
+function prOtherMajorOf(c) {
+  const ms = (Array.isArray(c.major) ? c.major : [c.major]).filter(Boolean);
+  const list = prOtherMajors();
+  return ms.find(m => list.includes(m)) || ms.find(m => m !== prMajor) || ms[0] || '';
+}
+function prOtherPeriodKey() {
+  const k = prPeriodKeys();
+  return prOther.period === 'cur' ? k.cur : prOther.period === 'next' ? k.next : (prSchedMode === 'cur' ? k.cur : k.next);
+}
+function prOtherPeriodVal() { return prOther.period || (prSchedMode === 'cur' ? 'cur' : 'next'); }
+function prOtherCourses() {
+  if (!prOther.major) return [];
+  const p = prOtherPeriodKey();
+  return (prCourses || []).filter(c => !String(c.course_type || '').includes('VIP') && !prLangKind(c)
+    && (Array.isArray(c.major) ? c.major : [c.major]).includes(prOther.major)
+    && c.first_session_date && c.first_session_date.startsWith(String(p.year)) && effectivePeriod(c) === p.name)
+    .sort((a, b) => (a.first_session_date || '').localeCompare(b.first_session_date || ''));
+}
+function prOtherSet(k, v) { prOther.limit = 30; prOther[k] = v; if (k === 'major' || k === 'period') prOther.campus = ''; prRenderBody(); }
+function prOtherToggle(id) {
+  const i = prOtherIds.indexOf(id);
+  if (i >= 0) prOtherIds.splice(i, 1); else prOtherIds.push(id);
+  prLangRefresh();
+}
+function prOtherClear() { prOtherIds = []; prLangRefresh(); }
+function prOtherPanelHtml() {
+  const k = prPeriodKeys();
+  const chip = (on, oc, t) => `<div class="filter-chip ${on ? 'active' : ''}" onclick="${oc}" style="padding:3px 10px;font-size:10px">${prEsc(t)}</div>`;
+  const majors = prOtherMajors();
+  const pool = prOtherCourses();
+  const campuses = [...new Set(pool.map(c => c.campus || '').filter(Boolean))];
+  const list = pool.filter(c => !prOther.campus || (c.campus || '') === prOther.campus);
+  const pv = prOtherPeriodVal();
+  const n = prOtherIds.length;
+  const lim = prOther.limit || 30;
+  const row = c => {
+    const on = prOtherIds.includes(c.id);
+    return `<div onclick="prOtherToggle('${prEsc(c.id)}')" style="cursor:pointer;padding:6px 10px;border:1px solid ${on ? 'var(--accent)' : 'var(--border)'};border-radius:3px;margin-bottom:4px;font-size:11px;background:${on ? 'var(--accent-bg,#f5ede3)' : 'var(--surface)'};color:var(--text-2)">
+      <span style="font-weight:600;color:var(--text-1,#1a1814)">${prEsc(c.name || '')}</span> · ${prEsc(prPubTeacher(c.teacher))} · ${prEsc(c.weekdays || '')} ${prEsc(c.time_range || '')}${c.campus ? ' · ' + prEsc(c.campus) : ''}</div>`;
+  };
+  const empty = !prOther.major ? '先选一个专业' : '该期没有符合条件的课程';
+  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:3px;margin-bottom:12px">
+    <div onclick="prOther.open=!prOther.open;prRenderBody()" style="display:flex;align-items:center;gap:10px;padding:8px 12px;cursor:pointer;user-select:none">
+      <span style="font-size:11px;font-weight:600;color:var(--accent)">＋ 加入其他专业课</span>
+      <span style="font-size:10px;color:var(--text-3)">${n ? `已选 ${n} 门` : '把同领域其他专业的课放进来对比（只读，不影响课程数据）'}</span>
+      <span style="font-size:10px;color:var(--text-3);margin-left:auto">${prOther.open ? '▾ 收起' : '▸ 展开'}</span>
+    </div>
+    ${prOther.open ? `<div style="border-top:1px solid var(--border-light);padding:10px 12px">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px"><span style="font-size:10px;color:var(--text-3)">专业：</span>
+        ${chipFold(majors.map(m => ({ on: prOther.major === m, html: chip(prOther.major === m, `prOtherSet('major','${prEsc(m)}')`, prMajorName(m)) }))) || '<span style="font-size:10px;color:var(--text-3)">该领域没有其他专业</span>'}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px"><span style="font-size:10px;color:var(--text-3)">期数：</span>
+        ${chip(pv === 'next', `prOtherSet('period','next')`, `下一期（${k.next.label}）`)}${chip(pv === 'cur', `prOtherSet('period','cur')`, `当期（${k.cur.label}）`)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px"><span style="font-size:10px;color:var(--text-3)">校区：</span>
+        ${chip(!prOther.campus, `prOtherSet('campus','')`, '全部')}${chipFold(campuses.map(c => ({ on: prOther.campus === c, html: chip(prOther.campus === c, `prOtherSet('campus','${prEsc(c)}')`, c) })))}</div>
+      ${list.length ? list.slice(0, lim).map(row).join('') + (list.length > lim ? `<div onclick="prOther.limit=${lim}+30;prRenderBody()" style="cursor:pointer;text-align:center;padding:7px;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:3px">显示更多（还有 ${list.length - lim} 项）</div>` : '') : `<div style="font-size:11px;color:var(--text-3);padding:8px 0">${empty}</div>`}
+      ${n ? `<div style="margin-top:6px"><button onclick="prOtherClear()" style="font-size:10px;background:var(--surface);border:1px solid var(--border);color:var(--text-2);border-radius:3px;padding:3px 12px;cursor:pointer;font-family:inherit">清空其他专业课（已选 ${n} 门）</button></div>` : ''}
+    </div>` : ''}
+  </div>`;
+}
+
 // ── 宣传视频（表 promo_videos）：老师端播放 + 扫码观看二维码（宣传资料里只放二维码）──
 // 二维码内容 = 宣传页链接 ?major=<专业>&v=<kind>，扫码后打开宣传页并定位到对应视频；以后视频链接改了，只在管理端改，已印出去的二维码不会失效
 const PV_BASE = 'https://edsched.github.io/transform/promo/index.html';
@@ -222,7 +290,8 @@ function prSchedSummary() {
   const base = prSchedMode === 'cur' ? k.cur.label : prSchedMode === 'share' ? '已发布的学生课表' : k.next.label;
   const by = {};
   Object.values((prData && prData.langOf) || {}).forEach(l => { by[l] = (by[l] || 0) + 1; });
-  return [base].concat(Object.entries(by).map(([l, n]) => `+${l} ${n} 门`)).join(' · ');
+  const on = Object.keys((prData && prData.otherOf) || {}).length;
+  return [base].concat(Object.entries(by).map(([l, n]) => `+${l} ${n} 门`)).concat(on ? [`+其他专业 ${on} 门`] : []).join(' · ');
 }
 function prSetSchedMode(v) { prSchedMode = v; renderTeacherPromo(document.getElementById('mainContent')); }
 
@@ -296,6 +365,14 @@ async function prFetchMajor(major, mode) {
     const base = data.share || { title: '课程表', course_ids: [] };
     data.share = Object.assign({}, base, { course_ids: [...new Set([...(base.course_ids || []), ...langIds])] });
   }
+  // 已选的其他专业课（同领域）并入同一张课程表
+  const otherIds = (prOtherIds || []).filter(id => (prCourses || []).some(c => c.id === id));
+  data.otherOf = {};
+  otherIds.forEach(id => { data.otherOf[id] = prMajorName(prOtherMajorOf((prCourses || []).find(c => c.id === id))); });
+  if (otherIds.length) {
+    const base = data.share || { title: '课程表', course_ids: [] };
+    data.share = Object.assign({}, base, { course_ids: [...new Set([...(base.course_ids || []), ...otherIds])] });
+  }
   // 拉课表课次
   if (data.share && (data.share.course_ids || []).length) {
     const ids = data.share.course_ids;
@@ -364,6 +441,8 @@ function prRenderShell() {
 }
 
 function prSetMajor(m) {
+  if (prMajorDomain(m) !== prMajorDomain(prMajor)) { prOtherIds = []; prOther.major = ''; prOther.campus = ''; }   // 其他专业课不能跨领域
+  else if (prOther.major === m) prOther.major = '';
   prMajor = m;
   prExpanded = null; prBlockLimit = 30; prVideoOpen = false;
   renderTeacherPromo(document.getElementById('mainContent'));
@@ -377,7 +456,7 @@ function prBodyHtml() {
     if (!list.length) return '<div class="empty" style="padding:30px">该领域暂无通用宣传内容（admin 可在「宣传管理 → 通用宣传」中录入）</div>';
     return `<div style="font-size:10px;color:var(--text-3);margin-bottom:8px">${prEsc(prCommonDomain)} 通用宣传共 ${list.length} 块；要放进资料请到「📦 宣传资料整合」选择「关于唯新」</div>` + prBlocksHtml(list);
   }
-  if (prSection === 'schedule') return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:10px;color:var(--text-3)">课程表期数：</span>${prSchedModeSelect('prSetSchedMode(this.value)')}</div>` + prLangPanelHtml() + prScheduleHtml();
+  if (prSection === 'schedule') return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:10px;color:var(--text-3)">课程表期数：</span>${prSchedModeSelect('prSetSchedMode(this.value)')}</div>` + prLangPanelHtml() + prOtherPanelHtml() + prScheduleHtml();
   const list = (prData.list || []).filter(p => p.section === prSection);
   const vids = prSection === 'major_intro' ? prVideosHtml(prData.videos, prMajor) : '';
   if (!list.length) return '<div class="empty" style="padding:30px">该板块暂无内容（admin 可在「宣传管理」中录入）</div>' + vids;
@@ -433,7 +512,7 @@ function prScheduleHtml(data, forClient) {
   const byCourse = {};
   sessions.forEach(s => { if (!byCourse[s.course_id]) byCourse[s.course_id] = []; byCourse[s.course_id].push(s); });
   const scs = Object.entries(byCourse)
-    .map(([id, l]) => ({ id, name: l[0].course_name || '', first: l[0].session_date || '', lang: (data.langOf || {})[id] || '' }))
+    .map(([id, l]) => ({ id, name: l[0].course_name || '', first: l[0].session_date || '', lang: (data.langOf || {})[id] || '', other: (data.otherOf || {})[id] || '' }))
     .sort((a, b) => a.first.localeCompare(b.first));
   let ci = 0;   // 语言课用固定的语言色；其余课依次取 PR_COLORS
   scs.forEach(c => { c.color = c.lang ? (PR_LANG_COLORS[c.lang === '英语' ? 'eigo' : 'nihongo']) : PR_COLORS[ci++ % PR_COLORS.length]; });
@@ -441,7 +520,7 @@ function prScheduleHtml(data, forClient) {
 
   // 图例：色块 + 课程名，一行排开（放不下自动换行）
   const legend = `<div style="display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #e2ded6">
-    ${scs.map(c => `<span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#5a5650"><i style="display:inline-block;width:12px;height:12px;border-radius:2px;background:${c.color[1]};border:1px solid ${c.color[0]}"></i>${prEsc(c.name)}${c.lang ? `<small style="font-size:9px;color:${c.color[0]};border:1px solid ${c.color[0]};border-radius:2px;padding:0 4px">${c.lang}</small>` : ''}</span>`).join('')}
+    ${scs.map(c => `<span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:#5a5650"><i style="display:inline-block;width:12px;height:12px;border-radius:2px;background:${c.color[1]};border:1px solid ${c.color[0]}"></i>${prEsc(c.name)}${c.other ? `<small style="font-size:9px;color:#9a9590">（${prEsc(c.other)}）</small>` : ''}${c.lang ? `<small style="font-size:9px;color:${c.color[0]};border:1px solid ${c.color[0]};border-radius:2px;padding:0 4px">${c.lang}</small>` : ''}</span>`).join('')}
   </div>`;
 
   // 月历（参照 sched/timetable.html 的 buildMonth）：每月一块，固定 7 列（周一～周日）
