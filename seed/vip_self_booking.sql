@@ -44,9 +44,17 @@ language plpgsql
 set search_path = public
 as $$
 declare
-  v_priv boolean := (public.is_admin() or public.is_teacher_manager());
-  v_teacher boolean := (public.current_teacher_id() is not null);
+  v_priv boolean := false;
+  v_mgr boolean := false;
+  v_teacher boolean := false;
 begin
+  v_priv := coalesce(public.is_admin(), false);
+  -- is_teacher_manager()（整合第 1 步）还没建时跳过，不报错
+  if not v_priv and to_regprocedure('public.is_teacher_manager()') is not null then
+    execute 'select public.is_teacher_manager()' into v_mgr;
+    v_priv := coalesce(v_mgr, false);
+  end if;
+  v_teacher := (public.current_teacher_id() is not null);
   if current_user in ('anon', 'authenticated') and not v_priv then
     if tg_op = 'INSERT' then
       if new.admin_review is distinct from (case when new.self_booked then 'pending' else null end)
