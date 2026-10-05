@@ -152,7 +152,7 @@ function renderTeacherVipFrameworks(mc) {
   const fwCount = (hasPlans ? teacherVipPlans.length : 0) + (hasFw ? teacherVipFrameworks.length : 0);
   const tab = (id, label, n) => `<button onclick="setVmTab('${id}')" style="font-size:12px;padding:7px 18px;border:none;border-bottom:2px solid ${vmTab === id ? 'var(--accent,#1a1814)' : 'transparent'};background:none;cursor:pointer;font-family:inherit;color:${vmTab === id ? 'var(--text-1,#1a1814)' : 'var(--text-3)'};font-weight:${vmTab === id ? '600' : '400'}">${label}${n ? ` <span style="font-size:10px;color:#a33">${n}</span>` : ''}</button>`;
 
-  const pendingVipBk = (typeof cachedTeacherBookings !== 'undefined') ? cachedTeacherBookings.filter(b => b.type === 'vip' && b.status === 'pending').length : 0;
+  const pendingVipBk = (typeof cachedTeacherBookings !== 'undefined') ? cachedTeacherBookings.filter(b => b.type === 'vip' && vipNeedTeacherOk(b)).length : 0;
   let body;
   if (vmTab === 'students') body = mineBody;
   else if (vmTab === 'framework') body = fwSection;
