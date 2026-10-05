@@ -598,7 +598,7 @@ function renderVipActiveBooking(b) {
   // 上课信息块（确认后显示）
   const confirmedInfo = isConfirmed ? `
     <div style="background:var(--ok-bg,#e4f5ee);border:1px solid var(--ok,#2a9e6a);border-radius:4px;padding:10px 12px;margin:10px 0">
-      <div style="font-size:12px;font-weight:600;color:var(--ok,#2a9e6a);margin-bottom:6px">✅ 老师已确认，请按时上课</div>
+      <div style="font-size:12px;font-weight:600;color:var(--ok,#2a9e6a);margin-bottom:6px">${b.self_booked ? '✅ 教务已审批，请按时上课' + (b.teacher_ok ? '（老师已确认）' : '') : '✅ 老师已确认，请按时上课'}</div>
       <div style="font-size:12px;line-height:2">
         <div>📅 ${b.slot_date} ${b.slot_time_range || ''}</div>
         <div>👤 ${b.assigned_teacher || ''} 老师</div>
@@ -611,8 +611,8 @@ function renderVipActiveBooking(b) {
       </div>
     </div>` : (b.self_booked ? `
     <div style="background:var(--warn-bg,#fff8e1);border:1px solid var(--warn,#e6a817);border-radius:4px;padding:10px 12px;margin:10px 0">
-      <div style="font-size:12px;font-weight:600;color:var(--warn,#b45309);margin-bottom:4px">自主预约 · ${b.teacher_ok ? '老师已确认 ✓' : '等待老师确认'} · ${b.admin_review === 'approved' ? '教务已审核 ✓' : '等待教务审核'}</div>
-      <div style="font-size:11px;color:var(--text-muted);line-height:1.7">两项都通过后预约才算成立，通过后会显示${isOffline ? '教室号' : '腾讯会议链接'}。<br>如需调整请通过下方留言联系老师。</div>
+      <div style="font-size:12px;font-weight:600;color:var(--warn,#b45309);margin-bottom:4px">自主预约 · 等待教务审核 · ${b.teacher_ok ? '老师已确认 ✓' : '等待老师确认'}</div>
+      <div style="font-size:11px;color:var(--text-muted);line-height:1.7">教务审核通过后预约即成立，可以正常上课${isOffline ? '，教室由教务安排' : ''}。<br>如需调整请通过下方留言联系老师。</div>
     </div>` : `
     <div style="background:var(--warn-bg,#fff8e1);border:1px solid var(--warn,#e6a817);border-radius:4px;padding:10px 12px;margin:10px 0">
       <div style="font-size:12px;font-weight:600;color:var(--warn,#b45309);margin-bottom:4px">⏳ 等待老师确认</div>
