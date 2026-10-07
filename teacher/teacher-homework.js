@@ -328,6 +328,79 @@ function thwRenderMain() {
   if (box) box.innerHTML = thwMainHtml();
 }
 
+// ── 照片旋转：im.rotate = 0/90/180/270，存在 homework_submissions.answers 的图片对象里 ──
+const thwRotNorm = r => (((parseInt(r) || 0) % 360) + 360) % 360;
+function thwRotImg(subId, ai, i, im, forPrint, imgStyle) {
+  const rot = thwRotNorm(im.rotate), side = rot === 90 || rot === 270;
+  const id = `thwimg_${subId}_${ai}_${i}`;
+  const btn = (d, t) => `<span onclick="thwRotate('${subId}',${ai},${i},${d})" style="cursor:pointer;background:rgba(0,0,0,.55);color:#fff;border-radius:3px;padding:1px 7px;font-size:13px;line-height:1.5;user-select:none">${t}</span>`;
+  const ctl = forPrint ? '' : `<div style="position:absolute;top:10px;right:6px;z-index:2;display:flex;gap:4px">${btn(-90, '↺')}${btn(90, '↻')}</div>`;
+  const wrap = side
+    ? `display:flex;align-items:center;justify-content:center;width:100%;${forPrint ? 'height:440px' : ''}`
+    : 'display:inline-block;max-width:100%';
+  return `<div id="${id}" data-rot="${rot}" style="position:relative;${wrap}">${ctl}<img src="${thwEsc(im.url)}" ${forPrint ? 'width="440"' : `onload="thwFitRot('${id}')"`} style="${imgStyle}${rot ? `;transform:rotate(${rot}deg)` : ''}"></div>`;
+}
+// 横向时外框高度 = 图片显示宽度，避免和下面的内容重叠
+function thwFitRot(id) {
+  const w = document.getElementById(id); if (!w) return;
+  const img = w.querySelector('img'), rot = parseInt(w.dataset.rot) || 0;
+  w.style.height = (rot === 90 || rot === 270) ? (img.offsetWidth + 'px') : '';
+}
+const thwRotTimers = {};
+function thwRotate(subId, ai, i, d) {
+  const sub = (thwSubs[thwOpenSession] || []).find(x => x.id === subId);
+  const im = sub && sub.answers && sub.answers[ai] && (sub.answers[ai].images || [])[i];
+  if (!im) return;
+  im.rotate = thwRotNorm((im.rotate || 0) + d);
+  const w = document.getElementById(`thwimg_${subId}_${ai}_${i}`);
+  if (w) {
+    const side = im.rotate === 90 || im.rotate === 270;
+    w.dataset.rot = im.rotate;
+    w.style.display = side ? 'flex' : 'inline-block';
+    w.style.alignItems = w.style.justifyContent = side ? 'center' : '';
+    w.style.width = side ? '100%' : '';
+    w.querySelector('img').style.transform = im.rotate ? `rotate(${im.rotate}deg)` : '';
+    thwFitRot(w.id);
+  }
+  // 稍等一下再保存（连点几次只存一次）；保存失败只在本次预览里生效，不打扰老师
+  clearTimeout(thwRotTimers[subId]);
+  thwRotTimers[subId] = setTimeout(() => { sb(`/rest/v1/homework_submissions?id=eq.${subId}`, 'PATCH', { answers: sub.answers }).catch(() => {}); }, 600);
+}
+// Word 不认 CSS 旋转：只把转过的图片用 canvas 转好（失败 / 跨域读不出就退回原图）
+function thwRotateDataUrl(url, rot) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const sc = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.round(img.naturalWidth * sc), h = Math.round(img.naturalHeight * sc);
+        const side = rot === 90 || rot === 270;
+        const cv = document.createElement('canvas');
+        cv.width = side ? h : w; cv.height = side ? w : h;
+        const ctx = cv.getContext('2d');
+        ctx.translate(cv.width / 2, cv.height / 2);
+        ctx.rotate(rot * Math.PI / 180);
+        ctx.drawImage(img, -w / 2, -h / 2, w, h);
+        resolve(cv.toDataURL('image/jpeg', 0.85));
+      } catch (e) { resolve(null); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+async function thwRotatedMap(subs) {
+  const map = {}, jobs = [];
+  subs.forEach(sub => (sub.answers || []).forEach(a => (a.images || []).forEach(im => {
+    const rot = thwRotNorm(im.rotate), key = im.url + '|' + rot;
+    if (!rot || im.kind === 'doc' || key in map) return;
+    map[key] = null;
+    jobs.push(thwRotateDataUrl(im.url, rot).then(d => { map[key] = d; }));
+  })));
+  await Promise.all(jobs);
+  return map;
+}
+
 // ── 整合答卷：按作答单元顺序展示（题目 + 文字答案 + 顺序照片） ──
 function thwPaperHtml(s, sub, forPrint) {
   const imgStyle = forPrint
@@ -336,7 +409,7 @@ function thwPaperHtml(s, sub, forPrint) {
   const answers = sub.answers || [];
   // 按 head 分组保持题型区块结构
   const groups = [];
-  answers.forEach(a => {
+  answers.forEach((a, ai) => {
     const label = a.label || a.k || '';
     const sp = label.indexOf(' ');
     const head = sp > 0 ? label.slice(0, sp) : '';
@@ -345,7 +418,7 @@ function thwPaperHtml(s, sub, forPrint) {
     if (sub2 === '整题') sub2 = '手写作答';  // 名词解释的整块图片
     let g = groups.find(x => x.head === head);
     if (!g) { g = { head, items: [] }; groups.push(g); }
-    g.items.push({ ...a, sub: sub2 });
+    g.items.push({ ...a, sub: sub2, _ai: ai });
   });
   return `
   ${forPrint ? `<div style="border-bottom:2px solid #5a3e28;padding-bottom:8px;margin-bottom:14px">
@@ -364,7 +437,7 @@ function thwPaperHtml(s, sub, forPrint) {
           ${it.text ? `<div style="font-size:${forPrint?'12px':'11.5px'};line-height:1.9;white-space:pre-wrap;padding:6px 8px;background:${forPrint?'#fafafa':'var(--surface)'};border-radius:2px">${thwEsc(it.text)}</div>` : ''}
           ${(it.images||[]).map((im, i) => im.kind==='doc'
             ? `<div style="font-size:11px;margin-top:4px">📎 <a href="${thwEsc(im.url)}" target="_blank" style="color:#5a3e28">${thwEsc(im.name||'附件')}</a></div>`
-            : `<div><div style="font-size:9px;color:#999;margin-top:4px">${thwEsc(it.sub)} · 图${i+1}</div><img src="${thwEsc(im.url)}" ${forPrint?'width="440"':''} style="${imgStyle}"></div>`).join('')}
+            : `<div><div style="font-size:9px;color:#999;margin-top:4px">${thwEsc(it.sub)} · 图${i+1}</div>${thwRotImg(sub.id, it._ai, i, im, forPrint, imgStyle)}</div>`).join('')}
           ${!it.text && !(it.images||[]).length ? `<div style="font-size:11px;color:#aaa">（未作答）</div>` : ''}
         </div>`).join('')}
   </div>`).join('')}`;
@@ -479,7 +552,7 @@ function thwDownload(blob, filename) {
 }
 
 // 供 Word 使用的正文（题干＋作答，图片用链接与内嵌两种方式）
-function thwWordBody(s, sub) {
+function thwWordBody(s, sub, rotMap) {
   const answers = sub.answers || [];
   const groups = [];
   answers.forEach(a => {
@@ -504,7 +577,7 @@ function thwWordBody(s, sub) {
       ${it.text?`<div class="a">${thwEsc(it.text)}</div>`:''}
       ${(it.images||[]).map((im,i) => im.kind==='doc'
         ? `<p style="font-size:10pt">📎 附件：<a href="${thwEsc(im.url)}">${thwEsc(im.name||'文件')}</a></p>`
-        : `<p style="font-size:9pt;color:#888">${thwEsc(it.sub)} · 图${i+1}</p><p><img src="${thwEsc(im.url)}" width="440" style="max-width:440px;height:auto"></p>`).join('')}
+        : `<p style="font-size:9pt;color:#888">${thwEsc(it.sub)} · 图${i+1}</p><p><img src="${thwEsc((rotMap && rotMap[im.url + '|' + thwRotNorm(im.rotate)]) || im.url)}" width="440" style="max-width:440px;height:auto"></p>`).join('')}
       ${!it.text && !(it.images||[]).length?`<div style="color:#aaa">（未作答）</div>`:''}
     `).join('')}
   `).join('')}
@@ -512,19 +585,21 @@ function thwWordBody(s, sub) {
   <div style="min-height:80pt"></div>`;
 }
 
-function thwExportWord(subId) {
+async function thwExportWord(subId) {
   const s = thwSessions.find(x => x.id === thwOpenSession);
   const sub = (thwSubs[thwOpenSession] || []).find(x => x.id === subId);
   if (!s || !sub) return;
   const name = `${sub.student_name}_${s.course_name||''}_第${s.session_number||''}回作业.doc`;
-  thwDownload(thwWordBlob(name, thwWordBody(s, sub)), name);
+  const rotMap = await thwRotatedMap([sub]).catch(() => ({}));
+  thwDownload(thwWordBlob(name, thwWordBody(s, sub, rotMap)), name);
 }
 
-function thwExportWordAll() {
+async function thwExportWordAll() {
   const s = thwSessions.find(x => x.id === thwOpenSession);
   const subs = thwSubs[thwOpenSession] || [];
   if (!s || !subs.length) return;
-  const body = subs.map(sub => thwWordBody(s, sub) + '<br clear=all style="page-break-before:always">').join('');
+  const rotMap = await thwRotatedMap(subs).catch(() => ({}));
+  const body = subs.map(sub => thwWordBody(s, sub, rotMap) + '<br clear=all style="page-break-before:always">').join('');
   const name = `${s.course_name||''}_第${s.session_number||''}回_全部作业.doc`;
   thwDownload(thwWordBlob(name, body), name);
 }
