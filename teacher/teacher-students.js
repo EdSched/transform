@@ -570,7 +570,7 @@ function tsmDefaultDomain() {
   const pool = tsmPool || [];
   const present = new Set(pool.map(s => tsmDomainOf(s.major)).filter(Boolean));
   const ok = d => d && (!tsmPool || present.has(d));
-  const isSales = typeof isSalesTeacher === 'function' && isSalesTeacher(teacherData);
+  const isSales = typeof canSeeAllStudents === 'function' && canSeeAllStudents(teacherData);
   if (!isSales) {
     const mb = (teacherData.managed_by || []).filter(Boolean);
     if (mb.length && ok(mb[0])) return mb[0];
@@ -740,7 +740,7 @@ function tsaGuaranteedLock() { return !!(teacherData && teacherData.permissions 
 function tsaIsGuaranteed(s) { return ((s && s.course_type) || '').includes('保录'); }
 
 function tsaAllowedSet() {
-  if (typeof isSalesTeacher === 'function' && isSalesTeacher(teacherData)) return null;   // 营业老师：看全部学生
+  if (typeof canSeeAllStudents === 'function' && canSeeAllStudents(teacherData)) return null;   // 营业 / 对接：看全部学生
   const p = (teacherData && teacherData.permissions) || {};
   let allowed = (Array.isArray(p.student_majors) && p.student_majors.length)
     ? p.student_majors

@@ -1309,10 +1309,17 @@ function teacherAdmDomains(t) {
 }
 // 老师在出愿数据库里被允许查看的专业：
 // 权限里明确选了的（没选则用老师自己负责的专业）→ 只保留是出愿专业、且属于老师所在领域的
-// 营业老师：标签里有「营业老师」（teachers.tags）。可查看所有领域的全部学生和出愿数据
-function isSalesTeacher(t) { return !!t && Array.isArray(t.tags) && t.tags.includes('营业老师'); }
+// 管理职位（teachers.position，只有正社员）和执行角色（teachers.roles，可多个）；默认功能存在 role_templates 表
+const TEACHER_POSITIONS = [['lead', '负责人'], ['sales', '营业'], ['liaison', '对接'], ['soumu', '总务'], ['soumu_asst', '总务助理']];
+const TEACHER_ROLES = [['senmon', '专业课老师'], ['ta', 'TA'], ['homeroom', '班主任']];
+function teacherPositionLabel(k) { const r = TEACHER_POSITIONS.find(x => x[0] === k); return r ? r[1] : ''; }
+function teacherRoleLabel(k) { const r = TEACHER_ROLES.find(x => x[0] === k); return r ? r[1] : ''; }
+// 看全部领域的学生：职位是营业或对接（兼容：标签里有「营业老师」）
+function canSeeAllStudents(t) { return !!t && (t.position === 'sales' || t.position === 'liaison' || (Array.isArray(t.tags) && t.tags.includes('营业老师'))); }
+// 看全部出愿数据：职位是营业（兼容：标签里有「营业老师」）
+function canSeeAllAdmission(t) { return !!t && (t.position === 'sales' || (Array.isArray(t.tags) && t.tags.includes('营业老师'))); }
 function teacherAdmAllowed(t) {
-  if (isSalesTeacher(t)) return Object.keys(ADMISSION_MAJORS);
+  if (canSeeAllAdmission(t)) return Object.keys(ADMISSION_MAJORS);
   const perm = (t && t.permissions && t.permissions.admission_majors) || [];
   const base = perm.length ? perm : ((t && t.majors) || []);
   const doms = teacherAdmDomains(t);
@@ -1601,8 +1608,8 @@ function hwFeedbackCardsHtml(sub, opts) {
 const PROFILE_REQUIRED = [['school', '毕业或所属研究科'], ['keywords', '专攻方向'], ['feature', '授课特色'], ['courses', '担当课程']];   // 特色亮点(highlights)不必填
 function profileComplete(p) { return !!p && PROFILE_REQUIRED.every(([k]) => String(p[k] || '').trim()); }
 function profileMissing(p) { return PROFILE_REQUIRED.filter(([k]) => !p || !String(p[k] || '').trim()).map(([, l]) => l); }
-// 标签含「专业课」的老师需要填写讲师介绍
-function isSenmonTeacher(t) { return !!t && (t.tags || []).some(g => String(g).includes('专业课')); }
+// 执行角色含「专业课老师」的老师需要填写讲师介绍（兼容：标签含「专业课」）
+function isSenmonTeacher(t) { return !!t && ((t.roles || []).includes('senmon') || (t.tags || []).some(g => String(g).includes('专业课'))); }
 // 专业中文名 → 专业 key（对不上返回 ''）
 function subjectToMajorKey(subject) {
   const s = String(subject || '').trim(); if (!s) return '';

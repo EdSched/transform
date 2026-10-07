@@ -52,9 +52,9 @@ function taskTeacherDomains(t) {
   (t.majors || []).forEach(m => { if (MAJOR_DOMAIN[m]) s.add(MAJOR_DOMAIN[m]); });
   return s;
 }
-// 学科类：这位老师负责的专业（和老师端 tsaAllowedSet 同一套）；null = 不限（营业老师 / 没填专业）
+// 学科类：这位老师负责的专业（和老师端 tsaAllowedSet 同一套）；null = 不限（营业 / 对接 / 没填专业）
 function taskAllowedMajors(t) {
-  if ((t.tags || []).includes('营业老师')) return null;
+  if (typeof canSeeAllStudents === 'function' ? canSeeAllStudents(t) : (t.tags || []).includes('营业老师')) return null;
   const p = t.permissions || {};
   const arr = (p.student_majors && p.student_majors.length) ? p.student_majors : (t.majors || []);
   if (!arr.length) return null;
@@ -64,7 +64,7 @@ function taskAllowedMajors(t) {
 }
 // 这条任务统计的学生是不是在这位老师的范围里
 function taskStudentOk(t, tpl, s) {
-  const wide = tpl.role === 'all_lead' || tpl.role === 'all_ta';
+  const wide = tpl.role === 'lead';
   if (wide) {
     if (_tkHasMs(t)) {
       const ms = t.manage_scope;
@@ -220,7 +220,7 @@ const TASK_CHECK_FN = {
 function taskRunCheck(D, t, tpl) {
   const fn = TASK_CHECK_FN[tpl.check_key];
   if (!fn) return Promise.resolve({ count: 0, items: [], na: true });
-  const key = `${t.id}|${tpl.check_key}|${(tpl.role === 'all_lead' || tpl.role === 'all_ta') ? 'w' : 'n'}`;
+  const key = `${t.id}|${tpl.check_key}|${tpl.role === 'lead' ? 'w' : 'n'}`;
   return D.res[key] || (D.res[key] = fn(D, t, tpl).catch(e => ({ count: 0, items: [], err: e.message || String(e) })));
 }
 // 这位老师这个月的任务清单：[{tpl, via, state:'done'|'pending', count, items, rec, na, err}]（触发条件没到的自动任务不出现）
