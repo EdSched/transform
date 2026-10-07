@@ -2502,7 +2502,7 @@ async function renderTeacherAdmissionDb(mc) {
       const entries = Object.entries(TEACHER_ADB_MAJORS).filter(([k]) => allowed.includes(k));
       const chipOf = ([k,v]) => `<div class="filter-chip" data-key="${k}" onclick="teacherAdbToggleMajor('${k}',this)">${v}</div>`;
       const foldOf = list => chipFold(list.map(e => ({ on: teacherAdbMajors.includes(e[0]), html: chipOf(e) })));
-      if (!(typeof isSalesTeacher === 'function' && isSalesTeacher(teacherData))) return foldOf(entries);
+      if (!(typeof canSeeAllAdmission === 'function' && canSeeAllAdmission(teacherData))) return foldOf(entries);
       // 营业老师：看全部领域，按领域分组显示
       const order = DOMAINS.map(d => d.label), by = {};
       entries.forEach(e => { const d = admissionMajorDomain(e[0]) || '其他'; (by[d] = by[d] || []).push(e); });

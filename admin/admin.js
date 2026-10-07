@@ -578,7 +578,7 @@ async function tfMgrInit(t){
 }
 function tfMgrRender(){
   const d=_mgrDraft, rb=document.getElementById('tf_resource_box'), mb=document.getElementById('tf_manager_box'); if(!d||!rb||!mb) return;
-  const permChips=RESOURCE_PERM_DEFS.map(([code,label])=>`<div class="filter-chip${d.perms.includes(code)?' active':''}" onclick="mgrPermToggle('${code}')" style="padding:3px 10px;font-size:11px">${escTM(label)}</div>`).join('');
+  const permChips=RESOURCE_PERM_DEFS.map(([code,label])=>`<div class="filter-chip${d.perms.includes(code)?' active':''}" data-res="${code}" onclick="mgrPermToggle('${code}')" style="padding:3px 10px;font-size:11px">${escTM(label)}</div>`).join('');
   const tplOpts='<option value="">选择权限模板（选了会覆盖下面已选的权限，之后可再增减）</option>'+(_mgrTemplates||[]).map((r,i)=>`<option value="${i}">${escTM(r.label)}</option>`).join('');
   rb.innerHTML=`<select onchange="mgrPickTemplate(this.value)" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:100%;box-sizing:border-box;margin-bottom:8px">${tplOpts}</select><div style="display:flex;gap:6px;flex-wrap:wrap">${permChips}</div>`;
   const isMgr=d.domains.length||d.majors.length||d.classIds.length;
@@ -692,7 +692,7 @@ function tsecRefresh(){
     const w=document.getElementById('tsec_warn_'+k);
     w.style.display=(hide.has(k)&&st.has)?'':'none'; w.textContent=`⚠ ${ty}通常不需要`;
   });
-  tfTaskHintRender();
+  tfTaskHintRender(); tfRoleDiffRender();
 }
 // ── 任务联动：这位老师有职能标签、该职能下的任务需要某项功能、却还没开 → 提示 + 「去设置」──
 let _tfTaskTpl=null, _tfEditId='';
@@ -731,8 +731,10 @@ function tsecShowAllToggle(el){ _tsecShowAll=!_tsecShowAll; el.classList.toggle(
 // 重置表单（新建 / 取消 / 添加成功后）：区块收起、负责人草稿清空
 function tfFormReset(){
   _tfEditId='';
+  tfRolesLoad(null);
   tsecCollapse();
   tfMgrInit(null);
+  roleTplEnsure();
   tsecApply();
 }
 // 供任务管理「去设置」调用：打开某位老师的编辑页，展开指定区块，滚动到并高亮其中一项
@@ -1023,6 +1025,7 @@ function renderTeachersPage(mc){
   </div>
   <div class="swipe-row" style="grid-template-columns:minmax(240px,1fr) minmax(0,1.6fr)">
     <!-- 添加/编辑老师 -->
+    <style>.rd-def::after{content:'角色默认';font-size:8px;color:var(--accent);margin-left:4px;font-weight:400;white-space:nowrap}</style>
     <div onclick="tsecRefreshSoon()" oninput="tsecRefreshSoon()" onchange="tsecRefreshSoon()" style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:16px;min-width:0">
       <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:14px;letter-spacing:.05em;text-transform:uppercase" id="teacherFormTitle">添加新老师</div>
       <div id="tf_task_hint" style="display:none;font-size:11px;line-height:1.7;background:#fff8e6;border:1px solid #e8d4a0;border-radius:3px;padding:6px 10px;margin-bottom:10px;color:var(--warn,#b8860b)"></div>
@@ -1047,15 +1050,15 @@ function renderTeachersPage(mc){
           <option>综合事业本部</option>
         </select>
       </div>`}
-      <div class="form-group"><label class="form-label">功能标签（点选；会影响老师端功能和任务）</label>
-        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:4px">
-          ${TEACHER_FUNC_TAGS.map((g,i)=>`${i===2?'<span style="font-size:10px;color:var(--text-3);margin-left:6px">职能：</span>':''}<div class="filter-chip" data-ftag="${g}" onclick="ftagToggle('${g}')" style="padding:4px 12px;font-size:11px">${g==='专业课老师'?'📚 ':g==='营业老师'?'💼 ':''}${g}</div>`).join('')}
-        </div>
-        <div style="font-size:10px;color:var(--text-3)">专业课老师：系统会提醒完成每个负责专业的讲师介绍；营业老师：可以查看所有领域的学生和出愿数据</div>
-      </div>
-      <div class="form-group"><label class="form-label">其他标签（自由填写，只用于搜索标记；写的和功能标签一样会自动当作功能标签）</label>
+      ${isHubAdminUser()?`<div class="form-group" id="tf_position_wrap" style="display:none"><label class="form-label">管理职位（只有正社员；最多一个，再点一次取消）</label>
+        <div style="display:flex;flex-wrap:wrap;gap:6px" id="tf_position_chips">${TEACHER_POSITIONS.map(([k,v])=>`<div class="filter-chip" data-pos="${k}" onclick="tfPositionClick('${k}')" style="padding:4px 12px;font-size:11px">${v}</div>`).join('')}</div></div>
+      <div class="form-group"><label class="form-label">执行角色（可多选；选了会自动带出默认功能）</label>
+        <div style="display:flex;flex-wrap:wrap;gap:6px" id="tf_roles_chips">${TEACHER_ROLES.map(([k,v])=>`<div class="filter-chip" data-role="${k}" onclick="tfRoleClick('${k}')" style="padding:4px 12px;font-size:11px">${v}</div>`).join('')}</div>
+        <div id="tf_role_scope" style="margin-top:8px"></div></div>`:''}
+      <div class="form-group"><label class="form-label">其他标签（自由填写，只用于搜索标记）</label>
         <input id="new_teacher_tags" oninput="senmonChipSync()" placeholder="用逗号或顿号分隔，如：计划书指导、模拟面试、兼职"></div>
       `,10)}
+      <div id="tf_role_diff" style="display:none;font-size:11px;line-height:1.7;background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:6px 10px;margin-bottom:8px;color:var(--text-2)"></div>
       ${tsecWrap('area','负责领域与专业',`
       ${_isDom ? `<div class="form-group"><label class="form-label">领域</label><div style="font-size:12px;color:var(--text-2);border:1px solid var(--border);border-radius:3px;padding:7px 10px;background:var(--bg)">${_lockDom}<span style="font-size:10px;color:var(--text-3);margin-left:6px">本领域账号：新建老师自动归属本领域，负责专业在下方选择</span></div></div>` : `<div class="form-group" style="border:1px solid var(--accent);border-radius:3px;padding:8px;background:var(--bg)">
         <label class="form-label" style="color:var(--accent)">隶属领域（可多选，决定"哪个领域账号能在老师管理里看到/编辑这个老师"）</label>
@@ -1451,40 +1454,217 @@ function openTeacherManager(){
   document.getElementById('teacherManagerModal').classList.add('open');
 }
 
-// ── 标签：功能标签（固定按钮，点选）+ 其他标签（自由填写）；两部分都写进同一个 teachers.tags ──
-// 功能标签：专业课老师 / 营业老师（影响功能）+ 职能（影响以后的任务）。其他标签只用于搜索标记
-const TEACHER_FUNC_TAGS=['专业课老师','营业老师','全学科负责人','学科负责人','任课讲师','学科TA','全学科TA'];
-const TEACHER_DUTY_TAGS=TEACHER_FUNC_TAGS.slice(2);   // 职能（老师列表按它筛选）
+// ── 标签：管理职位 / 执行角色 取代原来的「功能标签」；其他标签（自由填写）只用于搜索 ──
+// 保存时为了兼容还没改的老代码，同时把 专业课老师 / 营业老师 写回 tags，旧的职能标签全部去掉
+const TEACHER_FUNC_TAGS=['专业课老师','营业老师','全学科负责人','学科负责人','任课讲师','学科TA','全学科TA','TA'];
+const TEACHER_LEGACY_DUTY_TAGS=['全学科负责人','学科负责人','任课讲师','学科TA','全学科TA','TA'];
 let _tfFuncTags=new Set(), _tfSalesPrev=false;
+let _tfPos='', _tfRoles=[], _tfHr=null;   // 表单里选的管理职位 / 执行角色 / 班主任范围草稿 {domains,majors,classIds}
+function tfHasRoleUI(){ return !!document.getElementById('tf_roles_chips'); }
 function parseOtherTags(){
   const raw=document.getElementById('new_teacher_tags')?.value||'';
   return [...new Set(raw.split(/[,，、\s]+/).map(x=>x.trim()).filter(Boolean))];
 }
-// 保存用：功能标签 + 其他标签（输入的文字和功能标签一模一样时合并成同一个，等于自动当作功能标签）
-function parseTeacherTags(){ return [...new Set([..._tfFuncTags,...parseOtherTags()])]; }
-// 回填 / 清空：和功能标签完全一致的进按钮，其余进输入框
+// 按职位 / 角色推出的兼容标签
+function tfCompatTags(){
+  const t=[]; if(_tfRoles.includes('senmon')) t.push('专业课老师'); if(_tfPos==='sales') t.push('营业老师'); return t;
+}
+// 保存用：其他标签 + 兼容标签；没选职位 / 角色的老师，原有的「专业课老师 / 营业老师」标签原样保留
+function parseTeacherTags(){
+  if(!tfHasRoleUI()) return [...new Set([..._tfFuncTags,...parseOtherTags()])];
+  const sel=!!_tfPos||_tfRoles.length;
+  const keep=[..._tfFuncTags].filter(g=>!sel||(g!=='专业课老师'&&g!=='营业老师'));
+  return [...new Set([...keep,...parseOtherTags().filter(g=>!TEACHER_LEGACY_DUTY_TAGS.includes(g)),...tfCompatTags()])];
+}
+// 回填 / 清空：有职位 / 角色选择区时，旧的功能标签不进输入框（专业课老师 / 营业老师暂存，职位 / 角色都没选时保留）
 function setTeacherTags(arr){
   arr=arr||[];
-  _tfFuncTags=new Set(arr.filter(g=>TEACHER_FUNC_TAGS.includes(g)));
-  const inp=document.getElementById('new_teacher_tags');
-  if(inp) inp.value=arr.filter(g=>!TEACHER_FUNC_TAGS.includes(g)).join('、');
-  senmonChipSync();
-}
-// 「专业课老师」：已有含「专业课」字样的旧标签也视为已点亮
-function ftagOn(g){ const all=parseTeacherTags(); return g==='专业课老师'?all.some(x=>x.includes('专业课')):all.includes(g); }
-function senmonChipSync(){
-  document.querySelectorAll('#tsec_body_basic [data-ftag]').forEach(c=>c.classList.toggle('active',ftagOn(c.dataset.ftag)));
-  const now=ftagOn('营业老师');
-  if(now!==_tfSalesPrev){ _tfSalesPrev=now; if(typeof renderPermAdmMajors==='function') renderPermAdmMajors(); }   // 营业老师决定出愿专业可选范围
-}
-function ftagToggle(g){
-  if(ftagOn(g)){
-    const test=x=>g==='专业课老师'?x.includes('专业课'):x===g;
-    [..._tfFuncTags].filter(test).forEach(x=>_tfFuncTags.delete(x));
+  if(tfHasRoleUI()){
+    _tfFuncTags=new Set(arr.filter(g=>g==='专业课老师'||g==='营业老师'));
     const inp=document.getElementById('new_teacher_tags');
-    if(inp) inp.value=parseOtherTags().filter(x=>!test(x)).join('、');
-  } else _tfFuncTags.add(g);
+    if(inp) inp.value=arr.filter(g=>!TEACHER_FUNC_TAGS.includes(g)).join('、');
+  } else {   // 领域账号看不到职位 / 角色：功能标签原样保留
+    _tfFuncTags=new Set(arr.filter(g=>TEACHER_FUNC_TAGS.includes(g)));
+    const inp=document.getElementById('new_teacher_tags');
+    if(inp) inp.value=arr.filter(g=>!TEACHER_FUNC_TAGS.includes(g)).join('、');
+  }
   senmonChipSync();
+}
+function senmonChipSync(){
+  const now=parseTeacherTags().includes('营业老师');
+  if(now!==_tfSalesPrev){ _tfSalesPrev=now; if(typeof renderPermAdmMajors==='function') renderPermAdmMajors(); }   // 营业决定出愿专业可选范围
+}
+
+// ── 角色模板：默认功能从 role_templates 表读，读不到退回 seed/role_templates_seed.json ──
+let _roleTpl=null, _roleTplP=null;
+function roleTplEnsure(){
+  if(_roleTpl) return Promise.resolve(_roleTpl);
+  if(_roleTplP) return _roleTplP;
+  _roleTplP=(async()=>{
+    let rows=[];
+    try{ rows=await sbAll('/rest/v1/role_templates?select=*&order=sort.asc'); }catch(e){ rows=[]; }
+    if(!rows||!rows.length){
+      try{ const r=await fetch('../seed/role_templates_seed.json',{cache:'no-store'}); if(r.ok) rows=await r.json(); }catch(e){ rows=[]; }
+    }
+    _roleTpl={}; (rows||[]).forEach(r=>{ _roleTpl[r.key]=r; });
+    _roleTplP=null; return _roleTpl;
+  })();
+  return _roleTplP;
+}
+// 默认功能 → 一组「标记」字符串，方便做并集 / 差集 / 和表单比较
+function roleTokens(def){
+  const out=new Set(); if(!def) return out;
+  const p=def.permissions||{};
+  Object.keys(p).forEach(k=>{
+    const v=p[k];
+    if(v===true) out.add('p:'+k);
+    else if(Array.isArray(v)) v.forEach(x=>out.add(k+':'+x));
+    else if(k==='schedule'&&v) out.add('schedule:'+v);
+  });
+  (def.resource_perms||[]).forEach(x=>out.add('res:'+x));
+  return out;
+}
+// 职位 ∪ 角色 的默认（正社员再加 时间槽·出勤）
+function roleDefaultTokens(pos,roles,staffType){
+  const tpl=_roleTpl||{}, out=new Set();
+  [pos].concat(roles||[]).filter(Boolean).forEach(k=>{ roleTokens((tpl[k]||{}).defaults).forEach(x=>out.add(x)); });
+  if(staffType==='正社员'){ out.add('p:slots'); out.add('slot_types:attendance'); }
+  return out;
+}
+const TF_P_LABEL={booking:'预约管理',slots:'时间槽设定',student_mgmt:'学生管理',admission_query:'出願数据查询',homework:'批改作业',promo:'宣传相关',progress_plan:'进度规划',lect_info:'讲师信息查询',vip_sales:'VIP营业规划',promo_pack:'宣传资料整合',promo_pricing:'课程方案（含价格）',success_cases:'合格案例（填写）'};
+const TF_SUB_LABEL={booking_types:{daily:'日常',plan:'计划书',mock:'模拟面试',vip:'VIP'},slot_types:{daily:'日常',plan:'计划书',mock:'模拟面试',vip:'VIP',attendance:'出勤'},student_mgmt_items:{progress:'考学进度',meetings:'面谈查询',records_view:'出席・作业 查看',records_entry:'出席 登记',monthly:'月度学习情况',profile:'学生档案录入',profile_edit:'档案修改'}};
+const TF_SUB_PREFIX={booking_types:'预约·',slot_types:'时间槽·',student_mgmt_items:'学生管理·'};
+function roleTokenLabel(tk){
+  const i=tk.indexOf(':'), k=tk.slice(0,i), v=tk.slice(i+1);
+  if(k==='p') return TF_P_LABEL[v]||v;
+  if(k==='res'){ const r=(typeof RESOURCE_PERM_DEFS!=='undefined'?RESOURCE_PERM_DEFS:[]).find(x=>x[0]===v); return r?r[1]:v; }
+  if(k==='schedule') return v==='timetable'?'我的课表':'排班+课表';
+  return (TF_SUB_PREFIX[k]||'')+((TF_SUB_LABEL[k]||{})[v]||v);
+}
+// 读表单当前开了哪些（和 roleTokens 同一套标记）
+function tfFormTokens(){
+  const out=new Set(), $=id=>document.getElementById(id);
+  Object.keys(TF_P_LABEL).forEach(k=>{ const e=$('perm_'+k); if(e&&e.checked) out.add('p:'+k); });
+  [['booking_types','perm_booking_types'],['slot_types','perm_slot_types'],['student_mgmt_items','perm_student_mgmt_items']].forEach(([k,box])=>{
+    document.querySelectorAll('#'+box+' .filter-chip.active').forEach(c=>out.add(k+':'+c.dataset.value));
+  });
+  const sm=$('perm_schedule_mode')?.value; if(sm){ out.add('schedule:'+sm); if(sm==='full') out.add('schedule:timetable'); }
+  if(_mgrDraft) _mgrDraft.perms.forEach(x=>out.add('res:'+x));
+  return out;
+}
+// 开 / 关表单里的某一项（只用于带出 / 关掉角色默认）
+function tfSetToken(tk,on){
+  const i=tk.indexOf(':'), k=tk.slice(0,i), v=tk.slice(i+1), $=id=>document.getElementById(id);
+  if(k==='p'){ const e=$('perm_'+v); if(e) e.checked=on; return; }
+  if(k==='res'){ if(!_mgrDraft) return; const a=_mgrDraft.perms, j=a.indexOf(v); if(on&&j<0) a.push(v); if(!on&&j>=0) a.splice(j,1); return; }
+  if(k==='schedule'){
+    const e=$('perm_schedule_mode'); if(!e) return;
+    if(on){ if(!e.value||(e.value==='timetable'&&v==='full')) e.value=v; }
+    else if(e.value===v) e.value='';
+    return;
+  }
+  const box={booking_types:'perm_booking_types',slot_types:'perm_slot_types',student_mgmt_items:'perm_student_mgmt_items'}[k]; if(!box) return;
+  document.querySelectorAll('#'+box+' .filter-chip').forEach(c=>{ if(c.dataset.value===v) c.classList.toggle('active',on); });
+}
+function tfRoleState(){ return {pos:_tfPos,roles:_tfRoles.slice(),staff:(typeof tsecCurType==='function'?tsecCurType():'')}; }
+function tfRoleDefOf(st){ return roleDefaultTokens(st.pos,st.roles,st.staff); }
+const _rdTokensSort=a=>[...a].sort();
+// 职位 / 角色 / 类型变了：新增的默认功能带出来；去掉的角色独有的默认功能问了再关
+async function tfRolesChanged(prev){
+  await roleTplEnsure();
+  const now=tfRoleState(), dOld=tfRoleDefOf(prev), dNew=tfRoleDefOf(now), cur=tfFormTokens();
+  const toAdd=_rdTokensSort(dNew).filter(x=>!dOld.has(x)&&!cur.has(x));
+  const toDrop=_rdTokensSort(dOld).filter(x=>!dNew.has(x)&&cur.has(x));
+  if(toAdd.length){
+    if(!_tfEditId||confirm('按新角色补齐默认功能？（只会新增，不会关掉你已经开的）\n\n将新增：'+toAdd.map(roleTokenLabel).join('、'))) toAdd.forEach(x=>tfSetToken(x,true));
+  }
+  if(toDrop.length && confirm('去掉了一个角色。要关掉只属于这个角色的默认功能吗？\n\n将关掉：'+toDrop.map(roleTokenLabel).join('、'))) toDrop.forEach(x=>tfSetToken(x,false));
+  tfRolesRender(); tsecApply(); tfMgrRender();
+}
+function tfPositionClick(k){
+  if(tsecCurType()!=='正社员') return;
+  const prev=tfRoleState(); _tfPos=(_tfPos===k)?'':k; tfRolesChanged(prev);
+}
+function tfRoleClick(k){
+  const prev=tfRoleState(); const i=_tfRoles.indexOf(k); if(i>=0) _tfRoles.splice(i,1); else _tfRoles.push(k);
+  tfRolesChanged(prev);
+}
+// 类型改了：兼职不能有管理职位；正社员默认带出出勤
+function tfStaffTypeChanged(prevStaff){
+  if(!tfHasRoleUI()) return;
+  const prev={pos:_tfPos,roles:_tfRoles.slice(),staff:prevStaff};
+  if(tsecCurType()!=='正社员') _tfPos='';
+  tfRolesChanged(prev);
+}
+// 回填（编辑打开 / 新建重置时）：只回填选择，不动功能勾选
+function tfRolesLoad(t){
+  _tfPos=(t&&t.position)||''; _tfRoles=((t&&t.roles)||[]).slice();
+  const hr=t&&t.role_scope&&t.role_scope.homeroom;
+  _tfHr={domains:((hr&&hr.domains)||[]).slice(),majors:((hr&&hr.majors)||[]).slice(),classIds:((hr&&hr.class_ids)||[]).map(String)};
+  tfRolesRender();
+  if(_tfRoles.includes('homeroom')){ try{ if(typeof loadClasses==='function') loadClasses().then(tfRolesRender); }catch(e){} }
+}
+function tfHrToggle(field,val){ scopeDraftToggle(_tfHr,field,val); admKeepFold(document.getElementById('tf_role_scope'),tfRolesRender); }
+function tfGoSec(k){ const el=document.getElementById('tsec_'+k); if(el){ el.style.display=''; tsecToggle(k,true); el.scrollIntoView({behavior:'smooth',block:'center'}); } }
+function tfRolesRender(){
+  if(!tfHasRoleUI()) return;
+  const isReg=tsecCurType()==='正社员';
+  const w=document.getElementById('tf_position_wrap'); if(w) w.style.display=isReg?'':'none';
+  document.querySelectorAll('#tf_position_chips .filter-chip').forEach(c=>c.classList.toggle('active',isReg&&c.dataset.pos===_tfPos));
+  document.querySelectorAll('#tf_roles_chips .filter-chip').forEach(c=>c.classList.toggle('active',_tfRoles.includes(c.dataset.role)));
+  const box=document.getElementById('tf_role_scope'); if(!box) return;
+  const link=(k,txt)=>`<a href="javascript:void(0)" onclick="tfGoSec('${k}')" style="color:var(--accent)">${txt}</a>`;
+  const parts=[];
+  if(isReg&&_tfPos==='lead') parts.push(`<div style="font-size:11px;color:var(--text-2)">负责人：管理范围（领域 / 专业 / 班级可混合）在 ${link('manager','负责人（管理范围）')} 区块设置</div>`);
+  if(_tfRoles.includes('senmon')||_tfRoles.includes('ta')) parts.push(`<div style="font-size:11px;color:var(--text-2)">${_tfRoles.includes('senmon')&&_tfRoles.includes('ta')?'专业课老师 / TA':_tfRoles.includes('ta')?'TA':'专业课老师'}：负责专业在 ${link('area','负责领域与专业')} 区块选择${_tfRoles.includes('ta')?'（TA 也可以直接选整个领域）':''}</div>`);
+  if(_tfRoles.includes('homeroom')&&_tfHr) parts.push(`<div style="border:1px solid var(--border-light);border-radius:3px;padding:8px;margin-top:4px"><div style="font-size:11px;font-weight:600;margin-bottom:6px">班主任：负责班级（或整个学部领域）</div>${scopePickerHtml(_tfHr,'tfHrToggle')}</div>`);
+  box.innerHTML=parts.join('');
+}
+// 保存用：职位 / 角色 / 班主任范围；没有职位 / 角色选择区（领域账号）或准备 SQL 还没执行且没选 → 返回 {}
+function tfRolesCollect(cur){
+  if(!tfHasRoleUI()) return {};
+  const hasCols=!!cur&&('position' in cur||'roles' in cur);
+  if(!hasCols&&!_tfPos&&!_tfRoles.length) return {};
+  const keep=Object.assign({},(cur&&cur.role_scope)||{});
+  if(_tfRoles.includes('homeroom')&&_tfHr) keep.homeroom={domains:_tfHr.domains,majors:_tfHr.majors,class_ids:_tfHr.classIds};
+  else delete keep.homeroom;
+  return {position:_tfPos||null,roles:_tfRoles.slice(),role_scope:Object.keys(keep).length?keep:null};
+}
+// 「和角色默认相比」提示 + 自动勾上的项旁边标「角色默认」
+// 职位是负责人却没设管理范围：提示一下（不拦）
+function tfLeadScopeOk(mg,cur){
+  if(!tfHasRoleUI()||_tfPos!=='lead') return true;
+  const ms=('manage_scope' in mg)?mg.manage_scope:(cur&&cur.manage_scope);
+  if(managerScopeNonEmpty(ms)) return true;
+  return confirm('职位是「负责人」，但还没有设置管理范围。\n负责人需要在「负责人（管理范围）」区块里选领域 / 专业 / 班级，否则老师端不会出现管理模式。\n\n仍然保存吗？');
+}
+function tfRoleDiffRender(){
+  const box=document.getElementById('tf_role_diff');
+  document.querySelectorAll('.rd-def').forEach(e=>e.classList.remove('rd-def'));
+  if(!box) return;
+  if(!_tfPos&&!_tfRoles.length){ box.style.display='none'; return; }
+  if(!_roleTpl){ roleTplEnsure().then(tfRoleDiffRender); box.style.display='none'; return; }
+  const def=roleDefaultTokens(_tfPos,_tfRoles,tsecCurType()), cur=tfFormTokens();
+  const miss=_rdTokensSort(def).filter(x=>!cur.has(x)), extra=_rdTokensSort(cur).filter(x=>!def.has(x));
+  def.forEach(tk=>{
+    if(!cur.has(tk)) return;
+    const i=tk.indexOf(':'), k=tk.slice(0,i), v=tk.slice(i+1); let el=null;
+    if(k==='p'){ const e=document.getElementById('perm_'+v); el=e&&e.closest('label'); }
+    else if(k==='res'){ el=document.querySelector(`#tf_resource_box .filter-chip[data-res="${v}"]`); }
+    else if(k==='schedule'){ el=null; }
+    else { const box2={booking_types:'perm_booking_types',slot_types:'perm_slot_types',student_mgmt_items:'perm_student_mgmt_items'}[k]; el=box2&&document.querySelector(`#${box2} .filter-chip[data-value="${v}"]`); }
+    if(el) el.classList.add('rd-def');
+  });
+  const lim=a=>a.slice(0,6).map(roleTokenLabel).join('、')+(a.length>6?` 等 ${a.length} 项`:'');
+  const parts=[];
+  parts.push(miss.length?`缺 ${miss.length} 项（${lim(miss)}）<a href="javascript:void(0)" onclick="tfFillMissing()" style="color:var(--accent)">［补齐］</a>`:'没有缺的项');
+  if(extra.length) parts.push(`多开 ${extra.length} 项（${lim(extra)}）`);
+  box.style.display=''; box.innerHTML='和角色默认相比：'+parts.join(' · ');
+}
+function tfFillMissing(){
+  const def=roleDefaultTokens(_tfPos,_tfRoles,tsecCurType()), cur=tfFormTokens();
+  def.forEach(x=>{ if(!cur.has(x)) tfSetToken(x,true); });
+  tfMgrRender(); tsecRefresh();
 }
 function escTM(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
 
@@ -1493,7 +1673,8 @@ let teacherTagFilter='';
 let teacherDomainFilter='';
 let teacherTypeFilter='';
 let teacherDeptFilter='';
-let teacherDutyFilter='';      // 职能（功能标签里的职能）
+let teacherPosFilter='';       // 管理职位
+let teacherRoleFilter='';      // 执行角色
 let teacherFeatureFilter='';   // 开了某项功能（TEACHER_FEATURE_DEFS 的 key）
 let teacherExpandedId=null;
 
@@ -1531,7 +1712,8 @@ function teacherFilteredList(){
     list=list.filter(teacherInView);
   }
   if(teacherTagFilter) list=list.filter(t=>(t.tags||[]).includes(teacherTagFilter));
-  if(teacherDutyFilter) list=list.filter(t=>(t.tags||[]).includes(teacherDutyFilter));
+  if(teacherPosFilter) list=list.filter(t=>t.position===teacherPosFilter);
+  if(teacherRoleFilter) list=list.filter(t=>(t.roles||[]).includes(teacherRoleFilter));
   if(teacherFeatureFilter) list=list.filter(t=>teacherFeatures(t).some(d=>d[0]===teacherFeatureFilter));
   if(teacherTypeFilter) list=list.filter(t=>(t.staff_type||'')===teacherTypeFilter);
   if(teacherDeptFilter) list=list.filter(t=>(t.department||'')===teacherDeptFilter);
@@ -1556,7 +1738,7 @@ function renderTeacherList(){
   const el=document.getElementById('teacherList');
   if(!el) return;
   // 汇总现有标签作为筛选 chips
-  const allTags=[...new Set(cachedTeachers.flatMap(t=>t.tags||[]))].filter(g=>!TEACHER_DUTY_TAGS.includes(g));
+  const allTags=[...new Set(cachedTeachers.flatMap(t=>t.tags||[]))].filter(g=>!TEACHER_LEGACY_DUTY_TAGS.includes(g));
   el.innerHTML=`
     <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
       <input placeholder="搜索姓名（汉字/拼音首字母）、标签、备注…" value="${escTM(teacherSearch)}"
@@ -1577,10 +1759,17 @@ function renderTeacherList(){
       ${DOMAINS.map(d=>`<div class="filter-chip ${teacherDomainFilter===d.label?'active':''}" onclick="teacherDomainFilter='${escTM(d.label)}';renderTeacherList()" style="padding:2px 9px;font-size:10px">${escTM(d.label)}</div>`).join('')}
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:8px">
-      <span style="font-size:10px;color:var(--text-3)">职能：</span>
-      <div class="filter-chip ${teacherDutyFilter===''?'active':''}" onclick="teacherDutyFilter='';renderTeacherList()" style="padding:2px 9px;font-size:10px">全部</div>
-      ${TEACHER_DUTY_TAGS.map(g=>`<div class="filter-chip ${teacherDutyFilter===g?'active':''}" onclick="teacherDutyFilter='${g}';renderTeacherList()" style="padding:2px 9px;font-size:10px">${g}</div>`).join('')}
-      <span style="font-size:10px;color:var(--text-3);margin-left:8px">功能：</span>
+      <span style="font-size:10px;color:var(--text-3)">管理职位：</span>
+      <div class="filter-chip ${teacherPosFilter===''?'active':''}" onclick="teacherPosFilter='';renderTeacherList()" style="padding:2px 9px;font-size:10px">全部</div>
+      ${TEACHER_POSITIONS.map(([k,v])=>`<div class="filter-chip ${teacherPosFilter===k?'active':''}" onclick="teacherPosFilter='${k}';renderTeacherList()" style="padding:2px 9px;font-size:10px">${v}</div>`).join('')}
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:8px">
+      <span style="font-size:10px;color:var(--text-3)">执行角色：</span>
+      <div class="filter-chip ${teacherRoleFilter===''?'active':''}" onclick="teacherRoleFilter='';renderTeacherList()" style="padding:2px 9px;font-size:10px">全部</div>
+      ${TEACHER_ROLES.map(([k,v])=>`<div class="filter-chip ${teacherRoleFilter===k?'active':''}" onclick="teacherRoleFilter='${k}';renderTeacherList()" style="padding:2px 9px;font-size:10px">${v}</div>`).join('')}
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:8px">
+      <span style="font-size:10px;color:var(--text-3)">功能：</span>
       <select onchange="teacherFeatureFilter=this.value;renderTeacherList()" style="font-size:10px;padding:3px 6px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
         <option value="">全部</option>${TEACHER_FEATURE_DEFS.map(d=>`<option value="${d[0]}"${teacherFeatureFilter===d[0]?' selected':''}>${d[2]}</option>`).join('')}
       </select>
@@ -1647,7 +1836,8 @@ function renderTeacherRows(){
               <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px;white-space:nowrap">${escTM(t.name)}</span>
               ${t.staff_type?`<span style="font-size:10px;color:var(--text-2);border:1px solid var(--border);border-radius:2px;padding:0 6px;white-space:nowrap">${escTM(t.staff_type)}${t.department?'・'+escTM(t.department):''}</span>`:''}
               <span style="font-size:10px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:26%">${[(t.domains||[]).join('・'),(t.majors||[]).map(m=>MAJORS[m]||m).join('・')].filter(Boolean).join(' · ')||'—'}</span>
-              ${(t.tags||[]).map(g=>`<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 6px;white-space:nowrap">${escTM(g)}</span>`).join('')}
+              ${(()=>{ const lb=[teacherPositionLabel(t.position)].concat((t.roles||[]).map(teacherRoleLabel)).filter(Boolean).join(' · '); return lb?`<span style="font-size:10px;color:#fff;background:var(--text-2);border-radius:2px;padding:0 6px;white-space:nowrap">${escTM(lb)}</span>`:''; })()}
+              ${(t.tags||[]).filter(g=>!TEACHER_FUNC_TAGS.includes(g)||(!t.position&&!(t.roles||[]).length)).map(g=>`<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 6px;white-space:nowrap">${escTM(g)}</span>`).join('')}
               ${profBadgeHtml(t)}
               ${(()=>{ const m=(_tfTaskTpl&&typeof taskMissingFeatures==='function')?taskMissingFeatures(t,_tfTaskTpl):[]; return m.length?`<span title="${escTM(m.map(x=>x.tpl.requires_label||x.tpl.requires).join('、'))}" style="font-size:10px;color:var(--warn,#b8860b);border:1px solid var(--warn,#b8860b);border-radius:2px;padding:0 6px;white-space:nowrap">⚠ 任务需要开功能 ${m.length}</span>`:''; })()}
               ${managerScopeNonEmpty(t.manage_scope)?`<span title="${escTM(scopeSummary(managerScopeToView(t.manage_scope)))}" style="font-size:10px;color:#fff;background:var(--accent);border-radius:2px;padding:0 6px;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis">负责人：${escTM(scopeSummary(managerScopeToView(t.manage_scope)))}</span>`:''}
@@ -1741,6 +1931,7 @@ function _renderTeacherMajorChipsInner(){
 
 // 老师类型单选（正社员/兼职）；选正社员才显示部门
 function selectStaffType(el){
+  const _prevStaff=tsecCurType();
   document.querySelectorAll('#new_teacher_stafftype .filter-chip').forEach(c=>c.classList.remove('active'));
   el.classList.add('active');
   const isRegular = el.dataset.value==='正社员';
@@ -1748,6 +1939,7 @@ function selectStaffType(el){
   if(wrap) wrap.style.display = isRegular?'block':'none';
   if(!isRegular){ const d=document.getElementById('new_teacher_department'); if(d) d.value=''; }
   tsecApply();
+  if(_prevStaff!==el.dataset.value) tfStaffTypeChanged(_prevStaff);
 }
 async function addTeacher(){
   const _isDom = (typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && !!viewLockDomain());
@@ -1797,7 +1989,8 @@ async function addTeacher(){
     if(!staff_type && _isDom) staff_type='兼职';   // 领域端不区分正社员/兼职，默认兼职（仍记录，保证账号/出勤信息完整）
     const department=staff_type==='正社员'?(document.getElementById('new_teacher_department')?.value||''):'';
     const mg=tfMgrCollect(null,true); if(mg===null) return;
-    const t=Object.assign({id:`t-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,name,notes,majors,domains,managed_by,staff_type,department,permissions,tags},mg);
+    if(!tfLeadScopeOk(mg)) return;
+    const t=Object.assign({id:`t-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,name,notes,majors,domains,managed_by,staff_type,department,permissions,tags},mg,tfRolesCollect(null));
     const res=await sb('/rest/v1/teachers','POST',[t]);
     cachedTeachers.push(Array.isArray(res)?res[0]:t);
     document.getElementById('new_teacher_name').value='';
@@ -1879,7 +2072,7 @@ function openEditTeacher(id){
   document.querySelectorAll('#perm_slot_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.slot_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_vip_content .filter-chip').forEach(c=>{c.classList.toggle('active',(p.vip_content||[]).includes(c.dataset.value))});
   hwaInit(p, t);
-  _tfEditId=t.id; tsecCollapse(); tfMgrInit(t); tsecApply(); tfTaskLoad();
+  _tfEditId=t.id; tfRolesLoad(t); tsecCollapse(); tfMgrInit(t); tsecApply(); tfTaskLoad(); roleTplEnsure().then(tfRoleDiffRender);
   const btn=document.getElementById('teacherFormBtn');
   if(btn){btn.textContent='保存修改';btn.setAttribute('onclick',`saveEditTeacher('${id}')`);}
   const cancelBtn=document.getElementById('teacherFormCancelBtn');
@@ -1925,8 +2118,9 @@ async function saveEditTeacher(id){
     department=staff_type==='正社员'?(document.getElementById('new_teacher_department')?.value||''):'';
   }
   const mg=tfMgrCollect(cur,false); if(mg===null) return;
+  if(!tfLeadScopeOk(mg,cur)) return;
   try{
-    const body=Object.assign({name,notes,majors,domains,managed_by,staff_type,department,permissions,tags},mg);
+    const body=Object.assign({name,notes,majors,domains,managed_by,staff_type,department,permissions,tags},mg,tfRolesCollect(cur));
     await sb(`/rest/v1/teachers?id=eq.${id}`,'PATCH',body);
     const idx=cachedTeachers.findIndex(t=>t.id===id);
     if(idx>=0) Object.assign(cachedTeachers[idx],body);
