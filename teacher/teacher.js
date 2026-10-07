@@ -245,7 +245,7 @@ function buildTabs() {
   if (p.homework) tabs.push({ id: 'homework', label: '📝 作业反馈' });
   if (p.admission_query) {
     tabs.push({ id: 'admissiondb', label: '🏫 出願数据库' });
-    // 记录该老师被允许查看的专业：权限里选了的；没选则只有自己负责的专业；再限定在所在领域内
+    // 记录该老师被允许查看的出愿专业：由 teacherScope() 按职位 / 负责范围算出（减去「排除的专业」）
     window._teacherAllowedAdmMajors = teacherAdmAllowed(teacherData);
   }
   // 学生管理：admin 勾选后显示，具体子项由 student_mgmt_items 决定
@@ -636,9 +636,8 @@ async function tLoadBookingStudents() {
 function tBkMajor(b) { const s = b && b.student_id && tStuById[b.student_id]; return (s && s.major) || (b && b.major) || ''; }
 // 认领时「已有学生」的候选：这位老师能看到的学生（规则同学生管理 tsaAllowedSet / 保录锁）
 async function tClaimStudents() {
-  const all = await sbAll('/rest/v1/students?select=id,name,major,status,course_type,student_code&order=name.asc');
-  const set = (typeof tsaAllowedSet === 'function') ? tsaAllowedSet() : null;
-  let list = (all || []).filter(s => !set || set.has(s.major));
+  const all = await sbAll('/rest/v1/students?select=id,name,major,status,course_type,student_code,class_ids&order=name.asc');
+  let list = tsaFilterStudents(all);
   if (typeof tsaGuaranteedLock === 'function' && tsaGuaranteedLock()) list = list.filter(tsaIsGuaranteed);
   return list;
 }
@@ -2475,7 +2474,7 @@ async function renderTeacherAdmissionDb(mc) {
   const mainEl = document.querySelector('.main');
   if (mainEl) mainEl.style.maxWidth = 'none';
   if (!(window._teacherAllowedAdmMajors || []).length) {
-    mc.innerHTML = '<div class="empty">暂无可查看的专业，请联系管理员开通</div>';
+    mc.innerHTML = `<div class="empty">${TEACHER_SCOPE_EMPTY_MSG}</div>`;
     return;
   }
 
