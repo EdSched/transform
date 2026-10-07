@@ -737,7 +737,7 @@ function scMountTeacher(boxId) {
   scMount(boxId, {
     mode: 'teacher', canWrite: !!p.success_cases, canPack: true, me: (t.name || (typeof teacherName !== 'undefined' ? teacherName : '') || '').trim(), lockDomain: '',
     allowDomain, allowMajor,
-    inScope: sdoms.length ? (r => sdoms.includes(r.domain)) : undefined,
+    inScope: sdoms.length ? (r => sdoms.includes(r.domain)) : (typeof salesScopeEmpty === 'function' && salesScopeEmpty(t) ? (() => false) : undefined),   // 限定但没设任何范围：什么都不显示，不退回全部
     canEditRow: r => allowDomain(r.domain) && (!set || !scArr(r.majors).length || scArr(r.majors).some(allowMajor)),
     loadStudents: async () => {
       const all = await sbAll('/rest/v1/students?select=id,name,major,extra_majors,course_type,status&order=name.asc');

@@ -290,6 +290,8 @@ function switchTab(tab) {
 function renderTab() {
   const mc = document.getElementById('mainContent');
   mc.innerHTML = '<div class="loading">加载中…</div>';
+  // 营业功能（宣传 / 进度规划 / 宣传资料整合 / 讲师信息 / VIP 规划）：不是营业 / 对接的人按负责范围限定；什么范围都没设 → 提示，不退回全部
+  if (['progressplan', 'promo', 'promopack', 'lectinfo', 'vipsales'].includes(curTab) && salesScopeEmptyMe()) { mc.innerHTML = `<div class="empty">${SALES_SCOPE_EMPTY_MSG}</div>`; return; }
   switch (curTab) {
     case 'todo': renderTodo(mc); break;
     case 'mytasks': renderMyTasks(mc); break;
