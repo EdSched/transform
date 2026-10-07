@@ -505,6 +505,13 @@
           <option value="true">布置作业（学生可提交）</option>
         </select>
       </div>
+      <div class="form-group" style="margin:0"><label class="form-label">作业发布（整门课，所有课次生效）</label>
+        <select id="ac_hw_release_days">
+          <option value="">上课当天</option>
+          <option value="1">提前 1 天</option><option value="2">提前 2 天</option><option value="3">提前 3 天</option>
+          <option value="5">提前 5 天</option><option value="7">提前 7 天</option><option value="14">提前 14 天</option>
+        </select>
+      </div>
     </div>
     <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin:14px 0 8px">腾讯会议设置（选填）</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
@@ -753,7 +760,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
 <script src="../shared/vendor/supabase.min.js"></script>
 <script src="../shared/supabase.js?v=20261008"></script>
-<script src="../shared/constants.js?v=20261008"></script>
+<script src="../shared/constants.js?v=20261011"></script>
 <script src="../shared/riyu.js?v=20261008"></script>
 <script src="../shared/artworks.js?v=20261008"></script>
 <script src="../shared/promo-md.js?v=20261008"></script>
@@ -766,14 +773,14 @@
 <script src="../shared/vip-catalog.js?v=20261008"></script>
 <script src="../shared/tasks.js?v=20261008"></script>
 <script src="../shared/task-checks.js?v=20261008"></script>
-<script src="attendance.js?v=20261008"></script>
+<script src="attendance.js?v=20261011"></script>
 <script src="payroll.js?v=20261008"></script>
 <script src="admissiondb.js?v=20261008"></script>
 <script src="classes.js?v=20261008"></script>
 <script src="students.js?v=20261008"></script>
 <script src="materials.js?v=20261008"></script>
 <script src="booking.js?v=20261008"></script>
-<script src="courses.js?v=20261008"></script>
+<script src="courses.js?v=20261011"></script>
 <script src="monthcal.js?v=20261008"></script>
 <script src="vip-framework.js?v=20261008"></script>
 <script src="promo.js?v=20261008"></script>

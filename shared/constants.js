@@ -1524,6 +1524,23 @@ function studentInCourse(student, course, myMembers) {
 // 日本时间的今天 'YYYY-MM-DD'
 function jstToday() { return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Tokyo' }).slice(0, 10); }
 // 本周 = 日本时间的周一到周日：weekRange(date?) → {start, end, label:'9/22（一）– 9/28（日）'}
+// ── 作业发布日：单回 hw_release_date 优先；否则 = 上课日期 − 课程 hw_release_days 天（空/0 = 上课当天，且视为「没设定」）──
+function hwHasReleaseRule(session, course) {
+  return !!(session && session.hw_release_date) || (parseInt(course && course.hw_release_days) || 0) > 0;
+}
+function hwReleaseDate(session, course) {
+  if (session && session.hw_release_date) return String(session.hw_release_date).slice(0, 10);
+  const sd = String((session && session.session_date) || '').slice(0, 10);
+  const n = parseInt(course && course.hw_release_days) || 0;
+  if (!sd || !n) return sd;
+  const [y, m, d] = sd.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d - n)).toISOString().slice(0, 10);
+}
+// 已发布？没设定发布规则的作业一律算已发布（保持原来的行为）
+function hwIsReleased(session, course) {
+  return !hwHasReleaseRule(session, course) || hwReleaseDate(session, course) <= jstToday();
+}
+
 function weekRange(date) {
   let ds;
   if (!date) ds = jstToday();
