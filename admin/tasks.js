@@ -75,7 +75,7 @@ async function tkImportSeed() {
 function tkRenderTpl() {
   const main = document.getElementById('tkMain');
   const groups = TASK_ROLES.map(r => ({ key: r.key, label: r.label, list: tkTpl.filter(t => t.role === r.key) }));
-  groups.push({ key: '', label: '未分配职能（执行人待定）', list: tkTpl.filter(t => !t.role || !TASK_ROLE_LABEL[t.role]) });
+  groups.push({ key: '', label: '未分配角色（执行人待定）', list: tkTpl.filter(t => !t.role || !TASK_ROLE_LABEL[t.role]) });
   main.innerHTML = `<div style="display:flex;margin-bottom:8px"><button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="tkEditOpen('')">＋ 新增任务模板</button></div>` +
     groups.map(g => {
       const open = tkOpenRoles.has(g.key);
@@ -103,7 +103,7 @@ function tkTplRow(t, i, n) {
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
       <span style="font-size:12px;font-weight:600">${tkE(t.title)}</span>
       ${tag(t.kind === 'auto' ? '自动' : '手动', t.kind === 'auto' ? 'background:var(--ok-bg,#e4f0e8);color:var(--ok,#2a9e6a)' : 'border:1px solid var(--border);color:var(--text-2)')}
-      ${tag(feat ? '跟功能走：' + tkE(t.requires_label || t.requires || '—') : '跟职能走：' + tkE(TASK_ROLE_LABEL[t.role] || t.role_tag || '未分配'), feat ? 'background:var(--accent);color:#fff' : 'border:1px solid var(--accent);color:var(--accent)')}
+      ${tag(feat ? '跟功能走：' + tkE(t.requires_label || t.requires || '—') : '跟角色走：' + tkE(TASK_ROLE_LABEL[t.role] || t.role_tag || '未分配'), feat ? 'background:var(--accent);color:#fff' : 'border:1px solid var(--accent);color:var(--accent)')}
       ${t.domain ? tag(tkE(t.domain), 'border:1px solid var(--border);color:var(--text-3)') : ''}
       <span style="margin-left:auto;display:flex;gap:4px;align-items:center">
         <span onclick="tkToggleActive('${t.id}')" title="点击切换" style="cursor:pointer;user-select:none;font-size:9px;border-radius:2px;padding:1px 8px;${off ? 'background:var(--bg);color:var(--text-3);border:1px dashed var(--border)' : 'background:var(--ok-bg,#e4f0e8);color:var(--ok,#2a9e6a)'}">${off ? '已停用' : '启用'}</span>
@@ -177,8 +177,8 @@ function tkEditRender() {
     ${tkLbl('标题 *')}<input id="tk_title" value="${tkE(d.title)}" style="${TK_INP}">
     ${tkLbl('说明')}<textarea id="tk_detail" rows="2" style="${TK_INP}">${tkE(d.detail || '')}</textarea>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div>${tkLbl('任务从哪里来')}<select onchange="tkSet('assign_by',this.value)" style="${TK_INP}">${opt('role', '跟职能走（按老师的职能标签）', d.assign_by)}${opt('feature', '跟功能走（开了对应功能就出现）', d.assign_by)}</select></div>
-      <div>${tkLbl('职能')}<select onchange="tkSet('role',this.value)" style="${TK_INP}">${opt('', '未分配', d.role || '')}${TASK_ROLES.map(r => opt(r.key, r.label, d.role || '')).join('')}</select></div>
+      <div>${tkLbl('任务从哪里来')}<select onchange="tkSet('assign_by',this.value)" style="${TK_INP}">${opt('role', '跟角色走（按老师的管理职位 / 执行角色）', d.assign_by)}${opt('feature', '跟功能走（开了对应功能就出现）', d.assign_by)}</select></div>
+      <div>${tkLbl('角色')}<select onchange="tkSet('role',this.value)" style="${TK_INP}">${opt('', '未分配', d.role || '')}${TASK_ROLES.map(r => opt(r.key, r.label, d.role || '')).join('')}</select></div>
     </div>
     ${feat ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div>${tkLbl('对应功能的权限代号（如 homework、records_entry、tag:专业课老师）')}<input id="tk_requires" value="${tkE(d.requires || '')}" style="${TK_INP}"></div>
@@ -300,14 +300,13 @@ async function tkTeamDraw(periods, compute) {
     const cand = tkTeamTeachers.filter(t => taskApplicable(t, tkTeamTpl, month).length || taskMissingFeatures(t, tkTeamTpl).length);
     await Promise.all(cand.map(async t => { tkTeamRes[t.id] = await taskBuildList(tkTeamD, t, tkTeamTpl, month, tkTeamDone); }));
   }
-  const roleTags = TASK_ROLES.map(r => r.label);
   const q = tkTeamQ.trim();
   let rows = tkTeamTeachers.filter(t => tkTeamRes[t.id] !== undefined || taskMissingFeatures(t, tkTeamTpl).length)
-    .filter(t => !tkTeamRole || (t.tags || []).includes(tkTeamRole)).filter(t => !q || (t.name || '').includes(q));
+    .filter(t => !tkTeamRole || taskTeacherHasRole(t, tkTeamRole)).filter(t => !q || (t.name || '').includes(q));
   const sel = `font-size:11px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit`;
   box.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <select onchange="tkTeamPeriod=this.value;tkTeamMount(tkTeamBox,tkTeamFilterFn)" style="${sel}">${periods.map(p => `<option value="${p}"${p === tkTeamPeriod ? ' selected' : ''}>${p}</option>`).join('')}</select>
-      <select onchange="tkTeamRole=this.value;tkTeamShown=30;tkTeamDraw(null,false)" style="${sel}"><option value="">全部职能</option>${roleTags.map(r => `<option value="${r}"${tkTeamRole === r ? ' selected' : ''}>${r}</option>`).join('')}</select>
+      <select onchange="tkTeamRole=this.value;tkTeamShown=30;tkTeamDraw(null,false)" style="${sel}"><option value="">全部角色</option>${TASK_ROLES.map(r => `<option value="${r.key}"${tkTeamRole === r.key ? ' selected' : ''}>${r.label}</option>`).join('')}</select>
       <input placeholder="搜索老师…" value="${tkE(tkTeamQ)}" oninput="tkTeamQ=this.value;tkTeamShown=30;tkTeamDraw(null,false)" style="${sel};min-width:140px">
       <span style="font-size:10px;color:var(--text-3)">自动任务显示当前数字（0 = 完成）；点任务看名单；✓ = 已处理</span>
       <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="tkTeamMount(tkTeamBox,tkTeamFilterFn)">刷新</button></div>
@@ -326,7 +325,7 @@ function tkTeamRow(t) {
   const miss = taskMissingFeatures(t, tkTeamTpl).map(m => `<span style="font-size:10px;color:var(--warn,#b8860b)">⚠ 需要开启：${tkE(m.tpl.requires_label || m.tpl.requires)}${m.spot && tkIsAdmin() ? ` <a href="javascript:void(0)" onclick="tkGoSetting('${t.id}','${m.spot[0]}','${m.spot[1] || ''}')" style="color:var(--accent)">[去设置]</a>` : ''}</span>`).join('<br>');
   return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:7px 10px;margin-bottom:5px;background:var(--surface)">
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="font-size:12px;font-weight:600;margin-right:2px">${tkE(t.name)}</span>
-      ${(t.tags || []).filter(g => TASK_ROLES.some(r => r.label === g)).map(g => `<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 6px">${tkE(g)}</span>`).join('')}
+      ${TASK_ROLES.filter(r => taskTeacherHasRole(t, r.key)).map(r => r.label).map(g => `<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 6px">${tkE(g)}</span>`).join('')}
       <span style="font-size:10px;color:var(--text-3);margin-right:4px">${list.length ? `完成 ${nDone}/${list.length}` : ''}</span>${list.map(chip).join('')}</div>
     ${miss ? `<div style="margin-top:4px;line-height:1.7">${miss}</div>` : ''}</div>`;
 }

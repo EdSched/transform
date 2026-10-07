@@ -1,36 +1,46 @@
 {
  "roles": [
   {
-   "key": "all_lead",
-   "label": "全学科负责人",
-   "tag": "全学科负责人"
+   "key": "lead",
+   "label": "负责人",
+   "tag": "负责人"
   },
   {
-   "key": "subj_lead",
-   "label": "学科负责人",
-   "tag": "学科负责人"
+   "key": "senmon",
+   "label": "专业课老师",
+   "tag": "专业课老师"
   },
   {
-   "key": "lecturer",
-   "label": "任课讲师",
-   "tag": "任课讲师"
+   "key": "ta",
+   "label": "TA",
+   "tag": "TA"
   },
   {
-   "key": "subj_ta",
-   "label": "学科TA",
-   "tag": "学科TA"
+   "key": "homeroom",
+   "label": "班主任",
+   "tag": "班主任"
   },
   {
-   "key": "all_ta",
-   "label": "全学科TA",
-   "tag": "全学科TA"
+   "key": "sales",
+   "label": "营业",
+   "tag": "营业"
+  },
+  {
+   "key": "liaison",
+   "label": "对接",
+   "tag": "对接"
+  },
+  {
+   "key": "soumu",
+   "label": "总务",
+   "tag": "总务"
   }
  ],
  "templates": [
   {
    "id": "L01",
    "title": "各学科通年课程安排",
-   "role": "all_lead",
+   "role": "lead",
    "kind": "auto",
    "months": [
     12
@@ -45,12 +55,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科负责人"
+   "role_tag": "负责人"
   },
   {
    "id": "L02",
    "title": "下一期课程表确认",
-   "role": "all_lead",
+   "role": "lead",
    "kind": "auto",
    "months": [
     12,
@@ -68,12 +78,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科负责人"
+   "role_tag": "负责人"
   },
   {
    "id": "L03",
    "title": "下一期课程登录（唯新2.0 / CRM）",
-   "role": "all_lead",
+   "role": "lead",
    "kind": "manual",
    "months": [
     12,
@@ -91,12 +101,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科负责人"
+   "role_tag": "负责人"
   },
   {
    "id": "L04",
    "title": "工资申告确认审批",
-   "role": "all_lead",
+   "role": "lead",
    "kind": "auto",
    "months": [
     1,
@@ -122,12 +132,12 @@
    "assign_by": "feature",
    "requires": "payroll_approve",
    "requires_label": "负责人 · 工资审批",
-   "role_tag": "全学科负责人"
+   "role_tag": "负责人"
   },
   {
    "id": "L05",
    "title": "共通课通年安排",
-   "role": "all_lead",
+   "role": "lead",
    "kind": "manual",
    "months": [
     1,
@@ -153,12 +163,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科负责人"
+   "role_tag": "负责人"
   },
   {
    "id": "L06",
    "title": "全学科计划书收集确认",
-   "role": "all_lead",
+   "role": "lead",
    "kind": "auto",
    "months": [
     5,
@@ -176,12 +186,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科负责人"
+   "role_tag": "负责人"
   },
   {
    "id": "L07",
    "title": "全学科出愿学校收集确认",
-   "role": "all_lead",
+   "role": "lead",
    "kind": "auto",
    "months": [
     5,
@@ -199,12 +209,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科负责人"
+   "role_tag": "负责人"
   },
   {
    "id": "L08",
    "title": "全学科合格信息收集确认",
-   "role": "all_lead",
+   "role": "lead",
    "kind": "auto",
    "months": [
     2,
@@ -222,12 +232,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科负责人"
+   "role_tag": "负责人"
   },
   {
    "id": "L09",
    "title": "全学科学生信息确认",
-   "role": "all_lead",
+   "role": "lead",
    "kind": "manual",
    "months": [
     1,
@@ -253,12 +263,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科负责人"
+   "role_tag": "负责人"
   },
   {
    "id": "L10",
    "title": "语言课跟进确认",
-   "role": "all_lead",
+   "role": "lead",
    "kind": "manual",
    "months": [
     1,
@@ -276,12 +286,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科负责人"
+   "role_tag": "负责人"
   },
   {
    "id": "L11",
    "title": "课程设计和开发：过去问题库 / 答题数据库",
-   "role": "all_lead",
+   "role": "lead",
    "kind": "manual",
    "months": [
     1,
@@ -307,12 +317,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科负责人"
+   "role_tag": "负责人"
   },
   {
    "id": "L12",
    "title": "营业宣传配合",
-   "role": "all_lead",
+   "role": "lead",
    "kind": "manual",
    "months": [
     1,
@@ -338,12 +348,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科负责人"
+   "role_tag": "负责人"
   },
   {
    "id": "S01",
    "title": "担当分配",
-   "role": "subj_lead",
+   "role": "lead",
    "kind": "manual",
    "months": [
     4,
@@ -360,12 +370,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "学科负责人"
+   "role_tag": "负责人"
   },
   {
    "id": "S02",
    "title": "讲义 / 作业 / 模拟考题上传网盘",
-   "role": "lecturer",
+   "role": "senmon",
    "kind": "manual",
    "months": [
     1,
@@ -383,12 +393,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "任课讲师"
+   "role_tag": "专业课老师"
   },
   {
    "id": "S03",
    "title": "出席确认",
-   "role": "lecturer",
+   "role": "senmon",
    "kind": "auto",
    "months": [
     1,
@@ -414,12 +424,12 @@
    "assign_by": "feature",
    "requires": "records_entry",
    "requires_label": "老师端功能 · 出席登记",
-   "role_tag": "任课讲师"
+   "role_tag": "专业课老师"
   },
   {
    "id": "S04",
    "title": "视频录制和上传",
-   "role": "lecturer",
+   "role": "senmon",
    "kind": "manual",
    "months": [
     1,
@@ -445,12 +455,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "任课讲师"
+   "role_tag": "专业课老师"
   },
   {
    "id": "S05",
    "title": "布置作业和模拟考题",
-   "role": "lecturer",
+   "role": "senmon",
    "kind": "manual",
    "months": [
     1,
@@ -476,12 +486,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "任课讲师"
+   "role_tag": "专业课老师"
   },
   {
    "id": "S06",
    "title": "大课作业批改",
-   "role": "lecturer",
+   "role": "senmon",
    "kind": "auto",
    "months": [
     1,
@@ -507,12 +517,12 @@
    "assign_by": "feature",
    "requires": "homework",
    "requires_label": "老师端功能 · 作业反馈 / 作业批改分配",
-   "role_tag": "任课讲师"
+   "role_tag": "专业课老师"
   },
   {
    "id": "S07",
    "title": "讲师介绍完善",
-   "role": "lecturer",
+   "role": "senmon",
    "kind": "auto",
    "months": [
     1,
@@ -538,12 +548,12 @@
    "assign_by": "feature",
    "requires": "tag:专业课老师",
    "requires_label": "基本信息 · 标签「专业课老师」",
-   "role_tag": "任课讲师"
+   "role_tag": "专业课老师"
   },
   {
    "id": "S08",
    "title": "课程开发和讲义撰写",
-   "role": "lecturer",
+   "role": "senmon",
    "kind": "manual",
    "months": [
     1,
@@ -561,12 +571,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "任课讲师"
+   "role_tag": "专业课老师"
   },
   {
    "id": "S09",
    "title": "合格实绩分析",
-   "role": "subj_lead",
+   "role": "lead",
    "kind": "auto",
    "months": [
     3,
@@ -582,12 +592,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "学科负责人"
+   "role_tag": "负责人"
   },
   {
    "id": "T01",
    "title": "学生月度面谈",
-   "role": "subj_ta",
+   "role": "ta",
    "kind": "auto",
    "months": [
     1,
@@ -613,12 +623,12 @@
    "assign_by": "feature",
    "requires": "student_mgmt:meetings",
    "requires_label": "老师端功能 · 学生管理 · 面谈查询",
-   "role_tag": "学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "T02",
    "title": "出席督促和日常联系",
-   "role": "subj_ta",
+   "role": "ta",
    "kind": "auto",
    "months": [
     1,
@@ -644,12 +654,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "T03",
    "title": "上课提醒",
-   "role": "subj_ta",
+   "role": "ta",
    "kind": "manual",
    "months": [
     1,
@@ -675,12 +685,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "T04",
    "title": "研究计划书督促收集",
-   "role": "subj_ta",
+   "role": "ta",
    "kind": "auto",
    "months": [
     5,
@@ -698,12 +708,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "T05",
    "title": "出愿学校 list 督促收集",
-   "role": "subj_ta",
+   "role": "ta",
    "kind": "auto",
    "months": [
     5,
@@ -721,12 +731,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "T06",
    "title": "学生合格信息收集",
-   "role": "subj_ta",
+   "role": "ta",
    "kind": "auto",
    "months": [
     2,
@@ -742,12 +752,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "T07",
    "title": "考卷、面试问题收集",
-   "role": "subj_ta",
+   "role": "ta",
    "kind": "manual",
    "months": [
     1,
@@ -765,12 +775,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "T08",
    "title": "讲师评价汇报",
-   "role": "subj_ta",
+   "role": "ta",
    "kind": "manual",
    "months": [
     1,
@@ -796,12 +806,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "A01",
    "title": "出愿学校信息更新",
-   "role": "all_ta",
+   "role": "ta",
    "kind": "manual",
    "months": [
     4,
@@ -819,12 +829,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "A02",
    "title": "过去问收集",
-   "role": "all_ta",
+   "role": "ta",
    "kind": "manual",
    "months": [
     5,
@@ -840,12 +850,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "A03",
    "title": "开课前学科会议提醒",
-   "role": "all_ta",
+   "role": "ta",
    "kind": "auto",
    "months": [
     3,
@@ -863,12 +873,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "A04",
    "title": "开课前班会提醒",
-   "role": "all_ta",
+   "role": "ta",
    "kind": "auto",
    "months": [
     3,
@@ -890,12 +900,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "A05",
    "title": "每月面谈提醒",
-   "role": "all_ta",
+   "role": "ta",
    "kind": "auto",
    "months": [
     1,
@@ -921,12 +931,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "A06",
    "title": "计划书 / 出愿学校 list 收集提醒",
-   "role": "all_ta",
+   "role": "ta",
    "kind": "auto",
    "months": [
     5,
@@ -944,12 +954,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "A07",
    "title": "合格信息收集提醒",
-   "role": "all_ta",
+   "role": "ta",
    "kind": "auto",
    "months": [
     3,
@@ -965,12 +975,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "A08",
    "title": "次年通年课程安排提醒",
-   "role": "all_ta",
+   "role": "ta",
    "kind": "manual",
    "months": [
     12
@@ -985,12 +995,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "A09",
    "title": "共通课安排提醒",
-   "role": "all_ta",
+   "role": "ta",
    "kind": "manual",
    "months": [
     1,
@@ -1016,12 +1026,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "A10",
    "title": "问题学生标红上报",
-   "role": "all_ta",
+   "role": "ta",
    "kind": "auto",
    "months": [
     1,
@@ -1047,12 +1057,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "A11",
    "title": "到期学生提醒确认",
-   "role": "all_ta",
+   "role": "ta",
    "kind": "auto",
    "months": [
     1,
@@ -1078,12 +1088,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": "全学科TA"
+   "role_tag": "TA"
   },
   {
    "id": "B01",
    "title": "讲师日常管理",
-   "role": "",
+   "role": "lead",
    "kind": "manual",
    "months": [
     1,
@@ -1109,12 +1119,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": ""
+   "role_tag": "负责人"
   },
   {
    "id": "B02",
    "title": "讲师培训",
-   "role": "",
+   "role": "lead",
    "kind": "manual",
    "months": [
     1,
@@ -1140,12 +1150,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": ""
+   "role_tag": "负责人"
   },
   {
    "id": "B03",
    "title": "教学监督",
-   "role": "",
+   "role": "lead",
    "kind": "manual",
    "months": [
     1,
@@ -1171,12 +1181,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": ""
+   "role_tag": "负责人"
   },
   {
    "id": "B04",
    "title": "课程改革",
-   "role": "",
+   "role": "lead",
    "kind": "manual",
    "months": [
     1,
@@ -1202,12 +1212,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": ""
+   "role_tag": "负责人"
   },
   {
    "id": "B05",
    "title": "教学研发报告",
-   "role": "",
+   "role": "lead",
    "kind": "manual",
    "months": [
     1,
@@ -1233,12 +1243,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": ""
+   "role_tag": "负责人"
   },
   {
    "id": "B06",
    "title": "信息同步",
-   "role": "",
+   "role": "lead",
    "kind": "manual",
    "months": [
     1,
@@ -1264,12 +1274,12 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": ""
+   "role_tag": "负责人"
   },
   {
    "id": "B07",
    "title": "试讲和直播配合",
-   "role": "",
+   "role": "lead",
    "kind": "manual",
    "months": [
     1,
@@ -1295,7 +1305,7 @@
    "assign_by": "role",
    "requires": null,
    "requires_label": null,
-   "role_tag": ""
+   "role_tag": "负责人"
   }
  ],
  "calendar": [
