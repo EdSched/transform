@@ -1344,7 +1344,11 @@ function teacherScope(t, kind) {
   };
   const own = Array.isArray(t.majors) ? t.majors : [];
   add(own, '负责专业');
-  if (!own.length) add([].concat(...(t.managed_by || []).map(_scopeDomainMajors)), '负责领域');
+  if (!own.length) {
+    // 负责领域（teachers.domains）= 老师自己页面能看到的领域；老数据只填了隶属领域（managed_by）时退回它
+    const doms = (t.domains || []).length ? t.domains : (t.managed_by || []);
+    add([].concat(...doms.map(_scopeDomainMajors)), (t.domains || []).length ? '负责领域' : '隶属领域');
+  }
   if (t.position === 'lead' && managerScopeNonEmpty(t.manage_scope)) {
     const ms = t.manage_scope;
     add([].concat(...(ms.domains || []).map(_scopeDomainMajors)).concat(ms.majors || []), '负责人管理范围');

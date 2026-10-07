@@ -1351,7 +1351,8 @@ function admScopeTeacher(){
   const act=id=>[...document.querySelectorAll('#'+id+' .filter-chip.active')].map(c=>c.dataset.value);
   const _isDom=(typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && !!viewLockDomain());
   let mb=act('new_teacher_managed'); if(_isDom&&!mb.length) mb=[viewLockDomain()];
-  const t={majors:act('new_teacher_majors'),managed_by:mb,tags:parseTeacherTags(),position:null,roles:[],role_scope:null,manage_scope:null,permissions:{exclude_majors:[..._admExcl]}};
+  let dm=act('new_teacher_domains'); if(_isDom&&!dm.length) dm=[viewLockDomain()];
+  const t={majors:act('new_teacher_majors'),managed_by:mb,domains:dm,tags:parseTeacherTags(),position:null,roles:[],role_scope:null,manage_scope:null,permissions:{exclude_majors:[..._admExcl]}};
   if(tfHasRoleUI()){
     t.position=(tsecCurType()==='正社员'&&_tfPos)||null; t.roles=_tfRoles.slice();
     if(_tfRoles.includes('homeroom')&&_tfHr) t.role_scope={homeroom:{domains:_tfHr.domains,majors:_tfHr.majors,class_ids:_tfHr.classIds}};

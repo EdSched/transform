@@ -50,7 +50,7 @@ returns table (
 ) language plpgsql stable as $$
 declare
   r record;
-  tags text[]; own text[]; mb text[]; ms jsonb; hr jsonb; perm jsonb;
+  tags text[]; own text[]; mb text[]; dm text[]; ms jsonb; hr jsonb; perm jsonb;
   adm_keys text[]; adm_doms text[]; base text[];
   rng text[]; g_stu text[]; g_adm text[]; stu_on boolean; adm_on boolean;
 begin
@@ -61,6 +61,7 @@ begin
     tags := public._sc_arr(to_jsonb(r.tags));
     own := public._sc_expand(public._sc_arr(to_jsonb(r.majors)));
     mb := public._sc_arr(to_jsonb(r.managed_by));
+    dm := public._sc_arr(to_jsonb(r.domains));
     ms := to_jsonb(r.manage_scope); hr := r.role_scope -> 'homeroom';
     hr_classes := coalesce(jsonb_array_length(case when jsonb_typeof(hr -> 'class_ids') = 'array' then hr -> 'class_ids' end), 0);
     stu_all_new := (coalesce(r.position, '') in ('sales', 'liaison')) or ('营业老师' = any(tags));
@@ -84,7 +85,7 @@ begin
 
     -- 新：负责专业 ∪（没设负责专业时：负责领域）∪ 负责人管理范围 ∪ 班主任范围
     rng := own;
-    if coalesce(array_length(own, 1), 0) = 0 then rng := rng || public._sc_dom_majors(mb); end if;
+    if coalesce(array_length(own, 1), 0) = 0 then rng := rng || public._sc_dom_majors(case when coalesce(array_length(dm, 1), 0) > 0 then dm else mb end); end if;   -- 负责领域(domains)，空则退回隶属领域(managed_by)
     if coalesce(r.position, '') = 'lead' and ms is not null and jsonb_typeof(ms) = 'object' then
       rng := rng || public._sc_dom_majors(public._sc_arr(ms -> 'domains')) || public._sc_expand(public._sc_arr(ms -> 'majors'));
     end if;
