@@ -330,21 +330,172 @@ function thwRenderMain() {
 
 // ── 照片旋转：im.rotate = 0/90/180/270，存在 homework_submissions.answers 的图片对象里 ──
 const thwRotNorm = r => (((parseInt(r) || 0) % 360) + 360) % 360;
+const THW_ZOOMS = [0.5, 0.75, 1, 1.5, 2, 3];
+const thwZ = {};   // 放大缩小只影响当前查看，不保存：{ [图片框 id]: { z, ... } }
 function thwRotImg(subId, ai, i, im, forPrint, imgStyle) {
   const rot = thwRotNorm(im.rotate), side = rot === 90 || rot === 270;
   const id = `thwimg_${subId}_${ai}_${i}`;
-  const btn = (d, t) => `<span onclick="thwRotate('${subId}',${ai},${i},${d})" style="cursor:pointer;background:rgba(0,0,0,.55);color:#fff;border-radius:3px;padding:1px 7px;font-size:13px;line-height:1.5;user-select:none">${t}</span>`;
-  const ctl = forPrint ? '' : `<div style="position:absolute;top:10px;right:6px;z-index:2;display:flex;gap:4px">${btn(-90, '↺')}${btn(90, '↻')}</div>`;
   const wrap = side
     ? `display:flex;align-items:center;justify-content:center;width:100%;${forPrint ? 'height:440px' : ''}`
     : 'display:inline-block;max-width:100%';
-  return `<div id="${id}" data-rot="${rot}" style="position:relative;${wrap}">${ctl}<img src="${thwEsc(im.url)}" ${forPrint ? 'width="440"' : `onload="thwFitRot('${id}')"`} style="${imgStyle}${rot ? `;transform:rotate(${rot}deg)` : ''}"></div>`;
+  if (forPrint) return `<div id="${id}" data-rot="${rot}" style="position:relative;${wrap}"><img src="${thwEsc(im.url)}" width="440" style="${imgStyle}${rot ? `;transform:rotate(${rot}deg)` : ''}"></div>`;
+  const btn = (js, t) => `<span onclick="${js}" style="cursor:pointer;background:rgba(0,0,0,.55);color:#fff;border-radius:3px;padding:1px 7px;font-size:13px;line-height:1.5;user-select:none">${t}</span>`;
+  const ctl = `<div style="position:absolute;top:10px;right:6px;z-index:2;display:flex;gap:4px;align-items:center">${btn(`thwRotate('${subId}',${ai},${i},-90)`, '↺')}${btn(`thwRotate('${subId}',${ai},${i},90)`, '↻')}${btn(`thwZoomStep('${id}',1)`, '＋')}<span id="${id}_pct" style="background:rgba(0,0,0,.55);color:#fff;border-radius:3px;padding:1px 5px;font-size:11px;line-height:1.7;min-width:34px;text-align:center;user-select:none">100%</span>${btn(`thwZoomStep('${id}',-1)`, '－')}${btn(`thwZoomSet('${id}',1)`, '1:1')}</div>`;
+  return `<div id="${id}" data-rot="${rot}" style="position:relative;${wrap}">${ctl}<div id="${id}_s" style="display:contents"><div id="${id}_g" style="display:contents"><img src="${thwEsc(im.url)}" onload="thwFitRot('${id}');thwBindPan('${id}')" onclick="thwImgClick(event,'${subId}',${ai},${i})" style="${imgStyle}${rot ? `;transform:rotate(${rot}deg)` : ''};cursor:zoom-in"></div></div></div>`;
 }
 // 横向时外框高度 = 图片显示宽度，避免和下面的内容重叠
 function thwFitRot(id) {
   const w = document.getElementById(id); if (!w) return;
+  if (thwZ[id] && thwZ[id].z !== 1) return;
   const img = w.querySelector('img'), rot = parseInt(w.dataset.rot) || 0;
   w.style.height = (rot === 90 || rot === 270) ? (img.offsetWidth + 'px') : '';
+}
+// 不放大时的外框样式（和旋转逻辑一致）
+function thwWrapStyle(w, rot) {
+  const side = rot === 90 || rot === 270;
+  w.dataset.rot = rot;
+  w.style.display = side ? 'flex' : 'inline-block';
+  w.style.alignItems = w.style.justifyContent = side ? 'center' : '';
+  w.style.width = side ? '100%' : '';
+  w.style.height = '';
+  w.style.overflow = '';
+}
+// 放大 / 缩小：外框大小不变，图片在框里滚动。z=1 时回到原来的显示方式。
+function thwZoomApply(id) {
+  const w = document.getElementById(id); if (!w) return;
+  const st = thwZ[id] || (thwZ[id] = { z: 1 });
+  const sc = document.getElementById(id + '_s'), stg = document.getElementById(id + '_g'), img = w.querySelector('img');
+  const rot = parseInt(w.dataset.rot) || 0, side = rot === 90 || rot === 270;
+  const pct = document.getElementById(id + '_pct'); if (pct) pct.textContent = Math.round(st.z * 100) + '%';
+  if (st.z === 1) {
+    if (!st.on) return;
+    st.on = false;
+    sc.style.cssText = 'display:contents'; stg.style.cssText = 'display:contents';
+    img.setAttribute('style', st.imgCss);
+    img.style.transform = rot ? `rotate(${rot}deg)` : '';
+    thwWrapStyle(w, rot); thwFitRot(id);
+    return;
+  }
+  if (!st.on) {
+    st.on = true;
+    st.imgCss = img.getAttribute('style');
+    st.bw = img.offsetWidth; st.bh = img.offsetHeight;
+    const vw = side ? st.bh : st.bw, vh = side ? st.bw : st.bh;
+    st.fw = Math.min(vw, w.parentElement.clientWidth || vw); st.fh = vh;
+  }
+  w.style.cssText = `position:relative;display:block;width:${st.fw}px;height:${st.fh}px;max-width:100%;overflow:hidden`;
+  sc.style.cssText = 'display:flex;width:100%;height:100%;overflow:auto;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch';
+  const iw = st.bw * st.z, ih = st.bh * st.z;
+  stg.style.cssText = `flex:none;margin:auto;position:relative;width:${side ? ih : iw}px;height:${side ? iw : ih}px`;
+  img.setAttribute('style', `position:absolute;left:50%;top:50%;width:${iw}px;height:${ih}px;max-width:none;max-height:none;margin:0;box-sizing:border-box;border:1px solid var(--border-light);transform:translate(-50%,-50%) rotate(${rot}deg);cursor:grab`);
+}
+function thwZoomSet(id, z) {
+  const st = thwZ[id] || (thwZ[id] = { z: 1 });
+  st.z = Math.max(0.5, Math.min(3, z));
+  if (Math.abs(st.z - 1) < 0.02) st.z = 1;
+  thwZoomApply(id);
+}
+function thwZoomNext(z, dir) {
+  const L = THW_ZOOMS;
+  return dir > 0 ? (L.find(x => x > z + 0.01) || L[L.length - 1]) : ([...L].reverse().find(x => x < z - 0.01) || L[0]);
+}
+function thwZoomStep(id, dir) { thwZoomSet(id, thwZoomNext((thwZ[id] || { z: 1 }).z, dir)); }
+// 电脑上按住拖动、手机上双指缩放（单指拖动靠浏览器自带滚动）
+function thwBindPan(id, el, getZ, setZ, onTap) {
+  el = el || document.getElementById(id + '_s');
+  if (!el || el._thwBound) return;
+  getZ = getZ || (() => (thwZ[id] || { z: 1 }).z);
+  setZ = setZ || (z => thwZoomSet(id, z));
+  el._thwBound = true;
+  let drag = null, moved = false, pinch = null;
+  el.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    drag = { x: e.clientX, y: e.clientY, l: el.scrollLeft, t: el.scrollTop }; moved = false;
+    if (getZ() !== 1) e.preventDefault();
+  });
+  window.addEventListener('mousemove', e => {
+    if (!drag) return;
+    if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 4) moved = true;
+    el.scrollLeft = drag.l - (e.clientX - drag.x); el.scrollTop = drag.t - (e.clientY - drag.y);
+  });
+  window.addEventListener('mouseup', () => { drag = null; });
+  el._thwWasDrag = () => moved;
+  const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  el.addEventListener('touchstart', e => { if (e.touches.length === 2) pinch = { d: dist(e.touches), z: getZ() }; }, { passive: true });
+  el.addEventListener('touchmove', e => {
+    if (e.touches.length === 2 && pinch) { e.preventDefault(); setZ(pinch.z * dist(e.touches) / pinch.d); }
+  }, { passive: false });
+  el.addEventListener('touchend', e => { if (e.touches.length < 2) pinch = null; }, { passive: true });
+}
+// 点图片：全屏黑底大图（可放大缩小、旋转、左右切换同一份作业的其他照片）
+function thwImgClick(ev, subId, ai, i) {
+  const sc = document.getElementById(`thwimg_${subId}_${ai}_${i}_s`);
+  if (sc && sc._thwWasDrag && sc._thwWasDrag()) return;
+  const sub = (thwSubs[thwOpenSession] || []).find(x => x.id === subId); if (!sub) return;
+  const list = []; let idx = 0;
+  (sub.answers || []).forEach((a, x) => (a.images || []).forEach((im, y) => {
+    if (im.kind === 'doc') return;
+    if (x === ai && y === i) idx = list.length;
+    list.push({ url: im.url, rot: thwRotNorm(im.rotate) });
+  }));
+  thwLightbox(list, idx);
+}
+function thwLightbox(list, idx) {
+  const old = document.getElementById('thw_lb'); if (old) old.remove();
+  const ov = document.createElement('div');
+  ov.id = 'thw_lb';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:#000;color:#fff;display:flex;flex-direction:column';
+  const b = 'cursor:pointer;background:rgba(255,255,255,.18);border-radius:3px;padding:3px 10px;font-size:15px;user-select:none';
+  ov.innerHTML = `<div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;padding:8px 10px;flex:none">
+    <span id="thw_lb_n" style="margin-right:auto;font-size:12px;opacity:.8"></span>
+    <span data-a="prev" style="${b}">‹</span><span data-a="next" style="${b}">›</span>
+    <span data-a="rl" style="${b}">↺</span><span data-a="rr" style="${b}">↻</span>
+    <span data-a="in" style="${b}">＋</span><span id="thw_lb_p" style="font-size:12px;min-width:38px;text-align:center"></span><span data-a="out" style="${b}">－</span><span data-a="one" style="${b}">1:1</span>
+    <span data-a="x" style="${b};margin-left:8px">×</span></div>
+    <div id="thw_lb_s" style="flex:1;min-height:0;display:flex;overflow:auto;touch-action:pan-x pan-y"><div id="thw_lb_g" style="flex:none;margin:auto;position:relative"><img id="thw_lb_i" style="position:absolute;left:50%;top:50%;max-width:none;user-select:none;-webkit-user-drag:none;cursor:grab" draggable="false"></div></div>`;
+  document.body.appendChild(ov);
+  const sc = ov.querySelector('#thw_lb_s'), stg = ov.querySelector('#thw_lb_g'), img = ov.querySelector('#thw_lb_i');
+  const S = { z: 1, rot: 0 };
+  const draw = () => {
+    const side = S.rot === 90 || S.rot === 270, nw = img.naturalWidth || 1, nh = img.naturalHeight || 1;
+    const aw = sc.clientWidth, ah = sc.clientHeight;
+    const fit = Math.min(1, side ? Math.min(aw / nh, ah / nw) : Math.min(aw / nw, ah / nh));
+    const iw = nw * fit * S.z, ih = nh * fit * S.z;
+    stg.style.width = (side ? ih : iw) + 'px'; stg.style.height = (side ? iw : ih) + 'px';
+    img.style.width = iw + 'px'; img.style.height = ih + 'px';
+    img.style.transform = `translate(-50%,-50%) rotate(${S.rot}deg)`;
+    ov.querySelector('#thw_lb_p').textContent = Math.round(S.z * 100) + '%';
+  };
+  const show = n => {
+    idx = (n + list.length) % list.length; S.z = 1; S.rot = list[idx].rot;
+    ov.querySelector('#thw_lb_n').textContent = `${idx + 1} / ${list.length}`;
+    img.onload = draw; img.src = list[idx].url; sc.scrollLeft = sc.scrollTop = 0; draw();
+  };
+  const setZ = z => { S.z = Math.max(0.5, Math.min(5, z)); draw(); };
+  const act = a => {
+    if (a === 'x') return close();
+    if (a === 'prev') return show(idx - 1);
+    if (a === 'next') return show(idx + 1);
+    if (a === 'rl') S.rot = thwRotNorm(S.rot - 90);
+    else if (a === 'rr') S.rot = thwRotNorm(S.rot + 90);
+    else if (a === 'in') S.z = Math.min(5, thwZoomNext(S.z, 1) === S.z ? S.z * 1.5 : thwZoomNext(S.z, 1));
+    else if (a === 'out') S.z = thwZoomNext(S.z, -1);
+    else if (a === 'one') S.z = 1;
+    draw();
+  };
+  const onKey = e => {
+    if (e.key === 'Escape') close();
+    else if (e.key === 'ArrowLeft') act('prev');
+    else if (e.key === 'ArrowRight') act('next');
+    else if (e.key === '+' || e.key === '=') act('in');
+    else if (e.key === '-') act('out');
+  };
+  function close() { document.removeEventListener('keydown', onKey); window.removeEventListener('resize', draw); ov.remove(); }
+  ov.addEventListener('click', e => { const a = e.target.getAttribute && e.target.getAttribute('data-a'); if (a) act(a); });
+  document.addEventListener('keydown', onKey); window.addEventListener('resize', draw);
+  thwBindPan('', sc, () => S.z, setZ);
+  if (list.length < 2) ov.querySelectorAll('[data-a=prev],[data-a=next]').forEach(x => x.style.display = 'none');
+  show(idx);
 }
 const thwRotTimers = {};
 function thwRotate(subId, ai, i, d) {
@@ -354,13 +505,10 @@ function thwRotate(subId, ai, i, d) {
   im.rotate = thwRotNorm((im.rotate || 0) + d);
   const w = document.getElementById(`thwimg_${subId}_${ai}_${i}`);
   if (w) {
-    const side = im.rotate === 90 || im.rotate === 270;
-    w.dataset.rot = im.rotate;
-    w.style.display = side ? 'flex' : 'inline-block';
-    w.style.alignItems = w.style.justifyContent = side ? 'center' : '';
-    w.style.width = side ? '100%' : '';
+    thwWrapStyle(w, im.rotate);
     w.querySelector('img').style.transform = im.rotate ? `rotate(${im.rotate}deg)` : '';
     thwFitRot(w.id);
+    thwZoomApply(w.id);
   }
   // 稍等一下再保存（连点几次只存一次）；保存失败只在本次预览里生效，不打扰老师
   clearTimeout(thwRotTimers[subId]);
