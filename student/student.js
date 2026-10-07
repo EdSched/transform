@@ -24,6 +24,55 @@ function locationColor(loc) {
 
 const STORAGE_KEY = 'txe_student_info';
 const STORAGE_DAYS = 30;
+// 语言能力表单里需要随本机记录保存的控件
+const INFO_LANG_IDS = ['en_have_type','en_have_score','en_upcoming_type','en_upcoming_status','en_upcoming_date',
+  'ja_have_type','ja_have_jlpt_level','ja_have_jlpt_score','ja_have_eju_japanese','ja_have_eju_writing','ja_have_other_text',
+  'ja_upcoming_type','ja_upcoming_jlpt_level','ja_upcoming_other_text','ja_upcoming_status','ja_upcoming_date'];
+let infoGateOn = false, infoStoredExpiryStr = '';
+
+// 必填项清单：card=所在卡片；ok=已填
+function getInfoItems() {
+  const v = id => (document.getElementById(id)?.value || '').trim();
+  const member = typeof bkMode !== 'undefined' && bkMode === 'member' && typeof bkStudent !== 'undefined' && bkStudent;
+  const items = [];
+  if (!member) items.push({ label: '姓名', card: 'basic', el: document.getElementById('name'), ok: !!v('name') });
+  items.push({ label: '出愿期间', card: 'basic', el: document.getElementById('ep1')?.closest('.radio-group'),
+    ok: !!document.querySelector('input[name=examPeriod]:checked') });
+  [['语言能力（英语成绩）','en_have_type'],['语言能力（英语计划）','en_upcoming_type'],
+   ['语言能力（日语成绩）','ja_have_type'],['语言能力（日语计划）','ja_upcoming_type']]
+    .forEach(([label, id]) => items.push({ label, card: 'basic', el: document.getElementById(id), ok: !!v(id) }));
+  [['考学进度（专业课学习）','specialtyStatus'],['考学进度（择校）','targetSchool'],['考学进度（联系教授）','contactProf'],
+   ['考学进度（研究计划书）','planStatus'],['考学进度（出愿材料）','applicationStatus'],['考学进度（笔试）','writtenExam'],
+   ['考学进度（面试）','interviewStatus']]
+    .forEach(([label, id]) => items.push({ label, card: 'progress', el: document.getElementById(id), ok: !!v(id) }));
+  return items;
+}
+function refreshInfoGate() {
+  const items = getInfoItems();
+  items.forEach(it => { if (it.el) it.el.style.outline = (infoGateOn && !it.ok) ? '1px solid #c0392b' : ''; });
+  ['basic', 'progress'].forEach(card => {
+    const n = items.filter(it => it.card === card && !it.ok).length;
+    const badge = document.getElementById(card + 'MissBadge');
+    if (badge) badge.textContent = (infoGateOn && n) ? `还有 ${n} 项未填` : '';
+  });
+  const banner = document.getElementById('infoBanner');
+  if (banner && infoStoredExpiryStr) {
+    const miss = items.filter(it => !it.ok);
+    banner.style.display = 'block';
+    banner.innerHTML = miss.length
+      ? `请先补全以下信息再预约：${miss.map(it => it.label).join('、')}`
+      : `📋 已自动填入上次保留的信息（保留至 ${infoStoredExpiryStr}）。如有进度更新请修改后再提交。
+      <button onclick="expandCards()" style="margin-left:6px;font-size:10px;color:var(--accent);background:none;border:1px solid var(--accent);border-radius:2px;padding:1px 6px;cursor:pointer;font-family:inherit">展开修改</button>
+      <button onclick="clearStoredInfo()" style="margin-left:6px;font-size:10px;color:var(--text-muted);background:none;border:1px solid var(--border);border-radius:2px;padding:1px 6px;cursor:pointer;font-family:inherit">清除</button>`;
+  }
+  return items;
+}
+function bindInfoGate() {
+  ['basicCardBody', 'progressCardBody'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.addEventListener('change', refreshInfoGate); el.addEventListener('input', refreshInfoGate); }
+  });
+}
 
 function saveStudentInfo() {
   const info = {
@@ -37,7 +86,9 @@ function saveStudentInfo() {
     applicationStatus: document.getElementById('applicationStatus')?.value || '',
     writtenExam: document.getElementById('writtenExam')?.value || '',
     interviewStatus: document.getElementById('interviewStatus')?.value || '',
+    lang: {},
   };
+  INFO_LANG_IDS.forEach(id => { info.lang[id] = document.getElementById(id)?.value || ''; });
   localStorage.setItem(STORAGE_KEY, JSON.stringify(info));
 }
 
@@ -71,20 +122,20 @@ function applyStoredInfo(info) {
     const el = document.getElementById(id);
     if (el && val) el.value = val;
   }
+  if (info.lang) INFO_LANG_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && info.lang[id]) el.value = info.lang[id];
+  });
+  onJaHaveTypeChange();
+  onJaUpcomingTypeChange();
   updateTypeOptions();
-  // 有保存信息时自动收起步骤1和2
-  collapseCard('basicCardBody', 'basicCardArrow');
-  collapseCard('progressCardBody', 'progressCardArrow');
-  // show reminder banner
   const expiry = new Date(info.ts + STORAGE_DAYS * 24 * 60 * 60 * 1000);
-  const expiryStr = `${expiry.getMonth() + 1}月${expiry.getDate()}日`;
-  const banner = document.getElementById('infoBanner');
-  if (banner) {
-    banner.style.display = 'block';
-    banner.innerHTML = `📋 已自动填入上次保留的信息（保留至 ${expiryStr}）。如有进度更新请修改后再提交。
-      <button onclick="expandCards()" style="margin-left:6px;font-size:10px;color:var(--accent);background:none;border:1px solid var(--accent);border-radius:2px;padding:1px 6px;cursor:pointer;font-family:inherit">展开修改</button>
-      <button onclick="clearStoredInfo()" style="margin-left:6px;font-size:10px;color:var(--text-muted);background:none;border:1px solid var(--border);border-radius:2px;padding:1px 6px;cursor:pointer;font-family:inherit">清除</button>`;
-  }
+  infoStoredExpiryStr = `${expiry.getMonth() + 1}月${expiry.getDate()}日`;
+  infoGateOn = true;
+  const items = refreshInfoGate();
+  // 必填项全部有值才自动收起；缺项的卡片保持展开
+  if (!items.some(it => it.card === 'basic' && !it.ok)) collapseCard('basicCardBody', 'basicCardArrow');
+  if (!items.some(it => it.card === 'progress' && !it.ok)) collapseCard('progressCardBody', 'progressCardArrow');
 }
 
 function toggleCard(bodyId, arrowId) {
@@ -92,6 +143,11 @@ function toggleCard(bodyId, arrowId) {
   const arrow = document.getElementById(arrowId);
   if (!body) return;
   const isOpen = body.style.display !== 'none';
+  if (isOpen) {
+    // 必填项没填完时不能收起，并标出缺的项
+    const card = bodyId === 'basicCardBody' ? 'basic' : 'progress';
+    if (getInfoItems().some(it => it.card === card && !it.ok)) { infoGateOn = true; refreshInfoGate(); return; }
+  }
   body.style.display = isOpen ? 'none' : '';
   if (arrow) arrow.style.transform = isOpen ? 'rotate(-90deg)' : '';
 }
@@ -116,6 +172,7 @@ function expandCards() {
 
 function clearStoredInfo() {
   localStorage.removeItem(STORAGE_KEY);
+  infoStoredExpiryStr = '';
   const banner = document.getElementById('infoBanner');
   if (banner) banner.style.display = 'none';
 }
@@ -337,7 +394,7 @@ function buildForm() {
   <div id="infoBanner" style="display:none;background:var(--warning-light);border:1px solid var(--warning);border-radius:3px;padding:9px 12px;margin-bottom:12px;font-size:11px;color:var(--warning);line-height:1.6"></div>
   <div class="card">
     <div class="card-title" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between" onclick="toggleCard('basicCardBody','basicCardArrow')">
-      <span><span class="step-num">${stepBasic}</span>基本信息</span>
+      <span><span class="step-num">${stepBasic}</span>基本信息 <span id="basicMissBadge" style="font-size:10px;color:#c0392b;font-weight:400"></span></span>
       <span id="basicCardArrow" style="font-size:12px;color:var(--text-3);transition:transform .2s">▾</span>
     </div>
     <div id="basicCardBody">
@@ -351,14 +408,15 @@ function buildForm() {
       </div>
     </div>
     <div class="form-group" style="margin-bottom:0">
-      <label class="form-label">语言能力（选填）</label>
+      <label class="form-label">语言能力 <span class="required">*</span></label>
       <div style="display:flex;flex-direction:column;gap:14px">
         <div>
           <div style="font-size:11px;font-weight:600;margin-bottom:8px">英语</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
             <div><div class="sub-label">已有成绩</div>
               <select id="en_have_type">
-                <option value="">无</option>
+                <option value="">请选择</option>
+                <option value="none">暂无成绩</option>
                 <option value="TOEFL">托福 TOEFL</option>
                 <option value="TOEIC">托业 TOEIC</option>
                 <option value="IELTS">雅思 IELTS</option>
@@ -367,9 +425,10 @@ function buildForm() {
             <div><div class="sub-label">分数</div><input type="number" id="en_have_score" placeholder="分数"></div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-            <div><div class="sub-label">待考</div>
+            <div><div class="sub-label">近期计划</div>
               <select id="en_upcoming_type">
-                <option value="">无</option>
+                <option value="">请选择</option>
+                <option value="none">暂无计划</option>
                 <option value="TOEFL">托福 TOEFL</option>
                 <option value="TOEIC">托业 TOEIC</option>
                 <option value="IELTS">雅思 IELTS</option>
@@ -389,7 +448,8 @@ function buildForm() {
           <div style="margin-bottom:8px">
             <div class="sub-label">已有成绩</div>
             <select id="ja_have_type" onchange="onJaHaveTypeChange()">
-              <option value="">无</option>
+              <option value="">请选择</option>
+              <option value="none">暂无成绩</option>
               <option value="JLPT">JLPT</option>
               <option value="EJU">EJU</option>
               <option value="其他">其他</option>
@@ -407,9 +467,10 @@ function buildForm() {
             <div class="sub-label">说明</div><input type="text" id="ja_have_other_text" placeholder="请说明">
           </div>
           <div style="margin-bottom:8px">
-            <div class="sub-label">待考</div>
+            <div class="sub-label">近期计划</div>
             <select id="ja_upcoming_type" onchange="onJaUpcomingTypeChange()">
-              <option value="">无</option>
+              <option value="">请选择</option>
+              <option value="none">暂无计划</option>
               <option value="JLPT">JLPT</option>
               <option value="EJU">EJU</option>
               <option value="其他">其他</option>
@@ -438,22 +499,22 @@ function buildForm() {
   </div>
   <div class="card">
     <div class="card-title" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between" onclick="toggleCard('progressCardBody','progressCardArrow')">
-      <span><span class="step-num">${stepProgress}</span>当前学习进程</span>
+      <span><span class="step-num">${stepProgress}</span>当前学习进程 <span id="progressMissBadge" style="font-size:10px;color:#c0392b;font-weight:400"></span></span>
       <span id="progressCardArrow" style="font-size:12px;color:var(--text-3);transition:transform .2s">▾</span>
     </div>
     <div id="progressCardBody">
     <div class="progress-grid">
-      <div class="form-group"><label class="form-label">专业知识</label>
+      <div class="form-group"><label class="form-label">专业知识 <span class="required">*</span></label>
         <select id="specialtyStatus" onchange="updateTypeOptions()"><option value="">请选择</option><option>刚开始</option><option>学习中</option><option>完成一期</option></select></div>
-      <div class="form-group"><label class="form-label">目标学校</label>
+      <div class="form-group"><label class="form-label">目标学校 <span class="required">*</span></label>
         <select id="targetSchool"><option value="">请选择</option><option>已择校</option><option>择校中</option><option>未择校</option></select></div>
-      <div class="form-group"><label class="form-label">联系教授</label>
+      <div class="form-group"><label class="form-label">联系教授 <span class="required">*</span></label>
         <select id="contactProf"><option value="">请选择</option><option>已联系</option><option>写邮件中</option><option>未选定教授</option></select></div>
       <div class="form-group"><label class="form-label">研究计划书 <span class="required">*</span></label>
         <select id="planStatus" onchange="updateTypeOptions()"><option value="">请选择</option><option>已完成</option><option>待修改</option><option>收集先行研究中</option><option>已定好方向</option><option>未开始</option></select></div>
-      <div class="form-group"><label class="form-label">出愿进度</label>
+      <div class="form-group"><label class="form-label">出愿进度 <span class="required">*</span></label>
         <select id="applicationStatus"><option value="">请选择</option><option>已出愿</option><option>出愿中</option><option>准备材料中</option><option>未开始</option></select></div>
-      <div class="form-group"><label class="form-label">笔试准备</label>
+      <div class="form-group"><label class="form-label">笔试准备 <span class="required">*</span></label>
         <select id="writtenExam"><option value="">请选择</option><option>已开始</option><option>练习笔试中</option><option>未开始</option></select></div>
       <div class="form-group" style="grid-column:1/-1"><label class="form-label">面试准备 <span class="required">*</span></label>
         <select id="interviewStatus" onchange="updateTypeOptions()"><option value="">请选择</option><option>已完成面试稿</option><option>面试稿撰写中</option><option>模拟面试中</option><option>未开始</option></select></div>
@@ -517,6 +578,7 @@ function buildForm() {
 
   updateTypeOptions();
   renderSlots();
+  bindInfoGate();
   // restore saved info
   applyStoredInfo(loadStudentInfo());
   // 检查出愿共享banner（DOM重建后重新执行）
@@ -556,12 +618,14 @@ function onJaUpcomingTypeChange() {
 function buildEnglishText() {
   const parts = [];
   const haveType = document.getElementById('en_have_type')?.value || '';
-  if (haveType) {
+  if (haveType === 'none') parts.push('暂无成绩');
+  else if (haveType) {
     const score = document.getElementById('en_have_score')?.value || '';
     parts.push(score ? `${haveType} ${score}分` : haveType);
   }
   const upType = document.getElementById('en_upcoming_type')?.value || '';
-  if (upType) {
+  if (upType === 'none') parts.push('暂无计划');
+  else if (upType) {
     const status = document.getElementById('en_upcoming_status')?.value || '';
     const date = document.getElementById('en_upcoming_date')?.value || '';
     let s = `待考 ${upType}`;
@@ -574,7 +638,9 @@ function buildEnglishText() {
 function buildJapaneseText() {
   const parts = [];
   const haveType = document.getElementById('ja_have_type')?.value || '';
-  if (haveType === 'JLPT') {
+  if (haveType === 'none') {
+    parts.push('暂无成绩');
+  } else if (haveType === 'JLPT') {
     const level = document.getElementById('ja_have_jlpt_level')?.value || '';
     const score = document.getElementById('ja_have_jlpt_score')?.value || '';
     parts.push(score ? `JLPT ${level} ${score}分` : `JLPT ${level}`);
@@ -590,7 +656,9 @@ function buildJapaneseText() {
     parts.push(text ? `其他：${text}` : '其他');
   }
   const upType = document.getElementById('ja_upcoming_type')?.value || '';
-  if (upType) {
+  if (upType === 'none') {
+    parts.push('暂无计划');
+  } else if (upType) {
     let label = '';
     if (upType === 'JLPT') {
       const level = document.getElementById('ja_upcoming_jlpt_level')?.value || '';
@@ -748,9 +816,17 @@ async function submitBooking() {
   const duration = document.querySelector('input[name=duration]:checked')?.value;
   const urgency = document.querySelector('input[name=urgency]:checked')?.value;
   const needs = document.getElementById('needs').value.trim();
-  if (!name) { alert('请填写姓名'); return; }
-  if (!examPeriod) { alert('请选择出愿期间'); return; }
-  if (!planStatus) { alert('请选择研究计划书状态'); return; }
+  const missingItems = getInfoItems().filter(it => !it.ok);
+  if (!name && !missingItems.some(it => it.label === '姓名')) missingItems.unshift({ label: '姓名', card: 'basic', el: document.getElementById('name'), ok: false });
+  if (missingItems.length) {
+    infoGateOn = true;
+    expandCards();
+    refreshInfoGate();
+    alert('请先补全以下信息：\n' + missingItems.map(it => '· ' + it.label).join('\n'));
+    const first = missingItems[0].el;
+    if (first && first.scrollIntoView) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
   if (!selectedSlotId) { alert('请选择预约时间'); return; }
 
   // 检查是否有未完成的预约（已完成 completed 的不拦截）
