@@ -1253,7 +1253,10 @@ function admScopeTeacher(){
   const t={majors:act('new_teacher_majors'),managed_by:mb,domains:dm,tags:parseTeacherTags(),position:null,roles:[],role_scope:null,manage_scope:null,permissions:{exclude_majors:[..._admExcl]}};
   if(tfHasRoleUI()){
     t.position=(tsecCurType()==='正社员'&&_tfPos)||null; t.roles=_tfRoles.slice();
-    if(_tfRoles.includes('homeroom')&&_tfHr) t.role_scope={homeroom:{domains:_tfHr.domains,majors:_tfHr.majors,class_ids:_tfHr.classIds}};
+    const rs={};
+    if(_tfRoles.includes('homeroom')&&_tfHr) rs.homeroom={domains:_tfHr.domains,majors:_tfHr.majors,class_ids:_tfHr.classIds};
+    if(t.position==='sales'&&_tfSales.domains.length) rs.sales={domains:_tfSales.domains.slice()};
+    if(Object.keys(rs).length) t.role_scope=rs;
   } else if(cur){ t.position=cur.position||null; t.roles=cur.roles||[]; t.role_scope=cur.role_scope||null; }
   if(_mgrDraft&&document.getElementById('tf_manager_box')) t.manage_scope={domains:_mgrDraft.domains,majors:_mgrDraft.majors,class_ids:_mgrDraft.classIds};
   else if(cur) t.manage_scope=cur.manage_scope||null;
@@ -1362,6 +1365,7 @@ function openTeacherManager(){
 const TEACHER_FUNC_TAGS=['专业课老师','营业老师','全学科负责人','学科负责人','任课讲师','学科TA','全学科TA','TA'];
 const TEACHER_LEGACY_DUTY_TAGS=['全学科负责人','学科负责人','任课讲师','学科TA','全学科TA','TA'];
 let _tfFuncTags=new Set(), _tfSalesPrev=false;
+let _tfSales={domains:[]};   // 营业范围草稿（role_scope.sales.domains）：空 = 全部领域（只有管理员能选；部门负责人必须指定）
 let _tfPos='', _tfRoles=[], _tfHr=null;   // 表单里选的管理职位 / 执行角色 / 班主任范围草稿 {domains,majors,classIds}
 function tfHasRoleUI(){ return !!document.getElementById('tf_roles_chips'); }
 function parseOtherTags(){
@@ -1504,8 +1508,18 @@ function tfRolesLoad(t){
   _tfPos=(t&&t.position)||''; _tfRoles=((t&&t.roles)||[]).slice();
   const hr=t&&t.role_scope&&t.role_scope.homeroom;
   _tfHr={domains:((hr&&hr.domains)||[]).slice(),majors:((hr&&hr.majors)||[]).slice(),classIds:((hr&&hr.class_ids)||[]).map(String)};
+  const sl=t&&t.role_scope&&t.role_scope.sales;
+  _tfSales={domains:(sl&&Array.isArray(sl.domains)?sl.domains:[]).slice()};
+  if(!t&&!isHubAdminUser()) _tfSales.domains=deptDomains('teachers');   // 部门负责人新建营业老师：营业范围默认就是他自己的范围
   tfRolesRender();
   if(_tfRoles.includes('homeroom')){ try{ if(typeof loadClasses==='function') loadClasses().then(tfRolesRender); }catch(e){} }
+}
+function tfSalesAll(){ _tfSales.domains=[]; tfRolesRender(); }
+function tfSalesToggle(d){ const a=_tfSales.domains, i=a.indexOf(d); if(i>=0) a.splice(i,1); else a.push(d); tfRolesRender(); }
+// 部门负责人设营业：必须指定领域（管理员可以不指定 = 全部领域）
+function tfSalesScopeOk(){
+  if(!tfHasRoleUI()||_tfPos!=='sales'||isHubAdminUser()||_tfSales.domains.length) return true;
+  alert('营业老师需要指定营业范围（至少选一个领域）'); return false;
 }
 function tfHrToggle(field,val){ scopeDraftToggle(_tfHr,field,val); admKeepFold(document.getElementById('tf_role_scope'),tfRolesRender); }
 function tfGoSec(k){ const el=document.getElementById('tsec_'+k); if(el){ el.style.display=''; tsecToggle(k,true); el.scrollIntoView({behavior:'smooth',block:'center'}); } }
@@ -1519,6 +1533,16 @@ function tfRolesRender(){
   const link=(k,txt)=>`<a href="javascript:void(0)" onclick="tfGoSec('${k}')" style="color:var(--accent)">${txt}</a>`;
   const parts=[];
   if(isReg&&_tfPos==='lead') parts.push(`<div style="font-size:11px;color:var(--text-2)">负责人：管理范围（领域 / 专业 / 班级可混合）在 ${link('manager','负责人（管理范围）')} 区块设置</div>`);
+  if(isReg&&_tfPos==='sales'){
+    const mine=isHubAdminUser()?DOMAINS.map(d=>d.label):deptDomains('teachers');
+    const chip=(on,label,fn)=>`<div class="filter-chip${on?' active':''}" onclick="${fn}" style="padding:3px 10px;font-size:11px">${escTM(label)}</div>`;
+    parts.push(`<div style="border:1px solid var(--border-light);border-radius:3px;padding:8px;margin-top:4px"><div style="font-size:11px;font-weight:600;margin-bottom:6px">营业范围（决定营业能看到哪些领域的学生 / 出願 / 价目 / 宣传）</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        ${isHubAdminUser()?chip(!_tfSales.domains.length,'全部领域（默认）',"tfSalesAll()"):''}
+        ${mine.map(d=>chip(_tfSales.domains.includes(d),d,`tfSalesToggle('${escTM(d)}')`)).join('')}
+      </div>
+      <div style="font-size:10px;color:var(--text-3);margin-top:6px">${_tfSales.domains.length?'只看：'+escTM(_tfSales.domains.join('、')):(isHubAdminUser()?'不限领域（现有营业都是这样）':'请选择至少一个领域')}</div></div>`);
+  }
   if(_tfRoles.includes('senmon')||_tfRoles.includes('ta')) parts.push(`<div style="font-size:11px;color:var(--text-2)">${_tfRoles.includes('senmon')&&_tfRoles.includes('ta')?'专业课老师 / TA':_tfRoles.includes('ta')?'TA':'专业课老师'}：负责专业在 ${link('area','负责领域与专业')} 区块选择${_tfRoles.includes('ta')?'（TA 也可以直接选整个领域）':''}</div>`);
   if(_tfRoles.includes('homeroom')&&_tfHr) parts.push(`<div style="border:1px solid var(--border-light);border-radius:3px;padding:8px;margin-top:4px"><div style="font-size:11px;font-weight:600;margin-bottom:6px">班主任：负责班级（或整个学部领域）</div>${scopePickerHtml(_tfHr,'tfHrToggle')}</div>`);
   box.innerHTML=parts.join('');
@@ -1532,6 +1556,14 @@ function tfRolesCollect(cur){
   const keep=Object.assign({},(cur&&cur.role_scope)||{});
   if(_tfRoles.includes('homeroom')&&_tfHr) keep.homeroom={domains:_tfHr.domains,majors:_tfHr.majors,class_ids:_tfHr.classIds};
   else delete keep.homeroom;
+  if(_tfPos==='sales'){
+    let sd=_tfSales.domains.slice();
+    if(!isHubAdminUser()){   // 部门负责人：范围外原有的营业领域原样保留，只改自己范围内的
+      const curSd=(cur&&cur.role_scope&&cur.role_scope.sales&&cur.role_scope.sales.domains)||[], mine=deptDomains('teachers');
+      sd=[...new Set([...curSd.filter(d=>!mine.includes(d)),...sd])];
+    }
+    if(sd.length) keep.sales={domains:sd}; else delete keep.sales;
+  } else delete keep.sales;
   const res={position:_tfPos||null,roles:_tfRoles.slice(),role_scope:Object.keys(keep).length?keep:null};
   if(!isHubAdminUser()&&cur&&cur.position&&cur.position!=='sales') delete res.position;   // 部门负责人不能改别人的负责人 / 对接 / 总务职位
   return res;
@@ -1895,6 +1927,7 @@ async function addTeacher(){
     const department=staff_type==='正社员'?(document.getElementById('new_teacher_department')?.value||''):'';
     const mg=tfMgrCollect(null,true); if(mg===null) return;
     if(!tfLeadScopeOk(mg)) return;
+    if(!tfSalesScopeOk()) return;
     const t=Object.assign({id:`t-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,name,notes,majors,domains,managed_by,staff_type,department,permissions,tags},mg,tfRolesCollect(null));
     const res=await sb('/rest/v1/teachers','POST',[t]);
     cachedTeachers.push(Array.isArray(res)?res[0]:t);
@@ -2022,6 +2055,7 @@ async function saveEditTeacher(id){
   }
   const mg=tfMgrCollect(cur,false); if(mg===null) return;
   if(!tfLeadScopeOk(mg,cur)) return;
+  if(!tfSalesScopeOk()) return;
   try{
     const body=Object.assign({name,notes,majors,domains,managed_by,staff_type,department,permissions,tags},mg,tfRolesCollect(cur));
     await sb(`/rest/v1/teachers?id=eq.${id}`,'PATCH',body);

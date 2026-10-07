@@ -676,11 +676,13 @@ const VIP_HOURS_OPTIONS = [0.5, 1, 2, 3, 4];
 async function loadSalesVipData() {
   const [fw, ts, pl, tpl] = await Promise.all([
     sb('/rest/v1/vip_frameworks?select=*&order=major.asc,created_at.desc').catch(() => []),
-    sb('/rest/v1/teachers?select=name&order=name.asc').catch(() => []),
+    sb('/rest/v1/teachers?select=name,managed_by,domains,majors&order=name.asc').catch(() => []),
     sb('/rest/v1/vip_student_plans?select=*&order=created_at.desc').catch(() => []),
     sb('/rest/v1/vip_plan_templates?select=*&order=major.asc,created_at.desc').catch(() => []),
   ]);
-  salesVipFrameworks = fw; svAllTeachers = ts; salesStudentPlans = pl; salesTemplates = tpl;
+  // 营业指定了领域：只看这些领域的专业（框架 / 套餐 / 学生方案）和老师
+  salesVipFrameworks = fw.filter(f => salesMajorOkMe(f.major)); svAllTeachers = ts.filter(salesTeacherOkMe);
+  salesStudentPlans = pl.filter(p => salesMajorOkMe(p.major)); salesTemplates = tpl.filter(t => salesMajorOkMe(t.major));
 }
 
 // ── 营业首页：课程模板 / 学生方案 两个子视图 ──

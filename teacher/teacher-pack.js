@@ -110,7 +110,7 @@ function pkAdd(item, opts) {
 let pkPrice = { rows: null, domain: '', track: '', err: '' };
 async function pkPriceLoad() {
   if (pkPrice.rows !== null && !pkPrice.err) return;
-  try { pkPrice.rows = await sbAll('/rest/v1/price_packages?active=is.true&select=*&order=sort_order.asc'); pkPrice.err = ''; }
+  try { pkPrice.rows = (await sbAll('/rest/v1/price_packages?active=is.true&select=*&order=sort_order.asc')).filter(p => salesDomOkMe(pkPriceDom(p))); pkPrice.err = ''; }
   catch (e) { pkPrice.rows = []; pkPrice.err = e.message; }
   pkPriceBarRender();
 }
@@ -168,6 +168,7 @@ async function pkCommonLoad() {
     pkCommon.rows = await sbAll('/rest/v1/promo_common?or=(published.is.null,published.is.true)&select=*&order=sort_order.asc,updated_at.asc');
     pkCommon.err = '';
   } catch (e) { pkCommon.rows = []; pkCommon.err = e.message; }
+  pkCommon.rows = pkCommon.rows.filter(r => salesDomOkMe(r.domain));   // 营业只看自己营业范围内领域
   const doms = pkCommonDomains();
   if (!doms.includes(pkCommon.domain)) {
     const mine = [...((teacherData && teacherData.managed_by) || []), ...((teacherData && teacherData.domains) || [])];

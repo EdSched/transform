@@ -24,7 +24,11 @@ async function tpLoad() {
       q('/rest/v1/price_ta_options?active=is.true&select=*&order=sort_order.asc'),
       q(`/rest/v1/sales_plans?created_by=eq.${encodeURIComponent(tpMe())}&select=*&order=updated_at.desc`),
     ]);
-    tp.pk = pk; tp.vip = vip; tp.ta = ta; tp.saved = saved;
+    // 营业指定了领域：套餐只显示这些领域的；VIP / TA 显示这些领域的 + 通用项（domain 为空）
+    tp.pk = pk.filter(p => salesDomOkMe(tpPkDom(p)));
+    tp.vip = vip.filter(r => !r.domain || salesDomOkMe(r.domain));
+    tp.ta = ta.filter(r => !r.domain || salesDomOkMe(r.domain));
+    tp.saved = saved;
   } catch (e) { tp.err = e.message; }
   // 已有的 VIP 规划（营业「VIP规划」里的学生方案 / 套餐）：读不到就只能用自定义
   const [vplans, vtpls] = await Promise.all([

@@ -51,7 +51,7 @@ function renderProgressPlanTool(mc) {
     <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">填写咨询学生的基本信息，一键生成考学规划（计划书・择校等默认未开始，从当下开始规划）</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-bottom:12px">
       ${fld('学生姓名（可不填）', `<input id="pp_name" placeholder="咨询学生姓名" style="${inp}">`)}
-      ${fld('专业（可不填）', `<select id="pp_major" style="${inp}"><option value="">— 选择 —</option>${Object.entries(MAJORS).filter(([k])=>k!=='shakai_group').map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>`)}
+      ${fld('专业（可不填）', `<select id="pp_major" style="${inp}"><option value="">— 选择 —</option>${Object.entries(MAJORS).filter(([k])=>k!=='shakai_group'&&salesMajorOkMe(k)).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>`)}
       ${fld('报名时间', `<input id="pp_signup" placeholder="26年7月" style="${inp}">`)}
       ${fld('期待入学时间', `<input id="pp_enroll" placeholder="27年4月" style="${inp}">`)}
       ${fld('出愿时期', `<select id="pp_period" style="${inp}">${Object.keys(PP_ROUTES).map(k=>`<option value="${k}">${k}</option>`).join('')}</select>`)}
