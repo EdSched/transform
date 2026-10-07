@@ -6,7 +6,7 @@
 <title>唯新教育 管理系统</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="admin.css?v=20261016">
+<link rel="stylesheet" href="admin.css?v=20261017">
 </head>
 <body>
 <!-- Login -->
@@ -22,7 +22,10 @@
       <div id="magicMsg" style="font-size:11px;color:var(--text-3);min-height:16px;margin-top:8px;line-height:1.6"></div>
     </div>
 
-    <!-- 领域钥匙密码登录（仅通过 ?k= 领域链接访问时显示；admin 直接访问时隐藏）-->
+    <!-- 带 ?k= 的旧访问链接已停用：只显示这条提示 -->
+    <div id="retiredMsg" style="display:none;text-align:left;font-size:13px;line-height:1.8;color:var(--text-2)">此链接已停用，请用自己的老师链接登录，再点「管理模式」。</div>
+
+    <!-- 旧领域钥匙密码登录（已停用，保留元素避免脚本报错）-->
     <div id="pwBox" style="text-align:left;display:none">
       <div style="border-top:1px solid var(--border-light,#eee);margin:18px 0 12px"></div>
       <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:5px">领域链接密码</label>
@@ -47,7 +50,7 @@
   </div>
 </div>
 
-<!-- 管控台：中枢独立页面（访问链接 / 老师管理 / 工作管理） -->
+<!-- 管控台：中枢独立页面（老师管理 / 工作管理等） -->
 <div id="consoleOverlay" style="display:none;position:fixed;inset:0;z-index:950;background:var(--bg,#faf9f7);overflow:auto">
   <div style="max-width:1200px;margin:0 auto;padding:24px 28px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
@@ -55,16 +58,14 @@
       <button class="btn btn-outline btn-sm" onclick="closeConsole()">返回中枢台</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:18px;border-bottom:1px solid var(--border)">
-      <button id="ctab_keys" class="console-tab" onclick="switchConsoleTab('keys')" style="background:none;border:none;border-bottom:2px solid transparent;padding:8px 16px;font-size:13px;cursor:pointer;font-family:inherit">访问链接</button>
       <button id="ctab_teachers" class="console-tab" onclick="switchConsoleTab('teachers')" style="background:none;border:none;border-bottom:2px solid transparent;padding:8px 16px;font-size:13px;cursor:pointer;font-family:inherit">老师管理</button>
       <button id="ctab_roletpl" class="console-tab" onclick="switchConsoleTab('roletpl')" style="background:none;border:none;border-bottom:2px solid transparent;padding:8px 16px;font-size:13px;cursor:pointer;font-family:inherit">角色模板</button>
       <button id="ctab_payroll" class="console-tab" onclick="switchConsoleTab('payroll')" style="background:none;border:none;border-bottom:2px solid transparent;padding:8px 16px;font-size:13px;cursor:pointer;font-family:inherit">工作管理</button>
       <button id="ctab_majors" class="console-tab" onclick="switchConsoleTab('majors')" style="background:none;border:none;border-bottom:2px solid transparent;padding:8px 16px;font-size:13px;cursor:pointer;font-family:inherit">专业管理</button>
       <button id="ctab_pricing" class="console-tab" onclick="switchConsoleTab('pricing')" style="background:none;border:none;border-bottom:2px solid transparent;padding:8px 16px;font-size:13px;cursor:pointer;font-family:inherit">💴 价目</button>
       <button id="ctab_tasks" class="console-tab" onclick="switchConsoleTab('tasks')" style="background:none;border:none;border-bottom:2px solid transparent;padding:8px 16px;font-size:13px;cursor:pointer;font-family:inherit">📋 任务管理</button>
-      <button id="ctab_sched" class="console-tab" onclick="switchConsoleTab('sched')" style="background:none;border:none;border-bottom:2px solid transparent;padding:8px 16px;font-size:13px;cursor:pointer;font-family:inherit">排课口令</button>
     </div>
-    <div id="consoleBody"><!-- 由 renderConsole() 填充 --></div>
+    <div id="consoleBody"><!-- 由各分页填充 --></div>
   </div>
 </div>
 
@@ -760,35 +761,34 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
 <script src="../shared/vendor/supabase.min.js"></script>
-<script src="../shared/supabase.js?v=20261016"></script>
-<script src="../shared/constants.js?v=20261016"></script>
-<script src="../shared/riyu.js?v=20261016"></script>
-<script src="../shared/artworks.js?v=20261016"></script>
-<script src="../shared/promo-md.js?v=20261016"></script>
-<script src="../shared/promo-render.js?v=20261016"></script>
-<script src="../shared/success-cases.js?v=20261016"></script>
-<script src="../shared/materials.js?v=20261016"></script>
-<script src="../shared/schoolplan.js?v=20261016"></script>
-<script src="../shared/student-detail.js?v=20261016"></script>
-<script src="../shared/claim.js?v=20261016"></script>
-<script src="../shared/vip-catalog.js?v=20261016"></script>
-<script src="../shared/tasks.js?v=20261016"></script>
-<script src="../shared/task-checks.js?v=20261016"></script>
-<script src="attendance.js?v=20261016"></script>
-<script src="payroll.js?v=20261016"></script>
-<script src="admissiondb.js?v=20261016"></script>
-<script src="classes.js?v=20261016"></script>
-<script src="students.js?v=20261016"></script>
-<script src="materials.js?v=20261016"></script>
-<script src="booking.js?v=20261016"></script>
-<script src="courses.js?v=20261016"></script>
-<script src="monthcal.js?v=20261016"></script>
-<script src="vip-framework.js?v=20261016"></script>
-<script src="promo.js?v=20261016"></script>
-<script src="pricing.js?v=20261016"></script>
-<script src="tasks.js?v=20261016"></script>
-<script src="roletpl.js?v=20261016"></script>
-<script src="sched-codes.js?v=20261016"></script>
-<script src="admin.js?v=20261016"></script>
+<script src="../shared/supabase.js?v=20261017"></script>
+<script src="../shared/constants.js?v=20261017"></script>
+<script src="../shared/riyu.js?v=20261017"></script>
+<script src="../shared/artworks.js?v=20261017"></script>
+<script src="../shared/promo-md.js?v=20261017"></script>
+<script src="../shared/promo-render.js?v=20261017"></script>
+<script src="../shared/success-cases.js?v=20261017"></script>
+<script src="../shared/materials.js?v=20261017"></script>
+<script src="../shared/schoolplan.js?v=20261017"></script>
+<script src="../shared/student-detail.js?v=20261017"></script>
+<script src="../shared/claim.js?v=20261017"></script>
+<script src="../shared/vip-catalog.js?v=20261017"></script>
+<script src="../shared/tasks.js?v=20261017"></script>
+<script src="../shared/task-checks.js?v=20261017"></script>
+<script src="attendance.js?v=20261017"></script>
+<script src="payroll.js?v=20261017"></script>
+<script src="admissiondb.js?v=20261017"></script>
+<script src="classes.js?v=20261017"></script>
+<script src="students.js?v=20261017"></script>
+<script src="materials.js?v=20261017"></script>
+<script src="booking.js?v=20261017"></script>
+<script src="courses.js?v=20261017"></script>
+<script src="monthcal.js?v=20261017"></script>
+<script src="vip-framework.js?v=20261017"></script>
+<script src="promo.js?v=20261017"></script>
+<script src="pricing.js?v=20261017"></script>
+<script src="tasks.js?v=20261017"></script>
+<script src="roletpl.js?v=20261017"></script>
+<script src="admin.js?v=20261017"></script>
 </body>
 </html>
