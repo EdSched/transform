@@ -1764,11 +1764,12 @@ function hwUnits(level) {
     if (b.type === 'choice') {
       for (let i = 1; i <= (b.count || 0); i++) out.push({ key:`${bi}-${i}`, block:bi, head, label:`第${i}题`, mode:'answer' });
     } else if (b.type === 'calc') {
-      // 每道大题一个上传单元，可传多张图（按顺序）；兼容旧的分问数据
+      // 默认整块拍照（blockImg，key=`${bi}-img`）；改为打字作答时逐题一个单元（key=`${bi}-${num}-all`，text）
       const qs = b.count ? Array.from({length:b.count}, (_,i)=>({num:i+1, subs:1})) : (b.questions || []);
+      const lo = qs.length ? qs[0].num : 1, hi = qs.length ? qs[qs.length-1].num : 1;
+      out.push({ key:`${bi}-img`, block:bi, head, label: lo === hi ? `第${lo}题（整块拍照）` : `第${lo}–${hi}题（整块拍照）`, mode:'img', blockImg:true, calcBlock:true });
       qs.forEach(q => {
-        out.push({ key:`${bi}-${q.num}-all`, block:bi, head, label:`第${q.num}题`, mode:'img', calcWhole:true, qnum:q.num, subs:q.subs||1 });
-        if ((q.subs || 1) > 1) for (let j = 1; j <= q.subs; j++) out.push({ key:`${bi}-${q.num}-${j}`, block:bi, head, label:`第${q.num}题 问${j}`, mode:'img', calcSub:true, qnum:q.num });
+        out.push({ key:`${bi}-${q.num}-all`, block:bi, head, label:`第${q.num}题`, mode:'text', calcWhole:true, qnum:q.num, subs:q.subs||1 });
       });
     } else if (b.type === 'term' || b.type === 'essay') {
       const unit = b.type === 'term' ? '问' : '题';
@@ -1862,36 +1863,50 @@ function hwDetailHtml(s, sub) {
             </div>`;
           })()
         : b.type==='calc'
-        ? (b.count ? Array.from({length:b.count},(_,i)=>({num:i+1,subs:1})) : (b.questions||[])).map(q => {
-            const wu = bUnits.find(u => u.calcWhole && u.qnum === q.num);
-            const subs = bUnits.filter(u => u.calcSub && u.qnum === q.num);
-            const wa = ansOf(wu.key); const wImgs = wa.images || [];
-            const expKey = `${s.id}-${bi}-${q.num}`;
-            const expanded = !!hwCalcExpand[expKey];
-            const subHasImg = subs.some(u => (ansOf(u.key).images||[]).length);
+        ? (() => {
+            const qs = b.count ? Array.from({length:b.count},(_,i)=>({num:i+1,subs:1})) : (b.questions||[]);
+            const imgU = bUnits.find(u => u.blockImg);
+            const wUnits = bUnits.filter(u => u.calcWhole);
+            const ia = ansOf(imgU.key); const iImgs = ia.images || [];
+            const rangeTxt = qs.length > 1 ? `第 ${qs[0].num}–${qs[qs.length-1].num} 题` : `第 ${qs.length?qs[0].num:1} 题`;
+            // 方式：提交过的按实际内容判断（有逐题内容且无整块照片=打字）；草稿按 hwDraft 记录，默认拍照
+            const typed = locked ? (!iImgs.length && wUnits.some(u => (ansOf(u.key).text||'').trim())) : (hwDraft[`__calcMode_${bi}`] === 'type');
+            const legacyImgs = wUnits.some(u => (ansOf(u.key).images||[]).length || bUnits.some(x => x.calcSub));
+            if (locked) {
+              // 兼容旧数据：逐题照片 / 分问照片照原样显示
+              if (iImgs.length) return `<div style="border-top:1px dashed var(--border-light);padding:8px 0"><span style="font-size:11px;font-weight:600">${rangeTxt}（整块拍照）：</span>${iImgs.map((im,i)=>`<a href="${escA(im.url)}" target="_blank" style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:2px 8px;margin-right:4px">📷 图${i+1}</a>`).join('')}</div>`;
+              return wUnits.map(u => {
+                const wa = ansOf(u.key); const wImgs = wa.images || [];
+                const subs = (u.subs||1) > 1 ? Array.from({length:u.subs}, (_,j)=>({ key:`${bi}-${u.qnum}-${j+1}`, n:j+1 })) : [];
+                return `<div style="border-top:1px dashed var(--border-light);padding:8px 0">
+                  <span style="font-size:11.5px;font-weight:600">第${u.qnum}题</span>
+                  ${wa.text?`<div style="font-size:11px;color:var(--text-2);line-height:1.9;white-space:pre-wrap;background:var(--bg);border-radius:2px;padding:6px 8px;margin-top:4px">${escA(wa.text)}</div>`:''}
+                  ${wImgs.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${wImgs.map((im,i)=>`<a href="${escA(im.url)}" target="_blank" style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:2px 8px">📷 图${i+1}</a>`).join('')}</div>`:''}
+                  ${subs.filter(x=>(ansOf(x.key).images||[]).length).map(x=>`<div style="margin-top:4px"><span style="font-size:10px;color:var(--text-muted)">问${x.n}：</span>${(ansOf(x.key).images||[]).map((im,i)=>`<a href="${escA(im.url)}" target="_blank" style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:2px 8px;margin-right:4px">📷 图${i+1}</a>`).join('')}</div>`).join('')}
+                  ${!wa.text&&!wImgs.length&&!subs.some(x=>(ansOf(x.key).images||[]).length)?'<div style="font-size:10px;color:var(--text-muted)">未作答</div>':''}
+                </div>`;
+              }).join('');
+            }
+            const toggle = `<span onclick="hwCalcSwitch(${bi},'${typed?'photo':'type'}')" style="margin-left:auto;font-size:10px;color:var(--text-muted);cursor:pointer;text-decoration:underline">${typed?'改回整块拍照':'改为逐题打字作答'}</span>`;
+            if (typed) {
+              return `<div style="border-top:1px dashed var(--border-light);padding:8px 0">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:11.5px;font-weight:600">${rangeTxt} · 打字作答</span>${toggle}</div>
+                ${wUnits.map(u => `<div style="margin-bottom:6px">
+                  <div style="font-size:11px;font-weight:600;margin-bottom:3px">第${u.qnum}题</div>
+                  <textarea rows="3" placeholder="在此作答" oninput="hwSetAns('${u.key}',this.value)" style="width:100%;font-size:12px;line-height:1.9;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${escA(ansOf(u.key).text||'')}</textarea>
+                </div>`).join('')}
+              </div>`;
+            }
             return `<div style="border-top:1px dashed var(--border-light);padding:8px 0">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:11.5px;font-weight:600">${rangeTxt} · 手写作答拍照上传</span>${toggle}</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">请在纸上写清楚题号，按题号顺序拍照，可多张</div>
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                <span style="font-size:11.5px;font-weight:600">第${q.num}题${q.subs>1?`<span style="font-weight:400;color:var(--text-muted);font-size:10px">（共${q.subs}问）</span>`:''}</span>
-                ${locked?'':`<label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:3px 10px">📷 上传照片（可多张，按顺序）
-                  <input type="file" accept="image/*" multiple style="display:none" onchange="hwPickImages('${wu.key}', this)"></label>`}
-                <span id="hwimg_${wu.key}" style="font-size:10px;color:var(--text-muted)">${wImgs.length?wImgs.map((x,i)=>`图${i+1}`).join('・'):(locked?'未上传':'尚未上传')}</span>
-                ${q.subs>1&&!locked?`<span onclick="hwCalcExpand['${expKey}']=!hwCalcExpand['${expKey}'];hwRerender()" style="margin-left:auto;font-size:10px;color:var(--text-muted);cursor:pointer">${expanded?'▾ 收起分问上传':'▸ 分问上传'}</span>`:''}
+                <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:3px 10px">📷 上传照片（可多张，按顺序）
+                  <input type="file" accept="image/*" multiple style="display:none" onchange="hwPickImages('${imgU.key}', this)"></label>
+                <span id="hwimg_${imgU.key}" style="font-size:10px;color:var(--text-muted)">${iImgs.length?iImgs.map((x,i)=>`图${i+1}`).join('・'):'尚未上传'}</span>
               </div>
-              ${locked
-                ? `${wImgs.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${wImgs.map((im,i)=>`<a href="${escA(im.url)}" target="_blank" style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:2px 8px">📷 图${i+1}</a>`).join('')}</div>`:''}
-                   ${subs.filter(u=>(ansOf(u.key).images||[]).length).map(u=>`<div style="margin-top:4px"><span style="font-size:10px;color:var(--text-muted)">${u.label.replace(`第${q.num}题 `,'')}：</span>${(ansOf(u.key).images||[]).map((im,i)=>`<a href="${escA(im.url)}" target="_blank" style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:2px 8px;margin-right:4px">📷 图${i+1}</a>`).join('')}</div>`).join('')}`
-                : (expanded||subHasImg)&&q.subs>1
-                  ? `<div style="margin-top:6px;padding-left:10px;border-left:2px solid var(--border-light)">
-                      ${subs.map(u=>{const a=ansOf(u.key);const im=a.images||[];return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
-                        <span style="font-size:10px;color:var(--text-muted);min-width:32px">问${u.label.split('问')[1]||''}</span>
-                        <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:2px 9px">📷 上传
-                          <input type="file" accept="image/*" multiple style="display:none" onchange="hwPickImages('${u.key}', this)"></label>
-                        <span id="hwimg_${u.key}" style="font-size:10px;color:var(--text-muted)">${im.length?im.map((x,i)=>`图${i+1}`).join('・'):'—'}</span>
-                      </div>`;}).join('')}
-                    </div>`
-                  : ''}
             </div>`;
-          }).join('')
+          })()
         : bUnits.map(u => {
             const a = ansOf(u.key); const imgs = a.images || [];
             const picked = !locked && u.pickable ? !!hwPicked[u.key] : true;
@@ -1928,8 +1943,20 @@ function hwDetailHtml(s, sub) {
            <input type="file" accept=".doc,.docx,.pdf,image/*" style="display:none" onchange="hwPickWhole(this)"></label>
          <span id="hw_whole_tip" style="font-size:10px;color:var(--text-muted);margin-left:8px">${hwWholeFile?escA(hwWholeFile.name):'尚未上传'}</span>
        </div>
-       <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">💡 手写作业请按题号/问号上传，同一题可传多张（按拍摄顺序）；提交后不可修改</div>
+       <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">💡 手写作业请写清题号，按顺序拍照，可传多张；提交后不可修改</div>
        <button onclick="hwSubmit('${s.id}','${escA(L.key||'')}')" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 22px;cursor:pointer;font-family:inherit">提交作业</button>`}`;
+}
+
+// 计算题：整块拍照 / 逐题打字 二选一（每个大块各自记住，只在草稿里）
+function hwCalcSwitch(bi, to) {
+  const keys = Object.keys(hwDraft);
+  const hasPhoto = !!(hwDraft[`${bi}-img`] && (hwDraft[`${bi}-img`].images||[]).length);
+  const hasText = keys.some(k => k.startsWith(`${bi}-`) && k.endsWith('-all') && ((hwDraft[k].text||'').trim()));
+  if ((to === 'type' && hasPhoto) || (to === 'photo' && hasText)) {
+    if (!confirm('切换后，已上传的照片 / 已填写的答案不会提交，确定切换吗？')) return;
+  }
+  hwDraft[`__calcMode_${bi}`] = to;
+  hwRerender();
 }
 
 function hwSetAns(key, text) {
@@ -2016,7 +2043,10 @@ async function hwSubmit(sid, levelKey) {
   const N = hwNorm(s);
   const L = (N.levels.find(x => (x.key||'') === (levelKey||'')) || N.levels[0] || { blocks: [] });
   const units = hwUnits(L);
-  const answersAll = units.map(u => ({
+  // 计算题只保存当前方式的内容：整块拍照只取 `${bi}-img`，打字只取逐题文字
+  const calcTyped = bi => hwDraft[`__calcMode_${bi}`] === 'type';
+  const unitOn = u => !u.calcBlock && !u.calcWhole ? true : (u.calcBlock ? !calcTyped(u.block) : calcTyped(u.block));
+  const answersAll = units.filter(unitOn).map(u => ({
     k: u.key, label: `${u.head?u.head+' ':''}${u.label}`,
     q: u.text || '',                       // 题干随答案一并保存，便于老师对照批改
     picked: u.pickable ? !!hwPicked[u.key] : undefined,
@@ -2030,6 +2060,12 @@ async function hwSubmit(sid, levelKey) {
   let totalNeed = 0;
   (L.blocks || []).forEach((b, bi) => {
     if ((b.pick || 0) > 0) { totalNeed += b.pick; return; }
+    if (b.type === 'calc') {
+      // 整块拍照：至少一张照片即算整块都已作答；打字：按逐题计数
+      const wu = units.filter(u => u.block === bi && u.calcWhole);
+      totalNeed += calcTyped(bi) ? wu.length : 1;
+      return;
+    }
     totalNeed += units.filter(u => u.block === bi && !u.calcSub && !u.blockImg).length;
   });
   if (!answered && !hwWholeFile) { alert('请至少作答一题，或上传整份作业文件'); return; }
@@ -2317,7 +2353,7 @@ function hwCountLabel(s) {
   const N = hwNorm(s);
   if (!N.levels.length) return '';
   if (N.levels.length > 1) return ` · ${N.levels.length}个级别`;
-  const n = hwUnits(N.levels[0]).length;
+  const n = hwUnits(N.levels[0]).filter(u => !u.calcBlock).length;
   return n ? ` · ${n}题` : '';
 }
 
