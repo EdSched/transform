@@ -62,7 +62,7 @@ Sensis 经常在多个窗口/对话里同时改同一批文件，**已经多次�
 - 已开启 RLS：`students`、`student_login`、`teachers`、`teacher_profiles`、`periods`、`monthly_reviews`、`bookings`（学生只能读/新增自己 `student_id` 的预约，新同学匿名只能新增 `student_id` 为空的；学生改自己预约走 `rpc/student_patch_booking`，匿名统计名额走 `rpc/slot_booking_counts`）等。
   - 给新表开 RLS 前：先 `select * from pg_policies where tablename='xxx'` 查有没有遗留的 `public all` 宽松策略；先确认前端/登录流程依赖哪条读取路径；每一步都附回滚语句 `alter table ... disable row level security;`。
   - sched 系统的表原则上不锁。
-- 老师能看到哪些学生：以 `teacher/teacher-students.js` 的 `tsaAllowedSet()` 为准（按 `students.major` 单值过滤，集合为空=看全部）。不要凭记忆重写这套逻辑。
+- 老师能看到哪些学生 / 出願数据：统一以 `shared/constants.js` 的 `teacherScope(t, 'student'|'admission')` 为准（营业/对接看全部；其他人 = 负责专业 ∪ 负责领域 ∪ 负责人管理范围 ∪ 班主任班级，再减去 `permissions.exclude_majors`；范围为空 = 一个都看不到，不再有“没设就当全部”）。老师端用 `tsaFilterStudents()` / `tsaStudentOk()` 过滤；不要各自再写一套。
 - 老师的 `managed_by`（归谁管）和 `majors`（教什么）是两回事。
 
 ## 5. 业务上容易踩的坑

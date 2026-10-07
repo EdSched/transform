@@ -52,16 +52,6 @@ function taskTeacherDomains(t) {
   (t.majors || []).forEach(m => { if (MAJOR_DOMAIN[m]) s.add(MAJOR_DOMAIN[m]); });
   return s;
 }
-// 学科类：这位老师负责的专业（和老师端 tsaAllowedSet 同一套）；null = 不限（营业 / 对接 / 没填专业）
-function taskAllowedMajors(t) {
-  if (typeof canSeeAllStudents === 'function' ? canSeeAllStudents(t) : (t.tags || []).includes('营业老师')) return null;
-  const p = t.permissions || {};
-  const arr = (p.student_majors && p.student_majors.length) ? p.student_majors : (t.majors || []);
-  if (!arr.length) return null;
-  const set = new Set(arr);
-  if (set.has('shakai_group') && typeof SHAKAI_GROUP !== 'undefined') SHAKAI_GROUP.forEach(m => set.add(m));
-  return set;
-}
 // 这条任务统计的学生是不是在这位老师的范围里
 function taskStudentOk(t, tpl, s) {
   const wide = tpl.role === 'lead';
@@ -71,11 +61,9 @@ function taskStudentOk(t, tpl, s) {
       return (ms.domains || []).includes(MAJOR_DOMAIN[s.major]) || (ms.majors || []).includes(s.major)
         || (ms.class_ids || []).some(id => (s.class_ids || []).map(String).includes(String(id)));
     }
-    const doms = taskTeacherDomains(t);
-    return !doms.size || doms.has(MAJOR_DOMAIN[s.major]);
+    return teacherScopeHasStudent(teacherScope(t, 'student'), s);   // 没设范围 = 看不到（不再当全部）
   }
-  const set = taskAllowedMajors(t);
-  if (set && !set.has(s.major)) return false;
+  if (!teacherScopeHasStudent(teacherScope(t, 'student'), s)) return false;   // 与老师端学生管理同一套范围
   if ((t.permissions || {}).guaranteed_only && !String(s.course_type || '').includes('保录')) return false;
   return true;
 }

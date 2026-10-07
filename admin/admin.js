@@ -586,6 +586,7 @@ function tfMgrRender(){
   mb.innerHTML=`<div style="font-size:10px;color:var(--text-3);margin-bottom:8px">管理范围为空 = 不是负责人。设了范围后，这位老师用自己的老师链接登录，会多出「管理模式」按钮，一键进管理端（只看到范围内的东西），不用另外的访问链接。</div>
     ${scopePickerHtml(d,'mgrDraftToggle')}
     <div style="font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 12px;line-height:1.7">${isMgr?`负责人，管理范围：<b>${escTM(scopeSummary(d))}</b>`:'<b>不是负责人</b>（没有设置管理范围）'}</div>`;
+  if(typeof renderPermScope==='function') renderPermScope();
   tsecRefresh();
 }
 function mgrDraftToggle(field,val){
@@ -1126,7 +1127,7 @@ function renderTeachersPage(mc){
           <div style="padding:10px">
             <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;white-space:nowrap"><input type="checkbox" id="perm_student_mgmt" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">学生管理</label>
             <div style="font-size:10px;color:var(--text-3);margin-bottom:8px;margin-left:20px">开启后老师端显示「学生管理」页，按下方勾选的子项提供对应功能</div>
-            <label style="display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer;margin:0 0 8px 20px;color:#8a5010"><input type="checkbox" id="perm_guaranteed_only" style="accent-color:#8a5010;width:14px;height:14px">🎓 仅保录学生（勾选后此老师在学生管理里只能看到保录学生，看不到其他学生）</label>
+            <div style="margin:0 0 8px 20px"><div class="filter-chip" id="perm_guaranteed_only" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">仅保录学生</div><span style="font-size:10px;color:var(--text-3);margin-left:6px">点亮后此老师在学生管理里只能看到保录学生</span></div>
             <div style="margin-left:20px;margin-bottom:8px">
               <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可用的子项</div>
               <div style="display:flex;flex-wrap:wrap;gap:4px" id="perm_student_mgmt_items">
@@ -1135,22 +1136,17 @@ function renderTeachersPage(mc){
             ].map(([k,v])=>(k==='records_view'?'<span style="font-size:10px;color:var(--text-3);align-self:center;margin-left:4px">出席・作业：</span>':'')+`<div class="filter-chip" data-value="${k}" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">${v}</div>`).join('')}
               </div>
             </div>
-            <div style="margin-left:20px">
-              <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可见的专业（适用于全部三个子项；不选则默认按该老师自身的专业显示，老师档案无专业时全部可见）</div>
-              <div style="display:flex;flex-wrap:wrap;gap:4px" id="perm_student_majors">
-                ${chipFold(majorFilterKeys().map(m=>({on:false,html:`<div class="filter-chip" data-value="${m}" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">${majorLabel(m)}</div>`})))}
-              </div>
-            </div>
           </div>
           <!-- admission_query row -->
           <div style="padding:10px">
             <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;white-space:nowrap"><input type="checkbox" id="perm_admission_query" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">出願数据查询</label>
             <div style="font-size:10px;color:var(--text-3);margin-bottom:8px;margin-left:20px">开启后可在老师端查看出願学校数据库（只读）</div>
-            <div style="margin-left:20px">
-              <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可查看的专业（不选则只能查看该老师自己负责的专业）</div>
-              <div style="display:flex;flex-wrap:wrap;gap:4px" id="perm_admission_majors"></div>
-              <div id="perm_admission_removed" style="font-size:10px;color:var(--text-3);margin-top:4px"></div>
-            </div>
+          </div>
+          <!-- 可见范围（学生管理 / 出願数据共用）：范围由职位 + 角色 + 负责范围算出，这里只排除 -->
+          <div style="padding:10px" id="perm_scope_block">
+            <div style="font-size:11px;font-weight:600;margin-bottom:6px">不看的专业（可选，学生管理和出願数据共用）</div>
+            <div id="perm_scope_info" style="font-size:11px;color:var(--text-2);line-height:1.6;margin-bottom:6px"></div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px" id="perm_exclude_majors"></div>
           </div>
         </div>
       `,0)}
@@ -1344,57 +1340,61 @@ function admKeepFold(box,fn){
 }
 function toggleChip(el){
   el.classList.toggle('active');
-  if(el.closest && el.closest('#new_teacher_managed,#new_teacher_majors')) renderPermAdmMajors();   // 老师所在领域变了，出愿专业清单跟着变
+  if(el.closest && el.closest('#new_teacher_managed,#new_teacher_majors')) renderPermScope();   // 老师所在领域变了，出愿专业清单跟着变
 }
-// ── 老师权限「出願数据查询」的可查看专业：只列老师所在领域的出愿专业 ──
-let _admSel=new Set();   // 当前勾选（含可能不属于本领域的旧数据，保存时才清掉）
-function admFormDomains(){
+// ── 老师权限「不看的专业」（学生管理 + 出願数据共用，存 permissions.exclude_majors） ──
+// 能看哪些由 shared/constants.js 的 teacherScope()（职位 + 角色 + 负责范围）算出；这里只列出范围内的专业，点亮 = 排除
+let _admExcl=new Set();   // 当前排除（含可能已不在范围内的旧值，保存时才清掉）
+// 按表单当前内容拼一个"老师"，交给 teacherScope() 计算（没有对应表单区块时，退回已保存的值）
+function admScopeTeacher(){
+  const cur=(_tfEditId&&typeof cachedTeachers!=='undefined')?cachedTeachers.find(x=>x.id===_tfEditId):null;
+  const act=id=>[...document.querySelectorAll('#'+id+' .filter-chip.active')].map(c=>c.dataset.value);
   const _isDom=(typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && !!viewLockDomain());
-  if(_isDom) return [viewLockDomain()];
-  const mb=[...document.querySelectorAll('#new_teacher_managed .filter-chip.active')].map(c=>c.dataset.value);
-  if(mb.length) return [...new Set(mb)];
-  const ms=[...document.querySelectorAll('#new_teacher_majors .filter-chip.active')].map(c=>c.dataset.value);
-  return [...new Set(ms.map(m=>MAJOR_DOMAIN[m]).filter(Boolean))];
+  let mb=act('new_teacher_managed'); if(_isDom&&!mb.length) mb=[viewLockDomain()];
+  const t={majors:act('new_teacher_majors'),managed_by:mb,tags:parseTeacherTags(),position:null,roles:[],role_scope:null,manage_scope:null,permissions:{exclude_majors:[..._admExcl]}};
+  if(tfHasRoleUI()){
+    t.position=(tsecCurType()==='正社员'&&_tfPos)||null; t.roles=_tfRoles.slice();
+    if(_tfRoles.includes('homeroom')&&_tfHr) t.role_scope={homeroom:{domains:_tfHr.domains,majors:_tfHr.majors,class_ids:_tfHr.classIds}};
+  } else if(cur){ t.position=cur.position||null; t.roles=cur.roles||[]; t.role_scope=cur.role_scope||null; }
+  if(_mgrDraft&&document.getElementById('tf_manager_box')) t.manage_scope={domains:_mgrDraft.domains,majors:_mgrDraft.majors,class_ids:_mgrDraft.classIds};
+  else if(cur) t.manage_scope=cur.manage_scope||null;
+  return t;
 }
-function admListedKeys(){
-  const doms=admFormDomains();
-  return Object.keys(ADMISSION_MAJORS).filter(k=>doms.includes(admissionMajorDomain(k)));
+function admScopeBase(){
+  const t=admScopeTeacher(), st=teacherScope(t,'student'), ad=teacherScope(t,'admission');
+  return {st,ad,base:st.all?ad:st};   // 对接：学生看全部，排除只影响出願数据
 }
-function admSelectedForSave(){
-  if(!admFormDomains().length) return [..._admSel];   // 还没定领域：原样保留，不误清
-  const ok=new Set(admListedKeys());
-  return [..._admSel].filter(k=>ok.has(k));
+function admExcludeForSave(){
+  const {st,ad}=admScopeBase();
+  const ok=new Set([...st.rangeMajors,...ad.rangeMajors]);
+  if(!ok.size) return [..._admExcl];   // 还没设范围：原样保留，不误清
+  return [..._admExcl].filter(k=>ok.has(k));
 }
-function renderPermAdmMajors(){
-  const box=document.getElementById('perm_admission_majors'); if(!box) return;
-  const doms=admFormDomains(), keys=admListedKeys();
-  const rm=document.getElementById('perm_admission_removed');
-  if(parseTeacherTags().includes('营业老师')){
-    box.innerHTML='<div style="font-size:11px;color:var(--accent)">营业老师：可查看全部出愿数据</div>'+(keys.length?'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;opacity:.4;pointer-events:none">'+keys.map(k=>`<div class="filter-chip${_admSel.has(k)?' active':''}" style="padding:3px 9px;font-size:10px">${escTM(ADMISSION_MAJORS[k])}</div>`).join('')+'</div>':'');
-    if(rm) rm.textContent=''; return;
+function admMajorName(k){ return MAJORS[k]?majorLabel(k):(ADMISSION_MAJORS[k]||k); }
+function renderPermScope(){
+  const box=document.getElementById('perm_exclude_majors'); if(!box) return;
+  const info=document.getElementById('perm_scope_info');
+  const {st,ad,base}=admScopeBase();
+  if(st.all&&ad.all){
+    if(info) info.innerHTML='<span style="color:var(--accent)">这位老师能看的范围：看全部领域</span>（职位决定，不需要排除）';
+    box.innerHTML=''; return;
   }
-  if(!doms.length){ box.innerHTML='<div style="font-size:11px;color:var(--text-3)">请先选择该老师的隶属领域或负责专业，这里再列出对应领域的出愿专业</div>'; if(rm) rm.textContent=''; return; }
-  if(!keys.length){ box.innerHTML='<div style="font-size:11px;color:var(--text-3)">'+escTM(doms.join('、'))+' 暂无出愿专业</div>'; }
-  else {
-    const allOn=keys.every(k=>_admSel.has(k));
-    box.innerHTML=chipFold([{on:allOn,html:`<div class="filter-chip${allOn?' active':''}" onclick="admToggleAll()" style="padding:3px 9px;font-size:10px">全选</div>`}].concat(
-      keys.map(k=>({on:_admSel.has(k),html:`<div class="filter-chip${_admSel.has(k)?' active':''}" onclick="admToggleOne('${k}')" style="padding:3px 9px;font-size:10px">${escTM(ADMISSION_MAJORS[k])}</div>`}))));
+  const keys=[...base.rangeMajors];
+  const parts=[];
+  if(keys.length){
+    const by={}; keys.forEach(k=>{ const d=MAJOR_DOMAIN[k]||'其他'; (by[d]=by[d]||[]).push(admMajorName(k)); });
+    parts.push(Object.keys(by).map(d=>escTM(d)+' · '+escTM(by[d].join('、'))).join('；'));
   }
-  if(rm){
-    const ok=new Set(keys), gone=[..._admSel].filter(k=>!ok.has(k));
-    rm.textContent=gone.length?'已移除不属于本领域的专业：'+gone.map(k=>ADMISSION_MAJORS[k]||k).join('、')+'（保存后清掉）':'';
+  if(base.classIds.size) parts.push('班主任班级 '+base.classIds.size+' 个（按学生判断，不受排除影响）');
+  if(!parts.length){
+    if(info) info.innerHTML='<span style="color:var(--danger,#c0392b)">还没有设置负责专业 / 负责范围——这位老师现在看不到任何学生和出願数据。请先在「负责领域与专业」「负责人」等处设置。</span>';
+    box.innerHTML=''; return;
   }
+  const pre=st.all?'学生管理：看全部领域；出願数据：':'';
+  if(info) info.innerHTML='这位老师能看的范围：'+pre+parts.join('；')+'（来自：'+escTM(base.sources.join('、'))+'）';
+  box.innerHTML=chipFold(keys.map(k=>({on:_admExcl.has(k),html:`<div class="filter-chip${_admExcl.has(k)?' active':''}" onclick="admToggleExcl('${k}')" style="padding:3px 9px;font-size:10px">${escTM(admMajorName(k))}</div>`})));
 }
-function admToggleOne(k){ if(_admSel.has(k)) _admSel.delete(k); else _admSel.add(k); admKeepFold(document.getElementById('perm_admission_majors'),renderPermAdmMajors); }
-function admToggleAll(){
-  const keys=admListedKeys(); if(!keys.length) return;
-  if(keys.every(k=>_admSel.has(k))){ keys.forEach(k=>_admSel.delete(k)); }
-  else {
-    if(!confirm('要让这位老师查看〈'+admFormDomains().join('、')+'〉的全部出愿数据吗？')) return;
-    keys.forEach(k=>_admSel.add(k));
-  }
-  renderPermAdmMajors();
-}
+function admToggleExcl(k){ if(_admExcl.has(k)) _admExcl.delete(k); else _admExcl.add(k); admKeepFold(document.getElementById('perm_exclude_majors'),renderPermScope); }
 function cancelEditTeacher(){
   document.getElementById('teacherFormTitle').textContent='添加新老师';
   document.getElementById('teacherFormBtn').textContent='＋ 添加老师';
@@ -1406,12 +1406,12 @@ function cancelEditTeacher(){
   if(document.getElementById('new_teacher_department')) document.getElementById('new_teacher_department').value='';
   document.getElementById('new_teacher_notes').value='';
   setTeacherTags([]);
-  document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
+  document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
   {const _e=document.getElementById('perm_schedule_mode'); if(_e)_e.value='';}
     document.getElementById('perm_student_mgmt').checked=false;
-    {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.checked=false;}
+    {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.classList.remove('active');}
     {const _e=document.getElementById('perm_progress_plan'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_promo'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_lect_info'); if(_e)_e.checked=false;}
@@ -1421,7 +1421,7 @@ function cancelEditTeacher(){
     {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=false;}
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
-  _admSel=new Set(); renderPermAdmMajors();
+  _admExcl=new Set(); renderPermScope();
   renderHomeworkCoursesChips([]);
   tfFormReset();
 }
@@ -1434,12 +1434,12 @@ function openTeacherManager(){
   if(document.getElementById('new_teacher_department')) document.getElementById('new_teacher_department').value='';
   document.getElementById('new_teacher_notes').value='';
   setTeacherTags([]);
-  document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
+  document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
   document.getElementById('perm_booking').checked=false;
   document.getElementById('perm_slots').checked=false;
   {const _e=document.getElementById('perm_schedule_mode'); if(_e)_e.value='';}
     document.getElementById('perm_student_mgmt').checked=false;
-    {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.checked=false;}
+    {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.classList.remove('active');}
     {const _e=document.getElementById('perm_progress_plan'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_promo'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_lect_info'); if(_e)_e.checked=false;}
@@ -1449,7 +1449,7 @@ function openTeacherManager(){
     {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=false;}
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
-  _admSel=new Set(); renderPermAdmMajors();
+  _admExcl=new Set(); renderPermScope();
   renderHomeworkCoursesChips([]);
   renderTeacherList();
   document.getElementById('teacherManagerModal').classList.add('open');
@@ -1493,7 +1493,7 @@ function setTeacherTags(arr){
 }
 function senmonChipSync(){
   const now=parseTeacherTags().includes('营业老师');
-  if(now!==_tfSalesPrev){ _tfSalesPrev=now; if(typeof renderPermAdmMajors==='function') renderPermAdmMajors(); }   // 营业决定出愿专业可选范围
+  if(now!==_tfSalesPrev){ _tfSalesPrev=now; if(typeof renderPermScope==='function') renderPermScope(); }   // 营业决定出愿专业可选范围
 }
 
 // ── 角色模板：默认功能从 role_templates 表读，读不到退回 seed/role_templates_seed.json ──
@@ -1620,6 +1620,7 @@ function tfRolesRender(){
   if(_tfRoles.includes('senmon')||_tfRoles.includes('ta')) parts.push(`<div style="font-size:11px;color:var(--text-2)">${_tfRoles.includes('senmon')&&_tfRoles.includes('ta')?'专业课老师 / TA':_tfRoles.includes('ta')?'TA':'专业课老师'}：负责专业在 ${link('area','负责领域与专业')} 区块选择${_tfRoles.includes('ta')?'（TA 也可以直接选整个领域）':''}</div>`);
   if(_tfRoles.includes('homeroom')&&_tfHr) parts.push(`<div style="border:1px solid var(--border-light);border-radius:3px;padding:8px;margin-top:4px"><div style="font-size:11px;font-weight:600;margin-bottom:6px">班主任：负责班级（或整个学部领域）</div>${scopePickerHtml(_tfHr,'tfHrToggle')}</div>`);
   box.innerHTML=parts.join('');
+  if(typeof renderPermScope==='function') renderPermScope();   // 职位 / 角色 / 班主任范围变了，可见范围说明跟着变
 }
 // 保存用：职位 / 角色 / 班主任范围；没有职位 / 角色选择区（领域账号）或准备 SQL 还没执行且没选 → 返回 {}
 function tfRolesCollect(cur){
@@ -1885,7 +1886,6 @@ function getPermissionsFromForm(prev){
     homework_own_sessions:hwaOwn,
     homework_course_ids:hwaCoursesOn?[...hwaIds]:[],   // 旧的 homework_courses（课程名）不再写入，保存即删除
     admission_query:document.getElementById('perm_admission_query').checked,
-    admission_majors:admSelectedForSave(),
     promo:_chk('perm_promo',prev.promo),
     lect_info:_chk('perm_lect_info',prev.lect_info),
     progress_plan:_chk('perm_progress_plan',prev.progress_plan),
@@ -1894,9 +1894,9 @@ function getPermissionsFromForm(prev){
     promo_pricing:_chk('perm_promo_pricing',prev.promo_pricing),
     success_cases:_chk('perm_success_cases',prev.success_cases),
     student_mgmt:document.getElementById('perm_student_mgmt').checked,
-    guaranteed_only:document.getElementById('perm_guaranteed_only')?.checked||false,
+    guaranteed_only:document.getElementById('perm_guaranteed_only')?.classList.contains('active')||false,
     student_mgmt_items:[...document.querySelectorAll('#perm_student_mgmt_items .filter-chip.active')].map(c=>c.dataset.value),
-    student_majors:[...document.querySelectorAll('#perm_student_majors .filter-chip.active')].map(c=>c.dataset.value),
+    exclude_majors:admExcludeForSave(),
   });
 }
 
@@ -1906,7 +1906,7 @@ function toggleDomainChip(el){
   renderTeacherMajorChips();
 }
 // 按已选领域展开专业 chip（按领域分组显示）；保留已勾选的专业状态
-function renderTeacherMajorChips(){ _renderTeacherMajorChipsInner(); renderPermAdmMajors(); }
+function renderTeacherMajorChips(){ _renderTeacherMajorChipsInner(); renderPermScope(); }
 function _renderTeacherMajorChipsInner(){
   const box=document.getElementById('new_teacher_majors'); if(!box) return;
   const _isDom=(typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && !!viewLockDomain());
@@ -2001,12 +2001,12 @@ async function addTeacher(){
     document.getElementById('new_teacher_notes').value='';
   setTeacherTags([]);
     setTeacherTags([]);
-    document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_majors .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
+    document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
     document.getElementById('perm_booking').checked=false;
     document.getElementById('perm_slots').checked=false;
     {const _e=document.getElementById('perm_schedule_mode'); if(_e)_e.value='';}
     document.getElementById('perm_student_mgmt').checked=false;
-    {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.checked=false;}
+    {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.classList.remove('active');}
     {const _e=document.getElementById('perm_progress_plan'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_promo'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_lect_info'); if(_e)_e.checked=false;}
@@ -2056,7 +2056,7 @@ function openEditTeacher(id){
   {const _e=document.getElementById('perm_schedule_mode'); if(_e)_e.value=(p.schedule===true?'full':(p.schedule||''));}
   document.getElementById('perm_homework').checked=!!p.homework;
   document.getElementById('perm_admission_query').checked=!!p.admission_query;
-  _admSel=new Set(p.admission_majors||[]); renderPermAdmMajors();
+  _admExcl=new Set(p.exclude_majors||[]); renderPermScope();
   {const _e=document.getElementById('perm_promo'); if(_e)_e.checked=!!p.promo;}
   {const _e=document.getElementById('perm_lect_info'); if(_e)_e.checked=!!p.lect_info;}
   {const _e=document.getElementById('perm_progress_plan'); if(_e)_e.checked=!!p.progress_plan;}
@@ -2065,10 +2065,8 @@ function openEditTeacher(id){
   {const _e=document.getElementById('perm_promo_pricing'); if(_e)_e.checked=!!p.promo_pricing;}
   {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=!!p.success_cases;}
   document.getElementById('perm_student_mgmt').checked=!!p.student_mgmt;
-  {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.checked=!!p.guaranteed_only;}
+  {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.classList.toggle('active',!!p.guaranteed_only);}
   document.querySelectorAll('#perm_student_mgmt_items .filter-chip').forEach(c=>{c.classList.toggle('active',((p.student_mgmt_items||[]).includes(c.dataset.value)||((p.student_mgmt_items||[]).includes('records')&&/^records_(view|entry)$/.test(c.dataset.value))));});   // 旧的 records = 查看+登记都开
-  document.querySelectorAll('#perm_student_majors .filter-chip').forEach(c=>{c.classList.toggle('active',(p.student_majors||[]).includes(c.dataset.value));});
-  admFoldSync(document.getElementById('perm_student_majors'));
   document.querySelectorAll('#perm_booking_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.booking_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_slot_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.slot_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_vip_content .filter-chip').forEach(c=>{c.classList.toggle('active',(p.vip_content||[]).includes(c.dataset.value))});

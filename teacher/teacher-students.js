@@ -36,8 +36,7 @@ async function renderTeacherStudyProgress(mc) {
   let students = [];
   try {
     const all = await sb('/rest/v1/students?select=*&order=name.asc&limit=2000');
-    const set = (typeof tsaAllowedSet === 'function') ? tsaAllowedSet() : null;
-    students = (set ? (all || []).filter(s => set.has(s.major)) : (all || []));   // 全部状态；由全局「状态」筛选
+    students = tsaFilterStudents(all);   // 全部状态；由全局「状态」筛选
     if (tsaGuaranteedLock()) students = students.filter(tsaIsGuaranteed);
   } catch (e) { mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
 
@@ -632,9 +631,8 @@ function tsmFilterStudents(list) { return (list || []).filter(s => tsmMatch(s));
 async function tsmLoadPool(force) {
   if (!force && tsmPool && Date.now() - tsmPoolAt < 60000) return tsmPool;
   let all = [];
-  try { all = await sbAll('/rest/v1/students?select=id,name,major,level,status,course_type,student_type,source&order=name.asc'); } catch (e) { all = tsmPool || []; }
-  const set = tsaAllowedSet();
-  let list = set ? all.filter(s => set.has(s.major)) : all;
+  try { all = await sbAll('/rest/v1/students?select=id,name,major,level,status,course_type,student_type,source,class_ids&order=name.asc'); } catch (e) { all = tsmPool || []; }
+  let list = tsaFilterStudents(all);
   if (tsaGuaranteedLock()) list = list.filter(tsaIsGuaranteed);
   tsmPool = list; tsmPoolAt = Date.now();
   if (!tsmDomainInited) { tsmDomainInited = true; tsm.domain = tsmDefaultDomain(); tsmDomPicked = !!tsm.domain || tsmDomCount() <= 1; tsmMajPicked = false; }
@@ -722,6 +720,7 @@ function renderStudentMgmt(mc) {
   tsmShown = TSM_PAGE;
   tsmLoadPool(true).then(() => {
     if (smTab !== tab || !document.getElementById('sm_content')) return;   // 加载期间已切走
+    if (tsaScopeEmpty()) { const f = document.getElementById('sm_filter'); if (f) f.innerHTML = ''; box.innerHTML = tsaEmptyHtml(); return; }
     tsmRenderBar();
     if (tsmNeed()) { box.innerHTML = tsmPickHtml(); return; }
     if (tab === 'progress') renderTeacherStudyProgress(box);
@@ -734,22 +733,31 @@ function renderStudentMgmt(mc) {
 }
 
 // ── 共用：允许专业集合（三个子项统一使用；与面谈预约逻辑完全无关） ──
-// 判定顺序：admin 显式勾选的 student_majors > 老师档案自身的 majors > 全部可见（兜底）
+// 范围由 shared/constants.js 的 teacherScope() 统一算（营业/对接=全部；其他=负责专业/领域/管理范围/班主任班级，减去「排除的专业」）。
+// 没有范围 = 一个学生都看不到（不再"没设就全部"）。
 // admin 是否把此老师的学生管理限定为"仅保录学生"
 function tsaGuaranteedLock() { return !!(teacherData && teacherData.permissions && teacherData.permissions.guaranteed_only); }
 function tsaIsGuaranteed(s) { return ((s && s.course_type) || '').includes('保录'); }
 
+function tsaScope() { return teacherScope(teacherData, 'student'); }
+// 专业集合：null = 看全部；Set（可能为空）= 按专业；班主任班级的学生另外用 tsaStudentOk 判断
 function tsaAllowedSet() {
-  if (typeof canSeeAllStudents === 'function' && canSeeAllStudents(teacherData)) return null;   // 营业 / 对接：看全部学生
-  const p = (teacherData && teacherData.permissions) || {};
-  let allowed = (Array.isArray(p.student_majors) && p.student_majors.length)
-    ? p.student_majors
-    : (Array.isArray(teacherData && teacherData.majors) ? teacherData.majors : []);
-  if (!allowed.length) return null;
-  const set = new Set(allowed);
-  if (set.has('shakai_group') && typeof SHAKAI_GROUP !== 'undefined') SHAKAI_GROUP.forEach(m => set.add(m));
-  return set;
+  const sc = tsaScope();
+  return sc.all ? null : sc.majors;
 }
+// 学生行是否在这位老师的范围里（专业命中，或在班主任负责的班级里）
+function tsaStudentOk(s) { return teacherScopeHasStudent(tsaScope(), s); }
+function tsaScopeEmpty() { return teacherScopeEmpty(tsaScope()); }
+function tsaFilterStudents(list) { const sc = tsaScope(); return sc.all ? (list || []) : (list || []).filter(s => teacherScopeHasStudent(sc, s)); }
+function tsaScopeText() {
+  const sc = tsaScope();
+  if (sc.all) return '可见全部专业';
+  const parts = [];
+  if (sc.majors.size) parts.push('可见专业：' + [...sc.majors].map(m => MAJORS[m] || m).join('・'));
+  if (sc.classIds.size) parts.push('含班主任班级学生');
+  return parts.join('；');
+}
+function tsaEmptyHtml() { return `<div class="empty">${TEACHER_SCOPE_EMPTY_MSG}</div>`; }
 
 function tsaEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
@@ -763,8 +771,7 @@ async function renderTeacherStudents(box) {
   box.innerHTML = '<div class="empty">加载中…</div>';
   try {
     const all = await sb('/rest/v1/students?select=*&order=created_at.desc&limit=2000');
-    const set = tsaAllowedSet();
-    tsaStudents = set ? (all || []).filter(s => set.has(s.major)) : (all || []);   // 全部状态；由全局「状态」筛选
+    tsaStudents = tsaFilterStudents(all);   // 全部状态；由全局「状态」筛选
     // admin 限定"仅保录"：数据层就只保留保录学生，彻底看不到其他学生
     if (teacherData && teacherData.permissions && teacherData.permissions.guaranteed_only) {
       tsaStudents = tsaStudents.filter(s => (s.course_type || '').includes('保录'));
@@ -827,14 +834,13 @@ function tsaRenderList() {
 
 function tsaRender() {
   const mc = document.getElementById('sm_content') || document.getElementById('mainContent');
-  const set = tsaAllowedSet();
   const inpStyle = 'width:100%;font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
   const fld = (id, label, ctrl) => `<div><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:2px">${label}</label>${ctrl}</div>`;
   const inp = (id, label, ph) => fld(id, label, `<input id="${id}" placeholder="${ph || ''}" style="${inpStyle}">`);
 
   mc.innerHTML = `<div>
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-      <div style="font-size:12px;font-weight:600">👤 学生档案（${tsmFilterStudents(tsaStudents).length}人）<span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:6px">${set ? '可见专业：' + [...set].map(m => MAJORS[m] || m).join('・') : '可见全部专业'}</span></div>
+      <div style="font-size:12px;font-weight:600">👤 学生档案（${tsmFilterStudents(tsaStudents).length}人）<span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:6px">${tsaScopeText()}</span></div>
       <div style="display:flex;gap:6px;align-items:center">
         ${(teacherData && teacherData.permissions && teacherData.permissions.guaranteed_only)
           ? `<div style="font-size:10px;padding:2px 10px;border-radius:12px;background:#8a5010;color:#fff;white-space:nowrap">🎓 仅保录学生（管理员限定）</div>`
@@ -963,8 +969,7 @@ async function mrLoadAndRender(stu){
   // 谁能填：班主任=我负责的学生(owner/vip含我)；专业老师=有"专业课"标签且该生在我可见专业范围
   const canHome = (typeof tpIsMine==='function') ? tpIsMine(stu) : false;
   const isProfTeacher = !!(teacherData && Array.isArray(teacherData.tags) && teacherData.tags.some(t=>String(t).includes('专业课')));
-  const set = tsaAllowedSet();
-  const canProf = isProfTeacher && (!set || set.has(stu.major));
+  const canProf = isProfTeacher && tsaStudentOk(stu);
   body.innerHTML = `
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px 20px">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
@@ -1331,7 +1336,6 @@ function tsrRender() {
   if (!box) return;
   const listAll = tsmFilterStudents(tsrStudents);
   const list = tsmSlice(listAll);
-  const set = tsaAllowedSet();
   const rp = smRecPerm();   // view 查看 / entry 登记
 
   box.innerHTML = `<div>
@@ -1342,7 +1346,7 @@ function tsrRender() {
     ${rp.view ? `<div onclick="tsrHistOpen=!tsrHistOpen;tsrRender()" style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-2);padding:8px 0;border-top:1px solid var(--border);user-select:none">${tsrHistOpen?'▾':'▸'} 学生出席历史（${listAll.length} 人，点击${tsrHistOpen?'收起':'展开'}）</div>
     <div style="display:${tsrHistOpen?'block':'none'}">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-      <div style="font-size:12px;font-weight:600">🗒 出席・作业记录（${listAll.length} 人）<span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:6px">${set ? '可见专业：' + [...set].map(m => MAJORS[m] || m).join('・') : '可见全部专业'}</span></div>
+      <div style="font-size:12px;font-weight:600">🗒 出席・作业记录（${listAll.length} 人）<span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:6px">${tsaScopeText()}</span></div>
     </div>
     <div style="border:1px solid var(--border);border-radius:4px;overflow:hidden">
       ${list.length ? list.map(s => {
@@ -1484,9 +1488,8 @@ let tmData = null; // { groups: [{name, major, source, list:[booking...]}] }
 async function renderTsaMeetings(box) {
   box.innerHTML = '<div class="empty">加载中…</div>';
   try {
-    const set = tsaAllowedSet();
     const [allStu, allBk, allContact] = await Promise.all([
-      sb('/rest/v1/students?select=id,name,major,source,status,course_type,student_code&limit=2000').catch(() => []),
+      sb('/rest/v1/students?select=id,name,major,source,status,course_type,student_code,class_ids&limit=2000').catch(() => []),
       sb('/rest/v1/bookings?daily_record=not.is.null&select=*&order=slot_date.desc&limit=1500').catch(() => []),
       sb('/rest/v1/student_contact_logs?select=*&order=created_at.desc&limit=3000').catch(() => []),
     ]);
@@ -1501,12 +1504,12 @@ async function renderTsaMeetings(box) {
       // 已绑定学生（student_id）的预约以档案专业为准；未绑定时用 bookings.major（姓名匹配仅用于来源/保录标记）
       const stu = b.student_id ? stuById[b.student_id] : stuByName[b.name];
       const major = (b.student_id && stu && stu.major) || b.major || '';
-      if (set && !set.has(major)) return;
+      if (!teacherScopeHasStudent(tsaScope(), { major, class_ids: stu && stu.class_ids })) return;
       if (tsaGuaranteedLock() && !tsaIsGuaranteed(stu)) return;
       if (!groups[b.name]) groups[b.name] = { name: b.name, major, source: (stu && stu.source) || '', status: (stu && stu.status) || '', list: [] };
       groups[b.name].list.push(b);
     });
-    let myStudents = (allStu || []).filter(s => (!set || set.has(s.major)));   // 全部状态；由全局「状态」筛选
+    let myStudents = tsaFilterStudents(allStu);   // 全部状态；由全局「状态」筛选
     if (tsaGuaranteedLock()) myStudents = myStudents.filter(tsaIsGuaranteed);
     tmData = {
       groups: Object.values(groups).sort((a, b) => (b.list[0].slot_date || '').localeCompare(a.list[0].slot_date || '')),
@@ -2056,8 +2059,7 @@ async function renderTeacherFocus(box) {
   box.innerHTML = '<div class="empty">加载中…</div>';
   try {
     const all = await sb('/rest/v1/students?select=*&order=created_at.desc&limit=2000').catch(() => []);
-    const set = tsaAllowedSet();
-    let list = (set ? (all || []).filter(s => set.has(s.major)) : (all || []));   // 全部状态；由全局「状态」筛选
+    let list = tsaFilterStudents(all);   // 全部状态；由全局「状态」筛选
     if (tsaGuaranteedLock()) list = list.filter(tsaIsGuaranteed);
     focusStudents = list;
     focusRender();

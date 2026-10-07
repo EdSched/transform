@@ -1307,8 +1307,6 @@ function teacherAdmDomains(t) {
   if (mb.length) return [...new Set(mb)];
   return [...new Set(((t && t.majors) || []).map(m => MAJOR_DOMAIN[m]).filter(Boolean))];
 }
-// 老师在出愿数据库里被允许查看的专业：
-// 权限里明确选了的（没选则用老师自己负责的专业）→ 只保留是出愿专业、且属于老师所在领域的
 // 管理职位（teachers.position，只有正社员）和执行角色（teachers.roles，可多个）；默认功能存在 role_templates 表
 const TEACHER_POSITIONS = [['lead', '负责人'], ['sales', '营业'], ['liaison', '对接'], ['soumu', '总务'], ['soumu_asst', '总务助理']];
 const TEACHER_ROLES = [['senmon', '专业课老师'], ['ta', 'TA'], ['homeroom', '班主任']];
@@ -1318,12 +1316,64 @@ function teacherRoleLabel(k) { const r = TEACHER_ROLES.find(x => x[0] === k); re
 function canSeeAllStudents(t) { return !!t && (t.position === 'sales' || t.position === 'liaison' || (Array.isArray(t.tags) && t.tags.includes('营业老师'))); }
 // 看全部出愿数据：职位是营业（兼容：标签里有「营业老师」）
 function canSeeAllAdmission(t) { return !!t && (t.position === 'sales' || (Array.isArray(t.tags) && t.tags.includes('营业老师'))); }
+// ── 老师可见范围（学生管理 / 出願数据共用）：由「职位 + 角色 + 负责范围」算出，不再手选「可见的专业」 ──
+// kind: 'student'（学生管理）| 'admission'（出願数据）
+// 返回 { all, majors:Set, classIds:Set, rangeMajors:Set, sources:[], excluded:Set }
+//   all=true → 看全部（student：营业/对接；admission：营业）；
+//   majors = 范围内专业（已减去 permissions.exclude_majors）；rangeMajors = 减去之前；
+//   classIds = 班主任负责班级（只用于学生，按学生的 class_ids 判断）；
+//   all=false 且 majors、classIds 都空 → 一个都看不到（不再有"没设就当全部"）。
+function _scopeDomainMajors(dom) {
+  const keys = new Set(typeof allMajorKeys === 'function' ? allMajorKeys() : Object.keys(MAJORS));
+  Object.keys(MAJOR_DOMAIN).forEach(k => keys.add(k));
+  Object.keys(ADMISSION_MAJORS).forEach(k => keys.add(k));
+  return [...keys].filter(k => k !== 'shakai_group' && MAJOR_DOMAIN[k] === dom);
+}
+function teacherScope(t, kind) {
+  kind = kind === 'admission' ? 'admission' : 'student';
+  const sc = { kind, all: false, majors: new Set(), classIds: new Set(), rangeMajors: new Set(), sources: [], excluded: new Set() };
+  if (!t) return sc;
+  if (kind === 'admission' ? canSeeAllAdmission(t) : canSeeAllStudents(t)) { sc.all = true; return sc; }
+  const add = (arr, src) => {
+    let hit = false;
+    (arr || []).forEach(m => {
+      const ks = m === 'shakai_group' ? SHAKAI_GROUP : [m];
+      ks.forEach(k => { if (k) { sc.rangeMajors.add(k); hit = true; } });
+    });
+    if (hit && !sc.sources.includes(src)) sc.sources.push(src);
+  };
+  const own = Array.isArray(t.majors) ? t.majors : [];
+  add(own, '负责专业');
+  if (!own.length) add([].concat(...(t.managed_by || []).map(_scopeDomainMajors)), '负责领域');
+  if (t.position === 'lead' && managerScopeNonEmpty(t.manage_scope)) {
+    const ms = t.manage_scope;
+    add([].concat(...(ms.domains || []).map(_scopeDomainMajors)).concat(ms.majors || []), '负责人管理范围');
+  }
+  const hr = t.role_scope && t.role_scope.homeroom;
+  if (Array.isArray(t.roles) && t.roles.includes('homeroom') && hr && kind === 'student') {
+    const cls = (hr.class_ids || []).map(String);
+    if (cls.length) { cls.forEach(c => sc.classIds.add(c)); sc.sources.push('班主任班级'); }
+    add([].concat(...(hr.domains || []).map(_scopeDomainMajors)).concat(hr.majors || []), '班主任范围');
+  }
+  if (kind === 'admission') [...sc.rangeMajors].forEach(k => { if (!ADMISSION_MAJORS[k]) sc.rangeMajors.delete(k); });
+  const ex = (t.permissions && t.permissions.exclude_majors) || [];
+  ex.forEach(m => (m === 'shakai_group' ? SHAKAI_GROUP : [m]).forEach(k => sc.excluded.add(k)));
+  sc.rangeMajors.forEach(k => { if (!sc.excluded.has(k)) sc.majors.add(k); });
+  return sc;
+}
+function teacherScopeEmpty(sc) { return !sc || (!sc.all && !sc.majors.size && !sc.classIds.size); }
+// 某个学生行在不在范围内（专业命中，或在班主任负责的班级里）
+function teacherScopeHasStudent(sc, s) {
+  if (!sc || !s) return false;
+  if (sc.all) return true;
+  if (sc.majors.has(s.major)) return true;
+  return sc.classIds.size > 0 && studentClassIds(s).some(c => sc.classIds.has(String(c)));
+}
+const TEACHER_SCOPE_EMPTY_MSG = '还没有设置负责专业 / 负责范围，请联系管理员';
+// 出愿数据：老师能查看的出愿专业 key 列表
 function teacherAdmAllowed(t) {
-  if (canSeeAllAdmission(t)) return Object.keys(ADMISSION_MAJORS);
-  const perm = (t && t.permissions && t.permissions.admission_majors) || [];
-  const base = perm.length ? perm : ((t && t.majors) || []);
-  const doms = teacherAdmDomains(t);
-  return base.filter(k => ADMISSION_MAJORS[k] && doms.includes(admissionMajorDomain(k)));
+  const sc = teacherScope(t, 'admission');
+  return sc.all ? Object.keys(ADMISSION_MAJORS) : [...sc.majors];
 }
 async function loadAdmissionMajorsFromDB() {
   try {
