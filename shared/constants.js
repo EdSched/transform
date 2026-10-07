@@ -1318,10 +1318,11 @@ function canSeeAllStudents(t) { return !!t && (t.position === 'sales' || t.posit
 function canSeeAllAdmission(t) { return !!t && (t.position === 'sales' || (Array.isArray(t.tags) && t.tags.includes('营业老师'))); }
 // ── 老师可见范围（学生管理 / 出願数据共用）：由「职位 + 角色 + 负责范围」算出，不再手选「可见的专业」 ──
 // kind: 'student'（学生管理）| 'admission'（出願数据）
-// 返回 { all, majors:Set, classIds:Set, rangeMajors:Set, sources:[], excluded:Set }
+// 返回 { all, majors:Set, classIds:Set, domains:Set, rangeMajors:Set, sources:[], excluded:Set }
 //   all=true → 看全部（student：营业/对接；admission：营业）；
 //   majors = 范围内专业（已减去 permissions.exclude_majors）；rangeMajors = 减去之前；
 //   classIds = 班主任负责班级（只用于学生，按学生的 class_ids 判断）；
+//   domains = 负责的整个领域（不管这个领域下现在有没有专业：以后新增的专业 / 学生自动算在范围内）；
 //   all=false 且 majors、classIds 都空 → 一个都看不到（不再有"没设就当全部"）。
 function _scopeDomainMajors(dom) {
   const keys = new Set(typeof allMajorKeys === 'function' ? allMajorKeys() : Object.keys(MAJORS));
@@ -1331,7 +1332,7 @@ function _scopeDomainMajors(dom) {
 }
 function teacherScope(t, kind) {
   kind = kind === 'admission' ? 'admission' : 'student';
-  const sc = { kind, all: false, majors: new Set(), classIds: new Set(), rangeMajors: new Set(), sources: [], excluded: new Set() };
+  const sc = { kind, all: false, majors: new Set(), classIds: new Set(), domains: new Set(), rangeMajors: new Set(), sources: [], excluded: new Set() };
   if (!t) return sc;
   if (kind === 'admission' ? canSeeAllAdmission(t) : canSeeAllStudents(t)) { sc.all = true; return sc; }
   const add = (arr, src) => {
@@ -1342,22 +1343,30 @@ function teacherScope(t, kind) {
     });
     if (hit && !sc.sources.includes(src)) sc.sources.push(src);
   };
+  const addDom = (arr, src) => {
+    let hit = false;
+    (arr || []).forEach(d => { if (d) { sc.domains.add(d); hit = true; } });
+    if (hit && !sc.sources.includes(src)) sc.sources.push(src);
+  };
   const own = Array.isArray(t.majors) ? t.majors : [];
   add(own, '负责专业');
   if (!own.length) {
     // 负责领域（teachers.domains）= 老师自己页面能看到的领域；老数据只填了隶属领域（managed_by）时退回它
     const doms = (t.domains || []).length ? t.domains : (t.managed_by || []);
     add([].concat(...doms.map(_scopeDomainMajors)), (t.domains || []).length ? '负责领域' : '隶属领域');
+    addDom(doms, (t.domains || []).length ? '负责领域' : '隶属领域');
   }
   if (t.position === 'lead' && managerScopeNonEmpty(t.manage_scope)) {
     const ms = t.manage_scope;
     add([].concat(...(ms.domains || []).map(_scopeDomainMajors)).concat(ms.majors || []), '负责人管理范围');
+    addDom(ms.domains, '负责人管理范围');
   }
   const hr = t.role_scope && t.role_scope.homeroom;
   if (Array.isArray(t.roles) && t.roles.includes('homeroom') && hr && kind === 'student') {
     const cls = (hr.class_ids || []).map(String);
     if (cls.length) { cls.forEach(c => sc.classIds.add(c)); sc.sources.push('班主任班级'); }
     add([].concat(...(hr.domains || []).map(_scopeDomainMajors)).concat(hr.majors || []), '班主任范围');
+    addDom(hr.domains, '班主任范围');
   }
   if (kind === 'admission') [...sc.rangeMajors].forEach(k => { if (!ADMISSION_MAJORS[k]) sc.rangeMajors.delete(k); });
   const ex = (t.permissions && t.permissions.exclude_majors) || [];
@@ -1365,19 +1374,24 @@ function teacherScope(t, kind) {
   sc.rangeMajors.forEach(k => { if (!sc.excluded.has(k)) sc.majors.add(k); });
   return sc;
 }
-function teacherScopeEmpty(sc) { return !sc || (!sc.all && !sc.majors.size && !sc.classIds.size); }
-// 某个学生行在不在范围内（专业命中，或在班主任负责的班级里）
+function teacherScopeEmpty(sc) { return !sc || (!sc.all && !sc.majors.size && !sc.classIds.size && !sc.domains.size); }
+// 某个学生行在不在范围内（专业命中、学生所属领域在负责领域里、或在班主任负责的班级里；不看的专业除外）
 function teacherScopeHasStudent(sc, s) {
   if (!sc || !s) return false;
   if (sc.all) return true;
   if (sc.majors.has(s.major)) return true;
+  if (sc.domains.size && !sc.excluded.has(s.major) && sc.domains.has(MAJOR_DOMAIN[s.major])) return true;   // 整个领域（领域下专业 / 学生以后新增也算）
   return sc.classIds.size > 0 && studentClassIds(s).some(c => sc.classIds.has(String(c)));
 }
 const TEACHER_SCOPE_EMPTY_MSG = '还没有设置负责专业 / 负责范围，请联系管理员';
 // 出愿数据：老师能查看的出愿专业 key 列表
 function teacherAdmAllowed(t) {
   const sc = teacherScope(t, 'admission');
-  return sc.all ? Object.keys(ADMISSION_MAJORS) : [...sc.majors];
+  if (sc.all) return Object.keys(ADMISSION_MAJORS);
+  const out = new Set(sc.majors);
+  // 负责整个领域：出愿专业按所属领域算（领域下以后新增的出愿专业自动算在内）
+  if (sc.domains.size) Object.keys(ADMISSION_MAJORS).forEach(k => { if (!sc.excluded.has(k) && sc.domains.has(admissionMajorDomain(k))) out.add(k); });
+  return [...out];
 }
 async function loadAdmissionMajorsFromDB() {
   try {

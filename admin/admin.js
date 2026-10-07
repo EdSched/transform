@@ -1382,8 +1382,11 @@ function renderPermScope(){
   }
   const keys=[...base.rangeMajors];
   const parts=[];
-  if(keys.length){
-    const by={}; keys.forEach(k=>{ const d=MAJOR_DOMAIN[k]||'其他'; (by[d]=by[d]||[]).push(admMajorName(k)); });
+  const whole=[...base.domains];
+  if(whole.length) parts.push(escTM(whole.join('、'))+'（整个领域）');
+  const rest=keys.filter(k=>!base.domains.has(MAJOR_DOMAIN[k]));
+  if(rest.length){
+    const by={}; rest.forEach(k=>{ const d=MAJOR_DOMAIN[k]||'其他'; (by[d]=by[d]||[]).push(admMajorName(k)); });
     parts.push(Object.keys(by).map(d=>escTM(d)+' · '+escTM(by[d].join('、'))).join('；'));
   }
   if(base.classIds.size) parts.push('班主任班级 '+base.classIds.size+' 个（按学生判断，不受排除影响）');

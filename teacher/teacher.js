@@ -2474,7 +2474,7 @@ async function renderTeacherAdmissionDb(mc) {
   const mainEl = document.querySelector('.main');
   if (mainEl) mainEl.style.maxWidth = 'none';
   if (!(window._teacherAllowedAdmMajors || []).length) {
-    mc.innerHTML = `<div class="empty">${TEACHER_SCOPE_EMPTY_MSG}</div>`;
+    mc.innerHTML = `<div class="empty">${teacherScopeEmpty(teacherScope(teacherData, 'admission')) ? TEACHER_SCOPE_EMPTY_MSG : '这个领域暂时没有出愿数据'}</div>`;
     return;
   }
 
