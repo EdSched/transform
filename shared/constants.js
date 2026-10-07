@@ -977,6 +977,7 @@ function isVipDone(booking) {
 function mapJapaneseScore(scoreText) {
   if (!scoreText) return '';
   const t = scoreText.toString();
+  if (/^暂无(成绩|计划)(；暂无(成绩|计划))?$/.test(t)) return '';
   // 明确写出合格
   if (t.includes('N1合格')) return 'N1合格';
   if (t.includes('N2合格')) return 'N2合格';
@@ -1002,6 +1003,7 @@ function mapJapaneseScore(scoreText) {
 function mapEnglishScore(scoreText) {
   if (!scoreText) return '';
   const t = scoreText.toString();
+  if (/^暂无(成绩|计划)(；暂无(成绩|计划))?$/.test(t)) return '';
   if (t === '不需要' || t === '无') return '不需要';
   // 待考/备考/报名 → 区分考试类型
   if (t.includes('待考') || t.includes('备考') || t.includes('报名')) {
