@@ -1,5 +1,5 @@
 // ══════════════════════════════════
-// pricing.js — 中枢 → 💴 价目（只有管理员能进、能改）
+// pricing.js — 中枢 → 💴 价目（管理员改全部；有「价目编辑」权限的负责人在管理端导航里的 💴 价目，只改自己范围内的领域）
 // 三张表：price_packages 大课套餐 / price_vip_rates VIP 单价 / price_ta_options TA 助教
 // 套餐按「领域 → 价目表(track) → 套餐」组织；价目表可对应若干专业（majors），老师端选学生后自动带出
 // 营业老师在「宣传相关 → 💴 课程方案」里只读选用（需 promo_pricing 权限）；套餐的「包含课程」只在这里查看，不输出到资料
@@ -23,11 +23,14 @@ const prcE = v => promoEsc(v);
 const prcYen = n => Number(n || 0).toLocaleString('en-US');
 const prcIsAdmin = () => typeof ACCESS_KEY === 'undefined' || !ACCESS_KEY || !!ACCESS_KEY.is_admin;
 const prcDomOf = p => p.domain || (DOMAINS.some(d => d.label === p.track) ? p.track : '');
+// 负责人（管理模式）有「价目编辑」时：只能管理自己管理范围里的领域；VIP / TA 里 domain 为空的通用项只读
+const prcDoms = () => (typeof deptDomains === 'function') ? deptDomains('pricing') : (prcIsAdmin() ? DOMAINS.map(d => d.label) : []);
+const prcCanRow = (kind, r) => !!r && (prcIsAdmin() || (kind === 'pk' ? prcDoms().includes(prcDomOf(r)) : (!!r.domain && prcDoms().includes(r.domain))));
 
 // 中枢管控台「💴 价目」标签入口
 async function prcMount(body) {
   prcBodyEl = body;
-  if (!prcIsAdmin()) { body.innerHTML = '<div class="empty" style="padding:40px">只有管理员可以查看和维护价目</div>'; return; }
+  if (!prcIsAdmin() && !prcDoms().length) { body.innerHTML = '<div class="empty" style="padding:40px">没有价目编辑权限</div>'; return; }
   body.innerHTML = '<div style="padding:20px;color:var(--text-3);font-size:12px">加载中…</div>';
   try {
     [prcPk, prcVip, prcTa] = await Promise.all([
@@ -38,6 +41,12 @@ async function prcMount(body) {
   } catch (e) {
     body.innerHTML = `<div class="empty">加载失败：${prcE(e.message)}<br><span style="font-size:11px">（如果提示表不存在或没有 domain / majors 字段，请先执行价目的建表 / 升级 SQL）</span></div>`;
     return;
+  }
+  if (!prcIsAdmin()) {   // 只留自己范围内的套餐；VIP / TA 还保留通用项（只读）
+    const mine = prcDoms();
+    prcPk = prcPk.filter(p => mine.includes(prcDomOf(p)));
+    prcVip = prcVip.filter(v => !v.domain || mine.includes(v.domain));
+    prcTa = prcTa.filter(t => !t.domain || mine.includes(t.domain));
   }
   prcEdit = null; prcRender();
 }
@@ -55,7 +64,7 @@ function prcRender() {
       <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="prcNew('${addKind}')">＋ 新增</button>
     </div>${inner}</div>`;
   const row = (inner, off) => `<div style="border:1px solid var(--border-light);border-radius:3px;padding:8px 12px;margin-bottom:6px;background:var(--surface);${off ? 'opacity:.55' : ''}">${inner}</div>`;
-  const ctl = (kind, id, i, n, active) => `<span onclick="prcToggle('${kind}','${id}')" title="点击切换" style="cursor:pointer;user-select:none;font-size:9px;border-radius:2px;padding:1px 8px;${active === false ? 'background:var(--bg);color:var(--text-3);border:1px dashed var(--border)' : 'background:var(--ok-bg,#e4f0e8);color:var(--ok,#2a9e6a);border:1px solid transparent'}">${active === false ? '已停用' : '启用'}</span>
+  const ctl = (kind, id, i, n, active) => !prcCanRow(kind, PRC_KIND[kind].arr().find(x => x.id === id)) ? '<span style="font-size:9px;color:var(--text-3);border:1px solid var(--border-light);border-radius:2px;padding:1px 8px">只读</span>' : `<span onclick="prcToggle('${kind}','${id}')" title="点击切换" style="cursor:pointer;user-select:none;font-size:9px;border-radius:2px;padding:1px 8px;${active === false ? 'background:var(--bg);color:var(--text-3);border:1px dashed var(--border)' : 'background:var(--ok-bg,#e4f0e8);color:var(--ok,#2a9e6a);border:1px solid transparent'}">${active === false ? '已停用' : '启用'}</span>
     ${prcBtn('↑', `prcMove('${kind}','${id}',-1)`, i === 0 ? 'disabled' : '')}${prcBtn('↓', `prcMove('${kind}','${id}',1)`, i === n - 1 ? 'disabled' : '')}
     ${prcBtn('✏ 编辑', `prcEditOpen('${kind}','${id}')`)}<button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="prcDelete('${kind}','${id}')">删除</button>`;
   const form = kind => (prcEdit && prcEdit.kind === kind) ? prcFormHtml() : '';
@@ -83,8 +92,8 @@ function prcRender() {
 
   box.innerHTML = `<div style="max-width:980px">
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-    <div style="font-size:12px;color:var(--text-3);flex:1;min-width:260px;line-height:1.8">价目只由管理员在这里维护；只有勾选了「课程方案（含价格）」的营业老师在老师端配方案时能（只读）看到价格。停用的项目老师端不再出现，但已保存的方案不受影响。</div>
-    <button class="btn btn-primary btn-sm" onclick="prcImportSeed()">📥 按最新价目更新</button>
+    <div style="font-size:12px;color:var(--text-3);flex:1;min-width:260px;line-height:1.8">${prcIsAdmin() ? '价目由管理员和有「价目编辑」权限的负责人维护' : '你只能维护自己管理范围里的价目（' + prcE(prcDoms().join('、')) + '）；标「只读」的是通用项，由管理员维护'}；只有勾选了「课程方案（含价格）」的营业老师在老师端配方案时能（只读）看到价格。停用的项目老师端不再出现，但已保存的方案不受影响。</div>
+    ${prcIsAdmin() ? '<button class="btn btn-primary btn-sm" onclick="prcImportSeed()">📥 按最新价目更新</button>' : ''}
   </div>
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px">
     <span style="font-size:10px;color:var(--text-3)">领域：</span>
@@ -96,6 +105,7 @@ function prcRender() {
   ${form('vip')}
   ${sec('VIP 单价', '日元 / 小时；“授课内容”供营业老师自定义 VIP 时点选', 'vip', prcVip.length ? prcVip.map((v, i) => row(`
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:9px;color:var(--text-3);border:1px solid var(--border-light);border-radius:2px;padding:0 6px">${prcE(v.domain || '通用')}</span>
         <span style="font-size:10px;color:var(--text-3);min-width:80px">${prcE(v.track)}</span>
         <span style="font-size:12px;font-weight:600;min-width:120px">${prcE(v.name)}</span>
         <span style="font-size:12px;color:var(--accent);font-family:'DM Mono',monospace">${prcYen(v.yen_per_hour)} 日元/H</span>
@@ -105,6 +115,7 @@ function prcRender() {
   ${form('ta')}
   ${sec('TA 助教', '按档位定价', 'ta', prcTa.length ? prcTa.map((t, i) => row(`
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:9px;color:var(--text-3);border:1px solid var(--border-light);border-radius:2px;padding:0 6px">${prcE(t.domain || '通用')}</span>
         <span style="font-size:10px;color:var(--text-3);min-width:80px">${prcE(t.track)}</span>
         <span style="font-size:12px;font-weight:600;min-width:120px">${prcE(t.name)}</span>
         <span style="font-size:11px;color:var(--text-2);font-family:'DM Mono',monospace">${prcE(t.hours || '')}</span>
@@ -125,8 +136,9 @@ function prcIncludedView(inc) {
 }
 
 // ── 新增 / 编辑 ──
-function prcNew(kind) { prcEdit = { kind, id: 'new' }; prcInc = []; prcPasteOpen = false; prcDraft = { domain: prcDom, track: '', majors: [] }; prcRender(); document.getElementById('prc_name')?.scrollIntoView({ block: 'center' }); }
+function prcNew(kind) { prcEdit = { kind, id: 'new' }; prcInc = []; prcPasteOpen = false; prcDraft = { domain: prcDom || (!prcIsAdmin() && prcDoms().length === 1 ? prcDoms()[0] : ''), track: '', majors: [] }; prcRender(); document.getElementById('prc_name')?.scrollIntoView({ block: 'center' }); }
 function prcEditOpen(kind, id) {
+  if (!prcCanRow(kind, PRC_KIND[kind].arr().find(x => x.id === id))) return;
   prcEdit = { kind, id };
   prcPasteOpen = false;
   if (kind === 'pk') {
@@ -161,7 +173,7 @@ function prcFormHtml() {
     const trackOpts = [...new Set(prcPk.filter(p => !dom || prcDomOf(p) === dom).map(p => p.track))];
     const majorKeys = allMajorKeys().filter(m => MAJOR_DOMAIN[m] === dom);
     return wrap(`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">
-      <div>${prcLbl('领域')}<select id="prc_domain" onchange="prcDomainChange()" style="${PRC_INP}">${dom ? '' : '<option value="">请选择领域</option>'}${DOMAINS.map(d => `<option value="${prcE(d.label)}" ${dom === d.label ? 'selected' : ''}>${prcE(d.label)}</option>`).join('')}</select></div>
+      <div>${prcLbl('领域')}<select id="prc_domain" onchange="prcDomainChange()" style="${PRC_INP}">${dom ? '' : '<option value="">请选择领域</option>'}${DOMAINS.filter(d => prcIsAdmin() || prcDoms().includes(d.label)).map(d => `<option value="${prcE(d.label)}" ${dom === d.label ? 'selected' : ''}>${prcE(d.label)}</option>`).join('')}</select></div>
       <div>${prcLbl('价目表名（同一价目表的套餐放一起；可选已有的，也可输入新的）')}${inp('prc_track', track, '例：大学院经济学', null, 'list="prc_track_list"')}<datalist id="prc_track_list">${trackOpts.map(t => `<option value="${prcE(t)}">`).join('')}</datalist></div>
       <div>${prcLbl('套餐名')}${inp('prc_name', val('prc_name', 'name'), '例：EJU半年冲刺课程')}</div>
       <div>${prcLbl('价格（万日元）')}${inp('prc_price', val('prc_price', 'price_man_yen'), '例：45', 'number')}</div>
@@ -171,8 +183,10 @@ function prcFormHtml() {
       <div style="display:flex;flex-wrap:wrap;gap:6px">${dom ? (majorKeys.length ? chipFold(majorKeys.map(m => ({ on: prcDraft.majors.includes(m), html: `<div class="filter-chip${prcDraft.majors.includes(m) ? ' active' : ''}" onclick="prcToggleMajor('${m}')" style="padding:3px 10px;font-size:11px">${prcE(majorLabel(m))}</div>` }))) : '<span style="font-size:10px;color:var(--text-3)">这个领域下还没有专业</span>') : '<span style="font-size:10px;color:var(--text-3)">先选择领域</span>'}</div></div>
     <div style="margin-top:10px">${prcLbl('包含课程（只在后台查看，不输出到资料）')}${prcIncEditorHtml()}</div>`);
   }
+  const vdom = `<div>${prcLbl('领域' + (prcIsAdmin() ? '（不选 = 通用，所有领域都能看到）' : ''))}<select id="prc_vdomain" style="${PRC_INP}"><option value="">${prcIsAdmin() ? '通用（所有领域）' : '请选择领域'}</option>${DOMAINS.filter(d => prcIsAdmin() || prcDoms().includes(d.label)).map(d => `<option value="${prcE(d.label)}" ${(cur.domain || (id === 'new' ? prcDom : '')) === d.label ? 'selected' : ''}>${prcE(d.label)}</option>`).join('')}</select></div>`;
   if (kind === 'vip') {
     return wrap(`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">
+      ${vdom}
       <div>${prcLbl('类型')}${inp('prc_track', cur.track, '例：大学院文理科')}</div>
       <div>${prcLbl('名称')}${inp('prc_name', cur.name, '例：VIP定制课程')}</div>
       <div>${prcLbl('单价（日元 / 小时）')}${inp('prc_yen', cur.yen_per_hour, '例：13000', 'number')}</div>
@@ -181,6 +195,7 @@ function prcFormHtml() {
       <textarea id="prc_items" rows="3" style="${PRC_INP};line-height:1.7;resize:vertical">${prcE((cur.items || []).join('、'))}</textarea></div>`);
   }
   return wrap(`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">
+    ${vdom}
     <div>${prcLbl('类型')}${inp('prc_track', cur.track, '例：大学院文理科')}</div>
     <div>${prcLbl('名称')}${inp('prc_name', cur.name, '例：TA助教指导课程')}</div>
     <div>${prcLbl('课时')}${inp('prc_hours', cur.hours, '例：10H+10H')}</div>
@@ -220,9 +235,18 @@ function prcIncPaste() {
   prcInc = prcInc.concat(rows); prcPasteOpen = false; prcIncRender();
 }
 
+// VIP / TA 的领域：管理员可选「通用」（domain 空）；负责人必须选自己范围内的领域。返回 false = 已提示、不保存
+function prcVipTaDomain(rec) {
+  const vd = ((document.getElementById('prc_vdomain') || {}).value || '').trim();
+  if (!prcIsAdmin() && !prcDoms().includes(vd)) { alert('请选择领域（只能选自己管理范围内的领域）'); return false; }
+  const hasCol = [...prcVip, ...prcTa].some(r => 'domain' in r);
+  if (vd) rec.domain = vd; else if (hasCol) rec.domain = null;   // 价目升级 SQL 没执行（没有 domain 字段）时不写，免得保存失败
+  return true;
+}
 async function prcSave() {
   const { kind, id } = prcEdit;
   const v = k => ((document.getElementById(k) || {}).value || '').trim();
+  if (id !== 'new' && !prcCanRow(kind, PRC_KIND[kind].arr().find(x => x.id === id))) { alert('没有修改这一项的权限'); return; }
   const name = v('prc_name');
   if (!name) { alert('请填写名称'); return; }
   let rec;
@@ -230,6 +254,7 @@ async function prcSave() {
     const price = parseFloat(v('prc_price'));
     if (isNaN(price)) { alert('请填写价格（万日元）'); return; }
     if (!v('prc_domain')) { alert('请选择领域'); return; }
+    if (!prcIsAdmin() && !prcDoms().includes(v('prc_domain'))) { alert('只能在自己管理范围内的领域里维护价目'); return; }
     if (!v('prc_track')) { alert('请填写价目表名'); return; }
     prcCapture();
     rec = { domain: v('prc_domain'), track: v('prc_track'), name, price_man_yen: price, period: v('prc_period'), majors: prcDraft.majors.slice(), included: prcInc.filter(r => r.item.trim()).map(r => ({ group: r.group.trim(), item: r.item.trim(), mark: r.mark })) };
@@ -237,10 +262,12 @@ async function prcSave() {
     const yen = parseInt(v('prc_yen'));
     if (!v('prc_track') || isNaN(yen)) { alert('请填写类型和单价'); return; }
     rec = { track: v('prc_track'), name, yen_per_hour: yen, items: v('prc_items').split(/[、,，\n]+/).map(x => x.trim()).filter(Boolean) };
+    if (!prcVipTaDomain(rec)) return;
   } else {
     const price = parseFloat(v('prc_price'));
     if (!v('prc_track') || isNaN(price)) { alert('请填写类型和价格（万日元）'); return; }
     rec = { track: v('prc_track'), name, descr: v('prc_descr'), hours: v('prc_hours'), price_man_yen: price };
+    if (!prcVipTaDomain(rec)) return;
   }
   const K = PRC_KIND[kind], arr = K.arr();
   try {
@@ -264,24 +291,29 @@ async function prcSave() {
   } catch (e) { alert('保存失败：' + e.message); }
 }
 async function prcToggle(kind, id) {
-  const K = PRC_KIND[kind], r = K.arr().find(x => x.id === id); if (!r) return;
+  const K = PRC_KIND[kind], r = K.arr().find(x => x.id === id); if (!r || !prcCanRow(kind, r)) return;
   const next = r.active === false;
   try { await sb(`/rest/v1/${K.table}?id=eq.${encodeURIComponent(id)}`, 'PATCH', { active: next }); r.active = next; prcRender(); }
   catch (e) { alert('切换失败：' + e.message); }
 }
 async function prcDelete(kind, id) {
-  const K = PRC_KIND[kind], r = K.arr().find(x => x.id === id); if (!r) return;
+  const K = PRC_KIND[kind], r = K.arr().find(x => x.id === id); if (!r || !prcCanRow(kind, r)) return;
   if (!confirm(`删除「${r.name}」？\n（已保存的方案不受影响；只想暂时不用，建议点“启用”改成停用）`)) return;
   try { await sb(`/rest/v1/${K.table}?id=eq.${encodeURIComponent(id)}`, 'DELETE'); const a = K.arr(); a.splice(a.indexOf(r), 1); prcRender(); }
   catch (e) { alert('删除失败：' + e.message); }
 }
 // 上移 / 下移：套餐只在同一类型内交换；其余在整张表里交换。顺序号不连续或重复时整体重排成 1..n
 async function prcMove(kind, id, d) {
-  const K = PRC_KIND[kind], all = K.arr(), r = all.find(x => x.id === id); if (!r) return;
-  const group = kind === 'pk' ? all.filter(x => x.track === r.track) : all;
+  const K = PRC_KIND[kind], all = K.arr(), r = all.find(x => x.id === id); if (!r || !prcCanRow(kind, r)) return;
+  const group = kind === 'pk' ? all.filter(x => x.track === r.track) : (prcIsAdmin() ? all : all.filter(x => (x.domain || '') === (r.domain || '')));
   const i = group.indexOf(r), j = i + d; if (j < 0 || j >= group.length) return;
   const g = group.slice(); [g[i], g[j]] = [g[j], g[i]];
   try {
+    if (!prcIsAdmin()) {   // 负责人：只在自己范围内的项之间换顺序号（不重排别的领域的项）
+      const slots = group.map(x => x.sort_order || 0).sort((a, b) => a - b);
+      for (let k = 0; k < g.length; k++) if (g[k].sort_order !== slots[k]) { await sb(`/rest/v1/${K.table}?id=eq.${encodeURIComponent(g[k].id)}`, 'PATCH', { sort_order: slots[k] }); g[k].sort_order = slots[k]; }
+      all.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)); prcRender(); return;
+    }
     for (let k = 0; k < g.length; k++) if (g[k].sort_order !== k + 1) { await sb(`/rest/v1/${K.table}?id=eq.${encodeURIComponent(g[k].id)}`, 'PATCH', { sort_order: k + 1 }); g[k].sort_order = k + 1; }
     all.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
     prcRender();
