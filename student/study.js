@@ -1818,6 +1818,8 @@ function hwDetailHtml(s, sub) {
     ${levels.map((x,i)=>`<span onclick="${locked?'':`hwLevelPick['${s.id}']=${i};hwRerender()`}" style="font-size:10px;padding:3px 10px;border-radius:2px;cursor:${locked?'default':'pointer'};border:1px solid ${i===li?'var(--accent)':'var(--border)'};background:${i===li?'var(--accent)':'var(--surface)'};color:${i===li?'#fff':'var(--text-secondary)'}">${escA(x.key||'不分级别')}</span>`).join('')}
   </div>`:''}
 
+  ${hwWholeBoxHtml(sub, locked)}
+
   ${(L.blocks||[]).map((b, bi) => {
     const T = { choice:'选择题', calc:'计算题', term:'名词解释', essay:'论述题', free:'' }[b.type] || '';
     const bUnits = units.filter(u => u.block === bi);
@@ -1937,14 +1939,7 @@ function hwDetailHtml(s, sub) {
          <span style="font-size:10px;color:var(--text-muted)">已于 ${fmtJst(sub.submitted_at)} 提交${hwGraded(sub)?'':'，等待老师批改'}${sub.whole_file_url?` · <a href="${escA(sub.whole_file_url)}" target="_blank" style="color:var(--accent)">📎 整份作业文件</a>`:''}</span>
          ${!hwGraded(sub)?`<button onclick="hwWithdraw('${s.id}')" style="margin-left:auto;font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit;color:var(--text-secondary)">↺ 撤回重做</button>`:''}
        </div>`
-    : `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:9px 12px;margin-bottom:8px">
-         <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">📄 整份作业上传（Word / PDF / 照片）——写在 Word 里的作业在此提交即可，可与上方逐题作答并用</div>
-         <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:3px 10px">📎 上传整份作业
-           <input type="file" accept=".doc,.docx,.pdf,image/*" style="display:none" onchange="hwPickWhole(this)"></label>
-         <span id="hw_whole_tip" style="font-size:10px;color:var(--text-muted);margin-left:8px">${hwWholeFile?escA(hwWholeFile.name):'尚未上传'}</span>
-       </div>
-       <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">💡 手写作业请写清题号，按顺序拍照，可传多张；提交后不可修改</div>
-       <button onclick="hwSubmit('${s.id}','${escA(L.key||'')}')" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 22px;cursor:pointer;font-family:inherit">提交作业</button>`}`;
+    : `<button onclick="hwSubmit('${s.id}','${escA(L.key||'')}')" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 22px;cursor:pointer;font-family:inherit">提交作业</button>`}`;
 }
 
 // 计算题：整块拍照 / 逐题打字 二选一（每个大块各自记住，只在草稿里）
@@ -1958,6 +1953,51 @@ function hwCalcSwitch(bi, to) {
   hwDraft[`__calcMode_${bi}`] = to;
   hwRerender();
 }
+
+// ── 整份作业上传（置顶）：多张照片存进 answers 的 whole-img 单元，Word / PDF 仍用 whole_file_url ──
+function hwWholeBoxHtml(sub, locked) {
+  if (locked) {
+    const wi = ((sub.answers || []).find(x => x.k === 'whole-img') || {}).images || [];
+    if (!wi.length) return '';
+    return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:8px 12px;margin-bottom:10px;background:var(--surface)">
+      <span style="font-size:11px;font-weight:600">整份作业上传：</span>${wi.map((im,i)=>`<a href="${escA(im.url)}" target="_blank" style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:2px 8px;margin-right:4px">📷 图${i+1}</a>`).join('')}</div>`;
+  }
+  const imgs = (hwDraft['whole-img'] && hwDraft['whole-img'].images) || [];
+  const used = imgs.length || hwWholeFile;
+  const btn = 'font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:1px 6px;cursor:pointer;font-family:inherit;color:var(--text-secondary)';
+  const ok = !!hwDraft.__wholeOk;
+  return `<div id="hw_whole_box" style="background:#fff8e1;border:1px solid #e6c96b;border-radius:3px;padding:10px 12px;margin-bottom:12px">
+    <div style="font-size:13px;font-weight:600;margin-bottom:6px">📄 整份作业上传（手写拍照 / Word / PDF，可与下方逐题作答并用）</div>
+    <div style="font-size:12px;line-height:1.9;margin-bottom:8px;color:#5a4400">整份上传请注意：<br>① 每道题前写清题号（最好把题目也抄一遍）；<br>② 按题号顺序拍照、上传；<br>③ 照片要拍正、拍清楚。</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <label style="font-size:11px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:4px 12px;background:var(--surface)">📷 上传照片（可多张，可追加）
+        <input type="file" accept="image/*" multiple style="display:none" onchange="hwPickImages('whole-img', this)"></label>
+      <label style="font-size:11px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:4px 12px;background:var(--surface)">📎 上传 Word / PDF
+        <input type="file" accept=".doc,.docx,.pdf" style="display:none" onchange="hwPickWhole(this)"></label>
+      <span id="hwimg_whole-img" style="font-size:10px;color:var(--text-muted)">${imgs.length?'':'尚未上传照片'}</span>
+    </div>
+    ${imgs.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${imgs.map((im,i)=>`<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;border:1px solid var(--border);border-radius:2px;padding:2px 6px;background:var(--surface)">
+      <a href="${escA(im.url)}" target="_blank" style="color:var(--accent)">图${i+1}</a>
+      <span onclick="hwWholeMove(${i},-1)" style="cursor:pointer;color:var(--text-muted)${i===0?';opacity:.3':''}">←</span>
+      <span onclick="hwWholeMove(${i},1)" style="cursor:pointer;color:var(--text-muted)${i===imgs.length-1?';opacity:.3':''}">→</span>
+      <span onclick="hwWholeDel(${i})" style="cursor:pointer;color:var(--danger)">删除</span></span>`).join('')}</div>`:''}
+    ${hwWholeFile?`<div style="font-size:11px;margin-top:8px">📎 ${escA(hwWholeFile.name)} <span onclick="hwWholeDelFile()" style="cursor:pointer;color:var(--danger);margin-left:6px">删除</span></div>`:''}
+    <span id="hw_whole_tip" style="display:none"></span>
+    ${used?`<div style="margin-top:10px"><span onclick="hwDraft.__wholeOk=!hwDraft.__wholeOk;hwWholeRefresh()" style="cursor:pointer;user-select:none;font-size:11px;border:1px solid ${ok?'var(--accent)':'var(--border)'};background:${ok?'var(--accent)':'var(--surface)'};color:${ok?'#fff':'var(--text-secondary)'};border-radius:2px;padding:4px 12px">${ok?'✓ ':''}我已写清题号并按顺序上传</span></div>`:''}
+  </div>`;
+}
+function hwWholeRefresh() {
+  const el = document.getElementById('hw_whole_box');
+  if (!el) return hwRerender();
+  const tmp = document.createElement('div'); tmp.innerHTML = hwWholeBoxHtml(null, false);
+  el.replaceWith(tmp.firstElementChild);
+}
+function hwWholeMove(i, d) {
+  const a = hwDraft['whole-img'] && hwDraft['whole-img'].images; if (!a || i + d < 0 || i + d >= a.length) return;
+  [a[i], a[i + d]] = [a[i + d], a[i]]; hwWholeRefresh();
+}
+function hwWholeDel(i) { const a = hwDraft['whole-img'] && hwDraft['whole-img'].images; if (a) { a.splice(i, 1); hwWholeRefresh(); } }
+function hwWholeDelFile() { hwWholeFile = null; hwWholeRefresh(); }
 
 function hwSetAns(key, text) {
   hwDraft[key] = hwDraft[key] || { images: [] };
@@ -1974,8 +2014,8 @@ async function hwPickWhole(input) {
     const ext = (packed.name.split('.').pop()||'pdf').toLowerCase();
     const url = await sbUpload('homework', `${studyStudent.id}/whole-${Date.now()}.${ext}`, packed);
     hwWholeFile = { url, name: f.name };
-    if (tip) tip.textContent = `✓ ${f.name}（${hwSizeLabel(packed.size)}）`;
-  } catch (e) { if (tip) tip.textContent = '上传失败：' + e.message; }
+    hwWholeRefresh();
+  } catch (e) { if (tip) { tip.style.display = ''; tip.textContent = '上传失败：' + e.message; } }
   input.value = '';
 }
 
@@ -2029,7 +2069,8 @@ async function hwPickImages(key, input) {
       const url = await sbUpload('homework', path, f);
       hwDraft[key].images.push({ url, name: raw.name, kind: /\.(jpe?g|png|gif|webp|heic)$/i.test(raw.name) ? 'img' : 'doc' });
     }
-    if (tip) tip.textContent = hwDraft[key].images.map((x,i)=> x.kind === 'doc' ? (x.name||'文件') : `图${i+1}`).join('・')
+    if (key === 'whole-img') hwWholeRefresh();
+    else if (tip) tip.textContent = hwDraft[key].images.map((x,i)=> x.kind === 'doc' ? (x.name||'文件') : `图${i+1}`).join('・')
       + (saved > 200*1024 ? `（已压缩，省 ${hwSizeLabel(saved)}）` : '');
   } catch (e) {
     if (tip) tip.textContent = '上传失败：' + e.message;
@@ -2056,6 +2097,10 @@ async function hwSubmit(sid, levelKey) {
   // 只保留有内容的作答单元（计算题的整题/分问二选一，空的不入库）
   const answers = answersAll.filter(a => a.text || a.images.length);
   const answered = answers.length;
+  // 整份上传：照片（whole-img，排在最前）或 Word/PDF，任一即算用了整份上传
+  const wholeImgs = (hwDraft['whole-img'] && hwDraft['whole-img'].images) || [];
+  const wholeUsed = !!(wholeImgs.length || hwWholeFile);
+  if (wholeImgs.length) answers.unshift({ k:'whole-img', label:'整份作业（学生整体上传）', q:'', text:'', images: wholeImgs });
   // 必答数：选做区块按 pick 计，其余按单元数；计算题分问不计
   let totalNeed = 0;
   (L.blocks || []).forEach((b, bi) => {
@@ -2068,9 +2113,10 @@ async function hwSubmit(sid, levelKey) {
     }
     totalNeed += units.filter(u => u.block === bi && !u.calcSub && !u.blockImg).length;
   });
-  if (!answered && !hwWholeFile) { alert('请至少作答一题，或上传整份作业文件'); return; }
-  if (answered < totalNeed && !hwWholeFile && !confirm(`还有 ${totalNeed-answered} 处未作答，确认提交？提交后不可修改。`)) return;
-  if ((answered >= totalNeed || hwWholeFile) && !confirm('确认提交作业？提交后不可修改。')) return;
+  if (!answered && !wholeUsed) { alert('请至少作答一题，或上传整份作业'); return; }
+  if (wholeUsed && !hwDraft.__wholeOk) { alert('请确认已写清题号并按顺序上传'); return; }
+  if (answered < totalNeed && !wholeUsed && !confirm(`还有 ${totalNeed-answered} 处未作答，确认提交？提交后不可修改。`)) return;
+  if ((answered >= totalNeed || wholeUsed) && !confirm('确认提交作业？提交后不可修改。')) return;
   try {
     const _vipBk = s._vipBookingId || null;
     const row = {
