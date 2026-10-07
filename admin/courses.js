@@ -995,7 +995,7 @@ function renderCoursesSummary(courses){
                   <div style="font-size:10px;color:var(--text-3);margin-top:1px">${s.time_range||course.time_range||''}</div>
                   <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
                     ${hasRec?`<span style="font-size:9px;color:var(--ok)">✓ ${recCount}人</span>`:''}
-                    <span onclick="event.stopPropagation();openHwEditor('${s.id}')" title="布置作业" style="font-size:9px;cursor:pointer;margin-left:auto;${s.homework_enabled?'color:var(--accent);font-weight:600':'color:var(--text-3)'}">📝${s.homework_enabled?' 已布置':''}</span>
+                    <span onclick="event.stopPropagation();openHwEditor('${s.id}')" title="布置作业" style="font-size:9px;cursor:pointer;margin-left:auto;${s.homework_enabled?'color:var(--accent);font-weight:600':'color:var(--text-3)'}">📝${s.homework_enabled?' 已布置':''}${s.homework_enabled&&hwHasReleaseRule(s,course)?`<span style="font-weight:400;color:var(--text-3)"> · ${(()=>{const p=hwReleaseDate(s,course).split('-');return (+p[1])+'/'+(+p[2])})()} 发布</span>`:''}</span>
                   </div>
                 </div>`;
               }).join('')}
@@ -1371,6 +1371,7 @@ function openAddCourseModal(editId){
     document.getElementById('ac_first_date').value=c.first_session_date||'';
     document.getElementById('ac_notes').value=c.notes||'';
     document.getElementById('ac_homework_enabled').value=c.homework_enabled?'true':'false';
+    document.getElementById('ac_hw_release_days').value=c.hw_release_days?String(c.hw_release_days):'';
     document.getElementById('ac_meeting_url').value=c.meeting_url||'';
     document.getElementById('ac_host_key').value=c.host_key||'';
     document.getElementById('ac_recording').value = c.needs_recording ? 'yes' : 'no';
@@ -1395,6 +1396,7 @@ function openAddCourseModal(editId){
     ['ac_name','ac_teacher','ac_campus','ac_time_range','ac_notes','ac_meeting_url','ac_host_key'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('ac_recording').value = 'no';
     document.getElementById('ac_homework_enabled').value = 'false';
+    document.getElementById('ac_hw_release_days').value = '';
     ['ac_period','ac_course_type','ac_delivery'].forEach(id=>document.getElementById(id).value='');
     acSetWeekdayChips('');
     document.getElementById('ac_total').value='';
@@ -1951,6 +1953,7 @@ async function saveAddCourse(){
     first_session_date:firstDate,
     notes:document.getElementById('ac_notes').value.trim(),
     homework_enabled:document.getElementById('ac_homework_enabled').value==='true',
+    hw_release_days:parseInt(document.getElementById('ac_hw_release_days').value)||null,
     meeting_url:document.getElementById('ac_meeting_url').value.trim(),
     host_key:document.getElementById('ac_host_key').value.trim(),
     needs_recording:document.getElementById('ac_recording').value==='yes',
@@ -3468,6 +3471,16 @@ function hwEditorRender(){
       </div>
       <button onclick="hwPickOpen()" title="从往期单回或模板里找一份作业载入到这里" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit;white-space:nowrap">📥 从往期作业选…</button>
     </div>
+    ${(()=>{const c=cachedCourses.find(x=>x.id===s.course_id)||{};const n=parseInt(c.hw_release_days)||0;
+      return `<div style="font-size:11px;background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:6px 10px;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span>本课程作业：${n?`上课前 ${n} 天发布`:'上课当天发布'}</span>
+        <select onchange="hwSetCourseRelease(this.value)" style="font-size:10px;padding:2px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit">
+          <option value="">修改…</option>
+          ${[['0','上课当天'],['1','提前 1 天'],['2','提前 2 天'],['3','提前 3 天'],['5','提前 5 天'],['7','提前 7 天'],['14','提前 14 天']].map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}
+        </select>
+        <span style="margin-left:auto;font-size:10px;color:var(--text-3)">${s.hw_release_date?`本回单独：${s.hw_release_date} 发布　<span onclick="hwSetSessionRelease('')" style="color:var(--danger);cursor:pointer">清除</span>`:`<span onclick="document.getElementById('hw_rel_one').style.display='inline'" style="color:var(--accent);cursor:pointer;text-decoration:underline">这一回单独设定发布日</span>`}
+          <span id="hw_rel_one" style="display:none"><input type="date" onchange="hwSetSessionRelease(this.value)" style="font-size:10px;border:1px solid var(--border);border-radius:2px;background:var(--surface)"></span></span>
+      </div>`;})()}
     ${hwPickLoaded?`<div style="font-size:11px;color:var(--ok,#2a9e6a);background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:6px 10px;margin-bottom:10px">已载入：${hwPickLoaded}。确认内容后点「保存作业」才会生效。</div>`:''}
 
     <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">作业说明（可选）</label>
@@ -3693,6 +3706,25 @@ function hwPickUse(id){
   if(hasNow&&!confirm('编辑器里已有作业内容，载入后会被替换（保存前不会生效）。继续？')) return;
   hwEditData=n; hwEditLevel=0;
   hwPickLoaded=`${i.course} ${i.period} 第${i.num??'-'}回「${i.title||'（无标题）'}」`;
+  hwEditorRender();
+}
+
+// 编辑器顶部：直接改整门课 / 单回的作业发布日（立即保存）
+async function hwSetCourseRelease(v){
+  if(v==='') return;
+  const s=hwEditSession; const c=cachedCourses.find(x=>x.id===s.course_id); if(!c) return;
+  const n=parseInt(v)||null;
+  try{ await sb(`/rest/v1/courses?id=eq.${c.id}`,'PATCH',{hw_release_days:n}); c.hw_release_days=n; hwKeepNoteRender(); }
+  catch(e){alert('保存失败：'+e.message)}
+}
+async function hwSetSessionRelease(v){
+  const s=hwEditSession;
+  try{ await sb(`/rest/v1/course_sessions?id=eq.${s.id}`,'PATCH',{hw_release_date:v||null}); s.hw_release_date=v||null; hwKeepNoteRender(); }
+  catch(e){alert('保存失败：'+e.message)}
+}
+// 重绘编辑器但保住还没保存的说明文字
+function hwKeepNoteRender(){
+  const el=document.getElementById('hw_note'); if(el&&hwEditData) hwEditData.note=el.value;
   hwEditorRender();
 }
 

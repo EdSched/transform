@@ -206,9 +206,9 @@ function studyRemindersHtml() {
   } else if (!studyData.planDraft) items.push({ t: '📄 计划书 · 还没有开始', go: "switchStudyTab('plan')" });
   if (hwLoaded) {
     const wk = weekRange();
-    hwSessions.filter(x => x.session_date >= wk.start && x.session_date <= wk.end && !hwSubs[x.id])
-      .sort((x, y) => String(x.session_date || '').localeCompare(String(y.session_date || '')))
-      .forEach(x => items.push({ t: `📝 ${x.course_name || '课程'}${x.session_number ? ` 第${x.session_number}回` : ''} 作业未提交`, go: `hwOpenId='${x.id}';switchStudyTab('homework')` }));
+    const todo = hwSessions.filter(x => hwIsCur(x, wk) && !hwSubs[x.id])
+      .sort((x, y) => String(x.session_date || '').localeCompare(String(y.session_date || '')));
+    if (todo.length) items.push({ t: `📝 有 ${todo.length} 份作业未交`, go: `${todo.length === 1 ? `hwOpenId='${todo[0].id}';` : ''}switchStudyTab('homework')` });
   }
   if (!items.length) return '';
   return `<div style="background:#eef3fb;border:1px solid #2c4a7c;border-radius:3px;padding:8px 12px;margin-bottom:12px">
@@ -1581,6 +1581,7 @@ function hwPreview(url, name) {
 }
 
 // ── 作业状态 ──
+let hwCourseMap = {};     // course_id → 课程（算作业发布日用）
 let hwSessions = [];      // 有题目的课次
 let hwSubs = {};          // session_id → 提交记录
 let hwOpenId = null;      // 展开作答的课次
@@ -1640,6 +1641,7 @@ function studyHwFetch() {
       (arr || []).forEach(c => cMap[c.id] = c);
     }
     const me = studyMe();
+    hwCourseMap = cMap;
     hwSessions = (sessions || []).filter(s => {
       // 兼容新结构 {version:2,levels:[]} 与旧数组格式
       const q = s.homework_questions;
@@ -1647,6 +1649,7 @@ function studyHwFetch() {
       if (!hasQ) return false;
       if (!inCurrentPeriod(s.session_date)) return false;
       const c = cMap[s.course_id];
+      if (!hwIsReleased(s, c)) return false;   // 还没到发布日：不显示
       if (c) return studentInCourse(me, Object.assign({}, c, { major: (c.major && c.major.length) ? c.major : s.major }), myMembers);
       const sm = Array.isArray(s.major) ? s.major : [s.major || ''];
       return !myMajor || sm.some(m => acceptMajors.includes(m));
@@ -1688,6 +1691,11 @@ function fmtJst(ts) {
 
 function hwGraded(sub) { return hwFeedbacks(sub).length > 0; }
 
+// 「当前作业」：有发布规则的 = 已发布且上课日期不早于本周起点；没规则的 = 上课在本周
+function hwHasRule(s) { return hwHasReleaseRule(s, hwCourseMap[s.course_id]); }
+function hwIsCur(s, wk) { return hwHasRule(s) ? s.session_date >= wk.start : (s.session_date >= wk.start && s.session_date <= wk.end); }
+function hwDateTxt(d) { const p = String(d || '').split('-'); return p.length === 3 ? `${+p[1]}月${+p[2]}日` : ''; }
+
 // 作业按周分三块：本周（展开）/ 以前的作业（折叠，可补交）/ 之后的作业（折叠，可提前完成）；每周自动轮换
 let hwShowPast = false, hwShowFuture = false;
 function renderHwList() {
@@ -1697,17 +1705,17 @@ function renderHwList() {
   if (!hwSessions.length) { wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:10px 0">当期暂无布置的作业</div>'; return; }
   const wk = weekRange();
   const byDate = (a, b) => String(a.session_date || '').localeCompare(String(b.session_date || ''));
-  const cur = hwSessions.filter(s => s.session_date >= wk.start && s.session_date <= wk.end).sort(byDate);
+  const cur = hwSessions.filter(s => hwIsCur(s, wk)).sort(byDate);
   const past = hwSessions.filter(s => s.session_date < wk.start).sort((a, b) => byDate(b, a));
-  const future = hwSessions.filter(s => s.session_date > wk.end).sort(byDate);
+  const future = hwSessions.filter(s => !hwHasRule(s) && s.session_date > wk.end).sort(byDate);
   if (hwOpenId && past.some(s => s.id === hwOpenId)) hwShowPast = true;
   if (hwOpenId && future.some(s => s.id === hwOpenId)) hwShowFuture = true;
   const missing = past.filter(s => !hwSubs[s.id]).length;
   const head = (label, on, fn, sub) => `<div onclick="${fn}" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:7px 2px;margin:8px 0 4px;border-bottom:1px solid var(--border-light)">
       <span style="font-size:12px;font-weight:600">${label}</span>${sub || ''}<span style="margin-left:auto;font-size:10px;color:var(--text-muted)">${on ? '▾ 收起' : '▸ 展开'}</span></div>`;
   wrap.innerHTML = `
-    <div style="font-size:12px;font-weight:600;padding:2px 2px 6px">本周作业 <span style="font-size:11px;font-weight:400;color:var(--text-muted)">${wk.label}</span></div>
-    ${cur.length ? cur.map(hwRowHtml).join('') : '<div style="font-size:11px;color:var(--text-muted);padding:4px 2px 8px">本周没有布置作业</div>'}
+    <div style="font-size:12px;font-weight:600;padding:2px 2px 6px">当前作业</div>
+    ${cur.length ? cur.map(hwRowHtml).join('') : '<div style="font-size:11px;color:var(--text-muted);padding:4px 2px 8px">当前没有需要提交的作业</div>'}
     ${past.length ? head(`以前的作业`, hwShowPast, 'hwShowPast=!hwShowPast;renderHwList()', ` <span style="font-size:11px;color:${missing ? 'var(--danger)' : 'var(--text-muted)'}">· 未交 ${missing} 份</span>`) + (hwShowPast ? past.map(hwRowHtml).join('') : '') : ''}
     ${future.length ? head('之后的作业（可提前完成）', hwShowFuture, 'hwShowFuture=!hwShowFuture;renderHwList()', ` <span style="font-size:11px;color:var(--text-muted)">· ${future.length} 份</span>`) + (hwShowFuture ? future.map(hwRowHtml).join('') : '') : ''}`;
   renderHwArchive();
@@ -1724,7 +1732,7 @@ function hwRowHtml(s) {
       <div onclick="hwToggle('${s.id}')" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;${open?'background:var(--bg)':''}">
         <div style="flex:1;min-width:0">
           <div style="font-size:12px;font-weight:600">${escA(s.course_name||'')}${s.session_number?` 第${s.session_number}回`:''}</div>
-          <div style="font-size:10px;color:var(--text-muted)">${s.session_date||''}${s.session_title?' · '+escA(s.session_title):''}${hwCountLabel(s)}</div>
+          <div style="font-size:10px;color:var(--text-muted)">${s.session_date||''}${s.session_date>wk.end?` · ${hwDateTxt(s.session_date)}上课`:''}${s.session_title?' · '+escA(s.session_title):''}${hwCountLabel(s)}</div>
         </div>
         <span style="font-size:10px;white-space:nowrap;${statusSty}">${statusTxt}${graded && hwGradedBy(sub).length ? ` <span style="color:var(--text-muted)">${escA(hwGradedBy(sub).join('、'))}</span>` : ''}</span>
         <span style="font-size:10px;color:var(--text-muted)">${open?'▾':'▸'}</span>

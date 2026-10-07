@@ -255,11 +255,13 @@ async function loadAdminHwPanel(sessionId) {
     subs = await sb(`/rest/v1/homework_submissions?session_id=eq.${sessionId}&select=*&order=submitted_at.asc`);
   } catch (e) { wrap.innerHTML = `<div style="font-size:11px;color:var(--danger)">加载失败：${e.message}</div>`; return; }
   admHwSubs[sessionId] = subs || [];
-  if (!subs.length) { wrap.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:4px 0">暂无提交作业</div>'; return; }
+  const hwCourse = cachedCourses.find(x => x.id === s.course_id) || {};
+  const hwReleased = hwIsReleased(s, hwCourse);   // 还没到发布日的作业不算学生未交
+  if (!subs.length) { wrap.innerHTML = `<div style="font-size:11px;color:var(--text-muted);padding:4px 0">${hwReleased ? '暂无提交作业' : `作业尚未发布（${hwReleaseDate(s, hwCourse)} 发布）`}</div>`; return; }
 
   const students = attMembers(s.course_id, s.major);
   const done = new Set(subs.map(x => x.student_name));
-  const missing = students.filter(x => !done.has(x.name));
+  const missing = hwReleased ? students.filter(x => !done.has(x.name)) : [];
 
   wrap.innerHTML = `
   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
