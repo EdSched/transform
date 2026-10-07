@@ -581,6 +581,8 @@ function tsmDefaultDomain() {
     const best = Object.keys(cntBy).sort((a, b) => cntBy[b] - cntBy[a])[0];
     if (ok(best)) return best;
   }
+  // 指定了营业范围、只有一个领域：就用它
+  { const sd = typeof salesScopeDomains === 'function' ? salesScopeDomains(teacherData) : []; if (sd.length === 1 && ok(sd[0])) return sd[0]; }
   // 没有所属领域（营业老师等）：不替他选，留空，页面提示「请先选择领域」（见 tsmNeed）
   return '';
 }

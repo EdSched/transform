@@ -1312,10 +1312,34 @@ const TEACHER_POSITIONS = [['lead', '负责人'], ['sales', '营业'], ['liaison
 const TEACHER_ROLES = [['senmon', '专业课老师'], ['ta', 'TA'], ['homeroom', '班主任']];
 function teacherPositionLabel(k) { const r = TEACHER_POSITIONS.find(x => x[0] === k); return r ? r[1] : ''; }
 function teacherRoleLabel(k) { const r = TEACHER_ROLES.find(x => x[0] === k); return r ? r[1] : ''; }
-// 看全部领域的学生：职位是营业或对接（兼容：标签里有「营业老师」）
-function canSeeAllStudents(t) { return !!t && (t.position === 'sales' || t.position === 'liaison' || (Array.isArray(t.tags) && t.tags.includes('营业老师'))); }
-// 看全部出愿数据：职位是营业（兼容：标签里有「营业老师」）
-function canSeeAllAdmission(t) { return !!t && (t.position === 'sales' || (Array.isArray(t.tags) && t.tags.includes('营业老师'))); }
+// 营业范围（teachers.role_scope.sales.domains）：职位是营业且指定了领域 = 只管这些领域；没指定 = 全部领域（现有营业不变）
+function salesScopeDomains(t) {
+  const d = t && t.position === 'sales' && t.role_scope && t.role_scope.sales && t.role_scope.sales.domains;
+  return Array.isArray(d) ? d.filter(Boolean) : [];
+}
+// 这位老师的营业范围里有没有这个领域（没设范围 = 全部都有；没有领域的内容在设了范围时不算在内）
+function salesDomOk(t, dom) { const sd = salesScopeDomains(t); return !sd.length || (!!dom && sd.includes(dom)); }
+// 老师端当前登录的老师（teacherData）的营业范围判断；非老师端 / 没设营业范围 = 不限
+function salesDomOkMe(dom) { return typeof teacherData === 'undefined' || !teacherData || salesDomOk(teacherData, dom); }
+function salesMajorOkMe(key) { return typeof teacherData === 'undefined' || !teacherData || salesMajorOk(teacherData, key); }
+// 老师（有 managed_by / domains / majors 的行）是否在当前营业老师的营业范围内：隶属 / 负责领域，或负责专业所属领域，有一个在范围里就算
+function salesTeacherOkMe(row) {
+  if (typeof teacherData === 'undefined' || !teacherData) return true;
+  const sd = salesScopeDomains(teacherData); if (!sd.length) return true;
+  const doms = new Set([...(row.managed_by || []), ...(row.domains || [])]);
+  (row.majors || []).forEach(m => { const d = MAJOR_DOMAIN[m]; if (d) doms.add(d); });
+  return sd.some(d => doms.has(d));
+}
+// 专业（含社会人文组 shakai_group）是否在营业范围内
+function salesMajorOk(t, key) {
+  const sd = salesScopeDomains(t); if (!sd.length) return true;
+  const k = (key === 'shakai_group' && typeof SHAKAI_GROUP !== 'undefined') ? SHAKAI_GROUP[0] : key;
+  return !!k && sd.includes(MAJOR_DOMAIN[k]);
+}
+// 看全部领域的学生：职位是营业（没指定营业范围时）或对接（兼容：标签里有「营业老师」）
+function canSeeAllStudents(t) { return !!t && ((t.position === 'sales' && !salesScopeDomains(t).length) || t.position === 'liaison' || (Array.isArray(t.tags) && t.tags.includes('营业老师') && !salesScopeDomains(t).length)); }
+// 看全部出愿数据：职位是营业（没指定营业范围时）（兼容：标签里有「营业老师」）
+function canSeeAllAdmission(t) { return !!t && ((t.position === 'sales' && !salesScopeDomains(t).length) || (Array.isArray(t.tags) && t.tags.includes('营业老师') && !salesScopeDomains(t).length)); }
 // ── 老师可见范围（学生管理 / 出願数据共用）：由「职位 + 角色 + 负责范围」算出，不再手选「可见的专业」 ──
 // kind: 'student'（学生管理）| 'admission'（出願数据）
 // 返回 { all, majors:Set, classIds:Set, domains:Set, rangeMajors:Set, sources:[], excluded:Set }
@@ -1360,6 +1384,11 @@ function teacherScope(t, kind) {
     const ms = t.manage_scope;
     add([].concat(...(ms.domains || []).map(_scopeDomainMajors)).concat(ms.majors || []), '负责人管理范围');
     addDom(ms.domains, '负责人管理范围');
+  }
+  const sdoms = salesScopeDomains(t);
+  if (sdoms.length) {   // 营业指定了领域：这些领域的学生 / 出願数据都能看
+    add([].concat(...sdoms.map(_scopeDomainMajors)), '营业范围');
+    addDom(sdoms, '营业范围');
   }
   const hr = t.role_scope && t.role_scope.homeroom;
   if (Array.isArray(t.roles) && t.roles.includes('homeroom') && hr && kind === 'student') {

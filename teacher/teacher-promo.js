@@ -42,17 +42,17 @@ async function prAvailableMajors() {
   if (prMajorsCache) return prMajorsCache;
   let rows;
   try { rows = await sbAll('/rest/v1/promo_content?or=(published.is.null,published.is.true)&select=major'); }
-  catch (e) { return PR_MAJORS_FALLBACK; }   // 查询失败不缓存，下次再试
+  catch (e) { return PR_MAJORS_FALLBACK.filter(salesMajorOkMe); }   // 查询失败不缓存，下次再试
   // 只有宣传视频、还没有其他宣传内容的专业（如教育学）也要能选到
   const vids = await sbAll('/rest/v1/promo_videos?published=is.true&select=major').catch(() => []);
   rows = (rows || []).concat(vids || []);
   const order = majorFilterKeys();
   const idx = k => { const i = order.indexOf(k); return i < 0 ? 9999 : i; };
-  prMajorsCache = [...new Set((rows || []).map(r => r.major).filter(Boolean))].sort((a, b) => idx(a) - idx(b) || a.localeCompare(b));
+  prMajorsCache = [...new Set((rows || []).map(r => r.major).filter(Boolean))].filter(salesMajorOkMe).sort((a, b) => idx(a) - idx(b) || a.localeCompare(b));   // 营业只看自己营业范围内领域的专业
   return prMajorsCache;
 }
 function prMajorDomain(k) { return k === 'shakai_group' ? (MAJOR_DOMAIN[SHAKAI_GROUP[0]] || '') : (MAJOR_DOMAIN[k] || ''); }
-function prMajorList() { return prMajorsCache || PR_MAJORS_FALLBACK; }
+function prMajorList() { return prMajorsCache || PR_MAJORS_FALLBACK.filter(salesMajorOkMe); }
 // 可选领域：按 DOMAINS 顺序，只列有宣传内容的专业所属的领域（没有领域的专业归「其他」）
 function prDomainList() {
   const have = new Set(prMajorList().map(m => prMajorDomain(m)));
@@ -312,6 +312,7 @@ async function prCommonEnsure() {
   if (prCommon) return prCommon;
   try { prCommon = await sbAll('/rest/v1/promo_common?or=(published.is.null,published.is.true)&select=*&order=sort_order.asc,updated_at.asc'); }
   catch (e) { prCommon = []; }
+  prCommon = prCommon.filter(r => salesDomOkMe(r.domain));   // 营业只看自己营业范围内领域的通用宣传
   const doms = prCommonDomains();
   if (!doms.includes(prCommonDomain)) {
     const mine = [...((teacherData && teacherData.managed_by) || []), ...((teacherData && teacherData.domains) || [])];
