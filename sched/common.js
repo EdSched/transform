@@ -53,11 +53,20 @@ function schedAuthToken(){
   if(SCHED_TOKEN && SCHED_TOKEN_EXP*1000 > Date.now()+5000) return SCHED_TOKEN;
   return null;
 }
-function schedAuthCode(){
-  const k=new URLSearchParams(location.search).get('k'); if(k) return k;
-  try{ const r=JSON.parse(sessionStorage.getItem('sched_role')||'null'); if(r && r.code) return r.code; }catch(e){}
-  return '';
+// 排课口令已停用：不再用 ?k= / 口令登录（相关函数保留但不再生效，待后续清理）
+function schedAuthCode(){ return ''; }
+// 带 ?k=（旧口令链接）打开：整页盖一条停用提示。嵌入管理端 / 老师端（embed / via）不受影响
+function schedRetiredCheck(){
+  const q=new URLSearchParams(location.search);
+  if(!q.get('k') || schedEmbedVia() || q.get('embed')==='1') return;
+  const show=()=>{ if(document.getElementById('schedRetired')||!document.body) return;
+    const d=document.createElement('div'); d.id='schedRetired';
+    d.style.cssText='position:fixed;inset:0;z-index:99999;background:#f7f5f0;display:flex;align-items:center;justify-content:center;padding:24px';
+    d.innerHTML='<div style="max-width:420px;text-align:center;font-size:15px;line-height:1.9;color:#1a1814">此链接已停用，请用自己的老师链接登录，在「资源管理」里使用。</div>';
+    document.body.appendChild(d); };
+  if(document.body) show(); else document.addEventListener('DOMContentLoaded',show);
 }
+schedRetiredCheck();
 async function schedPasswordLogin(code){
   const email='c_'+schedMd5(code)+'@sched.local';
   let lastErr='';
@@ -558,23 +567,11 @@ PERM_LABEL.course_audit = '课程审查';   // course_audit 只在 index.html �
 const ALL_PERMS  = PERM_DEFS.map(p=>p[0]);
 
 // 用 code 读取角色记录（含 perms）
-async function getRoleByCode(code){
-  if(!code) return null;
-  const rows = await schedResolveCode(code);
-  if(rows.length) await schedEnsureLogin(code);   // 口令有效：顺便用它登录（手动输入口令的页面也能带上身份）
-  return rows.length ? rows[0] : null;
-}
-// 口令表已上锁（只有管理员能直接读）：用口令换角色记录只能走 rpc/resolve_sched_code，一次只返回这一个启用中的口令
-async function schedResolveCode(code){
-  const r = await fetch(SB_URL + '/rest/v1/rpc/resolve_sched_code', {
-    method:'POST', headers:{ apikey:SB_KEY, Authorization:'Bearer '+SB_KEY, 'Content-Type':'application/json' }, body: JSON.stringify({ p_code: code }), cache:'no-store'   // 登录前就要用，必须匿名
-  });
-  if(!r.ok) throw new Error('口令校验失败: ' + r.status + ' ' + await r.text());
-  const j = await r.json();
-  return Array.isArray(j) ? j : (j ? [j] : []);
-}
+async function getRoleByCode(code){ return null; }   // 口令已停用
+// 口令已停用：不再向数据库换角色
+async function schedResolveCode(code){ return []; }
 // 当前 URL 的 code
-function currentCode(){ return new URLSearchParams(location.search).get('k') || ''; }
+function currentCode(){ return ''; }   // 口令已停用
 // ── 嵌入管理端（?embed=admin）：身份来自管理端 / 老师端的登录会话，不用口令 ──
 // 管理端「资源管理」把排课首页嵌进 iframe：同一网站，localStorage 里有 sb-admin（管理员）或 sb-teacher（管理模式的负责人老师，
 // 地址上带 &as=teacher）的登录 token。「问我是谁」（rpc/sched_session_role）和所有读写（sbHeaders）都带这个 token。
@@ -615,10 +612,7 @@ async function currentRole(){
     return r;
   }
   if(q.get('via')==='admin'){ try{ const s=sessionStorage.getItem('sched_role_embed'); if(s) return JSON.parse(s); }catch(e){} return null; }
-  try{ const s=sessionStorage.getItem('sched_role'); if(s) return JSON.parse(s); }catch(e){}
-  const code=currentCode();
-  if(code){ const r=await getRoleByCode(code); if(r){ try{ sessionStorage.setItem('sched_role',JSON.stringify(r)); }catch(e){} } return r; }
-  return null;
+  return null;   // 口令已停用：独立打开（非嵌入）没有身份
 }
 // 各功能页拿「这个页面的身份」：嵌入管理端时用 currentRole()；独立打开时和以前一样只看 ?k=
 function pageRole(){ return schedEmbedVia() ? currentRole() : getRoleByCode(currentCode()); }

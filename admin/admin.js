@@ -4,17 +4,11 @@
 // 当前访问钥匙（从 URL ?k=xxx 解析并查库）。null=按老方式(admin密码→中枢台)
 let ACCESS_KEY=null; // {k, password, domain, major(旧), domains[], majors[], class_ids[], is_admin, label, active}
 
-// 读取 URL 的 ?k= 并查钥匙表；页面加载时调用一次
+// 读取 URL 的 ?k=：访问链接（含 admin 钥匙）已全部停用，带 ?k= 一律视为失效，不再查库、不再登录
 async function loadAccessKey(){
   const k=new URLSearchParams(location.search).get('k');
-  if(!k || k==='admin'){ ACCESS_KEY=null; return; } // 无k或admin → 走管理员流程
-  try{
-    // 登录前读取：走 rpc（只返回这一把钥匙、不含 password），access_keys 表本身只有管理员能读
-    const rows=await sb('/rest/v1/rpc/resolve_access_key','POST',{p_k:k});
-    const row=Array.isArray(rows)?rows[0]:rows;
-    if(row && row.k && row.active){ ACCESS_KEY=row; }
-    else { ACCESS_KEY={invalid:true}; } // 钥匙不存在或已停用
-  }catch(e){ ACCESS_KEY=null; }
+  if(!k){ ACCESS_KEY=null; return; }
+  ACCESS_KEY={invalid:true, retired:true};
 }
 
 // ═══════════════════════════════════════════════
@@ -174,33 +168,30 @@ function renderHubCards(){
   let html=card("enterDomain('all')",'总览','全部领域 · admin');
   DOMAINS.forEach(d=>{ html+=card(`enterDomain('${d.label}')`, d.label, ''); });
   // 管控台入口（仅 admin 可见——领域钥匙用户不会进到中枢台）
-  html+=card("openConsole()",'⚙ 管控台','生成领域访问链接');
+  html+=card("openConsole()",'⚙ 管控台','老师 / 价目 / 专业等');
   grid.innerHTML=html;
 }
 
-// ══════════ 管控台：领域访问链接管理 ══════════
-let _consoleKeys=[];
+// ══════════ 管控台 ══════════
 function openConsole(){
   const el=document.getElementById('consoleOverlay'); if(!el) return;
   document.getElementById('hubOverlay').style.display='none';
   el.style.display='block';
-  switchConsoleTab('keys');
+  switchConsoleTab('teachers');
 }
-let consoleTab='keys';
+let consoleTab='teachers';
 async function switchConsoleTab(tab){
   consoleTab=tab;
-  ['keys','teachers','roletpl','payroll','majors','pricing','tasks','sched'].forEach(t=>{
+  ['teachers','roletpl','payroll','majors','pricing','tasks'].forEach(t=>{
     const b=document.getElementById('ctab_'+t);
     if(b){ b.style.borderBottomColor = t===tab?'var(--primary,#8b5cf6)':'transparent'; b.style.color = t===tab?'var(--text)':'var(--text-3)'; b.style.fontWeight = t===tab?'600':'400'; }
   });
   const body=document.getElementById('consoleBody');
   if(!body) return;
-  if(tab==='keys'){ loadConsole(); }
-  else if(tab==='majors'){ renderMajorManager(body); }
+  if(tab==='majors'){ renderMajorManager(body); }
   else if(tab==='pricing'){ prcMount(body); }
   else if(tab==='tasks'){ tkMount(body); }
   else if(tab==='roletpl'){ rtpMount(body); }
-  else if(tab==='sched'){ sccMount(body); }
   else if(tab==='teachers'){
     body.innerHTML='<div style="padding:20px;color:var(--text-3);font-size:12px">加载中…</div>';
     [cachedTeachers, cachedSessions]=await Promise.all([
@@ -387,51 +378,6 @@ async function mmDelete(key,label){
     renderMajorManager(document.getElementById('consoleBody'));
   }catch(e){ alert('删除失败：'+e.message); }
 }
-async function loadConsole(){
-  const body=document.getElementById('consoleBody');
-  body.innerHTML='<div style="padding:20px;color:var(--text-3);font-size:12px">加载中…</div>';
-  try{
-    _consoleKeys=await sb('/rest/v1/access_keys?select=*&order=created_at.desc')||[];
-    renderConsole();
-  }catch(e){ body.innerHTML=`<div style="padding:20px;color:var(--danger)">加载失败：${e.message}</div>`; }
-}
-function renderConsole(){
-  const body=document.getElementById('consoleBody');
-  const base=location.origin+location.pathname.replace(/[^/]*$/,'')+'index.html';
-  let html=`
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-    <div style="font-size:12px;font-weight:600">访问链接</div>
-    <span style="font-size:10px;color:var(--text-3)">一个链接的范围 = 完整领域（可多个）＋ 单独专业（可跨领域）＋ 班级，三部分取并集</span>
-    <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="openKeyEditor()">＋ 新建访问链接</button>
-  </div>`;
-  // 钥匙列表
-  if(!_consoleKeys.length){
-    html+='<div style="padding:16px;color:var(--text-3);font-size:12px">暂无访问链接</div>';
-  } else {
-    html+='<div style="display:flex;flex-direction:column;gap:8px">';
-    _consoleKeys.forEach(kk=>{
-      if(kk.is_admin) return; // admin 那把不在此管理
-      const url=`${base}?k=${kk.k}`;
-      html+=`<div style="border:1px solid var(--border);border-radius:6px;padding:10px 12px;${kk.active?'':'opacity:.5'}">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-weight:600;font-size:13px">${keyScopeText(kk)}</span>
-          ${kk.label?`<span style="font-size:11px;color:var(--text-2)">${kk.label}</span>`:''}
-          <span style="font-size:10px;color:var(--text-3)">🔗 链接即登录</span>
-          ${kk.active?'':'<span style="font-size:10px;color:var(--danger)">已停用</span>'}
-          <span style="margin-left:auto;display:flex;gap:6px">
-            <button class="btn btn-outline btn-sm" onclick="copyKeyLink('${kk.k}')">复制链接</button>
-            <button class="btn btn-outline btn-sm" onclick="openKeyEditor('${kk.k}')">编辑</button>
-            <button class="btn btn-outline btn-sm" onclick="toggleKey('${kk.k}',${kk.active})">${kk.active?'停用':'启用'}</button>
-            <button class="btn btn-outline btn-sm" onclick="deleteKey('${kk.k}')">删除</button>
-          </span>
-        </div>
-        <div style="font-size:10px;color:var(--text-3);margin-top:5px;word-break:break-all">${url}</div>
-      </div>`;
-    });
-    html+='</div>';
-  }
-  body.innerHTML=html;
-}
 // ── 访问链接的范围：完整领域 + 单独专业 + 班级（新字段 domains / majors / class_ids；旧链接退回用 domain / major）──
 function scopeFromKey(kk){
   const d=kk.domains||[], m=kk.majors||[], c=kk.class_ids||[];
@@ -449,25 +395,6 @@ function keyScopeText(kk){
   const sc=scopeFromKey(kk);
   if(!(sc.domains||[]).length && !(sc.majors||[]).length && !(sc.classIds||[]).length) return '（没有设置范围）';
   return escTM(scopeSummary(sc));
-}
-// 新建 / 编辑共用的弹窗（全部 chip 点选，不用复选框）
-let _keyDraft=null;   // {k:'' 新建 | 链接的 k, domains:[], majors:[], classIds:[], label}
-async function openKeyEditor(k){
-  try{ if(typeof loadClasses==='function') await loadClasses(); }catch(e){}
-  const kk=k?_consoleKeys.find(x=>x.k===k):null;
-  const sc=kk?scopeFromKey(kk):{};
-  _keyDraft={k:kk?kk.k:'', domains:(sc.domains||[]).slice(), majors:(sc.majors||[]).slice(), classIds:(sc.classIds||[]).map(String), label:kk?(kk.label||''):''};
-  let ov=document.getElementById('keyEditModal');
-  if(!ov){ ov=document.createElement('div'); ov.className='modal-overlay'; ov.id='keyEditModal'; ov.style.zIndex='1000'; document.body.appendChild(ov); }
-  ov.classList.add('open'); renderKeyEditor();
-}
-function closeKeyEditor(){ const ov=document.getElementById('keyEditModal'); if(ov) ov.classList.remove('open'); _keyDraft=null; }
-function keyDraftSummary(){
-  const d=_keyDraft, parts=[];
-  d.domains.forEach(x=>parts.push(x+'（整个领域）'));
-  d.majors.forEach(m=>parts.push((MAJOR_DOMAIN[m]?MAJOR_DOMAIN[m]+'·':'')+(MAJORS[m]||m)));
-  d.classIds.forEach(id=>{ const c=(typeof classById==='function')?classById(id):null; parts.push('班级：'+(c?c.name:id)); });
-  return parts.length?parts.join(' ＋ '):'（还没有选任何范围）';
 }
 // 范围选择器（领域 / 专业 / 班级三块 chip，访问链接和「负责人范围」共用）：d={domains,majors,classIds}，fn=点 chip 时调用的函数名（fn(field,val)）
 function scopePickerHtml(d,fn){
@@ -497,69 +424,12 @@ function scopeDraftToggle(d,field,val){
     d.classIds=d.classIds.filter(id=>{ const c=(typeof classById==='function')?classById(id):null; return !(c&&c.domain===val); });
   }
 }
-function renderKeyEditor(){
-  const ov=document.getElementById('keyEditModal'), d=_keyDraft; if(!ov||!d) return;
-  const sec=(t,inner)=>`<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">${t}</div>${inner}</div>`;
-  ov.innerHTML=`<div class="modal" style="width:640px">
-    <div class="modal-title">${d.k?'编辑访问链接':'新建访问链接'}</div>
-    <div class="modal-sub">${d.k?`链接地址不变（${escTM(d.k)}），改完后已经发出去的链接对方刷新即生效`:'范围 = 完整领域（可多个）＋ 单独专业（可跨领域）＋ 班级，三部分取并集'}</div>
-    ${scopePickerHtml(d,'keyDraftToggle')}
-    ${sec('备注',`<input id="kd_label" value="${escTM(d.label)}" oninput="_keyDraft.label=this.value" placeholder="如负责人名（选填）" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:100%;box-sizing:border-box">`)}
-    <div style="font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 12px;line-height:1.7">这个链接可以看到：<b>${escTM(keyDraftSummary())}</b></div>
-    <div class="modal-actions"><button class="btn btn-outline" onclick="closeKeyEditor()">取消</button><button class="btn btn-primary" onclick="saveKeyEditor()">${d.k?'保存修改':'生成链接'}</button></div>
-  </div>`;
-}
-function keyDraftToggle(field,val){
-  scopeDraftToggle(_keyDraft,field,val);
-  admKeepFold(document.getElementById('keyEditModal'),renderKeyEditor);
-}
-async function saveKeyEditor(){
-  const d=_keyDraft; if(!d) return;
-  if(!d.domains.length&&!d.majors.length&&!d.classIds.length){ alert('请至少选一个范围（领域、专业或班级）'); return; }
-  const label=(d.label||'').trim();
-  // 旧字段 domain / major 先保留（回滚兜底）：domain = 第一个涉及的领域；major = 范围正好是一个专业时才填
-  const cls0=(typeof classById==='function'&&d.classIds.length)?classById(d.classIds[0]):null;
-  const domain=d.domains[0]||(d.majors[0]&&MAJOR_DOMAIN[d.majors[0]])||(cls0&&cls0.domain)||'';
-  const major=(!d.domains.length&&d.majors.length===1&&!d.classIds.length)?d.majors[0]:null;
-  const rec={domain, major, domains:d.domains, majors:d.majors, class_ids:d.classIds, label:label||null};
-  try{
-    if(d.k){
-      await sb(`/rest/v1/access_keys?k=eq.${encodeURIComponent(d.k)}`,'PATCH',rec);
-      closeKeyEditor(); await loadConsole();
-      alert('已保存。链接地址不变，已经发出去的链接对方刷新页面即按新范围生效。');
-    } else {
-      // 不再需要密码：链接即登录（k@access.local 由触发器自动建 Auth，登录靠链接的 k）
-      const pw='auto-'+Math.random().toString(36).slice(2,10);  // password 字段保留非空，但不用于登录
-      const code=domainCode(d.domains[0]||domain)||'key';
-      const k=code+(major?'_'+major:'')+'-'+Date.now().toString(36).slice(-4);
-      await sb('/rest/v1/access_keys','POST',Object.assign({k,password:pw,is_admin:false,active:true},rec));
-      closeKeyEditor(); await loadConsole();
-      alert(`已生成访问链接：${d.domains.concat(d.majors.map(m=>MAJORS[m]||m)).join(' ＋ ')||'班级范围'}。\n发送链接给负责人即可，点开直接进，无需密码。`);
-    }
-  }catch(e){ alert('保存失败：'+e.message); }
-}
-function copyKeyLink(k){
-  const base=location.origin+location.pathname.replace(/[^/]*$/,'')+'index.html';
-  const url=`${base}?k=${k}`;
-  navigator.clipboard?.writeText(url).then(()=>alert('链接已复制：\n'+url)).catch(()=>prompt('复制此链接：',url));
-}
-async function toggleKey(k,cur){
-  try{ await sb(`/rest/v1/access_keys?k=eq.${k}`,'PATCH',{active:!cur}); await loadConsole(); }
-  catch(e){ alert('操作失败：'+e.message); }
-}
-async function deleteKey(k){
-  if(!confirm('确定删除这个访问链接？删除后该链接立即失效。')) return;
-  try{ await sb(`/rest/v1/access_keys?k=eq.${k}`,'DELETE'); await loadConsole(); }
-  catch(e){ alert('删除失败：'+e.message); }
-}
 // ═══════════════════════════════════════════════
 // 负责人与权限（只有管理员）：老师链接绑定「负责人」身份 + 排课/资源权限
 //  - manage_scope（teachers 表）：管理范围，空 = 不是负责人；老师端出现「管理模式」按钮，进管理端 ?as=teacher
 //  - resource_perms（teachers 表）：排课/资源权限代号（sched/common.js PERM_DEFS 同一套）
-//  - 权限模板：读 sched_access_codes 里现有的口令角色，选了就把它的 perms 填进 chip
 // ═══════════════════════════════════════════════
 let _mgrDraft=null;      // {domains,majors,classIds,perms:[]}：老师编辑表单里「资源管理权限」「负责人」两个区块的草稿
-let _mgrTemplates=null;  // [{label,perms:[]}]
 function isHubAdminUser(){ return !ACCESS_KEY || (!ACCESS_KEY.invalid && ACCESS_KEY.is_admin); }
 // 打开 / 重置老师表单时调用：t=老师（新建传 null）。两个区块只在管理员的表单里渲染
 async function tfMgrInit(t){
@@ -569,19 +439,12 @@ async function tfMgrInit(t){
   const draft=_mgrDraft;
   tfMgrRender();
   try{ if(typeof loadClasses==='function') await loadClasses(); }catch(e){}
-  if(_mgrTemplates===null){
-    try{
-      const rows=await sb('/rest/v1/sched_access_codes?select=label,role,perms,sort,active&order=sort.asc,id.asc');
-      _mgrTemplates=(rows||[]).filter(r=>r.active!==false).map(r=>({label:r.label||r.role||'',perms:String(r.perms||'').split(',').map(x=>x.trim()).filter(Boolean)})).filter(r=>r.label);
-    }catch(e){ _mgrTemplates=[]; }
-  }
   if(_mgrDraft===draft) tfMgrRender();
 }
 function tfMgrRender(){
   const d=_mgrDraft, rb=document.getElementById('tf_resource_box'), mb=document.getElementById('tf_manager_box'); if(!d||!rb||!mb) return;
   const permChips=RESOURCE_PERM_DEFS.map(([code,label])=>`<div class="filter-chip${d.perms.includes(code)?' active':''}" data-res="${code}" onclick="mgrPermToggle('${code}')" style="padding:3px 10px;font-size:11px">${escTM(label)}</div>`).join('');
-  const tplOpts='<option value="">选择权限模板（选了会覆盖下面已选的权限，之后可再增减）</option>'+(_mgrTemplates||[]).map((r,i)=>`<option value="${i}">${escTM(r.label)}</option>`).join('');
-  rb.innerHTML=`<select onchange="mgrPickTemplate(this.value)" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:100%;box-sizing:border-box;margin-bottom:8px">${tplOpts}</select><div style="display:flex;gap:6px;flex-wrap:wrap">${permChips}</div>`;
+  rb.innerHTML=`<div style="display:flex;gap:6px;flex-wrap:wrap">${permChips}</div>`;
   const isMgr=d.domains.length||d.majors.length||d.classIds.length;
   mb.innerHTML=`<div style="font-size:10px;color:var(--text-3);margin-bottom:8px">管理范围为空 = 不是负责人。设了范围后，这位老师用自己的老师链接登录，会多出「管理模式」按钮，一键进管理端（只看到范围内的东西），不用另外的访问链接。</div>
     ${scopePickerHtml(d,'mgrDraftToggle')}
@@ -595,13 +458,6 @@ function mgrDraftToggle(field,val){
 }
 function mgrPermToggle(code){
   const a=_mgrDraft.perms, i=a.indexOf(code); if(i>=0) a.splice(i,1); else a.push(code);
-  admKeepFold(document.getElementById('tf_resource_box'),tfMgrRender);
-}
-function mgrPickTemplate(i){
-  if(i===''||!_mgrDraft) return;
-  const tpl=(_mgrTemplates||[])[+i]; if(!tpl) return;
-  const known=new Set(RESOURCE_PERM_DEFS.map(x=>x[0]));
-  _mgrDraft.perms=tpl.perms.filter(p=>known.has(p));
   admKeepFold(document.getElementById('tf_resource_box'),tfMgrRender);
 }
 // 保存时取负责人范围 + 资源权限（表单里没有这两个区块就返回 {}，不动原有值）；管理员取消确认返回 null
@@ -2202,7 +2058,8 @@ function backToTeacherPage(){
   // 钥匙无效：提示并停在登录框
   if(ACCESS_KEY && ACCESS_KEY.invalid){
     document.getElementById('loginOverlay').style.display='flex';
-    loginErr('此访问链接无效或已停用');
+    ['pwBox','magicBox'].forEach(id=>{ const b=document.getElementById(id); if(b) b.style.display='none'; });
+    const rm=document.getElementById('retiredMsg'); if(rm) rm.style.display='block';
     return;
   }
   // 领域钥匙（非admin）：纯链接登录——静默 Auth 拿 token → 直接进领域，不再输密码
