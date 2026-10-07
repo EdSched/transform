@@ -1,0 +1,265 @@
+[
+ {
+  "key": "lead",
+  "label": "负责人",
+  "kind": "position",
+  "sort": 1,
+  "defaults": {
+   "permissions": {
+    "student_mgmt": true,
+    "student_mgmt_items": [
+     "progress",
+     "meetings",
+     "records_view",
+     "records_entry",
+     "monthly",
+     "profile",
+     "profile_edit"
+    ],
+    "admission_query": true
+   },
+   "resource_perms": [
+    "board",
+    "conflict",
+    "course",
+    "course_audit",
+    "course_view",
+    "entry_room",
+    "meeting_view",
+    "timetable"
+   ],
+   "tags": [],
+   "see_all_students": false,
+   "see_all_admission": false,
+   "needs_manage_scope": true
+  }
+ },
+ {
+  "key": "sales",
+  "label": "营业",
+  "kind": "position",
+  "sort": 2,
+  "defaults": {
+   "permissions": {
+    "student_mgmt": true,
+    "student_mgmt_items": [
+     "progress",
+     "meetings",
+     "profile"
+    ],
+    "admission_query": true,
+    "promo": true,
+    "progress_plan": true,
+    "lect_info": true,
+    "vip_sales": true,
+    "promo_pack": true,
+    "promo_pricing": true,
+    "success_cases": true
+   },
+   "resource_perms": [
+    "board",
+    "course_view",
+    "entry_room",
+    "meeting_arrange",
+    "meeting_view",
+    "timetable"
+   ],
+   "tags": [],
+   "see_all_students": true,
+   "see_all_admission": true,
+   "needs_manage_scope": false
+  }
+ },
+ {
+  "key": "liaison",
+  "label": "对接",
+  "kind": "position",
+  "sort": 3,
+  "defaults": {
+   "permissions": {
+    "student_mgmt": true,
+    "student_mgmt_items": [
+     "progress",
+     "meetings",
+     "records_view",
+     "records_entry",
+     "monthly",
+     "profile",
+     "profile_edit"
+    ]
+   },
+   "resource_perms": [
+    "board",
+    "course_view"
+   ],
+   "tags": [],
+   "see_all_students": true,
+   "see_all_admission": false,
+   "needs_manage_scope": false
+  }
+ },
+ {
+  "key": "soumu",
+  "label": "总务",
+  "kind": "position",
+  "sort": 4,
+  "defaults": {
+   "permissions": {},
+   "resource_perms": [
+    "account_manage",
+    "approve",
+    "assign",
+    "board",
+    "conflict",
+    "course_view",
+    "entry_room",
+    "entry_room_full",
+    "meeting_arrange",
+    "meeting_view",
+    "occupy",
+    "room_manage"
+   ],
+   "tags": [],
+   "see_all_students": false,
+   "see_all_admission": false,
+   "needs_manage_scope": false
+  }
+ },
+ {
+  "key": "soumu_asst",
+  "label": "总务助理",
+  "kind": "position",
+  "sort": 5,
+  "defaults": {
+   "permissions": {},
+   "resource_perms": [
+    "board",
+    "course_view",
+    "entry_room",
+    "meeting_arrange",
+    "meeting_view",
+    "timetable"
+   ],
+   "tags": [],
+   "see_all_students": false,
+   "see_all_admission": false,
+   "needs_manage_scope": false
+  }
+ },
+ {
+  "key": "senmon",
+  "label": "专业课老师",
+  "kind": "role",
+  "sort": 6,
+  "defaults": {
+   "permissions": {
+    "booking": true,
+    "booking_types": [
+     "vip"
+    ],
+    "slots": true,
+    "slot_types": [
+     "vip"
+    ],
+    "schedule": "timetable",
+    "student_mgmt": true,
+    "student_mgmt_items": [
+     "progress",
+     "meetings"
+    ],
+    "homework": true
+   },
+   "resource_perms": [
+    "board",
+    "course_view"
+   ],
+   "tags": [
+    "专业课老师"
+   ],
+   "see_all_students": false,
+   "see_all_admission": false,
+   "needs_manage_scope": false
+  }
+ },
+ {
+  "key": "ta",
+  "label": "TA",
+  "kind": "role",
+  "sort": 7,
+  "defaults": {
+   "permissions": {
+    "booking": true,
+    "booking_types": [
+     "daily",
+     "plan",
+     "mock"
+    ],
+    "slots": true,
+    "slot_types": [
+     "daily",
+     "plan",
+     "mock"
+    ],
+    "student_mgmt": true,
+    "student_mgmt_items": [
+     "progress",
+     "meetings",
+     "records_view",
+     "records_entry",
+     "profile",
+     "profile_edit"
+    ],
+    "admission_query": true
+   },
+   "resource_perms": [
+    "board",
+    "course_view"
+   ],
+   "tags": [],
+   "see_all_students": false,
+   "see_all_admission": false,
+   "needs_manage_scope": false
+  }
+ },
+ {
+  "key": "homeroom",
+  "label": "班主任",
+  "kind": "role",
+  "sort": 8,
+  "defaults": {
+   "permissions": {
+    "booking": true,
+    "booking_types": [
+     "daily",
+     "plan",
+     "mock"
+    ],
+    "slots": true,
+    "slot_types": [
+     "daily",
+     "plan",
+     "mock"
+    ],
+    "student_mgmt": true,
+    "student_mgmt_items": [
+     "progress",
+     "meetings",
+     "records_view",
+     "records_entry",
+     "monthly",
+     "profile",
+     "profile_edit"
+    ]
+   },
+   "resource_perms": [
+    "board",
+    "course_view",
+    "timetable"
+   ],
+   "tags": [],
+   "see_all_students": false,
+   "see_all_admission": false,
+   "needs_manage_scope": false
+  }
+ }
+]
