@@ -568,10 +568,13 @@ function tsmDefaultDomain() {
   if (typeof teacherData === 'undefined' || !teacherData) return '';
   const pool = tsmPool || [];
   const present = new Set(pool.map(s => tsmDomainOf(s.major)).filter(Boolean));
+  tsmScopeDomains().forEach(d => present.add(d));
   const ok = d => d && (!tsmPool || present.has(d));
   const isSales = typeof canSeeAllStudents === 'function' && canSeeAllStudents(teacherData);
   if (!isSales) {
     const mb = (teacherData.managed_by || []).filter(Boolean);
+    const own = (teacherData.domains || []).filter(Boolean);
+    if (own.length && ok(own[0])) return own[0];
     if (mb.length && ok(mb[0])) return mb[0];
     const cntBy = {};
     (teacherData.majors || []).forEach(m => { const d = tsmDomainOf(m); if (d) cntBy[d] = (cntBy[d] || 0) + pool.filter(s => tpMajorMatch(s.major, m)).length + 0.001; });
@@ -583,7 +586,15 @@ function tsmDefaultDomain() {
 }
 // 逐级选择：领域 → 专业，每一级都要老师自己点了才显示学生（点「全部」也算选了）；没选完就只提示，不显示任何学生
 let tsmDomPicked = true, tsmMajPicked = false;
-function tsmDomainsPresent() { return DOMAINS.map(d => d.label).filter(d => (tsmPool || []).some(s => tsmDomainOf(s.major) === d)); }
+// 领域筛选里要列出的领域：可见学生里出现的 ∪ 负责的整个领域 ∪ 范围内专业所属领域（领域下暂时没有学生也要列出，数字 0）
+function tsmScopeDomains() {
+  const sc = tsaScope(), set = new Set();
+  if (sc.all) return set;
+  sc.domains.forEach(d => set.add(d));
+  sc.majors.forEach(m => { const d = tsmDomainOf(m); if (d) set.add(d); });
+  return set;
+}
+function tsmDomainsPresent() { const sd = tsmScopeDomains(); return DOMAINS.map(d => d.label).filter(d => sd.has(d) || (tsmPool || []).some(s => tsmDomainOf(s.major) === d)); }
 function tsmDomCount() { return tsmDomainsPresent().length; }
 function tsmEffDomain() { const doms = tsmDomainsPresent(); return tsm.domain || (doms.length === 1 ? doms[0] : ''); }
 function tsmDomMajorKeys(dom) {
@@ -646,7 +657,7 @@ function tsmBarHtml() {
   const row = (label, inner) => `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px"><span style="font-size:10px;color:var(--text-3);min-width:30px">${label}</span>${inner}</div>`;
   let h = '';
   // 领域：只列可见学生里实际出现的；只有一个领域时不显示
-  const doms = DOMAINS.map(d => d.label).filter(d => pool.some(s => tsmDomainOf(s.major) === d));
+  const doms = tsmDomainsPresent();
   if (doms.length > 1) h += row('领域', chipFold([{ on: !tsm.domain && tsmDomPicked, html: chip(!tsm.domain && tsmDomPicked, '全部', cnt('domain', () => true), `tsmSet('domain','')`) }]
     .concat(doms.map(d => ({ on: tsm.domain === d, html: chip(tsm.domain === d, d, cnt('domain', s => tsmDomainOf(s.major) === d), `tsmSet('domain','${d}')`) })))));
   // 专业：逐级展开——选了具体领域才显示，只列该领域的专业；领域选「全部」时只给一行提示（只有一个领域时直接列该领域专业）
@@ -747,12 +758,15 @@ function tsaAllowedSet() {
 }
 // 学生行是否在这位老师的范围里（专业命中，或在班主任负责的班级里）
 function tsaStudentOk(s) { return teacherScopeHasStudent(tsaScope(), s); }
+// 某个专业在不在范围内（专业命中或所属领域整个负责）
+function tsaMajorOk(k) { return teacherScopeHasStudent(tsaScope(), { major: k }); }
 function tsaScopeEmpty() { return teacherScopeEmpty(tsaScope()); }
 function tsaFilterStudents(list) { const sc = tsaScope(); return sc.all ? (list || []) : (list || []).filter(s => teacherScopeHasStudent(sc, s)); }
 function tsaScopeText() {
   const sc = tsaScope();
   if (sc.all) return '可见全部专业';
   const parts = [];
+  if (sc.domains.size) parts.push('整个领域：' + [...sc.domains].join('・'));
   if (sc.majors.size) parts.push('可见专业：' + [...sc.majors].map(m => MAJORS[m] || m).join('・'));
   if (sc.classIds.size) parts.push('含班主任班级学生');
   return parts.join('；');
@@ -782,9 +796,8 @@ async function renderTeacherStudents(box) {
 }
 
 function tsaMajorOptions(sel) {
-  const set = tsaAllowedSet();
   return Object.entries(MAJORS)
-    .filter(([k]) => k !== 'shakai_group' && (!set || set.has(k)))
+    .filter(([k]) => k !== 'shakai_group' && tsaMajorOk(k))
     .map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
 }
 
@@ -1142,7 +1155,7 @@ async function tatRenderSessionBar(){
   else if(tatRange==='week') q+=`&session_date=gte.${tatYmd(mon)}&session_date=lte.${tatYmd(sun)}`;
   let all=await sb(q).catch(()=>[]);
   // 专业过滤（可见专业）
-  if(set){ all=all.filter(se=>{ const mj=se.major||[]; return (Array.isArray(mj)?mj:[mj]).some(m=>set.has(m)|| (m==='shakai_group'&&['shakai','shinpan','fukushi'].some(x=>set.has(x)))); }); }
+  if(set){ all=all.filter(se=>{ const mj=se.major||[]; return (Array.isArray(mj)?mj:[mj]).some(m=>tsaMajorOk(m)|| (m==='shakai_group'&&['shakai','shinpan','fukushi'].some(x=>tsaMajorOk(x)))); }); }
   // 各课次已有的出席记录 → 区分待记录 / 已记录，并统计
   const stats={};
   const chunks=[]; for(let i=0;i<all.length;i+=100) chunks.push(all.slice(i,i+100).map(se=>`"${se.id}"`).join(','));
