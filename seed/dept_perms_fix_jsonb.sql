@@ -1,83 +1,4 @@
--- ============================================================
--- 部门管理权限 · 准备 SQL（PR ②，合并 PR 之前执行；可重复执行）
--- 只加字段、函数、改防提权触发器；不改任何表的读写规则（规则在 dept_perms_lock.sql）。
--- 执行后现有页面照常能用：触发器对「没有部门管理权限的人」的限制和原来完全一样。
---
--- 做了 4 件事：
---   1. teachers.dept_perms（部门管理权限：pricing / majors / promo / teachers）
---      price_vip_rates.domain / price_ta_options.domain（null = 通用，现有数据不变）
---   2. 函数 can_manage(权限, 领域)：当前登录的是老师、职位是负责人、dept_perms 含该权限、该领域在 manage_scope.domains 里 → true
---      （辅助：dept_my_domains / can_manage_major / dept_majors_in / dept_teacher_in_range，都是 security definer）
---   3. 防提权触发器 teachers_guard_manage_cols 升级：
---      · dept_perms 只有管理员能改
---      · 有「本范围老师管理」的负责人：能新建 / 改范围内的老师，但不能设职位「负责人 / 对接 / 总务」、不能碰
---        manage_scope / dept_perms、不能改资源权限里的「超级(manage) / 会议账号管理(account_manage)」、
---        不能把老师的隶属领域 / 负责领域 / 负责专业 / 班主任范围 / 营业范围设到自己范围以外
---      · 其他人的限制和原来完全一样
--- 前提：已执行 integrate_step1_prepare.sql、teacher_roles_prepare.sql（teachers 有 position / roles / role_scope）。
--- teachers.managed_by / domains 是 jsonb 数组；majors / roles / resource_perms 是 text[]。
--- ============================================================
-
--- ── 1. 字段 ──────────────────────────────────────────────────
-alter table public.teachers add column if not exists dept_perms text[] not null default '{}';
-alter table public.price_vip_rates  add column if not exists domain text;   -- null = 通用
-alter table public.price_ta_options add column if not exists domain text;
-
--- ── 2. 函数 ──────────────────────────────────────────────────
--- 当前登录老师在某项部门管理权限下能管理的领域（不是负责人 / 没这项权限 → 空数组）
-create or replace function public.dept_my_domains(p_perm text)
-returns text[]
-language sql stable security definer
-set search_path = public
-as $$
-  select coalesce((
-    select array(select jsonb_array_elements_text(t.manage_scope->'domains'))
-    from public.teachers t
-    where t.id = public.current_teacher_id()
-      and t.position = 'lead'
-      and p_perm = any(t.dept_perms)
-      and jsonb_typeof(t.manage_scope->'domains') = 'array'
-  ), '{}'::text[]);
-$$;
-revoke all on function public.dept_my_domains(text) from public;
-grant execute on function public.dept_my_domains(text) to anon, authenticated;
-
-create or replace function public.can_manage(p_perm text, p_domain text)
-returns boolean
-language sql stable security definer
-set search_path = public
-as $$
-  select coalesce(p_domain, '') <> '' and p_domain = any(public.dept_my_domains(p_perm));
-$$;
-revoke all on function public.can_manage(text, text) from public;
-grant execute on function public.can_manage(text, text) to anon, authenticated;
-
--- 专业所属领域 → can_manage（宣传内容按专业判断用）
-create or replace function public.can_manage_major(p_perm text, p_major text)
-returns boolean
-language sql stable security definer
-set search_path = public
-as $$
-  select public.can_manage(p_perm, (select m.domain from public.majors m where m.key = p_major));
-$$;
-revoke all on function public.can_manage_major(text, text) from public;
-grant execute on function public.can_manage_major(text, text) to anon, authenticated;
-
--- 这些专业是否都属于给定领域（触发器用；没有领域的专业算不在范围内）
-create or replace function public.dept_majors_in(p_keys text[], p_domains text[])
-returns boolean
-language sql stable security definer
-set search_path = public
-as $$
-  select not exists (
-    select 1 from unnest(coalesce(p_keys, '{}'::text[])) k
-    left join public.majors m on m.key = k
-    where m.domain is null or not (m.domain = any(coalesce(p_domains, '{}'::text[])))
-  );
-$$;
-revoke all on function public.dept_majors_in(text[], text[]) from public;
-grant execute on function public.dept_majors_in(text[], text[]) to anon, authenticated;
-
+-- 修正：managed_by / domains 是 jsonb（已执行过 dept_perms_prepare.sql 的人再执行本文件一次；可重复执行）
 -- jsonb 数组 → text[]（teachers.managed_by / domains 在库里是 jsonb 数组）
 create or replace function public.jsonb_text_arr(j jsonb)
 returns text[]
@@ -101,7 +22,6 @@ $$;
 revoke all on function public.dept_teacher_in_range(jsonb, jsonb, text[]) from public;
 grant execute on function public.dept_teacher_in_range(jsonb, jsonb, text[]) to anon, authenticated;
 
--- ── 3. 防提权触发器 ────────────────────────────────────────────
 create or replace function public.teachers_guard_manage_cols()
 returns trigger
 language plpgsql
@@ -225,23 +145,3 @@ drop trigger if exists teachers_guard_manage_cols on public.teachers;
 create trigger teachers_guard_manage_cols
   before insert or update on public.teachers
   for each row execute function public.teachers_guard_manage_cols();
-
--- ── 4. 检查（只读）：函数都在、字段都在 ─────────────────────────
-select (select count(*) from pg_proc where proname in ('dept_my_domains','can_manage','can_manage_major','dept_majors_in','dept_teacher_in_range')) as 函数数_应为5,
-       (select count(*) from information_schema.columns where table_schema='public'
-          and ((table_name='teachers' and column_name='dept_perms')
-            or (table_name in ('price_vip_rates','price_ta_options') and column_name='domain'))) as 字段数_应为3;
-
--- ============================================================
--- 回滚（需要时整段执行；先执行 dept_perms_lock.sql 的回滚，再执行这里）
--- ============================================================
--- 触发器函数还原成 seed/teacher_roles_prepare.sql 里的版本（不含 dept_perms / 部门负责人那一段）：重新执行该文件第 3 节即可。
--- drop function if exists public.dept_teacher_in_range(jsonb, jsonb, text[]);
--- drop function if exists public.jsonb_text_arr(jsonb);
--- drop function if exists public.dept_majors_in(text[], text[]);
--- drop function if exists public.can_manage_major(text, text);
--- drop function if exists public.can_manage(text, text);
--- drop function if exists public.dept_my_domains(text);
--- alter table public.price_vip_rates  drop column if exists domain;
--- alter table public.price_ta_options drop column if exists domain;
--- alter table public.teachers drop column if exists dept_perms;
