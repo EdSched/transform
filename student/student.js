@@ -398,8 +398,9 @@ function buildForm() {
       <span id="basicCardArrow" style="font-size:12px;color:var(--text-3);transition:transform .2s">▾</span>
     </div>
     <div id="basicCardBody">
-    <div class="form-group"><label class="form-label">姓名 <span class="required">*</span></label><input type="text" id="name" placeholder="请输入中文真实姓名">
+    <div class="form-group"><label class="form-label">姓名 <span class="required">*</span></label><input type="text" id="name" placeholder="请输入中文真实姓名"${bkMode === 'new' ? ' onblur="bkCheckNameBlur()"' : ''}>
     <div style="font-size:10px;color:var(--text-muted);margin-top:3px">⚠ 请填写中文真实姓名，使用昵称或日文名将不予预约</div></div>
+    <div id="nameGate"></div>
     <div class="form-group"><label class="form-label">出愿期间 <span class="required">*</span></label>
       <div class="radio-group">
         <div class="radio-option"><input type="radio" name="examPeriod" id="ep1" value="夏季出愿" onchange="updateTypeOptions()"><label for="ep1">夏季出愿</label></div>
@@ -570,7 +571,7 @@ function buildForm() {
       <input type="file" id="studentFileUpload" accept=".doc,.docx,.pdf,image/*">
     </div>
   </div>
-  <button class="btn btn-primary" onclick="submitBooking()">提交预约申请 →</button>
+  <button class="btn btn-primary" id="submitBtn" onclick="submitBooking()">提交预约申请 →</button>
   ${bkMode === 'new' ? `<div style="text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid var(--border-light)">
     <a onclick="renderBookingLogin()" style="font-size:11px;color:var(--text-muted);text-decoration:underline;cursor:pointer">已有查询码？请登录</a>
   </div>` : ''}
@@ -807,7 +808,85 @@ function toggleDateSlots(date) {
   renderSlots();
 }
 
+// ── 新同学模式：姓名已有档案 → 必须用查询码登录 ──
+// 数据库函数 booking_name_check（seed/booking_guard.sql）：匿名也能调用，只返回「有没有档案 / 有没有未完成预约」
+let bkConflictName = '';   // 点了「我不是这位同学」的姓名（改了姓名就失效）
+async function bkNameCheck(name) {
+  try {
+    const r = await sb('/rest/v1/rpc/booking_name_check', 'POST', { p_name: name });
+    return (Array.isArray(r) ? r[0] : r) || null;
+  } catch (e) { return null; }
+}
+function bkRenderNameGate(name) {
+  const el = document.getElementById('nameGate');
+  if (!el) return;
+  const inp = 'width:100%;font-size:13px;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);text-transform:uppercase';
+  el.innerHTML = `<div style="background:var(--warning-light);border:1px solid var(--warning);border-radius:3px;padding:12px 14px;margin-bottom:12px">
+    <div style="font-size:12px;color:var(--warning);line-height:1.7;margin-bottom:8px">系统里已经有「${bkEsc(name)}」同学的档案，请用查询码登录后预约</div>
+    <input id="bkg_code" placeholder="查询码" style="${inp}" onkeydown="if(event.key==='Enter')bkGateLogin()">
+    <div id="bkg_err" style="font-size:11px;color:var(--danger);min-height:16px;margin:6px 0"></div>
+    <button id="bkg_btn" class="btn btn-primary" style="width:100%" onclick="bkGateLogin()">登录并继续预约 →</button>
+    <div style="text-align:center;margin-top:8px"><a onclick="bkNotThisStudent()" style="font-size:11px;color:var(--text-muted);text-decoration:underline;cursor:pointer">我不是这位同学（同名的新同学）</a></div>
+  </div>`;
+  if (el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+async function bkCheckNameBlur() {
+  if (bkMode !== 'new') return;
+  const el = document.getElementById('name');
+  const name = el ? el.value.trim() : '';
+  const gate = document.getElementById('nameGate');
+  if (!name || name === bkConflictName) { if (gate) gate.innerHTML = ''; return; }
+  const r = await bkNameCheck(name);
+  if (!el || el.value.trim() !== name || bkMode !== 'new') return;   // 检查期间姓名又改了
+  if (r && r.has_profile) bkRenderNameGate(name); else if (gate) gate.innerHTML = '';
+}
+function bkNotThisStudent() {
+  bkConflictName = document.getElementById('name').value.trim();
+  const gate = document.getElementById('nameGate');
+  if (gate) gate.innerHTML = '';
+}
+async function bkGateLogin() {
+  const name = document.getElementById('name').value.trim();
+  const code = (document.getElementById('bkg_code').value || '').trim().toUpperCase();
+  const err = document.getElementById('bkg_err'), btn = document.getElementById('bkg_btn');
+  if (!code) { err.style.color = 'var(--danger)'; err.textContent = '请输入查询码'; return; }
+  if (btn) { btn.disabled = true; btn.style.opacity = '.6'; }
+  const r = await studentLogin(name, code, t => { err.style.color = 'var(--text-muted)'; err.textContent = t; });
+  if (!r.ok) {
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+    err.style.color = 'var(--danger)';
+    err.textContent = r.reason === 'not_found' ? '查询码不对，请确认后重试（查询码由老师/管理员提供）' : '网络连接不稳定，请稍后再点一次「登录」';
+    return;
+  }
+  studentLoginSave({ id: r.student.id, name, code, major });
+  saveStudentInfo();   // 已填的内容存起来，重建表单时自动带回
+  bkStudent = r.student;
+  bkMode = 'member';
+  bkConflictName = '';
+  document.getElementById('mainWrap').innerHTML = '<div class="loading">加载中…</div>';
+  await loadBookingPage();
+  window.scrollTo({ top: 0 });
+}
+
+// 防重复点击：提交过程中按钮禁用，成功后保持禁用
+let bkSubmitting = false;
+function bkSetSubmitBtn(busy, done) {
+  const b = document.getElementById('submitBtn');
+  if (!b) return;
+  b.disabled = !!(busy || done);
+  b.style.opacity = (busy || done) ? '.6' : '';
+  b.textContent = busy ? '提交中…' : done ? '已提交' : '提交预约申请 →';
+}
 async function submitBooking() {
+  if (bkSubmitting) return;
+  bkSubmitting = true;
+  bkSetSubmitBtn(true);
+  let ok = false;
+  try { ok = await submitBookingInner(); }
+  finally { bkSubmitting = false; bkSetSubmitBtn(false, ok); }
+}
+
+async function submitBookingInner() {
   const isMember = bkMode === 'member' && bkStudent;
   // 已登录学生：姓名以档案为准；新同学：手填
   const name = isMember ? (bkStudent.name || '') : document.getElementById('name').value.trim();
@@ -830,21 +909,30 @@ async function submitBooking() {
   if (!selectedSlotId) { alert('请选择预约时间'); return; }
 
   // 检查是否有未完成的预约（已完成 completed 的不拦截）
-  // 已登录：按学生 id 查（旧记录还没补 student_id，同时按档案姓名兜底）；新同学：按手填姓名查
+  // 已登录：按学生 id 查（旧记录还没补 student_id，同时按档案姓名兜底）；新同学：bookings 已上锁，匿名读不到，改用数据库函数
   let activeBooking = null;
-  try {
-    const who = isMember
-      ? `or=(student_id.eq.${encodeURIComponent(bkStudent.id)},name.eq.${encodeURIComponent(name)})`
-      : `name=eq.${encodeURIComponent(name)}`;
-    const act = await sb(`/rest/v1/bookings?${who}&status=in.("pending","confirmed")&select=slot_date,slot_time_range,status&limit=1`);
-    activeBooking = (act && act.length) ? act[0] : null;
-  } catch (e) {
-    activeBooking = cachedBookings.find(b =>
-      b.name === name && (b.status === 'pending' || b.status === 'confirmed')
-    ) || null;
+  let nameConflict = false;
+  if (isMember) {
+    try {
+      const act = await sb(`/rest/v1/bookings?or=(student_id.eq.${encodeURIComponent(bkStudent.id)},name.eq.${encodeURIComponent(name)})&status=in.("pending","confirmed")&select=slot_date,slot_time_range,status&limit=1`);
+      activeBooking = (act && act.length) ? act[0] : null;
+    } catch (e) {
+      activeBooking = cachedBookings.find(b =>
+        b.name === name && (b.status === 'pending' || b.status === 'confirmed')
+      ) || null;
+    }
+  } else {
+    const chk = await bkNameCheck(name);
+    if (!chk) { alert('网络连接不稳定，暂时无法核对预约信息，请稍后再点一次提交'); return; }
+    if (chk.has_profile) {
+      if (bkConflictName !== name) { bkRenderNameGate(name); return; }   // 有档案：必须登录（或明确声明同名）
+      nameConflict = true;
+    }
+    if (chk.has_active) activeBooking = { slot_date: chk.active_date, slot_time_range: chk.active_time, status: '' };
   }
   if (activeBooking) {
-    alert(`您好 ${name} 同学，您有一个面谈尚未完成（${activeBooking.slot_date} ${activeBooking.slot_time_range || ''}，状态：${activeBooking.status === 'pending' ? '待确认' : '已确认'}）。\n\n请在本次面谈完成后再提交新的预约申请。`);
+    const stText = activeBooking.status === 'confirmed' ? '已确认' : activeBooking.status === 'pending' ? '待确认' : '';
+    alert(`您好 ${name} 同学，您有一个面谈尚未完成（${activeBooking.slot_date} ${activeBooking.slot_time_range || ''}${stText ? '，状态：' + stText : ''}）。\n\n请在本次面谈完成后再提交新的预约申请。`);
     return;
   }
 
@@ -895,6 +983,7 @@ async function submitBooking() {
   };
   // 已登录学生写入 student_id；新同学不带该字段（留空，老师确认时再认领/建档）
   if (isMember) booking.student_id = bkStudent.id;
+  if (nameConflict) booking.name_conflict = true;   // 与在籍学生同名的新同学，老师/管理员列表里会提醒
   try {
     await bkInsertBooking(booking);
     cachedBookings.push(booking);
@@ -930,7 +1019,12 @@ async function submitBooking() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     if (bkIsEmbed && window.parent !== window) { try { window.parent.postMessage({ type: 'bk-embed-top' }, '*'); } catch (e) {} }
     renderSlots();
-  } catch(e) { alert('提交失败：' + e.message); }
+    return true;
+  } catch(e) {
+    // 数据库唯一索引（同一时间槽 + 同一姓名）拦下的重复提交
+    if (/23505|duplicate key|bookings_slot_name_active_uq/i.test(e.message || '')) alert('这个时间你已经预约过了');
+    else alert('提交失败：' + e.message);
+  }
 }
 
 async function loadSchoolPlanBanner() {

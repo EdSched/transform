@@ -61,6 +61,7 @@ let clState = null; // { booking, ids, students, resolve, mode, created }
 // opts.students：当前操作人能看到的学生 [{id,name,major,...}]
 // opts.bookingIds：一起挂靠的预约 id（默认只有这一条）
 // opts.searchAll：true 时「已有学生」不按专业限制搜索范围（管理端合并工具用）
+// opts.linkOnly：true 时只能「关联到已有学生」，不显示建档（预约卡片上的「关联到学生」按钮用）
 // opts.title：标题（默认「这位是新学生吗？」）
 // 返回 Promise：{ student_id, name, major, created, code } 或 null（取消）
 function openBookingClaim(booking, opts) {
@@ -68,9 +69,10 @@ function openBookingClaim(booking, opts) {
   return new Promise(resolve => {
     document.getElementById('clOverlay')?.remove();
     clState = {
-      booking, resolve, mode: '', created: null,
+      booking, resolve, created: null,
       ids: (opts.bookingIds && opts.bookingIds.length) ? opts.bookingIds : [booking.id],
       students: opts.students || [],
+      linkOnly: !!opts.linkOnly, mode: opts.linkOnly ? 'existing' : '',
       searchMajors: opts.searchAll ? null : clSearchMajors(booking.major),
     };
     const ov = document.createElement('div');
@@ -103,11 +105,11 @@ function clRender(title) {
       <div style="font-size:15px;font-weight:600">${clEsc(st.title || '这位是新学生吗？')}</div>
       <button onclick="clClose(null)" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-3,#9a9590)">×</button>
     </div>
-    <div style="font-size:11px;color:var(--text-3,#9a9590);margin-bottom:12px">预约姓名「${clEsc(b.name)}」· ${clEsc(b.slot_date || '')} ${clEsc(b.slot_time_range || '')} · ${clEsc(clMajorLabel(b.major) || '未填专业')}${cnt}<br>这条预约还没有关联学生档案，确认前请先认领。</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+    <div style="font-size:11px;color:var(--text-3,#9a9590);margin-bottom:12px">预约姓名「${clEsc(b.name)}」· ${clEsc(b.slot_date || '')} ${clEsc(b.slot_time_range || '')} · ${clEsc(clMajorLabel(b.major) || '未填专业')}${cnt}<br>${st.linkOnly ? '按姓名搜索在籍学生，选中后这条预约会关联到他的账号。' : '这条预约还没有关联学生档案，确认前请先认领。'}</div>
+    ${st.linkOnly ? '' : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
       ${card('existing', '已有学生', '已有档案（比如名字写成了日语汉字），搜索并选中本人')}
       ${card('new', '新学生', '建立档案并生成查询码，当面交给学生')}
-    </div>
+    </div>`}
     <div id="clPanel">${st.mode === 'existing' ? clExistingHtml() : st.mode === 'new' ? clNewHtml() : ''}</div>
     <div id="clMsg" style="font-size:11px;color:var(--danger,#b03030);min-height:14px;margin-top:6px"></div>`;
   if (st.mode === 'existing') clSearch();

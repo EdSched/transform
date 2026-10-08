@@ -392,7 +392,7 @@ function renderBookingCard(b){
   return `<div class="booking-card status-${b.status}">
     <div class="booking-header">
       <div>
-        <div class="booking-name">${b.name} <span style="font-size:11px;color:var(--text-3);font-weight:400">${displayMajor}</span>${(!b.student_id&&b.type!=='vip')?'<span style="font-size:10px;color:var(--warn);border:1px solid var(--warn);border-radius:2px;padding:0 5px;margin-left:6px;font-weight:400">未关联档案</span>':''}</div>
+        <div class="booking-name">${b.name} <span style="font-size:11px;color:var(--text-3);font-weight:400">${displayMajor}</span>${(!b.student_id&&b.type!=='vip')?`<span style="font-size:10px;color:var(--warn);border:1px solid var(--warn);border-radius:2px;padding:0 5px;margin-left:6px;font-weight:400">未关联档案</span><button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="bkLinkStudent('${b.id}')">关联到学生</button>`:''}${b.name_conflict?'<span style="font-size:10px;color:var(--danger);border:1px solid var(--danger);border-radius:2px;padding:0 5px;margin-left:6px;font-weight:400">⚠ 与在籍学生同名，请确认</span>':''}</div>
         <div class="booking-meta">${b.slot_date} ${b.slot_time_range||''} · ${b.duration}min · ${urgLabel(b.urgency)}</div>
         ${teacherName
           ? `<div style="font-size:11px;color:var(--text-2);margin-top:2px">👤 ${teacherName} <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="openReassignTeacher('${b.id}','${b.slot_id}')">重新分配</button></div>`
@@ -463,6 +463,15 @@ function bkApplyClaim(ids,r){
   (cachedBookings||[]).forEach(x=>{ if(ids.includes(x.id)){ x.student_id=r.student_id; x.name=r.name; } });
 }
 function bkClaimStudents(){ return (cachedStudents||[]).filter(s=>typeof studentInCurrentView!=='function'||studentInCurrentView(s)); }
+// 预约卡片上的「关联到学生」：只搜索、选中已有学生，写入 student_id（不建档）
+async function bkLinkStudent(id){
+  const _b=cachedBookings.find(x=>x.id===id);
+  if(!_b) return;
+  const r=await openBookingClaim(_b,{students:bkClaimStudents(),searchAll:true,linkOnly:true,title:'关联到学生'});
+  if(!r) return;
+  bkApplyClaim([id],r);
+  renderBookingPage(document.getElementById('mainContent'));
+}
 async function confirmBooking(id){
   // 没有绑定学生的预约：确认前先认领（挂到已有学生，或建档发查询码）
   const _b=cachedBookings.find(x=>x.id===id);
