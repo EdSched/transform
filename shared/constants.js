@@ -1,3 +1,6 @@
+// 本地日期 → 'YYYY-MM-DD'（不经过 UTC）
+function localDateStr(d){ d = d || new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+
 // ── 专业常量 ──
 // MAJORS 初始包含5个核心专业（写死，保证数据库未加载完成前页面也能正常显示）
 // 数据库 majors 表中的内容会在 loadMajorsFromDB() 后合并进来，不会覆盖/删除这5个核心专业
