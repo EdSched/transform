@@ -630,7 +630,7 @@ async function exportAllWorkRecordsExcel() {
   ws['!cols'] = [{wch:10},{wch:20},{wch:20},{wch:8},{wch:10},{wch:14},{wch:40}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '工作记录');
-  const today = new Date().toISOString().slice(0,10);
+  const today = localDateStr();
   XLSX.writeFile(wb, `工作记录_全部老师_${today}.xlsx`);
 }
 

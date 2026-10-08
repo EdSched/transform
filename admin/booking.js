@@ -919,7 +919,7 @@ function renderSlotsPage(mc){
   document.getElementById('slotDate').valueAsDate=today;
   const y=today.getFullYear(),m=String(today.getMonth()+1).padStart(2,'0');
   document.getElementById('repeatStart').value=`${y}-${m}-01`;
-  document.getElementById('repeatEnd').value=today.toISOString().slice(0,10);
+  document.getElementById('repeatEnd').value=localDateStr(today);
 }
 function setSlotMode(m){
   slotMode=m;

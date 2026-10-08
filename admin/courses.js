@@ -281,7 +281,7 @@ let coursesArchiveFilter='active'; // 状态筛选：active 进行中 | ended �
 
 // 课程是否已结课：以该课最后一个课次日期判断，无课次则看 end_date；两者都无 → 视为进行中
 function courseIsEnded(c){
-  const today=new Date().toISOString().slice(0,10);
+  const today=localDateStr();
   const dates=cachedSessions.filter(s=>s.course_id===c.id&&s.session_date).map(s=>s.session_date).sort();
   const last=dates.length?dates[dates.length-1]:(c.end_date||'');
   if(!last) return false;
@@ -798,7 +798,7 @@ function renderCoursesPage(mc){
 
   // 学部美术视角下「期数」按月份：当前期 = 本月
   const artView=viewIsArt();
-  const curPeriod=artView?monthPeriodOf(new Date().toISOString().slice(0,10)):currentPeriodKey();
+  const curPeriod=artView?monthPeriodOf(localDateStr()):currentPeriodKey();
   // 领域感知筛选：
   //  - coursesMajorFilter==='none'：未选专业，不显示任何课（初始态，避免满屏）
   //  - 非总览视角：先限定在当前领域 CURRENT_DOMAIN 的课

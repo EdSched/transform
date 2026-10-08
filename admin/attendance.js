@@ -15,7 +15,9 @@ function attStatusColor(v){
   if(!v) return 'var(--danger)';
   return ATT_STATUS.find(x=>x.value===v)?.color||'var(--danger)';
 }
-function attPresent(v){return v==='offline'||v==='online'||v==='replay';}
+function attPresent(v){return v==='offline'||v==='online'||v==='replay'||v==='offline_late'||v==='online_late';
+}
+function attIsLate(v){return v==='offline_late'||v==='online_late';}
 
 // 课程成员（规则见 shared/constants.js 的 courseMemberIds）：纯 VIP 默认不算，指定名单课只算名单里的人
 function attActiveStudents(){ return (cachedStudents||[]).filter(s=>s.status==='active'||!s.status); }
@@ -166,7 +168,7 @@ function renderSessionList(filteredCourses){
       from=new Date(now.getFullYear(),now.getMonth(),1);
       to=new Date(now.getFullYear(),now.getMonth()+1,0);
     }
-    const f=d=>d.toISOString().slice(0,10);
+    const f=localDateStr;
     sessions=sessions.filter(s=>s.session_date>=f(from)&&s.session_date<=f(to));
   }
 
@@ -207,6 +209,7 @@ function renderSessionList(filteredCourses){
           ${sess.map(s=>{
             const recs=cachedSessionRecords.filter(r=>r.session_id===s.id);
             const present=recs.filter(r=>attPresent(r.attendance_status)).length;
+            const lateN=recs.filter(r=>attIsLate(r.attendance_status)).length;
             // 交作业人数：新作业系统的实际提交（学生提交即自动计入，无需手动记录）
             const hwSubmit=(attHwCount[s.id]||0)||recs.filter(r=>r.homework_submitted||r.homework_file_url).length;
             const rate=totalStudents?Math.round(present/totalStudents*100):0;
@@ -216,7 +219,7 @@ function renderSessionList(filteredCourses){
               <td style="font-size:11px;color:var(--text-3)">${s.session_number}</td>
               <td style="font-size:12px;font-weight:600;cursor:pointer" onclick="openSessionModal('${s.id}')"><span style="display:inline-block;background:var(--accent,#b8953a);color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;margin-right:6px">📝 记录</span>${f.short} <span style="font-size:10px;color:${f.dowColor}">${f.dow}</span></td>
               <td style="font-size:11px;color:var(--text-2)">${s.session_title||'—'}${hasHw?'<span style="font-size:9px;color:var(--accent);margin-left:5px">📝</span>':''}</td>
-              <td style="font-size:11px">${recs.length?`${present}/${totalStudents}`:'<span style="color:var(--text-3)">—</span>'}</td>
+              <td style="font-size:11px">${recs.length?`${present}/${totalStudents}${lateN?`<span style="font-size:9px;color:#b8860b">（迟到 ${lateN}）</span>`:''}`:'<span style="color:var(--text-3)">—</span>'}</td>
               <td style="font-size:11px;color:${!recs.length?'var(--text-3)':rate>=80?'var(--ok)':rate>=60?'var(--warn)':'var(--danger)'}">${recs.length?rate+'%':'—'}</td>
               <td style="font-size:11px">${hasHw?(hwSubmit?`<span style="color:var(--ok);font-weight:600">${hwSubmit}</span>/${totalStudents}`:`<span style="color:var(--text-3)">0/${totalStudents}</span>`):'<span style="color:var(--text-3)">—</span>'}</td>
               <td style="display:flex;gap:4px">
@@ -681,10 +684,11 @@ function openStudentAttModal(studentId){
   document.getElementById('studentAttSub').textContent=`${MAJORS[s.major]||s.major||''}`;
   const recs=cachedSessionRecords.filter(r=>r.student_id===studentId).sort((a,b)=>a.session_date?.localeCompare(b.session_date));
   const present=recs.filter(r=>attPresent(r.attendance_status)).length;
+  const lateN=recs.filter(r=>attIsLate(r.attendance_status)).length;
   const hwSubmit=recs.filter(r=>r.homework_submitted).length;
   document.getElementById('studentAttBody').innerHTML=`
     <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-      <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 14px;font-size:12px">出席 <strong style="color:var(--ok)">${present}/${recs.length}</strong></div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 14px;font-size:12px">出席 <strong style="color:var(--ok)">${present}/${recs.length}</strong>${lateN?` <span style="font-size:11px;color:#b8860b">迟到 ${lateN}</span>`:''}</div>
       <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 14px;font-size:12px">出席率 <strong style="color:${recs.length&&present/recs.length>=0.8?'var(--ok)':'var(--warn)'}">${recs.length?Math.round(present/recs.length*100)+'%':'—'}</strong></div>
       <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 14px;font-size:12px">作业提交 <strong>${hwSubmit}/${recs.length}</strong></div>
     </div>
@@ -737,6 +741,7 @@ function renderAttStatusView(sessions, courses){
               if(r){rec++; if(attPresent(r.attendance_status)) att++;}
               if(submitted) hw++;
               const mark=!r?'<span style="color:var(--text-3)">─</span>'
+                : attIsLate(r.attendance_status)?'<span style="color:#b8860b">迟</span>'
                 : attPresent(r.attendance_status)?'<span style="color:var(--ok)">✓</span>'
                 : '<span style="color:var(--danger)">✗</span>';
               return `<td style="text-align:center;font-size:12px" title="${r?attStatusLabel(r.attendance_status):'未记录'}${submitted?' · 已交作业':''}">${mark}${submitted?'<span style="font-size:8px;color:var(--accent)">📝</span>':''}</td>`;
