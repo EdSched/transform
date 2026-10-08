@@ -330,6 +330,15 @@ function thwRenderMain() {
 
 // ── 照片旋转：im.rotate = 0/90/180/270，存在 homework_submissions.answers 的图片对象里 ──
 const thwRotNorm = r => (((parseInt(r) || 0) % 360) + 360) % 360;
+// 电脑端（≥768px）：不放大时图片按预览区可用宽度铺满（最宽 900px），不限高度；手机端不变
+(function () {
+  if (document.getElementById('thw_fit_css')) return;
+  const st = document.createElement('style'); st.id = 'thw_fit_css';
+  st.textContent = '@media (min-width:768px){.thw-fit[data-rot="0"],.thw-fit[data-rot="180"]{display:block!important;width:100%!important;max-width:900px!important}'
+    + '.thw-fit[data-rot="0"] img,.thw-fit[data-rot="180"] img{width:100%!important;height:auto!important;max-width:100%!important;max-height:none!important}}';
+  document.head.appendChild(st);
+})();
+const thwDesktop = () => window.matchMedia && window.matchMedia('(min-width:768px)').matches;
 const THW_ZOOMS = [0.5, 0.75, 1, 1.5, 2, 3];
 const thwZ = {};   // 放大缩小只影响当前查看，不保存：{ [图片框 id]: { z, ... } }
 function thwRotImg(subId, ai, i, im, forPrint, imgStyle) {
@@ -341,14 +350,23 @@ function thwRotImg(subId, ai, i, im, forPrint, imgStyle) {
   if (forPrint) return `<div id="${id}" data-rot="${rot}" style="position:relative;${wrap}"><img src="${thwEsc(im.url)}" width="440" style="${imgStyle}${rot ? `;transform:rotate(${rot}deg)` : ''}"></div>`;
   const btn = (js, t) => `<span onclick="${js}" style="cursor:pointer;background:rgba(0,0,0,.55);color:#fff;border-radius:3px;padding:1px 7px;font-size:13px;line-height:1.5;user-select:none">${t}</span>`;
   const ctl = `<div style="position:absolute;top:10px;right:6px;z-index:2;display:flex;gap:4px;align-items:center">${btn(`thwRotate('${subId}',${ai},${i},-90)`, '↺')}${btn(`thwRotate('${subId}',${ai},${i},90)`, '↻')}${btn(`thwZoomStep('${id}',1)`, '＋')}<span id="${id}_pct" style="background:rgba(0,0,0,.55);color:#fff;border-radius:3px;padding:1px 5px;font-size:11px;line-height:1.7;min-width:34px;text-align:center;user-select:none">100%</span>${btn(`thwZoomStep('${id}',-1)`, '－')}${btn(`thwZoomSet('${id}',1)`, '1:1')}</div>`;
-  return `<div id="${id}" data-rot="${rot}" style="position:relative;${wrap}">${ctl}<div id="${id}_s" style="display:contents"><div id="${id}_g" style="display:contents"><img src="${thwEsc(im.url)}" onload="thwFitRot('${id}');thwBindPan('${id}')" onclick="thwImgClick(event,'${subId}',${ai},${i})" style="${imgStyle}${rot ? `;transform:rotate(${rot}deg)` : ''};cursor:zoom-in"></div></div></div>`;
+  return `<div id="${id}" class="thw-fit" data-rot="${rot}" style="position:relative;${wrap}">${ctl}<div id="${id}_s" style="display:contents"><div id="${id}_g" style="display:contents"><img src="${thwEsc(im.url)}" onload="thwFitRot('${id}');thwBindPan('${id}')" onclick="thwImgClick(event,'${subId}',${ai},${i})" style="${imgStyle}${rot ? `;transform:rotate(${rot}deg)` : ''};cursor:zoom-in"></div></div></div>`;
 }
 // 横向时外框高度 = 图片显示宽度，避免和下面的内容重叠
 function thwFitRot(id) {
   const w = document.getElementById(id); if (!w) return;
   if (thwZ[id] && thwZ[id].z !== 1) return;
-  const img = w.querySelector('img'), rot = parseInt(w.dataset.rot) || 0;
-  w.style.height = (rot === 90 || rot === 270) ? (img.offsetWidth + 'px') : '';
+  const img = w.querySelector('img'), rot = parseInt(w.dataset.rot) || 0, side = rot === 90 || rot === 270;
+  // 电脑端横向：旋转后的可见宽度 = 可用宽度（图片排版高度取该宽度，外框高度 = 图片排版宽度）
+  if (side && thwDesktop()) {
+    const aw = Math.min(900, w.parentElement.clientWidth || 900);
+    img.style.width = 'auto'; img.style.height = aw + 'px'; img.style.maxWidth = 'none'; img.style.maxHeight = 'none';
+    w.style.maxWidth = '900px';
+  } else {
+    img.style.width = img.style.height = ''; img.style.maxWidth = '100%'; img.style.maxHeight = '60vh'; img.style.width = 'auto';
+    w.style.maxWidth = '';
+  }
+  w.style.height = side ? (img.offsetWidth + 'px') : '';
 }
 // 不放大时的外框样式（和旋转逻辑一致）
 function thwWrapStyle(w, rot) {
@@ -369,7 +387,7 @@ function thwZoomApply(id) {
   const pct = document.getElementById(id + '_pct'); if (pct) pct.textContent = Math.round(st.z * 100) + '%';
   if (st.z === 1) {
     if (!st.on) return;
-    st.on = false;
+    st.on = false; w.classList.add('thw-fit');
     sc.style.cssText = 'display:contents'; stg.style.cssText = 'display:contents';
     img.setAttribute('style', st.imgCss);
     img.style.transform = rot ? `rotate(${rot}deg)` : '';
@@ -379,7 +397,8 @@ function thwZoomApply(id) {
   if (!st.on) {
     st.on = true;
     st.imgCss = img.getAttribute('style');
-    st.bw = img.offsetWidth; st.bh = img.offsetHeight;
+    st.bw = img.offsetWidth; st.bh = img.offsetHeight;   // 先量（铺满后的大小就是 100%），再去掉铺满样式
+    w.classList.remove('thw-fit');
     const vw = side ? st.bh : st.bw, vh = side ? st.bw : st.bh;
     st.fw = Math.min(vw, w.parentElement.clientWidth || vw); st.fh = vh;
   }
