@@ -503,7 +503,7 @@ function renderBookingCardCollapsed(b) {
     <div id="${rowId}" style="display:none;padding:0 14px 14px">
       <div style="font-size:11px;margin-bottom:8px">
         <span style="cursor:pointer;color:var(--accent);text-decoration:underline" onclick="showStudentInfoTeacher('${b.name}','${b.student_id || ''}')">${b.name}</span>
-        <span style="color:var(--text-3);margin-left:6px">${MAJORS[tBkMajor(b)] || tBkMajor(b)}</span>${!b.student_id && b.type !== 'vip' ? '<span style="font-size:9px;color:var(--warn);border:1px solid var(--warn);border-radius:2px;padding:0 5px;margin-left:6px">未关联档案·确认时认领</span>' : ''}
+        <span style="color:var(--text-3);margin-left:6px">${MAJORS[tBkMajor(b)] || tBkMajor(b)}</span>${!b.student_id && b.type !== 'vip' ? `<span style="font-size:9px;color:var(--warn);border:1px solid var(--warn);border-radius:2px;padding:0 5px;margin-left:6px">未关联档案·确认时认领</span><button onclick="tLinkStudent('${b.id}')" style="font-size:10px;margin-left:6px;background:none;border:1px solid var(--border);border-radius:3px;padding:1px 7px;cursor:pointer;font-family:inherit;color:var(--accent)">关联到学生</button>` : ''}${b.name_conflict ? '<span style="font-size:9px;color:var(--danger);border:1px solid var(--danger);border-radius:2px;padding:0 5px;margin-left:6px">⚠ 与在籍学生同名，请确认</span>' : ''}
       </div>
       ${renderBookingCardBody(b)}
     </div>
@@ -819,6 +819,19 @@ async function showStudentInfoTeacher(name, studentId) {
   }
 }
 
+
+// 预约卡片上的「关联到学生」：只在自己范围内的学生里搜索选中，写入 student_id（不建档）
+async function tLinkStudent(id) {
+  const _bk = cachedTeacherBookings.find(x => x.id === id);
+  if (!_bk) return;
+  let stus = [];
+  try { stus = await tClaimStudents(); } catch (e) { alert('读取学生列表失败：' + e.message); return; }
+  const r = await openBookingClaim(_bk, { students: stus, searchAll: true, linkOnly: true, title: '关联到学生' });
+  if (!r) return;
+  _bk.student_id = r.student_id; _bk.name = r.name;
+  tStuById[r.student_id] = { id: r.student_id, name: r.name, major: r.major };
+  renderTab();
+}
 
 async function confirmBookingTeacher(id) {
   const d = document.getElementById('actual_date_' + id)?.value || '';
