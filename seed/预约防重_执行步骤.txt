@@ -12,7 +12,7 @@
 应该看到：一个表格，每行一条预约 + 对应的学生。没有行也正常（说明没有可补的）。
 
 ----------------------------------------------------------
-select b.id, b.name, b.slot_date, b.slot_time_range, b.status, s.id as student_id, s.major
+select b.id, b.name, b.slot_date, b.slot_time_range, b.status, b.major, s.id as student_id
 from public.bookings b
 join (
   select btrim(name) as name, min(id) as id, min(coalesce(status,'active')) as status
