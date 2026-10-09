@@ -411,6 +411,9 @@ function openAdminVipReschedule(bookingId) {
       </div>
       <div class="form-group"><label class="form-label">上课方式与校区</label>
         <select id="avr_loc" onchange="bkAvrLoadRooms('${bookingId}')">${BK_LOC_OPTS.map(([k,l])=>`<option value="${k}"${(b.location||'online')===k?' selected':''}>${l}</option>`).join('')}</select></div>
+      <div class="form-group" id="avr_meet_wrap" style="display:none"><label class="form-label">会议链接（线上课，建议填写；不填则由老师在老师端补）</label>
+        <input id="avr_meeting" value="${bkSelfEsc(b.vip_meeting_url || '')}" placeholder="https://meeting.tencent.com/…">
+        <div id="avr_meet_tip" style="font-size:10px;color:var(--text-3);margin-top:4px"></div></div>
       <div class="form-group" id="avr_room_wrap" style="display:none"><label class="form-label">教室（已保留教室的预约，换校区 / 时间后需重新选，会同步排课系统）</label>
         <div id="avr_room_box"></div></div>
       <div class="form-group"><label class="form-label">调整原因（必填）</label>
@@ -442,6 +445,9 @@ async function bkAvrLoadRooms(id){
   const wrap = document.getElementById('avr_room_wrap'), box = document.getElementById('avr_room_box'); if (!wrap || !box) return;
   const loc = document.getElementById('avr_loc').value;
   const holds = !!b.sched_booking_id && b.admin_review !== 'room_wait';
+  const online = loc === 'online' || loc.startsWith('both');
+  document.getElementById('avr_meet_wrap').style.display = online ? '' : 'none';
+  document.getElementById('avr_meet_tip').textContent = (online && holds && !bkAvrOffline(loc)) ? '改成线上后，原来保留的教室会自动释放' : '';
   wrap.style.display = (holds && bkAvrOffline(loc)) ? '' : 'none';
   if (wrap.style.display === 'none') return;
   const date = document.getElementById('avr_date').value, st = document.getElementById('avr_start').value, en = document.getElementById('avr_end').value;
@@ -482,6 +488,7 @@ async function saveAdminVipReschedule(bookingId) {
   const btn = document.querySelector('#adminVipRescheduleModal .btn-primary'); if (btn) btn.disabled = true;
   try {
     const patch = { slot_date: date, slot_time_range: timeRange, location: loc, reschedule_reason: reason, reschedule_by: 'admin' };
+    patch.vip_meeting_url = (loc === 'online' || loc.startsWith('both')) ? ((document.getElementById('avr_meeting') || {}).value || '').trim() : '';
     // 教室已满待调整：老师之前占的旧时间教室一并释放（通过时按新时间重新占）
     if (b.admin_review === 'room_wait' && b.sched_booking_id) {
       try { await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`, 'DELETE'); }
