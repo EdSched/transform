@@ -394,7 +394,9 @@ function scopeFromKey(kk){
 // 组合范围的链接（非 admin）：老师管理里的领域 / 专业只能选范围内的；其他情况返回 null（不限制）
 function teacherMultiDoms(){
   const keyUser=(typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin);
-  return (keyUser && (CURRENT_DOMAIN==='multi' || deptTeachersOn())) ? scopeDomainList() : null;
+  if(!keyUser) return null;
+  if(deptTeachersOn()) return deptDomains('teachers');   // 有「本范围老师管理」：领域下拉只列他自己的领域（专业另列）
+  return CURRENT_DOMAIN==='multi' ? scopeDomainList() : null;
 }
 function keyScopeText(kk){
   const sc=scopeFromKey(kk);
@@ -447,7 +449,30 @@ function deptDomains(perm){
   return ((ACCESS_KEY&&ACCESS_KEY.domains)||[]).slice();
 }
 function deptCan(perm,dom){ return !!dom && deptDomains(perm).includes(dom); }
-function deptTeachersOn(){ return !isHubAdminUser() && deptDomains('teachers').length>0; }
+// 「本范围老师管理」的范围 = 管理范围里的完整领域 + 单独专业（只管专业的负责人也行）
+function deptTeacherMajors(){
+  if(isHubAdminUser()||!deptPermList().includes('teachers')) return [];
+  return ((ACCESS_KEY&&ACCESS_KEY.majors)||[]).slice();
+}
+function deptTeachersOn(){ return !isHubAdminUser() && (deptDomains('teachers').length>0 || deptTeacherMajors().length>0); }
+// 管理模式（老师身份进管理端）下没有「本范围老师管理」权限：老师管理页只能看
+function deptTeachersReadOnly(){ return !!(ACCESS_KEY&&ACCESS_KEY._asTeacher&&!ACCESS_KEY.invalid&&!ACCESS_KEY.is_admin&&!deptPermList().includes('teachers')); }
+// 新建 / 保存老师：只因为专业才在范围内的专业，自动把它所属的领域补进负责领域 / 隶属领域（没有所属领域的专业不写；
+// 这位老师在该领域下的专业必须全部在范围内，否则不补，交给数据库去拒绝）
+function deptAutoDomains(majors,domains,managed_by){
+  if(!deptTeachersOn()) return {domains,managed_by};
+  const mine=deptDomains('teachers'), add=new Set();
+  majors.forEach(m=>{ const d=MAJOR_DOMAIN[m]; if(d&&!mine.includes(d)&&scopeMajor(m)) add.add(d); });
+  add.forEach(d=>{ if(majors.filter(m=>MAJOR_DOMAIN[m]===d).every(m=>scopeMajor(m))){ domains=[...new Set([...domains,d])]; managed_by=[...new Set([...managed_by,d])]; } });
+  return {domains,managed_by};
+}
+// 数据库拒绝时的中文提示（触发器的中文原样显示；42501 = 行级安全拒绝）
+function teacherSaveErrMsg(e){
+  const m=String((e&&e.message)||e||'');
+  if(/42501|row-level security|permission denied/i.test(m)) return '没有权限新增 / 修改这位老师：请确认老师的领域或专业在你的管理范围内';
+  const zh=m.match(/[^"{}:]*[\u4e00-\u9fa5][^"{}]*/);
+  return zh?zh[0].trim():'保存失败，请稍后重试';
+}
 // 「领域锁定」表单（只有一个领域的链接）：有「本范围老师管理」的负责人用完整表单（要选职位 / 角色），不走锁定版
 function deptIsDomLock(){
   return !!(typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin && !!viewLockDomain() && !deptTeachersOn());
@@ -480,7 +505,7 @@ function tfMgrRender(){
     <div style="font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 12px;line-height:1.7">${isMgr?`负责人，管理范围：<b>${escTM(scopeSummary(d))}</b>`:'<b>不是负责人</b>（没有设置管理范围）'}</div>
     ${_tfPos==='lead'?`<div style="margin-top:12px"><div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">部门管理权限</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${DEPT_PERM_DEFS.map(([code,label])=>`<div class="filter-chip${d.dept.includes(code)?' active':''}" onclick="mgrDeptToggle('${code}')" style="padding:3px 10px;font-size:11px">${escTM(label)}</div>`).join('')}</div>
-      <div style="font-size:10px;color:var(--text-3);margin-top:6px;line-height:1.7">选了之后，这位负责人进管理模式时，左侧导航会直接多出对应的功能，只能管理自己管理范围里的领域：价目编辑 = 价目；专业增删 = 专业；宣传内容 = 宣传介绍；本范围老师管理 = 新建 / 编辑范围内的老师（不能设负责人 / 对接 / 总务、不能给部门管理权限）。</div></div>`:''}`;
+      <div style="font-size:10px;color:var(--text-3);margin-top:6px;line-height:1.7">选了之后，这位负责人进管理模式时，左侧导航会直接多出对应的功能，只能管理自己管理范围里的领域：价目编辑 = 价目；专业增删 = 专业；宣传内容 = 宣传介绍；本范围老师管理 = 新建 / 编辑管理范围（领域或专业）内的老师（不能设负责人 / 对接 / 总务、不能给部门管理权限）。</div></div>`:''}`;
   if(typeof renderPermScope==='function') renderPermScope();
   tsecRefresh();
 }
@@ -915,6 +940,7 @@ function renderTeachersPage(mc){
   hwaData=null;   // 作业分配的课程列表：每次进入老师管理重新读取
   const _isDom = deptIsDomLock();
   const _lockDom = _isDom ? viewLockDomain() : '';
+  const _ro = deptTeachersReadOnly();
   mc.innerHTML=`
   <div class="page-header">
     <div class="section-title">老师管理 <span class="badge-count">${cachedTeachers.length}</span></div>
@@ -923,10 +949,11 @@ function renderTeachersPage(mc){
       <button onclick="renderTeacherProfilesPage(teacherPageHost())" style="font-size:11px;padding:5px 16px;border:none;cursor:pointer;font-family:inherit;background:var(--surface);color:var(--text-2)">📇 讲师档案</button>
     </div>
   </div>
-  <div class="swipe-row" style="grid-template-columns:minmax(240px,1fr) minmax(0,1.6fr)">
+  ${_ro?'<div style="font-size:11px;color:var(--text-3);margin-bottom:10px">你可以查看本范围的老师。需要新增或修改老师，请联系管理员开通「本范围老师管理」</div>':''}
+  <div class="swipe-row" style="grid-template-columns:${_ro?'minmax(0,1fr)':'minmax(240px,1fr) minmax(0,1.6fr)'}">
     <!-- 添加/编辑老师 -->
     <style>.rd-def::after{content:'角色默认';font-size:8px;color:var(--accent);margin-left:4px;font-weight:400;white-space:nowrap}</style>
-    <div onclick="tsecRefreshSoon()" oninput="tsecRefreshSoon()" onchange="tsecRefreshSoon()" style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:16px;min-width:0">
+    <div onclick="tsecRefreshSoon()" oninput="tsecRefreshSoon()" onchange="tsecRefreshSoon()" style="${_ro?'display:none;':''}background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:16px;min-width:0">
       <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:14px;letter-spacing:.05em;text-transform:uppercase" id="teacherFormTitle">添加新老师</div>
       <div id="tf_task_hint" style="display:none;font-size:11px;line-height:1.7;background:#fff8e6;border:1px solid #e8d4a0;border-radius:3px;padding:6px 10px;margin-bottom:10px;color:var(--warn,#b8860b)"></div>
       ${tsecWrap('basic','基本信息',`
@@ -1079,7 +1106,7 @@ function renderTeachersPage(mc){
     <!-- 老师列表 -->
     <div id="teacherList"></div>
   </div>
-  <div class="swipe-hint">← 左右滑动切换：编辑表单 / 老师列表 →</div>`;
+  ${_ro?'':'<div class="swipe-hint">← 左右滑动切换：编辑表单 / 老师列表 →</div>'}`;
   renderTeacherList();
   if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
   hwaInit({});   // 作业批改分配区（新建老师：默认都不开）
@@ -1793,10 +1820,10 @@ function renderTeacherRows(){
                 <code style="font-size:10px;color:var(--text-2);background:var(--surface);padding:1px 6px;border-radius:2px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${link}</code>
                 <button onclick="event.stopPropagation();navigator.clipboard.writeText('${link}').then(()=>alert('已复制'))" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:1px 7px;cursor:pointer;font-family:inherit;white-space:nowrap">复制</button>
               </div>
-              <div style="display:flex;gap:4px">
+              ${deptTeachersReadOnly()?'':`<div style="display:flex;gap:4px">
                 <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openEditTeacher('${t.id}')">编辑</button>
                 <button class="btn-ghost" onclick="event.stopPropagation();deleteTeacher('${t.id}')">✕ 删除</button>
-              </div>
+              </div>`}
             </div>`:''}
           </div>`;
         }).join('')}
@@ -1850,8 +1877,10 @@ function _renderTeacherMajorChipsInner(){
   const selDomains = _isDom ? [_lockDom] : [...new Set([...document.querySelectorAll('#new_teacher_domains .filter-chip.active')].map(c=>c.dataset.value))];
   // 记住当前已选专业，重绘后恢复
   const prevSel=new Set([...box.querySelectorAll('.filter-chip.active')].map(c=>c.dataset.value));
-  if(!selDomains.length){ box.innerHTML='<div style="font-size:11px;color:var(--text-3)">请先选择领域，上方选定后这里展开对应专业</div>'; return; }
+  const extraMajors=deptTeachersOn()?VIEW_SCOPE.majors.filter(m=>MAJOR_DOMAIN[m]!==undefined||MAJORS[m]):[];   // 管理范围里的单独专业：不用先选领域，直接显示
+  if(!selDomains.length&&!extraMajors.length){ box.innerHTML='<div style="font-size:11px;color:var(--text-3)">请先选择领域，上方选定后这里展开对应专业</div>'; return; }
   let html='';
+  const shownKeys=new Set();
   selDomains.forEach(dom=>{
     const majorsInDom=teacherMultiDoms()?scopeMajorsIn(dom):allMajorKeys().filter(m=>MAJOR_DOMAIN[m]===dom);
     // 社会人文（shakai_group）是三专业合并的虚拟专业：成员在本领域时，额外给一个可分配的「社会人文」
@@ -1859,10 +1888,17 @@ function _renderTeacherMajorChipsInner(){
     const groupHere = (typeof SHAKAI_GROUP!=='undefined') && SHAKAI_GROUP.some(m=>MAJOR_DOMAIN[m]===dom) && (!teacherMultiDoms()||scopeHasDomain(dom));
     if(!majorsInDom.length && !groupHere) return;
     const chipKeys = (groupHere ? ['shakai_group'] : []).concat(majorsInDom);
+    chipKeys.forEach(k=>shownKeys.add(k));
     html+=`<div style="margin-bottom:8px"><div style="font-size:10px;color:var(--text-3);margin-bottom:4px">${dom}</div><div style="display:flex;flex-wrap:wrap;gap:6px">`;
     html+=chipFold(chipKeys.map(m=>({on:prevSel.has(m),html:`<div class="filter-chip${prevSel.has(m)?' active':''}" data-value="${m}" onclick="toggleChip(this)" style="padding:4px 10px">${majorLabel(m)}${m==='shakai_group'?'<span style="font-size:9px;color:var(--text-3);margin-left:3px">(合并)</span>':''}</div>`})));
     html+='</div></div>';
   });
+  const rest=extraMajors.filter(m=>!shownKeys.has(m));
+  if(rest.length){
+    html+=`<div style="margin-bottom:8px"><div style="font-size:10px;color:var(--text-3);margin-bottom:4px">管理范围里的专业</div><div style="display:flex;flex-wrap:wrap;gap:6px">`;
+    html+=chipFold(rest.map(m=>({on:prevSel.has(m),html:`<div class="filter-chip${prevSel.has(m)?' active':''}" data-value="${m}" onclick="toggleChip(this)" style="padding:4px 10px">${majorLabel(m)}</div>`})));
+    html+='</div></div>';
+  }
   box.innerHTML=html||'<div style="font-size:11px;color:var(--text-3)">所选领域下暂无专业</div>';
 }
 
@@ -1891,7 +1927,8 @@ async function addTeacher(){
   else {
     domains=[...document.querySelectorAll('#new_teacher_domains .filter-chip.active')].map(c=>c.dataset.value);
     managed_by=[...document.querySelectorAll('#new_teacher_managed .filter-chip.active')].map(c=>c.dataset.value);
-    if(teacherMultiDoms() && !domains.length && !managed_by.length){ alert('请选择领域（只能选这个链接范围内的领域）'); return; }
+    if(teacherMultiDoms() && !domains.length && !managed_by.length && !(deptTeachersOn()&&majors.length)){ alert(deptTeachersOn()?'请选择领域或专业（只能选你管理范围内的）':'请选择领域（只能选这个链接范围内的领域）'); return; }
+    ({domains,managed_by}=deptAutoDomains(majors,domains,managed_by));
   }
   // 同名老师已存在：领域端提示「叠加本领域」（同一账号/ID）；中枢端沿用原「已存在」拦截
   const _existing=cachedTeachers.find(t=>t.name===name);
@@ -1919,6 +1956,7 @@ async function addTeacher(){
     }
     alert('该老师已存在'); return;
   }
+  if(deptTeachersReadOnly()){ alert('你没有「本范围老师管理」权限，只能查看老师'); return; }
   const permissions=getPermissionsFromForm();
   const tags=parseTeacherTags();
   try{
@@ -1953,10 +1991,11 @@ async function addTeacher(){
     {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=false;}
     tfFormReset();
     renderTeacherList();
-  }catch(e){alert('添加失败：'+e.message)}
+  }catch(e){alert('添加失败：'+(deptTeachersReadOnly()||!isHubAdminUser()?teacherSaveErrMsg(e):e.message))}
 }
 
 function openEditTeacher(id){
+  if(deptTeachersReadOnly()){ alert('你没有「本范围老师管理」权限，只能查看老师'); return; }
   const t=cachedTeachers.find(x=>x.id===id);
   if(!t) return;
   document.getElementById('new_teacher_name').value=t.name;
@@ -2021,6 +2060,7 @@ function openEditTeacher(id){
 }
 
 async function saveEditTeacher(id){
+  if(deptTeachersReadOnly()){ alert('你没有「本范围老师管理」权限，只能查看老师'); return; }
   const _isDom=deptIsDomLock();
   const _lockDom=_isDom?viewLockDomain():'';
   const cur=cachedTeachers.find(t=>t.id===id)||{};
@@ -2045,10 +2085,11 @@ async function saveEditTeacher(id){
     majors=selMajors;
     const _md=teacherMultiDoms();
     if(_md){   // 组合范围的链接：表单里只有范围内的领域 / 专业，范围外已有的归属和专业原样保留，避免误删
-      if(!domains.length&&!managed_by.length){ alert('请选择领域（只能选这个链接范围内的领域）'); return; }
+      if(!domains.length&&!managed_by.length&&!(deptTeachersOn()&&selMajors.length)){ alert(deptTeachersOn()?'请选择领域或专业（只能选你管理范围内的）':'请选择领域（只能选这个链接范围内的领域）'); return; }
       domains=[...new Set([...(cur.domains||[]).filter(d=>!_md.includes(d)),...domains])];
       managed_by=[...new Set([...(cur.managed_by||[]).filter(d=>!_md.includes(d)),...managed_by])];
       majors=[...new Set([...(cur.majors||[]).filter(m=>!scopeMajor(m)),...selMajors])];
+      ({domains,managed_by}=deptAutoDomains(majors,domains,managed_by));
     }
     staff_type=document.querySelector('#new_teacher_stafftype .filter-chip.active')?.dataset.value||'';
     department=staff_type==='正社员'?(document.getElementById('new_teacher_department')?.value||''):'';
@@ -2063,10 +2104,11 @@ async function saveEditTeacher(id){
     if(idx>=0) Object.assign(cachedTeachers[idx],body);
     cancelEditTeacher();
     renderTeacherList();
-  }catch(e){alert('保存失败：'+e.message)}
+  }catch(e){alert('保存失败：'+(!isHubAdminUser()?teacherSaveErrMsg(e):e.message))}
 }
 
 async function deleteTeacher(id){
+  if(deptTeachersReadOnly()){ alert('你没有「本范围老师管理」权限，只能查看老师'); return; }
   if(!confirm('确定删除这位老师？'))return;
   try{
     await sb(`/rest/v1/teachers?id=eq.${id}`,'DELETE');
