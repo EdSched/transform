@@ -168,6 +168,7 @@ function renderHubCards(){
   let html=card("enterDomain('all')",'总览','全部领域 · admin');
   DOMAINS.forEach(d=>{ html+=card(`enterDomain('${d.label}')`, d.label, ''); });
   // 管控台入口（仅 admin 可见——领域钥匙用户不会进到中枢台）
+  html+=card("mgOpen()",'管理可视化','完成率 · 分母 · 名单');
   html+=card("openConsole()",'⚙ 管控台','老师 / 价目 / 专业等');
   grid.innerHTML=html;
 }
@@ -832,6 +833,8 @@ async function renderPage(){
       await renderMajorManager(mc);
     } else if(curPage==='tasks'){
       await tkRenderTeamPage(mc);
+    } else if(curPage==='mgmt'){
+      await renderMgmtPage(mc);
     } else if(curPage==='resource'){
       await renderResourcePage(mc);
     } else if(curPage==='courses'){
