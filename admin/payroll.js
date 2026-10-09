@@ -95,12 +95,38 @@ function bookingTimes(b) {
 }
 
 // ── 生成课程行 ──
+// ── 视角（领域 / 专业）判断：工作核算只算当前视角内的 ──
+// 专业 → 所属领域（分组代码取第一个成员）
+function payrollMajorDomain(m) {
+  if (!m) return '';
+  if (typeof MAJOR_GROUPS !== 'undefined' && MAJOR_GROUPS[m]) return MAJOR_DOMAIN[MAJOR_GROUPS[m][0]] || '';
+  return MAJOR_DOMAIN[m] || '';
+}
+// 大课所属领域：courses.domain，没有就按课程专业
+function payrollCourseDomain(c) {
+  if (!c) return '';
+  if (c.domain) return c.domain;
+  const ms = Array.isArray(c.major) ? c.major : (c.major ? [c.major] : []);
+  for (const m of ms) { const d = payrollMajorDomain(m); if (d) return d; }
+  return '';
+}
+// 提交 / 读取工作记录时按视角过滤用：总览不限；否则只要视角涉及的领域
+function payrollDomainQs() {
+  if (typeof scopeAll === 'function' && scopeAll()) return '';
+  const ds = scopeDomainList();
+  return '&domain=in.(' + encodeURIComponent(ds.map(d => '"' + d + '"').join(',')) + ')';
+}
+
 function buildCourseRows(sessions, teacherName, courses) {
   // courses 用于 time_range/actual_hours fallback（旧课次可能没有该字段）
   const courseMap = {};
   (courses || []).forEach(c => { courseMap[c.id] = c; });
   return sessions
     .filter(s => !s.is_cancelled && (s.teacher === teacherName || s.session_teacher === teacherName))
+    .filter(s => {
+      const c = courseMap[s.course_id] || {};
+      return scopeCourse({ domain: c.domain, major: c.major || s.major, class_ids: c.class_ids });   // 只算本领域 / 本专业的课
+    })
     .map(s => {
       const tr = s.time_range || courseMap[s.course_id]?.time_range || '';
       const actualHours = (s.actual_hours != null ? s.actual_hours : courseMap[s.course_id]?.actual_hours);
@@ -115,18 +141,22 @@ function buildCourseRows(sessions, teacherName, courses) {
         工作内容: payrollWorkType(s.course_type || courseMap[s.course_id]?.course_type),
         工作地点: payrollLocation(s.delivery || courseMap[s.course_id]?.delivery, s.campus || courseMap[s.course_id]?.campus),
         备注: `${s.course_name} 第${s.session_number}回`,
-        _date: s.session_date
+        _date: s.session_date,
+        _domain: payrollCourseDomain({ domain: courseMap[s.course_id]?.domain, major: courseMap[s.course_id]?.major || s.major })
       };
     });
 }
 
 // ── 生成面谈行 ──
-function buildBookingRows(bookings, slots, teacherName) {
+function buildBookingRows(bookings, slots, teacherName, students) {
   const slotMap = {};
   slots.forEach(s => { slotMap[s.id] = s; });
+  const stuMap = payrollStuMap(students);
   return bookings
     .filter(b => {
+      if (b.type === 'vip') return false;   // VIP 一对一走 buildVipRows
       if (b.status === 'cancelled' || b.status === 'pending' || !b.actual_time) return false;
+      if (!scopeMajor(payrollBookingMajor(b, stuMap))) return false;   // 只算本领域 / 本专业学生的面谈
       // 优先用该预约自己分配的老师；若从未单独分配过，则退回看时间槽默认老师
       const owner = b.assigned_teacher || slotMap[b.slot_id]?.teacher_name || '';
       return owner === teacherName;
@@ -145,9 +175,65 @@ function buildBookingRows(bookings, slots, teacherName) {
         工作内容: '教研工作',
         工作地点: payrollLocation(loc, ''),
         备注: `${b.name}的面谈预约`,
-        _date: (b.actual_time || b.slot_date || '').slice(0, 10)
+        _date: (b.actual_time || b.slot_date || '').slice(0, 10),
+        _domain: payrollMajorDomain(payrollBookingMajor(b, stuMap))
       };
     });
+}
+
+function payrollStuMap(students) {
+  const m = {};
+  (students || []).forEach(x => { m[x.id] = x; });
+  return m;
+}
+// 预约的真实专业：学生档案优先，没有 student_id 才用预约上的 major
+function payrollBookingMajor(b, stuMap) {
+  const st = b.student_id && stuMap ? stuMap[b.student_id] : null;
+  return (st && st.major) || b.major || '';
+}
+
+// ── 生成 VIP 一对一行：已完成（老师填了上课记录）的 VIP 预约，时长 = 本次耗时 ──
+function buildVipRows(bookings, teacherName, slots, students) {
+  const slotMap = {};
+  (slots || []).forEach(s => { slotMap[s.id] = s; });
+  const stuMap = payrollStuMap(students);
+  return (bookings || [])
+    .filter(b => {
+      if (b.type !== 'vip' || b.status !== 'completed') return false;
+      const owner = b.assigned_teacher || slotMap[b.slot_id]?.teacher_name || '';
+      if (owner !== teacherName) return false;
+      return scopeMajor(payrollBookingMajor(b, stuMap));
+    })
+    .map(b => {
+      const tr = parseTimeRange(b.slot_date, b.slot_time_range || '');
+      const used = parseFloat(b.vip_hours_used);
+      const hours = used > 0 ? Math.round(used * 100) / 100 : (tr.hours || 0);
+      return {
+        type: 'vip',
+        source_id: b.id,
+        姓名: teacherName,
+        开始时间: tr.start,
+        结束时间: tr.end,
+        时长: hours,
+        工作内容: 'VIP授课',
+        工作地点: payrollLocation(b.location || slotMap[b.slot_id]?.location || 'online', ''),
+        备注: `${b.name} · VIP${b.vip_content ? ' · ' + b.vip_content : ''}`,
+        _date: b.slot_date || '',
+        _domain: payrollMajorDomain(payrollBookingMajor(b, stuMap))
+      };
+    });
+}
+
+// 一次读齐生成工资核算要用的数据
+async function payrollLoadData(start, end) {
+  const [sessions, bookings, slots, courses, students] = await Promise.all([
+    sb(`/rest/v1/course_sessions?select=*&session_date=gte.${start}&session_date=lte.${end}&order=session_date.asc`),
+    sb(`/rest/v1/bookings?select=*&slot_date=gte.${start}&slot_date=lte.${end}&order=slot_date.asc`),
+    sb(`/rest/v1/slots?select=*&date=gte.${start}&date=lte.${end}`),
+    sb(`/rest/v1/courses?select=id,time_range,course_type,delivery,campus,actual_hours,domain,major,class_ids`),
+    sbAll(`/rest/v1/students?select=id,major,extra_majors,class_ids`)
+  ]);
+  return { sessions, bookings, slots, courses, students };
 }
 
 // ── Excel 导出 ──
@@ -231,16 +317,12 @@ async function runPayroll() {
   res.innerHTML = '<div style="font-size:12px;color:var(--text-3)">加载中…</div>';
 
   try {
-    const [sessions, bookings, slots, courses] = await Promise.all([
-      sb(`/rest/v1/course_sessions?select=*&session_date=gte.${start}&session_date=lte.${end}&order=session_date.asc`),
-      sb(`/rest/v1/bookings?select=*&slot_date=gte.${start}&slot_date=lte.${end}&order=slot_date.asc`),
-      sb(`/rest/v1/slots?select=*&date=gte.${start}&date=lte.${end}`),
-      sb(`/rest/v1/courses?select=id,time_range,course_type,delivery,campus,actual_hours`)
-    ]);
+    const { sessions, bookings, slots, courses, students } = await payrollLoadData(start, end);
 
     const courseRows = buildCourseRows(sessions, teacherName, courses);
-    const bookingRows = buildBookingRows(bookings, slots, teacherName);
-    payrollRows = [...courseRows, ...bookingRows].sort((a, b) => a._date.localeCompare(b._date));
+    const bookingRows = buildBookingRows(bookings, slots, teacherName, students);
+    const vipRows = buildVipRows(bookings, teacherName, slots, students);
+    payrollRows = [...courseRows, ...bookingRows, ...vipRows].sort((a, b) => a._date.localeCompare(b._date));
 
     if (!payrollRows.length) {
       res.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:12px 0">该时间段内无数据</div>';
@@ -250,6 +332,7 @@ async function runPayroll() {
     const totalHours = Math.round(payrollRows.reduce((s, r) => s + (r.时长 || 0), 0) * 100) / 100;
     const courseCount = courseRows.length;
     const bookingCount = bookingRows.length;
+    const vipCount = vipRows.length;
     const dateRange = `${start.slice(0, 7).replace('-', '年')}月`;
     const submitBar = document.getElementById('pr_submit_bar');
     if (submitBar) submitBar.style.display = 'block';
@@ -259,6 +342,7 @@ async function runPayroll() {
       <div style="font-size:11px;color:var(--text-3)">
         大课 <strong style="color:var(--text)">${courseCount}</strong> 节 ·
         面谈 <strong style="color:var(--text)">${bookingCount}</strong> 次 ·
+        VIP <strong style="color:var(--text)">${vipCount}</strong> 节 ·
         合计 <strong style="color:var(--text)">${totalHours}</strong> 小时
       </div>
       <button class="btn btn-outline btn-sm" onclick="exportPayrollExcel(payrollRows,'${teacherName}','${dateRange}')">↓ 导出 Excel</button>
@@ -274,12 +358,12 @@ async function runPayroll() {
         </thead>
         <tbody>
           ${payrollRows.map((r, i) => `
-          <tr style="border-bottom:1px solid var(--border-light);background:${r.type === 'booking' ? 'rgba(42,106,173,0.03)' : 'transparent'}">
+          <tr style="border-bottom:1px solid var(--border-light);background:${r.type !== 'course' ? 'rgba(42,106,173,0.03)' : 'transparent'}">
             <td style="padding:6px 8px;white-space:nowrap">${r.姓名}</td>
             <td style="padding:6px 8px;white-space:nowrap;color:var(--text-2)">${r.开始时间}</td>
             <td style="padding:6px 8px;white-space:nowrap;color:var(--text-2)">${r.结束时间}</td>
             <td style="padding:6px 8px;text-align:center;font-weight:600">${r.时长}</td>
-            <td style="padding:6px 8px"><span style="font-size:10px;background:${r.type === 'booking' ? '#e8f0fb' : 'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px">${r.工作内容}</span></td>
+            <td style="padding:6px 8px"><span style="font-size:10px;background:${r.type !== 'course' ? '#e8f0fb' : 'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px">${r.工作内容}</span></td>
             <td style="padding:6px 8px;color:var(--text-2)">${r.工作地点}</td>
             <td style="padding:6px 8px;color:var(--text-2)">${r.备注}</td>
           </tr>`).join('')}
@@ -312,18 +396,14 @@ async function runPayrollByMajor(majorKey) {
   res.innerHTML = '<div style="font-size:12px;color:var(--text-3)">加载中…</div>';
 
   try {
-    const [sessions, bookings, slots, courses] = await Promise.all([
-      sb(`/rest/v1/course_sessions?select=*&session_date=gte.${start}&session_date=lte.${end}&order=session_date.asc`),
-      sb(`/rest/v1/bookings?select=*&slot_date=gte.${start}&slot_date=lte.${end}&order=slot_date.asc`),
-      sb(`/rest/v1/slots?select=*&date=gte.${start}&date=lte.${end}`),
-      sb(`/rest/v1/courses?select=id,time_range,course_type,delivery,campus,actual_hours`)
-    ]);
+    const { sessions, bookings, slots, courses, students } = await payrollLoadData(start, end);
 
     payrollRows = [];
     teacherNames.forEach(teacherName => {
       const courseRows = buildCourseRows(sessions, teacherName, courses);
-      const bookingRows = buildBookingRows(bookings, slots, teacherName);
-      payrollRows.push(...courseRows, ...bookingRows);
+      const bookingRows = buildBookingRows(bookings, slots, teacherName, students);
+      const vipRows = buildVipRows(bookings, teacherName, slots, students);
+      payrollRows.push(...courseRows, ...bookingRows, ...vipRows);
     });
     payrollRows.sort((a, b) => a.姓名.localeCompare(b.姓名) || a._date.localeCompare(b._date));
 
@@ -334,6 +414,7 @@ async function runPayrollByMajor(majorKey) {
 
     const courseCount = payrollRows.filter(r => r.type === 'course').length;
     const bookingCount = payrollRows.filter(r => r.type === 'booking').length;
+    const vipCount = payrollRows.filter(r => r.type === 'vip').length;
     const totalHours = Math.round(payrollRows.reduce((s, r) => s + (r.时长 || 0), 0) * 100) / 100;
     const dateRange = `${start.slice(0, 7).replace('-', '年')}月`;
     const submitBar = document.getElementById('pr_submit_bar');
@@ -346,6 +427,7 @@ async function runPayrollByMajor(majorKey) {
         ${labelMap[majorKey]} · ${teacherNames.length} 位老师 ·
         大课 <strong style="color:var(--text)">${courseCount}</strong> 节 ·
         面谈 <strong style="color:var(--text)">${bookingCount}</strong> 次 ·
+        VIP <strong style="color:var(--text)">${vipCount}</strong> 节 ·
         合计 <strong style="color:var(--text)">${totalHours}</strong> 小时
       </div>
       <button class="btn btn-outline btn-sm" onclick="exportPayrollExcel(payrollRows,'${labelMap[majorKey]}','${dateRange}')">↓ 导出 Excel</button>
@@ -361,12 +443,12 @@ async function runPayrollByMajor(majorKey) {
         </thead>
         <tbody>
           ${payrollRows.map((r, i) => `
-          <tr style="border-bottom:1px solid var(--border-light);background:${r.type === 'booking' ? 'rgba(42,106,173,0.03)' : 'transparent'}">
+          <tr style="border-bottom:1px solid var(--border-light);background:${r.type !== 'course' ? 'rgba(42,106,173,0.03)' : 'transparent'}">
             <td style="padding:6px 8px;white-space:nowrap">${r.姓名}</td>
             <td style="padding:6px 8px;white-space:nowrap;color:var(--text-2)">${r.开始时间}</td>
             <td style="padding:6px 8px;white-space:nowrap;color:var(--text-2)">${r.结束时间}</td>
             <td style="padding:6px 8px;text-align:center;font-weight:600">${r.时长}</td>
-            <td style="padding:6px 8px"><span style="font-size:10px;background:${r.type === 'booking' ? '#e8f0fb' : 'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px">${r.工作内容}</span></td>
+            <td style="padding:6px 8px"><span style="font-size:10px;background:${r.type !== 'course' ? '#e8f0fb' : 'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px">${r.工作内容}</span></td>
             <td style="padding:6px 8px;color:var(--text-2)">${r.工作地点}</td>
             <td style="padding:6px 8px;color:var(--text-2)">${r.备注}</td>
           </tr>`).join('')}
@@ -401,6 +483,7 @@ async function submitWorkRecords() {
       notes: r.备注,
       source: r.type,
       source_id: r.source_id,
+      domain: r._domain || null,
       status: 'pending'
     }));
   if (!toInsert.length) { alert('所有记录已提交过，无新增'); return; }
@@ -418,11 +501,12 @@ async function renderWorkRecordsAdmin(container) {
   if (!container) return;
   container.innerHTML = '<div style="font-size:12px;color:var(--text-3)">加载中…</div>';
   try {
-    const records = await sb(`/rest/v1/work_records?order=start_time.asc`);
+    const records = await sbAll(`/rest/v1/work_records?order=start_time.asc${payrollDomainQs()}`);   // 非总览视角只列本领域的；domain 为空的旧记录只在「全部」视角显示
     if (!records.length) {
       container.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无工作记录</div>';
       return;
     }
+    const vipMap = await payrollLoadVipMap(records.filter(r => r.source === 'vip').map(r => r.source_id));
     // 按老师分组
     const byTeacher = {};
     records.forEach(r => { if (!byTeacher[r.teacher_name]) byTeacher[r.teacher_name] = []; byTeacher[r.teacher_name].push(r); });
@@ -453,14 +537,14 @@ async function renderWorkRecordsAdmin(container) {
           </div>
         </div>
         <div id="wr_group_${safeId}">
-          ${activeRows.length ? activeRows.map(r => renderWorkRecordRow(r)).join('') : (approved ? '' : '<div style="font-size:11px;color:var(--text-3);padding:8px 0">暂无待审核记录</div>')}
+          ${activeRows.length ? activeRows.map(r => renderWorkRecordRow(r, vipMap)).join('') : (approved ? '' : '<div style="font-size:11px;color:var(--text-3);padding:8px 0">暂无待审核记录</div>')}
           ${approved ? `
           <div style="margin-top:6px">
             <div style="cursor:pointer;font-size:10px;color:var(--text-3);padding:6px 0" onclick="toggleWrHistory('${safeId}')">
               <span id="wr_history_arrow_${safeId}">▸</span> 历史记录（已通过 ${approved} 条）
             </div>
             <div id="wr_history_${safeId}" style="display:none">
-              ${approvedRows.map(r => renderWorkRecordRow(r)).join('')}
+              ${approvedRows.map(r => renderWorkRecordRow(r, vipMap)).join('')}
             </div>
           </div>` : ''}
         </div>
@@ -471,7 +555,48 @@ async function renderWorkRecordsAdmin(container) {
   }
 }
 
-function renderWorkRecordRow(r) {
+// ── VIP 记录完整度（审核时实时读预约，不用提交时的快照） ──
+const PAYROLL_VIP_SEL = 'id,name,student_confirmed,vip_content,vip_session_notes,vip_student_status,vip_homework,vip_homework_questions,vip_hours_used';
+async function payrollLoadVipMap(ids) {
+  const map = {};
+  ids = [...new Set((ids || []).filter(Boolean))];
+  for (let i = 0; i < ids.length; i += 60) {
+    const part = ids.slice(i, i + 60);
+    const rows = await sb(`/rest/v1/bookings?id=in.(${part.map(x => `"${x}"`).join(',')})&select=${PAYROLL_VIP_SEL}`, 'GET', undefined, { cache: 'no-store' }).catch(() => []);
+    (rows || []).forEach(b => { map[b.id] = b; });
+  }
+  return map;
+}
+// 缺哪些必填项（空数组 = 完整）；预约找不到也算不完整
+function payrollVipMissing(b) {
+  if (!b) return ['对应的 VIP 预约（已被删除？）'];
+  const t = v => String(v == null ? '' : v).trim();
+  const hwOk = t(b.vip_homework) || (Array.isArray(b.vip_homework_questions) ? b.vip_homework_questions.length : b.vip_homework_questions && Object.keys(b.vip_homework_questions).length);
+  const out = [];
+  if (!t(b.vip_content)) out.push('本次内容');
+  if (!t(b.vip_session_notes)) out.push('上课内容');
+  if (!t(b.vip_student_status)) out.push('学生状态/评价');
+  if (!hwOk) out.push('布置作业');
+  if (!(parseFloat(b.vip_hours_used) > 0)) out.push('本次耗时');
+  return out;
+}
+function payrollVipDetailHtml(b) {
+  if (!b) return '<div style="margin-top:6px;color:#8a1a1a">找不到对应的 VIP 预约</div>';
+  const e = escTM;
+  const row = (k, v) => `<div style="display:flex;gap:6px;margin-bottom:2px"><span style="color:var(--text-3);min-width:72px">${k}</span><span style="white-space:pre-wrap;flex:1">${v ? e(v) : '<span style="color:#8a1a1a">（未填）</span>'}</span></div>`;
+  const hw = b.vip_homework || (b.vip_homework_questions && (Array.isArray(b.vip_homework_questions) ? b.vip_homework_questions.length : 1) ? '（已设置结构化作业）' : '');
+  return `<details style="margin-top:6px"><summary style="cursor:pointer;color:var(--text-2)">VIP 上课记录（${e(b.name)}）</summary>
+    <div style="margin-top:6px;padding:8px 10px;background:var(--bg);border:1px solid var(--border-light);border-radius:3px;line-height:1.6">
+      <div style="margin-bottom:4px">学生确认：${b.student_confirmed ? '<span style="color:#1a4a28">已确认 ✓</span>' : '<span style="background:#ffe8cc;color:#9a5a00;border-radius:2px;padding:1px 6px">未确认</span>'}</div>
+      ${row('本次内容', b.vip_content)}${row('上课内容', b.vip_session_notes)}${row('学生状态/评价', b.vip_student_status)}${row('布置作业', hw)}${row('本次耗时', parseFloat(b.vip_hours_used) > 0 ? b.vip_hours_used + ' 小时' : '')}
+    </div></details>`;
+}
+
+function renderWorkRecordRow(r, vipMap) {
+  const isVip = r.source === 'vip';
+  const vipB = isVip ? (vipMap || {})[r.source_id] : null;
+  const missing = isVip ? payrollVipMissing(vipB) : [];
+  const approveStyle = missing.length ? 'background:#ececec;color:#999;border:1px solid #ddd' : 'background:#ddf0e0;color:#1a4a28;border:1px solid #b0d8b8';
   const statusColor = r.status === 'approved' ? '#1a4a28' : r.status === 'rejected' ? '#8a1a1a' : '#856404';
   const statusBg = r.status === 'approved' ? '#ddf0e0' : r.status === 'rejected' ? '#f8e0e0' : '#fff3cd';
   const statusLabel = r.status === 'approved' ? '已通过' : r.status === 'rejected' ? '已驳回' : '待审核';
@@ -485,9 +610,11 @@ function renderWorkRecordRow(r) {
           <span style="font-weight:600;color:var(--accent)">${r.duration}h</span>
           <span style="background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 5px">${r.work_type}</span>
           <span style="background:${statusBg};color:${statusColor};border-radius:2px;padding:1px 5px">${statusLabel}</span>
+          ${r.domain ? `<span style="background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 5px;color:var(--text-3)">${escTM(r.domain)}</span>` : ''}
         </div>
         <div style="color:var(--text-3)">${r.location} · ${r.notes}</div>
         ${r.admin_note ? `<div style="margin-top:4px;color:var(--text-2);font-style:italic">备注：${r.admin_note}</div>` : ''}
+        ${isVip ? payrollVipDetailHtml(vipB) : ''}
       </div>
       <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
         <div style="display:flex;gap:4px">
@@ -495,9 +622,10 @@ function renderWorkRecordRow(r) {
           <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deleteWorkRecord('${r.id}')">删除</button>
         </div>
         <div style="display:flex;gap:4px">
-          <button class="btn btn-sm" style="background:#ddf0e0;color:#1a4a28;border:1px solid #b0d8b8" onclick="approveWorkRecord('${r.id}')">通过</button>
+          <button class="btn btn-sm" style="${approveStyle}" onclick="approveWorkRecord('${r.id}')">通过</button>
           <button class="btn btn-sm" style="background:#f8e0e0;color:#8a1a1a;border:1px solid #d8b0b0" onclick="rejectWorkRecord('${r.id}')">驳回</button>
         </div>
+        ${missing.length ? `<div style="color:#c0392b;font-size:10px;max-width:220px;text-align:right">记录不完整：缺 ${missing.join('、')}</div>` : ''}
       </div>
     </div>
     <div id="wr_edit_${r.id}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
@@ -540,15 +668,29 @@ async function saveWorkRecord(id) {
 
 async function approveWorkRecord(id) {
   try {
-    await sb(`/rest/v1/work_records?id=eq.${id}`, 'PATCH', { status: 'approved', updated_at: new Date().toISOString() });
+    const r = ((await sb(`/rest/v1/work_records?id=eq.${id}&select=id,source,source_id`, 'GET', undefined, { cache: 'no-store' })) || [])[0];
+    if (r && r.source === 'vip') {
+      // VIP 记录：通过前重新读取预约，必填项齐全才能通过（老师补写后无需重新提交）
+      const miss = payrollVipMissing((await payrollLoadVipMap([r.source_id]))[r.source_id]);
+      if (miss.length) { alert('记录不完整，不能通过：缺 ' + miss.join('、')); renderWorkRecordsAdmin(document.getElementById('pr_records')); return; }
+    }
+    await sb(`/rest/v1/work_records?id=eq.${id}`, 'PATCH', { status: 'approved', admin_note: null, updated_at: new Date().toISOString() });
     renderWorkRecordsAdmin(document.getElementById('pr_records'));
   } catch(e) { alert('操作失败：' + e.message); }
 }
 
 async function approveAllWorkRecords(teacherName) {
-  if (!confirm(`确定将「${teacherName}」所有待审核记录全部通过？`)) return;
+  if (!confirm(`确定将「${teacherName}」所有待审核记录全部通过？（不完整的 VIP 记录会跳过）`)) return;
   try {
-    await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&status=eq.pending`, 'PATCH', { status: 'approved', updated_at: new Date().toISOString() });
+    const rows = await sbAll(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&status=eq.pending&select=id,source,source_id${payrollDomainQs()}`);
+    const vipMap = await payrollLoadVipMap(rows.filter(r => r.source === 'vip').map(r => r.source_id));
+    const okIds = rows.filter(r => r.source !== 'vip' || !payrollVipMissing(vipMap[r.source_id]).length).map(r => r.id);
+    const skipped = rows.length - okIds.length;
+    const now = new Date().toISOString();
+    for (let i = 0; i < okIds.length; i += 50) {
+      await sb(`/rest/v1/work_records?id=in.(${okIds.slice(i, i + 50).map(x => `"${x}"`).join(',')})`, 'PATCH', { status: 'approved', updated_at: now });
+    }
+    if (skipped) alert(`${skipped} 条 VIP 记录不完整，未通过`);
     renderWorkRecordsAdmin(document.getElementById('pr_records'));
   } catch(e) { alert('操作失败：' + e.message); }
 }
@@ -578,7 +720,7 @@ function toggleWrHistory(safeId) {
 async function deleteApprovedWorkRecords(teacherName) {
   if (!confirm(`确定删除「${teacherName}」所有已通过的工作记录？`)) return;
   try {
-    await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&status=eq.approved`, 'DELETE');
+    await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&status=eq.approved${payrollDomainQs()}`, 'DELETE');
     renderWorkRecordsAdmin(document.getElementById('pr_records'));
   } catch(e) { alert('删除失败：' + e.message); }
 }
@@ -586,13 +728,22 @@ async function deleteApprovedWorkRecords(teacherName) {
 async function deleteAllWorkRecords(teacherName) {
   if (!confirm(`确定删除「${teacherName}」全部工作记录（包括待审核和已通过）？`)) return;
   try {
-    await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}`, 'DELETE');
+    await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}${payrollDomainQs()}`, 'DELETE');
     renderWorkRecordsAdmin(document.getElementById('pr_records'));
   } catch(e) { alert('删除失败：' + e.message); }
 }
 
 async function rejectWorkRecord(id) {
-  const note = prompt('驳回理由（可选）：') ?? '';
+  let auto = '';
+  try {
+    const r = ((await sb(`/rest/v1/work_records?id=eq.${id}&select=id,source,source_id`, 'GET', undefined, { cache: 'no-store' })) || [])[0];
+    if (r && r.source === 'vip') {
+      const miss = payrollVipMissing((await payrollLoadVipMap([r.source_id]))[r.source_id]);
+      if (miss.length) auto = 'VIP 记录不完整，请补写：' + miss.join('、');   // 缺的项目自动写进驳回理由，老师端能看到
+    }
+  } catch(e) { /* 读不到就按普通驳回 */ }
+  const input = prompt('驳回理由（可选）：', auto);
+  const note = (input == null ? '' : input) || auto;
   try {
     await sb(`/rest/v1/work_records?id=eq.${id}`, 'PATCH', { status: 'rejected', admin_note: note || null, updated_at: new Date().toISOString() });
     renderWorkRecordsAdmin(document.getElementById('pr_records'));
@@ -609,7 +760,7 @@ async function deleteWorkRecord(id) {
 
 // 导出某老师所有 approved 记录为 Excel
 async function exportWorkRecordsExcel(teacherName) {
-  const records = await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&status=eq.approved&order=start_time.asc`);
+  const records = await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&status=eq.approved${payrollDomainQs()}&order=start_time.asc`);
   if (!records.length) { alert('该老师暂无已通过的工作记录'); return; }
   const headers = ['姓名', '开始时间', '结束时间', '时长', '工作内容', '工作地点', '备注'];
   const aoa = [headers, ...records.map(r => [r.teacher_name, r.start_time, r.end_time, r.duration, r.work_type, r.location, r.notes])];
@@ -622,7 +773,7 @@ async function exportWorkRecordsExcel(teacherName) {
 
 // 导出全部老师所有 approved 记录为一张 Excel
 async function exportAllWorkRecordsExcel() {
-  const records = await sb(`/rest/v1/work_records?status=eq.approved&order=teacher_name.asc,start_time.asc`);
+  const records = await sb(`/rest/v1/work_records?status=eq.approved${payrollDomainQs()}&order=teacher_name.asc,start_time.asc`);
   if (!records.length) { alert('暂无已通过的工作记录'); return; }
   const headers = ['姓名', '开始时间', '结束时间', '时长', '工作内容', '工作地点', '备注'];
   const aoa = [headers, ...records.map(r => [r.teacher_name, r.start_time, r.end_time, r.duration, r.work_type, r.location, r.notes])];
