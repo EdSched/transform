@@ -496,7 +496,7 @@ function tmTodoOkShow(hasTasks, left) {
   ok.textContent = hasTasks && !left ? '✓ 暂无待处理事项，本月任务已全部完成' : '✓ 暂无待处理事项';
 }
 function renderTodo(mc) {
-  setTimeout(() => { if (typeof homeRender === 'function') homeRender(); if (typeof tmTodoLine === 'function') tmTodoLine(); else tmTodoOkShow(false); }, 0);   // 快捷卡片 + 顶部「本月任务：还有 N 项未完成」
+  setTimeout(() => { if (typeof homeRender === 'function') homeRender(); if (typeof tmTodoLine === 'function') tmTodoLine(); else tmTodoOkShow(false); if (typeof mgpLoad === 'function') mgpLoad(); }, 0);   // 快捷卡片 + 顶部「本月任务：还有 N 项未完成」
   // 普通面谈 → 面谈预约；VIP → VIP 管理（预约子标签），两者分开提示
   const pendingBookings = cachedTeacherBookings.filter(b => b.status === 'pending' && b.type !== 'vip');
   const pendingVip = cachedTeacherBookings.filter(b => b.type === 'vip' && vipNeedTeacherOk(b));
@@ -517,6 +517,7 @@ function renderTodo(mc) {
   mc.innerHTML = `
   <div style="display:flex;flex-direction:column;gap:12px">
     <div id="homeBox"></div>
+    <div id="mgPinned"></div>
     <div id="tmTodoLine"></div>
     ${hasTodo ? '' : '<div class="todo-ok" style="display:none;background:var(--ok-bg);border:1px solid var(--ok);border-radius:4px;padding:12px 16px;font-size:12px;color:#1a5a3a">✓ 暂无待处理事项</div>'}
     ${unconfirmedVip.length ? `<div class="todo-card warn">

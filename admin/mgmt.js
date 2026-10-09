@@ -9,8 +9,8 @@
 const MG_COL = { bg: '#fcf8f4', card: '#ffffff', text: '#3a342e', mute: '#8a8076', line: '#e8dfd5', border: '#d9cfc4', hover: '#b9ab9b', blue: '#4f7194', green: '#5b7f55', sand: '#c9a37a', track: '#ece4d9', red: '#c4646a' };
 const MG_PAGE = 20;                                                                                  // 名单每页条数
 const mgE = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-let mgS = { tab: 'domain', dom: '', grp: '', met: '', data: {}, tbl: {}, busy: {} };               // 全局层状态：data[领域]=各大项结果；tbl[大项|指标]=各领域结果
-let mgPage = { mine: false, grp: '', met: '', rows: null, label: '' };                              // 负责人层状态
+let mgS = { tab: 'domain', dom: '', grp: '', met: '', data: {}, tbl: {}, busy: {}, view: '', nid: '' };               // 全局层状态：data[领域]=各大项结果；tbl[大项|指标]=各领域结果
+let mgPage = { mine: false, grp: '', met: '', rows: null, label: '', view: '', nid: '' };                              // 负责人层状态
 let mgDet = { open: '', page: 0 };                                                                   // 详情页：展开的老师分组、当前页
 let mgMode = 'o';                                                                                    // 最近一次渲染的是哪一层：'o' 全局层 / 'p' 负责人层
 let mgSeqP = 0;
@@ -51,6 +51,7 @@ function mgEnsureStyle() {
   .mg-li .nm{font-weight:600}.mg-li a{color:${MG_COL.blue};text-decoration:underline;cursor:pointer}
   .mg-li .nt{flex:1;color:${MG_COL.mute}}
   .mg-pg{display:flex;gap:10px;align-items:center;justify-content:flex-end;padding:8px 14px;font-size:11px;color:${MG_COL.mute};background:#fff;border-bottom:1px solid ${MG_COL.line}}
+  .mg-mini{color:#4f7194;cursor:pointer;font-size:11px;margin-left:12px}
   .mg-say{font-size:12px;color:${MG_COL.mute};padding:6px 0}`;
   document.head.appendChild(st);
 }
@@ -104,14 +105,14 @@ function mgDetailHtml(r) {
   if (st === 'na') return `<div class="mg-say">未接入${r.note ? '：' + mgE(r.note) : ''}</div>`;
   const big = r.kind === 'list' ? `待处理 ${r.count} 人` : `<span class="mg-num">${r.done}/${r.total}</span>`;
   const pct = r.kind === 'list' ? '' : `<div style="font-size:11px;color:${MG_COL.mute}" class="mg-num">${r.total ? Math.round(r.done / r.total * 100) : 100}%</div>`;
-  let h = `<div class="mg-sum"><div><label>完成情况</label><div class="big">${big}</div>${pct}</div><div><label>分母</label>${mgE(r.denom)}</div>
+  let h = (typeof mgnDetailTop === 'function' ? mgnDetailTop() : '') + `<div class="mg-sum"><div><label>完成情况</label><div class="big">${big}</div>${pct}</div><div><label>分母</label>${mgE(r.denom)}</div>
     <div><label>统计周期</label>${mgE(r.period)}</div><div><label>说明</label>${mgE(r.desc)}</div></div>`;
   if (!r.items.length) return h + `<div class="mg-say">没有需要处理的</div>`;
   const groups = mgGroups(r.items);
   if (groups.length < 2) return h + mgPaged(r.items);
   groups.forEach(([o, list], i) => {
     const on = mgDet.open === o;
-    h += `<div class="mg-grp" onclick="mgDetToggle(${i})"><span>${mgE(o)}</span><span class="mg-num" style="color:${MG_COL.mute}">${list.length} 项　${on ? '▾' : '▸'}</span></div>`;
+    h += `<div class="mg-grp" onclick="mgDetToggle(${i})"><span>${mgE(o)}${o !== '未指定' && typeof mgnOnlyBtn === 'function' ? mgnOnlyBtn(o) : ''}</span><span class="mg-num" style="color:${MG_COL.mute}">${list.length} 项　${on ? '▾' : '▸'}</span></div>`;
     if (on) h += mgPaged(list);
   });
   return h;
@@ -142,6 +143,12 @@ function mgCurResult() {
   }
   const t = mgS.tbl[mgS.grp + '|' + mgS.met], di = DOMAINS.findIndex(d => d.label === mgS.dom); return t && di >= 0 ? t[di] : null;
 }
+const mgSt = () => (mgMode === 'p' ? mgPage : mgS);
+// 当前详情页对应的大项 / 指标 / 范围名（发布提醒要用）
+function mgCurMeta() {
+  const st = mgSt(), g = MGM_GROUPS.find(x => x.key === st.grp), m = g && g.metrics.find(x => x.key === st.met);
+  return { g, m, label: mgMode === 'p' ? mgPage.label : st.dom };
+}
 function mgRerender() { if (mgMode === 'p') mgPageRender(); else mgRender(); }
 
 // ══════════ 全局层（admin 中枢台）══════════
@@ -157,17 +164,17 @@ function mgEnsureOverlay() {
 }
 function mgOpen() {
   const el = mgEnsureOverlay(), hub = document.getElementById('hubOverlay'); if (hub) hub.style.display = 'none';
-  el.style.display = 'block'; mgS = { tab: 'domain', dom: '', grp: '', met: '', data: {}, tbl: {}, busy: {} }; mgDet = { open: '', page: 0 }; mgRender();
+  el.style.display = 'block'; mgS = { tab: 'domain', dom: '', grp: '', met: '', data: {}, tbl: {}, busy: {}, view: '', nid: '' }; mgDet = { open: '', page: 0 }; mgRender();
 }
 function mgClose() {
   const el = document.getElementById('mgmtOverlay'); if (el) el.style.display = 'none';
   const m = document.getElementById('studentDetailModal'); if (m) m.style.zIndex = '';
   showHub();
 }
-function mgTab(t) { if (mgS.tab === t) return; mgS = Object.assign(mgS, { tab: t, dom: '', grp: '', met: '' }); mgDet = { open: '', page: 0 }; mgRender(); }
+function mgTab(t) { if (mgS.tab === t) return; mgS = Object.assign(mgS, { tab: t, dom: '', grp: '', met: '', view: '', nid: '' }); mgDet = { open: '', page: 0 }; mgRender(); }
 function mgRefresh() { mgmClearCache(); mgS.data = {}; mgS.tbl = {}; mgS.busy = {}; mgRender(); mgEnsure(); }
 // 跳到某一级（面包屑和方块都走这里）；字段含义随页签变：按领域看 = 领域→大项→指标；按项目看 = 大项→指标→领域
-function mgSet(d, g, m) { mgS.dom = d; mgS.grp = g; mgS.met = m; mgDet = { open: '', page: 0 }; mgRender(); mgEnsure(); }
+function mgSet(d, g, m) { mgS.view = ''; mgS.nid = ''; mgS.dom = d; mgS.grp = g; mgS.met = m; mgDet = { open: '', page: 0 }; mgRender(); mgEnsure(); }
 // 需要数据的层级才读取
 function mgEnsure() {
   if (mgS.tab === 'domain') { if (mgS.dom && !mgS.data[mgS.dom] && !mgS.busy['d' + mgS.dom]) mgLoadDom(mgS.dom); }
@@ -190,7 +197,8 @@ function mgRender() {
   const el = mgEnsureOverlay(), T = mgS.tab, root = { t: '管理可视化', js: "mgSet('','','')" };
   const lab = (arr, key) => (arr.find(x => x.key === key) || { label: key }).label;
   let crumbs = [], body = '';
-  if (T === 'domain') {
+  if (mgS.view === 'notices') { const v = mgnView(root); crumbs = v.crumbs; body = v.body; }
+  else if (T === 'domain') {
     const g = MGM_GROUPS.find(x => x.key === mgS.grp), rows = mgS.data[mgS.dom];
     if (!mgS.dom) body = `<div class="mg-grid">` + DOMAINS.map(d => mgTile(d.label, '点击查看', `mgSet('${d.label}','','')`)).join('') + `</div>`;
     else if (!rows) { crumbs = [root, { t: mgS.dom }]; body = `<div class="mg-say">读取 ${mgE(mgS.dom)} 的数据中…</div>`; }
@@ -227,10 +235,11 @@ function mgRender() {
   }
   el.innerHTML = `<div class="mg-wrap" style="max-width:1000px;margin:0 auto;padding:22px 20px 60px">
     <div style="display:flex;align-items:center;gap:10px"><div style="font-family:'Noto Serif SC',serif;font-size:1.25rem;font-weight:600;flex:1">管理可视化</div>
-      <button class="mg-btn" onclick="mgRefresh()">刷新</button><button class="mg-btn" onclick="mgClose()">返回中枢台</button></div>
+      ${typeof mgnLinksHtml === 'function' ? `<span style="display:flex;gap:14px">${mgnLinksHtml()}</span>` : ''}<button class="mg-btn" onclick="mgRefresh()">刷新</button><button class="mg-btn" onclick="mgClose()">返回中枢台</button></div>
     <div class="mg-seg"><span class="${T === 'domain' ? 'on' : ''}" onclick="mgTab('domain')">按领域看</span><span class="${T === 'item' ? 'on' : ''}" onclick="mgTab('item')">按项目看</span></div>
     <div style="font-size:11px;color:${MG_COL.mute};margin-bottom:6px">每个数字都写明分母和统计周期；只检测业务上真的做了没有。点开才读取数据，60 秒内不重复计算。</div>
     ${mgCrumb(crumbs)}<div style="margin-top:${crumbs.length ? 0 : 14}px">${body}</div></div>`;
+  if (typeof mgnAfterRender === 'function') mgnAfterRender();
 }
 
 // ══════════ 负责人层（侧栏页）══════════
@@ -252,7 +261,8 @@ function mgPageRender() {
   const asT = typeof ACCESS_KEY !== 'undefined' && ACCESS_KEY && ACCESS_KEY._asTeacher, P = mgPage, root = { t: '管理可视化', js: "mgPSet('','')" };
   const g = MGM_GROUPS.find(x => x.key === P.grp);
   let crumbs = [], body = '';
-  if (!P.rows) body = `<div class="mg-say">读取中…</div>`;
+  if (P.view === 'notices') { const v = mgnView(root); crumbs = v.crumbs; body = v.body; }
+  else if (!P.rows) body = `<div class="mg-say">读取中…</div>`;
   else if (!g) body = `<div class="mg-grid">` + MGM_GROUPS.map((x, i) => mgGroupTile(x, P.rows[i], `mgPSet('${x.key}','')`)).join('') + `</div>`;
   else if (!P.met) {
     crumbs = [root, { t: g.label }];
@@ -265,10 +275,11 @@ function mgPageRender() {
   mc.innerHTML = `<div class="mg-wrap" style="max-width:1000px">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><div style="font-family:'Noto Serif SC',serif;font-size:1.2rem;font-weight:600;flex:1;min-width:140px">管理可视化</div>
       ${asT ? `<div class="mg-seg sm"><span class="${!P.mine ? 'on' : ''}" onclick="mgPageMine(false)">全部管理范围</span><span class="${P.mine ? 'on' : ''}" onclick="mgPageMine(true)">我名下</span></div>` : ''}
-      <button class="mg-btn" onclick="mgPageRefresh()">刷新</button></div>
+      ${typeof mgnLinksHtml === 'function' ? `<span style="display:flex;gap:14px">${mgnLinksHtml()}</span>` : ''}<button class="mg-btn" onclick="mgPageRefresh()">刷新</button></div>
     <div style="font-size:11px;color:${MG_COL.mute};margin:8px 0 6px">范围：${mgE(P.label || (typeof scopeSummary === 'function' ? scopeSummary() : ''))}${P.mine ? '（任课·班主任·专业负责）' : ''}。每个数字都写明分母和统计周期。</div>
     ${mgCrumb(crumbs)}<div style="margin-top:${crumbs.length ? 0 : 10}px">${body}</div></div>`;
+  if (typeof mgnAfterRender === 'function') mgnAfterRender();
 }
-function mgPSet(g, m) { mgPage.grp = g; mgPage.met = m; mgDet = { open: '', page: 0 }; mgPageRender(); }
-function mgPageMine(on) { mgPage.mine = !!on; mgPage.grp = ''; mgPage.met = ''; mgDet = { open: '', page: 0 }; renderMgmtPage(document.getElementById('mainContent')); }
+function mgPSet(g, m) { mgPage.view = ''; mgPage.nid = ''; mgPage.grp = g; mgPage.met = m; mgDet = { open: '', page: 0 }; mgPageRender(); }
+function mgPageMine(on) { mgPage.view = ''; mgPage.nid = ''; mgPage.mine = !!on; mgPage.grp = ''; mgPage.met = ''; mgDet = { open: '', page: 0 }; renderMgmtPage(document.getElementById('mainContent')); }
 function mgPageRefresh() { mgmClearCache(); renderMgmtPage(document.getElementById('mainContent')); }
