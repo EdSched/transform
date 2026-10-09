@@ -146,6 +146,8 @@ const MGP_GO = {
   interview: { tab: 'studentmgmt', sm: 'meetings' }, absent3: { tab: 'studentmgmt', sm: 'focus' }, expiry: { tab: 'studentmgmt', sm: 'profile' },
   plan: { tab: 'studentmgmt', sm: 'progress' }, school: { tab: 'studentmgmt', sm: 'progress' }, result: { tab: 'studentmgmt', sm: 'progress' },
   attendance: { tab: 'studentmgmt', sm: 'records' }, next_term: { tab: 'schedule' }, homework: { tab: 'homework' }, profile: { profile: true },
+  vip_booking: { tab: 'vipframework', vm: 'booking' }, vip_change: { tab: 'vipframework', vm: 'booking' }, vip_notes: { tab: 'vipframework', vm: 'booking' }, vip_confirm: { tab: 'vipframework', vm: 'booking' },
+  vip_hours: { tab: 'vipframework', vm: 'students' },   // VIP 指定老师 / VIP 规划由教务和营业处理；宣传各项老师端为「不能自动判断」，都不显示「去处理」
 };
 function mgpGoAvail(key) {
   const g = MGP_GO[key]; if (!g) return false;
@@ -158,5 +160,6 @@ function mgpGo(key) {
   const g = MGP_GO[key]; if (!g || !mgpGoAvail(key)) return;
   if (g.profile) { openProfileForm(''); return; }
   if (g.sm) smTab = g.sm;
+  if (g.vm) vmTab = g.vm;
   switchTab(g.tab);
 }

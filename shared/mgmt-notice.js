@@ -25,7 +25,7 @@ function mgnTeacherScope(name) {
   const has = v => String(v || '').includes(name);
   return {
     key: 't:' + name, label: name + ' 名下', mine: name, domain: '',
-    stu: s => (s.owner_teachers || []).includes(name) || (s.vip_teachers || []).includes(name),
+    stu: s => (s.owner_teachers || []).includes(name) || (s.vip_teachers || []).includes(name), stuBase: () => true, major: () => true,
     course: c => has(c.teacher),
     sess: (x, cm) => !!(cm && cm[x.course_id]) && (has(x.session_teacher) || has(x.teacher)),
   };
