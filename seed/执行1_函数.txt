@@ -1,0 +1,61 @@
+create or replace function public.dept_my_majors(p_perm text)
+returns text[]
+language sql stable security definer
+set search_path = public
+as $$
+  select coalesce((
+    select array(select jsonb_array_elements_text(t.manage_scope->'majors'))
+    from public.teachers t
+    where t.id = public.current_teacher_id()
+      and t.position = 'lead'
+      and p_perm = any(t.dept_perms)
+      and jsonb_typeof(t.manage_scope->'majors') = 'array'
+  ), '{}'::text[]);
+$$;
+revoke all on function public.dept_my_majors(text) from public;
+grant execute on function public.dept_my_majors(text) to anon, authenticated;
+create or replace function public.dept_teacher_in_range(p_managed jsonb, p_domains jsonb, p_majors text[])
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select public.dept_my_domains('teachers') && (
+    public.jsonb_text_arr(p_managed) || public.jsonb_text_arr(p_domains)
+    || array(select m.domain from public.majors m where m.key = any(coalesce(p_majors, '{}'::text[])) and m.domain is not null)
+  )
+  or coalesce(p_majors, '{}'::text[]) && public.dept_my_majors('teachers');
+$$;
+revoke all on function public.dept_teacher_in_range(jsonb, jsonb, text[]) from public;
+grant execute on function public.dept_teacher_in_range(jsonb, jsonb, text[]) to anon, authenticated;
+create or replace function public.dept_majors_in_scope(p_keys text[], p_domains text[], p_majors text[])
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select not exists (
+    select 1 from unnest(coalesce(p_keys, '{}'::text[])) k
+    left join public.majors m on m.key = k
+    where not (k = any(coalesce(p_majors, '{}'::text[])))
+      and (m.domain is null or not (m.domain = any(coalesce(p_domains, '{}'::text[]))))
+  );
+$$;
+revoke all on function public.dept_majors_in_scope(text[], text[], text[]) from public;
+grant execute on function public.dept_majors_in_scope(text[], text[], text[]) to anon, authenticated;
+create or replace function public.dept_domains_ok(p_added text[], p_my text[], p_mym text[], p_tm text[])
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select not exists (
+    select 1 from unnest(coalesce(p_added, '{}'::text[])) x
+    where not (x = any(coalesce(p_my, '{}'::text[])))
+      and not (
+        coalesce(array_length(p_tm, 1), 0) > 0
+        and exists (select 1 from public.majors m where m.domain = x and m.key = any(coalesce(p_mym, '{}'::text[])))
+        and exists (select 1 from public.majors m where m.domain = x and m.key = any(p_tm))
+        and not exists (select 1 from public.majors m where m.domain = x and m.key = any(p_tm) and not (m.key = any(coalesce(p_mym, '{}'::text[]))))
+      )
+  );
+$$;
+revoke all on function public.dept_domains_ok(text[], text[], text[], text[]) from public;
+grant execute on function public.dept_domains_ok(text[], text[], text[], text[]) to anon, authenticated;

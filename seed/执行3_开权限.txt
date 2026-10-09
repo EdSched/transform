@@ -1,0 +1,5 @@
+update public.teachers
+set dept_perms = array(select distinct unnest(coalesce(dept_perms, '{}') || array['teachers']))
+where name in ('程斯', '尤一童', '尹铉', '黄升彦');
+select name, position, manage_scope, dept_perms from public.teachers
+where name in ('程斯', '尤一童', '尹铉', '黄升彦', '张曦炜', '姜喆峰', '徐懿') order by name;
