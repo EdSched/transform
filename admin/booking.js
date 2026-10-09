@@ -398,17 +398,21 @@ function openAdminVipReschedule(bookingId) {
   modal.id = 'adminVipRescheduleModal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   modal.innerHTML = `
-    <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:380px;width:100%">
-      <div style="font-size:13px;font-weight:600;margin-bottom:4px">调整 ${b.name} 的VIP课程时间</div>
-      <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">原时间：${b.slot_date} ${b.slot_time_range || ''}</div>
-      <div class="form-group"><label class="form-label">新日期</label><input type="date" id="avr_date" value="${b.slot_date}"></div>
+    <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:400px;width:100%;max-height:90vh;overflow-y:auto">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">调整 ${b.name} 的VIP课程时间 / 校区</div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">原来：${b.slot_date} ${b.slot_time_range || ''} · ${locationLong(b.location) || '线上'}${b.vip_room ? ' · ' + b.vip_room : ''}</div>
+      <div class="form-group"><label class="form-label">新日期</label><input type="date" id="avr_date" value="${b.slot_date}" onchange="bkAvrLoadRooms('${bookingId}')"></div>
       <div class="form-group"><label class="form-label">新时间段</label>
         <div style="display:grid;grid-template-columns:1fr 16px 1fr;gap:4px;align-items:center">
-          <input type="time" id="avr_start" value="${(b.slot_time_range||'').split(/[–\-]/)[0]?.trim()||''}">
+          <input type="time" id="avr_start" value="${(b.slot_time_range||'').split(/[–\-]/)[0]?.trim()||''}" onchange="bkAvrLoadRooms('${bookingId}')">
           <div style="text-align:center;font-size:11px;color:var(--text-3)">—</div>
-          <input type="time" id="avr_end" value="${(b.slot_time_range||'').split(/[–\-]/)[1]?.trim()||''}">
+          <input type="time" id="avr_end" value="${(b.slot_time_range||'').split(/[–\-]/)[1]?.trim()||''}" onchange="bkAvrLoadRooms('${bookingId}')">
         </div>
       </div>
+      <div class="form-group"><label class="form-label">上课方式与校区</label>
+        <select id="avr_loc" onchange="bkAvrLoadRooms('${bookingId}')">${BK_LOC_OPTS.map(([k,l])=>`<option value="${k}"${(b.location||'online')===k?' selected':''}>${l}</option>`).join('')}</select></div>
+      <div class="form-group" id="avr_room_wrap" style="display:none"><label class="form-label">教室（已保留教室的预约，换校区 / 时间后需重新选，会同步排课系统）</label>
+        <div id="avr_room_box"></div></div>
       <div class="form-group"><label class="form-label">调整原因（必填）</label>
         <select id="avr_reason_select" onchange="document.getElementById('avr_reason_other').style.display=this.value==='其他'?'block':'none'">
           <option value="">请选择</option>
@@ -428,6 +432,33 @@ function openAdminVipReschedule(bookingId) {
     </div>`;
   document.body.appendChild(modal);
   if (b.admin_review === 'room_wait') document.getElementById('avr_reason_select').value = '教室已满';
+  bkAvrLoadRooms(bookingId);
+}
+const BK_LOC_OPTS = [['online','线上'],['offline_takadanobaba','线下 · 高田马场'],['offline_ichigaya','线下 · 市谷'],['both_takadanobaba','线上线下均可 · 高田马场'],['both_ichigaya','线上线下均可 · 市谷']];
+function bkAvrOffline(loc){ return !!loc && (loc.startsWith('offline') || loc.startsWith('both')); }
+// 已保留教室的预约（有排课记录）：按新校区 / 日期 / 时间列出空的 VIP 教室和大教室，必须重新选
+async function bkAvrLoadRooms(id){
+  const b = cachedBookings.find(x => x.id === id); if (!b) return;
+  const wrap = document.getElementById('avr_room_wrap'), box = document.getElementById('avr_room_box'); if (!wrap || !box) return;
+  const loc = document.getElementById('avr_loc').value;
+  const holds = !!b.sched_booking_id && b.admin_review !== 'room_wait';
+  wrap.style.display = (holds && bkAvrOffline(loc)) ? '' : 'none';
+  if (wrap.style.display === 'none') return;
+  const date = document.getElementById('avr_date').value, st = document.getElementById('avr_start').value, en = document.getElementById('avr_end').value;
+  if (!date || !st || !en || st >= en) { box.innerHTML = '<div style="font-size:11px;color:var(--text-3)">请先填好日期和时间</div>'; return; }
+  const tok = window.__avrTok = (window.__avrTok || 0) + 1;
+  box.innerHTML = '<div style="font-size:11px;color:var(--text-3)">查询教室中…</div>';
+  try{
+    const rs = await bkvLoadRooms(bkvCampus(loc), date, st, en, b.sched_booking_id);
+    if (tok !== window.__avrTok) return;
+    window.__avrRooms = [...rs.vip, ...rs.big];
+    const fv = rs.vip.filter(r => !r.conf.length), fb = rs.big.filter(r => !r.conf.length);
+    if (!fv.length && !fb.length) { box.innerHTML = '<div style="font-size:12px;color:var(--danger)">该时段 VIP 教室和大教室都已排满，请换时间或校区</div><select id="avr_room" style="display:none"><option value=""></option></select>'; return; }
+    const keep = bkvCampus(loc) === bkvCampus(b.location) ? [...fv, ...fb].find(r => r.name === b.vip_room) : null;
+    const def = keep || fv[0] || null;
+    const opt = r => `<option value="${r.id}"${def && String(def.id) === String(r.id) ? ' selected' : ''}>${bkSelfEsc(r.name)}${r.capacity ? '（' + r.capacity + '人）' : ''}</option>`;
+    box.innerHTML = `<select id="avr_room"><option value="">请选择教室</option>${fv.length ? '<optgroup label="VIP 教室">' + fv.map(opt).join('') + '</optgroup>' : ''}${fb.length ? '<optgroup label="大教室' + (fv.length ? '' : '（VIP 已满）') + '">' + fb.map(opt).join('') + '</optgroup>' : ''}</select>`;
+  }catch(e){ if (tok === window.__avrTok) box.innerHTML = '<div style="font-size:12px;color:var(--danger)">教室查询失败：' + bkSelfEsc(bkvErr(e)) + '</div>'; }
 }
 
 async function saveAdminVipReschedule(bookingId) {
@@ -442,35 +473,55 @@ async function saveAdminVipReschedule(bookingId) {
   if (!date || !start || !end) { alert('请填写完整的新日期和时间'); return; }
   if (!reason) { alert('请填写调整原因'); return; }
   const timeRange = `${start}\u2013${end}`;
+  const loc = document.getElementById('avr_loc').value;
+  const off = bkAvrOffline(loc);
+  const holds = !!b.sched_booking_id && b.admin_review !== 'room_wait';
+  const roomId = holds && off ? ((document.getElementById('avr_room') || {}).value || '') : '';
+  if (holds && off && !roomId) { alert('这条预约已保留教室，请选择新的教室（换校区 / 时间后原教室不再适用）'); return; }
+  const room = roomId ? (window.__avrRooms || []).find(r => String(r.id) === String(roomId)) : null;
+  const btn = document.querySelector('#adminVipRescheduleModal .btn-primary'); if (btn) btn.disabled = true;
   try {
-    const patch = { slot_date: date, slot_time_range: timeRange, reschedule_reason: reason, reschedule_by: 'admin' };
+    const patch = { slot_date: date, slot_time_range: timeRange, location: loc, reschedule_reason: reason, reschedule_by: 'admin' };
     // 教室已满待调整：老师之前占的旧时间教室一并释放（通过时按新时间重新占）
     if (b.admin_review === 'room_wait' && b.sched_booking_id) {
       try { await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`, 'DELETE'); }
-      catch (e0) { alert('释放原教室失败，未保存：' + bkvErr(e0)); return; }
+      catch (e0) { alert('释放原教室失败，未保存：' + bkvErr(e0)); if (btn) btn.disabled = false; return; }
       patch.sched_booking_id = null;
-    } else if (b.sched_booking_id) {
-      // 已占教室的预约：排课记录跟着改到新日期/时间（同一间教室，改回待审批）；新时间被占就释放，让老师重新预约教室
-      // 已被驳回的记录不动（status=neq.rejected）
-      const moved = { booking_date: date, start_time: start, end_time: end, weekday: bkvWeekday(date), status: 'pending', reviewed_at: null };
-      let rows = null, conflict = '';
-      try { rows = await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}&status=neq.rejected`, 'PATCH', moved); }
-      catch (e0) { conflict = bkvErr(e0); }
-      if (conflict) {
-        try { await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`, 'DELETE'); }
-        catch (e1) { alert('教室记录无法调整，时间未保存：' + conflict); return; }
-        patch.sched_booking_id = null; patch.vip_room = '';
-        alert('原教室在新时间已被占用，已释放，请老师在老师端重新预约教室');
-      } else if (!(Array.isArray(rows) && rows.length)) {
-        const still = await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}&select=id`).catch(() => null);
-        if (Array.isArray(still) && !still.length) { patch.sched_booking_id = null; patch.vip_room = ''; }   // 排课记录已不存在
+    } else if (holds && !off) {
+      // 改成线上：释放教室
+      try { await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`, 'DELETE'); }
+      catch (e0) { alert('释放原教室失败，未保存：' + bkvErr(e0)); if (btn) btn.disabled = false; return; }
+      patch.sched_booking_id = null; patch.vip_room = '';
+    } else if (holds && room) {
+      // 保留教室的预约：排课记录改到新教室 / 新日期 / 新时间（冲突由数据库触发器拦下，拦下就不保存）
+      const moved = { room_id: room.id, booking_date: date, start_time: start, end_time: end, weekday: bkvWeekday(date), status: 'confirmed', reviewed_at: new Date().toISOString() };
+      let rows = null;
+      try { rows = await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`, 'PATCH', moved); }
+      catch (e0) {
+        if (!/42501|row-level security/i.test(e0.message || '')) { alert('教室预约失败，未保存：' + bkvErr(e0)); if (btn) btn.disabled = false; return; }
+        try { rows = await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`, 'PATCH', Object.assign({}, moved, { status: 'pending', reviewed_at: null })); }
+        catch (e1) { alert('教室预约失败，未保存：' + bkvErr(e1)); if (btn) btn.disabled = false; return; }
       }
+      if (!(Array.isArray(rows) && rows.length)) {
+        // 排课记录已不存在：按这条预约重建
+        const rec = { room_id: room.id, kind: 'vip', title: 'VIP·' + ((typeof majorLabel === 'function' && majorLabel(bkRealMajor(b))) || b.name),
+          user_name: b.assigned_teacher || '', student_name: b.name, recurrence: 'once', weekday: bkvWeekday(date), booking_date: date,
+          start_time: start, end_time: end, uses_meeting: false, meeting_account_id: null, show_title: false,
+          status: 'confirmed', reviewed_at: new Date().toISOString(), created_by: bkSelfWho(), note: '教务调整' };
+        try {
+          let ins;
+          try { ins = await sb('/rest/v1/sched_bookings', 'POST', rec); }
+          catch (e2) { if (!/42501|row-level security/i.test(e2.message || '')) throw e2; ins = await sb('/rest/v1/sched_bookings', 'POST', Object.assign({}, rec, { status: 'pending', reviewed_at: null })); }
+          patch.sched_booking_id = ins[0].id;
+        } catch (e3) { alert('教室预约失败，未保存：' + bkvErr(e3)); if (btn) btn.disabled = false; return; }
+      }
+      patch.vip_room = room.name;
     }
     await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', patch);
     Object.assign(b, patch);
     document.getElementById('adminVipRescheduleModal').remove();
     renderBookingPage(document.getElementById('mainContent'));
-  } catch (e) { alert('保存失败：' + e.message); }
+  } catch (e) { alert('保存失败：' + e.message); if (btn) btn.disabled = false; }
 }
 
 function renderVipBookingCard(b){
