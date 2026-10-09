@@ -1462,7 +1462,7 @@ function renderRecordsTab() {
   return `<div style="font-size:11px;font-weight:600;margin-bottom:10px">📋 面谈记录（${validBookings.length}条）</div>
   <div class="study-cols2" style="gap:12px 20px">
     ${validBookings.map(b => `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:12px;margin-bottom:8px">
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${b.slot_date}${b.actual_duration?' · '+b.actual_duration+'min':''} ${b.assigned_teacher?'· '+b.assigned_teacher+'老师':''}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${b.slot_date}${b.actual_duration?' · '+b.actual_duration+'min':''} ${b.assigned_teacher?'· '+b.assigned_teacher+'老师':''}${manualEntryTag(b)}</div>
       <pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0;color:var(--text-secondary)">${buildRecordText(b)}</pre>
     </div>`).join('')}
   </div>`;
