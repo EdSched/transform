@@ -327,7 +327,34 @@ async function bkSelfReject(id){
 function setBkSection(s){ bkSection=s; renderBookingPage(document.getElementById('mainContent')); }
 
 // ── VIP 预约页面 ──
+// 老师端 / 管理员在排课系统里指派大教室或驳回后，把实际教室名同步到预约（学生看的是 vip_room）
+let bkVipSynced=false;
+async function bkVipSyncRooms(){
+  if(bkVipSynced) return; bkVipSynced=true;
+  try{
+    const vips=(cachedBookings||[]).filter(b=>b.type==='vip'&&b.sched_booking_id&&b.status!=='cancelled'&&b.status!=='completed');
+    if(!vips.length) return;
+    const ids=[...new Set(vips.map(b=>b.sched_booking_id))];
+    const rows=(await sb(`/rest/v1/sched_bookings?id=in.(${ids.join(',')})&select=id,status,room_id,req_other`))||[];
+    const rids=[...new Set(rows.map(r=>r.room_id).filter(x=>x!=null))];
+    const rooms=rids.length?((await sb(`/rest/v1/sched_rooms?id=in.(${rids.join(',')})&select=id,name`).catch(()=>[]))||[]):[];
+    const rname={}; rooms.forEach(r=>{rname[String(r.id)]=r.name;});
+    const rmap={}; rows.forEach(r=>{rmap[String(r.id)]=r;});
+    let changed=false;
+    for(const b of vips){
+      const sc=rmap[String(b.sched_booking_id)]; if(!sc) continue;
+      let want=null;
+      if(sc.status==='rejected'||(sc.req_other&&!sc.room_id)) want='';
+      else if(sc.status==='confirmed'&&sc.room_id!=null&&rname[String(sc.room_id)]) want=rname[String(sc.room_id)];
+      if(want!==null&&(b.vip_room||'')!==want){
+        try{ const r=await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(b.id)}`,'PATCH',{vip_room:want}); if(Array.isArray(r)&&!r.length) continue; b.vip_room=want; changed=true; }catch(_){}
+      }
+    }
+    if(changed&&bkSection==='vip') renderBookingPage(document.getElementById('mainContent'));
+  }catch(_){}
+}
 function renderVipBookingPage(mc){
+  bkVipSyncRooms();
   const ym=`${bkYear}-${String(bkMonth+1).padStart(2,'0')}`;
   let filtered=cachedBookings.filter(b=>b.type==='vip'&&b.slot_date&&b.slot_date.startsWith(ym));
   // 视角过滤（跟随链接）：按学生真实专业判断领域/专业归属
@@ -422,6 +449,22 @@ async function saveAdminVipReschedule(bookingId) {
       try { await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`, 'DELETE'); }
       catch (e0) { alert('释放原教室失败，未保存：' + bkvErr(e0)); return; }
       patch.sched_booking_id = null;
+    } else if (b.sched_booking_id) {
+      // 已占教室的预约：排课记录跟着改到新日期/时间（同一间教室，改回待审批）；新时间被占就释放，让老师重新预约教室
+      // 已被驳回的记录不动（status=neq.rejected）
+      const moved = { booking_date: date, start_time: start, end_time: end, weekday: bkvWeekday(date), status: 'pending', reviewed_at: null };
+      let rows = null, conflict = '';
+      try { rows = await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}&status=neq.rejected`, 'PATCH', moved); }
+      catch (e0) { conflict = bkvErr(e0); }
+      if (conflict) {
+        try { await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`, 'DELETE'); }
+        catch (e1) { alert('教室记录无法调整，时间未保存：' + conflict); return; }
+        patch.sched_booking_id = null; patch.vip_room = '';
+        alert('原教室在新时间已被占用，已释放，请老师在老师端重新预约教室');
+      } else if (!(Array.isArray(rows) && rows.length)) {
+        const still = await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}&select=id`).catch(() => null);
+        if (Array.isArray(still) && !still.length) { patch.sched_booking_id = null; patch.vip_room = ''; }   // 排课记录已不存在
+      }
     }
     await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', patch);
     Object.assign(b, patch);
@@ -597,7 +640,9 @@ async function confirmBooking(id){
 }
 async function cancelBooking(id){
   if(!confirm('确定取消？'))return;
-  try{await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',{status:'cancelled'});const b=cachedBookings.find(x=>x.id===id);if(b)b.status='cancelled';renderBookingPage(document.getElementById('mainContent'))}catch(e){alert('操作失败：'+e.message)}
+  try{await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',{status:'cancelled'});const b=cachedBookings.find(x=>x.id===id);
+    if(b&&b.sched_booking_id){ try{ await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`,'DELETE'); }catch(_){} b.sched_booking_id=null; }   // 释放教室（数据库触发器也会释放，重复删除无害）
+    if(b)b.status='cancelled';renderBookingPage(document.getElementById('mainContent'))}catch(e){alert('操作失败：'+e.message)}
 }
 async function clearCancelledBookings(){
   const ym=`${bkYear}-${String(bkMonth+1).padStart(2,'0')}`;
