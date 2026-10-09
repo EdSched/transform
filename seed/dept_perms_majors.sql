@@ -54,6 +54,27 @@ $$;
 revoke all on function public.dept_majors_in_scope(text[], text[], text[]) from public;
 grant execute on function public.dept_majors_in_scope(text[], text[], text[]) to anon, authenticated;
 
+-- 3b. 新增的领域是否允许：在我的领域里；或是我某个负责专业所属的领域，并且这位老师有专业、
+--     且在该领域下的专业全部在我的专业里（不允许只选领域不选专业）
+create or replace function public.dept_domains_ok(p_added text[], p_my text[], p_mym text[], p_tm text[])
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select not exists (
+    select 1 from unnest(coalesce(p_added, '{}'::text[])) x
+    where not (x = any(coalesce(p_my, '{}'::text[])))
+      and not (
+        coalesce(array_length(p_tm, 1), 0) > 0
+        and exists (select 1 from public.majors m where m.domain = x and m.key = any(coalesce(p_mym, '{}'::text[])))
+        and exists (select 1 from public.majors m where m.domain = x and m.key = any(p_tm))
+        and not exists (select 1 from public.majors m where m.domain = x and m.key = any(p_tm) and not (m.key = any(coalesce(p_mym, '{}'::text[]))))
+      )
+  );
+$$;
+revoke all on function public.dept_domains_ok(text[], text[], text[], text[]) from public;
+grant execute on function public.dept_domains_ok(text[], text[], text[], text[]) to anon, authenticated;
+
 -- 4. 防提权触发器：「有本范围老师管理」那段改成 领域 或 专业 有一个不为空
 create or replace function public.teachers_guard_manage_cols()
 returns trigger
@@ -75,7 +96,6 @@ declare
   v_added    text[];
   v_tm       text[];
   k          text;
-  x          text;
 begin
   if current_user in ('anon', 'authenticated') and not public.is_admin() then
     if tg_op = 'INSERT' then
@@ -145,27 +165,14 @@ begin
       v_tm := coalesce(new.majors, '{}'::text[]);
       -- 隶属领域 / 负责领域：在我的领域里；或是我某个负责专业所属的领域，并且这位老师有专业、
       -- 且在该领域下的专业全部在我的专业里（不允许只选领域不选专业——那等于能看全部）
-      for k in select unnest(array['managed_by', 'domains']) loop
-        if k = 'managed_by' then
-          v_added := array(select unnest(public.jsonb_text_arr(new.managed_by)) except select unnest(o_managed));
-        else
-          v_added := array(select unnest(public.jsonb_text_arr(new.domains)) except select unnest(o_domains));
-        end if;
-        foreach x in array v_added loop
-          if x = any(v_my) then continue; end if;
-          if exists (select 1 from public.majors m where m.domain = x and m.key = any(v_mym))
-             and coalesce(array_length(v_tm, 1), 0) > 0
-             and not exists (select 1 from public.majors m where m.domain = x and m.key = any(v_tm) and not (m.key = any(v_mym)))
-             and exists (select 1 from public.majors m where m.domain = x and m.key = any(v_tm)) then
-            continue;
-          end if;
-          if k = 'managed_by' then
-            raise exception '不能把老师的隶属领域设到你的管理范围以外';
-          else
-            raise exception '不能把老师的负责领域设到你的管理范围以外';
-          end if;
-        end loop;
-      end loop;
+      v_added := array(select unnest(public.jsonb_text_arr(new.managed_by)) except select unnest(o_managed));
+      if not public.dept_domains_ok(v_added, v_my, v_mym, v_tm) then
+        raise exception '不能把老师的隶属领域设到你的管理范围以外';
+      end if;
+      v_added := array(select unnest(public.jsonb_text_arr(new.domains)) except select unnest(o_domains));
+      if not public.dept_domains_ok(v_added, v_my, v_mym, v_tm) then
+        raise exception '不能把老师的负责领域设到你的管理范围以外';
+      end if;
       v_added := array(select unnest(coalesce(new.majors, '{}'::text[])) except select unnest(o_majors));
       if not public.dept_majors_in_scope(v_added, v_my, v_mym) then
         raise exception '不能把老师的负责专业设到你的管理范围以外';

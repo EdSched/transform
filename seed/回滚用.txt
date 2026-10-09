@@ -2,3 +2,4 @@
 update public.teachers set dept_perms = array_remove(dept_perms, 'teachers') where name in ('程斯','尤一童','尹铉','黄升彦');
 drop function if exists public.dept_majors_in_scope(text[], text[], text[]);
 drop function if exists public.dept_my_majors(text);
+drop function if exists public.dept_domains_ok(text[], text[], text[], text[]);
