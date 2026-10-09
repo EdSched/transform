@@ -174,7 +174,7 @@ function buildBookingRows(bookings, slots, teacherName, students) {
         时长: hours,
         工作内容: '教研工作',
         工作地点: payrollLocation(loc, ''),
-        备注: `${b.name}的面谈预约`,
+        备注: `${b.name}的面谈预约${b.manual_entry ? '（教务补录）' : ''}`,
         _date: (b.actual_time || b.slot_date || '').slice(0, 10),
         _domain: payrollMajorDomain(payrollBookingMajor(b, stuMap))
       };
@@ -217,7 +217,7 @@ function buildVipRows(bookings, teacherName, slots, students) {
         时长: hours,
         工作内容: 'VIP授课',
         工作地点: payrollLocation(b.location || slotMap[b.slot_id]?.location || 'online', ''),
-        备注: `${b.name} · VIP${b.vip_content ? ' · ' + b.vip_content : ''}`,
+        备注: `${b.name} · VIP${b.vip_content ? ' · ' + b.vip_content : ''}${b.manual_entry ? '（教务补录）' : ''}`,
         _date: b.slot_date || '',
         _domain: payrollMajorDomain(payrollBookingMajor(b, stuMap))
       };
