@@ -88,47 +88,78 @@ function bkSelfInScope(b){
   if(st&&typeof scopeStudent==='function') return scopeStudent(st);
   return bkMajorInView(bkRealMajor(b));
 }
-function bkSelfPending(){ return (cachedBookings||[]).filter(b=>b.self_booked&&b.status==='pending'&&b.admin_review==='pending'&&bkSelfInScope(b)); }
+function bkSelfPending(){ return (cachedBookings||[]).filter(b=>b.self_booked&&b.status==='pending'&&(b.admin_review==='pending'||b.admin_review==='room_wait')&&bkSelfInScope(b)); }
 function bkSelfWho(){ return (typeof ADMIN_EMAIL!=='undefined'&&ADMIN_EMAIL)||(ACCESS_KEY&&ACCESS_KEY._asTeacher&&ACCESS_KEY._asTeacher.name)||'教务'; }
+function bkSelfEsc(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function bkSelfReviewHtml(){
   const list=bkSelfPending();
   if(!list.length) return '';
-  const rows=bkSelfOpen?`<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">${list.sort((a,b)=>String(a.slot_date).localeCompare(String(b.slot_date))).map(b=>`<div style="background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:8px 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+  const waitN=list.filter(b=>b.admin_review==='room_wait').length;
+  const rows=bkSelfOpen?`<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">${list.sort((a,b)=>String(a.slot_date).localeCompare(String(b.slot_date))).map(b=>{
+    const wait=b.admin_review==='room_wait';
+    return `<div style="background:${wait?'#fff1e0':'var(--surface)'};border:1px solid ${wait?'#e8b27a':'var(--border)'};border-radius:3px;padding:8px 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div style="flex:1;min-width:220px;font-size:12px;line-height:1.7">
-        <div><strong>${b.name}</strong> · 老师：${b.assigned_teacher||'—'} · ${b.teacher_ok?'<span style="color:var(--ok)">老师已确认</span>':'<span style="color:var(--text-3)">老师还没确认</span>'}</div>
+        <div><strong>${b.name}</strong> · 老师：${b.assigned_teacher||'—'} · ${b.teacher_ok?'<span style="color:var(--ok)">老师已确认</span>':'<span style="color:var(--text-3)">老师还没确认</span>'}${wait?' <span style="font-size:10px;color:#a0521a;background:#fdf1e6;border:1px solid #e8c9a8;border-radius:2px;padding:0 5px">教室已满·待调整</span>':''}</div>
         <div>${b.slot_date} ${b.slot_time_range||''} · ${locationLong(b.location)||'线上'}${(b.location||'').startsWith('offline')?' <span style="color:var(--danger)">（通过时需安排教室）</span>':''}</div>
         <div style="font-size:10px;color:var(--text-3)">提交时间：${/^\d{10,}$/.test(String(b.id))?new Date(+b.id).toLocaleString('zh-CN',{hour12:false}):(b.created_at||'—')}</div>
+        ${wait&&b.admin_review_note?`<details style="font-size:11px"><summary style="cursor:pointer;color:#a0521a">通知文字 ▸</summary>
+          <div style="white-space:pre-wrap;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:6px 8px;margin-top:4px">${bkSelfEsc(b.admin_review_note)}</div>
+          <button class="btn btn-outline btn-sm" style="margin-top:4px" onclick="bkSelfCopyNote('${b.id}')">复制</button></details>`:''}
       </div>
+      ${wait?`<button class="btn btn-outline btn-sm" onclick="openAdminVipReschedule('${b.id}')">🔄 调整时间</button>`:''}
       <button class="btn btn-primary btn-sm" onclick="bkSelfApprove('${b.id}')">${(b.location||'').startsWith('offline')?'通过并安排教室':'通过'}</button>
       <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="bkSelfReject('${b.id}')">退回</button>
-    </div>`).join('')}</div>`:'';
+    </div>`;}).join('')}</div>`:'';
   return `<div style="background:#fff8e1;border:1px solid #e6a817;border-radius:3px;padding:9px 12px;margin-bottom:10px">
-    <div onclick="bkSelfOpen=!bkSelfOpen;renderBookingPage(document.getElementById('mainContent'))" style="cursor:pointer;font-size:12px;font-weight:600;color:#856404">学生自主预约待审核：${list.length} 条 ${bkSelfOpen?'▾':'→'}</div>${rows}
+    <div onclick="bkSelfOpen=!bkSelfOpen;renderBookingPage(document.getElementById('mainContent'))" style="cursor:pointer;font-size:12px;font-weight:600;color:#856404">学生自主预约待审核：${list.length} 条${waitN?`（其中教室待调整 ${waitN} 条）`:''} ${bkSelfOpen?'▾':'→'}</div>${rows}
   </div>`;
+}
+function bkSelfCopyNote(id){
+  const b=cachedBookings.find(x=>x.id===id); if(!b) return;
+  bkSelfCopyText(b.admin_review_note||'');
+}
+function bkSelfCopyText(t){
+  const fb=()=>{ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); alert('已复制'); }catch(_){ alert('复制失败，请手动选中复制'); } ta.remove(); };
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(()=>alert('已复制'),fb); else fb();
 }
 // 教务通过 = 预约成立（status 直接变「已确认」，学生可正常上课），不等老师确认；线下的在这里安排教室（写入排课系统，和老师端 VIP 预约同一套）
 function bkvWeekday(d){ const w=new Date(d+'T12:00:00').getDay(); return w===0?7:w; }
 function bkvTimeParts(r){ const m=String(r||'').match(/(\d{1,2}:\d{2})\s*[-–~～]\s*(\d{1,2}:\d{2})/); if(!m) return null; const pad=t=>t.length===4?'0'+t:t; return [pad(m[1]),pad(m[2])]; }
 function bkvCampus(loc){ if(!loc) return ''; if(loc.endsWith('ichigaya')) return '市谷'; if(loc.endsWith('takadanobaba')) return '高马'; return ''; }
 function bkvErr(e){ try{ const j=JSON.parse(e.message); if(j.message) return j.message; }catch(_){} return e.message; }
-async function bkvLoadRooms(campus,date,start,end){
-  const all=await sb(`/rest/v1/sched_rooms?campus=eq.${encodeURIComponent(campus)}&type=eq.VIP&select=id,name,active,sort&order=sort`);
-  const rooms=(all||[]).filter(r=>r.active!==false&&!/コスモ|cosmo|外借/i.test(r.name||''));
-  if(!rooms.length) return [];
-  const wd=bkvWeekday(date);
-  const bks=await sb(`/rest/v1/sched_bookings?room_id=in.(${rooms.map(r=>r.id).join(',')})&status=neq.rejected&or=(booking_date.eq.${date},recurrence.eq.weekly)&select=id,room_id,course_id,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status,title,kind`);
-  let hits=(bks||[]).filter(x=>{
-    if(!(start<x.end_time&&x.start_time<end)) return false;
-    if(x.recurrence==='weekly'){ const w=Number(x.weekday); if((w===0?7:w)!==wd) return false; if(x.start_date&&date<x.start_date) return false; if(x.end_date&&date>x.end_date) return false; return true; }
-    return x.booking_date===date;
-  });
+function bkvAddDays(d,n){ const x=new Date(d+'T12:00:00Z'); x.setUTCDate(x.getUTCDate()+n); return x.toISOString().slice(0,10); }
+function bkvOnDate(x,date){
+  if(x.recurrence==='weekly'){ const w=Number(x.weekday); if((w===0?7:w)!==bkvWeekday(date)) return false; if(x.start_date&&date<x.start_date) return false; if(x.end_date&&date>x.end_date) return false; return true; }
+  return x.booking_date===date;
+}
+// 休讲日的周循环课不占教室
+async function bkvSkipMap(hits){
   const cids=[...new Set(hits.filter(x=>x.recurrence==='weekly'&&x.course_id).map(x=>x.course_id))];
+  const map={};
   if(cids.length){ try{
     const cs=await sb(`/rest/v1/sched_courses?id=in.(${cids.join(',')})&select=id,skip_dates`);
-    const skip=new Set((cs||[]).filter(c=>c.skip_dates&&c.skip_dates.split(',').map(s=>s.trim()).includes(date)).map(c=>String(c.id)));
-    hits=hits.filter(x=>!(x.recurrence==='weekly'&&skip.has(String(x.course_id))));
+    (cs||[]).forEach(c=>{ map[String(c.id)]=new Set(String(c.skip_dates||'').split(',').map(t=>t.trim()).filter(Boolean)); });
   }catch(_){} }
-  return rooms.map(r=>({...r,conf:hits.filter(x=>String(x.room_id)===String(r.id))}));
+  return map;
+}
+function bkvBusy(bks,skip,roomId,date,s,e,excludeId){
+  return bks.some(x=>String(x.room_id)===String(roomId)&&!(excludeId&&String(x.id)===String(excludeId))&&x.status!=='rejected'
+    &&bkvOnDate(x,date)&&s<x.end_time&&x.start_time<e
+    &&!(x.recurrence==='weekly'&&x.course_id&&skip[String(x.course_id)]&&skip[String(x.course_id)].has(date)));
+}
+// 返回 {vip:[…], big:[…]}；每个教室带 conf（该时段的冲突占用）。excludeSchedId：这条预约自己已占的排课记录，不算冲突
+async function bkvLoadRooms(campus,date,start,end,excludeSchedId){
+  const all=await sb(`/rest/v1/sched_rooms?campus=eq.${encodeURIComponent(campus)}&type=in.(VIP,${encodeURIComponent('大课')})&select=id,name,campus,type,capacity,active,sort&order=sort`);
+  const vip=(all||[]).filter(r=>r.type==='VIP'&&r.active!==false&&!/コスモ|cosmo|外借/i.test(r.name||''));
+  const big=(all||[]).filter(r=>r.type==='大课'&&r.active!==false&&!/コスモ|cosmo|外借|租/i.test((r.name||'')+(r.campus||'')));
+  const rooms=[...vip,...big];
+  if(!rooms.length) return {vip:[],big:[]};
+  const bks=await sb(`/rest/v1/sched_bookings?room_id=in.(${rooms.map(r=>r.id).join(',')})&status=neq.rejected&or=(booking_date.eq.${date},recurrence.eq.weekly)&select=id,room_id,course_id,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status,title,kind`);
+  let hits=(bks||[]).filter(x=>!(excludeSchedId&&String(x.id)===String(excludeSchedId))&&start<x.end_time&&x.start_time<end&&bkvOnDate(x,date));
+  const skip=await bkvSkipMap(hits);
+  hits=hits.filter(x=>!(x.recurrence==='weekly'&&x.course_id&&skip[String(x.course_id)]&&skip[String(x.course_id)].has(date)));
+  const mk=r=>({...r,conf:hits.filter(x=>String(x.room_id)===String(r.id))});
+  return {vip:vip.map(mk),big:big.map(mk)};
 }
 async function bkSelfApprove(id){
   const b=cachedBookings.find(x=>x.id===id); if(!b) return;
@@ -141,22 +172,33 @@ async function bkSelfApprove(id){
   document.getElementById('bkSelfRoomModal')?.remove();
   const m=document.createElement('div'); m.id='bkSelfRoomModal';
   m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  m.innerHTML=`<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:400px;width:100%">
+  m.innerHTML=`<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:420px;width:100%;max-height:88vh;overflow-y:auto">
     <div style="font-size:13px;font-weight:600;margin-bottom:4px">通过并安排教室 · ${b.name}</div>
     <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">${b.slot_date} ${b.slot_time_range||''} · ${locationLong(b.location)} · 老师：${b.assigned_teacher||'—'}</div>
-    <div class="form-group"><label class="form-label">教室（必选，会写入排课系统）</label><select id="bkSelfRoom"><option value="">加载中…</option></select>
-      <div style="font-size:10px;color:var(--text-3);margin-top:4px">灰色为该时段已占用（含待审批预约）</div></div>
+    <div id="bkSelfRoomBody"><div style="font-size:12px;color:var(--text-3)">加载中…</div></div>
     <div style="display:flex;gap:8px;margin-top:14px">
-      <button id="bkSelfRoomOk" class="btn btn-primary btn-sm" onclick="bkSelfApproveRoom('${id}')">通过</button>
+      <button id="bkSelfRoomOk" class="btn btn-primary btn-sm" disabled>通过</button>
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('bkSelfRoomModal').remove()">取消</button>
     </div></div>`;
   document.body.appendChild(m);
-  const sel=document.getElementById('bkSelfRoom');
+  const body=document.getElementById('bkSelfRoomBody'), ok=document.getElementById('bkSelfRoomOk');
   try{
-    window.__bkSelfRooms=await bkvLoadRooms(campus,b.slot_date,tp[0],tp[1]);
-    const rs=window.__bkSelfRooms;
-    sel.innerHTML=rs.length?'<option value="">请选择教室</option>'+rs.map(r=>{const busy=r.conf.length>0;const tag=busy?'占用：'+r.conf.map(c=>(c.title||c.kind||'')+(c.status==='pending'?'·待审批':'')).join('、'):'空闲';return `<option value="${r.id}"${busy?' disabled':''}>${r.name}（${tag}）</option>`;}).join(''):'<option value="">该校区暂无 VIP 教室</option>';
-  }catch(e){ sel.innerHTML='<option value="">教室加载失败</option>'; }
+    const rs=await bkvLoadRooms(campus,b.slot_date,tp[0],tp[1],b.sched_booking_id);
+    window.__bkSelfRooms=[...rs.vip,...rs.big];
+    const vipFree=rs.vip.some(r=>!r.conf.length), bigFree=rs.big.filter(r=>!r.conf.length);
+    if(vipFree){
+      body.innerHTML=`<div class="form-group"><label class="form-label">教室（必选，会写入排课系统）</label><select id="bkSelfRoom"><option value="">请选择教室</option>${rs.vip.map(r=>{const busy=r.conf.length>0;const tag=busy?'占用：'+r.conf.map(c=>(c.title||c.kind||'')+(c.status==='pending'?'·待审批':'')).join('、'):'空闲';return `<option value="${r.id}"${busy?' disabled':''}>${r.name}（${tag}）</option>`;}).join('')}</select>
+        <div style="font-size:10px;color:var(--text-3);margin-top:4px">灰色为该时段已占用（含待审批预约）</div></div>`;
+      ok.disabled=false; ok.textContent='通过'; ok.onclick=()=>bkSelfApproveRoom(id);
+    }else if(bigFree.length){
+      body.innerHTML=`<div style="font-size:12px;color:#a0521a;background:#fdf1e6;border:1px solid #e8c9a8;border-radius:3px;padding:6px 8px;margin-bottom:8px">VIP 教室已满，可安排大教室</div>
+        <div class="form-group"><label class="form-label">大教室（必选，会写入排课系统）</label><select id="bkSelfRoom"><option value="">请选择教室</option>${bigFree.map(r=>`<option value="${r.id}">${r.name}${r.capacity?'（'+r.capacity+'人）':''}</option>`).join('')}</select></div>`;
+      ok.disabled=false; ok.textContent='通过'; ok.onclick=()=>bkSelfApproveRoom(id);
+    }else{
+      body.innerHTML=`<div style="font-size:12px;color:var(--danger)">VIP 教室和大教室都已排满</div>`;
+      ok.disabled=false; ok.textContent='生成调整通知'; ok.onclick=()=>bkSelfNotice(id);
+    }
+  }catch(e){ body.innerHTML='<div style="font-size:12px;color:var(--danger)">教室加载失败：'+bkSelfEsc(bkvErr(e))+'</div>'; }
 }
 async function bkSelfApproveRoom(id){
   const sel=document.getElementById('bkSelfRoom'); const roomId=sel&&sel.value;
@@ -166,10 +208,60 @@ async function bkSelfApproveRoom(id){
   const ok=await bkSelfApproveDo(id,{id:roomId,name:r?r.name:''});
   if(ok) document.getElementById('bkSelfRoomModal')?.remove(); else if(btn) btn.disabled=false;
 }
+// 都满了：生成通知文字（当天空档 + 前后 5 天同时段 + 另一校区），VIP 教室和大教室都算
+async function bkSelfNotice(id){
+  const b=cachedBookings.find(x=>x.id===id); if(!b) return;
+  const tp=bkvTimeParts(b.slot_time_range), campus=bkvCampus(b.location); if(!tp||!campus) return;
+  const btn=document.getElementById('bkSelfRoomOk'); if(btn){ btn.disabled=true; btn.textContent='生成中…'; }
+  try{
+    const rooms=window.__bkSelfRooms||[];
+    const d0=bkvAddDays(b.slot_date,-5), d1=bkvAddDays(b.slot_date,5);
+    const bks=rooms.length?(await sb(`/rest/v1/sched_bookings?room_id=in.(${rooms.map(r=>r.id).join(',')})&status=neq.rejected&or=(recurrence.eq.weekly,and(booking_date.gte.${d0},booking_date.lte.${d1}))&select=id,room_id,course_id,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status`))||[]:[];
+    const skip=await bkvSkipMap(bks);
+    const free=(date,s,e)=>rooms.some(r=>!bkvBusy(bks,skip,r.id,date,s,e,b.sched_booking_id));
+    const mins=t=>{ const [h,m]=t.split(':').map(Number); return h*60+m; };
+    const hhmm=n=>String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');
+    const dur=mins(tp[1])-mins(tp[0]);
+    const sameDay=[];
+    for(let st=8*60;st+dur<=22*60&&sameDay.length<6;st+=30){
+      if(hhmm(st)===tp[0]) continue;
+      if(free(b.slot_date,hhmm(st),hhmm(st+dur))) sameDay.push(hhmm(st)+'-'+hhmm(st+dur));
+    }
+    const near=[];
+    for(let off=1;off<=5;off++) for(const d of [bkvAddDays(b.slot_date,-off),bkvAddDays(b.slot_date,off)]) if(free(d,tp[0],tp[1])) near.push(d);
+    const md=d=>`${+d.slice(5,7)}/${+d.slice(8,10)}`;
+    const wd='周'+'一二三四五六日'[bkvWeekday(b.slot_date)-1];
+    const other=campus==='市谷'?'高马':'市谷';
+    let t=`${b.assigned_teacher||''}老师您好：学生 ${b.name} 的 VIP 课 ${md(b.slot_date)}（${wd}）${tp[0]}-${tp[1]} 在 ${campus} 的 VIP 教室和大教室都已排满，需要调整上课时间。`;
+    if(sameDay.length) t+=`当天可改约时段：${sameDay.join('、')}。`;
+    if(near.length) t+=`同时段就近可约日期：${near.slice(0,6).map(md).join('、')}。`;
+    t+=`也可以改到 ${other}。请和学生确认新的时间后告诉我，谢谢！`;
+    document.getElementById('bkSelfRoomBody').innerHTML=`<div style="font-size:12px;color:var(--danger);margin-bottom:6px">VIP 教室和大教室都已排满</div>
+      <label class="form-label">通知文字（可编辑，复制后发给上课老师）</label>
+      <textarea id="bkSelfNoticeText" rows="7" style="width:100%;font-size:12px">${bkSelfEsc(t)}</textarea>
+      <button class="btn btn-outline btn-sm" style="margin-top:4px" onclick="bkSelfCopyText(document.getElementById('bkSelfNoticeText').value)">复制文字</button>`;
+    if(btn){ btn.disabled=false; btn.textContent='保存为待调整'; btn.onclick=()=>bkSelfSaveWait(id); }
+  }catch(e){ alert('生成失败：'+bkvErr(e)); if(btn){ btn.disabled=false; btn.textContent='生成调整通知'; } }
+}
+// 保存为待调整：预约不取消、不退回；留在待审核列表里，不给学生发消息
+async function bkSelfSaveWait(id){
+  const b=cachedBookings.find(x=>x.id===id); if(!b) return;
+  const text=(document.getElementById('bkSelfNoticeText')||{}).value||'';
+  if(!text.trim()){ alert('通知文字不能为空'); return; }
+  const patch={admin_review:'room_wait',admin_review_note:text.trim(),admin_review_by:bkSelfWho(),admin_review_at:new Date().toISOString()};
+  const btn=document.getElementById('bkSelfRoomOk'); if(btn) btn.disabled=true;
+  try{
+    const rows=await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(id)}`,'PATCH',patch);
+    if(Array.isArray(rows)&&!rows.length) throw new Error('数据库没有允许修改这条预约（0 行被更新）');
+    Object.assign(b,patch);
+    document.getElementById('bkSelfRoomModal')?.remove();
+    bkSelfOpen=true; renderBookingPage(document.getElementById('mainContent'));
+  }catch(e){ alert('保存失败：'+e.message); if(btn) btn.disabled=false; }
+}
 async function bkSelfApproveDo(id,room){
   const b=cachedBookings.find(x=>x.id===id); if(!b) return false;
   const now=new Date().toISOString(), who=bkSelfWho();
-  let schedId=null;
+  let schedId=null, createdNew=false;
   if(room){
     const tp=bkvTimeParts(b.slot_time_range);
     const rec={
@@ -178,14 +270,29 @@ async function bkSelfApproveDo(id,room){
       start_time:tp[0],end_time:tp[1],uses_meeting:false,meeting_account_id:null,show_title:false,
       status:'confirmed',reviewed_at:now,created_by:who,note:'学生自主预约·教务安排'};
     try{
-      let ins;
-      try{ ins=await sb('/rest/v1/sched_bookings','POST',rec); }
-      catch(e1){
-        // 这个账号没有权限直接写成「已确认」时，退回成「待审批」（和老师端 VIP 预约一样，之后在排课系统「预约批准」里通过）
-        if(!/42501|row-level security/i.test(e1.message||'')) throw e1;
-        ins=await sb('/rest/v1/sched_bookings','POST',Object.assign({},rec,{status:'pending',reviewed_at:null}));
+      // 老师确认时已经占过教室：改写那一条（新教室/新时间），改写失败（已被删）再新建
+      if(b.sched_booking_id){
+        const upd=Object.assign({},rec); delete upd.created_by;
+        let rows=null;
+        try{
+          try{ rows=await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`,'PATCH',upd); }
+          catch(e0){
+            if(!/42501|row-level security/i.test(e0.message||'')) throw e0;
+            rows=await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`,'PATCH',Object.assign({},upd,{status:'pending',reviewed_at:null}));
+          }
+        }catch(_){ rows=null; }
+        if(Array.isArray(rows)&&rows.length) schedId=b.sched_booking_id;
       }
-      schedId=ins[0].id;
+      if(!schedId){
+        let ins;
+        try{ ins=await sb('/rest/v1/sched_bookings','POST',rec); }
+        catch(e1){
+          // 这个账号没有权限直接写成「已确认」时，退回成「待审批」（和老师端 VIP 预约一样，之后在排课系统「预约批准」里通过）
+          if(!/42501|row-level security/i.test(e1.message||'')) throw e1;
+          ins=await sb('/rest/v1/sched_bookings','POST',Object.assign({},rec,{status:'pending',reviewed_at:null}));
+        }
+        schedId=ins[0].id; createdNew=true;
+      }
     }catch(e){ alert('教室预约失败，未通过：'+bkvErr(e)); return false; }
   }
   const patch={admin_review:'approved',admin_review_by:who,admin_review_at:now,status:'confirmed',
@@ -196,7 +303,7 @@ async function bkSelfApproveDo(id,room){
     if(Array.isArray(rows)&&!rows.length) throw new Error('数据库没有允许修改这条预约（0 行被更新）');
     Object.assign(b,patch); renderBookingPage(document.getElementById('mainContent')); return true;
   }catch(e){
-    if(schedId){ try{ await sb(`/rest/v1/sched_bookings?id=eq.${schedId}`,'DELETE'); }catch(_){} }   // 预约没改成功，释放刚占的教室
+    if(schedId&&createdNew){ try{ await sb(`/rest/v1/sched_bookings?id=eq.${schedId}`,'DELETE'); }catch(_){} }   // 预约没改成功，释放刚占的教室
     alert('操作失败：'+e.message); return false;
   }
 }
@@ -278,6 +385,7 @@ function openAdminVipReschedule(bookingId) {
       <div class="form-group"><label class="form-label">调整原因（必填）</label>
         <select id="avr_reason_select" onchange="document.getElementById('avr_reason_other').style.display=this.value==='其他'?'block':'none'">
           <option value="">请选择</option>
+          <option>教室已满</option>
           <option>学生迟到</option>
           <option>学生请假</option>
           <option>学生生病</option>
@@ -292,6 +400,7 @@ function openAdminVipReschedule(bookingId) {
       </div>
     </div>`;
   document.body.appendChild(modal);
+  if (b.admin_review === 'room_wait') document.getElementById('avr_reason_select').value = '教室已满';
 }
 
 async function saveAdminVipReschedule(bookingId) {
@@ -307,11 +416,15 @@ async function saveAdminVipReschedule(bookingId) {
   if (!reason) { alert('请填写调整原因'); return; }
   const timeRange = `${start}\u2013${end}`;
   try {
-    await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', {
-      slot_date: date, slot_time_range: timeRange,
-      reschedule_reason: reason, reschedule_by: 'admin',
-    });
-    Object.assign(b, { slot_date: date, slot_time_range: timeRange, reschedule_reason: reason, reschedule_by: 'admin' });
+    const patch = { slot_date: date, slot_time_range: timeRange, reschedule_reason: reason, reschedule_by: 'admin' };
+    // 教室已满待调整：老师之前占的旧时间教室一并释放（通过时按新时间重新占）
+    if (b.admin_review === 'room_wait' && b.sched_booking_id) {
+      try { await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`, 'DELETE'); }
+      catch (e0) { alert('释放原教室失败，未保存：' + bkvErr(e0)); return; }
+      patch.sched_booking_id = null;
+    }
+    await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', patch);
+    Object.assign(b, patch);
     document.getElementById('adminVipRescheduleModal').remove();
     renderBookingPage(document.getElementById('mainContent'));
   } catch (e) { alert('保存失败：' + e.message); }
@@ -333,7 +446,7 @@ function renderVipBookingCard(b){
   return `<div class="booking-card status-${b.status}">
     <div class="booking-header">
       <div>
-        <div class="booking-name">${b.name} <span style="font-size:11px;color:var(--text-3);font-weight:400">VIP</span>${b.self_booked?` <span style="font-size:10px;color:#a0521a;background:#fdf1e6;border:1px solid #e8c9a8;border-radius:2px;padding:0 5px;font-weight:400">自主填写 · ${b.admin_review==='approved'?'教务已通过':b.admin_review==='rejected'?'教务已退回':'待教务审核'} · ${b.teacher_ok?'老师已确认':'老师未确认'}</span>`:''}</div>
+        <div class="booking-name">${b.name} <span style="font-size:11px;color:var(--text-3);font-weight:400">VIP</span>${b.self_booked?` <span style="font-size:10px;color:#a0521a;background:#fdf1e6;border:1px solid #e8c9a8;border-radius:2px;padding:0 5px;font-weight:400">自主填写 · ${b.admin_review==='approved'?'教务已通过':b.admin_review==='rejected'?'教务已退回':b.admin_review==='room_wait'?'教室已满·待调整':'待教务审核'} · ${b.teacher_ok?'老师已确认':'老师未确认'}</span>`:''}</div>
         <div class="booking-meta">${b.slot_date} ${b.slot_time_range||''} · ${b.duration||''}min</div>
         ${teacherName?`<div style="font-size:11px;color:var(--text-2);margin-top:2px">👤 ${teacherName} <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="openReassignTeacher('${b.id}','${b.slot_id}')">重新分配</button></div>`:`<div style="font-size:11px;color:var(--danger);margin-top:2px">⚠ 未关联老师 <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="openReassignTeacher('${b.id}','${b.slot_id}')">分配老师</button></div>`}
       </div>
