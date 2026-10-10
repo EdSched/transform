@@ -225,6 +225,10 @@ async function renderMajorManager(body){
   try{ rows=await sb('/rest/v1/majors?select=*&order=domain,label')||[]; }catch(e){ body.innerHTML='<div style="padding:20px;color:var(--danger)">加载失败：'+e.message+'</div>'; return; }
   if(!mgAdmin) rows=rows.filter(r=>mgDoms.includes(r.domain));   // 负责人只看自己范围内领域的专业
   window._majorRows=rows;
+  let grps=[];
+  try{ grps=await sb('/rest/v1/major_groups?select=*&order=domain,sort,key')||[]; }catch(e){ grps=[]; }   // 表还没建时不显示分组
+  if(!mgAdmin) grps=grps.filter(g=>mgDoms.includes(g.domain));
+  window._majorGroupRows=grps;
   // 按领域分组
   const byDom={};
   rows.forEach(r=>{ const d=r.domain||'（未设领域）'; (byDom[d]=byDom[d]||[]).push(r); });
@@ -239,7 +243,7 @@ async function renderMajorManager(body){
       <div style="font-size:12px;font-weight:600;margin-bottom:10px">＋ 新建专业</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
         <div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">领域</div>
-          <select id="mm_domain" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px">${domainOpts}</select></div>
+          <select id="mm_domain" onchange="_mmNewGroup='';mmNewGroupChips()" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px">${domainOpts}</select></div>
         <div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">专业中文名</div>
           <input id="mm_label" placeholder="如 机械工学" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:130px"></div>
         <div><div style="font-size:10px;color:var(--accent);margin-bottom:3px">日文专业名（强烈建议填写）</div>
@@ -248,34 +252,121 @@ async function renderMajorManager(body){
           <input id="mm_key" placeholder="留空则自动生成" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:130px"></div>
         <button class="btn btn-primary btn-sm" onclick="mmCreate()">新建</button>
       </div>
+      <div id="mm_newgrp" style="margin-top:8px"></div>
       <div style="font-size:9px;color:var(--text-3);margin-top:6px">代号只能小写字母/数字/下划线，以字母开头，按「日文专业名」的罗马音自动生成（更准确）；不填日文名则退回按中文名生成，可能不准，建议之后手动补上日文名。</div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:18px;background:var(--bg,#faf9f7)">
+      <div style="font-size:12px;font-weight:600;margin-bottom:10px">＋ 新建分组 <span style="font-size:10px;font-weight:400;color:var(--text-3)">（同一领域下把几个专业合成一组，如「生命科学」下面放生物医学、齿科；学生、老师的专业仍填最细的那一层）</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">领域</div>
+          <select id="mg_domain" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px">${domainOpts}</select></div>
+        <div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">分组名称</div>
+          <input id="mg_label" placeholder="如 生命科学" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:130px"></div>
+        <div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">代号（小写字母/数字/下划线）</div>
+          <input id="mg_key" placeholder="如 seimei_group" style="padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:140px"></div>
+        <button class="btn btn-primary btn-sm" onclick="mmGroupCreate()">新建分组</button>
+      </div>
     </div>`;
-  // 按 DOMAINS 顺序 + 未设领域，列出每个领域的专业
+  // 按 DOMAINS 顺序 + 未设领域：每个领域先列分组（组内专业缩进在分组下面），再列不属于任何分组的专业
   const domOrder=[...DOMAINS.map(d=>d.label),'（未设领域）'];
-  domOrder.forEach(dom=>{
-    const list=byDom[dom]; if(!list||!list.length) return;
-    html+=`<div style="margin-bottom:14px">
-      <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:${dom==='（未设领域）'?'var(--danger)':'var(--text)'}">${dom} <span style="font-size:10px;color:var(--text-3)">(${list.length})</span></div>
-      <div style="display:flex;flex-direction:column;gap:4px">`;
-    list.forEach(m=>{
-      const jaCell = m.label_ja
-        ? `<span style="font-size:11px;color:var(--text-2)">JP：${majorEsc(m.label_ja)}</span>`
-        : `<span style="display:flex;align-items:center;gap:3px">
-             <input id="mm_ja_${m.key}" placeholder="补充日文名" style="font-size:10px;padding:2px 5px;border:1px solid var(--accent);border-radius:3px;width:90px">
-             <button onclick="mmSetLabelJa('${m.key}')" title="仅补充日文名用于对照参考，不会修改该专业已在用的代号" style="font-size:9px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:2px 7px;cursor:pointer;font-family:inherit">保存</button>
-           </span>`;
-      html+=`<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--border-light);border-radius:4px;flex-wrap:wrap">
+  const grpRows=window._majorGroupRows||[];
+  const rowHtml=(m,dom,gs)=>{
+    const jaCell = m.label_ja
+      ? `<span style="font-size:11px;color:var(--text-2)">JP：${majorEsc(m.label_ja)}</span>`
+      : `<span style="display:flex;align-items:center;gap:3px">
+           <input id="mm_ja_${m.key}" placeholder="补充日文名" style="font-size:10px;padding:2px 5px;border:1px solid var(--accent);border-radius:3px;width:90px">
+           <button onclick="mmSetLabelJa('${m.key}')" title="仅补充日文名用于对照参考，不会修改该专业已在用的代号" style="font-size:9px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:2px 7px;cursor:pointer;font-family:inherit">保存</button>
+         </span>`;
+    // 所属分组：chip 单选（只列同领域的分组，可选「不分组」）
+    const grpChips=gs.length?`<span style="display:flex;align-items:center;gap:4px;flex-wrap:wrap"><span style="font-size:10px;color:var(--text-3)">所属分组</span>
+        <span class="filter-chip${m.group_key?'':' active'}" style="padding:2px 8px;font-size:10px" onclick="mmSetGroup('${m.key}','')">不分组</span>
+        ${gs.map(g=>`<span class="filter-chip${m.group_key===g.key?' active':''}" style="padding:2px 8px;font-size:10px" onclick="mmSetGroup('${m.key}','${g.key}')">${majorEsc(g.label)}</span>`).join('')}</span>`:'';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--border-light);border-radius:4px;flex-wrap:wrap">
         <span style="font-size:12px;font-weight:500">${majorEsc(m.label)}</span>
         ${jaCell}
         <span style="font-size:10px;color:var(--text-3)">${m.key}</span>
+        ${grpChips}
         ${dom==='（未设领域）'?`<select onchange="mmSetDomain('${m.key}',this.value)" style="font-size:10px;padding:2px 4px;border:1px solid var(--border);border-radius:3px"><option value="">归到领域…</option>${domainOpts}</select>`:''}
         <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="mmDelete('${m.key}','${majorEsc(m.label)}')">删除</button>
       </div>`;
+  };
+  domOrder.forEach(dom=>{
+    const list=byDom[dom]||[];
+    const gs=grpRows.filter(g=>g.domain===dom);
+    if(!list.length && !gs.length) return;
+    html+=`<div style="margin-bottom:14px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:${dom==='（未设领域）'?'var(--danger)':'var(--text)'}">${dom} <span style="font-size:10px;color:var(--text-3)">(${list.length})</span></div>
+      <div style="display:flex;flex-direction:column;gap:4px">`;
+    gs.forEach(g=>{
+      const members=list.filter(m=>m.group_key===g.key);
+      html+=`<div style="border:1px solid var(--accent);border-radius:4px;padding:6px 8px;display:flex;flex-direction:column;gap:4px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:12px;font-weight:600">${majorEsc(g.label)}</span>
+          <span style="font-size:10px;color:var(--text-3)">分组 · ${g.key} · ${members.length} 个专业</span>
+          <span style="margin-left:auto;display:flex;gap:6px">
+            <button class="btn btn-outline btn-sm" onclick="mmGroupRename('${g.key}')">改名</button>
+            <button class="btn btn-outline btn-sm" onclick="mmGroupDelete('${g.key}')">删除分组</button>
+          </span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;padding-left:14px">${members.length?members.map(m=>rowHtml(m,dom,gs)).join(''):'<div style="font-size:10px;color:var(--text-3)">组内还没有专业：在下面专业的「所属分组」里选这个分组</div>'}</div>
+      </div>`;
     });
+    list.filter(m=>!m.group_key||!gs.some(g=>g.key===m.group_key)).forEach(m=>{ html+=rowHtml(m,dom,gs); });
     html+='</div></div>';
   });
   html+='</div>';
   body.innerHTML=html;
+  mmNewGroupChips();
+}
+// 新建专业时选所属分组（chip 单选，只列所选领域的分组；没有分组就不显示）
+let _mmNewGroup='';
+function mmNewGroupChips(){
+  const box=document.getElementById('mm_newgrp'); if(!box) return;
+  const dom=(document.getElementById('mm_domain')||{}).value;
+  const gs=(window._majorGroupRows||[]).filter(g=>g.domain===dom);
+  if(!gs.some(g=>g.key===_mmNewGroup)) _mmNewGroup='';
+  box.innerHTML=gs.length?`<span style="font-size:10px;color:var(--text-3);margin-right:6px">所属分组</span>
+    <span class="filter-chip${_mmNewGroup?'':' active'}" style="padding:2px 8px;font-size:10px" onclick="_mmNewGroup='';mmNewGroupChips()">不分组</span>
+    ${gs.map(g=>`<span class="filter-chip${_mmNewGroup===g.key?' active':''}" style="padding:2px 8px;font-size:10px" onclick="_mmNewGroup='${g.key}';mmNewGroupChips()">${majorEsc(g.label)}</span>`).join('')}`:'';
+}
+async function mmReloadMajors(){ await loadMajorsFromDB(); renderMajorManager(_mmHost||document.getElementById('consoleBody')); }
+async function mmSetGroup(key,g){
+  try{
+    await sb(`/rest/v1/majors?key=eq.${key}`,'PATCH',{group_key:g||null});
+    await mmReloadMajors();
+  }catch(e){ alert('设置分组失败：'+e.message); }
+}
+async function mmGroupCreate(){
+  const domain=document.getElementById('mg_domain').value;
+  const label=document.getElementById('mg_label').value.trim();
+  const key=document.getElementById('mg_key').value.trim().toLowerCase();
+  if(!label){ alert('请填分组名称'); return; }
+  if(!/^[a-z][a-z0-9_]*$/.test(key)){ alert('代号格式不对：只能用小写字母/数字/下划线，且以字母开头（如 seimei_group）'); return; }
+  if(key==='all'||MAJORS[key]||isMajorGroup(key)){ alert('代号「'+key+'」已被占用，请换一个'); return; }
+  const sort=((window._majorGroupRows||[]).filter(g=>g.domain===domain).length)+1;
+  try{
+    await sb('/rest/v1/major_groups','POST',{key,label,domain,sort});
+    await mmReloadMajors();
+  }catch(e){ alert('新建分组失败：'+e.message+'\n（如果提示表不存在，请先执行 seed/major_groups.sql）'); }
+}
+async function mmGroupRename(key){
+  const g=(window._majorGroupRows||[]).find(x=>x.key===key); if(!g) return;
+  const label=(prompt('分组新名称：',g.label)||'').trim();
+  if(!label||label===g.label) return;
+  try{
+    await sb(`/rest/v1/major_groups?key=eq.${key}`,'PATCH',{label});
+    await mmReloadMajors();
+  }catch(e){ alert('改名失败：'+e.message); }
+}
+async function mmGroupDelete(key){
+  const g=(window._majorGroupRows||[]).find(x=>x.key===key); if(!g) return;
+  const n=(window._majorRows||[]).filter(m=>m.group_key===key).length;
+  if(n){ alert(`分组「${g.label}」里还有 ${n} 个专业，请先把它们的「所属分组」改成别的或「不分组」，再删除分组。`); return; }
+  if(!confirm(`删除分组「${g.label}」(${key})？\n\n注意：已经用这个分组的课程、老师负责范围、课表发布对象等不会自动清除。确定删除？`)) return;
+  try{
+    await sb(`/rest/v1/major_groups?key=eq.${key}`,'DELETE');
+    await mmReloadMajors();
+  }catch(e){ alert('删除分组失败：'+e.message); }
 }
 function majorEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 async function mmCreate(){
@@ -288,6 +379,7 @@ async function mmCreate(){
   // 代号留空 → createMajor 会优先按日文名生成罗马音（更准确），无日文名则退回中文名
   const res=await createMajor(label,key,domain,labelJa);
   if(res){
+    if(_mmNewGroup){ try{ await sb(`/rest/v1/majors?key=eq.${res}`,'PATCH',{group_key:_mmNewGroup}); }catch(e){ alert('专业已建好，但设置所属分组失败：'+e.message); } }
     if(!key) alert(`已新建专业「${label}」，自动生成代号：${res}`);
     document.getElementById('mm_label_ja').value='';
     await loadMajorsFromDB(); renderMajorManager(_mmHost||document.getElementById('consoleBody'));
