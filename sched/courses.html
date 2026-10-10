@@ -45,7 +45,7 @@
 <div id="nav"></div>
 <div class="wrap">
   <div class="card">
-    <input id="q" class="sbox" type="search" placeholder="搜课程名、老师、专业、校区、星期…（例：N1、周一、市谷）" autocomplete="off">
+    <input id="q" class="sbox" type="search" placeholder="搜索课程名 / 老师（汉字 / 拼音首字母）/ 专业 / 校区 / 星期…（例：N1 周一 市谷）" autocomplete="off">
     <div class="srow"><span class="chip" id="onlyChip">只在筛选结果里搜</span><span class="muted" id="sNote" style="font-size:12px"></span></div>
   </div>
   <div class="card" id="filters">
@@ -63,6 +63,7 @@
   <div id="list"></div>
 </div>
 <script src="common.js?v=20261020"></script>
+<script src="../shared/search.js?v=20261029"></script>
 <script>
 const PAGE_SIZE = 30;
 const STATUSES = ['未开课','进行中','已结课'];
@@ -198,13 +199,11 @@ function buildHay(c){
   const lang = /语言|語学/.test(catOf(c)) ? langType(c) : '';
   return [c.name,c.merge_name,c.teacher,c.major,c.category,c.campus,c.mode,c.term,termKeyOf(c),lang,wd].filter(Boolean).join(' ').toLowerCase();
 }
-function tokens(){ return F.q.trim().toLowerCase().split(/[\s　]+/).filter(Boolean); }
-function searching(){ return tokens().length>0; }
+function searching(){ return searchNorm(F.q)!==''; }
 function currentList(){
   if(!searching()) return sortCourses(filtered(), false);
-  const toks=tokens();
   const base = F.only ? filtered() : COURSES.slice();
-  return sortCourses(base.filter(c=>toks.every(t=>HAY[c.id].includes(t))), true);
+  return sortCourses(base.filter(c=>searchMatch(F.q,[c.teacher,HAY[c.id]])), true);
 }
 
 /* ---------- 渲染 ---------- */
@@ -320,7 +319,7 @@ function bind(){
   });
   el('clearBtn').onclick=()=>{ ROWS.forEach(k=>F[k].clear()); STATUS_DEFAULT=false; SHOWN=PAGE_SIZE; renderAll(); };
   el('onlyChip').onclick=()=>{ F.only=!F.only; SHOWN=PAGE_SIZE; renderList(); };
-  el('q').oninput=()=>{ F.q=el('q').value; SHOWN=PAGE_SIZE; renderList(); };
+  bindSearch(el('q'),q=>{ F.q=q; SHOWN=PAGE_SIZE; renderList(); });
   el('list').addEventListener('click', e=>{
     if(e.target.id==='moreBtn'){ SHOWN+=PAGE_SIZE; renderList(); return; }
     const card=e.target.closest('.ccard'); if(!card) return;

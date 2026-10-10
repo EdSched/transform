@@ -85,10 +85,8 @@ function renderAdmissionDbPage(mc) {
 
   <!-- 搜索 -->
   <div style="margin-bottom:10px">
-    <input type="text" placeholder="搜索大学名、研究科、専攻…" value="${adbSearch}"
-      oninput="if(this.dataset.composing!=='1')setAdbSearch(this.value)"
-      oncompositionstart="this.dataset.composing='1'"
-      oncompositionend="this.dataset.composing='';setAdbSearch(this.value)"
+    <input type="text" placeholder="搜索大学名 / 研究科 / 専攻…" value="${searchAttr(adbSearch)}"
+      oninput="searchBox(this,setAdbSearch)"
       style="font-size:12px;max-width:320px">
   </div>
 
@@ -264,8 +262,7 @@ function filterAdmissionSchools() {
   if (adbEnglish !== 'all') list = list.filter(s => s.english_required === adbEnglish);
   if (adbJapanese !== 'all') list = list.filter(s => s.japanese_required === adbJapanese);
   if (adbSearch.trim()) {
-    const q = adbSearch.trim().toLowerCase();
-    list = list.filter(s => (s.university||'').toLowerCase().includes(q) || (s.faculty||'').toLowerCase().includes(q) || (s.department||'').toLowerCase().includes(q) || (s.admission_type||'').toLowerCase().includes(q));
+    list = list.filter(s => searchMatch(adbSearch, [s.university, s.faculty, s.department, s.admission_type], { names: 0 }));
   }
   // 出願月份范围筛选
   if (adbMonthFrom || adbMonthTo) {

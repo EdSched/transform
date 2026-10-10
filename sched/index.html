@@ -36,6 +36,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="common.js?v=20261020"></script>
+<script src="../shared/search.js?v=20261029"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], ROLE=null;
 const EMBED_ADMIN = new URLSearchParams(location.search).get('embed')==='admin';   // 嵌在管理端「资源管理」里
@@ -431,7 +432,7 @@ function tabAssign(){
   let h='<div class="card"><h3 style="margin-top:2px">排教室（把课程分配到教室）</h3>'+
     '<div class="tip">线下课需分配容量足够的教室；纯线上课不占教室，只需指定会议账号。分配后自动生成整学期每周占用。</div>'+
     '<div class="row" style="margin-bottom:10px">'+
-      '<div class="field"><label>搜索课程名/讲师</label><input id="af_q" placeholder="关键词"></div>'+
+      '<div class="field"><label>搜索课程名/讲师</label><input id="af_q" placeholder="搜索讲师（汉字 / 拼音首字母）/ 课程名…"></div>'+
       '<div class="field"><label>期</label><select id="af_term"></select></div>'+
       '<div class="field"><label>类别（专业/学科）</label><select id="af_cat"></select></div>'+
       '<div class="field"><label>校区</label><select id="af_campus"></select></div>'+
@@ -475,7 +476,8 @@ function tabAssign(){
     ['af_q','af_term','af_cat','af_campus','af_status','af_week'].forEach(id=>{ if(AF[id]!=null && el(id)) el(id).value=AF[id]; });
   }
   const saveAF=()=>{ window.AF_STATE={}; ['af_q','af_term','af_cat','af_campus','af_status','af_room','af_week','af_wd','af_dstart','af_dend','af_wd2','af_dstart2','af_dend2','af_mode'].forEach(id=>{ if(el(id)) window.AF_STATE[id]=el(id).value; }); };
-  ['af_q','af_term','af_cat','af_status'].forEach(id=>el(id)[id==='af_q'?'oninput':'onchange']=()=>{ saveAF(); renderAssignView(); });
+  ['af_term','af_cat','af_status'].forEach(id=>el(id).onchange=()=>{ saveAF(); renderAssignView(); });
+  bindSearch(el('af_q'),()=>{ saveAF(); renderAssignView(); });
   ['af_wd','af_dstart','af_dend','af_wd2','af_dstart2','af_dend2','af_mode'].forEach(id=>{ if(el(id)) el(id).onchange=()=>{ saveAF(); renderAssignView(); }; });
   if(AF){ ['af_wd','af_dstart','af_dend','af_wd2','af_dstart2','af_dend2','af_mode'].forEach(id=>{ if(AF[id]!=null && el(id)) el(id).value=AF[id]; }); }
   if(el('af_addrange')) el('af_addrange').onclick=()=>{ el('dayCtrl2').classList.remove('hidden'); window.AF_RANGE2=true; renderAssignView(); };
@@ -511,7 +513,7 @@ function renderAssignDay(){
   const wd=el('af_wd')?el('af_wd').value:'1';
   const ds=el('af_dstart')?el('af_dstart').value:'';
   const de=el('af_dend')?el('af_dend').value:'';
-  const term=el('af_term').value, cat=el('af_cat').value, q=(el('af_q').value||'').trim().toLowerCase();
+  const term=el('af_term').value, cat=el('af_cat').value, q=(el('af_q').value||'').trim();
   const isOnline = el('af_mode') && el('af_mode').value==='online';
   if(!campus){ box.innerHTML='<div class="muted">请先在上方选「校区」（线上课占教室时也需要选校区教室），再选周几和日期区间。</div>'; return; }
   const rooms=ROOMS.filter(r=>r.active!==false && r.campus===campus);
@@ -531,7 +533,7 @@ function renderAssignDay(){
     if(!activeInRange(c)) return false;
     if(term && c.term!==term) return false;
     if(cat && c.category!==cat) return false;
-    if(q && !((c.name||'').toLowerCase().includes(q)||(c.teacher||'').toLowerCase().includes(q))) return false;
+    if(q && !searchMatch(q,[c.teacher,c.name])) return false;
     return true;
   });
   // 合并组在右栏只显示一次（用合并名，排一次=整组排好）
@@ -646,7 +648,7 @@ function renderAssignWeek(){
   if(!slots.length){ el('assignTable').innerHTML='<div class="muted">该校区暂无课程时段可显示。</div>'; return; }
   // 已排到任何教室的课（这些不再作为候选）
   const assignedSet=new Set(BOOKINGS.filter(b=>b.kind==='course').map(b=>String(b.course_id)));
-  const q=(el('af_q').value||'').trim().toLowerCase();
+  const q=(el('af_q').value||'').trim();
   const term=el('af_term').value, cat=el('af_cat').value;
   // 定位到某一周：算出该周一~周日范围；未选则不限
   const weekPick=el('af_week')?el('af_week').value:'';
@@ -675,7 +677,7 @@ function renderAssignWeek(){
       if(cat && c.category!==cat) return false;
       if(!inCampus(c)) return false;
       if(!activeInWeek(c)) return false;
-      if(q && !((c.name||'').toLowerCase().includes(q)||(c.teacher||'').toLowerCase().includes(q))) return false;
+      if(q && !searchMatch(q,[c.teacher,c.name])) return false;
       return true;
     });
   }
@@ -790,12 +792,12 @@ function renderAssignWeek(){
   const cl=el('wk_clear'); if(cl) cl.onclick=()=>{ window.WK_PENDING[room.id]=new Set(); renderAssignWeek(); };
 }
 function renderAssignTable(){
-  const q=(el('af_q').value||'').trim().toLowerCase();
+  const q=(el('af_q').value||'').trim();
   const term=el('af_term').value, cat=el('af_cat').value, campus=el('af_campus').value, status=el('af_status').value;
   const assigned=new Set(BOOKINGS.filter(b=>b.kind==='course').map(b=>String(b.course_id)));
   let list=COURSES.filter(c=>{
     const done=assigned.has(String(c.id));
-    if(q && !((c.name||'').toLowerCase().includes(q) || (c.teacher||'').toLowerCase().includes(q))) return false;
+    if(q && !searchMatch(q,[c.teacher,c.name])) return false;
     if(term && c.term!==term) return false;
     if(cat && c.category!==cat) return false;
     if(campus && c.campus!==campus) return false;
@@ -1548,7 +1550,7 @@ function tabCourses(){
       '<div id="cf_importPrev" style="margin-top:10px"></div>'+
     '</div>'+
     '<div class="row" style="margin-bottom:10px">'+
-      '<div class="field"><label>搜索课名/讲师</label><input id="cf_q" placeholder="关键词"></div>'+
+      '<div class="field"><label>搜索课名/讲师</label><input id="cf_q" placeholder="搜索讲师（汉字 / 拼音首字母）/ 课程名…"></div>'+
       '<div class="field"><label>期</label><select id="cf_term"></select></div>'+
       '<div class="field"><label>类别</label><select id="cf_cat"></select></div>'+
       '<div class="field"><label>专业</label><select id="cf_major"><option value="">全部专业</option>'+majors.map(m=>`<option>${esc(m)}</option>`).join('')+'</select></div>'+
@@ -1564,7 +1566,8 @@ function tabCourses(){
   const st=window.CF_STATE||{};
   ['cf_q','cf_term','cf_cat','cf_major','cf_type','cf_campus'].forEach(id=>{ if(st[id]!=null && el(id)) el(id).value=st[id]; });
   const saveState=()=>{ window.CF_STATE={}; ['cf_q','cf_term','cf_cat','cf_major','cf_type','cf_campus'].forEach(id=>{ if(el(id)) window.CF_STATE[id]=el(id).value; }); };
-  ['cf_q','cf_term','cf_cat','cf_major','cf_type','cf_campus'].forEach(id=>el(id)[id==='cf_q'?'oninput':'onchange']=()=>{ saveState(); renderCoursesTable(); });
+  ['cf_term','cf_cat','cf_major','cf_type','cf_campus'].forEach(id=>el(id).onchange=()=>{ saveState(); renderCoursesTable(); });
+  bindSearch(el('cf_q'),()=>{ saveState(); renderCoursesTable(); });
   el('cf_new').onclick=()=>courseEdit(null);
   // ---- 批量导入 ----
   el('cf_import').onclick=()=>el('cf_importBox').classList.toggle('hidden');
@@ -1764,13 +1767,13 @@ function downloadCourseBackup(){
   }catch(e){ toast('导出失败：'+e.message, false); }
 }
 function renderCoursesTable(){
-  const q=(el('cf_q').value||'').trim().toLowerCase();
+  const q=(el('cf_q').value||'').trim();
   const term=el('cf_term').value, cat=el('cf_cat').value, major=el('cf_major').value, ctype=el('cf_type').value, campus=el('cf_campus').value;
   let list=COURSES.filter(c=>{
     // 学科负责人类别约束：ROLE.lead_cats 非空时，只显示其范围内的课
     if(ROLE && ROLE.lead_cats){ const scope=(ROLE.lead_cats||'').split(',').map(s=>s.trim()).filter(Boolean);
       if(scope.length && !scope.includes(courseScope(c))) return false; }
-    if(q && !((c.name||'').toLowerCase().includes(q)||(c.teacher||'').toLowerCase().includes(q))) return false;
+    if(q && !searchMatch(q,[c.teacher,c.name])) return false;
     if(term && c.term!==term) return false;
     if(cat && c.category!==cat) return false;
     if(major && c.major!==major) return false;

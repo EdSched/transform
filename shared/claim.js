@@ -120,7 +120,7 @@ function clPick(mode) { clState.mode = mode; clRender(); }
 function clExistingHtml() {
   const st = clState;
   const scope = st.searchMajors ? `搜索范围：${st.searchMajors.map(clMajorLabel).join('・')}` : '搜索范围：你能看到的全部学生';
-  return `<input id="clQ" value="${clEsc(st.booking.name)}" oninput="clSearch()" placeholder="输入姓名（可部分匹配）" style="width:100%;font-size:13px;padding:7px 9px;border:1px solid var(--border,#e2ded6);border-radius:3px;background:var(--bg,#f7f5f0);font-family:inherit">
+  return `<input id="clQ" value="${clEsc(st.booking.name)}" oninput="searchBox(this,clSearch)" placeholder="搜索姓名（汉字 / 拼音首字母）/ 专业…" style="width:100%;font-size:13px;padding:7px 9px;border:1px solid var(--border,#e2ded6);border-radius:3px;background:var(--bg,#f7f5f0);font-family:inherit">
     <div style="font-size:10px;color:var(--text-3,#9a9590);margin:4px 0 6px">${clEsc(scope)}</div>
     <div id="clResults" style="max-height:260px;overflow-y:auto;border:1px solid var(--border-light,#ede9e2);border-radius:3px"></div>`;
 }
@@ -131,8 +131,7 @@ function clSearch() {
   const q = (document.getElementById('clQ')?.value || '').trim();
   let list = st.students.filter(s => !st.searchMajors || st.searchMajors.includes(s.major));
   if (q) {
-    list = list.filter(s => (s.name || '').includes(q) || q.includes(s.name || '\u0000')
-      || (typeof matchesPinyin === 'function' && matchesPinyin(s.name || '', q)));
+    list = list.filter(s => searchMatch(q, studentSearchFields(s)) || q.includes(s.name || '\u0000'));
   }
   list = list.slice(0, 40);
   el.innerHTML = list.length ? list.map(s => `<div onclick="clChooseExisting('${clEsc(s.id)}')" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border-light,#ede9e2);cursor:pointer" onmouseover="this.style.background='var(--accent-light,#f5ede3)'" onmouseout="this.style.background=''">

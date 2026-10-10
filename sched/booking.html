@@ -44,7 +44,7 @@
       <div class="field"><label>止</label><input type="date" id="oc_to" value=""></div>
       <div class="field"><label>周几</label><select id="oc_wd"><option value="">不限</option>
         <option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="7">周日</option></select></div>
-      <div class="field"><label>搜索使用人/备注</label><input id="oc_q" placeholder="关键词"></div>
+      <div class="field"><label>搜索使用人/备注</label><input id="oc_q" placeholder="搜索使用人（汉字 / 拼音首字母）/ 备注…"></div>
       <div class="field"><label>&nbsp;</label><span class="muted" id="oc_count"></span></div>
     </div>
     <div id="occupyTable"></div><div id="occupyEdit"></div>
@@ -91,6 +91,7 @@
 </div>
 
 <script src="common.js?v=20261020"></script>
+<script src="../shared/search.js?v=20261029"></script>
 <script>
 el('nav').innerHTML = renderNav('booking.html');
 // 是否有「教室占用管理」权限：嵌入态由父页传 canmanage=1；独立态由 ?k= 解析角色
@@ -165,7 +166,8 @@ async function boot(){
   fillSelect(el('oc_campus'), CAMPUSES, v=>v, v=>v, '全部校区');
   fillMgmtRooms();
   el('oc_campus').onchange=()=>{ fillMgmtRooms(); renderMgmtTable(); };
-  ['oc_kind','oc_room','oc_from','oc_to','oc_wd','oc_q'].forEach(id=>el(id)[id==='oc_q'?'oninput':'onchange']=renderMgmtTable);
+  ['oc_kind','oc_room','oc_from','oc_to','oc_wd'].forEach(id=>el(id).onchange=renderMgmtTable);
+  bindSearch(el('oc_q'),renderMgmtTable);
   el('mgmtBtn').onclick = ()=>{ const c=el('mgmtCard'); const open=!c.classList.contains('hidden'); c.classList.toggle('hidden'); if(!open){ renderMgmtTable(); c.scrollIntoView({behavior:'smooth',block:'start'}); } };
   el('mgmtClose').onclick = ()=>el('mgmtCard').classList.add('hidden');
   applyManageUI();
@@ -187,7 +189,7 @@ function wireGridClicks(){
 function renderMgmtTable(){
   if(!CANMANAGE) return;
   const kind=el('oc_kind').value, campus=el('oc_campus').value, roomId=el('oc_room').value,
-        from=el('oc_from').value, to=el('oc_to').value, wd=el('oc_wd').value, q=(el('oc_q').value||'').trim().toLowerCase();
+        from=el('oc_from').value, to=el('oc_to').value, wd=el('oc_wd').value, q=(el('oc_q').value||'').trim();
   const rmap={}; ROOMS.forEach(r=>rmap[r.id]=r);
   const bWd=b=>{ if(b.recurrence==='weekly'){ const w=Number(b.weekday); return w===0?7:w; } if(b.booking_date){ const w=weekdayOf(b.booking_date); return w===0?7:w; } return null; };
   let list=BOOKINGS.filter(b=>b.kind!=='course' && b.status!=='rejected').filter(b=>{
@@ -199,7 +201,7 @@ function renderMgmtTable(){
     if(from && e && e<from) return false;
     if(to && s && s>to) return false;
     if(wd){ const w=bWd(b); if(w!==Number(wd)) return false; }
-    if(q && !((b.user_name||'').toLowerCase().includes(q)||(b.note||'').toLowerCase().includes(q)||(b.created_by||'').toLowerCase().includes(q))) return false;
+    if(q && !searchMatch(q,[b.user_name,b.created_by,b.note],{names:2})) return false;
     return true;
   }).sort((a,b)=>{ const da=a.booking_date||a.start_date||'', db=b.booking_date||b.start_date||''; return da.localeCompare(db); });
   el('oc_count').textContent='共 '+list.length+' 条';

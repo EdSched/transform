@@ -118,7 +118,7 @@ html.shareview #calBody:empty::after{ content:'课表加载中…'; color:#9a959
       <label>专业/共通课程（点选加入，可多选；可用「全选当前结果」一次全选；不选则不含专业课）</label>
       <div class="row" style="margin:4px 0 6px">
         <div class="field"><label style="font-size:11px">班级性质</label><select id="c_kind" style="min-width:110px"><option value="">全部性质</option></select></div>
-        <div class="field" style="flex:1;min-width:160px"><label style="font-size:11px">搜索课名</label><input id="c_q" placeholder="关键词过滤"></div>
+        <div class="field" style="flex:1;min-width:160px"><label style="font-size:11px">搜索课名</label><input id="c_q" placeholder="搜索课程名…"></div>
         <div class="field"><label style="font-size:11px">&nbsp;</label><button type="button" class="ghost sm" id="c_all">全选当前结果</button></div>
         <div class="field"><label style="font-size:11px">&nbsp;</label><button type="button" class="ghost sm" id="c_none">清空</button></div>
       </div>
@@ -129,7 +129,7 @@ html.shareview #calBody:empty::after{ content:'课表加载中…'; color:#9a959
       <div class="row" style="margin:4px 0 6px">
         <div class="field"><label style="font-size:11px">语种</label><select id="l_type" style="min-width:90px"><option value="">日语+英语</option><option value="日语">仅日语</option><option value="英语">仅英语</option></select></div>
         <div class="field"><label style="font-size:11px">班级性质</label><select id="l_kind" style="min-width:110px"><option value="">全部性质</option></select></div>
-        <div class="field" style="flex:1;min-width:140px"><label style="font-size:11px">搜索课名</label><input id="l_q" placeholder="关键词过滤"></div>
+        <div class="field" style="flex:1;min-width:140px"><label style="font-size:11px">搜索课名</label><input id="l_q" placeholder="搜索课程名…"></div>
         <div class="field"><label style="font-size:11px">&nbsp;</label><button type="button" class="ghost sm" id="l_all">全选当前结果</button></div>
         <div class="field"><label style="font-size:11px">&nbsp;</label><button type="button" class="ghost sm" id="l_none">清空</button></div>
       </div>
@@ -141,7 +141,7 @@ html.shareview #calBody:empty::after{ content:'课表加载中…'; color:#9a959
         <div class="field"><label>校区</label><select id="x_campus"></select></div>
         <div class="field"><label>类别</label><select id="x_cat"></select></div>
         <div class="field"><label>专业</label><select id="x_major"></select></div>
-        <div class="field" style="flex:1;min-width:160px"><label>搜索课名</label><input id="x_q" placeholder="关键词过滤"></div>
+        <div class="field" style="flex:1;min-width:160px"><label>搜索课名</label><input id="x_q" placeholder="搜索课程名 / 老师（汉字 / 拼音首字母）…"></div>
       </div>
       <div id="x_list" style="max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:6px;margin-top:8px;display:flex;flex-direction:column;gap:4px"></div>
       <div class="muted" id="x_info" style="font-size:12px;margin-top:6px"></div>
@@ -159,6 +159,7 @@ html.shareview #calBody:empty::after{ content:'课表加载中…'; color:#9a959
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="common.js?v=20261020"></script>
+<script src="../shared/search.js?v=20261029"></script>
 <script>
 el('nav').innerHTML = renderNav('timetable.html');
 pageRole().then(r=>{ if(r) el('nav').innerHTML = renderNav('timetable.html', r); }).catch(()=>{});
@@ -214,20 +215,20 @@ async function boot(){
   el('campus').onchange=()=>{ SELECTED_IDS.clear(); LANG_IDS.clear(); refreshCourseTags(); };
   // 专业课列表筛选
   el('c_kind').onchange=refreshCourseTags;
-  el('c_q').oninput=refreshCourseTags;
+  bindSearch(el('c_q'),refreshCourseTags);
   el('c_all').onclick=()=>{ (window._courseFiltered||[]).forEach(id=>SELECTED_IDS.add(id)); refreshCourseTags(); gen(); };
   el('c_none').onclick=()=>{ SELECTED_IDS.clear(); refreshCourseTags(); gen(); };
   // 语言课列表筛选
   el('l_type').onchange=refreshLangTags;
   el('l_kind').onchange=refreshLangTags;
-  el('l_q').oninput=refreshLangTags;
+  bindSearch(el('l_q'),refreshLangTags);
   el('l_all').onclick=()=>{ (window._langFiltered||[]).forEach(id=>LANG_IDS.add(id)); refreshLangTags(); gen(); };
   el('l_none').onclick=()=>{ LANG_IDS.clear(); refreshLangTags(); gen(); };
   ['lang','campus'].forEach(id=>el(id).onchange=refreshCourseTags);
   el('x_campus').onchange=()=>{ fillXMajors(); refreshExtraList(); };
   el('x_cat').onchange=()=>{ fillXMajors(); refreshExtraList(); };
   el('x_major').onchange=refreshExtraList;
-  el('x_q').oninput=refreshExtraList;
+  bindSearch(el('x_q'),refreshExtraList);
   el('go').onclick=gen; el('print').onclick=doPrint;
   if(el('ttLimit')) el('ttLimit').onchange=()=>{ document.querySelectorAll('.ttRange').forEach(x=>x.classList.toggle('hidden', el('ttLimit').value!=='1')); };
   el('tplSave').onclick=saveTpl; el('tplDel').onclick=delTpl; el('tpl').onchange=loadTpl;
@@ -353,8 +354,8 @@ function refreshCourseTags(){
   [...SELECTED_IDS].forEach(id=>{ if(!seen.has(id)) SELECTED_IDS.delete(id); });
   fillKindSelect('c_kind', cand);
   const kind=el('c_kind')?el('c_kind').value:'';
-  const q=(el('c_q')?el('c_q').value:'').trim().toLowerCase();
-  let list=cand.filter(c=>(!kind||classKind(c)===kind) && (!q||(c.name||'').toLowerCase().includes(q)));
+  const q=(el('c_q')?el('c_q').value:'').trim();
+  let list=cand.filter(c=>(!kind||classKind(c)===kind) && searchMatch(q,[c.name],{names:0}));
   // 排序：期倒序 → 班级性质 → 课名
   list.sort((a,b)=>{ if((a.term||'')!==(b.term||'')) return (b.term||'').localeCompare(a.term||'');
     const d=CLASS_KINDS.indexOf(classKind(a))-CLASS_KINDS.indexOf(classKind(b)); if(d)return d;
@@ -379,8 +380,8 @@ function refreshLangTags(){
   fillKindSelect('l_kind', cand);
   const lt=el('l_type')?el('l_type').value:'';
   const kind=el('l_kind')?el('l_kind').value:'';
-  const q=(el('l_q')?el('l_q').value:'').trim().toLowerCase();
-  let list=cand.filter(c=>(!lt||langType(c)===lt) && (!kind||classKind(c)===kind) && (!q||(c.name||'').toLowerCase().includes(q)));
+  const q=(el('l_q')?el('l_q').value:'').trim();
+  let list=cand.filter(c=>(!lt||langType(c)===lt) && (!kind||classKind(c)===kind) && searchMatch(q,[c.name],{names:0}));
   list.sort((a,b)=>{ if(langType(a)!==langType(b)) return langType(a)==='日语'?-1:1;
     if((a.term||'')!==(b.term||'')) return (b.term||'').localeCompare(a.term||'');
     const d=CLASS_KINDS.indexOf(classKind(a))-CLASS_KINDS.indexOf(classKind(b)); if(d)return d;
@@ -400,7 +401,7 @@ function refreshLangTags(){
 /* 跨校区滚动多选 */
 function refreshExtraList(){
   const box=el('x_list');
-  const campus=el('x_campus').value, cat=el('x_cat').value, major=el('x_major').value, q=(el('x_q').value||'').trim().toLowerCase();
+  const campus=el('x_campus').value, cat=el('x_cat').value, major=el('x_major').value, q=(el('x_q').value||'').trim();
   if(!campus){ box.innerHTML='<span class="muted">请先选择校区（再按类别/搜索缩小范围）</span>'; el('x_info').textContent='已附加 '+EXTRA_IDS.size+' 门跨校区课程'; return; }
   if(!SEL_TERMS.size){ box.innerHTML='<span class="muted">请先在上方选择「期」，跨校区课程会只在所选期里查找</span>'; el('x_info').textContent='已附加 '+EXTRA_IDS.size+' 门跨校区课程'; return; }
   let list=COURSES.filter(c=>{
@@ -408,7 +409,7 @@ function refreshExtraList(){
     if(campus && c.campus!==campus) return false;
     if(cat && c.category!==cat) return false;
     if(major && c.major!==major) return false;
-    if(q && !((c.name||'').toLowerCase().includes(q)||(c.teacher||'').toLowerCase().includes(q))) return false;
+    if(q && !searchMatch(q,[c.teacher,c.name])) return false;
     return true;
   }).slice(0,300);
   box.innerHTML = list.length ? list.map(c=>{

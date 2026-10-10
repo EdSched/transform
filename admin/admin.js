@@ -1280,6 +1280,8 @@ function hwaInit(p, t) {
   }
 }
 function renderHomeworkCoursesChips(selected) { hwaInit({ homework_courses: selected || [] }); }   // 兼容旧调用
+// 搜索：整块重画后把原来的搜索框换回去（不丢光标、不打断输入法）
+function hwaSetSearch(q) { hwaSearch = q; searchRerender('hwa_search', renderHomeworkAssign); }
 function renderHomeworkAssign() {
   const wrap = document.getElementById('perm_hw_assign'); if (!wrap) return;
   const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -1315,11 +1317,11 @@ function renderHomeworkAssign() {
     const artDom = hwaDom ? isGakubuArtDomain(hwaDom) : null;   // null = 全部领域（混合）
     const recentLabel = artDom === true ? '本月＋下个月' : artDom === false ? '当期＋下一期' : '当期 / 本月起';
     const isRecent = c => c.art ? (c.pkey === d.curM || c.pkey === d.nextM) : (c.pkey === d.cur || c.pkey === d.next);
-    const kw = hwaSearch.trim().toLowerCase();
+    const kw = hwaSearch.trim();
     let list = inDom.filter(c => hwaAllPeriods || isRecent(c));
     if (hwaClass) list = list.filter(c => c.classIds.includes(hwaClass));
     if (hwaMajor) list = list.filter(c => c.majors.includes(hwaMajor));
-    if (kw) list = list.filter(c => (c.name + ' ' + c.teacher + ' ' + c.pkey).toLowerCase().includes(kw));
+    if (kw) list = list.filter(c => searchMatch(kw, [c.teacher, c.name, c.pkey]));
     const groups = {};
     list.forEach(c => (groups[c.pkey] = groups[c.pkey] || []).push(c));
     const keys = Object.keys(groups).sort((a, b) => b.localeCompare(a));
@@ -1328,7 +1330,7 @@ function renderHomeworkAssign() {
     if (clsIds.length) h += row('班级', chipFold([{ on: !hwaClass, html: chip(!hwaClass, '全部', "hwaClass='';renderHomeworkAssign()") }].concat(clsIds.map(id => ({ on: hwaClass === id, html: chip(hwaClass === id, esc(clsName(id)), `hwaClass='${js(id)}';renderHomeworkAssign()`) })))));
     if (majorKeys.length > 1) h += row('专业', chipFold([{ on: !hwaMajor, html: chip(!hwaMajor, '全部', "hwaMajor='';renderHomeworkAssign()") }].concat(majorKeys.map(m => ({ on: hwaMajor === m, html: chip(hwaMajor === m, esc(majorLabel(m)), `hwaMajor='${js(m)}';renderHomeworkAssign()`) })))));
     h += `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:5px">
-      <input id="hwa_search" value="${esc(hwaSearch)}" placeholder="搜索课程名 / 老师" oninput="hwaSearch=this.value;renderHomeworkAssign();const e=document.getElementById('hwa_search');e.focus();e.setSelectionRange(e.value.length,e.value.length)" style="flex:1;min-width:140px;font-size:11px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--surface);font-family:inherit">
+      <input id="hwa_search" value="${esc(hwaSearch)}" placeholder="搜索老师（汉字 / 拼音首字母）/ 课程名 / 期数…" oninput="searchBox(this,hwaSetSearch)" style="flex:1;min-width:140px;font-size:11px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--surface);font-family:inherit">
       ${chip(!hwaAllPeriods, recentLabel, 'hwaAllPeriods=false;renderHomeworkAssign()')}${chip(hwaAllPeriods, artDom === true ? '全部月' : '全部期', 'hwaAllPeriods=true;renderHomeworkAssign()')}
     </div>
     <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border-light);border-radius:3px;background:var(--surface)">
@@ -1790,17 +1792,11 @@ function teacherFilteredList(){
     return (t.majors||[]).some(m=>MAJOR_DOMAIN[m]===teacherDomainFilter);
   });
   const q=teacherSearch.trim();
-  // 拼音严格匹配失败时退回首字母匹配姓氏（zs 也能命中张老师）
-  const nameMatch=n=>{
-    if(typeof matchesPinyin==='function'&&matchesPinyin(n||'',q)) return true;
-    if(/^[a-zA-Z]{2,3}$/.test(q)&&typeof matchesPinyin==='function') return matchesPinyin(n||'',q[0].toLowerCase());
-    return (n||'').includes(q);
-  };
-  if(q) list=list.filter(t=>nameMatch(t.name)
-    ||(t.notes||'').includes(q)||(t.tags||[]).some(g=>g.includes(q)));
+  if(q) list=list.filter(t=>searchMatch(q,[t.name,(t.tags||[]).join(' '),t.notes]));
   return list;
 }
 
+function teacherSetSearch(q){ teacherSearch=q; renderTeacherRows(); }
 function renderTeacherList(){
   const el=document.getElementById('teacherList');
   if(!el) return;
@@ -1808,8 +1804,8 @@ function renderTeacherList(){
   const allTags=[...new Set(cachedTeachers.flatMap(t=>t.tags||[]))].filter(g=>!TEACHER_LEGACY_DUTY_TAGS.includes(g));
   el.innerHTML=`
     <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
-      <input placeholder="搜索姓名（汉字/拼音首字母）、标签、备注…" value="${escTM(teacherSearch)}"
-        oninput="teacherSearch=this.value;renderTeacherRows()"
+      <input placeholder="搜索姓名（汉字 / 拼音首字母）/ 标签 / 备注…" value="${escTM(teacherSearch)}"
+        oninput="searchBox(this,teacherSetSearch)"
         style="font-size:11px;padding:6px 10px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;flex:1;min-width:180px">
       <span style="font-size:10px;color:var(--text-3)" id="teacherCount"></span>
     </div>

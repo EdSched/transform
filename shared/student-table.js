@@ -223,7 +223,7 @@ function sttOpenFilter(key, ck, btn) {
   const pop = document.createElement('div');
   pop.className = 'stt-pop';
   pop.innerHTML = `<div class="stt-pop-h"><b>${sttEsc(STT_COL_BY[ck].label)}</b><span><a onclick="sttPopAll()">全选</a> · <a onclick="sttPopNone()">清空</a></span></div>
-    <input class="stt-pop-q" placeholder="搜索取值…" oninput="if(this.dataset.c!=='1')sttPopSearch(this.value)" oncompositionstart="this.dataset.c='1'" oncompositionend="this.dataset.c='';sttPopSearch(this.value)">
+    <input class="stt-pop-q" placeholder="搜索取值（汉字 / 拼音首字母）…" oninput="searchBox(this,sttPopSearch)">
     <div class="stt-pop-list"></div>`;
   document.body.appendChild(pop);
   const r = btn.getBoundingClientRect();
@@ -238,8 +238,8 @@ function sttOpenFilter(key, ck, btn) {
   }, 0);
 }
 function sttPopShown() {
-  const q = (STT_POP.q || '').trim().toLowerCase();
-  return STT_POP.vals.map((x, i) => ({ ...x, i })).filter(x => !q || (x.v === '' ? '空白' : x.v).toLowerCase().includes(q));
+  const q = STT_POP.q || '';
+  return STT_POP.vals.map((x, i) => ({ ...x, i })).filter(x => searchMatch(q, [x.v === '' ? '空白' : x.v]));
 }
 function sttPopRender() {
   const box = document.querySelector('.stt-pop .stt-pop-list'); if (!box || !STT_POP) return;

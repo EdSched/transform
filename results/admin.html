@@ -10,6 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
 <script src="../shared/vendor/supabase.min.js"></script>
 <script src="../shared/supabase.js"></script>
+<script src="../shared/search.js?v=20261029"></script>
 <script src="../shared/admin-gate.js"></script>
 <style>
 :root {
@@ -449,7 +450,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
 <!-- ── TAB: データ管理 ── -->
 <div id="tab-list" style="display:none">
   <div class="list-controls">
-    <input type="text" id="search-input" placeholder="大学名・研究科・専攻で検索..." oninput="renderList()">
+    <input type="text" id="search-input" placeholder="大学名・研究科・専攻・学生名（漢字 / ピンイン頭文字）で検索..." oninput="searchBox(this,renderList)">
     <select id="filter-subj" onchange="renderList()">
       <option value="">全学科</option>
       <option value="shakai">社会学</option>
@@ -502,7 +503,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
     <div style="margin-left:auto;display:flex;gap:6px">
       <input type="text" id="tier-search" placeholder="大学名で絞り込み..."
         style="padding:5px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:200px"
-        oninput="renderTierTable()">
+        oninput="searchBox(this,renderTierTable)">
       <select id="tier-filter" onchange="renderTierTable()"
         style="padding:5px 8px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg)">
         <option value="">全Tier</option>
@@ -522,7 +523,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
 <!-- ── TAB: 合格写真 ── -->
 <div id="tab-photos" style="display:none">
   <div style="display:flex;gap:10px;margin-bottom:1rem;align-items:center;flex-wrap:wrap">
-    <input id="photo-search" placeholder="🔍 搜大学/学生/研究科…" oninput="loadPhotos()" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:200px">
+    <input id="photo-search" placeholder="搜索学生（汉字 / 拼音首字母）/ 大学 / 研究科…" oninput="searchBox(this,loadPhotos)" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:200px">
     <select id="photo-filter-subject" onchange="loadPhotos()" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg)">
       <option value="">全部专业</option>
       <option value="shakai">社会学</option>
@@ -724,7 +725,7 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
 <!-- ── UG TAB: データ管理 ── -->
 <div id="ugtab-list" style="display:none">
   <div class="list-controls">
-    <input type="text" id="ug-search-input" placeholder="大学名・学部・学科で検索..." oninput="ugRenderList()">
+    <input type="text" id="ug-search-input" placeholder="大学名・学部・学科・学生名（漢字 / ピンイン頭文字）で検索..." oninput="searchBox(this,ugRenderList)">
     <select id="ug-filter-track" onchange="ugRenderList()">
       <option value="">全系統</option>
       <option value="bunka">文科</option>
@@ -1218,14 +1219,14 @@ async function loadList() {
 }
 
 function renderList() {
-  const q = document.getElementById('search-input').value.toLowerCase();
+  const q = document.getElementById('search-input').value;
   const fs = document.getElementById('filter-subj').value;
   const fe = document.getElementById('filter-era').value;
 
   let rows = allData.filter(r => {
     if (fs && r.subject !== fs) return false;
     if (fe && r.era !== fe) return false;
-    if (q && !`${r.univ} ${r.dept} ${r.spec} ${r.student}`.toLowerCase().includes(q)) return false;
+    if (q && !searchMatch(q, [r.student, r.univ, r.dept, r.spec])) return false;
     return true;
   });
 
@@ -1428,10 +1429,10 @@ async function loadTierTab() {
 }
 
 function renderTierTable() {
-  const q = (document.getElementById('tier-search')?.value || '').toLowerCase();
+  const q = (document.getElementById('tier-search')?.value || '');
   const f = document.getElementById('tier-filter')?.value || '';
   let rows = tierUnivData.filter(d => {
-    if (q && !d.univ.toLowerCase().includes(q)) return false;
+    if (q && !searchMatch(q, [d.univ], { names: 0 })) return false;
     const effective = tierChanges[d.univ] !== undefined ? tierChanges[d.univ] : (d.dbTier != null ? d.dbTier : d.autoTier);
     if (f === 'auto' && d.dbTier !== null) return false;
     if (f === 'manual' && d.dbTier === null && tierChanges[d.univ] === undefined) return false;
@@ -1886,7 +1887,7 @@ async function ugLoadList() {
 }
 
 function ugRenderList() {
-  const q = document.getElementById('ug-search-input').value.toLowerCase();
+  const q = document.getElementById('ug-search-input').value;
   const ft = document.getElementById('ug-filter-track').value;
   const fe = document.getElementById('ug-filter-era').value;
   const fT = document.getElementById('ug-filter-tier').value;
@@ -1895,7 +1896,7 @@ function ugRenderList() {
     if (ft && r.track !== ft) return false;
     if (fe && r.era !== fe) return false;
     if (fT !== '' && String(r.tier ?? ugTierOf(r.univ)) !== fT) return false;
-    if (q && !`${r.univ} ${r.dept} ${r.spec} ${r.student}`.toLowerCase().includes(q)) return false;
+    if (q && !searchMatch(q, [r.student, r.univ, r.dept, r.spec])) return false;
     return true;
   });
 
@@ -2177,7 +2178,7 @@ const PHOTO_BUCKET = 'admission-photos';
 async function loadPhotos() {
   document.getElementById('photo-grid').innerHTML = '<div class="load-state">読み込み中...</div>';
   try {
-    const q = (document.getElementById('photo-search')?.value || '').trim().toLowerCase();
+    const q = (document.getElementById('photo-search')?.value || '').trim();
     const subj = document.getElementById('photo-filter-subject')?.value || '';
     const era = document.getElementById('photo-filter-era')?.value || '';
     // 从数据库读有图片的合格记录（note 里含 [photo]URL）
@@ -2190,8 +2191,7 @@ async function loadPhotos() {
       if (subj && r.subject !== subj) return false;
       if (era && r.era !== era) return false;
       if (q) {
-        const hay = [r.univ, r.student, r.dept, r.spec].filter(Boolean).join(' ').toLowerCase();
-        if (!hay.includes(q)) return false;
+        if (!searchMatch(q, [r.student, r.univ, r.dept, r.spec])) return false;
       }
       return true;
     });

@@ -114,10 +114,11 @@ function mgnPubSync() {   // 重画前把输入框里的内容存回状态
   const g = id => document.getElementById(id);
   if (g('mgnTitle')) p.title = g('mgnTitle').value; if (g('mgnBody')) p.body = g('mgnBody').value; if (g('mgnDue')) p.due = g('mgnDue').value; if (g('mgnFilter')) p.filter = g('mgnFilter').value;
 }
+function mgnPubSearch() { searchRerender('mgnFilter', mgnPubRender); }   // mgnPubRender 开头会把输入框内容存回 p.filter
 function mgnPubRender() {
   const p = mgnA.pub; if (!p) return;
   mgnPubSync();
-  const extraIds = p.extra, pool = (mgnA.teachers || []).filter(t => mgnRoleOk(t) && !p.chips.some(c => c.id === t.id) && !extraIds.includes(t.id) && (!p.filter || String(t.name).includes(p.filter)));
+  const extraIds = p.extra, pool = (mgnA.teachers || []).filter(t => mgnRoleOk(t) && !p.chips.some(c => c.id === t.id) && !extraIds.includes(t.id) && searchMatch(p.filter, [t.name]));
   const tagOf = (name, id, ok) => `<span class="mgn-chip ${ok ? (p.sel.has(id) ? 'on' : '') : 'off'}" ${ok ? `onclick="mgnPubToggle('${mgnE(id)}')"` : ''}>${mgnE(name)}${ok ? '' : '（不在你的范围 / 无账号）'}</span>`;
   const dupT = (p.active || []).flatMap(n => (n.target_teachers || []).filter(id => p.sel.has(id)).map(id => ({ id, n })));
   const dupMsg = dupT.length ? `<div style="font-size:11px;color:${MGN_COL.mute};margin-top:6px"><i style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${MGN_COL.red};margin-right:6px"></i>` + [...new Set(dupT.map(x => x.id))].map(id => `${mgnE(mgnTName(id))} 已有一条进行中的同类提醒（发布于 ${mgnDay(dupT.find(x => x.id === id).n.created_at)}）`).join('；') + `，仍可继续发布。</div>` : '';
@@ -127,7 +128,7 @@ function mgnPubRender() {
   el.innerHTML = `<div class="mgn-panel"><div style="display:flex;justify-content:space-between;align-items:center"><div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">${p.mk ? '发布提醒' : '新建自由提醒'}</div><button class="mg-btn" onclick="mgnPubClose()">取消</button></div>
     <label>对象（点击切换选中 / 取消）</label>
     <div>${p.chips.map(c => tagOf(c.name, c.id, c.ok)).join('')}${extraIds.map(id => tagOf(mgnTName(id), id, true)).join('')}${(!p.chips.length && !extraIds.length) ? `<span style="color:${MGN_COL.mute}">没有可选的负责老师，请在下面添加</span>` : ''}</div>
-    <div style="display:flex;gap:6px;margin-top:4px"><input id="mgnFilter" placeholder="添加其他老师：输入姓名搜索" value="${mgnE(p.filter)}" oninput="mgnPubRender();document.getElementById('mgnFilter').focus()" style="flex:1"><select id="mgnAdd" onchange="mgnPubAdd(this.value)" style="width:150px"><option value="">选择老师…</option>${pool.slice(0, 80).map(t => `<option value="${mgnE(t.id)}">${mgnE(t.name)}</option>`).join('')}</select></div>
+    <div style="display:flex;gap:6px;margin-top:4px"><input id="mgnFilter" placeholder="添加其他老师：搜索姓名（汉字 / 拼音首字母）" value="${mgnE(p.filter)}" oninput="searchBox(this,mgnPubSearch)" style="flex:1"><select id="mgnAdd" onchange="mgnPubAdd(this.value)" style="width:150px"><option value="">选择老师…</option>${pool.slice(0, 80).map(t => `<option value="${mgnE(t.id)}">${mgnE(t.name)}</option>`).join('')}</select></div>
     ${dupMsg}
     <label>标题</label><input id="mgnTitle" value="${mgnE(p.title)}">
     <label>说明</label><textarea id="mgnBody" rows="4">${mgnE(p.body)}</textarea>

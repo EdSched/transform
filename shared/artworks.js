@@ -3,7 +3,7 @@
 // 老师端：出席作业页的「🎨 作业收集」（拍照 → 点学生名字提交 → 本周已收集 / 批改）
 // 学生端：作业标签里的「🎨 我的作品」（按周列出，自己也能上传）
 // 月度学习情况：awMonthWorks() 取某月作品图片
-// 依赖：shared/supabase.js、shared/constants.js（weekRange / hwFeedbacks / hwFeedbackCardsHtml / matchesStudentSearch）
+// 依赖：shared/supabase.js、shared/constants.js、shared/search.js（weekRange / hwFeedbacks / hwFeedbackCardsHtml / matchesStudentSearch）
 // ══════════════════════════════════
 
 function awEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
@@ -129,11 +129,18 @@ async function awTSubmit(sid) {
   } catch (e) { alert('提交失败：' + e.message); }
   awT.busy = false; awTRender();
 }
+// 学生名单（只重画名单，搜索框在名单外面，输入法不会被打断）
+function awTPoolHtml() {
+  const pool = awT.students.filter(s => searchMatch(awT.search, studentSearchFields(s)));
+  return pool.length ? pool.map(s => `<button onclick="awTSubmit('${awEsc(s.id)}')" style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;padding:11px 4px;border:1px solid var(--border);border-radius:8px;background:var(--surface);cursor:pointer;color:var(--text)">${awEsc(s.name)}</button>`).join('') : '<div style="grid-column:1/-1;font-size:11px;color:var(--text-3);text-align:center;padding:10px">无匹配</div>';
+}
+function awTSearch(q) {
+  awT.search = q;
+  const el = document.getElementById('aw_t_pool'); if (el) el.innerHTML = awTPoolHtml();
+}
 function awTRender() {
   const box = document.getElementById(awT.boxId); if (!box) return;
   const wk = awShiftWeek(awT.week, 0), isCur = wk.start === weekRange().start;
-  const kw = awT.search.trim();
-  const pool = kw ? awT.students.filter(s => (typeof matchesStudentSearch === 'function') ? matchesStudentSearch(s, kw) : (s.name || '').includes(kw)) : awT.students;
   const works = awT.works || [];
   const btn = 'font-size:11px;padding:4px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg);cursor:pointer;font-family:inherit';
   box.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin:6px 0 12px">
@@ -149,10 +156,8 @@ function awTRender() {
     ${awT.pending.length ? `
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${awT.pending.map((p, i) => `<div style="position:relative;width:74px;height:74px"><img src="${p.preview}" style="width:74px;height:74px;object-fit:cover;border-radius:4px;border:1px solid var(--border)"><span onclick="awTDropPending(${i})" title="删掉这张" style="position:absolute;top:-6px;right:-6px;background:var(--danger,#b03a2e);color:#fff;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:20px;text-align:center;cursor:pointer">✕</span></div>`).join('')}</div>
       <div style="font-size:11px;color:var(--text-2);margin-bottom:6px">这 ${awT.pending.length} 张是谁的作品？点名字即提交 <span id="aw_t_tip" style="color:var(--text-3)">${awT.busy ? '上传中…' : ''}</span></div>
-      <input id="aw_t_search" value="${awEsc(awT.search)}" placeholder="搜索姓名 / 拼音首字母" oninput="awT.search=this.value;awTRender();const e=document.getElementById('aw_t_search');e.focus();e.setSelectionRange(e.value.length,e.value.length)" style="width:100%;box-sizing:border-box;font-size:12px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;margin-bottom:6px">
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px;max-height:40vh;overflow-y:auto;${awT.busy ? 'opacity:.5;pointer-events:none' : ''}">
-        ${pool.length ? pool.map(s => `<button onclick="awTSubmit('${awEsc(s.id)}')" style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;padding:11px 4px;border:1px solid var(--border);border-radius:8px;background:var(--surface);cursor:pointer;color:var(--text)">${awEsc(s.name)}</button>`).join('') : '<div style="grid-column:1/-1;font-size:11px;color:var(--text-3);text-align:center;padding:10px">无匹配</div>'}
-      </div>` : ''}
+      <input id="aw_t_search" value="${awEsc(awT.search)}" placeholder="搜索姓名（汉字 / 拼音首字母）" oninput="searchBox(this,awTSearch)" style="width:100%;box-sizing:border-box;font-size:12px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;margin-bottom:6px">
+      <div id="aw_t_pool" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px;max-height:40vh;overflow-y:auto;${awT.busy ? 'opacity:.5;pointer-events:none' : ''}">${awTPoolHtml()}</div>` : ''}
     <div style="font-size:12px;font-weight:600;margin:6px 0">${isCur ? '本周' : '这周'}已收集（${works.length}）</div>
     ${awT.works === null ? '<div style="font-size:11px;color:var(--text-3)">加载中…</div>' : works.length ? works.map(w => {
       const imgs = awImgs(w), fbs = hwFeedbacks(w), open = awT.openId === w.id;

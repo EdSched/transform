@@ -563,7 +563,7 @@ function openManualBooking(kind){
     <div class="form-group"><label class="form-label">类型</label>
       <div id="bkm_kinds" style="display:flex;flex-wrap:wrap;gap:6px">${kinds.map(([k,l])=>`<div class="filter-chip${bkmKind===k?' active':''}" data-k="${k}" onclick="bkmSetKind('${k}')" style="padding:3px 10px">${l}</div>`).join('')}</div></div>
     <div class="form-group"><label class="form-label">学生（在籍，必选）</label>
-      <input id="bkm_q" placeholder="输入姓名搜索" oninput="bkmSearch()" autocomplete="off">
+      <input id="bkm_q" placeholder="搜索姓名（汉字 / 拼音首字母）/ 专业…" oninput="searchBox(this,bkmSearch)" autocomplete="off">
       <div id="bkm_res" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
       <div id="bkm_sel" style="font-size:12px;margin-top:6px;color:var(--text-3)">还没有选择学生</div></div>
     <div class="form-group"><label class="form-label">老师（必选）</label>
@@ -593,7 +593,7 @@ function bkmSetKind(k){
 function bkmSearch(){
   const q=(document.getElementById('bkm_q').value||'').trim(), box=document.getElementById('bkm_res'); if(!box) return;
   if(!q){ box.innerHTML=''; return; }
-  const list=bkClaimStudents().filter(s=>(s.status==='active'||!s.status)&&String(s.name||'').includes(q)).slice(0,8);
+  const list=bkClaimStudents().filter(s=>(s.status==='active'||!s.status)&&matchesStudentSearch(s,q)).slice(0,8);
   box.innerHTML=list.length?list.map(s=>`<div class="filter-chip" style="padding:3px 10px" onclick="bkmPickStu('${s.id}')">${bkSelfEsc(s.name)}<span style="color:var(--text-3);margin-left:4px">${bkSelfEsc(MAJORS[s.major]||s.major||'')}</span></div>`).join(''):'<span style="font-size:11px;color:var(--text-3)">没有找到在籍学生</span>';
 }
 function bkmPickStu(id){
