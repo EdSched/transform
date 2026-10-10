@@ -306,7 +306,8 @@ function sttEnsureCss() {
 .stt-table .stt-fix{position:sticky;left:0;z-index:2;background:var(--surface);box-shadow:1px 0 0 var(--border)}
 .stt-table th.stt-fix{background:var(--bg);z-index:3}
 .stt-table tbody tr:hover td.stt-fix{background:var(--bg)}
-.stt-name{min-width:84px}
+.stt-name{min-width:84px;white-space:nowrap}
+.stt-table input[type=checkbox]{width:auto;padding:0;margin:0 6px 0 0;vertical-align:middle;flex:none}
 .stt-th{display:inline-flex;align-items:center;gap:4px}
 .stt-lab{cursor:pointer;user-select:none}
 .stt-arr{font-style:normal;font-size:8px;margin-left:3px;color:var(--accent)}
