@@ -25,7 +25,7 @@ function tpNameMatch(name, q) {
 // 按专业筛选值展开成实际专业列表
 function tpMajorMatch(major, filterVal) {
   if (!filterVal) return true;
-  if (filterVal === 'shakai_group') return SHAKAI_GROUP.includes(major) || major === 'shakai_group';
+  if (isMajorGroup(filterVal)) return groupMajors(filterVal).includes(major) || major === filterVal;
   return major === filterVal;
 }
 
@@ -384,7 +384,7 @@ function tsmDomCount() { return tsmDomainsPresent().length; }
 function tsmEffDomain() { const doms = tsmDomainsPresent(); return tsm.domain || (doms.length === 1 ? doms[0] : ''); }
 function tsmDomMajorKeys(dom) {
   const present = new Set((tsmPool || []).map(s => s.major).filter(Boolean));
-  const keys = majorFilterKeys().filter(k => k === 'shakai_group' ? SHAKAI_GROUP.some(m => present.has(m)) : present.has(k));
+  const keys = majorFilterKeys().filter(k => isMajorGroup(k) ? groupMajors(k).some(m => present.has(m)) : present.has(k));
   [...present].forEach(k => { if (!keys.includes(k)) keys.push(k); });
   return keys.filter(k => tsmDomainOf(k) === dom);
 }
@@ -409,7 +409,7 @@ let tsmPool = null, tsmPoolAt = 0;   // 可见学生（全部状态）[{id,name,
 
 function tsmDomainOf(major) {
   if (!major) return '';
-  if (major === 'shakai_group') return MAJOR_DOMAIN[SHAKAI_GROUP[0]] || '';
+  if (isMajorGroup(major)) return groupDomain(major) || MAJOR_DOMAIN[groupMajors(major)[0]] || '';
   return MAJOR_DOMAIN[major] || '';
 }
 // 一个学生（或带 name/major/source/status 的对象，如面谈分组）是否符合全局筛选；skip = 统计某一行人数时忽略的那一项，noQ = 忽略搜索
@@ -582,7 +582,7 @@ async function renderTeacherStudents(box) {
 
 function tsaMajorOptions(sel) {
   return Object.entries(MAJORS)
-    .filter(([k]) => k !== 'shakai_group' && tsaMajorOk(k))
+    .filter(([k]) => !isMajorGroup(k) && tsaMajorOk(k))
     .map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
 }
 
@@ -922,7 +922,7 @@ async function tatRenderSessionBar(){
   else if(tatRange==='week') q+=`&session_date=gte.${tatYmd(mon)}&session_date=lte.${tatYmd(sun)}`;
   let all=await sb(q).catch(()=>[]);
   // 专业过滤（可见专业）
-  if(set){ all=all.filter(se=>{ const mj=se.major||[]; return (Array.isArray(mj)?mj:[mj]).some(m=>tsaMajorOk(m)|| (m==='shakai_group'&&['shakai','shinpan','fukushi'].some(x=>tsaMajorOk(x)))); }); }
+  if(set){ all=all.filter(se=>{ const mj=se.major||[]; return (Array.isArray(mj)?mj:[mj]).some(m=>tsaMajorOk(m)|| (isMajorGroup(m)&&groupMajors(m).some(x=>tsaMajorOk(x)))); }); }
   // 各课次已有的出席记录 → 区分待记录 / 已记录，并统计
   const stats={};
   const chunks=[]; for(let i=0;i<all.length;i+=100) chunks.push(all.slice(i,i+100).map(se=>`"${se.id}"`).join(','));

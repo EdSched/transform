@@ -74,7 +74,8 @@ body { font-family:'DM Mono','Noto Serif SC',monospace; background:var(--bg); co
 <script src="../shared/supabase.js"></script>
 <script>
 const PROMO_MAJORS = { shakai:'社会学', shinpan:'新闻传播学', fukushi:'社会福祉学', keiei:'経営学', keizai:'経済学', nihongo:'日本语教育', hyosho:'表象文化・文学・哲学', seiji:'政治学', toyo:'東洋史', bunka:'文化人类学', mot:'MOT', tokei:'統計・計量' };
-const SHAKAI_G = ['shakai','shinpan','fukushi'];
+let myGroupKey = ['shakai','shinpan','fukushi'].includes(params0('major') || 'shakai') ? 'shakai_group' : '';   // 这个专业所在的分组（读到数据库后以 majors.group_key 为准；读不到时退回社会人文）
+function params0(k) { return new URLSearchParams(location.search).get(k); }
 const COLORS = PMR_COLORS;
 const params = new URLSearchParams(location.search);
 const major = params.get('major') || 'shakai';
@@ -92,12 +93,16 @@ async function init() {
   let list = [], courses = [], share = null, sessions = [], videos = [];
   // 专业名以数据库专业表为准（上面写死的清单只做兜底，新专业如教育学不用再改代码）
   try {
-    const mj = await sb('/rest/v1/majors?select=key,label');
+    let mj;
+    try { mj = await sb('/rest/v1/majors?select=key,label,group_key'); }
+    catch (e) { mj = await sb('/rest/v1/majors?select=key,label'); }   // 还没有 group_key 这一列
     (mj || []).forEach(r => { if (r.key && r.label) PROMO_MAJORS[r.key] = r.label; });
+    const me = (mj || []).find(r => r.key === major);
+    if (me && 'group_key' in me) myGroupKey = me.group_key || '';
     document.title = `唯新教育 · ${PROMO_MAJORS[major] || ''}专业介绍`;
   } catch (e) { /* 读不到就用兜底清单 */ }
   try {
-    const shareKeys = SHAKAI_G.includes(major) ? [major, 'shakai_group'] : [major];
+    const shareKeys = myGroupKey ? [major, myGroupKey] : [major];
     const [l, c, sh, tch, vd] = await Promise.all([
       sb(`/rest/v1/promo_content?major=eq.${major}&or=(published.is.null,published.is.true)&select=*&order=sort_order.asc,created_at.asc`),
       sb('/rest/v1/courses?select=id,name,major,period,teacher,weekdays,time_range,delivery,campus,total_sessions,first_session_date&order=first_session_date.desc&limit=1000').catch(() => []),

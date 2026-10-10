@@ -334,7 +334,7 @@ async function mmCleanup(){
       data.forEach(r=>{ const v=r[col]; (Array.isArray(v)?v:[v]).forEach(k=>{ if(k){ used.add(k); cnt[k]=(cnt[k]||0)+1; } }); });
     }catch(e){ failed.push(t+'.'+col); }
   }
-  const core=new Set(CORE_MAJOR_ORDER.concat(['shakai_group']));
+  const core=new Set(CORE_MAJOR_ORDER.concat(Object.keys(MAJOR_GROUPS)));
   _mmCleanCand=rows.filter(r=>!used.has(r.key)&&!core.has(r.key));
   _mmCleanSel=new Set(_mmCleanCand.map(r=>r.key));
   _mmCleanFailed=failed;
@@ -1150,7 +1150,7 @@ async function hwaEnsureData() {
   });
   const courses = (crs || []).filter(c => scopeCourse(c)).filter(c => hwN[c.id] || c.homework_enabled === true).map(c => {
     const majors = Array.isArray(c.major) ? c.major : (c.major ? [c.major] : []);
-    const dom = c.domain || majors.map(m => MAJOR_DOMAIN[m] || (MAJOR_GROUPS[m] ? MAJOR_DOMAIN[MAJOR_GROUPS[m][0]] : '')).find(Boolean) || '其他';
+    const dom = c.domain || majors.map(m => keyDomain(m) || (isMajorGroup(m) ? MAJOR_DOMAIN[groupMajors(m)[0]] : '')).find(Boolean) || '其他';
     return {
       id: c.id, name: c.name || '', teacher: c.teacher || '', hwN: hwN[c.id] || 0, first: c.first_session_date || '',
       pkey: c.first_session_date ? periodKeyOf(c) : '未排期', domain: dom, majors, classIds: courseClassIds(c),
@@ -1894,14 +1894,14 @@ function _renderTeacherMajorChipsInner(){
   const shownKeys=new Set();
   selDomains.forEach(dom=>{
     const majorsInDom=teacherMultiDoms()?scopeMajorsIn(dom):allMajorKeys().filter(m=>MAJOR_DOMAIN[m]===dom);
-    // 社会人文（shakai_group）是三专业合并的虚拟专业：成员在本领域时，额外给一个可分配的「社会人文」
-    // 老师分配到它后，开面谈时间槽能选「社会人文」，槽会显示在社会人文的学生预约页
-    const groupHere = (typeof SHAKAI_GROUP!=='undefined') && SHAKAI_GROUP.some(m=>MAJOR_DOMAIN[m]===dom) && (!teacherMultiDoms()||scopeHasDomain(dom));
-    if(!majorsInDom.length && !groupHere) return;
-    const chipKeys = (groupHere ? ['shakai_group'] : []).concat(majorsInDom);
+    // 分组（如社会人文）是多个专业合并的虚拟专业：成员在本领域时，额外给一个可分配的分组
+    // 老师分配到它后，开面谈时间槽能选这个分组，槽会显示在分组的学生预约页
+    const groupsHere = Object.keys(MAJOR_GROUPS).filter(g=>(groupDomain(g)===dom||groupMajors(g).some(m=>MAJOR_DOMAIN[m]===dom)) && (!teacherMultiDoms()||scopeHasDomain(dom)));
+    if(!majorsInDom.length && !groupsHere.length) return;
+    const chipKeys = groupsHere.concat(majorsInDom);
     chipKeys.forEach(k=>shownKeys.add(k));
     html+=`<div style="margin-bottom:8px"><div style="font-size:10px;color:var(--text-3);margin-bottom:4px">${dom}</div><div style="display:flex;flex-wrap:wrap;gap:6px">`;
-    html+=chipFold(chipKeys.map(m=>({on:prevSel.has(m),html:`<div class="filter-chip${prevSel.has(m)?' active':''}" data-value="${m}" onclick="toggleChip(this)" style="padding:4px 10px">${majorLabel(m)}${m==='shakai_group'?'<span style="font-size:9px;color:var(--text-3);margin-left:3px">(合并)</span>':''}</div>`})));
+    html+=chipFold(chipKeys.map(m=>({on:prevSel.has(m),html:`<div class="filter-chip${prevSel.has(m)?' active':''}" data-value="${m}" onclick="toggleChip(this)" style="padding:4px 10px">${majorLabel(m)}${isMajorGroup(m)?'<span style="font-size:9px;color:var(--text-3);margin-left:3px">(合并)</span>':''}</div>`})));
     html+='</div></div>';
   });
   const rest=extraMajors.filter(m=>!shownKeys.has(m));

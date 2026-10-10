@@ -1149,7 +1149,7 @@ function renderSlotManagement(mc) {
         <div id="ts_interview_fields" style="${onlyAttendance?'display:none':''}">
         <div class="form-group" style="margin-bottom:0"><label class="form-label">专业</label>
           <select id="ts_major">
-            ${[...new Set(majors)].map(m => `<option value="${m}">${m === 'shakai_group' ? '社会人文' : MAJORS[m] || m}</option>`).join('')}
+            ${[...new Set(majors)].map(m => `<option value="${m}">${isMajorGroup(m) ? groupLabel(m) : MAJORS[m] || m}</option>`).join('')}
           </select>
         </div>
         <div class="form-group" style="margin-bottom:0;margin-top:8px"><label class="form-label">面谈地点（可选）</label>
@@ -2694,9 +2694,10 @@ async function renderTeacherAdmissionDb(mc) {
     <div class="filter-row" id="tadbMajorRow">
       ${(() => {
       const allowed = window._teacherAllowedAdmMajors || [];
-      const group = ['shakai','shinpan','fukushi'];
-      const show = group.every(k => allowed.includes(k));
-      return show ? '<div class="filter-chip" onclick="teacherAdbToggleGroup(this)">社会人文</div>' : '';
+      return Object.keys(MAJOR_GROUPS).map(g => {
+        const group = groupMajors(g).filter(k => TEACHER_ADB_MAJORS[k]);
+        return group.length && group.every(k => allowed.includes(k)) ? `<div class="filter-chip" onclick="teacherAdbToggleGroup(this,'${g}')">${groupLabel(g)}</div>` : '';
+      }).join('');
     })()}
       ${(() => {
       const allowed = window._teacherAllowedAdmMajors || [];
@@ -2771,8 +2772,8 @@ async function teacherAdbToggleMajor(key, el) {
   await teacherAdbLoad();
 }
 
-async function teacherAdbToggleGroup(el) {
-  const group = ['shakai','shinpan','fukushi'];
+async function teacherAdbToggleGroup(el, g) {
+  const group = groupMajors(g).filter(k => TEACHER_ADB_MAJORS[k]);
   const allOn = group.every(k => teacherAdbMajors.includes(k));
   if (allOn) teacherAdbMajors = teacherAdbMajors.filter(k => !group.includes(k));
   else group.forEach(k => { if (!teacherAdbMajors.includes(k)) teacherAdbMajors.push(k); });

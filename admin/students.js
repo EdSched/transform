@@ -312,7 +312,7 @@ async function unlinkVipPlan(planId) {
 function populateMajorSelect(selectId, selectedValue){
   const sel=document.getElementById(selectId);
   if(!sel) return;
-  // 只列当前视角范围内的专业（不含 shakai_group）；原专业不在范围内时保留并标「范围外」
+  // 只列当前视角范围内的专业（不含分组）；原专业不在范围内时保留并标「范围外」
   sel.innerHTML=majorSelectOptions(selectedValue);
 }
 
@@ -1502,7 +1502,7 @@ function renderMonthlyPage(mc){
   const keys = majorFilterKeys({includeAll:true});
   let list = students;
   if(mpMajorFilter!=='all'){
-    const grp = (typeof MAJOR_GROUPS!=='undefined' && MAJOR_GROUPS[mpMajorFilter]) || null;
+    const grp = isMajorGroup(mpMajorFilter) ? groupMajors(mpMajorFilter) : null;
     list = students.filter(s=> grp ? grp.includes(s.major) : s.major===mpMajorFilter);
   }
   list = list.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','zh'));
@@ -1510,7 +1510,7 @@ function renderMonthlyPage(mc){
   <div class="page-header"><div class="section-title">📅 月度学习情况</div></div>
   <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">点学生查看/填写每月学习情况汇总，可生成家长版 PDF。学部与大学院通用。</div>
   <div class="filter-row" style="margin-bottom:12px">
-    ${chipFold(keys.map((m,i)=>({on:mpMajorFilter===m,html:`<div class="filter-chip${mpMajorFilter===m?' active':''}" onclick="mpMajorFilter='${m}';renderMonthlyPage(document.getElementById('mainContent'))">${i===0?'全部专业':(m==='shakai_group'?'社会人文':majorLabel(m))}</div>`})))}
+    ${chipFold(keys.map((m,i)=>({on:mpMajorFilter===m,html:`<div class="filter-chip${mpMajorFilter===m?' active':''}" onclick="mpMajorFilter='${m}';renderMonthlyPage(document.getElementById('mainContent'))">${i===0?'全部专业':majorLabel(m)}</div>`})))}
   </div>
   <div style="display:flex;flex-direction:column;gap:6px">
     ${list.length? list.map(s=>`

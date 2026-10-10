@@ -8,7 +8,8 @@ function detectMajorsFromField(str){
   const result=[];
   for(const p of parts){
     const s=p.trim();
-    if(/社会人文/i.test(s)){result.push('shakai','shinpan','fukushi')}
+    const grpKey=Object.keys(MAJOR_GROUPS).find(g=>MAJOR_GROUP_LABEL[g]&&s.includes(MAJOR_GROUP_LABEL[g]));
+    if(grpKey){result.push(...groupMajors(grpKey))}
     else if(/经营|経営/i.test(s)) result.push('keiei');
     else if(/经济|経済/i.test(s)) result.push('keizai');
     else if(/社会学/i.test(s)) result.push('shakai');
@@ -1316,7 +1317,7 @@ function frameWeekdaysLabel(str){
 // （数据库 courses.domain 默认是「大学院文科」，不写的话在别的领域新建的课会被标错、在自己的视角里看不到）
 function majorDomainOf(majors){
   const list=(Array.isArray(majors)?majors:[majors]).filter(Boolean)
-    .flatMap(k=>(typeof MAJOR_GROUPS!=='undefined'&&MAJOR_GROUPS[k])?MAJOR_GROUPS[k]:[k]);
+    .flatMap(k=>expandGroupKey(k));
   const k=list.find(x=>MAJOR_DOMAIN[x]);
   return k?MAJOR_DOMAIN[k]:'';
 }
@@ -1599,7 +1600,7 @@ function acRenderMajorCheckboxes(){
   let keys=majorFilterKeys();
   if(CURRENT_DOMAIN==='multi'){   // 组合范围：只列所选领域里范围内的专业（领域没选就先不列）
     const dom=acCurDomain(), ok=new Set(dom?scopeMajorsIn(dom):[]);
-    if(dom&&scopeHasDomain(dom)&&SHAKAI_GROUP.some(m=>MAJOR_DOMAIN[m]===dom)) ok.add('shakai_group');
+    if(dom&&scopeHasDomain(dom)) Object.keys(MAJOR_GROUPS).forEach(g=>{ if(groupDomain(g)===dom||groupMajors(g).some(m=>MAJOR_DOMAIN[m]===dom)) ok.add(g); });
     keys=keys.filter(k=>ok.has(k));
   }
   const keep=new Set(acGetMajors());
@@ -3190,7 +3191,7 @@ function openWeeklyNotice(){
         <input type="date" id="wn_start" value="${defDate}" style="font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit"></div>
       <div><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:2px">专业</label>
         <select id="wn_major" style="font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit">
-          ${majorFilterKeys().map(k=>`<option value="${k}">${k==='shakai_group'?'社会人文（社会学+新传+福祉）':majorLabel(k)}</option>`).join('')}
+          ${majorFilterKeys().map(k=>`<option value="${k}">${isMajorGroup(k)?groupLabel(k)+'（全部）':majorLabel(k)}</option>`).join('')}
           <option value="all">全部专业</option>
         </select></div>
       <button class="btn btn-primary btn-sm" onclick="wnGenerate()">生成</button>
@@ -3273,8 +3274,8 @@ async function openScheduleShare(){
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
       <div><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:2px">发布给（学生按档案专业看到对应课表）</label>
         <select id="ss_major" onchange="ssRenderCourseList()" style="font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit">
-          ${majorFilterKeys().includes('shakai_group')?'<option value="shakai_group">社会人文（社会学+新传+福祉共用）</option>':''}
-          ${majorFilterKeys().filter(k=>k!=='shakai_group').map(k=>`<option value="${k}">${majorLabel(k)}</option>`).join('')}
+          ${majorFilterKeys().filter(k=>isMajorGroup(k)).map(k=>`<option value="${k}">${groupLabel(k)}（${groupMajors(k).map(majorLabel).join('+')}共用）</option>`).join('')}
+          ${majorFilterKeys().filter(k=>!isMajorGroup(k)).map(k=>`<option value="${k}">${majorLabel(k)}</option>`).join('')}
         </select></div>
       <div style="flex:1;min-width:160px"><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:2px">课表标题</label>
         <input id="ss_title" value="${defTitle}" style="width:100%;font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit"></div>
@@ -3328,7 +3329,7 @@ async function ssRenderExisting(){
   try{
     const shares=await sb('/rest/v1/course_schedule_shares?select=*&order=created_at.desc&limit=30');
     box.innerHTML=(shares||[]).length?shares.map(s=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px dashed var(--border-light)">
-      <span>${majorLabel(s.major)==='shakai_group'?'社会人文':majorLabel(s.major)}</span>
+      <span>${majorLabel(s.major)}</span>
       <span style="color:var(--text-2)">${s.title||''}</span>
       <span style="color:var(--text-3);font-size:10px">${(s.course_ids||[]).length}门 · ${(s.created_at||'').slice(0,10)}</span>
       <button onclick="ssDelete('${s.id}')" style="margin-left:auto;font-size:10px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:2px;padding:1px 8px;cursor:pointer;font-family:inherit">删除</button>
@@ -3350,7 +3351,7 @@ async function ssPublish(){
       id:`ss-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
       major, title, course_ids:[...ssSelected],
     });
-    alert(`已发布「${title}」（${ssSelected.size}门课程）\n${major==='shakai_group'?'社会学/新传/福祉':majorLabel(major)} 的学生在学习记录 → 课程表中可见`);
+    alert(`已发布「${title}」（${ssSelected.size}门课程）\n${isMajorGroup(major)?groupMajors(major).map(majorLabel).join('/'):majorLabel(major)} 的学生在学习记录 → 课程表中可见`);
     ssSelected=new Set();
     ssRenderCourseList();
     ssRenderExisting();
@@ -4177,10 +4178,10 @@ async function cmQuickAdd(kind){
 }
 
 // ── 其他专业学生一键加入 ──
-// 视角内的真实专业（社会人文组展开成三个专业）
+// 视角内的真实专业（分组展开成组内专业）
 function cmViewMajors(){
   const out=[];
-  majorFilterKeys().forEach(k=>{ (MAJOR_GROUPS[k]||[k]).forEach(m=>{ if(!out.includes(m)) out.push(m); }); });
+  majorFilterKeys().forEach(k=>{ expandGroupKey(k).forEach(m=>{ if(!out.includes(m)) out.push(m); }); });
   return out;
 }
 function cmToggleIn(varName, k){

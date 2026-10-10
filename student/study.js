@@ -1620,9 +1620,9 @@ function studyHwFetch() {
   if (_hwFetchP) return _hwFetchP;
   _hwFetchP = (async () => {
     const myMajor = studyStudent.major || studyMajor;
-    const acceptMajors = myMajor === 'shakai_group'
-      ? ['shakai_group', ...SHAKAI_GROUP]
-      : SHAKAI_GROUP.includes(myMajor) ? [myMajor, 'shakai_group'] : [myMajor];
+    const acceptMajors = isMajorGroup(myMajor)
+      ? [myMajor, ...groupMajors(myMajor)]
+      : groupOf(myMajor) ? [myMajor, groupOf(myMajor)] : [myMajor];
     const today = new Date();
     // 只要「当期」：先取前后约 100 天，再按 inCurrentPeriod 精确过滤（下一期的作业不显示）
     const from = new Date(today); from.setDate(today.getDate() - 100);
@@ -2156,7 +2156,7 @@ async function loadStudySchedule() {
   try {
     const myMajor = studyStudent.major || '';
     const keys = [myMajor];
-    if (typeof SHAKAI_GROUP !== 'undefined' && SHAKAI_GROUP.includes(myMajor)) keys.push('shakai_group');
+    if (groupOf(myMajor)) keys.push(groupOf(myMajor));
     const [shares, myMembers] = await Promise.all([
       sb(`/rest/v1/course_schedule_shares?major=in.(${keys.map(k=>`"${k}"`).join(',')})&select=*&order=created_at.desc&limit=1`),
       studyLoadMyMembers(),

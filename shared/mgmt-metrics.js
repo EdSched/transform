@@ -111,7 +111,7 @@ async function _mgVipMonth(D, sc, withCancelled) {
 const _mgBkItem = (b, s, note) => ({ sid: s.id, name: b.name || s.name, note: `${b.slot_date || ''} ${note}`.trim(), owners: b.assigned_teacher ? [b.assigned_teacher] : [] });
 // 宣传内容按专业存放：范围 = 专业；宣传不分老师，「我名下」一律不能统计
 const _mgPromoNa = { na: true, note: '宣传内容不按老师统计，请在全部管理范围里看' };
-const _mgPromoMajors = sc => (typeof allMajorKeys === 'function' ? allMajorKeys() : Object.keys(MAJOR_DOMAIN)).filter(m => m !== 'shakai_group' && MAJOR_DOMAIN[m] && sc.major(m));
+const _mgPromoMajors = sc => (typeof allMajorKeys === 'function' ? allMajorKeys() : Object.keys(MAJOR_DOMAIN)).filter(m => !isMajorGroup(m) && MAJOR_DOMAIN[m] && sc.major(m));
 const _mgNorm = v => String(v == null ? '' : v).normalize('NFKC').replace(/\s+/g, '');
 
 // ── 指标 ──

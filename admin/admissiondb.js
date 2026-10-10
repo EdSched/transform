@@ -42,9 +42,9 @@ function renderAdmissionDbPage(mc) {
   </div>
 
   <!-- 专业筛选（支持多选） -->
-  <div style="margin-bottom:6px;font-size:10px;color:var(--text-3)">点击选择专业（可多选）；点「社会人文」同时加载社会学+新闻传播+社会福祉</div>
+  <div style="margin-bottom:6px;font-size:10px;color:var(--text-3)">点击选择专业（可多选）；点分组名（如「社会人文」）同时加载组内所有专业</div>
   <div class="filter-row" style="margin-bottom:8px" id="adbMajorRow">
-    ${chipFold([].concat((scopeAll()||SHAKAI_GROUP.some(m=>scopeHasDomain(MAJOR_DOMAIN[m]||'大学院文科')))?[{on:['shakai','shinpan','fukushi'].every(k=>adbSelectedMajors.includes(k)),html:`<div class="filter-chip${['shakai','shinpan','fukushi'].every(k=>adbSelectedMajors.includes(k))?' active':''}" onclick="toggleAdbMajor('shakai_group',this)" id="adb_chip_shakai_group">社会人文</div>`}]:[]).concat(Object.entries(ADMISSION_MAJORS).filter(([k,v])=>{
+    ${chipFold([].concat(adbGroupKeys().filter(g=>scopeAll()||scopeHasDomain(groupDomain(g)||'大学院文科')||VIEW_SCOPE.majors.includes(g)).map(g=>{const on=adbGroupMembers(g).every(k=>adbSelectedMajors.includes(k));return {on,html:`<div class="filter-chip${on?' active':''}" onclick="toggleAdbMajor('${g}',this)" id="adb_chip_${g}">${groupLabel(g)}</div>`};})).concat(Object.entries(ADMISSION_MAJORS).filter(([k,v])=>{
       if(scopeAll()) return true;
       // 已知领域的按领域判断；出愿专用未登记的key默认当大学院文科；单独选中的专业也算
       const dom = MAJOR_DOMAIN[k] || '大学院文科';
@@ -173,9 +173,9 @@ function renderAdmissionDbPage(mc) {
 
 // ── 专业多选 ──
 async function toggleAdbMajor(key, el) {
-  if (key === 'shakai_group') {
-    // 社会人文：切换 shakai+shinpan+fukushi 整体
-    const groupKeys = ['shakai','shinpan','fukushi'];
+  if (isMajorGroup(key)) {
+    // 分组（如社会人文）：切换组内专业整体
+    const groupKeys = adbGroupMembers(key);
     const allSelected = groupKeys.every(k => adbSelectedMajors.includes(k));
     if (allSelected) {
       adbSelectedMajors = adbSelectedMajors.filter(k => !groupKeys.includes(k));
@@ -201,11 +201,14 @@ function clearAdbMajors() {
   renderAdmissionTable();
 }
 
+// 出愿库里有成员的分组 / 分组在出愿库里的成员专业
+function adbGroupMembers(g) { return groupMajors(g).filter(k => ADMISSION_MAJORS[k]); }
+function adbGroupKeys() { return Object.keys(MAJOR_GROUPS).filter(g => adbGroupMembers(g).length); }
 function updateMajorChips() {
-  const groupKeys = ['shakai','shinpan','fukushi'];
-  const groupActive = groupKeys.every(k => adbSelectedMajors.includes(k));
-  const groupChip = document.getElementById('adb_chip_shakai_group');
-  if (groupChip) groupChip.classList.toggle('active', groupActive);
+  adbGroupKeys().forEach(g => {
+    const groupChip = document.getElementById('adb_chip_' + g);
+    if (groupChip) groupChip.classList.toggle('active', adbGroupMembers(g).every(k => adbSelectedMajors.includes(k)));
+  });
   Object.keys(ADMISSION_MAJORS).forEach(k => {
     const chip = document.getElementById(`adb_chip_${k}`);
     if (chip) chip.classList.toggle('active', adbSelectedMajors.includes(k));
@@ -830,7 +833,7 @@ function admMajorMgrRender() {
   // 「专业管理」里还没加入出愿库的专业，供下拉选择
   const allMajors = (typeof MAJORS !== 'undefined') ? MAJORS : {};
   const pickable = Object.keys(allMajors)
-    .filter(k => k !== 'shakai_group' && !curKeys.has(k))
+    .filter(k => !isMajorGroup(k) && !curKeys.has(k))
     .map(k => ({ key: k, label: allMajors[k] }))
     .sort((a, b) => String(a.label).localeCompare(String(b.label)));
   box.innerHTML = `

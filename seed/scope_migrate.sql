@@ -25,10 +25,13 @@ create or replace function public._sc_arr(j jsonb) returns text[] language sql i
     when jsonb_typeof(j) = 'string' then array[j #>> '{}']
     else '{}'::text[] end;
 $$;
--- shakai_group 展开成三个专业
-create or replace function public._sc_expand(a text[]) returns text[] language sql immutable as $$
+-- 分组（major_groups，如 shakai_group）展开成组内专业（需先执行 seed/major_groups.sql）
+create or replace function public._sc_expand(a text[]) returns text[] language sql stable as $$
   select coalesce(array_agg(distinct k), '{}'::text[]) from (
-    select unnest(case when x = 'shakai_group' then array['shakai','shinpan','fukushi'] else array[x] end) k from unnest(a) x
+    select unnest(case when exists (select 1 from public.major_groups g where g.key = x)
+                       then coalesce((select array_agg(m.key) from public.majors m where m.group_key = x), '{}'::text[])
+                       else array[x] end) k
+    from unnest(a) x
   ) s where k is not null and k <> '';
 $$;
 -- 领域 → 专业（专业表 + 出愿专业表）
