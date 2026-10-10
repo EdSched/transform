@@ -97,13 +97,17 @@ function matBoxText(it, r, riyuC) {
   return { t: '未准备', c: info.c };
 }
 // items：清单；rows：准备情况；openId：当前展开的条目；clickJs(itemId) → onclick 字符串
-function matBoxesHtml(items, rows, riyuC, openId, clickJs) {
-  return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px">${(items || []).map(it => {
+// fixed4=true（管理端/老师端考学进度）：网格等宽，每行 4 张、窄屏 2 张，按准备情况着底色；学生端保持自适应
+function matBoxesHtml(items, rows, riyuC, openId, clickJs, fixed4) {
+  const tint = c => c === '#2a7a4a' ? '#e4f0e8' : c === '#a0621a' ? '#fdf1e6' : '#f0ede8';
+  const grid = fixed4 ? 'display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px' : 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px';
+  return `${fixed4 ? '<style>@media (max-width:640px){.mat-grid4{grid-template-columns:repeat(2,minmax(0,1fr))!important}}</style>' : ''}<div class="${fixed4 ? 'mat-grid4' : ''}" style="${grid}">${(items || []).map(it => {
     const r = (rows || []).find(x => x.item_id === it.id) || {};
     const bt = matBoxText(it, r, riyuC), on = openId === it.id;
-    return `<div onclick="${clickJs(it.id)}" style="cursor:pointer;border:1px solid ${on ? 'var(--accent,#b8953a)' : 'var(--border,#e2ded6)'};background:${on ? 'var(--accent-light,#f5efe0)' : 'var(--surface,#fff)'};border-radius:4px;padding:7px 9px;min-width:0">
+    const bg = on ? 'var(--accent-light,#f5efe0)' : fixed4 ? tint(bt.c) : 'var(--surface,#fff)';
+    return `<div onclick="${clickJs(it.id)}" style="cursor:pointer;border:1px solid ${on ? 'var(--accent,#b8953a)' : 'var(--border,#e2ded6)'};background:${bg};border-radius:4px;padding:7px 9px;min-width:0">
       <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${matEsc(it.name)}</div>
-      <div style="font-size:10px;color:${bt.c};margin-top:2px">${matEsc(bt.t)}</div>
+      <div style="font-size:10px;color:${bt.c};margin-top:2px;${fixed4 ? 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis' : ''}" title="${matEsc(bt.t)}">${matEsc(bt.t)}</div>
     </div>`;
   }).join('')}</div>`;
 }
@@ -162,7 +166,7 @@ function matStaffInner(sid) {
       </div>`;
   }
   return `<div style="font-size:11px;color:var(--text-2,#5a5650);margin-bottom:6px">已准备 <b>${pg.ready} / ${pg.total}</b> 项</div>
-    ${matBoxesHtml(c.items, c.rows, riyuC, c.open, id => `matStaffOpen('${sidJs}','${matEsc(id)}')`)}
+    ${matBoxesHtml(c.items, c.rows, riyuC, c.open, id => `matStaffOpen('${sidJs}','${matEsc(id)}')`, true)}
     ${edit ? `<div style="border:1px solid var(--accent,#b8953a);border-radius:4px;padding:10px 12px;margin-top:8px;background:var(--surface,#fff)">${edit}</div>` : ''}`;
 }
 function matStaffOpen(sid, itemId) {
