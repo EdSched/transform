@@ -1748,7 +1748,7 @@ async function openVipSessionRecord(bookingId) {
         <div id="vip_status_tags" style="display:flex;flex-wrap:wrap;gap:6px">${vipStatusRowsHtml()}</div>
         <input id="vip_status_note" value="${vipRecEsc(vipStatusFree)}" placeholder="其他补充（可选）" style="font-size:11px;margin-top:8px;width:100%">
       </div>
-      <div class="form-group"><label class="form-label">布置作业（学生将在VIP页面看到并提交）</label>
+      <div class="form-group"><label class="form-label">布置作业（学生将在VIP页面看到并提交；本次确实没有作业请写「本次无作业」）</label>
         <input id="vip_homework_text" value="${vipRecEsc(b.vip_homework || '')}" placeholder="一句话说明（如：下节课前完成过去问2015第2题）" style="font-size:11px;width:100%;margin-bottom:6px">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <button type="button" onclick="openVipHwEditor('${b.id}')" style="font-size:12px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">📝 设置作业（结构化）</button>
@@ -2566,6 +2566,7 @@ async function renderWorkRecordsTeacher(mc) {
     const rejected = records.filter(r => r.status === 'rejected');
     const courseCount = approved.filter(r => r.source === 'course').length;
     const bookingCount = approved.filter(r => r.source === 'booking').length;
+    const vipCount = approved.filter(r => r.source === 'vip').length;
     const totalHours = Math.round(approved.reduce((s, r) => s + (r.duration || 0), 0) * 100) / 100;
 
     // 解析「2026年06月20日 13:00」中的年月，判断是否当月
@@ -2590,7 +2591,8 @@ async function renderWorkRecordsTeacher(mc) {
           <div style="flex:1">
             <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap">
               <span style="font-size:11px;font-weight:600">${r.start_time} → ${r.end_time.split(' ')[1]||r.end_time}</span>
-              <span style="font-size:10px;background:${r.source === 'booking' ? '#e8f0fb' : 'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 5px">${r.work_type}</span>
+              <span style="font-size:10px;background:${r.source !== 'course' ? '#e8f0fb' : 'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 5px">${r.work_type}</span>
+              ${r.domain ? `<span style="font-size:10px;color:var(--text-3);border:1px solid var(--border-light);border-radius:2px;padding:1px 5px">${r.domain}</span>` : ''}
             </div>
             <div style="font-size:11px;color:var(--text-3)">${r.location} · ${r.notes}</div>
             ${r.admin_note ? `<div style="font-size:11px;color:var(--text-2);margin-top:3px;font-style:italic">📝 ${r.admin_note}</div>` : ''}
@@ -2603,8 +2605,8 @@ async function renderWorkRecordsTeacher(mc) {
         <div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">工作记录</div>
       </div>
       ${pending.length ? `<div style="font-size:11px;background:#fff3cd;color:#856404;border-radius:3px;padding:8px 12px;margin-bottom:10px">⏳ ${pending.length} 条记录待 Admin 审核</div>` : ''}
-      ${rejected.length ? `<div style="font-size:11px;background:#f8e0e0;color:#8a1a1a;border-radius:3px;padding:8px 12px;margin-bottom:10px">✗ ${rejected.length} 条记录已驳回${rejected[0]?.admin_note ? `：${rejected[0].admin_note}` : ''}</div>` : ''}
-      <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">大课 <strong style="color:var(--text)">${courseCount}</strong> 节 · 面谈 <strong style="color:var(--text)">${bookingCount}</strong> 次 · 合计 <strong style="color:var(--text)">${totalHours}</strong> 小时</div>
+      ${rejected.length ? `<div style="font-size:11px;background:#f8e0e0;color:#8a1a1a;border-radius:3px;padding:8px 12px;margin-bottom:10px">✗ ${rejected.length} 条记录已驳回${rejected.map(r => `<div style="margin-top:4px">${r.start_time.slice(0,11)} ${r.notes || ''}${r.admin_note ? `：${r.admin_note}` : ''}</div>`).join('')}</div>` : ''}
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">大课 <strong style="color:var(--text)">${courseCount}</strong> 节 · 面谈 <strong style="color:var(--text)">${bookingCount}</strong> 次 · VIP <strong style="color:var(--text)">${vipCount}</strong> 节 · 合计 <strong style="color:var(--text)">${totalHours}</strong> 小时</div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">${curY}年${curM}月</div>
       ${currentMonthRows.length ? currentMonthRows.map(renderCard).join('') : '<div style="font-size:12px;color:var(--text-3);padding:8px 0">本月暂无已通过的工作记录</div>'}
       ${historyRows.length ? `

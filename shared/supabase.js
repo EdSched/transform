@@ -52,7 +52,7 @@ function __getSbToken(){
   return null;
 }
 
-async function sb(path, method = 'GET', body = null) {
+async function sb(path, method = 'GET', body = null, extra = null) {   // extra：额外的 fetch 选项（如 { cache: 'no-store' }）
   // 登录前的 resolve（换id）必须用匿名公钥调：此时还没有合法 token，
   // 若误带了别的端残留/过期的 token，会被当成"已登录但token无效"而拒绝（返回 null）。
   const _isLoginResolve = /rpc\/resolve_student_login/.test(path);
@@ -68,6 +68,7 @@ async function sb(path, method = 'GET', body = null) {
     }
   };
   if (body) opts.body = JSON.stringify(_normTimeColon(body));
+  if (extra) Object.assign(opts, extra);
   const r = await fetch(SB_URL + path, opts);
   if (!r.ok) {
     const e = await r.text();

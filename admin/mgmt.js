@@ -9,11 +9,13 @@
 const MG_COL = { bg: '#fcf8f4', card: '#ffffff', text: '#3a342e', mute: '#8a8076', line: '#e8dfd5', border: '#d9cfc4', hover: '#b9ab9b', blue: '#4f7194', green: '#5b7f55', sand: '#c9a37a', track: '#ece4d9', red: '#c4646a' };
 const MG_PAGE = 20;                                                                                  // 名单每页条数
 const mgE = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-let mgS = { tab: 'domain', dom: '', grp: '', met: '', data: {}, tbl: {}, busy: {}, view: '', nid: '' };               // 全局层状态：data[领域]=各大项结果；tbl[大项|指标]=各领域结果
+let mgS = { tab: 'domain', dom: '', grp: '', met: '', data: {}, tbl: {}, busy: {}, view: '', nid: '', all: null };               // 全局层状态：data[领域]=各大项结果；tbl[大项|指标]=各领域结果
 let mgPage = { mine: false, grp: '', met: '', rows: null, label: '', view: '', nid: '' };                              // 负责人层状态
 let mgDet = { open: '', page: 0 };                                                                   // 详情页：展开的老师分组、当前页
 let mgMode = 'o';                                                                                    // 最近一次渲染的是哪一层：'o' 全局层 / 'p' 负责人层
 let mgSeqP = 0;
+const mgAll0 = () => ({ busy: false, n: 0, total: 0, done: false });                                 // 「读取全部领域概览」的进度
+let mgPins = { key: '', st: '', list: [], total: 0, rcs: [] };                                        // 置顶管理：进行中的提醒（打开卡片屏才读一次）
 
 function mgEnsureStyle() {
   if (document.getElementById('mgStyle')) return;
@@ -36,6 +38,28 @@ function mgEnsureStyle() {
   .mg-tile small{font-size:12px;color:${MG_COL.mute}}
   .mg-tile.na{border-style:dashed}.mg-tile.na b,.mg-tile.na small{color:#b3aa9f}
   .mg-tile.done{border-left:3px solid ${MG_COL.green}}.mg-tile.done small{color:${MG_COL.green}}
+  .mg-cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
+  .mg-card{box-sizing:border-box;min-height:150px;padding:14px 16px;border-radius:6px;background:${MG_COL.card};border:1px solid ${MG_COL.border};cursor:pointer;display:flex;flex-direction:column;gap:4px;min-width:0}
+  .mg-card:hover{border-color:${MG_COL.hover}}
+  .mg-card .ch{display:flex;justify-content:space-between;align-items:center;gap:6px}
+  .mg-card .ch b{font-family:'Noto Serif SC',serif;font-size:14px;font-weight:600}
+  .mg-card .chev{color:${MG_COL.mute};font-size:16px;line-height:1}
+  .mg-card .big{font-family:'Noto Serif SC',serif;font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;color:${MG_COL.text};line-height:1.3;margin-top:4px}
+  .mg-card .den{font-size:11px;color:${MG_COL.mute};white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mg-card .sec{font-size:11px;color:${MG_COL.mute};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:6px}
+  .mg-card .ft{font-size:11px;color:${MG_COL.mute};margin-top:auto;padding-top:6px}
+  .mg-card.done{border-left:3px solid ${MG_COL.green}}.mg-card.done .big{color:${MG_COL.green}}
+  .mg-card.na{border-style:dashed}.mg-card.na .ch b,.mg-card.na .big{color:#b3aa9f}.mg-card.na .big{font-size:15px;font-weight:400;margin-top:10px}
+  .mg-txt{color:${MG_COL.blue};cursor:pointer;font-size:12px}.mg-txt:hover{text-decoration:underline}.mg-txt.off{color:${MG_COL.mute};cursor:default;text-decoration:none}
+  .mg-pins{margin-top:22px;padding-top:12px;border-top:1px solid ${MG_COL.line}}
+  .mg-pins .ph{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;font-weight:600;margin-bottom:4px}
+  .mg-pins .ph span{font-size:11px;font-weight:400;color:${MG_COL.mute}}
+  .mg-pin{display:flex;align-items:baseline;gap:8px;padding:8px 2px;border-bottom:1px solid ${MG_COL.line};cursor:pointer;font-size:13px}
+  .mg-pin:hover{background:#fdfbf8}
+  .mg-pin i{flex-shrink:0;width:6px;height:6px;border-radius:50%;background:${MG_COL.blue};align-self:center}
+  .mg-pin b{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mg-pin small{font-size:11px;color:${MG_COL.mute};flex-shrink:0}
+  @media(max-width:600px){.mg-card .big{font-size:22px}.mg-pin{flex-wrap:wrap}.mg-pin b{flex:1 1 calc(100% - 20px)}.mg-pin small{margin-left:14px;flex-basis:100%}}
   .mg-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 14px;background:${MG_COL.card};border:1px solid ${MG_COL.line};border-top:0;cursor:pointer}
   .mg-row:first-child{border-top:1px solid ${MG_COL.line}}.mg-row:hover{background:#fdfbf8}
   .mg-row .l{flex:1;min-width:0}.mg-row .l small{display:block;font-size:11px;color:${MG_COL.mute};margin-top:2px}
@@ -68,14 +92,82 @@ function mgReading(r) {
   if (r.kind === 'list') return r.count ? `<span class="mg-dot"></span>待处理 ${r.count} 人` : `待处理 0 人`;
   return `<b class="mg-num" style="font-weight:600">${r.done}/${r.total}</b>${mgBar(r.done, r.total)}`;
 }
-// 大项方块（sum 为空 = 还没读取）
-function mgGroupTile(g, rows, js) {
-  if (g.na) return mgTile(g.label, '暂未接入', js, 'na');
-  if (!rows) return mgTile(g.label, '点击查看', js);
+const MG_CHK = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="${MG_COL.green}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 4.8"/></svg>`;
+// 大项卡片（负责人页 L1 / 领域视图 L2）：主数字 = 未完成的 ratio 指标里完成比例最低的一个；没有就看 list 指标；全部完成显示「已完成」
+function mgGroupCard(g, rows, js) {
+  const head = r => `<div class="ch"><b>${mgE(g.label)}</b>${r}</div>`, chev = `<span class="chev">›</span>`;
+  const na = t => `<div class="mg-card na" onclick="${js}">${head(chev)}<div class="big">${t}</div></div>`;
+  if (g.na || !rows) return na('暂未接入');
   const s = mgmGroupSum(g, rows);
-  if (s.state === 'gray') return mgTile(g.label, '暂无可统计项', js, 'na');
-  return mgTile(g.label, s.state === 'done' ? '已完成' : `${s.done}/${s.total} 项完成`, js, s.state === 'done' ? 'done' : '');
+  if (s.state === 'gray') return na(rows.every(x => mgmState(x.r) === 'na') ? '暂未接入' : '暂无可统计项');
+  if (s.state === 'done') return `<div class="mg-card done" onclick="${js}">${head(MG_CHK)}<div class="big">已完成</div><div class="den">${s.total} 项指标全部完成</div></div>`;
+  const key = o => o.x.r.kind === 'list' ? [1, 0, o.i] : [0, o.x.r.done / o.x.r.total, o.i];   // ratio 在前、比例低在前、同比例按 MG_METRICS 顺序
+  const todo = rows.map((x, i) => ({ x, i })).filter(o => mgmState(o.x.r) === 'todo').sort((a, b) => { const p = key(a), q = key(b); return p[0] - q[0] || p[1] - q[1] || p[2] - q[2]; });
+  const m = todo[0].x.m, r = todo[0].x.r, sec = todo[1];
+  return `<div class="mg-card" onclick="${js}">${head(chev)}
+    <div class="big">${r.kind === 'list' ? `待处理 ${r.count} 人` : `${r.done}/${r.total}`}</div>
+    <div class="den" title="${mgE(m.label + ' · ' + (r.denom || ''))}">${mgE(m.label + ' · ' + (r.denom || ''))}</div>
+    ${r.kind === 'list' ? '' : mgBar(r.done, r.total)}
+    ${sec ? `<div class="sec">${mgE(sec.x.m.label + ' ' + mgmText(sec.x.r))}</div>` : ''}
+    <div class="ft">${s.done}/${s.total} 项指标完成</div></div>`;
 }
+// 领域卡片（按领域看 L1）：没读取过 = 只显示「点击查看」
+function mgDomCard(d) {
+  const rows = mgS.data[d.label], js = `mgSet('${d.label}','','')`;
+  let sub = mgS.busy['d' + d.label] ? '读取中…' : '点击查看', mark = '<span class="chev" style="color:' + MG_COL.mute + ';font-size:16px;line-height:1">›</span>', cls = '';
+  if (rows) {
+    const cnt = rows.flat().filter(x => ['done', 'todo'].includes(mgmState(x.r))), done = cnt.filter(x => mgmState(x.r) === 'done').length;
+    if (!cnt.length) { sub = '暂无可统计项'; cls = 'na'; }
+    else { sub = `${done}/${cnt.length} 项指标完成`; if (done === cnt.length) { mark = MG_CHK; cls = 'done'; } }
+  }
+  return `<div class="mg-tile ${cls}" onclick="${js}"><div style="display:flex;justify-content:space-between;align-items:center"><b>${mgE(d.label)}</b>${mark}</div><small>${mgE(sub)}</small></div>`;
+}
+// 读取全部领域概览：依次读，共用同一个 D（大表只查一次），按钮显示进度
+async function mgLoadAll() {
+  if (!mgS.all) mgS.all = mgAll0();
+  if (mgS.all.busy) return;
+  if (mgS.all.done) { mgmClearCache(); mgS.data = {}; mgS.tbl = {}; mgS.busy = {}; }
+  const my = mgS.all = { busy: true, n: 0, total: DOMAINS.length, done: false };
+  mgRender();
+  for (const d of DOMAINS) {
+    if (mgS.all !== my) return;                       // 中途刷新 / 重新打开了，放弃
+    if (typeof MGM_D !== 'undefined' && MGM_D) MGM_D_AT = Date.now();   // 读取期间保持同一个 D，别让 60 秒过期后把大表重查
+    if (!mgS.data[d.label]) await mgLoadDom(d.label);
+    if (mgS.all !== my) return;
+    my.n++; if (mgMode === 'o') mgRender();
+  }
+  my.busy = false; my.done = true; if (mgMode === 'o') mgRender();
+}
+const mgAllBtn = () => { const a = mgS.all || mgAll0(); return `<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><span class="mg-txt ${a.busy ? 'off' : ''}" ${a.busy ? '' : 'onclick="mgLoadAll()"'}>${a.busy ? `读取中 ${a.n}/${a.total}` : a.done ? '重新读取' : '读取全部领域概览'}</span></div>`; };
+
+// 置顶管理：范围内进行中的提醒（最多 3 条）。读取时机 = 打开卡片屏时查一次 mgmt_notices(active) + 这 3 条的回执
+function mgPinsBlock(key) {
+  if (typeof mgnCan !== 'function' || !mgnCan()) return '';
+  if (mgPins.key !== key) mgPinsLoad(key);
+  if (mgPins.st !== 'ok' || !mgPins.total) return '';
+  const rows = mgPins.list.map(n => {
+    const rs = mgPins.rcs.filter(r => r.notice_id === n.id), N = (n.target_teachers || []).length;
+    const sum = `已发 ${rs.length} 位 · 已反馈 ${rs.filter(r => r.feedback_status).length}/${N} · 待确认 ${rs.filter(r => r.feedback_status && r.confirm_result !== 'resolved').length}`;
+    return `<div class="mg-pin" onclick="mgPinOpen('${mgE(n.id)}')"><i></i><b>${mgE(n.title)}</b><small>${mgE(sum)}</small></div>`;
+  }).join('');
+  return `<div class="mg-pins"><div class="ph">置顶管理<span>${mgPins.total} 项</span></div>${rows}<div style="padding-top:8px"><a class="mg-txt" onclick="mgnGoList()">查看全部</a></div></div>`;
+}
+async function mgPinsLoad(key) {
+  const my = mgPins = { key, st: 'loading', list: [], total: 0, rcs: [] };
+  try {
+    let ns = await sbAll('/rest/v1/mgmt_notices?status=eq.active&select=*&order=created_at.desc');
+    if (key === 'p') {                                  // 负责人页：发给自己管理范围内老师的
+      const ts = await mgnLoadTeachers();
+      ns = ns.filter(n => (n.target_teachers || []).some(id => { const t = ts.find(x => x.id === id); return t && mgnRoleOk(t); }));
+    } else ns = ns.filter(n => n.scope && n.scope.label === key.slice(2));   // 领域视图：scope.label = 该领域
+    my.total = ns.length; my.list = ns.slice(0, 3);
+    if (my.list.length) my.rcs = await sb(`/rest/v1/mgmt_notice_receipts?notice_id=in.(${my.list.map(n => encodeURIComponent(n.id)).join(',')})&select=notice_id,feedback_status,confirm_result`) || [];
+    my.st = 'ok';
+  } catch (e) { my.st = 'err'; }
+  if (mgPins === my && my.total && !(mgMode === 'p' && curPage !== 'mgmt')) mgRerender();
+}
+function mgPinOpen(id) { mgnInvalidate(); mgnGoNotice(id); }   // 提醒列表缓存清掉，保证能找到这条
+
 // 指标列表（一行一个指标）
 function mgMetricList(rows, js) {
   return `<div>` + rows.map(x => {
@@ -164,17 +256,17 @@ function mgEnsureOverlay() {
 }
 function mgOpen() {
   const el = mgEnsureOverlay(), hub = document.getElementById('hubOverlay'); if (hub) hub.style.display = 'none';
-  el.style.display = 'block'; mgS = { tab: 'domain', dom: '', grp: '', met: '', data: {}, tbl: {}, busy: {}, view: '', nid: '' }; mgDet = { open: '', page: 0 }; mgRender();
+  el.style.display = 'block'; mgS = { tab: 'domain', dom: '', grp: '', met: '', data: {}, tbl: {}, busy: {}, view: '', nid: '', all: mgAll0() }; mgPins.key = ''; mgDet = { open: '', page: 0 }; mgRender();
 }
 function mgClose() {
   const el = document.getElementById('mgmtOverlay'); if (el) el.style.display = 'none';
   const m = document.getElementById('studentDetailModal'); if (m) m.style.zIndex = '';
   showHub();
 }
-function mgTab(t) { if (mgS.tab === t) return; mgS = Object.assign(mgS, { tab: t, dom: '', grp: '', met: '', view: '', nid: '' }); mgDet = { open: '', page: 0 }; mgRender(); }
-function mgRefresh() { mgmClearCache(); mgS.data = {}; mgS.tbl = {}; mgS.busy = {}; mgRender(); mgEnsure(); }
+function mgTab(t) { if (mgS.tab === t) return; mgPins.key = ''; mgS = Object.assign(mgS, { tab: t, dom: '', grp: '', met: '', view: '', nid: '' }); mgDet = { open: '', page: 0 }; mgRender(); }
+function mgRefresh() { mgPins.key = ''; mgS.all = mgAll0(); mgmClearCache(); mgS.data = {}; mgS.tbl = {}; mgS.busy = {}; mgRender(); mgEnsure(); }
 // 跳到某一级（面包屑和方块都走这里）；字段含义随页签变：按领域看 = 领域→大项→指标；按项目看 = 大项→指标→领域
-function mgSet(d, g, m) { mgS.view = ''; mgS.nid = ''; mgS.dom = d; mgS.grp = g; mgS.met = m; mgDet = { open: '', page: 0 }; mgRender(); mgEnsure(); }
+function mgSet(d, g, m) { mgPins.key = ''; mgS.view = ''; mgS.nid = ''; mgS.dom = d; mgS.grp = g; mgS.met = m; mgDet = { open: '', page: 0 }; mgRender(); mgEnsure(); }
 // 需要数据的层级才读取
 function mgEnsure() {
   if (mgS.tab === 'domain') { if (mgS.dom && !mgS.data[mgS.dom] && !mgS.busy['d' + mgS.dom]) mgLoadDom(mgS.dom); }
@@ -200,9 +292,9 @@ function mgRender() {
   if (mgS.view === 'notices') { const v = mgnView(root); crumbs = v.crumbs; body = v.body; }
   else if (T === 'domain') {
     const g = MGM_GROUPS.find(x => x.key === mgS.grp), rows = mgS.data[mgS.dom];
-    if (!mgS.dom) body = `<div class="mg-grid">` + DOMAINS.map(d => mgTile(d.label, '点击查看', `mgSet('${d.label}','','')`)).join('') + `</div>`;
+    if (!mgS.dom) body = mgAllBtn() + `<div class="mg-grid">` + DOMAINS.map(mgDomCard).join('') + `</div>`;
     else if (!rows) { crumbs = [root, { t: mgS.dom }]; body = `<div class="mg-say">读取 ${mgE(mgS.dom)} 的数据中…</div>`; }
-    else if (!g) { crumbs = [root, { t: mgS.dom }]; body = `<div class="mg-grid">` + MGM_GROUPS.map((x, i) => mgGroupTile(x, rows[i], `mgSet('${mgS.dom}','${x.key}','')`)).join('') + `</div>`; }
+    else if (!g) { crumbs = [root, { t: mgS.dom }]; body = `<div class="mg-cgrid">` + MGM_GROUPS.map((x, i) => mgGroupCard(x, rows[i], `mgSet('${mgS.dom}','${x.key}','')`)).join('') + `</div>` + mgPinsBlock('d:' + mgS.dom); }
     else if (!mgS.met) {
       crumbs = [root, { t: mgS.dom, js: `mgSet('${mgS.dom}','','')` }, { t: g.label }];
       body = (g.na || !g.metrics.length) ? `<div class="mg-say">${g.label}：未接入，不算完成也不算未完成</div>` : mgMetricList(rows[MGM_GROUPS.indexOf(g)], k => `mgSet('${mgS.dom}','${g.key}','${k}')`);
@@ -263,7 +355,7 @@ function mgPageRender() {
   let crumbs = [], body = '';
   if (P.view === 'notices') { const v = mgnView(root); crumbs = v.crumbs; body = v.body; }
   else if (!P.rows) body = `<div class="mg-say">读取中…</div>`;
-  else if (!g) body = `<div class="mg-grid">` + MGM_GROUPS.map((x, i) => mgGroupTile(x, P.rows[i], `mgPSet('${x.key}','')`)).join('') + `</div>`;
+  else if (!g) body = `<div class="mg-cgrid">` + MGM_GROUPS.map((x, i) => mgGroupCard(x, P.rows[i], `mgPSet('${x.key}','')`)).join('') + `</div>` + mgPinsBlock('p');
   else if (!P.met) {
     crumbs = [root, { t: g.label }];
     body = (g.na || !g.metrics.length) ? `<div class="mg-say">${g.label}：未接入，不算完成也不算未完成</div>` : mgMetricList(P.rows[MGM_GROUPS.indexOf(g)], k => `mgPSet('${g.key}','${k}')`);
@@ -280,6 +372,6 @@ function mgPageRender() {
     ${mgCrumb(crumbs)}<div style="margin-top:${crumbs.length ? 0 : 10}px">${body}</div></div>`;
   if (typeof mgnAfterRender === 'function') mgnAfterRender();
 }
-function mgPSet(g, m) { mgPage.view = ''; mgPage.nid = ''; mgPage.grp = g; mgPage.met = m; mgDet = { open: '', page: 0 }; mgPageRender(); }
-function mgPageMine(on) { mgPage.view = ''; mgPage.nid = ''; mgPage.mine = !!on; mgPage.grp = ''; mgPage.met = ''; mgDet = { open: '', page: 0 }; renderMgmtPage(document.getElementById('mainContent')); }
-function mgPageRefresh() { mgmClearCache(); renderMgmtPage(document.getElementById('mainContent')); }
+function mgPSet(g, m) { mgPins.key = ''; mgPage.view = ''; mgPage.nid = ''; mgPage.grp = g; mgPage.met = m; mgDet = { open: '', page: 0 }; mgPageRender(); }
+function mgPageMine(on) { mgPins.key = ''; mgPage.view = ''; mgPage.nid = ''; mgPage.mine = !!on; mgPage.grp = ''; mgPage.met = ''; mgDet = { open: '', page: 0 }; renderMgmtPage(document.getElementById('mainContent')); }
+function mgPageRefresh() { mgPins.key = ''; mgmClearCache(); renderMgmtPage(document.getElementById('mainContent')); }
