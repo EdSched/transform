@@ -123,89 +123,7 @@ function tpFilteredStudents() {
 }
 function tpSetOwner(v) { tpOwnerFilter = v; tpRenderShell(); }
 
-// 备考节点文字总结（与学生学习记录页的备考规划同一套逻辑，按学生所选考试路线）
-// 从期待入学时间解析入学年份（27年4月/2027年4月/2027 等）
-function tpParseEnrollYear(str){
-  if(!str) return null;
-  const m=String(str).match(/(20\d{2}|\d{2})\s*年?/);
-  if(!m) return null;
-  let y=parseInt(m[1]); if(y<100) y+=2000;
-  return (y<2020||y>2100)?null:y;
-}
-function tpNodeSummaryHtml(s, latest, plans, draft) {
-  const now = new Date();
-  const nowIdx = now.getFullYear() * 12 + now.getMonth();
-  const enrollY = tpParseEnrollYear(s.target_enrollment);
-  const manualRoute = s.prep_model==='winter'?'winter':s.prep_model==='next_summer'?'next_summer':(s.prep_model==='summer'?'summer':null);
-  let route, examIdx;
-  if(enrollY){
-    const baseY=enrollY-1;
-    const summerIdx=baseY*12+(8-1), winterIdx=(baseY+1)*12+(1-1), nextSummerIdx=(baseY+1)*12+(8-1);
-    if(manualRoute){ route=manualRoute; examIdx=route==='winter'?winterIdx:route==='next_summer'?nextSummerIdx:summerIdx; }
-    else {
-      if(winterIdx<nowIdx){ route='summer'; examIdx=nextSummerIdx; }
-      else if(now.getMonth()+1<8 && summerIdx>=nowIdx){ route='summer'; examIdx=summerIdx; }
-      else { route='winter'; examIdx=winterIdx; }
-    }
-    s._computedRoute=route;
-  } else {
-    route = manualRoute || 'summer';
-    const examMonth = route === 'winter' ? 1 : 8;
-    examIdx = now.getFullYear() * 12 + (examMonth - 1);
-    while (examIdx < nowIdx) examIdx += 12;
-    if (route === 'next_summer') examIdx += 12;
-    s._computedRoute=route;
-  }
-  // 各项目最晚节点偏移（次年路线：语言按冬季要求、草稿提前到12月）
-  const DL = route === 'next_summer'
-    ? { japanese:-7, english:-7, plan:-8, school:-3, apply:-1, kakomon:0, exam:0 }
-    : { japanese:-1, english:-1, plan:-3, school:-2, apply:-1, kakomon:0, exam:0 };
-  const ymStr = i => `${Math.floor(i/12)}年${i%12+1}月`;
-  let refs = 0;
-  try { refs = draft && draft.prior_research_list ? JSON.parse(draft.prior_research_list).length : 0; } catch (e) {}
-  const draftUploaded = !!(draft && draft.draft_file_url);
-  let draftFilled = false;
-  try {
-    const df1 = draft && draft.draft_fields ? JSON.parse(draft.draft_fields) : {};
-    draftFilled = Object.values(df1).some(v => Array.isArray(v) ? v.length : String(v || '').trim());
-  } catch (e) {}
-  if (!draftFilled && draft) draftFilled = ['research_question','methodology','draft_notes'].some(f => String(draft[f] || '').trim());
-  const dn = (k, v) => typeof PROGRESS_DONE !== 'undefined' && (PROGRESS_DONE[k] || []).includes(v);
-  const jp = latest.japanese || '', en = latest.english || '', plan = latest.plan || '', apply = latest.apply || '', exam = latest.exam || '';
-  // 逐校推进统计（来自志望校的状态与过去问/面试稿标记）
-  const profOkN = plans.filter(p => ['prof_ok','applied','passed'].includes(p.status)).length;
-  const contactedN = plans.filter(p => p.status === 'contacted').length;
-  const appliedN = plans.filter(p => ['applied','passed'].includes(p.status)).length;
-  const passedN = plans.filter(p => p.status === 'passed').length;
-  const kakomonN = plans.filter(p => p.kakomon_started).length;
-  const interviewN = plans.filter(p => p.interview_draft_done).length;
-  const dlSuffix = route === 'next_summer' ? '（次年路线）' : '';
-  // 学部：计划书节点 = 志望理由书（新版逐校提交/批复，见 shared/riyu.js）
-  const tGakubu = (typeof isGakubuStudent === 'function') && isGakubuStudent(s);
-  const riyuC = (typeof riyuCounts === 'function') ? riyuCounts(plans, ((teacherProgressData && teacherProgressData.riyuSubsMap) || {})[s.id], 'gakubu_riyu') : { total: plans.length, submitted: 0, reviewed: 0 };
-  const planItem = tGakubu
-    ? { label:'志望理由书', cur: riyuCountText(riyuC), done: riyuC.total>0 && riyuC.reviewed>=riyuC.total, dl:DL.plan, dlName:'完成最晚' + dlSuffix }
-    : { label:'研究计划书', cur:[plan || (draftUploaded ? '已完成' : draftFilled ? '撰写中' : refs ? '在收集材料' : '未填写'), refs ? `文献 ${refs} 条` : '', draftUploaded ? '📎 完成稿已上传' : ''].filter(Boolean).join(' · '), done: plan === '已完成' || draftUploaded, dl:DL.plan, dlName:'草稿完成最晚' + dlSuffix };
-  const items = [
-    { label:'日语', cur:[jp || '未填写', s.japanese_score || ''].filter(Boolean).join(' · '), done: dn('japanese', jp), dl:DL.japanese, dlName:'成绩确定最晚' + dlSuffix },
-    { label:'英语', cur:[en || '未填写', s.english_score || ''].filter(Boolean).join(' · '), done: dn('english', en), dl:DL.english, dlName:'成绩确定最晚' + dlSuffix },
-    planItem,
-    { label:'择校・联系教授', cur: (plans.length ? `已选 ${plans.length}/6 校` : '未选校') + (contactedN ? ` · 已发邮件 ${contactedN} 校` : '') + (profOkN ? ` · 教授OK ${profOkN} 校` : '') + (apply ? ' · ' + apply : ''), done: profOkN > 0, dl:DL.school, dlName:'锁定教授最晚' },
-    { label:'出愿', cur: appliedN ? `已出愿 ${appliedN} 校` : (apply || '未开始'), done: appliedN > 0 || ['已出愿','已合格'].includes(apply), dl:DL.apply, dlName:'出愿' },
-    { label:'过去问・面试稿', cur: [(kakomonN ? `过去问已开始 ${kakomonN} 校` : ''), (interviewN ? `面试稿完成 ${interviewN} 校` : ''), exam || ''].filter(Boolean).join(' · ') || '未开始', done: dn('exam', exam), dl:DL.kakomon, dlName:'完成最晚' },
-    { label:'大学院考试', cur: passedN ? `合格 ${passedN} 校` : apply === '已合格' ? '已合格' : appliedN ? `已出愿 ${appliedN} 校・待考试` : '—', done: passedN > 0 || apply === '已合格', dl:DL.exam, dlName:'考试' },
-  ];
-  return items.map(it => {
-    const dlIdx = examIdx + it.dl, left = dlIdx - nowIdx;
-    let v, c;
-    if (it.done) { v = it.label === '大学院考试' ? '🎉 已合格' : '✓ 已完成'; c = 'var(--ok,#2a9e6a)'; }
-    else if (left > 1)   { v = `距${it.dlName}（${ymStr(dlIdx)}）还剩 ${left} 个月`; c = 'var(--text-2,#666)'; }
-    else if (left === 1) { v = `⚠ 距${it.dlName}仅剩 1 个月`; c = 'var(--warn,#b8860b)'; }
-    else if (left === 0) { v = `⚠ ${it.dlName}就在本月`; c = 'var(--danger,#b03a2e)'; }
-    else                 { v = `✗ 已超${it.dlName} ${-left} 个月`; c = 'var(--danger,#b03a2e)'; }
-    return `<div style="font-size:11px;line-height:1.9"><span style="font-weight:600">${it.label}</span>：<span style="color:var(--text-2)">${tsaEsc(it.cur)}</span> —— <span style="color:${c}">${v}</span></div>`;
-  }).join('');
-}
+// 备考节点的计算、卡片画法在 shared/progress-card.js（pgcNodes / pgcCardHtml），管理端和老师端共用
 
 // 上传批复版后：更新缓存里的提交记录并重绘列表
 function tpRiyuChanged(sub) {
@@ -219,155 +137,20 @@ function tpRiyuChanged(sub) {
 function tpRenderProgressList() {
   const listBox = document.getElementById('tp_list');
   if (!listBox || !teacherProgressData) return;
-  const { timelineMap, plansMap, draftsMap } = teacherProgressData;
   const filteredAll = tpFilteredStudents();
   const filtered = tsmSlice(filteredAll);
   const cnt = document.getElementById('tp_count');
   if (cnt) cnt.textContent = filteredAll.length;
-
-  const cards = filtered.map(s => {
-    const timeline = timelineMap[s.id] || [];
-    const latest = getLatestProgress(timeline);
-    const plans = plansMap[s.id] || [];
-    const draft = draftsMap[s.id];
-    const _nodesHtml = tpNodeSummaryHtml(s, latest, plans, draft);  // 先算，填充 s._computedRoute
-    const _rt = s._computedRoute || s.prep_model || 'summer';
-    const routeLabel = (_rt === 'winter' ? '冬季路线・12月出愿1月考试'
-      : _rt === 'next_summer' ? '次年夏季路线・语言按冬季要求・次年7月出愿8月考试'
-      : '夏季路线・7月出愿8月考试') + (!s.prep_model ? '（按入学时间自动）' : '');
-
-    // 「出愿/合格」阶段以志望校为准：有合格→已合格（修正合格学生顶部仍显示已出愿的问题）
-    const anyPassed = plans.some(p => p.status === 'passed');
-    const anyApplied = plans.some(p => ['applied', 'passed'].includes(p.status));
-    const applyDisplay = anyPassed ? '已合格' : (latest.apply || (anyApplied ? '已出愿' : ''));
-    const applyDone = anyPassed || latest.apply === '已合格';
-
-    // 统一风格的状态芯片：完成=绿，进行中=中性
-    const tpChip = (icon, text, done) => `<span style="font-size:10px;padding:2px 9px;border-radius:10px;white-space:nowrap;background:${done ? 'var(--ok-bg,#e8f4ea)' : 'var(--bg,#f7f5f0)'};color:${done ? 'var(--ok,#2a5a30)' : 'var(--text-2,#5a5650)'};border:1px solid ${done ? 'var(--ok,#b8d8bc)' : 'var(--border-light,#ede9e2)'}">${icon} ${text}</span>`;
-    const statusRow = Object.entries(PROGRESS_LABELS).map(([k]) => {
-      let val, done;
-      if (k === 'apply') { val = applyDisplay; done = applyDone; }
-      else if (k === 'japanese') { val = latest[k] || (s.japanese_score ? '有成绩' : ''); done = isProgressDone(k, latest[k]); }
-      else if (k === 'english') { val = latest[k] || (s.english_score ? '有成绩' : ''); done = isProgressDone(k, latest[k]); }
-      else { val = latest[k]; done = isProgressDone(k, latest[k]); }
-      if (!val) return '';
-      const scoreHint = k === 'japanese' && s.japanese_score ? ` · ${s.japanese_score}` : k === 'english' && s.english_score ? ` · ${s.english_score}` : '';
-      return tpChip(PROGRESS_ICONS[k], val + scoreHint, done);
-    }).join('');
-
-    // ── 统一视觉：所有区块用同一套 frame + title ──
-    const secTitle = t => `<div style="font-size:11px;font-weight:600;color:var(--text-2);letter-spacing:.02em;margin-bottom:10px">${t}</div>`;
-    const secFrame = inner => `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:6px;padding:12px 14px">${inner}</div>`;
-
-    // 备考节点
-    const secNodes = secFrame(secTitle(`📅 备考节点 <span style="font-weight:400;color:var(--text-3)">· ${routeLabel}</span>`) + _nodesHtml);
-
-    // 语言成绩 + 计划书（两列）
-    const jpTxt = s.japanese_score ? tsaEsc(s.japanese_score) : '<span style="color:var(--text-3)">未填写</span>';
-    const enTxt = s.english_score ? tsaEsc(s.english_score) : '<span style="color:var(--text-3)">未填写</span>';
-    const secLang = secFrame(secTitle('🗣 语言成绩') +
-      `<div style="font-size:12px;line-height:2"><div><span style="color:var(--text-3)">日语</span>　${jpTxt}</div><div><span style="color:var(--text-3)">英语</span>　${enTxt}</div></div>`);
-    const tpGakubu = (typeof isGakubuStudent === 'function') && isGakubuStudent(s);
-    const secPlan = tpGakubu
-      ? secFrame(secTitle(`📄 志望理由书 <span style="font-weight:400;color:var(--text-3)">· ${tsaEsc(riyuCountText(riyuCounts(plans, (teacherProgressData.riyuSubsMap || {})[s.id], 'gakubu_riyu')))}</span>`) +
-          riyuStaffListHtml(s, plans, (teacherProgressData.riyuSubsMap || {})[s.id] || [], 'gakubu_riyu', tpRiyuChanged) +
-          `<button onclick="event.stopPropagation();openTeacherDraftComment('${s.id}','${tsaEsc(s.name)}')" style="margin-top:8px;font-size:10px;background:none;color:var(--text-2);border:1px solid var(--border);border-radius:4px;padding:4px 12px;cursor:pointer;font-family:inherit;display:block">整体评语・旧版草稿</button>`)
-      : secFrame(secTitle('📄 研究计划书') + (draft
-        ? `${tDraftSummaryHtml(draft)}${draft.draft_file_url ? `<a href="${draft.draft_file_url}" target="_blank" style="font-size:10px;color:var(--accent);display:inline-block;margin-top:4px">📎 草稿文件</a>` : ''}<button onclick="event.stopPropagation();openTeacherDraftComment('${s.id}','${tsaEsc(s.name)}')" style="margin-top:8px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:5px 12px;cursor:pointer;font-family:inherit;display:block">查看・评估计划书/先行研究</button>`
-        : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写</div>'));
-
-    // 志望校
-    const schoolTable = plans.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">
-        <thead><tr style="background:var(--bg)">
-          ${['No.', '级别', '学校名 · 研究科', '教授', '出愿期间', '该校进度', '过去问', '面试稿', ''].map(h => `<th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border-light);white-space:nowrap">${h}</th>`).join('')}
-        </tr></thead>
-        <tbody>
-          ${plans.map((p, pi) => { const st = schoolStatusLabel(p.status); return `<tr style="border-bottom:1px solid var(--border-light)">
-            <td style="padding:6px 8px;color:var(--text-3)">${pi + 1}</td>
-            <td style="padding:6px 8px;white-space:nowrap">${schoolLevelHtml(p.level)}</td>
-            <td style="padding:6px 8px"><span style="font-weight:600">${tsaEsc(p.school_name)}</span>${p.faculty ? `<span style="color:var(--text-3);margin-left:4px;font-size:10px">${tsaEsc(p.faculty)}</span>` : ''}</td>
-            <td style="padding:6px 8px;white-space:nowrap">${tsaEsc(p.professor) || '—'}</td>
-            <td style="padding:6px 8px;font-size:10px;color:var(--accent);white-space:nowrap">${tsaEsc(p.application_period) || '—'}</td>
-            <td style="padding:6px 8px">
-              <select onchange="tpPlanSet('${p.id}','status',this.value,this)" onclick="event.stopPropagation()" style="font-size:10px;padding:3px 5px;border:1px solid var(--border);border-radius:3px;background:var(--surface);font-family:inherit;color:${st.c};font-weight:600">
-                ${Object.entries(SCHOOL_STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${p.status === k ? 'selected' : ''}>${v.t}</option>`).join('')}
-              </select>
-            </td>
-            <td style="padding:6px 8px"><button onclick="event.stopPropagation();tpPlanFlag('${p.id}','kakomon_started',this)" data-on="${p.kakomon_started ? '1' : '0'}" style="font-size:10px;border-radius:3px;padding:3px 9px;cursor:pointer;font-family:inherit;border:1px solid ${p.kakomon_started ? 'var(--ok)' : 'var(--border)'};background:${p.kakomon_started ? 'var(--ok-bg)' : 'var(--surface)'};color:${p.kakomon_started ? 'var(--ok)' : 'var(--text-3)'}">${p.kakomon_started ? '✓ 已开始' : '未开始'}</button></td>
-            <td style="padding:6px 8px"><button onclick="event.stopPropagation();tpPlanFlag('${p.id}','interview_draft_done',this)" data-on="${p.interview_draft_done ? '1' : '0'}" style="font-size:10px;border-radius:3px;padding:3px 9px;cursor:pointer;font-family:inherit;border:1px solid ${p.interview_draft_done ? 'var(--ok)' : 'var(--border)'};background:${p.interview_draft_done ? 'var(--ok-bg)' : 'var(--surface)'};color:${p.interview_draft_done ? 'var(--ok)' : 'var(--text-3)'}">${p.interview_draft_done ? '✓ 已完成' : '未完成'}</button></td>
-            <td style="padding:6px 8px;white-space:nowrap"><span onclick="event.stopPropagation();tpEditSchool('${p.id}')" style="font-size:10px;color:var(--accent);cursor:pointer;margin-right:8px">编辑</span><span onclick="event.stopPropagation();tpDelSchool('${p.id}')" style="font-size:10px;color:var(--danger);cursor:pointer">删除</span></td>
-          </tr>`; }).join('')}
-        </tbody>
-      </table></div>` : '<div style="font-size:11px;color:var(--text-3)">学生尚未填写志望校</div>';
-    const secSchools = secFrame(
-      `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <span style="font-size:11px;font-weight:600;color:var(--text-2)">🏫 志望校 <span style="font-weight:400;color:var(--text-3)">（${plans.length}所）· 状态/过去问/面试稿可直接改，即时与学生端同步</span></span>
-        <button onclick="event.stopPropagation();tpAddSchool('${s.id}')" style="margin-left:auto;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-family:inherit;white-space:nowrap">＋ 添加志望校</button>
-      </div>${(typeof spChosenWarnHtml === 'function') ? spChosenWarnHtml((teacherProgressData.bkMap || {})[s.id], plans.length, `tpAddSchool('${s.id}')`) : ''}${schoolTable}`);
-
-    // 保录（仅保录学生）
-    // 出愿材料（学部 / 大学院各自的清单；大学院的志望理由书在这里下载 Word、上传批复版）
-    const secMaterials = (typeof matStaffNodeHtml === 'function') ? (() => {
-      const track = matTrackOf(s);
-      const items = (teacherProgressData.matItems || []).filter(it => it.track === track);
-      return secFrame(secTitle('📁 出愿材料') +
-        matStaffNodeHtml(s, items, (teacherProgressData.matsMap[s.id] = teacherProgressData.matsMap[s.id] || []), plans, (teacherProgressData.riyuSubsMap[s.id] = teacherProgressData.riyuSubsMap[s.id] || [])));
-    })() : '';
-    const secGuaranteed = (s.course_type || '').includes('保录') ? secFrame(
-      secTitle('🎓 保录学校') +
-      ((Array.isArray(s.guaranteed_schools) && s.guaranteed_schools.length)
-        ? `<div style="display:flex;flex-direction:column;gap:5px">${s.guaranteed_schools.map(g => `<div style="font-size:11px;padding:6px 10px;border:1px solid #e8d9b8;border-radius:4px;background:#fdfaf5"><span style="font-weight:600">${tsaEsc(g.university)}</span>${g.program ? ` <span style="color:var(--text-3)">· ${tsaEsc(g.program)}</span>` : ''}</div>`).join('')}</div>`
-        : '<div style="font-size:11px;color:var(--text-3)">尚无保录学校（可在管理端录入）</div>')) : '';
-
-    // 老师评估（收起）
-    const secNotes = secFrame(
-      `<div onclick="event.stopPropagation();tpNotesToggle('${s.id}','${tsaEsc(s.name)}',this)" style="font-size:11px;font-weight:600;color:var(--text-2);cursor:pointer;user-select:none">📝 老师评估记录 <span style="font-weight:400;color:var(--text-3)">（学生不可见，仅老师与 admin）</span><span class="arr" style="margin-left:4px;color:var(--text-3)">▸</span></div>
-       <div id="tpnotes_${s.id}" style="display:none;margin-top:10px"></div>`);
-
-    // 时间线（收起）
-    const secTimeline = secFrame(
-      `<div onclick="event.stopPropagation();const el=document.getElementById('tptl_${s.id}');const open=el.style.display==='none';el.style.display=open?'block':'none';this.querySelector('.arr').textContent=open?'▾':'▸'" style="font-size:11px;font-weight:600;color:var(--text-2);cursor:pointer;user-select:none">🕑 进度时间线 <span style="font-weight:400;color:var(--text-3)">（${timeline.length}条）</span><span class="arr" style="margin-left:4px;color:var(--text-3)">▸</span></div>
-       <div id="tptl_${s.id}" style="display:none;margin-top:10px">
-         ${timeline.length ? [...timeline].reverse().map(entry => renderProgressTimelineEntry(entry, false)).join('') : '<div style="font-size:11px;color:var(--text-3)">暂无记录</div>'}
-       </div>`);
-
-    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:10px;box-shadow:0 1px 2px rgba(0,0,0,.03)">
-      <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer" onclick="toggleTeacherProgressCard('${s.id}')">
-        <div style="flex:1;min-width:0">
-          <span style="font-size:13px;font-weight:600">${tsaEsc(s.name)}</span>
-          <span style="font-size:11px;color:var(--text-3);margin-left:8px">${MAJORS[s.major] || s.major || ''}</span>
-          ${s.source ? `<span style="font-size:10px;color:var(--text-3);margin-left:6px;border:1px solid var(--border-light);border-radius:3px;padding:0 6px">${tsaEsc(s.source)}</span>` : ''}
-        </div>
-        <div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;max-width:62%">
-          ${statusRow || '<span style="font-size:10px;color:var(--text-3)">暂无进度</span>'}
-        </div>
-        <span class="tp-arr" style="font-size:11px;color:var(--text-3);flex-shrink:0">▸</span>
-      </div>
-      <div id="tprog_${s.id}" style="display:none;border-top:1px solid var(--border-light);background:var(--bg)">
-        <div style="padding:14px;display:flex;flex-direction:column;gap:12px">
-          ${secNodes}
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">${secLang}${secPlan}</div>
-          ${secSchools}
-          ${secMaterials}
-          ${secGuaranteed}
-          ${secNotes}
-          ${secTimeline}
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-
-  listBox.innerHTML = (cards ? cards + tsmMoreHtml(filteredAll.length) : '') || `<div class="empty">${(tsmPool || []).length ? '没有符合筛选条件的学生' : (tsaScope().vipOnly ? '暂无你指导的 VIP 学生' : '没有符合筛选条件的学生')}</div>`;
-}
-
-function toggleTeacherProgressCard(id) {
-  const el = document.getElementById(`tprog_${id}`);
-  if (!el) return;
-  const open = el.style.display === 'none';
-  el.style.display = open ? 'block' : 'none';
-  const hdr = el.previousElementSibling;
-  const arr = hdr && hdr.querySelector('.tp-arr');
-  if (arr) arr.textContent = open ? '▾' : '▸';
+  // 重绘前记下已展开的卡片，重绘后保持展开（首次进入不展开任何卡片）
+  const openIds = new Set([...listBox.querySelectorAll('.pgc-body')].filter(e => e.style.display !== 'none').map(e => e.id.slice(4)));
+  const o = {
+    mode: 'teacher',
+    h: { planSet: 'tpPlanSet', planFlag: 'tpPlanFlag', schoolAdd: 'tpAddSchool', schoolEdit: 'tpEditSchool', schoolDel: 'tpDelSchool' },
+    notesFn: 'tpNotesToggle',
+    riyuChanged: tpRiyuChanged,
+  };
+  const cards = filtered.map(s => pgcCardHtml(s, teacherProgressData, { ...o, open: openIds.has(s.id) })).join('');
+  listBox.innerHTML = (cards ? `<div style="display:flex;flex-direction:column;gap:10px">${cards}</div>` + tsmMoreHtml(filteredAll.length) : '') || `<div class="empty">${(tsmPool || []).length ? '没有符合筛选条件的学生' : (tsaScope().vipOnly ? '暂无你指导的 VIP 学生' : '没有符合筛选条件的学生')}</div>`;
 }
 
 // ══ 老师侧：计划书 / 先行研究 查看・评估 ══
@@ -1725,7 +1508,7 @@ async function tpPlanFlag(planId, field, btn) {
 const tpNotesCache = {};
 
 async function tpNotesToggle(sid, sname, head) {
-  const box = document.getElementById('tpnotes_' + sid);
+  const box = document.getElementById('pgcnotes_' + sid);
   if (!box) return;
   const open = box.style.display === 'none';
   box.style.display = open ? 'block' : 'none';
@@ -1743,7 +1526,7 @@ async function tpNotesToggle(sid, sname, head) {
 }
 
 function tpNotesRender(sid, sname) {
-  const box = document.getElementById('tpnotes_' + sid);
+  const box = document.getElementById('pgcnotes_' + sid);
   if (!box) return;
   const notes = tpNotesCache[sid] || [];
   box.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px">
@@ -1866,8 +1649,8 @@ async function tpReloadStudentPlans(sid) {
   if (plans) teacherProgressData.plansMap[sid] = plans;
   if (tl) teacherProgressData.timelineMap[sid] = tl;
   tpRenderProgressList();
-  const el = document.getElementById(`tprog_${sid}`);
-  if (el && el.style.display === 'none') toggleTeacherProgressCard(sid);
+  const el = document.getElementById(`pgc_${sid}`);
+  if (el && el.style.display === 'none') pgcToggle(sid);
 }
 function tpAddSchool(sid) {
   const stu = tpStudentOf(sid); if (!stu) return;
