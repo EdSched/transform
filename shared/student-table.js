@@ -315,8 +315,9 @@ function sttEnsureCss() {
 .stt-fn:hover{opacity:1}
 .stt-fn.on{color:var(--accent);opacity:1;background:rgba(184,149,58,.18)}
 .stt-long{white-space:normal;max-width:200px;min-width:90px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.45}
-.stt-ops{white-space:nowrap;display:table-cell}
-.stt-ops .btn{margin-right:4px}
+.stt-table td.stt-ops{max-width:none;overflow:visible;white-space:nowrap;position:sticky;right:0;background:var(--surface);box-shadow:-1px 0 0 var(--border)}
+.stt-table tbody tr:hover td.stt-ops{background:var(--bg)}
+.stt-ops .btn{margin-right:4px;display:inline-block;width:auto}
 .stt-exp td{background:var(--bg);white-space:normal;max-width:none}
 .stt-pop{position:fixed;z-index:10000;width:268px;max-height:360px;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,.15);padding:8px;font-size:11px}
 .stt-pop-h{display:flex;justify-content:space-between;margin-bottom:6px}
