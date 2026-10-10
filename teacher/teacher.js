@@ -688,7 +688,7 @@ function renderBookingCardCollapsed(b) {
     <div id="${rowId}" style="display:none;padding:0 14px 14px">
       <div style="font-size:11px;margin-bottom:8px">
         <span style="cursor:pointer;color:var(--accent);text-decoration:underline" onclick="showStudentInfoTeacher('${b.name}','${b.student_id || ''}')">${b.name}</span>
-        <span style="color:var(--text-3);margin-left:6px">${MAJORS[tBkMajor(b)] || tBkMajor(b)}</span>${!b.student_id && b.type !== 'vip' ? `<span style="font-size:9px;color:var(--warn);border:1px solid var(--warn);border-radius:2px;padding:0 5px;margin-left:6px">未关联档案·确认时认领</span><button onclick="tLinkStudent('${b.id}')" style="font-size:10px;margin-left:6px;background:none;border:1px solid var(--border);border-radius:3px;padding:1px 7px;cursor:pointer;font-family:inherit;color:var(--accent)">关联到学生</button>` : ''}${b.name_conflict ? '<span style="font-size:9px;color:var(--danger);border:1px solid var(--danger);border-radius:2px;padding:0 5px;margin-left:6px">⚠ 与在籍学生同名，请确认</span>' : ''}
+        <span style="color:var(--text-3);margin-left:6px">${MAJORS[tBkMajor(b)] || tBkMajor(b)}</span>${manualEntryTag(b)}${!b.student_id && b.type !== 'vip' ? `<span style="font-size:9px;color:var(--warn);border:1px solid var(--warn);border-radius:2px;padding:0 5px;margin-left:6px">未关联档案·确认时认领</span><button onclick="tLinkStudent('${b.id}')" style="font-size:10px;margin-left:6px;background:none;border:1px solid var(--border);border-radius:3px;padding:1px 7px;cursor:pointer;font-family:inherit;color:var(--accent)">关联到学生</button>` : ''}${b.name_conflict ? '<span style="font-size:9px;color:var(--danger);border:1px solid var(--danger);border-radius:2px;padding:0 5px;margin-left:6px">⚠ 与在籍学生同名，请确认</span>' : ''}
       </div>
       ${renderBookingCardBody(b)}
     </div>
@@ -708,7 +708,7 @@ function renderBookingCard(b) {
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px">
       <div>
         <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:14px;cursor:pointer;color:var(--accent);text-decoration:underline" onclick="showStudentInfoTeacher('${b.name}','${b.student_id || ''}')">${b.name}</span>
-        <span style="font-size:11px;color:var(--text-3);margin-left:6px">${MAJORS[tBkMajor(b)] || tBkMajor(b)}</span>
+        <span style="font-size:11px;color:var(--text-3);margin-left:6px">${MAJORS[tBkMajor(b)] || tBkMajor(b)}</span>${manualEntryTag(b)}
       </div>
       <span style="font-size:10px;background:${b.status === 'pending' ? 'var(--warn-bg)' : 'var(--ok-bg)'};color:${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'};padding:2px 7px;border-radius:2px;white-space:nowrap">${b.status === 'pending' ? '待确认' : b.status === 'completed' ? '已完成' : '已确认'}</span>
     </div>
@@ -2284,6 +2284,7 @@ function renderMyVipRow(b, s) {
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap">
           <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px">${b.name} 的VIP课程</span>
           <span style="font-size:9px;background:#5a3a9a;color:#fff;border-radius:2px;padding:1px 6px">VIP</span>
+          ${manualEntryTag(b)}
           ${b.self_booked ? '<span style="font-size:9px;background:#fdf1e6;color:#a0521a;border:1px solid #e8c9a8;border-radius:2px;padding:1px 6px">学生自主填写</span>' : ''}
           ${hasRecord ? `<span style="font-size:9px;background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:1px 6px">已记录</span>` : (isPast ? `<span style="font-size:9px;background:#fff3cd;color:#856404;border-radius:2px;padding:1px 6px">待填写</span>` : '')}
           ${(b.messages||[]).length ? `<span style="font-size:9px;background:#e8f0fb;color:#1a6a9a;border-radius:2px;padding:1px 6px">💬 ${b.messages.length}</span>` : ''}

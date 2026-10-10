@@ -35,10 +35,13 @@ function renderBookingPage(mc){
   mc.innerHTML=`
   <div class="page-header">
     <div class="section-title">预约管理</div>
-    <div class="month-nav">
-      <button onclick="bkMonthShift(-1)">‹</button>
-      <div class="month-display">${bkYear}·${String(bkMonth+1).padStart(2,'0')}</div>
-      <button onclick="bkMonthShift(1)">›</button>
+    <div style="display:flex;align-items:center;gap:12px">
+      ${bkmBtnHtml('daily')}
+      <div class="month-nav">
+        <button onclick="bkMonthShift(-1)">‹</button>
+        <div class="month-display">${bkYear}·${String(bkMonth+1).padStart(2,'0')}</div>
+        <button onclick="bkMonthShift(1)">›</button>
+      </div>
     </div>
   </div>
   <div class="btn-group" style="margin-bottom:10px">
@@ -365,10 +368,13 @@ function renderVipBookingPage(mc){
   mc.innerHTML=`
   <div class="page-header">
     <div class="section-title">预约管理</div>
-    <div class="month-nav">
-      <button onclick="bkMonthShift(-1)">‹</button>
-      <div class="month-display">${bkYear}·${String(bkMonth+1).padStart(2,'0')}</div>
-      <button onclick="bkMonthShift(1)">›</button>
+    <div style="display:flex;align-items:center;gap:12px">
+      ${bkmBtnHtml('vip')}
+      <div class="month-nav">
+        <button onclick="bkMonthShift(-1)">‹</button>
+        <div class="month-display">${bkYear}·${String(bkMonth+1).padStart(2,'0')}</div>
+        <button onclick="bkMonthShift(1)">›</button>
+      </div>
     </div>
   </div>
   <div class="btn-group" style="margin-bottom:10px">
@@ -531,6 +537,149 @@ async function saveAdminVipReschedule(bookingId) {
   } catch (e) { alert('保存失败：' + e.message); if (btn) btn.disabled = false; }
 }
 
+// ══════════════════════════════════
+// 教务补录预约（面谈 / VIP）——不到万不得已不要用
+// 只建预约本身（时间、老师、学生、类型、地点）；不代填老师的记录、不代替学生确认。
+// 补录的预约永久带「教务补录」标签（manual_entry），必须填补录原因；VIP 不扣课时（老师填上课记录时才扣）。
+// ══════════════════════════════════
+let bkmKind='daily', bkmStu=null;
+function bkmCan(){ return bkIsAdmin()||!!(typeof ACCESS_KEY!=='undefined'&&ACCESS_KEY&&ACCESS_KEY._asTeacher&&ACCESS_KEY._asTeacher.position==='lead'); }
+function bkmBtnHtml(kind){ return bkmCan()?`<button class="btn btn-outline btn-sm" style="font-size:10px;color:var(--text-3);border-color:var(--border-light)" onclick="openManualBooking('${kind}')">补录预约</button>`:''; }
+function bkmOffline(loc){ return !!loc&&loc.startsWith('offline'); }
+function openManualBooking(kind){
+  if(!bkmCan()) return;
+  if(!confirm('补录只用于老师和学生都确实无法自己预约的情况。补录的预约会永久标记「教务补录」。确定继续？')) return;
+  bkmKind=kind==='vip'?'vip':'daily'; bkmStu=null;
+  const old=document.getElementById('bkmModal'); if(old) old.remove();
+  const e=bkSelfEsc;
+  const teachers=(typeof teacherFilteredList==='function'?teacherFilteredList():cachedTeachers).map(t=>t.name);
+  const kinds=[['daily','日常学习'],['plan','计划书'],['mock','模拟面试'],['vip','VIP']];
+  const m=document.createElement('div');
+  m.id='bkmModal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  m.innerHTML=`<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:440px;width:100%;max-height:90vh;overflow-y:auto">
+    <div style="font-size:13px;font-weight:600;margin-bottom:4px">补录预约</div>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">只建预约本身，老师的记录仍由老师填写；补录后永久标记「教务补录」。</div>
+    <div class="form-group"><label class="form-label">类型</label>
+      <div id="bkm_kinds" style="display:flex;flex-wrap:wrap;gap:6px">${kinds.map(([k,l])=>`<div class="filter-chip${bkmKind===k?' active':''}" data-k="${k}" onclick="bkmSetKind('${k}')" style="padding:3px 10px">${l}</div>`).join('')}</div></div>
+    <div class="form-group"><label class="form-label">学生（在籍，必选）</label>
+      <input id="bkm_q" placeholder="输入姓名搜索" oninput="bkmSearch()" autocomplete="off">
+      <div id="bkm_res" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
+      <div id="bkm_sel" style="font-size:12px;margin-top:6px;color:var(--text-3)">还没有选择学生</div></div>
+    <div class="form-group"><label class="form-label">老师（必选）</label>
+      <select id="bkm_teacher"><option value="">请选择老师</option>${teachers.map(n=>`<option value="${e(n)}">${e(n)}</option>`).join('')}</select></div>
+    <div class="form-group"><label class="form-label">日期</label><input type="date" id="bkm_date" onchange="bkmLoadRooms()"></div>
+    <div class="form-group"><label class="form-label">时间段</label>
+      <div style="display:grid;grid-template-columns:1fr 16px 1fr;gap:4px;align-items:center">
+        <input type="time" id="bkm_start" onchange="bkmLoadRooms()"><div style="text-align:center;font-size:11px;color:var(--text-3)">—</div><input type="time" id="bkm_end" onchange="bkmLoadRooms()">
+      </div></div>
+    <div class="form-group"><label class="form-label">上课方式与校区</label>
+      <select id="bkm_loc" onchange="bkmLoadRooms()">${BK_LOC_OPTS.slice(0,3).map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select></div>
+    <div class="form-group" id="bkm_room_wrap" style="display:none"><label class="form-label">教室（VIP 线下，会同步排课系统）</label><div id="bkm_room_box"></div></div>
+    <div class="form-group" id="bkm_meet_wrap" style="display:none"><label class="form-label">会议链接（VIP 线上，可选；不填由老师在老师端补）</label><input id="bkm_meeting" placeholder="https://meeting.tencent.com/…"></div>
+    <div class="form-group"><label class="form-label">补录原因（必填）</label><textarea id="bkm_reason" rows="2" placeholder="为什么老师和学生都无法自己预约"></textarea></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-primary btn-sm" id="bkm_save" onclick="saveManualBooking()">保存</button>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('bkmModal').remove()">取消</button>
+    </div></div>`;
+  document.body.appendChild(m);
+  bkmSetKind(bkmKind);
+}
+function bkmSetKind(k){
+  bkmKind=k;
+  document.querySelectorAll('#bkm_kinds .filter-chip').forEach(c=>c.classList.toggle('active',c.dataset.k===k));
+  bkmLoadRooms();
+}
+function bkmSearch(){
+  const q=(document.getElementById('bkm_q').value||'').trim(), box=document.getElementById('bkm_res'); if(!box) return;
+  if(!q){ box.innerHTML=''; return; }
+  const list=bkClaimStudents().filter(s=>(s.status==='active'||!s.status)&&String(s.name||'').includes(q)).slice(0,8);
+  box.innerHTML=list.length?list.map(s=>`<div class="filter-chip" style="padding:3px 10px" onclick="bkmPickStu('${s.id}')">${bkSelfEsc(s.name)}<span style="color:var(--text-3);margin-left:4px">${bkSelfEsc(MAJORS[s.major]||s.major||'')}</span></div>`).join(''):'<span style="font-size:11px;color:var(--text-3)">没有找到在籍学生</span>';
+}
+function bkmPickStu(id){
+  const s=(cachedStudents||[]).find(x=>x.id===id); if(!s) return;
+  bkmStu=s;
+  document.getElementById('bkm_sel').innerHTML=`已选：<strong style="color:var(--text)">${bkSelfEsc(s.name)}</strong> · ${bkSelfEsc(MAJORS[s.major]||s.major||'')}`;
+  document.getElementById('bkm_res').innerHTML=''; document.getElementById('bkm_q').value='';
+  const sel=document.getElementById('bkm_teacher');
+  if(bkmKind==='vip'&&sel&&!sel.value){ const t=(s.vip_teachers||[]).find(n=>[...sel.options].some(o=>o.value===n)); if(t) sel.value=t; }
+}
+async function bkmLoadRooms(){
+  const loc=document.getElementById('bkm_loc'); if(!loc) return;
+  const vip=bkmKind==='vip', off=bkmOffline(loc.value);
+  document.getElementById('bkm_meet_wrap').style.display=(vip&&loc.value==='online')?'':'none';
+  const wrap=document.getElementById('bkm_room_wrap'), box=document.getElementById('bkm_room_box');
+  wrap.style.display=(vip&&off)?'':'none';
+  if(!(vip&&off)) return;
+  const date=document.getElementById('bkm_date').value, st=document.getElementById('bkm_start').value, en=document.getElementById('bkm_end').value;
+  if(!date||!st||!en||st>=en){ box.innerHTML='<div style="font-size:11px;color:var(--text-3)">请先填好日期和时间</div>'; return; }
+  const tok=window.__bkmTok=(window.__bkmTok||0)+1;
+  box.innerHTML='<div style="font-size:11px;color:var(--text-3)">查询教室中…</div>';
+  try{
+    const rs=await bkvLoadRooms(bkvCampus(loc.value),date,st,en);
+    if(tok!==window.__bkmTok) return;
+    window.__bkmRooms=[...rs.vip,...rs.big];
+    const fv=rs.vip.filter(r=>!r.conf.length), fb=rs.big.filter(r=>!r.conf.length);
+    if(!fv.length&&!fb.length){ box.innerHTML='<div style="font-size:12px;color:var(--danger)">该时段 VIP 教室和大教室都已排满，请换时间或校区</div>'; return; }
+    const opt=r=>`<option value="${r.id}">${bkSelfEsc(r.name)}${r.capacity?'（'+r.capacity+'人）':''}</option>`;
+    box.innerHTML=`<select id="bkm_room"><option value="">请选择教室</option>${fv.length?'<optgroup label="VIP 教室">'+fv.map(opt).join('')+'</optgroup>':''}${fb.length?'<optgroup label="大教室'+(fv.length?'':'（VIP 已满）')+'">'+fb.map(opt).join('')+'</optgroup>':''}</select>`;
+  }catch(e){ if(tok===window.__bkmTok) box.innerHTML='<div style="font-size:12px;color:var(--danger)">教室查询失败：'+bkSelfEsc(bkvErr(e))+'</div>'; }
+}
+async function saveManualBooking(){
+  const g=id=>(document.getElementById(id)||{}).value||'';
+  const stu=bkmStu, teacher=g('bkm_teacher'), date=g('bkm_date'), st=g('bkm_start'), en=g('bkm_end'), loc=g('bkm_loc'), reason=g('bkm_reason').trim();
+  if(!stu){ alert('请选择学生'); return; }
+  if(!teacher){ alert('请选择老师'); return; }
+  if(!date||!st||!en){ alert('请填写日期和时间段'); return; }
+  if(st>=en){ alert('结束时间必须晚于开始时间'); return; }
+  if(!reason){ alert('请填写补录原因'); return; }
+  const vip=bkmKind==='vip', off=bkmOffline(loc);
+  const roomId=(vip&&off)?g('bkm_room'):'';
+  if(vip&&off&&!roomId){ alert('VIP 线下课请选择教室'); return; }
+  const room=roomId?(window.__bkmRooms||[]).find(r=>String(r.id)===String(roomId)):null;
+  const who=bkSelfWho(), now=new Date().toISOString();
+  const btn=document.getElementById('bkm_save'); if(btn) btn.disabled=true;
+  let schedId=null;
+  try{
+    if(room){
+      const rec={room_id:room.id,kind:'vip',title:'VIP·'+((typeof majorLabel==='function'&&majorLabel(stu.major))||stu.name),
+        user_name:teacher,student_name:stu.name,recurrence:'once',weekday:bkvWeekday(date),booking_date:date,
+        start_time:st,end_time:en,uses_meeting:false,meeting_account_id:null,show_title:false,
+        status:'confirmed',reviewed_at:now,created_by:who,note:'教务补录'};
+      let ins;
+      try{ ins=await sb('/rest/v1/sched_bookings','POST',rec); }
+      catch(e1){
+        if(!/42501|row-level security/i.test(e1.message||'')) throw e1;
+        ins=await sb('/rest/v1/sched_bookings','POST',Object.assign({},rec,{status:'pending',reviewed_at:null}));
+      }
+      schedId=ins[0].id;
+    }
+    const mins=(Number(en.slice(0,2))*60+Number(en.slice(3,5)))-(Number(st.slice(0,2))*60+Number(st.slice(3,5)));
+    const row={
+      id:Date.now().toString(), name:stu.name, major:stu.major||'', student_id:stu.id,
+      type:bkmKind, slot_id:null, slot_date:date, slot_time_range:`${st}–${en}`,
+      assigned_teacher:teacher, location:loc, status:'confirmed', needs:'',
+      manual_entry:true, manual_reason:reason, manual_by:who
+    };
+    if(vip){
+      row.duration=null;
+      if(room){ row.vip_room=room.name; row.sched_booking_id=schedId; }
+      if(loc==='online'&&g('bkm_meeting').trim()) row.vip_meeting_url=g('bkm_meeting').trim();
+    }else{
+      row.duration=mins; row.urgency='low'; row.actual_time=`${date}T${st}`;   // 面谈时间（和老师确认预约时填的一样），工作记录按它计算
+    }
+    try{ await sb('/rest/v1/bookings','POST',row); }
+    catch(e2){
+      if(schedId){ try{ await sb(`/rest/v1/sched_bookings?id=eq.${schedId}`,'DELETE'); }catch(_){} }   // 预约没建成，释放刚占的教室
+      throw e2;
+    }
+    cachedBookings.push(row);
+    document.getElementById('bkmModal').remove();
+    bkSection=vip?'vip':'regular';
+    renderBookingPage(document.getElementById('mainContent'));
+  }catch(e){ alert('补录失败：'+bkvErr(e)); if(btn) btn.disabled=false; }
+}
+
 function renderVipBookingCard(b){
   const slot=cachedSlots.find(s=>s.id===b.slot_id);
   const teacherName=b.assigned_teacher||slot?.teacher_name||'';
@@ -547,7 +696,7 @@ function renderVipBookingCard(b){
   return `<div class="booking-card status-${b.status}">
     <div class="booking-header">
       <div>
-        <div class="booking-name">${b.name} <span style="font-size:11px;color:var(--text-3);font-weight:400">VIP</span>${b.self_booked?` <span style="font-size:10px;color:#a0521a;background:#fdf1e6;border:1px solid #e8c9a8;border-radius:2px;padding:0 5px;font-weight:400">自主填写 · ${b.admin_review==='approved'?'教务已通过':b.admin_review==='rejected'?'教务已退回':b.admin_review==='room_wait'?'教室已满·待调整':'待教务审核'} · ${b.teacher_ok?'老师已确认':'老师未确认'}</span>`:''}</div>
+        <div class="booking-name">${b.name} <span style="font-size:11px;color:var(--text-3);font-weight:400">VIP</span>${manualEntryTag(b)}${b.self_booked?` <span style="font-size:10px;color:#a0521a;background:#fdf1e6;border:1px solid #e8c9a8;border-radius:2px;padding:0 5px;font-weight:400">自主填写 · ${b.admin_review==='approved'?'教务已通过':b.admin_review==='rejected'?'教务已退回':b.admin_review==='room_wait'?'教室已满·待调整':'待教务审核'} · ${b.teacher_ok?'老师已确认':'老师未确认'}</span>`:''}</div>
         <div class="booking-meta">${b.slot_date} ${b.slot_time_range||''} · ${b.duration||''}min</div>
         ${teacherName?`<div style="font-size:11px;color:var(--text-2);margin-top:2px">👤 ${teacherName} <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="openReassignTeacher('${b.id}','${b.slot_id}')">重新分配</button></div>`:`<div style="font-size:11px;color:var(--danger);margin-top:2px">⚠ 未关联老师 <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="openReassignTeacher('${b.id}','${b.slot_id}')">分配老师</button></div>`}
       </div>
@@ -606,7 +755,7 @@ function renderBookingCard(b){
   return `<div class="booking-card status-${b.status}">
     <div class="booking-header">
       <div>
-        <div class="booking-name">${b.name} <span style="font-size:11px;color:var(--text-3);font-weight:400">${displayMajor}</span>${(!b.student_id&&b.type!=='vip')?`<span style="font-size:10px;color:var(--warn);border:1px solid var(--warn);border-radius:2px;padding:0 5px;margin-left:6px;font-weight:400">未关联档案</span><button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="bkLinkStudent('${b.id}')">关联到学生</button>`:''}${b.name_conflict?'<span style="font-size:10px;color:var(--danger);border:1px solid var(--danger);border-radius:2px;padding:0 5px;margin-left:6px;font-weight:400">⚠ 与在籍学生同名，请确认</span>':''}</div>
+        <div class="booking-name">${b.name} <span style="font-size:11px;color:var(--text-3);font-weight:400">${displayMajor}</span>${manualEntryTag(b)}${(!b.student_id&&b.type!=='vip')?`<span style="font-size:10px;color:var(--warn);border:1px solid var(--warn);border-radius:2px;padding:0 5px;margin-left:6px;font-weight:400">未关联档案</span><button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="bkLinkStudent('${b.id}')">关联到学生</button>`:''}${b.name_conflict?'<span style="font-size:10px;color:var(--danger);border:1px solid var(--danger);border-radius:2px;padding:0 5px;margin-left:6px;font-weight:400">⚠ 与在籍学生同名，请确认</span>':''}</div>
         <div class="booking-meta">${b.slot_date} ${b.slot_time_range||''} · ${b.duration}min · ${urgLabel(b.urgency)}</div>
         ${teacherName
           ? `<div style="font-size:11px;color:var(--text-2);margin-top:2px">👤 ${teacherName} <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px;margin-left:6px" onclick="openReassignTeacher('${b.id}','${b.slot_id}')">重新分配</button></div>`

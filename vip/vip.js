@@ -564,7 +564,7 @@ function renderVipActiveBooking(b) {
     <div style="background:var(--ok-bg,#e4f5ee);border:1px solid var(--ok,#2a9e6a);border-radius:4px;padding:10px 12px;margin:10px 0">
       <div style="font-size:12px;font-weight:600;color:var(--ok,#2a9e6a);margin-bottom:6px">${b.self_booked ? '✅ 教务已审批，请按时上课' + (b.teacher_ok ? '（老师已确认）' : '') : '✅ 老师已确认，请按时上课'}</div>
       <div style="font-size:12px;line-height:2">
-        <div>📅 ${b.slot_date} ${b.slot_time_range || ''}</div>
+        <div>📅 ${b.slot_date} ${b.slot_time_range || ''}${manualEntryTag(b)}</div>
         <div>👤 ${b.assigned_teacher || ''} 老师</div>
         ${b.vip_room ? `<div>🏫 教室：<strong>${b.vip_room}</strong></div>` : ''}
         ${b.vip_meeting_url ? `<div>💻 腾讯会议：<a href="${b.vip_meeting_url}" target="_blank" style="color:var(--ok)">${b.vip_meeting_url}</a></div>` : (!isOffline ? '<div style="color:#856404">💻 老师将在上课前发送会议链接，请关注留言</div>' : '')}
@@ -772,7 +772,7 @@ function renderVipHistory() {
     const needsConfirm = !b.student_confirmed;
     return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:12px;margin-bottom:8px;background:${needsConfirm ? 'var(--accent-light)' : 'var(--surface)'}">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <span style="font-size:12px;font-weight:600">${b.slot_date} · ${b.assigned_teacher || ''}</span>
+        <span style="font-size:12px;font-weight:600">${b.slot_date} · ${b.assigned_teacher || ''}${manualEntryTag(b)}</span>
         ${b.student_confirmed ? '<span style="font-size:10px;color:var(--ok)">✓ 已确认</span>' : '<span style="font-size:10px;color:var(--accent)">待确认</span>'}
       </div>
       <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">本次内容：${b.vip_content || ''}</div>

@@ -820,6 +820,12 @@ function getRecordFromForm(id) {
 }
 function typeLabel(t) { return t === 'daily' ? '日常学习面谈' : t === 'plan' ? '计划书相关' : t === 'vip' ? 'VIP预约' : '模拟面试'; }
 function typeTag(t) { return t === 'daily' ? 'tag-daily' : t === 'plan' ? 'tag-plan' : t === 'vip' ? 'tag-vip' : 'tag-mock'; }
+// 教务补录的预约：永久带灰色标签（点开 / 悬停看补录原因）；三端的预约卡片共用
+function manualEntryTag(b) {
+  if (!b || !b.manual_entry) return '';
+  const tip = ('教务补录' + (b.manual_reason ? '：' + b.manual_reason : '')).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  return `<span title="${tip}" onclick="event.stopPropagation();alert(this.title)" style="font-size:10px;color:#6b6b6b;background:#ececec;border:1px solid #d6d6d6;border-radius:2px;padding:0 5px;margin-left:6px;font-weight:400;cursor:pointer;white-space:nowrap">教务补录</span>`;
+}
 function slotCap(tr) {
   const [a, b] = (tr || '').split('–');
   if (!a || !b) return 4;

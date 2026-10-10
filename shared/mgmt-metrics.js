@@ -67,6 +67,25 @@ const _mgQuarter = () => {   // 本期：1月期→1–3月 … 期末月月末�
 // ── VIP课程 / 宣传管理 用到的数据（读取失败要往外抛，只让依赖它的指标显示「读取失败」）──
 const mgVipBookings = D => mgmLoad(D, 'mg_vbk', () => sbAll('/rest/v1/bookings?type=eq.vip&select=id,student_id,name,type,status,slot_date,assigned_teacher,self_booked,teacher_ok,admin_review,vip_session_notes,student_confirmed,change_request'));
 const mgVipPlans = D => mgmLoad(D, 'mg_vpl', () => sbAll('/rest/v1/vip_student_plans?select=id,student_id,student_name,status'));
+// 教务补录统计用：本月预约（含 manual_entry）；列还没建时读取失败，只让这两项显示「读取失败」
+const mgMonthBookings = D => mgmLoad(D, 'mg_mbk', () => { const ym = _tkYm(); return sbAll(`/rest/v1/bookings?slot_date=gte.${ym}-01&slot_date=lte.${ym}-31&status=in.(pending,confirmed,completed)&select=id,student_id,name,type,status,slot_date,assigned_teacher,manual_entry,manual_reason`); });
+async function _mgManualMonth(D, sc, vip) {
+  const [all, bks] = await Promise.all([taskStudents(D), mgMonthBookings(D)]);
+  const ok = vip ? (s => _mgIsVip(s) && sc.stuBase(s)) : sc.stu, byId = {}, byName = {};
+  all.filter(ok).forEach(s => { byId[s.id] = s; byName[s.name] = s; });
+  const list = [];
+  bks.forEach(b => {
+    if ((b.type === 'vip') !== vip) return;
+    const s = (b.student_id && byId[b.student_id]) || byName[b.name]; if (!s) return;
+    if (sc.mine && b.assigned_teacher !== sc.mine) return;
+    list.push({ b, s });
+  });
+  return list;
+}
+function _mgManualRate(list, what) {
+  const items = list.filter(x => x.b.manual_entry).map(({ b, s }) => _mgBkItem(b, s, `教务补录：${String(b.manual_reason || '—').slice(0, 30)}`));
+  return _mgRate(list.length - items.length, list.length, items, `本月${what}预约数（待确认 / 已确认 / 已完成，不含已取消）`, `当月（${_tkYm()}）`, `教务补录 ${items.length} 次。完成 = 学生 / 老师自己预约的；名单 = 教务补录的预约，按老师分组，补录多的老师值得关注`);
+}
 const mgPromoContent = D => mgmLoad(D, 'mg_pc', () => sbAll('/rest/v1/promo_content?select=id,major,section'));
 const mgCases = D => mgmLoad(D, 'mg_cs', () => sbAll('/rest/v1/success_cases?select=id,student_id,majors,published'));
 const mgResults = D => mgmLoad(D, 'mg_ar', () => sbAll('/rest/v1/admission_results?select=id,student,univ'));
@@ -105,6 +124,7 @@ const MGM_GROUPS = [
       const items = stu.filter(s => !ids.has(s.id) && !names.has(s.name)).map(s => _mgStuItem(s, '本月没有面谈记录'));
       return _mgRate(stu.length - items.length, stu.length, items, '本月应面谈的在籍学生', `当月（${_tkYm()}）`, '完成 = 本月预约里有面谈记录（daily_record）的学生；名单 = 本月还没有面谈记录的学生');
     } },
+    { key: 'interview_manual', label: '面谈教务补录', async fn(D, sc) { return _mgManualRate(await _mgManualMonth(D, sc, false), '面谈'); } },
   ] },
   { key: 'vip', label: 'VIP课程', metrics: [
     { key: 'vip_teacher', label: 'VIP学生已指定VIP老师', async fn(D, sc) {
@@ -143,6 +163,7 @@ const MGM_GROUPS = [
       const items = list.filter(x => !x.b.student_confirmed).map(({ b, s }) => _mgBkItem(b, s, '已填记录，学生还没确认（请联系学生）'));
       return _mgRate(list.length - items.length, list.length, items, '本月已填课后记录的 VIP 课数', `当月（${_tkYm()}）`, '完成 = 学生已确认的课；名单 = 已填记录、学生还没确认的课');
     } },
+    { key: 'vip_manual', label: 'VIP教务补录', async fn(D, sc) { return _mgManualRate(await _mgManualMonth(D, sc, true), 'VIP'); } },
     { key: 'vip_hours', label: 'VIP课时用尽', async fn(D, sc) {
       const vs = _mgVipStu(await taskStudents(D), sc).filter(s => (s.vip_hours_total || 0) > 0);
       const items = vs.filter(s => (s.vip_hours_total || 0) - (s.vip_hours_used || 0) <= 0).map(s => ({ sid: s.id, name: s.name, note: `课时已用尽：已用 ${s.vip_hours_used || 0}/${s.vip_hours_total}`, owners: _mgVipOwners(s) }));
