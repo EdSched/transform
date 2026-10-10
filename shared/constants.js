@@ -394,7 +394,7 @@ async function loadMajorsFromDB() {
   try {
     groups = await sb('/rest/v1/major_groups?select=key,label,label_ja,domain,sort&order=sort.asc,key.asc');
   } catch (e) { groups = null; }   // 表还不存在 / 读取失败：保留写死的社会人文
-  if (Array.isArray(groups) && groups.length && Array.isArray(rows) && rows.some(r => 'group_key' in r)) applyMajorGroups(groups, rows);
+  if (Array.isArray(groups) && Array.isArray(rows) && rows.some(r => 'group_key' in r)) applyMajorGroups(groups, rows);
 }
 // 把 major_groups + majors.group_key 写进 MAJOR_GROUPS / MAJOR_GROUP_LABEL / MAJOR_GROUP_DOMAIN（原地更新，保持引用和 SHAKAI_GROUP 别名有效）
 function applyMajorGroups(groups, rows) {
