@@ -239,6 +239,19 @@ function expandMajorFilter(key) {
   return [key];
 }
 
+// 表单里「专业」下拉的 option HTML：只列当前视角范围内的真实专业（不含 shakai_group）
+//   非全部视角：没有已选值时，多个专业第一项为「请选择专业」，只有一个则自动选中
+//   已选值不在范围内：保留该选项并标「范围外」，避免下拉显示成别的专业被误改
+function majorSelectOptions(selected) {
+  const keys = majorFilterKeys().filter(k => k !== 'shakai_group');
+  const restricted = !scopeAll();
+  const auto = restricted && !selected && keys.length === 1;
+  let html = (restricted && !selected && keys.length > 1) ? '<option value="">请选择专业</option>' : '';
+  html += keys.map(k => `<option value="${k}" ${(k === selected || auto) ? 'selected' : ''}>${majorLabel(k)}</option>`).join('');
+  if (selected && !keys.includes(selected)) html += `<option value="${selected}" selected>${majorLabel(selected)}（范围外）</option>`;
+  return html;
+}
+
 // 筛选栏 chip 顺序：经营 经济 [社会人文组] 社会 新传 福祉 …新增专业追加末尾
 //   opts.includeAll=true 时在最前面加入 'all'
 function majorFilterKeys(opts = {}) {

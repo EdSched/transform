@@ -3273,8 +3273,8 @@ async function openScheduleShare(){
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
       <div><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:2px">发布给（学生按档案专业看到对应课表）</label>
         <select id="ss_major" onchange="ssRenderCourseList()" style="font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit">
-          <option value="shakai_group">社会人文（社会学+新传+福祉共用）</option>
-          ${allMajorKeys().map(k=>`<option value="${k}">${majorLabel(k)}</option>`).join('')}
+          ${majorFilterKeys().includes('shakai_group')?'<option value="shakai_group">社会人文（社会学+新传+福祉共用）</option>':''}
+          ${majorFilterKeys().filter(k=>k!=='shakai_group').map(k=>`<option value="${k}">${majorLabel(k)}</option>`).join('')}
         </select></div>
       <div style="flex:1;min-width:160px"><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:2px">课表标题</label>
         <input id="ss_title" value="${defTitle}" style="width:100%;font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit"></div>
