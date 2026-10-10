@@ -539,10 +539,11 @@ async function genUniqueCode(extraUsed) {
 // admin 有权限写这张锁表；生成/改码后必须调它，否则新学生/改码后登不了（resolve 查不到）
 async function syncStudentLogin(id, name, code){
   if(!id || !code) return;
+  const FAIL='查询码已生成，但登录表同步失败，学生可能无法登录，请联系管理员';
   try{
     // upsert：有则更新、无则插入（on_conflict=student_id）。sb() 不支持自定义 Prefer，故直接 fetch。
     const tok = (typeof __getSbToken==='function') ? __getSbToken() : null;
-    await fetch(`${SB_URL}/rest/v1/student_login?on_conflict=student_id`, {
+    const r = await fetch(`${SB_URL}/rest/v1/student_login?on_conflict=student_id`, {
       method:'POST',
       headers:{
         'apikey':SB_KEY,
@@ -552,7 +553,8 @@ async function syncStudentLogin(id, name, code){
       },
       body: JSON.stringify({ student_id:id, name:name||'', code })
     });
-  }catch(e){ console.warn('同步对照表失败(不影响档案保存):', e.message); }
+    if(!r.ok){ console.warn('同步对照表失败:', r.status); throw new Error(FAIL); }
+  }catch(e){ throw (e.message===FAIL ? e : new Error(FAIL)); }
 }
 
 // ── 查询码通知（文案 A，见 shared/constants.js）──
@@ -574,32 +576,35 @@ async function stBatchCodeNotice(){
 async function generateStudentCode(id) {
   const s = cachedStudents.find(x => x.id === id);
   if (!s) return;
-  if (s.student_code && !confirm(`${s.name} 已有查询码 ${s.student_code}，确定重新生成？`)) return;
-  const code = await genUniqueCode();
-  try {
-    await sb(`/rest/v1/students?id=eq.${id}`, 'PATCH', { student_code: code });
-    s.student_code = code;
-    await syncStudentLogin(id, s.name, code);   // 同步对照表，学生才能登录
-    renderStudentsPage(document.getElementById('mainContent'));
-  } catch(e) { alert('生成失败：' + e.message); }
+  if (s.student_code) {
+    // 重新生成：服务端函数不覆盖已有码，所以直接改档案，登录表由数据库触发器（seed/student_login_autosync.sql）自动同步
+    if (!confirm(`${s.name} 已有查询码 ${s.student_code}，确定重新生成？`)) return;
+    try {
+      const code = await genUniqueCode();
+      await sb(`/rest/v1/students?id=eq.${id}`, 'PATCH', { student_code: code });
+      s.student_code = code;
+      renderStudentsPage(document.getElementById('mainContent'));
+    } catch(e) { alert('生成失败：' + e.message); }
+    return;
+  }
+  const r = await ensureStudentCode(s);   // 服务端同时写档案和登录表
+  if (r.error) { alert(r.error); return; }
+  renderStudentsPage(document.getElementById('mainContent'));
 }
 
 async function generateAllStudentCodes() {
   const noCode = cachedStudents.filter(s => !s.student_code);
   if (!noCode.length) { alert('所有学生已有查询码'); return; }
   if (!confirm(`将为 ${noCode.length} 名学生生成查询码，继续？`)) return;
-  try {
-    const usedThisBatch = [];
-    for (const s of noCode) {
-      const code = await genUniqueCode(usedThisBatch);
-      usedThisBatch.push(code);
-      await sb(`/rest/v1/students?id=eq.${s.id}`, 'PATCH', { student_code: code });
-      s.student_code = code;
-      await syncStudentLogin(s.id, s.name, code);   // 同步对照表
-    }
-    renderStudentsPage(document.getElementById('mainContent'));
-    alert(`✓ 已为 ${noCode.length} 名学生生成查询码`);
-  } catch(e) { alert('生成失败：' + e.message); }
+  let ok = 0; const fails = [];
+  for (const s of noCode) {
+    const r = await ensureStudentCode(s);   // 服务端同时写档案和登录表
+    if (r.error) fails.push(`${s.name}：${r.error}`); else ok++;
+  }
+  renderStudentsPage(document.getElementById('mainContent'));
+  alert(fails.length
+    ? `已生成 ${ok} 人，失败 ${fails.length} 人：\n${fails.slice(0, 10).join('\n')}`
+    : `✓ 已为 ${ok} 名学生生成查询码`);
 }
 
 
