@@ -10,10 +10,10 @@ function bkStudentOf(b){ return (b&&b.student_id)?((cachedStudents||[]).find(s=>
 function bkRealMajor(b){ const s=bkStudentOf(b); return (s&&s.major)||(b&&b.major)||''; }
 // 视角判断：还没认领、major 仍是分组代码（shakai_group）的预约，组内任一成员在视角内就显示
 function bkMajorInView(m){
-  if(typeof MAJOR_GROUPS!=='undefined'&&MAJOR_GROUPS[m]) return majorInCurrentView(m)||MAJOR_GROUPS[m].some(x=>majorInCurrentView(x));
+  if(isMajorGroup(m)) return majorInCurrentView(m)||groupMajors(m).some(x=>majorInCurrentView(x));
   return majorInCurrentView(m);
 }
-// 专业筛选：选「社会人文」时，组内成员 + 分组代码本身（未认领的社会人文链接预约）都能筛出来
+// 专业筛选：选分组（如「社会人文」）时，组内成员 + 分组代码本身（未认领的社会人文链接预约）都能筛出来
 function bkMajorMatch(m,f){ return f==='all'||expandMajorFilter(f).includes(m); }
 function bkIsAdmin(){ return typeof ACCESS_KEY==='undefined'||!ACCESS_KEY||!!ACCESS_KEY.is_admin; }
 
@@ -1439,7 +1439,7 @@ async function bkMergeGroup(name){
 
 // 学生预约链接面板：专业按领域分组（顺序同 DOMAINS；分组标签如「社会人文」排在成员专业前面）
 function bkLinkGroups(){
-  const domOf=k=>MAJOR_DOMAIN[k]||(MAJOR_GROUPS[k]?MAJOR_DOMAIN[(MAJOR_GROUPS[k]||[])[0]]:'')||'其他';
+  const domOf=k=>keyDomain(k)||(isMajorGroup(k)?MAJOR_DOMAIN[groupMajors(k)[0]]:'')||'其他';
   const map={};
   majorFilterKeys().forEach(k=>{ const d=domOf(k); (map[d]=map[d]||[]).push(k); });
   const order=DOMAINS.map(d=>d.label);

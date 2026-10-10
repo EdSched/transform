@@ -330,7 +330,7 @@ function promoRenderShell() {
     ${pcDomains().map(d => `<div class="filter-chip ${pcDomain===d?'active':''}" onclick="pcDomain='${d}';pcEditing=null;pcImport=null;pcLoad()" style="padding:3px 10px;font-size:11px">${d}</div>`).join('')}
   </div>` : `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
     <span style="font-size:10px;color:var(--text-3)">专业：</span>
-    ${chipFold(majorFilterKeys().map(m => ({ on: promoMajor===m, html: `<div class="filter-chip ${promoMajor===m?'active':''}" onclick="promoMajor='${m}';promoEditingId=null;promoLoad()" style="padding:3px 10px;font-size:11px">${m==='shakai_group'?'社会人文':majorLabel(m)}</div>` })))}
+    ${chipFold(majorFilterKeys().map(m => ({ on: promoMajor===m, html: `<div class="filter-chip ${promoMajor===m?'active':''}" onclick="promoMajor='${m}';promoEditingId=null;promoLoad()" style="padding:3px 10px;font-size:11px">${majorLabel(m)}</div>` })))}
   </div>`}
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px">
     <span style="font-size:10px;color:var(--text-3)">板块：</span>
@@ -556,9 +556,9 @@ async function promoTogglePub(id) {
 function promoAvailCourses(){
   const courses=(typeof cachedCourses!=='undefined'&&cachedCourses)||[];
   const names=courses.filter(c=>{
-    // 按当前专业 promoMajor 匹配（社会人文组展开）
+    // 按当前专业 promoMajor 匹配（分组展开成组内专业）
     const mj=c.major||[];
-    if(promoMajor==='shakai_group') return ['shakai','shinpan','fukushi'].some(x=>mj.includes(x));
+    if(isMajorGroup(promoMajor)) return groupMajors(promoMajor).some(x=>mj.includes(x));
     return mj.includes(promoMajor);
   }).map(c=>c.name).filter(Boolean);
   return [...new Set(names)].sort();
@@ -598,7 +598,7 @@ function promoGenCourseTable(){
 // 列出当前专业(promoMajor)的讲师档案（档案subject是中文名，用majorLabel转换匹配）
 function promoAvailProfiles(){
   const all=promoProfiles||[];
-  const majorCn=promoMajor==='shakai_group'?['社会学','新闻传播学','社会福祉学']:[majorLabel(promoMajor)];
+  const majorCn=isMajorGroup(promoMajor)?groupMajors(promoMajor).map(majorLabel):[majorLabel(promoMajor)];
   const filtered=all.filter(p=>{
     const subj=(p.subject||'').trim();
     if(!subj) return true; // 未分类的档案也显示（可能是没标专业的）

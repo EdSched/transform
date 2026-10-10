@@ -733,7 +733,7 @@ function scMountTeacher(boxId) {
   const sdoms = typeof salesScopeDomains === 'function' ? salesScopeDomains(t) : [];   // 营业指定了领域：只看 / 只写这些领域
   sdoms.forEach(d => doms.add(d));
   const allowDomain = d => sales || (!set && !doms.size) || doms.has(d);
-  const allowMajor = m => sales || !set || set.has(m) || (m === 'shakai_group' && [...set].some(x => (MAJOR_GROUPS.shakai_group || []).includes(x)));
+  const allowMajor = m => sales || !set || set.has(m) || (isMajorGroup(m) && [...set].some(x => groupMajors(m).includes(x)));
   scMount(boxId, {
     mode: 'teacher', canWrite: !!p.success_cases, canPack: true, me: (t.name || (typeof teacherName !== 'undefined' ? teacherName : '') || '').trim(), lockDomain: '',
     allowDomain, allowMajor,

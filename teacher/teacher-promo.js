@@ -51,7 +51,7 @@ async function prAvailableMajors() {
   prMajorsCache = [...new Set((rows || []).map(r => r.major).filter(Boolean))].filter(salesMajorOkMe).sort((a, b) => idx(a) - idx(b) || a.localeCompare(b));   // 营业只看自己营业范围内领域的专业
   return prMajorsCache;
 }
-function prMajorDomain(k) { return k === 'shakai_group' ? (MAJOR_DOMAIN[SHAKAI_GROUP[0]] || '') : (MAJOR_DOMAIN[k] || ''); }
+function prMajorDomain(k) { return isMajorGroup(k) ? (groupDomain(k) || MAJOR_DOMAIN[groupMajors(k)[0]] || '') : (MAJOR_DOMAIN[k] || ''); }
 function prMajorList() { return prMajorsCache || PR_MAJORS_FALLBACK.filter(salesMajorOkMe); }
 // 可选领域：按 DOMAINS 顺序，只列有宣传内容的专业所属的领域（没有领域的专业归「其他」）
 function prDomainList() {
@@ -85,7 +85,7 @@ function prBlocksHtml(list) {
   return cards + more;
 }
 
-function prMajorName(k) { return k === 'shakai_group' ? '社会人文' : (MAJORS[k] || (typeof majorLabel === 'function' ? majorLabel(k) : '') || (typeof ADMISSION_MAJORS !== 'undefined' && ADMISSION_MAJORS[k]) || k); }
+function prMajorName(k) { return isMajorGroup(k) ? groupLabel(k) : (MAJORS[k] || (typeof majorLabel === 'function' ? majorLabel(k) : '') || (typeof ADMISSION_MAJORS !== 'undefined' && ADMISSION_MAJORS[k]) || k); }
 
 // ── 语言课（只读，合并进同一张课程表）──
 // 判断：语言领域的课，或专业代号为 nihongo / eigo（该专业属于语言领域时）；语言领域里没填专业的按课程名判断
@@ -163,7 +163,7 @@ function prLangPanelHtml() {
 function prOtherMajors() {
   const dom = prCurDomain();
   const all = typeof allMajorKeys === 'function' ? allMajorKeys() : Object.keys(MAJORS);
-  return all.filter(k => k !== prMajor && MAJOR_DOMAIN[k] === dom && k !== 'shakai_group' && !(prMajor === 'shakai_group' && SHAKAI_GROUP.includes(k)));
+  return all.filter(k => k !== prMajor && MAJOR_DOMAIN[k] === dom && !isMajorGroup(k) && !(isMajorGroup(prMajor) && groupMajors(prMajor).includes(k)));
 }
 function prOtherMajorOf(c) {
   const ms = (Array.isArray(c.major) ? c.major : [c.major]).filter(Boolean);
@@ -325,7 +325,6 @@ function prCommonDomains() {
   return [...new Set((prCommon || []).map(r => r.domain))].sort((a, b) => { const ia = order.indexOf(a), ib = order.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
 }
 const PR_COLORS = PMR_COLORS;   // 课程色块：和对外宣传页 / 月课表同一组柔和色（shared/promo-render.js）
-const PR_SHAKAI_G = ['shakai','shinpan','fukushi'];
 
 // prEsc / prInline / prMd 已移到 shared/promo-md.js（admin 通用宣传预览也要用）
 
@@ -333,7 +332,8 @@ const PR_SHAKAI_G = ['shakai','shinpan','fukushi'];
 // 返回 { list, share, sessions }；同时确保 prCourses / prPubMap 缓存已加载
 async function prFetchMajor(major, mode) {
   mode = mode || prSchedMode;
-  const shareKeys = PR_SHAKAI_G.includes(major) ? [major, 'shakai_group'] : [major];
+  const grp = groupOf(major);
+  const shareKeys = grp ? [major, grp] : [major];
   const jobs = [
     sb(`/rest/v1/promo_content?major=eq.${major}&select=*&order=sort_order.asc,created_at.asc`),
     sb(`/rest/v1/course_schedule_shares?major=in.(${shareKeys.map(k=>`"${k}"`).join(',')})&select=*&order=created_at.desc&limit=1`).catch(() => []),

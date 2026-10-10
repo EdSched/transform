@@ -12,7 +12,39 @@ let MAJORS = {
   fukushi: '社会福祉学',
   shakai_group: '社会人文',
 };
+// ── 专业分组（领域 → 分组 → 专业）──
+// 数据来自 DB：major_groups（分组本身）+ majors.group_key（专业挂在哪个分组）；loadMajorsFromDB() 读取后原地更新下面三个对象。
+// 数据库读不到时保留这里写死的「社会人文」，页面照常工作。分组 key 也会被存进别的表（课程专业、课表发布对象、老师负责专业……），不能改。
+//   MAJOR_GROUPS      ：分组 key → 组内专业 key 数组
+//   MAJOR_GROUP_LABEL ：分组 key → 名称
+//   MAJOR_GROUP_DOMAIN：分组 key → 所属领域
+// SHAKAI_GROUP 是 MAJOR_GROUPS.shakai_group 的别名（同一个数组，兼容旧代码），新代码请用 groupMajors('shakai_group')。
 const SHAKAI_GROUP = ['shakai', 'shinpan', 'fukushi'];
+const MAJOR_GROUPS = { shakai_group: SHAKAI_GROUP };
+const MAJOR_GROUP_LABEL = { shakai_group: '社会人文' };
+const MAJOR_GROUP_DOMAIN = { shakai_group: '大学院文科' };
+function isMajorGroup(key) { return !!key && Object.prototype.hasOwnProperty.call(MAJOR_GROUPS, key); }
+// 分组 → 组内专业 key（不是分组返回 []）
+function groupMajors(key) { return isMajorGroup(key) ? MAJOR_GROUPS[key] : []; }
+// 专业 → 所属分组 key（不在任何分组返回 ''）
+function groupOf(majorKey) { return Object.keys(MAJOR_GROUPS).find(g => MAJOR_GROUPS[g].includes(majorKey)) || ''; }
+function groupLabel(key) { return MAJOR_GROUP_LABEL[key] || MAJORS[key] || key || ''; }
+// 分组所属领域
+function groupDomain(key) { return MAJOR_GROUP_DOMAIN[key] || ''; }
+// 专业或分组所属领域（分组用 major_groups.domain）
+function keyDomain(key) { return MAJOR_DOMAIN[key] || MAJOR_GROUP_DOMAIN[key] || ''; }
+// 分组展开成真实专业 key；不是分组返回 [自身]
+function expandGroupKey(key) { return isMajorGroup(key) ? MAJOR_GROUPS[key] : [key]; }
+// 专业列表（可含分组 key）是否覆盖 key：key 是专业 → 列表里有它，或有它所在的分组；key 是分组 → 列表里有这个分组，或有组内任一专业
+function majorListHas(list, key) {
+  const l = Array.isArray(list) ? list : [];
+  if (!key) return false;
+  if (l.includes(key)) return true;
+  if (isMajorGroup(key)) return MAJOR_GROUPS[key].some(m => l.includes(m));
+  return l.some(g => isMajorGroup(g) && MAJOR_GROUPS[g].includes(key));
+}
+// 一组 key（可含分组）展开成真实专业 key，去重
+function expandGroupKeys(keys) { const out = []; (keys || []).forEach(k => expandGroupKey(k).forEach(x => { if (x && !out.includes(x)) out.push(x); })); return out; }
 
 // ── 领域（domain）对照 ──
 // 领域中文 ↔ 罗马音代码。中枢台卡片、访问钥匙标识都从这里读，统一来源避免不一致。
@@ -73,8 +105,9 @@ function scopeHasDomain(dom) { return !!dom && VIEW_SCOPE.domains.includes(dom);
 function scopeMajor(key) {
   if (scopeAll()) return true;
   if (!key) return false;
-  if (typeof MAJOR_GROUPS !== 'undefined' && MAJOR_GROUPS[key]) return VIEW_SCOPE.majors.includes(key) || MAJOR_GROUPS[key].some(scopeMajor);
-  return scopeHasDomain(MAJOR_DOMAIN[key]) || VIEW_SCOPE.majors.includes(key);
+  if (isMajorGroup(key)) return VIEW_SCOPE.majors.includes(key) || scopeHasDomain(groupDomain(key)) || MAJOR_GROUPS[key].some(scopeMajor);
+  // 范围里选了分组 = 组内所有专业（以后组里新加的专业自动算在内）
+  return scopeHasDomain(MAJOR_DOMAIN[key]) || VIEW_SCOPE.majors.includes(key) || VIEW_SCOPE.majors.some(m => isMajorGroup(m) && MAJOR_GROUPS[m].includes(key));
 }
 // 课程在范围内 = 领域完整选中；或任一专业在范围内；或 class_ids 和范围班级有交集
 function scopeCourse(c) {
@@ -106,14 +139,14 @@ function scopeDomainList() {
   const order = DOMAINS.map(d => d.label);
   if (scopeAll()) return order.slice();
   const set = new Set(VIEW_SCOPE.domains);
-  VIEW_SCOPE.majors.forEach(m => { const d = (typeof MAJOR_GROUPS !== 'undefined' && MAJOR_GROUPS[m]) ? MAJOR_DOMAIN[MAJOR_GROUPS[m][0]] : MAJOR_DOMAIN[m]; if (d) set.add(d); });
+  VIEW_SCOPE.majors.forEach(m => { const d = isMajorGroup(m) ? (groupDomain(m) || MAJOR_DOMAIN[MAJOR_GROUPS[m][0]]) : MAJOR_DOMAIN[m]; if (d) set.add(d); });
   VIEW_SCOPE.classIds.forEach(id => { const c = (typeof classById === 'function') ? classById(id) : null; if (c && c.domain) set.add(c.domain); });
   return [...set].sort((a, b) => { const ia = order.indexOf(a), ib = order.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
 }
 // 某个领域下，范围内可选的专业：领域完整选中 = 该领域全部专业；否则只有被单独选中的专业
 function scopeMajorsIn(dom) {
   const all = (typeof allMajorKeys === 'function' ? allMajorKeys() : Object.keys(MAJORS)).filter(k => MAJOR_DOMAIN[k] === dom);
-  return scopeAll() || scopeHasDomain(dom) ? all : all.filter(k => VIEW_SCOPE.majors.includes(k));
+  return scopeAll() || scopeHasDomain(dom) ? all : all.filter(k => VIEW_SCOPE.majors.includes(k) || VIEW_SCOPE.majors.some(m => isMajorGroup(m) && MAJOR_GROUPS[m].includes(k)));
 }
 // 当前视角是不是「只有学部美术」（课程页的期数按月、导出月课表用美术 logo 等）
 function viewIsArt() { if (scopeAll()) return false; const ds = scopeDomainList(); return ds.length > 0 && ds.every(isGakubuArtDomain); }
@@ -202,8 +235,6 @@ function majorInCurrentView(major) {
 }
 
 // ── 专业派生工具（单一数据源；新增专业只需写入 DB majors 表，即可自动流通全站）──
-// MAJOR_GROUPS：虚拟分组 key → 展开后的真实专业 key 列表（目前仅「社会人文」一组）
-const MAJOR_GROUPS = { shakai_group: SHAKAI_GROUP };
 // 核心专业的固定展示顺序；数据库新增的专业会自动追加到其后
 const CORE_MAJOR_ORDER = ['keiei', 'keizai', 'shakai', 'shinpan', 'fukushi'];
 
@@ -222,10 +253,10 @@ function bookingMajorsFor(x) {
   return [...out];
 }
 
-// 所有「真实」专业 key（核心在前，DB 新增在后），不含虚拟分组 shakai_group
+// 所有「真实」专业 key（核心在前，DB 新增在后），不含分组
 function allMajorKeys() {
   const keys = [...CORE_MAJOR_ORDER];
-  Object.keys(MAJORS).forEach(k => { if (k !== 'shakai_group' && !keys.includes(k)) keys.push(k); });
+  Object.keys(MAJORS).forEach(k => { if (!isMajorGroup(k) && !keys.includes(k)) keys.push(k); });
   return keys;
 }
 
@@ -233,17 +264,17 @@ function allMajorKeys() {
 //   'all' → 全部真实专业；分组 key（如 shakai_group）→ 其成员；其他 → [自身]
 function expandMajorFilter(key) {
   if (key === 'all') return allMajorKeys();
-  // 选组（社会人文）：三个成员 + 组代码本身（社会人文大课 major=shakai_group 也显示）
-  if (MAJOR_GROUPS[key]) return [key, ...MAJOR_GROUPS[key]];
+  // 选组（如社会人文）：组内成员 + 组代码本身（社会人文大课 major=shakai_group 也显示）
+  if (isMajorGroup(key)) return [key, ...MAJOR_GROUPS[key]];
   // 选单个专业（社会学）：只匹配自己，不带组代码——社会人文大课(共通课)不出现在单个专业里
   return [key];
 }
 
-// 表单里「专业」下拉的 option HTML：只列当前视角范围内的真实专业（不含 shakai_group）
+// 表单里「专业」下拉的 option HTML：只列当前视角范围内的真实专业（不含分组）
 //   非全部视角：没有已选值时，多个专业第一项为「请选择专业」，只有一个则自动选中
 //   已选值不在范围内：保留该选项并标「范围外」，避免下拉显示成别的专业被误改
 function majorSelectOptions(selected) {
-  const keys = majorFilterKeys().filter(k => k !== 'shakai_group');
+  const keys = majorFilterKeys().filter(k => !isMajorGroup(k));
   const restricted = !scopeAll();
   const auto = restricted && !selected && keys.length === 1;
   let html = (restricted && !selected && keys.length > 1) ? '<option value="">请选择专业</option>' : '';
@@ -254,14 +285,24 @@ function majorSelectOptions(selected) {
 
 // 筛选栏 chip 顺序：经营 经济 [社会人文组] 社会 新传 福祉 …新增专业追加末尾
 //   opts.includeAll=true 时在最前面加入 'all'
+//   分组排在组内专业前面：遇到某分组的第一个成员时，先放分组、再放组内全部成员（其余成员不再重复）；没有分组的专业照旧。
 function majorFilterKeys(opts = {}) {
-  let ordered = ['keiei', 'keizai', 'shakai_group', 'shakai', 'shinpan', 'fukushi'];
-  allMajorKeys().forEach(k => { if (!ordered.includes(k)) ordered.push(k); });
+  const base = allMajorKeys();
+  let ordered = [];
+  base.forEach(k => {
+    if (ordered.includes(k)) return;
+    const g = groupOf(k);
+    if (g && !ordered.includes(g)) {
+      ordered.push(g);
+      MAJOR_GROUPS[g].forEach(m => { if (base.includes(m) && !ordered.includes(m)) ordered.push(m); });
+    }
+    if (!ordered.includes(k)) ordered.push(k);
+  });
   // 范围过滤：非总览时，只保留范围内的专业（领域完整选中的全部专业 + 被单独选中的专业）；
-  // 社会人文组只在成员所属领域完整选中时才保留（只单独选了某一个成员专业时不出现组）
+  // 分组只在所属领域完整选中、或分组本身被选中时才保留（只单独选了某一个成员专业时不出现组）
   if (!scopeAll()) {
     ordered = ordered.filter(k => {
-      if (k === 'shakai_group') return SHAKAI_GROUP.some(m => scopeHasDomain(MAJOR_DOMAIN[m]));
+      if (isMajorGroup(k)) return scopeHasDomain(groupDomain(k)) || VIEW_SCOPE.majors.includes(k);
       return scopeMajor(k);
     });
   }
@@ -321,7 +362,8 @@ function majorKeyFromText(text) {
   if (MAJORS[t]) return t;                                   // 本身就是 key
   const rev = Object.entries(MAJORS).find(([, v]) => v === t);
   if (rev) return rev[0];                                    // 精确匹配中文名
-  if (/社会人文/.test(t)) return 'shakai_group';
+  const grpHit = Object.keys(MAJOR_GROUPS).find(g => MAJOR_GROUP_LABEL[g] && t.includes(MAJOR_GROUP_LABEL[g]));
+  if (grpHit) return grpHit;
   if (/经营|経営/.test(t)) return 'keiei';
   if (/经济|経済/.test(t)) return 'keizai';
   if (/社会学/.test(t)) return 'shakai';
@@ -335,8 +377,11 @@ function majorKeyFromText(text) {
 let majorsLoadedFromDB = false;
 const MAJORS_JA = {};   // key → 日文专业名（人工填写，用于精确生成罗马音代号，也可用于对照日本大学院官方专业名）
 async function loadMajorsFromDB() {
+  let rows = null, groups = null;
   try {
-    const rows = await sb('/rest/v1/majors?select=key,label,domain,label_ja');
+    // 先带 group_key 读；库里还没有这一列（SQL 没执行）时退回不带的老查询
+    try { rows = await sb('/rest/v1/majors?select=key,label,domain,label_ja,group_key'); }
+    catch (e) { rows = await sb('/rest/v1/majors?select=key,label,domain,label_ja'); }
     (rows || []).forEach(r => {
       if (r.key && r.label) MAJORS[r.key] = r.label;
       if (r.key && r.domain) MAJOR_DOMAIN[r.key] = r.domain;
@@ -346,6 +391,26 @@ async function loadMajorsFromDB() {
   } catch (e) {
     // 加载失败不影响主流程，MAJORS 仍保留核心5个专业
   }
+  try {
+    groups = await sb('/rest/v1/major_groups?select=key,label,label_ja,domain,sort&order=sort.asc,key.asc');
+  } catch (e) { groups = null; }   // 表还不存在 / 读取失败：保留写死的社会人文
+  if (Array.isArray(groups) && groups.length && Array.isArray(rows) && rows.some(r => 'group_key' in r)) applyMajorGroups(groups, rows);
+}
+// 把 major_groups + majors.group_key 写进 MAJOR_GROUPS / MAJOR_GROUP_LABEL / MAJOR_GROUP_DOMAIN（原地更新，保持引用和 SHAKAI_GROUP 别名有效）
+function applyMajorGroups(groups, rows) {
+  const keep = Object.keys(MAJOR_GROUPS);
+  groups.forEach(g => {
+    if (!g.key) return;
+    const members = (rows || []).filter(r => r.group_key === g.key).map(r => r.key);
+    if (MAJOR_GROUPS[g.key]) MAJOR_GROUPS[g.key].splice(0, MAJOR_GROUPS[g.key].length, ...members);   // 同一个数组原地改（SHAKAI_GROUP 别名）
+    else MAJOR_GROUPS[g.key] = members;
+    MAJOR_GROUP_LABEL[g.key] = g.label || g.key;
+    if (g.domain) MAJOR_GROUP_DOMAIN[g.key] = g.domain;
+    MAJORS[g.key] = g.label || g.key;
+    if (g.label_ja) MAJORS_JA[g.key] = g.label_ja;
+  });
+  // 数据库里已删除的分组：从内存里去掉（写死的 shakai_group 不删）
+  keep.forEach(k => { if (k !== 'shakai_group' && !groups.some(g => g.key === k)) { delete MAJOR_GROUPS[k]; delete MAJOR_GROUP_LABEL[k]; delete MAJOR_GROUP_DOMAIN[k]; delete MAJORS[k]; } });
 }
 
 // 中文专业名 → 生成一个安全的英文 key（拼音首字母不可行时退回时间戳后缀，保证唯一）
@@ -476,7 +541,7 @@ async function createMajor(label, keyArg, domainArg, labelJaArg) {
   let key = String(keyArg || '').trim().toLowerCase();
   if (key) {
     if (!/^[a-z][a-z0-9_]*$/.test(key)) { alert('英文代号格式不对：只能用小写字母/数字/下划线，且以字母开头（如 kannkou）'); return null; }
-    if (key === 'all' || key === 'shakai_group') { alert(`「${key}」是系统保留字，请换一个`); return null; }
+    if (key === 'all' || isMajorGroup(key)) { alert(`「${key}」是系统保留字，请换一个`); return null; }
     if (MAJORS[key]) { alert(`英文代号「${key}」已被专业「${MAJORS[key]}」占用，请换一个`); return null; }
   } else {
     // 有日文专业名 → 按日文生成，准确得多（中文名常与日本大学院官方叫法不同，如「陶瓷」→「陶芸」）
@@ -513,11 +578,11 @@ async function createMajor(label, keyArg, domainArg, labelJaArg) {
 }
 
 function majorLabel(m) {
-  return m === 'shakai_group' ? '社会人文' : MAJORS[m] || m || '';
+  return isMajorGroup(m) ? groupLabel(m) : MAJORS[m] || m || '';
 }
 function matchesMajorFilter(major, filter) {
   if (filter === 'all') return true;
-  if (filter === 'shakai_group') return SHAKAI_GROUP.includes(major);
+  if (isMajorGroup(filter)) return MAJOR_GROUPS[filter].includes(major);
   return major === filter;
 }
 
@@ -1345,7 +1410,7 @@ function _salesOwnDomains(t) {   // 营业职位自己设的营业范围
   const d = t && t.position === 'sales' && t.role_scope && t.role_scope.sales && t.role_scope.sales.domains;
   return Array.isArray(d) ? d.filter(Boolean) : [];
 }
-function _salesDomOfMajor(k) { return MAJOR_DOMAIN[(k === 'shakai_group' && typeof SHAKAI_GROUP !== 'undefined') ? SHAKAI_GROUP[0] : k] || ''; }
+function _salesDomOfMajor(k) { return isMajorGroup(k) ? (groupDomain(k) || MAJOR_DOMAIN[MAJOR_GROUPS[k][0]] || '') : (MAJOR_DOMAIN[k] || ''); }
 function salesScopeUnlimited(t) {
   if (!t) return true;
   if (t.position === 'liaison') return true;
@@ -1382,11 +1447,10 @@ function salesTeacherOkMe(row) {
   (row.majors || []).forEach(m => { const d = MAJOR_DOMAIN[m]; if (d) doms.add(d); });
   return sd.some(d => doms.has(d));
 }
-// 专业（含社会人文组 shakai_group）是否在营业范围内
+// 专业（含分组）是否在营业范围内
 function salesMajorOk(t, key) {
   if (salesScopeUnlimited(t)) return true;
-  const k = (key === 'shakai_group' && typeof SHAKAI_GROUP !== 'undefined') ? SHAKAI_GROUP[0] : key;
-  return !!k && salesScopeDomains(t).includes(MAJOR_DOMAIN[k]);
+  return !!key && salesScopeDomains(t).includes(_salesDomOfMajor(key));
 }
 // 看全部领域的学生：只有营业（没指定营业范围时）和对接（兼容：标签里有「营业老师」）；负责人等不会因为营业功能变成看全部
 function canSeeAllStudents(t) { return !!t && (t.position === 'liaison' || (salesIsSalesRole(t) && !_salesOwnDomains(t).length)); }
@@ -1404,7 +1468,7 @@ function _scopeDomainMajors(dom) {
   const keys = new Set(typeof allMajorKeys === 'function' ? allMajorKeys() : Object.keys(MAJORS));
   Object.keys(MAJOR_DOMAIN).forEach(k => keys.add(k));
   Object.keys(ADMISSION_MAJORS).forEach(k => keys.add(k));
-  return [...keys].filter(k => k !== 'shakai_group' && MAJOR_DOMAIN[k] === dom);
+  return [...keys].filter(k => !isMajorGroup(k) && MAJOR_DOMAIN[k] === dom);
 }
 function teacherScope(t, kind) {
   kind = kind === 'admission' ? 'admission' : 'student';
@@ -1416,7 +1480,7 @@ function teacherScope(t, kind) {
   const add = (arr, src) => {
     let hit = false;
     (arr || []).forEach(m => {
-      const ks = m === 'shakai_group' ? SHAKAI_GROUP : [m];
+      const ks = expandGroupKey(m);
       ks.forEach(k => { if (k) { sc.rangeMajors.add(k); hit = true; } });
     });
     if (hit && !sc.sources.includes(src)) sc.sources.push(src);
@@ -1453,7 +1517,7 @@ function teacherScope(t, kind) {
   }
   if (kind === 'admission') [...sc.rangeMajors].forEach(k => { if (!ADMISSION_MAJORS[k]) sc.rangeMajors.delete(k); });
   const ex = (t.permissions && t.permissions.exclude_majors) || [];
-  ex.forEach(m => (m === 'shakai_group' ? SHAKAI_GROUP : [m]).forEach(k => sc.excluded.add(k)));
+  ex.forEach(m => expandGroupKey(m).forEach(k => sc.excluded.add(k)));
   sc.rangeMajors.forEach(k => { if (!sc.excluded.has(k)) sc.majors.add(k); });
   return sc;
 }
@@ -1625,7 +1689,7 @@ async function studentTextBatch(students, kind, bodyEl, prefix, onCodeIssued) {
 // ══════════════════════════════════
 // 课程学生成员（courses.member_mode + course_members 表）
 // 课程表、作业、管理端签到、老师端签到四处统一用这里判断，不要在别处另写一套。
-//   major（按专业，默认）：同专业在读学生（shakai_group 展开成三个成员专业）排除纯 VIP，
+//   major（按专业，默认）：同专业在读学生（分组展开成组内成员专业）排除纯 VIP，
 //                        再加上 include、去掉 exclude；同专业新生自动成为成员
 //   class（按班级）     ：所属班级（students.class_ids）和课程班级（courses.class_ids）有交集的在读学生，
 //                        再加上 include、去掉 exclude；学生被编入班级后自动成为成员
@@ -1647,7 +1711,7 @@ function courseMajorSet(course) {
   const set = new Set();
   ms.forEach(m => {
     set.add(m);
-    if (typeof MAJOR_GROUPS !== 'undefined' && MAJOR_GROUPS[m]) MAJOR_GROUPS[m].forEach(x => set.add(x));
+    if (isMajorGroup(m)) MAJOR_GROUPS[m].forEach(x => set.add(x));
   });
   return set;
 }
@@ -1765,7 +1829,7 @@ function isSenmonTeacher(t) { return !!t && ((t.roles || []).includes('senmon') 
 // 专业中文名 → 专业 key（对不上返回 ''）
 function subjectToMajorKey(subject) {
   const s = String(subject || '').trim(); if (!s) return '';
-  return Object.keys(MAJORS).find(k => k !== 'shakai_group' && MAJORS[k] === s) || '';
+  return Object.keys(MAJORS).find(k => !isMajorGroup(k) && MAJORS[k] === s) || '';
 }
 // 介绍行所属领域：用 domain，为空时按 subject 对应专业所属领域补（只用于显示，不写库）
 function profileDomain(p) { return (p && p.domain) || MAJOR_DOMAIN[subjectToMajorKey(p && p.subject)] || ''; }
@@ -1773,7 +1837,7 @@ function profileDomain(p) { return (p && p.domain) || MAJOR_DOMAIN[subjectToMajo
 // 全部负责专业（社会人文组展开成成员专业），不排除「不需要」的
 function teacherProfileMajorsAll(t) {
   const out = [];
-  ((t && t.majors) || []).forEach(m => { (MAJOR_GROUPS[m] || [m]).forEach(k => { if (k && !out.includes(k)) out.push(k); }); });
+  ((t && t.majors) || []).forEach(m => { expandGroupKey(m).forEach(k => { if (k && !out.includes(k)) out.push(k); }); });
   return out;
 }
 // 管理员 / 负责人在任务明细里设为「不需要」的专业（teachers.permissions.profile_skip_majors）：不要求这位老师填这些专业的讲师介绍

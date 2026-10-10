@@ -99,7 +99,7 @@ function bookingTimes(b) {
 // 专业 → 所属领域（分组代码取第一个成员）
 function payrollMajorDomain(m) {
   if (!m) return '';
-  if (typeof MAJOR_GROUPS !== 'undefined' && MAJOR_GROUPS[m]) return MAJOR_DOMAIN[MAJOR_GROUPS[m][0]] || '';
+  if (isMajorGroup(m)) return groupDomain(m) || MAJOR_DOMAIN[groupMajors(m)[0]] || '';
   return MAJOR_DOMAIN[m] || '';
 }
 // 大课所属领域：courses.domain，没有就按课程专业
@@ -287,7 +287,7 @@ function renderPayrollSection(container) {
       <label class="form-label">按专业批量生成（自动覆盖该专业所有老师）</label>
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
         ${chipFold(majorFilterKeys().map(key =>
-          ({ on: false, html: `<button class="btn btn-outline btn-sm" onclick="runPayrollByMajor('${key}')">${key==='shakai_group'?'社会人文':majorLabel(key)}</button>` })
+          ({ on: false, html: `<button class="btn btn-outline btn-sm" onclick="runPayrollByMajor('${key}')">${majorLabel(key)}</button>` })
         ))}
         <button class="btn btn-outline btn-sm" onclick="runPayrollByMajor('all')">全部老师</button>
       </div>
@@ -385,10 +385,7 @@ async function runPayrollByMajor(majorKey) {
   const baseTeachers = (typeof teacherFilteredList==='function') ? teacherFilteredList() : cachedTeachers;
   const teacherNames = majorKey === 'all'
     ? baseTeachers.map(t => t.name)
-    : baseTeachers.filter(t => {
-        if(majorKey==='shakai_group') return ['shakai','shinpan','fukushi'].some(x=>(t.majors||[]).includes(x));
-        return (t.majors || []).includes(majorKey);
-      }).map(t => t.name);
+    : baseTeachers.filter(t => majorListHas(t.majors, majorKey)).map(t => t.name);
 
   if (!teacherNames.length) { alert('该专业下暂无老师'); return; }
 

@@ -231,7 +231,7 @@ async function initMajor() {
   // embed=1：内嵌在学习页「面谈预约」标签里，身份从本机登录信息读取（同源 localStorage）
   bkIsEmbed = p.get('embed') === '1';
   // 不带 ?major= 也能用：照常显示登录框；只有新同学预约需要专业链接
-  if (!(major && (MAJORS[major] || MAJOR_GROUPS[major]))) major = null;
+  if (!(major && (MAJORS[major] || isMajorGroup(major)))) major = null;
   document.getElementById('headerContent').innerHTML = `
     <div class="header-major">面谈预约</div>
     <div class="header-sub">唯新教育</div>
@@ -1061,9 +1061,9 @@ async function loadSchoolPlanBanner() {
       const to = new Date(today); to.setDate(today.getDate() + 7);
       const fmt = d => d.toISOString().slice(0, 10);
       const myMajor = shareMajor;
-      const accept = myMajor === 'shakai_group'
-        ? ['shakai_group', 'shakai', 'shinpan', 'fukushi']
-        : ['shakai', 'shinpan', 'fukushi'].includes(myMajor) ? [myMajor, 'shakai_group'] : [myMajor];
+      const accept = isMajorGroup(myMajor)
+        ? [myMajor, ...groupMajors(myMajor)]
+        : groupOf(myMajor) ? [myMajor, groupOf(myMajor)] : [myMajor];
       const sessions = await sb(`/rest/v1/course_sessions?session_date=gte.${fmt(from)}&session_date=lte.${fmt(to)}&homework_enabled=is.true&select=course_name,session_number,session_date,major,homework_questions&order=session_date.desc`).catch(() => []);
       const withHw = (sessions || []).filter(s => {
         const q = s.homework_questions;
