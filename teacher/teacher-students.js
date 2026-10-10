@@ -806,33 +806,15 @@ function tsaMajorOptions(sel) {
 function tsaListHtml() {
   let list = tsmFilterStudents(tsaStudents);
   if (tsaGuaranteedOnly) list = list.filter(s => (s.course_type || '').includes('保录'));
-  const listAll = list; list = tsmSlice(list);
-  const stLabel = v => ({ active:'在籍', graduated:'已合格', expired:'已到期', stopped:'停课', withdrawn:'退学' }[v] || v || '');
-  return `<table style="width:100%;border-collapse:collapse;font-size:11px">
-    <thead><tr style="background:var(--bg)">
-      ${['姓名','专业','等级','日语','英语','目标入学','到期','状态'].map(h => `<th style="padding:6px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border)">${h}</th>`).join('')}
-    </tr></thead>
-    <tbody>
-      ${list.length ? list.map(s => `
-      <tr onclick="tsaExpandedId=tsaExpandedId==='${s.id}'?null:'${s.id}';tsaRenderList()" style="cursor:pointer;border-bottom:1px solid var(--border)${tsaExpandedId === s.id ? ';background:var(--bg)' : ''}">
-        <td style="padding:7px 8px;font-weight:600">${tsaEsc(s.name)}</td>
-        <td style="padding:7px 8px">${MAJORS[s.major] || s.major || ''}</td>
-        <td style="padding:7px 8px">${tsaEsc(s.level)}</td>
-        <td style="padding:7px 8px">${tsaEsc(s.japanese_score)}</td>
-        <td style="padding:7px 8px">${tsaEsc(s.english_score)}</td>
-        <td style="padding:7px 8px">${tsaEsc(s.target_enrollment)}</td>
-        <td style="padding:7px 8px">${tsaEsc(s.expiry_date)}</td>
-        <td style="padding:7px 8px">${stLabel(s.status)}</td>
-      </tr>
-      ${tsaExpandedId === s.id ? `<tr><td colspan="8" style="padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--border)">
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:4px 16px;font-size:11px">
-          ${[['属性',s.student_type],['来源',s.source],['课程属性',s.course_type],['出身大学',s.university],['学部/专业',s.faculty],['GPA/履历',s.gpa],['毕业论文',s.thesis],['毕业时间',s.graduation_date],['赴日时间',s.japan_arrival],['报名时间',s.signup_date],['上课方式',s.default_mode==='offline'?'线下':'线上'],['查询码',s.student_code]].map(([l,v]) => `<div><span style="color:var(--text-3)">${l}：</span>${tsaEsc(v) || '—'}</div>`).join('')}
-        </div>
-        <button onclick="event.stopPropagation();tsaCodeNotice('${s.id}')" style="margin-top:8px;margin-right:6px;font-size:10px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">✉ 查询码通知</button>
-        ${(teacherData.permissions.student_mgmt_items||[]).includes('profile_edit')?`<button onclick="event.stopPropagation();tseOpen('${s.id}')" style="margin-top:8px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">✏ 修改档案</button>`:''}
-      </td></tr>` : ''}`).join('') : `<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--text-3)">暂无学生</td></tr>`}
-    </tbody>
-  </table>${tsmMoreHtml(listAll.length)}`;
+  // 表格本体（列、排序、表头筛选）用 shared/student-table.js，和管理端同一套
+  return sttHtml('teacher', list, {
+    mode: 'teacher',
+    slice: tsmSlice, more: tsmMoreHtml,
+    rowClick: s => `tsaExpandedId=tsaExpandedId==='${s.id}'?null:'${s.id}';tsaRenderList()`,
+    expand: s => tsaExpandedId !== s.id ? '' : `<div style="font-size:11px;margin-bottom:6px"><span style="color:var(--text-3)">上课方式：</span>${s.default_mode === 'offline' ? '线下' : '线上'}</div>
+        <button onclick="event.stopPropagation();tsaCodeNotice('${s.id}')" style="margin-right:6px;font-size:10px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">✉ 查询码通知</button>
+        ${(teacherData.permissions.student_mgmt_items||[]).includes('profile_edit')?`<button onclick="event.stopPropagation();tseOpen('${s.id}')" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">✏ 修改档案</button>`:''}`
+  });
 }
 
 // 查询码通知（文案 A）：只对本老师能看到的学生（tsaStudents 已按可见范围过滤）
@@ -890,7 +872,7 @@ function tsaRender() {
       <span id="tsa_save_msg" style="font-size:11px;margin-left:10px"></span>
     </div>` : ''}
 
-    <div id="tsa_list" style="border:1px solid var(--border);border-radius:4px;overflow:hidden;overflow-x:auto">${tsaListHtml()}</div>
+    <div id="tsa_list">${tsaListHtml()}</div>
     <div style="font-size:9px;color:var(--text-3);margin-top:6px">数据与 admin 学生档案为同一数据库、实时同步；此处可录入与查看，修改或删除请联系 admin。</div>
   </div>`;
 }

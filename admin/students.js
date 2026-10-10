@@ -45,9 +45,6 @@ function renderStudentsPage(mc){
   if(stSearch) list=list.filter(s=>matchesStudentSearch(s,stSearch));
   if(typeof stClassFilterApply==='function') list=stClassFilterApply(list);
   stLastList=list; // 「批量生成查询码通知」用当前筛选结果
-  const statusLabel=(v)=>({active:'在籍',graduated:'已合格',expired:'已到期',stopped:'停课',withdrawn:'退学'}[v]||v);
-  const statusColor=(v)=>v==='active'?'var(--ok)':v==='graduated'?'#1a6a9a':v==='withdrawn'?'var(--danger)':'var(--text-3)';
-  const statusBg=(v)=>v==='active'?'var(--ok-bg)':v==='graduated'?'#e8f4fd':v==='withdrawn'?'#fdecea':'var(--border)';
   mc.innerHTML=`
   <div id="spe_bar"></div>
   ${(setTimeout(()=>speRenderBar(),0),'')}
@@ -77,42 +74,15 @@ function renderStudentsPage(mc){
   </div>
   ${typeof stClassFilterHtml==='function'?stClassFilterHtml():''}
   <div class="search-bar"><input id="st_search_input" placeholder="搜索姓名 / 学校 / 备注…" value="${stSearch}" oninput="handleStSearchInput(this)" oncompositionstart="this.dataset.composing='1'" oncompositionend="this.dataset.composing='';handleStSearchInput(this)"></div>
-  <div class="table-scroll"><table class="student-table">
-    <thead><tr>
-      <th><input type="checkbox" id="selectAllStudents" onchange="toggleSelectAllStudents(this)"></th>
-      <th>姓名</th><th>专业</th><th>等级</th><th>属性</th><th>VIP课时</th><th>日语</th><th>英语</th><th>出身大学</th><th>入学目标</th><th>赴日</th><th>状态</th><th>查询码</th><th></th>
-    </tr></thead>
-    <tbody>
-      ${list.length?list.map(s=>{
-        const isVip = s.is_vip_course==='VIP'||s.is_vip_course==='大课+VIP';
-        const vipRemain = (s.vip_hours_total||0)-(s.vip_hours_used||0);
-        return `<tr>
-        <td><input type="checkbox" class="student-select" value="${s.id}"></td>
-        <td class="student-name-cell" onclick="openStudentDetail('${s.id}')" style="cursor:pointer;color:var(--accent)"><span style="text-decoration:underline">${s.name}</span>${typeof classTagsHtml==='function'?classTagsHtml(s.class_ids):''}</td>
-        <td>${MAJORS[s.major]||s.major||''}</td>
-        <td>${s.level?`<span class="level-badge level-${s.level}">${s.level}</span>`:''}</td>
-        <td style="font-size:11px">${s.student_type||''}</td>
-        <td style="font-size:11px">${isVip?`<span style="color:var(--accent);font-weight:600">${vipRemain}</span> / ${s.vip_hours_total||0}`:'—'}</td>
-        <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${s.japanese_score||''}">${s.japanese_score||''}</td>
-        <td style="font-size:11px">${s.english_score||''}</td>
-        <td style="font-size:11px">${s.university||''}</td>
-        <td style="font-size:11px">${s.target_enrollment||''}</td>
-        <td style="font-size:11px">${s.japan_arrival||''}</td>
-        <td><span class="status-badge" style="background:${statusBg(s.status)};color:${statusColor(s.status)}">${statusLabel(s.status)}</span></td>
-        <td>
-          ${s.student_code
-            ? `<span style="font-size:11px;font-weight:600;letter-spacing:1px;color:var(--accent)">${s.student_code}</span>`
-            : `<button class="btn btn-outline btn-sm" onclick="generateStudentCode('${s.id}')">生成</button>`}
-        </td>
-        <td style="display:flex;gap:4px">
-          <button class="btn btn-outline btn-sm" onclick="stCodeNotice('${s.id}')" style="white-space:nowrap">✉ 查询码通知</button>
-          <button class="btn btn-outline btn-sm" onclick="openStudentModal('${s.id}')">编辑</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteStudent('${s.id}')">删除</button>
-        </td>
-      </tr>`;
-      }).join(''):'<tr><td colspan="14" style="text-align:center;padding:30px;color:var(--text-3)">暂无学生数据</td></tr>'}
-    </tbody>
-  </table></div>`;
+  ${sttHtml('admin',list,{
+    mode:'admin',select:true,canExport:true,exportName:'学生档案',
+    nameClick:s=>`openStudentDetail('${s.id}')`,
+    codeHtml:s=>s.student_code
+      ?`<span style="font-size:11px;font-weight:600;letter-spacing:1px;color:var(--accent)">${s.student_code}</span>`
+      :`<button class="btn btn-outline btn-sm" onclick="generateStudentCode('${s.id}')">生成</button>`,
+    ops:s=>`<button class="btn btn-outline btn-sm" onclick="stCodeNotice('${s.id}')" style="white-space:nowrap">✉ 查询码通知</button><button class="btn btn-outline btn-sm" onclick="openStudentModal('${s.id}')">编辑</button><button class="btn btn-danger btn-sm" onclick="deleteStudent('${s.id}')">删除</button>`,
+    onRows:rows=>{stLastList=rows;}
+  })}`;
 }
 
 function setStVip(v,el){stVipFilter=v;document.querySelectorAll('.filter-row:nth-of-type(3) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderStudentsPage(document.getElementById('mainContent'))}
@@ -1012,13 +982,7 @@ function exportCoursesExcel(){
 }
 
 
-function exportStudents(){
-  if(!cachedStudents.length){alert('暂无学生数据');return}
-  const rows=cachedStudents.map(s=>({'姓名':s.name,'专业':MAJORS[s.major]||s.major||'','等级':s.level||'','属性':s.student_type||'','来源':s.source||'','课程属性':s.course_type||'','日语成绩':s.japanese_score||'','英语成绩':s.english_score||'','出身大学':s.university||'','学部专业':s.faculty||'','GPA':s.gpa||'','毕业时间':s.graduation_date||'','入学目标':s.target_enrollment||'','赴日时间':s.japan_arrival||'','报名时间':s.signup_date||'','到期时间':s.expiry_date||'','状态':s.status||'','困难点':s.difficulty||'','备注':s.notes||''}));
-  const ws=XLSX.utils.json_to_sheet(rows),wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'学生档案');
-  XLSX.writeFile(wb,'学生档案.xlsx');
-}
+function exportStudents(){ sttExport('admin'); } // 导出当前筛选 + 排序后的结果、当前显示的列（见 shared/student-table.js）
 
 // ══════════════════════════════════
 // IMPORT EXCEL
@@ -1046,6 +1010,44 @@ const COL_MAP = {
   '状态':'status',
   '备注':'notes', '備考':'notes',
 };
+// 列名匹配：精确匹配优先，其次放宽（列名「包含」关键字）。认不出返回 ''
+function importFieldOf(col) {
+  const c = String(col || '').trim();
+  if (COL_MAP[c]) return COL_MAP[c];
+  if (/论文|論文|卒論/.test(c)) return 'thesis';
+  if (/备注|備考/.test(c)) return 'notes';
+  if (/理由书|理由書|计划书|計画書/.test(c)) return 'research_plan';   // 先于「志望」，避免「志望理由书」被当成志望校
+  if (/志望/.test(c)) return 'target_school';
+  return '';
+}
+// 没识别的列可以手动指定放进哪个字段（status 不在其中，因为取值有固定写法）
+const IMPORT_TARGETS = [
+  ['thesis','毕业论文'],['notes','备注'],['target_school','志望校'],['research_plan','研究计划书'],['japanese_score','日语成绩'],['english_score','英语成绩'],
+  ['university','出身大学'],['faculty','学部专业'],['gpa','GPA / 履历'],['student_type','属性'],['source','来源'],['course_type','课程属性'],['level','等级'],['difficulty','困难点'],
+  ['graduation_date','毕业时间'],['target_enrollment','入学目标'],['signup_date','报名时间'],['expiry_date','到期时间'],['japan_arrival','赴日时间'],
+];
+const IMPORT_FIELDS = ['student_type','source','course_type','level','difficulty','japanese_score','english_score','university','faculty','gpa','thesis','research_plan','target_school','graduation_date','target_enrollment','signup_date','expiry_date','japan_arrival','status','notes'];
+const IMPORT_DATE_FIELDS = ['signup_date', 'expiry_date', 'graduation_date', 'japan_arrival', 'target_enrollment'];
+let importUnknown = [];   // [{ col, n, sample, target }] 没识别的列（有数据的）；target 空 = 不导入
+function importCellValue(field, val) {
+  if (IMPORT_DATE_FIELDS.includes(field) && /^\d{4,6}(\.\d+)?$/.test(String(val).trim())) return excelSerialToDate(Number(val));   // Excel 日期序列号 → 文本
+  return String(val).trim();
+}
+// 按「未识别列」的选择，重新算每行的字段（先还原到只含已识别列的状态，再叠加；目标字段已有值时用 / 接在后面，不丢数据）
+function importApplyExtra() {
+  const maps = importUnknown.filter(u => u.target);
+  importPendingRows.forEach(r => {
+    IMPORT_FIELDS.forEach(f => { if (r._base[f] !== undefined) r[f] = r._base[f]; else delete r[f]; });
+    maps.forEach(u => {
+      const v = r._raw && r._raw[u.col];
+      if (v === undefined || v === '') return;
+      const t = importCellValue(u.target, v);
+      r[u.target] = r[u.target] ? (IMPORT_DATE_FIELDS.includes(u.target) ? r[u.target] : r[u.target] + ' / ' + t) : t;
+    });
+  });
+}
+function importSetTarget(i, field) { importUnknown[i].target = field; importApplyExtra(); showImportPreview(); }
+
 // 专业 sheet 名 → key
 const SHEET_MAJOR_MAP = {
   '经营':'keiei','経営':'keiei','keiei':'keiei',
@@ -1085,6 +1087,7 @@ function handleImportFile(input) {
     try {
       const wb = XLSX.read(e.target.result, { type: 'array' });
       const rows = [];
+      const unknownMap = {};   // 没识别的列 -> { n, sample }
       // Try to find student info sheets
       const infoSheets = wb.SheetNames.filter(n =>
         n.includes('学生信息') || n.includes('大课') || n.includes('student') || n.includes('Student')
@@ -1099,6 +1102,7 @@ function handleImportFile(input) {
         const major = detectMajorFromSheet(sheetName) || detectMajorFromSheet(file.name) || '';
         for (const row of data) {
           const s = { major, status: 'active' };
+          const raw = {};
           let hasName = false;
           for (const [col, val] of Object.entries(row)) {
             const c = col.trim();
@@ -1107,17 +1111,16 @@ function handleImportFile(input) {
               if (key) s.major = key;
               continue;
             }
-            const field = COL_MAP[c];
-            if (!field || !val) continue;
-            const DATE_FIELDS = ['signup_date', 'expiry_date', 'graduation_date', 'japan_arrival', 'target_enrollment'];
-            if (DATE_FIELDS.includes(field) && /^\d{4,6}(\.\d+)?$/.test(String(val).trim())) {
-              s[field] = excelSerialToDate(Number(val)); // Excel 日期序列号 → 文本
-            } else {
-              s[field] = String(val).trim();
-            }
+            if (c === '专业' || c.startsWith('__EMPTY')) continue;
+            if (val === '' || val == null) continue;
+            const field = importFieldOf(c);
+            if (!field) { raw[c] = String(val).trim(); continue; }   // 没识别：先记下，预览里让人决定
+            s[field] = importCellValue(field, val);
             if (field === 'name') hasName = true;
           }
           if (!hasName || !s.name || s.name === '氏名') continue;
+          s._raw = raw;
+          Object.entries(raw).forEach(([c, v]) => { const u = unknownMap[c] || (unknownMap[c] = { n: 0, sample: v }); u.n++; });
           rows.push(s);
         }
       }
@@ -1131,8 +1134,10 @@ function handleImportFile(input) {
       const existingByName = new Map(cachedStudents.map(s => [s.name, s]));
       importPendingRows = rows.map(r => {
         const ex = existingByName.get(r.name);
-        return { ...r, _exists: !!ex, _existingId: ex ? ex.id : null };
+        const base = {}; IMPORT_FIELDS.forEach(f => { if (r[f] !== undefined) base[f] = r[f]; });
+        return { ...r, _base: base, _exists: !!ex, _existingId: ex ? ex.id : null };
       });
+      importUnknown = Object.entries(unknownMap).map(([col, u]) => ({ col, n: u.n, sample: u.sample, target: '' }));
 
       showImportPreview();
     } catch (err) {
@@ -1164,12 +1169,18 @@ function showImportPreview() {
         <strong style="color:${willUpdate?'var(--ok)':'var(--warn)'}">${updRows.length}</strong> <span style="color:var(--text-2)">条已存在将${willUpdate?'更新覆盖':'跳过'}</span>
       </div>
     </div>
+    ${importUnknown.length?`<div style="margin-bottom:12px;border:1px solid var(--border);border-radius:4px;padding:8px 10px;background:var(--bg)">
+      ${importUnknown.some(u=>!u.target)?`<div style="font-size:12px;color:var(--warn);font-weight:600;margin-bottom:6px">这些列没有导入：${importUnknown.filter(u=>!u.target).map(u=>stEsc(u.col)).join('、')}</div>`:'<div style="font-size:12px;color:var(--ok);margin-bottom:6px">所有有数据的列都已安排</div>'}
+      <div style="display:flex;flex-wrap:wrap;gap:8px">${importUnknown.map((u,i)=>`<div style="border:1px solid ${u.target?'var(--accent)':'var(--border)'};background:${u.target?'rgba(184,149,58,.12)':'var(--surface)'};border-radius:12px;padding:3px 6px 3px 10px;font-size:11px;display:flex;align-items:center;gap:6px" title="例：${stEsc(u.sample)}">
+        <span>${stEsc(u.col)} <span style="color:var(--text-3)">${u.n}行</span></span>
+        <select onchange="importSetTarget(${i},this.value)" style="font-size:11px;padding:1px 2px"><option value="">不导入</option>${IMPORT_TARGETS.map(([f,l])=>`<option value="${f}"${u.target===f?' selected':''}>放进「${l}」</option>`).join('')}</select>
+      </div>`).join('')}</div></div>`:''}
     ${willUpdate&&updRows.length?`<div style="font-size:11px;color:var(--text-3);margin-bottom:10px;background:var(--bg);border-radius:3px;padding:8px 10px">🔄 更新说明：按姓名匹配已有学生，用表格里<b>非空</b>的单元格覆盖对应字段（空单元格保留原值，不会清空）。专业列只在能识别时更新。</div>`:''}
     ${(newRows.length||(willUpdate&&updRows.length)) ? `
     <div style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:3px">
       <table class="student-table" style="margin:0">
         <thead><tr>
-          <th>姓名</th><th>处理</th><th>专业</th><th>报名时间</th><th>到期时间</th><th>日语</th><th>英语</th>
+          <th>姓名</th><th>处理</th><th>专业</th><th>报名时间</th><th>到期时间</th><th>日语</th><th>英语</th><th>毕业论文</th><th>备注</th>
         </tr></thead>
         <tbody>
           ${importPendingRows.filter(r=>!r._exists||willUpdate).slice(0,300).map(r => `<tr>
@@ -1180,6 +1191,8 @@ function showImportPreview() {
             <td style="font-size:11px">${r.expiry_date || ''}</td>
             <td style="font-size:11px">${r.japanese_score || ''}</td>
             <td style="font-size:11px">${r.english_score || ''}</td>
+            <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${stEsc(r.thesis||'')}">${stEsc(r.thesis||'')}</td>
+            <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${stEsc(r.notes||'')}">${stEsc(r.notes||'')}</td>
           </tr>`).join('')}
         </tbody>
       </table>
@@ -1199,7 +1212,7 @@ async function confirmImport() {
   const btn = document.getElementById('importConfirmBtn');
   btn.textContent = '处理中…'; btn.disabled = true;
   // 可导入/更新的字段（与列映射一致；major 单独处理）
-  const FIELDS = ['student_type','source','course_type','level','difficulty','japanese_score','english_score','university','faculty','gpa','thesis','research_plan','target_school','graduation_date','target_enrollment','signup_date','expiry_date','japan_arrival','status','notes'];
+  const FIELDS = IMPORT_FIELDS;
   try {
     // ① 新增
     const records = newRows.map((r, i) => {
