@@ -41,7 +41,7 @@ async function renderTeacherStudyProgress(mc) {
   } catch (e) { mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
 
   if (!students.length) {
-    mc.innerHTML = '<div class="empty">可见范围内暂无学生</div>';
+    mc.innerHTML = `<div class="empty">${tsaScope().vipOnly ? '暂无你指导的 VIP 学生' : '可见范围内暂无学生'}</div>`;
     return;
   }
 
@@ -357,7 +357,7 @@ function tpRenderProgressList() {
     </div>`;
   }).join('');
 
-  listBox.innerHTML = (cards ? cards + tsmMoreHtml(filteredAll.length) : '') || '<div class="empty">没有符合筛选条件的学生</div>';
+  listBox.innerHTML = (cards ? cards + tsmMoreHtml(filteredAll.length) : '') || `<div class="empty">${(tsmPool || []).length ? '没有符合筛选条件的学生' : (tsaScope().vipOnly ? '暂无你指导的 VIP 学生' : '没有符合筛选条件的学生')}</div>`;
 }
 
 function toggleTeacherProgressCard(id) {
@@ -644,7 +644,7 @@ function tsmFilterStudents(list) { return (list || []).filter(s => tsmMatch(s));
 async function tsmLoadPool(force) {
   if (!force && tsmPool && Date.now() - tsmPoolAt < 60000) return tsmPool;
   let all = [];
-  try { all = await sbAll('/rest/v1/students?select=id,name,major,level,status,course_type,student_type,source,class_ids&order=name.asc'); } catch (e) { all = tsmPool || []; }
+  try { all = await sbAll('/rest/v1/students?select=id,name,major,level,status,course_type,student_type,source,class_ids,vip_teachers&order=name.asc'); } catch (e) { all = tsmPool || []; }
   let list = tsaFilterStudents(all);
   if (tsaGuaranteedLock()) list = list.filter(tsaIsGuaranteed);
   tsmPool = list; tsmPoolAt = Date.now();
@@ -1504,7 +1504,7 @@ async function renderTsaMeetings(box) {
   box.innerHTML = '<div class="empty">加载中…</div>';
   try {
     const [allStu, allBk, allContact] = await Promise.all([
-      sb('/rest/v1/students?select=id,name,major,source,status,course_type,student_code,class_ids&limit=2000').catch(() => []),
+      sb('/rest/v1/students?select=id,name,major,source,status,course_type,student_code,class_ids,vip_teachers&limit=2000').catch(() => []),
       sb('/rest/v1/bookings?daily_record=not.is.null&select=*&order=slot_date.desc&limit=1500').catch(() => []),
       sb('/rest/v1/student_contact_logs?select=*&order=created_at.desc&limit=3000').catch(() => []),
     ]);
@@ -1519,7 +1519,7 @@ async function renderTsaMeetings(box) {
       // 已绑定学生（student_id）的预约以档案专业为准；未绑定时用 bookings.major（姓名匹配仅用于来源/保录标记）
       const stu = b.student_id ? stuById[b.student_id] : stuByName[b.name];
       const major = (b.student_id && stu && stu.major) || b.major || '';
-      if (!teacherScopeHasStudent(tsaScope(), { major, class_ids: stu && stu.class_ids })) return;
+      if (!teacherScopeHasStudent(tsaScope(), { major, class_ids: stu && stu.class_ids, vip_teachers: stu && stu.vip_teachers })) return;
       if (tsaGuaranteedLock() && !tsaIsGuaranteed(stu)) return;
       if (!groups[b.name]) groups[b.name] = { name: b.name, major, source: (stu && stu.source) || '', status: (stu && stu.status) || '', list: [] };
       groups[b.name].list.push(b);

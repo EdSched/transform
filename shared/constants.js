@@ -239,6 +239,19 @@ function expandMajorFilter(key) {
   return [key];
 }
 
+// 表单里「专业」下拉的 option HTML：只列当前视角范围内的真实专业（不含 shakai_group）
+//   非全部视角：没有已选值时，多个专业第一项为「请选择专业」，只有一个则自动选中
+//   已选值不在范围内：保留该选项并标「范围外」，避免下拉显示成别的专业被误改
+function majorSelectOptions(selected) {
+  const keys = majorFilterKeys().filter(k => k !== 'shakai_group');
+  const restricted = !scopeAll();
+  const auto = restricted && !selected && keys.length === 1;
+  let html = (restricted && !selected && keys.length > 1) ? '<option value="">请选择专业</option>' : '';
+  html += keys.map(k => `<option value="${k}" ${(k === selected || auto) ? 'selected' : ''}>${majorLabel(k)}</option>`).join('');
+  if (selected && !keys.includes(selected)) html += `<option value="${selected}" selected>${majorLabel(selected)}（范围外）</option>`;
+  return html;
+}
+
 // 筛选栏 chip 顺序：经营 经济 [社会人文组] 社会 新传 福祉 …新增专业追加末尾
 //   opts.includeAll=true 时在最前面加入 'all'
 function majorFilterKeys(opts = {}) {
@@ -1395,8 +1408,10 @@ function _scopeDomainMajors(dom) {
 }
 function teacherScope(t, kind) {
   kind = kind === 'admission' ? 'admission' : 'student';
-  const sc = { kind, all: false, majors: new Set(), classIds: new Set(), domains: new Set(), rangeMajors: new Set(), sources: [], excluded: new Set() };
+  const sc = { kind, all: false, majors: new Set(), classIds: new Set(), domains: new Set(), rangeMajors: new Set(), sources: [], excluded: new Set(), vipName: '', vipOnly: false };
   if (!t) return sc;
+  if (kind === 'student') sc.vipName = String(t.name || '').trim();   // 学生档案的 VIP 老师里有我 → 我能看到这个学生
+  sc.vipOnly = kind === 'student' && !!(t.permissions && t.permissions.vip_only);   // 勾了「仅可见自己指导的 VIP 学生」：不按负责专业 / 领域算
   if (kind === 'admission' ? canSeeAllAdmission(t) : canSeeAllStudents(t)) { sc.all = true; return sc; }
   const add = (arr, src) => {
     let hit = false;
@@ -1412,8 +1427,8 @@ function teacherScope(t, kind) {
     if (hit && !sc.sources.includes(src)) sc.sources.push(src);
   };
   const own = Array.isArray(t.majors) ? t.majors : [];
-  add(own, '负责专业');
-  if (!own.length) {
+  if (!sc.vipOnly) add(own, '负责专业');
+  if (!sc.vipOnly && !own.length) {
     // 负责领域（teachers.domains）= 老师自己页面能看到的领域；老数据只填了隶属领域（managed_by）时退回它
     const doms = (t.domains || []).length ? t.domains : (t.managed_by || []);
     add([].concat(...doms.map(_scopeDomainMajors)), (t.domains || []).length ? '负责领域' : '隶属领域');
@@ -1442,11 +1457,12 @@ function teacherScope(t, kind) {
   sc.rangeMajors.forEach(k => { if (!sc.excluded.has(k)) sc.majors.add(k); });
   return sc;
 }
-function teacherScopeEmpty(sc) { return !sc || (!sc.all && !sc.majors.size && !sc.classIds.size && !sc.domains.size); }
+function teacherScopeEmpty(sc) { return !sc || (!sc.all && !sc.vipOnly && !sc.majors.size && !sc.classIds.size && !sc.domains.size); }
 // 某个学生行在不在范围内（专业命中、学生所属领域在负责领域里、或在班主任负责的班级里；不看的专业除外）
 function teacherScopeHasStudent(sc, s) {
   if (!sc || !s) return false;
   if (sc.all) return true;
+  if (sc.vipName && Array.isArray(s.vip_teachers) && s.vip_teachers.includes(sc.vipName)) return true;   // 我是这个学生的 VIP 老师（即使专业在「排除的专业」里也能看）
   if (sc.majors.has(s.major)) return true;
   if (sc.domains.size && !sc.excluded.has(s.major) && sc.domains.has(MAJOR_DOMAIN[s.major])) return true;   // 整个领域（领域下专业 / 学生以后新增也算）
   return sc.classIds.size > 0 && studentClassIds(s).some(c => sc.classIds.has(String(c)));

@@ -823,7 +823,7 @@ async function tLoadBookingStudents() {
 function tBkMajor(b) { const s = b && b.student_id && tStuById[b.student_id]; return (s && s.major) || (b && b.major) || ''; }
 // 认领时「已有学生」的候选：这位老师能看到的学生（规则同学生管理 tsaAllowedSet / 保录锁）
 async function tClaimStudents() {
-  const all = await sbAll('/rest/v1/students?select=id,name,major,status,course_type,student_code,class_ids&order=name.asc');
+  const all = await sbAll('/rest/v1/students?select=id,name,major,status,course_type,student_code,class_ids,vip_teachers&order=name.asc');
   let list = tsaFilterStudents(all);
   if (typeof tsaGuaranteedLock === 'function' && tsaGuaranteedLock()) list = list.filter(tsaIsGuaranteed);
   return list;
