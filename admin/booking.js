@@ -1062,7 +1062,7 @@ function renderSlotsPage(mc){
       <div class="form-group" id="slotAlsoInterviewWrap" style="display:none"></div>
       <div class="form-group"><label class="form-label">专业</label>
         <select id="slotMajor">
-          ${Object.entries(MAJORS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}
+          ${majorSelectOptions('')}
         </select>
       </div>
       <div class="form-group" id="slotTypeWrap"><label class="form-label">面谈类型（可多选）</label>
@@ -1172,6 +1172,7 @@ async function addSlot(){
   const alsoInterview=false;
   const types=[...document.querySelectorAll('#slotTypeGroup input:checked')].map(c=>c.value);
   const major=document.getElementById('slotMajor').value;
+  if(!major){alert('请选择专业');return}
   const location=document.getElementById('slotLocation').value||'online';
   if(!ts||!te){alert('请填写时间段');return}
   if(ts>=te){alert('结束时间需晚于开始时间');return}
