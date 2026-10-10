@@ -1007,6 +1007,10 @@ function renderTeachersPage(mc){
         <label class="form-label">负责专业（可多选，按已选领域展开）</label>
         <div id="new_teacher_majors" style="min-height:20px"></div>
       </div>
+      <div class="form-group">
+        <div class="filter-chip" id="perm_vip_only" onclick="toggleChip(this);renderPermScope()" style="padding:3px 9px;font-size:10px">仅可见自己指导的 VIP 学生</div>
+        <div style="font-size:10px;color:var(--text-3);margin-top:4px;line-height:1.6">勾选后，这位老师在学生管理里只能看到学生档案「VIP 老师」里有他的学生；负责专业仍用于讲师介绍、课程等其他地方。负责人 / 班主任的范围照常叠加。</div>
+      </div>
       `,10)}
       ${tsecWrap('features','老师端功能',`
         <div>
@@ -1280,7 +1284,7 @@ function admScopeTeacher(){
   const _isDom=deptIsDomLock();
   let mb=act('new_teacher_managed'); if(_isDom&&!mb.length) mb=[viewLockDomain()];
   let dm=act('new_teacher_domains'); if(_isDom&&!dm.length) dm=[viewLockDomain()];
-  const t={majors:act('new_teacher_majors'),managed_by:mb,domains:dm,tags:parseTeacherTags(),position:null,roles:[],role_scope:null,manage_scope:null,permissions:{exclude_majors:[..._admExcl]}};
+  const t={majors:act('new_teacher_majors'),managed_by:mb,domains:dm,tags:parseTeacherTags(),position:null,roles:[],role_scope:null,manage_scope:null,permissions:{exclude_majors:[..._admExcl],vip_only:!!document.getElementById('perm_vip_only')?.classList.contains('active')},name:(document.getElementById('new_teacher_name')?.value||'').trim()};
   if(tfHasRoleUI()){
     t.position=(tsecCurType()==='正社员'&&_tfPos)||null; t.roles=_tfRoles.slice();
     const rs={};
@@ -1313,6 +1317,7 @@ function renderPermScope(){
   }
   const keys=[...base.rangeMajors];
   const parts=[];
+  if(st.vipOnly){ const nm=st.vipName; const n=(typeof cachedStudents!=='undefined'&&Array.isArray(cachedStudents)&&cachedStudents.length&&nm)?cachedStudents.filter(s=>(s.vip_teachers||[]).includes(nm)).length:null; parts.push('仅自己指导的 VIP 学生'+(n==null?'':'（当前 '+n+' 人）')); }
   const whole=[...base.domains];
   if(whole.length) parts.push(escTM(whole.join('、'))+'（整个领域）');
   const rest=keys.filter(k=>!base.domains.has(MAJOR_DOMAIN[k]));
@@ -1356,6 +1361,7 @@ function cancelEditTeacher(){
     {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=false;}
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
+  {const _e=document.getElementById('perm_vip_only'); if(_e)_e.classList.remove('active');}
   _admExcl=new Set(); renderPermScope();
   renderHomeworkCoursesChips([]);
   tfFormReset();
@@ -1384,6 +1390,7 @@ function openTeacherManager(){
     {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=false;}
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
+  {const _e=document.getElementById('perm_vip_only'); if(_e)_e.classList.remove('active');}
   _admExcl=new Set(); renderPermScope();
   renderHomeworkCoursesChips([]);
   renderTeacherList();
@@ -1863,6 +1870,7 @@ function getPermissionsFromForm(prev){
     guaranteed_only:document.getElementById('perm_guaranteed_only')?.classList.contains('active')||false,
     student_mgmt_items:[...document.querySelectorAll('#perm_student_mgmt_items .filter-chip.active')].map(c=>c.dataset.value),
     exclude_majors:admExcludeForSave(),
+    vip_only:document.getElementById('perm_vip_only')?.classList.contains('active')||false,
   });
 }
 
@@ -2035,6 +2043,7 @@ function openEditTeacher(id){
   {const _e=document.getElementById('perm_schedule_mode'); if(_e)_e.value=(p.schedule===true?'full':(p.schedule||''));}
   document.getElementById('perm_homework').checked=!!p.homework;
   document.getElementById('perm_admission_query').checked=!!p.admission_query;
+  {const _e=document.getElementById('perm_vip_only'); if(_e)_e.classList.toggle('active',!!p.vip_only);}
   _admExcl=new Set(p.exclude_majors||[]); renderPermScope();
   {const _e=document.getElementById('perm_promo'); if(_e)_e.checked=!!p.promo;}
   {const _e=document.getElementById('perm_lect_info'); if(_e)_e.checked=!!p.lect_info;}
