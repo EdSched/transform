@@ -4002,6 +4002,7 @@ async function hwSaveToTemplate(sessionId){
 // 同时选中多门课时，名字按钮对所有选中的课统一操作
 // ══════════════════════════════════
 let cmCourseIds=[];      // 弹窗里正在编辑的课程 id
+let cmOtherOpen=false, cmOtherMajors=[], cmOtherScope='novip', cmByMajors=[];  // 其他专业加入 / 名字列表按专业筛选
 let cmScopeAll=false;    // 名字列表：false=本课涉及专业；true=全部学生
 let cmSearch='';
 
@@ -4025,7 +4026,7 @@ function openCourseMembers(){
   if(!cleanupSelected.size){ alert('请先在列表里选中至少一门课'); return; }
   cmCourseIds=[...cleanupSelected].filter(id=>cmCourse(id));
   if(!cmCourseIds.length){ alert('找不到所选课程'); return; }
-  cmScopeAll=false; cmSearch='';
+  cmScopeAll=false; cmSearch=''; cmOtherOpen=false; cmOtherMajors=[]; cmOtherScope='novip'; cmByMajors=[];
   document.getElementById('cmModal')?.remove();
   const ov=document.createElement('div');
   ov.id='cmModal';
@@ -4065,14 +4066,20 @@ function cmRender(){
       ${modes.includes('list')&&typeof classesInView==='function'&&classesInView().length?`<select onchange="cmAddWholeClass(this.value)" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit"><option value="">＋ 整个班级…</option>${classesInView().map(k=>`<option value="${cmEsc(k.id)}">${cmEsc(k.name)}</option>`).join('')}</select>`:''}
       <button class="btn btn-outline btn-sm" onclick="cmQuickAdd('vip')">＋ 同专业纯 VIP 学生</button>
       <button class="btn btn-outline btn-sm" onclick="cmQuickAdd('all')">＋ 同专业全部学生</button>
+      <button class="btn btn-outline btn-sm${cmOtherOpen?' active':''}" onclick="cmOtherOpen=!cmOtherOpen;cmRender()">＋ 其他专业学生</button>
       <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="cmDeselectAll()">全部取消选择</button>
       ${modes.includes('major')||modes.includes('class')?'<button class="btn btn-outline btn-sm" onclick="cmClearList()">恢复默认成员</button>':''}
     </div>
+    ${cmOtherHtml(courses)}
     ${typeof cmClassBarHtml==='function'?cmClassBarHtml(courses):''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
       <input id="cmSearchInput" value="${cmEsc(cmSearch)}" placeholder="搜索姓名（汉字 / 拼音首字母）" oninput="if(this.dataset.composing!=='1'){cmSearch=this.value;cmRenderNames()}" oncompositionstart="this.dataset.composing='1'" oncompositionend="this.dataset.composing='';cmSearch=this.value;cmRenderNames()" style="flex:1;min-width:180px;font-size:13px;padding:7px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg);font-family:inherit">
       <div class="filter-chip${cmScopeAll?'':' active'}" onclick="cmScopeAll=false;cmRender()" style="font-size:11px;padding:3px 10px">本课专业</div>
       <div class="filter-chip${cmScopeAll?' active':''}" onclick="cmScopeAll=true;cmRender()" style="font-size:11px;padding:3px 10px">全部学生</div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <span style="font-size:11px;color:var(--text-3)">按专业</span>
+      ${chipFold(cmViewMajors().map(k=>({on:cmByMajors.includes(k),html:`<div class="filter-chip${cmByMajors.includes(k)?' active':''}" onclick="cmToggleIn('cmByMajors','${k}')" style="font-size:11px;padding:3px 10px">${cmEsc(MAJORS[k]||k)}</div>`})))}
     </div>
     <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">点名字切换是否成员：<span style="color:var(--accent);font-weight:600">深色</span>=成员${multi?'，<span style="color:var(--accent)">虚线框「部分」</span>=只在部分选中的课里是成员':''}；标「纯VIP」的学生按专业模式下默认不是成员。</div>
     <div id="cmNames" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px;max-height:52vh;overflow-y:auto"></div>
@@ -4088,6 +4095,7 @@ function cmRenderNames(){
   const rowIds=new Set(); courses.forEach(c=>cmRowsOf(c.id).forEach(r=>rowIds.add(String(r.student_id))));
   const clsIds=new Set(); courses.forEach(c=>courseClassIds(c).forEach(x=>clsIds.add(x)));
   let pool=cmActiveStudents().filter(s=>cmScopeAll||majors.has(s.major)||rowIds.has(String(s.id))||studentClassIds(s).some(x=>clsIds.has(x)));
+  if(cmByMajors.length) pool=pool.filter(s=>cmByMajors.includes(s.major));
   if(cmSearch.trim()) pool=pool.filter(s=>matchesStudentSearch(s,cmSearch));
   const n=courses.length;
   el.innerHTML=pool.length?pool.map(s=>{
@@ -4164,6 +4172,53 @@ async function cmQuickAdd(kind){
     cmActiveStudents().filter(s=>ms.has(s.major)&&(kind==='all'||isPureVipStudent(s))).forEach(s=>ops.push(cmPlan(c,s,true)));
   });
   if(!ops.filter(Boolean).length){ alert('没有需要加入的学生'); return; }
+  try{ await cmExec(ops); }catch(e){}
+  cmRender();
+}
+
+// ── 其他专业学生一键加入 ──
+// 视角内的真实专业（社会人文组展开成三个专业）
+function cmViewMajors(){
+  const out=[];
+  majorFilterKeys().forEach(k=>{ (MAJOR_GROUPS[k]||[k]).forEach(m=>{ if(!out.includes(m)) out.push(m); }); });
+  return out;
+}
+function cmToggleIn(varName, k){
+  const arr=varName==='cmOtherMajors'?cmOtherMajors:cmByMajors;
+  const i=arr.indexOf(k); if(i>=0) arr.splice(i,1); else arr.push(k);
+  cmRender();
+}
+function cmOtherTargets(courses){
+  if(!cmOtherMajors.length) return [];
+  return cmActiveStudents().filter(s=>cmOtherMajors.includes(s.major)&&(cmOtherScope==='all'||(cmOtherScope==='vip')===isPureVipStudent(s))
+    && courses.some(c=>cmPlan(c,s,true)));
+}
+function cmOtherHtml(courses){
+  if(!cmOtherOpen) return '';
+  const own=new Set(); courses.forEach(c=>courseMajorSet(c).forEach(m=>own.add(m)));
+  const keys=cmViewMajors().filter(k=>!own.has(k));
+  cmOtherMajors=cmOtherMajors.filter(k=>keys.includes(k));
+  const n=cmOtherTargets(courses).length;
+  const scopes=[['novip','不含纯VIP'],['vip','只要纯VIP'],['all','全部']];
+  return `<div style="border:1px solid var(--border);border-radius:4px;padding:8px 10px;margin-bottom:10px;background:var(--bg)">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+      <span style="font-size:11px;color:var(--text-3)">专业</span>
+      ${keys.length?chipFold(keys.map(k=>({on:cmOtherMajors.includes(k),html:`<div class="filter-chip${cmOtherMajors.includes(k)?' active':''}" onclick="cmToggleIn('cmOtherMajors','${k}')" style="font-size:11px;padding:3px 10px">${cmEsc(MAJORS[k]||k)}</div>`}))):'<span style="font-size:11px;color:var(--text-3)">没有其他可选专业</span>'}
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:11px;color:var(--text-3)">范围</span>
+      ${scopes.map(([v,l])=>`<div class="filter-chip${cmOtherScope===v?' active':''}" onclick="cmOtherScope='${v}';cmRender()" style="font-size:11px;padding:3px 10px">${l}</div>`).join('')}
+      <button class="btn btn-outline btn-sm" ${n?'':'disabled'} onclick="cmOtherAdd()">加入（${n} 人）</button>
+    </div>
+    <div style="font-size:10px;color:var(--text-3);margin-top:6px">这里加入的是当前名单：之后新入学的该专业学生不会自动加入，需要时再来加一次。</div>
+  </div>`;
+}
+async function cmOtherAdd(){
+  const courses=cmCourseIds.map(cmCourse).filter(Boolean);
+  const stus=cmOtherTargets(courses);
+  if(!stus.length){ alert('没有需要加入的学生'); return; }
+  const ops=[];
+  courses.forEach(c=>stus.forEach(s=>ops.push(cmPlan(c,s,true))));
   try{ await cmExec(ops); }catch(e){}
   cmRender();
 }
