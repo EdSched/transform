@@ -552,7 +552,6 @@ function openManualBooking(kind){
   bkmKind=kind==='vip'?'vip':'daily'; bkmStu=null;
   const old=document.getElementById('bkmModal'); if(old) old.remove();
   const e=bkSelfEsc;
-  const teachers=(typeof teacherFilteredList==='function'?teacherFilteredList():cachedTeachers).map(t=>t.name);
   const kinds=[['daily','日常学习'],['plan','计划书'],['mock','模拟面试'],['vip','VIP']];
   const m=document.createElement('div');
   m.id='bkmModal';
@@ -567,7 +566,8 @@ function openManualBooking(kind){
       <div id="bkm_res" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
       <div id="bkm_sel" style="font-size:12px;margin-top:6px;color:var(--text-3)">还没有选择学生</div></div>
     <div class="form-group"><label class="form-label">老师（必选）</label>
-      <select id="bkm_teacher"><option value="">请选择老师</option>${teachers.map(n=>`<option value="${e(n)}">${e(n)}</option>`).join('')}</select></div>
+      <input id="bkm_tq" placeholder="搜索老师（汉字 / 拼音首字母）" oninput="bkmRenderTeachers()" autocomplete="off" style="margin-bottom:6px">
+      <select id="bkm_teacher"><option value="">加载中…</option></select></div>
     <div class="form-group"><label class="form-label">日期</label><input type="date" id="bkm_date" onchange="bkmLoadRooms()"></div>
     <div class="form-group"><label class="form-label">时间段</label>
       <div style="display:grid;grid-template-columns:1fr 16px 1fr;gap:4px;align-items:center">
@@ -584,10 +584,42 @@ function openManualBooking(kind){
     </div></div>`;
   document.body.appendChild(m);
   bkmSetKind(bkmKind);
+  bkmEnsureTeachers();
+}
+async function bkmEnsureTeachers(){
+  if(!(cachedTeachers&&cachedTeachers.length)){
+    try{ cachedTeachers=await sb('/rest/v1/teachers?select=id,name,managed_by,domains,majors,tags,position,roles&order=name.asc'); }
+    catch(e){ const sel=document.getElementById('bkm_teacher'); if(sel) sel.innerHTML='<option value="">老师加载失败，请关闭后重试</option>'; return; }
+  }
+  bkmRenderTeachers();
+}
+// 候选老师：视角内（隶属领域 / 负责领域 / 负责专业任一）＋ 所选学生的 VIP 老师 / 负责老师；管理员全部视角 = 全部
+function bkmTeacherPool(){
+  const rel=bkmStu?new Set([...(bkmStu.vip_teachers||[]),...(bkmStu.owner_teachers||[])]):new Set();
+  const isDomainAccount=typeof ACCESS_KEY!=='undefined'&&ACCESS_KEY&&!ACCESS_KEY.invalid&&!ACCESS_KEY.is_admin;
+  return (cachedTeachers||[]).filter(t=>{
+    if(rel.has(t.name)) return true;
+    if(isDomainAccount){ const tags=t.tags||[]; if(tags.includes('营业老师')||tags.includes('保录老师')) return false; }
+    if(scopeAll()) return true;
+    return (t.managed_by||[]).some(scopeHasDomain)||(t.domains||[]).some(scopeHasDomain)||(t.majors||[]).some(scopeMajor);
+  });
+}
+function bkmRenderTeachers(){
+  const sel=document.getElementById('bkm_teacher'); if(!sel) return;
+  const e=bkSelfEsc, cur=sel.value, q=(document.getElementById('bkm_tq')||{}).value||'';
+  const vipT=new Set(bkmStu?(bkmStu.vip_teachers||[]):[]), ownT=new Set(bkmStu?(bkmStu.owner_teachers||[]):[]);
+  const rank=t=>(bkmKind==='vip'&&vipT.has(t.name))?0:ownT.has(t.name)?1:(vipT.has(t.name)?2:3);
+  const label=t=>t.name+((bkmKind==='vip'&&vipT.has(t.name))||(vipT.has(t.name)&&!ownT.has(t.name))?'（该生VIP老师）':ownT.has(t.name)?'（该生负责老师）':'');
+  const list=bkmTeacherPool().filter(t=>searchMatch(q,[t.name])).sort((a,b)=>rank(a)-rank(b));
+  const top=list.filter(t=>rank(t)<3);
+  sel.innerHTML='<option value="">请选择老师</option>'+list.map(t=>`<option value="${e(t.name)}">${e(label(t))}</option>`).join('');
+  if(cur&&list.some(t=>t.name===cur)) sel.value=cur;
+  else if(!cur&&top.length===1&&!q) sel.value=top[0].name;
 }
 function bkmSetKind(k){
   bkmKind=k;
   document.querySelectorAll('#bkm_kinds .filter-chip').forEach(c=>c.classList.toggle('active',c.dataset.k===k));
+  if(bkmStu) bkmRenderTeachers();
   bkmLoadRooms();
 }
 function bkmSearch(){
@@ -601,8 +633,8 @@ function bkmPickStu(id){
   bkmStu=s;
   document.getElementById('bkm_sel').innerHTML=`已选：<strong style="color:var(--text)">${bkSelfEsc(s.name)}</strong> · ${bkSelfEsc(MAJORS[s.major]||s.major||'')}`;
   document.getElementById('bkm_res').innerHTML=''; document.getElementById('bkm_q').value='';
-  const sel=document.getElementById('bkm_teacher');
-  if(bkmKind==='vip'&&sel&&!sel.value){ const t=(s.vip_teachers||[]).find(n=>[...sel.options].some(o=>o.value===n)); if(t) sel.value=t; }
+  const sel=document.getElementById('bkm_teacher'); if(sel) sel.value='';
+  bkmRenderTeachers();
 }
 async function bkmLoadRooms(){
   const loc=document.getElementById('bkm_loc'); if(!loc) return;
