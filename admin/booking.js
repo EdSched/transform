@@ -586,11 +586,14 @@ function openManualBooking(kind){
   bkmSetKind(bkmKind);
   bkmEnsureTeachers();
 }
+// 加载老师名单（单条 / 批量补录共用）：已有就不重复加载，失败抛错
+async function bkmLoadTeachers(){
+  if(cachedTeachers&&cachedTeachers.length) return;
+  cachedTeachers=await sb('/rest/v1/teachers?select=id,name,managed_by,domains,majors,tags,position,roles&order=name.asc');
+}
 async function bkmEnsureTeachers(){
-  if(!(cachedTeachers&&cachedTeachers.length)){
-    try{ cachedTeachers=await sb('/rest/v1/teachers?select=id,name,managed_by,domains,majors,tags,position,roles&order=name.asc'); }
-    catch(e){ const sel=document.getElementById('bkm_teacher'); if(sel) sel.innerHTML='<option value="">老师加载失败，请关闭后重试</option>'; return; }
-  }
+  try{ await bkmLoadTeachers(); }
+  catch(e){ const sel=document.getElementById('bkm_teacher'); if(sel) sel.innerHTML='<option value="">老师加载失败，请关闭后重试</option>'; return; }
   bkmRenderTeachers();
 }
 // 候选老师：视角内（隶属领域 / 负责领域 / 负责专业任一）＋ 所选学生的 VIP 老师 / 负责老师；管理员全部视角 = 全部
@@ -852,6 +855,11 @@ async function bkbRooms(campus,date,st,en){
 async function bkbValidate(){
   const tok=++bkb.tok;
   bkbRender();
+  if(!(cachedTeachers&&cachedTeachers.length)){   // 老师名单还没加载：先加载再校验，不要全部报「找不到老师」
+    try{ await bkmLoadTeachers(); }
+    catch(e){ if(tok===bkb.tok){ const box=document.getElementById('bkb_preview'); if(box) box.innerHTML='<div style="font-size:12px;color:var(--danger)">老师名单加载失败，请关闭后重试</div>'; } return; }
+    if(tok!==bkb.tok) return;
+  }
   const today=bkbToday(), view=bkClaimStudents(), act=bkbActiveStudents();
   const seen=[];          // 这次粘贴里已确定可保存的行：{stuId,date,st,en,n}
   const taken=[];         // 这次粘贴里已自动/指定的教室：{roomId,date,st,en}
@@ -994,7 +1002,7 @@ function bkbCopyLeft(){
   const d=bkb.done; if(!d||!d.left.length) return;
   bkbCopy(bkbTsv([BKB_COLS.map(c=>c[1]),...d.left.map(l=>bkbRowTsv(l.row))]));
 }
-function openBatchBooking(){
+async function openBatchBooking(){
   if(!bkmCan()) return;
   if(!confirm('补录只用于老师和学生都确实无法自己预约的情况。补录的预约会永久标记「教务补录」。确定继续？')) return;
   bkb={rows:[],common:'',tok:0,roomCache:{},done:null};
@@ -1019,6 +1027,13 @@ function openBatchBooking(){
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('bkbModal').remove()">关闭</button>
     </div></div>`;
   document.body.appendChild(m);
+  if(!(cachedTeachers&&cachedTeachers.length)){
+    const box=document.getElementById('bkb_preview'); if(box) box.innerHTML='<div style="font-size:11px;color:var(--text-3)">老师名单加载中…</div>';
+    try{ await bkmLoadTeachers(); }
+    catch(e){ const b2=document.getElementById('bkb_preview'); if(b2) b2.innerHTML='<div style="font-size:12px;color:var(--danger)">老师名单加载失败，请关闭后重试</div>'; return; }
+    if(!document.getElementById('bkbModal')) return;
+    if(bkb.rows.length) bkbValidate(); else bkbRender();   // 加载期间已经粘贴了内容就重新校验
+  }
 }
 async function bkbSave(){
   const sv=document.getElementById('bkb_save'); if(sv) sv.disabled=true;
