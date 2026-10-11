@@ -110,6 +110,10 @@ function __sbRenew(){
       } catch (e) {}
     }
     if (!t) t = await __sbFreshToken();
+    // 续期也不行（会话已被清掉）：页面若登记了静默重新登录（管理模式用老师 id 重新登录），就用它
+    if (!t && typeof window !== 'undefined' && typeof window.__sbRelogin === 'function') {
+      try { t = await window.__sbRelogin(); } catch (e) {}
+    }
     __SB_TOKEN = t || null;
     return t || null;
   })().finally(() => { __SB_RENEWING = null; __sbCheckStatus(); });
@@ -146,6 +150,8 @@ async function sb(path, method = 'GET', body = null, extra = null) {   // extra�
   };
   // 写入前先确保身份新鲜（过期会自动续期）；读取沿用缓存的 token
   let _tok = _isLoginResolve ? null : (_isWrite ? await __sbFreshToken() : __getSbToken());
+  // 写入时一个有效身份都没有，而页面登记了静默重新登录：先登录再写，不先发一次匿名请求
+  if (_isWrite && !_tok && typeof window !== 'undefined' && typeof window.__sbRelogin === 'function') _tok = await __sbRenew();
   let r = await _send(_tok);
   if (!r.ok) {
     let e = await r.text();

@@ -2239,17 +2239,45 @@ function teacherModeBlock(msg){
   const hint=document.getElementById('loginHint'); if(hint) hint.textContent='管理模式';
   const er=document.getElementById('loginErr'); if(er) er.textContent=msg;
 }
+// 用老师 id 静默登录（<id>@teacher.local / 密码 = id，同 teacher/teacher.js），最多 3 次、退避；成功返回 access_token 并更新 sb() 用的 token
+let __sbReloginP=null;
+function sbTeacherRelogin(c,tid){
+  if(__sbReloginP) return __sbReloginP;
+  __sbReloginP=(async()=>{
+    const email=tid+'@teacher.local';
+    for(let i=0;i<3;i++){
+      try{
+        const { error }=await c.auth.signInWithPassword({ email, password: tid });
+        const ss=(await c.auth.getSession()).data.session;
+        if(!error && ss && ss.user && ss.user.email===email){ __setSbToken(ss.access_token, c); return ss.access_token; }
+      }catch(e){ /* 网络抖动：退避后重试 */ }
+      await new Promise(r=>setTimeout(r,400*(i+1)));
+    }
+    return null;
+  })().finally(()=>{ __sbReloginP=null; });
+  return __sbReloginP;
+}
 async function bootAsTeacher(){
   try{
     if(typeof supabase==='undefined' || !supabase.createClient){ teacherModeBlock('登录组件未加载，请刷新页面重试'); return; }
     const c=window.__teacherAuthClient || supabase.createClient(SB_URL, SB_KEY, { auth:{ storageKey:'sb-teacher', persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });   // 每个页面只建一个会话客户端
-    const { data } = await c.auth.getSession();   // token 过期会在这里自动续期
-    const ses=data && data.session;
-    const m=ses && ses.user && /^(.+)@teacher\.local$/.exec(ses.user.email||'');
-    if(!m){ teacherModeBlock('请从你的老师链接进入'); return; }
-    __setSbStorageKey('sb-teacher');
-    __setSbToken(ses.access_token, c);
     window.__teacherAuthClient=c;   // 「资源管理」嵌入前用它让会话续期
+    __setSbStorageKey('sb-teacher');
+    // 老师 id：链接带的 tid（老师端「管理模式」按钮带来），其次上次进入时记下的
+    let tid=new URLSearchParams(location.search).get('tid')||'';
+    try{ if(!tid) tid=localStorage.getItem('txe_mgr_tid')||''; }catch(e){}
+    let { data } = await c.auth.getSession();   // token 过期会在这里自动续期
+    let ses=data && data.session;
+    let m=ses && ses.user && /^(.+)@teacher\.local$/.exec(ses.user.email||'');
+    if(m) tid=m[1];
+    if(tid){
+      // 会话丢了 / 不是本人：用老师 id 静默重新登录（和老师端打开时一样）；之后写入遇到身份丢失也用它
+      window.__sbRelogin=()=>sbTeacherRelogin(c,tid);
+      if(!m || m[1]!==tid){ const tk=await sbTeacherRelogin(c,tid); if(tk){ ({data}=await c.auth.getSession()); ses=data&&data.session; m=ses && ses.user && /^(.+)@teacher\.local$/.exec(ses.user.email||''); } }
+    }
+    if(!m){ teacherModeBlock('请从你的老师链接进入'); return; }
+    try{ localStorage.setItem('txe_mgr_tid',m[1]); }catch(e){}
+    __setSbToken(ses.access_token, c);
     const rows=await sb(`/rest/v1/teachers?id=eq.${encodeURIComponent(m[1])}&select=*`).catch(()=>[]);
     const t=rows && rows[0];
     if(!t || !managerScopeNonEmpty(t.manage_scope)){ teacherModeBlock(t?'你还不是负责人，没有管理模式。请联系管理员开通':'请从你的老师链接进入'); return; }

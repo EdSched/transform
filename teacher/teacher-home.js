@@ -20,7 +20,7 @@ function homeHeaderBtns() {
   const box = document.getElementById('headerBtns'); if (!box || !teacherData || !teacherData.id) return;
   if (managerScopeNonEmpty(teacherData.manage_scope) && !document.getElementById('mgrModeBtn')) {
     const a = document.createElement('a');
-    a.id = 'mgrModeBtn'; a.href = '../admin/index.html?as=teacher'; a.textContent = '🛠 管理模式';
+    a.id = 'mgrModeBtn'; a.href = '../admin/index.html?as=teacher&tid=' + encodeURIComponent(teacherData.id);   // tid：管理模式会话丢了时用它静默重新登录 a.textContent = '🛠 管理模式';
     a.style.cssText = 'font-size:12px;color:#fff;background:var(--warn);border-radius:4px;padding:6px 12px;text-decoration:none;white-space:nowrap';
     box.appendChild(a);
   }
