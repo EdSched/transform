@@ -2239,17 +2239,45 @@ function teacherModeBlock(msg){
   const hint=document.getElementById('loginHint'); if(hint) hint.textContent='管理模式';
   const er=document.getElementById('loginErr'); if(er) er.textContent=msg;
 }
+// 用老师 id 静默登录（<id>@teacher.local / 密码 = id，同 teacher/teacher.js），最多 3 次、退避；成功返回 access_token 并更新 sb() 用的 token
+let __sbReloginP=null;
+function sbTeacherRelogin(c,tid){
+  if(__sbReloginP) return __sbReloginP;
+  __sbReloginP=(async()=>{
+    const email=tid+'@teacher.local';
+    for(let i=0;i<3;i++){
+      try{
+        const { error }=await c.auth.signInWithPassword({ email, password: tid });
+        const ss=(await c.auth.getSession()).data.session;
+        if(!error && ss && ss.user && ss.user.email===email){ __setSbToken(ss.access_token, c); return ss.access_token; }
+      }catch(e){ /* 网络抖动：退避后重试 */ }
+      await new Promise(r=>setTimeout(r,400*(i+1)));
+    }
+    return null;
+  })().finally(()=>{ __sbReloginP=null; });
+  return __sbReloginP;
+}
 async function bootAsTeacher(){
   try{
     if(typeof supabase==='undefined' || !supabase.createClient){ teacherModeBlock('登录组件未加载，请刷新页面重试'); return; }
-    const c=supabase.createClient(SB_URL, SB_KEY, { auth:{ storageKey:'sb-teacher', persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });
-    const { data } = await c.auth.getSession();   // token 过期会在这里自动续期
-    const ses=data && data.session;
-    const m=ses && ses.user && /^(.+)@teacher\.local$/.exec(ses.user.email||'');
-    if(!m){ teacherModeBlock('请从你的老师链接进入'); return; }
-    __setSbStorageKey('sb-teacher');
-    __setSbToken(ses.access_token, c);
+    const c=window.__teacherAuthClient || supabase.createClient(SB_URL, SB_KEY, { auth:{ storageKey:'sb-teacher', persistSession:true, autoRefreshToken:true, detectSessionInUrl:false } });   // 每个页面只建一个会话客户端
     window.__teacherAuthClient=c;   // 「资源管理」嵌入前用它让会话续期
+    __setSbStorageKey('sb-teacher');
+    // 老师 id：链接带的 tid（老师端「管理模式」按钮带来），其次上次进入时记下的
+    let tid=new URLSearchParams(location.search).get('tid')||'';
+    try{ if(!tid) tid=localStorage.getItem('txe_mgr_tid')||''; }catch(e){}
+    let { data } = await c.auth.getSession();   // token 过期会在这里自动续期
+    let ses=data && data.session;
+    let m=ses && ses.user && /^(.+)@teacher\.local$/.exec(ses.user.email||'');
+    if(m) tid=m[1];
+    if(tid){
+      // 会话丢了 / 不是本人：用老师 id 静默重新登录（和老师端打开时一样）；之后写入遇到身份丢失也用它
+      window.__sbRelogin=()=>sbTeacherRelogin(c,tid);
+      if(!m || m[1]!==tid){ const tk=await sbTeacherRelogin(c,tid); if(tk){ ({data}=await c.auth.getSession()); ses=data&&data.session; m=ses && ses.user && /^(.+)@teacher\.local$/.exec(ses.user.email||''); } }
+    }
+    if(!m){ teacherModeBlock('请从你的老师链接进入'); return; }
+    try{ localStorage.setItem('txe_mgr_tid',m[1]); }catch(e){}
+    __setSbToken(ses.access_token, c);
     const rows=await sb(`/rest/v1/teachers?id=eq.${encodeURIComponent(m[1])}&select=*`).catch(()=>[]);
     const t=rows && rows[0];
     if(!t || !managerScopeNonEmpty(t.manage_scope)){ teacherModeBlock(t?'你还不是负责人，没有管理模式。请联系管理员开通':'请从你的老师链接进入'); return; }
@@ -2263,7 +2291,28 @@ async function bootAsTeacher(){
     if(tag){ const t0=scopeSummary(VIEW_SCOPE); tag.textContent='管理模式 · '+t.name+' · '+t0; tag.title=tag.textContent; }
     const lo=document.querySelector('.topbar button[onclick="doLogout()"]'); 
     if(lo){ lo.textContent='← 回到老师端'; lo.setAttribute('onclick','backToTeacherPage()'); }
+    sbDotInit();
   }catch(e){ console.warn('管理模式进入失败:', e); teacherModeBlock('进入失败：'+(e&&e.message||e)); }
+}
+// 管理模式顶栏小圆点：身份有效=绿，正在续期=黄，没有身份=红（点红点：先试着续期，不行就提示并可回老师端重新进入）
+const SB_DOT_COLOR={ok:'#2a7a3a',refreshing:'#d4a017',none:'#c0392b'};
+const SB_DOT_TITLE={ok:'登录身份有效',refreshing:'正在续期登录身份…',none:'没有登录身份，点此处理'};
+function sbDotPaint(st){
+  const d=document.getElementById('sbDot'); if(!d) return;
+  d.style.background=SB_DOT_COLOR[st]||SB_DOT_COLOR.none; d.title=SB_DOT_TITLE[st]||''; d.style.cursor=st==='none'?'pointer':'default';
+}
+function sbDotInit(){
+  const tag=document.getElementById('domainTag'); if(!tag||document.getElementById('sbDot')) return;
+  tag.insertAdjacentHTML('afterend','<span id="sbDot" onclick="sbDotClick()" style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-left:6px;vertical-align:middle"></span>');
+  window.addEventListener('sbstatus',e=>sbDotPaint(e.detail));
+  setInterval(()=>{ if(typeof __sbCheckStatus==='function') sbDotPaint(__sbCheckStatus()); },30000);
+  sbDotPaint(typeof __sbCheckStatus==='function'?__sbCheckStatus():'ok');
+}
+async function sbDotClick(){
+  if(typeof __sbCheckStatus==='function' && __sbCheckStatus()!=='none') return;
+  const t=await __sbRenew();
+  if(t){ sbDotPaint('ok'); return; }
+  if(confirm(__sbIdentityLostMsg()+'\n\n现在回到老师端重新进入吗？')) backToTeacherPage();
 }
 function backToTeacherPage(){
   const id=ACCESS_KEY && ACCESS_KEY._asTeacher && ACCESS_KEY._asTeacher.id;

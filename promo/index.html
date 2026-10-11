@@ -71,7 +71,7 @@ body { font-family:'DM Mono','Noto Serif SC',monospace; background:var(--bg); co
 </div>
 <div class="wrap" id="wrap"><div class="empty-page">加载中…</div></div>
 
-<script src="../shared/supabase.js"></script>
+<script src="../shared/supabase.js?v=20261102"></script>
 <script>
 const PROMO_MAJORS = { shakai:'社会学', shinpan:'新闻传播学', fukushi:'社会福祉学', keiei:'経営学', keizai:'経済学', nihongo:'日本语教育', hyosho:'表象文化・文学・哲学', seiji:'政治学', toyo:'東洋史', bunka:'文化人类学', mot:'MOT', tokei:'統計・計量' };
 let myGroupKey = ['shakai','shinpan','fukushi'].includes(params0('major') || 'shakai') ? 'shakai_group' : '';   // 这个专业所在的分组（读到数据库后以 majors.group_key 为准；读不到时退回社会人文）

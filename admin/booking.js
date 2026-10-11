@@ -544,7 +544,7 @@ async function saveAdminVipReschedule(bookingId) {
 // ══════════════════════════════════
 let bkmKind='daily', bkmStu=null;
 function bkmCan(){ return bkIsAdmin()||!!(typeof ACCESS_KEY!=='undefined'&&ACCESS_KEY&&ACCESS_KEY._asTeacher&&ACCESS_KEY._asTeacher.position==='lead'); }
-function bkmBtnHtml(kind){ return bkmCan()?`<button class="btn btn-outline btn-sm" style="font-size:10px;color:var(--text-3);border-color:var(--border-light)" onclick="openManualBooking('${kind}')">补录预约</button>`:''; }
+function bkmBtnHtml(kind){ return bkmCan()?`<button class="btn btn-outline btn-sm" style="font-size:10px;color:var(--text-3);border-color:var(--border-light)" onclick="openManualBooking('${kind}')">补录预约</button><button class="btn btn-outline btn-sm" style="font-size:10px;color:var(--text-3);border-color:var(--border-light)" onclick="openBatchBooking()">批量补录</button>`:''; }
 function bkmOffline(loc){ return !!loc&&loc.startsWith('offline'); }
 function openManualBooking(kind){
   if(!bkmCan()) return;
@@ -594,8 +594,9 @@ async function bkmEnsureTeachers(){
   bkmRenderTeachers();
 }
 // 候选老师：视角内（隶属领域 / 负责领域 / 负责专业任一）＋ 所选学生的 VIP 老师 / 负责老师；管理员全部视角 = 全部
-function bkmTeacherPool(){
-  const rel=bkmStu?new Set([...(bkmStu.vip_teachers||[]),...(bkmStu.owner_teachers||[])]):new Set();
+function bkmTeacherPool(stu){
+  if(stu===undefined) stu=bkmStu;
+  const rel=stu?new Set([...(stu.vip_teachers||[]),...(stu.owner_teachers||[])]):new Set();
   const isDomainAccount=typeof ACCESS_KEY!=='undefined'&&ACCESS_KEY&&!ACCESS_KEY.invalid&&!ACCESS_KEY.is_admin;
   return (cachedTeachers||[]).filter(t=>{
     if(rel.has(t.name)) return true;
@@ -669,10 +670,22 @@ async function saveManualBooking(){
   const roomId=(vip&&off)?g('bkm_room'):'';
   if(vip&&off&&!roomId){ alert('VIP 线下课请选择教室'); return; }
   const room=roomId?(window.__bkmRooms||[]).find(r=>String(r.id)===String(roomId)):null;
-  const who=bkSelfWho(), now=new Date().toISOString();
   const btn=document.getElementById('bkm_save'); if(btn) btn.disabled=true;
-  let schedId=null;
   try{
+    await bkmInsert({stu,teacher,kind:bkmKind,date,st,en,loc,reason,room,meeting:g('bkm_meeting').trim()});
+    document.getElementById('bkmModal').remove();
+    bkSection=vip?'vip':'regular';
+    renderBookingPage(document.getElementById('mainContent'));
+  }catch(e){ alert('补录失败：'+bkvErr(e)); if(btn) btn.disabled=false; }
+}
+// 单条 / 批量补录共用：建预约本身（VIP 线下有教室时同时写排课系统，预约没建成就回滚教室）
+function bkmNewId(){ let n=Date.now(); const used=new Set((cachedBookings||[]).map(b=>String(b.id))); while(used.has(String(n))) n++; return String(n); }
+async function bkmInsert(p){
+  const {stu,teacher,kind,date,st,en,loc,reason,room,meeting}=p;
+  const vip=kind==='vip';
+  const who=bkSelfWho(), now=new Date().toISOString();
+  let schedId=null;
+  {
     if(room){
       const rec={room_id:room.id,kind:'vip',title:'VIP·'+((typeof majorLabel==='function'&&majorLabel(stu.major))||stu.name),
         user_name:teacher,student_name:stu.name,recurrence:'once',weekday:bkvWeekday(date),booking_date:date,
@@ -688,15 +701,15 @@ async function saveManualBooking(){
     }
     const mins=(Number(en.slice(0,2))*60+Number(en.slice(3,5)))-(Number(st.slice(0,2))*60+Number(st.slice(3,5)));
     const row={
-      id:Date.now().toString(), name:stu.name, major:stu.major||'', student_id:stu.id,
-      type:bkmKind, slot_id:null, slot_date:date, slot_time_range:`${st}–${en}`,
+      id:bkmNewId(), name:stu.name, major:stu.major||'', student_id:stu.id,
+      type:kind, slot_id:null, slot_date:date, slot_time_range:`${st}–${en}`,
       assigned_teacher:teacher, location:loc, status:'confirmed', needs:'',
       manual_entry:true, manual_reason:reason, manual_by:who
     };
     if(vip){
       row.duration=null;
       if(room){ row.vip_room=room.name; row.sched_booking_id=schedId; }
-      if(loc==='online'&&g('bkm_meeting').trim()) row.vip_meeting_url=g('bkm_meeting').trim();
+      if(loc==='online'&&meeting) row.vip_meeting_url=meeting;
     }else{
       row.duration=mins; row.urgency='low'; row.actual_time=`${date}T${st}`;   // 面谈时间（和老师确认预约时填的一样），工作记录按它计算
     }
@@ -706,10 +719,325 @@ async function saveManualBooking(){
       throw e2;
     }
     cachedBookings.push(row);
-    document.getElementById('bkmModal').remove();
-    bkSection=vip?'vip':'regular';
-    renderBookingPage(document.getElementById('mainContent'));
-  }catch(e){ alert('补录失败：'+bkvErr(e)); if(btn) btn.disabled=false; }
+    return row;
+  }
+}
+
+// ══════════════════════════════════
+// 批量补录：复制表头到 Excel 填写 → 整块粘贴回来 → 预览校验 → 保存（每行保存逻辑同单条补录 bkmInsert）
+// ══════════════════════════════════
+const BKB_COLS=[
+  ['type','类型',['类型','种类','预约类型']],
+  ['stu','学生姓名',['学生姓名','学生','姓名','名前']],
+  ['teacher','老师',['老师','教师','担当']],
+  ['date','日期',['日期','日','预约日期']],
+  ['start','开始',['开始','开始时间','起始']],
+  ['end','结束',['结束','结束时间','终了']],
+  ['loc','上课方式',['上课方式','方式','校区','上课方式与校区']],
+  ['room','教室',['教室']],
+  ['reason','补录原因',['补录原因','原因','补录理由']]
+];
+const BKB_KIND_LABEL={daily:'日常学习',plan:'计划书',mock:'模拟面试',vip:'VIP'};
+const BKB_LOC_LABEL={online:'线上',offline_takadanobaba:'线下·高马',offline_ichigaya:'线下·市谷'};
+let bkb={rows:[],common:'',tok:0,roomCache:{},done:null};
+function bkbTsv(rows){ return rows.map(r=>r.map(c=>String(c==null?'':c).replace(/[\t\r\n]+/g,' ')).join('\t')).join('\n'); }
+function bkbHeaderTsv(){ return BKB_COLS.map(c=>c[1]).join('\t'); }
+function bkbCopy(t){
+  const fb=()=>{ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); alert('已复制'); }catch(_){ alert('复制失败，请手动选中复制'); } ta.remove(); };
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(()=>alert('已复制'),fb); else fb();
+}
+function bkbCopyHeader(){ bkbCopy(bkbHeaderTsv()); }
+function bkbTemplate(){
+  if(typeof XLSX==='undefined'){ alert('Excel 组件未加载，请刷新页面'); return; }
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet([BKB_COLS.map(c=>c[1]),
+    ['日常学习','张三','李老师','2026/10/1','14:00','15:00','线上','','老师和学生都无法自己预约'],
+    ['VIP','李四','王老师','2026/10/2','14:00','16:00','线下·高马','','']]);
+  ws['!cols']=[10,12,12,12,8,8,12,10,28].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb,ws,'补录预约');
+  const ins=XLSX.utils.aoa_to_sheet([['列','必填','写法'],
+    ['类型','必填','日常学习 / 计划书 / 模拟面试 / VIP'],
+    ['学生姓名','必填','和学生档案一致'],
+    ['老师','必填','和老师名单一致'],
+    ['日期','必填','2026/10/1、2026-10-01、10/1（默认今年）都可以'],
+    ['开始','必填','14:00（也可以在这一格写 14:00-16:00，结束留空）'],
+    ['结束','必填','16:00'],
+    ['上课方式','必填','线上 / 线下·高马 / 线下·市谷'],
+    ['教室','','VIP 线下才需要；可留空，系统自动安排'],
+    ['补录原因','','每行单独的原因；空着就用弹窗里统一填的原因']]);
+  ins['!cols']=[{wch:10},{wch:8},{wch:60}];
+  XLSX.utils.book_append_sheet(wb,ins,'填写说明');
+  XLSX.writeFile(wb,'批量补录预约模板.xlsx');
+}
+// ── 解析 ──
+function bkbN(v){ return String(v==null?'':v).normalize('NFKC').trim(); }
+function bkbIso(y,m,d){ const dt=new Date(Date.UTC(y,m-1,d)); if(dt.getUTCFullYear()!==y||dt.getUTCMonth()!==m-1||dt.getUTCDate()!==d) return ''; return dt.toISOString().slice(0,10); }
+function bkbToday(){ const d=new Date(); return bkbIso(d.getFullYear(),d.getMonth()+1,d.getDate()); }
+function bkbParseDate(v){
+  const t=bkbN(v); if(!t) return '';
+  let m;
+  if(/^\d{5}(\.\d+)?$/.test(t)){ const dt=new Date(Date.UTC(1899,11,30)+Math.floor(Number(t))*86400000); return dt.toISOString().slice(0,10); }   // Excel 序列号
+  if((m=t.match(/^(\d{4})[-\/.年](\d{1,2})[-\/.月](\d{1,2})日?$/))) return bkbIso(+m[1],+m[2],+m[3]);
+  if((m=t.match(/^(\d{1,2})[-\/.月](\d{1,2})日?$/))) return bkbIso(new Date().getFullYear(),+m[1],+m[2]);
+  return '';
+}
+function bkbParseTime(v){
+  const t=bkbN(v); if(!t) return '';
+  let m;
+  if(/^0?\.\d+$/.test(t)||/^0\.\d+$/.test(t)){ const mins=Math.round(Number(t)*1440); return String(Math.floor(mins/60)%24).padStart(2,'0')+':'+String(mins%60).padStart(2,'0'); }   // Excel 时间小数
+  if((m=t.match(/^(\d{1,2})[:：时点](\d{2})?分?(?::\d{2})?$/))){ const h=+m[1], mi=m[2]?+m[2]:0; if(h>23||mi>59) return ''; return String(h).padStart(2,'0')+':'+String(mi).padStart(2,'0'); }
+  if((m=t.match(/^(\d{2})(\d{2})$/))){ const h=+m[1], mi=+m[2]; if(h>23||mi>59) return ''; return m[1]+':'+m[2]; }
+  return '';
+}
+function bkbKind(v){
+  const t=bkbN(v).toLowerCase();
+  if(!t) return '';
+  if(t==='vip'||t.startsWith('vip')) return 'vip';
+  if(/日常|面谈|daily/.test(t)) return 'daily';
+  if(/计划书|plan/.test(t)) return 'plan';
+  if(/模拟|mock/.test(t)) return 'mock';
+  return '';
+}
+function bkbLoc(v){
+  const t=bkbN(v).replace(/\s+/g,'');
+  if(!t) return '';
+  if(/^(线上|online|网课|远程)$/i.test(t)) return 'online';
+  if(/offline_(takadanobaba|ichigaya)/.test(t)) return t.match(/offline_(takadanobaba|ichigaya)/)[0];
+  if(/线下|到校|面对面/.test(t)){
+    if(/高马|高田|takadanobaba/i.test(t)) return 'offline_takadanobaba';
+    if(/市谷|ichigaya/i.test(t)) return 'offline_ichigaya';
+  }
+  return '';
+}
+function bkbParseText(text){
+  const lines=String(text||'').replace(/\r/g,'').split('\n').map(l=>l.split('\t'));
+  let rows=lines.filter(l=>l.some(c=>bkbN(c)));
+  if(!rows.length) return [];
+  let map=BKB_COLS.map((_,i)=>i);   // 没有表头就按固定顺序
+  const first=rows[0].map(c=>bkbN(c));
+  const hits=first.map(c=>BKB_COLS.findIndex(col=>col[2].some(a=>bkbN(a)===c)));
+  if(hits.filter(h=>h>=0).length>=3){
+    map=BKB_COLS.map((col,i)=>hits.indexOf(i));   // map[i] = 该字段所在的列号（-1 = 没这列）
+    rows=rows.slice(1);
+  }
+  return rows.map(r=>{
+    const o={}; BKB_COLS.forEach((col,i)=>{ o[col[0]]=map[i]>=0?bkbN(r[map[i]]):''; });
+    o.stuId=''; o.skip=false; return o;
+  });
+}
+function bkbOnPaste(){ bkb.done=null; bkb.rows=bkbParseText(document.getElementById('bkb_text').value); bkbValidate(); }
+function bkbOnFile(inp){
+  const f=inp.files&&inp.files[0]; if(!f) return;
+  if(typeof XLSX==='undefined'){ alert('Excel 组件未加载，请刷新页面'); return; }
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const wb=XLSX.read(rd.result,{type:'array'}), ws=wb.Sheets[wb.SheetNames[0]];
+      const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+      document.getElementById('bkb_text').value=bkbTsv(aoa);
+      bkbOnPaste();
+    }catch(e){ alert('读取 Excel 失败：'+e.message); }
+    inp.value='';
+  };
+  rd.readAsArrayBuffer(f);
+}
+// ── 校验 ──
+function bkbActiveStudents(){ return (cachedStudents||[]).filter(s=>s.status==='active'||!s.status); }
+function bkbTimeRange(b){ const tp=bkvTimeParts(b.slot_time_range); return tp; }
+async function bkbRooms(campus,date,st,en){
+  const k=[campus,date,st,en].join('|');
+  if(!bkb.roomCache[k]) bkb.roomCache[k]=bkvLoadRooms(campus,date,st,en);
+  return bkb.roomCache[k];
+}
+async function bkbValidate(){
+  const tok=++bkb.tok;
+  bkbRender();
+  const today=bkbToday(), view=bkClaimStudents(), act=bkbActiveStudents();
+  const seen=[];          // 这次粘贴里已确定可保存的行：{stuId,date,st,en,n}
+  const taken=[];         // 这次粘贴里已自动/指定的教室：{roomId,date,st,en}
+  for(let i=0;i<bkb.rows.length;i++){
+    const r=bkb.rows[i], errs=[], warns=[], x={};
+    r._=x; x.errs=errs; x.warns=warns; x.cands=[];
+    if(r.skip){ continue; }
+    x.kind=bkbKind(r.type); if(!x.kind) errs.push('类型认不出（日常学习 / 计划书 / 模拟面试 / VIP）');
+    // 学生
+    const nm=bkbN(r.stu);
+    if(!nm) errs.push('缺少学生姓名');
+    else{
+      const inView=view.filter(s=>s.name===nm&&(s.status==='active'||!s.status));
+      x.cands=inView;
+      if(r.stuId){ x.stu=inView.find(s=>s.id===r.stuId); }
+      else if(inView.length===1) x.stu=inView[0];
+      if(!x.stu){
+        if(inView.length>1) errs.push('同名学生有 '+inView.length+' 位，请在行内选择');
+        else if(act.some(s=>s.name===nm)) errs.push('该学生不在当前视角范围内');
+        else errs.push('找不到在籍学生「'+nm+'」');
+      }
+    }
+    // 老师
+    const tn=bkbN(r.teacher);
+    if(!tn) errs.push('缺少老师');
+    else if(!bkmTeacherPool(x.stu||null).some(t=>t.name===tn)) errs.push('找不到老师「'+tn+'」（需在当前视角内，或是该生的 VIP / 负责老师）');
+    // 日期时间
+    x.date=bkbParseDate(r.date); if(!x.date) errs.push(bkbN(r.date)?'日期格式认不出':'缺少日期');
+    let sRaw=r.start, eRaw=r.end;
+    if(!bkbN(eRaw)){ const m=bkbN(sRaw).match(/^(.+?)\s*[-–—~～]\s*(.+)$/); if(m){ sRaw=m[1]; eRaw=m[2]; } }
+    x.st=bkbParseTime(sRaw); x.en=bkbParseTime(eRaw);
+    if(!x.st) errs.push(bkbN(sRaw)?'开始时间认不出':'缺少开始时间');
+    if(!x.en) errs.push(bkbN(eRaw)?'结束时间认不出':'缺少结束时间');
+    if(x.st&&x.en&&x.st>=x.en) errs.push('结束必须晚于开始');
+    x.loc=bkbLoc(r.loc); if(!x.loc) errs.push(bkbN(r.loc)?'上课方式认不出（线上 / 线下·高马 / 线下·市谷）':'缺少上课方式');
+    x.reason=bkbN(r.reason)||bkbN(bkb.common); if(!x.reason) errs.push('缺少补录原因（行内填或填统一原因）');
+    // 重复
+    const okTime=x.date&&x.st&&x.en&&x.st<x.en;
+    if(x.stu&&okTime){
+      const sys=(cachedBookings||[]).find(b=>b.student_id===x.stu.id&&b.status!=='cancelled'&&b.slot_date===x.date&&(()=>{ const tp=bkvTimeParts(b.slot_time_range); return tp&&x.st<tp[1]&&tp[0]<x.en; })());
+      if(sys) errs.push('已有预约：'+(BKB_KIND_LABEL[sys.type]||sys.type||'')+' '+(sys.slot_time_range||'')+(sys.assigned_teacher?' · '+sys.assigned_teacher:''));
+      else{
+        const dup=seen.find(o=>o.stuId===x.stu.id&&o.date===x.date&&x.st<o.en&&o.st<x.en);
+        if(dup) errs.push('已有预约：本次粘贴第 '+dup.n+' 行（同一学生时间重叠）');
+      }
+    }
+    // 教室：VIP · 线下 · 今天及以后
+    x.room=null;
+    if(x.kind==='vip'&&bkmOffline(x.loc)&&okTime){
+      if(x.date<today){ if(bkbN(r.room)) warns.push('过去的日期不占教室，教室已忽略'); }
+      else{
+        try{
+          const rs=await bkbRooms(bkvCampus(x.loc),x.date,x.st,x.en);
+          if(tok!==bkb.tok) return;
+          const free=rr=>!rr.conf.length&&!taken.some(t=>String(t.roomId)===String(rr.id)&&t.date===x.date&&x.st<t.en&&t.st<x.en);
+          const want=bkbN(r.room);
+          if(want){
+            const hit=[...rs.vip,...rs.big].find(rr=>rr.name===want)||[...rs.vip,...rs.big].find(rr=>rr.name.includes(want));
+            if(!hit) errs.push('找不到教室「'+want+'」（'+bkvCampus(x.loc)+'校区）');
+            else if(!free(hit)) errs.push('教室「'+hit.name+'」该时段已被占用');
+            else x.room=hit;
+          }else{
+            x.room=rs.vip.find(free)||rs.big.find(free)||null;
+            if(!x.room) warns.push('没有空教室，保存后不占教室，请老师在老师端预约教室');
+          }
+        }catch(e){ if(tok!==bkb.tok) return; errs.push('教室查询失败：'+bkvErr(e)); }
+      }
+    }
+    if(!errs.length&&x.stu){
+      seen.push({stuId:x.stu.id,date:x.date,st:x.st,en:x.en,n:i+1});
+      if(x.room) taken.push({roomId:x.room.id,date:x.date,st:x.st,en:x.en});
+    }
+  }
+  if(tok!==bkb.tok) return;
+  bkbRender();
+}
+// ── 界面 ──
+function bkbSet(i,f,v){ const r=bkb.rows[i]; if(!r) return; r[f]=v; if(f==='stu') r.stuId=''; if(f==='stu'||f==='teacher'||f==='date'||f==='start'||f==='end'||f==='loc'||f==='type'||f==='room'||f==='reason') bkbValidate(); }
+function bkbPickStu(i,id){ bkb.rows[i].stuId=id; bkbValidate(); }
+function bkbSkip(i){ const r=bkb.rows[i]; r.skip=!r.skip; if(!r.skip) r._=null; bkbValidate(); }
+function bkbCommon(v){ bkb.common=v; bkbValidate(); }
+function bkbStat(r){
+  if(r.skip) return 'skip';
+  if(!r._) return 'wait';
+  return r._.errs.length?'err':(r._.warns.length?'warn':'ok');
+}
+function bkbSummary(){
+  const c={ok:0,warn:0,err:0,skip:0}; bkb.rows.forEach(r=>{ const s=bkbStat(r); if(c[s]!=null) c[s]++; });
+  return c;
+}
+function bkbRender(){
+  const box=document.getElementById('bkb_preview'); if(!box) return;
+  if(bkb.done){
+    const d=bkb.done;
+    box.innerHTML=`<div style="font-size:13px;margin-bottom:8px">已保存 <strong>${d.saved}</strong> 条${d.left.length?`；以下 <strong style="color:var(--danger)">${d.left.length}</strong> 条未保存`:''}</div>`
+      +(d.left.length?`<div style="margin-bottom:8px"><button class="btn btn-outline btn-sm" onclick="bkbCopyLeft()">复制未保存的行</button></div>
+      <div style="overflow-x:auto"><table class="data-table" style="font-size:11px;width:100%"><tbody>${d.left.map(l=>`<tr><td style="white-space:nowrap">${bkSelfEsc(l.row.stu)}</td><td style="white-space:nowrap">${bkSelfEsc(l.row.date)} ${bkSelfEsc(l.row.start)}</td><td style="color:var(--danger)">${bkSelfEsc(l.why)}</td></tr>`).join('')}</tbody></table></div>`:'');
+    const sv=document.getElementById('bkb_save'); if(sv) sv.style.display='none';
+    return;
+  }
+  const rows=bkb.rows;
+  if(!rows.length){ box.innerHTML='<div style="font-size:11px;color:var(--text-3)">还没有数据</div>'; const sv=document.getElementById('bkb_save'); if(sv){ sv.disabled=true; sv.textContent='保存'; } return; }
+  const e=bkSelfEsc, c=bkbSummary(), ok=c.ok+c.warn;
+  const busy=rows.some(r=>!r.skip&&!r._);
+  const stBadge=r=>{ const s=bkbStat(r); return s==='ok'?'<span style="color:#2a7a3a;font-weight:600">✓ 可保存</span>':s==='warn'?'<span style="color:#a0521a;font-weight:600">⚠ 需确认</span>':s==='err'?'<span style="color:var(--danger);font-weight:600">✗ 有错误</span>':s==='skip'?'<span style="color:var(--text-3)">已跳过</span>':'<span style="color:var(--text-3)">校验中…</span>'; };
+  const inp=(i,f,v,w,type)=>`<input ${type?`type="${type}" `:''}value="${e(v)}" style="width:${w}px;font-size:11px;padding:2px 4px" onchange="bkbSet(${i},'${f}',this.value)">`;
+  const sel=(i,f,opts,cur,w)=>`<select style="width:${w}px;font-size:11px;padding:2px" onchange="bkbSet(${i},'${f}',this.value)">${opts.map(([k,l])=>`<option value="${e(k)}"${k===cur?' selected':''}>${e(l)}</option>`).join('')}</select>`;
+  box.innerHTML=`<div style="font-size:12px;margin-bottom:6px">共 ${rows.length} 行：可保存 <strong>${c.ok}</strong> · 需确认 <strong>${c.warn}</strong> · 有错误 <strong style="color:var(--danger)">${c.err}</strong>${c.skip?` · 已跳过 ${c.skip}`:''}</div>
+  <div style="overflow-x:auto;max-height:46vh;overflow-y:auto;border:1px solid var(--border-light)"><table class="data-table" style="font-size:11px;min-width:980px;width:100%"><thead><tr><th>#</th><th>状态</th><th>类型</th><th>学生</th><th>老师</th><th>日期</th><th>开始</th><th>结束</th><th>上课方式</th><th>教室</th><th>原因</th><th></th></tr></thead><tbody>
+  ${rows.map((r,i)=>{
+    const x=r._||{errs:[],warns:[],cands:[]}, s=bkbStat(r);
+    const kindK=x.kind||bkbKind(r.type), locK=x.loc||bkbLoc(r.loc);
+    const stuCell=(x.cands&&x.cands.length>1)
+      ? `<select style="width:130px;font-size:11px;padding:2px" onchange="bkbPickStu(${i},this.value)"><option value="">请选择…</option>${x.cands.map(t=>`<option value="${e(t.id)}"${r.stuId===t.id?' selected':''}>${e(t.name+' · '+(MAJORS[t.major]||t.major||'')+(t.student_code?'':''))}</option>`).join('')}</select>`
+      : inp(i,'stu',r.stu,90);
+    const pool=bkmTeacherPool(x.stu||null).map(t=>t.name);
+    const tn=bkbN(r.teacher);
+    const tOpts=[['',tn&&!pool.includes(tn)?'（'+tn+' 未找到）':'请选择'],...pool.map(n=>[n,n])];
+    const msg=[...x.errs.map(m=>`<div style="color:var(--danger)">${e(m)}</div>`),...x.warns.map(m=>`<div style="color:#a0521a">${e(m)}</div>`)].join('')
+      +(x.room?`<div style="color:var(--text-3)">教室：${e(x.room.name)}</div>`:'');
+    return `<tr style="${s==='err'?'background:#fdecec':s==='skip'?'opacity:.5':''}">
+      <td>${i+1}</td><td style="white-space:nowrap">${stBadge(r)}</td>
+      <td>${sel(i,'type',[['',kindK?'':(bkbN(r.type)?'（'+bkbN(r.type)+'）':'请选择')],...Object.entries(BKB_KIND_LABEL)].filter((o,j)=>j>0||!kindK),kindK,84)}</td>
+      <td>${stuCell}</td>
+      <td>${sel(i,'teacher',tOpts,pool.includes(tn)?tn:'',110)}</td>
+      <td>${inp(i,'date',x.date||r.date,104,x.date?'date':'')}</td>
+      <td>${inp(i,'start',x.st||r.start,62)}</td><td>${inp(i,'end',x.en||r.end,62)}</td>
+      <td>${sel(i,'loc',[['',locK?'':(bkbN(r.loc)?'（'+bkbN(r.loc)+'）':'请选择')],...Object.entries(BKB_LOC_LABEL)].filter((o,j)=>j>0||!locK),locK,96)}</td>
+      <td>${inp(i,'room',r.room,70)}</td>
+      <td>${inp(i,'reason',r.reason,110)}</td>
+      <td><span style="cursor:pointer;color:var(--text-3);white-space:nowrap" onclick="bkbSkip(${i})">${r.skip?'恢复':'跳过'}</span></td>
+    </tr>${msg?`<tr style="${s==='err'?'background:#fdecec':''}"><td></td><td colspan="11" style="font-size:11px;padding-top:0">${msg}</td></tr>`:''}`;
+  }).join('')}
+  </tbody></table></div>`;
+  const sv=document.getElementById('bkb_save');
+  if(sv){ sv.style.display=''; sv.disabled=busy||!ok; sv.textContent=ok?`保存 ${ok} 条`:'保存'; }
+}
+function bkbRowTsv(r){ return BKB_COLS.map(c=>r[c[0]]); }
+function bkbCopyLeft(){
+  const d=bkb.done; if(!d||!d.left.length) return;
+  bkbCopy(bkbTsv([BKB_COLS.map(c=>c[1]),...d.left.map(l=>bkbRowTsv(l.row))]));
+}
+function openBatchBooking(){
+  if(!bkmCan()) return;
+  if(!confirm('补录只用于老师和学生都确实无法自己预约的情况。补录的预约会永久标记「教务补录」。确定继续？')) return;
+  bkb={rows:[],common:'',tok:0,roomCache:{},done:null};
+  document.getElementById('bkbModal')?.remove();
+  const m=document.createElement('div');
+  m.id='bkbModal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  m.innerHTML=`<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:1100px;width:100%;max-height:92vh;overflow-y:auto">
+    <div style="font-size:13px;font-weight:600;margin-bottom:4px">批量补录预约</div>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">点「复制表头」，粘到 Excel 第一行，一行填一条预约；填完整块选中（含表头）复制，粘到下面的框里。</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn btn-outline btn-sm" onclick="bkbCopyHeader()">复制表头</button>
+      <button class="btn btn-outline btn-sm" onclick="bkbTemplate()">下载 Excel 模板</button>
+      <label class="btn btn-outline btn-sm" style="cursor:pointer">上传 Excel 文件<input type="file" accept=".xlsx,.xls" style="display:none" onchange="bkbOnFile(this)"></label>
+    </div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">列顺序：${BKB_COLS.map(c=>c[1]).join(' · ')}</div>
+    <textarea id="bkb_text" rows="5" placeholder="把 Excel 里填好的内容整块粘贴到这里" style="width:100%;font-size:11px;white-space:pre;overflow:auto" oninput="clearTimeout(window.__bkbT);window.__bkbT=setTimeout(bkbOnPaste,250)"></textarea>
+    <div class="form-group" style="margin-top:8px"><label class="form-label">统一补录原因（必填，除非每行都填了原因）</label><input id="bkb_common" placeholder="为什么老师和学生都无法自己预约" onchange="bkbCommon(this.value.trim())"></div>
+    <div id="bkb_preview" style="margin-top:8px"><div style="font-size:11px;color:var(--text-3)">还没有数据</div></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-primary btn-sm" id="bkb_save" onclick="bkbSave()" disabled>保存</button>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('bkbModal').remove()">关闭</button>
+    </div></div>`;
+  document.body.appendChild(m);
+}
+async function bkbSave(){
+  const sv=document.getElementById('bkb_save'); if(sv) sv.disabled=true;
+  bkb.roomCache={};                 // 保存前重新查教室占用，避免用旧结果
+  await bkbValidate();
+  const left=[]; let saved=0;
+  for(const r of bkb.rows){
+    if(r.skip){ left.push({row:r,why:'已跳过'}); continue; }
+    const x=r._;
+    if(!x||x.errs.length){ left.push({row:r,why:x?x.errs.join('；'):'未校验'}); continue; }
+    try{
+      await bkmInsert({stu:x.stu,teacher:bkbN(r.teacher),kind:x.kind,date:x.date,st:x.st,en:x.en,loc:x.loc,reason:x.reason,room:x.room,meeting:''});
+      saved++;
+    }catch(e){ left.push({row:r,why:'保存失败：'+bkvErr(e)}); }
+  }
+  bkb.roomCache={};
+  bkb.done={saved,left};
+  bkbRender();
+  if(saved) renderBookingPage(document.getElementById('mainContent'));
 }
 
 function renderVipBookingCard(b){
