@@ -4,22 +4,14 @@
 let stMajorFilter='all',stSearch='',stStatus='active';
 let stVipFilter='all'; // 'all' | 'vip_only'(VIP+大课VIP都含) | 'vip_exclusive'(仅VIP不含大课)
 
-// 中文输入法兼容：组合输入（拼音候选未确认）期间不重新渲染，避免打断输入法状态导致打不出字
-function handleStSearchInput(el){
-  if(el.dataset.composing==='1') return; // 正在用输入法组合中，先不处理
-  stSearch=el.value;
-  const cursorPos=el.selectionStart;
-  renderStudentsPage(document.getElementById('mainContent'));
-  const newEl=document.getElementById('st_search_input');
-  if(newEl){ newEl.focus(); newEl.setSelectionRange(cursorPos,cursorPos); }
+// 搜索：输入法组合 / 防抖由 searchBox 处理；整页重画后把原来的搜索框换回去（不丢光标、不打断输入法）
+function handleStSearchInput(q){
+  stSearch=q;
+  searchRerender('st_search_input',()=>renderStudentsPage(document.getElementById('mainContent')));
 }
-function handleProgressSearchInput(el){
-  if(el.dataset.composing==='1') return;
-  progressStudentFilter=el.value;progressShown=30;
-  const cursorPos=el.selectionStart;
-  renderProgressPage(document.getElementById('mainContent'));
-  const newEl=document.getElementById('progress_search_input');
-  if(newEl){ newEl.focus(); newEl.setSelectionRange(cursorPos,cursorPos); }
+function handleProgressSearchInput(q){
+  progressStudentFilter=q;progressShown=30;
+  searchRerender('progress_search_input',()=>renderProgressPage(document.getElementById('mainContent')));
 }
 let speEdits=null; // 老师修改记录（未处理）
 
@@ -73,7 +65,7 @@ function renderStudentsPage(mc){
     ${[['all','全部学生'],['vip_only','含VIP（含大课+VIP）'],['vip_exclusive','仅VIP（不含大课）']].map(([v,l])=>`<div class="filter-chip${stVipFilter===v?' active':''}" onclick="setStVip('${v}',this)">${l}</div>`).join('')}
   </div>
   ${typeof stClassFilterHtml==='function'?stClassFilterHtml():''}
-  <div class="search-bar"><input id="st_search_input" placeholder="搜索姓名 / 学校 / 备注…" value="${stSearch}" oninput="handleStSearchInput(this)" oncompositionstart="this.dataset.composing='1'" oncompositionend="this.dataset.composing='';handleStSearchInput(this)"></div>
+  <div class="search-bar"><input id="st_search_input" placeholder="搜索姓名（汉字 / 拼音首字母）/ 专业 / 学校 / 备注…" value="${stEsc(stSearch)}" oninput="searchBox(this,handleStSearchInput)"></div>
   ${sttHtml('admin',list,{
     mode:'admin',select:true,canExport:true,exportName:'学生档案',
     nameClick:s=>`openStudentDetail('${s.id}')`,
@@ -665,7 +657,7 @@ async function renderProgressPage(mc, focusStudentId=null){
   <div class="filter-row">
     ${PROGRESS_STATUS_OPTS.map(([v,l])=>`<div class="filter-chip${progressStatus===v?' active':''}" onclick="setProgressStatus('${v}')">${l}</div>`).join('')}
   </div>
-  <div class="search-bar"><input id="progress_search_input" placeholder="搜索学生姓名…" value="${stEsc(progressStudentFilter)}" oninput="handleProgressSearchInput(this)" oncompositionstart="this.dataset.composing='1'" oncompositionend="this.dataset.composing='';handleProgressSearchInput(this)"></div>
+  <div class="search-bar"><input id="progress_search_input" placeholder="搜索姓名（汉字 / 拼音首字母）/ 专业 / 学校 / 备注…" value="${stEsc(progressStudentFilter)}" oninput="searchBox(this,handleProgressSearchInput)"></div>
   <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">共 ${cardStudents.length} 人</div>
   <div style="display:flex;flex-direction:column;gap:10px">${cards || '<div class="empty">没有符合条件的学生</div>'}</div>
   ${cardStudents.length>progressShown?`<div onclick="progressShown+=30;renderProgressPage(document.getElementById('mainContent'))" style="text-align:center;padding:10px;margin:8px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">显示更多（还有 ${cardStudents.length-progressShown} 人）</div>`:''}

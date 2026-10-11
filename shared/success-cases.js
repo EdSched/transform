@@ -52,15 +52,14 @@ function scListHtml() {
   if (f.major && !majors.includes(f.major)) f.major = '';
   if (f.tag && !tags.includes(f.tag)) f.tag = '';
   if (f.school && !schools.includes(f.school)) f.school = '';
-  const kw = f.q.trim().toLowerCase();
   const list = inDom.filter(r => (!f.major || scArr(r.majors).includes(f.major)) && (!f.tag || scArr(r.tags).includes(f.tag)) && (!f.school || scSchoolsOf(r).includes(f.school))
-    && (!kw || [r.alias, r.tagline, r.background, r.result, scArr(r.tags).join(' ')].join(' ').toLowerCase().includes(kw)));
+    && searchMatch(f.q, [r.alias, r.tagline, r.background, r.result, scArr(r.tags).join(' ')]));
   const chip = (on, label, fn) => `<div class="filter-chip${on ? ' active' : ''}" onclick="${fn}" style="padding:3px 10px;font-size:10px">${label}</div>`;
   const row = (label, inner) => `<div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px"><span style="font-size:10px;color:var(--text-3);min-width:28px">${label}</span><div style="display:flex;gap:4px;flex-wrap:wrap">${inner}</div></div>`;
   const packOn = sc.ctx.canPack && typeof pkEnabled === 'function' && pkEnabled();
   const selN = [...sc.sel].filter(id => list.some(r => r.id === id) || (sc.rows || []).some(r => r.id === id)).length;
   return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-      <div style="font-size:12px;font-weight:600">合格案例（${list.length}${list.length !== all.length ? ' / ' + all.length : ''}）</div>
+      <div id="sc_count" style="font-size:12px;font-weight:600">合格案例（${list.length}${list.length !== all.length ? ' / ' + all.length : ''}）</div>
       <span style="font-size:10px;color:var(--text-3)">${scTopNote(packOn)}</span>
       ${sc.ctx.canWrite ? `<button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="scNew()">＋ 新建案例</button>` : ''}
     </div>
@@ -70,11 +69,17 @@ function scListHtml() {
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px">
       <select onchange="sc.f.school=this.value;scRender()" style="font-size:11px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
         <option value="">合格学校：全部</option>${schools.map(s => `<option value="${scE(s)}" ${f.school === s ? 'selected' : ''}>${scE(s)}</option>`).join('')}</select>
-      <input id="sc_q" value="${scE(f.q)}" placeholder="搜索称呼 / 标签 / 学校 / 背景" oninput="sc.f.q=this.value;scRender();const e=document.getElementById('sc_q');e.focus();e.setSelectionRange(e.value.length,e.value.length)" style="flex:1;min-width:160px;font-size:11px;padding:5px 9px;border:1px solid var(--border);border-radius:3px;background:var(--surface);font-family:inherit">
+      <input id="sc_q" value="${scE(f.q)}" placeholder="搜索称呼（汉字 / 拼音首字母）/ 标签 / 学校 / 背景…" oninput="searchBox(this,scSearch)" style="flex:1;min-width:160px;font-size:11px;padding:5px 9px;border:1px solid var(--border);border-radius:3px;background:var(--surface);font-family:inherit">
     </div>
-    ${list.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px">${list.map(r => scCardHtml(r, packOn)).join('')}</div>`
+    <div id="sc_listbox">${list.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px">${list.map(r => scCardHtml(r, packOn)).join('')}</div>`
       : '<div class="empty" style="padding:30px">没有符合条件的案例</div>'}
-    ${packOn ? scPackBar(selN) : ''}`;
+    ${packOn ? scPackBar(selN) : ''}</div>`;
+}
+// 搜索：只换「数量」和「卡片列表」，搜索框本身不重画（输入法不会被打断）
+function scSearch(q) {
+  sc.f.q = q;
+  const t = document.createElement('div'); t.innerHTML = scListHtml();
+  ['sc_count', 'sc_listbox'].forEach(id => { const a = document.getElementById(id), b = t.querySelector('#' + id); if (a && b) a.innerHTML = b.innerHTML; });
 }
 // 顶部说明：只有开通了「宣传资料整合」的老师才提「选用后加入宣传资料」，没开通的写清楚原因
 function scTopNote(packOn) {
@@ -319,13 +324,14 @@ async function scOnlyPassed(all) {
   return (all || []).filter(s => s.status === 'graduated' || by[String(s.id)]).map(s => Object.assign({}, s, { passedSchools: by[String(s.id)] || [] }));
 }
 function scStuOptions() {
-  const c = sc.cur, kw = (c.stuSearch || '').trim(), all = sc.stu || [];
-  const list = all.filter(s => !kw || (typeof matchesStudentSearch === 'function' ? matchesStudentSearch(s, kw) : (s.name || '').includes(kw)));
+  const c = sc.cur, all = sc.stu || [];
+  const list = all.filter(s => searchMatch(c.stuSearch, studentSearchFields(s)));
   const none = sc.stu && !all.length;
   const head = !sc.stu ? '学生列表读取中…' : none ? '— 还没有已合格的学生（学生档案状态为「已合格」，或志望校里有合格的学校）—' : `— 选择已合格的学生（${list.length}）—`;
   const sch = s => { const t = (s.passedSchools || []).join('、'); return t ? ' · ' + (t.length > 24 ? t.slice(0, 24) + '…' : t) : ''; };
   return `<option value="">${scE(head)}</option>` + list.map(s => `<option value="${scE(s.id)}" ${String(c.student_id) === String(s.id) ? 'selected' : ''}>${scE(s.name)} · ${scE(typeof majorLabel === 'function' ? majorLabel(s.major) : s.major)}${scE(sch(s))}</option>`).join('');
 }
+function scStuSearch(q) { sc.cur.stuSearch = q; scRerenderStuSelect(); }
 function scRerenderStuSelect() { const el = document.getElementById('sc_stu'); if (el) el.innerHTML = scStuOptions(); }
 
 function scEditHtml() {
@@ -345,7 +351,7 @@ function scEditHtml() {
     <div style="max-width:860px">
     <div style="${box}">${h('① 关联学生（可不选）')}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
-        <div>${lbl('搜索学生')}<input value="${scE(c.stuSearch)}" placeholder="姓名 / 拼音首字母" oninput="sc.cur.stuSearch=this.value;scRerenderStuSelect()" style="${inp}"></div>
+        <div>${lbl('搜索学生')}<input value="${scE(c.stuSearch)}" placeholder="搜索姓名（汉字 / 拼音首字母）/ 专业 / 学校…" oninput="searchBox(this,scStuSearch)" style="${inp}"></div>
         <div>${lbl('选择已合格的学生（自动带出背景、合格校、时间线草稿）')}<select id="sc_stu" onchange="scPickStudent(this.value)" style="${inp}">${scStuOptions()}</select></div>
       </div>
       ${c.student_id ? `<div style="margin-top:8px"><button class="btn btn-outline btn-sm" onclick="scRefill()">↻ 重新带出（覆盖背景 / 合格 / 时间线）</button></div>` : ''}

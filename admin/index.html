@@ -721,7 +721,7 @@
       </div>
       <button onclick="attShowSummary()" style="font-size:11px;padding:5px 10px;border:1px solid var(--border);border-radius:5px;background:var(--bg);cursor:pointer;font-family:inherit;color:var(--text-2);margin-left:auto">📋 汇总</button>
     </div>
-    <input id="sessionStudentSearch" placeholder="搜索姓名或拼音首字母…" autocomplete="off" oninput="if(this.dataset.composing!=='1')renderStudentRows(this.value)" oncompositionstart="this.dataset.composing='1'" oncompositionend="this.dataset.composing='';renderStudentRows(this.value)" style="font-size:12px;padding:6px 10px;width:100%;box-sizing:border-box;margin-bottom:10px">
+    <input id="sessionStudentSearch" placeholder="搜索姓名（汉字 / 拼音首字母）/ 专业…" autocomplete="off" oninput="searchBox(this,renderStudentRows)" style="font-size:12px;padding:6px 10px;width:100%;box-sizing:border-box;margin-bottom:10px">
     <!-- 未点名单（点名字即签到） -->
     <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">未点名 <span id="att_unmarked_count"></span>（点名字 = 记为当前状态）</div>
     <div id="sessionRecordBody" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px;max-height:46vh;overflow-y:auto"></div>
@@ -766,39 +766,40 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
 <script src="../shared/vendor/supabase.min.js"></script>
 <script src="../shared/supabase.js?v=20261020"></script>
-<script src="../shared/constants.js?v=20261026"></script>
-<script src="../shared/student-table.js?v=20261028"></script>
+<script src="../shared/constants.js?v=20261029"></script>
+<script src="../shared/search.js?v=20261029"></script>
+<script src="../shared/student-table.js?v=20261029"></script>
 <script src="../shared/progress-card.js?v=20261026"></script>
 <script src="../shared/riyu.js?v=20261020"></script>
-<script src="../shared/artworks.js?v=20261020"></script>
+<script src="../shared/artworks.js?v=20261029"></script>
 <script src="../shared/promo-md.js?v=20261020"></script>
 <script src="../shared/promo-render.js?v=20261020"></script>
-<script src="../shared/success-cases.js?v=20261025"></script>
+<script src="../shared/success-cases.js?v=20261029"></script>
 <script src="../shared/materials.js?v=20261026"></script>
 <script src="../shared/schoolplan.js?v=20261020"></script>
 <script src="../shared/student-detail.js?v=20261020"></script>
-<script src="../shared/claim.js?v=20261020"></script>
+<script src="../shared/claim.js?v=20261029"></script>
 <script src="../shared/vip-catalog.js?v=20261020"></script>
-<script src="../shared/tasks.js?v=20261020"></script>
+<script src="../shared/tasks.js?v=20261029"></script>
 <script src="../shared/task-checks.js?v=20261020"></script>
 <script src="../shared/mgmt-metrics.js?v=20261025"></script>
-<script src="../shared/mgmt-notice.js?v=20261020"></script>
-<script src="attendance.js?v=20261020"></script>
+<script src="../shared/mgmt-notice.js?v=20261029"></script>
+<script src="attendance.js?v=20261029"></script>
 <script src="payroll.js?v=20261025"></script>
-<script src="admissiondb.js?v=20261025"></script>
+<script src="admissiondb.js?v=20261029"></script>
 <script src="classes.js?v=20261020"></script>
-<script src="students.js?v=20261025"></script>
+<script src="students.js?v=20261029"></script>
 <script src="materials.js?v=20261020"></script>
-<script src="booking.js?v=20261025"></script>
-<script src="courses.js?v=20261025"></script>
+<script src="booking.js?v=20261029"></script>
+<script src="courses.js?v=20261029"></script>
 <script src="monthcal.js?v=20261020"></script>
 <script src="vip-framework.js?v=20261020"></script>
 <script src="promo.js?v=20261025"></script>
 <script src="pricing.js?v=20261020"></script>
-<script src="tasks.js?v=20261020"></script>
+<script src="tasks.js?v=20261029"></script>
 <script src="roletpl.js?v=20261020"></script>
 <script src="mgmt.js?v=20261020"></script>
-<script src="mgmt-notice.js?v=20261020"></script>
-<script src="admin.js?v=20261026"></script>
+<script src="mgmt-notice.js?v=20261029"></script>
+<script src="admin.js?v=20261029"></script>
 </body>
 </html>

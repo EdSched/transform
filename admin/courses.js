@@ -3674,13 +3674,15 @@ async function hwPickOpen(){
   hwPickKw='';
   hwPickRender();
 }
+// 搜索：整块重画后把原来的搜索框换回去（不丢光标、不打断输入法）
+function hwPickSearch(q){ hwPickKw=q; searchRerender('hwPickSearch',hwPickRender); }
 function hwPickRender(){
   const box=document.getElementById('hwEditorBody'); if(!box) return;
   const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
   const me=hwEditSession||{};
-  const kw=hwPickKw.trim().toLowerCase();
+  const kw=hwPickKw.trim();
   let list=hwPickItems();
-  if(kw) list=list.filter(i=>(i.course+' '+i.title+' '+i.period).toLowerCase().includes(kw));
+  if(kw) list=list.filter(i=>searchMatch(kw,[i.course,i.title,i.period],{names:0}));
   const total=list.length; list=list.slice(0,100);
   const t=(me.session_title||'').trim();
   box.innerHTML=`
@@ -3688,7 +3690,7 @@ function hwPickRender(){
       <div style="font-size:13px;font-weight:600;flex:1">📥 从往期作业选 — 载入到 第${me.session_number||''}回「${esc(me.session_title||'')}」</div>
       <button onclick="hwEditorRender()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:4px 10px;cursor:pointer;font-family:inherit">← 返回编辑</button>
     </div>
-    <input id="hwPickSearch" value="${esc(hwPickKw)}" placeholder="搜索课程名 / 单回标题 / 期数" oninput="hwPickKw=this.value;hwPickRender();const e=document.getElementById('hwPickSearch');e.focus();e.setSelectionRange(e.value.length,e.value.length)" style="width:100%;box-sizing:border-box;font-size:12px;padding:7px 10px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;margin-bottom:6px">
+    <input id="hwPickSearch" value="${esc(hwPickKw)}" placeholder="搜索课程名 / 单回标题 / 期数…" oninput="searchBox(this,hwPickSearch)" style="width:100%;box-sizing:border-box;font-size:12px;padding:7px 10px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;margin-bottom:6px">
     <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">同标题的单回排在最前，其次是同名课程。点一行即载入（会替换编辑器里当前的内容，保存前不会生效）。${total>100?` 共 ${total} 条，只显示前 100 条，请用搜索缩小范围。`:''}</div>
     <div style="max-height:60vh;overflow-y:auto;border:1px solid var(--border-light);border-radius:3px">
       ${list.length?list.map(i=>`<div onclick="hwPickUse('${esc(i.id)}')" style="display:flex;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid var(--border-light);cursor:pointer;font-size:12px" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
@@ -4074,7 +4076,7 @@ function cmRender(){
     ${cmOtherHtml(courses)}
     ${typeof cmClassBarHtml==='function'?cmClassBarHtml(courses):''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
-      <input id="cmSearchInput" value="${cmEsc(cmSearch)}" placeholder="搜索姓名（汉字 / 拼音首字母）" oninput="if(this.dataset.composing!=='1'){cmSearch=this.value;cmRenderNames()}" oncompositionstart="this.dataset.composing='1'" oncompositionend="this.dataset.composing='';cmSearch=this.value;cmRenderNames()" style="flex:1;min-width:180px;font-size:13px;padding:7px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg);font-family:inherit">
+      <input id="cmSearchInput" value="${cmEsc(cmSearch)}" placeholder="搜索姓名（汉字 / 拼音首字母）/ 专业…" oninput="searchBox(this,cmSetSearch)" style="flex:1;min-width:180px;font-size:13px;padding:7px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg);font-family:inherit">
       <div class="filter-chip${cmScopeAll?'':' active'}" onclick="cmScopeAll=false;cmRender()" style="font-size:11px;padding:3px 10px">本课专业</div>
       <div class="filter-chip${cmScopeAll?' active':''}" onclick="cmScopeAll=true;cmRender()" style="font-size:11px;padding:3px 10px">全部学生</div>
     </div>
@@ -4088,6 +4090,7 @@ function cmRender(){
   cmRenderNames();
 }
 
+function cmSetSearch(q){ cmSearch=q; cmRenderNames(); }
 function cmRenderNames(){
   const el=document.getElementById('cmNames'); if(!el) return;
   const courses=cmCourseIds.map(cmCourse).filter(Boolean);

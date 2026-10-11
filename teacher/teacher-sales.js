@@ -61,7 +61,7 @@ function tsRenderShell() {
     ${chipFold(subjects.map(s => ({ on: tsSubject===s, html: `<div class="filter-chip ${tsSubject===s?'active':''}" onclick="tsSubject='${tsEsc(s)}';tsPick={};tsRenderShell()" style="padding:3px 10px;font-size:10px">${tsEsc(s)}</div>` })))}
   </div>` : ''}
   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px">
-    <input placeholder="搜索姓名 / 方向 / 课程…" value="${tsEsc(tsSearch)}" oninput="tsSearch=this.value;tsRenderList()"
+    <input placeholder="搜索姓名（汉字 / 拼音首字母）/ 方向 / 课程 / 学校…" value="${tsEsc(tsSearch)}" oninput="searchBox(this,tsSetSearch)"
       style="font-size:11px;padding:6px 10px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;flex:1;min-width:180px">
     <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:3px;overflow:hidden">
       ${[['info','📋 内部信息'],['card','🎴 展示卡片']].map(([k,l]) => `<button onclick="tsMode='${k}';tsRenderShell()" style="font-size:11px;padding:5px 14px;border:none;cursor:pointer;font-family:inherit;background:${tsMode===k?'var(--accent)':'var(--surface)'};color:${tsMode===k?'#fff':'var(--text-2)'}">${l}</button>`).join('')}
@@ -76,16 +76,13 @@ function tsRenderShell() {
   tsRenderList();
 }
 
+function tsSetSearch(q) { tsSearch = q; tsRenderList(); }
 function tsFiltered() {
   let list = tsProfiles;
   if (tsDomain !== 'all') list = list.filter(p => profileDomain(p) === tsDomain);
   if (tsSubject !== 'all') list = list.filter(p => (p.subject || '').trim() === tsSubject);
   const q = tsSearch.trim();
-  if (q) list = list.filter(p =>
-    (p.name || '').includes(q) || (p.real_name || '').includes(q)
-    || (p.keywords || '').includes(q) || (p.courses || '').includes(q)
-    || (p.school || '').includes(q)
-    || (typeof matchesPinyin === 'function' && matchesPinyin(p.name || '', q)));
+  if (q) list = list.filter(p => searchMatch(q, [p.name, p.real_name, p.keywords, p.courses, p.school, p.subject], { names: 2 }));
   // 没选具体专业时，同一位老师只显示一张（第一个专业的介绍），卡片上可以切换到他负责的其他专业
   if (tsSubject === 'all') { const seen = new Set(); list = list.filter(p => !seen.has(p.name) && seen.add(p.name)); }
   return list.map(tsShown);

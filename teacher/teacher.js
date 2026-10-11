@@ -2725,10 +2725,8 @@ async function renderTeacherAdmissionDb(mc) {
         <span style="font-size:11px;color:var(--text-3);min-width:28px">日语</span>
         ${['all','必須','任意','不要'].map((v,i)=>`<button class="btn btn-sm ${teacherAdbJapanese===v?'btn-primary':'btn-outline'}" onclick="teacherAdbSetLang('japanese','${v}')" style="padding:3px 10px;font-size:11px;border:1px solid var(--border)">${['全部','必须','任意','不要'][i]}</button>`).join('')}
       </div>
-      <input type="text" placeholder="搜索大学名、研究科、専攻…" value="${teacherAdbSearch}"
-        oninput="if(this.dataset.composing!=='1'){teacherAdbSearch=this.value;teacherAdbRender()}"
-        oncompositionstart="this.dataset.composing='1'"
-        oncompositionend="this.dataset.composing='';teacherAdbSearch=this.value;teacherAdbRender()"
+      <input type="text" placeholder="搜索大学名 / 研究科 / 専攻…" value="${searchAttr(teacherAdbSearch)}"
+        oninput="searchBox(this,teacherAdbSetSearch)"
         style="font-size:12px;max-width:220px;padding:4px 8px">
     </div>
   </div>
@@ -2823,8 +2821,7 @@ function teacherAdbFilter() {
   if (teacherAdbEnglish !== 'all') list = list.filter(s => s.english_required === teacherAdbEnglish);
   if (teacherAdbJapanese !== 'all') list = list.filter(s => s.japanese_required === teacherAdbJapanese);
   if (teacherAdbSearch.trim()) {
-    const q = teacherAdbSearch.trim().toLowerCase();
-    list = list.filter(s => (s.university||'').toLowerCase().includes(q)||(s.faculty||'').toLowerCase().includes(q)||(s.department||'').toLowerCase().includes(q));
+    list = list.filter(s => searchMatch(teacherAdbSearch, [s.university, s.faculty, s.department], { names: 0 }));
   }
   if (teacherAdbEreOnly) list = list.filter(s => s.ere_available === true);
   if (teacherAdbMonthFrom || teacherAdbMonthTo) {
@@ -2985,6 +2982,7 @@ function teacherAdbAddToPack() {
   });
 }
 
+function teacherAdbSetSearch(q) { teacherAdbSearch = q; teacherAdbRender(); }
 function teacherAdbRender() {
   const thead = document.getElementById('tadbThead');
   const tbody = document.getElementById('tadbBody');

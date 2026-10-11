@@ -65,7 +65,7 @@ th{background:#f7f9fc;font-weight:600;color:var(--sub);white-space:nowrap;}
     <div class="filters">
       <div class="fld"><label>日期</label><select id="fDate"><option value="">全部日期</option></select></div>
       <div class="fld"><label>时段</label><select id="fTime"><option value="">全部时段</option></select></div>
-      <div class="fld"><label>老师姓名</label><input id="fName" placeholder="输入姓名筛选"></div>
+      <div class="fld"><label>老师姓名</label><input id="fName" placeholder="搜索老师姓名（汉字 / 拼音首字母）…"></div>
       <button class="ghost sm" id="fClear">清除筛选</button>
       <button class="sm" id="export">导出日历(.ics)</button>
       <div class="spacer" style="margin-left:auto;"></div>
@@ -81,6 +81,7 @@ th{background:#f7f9fc;font-weight:600;color:var(--sub);white-space:nowrap;}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
 <script src="../shared/vendor/supabase.min.js"></script>
 <script src="../shared/supabase.js"></script>
+<script src="../shared/search.js?v=20261029"></script>
 <script src="../shared/admin-gate.js"></script>
 <script>
 // 本页只有管理员能用（表 salary_bookings 的读/删只开放给 is_admin()）；SB_URL/SB_KEY 来自 shared/supabase.js
@@ -124,8 +125,8 @@ function buildFilterOptions(){
 }
 
 function filteredRows(){
-  const fd=$('#fDate').value, ft=$('#fTime').value, fn=$('#fName').value.trim().toLowerCase();
-  return ALLROWS.filter(r=>(!fd||r.slot_date===fd)&&(!ft||r.slot_time===ft)&&(!fn||(r.teacher_name||'').toLowerCase().includes(fn)));
+  const fd=$('#fDate').value, ft=$('#fTime').value, fn=$('#fName').value.trim();
+  return ALLROWS.filter(r=>(!fd||r.slot_date===fd)&&(!ft||r.slot_time===ft)&&searchMatch(fn,[r.teacher_name]));
 }
 function applyFilter(){
   const rows=filteredRows();
@@ -151,7 +152,7 @@ $('#next').onclick=()=>nav(1);
 $('#refresh').onclick=load;
 $('#fDate').onchange=applyFilter;
 $('#fTime').onchange=applyFilter;
-$('#fName').oninput=applyFilter;
+bindSearch($('#fName'),applyFilter);
 $('#fClear').onclick=()=>{ $('#fDate').value=''; $('#fTime').value=''; $('#fName').value=''; applyFilter(); };
 
 // ===== 导出 .ics 日历（导出当前筛选后的记录，可直接导入 Outlook 日历）=====

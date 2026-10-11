@@ -12,16 +12,6 @@ let teacherProgressData = { students: [], timeline: {}, schoolPlans: {}, planDra
 
 const TP_SOURCES = ['唯新','新世界','校内塾','杭州校'];
 
-// 姓名搜索：先按共享 matchesPinyin 严格匹配（汉字 includes / 拼音首字母逐字），
-// 多字母拼音在名字用字上匹配不到时，退回按第一个字母匹配姓氏（如 zs 也能命中张三）
-function tpNameMatch(name, q) {
-  q = (q || '').trim();
-  if (!q) return true;
-  if (matchesPinyin(name || '', q)) return true;
-  if (/^[a-zA-Z]{2,3}$/.test(q)) return matchesPinyin(name || '', q[0].toLowerCase());
-  return false;
-}
-
 // 按专业筛选值展开成实际专业列表
 function tpMajorMatch(major, filterVal) {
   if (!filterVal) return true;
@@ -419,7 +409,7 @@ function tsmMatch(s, skip, noQ) {
   if (skip !== 'status' && tsm.status && (s.status || 'active') !== tsm.status) return false;
   if (skip !== 'source' && tsm.source && (s.source || '') !== tsm.source) return false;
   const q = tsm.q.trim();
-  if (!noQ && q && !(tpNameMatch(s.name, q) || (s.source || '').includes(q))) return false;
+  if (!noQ && q && !searchMatch(q, studentSearchFields(s).concat([s.source]))) return false;
   return true;
 }
 function tsmFilterStudents(list) { return (list || []).filter(s => tsmMatch(s)); }
@@ -461,7 +451,7 @@ function tsmBarHtml() {
   h += row('来源', chip(!tsm.source, '全部', cnt('source', () => true), `tsmSet('source','')`) + TP_SOURCES.map(x => chip(tsm.source === x, x, cnt('source', s => (s.source || '') === x), `tsmSet('source','${x}')`)).join(''));
   const n = pool.filter(s => tsmMatch(s)).length;
   h += `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px">
-    <input id="tsm_q" placeholder="搜索姓名（汉字 / 拼音首字母）或来源…" value="${tsaEsc(tsm.q)}" oninput="tsmSearchInput(this.value)" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;width:240px;max-width:100%">
+    <input id="tsm_q" placeholder="搜索姓名（汉字 / 拼音首字母）/ 专业 / 来源…" value="${tsaEsc(tsm.q)}" oninput="searchBox(this,tsmSearchInput)" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;width:240px;max-width:100%">
     <span style="margin-left:auto;font-size:11px;color:var(--text-2)">符合条件 <b id="tsm_n">${tsmNeed() ? '—' : n}</b> 人</span>
     <span onclick="tsmClear()" style="font-size:10px;color:var(--accent);cursor:pointer">清除筛选</span></div>`;
   return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:10px 12px;margin-bottom:12px">${h}</div>`;
@@ -1024,7 +1014,7 @@ function tatRenderModal(){
       </div>
       <button onclick="tatSummary()" style="font-size:11px;padding:5px 10px;border:1px solid var(--border);border-radius:5px;background:var(--bg);cursor:pointer;font-family:inherit;margin-left:auto">📋汇总</button>
     </div>
-    <input id="tat_search" placeholder="搜索姓名/拼音…" oninput="tatRenderRows()" style="font-size:12px;padding:6px 10px;width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:4px;margin-bottom:8px">
+    <input id="tat_search" placeholder="搜索姓名（汉字 / 拼音首字母）/ 专业…" oninput="searchBox(this,tatRenderRows)" style="font-size:12px;padding:6px 10px;width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:4px;margin-bottom:8px">
     <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">未点名 <span id="tat_cnt"></span>（点名字=当前状态）</div>
     <div id="tat_body" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px;max-height:42vh;overflow-y:auto"></div>
     <div id="tat_marked" style="border-top:1px solid var(--border);padding-top:8px;margin-bottom:12px"></div>
@@ -1037,10 +1027,10 @@ function tatRenderModal(){
 }
 
 function tatRenderRows(){
-  const kw=(document.getElementById('tat_search')?.value||'').trim().toLowerCase();
+  const kw=(document.getElementById('tat_search')?.value||'').trim();
   const marked=tatStudents.filter(s=>tatEdits[s.id]&&tatEdits[s.id].attendance_status);
   const unmarked=tatStudents.filter(s=>!(tatEdits[s.id]&&tatEdits[s.id].attendance_status));
-  const shown=kw?unmarked.filter(s=>matchesStudentSearch?matchesStudentSearch(s,kw):(s.name||'').toLowerCase().includes(kw)):unmarked;
+  const shown=kw?unmarked.filter(s=>matchesStudentSearch(s,kw)):unmarked;
   const body=document.getElementById('tat_body');
   if(body) body.innerHTML=shown.length?shown.map(s=>`<button onclick="tatMark('${s.id}')" style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;padding:11px 4px;border:1px solid var(--border);border-radius:8px;background:var(--surface);cursor:pointer;color:var(--text)">${s.name}</button>`).join(''):`<div style="grid-column:1/-1;font-size:12px;color:var(--text-3);padding:16px;text-align:center">${kw?'无匹配':'全部已点 ✓'}</div>`;
   const cnt=document.getElementById('tat_cnt'); if(cnt)cnt.textContent=`剩 ${unmarked.length} 人`;
