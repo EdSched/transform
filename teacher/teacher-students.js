@@ -1247,171 +1247,195 @@ function tDraftFullHtml(draft) {
 }
 
 // ══════════════════════════════════
-// 面谈查询（学生管理子项 meetings）
-// 已完成面谈的完整文字记录 + 历史；查询逻辑与考学进度一致（汉字/拼音首字母 + 专业 + 来源）
+// 面谈跟进（学生管理子项 meetings）——按「每月一次」跟进
+// 规则：每个学生每月至少一次面谈；没有面谈的，老师补「联系记录」：
+//   学习记录（学生回复了、记了学习进度）→ 这个月算完成；联系未回复 → 没完成，继续跟进。
+//   连续 3 次联系未回复（中间没有面谈 / 学习记录）→ 转入重点关注。
 // ══════════════════════════════════
-let tmView = 'has'; // has=有面谈记录 | none=无面谈记录（发提醒用）| contacted=已联系确认
-let tmContactByName = {}; // 学生姓名 → 联系确认记录[]
-let tmExpandedName = null;
-let tmData = null; // { groups: [{name, major, source, list:[booking...]}] }
+const TM_KIND = { study: { t: '学习记录', c: '#1a6d3a', ic: '✎' }, no_reply: { t: '联系未回复', c: '#b8560b', ic: '✉' } };
+const TM_GROUPS = [['done', '✓ 已完成'], ['pend', '⏳ 待面谈'], ['noreply', '✉ 已联系未回复'], ['none', '⚠ 无面谈无记录']];
+let tmYm = '';             // 当前查看的月份 YYYY-MM（空 = 本月）
+let tmGroup = '';          // '' 全部 | done | pend | noreply | none
+let tmExpandedId = null;
+let tmData = null;         // { students, rec, pend, logs, cache }
+
+function tmPad2(n) { return String(n).padStart(2, '0'); }
+function tmCurYm() { const d = new Date(); return d.getFullYear() + '-' + tmPad2(d.getMonth() + 1); }
+function tmShiftYm(ym, n) { const p = ym.split('-').map(Number); const d = new Date(p[0], p[1] - 1 + n, 1); return d.getFullYear() + '-' + tmPad2(d.getMonth() + 1); }
+function tmMonthWord() { return (tmYm || tmCurYm()) === tmCurYm() ? '本月' : parseInt(tmYm.slice(5), 10) + '月'; }
+function tmJstYmd(iso) { return iso ? new Date(new Date(iso).getTime() + 9 * 3600e3).toISOString().slice(0, 10) : ''; }
+function tmHasRec(b) { return !!(b && b.daily_record && Object.values(b.daily_record).some(v => v && (typeof v === 'string' ? v : Object.values(v).some(x => x)))); }
+function tmLogKind(l) { return l.kind === 'no_reply' ? 'no_reply' : 'study'; }
+function tmLogYm(l) { return l.for_month || tmJstYmd(l.created_at).slice(0, 7); }
+// 记录在时间线上的位置（补记往月的记录，按那个月月底算，避免排在后面的面谈前面）
+function tmLogKey(l) { const ym = tmLogYm(l), cd = tmJstYmd(l.created_at); return cd.slice(0, 7) === ym ? cd : ym + '-28'; }
 
 async function renderTsaMeetings(box) {
   box.innerHTML = '<div class="empty">加载中…</div>';
+  if (!tmYm) tmYm = tmCurYm();
   try {
-    const [allStu, allBk, allContact] = await Promise.all([
+    const [allStu, allBk, allPend, allLogs] = await Promise.all([
       sb('/rest/v1/students?select=id,name,major,source,status,course_type,student_code,class_ids,vip_teachers&limit=2000').catch(() => []),
-      sb('/rest/v1/bookings?daily_record=not.is.null&select=*&order=slot_date.desc&limit=1500').catch(() => []),
-      sb('/rest/v1/student_contact_logs?select=*&order=created_at.desc&limit=3000').catch(() => []),
+      sbAll('/rest/v1/bookings?daily_record=not.is.null&select=*&order=slot_date.desc'),
+      sbAll('/rest/v1/bookings?status=in.("pending","confirmed")&select=id,name,student_id,major,slot_date,slot_time_range,status,type,assigned_teacher,daily_record'),
+      sbAll('/rest/v1/student_contact_logs?select=*&order=created_at.desc'),
     ]);
-    tmContactByName = {};
-    (allContact || []).forEach(c => { (tmContactByName[c.student_name] = tmContactByName[c.student_name] || []).push(c); });
-    const stuByName = {}, stuById = {};
-    (allStu || []).forEach(s => { if (!stuByName[s.name]) stuByName[s.name] = s; stuById[s.id] = s; });
-    // 只保留填写过记录内容的面谈（不限定预约状态，批量同步的历史记录同样纳入），专业按学生档案（无档案时按预约的 major 字段）过滤
-    const withRec = (allBk || []).filter(b => b.daily_record && Object.values(b.daily_record).some(v => v && (typeof v === 'string' ? v : Object.values(v).some(x => x))));
-    const groups = {};
-    withRec.forEach(b => {
-      // 已绑定学生（student_id）的预约以档案专业为准；未绑定时用 bookings.major（姓名匹配仅用于来源/保录标记）
-      const stu = b.student_id ? stuById[b.student_id] : stuByName[b.name];
-      const major = (b.student_id && stu && stu.major) || b.major || '';
-      if (!teacherScopeHasStudent(tsaScope(), { major, class_ids: stu && stu.class_ids, vip_teachers: stu && stu.vip_teachers })) return;
-      if (tsaGuaranteedLock() && !tsaIsGuaranteed(stu)) return;
-      if (!groups[b.name]) groups[b.name] = { name: b.name, major, source: (stu && stu.source) || '', status: (stu && stu.status) || '', list: [] };
-      groups[b.name].list.push(b);
-    });
     let myStudents = tsaFilterStudents(allStu);   // 全部状态；由全局「状态」筛选
     if (tsaGuaranteedLock()) myStudents = myStudents.filter(tsaIsGuaranteed);
-    tmData = {
-      groups: Object.values(groups).sort((a, b) => (b.list[0].slot_date || '').localeCompare(a.list[0].slot_date || '')),
-      students: myStudents,
-    };
-  } catch (e) { box.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
+    // 按学生 id 归档；没绑定学生 id 的（新同学预约、旧记录）按姓名归档
+    const idx = () => ({ id: {}, nm: {} });
+    const put = (ix, row, name) => { if (row.student_id) (ix.id[row.student_id] = ix.id[row.student_id] || []).push(row); else (ix.nm[name] = ix.nm[name] || []).push(row); };
+    const rec = idx(), pend = idx(), logs = idx();
+    (allBk || []).forEach(b => { if (tmHasRec(b)) put(rec, b, b.name); });
+    (allPend || []).forEach(b => { if (b.type !== 'vip' && !tmHasRec(b)) put(pend, b, b.name); });
+    (allLogs || []).forEach(l => put(logs, l, l.student_name));
+    tmData = { students: myStudents, rec, pend, logs, cache: {} };
+  } catch (e) { box.innerHTML = `<div class="empty">加载失败：${tsaEsc(e.message)}</div>`; return; }
   tmRenderShell();
 }
+
+// 一个学生的全部面谈 / 预约 / 联系记录
+function tmInfo(s) {
+  const c = tmData.cache;
+  if (c[s.id]) return c[s.id];
+  const pick = ix => (ix.id[s.id] || []).concat(ix.nm[s.name] || []);
+  return (c[s.id] = {
+    recs: pick(tmData.rec).sort((a, b) => (b.slot_date || '').localeCompare(a.slot_date || '')),
+    pend: pick(tmData.pend).sort((a, b) => (a.slot_date || '').localeCompare(b.slot_date || '')),
+    logs: pick(tmData.logs).sort((a, b) => tmLogKey(b).localeCompare(tmLogKey(a))),
+  });
+}
+// 某个月的状态：group = done | pend | noreply | none
+function tmMonthState(info, ym) {
+  const mtg = info.recs.filter(b => (b.slot_date || '').slice(0, 7) === ym);
+  const inM = info.logs.filter(l => tmLogYm(l) === ym);
+  const study = inM.filter(l => tmLogKind(l) === 'study'), nore = inM.filter(l => tmLogKind(l) === 'no_reply');
+  const pend = info.pend.filter(b => (b.slot_date || '').slice(0, 7) === ym);
+  const group = (mtg.length || study.length) ? 'done' : pend.length ? 'pend' : nore.length ? 'noreply' : 'none';
+  const cell = mtg.length ? 'mtg' : study.length ? 'study' : pend.length ? 'pend' : nore.length ? 'noreply' : '';
+  return { group, cell, mtg, study, nore, pend };
+}
+// 截至某月月底，连续几次联系未回复（中间有面谈 / 学习记录就清零）
+function tmStreak(info, uptoYm) {
+  const ev = info.recs.map(b => ({ k: b.slot_date || '', ok: true })).concat(info.logs.map(l => ({ k: tmLogKey(l), ok: tmLogKind(l) === 'study' })))
+    .filter(e => e.k && (!uptoYm || e.k.slice(0, 7) <= uptoYm)).sort((a, b) => a.k.localeCompare(b.k) || (b.ok ? 1 : 0) - (a.ok ? 1 : 0));
+  let n = 0;
+  ev.forEach(e => { n = e.ok ? 0 : n + 1; });
+  return n;
+}
+// 当前筛选下每个学生的本月分组
+function tmRows() {
+  const ym = tmYm || tmCurYm();
+  return tsmFilterStudents(tmData.students || []).map(s => {
+    const info = tmInfo(s), st = tmMonthState(info, ym);
+    return { s, info, st, streak: st.group === 'noreply' ? tmStreak(info, ym) : 0 };
+  });
+}
+// 当前筛选下「本月无面谈无记录」的学生（批量提醒用）
+function tmNoRecStudents() { return tmRows().filter(r => r.st.group === 'none').map(r => r.s); }
 
 function tmRenderShell() {
   const box = document.getElementById('sm_content');
   if (!box || !tmData) return;
+  if (!tmYm) tmYm = tmCurYm();
+  const cur = tmYm === tmCurYm();
+  const arrow = (n, t) => `<span onclick="tmSetYm('${tmShiftYm(tmYm, n)}')" style="cursor:pointer;user-select:none;font-size:13px;padding:2px 10px;border:1px solid var(--border);border-radius:3px;background:var(--surface)">${t}</span>`;
   box.innerHTML = `
   <div class="page-header">
-    <div class="section-title">面谈查询 <span class="badge-count" id="tm_count"></span></div>
+    <div class="section-title">面谈跟进 <span class="badge-count" id="tm_count"></span></div>
   </div>
-  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
-    <span style="font-size:10px;color:var(--text-3)">显示：</span>
-    <div class="filter-chip ${tmView==='has'?'active':''}" onclick="tmSetView('has')" style="padding:3px 10px;font-size:10px">有面谈记录</div>
-    <div class="filter-chip ${tmView==='none'?'active':''}" onclick="tmSetView('none')" style="padding:3px 10px;font-size:10px">⚠ 无面谈记录</div>
-    <div class="filter-chip ${tmView==='contacted'?'active':''}" onclick="tmSetView('contacted')" style="padding:3px 10px;font-size:10px;${tmView==='contacted'?'background:#1a6d3a;color:#fff;border-color:#1a6d3a':''}">✓ 已联系确认</div>
-    ${tmView==='none' ? `<button onclick="tmBatchReminder()" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:4px 12px;cursor:pointer;font-family:inherit;margin-left:auto">✉ 按专业批量生成提醒</button>` : `<button onclick="tmContactModal('','','')" style="font-size:10px;background:#1a6d3a;color:#fff;border:none;border-radius:2px;padding:4px 12px;cursor:pointer;font-family:inherit;margin-left:auto">＋ 补充记录（手输姓名）</button>`}
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px">
+    ${arrow(-1, '‹')}<span style="font-size:13px;font-weight:600;min-width:92px;text-align:center">${tmYm.replace('-', '年')}月</span>${arrow(1, '›')}
+    ${cur ? '' : `<span onclick="tmSetYm('${tmCurYm()}')" style="font-size:10px;color:var(--accent);cursor:pointer">回到本月</span>`}
+    <span style="font-size:10px;color:var(--text-3)">每个学生每月至少一次面谈；没面谈的补「学习记录」或「联系未回复」</span>
+    <button onclick="tmBatchReminder()" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:4px 12px;cursor:pointer;font-family:inherit;margin-left:auto">✉ 按专业批量生成提醒</button>
+    <button onclick="tmContactModal('')" style="font-size:10px;background:#1a6d3a;color:#fff;border:none;border-radius:2px;padding:4px 12px;cursor:pointer;font-family:inherit">＋ 补充记录</button>
   </div>
+  <div id="tm_chips" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px"></div>
   <div id="tm_list"></div>`;
   tmRenderList();
 }
+function tmSetYm(ym) { tmYm = ym; tmShown0(); tmRenderShell(); }
+function tmShown0() { tsmShown = TSM_PAGE; }
+function tmSetGroup(g) { tmGroup = tmGroup === g ? '' : g; tmShown0(); tmRenderList(); }
+function tmToggle(id) { tmExpandedId = tmExpandedId === id ? null : id; tmRenderList(); }
 
-function tmSetView(v) { tmView = v; tmRenderShell(); }
-
-// 当前筛选条件下「没有任何面谈记录、且没有联系确认记录」的在籍学生（真正被忽略的）
-function tmNoRecStudents() {
-  const recNames = new Set(tmData.groups.map(g => g.name));
-  return tsmFilterStudents(tmData.students || []).filter(s => !recNames.has(s.name)
-    && !(tmContactByName[s.name] && tmContactByName[s.name].length));
+// 近 6 个月小方格（每月一格）
+function tmCellsHtml(info) {
+  const ym = tmYm || tmCurYm(), out = [];
+  const sty = { mtg: ['✓', '#1a6d3a', '#e4f3ea', '面谈'], study: ['✎', '#1a6d3a', '#e4f3ea', '学习记录'], noreply: ['✉', '#b8560b', '#fbeee0', '联系未回复'], pend: ['⏳', '#8a6d10', '#fef5e0', '待面谈'] };
+  for (let i = 5; i >= 0; i--) {
+    const m = tmShiftYm(ym, -i), c = tmMonthState(info, m).cell, d = sty[c];
+    out.push(`<span title="${m.replace('-', '年')}月：${d ? d[3] : '无面谈无记录'}" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:3px;font-size:10px;border:1px solid ${d ? d[1] : 'var(--border)'};background:${d ? d[2] : 'transparent'};color:${d ? d[1] : 'transparent'}">${d ? d[0] : '·'}</span>`);
+  }
+  return `<span style="display:inline-flex;gap:3px;align-items:center">${out.join('')}</span>`;
 }
-
-// 无面谈、但已有联系确认记录的学生
-function tmContactedStudents() {
-  const recNames = new Set(tmData.groups.map(g => g.name));
-  return tsmFilterStudents(tmData.students || []).filter(s => !recNames.has(s.name)
-    && (tmContactByName[s.name] && tmContactByName[s.name].length));
+function tmStateTag(r) {
+  const st = r.st, tag = (c, bg, t) => `<span style="font-size:10px;padding:1px 8px;border-radius:10px;background:${bg};color:${c};white-space:nowrap">${t}</span>`;
+  if (st.group === 'done') return st.mtg.length ? tag('#1a6d3a', '#e4f3ea', `✓ 已面谈${st.mtg.length > 1 ? ' ' + st.mtg.length + ' 次' : ''}`) : tag('#1a6d3a', '#e4f3ea', '✎ 学习记录');
+  if (st.group === 'pend') { const b = st.pend[0]; return tag('#8a6d10', '#fef5e0', `⏳ 待面谈 ${tsaEsc((b.slot_date || '').slice(5))} ${tsaEsc(b.slot_time_range || '')}`); }
+  if (st.group === 'noreply') return r.streak >= 3 ? tag('#c0392b', '#fdecea', `⚠ 已连续 ${r.streak} 次未回复 → 已转重点关注`) : tag('#b8560b', '#fbeee0', `✉ 联系未回复 · 连续第 ${r.streak} 次`);
+  return tag('#c0392b', '#fdecea', `⚠ ${tmMonthWord()}无面谈无记录`);
 }
-function tmToggle(name) { tmExpandedName = tmExpandedName === name ? null : name; tmRenderList(); }
 
 function tmRenderList() {
-  const listBox = document.getElementById('tm_list');
+  const listBox = document.getElementById('tm_list'), chipBox = document.getElementById('tm_chips');
   if (!listBox || !tmData) return;
-
-  // 无面谈记录视图：真正被忽略的学生（无面谈+无联系记录），可发提醒 或 记录已联系
-  if (tmView === 'none') {
-    const noRec = tmNoRecStudents();
-    const cnt0 = document.getElementById('tm_count');
-    if (cnt0) cnt0.textContent = noRec.length;
-    listBox.innerHTML = noRec.length ? noRec.map(s => `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface);border:1px dashed var(--border);border-radius:4px;padding:10px 14px;margin-bottom:8px">
-      <span style="font-size:13px;font-weight:600">${tsaEsc(s.name)}</span>
-      <span style="font-size:11px;color:var(--text-3)">${MAJORS[s.major]||s.major||''}</span>
-      ${s.source?`<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 5px">${tsaEsc(s.source)}</span>`:''}
-      <span style="font-size:11px;color:var(--warn,#b8860b)">⚠ 近期没有预约面谈</span>
-      <button onclick="tmContactModal('${s.id||''}','${tsaEsc(s.name)}','${s.major||''}')" style="margin-left:auto;font-size:10px;background:#1a6d3a;color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">✓ 记录已联系</button>
-      <button onclick="tmGenReminder('${s.id||''}')" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">✉ 生成提醒文字</button>
-    </div>`).join('') : '<div class="empty">当前筛选范围内的学生都已有面谈或联系记录 🎉</div>';
-    return;
-  }
-
-  // 已联系确认视图：无面谈但已记录联系的学生 + 备注/截图
-  if (tmView === 'contacted') {
-    const list = tmContactedStudents();
-    const cnt1 = document.getElementById('tm_count');
-    if (cnt1) cnt1.textContent = list.length;
-    listBox.innerHTML = list.length ? list.map(s => {
-      const logs = (tmContactByName[s.name] || []);
-      const logHtml = logs.map(l => `<div style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--border-light)">
-        ${l.image_url ? `<img src="${l.image_url}" onclick="tmImgLightbox('${l.image_url}')" style="flex-shrink:0;width:52px;height:52px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:zoom-in">` : ''}
-        <div style="flex:1;min-width:0">
-          <div style="font-size:11px;color:var(--text-1);white-space:pre-wrap;line-height:1.5">${tsaEsc(l.note)||'（无备注）'}</div>
-          <div style="font-size:9px;color:var(--text-3);margin-top:3px">${(l.teacher_name||'')} · ${(l.created_at||'').slice(0,10)}</div>
-        </div>
-        <span onclick="tmDeleteContact('${l.id}')" style="flex-shrink:0;font-size:9px;color:var(--danger);cursor:pointer">删除</span>
-      </div>`).join('');
-      return `<div style="background:var(--surface);border:1px solid #cfe8d8;border-left:3px solid #1a6d3a;border-radius:4px;padding:10px 14px;margin-bottom:8px">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">
-          <span style="font-size:13px;font-weight:600">${tsaEsc(s.name)}</span>
-          <span style="font-size:11px;color:var(--text-3)">${MAJORS[s.major]||s.major||''}</span>
-          ${s.source?`<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 5px">${tsaEsc(s.source)}</span>`:''}
-          <span style="font-size:10px;color:#1a6d3a">✓ 已联系 ${logs.length} 次</span>
-          <button onclick="tmContactModal('${s.id||''}','${tsaEsc(s.name)}','${s.major||''}')" style="margin-left:auto;font-size:10px;background:#1a6d3a;color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">＋ 追加记录</button>
-        </div>
-        ${logHtml}
-      </div>`;
-    }).join('') : '<div class="empty">还没有"已联系确认"的记录。在「无面谈记录」里点某个学生的「✓ 记录已联系」即可。</div>';
-    return;
-  }
-
-  const listAll = tsmFilterStudents(tmData.groups);
-  const list = tsmSlice(listAll);
-  // 搜索时：命中的「没有面谈记录」的学生单独提示（默认页面不显示他们）
-  let noRec = [];
-  if (tsm.q.trim()) {
-    const recNames = new Set(tmData.groups.map(g => g.name));
-    noRec = tsmFilterStudents(tmData.students || []).filter(s => !recNames.has(s.name));
-  }
-  const cnt = document.getElementById('tm_count');
-  if (cnt) cnt.textContent = listAll.length;
-
-  const noRecHtml = noRec.map(s => `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface);border:1px dashed var(--border);border-radius:4px;padding:10px 14px;margin-bottom:8px">
-    <span style="font-size:13px;font-weight:600">${tsaEsc(s.name)}</span>
-    <span style="font-size:11px;color:var(--text-3)">${MAJORS[s.major]||s.major||''}</span>
-    ${s.source?`<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 5px">${tsaEsc(s.source)}</span>`:''}
-    <span style="font-size:11px;color:var(--warn,#b8860b)">⚠ 该学生近期没有预约面谈，可提醒学生预约面谈</span>
-    <button onclick="tmGenReminder('${s.id||''}')" style="margin-left:auto;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">✉ 生成提醒文字</button>
-  </div>`).join('');
-
-  listBox.innerHTML = (list.length || noRec.length) ? (list.map(g => {
-    const open = tmExpandedName === g.name;
-    const lastDate = g.list[0].slot_date || '';
-    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:8px">
-      <div onclick="tmToggle('${tsaEsc(g.name)}')" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;${open?'background:var(--bg)':''}">
-        <span style="font-size:13px;font-weight:600">${tsaEsc(g.name)}</span>
-        <span style="font-size:11px;color:var(--text-3)">${MAJORS[g.major]||g.major||''}</span>
-        ${g.source?`<span style="font-size:10px;color:var(--accent);border:1px solid var(--border);border-radius:2px;padding:0 5px">${tsaEsc(g.source)}</span>`:''}
-        <span style="font-size:10px;color:var(--text-2);margin-left:auto">共 ${g.list.length} 次面谈 · 最近 ${lastDate}</span>
-        <span style="font-size:10px;color:var(--text-3)">${open?'▲':'▼'}</span>
+  const all = tmRows();
+  const cnt = g => all.filter(r => r.st.group === g).length;
+  const w = tmMonthWord();
+  if (chipBox) chipBox.innerHTML = '<span style="font-size:10px;color:var(--text-3)">分组：</span>' + TM_GROUPS.map(([k, l]) => `<div class="filter-chip ${tmGroup === k ? 'active' : ''}" onclick="tmSetGroup('${k}')" style="padding:3px 10px;font-size:10px">${l.replace(/^(\S+) /, '$1 ' + w)} ${cnt(k)}</div>`).join('');
+  const ord = { done: 0, pend: 1, noreply: 2, none: 3 };
+  const list = all.filter(r => !tmGroup || r.st.group === tmGroup).sort((a, b) => (ord[a.st.group] - ord[b.st.group]) || (b.streak - a.streak) || a.s.name.localeCompare(b.s.name, 'zh'));
+  const c0 = document.getElementById('tm_count'); if (c0) c0.textContent = list.length;
+  if (!list.length) { listBox.innerHTML = '<div class="empty">没有符合筛选条件的学生</div>'; return; }
+  let lastG = '';
+  listBox.innerHTML = tsmSlice(list).map(r => {
+    const s = r.s, open = tmExpandedId === s.id, lastM = r.info.recs[0] ? r.info.recs[0].slot_date : '';
+    let head = '';
+    if (!tmGroup && r.st.group !== lastG) { lastG = r.st.group; const t = TM_GROUPS.find(x => x[0] === lastG)[1].replace(/^(\S+) /, '$1 ' + w); head = `<div style="font-size:11px;font-weight:600;color:var(--text-2);margin:12px 0 6px">${t}（${cnt(lastG)}）</div>`; }
+    return head + `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:6px">
+      <div onclick="tmToggle('${s.id}')" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 14px;cursor:pointer;${open ? 'background:var(--bg)' : ''}">
+        <span style="font-size:13px;font-weight:600">${tsaEsc(s.name)}</span>
+        <span style="font-size:11px;color:var(--text-3)">${tsaEsc(MAJORS[s.major] || s.major || '')}</span>
+        ${tmStateTag(r)}
+        <span style="font-size:10px;color:var(--text-3);margin-left:auto">${lastM ? '最近面谈 ' + tsaEsc(lastM) : '从未面谈'}</span>
+        ${tmCellsHtml(r.info)}
+        <span style="font-size:10px;color:var(--text-3)">${open ? '▲' : '▼'}</span>
       </div>
-      ${open ? `<div style="border-top:1px solid var(--border-light);background:var(--bg);padding:10px 14px">
-        ${g.list.map(b => `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:8px">
-          <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">📅 ${b.slot_date}${b.slot_time_range?' '+b.slot_time_range:''}${b.actual_duration?' · '+b.actual_duration+'min':''}${b.assigned_teacher?' · '+tsaEsc(b.assigned_teacher)+'老师':''}${b.type?' · '+(typeof typeLabel==='function'?typeLabel(b.type):b.type):''}</div>
-          <pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0;color:var(--text-2)">${tsaEsc(buildRecordText(b))}</pre>
-        </div>`).join('')}
-        ${tmContactBlockHtml(g.name, g.major, (tmData.students.find(s => s.name === g.name) || {}).id || '')}
-      </div>` : ''}
+      ${open ? tmDetailHtml(s, r.info) : ''}
     </div>`;
-  }).join('') + tsmMoreHtml(listAll.length) + noRecHtml) : '<div class="empty">没有符合筛选条件的面谈记录</div>';
+  }).join('') + tsmMoreHtml(list.length);
+}
+
+function tmDetailHtml(s, info) {
+  const me = (typeof teacherData !== 'undefined' && teacherData && teacherData.name) || '';
+  const sub = (title, inner, btn) => `<div style="margin-bottom:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:11px;font-weight:600;color:var(--text-2)">${title}</span>${btn || ''}</div>${inner}</div>`;
+  const mtg = info.recs.length ? info.recs.map(b => `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:6px">
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">${tsaEsc(b.slot_date)}${b.slot_time_range ? ' ' + tsaEsc(b.slot_time_range) : ''}${b.actual_duration ? ' · ' + tsaEsc(b.actual_duration) + 'min' : ''}${b.assigned_teacher ? ' · ' + tsaEsc(b.assigned_teacher) + '老师' : ''}${b.type ? ' · ' + tsaEsc(typeLabel(b.type)) : ''}</div>
+      <pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0;color:var(--text-2)">${tsaEsc(buildRecordText(b))}</pre></div>`).join('')
+    : '<div style="font-size:11px;color:var(--text-3)">还没有面谈记录</div>';
+  const logs = info.logs.length ? info.logs.map(l => {
+    const k = TM_KIND[tmLogKind(l)], mine = l.teacher_name === me;
+    return `<div style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--border-light)">
+      ${l.image_url ? `<img src="${tsaEsc(l.image_url)}" onclick="tmImgLightbox('${tsaEsc(l.image_url)}')" style="flex-shrink:0;width:52px;height:52px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:zoom-in">` : ''}
+      <div style="flex:1;min-width:0">
+        <div style="font-size:10px;margin-bottom:2px"><span style="color:var(--text-3)">${tsaEsc(tmLogYm(l))}</span> <span style="color:${k.c};border:1px solid ${k.c};border-radius:2px;padding:0 5px">${k.ic} ${k.t}</span></div>
+        <div style="font-size:11px;white-space:pre-wrap;line-height:1.5">${tsaEsc(l.note) || '（无内容）'}</div>
+        <div style="font-size:9px;color:var(--text-3);margin-top:3px">${tsaEsc(l.teacher_name || '')} · ${tsaEsc(tmJstYmd(l.created_at))}</div>
+      </div>
+      ${mine ? `<span style="flex-shrink:0;font-size:9px;white-space:nowrap"><span onclick="tmFlipKind('${l.id}')" style="color:var(--accent);cursor:pointer">改为${tmLogKind(l) === 'study' ? '未回复' : '学习记录'}</span> <span onclick="tmDeleteContact('${l.id}')" style="color:var(--danger);cursor:pointer;margin-left:6px">删除</span></span>` : ''}
+    </div>`;
+  }).join('') : '<div style="font-size:11px;color:var(--text-3)">还没有学习记录 / 联系记录</div>';
+  const from = (tmYm || tmCurYm()) + '-01';
+  const pend = info.pend.filter(b => (b.slot_date || '') >= from);
+  const pendHtml = pend.length ? pend.map(b => `<div style="font-size:11px;padding:4px 0;border-top:1px solid var(--border-light)">${tsaEsc(b.slot_date)} ${tsaEsc(b.slot_time_range || '')} · ${b.status === 'confirmed' ? '已确认' : '待确认'}${b.assigned_teacher ? ' · ' + tsaEsc(b.assigned_teacher) + '老师' : ''}</div>`).join('') : '<div style="font-size:11px;color:var(--text-3)">没有待进行的预约</div>';
+  const add = `<button onclick="tmContactModal('${s.id}')" style="margin-left:auto;font-size:10px;background:#1a6d3a;color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">＋ 补充记录</button>`;
+  return `<div style="border-top:1px solid var(--border-light);background:var(--bg);padding:10px 14px">
+    ${sub(`面谈记录（${info.recs.length} 次）`, mtg)}
+    ${sub(`学习记录 / 联系记录（${info.logs.length}）`, logs, add)}
+    ${sub(`预约（${tmMonthWord() === '本月' ? '本月' : tmYm.replace('-', '年') + '月'}及以后）`, pendHtml)}
+  </div>`;
 }
 
 // 批量提醒：当前筛选下「无面谈记录」的学生。两种模式（chip 切换）：
@@ -1658,7 +1682,7 @@ function tpDelSchool(planId) {
 }
 
 
-// ── 无面谈学生的"已联系确认"记录（备注 + 可选截图，支持 Ctrl+V 粘贴）──
+// ── 补充记录（学习记录 / 联系未回复；备注 + 可选截图，支持 Ctrl+V 粘贴）──
 let tmPendingImg = null; // 待上传的截图（已压缩）
 
 async function tmCompressImg(file, maxSide, quality) {
@@ -1679,39 +1703,64 @@ async function tmCompressImg(file, maxSide, quality) {
   } catch (e) { return file; }
 }
 
-function tmContactModal(sid, name, major) {
+// 补充记录弹窗：选学生（姓名搜索 / 先选专业再点名字）→ 类型 → 算哪个月 → 内容 → 截图
+let tmAdd = null;   // { sid, fixed, kind, major }
+function tmContactModal(sid) {
+  if (!tmData) return;
   tmPendingImg = null;
+  tmAdd = { sid: sid || '', fixed: !!sid, kind: 'study', major: '' };
   const ex = document.getElementById('tmContactModal'); if (ex) ex.remove();
   const m = document.createElement('div');
   m.id = 'tmContactModal';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  const fixed = !!name;
   m.innerHTML = `
-    <div style="background:var(--surface);border-radius:6px;padding:18px;max-width:440px;width:100%;max-height:90vh;overflow-y:auto">
-      <div style="font-size:13px;font-weight:600;margin-bottom:4px">${name ? '补充记录 — ' + tsaEsc(name) : '补充学生记录'}</div>
-      <div style="font-size:10px;color:var(--text-3);margin-bottom:12px">记录该学生的情况或补充信息（例：已发提醒未回复、某些重点信息）。可直接 Ctrl+V 粘贴截图。</div>
+    <div style="background:var(--surface);border-radius:6px;padding:18px;max-width:460px;width:100%;max-height:90vh;overflow-y:auto">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">＋ 补充记录</div>
+      <div style="font-size:10px;color:var(--text-3);margin-bottom:12px">没有面谈的学生，记录联系情况：学生回复了记「学习记录」（算该月完成）；没回复记「联系未回复」（继续跟进，连续 3 次转重点关注）。</div>
+      <div class="form-group"><label class="form-label">学生</label><div id="tma_stu"></div></div>
+      <div class="form-group"><label class="form-label">类型</label><div id="tma_kind" style="display:flex;gap:6px;flex-wrap:wrap"></div></div>
+      <div class="form-group"><label class="form-label">算哪个月</label>
+        <input type="month" id="tma_ym" value="${tsaEsc(tmYm || tmCurYm())}" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit"></div>
+      <div class="form-group"><label class="form-label" id="tma_note_lb">内容</label>
+        <textarea id="tm_contact_note" rows="4" onpaste="tmHandlePaste(event)" style="width:100%;font-size:12px"></textarea></div>
       <div class="form-group">
-        <label class="form-label">学生姓名</label>
-        <input id="tm_contact_name" value="${tsaEsc(name) || ''}" placeholder="输入学生姓名（汉字）" ${fixed ? 'readonly' : ''} style="width:100%;font-size:12px;${fixed ? 'background:var(--bg);color:var(--text-2)' : ''}">
-      </div>
-      <div class="form-group">
-        <label class="form-label">备注 / 内容</label>
-        <textarea id="tm_contact_note" rows="3" placeholder="如：已在微信发面谈提醒，学生未回复… / 该生近期状态…" onpaste="tmHandlePaste(event)" style="width:100%;font-size:12px"></textarea>
-      </div>
-      <div class="form-group">
-        <label class="form-label">截图证据（可选，Ctrl+V 粘贴或选择文件）</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="file" id="tm_contact_file" accept="image/*" onchange="tmPickFile(event)" style="font-size:11px">
-        </div>
+        <label class="form-label">截图（可选，Ctrl+V 粘贴或选择文件）</label>
+        <input type="file" id="tm_contact_file" accept="image/*" onchange="tmPickFile(event)" style="font-size:11px">
         <div id="tm_contact_preview" style="margin-top:8px"></div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
         <button onclick="document.getElementById('tmContactModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 14px;cursor:pointer;font-family:inherit">取消</button>
-        <button id="tm_contact_save" onclick="tmSaveContact('${sid || ''}','${major || ''}')" style="font-size:12px;background:#1a6d3a;color:#fff;border:none;border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit;font-weight:500">保存</button>
+        <button id="tm_contact_save" onclick="tmSaveContact()" style="font-size:12px;background:#1a6d3a;color:#fff;border:none;border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit;font-weight:500">保存</button>
       </div>
     </div>`;
   document.body.appendChild(m);
-  setTimeout(() => { const t = document.getElementById('tm_contact_note'); if (t) t.focus(); }, 50);
+  tmAddRender();
+}
+function tmAddRender() {
+  const stu = document.getElementById('tma_stu'); if (!stu || !tmAdd) return;
+  const inp = 'font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit';
+  const s = tmAdd.sid && (tmData.students || []).find(x => x.id === tmAdd.sid);
+  if (s) {
+    stu.innerHTML = `<span style="display:inline-flex;align-items:center;gap:8px;font-size:12px;padding:4px 10px;border-radius:12px;background:var(--accent);color:#fff">${tsaEsc(s.name)} · ${tsaEsc(MAJORS[s.major] || s.major || '')}${tmAdd.fixed ? '' : ` <span onclick="tmAdd.sid='';tmAddRender()" style="cursor:pointer">✕</span>`}</span>`;
+  } else {
+    const majors = [...new Set((tmData.students || []).map(x => x.major).filter(Boolean))];
+    stu.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        <input id="tma_q" placeholder="输入姓名（汉字 / 拼音首字母）" oninput="searchBox(this,tmAddSearch)" style="${inp};flex:1;min-width:150px">
+        <select id="tma_major" onchange="tmAdd.major=this.value;tmAddSearch()" style="${inp}"><option value="">先选专业…</option>${majors.map(k => `<option value="${tsaEsc(k)}" ${tmAdd.major === k ? 'selected' : ''}>${tsaEsc(MAJORS[k] || k)}</option>`).join('')}</select>
+      </div><div id="tma_res"></div>`;
+    tmAddSearch();
+  }
+  const kb = document.getElementById('tma_kind');
+  if (kb) kb.innerHTML = Object.entries({ study: '学习记录（学生回复了）', no_reply: '联系未回复' }).map(([k, l]) => `<div class="filter-chip ${tmAdd.kind === k ? 'active' : ''}" onclick="tmAdd.kind='${k}';tmAddRender()" style="padding:4px 12px;font-size:11px">${l}</div>`).join('');
+  const lb = document.getElementById('tma_note_lb');
+  if (lb) lb.textContent = tmAdd.kind === 'study' ? '内容（必填：学习进度、近况）' : '内容（可选：联系方式、时间）';
+}
+function tmAddSearch() {
+  const box = document.getElementById('tma_res'); if (!box || !tmAdd) return;
+  const q = ((document.getElementById('tma_q') || {}).value || '').trim();
+  if (!q && !tmAdd.major) { box.innerHTML = '<div style="font-size:10px;color:var(--text-3)">输入姓名搜索，或先选专业再点名字</div>'; return; }
+  const list = (tmData.students || []).filter(s => (!tmAdd.major || s.major === tmAdd.major) && (!q || searchMatch(q, studentSearchFields(s)))).slice(0, 40);
+  box.innerHTML = list.length ? `<div style="display:flex;flex-wrap:wrap;gap:5px;max-height:130px;overflow-y:auto">${list.map(s => `<div class="filter-chip" onclick="tmAdd.sid='${s.id}';tmAddRender()" style="padding:3px 10px;font-size:11px">${tsaEsc(s.name)}</div>`).join('')}</div>` : '<div style="font-size:10px;color:var(--text-3)">范围内没有匹配的学生</div>';
 }
 
 async function tmHandlePaste(e) {
@@ -1738,30 +1787,26 @@ async function tmSetImg(file) {
   }
 }
 
-async function tmSaveContact(sid, major) {
-  const name = (document.getElementById('tm_contact_name').value || '').trim();
+async function tmSaveContact() {
+  const s = tmAdd && (tmData.students || []).find(x => x.id === tmAdd.sid);
+  if (!s) { alert('请先选择学生'); return; }
   const note = (document.getElementById('tm_contact_note').value || '').trim();
-  if (!name) { alert('请填写学生姓名'); return; }
-  if (!note && !tmPendingImg) { alert('请填写备注，或粘贴一张截图'); return; }
-  // 手动输入姓名时，按姓名从已加载学生里补出 id/专业
-  if (!sid || !major) {
-    const st = (tmData.students || []).find(s => s.name === name);
-    if (st) { sid = sid || st.id; major = major || st.major; }
-  }
+  const ym = (document.getElementById('tma_ym').value || '').trim();
+  if (!/^\d{4}-\d{2}$/.test(ym)) { alert('请选择算哪个月'); return; }
+  if (tmAdd.kind === 'study' && !note) { alert('学习记录请填写内容（学习进度、近况）'); return; }
   const btn = document.getElementById('tm_contact_save');
   if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
   let imageUrl = '';
   try {
-    if (tmPendingImg) {
-      imageUrl = await sbUpload('teacher-files', `contact/${(sid || 'x')}-${Date.now()}.jpg`, tmPendingImg);
-    }
+    if (tmPendingImg) imageUrl = await sbUpload('teacher-files', `contact/${s.id}-${Date.now()}.jpg`, tmPendingImg);
     await sb('/rest/v1/student_contact_logs', 'POST', [{
       id: 'sclog-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5),
-      student_id: sid || null, student_name: name, major: major || '',
+      student_id: s.id, student_name: s.name, major: s.major || '',
       teacher_name: (typeof teacherData !== 'undefined' && teacherData ? teacherData.name : '') || '',
-      note, image_url: imageUrl || null,
+      note, image_url: imageUrl || null, kind: tmAdd.kind, for_month: ym,
     }]);
     document.getElementById('tmContactModal')?.remove();
+    tmYm = ym;   // 跳到刚记录的那个月，立刻能看到它出现在哪一组
     renderTsaMeetings(document.getElementById('sm_content') || document.getElementById('mainContent'));
   } catch (e) {
     alert('保存失败：' + e.message);
@@ -1769,10 +1814,25 @@ async function tmSaveContact(sid, major) {
   }
 }
 
-async function tmDeleteContact(id) {
-  if (!confirm('确认删除这条联系记录？')) return;
+function tmFindLog(id) {
+  let hit = null;
+  [tmData.logs.id, tmData.logs.nm].forEach(ix => Object.values(ix).forEach(arr => arr.forEach(l => { if (l.id === id) hit = l; })));
+  return hit;
+}
+async function tmFlipKind(id) {
+  const l = tmFindLog(id); if (!l) return;
+  const next = tmLogKind(l) === 'study' ? 'no_reply' : 'study';
   try {
-    await sb(`/rest/v1/student_contact_logs?id=eq.${id}`, 'DELETE');
+    await sb(`/rest/v1/student_contact_logs?id=eq.${encodeURIComponent(id)}`, 'PATCH', { kind: next });
+    l.kind = next; tmData.cache = {};
+    tmRenderList();
+  } catch (e) { alert('修改失败：' + e.message); }
+}
+
+async function tmDeleteContact(id) {
+  if (!confirm('确认删除这条记录？')) return;
+  try {
+    await sb(`/rest/v1/student_contact_logs?id=eq.${encodeURIComponent(id)}`, 'DELETE');
     renderTsaMeetings(document.getElementById('sm_content') || document.getElementById('mainContent'));
   } catch (e) { alert('删除失败：' + e.message); }
 }
@@ -1970,21 +2030,4 @@ async function focusOpenSummary(sid) {
     o.innerHTML = `<div style="background:#fff;border-radius:8px;max-width:520px;width:100%;padding:24px;margin:auto"><div style="color:#b03a2e;font-size:13px;margin-bottom:12px">概要生成失败：${(e && e.message) || e}</div><button onclick="document.getElementById('focusSummary').remove()" style="font-size:12px;border:1px solid #ccc;background:none;border-radius:4px;padding:6px 16px;cursor:pointer">关闭</button></div>`;
     console.error('focusOpenSummary error:', e);
   }
-}
-
-// 学生名下的"补充记录"块（追加按钮 + 已有联系/补充记录）——用于「有面谈记录」展开处
-function tmContactBlockHtml(name, major, sid) {
-  const logs = tmContactByName[name] || [];
-  const logHtml = logs.map(l => `<div style="display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-top:1px solid var(--border-light)">
-    ${l.image_url ? `<img src="${l.image_url}" onclick="tmImgLightbox('${l.image_url}')" style="flex-shrink:0;width:44px;height:44px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:zoom-in">` : ''}
-    <div style="flex:1;min-width:0"><div style="font-size:11px;white-space:pre-wrap;line-height:1.5">${tsaEsc(l.note) || '（无备注）'}</div><div style="font-size:9px;color:var(--text-3);margin-top:2px">${l.teacher_name || ''} · ${(l.created_at || '').slice(0, 10)}</div></div>
-    <span onclick="tmDeleteContact('${l.id}')" style="flex-shrink:0;font-size:9px;color:var(--danger);cursor:pointer">删除</span>
-  </div>`).join('');
-  return `<div style="border-top:1px dashed var(--border);margin-top:2px;padding-top:8px">
-    <div style="display:flex;align-items:center;gap:8px;${logs.length ? 'margin-bottom:4px' : ''}">
-      <span style="font-size:10px;color:#1a6d3a;font-weight:600">📝 补充记录${logs.length ? '（' + logs.length + '）' : ''}</span>
-      <button onclick="tmContactModal('${sid}','${tsaEsc(name)}','${major || ''}')" style="margin-left:auto;font-size:10px;background:#1a6d3a;color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">＋ 追加记录</button>
-    </div>
-    ${logHtml}
-  </div>`;
 }
