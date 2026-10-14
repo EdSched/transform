@@ -1514,27 +1514,32 @@ function isSchoolFailed(v) { return SCHOOL_FAILED_STATUSES.includes(v); }
 // 发给学生的文字：查询码通知（文案 A）/ 面谈提醒（文案 B）
 // 管理端学生管理、老师端学生管理、老师端面谈提醒共用。文字里只放该学生本人的查询码；群发文字不能带查询码。
 // ══════════════════════════════════
-const STUDENT_PORTAL_BASE = 'https://edsched.github.io/transform/student/index.html';
-function studentPortalLink(major) {
-  const k = (typeof majorKeyFromText === 'function' ? majorKeyFromText(major) : '') || major || '';
-  return `${STUDENT_PORTAL_BASE}?major=${encodeURIComponent(k)}`;
+const STUDENT_PORTAL_ROOT = 'https://edsched.github.io/transform/';
+// 纯 VIP 学生 → VIP 页；其他（大课、大课+VIP、未填）→ 学习页。不带专业。opts.tab：普通学生直接打开某个标签（如 'reserve'）
+function studentPortalLink(student, opts) {
+  if (isPureVipStudent(student)) return STUDENT_PORTAL_ROOT + 'vip/index.html';
+  const tab = opts && opts.tab;
+  return STUDENT_PORTAL_ROOT + 'student/study.html' + (tab ? `?tab=${encodeURIComponent(tab)}` : '');
 }
 const STUDENT_CODE_MISSING = '（未生成，请联系老师）';
 // 文案 A：查询码通知
-function studentCodeNoticeText(name, major, code) {
+function studentCodeNoticeText(student, code) {
+  const name = student.name;
+  const vip = isPureVipStudent(student);
   return `${name}同学，你好！
-以后你的学习记录和面谈预约都统一在这个链接里：
-${studentPortalLink(major)}
+以后你的${vip ? 'VIP 预约和课程安排' : '学习记录和面谈预约'}都统一在这个链接里：
+${studentPortalLink(student)}
 第一次打开时，请输入你的姓名和查询码登录。
 查询码：${code || STUDENT_CODE_MISSING}
 （在同一台手机上登录一次后，再打开就会自动进入。）
 ⚠ 查询码相当于你的个人账号密码，请妥善保存，不要告诉他人。
-学习记录、作业、面谈记录、志望校和计划书都可以在这里查看和更新，请好好利用～`;
+${vip ? 'VIP 预约、课程安排、作业、面谈记录、志望校和计划书' : '学习记录、作业、面谈记录、志望校和计划书'}都可以在这里查看和更新，请好好利用～`;
 }
 // 文案 B：面谈提醒（逐人，含查询码）
-function bookingReminderText(name, major, code) {
+function bookingReminderText(student, code) {
+  const name = student.name;
   return `${name}同学，你最近都一直没有预约面谈，学习上有什么问题吗？麻烦预约一下面谈噢。
-预约链接：${studentPortalLink(major)}
+预约链接：${studentPortalLink(student, { tab: 'reserve' })}
 登录时请输入你的姓名和查询码：${code || STUDENT_CODE_MISSING}
 ⚠ 查询码请妥善保存，不要告诉他人。`;
 }
@@ -1604,7 +1609,7 @@ async function openStudentCodeNotice(student, onCodeIssued) {
   const had = !!(student && student.student_code);
   const r = await ensureStudentCode(student);
   if (!had && r.code && typeof onCodeIssued === 'function') onCodeIssued(student);
-  const text = studentCodeNoticeText(student.name, student.major, r.code);
+  const text = studentCodeNoticeText(student, r.code);
   body.innerHTML = studentTextBlocksHtml([{ name: student.name, sub: (!had && r.code) ? '已自动生成查询码' : '', text, error: r.error }], 'stn');
   if (!r.error) studentTextCopy('stn', 0);
 }
@@ -1621,7 +1626,7 @@ async function studentTextBatch(students, kind, bodyEl, prefix, onCodeIssued) {
       r = await ensureStudentCode(s);
       if (r.code) issued = true;
     }
-    const text = kind === 'reminder' ? bookingReminderText(s.name, s.major, r.code) : studentCodeNoticeText(s.name, s.major, r.code);
+    const text = kind === 'reminder' ? bookingReminderText(s, r.code) : studentCodeNoticeText(s, r.code);
     const majorLbl = (typeof MAJORS !== 'undefined' && MAJORS[s.major]) || s.major || '';
     entries.push({ name: s.name, sub: majorLbl, text, error: r.error });
   }

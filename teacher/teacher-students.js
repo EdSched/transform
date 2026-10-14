@@ -1350,7 +1350,7 @@ function tDraftFullHtml(draft) {
 // ══════════════════════════════════
 // 面谈跟进（学生管理子项 meetings）——按「每月一次」跟进
 // 规则：每个学生每月至少一次面谈；没有面谈的，老师补「联系记录」：
-//   学习记录（学生回复了、记了学习进度）→ 这个月算完成；联系未回复 → 没完成，继续跟进。
+//   学习记录（补充学习情况、和学生的互动等）→ 这个月算完成；联系未回复 → 没完成，继续跟进。
 //   连续 3 次联系未回复（中间没有面谈 / 学习记录）→ 转入重点关注。
 // ══════════════════════════════════
 const TM_KIND = { study: { t: '学习记录', c: '#1a6d3a', ic: '✎' }, no_reply: { t: '联系未回复', c: '#b8560b', ic: '✉' } };
@@ -1392,7 +1392,7 @@ async function renderTsaMeetings(box) {
   box.innerHTML = '<div class="empty">加载中…</div>';
   if (!tmYm) tmYm = tmCurYm();
   try {
-    const allStu = await sb('/rest/v1/students?select=id,name,major,source,status,course_type,student_code,class_ids,vip_teachers&limit=2000').catch(() => []);
+    const allStu = await sb('/rest/v1/students?select=id,name,major,source,status,course_type,student_code,class_ids,vip_teachers,is_vip_course&limit=2000').catch(() => []);
     let myStudents = tsaFilterStudents(allStu);   // 全部状态；由全局「状态」筛选
     if (tsaGuaranteedLock()) myStudents = myStudents.filter(tsaIsGuaranteed);
     tmData = await tmLoadFollow(myStudents);
@@ -1567,12 +1567,14 @@ async function tmBatchRender(noRec) {
     <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">${tmBatchMode === 'each' ? '每人一段，只含本人的查询码，请逐个私信发送；复制后会标「✓ 已复制」。' : '可以发到专业群里；群发文字不含查询码，登录查询码请另外私信学生。'}</div>`;
   if (tmBatchMode === 'group') {
     const byMajor = {};
-    noRec.forEach(s => { const m = s.major || ''; (byMajor[m] = byMajor[m] || []).push(s.name); });
-    const entries = Object.entries(byMajor).map(([m, names]) => ({
-      name: `${MAJORS[m] || m || '未设专业'}（${names.length}人未面谈）`,
+    noRec.forEach(s => { const m = (s.major || '') + (isPureVipStudent(s) ? '|vip' : ''); (byMajor[m] = byMajor[m] || []).push(s.name); });   // 纯 VIP 单独一组（链接不同）
+    const entries = Object.entries(byMajor).map(([mk, names]) => {
+      const vip = mk.endsWith('|vip'), m = vip ? mk.slice(0, -4) : mk;
+      return {
+      name: `${MAJORS[m] || m || '未设专业'}${vip ? ' · 纯VIP' : ''}（${names.length}人未面谈）`,
       sub: names.join('、'),
-      text: `同学，你最近都一直没有预约面谈，学习上有什么问题吗？麻烦预约一下面谈噢。\n预约链接：${studentPortalLink(m)}\n登录查询码请查看老师私信，请妥善保存。`,
-    }));
+      text: `同学，你最近都一直没有预约面谈，学习上有什么问题吗？麻烦预约一下面谈噢。\n预约链接：${studentPortalLink({ is_vip_course: vip ? 'VIP' : '' }, { tab: 'reserve' })}\n登录查询码请查看老师私信，请妥善保存。`,
+    }; });
     body.innerHTML = head + studentTextBlocksHtml(entries, 'tmbg');
     return;
   }
@@ -1587,12 +1589,12 @@ async function tmBatchRender(noRec) {
 // 单人面谈提醒（文案 B，含本人查询码；没有查询码时先自动生成），弹窗显示并自动复制
 async function tmGenReminder(id) {
   let st = ((tmData && tmData.students) || []).find(x => x.id === id);
-  if (!st && id) st = ((await sb(`/rest/v1/students?id=eq.${encodeURIComponent(id)}&select=id,name,major,student_code`).catch(() => [])) || [])[0];
+  if (!st && id) st = ((await sb(`/rest/v1/students?id=eq.${encodeURIComponent(id)}&select=id,name,major,student_code,is_vip_course`).catch(() => [])) || [])[0];
   if (!st) { alert('找不到该学生档案'); return; }
   const body = studentTextModal('tmReminderModal', `✉ 面谈提醒 · ${tsaEsc(st.name)}`, '<div style="font-size:12px;color:var(--text-3);padding:12px">正在准备…</div>');
   const had = !!st.student_code;
   const r = await ensureStudentCode(st);
-  body.innerHTML = studentTextBlocksHtml([{ name: st.name, sub: (!had && r.code) ? '已自动生成查询码' : '', text: bookingReminderText(st.name, st.major, r.code), error: r.error }], 'tmr');
+  body.innerHTML = studentTextBlocksHtml([{ name: st.name, sub: (!had && r.code) ? '已自动生成查询码' : '', text: bookingReminderText(st, r.code), error: r.error }], 'tmr');
   if (!r.error) studentTextCopy('tmr', 0);
 }
 
@@ -1823,7 +1825,7 @@ function tmContactModal(sid) {
   m.innerHTML = `
     <div style="background:var(--surface);border-radius:6px;padding:18px;max-width:460px;width:100%;max-height:90vh;overflow-y:auto">
       <div style="font-size:13px;font-weight:600;margin-bottom:4px">＋ 补充记录</div>
-      <div style="font-size:10px;color:var(--text-3);margin-bottom:12px">没有面谈的学生，记录联系情况：学生回复了记「学习记录」（算该月完成）；没回复记「联系未回复」（继续跟进，连续 3 次转重点关注）。</div>
+      <div style="font-size:10px;color:var(--text-3);margin-bottom:12px">没有面谈的学生在这里补充记录：补充学习情况、和学生的互动等记「学习记录」（算该月完成）；联系了学生但没有回复记「联系未回复」（继续跟进，连续 3 次转重点关注）。</div>
       <div class="form-group"><label class="form-label">学生</label><div id="tma_stu"></div></div>
       <div class="form-group"><label class="form-label">类型</label><div id="tma_kind" style="display:flex;gap:6px;flex-wrap:wrap"></div></div>
       <div class="form-group"><label class="form-label">算哪个月</label>
@@ -1858,9 +1860,9 @@ function tmAddRender() {
     tmAddSearch();
   }
   const kb = document.getElementById('tma_kind');
-  if (kb) kb.innerHTML = Object.entries({ study: '学习记录（学生回复了）', no_reply: '联系未回复' }).map(([k, l]) => `<div class="filter-chip ${tmAdd.kind === k ? 'active' : ''}" onclick="tmAdd.kind='${k}';tmAddRender()" style="padding:4px 12px;font-size:11px">${l}</div>`).join('');
+  if (kb) kb.innerHTML = Object.entries({ study: '学习记录（补充学习情况，和学生的互动等）', no_reply: '联系未回复' }).map(([k, l]) => `<div class="filter-chip ${tmAdd.kind === k ? 'active' : ''}" onclick="tmAdd.kind='${k}';tmAddRender()" style="padding:4px 12px;font-size:11px">${l}</div>`).join('');
   const lb = document.getElementById('tma_note_lb');
-  if (lb) lb.textContent = tmAdd.kind === 'study' ? '内容（必填：学习进度、近况）' : '内容（可选：联系方式、时间）';
+  if (lb) lb.textContent = tmAdd.kind === 'study' ? '内容（必填：学习情况、作业、互动内容等）' : '内容（可选：联系方式、时间）';
 }
 function tmAddSearch() {
   const box = document.getElementById('tma_res'); if (!box || !tmAdd) return;
