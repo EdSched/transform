@@ -1371,39 +1371,45 @@ function tmLogYm(l) { return l.for_month || tmJstYmd(l.created_at).slice(0, 7); 
 // 记录在时间线上的位置（补记往月的记录，按那个月月底算，避免排在后面的面谈前面）
 function tmLogKey(l) { const ym = tmLogYm(l), cd = tmJstYmd(l.created_at); return cd.slice(0, 7) === ym ? cd : ym + '-28'; }
 
+// 读取面谈 / 预约 / 联系记录，按学生归档（面谈跟进、重点关注共用）；students = 已按可见范围过滤的学生
+async function tmLoadFollow(students) {
+  const [allBk, allPend, allLogs] = await Promise.all([
+    sbAll('/rest/v1/bookings?daily_record=not.is.null&select=*&order=slot_date.desc,id.asc'),
+    sbAll('/rest/v1/bookings?status=in.("pending","confirmed")&select=id,name,student_id,major,slot_date,slot_time_range,status,type,assigned_teacher,daily_record&order=id.asc'),
+    sbAll('/rest/v1/student_contact_logs?select=*&order=created_at.desc,id.asc'),
+  ]);
+  // 按学生 id 归档；没绑定学生 id 的（新同学预约、旧记录）按姓名归档
+  const idx = () => ({ id: {}, nm: {} });
+  const put = (ix, row, name) => { if (row.student_id) (ix.id[row.student_id] = ix.id[row.student_id] || []).push(row); else (ix.nm[name] = ix.nm[name] || []).push(row); };
+  const rec = idx(), pend = idx(), logs = idx();
+  (allBk || []).forEach(b => { if (tmHasRec(b)) put(rec, b, b.name); });
+  (allPend || []).forEach(b => { if (b.type !== 'vip' && !tmHasRec(b)) put(pend, b, b.name); });
+  (allLogs || []).forEach(l => put(logs, l, l.student_name));
+  return { students, rec, pend, logs, cache: {} };
+}
+
 async function renderTsaMeetings(box) {
   box.innerHTML = '<div class="empty">加载中…</div>';
   if (!tmYm) tmYm = tmCurYm();
   try {
-    const [allStu, allBk, allPend, allLogs] = await Promise.all([
-      sb('/rest/v1/students?select=id,name,major,source,status,course_type,student_code,class_ids,vip_teachers&limit=2000').catch(() => []),
-      sbAll('/rest/v1/bookings?daily_record=not.is.null&select=*&order=slot_date.desc'),
-      sbAll('/rest/v1/bookings?status=in.("pending","confirmed")&select=id,name,student_id,major,slot_date,slot_time_range,status,type,assigned_teacher,daily_record'),
-      sbAll('/rest/v1/student_contact_logs?select=*&order=created_at.desc'),
-    ]);
+    const allStu = await sb('/rest/v1/students?select=id,name,major,source,status,course_type,student_code,class_ids,vip_teachers&limit=2000').catch(() => []);
     let myStudents = tsaFilterStudents(allStu);   // 全部状态；由全局「状态」筛选
     if (tsaGuaranteedLock()) myStudents = myStudents.filter(tsaIsGuaranteed);
-    // 按学生 id 归档；没绑定学生 id 的（新同学预约、旧记录）按姓名归档
-    const idx = () => ({ id: {}, nm: {} });
-    const put = (ix, row, name) => { if (row.student_id) (ix.id[row.student_id] = ix.id[row.student_id] || []).push(row); else (ix.nm[name] = ix.nm[name] || []).push(row); };
-    const rec = idx(), pend = idx(), logs = idx();
-    (allBk || []).forEach(b => { if (tmHasRec(b)) put(rec, b, b.name); });
-    (allPend || []).forEach(b => { if (b.type !== 'vip' && !tmHasRec(b)) put(pend, b, b.name); });
-    (allLogs || []).forEach(l => put(logs, l, l.student_name));
-    tmData = { students: myStudents, rec, pend, logs, cache: {} };
+    tmData = await tmLoadFollow(myStudents);
   } catch (e) { box.innerHTML = `<div class="empty">加载失败：${tsaEsc(e.message)}</div>`; return; }
   tmRenderShell();
 }
 
 // 一个学生的全部面谈 / 预约 / 联系记录
-function tmInfo(s) {
-  const c = tmData.cache;
+function tmInfo(s, D) {
+  D = D || tmData;
+  const c = D.cache;
   if (c[s.id]) return c[s.id];
   const pick = ix => (ix.id[s.id] || []).concat(ix.nm[s.name] || []);
   return (c[s.id] = {
-    recs: pick(tmData.rec).sort((a, b) => (b.slot_date || '').localeCompare(a.slot_date || '')),
-    pend: pick(tmData.pend).sort((a, b) => (a.slot_date || '').localeCompare(b.slot_date || '')),
-    logs: pick(tmData.logs).sort((a, b) => tmLogKey(b).localeCompare(tmLogKey(a))),
+    recs: pick(D.rec).sort((a, b) => (b.slot_date || '').localeCompare(a.slot_date || '')),
+    pend: pick(D.pend).sort((a, b) => (a.slot_date || '').localeCompare(b.slot_date || '')),
+    logs: pick(D.logs).sort((a, b) => tmLogKey(b).localeCompare(tmLogKey(a))),
   });
 }
 // 某个月的状态：group = done | pend | noreply | none
@@ -1417,7 +1423,7 @@ function tmMonthState(info, ym) {
   return { group, cell, mtg, study, nore, pend };
 }
 // 截至某月月底，连续几次联系未回复（中间有面谈 / 学习记录就清零）
-function tmStreak(info, uptoYm) {
+function tmStreak(info, uptoYm) {   // uptoYm 为空 = 截至现在
   const ev = info.recs.map(b => ({ k: b.slot_date || '', ok: true })).concat(info.logs.map(l => ({ k: tmLogKey(l), ok: tmLogKind(l) === 'study' })))
     .filter(e => e.k && (!uptoYm || e.k.slice(0, 7) <= uptoYm)).sort((a, b) => a.k.localeCompare(b.k) || (b.ok ? 1 : 0) - (a.ok ? 1 : 0));
   let n = 0;
@@ -1462,8 +1468,8 @@ function tmSetGroup(g) { tmGroup = tmGroup === g ? '' : g; tmShown0(); tmRenderL
 function tmToggle(id) { tmExpandedId = tmExpandedId === id ? null : id; tmRenderList(); }
 
 // 近 6 个月小方格（每月一格）
-function tmCellsHtml(info) {
-  const ym = tmYm || tmCurYm(), out = [];
+function tmCellsHtml(info, endYm) {
+  const ym = endYm || tmYm || tmCurYm(), out = [];
   const sty = { mtg: ['✓', '#1a6d3a', '#e4f3ea', '面谈'], study: ['✎', '#1a6d3a', '#e4f3ea', '学习记录'], noreply: ['✉', '#b8560b', '#fbeee0', '联系未回复'], pend: ['⏳', '#8a6d10', '#fef5e0', '待面谈'] };
   for (let i = 5; i >= 0; i--) {
     const m = tmShiftYm(ym, -i), c = tmMonthState(info, m).cell, d = sty[c];
@@ -1954,7 +1960,7 @@ function tmImgLightbox(url) {
 // 重点关注：按到期临近筛选 + 学生学习概要汇总（换一种展示方式）
 // ══════════════════════════════════════════════════════════
 let focusStudents = [];
-let focusUrgency = 'all';   // all | half | q3 | near | expired
+let focusUrgency = 'all';   // all | half | q3 | near | expired | nomtg 本月无面谈无记录 | noreply3 连续3次联系未回复
 
 function focusParseDate(str) {
   if (!str) return null;
@@ -1986,6 +1992,9 @@ const FOCUS_URG = {
   far: { t: '远期', bg: '#eef1f5', c: '#5a6a7a' },
 };
 
+let focusTm = null;         // 面谈 / 预约 / 联系记录（tmLoad），用于「本月无面谈无记录」「连续 3 次未回复」
+let focusTmErr = '';
+
 async function renderTeacherFocus(box) {
   box.innerHTML = '<div class="empty">加载中…</div>';
   try {
@@ -1993,6 +2002,7 @@ async function renderTeacherFocus(box) {
     let list = tsaFilterStudents(all);   // 全部状态；由全局「状态」筛选
     if (tsaGuaranteedLock()) list = list.filter(tsaIsGuaranteed);
     focusStudents = list;
+    try { focusTm = await tmLoadFollow(list); focusTmErr = ''; } catch (e) { focusTm = null; focusTmErr = (e && e.message) || String(e); }
     focusRender();
   } catch (e) {
     box.innerHTML = `<div class="empty" style="color:var(--danger)">重点关注加载失败：${(e && e.message) || e}</div>`;
@@ -2000,13 +2010,23 @@ async function renderTeacherFocus(box) {
   }
 }
 
+// 这个学生的面谈跟进情况：本月是否「无面谈无记录」、当前连续几次联系未回复
+function focusFlags(s) {
+  if (!focusTm) return null;
+  const info = tmInfo(s, focusTm);
+  return { info, none: tmMonthState(info, tmCurYm()).group === 'none', streak: tmStreak(info) };
+}
+
 function focusRender() {
   const box = document.getElementById('sm_content') || document.getElementById('mainContent');
   if (!box) return;
   try {
-  const rows = tsmFilterStudents(focusStudents).map(s => { const months = focusMonthsUntil(s.expiry_date); return { s, months, bucket: focusBucket(months) }; });
+  const rows = tsmFilterStudents(focusStudents).map(s => { const months = focusMonthsUntil(s.expiry_date); return { s, months, bucket: focusBucket(months), f: focusFlags(s) }; });
+  const nNone = rows.filter(r => r.f && r.f.none).length, nStreak = rows.filter(r => r.f && r.f.streak >= 3).length;
   let filtered = rows.filter(r => {
     if (focusUrgency === 'all') return true;
+    if (focusUrgency === 'nomtg') return !!(r.f && r.f.none);
+    if (focusUrgency === 'noreply3') return !!(r.f && r.f.streak >= 3);
     if (focusUrgency === 'expired') return r.bucket === 'expired';
     if (focusUrgency === 'near') return ['near', 'expired'].includes(r.bucket);
     if (focusUrgency === 'q3') return ['near', 'q3', 'expired'].includes(r.bucket);
@@ -2014,9 +2034,11 @@ function focusRender() {
     return true;
   });
   const ord = { expired: 0, near: 1, q3: 2, half: 3, far: 4 };
-  filtered.sort((a, b) => ((ord[a.bucket] ?? 5) - (ord[b.bucket] ?? 5)) || ((a.months ?? 9999) - (b.months ?? 9999)));
+  if (focusUrgency === 'noreply3') filtered.sort((a, b) => b.f.streak - a.f.streak);
+  else filtered.sort((a, b) => ((ord[a.bucket] ?? 5) - (ord[b.bucket] ?? 5)) || ((a.months ?? 9999) - (b.months ?? 9999)));
 
-  const chip = (k, l) => `<div class="filter-chip ${focusUrgency === k ? 'active' : ''}" onclick="focusUrgency='${k}';focusRender()" style="padding:3px 10px;font-size:10px;cursor:pointer">${l}</div>`;
+  const chip = (k, l) => `<div class="filter-chip ${focusUrgency === k ? 'active' : ''}" onclick="focusUrgency='${k}';tsmShown=TSM_PAGE;focusRender()" style="padding:3px 10px;font-size:10px;cursor:pointer">${l}</div>`;
+  const tag = (c, bg, t) => `<span style="font-size:10px;padding:1px 8px;border-radius:10px;background:${bg};color:${c};white-space:nowrap">${t}</span>`;
   const cards = filtered.length ? tsmSlice(filtered).map(r => {
     const u = r.bucket ? FOCUS_URG[r.bucket] : null;
     const badge = u ? `<span style="font-size:10px;padding:1px 8px;border-radius:10px;background:${u.bg};color:${u.c};white-space:nowrap">${u.t}${r.months != null && r.months >= 0 ? '·' + r.months + '个月' : (r.months != null ? '·超' + (-r.months) + '月' : '')}</span>` : '<span style="font-size:10px;color:var(--text-3)">无到期时间</span>';
@@ -2024,6 +2046,8 @@ function focusRender() {
       <span style="font-size:13px;font-weight:600">${tsaEsc(r.s.name)}</span>
       <span style="font-size:11px;color:var(--text-3)">${MAJORS[r.s.major] || r.s.major || ''}</span>
       ${badge}
+      ${r.f && r.f.streak >= 3 ? tag('#c0392b', '#fdecea', `⚠ 连续 ${r.f.streak} 次联系未回复`) : ''}
+      ${r.f && r.f.none ? tag('#b8560b', '#fbeee0', '本月无面谈无记录') : ''}
       <span style="font-size:10px;color:var(--text-3)">到期 ${tsaEsc(r.s.expiry_date) || '—'}</span>
       <span style="margin-left:auto;font-size:11px;color:var(--accent)">查看概要 ›</span>
     </div>`;
@@ -2032,8 +2056,11 @@ function focusRender() {
   box.innerHTML = `
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
       ${chip('all', '全部')}${chip('half', '半年内')}${chip('q3', '三个月内')}${chip('near', '临近')}${chip('expired', '已过期')}
+      <span style="width:1px;height:16px;background:var(--border);margin:0 4px"></span>
+      ${chip('nomtg', '本月无面谈无记录 ' + (focusTm ? nNone : '—'))}${chip('noreply3', '连续 3 次联系未回复 ' + (focusTm ? nStreak : '—'))}
     </div>
-    <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">共 ${filtered.length} 人 · 点学生查看完整学习概要（可打印）。到期依据「到期时间」自动推算。</div>
+    ${focusTmErr ? `<div style="font-size:11px;color:var(--danger);margin-bottom:8px">面谈 / 联系记录加载失败：${tsaEsc(focusTmErr)}（「本月无面谈无记录」「连续 3 次联系未回复」暂不可用）</div>` : ''}
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">共 ${filtered.length} 人 · 点学生查看完整学习概要（可打印 / 复制反馈文字）。到期依据「到期时间」自动推算；连续 3 次联系未回复 = 中间没有面谈 / 学习记录。</div>
     <div>${cards}</div>`;
   } catch (e) {
     box.innerHTML = `<div class="empty" style="color:var(--danger)">重点关注渲染失败：${(e && e.message) || e}</div>`;
@@ -2041,6 +2068,14 @@ function focusRender() {
   }
 }
 
+let focusFbText = '';   // 当前概要对应的反馈文字（给营业 / 家长）
+function focusCopyFeedback() {
+  const ok = () => alert('已复制反馈文字，可直接发给营业 / 家长');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(focusFbText).then(ok).catch(() => prompt('复制下面的文字：', focusFbText));
+  else prompt('复制下面的文字：', focusFbText);
+}
+
+// 学生概要：每次打开都实时读取（不缓存）。结构：基本信息 / 报考学校 / 考学进度 / 面谈记录 / 学习记录・联系记录
 async function focusOpenSummary(sid) {
   const s = focusStudents.find(x => x.id === sid);
   if (!s) return;
@@ -2057,45 +2092,91 @@ async function focusOpenSummary(sid) {
   o.innerHTML = '<div style="background:#fff;border-radius:8px;max-width:820px;width:100%;padding:28px;margin:auto"><div style="text-align:center;color:#888;padding:30px">加载概要中…</div></div>';
   document.body.appendChild(o);
 
-  const enc = encodeURIComponent;
-  const [timeline, plans, bks, contacts] = await Promise.all([
-    sb(`/rest/v1/student_progress_timeline?student_id=eq.${sid}&select=*&order=created_at.asc`).catch(() => []),
-    sb(`/rest/v1/student_school_plans?student_id=eq.${sid}&select=*&order=level.asc`).catch(() => []),
-    sb(`/rest/v1/bookings?name=eq.${enc(s.name)}&daily_record=not.is.null&select=slot_date,daily_record,teacher_name&order=slot_date.desc&limit=200`).catch(() => []),
-    sb(`/rest/v1/student_contact_logs?student_name=eq.${enc(s.name)}&select=*&order=created_at.desc`).catch(() => []),
+  const enc = encodeURIComponent, nc = { cache: 'no-store' };
+  // 每个查询单独记录成功 / 失败：失败要显示错误，不能当成「0 条」
+  const safe = p => p.then(v => ({ v: v || [] }), e => ({ v: [], err: (e && e.message) || String(e) }));
+  const get = path => safe(sb(path, 'GET', null, nc));
+  const bkSel = 'id,name,student_id,major,slot_date,slot_time_range,actual_time,actual_duration,status,type,assigned_teacher,daily_record';
+  const [tlR, plR, bkIdR, bkNmR, lgIdR, lgNmR] = await Promise.all([
+    get(`/rest/v1/student_progress_timeline?student_id=eq.${enc(sid)}&select=*&order=created_at.asc`),
+    get(`/rest/v1/student_school_plans?student_id=eq.${enc(sid)}&select=*&order=level.asc`),
+    get(`/rest/v1/bookings?student_id=eq.${enc(sid)}&select=${bkSel}&order=slot_date.desc&limit=500`),
+    get(`/rest/v1/bookings?student_id=is.null&name=eq.${enc(s.name)}&select=${bkSel}&order=slot_date.desc&limit=500`),   // 没绑定学生 id 的老预约才按姓名兜底
+    get(`/rest/v1/student_contact_logs?student_id=eq.${enc(sid)}&select=*&order=created_at.desc`),
+    get(`/rest/v1/student_contact_logs?student_id=is.null&student_name=eq.${enc(s.name)}&select=*&order=created_at.desc`),
   ]);
 
   try {
+  const timeline = tlR.v, plans = plR.v;
+  const bks = bkIdR.v.concat(bkNmR.v), logs = lgIdR.v.concat(lgNmR.v);
+  const recs = bks.filter(tmHasRec).sort((a, b) => (b.slot_date || '').localeCompare(a.slot_date || ''));
+  const info = { recs, pend: bks.filter(b => ['pending', 'confirmed'].includes(b.status) && b.type !== 'vip' && !tmHasRec(b)), logs: logs.sort((a, b) => tmLogKey(b).localeCompare(tmLogKey(a))) };
+  const errHtml = (...rs) => { const e = rs.map(r => r.err).filter(Boolean)[0]; return e ? `<div style="font-size:11px;color:#b03a2e;padding:4px 0">读取失败：${tsaEsc(e)}</div>` : ''; };
   const months = focusMonthsUntil(s.expiry_date);
   const u = focusBucket(months) ? FOCUS_URG[focusBucket(months)] : null;
   const kv = (k, v) => v ? `<div style="font-size:12px;padding:3px 0"><span style="color:#888;display:inline-block;width:78px">${k}</span>${tsaEsc(v)}</div>` : '';
-
-  // 志望校
-  const schoolsHtml = plans.length ? plans.map(p => {
-    const st = (typeof SCHOOL_STATUS_LABELS !== 'undefined' && SCHOOL_STATUS_LABELS[p.status]) ? SCHOOL_STATUS_LABELS[p.status].t : (p.status || '');
-    return `<div style="font-size:12px;padding:5px 0;border-top:1px solid #eee"><span style="font-weight:600">${tsaEsc(p.school_name)}</span>${p.faculty ? ' · ' + tsaEsc(p.faculty) : ''}${p.professor ? ' · ' + tsaEsc(p.professor) : ''} ${schoolLevelHtml(p.level)} <span style="color:#2a6a9a">${st}</span>${p.application_period ? ' <span style="color:#888;font-size:11px">出愿 ' + tsaEsc(p.application_period) + '</span>' : ''}</div>`;
-  }).join('') : '<div style="font-size:11px;color:#aaa">暂无志望校</div>';
-
-  // 考学进度时间线
-  const tlHtml = timeline.length ? timeline.map(t => {
-    const d = (t.created_at || '').slice(0, 10);
-    const bits = Object.entries(t).filter(([k, v]) => !['id', 'student_id', 'student_name', 'created_at', 'updated_at', 'major'].includes(k) && v && typeof v === 'string').map(([k, v]) => `${tsaEsc(v)}`);
-    const note = t.note || t.summary || bits.join(' / ');
-    return `<div style="font-size:12px;padding:5px 0;border-top:1px solid #eee"><span style="color:#2a6a9a;font-family:monospace">${d}</span> ${tsaEsc(note) || '（进度更新）'}</div>`;
-  }).join('') : '<div style="font-size:11px;color:#aaa">暂无进度记录</div>';
-
-  // 面谈记录
-  const mtgHtml = bks.length ? bks.map(b => {
-    let txt = '';
-    const dr = b.daily_record;
-    if (dr && typeof dr === 'object') txt = Object.values(dr).filter(v => typeof v === 'string' && v.trim()).join(' / ');
-    return `<div style="font-size:12px;padding:5px 0;border-top:1px solid #eee"><span style="color:#2a6a9a;font-family:monospace">${b.slot_date || ''}</span> ${b.teacher_name ? '<span style="color:#888">' + tsaEsc(b.teacher_name) + '</span> ' : ''}${tsaEsc(txt.slice(0, 200))}</div>`;
-  }).join('') : '<div style="font-size:11px;color:#aaa">暂无面谈记录</div>';
-
-  // 联系记录
-  const contactHtml = contacts.length ? contacts.map(c => `<div style="font-size:12px;padding:5px 0;border-top:1px solid #eee"><span style="color:#2a6a9a;font-family:monospace">${(c.created_at || '').slice(0, 10)}</span> ${tsaEsc(c.note) || ''}${c.image_url ? ' <span style="color:#1a6d3a">[有截图]</span>' : ''}</div>`).join('') : '';
-
   const sec = (title, html) => `<div style="margin-top:18px"><div style="font-size:12px;font-weight:600;color:#1a3a5a;border-bottom:2px solid #dbe4ec;padding-bottom:4px;margin-bottom:6px">${title}</div>${html}</div>`;
+  const stLabel = v => (typeof SCHOOL_STATUS_LABELS !== 'undefined' && SCHOOL_STATUS_LABELS[v]) ? SCHOOL_STATUS_LABELS[v] : { t: v || '', c: '#2a6a9a' };
+
+  // 1. 基本信息
+  const vipTxt = s.vip_hours_total ? (s.vip_hours_used || 0) + '/' + s.vip_hours_total : '';
+  const basic = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px">
+      ${kv('属性', s.student_type)}${kv('来源', s.source)}
+      ${kv('到期', s.expiry_date)}${kv('入学目标', s.target_enrollment)}
+      ${kv('VIP课时', vipTxt)}${kv('课程属性', s.course_type)}
+      ${kv('等级', ({1:'冲刺',2:'匹配',3:'保底'}[s.level] || s.level || ''))}${kv('出身大学', s.university)}
+      ${kv('GPA', s.gpa)}${kv('毕业时间', s.graduation_date)}
+      ${kv('赴日', s.japan_arrival)}${kv('研究方向', s.thesis)}
+      ${kv('日语成绩', s.japanese_score)}${kv('英语成绩', s.english_score)}
+    </div>`;
+
+  // 2. 报考学校（重点）：已确定报考（教授 OK / 已出愿 / 已合格）放最前
+  const CONFIRMED = ['prof_ok', 'applied', 'passed'];
+  const confirmed = plans.filter(p => CONFIRMED.includes(p.status)), others = plans.filter(p => !CONFIRMED.includes(p.status));
+  const planLine = (p, strong) => {
+    const st = stLabel(p.status), nm = [p.school_name, p.faculty, p.department].filter(Boolean).map(tsaEsc).join(' · ');
+    return `<div style="font-size:${strong ? 13 : 12}px;padding:${strong ? 7 : 4}px 0;border-top:1px solid #eee;${strong ? 'background:#fffaf0;padding-left:8px;border-left:3px solid #b8953a;' : ''}"><span style="font-weight:600">${nm}</span>${p.professor ? ' · 教授 ' + tsaEsc(p.professor) : ''} ${schoolLevelHtml(p.level)} <span style="color:${st.c};font-weight:600">${tsaEsc(st.t)}</span>${p.application_period ? ' <span style="color:#888;font-size:11px">出愿期间 ' + tsaEsc(p.application_period) + '</span>' : ''}</div>`;
+  };
+  const schoolsHtml = errHtml(plR) + (confirmed.length ? `<div style="font-size:11px;color:#8a6d10;margin-bottom:2px">已确定报考（${confirmed.length}）</div>${confirmed.map(p => planLine(p, true)).join('')}`
+      : `<div style="font-size:13px;font-weight:600;color:#c0392b;background:#fdecea;border-radius:4px;padding:8px 12px">尚未确定报考学校</div>`)
+    + (others.length ? `<div style="font-size:11px;color:#888;margin:10px 0 2px">候选（${others.length}）</div>${others.map(p => planLine(p, false)).join('')}` : '');
+
+  // 3. 考学进度：当前各项状态 + 时间线（只含进度更新，不含面谈）
+  const latest = getLatestProgress(timeline);
+  const dims = ['japanese', 'english', 'plan', 'apply', 'exam'];
+  const statusHtml = `<div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:8px">${dims.map(k => `<div style="font-size:12px">${PROGRESS_ICONS[k]} ${PROGRESS_LABELS[k]}：${renderProgressBadge(k, latest[k])}</div>`).join('')}</div>`;
+  const tlItems = timeline.filter(t => t.source !== 'booking').slice().reverse();
+  const tlHtml = errHtml(tlR) + statusHtml + (tlItems.length ? tlItems.map(t => renderProgressTimelineEntry(t)).join('') : '<div style="font-size:11px;color:#aaa">暂无进度更新记录</div>');
+
+  // 4. 面谈记录（单独一块）
+  const recText = dr => {
+    if (!dr || typeof dr !== 'object') return '';
+    const out = [];
+    [['学习', 'study'], ['计划书', 'plan'], ['出愿', 'apply'], ['备考', 'exam']].forEach(([l, k]) => {
+      const st = dr[k + '_status'], ad = dr[k + '_advice'];
+      if (st || ad) out.push(`${l}：${[st, ad].filter(Boolean).join('；')}`);
+    });
+    if (dr.issue || dr.issue_advice) out.push(`问题：${[dr.issue, dr.issue_advice].filter(Boolean).join('；')}`);
+    if (dr.extra) out.push(`补充：${dr.extra}`);
+    return out.join('\n');
+  };
+  const mtgHtml = errHtml(bkIdR, bkNmR) + (recs.length ? recs.map(b => `<div style="font-size:12px;padding:6px 0;border-top:1px solid #eee"><span style="color:#2a6a9a;font-family:monospace">${tsaEsc(b.slot_date || '')}</span> ${b.assigned_teacher ? '<span style="color:#888">' + tsaEsc(b.assigned_teacher) + '老师</span>' : ''}<div style="white-space:pre-wrap;line-height:1.7;color:#444;margin-top:2px">${tsaEsc(recText(b.daily_record))}</div></div>`).join('') : '<div style="font-size:11px;color:#aaa">暂无面谈记录</div>');
+
+  // 5. 学习记录 / 联系记录 + 近 6 个月方格
+  const streak = tmStreak(info), curNone = tmMonthState(info, tmCurYm()).group === 'none';
+  const logHtml = info.logs.length ? info.logs.map(l => { const k = TM_KIND[tmLogKind(l)]; return `<div style="font-size:12px;padding:6px 0;border-top:1px solid #eee"><span style="color:#2a6a9a;font-family:monospace">${tsaEsc(tmLogYm(l))}</span> <span style="color:${k.c};border:1px solid ${k.c};border-radius:2px;padding:0 5px;font-size:10px">${k.t}</span> <span style="white-space:pre-wrap">${tsaEsc(l.note) || ''}</span>${l.image_url ? ' <span style="color:#1a6d3a">[有截图]</span>' : ''} <span style="color:#aaa;font-size:10px">${tsaEsc(l.teacher_name || '')}</span></div>`; }).join('') : '<div style="font-size:11px;color:#aaa">暂无学习记录 / 联系记录</div>';
+  const contactHtml = errHtml(lgIdR, lgNmR) + `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:11px;color:#888">近 6 个月（✓ 面谈 / ✎ 学习记录 / ✉ 未回复 / ⏳ 待面谈）${tmCellsHtml(info, tmCurYm())}${streak >= 3 ? `<span style="color:#c0392b;font-weight:600">⚠ 已连续 ${streak} 次联系未回复</span>` : ''}${curNone ? '<span style="color:#b8560b">本月无面谈无记录</span>' : ''}</div>` + logHtml;
+
+  // 反馈文字（给营业 / 家长）
+  const L = [];
+  L.push(`【学生情况反馈】${s.name}（${MAJORS[s.major] || s.major || ''}）`);
+  L.push(`到期：${s.expiry_date || '—'}${s.target_enrollment ? '　入学目标：' + s.target_enrollment : ''}`);
+  L.push(confirmed.length ? '报考学校：' + confirmed.map(p => [p.school_name, p.faculty, p.department].filter(Boolean).join(' ') + '（' + stLabel(p.status).t.replace(/\s*🎉/, '') + '）').join('；') : '报考学校：尚未确定');
+  L.push('考学进度：' + dims.map(k => `${PROGRESS_LABELS[k]} ${latest[k] || '未填写'}`).join('；'));
+  L.push(`面谈：共 ${recs.length} 次${recs[0] ? '，最近一次 ' + recs[0].slot_date : ''}；${curNone ? '本月暂无面谈或学习记录' : '本月已跟进'}`);
+  if (streak >= 3) L.push(`联系情况：已连续 ${streak} 次联系未回复，请营业 / 家长协助联系学生`);
+  else if (info.logs[0]) L.push(`联系情况：最近一次${TM_KIND[tmLogKind(info.logs[0])].t}（${tmLogYm(info.logs[0])}）`);
+  focusFbText = L.join('\n');
 
   o.innerHTML = `
   <div id="focusReport" style="background:#fff;border-radius:8px;max-width:820px;width:100%;padding:28px;margin:auto">
@@ -2104,26 +2185,18 @@ async function focusOpenSummary(sid) {
         <div style="font-family:'Noto Serif SC',serif;font-size:20px;font-weight:600">${tsaEsc(s.name)}<span style="font-size:13px;color:#888;font-weight:400;margin-left:10px">${MAJORS[s.major] || s.major || ''}</span></div>
         <div style="font-size:12px;color:#666;margin-top:3px">到期 ${tsaEsc(s.expiry_date) || '—'}${s.target_enrollment?' · 入学目标 '+tsaEsc(s.target_enrollment):''} ${u ? `<span style="padding:1px 8px;border-radius:10px;background:${u.bg};color:${u.c};margin-left:6px">${u.t}${months != null && months >= 0 ? '·还有' + months + '个月' : ''}</span>` : ''}</div>
       </div>
-      <div style="display:flex;gap:8px" class="focus-noprint">
+      <div style="display:flex;gap:8px;flex-wrap:wrap" class="focus-noprint">
+        <button onclick="focusCopyFeedback()" style="font-size:12px;background:#2a6a4a;color:#fff;border:none;border-radius:3px;padding:7px 14px;cursor:pointer;font-family:inherit">复制反馈文字</button>
         <button onclick="window.print()" style="font-size:12px;background:#1a3a5a;color:#fff;border:none;border-radius:3px;padding:7px 14px;cursor:pointer;font-family:inherit">🖨 打印 / 存PDF</button>
         <button onclick="document.getElementById('focusSummary').remove()" style="font-size:12px;background:none;border:1px solid #ccc;border-radius:3px;padding:7px 14px;cursor:pointer;font-family:inherit">关闭</button>
       </div>
     </div>
 
-    ${sec('基本信息', `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px">
-      ${kv('等级', ({1:'冲刺',2:'匹配',3:'保底'}[s.level] || s.level || ''))}${kv('属性', s.course_type)}
-      ${kv('出身大学', s.university)}${kv('GPA', s.gpa)}
-      ${kv('毕业时间', s.graduation_date)}${kv('期待入学', s.target_enrollment)}
-      ${kv('赴日', s.japan_arrival)}${kv('来源', s.source)}
-      ${kv('VIP课时', s.vip_hours_total ? (s.vip_hours_used || 0) + '/' + s.vip_hours_total : '')}${kv('研究方向', s.thesis)}
-    </div>`)}
-
-    ${sec('语言成绩', `<div style="display:flex;gap:24px;font-size:13px"><div><span style="color:#888">日语　</span>${tsaEsc(s.japanese_score) || '—'}</div><div><span style="color:#888">英语　</span>${tsaEsc(s.english_score) || '—'}</div></div>`)}
-
-    ${sec('志望校', schoolsHtml)}
-    ${sec('考学进度时间线', tlHtml)}
-    ${sec('面谈记录（' + bks.length + '次）', mtgHtml)}
-    ${contacts.length ? sec('联系确认记录', contactHtml) : ''}
+    ${sec('基本信息', basic)}
+    ${sec('报考学校', schoolsHtml)}
+    ${sec('考学进度', tlHtml)}
+    ${sec('面谈记录（' + recs.length + '次）', mtgHtml)}
+    ${sec('学习记录 / 联系记录（' + info.logs.length + '）', contactHtml)}
 
     <div style="margin-top:20px;font-size:10px;color:#aaa;text-align:center;border-top:1px solid #eee;padding-top:8px">唯新教育 · 学生学习概要 · 生成于 ${new Date().toLocaleDateString('zh-CN')}</div>
   </div>`;
