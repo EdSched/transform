@@ -1562,14 +1562,17 @@ async function ensureStudentCode(student) {
 
 function stTextEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
 // 逐人文字块：每人一段 + 「📋 复制」，复制后标「✓ 已复制」（一直保留，方便记住发到哪了）
-// entries: [{ name, sub, text, error }]
+// entries: [{ name, sub, text, error, copyName }]；copyName=true 时多一个「📋 姓名」按钮（只复制姓名），复制按钮改叫「📋 复制文字」
+// STUDENT_TEXT_HOOKS[prefix] = fn(i)：该前缀下点「复制文字」后额外执行（如自动记「已联系·等回复」）
+const STUDENT_TEXT_HOOKS = {};
 function studentTextBlocksHtml(entries, prefix) {
   return entries.map((e, i) => `<div id="${prefix}_blk_${i}" style="border:1px solid var(--border-light,#ede9e2);border-radius:4px;padding:10px 12px;margin-bottom:8px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-      <span style="font-size:12px;font-weight:600">${stTextEsc(e.name)}</span>
+      <span id="${prefix}_nm_${i}" style="font-size:12px;font-weight:600">${stTextEsc(e.name)}</span>
       ${e.sub ? `<span style="font-size:10px;color:var(--text-3,#9a9590)">${stTextEsc(e.sub)}</span>` : ''}
       <span id="${prefix}_done_${i}" style="font-size:10px;color:var(--ok,#2a9e6a);display:none">✓ 已复制</span>
-      <button onclick="studentTextCopy('${prefix}',${i})" style="margin-left:auto;font-size:11px;background:none;border:1px solid var(--border,#e2ded6);border-radius:3px;padding:3px 12px;cursor:pointer;font-family:inherit">📋 复制</button>
+      ${e.copyName ? `<button onclick="studentNameCopy('${prefix}',${i},this)" style="margin-left:auto;font-size:11px;background:none;border:1px solid var(--border,#e2ded6);border-radius:3px;padding:3px 10px;cursor:pointer;font-family:inherit">📋 姓名</button>` : ''}
+      <button onclick="studentTextCopy('${prefix}',${i})" style="${e.copyName ? '' : 'margin-left:auto;'}font-size:11px;background:none;border:1px solid var(--border,#e2ded6);border-radius:3px;padding:3px 12px;cursor:pointer;font-family:inherit">${e.copyName ? '📋 复制文字' : '📋 复制'}</button>
     </div>
     ${e.error ? `<div style="font-size:11px;color:var(--danger,#b03030);margin-bottom:6px">${stTextEsc(e.error)}</div>` : ''}
     <textarea id="${prefix}_txt_${i}" rows="${Math.min(9, String(e.text).split('\n').length + 1)}" style="width:100%;font-size:12px;line-height:1.7;padding:8px;border:1px solid var(--border,#e2ded6);border-radius:3px;background:var(--bg,#f7f5f0);font-family:inherit;resize:vertical">${stTextEsc(e.text)}</textarea>
@@ -1581,9 +1584,20 @@ function studentTextCopy(prefix, i) {
   const mark = () => {
     const d = document.getElementById(`${prefix}_done_${i}`); if (d) d.style.display = 'inline';
     const b = document.getElementById(`${prefix}_blk_${i}`); if (b) b.style.borderColor = 'var(--ok,#2a9e6a)';
+    const hk = STUDENT_TEXT_HOOKS[prefix]; if (hk) { try { hk(i); } catch (e) { console.error(e); } }
   };
   try { navigator.clipboard.writeText(ta.value).then(mark, () => { ta.select(); document.execCommand('copy'); mark(); }); }
   catch (e) { ta.select(); document.execCommand('copy'); mark(); }
+}
+// 只复制姓名（方便先在微信里搜人）；按钮短暂显示「已复制」
+function studentNameCopy(prefix, i, btn) {
+  const el = document.getElementById(`${prefix}_nm_${i}`);
+  if (el) copyNameText(el.textContent, btn);
+}
+function copyNameText(name, btn) {
+  const done = () => { if (!btn) return; const o = btn.dataset.o || btn.textContent; btn.dataset.o = o; btn.textContent = '已复制'; clearTimeout(btn._t); btn._t = setTimeout(() => { btn.textContent = o; }, 1500); };
+  const fb = () => { const ta = document.createElement('textarea'); ta.value = name; ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (e) {} ta.remove(); done(); };
+  try { navigator.clipboard.writeText(name).then(done, fb); } catch (e) { fb(); }
 }
 // 通用弹窗：title + 自定义 body HTML；返回 body 容器，方便后续更新内容
 function studentTextModal(id, title, bodyHtml) {
@@ -1615,7 +1629,7 @@ async function openStudentCodeNotice(student, onCodeIssued) {
 }
 
 // 批量逐人文字：对每个学生（没有码的先生成）生成一段；kind='notice' 用文案 A，'reminder' 用文案 B
-async function studentTextBatch(students, kind, bodyEl, prefix, onCodeIssued) {
+async function studentTextBatch(students, kind, bodyEl, prefix, onCodeIssued, opts_copyName) {
   const need = students.filter(s => !s.student_code).length;
   let done = 0, issued = false;
   const entries = [];
@@ -1628,7 +1642,7 @@ async function studentTextBatch(students, kind, bodyEl, prefix, onCodeIssued) {
     }
     const text = kind === 'reminder' ? bookingReminderText(s, r.code) : studentCodeNoticeText(s, r.code);
     const majorLbl = (typeof MAJORS !== 'undefined' && MAJORS[s.major]) || s.major || '';
-    entries.push({ name: s.name, sub: majorLbl, text, error: r.error });
+    entries.push({ id: s.id, name: s.name, sub: majorLbl, text, error: r.error, copyName: !!opts_copyName });
   }
   if (issued && typeof onCodeIssued === 'function') onCodeIssued();
   if (bodyEl) bodyEl.innerHTML = studentTextBlocksHtml(entries, prefix);
