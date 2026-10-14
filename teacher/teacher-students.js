@@ -1350,7 +1350,7 @@ function tDraftFullHtml(draft) {
 // ══════════════════════════════════
 // 面谈跟进（学生管理子项 meetings）——按「每月一次」跟进
 // 规则：每个学生每月至少一次面谈；没有面谈的，老师补「联系记录」：
-//   学习记录（学生回复了、记了学习进度）→ 这个月算完成；联系未回复 → 没完成，继续跟进。
+//   学习记录（补充学习情况、和学生的互动等）→ 这个月算完成；联系未回复 → 没完成，继续跟进。
 //   连续 3 次联系未回复（中间没有面谈 / 学习记录）→ 转入重点关注。
 // ══════════════════════════════════
 const TM_KIND = { study: { t: '学习记录', c: '#1a6d3a', ic: '✎' }, no_reply: { t: '联系未回复', c: '#b8560b', ic: '✉' } };
@@ -1823,7 +1823,7 @@ function tmContactModal(sid) {
   m.innerHTML = `
     <div style="background:var(--surface);border-radius:6px;padding:18px;max-width:460px;width:100%;max-height:90vh;overflow-y:auto">
       <div style="font-size:13px;font-weight:600;margin-bottom:4px">＋ 补充记录</div>
-      <div style="font-size:10px;color:var(--text-3);margin-bottom:12px">没有面谈的学生，记录联系情况：学生回复了记「学习记录」（算该月完成）；没回复记「联系未回复」（继续跟进，连续 3 次转重点关注）。</div>
+      <div style="font-size:10px;color:var(--text-3);margin-bottom:12px">没有面谈的学生在这里补充记录：补充学习情况、和学生的互动等记「学习记录」（算该月完成）；联系了学生但没有回复记「联系未回复」（继续跟进，连续 3 次转重点关注）。</div>
       <div class="form-group"><label class="form-label">学生</label><div id="tma_stu"></div></div>
       <div class="form-group"><label class="form-label">类型</label><div id="tma_kind" style="display:flex;gap:6px;flex-wrap:wrap"></div></div>
       <div class="form-group"><label class="form-label">算哪个月</label>
@@ -1858,9 +1858,9 @@ function tmAddRender() {
     tmAddSearch();
   }
   const kb = document.getElementById('tma_kind');
-  if (kb) kb.innerHTML = Object.entries({ study: '学习记录（学生回复了）', no_reply: '联系未回复' }).map(([k, l]) => `<div class="filter-chip ${tmAdd.kind === k ? 'active' : ''}" onclick="tmAdd.kind='${k}';tmAddRender()" style="padding:4px 12px;font-size:11px">${l}</div>`).join('');
+  if (kb) kb.innerHTML = Object.entries({ study: '学习记录（补充学习情况，和学生的互动等）', no_reply: '联系未回复' }).map(([k, l]) => `<div class="filter-chip ${tmAdd.kind === k ? 'active' : ''}" onclick="tmAdd.kind='${k}';tmAddRender()" style="padding:4px 12px;font-size:11px">${l}</div>`).join('');
   const lb = document.getElementById('tma_note_lb');
-  if (lb) lb.textContent = tmAdd.kind === 'study' ? '内容（必填：学习进度、近况）' : '内容（可选：联系方式、时间）';
+  if (lb) lb.textContent = tmAdd.kind === 'study' ? '内容（必填：学习情况、作业、互动内容等）' : '内容（可选：联系方式、时间）';
 }
 function tmAddSearch() {
   const box = document.getElementById('tma_res'); if (!box || !tmAdd) return;
