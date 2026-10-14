@@ -168,7 +168,6 @@ function renderHubCards(){
   let html=card("enterDomain('all')",'总览','全部领域 · admin');
   DOMAINS.forEach(d=>{ html+=card(`enterDomain('${d.label}')`, d.label, ''); });
   // 管控台入口（仅 admin 可见——领域钥匙用户不会进到中枢台）
-  html+=card("mgOpen()",'管理可视化','完成率 · 分母 · 名单');
   html+=card("openConsole()",'⚙ 管控台','老师 / 价目 / 专业等');
   grid.innerHTML=html;
 }
@@ -183,13 +182,15 @@ function openConsole(){
 let consoleTab='teachers';
 async function switchConsoleTab(tab){
   consoleTab=tab;
-  ['teachers','roletpl','payroll','majors','pricing','tasks'].forEach(t=>{
+  ['mgmt','teachers','roletpl','payroll','majors','pricing','tasks'].forEach(t=>{
     const b=document.getElementById('ctab_'+t);
     if(b){ b.style.borderBottomColor = t===tab?'var(--primary,#8b5cf6)':'transparent'; b.style.color = t===tab?'var(--text)':'var(--text-3)'; b.style.fontWeight = t===tab?'600':'400'; }
   });
   const body=document.getElementById('consoleBody');
   if(!body) return;
-  if(tab==='majors'){ renderMajorManager(body); }
+  if(tab!=='mgmt' && typeof mgEmbed!=='undefined') mgEmbed=false;
+  if(tab==='mgmt'){ body.innerHTML=''; mgOpenEmbed(); }
+  else if(tab==='majors'){ renderMajorManager(body); }
   else if(tab==='pricing'){ prcMount(body); }
   else if(tab==='tasks'){ tkMount(body); }
   else if(tab==='roletpl'){ rtpMount(body); }
@@ -209,6 +210,7 @@ async function switchConsoleTab(tab){
   }
 }
 function closeConsole(){
+  if(typeof mgEmbed!=='undefined') mgEmbed=false;
   document.getElementById('consoleOverlay').style.display='none';
   showHub();
 }

@@ -219,7 +219,7 @@ function mgDetPage(d) { mgDet.page = Math.max(0, mgDet.page + d); mgRerender(); 
 // 学生详情的弹窗层级比全屏页低，从全屏页打开时要抬高
 function mgOpenStu(sid) {
   const ov = document.getElementById('mgmtOverlay'), m = document.getElementById('studentDetailModal');
-  if (m) m.style.zIndex = (ov && ov.style.display !== 'none') ? '1000' : '';
+  if (m) m.style.zIndex = (mgEmbed || (ov && ov.style.display !== 'none')) ? '1000' : '';
   openStudentDetail(sid);
 }
 
@@ -244,8 +244,10 @@ function mgCurMeta() {
 function mgRerender() { if (mgMode === 'p') mgPageRender(); else mgRender(); }
 
 // ══════════ 全局层（admin 中枢台）══════════
+let mgEmbed = false;   // true = 渲染在管控台内容区（#consoleBody），false = 全屏覆盖层
 function mgEnsureOverlay() {
   mgEnsureStyle();
+  if (mgEmbed) { const cb = document.getElementById('consoleBody'); if (cb) return cb; }
   let el = document.getElementById('mgmtOverlay');
   if (!el) {
     el = document.createElement('div'); el.id = 'mgmtOverlay';
@@ -256,9 +258,15 @@ function mgEnsureOverlay() {
 }
 function mgOpen() {
   const el = mgEnsureOverlay(), hub = document.getElementById('hubOverlay'); if (hub) hub.style.display = 'none';
-  el.style.display = 'block'; mgS = { tab: 'domain', dom: '', grp: '', met: '', data: {}, tbl: {}, busy: {}, view: '', nid: '', all: mgAll0() }; mgPins.key = ''; mgDet = { open: '', page: 0 }; mgRender();
+  mgEmbed = false; el.style.display = 'block'; mgS = { tab: 'domain', dom: '', grp: '', met: '', data: {}, tbl: {}, busy: {}, view: '', nid: '', all: mgAll0() }; mgPins.key = ''; mgDet = { open: '', page: 0 }; mgRender();
+}
+// 嵌入管控台：由 switchConsoleTab('mgmt') 调用
+function mgOpenEmbed() {
+  mgEmbed = true;
+  mgS = { tab: 'domain', dom: '', grp: '', met: '', data: {}, tbl: {}, busy: {}, view: '', nid: '', all: mgAll0() }; mgPins.key = ''; mgDet = { open: '', page: 0 }; mgRender();
 }
 function mgClose() {
+  mgEmbed = false;
   const el = document.getElementById('mgmtOverlay'); if (el) el.style.display = 'none';
   const m = document.getElementById('studentDetailModal'); if (m) m.style.zIndex = '';
   showHub();
@@ -285,6 +293,7 @@ async function mgLoadMetric(gk, mk) {
   delete mgS.busy[k]; mgS.tbl[gk + '|' + mk] = rs; if (mgMode === 'o' && mgS.tab === 'item' && mgS.grp === gk && mgS.met === mk) mgRender();
 }
 function mgRender() {
+  if (mgEmbed && (typeof consoleTab === 'undefined' || consoleTab !== 'mgmt')) return;   // 已切走管控台标签，异步结果不再写入
   mgMode = 'o';
   const el = mgEnsureOverlay(), T = mgS.tab, root = { t: '管理可视化', js: "mgSet('','','')" };
   const lab = (arr, key) => (arr.find(x => x.key === key) || { label: key }).label;
@@ -327,7 +336,7 @@ function mgRender() {
   }
   el.innerHTML = `<div class="mg-wrap" style="max-width:1000px;margin:0 auto;padding:22px 20px 60px">
     <div style="display:flex;align-items:center;gap:10px"><div style="font-family:'Noto Serif SC',serif;font-size:1.25rem;font-weight:600;flex:1">管理可视化</div>
-      ${typeof mgnLinksHtml === 'function' ? `<span style="display:flex;gap:14px">${mgnLinksHtml()}</span>` : ''}<button class="mg-btn" onclick="mgRefresh()">刷新</button><button class="mg-btn" onclick="mgClose()">返回中枢台</button></div>
+      ${typeof mgnLinksHtml === 'function' ? `<span style="display:flex;gap:14px">${mgnLinksHtml()}</span>` : ''}<button class="mg-btn" onclick="mgRefresh()">刷新</button>${mgEmbed ? '' : '<button class="mg-btn" onclick="mgClose()">返回中枢台</button>'}</div>
     <div class="mg-seg"><span class="${T === 'domain' ? 'on' : ''}" onclick="mgTab('domain')">按领域看</span><span class="${T === 'item' ? 'on' : ''}" onclick="mgTab('item')">按项目看</span></div>
     <div style="font-size:11px;color:${MG_COL.mute};margin-bottom:6px">每个数字都写明分母和统计周期；只检测业务上真的做了没有。点开才读取数据，60 秒内不重复计算。</div>
     ${mgCrumb(crumbs)}<div style="margin-top:${crumbs.length ? 0 : 14}px">${body}</div></div>`;
