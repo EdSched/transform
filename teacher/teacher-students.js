@@ -707,11 +707,13 @@ function renderMonthlyReport(mc){
   mrStudentsCache = list; if (mrStudentId) mrLoadAndRender(list.find(x=>x.id===mrStudentId));
 }
 
-// ══ 学生月度出勤・作业统计（月度学习情况、出席・作业列表共用，口径只此一处）══
-// 规定出勤 = 这个月里、该生所属课程（按专业 / 班级 / 名单，studentInCourse）的课次数，不含休讲，只算到今天为止
-// 实际出勤 = 出席 + 迟到 + 录播回看；请假单独计；缺席 / 未记录 = 规定 − 实际 − 请假
-// 作业 = 这些课次里布置了作业（homework_enabled 且已发布）的份数，已交 = homework_submissions 里该生已提交的份数
-// ym 为空 = 全部月份（到今天为止）
+// ══ 学生出勤・作业统计（月度学习情况、出席・作业列表、重点关注、反馈文字共用，口径只此一处）══
+// 已上课次 = 到今天为止、已经点过名（这节课至少有一条出席记录）的课次；没点名的课不进分母，单独提示「未点名 n 回」
+// 出勤率 = (出席 + 迟到 + 录播回看) ÷ 已上课次；请假单独计；缺席 = 已上课次里没点到的（不含请假）
+// 总回数 = 范围内所有课次（含未来），休讲不算
+// 作业：已布置 = 作业已发布的课次，已交 = homework_submissions 里该生已提交的份数，提交率 = 已交 ÷ 已布置；共 = 开了作业的课次总数
+// ym 为空 = 全部（从出席记录上线的 2026 年 10 月期开始，之前的不计），含未来课次
+const SMS_START = '2026-10-01';
 let smsCtxCache = {};   // ym → Promise<ctx>；记出席 / 刷新时清空
 function smsChunks(arr, n) { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; }
 async function smsFetchChunked(ids, n, fn) { return (await Promise.all(smsChunks(ids, n).map(fn))).flat(); }
@@ -720,23 +722,27 @@ function smsLoad(ym) {
   if (smsCtxCache[k]) return smsCtxCache[k];
   const p = (async () => {
     const today = jstToday();
-    const lo = ym ? ym + '-01' : '2000-01-01';
-    let hi = ym ? ym + '-31' : today;
-    if (hi > today) hi = today;
-    const sess = lo > hi ? [] : await sbAll(`/rest/v1/course_sessions?select=id,course_id,course_name,session_date,session_number,is_cancelled,confirmed,homework_enabled,hw_release_date&session_date=gte.${lo}&session_date=lte.${hi}&order=session_date.asc,id.asc`);
+    const lo = ym ? ym + '-01' : SMS_START;
+    const hiQ = ym ? `&session_date=lte.${ym}-31` : '';
+    const sess = await sbAll(`/rest/v1/course_sessions?select=id,course_id,course_name,session_date,session_number,is_cancelled,confirmed,homework_enabled,hw_release_date&session_date=gte.${lo}${hiQ}&order=session_date.asc,id.asc`);
     const live = sess.filter(x => !x.is_cancelled && x.confirmed !== false && x.course_id);
-    const cids = [...new Set(live.map(x => String(x.course_id)))], sids = live.map(x => String(x.id));
+    const cids = [...new Set(live.map(x => String(x.course_id)))];
+    const recSids = live.filter(x => x.session_date <= today).map(x => String(x.id));   // 出席记录只会出现在已到日期的课次
+    const hwSids = live.filter(x => x.homework_enabled).map(x => String(x.id));
     const q = ids => ids.map(x => `"${x}"`).join(',');
     const [courses, members, recs, subs] = await Promise.all([
       smsFetchChunked(cids, 80, ids => sbAll(`/rest/v1/courses?id=in.(${q(ids)})&select=*&order=id.asc`)),
       smsFetchChunked(cids, 80, ids => sbAll(`/rest/v1/course_members?course_id=in.(${q(ids)})&select=course_id,student_id,kind&order=course_id.asc,student_id.asc`)),
-      smsFetchChunked(sids, 80, ids => sbAll(`/rest/v1/session_records?session_id=in.(${q(ids)})&select=id,session_id,student_id,student_name,attendance_status,created_at&order=id.asc`)),
-      smsFetchChunked(sids, 80, ids => sbAll(`/rest/v1/homework_submissions?session_id=in.(${q(ids)})&select=id,session_id,student_id,student_name&order=id.asc`)),
+      smsFetchChunked(recSids, 80, ids => sbAll(`/rest/v1/session_records?session_id=in.(${q(ids)})&select=id,session_id,student_id,student_name,attendance_status,created_at&order=id.asc`)),
+      smsFetchChunked(hwSids, 80, ids => sbAll(`/rest/v1/homework_submissions?session_id=in.(${q(ids)})&select=id,session_id,student_id,student_name&order=id.asc`)),
     ]);
-    const ctx = { ym: k, live, courses, membersByStu: {}, rec: {}, sub: new Set() };
+    const ctx = { ym: k, live, courses, membersByStu: {}, rec: {}, sub: new Set(), taken: new Set() };
     members.forEach(m => { (ctx.membersByStu[String(m.student_id)] = ctx.membersByStu[String(m.student_id)] || []).push(m); });
-    const rk = (r, sid) => r.student_id ? `${r.session_id}|${r.student_id}` : `${r.session_id}|n:${r.student_name}`;
-    recs.slice().sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || ''))).forEach(r => { const key = rk(r); if (!ctx.rec[key]) ctx.rec[key] = r; });   // 同一课次重复记录取最早一条
+    const rk = r => r.student_id ? `${r.session_id}|${r.student_id}` : `${r.session_id}|n:${r.student_name}`;
+    recs.slice().sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || ''))).forEach(r => {
+      const key = rk(r); if (!ctx.rec[key]) ctx.rec[key] = r;   // 同一课次重复记录取最早一条
+      if (r.attendance_status != null) ctx.taken.add(String(r.session_id));   // 这节课点过名
+    });
     subs.forEach(r => { ctx.sub.add(rk(r)); });
     ctx.courseById = {}; courses.forEach(c => { ctx.courseById[String(c.id)] = c; });
     return ctx;
@@ -754,28 +760,118 @@ function smsMark(r) {
   if (v === 'leave') return 'leave';
   return 'absent';
 }
-function studentMonthStats(student, ctx) {
-  const my = ctx.membersByStu[String(student.id)] || [];
-  const cids = new Set(ctx.courses.filter(c => studentInCourse(student, c, my)).map(c => String(c.id)));
-  const sess = ctx.live.filter(x => cids.has(String(x.course_id)));
-  const s = { required: 0, present: 0, late: 0, leave: 0, actual: 0, absent: 0, rate: null, hwAssigned: 0, hwDone: 0, marks: [] };
+// 一组课次的统计（sess 已是这个学生的课次）
+function smsCalc(student, sess, ctx) {
+  const today = jstToday();
+  const s = { total: sess.length, held: 0, present: 0, late: 0, leave: 0, actual: 0, absent: 0, untaken: 0, rate: null, hwAssigned: 0, hwDone: 0, hwTotal: 0, hwRate: null, marks: [] };
   sess.forEach(se => {
+    const past = se.session_date <= today, taken = past && ctx.taken.has(String(se.id));
     const r = ctx.rec[`${se.id}|${student.id}`] || ctx.rec[`${se.id}|n:${student.name}`];
-    const m = smsMark(r);
-    s.required++;
-    if (m === 'ok') s.present++; else if (m === 'late') s.late++; else if (m === 'leave') s.leave++;
+    let m = past ? 'untaken' : 'future';
+    if (taken) {
+      s.held++;
+      m = r ? smsMark(r) : 'absent';
+      if (m === 'ok') s.present++; else if (m === 'late') s.late++; else if (m === 'leave') s.leave++; else s.absent++;
+    } else if (past) s.untaken++;
     let hw = '';
-    if (se.homework_enabled && hwIsReleased(se, ctx.courseById[String(se.course_id)])) {
-      s.hwAssigned++;
-      hw = (ctx.sub.has(`${se.id}|${student.id}`) || ctx.sub.has(`${se.id}|n:${student.name}`)) ? 'done' : 'todo';
-      if (hw === 'done') s.hwDone++;
+    if (se.homework_enabled) {
+      s.hwTotal++;
+      if (hwIsReleased(se, ctx.courseById[String(se.course_id)])) {
+        s.hwAssigned++;
+        hw = (ctx.sub.has(`${se.id}|${student.id}`) || ctx.sub.has(`${se.id}|n:${student.name}`)) ? 'done' : 'todo';
+        if (hw === 'done') s.hwDone++;
+      }
     }
     s.marks.push({ date: se.session_date, course: se.course_name || '', no: se.session_number, mark: m, hw });
   });
   s.actual = s.present + s.late;
-  s.absent = Math.max(0, s.required - s.actual - s.leave);
-  s.rate = s.required ? Math.round(s.actual / s.required * 100) : null;
+  s.rate = s.held ? Math.round(s.actual / s.held * 100) : null;
+  s.hwRate = s.hwAssigned ? Math.round(s.hwDone / s.hwAssigned * 100) : null;
   return s;
+}
+function smsStudentSessions(student, ctx) {
+  const my = ctx.membersByStu[String(student.id)] || [];
+  const cids = new Set(ctx.courses.filter(c => studentInCourse(student, c, my)).map(c => String(c.id)));
+  return ctx.live.filter(x => cids.has(String(x.course_id)));
+}
+// ctx 范围内（一个月，或「全部」）的统计；byCourse = 每门课一行
+function studentMonthStats(student, ctx) {
+  const sess = smsStudentSessions(student, ctx);
+  const s = smsCalc(student, sess, ctx);
+  const g = {};
+  sess.forEach(se => { (g[String(se.course_id)] = g[String(se.course_id)] || []).push(se); });
+  s.byCourse = Object.entries(g).map(([cid, list]) => ({ cid, name: list[0].course_name || (ctx.courseById[cid] && ctx.courseById[cid].name) || '', st: smsCalc(student, list, ctx) }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+  return s;
+}
+// 按期数（courses 所属期，如「2026年10月期」）分组 + 总计 + 当前期；用 smsLoad('') 的 ctx
+function studentPeriodStats(student, ctx) {
+  const sess = smsStudentSessions(student, ctx);
+  const g = {}, cur = [];
+  sess.forEach(se => {
+    const c = ctx.courseById[String(se.course_id)];
+    const key = c ? periodKeyOf(c) : '未分期';
+    (g[key] = g[key] || []).push(se);
+    if (c && courseInCurrentPeriod(c)) cur.push(se);
+  });
+  return {
+    periods: Object.keys(g).sort().reverse().map(key => ({ key, st: smsCalc(student, g[key], ctx) })),
+    total: smsCalc(student, sess, ctx),
+    cur: smsCalc(student, cur, ctx),
+  };
+}
+// 当前期累计缺席（不含请假）：{ n, courses[] }；ctx 用 smsLoad('')
+function smsCurAbsent(student, ctx) {
+  const cur = studentPeriodStats(student, ctx).cur;
+  const cs = [...new Set(cur.marks.filter(m => m.mark === 'absent').map(m => m.course).filter(Boolean))];
+  return { n: cur.absent, courses: cs };
+}
+// 文字版（所有地方共用）
+function smsAttText(st) {
+  if (!st.total) return '无课次';
+  return `出席 ${st.actual} / 已上 ${st.held}（共 ${st.total} 回）` + (st.held ? ` · 出勤率 ${st.rate}%` : ' · 暂无已点名的课');
+}
+function smsHwText(st, word) {
+  return `作业 已交 ${st.hwDone} / 已布置 ${st.hwAssigned}（${word || ''}共 ${st.hwTotal} 次）`;
+}
+
+// 月度学习情况：作品展示（美术领域，作品照片）/ 作业展示（其他领域，本月提交的作业）
+function mrIsArt(stu) { return /美术|美術/.test(tsmDomainOf(stu && stu.major) || ''); }
+function mrWorksTitle(stu) { return mrIsArt(stu) ? '作品展示' : '作业展示'; }
+// 班主任评价（学部）/ TA 老师评价（大学院等）：同一栏（monthly_reviews.homeroom_review），按领域换名字和填写权限
+function mrHrLabel(stu) { return isGakubuMajor(stu && stu.major) ? '班主任' : 'TA 老师'; }
+function mrCanHr(stu) {
+  if (isGakubuMajor(stu.major)) return (typeof tpIsMine === 'function') ? tpIsMine(stu) : false;
+  return !!(teacherData && Array.isArray(teacherData.roles) && teacherData.roles.includes('ta')) && tsaStudentOk(stu);
+}
+const mrHwCache = {};   // `${sid}|${ym}` → 本月提交的作业文件
+const MR_NOT_IMG = /\.(pdf|docx?|xlsx?|pptx?|zip|rar|txt|mp4|mov)(\?|#|$)/i;
+// 本月作业文件 [{url, date, img}]：session_records.homework_file_url + homework_submissions 的答题图片 / 整份附件
+async function mrMonthWorks(stu, ym, monthRecs) {
+  const out = [], seen = new Set();
+  const add = (url, date, img) => { if (url && !seen.has(url)) { seen.add(url); out.push({ url, date: date || '', img: img !== false && !MR_NOT_IMG.test(url) }); } };
+  (monthRecs || []).forEach(r => add(r.homework_file_url, r.session_date));
+  if (!mrIsArt(stu)) {
+    const key = stu.id + '|' + ym;
+    if (!mrHwCache[key]) {
+      const [y, m] = ym.split('-').map(Number), next = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}-01`;
+      mrHwCache[key] = await sb(`/rest/v1/homework_submissions?student_id=eq.${encodeURIComponent(stu.id)}&submitted_at=gte.${ym}-01&submitted_at=lt.${next}&select=id,submitted_at,answers,whole_file_url&order=submitted_at.asc`).catch(() => []);
+    }
+    (mrHwCache[key] || []).forEach(x => {
+      const d = (x.submitted_at || '').slice(0, 10);
+      (x.answers || []).forEach(a => (a.images || []).forEach(im => add(im.url, d, im.kind !== 'doc')));
+      add(x.whole_file_url, d);
+    });
+  } else if (typeof awMonthWorks === 'function') (await awMonthWorks(stu.id, ym)).forEach(w => add(w.url, w.date));
+  return out;
+}
+// 统计块：数字 + 每门课一行 + 逐回小标记（月度学习情况页面用）
+function mrCoursesHtml(st) {
+  if (!st.byCourse.length) return '<div style="font-size:11px;color:var(--text-3);padding:4px 0 14px">本月没有课程</div>';
+  const marks = ms => ms.map(m => { const d = TSR_MARK[m.mark]; return `<span title="${tsaEsc(m.date)} 第${m.no || ''}回：${d[3]}${m.hw ? (m.hw === 'done' ? ' · 作业已交' : ' · 作业未交') : ''}" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:3px;font-size:9px;border:1px solid ${d[1]};background:${d[2]};color:${d[1]}">${d[0]}</span>`; }).join('');
+  return `<div style="margin-bottom:16px">${st.byCourse.map(c => `<div style="padding:6px 0;border-top:1px solid var(--border-light)">
+      <div style="font-size:12px"><span style="font-weight:600">${tsaEsc(c.name)}</span> · 出席 ${c.st.actual} / 已上 ${c.st.held}（共 ${c.st.total}）· 作业 ${c.st.hwDone} / ${c.st.hwAssigned}${c.st.untaken ? ` <span style="font-size:10px;color:var(--text-3)">· 未点名 ${c.st.untaken} 回</span>` : ''}</div>
+      <div style="display:flex;gap:2px;flex-wrap:wrap;margin-top:4px">${marks(c.st.marks)}</div></div>`).join('')}</div>`;
 }
 
 async function mrLoadAndRender(stu){
@@ -792,12 +888,8 @@ async function mrLoadAndRender(stu){
   let st;
   try { st = studentMonthStats(stu, await smsLoad(mrYearMonth)); }
   catch (e) { body.innerHTML = `<div style="font-size:11px;color:var(--danger);padding:20px">统计加载失败：${(e&&e.message)||e}</div>`; return; }
-  const required = st.required, actual = st.actual, leave = {length: st.leave};
-  const rate = st.rate == null ? 0 : st.rate;
-  // 作业图（本月交的、有图的）
-  const works = monthRecs.filter(r => r.homework_file_url).map(r => ({url:r.homework_file_url, date:r.session_date, name:r.course_name||''}));
-  // 学部美术「作业收集」的作品照片（art_works，按 week_start 落在该月）
-  if (typeof awMonthWorks === 'function') works.push(...(await awMonthWorks(stu.id, mrYearMonth)));
+  const works = await mrMonthWorks(stu, mrYearMonth, monthRecs);   // 作品展示 / 作业展示
+  const wt = mrWorksTitle(stu), hrl = mrHrLabel(stu);
   // 拉评价
   const key = `${stu.id}|${mrYearMonth}`;
   if(mrReviewCache[key]===undefined){
@@ -807,7 +899,7 @@ async function mrLoadAndRender(stu){
   const rev = mrReviewCache[key];
   const esc = v => String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
   // 谁能填：班主任=我负责的学生(owner/vip含我)；专业老师=有"专业课"标签且该生在我可见专业范围
-  const canHome = (typeof tpIsMine==='function') ? tpIsMine(stu) : false;
+  const canHome = mrCanHr(stu);
   const isProfTeacher = !!(teacherData && Array.isArray(teacherData.tags) && teacherData.tags.some(t=>String(t).includes('专业课')));
   const canProf = isProfTeacher && tsaStudentOk(stu);
   body.innerHTML = `
@@ -816,16 +908,20 @@ async function mrLoadAndRender(stu){
       <div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">${esc(stu.name)} · ${mrYearMonth.replace('-','年')}月 学习情况</div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:16px">
-      ${[['规定出勤',required+' 次'],['实际出勤',actual+' 次'],['出勤率',rate+'%'],['请假',leave.length+' 次'],['缺席/未记录',st.absent+' 次'],['交作业','已交 '+st.hwDone+' / 布置 '+st.hwAssigned]].map(([l,v])=>`
+      ${[['已上课次','已上 '+st.held+' / 共 '+st.total+' 回'],['出勤（出席+迟到）',st.actual+' 次'],['出勤率',st.rate==null?'—':st.rate+'%'],['请假',st.leave+' 次'],['缺席',st.absent+' 次'],['交作业','已交 '+st.hwDone+' / 已布置 '+st.hwAssigned+'（共 '+st.hwTotal+' 次）']].map(([l,v])=>`
         <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:6px;padding:8px 10px;text-align:center">
           <div style="font-size:16px;font-weight:700;color:var(--accent,#b8953a)">${v}</div>
           <div style="font-size:10px;color:var(--text-3);margin-top:2px">${l}</div>
         </div>`).join('')}
     </div>
-    <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px">练习作品（学生本月提交）</div>
+    ${st.untaken ? `<div style="font-size:10px;color:var(--text-3);margin:-8px 0 10px">未点名 ${st.untaken} 回（没点名的课不算进出勤率，请老师补点名）</div>` : ''}
+    <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;margin-bottom:6px">本月课程</div>
+    ${mrCoursesHtml(st)}
+    <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;margin-bottom:8px">${wt}（学生本月提交）</div>
     ${works.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-bottom:16px">
-      ${works.map(w=>`<a href="${w.url}" target="_blank" style="display:block;border:1px solid var(--border);border-radius:6px;overflow:hidden"><img src="${w.url}" style="width:100%;height:90px;object-fit:cover;display:block" loading="lazy"><div style="font-size:9px;color:var(--text-3);padding:3px 5px">${(w.date||'').slice(5)}</div></a>`).join('')}
-    </div>` : '<div style="font-size:11px;color:var(--text-3);padding:8px 0 16px">本月暂无提交作品</div>'}
+      ${works.map(w=>w.img ? `<div onclick="tmImgLightbox('${esc(w.url)}')" style="cursor:zoom-in;border:1px solid var(--border);border-radius:6px;overflow:hidden"><img src="${esc(w.url)}" style="width:100%;height:90px;object-fit:cover;display:block" loading="lazy"><div style="font-size:9px;color:var(--text-3);padding:3px 5px">${(w.date||'').slice(5)}</div></div>`
+        : `<a href="${esc(w.url)}" target="_blank" style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:116px;border:1px solid var(--border);border-radius:6px;font-size:11px;color:var(--accent);text-decoration:none">文件链接<span style="font-size:9px;color:var(--text-3);margin-top:4px">${(w.date||'').slice(5)}</span></a>`).join('')}
+    </div>` : `<div style="font-size:11px;color:var(--text-3);padding:8px 0 16px">本月暂无提交的${wt === '作品展示' ? '作品' : '作业'}</div>`}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:6px;padding:12px">
         <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">专业老师评价 ${canProf?'<span style="font-size:9px;color:var(--accent,#b8953a)">· 你可填写</span>':''}</div>
@@ -834,9 +930,9 @@ async function mrLoadAndRender(stu){
         ${rev&&rev.teacher_review_by?`<div style="font-size:10px;color:var(--text-3);margin-top:6px;text-align:right">— ${esc(rev.teacher_review_by)}</div>`:''}
       </div>
       <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:6px;padding:12px">
-        <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">班主任评价 ${canHome?'<span style="font-size:9px;color:var(--accent,#b8953a)">· 你可填写</span>':''}</div>
-        ${canHome ? `<textarea id="mr_homeroom_review" rows="5" style="width:100%;font-size:12px;line-height:1.7;padding:8px;border:1px solid var(--border);border-radius:4px;background:var(--surface);font-family:inherit;resize:vertical" placeholder="填写本月班主任评价…">${rev&&rev.homeroom_review?esc(rev.homeroom_review):''}</textarea>`
-          : `<div style="font-size:12px;line-height:1.7;color:var(--text-2);white-space:pre-wrap;min-height:40px">${rev&&rev.homeroom_review?esc(rev.homeroom_review):'<span style="color:var(--text-3)">（待班主任填写）</span>'}</div>`}
+        <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">${hrl}评价 ${canHome?'<span style="font-size:9px;color:var(--accent,#b8953a)">· 你可填写</span>':''}</div>
+        ${canHome ? `<textarea id="mr_homeroom_review" rows="5" style="width:100%;font-size:12px;line-height:1.7;padding:8px;border:1px solid var(--border);border-radius:4px;background:var(--surface);font-family:inherit;resize:vertical" placeholder="填写本月${hrl}评价…">${rev&&rev.homeroom_review?esc(rev.homeroom_review):''}</textarea>`
+          : `<div style="font-size:12px;line-height:1.7;color:var(--text-2);white-space:pre-wrap;min-height:40px">${rev&&rev.homeroom_review?esc(rev.homeroom_review):'<span style="color:var(--text-3)">（待${hrl}填写）</span>'}</div>`}
         ${rev&&rev.homeroom_review_by?`<div style="font-size:10px;color:var(--text-3);margin-top:6px;text-align:right">— ${esc(rev.homeroom_review_by)}</div>`:''}
       </div>
     </div>
@@ -888,10 +984,8 @@ async function mrGeneratePdf(sid){
   const monthRecs = recs.filter(r => (r.session_date||'').slice(0,7) === mrYearMonth);
   let st;
   try { st = studentMonthStats(stu, await smsLoad(mrYearMonth)); } catch (e) { alert('统计加载失败：' + ((e && e.message) || e)); return; }
-  const required = st.required, actual = st.actual, leave = {length: st.leave};
-  const rate = st.rate == null ? 0 : st.rate;
-  const works = monthRecs.filter(r => r.homework_file_url).map(r => ({url:r.homework_file_url, date:r.session_date}));
-  if (typeof awMonthWorks === 'function') works.push(...(await awMonthWorks(sid, mrYearMonth)));   // + 作业收集的作品照片
+  const works = (await mrMonthWorks(stu, mrYearMonth, monthRecs)).filter(w => w.img);   // 作品展示 / 作业展示（PDF 只放图片）
+  const wt = mrWorksTitle(stu), hrl = mrHrLabel(stu);
   const key = `${sid}|${mrYearMonth}`;
   const rev = mrReviewCache[key] || {};
   const esc = v => String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -927,17 +1021,18 @@ async function mrGeneratePdf(sid){
     </div>
     <div class="sec-label">出勤情况</div>
     <div class="stats">
-      <div class="stat"><div class="n">${required}</div><div class="l">规定出勤（次）</div></div>
-      <div class="stat"><div class="n">${actual}</div><div class="l">实际出勤（次）</div></div>
-      <div class="stat"><div class="n">${rate}%</div><div class="l">出勤率</div></div>
-      <div class="stat"><div class="n">${leave.length}</div><div class="l">请假</div></div>
-      <div class="stat"><div class="n">${st.absent}</div><div class="l">缺席 / 未记录</div></div>
-      <div class="stat"><div class="n">${st.hwDone} / ${st.hwAssigned}</div><div class="l">作业（已交 / 布置）</div></div>
+      <div class="stat"><div class="n">${st.held} / ${st.total}</div><div class="l">已上课次 / 共（回）</div></div>
+      <div class="stat"><div class="n">${st.actual}</div><div class="l">出勤（出席+迟到，次）</div></div>
+      <div class="stat"><div class="n">${st.rate == null ? '—' : st.rate + '%'}</div><div class="l">出勤率</div></div>
+      <div class="stat"><div class="n">${st.leave}</div><div class="l">请假</div></div>
+      <div class="stat"><div class="n">${st.absent}</div><div class="l">缺席</div></div>
+      <div class="stat"><div class="n">${st.hwDone} / ${st.hwAssigned}</div><div class="l">作业（已交 / 已布置，共 ${st.hwTotal} 次）</div></div>
     </div>
-    ${works.length?`<div class="sec-label">练习作品（部分）</div><div class="works">${works.slice(0,9).map(w=>`<img src="${w.url}">`).join('')}</div>`:''}
+    ${st.byCourse.length ? `<div class="sec-label">本月课程</div>${st.byCourse.map(c => `<div style="font-size:13px;padding:5px 0;border-bottom:1px solid #ede9e2"><b>${esc(c.name)}</b> · 出席 ${c.st.actual} / 已上 ${c.st.held}（共 ${c.st.total}）· 作业 ${c.st.hwDone} / ${c.st.hwAssigned}</div>`).join('')}` : ''}
+    ${works.length?`<div class="sec-label">${wt}（部分）</div><div class="works">${works.slice(0,9).map(w=>`<img src="${w.url}">`).join('')}</div>`:''}
     <div class="sec-label">专业老师评价</div>
     <div class="review"><div class="c">${rev.teacher_review?esc(rev.teacher_review):'—'}</div>${rev.teacher_review_by?`<div class="by">— ${esc(rev.teacher_review_by)} 老师</div>`:''}</div>
-    <div class="sec-label">班主任评价</div>
+    <div class="sec-label">${hrl}评价</div>
     <div class="review"><div class="c">${rev.homeroom_review?esc(rev.homeroom_review):'—'}</div>${rev.homeroom_review_by?`<div class="by">— ${esc(rev.homeroom_review_by)} 老师</div>`:''}</div>
     <div class="foot">唯新教育　Unique New Education　·　${esc(ym)}</div>
   </div>
@@ -1147,7 +1242,7 @@ async function tatSave(){
     for(let i=0;i<news.length;i+=20){ await sb('/rest/v1/session_records','POST',news.slice(i,i+20)); }
     document.getElementById('tatOverlay').style.display='none';
     alert(`✓ 已${tatEditing?'更新':'保存'} ${se.course_name} 第${se.session_number}回 出席（${tatStudents.length} 人${tatEditing?`，修改 ${updates.length} 条、新增 ${news.length} 条`:''}）`);
-    tsrRecCache={}; smsCtxCache={};   // 学生出席历史、月度统计缓存作废
+    tsrRecCache={}; smsCtxCache={}; tsrAllCtx=null;   // 学生出席历史、月度统计缓存作废
     if(document.getElementById('tsr_list')) tsrLoadStats();   // 列表上的统计立刻刷新
     tatRenderSessionBar();  // 刷新课次列表（这一节出现在「已记录」，统计更新）
   }catch(e){ alert('保存失败：'+e.message); if(btn){btn.textContent='保存全部';btn.disabled=false;} }
@@ -1157,7 +1252,7 @@ async function renderTsaRecords(box) {
   box.innerHTML = '<div class="empty">加载中…</div>';
   try {
     tsrStudents = (await tsmLoadPool()).slice();   // 全部状态（已按可见范围裁剪）；由全局「状态」筛选
-    smsCtxCache = {}; tsrCtx = null;   // 每次进入页面都重新读最新的出席・作业
+    smsCtxCache = {}; tsrCtx = null; tsrAllCtx = null;   // 每次进入页面都重新读最新的出席・作业
   } catch (e) { box.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
   tsrRender();
 }
@@ -1166,6 +1261,7 @@ let tsrHistOpen=true;
 let tsrYm=null;          // 统计月份：'YYYY-MM'，'' = 全部；null = 还没选过（默认本月）
 let tsrCtx=null;         // 当前月份的统计数据（smsLoad）；null = 加载中
 let tsrCtxErr='';
+let tsrAllCtx=null;      // 全部（2026年10月期起）的统计数据：当前期缺席提醒、「全部」视图用
 function tsrAtt(v) {
   if (!v) return { t:'缺席', c:'var(--danger,#b03a2e)' };
   return ({
@@ -1176,7 +1272,7 @@ function tsrAtt(v) {
   })[v] || { t:v, c:'var(--text-2,#666)' };
 }
 
-const TSR_MARK = { ok: ['✓', '#1a6d3a', '#e4f3ea', '出席'], late: ['迟', '#8a6d10', '#fef5e0', '迟到'], leave: ['假', '#5a6a7a', '#eef1f5', '请假'], absent: ['✗', '#c0392b', '#fdecea', '缺席'], none: ['', 'var(--border)', 'transparent', '未记录'] };
+const TSR_MARK = { ok: ['✓', '#1a6d3a', '#e4f3ea', '出席'], late: ['迟', '#8a6d10', '#fef5e0', '迟到'], leave: ['假', '#5a6a7a', '#eef1f5', '请假'], absent: ['✗', '#c0392b', '#fdecea', '缺席'], untaken: ['·', '#9a9590', '#f3f1ec', '未点名'], future: ['', 'var(--border)', 'transparent', '未上课'], none: ['', 'var(--border)', 'transparent', '未记录'] };
 
 // 打开页面 / 换月份时，一次性批量加载统计（不再逐个学生点开才加载）
 async function tsrLoadStats() {
@@ -1185,6 +1281,7 @@ async function tsrLoadStats() {
   try { const c = await smsLoad(ym); if (tsrYm === ym) tsrCtx = c; }
   catch (e) { if (tsrYm === ym) tsrCtxErr = (e && e.message) || String(e); }
   if (tsrYm === ym) tsrRenderList();
+  if (!tsrAllCtx) { try { tsrAllCtx = await smsLoad(''); if (tsrYm === ym) tsrRenderList(); } catch (e) { /* 缺席提醒暂不可用 */ } }
 }
 function tsrSetYm(ym) { tsrYm = ym; tsmShown = TSM_PAGE; tsrRender(); }
 
@@ -1207,7 +1304,7 @@ function tsrRender() {
       ${arrow(-1, '‹')}<span style="font-size:13px;font-weight:600;min-width:92px;text-align:center">${tsrYm ? tsrYm.replace('-', '年') + '月' : '全部月份'}</span>${arrow(1, '›')}
       ${tsrYm ? `<div class="filter-chip" onclick="tsrSetYm('')" style="padding:3px 10px;font-size:10px">全部</div>` : `<div class="filter-chip active" style="padding:3px 10px;font-size:10px">全部</div>`}
       ${tsrYm === cur ? '' : `<span onclick="tsrSetYm('${cur}')" style="font-size:10px;color:var(--accent);cursor:pointer">回到本月</span>`}
-      <span style="font-size:10px;color:var(--text-3)">应出席按学生所属课程的课次算（不含休讲、到今天为止），迟到算出席；出勤率低于 80% 标橙色</span>
+      <span style="font-size:10px;color:var(--text-3)">已上 = 已点过名的课次（没点名的不算缺席，单独提示）；出勤率 = (出席+迟到) ÷ 已上，低于 80% 标橙色；「全部」按期数列出（2026年10月期起）</span>
     </div>
     <div id="tsr_list"></div>
   </div>` : ''}
@@ -1220,11 +1317,22 @@ function tsrRender() {
 function tsrStatsHtml(s) {
   if (tsrCtxErr) return `<span style="font-size:10px;color:var(--danger)">统计加载失败</span>`;
   if (!tsrCtx || tsrCtx.ym !== tsrYm) return `<span style="font-size:10px;color:var(--text-3)">统计加载中…</span>`;
-  const st = studentMonthStats(s, tsrCtx);
-  if (!st.required) return `<span style="font-size:10px;color:var(--text-3)">${tsrYm ? '本月无课次' : '暂无课次'}</span>`;
+  const st = tsrYm ? studentMonthStats(s, tsrCtx) : studentPeriodStats(s, tsrCtx).cur;   // 「全部」视图：列表行显示当前期
+  const word = tsrYm ? '本月' : '本期';
+  let abs = '';
+  if (tsrAllCtx) { const a = smsCurAbsent(s, tsrAllCtx); if (a.n >= 3) abs = `<span style="font-size:10px;padding:1px 8px;border-radius:10px;background:#fdecea;color:#c0392b;white-space:nowrap">⚠ 缺席 ${a.n} 次</span>`; }
+  if (!st.total) return `${abs}<span style="font-size:10px;color:var(--text-3)">${word}无课次</span>`;
   const low = st.rate != null && st.rate < 80;
   const marks = st.marks.slice(-40).map(m => { const d = TSR_MARK[m.mark]; return `<span title="${tsaEsc(m.date)} ${tsaEsc(m.course)}：${d[3]}${m.hw ? (m.hw === 'done' ? ' · 作业已交' : ' · 作业未交') : ''}" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:3px;font-size:9px;border:1px solid ${d[1]};background:${d[2]};color:${d[1]}">${d[0]}</span>`; }).join('');
-  return `<span style="font-size:11px;color:var(--text-2)"><span style="${low ? 'color:#c9731a;font-weight:600' : ''}">出席 ${st.actual} / 应出席 ${st.required}（${st.rate}%）</span> · 请假 ${st.leave} · 缺席 ${st.absent} · 作业 已交 ${st.hwDone} / 布置 ${st.hwAssigned}</span><span style="display:inline-flex;gap:2px;flex-wrap:wrap">${marks}</span>`;
+  return `${abs}<span style="font-size:11px;color:var(--text-2)"><span style="${low ? 'color:#c9731a;font-weight:600' : ''}">${smsAttText(st)}</span> · 请假 ${st.leave} · 缺席 ${st.absent} · ${smsHwText(st, word)}${st.untaken ? ` <span style="font-size:10px;color:var(--text-3)">· 未点名 ${st.untaken} 回</span>` : ''}</span><span style="display:inline-flex;gap:2px;flex-wrap:wrap">${marks}</span>`;
+}
+// 「全部」视图展开：按期数各一行 + 总计
+function tsrPeriodsHtml(s) {
+  if (!tsrCtx || tsrCtx.ym !== tsrYm) return '';
+  const ps = studentPeriodStats(s, tsrCtx);
+  if (!ps.periods.length) return '';
+  const row = (name, st, bold) => `<div style="font-size:11px;padding:4px 0;border-bottom:1px solid var(--border-light);${bold ? 'font-weight:600' : ''}"><span style="display:inline-block;min-width:100px">${tsaEsc(name)}</span>${smsAttText(st)} · ${smsHwText(st)}${st.untaken ? ` <span style="font-size:10px;color:var(--text-3)">· 未点名 ${st.untaken} 回</span>` : ''}</div>`;
+  return `<div style="margin-bottom:10px">${ps.periods.map(p => row(p.key, p.st)).join('')}${row('总计', ps.total, true)}</div>`;
 }
 
 function tsrRenderList() {
@@ -1243,6 +1351,7 @@ function tsrRenderList() {
           <span style="font-size:10px;color:var(--text-3)">${tsrExpandedId === s.id ? '▲' : '▼'}</span>
         </div>
         ${tsrExpandedId === s.id ? `<div style="padding:8px 12px;background:var(--bg);border-bottom:1px solid var(--border)">
+          ${tsrYm ? '' : tsrPeriodsHtml(s)}
           ${!recs ? '<div style="font-size:11px;color:var(--text-3);padding:6px">加载中…</div>' : !recs.length ? '<div style="font-size:11px;color:var(--text-3);padding:6px">暂无出席・作业记录</div>' : `
           <table style="width:100%;border-collapse:collapse;font-size:11px">
             <thead><tr>${['日期','课程','出席','作业'].map(h => `<th style="padding:4px 8px;text-align:left;font-weight:600;color:var(--text-3);border-bottom:1px solid var(--border)">${h}</th>`).join('')}</tr></thead>
@@ -1962,6 +2071,7 @@ function tmImgLightbox(url) {
 // 重点关注：按到期临近筛选 + 学生学习概要汇总（换一种展示方式）
 // ══════════════════════════════════════════════════════════
 let focusStudents = [];
+let focusSms = null;       // smsLoad('')：当前期缺席统计
 let focusUrgency = 'all';   // all | half | q3 | near | expired | nomtg 本月无面谈无记录 | noreply3 连续3次联系未回复
 
 function focusParseDate(str) {
@@ -2005,6 +2115,8 @@ async function renderTeacherFocus(box) {
     if (tsaGuaranteedLock()) list = list.filter(tsaIsGuaranteed);
     focusStudents = list;
     try { focusTm = await tmLoadFollow(list); focusTmErr = ''; } catch (e) { focusTm = null; focusTmErr = (e && e.message) || String(e); }
+    focusSms = null; smsCtxCache = {};
+    try { focusSms = await smsLoad(''); } catch (e) { focusSms = null; }
     focusRender();
   } catch (e) {
     box.innerHTML = `<div class="empty" style="color:var(--danger)">重点关注加载失败：${(e && e.message) || e}</div>`;
@@ -2018,17 +2130,20 @@ function focusFlags(s) {
   const info = tmInfo(s, focusTm);
   return { info, none: tmMonthState(info, tmCurYm()).group === 'none', streak: tmStreak(info) };
 }
+// 当前期累计缺席 {n, courses}；统计没加载出来 = null
+function focusAbsent(s) { return focusSms ? smsCurAbsent(s, focusSms) : null; }
 
 function focusRender() {
   const box = document.getElementById('sm_content') || document.getElementById('mainContent');
   if (!box) return;
   try {
-  const rows = tsmFilterStudents(focusStudents).map(s => { const months = focusMonthsUntil(s.expiry_date); return { s, months, bucket: focusBucket(months), f: focusFlags(s) }; });
-  const nNone = rows.filter(r => r.f && r.f.none).length, nStreak = rows.filter(r => r.f && r.f.streak >= 3).length;
+  const rows = tsmFilterStudents(focusStudents).map(s => { const months = focusMonthsUntil(s.expiry_date); return { s, months, bucket: focusBucket(months), f: focusFlags(s), ab: focusAbsent(s) }; });
+  const nAbs = rows.filter(r => r.ab && r.ab.n >= 3).length, nNone = rows.filter(r => r.f && r.f.none).length, nStreak = rows.filter(r => r.f && r.f.streak >= 3).length;
   let filtered = rows.filter(r => {
     if (focusUrgency === 'all') return true;
     if (focusUrgency === 'nomtg') return !!(r.f && r.f.none);
     if (focusUrgency === 'noreply3') return !!(r.f && r.f.streak >= 3);
+    if (focusUrgency === 'abs3') return !!(r.ab && r.ab.n >= 3);
     if (focusUrgency === 'expired') return r.bucket === 'expired';
     if (focusUrgency === 'near') return ['near', 'expired'].includes(r.bucket);
     if (focusUrgency === 'q3') return ['near', 'q3', 'expired'].includes(r.bucket);
@@ -2037,6 +2152,7 @@ function focusRender() {
   });
   const ord = { expired: 0, near: 1, q3: 2, half: 3, far: 4 };
   if (focusUrgency === 'noreply3') filtered.sort((a, b) => b.f.streak - a.f.streak);
+  else if (focusUrgency === 'abs3') filtered.sort((a, b) => b.ab.n - a.ab.n);
   else filtered.sort((a, b) => ((ord[a.bucket] ?? 5) - (ord[b.bucket] ?? 5)) || ((a.months ?? 9999) - (b.months ?? 9999)));
 
   const chip = (k, l) => `<div class="filter-chip ${focusUrgency === k ? 'active' : ''}" onclick="focusUrgency='${k}';tsmShown=TSM_PAGE;focusRender()" style="padding:3px 10px;font-size:10px;cursor:pointer">${l}</div>`;
@@ -2050,6 +2166,7 @@ function focusRender() {
       ${badge}
       ${r.f && r.f.streak >= 3 ? tag('#c0392b', '#fdecea', `⚠ 连续 ${r.f.streak} 次联系未回复`) : ''}
       ${r.f && r.f.none ? tag('#b8560b', '#fbeee0', '本月无面谈无记录') : ''}
+      ${r.ab && r.ab.n >= 3 ? tag('#c0392b', '#fdecea', `⚠ 缺席 ${r.ab.n} 次${r.ab.courses.length ? ' · ' + r.ab.courses.map(tsaEsc).join('、') : ''}`) : ''}
       <span style="font-size:10px;color:var(--text-3)">到期 ${tsaEsc(r.s.expiry_date) || '—'}</span>
       <span style="margin-left:auto;font-size:11px;color:var(--accent)">查看概要 ›</span>
     </div>`;
@@ -2059,10 +2176,11 @@ function focusRender() {
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
       ${chip('all', '全部')}${chip('half', '半年内')}${chip('q3', '三个月内')}${chip('near', '临近')}${chip('expired', '已过期')}
       <span style="width:1px;height:16px;background:var(--border);margin:0 4px"></span>
-      ${chip('nomtg', '本月无面谈无记录 ' + (focusTm ? nNone : '—'))}${chip('noreply3', '连续 3 次联系未回复 ' + (focusTm ? nStreak : '—'))}
+      ${chip('nomtg', '本月无面谈无记录 ' + (focusTm ? nNone : '—'))}${chip('noreply3', '连续 3 次联系未回复 ' + (focusTm ? nStreak : '—'))}${chip('abs3', '缺席 3 次以上 ' + (focusSms ? nAbs : '—'))}
     </div>
+    ${focusTm && !focusSms ? '<div style="font-size:11px;color:var(--danger);margin-bottom:8px">出席统计加载失败（「缺席 3 次以上」暂不可用）</div>' : ''}
     ${focusTmErr ? `<div style="font-size:11px;color:var(--danger);margin-bottom:8px">面谈 / 联系记录加载失败：${tsaEsc(focusTmErr)}（「本月无面谈无记录」「连续 3 次联系未回复」暂不可用）</div>` : ''}
-    <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">共 ${filtered.length} 人 · 点学生查看完整学习概要（可打印 / 复制反馈文字）。到期依据「到期时间」自动推算；连续 3 次联系未回复 = 中间没有面谈 / 学习记录。</div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">共 ${filtered.length} 人 · 点学生查看完整学习概要（可打印 / 复制反馈文字）。到期依据「到期时间」自动推算；连续 3 次联系未回复 = 中间没有面谈 / 学习记录；缺席 3 次以上 = 当前期累计缺席（不含请假，出席记录从 2026 年 10 月期起算）。</div>
     <div>${cards}</div>`;
   } catch (e) {
     box.innerHTML = `<div class="empty" style="color:var(--danger)">重点关注渲染失败：${(e && e.message) || e}</div>`;
