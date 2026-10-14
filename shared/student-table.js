@@ -20,14 +20,6 @@ function sttClassNames(s) {
 }
 function sttVipRemain(s) { return (Number(s.vip_hours_total) || 0) - (Number(s.vip_hours_used) || 0); }
 function sttHasVip(s) { return s.is_vip_course === 'VIP' || s.is_vip_course === '大课+VIP' || (Number(s.vip_hours_total) || 0) > 0; }
-function sttCourseParts(s) {
-  const out = [];
-  const a = s.is_vip_course || '', b = s.course_type || '';
-  if (a) out.push(a);
-  if (b && b !== a && !(a && b.includes(a)) && !(a && a.includes(b))) out.push(b);
-  else if (b && !a) out.push(b);
-  return out;
-}
 // 日期文本（"27年4月" / "2027/4/1" / "26.7"）→ 可比较的数字；认不出返回 null
 function sttDateKey(v) {
   const m = String(v == null ? '' : v).match(/(\d{2,4})\s*[年\/.\-]\s*(\d{1,2})(?:\s*[月\/.\-]\s*(\d{1,2}))?/);
@@ -47,7 +39,9 @@ const STT_COLS = [
   { key: 'major', label: '专业', def: 1, vals: s => [sttMajor(s)], text: s => sttMajor(s) },
   { key: 'status', label: '状态', def: 1, vals: s => [STT_STATUS[s.status] || s.status || ''], text: s => STT_STATUS[s.status] || s.status || '',
     html: s => { const v = s.status; const c = v === 'active' ? 'var(--ok,#2d7a4f)' : v === 'graduated' ? '#1a6a9a' : v === 'withdrawn' ? 'var(--danger,#c0392b)' : 'var(--text-3)'; const bg = v === 'active' ? 'var(--ok-bg,#e8f5ec)' : v === 'graduated' ? '#e8f4fd' : v === 'withdrawn' ? '#fdecea' : 'var(--border)'; return `<span style="font-size:10px;padding:1px 7px;border-radius:10px;background:${bg};color:${c};white-space:nowrap">${sttEsc(STT_STATUS[v] || v || '')}</span>`; } },
-  { key: 'course', label: '课程属性', def: 1, vals: s => sttCourseParts(s), text: s => sttCourseParts(s).join(' / ') },
+  { key: 'vip_type', label: '大课/VIP', def: 1, vals: s => [s.is_vip_course || ''], text: s => s.is_vip_course || '' },
+  { key: 'course', label: '课程属性', def: 1, vals: s => [s.course_type || ''], text: s => s.course_type || '',
+    html: s => { const v = s.course_type || ''; return sttEsc(v) + (v.includes('保录') ? ' <span style="font-size:10px;padding:1px 7px;border-radius:10px;background:#fff1d6;color:#b8700f;font-weight:600;white-space:nowrap">保录</span>' : ''); } },
   { key: 'vip_hours', label: 'VIP课时（剩/总）', def: 1, sort: 'num', num: s => sttHasVip(s) ? sttVipRemain(s) : null, vals: s => [sttVipBucket(s)],
     text: s => sttHasVip(s) ? `${sttVipRemain(s)} / ${Number(s.vip_hours_total) || 0}` : '',
     html: s => { if (!sttHasVip(s)) return '<span style="color:var(--text-3)">—</span>'; const r = sttVipRemain(s); const c = r <= 0 ? 'var(--danger,#c0392b)' : r <= 3 ? '#d9822b' : 'var(--accent)'; return `<span style="color:${c};font-weight:600">${r}</span> / ${Number(s.vip_hours_total) || 0}`; } },
@@ -90,6 +84,7 @@ function sttLoadCols(key) {
       const arr = JSON.parse(raw);
       if (Array.isArray(arr)) {
         const ok = arr.filter(k => STT_COL_BY[k]);
+        if (ok.includes('course') && !arr.includes('vip_type')) ok.push('vip_type');   // 旧设置里「课程属性」拆成两列后，自动补上「大课/VIP」
         if (ok.length) return STT_COLS.filter(c => c.fixed || ok.includes(c.key)).map(c => c.key);
       }
     }
