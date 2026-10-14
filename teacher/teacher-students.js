@@ -2226,6 +2226,10 @@ async function focusOpenSummary(sid) {
     get(`/rest/v1/student_contact_logs?student_id=is.null&student_name=eq.${enc(s.name)}&select=*&order=created_at.desc`),
   ]);
 
+  // 出席・作业统计（当前期 + 本月，口径同出席・作业页）；加载失败不影响概要其它部分
+  let attErr = '', allCtx = null, monCtx = null;
+  try { [allCtx, monCtx] = await Promise.all([smsLoad(''), smsLoad(tmCurYm())]); } catch (e) { attErr = (e && e.message) || String(e); }
+
   try {
   const timeline = tlR.v, plans = plR.v;
   const bks = bkIdR.v.concat(bkNmR.v), logs = lgIdR.v.concat(lgNmR.v);
@@ -2249,6 +2253,13 @@ async function focusOpenSummary(sid) {
       ${kv('赴日', s.japan_arrival)}${kv('研究方向', s.thesis)}
       ${kv('日语成绩', s.japanese_score)}${kv('英语成绩', s.english_score)}
     </div>`;
+
+  // 出席与作业（当前期 + 本月）
+  const attCur = allCtx ? studentPeriodStats(s, allCtx).cur : null, attMon = monCtx ? studentMonthStats(s, monCtx) : null;
+  const attLine = (word, st) => st && st.total
+    ? `${word}：${smsAttText(st)}${st.held ? ' · 缺席 ' + st.absent + ' 次' : ''}${st.untaken ? '（未点名 ' + st.untaken + ' 回）' : ''}；${smsHwText(st, word)}`
+    : `${word}：无课次`;
+  const attHtml = attErr ? `<div style="font-size:11px;color:#b03a2e">出席统计读取失败：${tsaEsc(attErr)}</div>` : [['当前期', attCur], ['本月', attMon]].map(([w, st]) => `<div style="font-size:12px;padding:3px 0"><span style="color:#888;display:inline-block;width:50px">${w}</span>${tsaEsc(attLine(w === '当前期' ? '本期' : w, st).replace(/^[^：]+：/, ''))}${w === '当前期' && st && st.absent >= 3 ? ' <span style="color:#c0392b;font-weight:600">⚠ 缺席 ' + st.absent + ' 次</span>' : ''}</div>`).join('');
 
   // 2. 报考学校（重点）：已确定报考（教授 OK / 已出愿 / 已合格）放最前
   const CONFIRMED = ['prof_ok', 'applied', 'passed'];
@@ -2287,15 +2298,31 @@ async function focusOpenSummary(sid) {
   const logHtml = info.logs.length ? info.logs.map(l => { const k = TM_KIND[tmLogKind(l)]; return `<div style="font-size:12px;padding:6px 0;border-top:1px solid #eee"><span style="color:#2a6a9a;font-family:monospace">${tsaEsc(tmLogYm(l))}</span> <span style="color:${k.c};border:1px solid ${k.c};border-radius:2px;padding:0 5px;font-size:10px">${k.t}</span> <span style="white-space:pre-wrap">${tsaEsc(l.note) || ''}</span>${l.image_url ? ' <span style="color:#1a6d3a">[有截图]</span>' : ''} <span style="color:#aaa;font-size:10px">${tsaEsc(l.teacher_name || '')}</span></div>`; }).join('') : '<div style="font-size:11px;color:#aaa">暂无学习记录 / 联系记录</div>';
   const contactHtml = errHtml(lgIdR, lgNmR) + `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:11px;color:#888">近 6 个月（✓ 面谈 / ✎ 学习记录 / ✉ 未回复 / ⏳ 待面谈）${tmCellsHtml(info, tmCurYm())}${streak >= 3 ? `<span style="color:#c0392b;font-weight:600">⚠ 已连续 ${streak} 次联系未回复</span>` : ''}${curNone ? '<span style="color:#b8560b">本月无面谈无记录</span>' : ''}</div>` + logHtml;
 
-  // 反馈文字（给营业 / 家长）
+  // 反馈文字（给营业 / 家长）：基本信息 / 出席与作业 / 报考学校 / 考学进度 / 面谈记录（最近 3 次）/ 学习记录・联系记录（最近 3 条 + 近 6 个月）
+  const cut = (t, n) => { t = String(t || '').replace(/\s*\n+\s*/g, '；').trim(); return t.length > n ? t.slice(0, n) + '…' : t; };
+  const kindTxt = l => l.kind === 'waiting' ? '已联系·等回复' : l.kind === 'no_reply' ? '联系未回复' : '学习记录';
+  const cellTxt = { mtg: '面谈', study: '学习记录', noreply: '未回复', wait: '等回复', pend: '待面谈' };
+  const six = []; for (let i = 5; i >= 0; i--) { const m = tmShiftYm(tmCurYm(), -i); six.push(`${+m.slice(5)}月 ${cellTxt[tmMonthState(info, m).cell] || '无'}`); }
   const L = [];
-  L.push(`【学生情况反馈】${s.name}（${MAJORS[s.major] || s.major || ''}）`);
-  L.push(`到期：${s.expiry_date || '—'}${s.target_enrollment ? '　入学目标：' + s.target_enrollment : ''}`);
-  L.push(confirmed.length ? '报考学校：' + confirmed.map(p => [p.school_name, p.faculty, p.department].filter(Boolean).join(' ') + '（' + stLabel(p.status).t.replace(/\s*🎉/, '') + '）').join('；') : '报考学校：尚未确定');
+  L.push(`【学生情况反馈】${s.name} · ${MAJORS[s.major] || s.major || ''} · 到期 ${s.expiry_date || '—'} · 课程属性 ${s.course_type || '—'}`);
+  L.push('◆ 出席与作业');
+  if (attErr) L.push('（出席统计读取失败）');
+  else {
+    L.push(attLine('本期', attCur) + (attCur && attCur.absent >= 3 ? ' ⚠' : ''));
+    L.push(attLine('本月', attMon));
+  }
+  L.push('◆ 报考学校');
+  L.push(confirmed.length ? '已确定：' + confirmed.map(p => [p.school_name, p.faculty, p.department].filter(Boolean).join(' ') + '（' + stLabel(p.status).t.replace(/\s*🎉/, '') + '）').join('；') : '已确定：尚未确定');
+  if (others.length) L.push('候选：' + others.map(p => [p.school_name, p.faculty, p.department].filter(Boolean).join(' ')).join('；'));
   L.push('考学进度：' + dims.map(k => `${PROGRESS_LABELS[k]} ${latest[k] || '未填写'}`).join('；'));
-  L.push(`面谈：共 ${recs.length} 次${recs[0] ? '，最近一次 ' + recs[0].slot_date : ''}；${curNone ? '本月暂无面谈或学习记录' : '本月已跟进'}`);
-  if (streak >= 3) L.push(`联系情况：已连续 ${streak} 次联系未回复，请营业 / 家长协助联系学生`);
-  else if (info.logs[0]) L.push(`联系情况：最近一次${TM_KIND[tmLogKind(info.logs[0])].t}（${tmLogYm(info.logs[0])}）`);
+  L.push(`◆ 面谈记录（共 ${recs.length} 次，最近 3 次）`);
+  if (recs.length) recs.slice(0, 3).forEach(b => L.push(`${b.slot_date || ''}${b.assigned_teacher ? ' · ' + b.assigned_teacher + '老师' : ''} · ${cut(recText(b.daily_record), 80) || '（无内容）'}`));
+  else L.push('暂无面谈记录');
+  L.push('◆ 学习记录 / 联系记录');
+  if (info.logs.length) info.logs.slice(0, 3).forEach(l => L.push(`${tmLogYm(l)} ${kindTxt(l)}${l.kind !== 'waiting' && l.note ? '：' + cut(l.note, 80) : ''}`));
+  else L.push('暂无记录');
+  if (streak >= 3) L.push(`已连续 ${streak} 次联系未回复，请营业 / 家长协助联系学生`);
+  L.push('近 6 个月面谈情况：' + six.join(' · '));
   focusFbText = L.join('\n');
 
   o.innerHTML = `
@@ -2313,6 +2340,7 @@ async function focusOpenSummary(sid) {
     </div>
 
     ${sec('基本信息', basic)}
+    ${sec('出席与作业', attHtml)}
     ${sec('报考学校', schoolsHtml)}
     ${sec('考学进度', tlHtml)}
     ${sec('面谈记录（' + recs.length + '次）', mtgHtml)}
