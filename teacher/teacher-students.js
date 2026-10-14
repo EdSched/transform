@@ -483,7 +483,7 @@ function tsmRefreshPage(light) {
   if (tsmNeed()) { box.innerHTML = tsmPickHtml(); return; }
   if (smTab === 'progress') { if (light && document.getElementById('tp_list')) tpRenderProgressList(); else tpRenderShell(); }
   else if (smTab === 'meetings') { if (light && document.getElementById('tm_list')) tmRenderList(); else tmRenderShell(); }
-  else if (smTab === 'records') tsrRender();
+  else if (smTab === 'records') { if (light && document.getElementById('tsr_list')) tsrRenderList(); else tsrRender(); }
   else if (smTab === 'monthly') renderMonthlyReport(box);
   else if (smTab === 'focus') focusRender();
   else if (light && document.getElementById('tsa_list')) tsaRenderList();
@@ -1148,6 +1148,7 @@ async function tatSave(){
     document.getElementById('tatOverlay').style.display='none';
     alert(`✓ 已${tatEditing?'更新':'保存'} ${se.course_name} 第${se.session_number}回 出席（${tatStudents.length} 人${tatEditing?`，修改 ${updates.length} 条、新增 ${news.length} 条`:''}）`);
     tsrRecCache={}; smsCtxCache={};   // 学生出席历史、月度统计缓存作废
+    if(document.getElementById('tsr_list')) tsrLoadStats();   // 列表上的统计立刻刷新
     tatRenderSessionBar();  // 刷新课次列表（这一节出现在「已记录」，统计更新）
   }catch(e){ alert('保存失败：'+e.message); if(btn){btn.textContent='保存全部';btn.disabled=false;} }
 }
@@ -1156,11 +1157,15 @@ async function renderTsaRecords(box) {
   box.innerHTML = '<div class="empty">加载中…</div>';
   try {
     tsrStudents = (await tsmLoadPool()).slice();   // 全部状态（已按可见范围裁剪）；由全局「状态」筛选
+    smsCtxCache = {}; tsrCtx = null;   // 每次进入页面都重新读最新的出席・作业
   } catch (e) { box.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
   tsrRender();
 }
 
-let tsrHistOpen=false;
+let tsrHistOpen=true;
+let tsrYm=null;          // 统计月份：'YYYY-MM'，'' = 全部；null = 还没选过（默认本月）
+let tsrCtx=null;         // 当前月份的统计数据（smsLoad）；null = 加载中
+let tsrCtxErr='';
 function tsrAtt(v) {
   if (!v) return { t:'缺席', c:'var(--danger,#b03a2e)' };
   return ({
@@ -1171,40 +1176,70 @@ function tsrAtt(v) {
   })[v] || { t:v, c:'var(--text-2,#666)' };
 }
 
+const TSR_MARK = { ok: ['✓', '#1a6d3a', '#e4f3ea', '出席'], late: ['迟', '#8a6d10', '#fef5e0', '迟到'], leave: ['假', '#5a6a7a', '#eef1f5', '请假'], absent: ['✗', '#c0392b', '#fdecea', '缺席'], none: ['', 'var(--border)', 'transparent', '未记录'] };
+
+// 打开页面 / 换月份时，一次性批量加载统计（不再逐个学生点开才加载）
+async function tsrLoadStats() {
+  const ym = tsrYm;
+  tsrCtx = null; tsrCtxErr = '';
+  try { const c = await smsLoad(ym); if (tsrYm === ym) tsrCtx = c; }
+  catch (e) { if (tsrYm === ym) tsrCtxErr = (e && e.message) || String(e); }
+  if (tsrYm === ym) tsrRenderList();
+}
+function tsrSetYm(ym) { tsrYm = ym; tsmShown = TSM_PAGE; tsrRender(); }
+
 function tsrRender() {
   const box = document.getElementById('sm_content');
   if (!box) return;
-  const listAll = tsmFilterStudents(tsrStudents);
-  const list = tsmSlice(listAll);
+  if (tsrYm === null) tsrYm = tmCurYm();
   const rp = smRecPerm();   // view 查看 / entry 登记
+  const cur = tmCurYm();
+  const arrow = (n, tx) => tsrYm ? `<span onclick="tsrSetYm('${tmShiftYm(tsrYm, n)}')" style="cursor:pointer;user-select:none;font-size:13px;padding:2px 10px;border:1px solid var(--border);border-radius:3px;background:var(--surface)">${tx}</span>` : '';
 
   box.innerHTML = `<div>
     <!-- 签到区（选课→点名字记出席），只有登记权限才显示 -->
     ${rp.entry ? '<div id="tat_session_bar" style="margin-bottom:6px"></div>' : ''}
     ${(rp.entry && typeof awTeacherIsArt === 'function' && awTeacherIsArt()) ? '<div id="aw_teacher_box"></div>' : ''}
-    <!-- 学生出席历史（可收起），只有查看权限才显示 -->
-    ${rp.view ? `<div onclick="tsrHistOpen=!tsrHistOpen;tsrRender()" style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-2);padding:8px 0;border-top:1px solid var(--border);user-select:none">${tsrHistOpen?'▾':'▸'} 学生出席历史（${listAll.length} 人，点击${tsrHistOpen?'收起':'展开'}）</div>
+    <!-- 学生出席统计（可收起），只有查看权限才显示 -->
+    ${rp.view ? `<div onclick="tsrHistOpen=!tsrHistOpen;tsrRender()" style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-2);padding:8px 0;border-top:1px solid var(--border);user-select:none">${tsrHistOpen?'▾':'▸'} 学生出席・作业（<span id="tsr_n">${tsmFilterStudents(tsrStudents).length}</span> 人，点击${tsrHistOpen?'收起':'展开'}）</div>
     <div style="display:${tsrHistOpen?'block':'none'}">
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-      <div style="font-size:12px;font-weight:600">🗒 出席・作业记录（${listAll.length} 人）<span style="font-size:10px;font-weight:400;color:var(--text-3);margin-left:6px">${tsaScopeText()}</span></div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      ${arrow(-1, '‹')}<span style="font-size:13px;font-weight:600;min-width:92px;text-align:center">${tsrYm ? tsrYm.replace('-', '年') + '月' : '全部月份'}</span>${arrow(1, '›')}
+      ${tsrYm ? `<div class="filter-chip" onclick="tsrSetYm('')" style="padding:3px 10px;font-size:10px">全部</div>` : `<div class="filter-chip active" style="padding:3px 10px;font-size:10px">全部</div>`}
+      ${tsrYm === cur ? '' : `<span onclick="tsrSetYm('${cur}')" style="font-size:10px;color:var(--accent);cursor:pointer">回到本月</span>`}
+      <span style="font-size:10px;color:var(--text-3)">应出席按学生所属课程的课次算（不含休讲、到今天为止），迟到算出席；出勤率低于 80% 标橙色</span>
     </div>
-    <div style="border:1px solid var(--border);border-radius:4px;overflow:hidden">
+    <div id="tsr_list"></div>
+  </div>` : ''}
+  </div>`;
+  if (rp.view && tsrHistOpen) { tsrRenderList(); if (!tsrCtx || tsrCtx.ym !== tsrYm) tsrLoadStats(); }
+  if(rp.entry && typeof tatRenderSessionBar==='function') tatRenderSessionBar();
+  if(document.getElementById('aw_teacher_box')) awTeacherMount('aw_teacher_box', tsmFilterStudents(tsrStudents));   // 学部美术：🎨 作业收集
+}
+
+function tsrStatsHtml(s) {
+  if (tsrCtxErr) return `<span style="font-size:10px;color:var(--danger)">统计加载失败</span>`;
+  if (!tsrCtx || tsrCtx.ym !== tsrYm) return `<span style="font-size:10px;color:var(--text-3)">统计加载中…</span>`;
+  const st = studentMonthStats(s, tsrCtx);
+  if (!st.required) return `<span style="font-size:10px;color:var(--text-3)">${tsrYm ? '本月无课次' : '暂无课次'}</span>`;
+  const low = st.rate != null && st.rate < 80;
+  const marks = st.marks.slice(-40).map(m => { const d = TSR_MARK[m.mark]; return `<span title="${tsaEsc(m.date)} ${tsaEsc(m.course)}：${d[3]}${m.hw ? (m.hw === 'done' ? ' · 作业已交' : ' · 作业未交') : ''}" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:3px;font-size:9px;border:1px solid ${d[1]};background:${d[2]};color:${d[1]}">${d[0]}</span>`; }).join('');
+  return `<span style="font-size:11px;color:var(--text-2)"><span style="${low ? 'color:#c9731a;font-weight:600' : ''}">出席 ${st.actual} / 应出席 ${st.required}（${st.rate}%）</span> · 请假 ${st.leave} · 缺席 ${st.absent} · 作业 已交 ${st.hwDone} / 布置 ${st.hwAssigned}</span><span style="display:inline-flex;gap:2px;flex-wrap:wrap">${marks}</span>`;
+}
+
+function tsrRenderList() {
+  const el = document.getElementById('tsr_list'); if (!el) return;
+  const listAll = tsmFilterStudents(tsrStudents);
+  const list = tsmSlice(listAll);
+  const n = document.getElementById('tsr_n'); if (n) n.textContent = listAll.length;
+  el.innerHTML = `<div style="border:1px solid var(--border);border-radius:4px;overflow:hidden">
       ${list.length ? list.map(s => {
         const recs = tsrRecCache[s.id];
-        let sum = '';
-        if (recs) {
-          const present = recs.filter(r => ['offline','online','replay'].includes(r.attendance_status)).length;
-          const leave = recs.filter(r => r.attendance_status === 'leave').length;
-          const hw = recs.filter(r => r.homework_submitted || r.homework_file_url).length;
-          sum = recs.length
-            ? `共 ${recs.length} 课次 · 出席 ${present} · 请假 ${leave} · 缺席 ${recs.length - present - leave} · 作业已交 ${hw}`
-            : '暂无记录';
-        }
         return `<div>
-        <div onclick="tsrToggle('${s.id}')" style="display:flex;align-items:center;gap:10px;padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);${tsrExpandedId === s.id ? 'background:var(--bg)' : ''}">
+        <div onclick="tsrToggle('${s.id}')" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);${tsrExpandedId === s.id ? 'background:var(--bg)' : ''}">
           <span style="font-size:12px;font-weight:600">${tsaEsc(s.name)}</span>
           <span style="font-size:10px;color:var(--text-3)">${MAJORS[s.major] || s.major || ''}${s.level ? ' · ' + s.level : ''}</span>
-          <span style="font-size:10px;color:var(--text-2);margin-left:auto">${sum || '点击查看记录'}</span>
+          <span style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${tsrStatsHtml(s)}</span>
           <span style="font-size:10px;color:var(--text-3)">${tsrExpandedId === s.id ? '▲' : '▼'}</span>
         </div>
         ${tsrExpandedId === s.id ? `<div style="padding:8px 12px;background:var(--bg);border-bottom:1px solid var(--border)">
@@ -1228,16 +1263,12 @@ function tsrRender() {
       </div>`;
       }).join('') : '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:11px">暂无学生</div>'}
     </div>
-    ${tsmMoreHtml(listAll.length)}
-  </div>` : ''}
-  </div>`;
-  if(rp.entry && typeof tatRenderSessionBar==='function') tatRenderSessionBar();
-  if(document.getElementById('aw_teacher_box')) awTeacherMount('aw_teacher_box', tsmFilterStudents(tsrStudents));   // 学部美术：🎨 作业收集
+    ${tsmMoreHtml(listAll.length)}`;
 }
 
 async function tsrToggle(id) {
   tsrExpandedId = tsrExpandedId === id ? null : id;
-  tsrRender();
+  tsrRenderList();
   if (tsrExpandedId !== id || tsrRecCache[id]) return;
   const s = tsrStudents.find(x => x.id === id);
   if (!s) return;
@@ -1253,7 +1284,7 @@ async function tsrToggle(id) {
     }
     tsrRecCache[id] = recs.map(r => Object.assign({}, r, { course_name: r.course_name || (sesMap[r.session_id] && sesMap[r.session_id].course_name) || '' }));
   } catch (e) { tsrRecCache[id] = []; }
-  if (tsrExpandedId === id) tsrRender();
+  if (tsrExpandedId === id) tsrRenderList();
 }
 
 // ══ 计划书内容渲染（供考学进度卡片与批注弹窗使用） ══
