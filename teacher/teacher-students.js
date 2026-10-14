@@ -1392,7 +1392,7 @@ async function renderTsaMeetings(box) {
   box.innerHTML = '<div class="empty">加载中…</div>';
   if (!tmYm) tmYm = tmCurYm();
   try {
-    const allStu = await sb('/rest/v1/students?select=id,name,major,source,status,course_type,student_code,class_ids,vip_teachers&limit=2000').catch(() => []);
+    const allStu = await sb('/rest/v1/students?select=id,name,major,source,status,course_type,student_code,class_ids,vip_teachers,is_vip_course&limit=2000').catch(() => []);
     let myStudents = tsaFilterStudents(allStu);   // 全部状态；由全局「状态」筛选
     if (tsaGuaranteedLock()) myStudents = myStudents.filter(tsaIsGuaranteed);
     tmData = await tmLoadFollow(myStudents);
@@ -1567,12 +1567,14 @@ async function tmBatchRender(noRec) {
     <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">${tmBatchMode === 'each' ? '每人一段，只含本人的查询码，请逐个私信发送；复制后会标「✓ 已复制」。' : '可以发到专业群里；群发文字不含查询码，登录查询码请另外私信学生。'}</div>`;
   if (tmBatchMode === 'group') {
     const byMajor = {};
-    noRec.forEach(s => { const m = s.major || ''; (byMajor[m] = byMajor[m] || []).push(s.name); });
-    const entries = Object.entries(byMajor).map(([m, names]) => ({
-      name: `${MAJORS[m] || m || '未设专业'}（${names.length}人未面谈）`,
+    noRec.forEach(s => { const m = (s.major || '') + (isPureVipStudent(s) ? '|vip' : ''); (byMajor[m] = byMajor[m] || []).push(s.name); });   // 纯 VIP 单独一组（链接不同）
+    const entries = Object.entries(byMajor).map(([mk, names]) => {
+      const vip = mk.endsWith('|vip'), m = vip ? mk.slice(0, -4) : mk;
+      return {
+      name: `${MAJORS[m] || m || '未设专业'}${vip ? ' · 纯VIP' : ''}（${names.length}人未面谈）`,
       sub: names.join('、'),
-      text: `同学，你最近都一直没有预约面谈，学习上有什么问题吗？麻烦预约一下面谈噢。\n预约链接：${studentPortalLink(m)}\n登录查询码请查看老师私信，请妥善保存。`,
-    }));
+      text: `同学，你最近都一直没有预约面谈，学习上有什么问题吗？麻烦预约一下面谈噢。\n预约链接：${studentPortalLink({ is_vip_course: vip ? 'VIP' : '' }, { tab: 'reserve' })}\n登录查询码请查看老师私信，请妥善保存。`,
+    }; });
     body.innerHTML = head + studentTextBlocksHtml(entries, 'tmbg');
     return;
   }
@@ -1587,12 +1589,12 @@ async function tmBatchRender(noRec) {
 // 单人面谈提醒（文案 B，含本人查询码；没有查询码时先自动生成），弹窗显示并自动复制
 async function tmGenReminder(id) {
   let st = ((tmData && tmData.students) || []).find(x => x.id === id);
-  if (!st && id) st = ((await sb(`/rest/v1/students?id=eq.${encodeURIComponent(id)}&select=id,name,major,student_code`).catch(() => [])) || [])[0];
+  if (!st && id) st = ((await sb(`/rest/v1/students?id=eq.${encodeURIComponent(id)}&select=id,name,major,student_code,is_vip_course`).catch(() => [])) || [])[0];
   if (!st) { alert('找不到该学生档案'); return; }
   const body = studentTextModal('tmReminderModal', `✉ 面谈提醒 · ${tsaEsc(st.name)}`, '<div style="font-size:12px;color:var(--text-3);padding:12px">正在准备…</div>');
   const had = !!st.student_code;
   const r = await ensureStudentCode(st);
-  body.innerHTML = studentTextBlocksHtml([{ name: st.name, sub: (!had && r.code) ? '已自动生成查询码' : '', text: bookingReminderText(st.name, st.major, r.code), error: r.error }], 'tmr');
+  body.innerHTML = studentTextBlocksHtml([{ name: st.name, sub: (!had && r.code) ? '已自动生成查询码' : '', text: bookingReminderText(st, r.code), error: r.error }], 'tmr');
   if (!r.error) studentTextCopy('tmr', 0);
 }
 
