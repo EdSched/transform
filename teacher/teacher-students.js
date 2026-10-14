@@ -1462,8 +1462,8 @@ function tDraftFullHtml(draft) {
 //   学习记录（补充学习情况、和学生的互动等）→ 这个月算完成；联系未回复 → 没完成，继续跟进。
 //   连续 3 次联系未回复（中间没有面谈 / 学习记录）→ 转入重点关注。
 // ══════════════════════════════════
-const TM_KIND = { study: { t: '学习记录', c: '#1a6d3a', ic: '✎' }, no_reply: { t: '联系未回复', c: '#b8560b', ic: '✉' } };
-const TM_GROUPS = [['done', '✓ 已完成'], ['pend', '⏳ 待面谈'], ['noreply', '✉ 已联系未回复'], ['none', '⚠ 无面谈无记录']];
+const TM_KIND = { study: { t: '学习记录', c: '#1a6d3a', ic: '✎' }, waiting: { t: '已联系·等回复', c: '#8a6d10', ic: '✉' }, no_reply: { t: '联系未回复', c: '#b8560b', ic: '✉' } };
+const TM_GROUPS = [['done', '✓ 已完成'], ['pend', '⏳ 待面谈'], ['noreply', '✉ 已联系'], ['none', '⚠ 无面谈无记录']];
 let tmYm = '';             // 当前查看的月份 YYYY-MM（空 = 本月）
 let tmGroup = '';          // '' 全部 | done | pend | noreply | none
 let tmExpandedId = null;
@@ -1475,7 +1475,8 @@ function tmShiftYm(ym, n) { const p = ym.split('-').map(Number); const d = new D
 function tmMonthWord() { return (tmYm || tmCurYm()) === tmCurYm() ? '本月' : parseInt(tmYm.slice(5), 10) + '月'; }
 function tmJstYmd(iso) { return iso ? new Date(new Date(iso).getTime() + 9 * 3600e3).toISOString().slice(0, 10) : ''; }
 function tmHasRec(b) { return !!(b && b.daily_record && Object.values(b.daily_record).some(v => v && (typeof v === 'string' ? v : Object.values(v).some(x => x)))); }
-function tmLogKind(l) { return l.kind === 'no_reply' ? 'no_reply' : 'study'; }
+function tmLogKind(l) { return l.kind === 'no_reply' ? 'no_reply' : l.kind === 'waiting' ? 'waiting' : 'study'; }
+function tmWaitDays(l) { return Math.max(0, Math.floor((Date.now() - new Date(l.created_at || Date.now()).getTime()) / 86400e3)); }
 function tmLogYm(l) { return l.for_month || tmJstYmd(l.created_at).slice(0, 7); }
 // 记录在时间线上的位置（补记往月的记录，按那个月月底算，避免排在后面的面谈前面）
 function tmLogKey(l) { const ym = tmLogYm(l), cd = tmJstYmd(l.created_at); return cd.slice(0, 7) === ym ? cd : ym + '-28'; }
@@ -1525,15 +1526,15 @@ function tmInfo(s, D) {
 function tmMonthState(info, ym) {
   const mtg = info.recs.filter(b => (b.slot_date || '').slice(0, 7) === ym);
   const inM = info.logs.filter(l => tmLogYm(l) === ym);
-  const study = inM.filter(l => tmLogKind(l) === 'study'), nore = inM.filter(l => tmLogKind(l) === 'no_reply');
+  const study = inM.filter(l => tmLogKind(l) === 'study'), nore = inM.filter(l => tmLogKind(l) === 'no_reply'), wait = inM.filter(l => tmLogKind(l) === 'waiting');
   const pend = info.pend.filter(b => (b.slot_date || '').slice(0, 7) === ym);
-  const group = (mtg.length || study.length) ? 'done' : pend.length ? 'pend' : nore.length ? 'noreply' : 'none';
-  const cell = mtg.length ? 'mtg' : study.length ? 'study' : pend.length ? 'pend' : nore.length ? 'noreply' : '';
-  return { group, cell, mtg, study, nore, pend };
+  const group = (mtg.length || study.length) ? 'done' : pend.length ? 'pend' : (nore.length || wait.length) ? 'noreply' : 'none';
+  const cell = mtg.length ? 'mtg' : study.length ? 'study' : pend.length ? 'pend' : nore.length ? 'noreply' : wait.length ? 'wait' : '';
+  return { group, cell, mtg, study, nore, wait, pend };
 }
 // 截至某月月底，连续几次联系未回复（中间有面谈 / 学习记录就清零）
 function tmStreak(info, uptoYm) {   // uptoYm 为空 = 截至现在
-  const ev = info.recs.map(b => ({ k: b.slot_date || '', ok: true })).concat(info.logs.map(l => ({ k: tmLogKey(l), ok: tmLogKind(l) === 'study' })))
+  const ev = info.recs.map(b => ({ k: b.slot_date || '', ok: true })).concat(info.logs.filter(l => tmLogKind(l) !== 'waiting').map(l => ({ k: tmLogKey(l), ok: tmLogKind(l) === 'study' })))
     .filter(e => e.k && (!uptoYm || e.k.slice(0, 7) <= uptoYm)).sort((a, b) => a.k.localeCompare(b.k) || (b.ok ? 1 : 0) - (a.ok ? 1 : 0));
   let n = 0;
   ev.forEach(e => { n = e.ok ? 0 : n + 1; });
@@ -1544,7 +1545,7 @@ function tmRows() {
   const ym = tmYm || tmCurYm();
   return tsmFilterStudents(tmData.students || []).map(s => {
     const info = tmInfo(s), st = tmMonthState(info, ym);
-    return { s, info, st, streak: st.group === 'noreply' ? tmStreak(info, ym) : 0 };
+    return { s, info, st, streak: st.nore.length ? tmStreak(info, ym) : 0 };
   });
 }
 // 当前筛选下「本月无面谈无记录」的学生（批量提醒用）
@@ -1574,12 +1575,13 @@ function tmRenderShell() {
 function tmSetYm(ym) { tmYm = ym; tmShown0(); tmRenderShell(); }
 function tmShown0() { tsmShown = TSM_PAGE; }
 function tmSetGroup(g) { tmGroup = tmGroup === g ? '' : g; tmShown0(); tmRenderList(); }
+function tmStuName(id) { const s = ((tmData && tmData.students) || []).find(x => x.id === id); return s ? s.name : ''; }
 function tmToggle(id) { tmExpandedId = tmExpandedId === id ? null : id; tmRenderList(); }
 
 // 近 6 个月小方格（每月一格）
 function tmCellsHtml(info, endYm) {
   const ym = endYm || tmYm || tmCurYm(), out = [];
-  const sty = { mtg: ['✓', '#1a6d3a', '#e4f3ea', '面谈'], study: ['✎', '#1a6d3a', '#e4f3ea', '学习记录'], noreply: ['✉', '#b8560b', '#fbeee0', '联系未回复'], pend: ['⏳', '#8a6d10', '#fef5e0', '待面谈'] };
+  const sty = { mtg: ['✓', '#1a6d3a', '#e4f3ea', '面谈'], study: ['✎', '#1a6d3a', '#e4f3ea', '学习记录'], noreply: ['✉', '#b8560b', '#fbeee0', '联系未回复'], wait: ['✉', '#8a6d10', '#fef5e0', '已联系·等回复'], pend: ['⏳', '#8a6d10', '#fef5e0', '待面谈'] };
   for (let i = 5; i >= 0; i--) {
     const m = tmShiftYm(ym, -i), c = tmMonthState(info, m).cell, d = sty[c];
     out.push(`<span title="${m.replace('-', '年')}月：${d ? d[3] : '无面谈无记录'}" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:3px;font-size:10px;border:1px solid ${d ? d[1] : 'var(--border)'};background:${d ? d[2] : 'transparent'};color:${d ? d[1] : 'transparent'}">${d ? d[0] : '·'}</span>`);
@@ -1590,7 +1592,12 @@ function tmStateTag(r) {
   const st = r.st, tag = (c, bg, t) => `<span style="font-size:10px;padding:1px 8px;border-radius:10px;background:${bg};color:${c};white-space:nowrap">${t}</span>`;
   if (st.group === 'done') return st.mtg.length ? tag('#1a6d3a', '#e4f3ea', `✓ 已面谈${st.mtg.length > 1 ? ' ' + st.mtg.length + ' 次' : ''}`) : tag('#1a6d3a', '#e4f3ea', '✎ 学习记录');
   if (st.group === 'pend') { const b = st.pend[0]; return tag('#8a6d10', '#fef5e0', `⏳ 待面谈 ${tsaEsc((b.slot_date || '').slice(5))} ${tsaEsc(b.slot_time_range || '')}`); }
-  if (st.group === 'noreply') return r.streak >= 3 ? tag('#c0392b', '#fdecea', `⚠ 已连续 ${r.streak} 次未回复 → 已转重点关注`) : tag('#b8560b', '#fbeee0', `✉ 联系未回复 · 连续第 ${r.streak} 次`);
+  if (st.group === 'noreply') {
+    const out = [];
+    if (st.wait.length) { const d = Math.max(...st.wait.map(tmWaitDays)); out.push(tag('#8a6d10', '#fef5e0', `等回复 · 已等 ${d} 天`)); if (d > 3) out.push(tag('#b8560b', '#fbeee0', '请确认回复情况')); }
+    if (st.nore.length) out.push(r.streak >= 3 ? tag('#c0392b', '#fdecea', `⚠ 未回复 · 已连续 ${r.streak} 次 → 已转重点关注`) : tag('#b8560b', '#fbeee0', `未回复 · 连续第 ${r.streak} 次`));
+    return out.join(' ');
+  }
   return tag('#c0392b', '#fdecea', `⚠ ${tmMonthWord()}无面谈无记录`);
 }
 
@@ -1613,6 +1620,8 @@ function tmRenderList() {
     return head + `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:6px">
       <div onclick="tmToggle('${s.id}')" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 14px;cursor:pointer;${open ? 'background:var(--bg)' : ''}">
         <span style="font-size:13px;font-weight:600">${tsaEsc(s.name)}</span>
+        <span onclick="event.stopPropagation();copyNameText(tmStuName('${s.id}'),this)" style="font-size:10px;border:1px solid var(--border);border-radius:3px;padding:1px 7px;cursor:pointer;background:var(--surface);color:var(--text-2)">📋 姓名</span>
+        <span onclick="event.stopPropagation();tmGenReminder('${s.id}')" style="font-size:10px;border:1px solid var(--border);border-radius:3px;padding:1px 7px;cursor:pointer;background:var(--surface);color:var(--text-2)">✉ 联络文字</span>
         <span style="font-size:11px;color:var(--text-3)">${tsaEsc(MAJORS[s.major] || s.major || '')}</span>
         ${tmStateTag(r)}
         <span style="font-size:10px;color:var(--text-3);margin-left:auto">${lastM ? '最近面谈 ' + tsaEsc(lastM) : '从未面谈'}</span>
@@ -1632,15 +1641,19 @@ function tmDetailHtml(s, info) {
       <pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0;color:var(--text-2)">${tsaEsc(buildRecordText(b))}</pre></div>`).join('')
     : '<div style="font-size:11px;color:var(--text-3)">还没有面谈记录</div>';
   const logs = info.logs.length ? info.logs.map(l => {
-    const k = TM_KIND[tmLogKind(l)], mine = l.teacher_name === me;
+    const kd = tmLogKind(l), k = TM_KIND[kd], mine = l.teacher_name === me;
+    const kindTxt = kd === 'waiting' ? `${k.t} · 已等 ${tmWaitDays(l)} 天` : k.t;
+    const acts = kd === 'waiting'
+      ? `<span style="flex-shrink:0;display:flex;flex-direction:column;gap:4px;align-items:stretch"><button onclick="tmResolveModal('${l.id}','study')" style="font-size:10px;background:#1a6d3a;color:#fff;border:none;border-radius:3px;padding:3px 8px;cursor:pointer;font-family:inherit;white-space:nowrap">学生已回复 → 填学习记录</button><button onclick="tmResolveModal('${l.id}','no_reply')" style="font-size:10px;background:none;color:#b8560b;border:1px solid #b8560b;border-radius:3px;padding:3px 8px;cursor:pointer;font-family:inherit;white-space:nowrap">仍未回复 → 记为未回复</button>${mine ? `<span onclick="tmDeleteContact('${l.id}')" style="color:var(--danger);cursor:pointer;font-size:9px;text-align:right">删除</span>` : ''}</span>`
+      : mine ? `<span style="flex-shrink:0;font-size:9px;white-space:nowrap"><span onclick="tmFlipKind('${l.id}')" style="color:var(--accent);cursor:pointer">改为${kd === 'study' ? '未回复' : '学习记录'}</span> <span onclick="tmDeleteContact('${l.id}')" style="color:var(--danger);cursor:pointer;margin-left:6px">删除</span></span>` : '';
     return `<div style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--border-light)">
       ${l.image_url ? `<img src="${tsaEsc(l.image_url)}" onclick="tmImgLightbox('${tsaEsc(l.image_url)}')" style="flex-shrink:0;width:52px;height:52px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:zoom-in">` : ''}
       <div style="flex:1;min-width:0">
-        <div style="font-size:10px;margin-bottom:2px"><span style="color:var(--text-3)">${tsaEsc(tmLogYm(l))}</span> <span style="color:${k.c};border:1px solid ${k.c};border-radius:2px;padding:0 5px">${k.ic} ${k.t}</span></div>
+        <div style="font-size:10px;margin-bottom:2px"><span style="color:var(--text-3)">${tsaEsc(tmLogYm(l))}</span> <span style="color:${k.c};border:1px solid ${k.c};border-radius:2px;padding:0 5px">${k.ic} ${kindTxt}</span></div>
         <div style="font-size:11px;white-space:pre-wrap;line-height:1.5">${tsaEsc(l.note) || '（无内容）'}</div>
         <div style="font-size:9px;color:var(--text-3);margin-top:3px">${tsaEsc(l.teacher_name || '')} · ${tsaEsc(tmJstYmd(l.created_at))}</div>
       </div>
-      ${mine ? `<span style="flex-shrink:0;font-size:9px;white-space:nowrap"><span onclick="tmFlipKind('${l.id}')" style="color:var(--accent);cursor:pointer">改为${tmLogKind(l) === 'study' ? '未回复' : '学习记录'}</span> <span onclick="tmDeleteContact('${l.id}')" style="color:var(--danger);cursor:pointer;margin-left:6px">删除</span></span>` : ''}
+      ${acts}
     </div>`;
   }).join('') : '<div style="font-size:11px;color:var(--text-3)">还没有学习记录 / 联系记录</div>';
   const from = (tmYm || tmCurYm()) + '-01';
@@ -1664,6 +1677,7 @@ async function tmBatchReminder() {
   if (!noRec.length) { alert('当前筛选范围内没有「无面谈记录」的学生'); return; }
   tmBatchMode = 'each';
   tmBatchCache = null;
+  STUDENT_TEXT_HOOKS.tmbe = i => { const e = tmBatchCache && tmBatchCache[i]; if (e) tmMarkWaiting(e.id); };
   studentTextModal('tmBatchModal', `✉ 批量面谈提醒（共 ${noRec.length} 人未面谈）`, '');
   await tmBatchRender(noRec);
 }
@@ -1689,7 +1703,7 @@ async function tmBatchRender(noRec) {
   }
   if (tmBatchCache) { body.innerHTML = head + studentTextBlocksHtml(tmBatchCache, 'tmbe'); return; }
   body.innerHTML = head + '<div id="tmBatchEach"></div>';
-  const entries = await studentTextBatch(noRec, 'reminder', document.getElementById('tmBatchEach'), 'tmbe');
+  const entries = await studentTextBatch(noRec, 'reminder', document.getElementById('tmBatchEach'), 'tmbe', null, true);
   tmBatchCache = entries;
   if (tmBatchMode !== 'each') return;   // 生成期间切到了群发模式
   body.innerHTML = head + studentTextBlocksHtml(entries, 'tmbe');
@@ -1703,8 +1717,33 @@ async function tmGenReminder(id) {
   const body = studentTextModal('tmReminderModal', `✉ 面谈提醒 · ${tsaEsc(st.name)}`, '<div style="font-size:12px;color:var(--text-3);padding:12px">正在准备…</div>');
   const had = !!st.student_code;
   const r = await ensureStudentCode(st);
-  body.innerHTML = studentTextBlocksHtml([{ name: st.name, sub: (!had && r.code) ? '已自动生成查询码' : '', text: bookingReminderText(st, r.code), error: r.error }], 'tmr');
-  if (!r.error) studentTextCopy('tmr', 0);
+  STUDENT_TEXT_HOOKS.tmr = () => tmMarkWaiting(st.id);
+  body.innerHTML = studentTextBlocksHtml([{ name: st.name, sub: (!had && r.code) ? '已自动生成查询码' : '', text: bookingReminderText(st, r.code), error: r.error, copyName: true }], 'tmr');
+}
+
+// 点「复制文字」后自动记「已联系·等回复」：同一学生同一月份已有 waiting 就只更新时间
+async function tmMarkWaiting(sid) {
+  const s = ((tmData && tmData.students) || []).find(x => x.id === sid);
+  if (!s || !tmData) return;
+  const ym = tmYm || tmCurYm(), d = new Date(), p = tmPad2;
+  const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  const note = `已发送面谈提醒（${stamp}）`;
+  try {
+    const old = tmInfo(s).logs.find(l => tmLogKind(l) === 'waiting' && tmLogYm(l) === ym);
+    if (old) {
+      const now = new Date().toISOString();
+      await sb(`/rest/v1/student_contact_logs?id=eq.${encodeURIComponent(old.id)}`, 'PATCH', { note, created_at: now });
+      old.note = note; old.created_at = now;
+    } else {
+      const row = { id: 'sclog-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5), student_id: s.id, student_name: s.name, major: s.major || '',
+        teacher_name: (typeof teacherData !== 'undefined' && teacherData ? teacherData.name : '') || '', note, image_url: null, kind: 'waiting', for_month: ym };
+      await sb('/rest/v1/student_contact_logs', 'POST', [row]);
+      row.created_at = new Date().toISOString();
+      (tmData.logs.id[s.id] = tmData.logs.id[s.id] || []).push(row);
+    }
+    tmData.cache = {};
+    tmRenderList();
+  } catch (e) { alert('复制成功，但记录「已联系·等回复」失败：' + e.message); }
 }
 
 // ══ 志望校行内修改（老师端；与学生端同一张表即时同步） ══
@@ -1934,7 +1973,7 @@ function tmContactModal(sid) {
   m.innerHTML = `
     <div style="background:var(--surface);border-radius:6px;padding:18px;max-width:460px;width:100%;max-height:90vh;overflow-y:auto">
       <div style="font-size:13px;font-weight:600;margin-bottom:4px">＋ 补充记录</div>
-      <div style="font-size:10px;color:var(--text-3);margin-bottom:12px">没有面谈的学生在这里补充记录：补充学习情况、和学生的互动等记「学习记录」（算该月完成）；联系了学生但没有回复记「联系未回复」（继续跟进，连续 3 次转重点关注）。</div>
+      <div style="font-size:10px;color:var(--text-3);margin-bottom:12px">没有面谈的学生在这里补充记录：补充学习情况、和学生的互动等记「学习记录」（算该月完成）；已联系、在等学生回复记「已联系·等回复」；确认学生没有回复记「联系未回复」（连续 3 次转重点关注）。</div>
       <div class="form-group"><label class="form-label">学生</label><div id="tma_stu"></div></div>
       <div class="form-group"><label class="form-label">类型</label><div id="tma_kind" style="display:flex;gap:6px;flex-wrap:wrap"></div></div>
       <div class="form-group"><label class="form-label">算哪个月</label>
@@ -1969,7 +2008,7 @@ function tmAddRender() {
     tmAddSearch();
   }
   const kb = document.getElementById('tma_kind');
-  if (kb) kb.innerHTML = Object.entries({ study: '学习记录（补充学习情况，和学生的互动等）', no_reply: '联系未回复' }).map(([k, l]) => `<div class="filter-chip ${tmAdd.kind === k ? 'active' : ''}" onclick="tmAdd.kind='${k}';tmAddRender()" style="padding:4px 12px;font-size:11px">${l}</div>`).join('');
+  if (kb) kb.innerHTML = Object.entries({ study: '学习记录（补充学习情况，和学生的互动等）', waiting: '已联系·等回复', no_reply: '联系未回复' }).map(([k, l]) => `<div class="filter-chip ${tmAdd.kind === k ? 'active' : ''}" onclick="tmAdd.kind='${k}';tmAddRender()" style="padding:4px 12px;font-size:11px">${l}</div>`).join('');
   const lb = document.getElementById('tma_note_lb');
   if (lb) lb.textContent = tmAdd.kind === 'study' ? '内容（必填：学习情况、作业、互动内容等）' : '内容（可选：联系方式、时间）';
 }
@@ -2038,13 +2077,55 @@ function tmFindLog(id) {
   return hit;
 }
 async function tmFlipKind(id) {
-  const l = tmFindLog(id); if (!l) return;
+  const l = tmFindLog(id); if (!l || tmLogKind(l) === 'waiting') return;
   const next = tmLogKind(l) === 'study' ? 'no_reply' : 'study';
   try {
     await sb(`/rest/v1/student_contact_logs?id=eq.${encodeURIComponent(id)}`, 'PATCH', { kind: next });
     l.kind = next; tmData.cache = {};
     tmRenderList();
   } catch (e) { alert('修改失败：' + e.message); }
+}
+
+// 「等回复」记录处理：改这一条的类型（不是新增）。study = 学生已回复（填内容）；no_reply = 仍未回复（可贴截图）
+let tmResolve = null;
+function tmResolveModal(id, kind) {
+  const l = tmFindLog(id); if (!l) return;
+  tmPendingImg = null; tmResolve = { id, kind };
+  document.getElementById('tmResolveModal')?.remove();
+  const m = document.createElement('div');
+  m.id = 'tmResolveModal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  m.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:18px;max-width:460px;width:100%;max-height:90vh;overflow-y:auto">
+    <div style="font-size:13px;font-weight:600;margin-bottom:4px">${kind === 'study' ? '学生已回复 → 填学习记录' : '仍未回复 → 记为未回复'} · ${tsaEsc(l.student_name || '')}</div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:12px">${kind === 'study' ? '这条「已联系·等回复」会改成「学习记录」，算该月完成。' : '这条「已联系·等回复」会改成「联系未回复」，计入连续未回复次数。'}</div>
+    <div class="form-group"><label class="form-label">${kind === 'study' ? '内容（必填：学习情况、作业、互动内容等）' : '内容（可选）'}</label>
+      <textarea id="tm_contact_note" rows="4" onpaste="tmHandlePaste(event)" style="width:100%;font-size:12px">${kind === 'study' ? '' : tsaEsc(l.note || '')}</textarea></div>
+    <div class="form-group"><label class="form-label">截图（可选，Ctrl+V 粘贴或选择文件）</label>
+      <input type="file" id="tm_contact_file" accept="image/*" onchange="tmPickFile(event)" style="font-size:11px">
+      <div id="tm_contact_preview" style="margin-top:8px"></div></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
+      <button onclick="document.getElementById('tmResolveModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 14px;cursor:pointer;font-family:inherit">取消</button>
+      <button id="tm_resolve_save" onclick="tmResolveSave()" style="font-size:12px;background:#1a6d3a;color:#fff;border:none;border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit;font-weight:500">保存</button>
+    </div></div>`;
+  document.body.appendChild(m);
+}
+async function tmResolveSave() {
+  const l = tmResolve && tmFindLog(tmResolve.id); if (!l) return;
+  const note = (document.getElementById('tm_contact_note').value || '').trim();
+  if (tmResolve.kind === 'study' && !note) { alert('学习记录请填写内容（学习进度、近况）'); return; }
+  const btn = document.getElementById('tm_resolve_save');
+  if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
+  try {
+    const patch = { kind: tmResolve.kind, note };
+    if (tmPendingImg) patch.image_url = await sbUpload('teacher-files', `contact/${l.student_id}-${Date.now()}.jpg`, tmPendingImg);
+    await sb(`/rest/v1/student_contact_logs?id=eq.${encodeURIComponent(l.id)}`, 'PATCH', patch);
+    Object.assign(l, patch); tmData.cache = {};
+    document.getElementById('tmResolveModal')?.remove();
+    tmRenderList();
+  } catch (e) {
+    alert('保存失败：' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '保存'; }
+  }
 }
 
 async function tmDeleteContact(id) {
