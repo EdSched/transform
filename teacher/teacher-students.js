@@ -855,7 +855,7 @@ async function mrMonthWorks(stu, ym, monthRecs) {
     const key = stu.id + '|' + ym;
     if (!mrHwCache[key]) {
       const [y, m] = ym.split('-').map(Number), next = `${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}-01`;
-      mrHwCache[key] = await sb(`/rest/v1/homework_submissions?student_id=eq.${encodeURIComponent(stu.id)}&submitted_at=gte.${ym}-01&submitted_at=lt.${next}&select=id,submitted_at,answers,whole_file_url&order=submitted_at.asc`).catch(() => []);
+      mrHwCache[key] = await sb(`/rest/v1/homework_submissions?student_id=eq.${encodeURIComponent(stu.id)}&submitted_at=gte.${ym}-01&submitted_at=lt.${next}&select=*&order=submitted_at.asc`).catch(() => []);
     }
     (mrHwCache[key] || []).forEach(x => {
       const d = (x.submitted_at || '').slice(0, 10);
@@ -864,6 +864,61 @@ async function mrMonthWorks(stu, ym, monthRecs) {
     });
   } else if (typeof awMonthWorks === 'function') (await awMonthWorks(stu.id, ym)).forEach(w => add(w.url, w.date));
   return out;
+}
+// 作业展示按「份」合并：一次提交 = 一份。[{id, date, course, no, graded, pages:[{url, thumb, rotate}], files:[url]}]
+// 另外 session_records.homework_file_url（老师登记的文件）各算一份
+async function mrMonthHwGroups(stu, ym, monthRecs) {
+  const groups = [], seen = new Set();
+  const isImg = (url, kind) => kind !== 'doc' && !MR_NOT_IMG.test(url || '');
+  await mrMonthWorks(stu, ym, monthRecs);   // 只为填充 mrHwCache
+  (mrHwCache[stu.id + '|' + ym] || []).forEach(x => {
+    const g = { id: x.id, date: (x.submitted_at || '').slice(0, 10), course: x.course_name || '', no: x.session_number || '', graded: hwFeedbacks(x).length > 0, pages: [], files: [] };
+    (x.answers || []).forEach(a => (a.images || []).forEach(im => {
+      if (!im.url || seen.has(im.url)) return; seen.add(im.url);
+      if (isImg(im.url, im.kind)) g.pages.push({ url: im.url, thumb: im.thumb || '', rotate: im.rotate || 0 }); else g.files.push(im.url);
+    }));
+    if (x.whole_file_url && !seen.has(x.whole_file_url)) { seen.add(x.whole_file_url); if (isImg(x.whole_file_url)) g.pages.push({ url: x.whole_file_url, thumb: '', rotate: 0 }); else g.files.push(x.whole_file_url); }
+    if (g.pages.length || g.files.length) groups.push(g);
+  });
+  (monthRecs || []).forEach(r => {
+    const u = r.homework_file_url; if (!u || seen.has(u)) return; seen.add(u);
+    const g = { id: 'rec-' + (r.id || u), date: r.session_date || '', course: r.course_name || '', no: '', graded: null, pages: [], files: [] };
+    if (isImg(u)) g.pages.push({ url: u, thumb: '', rotate: 0 }); else g.files.push(u);
+    groups.push(g);
+  });
+  return groups.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+let mrHwGroups = [];
+function mrHwCardsHtml(groups, esc) {
+  mrHwGroups = groups;
+  const cols = window.innerWidth < 600 ? 3 : 5, limit = cols * 2;
+  const card = (g, i) => {
+    const p = g.pages[0], meta = [g.course, g.no ? '第' + g.no + '回' : '', (g.date || '').slice(5)].filter(Boolean).join(' · ');
+    const st = g.graded === null ? '' : g.graded ? '<span style="color:var(--ok,#2a9e6a)">已批改</span>' : '<span style="color:var(--warn,#b8860b)">待批改</span>';
+    const pg = g.pages.length ? `共 ${g.pages.length} 页` : '文件';
+    const hide = i >= limit ? ' data-mrhw-more="1" style="display:none;' : ' style="';
+    const inner = p
+      ? `<img src="${esc(p.thumb || p.url)}" style="width:100%;height:100px;object-fit:cover;display:block;background:var(--bg)" loading="lazy">`
+      : `<div style="height:100px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--accent)">文件链接</div>`;
+    return `<div${hide}cursor:pointer;border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--surface)" onclick="mrOpenHwGroup(${i})">${inner}
+      <div style="padding:4px 6px;font-size:10px;line-height:1.5"><div style="color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(meta)}">${esc(meta)}</div><div style="color:var(--text-3)">${pg}${st ? ' · ' + st : ''}</div></div></div>`;
+  };
+  const more = groups.length - limit;
+  return `<div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:8px;margin-bottom:${more > 0 ? 6 : 16}px">${groups.map(card).join('')}</div>`
+    + (more > 0 ? `<div style="margin-bottom:16px"><button class="btn btn-outline btn-sm" onclick="mrHwToggleMore(this,${more})">还有 ${more} 份，展开</button></div>` : '');
+}
+function mrHwToggleMore(btn, n) {
+  const hidden = btn.getAttribute('data-open') !== '1';
+  btn.parentNode.previousElementSibling.querySelectorAll('[data-mrhw-more]').forEach(el => { el.style.display = hidden ? '' : 'none'; });
+  btn.setAttribute('data-open', hidden ? '1' : '0');
+  btn.textContent = hidden ? '收起' : `还有 ${n} 份，展开`;
+}
+// 点卡片：打开大图查看器逐页翻看（这时才加载原图）；纯文件的份直接新窗口打开
+function mrOpenHwGroup(i) {
+  const g = mrHwGroups[i]; if (!g) return;
+  if (!g.pages.length) { if (g.files[0]) window.open(g.files[0], '_blank'); return; }
+  if (typeof thwLightbox === 'function') thwLightbox(g.pages.map(p => ({ url: p.url, rot: typeof thwRotNorm === 'function' ? thwRotNorm(p.rotate) : 0 })), 0);
+  else tmImgLightbox(g.pages[0].url);
 }
 // 统计块：数字 + 每门课一行 + 逐回小标记（月度学习情况页面用）
 function mrCoursesHtml(st) {
@@ -889,6 +944,7 @@ async function mrLoadAndRender(stu){
   try { st = studentMonthStats(stu, await smsLoad(mrYearMonth)); }
   catch (e) { body.innerHTML = `<div style="font-size:11px;color:var(--danger);padding:20px">统计加载失败：${(e&&e.message)||e}</div>`; return; }
   const works = await mrMonthWorks(stu, mrYearMonth, monthRecs);   // 作品展示 / 作业展示
+  const hwGroups = mrIsArt(stu) ? null : await mrMonthHwGroups(stu, mrYearMonth, monthRecs);   // 作业展示：按份合并
   const wt = mrWorksTitle(stu), hrl = mrHrLabel(stu);
   // 拉评价
   const key = `${stu.id}|${mrYearMonth}`;
@@ -918,7 +974,7 @@ async function mrLoadAndRender(stu){
     <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;margin-bottom:6px">本月课程</div>
     ${mrCoursesHtml(st)}
     <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;margin-bottom:8px">${wt}（学生本月提交）</div>
-    ${works.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-bottom:16px">
+    ${hwGroups ? (hwGroups.length ? mrHwCardsHtml(hwGroups, esc) : `<div style="font-size:11px;color:var(--text-3);padding:8px 0 16px">本月暂无提交的作业</div>`) : works.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-bottom:16px">
       ${works.map(w=>w.img ? `<div onclick="tmImgLightbox('${esc(w.url)}')" style="cursor:zoom-in;border:1px solid var(--border);border-radius:6px;overflow:hidden"><img src="${esc(w.url)}" style="width:100%;height:90px;object-fit:cover;display:block" loading="lazy"><div style="font-size:9px;color:var(--text-3);padding:3px 5px">${(w.date||'').slice(5)}</div></div>`
         : `<a href="${esc(w.url)}" target="_blank" style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:116px;border:1px solid var(--border);border-radius:6px;font-size:11px;color:var(--accent);text-decoration:none">文件链接<span style="font-size:9px;color:var(--text-3);margin-top:4px">${(w.date||'').slice(5)}</span></a>`).join('')}
     </div>` : `<div style="font-size:11px;color:var(--text-3);padding:8px 0 16px">本月暂无提交的${wt === '作品展示' ? '作品' : '作业'}</div>`}
@@ -985,6 +1041,7 @@ async function mrGeneratePdf(sid){
   let st;
   try { st = studentMonthStats(stu, await smsLoad(mrYearMonth)); } catch (e) { alert('统计加载失败：' + ((e && e.message) || e)); return; }
   const works = (await mrMonthWorks(stu, mrYearMonth, monthRecs)).filter(w => w.img);   // 作品展示 / 作业展示（PDF 只放图片）
+  const hwGroups = mrIsArt(stu) ? null : (await mrMonthHwGroups(stu, mrYearMonth, monthRecs)).filter(g => g.pages.length);   // 作业：每份只放第一页缩略图
   const wt = mrWorksTitle(stu), hrl = mrHrLabel(stu);
   const key = `${sid}|${mrYearMonth}`;
   const rev = mrReviewCache[key] || {};
@@ -1029,7 +1086,7 @@ async function mrGeneratePdf(sid){
       <div class="stat"><div class="n">${st.hwDone} / ${st.hwAssigned}</div><div class="l">作业（已交 / 已布置，共 ${st.hwTotal} 次）</div></div>
     </div>
     ${st.byCourse.length ? `<div class="sec-label">本月课程</div>${st.byCourse.map(c => `<div style="font-size:13px;padding:5px 0;border-bottom:1px solid #ede9e2"><b>${esc(c.name)}</b> · 出席 ${c.st.actual} / 已上 ${c.st.held}（共 ${c.st.total}）· 作业 ${c.st.hwDone} / ${c.st.hwAssigned}</div>`).join('')}` : ''}
-    ${works.length?`<div class="sec-label">${wt}（部分）</div><div class="works">${works.slice(0,9).map(w=>`<img src="${w.url}">`).join('')}</div>`:''}
+    ${hwGroups ? (hwGroups.length ? `<div class="sec-label">${wt}（共 ${hwGroups.length} 份）</div><div class="works">${hwGroups.slice(0,9).map(g=>`<div style="text-align:center"><img src="${g.pages[0].thumb||g.pages[0].url}"><div style="font-size:10px;color:#9a9590;margin-top:2px">${esc([g.course, (g.date||'').slice(5)].filter(Boolean).join(' · '))} · 共 ${g.pages.length} 页</div></div>`).join('')}</div>` : '') : works.length?`<div class="sec-label">${wt}（部分）</div><div class="works">${works.slice(0,9).map(w=>`<img src="${w.url}">`).join('')}</div>`:''}
     <div class="sec-label">专业老师评价</div>
     <div class="review"><div class="c">${rev.teacher_review?esc(rev.teacher_review):'—'}</div>${rev.teacher_review_by?`<div class="by">— ${esc(rev.teacher_review_by)} 老师</div>`:''}</div>
     <div class="sec-label">${hrl}评价</div>
