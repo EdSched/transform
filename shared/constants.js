@@ -1837,18 +1837,38 @@ function courseAttGroups(c) {
   (Array.isArray(mj) ? mj : (mj ? [mj] : [])).forEach(m => { const g = isMajorGroup(m) ? m : groupOf(m); if (g) out.add(g); });
   return out;
 }
+// 课程本专业：课程 major 里的真实专业（不含分组 key）。只写了分组（如社会人文大课）时为空 = 共通课，没有本专业之分
+function courseOwnMajors(c) {
+  const mj = c && c.major;
+  return (Array.isArray(mj) ? mj : (mj ? [mj] : [])).filter(m => m && !isMajorGroup(m));
+}
 // 这个学生对这门课的出席身份：'required' 必修 / 'elective' 选修 / null 不统计
 // myMembers：这个学生在 course_members 里的行（同 studentInCourse）
+// 必出席：成员 = 必修。组内开放：专业是课程本专业的成员 = 必修；成员但专业不是本专业、或同专业组的非成员 = 选修
+// （只写了分组、没有具体专业的课：成员全部必修）。不记出席：不统计
 function studentAttRole(student, course, myMembers) {
   if (!student || !course || courseAttMode(course) === 'none') return null;
-  if (studentInCourse(student, course, myMembers)) return 'required';
-  if (courseAttMode(course) !== 'open' || isPureVipStudent(student)) return null;
-  const g = isMajorGroup(student.major) ? student.major : groupOf(student.major);
-  if (!g || !courseAttGroups(course).has(g)) return null;
-  // 被明确排除（exclude）的学生不当选修
+  const member = studentInCourse(student, course, myMembers);
+  if (courseAttMode(course) !== 'open') return member ? 'required' : null;
+  const own = courseOwnMajors(course);
+  if (!own.length) return member ? 'required' : null;
   const row = (myMembers || []).find(r => String(r.course_id) === String(course.id) && String(r.student_id) === String(student.id));
-  if (row && row.kind === 'exclude') return null;
-  return 'elective';
+  if (row && row.kind === 'exclude') return null;   // 被明确移除的学生不算
+  if (own.includes(student.major)) return member ? 'required' : null;
+  if (member) return 'elective';
+  if (isPureVipStudent(student)) return null;
+  const g = isMajorGroup(student.major) ? student.major : groupOf(student.major);
+  return g && courseAttGroups(course).has(g) ? 'elective' : null;
+}
+// 管理端 / 老师端：这门课的必修学生 id 集合（成员里去掉组内开放课的选修者）
+function courseRequiredIds(course, students, members) {
+  const ids = courseMemberIds(course, students, members);
+  if (courseAttMode(course) !== 'open') return ids;
+  const byStu = {};
+  (members || []).filter(r => String(r.course_id) === String(course.id)).forEach(r => { (byStu[String(r.student_id)] = byStu[String(r.student_id)] || []).push(r); });
+  const out = new Set();
+  (students || []).forEach(st => { if (ids.has(String(st.id)) && studentAttRole(st, course, byStu[String(st.id)] || []) !== 'elective') out.add(String(st.id)); });
+  return out;
 }
 // 管理端：这门课的选修学生 id 集合（组内开放的课，同专业组、不是成员的在读学生）
 function courseElectiveIds(course, students, members) {

@@ -1214,7 +1214,7 @@ async function tatOpen(sessionId){
   ]);
   const c=(crs||[])[0]||{};
   const course=Object.assign({id:se.course_id},c,{major:majors.length?majors:(c.major||[])});
-  const ids=courseMemberIds(course,all||[],cms||[]);
+  const ids=courseRequiredIds(course,all||[],cms||[]);
   tatStudents=(all||[]).filter(s=>ids.has(String(s.id)));
   // 组内开放的课：同专业组、不是成员的在读学生 = 选修（只记来了的人）
   const elIds=courseElectiveIds(course,all||[],cms||[]);

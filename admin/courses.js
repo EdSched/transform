@@ -4054,14 +4054,20 @@ function cmRender(){
   const modes=[...new Set(courses.map(courseMemberMode))];
   const multi=courses.length>1;
   const sets=courses.map(cmMemberSet);
-  const counts=courses.map((c,i)=>`${multi?cmEsc(c.name)+' ':''}${sets[i].size} 人`);
+  const counts=courses.map((c,i)=>{
+    if(courseAttMode(c)!=='open') return `${multi?cmEsc(c.name)+' ':''}${sets[i].size} 人`;
+    const r=cmRoleCount(c);
+    return `${multi?cmEsc(c.name)+' ':''}必修 ${r.req} 人 · 选修 ${r.el} 人`;
+  });
+  const openNote=courses.some(c=>courseAttMode(c)==='open')?`<div style="font-size:11px;color:var(--text-3);margin-bottom:10px">组内开放：${cmEsc(courses.filter(c=>courseAttMode(c)==='open').map(c=>courseOwnMajors(c).map(m=>MAJORS[m]||m).join('・')||'（未设具体专业）').filter((v,i,a)=>a.indexOf(v)===i).join('・'))}的学生是必修，同组其他专业的学生是选修（不用再单独加入成员，也会自动算选修）。</div>`:'';
   box.innerHTML=`
     <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
       <div style="font-size:15px;font-weight:600">学生成员</div>
       <div style="font-size:11px;color:var(--text-3);flex:1">${multi?`同时编辑 ${courses.length} 门课：点名字会对所有选中的课统一加入 / 移除`:cmEsc(courses[0].name)}</div>
       <button onclick="cmClose()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-3)">×</button>
     </div>
-    <div style="font-size:12px;margin-bottom:10px">当前成员 <b>${counts.join('　·　')}</b></div>
+    <div style="font-size:12px;margin-bottom:${openNote?'4':'10'}px">当前成员 <b>${counts.join('　·　')}</b></div>
+    ${openNote}
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
       <span style="font-size:11px;color:var(--text-3)">成员模式</span>
       <select onchange="cmSetMode(this.value)" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
@@ -4094,6 +4100,13 @@ function cmRender(){
   cmRenderNames();
 }
 
+// 组内开放的课：必修 / 选修人数（成员按专业判断；同组非成员也算选修）
+function cmStuRole(c,s){ return studentAttRole(s,c,cmRowsOf(c.id).filter(r=>String(r.student_id)===String(s.id))); }
+function cmRoleCount(c){
+  let req=0,el=0;
+  cmActiveStudents().forEach(s=>{ const r=cmStuRole(c,s); if(r==='required') req++; else if(r==='elective') el++; });
+  return {req,el};
+}
 function cmSetSearch(q){ cmSearch=q; cmRenderNames(); }
 function cmRenderNames(){
   const el=document.getElementById('cmNames'); if(!el) return;
@@ -4111,12 +4124,14 @@ function cmRenderNames(){
     const full=k===n, part=k>0&&k<n;
     const vip=isPureVipStudent(s);
     const outMajor=!majors.has(s.major);
+    const roleTxt=(n===1&&courseAttMode(courses[0])==='open')?({required:'必修',elective:'选修'})[cmStuRole(courses[0],s)]||'':'';
+    const showMj=outMajor||(roleTxt&&n===1);
     const bd=full?'1px solid var(--accent)':part?'1px dashed var(--accent)':'1px solid var(--border)';
     const bg=full?'var(--accent)':part?'var(--accent-light,#f3ead9)':'var(--surface)';
     const fg=full?'#fff':'var(--text)';
     return `<button onclick="cmToggle('${cmEsc(s.id)}')" style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;padding:9px 4px;border:${bd};border-radius:8px;background:${bg};cursor:pointer;color:${fg};line-height:1.3">
       ${cmEsc(s.name)}
-      ${(vip||part||outMajor)?`<span style="display:block;font-size:9px;font-weight:400;margin-top:2px;opacity:.85">${[vip?'纯VIP':'',outMajor?(MAJORS[s.major]||s.major||'外专业'):'',part?`部分 ${k}/${n}`:''].filter(Boolean).join(' · ')}</span>`:''}
+      ${(vip||part||showMj||roleTxt)?`<span style="display:block;font-size:9px;font-weight:400;margin-top:2px;opacity:.85">${[vip?'纯VIP':'',showMj?(MAJORS[s.major]||s.major||'外专业'):'',part?`部分 ${k}/${n}`:'',roleTxt].filter(Boolean).join(' · ')}</span>`:''}
     </button>`;
   }).join(''):`<div style="grid-column:1/-1;font-size:12px;color:var(--text-3);padding:16px;text-align:center">${cmSearch?'无匹配':'没有学生'}</div>`;
 }
