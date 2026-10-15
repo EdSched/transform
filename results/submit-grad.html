@@ -219,7 +219,8 @@ async function submitForm(){
       jlpt_score:jlptScore?parseInt(jlptScore):null,
       eng_type:document.getElementById('f-eng-type').value||null,
       eng_score:engScore?parseInt(engScore):null,
-      note:[noteText,photoUrl?'[photo]'+photoUrl:''].filter(Boolean).join(' | ')||null,
+      note:noteText||null,
+      photo_url:photoUrl||null,
     };
 
     btn.textContent='保存中...';
