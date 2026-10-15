@@ -429,6 +429,8 @@ function buildTabs() {
   // 宣传资料整合：把出愿学校 / 学科介绍 / 进度规划等营业资料合成一份 PDF（需 admin 在营业功能中单独勾选）
   if (p.promo_pack) tabs.push({ id: 'promopack', label: '📦 宣传资料整合' });
   if (p.promo) tabs.push({ id: 'admissions', label: '🏆 合格实绩' });
+  // 合格海报查询：admin 在营业功能中单独勾选（permissions.pass_posters）；只读已发布的海报
+  if (p.pass_posters) tabs.push({ id: 'passposters', label: '🖼 合格海报' });
   if (p.lect_info) tabs.push({ id: 'lectinfo', label: '👤 讲师信息' });
   // 我的课表：有排班权限或有实际排到课才显示
   if (p.schedule || slots.length) tabs.push({ id: 'mycourses', label: '📚 我的课表' });
@@ -480,6 +482,7 @@ function renderTab() {
     case 'promo': renderTeacherPromo(mc); break;
     case 'promopack': renderPromoPack(mc); break;
     case 'admissions': renderTeacherAdmissions(mc); break;
+    case 'passposters': renderTeacherPosters(mc); break;
     case 'lectinfo': renderLectInfo(mc); break;
     case 'studyprogress': renderTeacherStudyProgress(mc); break;
     case 'mycourses': renderMySchedule(mc); break;
