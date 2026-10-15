@@ -543,7 +543,7 @@ function isHubAdminUser(){ return !ACCESS_KEY || (!ACCESS_KEY.invalid && ACCESS_
 // ── 部门管理权限（teachers.dept_perms）：负责人在自己的管理范围内维护价目 / 专业 / 宣传 / 老师 ──
 // 可选值：pricing 价目编辑 / majors 专业增删 / promo 宣传内容 / teachers 本范围老师管理。只有管理员能在老师编辑页设置。
 const DEPT_PERM_DEFS=[['pricing','价目编辑'],['majors','专业增删'],['promo','宣传内容'],['teachers','本范围老师管理']];
-function deptPermList(){ const a=ACCESS_KEY&&ACCESS_KEY._asTeacher; return (a&&a.position==='lead')?(a.dept_perms||[]):[]; }
+function deptPermList(){ const a=ACCESS_KEY&&ACCESS_KEY._asTeacher; return a?(a.dept_perms||[]):[]; }   // 不要求职位：管理员给谁开就是谁的（数据库同样不看职位）
 // 当前用户在某项权限下能管理的领域：管理员 = 全部；管理模式的负责人 = 管理范围里完整选中的领域（要有这项权限）
 function deptDomains(perm){
   if(isHubAdminUser()) return DOMAINS.map(d=>d.label);
@@ -609,10 +609,10 @@ function tfMgrRender(){
   const isMgr=d.domains.length||d.majors.length||d.classIds.length;
   mb.innerHTML=`<div style="font-size:10px;color:var(--text-3);margin-bottom:8px">管理范围为空 = 不是负责人。设了范围后，这位老师用自己的老师链接登录，会多出「管理模式」按钮，一键进管理端（只看到范围内的东西），不用另外的访问链接。</div>
     ${scopePickerHtml(d,'mgrDraftToggle')}
-    <div style="font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 12px;line-height:1.7">${isMgr?`负责人，管理范围：<b>${escTM(scopeSummary(d))}</b>`:'<b>不是负责人</b>（没有设置管理范围）'}</div>
-    ${_tfPos==='lead'?`<div style="margin-top:12px"><div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">部门管理权限</div>
+    <div style="font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 12px;line-height:1.7">${isMgr?`负责人，管理范围：<b>${escTM(scopeSummary(d))}</b><br>部门管理权限：${d.dept.length?`<b>${escTM(d.dept.map(c=>(DEPT_PERM_DEFS.find(x=>x[0]===c)||[c,c])[1]).join('、'))}</b>`:'<b>未开启任何一项</b>（只能在管理模式里按范围使用日常功能）'}`:'<b>不是负责人</b>（没有设置管理范围）'}</div>
+    ${isMgr?`<div style="margin-top:12px"><div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">部门管理权限</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${DEPT_PERM_DEFS.map(([code,label])=>`<div class="filter-chip${d.dept.includes(code)?' active':''}" onclick="mgrDeptToggle('${code}')" style="padding:3px 10px;font-size:11px">${escTM(label)}</div>`).join('')}</div>
-      <div style="font-size:10px;color:var(--text-3);margin-top:6px;line-height:1.7">选了之后，这位负责人进管理模式时，左侧导航会直接多出对应的功能，只能管理自己管理范围里的领域：价目编辑 = 价目；专业增删 = 专业；宣传内容 = 宣传介绍；本范围老师管理 = 新建 / 编辑管理范围（领域或专业）内的老师（不能设负责人 / 对接 / 总务、不能给部门管理权限）。</div></div>`:''}`;
+      <div style="font-size:10px;color:var(--text-3);margin-top:6px;line-height:1.7">不要求职位（兼职也可以），管理员想给谁开就给谁开；选了之后，这位老师进管理模式时，左侧导航会直接多出对应的功能，只能管理自己管理范围里的领域：价目编辑 = 价目；专业增删 = 专业；宣传内容 = 宣传介绍；本范围老师管理 = 新建 / 编辑管理范围（领域或专业）内的老师（不能设负责人 / 对接 / 总务、不能给部门管理权限）。</div></div>`:''}`;
   if(typeof renderPermScope==='function') renderPermScope();
   tsecRefresh();
 }
@@ -634,7 +634,7 @@ function tfMgrCollect(cur,isNew){
   const isMgr=d.domains.length||d.majors.length||d.classIds.length;
   const manage_scope=isMgr?{domains:d.domains,majors:d.majors,class_ids:d.classIds}:null;
   const resource_perms=d.perms.slice();
-  const dept=(_tfPos==='lead'?d.dept:[]).slice();   // 部门管理权限：只有负责人才有；准备 SQL 没执行（老师行里没有这个字段）且没选时不写
+  const dept=(isMgr?d.dept:[]).slice();   // 部门管理权限：有管理范围才有（不看职位）；准备 SQL 没执行（老师行里没有这个字段）且没选时不写
   const withDept=(dept.length||(cur&&('dept_perms' in cur)))?{dept_perms:dept}:{};
   if(isNew && !manage_scope && !resource_perms.length && !dept.length) return {};   // 新建且没设：不写这些字段（准备 SQL 没执行时也能新建）
   const changed=JSON.stringify(manage_scope)!==JSON.stringify(cur&&cur.manage_scope||null);
