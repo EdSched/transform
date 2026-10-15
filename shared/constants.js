@@ -532,7 +532,7 @@ function generateMajorKey(label) {
 }
 // 新增一个专业到数据库，返回生成的 key（重名/已存在则直接返回已有 key，不重复创建）
 // 新增专业。keyArg 可选：传入则用你指定的英文代号（如 kannkou），留空则按拼音自动生成
-async function createMajor(label, keyArg, domainArg, labelJaArg) {
+async function createMajor(label, keyArg, domainArg, labelJaArg, groupKeyArg) {
   label = String(label || '').trim();
   if (!label) return null;
   const labelJa = String(labelJaArg || '').trim();
@@ -566,6 +566,7 @@ async function createMajor(label, keyArg, domainArg, labelJaArg) {
     const row = { key, label };
     if (domain) row.domain = domain;
     if (labelJa) row.label_ja = labelJa;
+    if (groupKeyArg) row.group_key = groupKeyArg;
     await sb('/rest/v1/majors', 'POST', row);
     MAJORS[key] = label;
     if (domain) MAJOR_DOMAIN[key] = domain;
