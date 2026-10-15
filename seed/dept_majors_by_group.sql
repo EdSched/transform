@@ -14,7 +14,22 @@
 -- 回滚语句在文件最下面。
 -- ============================================================
 
--- 0. 不再要求职位 = 负责人（只去掉 position = 'lead' 这一行，其余和原版一样）
+-- 0a. 小工具（和 major_groups.sql 里的同名函数完全一样；已有就只是覆盖，没有就补上）
+create or replace function public.expand_major_keys(p_keys text[])
+returns text[]
+language sql stable security definer
+set search_path = public
+as $$
+  select coalesce(array_agg(distinct k), '{}'::text[]) from (
+    select unnest(coalesce(p_keys, '{}'::text[])) as k
+    union
+    select m.key from public.majors m where m.group_key = any(coalesce(p_keys, '{}'::text[]))
+  ) s where k is not null and k <> '';
+$$;
+revoke all on function public.expand_major_keys(text[]) from public;
+grant execute on function public.expand_major_keys(text[]) to anon, authenticated;
+
+-- 0b. 不再要求职位 = 负责人（只去掉 position = 'lead' 这一行，其余和原版一样）
 create or replace function public.dept_my_domains(p_perm text)
 returns text[]
 language sql stable security definer
