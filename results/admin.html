@@ -6,12 +6,14 @@
 <title>合格実绩 管理 · 唯新教育</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700;900&family=Noto+Sans+SC:wght@400;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
 <script src="../shared/vendor/supabase.min.js"></script>
 <script src="../shared/supabase.js?v=20261102"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script src="../shared/admin-gate.js"></script>
+<script src="poster/poster.js?v=20261127"></script>
 <style>
 :root {
   --bg: #f7f5f0; --surface: #fff; --border: #e2ded6; --border-light: #ede9e2;
@@ -2363,6 +2365,12 @@ async function loadPhotos() {
     const rows = await res.json();
     if (!Array.isArray(rows)) throw new Error((rows && rows.message) || '读取失败');
     phRows = rows.filter(r => arPhotoUrl(r));
+    // 已做过海报的记录（表还没建时 phPosterMap 为 null，「海报」筛选和按钮状态都不显示）
+    try {
+      const ps = await sbFetch('pass_posters?select=result_id,web_url');
+      phPosterMap = {};
+      (ps || []).forEach(p => { phPosterMap[p.result_id] = p.web_url ? 'pub' : 'draft'; });
+    } catch (e) { phPosterMap = null; }
     phRender();
   } catch(e) {
     document.getElementById('photo-grid').innerHTML = `<div class="load-state" style="color:var(--red)">エラー: ${e.message}</div>`;
@@ -2413,7 +2421,9 @@ function phRender() {
         <div class="photo-card-info">
           <div class="photo-card-title">${esc(r.univ) || '（未知大学）'} ${r.student ? '· ' + esc(r.student) : ''}
             <button class="photo-card-del" onclick="deletePhotoRecord('${esc(r.id)}')">削除</button>
+            <button class="photo-card-del" style="background:#eef2fa;color:var(--accent);border-color:#c5d0e8;margin-right:4px" onclick="pstOpen('${esc(r.id)}')">${phPosterMap && phPosterMap[r.id] ? '编辑海报' : '制作海报'}</button>
           </div>
+          ${phPosterMap && phPosterMap[r.id] ? `<div style="font-size:10px;color:var(--green);margin-bottom:2px">已制作${phPosterMap[r.id] === 'pub' ? ' · 已发布' : ''}</div>` : ''}
           <div class="photo-card-sub">${esc(r.dept)}${r.spec ? ' ' + esc(r.spec) : ''}　${esc(subjName(r.subject))}${noteText ? '　' + esc(noteText) : ''}</div>
         </div>
       </div>`;
@@ -2421,7 +2431,8 @@ function phRender() {
 }
 // 删除：只去掉照片（清 photo_url 和 note 里的 [photo] 段），合格数据保留；再删 Storage 文件
 async function deletePhotoRecord(id) {
-  if (!confirm('删除这张合格照片？（合格数据保留，只删照片）')) return;
+  const hasPoster = typeof phPosterMap !== 'undefined' && phPosterMap && phPosterMap[id];
+  if (!confirm('删除这张合格照片？（合格数据保留，只删照片）' + (hasPoster ? '\n这张照片的海报也会一起删除' : ''))) return;
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/admission_results?id=eq.${encodeURIComponent(id)}&select=note,photo_url`, { headers: adminAuthHeaders() });
     const rows = await r.json();
@@ -2437,6 +2448,7 @@ async function deletePhotoRecord(id) {
     if (pm) {
       await fetch(`${SUPABASE_URL}/storage/v1/object/${PHOTO_BUCKET}/${pm[1]}`, { method: 'DELETE', headers: adminAuthHeaders() }).catch(() => {});
     }
+    if (hasPoster) await pstDeleteForResult(id);
     loadPhotos();
   } catch(e) { alert('删除失败: ' + e.message); }
 }
