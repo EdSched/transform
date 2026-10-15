@@ -71,7 +71,7 @@ function renderStudentsPage(mc){
     nameClick:s=>`openStudentDetail('${s.id}')`,
     codeHtml:s=>s.student_code
       ?`<span style="font-size:11px;font-weight:600;letter-spacing:1px;color:var(--accent)">${s.student_code}</span>`
-      :`<button class="btn btn-outline btn-sm" onclick="generateStudentCode('${s.id}')">生成</button>`,
+      :(s.status==='graduated'?'':`<button class="btn btn-outline btn-sm" onclick="generateStudentCode('${s.id}')">生成</button>`),
     ops:s=>`<button class="btn btn-outline btn-sm" onclick="stCodeNotice('${s.id}')" style="white-space:nowrap">✉ 查询码通知</button><button class="btn btn-outline btn-sm" onclick="openStudentModal('${s.id}')">编辑</button><button class="btn btn-danger btn-sm" onclick="deleteStudent('${s.id}')">删除</button>`,
     onRows:rows=>{stLastList=rows;}
   })}`;
@@ -518,10 +518,13 @@ function stCodeNotice(id){
   openStudentCodeNotice(s, stRerender);   // 没有查询码时自动生成（同时写入登录表），生成后刷新列表显示新码
 }
 async function stBatchCodeNotice(){
-  const list=[...(stLastList||[])];
-  if(!list.length){ alert('当前筛选结果里没有学生'); return; }
+  const all=[...(stLastList||[])];
+  if(!all.length){ alert('当前筛选结果里没有学生'); return; }
+  const list=all.filter(s=>s.status!=='graduated');
+  const nGrad=all.length-list.length;
+  if(!list.length){ alert('当前筛选结果里都是已合格学生，不需要查询码'); return; }
   const noCode=list.filter(s=>!s.student_code).length;
-  if(!confirm(`将为当前筛选出的 ${list.length} 名学生逐人生成查询码通知${noCode?`（其中 ${noCode} 人还没有查询码，会先自动生成）`:''}，继续？`)) return;
+  if(!confirm(`将为当前筛选出的 ${list.length} 名学生逐人生成查询码通知${noCode?`（其中 ${noCode} 人还没有查询码，会先自动生成）`:''}${nGrad?`\n已排除 ${nGrad} 名已合格学生`:''}，继续？`)) return;
   const body=studentTextModal('stBatchNoticeModal',`✉ 批量查询码通知（${list.length} 人，每人一段，逐段复制）`,'');
   await studentTextBatch(list,'notice',body,'stbn',stRerender);
 }
@@ -546,9 +549,11 @@ async function generateStudentCode(id) {
 }
 
 async function generateAllStudentCodes() {
-  const noCode = cachedStudents.filter(s => !s.student_code);
-  if (!noCode.length) { alert('所有学生已有查询码'); return; }
-  if (!confirm(`将为 ${noCode.length} 名学生生成查询码，继续？`)) return;
+  const noCodeAll = cachedStudents.filter(s => !s.student_code);
+  const noCode = noCodeAll.filter(s => s.status !== 'graduated');
+  const nGrad = noCodeAll.length - noCode.length;
+  if (!noCode.length) { alert('所有学生已有查询码' + (nGrad ? `（已排除 ${nGrad} 名已合格学生）` : '')); return; }
+  if (!confirm(`将为 ${noCode.length} 名学生生成查询码${nGrad ? `\n已排除 ${nGrad} 名已合格学生` : ''}，继续？`)) return;
   let ok = 0; const fails = [];
   for (const s of noCode) {
     const r = await ensureStudentCode(s);   // 服务端同时写档案和登录表
@@ -624,7 +629,7 @@ async function renderProgressPage(mc, focusStudentId=null){
   const bkMapPG = {};
   cardStudents.forEach(s => { bkMapPG[s.id] = [...(bkByStuPG[s.id]||[]), ...(bkByNamePG[s.name]||[])].sort((x,y)=>String(y.slot_date||'').localeCompare(String(x.slot_date||''))); });
   const ctxPG = { timelineMap, plansMap: plansMapPG, draftsMap: draftsMapPG, riyuSubsMap: riyuSubsMapPG, matItems: matItemsPG||[], matsMap: matsMapPG, bkMap: bkMapPG };
-  const passBtn = (p, s) => ` <button onclick='openAdmissionEntry(${JSON.stringify({school:p.school_name||'',faculty:p.faculty||'',dept:p.department||'',student:s.name||'',jp:s.japanese_score||'',en:s.english_score||'',major:s.major||'',enroll:s.target_enrollment||''}).replace(/'/g,"&#39;")})' style="font-size:10px;padding:1px 6px;border:1px solid var(--accent);color:var(--accent);background:none;border-radius:3px;cursor:pointer;margin-top:3px;white-space:nowrap">录入合格实绩</button>`;
+  const passBtn = (p, s) => ` <button onclick='openAdmissionEntry(${JSON.stringify({school:p.school_name||'',faculty:p.faculty||'',dept:p.department||'',student:s.name||'',jp:s.japanese_score||'',en:s.english_score||'',major:s.major||'',enroll:s.target_enrollment||'',sid:s.id||''}).replace(/'/g,"&#39;")})' style="font-size:10px;padding:1px 6px;border:1px solid var(--accent);color:var(--accent);background:none;border-radius:3px;cursor:pointer;margin-top:3px;white-space:nowrap">录入合格实绩</button>`;
   if (focusStudentId) { const fi = cardStudents.findIndex(x => x.id === focusStudentId); if (fi >= progressShown) progressShown = fi + 1; }
   const shownStudents = cardStudents.slice(0, progressShown);
   const cards = shownStudents.map(s => pgcCardHtml(s, ctxPG, {
@@ -1372,7 +1377,9 @@ async function gsDel(sid,idx){
 }
 
 // ══════════ 录入合格实绩（考学进度→合格数据库联动）══════════
+let aeStudentId='';
 function openAdmissionEntry(data){
+  aeStudentId=data.sid||'';
   // 从学生档案的乱格式分数里智能拆解（复用 results/admin.html 同款逻辑 + 中文映射）
   const pj = aeParseJlpt(data.jp||'');
   const pe = aeParseEng(data.en||'');
@@ -1478,6 +1485,8 @@ async function saveAdmissionEntry(){
       photo_url:photoUrl,
       note:g('ae_note').trim()||null
     };
+    const aeSt=aeStudentId&&cachedStudents.find(x=>x.id===aeStudentId);
+    if(aeSt&&aeSt.name===student){ row.student_id=aeSt.id; row.our_major=aeSt.major||null; }   // 名字被改了就不关联
     await sb('/rest/v1/admission_results','POST',row);
     document.getElementById('admissionEntryOverlay').style.display='none';
     alert('✅ 已录入合格实绩（含语言分数与照片）');
