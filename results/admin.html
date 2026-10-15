@@ -251,10 +251,11 @@ main { padding: 2rem 1.5rem 4rem; max-width: none; }
       <div class="field">
         <label>学生名（イニシャル可）</label>
         <input id="f-student" type="text" placeholder="A同学">
+        <div style="font-size:10px;color:var(--text-muted);margin-top:3px">学生真实姓名（要记录到学生档案时必填）</div>
       </div>
       <div class="field">
         <label>在籍学科 *</label>
-        <select id="f-subject">
+        <select id="f-subject" onchange="arPreselect('f')">
           <option value="">-- 选择 --</option>
           <option value="shakai">社会学</option>
           <option value="fukushi">社会福祉</option>
@@ -280,6 +281,10 @@ main { padding: 2rem 1.5rem 4rem; max-width: none; }
           <option value="rika_keiei">経営工学</option>
           <option value="rika_other">その他（理科）</option>
         </select>
+      </div>
+      <div class="field">
+        <label>本校在籍专业（不选 = 不记录到学生档案）</label>
+        <div id="f-major-box"></div>
       </div>
       <div class="field">
         <label>入学年度 *</label>
@@ -828,9 +833,10 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
       <div class="field"><label>大学名</label><input id="em-univ" type="text"></div>
       <div class="field"><label>研究科</label><input id="em-dept" type="text"></div>
       <div class="field"><label>専攻</label><input id="em-spec" type="text"></div>
-      <div class="field"><label>学生名</label><input id="em-student" type="text"></div>
+      <div class="field"><label>学生名</label><input id="em-student" type="text">
+        <div style="font-size:10px;color:var(--text-muted);margin-top:3px">学生真实姓名（要记录到学生档案时必填）</div></div>
       <div class="field"><label>在籍学科</label>
-        <select id="em-subject">
+        <select id="em-subject" onchange="arPreselect('em')">
           <option value="shakai">社会学</option><option value="fukushi">社会福祉</option>
           <option value="shinpan">新聞伝播</option><option value="keizai">経済学</option>
           <option value="keiei">経営学</option><option value="kyoiku">教育学</option>
@@ -843,6 +849,9 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
           <option value="rika_kenchiku">建築・土木工学</option><option value="rika_bio">生命科学・医学</option>
           <option value="rika_keiei">経営工学</option><option value="rika_other">その他（理科）</option>
         </select>
+      </div>
+      <div class="field"><label>本校在籍专业</label>
+        <div id="em-major-box"></div>
       </div>
       <div class="field"><label>系統</label>
         <select id="em-track">
@@ -954,6 +963,7 @@ function resetForm() {
   ['f-subject','f-era','f-tier','f-jlpt','f-eng-type'].forEach(id => {
     document.getElementById(id).selectedIndex = 0;
   });
+  arSetMajor('f', '');
 }
 
 async function submitForm() {
@@ -979,13 +989,16 @@ async function submitForm() {
     eng_type: document.getElementById('f-eng-type').value || null,
     eng_score: engScore ? parseInt(engScore) : null,
     note: document.getElementById('f-note').value.trim() || null,
+    our_major: arGetMajor('f') || null,
   };
 
   try {
-    await insertResult(row);
+    const ins = await insertResult(row);
     toast('保存しました ✓');
+    const saved = Array.isArray(ins) ? ins[0] : null;
     resetForm();
     refreshUnivList();
+    if (saved) arSyncToStudent(saved);
   } catch(e) {
     toast('エラー: ' + e.message, false);
   }
@@ -1365,6 +1378,143 @@ async function sbFetch(path, opts = {}) {
   if (!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`);
   const text = await res.text();
   return text ? JSON.parse(text) : null;
+}
+
+
+// ════════════════════════════════════════════════════════════════════════
+// 本校在籍专业 + 反向记录到学生档案（只做大学院 admission_results）
+// ════════════════════════════════════════════════════════════════════════
+let arMajors = [];   // [{key,label,domain}]
+let arMajorsReady = false;
+async function arLoadMajors() {
+  try { arMajors = await sbFetch('majors?select=key,label,domain&order=domain.asc,label.asc') || []; } catch (e) { arMajors = []; }
+  arMajorsReady = true;
+  ['f', 'em'].forEach(p => arRenderMajor(p, arSel[p] || ''));
+}
+const arSel = { f: '', em: '' };
+function arEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+function arRenderMajor(p, sel) {
+  const box = document.getElementById(p + '-major-box'); if (!box) return;
+  arSel[p] = sel || '';
+  box.innerHTML = `<input id="${p}-major-q" type="text" placeholder="搜索专业…" oninput="arFilterMajor('${p}')" style="margin-bottom:4px"><select id="${p}-our-major"></select>`;
+  arFilterMajor(p);
+}
+function arFilterMajor(p) {
+  const q = ((document.getElementById(p + '-major-q') || {}).value || '').trim().toLowerCase();
+  const sel = document.getElementById(p + '-our-major'); if (!sel) return;
+  const cur = sel.value || arSel[p] || '';
+  const groups = {};
+  arMajors.forEach(m => {
+    if (q && !((m.label || '').toLowerCase().includes(q) || (m.key || '').toLowerCase().includes(q)) && m.key !== cur) return;
+    (groups[m.domain || '其他'] = groups[m.domain || '其他'] || []).push(m);
+  });
+  sel.innerHTML = '<option value="">-- 不记录到学生档案 --</option>' + Object.keys(groups).map(d =>
+    `<optgroup label="${arEsc(d)}">${groups[d].map(m => `<option value="${arEsc(m.key)}"${m.key === cur ? ' selected' : ''}>${arEsc(m.label)}</option>`).join('')}</optgroup>`).join('');
+  sel.onchange = () => { arSel[p] = sel.value; };
+}
+function arGetMajor(p) { const el = document.getElementById(p + '-our-major'); return el ? el.value : (arSel[p] || ''); }
+function arSetMajor(p, key) {
+  arSel[p] = key || '';
+  const q = document.getElementById(p + '-major-q'); if (q) q.value = '';
+  arFilterMajor(p);
+}
+// 在籍学科（粗分类）→ 真实专业 key；对不上就返回空
+function arGuessMajor(subject) {
+  if (!subject || !arMajors.length) return '';
+  const has = k => arMajors.some(m => m.key === k);
+  if (['shakai', 'fukushi', 'shinpan', 'keizai', 'keiei'].includes(subject)) return has(subject) ? subject : '';
+  if (subject === 'kyoiku') { const m = arMajors.find(x => /^教育学?$/.test(x.label || '')) || arMajors.find(x => /教育学/.test(x.label || '')); return m ? m.key : ''; }
+  return '';
+}
+function arPreselect(p) {
+  const subj = (document.getElementById(p + '-subject') || {}).value;
+  const g = arGuessMajor(subj);
+  if (g) arSetMajor(p, g);
+}
+arLoadMajors();
+
+// 学生名是不是缩写：A同学 / Aさん / 只有 1–2 个英文字母
+function arRealName(n) {
+  n = (n || '').trim();
+  if (!n) return false;
+  if (/^[A-Za-zＡ-Ｚａ-ｚ][A-Za-zＡ-Ｚａ-ｚ.．\s]{0,1}$/.test(n)) return false;
+  if (/^[A-Za-zＡ-Ｚａ-ｚ]{1,2}\s*(同学|同學|さん|サン|君|氏|桑)$/.test(n)) return false;
+  if (/^(某|匿名|不明|未知)/.test(n)) return false;
+  return true;
+}
+const AR_ST_STATUS = { active: '在籍', graduated: '已合格', expired: '已到期', stopped: '停课', withdrawn: '退学' };
+function arPickStudent(list, name) {
+  return new Promise(resolve => {
+    document.getElementById('ar-pick-modal')?.remove();
+    const d = document.createElement('div');
+    d.id = 'ar-pick-modal';
+    d.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+    const done = v => { d.remove(); resolve(v); };
+    d.innerHTML = `<div style="background:#fff;border-radius:6px;padding:18px 20px;max-width:460px;width:100%;max-height:88vh;overflow-y:auto">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">学生档案里已有「${arEsc(name)}」</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">是同一个人吗？选「是这个学生」不会改他的状态和专业。</div>
+      <div id="ar-pick-list"></div>
+      <button id="ar-pick-new" style="width:100%;margin-top:6px;padding:8px;border:1px dashed var(--border);background:#fff;border-radius:4px;cursor:pointer;font-family:inherit;font-size:12px">新建一个已合格学生（同名不同人）</button>
+      <button id="ar-pick-cancel" style="width:100%;margin-top:6px;padding:8px;border:none;background:none;color:var(--text-muted);cursor:pointer;font-family:inherit;font-size:12px">先不记录</button>
+    </div>`;
+    document.body.appendChild(d);
+    const lst = d.querySelector('#ar-pick-list');
+    list.forEach(s => {
+      const b = document.createElement('div');
+      b.style.cssText = 'display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid var(--border);border-radius:4px;margin-bottom:6px;cursor:pointer';
+      const mj = (arMajors.find(m => m.key === s.major) || {}).label || s.major || '未设专业';
+      b.innerHTML = `<span style="font-weight:600">${arEsc(s.name)}</span><span style="color:var(--text-muted);font-size:11px">${arEsc(mj)} · ${arEsc(AR_ST_STATUS[s.status] || s.status || '')}</span><span style="margin-left:auto;color:var(--accent);font-size:11px">是这个学生</span>`;
+      b.onclick = () => done(s);
+      lst.appendChild(b);
+    });
+    d.querySelector('#ar-pick-new').onclick = () => done('new');
+    d.querySelector('#ar-pick-cancel').onclick = () => done(null);
+  });
+}
+async function arCreateStudent(row) {
+  const rec = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: row.student.trim(), major: row.our_major, status: 'graduated' };
+  const res = await sbFetch('students', { method: 'POST', body: rec });
+  return Array.isArray(res) && res[0] ? res[0] : rec;
+}
+async function arUpsertPlan(stu, row) {
+  const sid = encodeURIComponent(stu.id);
+  const plans = await sbFetch(`student_school_plans?student_id=eq.${sid}&select=id,school_name,faculty`) || [];
+  const hit = plans.find(p => (p.school_name || '') === (row.univ || '') && (p.faculty || '') === (row.dept || ''));
+  if (hit) {
+    await sbFetch(`student_school_plans?id=eq.${encodeURIComponent(hit.id)}`, { method: 'PATCH', body: { status: 'passed' }, prefer: 'return=minimal', headers: {} });
+  } else {
+    await sbFetch('student_school_plans', { method: 'POST', prefer: 'return=minimal', headers: {}, body: {
+      id: `ssp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, student_id: stu.id, student_name: stu.name, major: stu.major || row.our_major || '',
+      school_name: row.univ, faculty: row.dept || null, department: row.spec || null, status: 'passed' } });
+  }
+}
+async function arSyncToStudent(row) {
+  if (!row || !row.our_major || !row.student) return;
+  if (!arRealName(row.student)) { toast('学生名是缩写，没有记录到学生档案', false); return; }
+  try {
+    let stu = null, created = false;
+    if (row.student_id) {
+      const r = await sbFetch(`students?id=eq.${encodeURIComponent(row.student_id)}&select=id,name,major,status`);
+      stu = r && r[0];
+    }
+    if (!stu) {
+      const list = await sbFetch(`students?name=eq.${encodeURIComponent(row.student.trim())}&select=id,name,major,status`) || [];
+      if (!list.length) { stu = await arCreateStudent(row); created = true; }
+      else {
+        const pick = await arPickStudent(list, row.student.trim());
+        if (!pick) { toast('合格实绩已保存，没有记录到学生档案', false); return; }
+        if (pick === 'new') { stu = await arCreateStudent(row); created = true; } else stu = pick;
+      }
+      await sbFetch(`admission_results?id=eq.${encodeURIComponent(row.id)}`, { method: 'PATCH', body: { student_id: stu.id }, prefer: 'return=minimal', headers: {} });
+      row.student_id = stu.id;
+      const li = allData.find(x => x.id === row.id); if (li) li.student_id = stu.id;
+    }
+    await arUpsertPlan(stu, row);
+    toast(created ? `✓ 已记录到学生档案：${stu.name}（已合格）` : `✓ 已关联到在籍学生 ${stu.name}`);
+  } catch (e) {
+    const m = (e && e.message) || '';
+    toast(/401|403|row-level|permission|42501/i.test(m) ? '只有管理员能记录到学生档案（合格实绩已保存）' : '记录到学生档案失败：' + m.slice(0, 120), false);
+  }
 }
 
 async function fetchAllResults() { return sbFetch('admission_results?select=*&order=created_at.desc'); }
@@ -1978,6 +2128,7 @@ function openEditModal(el) {
   document.getElementById('em-eng-type').value = r.eng_type || '';
   document.getElementById('em-eng-score').value = r.eng_score || '';
   document.getElementById('em-note').value = r.note || '';
+  arSetMajor('em', r.our_major || arGuessMajor(r.subject));
   document.getElementById('edit-modal-title').textContent = `編集: ${r.univ}`;
   document.getElementById('edit-modal').classList.add('show');
 }
@@ -2006,7 +2157,10 @@ async function saveEdit() {
     eng_type:   document.getElementById('em-eng-type').value || null,
     eng_score:  engScore ? parseInt(engScore) : null,
     note:       document.getElementById('em-note').value.trim() || null,
+    our_major:  arGetMajor('em') || null,
   };
+  const oldRow = allData.find(x => x.id === id);
+  if (oldRow && oldRow.student_id && (oldRow.student || null) !== updates.student) updates.student_id = null;   // 改了学生名：旧关联作废
 
   try {
     await sbFetch(`admission_results?id=eq.${id}`, {
@@ -2018,6 +2172,7 @@ async function saveEdit() {
     closeEditModal();
     renderList();
     toast('保存しました ✓');
+    if (idx >= 0) arSyncToStudent(allData[idx]);
   } catch(e) {
     toast('エラー: ' + e.message, false);
   }

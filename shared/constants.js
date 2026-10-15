@@ -1551,6 +1551,7 @@ function bookingReminderText(student, code) {
 async function ensureStudentCode(student) {
   if (!student) return { code: '', error: '找不到该学生' };
   if (student.student_code) return { code: student.student_code, error: '' };
+  if (student.status === 'graduated') return { code: '', error: '已合格学生不需要查询码' };
   try {
     const r = await sb('/rest/v1/rpc/issue_student_code', 'POST', { p_student_id: student.id });
     let code = Array.isArray(r) ? (r[0] || '') : (r || '');
