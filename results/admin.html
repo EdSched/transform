@@ -13,7 +13,9 @@
 <script src="../shared/supabase.js?v=20261102"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script src="../shared/admin-gate.js"></script>
-<script src="poster/poster.js?v=20261128"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="../shared/pass-posters.js?v=20261129"></script>
+<script src="poster/poster.js?v=20261129"></script>
 <style>
 :root {
   --bg: #f7f5f0; --surface: #fff; --border: #e2ded6; --border-light: #ede9e2;
@@ -211,6 +213,7 @@ main { padding: 2rem 1.5rem 4rem; max-width: none; }
 <div class="major-bar">
   <button class="major-btn active" onclick="switchMajor('grad')">大学院</button>
   <button class="major-btn" onclick="switchMajor('ug')">学部</button>
+  <button class="major-btn" onclick="switchMajor('poster')">合格海报</button>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════
@@ -824,6 +827,9 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
 
 <!-- ═══ /学部セクション ═══ -->
 
+<!-- ═══ 合格海报管理（大学院 + 学部放在一起，用筛选区分）═══ -->
+<div id="major-poster" style="display:none"><main><div id="pps-admin-root"></div></main></div>
+
 <div class="toast" id="toast"></div>
 
 <div class="modal-overlay" id="confirm-modal">
@@ -926,9 +932,43 @@ function switchMajor(m) {
   curMajor = m;
   document.getElementById('major-grad').style.display = m==='grad' ? '' : 'none';
   document.getElementById('major-ug').style.display = m==='ug' ? '' : 'none';
-  document.querySelectorAll('.major-btn').forEach((b,i) => b.classList.toggle('active', ['grad','ug'][i]===m));
+  document.getElementById('major-poster').style.display = m==='poster' ? '' : 'none';
+  document.querySelectorAll('.major-btn').forEach((b,i) => b.classList.toggle('active', ['grad','ug','poster'][i]===m));
   if (m === 'ug' && !ugDataLoaded) { ugRefreshUnivList(); ugDataLoaded = true; }
+  if (m === 'poster') ppAdminOpen();
 }
+
+// ── 合格海报管理页（列表本身在 shared/pass-posters.js，和老师端共用）──
+let ppAdminMounted = false;
+function ppAdminOpen() {
+  if (ppAdminMounted) { ppsReload(); return; }
+  ppAdminMounted = true;
+  ppsMount(document.getElementById('pps-admin-root'), {
+    mode: 'admin',
+    cls: { btn: 'btn btn-secondary' },
+    majorName: k => ((typeof arMajors !== 'undefined' ? arMajors : []).find(m => m.key === k) || {}).label || k || '未设专业',
+    defaultDomains: [],   // 管理端：最新一年 + 全部状态
+    loadRows: ppAdminLoad,
+    admin: {
+      edit: r => pstOpen(r.result_kind === 'ug' ? 'ug' : 'grad', r.result_id),
+      pdfBlob: pstPdfBlobFor, webBlob: pstWebBlobFor, previewUrl: pstPreviewUrlFor,
+      publish: pstPublishFor, unpublish: pstUnpublishFor, remove: pstRemoveFor, downloadPdf: pstDownloadPdfFor,
+    },
+  });
+}
+// 读全部海报（包括没发布的），不取原截图（原截图在管理员专用的 pass_poster_sources 里）
+async function ppAdminLoad() {
+  let all = [], off = 0;
+  for (;;) {
+    const r = await sbFetch(`pass_posters?select=id,result_kind,result_id,univ,dept,spec,major,domain,pass_year,pass_month,fields,web_url,thumb_url&order=pass_year.desc,pass_month.desc,updated_at.desc&limit=1000&offset=${off}`);
+    all = all.concat(r || []);
+    if (!r || r.length < 1000) break;
+    off += 1000;
+  }
+  return all;
+}
+// 编辑器关掉后：如果正在看海报管理页，刷新列表
+function pstOnClose() { if (curMajor === 'poster' && typeof ppsReload === 'function') ppsReload(); }
 
 // ════════════════════════════════════════════════════════════════════════
 // 大学院 (admission_results) ロジック
