@@ -789,11 +789,11 @@ function smsCalc(student, sess, ctx) {
   s.hwRate = s.hwAssigned ? Math.round(s.hwDone / s.hwAssigned * 100) : null;
   return s;
 }
-// mode：required 必出席（默认，正式出勤率只算这些）/ elective 选修（单独统计）；none 不记出席的课完全不进统计
+// mode：required 必修（默认，正式出勤率只算这些）/ elective 选修（单独统计）；按 studentAttRole 逐个学生判断，不记出席的课完全不进统计
 function smsStudentSessions(student, ctx, mode) {
   const my = ctx.membersByStu[String(student.id)] || [];
   const want = mode || 'required';
-  const cids = new Set(ctx.courses.filter(c => courseAttMode(c) === want && studentInCourse(student, c, my)).map(c => String(c.id)));
+  const cids = new Set(ctx.courses.filter(c => studentAttRole(student, c, my) === want).map(c => String(c.id)));
   return ctx.live.filter(x => cids.has(String(x.course_id)));
 }
 // ctx 范围内（一个月，或「全部」）的统计；byCourse = 每门课一行
@@ -1128,6 +1128,8 @@ let tatRange='today';       // today | week | all
 let tatSessions=[];         // 可见专业下待记出席的课次
 let tatCurSession=null;     // 当前签到的课次
 let tatStudents=[];         // 当前课次的学生
+let tatElectives=[];       // 组内开放的课：同组其他专业（选修）可点名的学生
+let tatElOpen=false;
 let tatEdits={};            // student_id -> {attendance_status, student_mode}
 let tatState='present', tatMode='offline';
 
@@ -1214,16 +1216,21 @@ async function tatOpen(sessionId){
   const course=Object.assign({id:se.course_id},c,{major:majors.length?majors:(c.major||[])});
   const ids=courseMemberIds(course,all||[],cms||[]);
   tatStudents=(all||[]).filter(s=>ids.has(String(s.id)));
+  // 组内开放的课：同专业组、不是成员的在读学生 = 选修（只记来了的人）
+  const elIds=courseElectiveIds(course,all||[],cms||[]);
+  tatElectives=(all||[]).filter(s=>elIds.has(String(s.id))).map(s=>Object.assign({},s,{_elective:true}));
+  tatElOpen=false;
   // 已有记录：每个学生取最早的一条（以前重复保存留下的多条，只更新最早那条）
   tatExisting={};
   (recs||[]).slice().sort((a,b)=>String(a.created_at||'').localeCompare(String(b.created_at||''))||String(a.id).localeCompare(String(b.id))).forEach(r=>{ if(r.student_id&&!tatExisting[r.student_id]) tatExisting[r.student_id]=r; });
   // 有记录、但现在已不在成员名单 / 不在籍的学生也要带出来，不然改不了
-  const missing=Object.keys(tatExisting).filter(id=>!tatStudents.some(s=>String(s.id)===String(id)));
+  const missing=Object.keys(tatExisting).filter(id=>!tatStudents.some(s=>String(s.id)===String(id))&&!tatElectives.some(s=>String(s.id)===String(id)));
   if(missing.length){ const extra=await sb(`/rest/v1/students?id=in.(${missing.map(x=>`"${x}"`).join(',')})&select=*`).catch(()=>[]); tatStudents=tatStudents.concat(extra||[]); }
   tatStudents.sort((a,b)=>a.name.localeCompare(b.name,'zh'));
+  tatElectives.sort((a,b)=>a.name.localeCompare(b.name,'zh'));
   tatEditing=Object.keys(tatExisting).length>0;
   tatEdits={}; tatState='present'; tatMode='offline';
-  tatStudents.forEach(s=>{ const r=tatExisting[s.id]; if(r&&r.attendance_status) tatEdits[s.id]={attendance_status:r.attendance_status,student_mode:r.student_mode||s.default_mode||'offline'}; });
+  tatStudents.concat(tatElectives).forEach(s=>{ const r=tatExisting[s.id]; if(r&&r.attendance_status) tatEdits[s.id]={attendance_status:r.attendance_status,student_mode:r.student_mode||s.default_mode||'offline'}; });
   tatRenderModal();
 }
 
@@ -1231,7 +1238,7 @@ function tatCurStatus(){ if(tatState==='leave')return'leave'; if(tatState==='lat
 function tatStatusFull(v){const m={online:{t:'线上出席',c:'#2a6aad'},offline:{t:'线下出席',c:'var(--ok,#2a9e6a)'},replay:{t:'录播回看',c:'var(--warn,#b8860b)'},online_late:{t:'线上迟到',c:'#b8860b'},offline_late:{t:'线下迟到',c:'#b8860b'},leave:{t:'请假',c:'var(--text-3,#999)'}};return m[v]||{t:v||'缺席',c:'var(--danger,#b03a2e)'};}
 function tatPickState(st){tatState=st;['present','late','leave'].forEach(k=>{const b=document.getElementById('tat_st_'+k);if(b){const on=k===st;b.style.background=on?'var(--accent,#b8953a)':'var(--bg)';b.style.color=on?'#fff':'var(--text-2)';}});const mw=document.getElementById('tat_mode_wrap');if(mw)mw.style.display=(st==='leave')?'none':'flex';}
 function tatPickMode(md){tatMode=md;['offline','online'].forEach(k=>{const b=document.getElementById('tat_md_'+k);if(b){const on=k===md;b.style.background=on?'#2a6aad':'var(--bg)';b.style.color=on?'#fff':'var(--text-2)';}});}
-function tatMark(sid){const s=tatStudents.find(x=>x.id===sid);if(!s)return;if(!tatEdits[sid])tatEdits[sid]={};tatEdits[sid].attendance_status=tatCurStatus();tatEdits[sid].student_mode=(tatState==='leave')?(s.default_mode||'offline'):tatMode;tatRenderRows();}
+function tatMark(sid){const s=tatStudents.concat(tatElectives).find(x=>x.id===sid);if(!s)return;if(!tatEdits[sid])tatEdits[sid]={};tatEdits[sid].attendance_status=tatCurStatus();tatEdits[sid].student_mode=(tatState==='leave')?(s.default_mode||'offline'):tatMode;tatRenderRows();}
 function tatUnmark(sid){if(tatEdits[sid])tatEdits[sid].attendance_status='';tatRenderRows();}
 
 function tatRenderModal(){
@@ -1260,6 +1267,7 @@ function tatRenderModal(){
     <input id="tat_search" placeholder="搜索姓名（汉字 / 拼音首字母）/ 专业…" oninput="searchBox(this,tatRenderRows)" style="font-size:12px;padding:6px 10px;width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:4px;margin-bottom:8px">
     <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">未点名 <span id="tat_cnt"></span>（点名字=当前状态）</div>
     <div id="tat_body" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px;max-height:42vh;overflow-y:auto"></div>
+    <div id="tat_el_wrap"></div>
     <div id="tat_marked" style="border-top:1px solid var(--border);padding-top:8px;margin-bottom:12px"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button onclick="document.getElementById('tatOverlay').style.display='none'" style="font-size:12px;padding:8px 16px;border:1px solid var(--border);border-radius:5px;background:var(--bg);cursor:pointer;font-family:inherit">关闭</button>
@@ -1271,21 +1279,32 @@ function tatRenderModal(){
 
 function tatRenderRows(){
   const kw=(document.getElementById('tat_search')?.value||'').trim();
-  const marked=tatStudents.filter(s=>tatEdits[s.id]&&tatEdits[s.id].attendance_status);
+  const marked=tatStudents.concat(tatElectives).filter(s=>tatEdits[s.id]&&tatEdits[s.id].attendance_status);
   const unmarked=tatStudents.filter(s=>!(tatEdits[s.id]&&tatEdits[s.id].attendance_status));
   const shown=kw?unmarked.filter(s=>matchesStudentSearch(s,kw)):unmarked;
   const body=document.getElementById('tat_body');
   if(body) body.innerHTML=shown.length?shown.map(s=>`<button onclick="tatMark('${s.id}')" style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;padding:11px 4px;border:1px solid var(--border);border-radius:8px;background:var(--surface);cursor:pointer;color:var(--text)">${s.name}</button>`).join(''):`<div style="grid-column:1/-1;font-size:12px;color:var(--text-3);padding:16px;text-align:center">${kw?'无匹配':'全部已点 ✓'}</div>`;
   const cnt=document.getElementById('tat_cnt'); if(cnt)cnt.textContent=`剩 ${unmarked.length} 人`;
+  const elw=document.getElementById('tat_el_wrap');
+  if(elw){
+    if(!tatElectives.length) elw.innerHTML='';
+    else{
+      const elLeft=tatElectives.filter(s=>!(tatEdits[s.id]&&tatEdits[s.id].attendance_status));
+      const elShown=kw?elLeft.filter(s=>matchesStudentSearch(s,kw)):elLeft;
+      const open=tatElOpen||!!kw;
+      elw.innerHTML=`<div style="margin-bottom:10px"><div onclick="tatElOpen=!tatElOpen;tatRenderRows()" style="font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 0">同组其他专业（选修）· ${tatElectives.length} 人 ${open?'▾':'▸'}</div>`+
+        (open?`<div style="font-size:10px;color:var(--text-3);margin-bottom:6px">只点来了的人，没来的不用点（不算缺席）</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-height:28vh;overflow-y:auto">${elShown.length?elShown.map(s=>`<button onclick="tatMark('${s.id}')" style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;padding:9px 4px;border:1px dashed var(--border);border-radius:8px;background:var(--surface);cursor:pointer;color:var(--text)">${s.name}<span style="display:block;font-size:9px;font-weight:400;color:var(--text-3)">${tsaEsc(MAJORS[s.major]||s.major||'')}</span></button>`).join(''):`<div style="grid-column:1/-1;font-size:12px;color:var(--text-3);padding:10px;text-align:center">${kw?'无匹配':'没有更多了'}</div>`}</div>`:'')+`</div>`;
+    }
+  }
   const area=document.getElementById('tat_marked');
   if(area){const g={};marked.forEach(s=>{const st=tatEdits[s.id].attendance_status;(g[st]=g[st]||[]).push(s);});
     const order=['offline','online','replay','offline_late','online_late','leave'];const keys=Object.keys(g).sort((a,b)=>order.indexOf(a)-order.indexOf(b));
-    area.innerHTML=`<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">已点 ${marked.length} · 未点 ${unmarked.length}（记为缺席）</div>`+(keys.map(st=>{const i=tatStatusFull(st);return `<div style="margin-bottom:8px"><span style="font-size:11px;font-weight:600;color:${i.c}">${i.t}（${g[st].length}）</span> <span style="display:inline-flex;flex-wrap:wrap;gap:6px">${g[st].map(s=>`<span onclick="tatUnmark('${s.id}')" style="font-size:12px;padding:3px 10px;border-radius:12px;background:var(--bg);border:1px solid ${i.c};color:${i.c};cursor:pointer">${s.name} ✕</span>`).join('')}</span></div>`;}).join('')||'<div style="font-size:11px;color:var(--text-3)">还没点名</div>');}
+    area.innerHTML=`<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">已点 ${marked.length} · 未点 ${unmarked.length}（记为缺席）</div>`+(keys.map(st=>{const i=tatStatusFull(st);return `<div style="margin-bottom:8px"><span style="font-size:11px;font-weight:600;color:${i.c}">${i.t}（${g[st].length}）</span> <span style="display:inline-flex;flex-wrap:wrap;gap:6px">${g[st].map(s=>`<span onclick="tatUnmark('${s.id}')" style="font-size:12px;padding:3px 10px;border-radius:12px;background:var(--bg);border:1px solid ${i.c};color:${i.c};cursor:pointer">${s.name}${s._elective?'（选修）':''} ✕</span>`).join('')}</span></div>`;}).join('')||'<div style="font-size:11px;color:var(--text-3)">还没点名</div>');}
 }
 
 function tatSummary(){
   const g={present_off:[],present_on:[],late:[],leave:[],absent:[]};
-  tatStudents.forEach(s=>{const st=(tatEdits[s.id]||{}).attendance_status||'';if(st==='offline')g.present_off.push(s.name);else if(st==='online')g.present_on.push(s.name);else if(st==='offline_late'||st==='online_late')g.late.push(s.name);else if(st==='leave')g.leave.push(s.name);else g.absent.push(s.name);});
+  tatStudents.concat(tatElectives.filter(s=>(tatEdits[s.id]||{}).attendance_status)).forEach(s=>{const st=(tatEdits[s.id]||{}).attendance_status||'';if(st==='offline')g.present_off.push(s.name);else if(st==='online')g.present_on.push(s.name);else if(st==='offline_late'||st==='online_late')g.late.push(s.name);else if(st==='leave')g.leave.push(s.name);else g.absent.push(s.name);});
   let ov=document.getElementById('tatSumOv');if(!ov){ov=document.createElement('div');ov.id='tatSumOv';ov.style.cssText='position:fixed;inset:0;z-index:995;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px';document.body.appendChild(ov);}
   ov.style.display='flex';
   ov.innerHTML=`<div style="background:#fff;border-radius:8px;padding:20px;max-width:520px;width:100%;max-height:82vh;overflow:auto">
@@ -1300,9 +1319,13 @@ async function tatSave(){
   const se=tatCurSession; const btn=document.getElementById('tat_save');
   if(btn){btn.textContent='保存中…';btn.disabled=true;}
   try{
-    const news=[], updates=[];
-    tatStudents.forEach(s=>{
+    const news=[], updates=[], dels=[];
+    tatStudents.concat(tatElectives).forEach(s=>{
       const e=tatEdits[s.id]||{};
+      if(s._elective&&!e.attendance_status){   // 选修：没来的人不建记录；撤回已点的就删掉记录
+        if(tatExisting[s.id]) dels.push(tatExisting[s.id].id);
+        return;
+      }
       const status=e.attendance_status||'', mode=e.student_mode||s.default_mode||'offline';
       const old=tatExisting[s.id];
       if(old){   // 已有记录：只更新出席状态和上课方式，不动作业相关字段（homework_submitted / homework_file_url 等）
@@ -1314,6 +1337,7 @@ async function tatSave(){
         student_mode:mode, attendance_status:status,
       });
     });
+    for(const id of dels){ await sb(`/rest/v1/session_records?id=eq.${encodeURIComponent(id)}`,'DELETE'); }
     // 分批 PATCH 已有记录
     for(let i=0;i<updates.length;i+=10){ await Promise.all(updates.slice(i,i+10).map(u=>sb(`/rest/v1/session_records?id=eq.${encodeURIComponent(u.id)}`,'PATCH',u.patch))); }
     // 分批 POST 新记录

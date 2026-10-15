@@ -29,9 +29,19 @@ function attMembers(courseId, majors){
   const ids=courseMemberIds(course, act, (typeof cachedCourseMembers!=='undefined'?cachedCourseMembers:[]));
   return act.filter(s=>ids.has(String(s.id)));
 }
-// 已有出席记录但已不是成员的学生（不删记录，标「非成员」照常显示）
-function attNonMembersWithRecords(records, members){
+// 组内开放的课：同专业组、不是成员的在读学生 = 选修（只记来了的人）
+function attElectives(courseId, majors){
+  const c=cachedCourses.find(x=>x.id===courseId)||{};
+  const mj=(majors&&majors.length)?majors:(c.major||[]);
+  const course=Object.assign({id:courseId},c,{major:mj});
+  const act=attActiveStudents();
+  const ids=courseElectiveIds(course, act, (typeof cachedCourseMembers!=='undefined'?cachedCourseMembers:[]));
+  return act.filter(s=>ids.has(String(s.id)));
+}
+// 已有出席记录但已不是成员的学生（不删记录，标「非成员」照常显示）；excludeIds：选修学生另外显示，不算非成员
+function attNonMembersWithRecords(records, members, excludeIds){
   const memberIds=new Set(members.map(s=>String(s.id)));
+  (excludeIds||[]).forEach(id=>memberIds.add(String(id)));
   const out=[];
   records.forEach(r=>{
     const stu=cachedStudents.find(x=>x.id===r.student_id)||cachedStudents.find(x=>x.name===r.student_name);
@@ -44,6 +54,9 @@ let attPeriodFilter='';
 let attTypeFilter='';
 let attCampusFilter='';
 let attMajorFilter='all';
+let attAttFilter='';       // 出席属性筛选：'' 全部 / required / open / none
+let attNoneOpen=false;     // 「不记出席的课」是否展开
+let attElOpen=false;       // 记出席弹窗里「同组其他专业（选修）」是否展开
 let sessionEdits={};
 
 let attRange='week';   // week | month | all
@@ -95,6 +108,7 @@ function renderAttendancePage(mc){
   if(attPeriodFilter){
     filteredCourses=filteredCourses.filter(c=>periodKeyOf(c)===attPeriodFilter);
   }
+  if(attAttFilter) filteredCourses=filteredCourses.filter(c=>courseAttMode(c)===attAttFilter);
   const seen=new Set();
   filteredCourses=filteredCourses.filter(c=>{if(seen.has(c.id))return false;seen.add(c.id);return true});
 
@@ -127,6 +141,13 @@ function renderAttendancePage(mc){
           ${chipFold(periods.map(p=>({on:attPeriodFilter===p,html:`<div class="filter-chip${attPeriodFilter===p?' active':''}" onclick="setAttPeriod('${p}')">${p}</div>`})))}
         </div>
       </div>
+      <div>
+        <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">出席属性</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap">
+          <div class="filter-chip${attAttFilter===''?' active':''}" onclick="setAttAttFilter('')">全部</div>
+          ${Object.keys(ATT_MODES).map(k=>`<div class="filter-chip${attAttFilter===k?' active':''}" onclick="setAttAttFilter('${k}')">${ATT_MODES[k]}</div>`).join('')}
+        </div>
+      </div>
       ${campuses.length>1?`<div>
         <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">校区</div>
         <div style="display:flex;gap:5px;flex-wrap:wrap">
@@ -140,17 +161,58 @@ function renderAttendancePage(mc){
         </div>
       </div>`:''}
     </div>
-    ${!attTypeFilter&&!attPeriodFilter?'<div style="font-size:11px;color:var(--text-3);margin-top:10px">请选择课程属性或期数查看课次</div>':''}
+    ${!attTypeFilter&&!attPeriodFilter&&!attAttFilter?'<div style="font-size:11px;color:var(--text-3);margin-top:10px">请选择课程属性或期数查看课次</div>':''}
   </div>
-  ${attTypeFilter||attPeriodFilter||attCampusFilter ? renderSessionList(filteredCourses) : ''}`;
+  ${attTypeFilter||attPeriodFilter||attCampusFilter||attAttFilter ? renderSessionList(filteredCourses) : ''}`;
   if(!Object.keys(attHwCount).length) attLoadHwCounts();
 }
 
+// 课程标题栏里的出席属性 chip：点了立即保存
+function attModeChips(cid){
+  const c=cachedCourses.find(x=>x.id===cid)||{}, cur=courseAttMode(c);
+  return `<span style="display:inline-flex;gap:3px">${Object.keys(ATT_MODES).map(k=>`<button onclick="event.stopPropagation();setCourseAttMode('${cid}','${k}')" style="font-size:10px;padding:2px 8px;border-radius:10px;cursor:pointer;font-family:inherit;border:1px solid rgba(255,255,255,.55);background:${cur===k?'rgba(255,255,255,.9)':'rgba(255,255,255,.15)'};color:${cur===k?'#333':'inherit'};font-weight:${cur===k?600:400}">${ATT_MODES[k]}</button>`).join('')}</span>`;
+}
+async function setCourseAttMode(cid, mode){
+  if(!ATT_MODES[mode]) return;
+  const c=cachedCourses.find(x=>x.id===cid); if(!c) return;
+  if(courseAttMode(c)===mode) return;
+  try{
+    await sb(`/rest/v1/courses?id=eq.${encodeURIComponent(cid)}`,'PATCH',{attendance_mode:mode});
+    c.attendance_mode=mode;
+    renderAttendancePage(document.getElementById('mainContent'));
+  }catch(e){ alert('保存失败：'+e.message); }
+}
+function setAttAttFilter(v){
+  attAttFilter=v;
+  renderAttendancePage(document.getElementById('mainContent'));
+}
+// 课程人数文字：组内开放的课显示「必修 a 人 · 同组选修 b 人」
+function attCountText(c, cid, majors){
+  const a=attMembers(cid, majors).length;
+  if(courseAttMode(c)!=='open') return `${a}人`;
+  return `必修 ${a} 人 · 同组选修 ${attElectives(cid, majors).length} 人`;
+}
+// 「不记出席」的课：只给标题栏（可改回来），不显示出席 / 作业数据
+function renderNoAttCourses(courses){
+  if(!courses.length) return '';
+  const open=attNoneOpen||attAttFilter==='none';
+  return `<div style="margin-bottom:20px">
+    <div onclick="attNoneOpen=!attNoneOpen;renderAttendancePage(document.getElementById('mainContent'))" style="font-size:12px;color:var(--text-2);cursor:pointer;padding:8px 2px">不记出席的课（${courses.length} 门）${open?'▾':'▸'}</div>
+    ${open?courses.map(c=>{const color=courseColor(c.name);return `<div style="margin-bottom:6px;background:${color.bg};color:${color.text};border-radius:4px;padding:7px 14px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px"><span>${c.name} <span style="font-size:10px;font-weight:400;opacity:.7">${c.time_range||''}</span></span>${attModeChips(c.id)}</div>`}).join(''):''}
+  </div>`;
+}
+
 function renderSessionList(filteredCourses){
-  let courses=filteredCourses;
+  let allCourses=filteredCourses;
   if(attMajorFilter!=='all'){
-    courses=courses.filter(c=>(c.major||[]).includes(attMajorFilter));
+    allCourses=allCourses.filter(c=>(c.major||[]).includes(attMajorFilter));
   }
+  const noAttCourses=allCourses.filter(c=>courseAttMode(c)==='none');
+  const courses=allCourses.filter(c=>courseAttMode(c)!=='none');
+  const noAttHtml=renderNoAttCourses(noAttCourses);
+  return renderSessionListMain(courses)+noAttHtml;
+}
+function renderSessionListMain(courses){
 
   let sessions=cachedSessions
     .filter(s=>courses.find(c=>c.id===s.course_id)&&s.confirmed)
@@ -172,6 +234,7 @@ function renderSessionList(filteredCourses){
     sessions=sessions.filter(s=>s.session_date>=f(from)&&s.session_date<=f(to));
   }
 
+  if(!courses.length) return '';
   if(!sessions.length) return `<div class="empty" style="padding:36px">${attRange==='all'?'所选条件下暂无已发布的课次':`本${attRange==='week'?'周':'月'}没有课次，可切换到「全部」查看`}</div>`;
 
   if(attView==='status') return renderAttStatusView(sessions,courses);
@@ -186,12 +249,15 @@ function renderSessionList(filteredCourses){
     const course=courses.find(c=>c.id===cid)||{name:sess[0]?.course_name||''};
     const color=courseColor(course.name);
     const totalStudents=attMembers(cid, sess[0]?.major).length;
+    const isOpen=courseAttMode(course)==='open';
+    const elIds=isOpen?new Set(attElectives(cid, sess[0]?.major).map(x=>String(x.id))):new Set();
 
     return `<div style="margin-bottom:20px;background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
       <div style="background:${color.bg};color:${color.text};padding:8px 14px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
         <span>${course.name} <span style="font-size:10px;font-weight:400;opacity:.7">${course.time_range||''}</span></span>
         <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:10px;opacity:.7">${sess.length}回 · ${totalStudents}人</span>
+          ${attModeChips(cid)}
+          <span style="font-size:10px;opacity:.7">${sess.length}回 · ${isOpen?attCountText(course, cid, sess[0]?.major):totalStudents+'人'}</span>
           ${sess.some(s=>s.homework_enabled)?`<button onclick="adminBatchDownloadCourse('${cid}')" style="font-size:10px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);border-radius:3px;padding:3px 8px;cursor:pointer;color:inherit;font-family:inherit">📦 下载作业</button>`:''}
         </div>
       </div>
@@ -207,7 +273,9 @@ function renderSessionList(filteredCourses){
         </tr></thead>
         <tbody>
           ${sess.map(s=>{
-            const recs=cachedSessionRecords.filter(r=>r.session_id===s.id);
+            const allRecs=cachedSessionRecords.filter(r=>r.session_id===s.id);
+            const recs=isOpen?allRecs.filter(r=>!elIds.has(String(r.student_id))):allRecs;   // 选修的记录另算，不进必修的出席率
+            const elPresent=isOpen?allRecs.filter(r=>elIds.has(String(r.student_id))&&attPresent(r.attendance_status)).length:0;
             const present=recs.filter(r=>attPresent(r.attendance_status)).length;
             const lateN=recs.filter(r=>attIsLate(r.attendance_status)).length;
             // 交作业人数：新作业系统的实际提交（学生提交即自动计入，无需手动记录）
@@ -219,7 +287,7 @@ function renderSessionList(filteredCourses){
               <td style="font-size:11px;color:var(--text-3)">${s.session_number}</td>
               <td style="font-size:12px;font-weight:600;cursor:pointer" onclick="openSessionModal('${s.id}')"><span style="display:inline-block;background:var(--accent,#b8953a);color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;margin-right:6px">📝 记录</span>${f.short} <span style="font-size:10px;color:${f.dowColor}">${f.dow}</span></td>
               <td style="font-size:11px;color:var(--text-2)">${s.session_title||'—'}${hasHw?'<span style="font-size:9px;color:var(--accent);margin-left:5px">📝</span>':''}</td>
-              <td style="font-size:11px">${recs.length?`${present}/${totalStudents}${lateN?`<span style="font-size:9px;color:#b8860b">（迟到 ${lateN}）</span>`:''}`:'<span style="color:var(--text-3)">—</span>'}</td>
+              <td style="font-size:11px">${recs.length?`${present}/${totalStudents}${lateN?`<span style="font-size:9px;color:#b8860b">（迟到 ${lateN}）</span>`:''}${elPresent?`<span style="font-size:9px;color:var(--text-3)">（选修 ${elPresent}）</span>`:''}`:'<span style="color:var(--text-3)">—</span>'}</td>
               <td style="font-size:11px;color:${!recs.length?'var(--text-3)':rate>=80?'var(--ok)':rate>=60?'var(--warn)':'var(--danger)'}">${recs.length?rate+'%':'—'}</td>
               <td style="font-size:11px">${hasHw?(hwSubmit?`<span style="color:var(--ok);font-weight:600">${hwSubmit}</span>/${totalStudents}`:`<span style="color:var(--text-3)">0/${totalStudents}</span>`):'<span style="color:var(--text-3)">—</span>'}</td>
               <td style="display:flex;gap:4px">
@@ -425,15 +493,18 @@ async function openSessionModal(sessionId){
     existing.forEach(r=>{if(!cachedSessionRecords.find(x=>x.id===r.id))cachedSessionRecords.push(r)});
   }
   const members=attMembers(session.course_id, session.major).sort((a,b)=>a.name.localeCompare(b.name,'zh'));
-  const students=members.concat(attNonMembersWithRecords(existing, members));
+  const electives=(courseAttMode(course)==='open'?attElectives(session.course_id, session.major):[]).map(s=>Object.assign({},s,{_elective:true})).sort((a,b)=>a.name.localeCompare(b.name,'zh'));
+  const students=members.concat(attNonMembersWithRecords(existing, members, electives.map(s=>s.id)));
 
   sessionEdits={};
+  attElOpen=false;
+  _currentSessionElectives = electives;
   _currentSessionStudents = students;
   _currentSessionRecords = existing;
   _currentSessionId = sessionId;
   const searchInput = document.getElementById('sessionStudentSearch');
   if (searchInput) searchInput.value = '';
-  existing.forEach(r=>{ const stu=students.find(x=>x.id===r.student_id||x.name===r.student_name); if(stu){ sessionEdits[stu.id]={attendance_status:r.attendance_status||'',student_mode:r.student_mode||'offline',homework_submitted:r.homework_submitted||false}; } });
+  existing.forEach(r=>{ const stu=students.concat(electives).find(x=>x.id===r.student_id||x.name===r.student_name); if(stu){ sessionEdits[stu.id]={attendance_status:r.attendance_status||'',student_mode:r.student_mode||'offline',homework_submitted:r.homework_submitted||false}; } });
   attState='present'; attMode='offline';
   if(typeof attPickState==='function'){ attPickState('present'); attPickMode('offline'); }
   renderStudentRows('');
@@ -441,6 +512,7 @@ async function openSessionModal(sessionId){
 }
 
 let _currentSessionStudents = [];
+let _currentSessionElectives = [];   // 组内开放的课：同组其他专业（选修）
 let _currentSessionRecords = [];
 let _currentSessionId = null;
 
@@ -479,7 +551,7 @@ function attShowSummary(){
   const students=_currentSessionStudents;
   const title=document.getElementById('sessionModalTitle')?.textContent||'';
   const groups={present_off:[],present_on:[],late:[],leave:[],absent:[]};
-  students.forEach(s=>{
+  students.concat(_currentSessionElectives.filter(s=>(sessionEdits[s.id]||{}).attendance_status)).forEach(s=>{
     const st=(sessionEdits[s.id]||{}).attendance_status||'';
     if(st==='offline') groups.present_off.push(s.name);
     else if(st==='online') groups.present_on.push(s.name);
@@ -512,7 +584,7 @@ function attShowSummary(){
 }
 
 function attMark(sid){
-  const s=_currentSessionStudents.find(x=>x.id===sid); if(!s) return;
+  const s=_currentSessionStudents.concat(_currentSessionElectives).find(x=>x.id===sid); if(!s) return;
   if(!sessionEdits[sid]) sessionEdits[sid]={};
   sessionEdits[sid].attendance_status=attCurrentStatus();
   sessionEdits[sid].student_mode=(attState==='leave')?(sessionEdits[sid].student_mode||s.default_mode||'offline'):attMode;
@@ -526,7 +598,7 @@ function attUnmark(sid){
 function renderStudentRows(filter='') {
   const students=_currentSessionStudents;
   const kw=(filter||'').trim().toLowerCase();
-  const marked=students.filter(s=>sessionEdits[s.id]&&sessionEdits[s.id].attendance_status);
+  const marked=students.concat(_currentSessionElectives).filter(s=>sessionEdits[s.id]&&sessionEdits[s.id].attendance_status);
   const unmarked=students.filter(s=>!(sessionEdits[s.id]&&sessionEdits[s.id].attendance_status));
   const unmarkedShown=kw?unmarked.filter(s=>matchesStudentSearch(s,kw)):unmarked;
   const body=document.getElementById('sessionRecordBody');
@@ -534,6 +606,18 @@ function renderStudentRows(filter='') {
     <button onclick="attMark('${s.id}')" style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;padding:11px 4px;border:1px solid var(--border);border-radius:8px;background:var(--surface);cursor:pointer;color:var(--text)">${s.name}${s._nonMember?'<span style="display:block;font-size:9px;font-weight:400;color:var(--text-3)">非成员</span>':''}</button>
   `).join(''):`<div style="grid-column:1/-1;font-size:12px;color:var(--text-3);padding:16px;text-align:center">${kw?'无匹配':'全部已点 ✓'}</div>`;
   const cnt=document.getElementById('att_unmarked_count'); if(cnt) cnt.textContent=`剩 ${unmarked.length} 人`;
+  const elw=document.getElementById('att_el_wrap');
+  if(elw){
+    const els=_currentSessionElectives;
+    if(!els.length) elw.innerHTML='';
+    else{
+      const left=els.filter(s=>!(sessionEdits[s.id]&&sessionEdits[s.id].attendance_status));
+      const shown=kw?left.filter(s=>matchesStudentSearch(s,kw)):left;
+      const open=attElOpen||!!kw;
+      elw.innerHTML=`<div style="margin-bottom:12px"><div onclick="attElOpen=!attElOpen;renderStudentRows(document.getElementById('sessionStudentSearch')?.value||'')" style="font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 0">同组其他专业（选修）· ${els.length} 人 ${open?'▾':'▸'}</div>`+
+        (open?`<div style="font-size:10px;color:var(--text-3);margin-bottom:6px">只点来了的人，没来的不用点（不算缺席）</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-height:28vh;overflow-y:auto">${shown.length?shown.map(s=>`<button onclick="attMark('${s.id}')" style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;padding:9px 4px;border:1px dashed var(--border);border-radius:8px;background:var(--surface);cursor:pointer;color:var(--text)">${s.name}<span style="display:block;font-size:9px;font-weight:400;color:var(--text-3)">${MAJORS[s.major]||s.major||''}</span></button>`).join(''):`<div style="grid-column:1/-1;font-size:12px;color:var(--text-3);padding:10px;text-align:center">${kw?'无匹配':'没有更多了'}</div>`}</div>`:'')+`</div>`;
+    }
+  }
   const area=document.getElementById('att_marked_area');
   if(area){
     const groups={};
@@ -544,7 +628,7 @@ function renderStudentRows(filter='') {
       (keys.map(st=>{const info=attStatusFull(st);
         return `<div style="margin-bottom:8px"><span style="font-size:11px;font-weight:600;color:${info.c}">${info.t}（${groups[st].length}）</span>
           <span style="display:inline-flex;flex-wrap:wrap;gap:6px;margin-left:8px">${groups[st].map(s=>`
-            <span onclick="attUnmark('${s.id}')" title="点击撤回" style="font-size:12px;padding:3px 10px;border-radius:12px;background:var(--bg);border:1px solid ${info.c};color:${info.c};cursor:pointer">${s.name}${s._nonMember?'（非成员）':''} ✕</span>`).join('')}</span></div>`;
+            <span onclick="attUnmark('${s.id}')" title="点击撤回" style="font-size:12px;padding:3px 10px;border-radius:12px;background:var(--bg);border:1px solid ${info.c};color:${info.c};cursor:pointer">${s.name}${s._nonMember?'（非成员）':''}${s._elective?'（选修）':''} ✕</span>`).join('')}</span></div>`;
       }).join('')||'<div style="font-size:11px;color:var(--text-3)">还没点名</div>');
   }
 }
@@ -614,7 +698,7 @@ async function saveSessionRecords(){
   const sessionId=document.getElementById('sessionModalId').value;
   const session=cachedSessions.find(s=>s.id===sessionId);
   if(!session) return;
-  const students=(_currentSessionId===sessionId)?_currentSessionStudents:attMembers(session.course_id, session.major);
+  const students=(_currentSessionId===sessionId)?_currentSessionStudents.concat(_currentSessionElectives):attMembers(session.course_id, session.major);
   const btn=document.querySelector('#sessionModal .btn-primary');
   btn.textContent='保存中…';btn.disabled=true;
   try{
@@ -622,6 +706,13 @@ async function saveSessionRecords(){
       const edit=sessionEdits[s.id];
       if(!edit) continue;
       const existing=cachedSessionRecords.find(r=>r.session_id===sessionId&&r.student_id===s.id);
+      if(s._elective&&!edit.attendance_status){   // 选修：没来的人不建记录；撤回已点的就删掉记录
+        if(existing){
+          await sb(`/rest/v1/session_records?id=eq.${existing.id}`,'DELETE');
+          cachedSessionRecords=cachedSessionRecords.filter(r=>r.id!==existing.id);
+        }
+        continue;
+      }
       const data={
         session_id:sessionId,
         course_name:session.course_name,
@@ -689,7 +780,8 @@ function renderAttStatusView(sessions, courses){
     const color=courseColor(course.name);
     const members=attMembers(cid, sess[0]?.major).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
     const sessIds=new Set(sess.map(s=>s.id));
-    const students=members.concat(attNonMembersWithRecords(cachedSessionRecords.filter(r=>sessIds.has(r.session_id)), members));
+    const elIds=courseAttMode(course)==='open'?attElectives(cid, sess[0]?.major).map(x=>x.id):[];
+    const students=members.concat(attNonMembersWithRecords(cachedSessionRecords.filter(r=>sessIds.has(r.session_id)), members, elIds));
     if(!students.length) return '';
     const hwSess=sess.filter(s=>s.homework_enabled);
     return `<div style="margin-bottom:18px;background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
