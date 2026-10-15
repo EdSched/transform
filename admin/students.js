@@ -1466,14 +1466,15 @@ async function saveAdmissionEntry(){
         if(!confirm(`「${student} · ${univ}${dept?' · '+dept:''}」似乎已录入过合格实绩。\n仍要再添加一条吗？`)){ if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} return; }
       }
     }
-    // ── 照片上传 → 写 photo_url 字段 ──
-    let photoUrl=null;
+    // ── 照片：管理员身份传到私有桶 admission-private，路径写进 result_photos（结果表里不放照片信息）──
+    let photoPath=null;
     const file=document.getElementById('ae_photo')?.files?.[0];
     if(file){
       let ext=(file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,''); if(!ext||ext.length>5)ext='jpg';
       const path=(aeUg?'ug/':'grad/')+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'.'+ext;
-      const up=await fetch(`${SB_URL}/storage/v1/object/admission-photos/${path}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':file.type,'x-upsert':'true'},body:file});
-      if(up.ok){ photoUrl=`${SB_URL}/storage/v1/object/public/admission-photos/${path}`; }
+      const tok=(await __sbFreshToken())||__getSbToken()||SB_KEY;
+      const up=await fetch(`${SB_URL}/storage/v1/object/admission-private/${path}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+tok,'Content-Type':file.type||'application/octet-stream'},body:file});
+      if(up.ok){ photoPath=path; }
       else { const e=await up.text(); if(!confirm('图片上传失败：'+e+'\n\n仍要保存合格数据（不含图片）吗？')){ if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} return; } }
     }
     // 入学年份 >=2026 算新数据(new)，否则旧(hist)
@@ -1491,7 +1492,6 @@ async function saveAdmissionEntry(){
         jlpt:g('ae_jlpt')||null,
         toefl:eng==='TOEFL'&&engScore?parseInt(engScore):null,
         toeic:eng==='TOEIC'&&engScore?parseInt(engScore):null,
-        photo_url:photoUrl,
         note:g('ae_note').trim()||null
       };
     } else {
@@ -1501,12 +1501,18 @@ async function saveAdmissionEntry(){
         jlpt_score:jlptScore?parseInt(jlptScore):null,
         eng_type:g('ae_eng_type')||null,
         eng_score:engScore?parseInt(engScore):null,
-        photo_url:photoUrl,
         note:g('ae_note').trim()||null
       };
     }
     if(aeSt&&aeSt.name===student){ row.student_id=aeSt.id; row.our_major=aeSt.major||null; }   // 名字被改了就不关联
-    await sb('/rest/v1/'+aeTable,'POST',row);
+    const saved=await sb('/rest/v1/'+aeTable,'POST',row);
+    if(photoPath){
+      const rid=Array.isArray(saved)?saved[0]&&saved[0].id:saved&&saved.id;
+      try{
+        if(!rid) throw new Error('没有取到记录编号');
+        await sb('/rest/v1/result_photos','POST',{result_kind:aeUg?'ug':'grad',result_id:String(rid),path:photoPath});
+      }catch(pe){ alert('合格数据已保存，但照片登记失败：'+pe.message+'\n请到合格实绩管理端的「合格写真」补传。'); }
+    }
     document.getElementById('admissionEntryOverlay').style.display='none';
     alert('✅ 已录入合格实绩（含语言分数与照片）');
   }catch(e){ alert('保存失败：'+e.message); if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} }

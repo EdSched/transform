@@ -369,7 +369,7 @@ const SUPABASE_URL = 'https://vwntezfvqbrkeovnseku.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
 
 async function fetchAllUG() {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/undergrad_results?select=*&order=created_at.desc`, {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/undergrad_results?select=id,univ,dept,spec,track,era,tier,jlpt,toefl,toeic,eju_japanese,eju_kijutsu,eju_bunsou,eju_math,eju_physics,eju_chemistry,eju_biology,eju_total,note&order=created_at.desc`, {
     headers: {'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}
   });
   if (!res.ok) throw new Error(await res.text());

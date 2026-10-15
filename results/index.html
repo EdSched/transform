@@ -186,8 +186,9 @@ main{padding:1.5rem 3rem 4rem;max-width:1200px;margin:0 auto}
 const SUPABASE_URL = 'https://vwntezfvqbrkeovnseku.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
 
-async function sbGet(table) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=*&order=created_at.desc`, {
+// 公开页面不取 photo_url / student_id
+async function sbGet(table, cols) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=${cols}&order=created_at.desc`, {
     headers: {'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}
   });
   if (!res.ok) throw new Error(await res.text());
@@ -236,7 +237,7 @@ let curScope = 'all', curEra = 'all';
 window.addEventListener('DOMContentLoaded', async () => {
   try {
     const [gradRaw, ugRaw] = await Promise.allSettled([
-      sbGet('admission_results'), sbGet('undergrad_results')
+      sbGet('admission_results','id,univ,dept,spec,subject,track,era,tier,note'), sbGet('undergrad_results','id,univ,dept,spec,track,era,tier,note')
     ]);
     gradData = gradRaw.status==='fulfilled' ? gradRaw.value.map(r=>({...r, univ:normUniv(r.univ), _src:'grad'})) : [];
     ugData = ugRaw.status==='fulfilled' ? ugRaw.value.map(r=>({...r, univ:normUniv(r.univ), _src:'ug'})) : [];
