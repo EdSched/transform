@@ -182,7 +182,7 @@ function openConsole(){
 let consoleTab='teachers';
 async function switchConsoleTab(tab){
   consoleTab=tab;
-  ['mgmt','teachers','roletpl','payroll','majors','pricing','tasks'].forEach(t=>{
+  ['mgmt','teachers','roletpl','payroll','majors','pricing','tasks','hwstore'].forEach(t=>{
     const b=document.getElementById('ctab_'+t);
     if(b){ b.style.borderBottomColor = t===tab?'var(--primary,#8b5cf6)':'transparent'; b.style.color = t===tab?'var(--text)':'var(--text-3)'; b.style.fontWeight = t===tab?'600':'400'; }
   });
@@ -193,6 +193,7 @@ async function switchConsoleTab(tab){
   else if(tab==='majors'){ renderMajorManager(body); }
   else if(tab==='pricing'){ prcMount(body); }
   else if(tab==='tasks'){ tkMount(body); }
+  else if(tab==='hwstore'){ hwsMount(body); }
   else if(tab==='roletpl'){ rtpMount(body); }
   else if(tab==='teachers'){
     body.innerHTML='<div style="padding:20px;color:var(--text-3);font-size:12px">加载中…</div>';

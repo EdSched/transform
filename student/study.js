@@ -2078,6 +2078,24 @@ async function hwCompressImage(file, maxSide, quality) {
   }
 }
 
+// 缩略图：长边 360px、JPEG 70%（约 20-40KB），给月度学习情况等「展示列表」用；失败返回 null（不影响交作业）
+async function hwMakeThumb(file) {
+  if (!/^image\//.test(file.type)) return null;
+  try {
+    let bitmap;
+    try { bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+    catch (e) { bitmap = await createImageBitmap(file); }
+    const scale = Math.min(1, 360 / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale)), h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+    if (bitmap.close) bitmap.close();
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.7));
+    return blob ? new File([blob], 'thumb.jpg', { type: 'image/jpeg' }) : null;
+  } catch (e) { return null; }
+}
+
 function hwSizeLabel(n) { return n > 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + 'MB' : Math.round(n / 1024) + 'KB'; }
 
 async function hwPickImages(key, input) {
@@ -2098,7 +2116,15 @@ async function hwPickImages(key, input) {
       const ext = (f.name.split('.').pop()||'jpg').toLowerCase();
       const path = `${studyStudent.id}/${Date.now()}-${key}-${hwDraft[key].images.length+1}.${ext}`;
       const url = await sbUpload('homework', path, f);
-      hwDraft[key].images.push({ url, name: raw.name, kind: /\.(jpe?g|png|gif|webp|heic)$/i.test(raw.name) ? 'img' : 'doc' });
+      const item = { url, name: raw.name, kind: /\.(jpe?g|png|gif|webp|heic)$/i.test(raw.name) ? 'img' : 'doc' };
+      // 同目录再传一张缩略图（文件名加 _thumb）；失败就不带 thumb，展示时退回原图
+      if (item.kind === 'img') {
+        try {
+          const t = await hwMakeThumb(raw);
+          if (t) item.thumb = await sbUpload('homework', path.replace(/\.[^./]+$/, '') + '_thumb.jpg', t);
+        } catch (e) {}
+      }
+      hwDraft[key].images.push(item);
     }
     if (key === 'whole-img') hwWholeRefresh();
     else if (tip) tip.textContent = hwDraft[key].images.map((x,i)=> x.kind === 'doc' ? (x.name||'文件') : `图${i+1}`).join('・')
