@@ -186,7 +186,7 @@ const MGM_GROUPS = [
     { key: 'attendance', label: '已上完课次出席登记', async fn(D, sc) {
       const [courses, sess, recs] = await Promise.all([taskCourses(D), taskSessions(D), taskRecords(D)]);
       const cm = _mgCourseMap(courses), today = jstToday(), from = _tkDaysAgo(60), done = new Set(recs.map(r => r.session_id));
-      const list = sess.filter(x => x.confirmed && !x.is_cancelled && x.session_date < today && x.session_date >= from && sc.sess(x, cm));
+      const list = sess.filter(x => x.confirmed && !x.is_cancelled && x.session_date < today && x.session_date >= from && sc.sess(x, cm) && courseAttMode(cm[x.course_id]) !== 'none');
       const items = list.filter(x => !done.has(x.id)).sort((a, b) => String(a.session_date).localeCompare(String(b.session_date)))
         .map(x => ({ name: x.course_name || '', note: `${x.session_date} 还没记出席`, owners: _mgNames(x.session_teacher || x.teacher) }));
       return _mgRate(list.length - items.length, list.length, items, '最近 60 天内已确认、未取消、已上完的课次', '最近 60 天', '完成 = 该课次已有出席记录；名单 = 还没记出席的课次，负责老师 = 课次老师');
@@ -207,7 +207,8 @@ const MGM_GROUPS = [
   ] },
   { key: 'student', label: '学生管理', metrics: [
     { key: 'absent3', label: '本月连续三次不出席', async fn(D, sc) {
-      const [all, recs] = await Promise.all([taskStudents(D), taskRecords(D)]);
+      const [all, recs0, skip] = await Promise.all([taskStudents(D), taskRecords(D), taskSessionsByAttMode(D)]);
+      const recs = recs0.filter(r => !skip.has(String(r.session_id)));
       const stu = all.filter(sc.stu), byId = {}, byName = {}; stu.forEach(s => { byId[s.id] = s; byName[s.name] = s; });
       const ym = _tkYm(), g = {};
       recs.filter(r => String(r.session_date || '').startsWith(ym)).forEach(r => {

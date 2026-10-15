@@ -30,8 +30,14 @@ function taskBookingsMonth(D) {
   });
 }
 function taskRecords(D) { return _tkLoad(D, 'rec', () => _tkAll(`/rest/v1/session_records?select=student_id,student_name,session_id,session_date,attendance_status,created_at&session_date=gte.${_tkDaysAgo(60)}&order=session_date.desc`)); }
-function taskCourses(D) { return _tkLoad(D, 'courses', () => _tkAll('/rest/v1/courses?select=id,name,teacher,period,period_override,first_session_date,domain,major,class_ids')); }
+function taskCourses(D) { return _tkLoad(D, 'courses', () => _tkAll('/rest/v1/courses?select=id,name,teacher,period,period_override,first_session_date,domain,major,class_ids,attendance_mode')); }
 function taskSessions(D) { return _tkLoad(D, 'sess', () => _tkAll(`/rest/v1/course_sessions?select=id,course_id,course_name,session_date,session_teacher,teacher,confirmed,is_cancelled&session_date=gte.${_tkDaysAgo(90)}`)); }
+// 出席属性不是「必出席」的课次 id（选修另算、不记出席都不进缺席提醒）；noneOnly=true 只取「不记出席」
+async function taskSessionsByAttMode(D, noneOnly) {
+  const [courses, sess] = await Promise.all([taskCourses(D), taskSessions(D)]);
+  const bad = new Set(courses.filter(c => noneOnly ? courseAttMode(c) === 'none' : courseAttMode(c) !== 'required').map(c => String(c.id)));
+  return new Set(sess.filter(x => bad.has(String(x.course_id))).map(x => String(x.id)));
+}
 function taskProfiles(D) { return _tkLoad(D, 'prof', () => _tkAll('/rest/v1/teacher_profiles?select=id,name,subject,school,keywords,feature,courses')); }
 function taskHwSessions(D) {
   return _tkLoad(D, 'hws', () => _tkAll(`/rest/v1/course_sessions?homework_enabled=is.true&homework_questions=not.is.null&session_date=gte.${_tkDaysAgo(120)}&select=id,course_id,course_name,session_date,session_teacher,teacher,homework_questions`));
@@ -134,7 +140,8 @@ const TASK_CHECK_FN = {
     return { count: items.length, items };
   },
   async absent_twice(D, t, tpl) {
-    const [stu, recs] = await Promise.all([taskScopedStudents(D, t, tpl), taskRecords(D)]);
+    const [stu, recs0, skip] = await Promise.all([taskScopedStudents(D, t, tpl), taskRecords(D), taskSessionsByAttMode(D)]);
+    const recs = recs0.filter(r => !skip.has(String(r.session_id)));
     const byId = {}, byName = {}; stu.forEach(s => { byId[s.id] = s; byName[s.name] = s; });
     const g = {};
     recs.forEach(r => {
@@ -157,10 +164,10 @@ const TASK_CHECK_FN = {
     return { count: items.length, items };
   },
   async attendance_unrecorded(D, t) {
-    const [sess, recs] = await Promise.all([taskSessions(D), taskRecords(D)]);
+    const [sess, recs, noAtt] = await Promise.all([taskSessions(D), taskRecords(D), taskSessionsByAttMode(D, true)]);
     const today = jstToday(), from = _tkDaysAgo(60), done = new Set(recs.map(r => r.session_id));
     const nm = t.name || '';
-    const items = sess.filter(x => x.confirmed && !x.is_cancelled && x.session_date < today && x.session_date >= from && !done.has(x.id)
+    const items = sess.filter(x => !noAtt.has(String(x.id)) && x.confirmed && !x.is_cancelled && x.session_date < today && x.session_date >= from && !done.has(x.id)
       && (String(x.session_teacher || '').includes(nm) || String(x.teacher || '').includes(nm)))
       .map(x => ({ name: x.course_name || '', note: `${x.session_date} 还没记出席` }));
     return { count: items.length, items };
