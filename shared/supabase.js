@@ -145,7 +145,7 @@ async function sb(path, method = 'GET', body = null, extra = null) {   // extra�
       }
     };
     if (body) opts.body = JSON.stringify(_normTimeColon(body));
-    if (extra) Object.assign(opts, extra);
+    if (extra) { const { headers: xh, ...rest } = extra; Object.assign(opts, rest); if (xh) Object.assign(opts.headers, xh); }   // extra.headers 合并进默认请求头（不覆盖 apikey / Authorization）
     return fetch(SB_URL + path, opts);
   };
   // 写入前先确保身份新鲜（过期会自动续期）；读取沿用缓存的 token

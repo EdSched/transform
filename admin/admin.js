@@ -1023,6 +1023,8 @@ async function renderPage(){
       cachedTeachers=await sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[]);
       await loadVipFrameworks();
       renderVipFrameworkPage(mc);
+    } else if(curPage==='admissions'){
+      raRender(mc);   // 合格实绩管理（admin/results-admin.js）
     }
   }catch(e){mc.innerHTML=`<div class="empty">加载失败：${e.message}</div>`}
 }
@@ -2241,10 +2243,17 @@ async function deleteTeacher(id){
 
 
 // ── Init ──
+let _pageParamUsed=false;
 async function initApp(){
   bkMonth=new Date().getMonth();bkYear=new Date().getFullYear();
   await loadMajorsFromDB();
   await loadPeriodsFromDB(); await loadHolidaysFromDB();
+  // 旧链接 results/admin.html 会跳到 admin/?page=admissions：进系统后直接打开对应页面（只认这一个值，只用一次）
+  if(!_pageParamUsed && new URLSearchParams(location.search).get('page')==='admissions'){
+    _pageParamUsed=true;
+    switchPage('admissions');
+    return;
+  }
   await renderPage();
 }
 // 页面启动：先解析访问钥匙，再决定登录流程
