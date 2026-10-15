@@ -1,6 +1,7 @@
 // 合格海报：遮盖隐私 → 填信息 → 自动合成 → 预览 / 导出
 // 依赖 admin/results-admin.js 里的：raSbFetch、raAuthHeaders（请求统一走 admin 的 sb()）、raPhGet、raArMajors、
-//   raArRenderMajor/raArGetMajor、raArUploadPhoto、raArPhotoUrl、raArStripNotePhoto、raArRealName、raArEsc、raToast、raLoadPhotos、raPstOnClose；
+//   raArRenderMajor/raArGetMajor、raArUploadPhoto、raArSetPhoto、raArEnsurePhotoMap、raArPhotoRef、raArResolveSrc、raArDeleteResultPhotos、
+//   raArStripNotePhoto、raArRealName、raArEsc、raToast、raLoadPhotos、raPstOnClose；
 //   以及 shared/search.js 的 pinyinInitialsOf、shared/supabase.js 的 SB_URL / SB_KEY。
 // 背景图 / 排版文件在 results/poster/（bg.png、layout.json），路径相对 admin 页面。
 // 全局名字一律以 pst 开头。
@@ -155,7 +156,7 @@ async function pstOpen(kind, resultId) {
     const poster = posters[0] || null;
     let srcUrl = '';
     if (poster) { const s = await raSbFetch(`pass_poster_sources?poster_id=eq.${enc(poster.id)}&select=src_url`).catch(() => []); srcUrl = (s && s[0] && s[0].src_url) || ''; }
-    srcUrl = srcUrl || raArPhotoUrl(row);
+    srcUrl = srcUrl || await raArPhotoRef(kind, row);   // 私有桶路径（或迁移前的旧链接）
     // 默认值
     let en = '';
     if (!poster) {
@@ -196,7 +197,7 @@ async function pstLoadSource() {
   const st = pstSt; st.img = null; st.small = null; st.imgErr = '';
   try {
     if (!st.srcUrl) throw new Error('这条记录没有截图');
-    const im = await pstLoadImg(st.srcUrl, true);   // crossOrigin：不然画布不能导出
+    const im = await pstLoadImg(await raArResolveSrc(st.srcUrl), true);   // 私有桶：先换临时链接；crossOrigin：不然画布不能导出
     st.img = im;
     const nw = im.naturalWidth, nh = im.naturalHeight, k = Math.min(1, PST_SMALL_EDGE / Math.max(nw, nh));
     const sm = document.createElement('canvas'); sm.width = Math.round(nw * k); sm.height = Math.round(nh * k);
@@ -391,12 +392,17 @@ async function pstReupload(inp) {
   if ((st.masks.length || st.crop) && !confirm('换了截图后，现有的遮盖框和裁切位置会清掉，继续？')) { inp.value = ''; return; }
   try {
     pstSetBusy('上传截图中…');
-    const url = await raArUploadPhoto(f, PST_FOLDER[st.kind]);   // 存到 admission-photos/grad/… 或 ug/…
+    const path = await raArUploadPhoto(f, PST_FOLDER[st.kind]);   // 管理员身份存到私有桶 admission-private/grad/… 或 ug/…
     const row = st.row;
     const note = raArStripNotePhoto(row.note) || null;
-    await raSbFetch(`${PST_TABLE[st.kind]}?id=eq.${encodeURIComponent(row.id)}`, { method: 'PATCH', body: { photo_url: url, note }, prefer: 'return=minimal', headers: {} });
-    row.photo_url = url; row.note = note;
-    st.srcUrl = url; st.masks = []; st.crop = null; st.sel = -1;
+    await raArEnsurePhotoMap(st.kind);
+    await raArSetPhoto(st.kind, row.id, path, row);   // 写 result_photos，删旧文件
+    if (row.photo_url || raArStripNotePhoto(row.note) !== (row.note || '').trim()) {   // 迁移前的旧链接作废
+      await raSbFetch(`${PST_TABLE[st.kind]}?id=eq.${encodeURIComponent(row.id)}`, { method: 'PATCH', body: { photo_url: null, note }, prefer: 'return=minimal', headers: {} });
+    }
+    row.photo_url = null; row.note = note;
+    if (st.poster) await raSbFetch(`pass_poster_sources?poster_id=eq.${encodeURIComponent(st.poster.id)}`, { method: 'PATCH', body: { src_url: path }, prefer: 'return=minimal', headers: {} });   // 旧文件已删，来源指向新路径
+    st.srcUrl = path; st.masks = []; st.crop = null; st.sel = -1;
     pstBuildTools();
     await pstLoadSource();
   } catch (e) { raToast('上传失败：' + e.message, false); }
@@ -491,11 +497,12 @@ async function pstExportPdf() {
   pstSetBusy('');
 }
 
-// ── 删除合格记录 / 照片时一并删海报（海报行 + pass_poster_sources 行 + posters 文件夹里的两张图）──
+// ── 删除合格记录 / 照片时一并删原截图和海报（原截图 + 海报行 + pass_poster_sources 行 + posters 文件夹里的两张图）──
 // 学部没有外键，所以删合格记录前必须调用这个；ids 很多时（全件削除）只取一次海报列表再对照
 async function pstDeleteForResults(kind, ids) {
   ids = (ids || []).map(String);
   if (!ids.length) return;
+  await raArDeleteResultPhotos(kind, ids);   // 原截图：result_photos 行 + 私有桶文件
   const enc = encodeURIComponent;
   let ps;
   try {
@@ -513,7 +520,7 @@ async function pstDeleteForResults(kind, ids) {
 }
 
 // ── 海报管理页用：不开编辑器，按已保存的海报在后台合成 / 发布 / 取消发布 ──
-// 读海报的完整设置和未遮盖原图（原图地址只有管理员读得到），拼成和编辑器同样的状态
+// 读海报的完整设置和未遮盖原图（原图在私有桶，只有管理员读得到；这里换成临时链接再加载），拼成和编辑器同样的状态
 async function pstLoadState(poster) {
   await pstInit();
   const enc = encodeURIComponent;
@@ -523,9 +530,9 @@ async function pstLoadState(poster) {
   let srcUrl = '';
   const s = await raSbFetch(`pass_poster_sources?poster_id=eq.${enc(full.id)}&select=src_url`).catch(() => []);
   srcUrl = (s && s[0] && s[0].src_url) || '';
-  if (!srcUrl) { const r = await raSbFetch(`${PST_TABLE[kind]}?id=eq.${enc(full.result_id)}&select=note,photo_url`).catch(() => []); srcUrl = raArPhotoUrl(r && r[0]); }
+  if (!srcUrl) { const r = await raSbFetch(`${PST_TABLE[kind]}?id=eq.${enc(full.result_id)}&select=id,note,photo_url`).catch(() => []); srcUrl = await raArPhotoRef(kind, r && r[0]); }
   if (!srcUrl) throw new Error('这张海报没有原截图');
-  const im = await pstLoadImg(srcUrl, true);
+  const im = await pstLoadImg(await raArResolveSrc(srcUrl), true);
   const k = Math.min(1, PST_SMALL_EDGE / Math.max(im.naturalWidth, im.naturalHeight));
   const sm = document.createElement('canvas'); sm.width = Math.round(im.naturalWidth * k); sm.height = Math.round(im.naturalHeight * k);
   sm.getContext('2d').drawImage(im, 0, 0, sm.width, sm.height);

@@ -194,12 +194,14 @@ async function sbAll(path) {
 // ── Supabase Storage ──
 // Upload a file to a public bucket, returns the public URL
 async function sbUpload(bucket, path, file) {
+  // admission-photos（海报 / 合格案例）只允许登录的人写入，要带登录身份；其他桶仍用匿名 key
+  const tok = bucket === 'admission-photos' ? ((await __sbFreshToken()) || __getSbToken()) : null;
   const url = `${SB_URL}/storage/v1/object/${bucket}/${path.split('/').map(encodeURIComponent).join('/')}`;
   const r = await fetch(url, {
     method: 'POST',
     headers: {
       'apikey': SB_KEY,
-      'Authorization': 'Bearer ' + SB_KEY,
+      'Authorization': 'Bearer ' + (tok || SB_KEY),
       'Content-Type': file.type || 'application/octet-stream',
       'x-upsert': 'true'
     },

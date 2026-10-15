@@ -1,7 +1,7 @@
 // 合格实绩管理（admin 左侧「宣传管理 → 合格实绩」）：原 results/admin.html 整页搬进 admin。
 // 入口：raRender(mc)，由 admin.js 的 renderPage 在 curPage==='admissions' 时调用；页面 HTML 由 raHtml() 生成。
 // 全局名字一律以 ra 开头（海报编辑器在 shared/poster.js，名字以 pst 开头；海报列表在 shared/pass-posters.js，以 pps 开头）。
-// 请求统一走 shared/supabase.js 的 sb()（raSbFetch）；样式全部套在 #ra-root 下，见 RA_CSS。
+// 请求统一走 shared/supabase.js 的 sb()（raSbFetch / sbAll）；直连 Storage 的请求头用 raAuthHeaders()；样式全部套在 #ra-root 下，见 RA_CSS。
 // 依赖：shared/supabase.js、shared/search.js（searchMatch / searchBox）、shared/pass-posters.js、shared/poster.js；XLSX / JSZip 由 admin/index.html 加载。
 
 const RA_CSS = `
@@ -13,7 +13,6 @@ const RA_CSS = `
 }
 :where(#ra-root) *, :where(#ra-root) *::before, :where(#ra-root) *::after { box-sizing: border-box; margin: 0; padding: 0; }
 #ra-root { font-family: 'DM Mono', monospace;  color: var(--text-primary); font-size: 13px; line-height: 1.55; }
-#ra-root input, #ra-root select, #ra-root textarea { width: auto; }   /* admin.css 给所有输入框设了 width:100%，这里还原原页面的默认宽度 */
 #ra-root header {
   background: var(--surface); border-bottom: 2px solid var(--text-primary);
   padding: 1.5rem 2.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem;
@@ -168,6 +167,7 @@ const RA_CSS = `
 #ra-root .edit-modal-title { font-size:14px;font-weight:500;margin-bottom:1rem;padding-bottom:8px;border-bottom:1px solid var(--border) }
 #ra-root .edit-grid { display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:1rem }
 #ra-root .edit-grid-3 { grid-template-columns:1fr 1fr 1fr }
+#ra-root input, #ra-root select, #ra-root textarea { width: auto; }   /* admin.css 给所有输入框设了 width:100%，这里还原原页面的默认宽度 */
 `;
 
 function raHtml() {
@@ -516,7 +516,9 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
     <input id="photo-search" placeholder="搜索学生（汉字 / 拼音首字母）/ 大学 / 研究科…" oninput="searchBox(this,()=>raPhRender('grad'))" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:260px">
     <button class="btn btn-secondary" onclick="raLoadPhotos('grad')">↺ 刷新</button>
     <span style="font-size:11px;color:var(--text-muted)" id="photo-count"></span>
+    <button class="btn btn-secondary ar-mig-btn" style="display:none;margin-left:auto" onclick="raArMigratePhotos()"></button>
   </div>
+  <div class="ar-mig-log" style="display:none;margin-bottom:10px;font-size:11px;line-height:1.7;padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface)"></div>
   <div id="photo-filters" style="margin-bottom:12px"></div>
   <div id="photo-grid" class="load-state">读取中...</div>
 </div>
@@ -739,7 +741,9 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
     <input id="ugphoto-search" placeholder="搜索学生（汉字 / 拼音首字母）/ 大学 / 学部…" oninput="searchBox(this,()=>raPhRender('ug'))" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:260px">
     <button class="btn btn-secondary" onclick="raLoadPhotos('ug')">↺ 刷新</button>
     <span style="font-size:11px;color:var(--text-muted)" id="ugphoto-count"></span>
+    <button class="btn btn-secondary ar-mig-btn" style="display:none;margin-left:auto" onclick="raArMigratePhotos()"></button>
   </div>
+  <div class="ar-mig-log" style="display:none;margin-bottom:10px;font-size:11px;line-height:1.7;padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface)"></div>
   <div id="ugphoto-filters" style="margin-bottom:12px"></div>
   <div id="ugphoto-grid" class="load-state">读取中...</div>
 </div>
@@ -901,37 +905,8 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
       <button class="btn btn-primary" onclick="raSaveEdit()">保存</button>
     </div>
   </div>
-</div>`;
-}
-
-// 外部库按需加载：XLSX / JSZip 已由 admin/index.html 加载；jsPDF 在第一次导出 PDF 时才加载（shared/poster.js），
-// Google 字体（Noto Sans JP / SC）在第一次打开海报编辑器时才加载（shared/poster.js 的 pstInit）。
-
-// 旧 results/admin.html 的状态都留在内存里；页面 HTML 每次进来重新生成，所以进来时把和界面绑定的状态重置一下
-function raResetState() {
-  raCurMajor = 'grad';
-  raPpAdminMounted = false;
-  raAllData = []; raUgAllData = [];
-  raUploadRows = []; raUploadColMap = {}; raUploadHeaders = [];
-  raUgUploadRows = []; raUgUploadColMap = {}; raUgUploadHeaders = [];
-  raTierUnivData = []; raTierChanges = {};
-  raUgTierUnivData2 = []; raUgTierChanges2 = {};
-  raUgDataLoaded = false;
-  ['grad', 'ug'].forEach(k => { const c = raPH[k]; c.rows = []; c.posterMap = null; c.f = { era: '', subj: '', poster: '' }; c.more = false; });
-}
-
-function raRender(mc) {
-  if (!document.getElementById('ra-style')) {
-    const st = document.createElement('style');
-    st.id = 'ra-style';
-    st.textContent = RA_CSS;
-    document.head.appendChild(st);
-  }
-  raResetState();
-  mc.innerHTML = '<div id="ra-root">' + raHtml() + '</div>';
-  raBindUploadZones();
-  raRefreshUnivList();
-  raArLoadMajors();
+</div>
+`;
 }
 
 // ─── Major category switch (大学院 / 学部) ───────────────────────────────────
@@ -1433,7 +1408,7 @@ async function raSbFetch(path, opts = {}) {
   const h = Object.assign({}, opts.prefer ? { Prefer: opts.prefer } : {}, opts.headers || {});
   return sb('/rest/v1/' + path, opts.method || 'GET', opts.body || null, Object.keys(h).length ? { headers: h } : null);
 }
-// 直连 Storage 用的请求头（上传 / 删除图片不能走 sb()）：同样带当前登录身份，先取新鲜 token
+// 直连 Storage 用的请求头（上传 / 删除 / 取临时链接不能走 sb()）：同样带当前登录身份，先取新鲜 token
 async function raAuthHeaders(extra) {
   const t = (await __sbFreshToken()) || __getSbToken() || SB_KEY;
   return Object.assign({ apikey: SB_KEY, Authorization: 'Bearer ' + t }, extra || {});
@@ -1491,7 +1466,6 @@ function raArPreselect(p) {
   const g = raArGuessMajor(subj);
   if (g) raArSetMajor(p, g);
 }
-raArLoadMajors();
 
 // 学生名是不是缩写：A同学 / Aさん / 只有 1–2 个英文字母
 function raArRealName(n) {
@@ -1508,7 +1482,7 @@ function raArPickStudent(list, name) {
     document.getElementById('ar-pick-modal')?.remove();
     const d = document.createElement('div');
     d.id = 'ar-pick-modal';
-    d.className = 'ra-vars';
+    d.className = 'ra-vars';   // 颜色变量（弹层挂在 body 上，不在 #ra-root 里）
     d.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
     const done = v => { d.remove(); resolve(v); };
     d.innerHTML = `<div style="background:#fff;border-radius:6px;padding:18px 20px;max-width:460px;width:100%;max-height:88vh;overflow-y:auto">
@@ -2194,7 +2168,7 @@ function raOpenEditModal(el) {
   document.getElementById('em-eng-score').value = r.eng_score || '';
   document.getElementById('em-note').value = r.note || '';
   raArSetMajor('em', r.our_major || raArGuessMajor(r.subject));
-  raEmPhotoShow(raArPhotoUrl(r), false);
+  raArPhotoShowFor('grad', r, 'em');
   document.getElementById('em-photo').value = '';
   document.getElementById('edit-modal-title').textContent = `編集: ${r.univ}`;
   document.getElementById('edit-modal').classList.add('show');
@@ -2229,8 +2203,10 @@ async function raSaveEdit() {
   const photoFile = document.getElementById('em-photo').files[0];
   if (photoFile) {
     try {
-      updates.photo_url = await raArUploadPhoto(photoFile);
-      updates.note = (updates.note || '').replace(/\s*\|\s*\[photo\]\S+/, '').replace(/\[photo\]\S+/, '').trim() || null;   // 旧的 [photo] 链接作废
+      const newPath = await raArUploadPhoto(photoFile, 'grad');
+      await raArSetPhoto('grad', id, newPath, raAllData.find(x => x.id === id));   // 写 result_photos，删旧文件
+      updates.photo_url = null;
+      updates.note = raArStripNotePhoto(updates.note) || null;   // 旧的 [photo] 链接作废
     } catch (e) { raToast('图片上传失败: ' + e.message, false); return; }
   }
   const oldRow = raAllData.find(x => x.id === id);
@@ -2291,7 +2267,7 @@ function raUgOpenEditModal(el) {
   document.getElementById('ug-em-toeic').value = r.toeic||'';
   document.getElementById('ug-em-note').value = r.note||'';
   raArSetMajor('ugem', r.our_major || '');
-  raEmPhotoShow(raArPhotoUrl(r), false, 'ug-em');
+  raArPhotoShowFor('ug', r, 'ug-em');
   document.getElementById('ug-em-photo').value = '';
   document.getElementById('ug-edit-modal-title').textContent = '編集: '+r.univ;
   document.getElementById('ug-edit-modal').classList.add('show');
@@ -2321,7 +2297,9 @@ async function raUgSaveEdit() {
   const ugPhoto=document.getElementById('ug-em-photo').files[0];
   if(ugPhoto){
     try{
-      updates.photo_url=await raArUploadPhoto(ugPhoto,'ug');
+      const newPath=await raArUploadPhoto(ugPhoto,'ug');
+      await raArSetPhoto('ug',id,newPath,raUgAllData.find(x=>x.id===id));   // 写 result_photos，删旧文件
+      updates.photo_url=null;
       updates.note=raArStripNotePhoto(updates.note)||null;   // 旧的 [photo] 链接作废
     }catch(e){ raToast('图片上传失败: '+e.message,false); return; }
   }
@@ -2416,20 +2394,115 @@ async function raUgSaveTierChanges(){
 
 
 // ─── 合格写真 ────────────────────────────────────────────────────────────────
-const raPHOTO_BUCKET = 'admission-photos';
+const raPHOTO_BUCKET = 'admission-photos';      // 公开桶：只剩旧照片（迁移前）、海报、案例
+const raPRIV_BUCKET = 'admission-private';     // 私有桶：未遮盖的原截图，只有管理员能读
 const raPH_NOTE_RE = /\[photo\](\S+)/;
-// 照片有两种存法：photo_url（统一用这个）和旧的 note 里的 [photo]链接，两种都认
-function raArPhotoUrl(r) { return (r && r.photo_url) || (((r && r.note) || '').match(raPH_NOTE_RE) || [])[1] || ''; }
+const raAR_PH = { grad: {}, ug: {} };          // 照片路径表 result_photos：result_id → 私有桶里的路径
+const raAR_PH_LOADED = { grad: false, ug: false };
+// 旧的存法（迁移前）：photo_url，或 note 里的 [photo]链接
+function raArLegacyUrl(r) { return (r && r.photo_url) || (((r && r.note) || '').match(raPH_NOTE_RE) || [])[1] || ''; }
 function raArStripNotePhoto(note) { return (note || '').replace(/\s*\|\s*\[photo\]\S+/, '').replace(/\[photo\]\S+/, '').trim(); }
-// 上传到 admission-photos/grad/…，原图原样上传；返回公开链接
+// 分页读全表（Supabase 一次最多 1000 行）：走 sbAll；按创建时间排序时补上 id，翻页才稳定
+function raArFetchAll(path) {
+  return sbAll('/rest/v1/' + path.replace(/order=created_at\.(desc|asc)(?![,\w])/, 'order=created_at.$1,id.$1'));
+}
+async function raArLoadPhotoMap(kind) {
+  const rows = await raArFetchAll(`result_photos?result_kind=eq.${kind}&select=result_id,path&order=created_at.asc`);
+  const m = {}; rows.forEach(x => { m[String(x.result_id)] = x.path; });
+  raAR_PH[kind] = m; raAR_PH_LOADED[kind] = true;
+}
+async function raArEnsurePhotoMap(kind) { if (!raAR_PH_LOADED[kind]) await raArLoadPhotoMap(kind); }
+// 这条记录的照片：私有桶路径（新）或旧的公开链接（还没迁移）；没有返回 ''
+async function raArPhotoRef(kind, r) {
+  await raArEnsurePhotoMap(kind);
+  return raAR_PH[kind][String(r && r.id)] || raArLegacyUrl(r);
+}
+// 私有桶路径 → 临时链接（600 秒）。一次传多个；返回 { 路径: 链接 }
+const raAR_SIGN_TTL = 600, raArSignCache = {};
+async function raArSignedUrls(paths) {
+  const out = {}, now = Date.now(), need = [];
+  [...new Set((paths || []).filter(Boolean))].forEach(p => {
+    const c = raArSignCache[p];
+    if (c && c.exp > now) out[p] = c.url; else need.push(p);
+  });
+  for (let i = 0; i < need.length; i += 100) {
+    const chunk = need.slice(i, i + 100);
+    const res = await fetch(`${SB_URL}/storage/v1/object/sign/${raPRIV_BUCKET}`, {
+      method: 'POST', headers: await raAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ expiresIn: raAR_SIGN_TTL, paths: chunk })
+    });
+    if (!res.ok) throw new Error('取得临时链接失败: ' + await res.text());
+    (await res.json()).forEach(x => {
+      if (x && x.signedURL && !x.error) {
+        const url = `${SB_URL}/storage/v1${x.signedURL}`;
+        raArSignCache[x.path] = { url, exp: now + (raAR_SIGN_TTL - 60) * 1000 };
+        out[x.path] = url;
+      }
+    });
+  }
+  return out;
+}
+// 引用（路径或旧链接）→ 能直接用的图片链接
+async function raArResolveSrc(ref) {
+  if (!ref) return '';
+  if (/^https?:/i.test(ref)) return ref;
+  return (await raArSignedUrls([ref]))[ref] || '';
+}
+// 管理员身份上传原截图到私有桶（原图原样，文件名随机 ASCII）；返回路径
 async function raArUploadPhoto(file, folder) {
   let ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, ''); if (!ext || ext.length > 5) ext = 'jpg';
   const path = (folder || 'grad') + '/' + Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.' + ext;
-  const put = h => fetch(`${SB_URL}/storage/v1/object/${raPHOTO_BUCKET}/${path}`, { method: 'POST', headers: { ...h, 'Content-Type': file.type, 'x-upsert': 'true' }, body: file });
-  let up = await put(await raAuthHeaders());
-  if (!up.ok) up = await put({ apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY });
+  const up = await fetch(`${SB_URL}/storage/v1/object/${raPRIV_BUCKET}/${path}`, { method: 'POST', headers: await raAuthHeaders({ 'Content-Type': file.type || 'application/octet-stream' }), body: file });
   if (!up.ok) throw new Error(await up.text());
-  return `${SB_URL}/storage/v1/object/public/${raPHOTO_BUCKET}/${path}`;
+  return path;
+}
+async function raArRemoveFiles(paths) {
+  paths = (paths || []).filter(Boolean);
+  for (let i = 0; i < paths.length; i += 100) {
+    await fetch(`${SB_URL}/storage/v1/object/${raPRIV_BUCKET}`, { method: 'DELETE', headers: await raAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ prefixes: paths.slice(i, i + 100) }) }).catch(() => {});
+  }
+}
+// 旧的公开链接对应的公开桶文件
+function raArLegacyFilePath(url) { const m = String(url || '').match(/admission-photos\/(.+)$/); return m ? m[1] : ''; }
+async function raArRemoveLegacyFile(url) {
+  const p = raArLegacyFilePath(url); if (!p) return true;
+  const r = await fetch(`${SB_URL}/storage/v1/object/${raPHOTO_BUCKET}/${p}`, { method: 'DELETE', headers: await raAuthHeaders() }).catch(() => null);
+  return !!(r && r.ok);
+}
+// 给一条记录设置（或更换）照片：写 result_photos，删旧文件（私有桶里的旧文件 + 迁移前的公开文件）
+async function raArSetPhoto(kind, id, path, legacyRow) {
+  await raArEnsurePhotoMap(kind);
+  const key = String(id), old = raAR_PH[kind][key];
+  await raSbFetch('result_photos?on_conflict=result_kind,result_id', { method: 'POST', body: { result_kind: kind, result_id: key, path }, prefer: 'resolution=merge-duplicates,return=minimal', headers: {} });
+  raAR_PH[kind][key] = path;
+  if (old && old !== path) await raArRemoveFiles([old]);
+  const lu = legacyRow && raArLegacyUrl(legacyRow);
+  if (lu) await raArRemoveLegacyFile(lu);
+}
+// 删合格记录 / 照片时：删 result_photos 行和私有桶里的文件
+async function raArDeleteResultPhotos(kind, ids) {
+  ids = (ids || []).map(String);
+  if (!ids.length) return;
+  let rows;
+  try {
+    rows = ids.length <= 50
+      ? await raSbFetch(`result_photos?result_kind=eq.${kind}&result_id=in.(${ids.map(i => '"' + i.replace(/"/g, '') + '"').join(',')})&select=id,result_id,path`)
+      : (await raArFetchAll(`result_photos?result_kind=eq.${kind}&select=id,result_id,path`)).filter(x => ids.includes(String(x.result_id)));
+  } catch (e) { return; }   // 表还没建
+  if (!rows || !rows.length) return;
+  await raArRemoveFiles(rows.map(x => x.path));
+  for (let i = 0; i < rows.length; i += 50) {
+    await raSbFetch(`result_photos?id=in.(${rows.slice(i, i + 50).map(x => x.id).join(',')})`, { method: 'DELETE', prefer: 'return=minimal', headers: {} });
+  }
+  rows.forEach(x => { delete raAR_PH[kind][String(x.result_id)]; });
+}
+// 编辑弹窗里显示现有照片（临时链接）
+async function raArPhotoShowFor(kind, r, pre) {
+  const box = document.getElementById(pre + '-photo-box');
+  if (box) box.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">读取中…</div>';
+  let url = '';
+  try { url = await raArResolveSrc(await raArPhotoRef(kind, r)); } catch (e) { url = ''; }
+  raEmPhotoShow(url, false, pre);
 }
 function raEmPhotoShow(url, isNew, pre) {
   const box = document.getElementById((pre || 'em') + '-photo-box'); if (!box) return;
@@ -2452,8 +2525,10 @@ async function raLoadPhotos(kind) {
   const c = raPH[kind], grid = document.getElementById(c.pre + '-grid');
   grid.innerHTML = '<div class="load-state">読み込み中...</div>';
   try {
-    const rows = await sbAll(`/rest/v1/${c.table}?select=*&or=(photo_url.not.is.null,note.like.*%5Bphoto%5D*)&order=created_at.desc,id.desc`);
-    c.rows = rows.filter(r => raArPhotoUrl(r));
+    await raArLoadPhotoMap(kind);
+    const rows = await raArFetchAll(`${c.table}?select=*&order=created_at.desc`);
+    c.rows = rows.filter(r => raAR_PH[kind][String(r.id)] || raArLegacyUrl(r));   // 有私有桶照片的，或还没迁移的旧照片
+    raArMigCount();
     // 已做过海报的记录（表还没建时 posterMap 为 null，「海报」筛选和按钮状态都不显示）
     try {
       const ps = await raSbFetch(`pass_posters?result_kind=eq.${kind}&select=result_id,web_url`);
@@ -2511,10 +2586,10 @@ function raPhRender(kind) {
   if (!rows.length) { grid.innerHTML = '<div class="load-state">该条件下暂无合格照片</div>'; return; }
   const esc = raArEsc;
   grid.innerHTML = '<div class="photo-grid">' + rows.map(r => {
-    const purl = raArPhotoUrl(r);
+    const ppath = raAR_PH[kind][String(r.id)] || '', legacy = ppath ? '' : raArLegacyUrl(r);
     const noteText = raArStripNotePhoto(r.note);
     return `<div class="photo-card">
-        <img src="${esc(purl)}" alt="${esc(r.univ)}" onerror="this.style.display='none'" style="cursor:pointer" onclick="window.open(this.src,'_blank')">
+        <img ${ppath ? `data-path="${esc(ppath)}"` : `src="${esc(legacy)}"`} alt="${esc(r.univ)}" onerror="this.style.display='none'" style="cursor:pointer" onclick="if(this.src)window.open(this.src,'_blank')">
         <div class="photo-card-info">
           <div class="photo-card-title">${esc(r.univ) || '（未知大学）'} ${r.student ? '· ' + esc(r.student) : ''}
             <button class="photo-card-del" onclick="raDeletePhotoRecord('${kind}','${esc(r.id)}')">削除</button>
@@ -2525,25 +2600,100 @@ function raPhRender(kind) {
         </div>
       </div>`;
   }).join('') + '</div>';
+  raArFillImgs(grid);
 }
-// 删除：只去掉照片（清 photo_url 和 note 里的 [photo] 段），合格数据保留；再删 Storage 文件
+// 私有桶的图：取临时链接后再显示
+async function raArFillImgs(root) {
+  const imgs = [...root.querySelectorAll('img[data-path]')];
+  if (!imgs.length) return;
+  try {
+    const m = await raArSignedUrls(imgs.map(i => i.dataset.path));
+    imgs.forEach(i => { if (m[i.dataset.path]) i.src = m[i.dataset.path]; else i.style.display = 'none'; });
+  } catch (e) { raToast(e.message, false); }
+}
+// 删除：只去掉照片（删 result_photos 行 + 私有桶文件；迁移前的旧照片清 photo_url 和 note 里的 [photo] 段并删公开桶文件），合格数据保留
 async function raDeletePhotoRecord(kind, id) {
   const c = raPH[kind];
   const hasPoster = c.posterMap && c.posterMap[id];
   if (!confirm('删除这张合格照片？（合格数据保留，只删照片）' + (hasPoster ? '\n这张照片的海报也会一起删除' : ''))) return;
   try {
-    const enc = encodeURIComponent(id);
-    const rows = await raSbFetch(`${c.table}?id=eq.${enc}&select=note,photo_url`);
+    const enc = encodeURIComponent;
+    const rows = await raSbFetch(`${c.table}?id=eq.${enc(id)}&select=note,photo_url`);
     const rec = (rows && rows[0]) || {};
-    const purl = raArPhotoUrl(rec);
-    await raSbFetch(`${c.table}?id=eq.${enc}`, { method: 'PATCH', body: { photo_url: null, note: raArStripNotePhoto(rec.note) || null }, prefer: 'return=minimal' });
-    const pm = purl.match(/admission-photos\/(.+)$/);
-    if (pm) {
-      await fetch(`${SB_URL}/storage/v1/object/${raPHOTO_BUCKET}/${pm[1]}`, { method: 'DELETE', headers: await raAuthHeaders() }).catch(() => {});
+    const legacy = raArLegacyUrl(rec);
+    if (legacy) {
+      await raSbFetch(`${c.table}?id=eq.${enc(id)}`, { method: 'PATCH', body: { photo_url: null, note: raArStripNotePhoto(rec.note) || null }, prefer: 'return=minimal' });
+      await raArRemoveLegacyFile(legacy);
     }
+    await raArDeleteResultPhotos(kind, [id]);
     if (hasPoster) await pstDeleteForResults(kind, [id]);
     raLoadPhotos(kind);
   } catch(e) { alert('删除失败: ' + e.message); }
+}
+
+// ─── 迁移旧照片（一次性）：公开桶里的旧原截图 → 私有桶 ───────────────────────────
+const raAR_LEGACY_OR = 'or=(photo_url.not.is.null,note.like.*%5Bphoto%5D*)';
+let raArMigBusy = false;
+async function raArLegacyRows(kind) {
+  return raArFetchAll(`${raPH[kind].table}?select=id,photo_url,note&${raAR_LEGACY_OR}`);
+}
+// 按钮上的数字 = 还有旧照片的记录数（大学院 + 学部）；0 就不显示
+async function raArMigCount() {
+  if (raArMigBusy) return;
+  let n = 0;
+  try { for (const k of ['grad', 'ug']) n += (await raArLegacyRows(k)).filter(r => raArLegacyUrl(r)).length; } catch (e) { return; }
+  document.querySelectorAll('.ar-mig-btn').forEach(b => { b.style.display = n ? '' : 'none'; b.textContent = `迁移旧照片（${n} 张）`; });
+}
+function raArMigLog(html) { document.querySelectorAll('.ar-mig-log').forEach(d => { d.style.display = html ? '' : 'none'; d.innerHTML = html; }); }
+async function raArMigrateOne(kind, row) {
+  const url = raArLegacyUrl(row), old = raArLegacyFilePath(url);
+  if (!old) throw new Error('不是公开桶的链接');
+  // 1. 下载原图，原样传到私有桶
+  const dl = await fetch(url, { cache: 'no-store' });
+  if (!dl.ok) throw new Error('下载失败 ' + dl.status);
+  const blob = await dl.blob();
+  const newPath = kind + '/' + old.split('/').pop();
+  const up = await fetch(`${SB_URL}/storage/v1/object/${raPRIV_BUCKET}/${newPath}`, { method: 'POST', headers: await raAuthHeaders({ 'Content-Type': blob.type || 'application/octet-stream', 'x-upsert': 'true' }), body: blob });
+  if (!up.ok) throw new Error('上传失败 ' + await up.text());
+  // 2. 写 result_photos
+  await raSbFetch('result_photos?on_conflict=result_kind,result_id', { method: 'POST', body: { result_kind: kind, result_id: String(row.id), path: newPath }, prefer: 'resolution=merge-duplicates,return=minimal', headers: {} });
+  // 3. 结果表：photo_url 置空，note 去掉 [photo] 段
+  await raSbFetch(`${raPH[kind].table}?id=eq.${encodeURIComponent(row.id)}`, { method: 'PATCH', body: { photo_url: null, note: raArStripNotePhoto(row.note) || null }, prefer: 'return=minimal', headers: {} });
+  // 4. 海报的原图来源改成新路径
+  const ps = await raSbFetch(`pass_posters?result_kind=eq.${kind}&result_id=eq.${encodeURIComponent(row.id)}&select=id`).catch(() => []);
+  if (ps && ps.length) {
+    await raSbFetch(`pass_poster_sources?poster_id=in.(${ps.map(x => x.id).join(',')})&src_url=like.http*`, { method: 'PATCH', body: { src_url: newPath }, prefer: 'return=minimal', headers: {} });
+  }
+  raAR_PH[kind][String(row.id)] = newPath;
+  // 5. 前面都成功了，才删公开桶里的旧文件
+  if (!(await raArRemoveLegacyFile(url))) throw new Error('已迁移，但公开桶里的旧文件没删掉，请到 Supabase Storage 手动删除：admission-photos/' + old);
+}
+async function raArMigratePhotos() {
+  if (raArMigBusy) return;
+  raArMigBusy = true;
+  const btns = [...document.querySelectorAll('.ar-mig-btn')];
+  btns.forEach(b => b.disabled = true);
+  const fails = [];
+  try {
+    const jobs = [];
+    for (const k of ['grad', 'ug']) (await raArLegacyRows(k)).forEach(r => { if (raArLegacyUrl(r)) jobs.push([k, r]); });
+    if (!jobs.length) { raArMigLog(''); return; }
+    for (let i = 0; i < jobs.length; i++) {
+      const [kind, row] = jobs[i];
+      btns.forEach(b => b.textContent = `迁移中 ${i + 1} / ${jobs.length}…`);
+      raArMigLog(`迁移中 ${i + 1} / ${jobs.length}…` + (fails.length ? `（失败 ${fails.length}）` : ''));
+      try { await raArMigrateOne(kind, row); }
+      catch (e) { fails.push(`${kind === 'ug' ? '学部' : '大学院'} · ${row.id}：${e.message}`); }
+    }
+    raArMigLog(`<b>完成：成功 ${jobs.length - fails.length} 张，失败 ${fails.length} 张。</b>` + (fails.length ? '<br>失败的记录（已跳过，可再点一次重试）：<br>' + fails.map(f => raArEsc(f)).join('<br>') : ''));
+  } catch (e) {
+    raArMigLog('<span style="color:var(--red)">迁移出错：' + raArEsc(e.message) + '</span>');
+  } finally {
+    raArMigBusy = false;
+    btns.forEach(b => b.disabled = false);
+    await raArMigCount();
+    ['grad', 'ug'].forEach(k => { if (document.getElementById(raPH[k].pre + '-grid') && raPH[k].rows.length) raLoadPhotos(k); });
+  }
 }
 
 async function raDeletePhoto(path) {
@@ -2558,3 +2708,33 @@ async function raDeletePhoto(path) {
   } catch(e) { raToast('エラー: ' + e.message, false); }
 }
 
+// 外部库按需加载：XLSX / JSZip 已由 admin/index.html 加载；jsPDF 在第一次导出 PDF 时才加载（shared/poster.js），
+// Google 字体（Noto Sans JP / SC）在第一次打开海报编辑器时才加载（shared/poster.js 的 pstInit）。
+
+// 旧 results/admin.html 的状态都留在内存里；页面 HTML 每次进来重新生成，所以进来时把和界面绑定的状态重置一下
+function raResetState() {
+  raCurMajor = 'grad';
+  raPpAdminMounted = false;
+  raAllData = []; raUgAllData = [];
+  raUploadRows = []; raUploadColMap = {}; raUploadHeaders = [];
+  raUgUploadRows = []; raUgUploadColMap = {}; raUgUploadHeaders = [];
+  raTierUnivData = []; raTierChanges = {};
+  raUgTierUnivData2 = []; raUgTierChanges2 = {};
+  raUgDataLoaded = false;
+  ['grad', 'ug'].forEach(k => { raAR_PH[k] = {}; raAR_PH_LOADED[k] = false; });   // 照片路径表：每次进来重新读
+  ['grad', 'ug'].forEach(k => { const c = raPH[k]; c.rows = []; c.posterMap = null; c.f = { era: '', subj: '', poster: '' }; c.more = false; });
+}
+
+function raRender(mc) {
+  if (!document.getElementById('ra-style')) {
+    const st = document.createElement('style');
+    st.id = 'ra-style';
+    st.textContent = RA_CSS;
+    document.head.appendChild(st);
+  }
+  raResetState();
+  mc.innerHTML = '<div id="ra-root">' + raHtml() + '</div>';
+  raBindUploadZones();
+  raRefreshUnivList();
+  raArLoadMajors();
+}
