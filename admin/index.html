@@ -6,7 +6,7 @@
 <title>唯新教育 管理系统</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="admin.css?v=20261020">
+<link rel="stylesheet" href="admin.css?v=20261123">
 </head>
 <body>
 <!-- Login -->
@@ -475,9 +475,6 @@
         <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap"><select id="ac_member_mode" onchange="acMemberRender()" style="width:auto"><option value="class">按班级</option><option value="major">按专业</option><option value="list">指定名单</option></select><div id="ac_class_chips" style="flex:1;min-width:200px;padding-top:3px"></div></div></div>
       <div class="form-group" style="margin:0"><label class="form-label">课程属性</label>
         <select id="ac_course_type" onchange="acOnTypeChange(this.value)"><option value="">请选择</option><option>专业课</option><option>共通课</option><option>VIP课程</option></select></div>
-      <div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">出席</label>
-        <input type="hidden" id="ac_att_mode" value="required">
-        <div id="ac_att_chips" style="display:flex;gap:6px;flex-wrap:wrap"></div></div>
       <div class="form-group" style="margin:0"><label class="form-label">讲师</label><input id="ac_teacher" placeholder="多人用 / 分隔"></div>
       <div class="form-group" style="margin:0"><label class="form-label">校区</label><input id="ac_campus" placeholder="市谷 / 高马 / 腾讯会议…"></div>
       <div class="form-group" style="margin:0"><label class="form-label">授课形式</label>
@@ -731,6 +728,7 @@
     <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">未点名 <span id="att_unmarked_count"></span>（点名字 = 记为当前状态）</div>
     <div id="sessionRecordBody" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px;max-height:46vh;overflow-y:auto"></div>
     <!-- 已点区（分状态，可撤回） -->
+    <div id="att_el_wrap"></div>
     <div id="att_marked_area" style="border-top:1px solid var(--border);padding-top:10px"></div>
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeModal('sessionModal')">关闭</button>
@@ -770,42 +768,42 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
 <script src="../shared/vendor/supabase.min.js"></script>
-<script src="../shared/supabase.js?v=20261102"></script>
-<script src="../shared/constants.js?v=20261120"></script>
-<script src="../shared/search.js?v=20261029"></script>
-<script src="../shared/student-table.js?v=20261014"></script>
-<script src="../shared/progress-card.js?v=20261026"></script>
-<script src="../shared/riyu.js?v=20261020"></script>
-<script src="../shared/artworks.js?v=20261029"></script>
-<script src="../shared/promo-md.js?v=20261020"></script>
-<script src="../shared/promo-render.js?v=20261020"></script>
-<script src="../shared/success-cases.js?v=20261029"></script>
-<script src="../shared/materials.js?v=20261026"></script>
-<script src="../shared/schoolplan.js?v=20261020"></script>
-<script src="../shared/student-detail.js?v=20261020"></script>
-<script src="../shared/claim.js?v=20261029"></script>
-<script src="../shared/vip-catalog.js?v=20261020"></script>
-<script src="../shared/tasks.js?v=20261029"></script>
-<script src="../shared/task-checks.js?v=20261120"></script>
-<script src="../shared/mgmt-metrics.js?v=20261120"></script>
-<script src="../shared/mgmt-notice.js?v=20261029"></script>
-<script src="attendance.js?v=20261029"></script>
-<script src="payroll.js?v=20261025"></script>
-<script src="admissiondb.js?v=20261029"></script>
-<script src="classes.js?v=20261020"></script>
-<script src="students.js?v=20261029"></script>
-<script src="materials.js?v=20261020"></script>
-<script src="booking.js?v=20261103"></script>
-<script src="courses.js?v=20261120"></script>
-<script src="monthcal.js?v=20261020"></script>
-<script src="vip-framework.js?v=20261020"></script>
-<script src="promo.js?v=20261025"></script>
-<script src="pricing.js?v=20261020"></script>
-<script src="tasks.js?v=20261029"></script>
-<script src="roletpl.js?v=20261020"></script>
-<script src="mgmt.js?v=20261111"></script>
-<script src="mgmt-notice.js?v=20261029"></script>
-<script src="hwstorage.js?v=20261116"></script>
-<script src="admin.js?v=20261116"></script>
+<script src="../shared/supabase.js?v=20261123"></script>
+<script src="../shared/constants.js?v=20261123"></script>
+<script src="../shared/search.js?v=20261123"></script>
+<script src="../shared/student-table.js?v=20261123"></script>
+<script src="../shared/progress-card.js?v=20261123"></script>
+<script src="../shared/riyu.js?v=20261123"></script>
+<script src="../shared/artworks.js?v=20261123"></script>
+<script src="../shared/promo-md.js?v=20261123"></script>
+<script src="../shared/promo-render.js?v=20261123"></script>
+<script src="../shared/success-cases.js?v=20261123"></script>
+<script src="../shared/materials.js?v=20261123"></script>
+<script src="../shared/schoolplan.js?v=20261123"></script>
+<script src="../shared/student-detail.js?v=20261123"></script>
+<script src="../shared/claim.js?v=20261123"></script>
+<script src="../shared/vip-catalog.js?v=20261123"></script>
+<script src="../shared/tasks.js?v=20261123"></script>
+<script src="../shared/task-checks.js?v=20261123"></script>
+<script src="../shared/mgmt-metrics.js?v=20261123"></script>
+<script src="../shared/mgmt-notice.js?v=20261123"></script>
+<script src="attendance.js?v=20261123"></script>
+<script src="payroll.js?v=20261123"></script>
+<script src="admissiondb.js?v=20261123"></script>
+<script src="classes.js?v=20261123"></script>
+<script src="students.js?v=20261123"></script>
+<script src="materials.js?v=20261123"></script>
+<script src="booking.js?v=20261123"></script>
+<script src="courses.js?v=20261123"></script>
+<script src="monthcal.js?v=20261123"></script>
+<script src="vip-framework.js?v=20261123"></script>
+<script src="promo.js?v=20261123"></script>
+<script src="pricing.js?v=20261123"></script>
+<script src="tasks.js?v=20261123"></script>
+<script src="roletpl.js?v=20261123"></script>
+<script src="mgmt.js?v=20261123"></script>
+<script src="mgmt-notice.js?v=20261123"></script>
+<script src="hwstorage.js?v=20261123"></script>
+<script src="admin.js?v=20261123"></script>
 </body>
 </html>

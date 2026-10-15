@@ -1826,6 +1826,36 @@ function teacherProfileStatus(t, rows) {
   });
 }
 
-// 课程出席属性：required 必出席（默认）/ elective 选修（出席另算）/ none 不记出席（占教室、展示用）
-const ATT_MODES = { required: '必出席', elective: '选修', none: '不记出席' };
-function courseAttMode(c) { const m = c && c.attendance_mode; return m === 'elective' || m === 'none' ? m : 'required'; }
+// 课程出席属性（courses.attendance_mode）：required 必出席（默认）/ open 组内开放（同专业组的非成员算选修）/ none 不记出席（占教室、展示用）
+const ATT_MODES = { required: '必出席', open: '组内开放', none: '不记出席' };
+function courseAttMode(c) { const m = c && c.attendance_mode; return m === 'open' || m === 'none' ? m : 'required'; }
+// 这门课的专业所属的专业组 key 集合（课程专业直接写组 key 的也算）
+function courseAttGroups(c) {
+  const out = new Set();
+  const mj = c && c.major;
+  (Array.isArray(mj) ? mj : (mj ? [mj] : [])).forEach(m => { const g = isMajorGroup(m) ? m : groupOf(m); if (g) out.add(g); });
+  return out;
+}
+// 这个学生对这门课的出席身份：'required' 必修 / 'elective' 选修 / null 不统计
+// myMembers：这个学生在 course_members 里的行（同 studentInCourse）
+function studentAttRole(student, course, myMembers) {
+  if (!student || !course || courseAttMode(course) === 'none') return null;
+  if (studentInCourse(student, course, myMembers)) return 'required';
+  if (courseAttMode(course) !== 'open' || isPureVipStudent(student)) return null;
+  const g = isMajorGroup(student.major) ? student.major : groupOf(student.major);
+  if (!g || !courseAttGroups(course).has(g)) return null;
+  // 被明确排除（exclude）的学生不当选修
+  const row = (myMembers || []).find(r => String(r.course_id) === String(course.id) && String(r.student_id) === String(student.id));
+  if (row && row.kind === 'exclude') return null;
+  return 'elective';
+}
+// 管理端：这门课的选修学生 id 集合（组内开放的课，同专业组、不是成员的在读学生）
+function courseElectiveIds(course, students, members) {
+  const out = new Set();
+  if (courseAttMode(course) !== 'open') return out;
+  const mine = (members || []).filter(r => String(r.course_id) === String(course.id));
+  const byStu = {};
+  mine.forEach(r => { (byStu[String(r.student_id)] = byStu[String(r.student_id)] || []).push(r); });
+  (students || []).forEach(st => { if (studentAttRole(st, course, byStu[String(st.id)] || []) === 'elective') out.add(String(st.id)); });
+  return out;
+}

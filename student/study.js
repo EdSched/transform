@@ -2240,13 +2240,14 @@ async function loadStudySchedule() {
     const courseInfoMap = {};
     (courseInfoArr || []).forEach(c => courseInfoMap[c.id] = c);
     const inShare = new Set([...((share0 && share0.course_ids) || []).map(String), ...clsIds]);
-    const memberIds = new Set(), pubIds = new Set(((share0 && share0.course_ids) || []).map(String));
+    const memberIds = new Set(), electiveIds = new Set(), pubIds = new Set(((share0 && share0.course_ids) || []).map(String));
     const ids = candIds.filter(id => {
       const c = courseInfoMap[id]; if (!c) return false;
       // 课程没填专业时，已发布在本专业课表里的课按本专业算
       const mj = (c.major && c.major.length) ? c.major : (inShare.has(id) ? [me.major] : []);
       const member = studentInCourse(me, Object.assign({}, c, { major: mj }), myMembers);
       if (member) memberIds.add(id);
+      else if (studentAttRole(me, Object.assign({}, c, { major: mj }), myMembers) === 'elective') electiveIds.add(id);   // 组内开放的课：同组其他专业 = 选修
       // 发布给专业 / 专业组的课表：里面的课对发布对象全部可见（非成员的课标「其他专业」）；自己被明确移除的课除外
       if (pubIds.has(id) && !myMembers.some(r => String(r.course_id) === id && r.kind === 'exclude')) return true;
       return member;   // 单独加入的课 / 班级的课：照成员规则
@@ -2283,7 +2284,7 @@ async function loadStudySchedule() {
       (rows || []).forEach(r => { const k = String(r.session_id); if (doneIds.has(k) && !rec[k] && r.attendance_status != null) rec[k] = r; });
     }
     await studyHwFetch().catch(() => {});
-    studySchedData = { share, sessions, courses, expired, rec, memberIds };
+    studySchedData = { share, sessions, courses, expired, rec, memberIds, electiveIds };
   } catch (e) {
     studySchedData = { share: null, sessions: [], courses: [], error: e.message };
   }
@@ -2301,8 +2302,15 @@ function sschedMarkOf(r) {
 }
 // 是不是自己的课（成员规则）；不是的是课表里「其他专业」的课，不进出席 / 作业 / 提醒
 function sschedIsMember(courseId) { return !!(studySchedData.memberIds && studySchedData.memberIds.has(String(courseId))); }
+function sschedIsElective(courseId) { return !!(studySchedData.electiveIds && studySchedData.electiveIds.has(String(courseId))); }
+// 出席身份：'required' 必修 / 'elective' 选修 / null 不统计（不记出席的课、其他专业的课）
+function sschedAttRole(courseId) {
+  if (courseAttMode(sschedCourseInfo(courseId)) === 'none') return null;
+  return sschedIsMember(courseId) ? 'required' : (sschedIsElective(courseId) ? 'elective' : null);
+}
 function sschedOtherTag(courseId) {
   if (sschedIsMember(courseId)) return '';
+  if (sschedIsElective(courseId)) return '<span style="display:inline-block;margin-left:4px;padding:0 4px;border-radius:2px;background:#f0e8d4;color:#7a5f1c;font-size:9px;line-height:1.4;font-weight:400">选修</span>';
   const inf = sschedCourseInfo(courseId) || {}, mj = (Array.isArray(inf.major) ? inf.major : (inf.major ? [inf.major] : [])).map(m => majorLabel(m)).filter(Boolean).join('・');
   return `<span style="display:inline-block;margin-left:4px;padding:0 4px;border-radius:2px;background:var(--bg);color:var(--text-muted);border:1px solid var(--border-light);font-size:9px;line-height:1.4;font-weight:400;opacity:.85">其他专业${mj ? '：' + escA(mj) : ''}</span>`;
 }
@@ -2312,22 +2320,21 @@ function sschedCourseInfo(courseId) {
 }
 function sschedMarkHtml(s) {
   const r = (studySchedData.rec || {})[String(s.id)];
-  if (!r || s.is_cancelled || s.session_title === '休讲' || !sschedIsMember(s.course_id)) return '';
-  if (courseAttMode(sschedCourseInfo(s.course_id)) === 'none') return '';
+  if (!r || s.is_cancelled || s.session_title === '休讲' || !sschedAttRole(s.course_id)) return '';
   const d = SSCHED_MARK[sschedMarkOf(r)];
   return `<span title="${d[2]}" style="display:inline-block;margin-left:3px;padding:0 3px;border-radius:2px;border:1px solid ${d[1]};color:${d[1]};background:#fff;font-size:9px;line-height:1.3;font-weight:600">${d[0]}</span>`;
 }
 // 课程表页顶部「我的出席」：下次上课 / 本期出席 / 作业
 function sschedMeCardHtml() {
   const D = studySchedData, today = jstToday(), wd = '日一二三四五六';
-  const live = (D.sessions || []).filter(x => x.session_date && !x.is_cancelled && x.session_title !== '休讲' && sschedIsMember(x.course_id));   // 只看自己是成员的课
+  const live = (D.sessions || []).filter(x => x.session_date && !x.is_cancelled && x.session_title !== '休讲' && (sschedIsMember(x.course_id) || sschedIsElective(x.course_id)));   // 自己是成员的课 + 选修的课
   const nowHM = new Date(Date.now() + 9 * 3600e3).toISOString().slice(11, 16);
   const ended = x => {
     if (x.session_date !== today) return false;
     const rs = parseTimeRanges(x.time_range); if (!rs.length) return false;
     const last = rs[rs.length - 1]; return (last.end || last.start) < nowHM;
   };
-  const next = live.filter(x => x.session_date >= today && !ended(x)).sort((a, b) => a.session_date.localeCompare(b.session_date) || timeRangesSortKey(a.time_range).localeCompare(timeRangesSortKey(b.time_range)))[0];
+  const next = live.filter(x => sschedIsMember(x.course_id) && x.session_date >= today && !ended(x)).sort((a, b) => a.session_date.localeCompare(b.session_date) || timeRangesSortKey(a.time_range).localeCompare(timeRangesSortKey(b.time_range)))[0];
   let nextHtml = '<div style="font-size:12px;color:var(--text-muted)">下次上课：暂无后续课次</div>';
   if (next) {
     const inf = sschedCourseInfo(next.course_id) || {}, d = new Date(next.session_date + 'T00:00:00');
@@ -2339,7 +2346,7 @@ function sschedMeCardHtml() {
   }
   // 出席：只算必出席的课（出席 + 迟到 ÷ 已点名的课次，口径同老师端）；选修单独一行；不记出席的课不统计
   const calc = mode => {
-    const list = live.filter(x => courseAttMode(sschedCourseInfo(x.course_id)) === mode);
+    const list = live.filter(x => sschedAttRole(x.course_id) === mode);
     const st = { total: list.length, held: 0, actual: 0, absent: 0, leave: 0 };
     list.forEach(x => { const r = D.rec[String(x.id)]; if (!r) return; st.held++; const m = sschedMarkOf(r); if (m === 'ok' || m === 'late') st.actual++; else if (m === 'absent') st.absent++; else st.leave++; });
     return st;
@@ -2348,7 +2355,7 @@ function sschedMeCardHtml() {
   const attHtml = req.total ? `<div style="font-size:12px;line-height:1.7"><span style="color:var(--text-muted)">本期出席</span> 出席 ${req.actual} / 已上 ${req.held} 回（共 ${req.total} 回）${req.held ? ` · 出勤率 ${Math.round(req.actual / req.held * 100)}%` : ''} · 缺席 ${req.absent} 次${req.leave ? ` · 请假 ${req.leave} 次` : ''}</div>` : '';
   const elHtml = el.total ? `<div style="font-size:12px;line-height:1.7;color:var(--text-secondary)">选修：出席 ${el.actual} / 已上 ${el.held} 回（共 ${el.total} 回）</div>` : '';
   // 作业：必出席的课里已发布的作业
-  const hwList = live.filter(x => x.homework_enabled && courseAttMode(sschedCourseInfo(x.course_id)) === 'required' && hwIsReleased(x, sschedCourseInfo(x.course_id)));
+  const hwList = live.filter(x => x.homework_enabled && sschedAttRole(x.course_id) === 'required' && hwIsReleased(x, sschedCourseInfo(x.course_id)));
   const hwDone = hwList.filter(x => hwSubs[x.id]).length, todo = hwList.length - hwDone;
   const hwHtml = hwList.length ? `<div style="font-size:12px;line-height:1.7"><span style="color:var(--text-muted)">作业</span> 已交 ${hwDone} / 已布置 ${hwList.length}${todo > 0 ? ` · <a onclick="switchStudyTab('homework')" style="color:var(--danger,#b03a2e);font-weight:600;cursor:pointer">还有 ${todo} 份作业未交 ›</a>` : ''}</div>` : '';
   return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:10px 14px;margin-bottom:12px">

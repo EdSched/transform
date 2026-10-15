@@ -1367,7 +1367,6 @@ function openAddCourseModal(editId){
     if(CURRENT_DOMAIN==='multi') acHiddenMajors=(c.major||[]).filter(m=>![...document.querySelectorAll('#ac_major_checkboxes input')].some(cb=>cb.value===m));
     document.getElementById('ac_period').value=c.period||'';
     document.getElementById('ac_course_type').value=c.course_type||'';
-    acSetAttMode(courseAttMode(c));
     document.getElementById('ac_teacher').value=c.teacher||'';
     document.getElementById('ac_campus').value=c.campus||'';
     document.getElementById('ac_delivery').value=c.delivery||'';
@@ -1404,7 +1403,6 @@ function openAddCourseModal(editId){
     document.getElementById('ac_homework_enabled').value = 'false';
     document.getElementById('ac_hw_release_days').value = '';
     ['ac_period','ac_course_type','ac_delivery'].forEach(id=>document.getElementById(id).value='');
-    acSetAttMode('required');
     acSetWeekdayChips('');
     document.getElementById('ac_total').value='';
     document.getElementById('ac_first_date').value='';
@@ -1950,7 +1948,6 @@ async function saveAddCourse(){
   const courseData={
     name,major:majors,period:stripPeriodYear(period),   // 学部美术只存月份（9月），年份由首回日期决定
     course_type:document.getElementById('ac_course_type').value,
-    attendance_mode:document.getElementById('ac_att_mode').value||'required',
     teacher:document.getElementById('ac_teacher').value.trim(),
     campus:document.getElementById('ac_campus').value.trim(),
     delivery:document.getElementById('ac_delivery').value,
@@ -4298,14 +4295,7 @@ async function cmSetMode(mode){
   cmRender();
 }
 
-// ── 课程出席属性（必出席 / 选修 / 不记出席）──
-const AC_ATT_HINT = { required: '', elective: '出席另算，不计入正式出勤率', none: '只用于占教室、课表展示，不进任何出席统计' };
-function acSetAttMode(v){
-  v = ATT_MODES[v] ? v : 'required';
-  const inp = document.getElementById('ac_att_mode'); if(inp) inp.value = v;
-  const box = document.getElementById('ac_att_chips'); if(!box) return;
-  box.innerHTML = Object.keys(ATT_MODES).map(k => `<div class="filter-chip${k===v?' active':''}" onclick="acSetAttMode('${k}')" style="font-size:11px;padding:3px 10px">${ATT_MODES[k]}${AC_ATT_HINT[k]?`<span style="font-weight:400;opacity:.7"> · ${AC_ATT_HINT[k]}</span>`:''}</div>`).join('');
-}
+// ── 课程出席属性（必出席 / 组内开放 / 不记出席）：在「出席・作业」页设置；这里只显示标签和批量设置 ──
 function attModeTag(c){
   const m = courseAttMode(c);
   return m === 'required' ? '' : `<span style="font-size:9px;background:#f0e8d4;color:#7a5f1c;border-radius:2px;padding:1px 6px;margin-left:6px;font-weight:500">${ATT_MODES[m]}</span>`;
