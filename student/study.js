@@ -2246,8 +2246,9 @@ async function loadStudySchedule() {
       // 课程没填专业时，已发布在本专业课表里的课按本专业算
       const mj = (c.major && c.major.length) ? c.major : (inShare.has(id) ? [me.major] : []);
       const member = studentInCourse(me, Object.assign({}, c, { major: mj }), myMembers);
-      if (member) memberIds.add(id);
-      else if (studentAttRole(me, Object.assign({}, c, { major: mj }), myMembers) === 'elective') electiveIds.add(id);   // 组内开放的课：同组其他专业 = 选修
+      // 组内开放的课：专业不是课程本专业的 = 选修（不管是不是成员）；其余成员 = 本专业
+      if (studentAttRole(me, Object.assign({}, c, { major: mj }), myMembers) === 'elective') electiveIds.add(id);
+      else if (member) memberIds.add(id);
       // 发布给专业 / 专业组的课表：里面的课对发布对象全部可见（非成员的课标「其他专业」）；自己被明确移除的课除外
       if (pubIds.has(id) && !myMembers.some(r => String(r.course_id) === id && r.kind === 'exclude')) return true;
       return member;   // 单独加入的课 / 班级的课：照成员规则

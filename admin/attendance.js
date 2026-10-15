@@ -26,10 +26,10 @@ function attMembers(courseId, majors){
   const mj=(majors&&majors.length)?majors:(c.major||[]);
   const course=Object.assign({id:courseId},c,{major:mj});
   const act=attActiveStudents();
-  const ids=courseMemberIds(course, act, (typeof cachedCourseMembers!=='undefined'?cachedCourseMembers:[]));
+  const ids=courseRequiredIds(course, act, (typeof cachedCourseMembers!=='undefined'?cachedCourseMembers:[]));
   return act.filter(s=>ids.has(String(s.id)));
 }
-// 组内开放的课：同专业组、不是成员的在读学生 = 选修（只记来了的人）
+// 组内开放的课：专业不是课程本专业的学生（成员或同专业组）= 选修（只记来了的人）
 function attElectives(courseId, majors){
   const c=cachedCourses.find(x=>x.id===courseId)||{};
   const mj=(majors&&majors.length)?majors:(c.major||[]);
@@ -180,6 +180,7 @@ async function setCourseAttMode(cid, mode){
     await sb(`/rest/v1/courses?id=eq.${encodeURIComponent(cid)}`,'PATCH',{attendance_mode:mode});
     c.attendance_mode=mode;
     renderAttendancePage(document.getElementById('mainContent'));
+    if(mode==='open'&&!courseOwnMajors(c).length) alert('这门课没有设具体专业，组内学生都算必修；如需区分，请在课程编辑里给它设具体专业');
   }catch(e){ alert('保存失败：'+e.message); }
 }
 function setAttAttFilter(v){
