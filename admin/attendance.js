@@ -156,7 +156,7 @@ function renderAttendancePage(mc){
           ${campuses.map(cp=>`<div class="filter-chip${attCampusFilter===cp?' active':''}" onclick="setAttCampus('${cp}')">${cp}</div>`).join('')}
         </div>
       </div>`:''}
-      ${(attTypeFilter||attPeriodFilter||attAttFilter)&&availMajors.length?`<div>
+      ${attTypeFilter&&availMajors.length?`<div>
         <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">专业</div>
         <div style="display:flex;gap:5px;flex-wrap:wrap">
           ${chipFold([{on:attMajorFilter==='all',html:`<div class="filter-chip${attMajorFilter==='all'?' active':''}" onclick="setAttMajor('all')">全部</div>`}].concat(availMajors.map(m=>({on:attMajorFilter===m,html:`<div class="filter-chip${attMajorFilter===m?' active':''}" onclick="setAttMajor('${m}')">${MAJORS[m]||m}</div>`}))))}
