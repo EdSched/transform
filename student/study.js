@@ -2251,11 +2251,17 @@ async function loadStudySchedule() {
       const batch = await sb(`/rest/v1/course_sessions?course_id=in.(${ids.slice(i,i+40).map(x=>`"${x}"`).join(',')})&select=*&order=session_date.asc`).catch(() => []);
       sessions = sessions.concat(batch || []);
     }
-    // 单独添加、但不在已发布课表里的课：只显示还没结束（最近 30 天内仍有课次）的，避免旧课一直挂着
-    const cutoff = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
-    const liveExtra = new Set(sessions.filter(s => !inShare.has(String(s.course_id)) && (s.session_date || '') >= cutoff).map(s => String(s.course_id)));
-    sessions = sessions.filter(s => inShare.has(String(s.course_id)) || liveExtra.has(String(s.course_id)));
-    const share = share0 || (sessions.length ? { title: '课程表' } : null);
+    // 过期的课表不显示：课表（本专业最新一份）里还有今天及以后的课次、或最后一节课在 7 天以内才显示；
+    // 单独加入的课 / 班级的课同样按「每门课」判断
+    const todayS = jstToday(), wk = new Date(todayS + 'T00:00:00Z'); wk.setUTCDate(wk.getUTCDate() - 7);
+    const weekAgo = wk.toISOString().slice(0, 10);
+    const lastBy = {};
+    sessions.forEach(x => { if (!x.is_cancelled && x.session_date && x.session_date > (lastBy[String(x.course_id)] || '')) lastBy[String(x.course_id)] = x.session_date; });
+    const shareIds = new Set(((share0 && share0.course_ids) || []).map(String));
+    const shareAlive = [...shareIds].some(id => (lastBy[id] || '') >= weekAgo);
+    sessions = sessions.filter(x => { const cid = String(x.course_id); return (shareAlive && shareIds.has(cid)) || (lastBy[cid] || '') >= weekAgo; });
+    const expired = !!share0 && !shareAlive && !sessions.length;
+    const share = (share0 && shareAlive) ? share0 : (sessions.length ? { title: '课程表' } : null);
     if (clsIds.length && !share0) studySchedView = 'month';   // 按班级上课的学生默认看月历
     // 课程顺序按首回日期，分配颜色
     const byCourse = {};
@@ -2264,11 +2270,77 @@ async function loadStudySchedule() {
       .map(([id, list]) => ({ id, name: list[0].course_name || '', first: list[0].session_date || '' }))
       .sort((a, b) => a.first.localeCompare(b.first))
       .map((c, i) => Object.assign(c, { color: SSCHED_COLORS[i % SSCHED_COLORS.length], info: courseInfoMap[c.id] || {} }));
-    studySchedData = { share, sessions, courses };
+    // 自己的出席记录（只读自己的）：有记录 = 这节课点过名
+    const rec = {};
+    const doneIds = new Set(sessions.filter(x => x.session_date && x.session_date <= todayS).map(x => String(x.id)));
+    if (doneIds.size) {
+      const rows = await sbAll(`/rest/v1/session_records?or=${encodeURIComponent(`(student_id.eq.${studyStudent.id},and(student_id.is.null,student_name.eq."${String(studyStudent.name || '').replace(/"/g, '')}"))`)}&select=session_id,attendance_status,created_at&order=created_at.asc`).catch(() => []);
+      (rows || []).forEach(r => { const k = String(r.session_id); if (doneIds.has(k) && !rec[k] && r.attendance_status != null) rec[k] = r; });
+    }
+    await studyHwFetch().catch(() => {});
+    studySchedData = { share, sessions, courses, expired, rec };
   } catch (e) {
     studySchedData = { share: null, sessions: [], courses: [], error: e.message };
   }
   el.innerHTML = renderScheduleTab();
+}
+
+// 出席小标记：只给已点名的课次；「不记出席」的课不加
+const SSCHED_MARK = { ok: ['✓', '#2a9e6a', '出席'], late: ['迟', '#b8860b', '迟到'], leave: ['假', '#6b5c4e', '请假'], absent: ['✗', '#b03a2e', '缺席'] };
+function sschedMarkOf(r) {
+  const v = (r && r.attendance_status) || '';
+  if (['offline', 'online', 'replay'].includes(v)) return 'ok';
+  if (v === 'offline_late' || v === 'online_late') return 'late';
+  if (v === 'leave') return 'leave';
+  return 'absent';
+}
+function sschedCourseInfo(courseId) {
+  const c = (studySchedData.courses || []).find(x => x.id === String(courseId));
+  return c ? c.info : null;
+}
+function sschedMarkHtml(s) {
+  const r = (studySchedData.rec || {})[String(s.id)];
+  if (!r || s.is_cancelled || s.session_title === '休讲') return '';
+  if (courseAttMode(sschedCourseInfo(s.course_id)) === 'none') return '';
+  const d = SSCHED_MARK[sschedMarkOf(r)];
+  return `<span title="${d[2]}" style="display:inline-block;margin-left:3px;padding:0 3px;border-radius:2px;border:1px solid ${d[1]};color:${d[1]};background:#fff;font-size:9px;line-height:1.3;font-weight:600">${d[0]}</span>`;
+}
+// 课程表页顶部「我的出席」：下次上课 / 本期出席 / 作业
+function sschedMeCardHtml() {
+  const D = studySchedData, today = jstToday(), wd = '日一二三四五六';
+  const live = (D.sessions || []).filter(x => x.session_date && !x.is_cancelled && x.session_title !== '休讲');
+  const nowHM = new Date(Date.now() + 9 * 3600e3).toISOString().slice(11, 16);
+  const ended = x => {
+    if (x.session_date !== today) return false;
+    const rs = parseTimeRanges(x.time_range); if (!rs.length) return false;
+    const last = rs[rs.length - 1]; return (last.end || last.start) < nowHM;
+  };
+  const next = live.filter(x => x.session_date >= today && !ended(x)).sort((a, b) => a.session_date.localeCompare(b.session_date) || timeRangesSortKey(a.time_range).localeCompare(timeRangesSortKey(b.time_range)))[0];
+  let nextHtml = '<div style="font-size:12px;color:var(--text-muted)">下次上课：暂无后续课次</div>';
+  if (next) {
+    const inf = sschedCourseInfo(next.course_id) || {}, d = new Date(next.session_date + 'T00:00:00');
+    const url = next.meeting_url || inf.meeting_url || '';
+    const place = [inf.delivery === '线下＋线上' ? '线上线下同步' : inf.delivery, inf.campus].filter(Boolean).join(' · ');
+    nextHtml = `${next.session_date === today ? `<div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:3px">今天${next.time_range ? ' ' + escA(parseTimeRanges(next.time_range)[0].start) : ''} 有课</div>` : ''}
+      <div style="font-size:12px;line-height:1.7"><span style="color:var(--text-muted)">下次上课</span> ${next.session_date.slice(5).replace('-', '/')}（周${wd[d.getDay()]}）${next.time_range ? ' · ' + escA(next.time_range) : ''} · <b>${escA(next.course_name || '')}</b>${next.session_number ? ' · 第' + next.session_number + '回' : ''}${place ? ' · ' + escA(place) : ''}
+      ${url ? `<a href="${escA(url)}" target="_blank" style="display:inline-block;margin-left:6px;padding:2px 10px;border-radius:3px;background:var(--accent);color:#fff;font-size:11px;text-decoration:none">进入课堂</a>` : ''}</div>`;
+  }
+  // 出席：只算必出席的课（出席 + 迟到 ÷ 已点名的课次，口径同老师端）；选修单独一行；不记出席的课不统计
+  const calc = mode => {
+    const list = live.filter(x => courseAttMode(sschedCourseInfo(x.course_id)) === mode);
+    const st = { total: list.length, held: 0, actual: 0, absent: 0, leave: 0 };
+    list.forEach(x => { const r = D.rec[String(x.id)]; if (!r) return; st.held++; const m = sschedMarkOf(r); if (m === 'ok' || m === 'late') st.actual++; else if (m === 'absent') st.absent++; else st.leave++; });
+    return st;
+  };
+  const req = calc('required'), el = calc('elective');
+  const attHtml = req.total ? `<div style="font-size:12px;line-height:1.7"><span style="color:var(--text-muted)">本期出席</span> 出席 ${req.actual} / 已上 ${req.held} 回（共 ${req.total} 回）${req.held ? ` · 出勤率 ${Math.round(req.actual / req.held * 100)}%` : ''} · 缺席 ${req.absent} 次${req.leave ? ` · 请假 ${req.leave} 次` : ''}</div>` : '';
+  const elHtml = el.total ? `<div style="font-size:12px;line-height:1.7;color:var(--text-secondary)">选修：出席 ${el.actual} / 已上 ${el.held} 回（共 ${el.total} 回）</div>` : '';
+  // 作业：必出席的课里已发布的作业
+  const hwList = live.filter(x => x.homework_enabled && courseAttMode(sschedCourseInfo(x.course_id)) === 'required' && hwIsReleased(x, sschedCourseInfo(x.course_id)));
+  const hwDone = hwList.filter(x => hwSubs[x.id]).length, todo = hwList.length - hwDone;
+  const hwHtml = hwList.length ? `<div style="font-size:12px;line-height:1.7"><span style="color:var(--text-muted)">作业</span> 已交 ${hwDone} / 已布置 ${hwList.length}${todo > 0 ? ` · <a onclick="switchStudyTab('homework')" style="color:var(--danger,#b03a2e);font-weight:600;cursor:pointer">还有 ${todo} 份作业未交 ›</a>` : ''}</div>` : '';
+  return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:10px 14px;margin-bottom:12px">
+    <div style="font-size:11px;font-weight:600;margin-bottom:4px">我的出席</div>${nextHtml}${attHtml}${elHtml}${hwHtml}</div>`;
 }
 
 function sschedColor(courseId) {
@@ -2279,6 +2351,7 @@ function sschedColor(courseId) {
 function renderScheduleTab() {
   const D = studySchedData || {};
   if (D.error) return `<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">课程表加载失败：${D.error}</div>`;
+  if (D.expired) return '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">本期课程表尚未发布，请等待教务发布</div>';
   if (!D.share) return '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">暂无发布的课程表，请等待教务发布</div>';
   if (!(D.courses || []).length) return '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">暂无你参加的课程</div>';
 
@@ -2304,7 +2377,7 @@ function renderScheduleTab() {
 
   return `<div>
     <div style="font-size:13px;font-weight:600;margin-bottom:8px">🗓 ${escA(D.share.title || '课程表')}</div>
-    ${legend}${infoBar}${toggle}
+    ${sschedMeCardHtml()}${legend}${infoBar}${toggle}
     ${studySchedView === 'month' ? sschedMonthHtml() : studySchedView === 'cal' ? sschedCalHtml() : sschedSumHtml()}
   </div>`;
 }
@@ -2335,7 +2408,7 @@ function sschedMonthHtml() {
         const off = s.is_cancelled || s.session_title === '休讲';
         const col = sschedColor(s.course_id);
         return `<div style="border-radius:3px;padding:2px 3px;margin-top:2px;font-size:9px;line-height:1.35;overflow-wrap:anywhere;${off ? 'background:var(--bg);color:var(--text-muted);text-decoration:line-through' : `background:${col[1]};color:${col[0]}`}">
-          <div style="font-weight:600">${escA((s.session_title && !off ? s.session_title : s.course_name) || '')}${off ? ' 休讲' : ''}</div>
+          <div style="font-weight:600">${escA((s.session_title && !off ? s.session_title : s.course_name) || '')}${off ? ' 休讲' : ''}${sschedMarkHtml(s)}</div>
           ${off ? '' : parseTimeRanges(s.time_range).map(r => `<div>${escA(r.end ? r.start + '-' + r.end : r.start)}</div>`).join('')}
         </div>`;
       }).join('')}
@@ -2391,7 +2464,7 @@ function sschedCalHtml() {
           const col = sschedColor(s.course_id);
           h += cancelled
             ? `<div style="font-size:9px;text-align:center;padding:4px 2px;border-radius:2px;background:var(--bg);color:var(--text-muted);border:1px dashed var(--border)">${escA(s.course_name||'')} 休讲</div>`
-            : `<div style="font-size:9px;text-align:center;padding:4px 2px;border-radius:2px;background:${col[1]};color:${col[0]};border:1px solid ${col[0]};line-height:1.4">${escA(s.course_name||'')}${s.session_number?`<div style="font-size:8px;opacity:.75">第${s.session_number}回${s.session_title?' '+escA(s.session_title):''}</div>`:''}</div>`;
+            : `<div style="font-size:9px;text-align:center;padding:4px 2px;border-radius:2px;background:${col[1]};color:${col[0]};border:1px solid ${col[0]};line-height:1.4">${escA(s.course_name||'')}${sschedMarkHtml(s)}${s.session_number?`<div style="font-size:8px;opacity:.75">第${s.session_number}回${s.session_title?' '+escA(s.session_title):''}</div>`:''}</div>`;
         });
         h += `</div>`;
       });
@@ -2424,7 +2497,7 @@ function sschedSumHtml() {
             const cancelled = s.session_title === '休讲';
             return `<div style="display:flex;gap:8px;font-size:10px;padding:4px 0;border-bottom:1px dashed var(--border-light);${cancelled?'opacity:.5':''}">
               <span style="font-family:'DM Mono',monospace;color:var(--text-muted);white-space:nowrap">${s.session_date.slice(5)}(${['日','一','二','三','四','五','六'][d.getDay()]}) ${s.time_range||''}</span>
-              <span style="color:var(--text-secondary)">${cancelled?'休讲':`${s.session_number?`第${s.session_number}回`:''}${s.session_title?' '+escA(s.session_title):''}`}</span>
+              <span style="color:var(--text-secondary)">${cancelled?'休讲':`${s.session_number?`第${s.session_number}回`:''}${s.session_title?' '+escA(s.session_title):''}`}${sschedMarkHtml(s)}</span>
             </div>`;
           }).join('')}
         </div>
