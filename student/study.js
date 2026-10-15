@@ -2240,11 +2240,16 @@ async function loadStudySchedule() {
     const courseInfoMap = {};
     (courseInfoArr || []).forEach(c => courseInfoMap[c.id] = c);
     const inShare = new Set([...((share0 && share0.course_ids) || []).map(String), ...clsIds]);
+    const memberIds = new Set(), pubIds = new Set(((share0 && share0.course_ids) || []).map(String));
     const ids = candIds.filter(id => {
       const c = courseInfoMap[id]; if (!c) return false;
       // 课程没填专业时，已发布在本专业课表里的课按本专业算
       const mj = (c.major && c.major.length) ? c.major : (inShare.has(id) ? [me.major] : []);
-      return studentInCourse(me, Object.assign({}, c, { major: mj }), myMembers);
+      const member = studentInCourse(me, Object.assign({}, c, { major: mj }), myMembers);
+      if (member) memberIds.add(id);
+      // 发布给专业 / 专业组的课表：里面的课对发布对象全部可见（非成员的课标「其他专业」）；自己被明确移除的课除外
+      if (pubIds.has(id) && !myMembers.some(r => String(r.course_id) === id && r.kind === 'exclude')) return true;
+      return member;   // 单独加入的课 / 班级的课：照成员规则
     });
     let sessions = [];
     for (let i = 0; i < ids.length; i += 40) {
@@ -2278,7 +2283,7 @@ async function loadStudySchedule() {
       (rows || []).forEach(r => { const k = String(r.session_id); if (doneIds.has(k) && !rec[k] && r.attendance_status != null) rec[k] = r; });
     }
     await studyHwFetch().catch(() => {});
-    studySchedData = { share, sessions, courses, expired, rec };
+    studySchedData = { share, sessions, courses, expired, rec, memberIds };
   } catch (e) {
     studySchedData = { share: null, sessions: [], courses: [], error: e.message };
   }
@@ -2294,13 +2299,20 @@ function sschedMarkOf(r) {
   if (v === 'leave') return 'leave';
   return 'absent';
 }
+// 是不是自己的课（成员规则）；不是的是课表里「其他专业」的课，不进出席 / 作业 / 提醒
+function sschedIsMember(courseId) { return !!(studySchedData.memberIds && studySchedData.memberIds.has(String(courseId))); }
+function sschedOtherTag(courseId) {
+  if (sschedIsMember(courseId)) return '';
+  const inf = sschedCourseInfo(courseId) || {}, mj = (Array.isArray(inf.major) ? inf.major : (inf.major ? [inf.major] : [])).map(m => majorLabel(m)).filter(Boolean).join('・');
+  return `<span style="display:inline-block;margin-left:4px;padding:0 4px;border-radius:2px;background:var(--bg);color:var(--text-muted);border:1px solid var(--border-light);font-size:9px;line-height:1.4;font-weight:400;opacity:.85">其他专业${mj ? '：' + escA(mj) : ''}</span>`;
+}
 function sschedCourseInfo(courseId) {
   const c = (studySchedData.courses || []).find(x => x.id === String(courseId));
   return c ? c.info : null;
 }
 function sschedMarkHtml(s) {
   const r = (studySchedData.rec || {})[String(s.id)];
-  if (!r || s.is_cancelled || s.session_title === '休讲') return '';
+  if (!r || s.is_cancelled || s.session_title === '休讲' || !sschedIsMember(s.course_id)) return '';
   if (courseAttMode(sschedCourseInfo(s.course_id)) === 'none') return '';
   const d = SSCHED_MARK[sschedMarkOf(r)];
   return `<span title="${d[2]}" style="display:inline-block;margin-left:3px;padding:0 3px;border-radius:2px;border:1px solid ${d[1]};color:${d[1]};background:#fff;font-size:9px;line-height:1.3;font-weight:600">${d[0]}</span>`;
@@ -2308,7 +2320,7 @@ function sschedMarkHtml(s) {
 // 课程表页顶部「我的出席」：下次上课 / 本期出席 / 作业
 function sschedMeCardHtml() {
   const D = studySchedData, today = jstToday(), wd = '日一二三四五六';
-  const live = (D.sessions || []).filter(x => x.session_date && !x.is_cancelled && x.session_title !== '休讲');
+  const live = (D.sessions || []).filter(x => x.session_date && !x.is_cancelled && x.session_title !== '休讲' && sschedIsMember(x.course_id));   // 只看自己是成员的课
   const nowHM = new Date(Date.now() + 9 * 3600e3).toISOString().slice(11, 16);
   const ended = x => {
     if (x.session_date !== today) return false;
@@ -2356,7 +2368,7 @@ function renderScheduleTab() {
   if (!(D.courses || []).length) return '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">暂无你参加的课程</div>';
 
   const legend = `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:10px 14px;margin-bottom:12px">
-    ${D.courses.map(c => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text-secondary)"><span style="width:10px;height:10px;border-radius:2px;background:${c.color[1]};border:1px solid ${c.color[0]};display:inline-block"></span>${escA(c.name)}</span>`).join('')}
+    ${D.courses.map(c => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text-secondary)"><span style="width:10px;height:10px;border-radius:2px;background:${c.color[1]};border:1px solid ${c.color[0]};display:inline-block"></span>${escA(c.name)}${sschedOtherTag(c.id)}</span>`).join('')}
   </div>`;
 
   const dvL = v => v === '线下＋线上' ? '线上线下同步' : (v || '');
@@ -2364,7 +2376,7 @@ function renderScheduleTab() {
     ${D.courses.map(c => {
       const inf = c.info || {};
       return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:10px;padding:4px 0;border-bottom:1px dashed var(--border-light)">
-        <span style="display:inline-flex;align-items:center;gap:5px;color:var(--text-secondary);min-width:120px"><span style="width:8px;height:8px;border-radius:2px;background:${c.color[1]};border:1px solid ${c.color[0]};display:inline-block"></span>${escA(c.name)}</span>
+        <span style="display:inline-flex;align-items:center;gap:5px;color:var(--text-secondary);min-width:120px"><span style="width:8px;height:8px;border-radius:2px;background:${c.color[1]};border:1px solid ${c.color[0]};display:inline-block"></span>${escA(c.name)}${sschedOtherTag(c.id)}</span>
         ${inf.delivery?`<span style="color:var(--text-secondary)">${dvL(inf.delivery)}</span>`:''}
         ${inf.campus?`<span style="color:var(--text-muted)">📍 ${escA(inf.campus)}</span>`:''}
         ${inf.meeting_url?`<a href="${escA(inf.meeting_url)}" target="_blank" style="color:var(--accent)">🔗 上课链接</a>`:''}
@@ -2408,7 +2420,7 @@ function sschedMonthHtml() {
         const off = s.is_cancelled || s.session_title === '休讲';
         const col = sschedColor(s.course_id);
         return `<div style="border-radius:3px;padding:2px 3px;margin-top:2px;font-size:9px;line-height:1.35;overflow-wrap:anywhere;${off ? 'background:var(--bg);color:var(--text-muted);text-decoration:line-through' : `background:${col[1]};color:${col[0]}`}">
-          <div style="font-weight:600">${escA((s.session_title && !off ? s.session_title : s.course_name) || '')}${off ? ' 休讲' : ''}${sschedMarkHtml(s)}</div>
+          <div style="font-weight:600">${escA((s.session_title && !off ? s.session_title : s.course_name) || '')}${off ? ' 休讲' : ''}${sschedMarkHtml(s)}${off ? '' : sschedOtherTag(s.course_id)}</div>
           ${off ? '' : parseTimeRanges(s.time_range).map(r => `<div>${escA(r.end ? r.start + '-' + r.end : r.start)}</div>`).join('')}
         </div>`;
       }).join('')}
@@ -2464,7 +2476,7 @@ function sschedCalHtml() {
           const col = sschedColor(s.course_id);
           h += cancelled
             ? `<div style="font-size:9px;text-align:center;padding:4px 2px;border-radius:2px;background:var(--bg);color:var(--text-muted);border:1px dashed var(--border)">${escA(s.course_name||'')} 休讲</div>`
-            : `<div style="font-size:9px;text-align:center;padding:4px 2px;border-radius:2px;background:${col[1]};color:${col[0]};border:1px solid ${col[0]};line-height:1.4">${escA(s.course_name||'')}${sschedMarkHtml(s)}${s.session_number?`<div style="font-size:8px;opacity:.75">第${s.session_number}回${s.session_title?' '+escA(s.session_title):''}</div>`:''}</div>`;
+            : `<div style="font-size:9px;text-align:center;padding:4px 2px;border-radius:2px;background:${col[1]};color:${col[0]};border:1px solid ${col[0]};line-height:1.4">${escA(s.course_name||'')}${sschedMarkHtml(s)}${sschedOtherTag(s.course_id)}${s.session_number?`<div style="font-size:8px;opacity:.75">第${s.session_number}回${s.session_title?' '+escA(s.session_title):''}</div>`:''}</div>`;
         });
         h += `</div>`;
       });
@@ -2482,7 +2494,7 @@ function sschedSumHtml() {
       return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;overflow:hidden">
         <div style="padding:9px 12px;border-bottom:1px solid var(--border-light)">
           <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-size:11px;padding:2px 10px;border-radius:2px;background:${c.color[1]};color:${c.color[0]};border:1px solid ${c.color[0]};font-weight:600">${escA(c.name)}</span>
+            <span style="font-size:11px;padding:2px 10px;border-radius:2px;background:${c.color[1]};color:${c.color[0]};border:1px solid ${c.color[0]};font-weight:600">${escA(c.name)}</span>${sschedOtherTag(c.id)}
             <span style="font-size:10px;color:var(--text-muted);margin-left:auto">${list.filter(s=>s.session_title!=='休讲').length} 课次</span>
           </div>
           ${(c.info&&(c.info.delivery||c.info.campus||c.info.meeting_url))?`<div style="font-size:10px;color:var(--text-muted);margin-top:4px;display:flex;flex-wrap:wrap;gap:8px">
