@@ -247,7 +247,8 @@ async function submitForm(){
       jlpt:document.getElementById('f-jlpt').value||null,
       toefl:engType==='TOEFL'?engScore:null,
       toeic:engType==='TOEIC'?engScore:null,
-      note:[document.getElementById('f-note').value.trim(),photoUrl?'[photo]'+photoUrl:''].filter(Boolean).join(' | ')||null,
+      note:document.getElementById('f-note').value.trim()||null,
+      photo_url:photoUrl||null,
     };
 
     btn.textContent='保存中...';

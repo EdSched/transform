@@ -1,5 +1,5 @@
 // 合格海报：遮盖隐私 → 填信息 → 自动合成 → 预览 / 导出
-// 依赖 results/admin.html 里的：sbFetch、adminAuthHeaders、SUPABASE_URL/SUPABASE_KEY、phRows、arMajors、
+// 依赖 results/admin.html 里的：sbFetch、adminAuthHeaders、SUPABASE_URL/SUPABASE_KEY、phGet、arMajors、
 //   arRenderMajor/arGetMajor、arUploadPhoto、arPhotoUrl、arStripNotePhoto、arRealName、arEsc、toast、loadPhotos、pinyinInitialsOf
 // 全局名字一律以 pst 开头。
 const PST_BUCKET = 'admission-photos';
@@ -114,15 +114,23 @@ function pstRefresh() {
 }
 
 // ── 打开编辑窗 ──
-async function pstOpen(resultId) {
+// kind = 'grad'（大学院，admission_results）| 'ug'（学部，undergrad_results）
+const PST_TABLE = { grad: 'admission_results', ug: 'undergrad_results' };
+const PST_FOLDER = { grad: 'grad', ug: 'ug' };
+async function pstOpen(kind, resultId) {
   if (pstSt) return;
-  const row = (typeof phRows !== 'undefined' ? phRows : []).find(r => r.id === resultId);
-  if (!row) { toast('找不到这条合格记录', false); return; }
+  kind = kind === 'ug' ? 'ug' : 'grad';
+  let row = (typeof phGet === 'function' ? phGet(kind).rows : []).find(r => String(r.id) === String(resultId));
   toast('正在打开海报编辑…');
   try {
+    if (!row) {   // 不是从合格写真页进来的（例如海报管理页）：直接按编号读这条合格记录
+      const r = await sbFetch(`${PST_TABLE[kind]}?id=eq.${encodeURIComponent(resultId)}&select=*`).catch(() => []);
+      row = r && r[0];
+    }
+    if (!row) { toast('找不到这条合格记录', false); return; }
     await pstInit();
     const enc = encodeURIComponent;
-    const posters = await sbFetch(`pass_posters?result_id=eq.${enc(resultId)}&select=*`).catch(() => null);
+    const posters = await sbFetch(`pass_posters?result_kind=eq.${kind}&result_id=eq.${enc(row.id)}&select=*`).catch(() => null);
     if (posters === null) { toast('读取海报表失败：请先执行 seed/pass_posters.sql', false); return; }
     const poster = posters[0] || null;
     let srcUrl = '';
@@ -142,11 +150,11 @@ async function pstOpen(resultId) {
     const now = new Date();
     const f = poster ? (poster.fields || {}) : {
       univ_ja: row.univ || '', univ_en: en,
-      dept_line: row.dept ? '大学院　' + row.dept : '大学院',
+      dept_line: kind === 'ug' ? [row.dept, row.spec].filter(Boolean).join('　') : (row.dept ? '大学院　' + row.dept : '大学院'),
       name_line: pstDefaultName(row.student),
     };
     pstSt = {
-      row, poster, srcUrl, img: null, small: null, imgErr: '',
+      kind, row, poster, srcUrl, img: null, small: null, imgErr: '',
       masks: poster ? (poster.masks || []) : [], crop: poster ? poster.crop : null,
       fields: Object.assign({ univ_ja: '', univ_en: '', dept_line: '', name_line: '', date_text: '' }, f),
       year: poster && poster.pass_year || now.getFullYear(), month: poster && poster.pass_month || (now.getMonth() + 1),
@@ -278,7 +286,7 @@ function pstClose() {
   document.getElementById('pst-overlay')?.remove();
   const st = pstSt; pstSt = null;
   if (st) { if (st.small) st.small.width = 0; st.img = null; }
-  if (typeof loadPhotos === 'function') loadPhotos();
+  if (typeof loadPhotos === 'function') loadPhotos(st ? st.kind : 'grad');
 }
 
 // ── 左栏画布：显示原截图 + 遮盖框 ──
@@ -361,10 +369,10 @@ async function pstReupload(inp) {
   if ((st.masks.length || st.crop) && !confirm('换了截图后，现有的遮盖框和裁切位置会清掉，继续？')) { inp.value = ''; return; }
   try {
     pstSetBusy('上传截图中…');
-    const url = await arUploadPhoto(f);   // 存到 admission-photos/grad/…
+    const url = await arUploadPhoto(f, PST_FOLDER[st.kind]);   // 存到 admission-photos/grad/… 或 ug/…
     const row = st.row;
     const note = arStripNotePhoto(row.note) || null;
-    await sbFetch(`admission_results?id=eq.${encodeURIComponent(row.id)}`, { method: 'PATCH', body: { photo_url: url, note }, prefer: 'return=minimal', headers: {} });
+    await sbFetch(`${PST_TABLE[st.kind]}?id=eq.${encodeURIComponent(row.id)}`, { method: 'PATCH', body: { photo_url: url, note }, prefer: 'return=minimal', headers: {} });
     row.photo_url = url; row.note = note;
     st.srcUrl = url; st.masks = []; st.crop = null; st.sel = -1;
     pstBuildTools();
@@ -391,13 +399,13 @@ async function pstSave(publish) {
   try {
     pstSetBusy('保存中…');
     const body = {
-      result_id: row.id, result_kind: 'grad', student_id: row.student_id || null,
+      result_id: String(row.id), result_kind: st.kind, student_id: row.student_id || null,
       masks: st.masks, crop: st.crop, fields: st.fields,
       univ: row.univ || null, dept: row.dept || null, spec: row.spec || null,
       major: st.major, domain: pstDomainOf(st.major) || null,
       pass_year: st.year, pass_month: st.month, updated_at: new Date().toISOString(),
     };
-    const res = await sbFetch('pass_posters?on_conflict=result_id', { method: 'POST', body, prefer: 'resolution=merge-duplicates,return=representation' });
+    const res = await sbFetch('pass_posters?on_conflict=result_kind,result_id', { method: 'POST', body, prefer: 'resolution=merge-duplicates,return=representation' });
     st.poster = Array.isArray(res) ? res[0] : res;
     await sbFetch('pass_poster_sources?on_conflict=poster_id', { method: 'POST', body: { poster_id: st.poster.id, src_url: st.srcUrl }, prefer: 'resolution=merge-duplicates,return=minimal', headers: {} });
     const k = (row.univ || '').trim();
@@ -458,11 +466,20 @@ async function pstExportPdf() {
   pstSetBusy('');
 }
 
-// ── 删除照片时一并删海报（admin.html 的 deletePhotoRecord 调用）──
-async function pstDeleteForResult(resultId) {
+// ── 删除合格记录 / 照片时一并删海报（海报行 + pass_poster_sources 行 + posters 文件夹里的两张图）──
+// 学部没有外键，所以删合格记录前必须调用这个；ids 很多时（全件削除）只取一次海报列表再对照
+async function pstDeleteForResults(kind, ids) {
+  ids = (ids || []).map(String);
+  if (!ids.length) return;
   const enc = encodeURIComponent;
-  const ps = await sbFetch(`pass_posters?result_id=eq.${enc(resultId)}&select=id`).catch(() => []);
+  let ps;
+  try {
+    ps = ids.length === 1
+      ? await sbFetch(`pass_posters?result_kind=eq.${kind}&result_id=eq.${enc(ids[0])}&select=id,result_id`)
+      : (await sbFetch(`pass_posters?result_kind=eq.${kind}&select=id,result_id`) || []).filter(p => ids.includes(String(p.result_id)));
+  } catch (e) { return; }   // 海报表还没建
   for (const p of (ps || [])) {
+    await sbFetch(`pass_poster_sources?poster_id=eq.${enc(p.id)}`, { method: 'DELETE', prefer: 'return=minimal', headers: {} }).catch(() => {});
     await sbFetch(`pass_posters?id=eq.${enc(p.id)}`, { method: 'DELETE', prefer: 'return=minimal', headers: {} });
     for (const n of ['web.jpg', 'thumb.jpg']) {
       await fetch(`${SUPABASE_URL}/storage/v1/object/${PST_BUCKET}/posters/${p.id}/${n}`, { method: 'DELETE', headers: adminAuthHeaders() }).catch(() => {});
