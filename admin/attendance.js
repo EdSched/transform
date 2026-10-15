@@ -56,6 +56,7 @@ let attCampusFilter='';
 let attMajorFilter='all';
 let attAttFilter='';       // 出席属性筛选：'' 全部 / required / open / none
 let attNoneOpen=false;     // 「不记出席的课」是否展开
+let attElAllOpen={};     // 出席状况表：组内开放课「显示全部同组学生」展开的课程 id
 let attElOpen=false;       // 记出席弹窗里「同组其他专业（选修）」是否展开
 let sessionEdits={};
 
@@ -108,7 +109,8 @@ function renderAttendancePage(mc){
   if(attPeriodFilter){
     filteredCourses=filteredCourses.filter(c=>periodKeyOf(c)===attPeriodFilter);
   }
-  if(attAttFilter) filteredCourses=filteredCourses.filter(c=>courseAttMode(c)===attAttFilter);
+  // 「必出席」= 所有有必修学生要点名的课 = 必出席 + 组内开放
+  if(attAttFilter) filteredCourses=filteredCourses.filter(c=>attAttFilter==='required'?courseAttMode(c)!=='none':courseAttMode(c)===attAttFilter);
   const seen=new Set();
   filteredCourses=filteredCourses.filter(c=>{if(seen.has(c.id))return false;seen.add(c.id);return true});
 
@@ -183,6 +185,10 @@ async function setCourseAttMode(cid, mode){
     if(mode==='open'&&!courseOwnMajors(c).length) alert('这门课没有设具体专业，组内学生都算必修；如需区分，请在课程编辑里给它设具体专业');
   }catch(e){ alert('保存失败：'+e.message); }
 }
+function attToggleElAll(cid){
+  attElAllOpen[cid]=!attElAllOpen[cid];
+  renderAttendancePage(document.getElementById('mainContent'));
+}
 function setAttAttFilter(v){
   attAttFilter=v;
   renderAttendancePage(document.getElementById('mainContent'));
@@ -251,7 +257,8 @@ function renderSessionListMain(courses){
     const color=courseColor(course.name);
     const totalStudents=attMembers(cid, sess[0]?.major).length;
     const isOpen=courseAttMode(course)==='open';
-    const elIds=isOpen?new Set(attElectives(cid, sess[0]?.major).map(x=>String(x.id))):new Set();
+    const elStudents=isOpen?attElectives(cid, sess[0]?.major):[];
+    const elIds=new Set(elStudents.map(x=>String(x.id)));
 
     return `<div style="margin-bottom:20px;background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
       <div style="background:${color.bg};color:${color.text};padding:8px 14px;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
@@ -267,9 +274,9 @@ function renderSessionListMain(courses){
           <th style="width:52px">回</th>
           <th style="width:86px">日期</th>
           <th>单回名称</th>
-          <th style="width:88px">出席</th>
+          <th style="width:130px">出席</th>
           <th style="width:70px">出席率</th>
-          <th style="width:88px">交作业</th>
+          <th style="width:130px">交作业</th>
           <th style="width:120px"></th>
         </tr></thead>
         <tbody>
@@ -280,7 +287,13 @@ function renderSessionListMain(courses){
             const present=recs.filter(r=>attPresent(r.attendance_status)).length;
             const lateN=recs.filter(r=>attIsLate(r.attendance_status)).length;
             // 交作业人数：新作业系统的实际提交（学生提交即自动计入，无需手动记录）
-            const hwSubmit=(attHwCount[s.id]||0)||recs.filter(r=>r.homework_submitted||r.homework_file_url).length;
+            let hwSubmit=(attHwCount[s.id]||0)||recs.filter(r=>r.homework_submitted||r.homework_file_url).length;
+            let hwEl=0;
+            if(isOpen&&attHwSubs[s.id]){   // 组内开放：交作业按必修 / 选修分开
+              const elNames=new Set(elStudents.map(x=>x.name));
+              attHwSubs[s.id].forEach(n=>{ if(elNames.has(n)) hwEl++; });
+              hwSubmit=attHwSubs[s.id].size-hwEl;
+            }
             const rate=totalStudents?Math.round(present/totalStudents*100):0;
             const f=fmtSessionDate(s.session_date);
             const hasHw=!!s.homework_enabled;
@@ -288,9 +301,9 @@ function renderSessionListMain(courses){
               <td style="font-size:11px;color:var(--text-3)">${s.session_number}</td>
               <td style="font-size:12px;font-weight:600;cursor:pointer" onclick="openSessionModal('${s.id}')"><span style="display:inline-block;background:var(--accent,#b8953a);color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;margin-right:6px">📝 记录</span>${f.short} <span style="font-size:10px;color:${f.dowColor}">${f.dow}</span></td>
               <td style="font-size:11px;color:var(--text-2)">${s.session_title||'—'}${hasHw?'<span style="font-size:9px;color:var(--accent);margin-left:5px">📝</span>':''}</td>
-              <td style="font-size:11px">${recs.length?`${present}/${totalStudents}${lateN?`<span style="font-size:9px;color:#b8860b">（迟到 ${lateN}）</span>`:''}${elPresent?`<span style="font-size:9px;color:var(--text-3)">（选修 ${elPresent}）</span>`:''}`:'<span style="color:var(--text-3)">—</span>'}</td>
+              <td style="font-size:11px">${(recs.length||elPresent)?`${isOpen?'必修 ':''}${present}/${totalStudents}${lateN?`<span style="font-size:9px;color:#b8860b">（迟到 ${lateN}）</span>`:''}${isOpen?`<span style="color:var(--text-3)"> · 选修 ${elPresent}</span>`:''}`:'<span style="color:var(--text-3)">—</span>'}</td>
               <td style="font-size:11px;color:${!recs.length?'var(--text-3)':rate>=80?'var(--ok)':rate>=60?'var(--warn)':'var(--danger)'}">${recs.length?rate+'%':'—'}</td>
-              <td style="font-size:11px">${hasHw?(hwSubmit?`<span style="color:var(--ok);font-weight:600">${hwSubmit}</span>/${totalStudents}`:`<span style="color:var(--text-3)">0/${totalStudents}</span>`):'<span style="color:var(--text-3)">—</span>'}</td>
+              <td style="font-size:11px">${hasHw?((hwSubmit?`${isOpen?'必修 ':''}<span style="color:var(--ok);font-weight:600">${hwSubmit}</span>/${totalStudents}`:`<span style="color:var(--text-3)">${isOpen?'必修 ':''}0/${totalStudents}</span>`)+(isOpen?`<span style="color:var(--text-3)"> · 选修 ${hwEl}</span>`:'')):'<span style="color:var(--text-3)">—</span>'}</td>
               <td style="display:flex;gap:4px">
                 <button class="btn btn-outline btn-sm" onclick="openSessionModal('${s.id}')">记出席</button>
                 ${hasHw&&hwSubmit?`<button class="btn btn-outline btn-sm" onclick="toggleAdminHwPanel('${s.id}')">作业(${hwSubmit})</button>`:''}
@@ -783,29 +796,28 @@ function renderAttStatusView(sessions, courses){
     const sessIds=new Set(sess.map(s=>s.id));
     const elIds=courseAttMode(course)==='open'?attElectives(cid, sess[0]?.major).map(x=>x.id):[];
     const students=members.concat(attNonMembersWithRecords(cachedSessionRecords.filter(r=>sessIds.has(r.session_id)), members, elIds));
-    if(!students.length) return '';
+    if(!students.length&&courseAttMode(course)!=='open') return '';
     const hwSess=sess.filter(s=>s.homework_enabled);
-    return `<div style="margin-bottom:18px;background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
-      <div style="background:${color.bg};color:${color.text};padding:8px 14px;font-size:12px;font-weight:600;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
-        <span>${course.name}</span>
-        <span style="font-size:10px;opacity:.75">${sess.length}回 · ${members.length}人　✓出席 ✗缺席 ─未记录 · 📝已交作业</span>
-      </div>
-      <div class="table-scroll"><table class="student-table" style="margin:0">
-        <thead><tr>
+    const isOpen=courseAttMode(course)==='open';
+    const head=`<thead><tr>
           <th style="width:110px;position:sticky;left:0;background:var(--bg);z-index:1">学生</th>
           ${sess.map(s=>{const f=fmtSessionDate(s.session_date);return `<th style="width:56px;text-align:center;font-size:10px" title="第${s.session_number}回 ${s.session_title||''}">${f.short}${s.homework_enabled?'<div style="font-size:8px;color:var(--accent)">📝</div>':''}</th>`}).join('')}
-          <th style="width:64px;text-align:center;font-size:10px">出席率</th>
+          @@RATE@@
           ${hwSess.length?'<th style="width:64px;text-align:center;font-size:10px">交作业</th>':''}
-        </tr></thead>
+        </tr></thead>`;
+    // elective=true：选修学生，只显示来了的 ✓，不显示 ✗，最后一列「出席 x 回」
+    const table=(list,elective)=>`<div class="table-scroll"><table class="student-table" style="margin:0">
+        ${head.replace('@@RATE@@',`<th style="width:64px;text-align:center;font-size:10px">${elective?'出席':'出席率'}</th>`)}
         <tbody>
-          ${students.map(stu=>{
+          ${list.map(stu=>{
             let att=0, rec=0, hw=0;
             const cells=sess.map(s=>{
               const r=cachedSessionRecords.find(x=>x.session_id===s.id&&x.student_name===stu.name);
               const submitted=!!(attHwSubs[s.id]&&attHwSubs[s.id].has(stu.name));
               if(r){rec++; if(attPresent(r.attendance_status)) att++;}
               if(submitted) hw++;
-              const mark=!r?'<span style="color:var(--text-3)">─</span>'
+              const mark=elective?(!r||!attPresent(r.attendance_status)?'':attIsLate(r.attendance_status)?'<span style="color:#b8860b">迟</span>':'<span style="color:var(--ok)">✓</span>')
+                : !r?'<span style="color:var(--text-3)">─</span>'
                 : attIsLate(r.attendance_status)?'<span style="color:#b8860b">迟</span>'
                 : attPresent(r.attendance_status)?'<span style="color:var(--ok)">✓</span>'
                 : '<span style="color:var(--danger)">✗</span>';
@@ -813,14 +825,35 @@ function renderAttStatusView(sessions, courses){
             }).join('');
             const rate=rec?Math.round(att/rec*100):0;
             return `<tr>
-              <td style="font-size:11px;font-weight:600;position:sticky;left:0;background:var(--surface)">${stu.name}${stu._nonMember?'<span style="font-size:9px;font-weight:400;color:var(--text-3);margin-left:4px">非成员</span>':''}</td>
+              <td style="font-size:11px;font-weight:600;position:sticky;left:0;background:var(--surface)">${stu.name}${stu._nonMember?'<span style="font-size:9px;font-weight:400;color:var(--text-3);margin-left:4px">非成员</span>':''}${elective?`<span style="font-size:9px;font-weight:400;color:var(--text-3);margin-left:4px">${MAJORS[stu.major]||stu.major||''}</span>`:''}</td>
               ${cells}
-              <td style="text-align:center;font-size:11px;color:${!rec?'var(--text-3)':rate>=80?'var(--ok)':rate>=60?'var(--warn)':'var(--danger)'}">${rec?rate+'%':'—'}</td>
+              ${elective?`<td style="text-align:center;font-size:11px;color:${att?'var(--ok)':'var(--text-3)'}">${att?'出席 '+att+' 回':'—'}</td>`
+                :`<td style="text-align:center;font-size:11px;color:${!rec?'var(--text-3)':rate>=80?'var(--ok)':rate>=60?'var(--warn)':'var(--danger)'}">${rec?rate+'%':'—'}</td>`}
               ${hwSess.length?`<td style="text-align:center;font-size:11px;color:${hw>=hwSess.length?'var(--ok)':hw?'var(--warn)':'var(--text-3)'}">${hw}/${hwSess.length}</td>`:''}
             </tr>`;
           }).join('')}
         </tbody>
-      </table></div>
+      </table></div>`;
+    const sub=t=>`<div style="padding:7px 14px;font-size:11px;font-weight:600;color:var(--text-2);background:var(--bg);border-top:1px solid var(--border-light);border-bottom:1px solid var(--border-light)">${t}</div>`;
+    let body;
+    if(!isOpen) body=table(students,false);
+    else{
+      const elAll=attElectives(cid, sess[0]?.major).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+      const came=new Set(cachedSessionRecords.filter(r=>sessIds.has(r.session_id)&&attPresent(r.attendance_status)).map(r=>String(r.student_id)));
+      const elCame=elAll.filter(x=>came.has(String(x.id)));
+      const showAll=!!attElAllOpen[cid];
+      const elShown=showAll?elAll:elCame;
+      body=sub(`必修学生（${students.length} 人）`)+(students.length?table(students,false):'<div style="padding:10px 14px;font-size:11px;color:var(--text-3)">没有必修学生</div>')
+        +sub(`选修学生（${elCame.length} 人来过${showAll?`，共列 ${elAll.length} 人`:''}）`)
+        +(elShown.length?table(elShown,true):'<div style="padding:10px 14px;font-size:11px;color:var(--text-3)">还没有选修学生来过</div>')
+        +(elAll.length>elCame.length||showAll?`<div onclick="attToggleElAll('${cid}')" style="padding:8px 14px;font-size:11px;color:var(--accent);cursor:pointer">${showAll?'收起，只看来过的':`显示全部同组学生（${elAll.length} 人）`}</div>`:'');
+    }
+    return `<div style="margin-bottom:18px;background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
+      <div style="background:${color.bg};color:${color.text};padding:8px 14px;font-size:12px;font-weight:600;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
+        <span>${course.name}</span>
+        <span style="font-size:10px;opacity:.75">${sess.length}回 · ${isOpen?'必修 '+members.length+' 人':members.length+'人'}　✓出席 ✗缺席 ─未记录 · 📝已交作业</span>
+      </div>
+      ${body}
     </div>`;
   }).join('')||'<div class="empty" style="padding:36px">该范围内没有可显示的学生</div>';
 }
