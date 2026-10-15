@@ -527,26 +527,12 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
 
 <!-- ── TAB: 合格写真 ── -->
 <div id="tab-photos" style="display:none">
-  <div style="display:flex;gap:10px;margin-bottom:1rem;align-items:center;flex-wrap:wrap">
-    <input id="photo-search" placeholder="搜索学生（汉字 / 拼音首字母）/ 大学 / 研究科…" oninput="searchBox(this,loadPhotos)" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:200px">
-    <select id="photo-filter-subject" onchange="loadPhotos()" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg)">
-      <option value="">全部专业</option>
-      <option value="shakai">社会学</option>
-      <option value="fukushi">社会福祉</option>
-      <option value="shinpan">新聞伝播</option>
-      <option value="keizai">経済学</option>
-      <option value="keiei">経営学</option>
-      <option value="kyoiku">教育学</option>
-      <option value="other">その他</option>
-    </select>
-    <select id="photo-filter-era" onchange="loadPhotos()" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg)">
-      <option value="">全部年度</option>
-      <option value="new">2025-2026</option>
-      <option value="hist">2022-2024</option>
-    </select>
+  <div style="display:flex;gap:10px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+    <input id="photo-search" placeholder="搜索学生（汉字 / 拼音首字母）/ 大学 / 研究科…" oninput="searchBox(this,phRender)" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:260px">
     <button class="btn btn-secondary" onclick="loadPhotos()">↺ 刷新</button>
     <span style="font-size:11px;color:var(--text-muted)" id="photo-count"></span>
   </div>
+  <div id="photo-filters" style="margin-bottom:12px"></div>
   <div id="photo-grid" class="load-state">读取中...</div>
 </div>
 
@@ -893,6 +879,10 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
       <div class="field"><label>英語スコア</label><input id="em-eng-score" type="number" placeholder="800"></div>
       <div class="field" style="grid-column:span 1"><label>備考</label><input id="em-note" type="text"></div>
     </div>
+    <div class="field" style="margin-bottom:1rem"><label>合格截图（原图上传，不压缩）</label>
+      <div id="em-photo-box" style="margin-bottom:6px"></div>
+      <input id="em-photo" type="file" accept="image/*" onchange="emPhotoPick(this)">
+    </div>
     <input type="hidden" id="em-id">
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeEditModal()">キャンセル</button>
@@ -931,7 +921,7 @@ function switchTab(t) {
     const el=document.getElementById(`tab-${id}`); if(el) el.style.display = id === t ? '' : 'none';
   });
   document.querySelectorAll('#major-grad .tab-btn').forEach((b,i) => {
-    b.classList.toggle('active', ['add','excel','list','tier'][i] === t);
+    b.classList.toggle('active', ['add','excel','list','tier','photos'][i] === t);
   });
   if (t === 'list') loadList();
   if (t === 'tier') loadTierTab();
@@ -2129,6 +2119,8 @@ function openEditModal(el) {
   document.getElementById('em-eng-score').value = r.eng_score || '';
   document.getElementById('em-note').value = r.note || '';
   arSetMajor('em', r.our_major || arGuessMajor(r.subject));
+  emPhotoShow(arPhotoUrl(r), false);
+  document.getElementById('em-photo').value = '';
   document.getElementById('edit-modal-title').textContent = `編集: ${r.univ}`;
   document.getElementById('edit-modal').classList.add('show');
 }
@@ -2159,6 +2151,13 @@ async function saveEdit() {
     note:       document.getElementById('em-note').value.trim() || null,
     our_major:  arGetMajor('em') || null,
   };
+  const photoFile = document.getElementById('em-photo').files[0];
+  if (photoFile) {
+    try {
+      updates.photo_url = await arUploadPhoto(photoFile);
+      updates.note = (updates.note || '').replace(/\s*\|\s*\[photo\]\S+/, '').replace(/\[photo\]\S+/, '').trim() || null;   // 旧的 [photo] 链接作废
+    } catch (e) { toast('图片上传失败: ' + e.message, false); return; }
+  }
   const oldRow = allData.find(x => x.id === id);
   if (oldRow && oldRow.student_id && (oldRow.student || null) !== updates.student) updates.student_id = null;   // 改了学生名：旧关联作废
 
@@ -2329,75 +2328,114 @@ async function ugSaveTierChanges(){
 
 // ─── 合格写真 ────────────────────────────────────────────────────────────────
 const PHOTO_BUCKET = 'admission-photos';
+const PH_NOTE_RE = /\[photo\](\S+)/;
+// 照片有两种存法：photo_url（统一用这个）和旧的 note 里的 [photo]链接，两种都认
+function arPhotoUrl(r) { return (r && r.photo_url) || (((r && r.note) || '').match(PH_NOTE_RE) || [])[1] || ''; }
+function arStripNotePhoto(note) { return (note || '').replace(/\s*\|\s*\[photo\]\S+/, '').replace(/\[photo\]\S+/, '').trim(); }
+// 上传到 admission-photos/grad/…，原图原样上传；返回公开链接
+async function arUploadPhoto(file) {
+  let ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, ''); if (!ext || ext.length > 5) ext = 'jpg';
+  const path = 'grad/' + Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.' + ext;
+  const put = h => fetch(`${SUPABASE_URL}/storage/v1/object/${PHOTO_BUCKET}/${path}`, { method: 'POST', headers: { ...h, 'Content-Type': file.type, 'x-upsert': 'true' }, body: file });
+  let up = await put(adminAuthHeaders());
+  if (!up.ok) up = await put({ apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY });
+  if (!up.ok) throw new Error(await up.text());
+  return `${SUPABASE_URL}/storage/v1/object/public/${PHOTO_BUCKET}/${path}`;
+}
+function emPhotoShow(url, isNew) {
+  const box = document.getElementById('em-photo-box'); if (!box) return;
+  box.innerHTML = url ? `<img src="${url}" style="max-width:100%;max-height:160px;border:1px solid var(--border);border-radius:4px;display:block"><div style="font-size:10px;color:var(--text-muted);margin-top:3px">${isNew ? '新图（保存后生效）' : '现在的图；选择文件可更换'}</div>` : '<div style="font-size:11px;color:var(--text-muted)">还没有截图</div>';
+}
+function emPhotoPick(inp) {
+  const f = inp.files[0]; if (!f) return;
+  emPhotoShow(URL.createObjectURL(f), true);
+}
 
+let phRows = [];
+const phF = { era: '', subj: '', poster: '' };
+let phSubjMore = false;
+let phPosterMap = null;   // 海报表做好后赋值 {记录id: true}；为空时「海报」一组隐藏
 async function loadPhotos() {
   document.getElementById('photo-grid').innerHTML = '<div class="load-state">読み込み中...</div>';
   try {
-    const q = (document.getElementById('photo-search')?.value || '').trim();
-    const subj = document.getElementById('photo-filter-subject')?.value || '';
-    const era = document.getElementById('photo-filter-era')?.value || '';
-    // 从数据库读有图片的合格记录（note 里含 [photo]URL）
-    let url = `${SUPABASE_URL}/rest/v1/admission_results?select=*&note=like.*%5Bphoto%5D*&order=created_at.desc`;
+    const url = `${SUPABASE_URL}/rest/v1/admission_results?select=*&or=(photo_url.not.is.null,note.like.*%5Bphoto%5D*)&order=created_at.desc`;
     const res = await fetch(url, { headers: adminAuthHeaders() });
-    let rows = await res.json();
-    if (!Array.isArray(rows)) rows = [];
-    // 筛选
-    rows = rows.filter(r => {
-      if (subj && r.subject !== subj) return false;
-      if (era && r.era !== era) return false;
-      if (q) {
-        if (!searchMatch(q, [r.student, r.univ, r.dept, r.spec])) return false;
-      }
-      return true;
-    });
-    document.getElementById('photo-count').textContent = rows.length + ' 件';
-    if (!rows.length) {
-      document.getElementById('photo-grid').innerHTML = '<div class="load-state">该条件下暂无合格照片</div>';
-      return;
-    }
-    const subjLabel = { shakai:'社会学', fukushi:'社会福祉', shinpan:'新聞伝播', keizai:'経済学', keiei:'経営学', kyoiku:'教育学', other:'その他' };
-    let html = '<div class="photo-grid">';
-    for (const r of rows) {
-      // 从 note 提取图片URL（[photo]https://...）
-      const m = (r.note || '').match(/\[photo\](\S+)/);
-      const purl = m ? m[1] : '';
-      const noteText = (r.note || '').replace(/\s*\|\s*\[photo\]\S+/, '').replace(/\[photo\]\S+/, '').trim();
-      html += `<div class="photo-card">
-        <img src="${purl}" alt="${r.univ||''}" onerror="this.style.display='none'" style="cursor:pointer" onclick="window.open('${purl}','_blank')">
-        <div class="photo-card-info">
-          <div class="photo-card-title">${r.univ || '（未知大学）'} ${r.student ? '· '+r.student : ''}
-            <button class="photo-card-del" onclick="deletePhotoRecord('${r.id}','${purl}')">削除</button>
-          </div>
-          <div class="photo-card-sub">${r.dept||''}${r.spec?' '+r.spec:''}　${subjLabel[r.subject]||r.subject||''}${noteText?'　'+noteText:''}</div>
-        </div>
-      </div>`;
-    }
-    html += '</div>';
-    document.getElementById('photo-grid').innerHTML = html;
+    const rows = await res.json();
+    if (!Array.isArray(rows)) throw new Error((rows && rows.message) || '读取失败');
+    phRows = rows.filter(r => arPhotoUrl(r));
+    phRender();
   } catch(e) {
     document.getElementById('photo-grid').innerHTML = `<div class="load-state" style="color:var(--red)">エラー: ${e.message}</div>`;
   }
 }
-// 删除：清掉这条记录 note 里的图片URL（数据保留，只去图）+ 删Storage文件
-async function deletePhotoRecord(id, purl) {
+function phSet(k, v) { phF[k] = phF[k] === v ? '' : v; phRender(); }
+function phChip(on, label, onclick) {
+  return `<span class="filter-chip${on ? ' active' : ''}" onclick="${onclick}" style="display:inline-block;padding:3px 10px;margin:0 4px 4px 0;border:1px solid ${on ? 'var(--accent)' : 'var(--border)'};background:${on ? 'var(--accent)' : 'var(--surface)'};color:${on ? '#fff' : 'var(--text-secondary)'};border-radius:12px;font-size:11px;cursor:pointer">${label}</span>`;
+}
+function phRender() {
+  const q = (document.getElementById('photo-search')?.value || '').trim();
+  const subjName = id => (SUBJECTS.find(x => x.id === id) || {}).label || id || '其他';
+  const rowOk = (r, skip) => {
+    if (skip !== 'era' && phF.era && r.era !== phF.era) return false;
+    if (skip !== 'subj' && phF.subj && r.subject !== phF.subj) return false;
+    if (skip !== 'poster' && phF.poster && phPosterMap) { const has = !!phPosterMap[r.id]; if ((phF.poster === 'done') !== has) return false; }
+    if (q && !searchMatch(q, [r.student, r.univ, r.dept, r.spec])) return false;
+    return true;
+  };
+  const cnt = (skip, f) => phRows.filter(r => rowOk(r, skip) && f(r)).length;
+  // 筛选 chips（每组单独可用、互相交叉）
+  const subjIds = [...new Set(phRows.map(r => r.subject || 'other'))];
+  const SHOW = 12;
+  const shown = phSubjMore ? subjIds : subjIds.filter((id, i) => i < SHOW || id === phF.subj);
+  let h = `<div style="margin-bottom:4px"><span style="font-size:11px;color:var(--text-muted);margin-right:6px">年度</span>`
+    + phChip(!phF.era, '全部', "phF.era='';phRender()")
+    + [['new', '2026–2027'], ['hist', '2022–2025']].map(([k, l]) => phChip(phF.era === k, `${l} (${cnt('era', r => r.era === k)})`, `phSet('era','${k}')`)).join('') + '</div>';
+  h += `<div style="margin-bottom:4px"><span style="font-size:11px;color:var(--text-muted);margin-right:6px">在籍学科</span>`
+    + phChip(!phF.subj, '全部', "phF.subj='';phRender()")
+    + shown.map(id => phChip(phF.subj === id, `${subjName(id)} (${cnt('subj', r => (r.subject || 'other') === id)})`, `phSet('subj','${id}')`)).join('')
+    + (subjIds.length > SHOW ? phChip(false, phSubjMore ? '收起 ▴' : '更多 ▾', 'phSubjMore=!phSubjMore;phRender()') : '') + '</div>';
+  if (phPosterMap) {
+    h += `<div style="margin-bottom:4px"><span style="font-size:11px;color:var(--text-muted);margin-right:6px">海报</span>`
+      + phChip(!phF.poster, '全部', "phF.poster='';phRender()")
+      + [['todo', '未制作'], ['done', '已制作']].map(([k, l]) => phChip(phF.poster === k, l, `phSet('poster','${k}')`)).join('') + '</div>';
+  }
+  document.getElementById('photo-filters').innerHTML = h;
+
+  const rows = phRows.filter(r => rowOk(r, ''));
+  document.getElementById('photo-count').textContent = rows.length + ' 件';
+  if (!rows.length) { document.getElementById('photo-grid').innerHTML = '<div class="load-state">该条件下暂无合格照片</div>'; return; }
+  const esc = arEsc;
+  document.getElementById('photo-grid').innerHTML = '<div class="photo-grid">' + rows.map(r => {
+    const purl = arPhotoUrl(r);
+    const noteText = arStripNotePhoto(r.note);
+    return `<div class="photo-card">
+        <img src="${esc(purl)}" alt="${esc(r.univ)}" onerror="this.style.display='none'" style="cursor:pointer" onclick="window.open(this.src,'_blank')">
+        <div class="photo-card-info">
+          <div class="photo-card-title">${esc(r.univ) || '（未知大学）'} ${r.student ? '· ' + esc(r.student) : ''}
+            <button class="photo-card-del" onclick="deletePhotoRecord('${esc(r.id)}')">削除</button>
+          </div>
+          <div class="photo-card-sub">${esc(r.dept)}${r.spec ? ' ' + esc(r.spec) : ''}　${esc(subjName(r.subject))}${noteText ? '　' + esc(noteText) : ''}</div>
+        </div>
+      </div>`;
+  }).join('') + '</div>';
+}
+// 删除：只去掉照片（清 photo_url 和 note 里的 [photo] 段），合格数据保留；再删 Storage 文件
+async function deletePhotoRecord(id) {
   if (!confirm('删除这张合格照片？（合格数据保留，只删照片）')) return;
   try {
-    // 读原记录
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/admission_results?id=eq.${id}&select=note`, { headers: adminAuthHeaders() });
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/admission_results?id=eq.${encodeURIComponent(id)}&select=note,photo_url`, { headers: adminAuthHeaders() });
     const rows = await r.json();
-    const oldNote = (rows[0]?.note) || '';
-    const newNote = oldNote.replace(/\s*\|\s*\[photo\]\S+/, '').replace(/\[photo\]\S+/, '').trim() || null;
-    await fetch(`${SUPABASE_URL}/rest/v1/admission_results?id=eq.${id}`, {
+    const rec = rows[0] || {};
+    const purl = arPhotoUrl(rec);
+    const upd = await fetch(`${SUPABASE_URL}/rest/v1/admission_results?id=eq.${encodeURIComponent(id)}`, {
       method: 'PATCH',
-      headers: adminAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ note: newNote })
+      headers: adminAuthHeaders({ 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }),
+      body: JSON.stringify({ photo_url: null, note: arStripNotePhoto(rec.note) || null })
     });
-    // 删Storage文件（从URL提取路径）
+    if (!upd.ok) throw new Error(await upd.text());
     const pm = purl.match(/admission-photos\/(.+)$/);
     if (pm) {
-      await fetch(`${SUPABASE_URL}/storage/v1/object/${PHOTO_BUCKET}/${pm[1]}`, {
-        method: 'DELETE', headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
-      });
+      await fetch(`${SUPABASE_URL}/storage/v1/object/${PHOTO_BUCKET}/${pm[1]}`, { method: 'DELETE', headers: adminAuthHeaders() }).catch(() => {});
     }
     loadPhotos();
   } catch(e) { alert('删除失败: ' + e.message); }
