@@ -2308,12 +2308,18 @@ function sschedAttRole(courseId) {
   if (courseAttMode(sschedCourseInfo(courseId)) === 'none') return null;
   return sschedIsMember(courseId) ? 'required' : (sschedIsElective(courseId) ? 'elective' : null);
 }
+// 其他专业（选修）课名后面的小字：课程所属专业
 function sschedOtherTag(courseId) {
   if (sschedIsMember(courseId)) return '';
-  if (sschedIsElective(courseId)) return '<span style="display:inline-block;margin-left:4px;padding:0 4px;border-radius:2px;background:#f0e8d4;color:#7a5f1c;font-size:9px;line-height:1.4;font-weight:400">选修</span>';
   const inf = sschedCourseInfo(courseId) || {}, mj = (Array.isArray(inf.major) ? inf.major : (inf.major ? [inf.major] : [])).map(m => majorLabel(m)).filter(Boolean).join('・');
-  return `<span style="display:inline-block;margin-left:4px;padding:0 4px;border-radius:2px;background:var(--bg);color:var(--text-muted);border:1px solid var(--border-light);font-size:9px;line-height:1.4;font-weight:400;opacity:.85">其他专业${mj ? '：' + escA(mj) : ''}</span>`;
+  return mj ? `<span style="margin-left:5px;font-size:9px;color:var(--text-muted);font-weight:400">${escA(mj)}</span>` : '';
 }
+// 课程分两组：本专业（自己是成员的课）在前，其他专业（选修）在后
+function sschedGroups() {
+  const all = (studySchedData && studySchedData.courses) || [];
+  return { mine: all.filter(c => sschedIsMember(c.id)), other: all.filter(c => !sschedIsMember(c.id)) };
+}
+function sschedGroupTitle(t) { return `<div style="width:100%;font-size:10px;font-weight:600;color:var(--text-muted);letter-spacing:.05em">${t}</div>`; }
 function sschedCourseInfo(courseId) {
   const c = (studySchedData.courses || []).find(x => x.id === String(courseId));
   return c ? c.info : null;
@@ -2374,13 +2380,16 @@ function renderScheduleTab() {
   if (!D.share) return '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">暂无发布的课程表，请等待教务发布</div>';
   if (!(D.courses || []).length) return '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">暂无你参加的课程</div>';
 
-  const legend = `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:10px 14px;margin-bottom:12px">
-    ${D.courses.map(c => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text-secondary)"><span style="width:10px;height:10px;border-radius:2px;background:${c.color[1]};border:1px solid ${c.color[0]};display:inline-block"></span>${escA(c.name)}${sschedOtherTag(c.id)}</span>`).join('')}
+  const G = sschedGroups();
+  const legendItem = c => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text-secondary)"><span style="width:10px;height:10px;border-radius:2px;background:${c.color[1]};border:1px ${sschedIsMember(c.id) ? 'solid' : 'dashed'} ${c.color[0]};display:inline-block"></span>${escA(c.name)}${sschedOtherTag(c.id)}</span>`;
+  const legendGroup = (title, list) => `<div style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center">${sschedGroupTitle(title)}${list.map(legendItem).join('')}</div>`;
+  const legend = `<div style="display:flex;flex-direction:column;gap:8px;background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:10px 14px;margin-bottom:12px">
+    ${G.other.length ? legendGroup('本专业', G.mine) + legendGroup('其他专业（选修）', G.other) : legendGroup('本专业', G.mine)}
   </div>`;
 
   const dvL = v => v === '线下＋线上' ? '线上线下同步' : (v || '');
   const infoBar = `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:8px 14px;margin-bottom:12px">
-    ${D.courses.map(c => {
+    ${G.mine.concat(G.other).map(c => {
       const inf = c.info || {};
       return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:10px;padding:4px 0;border-bottom:1px dashed var(--border-light)">
         <span style="display:inline-flex;align-items:center;gap:5px;color:var(--text-secondary);min-width:120px"><span style="width:8px;height:8px;border-radius:2px;background:${c.color[1]};border:1px solid ${c.color[0]};display:inline-block"></span>${escA(c.name)}${sschedOtherTag(c.id)}</span>
@@ -2426,8 +2435,8 @@ function sschedMonthHtml() {
       ${list.map(s => {
         const off = s.is_cancelled || s.session_title === '休讲';
         const col = sschedColor(s.course_id);
-        return `<div style="border-radius:3px;padding:2px 3px;margin-top:2px;font-size:9px;line-height:1.35;overflow-wrap:anywhere;${off ? 'background:var(--bg);color:var(--text-muted);text-decoration:line-through' : `background:${col[1]};color:${col[0]}`}">
-          <div style="font-weight:600">${escA((s.session_title && !off ? s.session_title : s.course_name) || '')}${off ? ' 休讲' : ''}${sschedMarkHtml(s)}${off ? '' : sschedOtherTag(s.course_id)}</div>
+        return `<div style="border-radius:3px;padding:2px 3px;margin-top:2px;font-size:9px;line-height:1.35;overflow-wrap:anywhere;${off ? 'background:var(--bg);color:var(--text-muted);text-decoration:line-through' : `background:${col[1]};color:${col[0]}${sschedIsMember(s.course_id) ? '' : ';border:1px dashed ' + col[0]}`}">
+          <div style="font-weight:600">${escA((s.session_title && !off ? s.session_title : s.course_name) || '')}${off ? ' 休讲' : ''}${sschedMarkHtml(s)}</div>
           ${off ? '' : parseTimeRanges(s.time_range).map(r => `<div>${escA(r.end ? r.start + '-' + r.end : r.start)}</div>`).join('')}
         </div>`;
       }).join('')}
@@ -2483,7 +2492,7 @@ function sschedCalHtml() {
           const col = sschedColor(s.course_id);
           h += cancelled
             ? `<div style="font-size:9px;text-align:center;padding:4px 2px;border-radius:2px;background:var(--bg);color:var(--text-muted);border:1px dashed var(--border)">${escA(s.course_name||'')} 休讲</div>`
-            : `<div style="font-size:9px;text-align:center;padding:4px 2px;border-radius:2px;background:${col[1]};color:${col[0]};border:1px solid ${col[0]};line-height:1.4">${escA(s.course_name||'')}${sschedMarkHtml(s)}${sschedOtherTag(s.course_id)}${s.session_number?`<div style="font-size:8px;opacity:.75">第${s.session_number}回${s.session_title?' '+escA(s.session_title):''}</div>`:''}</div>`;
+            : `<div style="font-size:9px;text-align:center;padding:4px 2px;border-radius:2px;background:${col[1]};color:${col[0]};border:1px ${sschedIsMember(s.course_id) ? 'solid' : 'dashed'} ${col[0]};line-height:1.4">${escA(s.course_name||'')}${sschedMarkHtml(s)}${s.session_number?`<div style="font-size:8px;opacity:.75">第${s.session_number}回${s.session_title?' '+escA(s.session_title):''}</div>`:''}</div>`;
         });
         h += `</div>`;
       });
@@ -2495,8 +2504,9 @@ function sschedCalHtml() {
 
 // 课程汇总视图：每门课一张卡，逐回列出
 function sschedSumHtml() {
-  return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
-    ${studySchedData.courses.map(c => {
+  const G = sschedGroups();
+  const grid = courses => `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
+    ${courses.map(c => {
       const list = studySchedData.sessions.filter(s => s.course_id === c.id);
       return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;overflow:hidden">
         <div style="padding:9px 12px;border-bottom:1px solid var(--border-light)">
@@ -2523,6 +2533,9 @@ function sschedSumHtml() {
       </div>`;
     }).join('')}
   </div>`;
+  const title = (t, mt) => `<div style="font-size:11px;font-weight:600;color:var(--text-muted);margin:${mt}px 0 8px">${t}</div>`;
+  if (!G.other.length) return grid(G.mine);
+  return (G.mine.length ? title('本专业', 2) + grid(G.mine) : '') + title('其他专业（选修）', G.mine.length ? 16 : 2) + grid(G.other);
 }
 
 // ── 作业档案（成长回顾）：按课程分组的历史作业与老师反馈 ──
