@@ -157,7 +157,7 @@ main{max-width:640px;margin:2rem auto;padding:0 1.2rem 4rem}
 <script>
 const SUPABASE_URL='https://vwntezfvqbrkeovnseku.supabase.co';
 const SUPABASE_KEY='sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
-const BUCKET='admission-photos';
+const BUCKET='admission-private';   // 私有桶：原截图只有管理员能看
 
 function previewPhoto(input){
   const file=input.files[0];if(!file)return;
@@ -179,13 +179,12 @@ async function uploadPhoto(file,univ,student){
       'apikey':SUPABASE_KEY,
       'Authorization':'Bearer '+SUPABASE_KEY,
       'Content-Type':file.type,
-      'x-upsert':'true',
       'Cache-Control':'3600',
     },
     body:file,
   });
   if(!res.ok){const err=await res.text();throw new Error('图片上传失败: '+err);}
-  return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`;
+  return path;   // 只返回私有桶里的路径，不写进公开的结果表
 }
 
 async function submitForm(){
@@ -206,8 +205,8 @@ async function submitForm(){
     const engScore=document.getElementById('f-eng-score').value;
     const photoFile=document.getElementById('f-photo').files[0];
 
-    let photoUrl=null;
-    if(photoFile){btn.textContent='上传图片中...';photoUrl=await uploadPhoto(photoFile,univ,student);}
+    let photoPath=null;
+    if(photoFile){btn.textContent='上传图片中...';photoPath=await uploadPhoto(photoFile,univ,student);}
 
     const noteText=document.getElementById('f-note').value.trim();
     const row={
@@ -220,19 +219,33 @@ async function submitForm(){
       eng_type:document.getElementById('f-eng-type').value||null,
       eng_score:engScore?parseInt(engScore):null,
       note:noteText||null,
-      photo_url:photoUrl||null,
     };
 
     btn.textContent='保存中...';
     const res=await fetch(`${SUPABASE_URL}/rest/v1/admission_results`,{
       method:'POST',
-      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=representation'},
       body:JSON.stringify(row),
     });
     if(!res.ok)throw new Error(await res.text());
+    if(photoPath){
+      // 照片路径写进单独的 result_photos 表（公开的结果表里不放照片信息）
+      let photoOk=false;
+      try{
+        const saved=await res.json();
+        const rid=Array.isArray(saved)?saved[0]&&saved[0].id:saved&&saved.id;
+        const pr=await fetch(`${SUPABASE_URL}/rest/v1/result_photos`,{
+          method:'POST',
+          headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+          body:JSON.stringify({result_kind:'grad',result_id:String(rid),path:photoPath}),
+        });
+        photoOk=!!rid&&pr.ok;
+      }catch(_){}
+      if(!photoOk)showToast('合格信息已保存，但照片登记失败，请联系老师补传',false);
+    }
 
     document.getElementById('success-msg').innerHTML=`<strong>${univ}</strong> 合格おめでとうございます！<br>情報を正常に保存しました。`;
-    if(photoUrl){const sp=document.getElementById('success-photo');sp.src=photoUrl;sp.style.display='block';}
+    if(photoFile){const sp=document.getElementById('success-photo');sp.src=URL.createObjectURL(photoFile);sp.style.display='block';}   // 用本地文件预览，不再请求服务器
     document.getElementById('form-area').style.display='none';
     document.getElementById('success-screen').style.display='block';
     launchConfetti();

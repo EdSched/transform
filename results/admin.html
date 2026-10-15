@@ -10,12 +10,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
 <script src="../shared/vendor/supabase.min.js"></script>
-<script src="../shared/supabase.js?v=20261102"></script>
+<script src="../shared/supabase.js?v=20261201"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script src="../shared/admin-gate.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="../shared/pass-posters.js?v=20261129"></script>
-<script src="poster/poster.js?v=20261129"></script>
+<script src="poster/poster.js?v=20261201"></script>
 <style>
 :root {
   --bg: #f7f5f0; --surface: #fff; --border: #e2ded6; --border-light: #ede9e2;
@@ -536,7 +536,9 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
     <input id="photo-search" placeholder="搜索学生（汉字 / 拼音首字母）/ 大学 / 研究科…" oninput="searchBox(this,()=>phRender('grad'))" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:260px">
     <button class="btn btn-secondary" onclick="loadPhotos('grad')">↺ 刷新</button>
     <span style="font-size:11px;color:var(--text-muted)" id="photo-count"></span>
+    <button class="btn btn-secondary ar-mig-btn" style="display:none;margin-left:auto" onclick="arMigratePhotos()"></button>
   </div>
+  <div class="ar-mig-log" style="display:none;margin-bottom:10px;font-size:11px;line-height:1.7;padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface)"></div>
   <div id="photo-filters" style="margin-bottom:12px"></div>
   <div id="photo-grid" class="load-state">读取中...</div>
 </div>
@@ -759,7 +761,9 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
     <input id="ugphoto-search" placeholder="搜索学生（汉字 / 拼音首字母）/ 大学 / 学部…" oninput="searchBox(this,()=>phRender('ug'))" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:260px">
     <button class="btn btn-secondary" onclick="loadPhotos('ug')">↺ 刷新</button>
     <span style="font-size:11px;color:var(--text-muted)" id="ugphoto-count"></span>
+    <button class="btn btn-secondary ar-mig-btn" style="display:none;margin-left:auto" onclick="arMigratePhotos()"></button>
   </div>
+  <div class="ar-mig-log" style="display:none;margin-bottom:10px;font-size:11px;line-height:1.7;padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface)"></div>
   <div id="ugphoto-filters" style="margin-bottom:12px"></div>
   <div id="ugphoto-grid" class="load-state">读取中...</div>
 </div>
@@ -2190,7 +2194,7 @@ function openEditModal(el) {
   document.getElementById('em-eng-score').value = r.eng_score || '';
   document.getElementById('em-note').value = r.note || '';
   arSetMajor('em', r.our_major || arGuessMajor(r.subject));
-  emPhotoShow(arPhotoUrl(r), false);
+  arPhotoShowFor('grad', r, 'em');
   document.getElementById('em-photo').value = '';
   document.getElementById('edit-modal-title').textContent = `編集: ${r.univ}`;
   document.getElementById('edit-modal').classList.add('show');
@@ -2225,8 +2229,10 @@ async function saveEdit() {
   const photoFile = document.getElementById('em-photo').files[0];
   if (photoFile) {
     try {
-      updates.photo_url = await arUploadPhoto(photoFile);
-      updates.note = (updates.note || '').replace(/\s*\|\s*\[photo\]\S+/, '').replace(/\[photo\]\S+/, '').trim() || null;   // 旧的 [photo] 链接作废
+      const newPath = await arUploadPhoto(photoFile, 'grad');
+      await arSetPhoto('grad', id, newPath, allData.find(x => x.id === id));   // 写 result_photos，删旧文件
+      updates.photo_url = null;
+      updates.note = arStripNotePhoto(updates.note) || null;   // 旧的 [photo] 链接作废
     } catch (e) { toast('图片上传失败: ' + e.message, false); return; }
   }
   const oldRow = allData.find(x => x.id === id);
@@ -2287,7 +2293,7 @@ function ugOpenEditModal(el) {
   document.getElementById('ug-em-toeic').value = r.toeic||'';
   document.getElementById('ug-em-note').value = r.note||'';
   arSetMajor('ugem', r.our_major || '');
-  emPhotoShow(arPhotoUrl(r), false, 'ug-em');
+  arPhotoShowFor('ug', r, 'ug-em');
   document.getElementById('ug-em-photo').value = '';
   document.getElementById('ug-edit-modal-title').textContent = '編集: '+r.univ;
   document.getElementById('ug-edit-modal').classList.add('show');
@@ -2317,7 +2323,9 @@ async function ugSaveEdit() {
   const ugPhoto=document.getElementById('ug-em-photo').files[0];
   if(ugPhoto){
     try{
-      updates.photo_url=await arUploadPhoto(ugPhoto,'ug');
+      const newPath=await arUploadPhoto(ugPhoto,'ug');
+      await arSetPhoto('ug',id,newPath,ugAllData.find(x=>x.id===id));   // 写 result_photos，删旧文件
+      updates.photo_url=null;
       updates.note=arStripNotePhoto(updates.note)||null;   // 旧的 [photo] 链接作废
     }catch(e){ toast('图片上传失败: '+e.message,false); return; }
   }
@@ -2412,20 +2420,123 @@ async function ugSaveTierChanges(){
 
 
 // ─── 合格写真 ────────────────────────────────────────────────────────────────
-const PHOTO_BUCKET = 'admission-photos';
+const PHOTO_BUCKET = 'admission-photos';      // 公开桶：只剩旧照片（迁移前）、海报、案例
+const PRIV_BUCKET = 'admission-private';     // 私有桶：未遮盖的原截图，只有管理员能读
 const PH_NOTE_RE = /\[photo\](\S+)/;
-// 照片有两种存法：photo_url（统一用这个）和旧的 note 里的 [photo]链接，两种都认
-function arPhotoUrl(r) { return (r && r.photo_url) || (((r && r.note) || '').match(PH_NOTE_RE) || [])[1] || ''; }
+const AR_PH = { grad: {}, ug: {} };          // 照片路径表 result_photos：result_id → 私有桶里的路径
+const AR_PH_LOADED = { grad: false, ug: false };
+// 旧的存法（迁移前）：photo_url，或 note 里的 [photo]链接
+function arLegacyUrl(r) { return (r && r.photo_url) || (((r && r.note) || '').match(PH_NOTE_RE) || [])[1] || ''; }
 function arStripNotePhoto(note) { return (note || '').replace(/\s*\|\s*\[photo\]\S+/, '').replace(/\[photo\]\S+/, '').trim(); }
-// 上传到 admission-photos/grad/…，原图原样上传；返回公开链接
+// 分页读全表（Supabase 一次最多 1000 行）
+async function arFetchAll(path) {
+  const out = [];
+  for (let from = 0; ; from += 1000) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: adminAuthHeaders({ 'Range-Unit': 'items', 'Range': `${from}-${from + 999}` }) });
+    if (!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`);
+    const rows = await res.json();
+    out.push(...rows);
+    if (rows.length < 1000) break;
+  }
+  return out;
+}
+async function arLoadPhotoMap(kind) {
+  const rows = await arFetchAll(`result_photos?result_kind=eq.${kind}&select=result_id,path&order=created_at.asc`);
+  const m = {}; rows.forEach(x => { m[String(x.result_id)] = x.path; });
+  AR_PH[kind] = m; AR_PH_LOADED[kind] = true;
+}
+async function arEnsurePhotoMap(kind) { if (!AR_PH_LOADED[kind]) await arLoadPhotoMap(kind); }
+// 这条记录的照片：私有桶路径（新）或旧的公开链接（还没迁移）；没有返回 ''
+async function arPhotoRef(kind, r) {
+  await arEnsurePhotoMap(kind);
+  return AR_PH[kind][String(r && r.id)] || arLegacyUrl(r);
+}
+// 私有桶路径 → 临时链接（600 秒）。一次传多个；返回 { 路径: 链接 }
+const AR_SIGN_TTL = 600, arSignCache = {};
+async function arSignedUrls(paths) {
+  const out = {}, now = Date.now(), need = [];
+  [...new Set((paths || []).filter(Boolean))].forEach(p => {
+    const c = arSignCache[p];
+    if (c && c.exp > now) out[p] = c.url; else need.push(p);
+  });
+  for (let i = 0; i < need.length; i += 100) {
+    const chunk = need.slice(i, i + 100);
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${PRIV_BUCKET}`, {
+      method: 'POST', headers: adminAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ expiresIn: AR_SIGN_TTL, paths: chunk })
+    });
+    if (!res.ok) throw new Error('取得临时链接失败: ' + await res.text());
+    (await res.json()).forEach(x => {
+      if (x && x.signedURL && !x.error) {
+        const url = `${SUPABASE_URL}/storage/v1${x.signedURL}`;
+        arSignCache[x.path] = { url, exp: now + (AR_SIGN_TTL - 60) * 1000 };
+        out[x.path] = url;
+      }
+    });
+  }
+  return out;
+}
+// 引用（路径或旧链接）→ 能直接用的图片链接
+async function arResolveSrc(ref) {
+  if (!ref) return '';
+  if (/^https?:/i.test(ref)) return ref;
+  return (await arSignedUrls([ref]))[ref] || '';
+}
+// 管理员身份上传原截图到私有桶（原图原样，文件名随机 ASCII）；返回路径
 async function arUploadPhoto(file, folder) {
   let ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, ''); if (!ext || ext.length > 5) ext = 'jpg';
   const path = (folder || 'grad') + '/' + Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.' + ext;
-  const put = h => fetch(`${SUPABASE_URL}/storage/v1/object/${PHOTO_BUCKET}/${path}`, { method: 'POST', headers: { ...h, 'Content-Type': file.type, 'x-upsert': 'true' }, body: file });
-  let up = await put(adminAuthHeaders());
-  if (!up.ok) up = await put({ apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY });
+  const up = await fetch(`${SUPABASE_URL}/storage/v1/object/${PRIV_BUCKET}/${path}`, { method: 'POST', headers: adminAuthHeaders({ 'Content-Type': file.type || 'application/octet-stream' }), body: file });
   if (!up.ok) throw new Error(await up.text());
-  return `${SUPABASE_URL}/storage/v1/object/public/${PHOTO_BUCKET}/${path}`;
+  return path;
+}
+async function arRemoveFiles(paths) {
+  paths = (paths || []).filter(Boolean);
+  for (let i = 0; i < paths.length; i += 100) {
+    await fetch(`${SUPABASE_URL}/storage/v1/object/${PRIV_BUCKET}`, { method: 'DELETE', headers: adminAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ prefixes: paths.slice(i, i + 100) }) }).catch(() => {});
+  }
+}
+// 旧的公开链接对应的公开桶文件
+function arLegacyFilePath(url) { const m = String(url || '').match(/admission-photos\/(.+)$/); return m ? m[1] : ''; }
+async function arRemoveLegacyFile(url) {
+  const p = arLegacyFilePath(url); if (!p) return true;
+  const r = await fetch(`${SUPABASE_URL}/storage/v1/object/${PHOTO_BUCKET}/${p}`, { method: 'DELETE', headers: adminAuthHeaders() }).catch(() => null);
+  return !!(r && r.ok);
+}
+// 给一条记录设置（或更换）照片：写 result_photos，删旧文件（私有桶里的旧文件 + 迁移前的公开文件）
+async function arSetPhoto(kind, id, path, legacyRow) {
+  await arEnsurePhotoMap(kind);
+  const key = String(id), old = AR_PH[kind][key];
+  await sbFetch('result_photos?on_conflict=result_kind,result_id', { method: 'POST', body: { result_kind: kind, result_id: key, path }, prefer: 'resolution=merge-duplicates,return=minimal', headers: {} });
+  AR_PH[kind][key] = path;
+  if (old && old !== path) await arRemoveFiles([old]);
+  const lu = legacyRow && arLegacyUrl(legacyRow);
+  if (lu) await arRemoveLegacyFile(lu);
+}
+// 删合格记录 / 照片时：删 result_photos 行和私有桶里的文件
+async function arDeleteResultPhotos(kind, ids) {
+  ids = (ids || []).map(String);
+  if (!ids.length) return;
+  let rows;
+  try {
+    rows = ids.length <= 50
+      ? await sbFetch(`result_photos?result_kind=eq.${kind}&result_id=in.(${ids.map(i => '"' + i.replace(/"/g, '') + '"').join(',')})&select=id,result_id,path`)
+      : (await arFetchAll(`result_photos?result_kind=eq.${kind}&select=id,result_id,path`)).filter(x => ids.includes(String(x.result_id)));
+  } catch (e) { return; }   // 表还没建
+  if (!rows || !rows.length) return;
+  await arRemoveFiles(rows.map(x => x.path));
+  for (let i = 0; i < rows.length; i += 50) {
+    await sbFetch(`result_photos?id=in.(${rows.slice(i, i + 50).map(x => x.id).join(',')})`, { method: 'DELETE', prefer: 'return=minimal', headers: {} });
+  }
+  rows.forEach(x => { delete AR_PH[kind][String(x.result_id)]; });
+}
+// 编辑弹窗里显示现有照片（临时链接）
+async function arPhotoShowFor(kind, r, pre) {
+  const box = document.getElementById(pre + '-photo-box');
+  if (box) box.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">读取中…</div>';
+  let url = '';
+  try { url = await arResolveSrc(await arPhotoRef(kind, r)); } catch (e) { url = ''; }
+  emPhotoShow(url, false, pre);
 }
 function emPhotoShow(url, isNew, pre) {
   const box = document.getElementById((pre || 'em') + '-photo-box'); if (!box) return;
@@ -2448,11 +2559,10 @@ async function loadPhotos(kind) {
   const c = PH[kind], grid = document.getElementById(c.pre + '-grid');
   grid.innerHTML = '<div class="load-state">読み込み中...</div>';
   try {
-    const url = `${SUPABASE_URL}/rest/v1/${c.table}?select=*&or=(photo_url.not.is.null,note.like.*%5Bphoto%5D*)&order=created_at.desc`;
-    const res = await fetch(url, { headers: adminAuthHeaders() });
-    const rows = await res.json();
-    if (!Array.isArray(rows)) throw new Error((rows && rows.message) || '读取失败');
-    c.rows = rows.filter(r => arPhotoUrl(r));
+    await arLoadPhotoMap(kind);
+    const rows = await arFetchAll(`${c.table}?select=*&order=created_at.desc`);
+    c.rows = rows.filter(r => AR_PH[kind][String(r.id)] || arLegacyUrl(r));   // 有私有桶照片的，或还没迁移的旧照片
+    arMigCount();
     // 已做过海报的记录（表还没建时 posterMap 为 null，「海报」筛选和按钮状态都不显示）
     try {
       const ps = await sbFetch(`pass_posters?result_kind=eq.${kind}&select=result_id,web_url`);
@@ -2510,10 +2620,10 @@ function phRender(kind) {
   if (!rows.length) { grid.innerHTML = '<div class="load-state">该条件下暂无合格照片</div>'; return; }
   const esc = arEsc;
   grid.innerHTML = '<div class="photo-grid">' + rows.map(r => {
-    const purl = arPhotoUrl(r);
+    const ppath = AR_PH[kind][String(r.id)] || '', legacy = ppath ? '' : arLegacyUrl(r);
     const noteText = arStripNotePhoto(r.note);
     return `<div class="photo-card">
-        <img src="${esc(purl)}" alt="${esc(r.univ)}" onerror="this.style.display='none'" style="cursor:pointer" onclick="window.open(this.src,'_blank')">
+        <img ${ppath ? `data-path="${esc(ppath)}"` : `src="${esc(legacy)}"`} alt="${esc(r.univ)}" onerror="this.style.display='none'" style="cursor:pointer" onclick="if(this.src)window.open(this.src,'_blank')">
         <div class="photo-card-info">
           <div class="photo-card-title">${esc(r.univ) || '（未知大学）'} ${r.student ? '· ' + esc(r.student) : ''}
             <button class="photo-card-del" onclick="deletePhotoRecord('${kind}','${esc(r.id)}')">削除</button>
@@ -2524,31 +2634,106 @@ function phRender(kind) {
         </div>
       </div>`;
   }).join('') + '</div>';
+  arFillImgs(grid);
 }
-// 删除：只去掉照片（清 photo_url 和 note 里的 [photo] 段），合格数据保留；再删 Storage 文件
+// 私有桶的图：取临时链接后再显示
+async function arFillImgs(root) {
+  const imgs = [...root.querySelectorAll('img[data-path]')];
+  if (!imgs.length) return;
+  try {
+    const m = await arSignedUrls(imgs.map(i => i.dataset.path));
+    imgs.forEach(i => { if (m[i.dataset.path]) i.src = m[i.dataset.path]; else i.style.display = 'none'; });
+  } catch (e) { toast(e.message, false); }
+}
+// 删除：只去掉照片（删 result_photos 行 + 私有桶文件；迁移前的旧照片清 photo_url 和 note 里的 [photo] 段并删公开桶文件），合格数据保留
 async function deletePhotoRecord(kind, id) {
   const c = PH[kind];
   const hasPoster = c.posterMap && c.posterMap[id];
   if (!confirm('删除这张合格照片？（合格数据保留，只删照片）' + (hasPoster ? '\n这张照片的海报也会一起删除' : ''))) return;
   try {
-    const enc = encodeURIComponent(id);
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/${c.table}?id=eq.${enc}&select=note,photo_url`, { headers: adminAuthHeaders() });
+    const enc = encodeURIComponent;
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${c.table}?id=eq.${enc(id)}&select=note,photo_url`, { headers: adminAuthHeaders() });
     const rows = await r.json();
     const rec = rows[0] || {};
-    const purl = arPhotoUrl(rec);
-    const upd = await fetch(`${SUPABASE_URL}/rest/v1/${c.table}?id=eq.${enc}`, {
-      method: 'PATCH',
-      headers: adminAuthHeaders({ 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }),
-      body: JSON.stringify({ photo_url: null, note: arStripNotePhoto(rec.note) || null })
-    });
-    if (!upd.ok) throw new Error(await upd.text());
-    const pm = purl.match(/admission-photos\/(.+)$/);
-    if (pm) {
-      await fetch(`${SUPABASE_URL}/storage/v1/object/${PHOTO_BUCKET}/${pm[1]}`, { method: 'DELETE', headers: adminAuthHeaders() }).catch(() => {});
+    const legacy = arLegacyUrl(rec);
+    if (legacy) {
+      const upd = await fetch(`${SUPABASE_URL}/rest/v1/${c.table}?id=eq.${enc(id)}`, {
+        method: 'PATCH',
+        headers: adminAuthHeaders({ 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }),
+        body: JSON.stringify({ photo_url: null, note: arStripNotePhoto(rec.note) || null })
+      });
+      if (!upd.ok) throw new Error(await upd.text());
+      await arRemoveLegacyFile(legacy);
     }
+    await arDeleteResultPhotos(kind, [id]);
     if (hasPoster) await pstDeleteForResults(kind, [id]);
     loadPhotos(kind);
   } catch(e) { alert('删除失败: ' + e.message); }
+}
+
+// ─── 迁移旧照片（一次性）：公开桶里的旧原截图 → 私有桶 ───────────────────────────
+const AR_LEGACY_OR = 'or=(photo_url.not.is.null,note.like.*%5Bphoto%5D*)';
+let arMigBusy = false;
+async function arLegacyRows(kind) {
+  return arFetchAll(`${PH[kind].table}?select=id,photo_url,note&${AR_LEGACY_OR}`);
+}
+// 按钮上的数字 = 还有旧照片的记录数（大学院 + 学部）；0 就不显示
+async function arMigCount() {
+  if (arMigBusy) return;
+  let n = 0;
+  try { for (const k of ['grad', 'ug']) n += (await arLegacyRows(k)).filter(r => arLegacyUrl(r)).length; } catch (e) { return; }
+  document.querySelectorAll('.ar-mig-btn').forEach(b => { b.style.display = n ? '' : 'none'; b.textContent = `迁移旧照片（${n} 张）`; });
+}
+function arMigLog(html) { document.querySelectorAll('.ar-mig-log').forEach(d => { d.style.display = html ? '' : 'none'; d.innerHTML = html; }); }
+async function arMigrateOne(kind, row) {
+  const url = arLegacyUrl(row), old = arLegacyFilePath(url);
+  if (!old) throw new Error('不是公开桶的链接');
+  // 1. 下载原图，原样传到私有桶
+  const dl = await fetch(url, { cache: 'no-store' });
+  if (!dl.ok) throw new Error('下载失败 ' + dl.status);
+  const blob = await dl.blob();
+  const newPath = kind + '/' + old.split('/').pop();
+  const up = await fetch(`${SUPABASE_URL}/storage/v1/object/${PRIV_BUCKET}/${newPath}`, { method: 'POST', headers: adminAuthHeaders({ 'Content-Type': blob.type || 'application/octet-stream', 'x-upsert': 'true' }), body: blob });
+  if (!up.ok) throw new Error('上传失败 ' + await up.text());
+  // 2. 写 result_photos
+  await sbFetch('result_photos?on_conflict=result_kind,result_id', { method: 'POST', body: { result_kind: kind, result_id: String(row.id), path: newPath }, prefer: 'resolution=merge-duplicates,return=minimal', headers: {} });
+  // 3. 结果表：photo_url 置空，note 去掉 [photo] 段
+  await sbFetch(`${PH[kind].table}?id=eq.${encodeURIComponent(row.id)}`, { method: 'PATCH', body: { photo_url: null, note: arStripNotePhoto(row.note) || null }, prefer: 'return=minimal', headers: {} });
+  // 4. 海报的原图来源改成新路径
+  const ps = await sbFetch(`pass_posters?result_kind=eq.${kind}&result_id=eq.${encodeURIComponent(row.id)}&select=id`).catch(() => []);
+  if (ps && ps.length) {
+    await sbFetch(`pass_poster_sources?poster_id=in.(${ps.map(x => x.id).join(',')})&src_url=like.http*`, { method: 'PATCH', body: { src_url: newPath }, prefer: 'return=minimal', headers: {} });
+  }
+  AR_PH[kind][String(row.id)] = newPath;
+  // 5. 前面都成功了，才删公开桶里的旧文件
+  if (!(await arRemoveLegacyFile(url))) throw new Error('已迁移，但公开桶里的旧文件没删掉，请到 Supabase Storage 手动删除：admission-photos/' + old);
+}
+async function arMigratePhotos() {
+  if (arMigBusy) return;
+  arMigBusy = true;
+  const btns = [...document.querySelectorAll('.ar-mig-btn')];
+  btns.forEach(b => b.disabled = true);
+  const fails = [];
+  try {
+    const jobs = [];
+    for (const k of ['grad', 'ug']) (await arLegacyRows(k)).forEach(r => { if (arLegacyUrl(r)) jobs.push([k, r]); });
+    if (!jobs.length) { arMigLog(''); return; }
+    for (let i = 0; i < jobs.length; i++) {
+      const [kind, row] = jobs[i];
+      btns.forEach(b => b.textContent = `迁移中 ${i + 1} / ${jobs.length}…`);
+      arMigLog(`迁移中 ${i + 1} / ${jobs.length}…` + (fails.length ? `（失败 ${fails.length}）` : ''));
+      try { await arMigrateOne(kind, row); }
+      catch (e) { fails.push(`${kind === 'ug' ? '学部' : '大学院'} · ${row.id}：${e.message}`); }
+    }
+    arMigLog(`<b>完成：成功 ${jobs.length - fails.length} 张，失败 ${fails.length} 张。</b>` + (fails.length ? '<br>失败的记录（已跳过，可再点一次重试）：<br>' + fails.map(f => arEsc(f)).join('<br>') : ''));
+  } catch (e) {
+    arMigLog('<span style="color:var(--red)">迁移出错：' + arEsc(e.message) + '</span>');
+  } finally {
+    arMigBusy = false;
+    btns.forEach(b => b.disabled = false);
+    await arMigCount();
+    ['grad', 'ug'].forEach(k => { if (document.getElementById(PH[k].pre + '-grid') && PH[k].rows.length) loadPhotos(k); });
+  }
 }
 
 async function deletePhoto(path) {
