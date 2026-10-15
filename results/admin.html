@@ -13,7 +13,7 @@
 <script src="../shared/supabase.js?v=20261102"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script src="../shared/admin-gate.js"></script>
-<script src="poster/poster.js?v=20261127"></script>
+<script src="poster/poster.js?v=20261128"></script>
 <style>
 :root {
   --bg: #f7f5f0; --surface: #fff; --border: #e2ded6; --border-light: #ede9e2;
@@ -530,8 +530,8 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
 <!-- ── TAB: 合格写真 ── -->
 <div id="tab-photos" style="display:none">
   <div style="display:flex;gap:10px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
-    <input id="photo-search" placeholder="搜索学生（汉字 / 拼音首字母）/ 大学 / 研究科…" oninput="searchBox(this,phRender)" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:260px">
-    <button class="btn btn-secondary" onclick="loadPhotos()">↺ 刷新</button>
+    <input id="photo-search" placeholder="搜索学生（汉字 / 拼音首字母）/ 大学 / 研究科…" oninput="searchBox(this,()=>phRender('grad'))" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:260px">
+    <button class="btn btn-secondary" onclick="loadPhotos('grad')">↺ 刷新</button>
     <span style="font-size:11px;color:var(--text-muted)" id="photo-count"></span>
   </div>
   <div id="photo-filters" style="margin-bottom:12px"></div>
@@ -552,6 +552,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
   <button class="tab-btn" onclick="switchUgTab('excel')">Excel 批量导入</button>
   <button class="tab-btn" onclick="switchUgTab('list')">数据管理</button>
   <button class="tab-btn" onclick="switchUgTab('tier')">Tier 管理</button>
+  <button class="tab-btn" onclick="switchUgTab('photos')">合格写真</button>
 </div>
 
 <main>
@@ -581,6 +582,11 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
       <div class="field">
         <label>学生名</label>
         <input id="ug-f-student" type="text" placeholder="A同学">
+        <div style="font-size:10px;color:var(--text-muted);margin-top:3px">学生真实姓名（要记录到学生档案时必填）</div>
+      </div>
+      <div class="field">
+        <label>本校在籍专业（不选 = 不记录到学生档案）</label>
+        <div id="ugf-major-box"></div>
       </div>
       <div class="field">
         <label>系統 *</label>
@@ -744,6 +750,17 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
   <div id="ug-list-area" class="load-state">読み込み中...</div>
 </div>
 
+<!-- ── UG TAB: 合格写真 ── -->
+<div id="ugtab-photos" style="display:none">
+  <div style="display:flex;gap:10px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+    <input id="ugphoto-search" placeholder="搜索学生（汉字 / 拼音首字母）/ 大学 / 学部…" oninput="searchBox(this,()=>phRender('ug'))" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:260px">
+    <button class="btn btn-secondary" onclick="loadPhotos('ug')">↺ 刷新</button>
+    <span style="font-size:11px;color:var(--text-muted)" id="ugphoto-count"></span>
+  </div>
+  <div id="ugphoto-filters" style="margin-bottom:12px"></div>
+  <div id="ugphoto-grid" class="load-state">读取中...</div>
+</div>
+
 </main>
 </div>
 <div id="ugtab-tier" style="display:none">
@@ -764,7 +781,9 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
       <div class="field"><label>大学名</label><input id="ug-em-univ" type="text"></div>
       <div class="field"><label>学部名</label><input id="ug-em-dept" type="text"></div>
       <div class="field"><label>学科名</label><input id="ug-em-spec" type="text"></div>
-      <div class="field"><label>学生名</label><input id="ug-em-student" type="text"></div>
+      <div class="field"><label>学生名</label><input id="ug-em-student" type="text">
+        <div style="font-size:10px;color:var(--text-muted);margin-top:3px">学生真实姓名（要记录到学生档案时必填）</div></div>
+      <div class="field"><label>本校在籍专业</label><div id="ugem-major-box"></div></div>
       <div class="field"><label>系統</label>
         <select id="ug-em-track"><option value="bunka">文科</option><option value="rika">理科</option><option value="bijutsu">美術</option></select>
       </div>
@@ -790,6 +809,10 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
       <div class="field"><label>TOEFL</label><input id="ug-em-toefl" type="number"></div>
       <div class="field"><label>TOEIC</label><input id="ug-em-toeic" type="number"></div>
       <div class="field"><label>備考</label><input id="ug-em-note" type="text"></div>
+    </div>
+    <div class="field" style="margin-bottom:1rem"><label>合格截图（原图上传，不压缩）</label>
+      <div id="ug-em-photo-box" style="margin-bottom:6px"></div>
+      <input id="ug-em-photo" type="file" accept="image/*" onchange="emPhotoPick(this,'ug-em')">
     </div>
     <input type="hidden" id="ug-em-id">
     <div class="form-actions">
@@ -1298,7 +1321,7 @@ function confirmDelete(id, univ) {
 
 function confirmDeleteAll() {
   showModal('全件削除', `${allData.length} 件すべてを削除しますか？この操作は元に戻せません。`, async () => {
-    try { for (const id of allData.map(r=>r.id)) await deleteResult(id); allData = []; renderList(); toast('全件削除しました ✓'); }
+    try { await pstDeleteForResults('grad', allData.map(r=>r.id)); for (const id of allData.map(r=>r.id)) await sbFetch(`admission_results?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); allData = []; renderList(); toast('全件削除しました ✓'); }
     catch(e) { toast('削除エラー: ' + e.message, false); }
   });
 }
@@ -1381,9 +1404,9 @@ let arMajorsReady = false;
 async function arLoadMajors() {
   try { arMajors = await sbFetch('majors?select=key,label,domain&order=domain.asc,label.asc') || []; } catch (e) { arMajors = []; }
   arMajorsReady = true;
-  ['f', 'em'].forEach(p => arRenderMajor(p, arSel[p] || ''));
+  ['f', 'em', 'ugf', 'ugem'].forEach(p => arRenderMajor(p, arSel[p] || ''));
 }
-const arSel = { f: '', em: '' };
+const arSel = { f: '', em: '', ugf: '', ugem: '' };
 function arEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
 function arRenderMajor(p, sel) {
   const box = document.getElementById(p + '-major-box'); if (!box) return;
@@ -1400,7 +1423,9 @@ function arFilterMajor(p) {
     if (q && !((m.label || '').toLowerCase().includes(q) || (m.key || '').toLowerCase().includes(q)) && m.key !== cur) return;
     (groups[m.domain || '其他'] = groups[m.domain || '其他'] || []).push(m);
   });
-  sel.innerHTML = '<option value="">-- 不记录到学生档案 --</option>' + Object.keys(groups).map(d =>
+  let doms = Object.keys(groups);
+  if (p.startsWith('ug')) doms.sort((a, b) => (/^学部/.test(b) ? 1 : 0) - (/^学部/.test(a) ? 1 : 0));   // 学部：学部的领域排前面
+  sel.innerHTML = '<option value="">-- 不记录到学生档案 --</option>' + doms.map(d =>
     `<optgroup label="${arEsc(d)}">${groups[d].map(m => `<option value="${arEsc(m.key)}"${m.key === cur ? ' selected' : ''}>${arEsc(m.label)}</option>`).join('')}</optgroup>`).join('');
   sel.onchange = () => { arSel[p] = sel.value; };
 }
@@ -1480,7 +1505,8 @@ async function arUpsertPlan(stu, row) {
       school_name: row.univ, faculty: row.dept || null, department: row.spec || null, status: 'passed' } });
   }
 }
-async function arSyncToStudent(row) {
+async function arSyncToStudent(row, table) {
+  table = table || 'admission_results';
   if (!row || !row.our_major || !row.student) return;
   if (!arRealName(row.student)) { toast('学生名是缩写，没有记录到学生档案', false); return; }
   try {
@@ -1497,9 +1523,9 @@ async function arSyncToStudent(row) {
         if (!pick) { toast('合格实绩已保存，没有记录到学生档案', false); return; }
         if (pick === 'new') { stu = await arCreateStudent(row); created = true; } else stu = pick;
       }
-      await sbFetch(`admission_results?id=eq.${encodeURIComponent(row.id)}`, { method: 'PATCH', body: { student_id: stu.id }, prefer: 'return=minimal', headers: {} });
+      await sbFetch(`${table}?id=eq.${encodeURIComponent(row.id)}`, { method: 'PATCH', body: { student_id: stu.id }, prefer: 'return=minimal', headers: {} });
       row.student_id = stu.id;
-      const li = allData.find(x => x.id === row.id); if (li) li.student_id = stu.id;
+      const li = (table === 'undergrad_results' ? ugAllData : allData).find(x => x.id === row.id); if (li) li.student_id = stu.id;
     }
     await arUpsertPlan(stu, row);
     toast(created ? `✓ 已记录到学生档案：${stu.name}（已合格）` : `✓ 已关联到在籍学生 ${stu.name}`);
@@ -1520,7 +1546,7 @@ async function insertBatch(rows) {
   }));
   return sbFetch('admission_results', { method:'POST', body:clean, prefer:'return=representation' });
 }
-async function deleteResult(id) { return sbFetch(`admission_results?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); }
+async function deleteResult(id) { await pstDeleteForResults('grad', [id]); return sbFetch(`admission_results?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); }
 async function updateResult(id, row) { return sbFetch(`admission_results?id=eq.${id}`, { method:'PATCH', body:row }); }
 
 function parseJlpt(raw) {
@@ -1743,7 +1769,7 @@ async function ugInsertBatch(rows) {
   const clean = rows.map(r => ({ ...r, tier: r.tier != null ? parseInt(r.tier)||null : null }));
   return sbFetch(UG_TABLE, { method:'POST', body:clean, prefer:'return=representation' });
 }
-async function ugDeleteOne(id) { return sbFetch(`${UG_TABLE}?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); }
+async function ugDeleteOne(id) { await pstDeleteForResults('ug', [id]); return sbFetch(`${UG_TABLE}?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); }
 
 // ─── Tier dict (T0-T4 + school_type) ────────────────────────────────────────
 const UG_TIER_INFO = {
@@ -1820,8 +1846,9 @@ function ugTierOf(univ) { return UG_SCHOOL_DB[normUnivUG(univ)]?.tier ?? 4; }
 function ugSchoolType(univ) { return UG_SCHOOL_DB[normUnivUG(univ)]?.type ?? 'private'; }
 
 function switchUgTab(t) {
-  ['add','excel','list','tier'].forEach(id => { const el=document.getElementById(`ugtab-${id}`); if(el) el.style.display = id===t?'':'none'; });
-  document.querySelectorAll('#major-ug .tab-btn').forEach((b,i) => b.classList.toggle('active', ['add','excel','list','tier'][i]===t));
+  ['add','excel','list','tier','photos'].forEach(id => { const el=document.getElementById(`ugtab-${id}`); if(el) el.style.display = id===t?'':'none'; });
+  document.querySelectorAll('#major-ug .tab-btn').forEach((b,i) => b.classList.toggle('active', ['add','excel','list','tier','photos'][i]===t));
+  if (t === 'photos') loadPhotos('ug');
   if (t === 'list') ugLoadList();
   if (t === 'tier') ugLoadTierTab();
 }
@@ -1832,6 +1859,7 @@ function ugResetForm() {
     document.getElementById(id).value = '';
   });
   ['ug-f-track','ug-f-era','ug-f-tier','ug-f-jlpt'].forEach(id => document.getElementById(id).selectedIndex = 0);
+  arSetMajor('ugf', '');
 }
 
 async function ugSubmitForm() {
@@ -1853,9 +1881,10 @@ async function ugSubmitForm() {
     jlpt: document.getElementById('ug-f-jlpt').value || null,
     toefl: num('ug-f-toefl'), toeic: num('ug-f-toeic'),
     note: document.getElementById('ug-f-note').value.trim()||null,
+    our_major: arGetMajor('ugf') || null,
   };
 
-  try { await ugInsertOne(row); toast('保存しました ✓'); ugResetForm(); ugRefreshUnivList(); }
+  try { const ins = await ugInsertOne(row); toast('保存しました ✓'); const saved = Array.isArray(ins) ? ins[0] : null; ugResetForm(); ugRefreshUnivList(); if (saved) arSyncToStudent(saved, 'undergrad_results'); }
   catch(e) { toast('エラー: ' + e.message, false); }
 }
 
@@ -2096,7 +2125,7 @@ function ugConfirmDelete(id, univ) {
 
 function ugConfirmDeleteAll() {
   showModal('全件削除', `${ugAllData.length} 件すべてを削除しますか？この操作は元に戻せません。`, async () => {
-    try { for (const r of ugAllData) await ugDeleteOne(r.id); ugAllData = []; ugRenderList(); toast('全件削除しました ✓'); }
+    try { await pstDeleteForResults('ug', ugAllData.map(r=>r.id)); for (const r of ugAllData) await sbFetch(`${UG_TABLE}?id=eq.${r.id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); ugAllData = []; ugRenderList(); toast('全件削除しました ✓'); }
     catch(e) { toast('削除エラー: ' + e.message, false); }
   });
 }
@@ -2217,6 +2246,9 @@ function ugOpenEditModal(el) {
   document.getElementById('ug-em-toefl').value = r.toefl||'';
   document.getElementById('ug-em-toeic').value = r.toeic||'';
   document.getElementById('ug-em-note').value = r.note||'';
+  arSetMajor('ugem', r.our_major || '');
+  emPhotoShow(arPhotoUrl(r), false, 'ug-em');
+  document.getElementById('ug-em-photo').value = '';
   document.getElementById('ug-edit-modal-title').textContent = '編集: '+r.univ;
   document.getElementById('ug-edit-modal').classList.add('show');
 }
@@ -2238,7 +2270,17 @@ async function ugSaveEdit() {
     jlpt:document.getElementById('ug-em-jlpt').value||null,
     toefl:n('ug-em-toefl'), toeic:n('ug-em-toeic'),
     note:document.getElementById('ug-em-note').value.trim()||null,
+    our_major:arGetMajor('ugem')||null,
   };
+  const oldUg=ugAllData.find(x=>x.id===id);
+  if(oldUg&&oldUg.student_id&&(oldUg.student||null)!==updates.student) updates.student_id=null;   // 改了学生名：旧关联作废
+  const ugPhoto=document.getElementById('ug-em-photo').files[0];
+  if(ugPhoto){
+    try{
+      updates.photo_url=await arUploadPhoto(ugPhoto,'ug');
+      updates.note=arStripNotePhoto(updates.note)||null;   // 旧的 [photo] 链接作废
+    }catch(e){ toast('图片上传失败: '+e.message,false); return; }
+  }
   try {
     await sbFetch(`undergrad_results?id=eq.${id}`,{method:'PATCH',body:updates,prefer:'return=minimal',headers:{}});
     const idx2=ugAllData.findIndex(x=>x.id===id);
@@ -2246,6 +2288,7 @@ async function ugSaveEdit() {
     document.getElementById('ug-edit-modal').classList.remove('show');
     ugRenderList();
     toast('保存しました ✓');
+    if(idx2>=0) arSyncToStudent(ugAllData[idx2],'undergrad_results');
   } catch(e){toast('エラー: '+e.message,false);}
 }
 
@@ -2335,110 +2378,125 @@ const PH_NOTE_RE = /\[photo\](\S+)/;
 function arPhotoUrl(r) { return (r && r.photo_url) || (((r && r.note) || '').match(PH_NOTE_RE) || [])[1] || ''; }
 function arStripNotePhoto(note) { return (note || '').replace(/\s*\|\s*\[photo\]\S+/, '').replace(/\[photo\]\S+/, '').trim(); }
 // 上传到 admission-photos/grad/…，原图原样上传；返回公开链接
-async function arUploadPhoto(file) {
+async function arUploadPhoto(file, folder) {
   let ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, ''); if (!ext || ext.length > 5) ext = 'jpg';
-  const path = 'grad/' + Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.' + ext;
+  const path = (folder || 'grad') + '/' + Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.' + ext;
   const put = h => fetch(`${SUPABASE_URL}/storage/v1/object/${PHOTO_BUCKET}/${path}`, { method: 'POST', headers: { ...h, 'Content-Type': file.type, 'x-upsert': 'true' }, body: file });
   let up = await put(adminAuthHeaders());
   if (!up.ok) up = await put({ apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY });
   if (!up.ok) throw new Error(await up.text());
   return `${SUPABASE_URL}/storage/v1/object/public/${PHOTO_BUCKET}/${path}`;
 }
-function emPhotoShow(url, isNew) {
-  const box = document.getElementById('em-photo-box'); if (!box) return;
+function emPhotoShow(url, isNew, pre) {
+  const box = document.getElementById((pre || 'em') + '-photo-box'); if (!box) return;
   box.innerHTML = url ? `<img src="${url}" style="max-width:100%;max-height:160px;border:1px solid var(--border);border-radius:4px;display:block"><div style="font-size:10px;color:var(--text-muted);margin-top:3px">${isNew ? '新图（保存后生效）' : '现在的图；选择文件可更换'}</div>` : '<div style="font-size:11px;color:var(--text-muted)">还没有截图</div>';
 }
-function emPhotoPick(inp) {
+function emPhotoPick(inp, pre) {
   const f = inp.files[0]; if (!f) return;
-  emPhotoShow(URL.createObjectURL(f), true);
+  emPhotoShow(URL.createObjectURL(f), true, pre);
 }
 
-let phRows = [];
-const phF = { era: '', subj: '', poster: '' };
-let phSubjMore = false;
-let phPosterMap = null;   // 海报表做好后赋值 {记录id: true}；为空时「海报」一组隐藏
-async function loadPhotos() {
-  document.getElementById('photo-grid').innerHTML = '<div class="load-state">読み込み中...</div>';
+// 大学院（admission_results）和学部（undergrad_results）共用一套：kind = 'grad' | 'ug'
+const PH = {
+  grad: { pre: 'photo',   table: 'admission_results', rows: [], posterMap: null, f: { era: '', subj: '', poster: '' }, more: false },
+  ug:   { pre: 'ugphoto', table: 'undergrad_results', rows: [], posterMap: null, f: { era: '', subj: '', poster: '' }, more: false },
+};
+const PH_TRACK = { bunka: '文科', rika: '理科', bijutsu: '美術' };
+function phGet(kind) { return PH[kind || 'grad']; }
+async function loadPhotos(kind) {
+  kind = kind || 'grad';
+  const c = PH[kind], grid = document.getElementById(c.pre + '-grid');
+  grid.innerHTML = '<div class="load-state">読み込み中...</div>';
   try {
-    const url = `${SUPABASE_URL}/rest/v1/admission_results?select=*&or=(photo_url.not.is.null,note.like.*%5Bphoto%5D*)&order=created_at.desc`;
+    const url = `${SUPABASE_URL}/rest/v1/${c.table}?select=*&or=(photo_url.not.is.null,note.like.*%5Bphoto%5D*)&order=created_at.desc`;
     const res = await fetch(url, { headers: adminAuthHeaders() });
     const rows = await res.json();
     if (!Array.isArray(rows)) throw new Error((rows && rows.message) || '读取失败');
-    phRows = rows.filter(r => arPhotoUrl(r));
-    // 已做过海报的记录（表还没建时 phPosterMap 为 null，「海报」筛选和按钮状态都不显示）
+    c.rows = rows.filter(r => arPhotoUrl(r));
+    // 已做过海报的记录（表还没建时 posterMap 为 null，「海报」筛选和按钮状态都不显示）
     try {
-      const ps = await sbFetch('pass_posters?select=result_id,web_url');
-      phPosterMap = {};
-      (ps || []).forEach(p => { phPosterMap[p.result_id] = p.web_url ? 'pub' : 'draft'; });
-    } catch (e) { phPosterMap = null; }
-    phRender();
+      const ps = await sbFetch(`pass_posters?result_kind=eq.${kind}&select=result_id,web_url`);
+      c.posterMap = {};
+      (ps || []).forEach(p => { c.posterMap[p.result_id] = p.web_url ? 'pub' : 'draft'; });
+    } catch (e) { c.posterMap = null; }
+    phRender(kind);
   } catch(e) {
-    document.getElementById('photo-grid').innerHTML = `<div class="load-state" style="color:var(--red)">エラー: ${e.message}</div>`;
+    grid.innerHTML = `<div class="load-state" style="color:var(--red)">エラー: ${e.message}</div>`;
   }
 }
-function phSet(k, v) { phF[k] = phF[k] === v ? '' : v; phRender(); }
+function phSet(kind, k, v) { const f = PH[kind].f; f[k] = f[k] === v ? '' : v; phRender(kind); }
+function phClear(kind, k) { PH[kind].f[k] = ''; phRender(kind); }
+function phMore(kind) { PH[kind].more = !PH[kind].more; phRender(kind); }
 function phChip(on, label, onclick) {
   return `<span class="filter-chip${on ? ' active' : ''}" onclick="${onclick}" style="display:inline-block;padding:3px 10px;margin:0 4px 4px 0;border:1px solid ${on ? 'var(--accent)' : 'var(--border)'};background:${on ? 'var(--accent)' : 'var(--surface)'};color:${on ? '#fff' : 'var(--text-secondary)'};border-radius:12px;font-size:11px;cursor:pointer">${label}</span>`;
 }
-function phRender() {
-  const q = (document.getElementById('photo-search')?.value || '').trim();
-  const subjName = id => (SUBJECTS.find(x => x.id === id) || {}).label || id || '其他';
+function phRender(kind) {
+  kind = kind || 'grad';
+  const c = PH[kind], f = c.f, pm = c.posterMap;
+  const q = (document.getElementById(c.pre + '-search')?.value || '').trim();
+  const isUg = kind === 'ug';
+  const grpKey = isUg ? 'track' : 'subject';                 // 第二组筛选用的字段：学部=系統，大学院=在籍学科
+  const grpName = id => isUg ? (PH_TRACK[id] || id || '其他') : ((SUBJECTS.find(x => x.id === id) || {}).label || id || '其他');
   const rowOk = (r, skip) => {
-    if (skip !== 'era' && phF.era && r.era !== phF.era) return false;
-    if (skip !== 'subj' && phF.subj && r.subject !== phF.subj) return false;
-    if (skip !== 'poster' && phF.poster && phPosterMap) { const has = !!phPosterMap[r.id]; if ((phF.poster === 'done') !== has) return false; }
+    if (skip !== 'era' && f.era && r.era !== f.era) return false;
+    if (skip !== 'subj' && f.subj && (r[grpKey] || 'other') !== f.subj) return false;
+    if (skip !== 'poster' && f.poster && pm) { const has = !!pm[r.id]; if ((f.poster === 'done') !== has) return false; }
     if (q && !searchMatch(q, [r.student, r.univ, r.dept, r.spec])) return false;
     return true;
   };
-  const cnt = (skip, f) => phRows.filter(r => rowOk(r, skip) && f(r)).length;
+  const cnt = (skip, fn) => c.rows.filter(r => rowOk(r, skip) && fn(r)).length;
   // 筛选 chips（每组单独可用、互相交叉）
-  const subjIds = [...new Set(phRows.map(r => r.subject || 'other'))];
+  const grpIds = [...new Set(c.rows.map(r => r[grpKey] || 'other'))];
   const SHOW = 12;
-  const shown = phSubjMore ? subjIds : subjIds.filter((id, i) => i < SHOW || id === phF.subj);
-  let h = `<div style="margin-bottom:4px"><span style="font-size:11px;color:var(--text-muted);margin-right:6px">年度</span>`
-    + phChip(!phF.era, '全部', "phF.era='';phRender()")
-    + [['new', '2026–2027'], ['hist', '2022–2025']].map(([k, l]) => phChip(phF.era === k, `${l} (${cnt('era', r => r.era === k)})`, `phSet('era','${k}')`)).join('') + '</div>';
-  h += `<div style="margin-bottom:4px"><span style="font-size:11px;color:var(--text-muted);margin-right:6px">在籍学科</span>`
-    + phChip(!phF.subj, '全部', "phF.subj='';phRender()")
-    + shown.map(id => phChip(phF.subj === id, `${subjName(id)} (${cnt('subj', r => (r.subject || 'other') === id)})`, `phSet('subj','${id}')`)).join('')
-    + (subjIds.length > SHOW ? phChip(false, phSubjMore ? '收起 ▴' : '更多 ▾', 'phSubjMore=!phSubjMore;phRender()') : '') + '</div>';
-  if (phPosterMap) {
-    h += `<div style="margin-bottom:4px"><span style="font-size:11px;color:var(--text-muted);margin-right:6px">海报</span>`
-      + phChip(!phF.poster, '全部', "phF.poster='';phRender()")
-      + [['todo', '未制作'], ['done', '已制作']].map(([k, l]) => phChip(phF.poster === k, l, `phSet('poster','${k}')`)).join('') + '</div>';
+  const shown = c.more ? grpIds : grpIds.filter((id, i) => i < SHOW || id === f.subj);
+  const lab = t => `<span style="font-size:11px;color:var(--text-muted);margin-right:6px">${t}</span>`;
+  let h = `<div style="margin-bottom:4px">${lab('年度')}`
+    + phChip(!f.era, '全部', `phClear('${kind}','era')`)
+    + [['new', '2026–2027'], ['hist', '2022–2025']].map(([k, l]) => phChip(f.era === k, `${l} (${cnt('era', r => r.era === k)})`, `phSet('${kind}','era','${k}')`)).join('') + '</div>';
+  h += `<div style="margin-bottom:4px">${lab(isUg ? '系統' : '在籍学科')}`
+    + phChip(!f.subj, '全部', `phClear('${kind}','subj')`)
+    + shown.map(id => phChip(f.subj === id, `${grpName(id)} (${cnt('subj', r => (r[grpKey] || 'other') === id)})`, `phSet('${kind}','subj','${id}')`)).join('')
+    + (grpIds.length > SHOW ? phChip(false, c.more ? '收起 ▴' : '更多 ▾', `phMore('${kind}')`) : '') + '</div>';
+  if (pm) {
+    h += `<div style="margin-bottom:4px">${lab('海报')}`
+      + phChip(!f.poster, '全部', `phClear('${kind}','poster')`)
+      + [['todo', '未制作'], ['done', '已制作']].map(([k, l]) => phChip(f.poster === k, l, `phSet('${kind}','poster','${k}')`)).join('') + '</div>';
   }
-  document.getElementById('photo-filters').innerHTML = h;
+  document.getElementById(c.pre + '-filters').innerHTML = h;
 
-  const rows = phRows.filter(r => rowOk(r, ''));
-  document.getElementById('photo-count').textContent = rows.length + ' 件';
-  if (!rows.length) { document.getElementById('photo-grid').innerHTML = '<div class="load-state">该条件下暂无合格照片</div>'; return; }
+  const rows = c.rows.filter(r => rowOk(r, ''));
+  document.getElementById(c.pre + '-count').textContent = rows.length + ' 件';
+  const grid = document.getElementById(c.pre + '-grid');
+  if (!rows.length) { grid.innerHTML = '<div class="load-state">该条件下暂无合格照片</div>'; return; }
   const esc = arEsc;
-  document.getElementById('photo-grid').innerHTML = '<div class="photo-grid">' + rows.map(r => {
+  grid.innerHTML = '<div class="photo-grid">' + rows.map(r => {
     const purl = arPhotoUrl(r);
     const noteText = arStripNotePhoto(r.note);
     return `<div class="photo-card">
         <img src="${esc(purl)}" alt="${esc(r.univ)}" onerror="this.style.display='none'" style="cursor:pointer" onclick="window.open(this.src,'_blank')">
         <div class="photo-card-info">
           <div class="photo-card-title">${esc(r.univ) || '（未知大学）'} ${r.student ? '· ' + esc(r.student) : ''}
-            <button class="photo-card-del" onclick="deletePhotoRecord('${esc(r.id)}')">削除</button>
-            <button class="photo-card-del" style="background:#eef2fa;color:var(--accent);border-color:#c5d0e8;margin-right:4px" onclick="pstOpen('${esc(r.id)}')">${phPosterMap && phPosterMap[r.id] ? '编辑海报' : '制作海报'}</button>
+            <button class="photo-card-del" onclick="deletePhotoRecord('${kind}','${esc(r.id)}')">削除</button>
+            <button class="photo-card-del" style="background:#eef2fa;color:var(--accent);border-color:#c5d0e8;margin-right:4px" onclick="pstOpen('${kind}','${esc(r.id)}')">${pm && pm[r.id] ? '编辑海报' : '制作海报'}</button>
           </div>
-          ${phPosterMap && phPosterMap[r.id] ? `<div style="font-size:10px;color:var(--green);margin-bottom:2px">已制作${phPosterMap[r.id] === 'pub' ? ' · 已发布' : ''}</div>` : ''}
-          <div class="photo-card-sub">${esc(r.dept)}${r.spec ? ' ' + esc(r.spec) : ''}　${esc(subjName(r.subject))}${noteText ? '　' + esc(noteText) : ''}</div>
+          ${pm && pm[r.id] ? `<div style="font-size:10px;color:var(--green);margin-bottom:2px">已制作${pm[r.id] === 'pub' ? ' · 已发布' : ''}</div>` : ''}
+          <div class="photo-card-sub">${esc(r.dept)}${r.spec ? ' ' + esc(r.spec) : ''}　${esc(grpName(r[grpKey] || 'other'))}${noteText ? '　' + esc(noteText) : ''}</div>
         </div>
       </div>`;
   }).join('') + '</div>';
 }
 // 删除：只去掉照片（清 photo_url 和 note 里的 [photo] 段），合格数据保留；再删 Storage 文件
-async function deletePhotoRecord(id) {
-  const hasPoster = typeof phPosterMap !== 'undefined' && phPosterMap && phPosterMap[id];
+async function deletePhotoRecord(kind, id) {
+  const c = PH[kind];
+  const hasPoster = c.posterMap && c.posterMap[id];
   if (!confirm('删除这张合格照片？（合格数据保留，只删照片）' + (hasPoster ? '\n这张照片的海报也会一起删除' : ''))) return;
   try {
-    const r = await fetch(`${SUPABASE_URL}/rest/v1/admission_results?id=eq.${encodeURIComponent(id)}&select=note,photo_url`, { headers: adminAuthHeaders() });
+    const enc = encodeURIComponent(id);
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${c.table}?id=eq.${enc}&select=note,photo_url`, { headers: adminAuthHeaders() });
     const rows = await r.json();
     const rec = rows[0] || {};
     const purl = arPhotoUrl(rec);
-    const upd = await fetch(`${SUPABASE_URL}/rest/v1/admission_results?id=eq.${encodeURIComponent(id)}`, {
+    const upd = await fetch(`${SUPABASE_URL}/rest/v1/${c.table}?id=eq.${enc}`, {
       method: 'PATCH',
       headers: adminAuthHeaders({ 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }),
       body: JSON.stringify({ photo_url: null, note: arStripNotePhoto(rec.note) || null })
@@ -2448,8 +2506,8 @@ async function deletePhotoRecord(id) {
     if (pm) {
       await fetch(`${SUPABASE_URL}/storage/v1/object/${PHOTO_BUCKET}/${pm[1]}`, { method: 'DELETE', headers: adminAuthHeaders() }).catch(() => {});
     }
-    if (hasPoster) await pstDeleteForResult(id);
-    loadPhotos();
+    if (hasPoster) await pstDeleteForResults(kind, [id]);
+    loadPhotos(kind);
   } catch(e) { alert('删除失败: ' + e.message); }
 }
 

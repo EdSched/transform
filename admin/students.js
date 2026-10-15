@@ -1378,8 +1378,10 @@ async function gsDel(sid,idx){
 
 // ══════════ 录入合格实绩（考学进度→合格数据库联动）══════════
 let aeStudentId='';
+let aeUg=false;   // 学部学生：写 undergrad_results
 function openAdmissionEntry(data){
   aeStudentId=data.sid||'';
+  aeUg=isGakubuMajor(data.major);
   // 从学生档案的乱格式分数里智能拆解（复用 results/admin.html 同款逻辑 + 中文映射）
   const pj = aeParseJlpt(data.jp||'');
   const pe = aeParseEng(data.en||'');
@@ -1391,28 +1393,28 @@ function openAdmissionEntry(data){
   ov.innerHTML=`
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:22px 26px;width:min(520px,94vw);max-height:88vh;overflow:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <div style="font-family:'Noto Serif SC',serif;font-size:1.05rem;font-weight:600">📝 录入合格实绩</div>
+      <div style="font-family:'Noto Serif SC',serif;font-size:1.05rem;font-weight:600">📝 录入合格实绩${aeUg?'（学部）':''}</div>
       <button onclick="document.getElementById('admissionEntryOverlay').style.display='none'" class="btn btn-outline btn-sm">取消</button>
     </div>
     <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">已从考学进度预填，语言分数已尽力拆解，请核对后保存。</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">大学名 *</label><input id="ae_univ" value="${stEsc(data.school)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
-      <div><label style="font-size:9px;color:var(--text-3)">研究科</label><input id="ae_dept" value="${stEsc(data.faculty)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
-      <div><label style="font-size:9px;color:var(--text-3)">专攻</label><input id="ae_spec" value="${stEsc(data.dept)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
+      <div><label style="font-size:9px;color:var(--text-3)">${aeUg?'学部':'研究科'}</label><input id="ae_dept" value="${stEsc(data.faculty)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
+      <div><label style="font-size:9px;color:var(--text-3)">${aeUg?'学科':'专攻'}</label><input id="ae_spec" value="${stEsc(data.dept)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
       <div><label style="font-size:9px;color:var(--text-3)">学生名</label><input id="ae_student" value="${stEsc(data.student)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
-      <div><label style="font-size:9px;color:var(--text-3)">专业分类</label>
+      ${aeUg?'':`<div><label style="font-size:9px;color:var(--text-3)">专业分类</label>
         <select id="ae_subject" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px">
           ${[['shakai','社会学'],['fukushi','社会福祉'],['shinpan','新聞伝播'],['keizai','経済学'],['keiei','経営学'],['kyoiku','教育学'],['other','その他']].map(([v,l])=>`<option value="${v}" ${guessSubj===v?'selected':''}>${l}</option>`).join('')}
-        </select></div>
+        </select></div>`}
       <div><label style="font-size:9px;color:var(--text-3)">入学年份 *</label><input id="ae_enroll" value="${stEsc((data.enroll||'').match(/\d{4}/)?.[0]||'')}" placeholder="如 2027" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
       <div><label style="font-size:9px;color:var(--text-3)">日语等级</label>
         <select id="ae_jlpt" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px">
           ${[['','—'],['N1','N1'],['N2','N2'],['N3','N3']].map(([v,l])=>`<option value="${v}" ${pj.jlpt===v?'selected':''}>${l}</option>`).join('')}
         </select></div>
-      <div><label style="font-size:9px;color:var(--text-3)">日语分数</label><input id="ae_jlpt_score" type="number" value="${pj.jlpt_score||''}" placeholder="如 145" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
+      ${aeUg?'':`<div><label style="font-size:9px;color:var(--text-3)">日语分数</label><input id="ae_jlpt_score" type="number" value="${pj.jlpt_score||''}" placeholder="如 145" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>`}
       <div><label style="font-size:9px;color:var(--text-3)">英语类型</label>
         <select id="ae_eng_type" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px">
-          ${[['','—'],['TOEIC','托业 TOEIC'],['TOEFL','托福 TOEFL'],['IELTS','雅思 IELTS'],['EJU','EJU']].map(([v,l])=>`<option value="${v}" ${pe.eng_type===v?'selected':''}>${l}</option>`).join('')}
+          ${(aeUg?[['','—'],['TOEIC','托业 TOEIC'],['TOEFL','托福 TOEFL']]:[['','—'],['TOEIC','托业 TOEIC'],['TOEFL','托福 TOEFL'],['IELTS','雅思 IELTS'],['EJU','EJU']]).map(([v,l])=>`<option value="${v}" ${pe.eng_type===v?'selected':''}>${l}</option>`).join('')}
         </select></div>
       <div><label style="font-size:9px;color:var(--text-3)">英语分数</label><input id="ae_eng_score" type="number" value="${pe.eng_score||''}" placeholder="如 800" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
       <div style="grid-column:1/-1"><label style="font-size:9px;color:var(--text-3)">备注</label><input id="ae_note" value="" placeholder="其它补充" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px"></div>
@@ -1456,9 +1458,10 @@ async function saveAdmissionEntry(){
   if(!enrollYear){ alert('请填入学年份（如 2027）'); return; }
   const btn=document.getElementById('ae_save_btn'); if(btn){ btn.textContent='保存中…'; btn.disabled=true; }
   try{
-    // ── 查重：同 学生+大学+研究科 已录过 → 提示 ──
+    // ── 查重：同 学生+大学+研究科（学部：学部名）已录过 → 提示 ──
+    const aeTable=aeUg?'undergrad_results':'admission_results';
     if(student){
-      const dup=await sb(`/rest/v1/admission_results?student=eq.${encodeURIComponent(student)}&univ=eq.${encodeURIComponent(univ)}${dept?`&dept=eq.${encodeURIComponent(dept)}`:''}&select=id&limit=1`).catch(()=>[]);
+      const dup=await sb(`/rest/v1/${aeTable}?student=eq.${encodeURIComponent(student)}&univ=eq.${encodeURIComponent(univ)}${dept?`&dept=eq.${encodeURIComponent(dept)}`:''}&select=id&limit=1`).catch(()=>[]);
       if(dup&&dup.length){
         if(!confirm(`「${student} · ${univ}${dept?' · '+dept:''}」似乎已录入过合格实绩。\n仍要再添加一条吗？`)){ if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} return; }
       }
@@ -1468,7 +1471,7 @@ async function saveAdmissionEntry(){
     const file=document.getElementById('ae_photo')?.files?.[0];
     if(file){
       let ext=(file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,''); if(!ext||ext.length>5)ext='jpg';
-      const path='grad/'+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'.'+ext;
+      const path=(aeUg?'ug/':'grad/')+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'.'+ext;
       const up=await fetch(`${SB_URL}/storage/v1/object/admission-photos/${path}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':file.type,'x-upsert':'true'},body:file});
       if(up.ok){ photoUrl=`${SB_URL}/storage/v1/object/public/admission-photos/${path}`; }
       else { const e=await up.text(); if(!confirm('图片上传失败：'+e+'\n\n仍要保存合格数据（不含图片）吗？')){ if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} return; } }
@@ -1476,18 +1479,34 @@ async function saveAdmissionEntry(){
     // 入学年份 >=2026 算新数据(new)，否则旧(hist)
     const era = enrollYear>=2026 ? 'new' : 'hist';
     const jlptScore=g('ae_jlpt_score'); const engScore=g('ae_eng_score');
-    const row={
-      univ, dept, spec:g('ae_spec').trim()||null, student, subject:g('ae_subject'), era,
-      jlpt:g('ae_jlpt')||null,
-      jlpt_score:jlptScore?parseInt(jlptScore):null,
-      eng_type:g('ae_eng_type')||null,
-      eng_score:engScore?parseInt(engScore):null,
-      photo_url:photoUrl,
-      note:g('ae_note').trim()||null
-    };
     const aeSt=aeStudentId&&cachedStudents.find(x=>x.id===aeStudentId);
+    let row;
+    if(aeUg){
+      // 学部：写 undergrad_results。EJU 留空，以后在合格实绩管理端补；系統按学生专业所属领域
+      const dom=aeSt?keyDomain(aeSt.major):'';
+      const eng=g('ae_eng_type');
+      row={
+        univ, dept, spec:g('ae_spec').trim()||null, student, era,
+        track:/理科/.test(dom)?'rika':(/美术|美術/.test(dom)?'bijutsu':'bunka'),
+        jlpt:g('ae_jlpt')||null,
+        toefl:eng==='TOEFL'&&engScore?parseInt(engScore):null,
+        toeic:eng==='TOEIC'&&engScore?parseInt(engScore):null,
+        photo_url:photoUrl,
+        note:g('ae_note').trim()||null
+      };
+    } else {
+      row={
+        univ, dept, spec:g('ae_spec').trim()||null, student, subject:g('ae_subject'), era,
+        jlpt:g('ae_jlpt')||null,
+        jlpt_score:jlptScore?parseInt(jlptScore):null,
+        eng_type:g('ae_eng_type')||null,
+        eng_score:engScore?parseInt(engScore):null,
+        photo_url:photoUrl,
+        note:g('ae_note').trim()||null
+      };
+    }
     if(aeSt&&aeSt.name===student){ row.student_id=aeSt.id; row.our_major=aeSt.major||null; }   // 名字被改了就不关联
-    await sb('/rest/v1/admission_results','POST',row);
+    await sb('/rest/v1/'+aeTable,'POST',row);
     document.getElementById('admissionEntryOverlay').style.display='none';
     alert('✅ 已录入合格实绩（含语言分数与照片）');
   }catch(e){ alert('保存失败：'+e.message); if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} }
