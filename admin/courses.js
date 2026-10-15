@@ -427,7 +427,7 @@ function renderCourseCleanupPage(mc){
         return `
         <div class="cleanup_row" data-id="${c.id}" data-dup="${isDup?'1':'0'}" onclick="cleanupRowClick(event,'${c.id}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid ${sel?'var(--accent)':isDup?'#e0c060':'var(--border-light)'};background:${sel?'var(--accent-light, #e8e0d0)':isDup?'#fffbe8':'var(--surface)'};border-radius:3px;margin-bottom:6px;transition:background-color .12s">
           <div style="flex:1">
-            <div style="font-size:12px;font-weight:600">${c.name} ${isDup?'<span style="font-size:9px;background:#e0c060;color:#5a4a10;border-radius:2px;padding:1px 5px;margin-left:4px">疑似重复</span>':''}${cmRowTag(c)}${hwTplTag(c)}</div>
+            <div style="font-size:12px;font-weight:600">${c.name} ${isDup?'<span style="font-size:9px;background:#e0c060;color:#5a4a10;border-radius:2px;padding:1px 5px;margin-left:4px">疑似重复</span>':''}${cmRowTag(c)}${attModeTag(c)}${hwTplTag(c)}</div>
             <div style="font-size:11px;color:var(--text-3);margin-top:2px">
               ${(c.major||[]).map(m=>majorLabel(m)).join('/')} · ${c.teacher||''} · ${c.time_range||''} ·
               ${sessions.length} 条课次记录（设置回数：${c.total_sessions||'-'}）·
@@ -471,6 +471,10 @@ function renderCourseCleanupPage(mc){
     <span style="font-size:12px;color:var(--text-2)">已选 <b id="cleanup_bar_count">0</b> 门 · 期数改为</span>
     <input id="cp_name" placeholder="期名，如 秋冬期" style="width:130px;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px">
     <button class="btn btn-primary btn-sm" onclick="cleanupApplyPeriod()">应用</button>
+    <span style="color:var(--border)">|</span>
+    <span style="font-size:12px;color:var(--text-2)">出席属性</span>
+    <select id="cp_att_mode" style="padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px"><option value="">请选择</option>${Object.keys(ATT_MODES).map(k=>`<option value="${k}">${ATT_MODES[k]}</option>`).join('')}</select>
+    <button class="btn btn-primary btn-sm" onclick="cleanupApplyAttMode()">应用</button>
     <button class="btn btn-outline btn-sm" onclick="cleanupClearSelection()">取消</button>
   </div>`;
 
@@ -1270,7 +1274,7 @@ function renderPublishModal(){
             const year=c.first_session_date?.slice(0,4)||'';
             return `<tr>
               <td><input type="checkbox" class="pub-course-cb" value="${c.id}" style="accent-color:var(--accent)" ${isConfirmed?'checked':''}></td>
-              <td style="font-size:12px;font-weight:600">${c.name}</td>
+              <td style="font-size:12px;font-weight:600">${c.name}${attModeTag(c)}</td>
               <td style="font-size:11px">${c.first_session_date?periodKeyOf(c):(c.period||'')}</td>
               <td style="font-size:11px">${(c.major||[]).map(m=>MAJORS[m]||m).join('・')}</td>
               <td style="font-size:11px">${c.course_type||''}</td>
@@ -1363,6 +1367,7 @@ function openAddCourseModal(editId){
     if(CURRENT_DOMAIN==='multi') acHiddenMajors=(c.major||[]).filter(m=>![...document.querySelectorAll('#ac_major_checkboxes input')].some(cb=>cb.value===m));
     document.getElementById('ac_period').value=c.period||'';
     document.getElementById('ac_course_type').value=c.course_type||'';
+    acSetAttMode(courseAttMode(c));
     document.getElementById('ac_teacher').value=c.teacher||'';
     document.getElementById('ac_campus').value=c.campus||'';
     document.getElementById('ac_delivery').value=c.delivery||'';
@@ -1399,6 +1404,7 @@ function openAddCourseModal(editId){
     document.getElementById('ac_homework_enabled').value = 'false';
     document.getElementById('ac_hw_release_days').value = '';
     ['ac_period','ac_course_type','ac_delivery'].forEach(id=>document.getElementById(id).value='');
+    acSetAttMode('required');
     acSetWeekdayChips('');
     document.getElementById('ac_total').value='';
     document.getElementById('ac_first_date').value='';
@@ -1944,6 +1950,7 @@ async function saveAddCourse(){
   const courseData={
     name,major:majors,period:stripPeriodYear(period),   // 学部美术只存月份（9月），年份由首回日期决定
     course_type:document.getElementById('ac_course_type').value,
+    attendance_mode:document.getElementById('ac_att_mode').value||'required',
     teacher:document.getElementById('ac_teacher').value.trim(),
     campus:document.getElementById('ac_campus').value.trim(),
     delivery:document.getElementById('ac_delivery').value,
@@ -4289,4 +4296,33 @@ async function cmSetMode(mode){
     toChange.forEach(c=>{ c.member_mode=mode; });
   }catch(e){ if(msg) msg.textContent='保存失败：'+e.message; }
   cmRender();
+}
+
+// ── 课程出席属性（必出席 / 选修 / 不记出席）──
+const AC_ATT_HINT = { required: '', elective: '出席另算，不计入正式出勤率', none: '只用于占教室、课表展示，不进任何出席统计' };
+function acSetAttMode(v){
+  v = ATT_MODES[v] ? v : 'required';
+  const inp = document.getElementById('ac_att_mode'); if(inp) inp.value = v;
+  const box = document.getElementById('ac_att_chips'); if(!box) return;
+  box.innerHTML = Object.keys(ATT_MODES).map(k => `<div class="filter-chip${k===v?' active':''}" onclick="acSetAttMode('${k}')" style="font-size:11px;padding:3px 10px">${ATT_MODES[k]}${AC_ATT_HINT[k]?`<span style="font-weight:400;opacity:.7"> · ${AC_ATT_HINT[k]}</span>`:''}</div>`).join('');
+}
+function attModeTag(c){
+  const m = courseAttMode(c);
+  return m === 'required' ? '' : `<span style="font-size:9px;background:#f0e8d4;color:#7a5f1c;border-radius:2px;padding:1px 6px;margin-left:6px;font-weight:500">${ATT_MODES[m]}</span>`;
+}
+// 课程清理：批量改出席属性
+async function cleanupApplyAttMode(){
+  if(!cleanupSelected.size){alert('请先选中课程');return}
+  const m = document.getElementById('cp_att_mode').value;
+  if(!ATT_MODES[m]){alert('请选择出席属性');return}
+  if(!confirm(`把选中的 ${cleanupSelected.size} 门课设为「${ATT_MODES[m]}」？`))return;
+  try{
+    for(const id of cleanupSelected){
+      await sb(`/rest/v1/courses?id=eq.${id}`,'PATCH',{attendance_mode:m});
+      const c=cachedCourses.find(x=>x.id===id); if(c) c.attendance_mode=m;
+    }
+    alert(`已把 ${cleanupSelected.size} 门课设为「${ATT_MODES[m]}」`);
+    cleanupSelected.clear();
+    renderCourseCleanupPage(document.getElementById('mainContent'));
+  }catch(err){alert('设置失败：'+err.message)}
 }

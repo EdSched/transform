@@ -1825,3 +1825,7 @@ function teacherProfileStatus(t, rows) {
     return { key, label, row, missing: row ? profileMissing(row) : PROFILE_REQUIRED.map(([, l]) => l), done: profileComplete(row) };
   });
 }
+
+// 课程出席属性：required 必出席（默认）/ elective 选修（出席另算）/ none 不记出席（占教室、展示用）
+const ATT_MODES = { required: '必出席', elective: '选修', none: '不记出席' };
+function courseAttMode(c) { const m = c && c.attendance_mode; return m === 'elective' || m === 'none' ? m : 'required'; }

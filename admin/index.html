@@ -475,6 +475,9 @@
         <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap"><select id="ac_member_mode" onchange="acMemberRender()" style="width:auto"><option value="class">按班级</option><option value="major">按专业</option><option value="list">指定名单</option></select><div id="ac_class_chips" style="flex:1;min-width:200px;padding-top:3px"></div></div></div>
       <div class="form-group" style="margin:0"><label class="form-label">课程属性</label>
         <select id="ac_course_type" onchange="acOnTypeChange(this.value)"><option value="">请选择</option><option>专业课</option><option>共通课</option><option>VIP课程</option></select></div>
+      <div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">出席</label>
+        <input type="hidden" id="ac_att_mode" value="required">
+        <div id="ac_att_chips" style="display:flex;gap:6px;flex-wrap:wrap"></div></div>
       <div class="form-group" style="margin:0"><label class="form-label">讲师</label><input id="ac_teacher" placeholder="多人用 / 分隔"></div>
       <div class="form-group" style="margin:0"><label class="form-label">校区</label><input id="ac_campus" placeholder="市谷 / 高马 / 腾讯会议…"></div>
       <div class="form-group" style="margin:0"><label class="form-label">授课形式</label>
@@ -768,7 +771,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
 <script src="../shared/vendor/supabase.min.js"></script>
 <script src="../shared/supabase.js?v=20261102"></script>
-<script src="../shared/constants.js?v=20261112"></script>
+<script src="../shared/constants.js?v=20261120"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script src="../shared/student-table.js?v=20261014"></script>
 <script src="../shared/progress-card.js?v=20261026"></script>
@@ -783,8 +786,8 @@
 <script src="../shared/claim.js?v=20261029"></script>
 <script src="../shared/vip-catalog.js?v=20261020"></script>
 <script src="../shared/tasks.js?v=20261029"></script>
-<script src="../shared/task-checks.js?v=20261020"></script>
-<script src="../shared/mgmt-metrics.js?v=20261025"></script>
+<script src="../shared/task-checks.js?v=20261120"></script>
+<script src="../shared/mgmt-metrics.js?v=20261120"></script>
 <script src="../shared/mgmt-notice.js?v=20261029"></script>
 <script src="attendance.js?v=20261029"></script>
 <script src="payroll.js?v=20261025"></script>
@@ -793,7 +796,7 @@
 <script src="students.js?v=20261029"></script>
 <script src="materials.js?v=20261020"></script>
 <script src="booking.js?v=20261103"></script>
-<script src="courses.js?v=20261029"></script>
+<script src="courses.js?v=20261120"></script>
 <script src="monthcal.js?v=20261020"></script>
 <script src="vip-framework.js?v=20261020"></script>
 <script src="promo.js?v=20261025"></script>
