@@ -28,9 +28,10 @@ async function pstInit() {
 function pstClamp(v) { return Math.max(0, Math.min(1, v)); }
 function pstNum(v) { return Number(v) || 0; }
 function pstFilePart(s) { return String(s || '').replace(/[\\/:*?"<>|\s]+/g, '').slice(0, 30); }
-function pstFileName(ext) {
-  const f = pstSt.fields, y = pstSt.year, m = String(pstSt.month || '').padStart(2, '0');
-  return `合格海报_${pstFilePart(pstSt.row.univ)}_${pstFilePart(f.name_line)}_${y}${m}.${ext}`;
+function pstFileName(ext, st) {
+  st = st || pstSt;
+  const f = st.fields, y = st.year, m = String(st.month || '').padStart(2, '0');
+  return `合格海报_${pstFilePart(st.row.univ)}_${pstFilePart(f.name_line)}_${y}${m}.${ext}`;
 }
 function pstDownload(blob, name) {
   const a = document.createElement('a');
@@ -66,7 +67,7 @@ async function pstFonts(st) {
 // 返回画好的 canvas，调用方用完要 canvas.width = 0 释放
 async function pstRender(targetW, opts) {
   opts = opts || {};
-  const st = pstSt, L = pstLayout;
+  const st = opts.st || pstSt, L = pstLayout;   // opts.st：不开编辑器、直接按已保存的海报合成（海报管理页用）
   await pstFonts(st);
   const W = targetW, H = Math.round(W * L.ratio[1] / L.ratio[0]);
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
@@ -287,6 +288,7 @@ function pstClose() {
   const st = pstSt; pstSt = null;
   if (st) { if (st.small) st.small.width = 0; st.img = null; }
   if (typeof loadPhotos === 'function') loadPhotos(st ? st.kind : 'grad');
+  if (typeof pstOnClose === 'function') pstOnClose(st);   // 海报管理页刷新列表用
 }
 
 // ── 左栏画布：显示原截图 + 遮盖框 ──
@@ -411,21 +413,24 @@ async function pstSave(publish) {
     const k = (row.univ || '').trim();
     if (k) await sbFetch('univ_en_names?on_conflict=univ_ja', { method: 'POST', body: { univ_ja: k, univ_en: st.fields.univ_en.trim() }, prefer: 'resolution=merge-duplicates,return=minimal', headers: {} });
     if (publish) {
-      pstSetBusy('生成网络版…');
-      const web = await pstRender(PST_WEB_W, { full: true }); const wb = await pstToBlob(web, 0.9); web.width = 0;
-      const th = await pstRender(PST_THUMB_W); const tb = await pstToBlob(th, 0.8); th.width = 0;
-      pstSetBusy('上传中…');
-      const base = `posters/${st.poster.id}`;
-      await pstUpload(`${base}/web.jpg`, wb); await pstUpload(`${base}/thumb.jpg`, tb);
-      const v = '?v=' + Date.now(), pub = `${SUPABASE_URL}/storage/v1/object/public/${PST_BUCKET}/${base}`;
-      const upd = { web_url: `${pub}/web.jpg${v}`, thumb_url: `${pub}/thumb.jpg${v}` };
-      await sbFetch(`pass_posters?id=eq.${enc(st.poster.id)}`, { method: 'PATCH', body: upd, prefer: 'return=minimal', headers: {} });
-      Object.assign(st.poster, upd);
+      pstSetBusy('生成并上传网络版…');
+      Object.assign(st.poster, await pstPublishFiles(st, st.poster.id));
     }
     pstUpdateState();
     toast(publish ? '✓ 已保存并发布' : '✓ 已保存');
   } catch (e) { toast('保存失败：' + e.message, false); }
   pstSetBusy('');
+}
+// 生成网络版 JPG（1080）和缩略图（360）→ 上传 → 写 web_url / thumb_url；返回 { web_url, thumb_url }
+async function pstPublishFiles(st, posterId) {
+  const web = await pstRender(PST_WEB_W, { full: true, st }); const wb = await pstToBlob(web, 0.9); web.width = 0;
+  const th = await pstRender(PST_THUMB_W, { st }); const tb = await pstToBlob(th, 0.8); th.width = 0;
+  const base = `posters/${posterId}`;
+  await pstUpload(`${base}/web.jpg`, wb); await pstUpload(`${base}/thumb.jpg`, tb);
+  const v = '?v=' + Date.now(), pub = `${SUPABASE_URL}/storage/v1/object/public/${PST_BUCKET}/${base}`;
+  const upd = { web_url: `${pub}/web.jpg${v}`, thumb_url: `${pub}/thumb.jpg${v}` };
+  await sbFetch(`pass_posters?id=eq.${encodeURIComponent(posterId)}`, { method: 'PATCH', body: upd, prefer: 'return=minimal', headers: {} });
+  return upd;
 }
 async function pstUpload(path, blob) {
   const put = h => fetch(`${SUPABASE_URL}/storage/v1/object/${PST_BUCKET}/${path}`, { method: 'POST', headers: { ...h, 'Content-Type': 'image/jpeg', 'x-upsert': 'true' }, body: blob });
@@ -486,3 +491,63 @@ async function pstDeleteForResults(kind, ids) {
     }
   }
 }
+
+// ── 海报管理页用：不开编辑器，按已保存的海报在后台合成 / 发布 / 取消发布 ──
+// 读海报的完整设置和未遮盖原图（原图地址只有管理员读得到），拼成和编辑器同样的状态
+async function pstLoadState(poster) {
+  await pstInit();
+  const enc = encodeURIComponent;
+  const full = (await sbFetch(`pass_posters?id=eq.${enc(poster.id)}&select=*`))[0];
+  if (!full) throw new Error('找不到这张海报');
+  const kind = full.result_kind === 'ug' ? 'ug' : 'grad';
+  let srcUrl = '';
+  const s = await sbFetch(`pass_poster_sources?poster_id=eq.${enc(full.id)}&select=src_url`).catch(() => []);
+  srcUrl = (s && s[0] && s[0].src_url) || '';
+  if (!srcUrl) { const r = await sbFetch(`${PST_TABLE[kind]}?id=eq.${enc(full.result_id)}&select=note,photo_url`).catch(() => []); srcUrl = arPhotoUrl(r && r[0]); }
+  if (!srcUrl) throw new Error('这张海报没有原截图');
+  const im = await pstLoadImg(srcUrl, true);
+  const k = Math.min(1, PST_SMALL_EDGE / Math.max(im.naturalWidth, im.naturalHeight));
+  const sm = document.createElement('canvas'); sm.width = Math.round(im.naturalWidth * k); sm.height = Math.round(im.naturalHeight * k);
+  sm.getContext('2d').drawImage(im, 0, 0, sm.width, sm.height);
+  return { kind, row: { univ: full.univ, dept: full.dept, spec: full.spec }, poster: full, img: im, small: sm,
+    masks: full.masks || [], crop: full.crop, fields: full.fields || {}, year: full.pass_year, month: full.pass_month, major: full.major };
+}
+function pstFreeState(st) { if (st && st.small) st.small.width = 0; if (st) st.img = null; }
+// 网络版 JPG（1080）
+async function pstWebBlobFor(poster) {
+  const st = await pstLoadState(poster);
+  try { const cv = await pstRender(PST_WEB_W, { full: true, st }); const b = await pstToBlob(cv, 0.9); cv.width = 0; return b; }
+  finally { pstFreeState(st); }
+}
+// 大图预览用：返回一个 blob 链接（用完要 revokeObjectURL）
+async function pstPreviewUrlFor(poster) { return URL.createObjectURL(await pstWebBlobFor(poster)); }
+// 印刷版 PDF（A4，2480 宽，原图全分辨率；整页一张 JPG）
+async function pstPdfBlobFor(poster) {
+  await pstLoadJsPdf();
+  const st = await pstLoadState(poster);
+  try {
+    const cv = await pstRender(PST_PRINT_W, { full: true, st });
+    const data = cv.toDataURL('image/jpeg', 0.95); cv.width = 0;
+    const pdf = new window.jspdf.jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+    pdf.addImage(data, 'JPEG', 0, 0, 210, 297);
+    return pdf.output('blob');
+  } finally { pstFreeState(st); }
+}
+async function pstDownloadPdfFor(poster) {
+  const st = await pstLoadState(poster);
+  const name = pstFileName('pdf', st); pstFreeState(st);
+  pstDownload(await pstPdfBlobFor(poster), name);
+}
+async function pstPublishFor(poster) {
+  const st = await pstLoadState(poster);
+  try { const upd = await pstPublishFiles(st, poster.id); Object.assign(poster, upd); return upd; } finally { pstFreeState(st); }
+}
+// 取消发布：清空 web_url / thumb_url，删掉两张图；海报的设置保留
+async function pstUnpublishFor(poster) {
+  await sbFetch(`pass_posters?id=eq.${encodeURIComponent(poster.id)}`, { method: 'PATCH', body: { web_url: null, thumb_url: null }, prefer: 'return=minimal', headers: {} });
+  for (const n of ['web.jpg', 'thumb.jpg']) {
+    await fetch(`${SUPABASE_URL}/storage/v1/object/${PST_BUCKET}/posters/${poster.id}/${n}`, { method: 'DELETE', headers: adminAuthHeaders() }).catch(() => {});
+  }
+  poster.web_url = null; poster.thumb_url = null;
+}
+async function pstRemoveFor(poster) { await pstDeleteForResults(poster.result_kind === 'ug' ? 'ug' : 'grad', [poster.result_id]); }
