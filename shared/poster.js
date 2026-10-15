@@ -1,6 +1,8 @@
 // 合格海报：遮盖隐私 → 填信息 → 自动合成 → 预览 / 导出
-// 依赖 results/admin.html 里的：sbFetch、adminAuthHeaders、SUPABASE_URL/SUPABASE_KEY、phGet、arMajors、
-//   arRenderMajor/arGetMajor、arUploadPhoto、arPhotoUrl、arStripNotePhoto、arRealName、arEsc、toast、loadPhotos、pinyinInitialsOf
+// 依赖 admin/results-admin.js 里的：raSbFetch、raAuthHeaders（请求统一走 admin 的 sb()）、raPhGet、raArMajors、
+//   raArRenderMajor/raArGetMajor、raArUploadPhoto、raArPhotoUrl、raArStripNotePhoto、raArRealName、raArEsc、raToast、raLoadPhotos、raPstOnClose；
+//   以及 shared/search.js 的 pinyinInitialsOf、shared/supabase.js 的 SB_URL / SB_KEY。
+// 背景图 / 排版文件在 results/poster/（bg.png、layout.json），路径相对 admin 页面。
 // 全局名字一律以 pst 开头。
 const PST_BUCKET = 'admission-photos';
 const PST_PREVIEW_W = 540;     // 预览
@@ -21,9 +23,26 @@ function pstLoadImg(url, cors) {
     im.src = url;
   });
 }
+const PST_DIR = '../results/poster/';   // 相对 admin 页面
+// 海报用的 Google 字体（Noto Sans JP / SC）只在第一次用到海报时才加载，等样式表就绪再往下走
+let pstFontsP = null;
+function pstLoadFonts() {
+  if (pstFontsP) return pstFontsP;
+  pstFontsP = new Promise(ok => {
+    const l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700;900&family=Noto+Sans+SC:wght@400;900&display=swap';
+    l.onload = ok; l.onerror = ok;   // 字体加载失败不拦着：退回系统字体
+    document.head.appendChild(l);
+    setTimeout(ok, 8000);
+  });
+  return pstFontsP;
+}
 async function pstInit() {
-  if (!pstLayout) pstLayout = await (await fetch('poster/layout.json?v=' + Date.now())).json();
-  if (!pstBg) pstBg = await pstLoadImg('poster/' + pstLayout.bg + '?v=' + Date.now(), false);
+  pstLoadFonts();
+  if (!pstLayout) pstLayout = await (await fetch(PST_DIR + 'layout.json?v=' + Date.now())).json();
+  if (!pstBg) pstBg = await pstLoadImg(PST_DIR + pstLayout.bg + '?v=' + Date.now(), false);
+  await pstFontsP;
 }
 function pstClamp(v) { return Math.max(0, Math.min(1, v)); }
 function pstNum(v) { return Number(v) || 0; }
@@ -121,31 +140,31 @@ const PST_FOLDER = { grad: 'grad', ug: 'ug' };
 async function pstOpen(kind, resultId) {
   if (pstSt) return;
   kind = kind === 'ug' ? 'ug' : 'grad';
-  let row = (typeof phGet === 'function' ? phGet(kind).rows : []).find(r => String(r.id) === String(resultId));
-  toast('正在打开海报编辑…');
+  let row = (typeof raPhGet === 'function' ? raPhGet(kind).rows : []).find(r => String(r.id) === String(resultId));
+  raToast('正在打开海报编辑…');
   try {
     if (!row) {   // 不是从合格写真页进来的（例如海报管理页）：直接按编号读这条合格记录
-      const r = await sbFetch(`${PST_TABLE[kind]}?id=eq.${encodeURIComponent(resultId)}&select=*`).catch(() => []);
+      const r = await raSbFetch(`${PST_TABLE[kind]}?id=eq.${encodeURIComponent(resultId)}&select=*`).catch(() => []);
       row = r && r[0];
     }
-    if (!row) { toast('找不到这条合格记录', false); return; }
+    if (!row) { raToast('找不到这条合格记录', false); return; }
     await pstInit();
     const enc = encodeURIComponent;
-    const posters = await sbFetch(`pass_posters?result_kind=eq.${kind}&result_id=eq.${enc(row.id)}&select=*`).catch(() => null);
-    if (posters === null) { toast('读取海报表失败：请先执行 seed/pass_posters.sql', false); return; }
+    const posters = await raSbFetch(`pass_posters?result_kind=eq.${kind}&result_id=eq.${enc(row.id)}&select=*`).catch(() => null);
+    if (posters === null) { raToast('读取海报表失败：请先执行 seed/pass_posters.sql', false); return; }
     const poster = posters[0] || null;
     let srcUrl = '';
-    if (poster) { const s = await sbFetch(`pass_poster_sources?poster_id=eq.${enc(poster.id)}&select=src_url`).catch(() => []); srcUrl = (s && s[0] && s[0].src_url) || ''; }
-    srcUrl = srcUrl || arPhotoUrl(row);
+    if (poster) { const s = await raSbFetch(`pass_poster_sources?poster_id=eq.${enc(poster.id)}&select=src_url`).catch(() => []); srcUrl = (s && s[0] && s[0].src_url) || ''; }
+    srcUrl = srcUrl || raArPhotoUrl(row);
     // 默认值
     let en = '';
     if (!poster) {
-      const e = await sbFetch(`univ_en_names?univ_ja=eq.${enc((row.univ || '').trim())}&select=univ_en`).catch(() => []);
+      const e = await raSbFetch(`univ_en_names?univ_ja=eq.${enc((row.univ || '').trim())}&select=univ_en`).catch(() => []);
       en = (e && e[0] && e[0].univ_en) || '';
     }
     let major = (poster && poster.major) || row.our_major || '';
     if (!major && row.student_id) {
-      const s = await sbFetch(`students?id=eq.${enc(row.student_id)}&select=major`).catch(() => []);
+      const s = await raSbFetch(`students?id=eq.${enc(row.student_id)}&select=major`).catch(() => []);
       major = (s && s[0] && s[0].major) || '';
     }
     const now = new Date();
@@ -163,12 +182,12 @@ async function pstOpen(kind, resultId) {
     };
     pstBuildUi();
     await pstLoadSource();
-  } catch (e) { pstSt = null; toast('打开失败：' + e.message, false); }
+  } catch (e) { pstSt = null; raToast('打开失败：' + e.message, false); }
 }
 function pstDefaultName(student) {
   student = (student || '').trim();
   if (!student) return '';
-  if (typeof arRealName === 'function' && !arRealName(student)) return student;   // 已经是 A同学 这种缩写
+  if (typeof raArRealName === 'function' && !raArRealName(student)) return student;   // 已经是 A同学 这种缩写
   const ini = typeof pinyinInitialsOf === 'function' ? pinyinInitialsOf(Array.from(student)[0]) : null;
   const ch = ini ? String(ini)[0].toUpperCase() : '';
   return ch ? ch + '同学' : student;
@@ -195,6 +214,7 @@ function pstBuildUi() {
   const st = pstSt, f = st.fields;
   const o = document.createElement('div');
   o.id = 'pst-overlay';
+  o.className = 'ra-vars';   // 合格实绩页的颜色变量（弹层挂在 body 上，不在 #ra-root 里）
   o.style.cssText = 'position:fixed;inset:0;z-index:900;background:#f7f5f0;display:grid;grid-template-columns:minmax(260px,1fr) minmax(260px,1fr) 340px;gap:12px;padding:12px;overflow:hidden;font-family:inherit';
   const inp = 'width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:#fff';
   const lab = 'font-size:10px;color:var(--text-muted);display:block;margin:8px 0 2px';
@@ -218,10 +238,10 @@ function pstBuildUi() {
   </div>
   <div style="display:flex;flex-direction:column;min-height:0;overflow:auto">
     <div style="font-size:12px;font-weight:600">3. 信息 <span id="pst-state" style="font-weight:400;font-size:10px;color:var(--text-muted)"></span></div>
-    <label style="${lab}">大学名（大字）</label><input style="${inp}" id="pst-f-univ_ja" value="${arEsc(f.univ_ja)}" oninput="pstSetField('univ_ja',this.value)">
-    <label style="${lab}">大学英文名 *（必填，会记住，下次自动带出）</label><input style="${inp}" id="pst-f-univ_en" value="${arEsc(f.univ_en)}" oninput="pstSetField('univ_en',this.value)">
-    <label style="${lab}">研究科行</label><input style="${inp}" id="pst-f-dept_line" value="${arEsc(f.dept_line)}" oninput="pstSetField('dept_line',this.value)">
-    <label style="${lab}">合格者（可改成 WU同学）</label><input style="${inp}" id="pst-f-name_line" value="${arEsc(f.name_line)}" oninput="pstSetField('name_line',this.value)">
+    <label style="${lab}">大学名（大字）</label><input style="${inp}" id="pst-f-univ_ja" value="${raArEsc(f.univ_ja)}" oninput="pstSetField('univ_ja',this.value)">
+    <label style="${lab}">大学英文名 *（必填，会记住，下次自动带出）</label><input style="${inp}" id="pst-f-univ_en" value="${raArEsc(f.univ_en)}" oninput="pstSetField('univ_en',this.value)">
+    <label style="${lab}">研究科行</label><input style="${inp}" id="pst-f-dept_line" value="${raArEsc(f.dept_line)}" oninput="pstSetField('dept_line',this.value)">
+    <label style="${lab}">合格者（可改成 WU同学）</label><input style="${inp}" id="pst-f-name_line" value="${raArEsc(f.name_line)}" oninput="pstSetField('name_line',this.value)">
     <label style="${lab}">合格时间（年 / 月）</label>
     <div style="display:flex;gap:6px;align-items:center"><input style="${inp};width:80px" id="pst-year" type="number" value="${st.year}" oninput="pstSetDate()"><span>年</span><input style="${inp};width:60px" id="pst-month" type="number" min="1" max="12" value="${st.month}" oninput="pstSetDate()"><span>月</span></div>
     <label style="${lab}">本校专业 *（不上海报，老师端按它筛选）</label><div id="pst-major-box"></div>
@@ -236,7 +256,7 @@ function pstBuildUi() {
   </div>`;
   document.body.appendChild(o);
   st.fields.date_text = `${st.year}年${st.month}月`;
-  arRenderMajor('pst', st.major);
+  raArRenderMajor('pst', st.major);
   const mb = document.getElementById('pst-our-major'); if (mb) mb.addEventListener('change', () => { st.major = mb.value; });
   pstBuildTools();
   const cv = document.getElementById('pst-edit');
@@ -287,8 +307,8 @@ function pstClose() {
   document.getElementById('pst-overlay')?.remove();
   const st = pstSt; pstSt = null;
   if (st) { if (st.small) st.small.width = 0; st.img = null; }
-  if (typeof loadPhotos === 'function') loadPhotos(st ? st.kind : 'grad');
-  if (typeof pstOnClose === 'function') pstOnClose(st);   // 海报管理页刷新列表用
+  if (typeof raLoadPhotos === 'function') raLoadPhotos(st ? st.kind : 'grad');
+  if (typeof raPstOnClose === 'function') raPstOnClose(st);   // 海报管理页刷新列表用
 }
 
 // ── 左栏画布：显示原截图 + 遮盖框 ──
@@ -371,28 +391,28 @@ async function pstReupload(inp) {
   if ((st.masks.length || st.crop) && !confirm('换了截图后，现有的遮盖框和裁切位置会清掉，继续？')) { inp.value = ''; return; }
   try {
     pstSetBusy('上传截图中…');
-    const url = await arUploadPhoto(f, PST_FOLDER[st.kind]);   // 存到 admission-photos/grad/… 或 ug/…
+    const url = await raArUploadPhoto(f, PST_FOLDER[st.kind]);   // 存到 admission-photos/grad/… 或 ug/…
     const row = st.row;
-    const note = arStripNotePhoto(row.note) || null;
-    await sbFetch(`${PST_TABLE[st.kind]}?id=eq.${encodeURIComponent(row.id)}`, { method: 'PATCH', body: { photo_url: url, note }, prefer: 'return=minimal', headers: {} });
+    const note = raArStripNotePhoto(row.note) || null;
+    await raSbFetch(`${PST_TABLE[st.kind]}?id=eq.${encodeURIComponent(row.id)}`, { method: 'PATCH', body: { photo_url: url, note }, prefer: 'return=minimal', headers: {} });
     row.photo_url = url; row.note = note;
     st.srcUrl = url; st.masks = []; st.crop = null; st.sel = -1;
     pstBuildTools();
     await pstLoadSource();
-  } catch (e) { toast('上传失败：' + e.message, false); }
+  } catch (e) { raToast('上传失败：' + e.message, false); }
   pstSetBusy('');
   inp.value = '';
 }
 
 // ── 保存 / 发布 / 导出 ──
 function pstSetBusy(msg) { pstBusy = !!msg; const el = document.getElementById('pst-busy'); if (el) el.textContent = msg || ''; }
-function pstDomainOf(major) { return ((typeof arMajors !== 'undefined' ? arMajors : []).find(m => m.key === major) || {}).domain || ''; }
+function pstDomainOf(major) { return ((typeof raArMajors !== 'undefined' ? raArMajors : []).find(m => m.key === major) || {}).domain || ''; }
 function pstCheck() {
   const st = pstSt, f = st.fields;
-  st.major = (typeof arGetMajor === 'function' && arGetMajor('pst')) || st.major;
-  if (!(f.univ_en || '').trim()) { toast('请填大学英文名', false); return false; }
-  if (!st.major) { toast('请选择本校专业', false); return false; }
-  if (!st.year || st.month < 1 || st.month > 12) { toast('请填写正确的合格年月', false); return false; }
+  st.major = (typeof raArGetMajor === 'function' && raArGetMajor('pst')) || st.major;
+  if (!(f.univ_en || '').trim()) { raToast('请填大学英文名', false); return false; }
+  if (!st.major) { raToast('请选择本校专业', false); return false; }
+  if (!st.year || st.month < 1 || st.month > 12) { raToast('请填写正确的合格年月', false); return false; }
   return true;
 }
 async function pstSave(publish) {
@@ -407,18 +427,18 @@ async function pstSave(publish) {
       major: st.major, domain: pstDomainOf(st.major) || null,
       pass_year: st.year, pass_month: st.month, updated_at: new Date().toISOString(),
     };
-    const res = await sbFetch('pass_posters?on_conflict=result_kind,result_id', { method: 'POST', body, prefer: 'resolution=merge-duplicates,return=representation' });
+    const res = await raSbFetch('pass_posters?on_conflict=result_kind,result_id', { method: 'POST', body, prefer: 'resolution=merge-duplicates,return=representation' });
     st.poster = Array.isArray(res) ? res[0] : res;
-    await sbFetch('pass_poster_sources?on_conflict=poster_id', { method: 'POST', body: { poster_id: st.poster.id, src_url: st.srcUrl }, prefer: 'resolution=merge-duplicates,return=minimal', headers: {} });
+    await raSbFetch('pass_poster_sources?on_conflict=poster_id', { method: 'POST', body: { poster_id: st.poster.id, src_url: st.srcUrl }, prefer: 'resolution=merge-duplicates,return=minimal', headers: {} });
     const k = (row.univ || '').trim();
-    if (k) await sbFetch('univ_en_names?on_conflict=univ_ja', { method: 'POST', body: { univ_ja: k, univ_en: st.fields.univ_en.trim() }, prefer: 'resolution=merge-duplicates,return=minimal', headers: {} });
+    if (k) await raSbFetch('univ_en_names?on_conflict=univ_ja', { method: 'POST', body: { univ_ja: k, univ_en: st.fields.univ_en.trim() }, prefer: 'resolution=merge-duplicates,return=minimal', headers: {} });
     if (publish) {
       pstSetBusy('生成并上传网络版…');
       Object.assign(st.poster, await pstPublishFiles(st, st.poster.id));
     }
     pstUpdateState();
-    toast(publish ? '✓ 已保存并发布' : '✓ 已保存');
-  } catch (e) { toast('保存失败：' + e.message, false); }
+    raToast(publish ? '✓ 已保存并发布' : '✓ 已保存');
+  } catch (e) { raToast('保存失败：' + e.message, false); }
   pstSetBusy('');
 }
 // 生成网络版 JPG（1080）和缩略图（360）→ 上传 → 写 web_url / thumb_url；返回 { web_url, thumb_url }
@@ -427,15 +447,15 @@ async function pstPublishFiles(st, posterId) {
   const th = await pstRender(PST_THUMB_W, { st }); const tb = await pstToBlob(th, 0.8); th.width = 0;
   const base = `posters/${posterId}`;
   await pstUpload(`${base}/web.jpg`, wb); await pstUpload(`${base}/thumb.jpg`, tb);
-  const v = '?v=' + Date.now(), pub = `${SUPABASE_URL}/storage/v1/object/public/${PST_BUCKET}/${base}`;
+  const v = '?v=' + Date.now(), pub = `${SB_URL}/storage/v1/object/public/${PST_BUCKET}/${base}`;
   const upd = { web_url: `${pub}/web.jpg${v}`, thumb_url: `${pub}/thumb.jpg${v}` };
-  await sbFetch(`pass_posters?id=eq.${encodeURIComponent(posterId)}`, { method: 'PATCH', body: upd, prefer: 'return=minimal', headers: {} });
+  await raSbFetch(`pass_posters?id=eq.${encodeURIComponent(posterId)}`, { method: 'PATCH', body: upd, prefer: 'return=minimal', headers: {} });
   return upd;
 }
 async function pstUpload(path, blob) {
-  const put = h => fetch(`${SUPABASE_URL}/storage/v1/object/${PST_BUCKET}/${path}`, { method: 'POST', headers: { ...h, 'Content-Type': 'image/jpeg', 'x-upsert': 'true' }, body: blob });
-  let r = await put(adminAuthHeaders());
-  if (!r.ok) r = await put({ apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY });
+  const put = h => fetch(`${SB_URL}/storage/v1/object/${PST_BUCKET}/${path}`, { method: 'POST', headers: { ...h, 'Content-Type': 'image/jpeg', 'x-upsert': 'true' }, body: blob });
+  let r = await put(await raAuthHeaders());
+  if (!r.ok) r = await put({ apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY });
   if (!r.ok) throw new Error('上传失败：' + (await r.text()).slice(0, 120));
 }
 async function pstExportWeb() {
@@ -444,7 +464,7 @@ async function pstExportWeb() {
     pstSetBusy('生成网络版…');
     const cv = await pstRender(PST_WEB_W, { full: true }); const b = await pstToBlob(cv, 0.9); cv.width = 0;
     pstDownload(b, pstFileName('jpg'));
-  } catch (e) { toast('导出失败：' + e.message, false); }
+  } catch (e) { raToast('导出失败：' + e.message, false); }
   pstSetBusy('');
 }
 function pstLoadJsPdf() {
@@ -458,7 +478,7 @@ function pstLoadJsPdf() {
 }
 async function pstExportPdf() {
   if (pstBusy || !pstCheck()) return;
-  if (!pstSt.img) { toast('原截图没有加载成功，无法导出印刷版', false); return; }
+  if (!pstSt.img) { raToast('原截图没有加载成功，无法导出印刷版', false); return; }
   try {
     pstSetBusy('生成印刷版（较慢）…');
     await pstLoadJsPdf();
@@ -467,7 +487,7 @@ async function pstExportPdf() {
     const pdf = new window.jspdf.jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
     pdf.addImage(data, 'JPEG', 0, 0, 210, 297);   // 整页一张 JPG，没有图层和文字
     pdf.save(pstFileName('pdf'));
-  } catch (e) { toast('导出失败：' + e.message, false); }
+  } catch (e) { raToast('导出失败：' + e.message, false); }
   pstSetBusy('');
 }
 
@@ -480,14 +500,14 @@ async function pstDeleteForResults(kind, ids) {
   let ps;
   try {
     ps = ids.length === 1
-      ? await sbFetch(`pass_posters?result_kind=eq.${kind}&result_id=eq.${enc(ids[0])}&select=id,result_id`)
-      : (await sbFetch(`pass_posters?result_kind=eq.${kind}&select=id,result_id`) || []).filter(p => ids.includes(String(p.result_id)));
+      ? await raSbFetch(`pass_posters?result_kind=eq.${kind}&result_id=eq.${enc(ids[0])}&select=id,result_id`)
+      : (await raSbFetch(`pass_posters?result_kind=eq.${kind}&select=id,result_id`) || []).filter(p => ids.includes(String(p.result_id)));
   } catch (e) { return; }   // 海报表还没建
   for (const p of (ps || [])) {
-    await sbFetch(`pass_poster_sources?poster_id=eq.${enc(p.id)}`, { method: 'DELETE', prefer: 'return=minimal', headers: {} }).catch(() => {});
-    await sbFetch(`pass_posters?id=eq.${enc(p.id)}`, { method: 'DELETE', prefer: 'return=minimal', headers: {} });
+    await raSbFetch(`pass_poster_sources?poster_id=eq.${enc(p.id)}`, { method: 'DELETE', prefer: 'return=minimal', headers: {} }).catch(() => {});
+    await raSbFetch(`pass_posters?id=eq.${enc(p.id)}`, { method: 'DELETE', prefer: 'return=minimal', headers: {} });
     for (const n of ['web.jpg', 'thumb.jpg']) {
-      await fetch(`${SUPABASE_URL}/storage/v1/object/${PST_BUCKET}/posters/${p.id}/${n}`, { method: 'DELETE', headers: adminAuthHeaders() }).catch(() => {});
+      await fetch(`${SB_URL}/storage/v1/object/${PST_BUCKET}/posters/${p.id}/${n}`, { method: 'DELETE', headers: await raAuthHeaders() }).catch(() => {});
     }
   }
 }
@@ -497,13 +517,13 @@ async function pstDeleteForResults(kind, ids) {
 async function pstLoadState(poster) {
   await pstInit();
   const enc = encodeURIComponent;
-  const full = (await sbFetch(`pass_posters?id=eq.${enc(poster.id)}&select=*`))[0];
+  const full = (await raSbFetch(`pass_posters?id=eq.${enc(poster.id)}&select=*`))[0];
   if (!full) throw new Error('找不到这张海报');
   const kind = full.result_kind === 'ug' ? 'ug' : 'grad';
   let srcUrl = '';
-  const s = await sbFetch(`pass_poster_sources?poster_id=eq.${enc(full.id)}&select=src_url`).catch(() => []);
+  const s = await raSbFetch(`pass_poster_sources?poster_id=eq.${enc(full.id)}&select=src_url`).catch(() => []);
   srcUrl = (s && s[0] && s[0].src_url) || '';
-  if (!srcUrl) { const r = await sbFetch(`${PST_TABLE[kind]}?id=eq.${enc(full.result_id)}&select=note,photo_url`).catch(() => []); srcUrl = arPhotoUrl(r && r[0]); }
+  if (!srcUrl) { const r = await raSbFetch(`${PST_TABLE[kind]}?id=eq.${enc(full.result_id)}&select=note,photo_url`).catch(() => []); srcUrl = raArPhotoUrl(r && r[0]); }
   if (!srcUrl) throw new Error('这张海报没有原截图');
   const im = await pstLoadImg(srcUrl, true);
   const k = Math.min(1, PST_SMALL_EDGE / Math.max(im.naturalWidth, im.naturalHeight));
@@ -544,9 +564,9 @@ async function pstPublishFor(poster) {
 }
 // 取消发布：清空 web_url / thumb_url，删掉两张图；海报的设置保留
 async function pstUnpublishFor(poster) {
-  await sbFetch(`pass_posters?id=eq.${encodeURIComponent(poster.id)}`, { method: 'PATCH', body: { web_url: null, thumb_url: null }, prefer: 'return=minimal', headers: {} });
+  await raSbFetch(`pass_posters?id=eq.${encodeURIComponent(poster.id)}`, { method: 'PATCH', body: { web_url: null, thumb_url: null }, prefer: 'return=minimal', headers: {} });
   for (const n of ['web.jpg', 'thumb.jpg']) {
-    await fetch(`${SUPABASE_URL}/storage/v1/object/${PST_BUCKET}/posters/${poster.id}/${n}`, { method: 'DELETE', headers: adminAuthHeaders() }).catch(() => {});
+    await fetch(`${SB_URL}/storage/v1/object/${PST_BUCKET}/posters/${poster.id}/${n}`, { method: 'DELETE', headers: await raAuthHeaders() }).catch(() => {});
   }
   poster.web_url = null; poster.thumb_url = null;
 }
