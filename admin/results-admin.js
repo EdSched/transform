@@ -1443,9 +1443,11 @@ async function raArLoadMajors() {
 }
 const raArSel = { f: '', em: '', ugf: '', ugem: '' };
 function raArEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
-function raArRenderMajor(p, sel) {
+const raArOpt = {};   // 前缀 → { domains: 只列哪些领域, first: 排第一的领域, emptyLabel }（海报编辑器用）
+function raArRenderMajor(p, sel, opt) {
   const box = document.getElementById(p + '-major-box'); if (!box) return;
   raArSel[p] = sel || '';
+  if (opt) raArOpt[p] = opt;
   box.innerHTML = `<input id="${p}-major-q" type="text" placeholder="搜索专业…" oninput="raArFilterMajor('${p}')" style="margin-bottom:4px"><select id="${p}-our-major"></select>`;
   raArFilterMajor(p);
 }
@@ -1454,13 +1456,16 @@ function raArFilterMajor(p) {
   const sel = document.getElementById(p + '-our-major'); if (!sel) return;
   const cur = sel.value || raArSel[p] || '';
   const groups = {};
+  const o = raArOpt[p] || {};
   raArMajors.forEach(m => {
+    if (o.domains && !o.domains.includes(m.domain || '其他') && m.key !== cur) return;
     if (q && !((m.label || '').toLowerCase().includes(q) || (m.key || '').toLowerCase().includes(q)) && m.key !== cur) return;
     (groups[m.domain || '其他'] = groups[m.domain || '其他'] || []).push(m);
   });
   let doms = Object.keys(groups);
   if (p.startsWith('ug')) doms.sort((a, b) => (/^学部/.test(b) ? 1 : 0) - (/^学部/.test(a) ? 1 : 0));   // 学部：学部的领域排前面
-  sel.innerHTML = '<option value="">' + (raIsTeacher() ? '-- 未选择 --' : '-- 不记录到学生档案 --') + '</option>' + doms.map(d =>
+  if (o.first) doms.sort((a, b) => (b === o.first ? 1 : 0) - (a === o.first ? 1 : 0));
+  sel.innerHTML = '<option value="">' + (o.emptyLabel || (raIsTeacher() ? '-- 未选择 --' : '-- 不记录到学生档案 --')) + '</option>' + doms.map(d =>
     `<optgroup label="${raArEsc(d)}">${groups[d].map(m => `<option value="${raArEsc(m.key)}"${m.key === cur ? ' selected' : ''}>${raArEsc(m.label)}</option>`).join('')}</optgroup>`).join('');
   sel.onchange = () => { raArSel[p] = sel.value; };
 }
