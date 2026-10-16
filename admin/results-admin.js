@@ -274,7 +274,7 @@ function raHtml() {
         </select>
       </div>
       <div class="field">
-        <label>本校在籍专业（不选 = 不记录到学生档案）</label>
+        <label>${raIsTeacher() ? '本校在籍专业（海报筛选用）' : '本校在籍专业（不选 = 不记录到学生档案）'}</label>
         <div id="f-major-box"></div>${raTeacherMajorNote()}
       </div>
       <div class="field">
@@ -580,7 +580,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
         <div style="font-size:10px;color:var(--text-muted);margin-top:3px">学生真实姓名（要记录到学生档案时必填）</div>
       </div>
       <div class="field">
-        <label>本校在籍专业（不选 = 不记录到学生档案）</label>
+        <label>${raIsTeacher() ? '本校在籍专业（海报筛选用）' : '本校在籍专业（不选 = 不记录到学生档案）'}</label>
         <div id="ugf-major-box"></div>${raTeacherMajorNote()}
       </div>
       <div class="field">
@@ -1460,7 +1460,7 @@ function raArFilterMajor(p) {
   });
   let doms = Object.keys(groups);
   if (p.startsWith('ug')) doms.sort((a, b) => (/^学部/.test(b) ? 1 : 0) - (/^学部/.test(a) ? 1 : 0));   // 学部：学部的领域排前面
-  sel.innerHTML = '<option value="">-- 不记录到学生档案 --</option>' + doms.map(d =>
+  sel.innerHTML = '<option value="">' + (raIsTeacher() ? '-- 未选择 --' : '-- 不记录到学生档案 --') + '</option>' + doms.map(d =>
     `<optgroup label="${raArEsc(d)}">${groups[d].map(m => `<option value="${raArEsc(m.key)}"${m.key === cur ? ' selected' : ''}>${raArEsc(m.label)}</option>`).join('')}</optgroup>`).join('');
   sel.onchange = () => { raArSel[p] = sel.value; };
 }

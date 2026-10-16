@@ -428,7 +428,8 @@ function buildTabs() {
   if (p.promo) tabs.push({ id: 'promo', label: '📣 宣传相关' });
   // 宣传资料整合：把出愿学校 / 学科介绍 / 进度规划等营业资料合成一份 PDF（需 admin 在营业功能中单独勾选）
   if (p.promo_pack) tabs.push({ id: 'promopack', label: '📦 宣传资料整合' });
-  if (p.promo) tabs.push({ id: 'admissions', label: '🏆 合格实绩' });
+  // 有「合格实绩管理」的老师只显示「合格实绩管理」，不再重复显示只读的「合格实绩」
+  if (p.promo && !p.result_admin) tabs.push({ id: 'admissions', label: '🏆 合格实绩' });
   // 合格实绩管理：admin 在营业功能中单独勾选（permissions.result_admin）；内容就是管理端的合格实绩页（admin/results-admin.js，老师模式）
   if (p.result_admin) tabs.push({ id: 'resultadmin', label: '🏆 合格实绩管理' });
   // 合格海报查询：admin 在营业功能中单独勾选（permissions.pass_posters）；只读已发布的海报
