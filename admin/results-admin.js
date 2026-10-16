@@ -523,6 +523,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
 
 <!-- ── TAB: 合格写真 ── -->
 <div id="tab-photos" style="display:none">
+  <div id="photo-mode" style="margin-bottom:8px"></div>
   <div style="display:flex;gap:10px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
     <input id="photo-search" placeholder="搜索学生（汉字 / 拼音首字母）/ 大学 / 研究科…" oninput="searchBox(this,()=>raPhRender('grad'))" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:260px">
     <button class="btn btn-secondary" onclick="raLoadPhotos('grad')">↺ 刷新</button>
@@ -753,6 +754,7 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
 
 <!-- ── UG TAB: 合格写真 ── -->
 <div id="ugtab-photos" style="display:none">
+  <div id="ugphoto-mode" style="margin-bottom:8px"></div>
   <div style="display:flex;gap:10px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
     <input id="ugphoto-search" placeholder="搜索学生（汉字 / 拼音首字母）/ 大学 / 学部…" oninput="searchBox(this,()=>raPhRender('ug'))" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:260px">
     <button class="btn btn-secondary" onclick="raLoadPhotos('ug')">↺ 刷新</button>
@@ -2648,6 +2650,8 @@ const raPH_TRACK = { bunka: '文科', rika: '理科', bijutsu: '美術' };
 function raPhGet(kind) { return raPH[kind || 'grad']; }
 async function raLoadPhotos(kind) {
   kind = kind || 'grad';
+  raPhModeRender(kind);
+  if (raFill[kind].mode === 'fill') return raFillLoad(kind, true);
   const c = raPH[kind], grid = document.getElementById(c.pre + '-grid');
   grid.innerHTML = '<div class="load-state">読み込み中...</div>';
   try {
@@ -2674,6 +2678,7 @@ function raPhChip(on, label, onclick) {
 }
 function raPhRender(kind) {
   kind = kind || 'grad';
+  if (raFill[kind].mode === 'fill') return raFillLoad(kind, true);   // 补图模式下搜索框 = 补图的搜索
   const c = raPH[kind], f = c.f, pm = c.posterMap;
   const q = (document.getElementById(c.pre + '-search')?.value || '').trim();
   const isUg = kind === 'ug';
@@ -2728,6 +2733,194 @@ function raPhRender(kind) {
   }).join('') + '</div>';
   raArFillImgs(grid);
 }
+// ─── 补图：只列缺截图的合格记录，点一下 / 拖进来 / 粘贴 就能传 ─────────────────────
+const raFill = { grad: null, ug: null };
+function raFillNew() {
+  return { mode: 'have', range: '1m', univ: '', subj: '', track: '', rows: [], schools: [], offset: 0, hasMore: false, gate: false,
+    loading: false, seq: 0, sel: '', st: {}, phIds: null, pickId: '' };
+}
+raFill.grad = raFillNew(); raFill.ug = raFillNew();
+const raFILL_RANGES = [['1w', '最近 1 周'], ['1m', '最近 1 个月'], ['3m', '最近 3 个月'], ['old', '3 个月以前'], ['all', '全部']];
+const raFILL_PAGE = 100, raFILL_SCAN_MAX = 5000;
+function raFillCols(kind) { return 'id,univ,dept,spec,student,' + (kind === 'ug' ? '' : 'subject,') + 'track,era,created_at'; }
+
+function raPhModeRender(kind) {
+  const c = raPH[kind], f = raFill[kind], el = document.getElementById(c.pre + '-mode'); if (!el) return;
+  el.innerHTML = raPhChip(f.mode === 'have', '已有截图', `raFillMode('${kind}','have')`) + raPhChip(f.mode === 'fill', '补图', `raFillMode('${kind}','fill')`)
+    + `<input type="file" accept="image/*" id="${c.pre}-fillfile" style="display:none" onchange="raFillFilePicked('${kind}',this)">`;
+}
+function raFillMode(kind, m) {
+  const f = raFill[kind]; if (f.mode === m) return;
+  f.mode = m;
+  if (m === 'fill') { f.st = {}; f.sel = ''; }
+  raLoadPhotos(kind);
+}
+// 老师端：默认选成这位老师负责领域对应的那一项（大学院 / 学部 + 系統）；负责多个领域的不预选
+function raFillTeacherPreset() {
+  if (!raIsTeacher() || typeof teacherData === 'undefined' || !teacherData) return;
+  const doms = ((teacherData.domains || []).length ? teacherData.domains : (teacherData.managed_by || []));
+  const hits = [];
+  doms.forEach(d => {
+    const m = String(d || '').match(/^(大学院|学部)(文科|理科|美术|美術)$/);
+    if (m) hits.push([m[1] === '学部' ? 'ug' : 'grad', m[2] === '文科' ? 'bunka' : m[2] === '理科' ? 'rika' : 'bijutsu']);
+  });
+  if (hits.length !== 1 || doms.length !== 1) return;
+  raFill[hits[0][0]].track = hits[0][1];
+  if (hits[0][0] !== raCurMajor) raSwitchMajor(hits[0][0]);
+}
+function raFillSince(range) {
+  const d = new Date();
+  if (range === '1w') d.setDate(d.getDate() - 7); else if (range === '1m') d.setMonth(d.getMonth() - 1); else d.setMonth(d.getMonth() - 3);
+  return d.toISOString();
+}
+function raFillSet(kind, k, v) {
+  const f = raFill[kind];
+  if (k === 'range') { f.range = v; f.univ = ''; } else f[k] = f[k] === v ? '' : v;
+  if (k !== 'univ') f.schools = [];
+  raFillLoad(kind, true);
+}
+async function raFillLoad(kind, reset) {
+  const c = raPH[kind], f = raFill[kind], q = (document.getElementById(c.pre + '-search')?.value || '').trim();
+  const seq = ++f.seq;
+  if (reset) { f.rows = []; f.offset = 0; f.hasMore = false; f.st = {}; f.sel = ''; f.phIds = null; }
+  f.gate = (f.range === 'old' || f.range === 'all') && !f.univ && !q;
+  if (f.gate) { f.rows = []; f.loading = false; raFillRender(kind); return; }
+  f.loading = true; raFillRender(kind);
+  try {
+    if (!f.phIds) {
+      const [ph, leg] = await Promise.all([
+        raArFetchAll(`result_photos?result_kind=eq.${kind}&select=result_id&order=created_at.asc`),
+        raArFetchAll(`${c.table}?select=id,photo_url,note&${raAR_LEGACY_OR}`)
+      ]);
+      if (seq !== f.seq) return;
+      f.phIds = new Set(ph.map(x => String(x.result_id)));
+      leg.forEach(r => { if (raArLegacyUrl(r)) f.phIds.add(String(r.id)); });
+    }
+    let qs = `${c.table}?select=${raFillCols(kind)}&order=created_at.desc,id.desc`;
+    if (f.range === 'old') qs += `&created_at=lt.${encodeURIComponent(raFillSince('3m'))}`;
+    else if (f.range !== 'all') qs += `&created_at=gte.${encodeURIComponent(raFillSince(f.range))}`;
+    if (f.univ) qs += `&univ=eq.${encodeURIComponent(f.univ)}`;
+    if (f.track) qs += `&track=eq.${encodeURIComponent(f.track)}`;
+    if (f.subj && kind !== 'ug') qs += `&subject=eq.${encodeURIComponent(f.subj)}`;
+    const BATCH = 200, got = [];
+    let scanned = 0, more = false;
+    while (got.length < raFILL_PAGE) {
+      const rows = await raSbFetch(`${qs}&limit=${BATCH}&offset=${f.offset}`, { headers: {} }) || [];
+      if (seq !== f.seq) return;
+      f.offset += rows.length; scanned += rows.length;
+      for (const r of rows) {
+        if (f.phIds.has(String(r.id))) continue;
+        if (q && !searchMatch(q, [r.student, r.univ, r.dept, r.spec])) continue;
+        got.push(r);
+      }
+      if (rows.length < BATCH) { more = false; break; }
+      more = true;
+      if (scanned >= raFILL_SCAN_MAX) break;
+    }
+    f.rows = f.rows.concat(got); f.hasMore = more;
+    if (!f.univ) f.schools = [...new Set(f.rows.map(r => r.univ).filter(Boolean))];
+  } catch (e) {
+    if (seq !== f.seq) return;
+    f.loading = false;
+    document.getElementById(c.pre + '-grid').innerHTML = `<div class="load-state" style="color:var(--red)">エラー: ${raArEsc(e.message)}</div>`;
+    return;
+  }
+  f.loading = false; raFillRender(kind);
+}
+function raFillRender(kind) {
+  const c = raPH[kind], f = raFill[kind], isUg = kind === 'ug', esc = raArEsc;
+  const lab = t => `<span style="font-size:11px;color:var(--text-muted);margin-right:6px">${t}</span>`;
+  let h = `<div style="margin-bottom:4px">${lab('录入时间')}` + raFILL_RANGES.map(([k, l]) => raPhChip(f.range === k, l, `raFillSet('${kind}','range','${k}')`)).join('') + '</div>';
+  h += `<div style="margin-bottom:4px">${lab('系統')}` + Object.keys(raPH_TRACK).map(k => raPhChip(f.track === k, raPH_TRACK[k], `raFillSet('${kind}','track','${k}')`)).join('') + '</div>';
+  if (!isUg) h += `<div style="margin-bottom:4px">${lab('在籍学科')}` + raSUBJECTS.map(x => raPhChip(f.subj === x.id, x.label, `raFillSet('${kind}','subj','${x.id}')`)).join('') + '</div>';
+  const SHOW = 12, sch = f.schools.slice().sort((a, b) => a.localeCompare(b, 'ja'));
+  if (sch.length || f.univ) {
+    const list = f.moreSchools ? sch : sch.filter((u, i) => i < SHOW || u === f.univ);
+    h += `<div style="margin-bottom:4px">${lab('学校')}` + list.map(u => raPhChip(f.univ === u, esc(u), `raFillSet('${kind}','univ',this.dataset.u)" data-u="${esc(u)}`)).join('')
+      + (sch.length > SHOW ? raPhChip(false, f.moreSchools ? '收起 ▴' : '更多 ▾', `raFill['${kind}'].moreSchools=!raFill['${kind}'].moreSchools;raFillRender('${kind}')`) : '') + '</div>';
+  }
+  document.getElementById(c.pre + '-filters').innerHTML = h;
+  const grid = document.getElementById(c.pre + '-grid'), cnt = document.getElementById(c.pre + '-count');
+  if (f.gate) { cnt.textContent = ''; grid.innerHTML = '<div class="load-state">请先选学校或搜索</div>'; return; }
+  cnt.textContent = f.loading && !f.rows.length ? '' : `缺截图 ${f.rows.length}${f.hasMore ? '+' : ''} 条（当前条件）`;
+  if (f.loading && !f.rows.length) { grid.innerHTML = '<div class="load-state">读取中...</div>'; return; }
+  if (!f.rows.length) { grid.innerHTML = '<div class="load-state">该条件下没有缺截图的记录</div>'; return; }
+  const btn = 'padding:2px 10px;font-size:11px;border:1px solid var(--border);background:var(--surface);border-radius:3px;cursor:pointer;font-family:inherit';
+  grid.innerHTML = f.rows.map(r => {
+    const id = String(r.id), s = f.st[id], sel = f.sel === id;
+    const trackName = raPH_TRACK[r.track] || '';
+    const info = `<span style="color:var(--text-muted);font-size:11px;width:78px;flex:none">${esc((r.created_at || '').slice(0, 10))}</span>`
+      + `<span style="flex:1;min-width:0;font-size:12px"><b>${esc(r.univ) || '（未知大学）'}</b> ${esc(r.dept)}${r.spec ? ' ' + esc(r.spec) : ''}　<span style="color:var(--text-secondary)">${esc(r.student) || ''}</span>${trackName ? `　<span style="color:var(--text-muted);font-size:10px">${trackName}</span>` : ''}</span>`;
+    let right;
+    if (s && s.s === 'busy') right = '<span style="font-size:11px;color:var(--text-muted)">上传中…</span>';
+    else if (s && s.s === 'done') right = `${s.url ? `<img src="${esc(s.url)}" style="height:34px;border:1px solid var(--border);border-radius:3px;cursor:pointer" onclick="event.stopPropagation();window.open(this.src,'_blank')">` : ''}<span style="font-size:12px;color:var(--green);font-weight:600">✓ 已补</span>`
+      + `<button style="${btn}" onclick="event.stopPropagation();raFillPick('${kind}',this)">换一张</button><button style="${btn}" onclick="event.stopPropagation();raFillUndo('${kind}',this)">撤销</button>`;
+    else right = (s && s.s === 'err' ? `<span style="font-size:11px;color:var(--red)">${esc(s.msg)}</span>` : '')
+      + `<button style="${btn}" onclick="event.stopPropagation();raFillPick('${kind}',this)">${s && s.s === 'err' ? '重试' : '上传截图'}</button>`;
+    return `<div class="ra-fill-row" data-rid="${esc(id)}" onclick="raFillSelect('${kind}',this)" ondragover="event.preventDefault();this.style.background='#fbf6e6'" ondragleave="this.style.background=''" ondrop="raFillDrop('${kind}',event,this)"
+      style="display:flex;align-items:center;gap:10px;padding:6px 10px;border:1px solid ${sel ? 'var(--accent)' : 'var(--border)'};border-radius:4px;margin-bottom:4px;background:${s && s.s === 'done' ? '#eef7ee' : 'var(--surface)'};cursor:pointer">${info}<span style="display:flex;align-items:center;gap:8px;flex:none">${right}</span></div>`;
+  }).join('')
+    + (f.hasMore ? `<div style="text-align:center;margin-top:8px"><button class="btn btn-secondary" ${f.loading ? 'disabled' : ''} onclick="raFillLoad('${kind}',false)">${f.loading ? '读取中…' : '加载更多'}</button></div>` : '')
+    + '<div style="font-size:10px;color:var(--text-muted);margin-top:6px">传法：点「上传截图」/ 把图片拖到这一行上 / 点选一行后按 Ctrl+V（⌘V）粘贴截图</div>';
+}
+function raFillRid(el) { const row = el.closest('.ra-fill-row'); return row ? row.dataset.rid : ''; }
+function raFillSelect(kind, row) {
+  raFill[kind].sel = row.dataset.rid;
+  document.querySelectorAll(`#${raPH[kind].pre}-grid .ra-fill-row`).forEach(r => { r.style.borderColor = r === row ? 'var(--accent)' : 'var(--border)'; });
+}
+function raFillPick(kind, btn) {
+  const f = raFill[kind]; f.pickId = raFillRid(btn); f.sel = f.pickId;
+  const inp = document.getElementById(raPH[kind].pre + '-fillfile'); inp.value = ''; inp.click();
+}
+function raFillFilePicked(kind, inp) { const file = inp.files[0]; if (file) raFillUpload(kind, raFill[kind].pickId, file); inp.value = ''; }
+function raFillDrop(kind, ev, row) {
+  ev.preventDefault(); row.style.background = '';
+  const file = [...(ev.dataTransfer.files || [])].find(x => /^image\//.test(x.type));
+  if (file) raFillUpload(kind, row.dataset.rid, file); else raToast('请拖入图片文件', false);
+}
+async function raFillUpload(kind, id, file) {
+  const f = raFill[kind], r = f.rows.find(x => String(x.id) === String(id));
+  if (!r || !file) return;
+  if (!/^image\//.test(file.type)) { raToast('只能上传图片', false); return; }
+  if (f.st[id] && f.st[id].s === 'busy') return;
+  f.st[id] = { s: 'busy' }; raFillRender(kind);
+  try {
+    const path = await raArUploadPhoto(file, kind);
+    await raArSetPhoto(kind, id, path, null);
+    let url = ''; try { url = (await raArSignedUrls([path]))[path] || ''; } catch (e) {}
+    f.st[id] = { s: 'done', path, url };
+    if (f.phIds) f.phIds.add(String(id));
+  } catch (e) { f.st[id] = { s: 'err', msg: '失败：' + e.message }; }
+  raFillRender(kind);
+}
+async function raFillUndo(kind, btn) {
+  const f = raFill[kind], id = raFillRid(btn);
+  if (!id || !confirm('撤销这张截图？（删掉截图文件，这条回到缺截图状态）')) return;
+  try {
+    await raArDeleteResultPhotos(kind, [id]);
+    if (f.phIds) f.phIds.delete(String(id));
+    delete f.st[id];
+  } catch (e) { f.st[id] = { s: 'err', msg: '撤销失败：' + e.message }; }
+  raFillRender(kind);
+}
+// 粘贴截图：点选一行后 Ctrl+V / ⌘V
+if (!window.__raFillPasteBound) {
+  window.__raFillPasteBound = true;
+  document.addEventListener('paste', ev => {
+    const kind = ['grad', 'ug'].find(k => {
+      const f = raFill[k], g = document.getElementById(raPH[k].pre + '-grid');
+      return f.mode === 'fill' && f.sel && g && g.offsetParent !== null;
+    });
+    if (!kind) return;
+    const items = [...((ev.clipboardData && ev.clipboardData.items) || [])];
+    const it = items.find(x => x.kind === 'file' && /^image\//.test(x.type));
+    if (!it) return;
+    const file = it.getAsFile(); if (!file) return;
+    ev.preventDefault();
+    raFillUpload(kind, raFill[kind].sel, file);
+  });
+}
+
 // 私有桶的图：取临时链接后再显示
 async function raArFillImgs(root) {
   const imgs = [...root.querySelectorAll('img[data-path]')];
@@ -2849,6 +3042,7 @@ function raResetState() {
   raUgDataLoaded = false;
   ['grad', 'ug'].forEach(k => { raAR_PH[k] = {}; raAR_PH_LOADED[k] = false; });   // 照片路径表：每次进来重新读
   ['grad', 'ug'].forEach(k => { const c = raPH[k]; c.rows = []; c.posterMap = null; c.f = { era: '', subj: '', poster: '' }; c.more = false; });
+  ['grad', 'ug'].forEach(k => { raFill[k] = raFillNew(); });
 }
 
 // 外部库按需加载（老师端页面不预先加载）：XLSX（Excel 导入）、JSZip（批量下载）；admin 页面已经有，直接跳过
@@ -2879,4 +3073,6 @@ function raRender(mc, opts) {
   raBindUploadZones();
   raRefreshUnivList();
   raArLoadMajors();
+  ['grad', 'ug'].forEach(raPhModeRender);
+  raFillTeacherPreset();
 }
