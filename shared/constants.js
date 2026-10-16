@@ -344,6 +344,69 @@ function chipFoldToggle(btn) {
   btn.textContent = open ? '收起 ▴' : '更多 ▾ ' + btn.dataset.n;
 }
 
+// ══ 管理端学生类页面共用筛选：领域 → 专业 → 来源（学生档案 / 考学进度 / 月度学习情况 / 出席・作业共用同一份状态 DMF）══
+// 领域一行：只列视角范围内、而且有学生的领域（带人数）；只有一个领域时不显示，直接显示专业
+// 专业一行：只列已选领域里的专业（含分组）；领域选「全部」（且有多个领域）时隐藏
+// 来源一行：只列当前可见学生里出现的来源；只有一个来源时不显示
+// 每个 chip 的人数 = 其他条件已选、这一行不算
+const DMF = { domain: '', major: '', source: '' };
+function dmfDomainOfKey(k) { return isMajorGroup(k) ? (groupDomain(k) || MAJOR_DOMAIN[groupMajors(k)[0]] || '') : (MAJOR_DOMAIN[k] || ''); }
+// 一个对象涉及的专业：opts.majorsOf(item) 优先（如课程的 major 数组）；否则主专业，opts.extra=true 时再加附加专业
+function dmfMajors(item, opts) {
+  if (opts && opts.majorsOf) return (opts.majorsOf(item) || []).filter(Boolean);
+  const a = [item.major];
+  if (opts && opts.extra && Array.isArray(item.extra_majors)) a.push(...item.extra_majors);
+  return a.filter(Boolean);
+}
+// 是否符合 state 的领域 / 专业 / 来源；skip = 统计某一行人数时不算的那一项
+function dmfMatch(item, state, opts, skip) {
+  const ms = dmfMajors(item, opts);
+  if (skip !== 'domain' && state.domain && !ms.some(m => dmfDomainOfKey(m) === state.domain)) return false;
+  if (skip !== 'major' && state.major && !ms.some(m => matchesMajorFilter(m, state.major))) return false;
+  if (skip !== 'source' && state.source && (item.source || '') !== state.source) return false;
+  return true;
+}
+function dmfFilter(items, opts) { return (items || []).filter(i => dmfMatch(i, DMF, opts)); }
+// items = 当前视角下可见的对象（学生 / 课程）；opts.also(item) = 页面自己的其他条件（状态等），只影响人数
+function domMajorFilterHtml(state, onSet, items, opts) {
+  opts = opts || {}; items = items || [];
+  const also = opts.also || (() => true);
+  const present = new Set();
+  items.forEach(i => dmfMajors(i, opts).forEach(m => present.add(m)));
+  // 领域：按 DOMAINS 顺序，范围内且有学生
+  const scopeDoms = new Set(scopeDomainList());
+  const doms = DOMAINS.map(d => d.label).filter(d => scopeDoms.has(d) && [...present].some(m => dmfDomainOfKey(m) === d));
+  const eff = state.domain || (doms.length === 1 ? doms[0] : '');
+  const keysIn = dom => {
+    const ks = majorFilterKeys().filter(k => isMajorGroup(k) ? groupMajors(k).some(m => present.has(m)) : present.has(k));
+    return ks.filter(k => dmfDomainOfKey(k) === dom);
+  };
+  const mkeys = eff ? keysIn(eff) : [];
+  const sources = opts.noSource ? [] : [...new Set(items.map(i => i.source).filter(Boolean))]
+    .sort((a, b) => { const o = STUDENT_SOURCES_ALL, ia = o.indexOf(a), ib = o.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
+  // 已选项不在当前可选范围里 → 清掉（页面之间切换时数据范围不同）
+  if (state.domain && !doms.includes(state.domain)) state.domain = '';
+  if (state.major && !(eff && mkeys.length > 1 && mkeys.includes(state.major))) state.major = '';
+  if (state.source && !sources.includes(state.source)) state.source = '';
+  const cnt = (skip, test) => items.filter(i => dmfMatch(i, state, opts, skip) && also(i) && test(i)).length;
+  const chip = (on, label, n, k, v) => `<div class="filter-chip${on ? ' active' : ''}" onclick="dmfPick('${k}','${v}');${onSet}" style="${n === 0 && !on ? 'opacity:.45' : ''}">${label} ${n}</div>`;
+  const row = (label, chips) => `<div class="filter-row"><span style="font-size:10px;color:var(--text-3);min-width:30px;align-self:center">${label}</span>${chips}</div>`;
+  let h = '';
+  if (doms.length > 1) h += row('领域', chipFold([{ on: !state.domain, html: chip(!state.domain, '全部', cnt('domain', () => true), 'domain', '') }]
+    .concat(doms.map(d => ({ on: state.domain === d, html: chip(state.domain === d, d, cnt('domain', i => dmfMajors(i, opts).some(m => dmfDomainOfKey(m) === d)), 'domain', d) })))));
+  if (mkeys.length > 1) h += row('专业', chipFold([{ on: !state.major, html: chip(!state.major, '全部', cnt('major', () => true), 'major', '') }]
+    .concat(mkeys.map(k => ({ on: state.major === k, html: chip(state.major === k, majorLabel(k) + (isMajorGroup(k) ? '（全部）' : ''), cnt('major', i => dmfMajors(i, opts).some(m => matchesMajorFilter(m, k))), 'major', k) })))));
+  if (sources.length > 1) h += row('来源', chipFold([{ on: !state.source, html: chip(!state.source, '全部', cnt('source', () => true), 'source', '') }]
+    .concat(sources.map(x => ({ on: state.source === x, html: chip(state.source === x, x, cnt('source', i => (i.source || '') === x), 'source', x) })))));
+  return h;
+}
+// 点 chip：写入 DMF；换领域时，不属于新领域的专业选择清掉
+function dmfPick(k, v) {
+  DMF[k] = v;
+  if (k === 'domain' && DMF.major && v && dmfDomainOfKey(DMF.major) !== v) DMF.major = '';
+  if (k === 'domain' && !v) DMF.major = '';
+}
+
 // ── 排课 / 资源权限（teachers.resource_perms 用；代号沿用 sched/common.js 的 PERM_DEFS）──
 // [代号, 显示名]。整合后「资源管理」按这些代号放行；sched 旧口令链接仍读 sched_access_codes.perms，互不影响。
 const RESOURCE_PERM_DEFS = [

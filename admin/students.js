@@ -1,7 +1,7 @@
 // ══════════════════════════════════
 // STUDENTS PAGE
 // ══════════════════════════════════
-let stMajorFilter='all',stSearch='',stStatus='active';
+let stSearch='',stStatus='active';   // 领域/专业/来源筛选用 shared/constants.js 的 DMF（几个页面共用）
 let stVipFilter='all'; // 'all' | 'vip_only'(VIP+大课VIP都含) | 'vip_exclusive'(仅VIP不含大课)
 
 // 搜索：输入法组合 / 防抖由 searchBox 处理；整页重画后把原来的搜索框换回去（不丢光标、不打断输入法）
@@ -26,11 +26,10 @@ function renderStudentsPage(mc){
   // 视角过滤（叠加逻辑）：非总览时，主专业或附加专业任一属于当前领域/专业即可见
   list=list.filter(s=>studentInCurrentView(s));
   const viewTotal=list.length; // 当前视角学生总数（不受下方专业/状态/搜索筛选影响）
-  if(stMajorFilter!=='all') list=list.filter(s=>{
-    // 主专业匹配，或附加专业(extra_majors,如日语/英语)匹配——叠加逻辑
-    if(matchesMajorFilter(s.major,stMajorFilter)) return true;
-    return (s.extra_majors||[]).some(m=>matchesMajorFilter(m,stMajorFilter));
-  });
+  // 领域 → 专业 → 来源（主专业或附加专业(extra_majors,如日语/英语)匹配——叠加逻辑）；先生成筛选栏（会清掉失效的选择），再过滤
+  const dmfOpts={extra:true,also:s=>(stStatus==='all'||s.status===stStatus)&&(stVipFilter==='all'||(stVipFilter==='vip_only'?(s.is_vip_course==='VIP'||s.is_vip_course==='大课+VIP'):s.is_vip_course==='VIP'))};
+  const dmfBar=domMajorFilterHtml(DMF,"renderStudentsPage(document.getElementById('mainContent'))",list,dmfOpts);
+  list=dmfFilter(list,dmfOpts);
   if(stStatus!=='all') list=list.filter(s=>s.status===stStatus);
   if(stVipFilter==='vip_only') list=list.filter(s=>s.is_vip_course==='VIP'||s.is_vip_course==='大课+VIP');
   if(stVipFilter==='vip_exclusive') list=list.filter(s=>s.is_vip_course==='VIP');
@@ -55,9 +54,7 @@ function renderStudentsPage(mc){
       <button class="btn btn-primary btn-sm" onclick="openStudentModal()">＋ 添加学生</button>
     </div>
   </div>
-  <div class="filter-row">
-    ${chipFold(majorFilterKeys({includeAll:true}).map((m,i)=>({on:stMajorFilter===m,html:`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this)">${i===0?'全部专业':majorLabel(m)}</div>`})))}
-  </div>
+  ${dmfBar}
   <div class="filter-row">
     ${[['active','在籍'],['graduated','已合格'],['expired','已到期'],['stopped','停课'],['withdrawn','退学'],['all','全部']].map(([v,l])=>`<div class="filter-chip${stStatus===v?' active':''}" onclick="setStStatus('${v}',this)">${l}</div>`).join('')}
   </div>
@@ -79,7 +76,6 @@ function renderStudentsPage(mc){
 
 function setStVip(v,el){stVipFilter=v;document.querySelectorAll('.filter-row:nth-of-type(3) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderStudentsPage(document.getElementById('mainContent'))}
 
-function setStMajor(m,el){stMajorFilter=m;document.querySelectorAll('.filter-row:nth-of-type(1) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderStudentsPage(document.getElementById('mainContent'))}
 function setStStatus(v,el){stStatus=v;document.querySelectorAll('.filter-row:nth-of-type(2) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderStudentsPage(document.getElementById('mainContent'))}
 // 渲染VIP指导老师标签+输入框，selectedTeachers 是已选老师姓名数组（存在 module 级变量里方便增删）
 let vipTeacherTags = [];
@@ -581,7 +577,6 @@ let progressStudentFilter = '';
 let progressStatus = 'active', progressShown = 30;   // 学生视角：状态筛选（默认在籍）+ 每次显示 30 人
 const PROGRESS_STATUS_OPTS = [['active','在籍'],['graduated','已合格'],['expired','已到期'],['stopped','停课'],['withdrawn','退学'],['all','全部']];
 function setProgressStatus(v){progressStatus=v;progressShown=30;renderProgressPage(document.getElementById('mainContent'))}
-function setProgressMajor(m){stMajorFilter=m;progressShown=30;renderProgressPage(document.getElementById('mainContent'))}
 let progressViewMode = 'student'; // 'student' | 'season' | 'materials'
 // 考学进度顶部的视图切换按钮（学生视角 / 年度出愿情报 / 出愿材料准备）
 function progressViewButtons(){
@@ -595,12 +590,14 @@ async function renderProgressPage(mc, focusStudentId=null){
   let students=cachedStudents.filter(s=>s.status==='active'||s.status==='stopped'||s.status==='graduated');
   // 视角过滤（叠加逻辑）：非总览时按学生主专业+附加专业判断
   students=students.filter(s=>studentInCurrentView(s));
-  if(stMajorFilter!=='all') students=students.filter(s=>matchesMajorFilter(s.major,stMajorFilter));
+  const dmfViewStudents=cachedStudents.filter(s=>studentInCurrentView(s));   // 领域/专业/来源筛选栏（DMF）用：当前视角下的全部学生
+  const dmfBar=domMajorFilterHtml(DMF,"progressShown=30;renderProgressPage(document.getElementById('mainContent'))",dmfViewStudents,{also:s=>progressStatus==='all'||(s.status||'active')===progressStatus});
+  students=dmfFilter(students);
   if(progressStudentFilter) students=students.filter(s=>matchesStudentSearch(s,progressStudentFilter));
   // 学生视角用状态 chip 筛选（年度出愿情报仍沿用上面在籍/停课/已合格的范围）
   const seasonStudents=students;
   let cardStudents=cachedStudents.filter(s=>studentInCurrentView(s));
-  if(stMajorFilter!=='all') cardStudents=cardStudents.filter(s=>matchesMajorFilter(s.major,stMajorFilter));
+  cardStudents=dmfFilter(cardStudents);
   if(progressStudentFilter) cardStudents=cardStudents.filter(s=>matchesStudentSearch(s,progressStudentFilter));
   if(focusStudentId){ const fs=cachedStudents.find(x=>x.id===focusStudentId); if(fs && progressStatus!=='all' && (fs.status||'active')!==progressStatus) progressStatus='all'; }   // 从学生详情跳过来时，别让状态筛选把他藏起来
   if(progressStatus!=='all') cardStudents=cardStudents.filter(s=>(s.status||'active')===progressStatus);
@@ -666,9 +663,7 @@ async function renderProgressPage(mc, focusStudentId=null){
       <div style="display:flex;gap:4px">${progressViewButtons()}</div>
     </div>
   </div>
-  <div class="filter-row">
-    ${chipFold(majorFilterKeys({includeAll:true}).map((m,i)=>({on:stMajorFilter===m,html:`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setProgressMajor('${m}')">${i===0?'全部专业':majorLabel(m)}</div>`})))}
-  </div>
+  ${dmfBar}
   <div class="filter-row">
     ${PROGRESS_STATUS_OPTS.map(([v,l])=>`<div class="filter-chip${progressStatus===v?' active':''}" onclick="setProgressStatus('${v}')">${l}</div>`).join('')}
   </div>
@@ -1123,6 +1118,7 @@ async function renderSeasonView(mc, students, timelineMap) {
   const validStudentIds = new Set(students.map(s => s.id));
 
   const seasonOrder = ['summer','winter','next_year','unknown'];
+  const dmfBar = domMajorFilterHtml(DMF, "renderProgressPage(document.getElementById('mainContent'))", cachedStudents.filter(s=>studentInCurrentView(s)&&['active','stopped','graduated'].includes(s.status)));
   let html = `
   <div class="page-header">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -1130,9 +1126,7 @@ async function renderSeasonView(mc, students, timelineMap) {
       <div style="display:flex;gap:4px">${progressViewButtons()}</div>
     </div>
   </div>
-  <div class="filter-row">
-    ${chipFold(majorFilterKeys({includeAll:true}).map((m,i)=>({on:stMajorFilter===m,html:`<div class="filter-chip${stMajorFilter===m?' active':''}" onclick="setStMajor('${m}',this);renderProgressPage(document.getElementById('mainContent'))">${i===0?'全部专业':majorLabel(m)}</div>`})))}
-  </div>`;
+  ${dmfBar}`;
 
   if (!allPlans.length) {
     html += '<div style="text-align:center;padding:40px;color:var(--text-3)">暂无学生填写志望校数据</div>';
@@ -1530,24 +1524,17 @@ async function saveAdmissionEntry(){
 function stEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
 // 左侧菜单「月度学习情况」列表页：列出学生，点开看月度（复用 openMonthlyReport 弹窗）
-let mpMajorFilter = 'all';
 function renderMonthlyPage(mc){
   let students = (cachedStudents||[]).filter(s=>s.status!=='withdrawn');
   // 按当前视角过滤：admin看全部，领域账号只看自己领域（跟学生档案页一致）
   if(typeof studentInCurrentView==='function') students = students.filter(s=>studentInCurrentView(s));
-  const keys = majorFilterKeys({includeAll:true});
-  let list = students;
-  if(mpMajorFilter!=='all'){
-    const grp = isMajorGroup(mpMajorFilter) ? groupMajors(mpMajorFilter) : null;
-    list = students.filter(s=> grp ? grp.includes(s.major) : s.major===mpMajorFilter);
-  }
+  const dmfBar = domMajorFilterHtml(DMF, "renderMonthlyPage(document.getElementById('mainContent'))", students);
+  let list = dmfFilter(students);
   list = list.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','zh'));
   mc.innerHTML = `
   <div class="page-header"><div class="section-title">📅 月度学习情况</div></div>
   <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">点学生查看/填写每月学习情况汇总，可生成家长版 PDF。学部与大学院通用。</div>
-  <div class="filter-row" style="margin-bottom:12px">
-    ${chipFold(keys.map((m,i)=>({on:mpMajorFilter===m,html:`<div class="filter-chip${mpMajorFilter===m?' active':''}" onclick="mpMajorFilter='${m}';renderMonthlyPage(document.getElementById('mainContent'))">${i===0?'全部专业':majorLabel(m)}</div>`})))}
-  </div>
+  ${dmfBar}
   <div style="display:flex;flex-direction:column;gap:6px">
     ${list.length? list.map(s=>`
       <div onclick="openMonthlyReport('${s.id}','${(s.name||'').replace(/'/g,"&#39;")}')" style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:6px;cursor:pointer">
