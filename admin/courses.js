@@ -2544,7 +2544,7 @@ function renderSchedulePage(mc){
     <div class="section-title">课程预定</div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-danger btn-sm" onclick="clearAllScheduleSlots()" style="font-size:11px">🗑 清空全部</button>
-      <button class="btn btn-primary btn-sm" onclick="switchPage('teachers')">👤 管理老师</button>
+      ${mgrPageAllowed('teachers')?`<button class="btn btn-primary btn-sm" onclick="switchPage('teachers')">👤 管理老师</button>`:''}
       <button class="btn btn-outline btn-sm" onclick="openCreateSlots()">＋ 创建时间槽</button>
     </div>
   </div>
@@ -4014,7 +4014,7 @@ let cmScopeAll=false;    // 名字列表：false=本课涉及专业；true=全�
 let cmSearch='';
 
 function cmEsc(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
-function cmActiveStudents(){ return (cachedStudents||[]).filter(s=>!s.status||s.status==='active'); }
+function cmActiveStudents(){ return (cachedStudents||[]).filter(s=>(!s.status||s.status==='active')&&sourceAllowed(s,mgrSources())); }   // 管理模式老师的来源限制
 function cmRowsOf(cid){ return (cachedCourseMembers||[]).filter(r=>String(r.course_id)===String(cid)); }
 function cmCourse(cid){ return (cachedCourses||[]).find(c=>String(c.id)===String(cid)); }
 function cmMemberSet(c){ return courseMemberIds(c, cmActiveStudents(), cmRowsOf(c.id)); }

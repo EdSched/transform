@@ -20,7 +20,7 @@ function attPresent(v){return v==='offline'||v==='online'||v==='replay'||v==='of
 function attIsLate(v){return v==='offline_late'||v==='online_late';}
 
 // 课程成员（规则见 shared/constants.js 的 courseMemberIds）：纯 VIP 默认不算，指定名单课只算名单里的人
-function attActiveStudents(){ return (cachedStudents||[]).filter(s=>s.status==='active'||!s.status); }
+function attActiveStudents(){ return (cachedStudents||[]).filter(s=>(s.status==='active'||!s.status)&&sourceAllowed(s,mgrSources())); }   // 管理模式老师的来源限制
 function attMembers(courseId, majors){
   const c=cachedCourses.find(x=>x.id===courseId)||{};
   const mj=(majors&&majors.length)?majors:(c.major||[]);

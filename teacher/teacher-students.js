@@ -10,7 +10,7 @@ if (typeof window !== "undefined" && typeof window.schoolLevelHtml !== "function
 
 let teacherProgressData = { students: [], timeline: {}, schoolPlans: {}, planDrafts: {} };
 
-const TP_SOURCES = ['唯新','新世界','校内塾','杭州校'];
+const TP_SOURCES = STUDENT_SOURCES;   // 共用 shared/constants.js
 
 // 按专业筛选值展开成实际专业列表
 function tpMajorMatch(major, filterVal) {
@@ -448,7 +448,7 @@ function tsmBarHtml() {
     h += row('专业', '<span style="font-size:10px;color:var(--text-3)">选择领域后可按专业筛选</span>');
   }
   h += row('状态', TSM_STATUS.map(([k, l]) => chip(tsm.status === k, l, cnt('status', s => !k || (s.status || 'active') === k), `tsmSet('status','${k}')`)).join(''));
-  h += row('来源', chip(!tsm.source, '全部', cnt('source', () => true), `tsmSet('source','')`) + TP_SOURCES.map(x => chip(tsm.source === x, x, cnt('source', s => (s.source || '') === x), `tsmSet('source','${x}')`)).join(''));
+  h += row('来源', chip(!tsm.source, '全部', cnt('source', () => true), `tsmSet('source','')`) + TP_SOURCES.filter(x => sourceAllowed({ source: x }, teacherData && teacherData.student_sources)).map(x => chip(tsm.source === x, x, cnt('source', s => (s.source || '') === x), `tsmSet('source','${x}')`)).join(''));
   const n = pool.filter(s => tsmMatch(s)).length;
   h += `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px">
     <input id="tsm_q" placeholder="搜索姓名（汉字 / 拼音首字母）/ 专业 / 来源…" value="${tsaEsc(tsm.q)}" oninput="searchBox(this,tsmSearchInput)" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;width:240px;max-width:100%">
@@ -534,9 +534,9 @@ function tsaAllowedSet() {
 // 学生行是否在这位老师的范围里（专业命中，或在班主任负责的班级里）
 function tsaStudentOk(s) { return teacherScopeHasStudent(tsaScope(), s); }
 // 某个专业在不在范围内（专业命中或所属领域整个负责）
-function tsaMajorOk(k) { return teacherScopeHasStudent(tsaScope(), { major: k }); }
+function tsaMajorOk(k) { return teacherScopeHasStudent(Object.assign({}, tsaScope(), { studentSources: [] }), { major: k }); }   // 只问专业，不看来源
 function tsaScopeEmpty() { return teacherScopeEmpty(tsaScope()); }
-function tsaFilterStudents(list) { const sc = tsaScope(); return sc.all ? (list || []) : (list || []).filter(s => teacherScopeHasStudent(sc, s)); }
+function tsaFilterStudents(list) { const sc = tsaScope(); return (sc.all && !sc.studentSources.length) ? (list || []) : (list || []).filter(s => teacherScopeHasStudent(sc, s)); }   // 有来源限制时 all 也要过滤
 function tsaScopeText() {
   const sc = tsaScope();
   if (sc.all) return '可见全部专业';
@@ -625,7 +625,7 @@ function tsaRender() {
         ${inp('tsa_name', '姓名 *', '学生姓名')}
         ${fld('tsa_major', '专业 *', `<select id="tsa_major" style="${inpStyle}">${tsaMajorOptions('')}</select>`)}
         ${fld('tsa_type', '属性', `<select id="tsa_type" style="${inpStyle}"><option value="">请选择</option><option>本科</option><option>专科</option><option>专升本</option></select>`)}
-        ${fld('tsa_source', '来源', `<select id="tsa_source" style="${inpStyle}"><option value="">请选择</option><option>唯新</option><option>新世界</option><option>校内塾</option><option>杭州校</option></select>`)}
+        ${fld('tsa_source', '来源', `<select id="tsa_source" style="${inpStyle}">${(teacherData.student_sources || []).length ? '' : '<option value="">请选择</option>'}${STUDENT_SOURCES.filter(x => sourceAllowed({ source: x }, teacherData.student_sources)).map(x => `<option>${x}</option>`).join('')}</select>`)}
         ${inp('tsa_course', '课程属性', '大课 / VIP / 保录…')}
         ${fld('tsa_level', '等级', `<select id="tsa_level" style="${inpStyle}"><option value="">请选择</option><option>A</option><option>B</option><option>C</option><option>D</option></select>`)}
         ${inp('tsa_japanese', '日语成绩', 'N1 120 / 备考…')}
