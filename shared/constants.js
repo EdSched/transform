@@ -119,7 +119,10 @@ function scopeCourse(c) {
   return VIEW_SCOPE.classIds.length > 0 && courseClassIds(c).some(id => VIEW_SCOPE.classIds.includes(id));
 }
 // 学生来源（学生档案「来源」下拉 / 老师端来源筛选 / 老师的学生来源限制共用）
-const STUDENT_SOURCES = ['唯新', '新世界', '校内塾', '杭州校'];
+// 学生来源：写死值是兜底；loadAppOptions() 读 app_options 后原地覆盖（保持其他文件里的引用有效）。
+// STUDENT_SOURCES = 只含启用的（选择用）；STUDENT_SOURCES_ALL = 含已停用的（筛选 / 显示已有数据用）
+let STUDENT_SOURCES = ['唯新', '新世界', '校内塾', '杭州校'];
+let STUDENT_SOURCES_ALL = STUDENT_SOURCES.slice();
 // 来源是否允许：sources 为空 = 不限；否则学生来源必须在里面（没填来源的学生，有来源限制时看不到）
 function sourceAllowed(student, sources) {
   if (!Array.isArray(sources) || !sources.length) return true;
@@ -1353,10 +1356,33 @@ function teacherAdmDomains(t) {
   return [...new Set(((t && t.majors) || []).map(m => MAJOR_DOMAIN[m]).filter(Boolean))];
 }
 // 管理职位（teachers.position，只有正社员）和执行角色（teachers.roles，可多个）；默认功能存在 role_templates 表
-const TEACHER_POSITIONS = [['lead', '负责人'], ['sales', '营业'], ['liaison', '对接'], ['soumu', '总务'], ['soumu_asst', '总务助理']];
-const TEACHER_ROLES = [['senmon', '专业课老师'], ['ta', 'TA'], ['homeroom', '班主任']];
+// 条目 = [key, 名称, 是否启用, 是否内置]；TEACHER_POSITIONS / TEACHER_ROLES 含已停用的（显示、筛选用），选择时用 teacherPositionsActive() / teacherRolesActive()
+// 写死值是兜底；loadAppOptions() 读 app_options 后原地覆盖。自定义项（key 以 c_ 开头）只是名称标签，不带任何权限
+let TEACHER_POSITIONS = [['lead', '负责人', true, true], ['sales', '营业', true, true], ['liaison', '对接', true, true], ['soumu', '总务', true, true], ['soumu_asst', '总务助理', true, true]];
+let TEACHER_ROLES = [['senmon', '专业课老师', true, true], ['ta', 'TA', true, true], ['homeroom', '班主任', true, true]];
+function teacherPositionsActive() { return TEACHER_POSITIONS.filter(x => x[2] !== false); }
+function teacherRolesActive() { return TEACHER_ROLES.filter(x => x[2] !== false); }
 function teacherPositionLabel(k) { const r = TEACHER_POSITIONS.find(x => x[0] === k); return r ? r[1] : ''; }
 function teacherRoleLabel(k) { const r = TEACHER_ROLES.find(x => x[0] === k); return r ? r[1] : ''; }
+// 读 app_options，按 sort 覆盖上面三个列表；表还没建 / 没权限读 / 某类没有数据时，保留写死值
+let appOptionsLoaded = false;
+async function loadAppOptions() {
+  let rows = null;
+  try { rows = await sb('/rest/v1/app_options?select=kind,key,label,sort,builtin,active&order=sort.asc,key.asc', 'GET', null, { cache: 'no-store' }); }
+  catch (e) { return false; }
+  if (!Array.isArray(rows)) return false;
+  const of = k => rows.filter(r => r.kind === k && r.key);
+  const pos = of('teacher_position'), rol = of('teacher_role'), src = of('student_source');
+  const toArr = r => [r.key, r.label || r.key, r.active !== false, !!r.builtin];
+  if (pos.length) TEACHER_POSITIONS.splice(0, TEACHER_POSITIONS.length, ...pos.map(toArr));
+  if (rol.length) TEACHER_ROLES.splice(0, TEACHER_ROLES.length, ...rol.map(toArr));
+  if (src.length) {
+    STUDENT_SOURCES_ALL.splice(0, STUDENT_SOURCES_ALL.length, ...src.map(r => r.label || r.key));
+    STUDENT_SOURCES.splice(0, STUDENT_SOURCES.length, ...src.filter(r => r.active !== false).map(r => r.label || r.key));
+  }
+  appOptionsLoaded = true;
+  return true;
+}
 // ── 营业功能的范围（宣传 / 进度规划 / 价目 / 讲师信息 / VIP 规划 / 合格案例 / 宣传资料整合共用） ──
 //  1. 职位是营业（兼容：标签「营业老师」）：设了营业范围（role_scope.sales.domains）= 只管这些领域；没设 = 全部领域（现有营业不变）
 //  2. 职位是对接：全部领域

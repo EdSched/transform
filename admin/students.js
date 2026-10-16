@@ -212,7 +212,7 @@ function openStudentModal(id){
 // 来源下拉：选项来自 constants.js 的 STUDENT_SOURCES；有来源限制的老师（管理模式）只列允许的来源，新建时默认选第一个
 function stSourceInit(s){
   const el=document.getElementById('st_source'); if(!el) return;
-  const lim=mgrSources(), opts=STUDENT_SOURCES.filter(x=>sourceAllowed({source:x},lim));
+  const lim=mgrSources(), opts=STUDENT_SOURCES.filter(x=>sourceAllowed({source:x},lim));   // 只列启用的；该学生已有的（含已停用）下面补上
   const cur=s?(s.source||''):'';
   if(cur && !opts.includes(cur)) opts.push(cur);
   el.innerHTML=(lim.length?'':'<option value="">请选择</option>')+opts.map(x=>`<option>${stEsc(x)}</option>`).join('');
