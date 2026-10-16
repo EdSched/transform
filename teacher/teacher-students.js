@@ -763,10 +763,16 @@ function smsMark(r) {
 // 一组课次的统计（sess 已是这个学生的课次）
 function smsCalc(student, sess, ctx) {
   const today = jstToday();
-  const s = { total: sess.length, held: 0, present: 0, late: 0, leave: 0, actual: 0, absent: 0, untaken: 0, rate: null, hwAssigned: 0, hwDone: 0, hwTotal: 0, hwRate: null, marks: [] };
+  const s = { total: sess.filter(se => sessionCountsFor(student, se.session_date)).length, held: 0, present: 0, late: 0, leave: 0, actual: 0, absent: 0, untaken: 0, rate: null, hwAssigned: 0, hwDone: 0, hwTotal: 0, hwRate: null, marks: [] };
   sess.forEach(se => {
     const past = se.session_date <= today, taken = past && ctx.taken.has(String(se.id));
     const r = ctx.rec[`${se.id}|${student.id}`] || ctx.rec[`${se.id}|n:${student.name}`];
+    if (!sessionCountsFor(student, se.session_date)) {   // 报名前的课次：不算缺席 / 未点名 / 分母 / 作业；有出席记录的照常算出席
+      let pm = 'pre';
+      if (taken && r) { const k = smsMark(r); if (k === 'ok') { s.present++; pm = k; } else if (k === 'late') { s.late++; pm = k; } }
+      s.marks.push({ date: se.session_date, course: se.course_name || '', no: se.session_number, mark: pm, hw: '' });
+      return;
+    }
     let m = past ? 'untaken' : 'future';
     if (taken) {
       s.held++;
@@ -785,7 +791,7 @@ function smsCalc(student, sess, ctx) {
     s.marks.push({ date: se.session_date, course: se.course_name || '', no: se.session_number, mark: m, hw });
   });
   s.actual = s.present + s.late;
-  s.rate = s.held ? Math.round(s.actual / s.held * 100) : null;
+  s.rate = s.held ? Math.min(100, Math.round(s.actual / s.held * 100)) : null;
   s.hwRate = s.hwAssigned ? Math.round(s.hwDone / s.hwAssigned * 100) : null;
   return s;
 }
@@ -1127,6 +1133,8 @@ let tsrRecCache = {};
 let tatRange='today';       // today | week | all
 let tatSessions=[];         // 可见专业下待记出席的课次
 let tatCurSession=null;     // 当前签到的课次
+let tatPre=[];              // 报名时间晚于这节课的学生（折叠的「未报名」分区，不算缺席）
+let tatPreOpen=false;
 let tatStudents=[];         // 当前课次的学生
 let tatElectives=[];       // 组内开放的课：同组其他专业（选修）可点名的学生
 let tatElOpen=false;
@@ -1227,10 +1235,12 @@ async function tatOpen(sessionId){
   const missing=Object.keys(tatExisting).filter(id=>!tatStudents.some(s=>String(s.id)===String(id))&&!tatElectives.some(s=>String(s.id)===String(id)));
   if(missing.length){ const extra=await sb(`/rest/v1/students?id=in.(${missing.map(x=>`"${x}"`).join(',')})&select=*`).catch(()=>[]); tatStudents=tatStudents.concat(extra||[]); }
   tatStudents.sort((a,b)=>a.name.localeCompare(b.name,'zh'));
+  tatPre=tatStudents.filter(x=>!sessionCountsFor(x,se.session_date)); tatPreOpen=false;
+  if(tatPre.length) tatStudents=tatStudents.filter(x=>sessionCountsFor(x,se.session_date));
   tatElectives.sort((a,b)=>a.name.localeCompare(b.name,'zh'));
   tatEditing=Object.keys(tatExisting).length>0;
   tatEdits={}; tatState='present'; tatMode='offline';
-  tatStudents.concat(tatElectives).forEach(s=>{ const r=tatExisting[s.id]; if(r&&r.attendance_status) tatEdits[s.id]={attendance_status:r.attendance_status,student_mode:r.student_mode||s.default_mode||'offline'}; });
+  tatStudents.concat(tatElectives,tatPre).forEach(s=>{ const r=tatExisting[s.id]; if(r&&r.attendance_status) tatEdits[s.id]={attendance_status:r.attendance_status,student_mode:r.student_mode||s.default_mode||'offline'}; });
   tatRenderModal();
 }
 
@@ -1238,7 +1248,7 @@ function tatCurStatus(){ if(tatState==='leave')return'leave'; if(tatState==='lat
 function tatStatusFull(v){const m={online:{t:'线上出席',c:'#2a6aad'},offline:{t:'线下出席',c:'var(--ok,#2a9e6a)'},replay:{t:'录播回看',c:'var(--warn,#b8860b)'},online_late:{t:'线上迟到',c:'#b8860b'},offline_late:{t:'线下迟到',c:'#b8860b'},leave:{t:'请假',c:'var(--text-3,#999)'}};return m[v]||{t:v||'缺席',c:'var(--danger,#b03a2e)'};}
 function tatPickState(st){tatState=st;['present','late','leave'].forEach(k=>{const b=document.getElementById('tat_st_'+k);if(b){const on=k===st;b.style.background=on?'var(--accent,#b8953a)':'var(--bg)';b.style.color=on?'#fff':'var(--text-2)';}});const mw=document.getElementById('tat_mode_wrap');if(mw)mw.style.display=(st==='leave')?'none':'flex';}
 function tatPickMode(md){tatMode=md;['offline','online'].forEach(k=>{const b=document.getElementById('tat_md_'+k);if(b){const on=k===md;b.style.background=on?'#2a6aad':'var(--bg)';b.style.color=on?'#fff':'var(--text-2)';}});}
-function tatMark(sid){const s=tatStudents.concat(tatElectives).find(x=>x.id===sid);if(!s)return;if(!tatEdits[sid])tatEdits[sid]={};tatEdits[sid].attendance_status=tatCurStatus();tatEdits[sid].student_mode=(tatState==='leave')?(s.default_mode||'offline'):tatMode;tatRenderRows();}
+function tatMark(sid){const s=tatStudents.concat(tatElectives,tatPre).find(x=>x.id===sid);if(!s)return;if(!tatEdits[sid])tatEdits[sid]={};tatEdits[sid].attendance_status=tatCurStatus();tatEdits[sid].student_mode=(tatState==='leave')?(s.default_mode||'offline'):tatMode;tatRenderRows();}
 function tatUnmark(sid){if(tatEdits[sid])tatEdits[sid].attendance_status='';tatRenderRows();}
 
 function tatRenderModal(){
@@ -1279,7 +1289,7 @@ function tatRenderModal(){
 
 function tatRenderRows(){
   const kw=(document.getElementById('tat_search')?.value||'').trim();
-  const marked=tatStudents.concat(tatElectives).filter(s=>tatEdits[s.id]&&tatEdits[s.id].attendance_status);
+  const marked=tatStudents.concat(tatElectives,tatPre).filter(s=>tatEdits[s.id]&&tatEdits[s.id].attendance_status);
   const unmarked=tatStudents.filter(s=>!(tatEdits[s.id]&&tatEdits[s.id].attendance_status));
   const shown=kw?unmarked.filter(s=>matchesStudentSearch(s,kw)):unmarked;
   const body=document.getElementById('tat_body');
@@ -1287,12 +1297,19 @@ function tatRenderRows(){
   const cnt=document.getElementById('tat_cnt'); if(cnt)cnt.textContent=`剩 ${unmarked.length} 人`;
   const elw=document.getElementById('tat_el_wrap');
   if(elw){
-    if(!tatElectives.length) elw.innerHTML='';
+    let preHtml='';
+    const preLeft=tatPre.filter(s=>!(tatEdits[s.id]&&tatEdits[s.id].attendance_status));
+    if(preLeft.length){
+      const popen=tatPreOpen||!!kw;
+      const pshown=kw?preLeft.filter(s=>matchesStudentSearch(s,kw)):preLeft;
+      preHtml=`<div style="margin-bottom:10px"><div onclick="tatPreOpen=!tatPreOpen;tatRenderRows()" style="font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 0">未报名（这节课在报名之前）· ${preLeft.length} 人 ${popen?'▾':'▸'}</div>`+(popen?`<div style="font-size:10px;color:var(--text-3);margin-bottom:6px">不算缺席；来旁听的点一下即可记录</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-height:28vh;overflow-y:auto">${pshown.length?pshown.map(s=>`<button onclick="tatMark('${s.id}')" style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;padding:9px 4px;border:1px dashed var(--border);border-radius:8px;background:var(--surface);cursor:pointer;color:var(--text)">${s.name}<span style="display:block;font-size:9px;font-weight:400;color:var(--text-3)">${signupNote(s,'9999')}</span></button>`).join(''):`<div style="grid-column:1/-1;font-size:12px;color:var(--text-3);padding:10px;text-align:center">无匹配</div>`}</div>`:'')+`</div>`;
+    }
+    if(!tatElectives.length) elw.innerHTML=preHtml;
     else{
       const elLeft=tatElectives.filter(s=>!(tatEdits[s.id]&&tatEdits[s.id].attendance_status));
       const elShown=kw?elLeft.filter(s=>matchesStudentSearch(s,kw)):elLeft;
       const open=tatElOpen||!!kw;
-      elw.innerHTML=`<div style="margin-bottom:10px"><div onclick="tatElOpen=!tatElOpen;tatRenderRows()" style="font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 0">同组其他专业（选修）· ${tatElectives.length} 人 ${open?'▾':'▸'}</div>`+
+      elw.innerHTML=preHtml+`<div style="margin-bottom:10px"><div onclick="tatElOpen=!tatElOpen;tatRenderRows()" style="font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 0">同组其他专业（选修）· ${tatElectives.length} 人 ${open?'▾':'▸'}</div>`+
         (open?`<div style="font-size:10px;color:var(--text-3);margin-bottom:6px">只点来了的人，没来的不用点（不算缺席）</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-height:28vh;overflow-y:auto">${elShown.length?elShown.map(s=>`<button onclick="tatMark('${s.id}')" style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;padding:9px 4px;border:1px dashed var(--border);border-radius:8px;background:var(--surface);cursor:pointer;color:var(--text)">${s.name}<span style="display:block;font-size:9px;font-weight:400;color:var(--text-3)">${tsaEsc(MAJORS[s.major]||s.major||'')}</span></button>`).join(''):`<div style="grid-column:1/-1;font-size:12px;color:var(--text-3);padding:10px;text-align:center">${kw?'无匹配':'没有更多了'}</div>`}</div>`:'')+`</div>`;
     }
   }
@@ -1304,7 +1321,7 @@ function tatRenderRows(){
 
 function tatSummary(){
   const g={present_off:[],present_on:[],late:[],leave:[],absent:[]};
-  tatStudents.concat(tatElectives.filter(s=>(tatEdits[s.id]||{}).attendance_status)).forEach(s=>{const st=(tatEdits[s.id]||{}).attendance_status||'';if(st==='offline')g.present_off.push(s.name);else if(st==='online')g.present_on.push(s.name);else if(st==='offline_late'||st==='online_late')g.late.push(s.name);else if(st==='leave')g.leave.push(s.name);else g.absent.push(s.name);});
+  tatStudents.concat(tatElectives.filter(s=>(tatEdits[s.id]||{}).attendance_status),tatPre.filter(s=>(tatEdits[s.id]||{}).attendance_status)).forEach(s=>{const st=(tatEdits[s.id]||{}).attendance_status||'';if(st==='offline')g.present_off.push(s.name);else if(st==='online')g.present_on.push(s.name);else if(st==='offline_late'||st==='online_late')g.late.push(s.name);else if(st==='leave')g.leave.push(s.name);else g.absent.push(s.name);});
   let ov=document.getElementById('tatSumOv');if(!ov){ov=document.createElement('div');ov.id='tatSumOv';ov.style.cssText='position:fixed;inset:0;z-index:995;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px';document.body.appendChild(ov);}
   ov.style.display='flex';
   ov.innerHTML=`<div style="background:#fff;border-radius:8px;padding:20px;max-width:520px;width:100%;max-height:82vh;overflow:auto">
@@ -1320,7 +1337,7 @@ async function tatSave(){
   if(btn){btn.textContent='保存中…';btn.disabled=true;}
   try{
     const news=[], updates=[], dels=[];
-    tatStudents.concat(tatElectives).forEach(s=>{
+    tatStudents.concat(tatElectives,tatPre).forEach(s=>{
       const e=tatEdits[s.id]||{};
       if(s._elective&&!e.attendance_status){   // 选修：没来的人不建记录；撤回已点的就删掉记录
         if(tatExisting[s.id]) dels.push(tatExisting[s.id].id);
@@ -1374,7 +1391,7 @@ function tsrAtt(v) {
   })[v] || { t:v, c:'var(--text-2,#666)' };
 }
 
-const TSR_MARK = { ok: ['✓', '#1a6d3a', '#e4f3ea', '出席'], late: ['迟', '#8a6d10', '#fef5e0', '迟到'], leave: ['假', '#5a6a7a', '#eef1f5', '请假'], absent: ['✗', '#c0392b', '#fdecea', '缺席'], untaken: ['·', '#9a9590', '#f3f1ec', '未点名'], future: ['', 'var(--border)', 'transparent', '未上课'], none: ['', 'var(--border)', 'transparent', '未记录'] };
+const TSR_MARK = { pre: ['·', '#bbb', '#f4f4f4', '报名前'], ok: ['✓', '#1a6d3a', '#e4f3ea', '出席'], late: ['迟', '#8a6d10', '#fef5e0', '迟到'], leave: ['假', '#5a6a7a', '#eef1f5', '请假'], absent: ['✗', '#c0392b', '#fdecea', '缺席'], untaken: ['·', '#9a9590', '#f3f1ec', '未点名'], future: ['', 'var(--border)', 'transparent', '未上课'], none: ['', 'var(--border)', 'transparent', '未记录'] };
 
 // 打开页面 / 换月份时，一次性批量加载统计（不再逐个学生点开才加载）
 async function tsrLoadStats() {
@@ -1493,7 +1510,8 @@ async function tsrToggle(id) {
       const batch = await sb(`/rest/v1/course_sessions?id=in.(${chunk.map(x => `"${x}"`).join(',')})&select=id,course_name`).catch(() => []);
       (batch || []).forEach(cs => sesMap[cs.id] = cs);
     }
-    tsrRecCache[id] = recs.map(r => Object.assign({}, r, { course_name: r.course_name || (sesMap[r.session_id] && sesMap[r.session_id].course_name) || '' }));
+    tsrRecCache[id] = recs.filter(r => sessionCountsFor(s, r.session_date) || ['offline', 'online', 'replay', 'offline_late', 'online_late'].includes(r.attendance_status))   // 报名前没出席的记录不显示
+      .map(r => Object.assign({}, r, { course_name: r.course_name || (sesMap[r.session_id] && sesMap[r.session_id].course_name) || '' }));
   } catch (e) { tsrRecCache[id] = []; }
   if (tsrExpandedId === id) tsrRenderList();
 }
