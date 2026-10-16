@@ -1499,10 +1499,39 @@ function salesMajorOk(t, key) {
   if (salesScopeUnlimited(t)) return true;
   return !!key && salesScopeDomains(t).includes(_salesDomOfMajor(key));
 }
-// 看全部领域的学生：只有营业（没指定营业范围时）和对接（兼容：标签里有「营业老师」）；负责人等不会因为营业功能变成看全部
-function canSeeAllStudents(t) { return !!t && (t.position === 'liaison' || (salesIsSalesRole(t) && !_salesOwnDomains(t).length)); }
-// 看全部出愿数据：只有营业（没指定营业范围时）（兼容：标签里有「营业老师」）
-function canSeeAllAdmission(t) { return !!t && salesIsSalesRole(t) && !_salesOwnDomains(t).length; }
+// 范围规则由角色模板里的开关决定（role_templates.defaults.see_all_students / see_all_admission，在中枢「角色模板」里设置）：
+//   老师的职位或任一执行角色开了 → 看全部；营业如果另外指定了营业范围，就只看营业范围。
+//   模板读不到（没读到 / 这些角色都没有这个开关）→ 退回原来写死的规则：看全部学生 = 对接、没指定范围的营业；看全部出愿 = 没指定范围的营业
+let ROLE_FLAG_TPL = null;   // 老师端 / 学生端等没有 admin.js 的页面：loadRoleFlagTemplates() 读到的模板
+async function loadRoleFlagTemplates() {
+  try {
+    const rows = await sb('/rest/v1/role_templates?select=key,defaults', 'GET', null, { cache: 'no-store' });
+    if (Array.isArray(rows) && rows.length) { const o = {}; rows.forEach(r => { o[r.key] = r; }); ROLE_FLAG_TPL = o; }
+  } catch (e) { /* 读不到就用写死规则 */ }
+  return !!ROLE_FLAG_TPL;
+}
+// 返回 true / false；模板里没有任何相关角色带这个开关 → null（调用方退回写死规则）
+function _roleFlagOf(t, flag) {
+  const tpl = (typeof _roleTpl !== 'undefined' && _roleTpl) || ROLE_FLAG_TPL;
+  if (!tpl || !t) return null;
+  const keys = [t.position].concat(t.roles || []).filter(Boolean);
+  if (salesIsSalesRole(t) && !keys.includes('sales')) keys.push('sales');
+  let known = false, on = false;
+  keys.forEach(k => { const d = tpl[k] && tpl[k].defaults; if (d && typeof d[flag] === 'boolean') { known = true; if (d[flag]) on = true; } });
+  return known ? on : null;
+}
+function canSeeAllStudents(t) {
+  if (!t) return false;
+  const f = _roleFlagOf(t, 'see_all_students');
+  if (f === null) return t.position === 'liaison' || (salesIsSalesRole(t) && !_salesOwnDomains(t).length);
+  return f && !(salesIsSalesRole(t) && _salesOwnDomains(t).length);
+}
+function canSeeAllAdmission(t) {
+  if (!t) return false;
+  const f = _roleFlagOf(t, 'see_all_admission');
+  if (f === null) return salesIsSalesRole(t) && !_salesOwnDomains(t).length;
+  return f && !(salesIsSalesRole(t) && _salesOwnDomains(t).length);
+}
 // ── 老师可见范围（学生管理 / 出願数据共用）：由「职位 + 角色 + 负责范围」算出，不再手选「可见的专业」 ──
 // kind: 'student'（学生管理）| 'admission'（出願数据）
 // 返回 { all, majors:Set, classIds:Set, domains:Set, rangeMajors:Set, sources:[], excluded:Set }

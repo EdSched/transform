@@ -328,6 +328,7 @@ async function init() {
 
     // 有 token 了：读选项设置（来源 / 职位 / 角色；表有 RLS，登录前读不到）
     if (typeof loadAppOptions === 'function') await loadAppOptions();
+    if (typeof loadRoleFlagTemplates === 'function') await loadRoleFlagTemplates();   // 角色模板里的范围规则开关
 
     // 现在有 token 了，再读 teachers 表查自己（RLS 放行登录老师）
     let teachers = [];
