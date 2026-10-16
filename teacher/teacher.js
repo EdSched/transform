@@ -326,6 +326,9 @@ async function init() {
       }
     } catch (e) { /* Auth 失败不挡人：老师照常进（老链接无 tid 时走下面的按名字查） */ }
 
+    // 有 token 了：读选项设置（来源 / 职位 / 角色；表有 RLS，登录前读不到）
+    if (typeof loadAppOptions === 'function') await loadAppOptions();
+
     // 现在有 token 了，再读 teachers 表查自己（RLS 放行登录老师）
     let teachers = [];
     if (teacherId) {

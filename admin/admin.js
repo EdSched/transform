@@ -677,6 +677,7 @@ function tfSrcRender(){
   box.style.display='';
   const lim=isHubAdminUser()?[]:mgrSources();
   const opts=STUDENT_SOURCES.filter(x=>sourceAllowed({source:x},lim));
+  _tfSrc.forEach(x=>{ if(!opts.includes(x)) opts.push(x); });   // 已选的停用来源也显示，方便取消
   const chips=opts.map(x=>`<div class="filter-chip${_tfSrc.includes(x)?' active':''}" onclick="tfSrcToggle('${x}')" style="padding:3px 10px;font-size:11px">${escTM(x)}</div>`).join('');
   let leaderHtml='';
   if(isHubAdminUser()){
@@ -1178,9 +1179,12 @@ function renderTeachersPage(mc){
   mc.innerHTML=`
   <div class="page-header">
     <div class="section-title">老师管理 <span class="badge-count">${cachedTeachers.length}</span></div>
+    <div style="display:flex;gap:8px;align-items:center">
     <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:3px;overflow:hidden">
       <button style="font-size:11px;padding:5px 16px;border:none;cursor:pointer;font-family:inherit;background:var(--accent);color:#fff">👥 老师账号</button>
       <button onclick="renderTeacherProfilesPage(teacherPageHost())" style="font-size:11px;padding:5px 16px;border:none;cursor:pointer;font-family:inherit;background:var(--surface);color:var(--text-2)">📇 讲师档案</button>
+    </div>
+    ${isHubAdminUser()?'<button class="btn btn-outline btn-sm" onclick="aoOpen()">⚙ 选项设置</button>':''}
     </div>
   </div>
   ${_ro?'<div style="font-size:11px;color:var(--text-3);margin-bottom:10px">你可以查看本范围的老师。需要新增或修改老师，请联系管理员开通「本范围老师管理」</div>':''}
@@ -1212,9 +1216,9 @@ function renderTeachersPage(mc){
         </select>
       </div>`}
       ${(isHubAdminUser()||deptTeachersOn())?`<div class="form-group" id="tf_position_wrap" style="display:none"><label class="form-label">管理职位（只有正社员；最多一个，再点一次取消）</label>
-        <div style="display:flex;flex-wrap:wrap;gap:6px" id="tf_position_chips">${TEACHER_POSITIONS.filter(([k])=>isHubAdminUser()||k==='sales').map(([k,v])=>`<div class="filter-chip" data-pos="${k}" onclick="tfPositionClick('${k}')" style="padding:4px 12px;font-size:11px">${v}</div>`).join('')}</div></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span id="tf_position_chips" style="display:contents"></span>${isHubAdminUser()?tfNewOptBox('teacher_position'):''}</div></div>
       <div class="form-group"><label class="form-label">执行角色（可多选；选了会自动带出默认功能）</label>
-        <div style="display:flex;flex-wrap:wrap;gap:6px" id="tf_roles_chips">${TEACHER_ROLES.map(([k,v])=>`<div class="filter-chip" data-role="${k}" onclick="tfRoleClick('${k}')" style="padding:4px 12px;font-size:11px">${v}</div>`).join('')}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span id="tf_roles_chips" style="display:contents"></span>${isHubAdminUser()?tfNewOptBox('teacher_role'):''}</div>
         <div id="tf_role_scope" style="margin-top:8px"></div></div>`:''}
       <div class="form-group"><label class="form-label">其他标签（自由填写，只用于搜索标记）</label>
         <input id="new_teacher_tags" oninput="senmonChipSync()" placeholder="用逗号或顿号分隔，如：计划书指导、模拟面试、兼职"></div>
@@ -1807,8 +1811,11 @@ function tfRolesRender(){
   if(!tfHasRoleUI()) return;
   const isReg=tsecCurType()==='正社员';
   const w=document.getElementById('tf_position_wrap'); if(w) w.style.display=isReg?'':'none';
-  document.querySelectorAll('#tf_position_chips .filter-chip').forEach(c=>c.classList.toggle('active',isReg&&c.dataset.pos===_tfPos));
-  document.querySelectorAll('#tf_roles_chips .filter-chip').forEach(c=>c.classList.toggle('active',_tfRoles.includes(c.dataset.role)));
+  // 职位 / 角色 chips 每次重画：只列启用的（管理员以外的负责人职位只有「营业」）；已选中的停用项也显示
+  const pc=document.getElementById('tf_position_chips');
+  if(pc) pc.innerHTML=TEACHER_POSITIONS.filter(([k,,on])=>(on!==false||k===_tfPos)&&(isHubAdminUser()||k==='sales')).map(([k,v])=>`<div class="filter-chip${isReg&&k===_tfPos?' active':''}" data-pos="${escTM(k)}" onclick="tfPositionClick('${escTM(k)}')" style="padding:4px 12px;font-size:11px">${escTM(v)}</div>`).join('');
+  const rc=document.getElementById('tf_roles_chips');
+  if(rc) rc.innerHTML=TEACHER_ROLES.filter(([k,,on])=>on!==false||_tfRoles.includes(k)).map(([k,v])=>`<div class="filter-chip${_tfRoles.includes(k)?' active':''}" data-role="${escTM(k)}" onclick="tfRoleClick('${escTM(k)}')" style="padding:4px 12px;font-size:11px">${escTM(v)}</div>`).join('');
   const box=document.getElementById('tf_role_scope'); if(!box) return;
   const link=(k,txt)=>`<a href="javascript:void(0)" onclick="tfGoSec('${k}')" style="color:var(--accent)">${txt}</a>`;
   const parts=[];
@@ -1989,12 +1996,12 @@ function renderTeacherList(){
     <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:8px">
       <span style="font-size:10px;color:var(--text-3)">管理职位：</span>
       <div class="filter-chip ${teacherPosFilter===''?'active':''}" onclick="teacherPosFilter='';renderTeacherList()" style="padding:2px 9px;font-size:10px">全部</div>
-      ${TEACHER_POSITIONS.map(([k,v])=>`<div class="filter-chip ${teacherPosFilter===k?'active':''}" onclick="teacherPosFilter='${k}';renderTeacherList()" style="padding:2px 9px;font-size:10px">${v}</div>`).join('')}
+      ${TEACHER_POSITIONS.filter(([k,,on])=>on!==false||teacherPosFilter===k||cachedTeachers.some(t=>t.position===k)).map(([k,v])=>`<div class="filter-chip ${teacherPosFilter===k?'active':''}" onclick="teacherPosFilter='${escTM(k)}';renderTeacherList()" style="padding:2px 9px;font-size:10px">${escTM(v)}</div>`).join('')}
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:8px">
       <span style="font-size:10px;color:var(--text-3)">执行角色：</span>
       <div class="filter-chip ${teacherRoleFilter===''?'active':''}" onclick="teacherRoleFilter='';renderTeacherList()" style="padding:2px 9px;font-size:10px">全部</div>
-      ${TEACHER_ROLES.map(([k,v])=>`<div class="filter-chip ${teacherRoleFilter===k?'active':''}" onclick="teacherRoleFilter='${k}';renderTeacherList()" style="padding:2px 9px;font-size:10px">${v}</div>`).join('')}
+      ${TEACHER_ROLES.filter(([k,,on])=>on!==false||teacherRoleFilter===k||cachedTeachers.some(t=>(t.roles||[]).includes(k))).map(([k,v])=>`<div class="filter-chip ${teacherRoleFilter===k?'active':''}" onclick="teacherRoleFilter='${escTM(k)}';renderTeacherList()" style="padding:2px 9px;font-size:10px">${escTM(v)}</div>`).join('')}
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:8px">
       <span style="font-size:10px;color:var(--text-3)">功能：</span>
@@ -2406,7 +2413,7 @@ async function deleteTeacher(id){
 let _pageParamUsed=false;
 async function initApp(){
   bkMonth=new Date().getMonth();bkYear=new Date().getFullYear();
-  await loadMajorsFromDB();
+  await loadMajorsFromDB(); await loadAppOptions();
   await loadPeriodsFromDB(); await loadHolidaysFromDB();
   // 旧链接 results/admin.html 会跳到 admin/?page=admissions：进系统后直接打开对应页面（只认这一个值，只用一次）
   if(!_pageParamUsed && new URLSearchParams(location.search).get('page')==='admissions'){
@@ -2521,7 +2528,7 @@ function backToTeacherPage(){
   if(new URLSearchParams(location.search).get('as')==='teacher'){ await bootAsTeacher(); return; }
   await loadAccessKey();
   // 基础数据（专业、期数）在任何分支前先加载，保证中枢台/各页面都能用
-  await loadMajorsFromDB();
+  await loadMajorsFromDB(); await loadAppOptions();
   await loadPeriodsFromDB(); await loadHolidaysFromDB();
   // 钥匙无效：提示并停在登录框
   if(ACCESS_KEY && ACCESS_KEY.invalid){

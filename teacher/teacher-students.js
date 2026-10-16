@@ -10,7 +10,7 @@ if (typeof window !== "undefined" && typeof window.schoolLevelHtml !== "function
 
 let teacherProgressData = { students: [], timeline: {}, schoolPlans: {}, planDrafts: {} };
 
-const TP_SOURCES = STUDENT_SOURCES;   // 共用 shared/constants.js
+const TP_SOURCES = STUDENT_SOURCES_ALL;   // 共用 shared/constants.js（含已停用的：筛选已有学生用；新建学生用 STUDENT_SOURCES）
 
 // 按专业筛选值展开成实际专业列表
 function tpMajorMatch(major, filterVal) {
