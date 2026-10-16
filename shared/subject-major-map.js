@@ -54,3 +54,8 @@ function majorToSubject(majorKey) {
   }
   return '';
 }
+// 一条合格记录的本校专业 key：有 our_major 用它；没有（旧数据）按旧学科对照；对不上返回 ''
+function resultMajorKey(rec) {
+  if (!rec) return '';
+  return rec.our_major || subjectToMajor(rec.subject) || '';
+}

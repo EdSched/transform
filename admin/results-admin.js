@@ -39,6 +39,13 @@ const RA_CSS = `
   letter-spacing: .04em; transition: color .15s, border-color .15s;
 }
 #ra-root .tab-btn.active { color: var(--text-primary); border-bottom-color: var(--text-primary); }
+@media (max-width: 700px) {
+  #ra-root .tab-bar, #ra-root .major-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-left: 1rem; padding-right: 1rem; scrollbar-width: none; }
+  #ra-root .tab-bar::-webkit-scrollbar, #ra-root .major-bar::-webkit-scrollbar { display: none; }
+  #ra-root .tab-btn, #ra-root .major-btn { white-space: nowrap; flex: 0 0 auto; }
+  #ra-root .tab-btn { padding: 10px 14px; }
+  #ra-root .major-btn { padding: 10px 16px; }
+}
 #ra-root main { padding: 2rem 1.5rem 4rem; max-width: none; }
 #ra-root .form-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 1.5rem; }
 #ra-root .form-section-title {
@@ -503,32 +510,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
 <div id="tab-list" style="display:none">
   <div class="list-controls">
     <input type="text" id="search-input" placeholder="大学名・研究科・専攻・学生名（漢字 / ピンイン頭文字）で検索..." oninput="searchBox(this,raRenderList)">
-    <select id="filter-subj" onchange="raRenderList()">
-      <option value="">全学科</option>
-      <option value="shakai">社会学</option>
-      <option value="fukushi">社会福祉</option>
-      <option value="shinpan">新聞伝播</option>
-      <option value="keizai">経済学</option>
-      <option value="keiei">経営学</option>
-      <option value="kyoiku">教育学</option>
-      <option value="hougaku">法学</option>
-      <option value="seiji">政治学/国際関係</option>
-      <option value="bungaku">文学</option>
-      <option value="rekishi">歴史学</option>
-      <option value="hyosho">表象文化</option>
-      <option value="nihongo">日本語教育</option>
-      <option value="shinri">心理学</option>
-      <option value="other">その他（文科）</option>
-      <!-- 理科 -->
-      <option value="rika_kikai">機械工学</option>
-      <option value="rika_denki">電気電子工学</option>
-      <option value="rika_kagaku">化学・化学工学</option>
-      <option value="rika_joho">情報工学</option>
-      <option value="rika_kenchiku">建築・土木工学</option>
-      <option value="rika_bio">生命科学・医学</option>
-      <option value="rika_keiei">経営工学</option>
-      <option value="rika_other">その他（理科）</option>
-    </select>
+    <select id="filter-subj" onchange="raRenderList()"><option value="">全部本校专业</option></select>
     <select id="filter-era" onchange="raRenderList()">
       <option value="">全年度</option>
       <option value="new">2026–2027</option>
@@ -1737,8 +1719,9 @@ function raListRows() {
   const fs = document.getElementById('filter-subj').value;
   const fe = document.getElementById('filter-era').value;
 
+  raAllData.forEach(r => { r._maj = raRmLabel(r); });
   let rows = raAllData.filter(r => {
-    if (fs && r.subject !== fs) return false;
+    if (fs && raRmFilterKey(r) !== fs) return false;
     if (fe && r.era !== fe) return false;
     if (q && !searchMatch(q, [r.student, r.univ, r.dept, r.spec])) return false;
     return true;
@@ -1752,8 +1735,21 @@ function raListRows() {
   return rows;
 }
 
+// 本校专业下拉：只列数据里有的，按领域分组；保留当前选择
+function raRmFillSelect() {
+  const sel = document.getElementById('filter-subj'); if (!sel) return;
+  const cur = sel.value, cnt = {};
+  raAllData.forEach(r => { const k = raRmFilterKey(r); cnt[k] = (cnt[k] || 0) + 1; });
+  let h = '<option value="">全部本校专业</option>';
+  raRmGroups(Object.keys(cnt)).forEach(g => {
+    const opts = g.items.map(x => `<option value="${raArEsc(x.key)}">${raArEsc(x.label)} (${cnt[x.key]})</option>`).join('');
+    h += g.domain ? `<optgroup label="${raArEsc(g.domain)}">${opts}</optgroup>` : opts;
+  });
+  sel.innerHTML = h; sel.value = cnt[cur] ? cur : '';
+}
 function raRenderList() {
   raArPendingRender('grad');
+  raRmFillSelect();
   const rows = raListRows();
 
   document.getElementById('result-count').textContent = `${rows.length} 件`;
@@ -1762,11 +1758,9 @@ function raRenderList() {
 
   const cols = [
     { key: 'univ', label: '大学名' }, { key: 'dept', label: '研究科' }, { key: 'spec', label: '専攻' },
-    { key: 'subject', label: '学科' }, { key: 'track', label: '系統' }, { key: 'tier', label: 'Tier' }, { key: 'era', label: '年度' },
+    { key: '_maj', label: '本校专业' }, { key: 'track', label: '系統' }, { key: 'tier', label: 'Tier' }, { key: 'era', label: '年度' },
     { key: 'jlpt', label: 'JLPT' }, { key: 'jlpt_score', label: 'J点数' }, { key: 'eng_type', label: '英語種別' }, { key: 'eng_score', label: '英語点数' }, { key: 'student', label: '学生' },
   ];
-
-  const SUBJ_LABEL = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学/国際関係',bungaku:'文学',rekishi:'歴史学',hyosho:'表象文化',nihongo:'日本語教育',shinri:'心理学',other:'その他',rika_kikai:'機械工学',rika_denki:'電気電子工学',rika_kagaku:'化学・化学工学',rika_joho:'情報工学',rika_kenchiku:'建築・土木工学',rika_bio:'生命科学・医学',rika_keiei:'経営工学',rika_other:'その他（理科）'};
 
   let html = `<div class="data-table-wrap"><table class="data-table"><thead><tr>`;
   for (const c of cols) {
@@ -1781,7 +1775,7 @@ function raRenderList() {
     const eraTag = r.era === 'new' ? `<span class="era-tag era-new">26–27</span>` : `<span class="era-tag era-hist">22–25</span>`;
     html += `<tr data-id="${r.id}" data-univ="${(r.univ||'').replace(/"/g,'&quot;')}">
       <td style="max-width:100px">${r.univ||''}</td><td style="max-width:100px">${r.dept||''}</td><td style="max-width:80px">${r.spec||''}</td>
-      <td><span class="subj-tag" style="background:${sc.bg};color:${sc.fg}">${SUBJ_LABEL[r.subject]||r.subject}</span></td>
+      <td><span class="subj-tag" style="background:${sc.bg};color:${sc.fg}">${raArEsc(raRmLabel(r))}</span></td>
       <td><span style="font-size:9px;padding:1px 5px;border-radius:2px;background:${r.track==='rika'?'#e8f0e4':r.track==='bijutsu'?'#f4ece0':'#e8edf8'};color:${r.track==='rika'?'#3a6630':r.track==='bijutsu'?'#7a4a20':'#2c4a8a'}">${{bunka:'文科',rika:'理科',bijutsu:'美術'}[r.track]||'文科'}</span></td>
       <td>${r.tier != null ? `<span style="font-size:9px;padding:1px 6px;border-radius:2px;background:${['#dce4f4','#e8edf8','#e8f0e4','#f4ece0'][r.tier]||'#eee'};color:${['#1a3070','#2c4a8a','#3a6630','#7a4a20'][r.tier]||'#666'};font-weight:500">T${r.tier}</span>` : '<span style="font-size:9px;color:var(--text-muted)">自動</span>'}</td>
       <td>${eraTag}</td>
@@ -1817,6 +1811,44 @@ function raConfirmDeleteAll() {
     try { await pstDeleteForResults('grad', raAllData.map(r=>r.id)); for (const id of raAllData.map(r=>r.id)) await raSbFetch(`admission_results?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); raAllData = []; raRenderList(); raToast('全件削除しました ✓'); }
     catch(e) { raToast('削除エラー: ' + e.message, false); }
   });
+}
+
+// ─── 本校专业的显示（合格写真 / 数据管理 / 编辑器共用；任何时候都不显示代码）──────────
+// 专业 key → 显示名：专业用专业名，分组用分组名（不带「（全部）」）；读不到返回 ''
+function raRmName(k) {
+  if (!k) return '';
+  const m = (raArMajors || []).find(x => x.key === k);
+  if (m) return m.label || '';
+  const g = (raArGroups || []).find(x => x.key === k);
+  return g ? (g.label || '') : '';
+}
+// 一条记录显示的本校专业：our_major → 旧学科对照 → 旧学科的中文名 → 其他
+function raRmLabel(r) {
+  const n = raRmName(resultMajorKey(r));
+  if (n) return n;
+  const s = (raSUBJ_ALL.find(x => x.id === (r && r.subject)) || {}).label;
+  return s || '其他';
+}
+// 筛选用的 key：有对应的本校专业用它，没有统一归 'other'
+function raRmFilterKey(r) {
+  const k = resultMajorKey(r);
+  return k && raRmName(k) ? k : 'other';
+}
+function raRmDomain(key) {
+  const m = (raArMajors || []).find(x => x.key === key);
+  if (m) return m.domain || '';
+  const g = (raArGroups || []).find(x => x.key === key);
+  return g ? (g.domain || '') : '';
+}
+// 一批 key → [{ domain, items:[{key,label}] }]：按领域分组（大学院文科 / 理科 / 美术在前），「其他」放最后
+function raRmGroups(keys) {
+  const by = {};
+  keys.filter(k => k !== 'other').forEach(k => { const d = raRmDomain(k) || '其他领域'; (by[d] = by[d] || []).push({ key: k, label: raRmName(k) }); });
+  const order = ['大学院文科', '大学院理科', '大学院美术'];
+  const doms = Object.keys(by).sort((a, b) => { const ia = order.indexOf(a), ib = order.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b, 'zh'); });
+  const out = doms.map(d => ({ domain: d, items: by[d].sort((a, b) => a.label.localeCompare(b.label, 'ja')) }));
+  if (keys.includes('other')) out.push({ domain: '', items: [{ key: 'other', label: '其他' }] });
+  return out;
 }
 
 // ─── 大学院: admission_results ───────────────────────────────────────────────
@@ -2167,7 +2199,7 @@ async function raLoadTierTab() {
     for (const r of all) {
       if (!univMap[r.univ]) univMap[r.univ] = { count:0, dbTier: r.tier != null ? r.tier : null, subjSet: new Set() };
       univMap[r.univ].count++;
-      if (r.subject) univMap[r.univ].subjSet.add(r.subject);
+      { const mk = raRmFilterKey(r); if (mk !== 'other') univMap[r.univ].subjSet.add(mk); }
       if (r.tier != null && univMap[r.univ].dbTier == null) univMap[r.univ].dbTier = r.tier;
     }
     raTierUnivData = Object.entries(univMap).map(([univ, d]) => ({
@@ -2197,12 +2229,11 @@ function raRenderTierTable() {
   if (!rows.length) { document.getElementById('tier-area').innerHTML = '<div class="load-state">該当する大学がありません</div>'; return; }
 
   const TIER_COLOR = { 0:['#dce4f4','#1a3070'], 1:['#e8edf8','#2c4a8a'], 2:['#e8f0e4','#3a6630'], 3:['#f4ece0','#7a4a20'] };
-  const SUBJ_LABEL_SHORT = {shakai:'社会学',fukushi:'社会福祉',shinpan:'新聞伝播',keizai:'経済学',keiei:'経営学',kyoiku:'教育学',hougaku:'法学',seiji:'政治学',bungaku:'文学',rekishi:'歴史学',hyosho:'表象',nihongo:'日本語教育',shinri:'心理学',other:'その他'};
 
   let tableHtml = `<div style="overflow-x:auto"><table class="data-table" style="min-width:600px">
     <thead><tr><th style="min-width:180px">大学名</th><th style="width:60px;text-align:center">件数</th>
     <th style="width:90px;text-align:center">自動判定</th><th style="width:90px;text-align:center">DB設定</th>
-    <th style="width:220px">Tier変更</th><th>学科構成</th></tr></thead><tbody>`;
+    <th style="width:220px">Tier変更</th><th>本校专业构成</th></tr></thead><tbody>`;
 
   for (const d of rows) {
     const pending = raTierChanges[d.univ];
@@ -2213,7 +2244,7 @@ function raRenderTierTable() {
     const [dbg, dfg] = d.dbTier != null ? (TIER_COLOR[d.dbTier] || ['#eee','#666']) : ['#f0ede6','#9a9590'];
 
     const subjTags = d.subjs.slice(0,3).map(s =>
-      `<span style="font-size:9px;padding:1px 5px;border-radius:2px;background:${raSUBJ_COLOR[s]?.bg||'#eee'};color:${raSUBJ_COLOR[s]?.fg||'#666'};margin-right:3px">${SUBJ_LABEL_SHORT[s]||s}</span>`
+      `<span style="font-size:9px;padding:1px 5px;border-radius:2px;background:#eee;color:#444;margin-right:3px">${raArEsc(raRmName(s) || '其他')}</span>`
     ).join('');
 
     const rowBg = isChanged ? 'background:#fffbe8' : '';
@@ -3153,27 +3184,35 @@ function raPhRender(kind) {
   const c = raPH[kind], f = c.f, pm = c.posterMap;
   const q = (document.getElementById(c.pre + '-search')?.value || '').trim();
   const isUg = kind === 'ug';
-  const grpKey = isUg ? 'track' : 'subject';                 // 第二组筛选用的字段：学部=系統，大学院=在籍学科
-  const grpName = id => isUg ? (raPH_TRACK[id] || id || '其他') : ((raSUBJECTS.find(x => x.id === id) || {}).label || id || '其他');
+  // 第二组筛选：学部=系統，大学院=本校专业（our_major → 旧学科对照 → 其他）
+  const grpOf = r => isUg ? (r.track || 'other') : raRmFilterKey(r);
+  const grpName = id => isUg ? (raPH_TRACK[id] || id || '其他') : (id === 'other' ? '其他' : raRmName(id) || '其他');
   const rowOk = (r, skip) => {
     if (skip !== 'era' && f.era && r.era !== f.era) return false;
-    if (skip !== 'subj' && f.subj && (r[grpKey] || 'other') !== f.subj) return false;
+    if (skip !== 'subj' && f.subj && grpOf(r) !== f.subj) return false;
     if (skip !== 'poster' && f.poster && pm) { const has = !!pm[r.id]; if ((f.poster === 'done') !== has) return false; }
     if (q && !searchMatch(q, [r.student, r.univ, r.dept, r.spec])) return false;
     return true;
   };
   const cnt = (skip, fn) => c.rows.filter(r => rowOk(r, skip) && fn(r)).length;
   // 筛选 chips（每组单独可用、互相交叉）
-  const grpIds = [...new Set(c.rows.map(r => r[grpKey] || 'other'))];
+  let grpIds = [...new Set(c.rows.map(grpOf))];
+  if (!isUg) grpIds = raRmGroups(grpIds).flatMap(g => g.items.map(x => x.key));   // 按领域分组排序，其他在最后
   const SHOW = 12;
   const shown = c.more ? grpIds : grpIds.filter((id, i) => i < SHOW || id === f.subj);
+  const domOf = id => (isUg || id === 'other') ? '' : raRmDomain(id);
   const lab = t => `<span style="font-size:11px;color:var(--text-muted);margin-right:6px">${t}</span>`;
   let h = `<div style="margin-bottom:4px">${lab('年度')}`
     + raPhChip(!f.era, '全部', `raPhClear('${kind}','era')`)
     + [['new', '2026–2027'], ['hist', '2022–2025']].map(([k, l]) => raPhChip(f.era === k, `${l} (${cnt('era', r => r.era === k)})`, `raPhSet('${kind}','era','${k}')`)).join('') + '</div>';
-  h += `<div style="margin-bottom:4px">${lab(isUg ? '系統' : '在籍学科')}`
+  let lastDom = null;
+  h += `<div style="margin-bottom:4px">${lab(isUg ? '系統' : '本校专业')}`
     + raPhChip(!f.subj, '全部', `raPhClear('${kind}','subj')`)
-    + shown.map(id => raPhChip(f.subj === id, `${grpName(id)} (${cnt('subj', r => (r[grpKey] || 'other') === id)})`, `raPhSet('${kind}','subj','${id}')`)).join('')
+    + shown.map(id => {
+      const d = domOf(id); let pre = '';
+      if (!isUg && d !== lastDom) { pre = `<span style="font-size:10px;color:var(--text-muted);margin:0 4px 0 6px">${raArEsc(d || '其他')}</span>`; lastDom = d; }
+      return pre + raPhChip(f.subj === id, `${grpName(id)} (${cnt('subj', r => grpOf(r) === id)})`, `raPhSet('${kind}','subj','${id}')`);
+    }).join('')
     + (grpIds.length > SHOW ? raPhChip(false, c.more ? '收起 ▴' : '更多 ▾', `raPhMore('${kind}')`) : '') + '</div>';
   if (pm) {
     h += `<div style="margin-bottom:4px">${lab('海报')}`
@@ -3198,7 +3237,7 @@ function raPhRender(kind) {
             <button class="photo-card-del" style="background:#eef2fa;color:var(--accent);border-color:#c5d0e8;margin-right:4px" onclick="pstOpen('${kind}','${esc(r.id)}')">${pm && pm[r.id] ? '编辑海报' : '制作海报'}</button>
           </div>
           ${pm && pm[r.id] ? `<div style="font-size:10px;color:var(--green);margin-bottom:2px">已制作${pm[r.id] === 'pub' ? ' · 已发布' : ''}</div>` : ''}
-          <div class="photo-card-sub">${esc(r.dept)}${r.spec ? ' ' + esc(r.spec) : ''}　${esc(grpName(r[grpKey] || 'other'))}${noteText ? '　' + esc(noteText) : ''}</div>
+          <div class="photo-card-sub">${esc(r.dept)}${r.spec ? ' ' + esc(r.spec) : ''}　${esc(isUg ? grpName(grpOf(r)) : raRmLabel(r))}${noteText ? '　' + esc(noteText) : ''}</div>
         </div>
       </div>`;
   }).join('') + '</div>';
@@ -3213,7 +3252,7 @@ function raFillNew() {
 raFill.grad = raFillNew(); raFill.ug = raFillNew();
 const raFILL_RANGES = [['1w', '最近 1 周'], ['1m', '最近 1 个月'], ['3m', '最近 3 个月'], ['old', '3 个月以前'], ['all', '全部']];
 const raFILL_PAGE = 100, raFILL_SCAN_MAX = 5000;
-function raFillCols(kind) { return 'id,univ,dept,spec,student,' + (kind === 'ug' ? '' : 'subject,') + 'track,era,created_at' + (raScopedLead() ? ',our_major' : ''); }
+function raFillCols(kind) { return 'id,univ,dept,spec,student,' + (kind === 'ug' ? '' : 'subject,') + 'track,era,created_at,our_major'; }
 
 function raPhModeRender(kind) {
   const c = raPH[kind], f = raFill[kind], el = document.getElementById(c.pre + '-mode'); if (!el) return;
@@ -3273,7 +3312,6 @@ async function raFillLoad(kind, reset) {
     if (f.univ) qs += `&univ=eq.${encodeURIComponent(f.univ)}`;
     if (f.track) qs += `&track=eq.${encodeURIComponent(f.track)}`;
     qs += raScopeQs(kind);
-    if (f.subj && kind !== 'ug') qs += `&subject=eq.${encodeURIComponent(f.subj)}`;
     const BATCH = 200, got = [];
     let scanned = 0, more = false;
     while (got.length < raFILL_PAGE) {
@@ -3282,6 +3320,7 @@ async function raFillLoad(kind, reset) {
       f.offset += rows.length; scanned += rows.length;
       for (const r of rows) {
         if (f.phIds.has(String(r.id)) || !raInMyScope(kind, r)) continue;
+        if (f.subj && kind !== 'ug' && raRmFilterKey(r) !== f.subj) continue;
         if (q && !searchMatch(q, [r.student, r.univ, r.dept, r.spec])) continue;
         got.push(r);
       }
@@ -3304,7 +3343,10 @@ function raFillRender(kind) {
   const lab = t => `<span style="font-size:11px;color:var(--text-muted);margin-right:6px">${t}</span>`;
   let h = `<div style="margin-bottom:4px">${lab('录入时间')}` + raFILL_RANGES.map(([k, l]) => raPhChip(f.range === k, l, `raFillSet('${kind}','range','${k}')`)).join('') + '</div>';
   h += `<div style="margin-bottom:4px">${lab('系統')}` + Object.keys(raPH_TRACK).map(k => raPhChip(f.track === k, raPH_TRACK[k], `raFillSet('${kind}','track','${k}')`)).join('') + '</div>';
-  if (!isUg) h += `<div style="margin-bottom:4px">${lab('在籍学科')}` + raSUBJECTS.map(x => raPhChip(f.subj === x.id, x.label, `raFillSet('${kind}','subj','${x.id}')`)).join('') + '</div>';
+  if (!isUg) {
+    const keys = [...new Set((raArMajors || []).filter(m => (m.domain || '').startsWith('大学院')).map(m => m.key).concat('other'))];
+    h += `<div style="margin-bottom:4px">${lab('本校专业')}` + raRmGroups(keys).map(g => `<span style="font-size:10px;color:var(--text-muted);margin:0 4px 0 6px">${raArEsc(g.domain || '其他')}</span>` + g.items.map(x => raPhChip(f.subj === x.key, raArEsc(x.label), `raFillSet('${kind}','subj','${x.key}')`)).join('')).join('') + '</div>';
+  }
   const SHOW = 12, sch = f.schools.slice().sort((a, b) => a.localeCompare(b, 'ja'));
   if (sch.length || f.univ) {
     const list = f.moreSchools ? sch : sch.filter((u, i) => i < SHOW || u === f.univ);
