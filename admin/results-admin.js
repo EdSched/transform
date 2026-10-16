@@ -446,7 +446,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
 <!-- ── TAB: データ管理 ── -->
 <div id="tab-list" style="display:none">
   <div class="list-controls">
-    <input type="text" id="search-input" placeholder="大学名・研究科・専攻・学生名（漢字 / ピンイン頭文字）で検索..." oninput="searchBox(this,renderList)">
+    <input type="text" id="search-input" placeholder="大学名・研究科・専攻・学生名（漢字 / ピンイン頭文字）で検索..." oninput="searchBox(this,raRenderList)">
     <select id="filter-subj" onchange="raRenderList()">
       <option value="">全学科</option>
       <option value="shakai">社会学</option>
@@ -499,7 +499,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
     <div style="margin-left:auto;display:flex;gap:6px">
       <input type="text" id="tier-search" placeholder="大学名で絞り込み..."
         style="padding:5px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:200px"
-        oninput="searchBox(this,renderTierTable)">
+        oninput="searchBox(this,raRenderTierTable)">
       <select id="tier-filter" onchange="raRenderTierTable()"
         style="padding:5px 8px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg)">
         <option value="">全Tier</option>
@@ -715,7 +715,7 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
 <!-- ── UG TAB: データ管理 ── -->
 <div id="ugtab-list" style="display:none">
   <div class="list-controls">
-    <input type="text" id="ug-search-input" placeholder="大学名・学部・学科・学生名（漢字 / ピンイン頭文字）で検索..." oninput="searchBox(this,ugRenderList)">
+    <input type="text" id="ug-search-input" placeholder="大学名・学部・学科・学生名（漢字 / ピンイン頭文字）で検索..." oninput="searchBox(this,raUgRenderList)">
     <select id="ug-filter-track" onchange="raUgRenderList()">
       <option value="">全系統</option>
       <option value="bunka">文科</option>
@@ -2574,16 +2574,16 @@ function raPhRender(kind) {
   const shown = c.more ? grpIds : grpIds.filter((id, i) => i < SHOW || id === f.subj);
   const lab = t => `<span style="font-size:11px;color:var(--text-muted);margin-right:6px">${t}</span>`;
   let h = `<div style="margin-bottom:4px">${lab('年度')}`
-    + raPhChip(!f.era, '全部', `phClear('${kind}','era')`)
-    + [['new', '2026–2027'], ['hist', '2022–2025']].map(([k, l]) => raPhChip(f.era === k, `${l} (${cnt('era', r => r.era === k)})`, `phSet('${kind}','era','${k}')`)).join('') + '</div>';
+    + raPhChip(!f.era, '全部', `raPhClear('${kind}','era')`)
+    + [['new', '2026–2027'], ['hist', '2022–2025']].map(([k, l]) => raPhChip(f.era === k, `${l} (${cnt('era', r => r.era === k)})`, `raPhSet('${kind}','era','${k}')`)).join('') + '</div>';
   h += `<div style="margin-bottom:4px">${lab(isUg ? '系統' : '在籍学科')}`
-    + raPhChip(!f.subj, '全部', `phClear('${kind}','subj')`)
-    + shown.map(id => raPhChip(f.subj === id, `${grpName(id)} (${cnt('subj', r => (r[grpKey] || 'other') === id)})`, `phSet('${kind}','subj','${id}')`)).join('')
-    + (grpIds.length > SHOW ? raPhChip(false, c.more ? '收起 ▴' : '更多 ▾', `phMore('${kind}')`) : '') + '</div>';
+    + raPhChip(!f.subj, '全部', `raPhClear('${kind}','subj')`)
+    + shown.map(id => raPhChip(f.subj === id, `${grpName(id)} (${cnt('subj', r => (r[grpKey] || 'other') === id)})`, `raPhSet('${kind}','subj','${id}')`)).join('')
+    + (grpIds.length > SHOW ? raPhChip(false, c.more ? '收起 ▴' : '更多 ▾', `raPhMore('${kind}')`) : '') + '</div>';
   if (pm) {
     h += `<div style="margin-bottom:4px">${lab('海报')}`
-      + raPhChip(!f.poster, '全部', `phClear('${kind}','poster')`)
-      + [['todo', '未制作'], ['done', '已制作']].map(([k, l]) => raPhChip(f.poster === k, l, `phSet('${kind}','poster','${k}')`)).join('') + '</div>';
+      + raPhChip(!f.poster, '全部', `raPhClear('${kind}','poster')`)
+      + [['todo', '未制作'], ['done', '已制作']].map(([k, l]) => raPhChip(f.poster === k, l, `raPhSet('${kind}','poster','${k}')`)).join('') + '</div>';
   }
   document.getElementById(c.pre + '-filters').innerHTML = h;
 
