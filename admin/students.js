@@ -204,9 +204,19 @@ function openStudentModal(id){
     else if(el==='st_vip_course'){ e.value='大课'; }
     else { e.value=''; }
   });
+  stSourceInit(s);
   if(typeof stClassOpen==='function') stClassOpen(s);
   document.getElementById('studentModal').classList.add('open');
   renderStudentVipPlans(s);
+}
+// 来源下拉：选项来自 constants.js 的 STUDENT_SOURCES；有来源限制的老师（管理模式）只列允许的来源，新建时默认选第一个
+function stSourceInit(s){
+  const el=document.getElementById('st_source'); if(!el) return;
+  const lim=mgrSources(), opts=STUDENT_SOURCES.filter(x=>sourceAllowed({source:x},lim));
+  const cur=s?(s.source||''):'';
+  if(cur && !opts.includes(cur)) opts.push(cur);
+  el.innerHTML=(lim.length?'':'<option value="">请选择</option>')+opts.map(x=>`<option>${stEsc(x)}</option>`).join('');
+  el.value=s?cur:(lim.length?opts[0]:'');
 }
 
 // ── VIP 课程方案关联（在籍关联）──
@@ -454,8 +464,8 @@ async function openStudentDetail(id){
     // 每次打开都重新读数据库（不用缓存的学生列表）；共用函数见 shared/student-detail.js
     const { html, student:s } = await renderStudentDetailCard(id, { actionsHtml:`
       <button class="btn btn-outline btn-sm" onclick="closeModal('studentDetailModal');openStudentModal('${id}')">✏ 编辑档案</button>
-      <button class="btn btn-outline btn-sm" onclick="closeModal('studentDetailModal');renderProgressPage(document.getElementById('mainContent'),'${id}')">📊 考学进度</button>
-      <button class="btn btn-outline btn-sm" onclick="openMonthlyReport('${id}',this.dataset.n)" data-n="">📅 月度学习情况</button>` });
+      ${mgrPageAllowed('progress')?`<button class="btn btn-outline btn-sm" onclick="closeModal('studentDetailModal');renderProgressPage(document.getElementById('mainContent'),'${id}')">📊 考学进度</button>`:''}
+      ${mgrPageAllowed('monthly')?`<button class="btn btn-outline btn-sm" onclick="openMonthlyReport('${id}',this.dataset.n)" data-n="">📅 月度学习情况</button>`:''}` });
     if(!s){ box.innerHTML='<div style="font-size:12px;color:var(--text-3)">未找到该学生档案</div>'; return; }
     const cached=cachedStudents.find(x=>x.id===id);
     if(cached) Object.assign(cached,s);   // 顺便把缓存列表也刷成最新

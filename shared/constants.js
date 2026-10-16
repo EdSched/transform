@@ -118,8 +118,21 @@ function scopeCourse(c) {
   if (ms.some(scopeMajor)) return true;
   return VIEW_SCOPE.classIds.length > 0 && courseClassIds(c).some(id => VIEW_SCOPE.classIds.includes(id));
 }
-// 学生在范围内 = 主专业 / 附加专业任一在范围内；或学生班级和范围班级有交集
+// 学生来源（学生档案「来源」下拉 / 老师端来源筛选 / 老师的学生来源限制共用）
+const STUDENT_SOURCES = ['唯新', '新世界', '校内塾', '杭州校'];
+// 来源是否允许：sources 为空 = 不限；否则学生来源必须在里面（没填来源的学生，有来源限制时看不到）
+function sourceAllowed(student, sources) {
+  if (!Array.isArray(sources) || !sources.length) return true;
+  return !!student && sources.includes(student.source);
+}
+// 管理模式（老师身份进管理端）下当前老师的学生来源限制；管理员 / 访问链接 = 空（不限）
+function mgrSources() {
+  const a = typeof ACCESS_KEY !== 'undefined' ? ACCESS_KEY : null;
+  return (a && a._asTeacher && Array.isArray(a._asTeacher.sources)) ? a._asTeacher.sources : [];
+}
+// 学生在范围内 = 主专业 / 附加专业任一在范围内；或学生班级和范围班级有交集；并且满足管理模式老师的来源限制
 function scopeStudent(st) {
+  if (st && !sourceAllowed(st, mgrSources())) return false;
   if (scopeAll()) return true;
   if (!st) return false;
   const ms = [st.major, ...(Array.isArray(st.extra_majors) ? st.extra_majors : [])].filter(Boolean);
@@ -1417,8 +1430,9 @@ function _scopeDomainMajors(dom) {
 }
 function teacherScope(t, kind) {
   kind = kind === 'admission' ? 'admission' : 'student';
-  const sc = { kind, all: false, majors: new Set(), classIds: new Set(), domains: new Set(), rangeMajors: new Set(), sources: [], excluded: new Set(), vipName: '', vipOnly: false };
+  const sc = { kind, all: false, majors: new Set(), classIds: new Set(), domains: new Set(), rangeMajors: new Set(), sources: [], excluded: new Set(), vipName: '', vipOnly: false, studentSources: [] };
   if (!t) return sc;
+  sc.studentSources = Array.isArray(t.student_sources) ? t.student_sources : [];
   if (kind === 'student') sc.vipName = String(t.name || '').trim();   // 学生档案的 VIP 老师里有我 → 我能看到这个学生
   sc.vipOnly = kind === 'student' && !!(t.permissions && t.permissions.vip_only);   // 勾了「仅可见自己指导的 VIP 学生」：不按负责专业 / 领域算
   if (kind === 'admission' ? canSeeAllAdmission(t) : canSeeAllStudents(t)) { sc.all = true; return sc; }
@@ -1470,6 +1484,7 @@ function teacherScopeEmpty(sc) { return !sc || (!sc.all && !sc.vipOnly && !sc.ma
 // 某个学生行在不在范围内（专业命中、学生所属领域在负责领域里、或在班主任负责的班级里；不看的专业除外）
 function teacherScopeHasStudent(sc, s) {
   if (!sc || !s) return false;
+  if (!sourceAllowed(s, sc.studentSources)) return false;   // 来源限制：liaison / all 也要过这一关
   if (sc.all) return true;
   if (sc.vipName && Array.isArray(s.vip_teachers) && s.vip_teachers.includes(sc.vipName)) return true;   // 我是这个学生的 VIP 老师（即使专业在「排除的专业」里也能看）
   if (sc.majors.has(s.major)) return true;
