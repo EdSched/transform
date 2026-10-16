@@ -656,6 +656,7 @@ function tfMgrRender(){
       <div style="font-size:10px;color:var(--text-3);margin-top:6px;line-height:1.7">「只管归属自己的老师」：老师列表只显示「归属负责人」是他的老师（加上他自己，只读）；新建的老师自动归属给他。</div></div>`:''}`:''}`;
   if(typeof renderPermScope==='function') renderPermScope();
   tsecRefresh();
+  tfRolesRender();   // 「需要设管理范围」的提醒跟着范围变
 }
 function mgrDraftToggle(field,val){
   scopeDraftToggle(_mgrDraft,field,val);
@@ -1832,6 +1833,9 @@ function tfRolesRender(){
   }
   if(_tfRoles.includes('senmon')||_tfRoles.includes('ta')) parts.push(`<div style="font-size:11px;color:var(--text-2)">${_tfRoles.includes('senmon')&&_tfRoles.includes('ta')?'专业课老师 / TA':_tfRoles.includes('ta')?'TA':'专业课老师'}：负责专业在 ${link('area','负责领域与专业')} 区块选择${_tfRoles.includes('ta')?'（TA 也可以直接选整个领域）':''}</div>`);
   if(_tfRoles.includes('homeroom')&&_tfHr) parts.push(`<div style="border:1px solid var(--border-light);border-radius:3px;padding:8px;margin-top:4px"><div style="font-size:11px;font-weight:600;margin-bottom:6px">班主任：负责班级（或整个学部领域）</div>${scopePickerHtml(_tfHr,'tfHrToggle')}</div>`);
+  // 提醒：选的职位 / 角色在模板里标了「需要设管理范围」，但还没设（只是提醒，不影响保存）
+  const needMs=[_tfPos].concat(_tfRoles).filter(k=>k&&_roleTpl&&_roleTpl[k]&&_roleTpl[k].defaults&&_roleTpl[k].defaults.needs_manage_scope);
+  if(needMs.length&&_mgrDraft&&!(_mgrDraft.domains.length||_mgrDraft.majors.length||_mgrDraft.classIds.length)) parts.push(`<div style="font-size:11px;color:var(--warn,#b8860b);background:#fff8e1;border:1px solid #f0e0a8;border-radius:3px;padding:5px 8px;margin-top:4px">${needMs.map(k=>escTM((_roleTpl[k]||{}).label||k)).join('、')}需要设置管理范围，请在 ${link('manager','负责人（管理范围）')} 区块设置（只是提醒，不影响保存）</div>`);
   box.innerHTML=parts.join('');
   if(typeof renderPermScope==='function') renderPermScope();   // 职位 / 角色 / 班主任范围变了，可见范围说明跟着变
 }
@@ -2337,7 +2341,7 @@ function openEditTeacher(id){
   document.querySelectorAll('#perm_slot_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.slot_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_vip_content .filter-chip').forEach(c=>{c.classList.toggle('active',(p.vip_content||[]).includes(c.dataset.value))});
   hwaInit(p, t);
-  _tfEditId=t.id; tfRolesLoad(t); tsecCollapse(); tfMgrInit(t); tsecApply(); tfTaskLoad(); roleTplEnsure().then(tfRoleDiffRender);
+  _tfEditId=t.id; tfRolesLoad(t); tsecCollapse(); tfMgrInit(t); tsecApply(); tfTaskLoad(); roleTplEnsure().then(()=>{ tfRolesRender(); tfRoleDiffRender(); });
   const btn=document.getElementById('teacherFormBtn');
   if(btn){btn.textContent='保存修改';btn.setAttribute('onclick',`saveEditTeacher('${id}')`);}
   const cancelBtn=document.getElementById('teacherFormCancelBtn');
