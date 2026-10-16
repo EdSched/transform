@@ -429,6 +429,8 @@ function buildTabs() {
   // 宣传资料整合：把出愿学校 / 学科介绍 / 进度规划等营业资料合成一份 PDF（需 admin 在营业功能中单独勾选）
   if (p.promo_pack) tabs.push({ id: 'promopack', label: '📦 宣传资料整合' });
   if (p.promo) tabs.push({ id: 'admissions', label: '🏆 合格实绩' });
+  // 合格实绩管理：admin 在营业功能中单独勾选（permissions.result_admin）；内容就是管理端的合格实绩页（admin/results-admin.js，老师模式）
+  if (p.result_admin) tabs.push({ id: 'resultadmin', label: '🏆 合格实绩管理' });
   // 合格海报查询：admin 在营业功能中单独勾选（permissions.pass_posters）；只读已发布的海报
   if (p.pass_posters) tabs.push({ id: 'passposters', label: '🖼 合格海报' });
   if (p.lect_info) tabs.push({ id: 'lectinfo', label: '👤 讲师信息' });
@@ -483,6 +485,7 @@ function renderTab() {
     case 'promopack': renderPromoPack(mc); break;
     case 'admissions': renderTeacherAdmissions(mc); break;
     case 'passposters': renderTeacherPosters(mc); break;
+    case 'resultadmin': raRender(mc, { mode: 'teacher' }); break;
     case 'lectinfo': renderLectInfo(mc); break;
     case 'studyprogress': renderTeacherStudyProgress(mc); break;
     case 'mycourses': renderMySchedule(mc); break;
