@@ -173,6 +173,16 @@ const RA_CSS = `
 
 let raMode = 'admin';   // 'admin' | 'teacher'
 function raIsTeacher() { return raMode === 'teacher'; }
+// 能不能看截图 / 补图 / 做海报（数据库 can_manage_results() 同一规则）：管理员；result_admin；管理模式的负责人且「合格实绩」页对他开放
+function raCanPhotos() {
+  if (raIsTeacher()) return true;   // 老师端「合格实绩管理」本身就要求 result_admin
+  if (typeof ACCESS_KEY === 'undefined' || !ACCESS_KEY) return true;   // 管理员邮箱登录
+  if (ACCESS_KEY.invalid) return false;
+  if (ACCESS_KEY.is_admin) return true;
+  const a = ACCESS_KEY._asTeacher; if (!a) return false;
+  if (String((a.permissions || {}).result_admin).toLowerCase() === 'true') return true;
+  return typeof mgrPageAllowed === 'function' && mgrPageAllowed('admissions');
+}
 // 老师模式下「本校在籍专业」下面的说明（不同步学生档案）
 function raTeacherMajorNote() { return raIsTeacher() ? '<div style="font-size:10px;color:var(--text-muted);margin-top:3px">记录到学生档案由管理员处理</div>' : ''; }
 
@@ -199,7 +209,7 @@ function raHtml() {
 <div class="major-bar">
   <button class="major-btn active" onclick="raSwitchMajor('grad')">大学院</button>
   <button class="major-btn" onclick="raSwitchMajor('ug')">学部</button>
-  <button class="major-btn" onclick="raSwitchMajor('poster')">合格海报</button>
+  <button ${raCanPhotos()?'':'style="display:none"'} class="major-btn" onclick="raSwitchMajor('poster')">合格海报</button>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════
@@ -212,7 +222,7 @@ function raHtml() {
   <button class="tab-btn" onclick="raSwitchTab('excel')">Excel 批量导入</button>
   <button class="tab-btn" onclick="raSwitchTab('list')">数据管理</button>
   <button class="tab-btn" onclick="raSwitchTab('tier')">Tier 管理</button>
-  <button class="tab-btn" onclick="raSwitchTab('photos')">合格写真</button>
+  <button ${raCanPhotos()?'':'style="display:none"'} class="tab-btn" onclick="raSwitchTab('photos')">合格写真</button>
 </div>
 
 <main>
@@ -549,7 +559,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
   <button class="tab-btn" onclick="raSwitchUgTab('excel')">Excel 批量导入</button>
   <button class="tab-btn" onclick="raSwitchUgTab('list')">数据管理</button>
   <button class="tab-btn" onclick="raSwitchUgTab('tier')">Tier 管理</button>
-  <button class="tab-btn" onclick="raSwitchUgTab('photos')">合格写真</button>
+  <button ${raCanPhotos()?'':'style="display:none"'} class="tab-btn" onclick="raSwitchUgTab('photos')">合格写真</button>
 </div>
 
 <main>
