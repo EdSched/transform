@@ -338,6 +338,10 @@ function raHtml() {
         <input id="f-note" type="text" placeholder="※ 研究生 等">
       </div>
     </div>
+    <div class="field" style="margin-bottom:1rem"><label>合格截图（原图上传，不压缩，选填）</label>
+      <div id="f-photo-box" style="margin-bottom:6px"></div>
+      <input id="f-photo" type="file" accept="image/*" onchange="raEmPhotoPick(this,'f')">
+    </div>
 
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="raResetForm()">クリア</button>
@@ -633,6 +637,10 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
       <div class="field"><label>TOEFL</label><input id="ug-f-toefl" type="number" placeholder="100"></div>
       <div class="field"><label>TOEIC</label><input id="ug-f-toeic" type="number" placeholder="800"></div>
       <div class="field"><label>備考</label><input id="ug-f-note" type="text" placeholder=""></div>
+    </div>
+    <div class="field" style="margin-bottom:1rem"><label>合格截图（原图上传，不压缩，选填）</label>
+      <div id="ug-f-photo-box" style="margin-bottom:6px"></div>
+      <input id="ug-f-photo" type="file" accept="image/*" onchange="raEmPhotoPick(this,'ug-f')">
     </div>
 
     <div class="form-actions">
@@ -1009,6 +1017,8 @@ function raResetForm() {
     document.getElementById(id).selectedIndex = 0;
   });
   raArSetMajor('f', '');
+  document.getElementById('f-photo').value = '';
+  document.getElementById('f-photo-box').innerHTML = '';
 }
 
 async function raSubmitForm() {
@@ -1039,8 +1049,9 @@ async function raSubmitForm() {
 
   try {
     const ins = await raInsertResult(row);
-    raToast('保存しました ✓');
     const saved = Array.isArray(ins) ? ins[0] : null;
+    const phOk = await raAddPhotoAfterInsert('grad', saved, document.getElementById('f-photo').files[0]);
+    raToast(phOk ? '保存しました ✓' : '合格実绩已保存，但截图上传失败，请在「数据管理」编辑里补传', phOk);
     raResetForm();
     raRefreshUnivList();
     if (saved) raArSyncToStudent(saved);
@@ -1885,6 +1896,8 @@ function raUgResetForm() {
   });
   ['ug-f-track','ug-f-era','ug-f-tier','ug-f-jlpt'].forEach(id => document.getElementById(id).selectedIndex = 0);
   raArSetMajor('ugf', '');
+  document.getElementById('ug-f-photo').value = '';
+  document.getElementById('ug-f-photo-box').innerHTML = '';
 }
 
 async function raUgSubmitForm() {
@@ -1909,7 +1922,7 @@ async function raUgSubmitForm() {
     our_major: raArGetMajor('ugf') || null,
   };
 
-  try { const ins = await raUgInsertOne(row); raToast('保存しました ✓'); const saved = Array.isArray(ins) ? ins[0] : null; raUgResetForm(); raUgRefreshUnivList(); if (saved) raArSyncToStudent(saved, 'undergrad_results'); }
+  try { const ins = await raUgInsertOne(row); const saved = Array.isArray(ins) ? ins[0] : null; const phOk = await raAddPhotoAfterInsert('ug', saved, document.getElementById('ug-f-photo').files[0]); raToast(phOk ? '保存しました ✓' : '合格実绩已保存，但截图上传失败，请在「数据管理」编辑里补传', phOk); raUgResetForm(); raUgRefreshUnivList(); if (saved) raArSyncToStudent(saved, 'undergrad_results'); }
   catch(e) { raToast('エラー: ' + e.message, false); }
 }
 
@@ -2485,6 +2498,15 @@ async function raArSetPhoto(kind, id, path, legacyRow) {
   if (old && old !== path) await raArRemoveFiles([old]);
   const lu = legacyRow && raArLegacyUrl(legacyRow);
   if (lu) await raArRemoveLegacyFile(lu);
+}
+// 手动添加时选了截图：记录保存后再传到私有桶并写 result_photos；没选图或成功返回 true，失败返回 false（合格实绩本身已保存）
+async function raAddPhotoAfterInsert(kind, saved, file) {
+  if (!file) return true;
+  try {
+    if (!saved || !saved.id) throw new Error('没有取到记录编号');
+    await raArSetPhoto(kind, saved.id, await raArUploadPhoto(file, kind), null);
+    return true;
+  } catch (e) { return false; }
 }
 // 删合格记录 / 照片时：删 result_photos 行和私有桶里的文件
 async function raArDeleteResultPhotos(kind, ids) {
