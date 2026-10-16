@@ -74,7 +74,7 @@ const RA_CSS = `
 #ra-root .btn-success { background: var(--green-bg); color: var(--green); border-color: #b8d8bc; }
 #ra-root .toast {
   position: fixed; bottom: 1.5rem; right: 1.5rem; padding: 10px 18px; border-radius: 4px;
-  font-size: 12px; display: none; z-index: 999; max-width: 320px;
+  font-size: 12px; display: none; z-index: 10050; max-width: 320px;
 }
 #ra-root .toast.show { display: block; }
 #ra-root .toast-ok { background: var(--green-bg); color: var(--green); border: 1px solid #b8d8bc; }
@@ -344,8 +344,9 @@ function raHtml() {
     </div>
 
     <div class="form-actions">
+      <span id="f-save-msg" class="ra-save-msg" style="margin-right:auto;align-self:center;font-size:12px;text-align:left"></span>
       <button class="btn btn-secondary" onclick="raResetForm()">クリア</button>
-      <button class="btn btn-primary" onclick="raSubmitForm()">保存</button>
+      <button class="btn btn-primary" onclick="raSubmitForm(this)">保存</button>
     </div>
   </div>
 </div>
@@ -644,8 +645,9 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
     </div>
 
     <div class="form-actions">
+      <span id="ug-f-save-msg" class="ra-save-msg" style="margin-right:auto;align-self:center;font-size:12px;text-align:left"></span>
       <button class="btn btn-secondary" onclick="raUgResetForm()">クリア</button>
-      <button class="btn btn-primary" onclick="raUgSubmitForm()">保存</button>
+      <button class="btn btn-primary" onclick="raUgSubmitForm(this)">保存</button>
     </div>
   </div>
 </div>
@@ -817,9 +819,10 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
       <input id="ug-em-photo" type="file" accept="image/*" onchange="raEmPhotoPick(this,'ug-em')">
     </div>
     <input type="hidden" id="ug-em-id">
+    <div id="ug-em-err" style="color:var(--red);font-size:12px;margin-top:6px"></div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="document.getElementById('ug-edit-modal').classList.remove('show')">キャンセル</button>
-      <button class="btn btn-primary" onclick="raUgSaveEdit()">保存</button>
+      <button class="btn btn-primary" onclick="raUgSaveEdit(this)">保存</button>
     </div>
   </div>
 </div>
@@ -914,9 +917,10 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
       <input id="em-photo" type="file" accept="image/*" onchange="raEmPhotoPick(this)">
     </div>
     <input type="hidden" id="em-id">
+    <div id="em-err" style="color:var(--red);font-size:12px;margin-top:6px"></div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="raCloseEditModal()">キャンセル</button>
-      <button class="btn btn-primary" onclick="raSaveEdit()">保存</button>
+      <button class="btn btn-primary" onclick="raSaveEdit(this)">保存</button>
     </div>
   </div>
 </div>
@@ -1000,6 +1004,44 @@ function raToast(msg, ok = true) {
   raToastTimer = setTimeout(() => el.classList.remove('show'), 3000);
 }
 
+// ── 保存按钮状态 / 结果行 / 防重复 ──
+function raBtnBusy(btn, text) {
+  if (!btn) return;
+  if (btn.dataset.raLabel == null) btn.dataset.raLabel = btn.textContent;
+  btn.disabled = true; btn.textContent = text;
+}
+function raBtnDone(btn) {
+  if (!btn) return;
+  btn.disabled = false;
+  if (btn.dataset.raLabel != null) { btn.textContent = btn.dataset.raLabel; delete btn.dataset.raLabel; }
+}
+// kind: ok 绿 / warn 橙 / err 红；结果行不会自动消失，开始填下一条时变灰
+function raSaveMsg(id, kind, text) {
+  const el = document.getElementById(id); if (!el) return;
+  el.textContent = text || '';
+  el.style.color = { ok: 'var(--green)', warn: '#c27a1a', err: 'var(--red)' }[kind] || '';
+  el.dataset.kind = kind || '';
+  if (kind === 'ok' || kind === 'warn') {
+    const box = el.closest('.form-actions') && el.closest('.form-actions').parentElement;
+    if (box) {
+      const grey = () => { if (el.dataset.kind) el.style.color = 'var(--text-muted)'; };
+      box.addEventListener('input', grey, { once: true });
+      box.addEventListener('change', grey, { once: true });
+    }
+  }
+}
+function raNowHM() { const d = new Date(); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+const raLastSaved = {};
+function raSavedKey(row) { return [row.univ, row.dept, row.student].map(v => (v || '').trim()).join('|'); }
+function raFlashRow(id) {
+  document.querySelectorAll(`tr[data-id="${String(id).replace(/"/g, '')}"]`).forEach(tr => {
+    if (tr.offsetParent === null) return;
+    tr.style.setProperty('background', '#fff3c4', 'important');
+    tr.scrollIntoView({ block: 'nearest' });
+    setTimeout(() => tr.style.removeProperty('background'), 2000);
+  });
+}
+
 let raModalCb = null;
 function raShowModal(title, body, cb) {
   document.getElementById('modal-title').textContent = title;
@@ -1021,7 +1063,8 @@ function raResetForm() {
   document.getElementById('f-photo-box').innerHTML = '';
 }
 
-async function raSubmitForm() {
+async function raSubmitForm(btn, force) {
+  if (btn && btn.disabled) return;
   const univ = document.getElementById('f-univ').value.trim();
   const subject = document.getElementById('f-subject').value;
   if (!univ) { raToast('大学名を入力してください', false); return; }
@@ -1047,17 +1090,29 @@ async function raSubmitForm() {
     our_major: raArGetMajor('f') || null,
   };
 
+  if (!force && raLastSaved.grad === raSavedKey(row)) {
+    raShowModal('重复确认', '刚刚已经保存过一条相同的，还要再存一条吗？', () => raSubmitForm(btn, true));
+    return;
+  }
+  const file = document.getElementById('f-photo').files[0];
+  raBtnBusy(btn, '保存中…'); raSaveMsg('f-save-msg', '', '');
   try {
     const ins = await raInsertResult(row);
     const saved = Array.isArray(ins) ? ins[0] : null;
-    const phOk = await raAddPhotoAfterInsert('grad', saved, document.getElementById('f-photo').files[0]);
-    raToast(phOk ? '保存しました ✓' : '合格実绩已保存，但截图上传失败，请在「数据管理」编辑里补传', phOk);
-    raResetForm();
-    raRefreshUnivList();
-    if (saved) raArSyncToStudent(saved);
-  } catch(e) {
+    raLastSaved.grad = raSavedKey(row);
+    let phOk = true, synced = false;
+    if (file) { raBtnBusy(btn, '上传截图中…'); phOk = await raAddPhotoAfterInsert('grad', saved, file); }
+    if (saved && row.our_major && row.student && !raIsTeacher()) { raBtnBusy(btn, '同步学生档案中…'); synced = (await raArSyncToStudent(saved)) === 'synced'; }
+    const label = [row.univ, row.dept, row.student].filter(Boolean).join(' · ');
+    const tail = synced ? ' · 已记录到学生档案' : '';
+    if (phOk) raSaveMsg('f-save-msg', 'ok', `✓ 已保存：${label}（${raNowHM()}）${file ? ' · 含截图' : ''}${tail}`);
+    else raSaveMsg('f-save-msg', 'warn', `合格实绩已保存（${label}），截图上传失败，请在数据管理里补传${tail}`);
+    raToast(phOk ? '保存しました ✓' : '合格实绩已保存，但截图上传失败，请在「数据管理」编辑里补传', phOk);
+    raResetForm(); raRefreshUnivList();
+  } catch (e) {
+    raSaveMsg('f-save-msg', 'err', '保存失败：' + e.message + '（表单内容还在，可直接再点保存）');
     raToast('エラー: ' + e.message, false);
-  }
+  } finally { raBtnDone(btn); }
 }
 
 async function raRefreshUnivList() {
@@ -1546,10 +1601,10 @@ async function raArUpsertPlan(stu, row) {
   }
 }
 async function raArSyncToStudent(row, table) {
-  if (raIsTeacher()) return;   // 老师模式：不写学生档案（管理员之后在 admin 里打开这条再保存一次就会同步）
+  if (raIsTeacher()) return '';   // 老师模式：不写学生档案（管理员之后在 admin 里打开这条再保存一次就会同步）
   table = table || 'admission_results';
-  if (!row || !row.our_major || !row.student) return;
-  if (!raArRealName(row.student)) { raToast('学生名是缩写，没有记录到学生档案', false); return; }
+  if (!row || !row.our_major || !row.student) return '';
+  if (!raArRealName(row.student)) { raToast('学生名是缩写，没有记录到学生档案', false); return ''; }
   try {
     let stu = null, created = false;
     if (row.student_id) {
@@ -1561,7 +1616,7 @@ async function raArSyncToStudent(row, table) {
       if (!list.length) { stu = await raArCreateStudent(row); created = true; }
       else {
         const pick = await raArPickStudent(list, row.student.trim());
-        if (!pick) { raToast('合格实绩已保存，没有记录到学生档案', false); return; }
+        if (!pick) { raToast('合格实绩已保存，没有记录到学生档案', false); return ''; }
         if (pick === 'new') { stu = await raArCreateStudent(row); created = true; } else stu = pick;
       }
       await raSbFetch(`${table}?id=eq.${encodeURIComponent(row.id)}`, { method: 'PATCH', body: { student_id: stu.id }, prefer: 'return=minimal', headers: {} });
@@ -1570,10 +1625,12 @@ async function raArSyncToStudent(row, table) {
     }
     await raArUpsertPlan(stu, row);
     raToast(created ? `✓ 已记录到学生档案：${stu.name}（已合格）` : `✓ 已关联到在籍学生 ${stu.name}`);
+    return 'synced';
   } catch (e) {
     const m = (e && e.message) || '';
     raToast(/401|403|row-level|permission|42501/i.test(m) ? '只有管理员能记录到学生档案（合格实绩已保存）' : '记录到学生档案失败：' + m.slice(0, 120), false);
   }
+  return '';
 }
 
 async function raFetchAllResults() { return sbAll('/rest/v1/admission_results?select=*&order=created_at.desc,id.desc'); }
@@ -1905,7 +1962,8 @@ function raUgResetForm() {
   document.getElementById('ug-f-photo-box').innerHTML = '';
 }
 
-async function raUgSubmitForm() {
+async function raUgSubmitForm(btn, force) {
+  if (btn && btn.disabled) return;
   const univ = document.getElementById('ug-f-univ').value.trim();
   if (!univ) { raToast('大学名を入力してください', false); return; }
   const num = id => { const v = document.getElementById(id).value; return v !== '' ? parseInt(v) : null; };
@@ -1927,8 +1985,29 @@ async function raUgSubmitForm() {
     our_major: raArGetMajor('ugf') || null,
   };
 
-  try { const ins = await raUgInsertOne(row); const saved = Array.isArray(ins) ? ins[0] : null; const phOk = await raAddPhotoAfterInsert('ug', saved, document.getElementById('ug-f-photo').files[0]); raToast(phOk ? '保存しました ✓' : '合格実绩已保存，但截图上传失败，请在「数据管理」编辑里补传', phOk); raUgResetForm(); raUgRefreshUnivList(); if (saved) raArSyncToStudent(saved, 'undergrad_results'); }
-  catch(e) { raToast('エラー: ' + e.message, false); }
+  if (!force && raLastSaved.ug === raSavedKey(row)) {
+    raShowModal('重复确认', '刚刚已经保存过一条相同的，还要再存一条吗？', () => raUgSubmitForm(btn, true));
+    return;
+  }
+  const file = document.getElementById('ug-f-photo').files[0];
+  raBtnBusy(btn, '保存中…'); raSaveMsg('ug-f-save-msg', '', '');
+  try {
+    const ins = await raUgInsertOne(row);
+    const saved = Array.isArray(ins) ? ins[0] : null;
+    raLastSaved.ug = raSavedKey(row);
+    let phOk = true, synced = false;
+    if (file) { raBtnBusy(btn, '上传截图中…'); phOk = await raAddPhotoAfterInsert('ug', saved, file); }
+    if (saved && row.our_major && row.student && !raIsTeacher()) { raBtnBusy(btn, '同步学生档案中…'); synced = (await raArSyncToStudent(saved,'undergrad_results')) === 'synced'; }
+    const label = [row.univ, row.dept, row.student].filter(Boolean).join(' · ');
+    const tail = synced ? ' · 已记录到学生档案' : '';
+    if (phOk) raSaveMsg('ug-f-save-msg', 'ok', `✓ 已保存：${label}（${raNowHM()}）${file ? ' · 含截图' : ''}${tail}`);
+    else raSaveMsg('ug-f-save-msg', 'warn', `合格实绩已保存（${label}），截图上传失败，请在数据管理里补传${tail}`);
+    raToast(phOk ? '保存しました ✓' : '合格实绩已保存，但截图上传失败，请在「数据管理」编辑里补传', phOk);
+    raUgResetForm(); raUgRefreshUnivList();
+  } catch (e) {
+    raSaveMsg('ug-f-save-msg', 'err', '保存失败：' + e.message + '（表单内容还在，可直接再点保存）');
+    raToast('エラー: ' + e.message, false);
+  } finally { raBtnDone(btn); }
 }
 
 async function raUgRefreshUnivList() {
@@ -2179,6 +2258,7 @@ function raOpenEditModal(el) {
   const r = raAllData.find(x => x.id === id);
   if (!r) return;
   document.getElementById('em-id').value = id;
+  document.getElementById('em-err').textContent = '';
   document.getElementById('em-univ').value = r.univ || '';
   document.getElementById('em-dept').value = r.dept || '';
   document.getElementById('em-spec').value = r.spec || '';
@@ -2203,7 +2283,9 @@ function raCloseEditModal() {
   document.getElementById('edit-modal').classList.remove('show');
 }
 
-async function raSaveEdit() {
+async function raSaveEdit(btn) {
+  if (btn && btn.disabled) return;
+  const errEl = document.getElementById('em-err'); errEl.textContent = '';
   const id = document.getElementById('em-id').value;
   const tierVal = document.getElementById('em-tier').value;
   const jlptScore = document.getElementById('em-jlpt-score').value;
@@ -2226,31 +2308,33 @@ async function raSaveEdit() {
     our_major:  raArGetMajor('em') || null,
   };
   const photoFile = document.getElementById('em-photo').files[0];
-  if (photoFile) {
-    try {
+  raBtnBusy(btn, '保存中…');
+  try {
+    if (photoFile) {
+      raBtnBusy(btn, '上传截图中…');
       const newPath = await raArUploadPhoto(photoFile, 'grad');
       await raArSetPhoto('grad', id, newPath, raAllData.find(x => x.id === id));   // 写 result_photos，删旧文件
       updates.photo_url = null;
       updates.note = raArStripNotePhoto(updates.note) || null;   // 旧的 [photo] 链接作废
-    } catch (e) { raToast('图片上传失败: ' + e.message, false); return; }
-  }
-  const oldRow = raAllData.find(x => x.id === id);
-  if (oldRow && oldRow.student_id && (oldRow.student || null) !== updates.student) updates.student_id = null;   // 改了学生名：旧关联作废
-
-  try {
+      raBtnBusy(btn, '保存中…');
+    }
+    const oldRow = raAllData.find(x => x.id === id);
+    if (oldRow && oldRow.student_id && (oldRow.student || null) !== updates.student) updates.student_id = null;   // 改了学生名：旧关联作废
     await raSbFetch(`admission_results?id=eq.${id}`, {
       method: 'PATCH', body: updates, prefer: 'return=minimal', headers: {}
     });
     // ローカルデータも更新
     const idx = raAllData.findIndex(x => x.id === id);
     if (idx >= 0) raAllData[idx] = { ...raAllData[idx], ...updates };
+    if (idx >= 0 && updates.our_major && updates.student && !raIsTeacher()) { raBtnBusy(btn, '同步学生档案中…'); await raArSyncToStudent(raAllData[idx]); }
     raCloseEditModal();
     raRenderList();
+    raFlashRow(id);
     raToast('保存しました ✓');
-    if (idx >= 0) raArSyncToStudent(raAllData[idx]);
-  } catch(e) {
+  } catch (e) {
+    errEl.textContent = '保存失败：' + e.message;
     raToast('エラー: ' + e.message, false);
-  }
+  } finally { raBtnDone(btn); }
 }
 
 
@@ -2272,6 +2356,7 @@ function raUgOpenEditModal(el) {
   const r = raUgAllData.find(x => x.id === id);
   if (!r) return;
   document.getElementById('ug-em-id').value = id;
+  document.getElementById('ug-em-err').textContent = '';
   document.getElementById('ug-em-univ').value = r.univ||'';
   document.getElementById('ug-em-dept').value = r.dept||'';
   document.getElementById('ug-em-spec').value = r.spec||'';
@@ -2298,7 +2383,9 @@ function raUgOpenEditModal(el) {
   document.getElementById('ug-edit-modal').classList.add('show');
 }
 
-async function raUgSaveEdit() {
+async function raUgSaveEdit(btn) {
+  if (btn && btn.disabled) return;
+  const errEl = document.getElementById('ug-em-err'); errEl.textContent = '';
   const id = document.getElementById('ug-em-id').value;
   const n = id2 => { const v=document.getElementById(id2).value; return v!==''?parseInt(v):null; };
   const updates = {
@@ -2317,26 +2404,31 @@ async function raUgSaveEdit() {
     note:document.getElementById('ug-em-note').value.trim()||null,
     our_major:raArGetMajor('ugem')||null,
   };
-  const oldUg=raUgAllData.find(x=>x.id===id);
-  if(oldUg&&oldUg.student_id&&(oldUg.student||null)!==updates.student) updates.student_id=null;   // 改了学生名：旧关联作废
   const ugPhoto=document.getElementById('ug-em-photo').files[0];
-  if(ugPhoto){
-    try{
+  raBtnBusy(btn, '保存中…');
+  try {
+    if(ugPhoto){
+      raBtnBusy(btn, '上传截图中…');
       const newPath=await raArUploadPhoto(ugPhoto,'ug');
       await raArSetPhoto('ug',id,newPath,raUgAllData.find(x=>x.id===id));   // 写 result_photos，删旧文件
       updates.photo_url=null;
       updates.note=raArStripNotePhoto(updates.note)||null;   // 旧的 [photo] 链接作废
-    }catch(e){ raToast('图片上传失败: '+e.message,false); return; }
-  }
-  try {
+      raBtnBusy(btn, '保存中…');
+    }
+    const oldUg=raUgAllData.find(x=>x.id===id);
+    if(oldUg&&oldUg.student_id&&(oldUg.student||null)!==updates.student) updates.student_id=null;   // 改了学生名：旧关联作废
     await raSbFetch(`undergrad_results?id=eq.${id}`,{method:'PATCH',body:updates,prefer:'return=minimal',headers:{}});
     const idx2=raUgAllData.findIndex(x=>x.id===id);
     if(idx2>=0) raUgAllData[idx2]={...raUgAllData[idx2],...updates};
+    if(idx2>=0&&updates.our_major&&updates.student&&!raIsTeacher()){ raBtnBusy(btn, '同步学生档案中…'); await raArSyncToStudent(raUgAllData[idx2],'undergrad_results'); }
     document.getElementById('ug-edit-modal').classList.remove('show');
     raUgRenderList();
+    raFlashRow(id);
     raToast('保存しました ✓');
-    if(idx2>=0) raArSyncToStudent(raUgAllData[idx2],'undergrad_results');
-  } catch(e){raToast('エラー: '+e.message,false);}
+  } catch(e){
+    errEl.textContent = '保存失败：' + e.message;
+    raToast('エラー: '+e.message,false);
+  } finally { raBtnDone(btn); }
 }
 
 let raUgTierUnivData2=[], raUgTierChanges2={};
