@@ -241,11 +241,11 @@ function pstBuildUi() {
     <div style="font-size:12px;font-weight:600">3. 信息 <span id="pst-state" style="font-weight:400;font-size:10px;color:var(--text-muted)"></span></div>
     <label style="${lab}">大学名（大字）</label><input style="${inp}" id="pst-f-univ_ja" value="${raArEsc(f.univ_ja)}" oninput="pstSetField('univ_ja',this.value)">
     <label style="${lab}">大学英文名 *（必填，会记住，下次自动带出）</label><input style="${inp}" id="pst-f-univ_en" value="${raArEsc(f.univ_en)}" oninput="pstSetField('univ_en',this.value)">
-    <label style="${lab}">研究科行</label><input style="${inp}" id="pst-f-dept_line" value="${raArEsc(f.dept_line)}" oninput="pstSetField('dept_line',this.value)">
+    <label style="${lab}">${st.kind === 'ug' ? '学部・学科行' : '研究科行'}</label><input style="${inp}" id="pst-f-dept_line" value="${raArEsc(f.dept_line)}" oninput="pstSetField('dept_line',this.value)">
     <label style="${lab}">合格者（可改成 WU同学）</label><input style="${inp}" id="pst-f-name_line" value="${raArEsc(f.name_line)}" oninput="pstSetField('name_line',this.value)">
     <label style="${lab}">合格时间（年 / 月）</label>
     <div style="display:flex;gap:6px;align-items:center"><input style="${inp};width:80px" id="pst-year" type="number" value="${st.year}" oninput="pstSetDate()"><span>年</span><input style="${inp};width:60px" id="pst-month" type="number" min="1" max="12" value="${st.month}" oninput="pstSetDate()"><span>月</span></div>
-    <label style="${lab}">本校专业 *（不上海报，老师端按它筛选）</label><div id="pst-major-box"></div>
+    <label style="${lab}">本校专业（可不填；老师端按它筛选）</label><div id="pst-major-box"></div>
     <div style="display:flex;flex-direction:column;gap:6px;margin-top:14px">
       <button style="${btn};background:var(--accent);color:#fff;border-color:var(--accent)" onclick="pstSave(false)">保存</button>
       <button style="${btn};background:var(--accent);color:#fff;border-color:var(--accent)" onclick="pstSave(true)">保存并发布</button>
@@ -257,7 +257,8 @@ function pstBuildUi() {
   </div>`;
   document.body.appendChild(o);
   st.fields.date_text = `${st.year}年${st.month}月`;
-  raArRenderMajor('pst', st.major);
+  const dom0 = pstTrackDomain(st.kind, st.row && st.row.track);
+  raArRenderMajor('pst', st.major, { domains: PST_DOMAINS[st.kind], first: dom0, emptyLabel: '-- 暂不选择 --' });
   const mb = document.getElementById('pst-our-major'); if (mb) mb.addEventListener('change', () => { st.major = mb.value; });
   pstBuildTools();
   const cv = document.getElementById('pst-edit');
@@ -412,12 +413,17 @@ async function pstReupload(inp) {
 
 // ── 保存 / 发布 / 导出 ──
 function pstSetBusy(msg) { pstBusy = !!msg; const el = document.getElementById('pst-busy'); if (el) el.textContent = msg || ''; }
+// 本校专业的领域：大学院 / 学部各三个，按「系統」排第一
+const PST_DOMAINS = { grad: ['大学院文科', '大学院理科', '大学院美术'], ug: ['学部文科', '学部理科', '学部美术'] };
+function pstTrackDomain(kind, track) {
+  const i = { bunka: 0, rika: 1, bijutsu: 2 }[track];
+  return i == null ? '' : PST_DOMAINS[kind === 'ug' ? 'ug' : 'grad'][i];
+}
 function pstDomainOf(major) { return ((typeof raArMajors !== 'undefined' ? raArMajors : []).find(m => m.key === major) || {}).domain || ''; }
 function pstCheck() {
   const st = pstSt, f = st.fields;
   st.major = (typeof raArGetMajor === 'function' && raArGetMajor('pst')) || st.major;
   if (!(f.univ_en || '').trim()) { raToast('请填大学英文名', false); return false; }
-  if (!st.major) { raToast('请选择本校专业', false); return false; }
   if (!st.year || st.month < 1 || st.month > 12) { raToast('请填写正确的合格年月', false); return false; }
   return true;
 }
@@ -430,7 +436,7 @@ async function pstSave(publish) {
       result_id: String(row.id), result_kind: st.kind, student_id: row.student_id || null,
       masks: st.masks, crop: st.crop, fields: st.fields,
       univ: row.univ || null, dept: row.dept || null, spec: row.spec || null,
-      major: st.major, domain: pstDomainOf(st.major) || null,
+      major: st.major || null, domain: (st.major && pstDomainOf(st.major)) || pstTrackDomain(st.kind, row.track) || null,
       pass_year: st.year, pass_month: st.month, updated_at: new Date().toISOString(),
     };
     const res = await raSbFetch('pass_posters?on_conflict=result_kind,result_id', { method: 'POST', body, prefer: 'resolution=merge-duplicates,return=representation' });

@@ -77,7 +77,7 @@ function ppsRowOk(r, skip) {
   const f = ppsS.f;
   if (skip !== 'kind' && f.kind && ppsKind(r) !== f.kind) return false;
   if (skip !== 'dom' && f.doms.size && !f.doms.has(r.domain)) return false;
-  if (skip !== 'major' && f.major && r.major !== f.major) return false;
+  if (skip !== 'major' && f.major && (f.major === '__none' ? !!r.major : r.major !== f.major)) return false;
   if (skip !== 'year' && f.year && String(r.pass_year) !== f.year) return false;
   if (skip !== 'univ' && f.univ && r.univ !== f.univ) return false;
   if (skip !== 'status' && f.status && (f.status === 'pub') !== !!r.web_url) return false;
@@ -128,6 +128,7 @@ function ppsRender() {
   // 领域：只列有海报的；专业 chips 跟着已选领域走
   const doms = [...new Set(rows.map(r => r.domain).filter(Boolean))];
   const majors = [...new Set(rows.filter(r => !f.doms.size || f.doms.has(r.domain)).map(r => r.major).filter(Boolean))];
+  const hasNoMajor = rows.some(r => (!f.doms.size || f.doms.has(r.domain)) && !r.major);
   const years = opts('year', 'pass_year').sort((a, b) => b - a);
   const univs = opts('univ', 'univ').sort((a, b) => a.localeCompare(b, 'ja'));
   const row = (lab, items) => `<div class="pps-row"><span class="pps-lab">${lab}</span>${items}</div>`;
@@ -135,7 +136,7 @@ function ppsRender() {
   h += row('类别', ppsFold('kind', [chip(!f.kind, '全部', "ppsSet('kind','')"), chip(f.kind === 'grad', '大学院', "ppsSet('kind','grad')"), chip(f.kind === 'ug', '学部', "ppsSet('kind','ug')")]));
   if (ppsAdmin()) h += row('状态', ppsFold('status', [chip(!f.status, '全部', "ppsSet('status','')"), chip(f.status === 'pub', '已发布', "ppsSet('status','pub')"), chip(f.status === 'draft', '未发布', "ppsSet('status','draft')")]));
   if (doms.length) h += row('领域', ppsFold('dom', [chip(!f.doms.size, '全部', 'ppsDomAll()'), ...doms.map(d => chip(f.doms.has(d), ppsEsc(d), `ppsSet('dom','${ppsAttr(d)}')`))]));
-  if (majors.length) h += row('专业', ppsFold('major', [chip(!f.major, '全部', "ppsSet('major','')"), ...majors.map(m => chip(f.major === m, ppsEsc(o.majorName(m)), `ppsSet('major','${ppsAttr(m)}')`))]));
+  if (majors.length || hasNoMajor) h += row('专业', ppsFold('major', [chip(!f.major, '全部', "ppsSet('major','')"), ...majors.map(m => chip(f.major === m, ppsEsc(o.majorName(m)), `ppsSet('major','${ppsAttr(m)}')`)), ...(hasNoMajor || f.major === '__none' ? [chip(f.major === '__none', '未设专业', "ppsSet('major','__none')")] : [])]));
   if (years.length) h += row('年份', ppsFold('year', [chip(!f.year, '全部', "ppsSet('year','')"), ...years.map(y => chip(f.year === String(y), y + '年', `ppsSet('year','${y}')`))]));
   if (univs.length) h += row('学校', ppsFold('univ', [chip(!f.univ, '全部', "ppsSet('univ','')"), ...univs.map(u => chip(f.univ === u, ppsEsc(u), `ppsSet('univ','${ppsAttr(u)}')`))]));
   const list = ppsResult();
