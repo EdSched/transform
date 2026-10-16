@@ -400,6 +400,10 @@ ${raScopeHint()}
 <!-- ── TAB: Excel 批量导入 ── -->
 <div id="tab-excel" style="display:none">
   <div class="form-panel">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="btn btn-secondary" onclick="raXlTemplate('grad')">⬇ 下载填写模板</button>
+      <span style="font-size:11px;color:var(--text-muted)">模板含填写说明和专业对照；下载「数据管理」导出的 Excel 改完再导入，可按记录编号更新</span>
+    </div>
     <div class="form-section-title">ファイル選択</div>
 
     <div style="margin-bottom:14px">
@@ -437,7 +441,8 @@ ${raScopeHint()}
     </div>
 
     <div id="import-preview" style="display:none">
-      <div class="form-section-title">インポートプレビュー（先頭5件）</div>
+      <div class="form-section-title">インポートプレビュー</div>
+      <div id="import-summary" style="font-size:12px;margin-bottom:8px"></div>
       <div class="preview-table-wrap" id="preview-wrap"></div>
       <div class="progress-wrap" id="import-progress">
         <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
@@ -530,6 +535,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
       <option value="hist">2022–2025</option>
     </select>
     <span class="result-count" id="result-count"></span>
+    <button class="btn btn-secondary" id="export-btn" onclick="raXlExport('grad')" style="padding:5px 12px;font-size:11px">⬇ 下载 Excel</button>
     ${raIsTeacher() || raScopedLead() ? '' : '<button class="btn btn-danger" onclick="raConfirmDeleteAll()" style="margin-left:auto">全件削除</button>'}
   </div>
   <div id="list-area" class="load-state">読み込み中...</div>
@@ -703,6 +709,10 @@ ${raScopeHint()}
 <!-- ── UG TAB: Excel 批量导入 ── -->
 <div id="ugtab-excel" style="display:none">
   <div class="form-panel">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="btn btn-secondary" onclick="raXlTemplate('ug')">⬇ 下载填写模板</button>
+      <span style="font-size:11px;color:var(--text-muted)">模板含填写说明和专业对照；下载「数据管理」导出的 Excel 改完再导入，可按记录编号更新</span>
+    </div>
     <div class="form-section-title">ファイル選択</div>
     <div class="upload-zone" id="ug-upload-zone" onclick="document.getElementById('ug-file-input').click()">
       <input type="file" id="ug-file-input" accept=".xlsx,.xls,.csv" onchange="raUgHandleFile(this.files[0])">
@@ -720,7 +730,8 @@ ${raScopeHint()}
     </div>
 
     <div id="ug-import-preview" style="display:none">
-      <div class="form-section-title">インポートプレビュー（先頭5件）</div>
+      <div class="form-section-title">インポートプレビュー</div>
+      <div id="ug-import-summary" style="font-size:12px;margin-bottom:8px"></div>
       <div class="preview-table-wrap" id="ug-preview-wrap"></div>
       <div class="progress-wrap" id="ug-import-progress">
         <div class="progress-bar"><div class="progress-fill" id="ug-progress-fill" style="width:0%"></div></div>
@@ -794,6 +805,7 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
       <option value="4">T4</option>
     </select>
     <span class="result-count" id="ug-result-count"></span>
+    <button class="btn btn-secondary" id="ug-export-btn" onclick="raXlExport('ug')" style="padding:5px 12px;font-size:11px">⬇ 下载 Excel</button>
     ${raIsTeacher() || raScopedLead() ? '' : '<button class="btn btn-danger" onclick="raUgConfirmDeleteAll()" style="margin-left:auto">全件削除</button>'}
   </div>
   <div id="ug-list-area" class="load-state">読み込み中...</div>
@@ -1174,17 +1186,345 @@ async function raRefreshUnivList() {
   } catch(e) {}
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// Excel 导出 / 导入模板 / 导入预览（大学院 grad 和 学部 ug 共用）
+// 列顺序 = 导出文件 = 导入模板；第一列「记录编号」(id) 导入时用来更新
+// ════════════════════════════════════════════════════════════════════════
+const raXlTpl = { grad: false, ug: false };   // 当前上传的文件表头是不是模板 / 导出文件（有「记录编号」列）
+const raXl = { plan: { grad: [], ug: [] }, show: { grad: 50, ug: 50 }, kind: 'grad' };
+let raXlMajors = [];   // [{key,label,label_ja,domain,group_key}]：每次导出 / 模板 / 预览时从 majors 表实时读取
+let raXlGroups = {};   // 分组 key → { label, domain }
+
+const RA_XL = {
+  grad: {
+    name: '大学院', table: 'admission_results', p: '',
+    sample: ['示例行，导入时自动跳过', '示例大学', '示例研究科', '示例専攻', '示例学生', '社会学', '文科', '2026–2027', '社会学', '2', 'N1 150', 'TOEIC 800', '示例备注'],
+    cols: [
+      { k: 'id', head: '记录编号' }, { k: 'univ', head: '大学名 *' }, { k: 'dept', head: '研究科' }, { k: 'spec', head: '専攻' },
+      { k: 'student', head: '学生名' }, { k: 'subject', head: '在籍学科' }, { k: 'track', head: '系統' }, { k: 'era', head: '年度' },
+      { k: 'our_major', head: '本校在籍专业' }, { k: 'tier', head: 'Tier' }, { k: 'jlpt_raw', head: 'JLPT' }, { k: 'eng_raw', head: '英語スコア' },
+      { k: 'note', head: '备注' },
+    ],
+  },
+  ug: {
+    name: '学部', table: 'undergrad_results', p: 'ug-',
+    sample: ['示例行，导入时自动跳过', '示例大学', '示例学部', '示例学科', '示例学生', '文科', '2026–2027', '社会学', '2', 'N1', '', '', '', '', '', '', '', '', '', '', '示例备注'],
+    cols: [
+      { k: 'id', head: '记录编号' }, { k: 'univ', head: '大学名 *' }, { k: 'dept', head: '学部' }, { k: 'spec', head: '学科' },
+      { k: 'student', head: '学生名' }, { k: 'track', head: '系統' }, { k: 'era', head: '年度' }, { k: 'our_major', head: '本校在籍专业' },
+      { k: 'tier', head: 'Tier' }, { k: 'jlpt', head: 'JLPT' }, { k: 'eju_japanese', head: 'EJU日本語' }, { k: 'eju_kijutsu', head: 'EJU記述' },
+      { k: 'eju_bunsou', head: 'EJU文系総合' }, { k: 'eju_math', head: 'EJU数学' }, { k: 'eju_physics', head: 'EJU物理' },
+      { k: 'eju_chemistry', head: 'EJU化学' }, { k: 'eju_biology', head: 'EJU生物' }, { k: 'eju_total', head: 'EJU総分' },
+      { k: 'toefl', head: 'TOEFL' }, { k: 'toeic', head: 'TOEIC' }, { k: 'note', head: '备注' },
+    ],
+  },
+};
+const RA_XL_TRACK = { bunka: '文科', rika: '理科', bijutsu: '美术' };
+const RA_XL_ERA = { new: '2026–2027', hist: '2022–2025' };
+const RA_XL_FIELD_LABEL = {
+  univ: '大学名', dept: '研究科/学部', spec: '専攻/学科', student: '学生名', subject: '在籍学科', track: '系統', era: '年度', our_major: '本校在籍专业',
+  tier: 'Tier', jlpt: 'JLPT', jlpt_score: 'JLPT分', eng_type: '英語種別', eng_score: '英語分', note: '备注', school_type: '区分',
+  eju_japanese: 'EJU日本語', eju_kijutsu: 'EJU記述', eju_bunsou: 'EJU文系総合', eju_math: 'EJU数学', eju_physics: 'EJU物理',
+  eju_chemistry: 'EJU化学', eju_biology: 'EJU生物', eju_total: 'EJU総分', toefl: 'TOEFL', toeic: 'TOEIC',
+};
+
+function raXlNorm(h) { return String(h == null ? '' : h).replace(/[\s*＊]/g, '').toLowerCase(); }
+function raXlGuessExact(kind, header, key) {
+  const h = raXlNorm(header);
+  return RA_XL[kind].cols.some(c => c.k === key && raXlNorm(c.head) === h);
+}
+function raXlYmd() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+async function raXlEnsureLib() {
+  await raLoadLib('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', () => typeof XLSX !== 'undefined');
+  if (typeof XLSX === 'undefined') { raToast('Excel 组件加载失败，请检查网络后重试', false); return false; }
+  return true;
+}
+
+// ── 本校专业（实时读 majors 表）──
+async function raXlLoadMajorRows() {
+  let rows = null;
+  const tries = ['key,label,label_ja,domain,group_key', 'key,label,domain,group_key', 'key,label,domain'];
+  for (const sel of tries) { try { rows = await raSbFetch(`majors?select=${sel}&order=domain.asc,label.asc`); break; } catch (e) { rows = null; } }
+  raXlMajors = Array.isArray(rows) ? rows : (raArMajors || []).map(m => ({ key: m.key, label: m.label, domain: m.domain }));
+  raXlGroups = {};
+  Object.keys(typeof MAJOR_GROUP_LABEL !== 'undefined' ? MAJOR_GROUP_LABEL : {}).forEach(k => { raXlGroups[k] = { label: MAJOR_GROUP_LABEL[k], domain: (MAJOR_GROUP_DOMAIN || {})[k] || '' }; });
+  try {
+    const gs = await raSbFetch('major_groups?select=key,label,domain&order=key.asc');
+    if (Array.isArray(gs)) gs.forEach(g => { raXlGroups[g.key] = { label: g.label || g.key, domain: g.domain || '' }; });
+  } catch (e) { /* 分组表读不到：用内存里的 */ }
+}
+function raXlMajorLabel(key) {
+  if (!key) return '';
+  const m = raXlMajors.find(x => x.key === key) || (raArMajors || []).find(x => x.key === key);
+  return m ? (m.label || key) : key;
+}
+// 本校在籍专业：按中文名匹配 majors（也认 key、日文名、只有一个专业的分组名）；返回 { key, err }
+function raMatchMajor(text) {
+  const t = String(text || '').trim();
+  if (!t) return { key: '', err: '' };
+  const rows = raXlMajors.length ? raXlMajors : (raArMajors || []);
+  const lc = t.toLowerCase();
+  const pickOne = list => {
+    if (list.length === 1) return { key: list[0].key, err: '' };
+    if (list.length > 1) {   // 不同领域有同名专业：优先本页大学院 / 学部的领域
+      const pre = raXl.kind === 'ug' ? '学部' : '大学院';
+      const pref = list.filter(m => (m.domain || '').startsWith(pre));
+      if (pref.length === 1) return { key: pref[0].key, err: '' };
+      return { key: '', err: '专业名重复，请填专业 key' };
+    }
+    return null;
+  };
+  let r = pickOne(rows.filter(m => m.key === t || (m.key || '').toLowerCase() === lc)); if (r) return r;
+  r = pickOne(rows.filter(m => (m.label || '').trim().toLowerCase() === lc)); if (r) return r;
+  r = pickOne(rows.filter(m => (m.label_ja || '').trim().toLowerCase() === lc)); if (r) return r;
+  const gk = Object.keys(raXlGroups).filter(k => k === t || (raXlGroups[k].label || '').trim().toLowerCase() === lc);
+  if (gk.length) {
+    const mem = rows.filter(m => gk.includes(m.group_key));
+    if (mem.length === 1) return { key: mem[0].key, err: '' };
+    return { key: '', err: '分组含多个专业，请填具体专业' };
+  }
+  return { key: '', err: '对不上' };
+}
+
+// ── 导出 ──
+function raXlCellValue(kind, key, r) {
+  switch (key) {
+    case 'id': return r.id || '';
+    case 'subject': return (raSUBJ_ALL.find(x => x.id === r.subject) || {}).label || r.subject || '';
+    case 'track': return RA_XL_TRACK[r.track] || '';
+    case 'era': return RA_XL_ERA[r.era] || '';
+    case 'our_major': return raXlMajorLabel(r.our_major);
+    case 'tier': return r.tier != null ? r.tier : '';
+    case 'jlpt_raw': return [r.jlpt, r.jlpt_score].filter(v => v != null && v !== '').join(' ');
+    case 'eng_raw': return [r.eng_type, r.eng_score].filter(v => v != null && v !== '').join(' ');
+    default: return r[key] == null ? '' : r[key];
+  }
+}
+function raXlSetWidths(ws, aoa) {
+  ws['!cols'] = (aoa[0] || []).map((_, i) => ({ wch: Math.min(40, Math.max(8, ...aoa.slice(0, 60).map(r => String(r[i] == null ? '' : r[i]).length * 1.6 + 2))) }));
+}
+async function raXlExport(kind) {
+  const rows = kind === 'ug' ? raUgListRows() : raListRows();
+  if (!rows.length) { raToast('当前筛选下没有记录可导出', false); return; }
+  if (!(await raXlEnsureLib())) return;
+  await raXlLoadMajorRows();
+  const K = RA_XL[kind];
+  const aoa = [K.cols.map(c => c.head)].concat(rows.map(r => K.cols.map(c => raXlCellValue(kind, c.k, r))));
+  const ws = XLSX.utils.aoa_to_sheet(aoa); raXlSetWidths(ws, aoa);
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '数据');
+  XLSX.writeFile(wb, `合格实绩_${K.name}_${raXlYmd()}.xlsx`);
+  raToast(`已导出 ${rows.length} 条`);
+}
+
+// ── 模板 ──
+async function raXlTemplate(kind) {
+  if (!(await raXlEnsureLib())) return;
+  await raXlLoadMajorRows();
+  const K = RA_XL[kind], isG = kind === 'grad';
+  const heads = K.cols.map(c => c.head);
+  const wsFill = XLSX.utils.aoa_to_sheet([heads, K.sample]); raXlSetWidths(wsFill, [heads, K.sample]);
+
+  const subjList = raSUBJ_ALL.map(x => `${x.label}（${x.id}）`).join('、');
+  const R = (name, req, what, ex) => [name, req, what, ex];
+  const help = [['列名', '是否必填', '能填什么', '例子']];
+  help.push(R('记录编号', '否', '新增留空。要更新已有记录：填「数据管理」导出的记录编号（不要改）。编号找不到时当新增。更新时空白格子保持原值，只改填了的格子。', '（导出文件里的编号）'));
+  help.push(R('大学名 *', '新增必填；更新可不填', '大学全名', '早稲田大学'));
+  help.push(R(K.cols[2].head, '否', isG ? '研究科名称' : '学部名称', isG ? '社会学研究科' : '文学部'));
+  help.push(R(K.cols[3].head, '否', isG ? '専攻名称' : '学科名称', isG ? '社会学専攻' : '社会学科'));
+  help.push(R('学生名', '否', '学生姓名；缩写（如 A同学）不会记录到学生档案', '张三'));
+  if (isG) help.push(R('在籍学科', '否（留空新增 = その他）', '中文名称和代码都可以：' + subjList, '社会学'));
+  help.push(R('系統', '否', isG ? '文科 / 理科 / 美术。留空时用导入页选的系統；在籍学科是理科类时自动按理科' : '文科 / 理科 / 美术。留空 = 文科', '文科'));
+  help.push(R('年度', '否', '2026–2027 / 2022–2025。留空 = 2026–2027', '2026–2027'));
+  help.push(R('本校在籍专业', '否（只负责专业的负责人必须填）', '填学生系统里的专业名称，见『专业对照』表；只负责专业的负责人必须填。对不上的会在预览里标红，这一项留空，其他列不受影响。', '社会学'));
+  help.push(R('Tier', '否', isG ? '0 / 1 / 2 / 3。留空 = 按大学自动' : '0 / 1 / 2 / 3 / 4。留空 = 按大学自动', '2'));
+  if (isG) {
+    help.push(R('JLPT', '否', 'N1 / N2，可带分数', 'N1 150'));
+    help.push(R('英語スコア', '否', '种类 + 分数：TOEIC / TOEFL / IELTS / EJU', 'TOEIC 800'));
+  } else {
+    help.push(R('JLPT', '否', 'N1 / N2 / N3', 'N1'));
+    help.push(R('EJU日本語 … EJU総分 / TOEFL / TOEIC', '否', '数字', '280'));
+  }
+  help.push(R('备注', '否', '自由文字', ''));
+  help.push([]);
+  help.push(['说明', '', '第 2 行是示例行（内容和示例完全一样的行，导入时自动跳过）。Excel 导入不会把学生记录到学生档案。', '']);
+  const wsHelp = XLSX.utils.aoa_to_sheet(help); wsHelp['!cols'] = [{ wch: 26 }, { wch: 24 }, { wch: 80 }, { wch: 22 }];
+
+  // 专业对照
+  const inScope = m => !raScopedLead() || scopeMajor(m.key);
+  const ms = raXlMajors.filter(inScope);
+  const gl = m => (m.group_key && (raXlGroups[m.group_key] || {}).label) || '';
+  const cmp = (a, b) => String(a).localeCompare(String(b), 'zh');
+  const sorted = ms.slice().sort((a, b) => cmp(a.domain || '其他', b.domain || '其他') || (gl(a) ? 0 : 1) - (gl(b) ? 0 : 1) || cmp(gl(a), gl(b)) || cmp(a.label, b.label));
+  const mp = [['本校专业'], ['领域', '分组', '专业名称']].concat(sorted.map(m => [m.domain || '其他', gl(m), m.label]));
+  if (isG) {
+    mp.push([], ['在籍学科 ↔ 本校专业 参考'], ['在籍学科是合格数据的粗分类，和学生系统的专业不完全对应。本校在籍专业以学生系统为准。'], ['在籍学科', '代码', '可能对应的本校专业']);
+    const rika = ms.filter(m => m.domain === '大学院理科');
+    const grp = {};
+    rika.forEach(m => { (grp[gl(m) || '（无分组）'] = grp[gl(m) || '（无分组）'] || []).push(m.label); });
+    const rikaText = Object.keys(grp).sort((a, b) => (a === '（无分组）') - (b === '（无分组）') || cmp(a, b)).map(g => (g === '（无分组）' ? '' : g + '：') + grp[g].join('、')).join('；') || '（无）';
+    raSUBJ_ALL.forEach(x => {
+      let txt;
+      if (x.id.startsWith('rika_')) txt = '大学院理科：' + rikaText;
+      else { const g = raArGuessMajor(x.id); const gm = g && ms.find(m => m.key === g); txt = gm ? gm.label : '（没有自动对应，请按学生系统选择）'; }
+      mp.push([x.label, x.id, txt]);
+    });
+  }
+  const wsMajor = XLSX.utils.aoa_to_sheet(mp); wsMajor['!cols'] = [{ wch: 22 }, { wch: 22 }, { wch: 90 }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, wsFill, '填写');
+  XLSX.utils.book_append_sheet(wb, wsHelp, '填写说明');
+  XLSX.utils.book_append_sheet(wb, wsMajor, '专业对照');
+  XLSX.writeFile(wb, `合格实绩导入模板_${K.name}.xlsx`);
+}
+
+// ── 导入：预览 + 执行 ──
+function raXlEq(a, b) {
+  const n = v => (v == null || v === '') ? null : String(v);
+  return n(a) === n(b);
+}
+function raXlShow(f, v) {
+  if (v == null || v === '') return '（空）';
+  if (f === 'subject') return (raSUBJ_ALL.find(x => x.id === v) || {}).label || v;
+  if (f === 'track') return RA_XL_TRACK[v] || v;
+  if (f === 'era') return RA_XL_ERA[v] || v;
+  if (f === 'our_major') return raXlMajorLabel(v);
+  return String(v);
+}
+function raXlBuildPlan(kind, upRows, existing) {
+  const K = RA_XL[kind];
+  const mapper = kind === 'ug' ? raUgMapRow : raMapRow;
+  const colMap = kind === 'ug' ? raUgUploadColMap : raUploadColMap;
+  const byId = {}; existing.forEach(r => { byId[r.id] = r; });
+  const seen = new Set();
+  const isSample = row => {
+    const idI = colMap.id;
+    if (idI != null && String(row[idI] ?? '').trim().startsWith('示例行')) return true;
+    let cmp = 0;
+    for (let i = 1; i < K.cols.length; i++) {
+      const c = K.cols[i], ci = colMap[c.k];
+      if (ci == null) continue;
+      cmp++;
+      if (String(row[ci] ?? '').trim() !== String(K.sample[i] ?? '')) return false;
+    }
+    return cmp > 0;
+  };
+  return upRows.map((row, idx) => {
+    const e = { no: idx + 2, status: 'skip', reason: '', hint: '', diffs: [], rec: null, id: '', view: {}, majorRaw: '', majorErr: '' };
+    if (isSample(row)) { e.reason = '示例行'; return e; }
+    const m = mapper(row);
+    e.majorRaw = m._majorRaw; e.majorErr = m._majorErr;
+    const rec = {}; Object.keys(m).forEach(k => { if (k[0] !== '_') rec[k] = m[k]; });
+    const id = m._id;
+    const ex = id ? byId[id] : null;
+    const scopeReason = r2 => (raInMyScope(kind, r2) ? '' : (r2.our_major ? '本校在籍专业不在你的管理范围内' : '没有填本校在籍专业，系統所属领域不在你的管理范围内（只负责专业的负责人必须填）'));
+    if (ex) {
+      if (seen.has(id)) { e.reason = '记录编号在文件里重复'; e.view = ex; return e; }
+      seen.add(id);
+      const patch = {}; m._patchKeys.forEach(k => { patch[k] = rec[k]; });
+      if (raXlEq(ex.univ, patch.univ)) delete patch.school_type;   // 大学名没变就不重算区分
+      e.id = id; e.view = Object.assign({}, ex, patch);
+      const diffs = Object.keys(patch).filter(f => !raXlEq(ex[f], patch[f])).map(f => ({ f, old: raXlShow(f, ex[f]), now: raXlShow(f, patch[f]) }));
+      const why = scopeReason(e.view);
+      if (why) { e.reason = why; return e; }
+      if (!diffs.length) { e.reason = '没有变化'; return e; }
+      e.status = 'update'; e.diffs = diffs; e.patch = patch; return e;
+    }
+    e.view = rec;
+    if (id) e.hint = '找不到这个记录编号' + (raScopedLead() ? '（或不在你的范围内）' : '') + '，按新增';
+    if (!rec.univ) { e.reason = '没有大学名'; return e; }
+    const why = scopeReason(rec);
+    if (why) { e.reason = why; return e; }
+    e.status = 'new'; e.rec = rec; return e;
+  });
+}
+async function raXlShowPreview(kind) {
+  const K = RA_XL[kind], p = K.p;
+  raXl.kind = kind;
+  try {
+    await raXlLoadMajorRows();
+    const existing = kind === 'ug' ? await raUgFetchAll() : await raFetchAllResults();
+    const upRows = kind === 'ug' ? raUgUploadRows : raUploadRows;
+    raXl.plan[kind] = raXlBuildPlan(kind, upRows, existing);
+    raXl.show[kind] = 50;
+    raXlRenderPreview(kind);
+    document.getElementById(p + 'col-mapping').style.display = 'none';
+    document.getElementById(p + 'import-preview').style.display = '';
+  } catch (e) { raToast('预览失败：' + e.message, false); }
+}
+function raXlMoreRows(kind) { raXl.show[kind] += 50; raXlRenderPreview(kind); }
+function raXlRenderPreview(kind) {
+  const K = RA_XL[kind], p = K.p, plan = raXl.plan[kind];
+  const n = s => plan.filter(x => x.status === s).length;
+  const nNew = n('new'), nUp = n('update'), nSkip = n('skip');
+  const nErr = plan.filter(x => x.majorErr).length;
+  document.getElementById(p + 'import-summary').innerHTML =
+    `<b>新增 ${nNew} 条 · 更新 ${nUp} 条 · 跳过 ${nSkip} 条</b>` +
+    (nErr ? `<span style="color:var(--red);margin-left:10px">本校在籍专业对不上 ${nErr} 行（已标红，该项留空）</span>` : '');
+  document.getElementById(p + 'import-count').textContent = nNew + nUp;
+  document.getElementById(p + 'import-btn').disabled = !(nNew + nUp);
+  const E = raArEsc, shown = plan.slice(0, raXl.show[kind]);
+  const ST = { new: ['新增', '#1a4a30', '#ddf0e8'], update: ['更新', '#1a3a6a', '#ddeaf8'], skip: ['跳过', '#8a2020', '#f8e0e0'] };
+  let html = `<table class="preview-table"><thead><tr><th>行</th><th>状态</th><th>大学名</th><th>${E(RA_XL_FIELD_LABEL.dept)}</th><th>${E(RA_XL_FIELD_LABEL.spec)}</th><th>学生</th><th>本校在籍专业</th><th>说明 / 改动</th></tr></thead><tbody>`;
+  shown.forEach(x => {
+    const v = x.view || {}, st = ST[x.status];
+    const major = x.majorErr
+      ? `<span style="color:var(--red)">${E(x.majorRaw)}（${E(x.majorErr)}，已留空）</span>`
+      : E(raXlMajorLabel(v.our_major));
+    const note = x.status === 'update' ? x.diffs.map(d => `${E(RA_XL_FIELD_LABEL[d.f] || d.f)}：${E(d.old)} → ${E(d.now)}`).join('<br>')
+      : x.status === 'skip' ? `<span style="color:#8a2020">${E(x.reason)}</span>` : E(x.hint);
+    html += `<tr${x.status === 'skip' ? ' style="background:#fdf3f3"' : ''}><td>${x.no}</td><td><span style="font-size:10px;padding:1px 6px;border-radius:2px;background:${st[2]};color:${st[1]}">${st[0]}</span></td>`
+      + `<td>${E(v.univ || '')}</td><td>${E(v.dept || '')}</td><td>${E(v.spec || '')}</td><td>${E(v.student || '')}</td><td>${major}</td><td style="font-size:11px">${note}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  if (plan.length > shown.length) html += `<div style="text-align:center;margin:8px"><button class="btn btn-secondary" onclick="raXlMoreRows('${kind}')">显示更多（还有 ${plan.length - shown.length} 行）</button></div>`;
+  document.getElementById(p + 'preview-wrap').innerHTML = html;
+}
+async function raXlExecute(kind) {
+  const K = RA_XL[kind], p = K.p, plan = raXl.plan[kind];
+  const ins = plan.filter(x => x.status === 'new'), ups = plan.filter(x => x.status === 'update');
+  if (!ins.length && !ups.length) { raToast('没有可导入的行', false); return; }
+  const btn = document.getElementById(p + 'import-btn'); btn.disabled = true;
+  const prog = document.getElementById(p + 'import-progress'), fill = document.getElementById(p + 'progress-fill'), label = document.getElementById(p + 'progress-label');
+  prog.classList.add('show');
+  const total = ins.length + ups.length; let done = 0, failed = 0;
+  const tick = () => { fill.style.width = Math.round(done / total * 100) + '%'; label.textContent = `${done} / ${total} 件処理済み`; };
+  try {
+    const BATCH = 50;
+    for (let i = 0; i < ins.length; i += BATCH) {
+      const batch = ins.slice(i, i + BATCH).map(x => x.rec);
+      await (kind === 'ug' ? raUgInsertBatch(batch) : raInsertBatch(batch));
+      done += batch.length; tick();
+    }
+    for (const x of ups) {
+      try {
+        const res = await raSbFetch(`${K.table}?id=eq.${encodeURIComponent(x.id)}`, { method: 'PATCH', body: x.patch, prefer: 'return=representation' });
+        if (Array.isArray(res) && !res.length) failed++;   // 被数据库拦下（没有权限 / 记录已不存在）
+      } catch (e) { failed++; }
+      done++; tick();
+    }
+    raToast(`新增 ${ins.length} 条，更新 ${ups.length - failed} 条${failed ? `，${failed} 条更新失败（可能不在你的范围内）` : ''} ✓`, !failed);
+    if (kind === 'ug') { raUgResetUpload(); raUgRefreshUnivList(); } else { raResetUpload(); raRefreshUnivList(); }
+  } catch (e) {
+    raToast('インポートエラー: ' + e.message + '（已处理 ' + done + ' 条，请重新上传预览确认）', false);
+    btn.disabled = false;
+  }
+}
+
 const raFIELD_DEFS = [
+  { key: 'id',        label: '记录编号（更新用，新增留空）' },
   { key: 'univ',      label: '大学名 *' },
   { key: 'dept',      label: '研究科' },
   { key: 'spec',      label: '専攻' },
   { key: 'student',   label: '学生名' },
   { key: 'subject',   label: '在籍学科' },
-  { key: 'track',     label: '系統（bunka/rika/bijutsu）' },
+  { key: 'track',     label: '系統（文科 / 理科 / 美术）' },
   { key: 'era',       label: '入学年度' },
+  { key: 'our_major', label: '本校在籍专业' },
   { key: 'tier',      label: 'Tier（0/1/2/3）' },
   { key: 'jlpt_raw',  label: 'JLPT（テキスト）' },
   { key: 'eng_raw',   label: '英語スコア（テキスト）' },
+  { key: 'note',      label: '备注' },
 ];
 
 let raImportTrack = 'bunka';
@@ -1216,10 +1556,11 @@ function raHandleFile(file) {
   const reader = new FileReader();
   reader.onload = e => {
     const wb = XLSX.read(e.target.result, { type: 'array' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
+    const ws = wb.Sheets['填写'] || wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
     if (!rows.length) { raToast('データが空です', false); return; }
     raUploadHeaders = rows[0].map(String);
+    raXlTpl.grad = raUploadHeaders.some(h => raXlNorm(h) === raXlNorm('记录编号'));
     raUploadRows = rows.slice(1).filter(r => r.some(c => c !== ''));
     raBuildMappingUI();
   };
@@ -1242,13 +1583,19 @@ function raBuildMappingUI() {
   document.getElementById('import-preview').style.display = 'none';
 }
 
+// 表头是模板 / 导出文件的（有「记录编号」列）→ 只按列名完全一致来对应；否则沿用旧的模糊猜测
 function raGuessCol(header, key) {
+  if (raXlTpl.grad) return raXlGuessExact('grad', header, key);
   const h = header.toLowerCase();
+  if (key === 'subject' && /专业|專業|本校/.test(h)) return false;
   const guesses = {
+    id: ['记录编号','記録編号','記録番号'],
     univ: ['大学','学校','univ'], dept: ['研究科','dept','研究'], spec: ['専攻','专攻','spec'],
     student: ['学生','名前','student','学员'], subject: ['学科','在籍','subject'],
-    era: ['年度','era','入学','批次'], jlpt_raw: ['日語','jlpt','日语','日本語'],
-    eng_raw: ['英語','toeic','toefl','英语','英'],
+    track: ['系統','系统','track'],
+    era: ['年度','era','入学','批次'], our_major: ['本校在籍','our_major'], tier: ['tier'],
+    jlpt_raw: ['日語','jlpt','日语','日本語'],
+    eng_raw: ['英語','toeic','toefl','英语','英'], note: ['备注','備考','note'],
   };
   return (guesses[key] || []).some(g => h.includes(g));
 }
@@ -1258,54 +1605,19 @@ function raGetColIndex(key) {
   return v !== '' && v !== undefined ? parseInt(v) : null;
 }
 
-function raPreviewImport() {
+async function raPreviewImport() {
   const univIdx = raGetColIndex('univ');
   if (univIdx === null) { raToast('大学名の列を選択してください', false); return; }
   raUploadColMap = {};
   raFIELD_DEFS.forEach(fd => { raUploadColMap[fd.key] = raGetColIndex(fd.key); });
-
-  const preview = raUploadRows.slice(0, 5);
-  const headers = ['大学名','研究科','専攻','学生','学科','年度','JLPT','英語'];
-  let html = `<table class="preview-table"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>`;
-  for (const row of preview) {
-    const mapped = raMapRow(row);
-    html += `<tr>
-      <td>${mapped.univ||''}</td><td>${mapped.dept||''}</td><td>${mapped.spec||''}</td>
-      <td>${mapped.student||''}</td><td>${mapped.subject||''}</td><td>${mapped.era||''}</td>
-      <td>${mapped.jlpt||''}${mapped.jlpt_score?' '+mapped.jlpt_score:''}</td>
-      <td>${mapped.eng_type||''}${mapped.eng_score?' '+mapped.eng_score:''}</td>
-    </tr>`;
-  }
-  html += '</tbody></table>';
-  document.getElementById('preview-wrap').innerHTML = html;
-  document.getElementById('import-count').textContent = raUploadRows.length;
-  document.getElementById('col-mapping').style.display = 'none';
-  document.getElementById('import-preview').style.display = '';
+  await raXlShowPreview('grad');
 }
 
-function raMapRow(row) {
-  const get = key => {
-    const i = raUploadColMap[key];
-    return (i !== null && i !== undefined) ? String(row[i] ?? '').trim() : '';
-  };
-  const jlptRaw = get('jlpt_raw');
-  const engRaw = get('eng_raw');
-  const { jlpt, jlpt_score } = raParseJlpt(jlptRaw);
-  const { eng_type, eng_score } = raParseEng(engRaw);
-
-  let era = get('era').toLowerCase();
-  if (era.includes('26') || era.includes('25') || era.includes('new') || era.includes('夏') || era.includes('冬')) era = 'new';
-  else if (era.includes('22') || era.includes('23') || era.includes('24') || era.includes('25') || era.includes('hist')) era = 'hist';
-  else era = 'new';
-
-  let trackRaw = get('track').toLowerCase().trim();
-  let track;
-  if (trackRaw.includes('rika') || trackRaw.includes('理科')) track = 'rika';
-  else if (trackRaw.includes('bijutsu') || trackRaw.includes('美術') || trackRaw.includes('美术')) track = 'bijutsu';
-  else if (trackRaw.includes('bunka') || trackRaw.includes('文科')) track = 'bunka';
-  else track = raImportTrack; // Excel にtrack列がなければUIで選んだ系統を使用
-
-  let subject = get('subject').toLowerCase().trim();
+// 在籍学科：中文名称 / 代码都认；对不上再走旧的关键字猜测
+function raGuessSubject(raw) {
+  let subject = String(raw || '').toLowerCase().trim();
+  const hit = raSUBJ_ALL.find(x => x.id === subject || x.label.toLowerCase() === subject);
+  if (hit) return hit.id;
   if      (subject.includes('社会学') || subject.includes('(社会)') || subject === 'shakai') subject = 'shakai';
   else if (subject.includes('福祉') || subject.includes('(福祉)') || subject === 'fukushi') subject = 'fukushi';
   else if (subject.includes('新伝') || subject.includes('(新传)') || subject.includes('新聞') || subject.includes('メディア') || subject.includes('shinpan') || subject.includes('传播')) subject = 'shinpan';
@@ -1322,49 +1634,66 @@ function raMapRow(row) {
   // 理科コード（直接入力されている場合はそのまま）
   else if (subject.startsWith('rika_')) { /* keep as-is */ }
   else subject = 'other';
+  return subject;
+}
+
+// 年度：2026–2027 / 2022–2025 / new / hist / 年份，都认；空白 = 2026–2027
+function raParseEra(raw) {
+  const s = String(raw || '').trim().toLowerCase();
+  if (!s) return 'new';
+  if (/hist|20[01]\d|202[0-4]|22\s*[–\-~]\s*25/.test(s)) return 'hist';
+  return 'new';
+}
+
+// 系統：文科 / 理科 / 美术（也认代码和旧写法）；对不上返回空
+function raParseTrack(raw) {
+  const t = String(raw || '').toLowerCase().trim();
+  if (t.includes('rika') || t.includes('理科')) return 'rika';
+  if (t.includes('bijutsu') || t.includes('美術') || t.includes('美术')) return 'bijutsu';
+  if (t.includes('bunka') || t.includes('文科')) return 'bunka';
+  return '';
+}
+
+function raMapRow(row) {
+  const get = key => {
+    const i = raUploadColMap[key];
+    return (i !== null && i !== undefined) ? String(row[i] ?? '').trim() : '';
+  };
+  const jlptRaw = get('jlpt_raw');
+  const engRaw = get('eng_raw');
+  const { jlpt, jlpt_score } = raParseJlpt(jlptRaw);
+  const { eng_type, eng_score } = raParseEng(engRaw);
+
+  const era = raParseEra(get('era'));
+  const subject = raGuessSubject(get('subject'));
+  const trackParsed = raParseTrack(get('track'));
+  let track = trackParsed || raImportTrack;   // Excel にtrack列がなければUIで選んだ系統を使用
 
   const tierRaw = get('tier');
   const tier = tierRaw && ['0','1','2','3'].includes(tierRaw.trim()) ? parseInt(tierRaw.trim()) : null;
 
-  if (subject.startsWith('rika_')) track = 'rika';
+  const rikaSubj = subject.startsWith('rika_');
+  if (rikaSubj) track = 'rika';
+  const mj = raMatchMajor(get('our_major'));
+  const filled = k => get(k) !== '';
+  const patchKeys = [];
+  ['univ', 'dept', 'spec', 'student', 'note'].forEach(k => { if (filled(k)) patchKeys.push(k); });
+  if (filled('subject')) patchKeys.push('subject');
+  if (trackParsed || (filled('subject') && rikaSubj)) patchKeys.push('track');
+  if (filled('era')) patchKeys.push('era');
+  if (tier !== null) patchKeys.push('tier');
+  if (filled('jlpt_raw')) patchKeys.push('jlpt', 'jlpt_score');
+  if (filled('eng_raw')) patchKeys.push('eng_type', 'eng_score');
+  if (mj.key) patchKeys.push('our_major');
   return {
     univ: get('univ') || null, dept: get('dept') || null, spec: get('spec') || null,
-    student: get('student') || null, subject, era, track, tier, jlpt, jlpt_score, eng_type, eng_score, note: null,
+    student: get('student') || null, subject, era, track, tier, jlpt, jlpt_score, eng_type, eng_score, note: get('note') || null,
+    our_major: mj.key || null,
+    _id: get('id'), _majorRaw: get('our_major'), _majorErr: mj.err, _patchKeys: patchKeys,
   };
 }
 
-async function raExecuteImport() {
-  const btn = document.getElementById('import-btn');
-  btn.disabled = true;
-  const prog = document.getElementById('import-progress');
-  const fill = document.getElementById('progress-fill');
-  const label = document.getElementById('progress-label');
-  prog.classList.add('show');
-
-  let rows = raUploadRows.map(raMapRow).filter(r => r.univ);
-  if (raScopedLead()) {
-    const n0 = rows.length; rows = rows.filter(r => raInMyScope('grad', r));
-    if (n0 > rows.length) raToast(`${n0 - rows.length} 条不在你的管理范围内，已跳过`, false);
-    if (!rows.length) { btn.disabled = false; prog.classList.remove('show'); return; }
-  }
-  const BATCH = 50;
-  let done = 0;
-
-  try {
-    for (let i = 0; i < rows.length; i += BATCH) {
-      const batch = rows.slice(i, i + BATCH);
-      await raInsertBatch(batch);
-      done += batch.length;
-      fill.style.width = Math.round(done / rows.length * 100) + '%';
-      label.textContent = `${done} / ${rows.length} 件処理済み`;
-    }
-    raToast(`${done} 件をインポートしました ✓`);
-    raResetUpload();
-  } catch(e) {
-    raToast('インポートエラー: ' + e.message, false);
-    btn.disabled = false;
-  }
-}
+async function raExecuteImport() { await raXlExecute('grad'); }
 
 function raResetUpload() {
   document.getElementById('upload-zone').style.display = '';
@@ -1397,7 +1726,8 @@ async function raLoadList() {
   catch(e) { document.getElementById('list-area').innerHTML = `<div class="load-state" style="color:var(--red)">エラー: ${e.message}</div>`; }
 }
 
-function raRenderList() {
+// 当前筛选 + 排序后看得到的记录（列表和「下载 Excel」共用）
+function raListRows() {
   const q = document.getElementById('search-input').value;
   const fs = document.getElementById('filter-subj').value;
   const fe = document.getElementById('filter-era').value;
@@ -1414,8 +1744,14 @@ function raRenderList() {
     if (typeof av === 'string') return av.localeCompare(bv) * raListSortDir;
     return (av - bv) * raListSortDir;
   });
+  return rows;
+}
+
+function raRenderList() {
+  const rows = raListRows();
 
   document.getElementById('result-count').textContent = `${rows.length} 件`;
+  document.getElementById('export-btn').textContent = `⬇ 下载 Excel（${rows.length} 条）`;
   if (!rows.length) { document.getElementById('list-area').innerHTML = '<div class="load-state">データが見つかりません</div>'; return; }
 
   const cols = [
@@ -1485,6 +1821,13 @@ const raSUBJECTS = [
   { id:'rekishi',label:'歴史学' },{ id:'hyosho',label:'表象文化' },{ id:'nihongo',label:'日本語教育' },
   { id:'shinri',label:'心理学' },{ id:'other',label:'その他' },
 ];
+
+// 在籍学科全部选项（文科 + 理科）：导入 / 导出 / 模板共用
+const raSUBJ_ALL = raSUBJECTS.concat([
+  { id:'rika_kikai',label:'機械工学' },{ id:'rika_denki',label:'電気電子工学' },{ id:'rika_kagaku',label:'化学・化学工学' },
+  { id:'rika_joho',label:'情報工学' },{ id:'rika_kenchiku',label:'建築・土木工学' },{ id:'rika_bio',label:'生命科学・医学' },
+  { id:'rika_keiei',label:'経営工学' },{ id:'rika_other',label:'その他（理科）' },
+]);
 
 const raSUBJ_COLOR = {
   shakai:{bg:'#ddeaf8',fg:'#1a3a6a'}, fukushi:{bg:'#ddf0e8',fg:'#1a4a30'}, shinpan:{bg:'#ece4f8',fg:'#3a2a7a'},
@@ -2076,14 +2419,16 @@ async function raUgRefreshUnivList() {
 }
 
 const raUG_FIELD_DEFS = [
+  { key:'id', label:'记录编号（更新用，新增留空）' },
   { key:'univ', label:'大学名 *' }, { key:'dept', label:'学部名' }, { key:'spec', label:'学科名' },
-  { key:'student', label:'学生名' }, { key:'track', label:'系統（学部理科/学部文科）' }, { key:'era', label:'年度' },
+  { key:'student', label:'学生名' }, { key:'track', label:'系統（文科 / 理科 / 美术）' }, { key:'era', label:'年度' },
+  { key:'our_major', label:'本校在籍专业' },
   { key:'eju_japanese', label:'EJU日本語' }, { key:'eju_kijutsu', label:'EJU記述' },
   { key:'eju_bunsou', label:'EJU文系総合' }, { key:'eju_math', label:'EJU数学' },
   { key:'eju_physics', label:'EJU物理' }, { key:'eju_chemistry', label:'EJU化学' },
   { key:'eju_biology', label:'EJU生物' }, { key:'eju_total', label:'EJU総分' },
   { key:'toefl', label:'TOEFL' }, { key:'toeic', label:'TOEIC' }, { key:'jlpt', label:'JLPT' },
-  { key:'tier', label:'学校等级（元データ）' },
+  { key:'tier', label:'学校等级（元データ / 0–4）' }, { key:'note', label:'备注' },
 ];
 
 function raUgHandleFile(file) {
@@ -2092,10 +2437,11 @@ function raUgHandleFile(file) {
   const reader = new FileReader();
   reader.onload = e => {
     const wb = XLSX.read(e.target.result, { type:'array' });
-    const ws = wb.Sheets[wb.SheetNames[0]];
+    const ws = wb.Sheets['填写'] || wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
     if (!rows.length) { raToast('データが空です', false); return; }
     raUgUploadHeaders = rows[0].map(String);
+    raXlTpl.ug = raUgUploadHeaders.some(h => raXlNorm(h) === raXlNorm('记录编号'));
     raUgUploadRows = rows.slice(1).filter(r => r.some(c => c !== ''));
     raUgBuildMappingUI();
   };
@@ -2115,14 +2461,16 @@ function raUgBuildMappingUI() {
 }
 
 function raUgGuessCol(header, key) {
+  if (raXlTpl.ug) return raXlGuessExact('ug', header, key);
   const h = header.toLowerCase();
   const guesses = {
+    id:['记录编号','記録編号','記録番号'],
     univ:['大学','学校名（中文', '学校名（日'], dept:['学部名'], spec:['学科名'],
-    student:['学生姓名','学生名'], track:['学科'], era:['年份','年度'],
+    student:['学生姓名','学生名'], track:['学科'], era:['年份','年度'], our_major:['本校在籍','our_major'],
     eju_japanese:['eju日语','eju日本語'], eju_kijutsu:['eju记述','eju記述'],
     eju_bunsou:['eju文综','eju文系'], eju_math:['eju数学'], eju_physics:['eju物理'],
     eju_chemistry:['eju化学'], eju_biology:['eju生物'], eju_total:['eju总分','eju総分'],
-    toefl:['托福','toefl'], toeic:['托业','toeic'], jlpt:['jlpt'], tier:['学校等级','学校等級'],
+    toefl:['托福','toefl'], toeic:['托业','toeic'], jlpt:['jlpt'], tier:['学校等级','学校等級'], note:['备注','備考'],
   };
   return (guesses[key]||[]).some(g => h.includes(g));
 }
@@ -2132,43 +2480,21 @@ function raUgGetColIndex(key) {
   return v !== '' && v !== undefined ? parseInt(v) : null;
 }
 
-function raUgPreviewImport() {
+async function raUgPreviewImport() {
   const univIdx = raUgGetColIndex('univ');
   if (univIdx === null) { raToast('大学名の列を選択してください', false); return; }
   raUgUploadColMap = {};
   raUG_FIELD_DEFS.forEach(fd => raUgUploadColMap[fd.key] = raUgGetColIndex(fd.key));
-
-  const preview = raUgUploadRows.slice(0,5);
-  const headers = ['大学名','学部','学科','系統','年度','Tier(元)','EJU総分','JLPT'];
-  let html = `<table class="preview-table"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>`;
-  for (const row of preview) {
-    const m = raUgMapRow(row);
-    html += `<tr><td>${m.univ||''}</td><td>${m.dept||''}</td><td>${m.spec||''}</td>
-      <td>${m.track==='rika'?'理科':m.track==='bijutsu'?'美術':'文科'}</td>
-      <td>${m.era||''}</td><td>${m.tier!=null?'T'+m.tier:'自動'}</td>
-      <td>${m.eju_total||''}</td><td>${m.jlpt||''}</td></tr>`;
-  }
-  html += '</tbody></table>';
-  document.getElementById('ug-preview-wrap').innerHTML = html;
-  document.getElementById('ug-import-count').textContent = raUgUploadRows.length;
-  document.getElementById('ug-col-mapping').style.display = 'none';
-  document.getElementById('ug-import-preview').style.display = '';
+  await raXlShowPreview('ug');
 }
 
 function raUgMapRow(row) {
   const get = key => { const i = raUgUploadColMap[key]; return (i!=null) ? String(row[i]??'').trim() : ''; };
   const getNum = key => { const v = get(key); return v!=='' && v!=='None' && !isNaN(parseFloat(v)) ? Math.round(parseFloat(v)) : null; };
 
-  let trackRaw = get('track');
-  let track = 'bunka';
-  if (trackRaw.includes('理科')) track = 'rika';
-  else if (trackRaw.includes('美术') || trackRaw.includes('美術')) track = 'bijutsu';
-  else if (trackRaw.includes('文科')) track = 'bunka';
-
-  let eraRaw = get('era');
-  let era = 'new';
-  const yearNum = parseInt(eraRaw);
-  if (!isNaN(yearNum)) era = (yearNum >= 2025) ? 'new' : 'hist';
+  const trackParsed = raParseTrack(get('track'));
+  const track = trackParsed || 'bunka';
+  const era = raParseEra(get('era'));
 
   const univRaw = get('univ');
   const univ = raNormUnivUG(univRaw);
@@ -2182,6 +2508,20 @@ function raUgMapRow(row) {
     'C知名学校-大东亚帝国等':3, 'D相对保底':4, 'E稳妥保底':4,
   };
   if (origTierLabel && TIER_LABEL_MAP[origTierLabel] !== undefined) tier = TIER_LABEL_MAP[origTierLabel];
+  else if (/^[0-4]$/.test(origTierLabel)) tier = parseInt(origTierLabel);
+
+  const mj = raMatchMajor(get('our_major'));
+  const filled = k => get(k) !== '';
+  const patchKeys = [];
+  ['dept', 'spec', 'student', 'note'].forEach(k => { if (filled(k)) patchKeys.push(k); });
+  if (univ) patchKeys.push('univ', 'school_type');
+  if (trackParsed) patchKeys.push('track');
+  if (filled('era')) patchKeys.push('era');
+  if (tier !== null) patchKeys.push('tier');
+  ['eju_japanese','eju_kijutsu','eju_bunsou','eju_math','eju_physics','eju_chemistry','eju_biology','eju_total','toefl','toeic'].forEach(k => { if (getNum(k) !== null) patchKeys.push(k); });
+  const jl = get('jlpt'); const jlptOk = !!(jl && jl!=='None' && jl!=='无');
+  if (jlptOk) patchKeys.push('jlpt');
+  if (mj.key) patchKeys.push('our_major');
 
   return {
     univ: univ || null, dept: get('dept') || null, spec: get('spec') || null, student: get('student') || null,
@@ -2190,38 +2530,14 @@ function raUgMapRow(row) {
     eju_bunsou: getNum('eju_bunsou'), eju_math: getNum('eju_math'),
     eju_physics: getNum('eju_physics'), eju_chemistry: getNum('eju_chemistry'),
     eju_biology: getNum('eju_biology'), eju_total: getNum('eju_total'),
-    jlpt: (() => { const v=get('jlpt'); return (v && v!=='None' && v!=='无') ? v : null; })(),
-    toefl: getNum('toefl'), toeic: getNum('toeic'), note: null,
+    jlpt: jlptOk ? jl : null,
+    toefl: getNum('toefl'), toeic: getNum('toeic'), note: get('note') || null,
+    our_major: mj.key || null,
+    _id: get('id'), _majorRaw: get('our_major'), _majorErr: mj.err, _patchKeys: patchKeys,
   };
 }
 
-async function raUgExecuteImport() {
-  const btn = document.getElementById('ug-import-btn');
-  btn.disabled = true;
-  const prog = document.getElementById('ug-import-progress');
-  const fill = document.getElementById('ug-progress-fill');
-  const label = document.getElementById('ug-progress-label');
-  prog.classList.add('show');
-  let rows = raUgUploadRows.map(raUgMapRow).filter(r => r.univ);
-  if (raScopedLead()) {
-    const n0 = rows.length; rows = rows.filter(r => raInMyScope('ug', r));
-    if (n0 > rows.length) raToast(`${n0 - rows.length} 条不在你的管理范围内，已跳过`, false);
-    if (!rows.length) { btn.disabled = false; prog.classList.remove('show'); return; }
-  }
-  const BATCH = 50;
-  let done = 0;
-  try {
-    for (let i=0; i<rows.length; i+=BATCH) {
-      const batch = rows.slice(i, i+BATCH);
-      await raUgInsertBatch(batch);
-      done += batch.length;
-      fill.style.width = Math.round(done/rows.length*100) + '%';
-      label.textContent = `${done} / ${rows.length} 件処理済み`;
-    }
-    raToast(`${done} 件をインポートしました ✓`);
-    raUgResetUpload();
-  } catch(e) { raToast('インポートエラー: ' + e.message, false); btn.disabled = false; }
-}
+async function raUgExecuteImport() { await raXlExecute('ug'); }
 
 function raUgResetUpload() {
   document.getElementById('ug-upload-zone').style.display = '';
@@ -2241,7 +2557,7 @@ async function raUgLoadList() {
   catch(e) { document.getElementById('ug-list-area').innerHTML = `<div class="load-state" style="color:var(--red)">エラー: ${e.message}</div>`; }
 }
 
-function raUgRenderList() {
+function raUgListRows() {
   const q = document.getElementById('ug-search-input').value;
   const ft = document.getElementById('ug-filter-track').value;
   const fe = document.getElementById('ug-filter-era').value;
@@ -2260,8 +2576,14 @@ function raUgRenderList() {
     if (typeof av === 'string') return av.localeCompare(bv) * raUgListSortDir;
     return (av-bv) * raUgListSortDir;
   });
+  return rows;
+}
+
+function raUgRenderList() {
+  const rows = raUgListRows();
 
   document.getElementById('ug-result-count').textContent = `${rows.length} 件`;
+  document.getElementById('ug-export-btn').textContent = `⬇ 下载 Excel（${rows.length} 条）`;
   if (!rows.length) { document.getElementById('ug-list-area').innerHTML = '<div class="load-state">データが見つかりません</div>'; return; }
 
   const TRACK_LABEL = {bunka:'文科',rika:'理科',bijutsu:'美術'};
@@ -3100,6 +3422,7 @@ function raResetState() {
   raAllData = []; raUgAllData = [];
   raUploadRows = []; raUploadColMap = {}; raUploadHeaders = [];
   raUgUploadRows = []; raUgUploadColMap = {}; raUgUploadHeaders = [];
+  raXlTpl.grad = raXlTpl.ug = false; raXl.plan = { grad: [], ug: [] };
   raTierUnivData = []; raTierChanges = {};
   raUgTierUnivData2 = []; raUgTierChanges2 = {};
   raUgDataLoaded = false;
