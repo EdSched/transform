@@ -67,7 +67,7 @@ Sensis 经常在多个窗口/对话里同时改同一批文件，**已经多次�
 
 ## 5. 业务上容易踩的坑
 
-- **合格实绩**：任何录入入口都必须写 `jlpt`/`jlpt_score`/`eng_type`/`eng_score`/`photo_url` 这些独立字段，不能塞进 `note`，否则 `results/grad.html` 显示为空。三处入口都有去重确认（学生名+大学+日语分+英语分完全相同）。老师端没有录入入口，不要加回去。
+- **合格实绩**：任何录入入口都必须写 `jlpt`/`jlpt_score`/`eng_type`/`eng_score` 这些独立字段，不能塞进 `note`，否则 `results/grad.html` 显示为空。三处入口都有去重确认（学生名+大学+日语分+英语分完全相同）。照片只存私有桶 `admission-private`，路径写在 `result_photos`，结果表里不放照片信息。老师端的合格实绩管理只给有 `result_admin` 权限的老师，用的是同一份 `admin/results-admin.js`（`raRender(mc, { mode: 'teacher' })` 老师模式：不同步学生档案、不显示全件删除和迁移旧照片）；数据库放行靠 `can_manage_results()`（`seed/results_teacher_admin.sql`）。
 - **专业代码**：学部专业加 `gakubu_` 前缀（如 `gakubu_fashion` vs 大学院 `fashion`），只能用字母/数字/下划线。`students` 表没有 `campus` 字段，插入时不要带。
 - **VIP 时间槽可见性**：`teacher_name` 必须与学生的 `vip_teachers` 完全一致；`vip_exclusive=true` 只给纯 VIP 学生，`false` 只给"大课+VIP"学生。这是有意设计，不是 bug。
 - **课时/缴费**应当是只追加的流水账，不应该是可随手修改的数字（现有 `vip_hours_total/used` 是待改造的反例）。

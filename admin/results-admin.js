@@ -1,8 +1,9 @@
 // 合格实绩管理（admin 左侧「宣传管理 → 合格实绩」）：原 results/admin.html 整页搬进 admin。
-// 入口：raRender(mc)，由 admin.js 的 renderPage 在 curPage==='admissions' 时调用；页面 HTML 由 raHtml() 生成。
+// 入口：raRender(mc, { mode })，mode = 'admin'（默认，admin.js 的 renderPage 在 curPage==='admissions' 时调用）| 'teacher'（老师端「合格实绩管理」，permissions.result_admin）；页面 HTML 由 raHtml() 生成。
+// 老师模式：不显示「全件削除」和「迁移旧照片」，保存时不记录到学生档案（raArSyncToStudent 直接返回），其余功能一样。
 // 全局名字一律以 ra 开头（海报编辑器在 shared/poster.js，名字以 pst 开头；海报列表在 shared/pass-posters.js，以 pps 开头）。
 // 请求统一走 shared/supabase.js 的 sb()（raSbFetch / sbAll）；直连 Storage 的请求头用 raAuthHeaders()；样式全部套在 #ra-root 下，见 RA_CSS。
-// 依赖：shared/supabase.js、shared/search.js（searchMatch / searchBox）、shared/pass-posters.js、shared/poster.js；XLSX / JSZip 由 admin/index.html 加载。
+// 依赖：shared/supabase.js、shared/search.js（searchMatch / searchBox）、shared/pass-posters.js、shared/poster.js；XLSX / JSZip 由 admin/index.html 加载，老师端在 raRender 时按需加载（raLoadLibs）。
 
 const RA_CSS = `
 #ra-root, .ra-vars {
@@ -170,6 +171,11 @@ const RA_CSS = `
 #ra-root input, #ra-root select, #ra-root textarea { width: auto; }   /* admin.css 给所有输入框设了 width:100%，这里还原原页面的默认宽度 */
 `;
 
+let raMode = 'admin';   // 'admin' | 'teacher'
+function raIsTeacher() { return raMode === 'teacher'; }
+// 老师模式下「本校在籍专业」下面的说明（不同步学生档案）
+function raTeacherMajorNote() { return raIsTeacher() ? '<div style="font-size:10px;color:var(--text-muted);margin-top:3px">记录到学生档案由管理员处理</div>' : ''; }
+
 function raHtml() {
   return `
 <header>
@@ -269,7 +275,7 @@ function raHtml() {
       </div>
       <div class="field">
         <label>本校在籍专业（不选 = 不记录到学生档案）</label>
-        <div id="f-major-box"></div>
+        <div id="f-major-box"></div>${raTeacherMajorNote()}
       </div>
       <div class="field">
         <label>入学年度 *</label>
@@ -440,7 +446,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
 <!-- ── TAB: データ管理 ── -->
 <div id="tab-list" style="display:none">
   <div class="list-controls">
-    <input type="text" id="search-input" placeholder="大学名・研究科・専攻・学生名（漢字 / ピンイン頭文字）で検索..." oninput="searchBox(this,renderList)">
+    <input type="text" id="search-input" placeholder="大学名・研究科・専攻・学生名（漢字 / ピンイン頭文字）で検索..." oninput="searchBox(this,raRenderList)">
     <select id="filter-subj" onchange="raRenderList()">
       <option value="">全学科</option>
       <option value="shakai">社会学</option>
@@ -473,7 +479,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
       <option value="hist">2022–2025</option>
     </select>
     <span class="result-count" id="result-count"></span>
-    <button class="btn btn-danger" onclick="raConfirmDeleteAll()" style="margin-left:auto">全件削除</button>
+    ${raIsTeacher() ? '' : '<button class="btn btn-danger" onclick="raConfirmDeleteAll()" style="margin-left:auto">全件削除</button>'}
   </div>
   <div id="list-area" class="load-state">読み込み中...</div>
 </div>
@@ -493,7 +499,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
     <div style="margin-left:auto;display:flex;gap:6px">
       <input type="text" id="tier-search" placeholder="大学名で絞り込み..."
         style="padding:5px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:200px"
-        oninput="searchBox(this,renderTierTable)">
+        oninput="searchBox(this,raRenderTierTable)">
       <select id="tier-filter" onchange="raRenderTierTable()"
         style="padding:5px 8px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg)">
         <option value="">全Tier</option>
@@ -516,9 +522,9 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
     <input id="photo-search" placeholder="搜索学生（汉字 / 拼音首字母）/ 大学 / 研究科…" oninput="searchBox(this,()=>raPhRender('grad'))" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:260px">
     <button class="btn btn-secondary" onclick="raLoadPhotos('grad')">↺ 刷新</button>
     <span style="font-size:11px;color:var(--text-muted)" id="photo-count"></span>
-    <button class="btn btn-secondary ar-mig-btn" style="display:none;margin-left:auto" onclick="raArMigratePhotos()"></button>
+    ${raIsTeacher() ? '' : '<button class="btn btn-secondary ar-mig-btn" style="display:none;margin-left:auto" onclick="raArMigratePhotos()"></button>'}
   </div>
-  <div class="ar-mig-log" style="display:none;margin-bottom:10px;font-size:11px;line-height:1.7;padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface)"></div>
+  ${raIsTeacher() ? '' : '<div class="ar-mig-log" style="display:none;margin-bottom:10px;font-size:11px;line-height:1.7;padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface)"></div>'}
   <div id="photo-filters" style="margin-bottom:12px"></div>
   <div id="photo-grid" class="load-state">读取中...</div>
 </div>
@@ -571,7 +577,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
       </div>
       <div class="field">
         <label>本校在籍专业（不选 = 不记录到学生档案）</label>
-        <div id="ugf-major-box"></div>
+        <div id="ugf-major-box"></div>${raTeacherMajorNote()}
       </div>
       <div class="field">
         <label>系統 *</label>
@@ -709,7 +715,7 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
 <!-- ── UG TAB: データ管理 ── -->
 <div id="ugtab-list" style="display:none">
   <div class="list-controls">
-    <input type="text" id="ug-search-input" placeholder="大学名・学部・学科・学生名（漢字 / ピンイン頭文字）で検索..." oninput="searchBox(this,ugRenderList)">
+    <input type="text" id="ug-search-input" placeholder="大学名・学部・学科・学生名（漢字 / ピンイン頭文字）で検索..." oninput="searchBox(this,raUgRenderList)">
     <select id="ug-filter-track" onchange="raUgRenderList()">
       <option value="">全系統</option>
       <option value="bunka">文科</option>
@@ -730,7 +736,7 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
       <option value="4">T4</option>
     </select>
     <span class="result-count" id="ug-result-count"></span>
-    <button class="btn btn-danger" onclick="raUgConfirmDeleteAll()" style="margin-left:auto">全件削除</button>
+    ${raIsTeacher() ? '' : '<button class="btn btn-danger" onclick="raUgConfirmDeleteAll()" style="margin-left:auto">全件削除</button>'}
   </div>
   <div id="ug-list-area" class="load-state">読み込み中...</div>
 </div>
@@ -741,9 +747,9 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
     <input id="ugphoto-search" placeholder="搜索学生（汉字 / 拼音首字母）/ 大学 / 学部…" oninput="searchBox(this,()=>raPhRender('ug'))" style="padding:6px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;font-size:12px;background:var(--bg);width:260px">
     <button class="btn btn-secondary" onclick="raLoadPhotos('ug')">↺ 刷新</button>
     <span style="font-size:11px;color:var(--text-muted)" id="ugphoto-count"></span>
-    <button class="btn btn-secondary ar-mig-btn" style="display:none;margin-left:auto" onclick="raArMigratePhotos()"></button>
+    ${raIsTeacher() ? '' : '<button class="btn btn-secondary ar-mig-btn" style="display:none;margin-left:auto" onclick="raArMigratePhotos()"></button>'}
   </div>
-  <div class="ar-mig-log" style="display:none;margin-bottom:10px;font-size:11px;line-height:1.7;padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface)"></div>
+  ${raIsTeacher() ? '' : '<div class="ar-mig-log" style="display:none;margin-bottom:10px;font-size:11px;line-height:1.7;padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface)"></div>'}
   <div id="ugphoto-filters" style="margin-bottom:12px"></div>
   <div id="ugphoto-grid" class="load-state">读取中...</div>
 </div>
@@ -771,7 +777,7 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
       <div class="field"><label>学科名</label><input id="ug-em-spec" type="text"></div>
       <div class="field"><label>学生名</label><input id="ug-em-student" type="text">
         <div style="font-size:10px;color:var(--text-muted);margin-top:3px">学生真实姓名（要记录到学生档案时必填）</div></div>
-      <div class="field"><label>本校在籍专业</label><div id="ugem-major-box"></div></div>
+      <div class="field"><label>本校在籍专业</label><div id="ugem-major-box"></div>${raTeacherMajorNote()}</div>
       <div class="field"><label>系統</label>
         <select id="ug-em-track"><option value="bunka">文科</option><option value="rika">理科</option><option value="bijutsu">美術</option></select>
       </div>
@@ -853,7 +859,7 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
         </select>
       </div>
       <div class="field"><label>本校在籍专业</label>
-        <div id="em-major-box"></div>
+        <div id="em-major-box"></div>${raTeacherMajorNote()}
       </div>
       <div class="field"><label>系統</label>
         <select id="em-track">
@@ -1524,6 +1530,7 @@ async function raArUpsertPlan(stu, row) {
   }
 }
 async function raArSyncToStudent(row, table) {
+  if (raIsTeacher()) return;   // 老师模式：不写学生档案（管理员之后在 admin 里打开这条再保存一次就会同步）
   table = table || 'admission_results';
   if (!row || !row.our_major || !row.student) return;
   if (!raArRealName(row.student)) { raToast('学生名是缩写，没有记录到学生档案', false); return; }
@@ -2567,16 +2574,16 @@ function raPhRender(kind) {
   const shown = c.more ? grpIds : grpIds.filter((id, i) => i < SHOW || id === f.subj);
   const lab = t => `<span style="font-size:11px;color:var(--text-muted);margin-right:6px">${t}</span>`;
   let h = `<div style="margin-bottom:4px">${lab('年度')}`
-    + raPhChip(!f.era, '全部', `phClear('${kind}','era')`)
-    + [['new', '2026–2027'], ['hist', '2022–2025']].map(([k, l]) => raPhChip(f.era === k, `${l} (${cnt('era', r => r.era === k)})`, `phSet('${kind}','era','${k}')`)).join('') + '</div>';
+    + raPhChip(!f.era, '全部', `raPhClear('${kind}','era')`)
+    + [['new', '2026–2027'], ['hist', '2022–2025']].map(([k, l]) => raPhChip(f.era === k, `${l} (${cnt('era', r => r.era === k)})`, `raPhSet('${kind}','era','${k}')`)).join('') + '</div>';
   h += `<div style="margin-bottom:4px">${lab(isUg ? '系統' : '在籍学科')}`
-    + raPhChip(!f.subj, '全部', `phClear('${kind}','subj')`)
-    + shown.map(id => raPhChip(f.subj === id, `${grpName(id)} (${cnt('subj', r => (r[grpKey] || 'other') === id)})`, `phSet('${kind}','subj','${id}')`)).join('')
-    + (grpIds.length > SHOW ? raPhChip(false, c.more ? '收起 ▴' : '更多 ▾', `phMore('${kind}')`) : '') + '</div>';
+    + raPhChip(!f.subj, '全部', `raPhClear('${kind}','subj')`)
+    + shown.map(id => raPhChip(f.subj === id, `${grpName(id)} (${cnt('subj', r => (r[grpKey] || 'other') === id)})`, `raPhSet('${kind}','subj','${id}')`)).join('')
+    + (grpIds.length > SHOW ? raPhChip(false, c.more ? '收起 ▴' : '更多 ▾', `raPhMore('${kind}')`) : '') + '</div>';
   if (pm) {
     h += `<div style="margin-bottom:4px">${lab('海报')}`
-      + raPhChip(!f.poster, '全部', `phClear('${kind}','poster')`)
-      + [['todo', '未制作'], ['done', '已制作']].map(([k, l]) => raPhChip(f.poster === k, l, `phSet('${kind}','poster','${k}')`)).join('') + '</div>';
+      + raPhChip(!f.poster, '全部', `raPhClear('${kind}','poster')`)
+      + [['todo', '未制作'], ['done', '已制作']].map(([k, l]) => raPhChip(f.poster === k, l, `raPhSet('${kind}','poster','${k}')`)).join('') + '</div>';
   }
   document.getElementById(c.pre + '-filters').innerHTML = h;
 
@@ -2639,7 +2646,7 @@ async function raArLegacyRows(kind) {
 }
 // 按钮上的数字 = 还有旧照片的记录数（大学院 + 学部）；0 就不显示
 async function raArMigCount() {
-  if (raArMigBusy) return;
+  if (raArMigBusy || raIsTeacher()) return;
   let n = 0;
   try { for (const k of ['grad', 'ug']) n += (await raArLegacyRows(k)).filter(r => raArLegacyUrl(r)).length; } catch (e) { return; }
   document.querySelectorAll('.ar-mig-btn').forEach(b => { b.style.display = n ? '' : 'none'; b.textContent = `迁移旧照片（${n} 张）`; });
@@ -2725,7 +2732,23 @@ function raResetState() {
   ['grad', 'ug'].forEach(k => { const c = raPH[k]; c.rows = []; c.posterMap = null; c.f = { era: '', subj: '', poster: '' }; c.more = false; });
 }
 
-function raRender(mc) {
+// 外部库按需加载（老师端页面不预先加载）：XLSX（Excel 导入）、JSZip（批量下载）；admin 页面已经有，直接跳过
+function raLoadLib(src, ready) {
+  if (ready()) return Promise.resolve();
+  return new Promise(res => {
+    const sc = document.createElement('script');
+    sc.src = src; sc.onload = () => res(); sc.onerror = () => res();   // 失败了对应功能自己会提示
+    document.head.appendChild(sc);
+  });
+}
+function raLoadLibs() {
+  raLoadLib('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', () => typeof XLSX !== 'undefined');
+  raLoadLib('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', () => typeof JSZip !== 'undefined');
+}
+
+function raRender(mc, opts) {
+  raMode = (opts && opts.mode === 'teacher') ? 'teacher' : 'admin';
+  if (raIsTeacher()) raLoadLibs();
   if (!document.getElementById('ra-style')) {
     const st = document.createElement('style');
     st.id = 'ra-style';
