@@ -3247,7 +3247,8 @@ function raPhRender(kind) {
 const raFill = { grad: null, ug: null };
 function raFillNew() {
   return { mode: 'have', range: '1m', univ: '', subj: '', track: '', rows: [], schools: [], offset: 0, hasMore: false, gate: false,
-    loading: false, seq: 0, sel: '', st: {}, phIds: null, pickId: '' };
+    loading: false, seq: 0, sel: '', st: {}, phIds: null, pickId: '',
+    batch: false, imgs: [], imgSeq: 0, pairSeq: 0, bImg: 0, bRow: '', bAct: '', bq: '', bBusy: false, bProg: '' };
 }
 raFill.grad = raFillNew(); raFill.ug = raFillNew();
 const raFILL_RANGES = [['1w', '最近 1 周'], ['1m', '最近 1 个月'], ['3m', '最近 3 个月'], ['old', '3 个月以前'], ['all', '全部']];
@@ -3261,6 +3262,7 @@ function raPhModeRender(kind) {
 }
 function raFillMode(kind, m) {
   const f = raFill[kind]; if (f.mode === m) return;
+  if (f.batch) { if (!raBpLeave(kind)) return; f.batch = false; }
   f.mode = m;
   if (m === 'fill') { f.st = {}; f.sel = ''; }
   raLoadPhotos(kind);
@@ -3341,7 +3343,8 @@ async function raFillLoad(kind, reset) {
 function raFillRender(kind) {
   const c = raPH[kind], f = raFill[kind], isUg = kind === 'ug', esc = raArEsc;
   const lab = t => `<span style="font-size:11px;color:var(--text-muted);margin-right:6px">${t}</span>`;
-  let h = `<div style="margin-bottom:4px">${lab('录入时间')}` + raFILL_RANGES.map(([k, l]) => raPhChip(f.range === k, l, `raFillSet('${kind}','range','${k}')`)).join('') + '</div>';
+  let h = `<div style="margin-bottom:4px">${raPhChip(f.batch, f.batch ? '退出配对' : '批量配对', `raBpToggle('${kind}')`)}</div>`;
+  h += `<div style="margin-bottom:4px">${lab('录入时间')}` + raFILL_RANGES.map(([k, l]) => raPhChip(f.range === k, l, `raFillSet('${kind}','range','${k}')`)).join('') + '</div>';
   h += `<div style="margin-bottom:4px">${lab('系統')}` + Object.keys(raPH_TRACK).map(k => raPhChip(f.track === k, raPH_TRACK[k], `raFillSet('${kind}','track','${k}')`)).join('') + '</div>';
   if (!isUg) {
     const keys = [...new Set((raArMajors || []).filter(m => (m.domain || '').startsWith('大学院')).map(m => m.key).concat('other'))];
@@ -3355,6 +3358,8 @@ function raFillRender(kind) {
   }
   document.getElementById(c.pre + '-filters').innerHTML = h;
   const grid = document.getElementById(c.pre + '-grid'), cnt = document.getElementById(c.pre + '-count');
+  if (f.batch) { cnt.textContent = ''; return raBpRender(kind); }
+  grid.dataset.bshell = '';
   if (f.gate) { cnt.textContent = ''; grid.innerHTML = '<div class="load-state">请先选学校或搜索</div>'; return; }
   cnt.textContent = f.loading && !f.rows.length ? '' : `缺截图 ${f.rows.length}${f.hasMore ? '+' : ''} 条（当前条件）`;
   if (f.loading && !f.rows.length) { grid.innerHTML = '<div class="load-state">读取中...</div>'; return; }
@@ -3417,16 +3422,182 @@ async function raFillUndo(kind, btn) {
   } catch (e) { f.st[id] = { s: 'err', msg: '撤销失败：' + e.message }; }
   raFillRender(kind);
 }
+// ─── 补图·批量配对：先把一批截图导进浏览器（不上传），点图再点记录配对，最后一起上传 ───
+function raBpNo(n) { return n >= 1 && n <= 20 ? String.fromCharCode(0x2460 + n - 1) : '(' + n + ')'; }
+function raBpPaired(kind) { return raFill[kind].imgs.filter(i => i.rid); }
+function raBpRevoke(img) { try { URL.revokeObjectURL(img.url); } catch (e) {} }
+// 退出配对 / 离开补图前：有已配对没上传的要确认
+function raBpLeave(kind) {
+  const f = raFill[kind], n = raBpPaired(kind).length;
+  if (n && !confirm('还有 ' + n + ' 对没上传，确定离开吗？')) return false;
+  f.imgs.forEach(raBpRevoke); f.imgs = []; f.bImg = 0; f.bRow = ''; f.bAct = ''; f.bq = '';
+  return true;
+}
+function raBpToggle(kind) {
+  const f = raFill[kind];
+  if (f.batch) { if (!raBpLeave(kind)) return; f.batch = false; } else f.batch = true;
+  raFillRender(kind);
+}
+window.addEventListener('beforeunload', ev => {
+  if (['grad', 'ug'].some(k => raFill[k] && raBpPaired(k).length)) { ev.preventDefault(); ev.returnValue = ''; }
+});
+function raBpAdd(kind, files) {
+  const f = raFill[kind], list = [...files].filter(x => /^image\//.test(x.type));
+  if (!list.length) { raToast('请选择图片文件', false); return; }
+  list.forEach(file => f.imgs.push({ id: ++f.imgSeq, file, url: URL.createObjectURL(file), rid: '', row: null, no: 0, s: '', msg: '' }));
+  raBpRefresh(kind);
+}
+function raBpImg(kind, id) { return raFill[kind].imgs.find(i => i.id === Number(id)); }
+function raBpImgOf(kind, rid) { return raFill[kind].imgs.find(i => i.rid === rid); }
+function raBpPair(kind, imgId, rid) {
+  const f = raFill[kind], img = raBpImg(kind, imgId), row = f.rows.find(r => String(r.id) === rid);
+  if (!img || !row || img.rid || raBpImgOf(kind, rid) || (f.st[rid] && f.st[rid].s === 'done')) return;
+  img.rid = rid; img.row = row; img.no = ++f.pairSeq; img.s = ''; img.msg = '';
+  f.bImg = 0; f.bRow = ''; f.bAct = '';
+  raBpRefresh(kind);
+}
+function raBpUnpair(kind, img) { img.rid = ''; img.row = null; img.no = 0; img.s = ''; img.msg = ''; }
+function raBpClickImg(kind, id) {
+  const f = raFill[kind], img = raBpImg(kind, id); if (!img) return;
+  if (img.rid) { f.bAct = img.rid; f.bImg = 0; f.bRow = ''; }
+  else if (f.bRow) return raBpPair(kind, img.id, f.bRow);
+  else { f.bImg = f.bImg === img.id ? 0 : img.id; f.bAct = ''; }
+  raBpRefresh(kind);
+}
+function raBpClickRow(kind, rid) {
+  const f = raFill[kind];
+  if (f.st[rid] && f.st[rid].s === 'done') return;
+  if (raBpImgOf(kind, rid)) { f.bAct = rid; f.bImg = 0; f.bRow = ''; }
+  else if (f.bImg) return raBpPair(kind, f.bImg, rid);
+  else { f.bRow = f.bRow === rid ? '' : rid; f.bAct = ''; }
+  raBpRefresh(kind);
+}
+function raBpAct(kind, how) {
+  const f = raFill[kind], img = raBpImgOf(kind, f.bAct); if (!img) return;
+  const rid = img.rid; raBpUnpair(kind, img); f.bAct = '';
+  f.bRow = how === 'swap' ? rid : ''; f.bImg = 0;
+  raBpRefresh(kind);
+}
+function raBpClearLoose(kind) {
+  const f = raFill[kind];
+  f.imgs.filter(i => !i.rid).forEach(raBpRevoke);
+  f.imgs = f.imgs.filter(i => i.rid); f.bImg = 0;
+  raBpRefresh(kind);
+}
+function raBpZoom(kind, id) {
+  const img = raBpImg(kind, id); if (!img) return;
+  const f = raFill[kind], idx = f.imgs.indexOf(img) + 1;
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.82);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px';
+  const can = !img.rid && f.bRow;
+  const row = can ? f.rows.find(r => String(r.id) === f.bRow) : null;
+  const bs = 'padding:6px 16px;font-size:13px;border:1px solid #fff;background:#fff;border-radius:4px;cursor:pointer;font-family:inherit';
+  ov.innerHTML = `<img src="${img.url}" style="max-width:96vw;max-height:80vh;object-fit:contain;background:#fff"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;color:#fff;font-size:13px"><span>第 ${idx} 张</span>`
+    + (can && row ? `<button style="${bs}" data-a="pair">配给右边选中的记录（${raArEsc(row.student || '')}）</button>` : '<span style="opacity:.7">先在右边点选一条记录，才能在这里配对</span>')
+    + `<button style="${bs}" data-a="close">关闭</button></div>`;
+  ov.onclick = e => {
+    const a = e.target.dataset && e.target.dataset.a;
+    if (a === 'pair') raBpPair(kind, img.id, f.bRow);
+    if (a === 'pair' || a === 'close' || e.target === ov) ov.remove();
+  };
+  document.body.appendChild(ov);
+}
+async function raBpUpload(kind) {
+  const f = raFill[kind]; if (f.bBusy) return;
+  const list = raBpPaired(kind); if (!list.length) return;
+  f.bBusy = true; let ok = 0, fail = 0;
+  for (let n = 0; n < list.length; n++) {
+    const img = list[n];
+    f.bProg = (n + 1) + ' / ' + list.length; img.s = 'busy'; raBpRefresh(kind);
+    try {
+      const path = await raArUploadPhoto(img.file, kind);
+      await raArSetPhoto(kind, img.rid, path, null);
+      f.st[img.rid] = { s: 'done', path, url: img.url };
+      if (f.phIds) f.phIds.add(String(img.rid));
+      f.imgs = f.imgs.filter(x => x !== img); ok++;
+    } catch (e) { img.s = 'err'; img.msg = '失败：' + e.message; fail++; }
+  }
+  f.bBusy = false; f.bProg = '';
+  raBpRefresh(kind);
+  raToast(fail ? `上传完成：成功 ${ok} 对，失败 ${fail} 对（红字的可重试）` : `已上传 ${ok} 对`, !fail);
+}
+function raBpRender(kind) {
+  const c = raPH[kind], grid = document.getElementById(c.pre + '-grid');
+  if (grid.dataset.bshell !== '1') {
+    if (!document.getElementById('ra-bp-style')) {
+      const st = document.createElement('style'); st.id = 'ra-bp-style';
+      st.textContent = '.ra-bp-wrap{display:flex;gap:12px;align-items:flex-start}.ra-bp-l{flex:1 1 0;min-width:0}.ra-bp-r{flex:1.5 1 0;min-width:0}@media(max-width:760px){.ra-bp-wrap{flex-direction:column;align-items:stretch}.ra-bp-l,.ra-bp-r{flex:none;width:100%}}';
+      document.head.appendChild(st);
+    }
+    grid.dataset.bshell = '1';
+    grid.innerHTML = `<div id="${c.pre}-bst" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;margin-bottom:8px"></div>
+      <div class="ra-bp-wrap"><div class="ra-bp-l">
+        <label id="${c.pre}-bdrop" style="display:block;border:2px dashed var(--border);border-radius:6px;padding:14px 8px;text-align:center;font-size:12px;color:var(--text-secondary);cursor:pointer;margin-bottom:8px;background:var(--surface)">把这批截图拖进来，或点击选择（也可 Ctrl / ⌘+V 粘贴）
+          <input type="file" accept="image/*" multiple style="display:none" onchange="raBpAdd('${kind}',this.files);this.value=''"></label>
+        <div id="${c.pre}-bimgs"></div></div>
+      <div class="ra-bp-r"><input type="text" placeholder="搜索学生名、大学（汉字或拼音首字母）" value="${raArEsc(raFill[kind].bq)}" oninput="raFill['${kind}'].bq=this.value;raBpRefreshRows('${kind}')" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;font-family:inherit;margin-bottom:6px">
+        <div id="${c.pre}-bact"></div><div id="${c.pre}-brows"></div></div></div>`;
+    const dz = document.getElementById(c.pre + '-bdrop');
+    dz.ondragover = e => { e.preventDefault(); dz.style.background = '#fbf6e6'; };
+    dz.ondragleave = () => { dz.style.background = ''; };
+    dz.ondrop = e => { e.preventDefault(); dz.style.background = ''; raBpAdd(kind, e.dataTransfer.files || []); };
+  }
+  raBpRefresh(kind);
+}
+function raBpRefresh(kind) {
+  const c = raPH[kind], f = raFill[kind], esc = raArEsc;
+  const st = document.getElementById(c.pre + '-bst'); if (!st) return;
+  const pairs = raBpPaired(kind), loose = f.imgs.length - pairs.length;
+  const lack = f.rows.filter(r => !(f.st[String(r.id)] && f.st[String(r.id)].s === 'done') && !raBpImgOf(kind, String(r.id))).length;
+  const btn = 'padding:3px 12px;font-size:12px;border:1px solid var(--border);background:var(--surface);border-radius:3px;cursor:pointer;font-family:inherit';
+  st.innerHTML = `<span>已配对 <b>${pairs.length}</b> 对 · 未配对图片 <b>${loose}</b> 张 · 还缺图的记录 <b>${lack}</b> 条${f.hasMore ? '+' : ''}</span>`
+    + `<button class="btn btn-primary" ${pairs.length && !f.bBusy ? '' : 'disabled'} onclick="raBpUpload('${kind}')">${f.bBusy ? '上传中 ' + f.bProg : '上传已配对的 ' + pairs.length + ' 对'}</button>`
+    + (loose && !f.bBusy ? `<button style="${btn}" onclick="if(confirm('清空 ${loose} 张未配对的图片？'))raBpClearLoose('${kind}')">清空未配对的图片</button>` : '');
+  const bi = document.getElementById(c.pre + '-bimgs');
+  bi.innerHTML = f.imgs.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px;max-height:70vh;overflow:auto">` + f.imgs.map((m, i) => {
+    const sel = f.bImg === m.id || (m.rid && f.bAct === m.rid);
+    return `<div style="position:relative;border:2px solid ${sel ? 'var(--accent)' : 'var(--border)'};border-radius:4px;background:var(--surface);cursor:pointer" onclick="raBpClickImg('${kind}',${m.id})" ondblclick="raBpZoom('${kind}',${m.id})">
+      <img src="${m.url}" style="display:block;width:100%;height:84px;object-fit:cover;${m.rid ? 'opacity:.4' : ''}">
+      <span style="position:absolute;top:2px;right:2px;font-size:10px;background:rgba(255,255,255,.92);border:1px solid var(--border);border-radius:3px;padding:0 4px" onclick="event.stopPropagation();raBpZoom('${kind}',${m.id})">放大</span>
+      ${m.rid ? `<span style="position:absolute;top:2px;left:4px;font-size:16px;font-weight:700;color:var(--accent)">${raBpNo(m.no)}</span>` : ''}
+      <div style="font-size:10px;padding:2px 4px;color:var(--text-secondary);overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${i + 1}${m.rid ? ' · 已配给 ' + esc(m.row.student || '') : ''}${m.s === 'busy' ? ' · 上传中…' : ''}</div>
+      ${m.s === 'err' ? `<div style="font-size:10px;padding:0 4px 3px;color:var(--red)">${esc(m.msg)}</div>` : ''}</div>`;
+  }).join('') + '</div>' : '<div class="load-state" style="font-size:12px">还没有导入截图</div>';
+  const ba = document.getElementById(c.pre + '-bact'), ai = f.bAct && raBpImgOf(kind, f.bAct);
+  ba.innerHTML = ai ? `<div style="padding:6px 8px;margin-bottom:6px;background:#fbf6e6;border:1px solid var(--accent);border-radius:4px;font-size:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">${raBpNo(ai.no)} ${esc(ai.row.student || '')}<button style="${btn}" onclick="raBpAct('${kind}','swap')">换一张</button><button style="${btn}" onclick="raBpAct('${kind}','cancel')">取消配对</button></div>` : '';
+  raBpRefreshRows(kind);
+}
+function raBpRefreshRows(kind) {
+  const c = raPH[kind], f = raFill[kind], esc = raArEsc, el = document.getElementById(c.pre + '-brows'); if (!el) return;
+  if (f.gate) { el.innerHTML = '<div class="load-state">请先选学校或搜索</div>'; return; }
+  if (f.loading && !f.rows.length) { el.innerHTML = '<div class="load-state">读取中...</div>'; return; }
+  const q = (f.bq || '').trim();
+  const rows = f.rows.filter(r => !q || searchMatch(q, [r.student, r.univ, r.dept, r.spec]));
+  if (!rows.length) { el.innerHTML = '<div class="load-state">没有缺截图的记录</div>'; return; }
+  el.innerHTML = rows.map(r => {
+    const id = String(r.id), s = f.st[id], done = s && s.s === 'done', im = raBpImgOf(kind, id), sel = f.bRow === id || (f.bAct === id && im);
+    return `<div data-rid="${esc(id)}" onclick="raBpClickRow('${kind}',this.dataset.rid)" style="display:flex;align-items:center;gap:8px;padding:5px 8px;border:1px solid ${sel ? 'var(--accent)' : 'var(--border)'};border-radius:4px;margin-bottom:4px;background:${done ? '#eef7ee' : im ? '#fbf6e6' : 'var(--surface)'};cursor:${done ? 'default' : 'pointer'}">
+      <span style="color:var(--text-muted);font-size:11px;width:74px;flex:none">${esc((r.created_at || '').slice(0, 10))}</span>
+      <span style="flex:1;min-width:0;font-size:12px"><b>${esc(r.student) || '（未知）'}</b>　${esc(r.univ) || ''} ${esc(r.dept)}${r.spec ? '　<span style="color:var(--text-secondary)">' + esc(r.spec) + '</span>' : ''}</span>
+      ${done ? `<span style="font-size:12px;color:var(--green);font-weight:600;flex:none">✓ 已补</span>` : im ? `<span style="font-size:16px;font-weight:700;color:var(--accent);flex:none">${raBpNo(im.no)}</span><img src="${im.url}" style="height:30px;border:1px solid var(--border);border-radius:3px;flex:none">` : ''}</div>`;
+  }).join('') + (f.hasMore ? `<div style="text-align:center;margin-top:8px"><button class="btn btn-secondary" ${f.loading ? 'disabled' : ''} onclick="raFillLoad('${kind}',false)">${f.loading ? '读取中…' : '加载更多'}</button></div>` : '');
+}
+
 // 粘贴截图：点选一行后 Ctrl+V / ⌘V
 if (!window.__raFillPasteBound) {
   window.__raFillPasteBound = true;
   document.addEventListener('paste', ev => {
     const kind = ['grad', 'ug'].find(k => {
       const f = raFill[k], g = document.getElementById(raPH[k].pre + '-grid');
-      return f.mode === 'fill' && f.sel && g && g.offsetParent !== null;
+      return f.mode === 'fill' && (f.batch || f.sel) && g && g.offsetParent !== null;
     });
     if (!kind) return;
     const items = [...((ev.clipboardData && ev.clipboardData.items) || [])];
+    if (raFill[kind].batch) {
+      const fs = items.filter(x => x.kind === 'file' && /^image\//.test(x.type)).map(x => x.getAsFile()).filter(Boolean);
+      if (fs.length) { ev.preventDefault(); raBpAdd(kind, fs); }
+      return;
+    }
     const it = items.find(x => x.kind === 'file' && /^image\//.test(x.type));
     if (!it) return;
     const file = it.getAsFile(); if (!file) return;
