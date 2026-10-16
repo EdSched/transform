@@ -1256,7 +1256,9 @@ async function raXlLoadMajorRows() {
 function raXlMajorLabel(key) {
   if (!key) return '';
   const m = raXlMajors.find(x => x.key === key) || (raArMajors || []).find(x => x.key === key);
-  return m ? (m.label || key) : key;
+  if (m) return m.label || key;
+  const g = raXlGroups[key] || (raArGroups || []).find(x => x.key === key);
+  return g ? g.label + '（全部）' : key;
 }
 // 本校在籍专业：按中文名匹配 majors（也认 key、日文名、只有一个专业的分组名）；返回 { key, err }
 function raMatchMajor(text) {
@@ -1349,27 +1351,26 @@ async function raXlTemplate(kind) {
   help.push(['说明', '', '第 2 行是示例行（内容和示例完全一样的行，导入时自动跳过）。Excel 导入不会把学生记录到学生档案。', '']);
   const wsHelp = XLSX.utils.aoa_to_sheet(help); wsHelp['!cols'] = [{ wch: 26 }, { wch: 24 }, { wch: 80 }, { wch: 22 }];
 
-  // 专业对照
-  const inScope = m => !raScopedLead() || scopeMajor(m.key);
-  const ms = raXlMajors.filter(inScope);
+  // 专业对照：第一部分 合格数据学科 → 本校专业（每行一个对应）；第二部分 本校专业一览
+  const lead = raScopedLead();
+  const ms = raXlMajors.filter(m => !lead || scopeMajor(m.key));
   const gl = m => (m.group_key && (raXlGroups[m.group_key] || {}).label) || '';
   const cmp = (a, b) => String(a).localeCompare(String(b), 'zh');
-  const sorted = ms.slice().sort((a, b) => cmp(a.domain || '其他', b.domain || '其他') || (gl(a) ? 0 : 1) - (gl(b) ? 0 : 1) || cmp(gl(a), gl(b)) || cmp(a.label, b.label));
-  const mp = [['本校专业'], ['领域', '分组', '专业名称']].concat(sorted.map(m => [m.domain || '其他', gl(m), m.label]));
+  const mp = [];
   if (isG) {
-    mp.push([], ['在籍学科 ↔ 本校专业 参考'], ['在籍学科是合格数据的粗分类，和学生系统的专业不完全对应。本校在籍专业以学生系统为准。'], ['在籍学科', '代码', '可能对应的本校专业']);
-    const rika = ms.filter(m => m.domain === '大学院理科');
-    const grp = {};
-    rika.forEach(m => { (grp[gl(m) || '（无分组）'] = grp[gl(m) || '（无分组）'] || []).push(m.label); });
-    const rikaText = Object.keys(grp).sort((a, b) => (a === '（无分组）') - (b === '（无分组）') || cmp(a, b)).map(g => (g === '（无分组）' ? '' : g + '：') + grp[g].join('、')).join('；') || '（无）';
+    mp.push(['合格数据学科 → 本校专业'], ['在籍学科是合格数据的粗分类，和学生系统的专业不完全对应。本校在籍专业以学生系统为准。'], ['在籍学科', '代码', '对应的本校专业', '备注']);
     raSUBJ_ALL.forEach(x => {
-      let txt;
-      if (x.id.startsWith('rika_')) txt = '大学院理科：' + rikaText;
-      else { const g = raArGuessMajor(x.id); const gm = g && ms.find(m => m.key === g); txt = gm ? gm.label : '（没有自动对应，请按学生系统选择）'; }
-      mp.push([x.label, x.id, txt]);
+      const r = raSubjectMajor(x.id);
+      if (lead && (!r.key || !scopeMajor(r.key))) return;   // 负责人：只保留对应专业在他范围内的行
+      mp.push([x.label, x.id, r.key ? r.label : '无固定对应', r.note]);
     });
+    mp.push([]);
   }
-  const wsMajor = XLSX.utils.aoa_to_sheet(mp); wsMajor['!cols'] = [{ wch: 22 }, { wch: 22 }, { wch: 90 }];
+  mp.push(['本校专业一览'], ['领域', '分组', '专业']);
+  const sorted = ms.slice().sort((a, b) => cmp(a.domain || '其他', b.domain || '其他') || (gl(a) ? 0 : 1) - (gl(b) ? 0 : 1) || cmp(gl(a), gl(b)) || cmp(a.label, b.label));
+  let lastDom = null;
+  sorted.forEach(m => { const d = m.domain || '其他'; mp.push([d === lastDom ? '' : d, gl(m), m.label]); lastDom = d; });
+  const wsMajor = XLSX.utils.aoa_to_sheet(mp); wsMajor['!cols'] = [{ wch: 22 }, { wch: 22 }, { wch: 28 }, { wch: 42 }];
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, wsFill, '填写');
@@ -1430,7 +1431,7 @@ function raXlBuildPlan(kind, upRows, existing) {
       if (!diffs.length) { e.reason = '没有变化'; return e; }
       e.status = 'update'; e.diffs = diffs; e.patch = patch; return e;
     }
-    e.view = rec;
+    e.view = rec; e.auto = !!m._auto;
     if (id) e.hint = '找不到这个记录编号' + (raScopedLead() ? '（或不在你的范围内）' : '') + '，按新增';
     if (!rec.univ) { e.reason = '没有大学名'; return e; }
     const why = scopeReason(rec);
@@ -1470,7 +1471,7 @@ function raXlRenderPreview(kind) {
     const v = x.view || {}, st = ST[x.status];
     const major = x.majorErr
       ? `<span style="color:var(--red)">${E(x.majorRaw)}（${E(x.majorErr)}，已留空）</span>`
-      : E(raXlMajorLabel(v.our_major));
+      : E(raXlMajorLabel(v.our_major)) + (x.auto && v.our_major ? '（自动）' : '');
     const note = x.status === 'update' ? x.diffs.map(d => `${E(RA_XL_FIELD_LABEL[d.f] || d.f)}：${E(d.old)} → ${E(d.now)}`).join('<br>')
       : x.status === 'skip' ? `<span style="color:#8a2020">${E(x.reason)}</span>` : E(x.hint);
     html += `<tr${x.status === 'skip' ? ' style="background:#fdf3f3"' : ''}><td>${x.no}</td><td><span style="font-size:10px;padding:1px 6px;border-radius:2px;background:${st[2]};color:${st[1]}">${st[0]}</span></td>`
@@ -1675,6 +1676,8 @@ function raMapRow(row) {
   const rikaSubj = subject.startsWith('rika_');
   if (rikaSubj) track = 'rika';
   const mj = raMatchMajor(get('our_major'));
+  // 本校在籍专业那一格是空的：按在籍学科自动建议（只用于新增；更新时空格保持原值）
+  const autoMajor = (!get('our_major') && get('subject')) ? raArGuessMajor(subject) : '';
   const filled = k => get(k) !== '';
   const patchKeys = [];
   ['univ', 'dept', 'spec', 'student', 'note'].forEach(k => { if (filled(k)) patchKeys.push(k); });
@@ -1688,8 +1691,8 @@ function raMapRow(row) {
   return {
     univ: get('univ') || null, dept: get('dept') || null, spec: get('spec') || null,
     student: get('student') || null, subject, era, track, tier, jlpt, jlpt_score, eng_type, eng_score, note: get('note') || null,
-    our_major: mj.key || null,
-    _id: get('id'), _majorRaw: get('our_major'), _majorErr: mj.err, _patchKeys: patchKeys,
+    our_major: mj.key || autoMajor || null,
+    _id: get('id'), _majorRaw: get('our_major'), _majorErr: mj.err, _patchKeys: patchKeys, _auto: !!autoMajor,
   };
 }
 
@@ -1889,8 +1892,17 @@ async function raAuthHeaders(extra) {
 // ════════════════════════════════════════════════════════════════════════
 let raArMajors = [];   // [{key,label,domain}]
 let raArMajorsReady = false;
+let raArGroups = [];   // [{key,label,domain}]：下面有专业的分组
 async function raArLoadMajors() {
-  try { raArMajors = await raSbFetch('majors?select=key,label,domain&order=domain.asc,label.asc') || []; } catch (e) { raArMajors = []; }
+  try { raArMajors = await raSbFetch('majors?select=key,label,domain,group_key&order=domain.asc,label.asc') || []; }
+  catch (e) { try { raArMajors = await raSbFetch('majors?select=key,label,domain&order=domain.asc,label.asc') || []; } catch (e2) { raArMajors = []; } }
+  // 分组（major_groups）：选择框里作为「XX（全部）」列出；读不到就用内存里的
+  raArGroups = Object.keys(typeof MAJOR_GROUP_LABEL !== 'undefined' ? MAJOR_GROUP_LABEL : {}).map(k => ({ key: k, label: MAJOR_GROUP_LABEL[k], domain: (MAJOR_GROUP_DOMAIN || {})[k] || '' }));
+  try {
+    const gs = await raSbFetch('major_groups?select=key,label,domain&order=key.asc');
+    if (Array.isArray(gs)) raArGroups = gs.map(g => ({ key: g.key, label: g.label || g.key, domain: g.domain || '' }));
+  } catch (e) { /* 分组表读不到 */ }
+  raArGroups = raArGroups.filter(g => raArMajors.some(m => m.group_key === g.key));   // 空分组不列
   raArMajorsReady = true;
   ['f', 'em', 'ugf', 'ugem'].forEach(p => raArRenderMajor(p, raArSel[p] || ''));
 }
@@ -1910,7 +1922,8 @@ function raArFilterMajor(p) {
   const cur = sel.value || raArSel[p] || '';
   const groups = {};
   const o = raArOpt[p] || {};
-  raArMajors.forEach(m => {
+  const optRows = raArGroups.map(g => ({ key: g.key, label: g.label + '（全部）', domain: g.domain })).concat(raArMajors);   // 分组排在各领域最前
+  optRows.forEach(m => {
     if (o.domains && !o.domains.includes(m.domain || '其他') && m.key !== cur) return;
     if (raScopedLead() && !scopeMajor(m.key)) return;   // 负责人：只能选自己范围内的专业
     if (q && !((m.label || '').toLowerCase().includes(q) || (m.key || '').toLowerCase().includes(q)) && m.key !== cur) return;
@@ -1929,13 +1942,44 @@ function raArSetMajor(p, key) {
   const q = document.getElementById(p + '-major-q'); if (q) q.value = '';
   raArFilterMajor(p);
 }
-// 在籍学科（粗分类）→ 真实专业 key；对不上就返回空
+// 在籍学科（合格数据的粗分类）→ 本校在籍专业：模板「专业对照」和自动预选共用
+//   names：按专业中文名匹配 majors（取第一个对得上的）；key：直接用专业 key；group：按分组名匹配 major_groups
+//   对不上就当没有对应；note 写在模板备注列
+const RA_SUBJECT_MAJOR_MAP = {
+  shakai: { key: 'shakai' }, fukushi: { key: 'fukushi' }, shinpan: { key: 'shinpan' }, keizai: { key: 'keizai' }, keiei: { key: 'keiei' },
+  kyoiku: { names: ['教育学', '教育'], re: /教育学?$/ },
+  hougaku: { names: ['法学'] }, seiji: { names: ['政治学', '政治学/国际关系', '政治学/国際関係', '国际关系'] },
+  bungaku: { names: ['文学'] }, rekishi: { names: ['历史学', '歴史学', '历史'] }, hyosho: { names: ['表象文化'] },
+  nihongo: { names: ['日本语教育', '日本語教育'] }, shinri: { names: ['心理学', '心理'] },
+  other: {},
+  rika_kikai: { names: ['机械工学'] }, rika_denki: { names: ['电子电气'] },
+  rika_kagaku: { names: ['化学'], note: '材料方向的学生选「材料科学」' },
+  rika_joho: { names: ['情报工学'] }, rika_kenchiku: { names: ['建筑工学'] },
+  rika_bio: { group: '生命科学' }, rika_keiei: { names: ['经营工学'] },
+  rika_other: { note: '材料科学、环境科学等，按学生实际专业选' },
+};
+// → { key, label, isGroup, note }；没有对应时 key 为空
+function raSubjectMajor(subject) {
+  const e = RA_SUBJECT_MAJOR_MAP[subject] || {};
+  const out = { key: '', label: '', isGroup: false, note: e.note || '' };
+  const ms = raArMajors || [];
+  if (e.key) { const m = ms.find(x => x.key === e.key); if (m) { out.key = m.key; out.label = m.label; } }
+  if (!out.key && e.names) {
+    let m = null;
+    for (const n of e.names) { m = ms.find(x => (x.label || '').trim() === n); if (m) break; }
+    if (!m && e.re) m = ms.find(x => e.re.test((x.label || '').trim()));
+    if (m) { out.key = m.key; out.label = m.label; }
+  }
+  if (!out.key && e.group) {
+    const g = (raArGroups || []).find(x => (x.label || '').trim() === e.group);
+    if (g) { out.key = g.key; out.label = g.label + '（全部）'; out.isGroup = true; }
+  }
+  if (!out.key && !out.note) out.note = '按学生实际专业选';
+  return out;
+}
 function raArGuessMajor(subject) {
-  if (!subject || !raArMajors.length) return '';
-  const has = k => raArMajors.some(m => m.key === k);
-  if (['shakai', 'fukushi', 'shinpan', 'keizai', 'keiei'].includes(subject)) return has(subject) ? subject : '';
-  if (subject === 'kyoiku') { const m = raArMajors.find(x => /^教育学?$/.test(x.label || '')) || raArMajors.find(x => /教育学/.test(x.label || '')); return m ? m.key : ''; }
-  return '';
+  if (!subject || !(raArMajors || []).length) return '';
+  return raSubjectMajor(subject).key;
 }
 function raArPreselect(p) {
   const subj = (document.getElementById(p + '-subject') || {}).value;
