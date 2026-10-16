@@ -300,14 +300,14 @@ function scBlank() {
   const lock = sc.ctx.lockDomain || '';
   const doms = scAllowedDomains();
   return { id: '', domain: lock || doms[0] || '', majors: [], student_id: '', alias: scNextAlias(), tagline: '', background: '', timeline: [], schools: [], schoolInput: '', schoolNew: 0, quote: '', works: [], plan_files: [], others: [], tags: [], published: false,
-    stuSearch: '', cand: null, tagInput: '' };
+    stuSearch: '', cand: null, tagInput: '', sf: scSfInit() };
 }
 function scAllowedDomains() { return DOMAINS.map(d => d.label).filter(d => sc.ctx.allowDomain(d)); }
 function scNew() { sc.cur = scBlank(); sc.view = 'edit'; scRender(); scEnsureStudents(); }
 function scEdit(id) {
   const r = (sc.rows || []).find(x => x.id === id); if (!r) return;
   sc.cur = { id: r.id, domain: r.domain, majors: scArr(r.majors).slice(), student_id: r.student_id || '', alias: r.alias || '', tagline: r.tagline || '', background: r.background || '', timeline: scArr(r.timeline).map(t => ({ period: t.period || '', content: t.content || '' })),
-    schools: scSplitResult(r.result).map(l => ({ label: l, on: true })), schoolInput: '', schoolNew: 0, quote: r.quote || '', works: scArr(r.works).map(w => Object.assign({}, w)), plan_files: scArr(r.plan_files).map(p => Object.assign({}, p)), others: scArr(r.others).map(o => Object.assign({}, o)), tags: scArr(r.tags).slice(), published: r.published === true, stuSearch: '', cand: null, tagInput: '' };
+    schools: scSplitResult(r.result).map(l => ({ label: l, on: true })), schoolInput: '', schoolNew: 0, quote: r.quote || '', works: scArr(r.works).map(w => Object.assign({}, w)), plan_files: scArr(r.plan_files).map(p => Object.assign({}, p)), others: scArr(r.others).map(o => Object.assign({}, o)), tags: scArr(r.tags).slice(), published: r.published === true, stuSearch: '', cand: null, tagInput: '', sf: scSfInit() };
   sc.view = 'edit'; scRender(); scEnsureStudents();
   if (sc.cur.student_id) { scLoadCandidates(); scMergeSchools(sc.cur); }
 }
@@ -318,21 +318,86 @@ async function scEnsureStudents() {
 }
 // 合格案例只关联已合格的学生：学生档案状态为「已合格」(graduated)，或志望校里有任一所是合格(passed)；给每人带上合格校名
 async function scOnlyPassed(all) {
-  const plans = await sbAll('/rest/v1/student_school_plans?status=eq.passed&select=student_id,school_name');
-  const by = {};
-  (plans || []).forEach(p => { const k = String(p.student_id); (by[k] = by[k] || []); if (p.school_name && !by[k].includes(p.school_name)) by[k].push(p.school_name); });
-  return (all || []).filter(s => s.status === 'graduated' || by[String(s.id)]).map(s => Object.assign({}, s, { passedSchools: by[String(s.id)] || [] }));
+  const plans = await sbAll('/rest/v1/student_school_plans?status=eq.passed&select=*');
+  const by = {}, yrs = {};
+  const yearOf = v => { const m = /(20\d{2})/.exec(String(v || '')); return m ? m[1] : ''; };
+  (plans || []).forEach(p => {
+    const k = String(p.student_id); (by[k] = by[k] || []); if (p.school_name && !by[k].includes(p.school_name)) by[k].push(p.school_name);
+    const y = yearOf(p.exam_date) || yearOf(p.application_period) || yearOf(p.created_at);   // 考试日期 > 出愿时间 > 记录建立年份
+    if (y) (yrs[k] = yrs[k] || new Set()).add(y);
+  });
+  return (all || []).filter(s => s.status === 'graduated' || by[String(s.id)]).map(s => Object.assign({}, s, { passedSchools: by[String(s.id)] || [], passedYears: [...(yrs[String(s.id)] || [])] }));
 }
-function scStuOptions() {
-  const c = sc.cur, all = sc.stu || [];
-  const list = all.filter(s => searchMatch(c.stuSearch, studentSearchFields(s)));
-  const none = sc.stu && !all.length;
-  const head = !sc.stu ? '学生列表读取中…' : none ? '— 还没有已合格的学生（学生档案状态为「已合格」，或志望校里有合格的学校）—' : `— 选择已合格的学生（${list.length}）—`;
-  const sch = s => { const t = (s.passedSchools || []).join('、'); return t ? ' · ' + (t.length > 24 ? t.slice(0, 24) + '…' : t) : ''; };
-  return `<option value="">${scE(head)}</option>` + list.map(s => `<option value="${scE(s.id)}" ${String(c.student_id) === String(s.id) ? 'selected' : ''}>${scE(s.name)} · ${scE(typeof majorLabel === 'function' ? majorLabel(s.major) : s.major)}${scE(sch(s))}</option>`).join('');
+// ── ① 关联学生：搜索框 + 领域 / 专业 / 合格年份 / 案例 chips + 结果列表 ──
+function scSfInit() {
+  const doms = scAllowedDomains();
+  return { dom: sc.ctx.lockDomain || (doms.length === 1 ? doms[0] : ''), major: '', year: '', cs: 'none', more: 30 };
 }
-function scStuSearch(q) { sc.cur.stuSearch = q; scRerenderStuSelect(); }
-function scRerenderStuSelect() { const el = document.getElementById('sc_stu'); if (el) el.innerHTML = scStuOptions(); }
+function scStuDom(s) { return MAJOR_DOMAIN[s.major] || ''; }
+function scStuHasCase(s) { const cid = sc.cur && sc.cur.id; return (sc.rows || []).some(r => r.id !== cid && String(r.student_id) === String(s.id)); }
+function scStuYears(s) { return (s.passedYears && s.passedYears.length) ? s.passedYears : ['unknown']; }
+function scStuOk(s, f, q, skip) {
+  if (skip !== 'dom' && f.dom && scStuDom(s) !== f.dom) return false;
+  if (skip !== 'major' && f.major && s.major !== f.major) return false;
+  if (skip !== 'year' && f.year && !scStuYears(s).includes(f.year)) return false;
+  if (skip !== 'cs' && f.cs !== 'all' && scStuHasCase(s) !== (f.cs === 'has')) return false;
+  return !q || searchMatch(q, studentSearchFields(s).concat([(s.passedSchools || []).join(' ')]));
+}
+function scStuPickerHtml() {
+  const c = sc.cur, f = c.sf || (c.sf = scSfInit());
+  if (c.student_id) {
+    const s = (sc.stu || []).find(x => String(x.id) === String(c.student_id));
+    const t = s ? [s.name, typeof majorLabel === 'function' ? majorLabel(s.major) : s.major, (s.passedSchools || [])[0]].filter(Boolean).join(' · ') : '已关联学生';
+    return `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px">已选：<b>${scE(t)}</b></span>
+      <button class="btn btn-outline btn-sm" onclick="scPickStudent('')">换一个</button>
+      <button class="btn btn-outline btn-sm" onclick="scRefill()">↻ 重新带出（覆盖背景 / 合格 / 时间线）</button></div>`;
+  }
+  return `<div>${'<label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:3px">搜索学生</label>'}<input value="${scE(c.stuSearch)}" placeholder="搜索姓名（汉字 / 拼音首字母）/ 专业 / 合格学校…" oninput="searchBox(this,scStuSearch)" style="width:100%;box-sizing:border-box;font-size:12px;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit"></div>
+    <div id="sc_stu_box" style="margin-top:8px">${scStuListHtml()}</div>`;
+}
+function scStuListHtml() {
+  const c = sc.cur, f = c.sf;
+  if (!sc.stu) return '<div class="empty">学生列表读取中…</div>';
+  const all = sc.stu, q = (c.stuSearch || '').trim();
+  const chip = (on, label, n, fn) => ({ on, html: `<div class="filter-chip${on ? ' active' : ''}" onclick="${fn}" style="padding:3px 10px;font-size:10px">${label}${n == null ? '' : ` <span style="opacity:.6">${n}</span>`}</div>` });
+  const row = (label, items) => items.length ? `<div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px"><span style="font-size:10px;color:var(--text-3);min-width:28px">${label}</span><div style="display:flex;gap:4px;flex-wrap:wrap">${chipFold(items)}</div></div>` : '';
+  const cnt = skip => all.filter(s => scStuOk(s, f, q, skip));
+  // 领域：候选人里出现的、且在账号范围内
+  const order = DOMAINS.map(d => d.label), domPool = all.filter(s => scStuOk(s, f, q, 'dom'));
+  const doms = scAllowedDomains().filter(d => all.some(s => scStuDom(s) === d)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const domItems = doms.map(d => chip(f.dom === d, scE(d), domPool.filter(s => scStuDom(s) === d).length, `scSf('dom','${scE(d)}')`));
+  // 专业：跟着已选领域
+  const majPool = all.filter(s => scStuOk(s, f, q, 'major'));
+  const majs = [...new Set(all.filter(s => !f.dom || scStuDom(s) === f.dom).map(s => s.major).filter(Boolean))];
+  const majItems = majs.map(m => chip(f.major === m, scE(typeof majorLabel === 'function' ? majorLabel(m) : m), majPool.filter(s => s.major === m).length, `scSf('major','${scE(m)}')`));
+  // 合格年份
+  const yrPool = all.filter(s => scStuOk(s, f, q, 'year'));
+  const yrs = [...new Set(all.flatMap(scStuYears))].sort((a, b) => a === 'unknown' ? 1 : b === 'unknown' ? -1 : b.localeCompare(a));
+  const yrItems = yrs.map(y => chip(f.year === y, y === 'unknown' ? '未知' : y + '年', yrPool.filter(s => scStuYears(s).includes(y)).length, `scSf('year','${y}')`));
+  const csPool = all.filter(s => scStuOk(s, f, q, 'cs'));
+  const csItems = [['all', '全部', csPool.length], ['none', '还没写案例', csPool.filter(s => !scStuHasCase(s)).length], ['has', '已有案例', csPool.filter(scStuHasCase).length]].map(([k, l, n]) => chip(f.cs === k, l, n, `scSf('cs','${k}')`));
+  const list = cnt();
+  const shown = list.slice(0, f.more);
+  const mj = s => typeof majorLabel === 'function' ? majorLabel(s.major) : s.major;
+  const sch = s => { const a = s.passedSchools || []; return a.length ? a.slice(0, 3).join('、') + (a.length > 3 ? ` 等 ${a.length} 所` : '') : ''; };
+  const rows = shown.map(s => `<div onclick="scPickStudent('${scE(s.id)}')" style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:6px 8px;border-bottom:1px solid var(--border);cursor:pointer;font-size:12px">
+      <b style="min-width:70px">${scE(s.name)}</b><span style="color:var(--text-2)">${scE(mj(s))}</span>
+      <span style="flex:1;min-width:120px;color:var(--text-3);font-size:11px">${scE(sch(s)) || '—'}</span>
+      <span style="font-size:10px;color:var(--text-3)">${s.status === 'graduated' ? '已合格' : '在籍'}</span>
+      ${scStuHasCase(s) ? '<span style="font-size:10px;color:var(--accent)">已有案例</span>' : ''}</div>`).join('');
+  return row('领域', domItems) + row('专业', majItems) + row('年份', yrItems) + row('案例', csItems)
+    + `<div style="font-size:10px;color:var(--text-3);margin:6px 0 2px">共 ${list.length} 人</div>`
+    + `<div style="border:1px solid var(--border);border-radius:3px;background:var(--bg);max-height:340px;overflow:auto">${rows || '<div class="empty" style="padding:12px">没有符合条件的已合格学生（学生档案状态为「已合格」，或志望校里有合格的学校）</div>'}`
+    + (list.length > shown.length ? `<div onclick="scSf('more',${f.more + 30})" style="text-align:center;padding:7px;font-size:11px;color:var(--accent);cursor:pointer">显示更多（还有 ${list.length - shown.length} 人）</div>` : '') + '</div>';
+}
+function scSf(k, v) {
+  const f = sc.cur.sf;
+  if (k === 'more') f.more = v;
+  else { f[k] = f[k] === v && k !== 'cs' ? '' : v; f.more = 30; if (k === 'dom') f.major = ''; }
+  scRerenderStuSelect();
+}
+function scStuSearch(q) { sc.cur.stuSearch = q; sc.cur.sf.more = 30; scRerenderStuSelect(); }
+function scRerenderStuSelect() { const el = document.getElementById('sc_stu_box'); if (el) el.innerHTML = scStuListHtml(); }
 
 function scEditHtml() {
   const c = sc.cur;
@@ -350,11 +415,7 @@ function scEditHtml() {
       <span style="font-size:10px;color:var(--text-3)">对外只显示称呼；学生真名只用来带出数据，不会写进案例</span></div>
     <div style="max-width:860px">
     <div style="${box}">${h('① 关联学生（可不选）')}
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
-        <div>${lbl('搜索学生')}<input value="${scE(c.stuSearch)}" placeholder="搜索姓名（汉字 / 拼音首字母）/ 专业 / 学校…" oninput="searchBox(this,scStuSearch)" style="${inp}"></div>
-        <div>${lbl('选择已合格的学生（自动带出背景、合格校、时间线草稿）')}<select id="sc_stu" onchange="scPickStudent(this.value)" style="${inp}">${scStuOptions()}</select></div>
-      </div>
-      ${c.student_id ? `<div style="margin-top:8px"><button class="btn btn-outline btn-sm" onclick="scRefill()">↻ 重新带出（覆盖背景 / 合格 / 时间线）</button></div>` : ''}
+      ${scStuPickerHtml()}
     </div>
     <div style="${box}">${h('② 基本信息')}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
