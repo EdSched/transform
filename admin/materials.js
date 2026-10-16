@@ -149,7 +149,7 @@ async function msLoad() {
   } catch (e) { box.innerHTML = `<div style="font-size:12px;color:var(--danger)">读取失败：${riyuEsc(e.message)}（请先执行 PR 里的 SQL 建表）</div>`; return; }
   // 学生：在读 + 当前领域 / 专业筛选（与学生视角一致），按学部 / 大学院分
   let stus = (cachedStudents || []).filter(s => (s.status === 'active' || !s.status) && studentInCurrentView(s));
-  if (typeof stMajorFilter !== 'undefined' && stMajorFilter !== 'all') stus = stus.filter(s => matchesMajorFilter(s.major, stMajorFilter));
+  stus = dmfFilter(stus);   // 领域 / 专业 / 来源（与学生视角共用 DMF）
   stus = stus.filter(s => matTrackOf(s) === msTrack);
   const by = (arr, k) => { const m = {}; (arr || []).forEach(r => (m[r[k]] = m[r[k]] || []).push(r)); return m; };
   const rowsBy = by(rows, 'student_id'), plansBy = by(plans, 'student_id'), subsBy = by(subs, 'student_id');

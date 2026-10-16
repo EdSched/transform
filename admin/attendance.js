@@ -53,7 +53,7 @@ function attNonMembersWithRecords(records, members, excludeIds){
 let attPeriodFilter='';
 let attTypeFilter='';
 let attCampusFilter='';
-let attMajorFilter='all';
+const ATT_DMF={majorsOf:c=>(c.major||[]).filter(m=>MAJORS[m]),noSource:true};   // 出席页按课程筛选：领域 → 专业（共用 DMF）
 let attAttFilter='';       // 出席属性筛选：'' 全部 / required / open / none
 let attNoneOpen=false;     // 「不记出席的课」是否展开
 let attElAllOpen={};     // 出席状况表：组内开放课「显示全部同组学生」展开的课程 id
@@ -115,7 +115,7 @@ function renderAttendancePage(mc){
   filteredCourses=filteredCourses.filter(c=>{if(seen.has(c.id))return false;seen.add(c.id);return true});
 
   // majors available in filtered courses
-  const availMajors=[...new Set(filteredCourses.flatMap(c=>c.major||[]))].filter(m=>MAJORS[m]);
+  const dmfBar=attTypeFilter?domMajorFilterHtml(DMF,"renderAttendancePage(document.getElementById('mainContent'))",filteredCourses,ATT_DMF):'';
 
   mc.innerHTML=`
   <div class="page-header">
@@ -156,12 +156,7 @@ function renderAttendancePage(mc){
           ${campuses.map(cp=>`<div class="filter-chip${attCampusFilter===cp?' active':''}" onclick="setAttCampus('${cp}')">${cp}</div>`).join('')}
         </div>
       </div>`:''}
-      ${attTypeFilter&&availMajors.length?`<div>
-        <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">专业</div>
-        <div style="display:flex;gap:5px;flex-wrap:wrap">
-          ${chipFold([{on:attMajorFilter==='all',html:`<div class="filter-chip${attMajorFilter==='all'?' active':''}" onclick="setAttMajor('all')">全部</div>`}].concat(availMajors.map(m=>({on:attMajorFilter===m,html:`<div class="filter-chip${attMajorFilter===m?' active':''}" onclick="setAttMajor('${m}')">${MAJORS[m]||m}</div>`}))))}
-        </div>
-      </div>`:''}
+      ${dmfBar?`<div style="flex-basis:100%">${dmfBar}</div>`:''}
     </div>
     ${!attTypeFilter&&!attPeriodFilter&&!attAttFilter?'<div style="font-size:11px;color:var(--text-3);margin-top:10px">请选择课程属性或期数查看课次</div>':''}
   </div>
@@ -211,9 +206,7 @@ function renderNoAttCourses(courses){
 
 function renderSessionList(filteredCourses){
   let allCourses=filteredCourses;
-  if(attMajorFilter!=='all'){
-    allCourses=allCourses.filter(c=>(c.major||[]).includes(attMajorFilter));
-  }
+  if(attTypeFilter) allCourses=dmfFilter(allCourses,ATT_DMF);
   const noAttCourses=allCourses.filter(c=>courseAttMode(c)==='none');
   const courses=allCourses.filter(c=>courseAttMode(c)!=='none');
   const noAttHtml=renderNoAttCourses(noAttCourses);
@@ -474,20 +467,14 @@ function admHwWord(sessionId, subId) {
 
 function setAttPeriod(p){
   attPeriodFilter=attPeriodFilter===p?'':p;
-  attMajorFilter='all';
   renderAttendancePage(document.getElementById('mainContent'));
 }
 function setAttType(t){
   attTypeFilter=attTypeFilter===t?'':t;
-  attMajorFilter='all';
   renderAttendancePage(document.getElementById('mainContent'));
 }
 function setAttCampus(cp){
   attCampusFilter=attCampusFilter===cp?'':cp;
-  renderAttendancePage(document.getElementById('mainContent'));
-}
-function setAttMajor(m){
-  attMajorFilter=m;
   renderAttendancePage(document.getElementById('mainContent'));
 }
 
