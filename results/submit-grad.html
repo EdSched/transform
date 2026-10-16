@@ -71,6 +71,7 @@ main{max-width:640px;margin:2rem auto;padding:0 1.2rem 4rem}
 <div id="form-area">
   <div class="card">
     <div class="card-title">🎓 院校信息</div>
+    <div class="field"><label>真实姓名<span class="req">*</span></label><input id="f-student" type="text" placeholder="例：张三"><div style="font-size:11px;color:var(--text-secondary);margin-top:4px">真实姓名不会对外公开，请放心填写。</div></div>
     <div class="field"><label>合格大学<span class="req">*</span></label><input id="f-univ" type="text" placeholder="例：東京大学"></div>
     <div class="grid-2">
       <div class="field"><label>研究科<span class="req">*</span></label><input id="f-dept" type="text" placeholder="例：工学系研究科"></div>
@@ -120,7 +121,6 @@ main{max-width:640px;margin:2rem auto;padding:0 1.2rem 4rem}
         <select id="f-eng-type"><option value="">—</option><option value="TOEIC">TOEIC</option><option value="TOEFL">TOEFL</option><option value="IELTS">IELTS</option></select>
       </div>
       <div class="field"><label>英语分数</label><input id="f-eng-score" type="number" placeholder="例：820" min="0"></div>
-      <div class="field"><label>姓名（可用代号）</label><input id="f-student" type="text" placeholder="例：A同学"></div>
     </div>
   </div>
 
@@ -187,7 +187,17 @@ async function uploadPhoto(file,univ,student){
   return path;   // 只返回私有桶里的路径，不写进公开的结果表
 }
 
+function isRealName(n){
+  n=(n||'').trim();
+  if(!n)return false;
+  if(/^[A-Za-zＡ-Ｚａ-ｚ][A-Za-zＡ-Ｚａ-ｚ.．\s]{0,1}$/.test(n))return false;
+  if(/^[A-Za-zＡ-Ｚａ-ｚ]{1,2}\s*(同学|同學|さん|サン|君|氏|桑)$/.test(n))return false;
+  if(/^(某|匿名|不明|未知)/.test(n))return false;
+  return true;   // 与管理端 raArRealName 同一套规则
+}
 async function submitForm(){
+  const stuName=document.getElementById('f-student').value.trim();
+  if(!isRealName(stuName)){showToast('请填写真实姓名',false);return;}
   const univ=document.getElementById('f-univ').value.trim();
   const dept=document.getElementById('f-dept').value.trim();
   const subject=document.getElementById('f-subject').value;
@@ -200,7 +210,7 @@ async function submitForm(){
 
   try{
     const track=subject.startsWith('rika_')?'rika':'bunka';
-    const student=document.getElementById('f-student').value.trim()||null;
+    const student=stuName;
     const jlptScore=document.getElementById('f-jlpt-score').value;
     const engScore=document.getElementById('f-eng-score').value;
     const photoFile=document.getElementById('f-photo').files[0];
@@ -209,7 +219,9 @@ async function submitForm(){
     if(photoFile){btn.textContent='上传图片中...';photoPath=await uploadPhoto(photoFile,univ,student);}
 
     const noteText=document.getElementById('f-note').value.trim();
+    const rowId=crypto.randomUUID();   // 前端生成 id：匿名读不到整行，不能靠 return=representation 取回
     const row={
+      id:rowId,
       univ,dept,
       spec:document.getElementById('f-spec').value.trim()||null,
       student,subject,track,
@@ -224,7 +236,7 @@ async function submitForm(){
     btn.textContent='保存中...';
     const res=await fetch(`${SUPABASE_URL}/rest/v1/admission_results`,{
       method:'POST',
-      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=representation'},
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
       body:JSON.stringify(row),
     });
     if(!res.ok)throw new Error(await res.text());
@@ -232,8 +244,7 @@ async function submitForm(){
       // 照片路径写进单独的 result_photos 表（公开的结果表里不放照片信息）
       let photoOk=false;
       try{
-        const saved=await res.json();
-        const rid=Array.isArray(saved)?saved[0]&&saved[0].id:saved&&saved.id;
+        const rid=rowId;
         const pr=await fetch(`${SUPABASE_URL}/rest/v1/result_photos`,{
           method:'POST',
           headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
