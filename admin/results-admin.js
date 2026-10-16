@@ -183,6 +183,41 @@ function raCanPhotos() {
   if (String((a.permissions || {}).result_admin).toLowerCase() === 'true') return true;
   return typeof mgrPageAllowed === 'function' && mgrPageAllowed('admissions');
 }
+// 管理模式的负责人（没有 result_admin）：只看、只管自己管理范围（领域 / 专业）内的合格实绩、截图和海报（数据库 result_in_my_scope() 同一规则）
+function raScopedLead() {
+  if (raIsTeacher() || typeof ACCESS_KEY === 'undefined' || !ACCESS_KEY || ACCESS_KEY.invalid || ACCESS_KEY.is_admin) return false;
+  const a = ACCESS_KEY._asTeacher; if (!a) return false;
+  return String((a.permissions || {}).result_admin).toLowerCase() !== 'true';
+}
+// 一条合格记录在不在我的范围：专业 = our_major；领域 = 专业所属领域，没有专业就按 大学院/学部 + 系統 推
+function raInMyScope(kind, row) {
+  if (!raScopedLead()) return true;
+  const mj = row && row.our_major;
+  const dom = (mj && MAJOR_DOMAIN[mj]) || pstTrackDomain(kind, row && row.track);
+  return !!((mj && scopeMajor(mj)) || scopeHasDomain(dom));
+}
+function raPosterInMyScope(r) { return !raScopedLead() || !!((r.major && scopeMajor(r.major)) || scopeHasDomain(r.domain)); }
+// 补图等读取时在服务器端先按范围缩小（取回后还会用 raInMyScope 再过滤一次）；不是负责人 = 不加条件
+function raScopeQs(kind) {
+  if (!raScopedLead()) return '';
+  const keys = Object.keys(MAJOR_DOMAIN).filter(k => scopeMajor(k));
+  const tracks = ['bunka', 'rika', 'bijutsu'].filter(t => scopeHasDomain(pstTrackDomain(kind, t)));
+  const parts = [];
+  if (keys.length) parts.push(`our_major.in.(${keys.join(',')})`);
+  if (tracks.length) parts.push(`and(our_major.is.null,track.in.(${tracks.join(',')}))`);
+  return `&or=(${parts.length ? parts.join(',') : 'id.is.null'})`;
+}
+function raScopeHint() {
+  if (!raScopedLead()) return '';
+  const only = !VIEW_SCOPE.domains.length;
+  return `<div style="font-size:11px;color:var(--text-muted);margin:6px 0">${only ? '只显示本校在籍专业属于你负责专业的记录' : '只显示你管理范围内的记录（没填本校在籍专业的，按系統归到领域）'}</div>`;
+}
+// 保存前检查：不在自己范围内的记录存进去自己也看不到
+function raScopeCheck(kind, row) {
+  if (raInMyScope(kind, row)) return true;
+  raToast('这条不在你的管理范围内：请选择范围内的本校在籍专业', false);
+  return false;
+}
 // 老师模式下「本校在籍专业」下面的说明（不同步学生档案）
 function raTeacherMajorNote() { return raIsTeacher() ? '<div style="font-size:10px;color:var(--text-muted);margin-top:3px">记录到学生档案由管理员处理</div>' : ''; }
 
@@ -221,11 +256,12 @@ function raHtml() {
   <button class="tab-btn active" onclick="raSwitchTab('add')">手动添加</button>
   <button class="tab-btn" onclick="raSwitchTab('excel')">Excel 批量导入</button>
   <button class="tab-btn" onclick="raSwitchTab('list')">数据管理</button>
-  <button class="tab-btn" onclick="raSwitchTab('tier')">Tier 管理</button>
+  <button ${raScopedLead()?'style="display:none"':''} class="tab-btn" onclick="raSwitchTab('tier')">Tier 管理</button>
   <button ${raCanPhotos()?'':'style="display:none"'} class="tab-btn" onclick="raSwitchTab('photos')">合格写真</button>
 </div>
 
 <main>
+${raScopeHint()}
 
 <!-- ── TAB: 手动添加 ── -->
 <div id="tab-add">
@@ -494,7 +530,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
       <option value="hist">2022–2025</option>
     </select>
     <span class="result-count" id="result-count"></span>
-    ${raIsTeacher() ? '' : '<button class="btn btn-danger" onclick="raConfirmDeleteAll()" style="margin-left:auto">全件削除</button>'}
+    ${raIsTeacher() || raScopedLead() ? '' : '<button class="btn btn-danger" onclick="raConfirmDeleteAll()" style="margin-left:auto">全件削除</button>'}
   </div>
   <div id="list-area" class="load-state">読み込み中...</div>
 </div>
@@ -558,11 +594,12 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
   <button class="tab-btn active" onclick="raSwitchUgTab('add')">手动添加</button>
   <button class="tab-btn" onclick="raSwitchUgTab('excel')">Excel 批量导入</button>
   <button class="tab-btn" onclick="raSwitchUgTab('list')">数据管理</button>
-  <button class="tab-btn" onclick="raSwitchUgTab('tier')">Tier 管理</button>
+  <button ${raScopedLead()?'style="display:none"':''} class="tab-btn" onclick="raSwitchUgTab('tier')">Tier 管理</button>
   <button ${raCanPhotos()?'':'style="display:none"'} class="tab-btn" onclick="raSwitchUgTab('photos')">合格写真</button>
 </div>
 
 <main>
+${raScopeHint()}
 
 <!-- ── UG TAB: 手动添加 ── -->
 <div id="ugtab-add">
@@ -757,7 +794,7 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
       <option value="4">T4</option>
     </select>
     <span class="result-count" id="ug-result-count"></span>
-    ${raIsTeacher() ? '' : '<button class="btn btn-danger" onclick="raUgConfirmDeleteAll()" style="margin-left:auto">全件削除</button>'}
+    ${raIsTeacher() || raScopedLead() ? '' : '<button class="btn btn-danger" onclick="raUgConfirmDeleteAll()" style="margin-left:auto">全件削除</button>'}
   </div>
   <div id="ug-list-area" class="load-state">読み込み中...</div>
 </div>
@@ -978,7 +1015,7 @@ async function raPpAdminLoad() {
     if (!r || r.length < 1000) break;
     off += 1000;
   }
-  return all;
+  return all.filter(raPosterInMyScope);
 }
 // 编辑器关掉后：如果正在看海报管理页，刷新列表
 function raPstOnClose() { if (raCurMajor === 'poster' && typeof ppsReload === 'function') ppsReload(); }
@@ -1102,6 +1139,7 @@ async function raSubmitForm(btn, force) {
     our_major: raArGetMajor('f') || null,
   };
 
+  if (!raScopeCheck('grad', row)) return;
   if (!force && raLastSaved.grad === raSavedKey(row)) {
     raShowModal('重复确认', '刚刚已经保存过一条相同的，还要再存一条吗？', () => raSubmitForm(btn, true));
     return;
@@ -1303,7 +1341,12 @@ async function raExecuteImport() {
   const label = document.getElementById('progress-label');
   prog.classList.add('show');
 
-  const rows = raUploadRows.map(raMapRow).filter(r => r.univ);
+  let rows = raUploadRows.map(raMapRow).filter(r => r.univ);
+  if (raScopedLead()) {
+    const n0 = rows.length; rows = rows.filter(r => raInMyScope('grad', r));
+    if (n0 > rows.length) raToast(`${n0 - rows.length} 条不在你的管理范围内，已跳过`, false);
+    if (!rows.length) { btn.disabled = false; prog.classList.remove('show'); return; }
+  }
   const BATCH = 50;
   let done = 0;
 
@@ -1526,6 +1569,7 @@ function raArFilterMajor(p) {
   const o = raArOpt[p] || {};
   raArMajors.forEach(m => {
     if (o.domains && !o.domains.includes(m.domain || '其他') && m.key !== cur) return;
+    if (raScopedLead() && !scopeMajor(m.key)) return;   // 负责人：只能选自己范围内的专业
     if (q && !((m.label || '').toLowerCase().includes(q) || (m.key || '').toLowerCase().includes(q)) && m.key !== cur) return;
     (groups[m.domain || '其他'] = groups[m.domain || '其他'] || []).push(m);
   });
@@ -1645,7 +1689,7 @@ async function raArSyncToStudent(row, table) {
   return '';
 }
 
-async function raFetchAllResults() { return sbAll('/rest/v1/admission_results?select=*&order=created_at.desc,id.desc'); }
+async function raFetchAllResults() { return (await sbAll('/rest/v1/admission_results?select=*&order=created_at.desc,id.desc' + raScopeQs('grad'))).filter(r => raInMyScope('grad', r)); }
 async function raInsertResult(row) { return raSbFetch('admission_results', { method:'POST', body:row }); }
 async function raInsertBatch(rows) {
   const clean = rows.map(r => ({
@@ -1873,7 +1917,7 @@ let raUgDataLoaded = false;
 let raUgListSortCol = 'created_at', raUgListSortDir = -1;
 let raUgUploadRows = [], raUgUploadColMap = {}, raUgUploadHeaders = [];
 
-async function raUgFetchAll() { return sbAll(`/rest/v1/${raUG_TABLE}?select=*&order=created_at.desc,id.desc`); }
+async function raUgFetchAll() { return (await sbAll(`/rest/v1/${raUG_TABLE}?select=*&order=created_at.desc,id.desc` + raScopeQs('ug'))).filter(r => raInMyScope('ug', r)); }
 async function raUgInsertOne(row) { return raSbFetch(raUG_TABLE, { method:'POST', body:row }); }
 async function raUgInsertBatch(rows) {
   const clean = rows.map(r => ({ ...r, tier: r.tier != null ? parseInt(r.tier)||null : null }));
@@ -1997,6 +2041,7 @@ async function raUgSubmitForm(btn, force) {
     our_major: raArGetMajor('ugf') || null,
   };
 
+  if (!raScopeCheck('ug', row)) return;
   if (!force && raLastSaved.ug === raSavedKey(row)) {
     raShowModal('重复确认', '刚刚已经保存过一条相同的，还要再存一条吗？', () => raUgSubmitForm(btn, true));
     return;
@@ -2157,7 +2202,12 @@ async function raUgExecuteImport() {
   const fill = document.getElementById('ug-progress-fill');
   const label = document.getElementById('ug-progress-label');
   prog.classList.add('show');
-  const rows = raUgUploadRows.map(raUgMapRow).filter(r => r.univ);
+  let rows = raUgUploadRows.map(raUgMapRow).filter(r => r.univ);
+  if (raScopedLead()) {
+    const n0 = rows.length; rows = rows.filter(r => raInMyScope('ug', r));
+    if (n0 > rows.length) raToast(`${n0 - rows.length} 条不在你的管理范围内，已跳过`, false);
+    if (!rows.length) { btn.disabled = false; prog.classList.remove('show'); return; }
+  }
   const BATCH = 50;
   let done = 0;
   try {
@@ -2319,6 +2369,7 @@ async function raSaveEdit(btn) {
     note:       document.getElementById('em-note').value.trim() || null,
     our_major:  raArGetMajor('em') || null,
   };
+  if (!raScopeCheck('grad', updates)) return;
   const photoFile = document.getElementById('em-photo').files[0];
   raBtnBusy(btn, '保存中…');
   try {
@@ -2416,6 +2467,7 @@ async function raUgSaveEdit(btn) {
     note:document.getElementById('ug-em-note').value.trim()||null,
     our_major:raArGetMajor('ugem')||null,
   };
+  if (!raScopeCheck('ug', updates)) return;
   const ugPhoto=document.getElementById('ug-em-photo').files[0];
   raBtnBusy(btn, '保存中…');
   try {
@@ -2666,8 +2718,8 @@ async function raLoadPhotos(kind) {
   grid.innerHTML = '<div class="load-state">読み込み中...</div>';
   try {
     await raArLoadPhotoMap(kind);
-    const rows = await raArFetchAll(`${c.table}?select=*&order=created_at.desc`);
-    c.rows = rows.filter(r => raAR_PH[kind][String(r.id)] || raArLegacyUrl(r));   // 有私有桶照片的，或还没迁移的旧照片
+    const rows = await raArFetchAll(`${c.table}?select=*&order=created_at.desc` + raScopeQs(kind));
+    c.rows = rows.filter(r => raInMyScope(kind, r) && (raAR_PH[kind][String(r.id)] || raArLegacyUrl(r)));   // 有私有桶照片的，或还没迁移的旧照片
     raArMigCount();
     // 已做过海报的记录（表还没建时 posterMap 为 null，「海报」筛选和按钮状态都不显示）
     try {
@@ -2752,7 +2804,7 @@ function raFillNew() {
 raFill.grad = raFillNew(); raFill.ug = raFillNew();
 const raFILL_RANGES = [['1w', '最近 1 周'], ['1m', '最近 1 个月'], ['3m', '最近 3 个月'], ['old', '3 个月以前'], ['all', '全部']];
 const raFILL_PAGE = 100, raFILL_SCAN_MAX = 5000;
-function raFillCols(kind) { return 'id,univ,dept,spec,student,' + (kind === 'ug' ? '' : 'subject,') + 'track,era,created_at'; }
+function raFillCols(kind) { return 'id,univ,dept,spec,student,' + (kind === 'ug' ? '' : 'subject,') + 'track,era,created_at' + (raScopedLead() ? ',our_major' : ''); }
 
 function raPhModeRender(kind) {
   const c = raPH[kind], f = raFill[kind], el = document.getElementById(c.pre + '-mode'); if (!el) return;
@@ -2811,6 +2863,7 @@ async function raFillLoad(kind, reset) {
     else if (f.range !== 'all') qs += `&created_at=gte.${encodeURIComponent(raFillSince(f.range))}`;
     if (f.univ) qs += `&univ=eq.${encodeURIComponent(f.univ)}`;
     if (f.track) qs += `&track=eq.${encodeURIComponent(f.track)}`;
+    qs += raScopeQs(kind);
     if (f.subj && kind !== 'ug') qs += `&subject=eq.${encodeURIComponent(f.subj)}`;
     const BATCH = 200, got = [];
     let scanned = 0, more = false;
@@ -2819,7 +2872,7 @@ async function raFillLoad(kind, reset) {
       if (seq !== f.seq) return;
       f.offset += rows.length; scanned += rows.length;
       for (const r of rows) {
-        if (f.phIds.has(String(r.id))) continue;
+        if (f.phIds.has(String(r.id)) || !raInMyScope(kind, r)) continue;
         if (q && !searchMatch(q, [r.student, r.univ, r.dept, r.spec])) continue;
         got.push(r);
       }

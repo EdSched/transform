@@ -650,7 +650,7 @@ function tfMgrRender(){
       <div style="font-size:10px;color:var(--text-3);margin-top:6px;line-height:1.7">不要求职位（兼职也可以），管理员想给谁开就给谁开；选了之后，这位老师进管理模式时，左侧导航会直接多出对应的功能，只能管理自己管理范围里的领域：价目编辑 = 价目；专业增删 = 专业；宣传内容 = 宣传介绍；本范围老师管理 = 新建 / 编辑管理范围（领域或专业）内的老师（不能设负责人 / 对接 / 总务、不能给部门管理权限）。</div></div>
     <div style="margin-top:12px"><div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">管理模式能用的页面</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${MGR_PAGE_DEFS.map(([k,label])=>`<div class="filter-chip${d.pages.includes(k)?' active':''}" onclick="mgrPageToggle('${k}')" style="padding:3px 10px;font-size:11px">${escTM(label)}</div>`).join('')}</div>
-      <div style="font-size:10px;color:var(--text-3);margin-top:6px;line-height:1.7">默认全选 = 管理模式的页面不受限制。取消勾选的页面，菜单里看不到、直接输网址也进不去。资源管理 / 价目 / 专业沿用各自的开关。合格实绩：开放后，这位负责人在管理模式里可以看截图、补图、制作和发布海报。</div></div>
+      <div style="font-size:10px;color:var(--text-3);margin-top:6px;line-height:1.7">默认全选 = 管理模式的页面不受限制。取消勾选的页面，菜单里看不到、直接输网址也进不去。资源管理 / 价目 / 专业沿用各自的开关。合格实绩：开放后，负责人只能看、管理自己管理范围（领域 / 专业）内的合格实绩、截图和海报。</div></div>
     ${d.dept.includes('teachers')?`<div style="margin-top:12px"><div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">老师管理范围</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${[['range','按领域/专业'],['own','只管归属自己的老师']].map(([k,label])=>`<div class="filter-chip${d.teacherMode===k?' active':''}" onclick="mgrTeacherModeSet('${k}')" style="padding:3px 10px;font-size:11px">${label}</div>`).join('')}</div>
       <div style="font-size:10px;color:var(--text-3);margin-top:6px;line-height:1.7">「只管归属自己的老师」：老师列表只显示「归属负责人」是他的老师（加上他自己，只读）；新建的老师自动归属给他。</div></div>`:''}`:''}`;
