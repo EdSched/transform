@@ -163,7 +163,7 @@ async function pstOpen(kind, resultId) {
       const e = await raSbFetch(`univ_en_names?univ_ja=eq.${enc((row.univ || '').trim())}&select=univ_en`).catch(() => []);
       en = (e && e[0] && e[0].univ_en) || '';
     }
-    let major = (poster && poster.major) || row.our_major || '';
+    let major = (poster && poster.major) || (typeof resultMajorKey === 'function' ? resultMajorKey(row) : row.our_major) || '';
     if (!major && row.student_id) {
       const s = await raSbFetch(`students?id=eq.${enc(row.student_id)}&select=major`).catch(() => []);
       major = (s && s[0] && s[0].major) || '';
