@@ -1923,7 +1923,8 @@ function teacherFeatures(t){ const p=t.permissions||{}; return TEACHER_FEATURE_D
 // 管理模式下「老师管理范围 = 只管归属自己的老师」
 function mgrOwnMode(){ const a=ACCESS_KEY&&ACCESS_KEY._asTeacher; return !!(a&&a.teacher_mode==='own'&&deptPermList().includes('teachers')); }
 function teacherIsMgrSelf(t){ const a=ACCESS_KEY&&ACCESS_KEY._asTeacher; return !!(a&&t&&t.id===a.id); }
-function teacherFilteredList(){
+// 范围内的老师账号（不含列表上的筛选）：讲师档案也用它判断「能看到哪些老师」
+function teacherScopedList(){
   let list=cachedTeachers;
   const isDomainAccount = typeof ACCESS_KEY!=='undefined' && ACCESS_KEY && !ACCESS_KEY.invalid && !ACCESS_KEY.is_admin;
   // 领域端（非admin）：排除带"营业老师""保录老师"标签的人
@@ -1939,6 +1940,10 @@ function teacherFilteredList(){
   } else if(typeof teacherInView==='function'){
     list=list.filter(teacherInView);
   }
+  return list;
+}
+function teacherFilteredList(){
+  let list=teacherScopedList();
   if(teacherLeaderFilter) list=list.filter(t=>(t.leader_id||'')===teacherLeaderFilter);
   if(teacherTagFilter) list=list.filter(t=>(t.tags||[]).includes(teacherTagFilter));
   if(teacherPosFilter) list=list.filter(t=>t.position===teacherPosFilter);
@@ -2591,8 +2596,8 @@ async function renderTeacherProfilesPage(mc){
         <button onclick="renderTeachersPage(teacherPageHost());renderTeacherList()" style="font-size:11px;padding:5px 16px;border:none;cursor:pointer;font-family:inherit;background:var(--surface);color:var(--text-2)">👥 老师账号</button>
         <button style="font-size:11px;padding:5px 16px;border:none;cursor:pointer;font-family:inherit;background:var(--accent);color:#fff">📇 讲师档案</button>
       </div>
-      <label class="btn btn-outline btn-sm" style="cursor:pointer">⬆ 导入 Excel<input type="file" accept=".xlsx,.xls" style="display:none" onchange="profImportExcel(this)"></label>
-      <button class="btn btn-primary btn-sm" onclick="profEditingId='new';profRender()">＋ 新增讲师</button>
+      ${profAsT()?'':`<label class="btn btn-outline btn-sm" style="cursor:pointer">⬆ 导入 Excel<input type="file" accept=".xlsx,.xls" style="display:none" onchange="profImportExcel(this)"></label>`}
+      ${profCanEdit()?`<button class="btn btn-primary btn-sm" onclick="profEditingId='new';profRender()">＋ 新增讲师</button>`:''}
     </div>
   </div>
   <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">Excel 列名须与讲师信息表一致（讲师姓名 / 所属学系 / 所属学科 / 毕业或所属大学院研究科 / 学位（含在读） / 执教年份 / 担当课程 / 可指导方向（关键词） / VIP指导 / 授课特色 / 特色亮点（选填） / 备注）。<b>讲师姓名请填本名</b>：与老师管理中的姓名一致即自动关联账号（老师可自行补全档案，对外展示名由老师管理的「备注 / 对外宣传姓名」控制）。</div>
@@ -2605,6 +2610,21 @@ async function renderTeacherProfilesPage(mc){
 
 function profEsc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
 
+// ── 管理模式（老师身份进管理端）下的讲师档案范围 ──
+// 档案和老师账号按「讲师姓名 = 老师姓名」对应。own 模式只显示对应「能看到的老师账号」的档案；
+// 其他负责人：档案的领域 / 专业在管理范围内，或对应范围内的老师账号，满足一条就显示
+function profAsT(){ return !!(ACCESS_KEY&&ACCESS_KEY._asTeacher); }
+function profAccountNames(){ return new Set(teacherScopedList().map(t=>String(t.name||'').trim())); }
+function profVisible(p,names){
+  if(!profAsT()) return true;
+  const nm=String(p.name||'').trim();
+  if(mgrOwnMode()) return names.has(nm);
+  if(names.has(nm)) return true;
+  const subs=VIEW_SCOPE.majors.map(m=>MAJORS[m]||m);
+  return scopeHasDomain(p.domain||'') || subs.includes((p.subject||'').trim());
+}
+// 管理模式下只有开了「本范围老师管理」的负责人能新增 / 编辑 / 删除档案
+function profCanEdit(){ return !profAsT() || deptPermList().includes('teachers'); }
 function profIncomplete(p){
   return !((p.school||'').trim()&&(p.keywords||'').trim()&&(p.feature||'').trim()&&(p.courses||'').trim());
 }
@@ -2613,7 +2633,9 @@ function profRender(){
   const box=document.getElementById('prof_body');
   if(!box||!profList)return;
   const cnt=document.getElementById('prof_count');
-  if(cnt) cnt.textContent=profList.length;
+  const accNames=profAsT()?profAccountNames():null;
+  const profEditable=profCanEdit();
+  if(cnt) cnt.textContent=profList.filter(p=>profVisible(p,accNames)).length;
   const inp='width:100%;font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
 
   const formHtml=(p)=>`
@@ -2621,7 +2643,14 @@ function profRender(){
   <div style="flex:1 1 460px;min-width:0;border:1px solid var(--accent);border-radius:4px;padding:14px;background:var(--bg)">
     <div style="font-size:11px;font-weight:600;margin-bottom:8px">${profEditingId==='new'?'＋ 新增讲师档案':(p._addFor?`＋ 为「${profEsc(p.name)}」添加介绍`:'✏ 编辑讲师档案')}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;margin-bottom:8px">
-      ${PROF_FIELDS.map(([k,l])=>`<div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">${l}</label><input id="pf_${k}" value="${profEsc(p[k])}" ${k==='name'?'oninput="profOthersRefresh()"':''} style="${inp}"></div>`).join('')}
+      ${PROF_FIELDS.map(([k,l])=>{
+        if(k==='name'&&mgrOwnMode()&&profEditingId==='new'){   // 只管归属自己的老师：讲师姓名只能选归属他的老师
+          const mine=teacherScopedList().filter(t=>t.id!==ACCESS_KEY._asTeacher.id).map(t=>t.name);
+          const opts=[...new Set(p.name?[p.name,...mine]:mine)];
+          return `<div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">${l}</label><select id="pf_name" onchange="profOthersRefresh()" style="${inp}">${p.name?'':'<option value="">选择归属你的老师</option>'}${opts.map(n=>`<option value="${profEsc(n)}"${n===p.name?' selected':''}>${profEsc(n)}</option>`).join('')}</select></div>`;
+        }
+        return `<div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">${l}</label><input id="pf_${k}" value="${profEsc(p[k])}" ${k==='name'?'oninput="profOthersRefresh()"':''} style="${inp}"></div>`;
+      }).join('')}
       <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">领域 *</label>
         <select id="pf_domain" onchange="profDomainChange()" style="${inp}">
           <option value="">选择领域</option>
@@ -2645,9 +2674,11 @@ function profRender(){
 
   if(profEditingId==='new'){box.innerHTML=formHtml(profNewPreset||{});setTimeout(profDomainChange,0);return}
 
-  // 视角过滤：专业链接→只看该专业档案；领域链接→只看该领域档案；admin→全部
+  // 视角过滤：专业链接→只看该专业档案；领域链接→只看该领域档案；admin→全部；管理模式按 profVisible
   let viewProfs=profList;
-  if(!scopeAll()){
+  if(profAsT()){
+    viewProfs=profList.filter(p=>profVisible(p,accNames));
+  } else if(!scopeAll()){
     // 完整领域：按档案的领域；单独专业：按档案的学科（专业中文名）
     const subs=VIEW_SCOPE.majors.map(m=>MAJORS[m]||m);
     viewProfs=profList.filter(p=>scopeHasDomain((p.domain||'')) || subs.includes((p.subject||'').trim()));
@@ -2678,13 +2709,13 @@ function profRender(){
             <div style="font-size:10px;color:var(--text-3);margin-top:2px">${profEsc(p.school||'')} ${profEsc(p.degree||'')} · ${profEsc((p.courses||'').slice(0,40))}${(p.courses||'').length>40?'…':''}</div>
             ${(p.highlights||'').trim()?`<div style="font-size:10px;color:var(--text-2);margin-top:2px">特色亮点：${profEsc((p.highlights||'').slice(0,60))}${(p.highlights||'').length>60?'…':''}</div>`:''}
           </div>
-          <button class="btn btn-outline btn-sm" onclick="profAddFor('${p.id}')" title="用该老师的固定信息，新增另一个领域/专业的介绍">＋ 添加介绍</button>
+          ${profEditable?`<button class="btn btn-outline btn-sm" onclick="profAddFor('${p.id}')" title="用该老师的固定信息，新增另一个领域/专业的介绍">＋ 添加介绍</button>
           <button class="btn btn-outline btn-sm" onclick="profEditingId='${p.id}';profRender()">✏ 编辑</button>
-          <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="profDelete('${p.id}')">删除</button>
+          <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="profDelete('${p.id}')">删除</button>`:''}
         </div>`).join('')}
       </div>`:''}
     </div>`;
-  }).join('')||'<div class="empty" style="padding:30px">暂无讲师档案，可导入 Excel 或手动新增</div>';
+  }).join('')||`<div class="empty" style="padding:30px">暂无讲师档案${profAsT()?'':'，可导入 Excel 或手动新增'}</div>`;
   if(profEditingId&&profEditingId!=='new') setTimeout(profDomainChange,0);
 }
 
@@ -2757,6 +2788,8 @@ async function profSave(){
   };
   if(!row.name){alert('请填写讲师姓名');return}
   if(!row.domain){alert('请选择领域');return}
+  if(!profCanEdit()){ alert('你没有「本范围老师管理」权限，讲师档案只能查看'); return; }
+  if(mgrOwnMode()&&!profAccountNames().has(row.name)){ alert('只能为归属你的老师（或你自己）设置讲师档案'); return; }
   try{
     await profSyncFixed(row, profEditingId==='new'?'':profEditingId);
     if(profEditingId==='new'){
@@ -2777,6 +2810,7 @@ async function profSave(){
 }
 
 async function profDelete(id){
+  if(!profCanEdit()){ alert('你没有「本范围老师管理」权限，讲师档案只能查看'); return; }
   if(!confirm('删除这位讲师的档案？'))return;
   try{
     await sb(`/rest/v1/teacher_profiles?id=eq.${id}`,'DELETE');
@@ -2787,6 +2821,7 @@ async function profDelete(id){
 }
 
 async function profImportExcel(input){
+  if(profAsT()){ alert('管理模式下不能导入 Excel，请联系管理员'); return; }
   const file=input.files[0];
   if(!file)return;
   input.value='';
