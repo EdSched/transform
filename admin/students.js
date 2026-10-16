@@ -1568,6 +1568,18 @@ async function openMonthlyReport(sid, sname){
   amrRenderBody(sid, sname);
 }
 
+// 月度出勤口径：报名前的课次不算规定 / 缺席 / 请假；报名前有出席记录的照常算出席，出勤率上限 100%
+function amrCalc(sid, monthRecs){
+  const stu = (typeof cachedStudents !== 'undefined' ? cachedStudents : []).find(x => String(x.id) === String(sid)) || {};
+  const ok = r => ['offline','online','replay'].includes(r.attendance_status);
+  const app = monthRecs.filter(r => sessionCountsFor(stu, r.session_date));
+  const actual = monthRecs.filter(r => ok(r)).length;
+  const leave = app.filter(r => r.attendance_status === 'leave').length;
+  const required = app.length;
+  const actualApp = app.filter(ok).length;
+  return { required, actual, leave, absent: Math.max(0, required - actualApp - leave), rate: required ? Math.min(100, Math.round(actual / required * 100)) : 0 };
+}
+
 async function amrRenderBody(sid, sname){
   const body=document.getElementById('amr_body'); if(!body) return;
   if(!amrData[sid]){
@@ -1575,9 +1587,7 @@ async function amrRenderBody(sid, sname){
   }
   const recs = amrData[sid]||[];
   const monthRecs = recs.filter(r=>(r.session_date||'').slice(0,7)===amrYearMonth);
-  const attended = monthRecs.filter(r=>['offline','online','replay'].includes(r.attendance_status));
-  const leave = monthRecs.filter(r=>r.attendance_status==='leave');
-  const required=monthRecs.length, actual=attended.length, rate=required?Math.round(actual/required*100):0;
+  const {required, actual, leave, absent, rate} = amrCalc(sid, monthRecs);
   const works = monthRecs.filter(r=>r.homework_file_url).map(r=>({url:r.homework_file_url,date:r.session_date}));
   if (typeof awMonthWorks === 'function') works.push(...(await awMonthWorks(sid, amrYearMonth)));   // + 学部美术作业收集的作品照片
   const key=`${sid}|${amrYearMonth}`;
@@ -1589,7 +1599,7 @@ async function amrRenderBody(sid, sname){
   const esc=stEsc;
   body.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px;margin-bottom:14px">
-      ${[['规定',required],['实际',actual],['出勤率',rate+'%'],['请假',leave.length],['缺席',required-actual-leave.length],['作业',works.length]].map(([l,v])=>`
+      ${[['规定',required],['实际',actual],['出勤率',rate+'%'],['请假',leave],['缺席',absent],['作业',works.length]].map(([l,v])=>`
         <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:6px;padding:8px;text-align:center"><div style="font-size:16px;font-weight:700;color:var(--accent,#b8953a)">${v}</div><div style="font-size:10px;color:var(--text-3)">${l}</div></div>`).join('')}
     </div>
     <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;margin-bottom:6px">练习作品</div>
@@ -1631,9 +1641,7 @@ async function amrSave(sid,sname){
 async function amrPdf(sid,sname){
   const recs=amrData[sid]||[];
   const monthRecs=recs.filter(r=>(r.session_date||'').slice(0,7)===amrYearMonth);
-  const attended=monthRecs.filter(r=>['offline','online','replay'].includes(r.attendance_status));
-  const leave=monthRecs.filter(r=>r.attendance_status==='leave');
-  const required=monthRecs.length,actual=attended.length,rate=required?Math.round(actual/required*100):0;
+  const {required, actual, leave, absent, rate} = amrCalc(sid, monthRecs);
   const works=monthRecs.filter(r=>r.homework_file_url).map(r=>({url:r.homework_file_url}));
   if (typeof awMonthWorks === 'function') works.push(...(await awMonthWorks(sid, amrYearMonth)));   // + 作业收集的作品照片
   const rev=amrRev[`${sid}|${amrYearMonth}`]||{};
@@ -1654,7 +1662,7 @@ async function amrPdf(sid,sname){
     <div class="head"><div class="sub">唯新教育</div><h1>${esc(ym)} 学习情况</h1><div class="stu">${esc(sname)}</div></div>
     <div class="sec-label">出勤情况</div><div class="stats">
       <div class="stat"><div class="n">${required}</div><div class="l">规定出勤</div></div><div class="stat"><div class="n">${actual}</div><div class="l">实际出勤</div></div><div class="stat"><div class="n">${rate}%</div><div class="l">出勤率</div></div>
-      <div class="stat"><div class="n">${leave.length}</div><div class="l">请假</div></div><div class="stat"><div class="n">${required-actual-leave.length}</div><div class="l">缺席</div></div><div class="stat"><div class="n">${works.length}</div><div class="l">作品</div></div></div>
+      <div class="stat"><div class="n">${leave}</div><div class="l">请假</div></div><div class="stat"><div class="n">${absent}</div><div class="l">缺席</div></div><div class="stat"><div class="n">${works.length}</div><div class="l">作品</div></div></div>
     ${works.length?`<div class="sec-label">练习作品（部分）</div><div class="works">${works.slice(0,9).map(w=>`<img src="${w.url}">`).join('')}</div>`:''}
     <div class="sec-label">专业老师评价</div><div class="review"><div class="c">${rev.teacher_review?esc(rev.teacher_review):'—'}</div>${rev.teacher_review_by?`<div class="by">— ${esc(rev.teacher_review_by)} 老师</div>`:''}</div>
     <div class="sec-label">班主任评价</div><div class="review"><div class="c">${rev.homeroom_review?esc(rev.homeroom_review):'—'}</div>${rev.homeroom_review_by?`<div class="by">— ${esc(rev.homeroom_review_by)} 老师</div>`:''}</div>

@@ -248,7 +248,8 @@ function renderSessionListMain(courses){
   return Object.entries(byCourse).map(([cid,sess])=>{
     const course=courses.find(c=>c.id===cid)||{name:sess[0]?.course_name||''};
     const color=courseColor(course.name);
-    const totalStudents=attMembers(cid, sess[0]?.major).length;
+    const memList=attMembers(cid, sess[0]?.major);
+    const totalStudents=memList.length;
     const isOpen=courseAttMode(course)==='open';
     const elStudents=isOpen?attElectives(cid, sess[0]?.major):[];
     const elIds=new Set(elStudents.map(x=>String(x.id)));
@@ -287,16 +288,17 @@ function renderSessionListMain(courses){
               attHwSubs[s.id].forEach(n=>{ if(elNames.has(n)) hwEl++; });
               hwSubmit=attHwSubs[s.id].size-hwEl;
             }
-            const rate=totalStudents?Math.round(present/totalStudents*100):0;
+            const tot=memList.filter(m=>sessionCountsFor(m,s.session_date)).length;   // 分母只算这次课已报名的学生
+            const rate=tot?Math.min(100,Math.round(present/tot*100)):0;
             const f=fmtSessionDate(s.session_date);
             const hasHw=!!s.homework_enabled;
             return `<tr>
               <td style="font-size:11px;color:var(--text-3)">${s.session_number}</td>
               <td style="font-size:12px;font-weight:600;cursor:pointer" onclick="openSessionModal('${s.id}')"><span style="display:inline-block;background:var(--accent,#b8953a);color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;margin-right:6px">📝 记录</span>${f.short} <span style="font-size:10px;color:${f.dowColor}">${f.dow}</span></td>
               <td style="font-size:11px;color:var(--text-2)">${s.session_title||'—'}${hasHw?'<span style="font-size:9px;color:var(--accent);margin-left:5px">📝</span>':''}</td>
-              <td style="font-size:11px">${(recs.length||elPresent)?`${isOpen?'必修 ':''}${present}/${totalStudents}${lateN?`<span style="font-size:9px;color:#b8860b">（迟到 ${lateN}）</span>`:''}${isOpen?`<span style="color:var(--text-3)"> · 选修 ${elPresent}</span>`:''}`:'<span style="color:var(--text-3)">—</span>'}</td>
+              <td style="font-size:11px">${(recs.length||elPresent)?`${isOpen?'必修 ':''}${present}/${tot}${lateN?`<span style="font-size:9px;color:#b8860b">（迟到 ${lateN}）</span>`:''}${isOpen?`<span style="color:var(--text-3)"> · 选修 ${elPresent}</span>`:''}`:'<span style="color:var(--text-3)">—</span>'}</td>
               <td style="font-size:11px;color:${!recs.length?'var(--text-3)':rate>=80?'var(--ok)':rate>=60?'var(--warn)':'var(--danger)'}">${recs.length?rate+'%':'—'}</td>
-              <td style="font-size:11px">${hasHw?((hwSubmit?`${isOpen?'必修 ':''}<span style="color:var(--ok);font-weight:600">${hwSubmit}</span>/${totalStudents}`:`<span style="color:var(--text-3)">${isOpen?'必修 ':''}0/${totalStudents}</span>`)+(isOpen?`<span style="color:var(--text-3)"> · 选修 ${hwEl}</span>`:'')):'<span style="color:var(--text-3)">—</span>'}</td>
+              <td style="font-size:11px">${hasHw?((hwSubmit?`${isOpen?'必修 ':''}<span style="color:var(--ok);font-weight:600">${hwSubmit}</span>/${tot}`:`<span style="color:var(--text-3)">${isOpen?'必修 ':''}0/${tot}</span>`)+(isOpen?`<span style="color:var(--text-3)"> · 选修 ${hwEl}</span>`:'')):'<span style="color:var(--text-3)">—</span>'}</td>
               <td style="display:flex;gap:4px">
                 <button class="btn btn-outline btn-sm" onclick="openSessionModal('${s.id}')">记出席</button>
                 ${hasHw&&hwSubmit?`<button class="btn btn-outline btn-sm" onclick="toggleAdminHwPanel('${s.id}')">作业(${hwSubmit})</button>`:''}
@@ -495,7 +497,11 @@ async function openSessionModal(sessionId){
   }
   const members=attMembers(session.course_id, session.major).sort((a,b)=>a.name.localeCompare(b.name,'zh'));
   const electives=(courseAttMode(course)==='open'?attElectives(session.course_id, session.major):[]).map(s=>Object.assign({},s,{_elective:true})).sort((a,b)=>a.name.localeCompare(b.name,'zh'));
-  const students=members.concat(attNonMembersWithRecords(existing, members, electives.map(s=>s.id)));
+  const preMembers=members.filter(s=>!sessionCountsFor(s,session.session_date));   // 报名前的课次：放进折叠的「未报名」分区
+  const mainMembers=members.filter(s=>sessionCountsFor(s,session.session_date));
+  const students=mainMembers.concat(attNonMembersWithRecords(existing, members, electives.map(s=>s.id)));
+  _currentSessionPre = preMembers;
+  attPreOpen=false;
 
   sessionEdits={};
   attElOpen=false;
@@ -505,7 +511,7 @@ async function openSessionModal(sessionId){
   _currentSessionId = sessionId;
   const searchInput = document.getElementById('sessionStudentSearch');
   if (searchInput) searchInput.value = '';
-  existing.forEach(r=>{ const stu=students.concat(electives).find(x=>x.id===r.student_id||x.name===r.student_name); if(stu){ sessionEdits[stu.id]={attendance_status:r.attendance_status||'',student_mode:r.student_mode||'offline',homework_submitted:r.homework_submitted||false}; } });
+  existing.forEach(r=>{ const stu=students.concat(electives,preMembers).find(x=>x.id===r.student_id||x.name===r.student_name); if(stu){ sessionEdits[stu.id]={attendance_status:r.attendance_status||'',student_mode:r.student_mode||'offline',homework_submitted:r.homework_submitted||false}; } });
   attState='present'; attMode='offline';
   if(typeof attPickState==='function'){ attPickState('present'); attPickMode('offline'); }
   renderStudentRows('');
@@ -513,6 +519,8 @@ async function openSessionModal(sessionId){
 }
 
 let _currentSessionStudents = [];
+let _currentSessionPre = [];         // 报名时间晚于这节课的学生
+let attPreOpen = false;
 let _currentSessionElectives = [];   // 组内开放的课：同组其他专业（选修）
 let _currentSessionRecords = [];
 let _currentSessionId = null;
@@ -552,7 +560,7 @@ function attShowSummary(){
   const students=_currentSessionStudents;
   const title=document.getElementById('sessionModalTitle')?.textContent||'';
   const groups={present_off:[],present_on:[],late:[],leave:[],absent:[]};
-  students.concat(_currentSessionElectives.filter(s=>(sessionEdits[s.id]||{}).attendance_status)).forEach(s=>{
+  students.concat(_currentSessionElectives.filter(s=>(sessionEdits[s.id]||{}).attendance_status),_currentSessionPre.filter(s=>(sessionEdits[s.id]||{}).attendance_status)).forEach(s=>{
     const st=(sessionEdits[s.id]||{}).attendance_status||'';
     if(st==='offline') groups.present_off.push(s.name);
     else if(st==='online') groups.present_on.push(s.name);
@@ -585,7 +593,7 @@ function attShowSummary(){
 }
 
 function attMark(sid){
-  const s=_currentSessionStudents.concat(_currentSessionElectives).find(x=>x.id===sid); if(!s) return;
+  const s=_currentSessionStudents.concat(_currentSessionElectives,_currentSessionPre).find(x=>x.id===sid); if(!s) return;
   if(!sessionEdits[sid]) sessionEdits[sid]={};
   sessionEdits[sid].attendance_status=attCurrentStatus();
   sessionEdits[sid].student_mode=(attState==='leave')?(sessionEdits[sid].student_mode||s.default_mode||'offline'):attMode;
@@ -599,7 +607,7 @@ function attUnmark(sid){
 function renderStudentRows(filter='') {
   const students=_currentSessionStudents;
   const kw=(filter||'').trim().toLowerCase();
-  const marked=students.concat(_currentSessionElectives).filter(s=>sessionEdits[s.id]&&sessionEdits[s.id].attendance_status);
+  const marked=students.concat(_currentSessionElectives,_currentSessionPre).filter(s=>sessionEdits[s.id]&&sessionEdits[s.id].attendance_status);
   const unmarked=students.filter(s=>!(sessionEdits[s.id]&&sessionEdits[s.id].attendance_status));
   const unmarkedShown=kw?unmarked.filter(s=>matchesStudentSearch(s,kw)):unmarked;
   const body=document.getElementById('sessionRecordBody');
@@ -610,12 +618,19 @@ function renderStudentRows(filter='') {
   const elw=document.getElementById('att_el_wrap');
   if(elw){
     const els=_currentSessionElectives;
-    if(!els.length) elw.innerHTML='';
+    let preHtml='';
+    const pres=_currentSessionPre.filter(x=>!(sessionEdits[x.id]&&sessionEdits[x.id].attendance_status));
+    if(pres.length){
+      const popen=attPreOpen||!!kw;
+      const pshown=kw?pres.filter(x=>matchesStudentSearch(x,kw)):pres;
+      preHtml=`<div style="margin-bottom:12px"><div onclick="attPreOpen=!attPreOpen;renderStudentRows(document.getElementById('sessionStudentSearch')?.value||'')" style="font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 0">未报名（这节课在报名之前）· ${pres.length} 人 ${popen?'▾':'▸'}</div>`+(popen?`<div style="font-size:10px;color:var(--text-3);margin-bottom:6px">不算缺席；来旁听的点一下即可记录</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-height:28vh;overflow-y:auto">${pshown.length?pshown.map(x=>`<button onclick="attMark('${x.id}')" style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;padding:9px 4px;border:1px dashed var(--border);border-radius:8px;background:var(--surface);cursor:pointer;color:var(--text)">${x.name}<span style="display:block;font-size:9px;font-weight:400;color:var(--text-3)">${signupNote(x,'9999')||''}</span></button>`).join(''):`<div style="grid-column:1/-1;font-size:12px;color:var(--text-3);padding:10px;text-align:center">无匹配</div>`}</div>`:'')+`</div>`;
+    }
+    if(!els.length) elw.innerHTML=preHtml;
     else{
       const left=els.filter(s=>!(sessionEdits[s.id]&&sessionEdits[s.id].attendance_status));
       const shown=kw?left.filter(s=>matchesStudentSearch(s,kw)):left;
       const open=attElOpen||!!kw;
-      elw.innerHTML=`<div style="margin-bottom:12px"><div onclick="attElOpen=!attElOpen;renderStudentRows(document.getElementById('sessionStudentSearch')?.value||'')" style="font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 0">同组其他专业（选修）· ${els.length} 人 ${open?'▾':'▸'}</div>`+
+      elw.innerHTML=preHtml+`<div style="margin-bottom:12px"><div onclick="attElOpen=!attElOpen;renderStudentRows(document.getElementById('sessionStudentSearch')?.value||'')" style="font-size:12px;color:var(--text-2);cursor:pointer;padding:6px 0">同组其他专业（选修）· ${els.length} 人 ${open?'▾':'▸'}</div>`+
         (open?`<div style="font-size:10px;color:var(--text-3);margin-bottom:6px">只点来了的人，没来的不用点（不算缺席）</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-height:28vh;overflow-y:auto">${shown.length?shown.map(s=>`<button onclick="attMark('${s.id}')" style="font-family:'Noto Serif SC',serif;font-size:13px;font-weight:600;padding:9px 4px;border:1px dashed var(--border);border-radius:8px;background:var(--surface);cursor:pointer;color:var(--text)">${s.name}<span style="display:block;font-size:9px;font-weight:400;color:var(--text-3)">${MAJORS[s.major]||s.major||''}</span></button>`).join(''):`<div style="grid-column:1/-1;font-size:12px;color:var(--text-3);padding:10px;text-align:center">${kw?'无匹配':'没有更多了'}</div>`}</div>`:'')+`</div>`;
     }
   }
@@ -699,7 +714,7 @@ async function saveSessionRecords(){
   const sessionId=document.getElementById('sessionModalId').value;
   const session=cachedSessions.find(s=>s.id===sessionId);
   if(!session) return;
-  const students=(_currentSessionId===sessionId)?_currentSessionStudents.concat(_currentSessionElectives):attMembers(session.course_id, session.major);
+  const students=(_currentSessionId===sessionId)?_currentSessionStudents.concat(_currentSessionElectives,_currentSessionPre):attMembers(session.course_id, session.major);
   const btn=document.querySelector('#sessionModal .btn-primary');
   btn.textContent='保存中…';btn.disabled=true;
   try{
@@ -746,15 +761,17 @@ function openStudentAttModal(studentId){
   if(!s) return;
   document.getElementById('studentAttTitle').textContent=s.name+' · 出席记录';
   document.getElementById('studentAttSub').textContent=`${MAJORS[s.major]||s.major||''}`;
-  const recs=cachedSessionRecords.filter(r=>r.student_id===studentId).sort((a,b)=>a.session_date?.localeCompare(b.session_date));
+  const allRecs=cachedSessionRecords.filter(r=>r.student_id===studentId).sort((a,b)=>a.session_date?.localeCompare(b.session_date));
+  const recs=allRecs.filter(r=>sessionCountsFor(s,r.session_date)||attPresent(r.attendance_status));   // 报名前没出席的记录不显示、不算
+  const need=allRecs.filter(r=>sessionCountsFor(s,r.session_date)).length;   // 分母只算报名后的课次
   const present=recs.filter(r=>attPresent(r.attendance_status)).length;
   const lateN=recs.filter(r=>attIsLate(r.attendance_status)).length;
   const hwSubmit=recs.filter(r=>r.homework_submitted).length;
   document.getElementById('studentAttBody').innerHTML=`
     <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
-      <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 14px;font-size:12px">出席 <strong style="color:var(--ok)">${present}/${recs.length}</strong>${lateN?` <span style="font-size:11px;color:#b8860b">迟到 ${lateN}</span>`:''}</div>
-      <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 14px;font-size:12px">出席率 <strong style="color:${recs.length&&present/recs.length>=0.8?'var(--ok)':'var(--warn)'}">${recs.length?Math.round(present/recs.length*100)+'%':'—'}</strong></div>
-      <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 14px;font-size:12px">作业提交 <strong>${hwSubmit}/${recs.length}</strong></div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 14px;font-size:12px">出席 <strong style="color:var(--ok)">${present}/${need}</strong>${lateN?` <span style="font-size:11px;color:#b8860b">迟到 ${lateN}</span>`:''}</div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 14px;font-size:12px">出席率 <strong style="color:${need&&present/need>=0.8?'var(--ok)':'var(--warn)'}">${need?Math.min(100,Math.round(present/need*100))+'%':'—'}</strong></div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:8px 14px;font-size:12px">作业提交 <strong>${hwSubmit}/${need}</strong></div>
     </div>
     ${recs.length?`<div class="table-scroll"><table class="student-table" style="min-width:600px">
       <thead><tr><th>课程</th><th>日期</th><th>单回</th><th>方式</th><th>出席状态</th><th>作业</th></tr></thead>
@@ -797,12 +814,18 @@ function renderAttStatusView(sessions, courses){
         ${head.replace('@@RATE@@',`<th style="width:64px;text-align:center;font-size:10px">${elective?'出席':'出席率'}</th>`)}
         <tbody>
           ${list.map(stu=>{
-            let att=0, rec=0, hw=0;
+            let att=0, rec=0, hw=0, hwNeed=0;
+            const startD=studentStartDate(stu);
             const cells=sess.map(s=>{
               const r=cachedSessionRecords.find(x=>x.session_id===s.id&&x.student_name===stu.name);
               const submitted=!!(attHwSubs[s.id]&&attHwSubs[s.id].has(stu.name));
-              if(r){rec++; if(attPresent(r.attendance_status)) att++;}
+              const applies=elective||sessionCountsFor(stu,s.session_date);   // 报名前的课次对这个学生不适用
+              if(applies&&s.homework_enabled) hwNeed++;
+              if(r){ if(applies) rec++; if(attPresent(r.attendance_status)) att++; }
               if(submitted) hw++;
+              if(!applies&&!(r&&attPresent(r.attendance_status))){
+                return `<td style="text-align:center;font-size:12px" title="报名前（${startD} 报名）${submitted?' · 已交作业':''}"><span style="color:var(--border)">·</span>${submitted?'<span style="font-size:8px;color:var(--accent)">📝</span>':''}</td>`;
+              }
               const mark=elective?(!r||!attPresent(r.attendance_status)?'':attIsLate(r.attendance_status)?'<span style="color:#b8860b">迟</span>':'<span style="color:var(--ok)">✓</span>')
                 : !r?'<span style="color:var(--text-3)">─</span>'
                 : attIsLate(r.attendance_status)?'<span style="color:#b8860b">迟</span>'
@@ -810,13 +833,14 @@ function renderAttStatusView(sessions, courses){
                 : '<span style="color:var(--danger)">✗</span>';
               return `<td style="text-align:center;font-size:12px" title="${r?attStatusLabel(r.attendance_status):'未记录'}${submitted?' · 已交作业':''}">${mark}${submitted?'<span style="font-size:8px;color:var(--accent)">📝</span>':''}</td>`;
             }).join('');
-            const rate=rec?Math.round(att/rec*100):0;
+            const rate=rec?Math.min(100,Math.round(att/rec*100)):0;
+            const sgn=elective?'':signupNote(stu,sess[0]&&sess[0].session_date);
             return `<tr>
-              <td style="font-size:11px;font-weight:600;position:sticky;left:0;background:var(--surface)">${stu.name}${stu._nonMember?'<span style="font-size:9px;font-weight:400;color:var(--text-3);margin-left:4px">非成员</span>':''}${elective?`<span style="font-size:9px;font-weight:400;color:var(--text-3);margin-left:4px">${MAJORS[stu.major]||stu.major||''}</span>`:''}</td>
+              <td style="font-size:11px;font-weight:600;position:sticky;left:0;background:var(--surface)">${stu.name}${sgn?`<span style="font-size:9px;font-weight:400;color:var(--text-3);margin-left:4px">${sgn}</span>`:''}${stu._nonMember?'<span style="font-size:9px;font-weight:400;color:var(--text-3);margin-left:4px">非成员</span>':''}${elective?`<span style="font-size:9px;font-weight:400;color:var(--text-3);margin-left:4px">${MAJORS[stu.major]||stu.major||''}</span>`:''}</td>
               ${cells}
               ${elective?`<td style="text-align:center;font-size:11px;color:${att?'var(--ok)':'var(--text-3)'}">${att?'出席 '+att+' 回':'—'}</td>`
                 :`<td style="text-align:center;font-size:11px;color:${!rec?'var(--text-3)':rate>=80?'var(--ok)':rate>=60?'var(--warn)':'var(--danger)'}">${rec?rate+'%':'—'}</td>`}
-              ${hwSess.length?`<td style="text-align:center;font-size:11px;color:${hw>=hwSess.length?'var(--ok)':hw?'var(--warn)':'var(--text-3)'}">${hw}/${hwSess.length}</td>`:''}
+              ${hwSess.length?`<td style="text-align:center;font-size:11px;color:${hw>=hwNeed?'var(--ok)':hw?'var(--warn)':'var(--text-3)'}">${Math.min(hw,hwNeed)}/${hwNeed}</td>`:''}
             </tr>`;
           }).join('')}
         </tbody>
@@ -838,7 +862,7 @@ function renderAttStatusView(sessions, courses){
     return `<div style="margin-bottom:18px;background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
       <div style="background:${color.bg};color:${color.text};padding:8px 14px;font-size:12px;font-weight:600;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
         <span>${course.name}</span>
-        <span style="font-size:10px;opacity:.75">${sess.length}回 · ${isOpen?'必修 '+members.length+' 人':members.length+'人'}　✓出席 ✗缺席 ─未记录 · 📝已交作业</span>
+        <span style="font-size:10px;opacity:.75">${sess.length}回 · ${isOpen?'必修 '+members.length+' 人':members.length+'人'}　✓出席 ✗缺席 ─未记录 ·报名前 · 📝已交作业</span>
       </div>
       ${body}
     </div>`;

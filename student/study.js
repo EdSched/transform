@@ -1650,6 +1650,7 @@ function studyHwFetch() {
       if (!inCurrentPeriod(s.session_date)) return false;
       const c = cMap[s.course_id];
       if (!hwIsReleased(s, c)) return false;   // 还没到发布日：不显示
+      if (!sessionCountsFor(studyStudent, s.session_date) && !(subs || []).some(x => String(x.session_id) === String(s.id))) return false;   // 报名前的作业：不应交，不算未交（已交的照常显示）
       if (c) return studentInCourse(me, Object.assign({}, c, { major: (c.major && c.major.length) ? c.major : s.major }), myMembers);
       const sm = Array.isArray(s.major) ? s.major : [s.major || ''];
       return !myMajor || sm.some(m => acceptMajors.includes(m));
@@ -2328,7 +2329,9 @@ function sschedCourseInfo(courseId) {
 function sschedMarkHtml(s) {
   const r = (studySchedData.rec || {})[String(s.id)];
   if (!r || s.is_cancelled || s.session_title === '休讲' || !sschedAttRole(s.course_id)) return '';
-  const d = SSCHED_MARK[sschedMarkOf(r)];
+  const mk = sschedMarkOf(r);
+  if (!sessionCountsFor(studyStudent, s.session_date) && mk !== 'ok' && mk !== 'late') return '';   // 报名前的课次：不显示缺席 / 请假，来旁听的照常显示
+  const d = SSCHED_MARK[mk];
   return `<span title="${d[2]}" style="display:inline-block;margin-left:3px;padding:0 3px;border-radius:2px;border:1px solid ${d[1]};color:${d[1]};background:#fff;font-size:9px;line-height:1.3;font-weight:600">${d[0]}</span>`;
 }
 // 课程表页顶部「我的出席」：下次上课 / 本期出席 / 作业
@@ -2354,15 +2357,17 @@ function sschedMeCardHtml() {
   // 出席：只算必出席的课（出席 + 迟到 ÷ 已点名的课次，口径同老师端）；选修单独一行；不记出席的课不统计
   const calc = mode => {
     const list = live.filter(x => sschedAttRole(x.course_id) === mode);
-    const st = { total: list.length, held: 0, actual: 0, absent: 0, leave: 0 };
-    list.forEach(x => { const r = D.rec[String(x.id)]; if (!r) return; st.held++; const m = sschedMarkOf(r); if (m === 'ok' || m === 'late') st.actual++; else if (m === 'absent') st.absent++; else st.leave++; });
+    const st = { total: list.filter(x => sessionCountsFor(studyStudent, x.session_date)).length, held: 0, actual: 0, absent: 0, leave: 0 };
+    list.forEach(x => { const r = D.rec[String(x.id)]; if (!r) return;
+      if (!sessionCountsFor(studyStudent, x.session_date)) { const pm = sschedMarkOf(r); if (pm === 'ok' || pm === 'late') st.actual++; return; }   // 报名前的课次：不进分母，来旁听的算出席
+      st.held++; const m = sschedMarkOf(r); if (m === 'ok' || m === 'late') st.actual++; else if (m === 'absent') st.absent++; else st.leave++; });
     return st;
   };
   const req = calc('required'), el = calc('elective');
-  const attHtml = req.total ? `<div style="font-size:12px;line-height:1.7"><span style="color:var(--text-muted)">本期出席</span> 出席 ${req.actual} / 已上 ${req.held} 回（共 ${req.total} 回）${req.held ? ` · 出勤率 ${Math.round(req.actual / req.held * 100)}%` : ''} · 缺席 ${req.absent} 次${req.leave ? ` · 请假 ${req.leave} 次` : ''}</div>` : '';
+  const attHtml = req.total ? `<div style="font-size:12px;line-height:1.7"><span style="color:var(--text-muted)">本期出席</span> 出席 ${req.actual} / 已上 ${req.held} 回（共 ${req.total} 回）${req.held ? ` · 出勤率 ${Math.min(100, Math.round(req.actual / req.held * 100))}%` : ''} · 缺席 ${req.absent} 次${req.leave ? ` · 请假 ${req.leave} 次` : ''}</div>` : '';
   const elHtml = el.total ? `<div style="font-size:12px;line-height:1.7;color:var(--text-secondary)">选修：出席 ${el.actual} / 已上 ${el.held} 回（共 ${el.total} 回）</div>` : '';
   // 作业：必出席的课里已发布的作业
-  const hwList = live.filter(x => x.homework_enabled && sschedAttRole(x.course_id) === 'required' && hwIsReleased(x, sschedCourseInfo(x.course_id)));
+  const hwList = live.filter(x => x.homework_enabled && sschedAttRole(x.course_id) === 'required' && hwIsReleased(x, sschedCourseInfo(x.course_id)) && (sessionCountsFor(studyStudent, x.session_date) || hwSubs[x.id]));
   const hwDone = hwList.filter(x => hwSubs[x.id]).length, todo = hwList.length - hwDone;
   const hwHtml = hwList.length ? `<div style="font-size:12px;line-height:1.7"><span style="color:var(--text-muted)">作业</span> 已交 ${hwDone} / 已布置 ${hwList.length}${todo > 0 ? ` · <a onclick="switchStudyTab('homework')" style="color:var(--danger,#b03a2e);font-weight:600;cursor:pointer">还有 ${todo} 份作业未交 ›</a>` : ''}</div>` : '';
   return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:10px 14px;margin-bottom:12px">

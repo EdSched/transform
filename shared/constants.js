@@ -1,5 +1,30 @@
 // 本地日期 → 'YYYY-MM-DD'（不经过 UTC）
 function localDateStr(d){ d = d || new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+// 学生开始算出席 / 作业的日期（YYYY-MM-DD），取档案「报名时间」signup_date（自由文本：2026-07-12 / 2026/7/12 / 2026年7月12日 / 2026年7月 / 2026.7）
+// 只有年月 = 当月 1 日；空或解析不了 = ''（不限，所有课次照常算）
+function studentStartDate(s) {
+  const str = String((s && s.signup_date) || '');
+  let m = /(\d{2,4})\s*年\s*(\d{1,2})\s*月\s*(?:(\d{1,2})\s*[日号])?/.exec(str);
+  if (!m) m = /(\d{4})\s*[\-\/\.]\s*(\d{1,2})(?:\s*[\-\/\.]\s*(\d{1,2}))?/.exec(str);
+  if (!m) return '';
+  let y = +m[1]; if (y < 100) y += 2000;
+  const mo = +m[2];
+  let d = m[3] ? +m[3] : 1;
+  if (mo < 1 || mo > 12) return '';
+  if (d < 1 || d > 31) d = 1;
+  return y + '-' + String(mo).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+}
+// 这节课对该学生适用吗：没有开始日，或课次日期 ≥ 开始日
+function sessionCountsFor(s, sessionDate) {
+  const st = studentStartDate(s);
+  return !st || String(sessionDate || '') >= st;
+}
+// 「x月x日报名」小字：有报名日且晚于这一期第一次课（firstDate）才返回，否则 ''
+function signupNote(s, firstDate) {
+  const st = studentStartDate(s);
+  if (!st || !firstDate || st <= String(firstDate)) return '';
+  return (+st.slice(5, 7)) + '月' + (+st.slice(8, 10)) + '日报名';
+}
 
 // ── 专业常量 ──
 // MAJORS 初始包含5个核心专业（写死，保证数据库未加载完成前页面也能正常显示）

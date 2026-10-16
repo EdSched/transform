@@ -213,6 +213,7 @@ const MGM_GROUPS = [
       const ym = _tkYm(), g = {};
       recs.filter(r => String(r.session_date || '').startsWith(ym)).forEach(r => {
         const s = (r.student_id && byId[r.student_id]) || byName[r.student_name]; if (!s) return;
+        if (!sessionCountsFor(s, r.session_date)) return;   // 报名前的课次不算
         const m = g[s.id] = g[s.id] || { s, by: {} }, k = r.session_id || r.session_date, old = m.by[k];
         if (!old || String(r.created_at || '') < String(old.created_at || '')) m.by[k] = r;   // 同一课次重复记录取最早一条
       });

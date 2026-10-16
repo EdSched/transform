@@ -147,6 +147,7 @@ const TASK_CHECK_FN = {
     const g = {};
     recs.forEach(r => {
       const s = (r.student_id && byId[r.student_id]) || byName[r.student_name]; if (!s) return;
+      if (!sessionCountsFor(s, r.session_date)) return;   // 报名前的课次不算
       const m = g[s.id] = g[s.id] || { s, by: {} };
       const old = m.by[r.session_id || r.session_date];
       if (!old || String(r.created_at || '') < String(old.created_at || '')) m.by[r.session_id || r.session_date] = r;   // 同一课次重复记录取最早一条
