@@ -48,11 +48,31 @@ async function aoOpen() {
 }
 function aoClose() {
   const ov = document.getElementById('aoOverlay'); if (ov) ov.classList.remove('open');
-  if (aoChanged) {
-    try { if (typeof tfRolesRender === 'function') tfRolesRender(); } catch (e) {}
-    try { if (document.getElementById('teacherList')) renderTeacherList(); } catch (e) {}
-  }
+  if (aoChanged) { aoRefreshViews(true); aoChanged = false; }
 }
+// 职位 / 角色 / 来源有变动后，把当前显示着的老师管理（编辑页 chips、列表筛选）重画；withTpl=true 时角色模板也重读
+// 所有选职位 / 角色的地方都是渲染时直接读 TEACHER_POSITIONS / TEACHER_ROLES，没有另存拷贝，所以重画就够了
+function aoRefreshViews(withTpl) {
+  try { if (document.getElementById('tf_roles_chips') && typeof tfRolesRender === 'function') tfRolesRender(); } catch (e) {}
+  try { if (document.getElementById('teacherList') && typeof renderTeacherList === 'function') renderTeacherList(); } catch (e) {}
+  try {
+    const ov = document.getElementById('consoleOverlay');
+    if (withTpl && typeof consoleTab !== 'undefined' && consoleTab === 'roletpl' && ov && ov.style.display !== 'none' && typeof rtpMount === 'function') rtpMount(document.getElementById('consoleBody'));
+  } catch (e) {}
+}
+// loadAppOptions() 读完后，如果职位 / 角色真的变了（比如启动时读失败、之后才读到自定义项），当前显示的老师管理页重画一次
+// （角色模板自己进入时会重读，这里不动它，避免重复挂载）
+(function () {
+  if (typeof loadAppOptions !== 'function') return;
+  const raw = loadAppOptions;
+  loadAppOptions = async function () {
+    const snap = () => JSON.stringify([TEACHER_POSITIONS, TEACHER_ROLES]);
+    const before = snap();
+    const ok = await raw.apply(this, arguments);
+    if (ok && snap() !== before) aoRefreshViews(false);
+    return ok;
+  };
+})();
 function aoRender() {
   const body = document.getElementById('aoBody'); if (!body) return;
   const sec = (kind, title, note) => {

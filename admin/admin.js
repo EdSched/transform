@@ -200,6 +200,7 @@ async function switchConsoleTab(tab){
     [cachedTeachers, cachedSessions]=await Promise.all([
       sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[]),
       sbAll('/rest/v1/course_sessions?homework_enabled=is.true&select=id,course_name&order=course_name.asc').catch(()=>[]),
+      loadAppOptions().catch(()=>false),   // 自定义职位 / 角色：进老师管理时再读一次，不依赖启动时那次
     ]);
     renderTeachersPage(body);
     if(typeof renderTeacherList==='function') renderTeacherList();
@@ -363,15 +364,44 @@ async function mmGroupRename(key){
     await mmReloadMajors();
   }catch(e){ alert('改名失败：'+e.message); }
 }
+// 小提示条：长操作显示进度
+function mmBusy(msg){
+  let el=document.getElementById('mmBusy');
+  if(!el){ el=document.createElement('div'); el.id='mmBusy'; el.style.cssText='position:fixed;left:50%;top:40%;transform:translateX(-50%);z-index:1200;background:#1a1814;color:#fff;font-size:13px;padding:14px 22px;border-radius:6px;box-shadow:0 4px 18px rgba(0,0,0,.3)'; document.body.appendChild(el); }
+  el.textContent=msg; return el;
+}
+function mmBusyDone(){ const el=document.getElementById('mmBusy'); if(el) el.remove(); }
+// 逐位老师保存（显示进度）；返回失败的人数
+async function mmPatchTeachers(jobs,label){
+  let fail=0;
+  for(let i=0;i<jobs.length;i++){
+    mmBusy(`${label} ${i+1}/${jobs.length}：${jobs[i].t.name||jobs[i].t.id}…`);
+    try{ await sb(`/rest/v1/teachers?id=eq.${encodeURIComponent(jobs[i].t.id)}`,'PATCH',jobs[i].patch); }catch(e){ fail++; }
+  }
+  mmBusyDone();
+  return fail;
+}
 async function mmGroupDelete(key){
   const g=(window._majorGroupRows||[]).find(x=>x.key===key); if(!g) return;
   const n=(window._majorRows||[]).filter(m=>m.group_key===key).length;
   if(n){ alert(`分组「${g.label}」里还有 ${n} 个专业，请先把它们的「所属分组」改成别的或「不分组」，再删除分组。`); return; }
-  if(!confirm(`删除分组「${g.label}」(${key})？\n\n注意：已经用这个分组的课程、老师负责范围、课表发布对象等不会自动清除。确定删除？`)) return;
+  if(!isHubAdminUser()){ alert('只有管理员能删除分组'); return; }
+  // 老师范围里用到这个分组的：删分组前先换成组内原来的专业（组已空就直接去掉）
+  let tch; try{ mmBusy('正在检查老师的范围…'); tch=await sbAll('/rest/v1/teachers?select='+TCH_MAJOR_COLS)||[]; }catch(e){ mmBusyDone(); alert('检查老师范围失败，为安全起见先不删除：'+e.message); return; }
+  mmBusyDone();
+  const members=(window._majorRows||[]).filter(m=>m.group_key===key).map(m=>m.key);
+  const fn=a=>{ const o=[]; a.forEach(k=>(k===key?members:[k]).forEach(x=>{ if(!o.includes(x)) o.push(x); })); return o; };
+  const jobs=tch.map(t=>({t,patch:teacherMapMajors(t,fn)})).filter(j=>Object.keys(j.patch).length);
+  const names=jobs.slice(0,8).map(j=>j.t.name||j.t.id).join('、')+(jobs.length>8?' 等':'');
+  if(!confirm(`删除分组「${g.label}」(${key})？\n\n${jobs.length?`${jobs.length} 位老师的范围里有这个分组（${names}）。确认后先把这些老师范围里的分组${members.length?'换成组内原来的专业':'去掉'}，再删除分组。`:'没有老师的范围里用到这个分组。'}\n\n课程、课表发布对象等其他地方不会自动清除。确定删除？`)) return;
   try{
+    if(jobs.length){
+      const fail=await mmPatchTeachers(jobs,'更新老师范围');
+      if(fail){ alert(`有 ${fail} 位老师没能更新，为安全起见没有删除分组。请刷新后重试。`); return; }
+    }
     await sb(`/rest/v1/major_groups?key=eq.${key}`,'DELETE');
     await mmReloadMajors();
-  }catch(e){ alert('删除分组失败：'+e.message); }
+  }catch(e){ mmBusyDone(); alert('删除分组失败：'+e.message); }
 }
 function majorEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 async function mmCreate(){
@@ -475,14 +505,92 @@ async function mmCleanRun(){
     alert(`已清理 ${keys.length} 个无用专业`);
   }catch(e){ alert('删除失败：'+e.message); }
 }
+// 这个专业还在哪些地方用：老师的范围、学生主专业 / 附加专业、课程、合格实绩、海报
+async function mmMajorUsage(key){
+  const q=encodeURIComponent(key);
+  const [tch,stu,crs,grad,ug,pst]=await Promise.all([
+    sbAll('/rest/v1/teachers?select='+TCH_MAJOR_COLS),
+    sbAll('/rest/v1/students?select=id,name,major,extra_majors'),
+    sbAll('/rest/v1/courses?select=id,major'),
+    sbAll(`/rest/v1/admission_results?our_major=eq.${q}&select=id`),
+    sbAll(`/rest/v1/undergrad_results?our_major=eq.${q}&select=id`),
+    sbAll(`/rest/v1/pass_posters?major=eq.${q}&select=id`).catch(()=>[]),   // 海报表还没建就当没有
+  ]);
+  const has=v=>Array.isArray(v)?v.includes(key):v===key;
+  const rm=a=>a.filter(k=>k!==key);
+  return {
+    tch:(tch||[]).map(t=>({t,patch:teacherMapMajors(t,rm)})).filter(j=>Object.keys(j.patch).length),
+    stuMain:(stu||[]).filter(s=>s.major===key),
+    stuExtra:(stu||[]).filter(s=>Array.isArray(s.extra_majors)&&s.extra_majors.includes(key)),
+    courses:(crs||[]).filter(c=>has(c.major)),
+    grad:(grad||[]).length, ug:(ug||[]).length, poster:(pst||[]).length,
+  };
+}
 async function mmDelete(key,label){
-  if(!confirm(`删除专业「${label}」(${key})？\n\n注意：已用此专业的学生/课程/老师不会自动清除，只是专业选项消失。确定删除？`)) return;
+  let u;
+  try{ mmBusy('正在检查哪里在用这个专业…'); u=await mmMajorUsage(key); }
+  catch(e){ mmBusyDone(); alert('检查使用情况失败，为安全起见先不删除：'+e.message); return; }
+  mmBusyDone();
+  // 学生主专业、课程在用：不能直接删，先转移
+  if(u.stuMain.length||u.courses.length){ mmMoveDialog(key,label,u); return; }
+  const lines=[];
+  if(u.tch.length) lines.push(`${u.tch.length} 位老师的范围里有它（自动去掉）`);
+  if(u.stuExtra.length) lines.push(`${u.stuExtra.length} 个学生的附加专业里有它（自动去掉）`);
+  if(u.grad+u.ug) lines.push(`${u.grad+u.ug} 条合格实绩的本校在籍专业是它（改为空）`);
+  if(u.poster) lines.push(`${u.poster} 张海报的专业是它（改为空）`);
+  if(lines.length&&!isHubAdminUser()){ alert('这个专业还有这些引用，需要管理员来删除（会自动清掉）：\n\n'+lines.join('\n')); return; }
+  if(!confirm(`删除专业「${label}」(${key})？${lines.length?'\n\n确认后会自动处理：\n'+lines.join('\n'):''}\n\n确定删除？`)) return;
+  const q=encodeURIComponent(key);
   try{
-    await sb(`/rest/v1/majors?key=eq.${key}`,'DELETE');
+    if(u.tch.length){ const fail=await mmPatchTeachers(u.tch,'去掉老师范围里的专业'); if(fail){ alert(`有 ${fail} 位老师没能更新，没有删除专业。请刷新后重试。`); return; } }
+    for(let i=0;i<u.stuExtra.length;i++){
+      mmBusy(`去掉学生附加专业 ${i+1}/${u.stuExtra.length}…`);
+      await sb(`/rest/v1/students?id=eq.${encodeURIComponent(u.stuExtra[i].id)}`,'PATCH',{extra_majors:u.stuExtra[i].extra_majors.filter(k=>k!==key)});
+    }
+    mmBusy('清理合格实绩 / 海报里的引用…');
+    if(u.grad) await sb(`/rest/v1/admission_results?our_major=eq.${q}`,'PATCH',{our_major:null});
+    if(u.ug) await sb(`/rest/v1/undergrad_results?our_major=eq.${q}`,'PATCH',{our_major:null});
+    if(u.poster) await sb(`/rest/v1/pass_posters?major=eq.${q}`,'PATCH',{major:null});
+    mmBusy('删除专业…');
+    await sb(`/rest/v1/majors?key=eq.${q}`,'DELETE');
+    mmBusyDone();
     delete MAJORS[key]; delete MAJOR_DOMAIN[key];
     await loadMajorsFromDB();
     renderMajorManager(_mmHost||document.getElementById('consoleBody'));
-  }catch(e){ alert('删除失败：'+e.message); }
+  }catch(e){ mmBusyDone(); alert('删除失败：'+e.message+'\n（已处理的引用不会恢复；可以再点一次删除继续）'); }
+}
+// 有学生 / 课程还在用：提示并给「转移到…」
+function mmMoveDialog(key,label,u){
+  let ov=document.getElementById('mmMoveModal'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='mmMoveModal';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1100;display:flex;align-items:center;justify-content:center;padding:16px';
+  const opts=(window._majorRows||[]).filter(m=>m.key!==key).map(m=>`<option value="${majorEsc(m.key)}">${majorEsc(m.label)}（${majorEsc(m.domain||'未设领域')}）</option>`).join('');
+  ov.innerHTML=`<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:460px;width:100%">
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px">不能直接删除「${majorEsc(label)}」</div>
+    <div style="font-size:12px;line-height:1.8;color:var(--text-2);margin-bottom:12px">有 ${u.stuMain.length} 个学生 / ${u.courses.length} 门课还在用，请先把它们改到别的专业。</div>
+    <select id="mmMoveTo" style="width:100%;font-size:12px;padding:6px 8px;margin-bottom:12px"><option value="">转移到…（选一个专业）</option>${opts}</select>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('mmMoveModal').remove()">取消</button>
+      <button class="btn btn-primary btn-sm" onclick="mmMoveRun('${majorEsc(String(key).replace(/'/g,"\\'"))}','${majorEsc(String(label).replace(/\\/g,'\\\\').replace(/'/g,"\\'"))}')">把学生和课程转移过去</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  ov._u=u;
+}
+async function mmMoveRun(key,label){
+  const ov=document.getElementById('mmMoveModal'); if(!ov) return;
+  const to=(document.getElementById('mmMoveTo')||{}).value; if(!to){ alert('请先选择要转移到哪个专业'); return; }
+  const u=ov._u; const toLabel=(window._majorRows||[]).find(m=>m.key===to);
+  if(!confirm(`把 ${u.stuMain.length} 个学生、${u.courses.length} 门课的专业从「${label}」改成「${toLabel?toLabel.label:to}」？`)) return;
+  try{
+    if(u.stuMain.length){ mmBusy(`转移 ${u.stuMain.length} 个学生…`); await sb(`/rest/v1/students?major=eq.${encodeURIComponent(key)}`,'PATCH',{major:to}); }
+    for(let i=0;i<u.courses.length;i++){
+      mmBusy(`转移课程 ${i+1}/${u.courses.length}…`);
+      const c=u.courses[i], nv=Array.isArray(c.major)?[...new Set(c.major.map(k=>k===key?to:k))]:to;
+      await sb(`/rest/v1/courses?id=eq.${encodeURIComponent(c.id)}`,'PATCH',{major:nv});
+    }
+    mmBusyDone(); ov.remove();
+    await mmDelete(key,label);   // 重新检查，没有阻挡了就继续删除
+  }catch(e){ mmBusyDone(); alert('转移失败：'+e.message); }
 }
 // ── 访问链接的范围：完整领域 + 单独专业 + 班级（新字段 domains / majors / class_ids；旧链接退回用 domain / major）──
 function scopeFromKey(kk){
@@ -502,12 +610,45 @@ function teacherMultiDoms(){
 function keyScopeText(kk){
   const sc=scopeFromKey(kk);
   if(!(sc.domains||[]).length && !(sc.majors||[]).length && !(sc.classIds||[]).length) return '（没有设置范围）';
-  return escTM(scopeSummary(sc));
+  return escTM(scopeSummaryX(sc));
+}
+// ── 已删除的专业 / 分组：库里已经没有的 key，不报错、不当成「全部」，显示成「（已删除）key」，并能手动去掉 ──
+function scopeKeyDead(k){ return !!k && majorsLoadedFromDB && !MAJORS[k] && !isMajorGroup(k) && !(typeof ADMISSION_MAJORS!=='undefined'&&ADMISSION_MAJORS[k]); }
+function scopeKeyName(k){ return scopeKeyDead(k)?'（已删除）'+k:(MAJORS[k]||k); }
+// 同 scopeSummary，只是已删除的专业显示成「（已删除）key」
+function scopeSummaryX(sc,opts){
+  sc=sc||VIEW_SCOPE;
+  if(!(sc.majors||[]).some(scopeKeyDead)) return scopeSummary(sc,opts);
+  return scopeSummary(Object.assign({},sc,{majors:sc.majors.map(scopeKeyName)}),opts);
+}
+// 老师身上用到专业 / 分组 key 的所有字段：majors、manage_scope.majors、role_scope 各项的 majors、permissions.exclude_majors / profile_skip_majors。
+// fn(数组)→新数组；返回需要更新的老师列（只含有变化的列，没变化 = {}）
+const TCH_MAJOR_COLS='id,name,majors,manage_scope,role_scope,permissions';
+function teacherMapMajors(t,fn){
+  const patch={}, same=(a,b)=>a.length===b.length&&a.every((x,i)=>x===b[i]);
+  if(Array.isArray(t.majors)){ const n=fn(t.majors); if(!same(n,t.majors)) patch.majors=n; }
+  const ms=t.manage_scope;
+  if(ms&&Array.isArray(ms.majors)){ const n=fn(ms.majors); if(!same(n,ms.majors)) patch.manage_scope=Object.assign({},ms,{majors:n}); }
+  const rs=t.role_scope;
+  if(rs&&typeof rs==='object'){
+    let c=false; const o={};
+    Object.keys(rs).forEach(k=>{ const v=rs[k]; if(v&&Array.isArray(v.majors)){ const n=fn(v.majors); if(!same(n,v.majors)){ c=true; o[k]=Object.assign({},v,{majors:n}); return; } } o[k]=v; });
+    if(c) patch.role_scope=o;
+  }
+  const pm=t.permissions;
+  if(pm&&typeof pm==='object'){
+    let c=false; const o=Object.assign({},pm);
+    ['exclude_majors','profile_skip_majors'].forEach(f=>{ if(Array.isArray(pm[f])){ const n=fn(pm[f]); if(!same(n,pm[f])){ o[f]=n; c=true; } } });
+    if(c) patch.permissions=o;
+  }
+  return patch;
 }
 // 范围选择器（领域 / 专业 / 班级三块 chip，访问链接和「负责人范围」共用）：d={domains,majors,classIds}，fn=点 chip 时调用的函数名（fn(field,val)）
 function scopePickerHtml(d,fn){
   const chip=(on,label,fn,dis)=>`<div class="filter-chip${on?' active':''}" ${dis?'':`onclick="${fn}"`} style="padding:3px 10px;font-size:11px;${dis?'opacity:.4;cursor:default':''}" ${dis?'title="这个领域已经整个选中，不用再单选专业"':''}>${label}</div>`;
   const sec=(t,inner)=>`<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">${t}</div>${inner}</div>`;
+  const deadM=(d.majors||[]).filter(scopeKeyDead);   // 已经不存在的专业 / 分组：单独一行，点 × 去掉（保存后生效）
+  const deadHtml=deadM.length?sec('已删除的专业（点 × 去掉，保存后生效）',`<div style="display:flex;gap:4px;flex-wrap:wrap">${deadM.map(k=>`<div class="filter-chip active" onclick="${fn}('majors','${String(k).replace(/'/g,"\\'")}')" style="padding:3px 10px;font-size:11px;border-color:var(--danger,#c0392b);color:var(--danger,#c0392b);background:transparent">已删除的专业：${escTM(k)} ×</div>`).join('')}</div>`):'';
   const majorsHtml=DOMAINS.map(dm=>{
     const ks=allMajorKeys().filter(k=>MAJOR_DOMAIN[k]===dm.label); if(!ks.length&&!Object.keys(MAJOR_GROUPS).some(g=>groupDomain(g)===dm.label)) return '';
     const full=d.domains.includes(dm.label);
@@ -521,7 +662,7 @@ function scopePickerHtml(d,fn){
     return `<div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px"><span style="font-size:10px;color:var(--text-3);min-width:64px">${dm.label}</span>
       <div style="display:flex;gap:4px;flex-wrap:wrap">${chipFold(cs.map(c=>({on:d.classIds.includes(String(c.id)),html:chip(d.classIds.includes(String(c.id)), escTM(c.name), `${fn}('classIds','${String(c.id).replace(/'/g,"\\'")}')`, d.domains.includes(dm.label))})))}</div></div>`;
   }).join('')+((cls.filter(c=>!DOMAINS.some(dm=>dm.label===c.domain)).length)?`<div style="display:flex;gap:4px;flex-wrap:wrap">${cls.filter(c=>!DOMAINS.some(dm=>dm.label===c.domain)).map(c=>chip(d.classIds.includes(String(c.id)), escTM(c.name), `${fn}('classIds','${String(c.id).replace(/'/g,"\\'")}')`)).join('')}</div>`:''):'<span style="font-size:10px;color:var(--text-3)">还没有班级（在「班级管理」里建）</span>';
-  return sec('完整领域（这个领域的所有东西都能看到，包括没有专业的）',`<div style="display:flex;gap:6px;flex-wrap:wrap">${DOMAINS.map(dm=>chip(d.domains.includes(dm.label), dm.label, `${fn}('domains','${dm.label}')`)).join('')}</div>`)
+  return deadHtml+sec('完整领域（这个领域的所有东西都能看到，包括没有专业的）',`<div style="display:flex;gap:6px;flex-wrap:wrap">${DOMAINS.map(dm=>chip(d.domains.includes(dm.label), dm.label, `${fn}('domains','${dm.label}')`)).join('')}</div>`)
     +sec('单独专业（只看这些专业的东西；没有专业的东西不显示）',majorsHtml||'<span style="font-size:10px;color:var(--text-3)">还没有专业</span>')
     +sec('班级（只看属于这些班级的学生和按班级编入的课）',clsHtml);
 }
@@ -644,7 +785,7 @@ function tfMgrRender(){
   const isMgr=d.domains.length||d.majors.length||d.classIds.length;
   mb.innerHTML=`<div style="font-size:10px;color:var(--text-3);margin-bottom:8px">管理范围为空 = 不是负责人。设了范围后，这位老师用自己的老师链接登录，会多出「管理模式」按钮，一键进管理端（只看到范围内的东西），不用另外的访问链接。</div>
     ${scopePickerHtml(d,'mgrDraftToggle')}
-    <div style="font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 12px;line-height:1.7">${isMgr?`负责人，管理范围：<b>${escTM(scopeSummary(d))}</b><br>部门管理权限：${d.dept.length?`<b>${escTM(d.dept.map(c=>(DEPT_PERM_DEFS.find(x=>x[0]===c)||[c,c])[1]).join('、'))}</b>`:'<b>未开启任何一项</b>（只能在管理模式里按范围使用日常功能）'}`:'<b>不是负责人</b>（没有设置管理范围）'}</div>
+    <div style="font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 12px;line-height:1.7">${isMgr?`负责人，管理范围：<b>${escTM(scopeSummaryX(d))}</b><br>部门管理权限：${d.dept.length?`<b>${escTM(d.dept.map(c=>(DEPT_PERM_DEFS.find(x=>x[0]===c)||[c,c])[1]).join('、'))}</b>`:'<b>未开启任何一项</b>（只能在管理模式里按范围使用日常功能）'}`:'<b>不是负责人</b>（没有设置管理范围）'}</div>
     ${isMgr?`<div style="margin-top:12px"><div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">部门管理权限</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${DEPT_PERM_DEFS.map(([code,label])=>`<div class="filter-chip${d.dept.includes(code)?' active':''}" onclick="mgrDeptToggle('${code}')" style="padding:3px 10px;font-size:11px">${escTM(label)}</div>`).join('')}</div>
       <div style="font-size:10px;color:var(--text-3);margin-top:6px;line-height:1.7">不要求职位（兼职也可以），管理员想给谁开就给谁开；选了之后，这位老师进管理模式时，左侧导航会直接多出对应的功能，只能管理自己管理范围里的领域：价目编辑 = 价目；专业增删 = 专业；宣传内容 = 宣传介绍；本范围老师管理 = 新建 / 编辑管理范围（领域或专业）内的老师（不能设负责人 / 对接 / 总务、不能给部门管理权限）。</div></div>
@@ -821,7 +962,7 @@ function tsecState(key){
   if(key==='resource'){ const n=_mgrDraft?_mgrDraft.perms.length:0; return {has:n>0,sum:n?`${n} 项权限`:'无'}; }
   if(key==='manager'){
     const d=_mgrDraft, on=!!d&&(d.domains.length||d.majors.length||d.classIds.length);
-    return {has:!!on,sum:on?'负责人：'+scopeSummary(d):'不是负责人'};
+    return {has:!!on,sum:on?'负责人：'+scopeSummaryX(d):'不是负责人'};
   }
   return {has:false,sum:''};
 }
@@ -875,7 +1016,7 @@ function tsecApply(){
 function tsecShowAllToggle(el){ _tsecShowAll=!_tsecShowAll; el.classList.toggle('active',_tsecShowAll); tsecApply(); }
 // 重置表单（新建 / 取消 / 添加成功后）：区块收起、负责人草稿清空
 function tfFormReset(){
-  _tfEditId='';
+  _tfEditId=''; _tfDeadHide=new Set(); tfDeadRender();
   tfRolesLoad(null);
   tsecCollapse();
   tfMgrInit(null);
@@ -1116,6 +1257,7 @@ async function renderPage(){
       [cachedTeachers, cachedSessions]=await Promise.all([
         sb('/rest/v1/teachers?select=*&order=name.asc').catch(()=>[]),
         sbAll('/rest/v1/course_sessions?homework_enabled=is.true&select=id,course_name&order=course_name.asc').catch(()=>[]),
+        loadAppOptions().catch(()=>false),
       ]);
       renderTeachersPage(mc);
     } else if(curPage==='payroll'){
@@ -1194,6 +1336,7 @@ function renderTeachersPage(mc){
     <style>.rd-def::after{content:'角色默认';font-size:8px;color:var(--accent);margin-left:4px;font-weight:400;white-space:nowrap}</style>
     <div onclick="tsecRefreshSoon()" oninput="tsecRefreshSoon()" onchange="tsecRefreshSoon()" style="${_ro?'display:none;':''}background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:16px;min-width:0">
       <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:14px;letter-spacing:.05em;text-transform:uppercase" id="teacherFormTitle">添加新老师</div>
+      <div id="tf_dead_box"></div>
       <div id="tf_task_hint" style="display:none;font-size:11px;line-height:1.7;background:#fff8e6;border:1px solid #e8d4a0;border-radius:3px;padding:6px 10px;margin-bottom:10px;color:var(--warn,#b8860b)"></div>
       ${tsecWrap('basic','基本信息',`
       <div class="form-group"><label class="form-label">姓名 *</label><input id="new_teacher_name" placeholder="老师姓名"></div>
@@ -1548,7 +1691,7 @@ function admExcludeForSave(){
   if(!ok.size) return [..._admExcl];   // 还没设范围：原样保留，不误清
   return [..._admExcl].filter(k=>ok.has(k));
 }
-function admMajorName(k){ return MAJORS[k]?majorLabel(k):(ADMISSION_MAJORS[k]||k); }
+function admMajorName(k){ return MAJORS[k]?majorLabel(k):(ADMISSION_MAJORS[k]||scopeKeyName(k)); }
 function renderPermScope(){
   const box=document.getElementById('perm_exclude_majors'); if(!box) return;
   const info=document.getElementById('perm_scope_info');
@@ -2087,7 +2230,7 @@ function renderTeacherRows(){
               ${profBadgeHtml(t)}
               ${t.leader_id?`<span title="归属负责人" style="font-size:10px;color:var(--text-2);border:1px solid var(--border);border-radius:2px;padding:0 6px;white-space:nowrap">归属：${escTM((cachedTeachers.find(x=>x.id===t.leader_id)||{name:t.leader_id}).name)}</span>`:''}
               ${(()=>{ const m=(_tfTaskTpl&&typeof taskMissingFeatures==='function')?taskMissingFeatures(t,_tfTaskTpl):[]; return m.length?`<span title="${escTM(m.map(x=>x.tpl.requires_label||x.tpl.requires).join('、'))}" style="font-size:10px;color:var(--warn,#b8860b);border:1px solid var(--warn,#b8860b);border-radius:2px;padding:0 6px;white-space:nowrap">⚠ 任务需要开功能 ${m.length}</span>`:''; })()}
-              ${managerScopeNonEmpty(t.manage_scope)?`<span title="${escTM(scopeSummary(managerScopeToView(t.manage_scope)))}" style="font-size:10px;color:#fff;background:var(--accent);border-radius:2px;padding:0 6px;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis">负责人：${escTM(scopeSummary(managerScopeToView(t.manage_scope)))}</span>`:''}
+              ${managerScopeNonEmpty(t.manage_scope)?`<span title="${escTM(scopeSummaryX(managerScopeToView(t.manage_scope)))}" style="font-size:10px;color:#fff;background:var(--accent);border-radius:2px;padding:0 6px;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis">负责人：${escTM(scopeSummaryX(managerScopeToView(t.manage_scope)))}</span>`:''}
               <span title="${escTM(featTip)}" style="font-size:10px;color:var(--text-3);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:30%">${escTM(featShort)||'无权限'}</span>
               <span style="font-size:10px;color:var(--text-3)">${open?'▾':'▸'}</span>
             </div>
@@ -2116,7 +2259,7 @@ function renderTeacherRows(){
 function getPermissionsFromForm(prev){
   prev=prev||{};
   // profile_skip_majors（任务明细里设的「不需要讲师介绍」）表单里没有，保存时原样带上，不能被冲掉
-  const _keep=Array.isArray(prev.profile_skip_majors)?{profile_skip_majors:prev.profile_skip_majors}:{};
+  const _keep=Array.isArray(prev.profile_skip_majors)?{profile_skip_majors:prev.profile_skip_majors.filter(k=>!_tfDeadHide.has('skip:'+k))}:{};
   // 营业功能 4 个勾选项仅在 admin/中枢渲染；领域端链接下这些元素不存在，
   // 读取 .checked 会抛错导致「添加/保存老师」点击无反应。缺失时回退到已有值（编辑时不清空）。
   const _chk=(id,fb)=>{ const el=document.getElementById(id); return el?el.checked:(fb||false); };
@@ -2284,6 +2427,27 @@ async function addTeacher(){
   }catch(e){alert('添加失败：'+(deptTeachersReadOnly()||!isHubAdminUser()?teacherSaveErrMsg(e):e.message))}
 }
 
+// 编辑页顶部：这位老师身上已经不存在的专业 / 分组（负责专业、不看的专业、「不需要讲师介绍」的专业；负责人范围和班主任范围的在各自的选择器里）
+let _tfDeadHide=new Set();   // 点 × 去掉的 'cols:key'
+function tfDeadItems(){
+  const cur=_tfEditId?(cachedTeachers||[]).find(x=>x.id===_tfEditId):null; if(!cur) return [];
+  const out=[], add=(f,k)=>{ if(scopeKeyDead(k)&&!_tfDeadHide.has(f+':'+k)&&!out.some(x=>x.f===f&&x.k===k)) out.push({f,k}); };
+  (cur.majors||[]).forEach(k=>add('majors',k));
+  [..._admExcl].forEach(k=>add('excl',k));
+  ((cur.permissions||{}).profile_skip_majors||[]).forEach(k=>add('skip',k));
+  return out;
+}
+function tfDeadRender(){
+  const box=document.getElementById('tf_dead_box'); if(!box) return;
+  const items=tfDeadItems();
+  const LB={majors:'负责专业',excl:'不看的专业',skip:'不需要讲师介绍'};
+  box.innerHTML=items.length?`<div style="margin-bottom:12px;padding:8px 10px;border:1px solid var(--danger,#c0392b);border-radius:4px"><div style="font-size:11px;font-weight:600;color:var(--danger,#c0392b);margin-bottom:6px">这位老师身上有已经删除的专业（点 × 去掉，保存后生效）</div><div style="display:flex;gap:4px;flex-wrap:wrap">${items.map(x=>`<div class="filter-chip active" onclick="tfDeadRemove('${x.f}','${String(x.k).replace(/'/g,"\\'")}')" style="padding:3px 10px;font-size:11px;border-color:var(--danger,#c0392b);color:var(--danger,#c0392b);background:transparent">已删除的专业：${escTM(x.k)}（${LB[x.f]}） ×</div>`).join('')}</div></div>`:'';
+}
+function tfDeadRemove(f,k){
+  _tfDeadHide.add(f+':'+k);
+  if(f==='excl') _admExcl.delete(k);
+  tfDeadRender();
+}
 function openEditTeacher(id){
   if(deptTeachersReadOnly()){ alert('你没有「本范围老师管理」权限，只能查看老师'); return; }
   const t=cachedTeachers.find(x=>x.id===id);
@@ -2341,7 +2505,7 @@ function openEditTeacher(id){
   document.querySelectorAll('#perm_slot_types .filter-chip').forEach(c=>{c.classList.toggle('active',(p.slot_types||[]).includes(c.dataset.value))});
   document.querySelectorAll('#perm_vip_content .filter-chip').forEach(c=>{c.classList.toggle('active',(p.vip_content||[]).includes(c.dataset.value))});
   hwaInit(p, t);
-  _tfEditId=t.id; tfRolesLoad(t); tsecCollapse(); tfMgrInit(t); tsecApply(); tfTaskLoad(); roleTplEnsure().then(()=>{ tfRolesRender(); tfRoleDiffRender(); });
+  _tfEditId=t.id; _tfDeadHide=new Set(); tfDeadRender(); tfRolesLoad(t); tsecCollapse(); tfMgrInit(t); tsecApply(); tfTaskLoad(); roleTplEnsure().then(()=>{ tfRolesRender(); tfRoleDiffRender(); });
   const btn=document.getElementById('teacherFormBtn');
   if(btn){btn.textContent='保存修改';btn.setAttribute('onclick',`saveEditTeacher('${id}')`);}
   const cancelBtn=document.getElementById('teacherFormCancelBtn');
