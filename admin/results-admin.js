@@ -538,6 +538,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
     <button class="btn btn-secondary" id="export-btn" onclick="raXlExport('grad')" style="padding:5px 12px;font-size:11px">⬇ 下载 Excel</button>
     ${raIsTeacher() || raScopedLead() ? '' : '<button class="btn btn-danger" onclick="raConfirmDeleteAll()" style="margin-left:auto">全件削除</button>'}
   </div>
+  <div id="ar-pending-grad"></div>
   <div id="list-area" class="load-state">読み込み中...</div>
 </div>
 
@@ -640,7 +641,7 @@ ${raScopeHint()}
       </div>
       <div class="field">
         <label>系統 *</label>
-        <select id="ug-f-track">
+        <select id="ug-f-track" onchange="raArUgTrackChanged('ugf', this.value)">
           <option value="bunka">文科</option>
           <option value="rika">理科</option>
           <option value="bijutsu">美術</option>
@@ -808,6 +809,7 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
     <button class="btn btn-secondary" id="ug-export-btn" onclick="raXlExport('ug')" style="padding:5px 12px;font-size:11px">⬇ 下载 Excel</button>
     ${raIsTeacher() || raScopedLead() ? '' : '<button class="btn btn-danger" onclick="raUgConfirmDeleteAll()" style="margin-left:auto">全件削除</button>'}
   </div>
+  <div id="ar-pending-ug"></div>
   <div id="ug-list-area" class="load-state">読み込み中...</div>
 </div>
 
@@ -1166,7 +1168,7 @@ async function raSubmitForm(btn, force) {
     if (file) { raBtnBusy(btn, '上传截图中…'); phOk = await raAddPhotoAfterInsert('grad', saved, file); }
     if (saved && row.our_major && row.student && !raIsTeacher()) { raBtnBusy(btn, '同步学生档案中…'); synced = (await raArSyncToStudent(saved)) === 'synced'; }
     const label = [row.univ, row.dept, row.student].filter(Boolean).join(' · ');
-    const tail = synced ? ' · 已记录到学生档案' : '';
+    const tail = synced ? ' · 已记录到学生档案' : (!row.our_major && row.student && !raIsTeacher() ? ' · 没有选本校在籍专业，未记录到学生档案' : '');
     if (phOk) raSaveMsg('f-save-msg', 'ok', `✓ 已保存：${label}（${raNowHM()}）${file ? ' · 含截图' : ''}${tail}`);
     else raSaveMsg('f-save-msg', 'warn', `合格实绩已保存（${label}），截图上传失败，请在数据管理里补传${tail}`);
     raToast(phOk ? '保存しました ✓' : '合格实绩已保存，但截图上传失败，请在「数据管理」编辑里补传', phOk);
@@ -1751,6 +1753,7 @@ function raListRows() {
 }
 
 function raRenderList() {
+  raArPendingRender('grad');
   const rows = raListRows();
 
   document.getElementById('result-count').textContent = `${rows.length} 件`;
@@ -1903,8 +1906,11 @@ async function raArLoadMajors() {
     if (Array.isArray(gs)) raArGroups = gs.map(g => ({ key: g.key, label: g.label || g.key, domain: g.domain || '' }));
   } catch (e) { /* 分组表读不到 */ }
   raArGroups = raArGroups.filter(g => raArMajors.some(m => m.group_key === g.key));   // 空分组不列
+  subjectMajorSetData(raArMajors, raArGroups);
   raArMajorsReady = true;
   ['f', 'em', 'ugf', 'ugem'].forEach(p => raArRenderMajor(p, raArSel[p] || ''));
+  if (!raArSel.ugf) raArSetMajor('ugf', raArUgDefaultMajor((document.getElementById('ug-f-track') || {}).value || 'bunka'));
+  raArPendingRender('grad'); raArPendingRender('ug');
 }
 const raArSel = { f: '', em: '', ugf: '', ugem: '' };
 function raArEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
@@ -1942,44 +1948,23 @@ function raArSetMajor(p, key) {
   const q = document.getElementById(p + '-major-q'); if (q) q.value = '';
   raArFilterMajor(p);
 }
-// 在籍学科（合格数据的粗分类）→ 本校在籍专业：模板「专业对照」和自动预选共用
-//   names：按专业中文名匹配 majors（取第一个对得上的）；key：直接用专业 key；group：按分组名匹配 major_groups
-//   对不上就当没有对应；note 写在模板备注列
-const RA_SUBJECT_MAJOR_MAP = {
-  shakai: { key: 'shakai' }, fukushi: { key: 'fukushi' }, shinpan: { key: 'shinpan' }, keizai: { key: 'keizai' }, keiei: { key: 'keiei' },
-  kyoiku: { names: ['教育学', '教育'], re: /教育学?$/ },
-  hougaku: { names: ['法学'] }, seiji: { names: ['政治学', '政治学/国际关系', '政治学/国際関係', '国际关系'] },
-  bungaku: { names: ['文学'] }, rekishi: { names: ['历史学', '歴史学', '历史'] }, hyosho: { names: ['表象文化'] },
-  nihongo: { names: ['日本语教育', '日本語教育'] }, shinri: { names: ['心理学', '心理'] },
-  other: {},
-  rika_kikai: { names: ['机械工学'] }, rika_denki: { names: ['电子电气'] },
-  rika_kagaku: { names: ['化学'], note: '材料方向的学生选「材料科学」' },
-  rika_joho: { names: ['情报工学'] }, rika_kenchiku: { names: ['建筑工学'] },
-  rika_bio: { group: '生命科学' }, rika_keiei: { names: ['经营工学'] },
-  rika_other: { note: '材料科学、环境科学等，按学生实际专业选' },
-};
+// 在籍学科（合格数据的粗分类）→ 本校在籍专业：对照表在 shared/subject-major-map.js（模板「专业对照」和自动预选共用）
 // → { key, label, isGroup, note }；没有对应时 key 为空
-function raSubjectMajor(subject) {
-  const e = RA_SUBJECT_MAJOR_MAP[subject] || {};
-  const out = { key: '', label: '', isGroup: false, note: e.note || '' };
-  const ms = raArMajors || [];
-  if (e.key) { const m = ms.find(x => x.key === e.key); if (m) { out.key = m.key; out.label = m.label; } }
-  if (!out.key && e.names) {
-    let m = null;
-    for (const n of e.names) { m = ms.find(x => (x.label || '').trim() === n); if (m) break; }
-    if (!m && e.re) m = ms.find(x => e.re.test((x.label || '').trim()));
-    if (m) { out.key = m.key; out.label = m.label; }
-  }
-  if (!out.key && e.group) {
-    const g = (raArGroups || []).find(x => (x.label || '').trim() === e.group);
-    if (g) { out.key = g.key; out.label = g.label + '（全部）'; out.isGroup = true; }
-  }
-  if (!out.key && !out.note) out.note = '按学生实际专业选';
-  return out;
-}
+function raSubjectMajor(subject) { return subjectMajorInfo(subject, raArMajors, raArGroups); }
 function raArGuessMajor(subject) {
   if (!subject || !(raArMajors || []).length) return '';
   return raSubjectMajor(subject).key;
+}
+// 学部不分专业：按系統默认到「学部文科 / 学部理科 / 学部美术」；系统里没有这个 key 时返回空
+const RA_UG_TRACK_MAJOR = { bunka: 'gakubu_bunka', rika: 'gakubu_rika', bijutsu: 'gakubu_bijutsu' };
+function raArUgDefaultMajor(track) {
+  const k = RA_UG_TRACK_MAJOR[track] || '';
+  return k && (raArMajors || []).some(m => m.key === k) ? k : '';
+}
+// 学部表单换系統：选择框是空的或还是上一个系統的默认值时，才跟着换（手动选过别的不动）
+function raArUgTrackChanged(p, track) {
+  const cur = raArGetMajor(p);
+  if (!cur || Object.values(RA_UG_TRACK_MAJOR).includes(cur)) raArSetMajor(p, raArUgDefaultMajor(track));
 }
 function raArPreselect(p) {
   const subj = (document.getElementById(p + '-subject') || {}).value;
@@ -2074,6 +2059,63 @@ async function raArSyncToStudent(row, table) {
     raToast(/401|403|row-level|permission|42501/i.test(m) ? '只有管理员能记录到学生档案（合格实绩已保存）' : '记录到学生档案失败：' + m.slice(0, 120), false);
   }
   return '';
+}
+
+// ── 收集页来的记录：还没记录到学生档案的（entered_via='public'，有真名，有本校在籍专业，student_id 为空）──
+const raArPend = { grad: { open: false, sel: new Set() }, ug: { open: false, sel: new Set() } };
+function raArPendData(kind) { return kind === 'ug' ? raUgAllData : raAllData; }
+function raArPendRows(kind) {
+  return raArPendData(kind).filter(r => r.entered_via === 'public' && r.student && raArRealName(r.student) && r.our_major && !r.student_id);
+}
+function raArPendingRender(kind) {
+  const box = document.getElementById('ar-pending-' + kind); if (!box) return;
+  const st = raArPend[kind];
+  const rows = raIsTeacher() ? [] : raArPendRows(kind);
+  if (!rows.length) { box.innerHTML = ''; st.sel.clear(); return; }
+  st.sel = new Set([...st.sel].filter(id => rows.some(r => String(r.id) === id)));
+  const mjLabel = k => ((raArMajors.find(m => m.key === k) || raArGroups.find(g => g.key === k) || {}).label) || k;
+  let html = `<div style="border:1px solid #e8d9a8;background:#fbf6e6;border-radius:6px;padding:9px 12px;margin-bottom:10px;font-size:12px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span>有 <b>${rows.length}</b> 条收集来的记录还没记录到学生档案</span>
+      <button class="btn btn-secondary" style="padding:3px 10px;font-size:11px;margin-left:auto" onclick="raArPendToggleOpen('${kind}')">${st.open ? '收起 ▴' : '展开 ▾'}</button>
+    </div>`;
+  if (st.open) {
+    html += `<div style="margin-top:8px">` + rows.map(r => {
+      const on = st.sel.has(String(r.id));
+      return `<div onclick="raArPendToggle('${kind}','${raArEsc(String(r.id))}')" style="display:flex;gap:10px;align-items:center;padding:6px 10px;margin-bottom:4px;border:1px solid ${on ? 'var(--accent)' : 'var(--border)'};background:${on ? '#f1ead2' : '#fff'};border-radius:4px;cursor:pointer">
+        <span style="font-weight:600">${raArEsc(r.student)}</span>
+        <span style="color:var(--text-secondary)">${raArEsc([r.univ, r.dept].filter(Boolean).join(' '))}</span>
+        <span style="margin-left:auto;color:var(--text-muted);font-size:11px">${raArEsc(mjLabel(r.our_major))}</span></div>`;
+    }).join('') + `<div style="display:flex;gap:8px;margin-top:6px">
+      <button class="btn btn-secondary" style="padding:4px 12px;font-size:11px" onclick="raArPendAll('${kind}')">${st.sel.size === rows.length ? '取消全选' : '全选'}</button>
+      <button class="btn btn-primary" id="ar-pend-go-${kind}" style="padding:4px 14px;font-size:11px" ${st.sel.size ? '' : 'disabled'} onclick="raArPendGo('${kind}')">记录到学生档案（${st.sel.size}）</button></div></div>`;
+  }
+  box.innerHTML = html + '</div>';
+}
+function raArPendToggleOpen(kind) { raArPend[kind].open = !raArPend[kind].open; raArPendingRender(kind); }
+function raArPendToggle(kind, id) { const s = raArPend[kind].sel; s.has(id) ? s.delete(id) : s.add(id); raArPendingRender(kind); }
+function raArPendAll(kind) {
+  const st = raArPend[kind], rows = raArPendRows(kind);
+  st.sel = st.sel.size === rows.length ? new Set() : new Set(rows.map(r => String(r.id)));
+  raArPendingRender(kind);
+}
+let raArPendBusy = false;
+async function raArPendGo(kind) {
+  if (raArPendBusy) return;
+  const st = raArPend[kind], table = kind === 'ug' ? 'undergrad_results' : 'admission_results';
+  const todo = raArPendRows(kind).filter(r => st.sel.has(String(r.id)));
+  if (!todo.length) return;
+  raArPendBusy = true;
+  const btn = document.getElementById('ar-pend-go-' + kind); if (btn) btn.disabled = true;
+  let ok = 0;
+  for (const r of todo) {
+    if (btn) btn.textContent = `记录中…（${ok}/${todo.length}）`;
+    if ((await raArSyncToStudent(r, table)) === 'synced') ok++;
+  }
+  raArPendBusy = false;
+  st.sel.clear();
+  raArPendingRender(kind);
+  raToast(ok === todo.length ? `✓ 已记录 ${ok} 条到学生档案` : `已记录 ${ok} / ${todo.length} 条，其余没有记录`, ok === todo.length);
 }
 
 async function raFetchAllResults() { return (await sbAll('/rest/v1/admission_results?select=*&order=created_at.desc,id.desc' + raScopeQs('grad'))).filter(r => raInMyScope('grad', r)); }
@@ -2400,7 +2442,7 @@ function raUgResetForm() {
     document.getElementById(id).value = '';
   });
   ['ug-f-track','ug-f-era','ug-f-tier','ug-f-jlpt'].forEach(id => document.getElementById(id).selectedIndex = 0);
-  raArSetMajor('ugf', '');
+  raArSetMajor('ugf', raArUgDefaultMajor('bunka'));
   document.getElementById('ug-f-photo').value = '';
   document.getElementById('ug-f-photo-box').innerHTML = '';
 }
@@ -2443,7 +2485,7 @@ async function raUgSubmitForm(btn, force) {
     if (file) { raBtnBusy(btn, '上传截图中…'); phOk = await raAddPhotoAfterInsert('ug', saved, file); }
     if (saved && row.our_major && row.student && !raIsTeacher()) { raBtnBusy(btn, '同步学生档案中…'); synced = (await raArSyncToStudent(saved,'undergrad_results')) === 'synced'; }
     const label = [row.univ, row.dept, row.student].filter(Boolean).join(' · ');
-    const tail = synced ? ' · 已记录到学生档案' : '';
+    const tail = synced ? ' · 已记录到学生档案' : (!row.our_major && row.student && !raIsTeacher() ? ' · 没有选本校在籍专业，未记录到学生档案' : '');
     if (phOk) raSaveMsg('ug-f-save-msg', 'ok', `✓ 已保存：${label}（${raNowHM()}）${file ? ' · 含截图' : ''}${tail}`);
     else raSaveMsg('ug-f-save-msg', 'warn', `合格实绩已保存（${label}），截图上传失败，请在数据管理里补传${tail}`);
     raToast(phOk ? '保存しました ✓' : '合格实绩已保存，但截图上传失败，请在「数据管理」编辑里补传', phOk);
@@ -2624,6 +2666,7 @@ function raUgListRows() {
 }
 
 function raUgRenderList() {
+  raArPendingRender('ug');
   const rows = raUgListRows();
 
   document.getElementById('ug-result-count').textContent = `${rows.length} 件`;
@@ -2805,7 +2848,7 @@ function raUgOpenEditModal(el) {
   document.getElementById('ug-em-toefl').value = r.toefl||'';
   document.getElementById('ug-em-toeic').value = r.toeic||'';
   document.getElementById('ug-em-note').value = r.note||'';
-  raArSetMajor('ugem', r.our_major || '');
+  raArSetMajor('ugem', r.our_major || raArUgDefaultMajor(r.track || 'bunka'));
   raArPhotoShowFor('ug', r, 'ug-em');
   document.getElementById('ug-em-photo').value = '';
   document.getElementById('ug-edit-modal-title').textContent = '編集: '+r.univ;

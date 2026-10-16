@@ -181,6 +181,7 @@ main{padding:1.5rem 3rem 4rem;max-width:1200px;margin:0 auto}
   <div class="loading">読み込み中...</div>
 </main>
 
+<script src="../shared/subject-major-map.js?v=20261227"></script>
 <script>
 // ─── Supabase ─────────────────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://vwntezfvqbrkeovnseku.supabase.co';
@@ -237,9 +238,17 @@ let curScope = 'all', curEra = 'all';
 window.addEventListener('DOMContentLoaded', async () => {
   try {
     const [gradRaw, ugRaw] = await Promise.allSettled([
-      sbGet('admission_results','id,univ,dept,spec,subject,track,era,tier,note'), sbGet('undergrad_results','id,univ,dept,spec,track,era,tier,note')
+      sbGet('admission_results','id,univ,dept,spec,subject,our_major,track,era,tier,note'), sbGet('undergrad_results','id,univ,dept,spec,track,era,tier,note')
     ]);
-    gradData = gradRaw.status==='fulfilled' ? gradRaw.value.map(r=>({...r, univ:normUniv(r.univ), _src:'grad'})) : [];
+    await loadMajors();
+    gradData = gradRaw.status==='fulfilled' ? gradRaw.value.map(r=>{
+      // 本校专业：有 our_major 用它；旧数据按旧学科对照；对不上归「other」。系統：有本校专业按所属领域，否则按 track
+      const info = r.our_major && MAJOR_INFO[r.our_major];
+      const track = (info && DOMAIN_TRACK[info.domain]) || r.track || 'bunka';
+      let maj = majorsOk ? (r.our_major || subjectToMajor(r.subject) || '') : (track==='rika' && (!r.subject || r.subject==='other') ? 'rika_other' : (r.subject||'other'));
+      if (majorsOk && (!maj || !MAJOR_INFO[maj])) maj = 'other';
+      return {...r, univ:normUniv(r.univ), track, maj, _src:'grad'};
+    }) : [];
     ugData = ugRaw.status==='fulfilled' ? ugRaw.value.map(r=>({...r, univ:normUniv(r.univ), _src:'ug'})) : [];
     render();
   } catch(e) {
@@ -287,6 +296,31 @@ function render() {
   document.getElementById('main').innerHTML = buildMainContent(combined, g, u);
 }
 
+// 本校专业清单（majors / major_groups，匿名可读）；读不到就退回旧学科名
+const DOMAIN_TRACK = {'大学院文科':'bunka','大学院理科':'rika','大学院美术':'bijutsu'};
+const MAJOR_INFO = {};
+let majorsOk = false;
+async function loadMajors() {
+  try {
+    let ms;
+    try { ms = await sbGetRaw('majors?select=key,label,domain,group_key&order=label.asc'); }
+    catch(e) { ms = await sbGetRaw('majors?select=key,label,domain&order=label.asc'); }
+    let gs = [];
+    try { gs = await sbGetRaw('major_groups?select=key,label,domain&order=key.asc'); } catch(e) {}
+    gs = gs.filter(g => ms.some(m => m.group_key === g.key));
+    subjectMajorSetData(ms, gs);
+    gs.forEach(g => { MAJOR_INFO[g.key] = {label:g.label+'（全部）', domain:g.domain}; });
+    ms.forEach(m => { MAJOR_INFO[m.key] = {label:m.label, domain:m.domain}; });
+    majorsOk = ms.length > 0;
+  } catch(e) { majorsOk = false; }
+}
+async function sbGetRaw(path) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {headers: {'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+function majorLabel(id) { return (MAJOR_INFO[id] && MAJOR_INFO[id].label) || (id==='other' ? 'その他' : SUBJ_LABEL[id]) || id; }
+
 const SUBJ_LABEL = {
   shakai:'社会学', fukushi:'社会福祉', shinpan:'新聞伝播', keizai:'経済学',
   keiei:'経営学', kyoiku:'教育学', hougaku:'法学', seiji:'政治学/国際',
@@ -333,13 +367,13 @@ function buildMainContent(combined, g, u) {
 
   if (gBunka.length) {
     const counts = {};
-    for (const r of gBunka) counts[r.subject||'other']=(counts[r.subject||'other']||0)+1;
+    for (const r of gBunka) counts[r.maj]=(counts[r.maj]||0)+1;
     const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
     const max = entries[0]?.[1]||1;
     html += `<div class="bar-section"><div class="bar-section-title">大学院 文科 · 学科別件数</div>`;
     for (const [s,cnt] of entries) {
       const pct = Math.round(cnt/max*100);
-      html += `<div class="bar-row"><div class="bar-label">${SUBJ_LABEL[s]||s}</div>
+      html += `<div class="bar-row"><div class="bar-label">${majorLabel(s)}</div>
         <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:var(--grad-c)"></div></div>
         <div class="bar-val">${cnt}</div></div>`;
     }
@@ -349,13 +383,13 @@ function buildMainContent(combined, g, u) {
   // 大学院：理科学科別
   if (gRika.length) {
     const counts = {};
-    for (const r of gRika) counts[r.subject||'rika_other']=(counts[r.subject||'rika_other']||0)+1;
+    for (const r of gRika) counts[r.maj]=(counts[r.maj]||0)+1;
     const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
     const max = entries[0]?.[1]||1;
     html += `<div class="bar-section"><div class="bar-section-title">大学院 理科 · 学科別件数</div>`;
     for (const [s,cnt] of entries) {
       const pct = Math.round(cnt/max*100);
-      html += `<div class="bar-row"><div class="bar-label">${SUBJ_LABEL[s]||s}</div>
+      html += `<div class="bar-row"><div class="bar-label">${majorLabel(s)}</div>
         <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:#3a6630"></div></div>
         <div class="bar-val">${cnt}</div></div>`;
     }
