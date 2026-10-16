@@ -78,24 +78,14 @@ main{max-width:640px;margin:2rem auto;padding:0 1.2rem 4rem}
       <div class="field"><label>専攻</label><input id="f-spec" type="text" placeholder="例：機械工学専攻"></div>
     </div>
     <div class="field">
-      <label>在籍学科（所属方向）<span class="req">*</span></label>
-      <select id="f-subject">
+      <label>在籍专业<span class="req">*</span></label>
+      <select id="f-major" onchange="onMajorChange()"><option value="">读取中...</option></select>
+    </div>
+    <div class="field" id="track-field" style="display:none">
+      <label>系統<span class="req">*</span></label>
+      <select id="f-track">
         <option value="">-- 请选择 --</option>
-        <optgroup label="── 文科 ──">
-          <option value="shakai">社会学</option><option value="fukushi">社会福祉</option>
-          <option value="shinpan">新聞伝播</option><option value="keizai">経済学</option>
-          <option value="keiei">経営学</option><option value="kyoiku">教育学</option>
-          <option value="hougaku">法学</option><option value="seiji">政治学/国際関係</option>
-          <option value="bungaku">文学</option><option value="rekishi">歴史学</option>
-          <option value="hyosho">表象文化</option><option value="nihongo">日本語教育</option>
-          <option value="shinri">心理学</option><option value="other">その他（文科）</option>
-        </optgroup>
-        <optgroup label="── 理科 ──">
-          <option value="rika_kikai">機械工学</option><option value="rika_denki">電気電子工学</option>
-          <option value="rika_kagaku">化学・化学工学</option><option value="rika_joho">情報工学</option>
-          <option value="rika_kenchiku">建築・土木工学</option><option value="rika_bio">生命科学・医学</option>
-          <option value="rika_keiei">経営工学</option><option value="rika_other">その他（理科）</option>
-        </optgroup>
+        <option value="bunka">文科</option><option value="rika">理科</option><option value="bijutsu">美术</option>
       </select>
     </div>
     <div class="field">
@@ -154,10 +144,47 @@ main{max-width:640px;margin:2rem auto;padding:0 1.2rem 4rem}
 </main>
 <div class="toast" id="toast"></div>
 
+<script src="../shared/subject-major-map.js?v=20261227"></script>
 <script>
 const SUPABASE_URL='https://vwntezfvqbrkeovnseku.supabase.co';
 const SUPABASE_KEY='sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
 const BUCKET='admission-private';   // 私有桶：原截图只有管理员能看
+
+// ─── 在籍专业：从 majors 读，只列大学院三个领域，按领域分组 ───
+const GRAD_DOMAINS=[['大学院文科','bunka'],['大学院理科','rika'],['大学院美术','bijutsu']];
+const OTHER_MAJOR='__other__';
+let majorRows=[],groupRows=[],majorsOk=false;
+async function sbRead(path){
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${path}`,{headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
+  if(!res.ok)throw new Error(await res.text());
+  return res.json();
+}
+function escHtml(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+async function loadMajors(){
+  const sel=document.getElementById('f-major');
+  try{
+    try{majorRows=await sbRead('majors?select=key,label,domain,group_key&order=label.asc');}
+    catch(e){majorRows=(await sbRead('majors?select=key,label,domain&order=label.asc'));}
+    try{groupRows=await sbRead('major_groups?select=key,label,domain&order=key.asc');}catch(e){groupRows=[];}
+    groupRows=groupRows.filter(g=>majorRows.some(m=>m.group_key===g.key));   // 空分组不列
+    subjectMajorSetData(majorRows,groupRows);
+    let html='<option value="">-- 请选择 --</option>';
+    GRAD_DOMAINS.forEach(([dom])=>{
+      const opts=groupRows.filter(g=>g.domain===dom).map(g=>({key:g.key,label:g.label+'（全部）'}))
+        .concat(majorRows.filter(m=>m.domain===dom).map(m=>({key:m.key,label:m.label})));
+      if(opts.length)html+=`<optgroup label="${escHtml(dom)}">${opts.map(o=>`<option value="${escHtml(o.key)}">${escHtml(o.label)}</option>`).join('')}</optgroup>`;
+    });
+    html+=`<option value="${OTHER_MAJOR}">其他（列表里没有）</option>`;
+    sel.innerHTML=html;majorsOk=true;
+  }catch(e){
+    sel.innerHTML='<option value="">专业清单读取失败，请刷新页面</option>';
+  }
+}
+function onMajorChange(){
+  const v=document.getElementById('f-major').value;
+  document.getElementById('track-field').style.display=(v===OTHER_MAJOR)?'':'none';
+}
+window.addEventListener('DOMContentLoaded',loadMajors);
 
 function previewPhoto(input){
   const file=input.files[0];if(!file)return;
@@ -200,16 +227,28 @@ async function submitForm(){
   if(!isRealName(stuName)){showToast('请填写真实姓名',false);return;}
   const univ=document.getElementById('f-univ').value.trim();
   const dept=document.getElementById('f-dept').value.trim();
-  const subject=document.getElementById('f-subject').value;
+  const majorVal=document.getElementById('f-major').value;
+  const otherTrack=document.getElementById('f-track').value;
   if(!univ){showToast('请填写合格大学',false);return;}
   if(!dept){showToast('请填写研究科',false);return;}
-  if(!subject){showToast('请选择在籍学科',false);return;}
+  if(!majorsOk){showToast('专业清单没有读取成功，请刷新页面',false);return;}
+  if(!majorVal){showToast('请选择在籍专业',false);return;}
+  if(majorVal===OTHER_MAJOR&&!otherTrack){showToast('请选择系統',false);return;}
 
   const btn=document.getElementById('submit-btn');
   btn.disabled=true;btn.textContent='提交中...';
 
   try{
-    const track=subject.startsWith('rika_')?'rika':'bunka';
+    // 本校专业 → 领域 → 系統；选「其他」时系統由学生自己选
+    let ourMajor=null,track=otherTrack;
+    if(majorVal!==OTHER_MAJOR){
+      ourMajor=majorVal;
+      const mj=majorRows.find(m=>m.key===majorVal)||groupRows.find(g=>g.key===majorVal);
+      const d=GRAD_DOMAINS.find(x=>x[0]===(mj&&mj.domain));
+      track=d?d[1]:'bunka';
+    }
+    // subject（旧字段）照样写，兼容旧代码；对不上就写 other / rika_other
+    const subject=(ourMajor&&majorToSubject(ourMajor))||(track==='rika'?'rika_other':'other');
     const student=stuName;
     const jlptScore=document.getElementById('f-jlpt-score').value;
     const engScore=document.getElementById('f-eng-score').value;
@@ -224,7 +263,7 @@ async function submitForm(){
       id:rowId,
       univ,dept,
       spec:document.getElementById('f-spec').value.trim()||null,
-      student,subject,track,
+      student,subject,track,our_major:ourMajor,entered_via:'public',
       era:document.getElementById('f-era').value,
       jlpt:document.getElementById('f-jlpt').value||null,
       jlpt_score:jlptScore?parseInt(jlptScore):null,
@@ -282,7 +321,8 @@ function launchConfetti(){
 
 function resetForm(){
   ['f-univ','f-dept','f-spec','f-student','f-jlpt-score','f-eng-score','f-note'].forEach(id=>document.getElementById(id).value='');
-  ['f-subject','f-era','f-jlpt','f-eng-type'].forEach(id=>document.getElementById(id).selectedIndex=0);
+  ['f-major','f-track','f-era','f-jlpt','f-eng-type'].forEach(id=>document.getElementById(id).selectedIndex=0);
+  onMajorChange();
   document.getElementById('f-photo').value='';
   document.getElementById('photo-preview').style.display='none';
   document.getElementById('success-photo').style.display='none';

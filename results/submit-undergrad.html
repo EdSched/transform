@@ -175,6 +175,11 @@ const SUPABASE_URL='https://vwntezfvqbrkeovnseku.supabase.co';
 const SUPABASE_KEY='sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
 const BUCKET='admission-private';   // 私有桶：原截图只有管理员能看
 let curTrack='bunka';
+// 学部不分专业：按系統写本校专业（学部文科 / 学部理科 / 学部美术）；系统里没有这个 key 时留空
+const UG_TRACK_MAJOR={bunka:null,rika:null,bijutsu:null};
+fetch(`${SUPABASE_URL}/rest/v1/majors?select=key&key=in.(gakubu_bunka,gakubu_rika,gakubu_bijutsu)`,{headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}})
+  .then(r=>r.ok?r.json():[]).then(rows=>{const ks=new Set(rows.map(x=>x.key));
+    ['bunka','rika','bijutsu'].forEach(t=>{if(ks.has('gakubu_'+t))UG_TRACK_MAJOR[t]='gakubu_'+t;});}).catch(()=>{});
 
 function setTrack(t){
   curTrack=t;
@@ -246,6 +251,7 @@ async function submitForm(){
       dept:document.getElementById('f-dept').value.trim()||null,
       spec:document.getElementById('f-spec').value.trim()||null,
       student,track:curTrack,
+      our_major:UG_TRACK_MAJOR[curTrack],entered_via:'public',
       era:document.getElementById('f-era').value,
       eju_japanese,
       eju_kijutsu:curTrack==='bunka'?n('f-eju-kijutsu'):null,
