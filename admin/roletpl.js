@@ -28,8 +28,23 @@ async function rtpMount(body) {
   body.innerHTML = '<div style="padding:20px;color:var(--text-3);font-size:12px">加载中…</div>';
   _roleTpl = null; _roleTplP = null;
   const tpl = await roleTplEnsure();
-  const keys = RTP_ROLE_ORDER.filter(k => tpl[k]).concat(Object.keys(tpl).filter(k => !RTP_ROLE_ORDER.includes(k)).sort((a, b) => (tpl[a].sort || 0) - (tpl[b].sort || 0)));
-  rtpRows = keys.map(k => JSON.parse(JSON.stringify(tpl[k])));
+  // 角色列表 = 模板表的行 ∪ 选项设置里启用中的自定义职位 / 角色（没有模板行的用空默认显示）；停用的自定义项不显示
+  let opts = [];
+  try { await loadAppOptions(); opts = (await sb('/rest/v1/app_options?select=kind,key,label,sort,builtin,active&kind=in.(teacher_position,teacher_role)&order=sort.asc,key.asc', 'GET', null, { cache: 'no-store' })) || []; }
+  catch (e) { opts = []; }
+  if (!opts.length) {
+    TEACHER_POSITIONS.forEach((x, i) => opts.push({ kind: 'teacher_position', key: x[0], label: x[1], sort: i + 1, builtin: x[3], active: x[2] }));
+    TEACHER_ROLES.forEach((x, i) => opts.push({ kind: 'teacher_role', key: x[0], label: x[1], sort: i + 1, builtin: x[3], active: x[2] }));
+  }
+  const customs = ['teacher_position', 'teacher_role'].flatMap(kind => opts.filter(o => o.kind === kind && !RTP_ROLE_ORDER.includes(o.key) && o.active !== false));
+  const blank = () => ({ permissions: {}, resource_perms: [], tags: [], see_all_students: false, see_all_admission: false, needs_manage_scope: false });
+  rtpRows = RTP_ROLE_ORDER.filter(k => tpl[k]).map(k => JSON.parse(JSON.stringify(tpl[k])));
+  customs.forEach(o => {
+    const r = tpl[o.key] ? JSON.parse(JSON.stringify(tpl[o.key])) : { key: o.key, kind: o.kind === 'teacher_position' ? 'position' : 'role', defaults: blank() };
+    r.label = o.label || r.label || o.key; r.kind = o.kind === 'teacher_position' ? 'position' : 'role'; r.sort = o.sort || 0;
+    if (!r.defaults) r.defaults = blank();
+    rtpRows.push(r);
+  });
   rtpOrig = {}; rtpRows.forEach(r => { rtpOrig[r.key] = JSON.stringify(r); });
   rtpDirty = new Set(); rtpSel = rtpRows[0] ? rtpRows[0].key : ''; rtpQ = ''; rtpCompare = false;
   rtpDiffOpen = false; rtpTeachers = null; rtpChk = new Set(); rtpShowAcked = false; rtpBusy = '';

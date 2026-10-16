@@ -1,6 +1,6 @@
 // ⚙ 选项设置（只有管理员）：管理职位 / 执行角色 可加自定义名称；学生来源可增删改、排序、停用
 // 数据在 app_options 表（seed/app_options.sql）；读取在 shared/constants.js 的 loadAppOptions()
-// 自定义职位 / 角色只是名称标签（key 以 c_ 开头），不带任何权限；负责人 / 营业 / 对接等功能只跟内置项走
+// 自定义职位 / 角色（key 以 c_ 开头）可以在「角色模板」里设默认功能和范围规则；负责人的管理范围、营业范围等特殊规则只跟内置项走
 const AO_KINDS = [
   ['teacher_position', '管理职位'],
   ['teacher_role', '执行角色'],
@@ -80,7 +80,7 @@ function aoRender() {
   };
   body.innerHTML = `<div class="modal-title">选项设置</div>
     <div class="modal-sub">只有管理员能改；其他页面只读取、只能选。停用 = 新的选择里不再出现，已有数据保留并照常显示。</div>
-    ${sec('teacher_position', '管理职位', '自定义职位 / 角色只是名称标签，不带任何权限。负责人、营业、对接等的功能仍然只跟内置项走。内置项可以改显示名称，不能删除、不能停用。')}
+    ${sec('teacher_position', '管理职位', '自定义职位 / 角色可以在「角色模板」里设默认功能和范围规则，老师选了它就能［补齐］这些功能。负责人的管理范围、营业范围这类特殊规则，仍然只跟内置项走。内置项可以改显示名称，不能删除、不能停用。')}
     ${sec('teacher_role', '执行角色', '同上。自定义项没有老师在用时才能删除。')}
     ${sec('student_source', '学生来源', '改名会同时更新所有学生的来源和老师的来源限制。没有学生、老师在用时才能删除。用 ↑ ↓ 调整顺序。')}
     <div class="modal-actions"><button class="btn btn-outline" onclick="aoClose()">关闭</button></div>`;
@@ -118,6 +118,7 @@ async function aoRename(kind, key) {
     } else {
       if ((kind === 'teacher_position' ? TEACHER_POSITIONS : TEACHER_ROLES).some(x => x[0] !== key && x[1] === nv)) { alert('已经有叫「' + nv + '」的了'); return; }
       await sb(`/rest/v1/app_options?kind=eq.${kind}&key=eq.${encodeURIComponent(key)}`, 'PATCH', { label: nv });
+      await sb(`/rest/v1/role_templates?key=eq.${encodeURIComponent(key)}`, 'PATCH', { label: nv }).catch(() => {});   // 角色模板里对应行的名称一起改（没有这一行也没关系）
     }
     await aoRefresh();
   } catch (e) { alert('改名失败：' + e.message); }
@@ -131,7 +132,9 @@ async function aoDelete(kind, key) {
   const r = aoFind(kind, key); if (!r || r.builtin) return;
   if (aoUsedBy(r).n > 0) { alert('还有人在用，不能删除（可以先停用）'); return; }
   if (!confirm('删除「' + r.label + '」？')) return;
-  try { await sb(`/rest/v1/app_options?kind=eq.${kind}&key=eq.${encodeURIComponent(key)}`, 'DELETE'); await aoRefresh(); }
+  try { await sb(`/rest/v1/app_options?kind=eq.${kind}&key=eq.${encodeURIComponent(key)}`, 'DELETE');
+    if (kind !== 'student_source') await sb(`/rest/v1/role_templates?key=eq.${encodeURIComponent(key)}`, 'DELETE').catch(() => {});   // 对应的模板行一起删
+    await aoRefresh(); }
   catch (e) { alert('删除失败：' + e.message); }
 }
 // 调整顺序：整组重新编号 1..n，只改有变化的
