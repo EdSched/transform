@@ -393,7 +393,7 @@ ${raScopeHint()}
     </div>
     <div class="field" style="margin-bottom:1rem"><label>合格截图（原图上传，不压缩，选填）</label>
       <div id="f-photo-box" style="margin-bottom:6px"></div>
-      <input id="f-photo" type="file" accept="image/*" onchange="raEmPhotoPick(this,'f')">
+      ${raPhotoZone('f')}
     </div>
 
     <div class="form-actions">
@@ -678,7 +678,7 @@ ${raScopeHint()}
     </div>
     <div class="field" style="margin-bottom:1rem"><label>合格截图（原图上传，不压缩，选填）</label>
       <div id="ug-f-photo-box" style="margin-bottom:6px"></div>
-      <input id="ug-f-photo" type="file" accept="image/*" onchange="raEmPhotoPick(this,'ug-f')">
+      ${raPhotoZone('ug-f')}
     </div>
 
     <div class="form-actions">
@@ -861,7 +861,7 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
     </div>
     <div class="field" style="margin-bottom:1rem"><label>合格截图（原图上传，不压缩）</label>
       <div id="ug-em-photo-box" style="margin-bottom:6px"></div>
-      <input id="ug-em-photo" type="file" accept="image/*" onchange="raEmPhotoPick(this,'ug-em')">
+      ${raPhotoZone('ug-em')}
     </div>
     <input type="hidden" id="ug-em-id">
     <div id="ug-em-err" style="color:var(--red);font-size:12px;margin-top:6px"></div>
@@ -959,7 +959,7 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
     </div>
     <div class="field" style="margin-bottom:1rem"><label>合格截图（原图上传，不压缩）</label>
       <div id="em-photo-box" style="margin-bottom:6px"></div>
-      <input id="em-photo" type="file" accept="image/*" onchange="raEmPhotoPick(this)">
+      ${raPhotoZone('em')}
     </div>
     <input type="hidden" id="em-id">
     <div id="em-err" style="color:var(--red);font-size:12px;margin-top:6px"></div>
@@ -1104,7 +1104,7 @@ function raResetForm() {
     document.getElementById(id).selectedIndex = 0;
   });
   raArSetMajor('f', '');
-  document.getElementById('f-photo').value = '';
+  raPhotoZoneClear('f');
   document.getElementById('f-photo-box').innerHTML = '';
 }
 
@@ -2474,7 +2474,7 @@ function raUgResetForm() {
   });
   ['ug-f-track','ug-f-era','ug-f-tier','ug-f-jlpt'].forEach(id => document.getElementById(id).selectedIndex = 0);
   raArSetMajor('ugf', raArUgDefaultMajor('bunka'));
-  document.getElementById('ug-f-photo').value = '';
+  raPhotoZoneClear('ug-f');
   document.getElementById('ug-f-photo-box').innerHTML = '';
 }
 
@@ -2776,7 +2776,7 @@ function raOpenEditModal(el) {
   document.getElementById('em-note').value = r.note || '';
   raArSetMajor('em', r.our_major || raArGuessMajor(r.subject));
   raArPhotoShowFor('grad', r, 'em');
-  document.getElementById('em-photo').value = '';
+  raPhotoZoneClear('em');
   document.getElementById('edit-modal-title').textContent = `編集: ${r.univ}`;
   document.getElementById('edit-modal').classList.add('show');
 }
@@ -2881,7 +2881,7 @@ function raUgOpenEditModal(el) {
   document.getElementById('ug-em-note').value = r.note||'';
   raArSetMajor('ugem', r.our_major || raArUgDefaultMajor(r.track || 'bunka'));
   raArPhotoShowFor('ug', r, 'ug-em');
-  document.getElementById('ug-em-photo').value = '';
+  raPhotoZoneClear('ug-em');
   document.getElementById('ug-edit-modal-title').textContent = '編集: '+r.univ;
   document.getElementById('ug-edit-modal').classList.add('show');
 }
@@ -3142,6 +3142,72 @@ function raEmPhotoPick(inp, pre) {
   const f = inp.files[0]; if (!f) return;
   raEmPhotoShow(URL.createObjectURL(f), true, pre);
 }
+
+// 截图上传区：拖入 / 点击 / 粘贴，选中后本地预览（保存时才上传）。pre = 'f' | 'ug-f' | 'em' | 'ug-em'
+function raPhotoZone(pre) {
+  return `<div id="${pre}-photo-zone" class="ra-pz" data-pre="${pre}" style="border:1.5px dashed var(--border);border-radius:6px;padding:10px;font-size:12px;color:var(--text-muted);cursor:pointer;text-align:center" onclick="raPhotoZoneClick(event,'${pre}')" ondragover="raPhotoZoneDrag(event,'${pre}',1)" ondragleave="raPhotoZoneDrag(event,'${pre}',0)" ondrop="raPhotoZoneDrop(event,'${pre}')">
+    <div id="${pre}-photo-hint">把截图拖到这里，或点击选择，也可以 Ctrl / ⌘+V 粘贴</div>
+    <div id="${pre}-photo-prev" style="display:none;align-items:center;gap:10px;text-align:left">
+      <img id="${pre}-photo-thumb" style="max-width:120px;max-height:90px;border:1px solid var(--border);border-radius:4px">
+      <div style="flex:1;min-width:0"><div id="${pre}-photo-name" style="word-break:break-all;color:var(--text)"></div>
+        <div style="margin-top:4px"><a href="#" onclick="event.preventDefault();event.stopPropagation();document.getElementById('${pre}-photo').click()">换一张</a>　<a href="#" onclick="event.preventDefault();event.stopPropagation();raPhotoZoneClear('${pre}',true)">移除</a></div></div>
+    </div>
+    <input id="${pre}-photo" type="file" accept="image/*" style="display:none" onclick="event.stopPropagation()" onchange="raPhotoZoneSet('${pre}',this.files[0])">
+  </div>`;
+}
+function raPhotoZoneClick(ev, pre) {
+  if (ev.target.tagName === 'A') return;
+  document.getElementById(pre + '-photo').click();
+}
+function raPhotoZoneDrag(ev, pre, on) {
+  ev.preventDefault();
+  const z = document.getElementById(pre + '-photo-zone');
+  if (z) z.style.borderColor = on ? 'var(--gold,#b8953a)' : 'var(--border)';
+}
+function raPhotoZoneDrop(ev, pre) {
+  ev.preventDefault(); raPhotoZoneDrag(ev, pre, 0);
+  const all = [...(ev.dataTransfer.files || [])];
+  const imgs = all.filter(f => /^image\//.test(f.type));
+  if (!imgs.length) { raToast('只能放图片', false); return; }
+  if (all.length > 1) raToast('一次只能放一张', false);
+  raPhotoZoneSet(pre, imgs[0]);
+}
+function raPhotoZoneSet(pre, f) {
+  const inp = document.getElementById(pre + '-photo');
+  if (!inp || !f) return;
+  if (inp.files[0] !== f) { const dt = new DataTransfer(); dt.items.add(f); inp.files = dt.files; }
+  const box = document.getElementById(pre + '-photo-box');
+  if (box) { if (box.dataset.old == null) box.dataset.old = box.innerHTML; box.style.display = 'none'; }
+  const th = document.getElementById(pre + '-photo-thumb');
+  if (th.dataset.url) URL.revokeObjectURL(th.dataset.url);
+  th.dataset.url = th.src = URL.createObjectURL(f);
+  document.getElementById(pre + '-photo-name').textContent = f.name;
+  document.getElementById(pre + '-photo-hint').style.display = 'none';
+  document.getElementById(pre + '-photo-prev').style.display = 'flex';
+}
+// 清掉所选图（保存成功 / 重置表单 / 点移除）；编辑弹窗里恢复显示原来的图
+function raPhotoZoneClear(pre) {
+  const inp = document.getElementById(pre + '-photo'); if (!inp) return;
+  inp.value = '';
+  const th = document.getElementById(pre + '-photo-thumb');
+  if (th && th.dataset.url) { URL.revokeObjectURL(th.dataset.url); delete th.dataset.url; th.removeAttribute('src'); }
+  const box = document.getElementById(pre + '-photo-box');
+  if (box) { box.style.display = ''; delete box.dataset.old; }
+  const h = document.getElementById(pre + '-photo-hint'), p = document.getElementById(pre + '-photo-prev');
+  if (h) h.style.display = ''; if (p) p.style.display = 'none';
+}
+// 粘贴：剪贴板里有图片才当截图，文字照常粘贴
+document.addEventListener('paste', ev => {
+  const items = [...((ev.clipboardData && ev.clipboardData.items) || [])];
+  const it = items.find(i => i.kind === 'file' && /^image\//.test(i.type));
+  if (!it) return;
+  const zones = [...document.querySelectorAll('.ra-pz')].filter(z => z.offsetParent !== null);
+  if (!zones.length) return;
+  const z = zones.find(z => z.closest('.edit-modal-overlay.show, .modal-overlay.show')) || zones[0];
+  const f = it.getAsFile(); if (!f) return;
+  ev.preventDefault();
+  raPhotoZoneSet(z.dataset.pre, f);
+});
 
 // 大学院（admission_results）和学部（undergrad_results）共用一套：kind = 'grad' | 'ug'
 const raPH = {
