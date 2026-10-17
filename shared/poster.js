@@ -180,6 +180,7 @@ async function pstOpen(kind, resultId) {
       fields: Object.assign({ univ_ja: '', univ_en: '', dept_line: '', name_line: '', date_text: '' }, f),
       year: poster && poster.pass_year || now.getFullYear(), month: poster && poster.pass_month || (now.getMonth() + 1),
       major, color: 'black', mode: 'mask', sel: -1, drag: null,
+      step: 1, zoom: 1, draw: false, lock: false,
     };
     pstBuildUi();
     await pstLoadSource();
@@ -221,23 +222,44 @@ function pstBuildUi() {
   const lab = 'font-size:10px;color:var(--text-muted);display:block;margin:8px 0 2px';
   const btn = 'padding:7px 12px;border:1px solid var(--border);background:#fff;border-radius:4px;cursor:pointer;font-family:inherit;font-size:12px';
   o.innerHTML = `
-  <div style="display:flex;flex-direction:column;min-height:0">
+  <style>
+  #pst-overlay .pst-top{display:none}
+  @media (max-width:899px){
+    #pst-overlay{display:flex!important;flex-direction:column;gap:8px!important;padding:8px!important}
+    #pst-overlay .pst-top{display:flex;gap:6px;align-items:center;flex:none}
+    #pst-overlay .pst-p{display:none!important;flex:1 1 auto;min-height:0!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch}
+    #pst-overlay[data-step="1"] .pst-p1,#pst-overlay[data-step="2"] .pst-p2,#pst-overlay[data-step="3"] .pst-p3{display:flex!important}
+    #pst-overlay .pst-wrap{flex:none!important;max-height:none!important;overflow:auto!important}
+    #pst-overlay .pst-wrap.pst-zoomed{max-height:70vh!important}
+    #pst-overlay .pst-wrap canvas{flex:none;margin:0 auto}
+    #pst-overlay #pst-prev{max-width:100%!important;max-height:none!important}
+    #pst-overlay input,#pst-overlay select,#pst-overlay textarea{font-size:16px!important;padding:9px 10px!important}
+    #pst-overlay .pst-p3 button{width:100%;padding:11px 12px!important;font-size:14px!important}
+    #pst-overlay .pst-p3 #pst-year,#pst-overlay .pst-p3 #pst-month{width:auto!important;flex:1}
+    #pst-overlay .pst-desk{display:none!important}
+  }
+  </style>
+  <div class="pst-top">
+    <div id="pst-steps" style="display:flex;gap:6px;flex:1;flex-wrap:wrap"></div>
+    <button style="${btn}" onclick="pstClose()">关闭</button>
+  </div>
+  <div class="pst-p pst-p1" style="display:flex;flex-direction:column;min-height:0">
     <div style="font-size:12px;font-weight:600;margin-bottom:6px">1. 遮盖隐私 / 裁切</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px" id="pst-tools"></div>
-    <div id="pst-editwrap" style="flex:1;min-height:0;overflow:auto;background:#e8e5de;border:1px solid var(--border);border-radius:4px;display:flex;align-items:flex-start;justify-content:center;padding:6px">
+    <div id="pst-editwrap" class="pst-wrap" style="flex:1;min-height:0;overflow:auto;background:#e8e5de;border:1px solid var(--border);border-radius:4px;display:flex;align-items:flex-start;justify-content:center;padding:6px">
       <canvas id="pst-edit" style="touch-action:none;cursor:crosshair;background:#fff"></canvas>
     </div>
     <div id="pst-imgmsg" style="font-size:11px;color:var(--red);margin-top:4px"></div>
     <div style="margin-top:4px"><button style="${btn}" onclick="document.getElementById('pst-reup').click()">重新上传截图</button>
       <input id="pst-reup" type="file" accept="image/*" style="display:none" onchange="pstReupload(this)"></div>
   </div>
-  <div style="display:flex;flex-direction:column;min-height:0">
+  <div class="pst-p pst-p2" style="display:flex;flex-direction:column;min-height:0">
     <div style="font-size:12px;font-weight:600;margin-bottom:6px">2. 海报预览</div>
-    <div style="flex:1;min-height:0;overflow:auto;background:#e8e5de;border:1px solid var(--border);border-radius:4px;display:flex;align-items:flex-start;justify-content:center;padding:6px">
+    <div class="pst-wrap" style="flex:1;min-height:0;overflow:auto;background:#e8e5de;border:1px solid var(--border);border-radius:4px;display:flex;align-items:flex-start;justify-content:center;padding:6px">
       <canvas id="pst-prev" style="max-width:100%;max-height:100%;height:auto;background:#fff"></canvas>
     </div>
   </div>
-  <div style="display:flex;flex-direction:column;min-height:0;overflow:auto">
+  <div class="pst-p pst-p3" style="display:flex;flex-direction:column;min-height:0;overflow:auto">
     <div style="font-size:12px;font-weight:600">3. 信息 <span id="pst-state" style="font-weight:400;font-size:10px;color:var(--text-muted)"></span></div>
     <label style="${lab}">大学名（大字）</label><input style="${inp}" id="pst-f-univ_ja" value="${raArEsc(f.univ_ja)}" oninput="pstSetField('univ_ja',this.value)">
     <label style="${lab}">大学英文名 *（必填，会记住，下次自动带出）</label><input style="${inp}" id="pst-f-univ_en" value="${raArEsc(f.univ_en)}" oninput="pstSetField('univ_en',this.value)">
@@ -251,7 +273,7 @@ function pstBuildUi() {
       <button style="${btn};background:var(--accent);color:#fff;border-color:var(--accent)" onclick="pstSave(true)">保存并发布</button>
       <button style="${btn}" onclick="pstExportWeb()">下载网络版 JPG</button>
       <button style="${btn}" onclick="pstExportPdf()">下载印刷版 PDF</button>
-      <button style="${btn}" onclick="pstClose()">关闭</button>
+      <button class="pst-desk" style="${btn}" onclick="pstClose()">关闭</button>
     </div>
     <div id="pst-busy" style="font-size:11px;color:var(--text-muted);margin-top:8px"></div>
   </div>`;
@@ -260,13 +282,41 @@ function pstBuildUi() {
   const dom0 = pstTrackDomain(st.kind, st.row && st.row.track);
   raArRenderMajor('pst', st.major, { domains: PST_DOMAINS[st.kind], first: dom0, emptyLabel: '-- 暂不选择 --' });
   const mb = document.getElementById('pst-our-major'); if (mb) mb.addEventListener('change', () => { st.major = mb.value; });
-  pstBuildTools();
+  pstBuildTools(); pstBuildSteps(); o.dataset.step = st.step;
   const cv = document.getElementById('pst-edit');
+  pstApplyTouch();
   cv.addEventListener('pointerdown', pstDown); cv.addEventListener('pointermove', pstMove);
   cv.addEventListener('pointerup', pstUp); cv.addEventListener('pointercancel', pstUp);
   document.addEventListener('keydown', pstKey);
-  window.addEventListener('resize', pstDrawEdit);
+  window.addEventListener('resize', pstOnResize);
   pstUpdateState();
+}
+function pstOnResize() { pstApplyTouch(); pstBuildTools(); pstDrawEdit(); }
+function pstMobile() { return window.matchMedia('(max-width:899px)').matches; }
+// 手机：默认让手指滚动 / 双指放大；选了「画框」才把触摸交给画布
+function pstApplyTouch() {
+  const cv = document.getElementById('pst-edit'); if (!cv) return;
+  const st = pstSt;
+  cv.style.touchAction = (pstMobile() && !(st && st.draw)) ? 'pan-x pan-y pinch-zoom' : 'none';
+}
+function pstBuildSteps() {
+  const box = document.getElementById('pst-steps'); if (!box) return;
+  const names = ['① 遮盖', '② 预览', '③ 信息 / 导出'];
+  box.innerHTML = names.map((n, i) => { const on = pstSt.step === i + 1;
+    return `<span onclick="pstStep(${i + 1})" style="padding:6px 12px;border:1px solid ${on ? 'var(--accent)' : 'var(--border)'};background:${on ? 'var(--accent)' : '#fff'};color:${on ? '#fff' : 'var(--text-secondary)'};border-radius:14px;font-size:12px;cursor:pointer">${n}</span>`; }).join('');
+}
+function pstStep(n) {
+  const st = pstSt; if (!st) return;
+  st.step = n; st.draw = false;
+  const o = document.getElementById('pst-overlay'); if (o) o.dataset.step = n;
+  pstBuildSteps(); pstBuildTools(); pstApplyTouch();
+  if (n === 1) pstDrawEdit();
+  if (n === 2) pstRefresh();
+}
+function pstZoom(d) {
+  const st = pstSt; if (!st) return;
+  st.zoom = Math.max(1, Math.min(4, Math.round((st.zoom + d) * 2) / 2));
+  pstBuildTools(); pstDrawEdit();
 }
 function pstUpdateState() {
   const el = document.getElementById('pst-state'); if (!el) return;
@@ -282,7 +332,17 @@ function pstBuildTools() {
     + '<span style="width:8px"></span>'
     + chip(false, '删除这个框', 'pstDelSel()') + chip(false, '清除全部', 'pstClearMasks()')
     + (st.crop ? chip(false, '取消裁切', 'pstClearCrop()') : '');
+  if (pstMobile()) {
+    box.innerHTML += '<span style="flex-basis:100%;height:0"></span>'
+      + chip(!st.draw, '滚动 / 看图', 'pstSetDraw(false)') + chip(st.draw, '画框', 'pstSetDraw(true)')
+      + chip(st.lock, st.lock ? '连续画框：开' : '连续画框：关', 'pstToggleLock()')
+      + '<span style="width:8px"></span>'
+      + chip(false, '放大 +', 'pstZoom(0.5)') + chip(false, '缩小 −', 'pstZoom(-0.5)')
+      + `<span style="font-size:11px;color:var(--text-muted);align-self:center">${Math.round(st.zoom * 100)}%</span>`;
+  }
 }
+function pstSetDraw(on) { pstSt.draw = !!on; pstBuildTools(); pstApplyTouch(); }
+function pstToggleLock() { pstSt.lock = !pstSt.lock; if (pstSt.lock) pstSt.draw = true; pstBuildTools(); pstApplyTouch(); }
 function pstSetMode(m) { pstSt.mode = m; pstBuildTools(); }
 function pstSetColor(c) { const st = pstSt; st.color = c; if (st.sel >= 0 && st.masks[st.sel]) st.masks[st.sel].color = c; pstBuildTools(); pstDrawEdit(); pstRefresh(); }
 function pstDelSel() { const st = pstSt; if (st.sel >= 0) { st.masks.splice(st.sel, 1); st.sel = -1; pstDrawEdit(); pstRefresh(); } }
@@ -305,7 +365,7 @@ function pstKey(e) {
 function pstClose() {
   if (pstBusy) return;
   document.removeEventListener('keydown', pstKey);
-  window.removeEventListener('resize', pstDrawEdit);
+  window.removeEventListener('resize', pstOnResize);
   document.getElementById('pst-overlay')?.remove();
   const st = pstSt; pstSt = null;
   if (st) { if (st.small) st.small.width = 0; st.img = null; }
@@ -319,8 +379,12 @@ function pstDrawEdit() {
   const wrap = document.getElementById('pst-editwrap');
   const g = cv.getContext('2d');
   if (!st.small) { cv.width = 300; cv.height = 200; g.fillStyle = '#fff'; g.fillRect(0, 0, 300, 200); g.fillStyle = '#9a9590'; g.font = '13px sans-serif'; g.fillText('没有可用的截图', 90, 105); return; }
+  const mob = pstMobile();
+  if (mob && !wrap.clientWidth) return;   // 当前步骤被隐藏时先不画
   const aw = Math.max(200, wrap.clientWidth - 14), ah = Math.max(200, wrap.clientHeight - 14);
-  const k = Math.min(aw / st.small.width, ah / st.small.height);
+  // 手机：按屏幕宽度显示，可按倍数放大；电脑：整张塞进左栏
+  const k = mob ? (aw * st.zoom) / st.small.width : Math.min(aw / st.small.width, ah / st.small.height);
+  wrap.classList.toggle('pst-zoomed', mob && st.zoom > 1);
   const w = Math.round(st.small.width * k), h = Math.round(st.small.height * k);
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
   g.clearRect(0, 0, w, h);
@@ -328,7 +392,7 @@ function pstDrawEdit() {
   st.masks.forEach((m, i) => {
     g.globalAlpha = 0.78; g.fillStyle = m.color === 'white' ? '#fff' : '#000'; g.fillRect(m.x * w, m.y * h, m.w * w, m.h * h); g.globalAlpha = 1;
     g.strokeStyle = i === st.sel ? '#e0482b' : '#2c4a8a'; g.lineWidth = i === st.sel ? 2 : 1; g.strokeRect(m.x * w, m.y * h, m.w * w, m.h * h);
-    if (i === st.sel) { g.fillStyle = '#e0482b'; pstCorners(m).forEach(c => g.fillRect(c.x * w - 4, c.y * h - 4, 8, 8)); }
+    if (i === st.sel) { const hs = mob ? 24 : 8; g.fillStyle = '#e0482b'; pstCorners(m).forEach(c => g.fillRect(c.x * w - hs / 2, c.y * h - hs / 2, hs, hs)); }
   });
   if (st.crop && st.crop.w > 0) {
     const c = st.crop;
@@ -345,9 +409,11 @@ function pstPos(e) {
 }
 function pstDown(e) {
   const st = pstSt; if (!st || !st.small) return;
+  if (pstMobile() && !st.draw) return;   // 手机的「滚动 / 看图」模式：不画框
   const cv = e.target; cv.setPointerCapture(e.pointerId);
   const p = pstPos(e), r = cv.getBoundingClientRect();
-  const hx = 9 / r.width, hy = 9 / r.height;
+  const hr = pstMobile() ? 16 : 9;
+  const hx = hr / r.width, hy = hr / r.height;
   if (st.mode === 'crop') { st.drag = { type: 'crop', x0: p.x, y0: p.y }; st.crop = { x: p.x, y: p.y, w: 0, h: 0 }; return; }
   if (st.sel >= 0 && st.masks[st.sel]) {
     const m = st.masks[st.sel];
@@ -385,6 +451,7 @@ function pstUp() {
   if (d.type === 'new') { const m = st.masks[st.sel]; if (!m || m.w < 0.004 || m.h < 0.004) { st.masks.pop(); st.sel = -1; } }
   if (d.type === 'crop' && (!st.crop || st.crop.w < 0.02 || st.crop.h < 0.02)) st.crop = null;
   if (d.type === 'crop') pstBuildTools();
+  if (pstMobile() && st.draw && !st.lock && (d.type === 'new' || d.type === 'crop')) { st.draw = false; pstBuildTools(); pstApplyTouch(); }
   pstDrawEdit(); pstRefresh();
 }
 async function pstReupload(inp) {
