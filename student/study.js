@@ -251,7 +251,7 @@ function renderStudyTab() {
   else if (studyTab === 'progress') el.innerHTML = renderProgressTab();
   else if (studyTab === 'records') el.innerHTML = renderRecordsTab();
   else if (studyTab === 'reserve') el.innerHTML = renderReserveTab();
-  else if (studyTab === 'homework') { el.innerHTML = renderHomeworkTab(); setTimeout(() => loadStudyHwSessions(0), 50); if (document.getElementById('aw_student_box')) awStudentMount('aw_student_box', studyStudent); }
+  else if (studyTab === 'homework') { el.innerHTML = renderHomeworkTab(); setTimeout(() => loadStudyHwSessions(0), 50); studyIcLoad(); if (document.getElementById('aw_student_box')) awStudentMount('aw_student_box', studyStudent); }
   else if (studyTab === 'schedule') { el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">课程表加载中…</div>'; loadStudySchedule(); }
   else if (studyTab === 'vipbook') el.innerHTML = (typeof renderVipBookingSection === 'function') ? renderVipBookingSection() : '<div class="no-slots">VIP预约模块未加载</div>';
   else if (studyTab === 'vipplan') el.innerHTML = (typeof renderVipPlanSection === 'function') ? renderVipPlanSection() : '<div class="no-slots">VIP课程安排未加载</div>';
@@ -1515,6 +1515,7 @@ function renderHomeworkTab() {
       </div>
     </div>
     <div style="min-width:0">
+      <div id="study_ic_wrap"></div>
       ${(typeof awIsArtMajor === 'function' && awIsArtMajor(studyStudent.major)) ? '<div id="aw_student_box"></div>' : ''}
       <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px;margin-bottom:14px">
         <div style="font-size:12px;font-weight:600;margin-bottom:10px">📝 作业</div>
@@ -2587,6 +2588,186 @@ async function hwWithdraw(sid) {
     hwDraft = {}; hwWholeFile = null;
     if (hwMode === 'vip' && hwVipCb && hwVipCb.onSubmitted) hwVipCb.onSubmitted(null);
     hwRerender();
+  } catch (e) { alert('撤回失败：' + e.message); }
+}
+
+
+// ══════════════════════════════════
+// 随堂作业：老师在出席・作业页的单回上打开开关，学生交文字 / 图片（表 inclass_submissions，不算进作业统计）
+// ══════════════════════════════════
+let icOpenList = [];     // 现在开着开关、且属于我的课次（按日期倒序）
+let icSubs = {};         // session_id → 我的提交
+let icDraft = {};        // session_id → { text, images:[{url,thumb,name}] }
+let icOpenId = null;     // 展开填写的课次
+let icBusy = false;
+async function studyIcLoad() {
+  const wrap = document.getElementById('study_ic_wrap');
+  if (!wrap) return;
+  try {
+    const myMajor = studyStudent.major || studyMajor;
+    const acceptMajors = isMajorGroup(myMajor)
+      ? [myMajor, ...groupMajors(myMajor)]
+      : groupOf(myMajor) ? [myMajor, groupOf(myMajor)] : [myMajor];
+    const d0 = new Date(); d0.setDate(d0.getDate() - 100);
+    const d1 = new Date(); d1.setDate(d1.getDate() + 100);
+    const fmt = d => d.toISOString().slice(0, 10);
+    const [sessions, subs, myMembers] = await Promise.all([
+      sb(`/rest/v1/course_sessions?inclass_enabled=is.true&session_date=gte.${fmt(d0)}&session_date=lte.${fmt(d1)}&select=*&order=session_date.desc`, 'GET', null, { cache: 'no-store' }),
+      sb(`/rest/v1/inclass_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&select=*&order=submitted_at.desc`, 'GET', null, { cache: 'no-store' }),
+      studyLoadMyMembers(),
+    ]);
+    icSubs = {};
+    (subs || []).forEach(x => { icSubs[x.session_id] = x; });
+    const cids = [...new Set((sessions || []).map(s => s.course_id).filter(Boolean))];
+    const cMap = {};
+    for (let i = 0; i < cids.length; i += 40) {
+      const arr = await sb(`/rest/v1/courses?id=in.(${cids.slice(i, i + 40).map(x => `"${x}"`).join(',')})&select=*`).catch(() => []);
+      (arr || []).forEach(c => cMap[c.id] = c);
+    }
+    const me = studyMe();
+    icOpenList = (sessions || []).filter(s => {
+      if (!sessionCountsFor(studyStudent, s.session_date)) return false;
+      const c = cMap[s.course_id];
+      if (c) return studentInCourse(me, Object.assign({}, c, { major: (c.major && c.major.length) ? c.major : s.major }), myMembers);
+      const sm = Array.isArray(s.major) ? s.major : [s.major || ''];
+      return !myMajor || sm.some(m => acceptMajors.includes(m));
+    });
+    icRender();
+  } catch (e) {
+    // 表 / 字段还没建（SQL 未执行）：整块不显示，不影响作业
+    wrap.innerHTML = '';
+  }
+}
+function icRender() {
+  const wrap = document.getElementById('study_ic_wrap');
+  if (!wrap) return;
+  const cut = Date.now() - 30 * 86400000;
+  const todo = icOpenList.filter(s => !icSubs[s.id]);
+  const done = Object.values(icSubs).filter(x => new Date(x.submitted_at).getTime() >= cut)
+    .sort((a, b) => String(b.submitted_at).localeCompare(String(a.submitted_at)));
+  if (!todo.length && !done.length) { wrap.innerHTML = ''; return; }
+  const head = t => `<div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin:8px 0 6px">${t}</div>`;
+  wrap.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px;margin-bottom:14px">
+    <div style="font-size:12px;font-weight:600">随堂作业</div>
+    ${todo.length ? head('可以提交') + todo.map(icTodoHtml).join('') : ''}
+    ${done.length ? head('我交过的（最近 30 天）') + done.map(icDoneHtml).join('') : ''}
+  </div>`;
+}
+function icCardHead(name, num, date) {
+  return `${escA(name || '')}${num ? ` 第${num}回` : ''} <span style="font-weight:400;color:var(--text-muted);font-size:10px">${escA(date || '')}</span>`;
+}
+function icTodoHtml(s) {
+  const open = icOpenId === s.id;
+  const d = icDraft[s.id] || { text: '', images: [] };
+  return `<div style="border:1px solid ${open ? 'var(--accent)' : 'var(--border)'};border-radius:4px;margin-bottom:6px;background:var(--surface)">
+    <div onclick="icToggle('${s.id}')" style="cursor:pointer;padding:9px 12px;display:flex;align-items:center;gap:8px">
+      <span style="font-size:12px;font-weight:600">${icCardHead(s.course_name, s.session_number, s.session_date)}</span>
+      <span style="margin-left:auto;font-size:10px;color:var(--text-muted)">${open ? '▾ 收起' : '▸ 填写'}</span>
+    </div>
+    ${open ? `<div style="padding:0 12px 12px">
+      <textarea id="ic_text_${s.id}" oninput="icSetText('${s.id}',this.value)" placeholder="写下你的回答（可以不填）" style="width:100%;min-height:90px;font-size:12px;font-family:inherit;padding:8px;border:1px solid var(--border);border-radius:3px;box-sizing:border-box;resize:vertical">${escA(d.text || '')}</textarea>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <label style="font-size:11px;border:1px solid var(--border);border-radius:3px;padding:5px 14px;cursor:pointer;background:var(--surface)">上传图片
+          <input type="file" accept="image/*" multiple style="display:none" onchange="icPickImages('${s.id}',this)"></label>
+        <span id="ic_tip_${s.id}" style="font-size:10px;color:var(--text-muted)"></span>
+      </div>
+      <div id="ic_imgs_${s.id}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${icThumbsHtml(s.id, true)}</div>
+      <button onclick="icSubmit('${s.id}')" style="margin-top:10px;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 26px;cursor:pointer;font-family:inherit">提交</button>
+    </div>` : ''}
+  </div>`;
+}
+function icThumbsHtml(sid, removable) {
+  const list = removable ? ((icDraft[sid] || {}).images || []) : [];
+  return list.map((im, i) => `<div style="position:relative"><img src="${escA(im.thumb || im.url)}" style="width:64px;height:64px;object-fit:cover;border-radius:3px;border:1px solid var(--border-light)">
+    <span onclick="icRemoveImage('${sid}',${i})" style="position:absolute;top:-6px;right:-6px;background:rgba(0,0,0,.65);color:#fff;border-radius:50%;width:18px;height:18px;line-height:18px;text-align:center;font-size:12px;cursor:pointer">×</span></div>`).join('');
+}
+function icDoneHtml(x) {
+  const fbs = hwFeedbacks(x), graded = fbs.length > 0;
+  const imgs = Array.isArray(x.images) ? x.images : [];
+  return `<div style="border:1px solid ${graded ? 'var(--ok)' : 'var(--accent)'};border-radius:4px;margin-bottom:6px;padding:9px 12px;background:var(--surface)">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:600">${icCardHead(x.course_name, x.session_number, x.session_date)}</span>
+      <span style="font-size:10px;color:${graded ? 'var(--ok)' : 'var(--accent)'}">${graded ? '✓ 已批改' : '已提交'} · ${fmtJst(x.submitted_at)}</span>
+      ${!graded ? `<button onclick="icWithdraw('${x.session_id}')" style="margin-left:auto;font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit;color:var(--text-secondary)">↺ 撤回重交</button>` : ''}
+    </div>
+    ${x.text ? `<div style="font-size:11px;line-height:1.8;white-space:pre-wrap;margin-top:6px;color:var(--text-secondary)">${escA(x.text)}</div>` : ''}
+    ${imgs.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${imgs.map(im => `<a href="${escA(im.url)}" target="_blank"><img src="${escA(im.thumb || im.url)}" style="width:64px;height:64px;object-fit:cover;border-radius:3px;border:1px solid var(--border-light)"></a>`).join('')}</div>` : ''}
+    ${graded ? `<div style="margin-top:8px">${hwFeedbackCardsHtml(x)}</div>` : ''}
+  </div>`;
+}
+function icToggle(sid) { icOpenId = icOpenId === sid ? null : sid; icRender(); }
+function icSetText(sid, v) { icDraft[sid] = icDraft[sid] || { text: '', images: [] }; icDraft[sid].text = v; }
+function icRemoveImage(sid, i) {
+  if (!icDraft[sid]) return;
+  icDraft[sid].images.splice(i, 1);
+  const box = document.getElementById('ic_imgs_' + sid);
+  if (box) box.innerHTML = icThumbsHtml(sid, true);
+}
+async function icPickImages(sid, input) {
+  const files = [...(input.files || [])];
+  if (!files.length) return;
+  const tip = document.getElementById('ic_tip_' + sid);
+  icDraft[sid] = icDraft[sid] || { text: '', images: [] };
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const raw = files[i];
+      if (tip) tip.textContent = `上传中 ${i + 1}/${files.length}…`;
+      const f = await hwCompressImage(raw, 1600, 0.82);
+      const ext = (f.name.split('.').pop() || 'jpg').toLowerCase();
+      const path = `${studyStudent.id}/inclass-${Date.now()}-${icDraft[sid].images.length + 1}.${ext}`;
+      const item = { url: await sbUpload('homework', path, f), name: raw.name };
+      try {
+        const t = await hwMakeThumb(raw);
+        if (t) item.thumb = await sbUpload('homework', path.replace(/\.[^./]+$/, '') + '_thumb.jpg', t);
+      } catch (e) {}
+      icDraft[sid].images.push(item);
+    }
+    if (tip) tip.textContent = '';
+    const box = document.getElementById('ic_imgs_' + sid);
+    if (box) box.innerHTML = icThumbsHtml(sid, true);
+  } catch (e) { if (tip) tip.textContent = '上传失败：' + e.message; }
+  input.value = '';
+}
+async function icSubmit(sid) {
+  if (icBusy) return;
+  const s = icOpenList.find(x => x.id === sid);
+  if (!s) { alert('老师已关闭这次随堂作业'); return icRender(); }
+  const d = icDraft[sid] || { text: '', images: [] };
+  const text = (d.text || '').trim();
+  if (!text && !d.images.length) { alert('请写点文字或上传图片'); return; }
+  if (!confirm('确认提交？')) return;
+  icBusy = true;
+  try {
+    const row = {
+      id: `ics-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      session_id: sid, course_name: s.course_name || '', session_number: s.session_number || null,
+      session_date: s.session_date || null,
+      student_id: studyStudent.id, student_name: studyStudent.name, major: studyStudent.major || studyMajor || '',
+      text: text || null, images: d.images,
+    };
+    await sb('/rest/v1/inclass_submissions', 'POST', row);
+    row.submitted_at = new Date().toISOString(); row.feedbacks = [];
+    icSubs[sid] = row;
+    delete icDraft[sid]; icOpenId = null;
+    icRender();
+    alert('已提交');
+  } catch (e) { alert('提交失败：' + e.message); }
+  icBusy = false;
+}
+async function icWithdraw(sid) {
+  const sub = icSubs[sid];
+  if (!sub) return;
+  try {   // 以数据库为准：别的设备上老师刚批改过也不能撤回
+    const cur = await sb(`/rest/v1/inclass_submissions?id=eq.${encodeURIComponent(sub.id)}&select=feedbacks`, 'GET', null, { cache: 'no-store' });
+    if (cur && cur[0] && hwFeedbacks(cur[0]).length) { sub.feedbacks = cur[0].feedbacks; alert('老师已批改，如需重做请联系老师'); return icRender(); }
+  } catch (e) {}
+  if (!confirm('撤回这次提交并重新作答？已上传的内容将被清除。')) return;
+  try {
+    await sb(`/rest/v1/inclass_submissions?id=eq.${encodeURIComponent(sub.id)}`, 'DELETE');
+    delete icSubs[sid];
+    icDraft[sid] = { text: sub.text || '', images: Array.isArray(sub.images) ? sub.images : [] };
+    icOpenId = icOpenList.some(x => x.id === sid) ? sid : null;
+    icRender();
   } catch (e) { alert('撤回失败：' + e.message); }
 }
 

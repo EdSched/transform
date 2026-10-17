@@ -65,6 +65,11 @@ let attView='list';    // list 课次列表 | status 出席状况
 let attHwCount={};     // session_id → 新作业系统的提交人数
 let attHwSubs={};      // session_id → Set(已交作业的学生姓名)
 
+let attIcCount={};     // session_id → 随堂作业提交人数（inclass_submissions）
+let attIcLoaded=false;
+let attIcOpen={};      // session_id → 随堂名单是否展开
+let attIcSubs={};      // session_id → 随堂提交（展开时才读完整内容）
+
 function setAttRange(v){attRange=v;renderAttendancePage(document.getElementById('mainContent'))}
 function setAttView(v){attView=v;renderAttendancePage(document.getElementById('mainContent'))}
 
@@ -81,6 +86,58 @@ async function attLoadHwCounts(silent){
     const el=document.getElementById('mainContent');
     if(el&&curPage==='attendance') renderAttendancePage(el);
   }catch(e){}
+}
+
+// 载入随堂作业提交人数（表还没建时静默忽略）
+async function attLoadIcCounts(){
+  attIcLoaded=true;
+  try{
+    const rows=await sbAll('/rest/v1/inclass_submissions?select=session_id');
+    attIcCount={};
+    (rows||[]).forEach(r=>{ attIcCount[r.session_id]=(attIcCount[r.session_id]||0)+1; });
+    const el=document.getElementById('mainContent');
+    if(el&&curPage==='attendance') renderAttendancePage(el);
+  }catch(e){}
+}
+// 单回「随堂作业」开关：点一下打开，再点关闭，直接保存
+async function toggleInclass(sessionId){
+  const s=cachedSessions.find(x=>x.id===sessionId); if(!s) return;
+  const v=!s.inclass_enabled;
+  try{
+    await sb(`/rest/v1/course_sessions?id=eq.${encodeURIComponent(sessionId)}`,'PATCH',{inclass_enabled:v});
+    s.inclass_enabled=v;
+    renderAttendancePage(document.getElementById('mainContent'));
+  }catch(e){ alert('保存失败：'+e.message+(/inclass_enabled/.test(e.message)?'\n（需要先执行 seed/inclass_submissions.sql）':'')); }
+}
+// 点「随堂 n」展开名单：谁交了（缩略图、文字前几句），谁没交（只列必修学生）
+async function toggleInclassPanel(sessionId){
+  const row=document.getElementById(`admin_ic_panel_${sessionId}`); if(!row) return;
+  const open=row.style.display==='none';
+  row.style.display=open?'table-row':'none';
+  if(!open) return;
+  const wrap=document.getElementById(`admin_ic_content_${sessionId}`);
+  wrap.innerHTML='<div style="font-size:11px;color:var(--text-3)">加载中…</div>';
+  const s=cachedSessions.find(x=>x.id===sessionId)||{};
+  let subs=[];
+  try{ subs=await sb(`/rest/v1/inclass_submissions?session_id=eq.${encodeURIComponent(sessionId)}&select=*&order=submitted_at.asc`,'GET',null,{cache:'no-store'})||[]; }
+  catch(e){ wrap.innerHTML=`<div style="font-size:11px;color:var(--danger)">加载失败：${admEsc(e.message)}</div>`; return; }
+  attIcSubs[sessionId]=subs;
+  attIcCount[sessionId]=subs.length;
+  const done=new Set(subs.map(x=>String(x.student_id)));
+  const missing=attMembers(s.course_id,s.major).filter(m=>sessionCountsFor(m,s.session_date)&&!done.has(String(m.id)));
+  const thumb=im=>`<img src="${admEsc(im.thumb||im.url)}" style="width:44px;height:44px;object-fit:cover;border-radius:3px;border:1px solid var(--border-light)" loading="lazy">`;
+  wrap.innerHTML=`<div style="font-size:11px;font-weight:600;margin-bottom:6px">随堂作业提交（${subs.length}）</div>
+  ${subs.length?`<div style="display:flex;flex-direction:column;gap:4px">${subs.map(x=>{
+    const imgs=Array.isArray(x.images)?x.images:[];
+    const fb=hwFeedbacks(x).length;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;border:1px solid var(--border-light);border-radius:3px;background:var(--surface)">
+      <span style="font-size:11px;font-weight:600;min-width:60px">${admEsc(x.student_name)}</span>
+      <span style="display:flex;gap:3px">${imgs.slice(0,4).map(thumb).join('')}${imgs.length>4?`<span style="font-size:10px;color:var(--text-3);align-self:center">+${imgs.length-4}</span>`:''}</span>
+      <span style="font-size:11px;color:var(--text-2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${admEsc(String(x.text||'').slice(0,60))}</span>
+      <span style="font-size:9px;color:var(--text-3)">${fmtJst(x.submitted_at)}</span>
+      ${fb?'<span style="font-size:9px;color:var(--ok)">已批改</span>':'<span style="font-size:9px;color:var(--warn,#b8860b)">待批改</span>'}
+    </div>`;}).join('')}</div>`:'<div style="font-size:11px;color:var(--text-3)">还没有人提交</div>'}
+  ${missing.length?`<div style="font-size:11px;color:var(--warn,#b8860b);margin-top:8px">未交 ${missing.length} 人：${missing.map(m=>admEsc(m.name)).join('、')}</div>`:(subs.length?'<div style="font-size:11px;color:var(--ok);margin-top:8px">必修学生全部已交</div>':'')}`;
 }
 
 function renderAttendancePage(mc){
@@ -162,6 +219,7 @@ function renderAttendancePage(mc){
   </div>
   ${attTypeFilter||attPeriodFilter||attCampusFilter||attAttFilter ? renderSessionList(filteredCourses) : ''}`;
   if(!Object.keys(attHwCount).length) attLoadHwCounts();
+  if(!attIcLoaded) attLoadIcCounts();
 }
 
 // 课程标题栏里的出席属性 chip：点了立即保存
@@ -295,7 +353,11 @@ function renderSessionListMain(courses){
             return `<tr>
               <td style="font-size:11px;color:var(--text-3)">${s.session_number}</td>
               <td style="font-size:12px;font-weight:600;cursor:pointer" onclick="openSessionModal('${s.id}')"><span style="display:inline-block;background:var(--accent,#b8953a);color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;margin-right:6px">📝 记录</span>${f.short} <span style="font-size:10px;color:${f.dowColor}">${f.dow}</span></td>
-              <td style="font-size:11px;color:var(--text-2)">${s.session_title||'—'}${hasHw?'<span style="font-size:9px;color:var(--accent);margin-left:5px">📝</span>':''}</td>
+              <td style="font-size:11px;color:var(--text-2)">${s.session_title||'—'}${hasHw?'<span style="font-size:9px;color:var(--accent);margin-left:5px">📝</span>':''}
+                <div style="margin-top:3px;display:flex;gap:4px;align-items:center">
+                  <span class="filter-chip${s.inclass_enabled?' active':''}" style="font-size:10px;padding:1px 9px" onclick="toggleInclass('${s.id}')">随堂作业</span>
+                  ${(s.inclass_enabled||attIcCount[s.id])?`<span onclick="toggleInclassPanel('${s.id}')" style="font-size:10px;cursor:pointer;color:var(--accent);text-decoration:underline">随堂 ${attIcCount[s.id]||0}</span>`:''}
+                </div></td>
               <td style="font-size:11px">${(recs.length||elPresent)?`${isOpen?'必修 ':''}${present}/${tot}${lateN?`<span style="font-size:9px;color:#b8860b">（迟到 ${lateN}）</span>`:''}${isOpen?`<span style="color:var(--text-3)"> · 选修 ${elPresent}</span>`:''}`:'<span style="color:var(--text-3)">—</span>'}</td>
               <td style="font-size:11px;color:${!recs.length?'var(--text-3)':rate>=80?'var(--ok)':rate>=60?'var(--warn)':'var(--danger)'}">${recs.length?rate+'%':'—'}</td>
               <td style="font-size:11px">${hasHw?((hwSubmit?`${isOpen?'必修 ':''}<span style="color:var(--ok);font-weight:600">${hwSubmit}</span>/${tot}`:`<span style="color:var(--text-3)">${isOpen?'必修 ':''}0/${tot}</span>`)+(isOpen?`<span style="color:var(--text-3)"> · 选修 ${hwEl}</span>`:'')):'<span style="color:var(--text-3)">—</span>'}</td>
@@ -303,6 +365,11 @@ function renderSessionListMain(courses){
                 <button class="btn btn-outline btn-sm" onclick="openSessionModal('${s.id}')">记出席</button>
                 ${hasHw&&hwSubmit?`<button class="btn btn-outline btn-sm" onclick="toggleAdminHwPanel('${s.id}')">作业(${hwSubmit})</button>`:''}
                 <button class="btn btn-danger btn-sm" onclick="deleteSession('${s.id}')">删</button>
+              </td>
+            </tr>
+            <tr id="admin_ic_panel_${s.id}" style="display:none">
+              <td colspan="7" style="padding:0;background:var(--bg)">
+                <div id="admin_ic_content_${s.id}" style="padding:10px 14px"></div>
               </td>
             </tr>
             <tr id="admin_hw_panel_${s.id}" style="display:none">
