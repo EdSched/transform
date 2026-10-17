@@ -36,6 +36,9 @@ function fmtJst(ts) {
 function thwEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
 // 可见范围 = ①（homework_own_sessions）本人担当的单回 ∪ ②（homework_course_ids）负责课程的全部单回；admin 老师管理里分配
+let thwKind = 'hw';        // 'hw' 作业 / 'ic' 随堂作业
+let thwIc = { sessions: [], subs: {}, req: {} };   // 随堂作业：课次、session_id → 提交、session_id → 必修人数
+let thwIcOpen = null, thwIcStu = null;
 let thwAssigned = true;   // 是否有任何分配（没有时显示「还没有给你安排作业批改」）
 async function renderHomeworkFeedback(mc) {
   const p = teacherData.permissions || {};
@@ -75,6 +78,7 @@ async function renderHomeworkFeedback(mc) {
       (batch || []).forEach(x => { (thwSubs[x.session_id] = thwSubs[x.session_id] || []).push(x); });
     }
     await thwArtLoad(own, nm, courseIds, sessions);
+    await thwIcLoad(own, nm, courseIds);
   } catch (e) { mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
   thwRender();
 }
@@ -86,8 +90,9 @@ function thwRender() {
     mc.innerHTML = '<div class="empty">还没有给你安排作业批改，请联系教务</div>';
     return;
   }
+  if (thwKind === 'ic') { thwIcRender(mc); return; }
   if (!thwSessions.length && !thwArt.length && !thwNoQ.length) {
-    mc.innerHTML = '<div class="empty">当期暂无分配给你的作业课次<br><span style="font-size:11px">作业由教务在课程安排的单回中布置</span></div>';
+    mc.innerHTML = thwKindChips() + '<div class="empty">当期暂无分配给你的作业课次<br><span style="font-size:11px">作业由教务在课程安排的单回中布置</span></div>';
     return;
   }
   // 按周分块：本周（展开）/ 以前·未批改（有才显示，醒目）/ 提前提交（未来单回有人提前交才显示）
@@ -113,6 +118,7 @@ function thwRender() {
   const sec = t => `<div style="font-size:11px;font-weight:600;color:var(--text-2);padding:6px 4px 4px">${t}</div>`;
   mc.innerHTML = `
   <div class="page-header"><div class="section-title">📝 作业批改</div></div>
+  ${thwKindChips()}
   <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
     <div style="flex:0 0 250px;min-width:220px;max-height:74vh;overflow-y:auto;background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:8px">
       ${thwSessions.length || !thwArt.length ? `${sec(`本周 <span style="font-weight:400;color:var(--text-3)">${wk.label}</span>`)}
@@ -691,6 +697,149 @@ async function thwSaveFeedback(subId) {
     thwPendingFile = null;
     alert('批改已保存，学生可见');
     thwOpenStudent = null;
+    thwRender();
+  } catch (e) { alert('保存失败：' + e.message); }
+}
+
+// ══════════════════════════════════
+// 随堂作业批改（表 inclass_submissions；课次范围与作业完全相同：自己上的课 / 指定课程）
+// 课次 = 开关开着的，或已经有人提交的
+// ══════════════════════════════════
+function thwKindChips() {
+  const c = (k, l) => `<div class="filter-chip${thwKind === k ? ' active' : ''}" onclick="thwKind='${k}';thwRender()">${l}</div>`;
+  return `<div style="display:flex;gap:6px;margin-bottom:12px">${c('hw', '作业')}${c('ic', '随堂作业')}</div>`;
+}
+async function thwIcLoad(own, nm, courseIds) {
+  thwIc = { sessions: [], subs: {}, req: {} };
+  try {
+    const from = new Date(); from.setDate(from.getDate() - 100);
+    const f = from.toISOString().slice(0, 10);
+    const ownOk = s => (own && (String(s.session_teacher || '').includes(nm) || String(s.teacher || '').includes(nm))) || courseIds.includes(String(s.course_id));
+    // ① 开关开着的课次
+    const base = `/rest/v1/course_sessions?inclass_enabled=is.true&session_date=gte.${f}&select=*&order=session_date.desc`;
+    const jobs = [];
+    if (own) { const enc = encodeURIComponent(nm); jobs.push(sbAll(`${base}&or=(session_teacher.ilike.*${enc}*,teacher.ilike.*${enc}*)`)); }
+    for (let i = 0; i < courseIds.length; i += 40) jobs.push(sbAll(`${base}&course_id=in.(${courseIds.slice(i, i + 40).map(x => `"${x}"`).join(',')})`));
+    let sessions = [].concat(...await Promise.all(jobs));
+    // ② 有提交的课次（开关已关也照常批改）
+    const subRows = await sbAll(`/rest/v1/inclass_submissions?session_date=gte.${f}&select=*&order=submitted_at.asc`);
+    const have = new Set(sessions.map(x => String(x.id)));
+    const extra = [...new Set(subRows.map(x => String(x.session_id)))].filter(id => !have.has(id));
+    for (let i = 0; i < extra.length; i += 40) {
+      const arr = await sb(`/rest/v1/course_sessions?id=in.(${extra.slice(i, i + 40).map(x => `"${x}"`).join(',')})&select=*`).catch(() => []);
+      sessions = sessions.concat((arr || []).filter(ownOk));
+    }
+    const seen = new Set();
+    thwIc.sessions = sessions.filter(x => ownOk(x) && !seen.has(x.id) && seen.add(x.id));
+    const ids = new Set(thwIc.sessions.map(x => String(x.id)));
+    subRows.filter(x => ids.has(String(x.session_id))).forEach(x => { (thwIc.subs[x.session_id] = thwIc.subs[x.session_id] || []).push(x); });
+    // 必修人数
+    const cids = [...new Set(thwIc.sessions.map(x => x.course_id).filter(Boolean))];
+    if (cids.length) {
+      const q = cids.map(x => `"${x}"`).join(',');
+      const [stu, crs, cms] = await Promise.all([
+        sbAll('/rest/v1/students?select=*&status=eq.active').catch(() => []),
+        sbAll(`/rest/v1/courses?id=in.(${q})&select=*`).catch(() => []),
+        sbAll(`/rest/v1/course_members?course_id=in.(${q})&select=course_id,student_id,kind`).catch(() => []),
+      ]);
+      thwIc.sessions.forEach(se => {
+        const c = (crs || []).find(x => String(x.id) === String(se.course_id)) || {};
+        const mj = Array.isArray(se.major) ? se.major : (se.major ? [se.major] : []);
+        const course = Object.assign({ id: se.course_id }, c, { major: mj.length ? mj : (c.major || []) });
+        const rid = courseRequiredIds(course, stu || [], (cms || []).filter(m => String(m.course_id) === String(se.course_id)));
+        thwIc.req[se.id] = (stu || []).filter(x => rid.has(String(x.id)) && sessionCountsFor(x, se.session_date)).length;
+      });
+    }
+  } catch (e) { /* 表还没建：随堂作业页显示为空 */ }
+}
+function thwIcUngraded(sid) { return (thwIc.subs[sid] || []).filter(x => !hwFeedbacks(x).length).length; }
+function thwIcRender(mc) {
+  const list = thwIc.sessions.slice().sort((a, b) => (thwIcUngraded(b.id) > 0) - (thwIcUngraded(a.id) > 0) || String(b.session_date || '').localeCompare(String(a.session_date || '')));
+  const item = s => {
+    const n = (thwIc.subs[s.id] || []).length, u = thwIcUngraded(s.id), sel = thwIcOpen === s.id;
+    return `<div onclick="thwIcOpen='${s.id}';thwIcStu=null;thwRender()" style="cursor:pointer;padding:7px 10px;border:1px solid ${sel ? 'var(--accent)' : 'transparent'};background:${sel ? 'var(--accent-light,#f5ede3)' : 'transparent'};border-radius:3px;margin-bottom:3px">
+      <div style="font-size:12px;font-weight:600">${thwEsc(s.course_name || '')}${s.session_number ? ` 第${s.session_number}回` : ''}</div>
+      <div style="font-size:9px;color:var(--text-3)">${s.session_date || ''} · 已交 ${n} / 必修 ${thwIc.req[s.id] == null ? '—' : thwIc.req[s.id]}${u ? ` · <span style="color:var(--warn,#b8860b)">待批 ${u}</span>` : n ? ' · <span style="color:var(--ok)">已批完</span>' : ''}${s.inclass_enabled ? '' : ' · 已关闭'}</div>
+    </div>`;
+  };
+  mc.innerHTML = `<div class="page-header"><div class="section-title">📝 作业批改</div></div>
+  ${thwKindChips()}
+  ${list.length ? `<div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
+    <div style="flex:0 0 250px;min-width:220px;max-height:74vh;overflow-y:auto;background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:8px">${list.map(item).join('')}</div>
+    <div style="flex:1 1 460px;min-width:0" id="thw_main">${thwIcMainHtml()}</div></div>`
+    : '<div class="empty">暂无随堂作业<br><span style="font-size:11px">老师在出席・作业页的单回上打开「随堂作业」后，学生提交的内容会出现在这里</span></div>'}`;
+}
+function thwIcMain() { const b = document.getElementById('thw_main'); if (b) b.innerHTML = thwIcMainHtml(); }
+function thwIcImgsHtml(sub, big) {
+  const imgs = Array.isArray(sub.images) ? sub.images : [];
+  const sz = big ? 'max-width:100%;max-height:360px' : 'width:56px;height:56px;object-fit:cover';
+  return imgs.map((im, i) => `<img src="${thwEsc(big ? im.url : (im.thumb || im.url))}" onclick="event.stopPropagation();thwIcView('${sub.id}',${i})" style="${sz};border-radius:3px;border:1px solid var(--border-light);cursor:zoom-in" loading="lazy">`).join('');
+}
+function thwIcView(subId, idx) {   // 放大、旋转：沿用作业的查看器
+  const sub = (thwIc.subs[thwIcOpen] || []).find(x => x.id === subId);
+  const imgs = (sub && sub.images) || [];
+  if (imgs.length) thwLightbox(imgs.map(im => ({ url: im.url, rot: thwRotNorm(im.rotate) })), idx);
+}
+function thwIcMainHtml() {
+  const s = thwIc.sessions.find(x => x.id === thwIcOpen);
+  if (!s) return '<div style="text-align:center;padding:60px 20px;color:var(--text-3);font-size:12px;border:1px dashed var(--border);border-radius:4px">← 从左侧选择课次</div>';
+  const subs = thwIc.subs[s.id] || [];
+  const title = `${thwEsc(s.course_name || '')}${s.session_number ? ` 第${s.session_number}回` : ''}`;
+  if (!thwIcStu) {
+    if (!subs.length) return `<div style="text-align:center;padding:50px 20px;color:var(--text-3);font-size:12px;border:1px dashed var(--border);border-radius:4px">${title}<br>暂无学生提交</div>`;
+    return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:12px 14px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:2px">${title}</div>
+      <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">${s.session_date || ''} · 已交 ${subs.length} / 必修 ${thwIc.req[s.id] == null ? '—' : thwIc.req[s.id]}</div>
+      <div style="display:flex;flex-direction:column;gap:5px">${subs.map(x => `<div onclick="thwIcStu='${x.id}';thwIcMain()" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border-light);border-radius:3px">
+        <span style="font-size:12px;font-weight:600;min-width:56px">${thwEsc(x.student_name)}</span>
+        <span style="display:flex;gap:3px">${thwIcImgsHtml(Object.assign({}, x, { images: (x.images || []).slice(0, 3) }), false)}</span>
+        <span style="font-size:11px;color:var(--text-2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${thwEsc(String(x.text || '').slice(0, 40))}</span>
+        <span style="font-size:10px;color:${hwFeedbacks(x).length ? 'var(--ok)' : 'var(--warn,#b8860b)'}">${hwFeedbacks(x).length ? '✓ ' + thwEsc(hwGradedBy(x).join('、') || '已批改') : '待批改'}</span>
+      </div>`).join('')}</div></div>`;
+  }
+  const sub = subs.find(x => x.id === thwIcStu);
+  if (!sub) return '';
+  const all = hwFeedbacks(sub), mine = all.filter(f => f.by === teacherData.name).pop() || null;
+  return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px 16px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <span onclick="thwIcStu=null;thwIcMain()" style="font-size:11px;color:var(--accent);cursor:pointer">← 返回列表</span>
+      <span style="font-size:13px;font-weight:600">${thwEsc(sub.student_name)}</span>
+      <span style="font-size:10px;color:var(--text-3)">${title} · ${fmtJst(sub.submitted_at)}</span>
+    </div>
+    <div style="border:1px solid var(--border-light);border-radius:3px;padding:12px;background:var(--bg);max-height:52vh;overflow-y:auto">
+      ${sub.text ? `<div style="font-size:12px;line-height:1.9;white-space:pre-wrap;margin-bottom:8px">${thwEsc(sub.text)}</div>` : ''}
+      <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start">${thwIcImgsHtml(sub, true)}</div>
+      <div style="font-size:9px;color:var(--text-3);margin-top:6px">点图片放大、旋转</div>
+    </div>
+    <div style="margin-top:12px;border-top:1px solid var(--border-light);padding-top:10px">
+      ${all.length ? `<div style="font-size:11px;font-weight:600;margin-bottom:6px">已有批改（${all.length}）</div>${hwFeedbackCardsHtml(all, { mine: teacherData.name })}` : ''}
+      <div style="font-size:11px;font-weight:600;margin:8px 0">${mine ? '编辑我的批改（学生可见）' : '添加我的批改（学生可见）'}</div>
+      <textarea id="thw_ic_text" rows="4" placeholder="评语" style="width:100%;font-size:11px;line-height:1.8;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical;margin-bottom:8px;box-sizing:border-box">${thwEsc(mine ? (mine.text || '') : '')}</textarea>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="thw_ic_score" value="${thwEsc(mine ? (mine.score || '') : '')}" placeholder="分数（可选）" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;width:120px">
+        <button onclick="thwIcSave('${sub.id}')" style="margin-left:auto;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">${mine ? '保存修改' : '保存我的批改'}</button>
+      </div>
+    </div>
+  </div>`;
+}
+// 每位老师一条（feedbacks），可改自己的
+async function thwIcSave(subId) {
+  const text = ((document.getElementById('thw_ic_text') || {}).value || '').trim();
+  const score = ((document.getElementById('thw_ic_score') || {}).value || '').trim();
+  if (!text && !score) { alert('请写评语或分数'); return; }
+  const sub = (thwIc.subs[thwIcOpen] || []).find(x => x.id === subId);
+  if (!sub) return;
+  const me = teacherData.name, now = new Date().toISOString();
+  const list = hwFeedbacks(sub).map(f => Object.assign({}, f));
+  let mine = null;
+  for (let i = list.length - 1; i >= 0; i--) if (list[i].by === me) { mine = list[i]; break; }
+  if (mine) Object.assign(mine, { text, score, edited_at: now });
+  else list.push({ id: 'fb-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), by: me, at: now, text, score });
+  try {
+    await sb(`/rest/v1/inclass_submissions?id=eq.${encodeURIComponent(subId)}`, 'PATCH', { feedbacks: list });
+    sub.feedbacks = list;
+    alert('批改已保存，学生可见');
+    thwIcStu = null;
     thwRender();
   } catch (e) { alert('保存失败：' + e.message); }
 }
