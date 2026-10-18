@@ -180,7 +180,8 @@ async function confirmCourseImport(){
         course_type:r.course_type,teacher:r.teacher,campus:r.campus,
         delivery:r.delivery,weekdays:r.weekdays,time_range:r.time_range,
         total_sessions:r.total_sessions,first_session_date:r.first_session_date||null,
-        notes:r.notes
+        notes:r.notes,
+        has_details:(r._details||[]).some(d=>d.title||d.teacher)
       },r.major);
       const res=await sb('/rest/v1/courses','POST',[course]);
       cachedCourses.push(Array.isArray(res)?res[0]:course);
@@ -190,15 +191,16 @@ async function confirmCourseImport(){
         const details=r._details||[];
         const sessions=r._dates.map((date,i)=>{
           const detail=details.find(d=>d.num===i+1)||{};
+          const tv=detail.teacher||acSingleTeacher(r.teacher);
           return {
             id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
             course_id:courseId,course_name:r.name,major:r.major,
             session_date:date,session_number:i+1,
             time_range:r.time_range,
             delivery:r.delivery,campus:r.campus,
-            teacher:detail.teacher||r.teacher,
+            teacher:tv,
             session_title:detail.title||'',
-            session_teacher:detail.teacher||'',
+            session_teacher:tv,
             confirmed
           };
         });
@@ -767,20 +769,22 @@ async function openApplyTemplate(templateId){
       id:courseId,name:t.name,major:t.major,course_type:t.course_type,
       weekdays:t.weekdays,time_range:t.time_range,total_sessions:t.total_sessions,
       actual_hours:t.actual_hours,delivery:t.delivery,campus:t.campus,teacher:t.teacher,
-      homework_enabled:t.homework_enabled,first_session_date:firstDate,period
+      homework_enabled:t.homework_enabled,first_session_date:firstDate,period,
+      has_details:(t.detail_rows||[]).some(r=>r.title||r.teacher)
     },t.major));
 
     const sessions=dates.map((date,i)=>{
       const detail=(t.detail_rows||[]).find(r=>r.num===i+1)||{};
+      const tv=detail.teacher||acSingleTeacher(t.teacher);
       return {
         id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
         course_id:courseId,course_name:t.name,major:t.major,
         session_date:date,session_number:i+1,
         time_range:t.time_range,actual_hours:t.actual_hours,
         delivery:t.delivery,campus:t.campus,
-        teacher:detail.teacher||t.teacher,
+        teacher:tv,
         session_title:detail.title||'',
-        session_teacher:detail.teacher||t.teacher,
+        session_teacher:tv,
         homework_questions:detail.homework_questions||null,
         homework_note:detail.homework_note||null,
         homework_enabled:!!detail.homework_questions||t.homework_enabled||false
@@ -1353,6 +1357,29 @@ function acDomainChange(){
 }
 function withCourseDomain(obj,majors){ const d=courseDomainFor(majors); if(d) obj.domain=d; return obj; }
 
+// ── 课程老师：一回只存一个老师名（teacher 和 session_teacher 永远写同一个值）──
+let acOrigTeacher='';   // 打开编辑弹窗时的上课老师，用来判断这次「改没改」
+function acTeacherNames(str){ return String(str||'').split(/[\/／,，、]/).map(x=>x.trim()).filter(Boolean); }
+// 一位老师的课返回这个人；多人课 / 没填返回空（空着就是空着，不补框架整串）
+function acSingleTeacher(str){ const n=acTeacherNames(str); return n.length===1?n[0]:''; }
+// 保存时这一行要写的老师；返回 undefined = 不动原来的值
+function acRowTeacher(rowTeacher,ctx){
+  const t=(rowTeacher||'').trim();
+  if(ctx.single) return (ctx.hasDetails&&!ctx.changed)?(t||ctx.single):ctx.single;
+  return ctx.hasDetails?t:undefined;
+}
+// 改了「上课老师」输入框：一位老师 → 表格里不是休讲的行马上全改成这个人，所见即所得；多人课表格不动
+document.addEventListener('change',e=>{
+  if(!e.target||e.target.id!=='ac_teacher') return;
+  const one=acSingleTeacher(e.target.value);
+  if(!one) return;
+  document.querySelectorAll('#ac_details_body tr').forEach(tr=>{
+    const ins=tr.querySelectorAll('input');
+    if(!ins[4]||ins[0].value.trim()==='休讲'||ins[3].value.trim()==='休讲') return;
+    ins[4].value=one;
+  });
+});
+
 function openAddCourseModal(editId){
   document.getElementById('addCourseModalTitle').textContent=editId?'编辑课程':'手动添加课程';
   document.getElementById('ac_editing_id').value=editId||'';
@@ -1385,8 +1412,9 @@ function openAddCourseModal(editId){
     document.getElementById('ac_confirm_publish').checked=isConfirmed;
     // load existing session details（编辑时始终展示明细表，date 按真实日期排序，便于直接调整）
     const sessions=cachedSessions.filter(s=>s.course_id===editId).sort((a,b)=>a.session_date.localeCompare(b.session_date));
-    // 有单回才勾「有单回明细」并展开明细表；没有单回的课（如排课来的）保持不勾、不展开
-    const hasDetails=sessions.length>0;
+    // 「需要单回明细」照 courses.has_details 显示；表格只在开着时显示（关着也照常填好，保存时老师按规则写）
+    const hasDetails=!!c.has_details;
+    acOrigTeacher=c.teacher||'';
     document.getElementById('ac_has_details').checked=hasDetails;
     document.getElementById('ac_details_section').style.display=hasDetails?'':'none';
     acPopulateRows(sessions.map(s=>({
@@ -1394,10 +1422,11 @@ function openAddCourseModal(editId){
       num:s.is_cancelled?'休讲':s.session_number,
       date:s.session_date,
       title:s.is_cancelled?(s.cancel_reason||'休讲'):(s.session_title||''),
-      teacher:s.session_teacher||c.teacher||'',
+      teacher:s.session_teacher||acSingleTeacher(c.teacher),
       time_range:s.time_range||''
     })));
   } else {
+    acOrigTeacher='';
     ['ac_name','ac_teacher','ac_campus','ac_time_range','ac_notes','ac_meeting_url','ac_host_key'].forEach(id=>document.getElementById(id).value='');
     document.getElementById('ac_recording').value = 'no';
     document.getElementById('ac_homework_enabled').value = 'false';
@@ -1417,6 +1446,7 @@ function openAddCourseModal(editId){
   { const h=document.getElementById('ac_weekday_actual');
     if(h){ const a=editId?sessionWeekdaysLabel(cachedSessions.filter(x=>x.course_id===editId)):'', f=frameWeekdaysLabel(editId?(cachedCourses.find(x=>x.id===editId)||{}).weekdays:'');
       h.textContent=a&&a!==f?`实际上课（按单回汇总）：周${a}`:''; } }
+  acAssignEnsure();
   document.getElementById('addCourseModal').classList.add('open');
 }
 
@@ -1503,7 +1533,7 @@ function acModeChange(byUser){
 function acMpAddRow(d){
   const box=document.getElementById('ac_mp_rows'); if(!box) return;
   const id='acmp_t'+(++acMpSeq);
-  const teacher=d&&d.teacher!=null?d.teacher:document.getElementById('ac_teacher').value.trim();
+  const teacher=d&&d.teacher!=null?d.teacher:acSingleTeacher(document.getElementById('ac_teacher').value);
   const inp='font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
   const div=document.createElement('div');
   div.className='acmp-row'; div.style.cssText='display:flex;gap:5px;align-items:center;flex-wrap:wrap';
@@ -1625,6 +1655,7 @@ function acSetMajors(majors){
 
 function toggleAcDetails(show){
   document.getElementById('ac_details_section').style.display=show?'':'none';
+  acAssignEnsure();
   if(show) acSyncRows();
 }
 
@@ -1637,7 +1668,7 @@ function acSyncRows(){
     return;
   }
   // 已有的行原样保留（日期、时间、标题、老师都不动）；只有新增的行按框架（第一回日期 + 星期）补上日期
-  const teacher=document.getElementById('ac_teacher').value.trim();
+  const teacher=acSingleTeacher(document.getElementById('ac_teacher').value);
   const existing=acGetRows().filter(r=>r.id||r.date||r.title||r.teacher||r.time_range);
   const firstDate=document.getElementById('ac_first_date').value;
   const weekdayStr=acGetWeekdayChips();
@@ -1705,6 +1736,59 @@ function acPasteImport(){
   const btn=document.querySelector('#ac_details_section .btn-outline:last-child');
   btn?.parentNode?.insertBefore(hint,btn);
   setTimeout(()=>hint.remove(),2500);
+}
+
+// ── 第二步的小工具：按周几 / 回数分配老师（只改表格里的老师，日期、时间、单回名称都不动，按保存才写入）──
+function acAssignEnsure(){
+  const sec=document.getElementById('ac_details_section');
+  if(!sec||document.getElementById('ac_assign_btn')) return;
+  const head=sec.firstElementChild, btns=head&&head.lastElementChild;
+  if(!btns) return;
+  const b=document.createElement('button');
+  b.type='button'; b.id='ac_assign_btn'; b.className='btn btn-outline btn-sm';
+  b.textContent='按周几 / 回数分配老师'; b.onclick=acAssignToggle;
+  btns.insertBefore(b,btns.firstChild);
+  const p=document.createElement('div');
+  p.id='ac_assign_panel'; p.style.cssText='display:none;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:10px';
+  const inp='font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit';
+  p.innerHTML=`<div style="font-size:11px;color:var(--text-2);margin-bottom:6px">选周几（可多选），或填第几回到第几回，再选老师点「套用」。休讲的行不动；可连续套用几次（如周二 A、周五 B）。按保存才写入。</div>
+    <div id="ac_assign_wd" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px">${AC_WD_LABELS.map(w=>`<span class="filter-chip" data-wd="${w}" onclick="this.classList.toggle('active')">${w}</span>`).join('')}</div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:11px">
+      第 <input id="ac_assign_from" type="number" min="1" style="${inp};width:56px"> 回到第 <input id="ac_assign_to" type="number" min="1" style="${inp};width:56px"> 回
+      老师 <input id="ac_assign_teacher" list="ac_assign_teacher_list" placeholder="选择或输入老师" style="${inp};width:140px"><datalist id="ac_assign_teacher_list"></datalist>
+      <button type="button" class="btn btn-primary btn-sm" onclick="acAssignApply()">套用</button>
+    </div>`;
+  sec.insertBefore(p,document.getElementById('ac_text_area'));
+}
+function acAssignToggle(){
+  const p=document.getElementById('ac_assign_panel');
+  const open=p.style.display==='none';
+  p.style.display=open?'block':'none';
+  if(open) document.getElementById('ac_assign_teacher_list').innerHTML=acTeacherNames(document.getElementById('ac_teacher').value).map(n=>`<option value="${escTM(n)}">`).join('');
+}
+function acAssignApply(){
+  const teacher=document.getElementById('ac_assign_teacher').value.trim();
+  const wds=[...document.querySelectorAll('#ac_assign_wd .filter-chip.active')].map(c=>c.dataset.wd);
+  const from=parseInt(document.getElementById('ac_assign_from').value)||0, to=parseInt(document.getElementById('ac_assign_to').value)||0;
+  if(!teacher){ alert('请选择或输入老师'); return; }
+  if(!wds.length&&!from&&!to){ alert('请选择周几，或填写第几回到第几回'); return; }
+  let n=0;
+  document.querySelectorAll('#ac_details_body tr').forEach(tr=>{
+    const ins=tr.querySelectorAll('input');
+    if(ins.length<5) return;
+    const num=ins[0].value.trim(), title=ins[3].value.trim();
+    if(num==='休讲'||title==='休讲') return;
+    if(wds.length){
+      if(!ins[1].value) return;
+      if(!wds.includes(AC_WD_LABELS[(new Date(ins[1].value+'T12:00:00').getDay()+6)%7])) return;
+    }
+    if(from||to){
+      const k=parseInt(num);
+      if(isNaN(k)||(from&&k<from)||(to&&k>to)) return;
+    }
+    ins[4].value=teacher; n++;
+  });
+  alert(n?`已把 ${n} 回的老师改成「${teacher}」，按保存才写入`:'没有符合条件的行');
 }
 
 function acAddRow(data){
@@ -1962,6 +2046,14 @@ async function saveAddCourse(){
     meeting_url:document.getElementById('ac_meeting_url').value.trim(),
     host_key:document.getElementById('ac_host_key').value.trim(),
     needs_recording:document.getElementById('ac_recording').value==='yes',
+    has_details:hasDetails,
+  };
+  // 每一回的老师怎么写：见 acRowTeacher（一位老师 / 多人 × 开着 / 关着单回明细 × 这次改没改老师）
+  const tNames=acTeacherNames(courseData.teacher);
+  const tCtx={
+    single:tNames.length===1?tNames[0]:'',
+    hasDetails,
+    changed:!!editingId&&tNames.join('/')!==acTeacherNames(acOrigTeacher).join('/'),
   };
   // 单回表反推框架：开课日 = 最早的单回日期，结课日 = 最晚的单回日期（排课系统按这两个日期显示区间）
   if(hasDetails){ courseData.start_date=ds[0]; courseData.end_date=ds[ds.length-1]; }
@@ -1999,7 +2091,7 @@ async function saveAddCourse(){
         const fw=computeSessionDates({first_session_date:firstDate,weekdays:weekdayStr,skip_dates:_co.skip_dates||'',holiday_except:_co.holiday_except||''},total);
         if(fw.length!==total){ alert(`按框架算出 ${fw.length} 个日期、需要 ${total} 个（可能假期太多排不下，或星期设置有误）`); return; }
         const ex=existing.filter(x=>!x.is_cancelled).sort((a,b)=>(a.session_date||'').localeCompare(b.session_date||'')||((a.session_number||0)-(b.session_number||0)));
-        rows=fw.map((d,i)=>{ const e=ex[i]||{}; return { id:e.id||'', num:String(i+1), date:d, time_range:'', title:e.session_title||'', teacher:e.session_teacher||'' }; });
+        rows=fw.map((d,i)=>{ const e=ex[i]||{}; return { id:e.id||'', num:String(i+1), date:d, time_range:'', title:e.session_title||'', teacher:e.session_teacher||'' }; });   // 老师在下面按 acRowTeacher 写
         existing.filter(x=>x.is_cancelled).forEach(x=>rows.push({ id:x.id, num:'休讲', date:x.session_date, time_range:x.time_range||'', title:x.cancel_reason||'休讲', teacher:x.session_teacher||'' }));
       }
       if(!rows.length){ alert('单回明细不能为空，至少需要一行课次'); return; }
@@ -2023,7 +2115,6 @@ async function saveAddCourse(){
       }
 
       const confirmed=document.getElementById('ac_confirm_publish')?.checked ?? (existing[0]?.confirmed||false);
-      const mainTeacher=courseData.teacher;
       // 作业跟着「单回标题 + 担当老师」走：保存前记下每份作业的归属
       const hwKey=(title,teacher)=>(title||'').trim()+'\u0001'+(teacher||'').trim();
       const hwItems=existing.filter(x=>hwHasQ(x.homework_questions)).map(x=>({
@@ -2034,6 +2125,7 @@ async function saveAddCourse(){
 
       for(const r of rows){
         const isCancelled = r.num==='休讲' || r.title==='休讲';
+        const tv=acRowTeacher(r.teacher,tCtx);
         const patchCommon={
           course_name:name, major:majors,
           session_date:r.date,
@@ -2043,13 +2135,12 @@ async function saveAddCourse(){
           delivery:courseData.delivery,campus:courseData.campus,
           // 已布置作业的回次保持开启，不被课程级开关覆盖
           homework_enabled:(r.id&&existingMap[r.id]&&hwHasQ(existingMap[r.id].homework_questions))?true:courseData.homework_enabled,
-          teacher:r.teacher||mainTeacher,
           session_title:r.title||'',
-          session_teacher:r.teacher||mainTeacher,
           is_cancelled:isCancelled,
           cancel_reason:isCancelled?(r.title||'休讲'):null,
           confirmed,
         };
+        if(tv!==undefined){ patchCommon.teacher=tv; patchCommon.session_teacher=tv; }   // 多人课关着单回明细：老师不动
         if(r.id && existingMap[r.id]){
           // 已有记录：PATCH，id 不变，所有关联（出席/作业）保持
           await sb(`/rest/v1/course_sessions?id=eq.${r.id}`,'PATCH',patchCommon);
@@ -2060,6 +2151,7 @@ async function saveAddCourse(){
             id:`s-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
             course_id:editingId,
             confirmed,
+            teacher:'',session_teacher:'',
             ...patchCommon
           };
           const sres=await sb('/rest/v1/course_sessions','POST',[newRow]);
@@ -2078,6 +2170,7 @@ async function saveAddCourse(){
         else { dateChanged=true; } // 新增的行也算变动
       }
       if(hwMsg) alert(hwMsg);
+      if(tCtx.changed&&!tCtx.single) alert('上课老师已改，请在单回明细里重新分配老师（按周几 / 回数分配，或者去排课）');
       if(dateChanged){
         alert('课程已更新。\n\n检测到单回日期有变动（改期/休讲顺延/新增课次），这可能影响排课系统里的教室占用与腾讯会议安排。\n\n请记得到排课系统，为变动的日期确认/补上临时教室占用。');
       } else {
@@ -2092,9 +2185,9 @@ async function saveAddCourse(){
     // 新增课程、开了单回明细：按单回表逐行生成课次（日期、时间、标题、老师、回数都以表为准）
     if(hasDetails){
       const confirmed=document.getElementById('ac_confirm_publish')?.checked||false;
-      const mainTeacher=courseData.teacher;
       const sessions=detailRows.map((r,i)=>{
         const isCancelled=r.num==='休讲'||r.title==='休讲';
+        const tv=acRowTeacher(r.teacher,tCtx)||'';
         return {
           id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
           course_id:courseId,course_name:name,major:majors,
@@ -2102,9 +2195,9 @@ async function saveAddCourse(){
           time_range:r.time_range||courseData.time_range,
           actual_hours:trSessionHours(r.time_range||courseData.time_range,courseData.actual_hours),
           delivery:courseData.delivery,campus:courseData.campus,
-          teacher:r.teacher||mainTeacher,
+          teacher:tv,
           session_title:r.title||'',
-          session_teacher:r.teacher||mainTeacher,
+          session_teacher:tv,
           is_cancelled:isCancelled,
           cancel_reason:isCancelled?(r.title||'休讲'):null,
           confirmed,homework_enabled:courseData.homework_enabled||false,
@@ -2125,7 +2218,7 @@ async function saveAddCourse(){
       const confirmed=document.getElementById('ac_confirm_publish')?.checked||false;
       const sessions=dates.map((date,i)=>{
         const detail=detailRows.find(r=>r.num===i+1)||{};
-        const mainTeacher=courseData.teacher;
+        const tv=acRowTeacher(detail.teacher,tCtx)||'';
         return {
           id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
           course_id:courseId,course_name:name,major:majors,
@@ -2133,9 +2226,9 @@ async function saveAddCourse(){
           time_range:detail.time_range||courseData.time_range,
           actual_hours:trSessionHours(detail.time_range||courseData.time_range,courseData.actual_hours),
           delivery:courseData.delivery,campus:courseData.campus,
-          teacher:detail.teacher||mainTeacher,
+          teacher:tv,
           session_title:detail.title||'',
-          session_teacher:detail.teacher||mainTeacher,
+          session_teacher:tv,
           confirmed
         };
       });
@@ -2293,8 +2386,8 @@ async function regenerateSessions(){
       id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
       course_id:id,course_name:c.name,major:c.major,
       session_date:date,session_number:i+1,
-      time_range:timeRange||c.time_range,teacher:c.teacher,
-      session_teacher:c.teacher,
+      time_range:timeRange||c.time_range,teacher:acSingleTeacher(c.teacher),
+      session_teacher:acSingleTeacher(c.teacher),
       delivery:c.delivery,campus:c.campus
     }));
     for(let i=0;i<sessions.length;i+=20){
@@ -2353,7 +2446,7 @@ async function confirmCopyPeriod(){
     // 用生成的课次首尾日期设置 start_date/end_date（sched 靠这两个显示日期区间）
     const newStart=dates[0];
     const newEnd=dates[dates.length-1];
-    const newCourse={...src,id:newId,period:stripPeriodYear(newPeriod),first_session_date:newFirstDate,start_date:newStart,end_date:newEnd,period_override:null};
+    const newCourse={...src,id:newId,period:stripPeriodYear(newPeriod),first_session_date:newFirstDate,start_date:newStart,end_date:newEnd,period_override:null,has_details:false};
     delete newCourse.created_at;
     const res=await sb('/rest/v1/courses','POST',[newCourse]);
     cachedCourses.push(Array.isArray(res)?res[0]:newCourse);
@@ -2361,8 +2454,8 @@ async function confirmCopyPeriod(){
       id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
       course_id:newId,course_name:src.name,major:src.major,
       session_date:date,session_number:i+1,
-      time_range:src.time_range,teacher:src.teacher,
-      session_teacher:src.teacher,
+      time_range:src.time_range,teacher:acSingleTeacher(src.teacher),
+      session_teacher:acSingleTeacher(src.teacher),
       delivery:src.delivery,campus:src.campus,
       actual_hours:src.actual_hours,
       homework_enabled:src.homework_enabled||false,
@@ -2697,9 +2790,9 @@ async function confirmSlotTeacher(slotId,teacher){
     if(slot){slot.confirmed_teacher=teacher;slot.status='confirmed'}
     // 同步到 course_sessions
     if(slot?.session_id){
-      await sb(`/rest/v1/course_sessions?id=eq.${slot.session_id}`,'PATCH',{session_teacher:teacher});
+      await sb(`/rest/v1/course_sessions?id=eq.${slot.session_id}`,'PATCH',{session_teacher:teacher,teacher});
       const sess=cachedSessions.find(s=>s.id===slot.session_id);
-      if(sess) sess.session_teacher=teacher;
+      if(sess){ sess.session_teacher=teacher; sess.teacher=teacher; }
     }
     renderSchedulePage(document.getElementById('mainContent'));
   }catch(e){alert('保存失败：'+e.message)}
@@ -2710,8 +2803,12 @@ async function unconfirmSlot(slotId){
     await sb(`/rest/v1/schedule_slots?id=eq.${slotId}`,'PATCH',{confirmed_teacher:null,confirmed_title:null,status:'pending'});
     const slot=cachedScheduleSlots.find(s=>s.id===slotId);
     if(slot){slot.confirmed_teacher=null;slot.confirmed_title=null;slot.status='pending'}
-    // also clear session_teacher on course_session
-    if(slot?.session_id) await sb(`/rest/v1/course_sessions?id=eq.${slot.session_id}`,'PATCH',{session_teacher:''}).catch(()=>{});
+    // also clear teacher / session_teacher on course_session（一回只存一个老师名，两个字段一起清）
+    if(slot?.session_id){
+      await sb(`/rest/v1/course_sessions?id=eq.${slot.session_id}`,'PATCH',{session_teacher:'',teacher:''}).catch(()=>{});
+      const sess=cachedSessions.find(s=>s.id===slot.session_id);
+      if(sess){ sess.session_teacher=''; sess.teacher=''; }
+    }
     renderSchedulePage(document.getElementById('mainContent'));
   }catch(e){alert('操作失败：'+e.message)}
 }
@@ -3106,10 +3203,10 @@ async function confirmArrangement(){
         const prefDates=cachedTeacherAvail.filter(a=>allSlotIds.includes(a.slot_id)&&a.available&&a.preferred_date).map(a=>a.preferred_date);
         const preferredDate=prefDates.length ? prefDates.sort((a,b)=>prefDates.filter(x=>x===b).length-prefDates.filter(x=>x===a).length)[0] : null;
         const finalDate=preferredDate||date;
-        const patchData={session_title:title,session_teacher:teacher};
+        const patchData={session_title:title,session_teacher:teacher,teacher};
         if(preferredDate&&preferredDate!==date) patchData.session_date=preferredDate;
         await sb(`/rest/v1/course_sessions?id=eq.${session.id}`,'PATCH',patchData);
-        session.session_title=title;session.session_teacher=teacher;
+        session.session_title=title;session.session_teacher=teacher;session.teacher=teacher;
         if(patchData.session_date) session.session_date=patchData.session_date;
         arrangementDraft[date].session_id=session.id;
         arrangementDraft[date].confirmed=true;
