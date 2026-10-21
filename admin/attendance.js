@@ -140,7 +140,20 @@ async function toggleInclassPanel(sessionId){
   ${missing.length?`<div style="font-size:11px;color:var(--warn,#b8860b);margin-top:8px">未交 ${missing.length} 人：${missing.map(m=>admEsc(m.name)).join('、')}</div>`:(subs.length?'<div style="font-size:11px;color:var(--ok);margin-top:8px">必修学生全部已交</div>':'')}`;
 }
 
+let attKind='big';     // big 大课 | vip VIP 上课情况（shared/vip-lessons.js）
+function setAttKind(k){attKind=k;renderAttendancePage(document.getElementById('mainContent'))}
+function attKindChips(){
+  return `<div style="display:flex;gap:5px">${[['big','大课'],['vip','VIP']].map(([k,l])=>`<div class="filter-chip${attKind===k?' active':''}" onclick="setAttKind('${k}')" style="padding:4px 14px">${l}</div>`).join('')}</div>`;
+}
 function renderAttendancePage(mc){
+  if(attKind==='vip'){
+    mc.innerHTML=`<div class="page-header"><div class="section-title">出席・作业</div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${attKindChips()}</div></div><div id="att_vip_box"></div>`;
+    vlMount(document.getElementById('att_vip_box'),{
+      requireStudent:true,
+      students:()=>(cachedStudents||[]).filter(s=>scopeStudent(s)&&sourceAllowed(s,mgrSources()))   // 只看管理范围内的学生（含来源限制）
+    });
+    return;
+  }
   // 先按视角（领域/专业）过滤出本视角的课，筛选项都基于这些课生成——因地制宜
   const viewCourses=cachedCourses.filter(c=>{
     if(!scopeCourse(c)) return false;
@@ -178,6 +191,7 @@ function renderAttendancePage(mc){
   <div class="page-header">
     <div class="section-title">出席・作业</div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      ${attKindChips()}
       <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:3px;overflow:hidden">
         ${[['week','本周'],['month','本月'],['all','全部']].map(([k,l])=>`<button onclick="setAttRange('${k}')" style="font-size:11px;padding:5px 14px;border:none;cursor:pointer;font-family:inherit;background:${attRange===k?'var(--accent)':'var(--surface)'};color:${attRange===k?'#fff':'var(--text-2)'}">${l}</button>`).join('')}
       </div>
