@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>操作记录 · 唯新</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .chips{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:8px; }
+  .chips .lbl{ font-size:12px; color:var(--sub); width:44px; }
+  .chip2{ padding:4px 12px; border:1px solid var(--line); background:#fff; border-radius:14px; cursor:pointer; font-size:13px; user-select:none; }
+  .chip2.on{ background:var(--blue); color:#fff; border-color:var(--blue); }
+  tr.lrow{ cursor:pointer; }
+  tr.lrow:hover{ background:#f4f8f5; }
+  .kv{ display:grid; grid-template-columns:110px 1fr; gap:2px 10px; font-size:12px; }
+  .kv b{ color:var(--sub); font-weight:normal; }
+</style>
+</head><body>
+<div id="nav"></div>
+<div class="wrap">
+  <div id="denied" class="hidden"><div class="tip">没有查看操作记录的权限（需要「教室占用管理」或「账号与权限管理」权限）。</div></div>
+  <div id="main" class="hidden">
+    <div class="card">
+      <div class="row">
+        <div class="field" style="flex:1;min-width:240px"><label>搜索（人名 / 学生 / 教室）</label><input id="q" placeholder="输入姓名、学生名、教室名…" style="width:100%"></div>
+        <div class="field"><label>&nbsp;</label><span class="muted" id="cnt"></span></div>
+      </div>
+      <div class="chips"><span class="lbl">操作</span><span id="cAct"></span></div>
+      <div class="chips"><span class="lbl">类型</span><span id="cKind"></span></div>
+      <div class="chips"><span class="lbl">时间</span><span id="cTime"></span>
+        <input type="month" id="monthPick" class="hidden" style="width:150px"></div>
+    </div>
+    <div id="trailBar" class="hidden"></div>
+    <div class="card"><div id="logBox"><div class="muted">加载中…</div></div></div>
+  </div>
+</div>
+
+<script src="common.js?v=20261021"></script>
+<script src="../shared/search.js?v=20261029"></script>
+<script>
+const ACTIONS=[['create','新建'],['approve','批准'],['reject','驳回'],['edit','修改'],['cancel','取消/删除'],['archive','归档']];
+const ACT_LABEL=Object.fromEntries(ACTIONS);
+const KINDS=[['vip','VIP'],['temp','临时'],['rental','出租'],['meeting','会议'],['course','课程']];
+const FIELD_LABEL={ booking_date:'日期', start_date:'起始日', end_date:'结束日', start_time:'开始', end_time:'结束', room_id:'教室', status:'状态', student_name:'学生', major:'专业',
+  title:'事由/名称', note:'备注', user_name:'使用人', reject_reason:'驳回理由', req_other:'其他教室申请', urgent:'紧急', kind:'类型', recurrence:'周期', weekday:'周几',
+  uses_meeting:'占用会议账号', meeting_account_id:'会议账号', show_title:'对外显示标题', entry_name:'录入人', created_by:'创建标记', allow_multi:'允许同人多间',
+  orig_room_id:'原申请教室', req_campus:'申请校区', reviewed_at:'审核时间', meeting_link:'会议链接', meeting_id:'会议号', course_id:'课程', client_token:'设备标记', id:'记录号' };
+const SEL={ act:new Set(), kind:new Set(), time:'7d', month:'' };
+const STATE={ rows:[], shown:30, trail:null };
+let ROOMS=[], ACCOUNTS=[];
+const rmap=()=>Object.fromEntries(ROOMS.map(r=>[String(r.id),r]));
+function roomText(id){ const r=rmap()[String(id)]; return r?(r.campus+' '+r.name):(id?('#'+id):'—'); }
+
+el('nav').innerHTML = renderNav('oplog.html');
+pageRole().then(r=>{
+  if(r) el('nav').innerHTML = renderNav('oplog.html', r);
+  const ps=permSet(r);
+  if(r && (ps.has('occupy')||ps.has('manage')||r.role==='admin')){ el('main').classList.remove('hidden'); boot(); }
+  else el('denied').classList.remove('hidden');
+}).catch(()=>el('denied').classList.remove('hidden'));
+
+function chipRow(box, items, isOn, onClick){
+  box.innerHTML=items.map(([k,t])=>`<span class="chip2${isOn(k)?' on':''}" data-k="${k}">${t}</span>`).join('');
+  box.querySelectorAll('.chip2').forEach(c=>c.onclick=()=>onClick(c.dataset.k));
+}
+function renderChips(){
+  chipRow(el('cAct'), ACTIONS, k=>SEL.act.has(k), k=>{ SEL.act.has(k)?SEL.act.delete(k):SEL.act.add(k); renderChips(); load(); });
+  chipRow(el('cKind'), KINDS, k=>SEL.kind.has(k), k=>{ SEL.kind.has(k)?SEL.kind.delete(k):SEL.kind.add(k); renderChips(); load(); });
+  chipRow(el('cTime'), [['7d','近 7 天'],['30d','近 30 天'],['month','按月']], k=>SEL.time===k, k=>{
+    SEL.time=k; el('monthPick').classList.toggle('hidden',k!=='month');
+    if(k==='month' && !el('monthPick').value) el('monthPick').value=todayStr().slice(0,7);
+    SEL.month=el('monthPick').value; renderChips(); load(); });
+}
+async function boot(){
+  ROOMS = await sbGet('sched_rooms','select=id,campus,name&order=campus,sort').catch(()=>[]);
+  renderChips();
+  el('monthPick').onchange=()=>{ SEL.month=el('monthPick').value; load(); };
+  bindSearch(el('q'), ()=>{ STATE.shown=30; renderRows(); });
+  load();
+}
+function timeRange(){
+  const now=new Date();
+  if(SEL.time==='7d')  return [new Date(now-7*86400000).toISOString(), null];
+  if(SEL.time==='30d') return [new Date(now-30*86400000).toISOString(), null];
+  if(!SEL.month) return [null,null];
+  const [y,m]=SEL.month.split('-').map(Number);
+  return [new Date(y,m-1,1).toISOString(), new Date(y,m,1).toISOString()];
+}
+async function load(){
+  STATE.shown=30; STATE.trail=null; el('trailBar').classList.add('hidden');
+  el('logBox').innerHTML='<div class="muted">加载中…</div>';
+  const [from,to]=timeRange();
+  let q='select=*&order=at.desc&limit=1000';
+  if(from) q+='&at=gte.'+encodeURIComponent(from);
+  if(to)   q+='&at=lt.'+encodeURIComponent(to);
+  if(SEL.act.size)  q+='&action=in.('+[...SEL.act].join(',')+')';
+  if(SEL.kind.size) q+='&kind=in.('+[...SEL.kind].join(',')+')';
+  try{ STATE.rows=await sbGet('sched_booking_log', q); }
+  catch(e){ el('logBox').innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>'; return; }
+  renderRows();
+}
+async function showTrail(bid){
+  el('logBox').innerHTML='<div class="muted">加载中…</div>';
+  try{ STATE.rows=await sbGet('sched_booking_log','select=*&booking_id=eq.'+bid+'&order=at.asc&limit=500'); }
+  catch(e){ el('logBox').innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>'; return; }
+  STATE.trail=bid; STATE.shown=500;
+  const bar=el('trailBar'); bar.classList.remove('hidden');
+  bar.innerHTML='<div class="tip">占用 #'+esc(bid)+' 的全部记录（从提交到最后一步，按时间正序）。 <button class="ghost sm" id="trailBack">返回列表</button></div>';
+  el('trailBack').onclick=load;
+  renderRows(true);
+}
+function whenText(x){
+  const s=x.snapshot||{};
+  if(x.action==='archive') return esc((s.month||'')+' 月');
+  if(s.recurrence==='weekly') return esc((s.weekday?weekdaysLabel(String(s.weekday))+' ':'')+(s.start_date||'')+'~'+(s.end_date||''))+'<br><small class="muted">'+esc((s.start_time||'')+'-'+(s.end_time||''))+'</small>';
+  return esc(x.booking_date||s.booking_date||'')+'<br><small class="muted">'+esc((s.start_time||'')+'-'+(s.end_time||''))+'</small>';
+}
+function fmtAt(iso){ const d=new Date(iso); return ymd(d)+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function matches(x){
+  const q=(el('q').value||'').trim(); if(!q) return true;
+  return searchMatch(q,[x.actor,x.user_name,x.student_name,roomText(x.room_id),(x.snapshot||{}).entry_name],{names:3});
+}
+function val(k,v){
+  if(v==null||v==='') return '空';
+  if(k==='room_id'||k==='orig_room_id') return roomText(v);
+  if(typeof v==='boolean') return v?'是':'否';
+  return String(v);
+}
+function detailHtml(x){
+  let h='';
+  if(x.action==='archive'){
+    const s=x.snapshot||{};
+    return '<div class="kv"><b>月份</b><span>'+esc(s.month||'')+'</span><b>删除条数</b><span>'+esc(s.count)+'</span><b>文件</b><span>'+esc(s.path||'')+'</span><b>操作人</b><span>'+esc(x.actor||'')+'</span></div>';
+  }
+  if(x.changes && Object.keys(x.changes).length){
+    h+='<div style="margin-bottom:8px"><b style="font-size:12px">改了什么</b><div class="kv" style="margin-top:4px">'+
+      Object.keys(x.changes).map(k=>`<b>${esc(FIELD_LABEL[k]||k)}</b><span>${esc(val(k,x.changes[k].from))} → ${esc(val(k,x.changes[k].to))}</span>`).join('')+'</div></div>';
+  }
+  if(x.snapshot){
+    const lbl = x.action==='cancel' ? '删除前的整条内容' : (x.action==='create' ? '新建的内容' : '操作前的内容');
+    h+='<div><b style="font-size:12px">'+lbl+'</b><div class="kv" style="margin-top:4px">'+
+      Object.keys(x.snapshot).filter(k=>x.snapshot[k]!==null && x.snapshot[k]!=='' && k!=='client_token')
+        .map(k=>`<b>${esc(FIELD_LABEL[k]||k)}</b><span>${esc(val(k,x.snapshot[k]))}</span>`).join('')+'</div></div>';
+  }
+  if(x.booking_id) h+='<div style="margin-top:8px"><button class="ghost sm" data-trail="'+x.booking_id+'">同一条的全部记录</button></div>';
+  return h;
+}
+function renderRows(isTrail){
+  const list=STATE.rows.filter(matches);
+  el('cnt').textContent='共 '+list.length+' 条'+(STATE.rows.length>=1000?'（已达读取上限 1000 条，请缩小时间范围）':'');
+  if(!list.length){ el('logBox').innerHTML='<div class="muted">没有符合条件的记录</div>'; return; }
+  const shown=list.slice(0,STATE.shown);
+  let h='<table><thead><tr><th>时间</th><th>操作</th><th>操作人</th><th>类型</th><th>日期时段</th><th>校区教室</th><th>使用人</th><th>学生</th></tr></thead><tbody>';
+  shown.forEach((x,i)=>{
+    const bad = x.action==='reject'||x.action==='cancel' ? 'b-err' : (x.action==='archive'?'b-warn':'b-ok');
+    h+=`<tr class="lrow" data-i="${i}"><td>${esc(fmtAt(x.at))}</td><td><span class="badge ${bad}">${esc(ACT_LABEL[x.action]||x.action)}</span></td>`+
+      `<td>${esc(x.actor||'—')}${x.actor_kind==='anon'?' <small class="muted">(未登录)</small>':''}</td><td>${esc(KIND_LABEL[x.kind]||x.kind||'—')}</td>`+
+      `<td>${whenText(x)}</td><td>${esc(x.room_id?roomText(x.room_id):'—')}</td><td>${esc(x.user_name||'')}</td><td>${esc(x.student_name||'')}</td></tr>`+
+      `<tr class="hidden" data-d="${i}"><td colspan="8" style="background:#fafbfa">${detailHtml(x)}</td></tr>`;
+  });
+  h+='</tbody></table>';
+  if(list.length>shown.length) h+=`<div style="text-align:center;margin-top:10px"><button class="ghost sm" id="more">显示更多（还有 ${list.length-shown.length} 条）</button></div>`;
+  const box=el('logBox'); box.innerHTML=h;
+  box.querySelectorAll('tr.lrow').forEach(tr=>tr.onclick=()=>box.querySelector('tr[data-d="'+tr.dataset.i+'"]').classList.toggle('hidden'));
+  box.querySelectorAll('[data-trail]').forEach(b=>b.onclick=ev=>{ ev.stopPropagation(); showTrail(b.dataset.trail); });
+  if(el('more')) el('more').onclick=()=>{ STATE.shown+=30; renderRows(isTrail); };
+}
+</script>
+</body></html>

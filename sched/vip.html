@@ -61,8 +61,13 @@
         <div class="field"><label>&nbsp;</label><button class="ghost sm" id="mine_find">按姓名查找</button></div>
         <div class="field"><label>&nbsp;</label><button class="ghost sm" id="mine_reload">刷新本机记录</button></div>
       </div>
+      <div class="seg" style="margin:10px 0 0">
+        <button id="mt_cur" class="on">当前预约</button>
+        <button id="mt_hist">预约履历</button>
+      </div>
       <div id="mineBox" style="margin-top:10px"><div class="muted">加载中…</div></div>
-      <div class="tip" style="margin-top:10px;font-size:12px">状态为<b>待确认</b>表示等管理员审批，<b>已批准</b>后教室即占用。<br>如需<b>更换时间或取消</b>：请在此点该预约的「取消」释放教室，再回到「预约」重新选时段提交。</div>
+      <div id="histBox" class="hidden" style="margin-top:10px"></div>
+      <div class="tip" id="mineTip" style="margin-top:10px;font-size:12px">状态为<b>待确认</b>表示等管理员审批，<b>已批准</b>后教室即占用。<br>如需<b>更换时间或取消</b>：请在此点该预约的「取消」释放教室，再回到「预约」重新选时段提交。</div>
     </div>
   </div>
 </div>
@@ -86,7 +91,7 @@
   </div>
 </div>
 
-<script src="common.js?v=20261020"></script>
+<script src="common.js?v=20261021"></script>
 <script>
 let ROOMS=[], BOOKINGS=[], CUR=null;
 const MIN_ADVANCE=2;
@@ -110,8 +115,10 @@ async function boot(){
   el('m_submit').onclick = submit;
   el('seg_book').onclick = ()=>seg('book');
   el('seg_mine').onclick = ()=>seg('mine');
-  el('mine_find').onclick = ()=>loadMine(el('mine_name').value.trim());
-  el('mine_reload').onclick = ()=>loadMine('');
+  el('mine_find').onclick = ()=>reloadMine(el('mine_name').value.trim());
+  el('mine_reload').onclick = ()=>reloadMine('');
+  el('mt_cur').onclick = ()=>mineTab('cur');
+  el('mt_hist').onclick = ()=>mineTab('hist');
   const last=localStorage.getItem(NKEY); if(last) el('mine_name').value=last;
   checkAdvance(); renderGrid();
 }
@@ -120,7 +127,7 @@ function seg(v){
   el('seg_mine').classList.toggle('on',v==='mine');
   el('view_book').classList.toggle('hidden',v!=='book');
   el('view_mine').classList.toggle('hidden',v!=='mine');
-  if(v==='mine') loadMine('');
+  if(v==='mine') reloadMine('');
 }
 function advanceOk(){ return diffDays(todayStr(), el('date').value) >= MIN_ADVANCE; }
 function checkAdvance(){
@@ -281,6 +288,49 @@ function showReqCard(title, msg, note){
   box.appendChild(div);
   el('copyReqBtn').onclick=()=>navigator.clipboard.writeText(msg).then(()=>toast('已复制，去群里发给管理员'));
 }
+let MINE_TAB='cur', MINE_NAME='', MINE_ROWS=[];
+const ACT_LABEL={ create:'提交', approve:'批准', reject:'驳回', edit:'修改', cancel:'取消' };
+const FIELD_LABEL={ booking_date:'日期', start_time:'开始', end_time:'结束', room_id:'教室', status:'状态', student_name:'学生', major:'专业', title:'事由', note:'备注', user_name:'讲师', reject_reason:'驳回理由', req_other:'其他教室申请', urgent:'紧急' };
+function mineTab(t){
+  MINE_TAB=t;
+  el('mt_cur').classList.toggle('on',t==='cur'); el('mt_hist').classList.toggle('on',t==='hist');
+  el('mineBox').classList.toggle('hidden',t!=='cur'); el('mineTip').classList.toggle('hidden',t!=='cur');
+  el('histBox').classList.toggle('hidden',t!=='hist');
+  if(t==='hist') loadHist(MINE_NAME);
+}
+function reloadMine(name){ MINE_NAME=name; if(MINE_TAB==='hist') loadHist(name); loadMine(name); }
+function fmtAt(iso){ const d=new Date(iso); return ymd(d)+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function chgText(c, rmap){
+  if(!c) return '';
+  const val=(k,v)=>{ if(v==null||v==='') return '空'; if(k==='room_id'){ const r=rmap[v]; return r?(r.campus+' '+r.name):('#'+v); } if(typeof v==='boolean') return v?'是':'否'; return String(v); };
+  return Object.keys(c).filter(k=>FIELD_LABEL[k]).map(k=>FIELD_LABEL[k]+'：'+val(k,c[k].from)+' → '+val(k,c[k].to)).join('；');
+}
+async function loadHist(name){
+  const box=el('histBox'); box.innerHTML='<div class="muted">加载中…</div>';
+  let rows;
+  try{
+    await schedAuthReady();
+    const r=await fetch(SB_URL+'/rest/v1/rpc/sched_vip_history',{ method:'POST', headers:sbHeaders(), cache:'no-store',
+      body:JSON.stringify({ p_name:name||'', p_token:myToken() }) });
+    if(!r.ok) throw new Error(r.status+' '+await r.text());
+    rows=await r.json();
+  }catch(e){ box.innerHTML='<span class="badge b-err">读取失败：'+esc(e.message)+'</span>'; return; }
+  if(!rows.length){ box.innerHTML='<div class="muted">'+(name?'没找到该姓名的预约履历':'本机暂无预约履历。换过设备的话，用上方真实姓名找回。')+'</div>'; return; }
+  const rmap={}; ROOMS.forEach(r=>rmap[r.id]=r);
+  let h='<table><thead><tr><th>时间</th><th>操作</th><th>日期时段</th><th>教室</th><th>学生</th><th>操作人</th><th>说明</th></tr></thead><tbody>';
+  rows.forEach(x=>{
+    const bad = x.action==='reject' ? 'b-err' : (x.action==='cancel' ? 'b-warn' : 'b-ok');
+    const room = x.room_name ? (esc(x.room_name)+'<br><small class="muted">'+esc(x.room_campus||'')+'</small>') : (x.room_campus?('<span class="muted">待指派大教室</span><br><small class="muted">'+esc(x.room_campus)+'</small>'):'<span class="muted">—</span>');
+    let note='';
+    if(x.action==='reject' && x.reject_reason) note='<small style="color:#c0392b">理由：'+esc(x.reject_reason)+'</small>';
+    else if(x.action==='edit') note='<small class="muted">'+esc(chgText(x.changes,rmap))+'</small>';
+    h+=`<tr><td>${esc(fmtAt(x.at))}</td><td><span class="badge ${bad}">${ACT_LABEL[x.action]||esc(x.action)}</span></td>`+
+      `<td>${esc(x.booking_date||'')}<br><small class="muted">${esc(x.start_time||'')}-${esc(x.end_time||'')}</small></td><td>${room}</td>`+
+      `<td>${esc(x.student_name||'')}</td><td>${esc(x.actor||'—')}</td><td>${note}</td></tr>`;
+  });
+  h+='</tbody></table><div class="muted" style="font-size:12px;margin-top:6px">最近 100 条，按时间倒序。</div>';
+  box.innerHTML=h;
+}
 async function loadMine(name){
   const box=el('mineBox'); box.innerHTML='<div class="muted">加载中…</div>';
   const token=myToken();
@@ -293,6 +343,7 @@ async function loadMine(name){
       rows = await sbGet('sched_bookings','select=*&kind=eq.vip&client_token=eq.'+encodeURIComponent(token)+'&order=booking_date.desc&limit=100');
     }
   }catch(e){ box.innerHTML='<span class="badge b-err">读取失败：'+esc(e.message)+'</span>'; return; }
+  MINE_ROWS=rows;
   if(!rows.length){ box.innerHTML='<div class="muted">'+(name?'没找到该姓名的预约':'本机暂无预约记录。换过设备的话，用上方真实姓名找回。')+'</div>'; return; }
   const rmap={}; ROOMS.forEach(r=>rmap[r.id]=r);
   let h='<table><thead><tr><th>日期</th><th>时段</th><th>教室</th><th>学生</th><th>状态</th><th>操作</th></tr></thead><tbody>';
@@ -321,7 +372,7 @@ async function loadMine(name){
   box.querySelectorAll('button[data-cancel]').forEach(btn=>btn.onclick=()=>cancelBooking(btn.dataset.cancel, name));
   box.querySelectorAll('button[data-drop]').forEach(btn=>btn.onclick=async()=>{
     if(!confirm('放弃这条被驳回的记录？')) return;
-    try{ await sbDelete('sched_bookings', btn.dataset.drop); BOOKINGS=BOOKINGS.filter(x=>String(x.id)!==String(btn.dataset.drop)); loadMine(name); }
+    try{ const mb=rows.find(x=>String(x.id)===String(btn.dataset.drop)); await sbDeleteAs('sched_bookings', btn.dataset.drop, mb&&mb.user_name); BOOKINGS=BOOKINGS.filter(x=>String(x.id)!==String(btn.dataset.drop)); loadMine(name); }
     catch(e){ toast('操作失败：'+e.message, false); }
   });
   box.querySelectorAll('button[data-rebook]').forEach(btn=>btn.onclick=()=>{
@@ -338,10 +389,11 @@ async function loadMine(name){
 async function cancelBooking(id, name){
   if(!confirm('确定取消这条预约？取消后教室将释放。')) return;
   try{
-    await sbDelete('sched_bookings', id);
+    const mb=MINE_ROWS.find(x=>String(x.id)===String(id)) || BOOKINGS.find(x=>String(x.id)===String(id));
+    await sbDeleteAs('sched_bookings', id, mb&&mb.user_name);
     BOOKINGS = BOOKINGS.filter(b=>String(b.id)!==String(id));
     toast('已取消，教室已释放');
-    loadMine(name);
+    loadMine(name); if(MINE_TAB==='hist') loadHist(name);
   }catch(e){ toast('取消失败：'+e.message, false); }
 }
 boot();
