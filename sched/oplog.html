@@ -55,12 +55,17 @@ const rmap=()=>Object.fromEntries(ROOMS.map(r=>[String(r.id),r]));
 function roomText(id){ const r=rmap()[String(id)]; return r?(r.campus+' '+r.name):(id?('#'+id):'—'); }
 
 el('nav').innerHTML = renderNav('oplog.html');
-pageRole().then(r=>{
+// 嵌在排课首页里时（iframe 地址没有 ?k=），权限由首页通过 canmanage / canarchive 传入，和 booking.html 一致；
+// 真正的读写权限仍由数据库（RLS）按登录身份把关
+const QP=new URLSearchParams(location.search);
+let EMB_MANAGE=QP.get('canmanage')==='1', EMB_ARCH=QP.get('canarchive')==='1';
+pageRole().catch(()=>null).then(r=>{
   if(r) el('nav').innerHTML = renderNav('oplog.html', r);
   const ps=permSet(r);
-  if(r && (ps.has('occupy')||ps.has('manage')||r.role==='admin')){ el('main').classList.remove('hidden'); CAN_ARCH=ps.has('manage')||r.role==='admin'; boot(); }
+  const ok = EMB_MANAGE || (r && (ps.has('occupy')||ps.has('manage')||r.role==='admin'));
+  if(ok){ el('main').classList.remove('hidden'); CAN_ARCH=EMB_ARCH||(r&&(ps.has('manage')||r.role==='admin')); boot(); }
   else el('denied').classList.remove('hidden');
-}).catch(()=>el('denied').classList.remove('hidden'));
+});
 
 function chipRow(box, items, isOn, onClick){
   box.innerHTML=items.map(([k,t])=>`<span class="chip2${isOn(k)?' on':''}" data-k="${k}">${t}</span>`).join('');

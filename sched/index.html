@@ -287,7 +287,7 @@ function openCard(key){
     panel.style.display='none'; panel.innerHTML='';
     const ps=permSet(ROLE); let cap='';
     if(target==='booking.html' && (ps.has('occupy')||ps.has('manage'))) cap='&canmanage=1';
-    if(target==='oplog.html' && window.__OPLOG_ARCH) cap='&tab=arch';
+    if(target==='oplog.html'){ if(ps.has('occupy')||ps.has('manage')) cap='&canmanage=1'; if(ps.has('manage')) cap+='&canarchive=1'; if(window.__OPLOG_ARCH) cap+='&tab=arch'; }
     if(target==='meeting.html' && (ps.has('meeting_arrange')||ps.has('manage'))) cap='&canarrange=1';
     frame.style.display='block'; frame.src = target + (target.includes('?')?'&':'?') + 'embed=1' + cap + (EMBED_ADMIN ? '&via=admin' : '');
   }else{
