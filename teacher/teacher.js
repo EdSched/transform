@@ -3127,7 +3127,7 @@ function openProfileForm(key) {
   const val = f => d[f] !== undefined ? d[f] : (row[f] || '');
   const others = st.filter(x => x.key !== key && x.row);
   const inp = 'width:100%;font-size:12px;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit';
-  const pubName = (teacherData.notes || '').trim();
+  const pubName = (teacherData.display_name || '').trim();
   const modal = modalOld || document.createElement('div');
   modal.id = 'profileFormModal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
@@ -3136,7 +3136,7 @@ function openProfileForm(key) {
   const bringFields = [['courses', '担当课程'], ['keywords', '可指导方向'], ['feature', '授课特色'], ['highlights', '特色亮点']];
   modal.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto">
     <div style="font-size:13px;font-weight:600;margin-bottom:4px">📋 讲师介绍</div>
-    <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">档案登记姓名：<b>${profEscT(teacherName)}</b>${pubName ? `（对外展示为「${profEscT(pubName)}」）` : ''}。每个负责专业一份介绍，点下面的专业切换。对外展示名如需修改请联系教务。</div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">档案登记姓名：<b>${profEscT(teacherName)}</b>${pubName ? `（对外展示为「${profEscT(pubName)}」）` : ''}。每个负责专业一份介绍，点下面的专业切换。对外展示名可在首页名字旁的昵称处修改。</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
       ${st.map(x => `<div class="filter-chip${x.key === key ? ' active' : ''}" onclick="openProfileForm('${x.key}')" style="padding:4px 12px;font-size:11px">${profEscT(x.label)} <span style="font-size:10px;color:${x.done ? 'var(--ok,#2a9e6a)' : 'var(--warn,#b8860b)'}">${x.done ? '✓' : '未完成'}</span></div>`).join('')}
     </div>
