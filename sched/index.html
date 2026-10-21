@@ -175,6 +175,18 @@ function renderHub(){
       } else rb.innerHTML='';
     }
   }catch(e){ const rb=el('schedRemind'); if(rb) rb.innerHTML=''; }
+  // 管理员提醒：上个月（及更早）的教室占用还没归档
+  try{
+    const rb=el('schedRemind');
+    if(rb && permSet(ROLE).has('manage')){
+      const t=todayStr(), lastDay=addDays(t.slice(0,7)+'-01',-1);   // 上个月最后一天
+      const n=BOOKINGS.filter(b=>b.kind!=='course' && (b.recurrence==='weekly' ? (b.end_date && b.end_date<=lastDay) : (b.booking_date && b.booking_date<=lastDay))).length;
+      if(n){
+        rb.insertAdjacentHTML('beforeend','<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#2f5a8a;padding:10px 14px;border-radius:8px;margin-bottom:8px;font-size:13px;line-height:1.5;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span>上个月的教室占用还没归档（共 <b>'+n+'</b> 条）。</span><button class="sm" id="rem_arch">去归档</button></div>');
+        el('rem_arch').onclick=()=>{ window.__OPLOG_ARCH=true; openCard('oplog'); window.__OPLOG_ARCH=false; };
+      }
+    }
+  }catch(e){}
   renderChangeAlerts();
   renderTrashExpiry();
   const pend = BOOKINGS.filter(b=>b.status==='pending').length;
@@ -275,6 +287,7 @@ function openCard(key){
     panel.style.display='none'; panel.innerHTML='';
     const ps=permSet(ROLE); let cap='';
     if(target==='booking.html' && (ps.has('occupy')||ps.has('manage'))) cap='&canmanage=1';
+    if(target==='oplog.html' && window.__OPLOG_ARCH) cap='&tab=arch';
     if(target==='meeting.html' && (ps.has('meeting_arrange')||ps.has('manage'))) cap='&canarrange=1';
     frame.style.display='block'; frame.src = target + (target.includes('?')?'&':'?') + 'embed=1' + cap + (EMBED_ADMIN ? '&via=admin' : '');
   }else{
