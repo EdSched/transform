@@ -182,7 +182,7 @@ function renderRows(isTrail){
 }
 
 /* ================= 月度归档 ================= */
-const ARCH={ months:[], cur:'', saved:{}, busy:false };
+const ARCH={ months:[], cur:'', busy:false };
 const monthOf=d=>String(d||'').slice(0,7);
 const monthRange=m=>{ const [y,mo]=m.split('-').map(Number); const last=new Date(y,mo,0).getDate();
   return { first:m+'-01', last:m+'-'+String(last).padStart(2,'0'), atFrom:new Date(y,mo-1,1).toISOString(), atTo:new Date(y,mo,1).toISOString() }; };
@@ -214,21 +214,47 @@ async function archRender(){
   archFiles();
   if(ARCH.cur) archInfo();
 }
+// 读 Storage 里的说明文件 年-月.json；没有 = null。能不能清空只看它，不看内存
+async function archMeta(m){
+  await schedAuthReady();
+  const r=await fetch(SB_URL+'/storage/v1/object/authenticated/sched-archive/'+encodeURIComponent(m+'.json')+'?t='+Date.now(),{ headers:sbHeaders(), cache:'no-store' });
+  if(r.status===404||r.status===400) return null;
+  if(!r.ok) throw new Error('读取归档说明失败：'+r.status+' '+await r.text());
+  try{ const j=await r.json(); return (j&&Array.isArray(j.ids))?j:null; }catch(e){ return null; }
+}
+async function archHasXlsx(m){
+  const r=await fetch(SB_URL+'/storage/v1/object/list/sched-archive',{ method:'POST', headers:sbHeaders(), body:JSON.stringify({ prefix:'', search:m, limit:20 }) });
+  if(!r.ok) return false;
+  return (await r.json()).some(f=>f.name===m+'.xlsx');
+}
 async function archInfo(){
   const m=ARCH.cur, r=monthRange(m), box=el('archInfo'); box.innerHTML='<div class="muted">统计中…</div>';
-  let nb=0, nl=0;
+  let rows=[], nl=0, meta=null, hasX=false;
   try{
-    nb=(await sbGet('sched_bookings',archQuery(m).replace('select=*','select=id'))).length;
+    rows=await sbGet('sched_bookings',archQuery(m).replace('select=*','select=id'));
     nl=(await sbGet('sched_booking_log','select=id&at=gte.'+encodeURIComponent(r.atFrom)+'&at=lt.'+encodeURIComponent(r.atTo))).length;
+    meta=await archMeta(m);
+    if(!meta) hasX=await archHasXlsx(m);
   }catch(e){ box.innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>'; return; }
-  const saved=ARCH.saved[m];
+  if(ARCH.cur!==m) return;   // 读的过程中切了月份
+  const nb=rows.length;
+  // 现在可归档的和保存时的完全一致，才允许清空
+  const cur=new Set(rows.map(x=>String(x.id)));
+  const same=!!meta && meta.ids.length===nb && meta.ids.every(id=>cur.has(String(id)));
+  const can=same && nb>0;
+  let why='';
+  if(!meta) why=hasX?'这个月只有旧的 '+m+'.xlsx，没有说明文件，请重新「生成并保存」一次':'先点「生成并保存」';
+  else if(!same) why='保存后数据有变化（保存时 '+meta.ids.length+' 条，现在 '+nb+' 条），请重新「生成并保存」';
+  else if(!nb) why='这个月没有可归档的教室占用';
+  const when=meta&&meta.saved_at?new Date(meta.saved_at).toLocaleString('sv-SE',{timeZone:'Asia/Tokyo'}).slice(0,16):'';
   box.innerHTML=`<div>可归档的教室占用：<b>${nb}</b> 条（含此前已整段结束的每周重复）；这个月的操作记录：<b>${nl}</b> 条</div>`+
-    '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'+
+    '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
     '<button id="archSave">生成并保存</button>'+
-    `<button id="archPurge" class="danger"${saved&&saved.count===nb&&nb>0?'':' disabled'}>清空这个月</button></div>`+
-    '<div id="archMsg" style="margin-top:8px;font-size:13px">'+(saved?`已保存 <b>${esc(saved.path)}</b>（${saved.count} 条占用），可以清空。`:'')+'</div>';
+    `<button id="archPurge" class="danger"${can?'':' disabled style="opacity:.45;cursor:not-allowed"'}>清空这个月</button>`+
+    (can?'':`<span class="muted" style="font-size:12px">${esc(why)}</span>`)+'</div>'+
+    '<div id="archMsg" style="margin-top:8px;font-size:13px">'+(meta?`已保存 <b>${esc(m)}.xlsx</b>（${meta.count} 条占用${meta.saved_by?'，'+esc(meta.saved_by):''}${when?'，'+esc(when):''}）${can?'，可以清空。':'。'}`:'')+'</div>';
   el('archSave').onclick=()=>archSave(m, nb);
-  el('archPurge').onclick=()=>archPurge(m, nb);
+  if(can) el('archPurge').onclick=()=>archPurge(m, meta);
 }
 function bookingWhen(b){ return b.recurrence==='weekly' ? (weekdaysLabel(String(b.weekday))+' '+(b.start_date||'')+'~'+(b.end_date||'')) : (b.booking_date||''); }
 async function archSave(m, nb){
@@ -259,22 +285,26 @@ async function archSave(m, nb){
     const path=m+'.xlsx';
     const up=await fetch(SB_URL+'/storage/v1/object/sched-archive/'+path,{ method:'POST', headers:sbHeaders({ 'Content-Type':type, 'x-upsert':'true' }), body:blob });
     if(!up.ok) throw new Error('已下载到本机，但上传 Storage 失败：'+up.status+' '+await up.text()+'。上传成功前不能清空。');
-    ARCH.saved[m]={ path, count:bks.length };
+    // 说明文件：之后能不能清空、清哪些，都以它为准
+    const meta={ month:m, count:bks.length, ids:bks.map(x=>x.id), saved_at:new Date().toISOString(), saved_by:(typeof schedEntryName==='function'&&schedEntryName())||'管理员' };
+    const up2=await fetch(SB_URL+'/storage/v1/object/sched-archive/'+m+'.json',{ method:'POST', headers:sbHeaders({ 'Content-Type':'application/json', 'x-upsert':'true' }), body:JSON.stringify(meta) });
+    if(!up2.ok) throw new Error('Excel 已保存，但上传说明文件失败：'+up2.status+' '+await up2.text()+'。没有说明文件不能清空，请再点一次「生成并保存」。');
     await archInfo(); archFiles();
   }catch(e){ msg.innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>'; btn.disabled=false; btn.textContent='生成并保存'; }
   finally{ ARCH.busy=false; }
 }
-async function archPurge(m, nb){
+async function archPurge(m, meta){
+  const nb=meta.ids.length;
   if(!confirm('确定清空 '+m+' 的教室占用（共 '+nb+' 条）？\n\n文件 '+m+'.xlsx 已保存。清空后无法在系统里恢复，只能看归档文件。')) return;
   if(!confirm('再确认一次：真的清空 '+m+' 吗？')) return;
   const btn=el('archPurge'); btn.disabled=true; btn.textContent='清空中…';
   try{
     await schedAuthReady();
-    const r=await fetch(SB_URL+'/rest/v1/rpc/sched_archive_purge',{ method:'POST', headers:sbHeaders(), body:JSON.stringify({ p_month:m }) });
+    const r=await fetch(SB_URL+'/rest/v1/rpc/sched_archive_purge',{ method:'POST', headers:sbHeaders(), body:JSON.stringify({ p_month:m, p_ids:meta.ids }) });
     if(!r.ok) throw new Error(sbErrMsg ? (sbErrMsg(await r.text())||'清空失败') : '清空失败');
     const j=await r.json();
     toast('已清空 '+m+'：删除 '+j.count+' 条');
-    delete ARCH.saved[m]; await archInit(); load();
+    await archInit(); load();
   }catch(e){ el('archMsg').innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>'; btn.disabled=false; btn.textContent='清空这个月'; }
 }
 async function archFiles(){
