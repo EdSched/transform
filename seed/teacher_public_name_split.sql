@@ -24,25 +24,39 @@ where coalesce(notes,'')<>'' and coalesce(public_name,'')='';
 
 -- 2) 昵称还原：上次迁移（teachers_pubname_backup）复制过去、老师之后没改过的（display_name = trim(notes)），
 --    还原成迁移前的值（一般是空）。老师已经自己改过的，不动。
+--    如果库里没有 teachers_pubname_backup（上次迁移没留下备份），这一步自动跳过，改看下面第 3 步的候选名单自己定。
 create table if not exists public.teachers_pubname_split_backup2 (
   id text primary key,
   restored_from text,          -- 还原前的 display_name
   restored_to text,            -- 还原后的值
   migrated_at timestamptz default now()
 );
-insert into public.teachers_pubname_split_backup2 (id, restored_from, restored_to)
-select t.id::text, t.display_name, nullif(b.old_display_name, '')
-from public.teachers t
-join public.teachers_pubname_backup b on b.id = t.id::text
-where t.display_name = trim(t.notes)
-on conflict (id) do nothing;
+do $$
+begin
+  if to_regclass('public.teachers_pubname_backup') is not null then
+    insert into public.teachers_pubname_split_backup2 (id, restored_from, restored_to)
+    select t.id::text, t.display_name, nullif(b.old_display_name, '')
+    from public.teachers t
+    join public.teachers_pubname_backup b on b.id = t.id::text
+    where t.display_name = trim(t.notes)
+    on conflict (id) do nothing;
 
-update public.teachers t
-set display_name = b2.restored_to
-from public.teachers_pubname_split_backup2 b2
-where t.id::text = b2.id and t.display_name = b2.restored_from;
+    update public.teachers t
+    set display_name = b2.restored_to
+    from public.teachers_pubname_split_backup2 b2
+    where t.id::text = b2.id and t.display_name = b2.restored_from;
+  else
+    raise notice '没有 teachers_pubname_backup，跳过昵称还原；请看第 3 步的候选名单';
+  end if;
+end $$;
 
--- 3) 只读核对：每位老师的真名、对外名称、昵称、备注
+-- 3) 只读核对 A（没有备份表时用）：昵称和备注完全一样的老师——可能是上次迁移复制过去的，也可能是老师自己填的，请自己判断
+--    要清空某位老师的昵称：update public.teachers set display_name = null where id = '这里填 id';
+select id, name as 真名, display_name as 昵称, notes as 备注
+from public.teachers
+where coalesce(display_name,'')<>'' and display_name = trim(notes);
+
+-- 4) 只读核对 B：每位老师的真名、对外名称、昵称、备注
 select id, name as 真名, public_name as 对外名称, display_name as 昵称, notes as 备注
 from public.teachers
 order by name;
