@@ -44,7 +44,7 @@ function pkEsc(v) { return String(v == null ? '' : v).replace(/&/g,'&amp;').repl
 function pkEnabled() { return !!pkPerm().promo_pack; }
 function pkPerm() { return (typeof teacherData !== 'undefined' && teacherData && teacherData.permissions) || {}; }
 function pkConsultantName() {
-  const pub = String((teacherData && teacherData.notes) || '').trim();
+  const pub = String((teacherData && teacherData.display_name) || '').trim();
   return pub || (typeof teacherName !== 'undefined' ? teacherName : '');
 }
 

@@ -338,7 +338,7 @@ async function prFetchMajor(major, mode) {
     sb(`/rest/v1/promo_content?major=eq.${major}&select=*&order=sort_order.asc,created_at.asc`),
     sb(`/rest/v1/course_schedule_shares?major=in.(${shareKeys.map(k=>`"${k}"`).join(',')})&select=*&order=created_at.desc&limit=1`).catch(() => []),
     prCourses ? Promise.resolve(null) : sbAll('/rest/v1/courses?select=id,name,major,period,period_override,course_type,domain,teacher,weekdays,time_range,delivery,campus,total_sessions,first_session_date&order=first_session_date.desc').catch(() => []),
-    prPubMap ? Promise.resolve(null) : sb('/rest/v1/teachers?select=name,notes').catch(() => []),
+    prPubMap ? Promise.resolve(null) : sb('/rest/v1/teachers?select=name,display_name').catch(() => []),
     sb(`/rest/v1/promo_videos?major=eq.${encodeURIComponent(major)}&published=is.true&select=*&order=sort_order.asc`).catch(() => []),
   ];
   const res = await Promise.all(jobs);
@@ -348,7 +348,7 @@ async function prFetchMajor(major, mode) {
   if (res[3]) {
     prPubMap = {};
     const nrm = s => String(s || '').replace(/老师|先生|様|さん/g, '').trim();
-    res[3].forEach(t => { const k = nrm(t.name); const pub = String(t.notes || '').trim(); if (k && pub) prPubMap[k] = pub; });
+    res[3].forEach(t => { const k = nrm(t.name); const pub = String(t.display_name || '').trim(); if (k && pub) prPubMap[k] = pub; });
   }
   // 当期 / 下一期：直接按课程安排里这个专业、这一期的课（不含 VIP 课）
   if (mode === 'cur' || mode === 'next') {
