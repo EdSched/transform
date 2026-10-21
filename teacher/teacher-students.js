@@ -1404,15 +1404,34 @@ async function tsrLoadStats() {
 }
 function tsrSetYm(ym) { tsrYm = ym; tsmShown = TSM_PAGE; tsrRender(); }
 
+// 大课 / VIP 切换；VIP 部分用 shared/vip-lessons.js（和 admin 同一套，只查看）
+let tsrKind = 'big';
+function tsrSetKind(k) { tsrKind = k; tsrRender(); }
+// 有查看权限：照学生范围（含来源限制）；只有登记权限（只是上 VIP 课的老师）：只看自己上的课
+function tsrRenderVip(box, kindBar, rp) {
+  box.innerHTML = `<div>${kindBar}${rp.view ? '' : '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">这里只显示你自己上的 VIP 课</div>'}<div id="tsr_vip_box"></div></div>`;
+  const mine = b => b.assigned_teacher ? b.assigned_teacher === teacherName : (cachedTeacherSlots || []).some(sl => sl.id === b.slot_id);
+  vlMount(document.getElementById('tsr_vip_box'), {
+    requireStudent: rp.view,
+    students: () => tsaFilterStudents(tsrStudents),
+    bookingOk: rp.view ? null : mine,
+    // 补记录 / 修改：跳到现有的 VIP 上课记录弹窗（保存后让下次重新读取）
+    recordBtn: b => (b.status !== 'cancelled' && (cachedTeacherBookings || []).some(x => x.id === b.id))
+      ? `<button class="btn btn-outline btn-sm" onclick="VL.loadedYm='';openVipSessionRecord('${b.id}')">去上课记录</button>` : '',
+  });
+}
 function tsrRender() {
   const box = document.getElementById('sm_content');
   if (!box) return;
   if (tsrYm === null) tsrYm = tmCurYm();
   const rp = smRecPerm();   // view 查看 / entry 登记
+  const kindBar = `<div style="display:flex;gap:5px;margin-bottom:10px">${[['big','大课'],['vip','VIP']].map(([k,l])=>`<div class="filter-chip${tsrKind===k?' active':''}" onclick="tsrSetKind('${k}')" style="padding:4px 14px">${l}</div>`).join('')}</div>`;
+  if (tsrKind === 'vip') { tsrRenderVip(box, kindBar, rp); return; }
   const cur = tmCurYm();
   const arrow = (n, tx) => tsrYm ? `<span onclick="tsrSetYm('${tmShiftYm(tsrYm, n)}')" style="cursor:pointer;user-select:none;font-size:13px;padding:2px 10px;border:1px solid var(--border);border-radius:3px;background:var(--surface)">${tx}</span>` : '';
 
   box.innerHTML = `<div>
+    ${kindBar}
     <!-- 签到区（选课→点名字记出席），只有登记权限才显示 -->
     ${rp.entry ? '<div id="tat_session_bar" style="margin-bottom:6px"></div>' : ''}
     ${(rp.entry && typeof awTeacherIsArt === 'function' && awTeacherIsArt()) ? '<div id="aw_teacher_box"></div>' : ''}
