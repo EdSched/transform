@@ -26,11 +26,11 @@ async function renderLectInfo(mc) {
   try {
     const [profiles, teachers] = await Promise.all([
       sb('/rest/v1/teacher_profiles?select=*&order=sort_order.asc,created_at.asc'),
-      sb('/rest/v1/teachers?select=name,notes').catch(() => []),
+      sb('/rest/v1/teachers?select=name,public_name').catch(() => []),
     ]);
     tsProfiles = profiles.filter(p => salesDomOkMe(profileDomain(p)));   // 营业只看自己营业范围内领域的讲师
     tsPubMap = {};
-    (teachers || []).forEach(t => { const pub = String(t.notes || '').trim(); if (pub) tsPubMap[t.name] = pub; });
+    (teachers || []).forEach(t => { const pub = String(t.public_name || '').trim(); if (pub) tsPubMap[t.name] = pub; });
   } catch (e) { mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
   tsRenderShell();
 }

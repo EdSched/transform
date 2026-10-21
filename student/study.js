@@ -99,7 +99,7 @@ async function studyLogin(name, code, silent, onStatus) {
 }
 
 async function loadStudyData() {
-  studyPubMap = await pubNameMap();
+  studyPubMap = await teacherNameMap();
   const id = studyStudent.id;
   const name = studyStudent.name;
   // 学习记录页内容绑定学生档案里的真实专业；URL 的 major 仅作后备
@@ -729,11 +729,11 @@ function riyuStudentRender() {
     const curBlock = sub && sub.status === 'reviewed' && sub.reviewed_file_url ? `<div style="background:#e4f0e8;border:1px solid #b8d8bc;border-radius:4px;padding:9px 12px;margin-bottom:10px;font-size:12px;color:#1f5a36">
         <div style="font-weight:600;margin-bottom:3px">老师批复版本</div>
         <a href="${escA(sub.reviewed_file_url)}" target="_blank" style="color:#1f5a36;font-weight:600">⬇ 下载</a>
-        <span style="font-size:11px">（${escA(sub.reviewed_file_name || '批复文件')} · ${escA(riyuFmtTime(sub.reviewed_at))}${sub.reviewed_by ? ' · ' + escA(pubName(sub.reviewed_by, studyPubMap)) : ''}）</span>
+        <span style="font-size:11px">（${escA(sub.reviewed_file_name || '批复文件')} · ${escA(riyuFmtTime(sub.reviewed_at))}${sub.reviewed_by ? ' · ' + escA(stuName(sub.reviewed_by, studyPubMap)) : ''}）</span>
         ${sub.review_note ? `<div style="font-size:11px;margin-top:4px;white-space:pre-wrap">老师备注：${escA(sub.review_note)}</div>` : ''}
       </div>` : '';
     const pastBlock = past.length ? `<details style="margin-bottom:10px;font-size:11px"><summary style="cursor:pointer;color:var(--text-secondary)">历史批复（${past.length}）</summary>
-        ${past.map(h => `<div style="padding:4px 0 4px 12px;border-left:2px solid var(--border-light);margin-top:4px"><a href="${escA(h.file_url)}" target="_blank" style="color:var(--accent)">⬇ ${escA(h.file_name || '批复文件')}</a> · ${escA(riyuFmtTime(h.at))}${h.by ? ' · ' + escA(pubName(h.by, studyPubMap)) : ''}${h.note ? `<div style="color:var(--text-secondary)">${escA(h.note)}</div>` : ''}</div>`).join('')}
+        ${past.map(h => `<div style="padding:4px 0 4px 12px;border-left:2px solid var(--border-light);margin-top:4px"><a href="${escA(h.file_url)}" target="_blank" style="color:var(--accent)">⬇ ${escA(h.file_name || '批复文件')}</a> · ${escA(riyuFmtTime(h.at))}${h.by ? ' · ' + escA(stuName(h.by, studyPubMap)) : ''}${h.note ? `<div style="color:var(--text-secondary)">${escA(h.note)}</div>` : ''}</div>`).join('')}
       </details>` : '';
     const old = oldMap[key] || {};
     const oldHas = !sub && typeof RIYU_SECTIONS !== 'undefined' && RIYU_SECTIONS.some(x => String(old[x.k] || '').trim());
@@ -1464,7 +1464,7 @@ function renderRecordsTab() {
   return `<div style="font-size:11px;font-weight:600;margin-bottom:10px">📋 面谈记录（${validBookings.length}条）</div>
   <div class="study-cols2" style="gap:12px 20px">
     ${validBookings.map(b => `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:12px;margin-bottom:8px">
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${b.slot_date}${b.actual_duration?' · '+b.actual_duration+'min':''} ${b.assigned_teacher?'· '+escA(pubName(b.assigned_teacher, studyPubMap))+'老师':''}${manualEntryTag(b)}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${b.slot_date}${b.actual_duration?' · '+b.actual_duration+'min':''} ${b.assigned_teacher?'· '+escA(stuName(b.assigned_teacher, studyPubMap))+'老师':''}${manualEntryTag(b)}</div>
       <pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0;color:var(--text-secondary)">${buildRecordText(b)}</pre>
     </div>`).join('')}
   </div>`;
@@ -2563,7 +2563,7 @@ function renderHwArchive() {
       ${list.sort((a,b)=>String(a.session_date).localeCompare(String(b.session_date))).map(x => `
       <div style="font-size:10px;line-height:1.9;padding:5px 0;border-top:1px dashed var(--border-light)">
         <span style="color:var(--text-muted)">${x.session_date||''}${x.session_number?` 第${x.session_number}回`:''}</span>
-        ${hwFeedbacks(x).map(f => `<div style="color:var(--text-secondary);white-space:pre-wrap;margin-top:2px"><span style="color:var(--ok)">${escA(f.by ? pubName(f.by, studyPubMap) : '老师')}</span>${f.score?`<span style="background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:0 6px;margin-left:6px;font-weight:600">${escA(f.score)}</span>`:''}：${escA(f.knowledge||f.text||'')}${f.suggestions?`\n💡 ${escA(f.suggestions)}`:''}</div>`).join('')}
+        ${hwFeedbacks(x).map(f => `<div style="color:var(--text-secondary);white-space:pre-wrap;margin-top:2px"><span style="color:var(--ok)">${escA(f.by ? stuName(f.by, studyPubMap) : '老师')}</span>${f.score?`<span style="background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:0 6px;margin-left:6px;font-weight:600">${escA(f.score)}</span>`:''}：${escA(f.knowledge||f.text||'')}${f.suggestions?`\n💡 ${escA(f.suggestions)}`:''}</div>`).join('')}
       </div>`).join('')}
     </div>`).join('')}
   </div>`;

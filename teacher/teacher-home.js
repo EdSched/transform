@@ -63,8 +63,9 @@ function homeNickToggle() {
   box = document.createElement('div');
   box.id = 'nickBox';
   box.style.cssText = 'position:absolute;left:0;top:100%;z-index:50;margin-top:8px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:10px 12px;width:280px;max-width:86vw;box-shadow:0 4px 14px rgba(0,0,0,.08)';
-  box.innerHTML = `<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">学生和对外页面显示的名字（管理员填过的会带出来，可以修改）；留空则显示真实姓名「${homeEsc(teacherName)}」</div>
+  box.innerHTML = `<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">学生端显示的名字（预约时间槽、作业批改等）。不填时显示管理员设定的对外名称，再没有就显示真实姓名「${homeEsc(teacherName)}」</div>
     <input id="displayNameInput" type="text" value="${homeEsc(teacherData.display_name || '')}" placeholder="输入昵称（可留空）" style="width:100%;font-size:12px;padding:6px 9px;margin-bottom:8px">
+    ${(teacherData.public_name || '').trim() ? `<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">对外名称：${homeEsc(teacherData.public_name)}（管理员设定，用于宣传）</div>` : ''}
     <div style="display:flex;gap:6px;justify-content:flex-end">
       <button onclick="document.getElementById('nickBox').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text-2)">取消</button>
       <button onclick="saveDisplayName()" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 14px;font-size:11px;cursor:pointer;font-family:inherit">保存</button>

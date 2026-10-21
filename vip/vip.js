@@ -129,7 +129,7 @@ async function loadVipData() {
   const teachers = vipStudent.vip_teachers || [];
   _vipSchoolPlans = null; _vipPlanDraft = null;
   await loadVipSchoolData();
-  vipPubMap = await pubNameMap(teachers);
+  vipPubMap = await teacherNameMap(teachers);
   if (!teachers.length) { vipSlots = []; vipBookings = []; return; }
   const today = new Date().toISOString().slice(0, 10);
   const teacherFilter = teachers.map(t => `"${t}"`).join(',');
@@ -145,7 +145,7 @@ async function loadVipData() {
     : vipStudent.is_vip_course === '大课+VIP');
   vipBookings = bookings;
   const extraT = [...new Set([...vipBookings.map(b => b.assigned_teacher), ...vipSlots.map(x => x.teacher_name)].filter(n => n && !teachers.includes(n)))];
-  if (extraT.length) Object.assign(vipPubMap, await pubNameMap(extraT));
+  if (extraT.length) Object.assign(vipPubMap, await teacherNameMap(extraT));
   // 结构化 VIP 作业提交（booking_id 关联；与大课共用 homework_submissions 表）
   try {
     const subs = await sb(`/rest/v1/homework_submissions?student_name=eq.${encodeURIComponent(vipStudent.name)}&booking_id=not.is.null&select=*`).catch(() => []);
@@ -569,7 +569,7 @@ function renderVipActiveBooking(b) {
       <div style="font-size:12px;font-weight:600;color:var(--ok,#2a9e6a);margin-bottom:6px">${b.self_booked ? '✅ 教务已审批，请按时上课' + (b.teacher_ok ? '（老师已确认）' : '') : '✅ 老师已确认，请按时上课'}</div>
       <div style="font-size:12px;line-height:2">
         <div>📅 ${b.slot_date} ${b.slot_time_range || ''}${manualEntryTag(b)}</div>
-        <div>👤 ${pubName(b.assigned_teacher || '', vipPubMap)} 老师</div>
+        <div>👤 ${stuName(b.assigned_teacher || '', vipPubMap)} 老师</div>
         ${b.vip_room ? `<div>🏫 教室：<strong>${b.vip_room}</strong></div>` : ''}
         ${b.vip_meeting_url ? `<div>💻 腾讯会议：<a href="${b.vip_meeting_url}" target="_blank" style="color:var(--ok)">${b.vip_meeting_url}</a></div>` : (!isOffline ? '<div style="color:#856404">💻 老师将在上课前发送会议链接，请关注留言</div>' : '')}
       </div>
@@ -594,7 +594,7 @@ function renderVipActiveBooking(b) {
     <div class="card-title">当前预约</div>
     ${isPending ? `<div style="font-size:12px;line-height:1.8;margin-bottom:4px">
       <div>📅 ${b.slot_date} ${b.slot_time_range || ''}</div>
-      <div>👤 老师：${b.assigned_teacher ? pubName(b.assigned_teacher, vipPubMap) : '确认中'}</div>
+      <div>👤 老师：${b.assigned_teacher ? stuName(b.assigned_teacher, vipPubMap) : '确认中'}</div>
       ${b.location ? `<div>📍 ${locationLong(b.location) || '线上'}</div>` : ''}
     </div>` : ''}
     ${confirmedInfo}
@@ -610,7 +610,7 @@ function renderVipActiveBooking(b) {
           return `
           <div style="font-size:11px;margin-bottom:6px;${m.from==='student'?'text-align:right':''}">
             <span style="display:inline-block;max-width:80%;background:${m.from==='student'?'var(--accent-light,#e8e0d0)':'var(--bg)'};border-radius:8px;padding:5px 10px;text-align:left">
-              <div style="font-size:9px;color:var(--text-muted);margin-bottom:2px">${m.from==='student'?'我':(b.assigned_teacher ? pubName(b.assigned_teacher, vipPubMap) : '老师')}</div>
+              <div style="font-size:9px;color:var(--text-muted);margin-bottom:2px">${m.from==='student'?'我':(b.assigned_teacher ? stuName(b.assigned_teacher, vipPubMap) : '老师')}</div>
               ${m.text}
             </span>
           </div>`;
@@ -776,7 +776,7 @@ function renderVipHistory() {
     const needsConfirm = !b.student_confirmed;
     return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:12px;margin-bottom:8px;background:${needsConfirm ? 'var(--accent-light)' : 'var(--surface)'}">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <span style="font-size:12px;font-weight:600">${b.slot_date} · ${pubName(b.assigned_teacher || '', vipPubMap)}${manualEntryTag(b)}</span>
+        <span style="font-size:12px;font-weight:600">${b.slot_date} · ${stuName(b.assigned_teacher || '', vipPubMap)}${manualEntryTag(b)}</span>
         ${b.student_confirmed ? '<span style="font-size:10px;color:var(--ok)">✓ 已确认</span>' : '<span style="font-size:10px;color:var(--accent)">待确认</span>'}
       </div>
       <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">本次内容：${b.vip_content || ''}</div>
@@ -950,7 +950,7 @@ function vipSlotAreaHtml() {
             <span style="font-size:13px;font-weight:600;font-family:'DM Mono',monospace">${s.time_range}</span>
             ${slotOff ? `<span style="font-size:10px;color:var(--danger)">${slotOff}</span>` : ''}
           </div>
-          ${s.teacher_name ? `<div style="font-size:10px;color:var(--text-muted)">👤 ${pubName(s.teacher_name, vipPubMap)}</div>` : ''}
+          ${s.teacher_name ? `<div style="font-size:10px;color:var(--text-muted)">👤 ${stuName(s.teacher_name, vipPubMap)}</div>` : ''}
           ${needsLocationChoice
             ? `<div style="font-size:10px;color:var(--text-secondary)">📍 线上 / 线下均可・${campusLabel}（需选择）</div>`
             : `<div style="font-size:10px;color:${locationColor(s.location)}">📍 ${locationLong(s.location) || '线上'}</div>`}
@@ -1102,7 +1102,7 @@ function vipSelfFormHtml(noSlots) {
   return `
     ${noSlots ? '<div style="font-size:11px;color:var(--text-secondary);background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:8px 10px;margin-bottom:4px">老师还没开放时间？如果已经和老师商量好，可以直接填写</div>' : ''}
     ${lab('指导老师')}
-    <div style="display:flex;flex-wrap:wrap;gap:6px">${ts.map(t => vipSelfChipHtml('teacher', t, pubName(t, vipPubMap) + ' 老师', vipSelf.teacher === t)).join('')}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${ts.map(t => vipSelfChipHtml('teacher', t, stuName(t, vipPubMap) + ' 老师', vipSelf.teacher === t)).join('')}</div>
     ${lab('日期')}
     <input type="date" id="vipSelfDate" min="${today}" style="${sel}">
     ${lab('时间')}
