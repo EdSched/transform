@@ -18,6 +18,9 @@
 <div class="wrap">
   <div id="denied" class="hidden"><div class="tip">没有查看操作记录的权限（需要「教室占用管理」或「账号与权限管理」权限）。</div></div>
   <div id="main" class="hidden">
+    <div class="seg2" id="tabs" style="margin-bottom:10px"><span class="chip2 on" data-t="log">操作记录</span><span class="chip2 hidden" data-t="arch" id="tabArch">月度归档</span></div>
+    <div id="pane_arch" class="hidden"></div>
+    <div id="pane_log">
     <div class="card">
       <div class="row">
         <div class="field" style="flex:1;min-width:240px"><label>搜索（人名 / 学生 / 教室）</label><input id="q" placeholder="输入姓名、学生名、教室名…" style="width:100%"></div>
@@ -30,9 +33,11 @@
     </div>
     <div id="trailBar" class="hidden"></div>
     <div class="card"><div id="logBox"><div class="muted">加载中…</div></div></div>
+    </div>
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="common.js?v=20261021"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
@@ -45,7 +50,7 @@ const FIELD_LABEL={ booking_date:'日期', start_date:'起始日', end_date:'结
   orig_room_id:'原申请教室', req_campus:'申请校区', reviewed_at:'审核时间', meeting_link:'会议链接', meeting_id:'会议号', course_id:'课程', client_token:'设备标记', id:'记录号' };
 const SEL={ act:new Set(), kind:new Set(), time:'7d', month:'' };
 const STATE={ rows:[], shown:30, trail:null };
-let ROOMS=[], ACCOUNTS=[];
+let ROOMS=[], ACCOUNTS=[], CAN_ARCH=false;
 const rmap=()=>Object.fromEntries(ROOMS.map(r=>[String(r.id),r]));
 function roomText(id){ const r=rmap()[String(id)]; return r?(r.campus+' '+r.name):(id?('#'+id):'—'); }
 
@@ -53,7 +58,7 @@ el('nav').innerHTML = renderNav('oplog.html');
 pageRole().then(r=>{
   if(r) el('nav').innerHTML = renderNav('oplog.html', r);
   const ps=permSet(r);
-  if(r && (ps.has('occupy')||ps.has('manage')||r.role==='admin')){ el('main').classList.remove('hidden'); boot(); }
+  if(r && (ps.has('occupy')||ps.has('manage')||r.role==='admin')){ el('main').classList.remove('hidden'); CAN_ARCH=ps.has('manage')||r.role==='admin'; boot(); }
   else el('denied').classList.remove('hidden');
 }).catch(()=>el('denied').classList.remove('hidden'));
 
@@ -72,6 +77,13 @@ function renderChips(){
 async function boot(){
   ROOMS = await sbGet('sched_rooms','select=id,campus,name&order=campus,sort').catch(()=>[]);
   renderChips();
+  if(CAN_ARCH){ el('tabArch').classList.remove('hidden'); }
+  document.querySelectorAll('#tabs .chip2').forEach(c=>c.onclick=()=>{
+    document.querySelectorAll('#tabs .chip2').forEach(x=>x.classList.toggle('on',x===c));
+    el('pane_log').classList.toggle('hidden',c.dataset.t!=='log'); el('pane_arch').classList.toggle('hidden',c.dataset.t!=='arch');
+    if(c.dataset.t==='arch') archInit();
+  });
+  if(new URLSearchParams(location.search).get('tab')==='arch' && CAN_ARCH) document.querySelector('#tabs [data-t=arch]').click();
   el('monthPick').onchange=()=>{ SEL.month=el('monthPick').value; load(); };
   bindSearch(el('q'), ()=>{ STATE.shown=30; renderRows(); });
   load();
@@ -162,6 +174,120 @@ function renderRows(isTrail){
   box.querySelectorAll('tr.lrow').forEach(tr=>tr.onclick=()=>box.querySelector('tr[data-d="'+tr.dataset.i+'"]').classList.toggle('hidden'));
   box.querySelectorAll('[data-trail]').forEach(b=>b.onclick=ev=>{ ev.stopPropagation(); showTrail(b.dataset.trail); });
   if(el('more')) el('more').onclick=()=>{ STATE.shown+=30; renderRows(isTrail); };
+}
+
+/* ================= 月度归档 ================= */
+const ARCH={ months:[], cur:'', saved:{}, busy:false };
+const monthOf=d=>String(d||'').slice(0,7);
+const monthRange=m=>{ const [y,mo]=m.split('-').map(Number); const last=new Date(y,mo,0).getDate();
+  return { first:m+'-01', last:m+'-'+String(last).padStart(2,'0'), atFrom:new Date(y,mo-1,1).toISOString(), atTo:new Date(y,mo,1).toISOString() }; };
+// 归档范围：非课程；单次且日期在该月，或每周重复且结束日 <= 该月最后一天（含此前已整段结束的）
+function archQuery(m){
+  const r=monthRange(m);
+  return 'select=*&kind=neq.course&or=(and(recurrence.eq.once,booking_date.gte.'+r.first+',booking_date.lte.'+r.last+'),and(recurrence.eq.weekly,end_date.lte.'+r.last+'))';
+}
+async function archInit(){
+  const box=el('pane_arch'); box.innerHTML='<div class="card"><div class="muted">加载中…</div></div>';
+  const thisMonth=todayStr().slice(0,7);
+  let rows=[];
+  try{ rows=await sbGet('sched_bookings','select=id,recurrence,booking_date,end_date&kind=neq.course'); }
+  catch(e){ box.innerHTML='<div class="card"><span class="badge b-err">'+esc(e.message)+'</span></div>'; return; }
+  const set=new Set();
+  rows.forEach(b=>{ const m=monthOf(b.recurrence==='weekly'?b.end_date:b.booking_date); if(m && m<thisMonth) set.add(m); });
+  ARCH.months=[...set].sort().reverse();
+  if(!ARCH.months.includes(ARCH.cur)) ARCH.cur=ARCH.months[0]||'';
+  await archRender();
+}
+async function archRender(){
+  const box=el('pane_arch');
+  let h='<div class="card"><b>月度归档</b><div class="muted" style="font-size:12px;margin:4px 0 8px">只能归档已经过完的月份（本月不行）。先「生成并保存」（下载 Excel，同时存入 Storage），再「清空这个月」。课程占用不在此处删除；操作记录本身不会被删。</div>';
+  h+='<div class="chips" style="margin-top:0"><span class="lbl">月份</span>'+(ARCH.months.length?ARCH.months.map(m=>`<span class="chip2${m===ARCH.cur?' on':''}" data-am="${m}">${m}</span>`).join(''):'<span class="muted">没有可归档的月份</span>')+'</div>';
+  h+='<div id="archInfo" style="margin-top:12px"></div></div>';
+  h+='<div class="card"><b>已归档的文件</b><div id="archFiles" style="margin-top:8px"><div class="muted">加载中…</div></div></div>';
+  box.innerHTML=h;
+  box.querySelectorAll('[data-am]').forEach(c=>c.onclick=()=>{ ARCH.cur=c.dataset.am; archRender(); });
+  archFiles();
+  if(ARCH.cur) archInfo();
+}
+async function archInfo(){
+  const m=ARCH.cur, r=monthRange(m), box=el('archInfo'); box.innerHTML='<div class="muted">统计中…</div>';
+  let nb=0, nl=0;
+  try{
+    nb=(await sbGet('sched_bookings',archQuery(m).replace('select=*','select=id'))).length;
+    nl=(await sbGet('sched_booking_log','select=id&at=gte.'+encodeURIComponent(r.atFrom)+'&at=lt.'+encodeURIComponent(r.atTo))).length;
+  }catch(e){ box.innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>'; return; }
+  const saved=ARCH.saved[m];
+  box.innerHTML=`<div>可归档的教室占用：<b>${nb}</b> 条（含此前已整段结束的每周重复）；这个月的操作记录：<b>${nl}</b> 条</div>`+
+    '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'+
+    '<button id="archSave">生成并保存</button>'+
+    `<button id="archPurge" class="danger"${saved&&saved.count===nb&&nb>0?'':' disabled'}>清空这个月</button></div>`+
+    '<div id="archMsg" style="margin-top:8px;font-size:13px">'+(saved?`已保存 <b>${esc(saved.path)}</b>（${saved.count} 条占用），可以清空。`:'')+'</div>';
+  el('archSave').onclick=()=>archSave(m, nb);
+  el('archPurge').onclick=()=>archPurge(m, nb);
+}
+function bookingWhen(b){ return b.recurrence==='weekly' ? (weekdaysLabel(String(b.weekday))+' '+(b.start_date||'')+'~'+(b.end_date||'')) : (b.booking_date||''); }
+async function archSave(m, nb){
+  if(ARCH.busy) return; ARCH.busy=true;
+  const btn=el('archSave'), msg=el('archMsg'); btn.disabled=true; btn.textContent='生成中…'; msg.textContent='';
+  try{
+    if(typeof XLSX==='undefined') throw new Error('Excel 组件没有加载成功，请检查网络后刷新');
+    const r=monthRange(m);
+    const bks=await sbGet('sched_bookings', archQuery(m));
+    const logs=await sbGet('sched_booking_log','select=*&at=gte.'+encodeURIComponent(r.atFrom)+'&at=lt.'+encodeURIComponent(r.atTo)+'&order=at.asc');
+    const rm=Object.fromEntries(ROOMS.map(x=>[String(x.id),x]));
+    const roomCampus=id=>rm[String(id)]?rm[String(id)].campus:'', roomName=id=>rm[String(id)]?rm[String(id)].name:'';
+    const sheet1=bks.map(b=>({ '记录号':b.id, '类型':KIND_LABEL[b.kind]||b.kind, '校区':roomCampus(b.room_id), '教室':roomName(b.room_id), '日期/周期':bookingWhen(b),
+      '开始':b.start_time, '结束':b.end_time, '使用人':b.user_name||'', '学生':b.student_name||'', '专业':b.major||'', '事由':b.title||'',
+      '状态':b.status||'', '录入人':b.entry_name||'', '最后操作人':b.last_actor||'', '备注':b.note||'', '创建时间':b.created_at||'' }));
+    const sheet2=logs.map(x=>({ '时间':fmtAt(x.at), '操作':ACT_LABEL[x.action]||x.action, '操作人':x.actor||'', '类型':KIND_LABEL[x.kind]||x.kind||'', '日期':x.booking_date||'',
+      '校区':roomCampus(x.room_id), '教室':roomName(x.room_id), '使用人':x.user_name||'', '学生':x.student_name||'', '占用记录号':x.booking_id||'',
+      '修改内容':x.changes?Object.keys(x.changes).map(k=>(FIELD_LABEL[k]||k)+'：'+val(k,x.changes[k].from)+' → '+val(k,x.changes[k].to)).join('；'):'',
+      '整条内容':x.snapshot?JSON.stringify(x.snapshot):'' }));
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheet1.length?sheet1:[{'记录号':''}]), '教室占用');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheet2.length?sheet2:[{'时间':''}]), '操作记录');
+    const buf=XLSX.write(wb,{ bookType:'xlsx', type:'array' });
+    const type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const blob=new Blob([buf],{type});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=m+'.xlsx'; document.body.appendChild(a); a.click(); a.remove();
+    await schedAuthReady();
+    const path=m+'.xlsx';
+    const up=await fetch(SB_URL+'/storage/v1/object/sched-archive/'+path,{ method:'POST', headers:sbHeaders({ 'Content-Type':type, 'x-upsert':'true' }), body:blob });
+    if(!up.ok) throw new Error('已下载到本机，但上传 Storage 失败：'+up.status+' '+await up.text()+'。上传成功前不能清空。');
+    ARCH.saved[m]={ path, count:bks.length };
+    await archInfo(); archFiles();
+  }catch(e){ msg.innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>'; btn.disabled=false; btn.textContent='生成并保存'; }
+  finally{ ARCH.busy=false; }
+}
+async function archPurge(m, nb){
+  if(!confirm('确定清空 '+m+' 的教室占用（共 '+nb+' 条）？\n\n文件 '+m+'.xlsx 已保存。清空后无法在系统里恢复，只能看归档文件。')) return;
+  if(!confirm('再确认一次：真的清空 '+m+' 吗？')) return;
+  const btn=el('archPurge'); btn.disabled=true; btn.textContent='清空中…';
+  try{
+    await schedAuthReady();
+    const r=await fetch(SB_URL+'/rest/v1/rpc/sched_archive_purge',{ method:'POST', headers:sbHeaders(), body:JSON.stringify({ p_month:m }) });
+    if(!r.ok) throw new Error(sbErrMsg ? (sbErrMsg(await r.text())||'清空失败') : '清空失败');
+    const j=await r.json();
+    toast('已清空 '+m+'：删除 '+j.count+' 条');
+    delete ARCH.saved[m]; await archInit(); load();
+  }catch(e){ el('archMsg').innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>'; btn.disabled=false; btn.textContent='清空这个月'; }
+}
+async function archFiles(){
+  const box=el('archFiles'); if(!box) return;
+  try{
+    await schedAuthReady();
+    const r=await fetch(SB_URL+'/storage/v1/object/list/sched-archive',{ method:'POST', headers:sbHeaders(), body:JSON.stringify({ prefix:'', limit:200, sortBy:{ column:'name', order:'desc' } }) });
+    if(!r.ok) throw new Error(r.status+' '+await r.text());
+    const files=(await r.json()).filter(f=>f.name&&/\.xlsx$/.test(f.name));
+    box.innerHTML = files.length ? files.map(f=>`<button class="ghost sm" data-f="${esc(f.name)}" style="margin:0 6px 6px 0">${esc(f.name)}</button>`).join('') : '<span class="muted">还没有归档文件</span>';
+    box.querySelectorAll('[data-f]').forEach(b=>b.onclick=async()=>{
+      try{
+        const s=await fetch(SB_URL+'/storage/v1/object/sign/sched-archive/'+encodeURIComponent(b.dataset.f),{ method:'POST', headers:sbHeaders(), body:JSON.stringify({ expiresIn:300 }) });
+        if(!s.ok) throw new Error(s.status+' '+await s.text());
+        const j=await s.json(); window.open(SB_URL+'/storage/v1'+j.signedURL,'_blank');
+      }catch(e){ toast('下载失败：'+e.message,false); }
+    });
+  }catch(e){ box.innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>'; }
 }
 </script>
 </body></html>
