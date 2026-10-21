@@ -26,7 +26,7 @@
   <div class="card board" id="boardBox"><div class="muted">加载中…</div></div>
 </div>
 
-<script src="common.js?v=20261020"></script>
+<script src="common.js?v=20261021"></script>
 <script>
 el('nav').innerHTML = renderNav('board.html');
 pageRole().then(r=>{ if(r) el('nav').innerHTML = renderNav('board.html', r); }).catch(()=>{});
@@ -58,7 +58,9 @@ function render(){
     b.start_time<=slot && slot<b.end_time);
 
   const gridRooms = rooms.map(r=>({ id:r.id, name:r.name, sub:(r.type==='大课'?(r.size_label+'·'+r.capacity+'人'):(r.capacity+'人')) }));
-  el('boardBox').innerHTML = renderOccupancyGrid(gridRooms, todays, 'room_id');
+  el('boardBox').innerHTML = renderOccupancyGrid(gridRooms, todays, 'room_id', {showEntry:true});
+  // 手机上没有悬停：点占用格显示录入人
+  el('boardBox').querySelectorAll('td.occ[data-entry]').forEach(td=>td.onclick=()=>toast('录入：'+td.dataset.entry));
 }
 boot();
 </script>

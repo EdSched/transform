@@ -82,6 +82,7 @@
         <div id="r_wd" style="display:flex;gap:6px;flex-wrap:wrap"></div></div>
       <div class="field hidden" id="r_accWrap" style="margin-top:10px"><label>会议账号</label><div id="r_accBox"></div></div>
       <div class="field" style="margin-top:10px"><label>备注</label><input id="r_note" style="width:100%"></div>
+      <div class="field" style="margin-top:10px"><label>录入人姓名 *</label><input id="r_entry" placeholder="你自己的真实姓名（会记录在操作记录里）"></div>
       <div id="r_conf" class="hidden" style="margin-top:10px"></div>
       <div id="r_near" style="margin-top:8px"></div>
       <div style="margin-top:12px"><button id="r_save">保存占用</button></div>
@@ -99,7 +100,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="common.js?v=20261020"></script>
+<script src="common.js?v=20261021"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], BOOKINGS=[], CODEREC=null, PARSED=[], EXISTING=[];
 
@@ -125,6 +126,7 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
 });
 
 async function boot(){
+  el('r_entry').value=schedEntryName();
   fillSelect(el('c_campus'), CAMPUSES);
   fillSelect(el('c_cat'), CATEGORIES);
   renderWeekdayToggle();
@@ -423,6 +425,8 @@ async function saveRoom(){
   const s=el('r_st').value, e=el('r_et').value;
   if(e<=s){ toast('结束时间需晚于开始', false); return; }
   if(!el('r_room').value){ toast('请选择教室', false); return; }
+  const entryName=el('r_entry').value.trim();
+  if(!entryName){ toast('请填录入人姓名', false); return; }
   const um = el('r_um').value==='true';
   const weekly = el('r_rec').value==='weekly';
   const base = {
@@ -431,7 +435,8 @@ async function saveRoom(){
     start_time:s, end_time:e, uses_meeting: um,
     meeting_account_id: um ? Number(el('r_acc').value) : null,
     status:'confirmed', created_by: el('r_user').value.trim()||CODEREC.label,
-    note: el('r_note').value.trim()||null
+    note: el('r_note').value.trim()||null,
+    entry_name: entryName, ...schedActorStamp(entryName)
   };
   let recs=[];
   if(weekly){
@@ -446,6 +451,7 @@ async function saveRoom(){
   btn.disabled=true; btn.textContent='保存中…';
   try{
     const ins = await sbInsert('sched_bookings', recs);
+    schedSaveEntryName(entryName);
     ins.forEach(x=>BOOKINGS.push(x));
     toast('占用已保存（'+ins.length+' 条）');
     // 清空本次输入，避免误以为没存又再点一次

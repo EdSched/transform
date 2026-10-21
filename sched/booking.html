@@ -44,7 +44,7 @@
       <div class="field"><label>止</label><input type="date" id="oc_to" value=""></div>
       <div class="field"><label>周几</label><select id="oc_wd"><option value="">不限</option>
         <option value="1">周一</option><option value="2">周二</option><option value="3">周三</option><option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="7">周日</option></select></div>
-      <div class="field"><label>搜索使用人/备注</label><input id="oc_q" placeholder="搜索使用人（汉字 / 拼音首字母）/ 备注…"></div>
+      <div class="field"><label>搜索使用人/录入人/备注</label><input id="oc_q" placeholder="搜索使用人 / 录入人（汉字 / 拼音首字母）/ 备注…"></div>
       <div class="field"><label>&nbsp;</label><span class="muted" id="oc_count"></span></div>
     </div>
     <div id="occupyTable"></div><div id="occupyEdit"></div>
@@ -82,6 +82,7 @@
       <option value="false">否</option><option value="true">是（占该教室固定账号）</option></select>
       <div id="m_umtip" class="hidden" style="margin-top:5px;font-size:11px;color:#b5651d;background:#fdf6ed;border:1px solid #f0d9b3;border-radius:6px;padding:5px 8px">提醒：会议账号在别的时段可能另有安排，请按你上面填的「日期+时段」确认这个账号那时是空的再占用（账号的整体绑定时间不等于你这次要用的时间）。</div></div>
     <div class="field" style="margin-top:8px"><label>备注</label><input id="m_note"></div>
+    <div class="field" style="margin-top:8px"><label>录入人姓名 *</label><input id="m_entry" placeholder="你自己的真实姓名（会记录在操作记录里）"></div>
     <div id="m_warn" class="hidden" style="margin-top:8px"></div>
     <div style="margin-top:14px;display:flex;gap:8px">
       <button id="m_submit">保存占用</button>
@@ -90,7 +91,7 @@
   </div>
 </div>
 
-<script src="common.js?v=20261020"></script>
+<script src="common.js?v=20261021"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 el('nav').innerHTML = renderNav('booking.html');
@@ -124,8 +125,8 @@ function renderMine(){
   box.innerHTML=h;
   box.querySelectorAll('[data-delmine]').forEach(x=>x.onclick=async()=>{
     const b=BOOKINGS.find(y=>String(y.id)===String(x.dataset.delmine)); if(!b||!isMine(b)) return;
-    if(!confirm('删除这条占用？删除即释放教室。')) return;
-    try{ await sbDelete('sched_bookings', b.id); BOOKINGS=BOOKINGS.filter(y=>String(y.id)!==String(b.id)); renderMine(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已删除'); }
+    const who=await schedAskActor('删除这条占用？删除即释放教室。'); if(!who) return;
+    try{ await sbDeleteAs('sched_bookings', b.id, who); BOOKINGS=BOOKINGS.filter(y=>String(y.id)!==String(b.id)); renderMine(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已删除'); }
     catch(e){ toast(e.message,false); }
   });
 }
@@ -201,22 +202,22 @@ function renderMgmtTable(){
     if(from && e && e<from) return false;
     if(to && s && s>to) return false;
     if(wd){ const w=bWd(b); if(w!==Number(wd)) return false; }
-    if(q && !searchMatch(q,[b.user_name,b.created_by,b.note],{names:2})) return false;
+    if(q && !searchMatch(q,[b.user_name,b.entry_name,b.created_by,b.note],{names:2})) return false;
     return true;
   }).sort((a,b)=>{ const da=a.booking_date||a.start_date||'', db=b.booking_date||b.start_date||''; return da.localeCompare(db); });
   el('oc_count').textContent='共 '+list.length+' 条';
   const showAll = window.OC_SHOWALL===true;
   const LIMIT=50; const truncated = !showAll && list.length>LIMIT;
   const shown = truncated ? list.slice(0,LIMIT) : list;
-  let h='<table><thead><tr><th>用途</th><th>校区</th><th>教室</th><th>日期/周期</th><th>时段</th><th>使用人</th><th>账号</th><th>状态</th><th>备注</th><th>操作</th></tr></thead><tbody>';
-  if(!shown.length) h+='<tr><td colspan="10" class="muted">无匹配记录</td></tr>';
+  let h='<table><thead><tr><th>用途</th><th>校区</th><th>教室</th><th>日期/周期</th><th>时段</th><th>使用人</th><th>录入人</th><th>账号</th><th>状态</th><th>备注</th><th>操作</th></tr></thead><tbody>';
+  if(!shown.length) h+='<tr><td colspan="11" class="muted">无匹配记录</td></tr>';
   shown.forEach(b=>{
     const r=rmap[b.room_id];
     const when = b.recurrence==='weekly'
       ? (weekdaysLabel(String(b.weekday))+' '+(b.start_date||'')+'~'+(b.end_date||''))
       : (b.booking_date||'');
     h+=`<tr><td>${KIND_LABEL[b.kind]||esc(b.kind)}</td><td>${esc(r?r.campus:'')}</td><td>${esc(r?r.name:(b.room_id?('#'+b.room_id):'—'))}</td>`+
-      `<td>${esc(when)}</td><td>${b.start_time}-${b.end_time}</td><td>${esc(b.user_name||'')}</td>`+
+      `<td>${esc(when)}</td><td>${b.start_time}-${b.end_time}</td><td>${esc(b.user_name||'')}</td><td>${esc(b.entry_name||'—')}</td>`+
       `<td>${b.uses_meeting?esc(aname(b.meeting_account_id)):'—'}</td>`+
       `<td>${b.status==='pending'?'<span class="badge b-warn">待确认</span>':'<span class="badge b-ok">已确认</span>'}</td>`+
       `<td class="muted">${esc(b.note||'')}</td>`+
@@ -228,8 +229,9 @@ function renderMgmtTable(){
   el('occupyTable').innerHTML=h;
   if(el('oc_showall')) el('oc_showall').onclick=()=>{ window.OC_SHOWALL=true; renderMgmtTable(); };
   if(el('oc_showless')) el('oc_showless').onclick=()=>{ window.OC_SHOWALL=false; renderMgmtTable(); };
-  el('occupyTable').querySelectorAll('[data-delo]').forEach(x=>x.onclick=async()=>{ if(!confirm('删除该占用记录？删除即释放教室。')) return;
-    await sbDelete('sched_bookings',x.dataset.delo); await reloadBookings(); renderMgmtTable(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已删除（教室已释放）'); });
+  el('occupyTable').querySelectorAll('[data-delo]').forEach(x=>x.onclick=async()=>{ const who=await schedAskActor('删除该占用记录？删除即释放教室。'); if(!who) return;
+    try{ await sbDeleteAs('sched_bookings',x.dataset.delo,who); }catch(e){ toast(e.message,false); return; }
+    await reloadBookings(); renderMgmtTable(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已删除（教室已释放）'); });
   el('occupyTable').querySelectorAll('[data-edito]').forEach(x=>x.onclick=()=>occupyEditForm(x.dataset.edito));
 }
 function occupyEditForm(id){
@@ -252,18 +254,22 @@ function occupyEditForm(id){
       '<div class="field"><label>对外看板(today)显示</label><select id="oe_showtitle"><option value="0"'+(b.show_title===true?'':' selected')+'>只标类型（如VIP/临时）</option><option value="1"'+(b.show_title===true?' selected':'')+'>显示标题（如MBA课程）</option></select></div>'+
     '</div>'+
     '<div class="field" style="margin-top:8px"><label>备注</label><input id="oe_note" value="'+esc(b.note||'')+'" style="width:100%"></div>'+
+    '<div class="row" style="margin-top:8px"><div class="field"><label>原录入人（只读）</label><input value="'+esc(b.entry_name||'—')+'" readonly></div>'+
+    '<div class="field"><label>本次操作人 *</label><input id="oe_actor" value="'+esc(schedEntryName())+'"></div></div>'+
     '<div id="oe_warn" style="margin-top:8px"></div>'+
     '<div style="margin-top:12px;display:flex;gap:8px"><button id="oe_save">保存</button><button class="danger" id="oe_del">删除该占用</button><button class="ghost" id="oe_cancel">取消</button></div>'+
     '</div></div>';
   el('occupyEdit').innerHTML=h;
   el('oe_cancel').onclick=()=>{ el('occupyEdit').innerHTML=''; };
   el('oe_del').onclick=async()=>{
-    if(!confirm('删除该占用记录？删除即释放教室。')) return;
-    try{ await sbDelete('sched_bookings', b.id); await reloadBookings(); el('occupyEdit').innerHTML=''; renderMgmtTable(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已删除（教室已释放）'); }
+    const who=await schedAskActor('删除该占用记录？删除即释放教室。'); if(!who) return;
+    try{ await sbDeleteAs('sched_bookings', b.id, who); await reloadBookings(); el('occupyEdit').innerHTML=''; renderMgmtTable(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已删除（教室已释放）'); }
     catch(e){ el('oe_warn').innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>'; }
   };
   el('oe_save').onclick=async()=>{
-    const patch={ room_id: el('oe_room').value||null, start_time: el('oe_st').value||null, end_time: el('oe_et').value||null,
+    const actor=el('oe_actor').value.trim();
+    if(!actor){ el('oe_warn').innerHTML='<span class="badge b-err">请填本次操作人姓名</span>'; return; }
+    const patch={ ...schedActorStamp(actor), room_id: el('oe_room').value||null, start_time: el('oe_st').value||null, end_time: el('oe_et').value||null,
       user_name: el('oe_user').value.trim()||null, status: el('oe_status').value, note: el('oe_note').value.trim()||null,
       show_title: el('oe_showtitle') ? el('oe_showtitle').value==='1' : (b.show_title===true) };
     if(isWeekly){ patch.start_date=el('oe_sd').value||null; patch.end_date=el('oe_ed').value||null; }
@@ -278,7 +284,7 @@ function occupyEditForm(id){
       } else patch.allow_multi=false;
     }
     const btn=el('oe_save'); btn.disabled=true; btn.textContent='保存中…';
-    try{ await sbUpdate('sched_bookings', b.id, patch); await reloadBookings(); el('occupyEdit').innerHTML=''; renderMgmtTable(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已保存'); }
+    try{ await sbUpdate('sched_bookings', b.id, patch); schedSaveEntryName(actor); await reloadBookings(); el('occupyEdit').innerHTML=''; renderMgmtTable(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已保存'); }
     catch(e){ el('oe_warn').innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>'; btn.disabled=false; btn.textContent='保存'; }
   };
 }
@@ -346,6 +352,7 @@ function openModal(roomId){
   el('m_room').textContent = r.name;
   el('m_when').textContent = `${el('date').value}（${WEEKDAYS[weekdayOf(el('date').value)]}）${el('st').value}-${el('et').value} · ${r.campus}`;
   ['m_title','m_user','m_note'].forEach(id=>el(id).value='');
+  el('m_entry').value=schedEntryName();
   el('m_um').value='false';
   el('m_warn').classList.add('hidden');
   el('modal').classList.remove('hidden');
@@ -353,6 +360,8 @@ function openModal(roomId){
 async function submit(){
   const s=el('st').value, e=el('et').value, use=el('use').value;
   const warn=m=>{ el('m_warn').className=''; el('m_warn').innerHTML='<span class="badge b-err">'+m+'</span>'; };
+  const entryName = el('m_entry').value.trim();
+  if(!entryName){ warn('请填录入人姓名'); return; }
   const um = el('m_um').value==='true';
   const accId = um ? (CUR.meeting_account_id||null) : null;
   if(um && !accId){ warn('该教室没有绑定固定会议账号，无法占用账号'); return; }
@@ -403,9 +412,11 @@ async function submit(){
       const rec={ room_id:CUR.id, kind:use, title: el('m_title').value.trim()||KIND_LABEL[use]||null, allow_multi:allowMulti,
         user_name: el('m_user').value.trim()||null, recurrence: 'once', weekday: weekdayOf(date), booking_date:date, start_time:s, end_time:e,
         uses_meeting:um, meeting_account_id:accId, show_title: el('m_showtitle')?el('m_showtitle').value==='1':false,
-        status:'confirmed', created_by:myToken()+'|'+(CANMANAGE?'管理员':'使用者'), note: el('m_note').value.trim()||null };
+        status:'confirmed', created_by:myToken()+'|'+(CANMANAGE?'管理员':'使用者'), note: el('m_note').value.trim()||null,
+        entry_name:entryName, ...schedActorStamp(entryName) };
       const ins=await sbInsert('sched_bookings', rec); BOOKINGS.push(ins[0]);
     }
+    schedSaveEntryName(entryName);
     el('modal').classList.add('hidden'); toast(weekly?('已批量录入 '+dates.length+' 条'):'已录入并生效'); find(); renderGrid(); renderMine();
   }catch(err){ warn(esc(err.message)); try{ await reloadBookings(); find(); renderGrid(); renderMine(); }catch(e){} }
   finally{ sb.disabled=false; sb.textContent='保存占用'; }

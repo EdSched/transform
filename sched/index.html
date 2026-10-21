@@ -35,7 +35,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="common.js?v=20261020"></script>
+<script src="common.js?v=20261021"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], ROLE=null;
@@ -118,6 +118,7 @@ const HUB_CARDS = [
   ['rooms',    '🏠','教室管理','增删改教室、新增租借教室','tab','rooms'],
   ['accounts', '🎙️','会议账号管理','管理腾讯账号（固定/临时、登录名密码）','tab','accounts'],
   ['courses',  '✍️','课程管理','课程列表：新增/编辑/删除/查重','tab','courses'],
+  ['oplog',    '📜','操作记录','教室占用的新建/批准/驳回/修改/删除记录，可按人、类型、时间查','iframe','oplog.html'],
 ];
 /* 每张卡片需要的权限；manage(管理员)看到全部 */
 const CARD_PERM = {
@@ -130,6 +131,7 @@ function canSee(key){
   const ps = permSet(ROLE);
   if(ps.has('manage')) return true;                 // 管理员看到全部
   if(key==='courseview') return ps.has('course_view')||ps.has('timetable')||ps.has('course');   // 有课程表/课程管理权限默认可见
+  if(key==='oplog') return ps.has('occupy')||ps.has('manage');
   if(key==='bookingf') return ps.has('entry_room')||ps.has('entry_room_full');
   if(key==='meeting') return ps.has('meeting_view')||ps.has('meeting_arrange');
   const need = CARD_PERM[key];
@@ -344,7 +346,7 @@ function tabPending(){
     const b=BOOKINGS.find(x=>String(x.id)===String(id)); if(!b) return;
     const reason=prompt('驳回理由（老师会在「我的预约」看到）：','该时段/教室不可用，请重新预约'); if(reason===null) return;
     const r=ROOMS.find(x=>String(x.id)===String(b.room_id)); const campus=r?r.campus:(b.req_campus||'');
-    await sbUpdate('sched_bookings',id,{status:'rejected', room_id:null, req_campus:campus||null, reject_reason:reason||'管理员驳回', reviewed_at:new Date().toISOString()});
+    await sbUpdate('sched_bookings',id,{status:'rejected', orig_room_id:b.room_id||null, room_id:null, req_campus:campus||null, reject_reason:reason||'管理员驳回', reviewed_at:new Date().toISOString()});
     await reloadAll(); show('pending'); toast('已驳回（老师可在「我的预约」看到理由）');
   });
   bind('[data-assign]', async id=>{
@@ -780,7 +782,7 @@ function renderAssignWeek(){
           start_date:c.start_date||null, end_date:c.end_date||null,
           start_time:c.start_time, end_time:c.end_time,
           uses_meeting:useAcc, meeting_account_id:useAcc?room.meeting_account_id:null,
-          status:'confirmed', created_by:'admin', note:'排课自动生成' }));
+          status:'confirmed', created_by:'admin', entry_name:'排课自动生成', note:'排课自动生成' }));
         if(recs.length){ await sbInsert('sched_bookings', recs); done++; }
       }
       window.WK_PENDING[room.id]=new Set();
@@ -900,7 +902,7 @@ function assignRoomOnly(courseId){
       groupCourses.forEach(gc=>{ wdays.forEach(wd=>recs.push({ room_id:null, kind:'course', course_id:gc.id,
         title:dispName, user_name:gc.teacher||null, recurrence:'weekly', weekday:wd,
         start_date:sd||gc.start_date||null, end_date:ed||gc.end_date||null, start_time:gc.start_time, end_time:gc.end_time,
-        uses_meeting:true, meeting_account_id:null, status:'confirmed', created_by:'admin', note:'线上课·无教室' })); });
+        uses_meeting:true, meeting_account_id:null, status:'confirmed', created_by:'admin', entry_name:'排课自动生成', note:'线上课·无教室' })); });
       if(recs.length) await sbInsert('sched_bookings', recs);
       await reloadAll(); document.getElementById('aroMask').remove(); renderAssignView();
       toast('已标记为「仅腾讯会议」，记得去「会议链接设定」绑定会议号');
@@ -928,7 +930,7 @@ function assignRoomOnly(courseId){
         wdays.forEach(wd=>recs.push({ room_id:roomId, kind:'course', course_id:gc.id,
           title:dispName, user_name:gc.teacher||null, recurrence:'weekly', weekday:wd,
           start_date:sd||gc.start_date||null, end_date:ed||gc.end_date||null, start_time:gc.start_time, end_time:gc.end_time,
-          uses_meeting:useAcc, meeting_account_id:useAcc?roomAcc:null, status:'confirmed', created_by:'admin', note:'排课自动生成' }));
+          uses_meeting:useAcc, meeting_account_id:useAcc?roomAcc:null, status:'confirmed', created_by:'admin', entry_name:'排课自动生成', note:'排课自动生成' }));
       });
       if(recs.length) await sbInsert('sched_bookings', recs);
       await reloadAll();
@@ -1060,7 +1062,7 @@ function assignForm(courseId){
       title:c.name, user_name:c.teacher||null, recurrence:'weekly', weekday:wd,
       start_date:sd, end_date:ed, start_time:c.start_time, end_time:c.end_time,
       uses_meeting:um, meeting_account_id:accId,
-      status:'confirmed', created_by:'admin', note:'排课自动生成' }));
+      status:'confirmed', created_by:'admin', entry_name:'排课自动生成', note:'排课自动生成' }));
     try{
       if(noDate) await sbUpdate('sched_courses', c.id, {start_date:sd, end_date:ed});
       for(const o of existing) await sbDelete('sched_bookings',o.id);

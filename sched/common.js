@@ -167,6 +167,37 @@ async function sbDelete(table, id){
   return true;
 }
 
+/* ---------- 操作人（留痕）----------
+   触发器 sched_bookings_log 记「谁做的」：优先用记录上的 last_actor（页面写入、10 分钟内有效），其次登录身份。
+   删除前先 PATCH 一次 last_actor 再删；匿名用户（vip.html 老师）没有 update 权限，PATCH 失败不挡删除。 */
+const ENTRY_NAME_KEY = 'sched_entry_name';
+function schedEntryName(){ try{ return localStorage.getItem(ENTRY_NAME_KEY)||''; }catch(e){ return ''; } }
+function schedSaveEntryName(n){ try{ if(n) localStorage.setItem(ENTRY_NAME_KEY, n); }catch(e){} }
+function schedActorStamp(name){ return { last_actor: name, last_actor_at: new Date().toISOString() }; }
+async function sbDeleteAs(table, id, actorName){
+  if(actorName){ try{ await sbUpdate(table, id, schedActorStamp(actorName)); }catch(e){} }
+  return sbDelete(table, id);
+}
+// 弹出「操作人姓名 *」确认框；点确认返回姓名，取消返回 null。姓名为空不能确认。
+function schedAskActor(msg, okText){
+  return new Promise(resolve=>{
+    const mask=document.createElement('div');
+    mask.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:200;overflow:auto;padding:60px 16px';
+    mask.innerHTML='<div class="card" style="width:380px;max-width:92vw;margin:auto"><div style="font-size:14px;line-height:1.6;margin-bottom:10px">'+esc(msg)+'</div>'+
+      '<div class="field"><label>操作人姓名 *</label><input id="sa_name" style="width:100%"></div><div id="sa_warn" style="margin-top:6px"></div>'+
+      '<div style="margin-top:12px;display:flex;gap:8px"><button id="sa_ok" class="danger">'+esc(okText||'确认')+'</button><button id="sa_no" class="ghost">取消</button></div></div>';
+    document.body.appendChild(mask);
+    const inp=mask.querySelector('#sa_name'); inp.value=schedEntryName(); inp.focus();
+    const done=v=>{ mask.remove(); resolve(v); };
+    mask.querySelector('#sa_no').onclick=()=>done(null);
+    mask.querySelector('#sa_ok').onclick=()=>{
+      const n=inp.value.trim();
+      if(!n){ mask.querySelector('#sa_warn').innerHTML='<span class="badge b-err">请填操作人姓名</span>'; return; }
+      schedSaveEntryName(n); done(n);
+    };
+  });
+}
+
 /* ---------- 常量 ---------- */
 const CAMPUSES   = ['高马','市谷'];
 const CATEGORIES = ['学部文科','学部理科','语言','大学院文科','大学院理科'];
@@ -370,7 +401,7 @@ function renderOccupancyGrid(rooms, items, keyField, opts){
         let styleAttr='', cc=null;
         if(!vipMask && opts.catOf && b.course_id){ const cat=opts.catOf(b.course_id); if(cat){ cc=catColor(cat); } }
         if(cc) styleAttr=` style="background:${cc.bg};border-color:${cc.bd};color:${cc.tx}"`;
-        h+=`<td class="occ ${cc?'':(KIND_CLASS[b.kind]||'')}${vipMask?' occ-vip':''}${pend?' occ-pend':''}${r.cls?' '+esc(r.cls):''}" data-b="${b.id}" data-kind="${esc(b.kind||'')}" rowspan="${span}"${styleAttr}>`+
+        h+=`<td class="occ ${cc?'':(KIND_CLASS[b.kind]||'')}${vipMask?' occ-vip':''}${pend?' occ-pend':''}${r.cls?' '+esc(r.cls):''}" data-b="${b.id}" data-kind="${esc(b.kind||'')}" rowspan="${span}"${styleAttr}${opts.showEntry&&b.kind!=='course'?` data-entry="${esc(b.entry_name||'—')}" title="录入：${esc(b.entry_name||'—')}"`:''}>`+
            `<div class="occ-in">${esc(label)}${vipMask?'':mic}`+
            (vipMask?'':`<small>${esc(who)} ${b.start_time}-${b.end_time}${pend&&!(opts.hideWho||opts.labelOnly)?' · 待确认':''}</small>`)+`</div></td>`;
       }else{
@@ -657,6 +688,7 @@ function renderNav(active, roleRec){
       if(seen.has(base)) return; seen.add(base);       // 同页去重（如两种录入都指向 booking）
       items.push([base, label]);
     });
+    if(permSet(roleRec).has('occupy') || permSet(roleRec).has('manage')) items.push(['oplog.html','操作记录']);
     items.unshift(['index.html','首页']);
   }else{
     items = [
