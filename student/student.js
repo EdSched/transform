@@ -344,7 +344,7 @@ async function loadBookingPage() {
     cachedBookings = cachedBookings.filter(b => b.type !== 'vip');
     const teacherNames = [...new Set(cachedSlots.map(s => s.teacher_name).filter(Boolean))];
     if (teacherNames.length) {
-      teacherDisplayNames = await pubNameMap(teacherNames);
+      teacherDisplayNames = await teacherNameMap(teacherNames);
     }
     buildForm();
     // 已登录学生：姓名以本人档案为准并锁定（buildForm 内已执行 applyStoredInfo，这里覆盖）
@@ -777,7 +777,7 @@ function renderSlots() {
             ${s.major ? `<span style="font-size:9px;border:1px solid var(--border);border-radius:2px;padding:0 5px;color:var(--text-secondary)">${majorLabel(s.major)}</span>` : ''}
             <span style="margin-left:auto;font-size:10px;color:${full?'var(--danger)':'var(--success)'}">${full?'已满':`剩余 ${remaining}`}</span>
           </div>
-          ${s.teacher_name ? `<div style="font-size:10px;color:var(--text-muted)">👤 ${pubName(s.teacher_name, teacherDisplayNames)}</div>` : ''}
+          ${s.teacher_name ? `<div style="font-size:10px;color:var(--text-muted)">👤 ${stuName(s.teacher_name, teacherDisplayNames)}</div>` : ''}
           ${locationLong(s.location)?`<div style="font-size:10px;color:${locationColor(s.location)}">📍 ${locationLong(s.location)}</div>`:''}
         </label>
       </div>`;

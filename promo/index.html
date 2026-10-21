@@ -107,13 +107,13 @@ async function init() {
       sb(`/rest/v1/promo_content?major=eq.${major}&or=(published.is.null,published.is.true)&select=*&order=sort_order.asc,created_at.asc`),
       sb('/rest/v1/courses?select=id,name,major,period,teacher,weekdays,time_range,delivery,campus,total_sessions,first_session_date&order=first_session_date.desc&limit=1000').catch(() => []),
       sb(`/rest/v1/course_schedule_shares?major=in.(${shareKeys.map(k => `"${k}"`).join(',')})&select=*&order=created_at.desc&limit=1`).catch(() => []),
-      sb('/rest/v1/teachers?select=name,display_name').catch(() => []),
+      sb('/rest/v1/teachers?select=name,public_name').catch(() => []),
       sb(`/rest/v1/promo_videos?major=eq.${encodeURIComponent(major)}&published=is.true&select=*&order=sort_order.asc`).catch(() => []),
     ]);
     videos = vd || [];
     list = l || []; courses = c || []; share = (sh || [])[0] || null;
     // 对外宣传姓名映射：老师档案的「备注」填写宣传名（如 杨畅→周老师），显示与匹配均使用宣传名
-    (tch || []).forEach(t => { const k = normName(t.name); const pub = String(t.display_name || '').trim(); if (k && pub) pubMap[k] = pub; });
+    (tch || []).forEach(t => { const k = normName(t.name); const pub = String(t.public_name || '').trim(); if (k && pub) pubMap[k] = pub; });
     if (share && (share.course_ids || []).length) {
       const ids = share.course_ids;
       for (let i = 0; i < ids.length; i += 40) {

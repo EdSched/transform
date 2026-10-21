@@ -1340,7 +1340,8 @@ function renderTeachersPage(mc){
       <div id="tf_task_hint" style="display:none;font-size:11px;line-height:1.7;background:#fff8e6;border:1px solid #e8d4a0;border-radius:3px;padding:6px 10px;margin-bottom:10px;color:var(--warn,#b8860b)"></div>
       ${tsecWrap('basic','基本信息',`
       <div class="form-group"><label class="form-label">姓名 *</label><input id="new_teacher_name" placeholder="老师姓名"></div>
-      <div class="form-group"><label class="form-label">对外名称</label><input id="new_teacher_pubname" placeholder="如：周老师（留空则显示真名）"><div style="font-size:10px;color:var(--text-3);margin-top:3px">学生和对外页面显示这个名字；老师可以在老师端自己修改</div></div>
+      <div class="form-group"><label class="form-label">对外名称</label><input id="new_teacher_pubname" placeholder="如：周老师（留空则显示真名）"><div style="font-size:10px;color:var(--text-3);margin-top:3px">营业、宣传使用；老师没填昵称时，学生端也显示它</div></div>
+      <div class="form-group"><label class="form-label">老师昵称</label><div id="new_teacher_nick_view" style="font-size:12px;color:var(--text-2)">—</div><div style="font-size:10px;color:var(--text-3);margin-top:3px">老师在老师端填写，学生端优先显示它；这里只读</div></div>
       <div class="form-group"><label class="form-label">备注</label><input id="new_teacher_notes" placeholder="内部备注，不对外显示"></div>
       ${_isDom ? '' : `<div class="form-group">
         <label class="form-label">类型 *</label>
@@ -1730,7 +1731,7 @@ function cancelEditTeacher(){
   document.querySelectorAll('#new_teacher_stafftype .filter-chip').forEach(c=>c.classList.remove('active'));
   if(document.getElementById('new_teacher_dept_wrap')) document.getElementById('new_teacher_dept_wrap').style.display='none';
   if(document.getElementById('new_teacher_department')) document.getElementById('new_teacher_department').value='';
-  document.getElementById('new_teacher_notes').value='';document.getElementById('new_teacher_pubname').value='';
+  document.getElementById('new_teacher_notes').value='';document.getElementById('new_teacher_pubname').value='';document.getElementById('new_teacher_nick_view').textContent='—';
   setTeacherTags([]);
   document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
   document.getElementById('perm_booking').checked=false;
@@ -1762,7 +1763,7 @@ function openTeacherManager(){
   document.querySelectorAll('#new_teacher_stafftype .filter-chip').forEach(c=>c.classList.remove('active'));
   if(document.getElementById('new_teacher_dept_wrap')) document.getElementById('new_teacher_dept_wrap').style.display='none';
   if(document.getElementById('new_teacher_department')) document.getElementById('new_teacher_department').value='';
-  document.getElementById('new_teacher_notes').value='';document.getElementById('new_teacher_pubname').value='';
+  document.getElementById('new_teacher_notes').value='';document.getElementById('new_teacher_pubname').value='';document.getElementById('new_teacher_nick_view').textContent='—';
   setTeacherTags([]);
   document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
   document.getElementById('perm_booking').checked=false;
@@ -2112,7 +2113,7 @@ function teacherFilteredList(){
     return (t.majors||[]).some(m=>MAJOR_DOMAIN[m]===teacherDomainFilter);
   });
   const q=teacherSearch.trim();
-  if(q) list=list.filter(t=>searchMatch(q,[t.name,t.display_name,(t.tags||[]).join(' '),t.notes]));
+  if(q) list=list.filter(t=>searchMatch(q,[t.name,t.public_name,t.display_name,(t.tags||[]).join(' '),t.notes]));
   return list;
 }
 
@@ -2223,7 +2224,7 @@ function renderTeacherRows(){
           const link=`${base}?tid=${encodeURIComponent(t.id)}`;  // 只带 id，不暴露老师真名（真名由老师端按 id 查出）
           return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
             <div onclick="teacherExpandedId=teacherExpandedId==='${t.id}'?null:'${t.id}';renderTeacherRows()" style="display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;${open?'background:var(--bg)':''}">
-              <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px;white-space:nowrap">${escTM(t.name)}</span>${t.display_name?`<span style="font-size:10px;color:var(--text-3);white-space:nowrap">对外：${escTM(t.display_name)}</span>`:''}
+              <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px;white-space:nowrap">${escTM(t.name)}</span>${(t.public_name||t.display_name)?`<span style="font-size:10px;color:var(--text-3);white-space:nowrap">${[t.public_name?'对外：'+escTM(t.public_name):'',t.display_name?'昵称：'+escTM(t.display_name):''].filter(Boolean).join(' · ')}</span>`:''}
               ${t.staff_type?`<span style="font-size:10px;color:var(--text-2);border:1px solid var(--border);border-radius:2px;padding:0 6px;white-space:nowrap">${escTM(t.staff_type)}${t.department?'・'+escTM(t.department):''}</span>`:''}
               <span style="font-size:10px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:26%">${[(t.domains||[]).join('・'),(t.majors||[]).map(m=>MAJORS[m]||m).join('・')].filter(Boolean).join(' · ')||'—'}</span>
               ${(()=>{ const lb=[teacherPositionLabel(t.position)].concat((t.roles||[]).map(teacherRoleLabel)).filter(Boolean).join(' · '); return lb?`<span style="font-size:10px;color:#fff;background:var(--text-2);border-radius:2px;padding:0 6px;white-space:nowrap">${escTM(lb)}</span>`:''; })()}
@@ -2349,7 +2350,7 @@ async function addTeacher(){
   const _lockDom = _isDom ? viewLockDomain() : '';
   const name=document.getElementById('new_teacher_name').value.trim();
   const notes=document.getElementById('new_teacher_notes').value.trim();
-  const display_name=document.getElementById('new_teacher_pubname').value.trim();
+  const public_name=document.getElementById('new_teacher_pubname').value.trim();
   if(!name){alert('请填写姓名');return}
   const majors=[...document.querySelectorAll('#new_teacher_majors .filter-chip.active')].map(c=>c.dataset.value);
   // 负责/隶属领域：领域端自动锁定为本领域；中枢端按表单勾选
@@ -2398,14 +2399,14 @@ async function addTeacher(){
     const sg=tfSrcCollect(null,true); if(sg===null) return;
     if(!tfLeadScopeOk(mg)) return;
     if(!tfSalesScopeOk()) return;
-    const t=Object.assign({id:`t-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,name,notes,display_name,majors,domains,managed_by,staff_type,department,permissions,tags},mg,sg,tfRolesCollect(null));
+    const t=Object.assign({id:`t-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,name,notes,public_name,majors,domains,managed_by,staff_type,department,permissions,tags},mg,sg,tfRolesCollect(null));
     const res=await sb('/rest/v1/teachers','POST',[t]);
     cachedTeachers.push(Array.isArray(res)?res[0]:t);
     document.getElementById('new_teacher_name').value='';
   document.querySelectorAll('#new_teacher_stafftype .filter-chip').forEach(c=>c.classList.remove('active'));
   if(document.getElementById('new_teacher_dept_wrap')) document.getElementById('new_teacher_dept_wrap').style.display='none';
   if(document.getElementById('new_teacher_department')) document.getElementById('new_teacher_department').value='';
-    document.getElementById('new_teacher_notes').value='';document.getElementById('new_teacher_pubname').value='';
+    document.getElementById('new_teacher_notes').value='';document.getElementById('new_teacher_pubname').value='';document.getElementById('new_teacher_nick_view').textContent='—';
   setTeacherTags([]);
     setTeacherTags([]);
     document.querySelectorAll('#new_teacher_domains .filter-chip,#new_teacher_managed .filter-chip,#perm_booking_types .filter-chip,#perm_slot_types .filter-chip,#perm_vip_content .filter-chip,#perm_student_mgmt_items .filter-chip').forEach(c=>c.classList.remove('active')); if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
@@ -2463,7 +2464,7 @@ function openEditTeacher(id){
   if(_deptWrap) _deptWrap.style.display=(t.staff_type==='正社员')?'block':'none';
   const _dept=document.getElementById('new_teacher_department');
   if(_dept) _dept.value=t.department||'';
-  document.getElementById('new_teacher_notes').value=t.notes||'';document.getElementById('new_teacher_pubname').value=t.display_name||'';
+  document.getElementById('new_teacher_notes').value=t.notes||'';document.getElementById('new_teacher_pubname').value=t.public_name||'';document.getElementById('new_teacher_nick_view').textContent=t.display_name||'—';
   setTeacherTags(t.tags||[]);
   document.querySelectorAll('#new_teacher_majors .filter-chip').forEach(c=>{c.classList.toggle('active',(t.majors||[]).includes(c.dataset.value))});
   // 回填隶属领域 chip
@@ -2529,7 +2530,7 @@ async function saveEditTeacher(id){
   const selMajors=[...document.querySelectorAll('#new_teacher_majors .filter-chip.active')].map(c=>c.dataset.value);
   const permissions=getPermissionsFromForm(cur.permissions);
   const notes=document.getElementById('new_teacher_notes').value.trim();
-  const display_name=document.getElementById('new_teacher_pubname').value.trim();
+  const public_name=document.getElementById('new_teacher_pubname').value.trim();
   const tags=parseTeacherTags();
   // 领域端编辑：不清空领域归属/正社员属性/他领域专业（表单里这些控件不渲染），避免跨领域数据丢失
   let domains, managed_by, majors, staff_type, department;
@@ -2560,7 +2561,7 @@ async function saveEditTeacher(id){
   if(!tfLeadScopeOk(mg,cur)) return;
   if(!tfSalesScopeOk()) return;
   try{
-    const body=Object.assign({name,notes,display_name,majors,domains,managed_by,staff_type,department,permissions,tags},mg,sg,tfRolesCollect(cur));
+    const body=Object.assign({name,notes,public_name,majors,domains,managed_by,staff_type,department,permissions,tags},mg,sg,tfRolesCollect(cur));
     await sb(`/rest/v1/teachers?id=eq.${id}`,'PATCH',body);
     const idx=cachedTeachers.findIndex(t=>t.id===id);
     if(idx>=0) Object.assign(cachedTeachers[idx],body);
@@ -2881,7 +2882,7 @@ function profRender(){
           <div style="flex:1;min-width:220px">
             <div style="font-size:12px;font-weight:600">${profEsc(p.name)}
               <span style="font-size:9px;color:var(--accent,#8b5cf6);margin-left:4px">${profEsc(p.domain||'')}${p.subject?' · '+profEsc(p.subject):''}</span>
-              ${cachedTeachers.some(t=>t.name===p.name)?`<span style="font-size:9px;color:var(--ok);margin-left:6px">🔗 已关联账号${(cachedTeachers.find(t=>t.name===p.name)?.display_name||'').trim()?`（对外：${profEsc(cachedTeachers.find(t=>t.name===p.name).display_name)}）`:''}</span>`:`<span style="font-size:9px;color:var(--text-3);margin-left:6px">无账号（不影响）</span>`}
+              ${cachedTeachers.some(t=>t.name===p.name)?`<span style="font-size:9px;color:var(--ok);margin-left:6px">🔗 已关联账号${(cachedTeachers.find(t=>t.name===p.name)?.public_name||'').trim()?`（对外：${profEsc(cachedTeachers.find(t=>t.name===p.name).public_name)}）`:''}</span>`:`<span style="font-size:9px;color:var(--text-3);margin-left:6px">无账号（不影响）</span>`}
               ${profIncomplete(p)?`<span style="font-size:9px;background:var(--warn-bg,#f8f0d8);color:var(--warn,#b8860b);border-radius:2px;padding:0 5px;margin-left:4px">信息不全</span>`:''}
             </div>
             <div style="font-size:10px;color:var(--text-3);margin-top:2px">${profEsc(p.school||'')} ${profEsc(p.degree||'')} · ${profEsc((p.courses||'').slice(0,40))}${(p.courses||'').length>40?'…':''}</div>

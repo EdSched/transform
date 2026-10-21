@@ -302,13 +302,13 @@ async function promoLoad() {
       sb(`/rest/v1/promo_videos?major=eq.${promoMajor}&select=*&order=sort_order.asc,updated_at.asc`).catch(() => [])];
     if (promoProfiles === null) {
       jobs.push(sb('/rest/v1/teacher_profiles?select=*&order=subject.asc,sort_order.asc').catch(() => []));
-      jobs.push(sb('/rest/v1/teachers?select=name,display_name').catch(() => []));
+      jobs.push(sb('/rest/v1/teachers?select=name,public_name').catch(() => []));
     }
     const res = await Promise.all(jobs);
     promoList = res[0];
     pvList = res[1] || []; pvEditing = null;
     if (res[2]) promoProfiles = res[2];
-    if (res[3]) { promoPubMap = {}; res[3].forEach(t => { const pub = String(t.display_name || '').trim(); if (pub) promoPubMap[t.name] = pub; }); }
+    if (res[3]) { promoPubMap = {}; res[3].forEach(t => { const pub = String(t.public_name || '').trim(); if (pub) promoPubMap[t.name] = pub; }); }
   } catch (e) {
     const mc = document.getElementById('mainContent');
     if (mc) mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
