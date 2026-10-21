@@ -66,3 +66,60 @@ grant execute on function public.sched_archive_purge(text) to authenticated;
 --   drop policy if exists "sched_archive update" on storage.objects;
 --   -- 桶里有文件时先在 Storage 页面清空再删：delete from storage.buckets where id = 'sched-archive';
 -- ============================================================
+
+
+-- ============================================================
+-- 追加（清空只删「生成并保存」时导出的那些记录）
+--   sched_archive_purge(p_month, p_ids)：只删在 p_ids 里、并且仍符合该月归档条件的记录；
+--   同时要求桶里有 p_month.xlsx 和 p_month.json（前端「生成并保存」写入的说明文件）。
+--   旧的 sched_archive_purge(text) 删除，避免绕过 p_ids 整月清空。
+-- ============================================================
+drop function if exists public.sched_archive_purge(text);
+
+create or replace function public.sched_archive_purge(p_month text, p_ids bigint[])
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_first date; v_last date; v_path text; v_n int; v_actor text; v_kind text;
+begin
+  if not public.is_admin() then raise exception '只有管理员可以归档清空'; end if;
+  if p_month !~ '^\d{4}-\d{2}$' then raise exception '月份格式应为 YYYY-MM'; end if;
+  if p_ids is null or coalesce(array_length(p_ids, 1), 0) = 0 then raise exception '没有要清空的记录，请先「生成并保存」'; end if;
+  v_first := (p_month || '-01')::date;
+  v_last  := (v_first + interval '1 month' - interval '1 day')::date;
+  if v_first >= date_trunc('month', (now() at time zone 'Asia/Tokyo'))::date then
+    raise exception '只能归档已经过完的月份（本月不行）';
+  end if;
+  v_path := p_month || '.xlsx';
+  if not exists (select 1 from storage.objects where bucket_id = 'sched-archive' and name = v_path) then
+    raise exception '还没有保存归档文件 %，请先点「生成并保存」', v_path;
+  end if;
+  if not exists (select 1 from storage.objects where bucket_id = 'sched-archive' and name = p_month || '.json') then
+    raise exception '还没有归档说明文件 %.json，请重新「生成并保存」', p_month;
+  end if;
+
+  perform set_config('sched.archiving', '1', true);
+  delete from public.sched_bookings b
+  where b.id = any(p_ids)
+    and b.kind is distinct from 'course'
+    and ( (b.recurrence = 'once'   and b.booking_date between v_first and v_last)
+       or (b.recurrence = 'weekly' and b.end_date <= v_last) );
+  get diagnostics v_n = row_count;
+  perform set_config('sched.archiving', '', true);
+
+  select a.actor, a.actor_kind into v_actor, v_kind from public.sched_actor(null, null, null) a;
+  insert into public.sched_booking_log (action, actor, actor_kind, snapshot)
+  values ('archive', v_actor, v_kind, jsonb_build_object('month', p_month, 'count', v_n, 'path', v_path));
+  return jsonb_build_object('month', p_month, 'count', v_n, 'path', v_path);
+end $$;
+revoke all on function public.sched_archive_purge(text, bigint[]) from public;
+grant execute on function public.sched_archive_purge(text, bigint[]) to authenticated;
+
+-- 回滚（恢复成按整月清空的旧版本）：
+--   drop function if exists public.sched_archive_purge(text, bigint[]);
+--   然后把本文件上面的 create or replace function public.sched_archive_purge(p_month text) ... 整段再执行一遍，
+--   并重新执行 revoke / grant 两句。
+-- ============================================================
