@@ -369,6 +369,31 @@ function chipFoldToggle(btn) {
   btn.textContent = open ? '收起 ▴' : '更多 ▾ ' + btn.dataset.n;
 }
 
+// ══ 老师对外名称：teachers.display_name（管理端老师管理和老师端首页改的是同一个值）══
+// 对学生 / 对外公开的页面一律显示对外名称，没填显示真名；内部页面（管理端、老师端内部）照旧用真名。
+//   pubNameMap(names) → { 真名: 对外名称 }（只含填了对外名称的老师）；pubName(真名或多个名字, map) → 显示用名字
+function pubNameNrm(s) { return String(s || '').replace(/老师|先生|様|さん/g, '').trim(); }
+async function pubNameMap(names) {
+  const list = [...new Set((names || []).map(n => String(n || '').trim()).filter(Boolean))];
+  const map = {};
+  if (names == null) {   // 不传名单 = 读所有填了对外名称的老师（学生端作业批改人等零散位置用）
+    try { (await sb('/rest/v1/teachers?display_name=not.is.null&select=name,display_name') || []).forEach(t => { const pub = String(t.display_name || '').trim(); if (pub) map[t.name] = map[pubNameNrm(t.name)] = pub; }); } catch (e) { /* 读不到就显示真名 */ }
+    return map;
+  }
+  if (!list.length) return map;
+  try {
+    for (let i = 0; i < list.length; i += 40) {
+      const rows = await sb(`/rest/v1/teachers?name=in.(${list.slice(i, i + 40).map(n => `"${n.replace(/"/g, '')}"`).join(',')})&select=name,display_name`);
+      (rows || []).forEach(t => { const pub = String(t.display_name || '').trim(); if (pub) map[t.name] = map[pubNameNrm(t.name)] = pub; });
+    }
+  } catch (e) { /* 读不到就显示真名 */ }
+  return map;
+}
+function pubName(realName, map) {
+  return String(realName || '').split(/[\/、,，]/).map(x => x.trim()).filter(Boolean)
+    .map(x => (map && (map[x] || map[pubNameNrm(x)])) || x).join(' / ');
+}
+
 // ══ 管理端学生类页面共用筛选：领域 → 专业 → 来源（学生档案 / 考学进度 / 月度学习情况 / 出席・作业共用同一份状态 DMF）══
 // 领域一行：只列视角范围内、而且有学生的领域（带人数）；只有一个领域时不显示，直接显示专业
 // 专业一行：只列已选领域里的专业（含分组）；领域选「全部」（且有多个领域）时隐藏
@@ -1935,7 +1960,7 @@ function hwFeedbackCardsHtml(sub, opts) {
   const t = ts => { if (!ts) return ''; try { return new Date(ts).toLocaleString('sv-SE', { timeZone: 'Asia/Tokyo' }).slice(0, 16); } catch (x) { return String(ts).slice(0, 16); } };
   const row = (k, v) => v ? `<div style="font-size:11px;color:#5a5650;line-height:1.9;white-space:pre-wrap"><span style="color:#9a9590">${k}：</span>${e(v)}</div>` : '';
   return list.map(f => `<div style="background:#eef6f0;border:1px solid #b8d8bc;border-radius:4px;padding:8px 11px;margin-bottom:6px">
-    <div style="font-size:10px;color:#2a7a4a;font-weight:600;margin-bottom:3px">✓ ${e(f.by || '老师')}${f.at ? ` · ${e(t(f.at))}` : ''}${f.score ? ` · <span style="background:#fff;border-radius:2px;padding:0 6px">${e(f.score)}</span>` : ''}${opts && opts.mine && f.by === opts.mine ? ' <span style="color:#9a9590;font-weight:400">（我的）</span>' : ''}</div>
+    <div style="font-size:10px;color:#2a7a4a;font-weight:600;margin-bottom:3px">✓ ${e(f.by ? (opts && opts.pub ? pubName(f.by, opts.pub) : f.by) : '老师')}${f.at ? ` · ${e(t(f.at))}` : ''}${f.score ? ` · <span style="background:#fff;border-radius:2px;padding:0 6px">${e(f.score)}</span>` : ''}${opts && opts.mine && f.by === opts.mine ? ' <span style="color:#9a9590;font-weight:400">（我的）</span>' : ''}</div>
     ${row('知识掌握', f.knowledge)}${row('学习态度', f.attitude)}${row('改进建议', f.suggestions)}
     ${f.text ? `<div style="font-size:11px;color:#5a5650;line-height:1.9;white-space:pre-wrap">${e(f.text)}</div>` : ''}
     ${f.file_url ? `<a href="${e(f.file_url)}" target="_blank" style="font-size:10px;color:#b8953a;display:inline-block;margin-top:4px">📎 下载批改文件${f.file_name ? '（' + e(f.file_name) + '）' : ''}</a>` : ''}
