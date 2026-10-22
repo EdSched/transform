@@ -31,31 +31,38 @@ alter table public.sched_courses add column if not exists sched_removed_at times
 -- ============================================================
 -- ③ 实测（会自动回滚，不留任何改动）：
 --    A. 给一门课打上移出标记后，管理端那边改一下这门课、排课这边也改一下，标记还在不在
+--    （已看过四个同步函数：只复制写明的列，不含 sched_removed_*，预期「还在」）
 --    B. 删掉这条 sched_courses 后，courses 里这门课还在不在
 --    结果会以「报错信息」的形式显示（报错 = 整段已回滚，正常现象），把那句话贴给 Claude 即可
 -- ============================================================
 do $$
 declare
-  v_id text; v_keep boolean; v_left_courses int; v_left_sessions int;
+  v_sched bigint; v_course text; v_keep boolean; v_left_courses int; v_left_sessions int; v_del text := '删除成功';
 begin
-  select sc.id::text into v_id
-  from public.sched_courses sc
-  join public.courses c on c.id::text = sc.id::text
+  -- 两张表靠 sched_course_id_map 对应（sched_courses.id 是数字，courses.id 是文本）
+  select m.sched_id, m.course_id into v_sched, v_course
+  from public.sched_course_id_map m
+  join public.sched_courses sc on sc.id = m.sched_id
+  join public.courses c on c.id = m.course_id
   where sc.deleted_at is null
   limit 1;
-  if v_id is null then raise exception '没找到可测试的课程'; end if;
+  if v_sched is null then raise exception '没找到可测试的课程'; end if;
 
-  update public.sched_courses set sched_removed_reason = '__test__', sched_removed_at = now() where id::text = v_id;
-  update public.courses       set name = name where id::text = v_id;          -- 触发 courses → sched 同步
-  update public.sched_courses set name = name where id::text = v_id;          -- 触发 sched → courses 同步
-  select (sched_removed_reason = '__test__') into v_keep from public.sched_courses where id::text = v_id;
+  update public.sched_courses set sched_removed_reason = '__test__', sched_removed_at = now() where id = v_sched;
+  update public.courses       set name = name where id = v_course;   -- 触发 courses → sched 同步
+  update public.sched_courses set name = name where id = v_sched;    -- 触发 sched → courses 同步
+  select (sched_removed_reason = '__test__') into v_keep from public.sched_courses where id = v_sched;
 
-  delete from public.sched_courses where id::text = v_id;
-  select count(*) into v_left_courses  from public.courses         where id::text = v_id;
-  select count(*) into v_left_sessions from public.course_sessions where course_id::text = v_id;
+  begin
+    delete from public.sched_courses where id = v_sched;
+  exception when others then
+    v_del := '删除被拦：' || sqlerrm;
+  end;
+  select count(*) into v_left_courses  from public.courses         where id = v_course;
+  select count(*) into v_left_sessions from public.course_sessions where course_id = v_course;
 
-  raise exception '实测结果（已回滚）：A 同步后移出标记%；B 删除 sched_courses 后 courses 剩 % 行、course_sessions 剩 % 行',
-    case when v_keep then '还在（正常）' else '被清掉了（需要改触发器）' end, v_left_courses, v_left_sessions;
+  raise exception '实测结果（已回滚）：A 同步后移出标记%；B 删除 sched_courses：%，courses 剩 % 行、course_sessions 剩 % 行',
+    case when v_keep then '还在（正常）' else '被清掉了（需要改触发器）' end, v_del, v_left_courses, v_left_sessions;
 end $$;
 
 -- ============================================================
