@@ -48,6 +48,7 @@
     <input id="q" class="sbox" type="search" placeholder="搜索课程名 / 老师（汉字 / 拼音首字母）/ 专业 / 校区 / 星期…（例：N1 周一 市谷）" autocomplete="off">
     <div class="srow"><span class="chip" id="onlyChip">只在筛选结果里搜</span><span class="muted" id="sNote" style="font-size:12px"></span></div>
   </div>
+  <div id="traceBar" style="margin-bottom:10px"></div>
   <div class="card" id="filters">
     <div class="fl" id="fCat"><span class="lbl">类别</span></div>
     <div class="fl" id="fLang"><span class="lbl">语种</span></div>
@@ -72,7 +73,7 @@ const STATUS_ORDER = {'进行中':0,'未开课':1,'已结课':2};
 const KEYWORDS = ['N1','N2','N3','N4','N5','EJU','TOEIC','TOEFL','过去问','面试','小论文','研究计划书','共通课'];
 const SHAKAI_GROUP = ['社会人文','社会学','新闻传播学','新聞传播学','社会福祉学'];   // 与 timetable.html 一致
 const MAJOR_FOLD = 12;
-let COURSES=[], HOLIDAYS=[], BOOKINGS=[], ROOMS=[], SESS={};
+let COURSES=[], ALLC=[], TRACE=schedTraceNew(), HOLIDAYS=[], BOOKINGS=[], ROOMS=[], SESS={};
 let INFO = {}, WDS = {}, HAY = {};
 const ROWS = ['cat','lang','major','term','status','campus','wd','kw'];
 const F = { cat:new Set(), lang:new Set(), major:new Set(), term:new Set(), status:new Set(['未开课','进行中']), campus:new Set(), wd:new Set(), kw:new Set(), q:'', only:false };
@@ -99,7 +100,7 @@ function reasonMap(c){ const m={}; (c.skip_reasons||'').split(';').forEach(p=>{ 
 // 推算：weekdays + 开课日 + 休讲日 + 全局假期（未豁免）；合并组按 merge_order 轮流
 function calcDates(c){
   const out=[];
-  const grp = c.merge_group ? COURSES.filter(x=>x.merge_group===c.merge_group).sort((a,b)=>(a.merge_order||99)-(b.merge_order||99)) : [c];
+  const grp = c.merge_group ? ALLC.filter(x=>x.merge_group===c.merge_group).sort((a,b)=>(a.merge_order||99)-(b.merge_order||99)) : [c];
   const ref = grp[0];
   if(!ref.weekdays) return out;
   const wds = parseWeekdaysSched(ref.weekdays);
@@ -268,6 +269,7 @@ function cardHtml(c){
     `<div class="l1"><span class="nm">${esc(c.merge_name||c.name)}</span>`+
     `<span class="tag" style="background:${cc.bg};border-color:${cc.bd};color:${cc.tx}">${esc(c.category||'')}</span>`+
     (termKeyOf(c)?`<span class="badge b-mute">${esc(termKeyOf(c))}</span>`:'')+
+    (schedRemoved(c)?`<span class="badge b-mute" style="background:#e4e4e4">已移出 · ${esc(c.sched_removed_reason)}</span>`:'')+
     `<span class="arrow">${open?'收起 ▴':'展开 ▾'}</span></div>`+
     `<div class="l2">${l2}</div><div class="l3">${l3}</div>${nx}`+
     (open?detailHtml(c):'')+`</div>`;
@@ -285,8 +287,9 @@ function detailHtml(c){
 }
 function renderList(){
   const sr=searching();
+  const traceOn = TRACE.open && schedTraceActive(TRACE);
   // 打开时不列课程：输入了搜索词，或点选了任意筛选条件才出结果
-  if(!sr && !userFiltering()){
+  if(!sr && !userFiltering() && !traceOn){
     el('filters').classList.remove('dim'); el('onlyChip').classList.toggle('on', F.only); el('sNote').textContent='';
     el('clearBtn').classList.toggle('hidden', !anyFilter());
     el('cnt').textContent=''; el('hint').textContent='';
@@ -324,14 +327,14 @@ function bind(){
     if(e.target.id==='moreBtn'){ SHOWN+=PAGE_SIZE; renderList(); return; }
     const card=e.target.closest('.ccard'); if(!card) return;
     const id=card.dataset.id; OPENED.has(id)?OPENED.delete(id):OPENED.add(id);
-    const c=COURSES.find(x=>String(x.id)===id); card.outerHTML=cardHtml(c);
+    const c=ALLC.find(x=>String(x.id)===id); card.outerHTML=cardHtml(c);
   });
 }
 
 async function boot(){
   el('list').innerHTML='<div class="tip">加载中…</div>';
   try{
-    const CF='id,name,merge_name,merge_group,merge_order,category,major,course_type,teacher,campus,mode,term,weekdays,start_time,end_time,start_date,end_date,sessions,skip_dates,skip_reasons,holiday_except,deleted_at';
+    const CF='id,name,merge_name,merge_group,merge_order,category,major,course_type,teacher,campus,mode,term,weekdays,start_time,end_time,start_date,end_date,sessions,skip_dates,skip_reasons,holiday_except,deleted_at,sched_removed_reason';
     const [cs, hol, bks, rooms, ses] = await Promise.all([
       sbGet('sched_course_v','select='+CF),
       sbGet('sched_holidays','select=*&order=start_date').catch(()=>[]),
@@ -339,11 +342,22 @@ async function boot(){
       sbGet('sched_rooms','select=id,name,campus').catch(()=>[]),
       sbGet('course_sessions','select=course_id,session_date').catch(()=>[])
     ]);
-    COURSES=cs.filter(c=>!c.deleted_at); HOLIDAYS=hol; BOOKINGS=bks.map(b=>Object.assign({kind:'course'},b)); ROOMS=rooms;
+    ALLC=cs.filter(c=>!c.deleted_at); HOLIDAYS=hol; BOOKINGS=bks.map(b=>Object.assign({kind:'course'},b)); ROOMS=rooms;
     ses.forEach(s=>{ if(s.course_id!=null && s.session_date) (SESS[String(s.course_id)]=SESS[String(s.course_id)]||[]).push(s.session_date); });
-    COURSES.forEach(c=>{ WDS[c.id]=parseWeekdaysSched(c.weekdays); INFO[c.id]=buildInfo(c); HAY[c.id]=buildHay(c); });
+    ALLC.forEach(c=>{ WDS[c.id]=parseWeekdaysSched(c.weekdays); INFO[c.id]=buildInfo(c); HAY[c.id]=buildHay(c); });
+    applyView();
   }catch(e){ el('list').innerHTML='<div class="tip">读取失败：'+esc(e.message)+'</div>'; return; }
-  bind(); renderAll();
+  bind();
+  // 追溯查询：默认只显示当前期 + 下一期、没移出的课；点开后按所选期数 / 搜索 / 已移出。点开时「状态」不再默认挡住已结课
+  let wasOpen=false;
+  schedTraceMount('traceBar', ()=>ALLC, TRACE, ()=>{
+    if(TRACE.open && !wasOpen){ F.status.clear(); STATUS_DEFAULT=false; }
+    if(!TRACE.open && wasOpen){ F.status=new Set(['未开课','进行中']); STATUS_DEFAULT=true; }
+    wasOpen=TRACE.open; applyView(); SHOWN=PAGE_SIZE; renderAll();
+  });
+  renderAll();
 }
+/* 本页显示的课（COURSES）= 全部课程按显示窗口 / 追溯条件筛过；周几、日期推算等仍按全部课程算 */
+function applyView(){ COURSES = schedViewList(ALLC, TRACE); }
 </script>
 </body></html>
