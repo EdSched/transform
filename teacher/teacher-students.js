@@ -1126,6 +1126,8 @@ async function mrGeneratePdf(sid){
 
 // ══ 子项2：出席・作业记录 ══
 let tsrStudents = [];
+// 大课的出席・作业只看有大课的学生：纯 VIP（is_vip_course = 'VIP'）没有大课，不出现在这里（他们的课看 VIP 页）
+const tsrBigStudents = () => tsrStudents.filter(s => !isPureVipStudent(s));
 let tsrExpandedId = null;
 let tsrRecCache = {};
 
@@ -1425,6 +1427,7 @@ function tsrRender() {
   if (!box) return;
   if (tsrYm === null) tsrYm = tmCurYm();
   const rp = smRecPerm();   // view 查看 / entry 登记
+  if (tsrKind === 'big' && tsrStudents.length && !tsrBigStudents().length) tsrKind = 'vip';   // 名下全是纯 VIP（没有大课）：直接看 VIP
   const kindBar = `<div style="display:flex;gap:5px;margin-bottom:10px">${[['big','大课'],['vip','VIP']].map(([k,l])=>`<div class="filter-chip${tsrKind===k?' active':''}" onclick="tsrSetKind('${k}')" style="padding:4px 14px">${l}</div>`).join('')}</div>`;
   if (tsrKind === 'vip') { tsrRenderVip(box, kindBar, rp); return; }
   const cur = tmCurYm();
@@ -1436,7 +1439,7 @@ function tsrRender() {
     ${rp.entry ? '<div id="tat_session_bar" style="margin-bottom:6px"></div>' : ''}
     ${(rp.entry && typeof awTeacherIsArt === 'function' && awTeacherIsArt()) ? '<div id="aw_teacher_box"></div>' : ''}
     <!-- 学生出席统计（可收起），只有查看权限才显示 -->
-    ${rp.view ? `<div onclick="tsrHistOpen=!tsrHistOpen;tsrRender()" style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-2);padding:8px 0;border-top:1px solid var(--border);user-select:none">${tsrHistOpen?'▾':'▸'} 学生出席・作业（<span id="tsr_n">${tsmFilterStudents(tsrStudents).length}</span> 人，点击${tsrHistOpen?'收起':'展开'}）</div>
+    ${rp.view ? `<div onclick="tsrHistOpen=!tsrHistOpen;tsrRender()" style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-2);padding:8px 0;border-top:1px solid var(--border);user-select:none">${tsrHistOpen?'▾':'▸'} 学生出席・作业（<span id="tsr_n">${tsmFilterStudents(tsrBigStudents()).length}</span> 人，点击${tsrHistOpen?'收起':'展开'}）</div>
     <div style="display:${tsrHistOpen?'block':'none'}">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       ${arrow(-1, '‹')}<span style="font-size:13px;font-weight:600;min-width:92px;text-align:center">${tsrYm ? tsrYm.replace('-', '年') + '月' : '全部月份'}</span>${arrow(1, '›')}
@@ -1449,7 +1452,7 @@ function tsrRender() {
   </div>`;
   if (rp.view && tsrHistOpen) { tsrRenderList(); if (!tsrCtx || tsrCtx.ym !== tsrYm) tsrLoadStats(); }
   if(rp.entry && typeof tatRenderSessionBar==='function') tatRenderSessionBar();
-  if(document.getElementById('aw_teacher_box')) awTeacherMount('aw_teacher_box', tsmFilterStudents(tsrStudents));   // 学部美术：🎨 作业收集
+  if(document.getElementById('aw_teacher_box')) awTeacherMount('aw_teacher_box', tsmFilterStudents(tsrBigStudents()));   // 学部美术：🎨 作业收集
 }
 
 function tsrStatsHtml(s) {
@@ -1475,7 +1478,7 @@ function tsrPeriodsHtml(s) {
 
 function tsrRenderList() {
   const el = document.getElementById('tsr_list'); if (!el) return;
-  const listAll = tsmFilterStudents(tsrStudents);
+  const listAll = tsmFilterStudents(tsrBigStudents());
   const list = tsmSlice(listAll);
   const n = document.getElementById('tsr_n'); if (n) n.textContent = listAll.length;
   el.innerHTML = `<div style="border:1px solid var(--border);border-radius:4px;overflow:hidden">
