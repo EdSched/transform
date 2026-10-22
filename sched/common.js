@@ -338,18 +338,86 @@ function termStartDate(term){
   const mo = parseInt(m[2],10);
   return y+'-'+String(mo).padStart(2,'0')+'-01';
 }
-/* 统计各期"未排教室"的课程：未排 = 该课在 bookings 里没有 kind=course 记录 */
+/* ---------- 排课里的课程显示：只看当前期和下一期 + 移出排课 ----------
+   只决定"列表里显示哪些课"；教室占空、冲突检查、roomFree 一律用全部课程和占用，不走这里。 */
+const SCHED_REMOVE_REASONS = ['外部场地','自有画室・工作室','本期停开','已过期','其他'];
+function schedRemoved(c){ return !!(c && c.sched_removed_reason); }          // 不为空 = 已移出排课
+function schedIsOnline(c){ return !!c && (c.mode==='线上' || c.campus==='线上'); }   // 「线上+线下」按线下处理
+function schedMissingDates(c){ return !c.start_date || !c.end_date; }
+/* 某日所在季度（1-3/4-6/7-9/10-12 月）的最后一天 */
+function schedQuarterEnd(dateStr){
+  const [y,m]=dateStr.split('-').map(Number);
+  return ymd(new Date(y, Math.ceil(m/3)*3, 0));
+}
+/* 下一期的最后一天：今天 10 月 → 下一期是 1-3 月 → 明年 3 月 31 日 */
+function schedNextTermEnd(today){ return schedQuarterEnd(addDays(schedQuarterEnd(today), 1)); }
+/* 显示窗口：正在进行 / 当前期或下一期 / 缺日期（好让人补上） */
+function schedInWindow(c, today){
+  today = today || todayStr();
+  if(schedMissingDates(c)) return true;
+  if(c.start_date<=today && today<=c.end_date) return true;
+  return c.end_date>=today && c.start_date<=schedNextTermEnd(today);
+}
+function schedTermKey(c){ return c.term || termOf(c.start_date) || '未分期'; }
+/* 追溯状态：{open, terms:Set, q, removedOnly}；没点开时 = 默认（窗口内、未移出） */
+function schedTraceNew(){ return {open:false, terms:new Set(), q:'', removedOnly:false}; }
+function schedTraceActive(st){ return !!(st.removedOnly || st.terms.size || (st.q||'').trim()); }
+function schedViewList(all, st, today){
+  today = today || todayStr();
+  if(!st || !st.open) return all.filter(c=>!schedRemoved(c) && schedInWindow(c, today));
+  if(!schedTraceActive(st)) return [];     // 点开后先选期数 / 搜索 / 已移出，不一次铺开全部历史
+  let l = all;
+  if(st.removedOnly) l = l.filter(schedRemoved);
+  if(st.terms.size) l = l.filter(c=>st.terms.has(schedTermKey(c)));
+  if((st.q||'').trim()) l = l.filter(c=>searchMatch(st.q,[c.teacher,c.name]));
+  return l;
+}
+/* 追溯栏：boxId 是页面里一个空 div；getAll() 返回全部课程（含已结课、已移出）；onChange() 让页面重画列表 */
+function schedTraceMount(boxId, getAll, st, onChange){
+  const box = el(boxId); if(!box) return;
+  const chip=(on,attr,text)=>`<span ${attr} style="display:inline-block;padding:2px 10px;margin:2px 4px 2px 0;border:1px solid ${on?'#2f6b4f':'#d5dbe1'};border-radius:14px;font-size:12px;cursor:pointer;user-select:none;background:${on?'#2f6b4f':'#fff'};color:${on?'#fff':'#666'}">${text}</span>`;
+  const draw=()=>{
+    if(!st.open){ box.innerHTML='<button type="button" class="ghost sm" data-tg="1">显示全部 / 追溯查询</button><span class="muted" style="font-size:12px;margin-left:8px">现在只显示正在进行的课和下一期开课前的课</span>'; return; }
+    const all = getAll();
+    const terms=[...new Set(all.map(schedTermKey))].sort((a,b)=>termSortKey(b)-termSortKey(a) || String(b).localeCompare(String(a)));
+    const nRem = all.filter(schedRemoved).length;
+    box.innerHTML='<div style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fafbfc;margin-bottom:8px">'+
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap"><b style="font-size:13px">追溯查询</b>'+
+        '<input type="search" data-tq="1" placeholder="课名 / 老师" value="'+esc(st.q||'')+'" style="width:180px">'+
+        '<button type="button" class="ghost sm" data-tg="1">收起，回到默认</button></div>'+
+      '<div>'+terms.map(t=>chip(st.terms.has(t),'data-tt="'+esc(t)+'"',esc(t))).join('')+chip(st.removedOnly,'data-rm="1"','已移出（'+nRem+'）')+'</div>'+
+      (schedTraceActive(st)?'':'<div class="muted" style="font-size:12px;margin-top:4px">请选期数、点「已移出」，或输入课名 / 老师。</div>')+'</div>';
+    const qi=box.querySelector('[data-tq]'); if(qi) bindSearch(qi, q=>{ st.q=q; onChange(); });
+  };
+  box.onclick=ev=>{
+    const t=ev.target.closest('[data-tg],[data-tt],[data-rm]'); if(!t) return;
+    if(t.dataset.tg){ st.open=!st.open; if(!st.open){ st.terms.clear(); st.q=''; st.removedOnly=false; } }
+    else if(t.dataset.rm){ st.removedOnly=!st.removedOnly; }
+    else { const v=t.dataset.tt; st.terms.has(v)?st.terms.delete(v):st.terms.add(v); }
+    draw(); onChange();
+  };
+  draw();
+}
+/* 统计各期"未排教室"的课程：未排 = 该课在 bookings 里没有 kind=course 记录
+   已移出排课的不算；线上课（还没设腾讯会议）单独算，见 onlineTodoCourses */
 function unscheduledByTerm(courses, bookings){
   const scheduled = new Set(bookings.filter(b=>b.kind==='course'&&b.course_id).map(b=>String(b.course_id)));
   const _today = todayStr();
   const byTerm = {};
   courses.forEach(c=>{
     if(scheduled.has(String(c.id))) return;
+    if(schedRemoved(c) || schedIsOnline(c)) return;
     if(c.end_date && c.end_date < _today) return;   // 已上完的课（结课日已过）不再提醒排教室
     const term = c.term||'未分期';
     (byTerm[term]=byTerm[term]||[]).push(c);
   });
   return byTerm;
+}
+/* 线上课里还没处理（没有 kind=course 占用，也没移出）的课 */
+function onlineTodoCourses(courses, bookings){
+  const scheduled = new Set(bookings.filter(b=>b.kind==='course'&&b.course_id).map(b=>String(b.course_id)));
+  const _today = todayStr();
+  return courses.filter(c=>schedIsOnline(c) && !schedRemoved(c) && !scheduled.has(String(c.id)) && !(c.end_date && c.end_date<_today));
 }
 /* 生成排课提醒文案列表（每个未排完的期一条）。提前半个月进入提醒窗 */
 function schedulingReminders(courses, bookings){

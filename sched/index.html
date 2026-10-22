@@ -35,10 +35,11 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="common.js?v=20261022"></script>
+<script src="common.js?v=20261023"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], ROLE=null;
+let ALL_COURSES=[];   // 全部未删除的课（含已结课、已移出排课）：只给「追溯查询 / 批量移出」用；教室占空、冲突检查仍用 COURSES
 const EMBED_ADMIN = new URLSearchParams(location.search).get('embed')==='admin';   // 嵌在管理端「资源管理」里
 
 /* 口令登录（口令即 access_codes 的 code，需 manage 权限）。admin-7910 可直接进 */
@@ -66,6 +67,7 @@ async function reloadAll(){
   ]);
   DELETED_COURSES = COURSES.filter(c=>c.deleted_at);
   COURSES = COURSES.filter(c=>!c.deleted_at);
+  ALL_COURSES = COURSES.slice();
   // 已上完的课（结课日已过）不再参与排课/教室占用/提醒——过去的期不需要占用显示
   // 只过滤 end_date 有值且已过的；没填 end_date 的不误伤
   { const _today=new Date().toISOString().slice(0,10); COURSES = COURSES.filter(c=>!(c.end_date && c.end_date < _today)); }
@@ -158,10 +160,11 @@ function renderHub(){
     if(rb){
       const ps=permSet(ROLE);
       if((ps.has('assign')||ps.has('manage')) && typeof schedulingReminders==='function'){
-        const rems=schedulingReminders(COURSES, BOOKINGS);
+        const rems=schedulingReminders(remindCourses(), BOOKINGS);
         let remHtml = rems.length ? rems.map(r=>
           `<div style="background:${r.urgent?'#fdf1ed':'#f7f5f0'};border:1px solid ${r.urgent?'#f2d5cc':'#e6e0d4'};color:${r.urgent?'#c85a3c':'#6b5d3e'};padding:10px 14px;border-radius:8px;margin-bottom:8px;font-size:13px;line-height:1.5">${esc(r.msg)}</div>`
         ).join('') : '';
+        remHtml += onlineRemindHtml();
         // 已排教室但未设会议链接（含线上课）
         const noLink = COURSES.filter(c=>!(c.meeting_link||c.meeting_id) && BOOKINGS.some(b=>b.kind==='course' && String(b.course_id)===String(c.id)));
         if(noLink.length){
@@ -172,6 +175,7 @@ function renderHub(){
         }
         rb.innerHTML = remHtml;
         if(el('rem_mtg')) el('rem_mtg').onclick=()=>openCard('meeting');
+        bindOnlineRemind();
       } else rb.innerHTML='';
     }
   }catch(e){ const rb=el('schedRemind'); if(rb) rb.innerHTML=''; }
@@ -244,15 +248,32 @@ function renderChangeAlerts(){
     renderChangeAlerts();
   });
 }
+/* 提醒只看显示窗口内、没移出的课 */
+function remindCourses(){ return schedViewList(ALL_COURSES, null); }
+/* 线上课还没设定腾讯会议：单独一条，不算「未排教室」 */
+function onlineRemindHtml(){
+  const todo = onlineTodoCourses(remindCourses(), BOOKINGS);
+  if(!todo.length) return '';
+  return '<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#2f5a8a;padding:10px 14px;border-radius:8px;margin-bottom:8px;font-size:13px;line-height:1.5;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+    '<span>有 <b>'+todo.length+'</b> 门线上课还没设定腾讯会议。</span><button class="sm rem_online">去处理</button></div>';
+}
+function bindOnlineRemind(){
+  document.querySelectorAll('.rem_online').forEach(b=>b.onclick=()=>{
+    window.AS_VIEW='table';
+    window.AF_STATE={af_kind:'online', af_status:'todo'};
+    window.AF_TRACE=schedTraceNew();
+    openCard('assign');
+  });
+}
 function reminderHtml(){
   try{
     if(typeof schedulingReminders!=='function' || !ROLE) return '';
     const ps=permSet(ROLE);
     if(!(ps.has('assign')||ps.has('manage'))) return '';   // 只对能排教室的账号提醒
-    const rems=schedulingReminders(COURSES, BOOKINGS);
-    return rems.length ? rems.map(r=>
+    const rems=schedulingReminders(remindCourses(), BOOKINGS);
+    return (rems.length ? rems.map(r=>
       `<div style="background:${r.urgent?'#fdf1ed':'#f7f5f0'};border:1px solid ${r.urgent?'#f2d5cc':'#e6e0d4'};color:${r.urgent?'#c85a3c':'#6b5d3e'};padding:10px 14px;border-radius:8px;margin-bottom:8px;font-size:13px;line-height:1.5">${esc(r.msg)}</div>`
-    ).join('') : '';
+    ).join('') : '') + onlineRemindHtml();
   }catch(e){ return ''; }
 }
 function openCard(key){
@@ -263,7 +284,7 @@ function openCard(key){
   el('hub').classList.add('hidden');
   el('work').classList.remove('hidden');
   el('workTitle').textContent = ic+' '+nm;
-  const wr=el('workRemind'); if(wr) wr.innerHTML = reminderHtml();   // 每个功能页都显示提醒
+  const wr=el('workRemind'); if(wr){ wr.innerHTML = reminderHtml(); bindOnlineRemind(); }   // 每个功能页都显示提醒
   const panel=el('panel'), frame=el('frame');
   if(type==='iframe'){
     panel.style.display='none'; panel.innerHTML='';
@@ -435,6 +456,7 @@ function tabAssign(){
       '<div class="field"><label>校区</label><select id="af_campus"></select></div>'+
       '<div class="field"><label>状态</label><select id="af_status">'+
         '<option value="">全部</option><option value="todo">未排</option><option value="done">已排</option></select></div>'+
+      '<div class="field"><label>方式</label><select id="af_kind"><option value="">全部</option><option value="online">线上课</option><option value="offline">线下课</option></select></div>'+
       '<div class="field"><label>&nbsp;</label><span class="muted" id="af_count"></span></div>'+
     '</div>'+
     '<div style="display:flex;gap:6px;margin-bottom:10px;align-items:flex-end;flex-wrap:wrap">'+
@@ -460,20 +482,24 @@ function tabAssign(){
         '<span class="field" style="margin:0"><label style="font-size:11px">定位到某一周（只看那周在上的课）</label><input type="date" id="af_week"></span>'+
         '<span class="field" style="margin:0"><label style="font-size:11px">&nbsp;</label><button type="button" class="ghost sm" id="af_weekclr">全部周</button></span>'+
       '</span>'+
-      '<button type="button" class="ghost sm" id="af_clear" style="margin-left:auto">清空筛选</button>'+
+      '<button type="button" class="ghost sm" id="af_batchrm" style="margin-left:auto">批量移出已结课</button>'+
+      '<button type="button" class="ghost sm" id="af_clear">清空筛选</button>'+
     '</div>'+
+    '<div id="af_trace" style="margin-bottom:8px"></div>'+
     '<div id="assignTable"></div></div><div id="asForm"></div>';
   render(h);
-  fillTermSelect(el('af_term'), COURSES.map(c=>c.term), '全部期');
+  fillTermSelect(el('af_term'), assignViewCourses().map(c=>c.term), '全部期');
+  if(!window.AF_TRACE) window.AF_TRACE=schedTraceNew();
+  schedTraceMount('af_trace', ()=>ALL_COURSES, window.AF_TRACE, ()=>{ fillTermSelect(el('af_term'), assignViewCourses().map(c=>c.term), '全部期'); renderAssignView(); });
   fillSelect(el('af_cat'), CATEGORIES, v=>v, v=>v, '全部类别');
   fillSelect(el('af_campus'), ['高马','市谷'], v=>v, v=>v, '全部校区');
   // 恢复上次筛选（操作后不重置）；首次进入默认「全部期」——按周排课靠日期区间定位，不锁某一期
   const AF=window.AF_STATE;
   if(AF){
-    ['af_q','af_term','af_cat','af_campus','af_status','af_week'].forEach(id=>{ if(AF[id]!=null && el(id)) el(id).value=AF[id]; });
+    ['af_q','af_term','af_cat','af_campus','af_status','af_kind','af_week'].forEach(id=>{ if(AF[id]!=null && el(id)) el(id).value=AF[id]; });
   }
-  const saveAF=()=>{ window.AF_STATE={}; ['af_q','af_term','af_cat','af_campus','af_status','af_room','af_week','af_wd','af_dstart','af_dend','af_wd2','af_dstart2','af_dend2','af_mode'].forEach(id=>{ if(el(id)) window.AF_STATE[id]=el(id).value; }); };
-  ['af_term','af_cat','af_status'].forEach(id=>el(id).onchange=()=>{ saveAF(); renderAssignView(); });
+  const saveAF=()=>{ window.AF_STATE={}; ['af_q','af_term','af_cat','af_campus','af_status','af_kind','af_room','af_week','af_wd','af_dstart','af_dend','af_wd2','af_dstart2','af_dend2','af_mode'].forEach(id=>{ if(el(id)) window.AF_STATE[id]=el(id).value; }); };
+  ['af_term','af_cat','af_status','af_kind'].forEach(id=>el(id).onchange=()=>{ saveAF(); renderAssignView(); });
   bindSearch(el('af_q'),()=>{ saveAF(); renderAssignView(); });
   ['af_wd','af_dstart','af_dend','af_wd2','af_dstart2','af_dend2','af_mode'].forEach(id=>{ if(el(id)) el(id).onchange=()=>{ saveAF(); renderAssignView(); }; });
   if(AF){ ['af_wd','af_dstart','af_dend','af_wd2','af_dstart2','af_dend2','af_mode'].forEach(id=>{ if(AF[id]!=null && el(id)) el(id).value=AF[id]; }); }
@@ -495,10 +521,13 @@ function tabAssign(){
       syncRoomPicker(); renderAssignView(); };
   });
   el('af_campus').addEventListener('change', ()=>{ saveAF(); syncRoomPicker(); saveAF(); renderAssignView(); });
-  const clr=el('af_clear'); if(clr) clr.onclick=()=>{ window.AF_STATE=null; window.AS_VIEW='day'; tabAssign(); };
+  el('af_batchrm').onclick=schedBatchRemoveEnded;
+  const clr=el('af_clear'); if(clr) clr.onclick=()=>{ window.AF_STATE=null; window.AF_TRACE=schedTraceNew(); window.AS_VIEW='day'; tabAssign(); };
   syncRoomPicker();
   renderAssignView();
 }
+/* 排教室页当前该显示的课：默认 = 当前期 + 下一期、没移出；点开「追溯查询」后按所选条件 */
+function assignViewCourses(){ return schedViewList(ALL_COURSES, window.AF_TRACE); }
 function renderAssignView(){
   if(window.AS_VIEW==='table') renderAssignTable();
   else renderAssignDay();
@@ -523,7 +552,8 @@ function renderAssignDay(){
     return true;
   };
   // 线下模式：读该校区线下课；线上模式：只读线上课（不管原校区）
-  let dayCourses=COURSES.filter(c=>{
+  let dayCourses=assignViewCourses().filter(c=>{
+    if(schedRemoved(c)) return false;
     const online = c.mode==='线上' || c.campus==='线上';
     if(isOnline){ if(!online) return false; }
     else { if(online) return false; if(c.campus!==campus) return false; }
@@ -792,17 +822,22 @@ function renderAssignTable(){
   const q=(el('af_q').value||'').trim();
   const term=el('af_term').value, cat=el('af_cat').value, campus=el('af_campus').value, status=el('af_status').value;
   const assigned=new Set(BOOKINGS.filter(b=>b.kind==='course').map(b=>String(b.course_id)));
-  let list=COURSES.filter(c=>{
+  const kind=el('af_kind')?el('af_kind').value:'';
+  let list=assignViewCourses().filter(c=>{
     const done=assigned.has(String(c.id));
     if(q && !searchMatch(q,[c.teacher,c.name])) return false;
+    if(kind==='online' && !schedIsOnline(c)) return false;
+    if(kind==='offline' && schedIsOnline(c)) return false;
     if(term && c.term!==term) return false;
     if(cat && c.category!==cat) return false;
     if(campus && c.campus!==campus) return false;
-    if(status==='todo' && done) return false;
+    if(status==='todo' && (done || schedRemoved(c))) return false;
     if(status==='done' && !done) return false;
     return true;
   });
   el('af_count').textContent = '共 '+list.length+' 门';
+  const tr=window.AF_TRACE;
+  if(tr && tr.open && !schedTraceActive(tr)){ el('assignTable').innerHTML=''; return; }
   let h='<table><thead><tr><th>课程</th><th>类别</th><th>校区</th><th>周几</th><th>时段</th><th>日期区间</th><th>人数</th><th>方式</th><th>已排</th><th>操作</th></tr></thead><tbody>';
   if(!list.length) h+='<tr><td colspan="10" class="muted">无匹配课程</td></tr>';
   list.forEach(c=>{
@@ -817,12 +852,15 @@ function renderAssignTable(){
       `<td>${weekdaysLabel(c.weekdays)}</td><td>${c.start_time||''}-${c.end_time||''}</td>`+
       `<td>${noDate?'<span class="badge b-warn">缺日期</span>':(c.start_date+' ~ '+c.end_date)}</td>`+
       `<td>${c.est_students||'?'}</td><td>${esc(c.mode)}</td>`+
-      `<td>${done?'<span class="badge b-ok">已排 · '+esc(where)+'</span>':'<span class="badge b-mute">未排</span>'}</td>`+
-      `<td><button class="sm" data-as="${c.id}">${done?'重排':'排教室'}</button>${done?(' <button class="sm ghost" data-clr="'+c.id+'">清空教室</button>'):''}</td></tr>`;
+      `<td>${schedRemoved(c)?'<span class="badge b-mute" style="background:#e4e4e4">已移出 · '+esc(c.sched_removed_reason)+'</span>':(done?'<span class="badge b-ok">已排 · '+esc(where)+'</span>':'<span class="badge b-mute">未排</span>')}</td>`+
+      (schedRemoved(c)
+        ? `<td><button class="sm ghost" data-restore="${c.id}">恢复到排课</button></td></tr>`
+        : `<td><button class="sm" data-as="${c.id}">${done?'重排':'排教室'}</button>${done?(' <button class="sm ghost" data-clr="'+c.id+'">清空教室</button>'):''}</td></tr>`);
   });
   h+='</tbody></table>';
   el('assignTable').innerHTML=h;
   bind('[data-as]', id=>assignRoomOnly(id));
+  bind('[data-restore]', id=>schedRestore(id));
   bind('[data-clr]', async id=>{
     const c=COURSES.find(x=>String(x.id)===String(id))||{};
     if(!confirm('把「'+(c.name||'')+'」清空教室（改回未排）？将删除它的教室占用记录，会议号绑定不受影响。')) return;
@@ -851,32 +889,67 @@ function assignRoomOnly(courseId){
       overlap(c.start_time,c.end_time,b.start_time,b.end_time) &&
       !(c.end_date&&b.start_date&&c.end_date<b.start_date) &&
       !(c.start_date&&b.end_date&&c.start_date>b.end_date) ));
-  // 线上课占教室时，用当前筛选的校区（高马/市谷）的教室；线下课用课程自己的校区
-  const roomCampus = isOnlineCourse ? (el('af_campus')?el('af_campus').value:'') : c.campus;
-  let cand=ROOMS.filter(r=>r.active!==false && r.campus===roomCampus);
-  if(c.est_students) cand=cand.filter(r=>!r.capacity || r.capacity>=c.est_students);
-  const roomOpts = cand.length
-    ? cand.map(r=>{ const free=roomFree(r); const sel=ex&&String(ex.room_id)===String(r.id)?' selected':'';
-        return `<option value="${r.id}"${(free||sel)?'':' disabled'}${sel}>${esc(r.name)}（${r.capacity||'?'}人）${free?'':' — 该时段已占'}</option>`; }).join('')
-    : '<option value="">无满足容量的教室</option>';
+  // 教室下拉：按容量筛、标出已占。线上课的校区由弹窗里的校区 chips 决定（默认课程登记校区；登记「线上」时用顶部筛选；都没有就要先选）
+  const topCampus = el('af_campus')?el('af_campus').value:'';
+  let aroCampus = isOnlineCourse
+    ? (CAMPUSES.includes(c.campus) ? c.campus : (CAMPUSES.includes(topCampus) ? topCampus : ''))
+    : c.campus;
+  if(isOnlineCourse && ex && ex.room_id){ const er=ROOMS.find(r=>String(r.id)===String(ex.room_id)); if(er && CAMPUSES.includes(er.campus)) aroCampus=er.campus; }
+  const roomOptsFor=campus=>{
+    if(!campus) return '<option value="">请先选校区</option>';
+    const all=ROOMS.filter(r=>r.active!==false && r.campus===campus);
+    if(!all.length) return '<option value="">该校区没有教室</option>';
+    let cand = c.est_students ? all.filter(r=>!r.capacity || r.capacity>=c.est_students) : all;
+    if(!cand.length && !isOnlineCourse) return '<option value="">无满足容量的教室</option>';
+    const tooSmall = !cand.length;          // 线上课容量都不够：列出全部教室并标出容量不足
+    if(tooSmall) cand=all;
+    return cand.map(r=>{ const free=roomFree(r); const sel=ex&&String(ex.room_id)===String(r.id)?' selected':'';
+      return `<option value="${r.id}"${(free||sel)?'':' disabled'}${sel}>${esc(r.name)}（${r.capacity||'?'}人）${tooSmall?' — 容量不足':''}${free?'':' — 该时段已占'}</option>`; }).join('');
+  };
+  const roomOpts = roomOptsFor(aroCampus);
+  const timeTxt = weekdaysLabel(c.weekdays)+' '+(c.start_time||'')+'–'+(c.end_time||'');
+  const subLine = isOnlineCourse
+    ? (c.campus && c.campus!=='线上' ? `线上课（登记校区：${esc(c.campus)}）· ${timeTxt}` : `线上课 · ${timeTxt}`)
+    : `${esc(c.campus)} · ${weekdaysLabel(c.weekdays)} · ${c.start_time||''}-${c.end_time||''} · 预估${c.est_students||'?'}人`;
+  const roomBlock =
+    '<div class="field" style="margin:8px 0"><label>选教室（容量足够）</label><select id="aro_room">'+roomOpts+'</select></div>'+
+    (isOnlineCourse?'':'<div style="display:flex;gap:8px;align-items:center;margin:8px 0"><span id="aro_um" data-on="1" style="cursor:pointer;user-select:none;border:1px solid var(--blue);background:var(--blue);color:#fff;border-radius:14px;padding:3px 12px;font-size:12px">占用该教室腾讯账号</span><span class="muted" id="aro_accName" style="font-size:12px"></span></div>');
   let h='<div style="position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:60;overflow:auto;padding:40px 16px" id="aroMask">'+
     '<div class="card" style="width:460px;max-width:94vw;margin:auto"><h3 style="margin-top:2px">'+(ex?'重排':'排')+'「'+esc(dispName)+'」教室</h3>'+
-    `<div class="muted" style="margin-bottom:8px">${esc(c.campus)} · ${weekdaysLabel(c.weekdays)} · ${c.start_time||''}-${c.end_time||''} · 预估${c.est_students||'?'}人</div>`;
-  if(ex){ h+='<div class="tip">当前已排：<b>'+esc(rname(ex.room_id))+'</b>。可改教室后重新生成。</div>'; }
+    `<div class="muted" style="margin-bottom:8px">${subLine}</div>`;
+  if(ex){ h+='<div class="tip">当前已排：<b>'+(ex.room_id?esc(rname(ex.room_id)):'仅腾讯会议（不占教室）')+'</b>。'+(ex.room_id?'可改教室后重新生成。':'')+'</div>'; }
   if(noDate){
     h+='<div class="tip">这门课缺开课/结课日期，排前请补上（会写回课程）。</div>'+
       '<div class="row"><div class="field"><label>开课日</label><input type="date" id="aro_sd" value="'+(c.start_date||'')+'"></div>'+
       '<div class="field"><label>结课日</label><input type="date" id="aro_ed" value="'+(c.end_date||'')+'"></div></div>';
   }
-  h+='<div class="field" style="margin:8px 0"><label>选教室（容量足够）</label><select id="aro_room">'+roomOpts+'</select></div>'+
-    (isOnlineCourse?'':'<div style="display:flex;gap:8px;align-items:center;margin:8px 0"><span id="aro_um" data-on="1" style="cursor:pointer;user-select:none;border:1px solid var(--blue);background:var(--blue);color:#fff;border-radius:14px;padding:3px 12px;font-size:12px">占用该教室腾讯账号</span><span class="muted" id="aro_accName" style="font-size:12px"></span></div>')+
-    '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button id="aro_save">'+(isOnlineCourse?'占用此教室':'确认排入')+'</button>'+
-    (isOnlineCourse?'<button class="ghost" id="aro_noroom">不安排教室（仅腾讯会议）</button>':'')+
+  const aroBtns = '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'+
+    (isOnlineCourse
+      ? '<button id="aro_noroom">仅腾讯会议（不占教室）</button><button class="ghost" id="aro_more">学生要来自习，另占一间教室</button>'
+      : '<button id="aro_save">确认排入</button>')+
     (ex?'<button class="danger" id="aro_clear">清空教室（改回未排）</button>':'')+
-    '<button class="ghost" id="aro_cancel">取消</button></div>'+
-    '<p class="muted" style="font-size:12px;margin-top:8px">'+(isOnlineCourse?'线上课：如学生要来自习就占一间教室；纯线上就点「不安排教室」，同样算排完，之后去绑腾讯会议即可。':'排入教室会默认占用该教室绑定的腾讯账号（用于账号冲突检测和看板显示）。具体会议链接/会议号之后统一到「会议链接设定」补。')+'</p>'+
-    '</div></div>';
+    '<button class="ghost" id="aro_remove">这门课不需要排教室，移出排课</button>'+
+    '<button class="ghost" id="aro_cancel">取消</button></div>';
+  if(isOnlineCourse){
+    h+='<p class="muted" style="font-size:12px;margin:4px 0 0">线上课只需要设定腾讯会议；只有学生要来教室自习时，才另外占一间教室。</p>'+aroBtns+
+      '<div id="aro_roomWrap" class="hidden" style="border-top:1px dashed var(--line);margin-top:12px;padding-top:8px">'+
+        '<div class="field"><label>教室所在校区</label><div id="aro_campus"></div></div>'+roomBlock+
+        '<button id="aro_save">占用此教室</button></div>';
+  } else {
+    h+=roomBlock+aroBtns+
+      '<p class="muted" style="font-size:12px;margin-top:8px">排入教室会默认占用该教室绑定的腾讯账号（用于账号冲突检测和看板显示）。具体会议链接/会议号之后统一到「会议链接设定」补。</p>';
+  }
+  h+='</div></div>';
   const wrap=document.createElement('div'); wrap.innerHTML=h; document.body.appendChild(wrap.firstChild);
+  if(isOnlineCourse){
+    const drawCampus=()=>{ el('aro_campus').innerHTML=CAMPUSES.map(cp=>`<span data-cp="${cp}" style="display:inline-block;padding:3px 12px;margin-right:6px;border:1px solid ${cp===aroCampus?'var(--blue)':'var(--line)'};border-radius:14px;font-size:13px;cursor:pointer;background:${cp===aroCampus?'var(--blue)':'#fff'};color:${cp===aroCampus?'#fff':'#666'}">${cp}</span>`).join('');
+      el('aro_campus').querySelectorAll('[data-cp]').forEach(x=>x.onclick=()=>{ aroCampus=x.dataset.cp; el('aro_room').innerHTML=roomOptsFor(aroCampus); drawCampus(); refreshAcc(); }); };
+    drawCampus();
+    const openMore=()=>{ el('aro_roomWrap').classList.remove('hidden'); el('aro_more').classList.add('hidden'); };
+    el('aro_more').onclick=openMore;
+    if(ex && ex.room_id) openMore();
+  }
+  if(el('aro_remove')) el('aro_remove').onclick=()=>schedRemoveDialog(groupCourses, dispName, ()=>{ const m=document.getElementById('aroMask'); if(m) m.remove(); });
   el('aro_cancel').onclick=()=>document.getElementById('aroMask').remove();
   document.getElementById('aroMask').onclick=(ev)=>{ if(ev.target.id==='aroMask') ev.target.remove(); };
   // 占用账号开关 + 随教室显示绑定账号
@@ -901,7 +974,7 @@ function assignRoomOnly(courseId){
       if(recs.length) await sbInsert('sched_bookings', recs);
       await reloadAll(); document.getElementById('aroMask').remove(); renderAssignView();
       toast('已标记为「仅腾讯会议」，记得去「会议链接设定」绑定会议号');
-    }catch(e){ toast('失败：'+e.message, false); btn.disabled=false; btn.textContent='不安排教室（仅腾讯会议）'; }
+    }catch(e){ toast('失败：'+e.message, false); btn.disabled=false; btn.textContent='仅腾讯会议（不占教室）'; }
   };
   if(el('aro_clear')) el('aro_clear').onclick=async()=>{
     if(!confirm('把「'+dispName+'」清空教室（改回未排）？将删除整组的教室占用记录。')) return;
@@ -932,8 +1005,83 @@ function assignRoomOnly(courseId){
       document.getElementById('aroMask').remove();
       renderAssignView();
       toast('已排入「'+rname(roomId)+'」，可继续排下一门');
-    }catch(e){ toast('失败：'+e.message, false); btn.disabled=false; btn.textContent='确认排入'; }
+    }catch(e){ toast('失败：'+e.message, false); btn.disabled=false; btn.textContent=isOnlineCourse?'占用此教室':'确认排入'; }
   };
+}
+/* ---------- 移出排课 / 恢复 ----------
+   只写管理端 courses 上的 sched_removed_*（排课专用标记，管理端不显示、不用），并删掉这门课的教室占用；不改课程本身，也不删课程*/
+async function schedDoRemove(courses, reason){
+  const now=new Date().toISOString();
+  for(const gc of courses){
+    for(const b of BOOKINGS.filter(b=>b.kind==='course' && String(b.course_id)===String(gc.id))) await sbDelete('sched_bookings', b.id);
+    await schedCourseUpdate(gc.id, {sched_removed_reason:reason, sched_removed_at:now});
+  }
+}
+function schedRemoveDialog(groupCourses, dispName, afterDone){
+  let reason='';
+  const m=document.createElement('div');
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;z-index:70;overflow:auto;padding:40px 16px';
+  const draw=()=>{
+    m.innerHTML='<div class="card" style="width:460px;max-width:94vw;margin:auto"><h3 style="margin-top:2px">移出排课：「'+esc(dispName)+'」</h3>'+
+      '<div class="tip">只从排课里移出，管理端的课程不受影响；这门课已经占的教室会释放。</div>'+
+      '<div class="field"><label>理由</label><div>'+SCHED_REMOVE_REASONS.map(r=>`<span data-rs="${esc(r)}" style="display:inline-block;padding:3px 12px;margin:2px 6px 2px 0;border:1px solid ${r===reason?'var(--blue)':'var(--line)'};border-radius:14px;font-size:13px;cursor:pointer;user-select:none;background:${r===reason?'var(--blue)':'#fff'};color:${r===reason?'#fff':'#666'}">${esc(r)}</span>`).join('')+'</div></div>'+
+      (reason==='其他'?'<div class="field" style="margin-top:6px"><label>一句话说明</label><input id="rm_other" placeholder="如：并入别的班" style="width:100%"></div>':'')+
+      (groupCourses.length>1?'<p class="muted" style="font-size:12px">这是合并组，整组 '+groupCourses.length+' 门课一起移出。</p>':'')+
+      '<div style="display:flex;gap:8px;margin-top:12px"><button id="rm_ok">确认移出</button><button class="ghost" id="rm_cancel">返回</button></div></div>';
+    m.querySelectorAll('[data-rs]').forEach(x=>x.onclick=()=>{ reason=x.dataset.rs; draw(); });
+    m.querySelector('#rm_cancel').onclick=()=>m.remove();
+    m.querySelector('#rm_ok').onclick=async()=>{
+      let rs=reason; if(!rs){ toast('请选一个理由', false); return; }
+      if(rs==='其他'){ const t=(m.querySelector('#rm_other').value||'').trim(); if(!t){ toast('选「其他」要填一句话', false); return; } rs='其他：'+t; }
+      const btn=m.querySelector('#rm_ok'); btn.disabled=true; btn.textContent='处理中…';
+      try{
+        await schedDoRemove(groupCourses, rs);
+        await reloadAll(); m.remove(); if(afterDone) afterDone(); renderAssignView(); toast('已移出排课（管理端课程不受影响）');
+      }catch(e){ toast('失败：'+e.message, false); btn.disabled=false; btn.textContent='确认移出'; }
+    };
+  };
+  draw(); document.body.appendChild(m);
+}
+async function schedRestore(id){
+  const c=ALL_COURSES.find(x=>String(x.id)===String(id)); if(!c) return;
+  const grp = c.merge_group ? ALL_COURSES.filter(x=>x.merge_group===c.merge_group && schedRemoved(x)) : [c];
+  if(!confirm('把「'+(c.merge_name||c.name)+'」恢复到排课？恢复后它会重新出现在排教室列表里。')) return;
+  try{
+    for(const gc of grp) await schedCourseUpdate(gc.id, {sched_removed_reason:null, sched_removed_at:null});
+    await reloadAll(); if(el('coursesTable')) tabCourses(); else renderAssignView(); toast('已恢复到排课');
+  }catch(e){ toast('失败：'+e.message, false); }
+}
+/* 批量移出已结课：end_date < 今天、没移出、没占教室的课，点选后一起移出（理由「已过期」） */
+function schedBatchRemoveEnded(){
+  const today=todayStr();
+  const hasRoom=new Set(BOOKINGS.filter(b=>b.kind==='course').map(b=>String(b.course_id)));
+  const list=ALL_COURSES.filter(c=>c.end_date && c.end_date<today && !schedRemoved(c) && !hasRoom.has(String(c.id)))
+    .sort((a,b)=>(b.end_date||'').localeCompare(a.end_date||''));
+  const sel=new Set(list.map(c=>String(c.id)));
+  const m=document.createElement('div');
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;z-index:70;overflow:auto;padding:40px 16px';
+  const draw=()=>{
+    m.innerHTML='<div class="card" style="width:640px;max-width:94vw;margin:auto"><h3 style="margin-top:2px">批量移出已结课</h3>'+
+      '<div class="tip">列出结课日已过、没占教室的课。只从排课里移出（理由「已过期」），管理端的课程不受影响。点一行可取消 / 选中。</div>'+
+      (list.length?('<div style="display:flex;gap:8px;margin:6px 0"><button class="ghost sm" id="bm_all">全选</button><button class="ghost sm" id="bm_none">全不选</button><span class="muted" style="align-self:center">已选 '+sel.size+' / '+list.length+' 门</span></div>'+
+        '<div style="max-height:50vh;overflow:auto">'+list.map(c=>{ const on=sel.has(String(c.id));
+          return `<div data-bm="${c.id}" style="cursor:pointer;border:1px solid ${on?'var(--blue)':'var(--line)'};background:${on?'#eef4f0':'#fff'};border-radius:7px;padding:6px 10px;margin-bottom:5px;font-size:13px"><b>${esc(c.merge_name||c.name)}</b> <span class="muted">${esc(c.teacher||'')} · ${esc(c.campus||'')} · 结课 ${esc(c.end_date)}</span></div>`; }).join('')+'</div>')
+        :'<div class="muted" style="margin:10px 0">没有符合条件的课。</div>')+
+      '<div style="display:flex;gap:8px;margin-top:12px">'+(list.length?'<button id="bm_ok"'+(sel.size?'':' disabled')+'>移出所选 '+sel.size+' 门</button>':'')+'<button class="ghost" id="bm_cancel">关闭</button></div></div>';
+    m.querySelector('#bm_cancel').onclick=()=>m.remove();
+    m.querySelectorAll('[data-bm]').forEach(x=>x.onclick=()=>{ const k=x.dataset.bm; sel.has(k)?sel.delete(k):sel.add(k); draw(); });
+    if(m.querySelector('#bm_all')) m.querySelector('#bm_all').onclick=()=>{ list.forEach(c=>sel.add(String(c.id))); draw(); };
+    if(m.querySelector('#bm_none')) m.querySelector('#bm_none').onclick=()=>{ sel.clear(); draw(); };
+    if(m.querySelector('#bm_ok')) m.querySelector('#bm_ok').onclick=async()=>{
+      const pick=list.filter(c=>sel.has(String(c.id)));
+      if(!pick.length) return;
+      if(!confirm('把 '+pick.length+' 门已结课的课从排课里移出？管理端的课程不受影响。')) return;
+      const btn=m.querySelector('#bm_ok'); btn.disabled=true; btn.textContent='处理中…';
+      try{ await schedDoRemove(pick, '已过期'); await reloadAll(); m.remove(); renderAssignView(); toast('已移出 '+pick.length+' 门（管理端课程不受影响）'); }
+      catch(e){ toast('失败：'+e.message, false); btn.disabled=false; btn.textContent='重试'; }
+    };
+  };
+  draw(); document.body.appendChild(m);
 }
 function assignForm(courseId){
   const c=COURSES.find(x=>String(x.id)===String(courseId));
@@ -1530,9 +1678,13 @@ function tabAccounts(){
 }
 
 /* ---------- 课程：筛选 + 编辑 + 删除 ---------- */
+/* 课程管理当前该显示的课：默认 = 当前期 + 下一期、没移出；点开「追溯查询」后按所选条件 */
+function cmViewCourses(){ return schedViewList(ALL_COURSES, window.CM_TRACE); }
 function tabCourses(){
-  const majors=[...new Set(COURSES.map(c=>c.major).filter(Boolean))].sort();
-  let h='<div class="card"><h3 style="margin-top:2px">课程（共 '+COURSES.length+'）'+
+  if(!window.CM_TRACE) window.CM_TRACE=schedTraceNew();
+  const dflt=schedViewList(ALL_COURSES, null);
+  const majors=[...new Set(dflt.map(c=>c.major).filter(Boolean))].sort();
+  let h='<div class="card"><h3 style="margin-top:2px">课程（共 '+dflt.length+'）'+
     '<span class="muted" style="font-size:12px;font-weight:400;margin-left:10px">新课程请在管理端『课程安排』里建，建好后这里马上能排</span></h3>'+
     '<div class="row" style="margin-bottom:10px">'+
       '<div class="field"><label>搜索课名/讲师</label><input id="cf_q" placeholder="搜索讲师（汉字 / 拼音首字母）/ 课程名…"></div>'+
@@ -1542,9 +1694,10 @@ function tabCourses(){
       '<div class="field"><label>属性</label><select id="cf_type"><option value="">全部属性</option><option>共通课</option><option>专业课</option><option>大课</option></select></div>'+
       '<div class="field"><label>校区</label><select id="cf_campus"></select></div>'+
       '<div class="field"><label>&nbsp;</label><span class="muted" id="cf_count"></span></div>'+
-    '</div><div id="coursesTable"></div></div><div id="cEdit"></div>';
+    '</div><div id="cf_trace" style="margin-bottom:8px"></div><div id="coursesTable"></div></div><div id="cEdit"></div>';
   render(h);
-  fillTermSelect(el('cf_term'), COURSES.map(c=>c.term), '全部期');
+  fillTermSelect(el('cf_term'), dflt.map(c=>c.term), '全部期');
+  schedTraceMount('cf_trace', ()=>ALL_COURSES, window.CM_TRACE, ()=>renderCoursesTable());
   fillSelect(el('cf_cat'), CATEGORIES, v=>v, v=>v, '全部类别');
   fillSelect(el('cf_campus'), ['高马','市谷','线上'], v=>v, v=>v, '全部校区');
   // 恢复上次筛选（编辑后不重置）
@@ -1628,7 +1781,8 @@ function downloadCourseBackup(){
 function renderCoursesTable(){
   const q=(el('cf_q').value||'').trim();
   const term=el('cf_term').value, cat=el('cf_cat').value, major=el('cf_major').value, ctype=el('cf_type').value, campus=el('cf_campus').value;
-  let list=COURSES.filter(c=>{
+  const tr=window.CM_TRACE;
+  let list=cmViewCourses().filter(c=>{
     // 学科负责人类别约束：ROLE.lead_cats 非空时，只显示其范围内的课
     if(ROLE && ROLE.lead_cats){ const scope=(ROLE.lead_cats||'').split(',').map(s=>s.trim()).filter(Boolean);
       if(scope.length && !scope.includes(courseScope(c))) return false; }
@@ -1641,6 +1795,7 @@ function renderCoursesTable(){
     return true;
   });
   el('cf_count').textContent='共 '+list.length+' 门';
+  if(tr && tr.open && !schedTraceActive(tr)){ el('coursesTable').innerHTML=''; return; }
   // 无任何筛选时默认只显示前50条，避免一次读太多
   const hasFilter = !!(q||term||cat||major||ctype||campus);
   const showAll = window.CF_SHOWALL===true;
@@ -1677,12 +1832,12 @@ function renderCoursesTable(){
     '</div>';
   h+='<table><thead><tr><th><input type="checkbox" id="cf_all"></th><th>期</th><th>课程</th><th>类别</th><th>专业</th><th>属性</th><th>校区</th><th>讲师</th><th>周几</th><th>时段</th><th>日期区间</th><th>方式</th><th>会议</th><th>操作</th></tr></thead><tbody>';
   if(!shown.length) h+='<tr><td colspan="14" class="muted">无匹配课程</td></tr>';
-  shown.forEach(c=>{ h+=`<tr data-cid="${c.id}"><td><input type="checkbox" class="cf_ck" value="${c.id}"></td><td>${esc(c.term||'')}</td><td>${esc(c.name)}</td><td>${esc(c.category)}</td><td>${esc(c.major||'')}</td><td>${esc(c.course_type||'')}</td><td>${esc(c.campus)}</td><td>${esc(c.teacher||'')}</td>`+
+  shown.forEach(c=>{ h+=`<tr data-cid="${c.id}"${schedRemoved(c)?' style="opacity:.6"':''}><td><input type="checkbox" class="cf_ck" value="${c.id}"></td><td>${esc(c.term||'')}</td><td>${esc(c.name)}</td><td>${esc(c.category)}</td><td>${esc(c.major||'')}</td><td>${esc(c.course_type||'')}</td><td>${esc(c.campus)}</td><td>${esc(c.teacher||'')}</td>`+
     `<td>${weekdaysLabel(c.weekdays)}</td><td>${c.start_time||''}-${c.end_time||''}</td>`+
     `<td>${(c.start_date&&c.end_date)?(c.start_date+' ~ '+c.end_date):'<span class="badge b-warn">缺日期</span>'}</td>`+
     `<td>${esc(c.mode)}</td>`+
     `<td style="font-size:11px">${(c.meeting_link||c.meeting_id)?('<span class="badge b-ok" style="font-size:10px">已设</span>'+(c.meeting_id?(' '+esc(c.meeting_id)):'')+(c.meeting_link?(' <a href="'+esc(c.meeting_link)+'" target="_blank" rel="noopener">进入</a>'):'')):'<span class="muted">—</span>'}</td>`+
-    `<td><button class="sm ghost" data-edc="${c.id}">编辑</button></td></tr>`; });
+    `<td>${schedRemoved(c)?'<span class="badge b-mute" style="background:#e4e4e4">已移出 · '+esc(c.sched_removed_reason)+'</span> <button class="sm ghost" data-restore="'+c.id+'">恢复到排课</button> ':''}<button class="sm ghost" data-edc="${c.id}">编辑</button></td></tr>`; });
   h+='</tbody></table>';
   if(truncated) h+='<div style="text-align:center;margin-top:10px"><span class="muted" style="font-size:12px">仅显示前 '+LIMIT+' 门（共 '+list.length+' 门）。用上方筛选缩小范围，或 </span><button class="ghost sm" id="cf_showall">显示全部</button></div>';
   else if(showAll && list.length>LIMIT) h+='<div style="text-align:center;margin-top:10px"><button class="ghost sm" id="cf_showless">收起（只看前 '+LIMIT+'）</button></div>';
@@ -1899,6 +2054,7 @@ function renderCoursesTable(){
     }catch(e){ toast('部分失败：'+e.message, false); btn.disabled=false; btn.textContent='应用到所选'; }
   };
   bind('[data-edc]', id=>courseEdit(id));
+  bind('[data-restore]', id=>schedRestore(id));
 }
 /* 完全重复判定键：课名+校区+开课日+结课日+回数 */
 function courseDupKey(c){ const n=v=>String(v==null?'':v).trim();
@@ -1936,7 +2092,7 @@ function courseEdit(id){
   const isNew = (id===null || id===undefined || id==='');
   const c = isNew
     ? { id:null, name:'', teacher:'', category:CATEGORIES[0], campus:'高马', major:'', course_type:'', term:'', mode:'线下', start_time:'18:00', end_time:'21:00', start_date:'', end_date:'', sessions:'', est_students:'', weekdays:'', meeting_link:'', skip_dates:'' }
-    : COURSES.find(x=>String(x.id)===String(id));
+    : (COURSES.find(x=>String(x.id)===String(id)) || ALL_COURSES.find(x=>String(x.id)===String(id)));
   const wd=parseWeekdaysSched(c.weekdays);
   const slotOpts=(sel)=>SLOTS.map(t=>`<option${t===sel?' selected':''}>${t}</option>`).join('');
   const catOpts=CATEGORIES.map(x=>`<option${x===c.category?' selected':''}>${x}</option>`).join('');
