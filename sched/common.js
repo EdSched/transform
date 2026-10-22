@@ -506,7 +506,7 @@ function renderOccupancyGrid(rooms, items, keyField, opts){
         let styleAttr='', cc=null;
         if(!vipMask && opts.catOf && b.course_id){ const cat=opts.catOf(b.course_id); if(cat){ cc=catColor(cat); } }
         if(cc) styleAttr=` style="background:${cc.bg};border-color:${cc.bd};color:${cc.tx}"`;
-        h+=`<td class="occ ${cc?'':(KIND_CLASS[b.kind]||'')}${vipMask?' occ-vip':''}${pend?' occ-pend':''}${r.cls?' '+esc(r.cls):''}" data-b="${b.id}" data-kind="${esc(b.kind||'')}" rowspan="${span}"${styleAttr}${opts.showEntry&&b.kind!=='course'?` data-entry="${esc(b.entry_name||'—')}" title="录入：${esc(b.entry_name||'—')}"`:''}>`+
+        h+=`<td class="occ ${cc?'':(KIND_CLASS[b.kind]||'')}${vipMask?' occ-vip':''}${pend?' occ-pend':''}${r.cls?' '+esc(r.cls):''}" data-b="${b.id}" data-kind="${esc(b.kind||'')}" rowspan="${span}"${styleAttr}${opts.showEntry&&b.kind!=='course'?` data-entry="${esc(schedEntryLabel(b))}" title="录入：${esc(schedEntryLabel(b))}"`:''}>`+
            `<div class="occ-in">${esc(label)}${vipMask?'':mic}`+
            (vipMask?'':`<small>${esc(who)} ${b.start_time}-${b.end_time}${pend&&!(opts.hideWho||opts.labelOnly)?' · 待确认':''}</small>`)+`</div></td>`;
       }else{
@@ -741,6 +741,29 @@ async function schedEmbedRole(){
     }
   }catch(e){}
   return null;
+}
+// 当前登录账号（老师端 / 管理端嵌入时才有）：{kind:'teacher'|'admin', id, name}；口令链接 / 没登录 = null
+// 数据库按登录身份给占用记 owner_*（触发器 sched_bookings_set_owner），这里只用来显示和查「我的」
+let SCHED_ACCOUNT_P=null;
+function schedAccount(){
+  if(SCHED_ACCOUNT_P) return SCHED_ACCOUNT_P;
+  SCHED_ACCOUNT_P=(async()=>{
+    if(!schedEmbedVia()) return null;
+    try{
+      await schedAuthReady();
+      if(!schedAuthToken()) return null;
+      const r=await fetch(SB_URL+'/rest/v1/rpc/sched_my_identity',{method:'POST',headers:sbHeaders(),body:'{}',cache:'no-store'});
+      if(!r.ok) return null;
+      const j=await r.json();
+      return (j && j.id && (j.kind==='teacher'||j.kind==='admin')) ? j : null;
+    }catch(e){ return null; }
+  })();
+  return SCHED_ACCOUNT_P;
+}
+// 管理表 / 看板悬停里的录入人：有账号归属时显示账号名（后面标「账号」），否则显示 entry_name
+function schedEntryLabel(b, html){
+  if(b && b.owner_name) return html ? esc(b.owner_name)+' <small class="muted">账号</small>' : b.owner_name+'（账号）';
+  return html ? esc((b&&b.entry_name)||'—') : ((b&&b.entry_name)||'—');
 }
 // 统一获取当前身份：嵌入管理端时用登录会话；否则已登录(session)优先，其次 URL 的 ?k=（旧口令逻辑原样不变）
 async function currentRole(){

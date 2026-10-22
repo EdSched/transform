@@ -56,7 +56,7 @@
     <div class="card">
       <b>我的预约</b>
       <span class="muted" style="font-size:12px;margin-left:8px">本机记录自动显示；换了设备可用真实姓名找回。</span>
-      <div class="row" style="margin-top:8px">
+      <div class="row" style="margin-top:8px" id="mineFindRow">
         <div class="field"><label>用真实姓名找回（换设备时）</label><input id="mine_name" placeholder="输入预约时填的真实姓名"></div>
         <div class="field"><label>&nbsp;</label><button class="ghost sm" id="mine_find">按姓名查找</button></div>
         <div class="field"><label>&nbsp;</label><button class="ghost sm" id="mine_reload">刷新本机记录</button></div>
@@ -91,9 +91,18 @@
   </div>
 </div>
 
-<script src="common.js?v=20261024"></script>
+<script src="common.js?v=20261030"></script>
 <script>
 let ROOMS=[], BOOKINGS=[], CUR=null;
+// 从老师端打开（带老师登录）时的账号 {kind:'teacher',id,name}；直接打开 / 没登录 = null，一切照旧
+let VACC=null;
+schedAccount().then(a=>{
+  if(!a || a.kind!=='teacher') return;
+  VACC=a; el('mineFindRow').classList.add('hidden');
+  el('mineTip').insertAdjacentHTML('beforebegin','<div class="muted" style="font-size:12px;margin-top:8px">已按登录账号（'+esc(a.name)+'）显示，换设备也在。</div>');
+  if(!el('view_mine').classList.contains('hidden')) reloadMine('');
+}).catch(()=>{});
+function fillTeacherName(){ if(!VACC) return; el('m_user').value=VACC.name; el('m_user').readOnly=true; }
 const MIN_ADVANCE=2;
 const TKEY='vip_client_token', NKEY='vip_last_name';
 function myToken(){ let t=localStorage.getItem(TKEY); if(!t){ t='t'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); localStorage.setItem(TKEY,t);} return t; }
@@ -205,6 +214,7 @@ function openModal(roomId, urgent){
   el('m_when').textContent=`${el('date').value}（${WEEKDAYS[weekdayOf(el('date').value)]}）${el('st').value}-${el('et').value} · ${r.campus}`;
   ['m_title','m_user','m_stu','m_major','m_note'].forEach(id=>el(id).value='');
   const last=localStorage.getItem(NKEY); if(last) el('m_user').value=last;
+  fillTeacherName();
   el('m_warn').classList.add('hidden');
   el('m_head').innerHTML = URGENT
     ? '紧急预约 · <span style="color:#e97457">'+esc(r.name)+'</span>'
@@ -222,6 +232,7 @@ function openOtherModal(){
   el('m_when').textContent=`${el('date').value}（${WEEKDAYS[weekdayOf(el('date').value)]}）${el('st').value}-${el('et').value} · ${campus} · 大教室（待管理员指派）`;
   ['m_title','m_user','m_stu','m_major','m_note'].forEach(id=>el(id).value='');
   const last=localStorage.getItem(NKEY); if(last) el('m_user').value=last;
+  fillTeacherName();
   el('m_warn').classList.add('hidden');
   el('m_head').innerHTML = '预约其他教室（大教室） · <span style="color:#e97457">'+esc(campus)+'</span>';
   el('m_hint').innerHTML = URGENT
@@ -234,7 +245,7 @@ function openOtherModal(){
 async function submit(){
   const s=el('st').value, e=el('et').value, date=el('date').value, campus=el('campus').value;
   const warn=m=>{ el('m_warn').className=''; el('m_warn').innerHTML='<span class="badge b-err">'+m+'</span>'; };
-  const user=el('m_user').value.trim(), stu=el('m_stu').value.trim(), major=el('m_major').value.trim();
+  const user=(VACC?VACC.name:el('m_user').value.trim()), stu=el('m_stu').value.trim(), major=el('m_major').value.trim();
   if(!user){ warn('请填讲师真实姓名'); return; }
   if(!stu){ warn('请填学生姓名'); return; }
   if(!major){ warn('请填专业/事由'); return; }
@@ -310,12 +321,13 @@ async function loadHist(name){
   let rows;
   try{
     await schedAuthReady();
-    const r=await fetch(SB_URL+'/rest/v1/rpc/sched_vip_history',{ method:'POST', headers:sbHeaders(), cache:'no-store',
-      body:JSON.stringify({ p_name:name||'', p_token:myToken() }) });
+    const r=await fetch(SB_URL+'/rest/v1/rpc/'+(VACC?'sched_my_bookings_history':'sched_vip_history'),{ method:'POST', headers:sbHeaders(), cache:'no-store',
+      body:VACC?'{}':JSON.stringify({ p_name:name||'', p_token:myToken() }) });
     if(!r.ok) throw new Error(r.status+' '+await r.text());
     rows=await r.json();
+    if(VACC) rows=rows.filter(x=>x.kind==='vip');
   }catch(e){ box.innerHTML='<span class="badge b-err">读取失败：'+esc(e.message)+'</span>'; return; }
-  if(!rows.length){ box.innerHTML='<div class="muted">'+(name?'没找到该姓名的预约履历':'本机暂无预约履历。换过设备的话，用上方真实姓名找回。')+'</div>'; return; }
+  if(!rows.length){ box.innerHTML='<div class="muted">'+(VACC?'暂无预约履历':(name?'没找到该姓名的预约履历':'本机暂无预约履历。换过设备的话，用上方真实姓名找回。'))+'</div>'; return; }
   const rmap={}; ROOMS.forEach(r=>rmap[r.id]=r);
   let h='<table><thead><tr><th>时间</th><th>操作</th><th>日期时段</th><th>教室</th><th>学生</th><th>操作人</th><th>说明</th></tr></thead><tbody>';
   rows.forEach(x=>{
@@ -336,7 +348,12 @@ async function loadMine(name){
   const token=myToken();
   let rows=[];
   try{
-    if(name){
+    if(VACC){
+      rows = await sbGet('sched_bookings','select=*&kind=eq.vip&owner_id=eq.'+encodeURIComponent(VACC.id)+'&order=booking_date.desc&limit=100');
+      const old = await sbGet('sched_bookings','select=*&kind=eq.vip&client_token=eq.'+encodeURIComponent(token)+'&order=booking_date.desc&limit=100');   // 这台设备以前的预约也带上
+      const seen=new Set(rows.map(x=>String(x.id))); old.forEach(x=>{ if(!seen.has(String(x.id))) rows.push(x); });
+      rows.sort((a,b)=>String(b.booking_date).localeCompare(String(a.booking_date)));
+    }else if(name){
       rows = await sbGet('sched_bookings','select=*&kind=eq.vip&user_name=eq.'+encodeURIComponent(name)+'&order=booking_date.desc&limit=100');
       localStorage.setItem(NKEY, name);
     }else{
@@ -344,7 +361,7 @@ async function loadMine(name){
     }
   }catch(e){ box.innerHTML='<span class="badge b-err">读取失败：'+esc(e.message)+'</span>'; return; }
   MINE_ROWS=rows;
-  if(!rows.length){ box.innerHTML='<div class="muted">'+(name?'没找到该姓名的预约':'本机暂无预约记录。换过设备的话，用上方真实姓名找回。')+'</div>'; return; }
+  if(!rows.length){ box.innerHTML='<div class="muted">'+(VACC?'暂无预约记录':(name?'没找到该姓名的预约':'本机暂无预约记录。换过设备的话，用上方真实姓名找回。'))+'</div>'; return; }
   const rmap={}; ROOMS.forEach(r=>rmap[r.id]=r);
   let h='<table><thead><tr><th>日期</th><th>时段</th><th>教室</th><th>学生</th><th>状态</th><th>操作</th></tr></thead><tbody>';
   rows.forEach(b=>{

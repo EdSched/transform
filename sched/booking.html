@@ -3,6 +3,11 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>教室占用录入 · 唯新</title>
 <link rel="stylesheet" href="style.css">
+<style>
+  .seg{ display:inline-flex; gap:4px; }
+  .seg button{ padding:6px 14px; border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:6px; cursor:pointer; font-size:13px; }
+  .seg button.on{ background:var(--blue); color:#fff; border-color:var(--blue); }
+</style>
 </head><body>
 <div id="nav"></div>
 <div class="wrap">
@@ -66,8 +71,10 @@
   <!-- 我录入的占用（非管理员：删自己的；管理员用上方完整管理面板即可，这里默认隐藏） -->
   <div class="card" id="mineCard" style="display:none">
     <h3 style="margin-top:2px" id="mineTitle">我在本设备录入的占用</h3>
-    <div class="muted" style="font-size:12px;margin-bottom:8px">这里显示你自己录入的教室占用，可以删除（删除即释放教室）。</div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px" id="mineTip">这里显示你自己录入的教室占用，可以删除（删除即释放教室）。</div>
+    <div class="seg hidden" id="mineTabs" style="margin:0 0 8px"><button id="mt_cur" class="on">当前占用</button><button id="mt_hist">占用履历</button></div>
     <div id="mineBox"><div class="muted">加载中…</div></div>
+    <div id="histBox" class="hidden"></div>
   </div>
 </div>
 
@@ -82,7 +89,8 @@
       <option value="false">否</option><option value="true">是（占该教室固定账号）</option></select>
       <div id="m_umtip" class="hidden" style="margin-top:5px;font-size:11px;color:#b5651d;background:#fdf6ed;border:1px solid #f0d9b3;border-radius:6px;padding:5px 8px">提醒：会议账号在别的时段可能另有安排，请按你上面填的「日期+时段」确认这个账号那时是空的再占用（账号的整体绑定时间不等于你这次要用的时间）。</div></div>
     <div class="field" style="margin-top:8px"><label>备注</label><input id="m_note"></div>
-    <div class="field" style="margin-top:8px"><label>录入人姓名 *</label><input id="m_entry" placeholder="你自己的真实姓名（会记录在操作记录里）"></div>
+    <div class="field" style="margin-top:8px" id="m_entryWrap"><label>录入人姓名 *</label><input id="m_entry" placeholder="你自己的真实姓名（会记录在操作记录里）"></div>
+    <div id="m_entryAcc" class="hidden muted" style="margin-top:8px;font-size:13px"></div>
     <div id="m_warn" class="hidden" style="margin-top:8px"></div>
     <div style="margin-top:14px;display:flex;gap:8px">
       <button id="m_submit">保存占用</button>
@@ -91,7 +99,7 @@
   </div>
 </div>
 
-<script src="common.js?v=20261024"></script>
+<script src="common.js?v=20261030"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 el('nav').innerHTML = renderNav('booking.html');
@@ -100,18 +108,63 @@ let CANMANAGE = new URLSearchParams(location.search).get('canmanage')==='1';
 pageRole().then(r=>{ if(r){ el('nav').innerHTML = renderNav('booking.html', r);
   if(permSet(r).has('occupy')||permSet(r).has('manage')){ CANMANAGE=true; applyManageUI(); } } }).catch(()=>{});
 let ROOMS=[], ACCOUNTS=[], BOOKINGS=[], CUR=null;
+// 老师端 / 管理端登录（嵌入）时的账号 {kind,id,name}；口令链接 / 没登录 = null，一切照旧
+let ACCOUNT=null, MINE_TAB='cur', MINE_HIST_ALL=false;
+schedAccount().then(a=>{ ACCOUNT=a; if(a) renderMine(); }).catch(()=>{});
+// 删除确认：登录账号直接用当前账号名，不再问操作人姓名
+async function askActor(msg, okText){
+  if(ACCOUNT) return confirm(msg) ? ACCOUNT.name : null;
+  return schedAskActor(msg, okText);
+}
 function rname(id){ const r=ROOMS.find(x=>String(x.id)===String(id)); return r?r.name:('#'+id); }
 // 本设备标识：用于普通用户识别并删除"自己录入的"占用
 const BK_TKEY='sched_booking_token';
 function myToken(){ let t=localStorage.getItem(BK_TKEY); if(!t){ t='bk'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); localStorage.setItem(BK_TKEY,t); } return t; }
 function applyManageUI(){ if(el('mgmtBtnWrap')) el('mgmtBtnWrap').style.display = CANMANAGE?'':'none'; renderMine(); }
+function mineTab(t){
+  MINE_TAB=t;
+  el('mt_cur').classList.toggle('on',t==='cur'); el('mt_hist').classList.toggle('on',t==='hist');
+  renderMine();
+}
+const BK_ACT={ create:'新建', approve:'批准', reject:'驳回', edit:'修改', cancel:'删除' };
+async function renderMineHist(){
+  const box=el('histBox'); box.innerHTML='<div class="muted">加载中…</div>';
+  let rows;
+  try{
+    await schedAuthReady();
+    const r=await fetch(SB_URL+'/rest/v1/rpc/sched_my_bookings_history',{ method:'POST', headers:sbHeaders(), cache:'no-store', body:'{}' });
+    if(!r.ok) throw new Error(r.status+' '+await r.text());
+    rows=await r.json();
+  }catch(e){ box.innerHTML='<span class="badge b-err">读取失败：'+esc(e.message)+'</span>'; return; }
+  if(!MINE_HIST_ALL){ const lim=new Date(Date.now()-30*86400000).toISOString(); rows=rows.filter(x=>x.at>=lim); }
+  let h='<div style="margin-bottom:6px"><button class="sm ghost" id="mh_range">'+(MINE_HIST_ALL?'只看最近 30 天':'显示全部（最近 200 条）')+'</button></div>';
+  h+='<table><thead><tr><th>时间</th><th>操作</th><th>用途</th><th>教室</th><th>日期时段</th><th>使用人</th><th>操作人</th><th>说明</th></tr></thead><tbody>';
+  if(!rows.length) h+='<tr><td colspan="8" class="muted">暂无记录</td></tr>';
+  rows.forEach(x=>{
+    const d=new Date(x.at); const at=ymd(d)+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+    const bad = x.action==='reject' ? 'b-err' : (x.action==='cancel' ? 'b-warn' : 'b-ok');
+    let note=''; if(x.action==='reject'&&x.reject_reason) note='<small style="color:#c0392b">理由：'+esc(x.reject_reason)+'</small>';
+    h+=`<tr><td>${esc(at)}</td><td><span class="badge ${bad}">${BK_ACT[x.action]||esc(x.action)}</span></td><td>${esc(KIND_LABEL[x.kind]||x.kind||'')}</td>`+
+      `<td>${esc(x.room_name||'—')}<br><small class="muted">${esc(x.room_campus||'')}</small></td><td>${esc(x.booking_date||'')}<br><small class="muted">${esc(x.start_time||'')}-${esc(x.end_time||'')}</small></td>`+
+      `<td>${esc(x.user_name||'')}</td><td>${esc(x.actor||'—')}</td><td>${note}</td></tr>`;
+  });
+  h+='</tbody></table>';
+  box.innerHTML=h;
+  el('mh_range').onclick=()=>{ MINE_HIST_ALL=!MINE_HIST_ALL; renderMineHist(); };
+}
 // 非管理员：显示"我在本设备录入的占用"，可删自己的。管理员用完整管理面板，这里隐藏。
 function renderMine(){
   const card=el('mineCard'), box=el('mineBox'); if(!card||!box) return;
-  if(CANMANAGE){ card.style.display='none'; return; } // 管理员用上方完整面板
+  if(CANMANAGE && !ACCOUNT){ card.style.display='none'; return; } // 管理员用上方完整面板（登录账号的仍显示「我的教室占用」）
   card.style.display='';
   const tok=myToken();
-  const isMine=b=>String(b.created_by||'').split('|')[0]===tok;
+  // 登录账号：按 owner_id 找（换设备也在），再合并这台设备以前用标记录入的旧记录；未登录照旧只认本设备
+  const isMine=b=>(ACCOUNT && b.owner_id && String(b.owner_id)===String(ACCOUNT.id)) || String(b.created_by||'').split('|')[0]===tok;
+  el('mineTitle').textContent = ACCOUNT ? '我的教室占用' : '我在本设备录入的占用';
+  el('mineTip').textContent = ACCOUNT ? '这里显示你登录账号录入的教室占用（换设备也在，含这台设备以前录入的），可以删除（删除即释放教室）。' : '这里显示你自己录入的教室占用，可以删除（删除即释放教室）。';
+  el('mineTabs').classList.toggle('hidden', !ACCOUNT);
+  if(ACCOUNT && MINE_TAB==='hist'){ el('mineBox').classList.add('hidden'); el('histBox').classList.remove('hidden'); renderMineHist(); return; }
+  el('mineBox').classList.remove('hidden'); el('histBox').classList.add('hidden');
   const rmap={}; ROOMS.forEach(r=>rmap[r.id]=r);
   let list=BOOKINGS.filter(b=>b.kind!=='course'&&isMine(b))
     .sort((a,b)=>{const da=a.booking_date||a.start_date||'',db=b.booking_date||b.start_date||'';return db.localeCompare(da);});
@@ -125,7 +178,7 @@ function renderMine(){
   box.innerHTML=h;
   box.querySelectorAll('[data-delmine]').forEach(x=>x.onclick=async()=>{
     const b=BOOKINGS.find(y=>String(y.id)===String(x.dataset.delmine)); if(!b||!isMine(b)) return;
-    const who=await schedAskActor('删除这条占用？删除即释放教室。'); if(!who) return;
+    const who=await askActor('删除这条占用？删除即释放教室。'); if(!who) return;
     try{ await sbDeleteAs('sched_bookings', b.id, who); BOOKINGS=BOOKINGS.filter(y=>String(y.id)!==String(b.id)); renderMine(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已删除'); }
     catch(e){ toast(e.message,false); }
   });
@@ -217,7 +270,7 @@ function renderMgmtTable(){
       ? (weekdaysLabel(String(b.weekday))+' '+(b.start_date||'')+'~'+(b.end_date||''))
       : (b.booking_date||'');
     h+=`<tr><td>${KIND_LABEL[b.kind]||esc(b.kind)}</td><td>${esc(r?r.campus:'')}</td><td>${esc(r?r.name:(b.room_id?('#'+b.room_id):'—'))}</td>`+
-      `<td>${esc(when)}</td><td>${b.start_time}-${b.end_time}</td><td>${esc(b.user_name||'')}</td><td>${esc(b.entry_name||'—')}</td>`+
+      `<td>${esc(when)}</td><td>${b.start_time}-${b.end_time}</td><td>${esc(b.user_name||'')}</td><td>${schedEntryLabel(b,true)}</td>`+
       `<td>${b.uses_meeting?esc(aname(b.meeting_account_id)):'—'}</td>`+
       `<td>${b.status==='pending'?'<span class="badge b-warn">待确认</span>':'<span class="badge b-ok">已确认</span>'}</td>`+
       `<td class="muted">${esc(b.note||'')}</td>`+
@@ -229,7 +282,7 @@ function renderMgmtTable(){
   el('occupyTable').innerHTML=h;
   if(el('oc_showall')) el('oc_showall').onclick=()=>{ window.OC_SHOWALL=true; renderMgmtTable(); };
   if(el('oc_showless')) el('oc_showless').onclick=()=>{ window.OC_SHOWALL=false; renderMgmtTable(); };
-  el('occupyTable').querySelectorAll('[data-delo]').forEach(x=>x.onclick=async()=>{ const who=await schedAskActor('删除该占用记录？删除即释放教室。'); if(!who) return;
+  el('occupyTable').querySelectorAll('[data-delo]').forEach(x=>x.onclick=async()=>{ const who=await askActor('删除该占用记录？删除即释放教室。'); if(!who) return;
     try{ await sbDeleteAs('sched_bookings',x.dataset.delo,who); }catch(e){ toast(e.message,false); return; }
     await reloadBookings(); renderMgmtTable(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已删除（教室已释放）'); });
   el('occupyTable').querySelectorAll('[data-edito]').forEach(x=>x.onclick=()=>occupyEditForm(x.dataset.edito));
@@ -254,7 +307,7 @@ function occupyEditForm(id){
       '<div class="field"><label>对外看板(today)显示</label><select id="oe_showtitle"><option value="0"'+(b.show_title===true?'':' selected')+'>只标类型（如VIP/临时）</option><option value="1"'+(b.show_title===true?' selected':'')+'>显示标题（如MBA课程）</option></select></div>'+
     '</div>'+
     '<div class="field" style="margin-top:8px"><label>备注</label><input id="oe_note" value="'+esc(b.note||'')+'" style="width:100%"></div>'+
-    '<div class="row" style="margin-top:8px"><div class="field"><label>原录入人（只读）</label><input value="'+esc(b.entry_name||'—')+'" readonly></div>'+
+    '<div class="row" style="margin-top:8px"><div class="field"><label>原录入人（只读）</label><input value="'+esc(schedEntryLabel(b))+'" readonly></div>'+
     '<div class="field"><label>本次操作人 *</label><input id="oe_actor" value="'+esc(schedEntryName())+'"></div></div>'+
     '<div id="oe_warn" style="margin-top:8px"></div>'+
     '<div style="margin-top:12px;display:flex;gap:8px"><button id="oe_save">保存</button><button class="danger" id="oe_del">删除该占用</button><button class="ghost" id="oe_cancel">取消</button></div>'+
@@ -262,7 +315,7 @@ function occupyEditForm(id){
   el('occupyEdit').innerHTML=h;
   el('oe_cancel').onclick=()=>{ el('occupyEdit').innerHTML=''; };
   el('oe_del').onclick=async()=>{
-    const who=await schedAskActor('删除该占用记录？删除即释放教室。'); if(!who) return;
+    const who=await askActor('删除该占用记录？删除即释放教室。'); if(!who) return;
     try{ await sbDeleteAs('sched_bookings', b.id, who); await reloadBookings(); el('occupyEdit').innerHTML=''; renderMgmtTable(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已删除（教室已释放）'); }
     catch(e){ el('oe_warn').innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>'; }
   };
@@ -353,6 +406,9 @@ function openModal(roomId){
   el('m_when').textContent = `${el('date').value}（${WEEKDAYS[weekdayOf(el('date').value)]}）${el('st').value}-${el('et').value} · ${r.campus}`;
   ['m_title','m_user','m_note'].forEach(id=>el(id).value='');
   el('m_entry').value=schedEntryName();
+  el('m_entryWrap').classList.toggle('hidden', !!ACCOUNT);
+  el('m_entryAcc').classList.toggle('hidden', !ACCOUNT);
+  if(ACCOUNT) el('m_entryAcc').textContent='录入人：'+ACCOUNT.name+'（当前登录账号）';
   el('m_um').value='false';
   el('m_warn').classList.add('hidden');
   el('modal').classList.remove('hidden');
@@ -360,7 +416,7 @@ function openModal(roomId){
 async function submit(){
   const s=el('st').value, e=el('et').value, use=el('use').value;
   const warn=m=>{ el('m_warn').className=''; el('m_warn').innerHTML='<span class="badge b-err">'+m+'</span>'; };
-  const entryName = el('m_entry').value.trim();
+  const entryName = ACCOUNT ? ACCOUNT.name : el('m_entry').value.trim();
   if(!entryName){ warn('请填录入人姓名'); return; }
   const um = el('m_um').value==='true';
   const accId = um ? (CUR.meeting_account_id||null) : null;
@@ -416,11 +472,12 @@ async function submit(){
         entry_name:entryName, ...schedActorStamp(entryName) };
       const ins=await sbInsert('sched_bookings', rec); BOOKINGS.push(ins[0]);
     }
-    schedSaveEntryName(entryName);
+    if(!ACCOUNT) schedSaveEntryName(entryName);
     el('modal').classList.add('hidden'); toast(weekly?('已批量录入 '+dates.length+' 条'):'已录入并生效'); find(); renderGrid(); renderMine();
   }catch(err){ warn(esc(err.message)); try{ await reloadBookings(); find(); renderGrid(); renderMine(); }catch(e){} }
   finally{ sb.disabled=false; sb.textContent='保存占用'; }
 }
+el('mt_cur').onclick=()=>mineTab('cur'); el('mt_hist').onclick=()=>mineTab('hist');
 boot();
 </script>
 </body></html>
