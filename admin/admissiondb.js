@@ -4,12 +4,12 @@
 
 // ADMISSION_MAJORS 现在统一在 shared/constants.js（唯一数据源）；此处仅兜底，防 constants 未更新时报错
 if (typeof ADMISSION_MAJORS === 'undefined') {
-  window.ADMISSION_MAJORS = { shakai:'社会学', keiei:'経営学', keizai:'経済学', shinpan:'新闻传播学', fukushi:'社会福祉学', nihongo:'日本语教育', hyosho:'表象文化・文学・哲学', seiji:'政治学', toyo:'東洋史', bunka:'文化人类学', mot:'MOT', tokei:'統計・計量', kyoiku:'教育学' };
+  window.ADMISSION_MAJORS = { shakai:'社会学', keiei:'経営学', keizai:'経済学', shinpan:'新闻传播学', fukushi:'社会福祉学', jpjiaoyu:'日本语教育', hyosho:'表象文化・文学・哲学', seiji:'政治学', toyo:'東洋史', bunka:'文化人类学', mot:'MOT', tokei:'統計・計量', kyoiku:'教育学' };
 }
 
 const SHEET_TO_MAJOR = {
   '社会学': 'shakai', '经营学': 'keiei', '经济学': 'keizai',
-  '新闻传播学': 'shinpan', '社会福祉学': 'fukushi', '日本语教育': 'nihongo',
+  '新闻传播学': 'shinpan', '社会福祉学': 'fukushi', '日本语教育': 'jpjiaoyu',
   '表象文化・文学・哲学': 'hyosho', '政治学': 'seiji', '东洋史': 'toyo',
   '文化人类学': 'bunka', 'MOT': 'mot', 'MOT（复制用）': 'mot',
   '統計・計量在籍': 'tokei', '经营学专升硕': 'keiei', '社会学各分': 'shakai',

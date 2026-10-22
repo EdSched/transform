@@ -1461,7 +1461,7 @@ function schoolStatusLabel(v) { return SCHOOL_STATUS_LABELS[v] || SCHOOL_STATUS_
 // 出愿数据库专业清单（唯一数据源：以后新增出愿专业只改这里，老师权限/出愿库/老师端出愿查询都会自动跟上）
 const ADMISSION_MAJORS = {
   shakai:'社会学', keiei:'経営学', keizai:'経済学', shinpan:'新闻传播学',
-  fukushi:'社会福祉学', nihongo:'日本语教育', hyosho:'表象文化・文学・哲学',
+  fukushi:'社会福祉学', jpjiaoyu:'日本语教育', hyosho:'表象文化・文学・哲学',
   seiji:'政治学', toyo:'東洋史', bunka:'文化人类学', mot:'MOT', tokei:'統計・計量',
   kyoiku:'教育学',
 };
@@ -1684,7 +1684,8 @@ async function loadAdmissionMajorsFromDB() {
     if (rows && rows.length) {
       Object.keys(ADMISSION_MAJORS).forEach(k => delete ADMISSION_MAJORS[k]);
       Object.keys(ADMISSION_MAJOR_DOMAIN).forEach(k => delete ADMISSION_MAJOR_DOMAIN[k]);
-      rows.forEach(r => { if (r.key && r.label) { ADMISSION_MAJORS[r.key] = r.label; if (r.domain) { MAJOR_DOMAIN[r.key] = r.domain; ADMISSION_MAJOR_DOMAIN[r.key] = r.domain; } } });
+      // 正式专业表来的领域不被出愿专业表覆盖：MAJOR_DOMAIN 只在还没有领域时才写
+      rows.forEach(r => { if (r.key && r.label) { ADMISSION_MAJORS[r.key] = r.label; if (r.domain) { if (!MAJOR_DOMAIN[r.key]) MAJOR_DOMAIN[r.key] = r.domain; ADMISSION_MAJOR_DOMAIN[r.key] = r.domain; } } });
     }
     admissionMajorsLoaded = true;
   } catch (e) { /* 加载失败保留内置清单 */ }
