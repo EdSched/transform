@@ -259,6 +259,63 @@ select (select count(*) from public.sched_course_v) as view_rows,
        (select count(*) from public.sched_course_v where legacy_sched_id is not null) as with_legacy_id;
 
 -- ============================================================
+-- ⑦ 补充（第一轮核对后加的）。①–④ 已执行过的不用重跑，从这里开始。
+-- ============================================================
+
+-- 7.A 清理已确认可删的孤课 605、960（管理端已删、排课里还活着）。先备份 605 的 2 条占用，再标删除。
+create table if not exists public.sched_bookings_orphan_backup_20261022 as
+  select * from public.sched_bookings where kind = 'course' and course_id = 605;
+alter table public.sched_bookings_orphan_backup_20261022 enable row level security;   -- 不开任何策略 = 只有后台能看
+
+begin;
+select set_config('app.course_sync', '1', true);
+delete from public.sched_bookings where kind = 'course' and course_id = 605;
+update public.sched_courses set deleted_at = now(), deleted_by = '迁移清理' where id in (605, 960) and deleted_at is null;
+commit;
+
+-- 7.B 补漏：排课里有值、管理端是空的，抄到 courses（只填空的，管理端已有值的一律不动）。
+--     原因：host_key 等列的同步只在「排课里改了一次之后」才会抄过去，以前填过的没抄，换成读管理端后这些值会"消失"。
+begin;
+select set_config('app.course_sync', '1', true);
+update public.courses c set
+  host_key       = case when nullif(c.host_key, '')       is null then nullif(s.host_key, '')       else c.host_key end,
+  holiday_except = case when nullif(c.holiday_except, '') is null then nullif(s.holiday_except, '') else c.holiday_except end,
+  skip_dates     = case when nullif(c.skip_dates, '')     is null then nullif(s.skip_dates, '')     else c.skip_dates end,
+  skip_reasons   = case when nullif(c.skip_reasons, '')   is null then nullif(s.skip_reasons, '')   else c.skip_reasons end,
+  meeting_url    = case when nullif(c.meeting_url, '')    is null then nullif(s.meeting_link, '')   else c.meeting_url end,
+  meeting_id     = case when nullif(c.meeting_id, '')     is null then nullif(s.meeting_id, '')     else c.meeting_id end,
+  course_type    = case when nullif(c.course_type, '')    is null then nullif(s.course_type, '')    else c.course_type end
+from public.sched_course_id_map m
+join public.sched_courses s on s.id = m.sched_id
+where m.course_id = c.id and s.deleted_at is null;
+commit;
+
+-- 7.C 补完后还剩的"两边都有值、但不一样"的（这些要你判断以哪边为准；默认以管理端为准）
+select s.id as sched_id, v.id as course_id, v.name, x.col, x.sched_val, x.course_val
+from public.sched_course_v v
+join public.sched_courses s on s.id = v.legacy_sched_id and s.deleted_at is null
+cross join lateral (values
+  ('host_key',       s.host_key,       v.host_key),
+  ('holiday_except', s.holiday_except, v.holiday_except),
+  ('skip_dates',     s.skip_dates,     v.skip_dates),
+  ('skip_reasons',   s.skip_reasons,   v.skip_reasons),
+  ('meeting_link',   s.meeting_link,   v.meeting_link),
+  ('meeting_id',     s.meeting_id,     v.meeting_id),
+  ('course_type',    s.course_type,    v.course_type),
+  ('teacher',        s.teacher,        v.teacher),
+  ('weekdays',       s.weekdays,       v.weekdays),
+  ('term',           s.term,           v.term),
+  ('start_date',     s.start_date::text, v.start_date::text),
+  ('end_date',       s.end_date::text,   v.end_date::text)
+) as x(col, sched_val, course_val)
+where nullif(x.sched_val, '') is not null and nullif(x.course_val, '') is not null and x.sched_val <> x.course_val
+order by x.col, s.id;
+
+-- 7.D 管理端里「校区」和「授课形式」实际用了哪些值（管理端的校区是自由文本，排课只认 高马 / 市谷 / 线上；
+--     看到结果后，Claude 会给视图加一个对应：例如 腾讯会议 → 线上）
+select campus, delivery, count(*) as n from public.courses group by campus, delivery order by n desc;
+
+-- ============================================================
 -- 回滚（按相反顺序；视图和新列都是新增的，回滚不影响 sched_courses / courses 原有数据）
 -- ============================================================
 -- ⑤ 清理的回滚（如果执行过）：
