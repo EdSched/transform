@@ -78,9 +78,138 @@ alter table public.sched_bookings rename column course_ref to course_id;
 -- 过渡用：让旧页面里还在 select course_ref 的查询继续有效（第 3b 步删除）
 alter table public.sched_bookings add column course_ref text generated always as (course_id) stored;
 
+-- B.4 两个防撞触发器函数原来连的是 sched_courses（只用 c.skip_dates 判断休讲日），改成连管理端课程 courses；
+--     其余逻辑一个字没动。注意：必须在上面的列改名之后执行（连接条件变成文本对文本）。
+create or replace function public.sched_bookings_check_overlap()
+ returns trigger
+ language plpgsql
+as $function$
+DECLARE
+  d   date;
+  s   time;
+  e   time;
+  hit record;
+BEGIN
+  -- 不占教室 / 已驳回 / 周循环排课：不在此处检查
+  IF NEW.room_id IS NULL OR NEW.booking_date IS NULL
+     OR NEW.start_time IS NULL OR NEW.end_time IS NULL
+     OR NEW.status NOT IN ('pending','confirmed')
+     OR NEW.recurrence = 'weekly' THEN
+    RETURN NEW;
+  END IF;
+
+  d := NEW.booking_date::date;
+  s := NEW.start_time::time;
+  e := NEW.end_time::time;
+
+  -- 同一教室串行化：两人同一瞬间提交也只能过一个
+  PERFORM pg_advisory_xact_lock(hashtext('sched_room_' || NEW.room_id::text));
+
+  SELECT b.id, b.kind, b.title, b.user_name, b.status, b.start_time, b.end_time
+    INTO hit
+    FROM sched_bookings b
+    LEFT JOIN public.courses c ON c.id = b.course_id
+   WHERE b.id IS DISTINCT FROM NEW.id
+     AND b.room_id = NEW.room_id
+     AND b.status IN ('pending','confirmed')
+     AND b.start_time IS NOT NULL AND b.end_time IS NOT NULL
+     AND s < b.end_time::time AND b.start_time::time < e
+     AND (
+       -- 对方也是单日占用：同一天
+       ( b.recurrence IS DISTINCT FROM 'weekly' AND b.booking_date::date = d )
+       OR
+       -- 对方是排课循环：日期在区间内、周几相同、当天不是休讲日
+       ( b.recurrence = 'weekly'
+         AND b.weekday IS NOT NULL
+         AND (b.weekday::int % 7) = EXTRACT(DOW FROM d)::int
+         AND d >= COALESCE(b.start_date::date, d)
+         AND d <= COALESCE(b.end_date::date, d)
+         AND NOT ( c.skip_dates IS NOT NULL
+                   AND d::text = ANY(string_to_array(replace(c.skip_dates,' ',''), ',')) )
+       )
+     )
+   LIMIT 1;
+
+  IF FOUND THEN
+    RAISE EXCEPTION '教室已被占用：% %-% %「%」%（记录#%）',
+      d, hit.start_time, hit.end_time,
+      CASE hit.status WHEN 'pending' THEN '待审批' ELSE '已确认' END,
+      COALESCE(hit.title, hit.kind, '占用'),
+      COALESCE(hit.user_name, ''),
+      hit.id
+      USING ERRCODE = 'exclusion_violation';
+  END IF;
+
+  RETURN NEW;
+END $function$;
+
+create or replace function public.sched_bookings_check_teacher_dup()
+ returns trigger
+ language plpgsql
+as $function$
+DECLARE
+  d   date;
+  s   time;
+  e   time;
+  nm  text;
+  hit record;
+BEGIN
+  nm := btrim(COALESCE(NEW.user_name, ''));
+  IF nm = '' OR NEW.booking_date IS NULL
+     OR NEW.start_time IS NULL OR NEW.end_time IS NULL
+     OR NEW.status NOT IN ('pending','confirmed')
+     OR NEW.recurrence = 'weekly'
+     OR NEW.allow_multi IS TRUE THEN          -- 占用录入页确认过"再预约一间"的，放行
+    RETURN NEW;
+  END IF;
+
+  d := NEW.booking_date::date;
+  s := NEW.start_time::time;
+  e := NEW.end_time::time;
+
+  PERFORM pg_advisory_xact_lock(hashtext('sched_teacher_' || nm));
+
+  SELECT b.id, b.kind, b.title, b.student_name, b.status, b.start_time, b.end_time, r.name AS room
+    INTO hit
+    FROM sched_bookings b
+    LEFT JOIN public.courses c ON c.id = b.course_id
+    LEFT JOIN sched_rooms   r ON r.id = b.room_id
+   WHERE b.id IS DISTINCT FROM NEW.id
+     AND btrim(COALESCE(b.user_name,'')) = nm
+     AND b.status IN ('pending','confirmed')
+     AND b.start_time IS NOT NULL AND b.end_time IS NOT NULL
+     AND s < b.end_time::time AND b.start_time::time < e
+     AND (
+       ( b.recurrence IS DISTINCT FROM 'weekly' AND b.booking_date::date = d )
+       OR
+       ( b.recurrence = 'weekly'
+         AND b.weekday IS NOT NULL
+         AND (b.weekday::int % 7) = EXTRACT(DOW FROM d)::int
+         AND d >= COALESCE(b.start_date::date, d)
+         AND d <= COALESCE(b.end_date::date, d)
+         AND NOT ( c.skip_dates IS NOT NULL
+                   AND d::text = ANY(string_to_array(replace(c.skip_dates,' ',''), ',')) )
+       )
+     )
+   LIMIT 1;
+
+  IF FOUND THEN
+    RAISE EXCEPTION '重复预约：% 在 % %-% 已有%「%」%（%，记录#%）',
+      nm, d, hit.start_time, hit.end_time,
+      CASE hit.status WHEN 'pending' THEN '待审批预约' ELSE '已确认预约' END,
+      COALESCE(hit.title, hit.kind, '占用'),
+      CASE WHEN hit.student_name IS NOT NULL THEN ' 学生:' || hit.student_name ELSE '' END,
+      COALESCE(hit.room, '未指定教室'),
+      hit.id
+      USING ERRCODE = 'unique_violation';
+  END IF;
+
+  RETURN NEW;
+END $function$;
+
 commit;
 
--- B.4 检查（只读）：课程占用都有新 course_id；旧表都还在
+-- B.5 检查（只读）：课程占用都有新 course_id；旧表都还在
 select count(*) filter (where kind = 'course' and course_id is null) as course_bookings_without_id,
        count(*) filter (where kind = 'course') as course_bookings
 from public.sched_bookings;
@@ -121,4 +250,132 @@ select (select count(*) from public.sched_courses_legacy) as legacy_courses,
 -- end $f$;
 -- create trigger trg_sched_bookings_fill_course_ref before insert or update of course_id on public.sched_bookings
 --   for each row execute function public.sched_bookings_fill_course_ref();
+-- -- 防撞函数改回连 sched_courses（先执行上面的改名回滚，再执行）：
+-- create or replace function public.sched_bookings_check_overlap()
+--  returns trigger
+--  language plpgsql
+-- as $function$
+-- DECLARE
+--   d   date;
+--   s   time;
+--   e   time;
+--   hit record;
+-- BEGIN
+--   -- 不占教室 / 已驳回 / 周循环排课：不在此处检查
+--   IF NEW.room_id IS NULL OR NEW.booking_date IS NULL
+--      OR NEW.start_time IS NULL OR NEW.end_time IS NULL
+--      OR NEW.status NOT IN ('pending','confirmed')
+--      OR NEW.recurrence = 'weekly' THEN
+--     RETURN NEW;
+--   END IF;
+--
+--   d := NEW.booking_date::date;
+--   s := NEW.start_time::time;
+--   e := NEW.end_time::time;
+--
+--   -- 同一教室串行化：两人同一瞬间提交也只能过一个
+--   PERFORM pg_advisory_xact_lock(hashtext('sched_room_' || NEW.room_id::text));
+--
+--   SELECT b.id, b.kind, b.title, b.user_name, b.status, b.start_time, b.end_time
+--     INTO hit
+--     FROM sched_bookings b
+--     LEFT JOIN sched_courses c ON c.id = b.course_id
+--    WHERE b.id IS DISTINCT FROM NEW.id
+--      AND b.room_id = NEW.room_id
+--      AND b.status IN ('pending','confirmed')
+--      AND b.start_time IS NOT NULL AND b.end_time IS NOT NULL
+--      AND s < b.end_time::time AND b.start_time::time < e
+--      AND (
+--        -- 对方也是单日占用：同一天
+--        ( b.recurrence IS DISTINCT FROM 'weekly' AND b.booking_date::date = d )
+--        OR
+--        -- 对方是排课循环：日期在区间内、周几相同、当天不是休讲日
+--        ( b.recurrence = 'weekly'
+--          AND b.weekday IS NOT NULL
+--          AND (b.weekday::int % 7) = EXTRACT(DOW FROM d)::int
+--          AND d >= COALESCE(b.start_date::date, d)
+--          AND d <= COALESCE(b.end_date::date, d)
+--          AND NOT ( c.skip_dates IS NOT NULL
+--                    AND d::text = ANY(string_to_array(replace(c.skip_dates,' ',''), ',')) )
+--        )
+--      )
+--    LIMIT 1;
+--
+--   IF FOUND THEN
+--     RAISE EXCEPTION '教室已被占用：% %-% %「%」%（记录#%）',
+--       d, hit.start_time, hit.end_time,
+--       CASE hit.status WHEN 'pending' THEN '待审批' ELSE '已确认' END,
+--       COALESCE(hit.title, hit.kind, '占用'),
+--       COALESCE(hit.user_name, ''),
+--       hit.id
+--       USING ERRCODE = 'exclusion_violation';
+--   END IF;
+--
+--   RETURN NEW;
+-- END $function$;
+--
+-- create or replace function public.sched_bookings_check_teacher_dup()
+--  returns trigger
+--  language plpgsql
+-- as $function$
+-- DECLARE
+--   d   date;
+--   s   time;
+--   e   time;
+--   nm  text;
+--   hit record;
+-- BEGIN
+--   nm := btrim(COALESCE(NEW.user_name, ''));
+--   IF nm = '' OR NEW.booking_date IS NULL
+--      OR NEW.start_time IS NULL OR NEW.end_time IS NULL
+--      OR NEW.status NOT IN ('pending','confirmed')
+--      OR NEW.recurrence = 'weekly'
+--      OR NEW.allow_multi IS TRUE THEN          -- 占用录入页确认过"再预约一间"的，放行
+--     RETURN NEW;
+--   END IF;
+--
+--   d := NEW.booking_date::date;
+--   s := NEW.start_time::time;
+--   e := NEW.end_time::time;
+--
+--   PERFORM pg_advisory_xact_lock(hashtext('sched_teacher_' || nm));
+--
+--   SELECT b.id, b.kind, b.title, b.student_name, b.status, b.start_time, b.end_time, r.name AS room
+--     INTO hit
+--     FROM sched_bookings b
+--     LEFT JOIN sched_courses c ON c.id = b.course_id
+--     LEFT JOIN sched_rooms   r ON r.id = b.room_id
+--    WHERE b.id IS DISTINCT FROM NEW.id
+--      AND btrim(COALESCE(b.user_name,'')) = nm
+--      AND b.status IN ('pending','confirmed')
+--      AND b.start_time IS NOT NULL AND b.end_time IS NOT NULL
+--      AND s < b.end_time::time AND b.start_time::time < e
+--      AND (
+--        ( b.recurrence IS DISTINCT FROM 'weekly' AND b.booking_date::date = d )
+--        OR
+--        ( b.recurrence = 'weekly'
+--          AND b.weekday IS NOT NULL
+--          AND (b.weekday::int % 7) = EXTRACT(DOW FROM d)::int
+--          AND d >= COALESCE(b.start_date::date, d)
+--          AND d <= COALESCE(b.end_date::date, d)
+--          AND NOT ( c.skip_dates IS NOT NULL
+--                    AND d::text = ANY(string_to_array(replace(c.skip_dates,' ',''), ',')) )
+--        )
+--      )
+--    LIMIT 1;
+--
+--   IF FOUND THEN
+--     RAISE EXCEPTION '重复预约：% 在 % %-% 已有%「%」%（%，记录#%）',
+--       nm, d, hit.start_time, hit.end_time,
+--       CASE hit.status WHEN 'pending' THEN '待审批预约' ELSE '已确认预约' END,
+--       COALESCE(hit.title, hit.kind, '占用'),
+--       CASE WHEN hit.student_name IS NOT NULL THEN ' 学生:' || hit.student_name ELSE '' END,
+--       COALESCE(hit.room, '未指定教室'),
+--       hit.id
+--       USING ERRCODE = 'unique_violation';
+--   END IF;
+--
+--   RETURN NEW;
+-- END $function$;
+--
 -- commit;
