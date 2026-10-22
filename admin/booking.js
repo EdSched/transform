@@ -137,7 +137,6 @@ function bkvOnDate(x,date){
 }
 // 休讲日的周循环课不占教室
 async function bkvSkipMap(hits){
-  hits.forEach(b=>{ if(b.course_ref!=null) b.course_id=b.course_ref; });   // 课程占用以 course_ref（= 管理端课程 id）为准
   const cids=[...new Set(hits.filter(x=>x.recurrence==='weekly'&&x.course_id).map(x=>x.course_id))];
   const map={};
   if(cids.length){ try{
@@ -158,7 +157,7 @@ async function bkvLoadRooms(campus,date,start,end,excludeSchedId){
   const big=(all||[]).filter(r=>r.type==='大课'&&r.active!==false&&!/コスモ|cosmo|外借|租/i.test((r.name||'')+(r.campus||'')));
   const rooms=[...vip,...big];
   if(!rooms.length) return {vip:[],big:[]};
-  const bks=await sb(`/rest/v1/sched_bookings?room_id=in.(${rooms.map(r=>r.id).join(',')})&status=neq.rejected&or=(booking_date.eq.${date},recurrence.eq.weekly)&select=id,room_id,course_id,course_ref,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status,title,kind`);
+  const bks=await sb(`/rest/v1/sched_bookings?room_id=in.(${rooms.map(r=>r.id).join(',')})&status=neq.rejected&or=(booking_date.eq.${date},recurrence.eq.weekly)&select=id,room_id,course_id,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status,title,kind`);
   let hits=(bks||[]).filter(x=>!(excludeSchedId&&String(x.id)===String(excludeSchedId))&&start<x.end_time&&x.start_time<end&&bkvOnDate(x,date));
   const skip=await bkvSkipMap(hits);
   hits=hits.filter(x=>!(x.recurrence==='weekly'&&x.course_id&&skip[String(x.course_id)]&&skip[String(x.course_id)].has(date)));
@@ -220,7 +219,7 @@ async function bkSelfNotice(id){
   try{
     const rooms=window.__bkSelfRooms||[];
     const d0=bkvAddDays(b.slot_date,-5), d1=bkvAddDays(b.slot_date,5);
-    const bks=rooms.length?(await sb(`/rest/v1/sched_bookings?room_id=in.(${rooms.map(r=>r.id).join(',')})&status=neq.rejected&or=(recurrence.eq.weekly,and(booking_date.gte.${d0},booking_date.lte.${d1}))&select=id,room_id,course_id,course_ref,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status`))||[]:[];
+    const bks=rooms.length?(await sb(`/rest/v1/sched_bookings?room_id=in.(${rooms.map(r=>r.id).join(',')})&status=neq.rejected&or=(recurrence.eq.weekly,and(booking_date.gte.${d0},booking_date.lte.${d1}))&select=id,room_id,course_id,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status`))||[]:[];
     const skip=await bkvSkipMap(bks);
     const free=(date,s,e)=>rooms.some(r=>!bkvBusy(bks,skip,r.id,date,s,e,b.sched_booking_id));
     const mins=t=>{ const [h,m]=t.split(':').map(Number); return h*60+m; };
