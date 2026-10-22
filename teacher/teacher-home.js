@@ -1,11 +1,15 @@
 // ══════════════════════════════════
 // teacher-home.js — 老师端首页细节：昵称（名字旁）、顶部「管理模式 / 资源管理」按钮、首页快捷卡片
 // 快捷卡片存在 teachers.home_shortcuts（jsonb 数组，建字段 SQL：seed/teacher_home_shortcuts.sql）：
-//   {type:'tab',tab} / {type:'sub',tab,sub} / {type:'student',id,label} / {type:'course',id,label} / {type:'resource'}
+//   {type:'tab',tab} / {type:'sub',tab,sub} / {type:'student',id,label} / {type:'course',id,label} / {type:'resource'} / {type:'action',id:'vip_backfill'}（直接打开某个操作的弹窗）
 //   一张都不留时存 [{type:'empty'}]（和「从来没设置过」区分：没设置过会显示默认的前 4 个标签）
 // 依赖：teacher.js（teacherData、teacherName、switchTab、curTab、cachedTeacher*、confirmedSessions）、teacher-students.js（smTab、smAllowedItems）
 // ══════════════════════════════════
 const HOME_MAX = 8;
+// 动作卡片：点了直接打开弹窗，不跳页面。ok() 跟对应入口的显示条件一致
+const HOME_ACTIONS = [
+  { id: 'vip_backfill', name: '补录 VIP 课', sub: '操作 · 弹出补录表单', ok: () => typeof vbfAllowed === 'function' && vbfAllowed(), run: () => vbfOpen() },
+];
 let teacherTabList = [];        // buildTabs 设置：[{id,label}]
 let homeList = [];              // 老师自己的快捷卡片（已保存的）
 let homeCustom = false;         // 是否设置过（没设置过就显示默认卡片，不落库）
@@ -96,6 +100,7 @@ function homeAllowed(it) {
   if (it.type === 'student') return ids.has('studentmgmt') || ids.has('booking');
   if (it.type === 'course') return ids.has('mycourses');
   if (it.type === 'resource') return homeResourceOk() && (!it.card || homeResCardOk(it.card));
+  if (it.type === 'action') { const a = HOME_ACTIONS.find(x => x.id === it.id); return !!a && a.ok(); }
   return false;
 }
 function homeGone(it) {
@@ -108,6 +113,7 @@ function homeText(it) {
   if (it.type === 'sub') { const s = HOME_SUBS[it.tab].list().find(([k]) => k === it.sub); return [homePlain(s ? s[1] : it.sub), homeTabLabel(it.tab) + ' · 分页']; }
   if (it.type === 'student') { const i = homeStuInfo[it.id]; return [it.label || (i && i.name) || '学生', '学生' + (i && i.major ? ' · ' + (typeof majorLabel === 'function' ? majorLabel(i.major) : i.major) : '')]; }
   if (it.type === 'course') return [it.label || '课程', '课程'];
+  if (it.type === 'action') { const a = HOME_ACTIONS.find(x => x.id === it.id); return [a ? a.name : '操作', a ? a.sub : '操作']; }
   if (it.card) { const c = HOME_RES_CARDS.find(([k]) => k === it.card); return [c ? c[1] : it.card, '资源管理 · 功能']; }
   return ['资源管理', '排课系统'];
 }
@@ -157,6 +163,7 @@ async function homeAddPick(kind, tab, sub) {
   const ok = await homeAdd(kind === 'sub' ? { type: 'sub', tab, sub } : { type: 'tab', tab });
   if (ok) homeRender();
 }
+async function homeAddAction(id) { if (await homeAdd({ type: 'action', id })) homeRender(); }
 async function homeAddResource(card) { if (await homeAdd(card ? { type: 'resource', card } : { type: 'resource' })) homeRender(); }
 
 // 「加到首页」小按钮（学生详情、课表上课次的标题旁）：已加过显示「已在首页」，再点取消
@@ -204,6 +211,7 @@ async function homeRender() {
       ${tabs.map(t => chip(homeHas({ type: 'tab', tab: t.id }), homePlain(t.label), `homeAddPick('tab','${homeJs(t.id)}')`, { type: 'tab', tab: t.id })).join('')}
       ${homeResourceOk() ? chip(homeHas({ type: 'resource' }), '资源管理', 'homeAddResource()', { type: 'resource' }) : ''}
       ${subRows}
+      ${HOME_ACTIONS.filter(a => a.ok()).length ? `<div style="margin-top:6px"><span style="font-size:10px;color:var(--text-3);margin-right:6px">操作</span>${HOME_ACTIONS.filter(a => a.ok()).map(a => chip(homeHas({ type: 'action', id: a.id }), a.name, `homeAddAction('${a.id}')`, { type: 'action', id: a.id })).join('')}</div>` : ''}
       ${homeResourceOk() ? `<div style="margin-top:6px"><span style="font-size:10px;color:var(--text-3);margin-right:6px">资源管理的功能</span>${HOME_RES_CARDS.filter(([k]) => homeResCardOk(k)).map(([k, l]) => chip(homeHas({ type: 'resource', card: k }), l, `homeAddResource('${k}')`, { type: 'resource', card: k })).join('')}</div>` : ''}
       <div style="font-size:10px;color:var(--text-3);margin-top:8px">学生、课程请在学生详情 / 课表里点「加到首页」</div></div>`;
   }
@@ -216,6 +224,7 @@ function homeOpen(i) {
   const it = homeShownVisible()[i]; if (!it || homeGone(it)) return;
   if (it.type === 'tab') switchTab(it.tab);
   else if (it.type === 'sub') { HOME_SUBS[it.tab].set(it.sub); switchTab(it.tab); }
+  else if (it.type === 'action') { const a = HOME_ACTIONS.find(x => x.id === it.id); if (a) a.run(); }
   else if (it.type === 'resource') { homeResCard = it.card || ''; switchTab('resource'); }
   else if (it.type === 'student') showStudentInfoTeacher((homeStuInfo[it.id] && homeStuInfo[it.id].name) || it.label, it.id);
   else if (it.type === 'course') {
