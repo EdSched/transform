@@ -397,6 +397,16 @@ function onlineTodoCourses(courses, bookings){
   const _today = todayStr();
   return courses.filter(c=>schedIsOnline(c) && !schedRemoved(c) && !scheduled.has(String(c.id)) && !(c.end_date && c.end_date<_today));
 }
+/* 已排教室但未设会议链接的课（含线上课） */
+function meetingNoLinkCourses(courses, bookings){
+  return courses.filter(c=>!(c.meeting_link||c.meeting_id) && bookings.some(b=>b.kind==='course' && String(b.course_id)===String(c.id)));
+}
+/* 期数名的类别：学部美术按月（2026年10月）/ 按季度（2026年10月期） */
+function termKindTag(term){
+  if(/^\d{4}年\d{1,2}月$/.test(term||'')) return '学部美术·按月';
+  if(/^\d{4}年\d{1,2}月期$/.test(term||'')) return '按季度';
+  return '';
+}
 /* 生成排课提醒文案列表（每个未排完的期一条）。提前半个月进入提醒窗 */
 function schedulingReminders(courses, bookings){
   const byTerm = unscheduledByTerm(courses, bookings);
@@ -415,7 +425,7 @@ function schedulingReminders(courses, bookings){
     } else {
       msg = `【${term}】有 ${n} 门课未排教室。`;
     }
-    out.push({term, n, msg, urgent});
+    out.push({term, n, msg, urgent, courses:byTerm[term]});
   });
   return out;
 }

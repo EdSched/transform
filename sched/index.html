@@ -35,7 +35,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="common.js?v=20261030"></script>
+<script src="common.js?v=20261031"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], ROLE=null;
@@ -162,22 +162,8 @@ function renderHub(){
     if(rb){
       const ps=permSet(ROLE);
       if((ps.has('assign')||ps.has('manage')) && typeof schedulingReminders==='function'){
-        const rems=schedulingReminders(remindCourses(), BOOKINGS);
-        let remHtml = rems.length ? rems.map(r=>
-          `<div style="background:${r.urgent?'#fdf1ed':'#f7f5f0'};border:1px solid ${r.urgent?'#f2d5cc':'#e6e0d4'};color:${r.urgent?'#c85a3c':'#6b5d3e'};padding:10px 14px;border-radius:8px;margin-bottom:8px;font-size:13px;line-height:1.5">${esc(r.msg)}</div>`
-        ).join('') : '';
-        remHtml += onlineRemindHtml();
-        // 已排教室但未设会议链接（含线上课）
-        const noLink = COURSES.filter(c=>!(c.meeting_link||c.meeting_id) && BOOKINGS.some(b=>b.kind==='course' && String(b.course_id)===String(c.id)));
-        if(noLink.length){
-          const canArrange = ps.has('meeting_arrange')||ps.has('manage');
-          remHtml += '<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#2f5a8a;padding:10px 14px;border-radius:8px;margin-bottom:8px;font-size:13px;line-height:1.5;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
-            '<span>还有 <b>'+noLink.length+'</b> 门已排教室但未设会议链接（含线上课）。</span>'+
-            (canArrange?'<button class="sm" id="rem_mtg">会议链接设定</button>':'')+'</div>';
-        }
-        rb.innerHTML = remHtml;
-        if(el('rem_mtg')) el('rem_mtg').onclick=()=>openCard('meeting');
-        bindOnlineRemind();
+        rb.innerHTML='<div class="remMain" data-nolink="1"></div>';
+        mountRemind(rb.querySelector('.remMain'));
       } else rb.innerHTML='';
     }
   }catch(e){ const rb=el('schedRemind'); if(rb) rb.innerHTML=''; }
@@ -252,31 +238,71 @@ function renderChangeAlerts(){
 }
 /* 提醒只看显示窗口内、没移出的课 */
 function remindCourses(){ return schedViewList(ALL_COURSES, null); }
-/* 线上课还没设定腾讯会议：单独一条，不算「未排教室」 */
-function onlineRemindHtml(){
-  const todo = onlineTodoCourses(remindCourses(), BOOKINGS);
-  if(!todo.length) return '';
-  return '<div style="background:#eef4fb;border:1px solid #cfe0f2;color:#2f5a8a;padding:10px 14px;border-radius:8px;margin-bottom:8px;font-size:13px;line-height:1.5;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
-    '<span>有 <b>'+todo.length+'</b> 门线上课还没设定腾讯会议。</span><button class="sm rem_online">去处理</button></div>';
+/* ---------- 排课提醒：每条可展开，列出课并能直接去排 ---------- */
+window.REM_OPEN = window.REM_OPEN || new Set();   // 展开状态只放内存，刷新后默认收起
+function remCourseRow(c, act){
+  const wd=weekdaysLabel(c.weekdays), tm=(c.start_time||'')?((c.start_time||'')+'-'+(c.end_time||'')):'';
+  const where=schedIsOnline(c)?'线上':(c.campus||'');
+  const parts=[c.teacher||'', [wd,tm].filter(Boolean).join(' '), where, c.start_date?('开课 '+c.start_date):''].filter(Boolean);
+  return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed rgba(0,0,0,.12)"><div style="flex:1;min-width:0"><b>'+esc(c.merge_name||c.name||'')+'</b><div style="font-size:12px;opacity:.8">'+esc(parts.join(' ｜ '))+'</div></div>'+
+    '<button class="sm" data-rem-act="'+act+'" data-cid="'+esc(String(c.id))+'">'+(act==='link'?'去设定':'去排')+'</button></div>';
 }
-function bindOnlineRemind(){
-  document.querySelectorAll('.rem_online').forEach(b=>b.onclick=()=>{
-    window.AS_VIEW='table';
-    window.AF_STATE={af_kind:'online', af_status:'todo'};
-    window.AF_TRACE=schedTraceNew();
-    openCard('assign');
-  });
+function remBox(key, style, headHtml, courses, act, allBtn){
+  const open=REM_OPEN.has(key);
+  let h='<div class="remBox" style="'+style+';border-radius:8px;margin-bottom:8px;font-size:13px;line-height:1.5">'+
+    '<div data-rem-tg="'+esc(key)+'" style="cursor:pointer;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="flex:1;min-width:0">'+headHtml+'</span>'+
+    (allBtn&&!open?'':'')+'<span style="font-size:12px;white-space:nowrap">'+(open?'收起 ▴':'展开 ▾')+'</span></div>';
+  if(open){
+    h+='<div style="padding:0 14px 10px">';
+    if(allBtn) h+='<div style="margin-bottom:4px"><button class="sm" data-rem-all="'+esc(allBtn)+'">全部去排</button></div>';
+    h+=courses.map(c=>remCourseRow(c,act)).join('')+'</div>';
+  }
+  return h+'</div>';
 }
-function reminderHtml(){
-  try{
-    if(typeof schedulingReminders!=='function' || !ROLE) return '';
-    const ps=permSet(ROLE);
-    if(!(ps.has('assign')||ps.has('manage'))) return '';   // 只对能排教室的账号提醒
-    const rems=schedulingReminders(remindCourses(), BOOKINGS);
-    return (rems.length ? rems.map(r=>
-      `<div style="background:${r.urgent?'#fdf1ed':'#f7f5f0'};border:1px solid ${r.urgent?'#f2d5cc':'#e6e0d4'};color:${r.urgent?'#c85a3c':'#6b5d3e'};padding:10px 14px;border-radius:8px;margin-bottom:8px;font-size:13px;line-height:1.5">${esc(r.msg)}</div>`
-    ).join('') : '') + onlineRemindHtml();
-  }catch(e){ return ''; }
+function remindMainHtml(withNoLink){
+  const ps=permSet(ROLE);
+  const rems=schedulingReminders(remindCourses(), BOOKINGS);
+  const anyMonth=rems.some(r=>/^\d{4}年\d{1,2}月$/.test(r.term));
+  let h=rems.map(r=>{
+    const tag=termKindTag(r.term);
+    let head=esc(r.msg);
+    if(tag && (anyMonth || /月$/.test(r.term))) head=head.replace(esc('【'+r.term+'】'), esc('【'+r.term+'】')+'<small style="opacity:.75">（'+esc(tag)+'）</small>');
+    return remBox('t:'+r.term, 'background:'+(r.urgent?'#fdf1ed':'#f7f5f0')+';border:1px solid '+(r.urgent?'#f2d5cc':'#e6e0d4')+';color:'+(r.urgent?'#c85a3c':'#6b5d3e'), head, r.courses, 'assign', 'term:'+r.term);
+  }).join('');
+  const online=onlineTodoCourses(remindCourses(), BOOKINGS);
+  if(online.length) h+=remBox('online','background:#eef4fb;border:1px solid #cfe0f2;color:#2f5a8a','有 <b>'+online.length+'</b> 门线上课还没设定腾讯会议。',online,'assign','online');
+  if(withNoLink){
+    const noLink=meetingNoLinkCourses(COURSES, BOOKINGS);
+    if(noLink.length){
+      const canArrange=ps.has('meeting_arrange')||ps.has('manage');
+      h+=remBox('nolink','background:#eef4fb;border:1px solid #cfe0f2;color:#2f5a8a','还有 <b>'+noLink.length+'</b> 门已排教室但未设会议链接（含线上课）。'+(canArrange?' <button class="sm" data-rem-mtg="1">会议链接设定</button>':''), canArrange?noLink:[], 'link', '');
+    }
+  }
+  return h;
+}
+function mountRemind(box){
+  if(!box) return;
+  try{ box.innerHTML=remindMainHtml(box.dataset.nolink==='1'); }catch(e){ box.innerHTML=''; return; }
+  box.onclick=ev=>{
+    const t=ev.target;
+    const mtg=t.closest('[data-rem-mtg]'); if(mtg){ openCard('meeting'); return; }
+    const all=t.closest('[data-rem-all]');
+    if(all){
+      const v=all.dataset.remAll;
+      window.AS_VIEW='table';
+      window.AF_STATE = v==='online' ? {af_kind:'online', af_status:'todo'} : {af_term:v.slice(5), af_status:'todo', af_kind:'offline'};
+      window.AF_TRACE=schedTraceNew(); openCard('assign'); return;
+    }
+    const act=t.closest('[data-rem-act]');
+    if(act){
+      const id=act.dataset.cid;
+      if(act.dataset.remAct==='link'){ window.MEET_FOCUS=id; openCard('meeting'); window.MEET_FOCUS=null; }
+      else { openCard('assign'); assignRoomOnly(id); }
+      return;
+    }
+    const tg=t.closest('[data-rem-tg]');
+    if(tg){ const k=tg.dataset.remTg; REM_OPEN.has(k)?REM_OPEN.delete(k):REM_OPEN.add(k); mountRemind(box); }
+  };
 }
 function openCard(key){
   if(!canSee(key)){ renderHub(); return; }           // 无权限的功能不可进
@@ -286,7 +312,8 @@ function openCard(key){
   el('hub').classList.add('hidden');
   el('work').classList.remove('hidden');
   el('workTitle').textContent = ic+' '+nm;
-  const wr=el('workRemind'); if(wr){ wr.innerHTML = reminderHtml(); bindOnlineRemind(); }   // 每个功能页都显示提醒
+  const wr=el('workRemind'); if(wr){ wr.innerHTML=''; wr.dataset.nolink='0';
+    try{ const ps0=permSet(ROLE); if(ROLE && (ps0.has('assign')||ps0.has('manage'))) mountRemind(wr); }catch(e){} }   // 每个功能页都显示提醒（只对能排教室的账号）
   const panel=el('panel'), frame=el('frame');
   if(type==='iframe'){
     panel.style.display='none'; panel.innerHTML='';
@@ -294,6 +321,7 @@ function openCard(key){
     if(target==='booking.html' && (ps.has('occupy')||ps.has('manage'))) cap='&canmanage=1';
     if(target==='oplog.html'){ if(ps.has('occupy')||ps.has('manage')) cap='&canmanage=1'; if(ps.has('manage')) cap+='&canarchive=1'; if(window.__OPLOG_ARCH) cap+='&tab=arch'; }
     if(target==='meeting.html' && (ps.has('meeting_arrange')||ps.has('manage'))) cap='&canarrange=1';
+    if(target==='meeting.html' && window.MEET_FOCUS) cap+='&focus='+encodeURIComponent(window.MEET_FOCUS);
     frame.style.display='block'; frame.src = target + (target.includes('?')?'&':'?') + 'embed=1' + cap + (EMBED_ADMIN ? '&via=admin' : '');
   }else{
     frame.style.display='none'; frame.src='about:blank';

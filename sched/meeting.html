@@ -80,7 +80,7 @@
     </div>
   </div>
 </div>
-<script src="common.js?v=20261030"></script>
+<script src="common.js?v=20261031"></script>
 <script>
 el('nav').innerHTML = renderNav('meeting.html');
 let CANARRANGE = new URLSearchParams(location.search).get('canarrange')==='1';
@@ -325,6 +325,15 @@ function initLinkSetup(){
   el('ms_tabRoom').onclick=()=>{ el('ms_tabRoom').classList.add('on'); el('ms_tabOnline').classList.remove('on'); el('ms_roomPane').classList.remove('hidden'); el('ms_onlinePane').classList.add('hidden'); };
   el('ms_tabOnline').onclick=()=>{ el('ms_tabOnline').classList.add('on'); el('ms_tabRoom').classList.remove('on'); el('ms_onlinePane').classList.remove('hidden'); el('ms_roomPane').classList.add('hidden'); renderOnlineMtg(); };
   fillSelect(el('ms_campus'), ['高马','市谷'], v=>v, v=>v, '选校区');
+  // 从首页提醒「去设定」进来：定位到这门课所在教室，并高亮这一行；没有教室的（线上课）打开「线上课 / 临时」
+  const focusId=new URLSearchParams(location.search).get('focus');
+  let focusOnline=false;
+  if(focusId){
+    window.MS_FOCUS=focusId;
+    const fb=BOOKINGS.find(b=>b.kind==='course'&&String(b.course_id)===String(focusId)&&b.room_id);
+    const fr=fb&&ROOMS.find(r=>String(r.id)===String(fb.room_id));
+    if(fr) window.MS_STATE={campus:fr.campus,room:fr.id}; else focusOnline=true;
+  }
   const st=window.MS_STATE||{};
   if(st.campus) el('ms_campus').value=st.campus;
   function syncRooms(){
@@ -337,6 +346,11 @@ function initLinkSetup(){
   el('ms_campus').onchange=()=>{ window.MS_STATE={campus:el('ms_campus').value,room:''}; syncRooms(); el('ms_body').innerHTML=''; };
   el('ms_room').onchange=()=>{ window.MS_STATE={campus:el('ms_campus').value,room:el('ms_room').value}; renderMtgRoom(); };
   if(st.room) renderMtgRoom();
+  if(focusId){
+    el('topTabLink').click();
+    if(focusOnline) el('ms_tabOnline').click();
+    else { const hl=document.querySelector('tr.ms_focus'); if(hl) hl.scrollIntoView({block:'center'}); }
+  }
 }
 // 线上课/临时占用的链接设定：列出占了账号的线上课与临时占用
 function renderOnlineMtg(){
@@ -351,7 +365,7 @@ function renderOnlineMtg(){
   if(onlineCourses.length){
     h+='<table><thead><tr><th>课程</th><th>账号</th><th>周期</th><th>状态</th><th>会议链接</th><th>操作</th></tr></thead><tbody>';
     onlineCourses.forEach(({c,b})=>{ const hasLink=!!(c.meeting_link||c.meeting_id);
-      h+=`<tr><td><b>${esc((c.term?c.term+' ':'')+(c.name||''))}</b>${c.category?(' <small class="muted">'+esc(c.category)+'</small>'):''}</td><td>${esc(aname(b.meeting_account_id))}</td><td>${weekdaysLabel(String(b.weekday||c.weekdays||''))} ${esc(b.start_time||'')}-${esc(b.end_time||'')}${(c.start_date||c.end_date)?('<br><small class="muted">'+esc((c.start_date||'')+'~'+(c.end_date||''))+'</small>'):''}</td>`+
+      h+=`<tr${String(c.id)===String(window.MS_FOCUS)?' class="ms_focus" style="background:#fff6d6"':''}><td><b>${esc((c.term?c.term+' ':'')+(c.name||''))}</b>${c.category?(' <small class="muted">'+esc(c.category)+'</small>'):''}</td><td>${esc(aname(b.meeting_account_id))}</td><td>${weekdaysLabel(String(b.weekday||c.weekdays||''))} ${esc(b.start_time||'')}-${esc(b.end_time||'')}${(c.start_date||c.end_date)?('<br><small class="muted">'+esc((c.start_date||'')+'~'+(c.end_date||''))+'</small>'):''}</td>`+
         `<td>${b.status==='reserved'?'<span class="badge b-warn">预留</span>':'<span class="badge b-ok">正式</span>'}</td>`+
         `<td>${hasLink?('<span class="badge b-ok" style="font-size:10px">已设</span>'+(c.meeting_link?(' <a href="'+esc(c.meeting_link)+'" target="_blank" style="font-size:10px">链接</a>'):'')+(c.meeting_id?(' <span class="muted" style="font-size:10px">'+esc(c.meeting_id)+'</span>'):'')+(c.host_key?(' <span class="muted" style="font-size:10px">密钥'+esc(c.host_key)+'</span>'):'')):'<span class="muted">—</span>'}</td>`+
         `<td><button class="sm ghost" data-msonline="${c.id}">${hasLink?'重设链接':'设链接'}</button></td></tr>`;
