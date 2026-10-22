@@ -50,6 +50,7 @@ async function vlLoad() {
 // ── 单节课的状态 / 作业 / 确认 ──
 function vlState(b) {
   if (b.status === 'cancelled') return 'cancelled';
+  if (b.teacher_backfill && b.admin_review !== 'approved') return 'bfwait';   // 老师补录，教务还没确认（或被退回）：不算已上课、不算课时
   if (b.status === 'completed') return 'done';
   return vlToday() > (b.slot_date || '') ? 'unrec' : 'todo';   // todo = 已约未到时间；unrec = 时间已过还没记录
 }
@@ -83,9 +84,9 @@ function vlHw(b) {
 function vlConfirm(b) {
   const st = vlState(b);
   if (st !== 'done') return { t: '—', c: 'var(--text-3,#999)' };
-  if (!b.student_confirmed) return { t: '待确认', c: 'var(--warn,#b8860b)' };
+  if (!b.student_confirmed) return { t: b.teacher_backfill ? '教务已确认·待学生确认' : '待确认', c: 'var(--warn,#b8860b)' };
   const r = b.student_rating;
-  return { t: '✓' + (r != null && r !== '' ? ' 评价 ' + r : ''), c: 'var(--ok,#2a9e6a)' };
+  return { t: '✓' + (b.student_confirmed_by ? ' 教务代确认' : (b.teacher_backfill ? ' 学生已确认' : '')) + (r != null && r !== '' ? ' 评价 ' + r : ''), c: 'var(--ok,#2a9e6a)' };
 }
 function vlStateTag(st) {
   return ({ done: ['已上课', 'var(--ok,#2a9e6a)'], cancelled: ['已取消', 'var(--text-3,#999)'], unrec: ['已过未记录', 'var(--danger,#b03a2e)'], todo: ['未上', 'var(--text-2,#666)'] })[st];
@@ -187,7 +188,7 @@ function vlMoreBtn(total) {
 
 // 一行课次 + 展开详情；colspan = 表格总列数
 function vlLessonRow(x, cols, extraTd) {
-  const b = x.b, st = vlState(b), tag = vlStateTag(st), hw = vlHw(b), cf = vlConfirm(b);
+  const b = x.b, st = vlState(b), tag = st === 'bfwait' ? [b.admin_review === 'rejected' ? '教务已退回' : '待教务确认', 'var(--warn,#b8860b)'] : vlStateTag(st), hw = vlHw(b), cf = vlConfirm(b);
   const grey = st === 'cancelled' ? 'opacity:.55;background:var(--bg,#f7f5f0);' : '';
   const open = !!VL.open[b.id];
   const who = b.cancelled_by ? `（${vlEsc(b.cancelled_by)}取消）` : '';
@@ -213,6 +214,7 @@ function vlDetailHtml(b, hw) {
   const btn = VL.cfg.recordBtn ? VL.cfg.recordBtn(b) : '';
   const fbCards = hw.sub ? hwFeedbackCardsHtml(hw.sub) : '';
   const body = [
+    b.teacher_backfill ? sec('老师补录', (b.location === 'online' ? '线上' : '线下' + (b.backfill_room_note ? '・' + b.backfill_room_note : '')) + (b.admin_review === 'rejected' ? '\n教务退回：' + (b.admin_review_note || '') : '')) : '',
     sec('课堂记录', b.vip_session_notes),
     sec('未按规划上课的原因', b.vip_offplan_reason),
     sec('作业内容', [b.vip_homework, qt, b.vip_homework_note].filter(x => String(x || '').trim()).join('\n')),
@@ -240,7 +242,7 @@ function vlStudentsHtml(list) {
   const groups = {};
   list.forEach(x => { const k = x.s ? x.s.id : 'n:' + (x.b.name || ''); (groups[k] = groups[k] || { key: k, s: x.s, name: x.b.name || '', items: [] }).items.push(x); });
   const stus = Object.values(groups).map(g => {
-    const c = { done: 0, cancelled: 0, unrec: 0, todo: 0, hours: 0, hwA: 0, hwS: 0, hwG: 0, last: '' };
+    const c = { done: 0, cancelled: 0, unrec: 0, todo: 0, bfwait: 0, hours: 0, hwA: 0, hwS: 0, hwG: 0, last: '' };
     g.items.forEach(x => {
       const st = vlState(x.b); c[st]++;
       if (st === 'done') { c.hours += Number(x.b.vip_hours_used) || 0; if ((x.b.slot_date || '') > c.last) c.last = x.b.slot_date; }

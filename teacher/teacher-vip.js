@@ -11,7 +11,7 @@ let tspItems = [];               // 工作副本
 let tspStudent = null;           // 关联学生（取课时上限）
 let tspUsedHours = 0;            // 已上课时（已完成预约合计）
 let tspDoneNames = new Set();    // 已上完的课名
-let vmTab = 'booking';           // VIP管理子tab：booking(预约) / students(学生进度) / framework(VIP框架)
+let vmTab = 'booking';           // VIP管理子tab：booking(预约) / students(学生进度) / framework(VIP框架) / records(上课记录)
 function setVmTab(t) { vmTab = t; renderTeacherVipFrameworks(document.getElementById('mainContent')); }
 let tvItems = [];                // 当前打开框架的条目（内存工作副本）
 let tvCurrentId = null;
@@ -156,6 +156,7 @@ function renderTeacherVipFrameworks(mc) {
   let body;
   if (vmTab === 'students') body = mineBody;
   else if (vmTab === 'framework') body = fwSection;
+  else if (vmTab === 'records') body = '<div id="vmRecBox"></div>';
   else body = (typeof renderTeacherVipBookingsBody === 'function') ? renderTeacherVipBookingsBody() : '';
 
   mc.innerHTML = `
@@ -169,9 +170,41 @@ function renderTeacherVipFrameworks(mc) {
       ${tab('booking', '预约', pendingVipBk)}
       ${tab('students', '学生进度', (teacherVipMyPlans.length + assignedOnly.length) || 0)}
       ${tab('framework', 'VIP框架', fwCount)}
+      ${tab('records', '上课记录', 0)}
     </div>
     ${body}
   </div>`;
+  if (vmTab === 'records') vmRecMount();
+}
+
+// ── 上课记录：我的 VIP 学生 + 我上的课，和 admin「出席・作业 → VIP」同一个组件（shared/vip-lessons.js），只查看 ──
+let vmRecStudents = [];
+async function vmRecMount() {
+  const box = document.getElementById('vmRecBox'); if (!box) return;
+  box.innerHTML = '<div class="loading">加载中…</div>';
+  try {
+    vmRecStudents = await sb(`/rest/v1/students?vip_teachers=cs.{"${teacherName}"}&or=(status.is.null,status.eq.active)&select=*&order=name.asc`, 'GET', null, { cache: 'no-store' });
+  } catch (e) { box.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
+  if (vmTab !== 'records' || !document.getElementById('vmRecBox')) return;   // 读的过程中切走了
+  box.innerHTML = '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">本月数字只算你上的课；剩余课时是学生的总剩余（包括别的老师上的）。待教务确认的补录不算课时。</div><div id="vmRecList"></div>';
+  const mine = b => b.assigned_teacher ? b.assigned_teacher === teacherName : (cachedTeacherSlots || []).some(sl => sl.id === b.slot_id);
+  VL.loadedYm = '';   // 每次进来重新读，保存上课记录 / 补录之后看到的是最新的
+  vlMount(document.getElementById('vmRecList'), {
+    requireStudent: true,
+    students: () => vmRecStudents,
+    bookingOk: mine,
+    recordBtn: b => {
+      if (b.status === 'cancelled') return '';
+      if (b.teacher_backfill && b.admin_review !== 'approved') return vbfRows.some(x => x.id === b.id) ? `<button class="btn btn-outline btn-sm" onclick="vbfOpen('${b.id}')">修改补录</button>` : '';
+      return `<button class="btn btn-outline btn-sm" onclick="vmRecOpen('${b.id}')">去上课记录</button>`;
+    },
+  });
+}
+// 上课记录弹窗要从 cachedTeacherBookings 里找这节课；没有预约权限的老师这里是空的，先把这一节放进去（是分配给自己的）
+function vmRecOpen(id) {
+  if (!cachedTeacherBookings.some(x => x.id === id)) { const b = VL.rows.find(x => x.id === id); if (!b) return; cachedTeacherBookings.push(b); }
+  VL.loadedYm = '';
+  openVipSessionRecord(id);
 }
 
 async function openTvFramework(id) {
