@@ -117,31 +117,9 @@ function schedShowLoginWarn(){
 function sbErrMsg(t){ try{ const j=JSON.parse(t); return j && j.message ? j.message : ''; }catch(e){ return ''; } }
 // 读取：自动翻页。Supabase 每次最多返回 1000 行（项目设置 Max rows），裸 select=* 会把超出部分静默截掉；
 // 这里用 Content-Range 拿总数、按页拉齐。查询里自己写了 limit 的按原样返回（不翻页）。
-/* ---------- 课程只留一份：排课读管理端课程，写回管理端 courses ----------
-   · 读课程一律读视图 sched_course_v（id = courses.id，文本；legacy_sched_id = 旧数字号）
-   · 课程占用 sched_bookings 以 course_ref（= courses.id）为准。为了让页面里现有的 b.course_id === c.id 比较不用逐处改，
-     读出来时把内存里的 course_id 换成 course_ref；写入时 course_ref 填 courses.id、course_id 仍照写旧数字号（回退用）。
-     第 3 步（数据库里改名）上线时，这一层一并去掉。
-   · 改课程用 schedCourseUpdate（排课字段名 → courses 列名），不再写 sched_courses */
-const SCHED_LEGACY = {};   // courses.id → 旧 sched_courses.id
-function schedReadQuery(table, q){
-  if(table!=='sched_bookings') return q;
-  return q.replace(/(^|&)select=([^&]*)/, (m, a, sel)=> (sel.includes('*') || !/(^|,)course_id(,|$)/.test(sel) || /course_ref/.test(sel)) ? m : a+'select='+sel+',course_ref');
-}
-function schedPostRead(table, rows){
-  if(!Array.isArray(rows)) return rows;
-  if(table==='sched_course_v'){ rows.forEach(r=>{ if(r.legacy_sched_id!=null) SCHED_LEGACY[String(r.id)]=r.legacy_sched_id; }); }
-  else if(table==='sched_bookings'){ rows.forEach(b=>{ if(b && b.course_ref!=null) b.course_id=b.course_ref; }); }
-  return rows;
-}
-function schedBookingWrite(r){
-  if(r && typeof r.course_id==='string' && !/^\d+$/.test(r.course_id)){
-    const cid=r.course_id;
-    r.course_ref=cid;
-    r.course_id = SCHED_LEGACY[cid]!=null ? SCHED_LEGACY[cid] : null;
-  }
-  return r;
-}
+/* ---------- 课程只留一份：排课读管理端课程（视图 sched_course_v，id = courses.id），写回管理端 courses ----------
+   · 课程占用 sched_bookings.course_id 就是管理端课程 id（文本）
+   · 改课程用 schedCourseUpdate（排课字段名 → courses 列名），不再写旧的 sched_courses */
 /* 排课字段名 → 管理端 courses 列名（对应关系见 PR 描述） */
 const SCHED_COURSE_COLMAP = {
   name:'name', category:'domain', course_type:'course_type', campus:'campus', teacher:'teacher', weekdays:'weekdays',
@@ -178,12 +156,12 @@ async function schedCourseUpdate(id, patch){
 }
 async function sbGet(table, query){
   await schedAuthReady();
-  const q = schedReadQuery(table, query || 'select=*');
+  const q = query || 'select=*';
   const base = SB_URL + '/rest/v1/' + table + '?' + q;
   if(/(^|&)limit=/.test(q)){
     const r = await fetch(base, { headers: sbHeaders(), cache: 'no-store' });
     if(!r.ok) throw new Error(table + ' 读取失败: ' + r.status + ' ' + await r.text());
-    return schedPostRead(table, await r.json());
+    return r.json();
   }
   const ord = /(^|&)order=/.test(q) ? '' : '&order=id.asc';   // 翻页需要稳定顺序
   const PAGE = 1000; let all = [], off = 0;
@@ -197,25 +175,25 @@ async function sbGet(table, query){
     const total = cr.includes('/') ? parseInt(cr.split('/')[1], 10) : NaN;
     if(!rows.length || isNaN(total) || off >= total) break;
   }
-  return schedPostRead(table, all);
+  return all;
 }
 async function sbInsert(table, rows){
   await schedAuthReady();
   const r = await fetch(SB_URL + '/rest/v1/' + table, {
     method:'POST', headers: sbHeaders({ Prefer:'return=representation' }),
-    body: JSON.stringify((Array.isArray(rows)? rows : [rows]).map(x=>table==='sched_bookings' ? schedBookingWrite(x) : x))
+    body: JSON.stringify(Array.isArray(rows)? rows : [rows])
   });
   if(!r.ok){ const t=await r.text(); throw new Error(sbErrMsg(t) || ('写入失败: ' + r.status + ' ' + t)); }
-  return schedPostRead(table, await r.json());
+  return r.json();
 }
 async function sbUpdate(table, id, patch){
   await schedAuthReady();
   const r = await fetch(SB_URL + '/rest/v1/' + table + '?id=eq.' + id, {
     method:'PATCH', headers: sbHeaders({ Prefer:'return=representation' }),
-    body: JSON.stringify(table==='sched_bookings' ? schedBookingWrite(patch) : patch)
+    body: JSON.stringify(patch)
   });
   if(!r.ok) throw new Error('更新失败: ' + r.status + ' ' + await r.text());
-  return schedPostRead(table, await r.json());
+  return r.json();
 }
 async function sbDelete(table, id){
   await schedAuthReady();
