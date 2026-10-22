@@ -80,7 +80,7 @@
     </div>
   </div>
 </div>
-<script src="common.js?v=20261021"></script>
+<script src="common.js?v=20261022"></script>
 <script>
 el('nav').innerHTML = renderNav('meeting.html');
 let CANARRANGE = new URLSearchParams(location.search).get('canarrange')==='1';
@@ -95,7 +95,7 @@ async function boot(){
   ROOMS=await sbGet('sched_rooms','select=*');
   ACCOUNTS=await sbGet('sched_meeting_accounts','select=*&active=eq.true');
   BOOKINGS=await sbGet('sched_bookings','select=*');
-  COURSES=(await sbGet('sched_courses','select=*')).filter(c=>!c.deleted_at);
+  COURSES=(await sbGet('sched_course_v','select=*')).filter(c=>!c.deleted_at);
   try{ MTEMPLATES=await sbGet('sched_meeting_templates','select=*&order=created_at.desc'); }catch(e){ MTEMPLATES=[]; }
   window.SKIPMAP={}; COURSES.forEach(c=>{ if(c.skip_dates) window.SKIPMAP[c.id]=new Set(c.skip_dates.split(',').map(x=>x.trim())); });
   refreshCourseDropdown();
@@ -284,7 +284,7 @@ function editOccupy(id){
 function bind(sel, fn){ const attr=sel.match(/data-[\w-]+/)[0]; document.querySelectorAll(sel).forEach(b=>{ b.onclick=()=>fn(b.getAttribute(attr)); }); }
 async function reloadMtg(){
   BOOKINGS=await sbGet('sched_bookings','select=*');
-  COURSES=(await sbGet('sched_courses','select=*')).filter(c=>!c.deleted_at);
+  COURSES=(await sbGet('sched_course_v','select=*')).filter(c=>!c.deleted_at);
   ACCOUNTS=await sbGet('sched_meeting_accounts','select=*&active=eq.true');
   try{ MTEMPLATES=await sbGet('sched_meeting_templates','select=*&order=created_at.desc'); }catch(e){ MTEMPLATES=[]; }
   window.SKIPMAP={}; COURSES.forEach(c=>{ if(c.skip_dates) window.SKIPMAP[c.id]=new Set(c.skip_dates.split(',').map(x=>x.trim())); });
@@ -398,7 +398,7 @@ function onlineMtgForm(courseId){
     if(!parsed) return; const btn=el('mo_save'); btn.disabled=true; btn.textContent='保存中…';
     try{
       const _hk=(el('mo_hostkey')&&el('mo_hostkey').value.trim())||parsed.host_key||null;
-      await sbUpdate('sched_courses', c.id, {meeting_link:parsed.link||null, meeting_id:parsed.id||null, host_key:_hk});
+      await schedCourseUpdate(c.id, {meeting_link:parsed.link||null, meeting_id:parsed.id||null, host_key:_hk});
       const syncMsg=await trySyncMgmt(c, parsed.link||null, parsed.id||null, _hk);
       // 预留转正式
       const bs=BOOKINGS.filter(b=>b.kind==='course'&&String(b.course_id)===String(c.id)&&b.uses_meeting&&b.meeting_account_id);
@@ -555,7 +555,7 @@ function mtgSetForm(courseId, room){
       if(!link&&!mid){ toast('请填会议链接或会议号', false); return; }
       const btn=el('ms_save'); btn.disabled=true; btn.textContent='保存中…';
       try{
-        await sbUpdate('sched_courses', c.id, {meeting_link:link, meeting_id:mid, host_key:hkey});
+        await schedCourseUpdate(c.id, {meeting_link:link, meeting_id:mid, host_key:hkey});
         const syncMsg=await trySyncMgmt(c, link, mid, hkey);
         // 同步该课在本教室的占用：标记占用教室绑定的会议账号，看板/搜索才显示网络与账号
         if(room && room.meeting_account_id){
@@ -598,7 +598,7 @@ function mtgCopyForm(courseId, room){
     el('ms_covdo').onclick=async()=>{
       if(!sel.size){ toast('未选择', false); return; }
       const btn=el('ms_covdo'); btn.disabled=true; btn.textContent='覆盖中…';
-      try{ let failed=0; for(const id of sel){ await sbUpdate('sched_courses', id, {meeting_link:src.meeting_link||null, meeting_id:src.meeting_id||null, host_key:src.host_key||null});
+      try{ let failed=0; for(const id of sel){ await schedCourseUpdate(id, {meeting_link:src.meeting_link||null, meeting_id:src.meeting_id||null, host_key:src.host_key||null});
           const tc=COURSES.find(x=>String(x.id)===String(id)); if(tc){ const m=await trySyncMgmt(tc, src.meeting_link, src.meeting_id, src.host_key); if(m.includes('失败')) failed++; }
           if(room && room.meeting_account_id){ const bs=BOOKINGS.filter(b=>b.kind==='course'&&String(b.course_id)===String(id)&&String(b.room_id)===String(room.id));
             for(const b of bs) await sbUpdate('sched_bookings', b.id, {uses_meeting:true, meeting_account_id:room.meeting_account_id}); } }

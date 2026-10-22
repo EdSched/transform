@@ -35,7 +35,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="common.js?v=20261021"></script>
+<script src="common.js?v=20261022"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], ROLE=null;
@@ -61,7 +61,7 @@ async function reloadAll(){
   [ROOMS,ACCOUNTS,COURSES,BOOKINGS] = await Promise.all([
     sbGet('sched_rooms','select=*&order=campus,sort'),
     sbGet('sched_meeting_accounts','select=*&order=id'),
-    sbGet('sched_courses','select=*&order=created_at.desc'),
+    sbGet('sched_course_v','select=*&order=created_at.desc'),
     sbGet('sched_bookings','select=*&order=created_at.desc')
   ]);
   DELETED_COURSES = COURSES.filter(c=>c.deleted_at);
@@ -89,7 +89,7 @@ async function autoFixEnds(){
     }
     for(const {c,real} of changed){
       try{
-        await sbUpdate('sched_courses', c.id, {end_date:real});
+        await schedCourseUpdate(c.id, {end_date:real});
         c.end_date=real;   // 更新本地，避免再次触发
         const bs=BOOKINGS.filter(b=>b.kind==='course'&&String(b.course_id)===String(c.id));
         for(const b of bs){ await sbUpdate('sched_bookings', b.id, {end_date:real}); b.end_date=real; }
@@ -188,7 +188,6 @@ function renderHub(){
     }
   }catch(e){}
   renderChangeAlerts();
-  renderTrashExpiry();
   const pend = BOOKINGS.filter(b=>b.status==='pending').length;
   el('hubCards').innerHTML = visibleCards().map(([k,ic,nm,desc])=>{
     const badge = (k==='pending'&&pend)?` <span class="badge b-warn">${pend}</span>`:'';
@@ -204,7 +203,7 @@ function renderChangeAlerts(){
   if(!pending.length){ box.innerHTML=''; return; }
   // 按学科（类别）分组：反查课程的 category
   const catOf=(l)=>{
-    const c=(COURSES||[]).find(x=>String(x.id)===String(l.course_id)) || (DELETED_COURSES||[]).find(x=>String(x.id)===String(l.course_id));
+    const c=(COURSES||[]).find(x=>String(x.legacy_sched_id)===String(l.course_id) || String(x.id)===String(l.course_id));
     return (c&&(c.category||c.major))||'未分类';
   };
   const groups={}; pending.forEach(l=>{ const k=catOf(l); (groups[k]=groups[k]||[]).push(l); });
@@ -244,23 +243,6 @@ function renderChangeAlerts(){
     }
     renderChangeAlerts();
   });
-}
-function renderTrashExpiry(){
-  let box=el('trashExpiry');
-  if(!box){ const hi=el('hello'); if(!hi) return; box=document.createElement('div'); box.id='trashExpiry'; hi.parentNode.insertBefore(box, hi.nextSibling); }
-  const isAdmin = ROLE && (ROLE.role==='admin' || (ROLE.perms&&ROLE.perms.split(',').map(s=>s.trim()).includes('manage')));
-  if(!isAdmin){ box.innerHTML=''; return; }
-  const over=(DELETED_COURSES||[]).filter(c=>daysSince(c.deleted_at)>=30);
-  if(!over.length){ box.innerHTML=''; return; }
-  box.innerHTML='<div style="background:#fdecea;border:1px solid #f2c9ba;border-radius:8px;padding:10px 14px;margin-bottom:8px">'+
-    '<div style="font-size:13px;color:#c0392b"><b>有 '+over.length+' 门已删除课程超过 30 天</b>，请下载备份后清除。</div>'+
-    '<div style="margin-top:8px;display:flex;gap:8px"><button class="sm ghost" id="te_backup">下载全部课程备份</button><button class="sm danger" id="te_purge">确认清除超30天（'+over.length+'）</button></div></div>';
-  if(el('te_backup')) el('te_backup').onclick=()=>downloadCourseBackup();
-  if(el('te_purge')) el('te_purge').onclick=async()=>{
-    if(!confirm('确认清除全部超30天的已删除课程？不可恢复！建议先下载备份。')) return;
-    for(const c of over) await sbDelete('sched_courses',c.id);
-    await reloadAll(); renderTrashExpiry(); toast('已清除 '+over.length+' 门');
-  };
 }
 function reminderHtml(){
   try{
@@ -909,7 +891,7 @@ function assignRoomOnly(courseId){
     if(noDate){ sd=el('aro_sd').value; ed=el('aro_ed').value; if(!sd||!ed){ toast('请补开课/结课日', false); return; } }
     const btn=el('aro_noroom'); btn.disabled=true; btn.textContent='处理中…';
     try{
-      for(const gc of groupCourses){ if(noDate) await sbUpdate('sched_courses', gc.id, {start_date:sd, end_date:ed}); }
+      for(const gc of groupCourses){ if(noDate) await schedCourseUpdate(gc.id, {start_date:sd, end_date:ed}); }
       for(const o of existing) await sbDelete('sched_bookings', o.id);
       let recs=[];
       groupCourses.forEach(gc=>{ wdays.forEach(wd=>recs.push({ room_id:null, kind:'course', course_id:gc.id,
@@ -935,7 +917,7 @@ function assignRoomOnly(courseId){
     if(noDate){ sd=el('aro_sd').value; ed=el('aro_ed').value; if(!sd||!ed){ toast('请补开课/结课日', false); return; } }
     const btn=el('aro_save'); btn.disabled=true; btn.textContent='生成中…';
     try{
-      for(const gc of groupCourses){ if(noDate) await sbUpdate('sched_courses', gc.id, {start_date:sd, end_date:ed}); }
+      for(const gc of groupCourses){ if(noDate) await schedCourseUpdate(gc.id, {start_date:sd, end_date:ed}); }
       for(const o of existing) await sbDelete('sched_bookings', o.id);
       // 合并组：组内每门课各建一条占用（同教室同时段），title 用合并名
       let recs=[];
@@ -1077,7 +1059,7 @@ function assignForm(courseId){
       uses_meeting:um, meeting_account_id:accId,
       status:'confirmed', created_by:'admin', entry_name:'排课自动生成', note:'排课自动生成' }));
     try{
-      if(noDate) await sbUpdate('sched_courses', c.id, {start_date:sd, end_date:ed});
+      if(noDate) await schedCourseUpdate(c.id, {start_date:sd, end_date:ed});
       for(const o of existing) await sbDelete('sched_bookings',o.id);
       await sbInsert('sched_bookings',recs);
       await reloadAll();
@@ -1193,7 +1175,7 @@ function meetingLinkStep(c, accId){
       const _hkInput=el('mk_hostkey')?el('mk_hostkey').value.trim():''; if(_hkInput) hkey=_hkInput;  // 手填优先
       const btn=el('mk_save'); if(btn.disabled) return; btn.disabled=true; btn.textContent='保存中…';
       try{
-        await sbUpdate('sched_courses', c.id, { meeting_link:link||null, meeting_id:mid||null, host_key:hkey||null });
+        await schedCourseUpdate(c.id, { meeting_link:link||null, meeting_id:mid||null, host_key:hkey||null });
         // 通用标题且是新建 → 存入模板库，供本期同专业复用
         if(useGeneric && !chosenTpl){
           const majorName = el('mk_major')?el('mk_major').value.trim():'';
@@ -1551,19 +1533,7 @@ function tabAccounts(){
 function tabCourses(){
   const majors=[...new Set(COURSES.map(c=>c.major).filter(Boolean))].sort();
   let h='<div class="card"><h3 style="margin-top:2px">课程（共 '+COURSES.length+'）'+
-    '<button class="sm" id="cf_new" style="margin-left:10px">+ 新增课程</button>'+
-    '<button class="ghost sm" id="cf_import" style="margin-left:6px">📥 批量导入</button>'+
-    '</h3>'+
-    '<div id="cf_importBox" class="hidden" style="border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px;background:#fafbfc">'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'+
-        '<button class="ghost sm" id="cf_tpl">⬇ 下载模板(Excel)</button>'+
-        '<label class="ghost sm" style="cursor:pointer;padding:4px 10px;border:1px solid var(--line);border-radius:6px">⬆ 选择Excel文件<input type="file" id="cf_file" accept=".xlsx,.xls" style="display:none"></label>'+
-        '<span class="muted" style="font-size:12px">或把从 Excel 复制的表格粘贴到下面框里</span>'+
-      '</div>'+
-      '<textarea id="cf_paste" rows="5" placeholder="从 Excel 选中含表头的整块（校区 类别 专业 课程属性 课程名 讲师 周几 上课时间 开课日 结课日 回数 预估人数 授课方式 腾讯会议链接），复制后粘贴到这里" style="width:100%;font-size:12px"></textarea>'+
-      '<div style="margin-top:8px;display:flex;gap:8px"><button class="sm" id="cf_pasteGo">解析粘贴内容</button><button class="ghost sm" id="cf_importClose">收起</button></div>'+
-      '<div id="cf_importPrev" style="margin-top:10px"></div>'+
-    '</div>'+
+    '<span class="muted" style="font-size:12px;font-weight:400;margin-left:10px">新课程请在管理端『课程安排』里建，建好后这里马上能排</span></h3>'+
     '<div class="row" style="margin-bottom:10px">'+
       '<div class="field"><label>搜索课名/讲师</label><input id="cf_q" placeholder="搜索讲师（汉字 / 拼音首字母）/ 课程名…"></div>'+
       '<div class="field"><label>期</label><select id="cf_term"></select></div>'+
@@ -1583,35 +1553,9 @@ function tabCourses(){
   const saveState=()=>{ window.CF_STATE={}; ['cf_q','cf_term','cf_cat','cf_major','cf_type','cf_campus'].forEach(id=>{ if(el(id)) window.CF_STATE[id]=el(id).value; }); };
   ['cf_term','cf_cat','cf_major','cf_type','cf_campus'].forEach(id=>el(id).onchange=()=>{ saveState(); renderCoursesTable(); });
   bindSearch(el('cf_q'),()=>{ saveState(); renderCoursesTable(); });
-  el('cf_new').onclick=()=>courseEdit(null);
-  // ---- 批量导入 ----
-  el('cf_import').onclick=()=>el('cf_importBox').classList.toggle('hidden');
-  el('cf_importClose').onclick=()=>el('cf_importBox').classList.add('hidden');
-  el('cf_tpl').onclick=downloadCourseTemplate;
-  el('cf_file').onchange=(e)=>{ const f=e.target.files[0]; if(f) importCourseFile(f); };
-  el('cf_pasteGo').onclick=()=>{ const rows=parsePastedCourses(el('cf_paste').value); previewImport(rows); };
   renderCoursesTable();
 }
 const COURSE_COLS=['校区','类别','专业','课程属性','课程名','讲师','周几','上课时间','开课日','结课日','回数','预估人数','授课方式','腾讯会议链接'];
-function downloadCourseTemplate(){
-  const sample=['高马','大学院文科','社会学','专业课','社会学导论','刘老师','周三','18:00-21:00','2026-10-01','2027-01-31','15','10','线下',''];
-  const ws=XLSX.utils.aoa_to_sheet([COURSE_COLS, sample]);
-  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'课程');
-  XLSX.writeFile(wb,'课程导入模板.xlsx');
-}
-function importCourseFile(file){
-  const reader=new FileReader();
-  reader.onload=(e)=>{
-    try{
-      const wb=XLSX.read(e.target.result,{type:'array',cellDates:true});
-      const ws=wb.Sheets[wb.SheetNames[0]];
-      const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false});
-      const rows=aoaToCourses(aoa);
-      previewImport(rows);
-    }catch(err){ el('cf_importPrev').innerHTML='<span class="badge b-err">读取失败：'+esc(err.message)+'</span>'; }
-  };
-  reader.readAsArrayBuffer(file);
-}
 // 把日期值统一成 YYYY-MM-DD（兼容文本/Date/Excel序列号）
 function normDate(v){
   if(v==null||v==='') return null;
@@ -1625,25 +1569,6 @@ function normDate(v){
   return s||null;
 }
 // 解析从 Excel 复制的 TSV：正确处理引号包裹、单元格内换行（多选值常见）
-function parsePastedCourses(text){
-  const rows=[]; let row=[], cur='', inQ=false;
-  for(let i=0;i<text.length;i++){
-    const ch=text[i], nx=text[i+1];
-    if(inQ){
-      if(ch==='"' && nx==='"'){ cur+='"'; i++; }
-      else if(ch==='"'){ inQ=false; }
-      else cur+=ch;
-    } else {
-      if(ch==='"'){ inQ=true; }
-      else if(ch==='\t'){ row.push(cur); cur=''; }
-      else if(ch==='\r'){ /* skip */ }
-      else if(ch==='\n'){ row.push(cur); rows.push(row); row=[]; cur=''; }
-      else cur+=ch;
-    }
-  }
-  if(cur!==''||row.length){ row.push(cur); rows.push(row); }
-  return aoaToCourses(rows.filter(r=>r.join('').trim()));
-}
 // 周几 → 逗号数字（1=周一…7=周日）。支持中文/数字/多种分隔符/单元格内换行/连写
 function wdToNums(s){
   if(!s) return '';
@@ -1691,91 +1616,10 @@ function aoaToCourses(aoa){
   }
   return rows;
 }
-function previewImport(rows){
-  if(!rows.length){ el('cf_importPrev').innerHTML='<span class="badge b-err">没解析到有效课程行</span>'; return; }
-  // 学科负责人类别约束
-  let blocked=0;
-  if(ROLE && ROLE.lead_cats){
-    const scope=(ROLE.lead_cats||'').split(',').map(s=>s.trim()).filter(Boolean);
-    if(scope.length){ const before=rows.length; rows=rows.filter(c=>scope.includes(courseScope(c))); blocked=before-rows.length; }
-  }
-  if(!rows.length){ el('cf_importPrev').innerHTML='<span class="badge b-err">这些课程都不在你可管理的类别范围内，无法导入</span>'; return; }
-  const wdName=n=>({'1':'周一','2':'周二','3':'周三','4':'周四','5':'周五','6':'周六','7':'周日'}[n]||n);
-  // 完全重复检测：课名+校区+开课日+结课日+回数 与现有课程一致
-  const existing={}; COURSES.forEach(c=>{ existing[courseDupKey(c)]=c; });
-  rows.forEach(c=>{ const m=existing[courseDupKey(c)]; c.__dup=!!m; c.__import=!m; });   // 默认：重复的不导入
-  rows.sort((a,b)=>(b.__dup?1:0)-(a.__dup?1:0));   // 重复排最前，便于对比
-  const dupN=rows.filter(c=>c.__dup).length;
-  function render(){
-    const impN=rows.filter(c=>c.__import).length;
-    let h='<div class="tip">共解析 '+rows.length+' 门课'+(blocked?('（另有 '+blocked+' 门不在你可管理类别，已跳过）'):'')+'。'+
-      (dupN?('<b style="color:#c0392b">其中 '+dupN+' 门与已有课程完全重复</b>（课名+校区+开课日+结课日+回数一致），默认<b>跳过</b>、保留原有；点该行「跳过/导入」可切换。'):'无与现有课程完全重复的。')+'</div>'+
-      '<div style="overflow-x:auto;max-height:320px;overflow-y:auto"><table style="font-size:12px"><thead><tr><th>处理</th><th>课名</th><th>讲师</th><th>类别</th><th>校区</th><th>期</th><th>方式</th><th>周几</th><th>时段</th><th>日期</th><th>回数</th></tr></thead><tbody>'+
-      rows.map((c,i)=>{
-        const dupTag = c.__dup ? '<span class="badge b-err" style="font-size:10px">重复</span> ' : '';
-        const act = c.__dup
-          ? '<span class="dupTog" data-i="'+i+'" style="cursor:pointer;user-select:none;border:1px solid '+(c.__import?'#2c8a4f':'#c0392b')+';color:'+(c.__import?'#2c8a4f':'#c0392b')+';border-radius:10px;padding:1px 8px;font-size:11px">'+(c.__import?'导入':'跳过')+'</span>'
-          : '<span class="badge b-ok" style="font-size:10px">新增</span>';
-        const rowStyle = c.__dup ? (c.__import?' style="background:#fef7f5"':' style="opacity:.5;background:#fdf1ed"') : '';
-        return '<tr'+rowStyle+'><td>'+dupTag+act+'</td>'+
-          '<td>'+esc(c.name)+'</td><td>'+esc(c.teacher||'')+'</td><td>'+esc(c.category)+'</td><td>'+esc(c.campus)+'</td><td>'+esc(c.term||'')+'</td><td>'+esc(c.mode)+'</td><td>'+parseWeekdaysSched(c.weekdays).map(wdName).join('、')+'</td><td>'+esc((c.start_time||'')+'-'+(c.end_time||''))+'</td><td>'+esc((c.start_date||'')+'~'+(c.end_date||''))+'</td><td>'+esc(String(c.sessions||''))+'</td></tr>';
-      }).join('')+
-      '</tbody></table></div>'+
-      '<div style="margin-top:10px"><button class="sm" id="cf_doImport">确认导入 '+impN+' 门'+(dupN?('（跳过 '+(rows.length-impN)+'）'):'')+'</button> <span id="cf_impWarn"></span></div>';
-    el('cf_importPrev').innerHTML=h;
-    el('cf_importPrev').querySelectorAll('.dupTog').forEach(x=>x.onclick=()=>{ const i=Number(x.dataset.i); rows[i].__import=!rows[i].__import; render(); });
-    el('cf_doImport').onclick=doImport;
-  }
-  async function doImport(){
-    const use=rows.filter(c=>c.__import).map(c=>{ const {__dup,__import,...rest}=c; return rest; });
-    if(!use.length){ el('cf_impWarn').innerHTML=' <span class="badge b-err">没有要导入的课（全部跳过）</span>'; return; }
-    const btn=el('cf_doImport'); if(btn.disabled) return; btn.disabled=true; btn.textContent='导入中…';
-    let ok=0; const errs=[];
-    for(const c of use){ try{ await sbInsert('sched_courses', c); ok++; } catch(e){ errs.push((c.name||'?')+'：'+(e.message||e)); } }
-    await reloadAll();
-    let msg='<span class="badge b-ok">导入成功 '+ok+' 门</span>'+((rows.length-use.length)?(' <span class="muted" style="font-size:12px">（跳过 '+(rows.length-use.length)+' 门重复/未选，保留原有）</span>'):'');
-    if(errs.length){ msg+='<div class="badge b-err" style="margin-top:8px">失败 '+errs.length+' 门</div>'+
-      '<div style="max-height:160px;overflow:auto;font-size:12px;color:#a33;margin-top:6px">'+errs.slice(0,20).map(esc).join('<br>')+'</div>'; }
-    el('cf_importPrev').innerHTML=msg;
-    renderCoursesTable();
-  }
-  render();
-}
 function daysSince(iso){ if(!iso) return 0; return Math.floor((Date.now()-new Date(iso).getTime())/86400000); }
-function renderTrash(){
-  const box=el('cf_trashBox'); if(!box) return;
-  if(!DELETED_COURSES.length){ box.innerHTML='<div class="muted" style="margin:8px 0;padding:10px;border:1px dashed var(--line);border-radius:8px">没有已删除的课程。</div>'; return; }
-  let h='<div style="border:1px solid #e6d9bd;background:#fdfaf3;border-radius:8px;padding:10px 12px;margin:8px 0">'+
-    '<div style="font-size:13px;margin-bottom:6px"><b>已删除课程</b> <span class="muted" style="font-size:12px">保留30天，可恢复；到期请下载备份后清除</span></div>'+
-    '<table style="font-size:12px"><thead><tr><th>课程</th><th>期·类别</th><th>删除者</th><th>已过天数</th><th>操作</th></tr></thead><tbody>';
-  DELETED_COURSES.slice().sort((a,b)=>(b.deleted_at||'').localeCompare(a.deleted_at||'')).forEach(c=>{
-    const d=daysSince(c.deleted_at); const over=d>=30;
-    h+='<tr><td><b>'+esc(c.name)+'</b></td><td>'+esc(c.term||'')+' '+esc(c.category||'')+'</td><td>'+esc(c.deleted_by||'')+'</td>'+
-      '<td>'+d+' 天'+(over?' <span class="badge b-err" style="font-size:10px">已超30天</span>':'')+'</td>'+
-      '<td><button class="sm ghost" data-restore="'+c.id+'">恢复</button> <button class="sm danger" data-purge="'+c.id+'">彻底删除</button></td></tr>';
-  });
-  h+='</tbody></table>';
-  const over=DELETED_COURSES.filter(c=>daysSince(c.deleted_at)>=30);
-  if(over.length) h+='<div style="margin-top:8px"><button class="sm danger" id="cf_purgeover">清除全部超30天（'+over.length+'）</button> <span class="muted" style="font-size:11px">请先「下载全部课程备份」再清</span></div>';
-  h+='</div>';
-  box.innerHTML=h;
-  box.querySelectorAll('[data-restore]').forEach(x=>x.onclick=async()=>{
-    await sbUpdate('sched_courses',x.dataset.restore,{deleted_at:null,deleted_by:null});
-    await reloadAll(); tabCourses(); toast('已恢复（教室需重新排）');
-  });
-  box.querySelectorAll('[data-purge]').forEach(x=>x.onclick=async()=>{
-    if(!confirm('彻底删除？此操作不可恢复！')) return;
-    await sbDelete('sched_courses',x.dataset.purge); await reloadAll(); tabCourses(); el('cf_trashBox').dataset.open='1'; renderTrash(); toast('已彻底删除');
-  });
-  const po=el('cf_purgeover'); if(po) po.onclick=async()=>{
-    if(!confirm('清除全部超30天的已删除课程？不可恢复！建议先下载备份。')) return;
-    for(const c of over) await sbDelete('sched_courses',c.id);
-    await reloadAll(); tabCourses(); el('cf_trashBox').dataset.open='1'; renderTrash(); toast('已清除 '+over.length+' 门');
-  };
-}
 function downloadCourseBackup(){
   try{
-    const all=[...COURSES, ...DELETED_COURSES];
+    const all=COURSES.slice();
     const rows=all.map(c=>({期:c.term||'',课程名:c.name||'',类别:c.category||'',专业:c.major||'',属性:c.course_type||'',校区:c.campus||'',讲师:c.teacher||'',周几:c.weekdays||'',开始:c.start_time||'',结束:c.end_time||'',开课日:c.start_date||'',结课日:c.end_date||'',回数:c.sessions||'',人数:c.est_students||'',方式:c.mode||'',会议链接:c.meeting_link||'',会议号:c.meeting_id||'',休讲日:c.skip_dates||'',状态:c.deleted_at?('已删除 '+(c.deleted_at||'').slice(0,10)):'在用'}));
     const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'课程备份');
     XLSX.writeFile(wb,'课程备份_'+todayStr()+'.xlsx');
@@ -1807,8 +1651,6 @@ function renderCoursesTable(){
   let h='<div class="row" style="margin-bottom:8px">'+
     '<button class="ghost sm" id="cf_dupscan">查找重复</button>'+
     '<button class="ghost sm" id="cf_batch">批量修改所选</button>'+
-    '<button class="danger sm" id="cf_delsel">删除所选</button>'+
-    (isAdmin?('<button class="ghost sm" id="cf_trash">已删除'+(DELETED_COURSES.length?('（'+DELETED_COURSES.length+'）'):'')+'</button>'):'')+
     (canAudit?('<button class="ghost sm" id="cf_review">回数审查</button>'):'')+
     (isAdmin?('<button class="ghost sm" id="cf_backup">下载全部课程备份</button>'):'')+
     '<span class="muted" id="cf_selinfo" style="align-self:center"></span></div>'+
@@ -1840,7 +1682,7 @@ function renderCoursesTable(){
     `<td>${(c.start_date&&c.end_date)?(c.start_date+' ~ '+c.end_date):'<span class="badge b-warn">缺日期</span>'}</td>`+
     `<td>${esc(c.mode)}</td>`+
     `<td style="font-size:11px">${(c.meeting_link||c.meeting_id)?('<span class="badge b-ok" style="font-size:10px">已设</span>'+(c.meeting_id?(' '+esc(c.meeting_id)):'')+(c.meeting_link?(' <a href="'+esc(c.meeting_link)+'" target="_blank" rel="noopener">进入</a>'):'')):'<span class="muted">—</span>'}</td>`+
-    `<td><button class="sm ghost" data-edc="${c.id}">编辑</button> <button class="sm danger" data-delc="${c.id}">删</button></td></tr>`; });
+    `<td><button class="sm ghost" data-edc="${c.id}">编辑</button></td></tr>`; });
   h+='</tbody></table>';
   if(truncated) h+='<div style="text-align:center;margin-top:10px"><span class="muted" style="font-size:12px">仅显示前 '+LIMIT+' 门（共 '+list.length+' 门）。用上方筛选缩小范围，或 </span><button class="ghost sm" id="cf_showall">显示全部</button></div>';
   else if(showAll && list.length>LIMIT) h+='<div style="text-align:center;margin-top:10px"><button class="ghost sm" id="cf_showless">收起（只看前 '+LIMIT+'）</button></div>';
@@ -1849,23 +1691,9 @@ function renderCoursesTable(){
   const updInfo=()=>{ const n=document.querySelectorAll('.cf_ck:checked').length; el('cf_selinfo').textContent=n?('已选 '+n+' 门'):''; };
   el('cf_all').onchange=()=>{ document.querySelectorAll('.cf_ck').forEach(c=>c.checked=el('cf_all').checked); updInfo(); };
   document.querySelectorAll('.cf_ck').forEach(c=>c.onchange=updInfo);
-  el('cf_delsel').onclick=async()=>{
-    const ids=[...document.querySelectorAll('.cf_ck:checked')].map(c=>c.value);
-    if(!ids.length){ toast('未选择', false); return; }
-    if(!confirm('删除所选 '+ids.length+' 门课程？（可在「已删除」区恢复，30天内保留）')) return;
-    const who=(ROLE&&(ROLE.label||ROLE.role))||'某账号';
-    for(const id of ids){ const c=COURSES.find(x=>String(x.id)===String(id));
-      const bs=BOOKINGS.filter(b=>b.kind==='course'&&String(b.course_id)===String(id));
-      for(const b of bs) await sbDelete('sched_bookings',b.id);
-      await sbUpdate('sched_courses',id,{deleted_at:new Date().toISOString(), deleted_by:who});
-      if(c){ try{ await sbInsert('sched_change_log',{ course_id:id, course_name:c.name, actor_role:(ROLE&&ROLE.role)||'', actor_label:who, action:'delete', changes:[{field:'_deleted',label:'整门课',from:c.name,to:'已删除'}], acked_by:'' }); }catch(e){} }
-    }
-    await reloadAll(); tabCourses(); toast('已删除 '+ids.length+' 门（可在「已删除」区恢复）');
-  };
   el('cf_dupscan').onclick=()=>dupScan(list);
   if(el('cf_showall')) el('cf_showall').onclick=()=>{ window.CF_SHOWALL=true; renderCoursesTable(); };
   if(el('cf_showless')) el('cf_showless').onclick=()=>{ window.CF_SHOWALL=false; renderCoursesTable(); };
-  if(el('cf_trash')) el('cf_trash').onclick=()=>{ const b=el('cf_trashBox'); if(b.dataset.open==='1'){ b.innerHTML=''; b.dataset.open=''; } else { b.dataset.open='1'; renderTrash(); } };
   if(el('cf_backup')) el('cf_backup').onclick=()=>downloadCourseBackup();
   if(el('cf_review')) el('cf_review').onclick=()=>{ const b=el('cf_trashBox'); if(b.dataset.open==='review'){ b.innerHTML=''; b.dataset.open=''; } else { b.dataset.open='review'; renderReview(list); } };
   // ---- 批量修改 ----
@@ -1959,7 +1787,7 @@ function renderCoursesTable(){
       for(const id of ids){ const c=COURSES.find(y=>String(y.id)===String(id)); if(!c) continue;
         const cur=new Set((c.holiday_except||'').split(',').map(s=>s.trim()).filter(Boolean));
         pickDates.forEach(dd=>cur.add(dd));
-        await sbUpdate('sched_courses', id, {holiday_except:[...cur].sort().join(',')});
+        await schedCourseUpdate(id, {holiday_except:[...cur].sort().join(',')});
       }
       await reloadAll(); tabCourses(); toast('已豁免 '+ids.length+' 门课（'+pickDates.length+' 天照常上课）');
     });
@@ -1985,7 +1813,7 @@ function renderCoursesTable(){
           for(const id of ids0){ const c=COURSES.find(x=>String(x.id)===String(id)); if(!c) continue;
             const cur=new Set((c.holiday_except||'').split(',').map(s=>s.trim()).filter(Boolean));
             exDates.forEach(d=>cur.add(d));
-            await sbUpdate('sched_courses', id, {holiday_except:[...cur].sort().join(',')});
+            await schedCourseUpdate(id, {holiday_except:[...cur].sort().join(',')});
           }
           await reloadAll(); el('cf_batchBox').classList.add('hidden'); tabCourses();
           toast('已豁免 '+ids0.length+' 门课（'+(hol.label||'假期')+'照常上课）');
@@ -2022,7 +1850,7 @@ function renderCoursesTable(){
           const rmap={}; (c.skip_reasons||'').split(';').forEach(p=>{ const i=p.indexOf('='); if(i>0) rmap[p.slice(0,i).trim()]=p.slice(i+1); });
           if(label) dates.forEach(d=>rmap[d]=label);
           const rstr=Object.keys(rmap).filter(k=>rmap[k]).map(k=>k+'='+rmap[k]).join(';');
-          await sbUpdate('sched_courses', id, {skip_dates:[...cur].sort().join(','), skip_reasons:rstr});
+          await schedCourseUpdate(id, {skip_dates:[...cur].sort().join(','), skip_reasons:rstr});
         }
         await reloadAll(); el('cf_batchBox').classList.add('hidden'); tabCourses();
         toast('已给 '+ids0.length+' 门课加休讲');
@@ -2043,7 +1871,7 @@ function renderCoursesTable(){
       const gid='mg_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
       const btn=el('cf_bapply'); btn.disabled=true; btn.textContent='合并中…';
       try{
-        for(let i=0;i<ids.length;i++) await sbUpdate('sched_courses', ids[i], {merge_group:gid, merge_name:mname, merge_order:i+1});
+        for(let i=0;i<ids.length;i++) await schedCourseUpdate(ids[i], {merge_group:gid, merge_name:mname, merge_order:i+1});
         await reloadAll(); el('cf_batchBox').classList.add('hidden'); tabCourses();
         toast('已合并 '+ids.length+' 门为「'+mname+'」，课表按 a→b→c 顺序轮流出现（顺序可在课程编辑里改）');
       }catch(e){ toast('失败：'+e.message, false); btn.disabled=false; btn.textContent='应用到所选'; }
@@ -2052,7 +1880,7 @@ function renderCoursesTable(){
     if(f==='unmerge'){
       const btn=el('cf_bapply'); btn.disabled=true; btn.textContent='处理中…';
       try{
-        for(const id of ids) await sbUpdate('sched_courses', id, {merge_group:null, merge_name:null, merge_order:null});
+        for(const id of ids) await schedCourseUpdate(id, {merge_group:null, merge_name:null, merge_order:null});
         await reloadAll(); el('cf_batchBox').classList.add('hidden'); tabCourses();
         toast('已取消合并');
       }catch(e){ toast('失败：'+e.message, false); btn.disabled=false; btn.textContent='应用到所选'; }
@@ -2063,7 +1891,7 @@ function renderCoursesTable(){
     try{
       for(const id of ids){
         const c=COURSES.find(x=>String(x.id)===String(id)); if(!c) continue;
-        await sbUpdate('sched_courses', id, {[f]: v||null});
+        await schedCourseUpdate(id, {[f]: v||null});
         done++;
       }
       await reloadAll(); tabCourses();
@@ -2071,15 +1899,6 @@ function renderCoursesTable(){
     }catch(e){ toast('部分失败：'+e.message, false); btn.disabled=false; btn.textContent='应用到所选'; }
   };
   bind('[data-edc]', id=>courseEdit(id));
-  bind('[data-delc]', async id=>{ if(!confirm('删除课程？（可在「已删除」区恢复，30天内保留）')) return;
-    const c=COURSES.find(x=>String(x.id)===String(id));
-    const bs=BOOKINGS.filter(b=>b.kind==='course'&&String(b.course_id)===String(id));
-    for(const b of bs) await sbDelete('sched_bookings',b.id);
-    await sbUpdate('sched_courses',id,{deleted_at:new Date().toISOString(), deleted_by:(ROLE&&(ROLE.label||ROLE.role))||'某账号'});
-    if(c){ try{ await sbInsert('sched_change_log',{ course_id:id, course_name:c.name,
-      actor_role:(ROLE&&ROLE.role)||'', actor_label:(ROLE&&(ROLE.label||ROLE.role))||'某账号', action:'delete',
-      changes:[{field:'_deleted',label:'整门课',from:c.name+'（'+(c.term||'')+' '+(c.category||'')+'）',to:'已删除'}], acked_by:'' }); }catch(e){} }
-    await reloadAll(); tabCourses(); toast('已删除（可在「已删除」区恢复）'); });
 }
 /* 完全重复判定键：课名+校区+开课日+结课日+回数 */
 function courseDupKey(c){ const n=v=>String(v==null?'':v).trim();
@@ -2129,7 +1948,7 @@ function courseEdit(id){
     `<div class="field"><label>讲师</label><input id="e_teacher" value="${esc(c.teacher||'')}"></div>`+
     `<div class="field"><label>类别</label><select id="e_cat">${catOpts}</select></div>`+
     `<div class="field"><label>校区</label><select id="e_campus">${campOpts}</select></div>`+
-    `<div class="field"><label>专业</label><input id="e_major" value="${esc(c.major||'')}" placeholder="大学院填，如经营"></div>`+
+    `<div class="field"><label>专业</label><input id="e_major" value="${esc(c.major||'')}" readonly style="background:#f2f2f2" title="专业请在管理端『课程安排』里改"></div>`+
     `<div class="field"><label>课程属性</label><select id="e_ctype"><option value="">（无）</option>`+
       ['共通课','专业课','大课'].map(x=>`<option${x===c.course_type?' selected':''}>${x}</option>`).join('')+`</select></div>`+
     `<div class="field"><label>期</label><input id="e_term" value="${esc(c.term||'')}" placeholder="如 2026年7月期"></div>`+
@@ -2257,18 +2076,13 @@ function courseEdit(id){
       }
     }
     try{
-      if(isNew){
-        await sbInsert('sched_courses', patch);
-        await reloadAll(); tabCourses(); toast('课程已新增');
-        return;
-      }
       // 记录变更日志（供首页提醒）
       const FLBL={name:'课程名',teacher:'讲师',category:'类别',campus:'校区',term:'期',major:'专业',course_type:'属性',mode:'方式',start_time:'开始',end_time:'结束',start_date:'开课日',end_date:'结课日',weekdays:'周几',sessions:'回数',est_students:'人数',meeting_link:'会议链接',skip_dates:'休讲日'};
       const changes=[];
       Object.keys(FLBL).forEach(f=>{ const ov=(c[f]==null?'':String(c[f])), nv=(patch[f]==null?'':String(patch[f]));
         if(ov!==nv) changes.push({field:f,label:FLBL[f],from:ov||'（空）',to:nv||'（空）'}); });
-      await sbUpdate('sched_courses', c.id, patch);
-      if(changes.length){ try{ await sbInsert('sched_change_log',{ course_id:c.id, course_name:patch.name||c.name,
+      await schedCourseUpdate(c.id, patch);
+      if(changes.length){ try{ await sbInsert('sched_change_log',{ course_id:(c.legacy_sched_id!=null?c.legacy_sched_id:null), course_name:patch.name||c.name,
         actor_role:(ROLE&&ROLE.role)||'', actor_label:(ROLE&&(ROLE.label||ROLE.role))||'某账号', action:'edit', changes, acked_by:'' }); }catch(e){} }
       // 若已排教室，同步把休讲日/结课日写进对应占用，看板才准
       const bs=BOOKINGS.filter(b=>b.kind==='course'&&String(b.course_id)===String(c.id));
@@ -2378,7 +2192,7 @@ function renderReview_OLD(list){
     const c=COURSES.find(y=>String(y.id)===String(x.dataset.rvback)); if(!c) return;
     const sd=computeStartByCount(c);
     if(!confirm('固定结课日 '+esc(c.end_date||'')+'，按回数 '+c.sessions+' 倒推，应有开课日为：\n\n'+sd+'\n\n把开课日改为这个？')) return;
-    await sbUpdate('sched_courses', c.id, {start_date:sd});
+    await schedCourseUpdate(c.id, {start_date:sd});
     const bs=BOOKINGS.filter(b=>b.kind==='course'&&String(b.course_id)===String(c.id));
     for(const b of bs) await sbUpdate('sched_bookings', b.id, {start_date:sd});
     await reloadAll(); tabCourses(); el('cf_trashBox').dataset.open='review'; renderReview(); toast('已更新开课日');
@@ -2393,7 +2207,7 @@ function renderReview_OLD(list){
   };
 }
 async function applyEnd(courseId, nd){
-  await sbUpdate('sched_courses', courseId, {end_date:nd});
+  await schedCourseUpdate(courseId, {end_date:nd});
   const bs=BOOKINGS.filter(b=>b.kind==='course'&&String(b.course_id)===String(courseId));
   for(const b of bs) await sbUpdate('sched_bookings', b.id, {end_date:nd});
 }
@@ -2410,7 +2224,7 @@ async function fixEndByCount(list){
   let done=0;
   for(const t of targets){
     try{
-      await sbUpdate('sched_courses', t.c.id, {end_date:t.real});
+      await schedCourseUpdate(t.c.id, {end_date:t.real});
       const bs=BOOKINGS.filter(b=>b.kind==='course'&&String(b.course_id)===String(t.c.id));
       for(const b of bs) await sbUpdate('sched_bookings', b.id, {end_date:t.real});
       done++;

@@ -1831,7 +1831,7 @@ function acGetRows(){
   });
 }
 // 文本模式：把当前明细表格转成「回数|日期|时间|标题|老师」文本，显示文本区供批量修改
-// ── 假期豁免：直接读写 sched_courses.holiday_except（与排课系统同一字段，两边同步）──
+// ── 假期豁免：直接读写 courses.holiday_except（排课系统读的就是这份课程）──
 function acNextDay(d){ const nd=new Date(d+'T12:00:00'); nd.setDate(nd.getDate()+1); return nd.getFullYear()+'-'+String(nd.getMonth()+1).padStart(2,'0')+'-'+String(nd.getDate()).padStart(2,'0'); }
 function acHolidayDates(h){ const out=[]; let d=h.start_date, g=0; const e=h.end_date||h.start_date; while(d&&d<=e&&g++<400){ out.push(d); d=acNextDay(d); } return out; }
 function acRenderHolidayExcept(){
@@ -1856,7 +1856,6 @@ async function acToggleHolidayExcept(holId){
   const editingId=document.getElementById('ac_editing_id').value;
   const co=editingId?cachedCourses.find(c=>c.id===editingId):null;
   if(!co){ alert('请先保存课程，再设置假期豁免'); return; }
-  if(!co._sched_id){ alert('这门课还没同步到排课系统，暂时无法设置豁免。\n请先在课程安排里保存一次（会同步到 sched），再回来设置。'); return; }
   const hol=(typeof HOLIDAYS!=='undefined'?HOLIDAYS:[]).find(h=>String(h.id)===String(holId));
   if(!hol) return;
   const exDates=acHolidayDates(hol);
@@ -1865,7 +1864,7 @@ async function acToggleHolidayExcept(holId){
   if(isOn){ exDates.forEach(x=>cur.delete(x)); } else { exDates.forEach(x=>cur.add(x)); }
   const newVal=[...cur].sort().join(',');
   try{
-    await sb(`/rest/v1/sched_courses?id=eq.${co._sched_id}`,'PATCH',{holiday_except:newVal||null});
+    await sb(`/rest/v1/courses?id=eq.${encodeURIComponent(co.id)}`,'PATCH',{holiday_except:newVal||null});
     co.holiday_except=newVal;
     acRenderHolidayExcept();
   }catch(e){ alert('保存豁免失败：'+e.message); }
@@ -2573,7 +2572,7 @@ async function confirmReschedule(){
     const sres=await sb('/rest/v1/course_sessions','POST',[newSession]);
     cachedSessions.push(Array.isArray(sres)?sres[0]:newSession);
 
-    // 同步给 sched：休讲日加进 courses.skip_dates + 更新 end_date（触发器会推给 sched_courses，sched 重算即一致）
+    // 同步给 sched：休讲日加进 courses.skip_dates + 更新 end_date（排课读的就是这份课程，改了就一致）
     try{
       const co=cachedCourses.find(x=>x.id===courseId);
       const skipSet=new Set(((co?.skip_dates)||'').split(',').map(s=>s.trim()).filter(Boolean));

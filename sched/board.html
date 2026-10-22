@@ -26,7 +26,7 @@
   <div class="card board" id="boardBox"><div class="muted">加载中…</div></div>
 </div>
 
-<script src="common.js?v=20261021"></script>
+<script src="common.js?v=20261022"></script>
 <script>
 el('nav').innerHTML = renderNav('board.html');
 pageRole().then(r=>{ if(r) el('nav').innerHTML = renderNav('board.html', r); }).catch(()=>{});
@@ -41,7 +41,7 @@ async function boot(){
   try{
     ROOMS    = await sbGet('sched_rooms','select=*&active=eq.true&order=campus,sort');
     BOOKINGS = await sbGet('sched_bookings','select=*');
-    const cs = await sbGet('sched_courses','select=id,skip_dates');
+    const cs = await sbGet('sched_course_v','select=id,skip_dates');
     window.SKIPMAP={}; cs.forEach(c=>{ if(c.skip_dates) window.SKIPMAP[c.id]=new Set(c.skip_dates.split(',').map(s=>s.trim())); });
     render();
   }catch(e){ el('boardBox').innerHTML = '<div class="b-err badge">'+esc(e.message)+'</div>'; }

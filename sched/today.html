@@ -60,7 +60,7 @@
   <div class="card" id="boardCard"><div class="board" id="gridBox"><div class="muted">加载中…</div></div></div>
   <p class="foot-note">仅显示上课安排。如需教室预约或管理，请使用管理员发放的专属链接。</p>
 </div>
-<script src="common.js?v=20261021"></script>
+<script src="common.js?v=20261022"></script>
 <script>
 // 是否在教室列里显示 VIP 教室：true = 方案 A（VIP 教室放在右边、列较窄）；false = 方案 B（只在大教室被 VIP 占用时显示灰色「VIP」）
 const SHOW_VIP_ROOMS = true;
@@ -73,7 +73,7 @@ async function loadData(){
   ROOMS = await sbGet('sched_rooms','select=*&active=eq.true&order=campus,sort');
   // 课程+临时+租借+VIP 等所有占用（排除待审批预约）；VIP 只用来占位，显示时不露任何信息
   BOOKINGS = await sbGet('sched_bookings','select=*&kind=in.(course,temp,rental,meeting,vip)&status=neq.pending');
-  const cs = (await sbGet('sched_courses','select=id,skip_dates,category,name,merge_name,deleted_at')).filter(c=>!c.deleted_at);
+  const cs = (await sbGet('sched_course_v','select=id,skip_dates,category,name,merge_name,deleted_at')).filter(c=>!c.deleted_at);
   window.SKIPMAP={}; window.CATMAP={}; window.CNAME={};
   cs.forEach(c=>{ if(c.skip_dates) window.SKIPMAP[c.id]=new Set(c.skip_dates.split(',').map(x=>x.trim())); window.CATMAP[c.id]=c.category; window.CNAME[c.id]=c.merge_name||c.name; });
 }

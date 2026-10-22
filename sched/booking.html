@@ -91,7 +91,7 @@
   </div>
 </div>
 
-<script src="common.js?v=20261021"></script>
+<script src="common.js?v=20261022"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 el('nav').innerHTML = renderNav('booking.html');
@@ -154,7 +154,7 @@ async function boot(){
   ROOMS    = await sbGet('sched_rooms','select=*&order=campus,sort');
   ACCOUNTS = await sbGet('sched_meeting_accounts','select=*&active=eq.true');
   BOOKINGS = await sbGet('sched_bookings','select=*');
-  { const cs = await sbGet('sched_courses','select=id,skip_dates'); window.SKIPMAP={}; cs.forEach(c=>{ if(c.skip_dates) window.SKIPMAP[c.id]=new Set(c.skip_dates.split(',').map(x=>x.trim())); }); }
+  { const cs = await sbGet('sched_course_v','select=id,skip_dates'); window.SKIPMAP={}; cs.forEach(c=>{ if(c.skip_dates) window.SKIPMAP[c.id]=new Set(c.skip_dates.split(',').map(x=>x.trim())); }); }
   el('find').onclick = find;
   el('date').onchange = renderGrid;
   el('campus').onchange = renderGrid;
