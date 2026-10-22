@@ -58,6 +58,7 @@ commit;
 --      term ← 首回日期的年份 || '年' || period（没有首回日期就是 period）
 --      start_date ← start_date，没有就取单回最早一天，再没有取首回日期；end_date ← end_date，没有取单回最晚一天
 --      major ← major_code_to_cn(major)
+--      campus：管理端写「腾讯会议」的按「线上」算（7.D 查到管理端实际只有 高马/市谷/线上/腾讯会议 四种）
 --      campus / mode / category / name 为空时的默认值，同「管理端新建 → 排课」那个同步函数（线上 / 线上 / 大学院文科 / 未命名课程）
 --    没有对应物的列：weekday、note 给空；confirmed 给 true；deleted_at / deleted_by 给空（管理端删了就是真删了）
 --    用视图所有者身份读（courses 本来就是公开读，没有新增暴露）
@@ -65,7 +66,7 @@ commit;
 create or replace view public.sched_course_v as
 select
   c.id                                                                    as id,
-  coalesce(c.campus, '线上')                                              as campus,
+  case when c.campus = '腾讯会议' then '线上' else coalesce(c.campus, '线上') end as campus,   -- 管理端校区是自由文本，排课只认 高马/市谷/线上
   coalesce(c.domain, '大学院文科')                                        as category,
   coalesce(c.name, '未命名课程')                                          as name,
   c.teacher                                                               as teacher,
@@ -311,6 +312,8 @@ cross join lateral (values
 where nullif(x.sched_val, '') is not null and nullif(x.course_val, '') is not null and x.sched_val <> x.course_val
 order by x.col, s.id;
 
+-- 7.E 视图加了校区对应（腾讯会议 → 线上），请把 ③ 的 create or replace view 整段再执行一次（可重复执行），然后重跑 6.5，campus 一项应只剩
+--     「排课里是高马/市谷、管理端写腾讯会议（已按线上算）」的那十来门。
 -- 7.D 管理端里「校区」和「授课形式」实际用了哪些值（管理端的校区是自由文本，排课只认 高马 / 市谷 / 线上；
 --     看到结果后，Claude 会给视图加一个对应：例如 腾讯会议 → 线上）
 select campus, delivery, count(*) as n from public.courses group by campus, delivery order by n desc;
