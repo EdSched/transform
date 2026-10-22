@@ -845,6 +845,7 @@ function renderCoursesPage(mc){
   if(coursesArchiveFilter==='active') filtered=filtered.filter(c=>!courseIsEnded(c));
   else if(coursesArchiveFilter==='ended') filtered=filtered.filter(c=>courseIsEnded(c));
 
+  Promise.resolve().then(refreshCourseReqBox);   // 排教室推送过来待确认的课（容器随下面的模板生成）
   mc.innerHTML=`
   <div class="page-header">
     <div class="section-title">课程安排</div>
@@ -860,6 +861,7 @@ function renderCoursesPage(mc){
     </div>
   </div>
 
+  <div id="courseReqBox"></div>
   <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap">
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">课程属性</div>
@@ -4426,4 +4428,82 @@ async function cleanupApplyAttMode(){
     cleanupSelected.clear();
     renderCourseCleanupPage(document.getElementById('mainContent'));
   }catch(err){alert('设置失败：'+err.message)}
+}
+
+// ── 排教室推送过来的"待确认"（表 sched_course_requests；写入端见 sched/index.html 的 schedPushDialog）──
+let cachedCourseReqs=[];
+let courseReqOpen=false;
+const crqPick={};   // 每条推送选中的快捷回复
+const CRQ_ISSUE_TEXT={no_room:'没有教室',time_conflict:'时间冲突',capacity:'容量不够',other:'其他'};
+const CRQ_ACTIONS=['已改时间（请重新排）','改为线上','本期不开','其他'];
+async function loadCourseReqs(){
+  try{ cachedCourseReqs=await sbAll('/rest/v1/sched_course_requests?status=eq.pending&select=*&order=created_at.desc'); }
+  catch(e){ cachedCourseReqs=[]; }   // 表还没建时静默
+  return cachedCourseReqs;
+}
+// 范围：和课程安排页一样按 scopeCourse(c)（领域 / 专业 / 班级）；管理模式下还要「课程」页对 TA 开着
+function courseReqInScope(r){
+  if(typeof mgrPageAllowed==='function' && !mgrPageAllowed('courses')) return false;
+  const c=cachedCourses.find(x=>x.id===r.course_id) || {domain:r.domain, major:r.major};
+  return scopeCourse(c);
+}
+function courseReqMine(){ return cachedCourseReqs.filter(courseReqInScope); }
+async function refreshCourseReqBadge(){
+  const btn=document.getElementById('nav-courses'); if(!btn) return;
+  await loadCourseReqs();
+  const n=courseReqMine().length;
+  let b=document.getElementById('nav-courses-badge');
+  if(!n){ if(b) b.remove(); return; }
+  if(!b){ b=document.createElement('span'); b.id='nav-courses-badge'; b.className='badge-count'; b.title='排教室推送过来、等你确认的课'; btn.appendChild(b); }
+  b.textContent=n;
+}
+async function refreshCourseReqBox(){
+  const box=document.getElementById('courseReqBox'); if(!box) return;
+  await loadCourseReqs();
+  const list=courseReqMine();
+  refreshCourseReqBadge();
+  if(!list.length){ box.innerHTML=''; return; }
+  const items=courseReqOpen?list.map(r=>{
+    const c=cachedCourses.find(x=>x.id===r.course_id);
+    const pick=crqPick[r.id]||'';
+    return `<div style="border:1px solid var(--border);background:var(--bg,#fff);border-radius:6px;padding:10px 12px;margin-top:8px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <b style="font-size:13px">${escTM((c&&(c.name))||'（课程已不存在）')}</b>
+        ${(r.issues||[]).map(k=>`<span style="font-size:10px;border:1px solid var(--border);border-radius:10px;padding:1px 7px;color:var(--text-2)">${escTM(CRQ_ISSUE_TEXT[k]||k)}</span>`).join('')}
+        <span style="font-size:10px;color:var(--text-3);margin-left:auto">${escTM((r.created_at||'').slice(0,16).replace('T',' '))}${r.created_by?' · '+escTM(r.created_by):''}</span>
+      </div>
+      <div style="white-space:pre-wrap;font-size:12px;color:var(--text-2);margin-top:6px">${escTM(r.message)}</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px">
+        ${CRQ_ACTIONS.map(a=>`<div class="filter-chip${pick===a?' active':''}" onclick="crqSetPick(${r.id},this.dataset.a)" data-a="${escTM(a)}" style="font-size:11px;padding:3px 10px">${escTM(a)}</div>`).join('')}
+      </div>
+      <textarea id="crq_txt_${r.id}" rows="2" placeholder="补充说明（选填）" style="width:100%;margin-top:6px;font-size:12px;box-sizing:border-box"></textarea>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button class="btn btn-primary btn-sm" onclick="crqReply(${r.id})">回复</button>
+        ${c?`<button class="btn btn-outline btn-sm" onclick="openEditCourse(this.dataset.c)" data-c="${escTM(c.id)}">去编辑这门课</button>`:''}
+      </div></div>`;
+  }).join(''):'';
+  box.innerHTML=`<div style="border:1px solid #f0dcb0;background:#fff7e6;border-radius:8px;padding:10px 14px;margin-bottom:14px">
+    <div style="display:flex;align-items:center;gap:10px;cursor:pointer" onclick="crqToggle()">
+      <span style="font-size:13px;color:#8a5a00"><b>排教室：有 ${list.length} 门课需要你确认</b></span>
+      <span style="font-size:11px;color:var(--text-3);margin-left:auto">${courseReqOpen?'收起 ▴':'展开 ▾'}</span>
+    </div>${items}</div>`;
+  // 展开状态下重画不要把没发出去的文字冲掉
+  list.forEach(r=>{ const t=document.getElementById('crq_txt_'+r.id); if(t&&crqTxt[r.id]!=null) t.value=crqTxt[r.id]; });
+}
+const crqTxt={};
+function crqToggle(){ courseReqOpen=!courseReqOpen; refreshCourseReqBox(); }
+function crqSetPick(id,a){
+  document.querySelectorAll('[id^="crq_txt_"]').forEach(t=>{ crqTxt[t.id.replace('crq_txt_','')]=t.value; });
+  crqPick[id]=(crqPick[id]===a)?'':a; refreshCourseReqBox();
+}
+async function crqReply(id){
+  const act=crqPick[id]||'', txt=((document.getElementById('crq_txt_'+id)||{}).value||'').trim();
+  if(!act && !txt){ alert('请选一个快捷回复，或写几句话'); return; }
+  const who=((ACCESS_KEY&&ACCESS_KEY.label)||ADMIN_EMAIL||'管理员').replace(/^管理模式\s*·\s*/,'');
+  try{
+    await sb(`/rest/v1/sched_course_requests?id=eq.${id}`,'PATCH',{ status:'replied', reply:txt||null, reply_action:act||null, replied_by:who, replied_at:new Date().toISOString() });
+    delete crqPick[id]; delete crqTxt[id];
+    await refreshCourseReqBox();
+    if(typeof showToast==='function') showToast('已回复，排课那边会看到'); else alert('已回复，排课那边会看到');
+  }catch(e){ alert('回复失败：'+e.message); }
 }

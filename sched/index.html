@@ -72,6 +72,7 @@ async function reloadAll(){
   // 只过滤 end_date 有值且已过的；没填 end_date 的不误伤
   { const _today=new Date().toISOString().slice(0,10); COURSES = COURSES.filter(c=>!(c.end_date && c.end_date < _today)); }
   try{ MTEMPLATES = await sbGet('sched_meeting_templates','select=*&order=created_at.desc'); }catch(e){ MTEMPLATES=[]; }
+  try{ REQUESTS = await sbGet('sched_course_requests','select=*&order=created_at.desc'); }catch(e){ REQUESTS=[]; }   // 表还没建时不影响排课
   try{ HOLIDAYS = await sbGet('sched_holidays','select=*&order=start_date'); }catch(e){ HOLIDAYS=[]; }
   try{ CHANGELOG = await sbGet('sched_change_log','select=*&order=created_at.desc&limit=50'); }catch(e){ CHANGELOG=[]; }
   // 自动重算已关闭：改由「回数审查」面板 + 编辑时推算提醒，由用户自己拍板
@@ -100,6 +101,7 @@ async function autoFixEnds(){
   }finally{ window.__autofixing=false; }
 }
 let MTEMPLATES=[];
+let REQUESTS=[];   // 推送给负责人确认的记录 sched_course_requests
 let HOLIDAYS=[];
 let CHANGELOG=[];
 let DELETED_COURSES=[];
@@ -852,7 +854,7 @@ function renderAssignTable(){
       `<td>${weekdaysLabel(c.weekdays)}</td><td>${c.start_time||''}-${c.end_time||''}</td>`+
       `<td>${noDate?'<span class="badge b-warn">缺日期</span>':(c.start_date+' ~ '+c.end_date)}</td>`+
       `<td>${c.est_students||'?'}</td><td>${esc(c.mode)}</td>`+
-      `<td>${schedRemoved(c)?'<span class="badge b-mute" style="background:#e4e4e4">已移出 · '+esc(c.sched_removed_reason)+'</span>':(done?'<span class="badge b-ok">已排 · '+esc(where)+'</span>':'<span class="badge b-mute">未排</span>')}</td>`+
+      `<td>${schedRemoved(c)?'<span class="badge b-mute" style="background:#e4e4e4">已移出 · '+esc(c.sched_removed_reason)+'</span>':(done?'<span class="badge b-ok">已排 · '+esc(where)+'</span>':'<span class="badge b-mute">未排</span>')}${schedReqBadgeHtml(c)}</td>`+
       (schedRemoved(c)
         ? `<td><button class="sm ghost" data-restore="${c.id}">恢复到排课</button></td></tr>`
         : `<td><button class="sm" data-as="${c.id}">${done?'重排':'排教室'}</button>${done?(' <button class="sm ghost" data-clr="'+c.id+'">清空教室</button>'):''}</td></tr>`);
@@ -861,6 +863,7 @@ function renderAssignTable(){
   el('assignTable').innerHTML=h;
   bind('[data-as]', id=>assignRoomOnly(id));
   bind('[data-restore]', id=>schedRestore(id));
+  bind('[data-reqview]', id=>schedReqDetail(id));
   bind('[data-clr]', async id=>{
     const c=COURSES.find(x=>String(x.id)===String(id))||{};
     if(!confirm('把「'+(c.name||'')+'」清空教室（改回未排）？将删除它的教室占用记录，会议号绑定不受影响。')) return;
@@ -917,6 +920,7 @@ function assignRoomOnly(courseId){
   let h='<div style="position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:60;overflow:auto;padding:40px 16px" id="aroMask">'+
     '<div class="card" style="width:460px;max-width:94vw;margin:auto"><h3 style="margin-top:2px">'+(ex?'重排':'排')+'「'+esc(dispName)+'」教室</h3>'+
     `<div class="muted" style="margin-bottom:8px">${subLine}</div>`;
+  { const rq=schedReqOpenFor(c.id); if(rq) h+='<div class="tip" style="background:#fff7e6;border-color:#f0dcb0">'+schedReqLabel(rq)+'</div>'; }
   if(ex){ h+='<div class="tip">当前已排：<b>'+(ex.room_id?esc(rname(ex.room_id)):'仅腾讯会议（不占教室）')+'</b>。'+(ex.room_id?'可改教室后重新生成。':'')+'</div>'; }
   if(noDate){
     h+='<div class="tip">这门课缺开课/结课日期，排前请补上（会写回课程）。</div>'+
@@ -929,6 +933,7 @@ function assignRoomOnly(courseId){
       : '<button id="aro_save">确认排入</button>')+
     (ex?'<button class="danger" id="aro_clear">清空教室（改回未排）</button>':'')+
     '<button class="ghost" id="aro_remove">这门课不需要排教室，移出排课</button>'+
+    '<button class="ghost" id="aro_push">推送给负责人确认</button>'+
     '<button class="ghost" id="aro_cancel">取消</button></div>';
   if(isOnlineCourse){
     h+='<p class="muted" style="font-size:12px;margin:4px 0 0">线上课只需要设定腾讯会议；只有学生要来教室自习时，才另外占一间教室。</p>'+aroBtns+
@@ -949,6 +954,7 @@ function assignRoomOnly(courseId){
     el('aro_more').onclick=openMore;
     if(ex && ex.room_id) openMore();
   }
+  if(el('aro_push')) el('aro_push').onclick=()=>schedPushDialog(c, dispName, groupCourses);
   if(el('aro_remove')) el('aro_remove').onclick=()=>schedRemoveDialog(groupCourses, dispName, ()=>{ const m=document.getElementById('aroMask'); if(m) m.remove(); });
   el('aro_cancel').onclick=()=>document.getElementById('aroMask').remove();
   document.getElementById('aroMask').onclick=(ev)=>{ if(ev.target.id==='aroMask') ev.target.remove(); };
@@ -1082,6 +1088,120 @@ function schedBatchRemoveEnded(){
     };
   };
   draw(); document.body.appendChild(m);
+}
+/* ---------- 推送给负责人确认（写 sched_course_requests；course_id = 管理端课程 id）---------- */
+const CRQ_ISSUES=[['no_room','没有教室'],['time_conflict','时间冲突'],['capacity','容量不够'],['other','其他']];
+const crqIssueText=k=>(CRQ_ISSUES.find(x=>x[0]===k)||[k,k])[1];
+function schedReqOpenFor(courseId){ return (REQUESTS||[]).find(r=>String(r.course_id)===String(courseId) && (r.status==='pending'||r.status==='replied')) || null; }
+function schedReqLabel(r){
+  if(r.status==='pending') return '已推送 · 待负责人确认';
+  if(r.status==='replied') return '负责人已回复：'+(r.reply_action||(r.reply||'').slice(0,12)||'已回复');
+  return '';
+}
+function schedReqBadgeHtml(c){
+  const r=schedReqOpenFor(c.id); if(!r) return '';
+  return '<br><span class="badge '+(r.status==='replied'?'b-ok':'b-warn')+'" style="cursor:pointer;margin-top:3px" data-reqview="'+c.id+'">'+esc(schedReqLabel(r))+'</span>';
+}
+/* 自动生成推送说明：课程信息 + 冲突在哪 + 可调整建议（当天其他时段、前后几天同时段、另一校区），写法同 VIP 驳回文案 */
+function schedPushMessage(c, dispName, groupCourses, issues){
+  const groupIds=groupCourses.map(x=>String(x.id));
+  const wdays=parseWeekdaysSched(c.weekdays);
+  const bks=BOOKINGS.filter(b=>!(b.kind==='course' && groupIds.includes(String(b.course_id))));
+  const topCampus=el('af_campus')?el('af_campus').value:'';
+  const campus=CAMPUSES.includes(c.campus)?c.campus:(CAMPUSES.includes(topCampus)?topCampus:CAMPUSES[0]);
+  const rooms=ROOMS.filter(r=>r.active!==false && r.campus===campus);
+  const fit=r=>!c.est_students || !r.capacity || r.capacity>=c.est_students;
+  const busyOf=(r)=>bks.filter(b=>b.status!=='pending' && b.recurrence==='weekly' && String(b.room_id)===String(r.id) && wdays.includes(Number(b.weekday)) &&
+      overlap(c.start_time,c.end_time,b.start_time,b.end_time) &&
+      !(c.end_date&&b.start_date&&c.end_date<b.start_date) && !(c.start_date&&b.end_date&&c.start_date>b.end_date));
+  const range=(c.start_date||'?')+' ~ '+(c.end_date||'?');
+  let m=`「${dispName}」${c.campus&&c.campus!=='线上'?c.campus+' ':''}${weekdaysLabel(c.weekdays)} ${c.start_time||''}-${c.end_time||''}，${range}，预估${c.est_students||'?'}人，目前排不进教室。`;
+  m+='\n问题：'+(issues.length?issues.map(crqIssueText).join('、'):'（请选择）')+'。';
+  const lines=[];
+  rooms.forEach(r=>{ const bs=busyOf(r); if(bs.length) lines.push(`${campus} ${r.name} 该时段已被「${[...new Set(bs.map(b=>b.title||'占用'))].slice(0,2).join('」「')}」占用`); });
+  if(lines.length) m+='\n冲突：'+lines.slice(0,5).join('；')+'。';
+  if(issues.includes('capacity')){ const mx=Math.max(0,...rooms.map(r=>r.capacity||0)); m+=`\n容量：${campus}最大的教室只能坐 ${mx||'?'} 人，放不下预估的 ${c.est_students||'?'} 人。`; }
+  // 就近建议：以第一个上课日为代表日期，在本校区放得下的教室里找
+  let rep=null;
+  if(wdays.length){ let d=(c.start_date && c.start_date>todayStr())?c.start_date:todayStr(); for(let i=0;i<14;i++){ if(wdays.includes(weekdayOf(d))){ rep=d; break; } d=addDays(d,1); } }
+  const cand=rooms.filter(fit);
+  const slots=new Set(), dates=new Set();
+  if(rep && c.start_time && c.end_time){
+    cand.forEach(r=>{ const nb=findNearby(bks, r.id, rep, c.start_time, c.end_time, 5); nb.sameDay.forEach(t=>slots.add(t)); nb.nearDates.forEach(o=>dates.add(o.date)); });
+  }
+  const adv=[];
+  if(slots.size) adv.push('当天可改的时段：'+[...slots].sort().slice(0,5).join('、'));
+  if(dates.size) adv.push('同时段前后几天有空：'+[...dates].sort().slice(0,5).map(d=>d.slice(5)+'（'+weekdaysLabel(String(weekdayOf(d)))+'）').join('、')+'（只供参考，课程是每周固定上课）');
+  const oth=CAMPUSES.filter(x=>x!==campus).map(cp=>{
+    const free=ROOMS.filter(r=>r.active!==false && r.campus===cp && fit(r) && !busyOf(r).length).map(r=>r.name);
+    return free.length?`${cp}同时段有空教室：${free.slice(0,4).join('、')}`:'';
+  }).filter(Boolean);
+  adv.push(...oth);
+  if(adv.length) m+='\n可调整的建议：'+adv.join('；')+'。';
+  m+='\n麻烦回复希望的调整（改时间 / 改线上 / 本期不开 / 换校区），谢谢！';
+  return m;
+}
+function schedPushDialog(c, dispName, groupCourses){
+  const open=schedReqOpenFor(c.id);
+  const pendingReq = open && open.status==='pending' ? open : null;     // 已有待确认 → 追加说明，不新建
+  const issues=new Set(pendingReq?(pendingReq.issues||[]):[]);
+  let msg=schedPushMessage(c, dispName, groupCourses, [...issues]), edited=false;
+  const m=document.createElement('div');
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;z-index:70;overflow:auto;padding:40px 16px';
+  const draw=()=>{
+    m.innerHTML='<div class="card" style="width:560px;max-width:94vw;margin:auto"><h3 style="margin-top:2px">推送给负责人确认：「'+esc(dispName)+'」</h3>'+
+      (pendingReq?'<div class="tip">这门课已经推送过、还在等负责人确认。再推送会把下面的内容<b>追加</b>到原来的说明后面，不会新建。</div>':'<div class="tip">把排不进教室的情况发给这门课的负责人，让 TA 在管理端回复怎么调整。</div>')+
+      (pendingReq?'<div class="muted" style="font-size:12px;white-space:pre-wrap;border:1px dashed var(--line);border-radius:6px;padding:6px 8px;margin-bottom:8px;max-height:120px;overflow:auto">原说明：\n'+esc(pendingReq.message)+'</div>':'')+
+      '<div class="field"><label>问题（可多选）</label><div>'+CRQ_ISSUES.map(([k,t])=>`<span data-is="${k}" style="display:inline-block;padding:3px 12px;margin:2px 6px 2px 0;border:1px solid ${issues.has(k)?'var(--blue)':'var(--line)'};border-radius:14px;font-size:13px;cursor:pointer;user-select:none;background:${issues.has(k)?'var(--blue)':'#fff'};color:${issues.has(k)?'#fff':'#666'}">${t}</span>`).join('')+'</div></div>'+
+      '<div class="field" style="margin-top:6px"><label>说明（自动生成，可以改）</label><textarea id="pu_msg" rows="9" style="width:100%">'+esc(msg)+'</textarea></div>'+
+      '<div style="display:flex;gap:8px;margin-top:12px"><button id="pu_ok">'+(pendingReq?'追加推送':'确认推送')+'</button><button class="ghost" id="pu_cancel">返回</button></div></div>';
+    m.querySelectorAll('[data-is]').forEach(x=>x.onclick=()=>{ const k=x.dataset.is; issues.has(k)?issues.delete(k):issues.add(k);
+      if(!edited) msg=schedPushMessage(c, dispName, groupCourses, [...issues]); else msg=m.querySelector('#pu_msg').value; draw(); });
+    m.querySelector('#pu_msg').oninput=e=>{ edited=true; msg=e.target.value; };
+    m.querySelector('#pu_cancel').onclick=()=>m.remove();
+    m.querySelector('#pu_ok').onclick=async()=>{
+      msg=m.querySelector('#pu_msg').value.trim();
+      if(!issues.size){ toast('请至少选一个问题', false); return; }
+      if(!msg){ toast('说明不能为空', false); return; }
+      const btn=m.querySelector('#pu_ok'); btn.disabled=true; btn.textContent='推送中…';
+      const who=(ROLE&&(ROLE.label||ROLE.role))||'排课';
+      try{
+        if(pendingReq){
+          const stamp=new Date().toLocaleString('zh-CN',{hour12:false});
+          await sbUpdate('sched_course_requests', pendingReq.id, {
+            issues:[...new Set([...(pendingReq.issues||[]), ...issues])],
+            message:pendingReq.message+'\n\n【追加 '+stamp+' · '+who+'】\n'+msg });
+        } else {
+          let dom=c.category||null, maj=null;
+          try{ const r=await sbGet('courses','select=domain,major&id=eq.'+c.id+'&limit=1'); if(r[0]){ dom=r[0].domain||dom; maj=r[0].major||null; } }catch(e){}
+          await sbInsert('sched_course_requests', { course_id:c.id, domain:dom, major:maj, issues:[...issues], message:msg, status:'pending', created_by:who });
+        }
+        await reloadAll(); m.remove(); const am=document.getElementById('aroMask'); if(am) am.remove(); renderAssignView();
+        toast('已推送给负责人，等 TA 在管理端回复');
+      }catch(e){ toast('推送失败：'+e.message+'（如果提示表不存在，请先执行 seed/sched_course_requests.sql）', false); btn.disabled=false; btn.textContent=pendingReq?'追加推送':'确认推送'; }
+    };
+  };
+  draw(); document.body.appendChild(m);
+}
+/* 点开看推送 / 负责人回复；回复后可「重新排」「标记已解决」，没回复时可撤回 */
+function schedReqDetail(courseId){
+  const r=schedReqOpenFor(courseId); if(!r) return;
+  const c=ALL_COURSES.find(x=>String(x.id)===String(courseId))||{};
+  const m=document.createElement('div');
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;z-index:70;overflow:auto;padding:40px 16px';
+  m.innerHTML='<div class="card" style="width:560px;max-width:94vw;margin:auto"><h3 style="margin-top:2px">「'+esc(c.merge_name||c.name||courseId)+'」的推送</h3>'+
+    '<div class="muted" style="font-size:12px;margin-bottom:6px">'+esc(schedReqLabel(r))+' · 问题：'+esc((r.issues||[]).map(crqIssueText).join('、'))+' · '+esc((r.created_at||'').slice(0,16).replace('T',' '))+(r.created_by?' · '+esc(r.created_by):'')+'</div>'+
+    '<div style="white-space:pre-wrap;border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:13px;max-height:200px;overflow:auto">'+esc(r.message)+'</div>'+
+    (r.status==='replied'?'<div style="margin-top:8px;border:1px solid #cfe0d3;background:#f2f8f4;border-radius:6px;padding:8px 10px;font-size:13px"><b>负责人回复'+(r.replied_by?'（'+esc(r.replied_by)+'）':'')+'：'+esc(r.reply_action||'')+'</b><div style="white-space:pre-wrap;margin-top:4px">'+esc(r.reply||'')+'</div></div>':'')+
+    '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'+
+      (r.status==='replied'?'<button id="rq_again">重新排</button><button class="ghost" id="rq_done">标记已解决</button>':'<button class="ghost" id="rq_wd">撤回推送</button><button class="ghost" id="rq_done">标记已解决</button>')+
+      '<button class="ghost" id="rq_close">关闭</button></div></div>';
+  document.body.appendChild(m);
+  const finish=async(patch,msg)=>{ try{ await sbUpdate('sched_course_requests', r.id, patch); await reloadAll(); m.remove(); renderAssignView(); toast(msg); }catch(e){ toast('失败：'+e.message, false); } };
+  m.querySelector('#rq_close').onclick=()=>m.remove();
+  if(m.querySelector('#rq_again')) m.querySelector('#rq_again').onclick=()=>{ m.remove(); assignRoomOnly(courseId); };
+  if(m.querySelector('#rq_wd')) m.querySelector('#rq_wd').onclick=()=>{ if(confirm('撤回这条推送？负责人那边将不再看到。')) finish({status:'withdrawn'}, '已撤回'); };
+  m.querySelector('#rq_done').onclick=()=>{ if(confirm('标记为已解决？')) finish({status:'resolved', resolved_at:new Date().toISOString()}, '已标记解决'); };
 }
 function assignForm(courseId){
   const c=COURSES.find(x=>String(x.id)===String(courseId));
