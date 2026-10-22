@@ -97,7 +97,7 @@ function renderTeacherVipFrameworks(mc) {
   const _myPlanNames = new Set(teacherVipMyPlans.map(p => p.student_name));
   const assignedOnly = (teacherVipAssignedStudents || []).filter(s => !_myPlanNames.has(s.name));
   const hasAssigned = assignedOnly.length;
-  if (!hasFw && !hasPlans && !hasMine && !hasVipBk && !hasAssigned) {
+  if (!hasFw && !hasPlans && !hasMine && !hasVipBk && !hasAssigned && !vbfRows.length) {
     mc.innerHTML = '<div class="empty">暂无需要处理的 VIP 事项<br><span style="font-size:11px">收到 VIP 预约、指导的 VIP 学生或课程框架后，会在这里出现</span></div>';
     return;
   }
@@ -164,6 +164,7 @@ function renderTeacherVipFrameworks(mc) {
       <div style="font-family:'Noto Serif SC',serif;font-size:16px;font-weight:600">VIP 管理</div>
       <div style="font-size:11px;color:var(--text-3);margin-top:2px">确认预约并锁定内容、给学生排课、补充课程框架</div>
     </div>
+    ${vbfBtnHtml('margin-bottom:12px')}
     <div style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px">
       ${tab('booking', '预约', pendingVipBk)}
       ${tab('students', '学生进度', (teacherVipMyPlans.length + assignedOnly.length) || 0)}
@@ -1215,4 +1216,224 @@ function svAddPlanToPack(id) {
     html: pkVipHtml({ groups: svPackGroups(items), sessions: p.total_sessions || 0, hours: p.total_hours || 0, subjectHours: p.subject_hours || 0 }),
     student: p.student_name || '',
   });
+}
+
+// ══════════════════════════════════
+// 老师补录已上完的 VIP 课：课上完后一次填完 → 教务确认（才扣课时）→ 发链接给学生确认
+// 记录在 bookings（type=vip、teacher_backfill=true）。不碰排课系统，不占也不检查教室。建字段 / 触发器 SQL：seed/vip_teacher_backfill.sql
+// 状态：admin_review = pending（待教务确认）/ rejected（教务退回，可改了重交）/ approved（教务已确认，status=completed）
+// 「待确认 / 已退回」的放在 vbfRows，不进 cachedTeacherBookings（免得被当成普通待确认预约）；教务已确认的并进 cachedTeacherBookings，和普通已完成 VIP 课一样显示
+// 表单控件和校验直接复用 teacher.js 的 vipRecInit / vipRecFormHtml / vipRecCollect（和「上课记录」弹窗同一套）
+// ══════════════════════════════════
+let vbfRows = [];            // 我的补录：待教务确认 / 已退回
+let vipBfDraft = null;       // 打开中的补录草稿（作业编辑器靠它认出 id）
+let vbfSt = null;            // 表单状态 {stu, mode, students, q, editId}
+const vbfEsc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const vbfMD = d => { const x = String(d || '').split('-'); return x.length === 3 ? (+x[1]) + '月' + (+x[2]) + '日' : (d || ''); };
+
+// 能上 VIP：有 VIP 权限，或者有指导的 VIP 学生
+function vbfAllowed() {
+  const p = (teacherData && teacherData.permissions) || {};
+  const perm = (p.booking && (p.booking_types || []).includes('vip')) || (p.slots && (p.slot_types || []).includes('vip'));
+  return !!(perm || (typeof teacherVipAssignedStudents !== 'undefined' && teacherVipAssignedStudents.length));
+}
+async function vbfLoad() {
+  if (!teacherName) { vbfRows = []; return; }
+  const rows = await sb(`/rest/v1/bookings?type=eq.vip&teacher_backfill=eq.true&assigned_teacher=eq.${encodeURIComponent(teacherName)}&select=*&order=slot_date.desc`).catch(() => []);
+  vbfRows = (rows || []).filter(b => b.admin_review !== 'approved');
+  (rows || []).filter(b => b.admin_review === 'approved').forEach(b => {
+    const i = cachedTeacherBookings.findIndex(x => x.id === b.id);
+    if (i >= 0) cachedTeacherBookings[i] = b; else cachedTeacherBookings.push(b);
+  });
+}
+async function vbfReload() { await vbfLoad(); renderTab(); }
+function vbfBtnHtml(extra) {
+  if (!vbfAllowed()) return '';
+  return `<button onclick="vbfOpen()" style="font-size:12px;background:#5a3a9a;color:#fff;border:none;border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit;white-space:nowrap;${extra || ''}">＋ 补录已上完的 VIP 课</button>`;
+}
+
+// ── 状态一行（首页 / VIP 管理共用）──
+function vbfStateHtml(b) {
+  if (b.admin_review === 'rejected') return `<div style="font-size:11px;color:var(--danger)">教务已退回：${vbfEsc(b.admin_review_note || '（未写原因）')}</div>`;
+  if (b.admin_review === 'pending') return '<div style="font-size:11px;color:#856404">待教务确认</div>';
+  if (b.student_confirmed) return `<div style="font-size:11px;color:var(--ok)">${b.student_confirmed_by ? '已由教务（' + vbfEsc(b.student_confirmed_by) + '）代学生确认' : '学生已确认'}${b.student_rating ? '・评价：' + vbfEsc(b.student_rating) : ''}</div>`;
+  return '<div style="font-size:11px;font-weight:600;color:#5a3a9a">教务已确认，请把链接发给学生确认</div>';
+}
+// 首页：VIP 区域最上面（按钮 + 还需要老师处理的补录）
+const vbfOpenList = () => [...vbfRows, ...cachedTeacherBookings.filter(b => b.teacher_backfill && b.admin_review === 'approved' && !b.student_confirmed)];   // 还需要处理的补录
+function vbfHomeCardHtml() {
+  if (!vbfAllowed()) return '';
+  const list = vbfOpenList();
+  return `<div class="todo-card">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="todo-head" style="color:var(--text-2);margin:0">VIP 补录</div><div style="margin-left:auto">${vbfBtnHtml()}</div></div>
+    ${list.map(b => `<div class="todo-item" style="align-items:flex-start;gap:8px;flex-wrap:wrap">
+      <span style="font-weight:600">${vbfEsc(b.name)}</span><span style="color:var(--text-3)">${vbfMD(b.slot_date)} ${vbfEsc(b.slot_time_range || '')}</span>
+      <div style="flex:1;min-width:150px">${vbfStateHtml(b)}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${vbfActionsHtml(b)}</div></div>`).join('')}
+  </div>`;
+}
+function vbfActionsHtml(b) {
+  const bt = (t, fn, c) => `<button onclick="${fn}" style="font-size:10px;background:${c ? c : 'none'};color:${c ? '#fff' : 'var(--text-2)'};border:1px solid ${c ? c : 'var(--border)'};border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit">${t}</button>`;
+  if (b.admin_review === 'rejected') return bt('修改后重新提交', `vbfOpen('${b.id}')`, '#5a3a9a') + bt('撤回', `vbfWithdraw('${b.id}')`);
+  if (b.admin_review === 'pending') return bt('修改', `vbfOpen('${b.id}')`) + bt('撤回', `vbfWithdraw('${b.id}')`);
+  if (!b.student_confirmed) return bt('生成确认文案', `openVipConfirmText('${b.id}')`, '#5a3a9a');
+  return '';
+}
+// VIP 管理 → 预约：待教务确认 / 已退回的补录
+function vbfListHtml() {
+  if (!vbfRows.length) return '';
+  return `<div style="margin-bottom:16px">
+    <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">补录的课（教务确认后才扣课时）</div>
+    ${vbfRows.map(b => `<div style="background:#f0edf8;border:1px solid #c8bfe8;border-radius:4px;margin-bottom:8px;padding:10px 14px">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px">${vbfEsc(b.name)} 的VIP课程</span>
+        <span style="font-size:9px;background:#5a3a9a;color:#fff;border-radius:2px;padding:1px 6px">老师补录</span>
+        <span style="font-size:11px;color:var(--text-3)">${vbfEsc(b.slot_date)} ${vbfEsc(b.slot_time_range || '')} · ${b.location === 'online' ? '线上' : '线下' + (b.backfill_room_note ? '（' + vbfEsc(b.backfill_room_note) + '）' : '')} · ${b.vip_hours_used || 0} 课时</span></div>
+      <div style="font-size:11px;color:var(--text-2);margin-top:3px;white-space:pre-wrap">${vbfEsc(b.vip_session_notes || '')}</div>
+      <div style="margin-top:4px">${vbfStateHtml(b)}</div>
+      <div style="display:flex;gap:6px;margin-top:6px">${vbfActionsHtml(b)}</div></div>`).join('')}
+  </div>`;
+}
+
+async function vbfWithdraw(id) {
+  if (!confirm('撤回这条补录？撤回后会直接删除。')) return;
+  try {
+    await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(id)}`, 'DELETE');
+    vbfRows = vbfRows.filter(b => b.id !== id);
+    renderTab();
+  } catch (e) { alert('撤回失败：' + e.message); }
+}
+
+// ── 补录表单 ──
+function vbfTimeOpts(ph, cur) {
+  let h = `<option value="">${ph}</option>`;
+  for (let m = 7 * 60; m <= 23 * 60; m += 30) { const t = String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); h += `<option value="${t}"${t === cur ? ' selected' : ''}>${t}</option>`; }
+  return h;
+}
+async function vbfOpen(editId) {
+  const old = editId ? vbfRows.find(b => b.id === editId) : null;
+  if (editId && !old) return;
+  vbfSt = { stu: null, mode: old ? (old.location === 'online' ? 'online' : 'offline') : '', students: [], q: '', editId: old ? old.id : '' };
+  try {
+    vbfSt.students = await sb(`/rest/v1/students?vip_teachers=cs.{"${teacherName}"}&or=(status.is.null,status.eq.active)&select=id,name,major,is_vip_course,vip_hours_total,vip_hours_used&order=name.asc`);
+  } catch (e) { alert('读取学生失败：' + e.message); return; }
+  if (old) vbfSt.stu = vbfSt.students.find(s => s.id === old.student_id) || { id: old.student_id, name: old.name, major: old.major, vip_hours_total: 0, vip_hours_used: 0 };
+  vipBfDraft = old ? { ...old, _bf: true } : { id: String(Date.now()), name: '', type: 'vip', _bf: true };
+  document.getElementById('vbfModal')?.remove();
+  const today = jstToday(), rg = (old && vipTimeParts(old.slot_time_range)) || ['', ''];
+  const modal = document.createElement('div');
+  modal.id = 'vbfModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:460px;width:100%;max-height:90vh;overflow-y:auto">
+    <div style="font-size:13px;font-weight:600;margin-bottom:4px">${old ? '修改补录的 VIP 课' : '补录已上完的 VIP 课'}</div>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">课已经上完，一次填完提交；教务确认后才会扣学生课时，确认后再把链接发给学生确认。${old && old.admin_review === 'rejected' ? `<br><span style="color:var(--danger)">教务退回原因：${vbfEsc(old.admin_review_note || '—')}</span>` : ''}</div>
+    <div class="form-group"><label class="form-label">学生</label>
+      <div id="vbf_stu"></div></div>
+    <div class="form-group"><label class="form-label">日期（只能选今天或以前）</label><input type="date" id="vbf_date" max="${today}" value="${vbfEsc(old ? old.slot_date : '')}"></div>
+    <div class="form-group"><label class="form-label">开始 / 结束时间</label>
+      <div style="display:grid;grid-template-columns:1fr 16px 1fr;gap:4px;align-items:center">
+        <select id="vbf_st">${vbfTimeOpts('开始', rg[0])}</select><div style="text-align:center;font-size:11px;color:var(--text-3)">—</div><select id="vbf_en">${vbfTimeOpts('结束', rg[1])}</select>
+      </div></div>
+    <div class="form-group"><label class="form-label">上课方式</label><div id="vbf_mode" style="display:flex;gap:6px"></div>
+      <div id="vbf_room_wrap" style="display:none;margin-top:8px">
+        <input id="vbf_room" value="${vbfEsc(old ? old.backfill_room_note || '' : '')}" placeholder="教室 / 地点（例：VIP2、教务已约、学生家）" style="font-size:12px;width:100%">
+        <div style="font-size:10px;color:var(--text-3);margin-top:3px">教室已经事先约好，这里只是记录，不会占用或检查教室</div>
+      </div></div>
+    <div id="vbf_rec"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button id="vbf_ok" class="btn btn-primary btn-sm" onclick="vbfSubmit()">${old ? '重新提交' : '提交给教务确认'}</button>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('vbfModal').remove()">取消</button>
+    </div></div>`;
+  document.body.appendChild(modal);
+  vbfRenderStu(); vbfRenderMode();
+  await vbfRenderRec(old);
+}
+function vbfChip(on, label, fn) {
+  return `<span onclick="${fn}" style="cursor:pointer;user-select:none;font-size:12px;border-radius:14px;padding:4px 14px;border:1px solid ${on ? 'var(--accent,#1a1814)' : 'var(--border)'};background:${on ? 'var(--accent,#1a1814)' : 'transparent'};color:${on ? '#fff' : 'var(--text-2)'}">${label}</span>`;
+}
+function vbfRenderStu() {
+  const box = document.getElementById('vbf_stu'); if (!box) return;
+  const s = vbfSt.stu;
+  if (vbfSt.editId) { box.innerHTML = `<div style="font-size:13px">${vbfEsc(s.name)}</div>`; return; }   // 修改时学生不能换
+  const q = vbfSt.q.trim(), list = vbfSt.students.filter(x => !q || x.name.includes(q));
+  const rem = x => (parseFloat(x.vip_hours_total) || 0) - (parseFloat(x.vip_hours_used) || 0);
+  box.innerHTML = `<input id="vbf_q" value="${vbfEsc(vbfSt.q)}" oninput="vbfSt.q=this.value;vbfRenderStuChips()" placeholder="搜索学生姓名" style="font-size:12px;width:100%;margin-bottom:6px">
+    <div id="vbf_chips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    <div id="vbf_remain" style="font-size:11px;color:var(--text-3);margin-top:4px">${s ? `已选：${vbfEsc(s.name)}　剩余课时 ${rem(s)}（已用 ${s.vip_hours_used || 0} / 总 ${s.vip_hours_total || 0}）` : ''}</div>`;
+  vbfRenderStuChips();
+}
+function vbfRenderStuChips() {
+  const box = document.getElementById('vbf_chips'); if (!box) return;
+  const q = vbfSt.q.trim(), all = vbfSt.students.filter(x => !q || x.name.includes(q));
+  const list = all.slice(0, 40);
+  box.innerHTML = list.length ? list.map(x => vbfChip(vbfSt.stu && vbfSt.stu.id === x.id, vbfEsc(x.name), `vbfPickStu('${vbfEsc(x.id)}')`)).join('') + (all.length > 40 ? `<span style="font-size:11px;color:var(--text-3)">还有 ${all.length - 40} 人，请搜索</span>` : '')
+    : '<span style="font-size:11px;color:var(--text-3)">没有可选的学生（只能选「VIP 老师」里有你的在籍学生）</span>';
+}
+async function vbfPickStu(id) {
+  const s = vbfSt.students.find(x => x.id === id); if (!s || (vbfSt.stu && vbfSt.stu.id === id)) return;
+  vbfSt.stu = s; vbfRenderStu(); await vbfRenderRec(null);
+}
+function vbfRenderMode() {
+  const box = document.getElementById('vbf_mode'); if (!box) return;
+  box.innerHTML = [['offline', '线下'], ['online', '线上']].map(([k, l]) => vbfChip(vbfSt.mode === k, l, `vbfSt.mode='${k}';vbfRenderMode()`)).join('');
+  const w = document.getElementById('vbf_room_wrap'); if (w) w.style.display = vbfSt.mode === 'offline' ? 'block' : 'none';
+}
+// 上课内容 / 学生状态 / 作业 / 课时：和「上课记录」弹窗同一套
+async function vbfRenderRec(old) {
+  const box = document.getElementById('vbf_rec'); if (!box) return;
+  if (!vbfSt.stu) { box.innerHTML = '<div style="font-size:11px;color:var(--text-3);padding:6px 0">请先选择学生</div>'; return; }
+  box.innerHTML = '<div style="font-size:11px;color:var(--text-3)">加载中…</div>';
+  const tok = vbfSt.stu.id + ':' + Date.now(); vbfSt.tok = tok;
+  vipBfDraft = Object.assign(old ? { ...old } : { id: vipBfDraft.id, type: 'vip' }, { name: vbfSt.stu.name, _bf: true });
+  const hasPlan = await vipRecInit(vipBfDraft);
+  if (vbfSt.tok !== tok || !document.getElementById('vbf_rec')) return;   // 期间又换了学生 / 关了弹窗
+  box.innerHTML = vipRecFormHtml(vipBfDraft, null, hasPlan);
+}
+
+const vbfMin = t => { const m = String(t || '').match(/(\d{1,2}):(\d{2})/); return m ? (+m[1]) * 60 + (+m[2]) : null; };
+async function vbfSubmit() {
+  const s = vbfSt.stu, date = document.getElementById('vbf_date').value, st = document.getElementById('vbf_st').value, en = document.getElementById('vbf_en').value;
+  if (!s) { alert('请选择学生'); return; }
+  if (!date) { alert('请选择日期'); return; }
+  if (date > jstToday()) { alert('补录的是已经上完的课，日期只能选今天或以前'); return; }
+  if (!st || !en) { alert('请选择开始和结束时间'); return; }
+  if (vbfMin(en) <= vbfMin(st)) { alert('结束时间要晚于开始时间'); return; }
+  if (!vbfSt.mode) { alert('请选择上课方式（线下 / 线上）'); return; }
+  const rec = vipRecCollect();
+  if (!rec) return;
+  const btn = document.getElementById('vbf_ok'); btn.disabled = true;
+  try {
+    // 提示（不挡）：同一时段已有别的 VIP 记录 / 课时超过剩余
+    const warns = [];
+    const same = await sb(`/rest/v1/bookings?type=eq.vip&assigned_teacher=eq.${encodeURIComponent(teacherName)}&slot_date=eq.${date}&status=neq.cancelled&select=id,name,slot_time_range`).catch(() => []);
+    (same || []).filter(x => x.id !== vbfSt.editId).forEach(x => {
+      const r = vipTimeParts(x.slot_time_range); if (!r) return;
+      if (vbfMin(r[0]) < vbfMin(en) && vbfMin(st) < vbfMin(r[1])) warns.push(`你在这个时段已有另一条 VIP 记录：${x.name} ${x.slot_time_range}`);
+    });
+    const fresh = await sb(`/rest/v1/students?id=eq.${encodeURIComponent(s.id)}&select=vip_hours_total,vip_hours_used`).catch(() => null);
+    const f = (fresh && fresh[0]) || s, remain = (parseFloat(f.vip_hours_total) || 0) - (parseFloat(f.vip_hours_used) || 0);
+    if (rec.newHours > remain) warns.push(`本次 ${rec.newHours} 课时超过学生剩余课时（剩余 ${remain}），由教务判断`);
+    if (warns.length && !confirm(warns.join('\n') + '\n\n仍然提交吗？')) { btn.disabled = false; return; }
+    const fields = {
+      slot_date: date, slot_time_range: `${st}–${en}`, location: vbfSt.mode, backfill_room_note: vbfSt.mode === 'offline' ? (document.getElementById('vbf_room').value.trim() || null) : null,
+      vip_content: rec.content, vip_offplan_reason: rec.offplanReason || null, vip_session_notes: rec.notes, vip_student_status: rec.studentStatus || null,
+      vip_hours_used: rec.newHours, vip_homework: rec.homework, vip_homework_questions: vipHwEditQ, vip_homework_note: vipHwEditNote || null,
+    };
+    if (vbfSt.editId) {
+      const patch = { ...fields, admin_review: 'pending' };   // 被退回的重新提交：回到待教务确认（原因保留在 admin_review_note，只在「已退回」时显示）
+      const rows = await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(vbfSt.editId)}`, 'PATCH', patch);
+      if (Array.isArray(rows) && !rows.length) throw new Error('数据库没有允许修改这条记录（可能教务已处理）');
+      const b = vbfRows.find(x => x.id === vbfSt.editId); if (b) Object.assign(b, patch);
+    } else {
+      const row = { id: vipBfDraft.id, name: s.name, major: s.major || '', student_id: s.id, type: 'vip', slot_id: null, assigned_teacher: teacherName,
+        duration: null, status: 'pending', teacher_ok: true, teacher_backfill: true, admin_review: 'pending', needs: '', ...fields };
+      await sb('/rest/v1/bookings', 'POST', row);
+      vbfRows.unshift(row);
+    }
+    document.getElementById('vbfModal')?.remove();
+    renderTab();
+    alert('已提交，等教务确认。确认后会提醒你把链接发给学生。');
+  } catch (e) {
+    btn.disabled = false;
+    alert('提交失败：' + (/teacher_backfill|backfill_room_note|student_confirmed_by/.test(e.message || '') ? '系统还没开通「VIP 上课补录」，请联系管理员' : e.message));
+  }
 }

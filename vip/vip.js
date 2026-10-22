@@ -143,7 +143,7 @@ async function loadVipData() {
   vipSlots = slots.filter(s => s.vip_exclusive
     ? vipStudent.is_vip_course === 'VIP'
     : vipStudent.is_vip_course === '大课+VIP');
-  vipBookings = bookings;
+  vipBookings = bookings.filter(b => !(b.teacher_backfill && b.admin_review !== 'approved'));   // 老师补录：教务确认前学生看不到
   const extraT = [...new Set([...vipBookings.map(b => b.assigned_teacher), ...vipSlots.map(x => x.teacher_name)].filter(n => n && !teachers.includes(n)))];
   if (extraT.length) Object.assign(vipPubMap, await teacherNameMap(extraT));
   // 结构化 VIP 作业提交（booking_id 关联；与大课共用 homework_submissions 表）
@@ -777,13 +777,13 @@ function renderVipHistory() {
     return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:12px;margin-bottom:8px;background:${needsConfirm ? 'var(--accent-light)' : 'var(--surface)'}">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
         <span style="font-size:12px;font-weight:600">${b.slot_date} · ${stuName(b.assigned_teacher || '', vipPubMap)}${manualEntryTag(b)}</span>
-        ${b.student_confirmed ? '<span style="font-size:10px;color:var(--ok)">✓ 已确认</span>' : '<span style="font-size:10px;color:var(--accent)">待确认</span>'}
+        ${b.student_confirmed ? `<span style="font-size:10px;color:var(--ok)">✓ ${b.student_confirmed_by ? '已确认（教务代确认）' : '已确认'}</span>` : '<span style="font-size:10px;color:var(--accent)">待确认</span>'}
       </div>
       <div style="font-size:11px;color:var(--text-secondary);margin-bottom:4px">本次内容：${b.vip_content || ''}</div>
       <div style="font-size:11px;color:var(--text-secondary);white-space:pre-wrap;margin-bottom:8px">${b.vip_session_notes || ''}</div>
-      ${needsConfirm ? `
+      ${needsConfirm || (b.student_confirmed_by && !b.student_rating) ? `
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          <span style="font-size:11px;color:var(--text-muted)">评价：</span>
+          <span style="font-size:11px;color:var(--text-muted)">${needsConfirm ? '评价：' : '教务已代您确认，可补一个评价：'}</span>
           <button class="btn btn-outline btn-sm" onclick="confirmVipSession('${b.id}','满意')">满意</button>
           <button class="btn btn-outline btn-sm" onclick="confirmVipSession('${b.id}','不满意')">不满意</button>
         </div>` : `<div style="font-size:11px;color:var(--text-muted)">您的评价：${b.student_rating || '—'}</div>`}
@@ -1016,7 +1016,7 @@ function vipBookCheck(date, range, list) {
 }
 // 以数据库里最新的进行中预约为准（页面数据可能过期）；读取失败时用页面上的
 async function vipFreshActive() {
-  const rows = await sb(`/rest/v1/bookings?student_id=eq.${vipStudent.id}&type=eq.vip&status=in.(pending,confirmed)&select=id,slot_date,slot_time_range,vip_hours_used,vip_session_notes,status`).catch(() => null);
+  const rows = await sb(`/rest/v1/bookings?student_id=eq.${vipStudent.id}&type=eq.vip&status=in.(pending,confirmed)&teacher_backfill=is.false&select=id,slot_date,slot_time_range,vip_hours_used,vip_session_notes,status`).catch(() => null);
   return Array.isArray(rows) ? rows : vipActiveBookings();
 }
 let vipActiveMoreOpen = false;
