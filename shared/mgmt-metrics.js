@@ -196,11 +196,11 @@ const MGM_GROUPS = [
       let cs, bk;
       try {
         [cs, bk] = await Promise.all([
-          mgmLoad(D, 'mg_sc', () => sbAll('/rest/v1/sched_course_v?select=id,name,term,end_date,teacher')),
+          mgmLoad(D, 'mg_sc', () => sbAll('/rest/v1/sched_course_v?select=id,name,term,end_date,teacher,sched_removed_reason')),
           mgmLoad(D, 'mg_sb', () => sbAll('/rest/v1/sched_bookings?select=course_ref&kind=eq.course&course_ref=not.is.null')),
         ]);
       } catch (e) { return { na: true, note: '读不到排课系统的数据，暂未接入' }; }
-      const today = jstToday(), live = cs.filter(c => !c.end_date || c.end_date >= today), has = new Set(bk.map(b => String(b.course_ref)));
+      const today = jstToday(), live = cs.filter(c => !c.sched_removed_reason && (!c.end_date || c.end_date >= today)), has = new Set(bk.map(b => String(b.course_ref)));
       const items = live.filter(c => !has.has(String(c.id))).map(c => ({ name: c.name || '', note: `${c.term || '未分期'} · 还没排教室`, owners: _mgNames(c.teacher) }));
       return _mgRate(live.length - items.length, live.length, items, '未结课的排课系统课程（结课日未过）', '至今未结课', '完成 = 在排课系统预约里已有「课程」记录的课。注意：排教室不分领域，各领域显示的是同一个全局数字');
     } },

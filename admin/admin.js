@@ -753,6 +753,7 @@ function syncDeptNav(){
   if(asT && Array.isArray(ACCESS_KEY._asTeacher.pages)){
     MGR_PAGE_DEFS.forEach(d=>d[2].forEach(pg=>set('nav-'+pg,mgrPageAllowed(pg))));
   }
+  if(typeof refreshCourseReqBadge==='function') refreshCourseReqBadge();   // 课程安排旁的待确认角标
   set('nav-pricing',asT&&deptDomains('pricing').length>0);
   set('nav-majors',asT&&(deptDomains('majors').length>0||deptMyGroups('majors').length>0));
   set('nav-sep-dept',asT&&(deptDomains('pricing').length>0||deptDomains('majors').length>0||deptMyGroups('majors').length>0));
