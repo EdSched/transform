@@ -158,7 +158,7 @@ html.shareview #calBody:empty::after{ content:'课表加载中…'; color:#9a959
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="common.js?v=20261021"></script>
+<script src="common.js?v=20261022"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 el('nav').innerHTML = renderNav('timetable.html');
@@ -202,7 +202,7 @@ function mondayOf(iso){ const d=new Date(iso+'T00:00:00'); d.setDate(d.getDate()
 async function boot(){
   fillSelect(el('cat'), CATEGORIES.filter(c=>c!=='语言'));
   fillSelect(el('campus'), ['高马','市谷','线上'], v=>v, v=>v, '全部校区');
-  COURSES = (await sbGet('sched_courses','select=*')).filter(c=>!c.deleted_at);
+  COURSES = (await sbGet('sched_course_v','select=*')).filter(c=>!c.deleted_at);
   try{ HOLIDAYS = await sbGet('sched_holidays','select=*&order=start_date'); }catch(e){ HOLIDAYS=[]; }
   ALL_TERMS=[...new Set(COURSES.map(c=>c.term).filter(Boolean))].sort((a,b)=>termSortKey(a)-termSortKey(b));
   renderTermTags();
@@ -482,8 +482,11 @@ function applyTemplate(t){
   el('cat').value=t.category||''; el('campus').value=t.campus||'';
   el('lang').value=t.with_lang?'1':'0';
   fillMajors(); el('major').value=t.major||'';
-  SELECTED_IDS=new Set(JSON.parse(t.course_ids||'[]').map(String));
-  EXTRA_IDS=new Set(JSON.parse(t.extra_ids||'[]').map(String));
+  // 旧模板里存的是排课旧的数字课程号，换算成管理端课程 id
+  const _L={}; COURSES.forEach(c=>{ if(c.legacy_sched_id!=null) _L[String(c.legacy_sched_id)]=String(c.id); });
+  const _mapId=x=>_L[String(x)]||String(x);
+  SELECTED_IDS=new Set(JSON.parse(t.course_ids||'[]').map(_mapId));
+  EXTRA_IDS=new Set(JSON.parse(t.extra_ids||'[]').map(_mapId));
   if(el('pdfCover') && t.cover_text!=null) el('pdfCover').value=t.cover_text;
   if(el('pdfHeader') && t.header_text!=null) el('pdfHeader').value=t.header_text;
   if(el('ttCover') && t.cover_img) el('ttCover').value=t.cover_img;

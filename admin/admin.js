@@ -1217,14 +1217,6 @@ async function renderPage(){
         sbAll('/rest/v1/course_sessions?select=*&order=session_date.asc')
       ]);
       cachedCourses=filterByDomain(cachedCourses);
-      // 从 sched_courses 附加「假期豁免」(holiday_except) 与休讲日：课程安排与排课系统视为同一门课，
-      // 按 id 优先、名称兜底匹配，让课程安排的日期计算尊重 sched 里设的豁免。
-      try {
-        const _scs = await sbAll('/rest/v1/sched_courses?select=id,name,holiday_except,skip_dates').catch(()=>[]);
-        const _byId={}, _byName={};
-        (_scs||[]).forEach(sc=>{ if(sc.id!=null)_byId[sc.id]=sc; const k=(sc.name||'').trim(); if(k&&!_byName[k])_byName[k]=sc; });
-        cachedCourses.forEach(c=>{ const sc=_byId[c.id]||_byName[(c.name||'').trim()]; if(sc){ c._sched_id=sc.id; c.holiday_except=sc.holiday_except||''; if(sc.skip_dates&&!c.skip_dates) c.skip_dates=sc.skip_dates; } });
-      } catch(e) {}
       renderCoursesPage(mc);
     } else if(curPage==='promo'){
       [cachedCourses,cachedSessions]=await Promise.all([

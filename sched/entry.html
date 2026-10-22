@@ -15,46 +15,14 @@
   <div id="main" class="hidden">
     <div class="tip">已进入录入模式（<span id="who"></span>）。你录入的内容将直接生效；公开预约需管理员确认。</div>
     <div class="tabs">
-      <button class="on" data-t="course">课程录入</button>
+      <button class="on" data-t="course">课程</button>
       <button data-t="mine">我最近录入的</button>
     </div>
 
-    <!-- 课程录入 -->
+    <!-- 课程：只在管理端建，这里不再录入 -->
     <div id="tab-course" class="card">
-      <div style="border:1px dashed #cfe0ff;background:#f7faff;border-radius:8px;padding:12px;margin-bottom:14px">
-        <b>📥 批量导入</b>
-        <span class="muted" style="font-size:12px;margin-left:6px">上传 Excel，或直接从表格复制一段粘贴；可预览、查重后再导入。</span>
-        <div class="row" style="margin-top:8px">
-          <div class="field"><label>选择 Excel 文件</label><input type="file" id="xlsxFile" accept=".xlsx,.xls"></div>
-          <div class="field"><label>&nbsp;</label><button class="ghost" id="xlsxParse">解析预览</button></div>
-          <div class="field" style="margin-left:auto"><label>&nbsp;</label><button class="ghost" id="dlAll">⬇ 下载当前全部课程</button></div>
-        </div>
-        <div class="field" style="margin-top:8px"><label>或：粘贴（从 Excel 选中区域复制，含表头行，Tab 分隔）</label>
-          <textarea id="pasteBox" rows="4" placeholder="校区&#9;类别&#9;专业&#9;课程属性&#9;课程名&#9;讲师&#9;周几&#9;上课时间&#9;开课日&#9;结课日&#9;回数&#9;预估人数&#9;授课方式&#9;腾讯会议链接"></textarea></div>
-        <div><button class="ghost sm" id="pasteParse">解析粘贴内容</button></div>
-        <div id="xlsxPrev" style="margin-top:10px"></div>
-      </div>
-      <div class="grid2">
-        <div class="field"><label>校区</label><select id="c_campus"></select></div>
-        <div class="field"><label>类别（专业）</label><select id="c_cat"></select></div>
-        <div class="field"><label>课程名</label><input id="c_name" placeholder="如 日语中级班N4"></div>
-        <div class="field"><label>讲师</label><input id="c_teacher"></div>
-        <div class="field"><label>专业（大学院填，如经营/情报）</label><input id="c_major" placeholder="学部/语言可留空"></div>
-        <div class="field"><label>课程属性</label><select id="c_ctype">
-          <option value="">（无）</option><option>共通课</option><option>专业课</option><option>大课</option></select></div>
-        <div class="field" style="grid-column:1/-1"><label>周几（可多选，如每周二+周四）</label>
-          <div id="c_wd" style="display:flex;gap:6px;flex-wrap:wrap"></div></div>
-        <div class="field"><label>授课方式</label><select id="c_mode"><option>线下</option><option>线上</option></select></div>
-        <div class="field"><label>开始时间</label><select id="c_st"></select></div>
-        <div class="field"><label>结束时间</label><select id="c_et"></select></div>
-        <div class="field"><label>开课日</label><input type="date" id="c_sd"></div>
-        <div class="field"><label>结课日</label><input type="date" id="c_ed"></div>
-        <div class="field"><label>回数</label><input type="number" id="c_sess" min="1"></div>
-        <div class="field"><label>预估人数</label><input type="number" id="c_est" min="1" placeholder="用于安排教室"></div>
-      </div>
-      <div class="field" style="margin-top:10px"><label>腾讯会议链接（线上课/直播填）</label><input id="c_link" style="width:100%"></div>
-      <div style="margin-top:12px"><button id="c_save">保存课程</button>
-        <span class="muted" style="font-size:12px;margin-left:8px">课程不绑教室，只到校区+人数；教室由管理员按容量安排。</span></div>
+      <div class="tip">课程只在管理端「课程安排」里建；建好后，排课这边马上就能排教室。这里不再新建、导入课程。</div>
+      <div style="margin-top:10px"><button class="ghost" id="dlAll">⬇ 下载当前全部课程</button></div>
     </div>
 
     <!-- 教室占用录入 -->
@@ -100,7 +68,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="common.js?v=20261021"></script>
+<script src="common.js?v=20261022"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], BOOKINGS=[], CODEREC=null, PARSED=[], EXISTING=[];
 
@@ -127,10 +95,6 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
 
 async function boot(){
   el('r_entry').value=schedEntryName();
-  fillSelect(el('c_campus'), CAMPUSES);
-  fillSelect(el('c_cat'), CATEGORIES);
-  renderWeekdayToggle();
-  fillSelect(el('c_st'), SLOTS); fillSelect(el('c_et'), SLOTS);
   fillSelect(el('r_campus'), CAMPUSES);
   fillSelect(el('r_st'), SLOTS); fillSelect(el('r_et'), SLOTS);
   el('r_date').value = todayStr();
@@ -138,8 +102,7 @@ async function boot(){
   ROOMS    = await sbGet('sched_rooms','select=*&active=eq.true&order=campus,sort');
   ACCOUNTS = await sbGet('sched_meeting_accounts','select=*&active=eq.true');
   BOOKINGS = await sbGet('sched_bookings','select=*');
-  { const cs = await sbGet('sched_courses','select=id,skip_dates'); window.SKIPMAP={}; cs.forEach(c=>{ if(c.skip_dates) window.SKIPMAP[c.id]=new Set(c.skip_dates.split(',').map(x=>x.trim())); }); }
-  EXISTING = await sbGet('sched_courses','select=id,name,campus,teacher,weekdays,start_time,end_time,start_date,end_date');
+  { const cs = await sbGet('sched_course_v','select=id,skip_dates'); window.SKIPMAP={}; cs.forEach(c=>{ if(c.skip_dates) window.SKIPMAP[c.id]=new Set(c.skip_dates.split(',').map(x=>x.trim())); }); }
 
   el('r_campus').onchange = fillRooms; el('r_kind').onchange = fillRooms; fillRooms();
   renderRoomWeekdayToggle();
@@ -147,11 +110,8 @@ async function boot(){
   el('r_um').onchange = refreshRoomAcc;
   ['r_room','r_date','r_sd','r_ed','r_st','r_et'].forEach(id=>el(id).onchange=()=>{ checkRoomConflict(); refreshRoomAcc(); });
 
-  el('c_save').onclick = saveCourse;
   el('r_save').onclick = saveRoom;
   el('m_load').onclick = loadMine;
-  el('xlsxParse').onclick = parseXlsx;
-  el('pasteParse').onclick = parsePaste;
   el('dlAll').onclick = downloadAll;
 }
 function onRecChange(){
@@ -192,131 +152,10 @@ function refreshRoomAcc(){
   }
 }
 
-/* ===== Excel 批量导入 ===== */
-function normTime(t){ // "18-21" / "18:00-21:00" -> ["18:00","21:00"]
-  if(!t) return [null,null];
-  const parts = String(t).replace(/：/g,':').replace(/\s/g,'').split(/[-~—]/);
-  const fix = x => { if(!x) return null; if(x.indexOf(':')<0) x=x+':00';
-    const [h,m]=x.split(':'); return String(h).padStart(2,'0')+':'+String(m||'00').padStart(2,'0'); };
-  return [fix(parts[0]), fix(parts[1])];
-}
-function normDate(v){ // Excel 日期/字符串 -> YYYY-MM-DD
-  if(!v) return null;
-  if(v instanceof Date) return v.toISOString().slice(0,10);
-  const s=String(v).trim().replace(/\//g,'-');
-  const m=s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if(m) return m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');
-  return null;
-}
-function rowToRec(r){
-  const campus=String(r['校区']||'').trim();
-  const [st,et]=normTime(r['上课时间']);
-  let mode=String(r['授课方式']||'').trim();
-  if(!mode) mode = campus.indexOf('线上')>=0 ? '线上' : '线下';
-  return {
-    campus, category:String(r['类别']||'').trim(), name:String(r['课程名']||'').trim(),
-    major:String(r['专业']||'').trim()||null, course_type:String(r['课程属性']||'').trim()||null,
-    teacher:String(r['讲师']||'').trim()||null,
-    weekdays: parseWeekdays(r['周几']).join(','),
-    start_time:st, end_time:et,
-    start_date:normDate(r['开课日']), end_date:normDate(r['结课日']),
-    term: termOf(normDate(r['开课日'])),
-    sessions: r['回数']!==''&&r['回数']!=null?Number(r['回数']):null,
-    est_students: r['预估人数']!==''&&r['预估人数']!=null?Number(r['预估人数']):null,
-    mode, meeting_link:String(r['腾讯会议链接']||'').trim()||null,
-    confirmed:true, note:null
-  };
-}
-function parseXlsx(){
-  const f = el('xlsxFile').files[0];
-  if(!f){ toast('请先选择文件', false); return; }
-  const reader = new FileReader();
-  reader.onload = e=>{
-    try{
-      const wb = XLSX.read(e.target.result, {type:'array', cellDates:true});
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
-      PARSED = rows.map(rowToRec);
-      renderPrev();
-    }catch(err){ toast('解析失败：'+err.message, false); }
-  };
-  reader.readAsArrayBuffer(f);
-}
-/* 粘贴解析：TSV，第一行须为表头 */
-function parsePaste(){
-  const txt=el('pasteBox').value.replace(/\r/g,'').trim();
-  if(!txt){ toast('请先粘贴内容', false); return; }
-  const lines=txt.split('\n').filter(l=>l.trim());
-  if(lines.length<2){ toast('至少需表头 + 1 行数据', false); return; }
-  const heads=lines[0].split('\t').map(s=>s.trim());
-  const known=['校区','类别','专业','课程属性','课程名','讲师','周几','上课时间','开课日','结课日','回数','预估人数','授课方式','腾讯会议链接'];
-  if(!heads.some(h=>known.includes(h))){ toast('第一行未识别到表头，请连表头一起复制', false); return; }
-  PARSED = lines.slice(1).map(line=>{
-    const cells=line.split('\t'); const o={};
-    heads.forEach((h,i)=>o[h]=(cells[i]||'').trim());
-    return rowToRec(o);
-  });
-  renderPrev();
-}
-function rowErr(r){
-  const e=[];
-  if(!r.name) e.push('缺课程名');
-  if(!CATEGORIES.includes(r.category)) e.push('类别不在允许范围');
-  if(!r.weekdays) e.push('周几无法识别');
-  if(!r.start_time||!r.end_time) e.push('时间无法识别');
-  else if(r.end_time<=r.start_time) e.push('结束早于开始');
-  return e;
-}
-/* 查重：在已有课程里找“大部分内容相同”的（同校区+同周几+同时段+同起止日），名称可不同 */
-function findDup(r){
-  return EXISTING.find(x=> x.campus===r.campus && (x.weekdays||'')===(r.weekdays||'') &&
-    x.start_time===r.start_time && x.end_time===r.end_time &&
-    x.start_date===r.start_date && x.end_date===r.end_date);
-}
-function renderPrev(){
-  if(!PARSED.length){ el('xlsxPrev').innerHTML='<span class="muted">未读到数据行</span>'; return; }
-  let ok=0, bad=0, dup=0;
-  let h='<table><thead><tr><th>#</th><th>覆盖?</th><th>校区</th><th>类别</th><th>专业</th><th>课程名</th><th>讲师</th><th>周几</th><th>时段</th><th>起止</th><th>方式</th><th>校验</th></tr></thead><tbody>';
-  PARSED.forEach((r,i)=>{
-    const errs=rowErr(r); if(errs.length) bad++; else ok++;
-    const d = errs.length?null:findDup(r); if(d) dup++;
-    r.__dup = d? d.id : null;
-    h+=`<tr${errs.length?' style="background:#fff5f5"':(d?' style="background:#fffdf0"':'')}><td>${i+1}</td>`+
-      `<td>${d?`<input type="checkbox" data-ov="${i}" checked> <small class="muted">覆盖「${esc(d.name)}」</small>`:''}</td>`+
-      `<td>${esc(r.campus)}</td><td>${esc(r.category)}</td><td>${esc(r.major||'')}</td>`+
-      `<td>${esc(r.name)}</td><td>${esc(r.teacher||'')}</td><td>${r.weekdays?weekdaysLabel(r.weekdays):'?'}</td>`+
-      `<td>${r.start_time||'?'}-${r.end_time||'?'}</td><td>${r.start_date||''}~${r.end_date||''}</td><td>${esc(r.mode)}</td>`+
-      `<td>${errs.length?'<span class="badge b-err">'+errs.join('；')+'</span>':(d?'<span class="badge b-warn">疑似已存在</span>':'<span class="badge b-ok">新</span>')}</td></tr>`;
-  });
-  h+='</tbody></table>';
-  h+=`<div style="margin-top:10px"><b>${ok}</b> 行可导入`+(dup?`（其中 <b style="color:#8a6d00">${dup}</b> 行疑似已存在，勾选=覆盖，取消=作为新课导入）`:'')+`，<b style="color:#d93025">${bad}</b> 行有问题。`+
-     `<button id="xlsxImport" style="margin-left:10px"${ok?'':' disabled'}>确认导入 ${ok} 行</button></div>`;
-  el('xlsxPrev').innerHTML=h;
-  el('xlsxImport').onclick = doImport;
-}
-async function doImport(){
-  const btn=el('xlsxImport'); btn.disabled=true; btn.textContent='导入中…';
-  const ovMap={}; document.querySelectorAll('[data-ov]').forEach(cb=>ovMap[cb.dataset.ov]=cb.checked);
-  const toInsert=[], toUpdate=[];
-  PARSED.forEach((r,i)=>{
-    if(rowErr(r).length) return;
-    const rec=Object.assign({},r); delete rec.__dup;
-    if(r.__dup && ovMap[i]!==false){ toUpdate.push({id:r.__dup, rec}); }
-    else toInsert.push(rec);
-  });
-  try{
-    if(toInsert.length) await sbInsert('sched_courses', toInsert);
-    for(const u of toUpdate) await sbUpdate('sched_courses', u.id, u.rec);
-    toast('导入完成：新增 '+toInsert.length+'，覆盖 '+toUpdate.length);
-    el('xlsxPrev').innerHTML='<span class="badge b-ok">已处理（新增 '+toInsert.length+'，覆盖 '+toUpdate.length+'）。可到课表或管理后台查看。</span>';
-    PARSED=[]; el('xlsxFile').value=''; el('pasteBox').value='';
-    EXISTING = await sbGet('sched_courses','select=id,name,campus,teacher,weekdays,start_time,end_time,start_date,end_date');
-  }catch(e){ toast('导入失败：'+e.message, false); btn.disabled=false; btn.textContent='重试导入'; }
-}
 /* 批量下载当前全部课程为 Excel（导入模板格式） */
 async function downloadAll(){
   try{
-    const all = await sbGet('sched_courses','select=*&order=term,category,start_time');
+    const all = await sbGet('sched_course_v','select=*&order=term,category,start_time');
     const rows = all.map(c=>({
       '校区':c.campus||'','类别':c.category||'','专业':c.major||'','课程属性':c.course_type||'',
       '课程名':c.name||'','讲师':c.teacher||'','周几':weekdaysLabel(c.weekdays),
@@ -338,44 +177,7 @@ function fillRooms(){
   if(typeof refreshRoomAcc==='function') refreshRoomAcc();
 }
 
-/* 保存课程 */
-/* 周几多选切换 */
-function renderWeekdayToggle(){
-  const box=el('c_wd'); box.innerHTML='';
-  for(let d=1; d<=7; d++){
-    const b=document.createElement('button');
-    b.type='button'; b.className='ghost sm'; b.textContent=WEEKDAYS[d]; b.dataset.d=d;
-    b.onclick=()=>{ const on=b.dataset.on==='1'; b.dataset.on=on?'':'1';
-      b.style.background=on?'#fff':'var(--blue)'; b.style.color=on?'var(--ink)':'#fff'; };
-    box.appendChild(b);
-  }
-}
-function getSelectedWeekdays(){
-  return [...el('c_wd').querySelectorAll('button[data-on="1"]')].map(b=>b.dataset.d).join(',');
-}
 
-async function saveCourse(){
-  const rec = {
-    campus: el('c_campus').value,
-    category: el('c_cat').value, name: el('c_name').value.trim(),
-    major: el('c_major').value.trim()||null, course_type: el('c_ctype').value||null,
-    teacher: el('c_teacher').value.trim(), weekdays: getSelectedWeekdays(),
-    start_time: el('c_st').value, end_time: el('c_et').value,
-    start_date: el('c_sd').value||null, end_date: el('c_ed').value||null,
-    term: termOf(el('c_sd').value),
-    sessions: el('c_sess').value?Number(el('c_sess').value):null,
-    est_students: el('c_est').value?Number(el('c_est').value):null,
-    mode: el('c_mode').value, meeting_link: el('c_link').value.trim()||null,
-    confirmed: true, note:null
-  };
-  if(!rec.name){ toast('请填课程名', false); return; }
-  if(!rec.weekdays){ toast('请至少选择一个上课日', false); return; }
-  if(rec.end_time <= rec.start_time){ toast('结束时间需晚于开始', false); return; }
-  try{ await sbInsert('sched_courses', rec); toast('课程已保存');
-    ['c_name','c_teacher','c_major','c_sess','c_est','c_link'].forEach(id=>el(id).value='');
-    renderWeekdayToggle();
-  }catch(e){ toast(e.message, false); }
-}
 
 /* 占用冲突提示 + 就近空档 */
 function checkRoomConflict(){

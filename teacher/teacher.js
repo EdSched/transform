@@ -36,7 +36,7 @@ async function vipLoadRooms(campus, date, start, end, excludeSchedId) {
   if (!rooms.length) return { rooms: [], mineRoomId: null };
   const ids = rooms.map(r => r.id).join(',');
   const wd = vipWeekday(date);
-  const bks = await sb(`/rest/v1/sched_bookings?room_id=in.(${ids})&status=neq.rejected&or=(booking_date.eq.${date},recurrence.eq.weekly)&select=id,room_id,course_id,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status,title,kind,user_name`);
+  const bks = await sb(`/rest/v1/sched_bookings?room_id=in.(${ids})&status=neq.rejected&or=(booking_date.eq.${date},recurrence.eq.weekly)&select=id,room_id,course_id,course_ref,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status,title,kind,user_name`);
   const mine = excludeSchedId ? (bks || []).find(x => String(x.id) === String(excludeSchedId)) : null;
   const overlap = (aS, aE, bS, bE) => aS < bE && bS < aE;
   const onDate = x => {
@@ -50,10 +50,11 @@ async function vipLoadRooms(campus, date, start, end, excludeSchedId) {
   };
   let hits = (bks || []).filter(x => !(mine && String(x.id) === String(mine.id)) && onDate(x) && overlap(start, end, x.start_time, x.end_time));
   // 周循环课程：休讲日不占教室
+  hits.forEach(b=>{ if(b.course_ref!=null) b.course_id=b.course_ref; });   // 课程占用以 course_ref（= 管理端课程 id）为准
   const cids = [...new Set(hits.filter(x => x.recurrence === 'weekly' && x.course_id).map(x => x.course_id))];
   if (cids.length) {
     try {
-      const cs = await sb(`/rest/v1/sched_courses?id=in.(${cids.join(',')})&select=id,skip_dates`);
+      const cs = await sb(`/rest/v1/courses?id=in.(${cids.map(i => '"' + i + '"').join(',')})&select=id,skip_dates`);
       const skip = new Set((cs || []).filter(c => c.skip_dates && c.skip_dates.split(',').map(s => s.trim()).includes(date)).map(c => String(c.id)));
       hits = hits.filter(x => !(x.recurrence === 'weekly' && skip.has(String(x.course_id))));
     } catch (_) {}
@@ -103,10 +104,11 @@ async function vipNearby(roomIds, date, s, e, excludeId) {
   const out = { sameDay: [], nearDates: [] };
   if (!roomIds.length) return out;
   const d0 = vipAddDays(date, -5), d1 = vipAddDays(date, 5);
-  const bks = (await sb(`/rest/v1/sched_bookings?room_id=in.(${roomIds.join(',')})&status=neq.rejected&or=(recurrence.eq.weekly,and(booking_date.gte.${d0},booking_date.lte.${d1}))&select=id,room_id,course_id,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status`)) || [];
+  const bks = (await sb(`/rest/v1/sched_bookings?room_id=in.(${roomIds.join(',')})&status=neq.rejected&or=(recurrence.eq.weekly,and(booking_date.gte.${d0},booking_date.lte.${d1}))&select=id,room_id,course_id,course_ref,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status`)) || [];
+  bks.forEach(b=>{ if(b.course_ref!=null) b.course_id=b.course_ref; });
   const cids = [...new Set(bks.filter(x => x.recurrence === 'weekly' && x.course_id).map(x => x.course_id))];
   const skip = {};
-  if (cids.length) { try { (await sb(`/rest/v1/sched_courses?id=in.(${cids.join(',')})&select=id,skip_dates`) || []).forEach(c => { skip[String(c.id)] = new Set(String(c.skip_dates || '').split(',').map(t => t.trim()).filter(Boolean)); }); } catch (_) {} }
+  if (cids.length) { try { (await sb(`/rest/v1/courses?id=in.(${cids.map(i => '"' + i + '"').join(',')})&select=id,skip_dates`) || []).forEach(c => { skip[String(c.id)] = new Set(String(c.skip_dates || '').split(',').map(t => t.trim()).filter(Boolean)); }); } catch (_) {} }
   const onDate = (x, d) => {
     if (x.recurrence === 'weekly') { const w = Number(x.weekday); if ((w === 0 ? 7 : w) !== vipWeekday(d)) return false; if (x.start_date && d < x.start_date) return false; if (x.end_date && d > x.end_date) return false; return true; }
     return x.booking_date === d;

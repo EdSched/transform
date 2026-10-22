@@ -91,7 +91,7 @@
   </div>
 </div>
 
-<script src="common.js?v=20261021"></script>
+<script src="common.js?v=20261022"></script>
 <script>
 let ROOMS=[], BOOKINGS=[], CUR=null;
 const MIN_ADVANCE=2;
@@ -106,7 +106,7 @@ async function boot(){
   const i=SLOTS.indexOf('18:00'); if(i>0){ el('st').value='18:00'; el('et').value='21:00'; }
   ROOMS    = await sbGet('sched_rooms','select=*&active=eq.true&order=campus,sort');
   BOOKINGS = await sbGet('sched_bookings','select=*');
-  { const cs = await sbGet('sched_courses','select=id,skip_dates'); window.SKIPMAP={}; cs.forEach(c=>{ if(c.skip_dates) window.SKIPMAP[c.id]=new Set(c.skip_dates.split(',').map(x=>x.trim())); }); }
+  { const cs = await sbGet('sched_course_v','select=id,skip_dates'); window.SKIPMAP={}; cs.forEach(c=>{ if(c.skip_dates) window.SKIPMAP[c.id]=new Set(c.skip_dates.split(',').map(x=>x.trim())); }); }
   el('find').onclick = find;
   el('date').onchange = ()=>{ checkAdvance(); renderGrid(); };
   el('campus').onchange = renderGrid;
