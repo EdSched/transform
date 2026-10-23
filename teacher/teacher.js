@@ -342,12 +342,14 @@ async function vipRoomRetryDo(id) {
   try { res = await vrpSubmit('vrt', b, b.slot_date, tp[0], tp[1], b.vip_content, campus); }
   catch (e) { alert('教室预约失败：' + vipSchedErr(e)); if (btn) btn.disabled = false; return; }
   try {
-    const patch = { vip_room: res.roomName, sched_booking_id: res.schedId, slot_time_range: tp[0] + '–' + tp[1], messages: vipSysMsg(b, vipTimeConfirmMsg(b, tp)) };
+    const patch = { vip_room: res.roomName, sched_booking_id: res.schedId, slot_time_range: tp[0] + '–' + tp[1] };
+    patch.messages = vipSysMsg(b, vipTimeConfirmMsg(b, tp), 'room_changed', { by: '老师重新预约，待总务批准' }, Object.assign({}, b, patch));
     await bkPatch(id, patch); Object.assign(b, patch);
     await vipLoadSchedInfo().catch(() => {});
     vipRerender();
     if (res.urgent || res.other) vipShowReqMsg('vipRetryModal', vipReqMsg(b, b.slot_date, tp[0], tp[1], campus, res), res);
-    else { document.getElementById('vipRetryModal')?.remove(); alert('已提交，等待管理员确认'); }
+    else document.getElementById('vipRetryModal')?.remove();
+    vipNoticeModal(b, 'room_changed', { by: '老师重新预约，' + vipNoticeApproval(b, {}) }, '已提交，等待管理员确认');
   } catch (e) {
     if (res.createdNow) await vipSchedRelease({ sched_booking_id: res.schedId });
     alert('保存失败：' + e.message); if (btn) btn.disabled = false;
@@ -2011,7 +2013,7 @@ async function saveVipSessionRecord(bookingId) {
     Object.assign(b, { vip_content: content, vip_offplan_reason: offplanReason || null, vip_session_notes: notes, vip_student_status: studentStatus || null, vip_hours_used: newHours, vip_homework: homework, vip_homework_questions: vipHwEditQ, vip_homework_note: vipHwEditNote || null, vip_homework_feedback: hwFeedback, vip_homework_feedback_file_url: hwFeedbackFileUrl, student_confirmed: false, status: 'completed' });
     document.getElementById('vipRecordModal').remove();
     renderTab();
-    alert('上课记录已保存，课时已扣除。建议点击「生成确认链接文案」发给学生确认。');
+    vipNoticeModal(b, 'done', {}, '上课记录已保存，课时已扣除。建议点击「生成确认链接文案」发给学生确认。');
   } catch (e) { alert('保存失败：' + e.message); }
 }
 
@@ -2120,11 +2122,10 @@ async function saveVipReschedule(bookingId) {
     // 生成系统留言通知学生
     const d = new Date(date + 'T12:00:00');
     const dow = DAYS_CN[d.getDay()];
-    const sysMsg = {
-      from: 'system',
-      text: `【时间调整通知】老师已将您的VIP课程调整为：${date}（${dow}）${timeRange}。调整原因：${reason}。如有疑问请留言联系老师。`,
-      ts: Date.now()
-    };
+    const nbAfter = Object.assign({}, b, { slot_date: date, slot_time_range: timeRange });
+    const sysMsg = vipNoticeMsg(nbAfter,
+      `【时间调整通知】老师已将您的VIP课程调整为：${date}（${dow}）${timeRange}。调整原因：${reason}。如有疑问请留言联系老师。`,
+      'changed', { from: vipNoticeDesc(b), to: vipNoticeDesc(nbAfter), reason });
     const newMessages = [...(b.messages || []), sysMsg];
     await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', {
       slot_date: date, slot_time_range: timeRange,
@@ -2134,7 +2135,7 @@ async function saveVipReschedule(bookingId) {
     Object.assign(b, { slot_date: date, slot_time_range: timeRange, reschedule_reason: reason, reschedule_by: teacherName, messages: newMessages });
     document.getElementById('vipRescheduleModal').remove();
     renderMySchedule(document.getElementById('mainContent'));
-    alert('时间已调整，已自动发送通知给学生。');
+    vipNoticeModal(b, 'changed', { from: sysMsg.x.from, to: sysMsg.x.to, reason }, '时间已调整，已自动发送通知给学生。');
   } catch (e) { alert('保存失败：' + e.message); }
 }
 
@@ -2152,10 +2153,10 @@ function openVipMessages(bookingId) {
     <div style="background:var(--surface);border-radius:6px;padding:20px;max-width:380px;width:100%;max-height:80vh;display:flex;flex-direction:column">
       <div style="font-size:13px;font-weight:600;margin-bottom:10px">与 ${b.name} 的留言</div>
       <div id="vip_teacher_messages_list" style="flex:1;overflow-y:auto;margin-bottom:10px;max-height:300px">
-        ${messages.length ? messages.map(m => `
+        ${vipNoticeMerged(b).length ? vipNoticeMerged(b).map(m => `
           <div style="font-size:12px;margin-bottom:8px;${m.from==='teacher'?'text-align:right':''}">
             <span style="display:inline-block;max-width:80%;background:${m.from==='teacher'?'var(--accent)':'var(--bg)'};color:${m.from==='teacher'?'#fff':'inherit'};border-radius:8px;padding:6px 11px;text-align:left">
-              <div style="font-size:9px;opacity:.7;margin-bottom:2px">${m.from==='teacher'?'我':b.name}</div>
+              <div style="font-size:9px;opacity:.7;margin-bottom:2px">${m.from==='teacher'?'我':m.from==='system'?'系统通知':b.name}${vipNoticeCopyBtn(b, m)}</div>
               ${m.text}
             </span>
           </div>`).join('') : '<div style="font-size:11px;color:var(--text-3)">暂无留言</div>'}
@@ -2164,7 +2165,7 @@ function openVipMessages(bookingId) {
         <input type="text" id="vip_teacher_message_input" placeholder="回复留言…" style="flex:1;font-size:12px">
         <button class="btn btn-primary btn-sm" onclick="sendVipTeacherMessage('${bookingId}')">发送</button>
       </div>
-      <button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="document.getElementById('vipMessagesModal').remove()">关闭</button>
+      <div style="display:flex;gap:8px;margin-top:10px">${vipNoticeLogBtn(b)}<button class="btn btn-outline btn-sm" onclick="document.getElementById('vipMessagesModal').remove()">关闭</button></div>
     </div>`;
   document.body.appendChild(modal);
 }
@@ -2236,7 +2237,7 @@ async function vipBkPatchSafe(id, patch) {
     return await bkPatch(id, p2);
   }
 }
-function vipSysMsg(b, text) { return [...(b.messages || []), { from: 'system', text, ts: Date.now() }]; }
+function vipSysMsg(b, text, ev, x, snapB) { return [...(b.messages || []), ev ? vipNoticeMsg(snapB || b, text, ev, x) : { from: 'system', text, ts: Date.now() }]; }
 function vipRerender() { if (typeof renderTab === 'function') renderTab(); }
 
 // 取消（老师主动 / 同意学生的取消申请）
@@ -2267,7 +2268,7 @@ async function vipCancelDo(id, fromReq) {
   if (!reason) { alert('请填写取消原因'); return; }
   const now = new Date().toISOString();
   const patch = { status: 'cancelled', cancel_reason: reason, cancelled_by: teacherName, cancelled_at: now, sched_booking_id: null,
-    messages: vipSysMsg(b, `【取消通知】老师已取消 ${b.slot_date} ${b.slot_time_range || ''} 的VIP课程。原因：${reason}`) };
+    messages: vipSysMsg(b, `【取消通知】老师已取消 ${b.slot_date} ${b.slot_time_range || ''} 的VIP课程。原因：${reason}`, 'cancelled', { by: '老师取消', reason }) };
   const cr = vipReqHandled(b, 'accepted');
   if (cr && fromReq) patch.change_request = cr;
   try {
@@ -2279,7 +2280,7 @@ async function vipCancelDo(id, fromReq) {
     Object.assign(b, patch);
     document.getElementById('vipCancelModal')?.remove();
     vipRerender();
-    alert('已取消，学生端会显示取消原因');
+    vipNoticeModal(b, 'cancelled', { by: '老师取消', reason }, '已取消，学生端会显示取消原因');
   } catch (e) { alert('取消失败：' + e.message); }
 }
 
@@ -2375,6 +2376,7 @@ async function vmdSave(id) {
     if (off && pick) { sres = await vrpSubmit('vmd', nb, date, st, en, b.vip_content, vipCampusOf(loc)); schedId = sres.schedId; createdNow = sres.createdNow; }
   } catch (e) { msg.textContent = '教室预约失败，未保存：' + vipSchedErr(e); btn.disabled = false; btn.textContent = '保存修改'; return; }
   const roomName = sres ? sres.roomName : '';
+  const descBefore = vipNoticeDesc(b);
   const releaseOld = (!off || !pick) && b.sched_booking_id;
   const range = `${st}–${en}`;
   const dow = DAYS_CN[new Date(date + 'T12:00:00').getDay()];
@@ -2383,8 +2385,9 @@ async function vmdSave(id) {
     vip_room: off ? roomName : '', vip_meeting_url: online ? meeting : '',
     sched_booking_id: (off && pick) ? schedId : null,
     reschedule_reason: reason, reschedule_by: teacherName,
-    messages: vipSysMsg(b, `【预约修改通知】老师已将您的VIP课程改为：${date}（${dow}）${range} · ${locationLong(loc) || '线上'}${off && roomName ? ' · 教室 ' + roomName : ''}。原因：${reason}`),
   };
+  const descAfter = vipNoticeDesc(Object.assign({}, b, { slot_date: date, slot_time_range: range, location: loc }), off ? roomName : '');
+  patch.messages = vipSysMsg(b, `【预约修改通知】老师已将您的VIP课程改为：${date}（${dow}）${range} · ${locationLong(loc) || '线上'}${off && roomName ? ' · 教室 ' + roomName : ''}。原因：${reason}`, 'changed', { from: descBefore, to: descAfter, reason }, Object.assign({}, b, patch));
   const cr = vipReqHandled(b, 'accepted');
   if (fromReq && cr) patch.change_request = cr;
   try {
@@ -2393,9 +2396,10 @@ async function vmdSave(id) {
     Object.assign(b, patch);
     await vipLoadSchedInfo().catch(() => {});
     vipRerender();
-    if (sres && (sres.urgent || sres.other)) { vipShowReqMsg('vipModifyModal', vipReqMsg(b, date, st, en, vipCampusOf(loc), sres), sres); return; }
+    const nx = { from: descBefore, to: descAfter, reason };
+    if (sres && (sres.urgent || sres.other)) { vipShowReqMsg('vipModifyModal', vipReqMsg(b, date, st, en, vipCampusOf(loc), sres), sres); vipNoticeModal(b, 'changed', nx, '已修改，并已通知学生'); return; }
     document.getElementById('vipModifyModal')?.remove();
-    alert('已修改，并已通知学生');
+    vipNoticeModal(b, 'changed', nx, '已修改，并已通知学生');
   } catch (e) {
     if (createdNow) await vipSchedRelease({ sched_booking_id: schedId });
     msg.textContent = '保存失败：' + e.message; btn.disabled = false; btn.textContent = '保存修改';
@@ -2448,6 +2452,7 @@ function renderMyVipRow(b, s) {
       ${!hasRecord && ['pending', 'confirmed'].includes(b.status) ? `<button class="btn btn-outline btn-sm" onclick="openVipModify('${b.id}')">✎ 修改预约</button>
       <button class="btn btn-sm" style="background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit" onclick="openVipCancel('${b.id}')">✕ 取消预约</button>` : ''}
       <button class="btn btn-outline btn-sm" onclick="openVipMessages('${b.id}')">💬 留言</button>
+      ${typeof vipNoticeLogBtn === 'function' ? vipNoticeLogBtn(b) : ''}
     </div>
   </div>`;
 }
@@ -2468,12 +2473,13 @@ async function vipSelfReject(id) {
   if (reason == null) return;
   if (!reason.trim()) { alert('请填写退回原因'); return; }
   const patch = { status: 'cancelled', cancel_reason: reason.trim(), cancelled_by: teacherName + '（老师退回）', cancelled_at: new Date().toISOString(), sched_booking_id: null,
-    messages: vipSysMsg(b, `【退回通知】老师退回了您自主填写的预约（${b.slot_date} ${b.slot_time_range || ''}）。原因：${reason.trim()}`) };
+    messages: vipSysMsg(b, `【退回通知】老师退回了您自主填写的预约（${b.slot_date} ${b.slot_time_range || ''}）。原因：${reason.trim()}`, 'cancelled', { by: '老师退回', reason: reason.trim() }) };
   try {
     await vipBkPatchSafe(id, patch);
     await vipSchedRelease(b);
     Object.assign(b, patch);
     vipRerender();
+    vipNoticeModal(b, 'cancelled', { by: '老师退回', reason: reason.trim() }, '已退回');
   } catch (e) { alert('退回失败：' + e.message); }
 }
 
@@ -2607,15 +2613,18 @@ async function confirmVipWithDetails(bookingId) {
   try {
     // 老师确认 → 这节课成立（学生发起的预约不再需要教务审批）；线下课的教室在上面已经约好；时间以老师填的为准
     const tr = vcmTime[0] + '–' + vcmTime[1];
-    const patch = { status: 'confirmed', vip_meeting_url: meeting, vip_content: lockedContent, slot_time_range: tr, messages: vipSysMsg(b, vipTimeConfirmMsg(b, vcmTime)) };
-    if (b.self_booked) { patch.teacher_ok = true; patch.messages = [...patch.messages, { from: 'system', text: `【预约确认】老师已确认 ${b.slot_date} ${tr} 的VIP课，这节课已成立${roomName ? '，教室 ' + roomName : ''}，请按时上课。`, ts: Date.now() }]; }
+    const snapB = Object.assign({}, b, { slot_time_range: tr, vip_room: isOffline ? roomName : b.vip_room });
+    const patch = { status: 'confirmed', vip_meeting_url: meeting, vip_content: lockedContent, slot_time_range: tr, messages: vipSysMsg(b, vipTimeConfirmMsg(b, vcmTime), 'teacher_ok', { room: isOffline ? roomName : '', approval: isOffline ? 'pending' : '' }, snapB) };
+    if (b.self_booked) { patch.teacher_ok = true; patch.messages = [...patch.messages, { from: 'system', ev: 'skip', text: `【预约确认】老师已确认 ${b.slot_date} ${tr} 的VIP课，这节课已成立${roomName ? '，教室 ' + roomName : ''}，请按时上课。`, ts: Date.now() }]; }
     if (isOffline) { patch.vip_room = roomName; patch.sched_booking_id = schedId; }
     await bkPatch(bookingId, patch);
     Object.assign(b, patch);
     await vipLoadSchedInfo().catch(() => {});
     renderTab();
-    if (sres && (sres.urgent || sres.other)) { vipShowReqMsg('vipConfirmModal', vipReqMsg(b, b.slot_date, vcmTime[0], vcmTime[1], vipCampusOf(b.location), sres), sres); return; }
+    const tx = { room: isOffline ? roomName : '', approval: isOffline ? 'pending' : '' };
+    if (sres && (sres.urgent || sres.other)) { vipShowReqMsg('vipConfirmModal', vipReqMsg(b, b.slot_date, vcmTime[0], vcmTime[1], vipCampusOf(b.location), sres), sres); vipNoticeModal(b, 'teacher_ok', tx, '已确认，这节课成立了'); return; }
     document.getElementById('vipConfirmModal').remove();
+    vipNoticeModal(b, 'teacher_ok', tx, '已确认，这节课成立了');
   } catch(e) {
     if (createdNow) await vipSchedRelease({ sched_booking_id: schedId });   // 预约没确认成功，释放刚占的教室
     alert('确认失败：' + e.message);

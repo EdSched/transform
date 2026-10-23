@@ -163,7 +163,7 @@ function vnbShowText(b, sres, pseudo) {
   const reqMsg = sres && (sres.urgent || sres.other) ? vipReqMsg(pseudo, b.slot_date, b.slot_time_range.split('–')[0], b.slot_time_range.split('–')[1], vipCampusOf(b.location), sres) : '';
   m.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:480px;width:100%;max-height:92vh;overflow-y:auto">
     <div style="font-size:14px;font-weight:600;margin-bottom:10px">已提交，等学生确认</div>
-    ${box('vnb_t_stu', '给学生的提醒文字（复制发给学生）', vipStudentRemindText(b, sres ? sres.roomName : ''))}
+    ${box('vnb_t_stu', '通知文字（可以发到群里留记录，也可以发给学生）', vipStudentRemindText(b, sres ? sres.roomName : ''))}
     ${reqMsg ? box('vnb_t_grp', sres.other ? '大教室申请 · 请复制发到群里' : '紧急预约 · 请复制发到群里', reqMsg, sres.urgent ? '必须把这段发到群里，否则总务会驳回。' : '把这段发到群里，周知总务安排大教室。') : ''}
     <button class="btn btn-primary btn-sm" onclick="document.getElementById('vnbModal').remove()">完成</button></div>`;
   document.body.appendChild(m);
@@ -176,7 +176,7 @@ function vnbRemindOpen(id) {
   m.id = 'vnbModal';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   m.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:460px;width:100%">
-    <div style="font-size:13px;font-weight:600;margin-bottom:8px">给学生的提醒文字</div>
+    <div style="font-size:13px;font-weight:600;margin-bottom:8px">通知文字（可以发到群里留记录）</div>
     <textarea id="vnb_t_stu" rows="4" readonly style="width:100%;font-size:12px">${vnbEsc(vipStudentRemindText(b))}</textarea>
     <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary btn-sm" onclick="vnbCopy('vnb_t_stu')">复制</button><button class="btn btn-outline btn-sm" onclick="document.getElementById('vnbModal').remove()">关闭</button></div></div>`;
   document.body.appendChild(m);
