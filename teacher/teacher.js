@@ -1083,7 +1083,7 @@ function renderSlotManagement(mc) {
   cachedTeacherBookings.forEach(b => { slotBookedCount[b.slot_id] = (slotBookedCount[b.slot_id] || 0) + 1; });
   mc.innerHTML = `
   <div class="page-section">
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px"><div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">时间槽设定</div>${typeof vbfBtnHtml === 'function' ? vbfBtnHtml('margin-left:auto') : ''}</div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px"><div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">时间槽设定</div></div>
     <div class="swipe-row" style="grid-template-columns:280px 1fr">
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:14px">
         <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:10px;letter-spacing:.06em;text-transform:uppercase">新增时间槽</div>
@@ -1218,7 +1218,8 @@ function renderSlotManagement(mc) {
       </div>
     </div>
   </div>
-  <div class="swipe-hint">← 左右滑动切换：新增表单 / 时间槽列表 →</div>`;
+  <div class="swipe-hint">← 左右滑动切换：新增表单 / 时间槽列表 →</div>
+  ${typeof vbfBtnHtml === 'function' && vbfBtnHtml() ? `<div style="margin-top:18px">${vbfBtnHtml()}</div>` : ''}`;
   const today = new Date().toISOString().slice(0, 10);
   const el = document.getElementById('ts_date'); if (el) el.value = today;
   const rs = document.getElementById('ts_repeat_start'); if (rs) rs.value = today;
@@ -2331,7 +2332,7 @@ function renderMyVipRow(b, s) {
         ${b.student_content ? `<div style="font-size:11px;color:var(--text-2);background:var(--bg);border-radius:2px;padding:6px 8px;margin-top:6px;white-space:pre-wrap">📄 ${b.student_content}</div>` : ''}
         ${b.student_file_url ? `<a href="${b.student_file_url}" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-top:4px">📎 学生上传文件下载</a>` : ''}
         ${hasRecord ? `<div style="font-size:11px;color:var(--text-2);margin-top:3px">📝 ${b.vip_session_notes}</div>` : ''}
-        ${b.student_confirmed ? `<div style="font-size:11px;color:var(--ok);margin-top:3px">✓ ${b.student_confirmed_by ? '已由教务（' + escapeHtmlVcm(b.student_confirmed_by) + '）代学生确认' : '学生已确认'}${b.student_rating ? '・评价：' + b.student_rating : ''}</div>` : (b.teacher_backfill && hasRecord ? `<div style="font-size:11px;font-weight:600;color:#5a3a9a;margin-top:3px">教务已确认，请把链接发给学生确认</div>` : hasRecord ? `<div style="font-size:11px;color:#856404;margin-top:3px">⏳ 等待学生确认</div>` : '')}
+        ${b.student_confirmed ? `<div style="font-size:11px;color:var(--ok);margin-top:3px">✓ ${b.student_confirmed_by ? '已由教务（' + escapeHtmlVcm(b.student_confirmed_by) + '）代学生确认' : '学生已确认'}${b.student_rating ? '・评价：' + b.student_rating : ''}</div>` : (b.teacher_backfill && hasRecord ? `<div style="font-size:11px;font-weight:600;color:var(--accent);margin-top:3px">教务已确认，请把链接发给学生确认</div>` : hasRecord ? `<div style="font-size:11px;color:#856404;margin-top:3px">⏳ 等待学生确认</div>` : '')}
         ${b.reschedule_reason ? `<div style="font-size:10px;color:var(--text-3);margin-top:3px">🔄 已调整・原因：${b.reschedule_reason}</div>` : ''}
       </div>
     </div>

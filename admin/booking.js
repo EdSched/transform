@@ -138,6 +138,7 @@ function bkBfReviewHtml(){
       <div style="font-size:12px;line-height:1.7">
         <div><span style="font-size:10px;color:#5a3a9a;background:#ede7f8;border:1px solid #c8bfe8;border-radius:2px;padding:0 5px">老师补录 · 已上课</span> <strong>${bkSelfEsc(b.name)}</strong> · 老师：${bkSelfEsc(b.assigned_teacher||'—')}</div>
         <div>${bkSelfEsc(b.slot_date)} ${bkSelfEsc(b.slot_time_range||'')} · ${bkBfModeText(b)}</div>
+        ${typeof bfMonthNoticeHtml==='function'?bfMonthNoticeHtml(b.slot_date):''}
         <div>课时：<strong>${hrs}</strong>　学生剩余：${r.has?`<strong style="color:${over?'var(--danger)':'var(--accent)'}">${r.total-r.used}</strong>（已用 ${r.used} / 总 ${r.total}）${over?' <span style="color:var(--danger)">超过剩余课时</span>':''}`:'<span style="color:var(--text-3)">（找不到学生档案）</span>'}</div>
         <div>上课内容：${bkSelfEsc(b.vip_content||'—')}${b.vip_offplan_reason?` <span style="color:var(--danger)">（未按规划：${bkSelfEsc(b.vip_offplan_reason)}）</span>`:''}</div>
         <div style="white-space:pre-wrap;color:var(--text-2)">${bkSelfEsc(b.vip_session_notes||'')}</div>

@@ -1906,6 +1906,15 @@ function studentInCourse(student, course, myMembers) {
 // ── 作业：统一的时间概念（学生端 / 老师端 / 管理端共用）──
 // 日本时间的今天 'YYYY-MM-DD'
 function jstToday() { return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Tokyo' }).slice(0, 10); }
+// VIP 补录的月末 / 跨月提示（老师补录弹窗和管理端审核共用；只提示，不挡提交）。classDate = 上课日期 'YYYY-MM-DD'，可为空
+function bfMonthNoticeHtml(classDate) {
+  const today = jstToday(), y = +today.slice(0, 4), m = +today.slice(5, 7), d = +today.slice(8, 10);
+  const lastDay = new Date(y, m, 0).getDate(), out = [];
+  const box = (bg, bd, c, t) => `<div style="font-size:11px;line-height:1.6;background:${bg};border:1px solid ${bd};color:${c};border-radius:3px;padding:6px 10px;margin-top:6px">${t}</div>`;
+  if (classDate && String(classDate).slice(0, 7) < today.slice(0, 7)) out.push(box('var(--danger-bg,#fceaea)', '#e8b4b4', 'var(--danger,#b03030)', '这是上个月的课，确认会在本月完成，将按本月（次月）工资计算。'));
+  if (d > lastDay - 7) out.push(box('var(--warn-bg,#fdf2dc)', '#e8d29a', 'var(--warn,#b87820)', '月底提交的补录，需要教务审批和学生确认，可能拖到下个月才完成。确认如果在下个月完成，这节课按次月工资计算。'));
+  return out.join('');
+}
 // 本周 = 日本时间的周一到周日：weekRange(date?) → {start, end, label:'9/22（一）– 9/28（日）'}
 // ── 作业发布日：单回 hw_release_date 优先；否则 = 上课日期 − 课程 hw_release_days 天（空/0 = 上课当天，且视为「没设定」）──
 function hwHasReleaseRule(session, course) {
