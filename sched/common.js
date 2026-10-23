@@ -407,25 +407,36 @@ function termKindTag(term){
   if(/^\d{4}年\d{1,2}月期$/.test(term||'')) return '按季度';
   return '';
 }
-/* 生成排课提醒文案列表（每个未排完的期一条）。提前半个月进入提醒窗 */
+/* 生成排课提醒文案列表（每个期一条，按每门课自己的开课日判断；没有开课日才用期名推算）。
+   已开课 / ≤15 天 → 紧急；16-45 天 → 普通；>45 天不提醒；两者都认不出来 → 提醒补开课日期。
+   文案里的天数取该期里最早开课那门；courses 只含这次符合提醒条件的课 */
 function schedulingReminders(courses, bookings){
   const byTerm = unscheduledByTerm(courses, bookings);
   const today = todayStr();
   const out = [];
   Object.keys(byTerm).forEach(term=>{
-    const n = byTerm[term].length; if(!n) return;
-    const start = termStartDate(term);
-    let msg, urgent=false;
-    if(start){
+    const termStart = termStartDate(term);
+    const due=[], noDate=[];
+    byTerm[term].forEach(c=>{
+      const start = c.start_date || termStart;
+      if(!start){ noDate.push(c); return; }
       const days = diffDays(today, start);   // 距开课天数（负=已开课）
+      if(days<=45) due.push({c, days});
+    });
+    if(!due.length && !noDate.length) return;
+    let msg='', urgent=false;
+    if(due.length){
+      const n = due.length;
+      const days = Math.min.apply(null, due.map(x=>x.days));
       if(days<0){ msg = `【${term}】已开课，仍有 ${n} 门课未排教室，请尽快补排！`; urgent=true; }
       else if(days<=15){ msg = `【${term}】距开课仅 ${days} 天，还有 ${n} 门课未排教室，请于开课前完成！`; urgent=true; }
-      else if(days<=45){ msg = `【${term}】距开课约 ${days} 天，有 ${n} 门课未排教室，请及时安排。`; }
-      else return; // 太早，不提醒
+      else msg = `【${term}】距开课约 ${days} 天，有 ${n} 门课未排教室，请及时安排。`;
+      if(noDate.length) msg += ` 另有 ${noDate.length} 门课缺开课日期，请补上。`;
     } else {
-      msg = `【${term}】有 ${n} 门课未排教室。`;
+      msg = `【${term}】有 ${noDate.length} 门课缺开课日期，请补上。`;
     }
-    out.push({term, n, msg, urgent, courses:byTerm[term]});
+    const list = due.map(x=>x.c).concat(noDate);
+    out.push({term, n:list.length, msg, urgent, courses:list});
   });
   return out;
 }
