@@ -1372,11 +1372,6 @@ function vbfExit() {
   vbfSt = vbfFresh();
   vmRecMount(true);
 }
-function vbfTimeOpts(ph, cur) {
-  let h = `<option value="">${ph}</option>`;
-  for (let m = 7 * 60; m <= 23 * 60; m += 30) { const t = String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); h += `<option value="${t}"${t === cur ? ' selected' : ''}>${t}</option>`; }
-  return h;
-}
 const vbfMin = t => { const m = String(t || '').match(/(\d{1,2}):(\d{2})/); return m ? (+m[1]) * 60 + (+m[2]) : null; };
 const vmRecMine = b => b.assigned_teacher ? b.assigned_teacher === teacherName : (cachedTeacherSlots || []).some(sl => sl.id === b.slot_id);
 // opts: { edit: 要修改的补录 id, first: 刚进入（月份回到本月 / 带入原日期所在月） }
@@ -1405,8 +1400,8 @@ function vbfPanelMount(box, opts) {
       <div class="form-group"><label class="form-label">学生</label><div id="vbf_stu"></div></div>
       <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:10px">
         <div class="form-group"><label class="form-label">日期（只能选今天或以前）</label><input type="date" id="vbf_date" max="${today}" value="${vbfEsc(old ? old.slot_date : '')}" oninput="vbfCheck()"></div>
-        <div class="form-group"><label class="form-label">开始</label><select id="vbf_st" onchange="vbfCheck()">${vbfTimeOpts('开始', rg[0])}</select></div>
-        <div class="form-group"><label class="form-label">结束</label><select id="vbf_en" onchange="vbfCheck()">${vbfTimeOpts('结束', rg[1])}</select></div>
+        <div class="form-group"><label class="form-label">开始</label>${timeInputHtml('vbf_st', rg[0], '如 14:00', { onch: 'vbfCheck()', role: 'start', mate: 'vbf_en', btn: 'vbf_ok' })}</div>
+        <div class="form-group"><label class="form-label">结束</label>${timeInputHtml('vbf_en', rg[1], '如 16:00', { onch: 'vbfCheck()', role: 'end', mate: 'vbf_st', btn: 'vbf_ok' })}</div>
       </div>
       <div class="form-group"><label class="form-label">上课方式</label><div id="vbf_mode" style="display:flex;gap:6px"></div>
         <div id="vbf_room_wrap" style="display:none;margin-top:8px">
@@ -1427,6 +1422,7 @@ function vbfPanelMount(box, opts) {
     </div>
   </div>`;
   vbfRenderStu(); vbfRenderMode(); vbfRenderNote(); vbfRenderMine();
+  timePairCheck('vbf_st', 'vbf_en', 'vbf_ok');
   vbfRenderRec(old);
   vbfRightMount();
 }
@@ -1457,7 +1453,7 @@ function vbfSummary(list) {
 function vbfClearStu() { vbfSt.stu = null; vbfRenderStu(); vbfRenderRec(null); vbfRightMount(); vbfRenderNote(); }
 // 左边填的时段和这节已有的课重叠（同一天、自己的课、没取消、不是正在修改的这条）
 function vbfOverlaps(b) {
-  const d = (document.getElementById('vbf_date') || {}).value, st = (document.getElementById('vbf_st') || {}).value, en = (document.getElementById('vbf_en') || {}).value;
+  const d = (document.getElementById('vbf_date') || {}).value, st = readTimeInput('vbf_st'), en = readTimeInput('vbf_en');
   if (!d || !st || !en || b.slot_date !== d || b.status === 'cancelled' || b.id === vbfSt.editId || !vmRecMine(b)) return false;
   const r = vipTimeParts(b.slot_time_range); if (!r) return false;
   return vbfMin(r[0]) < vbfMin(en) && vbfMin(st) < vbfMin(r[1]);
@@ -1537,13 +1533,13 @@ async function vbfRenderRec(old) {
 }
 
 async function vbfSubmit() {
-  const s = vbfSt.stu, date = document.getElementById('vbf_date').value, st = document.getElementById('vbf_st').value, en = document.getElementById('vbf_en').value;
+  const s = vbfSt.stu, date = document.getElementById('vbf_date').value, st = readTimeInput('vbf_st'), en = readTimeInput('vbf_en');
   if (!vbfSt.editId && !vbfAllowed()) { alert('没有开通「VIP 上课补录」，请联系教务'); return; }
   if (!s) { alert('请选择学生'); return; }
   if (!date) { alert('请选择日期'); return; }
   if (date > jstToday()) { alert('补录的是已经上完的课，日期只能选今天或以前'); return; }
-  if (!st || !en) { alert('请选择开始和结束时间'); return; }
-  if (vbfMin(en) <= vbfMin(st)) { alert('结束时间要晚于开始时间'); return; }
+  if (!st || !en) { alert('请填写开始和结束时间（如 14:00）'); return; }
+  if (vbfMin(en) <= vbfMin(st)) { alert('下课时间要晚于上课时间'); return; }
   if (!vbfSt.mode) { alert('请选择上课方式（线下 / 线上）'); return; }
   const rec = vipRecCollect();
   if (!rec) return;

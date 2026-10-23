@@ -223,10 +223,10 @@ async function vrgApply(id, roomId, t) {
   const b = cachedTeacherBookings.find(x => x.id === id), g = k => document.getElementById(k);
   if (!b || !g('vmd_start')) return;
   const mins = x => { const [h, m] = x.split(':').map(Number); return h * 60 + m; };
-  const tp = vipTimeParts(g('vmd_start').value + '-' + g('vmd_end').value) || vipTimeParts(b.slot_time_range) || ['', ''];
+  const tp = vipTimeParts(readTimeInput('vmd_start') + '-' + readTimeInput('vmd_end')) || vipTimeParts(b.slot_time_range) || ['', ''];
   const dur = tp[0] && tp[1] && mins(tp[1]) > mins(tp[0]) ? mins(tp[1]) - mins(tp[0]) : 60;
   const e = Math.min(mins(t) + dur, 22 * 60);
-  g('vmd_start').value = t; g('vmd_end').value = String(Math.floor(e / 60)).padStart(2, '0') + ':' + String(e % 60).padStart(2, '0');
+  setTimeInput('vmd_start', t); setTimeInput('vmd_end', String(Math.floor(e / 60)).padStart(2, '0') + ':' + String(e % 60).padStart(2, '0'));
   await vmdLoadRooms(id);
   const vp = VRP.vmd;
   if (vp && !vp.loading && vp.free && vp.free.some(r => String(r.id) === String(roomId))) { vp.pick = String(roomId); vrpRender('vmd'); }
@@ -316,7 +316,7 @@ function vipRoomRetry(id) {
   m.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:420px;width:100%;max-height:88vh;overflow-y:auto">
     <div style="font-size:13px;font-weight:600;margin-bottom:4px">重新预约教室 · ${escapeHtmlVcm(b.name)}</div>
     <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">${b.slot_date} ${b.slot_time_range || ''} · ${locationLong(b.location)}</div>
-    <div class="form-group"><label class="form-label">上课时间 / 下课时间（必填）</label>${vipTimeSelHtml('vrt', `vrtTimeChanged('${id}')`)}</div>
+    <div class="form-group"><label class="form-label">上课时间 / 下课时间（必填）</label>${vipTimeSelHtml('vrt', `vrtTimeChanged('${id}')`, 'vrt_ok')}</div>
     <div id="vrt_room_box"><div style="font-size:11px;color:var(--text-3)">请先填写上课和下课时间</div></div>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button id="vrt_ok" onclick="vipRoomRetryDo('${id}')" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:9px;font-size:12px;cursor:pointer;font-family:inherit">提交教室预约</button>
@@ -2318,7 +2318,7 @@ function openVipModify(id, fromReq) {
     <div class="form-group"><label class="form-label">日期</label><input type="date" id="vmd_date" value="${b.slot_date}" onchange="vmdLoadRooms('${id}')"></div>
     <div class="form-group"><label class="form-label">时间段</label>
       <div style="display:grid;grid-template-columns:1fr 16px 1fr;gap:4px;align-items:center">
-        <input type="time" id="vmd_start" value="${tp[0]}" onchange="vmdLoadRooms('${id}')"><div style="text-align:center;font-size:11px;color:var(--text-3)">—</div><input type="time" id="vmd_end" value="${tp[1]}" onchange="vmdLoadRooms('${id}')">
+        ${timeInputHtml('vmd_start', tp[0], '如 14:00', { onch: `vmdLoadRooms('${id}')`, role: 'start', mate: 'vmd_end', btn: 'vmd_save' })}<div style="text-align:center;font-size:11px;color:var(--text-3)">—</div>${timeInputHtml('vmd_end', tp[1], '如 16:00', { onch: `vmdLoadRooms('${id}')`, role: 'end', mate: 'vmd_start', btn: 'vmd_save' })}
       </div></div>
     <div class="form-group"><label class="form-label">上课方式与校区</label>
       <select id="vmd_loc" onchange="vmdLoadRooms('${id}')">${VIP_LOC_OPTS.map(([k, l]) => `<option value="${k}" ${(b.location || 'online') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
@@ -2334,6 +2334,7 @@ function openVipModify(id, fromReq) {
     </div>
   </div>`;
   document.body.appendChild(m);
+  timePairCheck('vmd_start', 'vmd_end', 'vmd_save');
   vmdLoadRooms(id);
 }
 async function vmdLoadRooms(id) {
@@ -2343,22 +2344,22 @@ async function vmdLoadRooms(id) {
   document.getElementById('vmd_room_wrap').style.display = off ? '' : 'none';
   document.getElementById('vmd_meet_wrap').style.display = online ? '' : 'none';
   if (!off) return;
-  const date = document.getElementById('vmd_date').value, st = document.getElementById('vmd_start').value, en = document.getElementById('vmd_end').value;
+  const date = document.getElementById('vmd_date').value, st = readTimeInput('vmd_start'), en = readTimeInput('vmd_end');
   if (!date || !st || !en || st >= en) { VRP.vmd = null; document.getElementById('vmd_room_box').innerHTML = '<div style="font-size:11px;color:var(--text-3)">请先填好日期和时间</div>'; return; }
   vrgRender('vmd_grid', vipCampusOf(loc), date, { start: st, end: en, exclude: b.sched_booking_id, onCell: (rid, t) => vrgApply(id, rid, t) });
   return vrpLoad('vmd', {
     box: 'vmd_room_box', campus: vipCampusOf(loc), date, start: st, end: en, exclude: b.sched_booking_id,
     prefer: vipCampusOf(loc) === vipCampusOf(b.location) ? (b.vip_room || '') : '', canNear: true,
-    onNear: (d, a, c) => { document.getElementById('vmd_date').value = d; document.getElementById('vmd_start').value = a; document.getElementById('vmd_end').value = c; vmdLoadRooms(id); },
+    onNear: (d, a, c) => { document.getElementById('vmd_date').value = d; setTimeInput('vmd_start', a); setTimeInput('vmd_end', c); vmdLoadRooms(id); },
   });
 }
 async function vmdSave(id) {
   const b = cachedTeacherBookings.find(x => x.id === id); if (!b) return;
   const g = k => (document.getElementById(k) || {}).value || '';
-  const date = g('vmd_date'), st = g('vmd_start'), en = g('vmd_end'), loc = g('vmd_loc'), reason = g('vmd_reason').trim(), meeting = g('vmd_meeting').trim();
+  const date = g('vmd_date'), st = readTimeInput('vmd_start'), en = readTimeInput('vmd_end'), loc = g('vmd_loc'), reason = g('vmd_reason').trim(), meeting = g('vmd_meeting').trim();
   const msg = document.getElementById('vmd_msg');
-  if (!date || !st || !en) { msg.textContent = '请填写完整的日期和时间'; return; }
-  if (st >= en) { msg.textContent = '结束时间要晚于开始时间'; return; }
+  if (!date || !st || !en) { msg.textContent = '请填写完整的日期和时间（时间如 14:00）'; return; }
+  if (st >= en) { msg.textContent = '下课时间要晚于上课时间'; return; }
   if (!reason) { msg.textContent = '请填写调整原因'; return; }
   const off = vipIsOfflineLoc(loc), online = loc === 'online' || loc.startsWith('both');
   const vp = off ? VRP.vmd : null;
@@ -2481,18 +2482,16 @@ let vcmPlanItems = [];
 let vcmPickIdx = null;
 let vcmDoneNames = new Set();
 let vcmTime = null;
-// 上课 / 下课时间：两个必填下拉（30 分钟一格，默认空），教室、紧急预约文字、保存都用这两个时间
-const VIP_TIME_OPTS = (function () { const a = []; for (let m = 6 * 60; m <= 23 * 60; m += 30) a.push(String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0')); return a; })();
-function vipTimeSelHtml(key, onch) {
-  const opts = '<option value="">请选择</option>' + VIP_TIME_OPTS.map(t => `<option value="${t}">${t}</option>`).join('');
-  return `<div style="display:grid;grid-template-columns:1fr 16px 1fr;gap:4px;align-items:center">
-      <select id="${key}_ts" onchange="${onch}">${opts.replace('请选择', '上课时间')}</select><div style="text-align:center;font-size:11px;color:var(--text-3)">—</div><select id="${key}_te" onchange="${onch}">${opts.replace('请选择', '下课时间')}</select>
+// 上课 / 下课时间：两个必填的手动输入框（如 14:00，不强制 30 分钟一格，默认空），教室、紧急预约文字、保存都用这两个时间
+function vipTimeSelHtml(key, onch, btnId) {
+  return `<div style="display:grid;grid-template-columns:1fr 16px 1fr;gap:4px;align-items:start">
+      ${timeInputHtml(key + '_ts', '', '上课 如 14:00', { onch, role: 'start', mate: key + '_te', btn: btnId })}<div style="text-align:center;font-size:11px;color:var(--text-3);padding-top:8px">—</div>${timeInputHtml(key + '_te', '', '下课 如 16:00', { onch, role: 'end', mate: key + '_ts', btn: btnId })}
     </div>
     <div style="font-size:10px;color:var(--text-3);margin-top:4px">请填写这次实际的上课、下课时间，教室按这个时间预约</div>`;
 }
-// 读两个下拉：返回 [上课, 下课]；没填返回 null；下课不晚于上课返回 'bad'
+// 读两个时间框：返回 [上课, 下课]；没填 / 格式不对返回 null；下课不晚于上课返回 'bad'
 function vipReadTimeSel(key) {
-  const a = document.getElementById(key + '_ts')?.value, z = document.getElementById(key + '_te')?.value;
+  const a = readTimeInput(key + '_ts'), z = readTimeInput(key + '_te');
   if (!a || !z) return null;
   return z > a ? [a, z] : 'bad';
 }
@@ -2547,7 +2546,7 @@ async function openVipConfirmModal(bookingId) {
       </div>
       <div class="form-group">
         <label class="form-label">上课时间 / 下课时间（必填）</label>
-        ${vipTimeSelHtml('vcm', `vcmTimeChanged('${bookingId}')`)}
+        ${vipTimeSelHtml('vcm', `vcmTimeChanged('${bookingId}')`, 'vcm_ok')}
       </div>
       ${isOffline ? `
       <div class="form-group">
@@ -2561,7 +2560,7 @@ async function openVipConfirmModal(bookingId) {
         <input id="vcm_meeting" value="${b.vip_meeting_url||''}" placeholder="https://meeting.tencent.com/…">
       </div>` : ''}
       <div style="display:flex;gap:8px;margin-top:6px">
-        <button onclick="confirmVipWithDetails('${bookingId}')" style="flex:1;background:var(--ok);color:#fff;border:none;border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">✓ 确认并锁定内容</button>
+        <button id="vcm_ok" onclick="confirmVipWithDetails('${bookingId}')" style="flex:1;background:var(--ok);color:#fff;border:none;border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">✓ 确认并锁定内容</button>
         <button onclick="document.getElementById('vipConfirmModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:10px 14px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
       </div>
     </div>`;

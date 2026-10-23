@@ -1163,11 +1163,6 @@ function vipSelfPick(key, val) {
     el.style.borderColor = on ? 'var(--accent)' : 'var(--border)';
   });
 }
-function vipSelfTimeOpts(ph) {
-  let h = `<option value="">${ph}</option>`;
-  for (let m = 7 * 60; m <= 23 * 60; m += 30) { const t = String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); h += `<option value="${t}">${t}</option>`; }
-  return h;
-}
 function vipSelfFormHtml(noSlots) {
   const ts = vipStudent.vip_teachers || [];
   if (ts.length === 1) vipSelf.teacher = ts[0];
@@ -1183,7 +1178,7 @@ function vipSelfFormHtml(noSlots) {
     <input type="date" id="vipSelfDate" min="${today}" style="${sel}">
     ${lab('时间')}
     <div style="display:grid;grid-template-columns:1fr 16px 1fr;gap:4px;align-items:center">
-      <select id="vipSelfStart" style="${sel}">${vipSelfTimeOpts('开始')}</select><div style="text-align:center;font-size:11px;color:var(--text-muted)">—</div><select id="vipSelfEnd" style="${sel}">${vipSelfTimeOpts('结束')}</select>
+      ${timeInputHtml('vipSelfStart', '', '如 14:00', { style: sel, role: 'start', mate: 'vipSelfEnd', btn: 'vipSelfBtn' })}<div style="text-align:center;font-size:11px;color:var(--text-muted)">—</div>${timeInputHtml('vipSelfEnd', '', '如 16:00', { style: sel, role: 'end', mate: 'vipSelfStart', btn: 'vipSelfBtn' })}
     </div>
     ${lab('上课方式')}
     <div style="display:flex;flex-wrap:wrap;gap:6px">${VIP_SELF_LOCS.map(([k, l]) => vipSelfChipHtml('loc', k, l, vipSelf.loc === k)).join('')}</div>
@@ -1198,13 +1193,13 @@ function vipSelfFormHtml(noSlots) {
 }
 async function submitVipSelfBooking() {
   const g = id => (document.getElementById(id) || {}).value || '';
-  const date = g('vipSelfDate'), st = g('vipSelfStart'), en = g('vipSelfEnd');
+  const date = g('vipSelfDate'), st = readTimeInput('vipSelfStart'), en = readTimeInput('vipSelfEnd');
   const today = new Date().toISOString().slice(0, 10);
   if (!vipSelf.teacher) { alert('请选择指导老师'); return; }
   if (!date) { alert('请选择日期'); return; }
   if (date < today) { alert('日期不能早于今天'); return; }
-  if (!st || !en) { alert('请选择开始和结束时间'); return; }
-  if (st >= en) { alert('结束时间必须晚于开始时间'); return; }
+  if (!st || !en) { alert('请填写开始和结束时间（如 14:00）'); return; }
+  if (st >= en) { alert('下课时间要晚于上课时间'); return; }
   if (!vipSelf.loc) { alert('请选择上课方式'); return; }
   if (vipRemainHours() <= 0) { alert('您的VIP课时已用完，暂时不能预约。如需继续上课，请联系顾问老师续课'); return; }
   const btn = document.getElementById('vipSelfBtn'); if (btn) btn.disabled = true;

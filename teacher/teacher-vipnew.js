@@ -6,7 +6,6 @@
 // 依赖：teacher.js（vrpLoad、vrpSubmit、vrgRender、vipReqMsg、vipSchedRelease、vipLoadSchedInfo、vipTimeParts、vipIsUrgent、vipCampusOf、escapeHtmlVcm）、
 //       teacher-vip.js（teacherVipAssignedStudents）、shared/vip-booking.js（vipStudentRemindText）、shared/constants.js（chipFold、majorLabel）
 // ══════════════════════════════════
-const VNB_TIMES = (function () { const a = []; for (let m = 7 * 60; m <= 23 * 60; m += 30) a.push(String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0')); return a; })();
 const VNB_LOCS = [['offline_takadanobaba', '线下 · 高田马场'], ['offline_ichigaya', '线下 · 市谷'], ['online', '线上']];
 let vnbSt = null;   // { stuId, q, date, st, en, loc, note, busy }
 const vnbEsc = v => escapeHtmlVcm(v);
@@ -29,8 +28,8 @@ function vnbOpen() {
     <div class="form-group"><label class="form-label">学生</label><div id="vnb_stu"></div></div>
     <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:8px">
       <div class="form-group"><label class="form-label">日期</label><input type="date" id="vnb_date" min="${vnbToday()}" onchange="vnbSt.date=this.value;vnbRefresh()"></div>
-      <div class="form-group"><label class="form-label">开始</label><select id="vnb_st" onchange="vnbSt.st=this.value;vnbRefresh()">${vnbTimeOpts('开始')}</select></div>
-      <div class="form-group"><label class="form-label">结束</label><select id="vnb_en" onchange="vnbSt.en=this.value;vnbRefresh()">${vnbTimeOpts('结束')}</select></div>
+      <div class="form-group"><label class="form-label">开始</label>${timeInputHtml('vnb_st', '', '如 14:00', { onch: "vnbSt.st=parseTimeInput(this.value)||'';vnbRefresh()", role: 'start', mate: 'vnb_en', btn: 'vnb_ok' })}</div>
+      <div class="form-group"><label class="form-label">结束</label>${timeInputHtml('vnb_en', '', '如 16:00', { onch: "vnbSt.en=parseTimeInput(this.value)||'';vnbRefresh()", role: 'end', mate: 'vnb_st', btn: 'vnb_ok' })}</div>
     </div>
     <div class="form-group"><label class="form-label">上课方式</label><div id="vnb_loc" style="display:flex;gap:6px;flex-wrap:wrap"></div></div>
     <div class="form-group" id="vnb_room_wrap" style="display:none"><label class="form-label">教室（提交后进排课系统，待总务批准）</label>
@@ -46,7 +45,6 @@ function vnbOpen() {
   document.body.appendChild(m);
   vnbRenderStu(); vnbRenderLoc();
 }
-function vnbTimeOpts(ph) { return `<option value="">${ph}</option>` + VNB_TIMES.map(t => `<option value="${t}">${t}</option>`).join(''); }
 const vnbChip = (on, label, fn) => `<span onclick="${fn}" style="cursor:pointer;user-select:none;font-size:12px;border-radius:14px;padding:4px 14px;border:1px solid ${on ? 'var(--accent)' : 'var(--border)'};background:${on ? 'var(--accent)' : 'transparent'};color:${on ? '#fff' : 'var(--text-2)'}">${label}</span>`;
 function vnbRenderStu() {
   const box = document.getElementById('vnb_stu'); if (!box) return;
@@ -75,7 +73,7 @@ function vnbRefresh() {
 }
 function vnbSetWhen(d, a, c) {
   vnbSt.date = d; vnbSt.st = a; vnbSt.en = c;
-  document.getElementById('vnb_date').value = d; document.getElementById('vnb_st').value = a; document.getElementById('vnb_en').value = c;
+  document.getElementById('vnb_date').value = d; setTimeInput('vnb_st', a); setTimeInput('vnb_en', c);
 }
 // 点当天教室安排里的空格子：改成这个时间（保持时长）并选中那间教室
 async function vnbCell(roomId, t) {
@@ -94,8 +92,8 @@ async function vnbSubmit() {
   if (!s) return bad('请选择学生');
   if (!date) return bad('请选择日期');
   if (date < vnbToday()) return bad('日期不能早于今天');
-  if (!st || !en) return bad('请选择开始和结束时间');
-  if (vnbMin(en) <= vnbMin(st)) return bad('结束时间要晚于开始时间');
+  if (!st || !en) return bad('请填写开始和结束时间（如 14:00）');
+  if (vnbMin(en) <= vnbMin(st)) return bad('下课时间要晚于上课时间');
   if (!loc) return bad('请选择上课方式');
   const off = vnbIsOffline(loc), vp = off ? VRP.vnb : null;
   if (off && (!vp || vp.loading)) return bad('教室还在查询，请稍等');
