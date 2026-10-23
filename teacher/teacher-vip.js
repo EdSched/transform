@@ -97,7 +97,7 @@ function renderTeacherVipFrameworks(mc) {
   const _myPlanNames = new Set(teacherVipMyPlans.map(p => p.student_name));
   const assignedOnly = (teacherVipAssignedStudents || []).filter(s => !_myPlanNames.has(s.name));
   const hasAssigned = assignedOnly.length;
-  if (!hasFw && !hasPlans && !hasMine && !hasVipBk && !hasAssigned && !vbfRows.length) {
+  if (!hasFw && !hasPlans && !hasMine && !hasVipBk && !hasAssigned && !vbfRows.length && !vrmAllowed()) {
     mc.innerHTML = '<div class="empty">暂无需要处理的 VIP 事项<br><span style="font-size:11px">收到 VIP 预约、指导的 VIP 学生或课程框架后，会在这里出现</span></div>';
     return;
   }
@@ -157,6 +157,7 @@ function renderTeacherVipFrameworks(mc) {
   if (vmTab === 'students') body = mineBody;
   else if (vmTab === 'framework') body = fwSection;
   else if (vmTab === 'records') body = '<div id="vmRecBox"></div>';
+  else if (vmTab === 'room' && vrmAllowed()) body = '<div id="vrmBox"></div>';
   else body = (typeof renderTeacherVipBookingsBody === 'function') ? renderTeacherVipBookingsBody() : '';
 
   mc.innerHTML = `
@@ -170,10 +171,12 @@ function renderTeacherVipFrameworks(mc) {
       ${tab('students', '学生进度', (teacherVipMyPlans.length + assignedOnly.length) || 0)}
       ${tab('framework', 'VIP框架', fwCount)}
       ${tab('records', '上课记录', 0)}
+      ${vrmAllowed() ? tab('room', '教室预约', 0) : ''}
     </div>
     ${body}
   </div>`;
   if (vmTab === 'records') vmRecMount();
+  if (vmTab === 'room' && vrmAllowed() && typeof vrmMount === 'function') vrmMount();
 }
 
 // ── 上课记录：我的 VIP 学生 + 我上的课，和 admin「出席・作业 → VIP」同一个组件（shared/vip-lessons.js），只查看 ──
