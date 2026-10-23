@@ -1,14 +1,14 @@
 // ══════════════════════════════════
 // teacher-home.js — 老师端首页细节：昵称（名字旁）、顶部「管理模式 / 资源管理」按钮、首页快捷卡片
 // 快捷卡片存在 teachers.home_shortcuts（jsonb 数组，建字段 SQL：seed/teacher_home_shortcuts.sql）：
-//   {type:'tab',tab} / {type:'sub',tab,sub} / {type:'student',id,label} / {type:'course',id,label} / {type:'resource'} / {type:'action',id:'vip_backfill'}（直接打开某个操作的弹窗）
+//   {type:'tab',tab} / {type:'sub',tab,sub} / {type:'student',id,label} / {type:'course',id,label} / {type:'resource'} / {type:'action',id:'vip_backfill'}（跳到对应页面 / 打开某个操作的弹窗）
 //   一张都不留时存 [{type:'empty'}]（和「从来没设置过」区分：没设置过会显示默认的前 4 个标签）
 // 依赖：teacher.js（teacherData、teacherName、switchTab、curTab、cachedTeacher*、confirmedSessions）、teacher-students.js（smTab、smAllowedItems）
 // ══════════════════════════════════
 const HOME_MAX = 8;
 // 动作卡片：点了直接打开弹窗，不跳页面。ok() 跟对应入口的显示条件一致
 const HOME_ACTIONS = [
-  { id: 'vip_backfill', name: '补录 VIP 课', sub: '操作 · 弹出补录表单', ok: () => typeof vbfAllowed === 'function' && vbfAllowed(), run: () => vbfOpen() },
+  { id: 'vip_backfill', name: '补录 VIP 课', sub: '跳转 · VIP 管理 → 上课记录', ok: () => typeof vbfAllowed === 'function' && vbfAllowed(), run: () => vbfGo('') },
 ];
 let teacherTabList = [];        // buildTabs 设置：[{id,label}]
 let homeList = [];              // 老师自己的快捷卡片（已保存的）

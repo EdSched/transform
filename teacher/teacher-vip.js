@@ -12,7 +12,7 @@ let tspStudent = null;           // 关联学生（取课时上限）
 let tspUsedHours = 0;            // 已上课时（已完成预约合计）
 let tspDoneNames = new Set();    // 已上完的课名
 let vmTab = 'booking';           // VIP管理子tab：booking(预约) / students(学生进度) / framework(VIP框架) / records(上课记录)
-function setVmTab(t) { vmTab = t; renderTeacherVipFrameworks(document.getElementById('mainContent')); }
+function setVmTab(t) { vmTab = t; if (t !== 'records') vbfLeave(); renderTeacherVipFrameworks(document.getElementById('mainContent')); }
 let tvItems = [];                // 当前打开框架的条目（内存工作副本）
 let tvCurrentId = null;
 let tvOriginalItemIds = new Set();
@@ -178,23 +178,31 @@ function renderTeacherVipFrameworks(mc) {
 
 // ── 上课记录：我的 VIP 学生 + 我上的课，和 admin「出席・作业 → VIP」同一个组件（shared/vip-lessons.js），只查看 ──
 let vmRecStudents = [];
-async function vmRecMount() {
+async function vmRecMount(keep) {
   const box = document.getElementById('vmRecBox'); if (!box) return;
-  box.innerHTML = '<div class="loading">加载中…</div>';
-  try {
-    vmRecStudents = await sb(`/rest/v1/students?vip_teachers=cs.{"${teacherName}"}&or=(status.is.null,status.eq.active)&select=*&order=name.asc`, 'GET', null, { cache: 'no-store' });
-  } catch (e) { box.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
-  if (vmTab !== 'records' || !document.getElementById('vmRecBox')) return;   // 读的过程中切走了
+  if (!(keep && vmRecStudents.length)) {
+    box.innerHTML = '<div class="loading">加载中…</div>';
+    try {
+      vmRecStudents = await sb(`/rest/v1/students?vip_teachers=cs.{"${teacherName}"}&or=(status.is.null,status.eq.active)&select=*&order=name.asc`, 'GET', null, { cache: 'no-store' });
+    } catch (e) { box.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
+    if (vmTab !== 'records' || !document.getElementById('vmRecBox')) return;   // 读的过程中切走了
+  }
+  // 被退回 / 待确认的补录点「修改」跳过来：直接进入补录模式并带入原内容（唯一自动打开的情况）
+  if (vbfSt.pendingEdit) {
+    const id = vbfSt.pendingEdit; vbfSt.pendingEdit = '';
+    if (vbfRows.some(b => b.id === id)) { vbfPanelMount(box, { edit: id, first: true }); return; }
+  }
+  if (vbfSt.on) { vbfPanelMount(box, { first: !box.querySelector('.vbf-split') }); return; }
+  const sec0 = box.closest('.page-section'); if (sec0) sec0.style.maxWidth = '900px';
   box.innerHTML = '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">本月数字只算你上的课；剩余课时是学生的总剩余（包括别的老师上的）。待教务确认的补录不算课时。</div><div id="vmRecList"></div><div style="margin-top:14px">' + vbfBtnHtml() + '</div>';
-  const mine = b => b.assigned_teacher ? b.assigned_teacher === teacherName : (cachedTeacherSlots || []).some(sl => sl.id === b.slot_id);
   VL.loadedYm = '';   // 每次进来重新读，保存上课记录 / 补录之后看到的是最新的
   vlMount(document.getElementById('vmRecList'), {
     requireStudent: true,
     students: () => vmRecStudents,
-    bookingOk: mine,
+    bookingOk: vmRecMine,
     recordBtn: b => {
       if (b.status === 'cancelled') return '';
-      if (b.teacher_backfill && b.admin_review !== 'approved') return vbfRows.some(x => x.id === b.id) ? `<button class="btn btn-outline btn-sm" onclick="vbfOpen('${b.id}')">修改补录</button>` : '';
+      if (b.teacher_backfill && b.admin_review !== 'approved') return vbfRows.some(x => x.id === b.id) ? `<button class="btn btn-outline btn-sm" onclick="vbfGo('${b.id}')">修改补录</button>` : '';
       return `<button class="btn btn-outline btn-sm" onclick="vmRecOpen('${b.id}')">去上课记录</button>`;
     },
   });
@@ -1259,7 +1267,7 @@ function svAddPlanToPack(id) {
 // ══════════════════════════════════
 let vbfRows = [];            // 我的补录：待教务确认 / 已退回
 let vipBfDraft = null;       // 打开中的补录草稿（作业编辑器靠它认出 id）
-let vbfSt = null;            // 表单状态 {stu, mode, students, q, editId}
+let vbfSt = { on: false, stu: null, mode: '', q: '', editId: '', pendingEdit: '', flash: '', tok: '' };   // 补录模式状态（见 vbfFresh）
 const vbfEsc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const vbfMD = d => { const x = String(d || '').split('-'); return x.length === 3 ? (+x[1]) + '月' + (+x[2]) + '日' : (d || ''); };
 
@@ -1284,10 +1292,10 @@ async function vbfLoad() {
   });
 }
 async function vbfReload() { await vbfLoad(); renderTab(); }
-// 不显眼的文字链接：只放在「VIP 管理 → 上课记录」下方和「时间槽设定」底部
+// 不显眼的文字链接：只放在「VIP 管理 → 上课记录」下方；点了才进入补录模式
 function vbfBtnHtml(extra) {
   if (!vbfAllowed()) return '';
-  return `<a class="vbf-link" href="javascript:void(0)" onclick="vbfOpen()" style="${extra || ''}">补录已上完的课</a>`;
+  return `<a class="vbf-link" href="javascript:void(0)" onclick="vbfEnter()" style="${extra || ''}">补录已上完的课</a>`;
 }
 
 // ── 状态一行（首页 / VIP 管理共用）──
@@ -1312,8 +1320,8 @@ function vbfHomeCardHtml() {
 }
 function vbfActionsHtml(b) {
   const bt = (t, fn, c) => `<button onclick="${fn}" style="font-size:10px;background:${c ? c : 'none'};color:${c ? '#fff' : 'var(--text-2)'};border:1px solid ${c ? c : 'var(--border)'};border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit">${t}</button>`;
-  if (b.admin_review === 'rejected') return bt('修改后重新提交', `vbfOpen('${b.id}')`, 'var(--accent)') + bt('撤回', `vbfWithdraw('${b.id}')`);
-  if (b.admin_review === 'pending') return bt('修改', `vbfOpen('${b.id}')`) + bt('撤回', `vbfWithdraw('${b.id}')`);
+  if (b.admin_review === 'rejected') return bt('修改后重新提交', `vbfGo('${b.id}')`, 'var(--accent)') + bt('撤回', `vbfWithdraw('${b.id}')`);
+  if (b.admin_review === 'pending') return bt('修改', `vbfGo('${b.id}')`) + bt('撤回', `vbfWithdraw('${b.id}')`);
   if (!b.student_confirmed) return bt('生成确认文案', `openVipConfirmText('${b.id}')`, 'var(--accent)');
   return '';
 }
@@ -1337,60 +1345,153 @@ async function vbfWithdraw(id) {
   try {
     await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(id)}`, 'DELETE');
     vbfRows = vbfRows.filter(b => b.id !== id);
+    if (vbfSt.editId === id) vbfSt.editId = '';
     renderTab();
   } catch (e) { alert('撤回失败：' + e.message); }
 }
 
-// ── 补录表单 ──
+// ── 补录模式：「VIP 管理 → 上课记录」里点「补录已上完的课」才出现，左边填、右边对照已上完的课（不是弹窗）──
+function vbfFresh() { return { on: false, stu: null, mode: '', q: '', editId: '', pendingEdit: '', flash: '', tok: '' }; }
+// 从别处（首页卡片 / 预约页的补录卡片）跳到「VIP 管理 → 上课记录」；有 editId 时直接进入补录模式并带入原内容，没有就只是跳过去
+function vbfGo(editId) {
+  vbfSt = vbfFresh();
+  vbfSt.pendingEdit = editId || '';
+  vmTab = 'records';
+  if (curTab === 'vipframework') renderTab(); else switchTab('vipframework');
+}
+function vbfLeave() { vbfSt = vbfFresh(); }   // 切到别的页面再回来，不保留补录模式
+function vbfEnter() {
+  if (!vbfAllowed()) { alert('没有开通「VIP 上课补录」，请联系教务'); return; }
+  vbfSt = vbfFresh(); vbfSt.on = true;
+  vmRecMount(true);
+}
+function vbfExit() {
+  const n = document.getElementById('vip_notes');
+  if (n && n.value.trim() && !confirm('退出补录？已填的内容不会保存。')) return;
+  vbfSt = vbfFresh();
+  vmRecMount(true);
+}
 function vbfTimeOpts(ph, cur) {
   let h = `<option value="">${ph}</option>`;
   for (let m = 7 * 60; m <= 23 * 60; m += 30) { const t = String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); h += `<option value="${t}"${t === cur ? ' selected' : ''}>${t}</option>`; }
   return h;
 }
-async function vbfOpen(editId) {
-  if (!editId && !vbfAllowed()) { alert('没有开通「VIP 上课补录」，请联系教务'); return; }
-  const old = editId ? vbfRows.find(b => b.id === editId) : null;
-  if (editId && !old) return;
-  vbfSt = { stu: null, mode: old ? (old.location === 'online' ? 'online' : 'offline') : '', students: [], q: '', editId: old ? old.id : '' };
-  try {
-    vbfSt.students = await sb(`/rest/v1/students?vip_teachers=cs.{"${teacherName}"}&or=(status.is.null,status.eq.active)&select=id,name,major,is_vip_course,vip_hours_total,vip_hours_used&order=name.asc`);
-  } catch (e) { alert('读取学生失败：' + e.message); return; }
-  if (old) vbfSt.stu = vbfSt.students.find(s => s.id === old.student_id) || { id: old.student_id, name: old.name, major: old.major, vip_hours_total: 0, vip_hours_used: 0 };
+const vbfMin = t => { const m = String(t || '').match(/(\d{1,2}):(\d{2})/); return m ? (+m[1]) * 60 + (+m[2]) : null; };
+const vmRecMine = b => b.assigned_teacher ? b.assigned_teacher === teacherName : (cachedTeacherSlots || []).some(sl => sl.id === b.slot_id);
+// opts: { edit: 要修改的补录 id, first: 刚进入（月份回到本月 / 带入原日期所在月） }
+function vbfPanelMount(box, opts) {
+  opts = opts || {};
+  const old = opts.edit ? vbfRows.find(b => b.id === opts.edit) : null;
+  vbfSt.on = true; vbfSt.editId = old ? old.id : '';
+  const sec = box.closest('.page-section'); if (sec) sec.style.maxWidth = 'none';   // 补录模式：整页放宽，左右两栏
+  if (old) {
+    vbfSt.stu = vmRecStudents.find(s => s.id === old.student_id) || { id: old.student_id, name: old.name, major: old.major, vip_hours_total: 0, vip_hours_used: 0 };
+    vbfSt.mode = old.location === 'online' ? 'online' : 'offline';
+  }
+  if (opts.first) VL.ym = old && old.slot_date ? old.slot_date.slice(0, 7) : vlCurYm();
   vipBfDraft = old ? { ...old, _bf: true } : { id: String(Date.now()), name: '', type: 'vip', _bf: true };
-  document.getElementById('vbfModal')?.remove();
   const today = jstToday(), rg = (old && vipTimeParts(old.slot_time_range)) || ['', ''];
-  const modal = document.createElement('div');
-  modal.id = 'vbfModal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  modal.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:460px;width:100%;max-height:90vh;overflow-y:auto">
-    <div style="font-size:13px;font-weight:600;margin-bottom:4px">${old ? '修改补录的 VIP 课' : '补录已上完的 VIP 课'}</div>
-    <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">课已经上完，一次填完提交；教务确认后才会扣学生课时，确认后再把链接发给学生确认。${old && old.admin_review === 'rejected' ? `<br><span style="color:var(--danger)">教务退回原因：${vbfEsc(old.admin_review_note || '—')}</span>` : ''}</div>
-    <div class="form-group"><label class="form-label">学生</label>
-      <div id="vbf_stu"></div></div>
-    <div class="form-group"><label class="form-label">日期（只能选今天或以前）</label><input type="date" id="vbf_date" max="${today}" value="${vbfEsc(old ? old.slot_date : '')}" oninput="vbfRenderNote()"></div>
-    <div class="form-group"><label class="form-label">开始 / 结束时间</label>
-      <div style="display:grid;grid-template-columns:1fr 16px 1fr;gap:4px;align-items:center">
-        <select id="vbf_st">${vbfTimeOpts('开始', rg[0])}</select><div style="text-align:center;font-size:11px;color:var(--text-3)">—</div><select id="vbf_en">${vbfTimeOpts('结束', rg[1])}</select>
-      </div></div>
-    <div class="form-group"><label class="form-label">上课方式</label><div id="vbf_mode" style="display:flex;gap:6px"></div>
-      <div id="vbf_room_wrap" style="display:none;margin-top:8px">
-        <input id="vbf_room" value="${vbfEsc(old ? old.backfill_room_note || '' : '')}" placeholder="教室 / 地点（例：VIP2、教务已约、学生家）" style="font-size:12px;width:100%">
-        <div style="font-size:10px;color:var(--text-3);margin-top:3px">教室已经事先约好，这里只是记录，不会占用或检查教室</div>
-      </div></div>
-    <div id="vbf_rec"></div>
-    <div id="vbf_note"></div>
-    <div style="display:flex;gap:8px;margin-top:14px">
-      <button id="vbf_ok" class="btn btn-primary btn-sm" onclick="vbfSubmit()">${old ? '重新提交' : '提交给教务确认'}</button>
-      <button class="btn btn-outline btn-sm" onclick="document.getElementById('vbfModal').remove()">取消</button>
-    </div></div>`;
-  document.body.appendChild(modal);
-  vbfRenderStu(); vbfRenderMode(); vbfRenderNote();
-  await vbfRenderRec(old);
+  const flash = vbfSt.flash; vbfSt.flash = '';
+  box.innerHTML = `
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+    <div style="font-size:13px;font-weight:600">${old ? '修改补录的课' : '补录已上完的课'}</div>
+    <div style="font-size:11px;color:var(--text-3)">课已经上完，一次填完提交；教务确认后才会扣学生课时，确认后再把链接发给学生确认。左边填，右边对照已有的课。</div>
+  </div>
+  ${flash ? `<div style="font-size:12px;color:var(--ok);background:var(--ok-bg);border:1px solid #b9dfcc;border-radius:3px;padding:7px 12px;margin-bottom:10px">${vbfEsc(flash)}</div>` : ''}
+  <div class="vbf-split">
+    <div class="vbf-left">
+      ${old && old.admin_review === 'rejected' ? `<div style="font-size:11px;color:var(--danger);margin-bottom:10px">教务退回原因：${vbfEsc(old.admin_review_note || '—')}</div>` : ''}
+      <div class="form-group"><label class="form-label">学生</label><div id="vbf_stu"></div></div>
+      <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:10px">
+        <div class="form-group"><label class="form-label">日期（只能选今天或以前）</label><input type="date" id="vbf_date" max="${today}" value="${vbfEsc(old ? old.slot_date : '')}" oninput="vbfCheck()"></div>
+        <div class="form-group"><label class="form-label">开始</label><select id="vbf_st" onchange="vbfCheck()">${vbfTimeOpts('开始', rg[0])}</select></div>
+        <div class="form-group"><label class="form-label">结束</label><select id="vbf_en" onchange="vbfCheck()">${vbfTimeOpts('结束', rg[1])}</select></div>
+      </div>
+      <div class="form-group"><label class="form-label">上课方式</label><div id="vbf_mode" style="display:flex;gap:6px"></div>
+        <div id="vbf_room_wrap" style="display:none;margin-top:8px">
+          <input id="vbf_room" value="${vbfEsc(old ? old.backfill_room_note || '' : '')}" placeholder="教室 / 地点（例：VIP2、教务已约、学生家）">
+          <div style="font-size:10px;color:var(--text-3);margin-top:3px">教室已经事先约好，这里只是记录，不会占用或检查教室</div>
+        </div></div>
+      <div id="vbf_rec"></div>
+      <div id="vbf_note"></div>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+        <button id="vbf_ok" class="btn btn-primary btn-sm" onclick="vbfSubmit()">${old ? '重新提交' : '提交补录'}</button>
+        <button class="btn btn-outline btn-sm" onclick="vbfClear()">清空</button>
+        <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="vbfExit()">退出补录</button>
+      </div>
+    </div>
+    <div class="vbf-right">
+      <div id="vbf_mine"></div>
+      <div id="vbf_cmp"></div>
+    </div>
+  </div>`;
+  vbfRenderStu(); vbfRenderMode(); vbfRenderNote(); vbfRenderMine();
+  vbfRenderRec(old);
+  vbfRightMount();
 }
+function vbfClear() { const box = document.getElementById('vmRecBox'); if (!box) return; vbfSt.editId = ''; vbfPanelMount(box, {}); }
+
+// ── 右栏：对照 ──
+// 选了学生 → 他本月的上课记录（按课次，只看自己上的课）；没选 → 自己所有 VIP 学生本月按学生汇总，点一个就在左边选中
+function vbfRightMount() {
+  const box = document.getElementById('vbf_cmp'); if (!box) return;
+  const stu = vbfSt.stu;
+  const d = (document.getElementById('vbf_date') || {}).value;
+  if (d) VL.ym = d.slice(0, 7);
+  vlMount(box, {
+    compact: true, view: stu ? 'lesson' : 'student', requireStudent: true,
+    students: () => stu ? [stu] : vmRecStudents,
+    bookingOk: vmRecMine,
+    summary: vbfSummary, onStudent: vbfPickStu, onDraw: vbfRenderNote, rowStyle: b => vbfOverlaps(b) ? 'background:var(--danger-bg);' : '',
+    recordBtn: b => (b.teacher_backfill && b.admin_review !== 'approved' && vbfRows.some(x => x.id === b.id)) ? `<button class="btn btn-outline btn-sm" onclick="vbfEdit('${b.id}')">修改补录</button>` : '',
+  });
+}
+function vbfSummary(list) {
+  const s = vbfSt.stu; if (!s) return '<div style="font-size:11px;color:var(--text-3)">本月各学生汇总（点一个学生，左边就选中他）</div>';
+  const done = list.filter(x => vlState(x.b) === 'done'), hrs = Math.round(done.reduce((a, x) => a + (Number(x.b.vip_hours_used) || 0), 0) * 100) / 100;
+  const rem = Math.round(((parseFloat(s.vip_hours_total) || 0) - (parseFloat(s.vip_hours_used) || 0)) * 100) / 100;
+  return `<div style="font-size:12px;margin-top:8px"><b>${vbfEsc(s.name)}</b>　本月已上 <b>${done.length}</b> 节　本月课时 <b>${hrs}</b>　学生剩余课时 <b>${rem}</b>
+    ${vbfSt.editId ? '' : '<span onclick="vbfClearStu()" style="margin-left:8px;font-size:10px;color:var(--accent);cursor:pointer">看全部学生</span>'}</div>`;
+}
+function vbfClearStu() { vbfSt.stu = null; vbfRenderStu(); vbfRenderRec(null); vbfRightMount(); vbfRenderNote(); }
+// 左边填的时段和这节已有的课重叠（同一天、自己的课、没取消、不是正在修改的这条）
+function vbfOverlaps(b) {
+  const d = (document.getElementById('vbf_date') || {}).value, st = (document.getElementById('vbf_st') || {}).value, en = (document.getElementById('vbf_en') || {}).value;
+  if (!d || !st || !en || b.slot_date !== d || b.status === 'cancelled' || b.id === vbfSt.editId || !vmRecMine(b)) return false;
+  const r = vipTimeParts(b.slot_time_range); if (!r) return false;
+  return vbfMin(r[0]) < vbfMin(en) && vbfMin(st) < vbfMin(r[1]);
+}
+function vbfCheck() {
+  const d = (document.getElementById('vbf_date') || {}).value;
+  if (d && d.slice(0, 7) !== VL.ym) { vlSetYm(d.slice(0, 7)); vbfRenderNote(); return; }   // 换月 → 右边重新读，读完会自己刷新提示
+  vbfRenderNote();
+  if (document.getElementById('vl_body') && !VL.loading) vlDrawBody();
+}
+// 左边提示：月末 / 上月课（只提示）+ 这个时段已经有记录（只提示，不挡）
 function vbfRenderNote() {
-  const box = document.getElementById('vbf_note'), d = document.getElementById('vbf_date');
-  if (box) box.innerHTML = bfMonthNoticeHtml(d ? d.value : '');
+  const box = document.getElementById('vbf_note'); if (!box) return;
+  const d = (document.getElementById('vbf_date') || {}).value;
+  let h = bfMonthNoticeHtml(d || '');
+  if (d && VL.loadedYm === d.slice(0, 7)) {
+    const hit = VL.rows.filter(vbfOverlaps);
+    if (hit.length) h += `<div style="font-size:11px;line-height:1.6;background:var(--danger-bg);border:1px solid #e8b4b4;color:var(--danger);border-radius:3px;padding:6px 10px;margin-top:6px">这个时段已经有记录：${hit.map(b => vbfEsc(b.name) + ' ' + vbfEsc(b.slot_time_range || '')).join('、')}（只是提示，仍可提交）</div>`;
+  }
+  box.innerHTML = h;
 }
+// 右栏顶部：我已经提交、还没走完的补录
+function vbfRenderMine() {
+  const box = document.getElementById('vbf_mine'); if (!box) return;
+  const list = vbfOpenList();
+  box.innerHTML = list.length ? `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:10px 12px;margin-bottom:10px">
+    <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:4px">我提交的补录</div>
+    ${list.map(b => `<div style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;font-size:12px;padding:5px 0;border-top:1px solid var(--border-light)">
+      <span style="font-weight:600">${vbfEsc(b.name)}</span><span style="color:var(--text-3)">${vbfMD(b.slot_date)} ${vbfEsc(b.slot_time_range || '')}</span>
+      <div style="flex:1;min-width:130px">${vbfStateHtml(b)}</div><div style="display:flex;gap:6px;flex-wrap:wrap">${vbfActionsHtml(b)}</div></div>`).join('')}
+  </div>` : '';
+}
+function vbfEdit(id) { const box = document.getElementById('vmRecBox'); if (box) vbfPanelMount(box, { edit: id }); }
+
+// ── 左栏：学生 / 上课方式 / 表单 ──
 function vbfChip(on, label, fn) {
   return `<span onclick="${fn}" style="cursor:pointer;user-select:none;font-size:12px;border-radius:14px;padding:4px 14px;border:1px solid ${on ? 'var(--accent,#1a1814)' : 'var(--border)'};background:${on ? 'var(--accent,#1a1814)' : 'transparent'};color:${on ? '#fff' : 'var(--text-2)'}">${label}</span>`;
 }
@@ -1398,23 +1499,24 @@ function vbfRenderStu() {
   const box = document.getElementById('vbf_stu'); if (!box) return;
   const s = vbfSt.stu;
   if (vbfSt.editId) { box.innerHTML = `<div style="font-size:13px">${vbfEsc(s.name)}</div>`; return; }   // 修改时学生不能换
-  const q = vbfSt.q.trim(), list = vbfSt.students.filter(x => !q || x.name.includes(q));
   const rem = x => (parseFloat(x.vip_hours_total) || 0) - (parseFloat(x.vip_hours_used) || 0);
-  box.innerHTML = `<input id="vbf_q" value="${vbfEsc(vbfSt.q)}" oninput="vbfSt.q=this.value;vbfRenderStuChips()" placeholder="搜索学生姓名" style="font-size:12px;width:100%;margin-bottom:6px">
+  box.innerHTML = `<input id="vbf_q" value="${vbfEsc(vbfSt.q)}" oninput="vbfSt.q=this.value;vbfRenderStuChips()" placeholder="搜索学生姓名" style="margin-bottom:6px">
     <div id="vbf_chips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
     <div id="vbf_remain" style="font-size:11px;color:var(--text-3);margin-top:4px">${s ? `已选：${vbfEsc(s.name)}　剩余课时 ${rem(s)}（已用 ${s.vip_hours_used || 0} / 总 ${s.vip_hours_total || 0}）` : ''}</div>`;
   vbfRenderStuChips();
 }
 function vbfRenderStuChips() {
   const box = document.getElementById('vbf_chips'); if (!box) return;
-  const q = vbfSt.q.trim(), all = vbfSt.students.filter(x => !q || x.name.includes(q));
+  const q = vbfSt.q.trim(), all = vmRecStudents.filter(x => !q || x.name.includes(q));
   const list = all.slice(0, 40);
   box.innerHTML = list.length ? list.map(x => vbfChip(vbfSt.stu && vbfSt.stu.id === x.id, vbfEsc(x.name), `vbfPickStu('${vbfEsc(x.id)}')`)).join('') + (all.length > 40 ? `<span style="font-size:11px;color:var(--text-3)">还有 ${all.length - 40} 人，请搜索</span>` : '')
     : '<span style="font-size:11px;color:var(--text-3)">没有可选的学生（只能选「VIP 老师」里有你的在籍学生）</span>';
 }
 async function vbfPickStu(id) {
-  const s = vbfSt.students.find(x => x.id === id); if (!s || (vbfSt.stu && vbfSt.stu.id === id)) return;
-  vbfSt.stu = s; vbfRenderStu(); await vbfRenderRec(null);
+  if (vbfSt.editId) return;
+  const s = vmRecStudents.find(x => x.id === id); if (!s || (vbfSt.stu && vbfSt.stu.id === id)) return;
+  vbfSt.stu = s; vbfRenderStu(); vbfRightMount();
+  await vbfRenderRec(null);
 }
 function vbfRenderMode() {
   const box = document.getElementById('vbf_mode'); if (!box) return;
@@ -1429,13 +1531,13 @@ async function vbfRenderRec(old) {
   const tok = vbfSt.stu.id + ':' + Date.now(); vbfSt.tok = tok;
   vipBfDraft = Object.assign(old ? { ...old } : { id: vipBfDraft.id, type: 'vip' }, { name: vbfSt.stu.name, _bf: true });
   const hasPlan = await vipRecInit(vipBfDraft);
-  if (vbfSt.tok !== tok || !document.getElementById('vbf_rec')) return;   // 期间又换了学生 / 关了弹窗
+  if (vbfSt.tok !== tok || !document.getElementById('vbf_rec')) return;   // 期间又换了学生 / 退出了补录
   box.innerHTML = vipRecFormHtml(vipBfDraft, null, hasPlan);
 }
 
-const vbfMin = t => { const m = String(t || '').match(/(\d{1,2}):(\d{2})/); return m ? (+m[1]) * 60 + (+m[2]) : null; };
 async function vbfSubmit() {
   const s = vbfSt.stu, date = document.getElementById('vbf_date').value, st = document.getElementById('vbf_st').value, en = document.getElementById('vbf_en').value;
+  if (!vbfSt.editId && !vbfAllowed()) { alert('没有开通「VIP 上课补录」，请联系教务'); return; }
   if (!s) { alert('请选择学生'); return; }
   if (!date) { alert('请选择日期'); return; }
   if (date > jstToday()) { alert('补录的是已经上完的课，日期只能选今天或以前'); return; }
@@ -1473,11 +1575,13 @@ async function vbfSubmit() {
       await sb('/rest/v1/bookings', 'POST', row);
       vbfRows.unshift(row);
     }
-    document.getElementById('vbfModal')?.remove();
-    renderTab();
-    alert('已提交，等教务确认。确认后会提醒你把链接发给学生。');
   } catch (e) {
     btn.disabled = false;
     alert('提交失败：' + (/teacher_backfill|backfill_room_note|student_confirmed_by/.test(e.message || '') ? '系统还没开通「VIP 上课补录」，请联系管理员' : e.message));
+    return;
   }
+  // 提交成功：左边清空，保留学生和上课方式，方便连着补下一节；右边马上刷新
+  vbfSt.editId = ''; vbfSt.flash = '已提交，等教务确认。确认后会提醒你把链接发给学生。';
+  VL.loadedYm = '';
+  const box = document.getElementById('vmRecBox'); if (box) vbfPanelMount(box, {});
 }
