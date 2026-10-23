@@ -1,52 +1,56 @@
-/* 唯新 · 教学资源调度系统  共享样式 */
+/* 唯新 · 教学资源调度系统  共享样式（配色、字体、圆角与管理端 admin/admin.css 保持一致：暖色米白 + 深褐主色） */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap');
 * { box-sizing: border-box; }
 :root{
-  --blue:#2f6b4f; --blue-d:#245740; --bg:#f4f6f9; --line:#e2e6ec;
-  --ink:#1f2733; --sub:#6b7480; --ok:#0f9d58; --warn:#e0a800; --err:#e97457;
-  --course:#dbeafe; --vip:#efeae4; --temp:#fff3cd; --rental:#e6f4ea; --meeting:#ede7f6;
+  /* --blue / --blue-d 是历史变量名（页面行内也在用）：现在是主色深褐 / hover 稍浅 */
+  --blue:#3a2e24; --blue-d:#5a4a3c; --bg:#faf7f2; --line:#e8e0d4;
+  --ink:#3a2e24; --sub:#6b5c4e; --faint:#a8998a; --ok:#2a9e6a; --warn:#b87820; --err:#b03030;
+  --ok-bg:#e4f5ee; --warn-bg:#fdf2dc; --err-bg:#fceaea;
+  /* 占用类型：课程蓝灰 / VIP 沙褐 / 临时黄 / 出租绿 / 会议紫 —— 柔和但色相互相错开 */
+  --course:#d6e4ee; --vip:#ecd9c2; --temp:#f3e6a8; --rental:#d3e8d8; --meeting:#e0d6ea;
 }
-body{ margin:0; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
-  background:var(--bg); color:var(--ink); font-size:14px; }
+body{ margin:0; font-family:'DM Mono','Noto Serif SC',monospace;
+  background:var(--bg); color:var(--ink); font-size:13px; line-height:1.5; }
 a{ color:var(--blue); text-decoration:none; }
 .wrap{ max-width:1400px; margin:0 auto; padding:16px; }
 header.top{ background:#fff; border-bottom:1px solid var(--line); }
 header.top .wrap{ display:flex; align-items:center; gap:16px; padding:20px 24px; }
-header.top h1{ font-size:17px; margin:0; }
-header.top nav{ margin-left:auto; display:flex; gap:14px; font-size:13px; }
+header.top h1{ font-size:15px; margin:0; font-family:'Noto Serif SC',serif; font-weight:600; }
+header.top nav{ margin-left:auto; display:flex; gap:14px; font-size:12px; }
 header.top nav a{ color:var(--sub); display:inline-block; padding:2px 4px; white-space:nowrap; position:relative; z-index:1; }
-header.top nav a:hover{ color:var(--blue); }
+header.top nav a:hover{ color:var(--ink); }
 
-.card{ background:#fff; border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:14px; }
+.card{ background:#fff; border:1px solid var(--line); border-radius:3px; padding:14px; margin-bottom:14px; }
 .row{ display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
 .field{ display:flex; flex-direction:column; gap:4px; }
 .field label{ font-size:12px; color:var(--sub); }
-select,input,textarea{ padding:7px 9px; border:1px solid var(--line); border-radius:6px;
-  font-size:14px; background:#fff; color:var(--ink); }
+select,input,textarea{ padding:7px 9px; border:1px solid var(--line); border-radius:3px;
+  font-size:13px; font-family:inherit; background:#fff; color:var(--ink); }
 select:focus,input:focus,textarea:focus{ outline:none; border-color:var(--blue); }
 textarea{ width:100%; resize:vertical; }
-button{ padding:8px 14px; border:none; border-radius:6px; background:var(--blue); color:#fff;
-  font-size:14px; cursor:pointer; }
+button{ padding:7px 14px; border:1px solid transparent; border-radius:3px; background:var(--blue); color:#fff;
+  font-size:12px; font-weight:500; font-family:inherit; cursor:pointer; transition:background .15s; }
 button:hover{ background:var(--blue-d); }
 button.ghost{ background:#fff; color:var(--ink); border:1px solid var(--line); }
-button.ghost:hover{ background:#f0f3f7; }
-button.sm{ padding:4px 9px; font-size:12px; }
+button.ghost:hover{ background:var(--bg); border-color:var(--faint); }
+button.sm{ padding:4px 10px; font-size:11px; }
 button.danger{ background:var(--err); }
 
 table{ width:100%; border-collapse:collapse; font-size:13px; }
 th,td{ border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
-th{ background:#f7f9fc; font-weight:600; color:var(--sub); white-space:nowrap; }
+th{ background:#faf7f2; font-weight:600; color:var(--sub); white-space:nowrap; }
 
 .badge{ display:inline-block; padding:1px 7px; border-radius:10px; font-size:12px; }
-.b-ok{ background:#e6f4ea; color:var(--ok); }
-.b-warn{ background:#fff3cd; color:#8a6d00; }
-.b-err{ background:#fde2e2; color:var(--err); }
-.b-mute{ background:#eef1f5; color:var(--sub); }
-.tip{ background:#eef4f0; border:1px solid #cfe3d6; color:#2f6b4f; padding:8px 12px;
-  border-radius:6px; font-size:13px; margin-bottom:12px; }
+.b-ok{ background:var(--ok-bg); color:var(--ok); }
+.b-warn{ background:var(--warn-bg); color:var(--warn); }
+.b-err{ background:var(--err-bg); color:var(--err); }
+.b-mute{ background:#f1ebe3; color:var(--sub); }
+.tip{ background:var(--bg); border:1px solid var(--line); color:var(--sub); padding:8px 12px;
+  border-radius:3px; font-size:12px; margin-bottom:12px; }
 .muted{ color:var(--sub); }
 .hidden{ display:none !important; }
 .permchip{ display:inline-block; padding:3px 9px; margin:2px; border:1px solid var(--line);
-  border-radius:14px; font-size:12px; cursor:pointer; background:#fff; color:var(--sub); user-select:none; }
+  border-radius:14px; font-size:11px; cursor:pointer; background:#fff; color:var(--sub); user-select:none; }
 .permchip.on{ background:var(--blue); color:#fff; border-color:var(--blue); }
 
 /* 看板网格 */
@@ -54,15 +58,15 @@ th{ background:#f7f9fc; font-weight:600; color:var(--sub); white-space:nowrap; }
 .board table{ border-collapse:collapse; table-layout:fixed; }
 .board th,.board td{ border:1px solid var(--line); box-sizing:border-box; }
 .board tr{ height:24px; }
-.board .tcol{ width:70px; background:#f7f9fc; text-align:center; white-space:nowrap;
+.board .tcol{ width:70px; background:#faf7f2; text-align:center; white-space:nowrap;
   font-size:11px; color:var(--sub); position:sticky; left:0; z-index:2; }
-.board thead th{ position:sticky; top:0; z-index:3; text-align:center; background:#f7f9fc; }
+.board thead th{ position:sticky; top:0; z-index:3; text-align:center; background:#faf7f2; }
 .board td.cell{ height:24px; min-width:96px; padding:0; position:relative; }
-.board .freetag{ position:absolute; top:1px; left:3px; font-size:10px; color:#c2c7cf; opacity:.7; }
+.board .freetag{ position:absolute; top:1px; left:3px; font-size:10px; color:var(--faint); opacity:.7; }
 .vt2{ display:inline-flex; gap:4px; }
 .vt2 button{ background:#fff; color:var(--ink); border:1px solid var(--line); }
 .vt2 button.on{ background:var(--blue); color:#fff; border-color:var(--blue); }
-.blk{ position:absolute; left:1px; right:1px; top:0; border-radius:4px; padding:2px 5px;
+.blk{ position:absolute; left:1px; right:1px; top:0; border-radius:3px; padding:2px 5px;
   font-size:12px; overflow:hidden; line-height:1.2; box-shadow:0 0 0 1px rgba(0,0,0,.03); box-sizing:border-box; }
 .blk small{ display:block; color:var(--sub); font-size:11px; }
 .board td.occ{ padding:0; vertical-align:top; }
@@ -75,11 +79,11 @@ th{ background:#f7f9fc; font-weight:600; color:var(--sub); white-space:nowrap; }
 .k-course{ background:var(--course); } .k-vip{ background:var(--vip); }
 .k-temp{ background:var(--temp); } .k-rental{ background:var(--rental); }
 .k-meeting{ background:var(--meeting); }
-.mic{ font-size:11px; color:#5b8def; }
+.mic{ font-size:11px; color:var(--sub); }
 
 .legend{ display:flex; gap:14px; flex-wrap:wrap; font-size:12px; margin:6px 0; }
 .legend span{ display:inline-flex; align-items:center; gap:5px; }
-.legend i{ width:14px; height:14px; border-radius:3px; display:inline-block; }
+.legend i{ width:14px; height:14px; border-radius:3px; border:1px solid rgba(58,46,36,.12); display:inline-block; }
 
 .tabs{ display:flex; gap:6px; border-bottom:1px solid var(--line); margin-bottom:14px; }
 .tabs button{ background:none; color:var(--sub); border-bottom:2px solid transparent;
@@ -99,16 +103,13 @@ th{ background:#f7f9fc; font-weight:600; color:var(--sub); white-space:nowrap; }
 }
 html,body{ max-width:100%; overflow-x:hidden; }
 .hub{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; }
-.hub a{ display:block; background:#fff; border:1px solid var(--line); border-radius:8px;
+.hub a{ display:block; background:#fff; border:1px solid var(--line); border-radius:3px;
   padding:16px; color:var(--ink); }
-.hub a:hover{ border-color:var(--blue); box-shadow:0 2px 8px rgba(37,99,235,.08); }
+.hub a:hover{ border-color:var(--blue); box-shadow:0 2px 8px rgba(58,46,36,.08); }
 .hub a b{ display:block; font-size:15px; margin-bottom:4px; }
 .hub a span{ font-size:12px; color:var(--sub); }
-.hub a.alert-card{ background:#eef4f0; border-color:#cfe3d6; }
-.hub a.alert-card b{ color:var(--blue); }
+.hub a.alert-card{ background:var(--warn-bg); border-color:#e8d29a; }
+.hub a.alert-card b{ color:var(--warn); }
 
-/* 嵌入老师端 / 管理端时：去掉蓝灰底色，换成暖色系（绿色主色、课程分类色不变） */
-html.sched-embed{ --bg:#faf7f2; --line:#e8e0d4; }
-.sched-embed th, .sched-embed .board .tcol, .sched-embed .board thead th{ background:#faf6f0; }
-.sched-embed button.ghost:hover{ background:#f3ede4; }
-.sched-embed .b-mute{ background:#f1ebe3; }
+/* 嵌入管理端 / 老师端「资源管理」时：背景透明，直接用外层页面的米白底，看起来像管理端的一个页面 */
+html.sched-embed, html.sched-embed body{ background:transparent; }
