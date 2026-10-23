@@ -2100,8 +2100,12 @@ function parseTimeInput(str) {
 // opts: { style: 追加样式, onch: 整理完后执行的代码（this = 输入框）, role: 'start'|'end', mate: 另一个框的 id, btn: 出错时要禁用的提交按钮 id }
 function timeInputHtml(id, value, placeholder, opts) {
   opts = opts || {};
+  if (typeof document !== 'undefined' && document.body && !document.getElementById('time_half_list')) {
+    let o = ''; for (let m = 7 * 60; m <= 23 * 60 + 30; m += 30) o += `<option value="${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}">`;
+    const dl = document.createElement('datalist'); dl.id = 'time_half_list'; dl.innerHTML = o; document.body.appendChild(dl);
+  }
   const a = (k, v) => v ? ` data-${k}="${String(v).replace(/"/g, '&quot;')}"` : '';
-  return `<div style="min-width:0"><input type="text" id="${id}" value="${String(value || '').replace(/"/g, '&quot;')}" placeholder="${placeholder || ''}" inputmode="numeric" autocomplete="off" maxlength="8" style="width:100%;min-width:0;box-sizing:border-box;text-align:center;${opts.style || ''}"${a('onch', opts.onch)}${a('role', opts.role)}${a('mate', opts.mate)}${a('btn', opts.btn)} onfocus="this.select()" oninput="timeInputLive(this)" onchange="timeInputCommit(this)"><div id="${id}_err" style="font-size:10px;color:var(--danger,#c0392b);line-height:1.4;margin-top:2px"></div></div>`;
+  return `<div style="min-width:0"><input type="text" id="${id}" value="${String(value || '').replace(/"/g, '&quot;')}" placeholder="${placeholder || ''}" inputmode="numeric" autocomplete="off" list="time_half_list" maxlength="8" style="width:100%;min-width:0;box-sizing:border-box;text-align:center;${opts.style || ''}"${a('onch', opts.onch)}${a('role', opts.role)}${a('mate', opts.mate)}${a('btn', opts.btn)} onfocus="this.select()" oninput="timeInputLive(this)" onchange="timeInputCommit(this)"><div id="${id}_err" style="font-size:10px;color:var(--danger,#c0392b);line-height:1.4;margin-top:2px"></div>${opts.role === 'end' ? `<div style="display:flex;align-items:center;gap:4px;margin-top:3px;font-size:10px;color:var(--text-3,#888)">时长<input type="text" id="${id}_dur" inputmode="decimal" autocomplete="off" maxlength="5" placeholder="1.5" title="填课时长度（小时），如 1、1.5、2，结束时间自动算" style="width:44px;min-width:0;box-sizing:border-box;text-align:center;font-size:11px;padding:3px 4px" onfocus="this.select()" onchange="timeDurCommit('${id}')">小时</div>` : ''}</div>`;
 }
 function readTimeInput(id) { const el = document.getElementById(id); return el ? (parseTimeInput(el.value) || '') : ''; }
 function setTimeInput(id, v) { const el = document.getElementById(id); if (el) { el.value = v || ''; el.dataset.fmt = ''; timeInputPaint(el); timeInputPair(el); } }
@@ -2122,6 +2126,7 @@ function timePairCheck(startId, endId, btnId) {
   timeInputPaint(s, order ? ' ' : ''); timeInputPaint(e, order ? '下课时间要晚于上课时间' : '');
   const btn = document.getElementById(btnId || s.dataset.btn || e.dataset.btn || '');
   if (btn) btn.disabled = order || fmt;
+  timeDurSync(e);
   return !(order || fmt);
 }
 function timeInputPair(el) {
@@ -2151,4 +2156,27 @@ function timeInputCommit(el, noFill) {
   }
   timeInputPair(el);
   if (el.dataset.onch) { try { new Function(el.dataset.onch).call(el); } catch (_) {} }
+}
+
+// 时长（小时）：结束时间不用填，写 1 / 1.5 / 2 就按「开始 + 时长」自动算；改结束时间时这里同步显示
+function timeDurSync(e) {
+  const d = document.getElementById(e.id + '_dur'); if (!d || document.activeElement === d) return;
+  const sEl = document.getElementById(e.dataset.mate), a = sEl && parseTimeInput(sEl.value), b = parseTimeInput(e.value);
+  const x = (a && b && b > a) ? ((+b.slice(0, 2)) * 60 + (+b.slice(3)) - (+a.slice(0, 2)) * 60 - (+a.slice(3))) / 60 : '';
+  d.value = x === '' ? '' : String(Math.round(x * 100) / 100);
+}
+function timeDurCommit(endId) {
+  const e = document.getElementById(endId), d = document.getElementById(endId + '_dur'); if (!e || !d) return;
+  const sEl = document.getElementById(e.dataset.mate), a = sEl && parseTimeInput(sEl.value), err = document.getElementById(endId + '_err');
+  const h = parseFloat(String(d.value).normalize('NFKC').replace(/。/g, '.').replace(/[^0-9.]/g, ''));
+  if (!d.value.trim()) return;
+  if (!a) { if (err) err.textContent = '请先填上课时间'; d.value = ''; return; }
+  if (!(h > 0)) { if (err) err.textContent = '时长请填如 1、1.5、2'; d.value = ''; return; }
+  const m = (+a.slice(0, 2)) * 60 + (+a.slice(3)) + Math.round(h * 60);
+  if (m > 23 * 60 + 59) { if (err) err.textContent = '超出当天，请直接填结束时间'; return; }
+  e.value = String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  e.dataset.fmt = '';
+  d.value = String(Math.round(h * 100) / 100);
+  timeInputPaint(e); timeInputPair(e);
+  if (e.dataset.onch) { try { new Function(e.dataset.onch).call(e); } catch (_) {} }
 }
