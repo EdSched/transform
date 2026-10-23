@@ -11,7 +11,7 @@ const RTP_ROLE_ORDER = ['lead', 'sales', 'liaison', 'soumu', 'soumu_asst', 'senm
 // 表的行：[分组, 标记, 名称]
 function rtpFeatureRows() {
   const rows = [];
-  const P = ['booking', 'slots', 'homework', 'admission_query', 'student_mgmt'];
+  const P = ['booking', 'slots', 'homework', 'admission_query', 'student_mgmt', 'vip_backfill'];
   P.forEach(k => rows.push(['老师端功能', 'p:' + k, TF_P_LABEL[k]]));
   Object.keys(TF_SUB_LABEL.booking_types).forEach(v => rows.push(['预约类型', 'booking_types:' + v, '预约·' + TF_SUB_LABEL.booking_types[v]]));
   Object.keys(TF_SUB_LABEL.slot_types).forEach(v => rows.push(['时间槽类型', 'slot_types:' + v, '时间槽·' + TF_SUB_LABEL.slot_types[v]]));

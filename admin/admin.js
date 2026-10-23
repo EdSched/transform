@@ -847,7 +847,7 @@ function tfSrcCollect(cur,isNew){
 function tfCeilingApply(){
   const a=ACCESS_KEY&&ACCESS_KEY._asTeacher; if(!a||isHubAdminUser()) return;
   const mine=a.permissions||{}, isT=v=>String(v).toLowerCase()==='true';
-  [['perm_booking','booking'],['perm_slots','slots'],['perm_student_mgmt','student_mgmt'],['perm_homework','homework'],['perm_admission_query','admission_query']].forEach(([id,k])=>{
+  [['perm_booking','booking'],['perm_slots','slots'],['perm_student_mgmt','student_mgmt'],['perm_homework','homework'],['perm_admission_query','admission_query'],['perm_vip_backfill','vip_backfill']].forEach(([id,k])=>{
     const el=document.getElementById(id); if(!el) return;
     const lock=!isT(mine[k]) && !el.checked;
     el.disabled=lock;
@@ -947,7 +947,7 @@ function tsecState(key){
     return {has:!!(doms.length||ms.length),sum:[doms.join('、'),ms.join('、')].filter(Boolean).join(' · ')||'未设置'};
   }
   if(key==='features'){
-    const n=['perm_booking','perm_slots','perm_student_mgmt','perm_admission_query'].filter(chk).length+(($('perm_schedule_mode')?.value)?1:0);
+    const n=['perm_booking','perm_slots','perm_student_mgmt','perm_admission_query','perm_vip_backfill'].filter(chk).length+(($('perm_schedule_mode')?.value)?1:0);
     return {has:n>0,sum:n?`已开 ${n} 项`:'未开启'};
   }
   if(key==='sales'){
@@ -1449,6 +1449,11 @@ function renderTeachersPage(mc){
             <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;white-space:nowrap"><input type="checkbox" id="perm_admission_query" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">出願数据查询</label>
             <div style="font-size:10px;color:var(--text-3);margin-bottom:8px;margin-left:20px">开启后可在老师端查看出願学校数据库（只读）</div>
           </div>
+          <!-- vip_backfill row -->
+          <div style="padding:10px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;white-space:nowrap"><input type="checkbox" id="perm_vip_backfill" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">VIP 上课补录</label>
+            <div style="font-size:10px;color:var(--text-3);margin-bottom:8px;margin-left:20px">开了才能在老师端补录已上完的 VIP 课。请尽量让老师按时填上课记录，不要依赖补录</div>
+          </div>
           <!-- 可见范围（学生管理 / 出願数据共用）：范围由职位 + 角色 + 负责范围算出，这里只排除 -->
           <div style="padding:10px" id="perm_scope_block">
             <div style="font-size:11px;font-weight:600;margin-bottom:6px">不看的专业（可选，学生管理和出願数据共用）</div>
@@ -1744,6 +1749,7 @@ function cancelEditTeacher(){
     {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=false;}
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
+  {const _e=document.getElementById('perm_vip_backfill'); if(_e)_e.checked=false;}
   {const _e=document.getElementById('perm_vip_only'); if(_e)_e.classList.remove('active');}
   _admExcl=new Set(); renderPermScope();
   renderHomeworkCoursesChips([]);
@@ -1776,6 +1782,7 @@ function openTeacherManager(){
     {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=false;}
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
+  {const _e=document.getElementById('perm_vip_backfill'); if(_e)_e.checked=false;}
   {const _e=document.getElementById('perm_vip_only'); if(_e)_e.classList.remove('active');}
   _admExcl=new Set(); renderPermScope();
   renderHomeworkCoursesChips([]);
@@ -1861,7 +1868,7 @@ function roleDefaultTokens(pos,roles,staffType){
   if(staffType==='正社员'){ out.add('p:slots'); out.add('slot_types:attendance'); }
   return out;
 }
-const TF_P_LABEL={booking:'预约管理',slots:'时间槽设定',student_mgmt:'学生管理',admission_query:'出願数据查询',homework:'批改作业',promo:'宣传相关',progress_plan:'进度规划',lect_info:'讲师信息查询',vip_sales:'VIP营业规划',promo_pack:'宣传资料整合',result_view:'合格实绩查询',pass_posters:'合格海报查询',result_admin:'合格实绩管理',promo_pricing:'课程方案（含价格）',success_cases:'合格案例（填写）'};
+const TF_P_LABEL={booking:'预约管理',slots:'时间槽设定',student_mgmt:'学生管理',admission_query:'出願数据查询',vip_backfill:'VIP 上课补录',homework:'批改作业',promo:'宣传相关',progress_plan:'进度规划',lect_info:'讲师信息查询',vip_sales:'VIP营业规划',promo_pack:'宣传资料整合',result_view:'合格实绩查询',pass_posters:'合格海报查询',result_admin:'合格实绩管理',promo_pricing:'课程方案（含价格）',success_cases:'合格案例（填写）'};
 const TF_SUB_LABEL={booking_types:{daily:'日常',plan:'计划书',mock:'模拟面试',vip:'VIP'},slot_types:{daily:'日常',plan:'计划书',mock:'模拟面试',vip:'VIP',attendance:'出勤'},student_mgmt_items:{progress:'考学进度',meetings:'面谈查询',records_view:'出席・作业 查看',records_entry:'出席 登记',monthly:'月度学习情况',profile:'学生档案录入',profile_edit:'档案修改'}};
 const TF_SUB_PREFIX={booking_types:'预约·',slot_types:'时间槽·',student_mgmt_items:'学生管理·'};
 function roleTokenLabel(tk){
@@ -2054,6 +2061,7 @@ const TEACHER_FEATURE_DEFS=[
   ['homework','作业','批改作业',(t,p)=>!!p.homework],
   ['admission_query','出願库','出願数据查询',(t,p)=>!!p.admission_query],
   ['student_mgmt','学生管理','学生管理',(t,p)=>!!p.student_mgmt],
+  ['vip_backfill','VIP补录','VIP 上课补录',(t,p)=>p.vip_backfill===true],
   ['records_entry','出席登记','出席登记',(t,p)=>!!p.student_mgmt&&(p.student_mgmt_items||[]).some(k=>k==='records'||k==='records_entry')],
   ['progress_plan','进度规划','进度规划（营业）',(t,p)=>!!p.progress_plan],
   ['promo','宣传','宣传相关（营业）',(t,p)=>!!p.promo],
@@ -2269,6 +2277,7 @@ function getPermissionsFromForm(prev){
     homework_own_sessions:hwaOwn,
     homework_course_ids:hwaCoursesOn?[...hwaIds]:[],   // 旧的 homework_courses（课程名）不再写入，保存即删除
     admission_query:document.getElementById('perm_admission_query').checked,
+    vip_backfill:_chk('perm_vip_backfill',prev.vip_backfill),
     promo:_chk('perm_promo',prev.promo),
     lect_info:_chk('perm_lect_info',prev.lect_info),
     progress_plan:_chk('perm_progress_plan',prev.progress_plan),
@@ -2407,6 +2416,7 @@ async function addTeacher(){
     document.getElementById('perm_slots').checked=false;
     {const _e=document.getElementById('perm_schedule_mode'); if(_e)_e.value='';}
     document.getElementById('perm_student_mgmt').checked=false;
+    {const _e=document.getElementById('perm_vip_backfill'); if(_e)_e.checked=false;}
     {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.classList.remove('active');}
     {const _e=document.getElementById('perm_progress_plan'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_promo'); if(_e)_e.checked=false;}
@@ -2482,6 +2492,7 @@ function openEditTeacher(id){
   {const _e=document.getElementById('perm_schedule_mode'); if(_e)_e.value=(p.schedule===true?'full':(p.schedule||''));}
   document.getElementById('perm_homework').checked=!!p.homework;
   document.getElementById('perm_admission_query').checked=!!p.admission_query;
+  {const _e=document.getElementById('perm_vip_backfill'); if(_e)_e.checked=p.vip_backfill===true;}
   {const _e=document.getElementById('perm_vip_only'); if(_e)_e.classList.toggle('active',!!p.vip_only);}
   _admExcl=new Set(p.exclude_majors||[]); renderPermScope();
   {const _e=document.getElementById('perm_promo'); if(_e)_e.checked=!!p.promo;}

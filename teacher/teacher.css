@@ -135,3 +135,7 @@ input:focus,select:focus{border-color:var(--accent)}
 /* 出願ページ全幅コンテナ */
 .adb-wrap { margin: 0 -16px; padding: 0 16px; }
 .adb-table-wrap { overflow-x:auto; margin:0 -16px; padding:0 16px; }
+
+/* 不显眼的文字链接（VIP 补录入口） */
+.vbf-link{font-size:11px;color:var(--text-3);text-decoration:none;background:none;border:none;padding:0;cursor:pointer}
+.vbf-link:hover{text-decoration:underline;color:var(--text-2)}

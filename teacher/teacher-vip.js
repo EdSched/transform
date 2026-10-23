@@ -165,7 +165,6 @@ function renderTeacherVipFrameworks(mc) {
       <div style="font-family:'Noto Serif SC',serif;font-size:16px;font-weight:600">VIP 管理</div>
       <div style="font-size:11px;color:var(--text-3);margin-top:2px">确认预约并锁定内容、给学生排课、补充课程框架</div>
     </div>
-    ${vbfBtnHtml('margin-bottom:12px')}
     <div style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px">
       ${tab('booking', '预约', pendingVipBk)}
       ${tab('students', '学生进度', (teacherVipMyPlans.length + assignedOnly.length) || 0)}
@@ -186,7 +185,7 @@ async function vmRecMount() {
     vmRecStudents = await sb(`/rest/v1/students?vip_teachers=cs.{"${teacherName}"}&or=(status.is.null,status.eq.active)&select=*&order=name.asc`, 'GET', null, { cache: 'no-store' });
   } catch (e) { box.innerHTML = `<div class="empty">加载失败：${e.message}</div>`; return; }
   if (vmTab !== 'records' || !document.getElementById('vmRecBox')) return;   // 读的过程中切走了
-  box.innerHTML = '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">本月数字只算你上的课；剩余课时是学生的总剩余（包括别的老师上的）。待教务确认的补录不算课时。</div><div id="vmRecList"></div>';
+  box.innerHTML = '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">本月数字只算你上的课；剩余课时是学生的总剩余（包括别的老师上的）。待教务确认的补录不算课时。</div><div id="vmRecList"></div><div style="margin-top:14px">' + vbfBtnHtml() + '</div>';
   const mine = b => b.assigned_teacher ? b.assigned_teacher === teacherName : (cachedTeacherSlots || []).some(sl => sl.id === b.slot_id);
   VL.loadedYm = '';   // 每次进来重新读，保存上课记录 / 补录之后看到的是最新的
   vlMount(document.getElementById('vmRecList'), {
@@ -1264,11 +1263,16 @@ let vbfSt = null;            // 表单状态 {stu, mode, students, q, editId}
 const vbfEsc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const vbfMD = d => { const x = String(d || '').split('-'); return x.length === 3 ? (+x[1]) + '月' + (+x[2]) + '日' : (d || ''); };
 
-// 能上 VIP：有 VIP 权限，或者有指导的 VIP 学生
-function vbfAllowed() {
+// 能用 VIP 相关功能：有 VIP 权限，或者有指导的 VIP 学生
+function vipAllowed() {
   const p = (teacherData && teacherData.permissions) || {};
   const perm = (p.booking && (p.booking_types || []).includes('vip')) || (p.slots && (p.slot_types || []).includes('vip'));
   return !!(perm || (typeof teacherVipAssignedStudents !== 'undefined' && teacherVipAssignedStudents.length));
+}
+// 能新建补录：上面的条件 + 管理端单独开了「VIP 上课补录」（permissions.vip_backfill）。已提交的补录不受这个限制
+function vbfAllowed() {
+  const p = (teacherData && teacherData.permissions) || {};
+  return vipAllowed() && p.vip_backfill === true;
 }
 async function vbfLoad() {
   if (!teacherName) { vbfRows = []; return; }
@@ -1280,25 +1284,26 @@ async function vbfLoad() {
   });
 }
 async function vbfReload() { await vbfLoad(); renderTab(); }
+// 不显眼的文字链接：只放在「VIP 管理 → 上课记录」下方和「时间槽设定」底部
 function vbfBtnHtml(extra) {
   if (!vbfAllowed()) return '';
-  return `<button onclick="vbfOpen()" style="font-size:12px;background:#5a3a9a;color:#fff;border:none;border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit;white-space:nowrap;${extra || ''}">＋ 补录已上完的 VIP 课</button>`;
+  return `<a class="vbf-link" href="javascript:void(0)" onclick="vbfOpen()" style="${extra || ''}">补录已上完的课</a>`;
 }
 
 // ── 状态一行（首页 / VIP 管理共用）──
 function vbfStateHtml(b) {
   if (b.admin_review === 'rejected') return `<div style="font-size:11px;color:var(--danger)">教务已退回：${vbfEsc(b.admin_review_note || '（未写原因）')}</div>`;
-  if (b.admin_review === 'pending') return '<div style="font-size:11px;color:#856404">待教务确认</div>';
+  if (b.admin_review === 'pending') return '<div style="font-size:11px;color:var(--warn)">待教务确认</div>';
   if (b.student_confirmed) return `<div style="font-size:11px;color:var(--ok)">${b.student_confirmed_by ? '已由教务（' + vbfEsc(b.student_confirmed_by) + '）代学生确认' : '学生已确认'}${b.student_rating ? '・评价：' + vbfEsc(b.student_rating) : ''}</div>`;
-  return '<div style="font-size:11px;font-weight:600;color:#5a3a9a">教务已确认，请把链接发给学生确认</div>';
+  return '<div style="font-size:11px;font-weight:600;color:var(--accent)">教务已确认，请把链接发给学生确认</div>';
 }
 // 首页：VIP 区域最上面（按钮 + 还需要老师处理的补录）
 const vbfOpenList = () => [...vbfRows, ...cachedTeacherBookings.filter(b => b.teacher_backfill && b.admin_review === 'approved' && !b.student_confirmed)];   // 还需要处理的补录
 function vbfHomeCardHtml() {
-  if (!vbfAllowed()) return '';
   const list = vbfOpenList();
+  if (!list.length) return '';   // 只有需要老师处理的补录才出现；权限关掉后已提交的补录仍照常显示
   return `<div class="todo-card">
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="todo-head" style="color:var(--text-2);margin:0">VIP 补录</div><div style="margin-left:auto">${vbfBtnHtml()}</div></div>
+    <div class="todo-head" style="color:var(--text-2);margin:0">VIP 补录</div>
     ${list.map(b => `<div class="todo-item" style="align-items:flex-start;gap:8px;flex-wrap:wrap">
       <span style="font-weight:600">${vbfEsc(b.name)}</span><span style="color:var(--text-3)">${vbfMD(b.slot_date)} ${vbfEsc(b.slot_time_range || '')}</span>
       <div style="flex:1;min-width:150px">${vbfStateHtml(b)}</div>
@@ -1307,9 +1312,9 @@ function vbfHomeCardHtml() {
 }
 function vbfActionsHtml(b) {
   const bt = (t, fn, c) => `<button onclick="${fn}" style="font-size:10px;background:${c ? c : 'none'};color:${c ? '#fff' : 'var(--text-2)'};border:1px solid ${c ? c : 'var(--border)'};border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit">${t}</button>`;
-  if (b.admin_review === 'rejected') return bt('修改后重新提交', `vbfOpen('${b.id}')`, '#5a3a9a') + bt('撤回', `vbfWithdraw('${b.id}')`);
+  if (b.admin_review === 'rejected') return bt('修改后重新提交', `vbfOpen('${b.id}')`, 'var(--accent)') + bt('撤回', `vbfWithdraw('${b.id}')`);
   if (b.admin_review === 'pending') return bt('修改', `vbfOpen('${b.id}')`) + bt('撤回', `vbfWithdraw('${b.id}')`);
-  if (!b.student_confirmed) return bt('生成确认文案', `openVipConfirmText('${b.id}')`, '#5a3a9a');
+  if (!b.student_confirmed) return bt('生成确认文案', `openVipConfirmText('${b.id}')`, 'var(--accent)');
   return '';
 }
 // VIP 管理 → 预约：待教务确认 / 已退回的补录
@@ -1317,9 +1322,9 @@ function vbfListHtml() {
   if (!vbfRows.length) return '';
   return `<div style="margin-bottom:16px">
     <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">补录的课（教务确认后才扣课时）</div>
-    ${vbfRows.map(b => `<div style="background:#f0edf8;border:1px solid #c8bfe8;border-radius:4px;margin-bottom:8px;padding:10px 14px">
+    ${vbfRows.map(b => `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;margin-bottom:8px;padding:10px 14px">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px">${vbfEsc(b.name)} 的VIP课程</span>
-        <span style="font-size:9px;background:#5a3a9a;color:#fff;border-radius:2px;padding:1px 6px">老师补录</span>
+        <span style="font-size:9px;background:var(--bg);color:var(--text-2);border:1px solid var(--border);border-radius:2px;padding:1px 6px">老师补录</span>
         <span style="font-size:11px;color:var(--text-3)">${vbfEsc(b.slot_date)} ${vbfEsc(b.slot_time_range || '')} · ${b.location === 'online' ? '线上' : '线下' + (b.backfill_room_note ? '（' + vbfEsc(b.backfill_room_note) + '）' : '')} · ${b.vip_hours_used || 0} 课时</span></div>
       <div style="font-size:11px;color:var(--text-2);margin-top:3px;white-space:pre-wrap">${vbfEsc(b.vip_session_notes || '')}</div>
       <div style="margin-top:4px">${vbfStateHtml(b)}</div>
@@ -1343,6 +1348,7 @@ function vbfTimeOpts(ph, cur) {
   return h;
 }
 async function vbfOpen(editId) {
+  if (!editId && !vbfAllowed()) { alert('没有开通「VIP 上课补录」，请联系教务'); return; }
   const old = editId ? vbfRows.find(b => b.id === editId) : null;
   if (editId && !old) return;
   vbfSt = { stu: null, mode: old ? (old.location === 'online' ? 'online' : 'offline') : '', students: [], q: '', editId: old ? old.id : '' };
@@ -1361,7 +1367,7 @@ async function vbfOpen(editId) {
     <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">课已经上完，一次填完提交；教务确认后才会扣学生课时，确认后再把链接发给学生确认。${old && old.admin_review === 'rejected' ? `<br><span style="color:var(--danger)">教务退回原因：${vbfEsc(old.admin_review_note || '—')}</span>` : ''}</div>
     <div class="form-group"><label class="form-label">学生</label>
       <div id="vbf_stu"></div></div>
-    <div class="form-group"><label class="form-label">日期（只能选今天或以前）</label><input type="date" id="vbf_date" max="${today}" value="${vbfEsc(old ? old.slot_date : '')}"></div>
+    <div class="form-group"><label class="form-label">日期（只能选今天或以前）</label><input type="date" id="vbf_date" max="${today}" value="${vbfEsc(old ? old.slot_date : '')}" oninput="vbfRenderNote()"></div>
     <div class="form-group"><label class="form-label">开始 / 结束时间</label>
       <div style="display:grid;grid-template-columns:1fr 16px 1fr;gap:4px;align-items:center">
         <select id="vbf_st">${vbfTimeOpts('开始', rg[0])}</select><div style="text-align:center;font-size:11px;color:var(--text-3)">—</div><select id="vbf_en">${vbfTimeOpts('结束', rg[1])}</select>
@@ -1372,13 +1378,18 @@ async function vbfOpen(editId) {
         <div style="font-size:10px;color:var(--text-3);margin-top:3px">教室已经事先约好，这里只是记录，不会占用或检查教室</div>
       </div></div>
     <div id="vbf_rec"></div>
+    <div id="vbf_note"></div>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button id="vbf_ok" class="btn btn-primary btn-sm" onclick="vbfSubmit()">${old ? '重新提交' : '提交给教务确认'}</button>
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('vbfModal').remove()">取消</button>
     </div></div>`;
   document.body.appendChild(modal);
-  vbfRenderStu(); vbfRenderMode();
+  vbfRenderStu(); vbfRenderMode(); vbfRenderNote();
   await vbfRenderRec(old);
+}
+function vbfRenderNote() {
+  const box = document.getElementById('vbf_note'), d = document.getElementById('vbf_date');
+  if (box) box.innerHTML = bfMonthNoticeHtml(d ? d.value : '');
 }
 function vbfChip(on, label, fn) {
   return `<span onclick="${fn}" style="cursor:pointer;user-select:none;font-size:12px;border-radius:14px;padding:4px 14px;border:1px solid ${on ? 'var(--accent,#1a1814)' : 'var(--border)'};background:${on ? 'var(--accent,#1a1814)' : 'transparent'};color:${on ? '#fff' : 'var(--text-2)'}">${label}</span>`;
