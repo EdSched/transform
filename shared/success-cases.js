@@ -12,6 +12,8 @@ const sc = {
   openId: null, cur: null,
   sel: new Set(), packDlg: null,
   stu: null,               // 编辑时可选的学生 [{id,name,major,...}]
+  teachers: null,          // 编辑时可选的点评老师（真名）
+  tmap: null,              // 老师对外名称表（pubName 用）
 };
 const SC_TAG_HINTS = ['跨专业', '零基础', '专科', '大专', '转专业', '短期', '低分逆袭'];
 const scE = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -27,6 +29,7 @@ async function scMount(boxId, ctx) {
     try { sc.rows = await sbAll('/rest/v1/success_cases?select=*&order=updated_at.desc'); sc.err = ''; }
     catch (e) { sc.rows = []; sc.err = e.message; }
   }
+  if (sc.tmap === null && typeof teacherNameMap === 'function') sc.tmap = await teacherNameMap();
   scRender();
 }
 function scRender() {
@@ -100,6 +103,15 @@ async function scPublish(id) {
   } catch (e) { alert('发布失败：' + e.message); }
 }
 // 草稿时的说明：不能加入的原因 + 能编辑的老师直接给「发布」
+// 合格经验总结 / 指导老师点评：排在学生感言后面；点评老师按 对外名称 → 真名 显示
+function scExpHtml(r, forDoc) {
+  const exp = (r.experience || '').trim(), com = (r.teacher_comment || '').trim();
+  if (!exp && !com) return '';
+  const by = com && r.teacher_comment_by ? (typeof pubName === 'function' ? pubName(r.teacher_comment_by, sc.tmap) : r.teacher_comment_by) : '';
+  const head = (t, extra) => forDoc ? `<div class="pk-case-s">${t}${extra || ''}</div>` : `<div style="font-size:11px;font-weight:600;margin:12px 0 4px">${t}${extra ? `<span style="font-weight:400;color:var(--text-3)">${extra}</span>` : ''}</div>`;
+  const body = t => forDoc ? `<div class="pk-case-q" style="white-space:pre-wrap">${scE(t)}</div>` : `<div style="border-left:3px solid var(--border);padding:4px 12px;color:var(--text-2);font-size:12px;line-height:1.9;white-space:pre-wrap">${scE(t)}</div>`;
+  return (exp ? head('合格经验总结') + body(exp) : '') + (com ? head('指导老师点评', by ? '（' + scE(by) + '）' : '') + body(com) : '');
+}
 function scDraftNote(r) {
   return `<span style="font-size:10px;color:var(--text-3)">草稿，发布后才能加入</span>${scCanEdit(r) ? `<button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 10px" onclick="scPublish('${scE(r.id)}')">发布</button>` : ''}`;
 }
@@ -151,6 +163,7 @@ function scDetailHtml() {
       <div style="font-size:10px;color:var(--text-3);margin:3px 0 10px">${scE(r.domain)} · ${scArr(r.majors).map(m => scE(typeof majorLabel === 'function' ? majorLabel(m) : m)).join('、')} ${scArr(r.tags).length ? ' · ' + scArr(r.tags).map(scE).join('、') : ''}</div>
       ${scTableHtml(r, false)}
       ${(r.quote || '').trim() ? `<div style="border-left:3px solid var(--accent);padding:4px 12px;margin:10px 0;color:var(--text-2);font-size:12px;line-height:1.9">“${scE(r.quote)}”</div>` : ''}
+      ${scExpHtml(r, false)}
       ${works.length ? `<div style="font-size:11px;font-weight:600;margin:12px 0 6px">作业展示</div>${scWorksHtml(works, false)}` : ''}
       ${plans.length ? `<div style="font-size:11px;font-weight:600;margin:12px 0 6px">计划书 / 志望理由书（老师批改版）</div>${scPlansHtml(plans, false)}` : ''}
       ${others.length ? `<div style="font-size:11px;font-weight:600;margin:12px 0 2px">其他展示</div>${scOthersHtml(others, false)}` : ''}
@@ -223,6 +236,7 @@ function scDocHtml(cases, opt) {
       <div class="pk-case-h">${scE(r.alias)}${r.tagline ? ' — ' + scE(r.tagline) : ''}</div>
       ${scTableHtml(r, true)}
       ${(r.quote || '').trim() ? `<div class="pk-case-q">“${scE(r.quote)}”</div>` : ''}
+      ${scExpHtml(r, true)}
       ${scDocMedia(r, opt)}
       ${plans.length ? `<div class="pk-case-s">计划书 / 志望理由书（老师批改版）</div>${scPlansHtml(plans, true)}` : ''}
     </div>`;
@@ -273,6 +287,7 @@ function scPackDialogOk() {
 async function scRegenPackItem(itemId) {
   const it = (typeof pkItems !== 'undefined' ? pkItems : []).find(x => x.id === itemId); if (!it || !it.caseIds) return;
   if (sc.rows === null) { try { sc.rows = await sbAll('/rest/v1/success_cases?select=*&order=updated_at.desc'); } catch (e) { alert('读取合格案例失败：' + e.message); return; } }
+  if (sc.tmap === null && typeof teacherNameMap === 'function') sc.tmap = await teacherNameMap();   // 点评老师显示对外名称
   const cases = it.caseIds.map(id => (sc.rows || []).find(r => r.id === id)).filter(r => r && r.published);
   if (!cases.length) { alert('这些合格案例已被删除或取消发布，无法重新生成'); return; }
   scPackDialog(cases, { regenId: itemId, opt: it.caseOpt });
@@ -299,7 +314,7 @@ function scNextAlias() {
 function scBlank() {
   const lock = sc.ctx.lockDomain || '';
   const doms = scAllowedDomains();
-  return { id: '', domain: lock || doms[0] || '', majors: [], student_id: '', alias: scNextAlias(), tagline: '', background: '', timeline: [], schools: [], schoolInput: '', schoolNew: 0, quote: '', works: [], plan_files: [], others: [], tags: [], published: false,
+  return { id: '', domain: lock || doms[0] || '', majors: [], student_id: '', alias: scNextAlias(), tagline: '', background: '', timeline: [], schools: [], schoolInput: '', schoolNew: 0, quote: '', experience: '', teacher_comment: '', teacher_comment_by: sc.ctx.mode === 'teacher' ? (sc.ctx.me || '') : '', works: [], plan_files: [], others: [], tags: [], published: false,
     stuSearch: '', cand: null, tagInput: '', sf: scSfInit() };
 }
 function scAllowedDomains() { return DOMAINS.map(d => d.label).filter(d => sc.ctx.allowDomain(d)); }
@@ -307,11 +322,12 @@ function scNew() { sc.cur = scBlank(); sc.view = 'edit'; scRender(); scEnsureStu
 function scEdit(id) {
   const r = (sc.rows || []).find(x => x.id === id); if (!r) return;
   sc.cur = { id: r.id, domain: r.domain, majors: scArr(r.majors).slice(), student_id: r.student_id || '', alias: r.alias || '', tagline: r.tagline || '', background: r.background || '', timeline: scArr(r.timeline).map(t => ({ period: t.period || '', content: t.content || '' })),
-    schools: scSplitResult(r.result).map(l => ({ label: l, on: true })), schoolInput: '', schoolNew: 0, quote: r.quote || '', works: scArr(r.works).map(w => Object.assign({}, w)), plan_files: scArr(r.plan_files).map(p => Object.assign({}, p)), others: scArr(r.others).map(o => Object.assign({}, o)), tags: scArr(r.tags).slice(), published: r.published === true, stuSearch: '', cand: null, tagInput: '', sf: scSfInit() };
+    schools: scSplitResult(r.result).map(l => ({ label: l, on: true })), schoolInput: '', schoolNew: 0, quote: r.quote || '', experience: r.experience || '', teacher_comment: r.teacher_comment || '', teacher_comment_by: r.teacher_comment_by || '', works: scArr(r.works).map(w => Object.assign({}, w)), plan_files: scArr(r.plan_files).map(p => Object.assign({}, p)), others: scArr(r.others).map(o => Object.assign({}, o)), tags: scArr(r.tags).slice(), published: r.published === true, stuSearch: '', cand: null, tagInput: '', sf: scSfInit() };
   sc.view = 'edit'; scRender(); scEnsureStudents();
   if (sc.cur.student_id) { scLoadCandidates(); scMergeSchools(sc.cur); }
 }
 async function scEnsureStudents() {
+  if (!sc.teachers) { try { sc.teachers = ((await sb('/rest/v1/teachers?select=name&order=name.asc')) || []).map(t => t.name).filter(Boolean); } catch (e) { sc.teachers = []; } if (sc.view === 'edit') scRender(); }
   if (sc.stu) return;
   try { sc.stu = await sc.ctx.loadStudents(); } catch (e) { sc.stu = []; }
   if (sc.view === 'edit') scRerenderStuSelect();
@@ -445,6 +461,9 @@ function scEditHtml() {
         ${c.schoolNew ? `<div style="font-size:10px;color:var(--accent);margin-top:4px">新带出 ${c.schoolNew} 所</div>` : ''}
         <div style="display:flex;gap:6px;margin-top:6px"><input value="${scE(c.schoolInput)}" placeholder="＋ 手动添加（系统里没有的学校），回车添加" oninput="sc.cur.schoolInput=this.value" onkeydown="if(event.key==='Enter'){event.preventDefault();scAddSchool()}" style="${inp}"></div></div>
       <div style="margin-top:10px">${lbl('学生感言')}<textarea rows="2" oninput="sc.cur.quote=this.value" style="${inp};line-height:1.7;resize:vertical" placeholder="例：有热爱支持着就不会觉得苦，拿到合格通知书的那一刻激动得不能自已。">${scE(c.quote)}</textarea></div>
+      <div style="margin-top:10px">${lbl('合格经验总结（可不填）')}<textarea rows="4" oninput="sc.cur.experience=this.value" style="${inp};line-height:1.7;resize:vertical" placeholder="这个学生为什么能考上：准备节奏、关键转折、可复制的方法，写给以后的学生看">${scE(c.experience)}</textarea></div>
+      <div style="margin-top:10px">${lbl('指导老师点评（可不填）')}<textarea rows="4" oninput="sc.cur.teacher_comment=this.value" style="${inp};line-height:1.7;resize:vertical" placeholder="指导老师对这位学生的点评">${scE(c.teacher_comment)}</textarea>
+        <div style="margin-top:6px">${lbl('点评老师（对外显示对外名称）')}<select onchange="sc.cur.teacher_comment_by=this.value" style="${inp}"><option value="">未选择</option>${[...new Set([...(sc.teachers || []), c.teacher_comment_by].filter(Boolean))].map(n => `<option value="${scE(n)}" ${n === c.teacher_comment_by ? 'selected' : ''}>${scE(n)}</option>`).join('')}</select></div></div>
     </div>
     <div style="${box}">${h('④ 作业展示')}
       <div style="font-size:10px;color:var(--warn,#b8860b);background:#fff8e6;border:1px solid #e8d4a0;border-radius:3px;padding:4px 8px;margin-bottom:8px">请确认图片中没有学生真实姓名（对外只显示称呼）。</div>
@@ -748,13 +767,13 @@ async function scSave() {
   c.result = c.schools.filter(x => x.on).map(x => x.label).join(' · ');
   if (stu && stu.name) {
     const nm = String(stu.name).trim(), keys = nm.length >= 3 ? [nm, nm.slice(0, 2)] : [nm];
-    const fields = { '对外称呼': c.alias, '一句话标签': c.tagline, '背景': c.background, '合格结果': c.result, '学生感言': c.quote, '时间线': c.timeline.map(t => t.period + t.content).join(' ') };
+    const fields = { '对外称呼': c.alias, '一句话标签': c.tagline, '背景': c.background, '合格结果': c.result, '学生感言': c.quote, '合格经验总结': c.experience, '指导老师点评': c.teacher_comment, '时间线': c.timeline.map(t => t.period + t.content).join(' ') };
     const hit = Object.entries(fields).find(([, v]) => keys.some(k => k && String(v || '').includes(k)));
     if (hit) { alert(`「${hit[0]}」里含有学生真实姓名，请改掉后再保存（对外只显示称呼）。`); return; }
   }
   const rec = { domain: c.domain, majors: c.majors, student_id: c.student_id || null, alias: c.alias.trim(), tagline: c.tagline.trim(), background: c.background.trim(),
     timeline: c.timeline.filter(t => (t.period || '').trim() || (t.content || '').trim()).map(t => ({ period: t.period.trim(), content: t.content.trim() })),
-    result: c.result.trim(), quote: c.quote.trim(), works: c.works, plan_files: c.plan_files, others: c.others, tags: c.tags, published: !!c.published, updated_at: new Date().toISOString() };
+    result: c.result.trim(), quote: c.quote.trim(), experience: (c.experience || '').trim(), teacher_comment: (c.teacher_comment || '').trim(), teacher_comment_by: (c.teacher_comment || '').trim() ? (c.teacher_comment_by || null) : null, works: c.works, plan_files: c.plan_files, others: c.others, tags: c.tags, published: !!c.published, updated_at: new Date().toISOString() };
   try {
     if (c.id) {
       await sb(`/rest/v1/success_cases?id=eq.${encodeURIComponent(c.id)}`, 'PATCH', rec);
