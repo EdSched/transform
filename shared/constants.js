@@ -2083,3 +2083,72 @@ function courseElectiveIds(course, students, members) {
   (students || []).forEach(st => { if (studentAttRole(st, course, byStu[String(st.id)] || []) === 'elective') out.add(String(st.id)); });
   return out;
 }
+
+// ── 手动输入的时间框（VIP 补录 / 新建 VIP 课 / 确认 VIP 预约 / 学生自主填写 / 修改弹窗共用）──
+// parseTimeInput：认得 14:00 / 14：00 / 1400 / 14 / 14.30 / 9:5，整理成 HH:MM；空返回 ''；认不出返回 null
+function parseTimeInput(str) {
+  const s = String(str == null ? '' : str).normalize('NFKC').replace(/[\s　]/g, '');
+  if (!s) return '';
+  let h, m, r;
+  if ((r = s.match(/^(\d{1,2})[:.](\d{1,2})$/))) { h = +r[1]; m = +r[2]; }
+  else if ((r = s.match(/^(\d{1,2})$/))) { h = +r[1]; m = 0; }
+  else if ((r = s.match(/^(\d{1,2})(\d{2})$/))) { h = +r[1]; m = +r[2]; }
+  else return null;
+  if (h > 23 || m > 59) return null;
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}
+// opts: { style: 追加样式, onch: 整理完后执行的代码（this = 输入框）, role: 'start'|'end', mate: 另一个框的 id, btn: 出错时要禁用的提交按钮 id }
+function timeInputHtml(id, value, placeholder, opts) {
+  opts = opts || {};
+  const a = (k, v) => v ? ` data-${k}="${String(v).replace(/"/g, '&quot;')}"` : '';
+  return `<div style="min-width:0"><input type="text" id="${id}" value="${String(value || '').replace(/"/g, '&quot;')}" placeholder="${placeholder || ''}" inputmode="numeric" autocomplete="off" maxlength="8" style="width:100%;min-width:0;box-sizing:border-box;text-align:center;${opts.style || ''}"${a('onch', opts.onch)}${a('role', opts.role)}${a('mate', opts.mate)}${a('btn', opts.btn)} onfocus="this.select()" oninput="timeInputLive(this)" onchange="timeInputCommit(this)"><div id="${id}_err" style="font-size:10px;color:var(--danger,#c0392b);line-height:1.4;margin-top:2px"></div></div>`;
+}
+function readTimeInput(id) { const el = document.getElementById(id); return el ? (parseTimeInput(el.value) || '') : ''; }
+function setTimeInput(id, v) { const el = document.getElementById(id); if (el) { el.value = v || ''; el.dataset.fmt = ''; timeInputPaint(el); timeInputPair(el); } }
+function timeInputPaint(el, pairMsg) {
+  const err = document.getElementById(el.id + '_err'), fmt = el.dataset.fmt === '1';
+  el.style.borderColor = (fmt || pairMsg) ? 'var(--danger,#c0392b)' : '';
+  if (err) err.textContent = fmt ? '请输入如 14:00' : (pairMsg || '');
+}
+// 开始 / 结束一对的检查：结束不晚于开始 → 两个框变红、提交按钮不能点
+function timePairCheck(startId, endId, btnId) {
+  const s = document.getElementById(startId), e = document.getElementById(endId);
+  if (!s || !e) return true;
+  if (!s.dataset.mate) { s.dataset.role = 'start'; s.dataset.mate = endId; if (btnId) s.dataset.btn = btnId; }
+  if (!e.dataset.mate) { e.dataset.role = 'end'; e.dataset.mate = startId; if (btnId) e.dataset.btn = btnId; }
+  const a = parseTimeInput(s.value), b = parseTimeInput(e.value);
+  const order = !!a && !!b && b <= a, fmt = s.dataset.fmt === '1' || e.dataset.fmt === '1';
+  s.dataset.pairbad = e.dataset.pairbad = order ? '1' : '';
+  timeInputPaint(s, order ? ' ' : ''); timeInputPaint(e, order ? '下课时间要晚于上课时间' : '');
+  const btn = document.getElementById(btnId || s.dataset.btn || e.dataset.btn || '');
+  if (btn) btn.disabled = order || fmt;
+  return !(order || fmt);
+}
+function timeInputPair(el) {
+  const mate = el.dataset.mate; if (!mate) return;
+  const s = el.dataset.role === 'start' ? el.id : mate, e = el.dataset.role === 'start' ? mate : el.id;
+  timePairCheck(s, e);
+}
+function timeInputLive(el) {
+  if (el.dataset.mate) timeInputPair(el);
+  else if (el.dataset.fmt === '1') { el.dataset.fmt = ''; timeInputPaint(el); }
+}
+// 离开输入框：整理成 HH:MM；认不出来就变红；开始填完而结束是空的 → 自动带入「开始 + 2 小时」
+function timeInputCommit(el, noFill) {
+  const v = parseTimeInput(el.value);
+  if (v === null) el.dataset.fmt = '1'; else { el.dataset.fmt = ''; el.value = v; }
+  timeInputPaint(el);
+  if (el.dataset.role === 'start' && v && !noFill) {
+    const e = document.getElementById(el.dataset.mate);
+    if (e && !e.value.trim()) {
+      const m = Math.min((+v.slice(0, 2)) * 60 + (+v.slice(3)) + 120, 23 * 60 + 59);
+      e.value = String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+      e.dataset.fmt = ''; timeInputPaint(e);
+      timeInputPair(el);
+      if (e.dataset.onch) { try { new Function(e.dataset.onch).call(e); } catch (_) {} }
+      setTimeout(() => { if (document.activeElement === e) e.select(); }, 0);
+    }
+  }
+  timeInputPair(el);
+  if (el.dataset.onch) { try { new Function(el.dataset.onch).call(el); } catch (_) {} }
+}
