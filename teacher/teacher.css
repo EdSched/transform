@@ -151,3 +151,11 @@ input:focus,select:focus{border-color:var(--accent)}
 .vrg-sub{font-size:9px;font-weight:400;color:var(--text-3)}
 .vrg-pend{outline:1px dashed var(--danger);outline-offset:-2px}
 .vrg-k-course{background:#d6e4ee}.vrg-k-vip{background:#ecd9c2}.vrg-k-temp{background:#f3e6a8}.vrg-k-rental{background:#d3e8d8}.vrg-k-meeting{background:#e0d6ea}
+
+/* VIP 补录模式：左边填、右边对照（窄屏上下排列，表单在上） */
+.vbf-split{display:grid;grid-template-columns:45fr 55fr;gap:14px;align-items:start}
+@media (max-width:820px){.vbf-split{grid-template-columns:1fr}}
+.vbf-left{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:14px;min-width:0}
+.vbf-right{min-width:0}
+.vbf-left input:not([type=checkbox]):not([type=radio]),.vbf-left select,.vbf-left textarea{width:100%;box-sizing:border-box;font-size:12px}
+.vbf-left textarea#vip_notes{min-height:170px;line-height:1.7}

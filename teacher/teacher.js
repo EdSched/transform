@@ -537,6 +537,7 @@ function buildTabs() {
 function switchTab(tab) {
   // 全页面统一加宽（1400px）；出願数据库在自身渲染中进一步放宽为 none
   curTab = tab;
+  if (tab !== 'vipframework' && typeof vbfLeave === 'function') vbfLeave();   // 离开 VIP 管理就退出补录模式
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   const tb = document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`);
   if (tb) { tb.classList.add('active'); try { tb.scrollIntoView({ inline: 'nearest', block: 'nearest' }); } catch (e) {} }   // 标签栏横向滚动时让当前标签露出来
@@ -1289,8 +1290,7 @@ function renderSlotManagement(mc) {
       </div>
     </div>
   </div>
-  <div class="swipe-hint">← 左右滑动切换：新增表单 / 时间槽列表 →</div>
-  ${typeof vbfBtnHtml === 'function' && vbfBtnHtml() ? `<div style="margin-top:18px">${vbfBtnHtml()}</div>` : ''}`;
+  <div class="swipe-hint">← 左右滑动切换：新增表单 / 时间槽列表 →</div>`;
   const today = new Date().toISOString().slice(0, 10);
   const el = document.getElementById('ts_date'); if (el) el.value = today;
   const rs = document.getElementById('ts_repeat_start'); if (rs) rs.value = today;
@@ -1762,7 +1762,7 @@ function openVipHwEditor(bookingId) {
     onSave: async (payload, note) => { vipHwEditQ = payload; vipHwEditNote = note || ''; const el = document.getElementById('vip_hw_status'); if (el) el.textContent = vipHwStatusText(); },
   });
 }
-// 上课记录表单：「上课记录」弹窗和「补录已上完的 VIP 课」弹窗共用同一套控件、同一套校验（vipRecInit / vipRecFormHtml / vipRecCollect）
+// 上课记录表单：「上课记录」弹窗和「VIP 管理 → 上课记录」里的补录模式共用同一套控件、同一套校验（vipRecInit / vipRecFormHtml / vipRecCollect）
 // b：预约（补录时是还没入库的草稿，要有 name / vip_*）；返回是否有 VIP 规划
 async function vipRecInit(b) {
   vipHwEditQ = b.vip_homework_questions || null; vipHwEditNote = b.vip_homework_note || ''; vipHwAutoVal = null;

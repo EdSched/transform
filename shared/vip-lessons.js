@@ -5,6 +5,8 @@
 //   cfg.requireStudent      true = 预约必须对得上范围内的学生才显示（管理范围 / 老师学生范围）
 //   cfg.bookingOk(b)        可选，再按预约过滤（例如老师端「只看自己上的课」）
 //   cfg.recordBtn(b)        可选，返回行里的「去上课记录」按钮 HTML（老师端用）
+//   cfg.compact             可选，精简版（老师端补录对照栏）：只留月份切换，不显示搜索 / 状态 / 领域专业 / 老师筛选；cfg.view = 'lesson' | 'student'
+//   cfg.summary(list)       compact 时月份行下面的汇总 HTML；cfg.onStudent(id) 按学生看时点学生；cfg.onDraw() 画完回调；cfg.rowStyle(b) 课次行的额外样式
 // 依赖：shared/constants.js（DMF / domMajorFilterHtml / chipFold / hwFeedbacks / hwFeedbackCardsHtml / MAJORS）、shared/supabase.js、shared/search.js
 const VL = {
   ym: '', view: 'lesson',            // view: lesson 按课次 | student 按学生
@@ -25,6 +27,9 @@ function vlMount(box, cfg) {
   VL.box = box; VL.cfg = cfg;
   if (!VL.ym) VL.ym = vlCurYm();
   VL.shown = VL_PAGE;
+  if (cfg.compact) { VL.view = cfg.view || 'lesson'; VL.status = ''; VL.teacher = ''; VL.q = ''; VL.open = {}; VL.stuOpen = {}; }
+  else if (VL.compactPrev) { VL.view = 'lesson'; VL.open = {}; VL.stuOpen = {}; }   // 刚从精简版回来，视图回到按课次
+  VL.compactPrev = !!cfg.compact;
   if (VL.loadedYm !== VL.ym) vlLoad(); else vlDraw();
 }
 
@@ -117,7 +122,7 @@ function vlScoped() {
 const VL_DMF_OPTS = { extra: true, noSource: true };
 function vlMatch(x, skip) {
   const b = x.b;
-  if (!dmfMatch(x.item, DMF, VL_DMF_OPTS)) return false;
+  if (!VL.cfg.compact && !dmfMatch(x.item, DMF, VL_DMF_OPTS)) return false;
   if (VL.status) {
     const st = vlState(b);
     if (VL.status === 'todo' ? !(st === 'todo' || st === 'unrec') : st !== VL.status) return false;
@@ -135,6 +140,7 @@ function vlSet(k, v) { VL[k] = v; VL.shown = VL_PAGE; if (k === 'q') { vlDrawBod
 function vlSetYm(ym) { VL.ym = ym; VL.shown = VL_PAGE; VL.open = {}; VL.stuOpen = {}; vlLoad(); }
 function vlMore() { VL.shown += VL_PAGE; vlDrawBody(); }
 function vlToggle(id) { VL.open[id] = !VL.open[id]; vlDrawBody(); }
+function vlPickStudent(id) { if (VL.cfg && VL.cfg.onStudent) VL.cfg.onStudent(id); }
 function vlToggleStu(key) { VL.stuOpen[key] = !VL.stuOpen[key]; vlDrawBody(); }
 
 // ── 绘制 ──
@@ -145,6 +151,15 @@ function vlDraw() {
   const box = VL.box; if (!box) return;
   const cur = vlCurYm();
   const scoped = vlScoped();
+  if (VL.cfg.compact) {   // 精简版：月份切换 + 汇总
+    const arrow = (n, tx) => `<span onclick="vlSetYm('${vlShiftYm(VL.ym, n)}')" style="cursor:pointer;user-select:none;font-size:13px;padding:2px 10px;border:1px solid var(--border);border-radius:3px;background:var(--surface)">${tx}</span>`;
+    box.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:10px 14px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${arrow(-1, '‹')}<span style="font-size:13px;font-weight:600;min-width:92px;text-align:center">${VL.ym.replace('-', '年')}月</span>${arrow(1, '›')}${VL.ym === cur ? '' : `<span onclick="vlSetYm('${cur}')" style="font-size:10px;color:var(--accent);cursor:pointer">回到本月</span>`}</div>
+      ${VL.cfg.summary ? VL.cfg.summary(scoped.filter(x => vlMatch(x))) : ''}</div><div id="vl_body"></div>`;
+    vlDrawBody();
+    if (VL.cfg.onDraw) VL.cfg.onDraw();
+    return;
+  }
   const teachers = [...new Set(scoped.map(x => x.b.assigned_teacher).filter(Boolean))].sort();
   if (VL.teacher && !teachers.includes(VL.teacher)) VL.teacher = '';
   // 领域/专业：只列有学生的；来源不用
@@ -191,8 +206,9 @@ function vlLessonRow(x, cols, extraTd) {
   const b = x.b, st = vlState(b), tag = st === 'bfwait' ? [b.admin_review === 'rejected' ? '教务已退回' : '待教务确认', 'var(--warn,#b8860b)'] : vlStateTag(st), hw = vlHw(b), cf = vlConfirm(b);
   const grey = st === 'cancelled' ? 'opacity:.55;background:var(--bg,#f7f5f0);' : '';
   const open = !!VL.open[b.id];
+  const hl = VL.cfg.rowStyle ? VL.cfg.rowStyle(b) : '';
   const who = b.cancelled_by ? `（${vlEsc(b.cancelled_by)}取消）` : '';
-  let h = `<tr onclick="vlToggle('${b.id}')" style="cursor:pointer;${grey}">
+  let h = `<tr onclick="vlToggle('${b.id}')" style="cursor:pointer;${grey}${hl}">
     <td style="${VL_TD};white-space:nowrap">${vlEsc(b.slot_date || '')}<div style="color:var(--text-3)">${vlEsc(b.slot_time_range || '')}</div></td>
     <td style="${VL_TD}"><b>${vlEsc(b.name || '')}</b></td>
     <td style="${VL_TD}">${vlEsc(b.assigned_teacher || '—')}</td>
@@ -254,7 +270,7 @@ function vlStudentsHtml(list) {
   const rows = stus.slice(0, VL.shown).map(g => {
     const c = g.c, s = g.s, open = !!VL.stuOpen[g.key];
     const remain = s && s.vip_hours_total != null ? Math.round(((Number(s.vip_hours_total) || 0) - (Number(s.vip_hours_used) || 0)) * 100) / 100 : null;
-    let h = `<tr onclick="vlToggleStu('${vlEsc(g.key).replace(/'/g, "\\'")}')" style="cursor:pointer">
+    let h = `<tr onclick="${VL.cfg.onStudent && s ? `vlPickStudent('${vlEsc(s.id).replace(/'/g, "\\'")}')` : `vlToggleStu('${vlEsc(g.key).replace(/'/g, "\\'")}')`}" style="cursor:pointer">
       <td style="${VL_TD}"><span style="color:var(--text-3)">${open ? '▾' : '▸'}</span> <b>${vlEsc(g.name)}</b></td>
       <td style="${VL_TD}">${c.done}</td>
       <td style="${VL_TD};color:${c.cancelled ? 'var(--text-2)' : 'var(--text-3)'}">${c.cancelled}</td>
