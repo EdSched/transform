@@ -139,3 +139,15 @@ input:focus,select:focus{border-color:var(--accent)}
 /* 不显眼的文字链接（VIP 补录入口） */
 .vbf-link{font-size:11px;color:var(--text-3);text-decoration:none;background:none;border:none;padding:0;cursor:pointer}
 .vbf-link:hover{text-decoration:underline;color:var(--text-2)}
+
+/* VIP 预约下面的教室安排（颜色与排课页占用五色一致） */
+.vrg-grid{border-collapse:collapse;font-size:10px;width:100%;table-layout:fixed;min-width:260px}
+.vrg-grid th{background:var(--bg);border:1px solid var(--border);padding:3px 4px;font-weight:600;color:var(--text-2);position:sticky;top:0;z-index:1}
+.vrg-grid td{border:1px solid var(--border-light);height:16px;padding:1px 4px;text-align:center;color:var(--text-2);vertical-align:middle}
+.vrg-grid th:first-child,.vrg-grid td.vrg-t{width:38px;text-align:right;color:var(--text-3);border-color:transparent;background:none}
+.vrg-grid td.vrg-free:hover{background:var(--ok-bg)}
+.vrg-win{background:var(--warn-bg)}
+.vrg-mine{background:var(--accent)!important;color:#fff!important}
+.vrg-sub{font-size:9px;font-weight:400;color:var(--text-3)}
+.vrg-pend{outline:1px dashed var(--danger);outline-offset:-2px}
+.vrg-k-course{background:#d6e4ee}.vrg-k-vip{background:#ecd9c2}.vrg-k-temp{background:#f3e6a8}.vrg-k-rental{background:#d3e8d8}.vrg-k-meeting{background:#e0d6ea}
