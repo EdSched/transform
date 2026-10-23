@@ -566,7 +566,7 @@ function renderVipActiveBooking(b) {
   // 上课信息块（确认后显示）
   const confirmedInfo = isConfirmed ? `
     <div style="background:var(--ok-bg,#e4f5ee);border:1px solid var(--ok,#2a9e6a);border-radius:4px;padding:10px 12px;margin:10px 0">
-      <div style="font-size:12px;font-weight:600;color:var(--ok,#2a9e6a);margin-bottom:6px">${b.self_booked ? '✅ 教务已审批，请按时上课' + (b.teacher_ok ? '（老师已确认）' : '') : '✅ 老师已确认，请按时上课'}</div>
+      <div style="font-size:12px;font-weight:600;color:var(--ok,#2a9e6a);margin-bottom:6px">${vipBookingState(b).k === 'established' && b.initiated_by === 'teacher' ? '✅ 这节课已成立，请按时上课' : (b.self_booked && b.admin_review === 'approved' ? '✅ 教务已审批，请按时上课' + (b.teacher_ok ? '（老师已确认）' : '') : '✅ 老师已确认，这节课已成立，请按时上课')}</div>
       <div style="font-size:12px;line-height:2">
         <div>📅 ${b.slot_date} ${b.slot_time_range || ''}${manualEntryTag(b)}</div>
         <div>👤 ${stuName(b.assigned_teacher || '', vipPubMap)} 老师</div>
@@ -579,8 +579,9 @@ function renderVipActiveBooking(b) {
       </div>
     </div>` : (b.self_booked ? `
     <div style="background:var(--warn-bg,#fff8e1);border:1px solid var(--warn,#e6a817);border-radius:4px;padding:10px 12px;margin:10px 0">
-      <div style="font-size:12px;font-weight:600;color:var(--warn,#b45309);margin-bottom:4px">自主预约 · 等待教务审核 · ${b.teacher_ok ? '老师已确认 ✓' : '等待老师确认'}</div>
-      <div style="font-size:11px;color:var(--text-muted);line-height:1.7">教务审核通过后预约即成立，可以正常上课${isOffline ? '，教室由教务安排' : ''}。<br>如需调整请通过下方留言联系老师。</div>
+      <div style="font-size:12px;font-weight:600;color:var(--warn,#b45309);margin-bottom:4px">自主预约 · ${b.teacher_ok ? '老师已确认，等教务确认成立' : '等待老师确认'}</div>
+      <div style="font-size:11px;color:var(--text-muted);line-height:1.7">老师确认后这节课就成立了${isOffline ? '（教室由老师安排）' : ''}。如果老师还没回复，可以把下面的文字再发给老师。<br>如需调整请通过下方留言联系老师。</div>
+      <button class="btn btn-outline btn-sm" style="margin-top:6px" onclick="vipShowTeacherRemind('${b.id}')">复制给老师的提醒文字</button>
     </div>` : `
     <div style="background:var(--warn-bg,#fff8e1);border:1px solid var(--warn,#e6a817);border-radius:4px;padding:10px 12px;margin:10px 0">
       <div style="font-size:12px;font-weight:600;color:var(--warn,#b45309);margin-bottom:4px">⏳ 等待老师确认</div>
@@ -622,6 +623,79 @@ function renderVipActiveBooking(b) {
       </div>
     </div>
   </div>`;
+}
+
+// 学生发起 → 给老师的提醒文字（复制后发给老师）
+function vipShowTeacherRemind(id, title) {
+  const b = (vipBookings || []).find(x => x.id === id); if (!b) return;
+  document.getElementById('vipRemindModal')?.remove();
+  const m = document.createElement('div');
+  m.id = 'vipRemindModal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  const text = vipTeacherRemindText(b, stuName(b.assigned_teacher || '', vipPubMap));
+  m.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:420px;width:100%">
+    <div style="font-size:14px;font-weight:600;margin-bottom:6px">${vipStuEsc(title || '给老师的提醒文字')}</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;line-height:1.7">老师确认后这节课就成立了。请把下面的文字复制发给老师：</div>
+    <textarea id="vipRemindText" rows="4" readonly style="width:100%;box-sizing:border-box;font-size:12px;padding:8px;border:1px solid var(--border);border-radius:3px">${vipStuEsc(text)}</textarea>
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-primary btn-sm" onclick="vipCopyRemind()">复制</button><button class="btn btn-outline btn-sm" onclick="document.getElementById('vipRemindModal').remove()">关闭</button></div></div>`;
+  document.body.appendChild(m);
+}
+function vipCopyRemind() {
+  const ta = document.getElementById('vipRemindText'); if (!ta) return;
+  const done = () => alert('已复制，去发给老师');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(done, () => { ta.select(); try { document.execCommand('copy'); done(); } catch (_) { alert('复制失败，请手动选中复制'); } });
+  else { ta.select(); try { document.execCommand('copy'); done(); } catch (_) { alert('复制失败，请手动选中复制'); } }
+}
+
+// ── 老师为我约的课，等我确认（老师发起 → 学生确认 → 成立）──
+function vipWaitMeHtml(list) {
+  if (!list.length) return '';
+  return `<div class="card" style="border-color:var(--warn,#e6a817)">
+    <div class="card-title">老师为你约了课，请确认</div>
+    ${list.map(b => {
+      const off = b.location && b.location !== 'online';
+      return `<div style="background:var(--warn-bg,#fff8e1);border:1px solid var(--warn,#e6a817);border-radius:4px;padding:10px 12px;margin-bottom:8px">
+        <div style="font-size:12px;line-height:1.9">
+          <div>📅 ${vipStuEsc(b.slot_date)} ${vipStuEsc(b.slot_time_range || '')}</div>
+          <div>👤 ${vipStuEsc(stuName(b.assigned_teacher || '', vipPubMap))} 老师</div>
+          <div>📍 ${vipStuEsc(locationLong(b.location) || '线上')}${off ? (b.vip_room ? ' · 教室 ' + vipStuEsc(b.vip_room) : ' · 教室待安排') : ''}</div>
+          ${b.needs ? `<div>📝 ${vipStuEsc(b.needs)}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+          <button class="btn btn-primary btn-sm" onclick="vipStuOk('${b.id}')">确认上课</button>
+          <button class="btn btn-outline btn-sm" onclick="vipStuAsk('${b.id}')">有问题，联系老师</button>
+          <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="vipStuCancelOwn('${b.id}')">不上这节课</button>
+        </div>
+      </div>`;
+    }).join('')}
+    <div style="font-size:10px;color:var(--text-muted);line-height:1.7">确认后这节课就成立了。如果不上了，请点「不上这节课」，教室会释放给别人。</div>
+  </div>`;
+}
+async function vipStuOk(id) {
+  try {
+    await sb('/rest/v1/rpc/student_vip_ok', 'POST', { p_id: id });
+    await loadVipData(); renderVipMain();
+    alert('已确认，这节课成立了。请按时上课。');
+  } catch (e) { alert(/PGRST202|Could not find the function/.test(e.message || '') ? '系统还没开通这个功能，请联系老师或管理员' : '确认失败：' + e.message); }
+}
+async function vipStuAsk(id) {
+  const b = vipBookings.find(x => x.id === id); if (!b) return;
+  const text = prompt('想对老师说什么？（例如：这个时间我不方便，能改到…）', '');
+  if (text == null || !text.trim()) return;
+  try {
+    await vipPatchOwnBooking(id, { messages: [...(b.messages || []), { from: 'student', text: text.trim(), ts: Date.now() }] });
+    b.messages = [...(b.messages || []), { from: 'student', text: text.trim(), ts: Date.now() }];
+    alert('已发给老师');
+  } catch (e) { alert('发送失败：' + e.message); }
+}
+async function vipStuCancelOwn(id) {
+  const reason = prompt('不上这节课的原因：', '');
+  if (reason == null) return;
+  if (!confirm('确定不上这节课？取消后教室会释放。')) return;
+  try {
+    await sb('/rest/v1/rpc/student_vip_cancel', 'POST', { p_id: id, p_reason: reason.trim() });
+    await loadVipData(); renderVipMain();
+  } catch (e) { alert(/PGRST202|Could not find the function/.test(e.message || '') ? '系统还没开通这个功能，请通过留言联系老师' : '取消失败：' + e.message); }
 }
 
 // ── 学生申请取消 / 改期（bookings.change_request；老师在老师端处理）──
@@ -1035,9 +1109,11 @@ function renderVipBookingSection() {
   if (!vipBookMode) vipBookMode = dateKeys.length ? 'slot' : 'self';
   const modeBtn = (m, t) => `<button onclick="vipSetBookMode('${m}')" style="flex:1;font-size:12px;padding:8px 6px;border:1px solid ${vipBookMode === m ? 'var(--accent)' : 'var(--border)'};background:${vipBookMode === m ? 'var(--accent)' : 'var(--surface)'};color:${vipBookMode === m ? '#fff' : 'var(--text-secondary)'};border-radius:3px;cursor:pointer;font-family:inherit">${t}</button>`;
   const remain = vipRemainHours(), booked = vipBookedHours(), canBook = vipCanBookHours();
-  const shown = vipActiveMoreOpen ? actives : actives.slice(0, 3);
-  const activeHtml = shown.map(b => renderVipActiveBooking(b)).join('')
-    + (actives.length > 3 ? `<div onclick="vipToggleActiveMore()" style="text-align:center;font-size:12px;color:var(--accent);cursor:pointer;padding:6px 0 12px">${vipActiveMoreOpen ? '收起 ▴' : `还有 ${actives.length - 3} 条预约 ▾`}</div>` : '');
+  const waitMe = actives.filter(b => vipBookingState(b).k === 'wait_student');   // 老师为我约的、等我确认（单独放在最上面）
+  const rest = actives.filter(b => vipBookingState(b).k !== 'wait_student');
+  const shown = vipActiveMoreOpen ? rest : rest.slice(0, 3);
+  const activeHtml = vipWaitMeHtml(waitMe) + shown.map(b => renderVipActiveBooking(b)).join('')
+    + (rest.length > 3 ? `<div onclick="vipToggleActiveMore()" style="text-align:center;font-size:12px;color:var(--accent);cursor:pointer;padding:6px 0 12px">${vipActiveMoreOpen ? '收起 ▴' : `还有 ${rest.length - 3} 条预约 ▾`}</div>` : '');
 
   return `
   ${activeHtml}
@@ -1117,7 +1193,7 @@ function vipSelfFormHtml(noSlots) {
       <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">或上传文件（Word / PDF / 图片，最大50MB）</div>
       <input type="file" id="vipStudentFileUpload" accept=".doc,.docx,.pdf,image/*">
     </div>
-    <div style="font-size:11px;color:var(--text-secondary);margin-top:12px">请先和老师商量好再填写。提交后需要老师确认和教务审核，通过后才算预约成功。</div>
+    <div style="font-size:11px;color:var(--text-secondary);margin-top:12px">请先和老师商量好再填写。老师确认后这节课就成立；提交后会生成一段文字，请复制发给老师。</div>
     <button id="vipSelfBtn" class="btn btn-primary btn-full" style="margin-top:10px" onclick="submitVipSelfBooking()">提交预约 →</button>`;
 }
 async function submitVipSelfBooking() {
@@ -1150,13 +1226,13 @@ async function submitVipSelfBooking() {
       assigned_teacher: vipSelf.teacher, location: vipSelf.loc, duration: null, status: 'pending', needs: '',
       student_content: document.getElementById('vipStudentContent')?.value.trim() || null, student_file_url: studentFileUrl,
       student_id: vipStudent.id,
-      self_booked: true, admin_review: 'pending',
+      self_booked: true, initiated_by: 'student',   // 老师确认后就成立，不再需要教务审核
     };
     await sb('/rest/v1/bookings', 'POST', booking);
     vipSelf = { teacher: '', loc: '' }; vipBookMode = null;
     await loadVipData();
     renderVipMain();
-    alert('预约已提交，请等待老师确认和教务审核');
+    vipShowTeacherRemind(booking.id, '预约已提交，等老师确认');
   } catch (e) {
     if (btn) btn.disabled = false;
     alert(/self_booked|admin_review|teacher_ok/.test(e.message || '') ? '系统还没开通「自主填写预约」，请联系管理员' : '提交失败：' + e.message);

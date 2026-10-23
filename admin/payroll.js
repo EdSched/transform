@@ -192,22 +192,27 @@ function payrollBookingMajor(b, stuMap) {
   return (st && st.major) || b.major || '';
 }
 
-// ── 生成 VIP 一对一行：已完成（老师填了上课记录）的 VIP 预约，时长 = 本次耗时 ──
+// ── 生成 VIP 一对一行 ──
+// 一节 VIP 课进工资要同时满足：老师填了上课记录（status = completed）+ 学生课后确认并评价（student_confirmed，教务代确认也算）。
+// 算哪个月：按最终确认的时间（student_confirmed_at，东京时间），不再按上课日。例：10 月 30 日的课，学生 11 月 2 日才确认 → 算 11 月工资。
+// 取数时已经按确认时间限定了日期范围（payrollLoadData 的 vipConfirmed），所以这里不再按上课日过滤。
+const payrollJstDate = iso => iso ? new Date(new Date(iso).getTime() + 9 * 3600e3).toISOString().slice(0, 10) : '';
+function payrollVipOwner(b, slotMap) { return b.assigned_teacher || slotMap[b.slot_id]?.teacher_name || ''; }
 function buildVipRows(bookings, teacherName, slots, students) {
   const slotMap = {};
   (slots || []).forEach(s => { slotMap[s.id] = s; });
   const stuMap = payrollStuMap(students);
   return (bookings || [])
     .filter(b => {
-      if (b.type !== 'vip' || b.status !== 'completed') return false;
-      const owner = b.assigned_teacher || slotMap[b.slot_id]?.teacher_name || '';
-      if (owner !== teacherName) return false;
+      if (b.type !== 'vip' || b.status !== 'completed' || b.student_confirmed !== true) return false;
+      if (payrollVipOwner(b, slotMap) !== teacherName) return false;
       return scopeMajor(payrollBookingMajor(b, stuMap));
     })
     .map(b => {
       const tr = parseTimeRange(b.slot_date, b.slot_time_range || '');
       const used = parseFloat(b.vip_hours_used);
       const hours = used > 0 ? Math.round(used * 100) / 100 : (tr.hours || 0);
+      const cf = payrollJstDate(b.student_confirmed_at) || b.slot_date || '';
       return {
         type: 'vip',
         source_id: b.id,
@@ -217,23 +222,47 @@ function buildVipRows(bookings, teacherName, slots, students) {
         时长: hours,
         工作内容: 'VIP授课',
         工作地点: payrollLocation(b.location || slotMap[b.slot_id]?.location || 'online', ''),
-        备注: `${b.name} · VIP${b.vip_content ? ' · ' + b.vip_content : ''}${b.manual_entry ? '（教务补录）' : ''}`,
-        _date: b.slot_date || '',
+        备注: `${b.name} · VIP${b.vip_content ? ' · ' + b.vip_content : ''}${b.manual_entry ? '（教务补录）' : ''}${cf && cf !== (b.slot_date || '') ? '（' + cf.slice(5).replace('-', '月') + '日确认）' : ''}`,
+        _date: cf,   // 排序 / 月份按确认日期
         _domain: payrollMajorDomain(payrollBookingMajor(b, stuMap))
       };
     });
 }
+// 已上课、学生还没确认的 VIP 课：不计入工资，单独列出来，好去催学生确认
+function buildVipPending(pending, teacherName, slots, students) {
+  const slotMap = {};
+  (slots || []).forEach(s => { slotMap[s.id] = s; });
+  const stuMap = payrollStuMap(students);
+  return (pending || []).filter(b => b.type === 'vip' && b.status === 'completed' && b.student_confirmed !== true
+      && payrollVipOwner(b, slotMap) === teacherName && scopeMajor(payrollBookingMajor(b, stuMap)))
+    .map(b => ({ name: b.name, date: b.slot_date || '', range: b.slot_time_range || '', hours: parseFloat(b.vip_hours_used) || 0, teacher: teacherName }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+function payrollPendingHtml(list) {
+  if (!list.length) return '';
+  const total = Math.round(list.reduce((t, x) => t + x.hours, 0) * 100) / 100;
+  return `<div style="margin-top:14px;background:#fff8e1;border:1px solid #e6a817;border-radius:3px;padding:9px 12px">
+    <div style="font-size:12px;font-weight:600;color:#856404">待学生确认（不计入本月）：${list.length} 节 · ${total} 课时</div>
+    <div style="font-size:10px;color:var(--text-3);margin:2px 0 6px">老师已填上课记录，学生确认并评价（教务可代确认）之后，按确认的日期算进当月工资。</div>
+    ${list.map(x => `<div style="font-size:11px;padding:2px 0">${x.teacher ? x.teacher + ' · ' : ''}${x.name} · ${x.date} ${x.range}${x.hours ? ' · ' + x.hours + 'h' : ''}</div>`).join('')}
+  </div>`;
+}
 
 // 一次读齐生成工资核算要用的数据
 async function payrollLoadData(start, end) {
-  const [sessions, bookings, slots, courses, students] = await Promise.all([
+  // VIP：按「学生确认的时间」（东京时间）落在日期范围内取；另外取已上课、还没确认的（待学生确认，不计入工资）
+  const nextDay = new Date(new Date(end + 'T12:00:00Z').getTime() + 864e5).toISOString().slice(0, 10);
+  const enc = encodeURIComponent;
+  const [sessions, bookings, slots, courses, students, vipConfirmed, vipPending] = await Promise.all([
     sb(`/rest/v1/course_sessions?select=*&session_date=gte.${start}&session_date=lte.${end}&order=session_date.asc`),
     sb(`/rest/v1/bookings?select=*&slot_date=gte.${start}&slot_date=lte.${end}&order=slot_date.asc`),
     sb(`/rest/v1/slots?select=*&date=gte.${start}&date=lte.${end}`),
     sb(`/rest/v1/courses?select=id,time_range,course_type,delivery,campus,actual_hours,domain,major,class_ids`),
-    sbAll(`/rest/v1/students?select=id,major,extra_majors,class_ids`)
+    sbAll(`/rest/v1/students?select=id,major,extra_majors,class_ids`),
+    sbAll(`/rest/v1/bookings?type=eq.vip&status=eq.completed&student_confirmed=is.true&student_confirmed_at=gte.${enc(start + 'T00:00:00+09:00')}&student_confirmed_at=lt.${enc(nextDay + 'T00:00:00+09:00')}&select=*`),
+    sbAll(`/rest/v1/bookings?type=eq.vip&status=eq.completed&or=(student_confirmed.is.null,student_confirmed.is.false)&slot_date=lte.${end}&select=*`)
   ]);
-  return { sessions, bookings, slots, courses, students };
+  return { sessions, bookings, slots, courses, students, vipConfirmed, vipPending };
 }
 
 // ── Excel 导出 ──
@@ -317,15 +346,16 @@ async function runPayroll() {
   res.innerHTML = '<div style="font-size:12px;color:var(--text-3)">加载中…</div>';
 
   try {
-    const { sessions, bookings, slots, courses, students } = await payrollLoadData(start, end);
+    const { sessions, bookings, slots, courses, students, vipConfirmed, vipPending } = await payrollLoadData(start, end);
 
     const courseRows = buildCourseRows(sessions, teacherName, courses);
     const bookingRows = buildBookingRows(bookings, slots, teacherName, students);
-    const vipRows = buildVipRows(bookings, teacherName, slots, students);
+    const vipRows = buildVipRows(vipConfirmed, teacherName, slots, students);
     payrollRows = [...courseRows, ...bookingRows, ...vipRows].sort((a, b) => a._date.localeCompare(b._date));
+    const pendingHtml = payrollPendingHtml(buildVipPending(vipPending, teacherName, slots, students));
 
     if (!payrollRows.length) {
-      res.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:12px 0">该时间段内无数据</div>';
+      res.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:12px 0">该时间段内无数据</div>' + pendingHtml;
       return;
     }
 
@@ -369,7 +399,7 @@ async function runPayroll() {
           </tr>`).join('')}
         </tbody>
       </table>
-    </div>`;
+    </div>${pendingHtml}`;
   } catch(e) {
     res.innerHTML = `<div style="font-size:12px;color:var(--danger)">加载失败：${e.message}</div>`;
   }
@@ -393,19 +423,22 @@ async function runPayrollByMajor(majorKey) {
   res.innerHTML = '<div style="font-size:12px;color:var(--text-3)">加载中…</div>';
 
   try {
-    const { sessions, bookings, slots, courses, students } = await payrollLoadData(start, end);
+    const { sessions, bookings, slots, courses, students, vipConfirmed, vipPending } = await payrollLoadData(start, end);
 
     payrollRows = [];
+    const pendingList = [];
     teacherNames.forEach(teacherName => {
       const courseRows = buildCourseRows(sessions, teacherName, courses);
       const bookingRows = buildBookingRows(bookings, slots, teacherName, students);
-      const vipRows = buildVipRows(bookings, teacherName, slots, students);
+      const vipRows = buildVipRows(vipConfirmed, teacherName, slots, students);
       payrollRows.push(...courseRows, ...bookingRows, ...vipRows);
+      pendingList.push(...buildVipPending(vipPending, teacherName, slots, students));
     });
     payrollRows.sort((a, b) => a.姓名.localeCompare(b.姓名) || a._date.localeCompare(b._date));
+    const pendingHtml = payrollPendingHtml(pendingList);
 
     if (!payrollRows.length) {
-      res.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:12px 0">该时间段内无数据</div>';
+      res.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:12px 0">该时间段内无数据</div>' + pendingHtml;
       return;
     }
 
@@ -451,7 +484,7 @@ async function runPayrollByMajor(majorKey) {
           </tr>`).join('')}
         </tbody>
       </table>
-    </div>`;
+    </div>${pendingHtml}`;
   } catch(e) {
     res.innerHTML = `<div style="font-size:12px;color:var(--danger)">加载失败：${e.message}</div>`;
   }

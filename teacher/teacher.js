@@ -478,6 +478,12 @@ async function init() {
       await tLoadBookingStudents().catch(() => {});   // 已绑定学生的预约按档案专业显示
       await vipLoadSchedInfo().catch(() => {});       // VIP 预约的教室审批状态（排课记录）
     }
+    // 老师自己发起的 VIP 课（initiated_by='teacher'）：不依赖「预约管理」权限，按 assigned_teacher 读（旧数据库没有这一列时读不到，忽略）
+    try {
+      const mine = await sb(`/rest/v1/bookings?type=eq.vip&assigned_teacher=eq.${encodeURIComponent(teacherName)}&initiated_by=eq.teacher&status=in.("pending","confirmed","completed")&select=*&order=slot_date.asc`, 'GET', null, { cache: 'no-store' }).catch(() => []);
+      (mine || []).forEach(b => { if (!cachedTeacherBookings.some(x => x.id === b.id)) cachedTeacherBookings.push(b); });
+      if ((mine || []).length) await vipLoadSchedInfo().catch(() => {});
+    } catch (_) {}
     if (typeof vbfLoad === 'function') await vbfLoad().catch(() => {});   // 我的 VIP 补录（待教务确认 / 已退回的单独放；教务已确认的并进 cachedTeacherBookings）
     existingAvail.forEach(a => {
       slotState[a.slot_id] = { available: a.available, time: a.available_time || '', titles: new Set(a.preferred_titles || []) };
@@ -707,7 +713,9 @@ function renderTeacherVipBookingsBody() {
   const waitIds = new Set(waiting.map(b => b.id));
   const done = vipBookings.filter(b => isVipDone(b) && !waitIds.has(b.id)).sort((x, y) => (y.slot_date || '').localeCompare(x.slot_date || ''));
   const confirmed = vipBookings.filter(b => b.status === 'confirmed' && !waitIds.has(b.id) && !b.student_confirmed && !vipNeedTeacherOk(b));
-  const needMe = vipBookings.filter(b => b.status === 'pending' || (b.self_booked && vipNeedTeacherOk(b)));
+  const waitStu = vipBookings.filter(b => typeof vipBookingState === 'function' && vipBookingState(b).k === 'wait_student');   // 我发起、等学生确认
+  const waitStuIds = new Set(waitStu.map(b => b.id));
+  const needMe = vipBookings.filter(b => !waitStuIds.has(b.id) && (b.status === 'pending' || (b.self_booked && vipNeedTeacherOk(b))));
   const head = (t) => `<div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">${t}</div>`;
   const empty = (t) => `<div style="font-size:12px;color:var(--text-3);padding:12px 0">${t}</div>`;
   const fold = (open, fn, t) => `<div onclick="${fn}" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-weight:600;padding:8px 0;border-top:1px solid var(--border);user-select:none"><span style="color:var(--text-3);width:10px">${open ? '▾' : '▸'}</span>${t}</div>`;
@@ -723,6 +731,10 @@ function renderTeacherVipBookingsBody() {
   return `<div id="tvbk_body">
     ${typeof vbfListHtml === 'function' ? vbfListHtml() : ''}
     ${roomRej.length ? `<div style="background:#fdf1ed;border:1px solid #f2d5cc;border-radius:4px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:var(--danger)">有 ${roomRej.length} 个 VIP 预约的教室申请被驳回，请在对应预约上点「重新预约教室」（预约本身没有取消）</div>` : ''}
+    ${waitStu.length ? `<div style="margin-bottom:16px">
+      ${head('我发起的 · 等学生确认')}
+      ${waitStu.map(b => renderMyVipRow(b)).join('')}
+    </div>` : ''}
     <div style="margin-bottom:16px">
       ${head('待确认VIP预约')}
       ${needMe.length ? needMe.map(b => renderMyVipRow(b)).join('') : empty('暂无待确认VIP预约')}
@@ -2186,9 +2198,10 @@ function tGoVip(id, action) {
   else setTimeout(() => { const el = document.getElementById('vipreq_' + id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
 }
 function vipReqOf(b) { let r = b && b.change_request; if (typeof r === 'string') { try { r = JSON.parse(r); } catch (e) { r = null; } } return r && typeof r === 'object' ? r : null; }
-// 学生自主填写的预约：教务审批通过即成立（status=confirmed），老师确认（teacher_ok）不挡上课，只是补充上课安排；
-// 老师先确认、教务还没审批时 status 仍是 pending（teacher_ok=true）。「待老师确认」= 老师还没打 teacher_ok 的
+// 学生发起的预约（自主填写）：老师确认（teacher_ok）这节课就成立（status=confirmed），线下课在确认时约教室；不再需要教务审批。
+// 旧数据：admin_review='approved' 的照旧算成立。「待老师确认」= 老师还没打 teacher_ok 的
 function vipNeedTeacherOk(b) {
+  if (b.initiated_by === 'teacher') return false;   // 老师自己发起的：老师那一方已经确认，等学生
   return b.self_booked ? (!b.teacher_ok && ['pending', 'confirmed'].includes(b.status)) : b.status === 'pending';
 }
 function vipReqPending(b) { const r = vipReqOf(b); return !!(r && r.status === 'pending'); }
@@ -2406,6 +2419,7 @@ function renderMyVipRow(b, s) {
           ${manualEntryTag(b)}
           ${b.self_booked ? '<span style="font-size:9px;background:#fdf1e6;color:#a0521a;border:1px solid #e8c9a8;border-radius:2px;padding:1px 6px">学生自主填写</span>' : ''}
           ${b.teacher_backfill ? '<span style="font-size:9px;background:#ede7f8;color:#5a3a9a;border:1px solid #c8bfe8;border-radius:2px;padding:1px 6px">老师补录</span>' : ''}
+          ${b.initiated_by === 'teacher' ? (b.student_ok === true ? '<span style="font-size:9px;background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:1px 6px">我发起 · 学生已确认</span>' : '<span style="font-size:9px;background:var(--warn-bg);color:var(--warn);border-radius:2px;padding:1px 6px">我发起 · 等学生确认</span>') : ''}
           ${hasRecord ? `<span style="font-size:9px;background:var(--ok-bg);color:var(--ok);border-radius:2px;padding:1px 6px">已记录</span>` : (isPast ? `<span style="font-size:9px;background:#fff3cd;color:#856404;border-radius:2px;padding:1px 6px">待填写</span>` : '')}
           ${(b.messages||[]).length ? `<span style="font-size:9px;background:#e8f0fb;color:#1a6a9a;border-radius:2px;padding:1px 6px">💬 ${b.messages.length}</span>` : ''}
         </div>
@@ -2421,11 +2435,13 @@ function renderMyVipRow(b, s) {
     ${vipSelfStateHtml(b)}
     ${vipReqBannerHtml(b, hasRecord)}
     ${vipRoomLineHtml(b)}
+    ${vipIsOfflineLoc(b.location) && !hasRecord && ['pending', 'confirmed'].includes(b.status) ? '<div style="font-size:10px;color:var(--text-3);margin-top:3px">如果不上课了，记得点取消，教室会释放给别人。</div>' : ''}
     ${vrgCardHtml(b)}
     ${b.vip_meeting_url ? `<div style="font-size:11px;color:#1a6a9a;margin-top:3px">💻 <a href="${b.vip_meeting_url}" target="_blank" style="color:#1a6a9a">${b.vip_meeting_url}</a></div>` : ''}
     <div style="margin-top:8px;padding-top:8px;border-top:1px solid #ddd5f0;display:flex;gap:6px;flex-wrap:wrap">
       ${vipNeedTeacherOk(b) ? `<button class="btn btn-sm" style="background:var(--ok);color:#fff;border:none;border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit" onclick="openVipConfirmModal('${b.id}')">✓ 确认预约</button>` : ''}
       ${b.self_booked && !b.teacher_ok && ['pending', 'confirmed'].includes(b.status) ? `<button class="btn btn-sm" style="background:none;color:var(--danger);border:1px solid var(--danger);border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit" onclick="vipSelfReject('${b.id}')">退回</button>` : ''}
+      ${typeof vipBookingState === 'function' && vipBookingState(b).k === 'wait_student' ? `<button class="btn btn-outline btn-sm" onclick="vnbRemindOpen('${b.id}')">📋 复制提醒文字</button>` : ''}
       <button class="btn btn-outline btn-sm" onclick="openVipSessionRecord('${b.id}')">${b.student_confirmed ? '查看上课记录' : hasRecord ? '编辑上课记录' : '填写上课记录'}</button>
       ${hasRecord && !b.student_confirmed ? `<button class="btn btn-outline btn-sm" onclick="openVipConfirmText('${b.id}')">📋 生成确认链接文案</button>` : ''}
       ${!hasRecord && ['pending', 'confirmed'].includes(b.status) ? `<button class="btn btn-outline btn-sm" onclick="openVipModify('${b.id}')">✎ 修改预约</button>
@@ -2438,9 +2454,10 @@ function renderMyVipRow(b, s) {
 // 学生自主填写的预约：显示审核进度
 function vipSelfStateHtml(b) {
   if (!b.self_booked || !['pending', 'confirmed'].includes(b.status)) return '';
-  const msg = b.status === 'confirmed'
-    ? `教务已审批通过，学生可以正常上课${b.vip_room ? '（教室：' + escapeHtmlVcm(b.vip_room) + '）' : ''}。${b.teacher_ok ? '' : '请点「确认预约」补充上课内容 / 会议链接，或点「退回」。'}`
-    : `学生自主填写（已和老师商量好），等待教务审批${b.teacher_ok ? '；你已确认' : '；教室由教务安排，你只需确认上课内容 / 会议链接'}`;
+  const room = b.vip_room ? '（教室：' + escapeHtmlVcm(b.vip_room) + '）' : '';
+  const msg = b.teacher_ok
+    ? (b.status === 'confirmed' ? `这节课已成立${room}。` : '你已确认；这是旧的自主预约，等教务确认成立。')
+    : `学生自己填写的预约（已和老师商量好）。你点「确认预约」这节课就成立${b.location && b.location.startsWith('offline') ? '，线下课在那里直接约教室' : ''}；不合适可以点「退回」。`;
   return `<div style="margin-top:8px;background:#fff8e1;border:1px solid #e6a817;border-radius:4px;padding:7px 10px;font-size:11px;color:#856404">${msg}</div>`;
 }
 // 老师退回学生自主填写的预约（写原因，学生在「已取消」里看到）
@@ -2499,8 +2516,7 @@ function vcmPick(i) { vcmPickIdx = i; const box = document.getElementById('vcm_c
 async function openVipConfirmModal(bookingId) {
   const b = cachedTeacherBookings.find(x => x.id === bookingId);
   if (!b) return;
-  const isSelf = !!b.self_booked;   // 自主预约的教室由教务在管理端安排，老师这里不选教室
-  const isOffline = !isSelf && b.location && (b.location.startsWith('offline') || b.location.startsWith('both'));
+  const isOffline = b.location && (b.location.startsWith('offline') || b.location.startsWith('both'));
   const isOnline = !b.location || b.location === 'online' || b.location.startsWith('both');
   // 拉该学生的 VIP 规划 + 已上课，确认时锁定本次内容
   vcmPlanItems = []; vcmPickIdx = null; vcmDoneNames = new Set();
@@ -2533,7 +2549,6 @@ async function openVipConfirmModal(bookingId) {
         <label class="form-label">上课时间 / 下课时间（必填）</label>
         ${vipTimeSelHtml('vcm', `vcmTimeChanged('${bookingId}')`)}
       </div>
-      ${isSelf && b.location && b.location.startsWith('offline') ? `<div style="font-size:11px;color:var(--text-2);margin-bottom:12px">教室由教务安排：${b.vip_room ? '<strong>' + escapeHtmlVcm(b.vip_room) + '</strong>' : '教务还没安排'}</div>` : ''}
       ${isOffline ? `
       <div class="form-group">
         <label class="form-label">教室（线下上课 · 确认后提交排课系统，待管理员审批）</label>
@@ -2556,7 +2571,7 @@ function vcmTimeChanged(bookingId) {
   const b = cachedTeacherBookings.find(x => x.id === bookingId); if (!b) return;
   const t = vipReadTimeSel('vcm'), campus = vipCampusOf(b.location);
   vcmTime = Array.isArray(t) ? t : null;
-  const isOffline = !b.self_booked && vipIsOfflineLoc(b.location);
+  const isOffline = vipIsOfflineLoc(b.location);
   if (!isOffline) return;
   const box = document.getElementById('vcm_room_box'), grid = document.getElementById('vcm_grid');
   delete VRP.vcm;
@@ -2572,7 +2587,7 @@ function vcmTimeChanged(bookingId) {
 async function confirmVipWithDetails(bookingId) {
   const b = cachedTeacherBookings.find(x => x.id === bookingId);
   if (!b) return;
-  const isOffline = !b.self_booked && b.location && (b.location.startsWith('offline') || b.location.startsWith('both'));
+  const isOffline = b.location && (b.location.startsWith('offline') || b.location.startsWith('both'));
   const vp = isOffline ? VRP.vcm : null;
   const pick = vp ? vp.pick : null;
   const meeting = document.getElementById('vcm_meeting')?.value.trim() || '';
@@ -2591,16 +2606,11 @@ async function confirmVipWithDetails(bookingId) {
   const roomName = sres ? sres.roomName : '';
   // ② 再确认预约
   try {
-    // 学生自主填写的预约：教务已审核通过才算「已确认」，否则只记老师已确认（teacher_ok），status 仍为 pending
-    const patch = {
-      status: (b.self_booked && b.admin_review !== 'approved') ? 'pending' : 'confirmed',
-      vip_meeting_url: meeting,
-      vip_content: lockedContent,
-      slot_time_range: vcmTime[0] + '–' + vcmTime[1],
-      messages: vipSysMsg(b, vipTimeConfirmMsg(b, vcmTime)),
-    };
-    if (b.self_booked) patch.teacher_ok = true;                       // 教室由教务安排，不覆盖
-    else { patch.vip_room = roomName; patch.sched_booking_id = schedId; }
+    // 老师确认 → 这节课成立（学生发起的预约不再需要教务审批）；线下课的教室在上面已经约好；时间以老师填的为准
+    const tr = vcmTime[0] + '–' + vcmTime[1];
+    const patch = { status: 'confirmed', vip_meeting_url: meeting, vip_content: lockedContent, slot_time_range: tr, messages: vipSysMsg(b, vipTimeConfirmMsg(b, vcmTime)) };
+    if (b.self_booked) { patch.teacher_ok = true; patch.messages = [...patch.messages, { from: 'system', text: `【预约确认】老师已确认 ${b.slot_date} ${tr} 的VIP课，这节课已成立${roomName ? '，教室 ' + roomName : ''}，请按时上课。`, ts: Date.now() }]; }
+    if (isOffline) { patch.vip_room = roomName; patch.sched_booking_id = schedId; }
     await bkPatch(bookingId, patch);
     Object.assign(b, patch);
     await vipLoadSchedInfo().catch(() => {});
