@@ -1199,7 +1199,7 @@ function renderVipBookingCard(b){
       ${b.student_confirmed_by?`<div><div class="bf-label">学生确认</div><div class="bf-value">教务（${bkSelfEsc(b.student_confirmed_by)}）代确认</div></div>`:''}
     </div>
     <div style="display:flex;gap:6px;padding:0 14px 12px;flex-wrap:wrap">
-      ${b.status==='pending'&&!b.self_booked&&!b.teacher_backfill?`<button class="btn btn-primary btn-sm" onclick="confirmBooking('${b.id}')">确认</button>`:''}
+      ${b.status==='pending'&&!b.self_booked&&!b.teacher_backfill&&b.initiated_by!=='teacher'?`<button class="btn btn-primary btn-sm" onclick="confirmBooking('${b.id}')">确认</button>`:''}
       ${b.teacher_backfill&&b.admin_review==='approved'&&!b.student_confirmed?`<button class="btn btn-outline btn-sm" onclick="bkBfProxyOpen('${b.id}')">代学生确认</button>`:''}
       ${b.status!=='cancelled'&&!b.vip_session_notes?`<button class="btn btn-outline btn-sm" onclick="openAdminVipReschedule('${b.id}')">🔄 调整时间</button>`:''}
       ${b.status==='completed'?`<button class="btn btn-outline btn-sm" style="color:var(--text-3);font-size:10px" onclick="revertVipToConfirmed('${b.id}')">撤销完成</button>`:''}
