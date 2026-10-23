@@ -175,6 +175,77 @@ async function vrpSubmit(key, b, date, s, e, content, campus) {
   const schedId = await vipSchedUpsert(b, other ? null : pick, date, s, e, content, { urgent, other, campus });
   return { schedId, createdNow: String(before) !== String(schedId), roomName, urgent, other };
 }
+// ── 教室安排（挂在 VIP 预约下面）：当天该校区所有 VIP 教室的占用一览，方便选教室、改时间 ──
+// 只读展示 + 点空格子回调；不会自己写排课系统，真正的预约 / 修改仍走 vrpSubmit（修改预约、确认预约弹窗）
+const VRG_TIMES = (function () { const a = []; for (let m = 8 * 60; m < 22 * 60; m += 30) a.push(String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0')); return a; })();
+const VRG_KIND = { course: '排课', vip: 'VIP', temp: '临时使用', rental: '对外出租', meeting: '开会' };
+const VRG_CB = {};   // boxId → 点空格子的回调 (roomId, time)
+const vrgHM = t => String(t || '').slice(0, 5);
+// o: { start, end, exclude（本预约自己的排课记录 id，显示成「本课」）, onCell(roomId, time) }
+async function vrgRender(boxId, campus, date, o) {
+  o = o || {};
+  const box = document.getElementById(boxId); if (!box) return;
+  const tok = box._vrgTok = String(Date.now()) + Math.random();
+  box.innerHTML = '<div style="font-size:11px;color:var(--text-3)">加载中…</div>';
+  let info;
+  try { info = await vipLoadRooms(campus, date, '08:00', '22:00', o.exclude); }
+  catch (e) { if (box._vrgTok === tok) box.innerHTML = `<div style="font-size:11px;color:var(--danger)">读取失败：${escapeHtmlVcm(vipSchedErr(e))}</div>`; return; }
+  if (box._vrgTok !== tok) return;
+  const rooms = info.rooms;
+  if (!rooms.length) { box.innerHTML = '<div style="font-size:11px;color:var(--text-3)">该校区暂无 VIP 教室</div>'; return; }
+  VRG_CB[boxId] = o.onCell || null;
+  const inWin = t => o.start && o.end && vrgHM(o.start) <= t && t < vrgHM(o.end);
+  const skip = rooms.map(() => 0);
+  let h = `<div style="font-size:10px;color:var(--text-3);margin-bottom:4px">${escapeHtmlVcm(campus)} · ${vipMD(date)}　${['vip', 'temp', 'course', 'rental', 'meeting'].map(k => `<span style="margin-right:8px"><i class="vrg-k-${k}" style="display:inline-block;width:9px;height:9px;border:1px solid var(--border);vertical-align:-1px"></i> ${VRG_KIND[k]}</span>`).join('')}${o.onCell ? '　点空格子 = 改到这个时间 / 教室' : ''}</div>
+    <div style="overflow:auto;max-height:340px"><table class="vrg-grid"><thead><tr><th></th>${rooms.map(r => `<th>${escapeHtmlVcm(r.name)}<div class="vrg-sub">${r.capacity ? r.capacity + '人' : ''}</div></th>`).join('')}</tr></thead><tbody>`;
+  VRG_TIMES.forEach((t, i) => {
+    h += `<tr><td class="vrg-t${inWin(t) ? ' vrg-win' : ''}">${t.endsWith(':00') || inWin(t) && !inWin(VRG_TIMES[i - 1] || '') ? t : ''}</td>`;
+    rooms.forEach((r, ri) => {
+      if (skip[ri] > 0) { skip[ri]--; return; }
+      const x = r.conf.find(c => vrgHM(c.start_time) <= t && t < vrgHM(c.end_time));
+      if (!x) {
+        const mine = info.mineRoomId != null && String(info.mineRoomId) === String(r.id) && inWin(t);
+        h += mine ? '<td class="vrg-mine">本课</td>'
+          : `<td class="vrg-free${inWin(t) ? ' vrg-win' : ''}"${o.onCell ? ` onclick="vrgCell('${boxId}','${r.id}','${t}')" style="cursor:pointer"` : ''}></td>`;
+        return;
+      }
+      let span = 0; for (let j = i; j < VRG_TIMES.length && VRG_TIMES[j] < vrgHM(x.end_time); j++) span++;
+      skip[ri] = span - 1;
+      h += `<td rowspan="${span}" class="vrg-k-${x.kind || 'temp'}${x.status === 'pending' ? ' vrg-pend' : ''}" title="${escapeHtmlVcm(vrgHM(x.start_time) + '-' + vrgHM(x.end_time))}">${escapeHtmlVcm(VRG_KIND[x.kind] || '占用')}<div class="vrg-sub">${x.status === 'pending' ? '待确认' : ''}</div></td>`;
+    });
+    h += '</tr>';
+  });
+  box.innerHTML = h + '</tbody></table></div>';
+}
+function vrgCell(boxId, roomId, t) { const f = VRG_CB[boxId]; if (f) f(roomId, t); }
+// 把点中的时间带进「修改预约」弹窗（保持原来的时长），并选中点的那间教室（空闲才选）
+async function vrgApply(id, roomId, t) {
+  const b = cachedTeacherBookings.find(x => x.id === id), g = k => document.getElementById(k);
+  if (!b || !g('vmd_start')) return;
+  const mins = x => { const [h, m] = x.split(':').map(Number); return h * 60 + m; };
+  const tp = vipTimeParts(g('vmd_start').value + '-' + g('vmd_end').value) || vipTimeParts(b.slot_time_range) || ['', ''];
+  const dur = tp[0] && tp[1] && mins(tp[1]) > mins(tp[0]) ? mins(tp[1]) - mins(tp[0]) : 60;
+  const e = Math.min(mins(t) + dur, 22 * 60);
+  g('vmd_start').value = t; g('vmd_end').value = String(Math.floor(e / 60)).padStart(2, '0') + ':' + String(e % 60).padStart(2, '0');
+  await vmdLoadRooms(id);
+  const vp = VRP.vmd;
+  if (vp && !vp.loading && vp.free && vp.free.some(r => String(r.id) === String(roomId))) { vp.pick = String(roomId); vrpRender('vmd'); }
+}
+// 预约卡片下面的「教室安排」：展开才加载
+function vrgToggle(id) {
+  const p = document.getElementById('vrg_p_' + id); if (!p) return;
+  const open = p.style.display === 'none';
+  p.style.display = open ? 'block' : 'none';
+  if (!open) return;
+  const b = cachedTeacherBookings.find(x => x.id === id); if (!b) return;
+  const tp = vipTimeParts(b.slot_time_range) || [], campus = vipCampusOf(b.location);
+  vrgRender('vrg_g_' + id, campus, b.slot_date, { start: tp[0], end: tp[1], exclude: b.sched_booking_id, onCell: (rid, t) => { openVipModify(id); vrgApply(id, rid, t); } });
+}
+function vrgCardHtml(b) {
+  if (!vipIsOfflineLoc(b.location) || !vipCampusOf(b.location) || b.vip_session_notes || !['pending', 'confirmed'].includes(b.status)) return '';
+  return `<div style="margin-top:8px"><span onclick="vrgToggle('${b.id}')" style="font-size:11px;color:var(--text-2);cursor:pointer;text-decoration:underline">教室安排 ▾</span>
+    <div id="vrg_p_${b.id}" style="display:none;margin-top:6px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:10px"><div id="vrg_g_${b.id}"></div></div></div>`;
+}
 // 紧急预约 / 大教室申请要发群的文字（照 sched/vip.html）
 function vipReqMsg(b, date, s, e, campus, res) {
   const wd = '周' + '日一二三四五六'[new Date(date + 'T12:00:00').getDay()];
@@ -2229,7 +2300,8 @@ function openVipModify(id, fromReq) {
       </div></div>
     <div class="form-group"><label class="form-label">上课方式与校区</label>
       <select id="vmd_loc" onchange="vmdLoadRooms('${id}')">${VIP_LOC_OPTS.map(([k, l]) => `<option value="${k}" ${(b.location || 'online') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-    <div class="form-group" id="vmd_room_wrap"><label class="form-label">教室（线下必选 · 会重新提交排课系统）</label><div id="vmd_room_box"></div></div>
+    <div class="form-group" id="vmd_room_wrap"><label class="form-label">教室（线下必选 · 会重新提交排课系统）</label><div id="vmd_room_box"></div>
+      <details style="margin-top:8px"><summary style="font-size:11px;color:var(--text-2);cursor:pointer">查看当天教室安排（点空格子可改时间 / 教室）</summary><div id="vmd_grid" style="margin-top:6px"></div></details></div>
     <div class="form-group" id="vmd_meet_wrap"><label class="form-label">会议链接</label><input id="vmd_meeting" value="${escapeHtmlVcm(b.vip_meeting_url || '')}" placeholder="https://meeting.tencent.com/…"></div>
     <div class="form-group"><label class="form-label">调整原因（必填，学生可以看到）</label>
       <input id="vmd_reason" value="${escapeHtmlVcm(r && r.status === 'pending' && r.type === 'change' ? '学生申请改期' + (r.reason ? '：' + r.reason : '') : '')}" placeholder="例：学生请假 / 老师临时有事"></div>
@@ -2251,7 +2323,8 @@ async function vmdLoadRooms(id) {
   if (!off) return;
   const date = document.getElementById('vmd_date').value, st = document.getElementById('vmd_start').value, en = document.getElementById('vmd_end').value;
   if (!date || !st || !en || st >= en) { VRP.vmd = null; document.getElementById('vmd_room_box').innerHTML = '<div style="font-size:11px;color:var(--text-3)">请先填好日期和时间</div>'; return; }
-  vrpLoad('vmd', {
+  vrgRender('vmd_grid', vipCampusOf(loc), date, { start: st, end: en, exclude: b.sched_booking_id, onCell: (rid, t) => vrgApply(id, rid, t) });
+  return vrpLoad('vmd', {
     box: 'vmd_room_box', campus: vipCampusOf(loc), date, start: st, end: en, exclude: b.sched_booking_id,
     prefer: vipCampusOf(loc) === vipCampusOf(b.location) ? (b.vip_room || '') : '', canNear: true,
     onNear: (d, a, c) => { document.getElementById('vmd_date').value = d; document.getElementById('vmd_start').value = a; document.getElementById('vmd_end').value = c; vmdLoadRooms(id); },
@@ -2339,6 +2412,7 @@ function renderMyVipRow(b, s) {
     ${vipSelfStateHtml(b)}
     ${vipReqBannerHtml(b, hasRecord)}
     ${vipRoomLineHtml(b)}
+    ${vrgCardHtml(b)}
     ${b.vip_meeting_url ? `<div style="font-size:11px;color:#1a6a9a;margin-top:3px">💻 <a href="${b.vip_meeting_url}" target="_blank" style="color:#1a6a9a">${b.vip_meeting_url}</a></div>` : ''}
     <div style="margin-top:8px;padding-top:8px;border-top:1px solid #ddd5f0;display:flex;gap:6px;flex-wrap:wrap">
       ${vipNeedTeacherOk(b) ? `<button class="btn btn-sm" style="background:var(--ok);color:#fff;border:none;border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit" onclick="openVipConfirmModal('${b.id}')">✓ 确认预约</button>` : ''}
@@ -2432,6 +2506,7 @@ async function openVipConfirmModal(bookingId) {
       ${isOffline ? `
       <div class="form-group">
         <label class="form-label">教室（线下上课 · 确认后提交排课系统，待管理员审批）</label>
+        <details style="margin-top:6px"><summary style="font-size:11px;color:var(--text-2);cursor:pointer">查看当天教室安排</summary><div id="vcm_grid" style="margin-top:6px"></div></details>
         <div id="vcm_room_box">${!vcmTime ? '<div style="font-size:10px;color:var(--danger)">时间段格式无法识别（需形如 14:00-16:00），无法自动预约教室</div>' : ''}</div>
       </div>` : ''}
       ${isOnline ? `
@@ -2446,6 +2521,7 @@ async function openVipConfirmModal(bookingId) {
     </div>`;
   document.body.appendChild(modal);
   const campus = vipCampusOf(b.location);
+  if (isOffline && vcmTime && campus) vrgRender('vcm_grid', campus, b.slot_date, { start: vcmTime[0], end: vcmTime[1], exclude: b.sched_booking_id });
   if (isOffline && vcmTime && campus) vrpLoad('vcm', { box: 'vcm_room_box', campus, date: b.slot_date, start: vcmTime[0], end: vcmTime[1], exclude: b.sched_booking_id, prefer: b.vip_room || '', canNear: false });
 }
 
