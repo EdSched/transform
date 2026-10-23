@@ -165,6 +165,7 @@ function renderTeacherVipFrameworks(mc) {
       <div style="font-family:'Noto Serif SC',serif;font-size:16px;font-weight:600">VIP 管理</div>
       <div style="font-size:11px;color:var(--text-3);margin-top:2px">确认预约并锁定内容、给学生排课、补充课程框架</div>
     </div>
+    ${(teacherVipAssignedStudents || []).length ? '<div style="margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="vnbOpen()">＋ 新建 VIP 课</button></div>' : ''}
     <div style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px">
       ${tab('booking', '预约', pendingVipBk)}
       ${tab('students', '学生进度', (teacherVipMyPlans.length + assignedOnly.length) || 0)}
