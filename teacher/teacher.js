@@ -64,11 +64,11 @@ function vipSchedRecord(b, roomId, date, start, end, content, opt) {
   opt = opt || {};
   return {
     room_id: opt.other ? null : roomId, kind: 'vip',
-    title: 'title' in opt ? opt.title : 'VIP·' + (content || vipMajorLabel(b) || b.name),   // opt.title：「教室预约」页照 vip.html 直接用填的用途
+    title: 'VIP·' + (content || vipMajorLabel(b) || b.name),
     user_name: teacherName, student_name: b.name, major: vipMajorLabel(b) || null,
     recurrence: 'once', weekday: vipWeekday(date), booking_date: date, start_time: start, end_time: end,
     uses_meeting: false, meeting_account_id: null, show_title: false,
-    status: 'pending', created_by: teacherName, note: 'note' in opt ? opt.note : '老师端VIP预约',
+    status: 'pending', created_by: teacherName, note: '老师端VIP预约',
     urgent: !!opt.urgent, req_other: !!opt.other, req_campus: opt.other ? (opt.campus || null) : null, reject_reason: null,
   };
 }
@@ -128,7 +128,7 @@ async function vipNearby(roomIds, date, s, e, excludeId) {
 async function vrpLoad(key, o) {
   const st = VRP[key] = { o, info: { rooms: [], mineRoomId: null }, free: [], pick: null, urgent: vipIsUrgent(o.date), near: null, err: '', loading: true };
   vrpRender(key);
-  try { st.info = await vipLoadRooms(o.campus, o.date, o.start, o.end, o.exclude); if (o.minCap) st.info.rooms = st.info.rooms.filter(r => !r.capacity || r.capacity >= o.minCap); }   // minCap：只列容得下这些人的教室
+  try { st.info = await vipLoadRooms(o.campus, o.date, o.start, o.end, o.exclude); }
   catch (e) { st.err = vipSchedErr(e); st.loading = false; if (VRP[key] === st) vrpRender(key); return; }
   if (VRP[key] !== st) return;   // 已被新的查询取代
   st.free = st.info.rooms.filter(r => !r.conf.length);
@@ -141,7 +141,7 @@ async function vrpLoad(key, o) {
   st.loading = false;
   if (VRP[key] === st) vrpRender(key);
 }
-function vrpPick(key, v) { const st = VRP[key]; if (!st) return; st.pick = st.pick === v && v === 'other' ? null : v; vrpRender(key); if (st.o.onPick) st.o.onPick(st.pick); }
+function vrpPick(key, v) { const st = VRP[key]; if (!st) return; st.pick = st.pick === v && v === 'other' ? null : v; vrpRender(key); }
 function vrpNear(key, d, s, e) { const st = VRP[key]; if (st && st.o.onNear) st.o.onNear(d, s, e); }
 function vrpRender(key) {
   const st = VRP[key]; if (!st) return;
@@ -167,12 +167,12 @@ function vrpRender(key) {
     ${st.pick === 'other' ? '<div style="font-size:11px;color:var(--text-3)">提交后由管理员在排课系统指派大教室；请把生成的文字发到群里。</div>' : ''}${urgentTip}`;
 }
 // 把选择结果写入排课系统（新建/改写）；返回 { schedId, createdNow, roomName, urgent, other }
-async function vrpSubmit(key, b, date, s, e, content, campus, extra) {
+async function vrpSubmit(key, b, date, s, e, content, campus) {
   const st = VRP[key], pick = st && st.pick;
   const other = pick === 'other', urgent = vipIsUrgent(date);
   const roomName = other ? '' : ((st.info.rooms.find(r => String(r.id) === String(pick)) || {}).name || '');
   const before = b.sched_booking_id || null;
-  const schedId = await vipSchedUpsert(b, other ? null : pick, date, s, e, content, Object.assign({ urgent, other, campus }, extra || {}));
+  const schedId = await vipSchedUpsert(b, other ? null : pick, date, s, e, content, { urgent, other, campus });
   return { schedId, createdNow: String(before) !== String(schedId), roomName, urgent, other };
 }
 // 紧急预约 / 大教室申请要发群的文字（照 sched/vip.html）
