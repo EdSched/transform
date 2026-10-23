@@ -127,6 +127,7 @@ function bkVipFlowHtml(){
       </div>
       ${main}
       <button class="btn btn-outline btn-sm" onclick="bkFlowCopy('${b.id}')">复制提醒文字</button>
+      ${vipNoticeLogBtn(b)}
       <button class="btn btn-outline btn-sm" onclick="openAdminVipReschedule('${b.id}')">调整</button>
       <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="bkSelfReject('${b.id}')">取消</button>
     </div>`;}).join('')}</div>`:'';
@@ -135,7 +136,7 @@ function bkVipFlowHtml(){
     ${fresh.length?fresh.map(b=>`<div style="${rowCss}"><div style="flex:1;min-width:220px;font-size:12px;line-height:1.7">
       <div><strong>${bkSelfEsc(b.name)}</strong> · 老师：${bkSelfEsc(b.assigned_teacher||'—')} · <span style="font-size:10px;color:var(--text-3)">${bkFlowBy(b)}</span></div>
       <div>${bkSelfEsc(b.slot_date)} ${bkSelfEsc(b.slot_time_range||'')} · ${bkSelfEsc(bkFlowRoom(b))}</div>
-      <div style="font-size:10px;color:var(--text-3)">成立于 ${new Date(bkFlowEstAt(b)).toLocaleString('zh-CN',{hour12:false}).slice(0,16)}</div></div></div>`).join(''):'<div style="font-size:11px;color:var(--text-3)">这段时间没有新成立的课</div>'}</div>`:'';
+      <div style="font-size:10px;color:var(--text-3)">成立于 ${new Date(bkFlowEstAt(b)).toLocaleString('zh-CN',{hour12:false}).slice(0,16)}</div></div>${vipNoticeLogBtn(b)}</div>`).join(''):'<div style="font-size:11px;color:var(--text-3)">这段时间没有新成立的课</div>'}</div>`:'';
   return `${pend.length?`<div style="background:#fff8e1;border:1px solid #e6a817;border-radius:3px;padding:9px 12px;margin-bottom:10px">
     <div onclick="bkFlowPendOpen=!bkFlowPendOpen;renderBookingPage(document.getElementById('mainContent'))" style="cursor:pointer;font-size:12px;font-weight:600;color:#856404">VIP 预约待确认：${pend.length} 条（一方还没确认，可以代确认 / 取消 / 调整） ${bkFlowPendOpen?'▾':'→'}</div>${pendRows}</div>`:''}
   <div style="background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:9px 12px;margin-bottom:10px">
@@ -152,11 +153,12 @@ async function bkProxyStudent(id){
   const b=cachedBookings.find(x=>x.id===id); if(!b) return;
   if(!confirm(`代 ${b.name} 确认这节课？\n${b.slot_date} ${b.slot_time_range||''}\n确认后这节课成立。`)) return;
   const who=bkSelfWho();
-  const patch={student_ok:true,status:'confirmed',ok_by_admin:who,messages:[...(b.messages||[]),{from:'system',text:`【教务代确认】教务（${who}）已代学生确认 ${b.slot_date} ${b.slot_time_range||''} 的VIP课，这节课已成立，请按时上课。`,ts:Date.now()}]};
+  const patch={student_ok:true,status:'confirmed',ok_by_admin:who,messages:[...(b.messages||[]),vipNoticeMsg(b,`【教务代确认】教务（${who}）已代学生确认 ${b.slot_date} ${b.slot_time_range||''} 的VIP课，这节课已成立，请按时上课。`,'admin_ok',{who:'学生',admin:who})]};
   try{
     const rows=await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(id)}`,'PATCH',patch);
     if(Array.isArray(rows)&&!rows.length) throw new Error('数据库没有允许修改这条预约（0 行被更新）');
     Object.assign(b,patch); renderBookingPage(document.getElementById('mainContent'));
+    vipNoticeModal(b,'admin_ok',{who:'学生',admin:who},'已代学生确认，这节课成立了');
   }catch(e){ alert('操作失败：'+(/student_ok|ok_by_admin/.test(e.message||'')?'系统还没开通「VIP 自助预约」，请先执行 vip_self_booking_v2.sql':e.message)); }
 }
 // 旧的自主预约（老师已确认、当时要教务审批）：直接确认成立
@@ -164,11 +166,12 @@ async function bkFlowConfirmLegacy(id){
   const b=cachedBookings.find(x=>x.id===id); if(!b) return;
   if(!confirm(`确认 ${b.name} 的这节课成立？\n${b.slot_date} ${b.slot_time_range||''}`)) return;
   const who=bkSelfWho(), now=new Date().toISOString();
-  const patch={status:'confirmed',admin_review:'approved',admin_review_by:who,admin_review_at:now,ok_by_admin:who,messages:[...(b.messages||[]),{from:'system',text:`【预约成立】教务（${who}）已确认 ${b.slot_date} ${b.slot_time_range||''} 的VIP课成立，请按时上课。`,ts:Date.now()}]};
+  const patch={status:'confirmed',admin_review:'approved',admin_review_by:who,admin_review_at:now,ok_by_admin:who,messages:[...(b.messages||[]),vipNoticeMsg(b,`【预约成立】教务（${who}）已确认 ${b.slot_date} ${b.slot_time_range||''} 的VIP课成立，请按时上课。`,'admin_ok',{who:'',admin:who})]};
   try{
     const rows=await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(id)}`,'PATCH',patch);
     if(Array.isArray(rows)&&!rows.length) throw new Error('数据库没有允许修改这条预约（0 行被更新）');
     Object.assign(b,patch); renderBookingPage(document.getElementById('mainContent'));
+    vipNoticeModal(b,'admin_ok',{who:'',admin:who},'已确认，这节课成立了');
   }catch(e){ alert('操作失败：'+e.message); }
 }
 
@@ -430,12 +433,13 @@ async function bkSelfApproveDo(id,room){
   const legacy=b.admin_review==='pending'||b.admin_review==='room_wait';
   const patch={status:'confirmed',teacher_ok:true,ok_by_admin:who,
     vip_room:room?room.name:(b.vip_room||''),sched_booking_id:schedId||b.sched_booking_id||null,
-    messages:[...(b.messages||[]),{from:'system',text:`【预约确认】教务（${who}）已代老师确认 ${b.slot_date} ${b.slot_time_range||''} 的VIP课，这节课已成立${room&&room.name?'，教室 '+room.name:''}，请按时上课。`,ts:Date.now()}]};
+    messages:[...(b.messages||[]),vipNoticeMsg(Object.assign({},b,{vip_room:room?room.name:(b.vip_room||'')}),`【预约确认】教务（${who}）已代老师确认 ${b.slot_date} ${b.slot_time_range||''} 的VIP课，这节课已成立${room&&room.name?'，教室 '+room.name:''}，请按时上课。`,'admin_ok',{who:'老师',admin:who,room:room?room.name:(b.vip_room||''),approval:room?'pending':''})]};
   if(legacy){ patch.admin_review='approved'; patch.admin_review_by=who; patch.admin_review_at=now; }
   try{
     const rows=await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(id)}`,'PATCH',patch);
     if(Array.isArray(rows)&&!rows.length) throw new Error('数据库没有允许修改这条预约（0 行被更新）');
-    Object.assign(b,patch); renderBookingPage(document.getElementById('mainContent')); return true;
+    Object.assign(b,patch); renderBookingPage(document.getElementById('mainContent'));
+    vipNoticeModal(b,'admin_ok',{who:'老师',admin:who,room:room?room.name:(b.vip_room||''),approval:room?'pending':''},'已代老师确认，这节课成立了'); return true;
   }catch(e){
     if(schedId&&createdNew){ try{ await sb(`/rest/v1/sched_bookings?id=eq.${schedId}`,'DELETE'); }catch(_){} }   // 预约没改成功，释放刚占的教室
     alert('操作失败：'+e.message); return false;
@@ -449,12 +453,13 @@ async function bkSelfReject(id){
   if(!note.trim()){ alert('请填写取消原因'); return; }
   const who=bkSelfWho(), now=new Date().toISOString();
   const patch={status:'cancelled',cancel_reason:note.trim(),cancelled_by:'教务取消（'+who+'）',cancelled_at:now,sched_booking_id:null,
-    messages:[...(b.messages||[]),{from:'system',text:`【取消通知】教务取消了 ${b.slot_date} ${b.slot_time_range||''} 的VIP预约。原因：${note.trim()}`,ts:Date.now()}]};
+    messages:[...(b.messages||[]),vipNoticeMsg(b,`【取消通知】教务取消了 ${b.slot_date} ${b.slot_time_range||''} 的VIP预约。原因：${note.trim()}`,'cancelled',{by:'教务取消',reason:note.trim()})]};
   try{
     const rows=await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(id)}`,'PATCH',patch);
     if(Array.isArray(rows)&&!rows.length) throw new Error('数据库没有允许修改这条预约（0 行被更新）');
     if(b.sched_booking_id){ try{ await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`,'DELETE'); }catch(_){} }   // 占的教室一并释放
     Object.assign(b,patch); renderBookingPage(document.getElementById('mainContent'));
+    vipNoticeModal(b,'cancelled',{by:'教务取消',reason:note.trim()},'已取消，教室已释放');
   }catch(e){ alert('操作失败：'+e.message); }
 }
 
@@ -661,10 +666,13 @@ async function saveAdminVipReschedule(bookingId) {
       }
       patch.vip_room = room.name;
     }
+    const descBefore = vipNoticeDesc(b), sameSlot = b.slot_date === date && String(b.slot_time_range || '') === timeRange && (b.location || 'online') === loc;
     await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', patch);
     Object.assign(b, patch);
     document.getElementById('adminVipRescheduleModal').remove();
     renderBookingPage(document.getElementById('mainContent'));
+    if (sameSlot && room) vipNoticeModal(b, 'room_changed', { by: '教务安排' }, '教室已调整');
+    else vipNoticeModal(b, 'changed', { from: descBefore, to: vipNoticeDesc(b), reason }, '已调整');
   } catch (e) { alert('保存失败：' + e.message); if (btn) btn.disabled = false; }
 }
 
@@ -1228,6 +1236,7 @@ function renderVipBookingCard(b){
       ${b.status!=='cancelled'&&!b.vip_session_notes?`<button class="btn btn-outline btn-sm" onclick="openAdminVipReschedule('${b.id}')">🔄 调整时间</button>`:''}
       ${b.status==='completed'?`<button class="btn btn-outline btn-sm" style="color:var(--text-3);font-size:10px" onclick="revertVipToConfirmed('${b.id}')">撤销完成</button>`:''}
       ${b.status!=='cancelled'?`<button class="btn btn-outline btn-sm" onclick="cancelBooking('${b.id}')">取消</button>`:''}
+      ${vipNoticeLogBtn(b)}
       <button class="btn btn-danger btn-sm" onclick="deleteVipBooking('${b.id}')">删除</button>
     </div>
   </div>`;
@@ -1357,7 +1366,8 @@ async function cancelBooking(id){
   if(!confirm('确定取消？'))return;
   try{await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',{status:'cancelled'});const b=cachedBookings.find(x=>x.id===id);
     if(b&&b.sched_booking_id){ try{ await sb(`/rest/v1/sched_bookings?id=eq.${b.sched_booking_id}`,'DELETE'); }catch(_){} b.sched_booking_id=null; }   // 释放教室（数据库触发器也会释放，重复删除无害）
-    if(b)b.status='cancelled';renderBookingPage(document.getElementById('mainContent'))}catch(e){alert('操作失败：'+e.message)}
+    if(b)b.status='cancelled';renderBookingPage(document.getElementById('mainContent'));
+    if(b&&b.type==='vip') vipNoticeModal(b,'cancelled',{by:'教务取消',reason:''},'已取消');}catch(e){alert('操作失败：'+e.message)}
 }
 async function clearCancelledBookings(){
   const ym=`${bkYear}-${String(bkMonth+1).padStart(2,'0')}`;

@@ -603,10 +603,10 @@ function renderVipActiveBooking(b) {
     <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:11px;font-weight:600;color:var(--text-secondary)">💬 与老师留言</div><div style="font-size:10px;color:${messages.length >= VIP_MSG_LIMIT ? 'var(--danger)' : 'var(--text-muted)'}">${messages.length}/${VIP_MSG_LIMIT}</div></div>
       <div id="vip_messages_list_${b.id}" style="max-height:160px;overflow-y:auto;margin-bottom:8px">
-        ${messages.length ? messages.map(m => {
+        ${vipNoticeMerged(b).length ? vipNoticeMerged(b).map(m => {
           if (m.from === 'system') return `
             <div style="text-align:center;margin-bottom:8px">
-              <span style="display:inline-block;background:#fff3cd;border:1px solid #e6a817;border-radius:4px;padding:5px 10px;font-size:10px;color:#856404;max-width:90%;text-align:left">${m.text}</span>
+              <span style="display:inline-block;background:#fff3cd;border:1px solid #e6a817;border-radius:4px;padding:5px 10px;font-size:10px;color:#856404;max-width:90%;text-align:left">${m.text}${vipNoticeCopyBtn(b, m)}</span>
             </div>`;
           return `
           <div style="font-size:11px;margin-bottom:6px;${m.from==='student'?'text-align:right':''}">
@@ -621,6 +621,7 @@ function renderVipActiveBooking(b) {
         <input type="text" id="vip_message_input_${b.id}" placeholder="${messages.length >= VIP_MSG_LIMIT ? '留言已达上限（'+VIP_MSG_LIMIT+'条）' : '给老师留言…'}" ${messages.length >= VIP_MSG_LIMIT ? 'disabled style="flex:1;font-size:12px;opacity:.5"' : 'style="flex:1;font-size:12px"'}>
         <button class="btn btn-outline btn-sm" onclick="sendVipMessage('${b.id}')">发送</button>
       </div>
+      <div style="margin-top:8px">${vipNoticeLogBtn(b)}</div>
     </div>
   </div>`;
 }
@@ -632,7 +633,7 @@ function vipShowTeacherRemind(id, title) {
   const m = document.createElement('div');
   m.id = 'vipRemindModal';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  const text = vipTeacherRemindText(b, stuName(b.assigned_teacher || '', vipPubMap));
+  const text = vipNoticeText(b, 'student_created', {});
   m.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:420px;width:100%">
     <div style="font-size:14px;font-weight:600;margin-bottom:6px">${vipStuEsc(title || '给老师的提醒文字')}</div>
     <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;line-height:1.7">老师确认后这节课就成立了。请把下面的文字复制发给老师：</div>
@@ -672,10 +673,12 @@ function vipWaitMeHtml(list) {
   </div>`;
 }
 async function vipStuOk(id) {
+  const b0 = vipBookings.find(x => x.id === id);
   try {
     await sb('/rest/v1/rpc/student_vip_ok', 'POST', { p_id: id });
     await loadVipData(); renderVipMain();
-    alert('已确认，这节课成立了。请按时上课。');
+    const b1 = vipBookings.find(x => x.id === id) || Object.assign({}, b0, { student_ok: true, status: 'confirmed' });
+    vipNoticeModal(b1, 'student_ok', {}, '已确认，这节课成立了。请按时上课。');
   } catch (e) { alert(/PGRST202|Could not find the function/.test(e.message || '') ? '系统还没开通这个功能，请联系老师或管理员' : '确认失败：' + e.message); }
 }
 async function vipStuAsk(id) {
@@ -692,9 +695,11 @@ async function vipStuCancelOwn(id) {
   const reason = prompt('不上这节课的原因：', '');
   if (reason == null) return;
   if (!confirm('确定不上这节课？取消后教室会释放。')) return;
+  const b0 = vipBookings.find(x => x.id === id);
   try {
     await sb('/rest/v1/rpc/student_vip_cancel', 'POST', { p_id: id, p_reason: reason.trim() });
     await loadVipData(); renderVipMain();
+    if (b0) vipNoticeModal(Object.assign({}, b0, { status: 'cancelled', cancelled_by: '学生本人', cancel_reason: reason.trim() }), 'cancelled', { by: '学生取消', reason: reason.trim() }, '已取消，教室会释放'); 
   } catch (e) { alert(/PGRST202|Could not find the function/.test(e.message || '') ? '系统还没开通这个功能，请通过留言联系老师' : '取消失败：' + e.message); }
 }
 
