@@ -17,19 +17,18 @@ function vipBookingState(b) {
   if (!b) return { k: '', label: '', who: '' };
   if (b.status === 'cancelled') return { k: 'cancelled', label: '已取消', who: '' };
   if (b.status === 'completed') return { k: 'done', label: '已上课', who: '' };
+  const est = { k: 'established', label: '已成立', who: '' };
+  if (b.status === 'confirmed') return est;   // 成立的时候 status 一定是 confirmed
   const by = vipInitiator(b);
-  if (by === 'teacher') {
-    if (b.student_ok === true) return { k: 'established', label: '已成立', who: '' };
-    return { k: 'wait_student', label: '待学生确认', who: 'student' };
-  }
+  if (by === 'teacher') return b.student_ok === true ? est : { k: 'wait_student', label: '待学生确认', who: 'student' };
   if (by === 'student') {
-    if (b.admin_review === 'approved') return { k: 'established', label: '已成立', who: '' };   // 旧数据：教务审批过
-    if (b.admin_review === 'pending') return { k: 'legacy_admin', label: b.teacher_ok ? '待教务处理（旧）' : '待老师确认', who: b.teacher_ok ? 'admin' : 'teacher' };
-    if (b.teacher_ok === true) return { k: 'established', label: '已成立', who: '' };
+    if (b.admin_review === 'approved') return est;   // 旧数据：教务审批过
+    const legacy = b.admin_review === 'pending' || b.admin_review === 'room_wait';   // 旧数据：当时要教务审批
+    if (b.teacher_ok === true) return legacy ? { k: 'legacy_admin', label: '待教务处理（旧）', who: 'admin' } : est;
     return { k: 'wait_teacher', label: '待老师确认', who: 'teacher' };
   }
-  if (by === 'admin') return { k: 'established', label: '已成立', who: '' };
-  return b.status === 'confirmed' ? { k: 'established', label: '已成立', who: '' } : { k: 'wait_teacher', label: '待老师确认', who: 'teacher' };
+  if (by === 'admin') return est;
+  return { k: 'wait_teacher', label: '待老师确认', who: 'teacher' };   // 时间槽预约：等老师确认
 }
 // 谁在 ○月○日 ○○:○○–○○:○○（把 'YYYY-MM-DD' 和 'HH:MM–HH:MM' 写成中文）
 function vipWhenText(b) {

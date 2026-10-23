@@ -65,7 +65,7 @@ const _mgQuarter = () => {   // 本期：1月期→1–3月 … 期末月月末�
 };
 
 // ── VIP课程 / 宣传管理 用到的数据（读取失败要往外抛，只让依赖它的指标显示「读取失败」）──
-const mgVipBookings = D => mgmLoad(D, 'mg_vbk', () => sbAll('/rest/v1/bookings?type=eq.vip&select=id,student_id,name,type,status,slot_date,assigned_teacher,self_booked,teacher_ok,admin_review,teacher_backfill,vip_session_notes,student_confirmed,change_request'));
+const mgVipBookings = D => mgmLoad(D, 'mg_vbk', () => sbAll('/rest/v1/bookings?type=eq.vip&select=id,student_id,name,type,status,slot_date,assigned_teacher,self_booked,initiated_by,student_ok,teacher_ok,admin_review,teacher_backfill,vip_session_notes,student_confirmed,change_request'));
 const mgVipPlans = D => mgmLoad(D, 'mg_vpl', () => sbAll('/rest/v1/vip_student_plans?select=id,student_id,student_name,status'));
 // 教务补录统计用：本月预约（含 manual_entry）；列还没建时读取失败，只让这两项显示「读取失败」
 const mgMonthBookings = D => mgmLoad(D, 'mg_mbk', () => { const ym = _tkYm(); return sbAll(`/rest/v1/bookings?slot_date=gte.${ym}-01&slot_date=lte.${ym}-31&status=in.(pending,confirmed,completed)&select=id,student_id,name,type,status,slot_date,assigned_teacher,manual_entry,manual_reason`); });
@@ -142,9 +142,13 @@ const MGM_GROUPS = [
       list.forEach(({ b, s }) => {   // 待办判断与老师端首页一致，满足多种只算最先匹配的一种
         let why = '';
         if (b.teacher_backfill) { if (b.admin_review === 'pending') why = '老师补录·待教务确认'; }   // 老师补录单独一类，不和「待教务审核」（学生自主填写）混在一起
-        else if (!b.self_booked && b.status === 'pending') why = '待确认';
-        else if (b.self_booked && b.status === 'pending' && b.admin_review === 'pending') why = '待教务审核';
-        else if (b.self_booked && !b.teacher_ok && ['pending', 'confirmed'].includes(b.status)) why = '待老师确认';
+        else {   // 谁发起都行，另一方确认就成立；教务不再审核。待办 = 还在等学生 / 老师（旧的自主预约老师已确认、等教务的算「待教务处理（旧）」）
+          const k = typeof vipBookingState === 'function' ? vipBookingState(b).k : '';
+          if (k === 'wait_student') why = '待学生确认';
+          else if (k === 'wait_teacher' || (b.self_booked && !b.teacher_ok && ['pending', 'confirmed'].includes(b.status))) why = '待老师确认';
+          else if (k === 'legacy_admin') why = '待教务处理（旧）';
+          else if (!k && !b.self_booked && b.status === 'pending') why = '待确认';
+        }
         if (why) items.push(_mgBkItem(b, s, why));
       });
       return _mgRate(list.length - items.length, list.length, items, '本月 VIP 预约数（待确认 / 已确认 / 已完成，不含已取消）', `当月（${_tkYm()}）`, '完成 = 没有待确认事项的预约；名单说明里写明是「待确认 / 待教务审核 / 待老师确认 / 老师补录·待教务确认」哪一种');
