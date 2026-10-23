@@ -221,7 +221,7 @@ async function bkBfApprove(id,proxy){
   const now=new Date().toISOString(), who=bkSelfWho(), f=String(b.slot_date||'').split('-');
   const patch={admin_review:'approved',admin_review_by:who,admin_review_at:now,status:'completed',
     messages:[...(b.messages||[]),{from:'system',text:`【上课记录】老师已记录 ${f.length===3?(+f[1])+'月'+(+f[2])+'日':b.slot_date}的课，请确认`,ts:Date.now()}]};
-  if(proxy){ patch.student_confirmed=true; patch.student_confirmed_by=who; if(rating) patch.student_rating=rating; }
+  if(proxy){ patch.student_confirmed=true; patch.student_confirmed_by=who; patch.student_confirmed_at=now; if(rating) patch.student_rating=rating; }
   try{
     // 只改还在待确认的那一条（防止两个人同时点出现重复扣课时）
     const rows=await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(id)}&admin_review=eq.pending`,'PATCH',patch);
@@ -233,7 +233,7 @@ async function bkBfApprove(id,proxy){
       stu.vip_hours_used=used+hrs;
     }catch(e2){
       // 扣课时没成功：把预约退回待确认，免得“已确认但没扣”
-      try{ await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(id)}`,'PATCH',{admin_review:'pending',admin_review_by:null,admin_review_at:null,status:'pending',student_confirmed:false,student_confirmed_by:null,student_rating:null,messages:b.messages||[]}); }catch(_){}
+      try{ await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(id)}`,'PATCH',{admin_review:'pending',admin_review_by:null,admin_review_at:null,status:'pending',student_confirmed:false,student_confirmed_at:null,student_confirmed_by:null,student_rating:null,messages:b.messages||[]}); }catch(_){}
       throw new Error('扣课时失败，已保持待确认：'+e2.message);
     }
     Object.assign(b,patch); delete bkBfRating[id];
@@ -271,7 +271,7 @@ function bkBfProxyChips(){
 }
 async function bkBfProxyDo(id){
   const b=cachedBookings.find(x=>x.id===id); if(!b) return;
-  const patch={student_confirmed:true,student_confirmed_by:bkSelfWho()}; if(window.__bkBfProxyRating) patch.student_rating=window.__bkBfProxyRating;
+  const patch={student_confirmed:true,student_confirmed_by:bkSelfWho(),student_confirmed_at:new Date().toISOString()}; if(window.__bkBfProxyRating) patch.student_rating=window.__bkBfProxyRating;
   try{
     const rows=await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(id)}&teacher_backfill=eq.true&admin_review=eq.approved`,'PATCH',patch);
     if(Array.isArray(rows)&&!rows.length) throw new Error('数据库没有允许修改这条预约（0 行被更新）');
