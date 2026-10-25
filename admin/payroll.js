@@ -235,17 +235,8 @@ function buildVipPending(pending, teacherName, slots, students) {
   const stuMap = payrollStuMap(students);
   return (pending || []).filter(b => b.type === 'vip' && b.status === 'completed' && b.student_confirmed !== true
       && payrollVipOwner(b, slotMap) === teacherName && scopeMajor(payrollBookingMajor(b, stuMap)))
-    .map(b => ({ name: b.name, date: b.slot_date || '', range: b.slot_time_range || '', hours: parseFloat(b.vip_hours_used) || 0, teacher: teacherName }))
+    .map(b => ({ id: b.id, name: b.name, date: b.slot_date || '', range: b.slot_time_range || '', hours: parseFloat(b.vip_hours_used) || 0, teacher: teacherName }))
     .sort((a, b) => a.date.localeCompare(b.date));
-}
-function payrollPendingHtml(list) {
-  if (!list.length) return '';
-  const total = Math.round(list.reduce((t, x) => t + x.hours, 0) * 100) / 100;
-  return `<div style="margin-top:14px;background:#fff8e1;border:1px solid #e6a817;border-radius:3px;padding:9px 12px">
-    <div style="font-size:12px;font-weight:600;color:#856404">待学生确认（不计入本月）：${list.length} 节 · ${total} 课时</div>
-    <div style="font-size:10px;color:var(--text-3);margin:2px 0 6px">老师已填上课记录，学生确认并评价（教务可代确认）之后，按确认的日期算进当月工资。</div>
-    ${list.map(x => `<div style="font-size:11px;padding:2px 0">${x.teacher ? x.teacher + ' · ' : ''}${x.name} · ${x.date} ${x.range}${x.hours ? ' · ' + x.hours + 'h' : ''}</div>`).join('')}
-  </div>`;
 }
 
 // 一次读齐生成工资核算要用的数据
@@ -264,340 +255,540 @@ async function payrollLoadData(start, end) {
   ]);
   return { sessions, bookings, slots, courses, students, vipConfirmed, vipPending };
 }
+// ══════════════════════════════════
+// 工资核算：一张表（生成 → 核对 / 勾选 / 改 → 下载 Excel 或确定发布）
+// ══════════════════════════════════
 
-// ── Excel 导出 ──
-function exportPayrollExcel(rows, teacherName, dateRange) {
-  const headers = ['姓名', '开始时间', '结束时间', '时长', '工作内容', '工作地点', '备注'];
-  // 用 SheetJS 生成真正的 xlsx，字段自动分列（原来的 .xls+Tab 会全挤第一列）
-  const aoa = [headers, ...rows.map(r => headers.map(h => r[h] ?? ''))];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{wch:10},{wch:20},{wch:20},{wch:8},{wch:10},{wch:14},{wch:40}];
+const PAYROLL_HEADERS = ['姓名', '开始时间', '结束时间', '时长', '工作内容', '工作地点', '备注'];
+const payrollRound = n => Math.round((parseFloat(n) || 0) * 100) / 100;
+const payrollPad = n => String(n).padStart(2, '0');
+
+// ── Excel：多位老师 = 一人一个工作表 + 汇总；rows 用 {姓名, 开始时间, …} 格式 ──
+function payrollBuildWorkbook(rows) {
+  const names = [...new Set(rows.map(r => r.姓名))];
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, '工资核算');
-  XLSX.writeFile(wb, `工资核算_${teacherName}_${dateRange}.xlsx`);
+  const cols = [{wch:10},{wch:20},{wch:20},{wch:8},{wch:10},{wch:14},{wch:40}];
+  const addSheet = (name, list) => {
+    const ws = XLSX.utils.aoa_to_sheet([PAYROLL_HEADERS, ...list.map(r => PAYROLL_HEADERS.map(h => r[h] ?? ''))]);
+    ws['!cols'] = cols;
+    XLSX.utils.book_append_sheet(wb, ws, name);
+  };
+  if (names.length <= 1) { addSheet('工资核算', rows); return wb; }
+  const summary = [['姓名', '节数', '总时长(h)']];
+  names.forEach(n => {
+    const list = rows.filter(r => r.姓名 === n);
+    summary.push([n, list.length, payrollRound(list.reduce((s, r) => s + (parseFloat(r.时长) || 0), 0))]);
+  });
+  const sws = XLSX.utils.aoa_to_sheet(summary);
+  sws['!cols'] = [{wch:14},{wch:8},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, sws, '汇总');
+  const used = new Set(['汇总']);
+  names.forEach(n => {
+    let sn = String(n).replace(/[\[\]:*?\/\\]/g, '_').slice(0, 28) || '老师', k = 2, cand = sn;
+    while (used.has(cand)) cand = sn + k++;
+    used.add(cand);
+    addSheet(cand, rows.filter(r => r.姓名 === n));
+  });
+  return wb;
 }
+function payrollDownload(rows, label, who) {
+  if (!rows.length) { alert('没有可下载的行'); return; }
+  XLSX.writeFile(payrollBuildWorkbook(rows), `工资核算_${label}_${who}.xlsx`);
+}
+// work_records 一行 → Excel 行
+const payrollRecToRow = r => ({ 姓名: r.teacher_name, 开始时间: r.start_time, 结束时间: r.end_time, 时长: r.duration, 工作内容: r.work_type, 工作地点: r.location, 备注: r.notes });
 
-// ══════════════════════════════════
-// 渲染工资核算区块
-// ══════════════════════════════════
-
-let payrollTeacher = '';
+// ── 状态 ──
+let payrollMonth = '';          // 'YYYY-MM'；空 = 自定义日期
+let payrollCustomOpen = false;
 let payrollStart = '';
 let payrollEnd = '';
-let payrollRows = [];
+let payrollMode = '';           // 'teacher' | 'major' | 'all'
+let payrollModeVal = '';        // 老师名 / 专业 key
+let payrollRows = [];           // 生成出来的所有行（含勾选、改动）
+let payrollCtx = null;          // { label, who, teachers, pending, pub }
+let payrollFilter = 'all';      // all | new | changed | published | missing
+let payrollQuery = '';
+let payrollCollapsed = {};
+let payrollPubOpen = false;
 
+const payrollKey = (type, id) => type + ':' + id;
+function payrollMonthList() {
+  const out = [], d = new Date();
+  for (let i = 0; i < 6; i++) { out.push(d.getFullYear() + '-' + payrollPad(d.getMonth() + 1)); d.setMonth(d.getMonth() - 1, 1); }
+  return out;
+}
+function payrollRange() {
+  if (payrollMonth) {
+    const [y, m] = payrollMonth.split('-').map(Number);
+    return { start: payrollMonth + '-01', end: payrollMonth + '-' + payrollPad(new Date(y, m, 0).getDate()) };
+  }
+  return { start: payrollStart, end: payrollEnd };
+}
+function payrollRangeLabel(start, end) {
+  if (start.slice(0, 7) === end.slice(0, 7)) return start.slice(0, 4) + '年' + start.slice(5, 7) + '月';
+  return start + '至' + end;
+}
+function payrollTeacherBase() { return (typeof teacherFilteredList === 'function') ? teacherFilteredList() : cachedTeachers; }
+
+// 日期 / 时间显示：「2026年10月05日 13:00」→ 10-05、13:00
+function payrollDT(s) {
+  const m = String(s || '').match(/(\d{4})年(\d{2})月(\d{2})日\s*(\d{1,2}:\d{2})/);
+  return m ? { d: m[2] + '-' + m[3], t: m[4] } : { d: '', t: String(s || '') };
+}
+
+// 行状态：new 未发布 / changed 有变化 / published 已发布
+function payrollStatusOf(r) {
+  const p = payrollCtx && payrollCtx.pub[payrollKey(r.type, r.source_id)];
+  if (!p || p.status !== 'approved') return 'new';
+  return (payrollRound(p.duration) !== payrollRound(r.时长) || String(p.notes || '') !== String(r.备注 || '')) ? 'changed' : 'published';
+}
+
+// 已有的工作记录（任意状态），按 来源+source_id 对应
+async function payrollLoadPub(rows) {
+  const ids = [...new Set(rows.map(r => r.source_id))];
+  const pub = {};
+  for (let i = 0; i < ids.length; i += 60) {
+    const part = await sb(`/rest/v1/work_records?source_id=in.(${ids.slice(i, i + 60).map(x => `"${x}"`).join(',')})&select=*`, 'GET', undefined, { cache: 'no-store' }) || [];
+    part.forEach(p => {
+      const k = payrollKey(p.source, p.source_id);
+      if (!pub[k] || p.status === 'approved') pub[k] = p;
+    });
+  }
+  return pub;
+}
+
+// ══════════════════════════════════
+// 页面
+// ══════════════════════════════════
 function renderPayrollSection(container) {
-  const today = new Date();
-  if (!payrollStart) payrollStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
-  if (!payrollEnd) payrollEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
-
+  if (!payrollMonth && !payrollStart) payrollMonth = payrollMonthList()[0];
   container.innerHTML = `
+  <div id="pr_legacy"></div>
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:16px;margin-top:16px">
-    <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:14px;letter-spacing:.05em;text-transform:uppercase">工资核算</div>
-    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:14px">
-      <div class="form-group" style="margin:0;min-width:140px">
-        <label class="form-label">老师</label>
-        <select id="pr_teacher">
-          <option value="">请选择老师</option>
-          ${(typeof teacherFilteredList==='function'?teacherFilteredList():cachedTeachers).map(t => `<option value="${t.name}" ${payrollTeacher === t.name ? 'selected' : ''}>${t.name}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group" style="margin:0">
-        <label class="form-label">开始日期</label>
-        <input type="date" id="pr_start" value="${payrollStart}" style="width:140px">
-      </div>
-      <div class="form-group" style="margin:0">
-        <label class="form-label">结束日期</label>
-        <input type="date" id="pr_end" value="${payrollEnd}" style="width:140px">
-      </div>
-      <button class="btn btn-primary btn-sm" onclick="runPayroll()">生成</button>
+    <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:12px;letter-spacing:.05em;text-transform:uppercase">工资核算</div>
+    <div id="pr_pick"></div>
+    <div id="pr_result" style="margin-top:14px"></div>
+  </div>
+  <div id="pr_published"></div>`;
+  payrollRenderPick();
+  payrollRenderResult();
+  payrollRenderPublished();
+  payrollLoadLegacy();
+}
+
+function payrollRenderPick() {
+  const el = document.getElementById('pr_pick');
+  if (!el) return;
+  const rg = payrollRange();
+  const chip = (on, click, text) => `<div class="filter-chip${on ? ' active' : ''}" onclick="${click}">${text}</div>`;
+  const teachers = payrollTeacherBase();
+  el.innerHTML = `
+  <div style="margin-bottom:12px">
+    <label class="form-label">月份</label>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px">
+      ${payrollMonthList().map(m => chip(payrollMonth === m, `payrollPickMonth('${m}')`, m.slice(0, 4) + '年' + m.slice(5) + '月')).join('')}
+      ${chip(!payrollMonth, 'payrollToggleCustom()', '自定义日期 ' + (payrollCustomOpen || !payrollMonth ? '▴' : '▾'))}
     </div>
-    <div style="margin-bottom:14px;padding-top:10px;border-top:1px solid var(--border-light)">
-      <label class="form-label">按专业批量生成（自动覆盖该专业所有老师）</label>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
-        ${chipFold(majorFilterKeys().map(key =>
-          ({ on: false, html: `<button class="btn btn-outline btn-sm" onclick="runPayrollByMajor('${key}')">${majorLabel(key)}</button>` })
-        ))}
-        <button class="btn btn-outline btn-sm" onclick="runPayrollByMajor('all')">全部老师</button>
-      </div>
-    </div>
-    <div id="pr_result"></div>
-    <div id="pr_submit_bar" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
-      <button class="btn btn-primary btn-sm" onclick="submitWorkRecords()">↑ 提交到工作记录</button>
-      <span style="font-size:11px;color:var(--text-3);margin-left:8px">提交后可在下方审核，老师端可查看已通过的记录</span>
+    <div style="display:${payrollCustomOpen || !payrollMonth ? 'flex' : 'none'};gap:8px;align-items:center;margin-top:8px">
+      <input type="date" id="pr_start" value="${rg.start}" style="width:140px" onchange="payrollCustomDate()">
+      <span style="font-size:11px;color:var(--text-3)">至</span>
+      <input type="date" id="pr_end" value="${rg.end}" style="width:140px" onchange="payrollCustomDate()">
     </div>
   </div>
-  <div id="pr_records"></div>`;
-
-  renderWorkRecordsAdmin(document.getElementById('pr_records'));
-}
-
-async function runPayroll() {
-  const teacherName = document.getElementById('pr_teacher').value;
-  const start = document.getElementById('pr_start').value;
-  const end = document.getElementById('pr_end').value;
-  if (!teacherName) { alert('请选择老师'); return; }
-  if (!start || !end || start > end) { alert('请选择有效日期范围'); return; }
-  payrollTeacher = teacherName;
-  payrollStart = start;
-  payrollEnd = end;
-
-  const res = document.getElementById('pr_result');
-  res.innerHTML = '<div style="font-size:12px;color:var(--text-3)">加载中…</div>';
-
-  try {
-    const { sessions, bookings, slots, courses, students, vipConfirmed, vipPending } = await payrollLoadData(start, end);
-
-    const courseRows = buildCourseRows(sessions, teacherName, courses);
-    const bookingRows = buildBookingRows(bookings, slots, teacherName, students);
-    const vipRows = buildVipRows(vipConfirmed, teacherName, slots, students);
-    payrollRows = [...courseRows, ...bookingRows, ...vipRows].sort((a, b) => a._date.localeCompare(b._date));
-    const pendingHtml = payrollPendingHtml(buildVipPending(vipPending, teacherName, slots, students));
-
-    if (!payrollRows.length) {
-      res.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:12px 0">该时间段内无数据</div>' + pendingHtml;
-      return;
-    }
-
-    const totalHours = Math.round(payrollRows.reduce((s, r) => s + (r.时长 || 0), 0) * 100) / 100;
-    const courseCount = courseRows.length;
-    const bookingCount = bookingRows.length;
-    const vipCount = vipRows.length;
-    const dateRange = `${start.slice(0, 7).replace('-', '年')}月`;
-    const submitBar = document.getElementById('pr_submit_bar');
-    if (submitBar) submitBar.style.display = 'block';
-
-    res.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-      <div style="font-size:11px;color:var(--text-3)">
-        大课 <strong style="color:var(--text)">${courseCount}</strong> 节 ·
-        面谈 <strong style="color:var(--text)">${bookingCount}</strong> 次 ·
-        VIP <strong style="color:var(--text)">${vipCount}</strong> 节 ·
-        合计 <strong style="color:var(--text)">${totalHours}</strong> 小时
-      </div>
-      <button class="btn btn-outline btn-sm" onclick="exportPayrollExcel(payrollRows,'${teacherName}','${dateRange}')">↓ 导出 Excel</button>
+  <div style="margin-bottom:12px">
+    <label class="form-label">老师</label>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:4px">
+      <input id="pr_teacher" list="pr_teacher_list" placeholder="输入或选择老师" value="${payrollMode === 'teacher' ? escTM(payrollModeVal) : ''}" style="width:180px" onchange="payrollPickTeacher(this.value)">
+      <datalist id="pr_teacher_list">${teachers.map(t => `<option value="${escTM(t.name)}"></option>`).join('')}</datalist>
     </div>
-    <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:11px">
-        <thead>
-          <tr style="background:var(--bg)">
-            ${['姓名','开始时间','结束时间','时长(h)','工作内容','工作地点','备注'].map(h =>
-              `<th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);font-weight:600;color:var(--text-2);white-space:nowrap">${h}</th>`
-            ).join('')}
-          </tr>
-        </thead>
-        <tbody>
-          ${payrollRows.map((r, i) => `
-          <tr style="border-bottom:1px solid var(--border-light);background:${r.type !== 'course' ? 'rgba(42,106,173,0.03)' : 'transparent'}">
-            <td style="padding:6px 8px;white-space:nowrap">${r.姓名}</td>
-            <td style="padding:6px 8px;white-space:nowrap;color:var(--text-2)">${r.开始时间}</td>
-            <td style="padding:6px 8px;white-space:nowrap;color:var(--text-2)">${r.结束时间}</td>
-            <td style="padding:6px 8px;text-align:center;font-weight:600">${r.时长}</td>
-            <td style="padding:6px 8px"><span style="font-size:10px;background:${r.type !== 'course' ? '#e8f0fb' : 'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px">${r.工作内容}</span></td>
-            <td style="padding:6px 8px;color:var(--text-2)">${r.工作地点}</td>
-            <td style="padding:6px 8px;color:var(--text-2)">${r.备注}</td>
-          </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>${pendingHtml}`;
-  } catch(e) {
-    res.innerHTML = `<div style="font-size:12px;color:var(--danger)">加载失败：${e.message}</div>`;
-  }
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center">
+      <span style="font-size:10px;color:var(--text-3)">按专业</span>
+      ${chipFold(majorFilterKeys().map(key => {
+        const on = payrollMode === 'major' && payrollModeVal === key;
+        return { on, html: chip(on, `payrollPickMode('major','${key}')`, escTM(majorLabel(key))) };
+      }))}
+      ${chip(payrollMode === 'all', "payrollPickMode('all','')", '全部老师')}
+    </div>
+  </div>
+  <button class="btn btn-primary btn-sm" onclick="payrollGenerate()">生成</button>`;
 }
+function payrollPickMonth(m) { payrollMonth = m; payrollRenderPick(); }
+function payrollToggleCustom() {
+  if (!payrollMonth) { return; }
+  const rg = payrollRange();
+  payrollStart = rg.start; payrollEnd = rg.end;
+  payrollMonth = '';
+  payrollCustomOpen = true;
+  payrollRenderPick();
+}
+function payrollCustomDate() {
+  payrollStart = document.getElementById('pr_start').value;
+  payrollEnd = document.getElementById('pr_end').value;
+  payrollMonth = '';
+}
+function payrollPickTeacher(v) {
+  v = String(v || '').trim();
+  if (!v) { if (payrollMode === 'teacher') { payrollMode = ''; payrollModeVal = ''; } return; }
+  if (!payrollTeacherBase().some(t => t.name === v)) { alert('没有这位老师：' + v); document.getElementById('pr_teacher').value = ''; return; }
+  payrollMode = 'teacher'; payrollModeVal = v;
+  payrollRenderPick();
+}
+function payrollPickMode(mode, val) { payrollMode = mode; payrollModeVal = val; payrollRenderPick(); }
 
-async function runPayrollByMajor(majorKey) {
-  const start = document.getElementById('pr_start').value;
-  const end = document.getElementById('pr_end').value;
-  if (!start || !end || start > end) { alert('请选择有效日期范围'); return; }
-  payrollStart = start;
-  payrollEnd = end;
+async function payrollGenerate(keepEdits) {
+  const rg = payrollRange();
+  if (!rg.start || !rg.end || rg.start > rg.end) { alert('请选择有效日期范围'); return; }
+  if (!payrollMode) { alert('请选择老师，或按专业 / 全部老师'); return; }
+  const base = payrollTeacherBase();
+  let names, who;
+  if (payrollMode === 'teacher') { names = [payrollModeVal]; who = payrollModeVal; }
+  else if (payrollMode === 'all') { names = base.map(t => t.name); who = '全部'; }
+  else { names = base.filter(t => majorListHas(t.majors, payrollModeVal)).map(t => t.name); who = majorLabel(payrollModeVal); }
+  if (!names.length) { alert('该专业下暂无老师'); return; }
 
-  const baseTeachers = (typeof teacherFilteredList==='function') ? teacherFilteredList() : cachedTeachers;
-  const teacherNames = majorKey === 'all'
-    ? baseTeachers.map(t => t.name)
-    : baseTeachers.filter(t => majorListHas(t.majors, majorKey)).map(t => t.name);
-
-  if (!teacherNames.length) { alert('该专业下暂无老师'); return; }
-
+  const snap = {};
+  if (keepEdits) payrollRows.forEach(r => { snap[payrollKey(r.type, r.source_id)] = r; });
   const res = document.getElementById('pr_result');
   res.innerHTML = '<div style="font-size:12px;color:var(--text-3)">加载中…</div>';
-
   try {
-    const { sessions, bookings, slots, courses, students, vipConfirmed, vipPending } = await payrollLoadData(start, end);
-
-    payrollRows = [];
-    const pendingList = [];
-    teacherNames.forEach(teacherName => {
-      const courseRows = buildCourseRows(sessions, teacherName, courses);
-      const bookingRows = buildBookingRows(bookings, slots, teacherName, students);
-      const vipRows = buildVipRows(vipConfirmed, teacherName, slots, students);
-      payrollRows.push(...courseRows, ...bookingRows, ...vipRows);
-      pendingList.push(...buildVipPending(vipPending, teacherName, slots, students));
+    const { sessions, bookings, slots, courses, students, vipConfirmed, vipPending } = await payrollLoadData(rg.start, rg.end);
+    const vipMap = {};
+    vipConfirmed.forEach(b => { vipMap[b.id] = b; });
+    const rows = [], pending = {};
+    names.forEach(n => {
+      const list = [
+        ...buildCourseRows(sessions, n, courses),
+        ...buildBookingRows(bookings, slots, n, students),
+        ...buildVipRows(vipConfirmed, n, slots, students)
+      ].sort((a, b) => a._date.localeCompare(b._date) || a.开始时间.localeCompare(b.开始时间));
+      list.forEach(r => { r._missing = r.type === 'vip' ? payrollVipMissing(vipMap[r.source_id]) : []; });
+      rows.push(...list);
+      const pl = buildVipPending(vipPending, n, slots, students);
+      if (pl.length) pending[n] = pl;
     });
-    payrollRows.sort((a, b) => a.姓名.localeCompare(b.姓名) || a._date.localeCompare(b._date));
-    const pendingHtml = payrollPendingHtml(pendingList);
-
-    if (!payrollRows.length) {
-      res.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:12px 0">该时间段内无数据</div>' + pendingHtml;
-      return;
-    }
-
-    const courseCount = payrollRows.filter(r => r.type === 'course').length;
-    const bookingCount = payrollRows.filter(r => r.type === 'booking').length;
-    const vipCount = payrollRows.filter(r => r.type === 'vip').length;
-    const totalHours = Math.round(payrollRows.reduce((s, r) => s + (r.时长 || 0), 0) * 100) / 100;
-    const dateRange = `${start.slice(0, 7).replace('-', '年')}月`;
-    const submitBar = document.getElementById('pr_submit_bar');
-    if (submitBar) submitBar.style.display = 'block';
-    const labelMap = {keiei:'経営学',keizai:'経済学',shakai:'社会学',shinpan:'新闻传播学',fukushi:'社会福祉学',all:'全部老师'};
-
-    res.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-      <div style="font-size:11px;color:var(--text-3)">
-        ${labelMap[majorKey]} · ${teacherNames.length} 位老师 ·
-        大课 <strong style="color:var(--text)">${courseCount}</strong> 节 ·
-        面谈 <strong style="color:var(--text)">${bookingCount}</strong> 次 ·
-        VIP <strong style="color:var(--text)">${vipCount}</strong> 节 ·
-        合计 <strong style="color:var(--text)">${totalHours}</strong> 小时
-      </div>
-      <button class="btn btn-outline btn-sm" onclick="exportPayrollExcel(payrollRows,'${labelMap[majorKey]}','${dateRange}')">↓ 导出 Excel</button>
-    </div>
-    <div style="overflow-x:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:11px">
-        <thead>
-          <tr style="background:var(--bg)">
-            ${['姓名','开始时间','结束时间','时长(h)','工作内容','工作地点','备注'].map(h =>
-              `<th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);font-weight:600;color:var(--text-2);white-space:nowrap">${h}</th>`
-            ).join('')}
-          </tr>
-        </thead>
-        <tbody>
-          ${payrollRows.map((r, i) => `
-          <tr style="border-bottom:1px solid var(--border-light);background:${r.type !== 'course' ? 'rgba(42,106,173,0.03)' : 'transparent'}">
-            <td style="padding:6px 8px;white-space:nowrap">${r.姓名}</td>
-            <td style="padding:6px 8px;white-space:nowrap;color:var(--text-2)">${r.开始时间}</td>
-            <td style="padding:6px 8px;white-space:nowrap;color:var(--text-2)">${r.结束时间}</td>
-            <td style="padding:6px 8px;text-align:center;font-weight:600">${r.时长}</td>
-            <td style="padding:6px 8px"><span style="font-size:10px;background:${r.type !== 'course' ? '#e8f0fb' : 'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px">${r.工作内容}</span></td>
-            <td style="padding:6px 8px;color:var(--text-2)">${r.工作地点}</td>
-            <td style="padding:6px 8px;color:var(--text-2)">${r.备注}</td>
-          </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>${pendingHtml}`;
-  } catch(e) {
-    res.innerHTML = `<div style="font-size:12px;color:var(--danger)">加载失败：${e.message}</div>`;
+    const pub = await payrollLoadPub(rows);
+    payrollCtx = { label: payrollRangeLabel(rg.start, rg.end), who, teachers: names.filter(n => rows.some(r => r.姓名 === n) || pending[n]), pending, pub };
+    payrollRows = rows;
+    payrollRows.forEach(r => {
+      const old = snap[payrollKey(r.type, r.source_id)];
+      if (old) { r.时长 = old.时长; r.备注 = old.备注; r._sel = old._sel; }
+      else r._sel = payrollStatusOf(r) === 'new';
+    });
+    payrollFilter = 'all'; payrollQuery = '';
+    payrollRenderResult();
+  } catch (e) {
+    res.innerHTML = `<div style="font-size:12px;color:var(--danger)">加载失败：${escTM(e.message)}</div>`;
   }
 }
 
-// ══════════════════════════════════
-// 工作记录 — Admin 审核
-// ══════════════════════════════════
-
-// 把 payrollRows 提交固化到 work_records 表
-async function submitWorkRecords() {
-  if (!payrollRows.length) { alert('请先生成工资核算数据'); return; }
-  const teacherNames = [...new Set(payrollRows.map(r => r.姓名))];
-  const existing = await sb(`/rest/v1/work_records?teacher_name=in.(${teacherNames.map(n=>`"${n}"`).join(',')})&select=source_id`);
-  const existingIds = new Set((existing || []).map(r => r.source_id));
-  const toInsert = payrollRows
-    .filter(r => !existingIds.has(r.source_id))
-    .map(r => ({
-      id: `wr-${Date.now()}-${Math.random().toString(36).slice(2,5)}-${Math.random().toString(36).slice(2,5)}`,
-      teacher_name: r.姓名,
-      start_time: r.开始时间,
-      end_time: r.结束时间,
-      duration: r.时长,
-      work_type: r.工作内容,
-      location: r.工作地点,
-      notes: r.备注,
-      source: r.type,
-      source_id: r.source_id,
-      domain: r._domain || null,
-      status: 'pending'
-    }));
-  if (!toInsert.length) { alert('所有记录已提交过，无新增'); return; }
-  try {
-    for (let i = 0; i < toInsert.length; i += 20) {
-      await sb('/rest/v1/work_records', 'POST', toInsert.slice(i, i + 20));
-    }
-    alert(`已提交 ${toInsert.length} 条记录，待审核`);
-    renderWorkRecordsAdmin(document.getElementById('pr_records'));
-  } catch(e) { alert('提交失败：' + e.message); }
+// ── 表 ──
+function payrollRenderResult() {
+  const res = document.getElementById('pr_result');
+  if (!res) return;
+  if (!payrollCtx) { res.innerHTML = '<div style="font-size:12px;color:var(--text-3)">选好月份和老师，点「生成」。</div>'; return; }
+  const counts = { all: payrollRows.length, new: 0, changed: 0, published: 0, missing: 0 };
+  payrollRows.forEach(r => { counts[payrollStatusOf(r)]++; if (r._missing.length) counts.missing++; });
+  if (!payrollRows.length && !Object.keys(payrollCtx.pending).length) {
+    res.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:12px 0">该时间段内无数据</div>';
+    return;
+  }
+  const fchip = (k, t) => `<div class="filter-chip${payrollFilter === k ? ' active' : ''}" onclick="payrollSetFilter('${k}')">${t} ${counts[k]}</div>`;
+  res.innerHTML = `
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px">
+    <span style="font-size:11px;color:var(--text-2)">${escTM(payrollCtx.label)} · ${escTM(payrollCtx.who)}</span>
+    <button class="btn btn-outline btn-sm" onclick="payrollSelectVisible(true)">全选</button>
+    <button class="btn btn-outline btn-sm" onclick="payrollSelectVisible(false)">全不选</button>
+    ${fchip('all', '全部')}${fchip('new', '未发布')}${fchip('changed', '有变化')}${fchip('published', '已发布')}${fchip('missing', '记录不全')}
+    <input id="pr_q" placeholder="搜索备注、学生名" value="${escTM(payrollQuery)}" style="width:160px;margin-left:auto" oninput="payrollSetQuery(this.value)">
+  </div>
+  <div id="pr_groups"></div>
+  <div id="pr_bar" style="position:sticky;bottom:0;z-index:5;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:10px 12px;margin-top:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;box-shadow:0 -2px 8px rgba(0,0,0,.06)"></div>`;
+  payrollRenderGroups();
+  payrollRenderBar();
+}
+function payrollSetFilter(k) { payrollFilter = k; payrollRenderResult(); }
+function payrollSetQuery(v) { payrollQuery = v; payrollRenderGroups(); }
+function payrollRowVisible(r) {
+  if (payrollFilter === 'missing') { if (!r._missing.length) return false; }
+  else if (payrollFilter !== 'all' && payrollStatusOf(r) !== payrollFilter) return false;
+  const q = payrollQuery.trim().toLowerCase();
+  return !q || (String(r.备注) + ' ' + r.工作内容).toLowerCase().includes(q);
+}
+function payrollSelectVisible(on) {
+  payrollRows.forEach(r => { if (payrollRowVisible(r)) r._sel = on; });
+  payrollRenderGroups(); payrollRenderBar();
 }
 
-// Admin 审核界面
-async function renderWorkRecordsAdmin(container) {
-  if (!container) return;
-  container.innerHTML = '<div style="font-size:12px;color:var(--text-3)">加载中…</div>';
-  try {
-    const records = await sbAll(`/rest/v1/work_records?order=start_time.asc${payrollDomainQs()}`);   // 非总览视角只列本领域的；domain 为空的旧记录只在「全部」视角显示
-    if (!records.length) {
-      container.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无工作记录</div>';
-      return;
-    }
-    const vipMap = await payrollLoadVipMap(records.filter(r => r.source === 'vip').map(r => r.source_id));
-    // 按老师分组
-    const byTeacher = {};
-    records.forEach(r => { if (!byTeacher[r.teacher_name]) byTeacher[r.teacher_name] = []; byTeacher[r.teacher_name].push(r); });
+function payrollRowHtml(r, i) {
+  const st = payrollStatusOf(r);
+  const dt = payrollDT(r.开始时间), de = payrollDT(r.结束时间);
+  const td = 'padding:5px 8px;';
+  const badge = st === 'published' ? '<span style="font-size:10px;background:#e6e6e6;color:#666;border-radius:2px;padding:1px 6px">已发布</span>'
+    : st === 'changed' ? '<span style="font-size:10px;background:#ffe8cc;color:#9a5a00;border-radius:2px;padding:1px 6px">有变化</span>' : '';
+  const miss = r._missing.length ? `<div style="font-size:10px;color:#9a5a00;margin-top:2px">记录不全：缺 ${escTM(r._missing.join('、'))}</div>` : '';
+  return `<tr style="border-bottom:1px solid var(--border-light);${st === 'published' ? 'color:#888;background:rgba(0,0,0,.025)' : r._missing.length ? 'background:#fffbe8' : ''}">
+    <td style="${td}width:24px"><input type="checkbox" ${r._sel ? 'checked' : ''} onchange="payrollToggleRow(${i},this.checked)"></td>
+    <td style="${td}white-space:nowrap">${escTM(dt.d || r._date.slice(5))}</td>
+    <td style="${td}white-space:nowrap;color:var(--text-2)">${escTM(dt.t)}${de.t ? '–' + escTM(de.t) : ''}</td>
+    <td style="${td}"><input type="number" step="0.25" min="0" value="${r.时长}" style="width:64px;font-size:11px;padding:2px 4px" onchange="payrollEditHours(${i},this.value)"></td>
+    <td style="${td}white-space:nowrap">${escTM(r.工作内容)}</td>
+    <td style="${td}white-space:nowrap;color:var(--text-2)">${escTM(r.工作地点)}</td>
+    <td style="${td}min-width:200px"><input value="${escTM(r.备注)}" style="width:100%;font-size:11px;padding:2px 4px" onchange="payrollEditNote(${i},this.value)">${miss}</td>
+    <td style="${td}white-space:nowrap">${badge}</td>
+  </tr>`;
+}
+function payrollRenderGroups() {
+  const box = document.getElementById('pr_groups');
+  if (!box || !payrollCtx) return;
+  box.innerHTML = payrollCtx.teachers.map((n, ti) => {
+    const all = payrollRows.map((r, i) => ({ r, i })).filter(x => x.r.姓名 === n);
+    const shown = all.filter(x => payrollRowVisible(x.r));
+    const hours = payrollRound(all.reduce((s, x) => s + (parseFloat(x.r.时长) || 0), 0));
+    const sel = all.filter(x => x.r._sel).length;
+    const closed = payrollCollapsed[n];
+    const head = `<div onclick="payrollToggleGroup(${ti})" style="cursor:pointer;font-size:12px;font-weight:600;padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:6px">${closed ? '▸' : '▾'} ${escTM(n)}
+      <span style="font-weight:400;font-size:11px;color:var(--text-2);margin-left:8px">${all.length} 节 · ${hours} 小时 · 已勾选 ${sel} 条</span></div>`;
+    const body = closed ? '' : (shown.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">
+      <thead><tr style="background:var(--bg)">${['', '日期', '时间', '时长(h)', '工作内容', '地点', '备注', ''].map(h => `<th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--border);font-weight:600;color:var(--text-2);white-space:nowrap">${h}</th>`).join('')}</tr></thead>
+      <tbody>${shown.map(x => payrollRowHtml(x.r, x.i)).join('')}</tbody></table></div>`
+      : `<div style="font-size:11px;color:var(--text-3);padding:6px 0">${all.length ? '当前筛选下没有行' : '该时间段内没有可发布的记录'}</div>`);
+    return `<div style="margin-bottom:16px">${head}${body}${closed ? '' : payrollPendingHtml(payrollCtx.pending[n] || [])}</div>`;
+  }).join('');
+}
+function payrollToggleGroup(ti) { const n = payrollCtx.teachers[ti]; payrollCollapsed[n] = !payrollCollapsed[n]; payrollRenderGroups(); }
+function payrollToggleRow(i, on) { payrollRows[i]._sel = on; payrollRenderGroups(); payrollRenderBar(); }
+function payrollEditHours(i, v) {
+  const r = payrollRows[i], n = parseFloat(v);
+  if (!(n >= 0)) { payrollRenderGroups(); return; }
+  r.时长 = payrollRound(n);
+  if (payrollStatusOf(r) === 'changed') r._sel = true;
+  payrollRenderGroups(); payrollRenderBar();
+}
+function payrollEditNote(i, v) {
+  const r = payrollRows[i];
+  r.备注 = v;
+  if (payrollStatusOf(r) === 'changed') r._sel = true;
+  payrollRenderGroups(); payrollRenderBar();
+}
 
-    container.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin:20px 0 12px">
-      <div style="font-size:12px;font-weight:600;color:var(--text-2);letter-spacing:.05em;text-transform:uppercase">工作记录审核</div>
-      <button class="btn btn-outline btn-sm" onclick="exportAllWorkRecordsExcel()">↓ 全部导出（已通过）</button>
-    </div>
-    ${Object.entries(byTeacher).map(([name, rows]) => {
-      const pendingRows = rows.filter(r => r.status === 'pending');
-      const rejectedRows = rows.filter(r => r.status === 'rejected');
-      const approvedRows = rows.filter(r => r.status === 'approved');
-      const pending = pendingRows.length;
-      const approved = approvedRows.length;
-      const safeId = name.replace(/[^a-zA-Z0-9]/g, '_');
-      const activeRows = [...pendingRows, ...rejectedRows];
-      return `
-      <div style="margin-bottom:16px">
-        <div style="font-size:11px;font-weight:600;color:var(--text);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span style="cursor:pointer" onclick="toggleWrGroup('${safeId}')">▾ ${name}</span>
-          ${pending ? `<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:2px;padding:1px 6px">${pending} 待审核</span>` : ''}
-          ${pending ? `<button class="btn btn-sm" style="background:#ddf0e0;color:#1a4a28;border:1px solid #b0d8b8" onclick="approveAllWorkRecords('${name}')">全部通过</button>` : ''}
-          <div style="display:flex;gap:4px;margin-left:auto">
-            <button class="btn btn-outline btn-sm" onclick="exportWorkRecordsExcel('${name}')">↓ 导出</button>
-            ${approved ? `<button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="deleteApprovedWorkRecords('${name}')">删除已通过</button>` : ''}
-            <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="deleteAllWorkRecords('${name}')">全部删除</button>
+// 待学生确认（不计入本月）：每位老师组下面
+function payrollPendingHtml(list) {
+  if (!list.length) return '';
+  const total = payrollRound(list.reduce((t, x) => t + x.hours, 0));
+  return `<div style="margin-top:8px;background:#fff8e1;border:1px solid #e6a817;border-radius:3px;padding:9px 12px">
+    <div style="font-size:12px;font-weight:600;color:#856404">待学生确认（不计入本月）：${list.length} 节 · ${total} 课时</div>
+    <div style="font-size:10px;color:var(--text-3);margin:2px 0 6px">老师已填上课记录，学生确认并评价（教务可代确认）之后，按确认的日期算进当月工资。</div>
+    ${list.map(x => `<div style="font-size:11px;padding:3px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span>${escTM(x.name)} · ${escTM(x.date)} ${escTM(x.range)}${x.hours ? ' · ' + x.hours + 'h' : ''}</span>
+      <button class="btn btn-outline btn-sm" onclick="payrollProxyConfirm('${escTM(x.id)}')">代学生确认</button></div>`).join('')}
+  </div>`;
+}
+async function payrollProxyConfirm(id) {
+  if (!confirm('代学生确认这节 VIP 课？确认后按今天的日期算进当月工资。')) return;
+  const who = typeof bkSelfWho === 'function' ? bkSelfWho() : '教务';
+  try {
+    const rows = await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(id)}&type=eq.vip&status=eq.completed`, 'PATCH',
+      { student_confirmed: true, student_confirmed_by: who, student_confirmed_at: new Date().toISOString() });
+    if (Array.isArray(rows) && !rows.length) throw new Error('数据库没有允许修改这条预约（0 行被更新）');
+    await payrollGenerate(true);
+  } catch (e) { alert('操作失败：' + e.message); }
+}
+
+// ── 底部操作栏 ──
+function payrollSelected() { return payrollRows.filter(r => r._sel); }
+function payrollRenderBar() {
+  const bar = document.getElementById('pr_bar');
+  if (!bar) return;
+  const sel = payrollSelected();
+  const hours = payrollRound(sel.reduce((s, r) => s + (parseFloat(r.时长) || 0), 0));
+  const tn = new Set(sel.map(r => r.姓名)).size;
+  bar.innerHTML = `<span style="font-size:12px">已勾选 <strong>${sel.length}</strong> 条 · 合计 <strong>${hours}</strong> 小时 · 涉及 <strong>${tn}</strong> 位老师</span>
+    <span style="margin-left:auto;display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="payrollDownloadSelected()">↓ 下载 Excel</button>
+      <button class="btn btn-primary btn-sm" onclick="payrollPublish()">✓ 确定发布</button>
+    </span>`;
+}
+function payrollDownloadSelected() {
+  const sel = payrollSelected();
+  if (!sel.length) { alert('请先勾选要下载的行'); return; }
+  // 多位老师按老师分表：保持老师顺序
+  const order = payrollCtx.teachers;
+  const rows = [...sel].sort((a, b) => order.indexOf(a.姓名) - order.indexOf(b.姓名));
+  payrollDownload(rows, payrollCtx.label, payrollCtx.who);
+}
+
+// ── 确定发布：直接 approved；同 source_id 有变化就更新，没变化跳过 ──
+async function payrollPublish() {
+  const sel = payrollSelected();
+  if (!sel.length) { alert('请先勾选要发布的行'); return; }
+  const toNew = [], toUpd = [];
+  let skipped = 0;
+  sel.forEach(r => {
+    const p = payrollCtx.pub[payrollKey(r.type, r.source_id)];
+    if (!p) toNew.push(r);
+    else if (payrollStatusOf(r) === 'published') skipped++;
+    else toUpd.push({ r, p });
+  });
+  if (!toNew.length && !toUpd.length) { alert('勾选的行都已发布且没有变化，无需重复发布'); return; }
+  if (!confirm(`发布后老师在老师端能看到这些工作记录。共 ${toNew.length + toUpd.length} 条，其中新增 ${toNew.length}、更新 ${toUpd.length}${skipped ? `（另有 ${skipped} 条已发布且无变化，跳过）` : ''}`)) return;
+  const now = new Date().toISOString();
+  const fields = r => ({
+    teacher_name: r.姓名, start_time: r.开始时间, end_time: r.结束时间, duration: r.时长,
+    work_type: r.工作内容, location: r.工作地点, notes: r.备注, source: r.type, source_id: r.source_id,
+    domain: r._domain || null, status: 'approved'
+  });
+  try {
+    const ins = toNew.map(r => ({ id: `wr-${Date.now()}-${Math.random().toString(36).slice(2, 5)}-${Math.random().toString(36).slice(2, 5)}`, ...fields(r) }));
+    for (let i = 0; i < ins.length; i += 20) await sb('/rest/v1/work_records', 'POST', ins.slice(i, i + 20));
+    for (let i = 0; i < toUpd.length; i += 10) {
+      await Promise.all(toUpd.slice(i, i + 10).map(({ r, p }) =>
+        sb(`/rest/v1/work_records?id=eq.${encodeURIComponent(p.id)}`, 'PATCH', { ...fields(r), admin_note: null, updated_at: now })));
+    }
+    payrollCtx.pub = await payrollLoadPub(payrollRows);
+    payrollRows.forEach(r => { if (payrollStatusOf(r) === 'published') r._sel = false; });
+    alert(`已发布：新增 ${toNew.length}、更新 ${toUpd.length}`);
+    payrollRenderResult();
+    payrollRenderPublished();
+  } catch (e) { alert('发布失败：' + e.message); }
+}
+
+// ══════════════════════════════════
+// 已发布记录：按月份 → 老师；只看、可下载、可撤回
+// ══════════════════════════════════
+let payrollPubRecords = null;
+let payrollPubOpenKeys = {};
+const payrollRecMonth = r => { const m = String(r.start_time || '').match(/(\d{4})年(\d{2})月/); return m ? m[1] + '-' + m[2] : '未知月份'; };
+const payrollFmtTime = iso => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? '' : `${d.getFullYear()}-${payrollPad(d.getMonth() + 1)}-${payrollPad(d.getDate())} ${payrollPad(d.getHours())}:${payrollPad(d.getMinutes())}`;
+};
+
+async function payrollRenderPublished() {
+  const box = document.getElementById('pr_published');
+  if (!box) return;
+  const head = `<div onclick="payrollTogglePublished()" style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-2);letter-spacing:.05em;margin:20px 0 10px">${payrollPubOpen ? '▾' : '▸'} 已发布记录</div>`;
+  if (!payrollPubOpen) { box.innerHTML = head; return; }
+  box.innerHTML = head + '<div style="font-size:12px;color:var(--text-3)">加载中…</div>';
+  try {
+    payrollPubRecords = await sbAll(`/rest/v1/work_records?status=eq.approved&order=start_time.asc${payrollDomainQs()}`);
+    payrollRenderPublishedBody();
+  } catch (e) {
+    box.innerHTML = head + `<div style="font-size:12px;color:var(--danger)">加载失败：${escTM(e.message)}</div>`;
+  }
+}
+function payrollTogglePublished() { payrollPubOpen = !payrollPubOpen; payrollRenderPublished(); }
+// 分组：月份 → 老师
+function payrollPubGroups() {
+  const g = {};
+  (payrollPubRecords || []).forEach(r => {
+    const m = payrollRecMonth(r);
+    ((g[m] = g[m] || {})[r.teacher_name] = g[m][r.teacher_name] || []).push(r);
+  });
+  return g;
+}
+function payrollRenderPublishedBody() {
+  const box = document.getElementById('pr_published');
+  if (!box) return;
+  const head = `<div onclick="payrollTogglePublished()" style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-2);letter-spacing:.05em;margin:20px 0 10px">▾ 已发布记录</div>`;
+  const g = payrollPubGroups();
+  const months = Object.keys(g).sort().reverse();
+  if (!months.length) { box.innerHTML = head + '<div style="font-size:12px;color:var(--text-3)">暂无已发布的记录</div>'; return; }
+  box.innerHTML = head + months.map(m => `
+    <div style="margin-bottom:14px">
+      <div style="font-size:12px;font-weight:600;margin-bottom:6px">${m.length === 7 ? m.slice(0, 4) + '年' + m.slice(5) + '月' : m}</div>
+      ${Object.keys(g[m]).sort().map(n => {
+        const list = g[m][n];
+        const k = m + '|' + n;
+        const open = payrollPubOpenKeys[k];
+        const hours = payrollRound(list.reduce((s, r) => s + (parseFloat(r.duration) || 0), 0));
+        const last = list.map(r => r.updated_at || r.created_at || '').sort().pop();
+        const ek = escTM(k);
+        return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:8px 12px;margin-bottom:6px;font-size:11px">
+          <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+            <span style="font-weight:600;min-width:80px">${escTM(n)}</span>
+            <span>${list.length} 节 · ${hours} 小时</span>
+            <span style="color:var(--text-3)">${last ? '发布于 ' + payrollFmtTime(last) : ''}</span>
+            <span style="margin-left:auto;display:flex;gap:6px">
+              <button class="btn btn-outline btn-sm" data-k="${ek}" onclick="payrollPubToggle(this.dataset.k)">${open ? '收起' : '展开'}</button>
+              <button class="btn btn-outline btn-sm" data-k="${ek}" onclick="payrollPubDownload(this.dataset.k)">↓ 下载</button>
+              <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" data-k="${ek}" onclick="payrollPubRetract(this.dataset.k)">撤回</button>
+            </span>
           </div>
-        </div>
-        <div id="wr_group_${safeId}">
-          ${activeRows.length ? activeRows.map(r => renderWorkRecordRow(r, vipMap)).join('') : (approved ? '' : '<div style="font-size:11px;color:var(--text-3);padding:8px 0">暂无待审核记录</div>')}
-          ${approved ? `
-          <div style="margin-top:6px">
-            <div style="cursor:pointer;font-size:10px;color:var(--text-3);padding:6px 0" onclick="toggleWrHistory('${safeId}')">
-              <span id="wr_history_arrow_${safeId}">▸</span> 历史记录（已通过 ${approved} 条）
-            </div>
-            <div id="wr_history_${safeId}" style="display:none">
-              ${approvedRows.map(r => renderWorkRecordRow(r, vipMap)).join('')}
-            </div>
-          </div>` : ''}
-        </div>
-      </div>`;
-    }).join('')}`;
-  } catch(e) {
-    container.innerHTML = `<div style="font-size:12px;color:var(--danger)">加载失败：${e.message}</div>`;
-  }
+          ${open ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light)">${list.map(r => `<div style="padding:2px 0;color:var(--text-2)">${escTM(r.start_time)} → ${escTM(payrollDT(r.end_time).t)} · ${r.duration}h · ${escTM(r.work_type)} · ${escTM(r.location)} · ${escTM(r.notes)}</div>`).join('')}</div>` : ''}
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+}
+function payrollPubList(k) { const [m, n] = k.split('|'); return ((payrollPubGroups()[m] || {})[n]) || []; }
+function payrollPubToggle(k) { payrollPubOpenKeys[k] = !payrollPubOpenKeys[k]; payrollRenderPublishedBody(); }
+function payrollPubDownload(k) {
+  const list = payrollPubList(k);
+  if (!list.length) return;
+  const [m, n] = k.split('|');
+  payrollDownload(list.map(payrollRecToRow), m.length === 7 ? m.slice(0, 4) + '年' + m.slice(5) + '月' : m, n);
+}
+async function payrollPubRetract(k) {
+  const list = payrollPubList(k);
+  if (!list.length) return;
+  const [m, n] = k.split('|');
+  if (!confirm(`撤回「${n}」${m.length === 7 ? m.slice(0, 4) + '年' + m.slice(5) + '月' : m}已发布的 ${list.length} 条记录？\n撤回后会删除这些记录，老师端随即看不到。`)) return;
+  try {
+    const ids = list.map(r => r.id);
+    for (let i = 0; i < ids.length; i += 50) {
+      await sb(`/rest/v1/work_records?id=in.(${ids.slice(i, i + 50).map(x => `"${x}"`).join(',')})`, 'DELETE');
+    }
+    if (payrollCtx) {
+      payrollCtx.pub = await payrollLoadPub(payrollRows);
+      payrollRenderResult();
+    }
+    payrollRenderPublished();
+  } catch (e) { alert('撤回失败：' + e.message); }
 }
 
-// ── VIP 记录完整度（审核时实时读预约，不用提交时的快照） ──
-const PAYROLL_VIP_SEL = 'id,name,student_confirmed,vip_content,vip_session_notes,vip_student_status,vip_homework,vip_homework_questions,vip_hours_used';
-async function payrollLoadVipMap(ids) {
-  const map = {};
-  ids = [...new Set((ids || []).filter(Boolean))];
-  for (let i = 0; i < ids.length; i += 60) {
-    const part = ids.slice(i, i + 60);
-    const rows = await sb(`/rest/v1/bookings?id=in.(${part.map(x => `"${x}"`).join(',')})&select=${PAYROLL_VIP_SEL}`, 'GET', undefined, { cache: 'no-store' }).catch(() => []);
-    (rows || []).forEach(b => { map[b.id] = b; });
-  }
-  return map;
+// ══════════════════════════════════
+// 旧数据：改版前提交、还停在待审核 / 已驳回的记录
+// ══════════════════════════════════
+async function payrollLoadLegacy() {
+  const box = document.getElementById('pr_legacy');
+  if (!box) return;
+  try {
+    const rows = await sbAll(`/rest/v1/work_records?status=in.(pending,rejected)&select=id${payrollDomainQs()}`);
+    if (!rows.length) { box.innerHTML = ''; return; }
+    box.innerHTML = `<div style="background:#fff8e1;border:1px solid #e6a817;border-radius:3px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+      <span style="font-size:12px;color:#856404;font-weight:600">有 ${rows.length} 条旧的待审核记录（改版前提交的）</span>
+      <span style="margin-left:auto;display:flex;gap:6px">
+        <button class="btn btn-primary btn-sm" onclick="payrollLegacyPublish()">全部发布</button>
+        <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="payrollLegacyDelete()">全部删除</button>
+      </span></div>`;
+    box.dataset.ids = JSON.stringify(rows.map(r => r.id));
+  } catch (e) { box.innerHTML = ''; }
 }
-// 缺哪些必填项（空数组 = 完整）；预约找不到也算不完整
+function payrollLegacyIds() { try { return JSON.parse(document.getElementById('pr_legacy').dataset.ids || '[]'); } catch (e) { return []; } }
+async function payrollLegacyPublish() {
+  const ids = payrollLegacyIds();
+  if (!ids.length || !confirm(`把这 ${ids.length} 条旧记录全部发布？发布后老师在老师端能看到。`)) return;
+  try {
+    const now = new Date().toISOString();
+    for (let i = 0; i < ids.length; i += 50) {
+      await sb(`/rest/v1/work_records?id=in.(${ids.slice(i, i + 50).map(x => `"${x}"`).join(',')})`, 'PATCH', { status: 'approved', admin_note: null, updated_at: now });
+    }
+    payrollLoadLegacy(); payrollRenderPublished();
+  } catch (e) { alert('操作失败：' + e.message); }
+}
+async function payrollLegacyDelete() {
+  const ids = payrollLegacyIds();
+  if (!ids.length || !confirm(`删除这 ${ids.length} 条旧的待审核记录？删除后无法恢复。`)) return;
+  try {
+    for (let i = 0; i < ids.length; i += 50) {
+      await sb(`/rest/v1/work_records?id=in.(${ids.slice(i, i + 50).map(x => `"${x}"`).join(',')})`, 'DELETE');
+    }
+    payrollLoadLegacy();
+  } catch (e) { alert('操作失败：' + e.message); }
+}
+
+// ── VIP 记录完整度（读自预约本身） ──
 function payrollVipMissing(b) {
   if (!b) return ['对应的 VIP 预约（已被删除？）'];
   const t = v => String(v == null ? '' : v).trim();
@@ -610,216 +801,12 @@ function payrollVipMissing(b) {
   if (!(parseFloat(b.vip_hours_used) > 0)) out.push('本次耗时');
   return out;
 }
-function payrollVipDetailHtml(b) {
-  if (!b) return '<div style="margin-top:6px;color:#8a1a1a">找不到对应的 VIP 预约</div>';
-  const e = escTM;
-  const row = (k, v) => `<div style="display:flex;gap:6px;margin-bottom:2px"><span style="color:var(--text-3);min-width:72px">${k}</span><span style="white-space:pre-wrap;flex:1">${v ? e(v) : '<span style="color:#8a1a1a">（未填）</span>'}</span></div>`;
-  const hw = b.vip_homework || (b.vip_homework_questions && (Array.isArray(b.vip_homework_questions) ? b.vip_homework_questions.length : 1) ? '（已设置结构化作业）' : '');
-  return `<details style="margin-top:6px"><summary style="cursor:pointer;color:var(--text-2)">VIP 上课记录（${e(b.name)}）</summary>
-    <div style="margin-top:6px;padding:8px 10px;background:var(--bg);border:1px solid var(--border-light);border-radius:3px;line-height:1.6">
-      <div style="margin-bottom:4px">学生确认：${b.student_confirmed ? '<span style="color:#1a4a28">已确认 ✓</span>' : '<span style="background:#ffe8cc;color:#9a5a00;border-radius:2px;padding:1px 6px">未确认</span>'}</div>
-      ${row('本次内容', b.vip_content)}${row('上课内容', b.vip_session_notes)}${row('学生状态/评价', b.vip_student_status)}${row('布置作业', hw)}${row('本次耗时', parseFloat(b.vip_hours_used) > 0 ? b.vip_hours_used + ' 小时' : '')}
-    </div></details>`;
-}
-
-function renderWorkRecordRow(r, vipMap) {
-  const isVip = r.source === 'vip';
-  const vipB = isVip ? (vipMap || {})[r.source_id] : null;
-  const missing = isVip ? payrollVipMissing(vipB) : [];
-  const approveStyle = missing.length ? 'background:#ececec;color:#999;border:1px solid #ddd' : 'background:#ddf0e0;color:#1a4a28;border:1px solid #b0d8b8';
-  const statusColor = r.status === 'approved' ? '#1a4a28' : r.status === 'rejected' ? '#8a1a1a' : '#856404';
-  const statusBg = r.status === 'approved' ? '#ddf0e0' : r.status === 'rejected' ? '#f8e0e0' : '#fff3cd';
-  const statusLabel = r.status === 'approved' ? '已通过' : r.status === 'rejected' ? '已驳回' : '待审核';
-  return `
-  <div style="background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:10px 12px;margin-bottom:6px;font-size:11px" id="wr_row_${r.id}">
-    <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
-      <div style="flex:1;min-width:200px">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap">
-          <span style="font-weight:600">${r.start_time}</span>
-          <span style="color:var(--text-3)">→ ${r.end_time}</span>
-          <span style="font-weight:600;color:var(--accent)">${r.duration}h</span>
-          <span style="background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 5px">${r.work_type}</span>
-          <span style="background:${statusBg};color:${statusColor};border-radius:2px;padding:1px 5px">${statusLabel}</span>
-          ${r.domain ? `<span style="background:var(--bg);border:1px solid var(--border-light);border-radius:2px;padding:1px 5px;color:var(--text-3)">${escTM(r.domain)}</span>` : ''}
-        </div>
-        <div style="color:var(--text-3)">${r.location} · ${r.notes}</div>
-        ${r.admin_note ? `<div style="margin-top:4px;color:var(--text-2);font-style:italic">备注：${r.admin_note}</div>` : ''}
-        ${isVip ? payrollVipDetailHtml(vipB) : ''}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
-        <div style="display:flex;gap:4px">
-          <button class="btn btn-outline btn-sm" onclick="openEditWorkRecord('${r.id}')">编辑</button>
-          <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deleteWorkRecord('${r.id}')">删除</button>
-        </div>
-        <div style="display:flex;gap:4px">
-          <button class="btn btn-sm" style="${approveStyle}" onclick="approveWorkRecord('${r.id}')">通过</button>
-          <button class="btn btn-sm" style="background:#f8e0e0;color:#8a1a1a;border:1px solid #d8b0b0" onclick="rejectWorkRecord('${r.id}')">驳回</button>
-        </div>
-        ${missing.length ? `<div style="color:#c0392b;font-size:10px;max-width:220px;text-align:right">记录不完整：缺 ${missing.join('、')}</div>` : ''}
-      </div>
-    </div>
-    <div id="wr_edit_${r.id}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
-        <div class="form-group" style="margin:0;flex:1;min-width:120px"><label class="form-label">开始时间</label><input id="wr_start_${r.id}" value="${r.start_time}" style="font-size:11px"></div>
-        <div class="form-group" style="margin:0;flex:1;min-width:120px"><label class="form-label">结束时间</label><input id="wr_end_${r.id}" value="${r.end_time}" style="font-size:11px"></div>
-        <div class="form-group" style="margin:0;width:80px"><label class="form-label">时长(h)</label><input id="wr_dur_${r.id}" value="${r.duration}" type="number" step="0.5" style="font-size:11px"></div>
-        <div class="form-group" style="margin:0;flex:1;min-width:100px"><label class="form-label">工作内容</label><input id="wr_type_${r.id}" value="${r.work_type}" style="font-size:11px"></div>
-        <div class="form-group" style="margin:0;flex:1;min-width:100px"><label class="form-label">工作地点</label><input id="wr_loc_${r.id}" value="${r.location}" style="font-size:11px"></div>
-        <div class="form-group" style="margin:0;flex:2;min-width:160px"><label class="form-label">备注</label><input id="wr_notes_${r.id}" value="${r.notes}" style="font-size:11px"></div>
-        <div class="form-group" style="margin:0;flex:2;min-width:160px"><label class="form-label">审批理由</label><input id="wr_anote_${r.id}" value="${r.admin_note||''}" placeholder="可选" style="font-size:11px"></div>
-      </div>
-      <button class="btn btn-primary btn-sm" onclick="saveWorkRecord('${r.id}')">保存</button>
-      <button class="btn btn-outline btn-sm" onclick="document.getElementById('wr_edit_${r.id}').style.display='none'">取消</button>
-    </div>
-  </div>`;
-}
-
-function openEditWorkRecord(id) {
-  const el = document.getElementById(`wr_edit_${id}`);
-  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
-}
-
-async function saveWorkRecord(id) {
-  const patch = {
-    start_time: document.getElementById(`wr_start_${id}`).value,
-    end_time: document.getElementById(`wr_end_${id}`).value,
-    duration: parseFloat(document.getElementById(`wr_dur_${id}`).value) || 0,
-    work_type: document.getElementById(`wr_type_${id}`).value,
-    location: document.getElementById(`wr_loc_${id}`).value,
-    notes: document.getElementById(`wr_notes_${id}`).value,
-    admin_note: document.getElementById(`wr_anote_${id}`).value,
-    updated_at: new Date().toISOString()
-  };
-  try {
-    await sb(`/rest/v1/work_records?id=eq.${id}`, 'PATCH', patch);
-    renderWorkRecordsAdmin(document.getElementById('pr_records'));
-  } catch(e) { alert('保存失败：' + e.message); }
-}
-
-async function approveWorkRecord(id) {
-  try {
-    const r = ((await sb(`/rest/v1/work_records?id=eq.${id}&select=id,source,source_id`, 'GET', undefined, { cache: 'no-store' })) || [])[0];
-    if (r && r.source === 'vip') {
-      // VIP 记录：通过前重新读取预约，必填项齐全才能通过（老师补写后无需重新提交）
-      const miss = payrollVipMissing((await payrollLoadVipMap([r.source_id]))[r.source_id]);
-      if (miss.length) { alert('记录不完整，不能通过：缺 ' + miss.join('、')); renderWorkRecordsAdmin(document.getElementById('pr_records')); return; }
-    }
-    await sb(`/rest/v1/work_records?id=eq.${id}`, 'PATCH', { status: 'approved', admin_note: null, updated_at: new Date().toISOString() });
-    renderWorkRecordsAdmin(document.getElementById('pr_records'));
-  } catch(e) { alert('操作失败：' + e.message); }
-}
-
-async function approveAllWorkRecords(teacherName) {
-  if (!confirm(`确定将「${teacherName}」所有待审核记录全部通过？（不完整的 VIP 记录会跳过）`)) return;
-  try {
-    const rows = await sbAll(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&status=eq.pending&select=id,source,source_id${payrollDomainQs()}`);
-    const vipMap = await payrollLoadVipMap(rows.filter(r => r.source === 'vip').map(r => r.source_id));
-    const okIds = rows.filter(r => r.source !== 'vip' || !payrollVipMissing(vipMap[r.source_id]).length).map(r => r.id);
-    const skipped = rows.length - okIds.length;
-    const now = new Date().toISOString();
-    for (let i = 0; i < okIds.length; i += 50) {
-      await sb(`/rest/v1/work_records?id=in.(${okIds.slice(i, i + 50).map(x => `"${x}"`).join(',')})`, 'PATCH', { status: 'approved', updated_at: now });
-    }
-    if (skipped) alert(`${skipped} 条 VIP 记录不完整，未通过`);
-    renderWorkRecordsAdmin(document.getElementById('pr_records'));
-  } catch(e) { alert('操作失败：' + e.message); }
-}
-
-function toggleWrGroup(safeId) {
-  const el = document.getElementById(`wr_group_${safeId}`);
-  if (!el) return;
-  const arrow = el.previousElementSibling?.querySelector('span[style*="cursor"]');
-  if (el.style.display === 'none') {
-    el.style.display = 'block';
-    if (arrow) arrow.textContent = arrow.textContent.replace('▸', '▾');
-  } else {
-    el.style.display = 'none';
-    if (arrow) arrow.textContent = arrow.textContent.replace('▾', '▸');
-  }
-}
-
-function toggleWrHistory(safeId) {
-  const el = document.getElementById(`wr_history_${safeId}`);
-  const arrow = document.getElementById(`wr_history_arrow_${safeId}`);
-  if (!el) return;
-  const open = el.style.display !== 'none';
-  el.style.display = open ? 'none' : 'block';
-  if (arrow) arrow.textContent = open ? '▸' : '▾';
-}
-
-async function deleteApprovedWorkRecords(teacherName) {
-  if (!confirm(`确定删除「${teacherName}」所有已通过的工作记录？`)) return;
-  try {
-    await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&status=eq.approved${payrollDomainQs()}`, 'DELETE');
-    renderWorkRecordsAdmin(document.getElementById('pr_records'));
-  } catch(e) { alert('删除失败：' + e.message); }
-}
-
-async function deleteAllWorkRecords(teacherName) {
-  if (!confirm(`确定删除「${teacherName}」全部工作记录（包括待审核和已通过）？`)) return;
-  try {
-    await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}${payrollDomainQs()}`, 'DELETE');
-    renderWorkRecordsAdmin(document.getElementById('pr_records'));
-  } catch(e) { alert('删除失败：' + e.message); }
-}
-
-async function rejectWorkRecord(id) {
-  let auto = '';
-  try {
-    const r = ((await sb(`/rest/v1/work_records?id=eq.${id}&select=id,source,source_id`, 'GET', undefined, { cache: 'no-store' })) || [])[0];
-    if (r && r.source === 'vip') {
-      const miss = payrollVipMissing((await payrollLoadVipMap([r.source_id]))[r.source_id]);
-      if (miss.length) auto = 'VIP 记录不完整，请补写：' + miss.join('、');   // 缺的项目自动写进驳回理由，老师端能看到
-    }
-  } catch(e) { /* 读不到就按普通驳回 */ }
-  const input = prompt('驳回理由（可选）：', auto);
-  const note = (input == null ? '' : input) || auto;
-  try {
-    await sb(`/rest/v1/work_records?id=eq.${id}`, 'PATCH', { status: 'rejected', admin_note: note || null, updated_at: new Date().toISOString() });
-    renderWorkRecordsAdmin(document.getElementById('pr_records'));
-  } catch(e) { alert('操作失败：' + e.message); }
-}
-
-async function deleteWorkRecord(id) {
-  if (!confirm('确定删除这条工作记录？')) return;
-  try {
-    await sb(`/rest/v1/work_records?id=eq.${id}`, 'DELETE');
-    renderWorkRecordsAdmin(document.getElementById('pr_records'));
-  } catch(e) { alert('删除失败：' + e.message); }
-}
-
-// 导出某老师所有 approved 记录为 Excel
-async function exportWorkRecordsExcel(teacherName) {
-  const records = await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&status=eq.approved${payrollDomainQs()}&order=start_time.asc`);
-  if (!records.length) { alert('该老师暂无已通过的工作记录'); return; }
-  const headers = ['姓名', '开始时间', '结束时间', '时长', '工作内容', '工作地点', '备注'];
-  const aoa = [headers, ...records.map(r => [r.teacher_name, r.start_time, r.end_time, r.duration, r.work_type, r.location, r.notes])];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{wch:10},{wch:20},{wch:20},{wch:8},{wch:10},{wch:14},{wch:40}];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, '工作记录');
-  XLSX.writeFile(wb, `工作记录_${teacherName}.xlsx`);
-}
-
-// 导出全部老师所有 approved 记录为一张 Excel
-async function exportAllWorkRecordsExcel() {
-  const records = await sb(`/rest/v1/work_records?status=eq.approved${payrollDomainQs()}&order=teacher_name.asc,start_time.asc`);
-  if (!records.length) { alert('暂无已通过的工作记录'); return; }
-  const headers = ['姓名', '开始时间', '结束时间', '时长', '工作内容', '工作地点', '备注'];
-  const aoa = [headers, ...records.map(r => [r.teacher_name, r.start_time, r.end_time, r.duration, r.work_type, r.location, r.notes])];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{wch:10},{wch:20},{wch:20},{wch:8},{wch:10},{wch:14},{wch:40}];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, '工作记录');
-  const today = localDateStr();
-  XLSX.writeFile(wb, `工作记录_全部老师_${today}.xlsx`);
-}
 
 function renderPayrollPage(mc){
   mc.innerHTML = `
   <div class="page-section">
     <div class="section-title">工作管理</div>
-    <div class="section-sub">工资核算与工作记录审核</div>
+    <div class="section-sub">工资核算：生成 → 核对 → 下载 Excel 或发布给老师</div>
   </div>
   <div id="payrollContainer"></div>`;
   renderPayrollSection(document.getElementById('payrollContainer'));
