@@ -2734,13 +2734,17 @@ function renderMyCalendar(ym, byMonth, monthNames) {
   `;
 }
 
-// 工作记录：月份 chips + 统计条 + 筛选 chips + 一张可排序的表（表格、统计、下载都在 shared/workrec-table.js）
-const wrtTeacher = { records: [], ym: '', types: [], status: ['approved'], sortCol: 'date', sortDir: 1 };
+// 工作记录：月份 chips + 统计条 + 筛选 chips + 一张可排序的表（表格、统计、下载在 shared/workrec-table.js）
+// 数据 = 系统核算（和管理端生成工资表同一套算法，shared/payroll-core.js）+ 自己的 work_records（已发布的 / 申告）
+//   核算出来、已发布 → 显示发布那一版，标「已审批」；核算出来、没发布 → 显示核算结果，标「未审批」；
+//   已发布但这个月核算里没有了 → 照样显示已发布那一版；申告 → 照 work_records 自己的状态
+const wrtTeacher = { records: [], ym: '', types: [], st: 'all', sortCol: 'date', sortDir: 1, auto: {}, loading: false };
 
 async function renderWorkRecordsTeacher(mc) {
   mc.innerHTML = '<div class="loading">加载中…</div>';
   try {
-    wrtTeacher.records = await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&order=start_time.asc`);
+    wrtTeacher.records = await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&order=start_time.asc`, 'GET', undefined, { cache: 'no-store' });
+    wrtTeacher.auto = {};   // 重新进来就重新核算
     wdcState.mc = mc;
     if (wrtTeacher.ym === '') {   // 第一次进来默认本月；之后保留老师选的月份（'all' = 全部）
       const n = new Date();
@@ -2755,40 +2759,96 @@ async function renderWorkRecordsTeacher(mc) {
       <div id="wdc_form"></div>
       <div id="wrt_body"></div>
     </div>`;
-    wrtPaint();
     wdcMount(wrtTeacher.records);
+    await wrtPaint();
   } catch(e) {
     mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
   }
 }
 
-function wrtInMonth(r) { return wrtTeacher.ym === 'all' || wrtParse(r.start_time).ym === wrtTeacher.ym; }
-function wrtPaint() {
+// 这个月的系统核算（只读自己的数据）；按月缓存
+async function wrtLoadAuto(ym) {
+  if (wrtTeacher.auto[ym]) return wrtTeacher.auto[ym];
+  const y = +ym.slice(0, 4), m = +ym.slice(5);
+  const start = ym + '-01', end = ym + '-' + String(new Date(y, m, 0).getDate()).padStart(2, '0');
+  const d = await payrollLoadTeacherData(start, end, teacherName);
+  const opt = { noScope: true };
+  const rows = [
+    ...buildCourseRows(d.sessions, teacherName, d.courses, opt),
+    ...buildBookingRows(d.bookings, d.slots, teacherName, d.students, opt),
+    ...buildVipRows(d.vipConfirmed, teacherName, d.slots, d.students, opt)
+  ];
+  const pending = buildVipPending(d.vipPending, teacherName, d.slots, d.students, opt);
+  return (wrtTeacher.auto[ym] = { rows, pending });
+}
+const wrtPlainRec = r => ({ id: r.type + ':' + r.source_id, source: r.type, source_id: r.source_id, teacher_name: teacherName, start_time: r.开始时间, end_time: r.结束时间, duration: r.时长, work_type: r.工作内容, location: r.工作地点, notes: r.备注, status: 'pending' });
+
+// 合并：返回 { rows, pending }；月份 = 'all' 时只有 work_records（系统核算按月份算）
+async function wrtMerge() {
+  const t = wrtTeacher, ym = t.ym, mine = t.records;
+  const inM = r => ym === 'all' || wrtParse(r.start_time).ym === ym;
+  const declares = mine.filter(r => r.source === 'declare' && inM(r));
+  const pubOf = {};
+  mine.filter(r => r.source !== 'declare' && r.status === 'approved').forEach(r => { pubOf[r.source + ':' + r.source_id] = r; });
+  if (ym === 'all') return { rows: [...declares, ...mine.filter(r => r.source !== 'declare' && r.status === 'approved')], pending: [] };
+  const auto = await wrtLoadAuto(ym);
+  const used = new Set(), rows = [...declares];
+  auto.rows.forEach(a => {
+    const k = a.type + ':' + a.source_id, p = pubOf[k];
+    if (p) { used.add(k); rows.push(p); } else rows.push(wrtPlainRec(a));
+  });
+  // 已发布、但这个月核算里没有了（课被删等）：照样显示发布的那一版。VIP 按确认月份算，不在本月确认的不算本月
+  const left = mine.filter(r => r.source !== 'declare' && r.status === 'approved' && !used.has(r.source + ':' + r.source_id) && inM(r));
+  const vipIds = left.filter(r => r.source === 'vip').map(r => r.source_id);
+  let otherMonth = new Set();
+  if (vipIds.length) {
+    const bs = await sb(`/rest/v1/bookings?select=id,student_confirmed_at&id=in.(${vipIds.map(x => `"${x}"`).join(',')})`).catch(() => []);
+    (bs || []).forEach(b => { const c = payrollJstDate(b.student_confirmed_at); if (c && c.slice(0, 7) !== ym) otherMonth.add(String(b.id)); });
+  }
+  left.forEach(r => { if (!(r.source === 'vip' && otherMonth.has(String(r.source_id)))) rows.push(r); });
+  return { rows, pending: auto.pending };
+}
+
+async function wrtPaint() {
   const box = document.getElementById('wrt_body');
   if (!box) return;
-  const t = wrtTeacher, all = t.records, inMonth = all.filter(wrtInMonth);
-  const approved = inMonth.filter(r => r.status === 'approved');
-  const nowD = new Date(), curYm = nowD.getFullYear() + '-' + String(nowD.getMonth() + 1).padStart(2, '0');   // 本月始终有 chip，没记录时也能从「全部」切回来
-  const months = [...new Set([...wrtMonths(all), curYm, wrtTeacher.ym !== 'all' ? wrtTeacher.ym : ''].filter(Boolean))].sort().reverse();
+  const t = wrtTeacher, ymNow = t.ym;
+  if (ymNow !== 'all' && !t.auto[ymNow]) box.insertAdjacentHTML('afterbegin', '<div style="font-size:11px;color:var(--text-3);margin-bottom:6px">正在核算…</div>');
+  let merged;
+  try { merged = await wrtMerge(); }
+  catch (e) { box.innerHTML = `<div class="empty">核算失败：${wrtEsc(e.message)}</div>`; return; }
+  if (ymNow !== wrtTeacher.ym) return;   // 核算期间老师又切了月份
+  const inMonth = merged.rows;
+  const approved = inMonth.filter(r => r.status === 'approved'), unap = inMonth.filter(r => r.status === 'pending');
+  const now = new Date(), curYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');   // 本月始终有 chip，没记录时也能从「全部」切回来
+  const months = [...new Set([...wrtMonths(t.records), curYm, t.ym !== 'all' ? t.ym : ''].filter(Boolean))].sort().reverse();
   const chip = (on, click, label) => `<div class="filter-chip${on ? ' active' : ''}" onclick="${click}">${label}</div>`;
-  const stLabel = { approved: '已通过', pending: '待审批', rejected: '已驳回' };
-  const rows = inMonth.filter(r => (!t.types.length || t.types.includes(payrollTypeName(r.work_type))) && (!t.status.length || t.status.includes(r.status)));
+  const stList = [['all', '全部', inMonth.length], ['approved', '已审批', approved.length], ['pending', '未审批', unap.length], ['rejected', '已驳回', inMonth.filter(r => r.status === 'rejected').length]];
+  const rows = inMonth.filter(r => (!t.types.length || t.types.includes(payrollTypeName(r.work_type))) && (t.st === 'all' || r.status === t.st));
+  const pend = merged.pending;
   box.innerHTML = `
     <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
       ${chipFold(months.map(m => ({ on: t.ym === m, html: chip(t.ym === m, `wrtPickMonth('${m}')`, wrtMonthLabel(m)) })))}
       ${chip(t.ym === 'all', "wrtPickMonth('all')", '全部')}
     </div>
-    <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">已通过的记录 · ${t.ym === 'all' ? '全部月份' : wrtMonthLabel(t.ym)}</div>
-    ${approved.length ? wrtStatsHtml(approved) : '<div style="font-size:12px;color:var(--text-3);padding:4px 0 10px">这段时间暂无已通过的工作记录</div>'}
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">${t.ym === 'all' ? '全部月份（只含已发布的记录和申告；系统核算请选具体月份）' : wrtMonthLabel(t.ym)}</div>
+    ${approved.length || unap.length ? wrtStatsHtml([['已审批', approved], ['含未审批合计', [...approved, ...unap]]]) : '<div style="font-size:12px;color:var(--text-3);padding:4px 0 6px">这段时间暂无工作记录</div>'}
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">未审批的是系统按课表、预约自动算的，最终以管理端审批发布为准</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
       <span style="font-size:10px;color:var(--text-3)">工作内容</span>
-      ${chipFold(wrtTypesPresent(all).map(x => ({ on: t.types.includes(x), html: `<div class="filter-chip${t.types.includes(x) ? ' active' : ''}" onclick="wrtToggleType(this.dataset.t)" data-t="${wrtEsc(x)}">${wrtEsc(x)}</div>` })))}
+      ${chipFold(wrtTypesPresent(inMonth).map(x => ({ on: t.types.includes(x), html: `<div class="filter-chip${t.types.includes(x) ? ' active' : ''}" onclick="wrtToggleType(this.dataset.t)" data-t="${wrtEsc(x)}">${wrtEsc(x)}</div>` })))}
       <span style="font-size:10px;color:var(--text-3);margin-left:8px">状态</span>
-      ${['approved', 'pending', 'rejected'].map(k => chip(t.status.includes(k), `wrtToggleStatus('${k}')`, `${stLabel[k]} ${inMonth.filter(r => r.status === k).length}`)).join('')}
+      ${stList.map(([k, label, n]) => chip(t.st === k, `wrtPickStatus('${k}')`, `${label} ${n}`)).join('')}
       <span style="margin-left:auto"><button class="btn btn-outline btn-sm" onclick="wrtDownloadMonth()">↓ 下载${t.ym === 'all' ? '全部' : '本月'}</button></span>
     </div>
     ${rows.length ? wrtTableHtml(rows, { sortCol: t.sortCol, sortDir: t.sortDir, onSort: 'wrtSortBy', actions: wrtActions })
-      : `<div style="font-size:12px;color:var(--text-3);padding:8px 0">${all.length ? '当前筛选下没有记录' : '暂无工作记录（Admin 审核通过后会显示在这里）'}</div>`}`;
+      : `<div style="font-size:12px;color:var(--text-3);padding:8px 0">${inMonth.length ? '当前筛选下没有记录' : '这段时间暂无工作记录'}</div>`}
+    ${pend.length ? `<div style="margin-top:12px;background:#fff8e1;border:1px solid #e6a817;border-radius:3px;padding:9px 12px">
+      <div style="font-size:12px;font-weight:600;color:#856404">待学生确认（不计入本月）：${pend.length} 节 · ${payrollRound(pend.reduce((s, x) => s + x.hours, 0))} 课时</div>
+      <div style="font-size:10px;color:var(--text-3);margin:2px 0 6px">学生确认后才计入，按确认的月份算。</div>
+      ${pend.map(x => `<div style="font-size:11px;padding:2px 0">${wrtEsc(x.name)} · ${wrtEsc(x.date)} ${wrtEsc(x.range)}${x.hours ? ' · ' + x.hours + 'h' : ''}</div>`).join('')}
+    </div>` : ''}`;
+  t.shown = rows;
 }
 function wrtActions(r) {
   if (r.source !== 'declare' || r.status === 'approved') return '';
@@ -2798,12 +2858,14 @@ function wrtActions(r) {
 function wrtEdit(id) { wdcOpen(id); const f = document.getElementById('wdc_form'); if (f && f.scrollIntoView) f.scrollIntoView({ block: 'start' }); }
 function wrtPickMonth(m) { wrtTeacher.ym = m; wrtPaint(); }
 function wrtToggleType(x) { const a = wrtTeacher.types, i = a.indexOf(x); if (i >= 0) a.splice(i, 1); else a.push(x); wrtPaint(); }
-function wrtToggleStatus(k) { const a = wrtTeacher.status, i = a.indexOf(k); if (i >= 0) a.splice(i, 1); else a.push(k); wrtPaint(); }
+function wrtPickStatus(k) { wrtTeacher.st = k; wrtPaint(); }
 function wrtSortBy(col) { const t = wrtTeacher; if (t.sortCol === col) t.sortDir *= -1; else { t.sortCol = col; t.sortDir = 1; } wrtPaint(); }
+// 下载：照当前筛选（月份 + 工作内容 + 状态）
 function wrtDownloadMonth() {
-  const list = wrtTeacher.records.filter(r => wrtInMonth(r) && r.status === 'approved');
-  if (!list.length) { alert('这段时间没有已通过的记录可下载'); return; }
-  wrtDownload(list, wrtTeacher.ym === 'all' ? '全部' : wrtMonthLabel(wrtTeacher.ym), teacherName);
+  const list = wrtTeacher.shown || [];
+  if (!list.length) { alert('当前筛选下没有记录可下载'); return; }
+  const stName = { all: '', approved: '_已审批', pending: '_未审批', rejected: '_已驳回' }[wrtTeacher.st];
+  wrtDownload(list, (wrtTeacher.ym === 'all' ? '全部' : wrtMonthLabel(wrtTeacher.ym)) + stName, teacherName);
 }
 
 init();
