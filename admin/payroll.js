@@ -235,7 +235,7 @@ function buildVipPending(pending, teacherName, slots, students) {
   const stuMap = payrollStuMap(students);
   return (pending || []).filter(b => b.type === 'vip' && b.status === 'completed' && b.student_confirmed !== true
       && payrollVipOwner(b, slotMap) === teacherName && scopeMajor(payrollBookingMajor(b, stuMap)))
-    .map(b => ({ id: b.id, name: b.name, date: b.slot_date || '', range: b.slot_time_range || '', hours: parseFloat(b.vip_hours_used) || 0, teacher: teacherName }))
+    .map(b => { window.__bkProxyExtra[b.id] = b; return { id: b.id, name: b.name, date: b.slot_date || '', range: b.slot_time_range || '', hours: parseFloat(b.vip_hours_used) || 0, teacher: teacherName }; })
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
@@ -584,15 +584,9 @@ function payrollPendingHtml(list) {
       <button class="btn btn-outline btn-sm" onclick="payrollProxyConfirm('${escTM(x.id)}')">代学生确认</button></div>`).join('')}
   </div>`;
 }
-async function payrollProxyConfirm(id) {
-  if (!confirm('代学生确认这节 VIP 课？确认后按今天的日期算进当月工资。')) return;
-  const who = typeof bkSelfWho === 'function' ? bkSelfWho() : '教务';
-  try {
-    const rows = await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(id)}&type=eq.vip&status=eq.completed`, 'PATCH',
-      { student_confirmed: true, student_confirmed_by: who, student_confirmed_at: new Date().toISOString() });
-    if (Array.isArray(rows) && !rows.length) throw new Error('数据库没有允许修改这条预约（0 行被更新）');
-    await payrollGenerate(true);
-  } catch (e) { alert('操作失败：' + e.message); }
+// 用管理端 booking.js 的同一个代确认弹窗，确认后重新生成（保留已改的时长、备注和勾选）
+function payrollProxyConfirm(id) {
+  bkBfProxyOpen(id, () => payrollGenerate(true));
 }
 
 // ── 底部操作栏 ──
