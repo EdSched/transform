@@ -773,14 +773,21 @@ async function tfMgrInit(t){
   if(!document.getElementById('tf_manager_box')){ _mgrDraft=null; return; }
   const ms=(t&&t.manage_scope)||{};
   const allPg=MGR_PAGE_DEFS.map(d=>d[0]);
-  _mgrDraft={pages:Array.isArray(ms.pages)?allPg.filter(k=>ms.pages.includes(k)):allPg.slice(),teacherMode:ms.teacher_mode==='own'?'own':'range',domains:(ms.domains||[]).slice(),majors:(ms.majors||[]).slice(),classIds:(ms.class_ids||[]).map(String),perms:((t&&t.resource_perms)||[]).slice(),dept:((t&&t.dept_perms)||[]).slice(),hasDept:!!(t&&('dept_perms' in t))};
+  _mgrDraft={payroll:ms.payroll==='approve'?'approve':'view',payrollTouched:!!ms.payroll,pages:Array.isArray(ms.pages)?allPg.filter(k=>ms.pages.includes(k)):allPg.slice(),teacherMode:ms.teacher_mode==='own'?'own':'range',domains:(ms.domains||[]).slice(),majors:(ms.majors||[]).slice(),classIds:(ms.class_ids||[]).map(String),perms:((t&&t.resource_perms)||[]).slice(),dept:((t&&t.dept_perms)||[]).slice(),hasDept:!!(t&&('dept_perms' in t))};
   const draft=_mgrDraft;
   tfMgrRender();
   try{ if(typeof loadClasses==='function') await loadClasses(); }catch(e){}
   if(_mgrDraft===draft) tfMgrRender();
 }
+// 新建老师时，「工作管理」审批权限的默认值：选中的职位 / 角色里有一个在角色模板里开了「工作管理可审批发布」就默认可以审批；其余默认只能查看
+function tfPayrollTplDefault(){
+  const tpl=_roleTpl||{};
+  return [_tfPos].concat(_tfRoles||[]).filter(Boolean).some(k=>tpl[k]&&tpl[k].defaults&&tpl[k].defaults.payroll_approve)?'approve':'view';
+}
+function mgrPayrollSet(v){ _mgrDraft.payroll=v; _mgrDraft.payrollTouched=true; admKeepFold(document.getElementById('tf_manager_box'),tfMgrRender); }
 function tfMgrRender(){
   const d=_mgrDraft, rb=document.getElementById('tf_resource_box'), mb=document.getElementById('tf_manager_box'); if(!d||!rb||!mb) return;
+  if(!d.payrollTouched && !_tfEditId) d.payroll=tfPayrollTplDefault();
   const permChips=RESOURCE_PERM_DEFS.map(([code,label])=>`<div class="filter-chip${d.perms.includes(code)?' active':''}" data-res="${code}" onclick="mgrPermToggle('${code}')" style="padding:3px 10px;font-size:11px">${escTM(label)}</div>`).join('');
   rb.innerHTML=`<div style="display:flex;gap:6px;flex-wrap:wrap">${permChips}</div>`;
   const isMgr=d.domains.length||d.majors.length||d.classIds.length;
@@ -793,6 +800,9 @@ function tfMgrRender(){
     <div style="margin-top:12px"><div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">管理模式能用的页面</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${MGR_PAGE_DEFS.map(([k,label])=>`<div class="filter-chip${d.pages.includes(k)?' active':''}" onclick="mgrPageToggle('${k}')" style="padding:3px 10px;font-size:11px">${escTM(label)}</div>`).join('')}</div>
       <div style="font-size:10px;color:var(--text-3);margin-top:6px;line-height:1.7">默认全选 = 管理模式的页面不受限制。取消勾选的页面，菜单里看不到、直接输网址也进不去。资源管理 / 价目 / 专业沿用各自的开关。合格实绩：开放后，负责人只能看、管理自己管理范围（领域 / 专业）内的合格实绩、截图和海报。</div></div>
+    ${d.pages.includes('payroll')?`<div style="margin-top:12px"><div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">工作管理</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${[['view','只能查看'],['approve','可以审批发布']].map(([k,label])=>`<div class="filter-chip${d.payroll===k?' active':''}" onclick="mgrPayrollSet('${k}')" style="padding:3px 10px;font-size:11px">${label}</div>`).join('')}</div>
+      <div style="font-size:10px;color:var(--text-3);margin-top:6px;line-height:1.7">只能查看：可以生成表、筛选、看统计、下载 Excel，不能发布 / 撤回 / 驳回。可以审批发布：能审批范围内别的老师的工资，但自己的工资一律由管理员审批（页面和数据库都拦）。管理员永远可以审批；领域访问链接照旧可以审批本领域的记录。没设过的负责人按「只能查看」算。</div></div>`:''}
     ${d.dept.includes('teachers')?`<div style="margin-top:12px"><div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">老师管理范围</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${[['range','按领域/专业'],['own','只管归属自己的老师']].map(([k,label])=>`<div class="filter-chip${d.teacherMode===k?' active':''}" onclick="mgrTeacherModeSet('${k}')" style="padding:3px 10px;font-size:11px">${label}</div>`).join('')}</div>
       <div style="font-size:10px;color:var(--text-3);margin-top:6px;line-height:1.7">「只管归属自己的老师」：老师列表只显示「归属负责人」是他的老师（加上他自己，只读）；新建的老师自动归属给他。</div></div>`:''}`:''}`;
@@ -890,6 +900,7 @@ function tfMgrCollect(cur,isNew){
   if(manage_scope){
     if(d.pages.length<MGR_PAGE_DEFS.length) manage_scope.pages=MGR_PAGE_DEFS.map(x=>x[0]).filter(k=>d.pages.includes(k));   // 全选时不写这个键
     if(d.teacherMode==='own'&&d.dept.includes('teachers')) manage_scope.teacher_mode='own';
+    manage_scope.payroll=(!d.payrollTouched&&!cur)?tfPayrollTplDefault():(d.payroll==='approve'?'approve':'view');   // 工作管理：view 只能查看 / approve 可以审批发布
   }
   const resource_perms=d.perms.slice();
   const dept=(isMgr?d.dept:[]).slice();   // 部门管理权限：有管理范围才有（不看职位）；准备 SQL 没执行（老师行里没有这个字段）且没选时不写
@@ -2664,7 +2675,7 @@ async function bootAsTeacher(){
     const t=rows && rows[0];
     if(!t || !managerScopeNonEmpty(t.manage_scope)){ teacherModeBlock(t?'你还不是负责人，没有管理模式。请联系管理员开通':'请从你的老师链接进入'); return; }
     const ms=t.manage_scope;
-    ACCESS_KEY={ k:'teacher:'+t.id, domains:ms.domains||[], majors:ms.majors||[], class_ids:ms.class_ids||[], is_admin:false, active:true, label:'管理模式 · '+t.name, _asTeacher:{ id:t.id, name:t.name, resource_perms:t.resource_perms||[], position:t.position||'', dept_perms:t.dept_perms||[], pages:Array.isArray(ms.pages)?ms.pages:null, sources:Array.isArray(t.student_sources)?t.student_sources:[], teacher_mode:ms.teacher_mode==='own'?'own':'range', leader_id:t.leader_id||'', permissions:t.permissions||{} } };
+    ACCESS_KEY={ k:'teacher:'+t.id, domains:ms.domains||[], majors:ms.majors||[], class_ids:ms.class_ids||[], is_admin:false, active:true, label:'管理模式 · '+t.name, _asTeacher:{ id:t.id, name:t.name, resource_perms:t.resource_perms||[], position:t.position||'', dept_perms:t.dept_perms||[], pages:Array.isArray(ms.pages)?ms.pages:null, payroll:ms.payroll==='approve'?'approve':'view', sources:Array.isArray(t.student_sources)?t.student_sources:[], teacher_mode:ms.teacher_mode==='own'?'own':'range', leader_id:t.leader_id||'', permissions:t.permissions||{} } };
     await loadMajorsFromDB();
     await loadPeriodsFromDB(); await loadHolidaysFromDB();
     await enterFromKey();
