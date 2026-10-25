@@ -1146,6 +1146,16 @@ async function raSubmitForm(btn, force) {
     raShowModal('重复确认', '刚刚已经保存过一条相同的，还要再存一条吗？', () => raSubmitForm(btn, true));
     return;
   }
+  if (!force) {
+    raBtnBusy(btn, '检查重复中…');
+    const dup = await raDupFind('grad', row);
+    raBtnDone(btn);
+    if (dup) {
+      const a = await raDupAsk('grad', dup);
+      if (a === 'open') { raOpenRecord('grad', dup.id); return; }
+      if (a !== 'new') return;
+    }
+  }
   const file = document.getElementById('f-photo').files[0];
   raBtnBusy(btn, '保存中…'); raSaveMsg('f-save-msg', '', '');
   try {
@@ -1740,8 +1750,8 @@ function raListRows() {
 
 // ─── 数据管理：筛选 chips + 统计条 + 按学校汇总（大学院 / 学部共用，kind = 'grad' | 'ug'）──────────
 const raRm = {
-  grad: { dom: '', maj: '', era: '', year: '', months: [], view: 'list', open: {} },
-  ug:   { dom: '', maj: '', era: '', year: '', months: [], view: 'list', open: {} },
+  grad: { dom: '', maj: '', era: '', year: '', months: [], view: 'list', open: {}, dup: false, keep: {}, posterIds: null },
+  ug:   { dom: '', maj: '', era: '', year: '', months: [], view: 'list', open: {}, dup: false, keep: {}, posterIds: null },
 };
 const RA_RM_ERAS = [['new', '2026–2027'], ['hist', '2022–2025']];
 function raRmData(kind) { return kind === 'ug' ? raUgAllData : raAllData; }
@@ -1802,6 +1812,9 @@ function raRmFiltersHtml(kind) {
     const keys = Object.keys(mc).sort((a, b) => mc[b] - mc[a] || (raRmName(a) || '').localeCompare(raRmName(b) || '', 'ja'));
     h += row('本校专业', chipFold(keys.map(k => raRmChip(f.maj === k, k === 'other' ? '其他' : (raRmName(k) || k), `raRmSet('${kind}','maj','${raArEsc(k)}')`, mc[k]))));
   }
+  // 疑似重复
+  const dn = raDupOpenGroups(kind).length;
+  if (dn || f.dup) h += row('检查', raRmChip(f.dup, '疑似重复', `raRmToggleDup('${kind}')`, dn).html);
   // 入学年度
   h += row('入学年度', RA_RM_ERAS.map(([k, lab]) => raRmChip(f.era === k, lab, `raRmSet('${kind}','era','${k}')`).html).join(''));
   // 录入时间（按录入日期）：年 → 月（多选）
@@ -1816,6 +1829,165 @@ function raRmFiltersHtml(kind) {
     h += row('月份', m + (f.months.length ? '' : '<span class="rm-sub">不选 = 全年</span>'));
   }
   return h;
+}
+
+// ─── 重复记录：录入防重 / 疑似重复筛查 / 合并 ───────────────────────────────────────────────
+// 判定规则在 shared/constants.js 的 resultSame()：同一个学生 + schoolKey 相同 + deptKey 相同（或一边研究科为空）
+function raDupSrc(r) { return r.entered_via === 'public' ? '收集页' : '管理端（手动或学生档案）'; }
+function raDupWhen(r) {
+  const d = r.created_at ? new Date(r.created_at) : null;
+  return d && !isNaN(d) ? `${d.getMonth() + 1}月${d.getDate()}日录入` : '录入时间不明';
+}
+// 保存前查库里有没有「同一条」；返回第一条，没有返回 null。excludeId = 编辑时排除自己
+async function raDupFind(kind, row, excludeId) {
+  const name = String(row.student || '').trim(), table = kind === 'ug' ? 'undergrad_results' : 'admission_results', enc = encodeURIComponent;
+  const qs = [];
+  if (resultPersonName(name)) qs.push(`/rest/v1/${table}?select=*&student=eq.${enc(name)}`);
+  if (row.student_id) qs.push(`/rest/v1/${table}?select=*&student_id=eq.${enc(row.student_id)}`);
+  if (!qs.length) return null;
+  try {
+    const lists = await Promise.all(qs.map(q => sb(q, 'GET', null, { cache: 'no-store' }).catch(() => [])));
+    const seen = new Set();
+    for (const r of [].concat(...lists.map(l => l || []))) {
+      if (seen.has(r.id)) continue; seen.add(r.id);
+      if (excludeId != null && String(r.id) === String(excludeId)) continue;
+      if (resultSame(row, r)) return r;
+    }
+  } catch (e) { /* 查不了就不拦 */ }
+  return null;
+}
+// 弹窗：「已经有这条」。返回 'open' | 'new' | 'cancel'
+function raDupAsk(kind, dup, newLabel) {
+  return new Promise(res => {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20000;display:flex;align-items:center;justify-content:center;padding:16px';
+    const label = [dup.univ, dup.dept, dup.spec].filter(Boolean).join(' ');
+    const b = (a, t, st) => `<button data-a="${a}" style="padding:6px 14px;font-size:12px;border-radius:3px;cursor:pointer;font-family:inherit;${st}">${t}</button>`;
+    ov.innerHTML = `<div style="background:#fff;border-radius:6px;padding:20px 22px;max-width:440px;width:100%;font-size:13px;line-height:1.7;color:#1a1814">
+      <div style="font-weight:600;margin-bottom:6px">已经有这条</div>
+      <div style="margin-bottom:16px">已经有这条：${raArEsc(label)}（${raDupWhen(dup)}，来源：${raDupSrc(dup)}）<br><span style="color:#9a9590;font-size:11px">学生：${raArEsc(dup.student || '—')}</span></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+        ${b('cancel', '取消', 'background:#fff;border:1px solid #e2ded6')}${b('new', newLabel || '还是新建', 'background:#fff;border:1px solid #2c4a8a;color:#2c4a8a')}${b('open', '打开那条修改', 'background:#2c4a8a;border:1px solid #2c4a8a;color:#fff')}
+      </div></div>`;
+    ov.addEventListener('click', e => { const a = e.target.dataset && e.target.dataset.a; if (!a) return; ov.remove(); res(a); });
+    document.body.appendChild(ov);
+  });
+}
+// 打开某条记录的编辑窗口（已经在合格实绩页就直接开；不在就先切到该页）
+async function raOpenRecord(kind, id) {
+  if (!document.getElementById('ra-root')) {
+    if (typeof switchPage !== 'function') return;
+    switchPage('admissions');
+    for (let i = 0; i < 40 && !document.getElementById('ra-root'); i++) await new Promise(r => setTimeout(r, 100));
+    if (!document.getElementById('ra-root')) return;
+  }
+  raSwitchMajor(kind);
+  if (kind === 'ug') { raSwitchUgTab('list'); await raUgLoadList(); raUgOpenEditModal(String(id)); }
+  else { raSwitchTab('list'); await raLoadList(); raOpenEditModal(String(id)); }
+}
+
+// 疑似重复分组：同一组 = 互相满足 resultSame 的记录（并查集）；按 schoolKey 先分桶
+function raDupGroups(rows) {
+  const parent = rows.map((_, i) => i), find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  const buckets = {};
+  rows.forEach((r, i) => { const k = schoolKey(r.univ); if (k) (buckets[k] = buckets[k] || []).push(i); });
+  Object.values(buckets).forEach(ix => {
+    for (let a = 0; a < ix.length; a++) for (let b = a + 1; b < ix.length; b++) {
+      if (resultSame(rows[ix[a]], rows[ix[b]])) parent[find(ix[a])] = find(ix[b]);
+    }
+  });
+  const by = {};
+  rows.forEach((r, i) => { if (!schoolKey(r.univ)) return; (by[find(i)] = by[find(i)] || []).push(r); });
+  return Object.values(by).filter(g => g.length > 1).map(g => g.slice().sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || ''))));
+}
+function raDupSig(g) { return g.map(r => String(r.id)).sort().join(','); }
+function raDupIgnored(kind) { try { return new Set(JSON.parse(localStorage.getItem('ra-notdup-' + kind) || '[]')); } catch (e) { return new Set(); } }
+function raDupIgnore(kind, sig) {
+  const s = raDupIgnored(kind); s.add(sig);
+  try { localStorage.setItem('ra-notdup-' + kind, JSON.stringify([...s])); } catch (e) { /* 没有本地存储就只在这次有效 */ }
+  raToast('已标记为不是重复'); raRmRerender(kind);
+}
+function raDupOpenGroups(kind) { const ig = raDupIgnored(kind); return raDupGroups(raRmData(kind)).filter(g => !ig.has(raDupSig(g))); }
+async function raRmToggleDup(kind) {
+  const f = raRm[kind]; f.dup = !f.dup;
+  if (f.dup) {
+    try {
+      await raArEnsurePhotoMap(kind);
+      const ps = await raSbFetch(`pass_posters?result_kind=eq.${kind}&select=result_id`).catch(() => []);
+      f.posterIds = new Set((ps || []).map(x => String(x.result_id)));
+    } catch (e) { f.posterIds = f.posterIds || new Set(); }
+  }
+  raRmRerender(kind);
+}
+function raDupHasPhoto(kind, r) { return !!(raAR_PH[kind] && raAR_PH[kind][String(r.id)]); }
+function raDupDefaultKeep(kind, g) {
+  const f = raRm[kind], poster = f.posterIds || new Set();
+  return (g.find(r => poster.has(String(r.id))) || g.find(r => raDupHasPhoto(kind, r)) || g[0]).id;
+}
+function raDupKeepOf(kind, g) {
+  const f = raRm[kind], k = f.keep && f.keep[raDupSig(g)];
+  return k != null && g.some(r => String(r.id) === String(k)) ? k : raDupKeepOf0(kind, g);
+}
+function raDupKeepOf0(kind, g) { return raDupDefaultKeep(kind, g); }
+function raDupPick(kind, sig, id) { const f = raRm[kind]; (f.keep = f.keep || {})[sig] = id; raRmRerender(kind); }
+function raRmDupHtml(kind, rows) {
+  const f = raRm[kind], ok = new Set(rows.map(r => String(r.id))), poster = f.posterIds || new Set();
+  const groups = raDupOpenGroups(kind).filter(g => g.some(r => ok.has(String(r.id)))).sort((a, b) => b.length - a.length);
+  if (!groups.length) return '<div class="load-state">没有疑似重复的记录</div>';
+  let h = '';
+  groups.forEach(g => {
+    const sig = raDupSig(g), keep = raDupKeepOf(kind, g), sigAttr = raArEsc(sig);
+    h += `<div class="rm-school"><div class="rm-school-h" style="cursor:default"><span style="flex:1;font-weight:500">${raArEsc(g[0].student || '—')} · ${raArEsc(g[0].univ || '')}</span><span class="rm-sub">${g.length} 条</span>
+      <button class="btn btn-primary" style="padding:3px 10px;font-size:11px" onclick="raDupMergeAsk('${kind}',this.dataset.s)" data-s="${sigAttr}">合并</button>
+      <button class="btn btn-secondary" style="padding:3px 10px;font-size:11px" onclick="raDupIgnore('${kind}',this.dataset.s)" data-s="${sigAttr}">不是重复</button></div>
+      <div class="rm-school-b"><div class="data-table-wrap"><table class="data-table"><thead><tr><th>保留</th><th>大学名</th><th>${kind === 'ug' ? '学部' : '研究科'}</th><th>${kind === 'ug' ? '学科' : '専攻'}</th><th>学生</th><th>本校专业</th><th>来源</th><th>录入日期</th><th>照片</th><th>海报</th><th>操作</th></tr></thead><tbody>`;
+    g.forEach(r => {
+      const on = String(r.id) === String(keep);
+      h += `<tr data-id="${r.id}" data-univ="${raArEsc(r.univ || '')}"><td><span class="ra-chip${on ? ' on' : ''}" onclick="raDupPick('${kind}',this.dataset.s,this.dataset.i)" data-s="${sigAttr}" data-i="${raArEsc(r.id)}">${on ? '保留' : '选这条'}</span></td>
+        <td>${raArEsc(r.univ || '')}</td><td>${raArEsc(r.dept || '')}</td><td>${raArEsc(r.spec || '')}</td><td>${raArEsc(r.student || '—')}</td><td>${raArEsc(raRmLabel(r))}</td>
+        <td>${raDupSrc(r).slice(0, 3)}</td><td>${r.created_at ? String(r.created_at).slice(0, 10) : '—'}</td><td>${raDupHasPhoto(kind, r) ? '有' : '—'}</td><td>${poster.has(String(r.id)) ? '已做' : '—'}</td>
+        <td style="white-space:nowrap"><button class="btn btn-secondary" style="padding:3px 8px;font-size:10px" onclick="${kind === 'ug' ? 'raUgOpenEditModal' : 'raOpenEditModal'}(this)">編集</button></td></tr>`;
+    });
+    h += '</tbody></table></div></div></div>';
+  });
+  return h;
+}
+function raDupMergeAsk(kind, sig) {
+  const g = raDupOpenGroups(kind).find(x => raDupSig(x) === sig); if (!g) return;
+  const keep = g.find(r => String(r.id) === String(raDupKeepOf(kind, g)));
+  raShowModal('合并确认', `保留「${keep.univ} ${keep.dept || ''}」这一条；其余 ${g.length - 1} 条里有、这条没有的内容（照片、本校专业、英语成绩、学生关联等）补进来，然后删除其余几条。照片和海报跟着保留的这条走。`, () => raDupMerge(kind, g, keep));
+}
+async function raDupMerge(kind, g, keep) {
+  const table = kind === 'ug' ? 'undergrad_results' : 'admission_results', enc = encodeURIComponent, others = g.filter(r => r !== keep);
+  const poster = raRm[kind].posterIds || new Set(), skip = new Set(['id', 'created_at', 'entered_via', 'era', 'track', 'school_type']);
+  const empty = (k, v) => v == null || v === '' || (k === 'subject' && v === 'other');
+  try {
+    await raArEnsurePhotoMap(kind);
+    const patch = {};
+    others.forEach(o => Object.keys(o).forEach(k => {
+      if (skip.has(k) || k.charAt(0) === '_' || k in patch) return;
+      if (empty(k, keep[k]) && !empty(k, o[k])) patch[k] = o[k];
+    }));
+    if (Object.keys(patch).length) await raSbFetch(`${table}?id=eq.${enc(keep.id)}`, { method: 'PATCH', body: patch, prefer: 'return=minimal', headers: {} });
+    // 照片 / 海报：保留的这条没有、别的有，就改挂到保留的这条；都有则保留的这条的，其余随删除清理
+    let hasPhoto = raDupHasPhoto(kind, keep), hasPoster = poster.has(String(keep.id));
+    for (const o of others) {
+      if (!hasPhoto && raDupHasPhoto(kind, o)) {
+        await raSbFetch(`result_photos?result_kind=eq.${kind}&result_id=eq.${enc(o.id)}`, { method: 'PATCH', body: { result_id: String(keep.id) }, prefer: 'return=minimal', headers: {} });
+        raAR_PH[kind][String(keep.id)] = raAR_PH[kind][String(o.id)]; delete raAR_PH[kind][String(o.id)]; hasPhoto = true;
+      }
+      if (!hasPoster && poster.has(String(o.id))) {
+        await raSbFetch(`pass_posters?result_kind=eq.${kind}&result_id=eq.${enc(o.id)}`, { method: 'PATCH', body: { result_id: String(keep.id) }, prefer: 'return=minimal', headers: {} });
+        poster.add(String(keep.id)); poster.delete(String(o.id)); hasPoster = true;
+      }
+    }
+    for (const o of others) { if (kind === 'ug') await raUgDeleteOne(o.id); else await raDeleteResult(o.id); }
+    const gone = new Set(others.map(o => String(o.id)));
+    if (kind === 'ug') { raUgAllData = raUgAllData.filter(r => !gone.has(String(r.id))); const i = raUgAllData.findIndex(r => String(r.id) === String(keep.id)); if (i >= 0) raUgAllData[i] = { ...raUgAllData[i], ...patch }; }
+    else { raAllData = raAllData.filter(r => !gone.has(String(r.id))); const i = raAllData.findIndex(r => String(r.id) === String(keep.id)); if (i >= 0) raAllData[i] = { ...raAllData[i], ...patch }; }
+    raRmRerender(kind);
+    raToast('已合并 ✓');
+  } catch (e) { raToast('合并失败：' + e.message, false); }
 }
 
 function raRmNameKey(n) { return String(n || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase(); }
@@ -1930,8 +2102,9 @@ async function raRmExportSummary(kind) {
 function raRmPaint(kind, rows) {
   const fe = document.getElementById('rm-filters-' + kind), se = document.getElementById('rm-stats-' + kind);
   if (fe) fe.innerHTML = raRmFiltersHtml(kind);
-  if (se) se.innerHTML = rows.length ? raRmStatsHtml(kind, rows) : '';
-  return raRm[kind].view === 'school' && rows.length > 0;
+  const dn = raDupOpenGroups(kind).length;
+  if (se) se.innerHTML = (dn && !raRm[kind].dup ? `<div style="font-size:11px;color:#7a4a20;margin:4px 0;cursor:pointer" onclick="raRmToggleDup('${kind}')">有 ${dn} 组疑似重复（点这里查看）</div>` : '') + (rows.length ? raRmStatsHtml(kind, rows) : '');
+  return raRm[kind].view === 'school' && rows.length > 0 && !raRm[kind].dup;
 }
 
 function raRenderList() {
@@ -1941,6 +2114,7 @@ function raRenderList() {
 
   document.getElementById('result-count').textContent = `${rows.length} 件`;
   document.getElementById('export-btn').textContent = `⬇ 下载 Excel（${rows.length} 条）`;
+  if (raRm.grad.dup) { document.getElementById('list-area').innerHTML = raRmDupHtml('grad', rows); return; }
   if (!rows.length) { document.getElementById('list-area').innerHTML = '<div class="load-state">データが見つかりません</div>'; return; }
   if (summary) { document.getElementById('list-area').innerHTML = raRmSummaryHtml('grad', rows); return; }
 
@@ -2239,7 +2413,9 @@ async function raArCreateStudent(row) {
 async function raArUpsertPlan(stu, row) {
   const sid = encodeURIComponent(stu.id);
   const plans = await raSbFetch(`student_school_plans?student_id=eq.${sid}&select=id,school_name,faculty`) || [];
-  const hit = plans.find(p => (p.school_name || '') === (row.univ || '') && (p.faculty || '') === (row.dept || ''));
+  const sk = schoolKey(row.univ), dk = deptKey(row.dept);
+  const same = plans.filter(p => schoolKey(p.school_name) === sk);
+  const hit = same.find(p => deptKey(p.faculty) === dk) || (!dk ? same[0] : null) || same.find(p => !deptKey(p.faculty));
   if (hit) {
     await raSbFetch(`student_school_plans?id=eq.${encodeURIComponent(hit.id)}`, { method: 'PATCH', body: { status: 'passed' }, prefer: 'return=minimal', headers: {} });
   } else {
@@ -2694,6 +2870,16 @@ async function raUgSubmitForm(btn, force) {
     raShowModal('重复确认', '刚刚已经保存过一条相同的，还要再存一条吗？', () => raUgSubmitForm(btn, true));
     return;
   }
+  if (!force) {
+    raBtnBusy(btn, '检查重复中…');
+    const dup = await raDupFind('ug', row);
+    raBtnDone(btn);
+    if (dup) {
+      const a = await raDupAsk('ug', dup);
+      if (a === 'open') { raOpenRecord('ug', dup.id); return; }
+      if (a !== 'new') return;
+    }
+  }
   const file = document.getElementById('ug-f-photo').files[0];
   raBtnBusy(btn, '保存中…'); raSaveMsg('ug-f-save-msg', '', '');
   try {
@@ -2890,6 +3076,7 @@ function raUgRenderList() {
 
   document.getElementById('ug-result-count').textContent = `${rows.length} 件`;
   document.getElementById('ug-export-btn').textContent = `⬇ 下载 Excel（${rows.length} 条）`;
+  if (raRm.ug.dup) { document.getElementById('ug-list-area').innerHTML = raRmDupHtml('ug', rows); return; }
   if (!rows.length) { document.getElementById('ug-list-area').innerHTML = '<div class="load-state">データが見つかりません</div>'; return; }
   if (summary) { document.getElementById('ug-list-area').innerHTML = raRmSummaryHtml('ug', rows); return; }
 
@@ -2974,7 +3161,7 @@ function raCloseEditModal() {
   document.getElementById('edit-modal').classList.remove('show');
 }
 
-async function raSaveEdit(btn) {
+async function raSaveEdit(btn, force) {
   if (btn && btn.disabled) return;
   const errEl = document.getElementById('em-err'); errEl.textContent = '';
   const id = document.getElementById('em-id').value;
@@ -2999,6 +3186,17 @@ async function raSaveEdit(btn) {
     our_major:  raArGetMajor('em') || null,
   };
   if (!raScopeCheck('grad', updates)) return;
+  const old0 = raAllData.find(x => x.id === id);
+  if (!force && old0 && (schoolKey(old0.univ) !== schoolKey(updates.univ) || deptKey(old0.dept) !== deptKey(updates.dept) || (old0.student || '') !== (updates.student || ''))) {
+    raBtnBusy(btn, '检查重复中…');
+    const dup = await raDupFind('grad', { ...updates, student_id: old0.student_id && old0.student === updates.student ? old0.student_id : null }, id);
+    raBtnDone(btn);
+    if (dup) {
+      const a = await raDupAsk('grad', dup, '还是保存');
+      if (a === 'open') { raCloseEditModal(); raOpenRecord('grad', dup.id); return; }
+      if (a !== 'new') return;
+    }
+  }
   const photoFile = document.getElementById('em-photo').files[0];
   raBtnBusy(btn, '保存中…');
   try {
@@ -3044,7 +3242,7 @@ function raUgDoDelete(btn) {
 }
 
 function raUgOpenEditModal(el) {
-  const id = el.closest('tr').dataset.id;
+  const id = typeof el === 'string' ? el : el.closest('tr').dataset.id;
   const r = raUgAllData.find(x => x.id === id);
   if (!r) return;
   document.getElementById('ug-em-id').value = id;
@@ -3075,7 +3273,7 @@ function raUgOpenEditModal(el) {
   document.getElementById('ug-edit-modal').classList.add('show');
 }
 
-async function raUgSaveEdit(btn) {
+async function raUgSaveEdit(btn, force) {
   if (btn && btn.disabled) return;
   const errEl = document.getElementById('ug-em-err'); errEl.textContent = '';
   const id = document.getElementById('ug-em-id').value;
@@ -3097,6 +3295,17 @@ async function raUgSaveEdit(btn) {
     our_major:raArGetMajor('ugem')||null,
   };
   if (!raScopeCheck('ug', updates)) return;
+  const old0 = raUgAllData.find(x => x.id === id);
+  if (!force && old0 && (schoolKey(old0.univ) !== schoolKey(updates.univ) || deptKey(old0.dept) !== deptKey(updates.dept) || (old0.student || '') !== (updates.student || ''))) {
+    raBtnBusy(btn, '检查重复中…');
+    const dup = await raDupFind('ug', { ...updates, student_id: old0.student_id && old0.student === updates.student ? old0.student_id : null }, id);
+    raBtnDone(btn);
+    if (dup) {
+      const a = await raDupAsk('ug', dup, '还是保存');
+      if (a === 'open') { document.getElementById('ug-edit-modal').classList.remove('show'); raOpenRecord('ug', dup.id); return; }
+      if (a !== 'new') return;
+    }
+  }
   const ugPhoto=document.getElementById('ug-em-photo').files[0];
   raBtnBusy(btn, '保存中…');
   try {

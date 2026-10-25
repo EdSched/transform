@@ -1462,12 +1462,15 @@ async function saveAdmissionEntry(){
   if(!enrollYear){ alert('请填入学年份（如 2027）'); return; }
   const btn=document.getElementById('ae_save_btn'); if(btn){ btn.textContent='保存中…'; btn.disabled=true; }
   try{
-    // ── 查重：同 学生+大学+研究科（学部：学部名）已录过 → 提示 ──
+    // ── 查重：同一个学生 + 学校（写法不同也算）+ 研究科（学部：学部名）已录过 → 提示 ──
     const aeTable=aeUg?'undergrad_results':'admission_results';
-    if(student){
-      const dup=await sb(`/rest/v1/${aeTable}?student=eq.${encodeURIComponent(student)}&univ=eq.${encodeURIComponent(univ)}${dept?`&dept=eq.${encodeURIComponent(dept)}`:''}&select=id&limit=1`).catch(()=>[]);
-      if(dup&&dup.length){
-        if(!confirm(`「${student} · ${univ}${dept?' · '+dept:''}」似乎已录入过合格实绩。\n仍要再添加一条吗？`)){ if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} return; }
+    if(student&&typeof raDupFind==='function'){
+      const stu0=aeStudentId&&cachedStudents.find(x=>x.id===aeStudentId);
+      const dup=await raDupFind(aeUg?'ug':'grad',{student,univ,dept,student_id:stu0&&stu0.name===student?stu0.id:null});
+      if(dup){
+        const a=await raDupAsk(aeUg?'ug':'grad',dup);
+        if(a==='open'){ document.getElementById('admissionEntryOverlay').style.display='none'; raOpenRecord(aeUg?'ug':'grad',dup.id); return; }
+        if(a!=='new'){ if(btn){btn.textContent='保存到合格数据库';btn.disabled=false;} return; }
       }
     }
     // ── 照片：管理员身份传到私有桶 admission-private，路径写进 result_photos（结果表里不放照片信息）──

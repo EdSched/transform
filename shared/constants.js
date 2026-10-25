@@ -2180,3 +2180,52 @@ function timeDurCommit(endId) {
   timeInputPaint(e); timeInputPair(e);
   if (e.dataset.onch) { try { new Function(e.dataset.onch).call(e); } catch (_) {} }
 }
+
+// ══ 学校名 / 研究科名 归一（只用来比对，不改存进去的原文）══
+//   schoolKey(name)：全角转半角、去空格 / 中点 / 括号补充说明、简体·繁体统一成日文新字体、去掉末尾多余的「大学院」
+//   deptKey(name)：同样处理后，再去掉末尾的「研究科」「学部」「学府」「学環」
+//   例：「早稻田大学」「早稲田大学 」「早稲田大学大学院」→ 同一个 key
+const SCHOOL_CHAR_MAP = (function () {
+  const pairs = ('稻稲 庆慶 應応 应応 东東 關関 关関 冈岡 岡岡 广広 廣広 滨浜 濱浜 泽沢 澤沢 艺芸 藝芸 经経 經経 济済 濟済 营営 營営 际際 國国 产産 產産 业業 業業 學学 术術 '
+    + '体体 體体 医医 醫医 药薬 藥薬 历歴 歷歴 数数 數数 机機 電電 电電 气気 氣気 铁鉄 鐵鉄 馆館 舘館 书書 書書 总総 總総 综総 綜総 与与 與与 兴興 实実 實実 报報 觀観 观観 '
+    + '当当 對対 对対 发発 發発 变変 變変 养養 习習 開開 开開 论論 無無 无無 师師 區区 区区 县県 縣県 岛島 長長 长長 户戸 戶戸 桥橋 驹駒 圣聖 馬馬 马馬 鸟鳥 鳥鳥 宫宮 '
+    + '爱愛 创創 价価 價価 圆円 園園 园園 樱桜 櫻桜 藏蔵 德徳 德徳 荣栄 榮栄 职職 職職 疗療 療療 护護 護護 农農 農農 畫画 齿歯 齒歯 佛仏 涉渉 涩渋 澀渋 联聯 儿児 兒児 '
+    + '寿寿 壽寿 并併 師師 宁寧 寧寧 严厳 嚴厳 义義 義義 乐楽 樂楽 万万 晋晋 临臨 臨臨 龙竜 龍竜 圖図 图図 国国 讲講 講講 访訪 訪訪 语語 語語 译訳 譯訳 话話 話話 条条 條条 '
+    + '会会 會会 称称 稱称 竞競 競競 争争 爭争 战戦 戰戦 单単 單単 买買 蓝藍 藍藍 学学').split(/\s+/);
+  const m = {};
+  pairs.forEach(p => { if (p.length === 2 && p[0] !== p[1]) m[p[0]] = p[1]; });
+  return m;
+})();
+function schoolNameNorm(name) {
+  let s = String(name == null ? '' : name).normalize('NFKC').toLowerCase();
+  s = s.replace(/[（(【\[〔][^）)】\]〕]*[）)】\]〕]/g, '');   // 括号里的补充说明
+  s = s.replace(/[\s・·･、,，.．\-_/]/g, '');
+  return s.replace(/./g, ch => SCHOOL_CHAR_MAP[ch] || ch);
+}
+function schoolKey(name) { return schoolNameNorm(name).replace(/(大学)大学院$/, '$1'); }
+function deptKey(name) {
+  let s = schoolNameNorm(name).replace(/^大学院/, '');
+  let prev;
+  do { prev = s; s = s.replace(/(研究科|学部|学府|学環)$/, ''); } while (s !== prev);
+  return s;
+}
+
+// 「同一条合格实绩」判定（录入防重 / 疑似重复共用）：同一个学生（student_id 相同，没有就是归一后的姓名相同；缩写名不算）
+//   + schoolKey 相同 + deptKey 相同（其中一边研究科为空也算）
+function resultPersonSame(a, b) {
+  if (a.student_id && b.student_id) return String(a.student_id) === String(b.student_id);
+  const na = resultPersonName(a.student), nb = resultPersonName(b.student);
+  return !!na && na === nb;
+}
+function resultPersonName(n) {
+  n = String(n == null ? '' : n).normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+  if (!n || /^[a-z.]{1,2}$/.test(n) || /^[a-z]{1,2}(同学|同學|さん|サン|君|氏|桑)$/.test(n) || /^(某|匿名|不明|未知)/.test(n)) return '';
+  return n;
+}
+function resultSame(a, b) {
+  if (!resultPersonSame(a, b)) return false;
+  const sa = schoolKey(a.univ), sb2 = schoolKey(b.univ);
+  if (!sa || sa !== sb2) return false;
+  const da = deptKey(a.dept), db = deptKey(b.dept);
+  return !da || !db || da === db;
+}
