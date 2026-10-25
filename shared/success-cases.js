@@ -576,7 +576,8 @@ function scTlBlur(i, v) { sc.cur.timeline[i].period = v; if (scSortTimeline(sc.c
 
 // ── 合格学校 chip ──
 // 结果文本 ↔ chip：保存时选中的学校用「 · 」连接；回显时把紧跟在学校名后面的「研究科 / 学部」等片段并回上一所
-const scSchoolKey = l => String(l || '').split(' · ')[0].trim();
+// 按学校名归一后的 key（schoolKey 在 shared/constants.js）：早稻田 / 早稲田 / 多空格 / 末尾「大学院」都算同一所
+const scSchoolKey = l => schoolKey(String(l || '').split(' · ')[0].trim());
 function scSplitResult(t) {
   const out = [];
   String(t || '').split(/\s*·\s*/).map(x => x.trim()).filter(Boolean).forEach(x => {
@@ -592,9 +593,11 @@ async function scSystemSchools(id, name) {
     q(`/rest/v1/student_school_plans?student_id=eq.${encodeURIComponent(id)}&status=eq.passed&select=school_name,faculty&order=level.asc`),
     name ? q(`/rest/v1/admission_results?student=eq.${encodeURIComponent(name)}&select=univ,dept,created_at&order=created_at.asc`) : Promise.resolve([]),
   ]);
-  const out = [], seen = new Set();
-  (plans || []).forEach(p => { const n = String(p.school_name || '').trim(); if (!n) return; const l = p.faculty ? `${n} · ${String(p.faculty).trim()}` : n; if (!out.includes(l)) { out.push(l); seen.add(n); } });
-  (res || []).forEach(r => { const n = String(r.univ || '').trim(); if (n && !seen.has(n)) { seen.add(n); out.push(n); } });
+  // 同一所学校只出现一次（按 schoolKey）：显示志望校里的写法，有研究科的优先；志望校里没有的才用合格实绩里的写法
+  const out = [], idx = {};
+  const put = l => { const k = scSchoolKey(l); if (!k) return; if (!(k in idx)) { idx[k] = out.length; out.push(l); } else if (!out[idx[k]].includes(' · ') && l.includes(' · ')) out[idx[k]] = l; };
+  (plans || []).forEach(p => { const n = String(p.school_name || '').trim(); if (!n) return; put(p.faculty ? `${n} · ${String(p.faculty).trim()}` : n); });
+  (res || []).forEach(r => { const n = String(r.univ || '').trim(); if (n) put(n); });
   return out;
 }
 // 编辑已有案例：把系统里新增的合格校补上（默认选中并提示）
@@ -612,7 +615,7 @@ async function scMergeSchools(c) {
 }
 function scAddSchool() {
   const c = sc.cur, t = (c.schoolInput || '').trim(); c.schoolInput = '';
-  if (t && !c.schools.some(x => x.label === t)) c.schools.push({ label: t, on: true });
+  if (t && !c.schools.some(x => scSchoolKey(x.label) === scSchoolKey(t))) c.schools.push({ label: t, on: true });
   scRender();
 }
 // 时间线草稿：报名时间 + 进度记录里的关键节点（同一个月合并成一行）
@@ -762,7 +765,7 @@ async function scSave() {
   // 对外内容里不能出现学生真实姓名（含姓）
   const stu = (sc.stu || []).find(x => String(x.id) === String(c.student_id));
   const pending = (c.schoolInput || '').trim();
-  if (pending && !c.schools.some(x => x.label === pending)) c.schools.push({ label: pending, on: true });
+  if (pending && !c.schools.some(x => scSchoolKey(x.label) === scSchoolKey(pending))) c.schools.push({ label: pending, on: true });
   scSortTimeline(c);
   c.result = c.schools.filter(x => x.on).map(x => x.label).join(' · ');
   if (stu && stu.name) {
