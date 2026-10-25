@@ -235,8 +235,12 @@ function buildVipPending(pending, teacherName, slots, students) {
   const stuMap = payrollStuMap(students);
   return (pending || []).filter(b => b.type === 'vip' && b.status === 'completed' && b.student_confirmed !== true
       && payrollVipOwner(b, slotMap) === teacherName && scopeMajor(payrollBookingMajor(b, stuMap)))
-    .map(b => ({ name: b.name, date: b.slot_date || '', range: b.slot_time_range || '', hours: parseFloat(b.vip_hours_used) || 0, teacher: teacherName }))
+    .map(b => { window.__bkProxyExtra[b.id] = b; return { id: b.id, name: b.name, date: b.slot_date || '', range: b.slot_time_range || '', hours: parseFloat(b.vip_hours_used) || 0, teacher: teacherName }; })
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+// 工资页「待学生确认」里直接代确认：用管理端 booking.js 的同一个弹窗，确认后重新算一遍
+function payrollProxyConfirm(id) {
+  bkBfProxyOpen(id, () => { if (typeof payrollRerun === 'function') payrollRerun(); });
 }
 function payrollPendingHtml(list) {
   if (!list.length) return '';
@@ -244,7 +248,7 @@ function payrollPendingHtml(list) {
   return `<div style="margin-top:14px;background:#fff8e1;border:1px solid #e6a817;border-radius:3px;padding:9px 12px">
     <div style="font-size:12px;font-weight:600;color:#856404">待学生确认（不计入本月）：${list.length} 节 · ${total} 课时</div>
     <div style="font-size:10px;color:var(--text-3);margin:2px 0 6px">老师已填上课记录，学生确认并评价（教务可代确认）之后，按确认的日期算进当月工资。</div>
-    ${list.map(x => `<div style="font-size:11px;padding:2px 0">${x.teacher ? x.teacher + ' · ' : ''}${x.name} · ${x.date} ${x.range}${x.hours ? ' · ' + x.hours + 'h' : ''}</div>`).join('')}
+    ${list.map(x => `<div style="font-size:11px;padding:2px 0">${x.teacher ? x.teacher + ' · ' : ''}${x.name} · ${x.date} ${x.range}${x.hours ? ' · ' + x.hours + 'h' : ''} <button class="btn btn-outline btn-sm" style="margin-left:6px" onclick="payrollProxyConfirm('${String(x.id).replace(/'/g, '')}')">代学生确认</button></div>`).join('')}
   </div>`;
 }
 
@@ -285,6 +289,7 @@ let payrollTeacher = '';
 let payrollStart = '';
 let payrollEnd = '';
 let payrollRows = [];
+let payrollRerun = null;
 
 function renderPayrollSection(container) {
   const today = new Date();
@@ -338,6 +343,7 @@ async function runPayroll() {
   const end = document.getElementById('pr_end').value;
   if (!teacherName) { alert('请选择老师'); return; }
   if (!start || !end || start > end) { alert('请选择有效日期范围'); return; }
+  payrollRerun = () => runPayroll();
   payrollTeacher = teacherName;
   payrollStart = start;
   payrollEnd = end;
@@ -409,6 +415,7 @@ async function runPayrollByMajor(majorKey) {
   const start = document.getElementById('pr_start').value;
   const end = document.getElementById('pr_end').value;
   if (!start || !end || start > end) { alert('请选择有效日期范围'); return; }
+  payrollRerun = () => runPayrollByMajor(majorKey);
   payrollStart = start;
   payrollEnd = end;
 

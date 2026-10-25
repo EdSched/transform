@@ -49,7 +49,7 @@ function renderBookingPage(mc){
     <button class="${bkSection==='vip'?'active':''}" onclick="setBkSection('vip')">VIP预约</button>
     ${bkIsAdmin()?`<button class="${bkSection==='unlinked'?'active':''}" onclick="setBkSection('unlinked')">未关联记录</button>`:''}
   </div>
-  ${bkVipFlowHtml()}${bkBfReviewHtml()}
+  ${bkVipFlowHtml()}${bkProxyAllHtml()}${bkBfReviewHtml()}
   <div class="export-bar">
     <div style="font-size:12px;color:var(--text-3)">当月 <strong style="color:var(--text)">${total}</strong> 条预约</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -255,17 +255,39 @@ async function bkBfReject(id){
     Object.assign(b,patch); renderBookingPage(document.getElementById('mainContent'));
   }catch(e){ alert('操作失败：'+e.message); }
 }
-// 已确认、学生还没确认的老师补录：教务单独代学生确认（VIP 预约列表里的按钮）
-function bkBfProxyOpen(id){
-  const b=cachedBookings.find(x=>x.id===id); if(!b) return;
+// 上完课、学生还没确认的 VIP 课（含已通过教务确认的老师补录）：教务代学生确认（VIP 预约列表按钮 / 顶部集中入口 / 工资页「待学生确认」共用）
+window.__bkProxyExtra=window.__bkProxyExtra||{}; window.__bkProxyAfter=null;
+let bkPcOpen=false; const bkPcSel={};
+function bkProxyFind(id){ return (cachedBookings||[]).find(x=>String(x.id)===String(id))||window.__bkProxyExtra[id]||null; }
+function bkProxyEligible(b){ return !!b&&b.type==='vip'&&b.status==='completed'&&b.student_confirmed!==true&&(!b.teacher_backfill||b.admin_review==='approved'); }
+function bkJstToday(){ return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tokyo'}).format(new Date()); }
+function bkJstTodayCn(){ const f=bkJstToday().split('-'); return (+f[1])+'月'+(+f[2])+'日'; }
+function bkProxyDays(b){ const t=Date.parse(String(b.slot_date||'')+'T12:00:00Z'), n=Date.parse(bkJstToday()+'T12:00:00Z'); return isFinite(t)?Math.max(0,Math.round((n-t)/864e5)):0; }
+function bkProxyList(){ return (cachedBookings||[]).filter(b=>bkProxyEligible(b)&&bkSelfInScope(b)).sort((a,b)=>String(a.slot_date).localeCompare(String(b.slot_date))||String(a.slot_time_range||'').localeCompare(String(b.slot_time_range||''))); }
+function bkProxyPatch(b,rating){
+  const who=bkSelfWho(), now=new Date().toISOString();
+  const text=`【教务代确认】教务（${who}）已代学生确认 ${b.slot_date} ${b.slot_time_range||''} 的上课记录${rating?'，评价：'+rating:''}。`;
+  const patch={student_confirmed:true,student_confirmed_by:who,student_confirmed_at:now,messages:[...(b.messages||[]),vipNoticeMsg(b,text,'proxy_confirmed',{text:`教务（${who}）已代学生确认上课记录${rating?'，评价：'+rating:''}`})]};
+  if(rating) patch.student_rating=rating;
+  return patch;
+}
+async function bkProxyPatchOne(b,patch){
+  const rows=await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(b.id)}&type=eq.vip&status=eq.completed&or=(student_confirmed.is.null,student_confirmed.is.false)`,'PATCH',patch);
+  if(Array.isArray(rows)&&!rows.length) throw new Error('这节课已经被确认过，或数据库没有允许修改（0 行被更新）');
+  Object.assign(b,patch);
+}
+function bkBfProxyOpen(id,after){
+  const b=bkProxyFind(id); if(!b) return;
+  window.__bkProxyAfter=typeof after==='function'?after:null;
   document.getElementById('bkBfProxyModal')?.remove();
   const m=document.createElement('div'); m.id='bkBfProxyModal';
   m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   m.innerHTML=`<div style="background:var(--surface);border-radius:6px;padding:20px;max-width:360px;width:100%">
     <div style="font-size:13px;font-weight:600;margin-bottom:8px">代 ${bkSelfEsc(b.name)} 确认 ${bkSelfEsc(b.slot_date)} 的课</div>
     <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">评价可不选；学生之后也可以自己补一个评价。</div>
-    <div id="bkBfProxyChips" style="display:flex;gap:6px;margin-bottom:12px"></div>
-    <div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" onclick="bkBfProxyDo('${b.id}')">代学生确认</button><button class="btn btn-outline btn-sm" onclick="document.getElementById('bkBfProxyModal').remove()">取消</button></div></div>`;
+    <div id="bkBfProxyChips" style="display:flex;gap:6px;margin-bottom:10px"></div>
+    <div style="font-size:11px;color:#856404;background:#fff8e1;border:1px solid #e6a817;border-radius:3px;padding:6px 8px;margin-bottom:12px">代确认的日期就是算工资的日期（今天：${bkJstTodayCn()}）</div>
+    <div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" onclick="bkBfProxyDo('${bkSelfEsc(String(b.id))}')">代学生确认</button><button class="btn btn-outline btn-sm" onclick="document.getElementById('bkBfProxyModal').remove()">取消</button></div></div>`;
   document.body.appendChild(m); window.__bkBfProxyRating=''; bkBfProxyChips();
 }
 function bkBfProxyChips(){
@@ -273,13 +295,56 @@ function bkBfProxyChips(){
   box.innerHTML=['满意','不满意'].map(r=>{ const on=window.__bkBfProxyRating===r; return `<span onclick="window.__bkBfProxyRating=(window.__bkBfProxyRating==='${r}'?'':'${r}');bkBfProxyChips()" style="cursor:pointer;font-size:12px;border-radius:14px;padding:3px 14px;border:1px solid ${on?'#5a3a9a':'var(--border)'};background:${on?'#5a3a9a':'transparent'};color:${on?'#fff':'var(--text-2)'}">${r}</span>`; }).join('');
 }
 async function bkBfProxyDo(id){
-  const b=cachedBookings.find(x=>x.id===id); if(!b) return;
-  const patch={student_confirmed:true,student_confirmed_by:bkSelfWho(),student_confirmed_at:new Date().toISOString()}; if(window.__bkBfProxyRating) patch.student_rating=window.__bkBfProxyRating;
+  const b=bkProxyFind(id); if(!b) return;
+  if(!bkProxyEligible(b)){ alert('这节课现在不能代确认（已确认或补录还没通过教务确认）'); return; }
+  const rating=window.__bkBfProxyRating||'';
   try{
-    const rows=await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(id)}&teacher_backfill=eq.true&admin_review=eq.approved`,'PATCH',patch);
-    if(Array.isArray(rows)&&!rows.length) throw new Error('数据库没有允许修改这条预约（0 行被更新）');
-    Object.assign(b,patch); document.getElementById('bkBfProxyModal')?.remove(); renderBookingPage(document.getElementById('mainContent'));
+    await bkProxyPatchOne(b,bkProxyPatch(b,rating));
+    document.getElementById('bkBfProxyModal')?.remove();
+    if(typeof window.__bkProxyAfter==='function') window.__bkProxyAfter(); else renderBookingPage(document.getElementById('mainContent'));
+    vipNoticeModal(b,'proxy_confirmed',{text:`教务（${bkSelfWho()}）已代学生确认上课记录${rating?'，评价：'+rating:''}`},'已代学生确认');
   }catch(e){ alert('操作失败：'+e.message); }
+}
+// 顶部集中入口：上完课、学生还没确认
+function bkProxyAllHtml(){
+  const list=bkProxyList(); if(!list.length) return '';
+  const rows=list.map(b=>({b,d:bkProxyDays(b)})).sort((x,y)=>y.d-x.d);
+  const body=bkPcOpen?`<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;color:var(--text-3)">
+      <button class="btn btn-outline btn-sm" onclick="bkPcAll(true)">全选</button><button class="btn btn-outline btn-sm" onclick="bkPcAll(false)">全不选</button>
+      <button class="btn btn-primary btn-sm" onclick="bkPcBatch()">批量代确认（不评价）</button>
+      <span>代确认的日期就是算工资的日期（今天：${bkJstTodayCn()}）</span></div>
+    ${rows.map(({b,d})=>{ const on=!!bkPcSel[b.id]; return `<div style="background:var(--surface);border:1px solid ${on?'var(--accent)':'var(--border)'};border-radius:3px;padding:8px 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span onclick="bkPcToggle('${bkSelfEsc(String(b.id))}')" style="cursor:pointer;font-size:11px;border-radius:12px;padding:2px 10px;border:1px solid ${on?'var(--accent)':'var(--border)'};background:${on?'var(--accent)':'transparent'};color:${on?'#fff':'var(--text-2)'}">${on?'已选':'选择'}</span>
+      <div style="flex:1;min-width:220px;font-size:12px;line-height:1.7"><div>${bkSelfEsc(b.slot_date)} ${bkSelfEsc(b.slot_time_range||'')} · ${parseFloat(b.vip_hours_used)||0}h</div>
+      <div>老师：${bkSelfEsc(b.assigned_teacher||'—')} · 学生：<strong>${bkSelfEsc(b.name)}</strong> · <span style="color:${d>=7?'var(--danger)':'var(--warn)'}">上完课 ${d} 天</span></div></div>
+      <button class="btn btn-primary btn-sm" onclick="bkBfProxyOpen('${bkSelfEsc(String(b.id))}')">代学生确认</button></div>`; }).join('')}</div>`:'';
+  return `<div style="background:#fff8e1;border:1px solid #e6a817;border-radius:3px;padding:9px 12px;margin-bottom:10px">
+    <div onclick="bkPcOpen=!bkPcOpen;renderBookingPage(document.getElementById('mainContent'))" style="cursor:pointer;font-size:12px;font-weight:600;color:#856404">上完课、学生还没确认：${list.length} 节（不计入工资，可以代学生确认） ${bkPcOpen?'▾':'→'}</div>${body}</div>`;
+}
+function bkPcToggle(id){ if(bkPcSel[id]) delete bkPcSel[id]; else bkPcSel[id]=true; renderBookingPage(document.getElementById('mainContent')); }
+function bkPcAll(on){ Object.keys(bkPcSel).forEach(k=>delete bkPcSel[k]); if(on) bkProxyList().forEach(b=>{ bkPcSel[b.id]=true; }); renderBookingPage(document.getElementById('mainContent')); }
+async function bkPcBatch(){
+  const ids=new Set(Object.keys(bkPcSel).filter(k=>bkPcSel[k]));
+  const list=bkProxyList().filter(b=>ids.has(String(b.id)));
+  if(!list.length){ alert('请先勾选要代确认的课'); return; }
+  if(!confirm(`批量代学生确认 ${list.length} 节课（不评价）？\n确认日期按今天（${bkJstTodayCn()}）算工资。`)) return;
+  const done=[], fail=[];
+  for(const b of list){
+    try{ await bkProxyPatchOne(b,bkProxyPatch(b,'')); done.push(b); delete bkPcSel[b.id]; }catch(e){ fail.push(`${b.name} ${b.slot_date}：${e.message}`); }
+  }
+  renderBookingPage(document.getElementById('mainContent'));
+  if(fail.length) alert(`成功 ${done.length} 节，失败 ${fail.length} 节：\n${fail.join('\n')}`);
+  if(done.length){
+    await vipNoticeLoadMap();
+    const text=done.map(b=>vipNoticeText(b,'proxy_confirmed',{text:`教务（${bkSelfWho()}）已代学生确认上课记录`})).join('\n');
+    document.getElementById('vipNoticeModal')?.remove();
+    const m=document.createElement('div'); m.id='vipNoticeModal';
+    m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
+    m.innerHTML=`<div style="background:var(--surface,#fff);border-radius:6px;padding:20px;max-width:460px;width:100%;max-height:90vh;overflow-y:auto"><div style="font-size:13px;font-weight:600;margin-bottom:6px">已代学生确认 ${done.length} 节</div><div style="font-size:11px;color:var(--text-3);margin-bottom:8px">可以复制下面的文字发到群里留记录：</div><textarea id="vipNoticeTa" rows="${Math.min(10,done.length+2)}" readonly style="width:100%;box-sizing:border-box;font-size:12px;padding:8px;border:1px solid var(--border,#ddd);border-radius:3px">${bkSelfEsc(text)}</textarea><div style="display:flex;gap:8px;margin-top:10px"><button type="button" class="btn btn-outline btn-sm" id="vipNoticeCopyBtn">复制文字</button><button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('vipNoticeModal').remove()">关闭</button></div></div>`;
+    document.body.appendChild(m);
+    document.getElementById('vipNoticeCopyBtn').onclick=function(){ vipNoticeCopy(document.getElementById('vipNoticeTa').value,this); };
+  }
 }
 function bkSelfCopyText(t){
   const fb=()=>{ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); alert('已复制'); }catch(_){ alert('复制失败，请手动选中复制'); } ta.remove(); };
@@ -518,7 +583,7 @@ function renderVipBookingPage(mc){
     <button class="${bkSection==='vip'?'active':''}" onclick="setBkSection('vip')">VIP预约</button>
     ${bkIsAdmin()?`<button class="${bkSection==='unlinked'?'active':''}" onclick="setBkSection('unlinked')">未关联记录</button>`:''}
   </div>
-  ${bkVipFlowHtml()}${bkBfReviewHtml()}
+  ${bkVipFlowHtml()}${bkProxyAllHtml()}${bkBfReviewHtml()}
   <div class="export-bar">
     <div style="font-size:12px;color:var(--text-3)">当月 <strong style="color:var(--text)">${total}</strong> 条VIP预约</div>
   </div>
@@ -1232,7 +1297,7 @@ function renderVipBookingCard(b){
     </div>
     <div style="display:flex;gap:6px;padding:0 14px 12px;flex-wrap:wrap">
       ${b.status==='pending'&&!b.self_booked&&!b.teacher_backfill&&b.initiated_by!=='teacher'?`<button class="btn btn-primary btn-sm" onclick="confirmBooking('${b.id}')">确认</button>`:''}
-      ${b.teacher_backfill&&b.admin_review==='approved'&&!b.student_confirmed?`<button class="btn btn-outline btn-sm" onclick="bkBfProxyOpen('${b.id}')">代学生确认</button>`:''}
+      ${bkProxyEligible(b)?`<button class="btn btn-outline btn-sm" onclick="bkBfProxyOpen('${b.id}')">代学生确认</button>`:''}
       ${b.status!=='cancelled'&&!b.vip_session_notes?`<button class="btn btn-outline btn-sm" onclick="openAdminVipReschedule('${b.id}')">🔄 调整时间</button>`:''}
       ${b.status==='completed'?`<button class="btn btn-outline btn-sm" style="color:var(--text-3);font-size:10px" onclick="revertVipToConfirmed('${b.id}')">撤销完成</button>`:''}
       ${b.status!=='cancelled'?`<button class="btn btn-outline btn-sm" onclick="cancelBooking('${b.id}')">取消</button>`:''}
