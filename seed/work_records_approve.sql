@@ -18,7 +18,7 @@
 --   2. 判断「当前老师是谁、管理范围、payroll 权限」都写在 security definer 函数里（work_* 开头）。
 --   3. work_records.work_type 里已有的「教研」改成「教研工作」。
 --
--- 前提：已执行 integrate_step1_prepare.sql（is_teacher_manager）、results_lead_scope.sql 所在的批次（majors.group_key）、
+-- 前提：teachers.manage_scope 字段已存在（本文件不依赖 is_teacher_manager()，负责人的判断直接写在 work_mgr_level() 里）、results_lead_scope.sql 所在的批次（majors.group_key）、
 --       work_records_domain.sql（work_records.domain）。缺了会在开头报错并整份回滚，不会改到任何东西。
 -- ============================================================
 
@@ -44,8 +44,11 @@ begin;
 do $$
 begin
   if to_regprocedure('public.is_admin()') is null or to_regprocedure('public.current_teacher_id()') is null
-     or to_regprocedure('public.is_teacher_manager()') is null or to_regprocedure('public.is_staff()') is null then
-    raise exception '缺少 is_admin() / current_teacher_id() / is_teacher_manager() / is_staff()，请把这段发给 Claude 评估';
+     or to_regprocedure('public.is_staff()') is null then
+    raise exception '缺少 is_admin() / current_teacher_id() / is_staff()，请把这段发给 Claude 评估';
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='teachers' and column_name='manage_scope') then
+    raise exception 'teachers 没有 manage_scope 字段，请先执行 integrate_step1_prepare.sql 的第 1 步（加字段）';
   end if;
   if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='work_records' and column_name='domain') then
     raise exception 'work_records 没有 domain 字段，请先执行 work_records_domain.sql';
@@ -77,7 +80,12 @@ language sql stable security definer set search_path = public as $$
   select case when lower(coalesce(t.manage_scope->>'payroll', '')) = 'approve' then 'approve' else 'view' end
     from public.teachers t
    where t.id = public.current_teacher_id()
-     and public.is_teacher_manager()
+     and t.manage_scope is not null
+     and (
+       (case when jsonb_typeof(t.manage_scope->'domains')   = 'array' then jsonb_array_length(t.manage_scope->'domains')   else 0 end) +
+       (case when jsonb_typeof(t.manage_scope->'majors')    = 'array' then jsonb_array_length(t.manage_scope->'majors')    else 0 end) +
+       (case when jsonb_typeof(t.manage_scope->'class_ids') = 'array' then jsonb_array_length(t.manage_scope->'class_ids') else 0 end)
+     ) > 0
      and (jsonb_typeof(t.manage_scope->'pages') is distinct from 'array' or t.manage_scope->'pages' ? 'payroll')
 $$;
 grant execute on function public.work_mgr_level() to anon, authenticated;
