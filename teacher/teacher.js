@@ -2768,7 +2768,8 @@ function wrtPaint() {
   if (!box) return;
   const t = wrtTeacher, all = t.records, inMonth = all.filter(wrtInMonth);
   const approved = inMonth.filter(r => r.status === 'approved');
-  const months = [...new Set([...wrtMonths(all), wrtTeacher.ym !== 'all' ? wrtTeacher.ym : ''].filter(Boolean))].sort().reverse();
+  const nowD = new Date(), curYm = nowD.getFullYear() + '-' + String(nowD.getMonth() + 1).padStart(2, '0');   // 本月始终有 chip，没记录时也能从「全部」切回来
+  const months = [...new Set([...wrtMonths(all), curYm, wrtTeacher.ym !== 'all' ? wrtTeacher.ym : ''].filter(Boolean))].sort().reverse();
   const chip = (on, click, label) => `<div class="filter-chip${on ? ' active' : ''}" onclick="${click}">${label}</div>`;
   const stLabel = { approved: '已通过', pending: '待审批', rejected: '已驳回' };
   const rows = inMonth.filter(r => (!t.types.length || t.types.includes(payrollTypeName(r.work_type))) && (!t.status.length || t.status.includes(r.status)));
