@@ -296,87 +296,6 @@ async function payrollLoadData(start, end) {
 // 工资核算：一张表（生成 → 核对 / 勾选 / 改 → 下载 Excel 或确定发布）
 // ══════════════════════════════════
 
-const PAYROLL_HEADERS = ['姓名', '开始时间', '结束时间', '时长', '工作内容', '工作地点', '备注'];
-const payrollRound = n => Math.round((parseFloat(n) || 0) * 100) / 100;
-const payrollPad = n => String(n).padStart(2, '0');
-
-// ── 按工作内容统计 ──
-// 工作内容的固定顺序（"教研"是旧名字，统一当"教研工作"）；不在清单里的排在最后
-const PAYROLL_TYPES = ['大课', '共通课', 'VIP授课', '教研工作', '试听・试讲', '临时上课安排'];
-const payrollTypeName = t => (t === '教研' ? '教研工作' : (t || ''));
-const payrollTypeIdx = t => { const i = PAYROLL_TYPES.indexOf(payrollTypeName(t)); return i < 0 ? 99 : i; };
-const payrollTypeSort = (a, b) => payrollTypeIdx(a) - payrollTypeIdx(b) || String(a).localeCompare(String(b), 'zh');
-// items = [{ name, type, h }] → { types, names, cell:{name:{type:{h,n}}}, rowTot:{name:{h,n}}, colTot:{type:{h,n}}, total:{h,n} }
-function payrollMatrix(items, nameOrder) {
-  const m = { types: [], names: [], cell: {}, rowTot: {}, colTot: {}, total: { h: 0, n: 0 } };
-  const add = (o, h) => { o.h += h; o.n += 1; };
-  items.forEach(it => {
-    const t = payrollTypeName(it.type), h = parseFloat(it.h) || 0;
-    if (!m.cell[it.name]) { m.cell[it.name] = {}; m.rowTot[it.name] = { h: 0, n: 0 }; m.names.push(it.name); }
-    if (!m.colTot[t]) { m.colTot[t] = { h: 0, n: 0 }; m.types.push(t); }
-    add(m.cell[it.name][t] = m.cell[it.name][t] || { h: 0, n: 0 }, h);
-    add(m.rowTot[it.name], h); add(m.colTot[t], h); add(m.total, h);
-  });
-  m.types.sort(payrollTypeSort);
-  m.names.sort((a, b) => { const ia = nameOrder ? nameOrder.indexOf(a) : -1, ib = nameOrder ? nameOrder.indexOf(b) : -1; return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || String(a).localeCompare(String(b), 'zh'); });
-  return m;
-}
-// Excel「按工作内容汇总」：行是老师、列是工作内容；上面一张小时数，下面一张条数
-function payrollMatrixAoa(m, firstHead) {
-  const head = [firstHead || '姓名', ...m.types, '合计'];
-  const hrs = [['小时数'], head];
-  const cnt = [[], ['条数'], head];
-  m.names.forEach(n => {
-    hrs.push([n, ...m.types.map(t => (m.cell[n][t] ? payrollRound(m.cell[n][t].h) : '')), payrollRound(m.rowTot[n].h)]);
-    cnt.push([n, ...m.types.map(t => (m.cell[n][t] ? m.cell[n][t].n : '')), m.rowTot[n].n]);
-  });
-  hrs.push(['合计', ...m.types.map(t => payrollRound(m.colTot[t].h)), payrollRound(m.total.h)]);
-  cnt.push(['合计', ...m.types.map(t => m.colTot[t].n), m.total.n]);
-  return [...hrs, ...cnt];
-}
-function payrollAddSummarySheet(wb, rows) {
-  const m = payrollMatrix(rows.map(r => ({ name: r.姓名, type: r.工作内容, h: r.时长 })));
-  const aoa = payrollMatrixAoa(m);
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{ wch: 14 }, ...m.types.map(() => ({ wch: 12 })), { wch: 10 }];
-  XLSX.utils.book_append_sheet(wb, ws, '按工作内容汇总');
-}
-
-// ── Excel：多位老师 = 一人一个工作表 + 汇总；rows 用 {姓名, 开始时间, …} 格式 ──
-function payrollBuildWorkbook(rows) {
-  const names = [...new Set(rows.map(r => r.姓名))];
-  const wb = XLSX.utils.book_new();
-  const cols = [{wch:10},{wch:20},{wch:20},{wch:8},{wch:10},{wch:14},{wch:40}];
-  const addSheet = (name, list) => {
-    const ws = XLSX.utils.aoa_to_sheet([PAYROLL_HEADERS, ...list.map(r => PAYROLL_HEADERS.map(h => r[h] ?? ''))]);
-    ws['!cols'] = cols;
-    XLSX.utils.book_append_sheet(wb, ws, name);
-  };
-  if (names.length <= 1) { addSheet('工资核算', rows); payrollAddSummarySheet(wb, rows); return wb; }
-  const summary = [['姓名', '节数', '总时长(h)']];
-  names.forEach(n => {
-    const list = rows.filter(r => r.姓名 === n);
-    summary.push([n, list.length, payrollRound(list.reduce((s, r) => s + (parseFloat(r.时长) || 0), 0))]);
-  });
-  const sws = XLSX.utils.aoa_to_sheet(summary);
-  sws['!cols'] = [{wch:14},{wch:8},{wch:12}];
-  XLSX.utils.book_append_sheet(wb, sws, '汇总');
-  payrollAddSummarySheet(wb, rows);
-  const used = new Set(['汇总', '按工作内容汇总']);
-  names.forEach(n => {
-    let sn = String(n).replace(/[\[\]:*?\/\\]/g, '_').slice(0, 28) || '老师', k = 2, cand = sn;
-    while (used.has(cand)) cand = sn + k++;
-    used.add(cand);
-    addSheet(cand, rows.filter(r => r.姓名 === n));
-  });
-  return wb;
-}
-function payrollDownload(rows, label, who) {
-  if (!rows.length) { alert('没有可下载的行'); return; }
-  XLSX.writeFile(payrollBuildWorkbook(rows), `工资核算_${label}_${who}.xlsx`);
-}
-// work_records 一行 → Excel 行
-const payrollRecToRow = r => ({ 姓名: r.teacher_name, 开始时间: r.start_time, 结束时间: r.end_time, 时长: r.duration, 工作内容: r.work_type, 工作地点: r.location, 备注: r.notes });
 
 // ── 权限：「查看」和「审批发布」分开，谁都不能审批自己的工资 ──
 // 管理员 / 领域访问链接：可以审批。管理模式的负责人：manage_scope.payroll === 'approve' 才可以，没设 = 只能查看；
@@ -426,10 +345,6 @@ function payrollRangeLabel(start, end) {
 function payrollTeacherBase() { return (typeof teacherFilteredList === 'function') ? teacherFilteredList() : cachedTeachers; }
 
 // 日期 / 时间显示：「2026年10月05日 13:00」→ 10-05、13:00
-function payrollDT(s) {
-  const m = String(s || '').match(/(\d{4})年(\d{2})月(\d{2})日\s*(\d{1,2}:\d{2})/);
-  return m ? { d: m[2] + '-' + m[3], t: m[4] } : { d: '', t: String(s || '') };
-}
 
 // 行状态：new 未发布 / changed 有变化 / published 已发布
 function payrollStatusOf(r) {
