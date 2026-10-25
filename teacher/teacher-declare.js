@@ -268,40 +268,10 @@ async function wdcWithdraw(id) {
   renderWorkRecordsTeacher(wdcState.mc);
 }
 
-// ── 我的申告列表：按月份分组 ──
-function wdcListHtml(list) {
-  if (!list.length) return '';
-  const g = {};
-  list.forEach(r => { const m = (String(r.start_time).match(/(\d{4})年(\d{2})月/) || [])[0] || '未知月份'; (g[m] = g[m] || []).push(r); });
-  const st = { pending: ['待审批', '#856404', '#fff3cd'], approved: ['已通过', '#1a6b32', '#e0f2e5'], rejected: ['已驳回', '#8a1a1a', '#f8e0e0'] };
-  const card = r => {
-    const s = st[r.status] || st.pending, a = wdcParse(r.start_time), b = wdcParse(r.end_time);
-    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:10px 14px;margin-bottom:8px">
-      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-        <span style="font-size:11px;font-weight:600">${wdcEsc(r.start_time)} → ${b ? wdcHM(b.min) : ''}</span>
-        <span style="font-size:11px;font-family:'DM Mono',monospace;color:var(--accent)">${r.duration}h</span>
-        <span style="font-size:10px;border:1px solid var(--border-light);border-radius:2px;padding:1px 5px">${wdcEsc(r.work_type)}</span>
-        <span style="font-size:10px;background:${s[2]};color:${s[1]};border-radius:2px;padding:1px 6px">${s[0]}</span>
-        <span style="margin-left:auto;display:flex;gap:6px">
-          ${r.status === 'pending' ? `<button class="btn btn-outline btn-sm" onclick="wdcOpen(this.dataset.id)" data-id="${wdcEsc(r.id)}">修改</button><button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="wdcWithdraw(this.dataset.id)" data-id="${wdcEsc(r.id)}">撤回</button>` : ''}
-          ${r.status === 'rejected' ? `<button class="btn btn-primary btn-sm" onclick="wdcOpen(this.dataset.id)" data-id="${wdcEsc(r.id)}">修改后重新提交</button>` : ''}
-        </span>
-      </div>
-      <div style="font-size:11px;color:var(--text-3);margin-top:3px">${wdcEsc(r.location)} · ${wdcEsc(r.notes)}</div>
-      ${r.status === 'rejected' ? `<div style="font-size:11px;color:#8a1a1a;margin-top:3px">驳回原因：${wdcEsc(r.admin_note || '（未写原因）')}</div>` : ''}
-    </div>`;
-  };
-  return `<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-light)">
-    <div style="font-size:12px;font-weight:600;margin-bottom:8px">我的申告</div>
-    ${Object.keys(g).sort().reverse().map(m => `<div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;margin:8px 0 6px">${m}</div>${g[m].sort((x, y) => String(y.start_time).localeCompare(String(x.start_time))).map(card).join('')}`).join('')}
-  </div>`;
-}
 // 工作记录页渲染完后调用：records = 这位老师的全部 work_records
 function wdcMount(records) {
   wdcState.mine = (records || []).filter(r => r.source === 'declare');
   wdcState.weekKey = '';
-  const l = document.getElementById('wdc_list');
-  if (l) l.innerHTML = wdcListHtml(wdcState.mine);
   if (wdcState.open) wdcOpen(wdcState.editId);
 }
 function wdcToggle() { if (wdcState.open) wdcClose(); else wdcOpen(''); }

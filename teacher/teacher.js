@@ -2734,50 +2734,18 @@ function renderMyCalendar(ym, byMonth, monthNames) {
   `;
 }
 
+// 工作记录：月份 chips + 统计条 + 筛选 chips + 一张可排序的表（表格、统计、下载都在 shared/workrec-table.js）
+const wrtTeacher = { records: [], ym: '', types: [], status: ['approved'], sortCol: 'date', sortDir: 1 };
+
 async function renderWorkRecordsTeacher(mc) {
   mc.innerHTML = '<div class="loading">加载中…</div>';
   try {
-    const records = await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&order=start_time.asc`);
+    wrtTeacher.records = await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&order=start_time.asc`);
     wdcState.mc = mc;
-    const approved = records.filter(r => r.status === 'approved');
-    const pending = records.filter(r => r.status === 'pending' && r.source !== 'declare');   // 申告的待审批 / 驳回在「我的申告」里单独显示
-    const rejected = records.filter(r => r.status === 'rejected' && r.source !== 'declare');
-    const declareCount = approved.filter(r => r.source === 'declare').length;
-    const courseCount = approved.filter(r => r.source === 'course').length;
-    const bookingCount = approved.filter(r => r.source === 'booking').length;
-    const vipCount = approved.filter(r => r.source === 'vip').length;
-    const totalHours = Math.round(approved.reduce((s, r) => s + (r.duration || 0), 0) * 100) / 100;
-
-    // 解析「2026年06月20日 13:00」中的年月，判断是否当月
-    const now = new Date();
-    const curY = now.getFullYear(), curM = now.getMonth() + 1;
-    const getYM = (str) => {
-      const m = (str || '').match(/(\d{4})年(\d{2})月/);
-      return m ? { y: parseInt(m[1]), m: parseInt(m[2]) } : null;
-    };
-    const currentMonthRows = approved.filter(r => {
-      const ym = getYM(r.start_time);
-      return ym && ym.y === curY && ym.m === curM;
-    });
-    const historyRows = approved.filter(r => !currentMonthRows.includes(r));
-
-    const renderCard = r => `
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:flex-start;gap:14px">
-          <div style="text-align:center;min-width:44px">
-            <div style="font-size:15px;font-weight:700;font-family:'DM Mono',monospace;color:var(--accent)">${r.duration}h</div>
-            <div style="font-size:9px;color:var(--text-3)">${r.start_time.slice(0,10).replace(/年(\d+)月(\d+)日/,'/$1/$2').slice(5)}</div>
-          </div>
-          <div style="flex:1">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap">
-              <span style="font-size:11px;font-weight:600">${r.start_time} → ${r.end_time.split(' ')[1]||r.end_time}</span>
-              <span style="font-size:10px;background:${r.source !== 'course' ? '#e8f0fb' : 'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 5px">${r.work_type}</span>
-              ${r.domain ? `<span style="font-size:10px;color:var(--text-3);border:1px solid var(--border-light);border-radius:2px;padding:1px 5px">${r.domain}</span>` : ''}
-            </div>
-            <div style="font-size:11px;color:var(--text-3)">${r.location} · ${r.notes}</div>
-            ${r.admin_note ? `<div style="font-size:11px;color:var(--text-2);margin-top:3px;font-style:italic">📝 ${r.admin_note}</div>` : ''}
-          </div>
-        </div>`;
-
+    if (wrtTeacher.ym === '') {   // 第一次进来默认本月；之后保留老师选的月份（'all' = 全部）
+      const n = new Date();
+      wrtTeacher.ym = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0');
+    }
     mc.innerHTML = `
     <div class="page-section">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
@@ -2785,36 +2753,56 @@ async function renderWorkRecordsTeacher(mc) {
         <button class="btn btn-sm btn-outline" id="wdc_btn" onclick="wdcToggle()" style="border:1px solid var(--accent);color:var(--accent)">＋ 工资申告</button>
       </div>
       <div id="wdc_form"></div>
-      ${pending.length ? `<div style="font-size:11px;background:#fff3cd;color:#856404;border-radius:3px;padding:8px 12px;margin-bottom:10px">⏳ ${pending.length} 条记录待 Admin 审核</div>` : ''}
-      ${rejected.length ? `<div style="font-size:11px;background:#f8e0e0;color:#8a1a1a;border-radius:3px;padding:8px 12px;margin-bottom:10px">✗ ${rejected.length} 条记录已驳回${rejected.map(r => `<div style="margin-top:4px">${r.start_time.slice(0,11)} ${r.notes || ''}${r.admin_note ? `：${r.admin_note}` : ''}</div>`).join('')}</div>` : ''}
-      <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">大课 <strong style="color:var(--text)">${courseCount}</strong> 节 · 面谈 <strong style="color:var(--text)">${bookingCount}</strong> 次 · VIP <strong style="color:var(--text)">${vipCount}</strong> 节 · 申告 <strong style="color:var(--text)">${declareCount}</strong> 条 · 合计 <strong style="color:var(--text)">${totalHours}</strong> 小时</div>
-      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">${curY}年${curM}月</div>
-      ${currentMonthRows.length ? currentMonthRows.map(renderCard).join('') : '<div style="font-size:12px;color:var(--text-3);padding:8px 0">本月暂无已通过的工作记录</div>'}
-      ${historyRows.length ? `
-      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
-        <div style="cursor:pointer;font-size:11px;color:var(--text-3);padding:4px 0" onclick="toggleWorkHistory()">
-          <span id="wh_arrow">▸</span> 历史记录（${historyRows.length} 条）
-        </div>
-        <div id="wh_body" style="display:none;margin-top:8px">
-          ${historyRows.map(renderCard).join('')}
-        </div>
-      </div>` : ''}
-      ${!records.length ? '<div style="font-size:12px;color:var(--text-3);padding:8px 0">暂无工作记录（Admin 审核通过后会显示在这里）</div>' : ''}
-      <div id="wdc_list"></div>
+      <div id="wrt_body"></div>
     </div>`;
-    wdcMount(records);
+    wrtPaint();
+    wdcMount(wrtTeacher.records);
   } catch(e) {
     mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
   }
 }
 
-function toggleWorkHistory() {
-  const body = document.getElementById('wh_body');
-  const arrow = document.getElementById('wh_arrow');
-  if (!body) return;
-  const open = body.style.display !== 'none';
-  body.style.display = open ? 'none' : 'block';
-  if (arrow) arrow.textContent = open ? '▸' : '▾';
+function wrtInMonth(r) { return wrtTeacher.ym === 'all' || wrtParse(r.start_time).ym === wrtTeacher.ym; }
+function wrtPaint() {
+  const box = document.getElementById('wrt_body');
+  if (!box) return;
+  const t = wrtTeacher, all = t.records, inMonth = all.filter(wrtInMonth);
+  const approved = inMonth.filter(r => r.status === 'approved');
+  const months = [...new Set([...wrtMonths(all), wrtTeacher.ym !== 'all' ? wrtTeacher.ym : ''].filter(Boolean))].sort().reverse();
+  const chip = (on, click, label) => `<div class="filter-chip${on ? ' active' : ''}" onclick="${click}">${label}</div>`;
+  const stLabel = { approved: '已通过', pending: '待审批', rejected: '已驳回' };
+  const rows = inMonth.filter(r => (!t.types.length || t.types.includes(payrollTypeName(r.work_type))) && (!t.status.length || t.status.includes(r.status)));
+  box.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
+      ${chipFold(months.map(m => ({ on: t.ym === m, html: chip(t.ym === m, `wrtPickMonth('${m}')`, wrtMonthLabel(m)) })))}
+      ${chip(t.ym === 'all', "wrtPickMonth('all')", '全部')}
+    </div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">已通过的记录 · ${t.ym === 'all' ? '全部月份' : wrtMonthLabel(t.ym)}</div>
+    ${approved.length ? wrtStatsHtml(approved) : '<div style="font-size:12px;color:var(--text-3);padding:4px 0 10px">这段时间暂无已通过的工作记录</div>'}
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
+      <span style="font-size:10px;color:var(--text-3)">工作内容</span>
+      ${chipFold(wrtTypesPresent(all).map(x => ({ on: t.types.includes(x), html: `<div class="filter-chip${t.types.includes(x) ? ' active' : ''}" onclick="wrtToggleType(this.dataset.t)" data-t="${wrtEsc(x)}">${wrtEsc(x)}</div>` })))}
+      <span style="font-size:10px;color:var(--text-3);margin-left:8px">状态</span>
+      ${['approved', 'pending', 'rejected'].map(k => chip(t.status.includes(k), `wrtToggleStatus('${k}')`, `${stLabel[k]} ${inMonth.filter(r => r.status === k).length}`)).join('')}
+      <span style="margin-left:auto"><button class="btn btn-outline btn-sm" onclick="wrtDownloadMonth()">↓ 下载${t.ym === 'all' ? '全部' : '本月'}</button></span>
+    </div>
+    ${rows.length ? wrtTableHtml(rows, { sortCol: t.sortCol, sortDir: t.sortDir, onSort: 'wrtSortBy', actions: wrtActions })
+      : `<div style="font-size:12px;color:var(--text-3);padding:8px 0">${all.length ? '当前筛选下没有记录' : '暂无工作记录（Admin 审核通过后会显示在这里）'}</div>`}`;
+}
+function wrtActions(r) {
+  if (r.source !== 'declare' || r.status === 'approved') return '';
+  const id = wrtEsc(r.id);
+  return `<button class="btn btn-outline btn-sm" onclick="wrtEdit(this.dataset.id)" data-id="${id}">修改</button> <button class="btn btn-outline btn-sm" style="color:var(--danger)" onclick="wdcWithdraw(this.dataset.id)" data-id="${id}">撤回</button>`;
+}
+function wrtEdit(id) { wdcOpen(id); const f = document.getElementById('wdc_form'); if (f && f.scrollIntoView) f.scrollIntoView({ block: 'start' }); }
+function wrtPickMonth(m) { wrtTeacher.ym = m; wrtPaint(); }
+function wrtToggleType(x) { const a = wrtTeacher.types, i = a.indexOf(x); if (i >= 0) a.splice(i, 1); else a.push(x); wrtPaint(); }
+function wrtToggleStatus(k) { const a = wrtTeacher.status, i = a.indexOf(k); if (i >= 0) a.splice(i, 1); else a.push(k); wrtPaint(); }
+function wrtSortBy(col) { const t = wrtTeacher; if (t.sortCol === col) t.sortDir *= -1; else { t.sortCol = col; t.sortDir = 1; } wrtPaint(); }
+function wrtDownloadMonth() {
+  const list = wrtTeacher.records.filter(r => wrtInMonth(r) && r.status === 'approved');
+  if (!list.length) { alert('这段时间没有已通过的记录可下载'); return; }
+  wrtDownload(list, wrtTeacher.ym === 'all' ? '全部' : wrtMonthLabel(wrtTeacher.ym), teacherName);
 }
 
 init();
