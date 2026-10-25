@@ -1,11 +1,11 @@
 // ══════════════════════════════════
 // 工资申告（老师端「工作记录」页）
-// 只报：教研 / 试听・试讲 / 临时上课安排。大课、面谈、VIP 系统自动算，撞时间不让报。
+// 只报：教研工作 / 试听・试讲 / 临时上课安排。大课、面谈、VIP 系统自动算，撞时间不让报。
 // 写入 work_records（source='declare'），管理端工资页（admin/payroll.js）一起审批。
 // 依赖：teacher.js（teacherName / teacherData / renderWorkRecordsTeacher）、shared/constants.js（timeInputHtml 等）
 // ══════════════════════════════════
 
-const WDC_KINDS = ['教研', '试听・试讲', '临时上课安排'];
+const WDC_KINDS = ['教研工作', '试听・试讲', '临时上课安排'];
 const WDC_LOCS = ['高马校区', '市谷校区', '线上', '其他'];
 const WDC_AUTO_LABEL = { course: '大课', booking: '面谈', vip: 'VIP' };
 const wdcState = { mc: null, open: false, editId: '', kind: '', loc: '', locOther: '', domain: '', mine: [], weekKey: '', auto: [], loading: false };
@@ -120,7 +120,7 @@ async function wdcRenderForm(v) {
   box.innerHTML = `
   <div style="background:var(--surface);border:1px solid var(--accent);border-radius:4px;padding:14px;margin-bottom:14px">
     <div style="font-size:12px;font-weight:600;margin-bottom:4px">${wdcState.editId ? '修改申告' : '工资申告'}</div>
-    <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">只用来报教研、试听・试讲、临时上课。大课、面谈、VIP 系统自动算，不用在这里报。</div>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">只用来报教研工作、试听・试讲、临时上课。大课、面谈、VIP 系统自动算，不用在这里报。</div>
     <div style="display:flex;flex-wrap:wrap;gap:18px">
       <div style="flex:1 1 300px;min-width:0">
         <div class="form-group"><label class="form-label">日期（可选以前的，不能选以后）</label>

@@ -335,6 +335,14 @@ function payrollDownload(rows, label, who) {
 // work_records 一行 → Excel 行
 const payrollRecToRow = r => ({ 姓名: r.teacher_name, 开始时间: r.start_time, 结束时间: r.end_time, 时长: r.duration, 工作内容: r.work_type, 工作地点: r.location, 备注: r.notes });
 
+// ── 权限：「查看」和「审批发布」分开，谁都不能审批自己的工资 ──
+// 管理员 / 领域访问链接：可以审批。管理模式的负责人：manage_scope.payroll === 'approve' 才可以，没设 = 只能查看；
+// 而且负责人自己（teacher_name = 当前登录老师）的那一组一律由管理员审批。数据库有同样的规则（seed/work_records_approve.sql）
+function payrollMe() { return (typeof ACCESS_KEY !== 'undefined' && ACCESS_KEY && ACCESS_KEY._asTeacher) || null; }
+function payrollCanApprove() { const a = payrollMe(); return !a || a.payroll === 'approve'; }
+function payrollIsSelf(name) { const a = payrollMe(); return !!(a && a.name && name === a.name); }
+function payrollRowSelectable(r) { return payrollCanApprove() && !payrollIsSelf(r.姓名); }
+
 // ── 状态 ──
 let payrollMonth = '';          // 'YYYY-MM'；空 = 自定义日期
 let payrollCustomOpen = false;
@@ -402,6 +410,7 @@ async function payrollLoadPub(rows) {
 function renderPayrollSection(container) {
   if (!payrollMonth && !payrollStart) payrollMonth = payrollMonthList()[0];
   container.innerHTML = `
+  ${payrollCanApprove() ? '' : '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">你只有查看权限，审批发布请联系管理员</div>'}
   <div id="pr_legacy"></div>
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:16px;margin-top:16px">
     <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:12px;letter-spacing:.05em;text-transform:uppercase">工资核算</div>
@@ -514,8 +523,8 @@ async function payrollGenerate(keepEdits) {
     payrollRows = rows;
     payrollRows.forEach(r => {
       const old = snap[payrollKey(r.type, r.source_id)];
-      if (old) { r.时长 = old.时长; r.备注 = old.备注; r._sel = old._sel; }
-      else r._sel = payrollStatusOf(r) === 'new' && !r._overlap;   // 申告撞上大课 / 面谈 / VIP 的默认不勾
+      if (old) { r.时长 = old.时长; r.备注 = old.备注; r._sel = old._sel && payrollRowSelectable(r); }
+      else r._sel = payrollStatusOf(r) === 'new' && !r._overlap && payrollRowSelectable(r);   // 申告撞上大课 / 面谈 / VIP 的默认不勾
     });
     payrollFilter = 'all'; payrollQuery = '';
     payrollRenderResult();
@@ -539,8 +548,8 @@ function payrollRenderResult() {
   res.innerHTML = `
   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px">
     <span style="font-size:11px;color:var(--text-2)">${escTM(payrollCtx.label)} · ${escTM(payrollCtx.who)}</span>
-    <button class="btn btn-outline btn-sm" onclick="payrollSelectVisible(true)">全选</button>
-    <button class="btn btn-outline btn-sm" onclick="payrollSelectVisible(false)">全不选</button>
+    ${payrollCanApprove() ? `<button class="btn btn-outline btn-sm" onclick="payrollSelectVisible(true)">全选</button>
+    <button class="btn btn-outline btn-sm" onclick="payrollSelectVisible(false)">全不选</button>` : ''}
     ${fchip('all', '全部')}${fchip('new', '未发布')}${fchip('changed', '有变化')}${fchip('published', '已发布')}${fchip('missing', '记录不全')}${fchip('declpend', '申告待审批')}
     <input id="pr_q" placeholder="搜索备注、学生名" value="${escTM(payrollQuery)}" style="width:160px;margin-left:auto" oninput="payrollSetQuery(this.value)">
   </div>
@@ -559,7 +568,7 @@ function payrollRowVisible(r) {
   return !q || (String(r.备注) + ' ' + r.工作内容).toLowerCase().includes(q);
 }
 function payrollSelectVisible(on) {
-  payrollRows.forEach(r => { if (payrollRowVisible(r)) r._sel = on; });
+  payrollRows.forEach(r => { if (payrollRowVisible(r) && payrollRowSelectable(r)) r._sel = on; });
   payrollRenderGroups(); payrollRenderBar();
 }
 
@@ -575,16 +584,17 @@ function payrollRowHtml(r, i) {
   const declTag = isDecl ? '<span style="font-size:10px;background:#e8f0fb;border:1px solid var(--border-light);border-radius:2px;padding:1px 5px;margin-right:4px">申告</span>' : '';
   const declNote = isDecl ? ((r._overlap ? `<div style="font-size:10px;color:#c0392b;margin-top:2px">和${escTM(r._overlap)}重叠</div>` : '')
     + (st === 'rejected' ? `<div style="font-size:10px;color:#8a1a1a;margin-top:2px">驳回原因：${escTM((payrollCtx.pub[payrollKey(r.type, r.source_id)] || {}).admin_note || '')}</div>` : '')) : '';
-  const rejBtn = isDecl && st !== 'published' && st !== 'rejected' ? `<button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none;margin-left:6px" onclick="payrollRejectDeclare(${i})">驳回</button>` : '';
+  const can = payrollRowSelectable(r);
+  const rejBtn = can && isDecl && st !== 'published' && st !== 'rejected' ? `<button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none;margin-left:6px" onclick="payrollRejectDeclare(${i})">驳回</button>` : '';
   const miss = r._missing.length ? `<div style="font-size:10px;color:#9a5a00;margin-top:2px">记录不全：缺 ${escTM(r._missing.join('、'))}</div>` : '';
   return `<tr style="border-bottom:1px solid var(--border-light);${st === 'published' ? 'color:#888;background:rgba(0,0,0,.025)' : st === 'rejected' ? 'color:#888;background:#fbeeee' : r._overlap ? 'background:#fdecec' : r._missing.length ? 'background:#fffbe8' : ''}">
-    <td style="${td}width:24px"><input type="checkbox" ${r._sel ? 'checked' : ''} onchange="payrollToggleRow(${i},this.checked)"></td>
+    <td style="${td}width:24px">${can ? `<input type="checkbox" ${r._sel ? 'checked' : ''} onchange="payrollToggleRow(${i},this.checked)">` : ''}</td>
     <td style="${td}white-space:nowrap">${escTM(dt.d || r._date.slice(5))}</td>
     <td style="${td}white-space:nowrap;color:var(--text-2)">${escTM(dt.t)}${de.t ? '–' + escTM(de.t) : ''}</td>
-    <td style="${td}"><input type="number" step="0.25" min="0" value="${r.时长}" style="width:64px;font-size:11px;padding:2px 4px" onchange="payrollEditHours(${i},this.value)"></td>
+    <td style="${td}">${can ? `<input type="number" step="0.25" min="0" value="${r.时长}" style="width:64px;font-size:11px;padding:2px 4px" onchange="payrollEditHours(${i},this.value)">` : escTM(r.时长)}</td>
     <td style="${td}white-space:nowrap">${declTag}${escTM(r.工作内容)}</td>
     <td style="${td}white-space:nowrap;color:var(--text-2)">${escTM(r.工作地点)}</td>
-    <td style="${td}min-width:200px"><input value="${escTM(r.备注)}" style="width:100%;font-size:11px;padding:2px 4px" onchange="payrollEditNote(${i},this.value)">${miss}${declNote}</td>
+    <td style="${td}min-width:200px">${can ? `<input value="${escTM(r.备注)}" style="width:100%;font-size:11px;padding:2px 4px" onchange="payrollEditNote(${i},this.value)">` : escTM(r.备注)}${miss}${declNote}</td>
     <td style="${td}white-space:nowrap">${badge}${rejBtn}</td>
   </tr>`;
 }
@@ -598,7 +608,7 @@ function payrollRenderGroups() {
     const sel = all.filter(x => x.r._sel).length;
     const closed = payrollCollapsed[n];
     const head = `<div onclick="payrollToggleGroup(${ti})" style="cursor:pointer;font-size:12px;font-weight:600;padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:6px">${closed ? '▸' : '▾'} ${escTM(n)}
-      <span style="font-weight:400;font-size:11px;color:var(--text-2);margin-left:8px">${all.length} 节 · ${hours} 小时 · 已勾选 ${sel} 条</span></div>`;
+      <span style="font-weight:400;font-size:11px;color:var(--text-2);margin-left:8px">${all.length} 节 · ${hours} 小时${payrollCanApprove() && !payrollIsSelf(n) ? ` · 已勾选 ${sel} 条` : ''}</span>${payrollCanApprove() && payrollIsSelf(n) ? '<span style="font-weight:400;font-size:11px;color:#9a5a00;margin-left:8px">自己的工资由管理员审批</span>' : ''}</div>`;
     const body = closed ? '' : (shown.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">
       <thead><tr style="background:var(--bg)">${['', '日期', '时间', '时长(h)', '工作内容', '地点', '备注', ''].map(h => `<th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--border);font-weight:600;color:var(--text-2);white-space:nowrap">${h}</th>`).join('')}</tr></thead>
       <tbody>${shown.map(x => payrollRowHtml(x.r, x.i)).join('')}</tbody></table></div>`
@@ -607,9 +617,10 @@ function payrollRenderGroups() {
   }).join('');
 }
 function payrollToggleGroup(ti) { const n = payrollCtx.teachers[ti]; payrollCollapsed[n] = !payrollCollapsed[n]; payrollRenderGroups(); }
-function payrollToggleRow(i, on) { payrollRows[i]._sel = on; payrollRenderGroups(); payrollRenderBar(); }
+function payrollToggleRow(i, on) { if (!payrollRowSelectable(payrollRows[i])) return; payrollRows[i]._sel = on; payrollRenderGroups(); payrollRenderBar(); }
 function payrollEditHours(i, v) {
   const r = payrollRows[i], n = parseFloat(v);
+  if (!payrollRowSelectable(r)) return;
   if (!(n >= 0)) { payrollRenderGroups(); return; }
   r.时长 = payrollRound(n);
   if (payrollStatusOf(r) === 'changed') r._sel = true;
@@ -617,6 +628,7 @@ function payrollEditHours(i, v) {
 }
 function payrollEditNote(i, v) {
   const r = payrollRows[i];
+  if (!payrollRowSelectable(r)) return;
   r.备注 = v;
   if (payrollStatusOf(r) === 'changed') r._sel = true;
   payrollRenderGroups(); payrollRenderBar();
@@ -625,7 +637,7 @@ function payrollEditNote(i, v) {
 // 驳回申告：必须写原因，老师端马上能看到
 async function payrollRejectDeclare(i) {
   const r = payrollRows[i];
-  if (!r || r.type !== 'declare') return;
+  if (!r || r.type !== 'declare' || !payrollRowSelectable(r)) return;
   const why = (prompt(`驳回「${r.姓名} · ${r.工作内容}」这条申告，请写驳回原因：`) || '').trim();
   if (!why) { alert('驳回必须写原因'); return; }
   try {
@@ -654,10 +666,17 @@ function payrollProxyConfirm(id) {
 }
 
 // ── 底部操作栏 ──
-function payrollSelected() { return payrollRows.filter(r => r._sel); }
+function payrollSelected() { return payrollRows.filter(r => r._sel && payrollRowSelectable(r)); }
 function payrollRenderBar() {
   const bar = document.getElementById('pr_bar');
   if (!bar) return;
+  if (!payrollCanApprove()) {   // 只能查看：没有勾选 / 发布，下载的是当前筛选下看得到的行
+    const vis = payrollRows.filter(payrollRowVisible);
+    const vh = payrollRound(vis.reduce((s, r) => s + (parseFloat(r.时长) || 0), 0));
+    bar.innerHTML = `<span style="font-size:12px">当前显示 <strong>${vis.length}</strong> 条 · 合计 <strong>${vh}</strong> 小时 · 涉及 <strong>${new Set(vis.map(r => r.姓名)).size}</strong> 位老师</span>
+      <span style="margin-left:auto"><button class="btn btn-outline btn-sm" onclick="payrollDownloadSelected()">↓ 下载 Excel</button></span>`;
+    return;
+  }
   const sel = payrollSelected();
   const hours = payrollRound(sel.reduce((s, r) => s + (parseFloat(r.时长) || 0), 0));
   const tn = new Set(sel.map(r => r.姓名)).size;
@@ -668,8 +687,8 @@ function payrollRenderBar() {
     </span>`;
 }
 function payrollDownloadSelected() {
-  const sel = payrollSelected();
-  if (!sel.length) { alert('请先勾选要下载的行'); return; }
+  const sel = payrollCanApprove() ? payrollSelected() : payrollRows.filter(payrollRowVisible);
+  if (!sel.length) { alert(payrollCanApprove() ? '请先勾选要下载的行' : '当前没有可下载的行'); return; }
   // 多位老师按老师分表：保持老师顺序
   const order = payrollCtx.teachers;
   const rows = [...sel].sort((a, b) => order.indexOf(a.姓名) - order.indexOf(b.姓名));
@@ -678,6 +697,7 @@ function payrollDownloadSelected() {
 
 // ── 确定发布：直接 approved；同 source_id 有变化就更新，没变化跳过 ──
 async function payrollPublish() {
+  if (!payrollCanApprove()) { alert('你只有查看权限，审批发布请联系管理员'); return; }
   const sel = payrollSelected();
   if (!sel.length) { alert('请先勾选要发布的行'); return; }
   const toNew = [], toUpd = [];
@@ -771,7 +791,7 @@ function payrollRenderPublishedBody() {
             <span style="margin-left:auto;display:flex;gap:6px">
               <button class="btn btn-outline btn-sm" data-k="${ek}" onclick="payrollPubToggle(this.dataset.k)">${open ? '收起' : '展开'}</button>
               <button class="btn btn-outline btn-sm" data-k="${ek}" onclick="payrollPubDownload(this.dataset.k)">↓ 下载</button>
-              <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" data-k="${ek}" onclick="payrollPubRetract(this.dataset.k)">撤回</button>
+              ${payrollCanApprove() && !payrollIsSelf(n) ? `<button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" data-k="${ek}" onclick="payrollPubRetract(this.dataset.k)">撤回</button>` : (payrollCanApprove() ? '<span style="font-size:10px;color:#9a5a00">自己的工资由管理员审批</span>' : '')}
             </span>
           </div>
           ${open ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light)">${list.map(r => `<div style="padding:2px 0;color:var(--text-2)">${escTM(r.start_time)} → ${escTM(payrollDT(r.end_time).t)} · ${r.duration}h · ${escTM(r.work_type)} · ${escTM(r.location)} · ${escTM(r.notes)}</div>`).join('')}</div>` : ''}
@@ -791,6 +811,7 @@ async function payrollPubRetract(k) {
   const list = payrollPubList(k);
   if (!list.length) return;
   const [m, n] = k.split('|');
+  if (!payrollCanApprove() || payrollIsSelf(n)) return;
   if (!confirm(`撤回「${n}」${m.length === 7 ? m.slice(0, 4) + '年' + m.slice(5) + '月' : m}已发布的 ${list.length} 条记录？\n撤回后会删除这些记录，老师端随即看不到。`)) return;
   try {
     const ids = list.map(r => r.id);
@@ -812,7 +833,8 @@ async function payrollLoadLegacy() {
   const box = document.getElementById('pr_legacy');
   if (!box) return;
   try {
-    const rows = await sbAll(`/rest/v1/work_records?status=in.(pending,rejected)&or=(source.is.null,source.neq.declare)&select=id${payrollDomainQs()}`);
+    if (!payrollCanApprove()) { box.innerHTML = ''; return; }   // 只能查看的负责人不显示旧记录的「全部发布 / 删除」
+    const rows = (await sbAll(`/rest/v1/work_records?status=in.(pending,rejected)&or=(source.is.null,source.neq.declare)&select=id,teacher_name${payrollDomainQs()}`)).filter(r => !payrollIsSelf(r.teacher_name));
     if (!rows.length) { box.innerHTML = ''; return; }
     box.innerHTML = `<div style="background:#fff8e1;border:1px solid #e6a817;border-radius:3px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
       <span style="font-size:12px;color:#856404;font-weight:600">有 ${rows.length} 条旧的待审核记录（改版前提交的）</span>
@@ -826,7 +848,7 @@ async function payrollLoadLegacy() {
 function payrollLegacyIds() { try { return JSON.parse(document.getElementById('pr_legacy').dataset.ids || '[]'); } catch (e) { return []; } }
 async function payrollLegacyPublish() {
   const ids = payrollLegacyIds();
-  if (!ids.length || !confirm(`把这 ${ids.length} 条旧记录全部发布？发布后老师在老师端能看到。`)) return;
+  if (!payrollCanApprove() || !ids.length || !confirm(`把这 ${ids.length} 条旧记录全部发布？发布后老师在老师端能看到。`)) return;
   try {
     const now = new Date().toISOString();
     for (let i = 0; i < ids.length; i += 50) {
@@ -837,7 +859,7 @@ async function payrollLegacyPublish() {
 }
 async function payrollLegacyDelete() {
   const ids = payrollLegacyIds();
-  if (!ids.length || !confirm(`删除这 ${ids.length} 条旧的待审核记录？删除后无法恢复。`)) return;
+  if (!payrollCanApprove() || !ids.length || !confirm(`删除这 ${ids.length} 条旧的待审核记录？删除后无法恢复。`)) return;
   try {
     for (let i = 0; i < ids.length; i += 50) {
       await sb(`/rest/v1/work_records?id=in.(${ids.slice(i, i + 50).map(x => `"${x}"`).join(',')})`, 'DELETE');
