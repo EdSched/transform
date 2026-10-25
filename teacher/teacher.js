@@ -2738,13 +2738,11 @@ async function renderWorkRecordsTeacher(mc) {
   mc.innerHTML = '<div class="loading">加载中…</div>';
   try {
     const records = await sb(`/rest/v1/work_records?teacher_name=eq.${encodeURIComponent(teacherName)}&order=start_time.asc`);
-    if (!records.length) {
-      mc.innerHTML = '<div class="empty">暂无工作记录<br><span style="font-size:11px">Admin 审核通过后会显示在这里</span></div>';
-      return;
-    }
+    wdcState.mc = mc;
     const approved = records.filter(r => r.status === 'approved');
-    const pending = records.filter(r => r.status === 'pending');
-    const rejected = records.filter(r => r.status === 'rejected');
+    const pending = records.filter(r => r.status === 'pending' && r.source !== 'declare');   // 申告的待审批 / 驳回在「我的申告」里单独显示
+    const rejected = records.filter(r => r.status === 'rejected' && r.source !== 'declare');
+    const declareCount = approved.filter(r => r.source === 'declare').length;
     const courseCount = approved.filter(r => r.source === 'course').length;
     const bookingCount = approved.filter(r => r.source === 'booking').length;
     const vipCount = approved.filter(r => r.source === 'vip').length;
@@ -2784,10 +2782,12 @@ async function renderWorkRecordsTeacher(mc) {
     <div class="page-section">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">工作记录</div>
+        <button class="btn btn-sm btn-outline" id="wdc_btn" onclick="wdcToggle()" style="border:1px solid var(--accent);color:var(--accent)">＋ 工资申告</button>
       </div>
+      <div id="wdc_form"></div>
       ${pending.length ? `<div style="font-size:11px;background:#fff3cd;color:#856404;border-radius:3px;padding:8px 12px;margin-bottom:10px">⏳ ${pending.length} 条记录待 Admin 审核</div>` : ''}
       ${rejected.length ? `<div style="font-size:11px;background:#f8e0e0;color:#8a1a1a;border-radius:3px;padding:8px 12px;margin-bottom:10px">✗ ${rejected.length} 条记录已驳回${rejected.map(r => `<div style="margin-top:4px">${r.start_time.slice(0,11)} ${r.notes || ''}${r.admin_note ? `：${r.admin_note}` : ''}</div>`).join('')}</div>` : ''}
-      <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">大课 <strong style="color:var(--text)">${courseCount}</strong> 节 · 面谈 <strong style="color:var(--text)">${bookingCount}</strong> 次 · VIP <strong style="color:var(--text)">${vipCount}</strong> 节 · 合计 <strong style="color:var(--text)">${totalHours}</strong> 小时</div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">大课 <strong style="color:var(--text)">${courseCount}</strong> 节 · 面谈 <strong style="color:var(--text)">${bookingCount}</strong> 次 · VIP <strong style="color:var(--text)">${vipCount}</strong> 节 · 申告 <strong style="color:var(--text)">${declareCount}</strong> 条 · 合计 <strong style="color:var(--text)">${totalHours}</strong> 小时</div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">${curY}年${curM}月</div>
       ${currentMonthRows.length ? currentMonthRows.map(renderCard).join('') : '<div style="font-size:12px;color:var(--text-3);padding:8px 0">本月暂无已通过的工作记录</div>'}
       ${historyRows.length ? `
@@ -2799,7 +2799,10 @@ async function renderWorkRecordsTeacher(mc) {
           ${historyRows.map(renderCard).join('')}
         </div>
       </div>` : ''}
+      ${!records.length ? '<div style="font-size:12px;color:var(--text-3);padding:8px 0">暂无工作记录（Admin 审核通过后会显示在这里）</div>' : ''}
+      <div id="wdc_list"></div>
     </div>`;
+    wdcMount(records);
   } catch(e) {
     mc.innerHTML = `<div class="empty">加载失败：${e.message}</div>`;
   }

@@ -181,6 +181,43 @@ function buildBookingRows(bookings, slots, teacherName, students) {
     });
 }
 
+// ── 老师的工资申告（work_records, source='declare'）→ 工资行 ──
+async function payrollLoadDeclares(names, start, end) {
+  const lo = start.slice(0, 4) + '年' + start.slice(5, 7) + '月' + start.slice(8, 10) + '日 00:00';
+  const hi = end.slice(0, 4) + '年' + end.slice(5, 7) + '月' + end.slice(8, 10) + '日 23:59';
+  const rows = await sbAll(`/rest/v1/work_records?source=eq.declare&start_time=gte.${encodeURIComponent(lo)}&start_time=lte.${encodeURIComponent(hi)}&select=*`);
+  const set = new Set(names);
+  return rows.filter(r => set.has(r.teacher_name));
+}
+function buildDeclareRows(decls, teacherName) {
+  return (decls || []).filter(r => r.teacher_name === teacherName).map(r => {
+    const dt = payrollDT(r.start_time);
+    return {
+      type: 'declare', source_id: r.id, 姓名: teacherName,
+      开始时间: r.start_time, 结束时间: r.end_time, 时长: payrollRound(r.duration),
+      工作内容: r.work_type, 工作地点: r.location, 备注: r.notes || '',
+      _date: String(r.start_time).slice(0, 4) + '-' + String(r.start_time).slice(5, 7) + '-' + String(r.start_time).slice(8, 10),
+      _domain: r.domain || '', _rec: r
+    };
+  });
+}
+// 申告撞上这位老师自己的大课 / 面谈 / VIP 行 → 返回撞上的类别（没有撞 = ''）
+const PAYROLL_TYPE_LABEL = { course: '大课', booking: '面谈', vip: 'VIP' };
+function payrollDeclareOverlap(r, rows) {
+  const span = x => {
+    const a = String(x.开始时间).match(/(\d{4}年\d{2}月\d{2}日)\s*(\d{1,2}):(\d{2})/), b = String(x.结束时间).match(/(\d{1,2}):(\d{2})\s*$/);
+    return a && b ? { d: a[1], s: (+a[2]) * 60 + (+a[3]), e: (+b[1]) * 60 + (+b[2]) } : null;
+  };
+  const me = span(r);
+  if (!me) return '';
+  for (const x of rows) {
+    if (!PAYROLL_TYPE_LABEL[x.type] || x.姓名 !== r.姓名) continue;
+    const o = span(x);
+    if (o && o.d === me.d && o.s < me.e && o.e > me.s) return PAYROLL_TYPE_LABEL[x.type];
+  }
+  return '';
+}
+
 function payrollStuMap(students) {
   const m = {};
   (students || []).forEach(x => { m[x.id] = x; });
@@ -340,6 +377,7 @@ function payrollDT(s) {
 // 行状态：new 未发布 / changed 有变化 / published 已发布
 function payrollStatusOf(r) {
   const p = payrollCtx && payrollCtx.pub[payrollKey(r.type, r.source_id)];
+  if (r.type === 'declare' && p && p.status === 'rejected') return 'rejected';
   if (!p || p.status !== 'approved') return 'new';
   return (payrollRound(p.duration) !== payrollRound(r.时长) || String(p.notes || '') !== String(r.备注 || '')) ? 'changed' : 'published';
 }
@@ -455,13 +493,17 @@ async function payrollGenerate(keepEdits) {
     const { sessions, bookings, slots, courses, students, vipConfirmed, vipPending } = await payrollLoadData(rg.start, rg.end);
     const vipMap = {};
     vipConfirmed.forEach(b => { vipMap[b.id] = b; });
+    const decls = await payrollLoadDeclares(names, rg.start, rg.end).catch(() => []);
     const rows = [], pending = {};
     names.forEach(n => {
-      const list = [
+      const auto = [
         ...buildCourseRows(sessions, n, courses),
         ...buildBookingRows(bookings, slots, n, students),
         ...buildVipRows(vipConfirmed, n, slots, students)
-      ].sort((a, b) => a._date.localeCompare(b._date) || a.开始时间.localeCompare(b.开始时间));
+      ];
+      const dl = buildDeclareRows(decls, n);
+      dl.forEach(r => { r._overlap = payrollDeclareOverlap(r, auto); });
+      const list = [...auto, ...dl].sort((a, b) => a._date.localeCompare(b._date) || a.开始时间.localeCompare(b.开始时间));
       list.forEach(r => { r._missing = r.type === 'vip' ? payrollVipMissing(vipMap[r.source_id]) : []; });
       rows.push(...list);
       const pl = buildVipPending(vipPending, n, slots, students);
@@ -473,7 +515,7 @@ async function payrollGenerate(keepEdits) {
     payrollRows.forEach(r => {
       const old = snap[payrollKey(r.type, r.source_id)];
       if (old) { r.时长 = old.时长; r.备注 = old.备注; r._sel = old._sel; }
-      else r._sel = payrollStatusOf(r) === 'new';
+      else r._sel = payrollStatusOf(r) === 'new' && !r._overlap;   // 申告撞上大课 / 面谈 / VIP 的默认不勾
     });
     payrollFilter = 'all'; payrollQuery = '';
     payrollRenderResult();
@@ -487,8 +529,8 @@ function payrollRenderResult() {
   const res = document.getElementById('pr_result');
   if (!res) return;
   if (!payrollCtx) { res.innerHTML = '<div style="font-size:12px;color:var(--text-3)">选好月份和老师，点「生成」。</div>'; return; }
-  const counts = { all: payrollRows.length, new: 0, changed: 0, published: 0, missing: 0 };
-  payrollRows.forEach(r => { counts[payrollStatusOf(r)]++; if (r._missing.length) counts.missing++; });
+  const counts = { all: payrollRows.length, new: 0, changed: 0, published: 0, missing: 0, rejected: 0, declpend: 0 };
+  payrollRows.forEach(r => { counts[payrollStatusOf(r)]++; if (r._missing.length) counts.missing++; if (r.type === 'declare' && payrollStatusOf(r) === 'new') counts.declpend++; });
   if (!payrollRows.length && !Object.keys(payrollCtx.pending).length) {
     res.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:12px 0">该时间段内无数据</div>';
     return;
@@ -499,7 +541,7 @@ function payrollRenderResult() {
     <span style="font-size:11px;color:var(--text-2)">${escTM(payrollCtx.label)} · ${escTM(payrollCtx.who)}</span>
     <button class="btn btn-outline btn-sm" onclick="payrollSelectVisible(true)">全选</button>
     <button class="btn btn-outline btn-sm" onclick="payrollSelectVisible(false)">全不选</button>
-    ${fchip('all', '全部')}${fchip('new', '未发布')}${fchip('changed', '有变化')}${fchip('published', '已发布')}${fchip('missing', '记录不全')}
+    ${fchip('all', '全部')}${fchip('new', '未发布')}${fchip('changed', '有变化')}${fchip('published', '已发布')}${fchip('missing', '记录不全')}${fchip('declpend', '申告待审批')}
     <input id="pr_q" placeholder="搜索备注、学生名" value="${escTM(payrollQuery)}" style="width:160px;margin-left:auto" oninput="payrollSetQuery(this.value)">
   </div>
   <div id="pr_groups"></div>
@@ -511,6 +553,7 @@ function payrollSetFilter(k) { payrollFilter = k; payrollRenderResult(); }
 function payrollSetQuery(v) { payrollQuery = v; payrollRenderGroups(); }
 function payrollRowVisible(r) {
   if (payrollFilter === 'missing') { if (!r._missing.length) return false; }
+  else if (payrollFilter === 'declpend') { if (r.type !== 'declare' || payrollStatusOf(r) !== 'new') return false; }
   else if (payrollFilter !== 'all' && payrollStatusOf(r) !== payrollFilter) return false;
   const q = payrollQuery.trim().toLowerCase();
   return !q || (String(r.备注) + ' ' + r.工作内容).toLowerCase().includes(q);
@@ -525,17 +568,24 @@ function payrollRowHtml(r, i) {
   const dt = payrollDT(r.开始时间), de = payrollDT(r.结束时间);
   const td = 'padding:5px 8px;';
   const badge = st === 'published' ? '<span style="font-size:10px;background:#e6e6e6;color:#666;border-radius:2px;padding:1px 6px">已发布</span>'
-    : st === 'changed' ? '<span style="font-size:10px;background:#ffe8cc;color:#9a5a00;border-radius:2px;padding:1px 6px">有变化</span>' : '';
+    : st === 'changed' ? '<span style="font-size:10px;background:#ffe8cc;color:#9a5a00;border-radius:2px;padding:1px 6px">有变化</span>'
+    : st === 'rejected' ? '<span style="font-size:10px;background:#f8e0e0;color:#8a1a1a;border-radius:2px;padding:1px 6px">已驳回</span>'
+    : r.type === 'declare' ? '<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:2px;padding:1px 6px">待审批</span>' : '';
+  const isDecl = r.type === 'declare';
+  const declTag = isDecl ? '<span style="font-size:10px;background:#e8f0fb;border:1px solid var(--border-light);border-radius:2px;padding:1px 5px;margin-right:4px">申告</span>' : '';
+  const declNote = isDecl ? ((r._overlap ? `<div style="font-size:10px;color:#c0392b;margin-top:2px">和${escTM(r._overlap)}重叠</div>` : '')
+    + (st === 'rejected' ? `<div style="font-size:10px;color:#8a1a1a;margin-top:2px">驳回原因：${escTM((payrollCtx.pub[payrollKey(r.type, r.source_id)] || {}).admin_note || '')}</div>` : '')) : '';
+  const rejBtn = isDecl && st !== 'published' && st !== 'rejected' ? `<button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none;margin-left:6px" onclick="payrollRejectDeclare(${i})">驳回</button>` : '';
   const miss = r._missing.length ? `<div style="font-size:10px;color:#9a5a00;margin-top:2px">记录不全：缺 ${escTM(r._missing.join('、'))}</div>` : '';
-  return `<tr style="border-bottom:1px solid var(--border-light);${st === 'published' ? 'color:#888;background:rgba(0,0,0,.025)' : r._missing.length ? 'background:#fffbe8' : ''}">
+  return `<tr style="border-bottom:1px solid var(--border-light);${st === 'published' ? 'color:#888;background:rgba(0,0,0,.025)' : st === 'rejected' ? 'color:#888;background:#fbeeee' : r._overlap ? 'background:#fdecec' : r._missing.length ? 'background:#fffbe8' : ''}">
     <td style="${td}width:24px"><input type="checkbox" ${r._sel ? 'checked' : ''} onchange="payrollToggleRow(${i},this.checked)"></td>
     <td style="${td}white-space:nowrap">${escTM(dt.d || r._date.slice(5))}</td>
     <td style="${td}white-space:nowrap;color:var(--text-2)">${escTM(dt.t)}${de.t ? '–' + escTM(de.t) : ''}</td>
     <td style="${td}"><input type="number" step="0.25" min="0" value="${r.时长}" style="width:64px;font-size:11px;padding:2px 4px" onchange="payrollEditHours(${i},this.value)"></td>
-    <td style="${td}white-space:nowrap">${escTM(r.工作内容)}</td>
+    <td style="${td}white-space:nowrap">${declTag}${escTM(r.工作内容)}</td>
     <td style="${td}white-space:nowrap;color:var(--text-2)">${escTM(r.工作地点)}</td>
-    <td style="${td}min-width:200px"><input value="${escTM(r.备注)}" style="width:100%;font-size:11px;padding:2px 4px" onchange="payrollEditNote(${i},this.value)">${miss}</td>
-    <td style="${td}white-space:nowrap">${badge}</td>
+    <td style="${td}min-width:200px"><input value="${escTM(r.备注)}" style="width:100%;font-size:11px;padding:2px 4px" onchange="payrollEditNote(${i},this.value)">${miss}${declNote}</td>
+    <td style="${td}white-space:nowrap">${badge}${rejBtn}</td>
   </tr>`;
 }
 function payrollRenderGroups() {
@@ -544,7 +594,7 @@ function payrollRenderGroups() {
   box.innerHTML = payrollCtx.teachers.map((n, ti) => {
     const all = payrollRows.map((r, i) => ({ r, i })).filter(x => x.r.姓名 === n);
     const shown = all.filter(x => payrollRowVisible(x.r));
-    const hours = payrollRound(all.reduce((s, x) => s + (parseFloat(x.r.时长) || 0), 0));
+    const hours = payrollRound(all.filter(x => payrollStatusOf(x.r) !== 'rejected').reduce((s, x) => s + (parseFloat(x.r.时长) || 0), 0));
     const sel = all.filter(x => x.r._sel).length;
     const closed = payrollCollapsed[n];
     const head = `<div onclick="payrollToggleGroup(${ti})" style="cursor:pointer;font-size:12px;font-weight:600;padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:6px">${closed ? '▸' : '▾'} ${escTM(n)}
@@ -570,6 +620,20 @@ function payrollEditNote(i, v) {
   r.备注 = v;
   if (payrollStatusOf(r) === 'changed') r._sel = true;
   payrollRenderGroups(); payrollRenderBar();
+}
+
+// 驳回申告：必须写原因，老师端马上能看到
+async function payrollRejectDeclare(i) {
+  const r = payrollRows[i];
+  if (!r || r.type !== 'declare') return;
+  const why = (prompt(`驳回「${r.姓名} · ${r.工作内容}」这条申告，请写驳回原因：`) || '').trim();
+  if (!why) { alert('驳回必须写原因'); return; }
+  try {
+    await sb(`/rest/v1/work_records?id=eq.${encodeURIComponent(r.source_id)}`, 'PATCH', { status: 'rejected', admin_note: why, updated_at: new Date().toISOString() });
+    payrollCtx.pub = await payrollLoadPub(payrollRows);
+    r._sel = false;
+    payrollRenderResult();
+  } catch (e) { alert('驳回失败：' + e.message); }
 }
 
 // 待学生确认（不计入本月）：每位老师组下面
@@ -748,7 +812,7 @@ async function payrollLoadLegacy() {
   const box = document.getElementById('pr_legacy');
   if (!box) return;
   try {
-    const rows = await sbAll(`/rest/v1/work_records?status=in.(pending,rejected)&select=id${payrollDomainQs()}`);
+    const rows = await sbAll(`/rest/v1/work_records?status=in.(pending,rejected)&or=(source.is.null,source.neq.declare)&select=id${payrollDomainQs()}`);
     if (!rows.length) { box.innerHTML = ''; return; }
     box.innerHTML = `<div style="background:#fff8e1;border:1px solid #e6a817;border-radius:3px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
       <span style="font-size:12px;color:#856404;font-weight:600">有 ${rows.length} 条旧的待审核记录（改版前提交的）</span>
