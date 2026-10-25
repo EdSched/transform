@@ -300,6 +300,48 @@ const PAYROLL_HEADERS = ['姓名', '开始时间', '结束时间', '时长', '�
 const payrollRound = n => Math.round((parseFloat(n) || 0) * 100) / 100;
 const payrollPad = n => String(n).padStart(2, '0');
 
+// ── 按工作内容统计 ──
+// 工作内容的固定顺序（"教研"是旧名字，统一当"教研工作"）；不在清单里的排在最后
+const PAYROLL_TYPES = ['大课', '共通课', 'VIP授课', '教研工作', '试听・试讲', '临时上课安排'];
+const payrollTypeName = t => (t === '教研' ? '教研工作' : (t || ''));
+const payrollTypeIdx = t => { const i = PAYROLL_TYPES.indexOf(payrollTypeName(t)); return i < 0 ? 99 : i; };
+const payrollTypeSort = (a, b) => payrollTypeIdx(a) - payrollTypeIdx(b) || String(a).localeCompare(String(b), 'zh');
+// items = [{ name, type, h }] → { types, names, cell:{name:{type:{h,n}}}, rowTot:{name:{h,n}}, colTot:{type:{h,n}}, total:{h,n} }
+function payrollMatrix(items, nameOrder) {
+  const m = { types: [], names: [], cell: {}, rowTot: {}, colTot: {}, total: { h: 0, n: 0 } };
+  const add = (o, h) => { o.h += h; o.n += 1; };
+  items.forEach(it => {
+    const t = payrollTypeName(it.type), h = parseFloat(it.h) || 0;
+    if (!m.cell[it.name]) { m.cell[it.name] = {}; m.rowTot[it.name] = { h: 0, n: 0 }; m.names.push(it.name); }
+    if (!m.colTot[t]) { m.colTot[t] = { h: 0, n: 0 }; m.types.push(t); }
+    add(m.cell[it.name][t] = m.cell[it.name][t] || { h: 0, n: 0 }, h);
+    add(m.rowTot[it.name], h); add(m.colTot[t], h); add(m.total, h);
+  });
+  m.types.sort(payrollTypeSort);
+  m.names.sort((a, b) => { const ia = nameOrder ? nameOrder.indexOf(a) : -1, ib = nameOrder ? nameOrder.indexOf(b) : -1; return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib) || String(a).localeCompare(String(b), 'zh'); });
+  return m;
+}
+// Excel「按工作内容汇总」：行是老师、列是工作内容；上面一张小时数，下面一张条数
+function payrollMatrixAoa(m, firstHead) {
+  const head = [firstHead || '姓名', ...m.types, '合计'];
+  const hrs = [['小时数'], head];
+  const cnt = [[], ['条数'], head];
+  m.names.forEach(n => {
+    hrs.push([n, ...m.types.map(t => (m.cell[n][t] ? payrollRound(m.cell[n][t].h) : '')), payrollRound(m.rowTot[n].h)]);
+    cnt.push([n, ...m.types.map(t => (m.cell[n][t] ? m.cell[n][t].n : '')), m.rowTot[n].n]);
+  });
+  hrs.push(['合计', ...m.types.map(t => payrollRound(m.colTot[t].h)), payrollRound(m.total.h)]);
+  cnt.push(['合计', ...m.types.map(t => m.colTot[t].n), m.total.n]);
+  return [...hrs, ...cnt];
+}
+function payrollAddSummarySheet(wb, rows) {
+  const m = payrollMatrix(rows.map(r => ({ name: r.姓名, type: r.工作内容, h: r.时长 })));
+  const aoa = payrollMatrixAoa(m);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 14 }, ...m.types.map(() => ({ wch: 12 })), { wch: 10 }];
+  XLSX.utils.book_append_sheet(wb, ws, '按工作内容汇总');
+}
+
 // ── Excel：多位老师 = 一人一个工作表 + 汇总；rows 用 {姓名, 开始时间, …} 格式 ──
 function payrollBuildWorkbook(rows) {
   const names = [...new Set(rows.map(r => r.姓名))];
@@ -310,7 +352,7 @@ function payrollBuildWorkbook(rows) {
     ws['!cols'] = cols;
     XLSX.utils.book_append_sheet(wb, ws, name);
   };
-  if (names.length <= 1) { addSheet('工资核算', rows); return wb; }
+  if (names.length <= 1) { addSheet('工资核算', rows); payrollAddSummarySheet(wb, rows); return wb; }
   const summary = [['姓名', '节数', '总时长(h)']];
   names.forEach(n => {
     const list = rows.filter(r => r.姓名 === n);
@@ -319,7 +361,8 @@ function payrollBuildWorkbook(rows) {
   const sws = XLSX.utils.aoa_to_sheet(summary);
   sws['!cols'] = [{wch:14},{wch:8},{wch:12}];
   XLSX.utils.book_append_sheet(wb, sws, '汇总');
-  const used = new Set(['汇总']);
+  payrollAddSummarySheet(wb, rows);
+  const used = new Set(['汇总', '按工作内容汇总']);
   names.forEach(n => {
     let sn = String(n).replace(/[\[\]:*?\/\\]/g, '_').slice(0, 28) || '老师', k = 2, cand = sn;
     while (used.has(cand)) cand = sn + k++;
@@ -355,6 +398,12 @@ let payrollCtx = null;          // { label, who, teachers, pending, pub }
 let payrollFilter = 'all';      // all | new | changed | published | missing
 let payrollQuery = '';
 let payrollCollapsed = {};
+let payrollTypeSel = [];        // 筛选：工作内容（多选）
+let payrollTeacherSel = '';     // 从汇总格子跳回明细时，只看这位老师
+let payrollSortCol = 'date';    // date | name | type | hours
+let payrollSortDir = 1;
+let payrollGrouped = true;      // false = 不分组：全部老师排在一张表里
+let payrollView = 'detail';     // detail | summary
 let payrollPubOpen = false;
 
 const payrollKey = (type, id) => type + ':' + id;
@@ -526,7 +575,7 @@ async function payrollGenerate(keepEdits) {
       if (old) { r.时长 = old.时长; r.备注 = old.备注; r._sel = old._sel && payrollRowSelectable(r); }
       else r._sel = payrollStatusOf(r) === 'new' && !r._overlap && payrollRowSelectable(r);   // 申告撞上大课 / 面谈 / VIP 的默认不勾
     });
-    payrollFilter = 'all'; payrollQuery = '';
+    payrollFilter = 'all'; payrollQuery = ''; payrollTypeSel = []; payrollTeacherSel = '';
     payrollRenderResult();
   } catch (e) {
     res.innerHTML = `<div style="font-size:12px;color:var(--danger)">加载失败：${escTM(e.message)}</div>`;
@@ -553,17 +602,39 @@ function payrollRenderResult() {
     ${fchip('all', '全部')}${fchip('new', '未发布')}${fchip('changed', '有变化')}${fchip('published', '已发布')}${fchip('missing', '记录不全')}${fchip('declpend', '申告待审批')}
     <input id="pr_q" placeholder="搜索备注、学生名" value="${escTM(payrollQuery)}" style="width:160px;margin-left:auto" oninput="payrollSetQuery(this.value)">
   </div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
+    <span style="font-size:10px;color:var(--text-3)">工作内容</span>
+    ${chipFold(payrollTypesPresent().map(t => ({ on: payrollTypeSel.includes(t), html: `<div class="filter-chip${payrollTypeSel.includes(t) ? ' active' : ''}" onclick="payrollToggleType(this.dataset.t)" data-t="${escTM(t)}">${escTM(t)} ${payrollRows.filter(r => payrollTypeName(r.工作内容) === t).length}</div>` })))}
+    ${payrollTeacherSel ? `<div class="filter-chip active" onclick="payrollSetTeacher('')">老师：${escTM(payrollTeacherSel)} ✕</div>` : ''}
+    <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+      <div class="filter-chip${payrollView === 'detail' ? ' active' : ''}" onclick="payrollSetView('detail')">明细</div>
+      <div class="filter-chip${payrollView === 'summary' ? ' active' : ''}" onclick="payrollSetView('summary')">汇总</div>
+      ${payrollView === 'detail' ? `<div class="filter-chip${payrollGrouped ? '' : ' active'}" onclick="payrollToggleGrouped()">不分组</div>` : ''}
+    </span>
+  </div>
+  <div id="pr_stats"></div>
   <div id="pr_groups"></div>
   <div id="pr_bar" style="position:sticky;bottom:0;z-index:5;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:10px 12px;margin-top:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;box-shadow:0 -2px 8px rgba(0,0,0,.06)"></div>`;
   payrollRenderGroups();
   payrollRenderBar();
 }
+function payrollTypesPresent() { return [...new Set(payrollRows.map(r => payrollTypeName(r.工作内容)).filter(Boolean))].sort(payrollTypeSort); }
+function payrollAllTypes() { return PAYROLL_TYPES.concat(payrollTypesPresent().filter(t => !PAYROLL_TYPES.includes(t))); }
+function payrollToggleType(t) { const i = payrollTypeSel.indexOf(t); if (i >= 0) payrollTypeSel.splice(i, 1); else payrollTypeSel.push(t); payrollRenderResult(); }
+function payrollSetTeacher(n) { payrollTeacherSel = n; payrollRenderResult(); }
+function payrollSetView(v) { payrollView = v; payrollRenderResult(); }
+function payrollToggleGrouped() { payrollGrouped = !payrollGrouped; payrollRenderResult(); }
+function payrollSortBy(col) { if (payrollSortCol === col) payrollSortDir *= -1; else { payrollSortCol = col; payrollSortDir = 1; } payrollRenderGroups(); }
+// 汇总里点一个格子：回到明细，筛好这位老师 + 这个工作内容（点合计格就只筛一边）
+function payrollJump(name, type) { payrollView = 'detail'; payrollTeacherSel = name || ''; payrollTypeSel = type ? [type] : []; payrollRenderResult(); }
 function payrollSetFilter(k) { payrollFilter = k; payrollRenderResult(); }
 function payrollSetQuery(v) { payrollQuery = v; payrollRenderGroups(); }
 function payrollRowVisible(r) {
   if (payrollFilter === 'missing') { if (!r._missing.length) return false; }
   else if (payrollFilter === 'declpend') { if (r.type !== 'declare' || payrollStatusOf(r) !== 'new') return false; }
   else if (payrollFilter !== 'all' && payrollStatusOf(r) !== payrollFilter) return false;
+  if (payrollTypeSel.length && !payrollTypeSel.includes(payrollTypeName(r.工作内容))) return false;
+  if (payrollTeacherSel && r.姓名 !== payrollTeacherSel) return false;
   const q = payrollQuery.trim().toLowerCase();
   return !q || (String(r.备注) + ' ' + r.工作内容).toLowerCase().includes(q);
 }
@@ -572,7 +643,7 @@ function payrollSelectVisible(on) {
   payrollRenderGroups(); payrollRenderBar();
 }
 
-function payrollRowHtml(r, i) {
+function payrollRowHtml(r, i, showName) {
   const st = payrollStatusOf(r);
   const dt = payrollDT(r.开始时间), de = payrollDT(r.结束时间);
   const td = 'padding:5px 8px;';
@@ -590,6 +661,7 @@ function payrollRowHtml(r, i) {
   return `<tr style="border-bottom:1px solid var(--border-light);${st === 'published' ? 'color:#888;background:rgba(0,0,0,.025)' : st === 'rejected' ? 'color:#888;background:#fbeeee' : r._overlap ? 'background:#fdecec' : r._missing.length ? 'background:#fffbe8' : ''}">
     <td style="${td}width:24px">${can ? `<input type="checkbox" ${r._sel ? 'checked' : ''} onchange="payrollToggleRow(${i},this.checked)">` : ''}</td>
     <td style="${td}white-space:nowrap">${escTM(dt.d || r._date.slice(5))}</td>
+    ${showName ? `<td style="${td}white-space:nowrap;font-weight:600">${escTM(r.姓名)}</td>` : ''}
     <td style="${td}white-space:nowrap;color:var(--text-2)">${escTM(dt.t)}${de.t ? '–' + escTM(de.t) : ''}</td>
     <td style="${td}">${can ? `<input type="number" step="0.25" min="0" value="${r.时长}" style="width:64px;font-size:11px;padding:2px 4px" onchange="payrollEditHours(${i},this.value)">` : escTM(r.时长)}</td>
     <td style="${td}white-space:nowrap">${declTag}${escTM(r.工作内容)}</td>
@@ -598,23 +670,92 @@ function payrollRowHtml(r, i) {
     <td style="${td}white-space:nowrap">${badge}${rejBtn}</td>
   </tr>`;
 }
+// 排序：点表头按 日期 / 老师 / 工作内容 / 时长，再点反过来；分组时在组内排
+function payrollSortItems(items) {
+  const d = payrollSortDir, byDate = (a, b) => String(a.r._date).localeCompare(String(b.r._date)) || String(a.r.开始时间).localeCompare(String(b.r.开始时间));
+  const cmp = {
+    date: byDate,
+    name: (a, b) => String(a.r.姓名).localeCompare(String(b.r.姓名), 'zh') || byDate(a, b),
+    type: (a, b) => payrollTypeIdx(a.r.工作内容) - payrollTypeIdx(b.r.工作内容) || byDate(a, b),
+    hours: (a, b) => ((parseFloat(a.r.时长) || 0) - (parseFloat(b.r.时长) || 0)) || byDate(a, b)
+  }[payrollSortCol] || byDate;
+  return items.slice().sort((a, b) => cmp(a, b) * d);
+}
+function payrollTableHtml(items, showName) {
+  const th = (label, col) => {
+    const on = payrollSortCol === col;
+    return `<th onclick="payrollSortBy('${col}')" style="cursor:pointer;padding:5px 8px;text-align:left;border-bottom:1px solid var(--border);font-weight:600;color:var(--text-2);white-space:nowrap">${label}<span style="color:${on ? 'var(--accent)' : 'var(--text-3)'}"> ${on ? (payrollSortDir === 1 ? '↑' : '↓') : '↕'}</span></th>`;
+  };
+  const plain = h => `<th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--border);font-weight:600;color:var(--text-2);white-space:nowrap">${h}</th>`;
+  return `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">
+    <thead><tr style="background:var(--bg)">${plain('')}${th('日期', 'date')}${showName ? th('老师', 'name') : ''}${plain('时间')}${th('时长(h)', 'hours')}${th('工作内容', 'type')}${plain('地点')}${plain('备注')}${plain('')}</tr></thead>
+    <tbody>${payrollSortItems(items).map(x => payrollRowHtml(x.r, x.i, showName)).join('')}</tbody></table></div>`;
+}
 function payrollRenderGroups() {
   const box = document.getElementById('pr_groups');
   if (!box || !payrollCtx) return;
-  box.innerHTML = payrollCtx.teachers.map((n, ti) => {
+  payrollRenderStats();
+  if (payrollView === 'summary') { box.innerHTML = payrollSummaryHtml(); return; }
+  const canAp = payrollCanApprove();
+  if (!payrollGrouped) {
+    const items = payrollRows.map((r, i) => ({ r, i })).filter(x => payrollRowVisible(x.r));
+    const pend = payrollCtx.teachers.filter(n => (payrollCtx.pending[n] || []).length && (!payrollTeacherSel || payrollTeacherSel === n))
+      .map(n => `<div style="margin-top:10px"><div style="font-size:11px;font-weight:600">${escTM(n)}</div>${payrollPendingHtml(payrollCtx.pending[n])}</div>`).join('');
+    box.innerHTML = (items.length ? payrollTableHtml(items, true) : '<div style="font-size:11px;color:var(--text-3);padding:6px 0">当前筛选下没有行</div>') + pend;
+    return;
+  }
+  box.innerHTML = payrollCtx.teachers.filter(n => !payrollTeacherSel || payrollTeacherSel === n).map(n => {
+    const ti = payrollCtx.teachers.indexOf(n);
     const all = payrollRows.map((r, i) => ({ r, i })).filter(x => x.r.姓名 === n);
     const shown = all.filter(x => payrollRowVisible(x.r));
     const hours = payrollRound(all.filter(x => payrollStatusOf(x.r) !== 'rejected').reduce((s, x) => s + (parseFloat(x.r.时长) || 0), 0));
     const sel = all.filter(x => x.r._sel).length;
     const closed = payrollCollapsed[n];
     const head = `<div onclick="payrollToggleGroup(${ti})" style="cursor:pointer;font-size:12px;font-weight:600;padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:6px">${closed ? '▸' : '▾'} ${escTM(n)}
-      <span style="font-weight:400;font-size:11px;color:var(--text-2);margin-left:8px">${all.length} 节 · ${hours} 小时${payrollCanApprove() && !payrollIsSelf(n) ? ` · 已勾选 ${sel} 条` : ''}</span>${payrollCanApprove() && payrollIsSelf(n) ? '<span style="font-weight:400;font-size:11px;color:#9a5a00;margin-left:8px">自己的工资由管理员审批</span>' : ''}</div>`;
-    const body = closed ? '' : (shown.length ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">
-      <thead><tr style="background:var(--bg)">${['', '日期', '时间', '时长(h)', '工作内容', '地点', '备注', ''].map(h => `<th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--border);font-weight:600;color:var(--text-2);white-space:nowrap">${h}</th>`).join('')}</tr></thead>
-      <tbody>${shown.map(x => payrollRowHtml(x.r, x.i)).join('')}</tbody></table></div>`
+      <span style="font-weight:400;font-size:11px;color:var(--text-2);margin-left:8px">${all.length} 节 · ${hours} 小时${canAp && !payrollIsSelf(n) ? ` · 已勾选 ${sel} 条` : ''}</span>${canAp && payrollIsSelf(n) ? '<span style="font-weight:400;font-size:11px;color:#9a5a00;margin-left:8px">自己的工资由管理员审批</span>' : ''}</div>`;
+    const body = closed ? '' : (shown.length ? payrollTableHtml(shown, false)
       : `<div style="font-size:11px;color:var(--text-3);padding:6px 0">${all.length ? '当前筛选下没有行' : '该时间段内没有可发布的记录'}</div>`);
     return `<div style="margin-bottom:16px">${head}${body}${closed ? '' : payrollPendingHtml(payrollCtx.pending[n] || [])}</div>`;
   }).join('');
+}
+
+// ── 统计条：按工作内容分开显示条数和小时数（跟着筛选和勾选变；已驳回的不算）──
+function payrollStatsTableHtml(rows, extra) {
+  const live = rows.filter(r => payrollStatusOf(r) !== 'rejected');
+  const m = payrollMatrix(live.map(r => ({ name: r.姓名, type: r.工作内容, h: r.时长 })));
+  const types = payrollAllTypes();
+  const cell = (o, bold) => o && o.n ? `<td style="padding:4px 10px;text-align:right;white-space:nowrap${bold ? ';font-weight:600' : ''}">${payrollRound(o.h)}<span style="font-size:9px;color:var(--text-3)"> h · ${o.n}条</span></td>` : '<td style="padding:4px 10px;text-align:right;color:var(--text-3)">–</td>';
+  return `<tr><td style="padding:4px 10px;white-space:nowrap;color:var(--text-2)">${extra}</td>${types.map(t => cell(m.colTot[t])).join('')}${cell(m.total, true)}</tr>`;
+}
+function payrollRenderStats() {
+  const box = document.getElementById('pr_stats');
+  if (!box || !payrollCtx) return;
+  const all = payrollAllTypes();
+  const vis = payrollRows.filter(payrollRowVisible), sel = payrollCanApprove() ? payrollSelected() : [];
+  const th = t => `<th style="padding:4px 10px;text-align:right;font-weight:600;color:var(--text-2);white-space:nowrap">${escTM(t)}</th>`;
+  box.innerHTML = `<div style="overflow-x:auto;margin-bottom:10px"><table style="border-collapse:collapse;font-size:11px;background:var(--surface);border:1px solid var(--border)">
+    <thead><tr style="background:var(--bg)"><th></th>${all.map(th).join('')}${th('合计')}</tr></thead>
+    <tbody>${payrollStatsTableHtml(vis, '当前显示')}${sel.length ? payrollStatsTableHtml(sel, '已勾选') : ''}</tbody></table></div>`;
+}
+
+// ── 汇总看法：行是老师、列是工作内容，格子里是小时数（小字是条数）；点格子跳回明细 ──
+function payrollSummaryTableHtml(m, jump, firstHead) {
+  const cellSt = 'padding:5px 10px;text-align:right;white-space:nowrap;';
+  const cell = (o, n, t, bold) => {
+    const click = jump ? ` onclick="payrollJump(this.dataset.n,this.dataset.t)" data-n="${escTM(n || '')}" data-t="${escTM(t || '')}" style="${cellSt}cursor:pointer${bold ? ';font-weight:600' : ''}"` : ` style="${cellSt}${bold ? 'font-weight:600' : ''}"`;
+    return o && o.n ? `<td${click}>${payrollRound(o.h)}<div style="font-size:9px;color:var(--text-3)">${o.n}条</div></td>` : `<td style="${cellSt}color:var(--text-3)">–</td>`;
+  };
+  const th = h => `<th style="padding:5px 10px;text-align:right;font-weight:600;color:var(--text-2);white-space:nowrap;border-bottom:1px solid var(--border)">${escTM(h)}</th>`;
+  return `<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:11px;background:var(--surface);border:1px solid var(--border)">
+    <thead><tr style="background:var(--bg)"><th style="padding:5px 10px;text-align:left;border-bottom:1px solid var(--border)">${firstHead || '老师'}</th>${m.types.map(th).join('')}${th('合计')}</tr></thead>
+    <tbody>${m.names.map(n => `<tr style="border-bottom:1px solid var(--border-light)"><td style="padding:5px 10px;font-weight:600;white-space:nowrap">${escTM(n)}</td>${m.types.map(t => cell(m.cell[n][t], n, t)).join('')}${cell(m.rowTot[n], n, '', true)}</tr>`).join('')}
+    <tr style="background:var(--bg)"><td style="padding:5px 10px;font-weight:600">合计</td>${m.types.map(t => cell(m.colTot[t], '', t, true)).join('')}${cell(m.total, '', '', true)}</tr></tbody></table></div>`;
+}
+function payrollSummaryHtml() {
+  const rows = payrollRows.filter(r => payrollRowVisible(r) && payrollStatusOf(r) !== 'rejected');
+  if (!rows.length) return '<div style="font-size:11px;color:var(--text-3);padding:6px 0">当前筛选下没有行</div>';
+  const m = payrollMatrix(rows.map(r => ({ name: r.姓名, type: r.工作内容, h: r.时长 })), payrollCtx.teachers);
+  return payrollSummaryTableHtml(m, true) + '<div style="font-size:10px;color:var(--text-3);margin-top:6px">点一个格子，回到明细并筛好这位老师 + 这个工作内容。已驳回的不算。</div>';
 }
 function payrollToggleGroup(ti) { const n = payrollCtx.teachers[ti]; payrollCollapsed[n] = !payrollCollapsed[n]; payrollRenderGroups(); }
 function payrollToggleRow(i, on) { if (!payrollRowSelectable(payrollRows[i])) return; payrollRows[i]._sel = on; payrollRenderGroups(); payrollRenderBar(); }
@@ -736,6 +877,10 @@ async function payrollPublish() {
 // ══════════════════════════════════
 let payrollPubRecords = null;
 let payrollPubOpenKeys = {};
+let payrollPubTypeSel = [];     // 已发布记录：工作内容筛选（多选）
+let payrollPubSortCol = 'date'; // date | name | type | hours
+let payrollPubSortDir = 1;
+let payrollPubView = 'detail';  // detail | summary
 const payrollRecMonth = r => { const m = String(r.start_time || '').match(/(\d{4})年(\d{2})月/); return m ? m[1] + '-' + m[2] : '未知月份'; };
 const payrollFmtTime = iso => {
   if (!iso) return '';
@@ -758,9 +903,10 @@ async function payrollRenderPublished() {
 }
 function payrollTogglePublished() { payrollPubOpen = !payrollPubOpen; payrollRenderPublished(); }
 // 分组：月份 → 老师
-function payrollPubGroups() {
+const payrollPubFiltered = () => (payrollPubRecords || []).filter(r => !payrollPubTypeSel.length || payrollPubTypeSel.includes(payrollTypeName(r.work_type)));
+function payrollPubGroups(all) {
   const g = {};
-  (payrollPubRecords || []).forEach(r => {
+  (all ? (payrollPubRecords || []) : payrollPubFiltered()).forEach(r => {
     const m = payrollRecMonth(r);
     ((g[m] = g[m] || {})[r.teacher_name] = g[m][r.teacher_name] || []).push(r);
   });
@@ -772,11 +918,31 @@ function payrollRenderPublishedBody() {
   const head = `<div onclick="payrollTogglePublished()" style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-2);letter-spacing:.05em;margin:20px 0 10px">▾ 已发布记录</div>`;
   const g = payrollPubGroups();
   const months = Object.keys(g).sort().reverse();
-  if (!months.length) { box.innerHTML = head + '<div style="font-size:12px;color:var(--text-3)">暂无已发布的记录</div>'; return; }
-  box.innerHTML = head + months.map(m => `
+  const present = [...new Set((payrollPubRecords || []).map(r => payrollTypeName(r.work_type)).filter(Boolean))].sort(payrollTypeSort);
+  const chip = (on, click, t, dt) => `<div class="filter-chip${on ? ' active' : ''}" onclick="${click}"${dt ? ` data-t="${escTM(dt)}"` : ''}>${t}</div>`;
+  const sortChip = (col, label) => chip(payrollPubSortCol === col, `payrollPubSortBy('${col}')`, label + (payrollPubSortCol === col ? (payrollPubSortDir === 1 ? ' ↑' : ' ↓') : ''));
+  const controls = `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
+      <span style="font-size:10px;color:var(--text-3)">工作内容</span>
+      ${chipFold(present.map(t => ({ on: payrollPubTypeSel.includes(t), html: chip(payrollPubTypeSel.includes(t), 'payrollPubToggleType(this.dataset.t)', escTM(t), t) })))}
+      <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+        <span style="font-size:10px;color:var(--text-3)">排序</span>${sortChip('date', '日期')}${sortChip('name', '老师')}${sortChip('type', '工作内容')}${sortChip('hours', '时长')}
+        ${chip(payrollPubView === 'detail', "payrollPubSetView('detail')", '明细')}${chip(payrollPubView === 'summary', "payrollPubSetView('summary')", '汇总')}
+      </span></div>`;
+  if (!months.length) { box.innerHTML = head + controls + '<div style="font-size:12px;color:var(--text-3)">' + ((payrollPubRecords || []).length ? '当前筛选下没有记录' : '暂无已发布的记录') + '</div>'; return; }
+  const monthStats = m => {
+    const items = []; Object.keys(g[m]).forEach(n => g[m][n].forEach(r => items.push({ name: n, type: r.work_type, h: r.duration })));
+    const mm = payrollMatrix(items);
+    return `<div style="font-size:11px;color:var(--text-2);margin-bottom:6px">${mm.types.map(t => `${escTM(t)} <b>${payrollRound(mm.colTot[t].h)}</b>h<span style="color:var(--text-3)">/${mm.colTot[t].n}条</span>`).join(' · ')} · 合计 <b>${payrollRound(mm.total.h)}</b>h/${mm.total.n}条</div>`;
+  };
+  const monthSummary = m => {
+    const items = []; Object.keys(g[m]).forEach(n => g[m][n].forEach(r => items.push({ name: n, type: r.work_type, h: r.duration })));
+    return payrollSummaryTableHtml(payrollMatrix(items), false) + `<div style="margin-top:6px">${payrollMatrix(items).types.map(t => chip(false, 'payrollPubJump(this.dataset.t)', '只看' + escTM(t), t)).join('')}</div>`;
+  };
+  box.innerHTML = head + controls + months.map(m => `
     <div style="margin-bottom:14px">
-      <div style="font-size:12px;font-weight:600;margin-bottom:6px">${m.length === 7 ? m.slice(0, 4) + '年' + m.slice(5) + '月' : m}</div>
-      ${Object.keys(g[m]).sort().map(n => {
+      <div style="font-size:12px;font-weight:600;margin-bottom:4px">${m.length === 7 ? m.slice(0, 4) + '年' + m.slice(5) + '月' : m}</div>
+      ${monthStats(m)}
+      ${payrollPubView === 'summary' ? monthSummary(m) : Object.keys(g[m]).sort((a, b) => payrollPubSortCol === 'name' ? String(a).localeCompare(String(b), 'zh') * payrollPubSortDir : String(a).localeCompare(String(b), 'zh')).map(n => {
         const list = g[m][n];
         const k = m + '|' + n;
         const open = payrollPubOpenKeys[k];
@@ -794,12 +960,27 @@ function payrollRenderPublishedBody() {
               ${payrollCanApprove() && !payrollIsSelf(n) ? `<button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" data-k="${ek}" onclick="payrollPubRetract(this.dataset.k)">撤回</button>` : (payrollCanApprove() ? '<span style="font-size:10px;color:#9a5a00">自己的工资由管理员审批</span>' : '')}
             </span>
           </div>
-          ${open ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light)">${list.map(r => `<div style="padding:2px 0;color:var(--text-2)">${escTM(r.start_time)} → ${escTM(payrollDT(r.end_time).t)} · ${r.duration}h · ${escTM(r.work_type)} · ${escTM(r.location)} · ${escTM(r.notes)}</div>`).join('')}</div>` : ''}
+          ${open ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light)">${payrollPubSort(list).map(r => `<div style="padding:2px 0;color:var(--text-2)">${escTM(r.start_time)} → ${escTM(payrollDT(r.end_time).t)} · ${r.duration}h · ${escTM(r.work_type)} · ${escTM(r.location)} · ${escTM(r.notes)}</div>`).join('')}</div>` : ''}
         </div>`;
       }).join('')}
     </div>`).join('');
 }
-function payrollPubList(k) { const [m, n] = k.split('|'); return ((payrollPubGroups()[m] || {})[n]) || []; }
+function payrollPubList(k, all) { const [m, n] = k.split('|'); return ((payrollPubGroups(all)[m] || {})[n]) || []; }
+function payrollPubToggleType(t) { const i = payrollPubTypeSel.indexOf(t); if (i >= 0) payrollPubTypeSel.splice(i, 1); else payrollPubTypeSel.push(t); payrollRenderPublishedBody(); }
+function payrollPubSortBy(col) { if (payrollPubSortCol === col) payrollPubSortDir *= -1; else { payrollPubSortCol = col; payrollPubSortDir = 1; } payrollRenderPublishedBody(); }
+function payrollPubSetView(v) { payrollPubView = v; payrollRenderPublishedBody(); }
+// 汇总里点一个格子：回到明细，只筛这个工作内容（老师卡片本来就按老师分）
+function payrollPubJump(t) { payrollPubView = 'detail'; payrollPubTypeSel = t ? [t] : []; payrollRenderPublishedBody(); }
+function payrollPubSort(list) {
+  const d = payrollPubSortDir, byDate = (a, b) => String(a.start_time).localeCompare(String(b.start_time));
+  const cmp = {
+    date: byDate,
+    name: (a, b) => String(a.teacher_name).localeCompare(String(b.teacher_name), 'zh') || byDate(a, b),
+    type: (a, b) => payrollTypeIdx(a.work_type) - payrollTypeIdx(b.work_type) || byDate(a, b),
+    hours: (a, b) => ((parseFloat(a.duration) || 0) - (parseFloat(b.duration) || 0)) || byDate(a, b)
+  }[payrollPubSortCol] || byDate;
+  return list.slice().sort((a, b) => cmp(a, b) * d);
+}
 function payrollPubToggle(k) { payrollPubOpenKeys[k] = !payrollPubOpenKeys[k]; payrollRenderPublishedBody(); }
 function payrollPubDownload(k) {
   const list = payrollPubList(k);
@@ -808,7 +989,7 @@ function payrollPubDownload(k) {
   payrollDownload(list.map(payrollRecToRow), m.length === 7 ? m.slice(0, 4) + '年' + m.slice(5) + '月' : m, n);
 }
 async function payrollPubRetract(k) {
-  const list = payrollPubList(k);
+  const list = payrollPubList(k, true);   // 撤回的是这位老师这个月已发布的全部，不受「工作内容」筛选影响
   if (!list.length) return;
   const [m, n] = k.split('|');
   if (!payrollCanApprove() || payrollIsSelf(n)) return;
