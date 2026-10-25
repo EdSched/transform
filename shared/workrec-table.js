@@ -105,15 +105,18 @@ const wrtMonthLabel = ym => (ym ? ym.slice(0, 4) + '年' + ym.slice(5) + '月' :
 const wrtMonths = recs => [...new Set(recs.map(r => wrtParse(r.start_time).ym).filter(Boolean))].sort().reverse();
 // 工作内容固定顺序 + 记录里出现的其他名字
 const wrtTypesPresent = recs => PAYROLL_TYPES.concat([...new Set(recs.map(r => payrollTypeName(r.work_type)).filter(t => t && !PAYROLL_TYPES.includes(t)))]);
-// 统计条：按工作内容分开显示「条数 · 小时数」，最后是合计（只统计传进来的行，调用方负责只传已通过的）
-function wrtStatsHtml(recs) {
-  const m = payrollMatrix(recs.map(r => ({ name: '-', type: r.work_type, h: r.duration })));
-  const types = wrtTypesPresent(recs);
+// 统计条：按工作内容分开显示「条数 · 小时数」，最后是合计小时。sets = [[行名, 记录们], …]，一组一行
+function wrtStatsHtml(sets) {
+  const types = wrtTypesPresent([].concat(...sets.map(x => x[1])));
   const th = t => `<th style="padding:4px 10px;text-align:right;font-weight:600;color:var(--text-2);white-space:nowrap">${wrtEsc(t)}</th>`;
   const td = (o, bold) => o && o.n ? `<td style="padding:4px 10px;text-align:right;white-space:nowrap${bold ? ';font-weight:600' : ''}">${o.n}条 · ${payrollRound(o.h)}h</td>` : '<td style="padding:4px 10px;text-align:right;color:var(--text-3)">–</td>';
-  return `<div style="overflow-x:auto;margin-bottom:10px"><table style="border-collapse:collapse;font-size:11px;background:var(--surface);border:1px solid var(--border)">
-    <thead><tr style="background:var(--bg)">${types.map(th).join('')}${th('合计小时')}</tr></thead>
-    <tbody><tr>${types.map(t => td(m.colTot[t])).join('')}<td style="padding:4px 10px;text-align:right;font-weight:600;white-space:nowrap">${payrollRound(m.total.h)}h</td></tr></tbody></table></div>`;
+  const row = ([label, recs]) => {
+    const m = payrollMatrix(recs.map(r => ({ name: '-', type: r.work_type, h: r.duration })));
+    return `<tr><td style="padding:4px 10px;white-space:nowrap;color:var(--text-2)">${wrtEsc(label)}</td>${types.map(t => td(m.colTot[t])).join('')}<td style="padding:4px 10px;text-align:right;font-weight:600;white-space:nowrap">${payrollRound(m.total.h)}h</td></tr>`;
+  };
+  return `<div style="overflow-x:auto;margin-bottom:6px"><table style="border-collapse:collapse;font-size:11px;background:var(--surface);border:1px solid var(--border)">
+    <thead><tr style="background:var(--bg)"><th></th>${types.map(th).join('')}${th('合计小时')}</tr></thead>
+    <tbody>${sets.map(row).join('')}</tbody></table></div>`;
 }
 // 排序：col = date / type / hours；dir = 1 升 / -1 降
 function wrtSort(recs, col, dir) {
@@ -132,10 +135,10 @@ function wrtTableHtml(recs, opt) {
   const stick = (left, z) => `position:sticky;left:${left}px;z-index:${z};`;
   const th = (label, col, st) => `<th onclick="${opt.onSort}('${col}')" style="${base}cursor:pointer;${st || ''}">${label}<span style="color:${sc === col ? 'var(--accent)' : 'var(--text-3)'}"> ${sc === col ? (sd === 1 ? '↑' : '↓') : '↕'}</span></th>`;
   const plain = (h, st) => `<th style="${base}${st || ''}">${h}</th>`;
-  const stTag = { pending: ['待审批', '#856404', '#fff3cd'], rejected: ['已驳回', '#8a1a1a', '#f8e0e0'] };
+  const stTag = { approved: ['已审批', '#1a6b32', '#e0f2e5'], pending: ['未审批', '#856404', '#fff3cd'], rejected: ['已驳回', '#8a1a1a', '#f8e0e0'] };
   const row = r => {
     const p = wrtParse(r.start_time), e = wrtParse(r.end_time), s = stTag[r.status];
-    const bg = r.status === 'rejected' ? '#fbeeee' : r.status === 'pending' ? '#f6f6f4' : 'var(--surface)';
+    const bg = r.status === 'rejected' ? '#fbeeee' : r.status === 'pending' ? '#f1f0ec' : 'var(--surface)';
     const td = 'padding:5px 8px;vertical-align:top;';
     const tag = s ? `<span style="font-size:10px;background:${s[2]};color:${s[1]};border-radius:2px;padding:1px 6px;margin-right:4px">${s[0]}</span>` : '';
     const reject = r.status === 'rejected' ? `<div style="font-size:10px;color:#8a1a1a;margin-top:2px">驳回原因：${wrtEsc(r.admin_note || '（未写原因）')}</div>` : '';
