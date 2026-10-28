@@ -2179,10 +2179,10 @@ async function saveAddCourse(){
       if(!hasDetails){
         // 没开单回明细：按框架（第一回日期 + 星期 + 回数）排课次；已有课次按先后保留 id / 标题 / 老师，只改日期；休讲行原样保留
         const _co=cachedCourses.find(c=>c.id===editingId)||{};
-        const fw=computeSessionDates({first_session_date:firstDate,weekdays:weekdayStr,skip_dates:_co.skip_dates||'',holiday_except:_co.holiday_except||''},total);
-        if(fw.length!==total){ alert(`按框架算出 ${fw.length} 个日期、需要 ${total} 个（可能假期太多排不下，或星期设置有误）`); return; }
-        const ex=existing.filter(x=>!x.is_cancelled).sort((a,b)=>(a.session_date||'').localeCompare(b.session_date||'')||((a.session_number||0)-(b.session_number||0)));
-        rows=fw.map((d,i)=>{ const e=ex[i]||{}; return { id:e.id||'', num:String(i+1), date:d, time_range:'', title:e.session_title||'', teacher:e.session_teacher||'' }; });   // 老师在下面按 acRowTeacher 写
+        // 和排课共用同一套规则（shared/course-sessions.js）：已有回次按先后保留 id / 标题 / 老师，只改日期
+        const plan=courseSessionPlan(Object.assign({},_co,{first_session_date:firstDate,weekdays:weekdayStr,total_sessions:total}),existing);
+        if(plan.err){ alert(plan.err); return; }
+        rows=plan.rows.map(r=>{ const e=r.src||{}; return { id:e.id||'', num:String(r.num), date:r.date, time_range:'', title:e.session_title||'', teacher:e.session_teacher||'' }; });   // 老师在下面按 acRowTeacher 写
         existing.filter(x=>x.is_cancelled).forEach(x=>rows.push({ id:x.id, num:'休讲', date:x.session_date, time_range:x.time_range||'', title:x.cancel_reason||'休讲', teacher:x.session_teacher||'' }));
       }
       if(!rows.length){ alert('单回明细不能为空，至少需要一行课次'); return; }

@@ -63,7 +63,7 @@
   <div class="topline"><span class="muted" id="hint"></span><span><span class="cnt" id="cnt"></span> <button class="ghost sm hidden" id="clearBtn">清除筛选</button></span></div>
   <div id="list"></div>
 </div>
-<script src="common.js?v=20261101"></script>
+<script src="common.js?v=20270112"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 const PAGE_SIZE = 30;
@@ -237,15 +237,15 @@ function renderFilters(){
   vis.forEach(it=>{ if(it.g!==lastG){ mh+=`<span class="glabel">${esc(it.g)}</span>`; lastG=it.g; } mh+=chip('major',it.v); });
   setRow('fMajor', mh + moreChip('major', showAll, items.length-vis.length));
 
-  // 期数：近期的在外面，其余「更多」；期 / 月两行
-  [['fTerm',false,'term'],['fTermM',true,'termM']].forEach(([id,month,key])=>{
-    const all=[...new Set(COURSES.map(termKeyOf).filter(Boolean))].filter(t=>isMonthTerm(t)===month).sort((a,b)=>termSortKey(b)-termSortKey(a));
-    el(id).classList.toggle('hidden', !all.length);
-    const recent=new Set(recentTermKeys(month?'month':'term'));
-    const outer=all.filter(t=>MORE_OPEN[key] || recent.has(termSortKey(t)) || F.term.has(t));
-    const inner=all.length-outer.length;
-    setRow(id, outer.map(t=>chip('term',t)).join('') + moreChip(key, MORE_OPEN[key], inner));
-  });
+  // 期数：先选领域，才列出这个领域下有课的期数；按类型分几行（季度期 / 春夏·秋冬期 / 月 / 其他旧写法），每行按时间先后排
+  // 列出的是「当前列表」里的期数：默认列表只有显示窗口里（当前期和下一期）的课，点开「显示全部 / 追溯」后才有更早的
+  el('fTermM').classList.add('hidden');
+  if(!F.cat.size){
+    setRow('fTerm', '<span class="muted" style="font-size:12px">先选领域</span>');
+  } else {
+    const terms=COURSES.filter(c=>F.cat.has(catOf(c))).map(termKeyOf).concat([...F.term]);
+    setRow('fTerm', termGroups(terms).map(g=>`<div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;flex-basis:100%"><span class="glabel">${esc(g.title)}</span>${g.list.map(t=>chip('term',t)).join('')}</div>`).join('') || '<span class="muted" style="font-size:12px">这个领域暂时没有期数</span>');
+  }
   setRow('fStatus', STATUSES.map(v=>chip('status',v)).join(''));
   const camps=['高马','市谷','线上'].filter(x=>COURSES.some(c=>campusOf(c)===x));
   setRow('fCampus', camps.map(v=>chip('campus',v)).join(''));
@@ -258,12 +258,12 @@ function md(date){ const [,m,d]=date.split('-').map(Number); return m+'/'+d; }
 function cardHtml(c){
   const i=INFO[c.id], cc=catColor(c.category);
   const wl=weekdaysLabel(WDS[c.id].join(','));
-  const time=(c.start_time&&c.end_time)? c.start_time.slice(0,5)+'–'+c.end_time.slice(0,5) : '';
+  const time=classTimeText(c);
   const stTxt = i.status==='进行中' ? `进行中 · 已上 ${i.done}/${i.total} 回` : i.status;
   const sep='<span class="sep">|</span>';
   const l2=[c.teacher, c.major, c.mode, campusOf(c)].filter(Boolean).map(esc).join(sep);
   const l3=[ (wl||time)? esc((wl+' '+time).trim()):'', (c.start_date||c.end_date)? esc((c.start_date||'?')+' ~ '+(c.end_date||'?')):'', `共 ${i.total} 回`, stTxt ].filter(Boolean).join(sep);
-  const nx=i.next ? `<div class="l4">下次：${md(i.next.date)}（${WEEKDAYS[weekdayOf(i.next.date)]}）${esc(i.next.s)} · ${esc(i.next.room)}</div>` : '';
+  const nx=i.next ? `<div class="l4">下次：${md(i.next.date)}（${WEEKDAYS[weekdayOf(i.next.date)]}）${esc(classTimeText(c))} · ${esc(i.next.room)}</div>` : '';
   const open=OPENED.has(String(c.id));
   return `<div class="ccard${searching()&&i.status==='已结课'?' ended':''}" data-id="${c.id}">`+
     `<div class="l1"><span class="nm">${esc(c.merge_name||c.name)}</span>`+
@@ -282,7 +282,7 @@ function detailHtml(c){
     if(x.off) return `<div class="r off"><span class="n"></span><span class="d">${md(x.date)}（${WEEKDAYS[weekdayOf(x.date)]}）</span><span class="t">${x.off}${x.why?'<span class="why"> · '+esc(x.why)+'</span>':''}</span></div>`;
     n++;
     const cls = x===i.next ? 'next' : (i.isPast(x) ? 'past' : '');
-    return `<div class="r ${cls}"><span class="n">${n}</span><span class="d">${md(x.date)}（${WEEKDAYS[weekdayOf(x.date)]}）</span><span class="t">${esc(x.s)}–${esc(x.e)}</span><span>${esc(x.room)}</span></div>`;
+    return `<div class="r ${cls}"><span class="n">${n}</span><span class="d">${md(x.date)}（${WEEKDAYS[weekdayOf(x.date)]}）</span><span class="t">${esc(classTimeText(c))}</span><span>${esc(x.room)}</span></div>`;
   }).join('')+'</div>';
 }
 function renderList(){
@@ -318,6 +318,10 @@ function bind(){
     const k=d.k, v=k==='wd'?Number(d.v):d.v;
     if(k==='status') STATUS_DEFAULT=false;
     F[k].has(v)?F[k].delete(v):F[k].add(v);
+    if(k==='cat'){   // 期数跟着领域走：领域改了，已选的期数不在新领域里的就去掉
+      const ok=new Set(COURSES.filter(c=>F.cat.has(catOf(c))).map(termKeyOf));
+      [...F.term].forEach(t=>{ if(!ok.has(t)) F.term.delete(t); });
+    }
     SHOWN=PAGE_SIZE; renderAll();
   });
   el('clearBtn').onclick=()=>{ ROWS.forEach(k=>F[k].clear()); STATUS_DEFAULT=false; SHOWN=PAGE_SIZE; renderAll(); };
@@ -334,7 +338,7 @@ function bind(){
 async function boot(){
   el('list').innerHTML='<div class="tip">加载中…</div>';
   try{
-    const CF='id,name,merge_name,merge_group,merge_order,category,major,course_type,teacher,campus,mode,term,weekdays,start_time,end_time,start_date,end_date,sessions,skip_dates,skip_reasons,holiday_except,deleted_at,sched_removed_reason';
+    const CF='id,name,merge_name,merge_group,merge_order,category,major,course_type,teacher,campus,mode,term,weekdays,start_time,end_time,class_time_range,start_date,end_date,sessions,skip_dates,skip_reasons,holiday_except,deleted_at,sched_removed_reason';
     const [cs, hol, bks, rooms, ses] = await Promise.all([
       sbGet('sched_course_v','select='+CF),
       sbGet('sched_holidays','select=*&order=start_date').catch(()=>[]),
