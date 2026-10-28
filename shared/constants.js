@@ -877,9 +877,9 @@ function courseTypeMatch(c, t) {
   const ct = (c && c.course_type) || '';
   if (!t || t === 'all' || t === '全部') return true;
   if (t === '共通课') return ct.includes('共通');
-  if (t === '班课') return ct.includes('班课');
+  if (t === '班课') return ct.includes('班课') || ct.includes('大课');   // 旧写法「大课」按班课算
   if (t === 'VIP') return ct.includes('VIP');
-  if (t === '专业课') return !!ct && !ct.includes('共通') && !ct.includes('VIP') && !ct.includes('班课');
+  if (t === '专业课') return !!ct && !ct.includes('共通') && !ct.includes('VIP') && !ct.includes('班课') && !ct.includes('大课');
   return ct === t;
 }
 

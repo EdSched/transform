@@ -35,7 +35,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="../shared/constants.js?v=20270113"></script>
+<script src="../shared/constants.js?v=20270114"></script>
 <script src="common.js?v=20270112"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270112"></script>
@@ -1965,7 +1965,6 @@ function renderCoursesTable(){
     '<div id="cf_batchBox" class="hidden" style="border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:10px;background:#fafbfc">'+
       '<div class="row">'+
         '<div class="field"><label>修改项</label><select id="cf_bfield">'+
-          '<option value="term">期</option>'+
           '<option value="campus">校区</option>'+
           '<option value="course_type">属性</option>'+
           '<option value="mode">授课方式</option>'+
@@ -2009,7 +2008,7 @@ function renderCoursesTable(){
     const f=el('cf_bfield').value; const box=el('cf_bval'); const hint=el('cf_bhint');
     if(f==='term'){ box.innerHTML='<input id="cf_bv" placeholder="如 2026年10月期" style="width:150px">'; hint.textContent='所选课程的期统一改为此值。'; }
     else if(f==='campus'){ box.innerHTML='<select id="cf_bv"><option>高马</option><option>市谷</option><option>线上</option></select>'; hint.textContent='所选课程校区统一改为此值。'; }
-    else if(f==='course_type'){ box.innerHTML='<select id="cf_bv"><option value="">（空）</option><option>共通课</option><option>专业课</option><option>大课</option></select>'; hint.textContent='所选课程属性统一改为此值。'; }
+    else if(f==='course_type'){ box.innerHTML='<select id="cf_bv"><option value="">（空）</option><option>共通课</option><option>专业课</option><option>班课</option></select>'; hint.textContent='所选课程属性统一改为此值。'; }
     else if(f==='mode'){ box.innerHTML='<select id="cf_bv"><option>线下</option><option>线上</option><option>线上+线下</option></select>'; hint.textContent='所选课程授课方式统一改为此值。'; }
     else if(f==='category'){ box.innerHTML='<select id="cf_bv">'+CATEGORIES.map(x=>`<option>${x}</option>`).join('')+'</select>'; hint.textContent='所选课程类别统一改为此值。'; }
     else if(f==='skip_add'){
@@ -2263,7 +2262,7 @@ async function courseEdit(id){
     `<div class="field"><label>校区</label><select id="e_campus">${campOpts}</select></div>`+
     `<div class="field"><label>专业</label><input id="e_major" value="${esc(c.major||'')}" readonly style="background:#f2f2f2" title="专业请在管理端『课程安排』里改"></div>`+
     `<div class="field"><label>课程属性</label><select id="e_ctype"><option value="">（无）</option>`+
-      ['共通课','专业课','大课'].map(x=>`<option${x===c.course_type?' selected':''}>${x}</option>`).join('')+`</select></div>`+
+      ['共通课','专业课','班课',...(c.course_type&&!['共通课','专业课','班课'].includes(c.course_type)?[c.course_type]:[])].map(x=>`<option${x===c.course_type?' selected':''}>${x}</option>`).join('')+`</select></div>`+
     `<div class="field"><label>期数</label><select id="e_term">${perOpts}</select><div class="muted" id="e_termHint" style="font-size:12px;margin-top:2px"></div></div>`+
     (c.merge_group?`<div class="field"><label>合并轮流顺序（${esc(c.merge_name||'')}）</label><input type="number" id="e_morder" min="1" value="${c.merge_order||''}" style="width:90px" title="课表按此顺序在连续上课日轮流：1先出现，2其次…"></div>`:'')+
     `<div class="field"><label>方式</label><select id="e_mode"><option${c.mode==='线下'?' selected':''}>线下</option><option${c.mode==='线上'?' selected':''}>线上</option></select></div>`+

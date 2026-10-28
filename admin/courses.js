@@ -736,7 +736,7 @@ function tplEditFormHtml(t){
       <div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">上课形式</label>
         <select id="te_delivery" style="${inp}"><option value="">请选择</option>${['线下','线上','线下＋线上'].map(d=>`<option ${t.delivery===d?'selected':''}>${d}</option>`).join('')}</select></div>
       ${fld('te_campus','校区/教室',t.campus)}
-      ${fld('te_type','课程属性',t.course_type,'专业课 / 共通课 / VIP')}
+      ${fld('te_type','课程属性',t.course_type,'专业课 / 共通课 / 班课')}
     </div>
     <label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">单回明细（每行一条：回数|标题|讲师；行尾 📝 表示该回已绑定作业，编辑时保留即可）</label>
     <textarea id="te_details" rows="${Math.min(10,Math.max(3,(t.detail_rows||[]).length))}" style="width:100%;font-size:11px;line-height:1.7;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:'DM Mono',monospace;resize:vertical">${detailText}</textarea>
