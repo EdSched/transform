@@ -163,7 +163,7 @@ function renderAttendancePage(mc){
   const periods=[...new Set(
     viewCourses.filter(c=>c.first_session_date).map(c=>periodKeyOf(c))
   )].sort();
-  const types=[...new Set(viewCourses.map(c=>c.course_type).filter(Boolean))];
+  const types=['专业课','共通课','班课',...(viewCourses.some(c=>(c.course_type||'').includes('VIP'))?['VIP']:[])].filter(t=>viewCourses.some(c=>courseTypeMatch(c,t)));
   // 校区：只列本视角课实际有的
   const campuses=[...new Set(viewCourses.map(c=>campusNormalize(c.campus)||c.campus).filter(Boolean))];
 
@@ -174,7 +174,7 @@ function renderAttendancePage(mc){
     if(!scopeCourse(c)) return false;
     return true;
   });
-  if(attTypeFilter) filteredCourses=filteredCourses.filter(c=>c.course_type===attTypeFilter);
+  if(attTypeFilter) filteredCourses=filteredCourses.filter(c=>courseTypeMatch(c,attTypeFilter));
   if(attCampusFilter) filteredCourses=filteredCourses.filter(c=>(campusNormalize(c.campus)||c.campus)===attCampusFilter);
   if(attPeriodFilter){
     filteredCourses=filteredCourses.filter(c=>periodKeyOf(c)===attPeriodFilter);
@@ -205,7 +205,7 @@ function renderAttendancePage(mc){
       <div>
         <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">课程属性</div>
         <div style="display:flex;gap:5px;flex-wrap:wrap">
-          ${types.map(t=>`<div class="filter-chip${attTypeFilter===t?' active':''}" onclick="setAttType('${t}')">${t}</div>`).join('')}
+          ${types.map(t=>`<div class="filter-chip${attTypeFilter===t?' active':''}" onclick="setAttType('${t}')">${t==='VIP'?'VIP（旧）':t}</div>`).join('')}
         </div>
       </div>
       <div>
