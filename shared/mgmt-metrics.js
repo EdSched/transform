@@ -178,7 +178,7 @@ const MGM_GROUPS = [
   { key: 'course', label: '课程管理', metrics: [
     { key: 'next_term', label: '下一期课程录入与发布', async fn(D, sc) {
       const [courses, sess] = await Promise.all([taskCourses(D), taskSessions(D)]);
-      const nt = taskNextTerm(), mine = courses.filter(c => sc.course(c) && periodKeyOf(c) === nt.key);
+      const nt = taskNextTerm(), mine = courses.filter(c => sc.course(c) && periodQuarterKeyOf(c) === nt.key);
       const sBy = {}; sess.forEach(x => (sBy[x.course_id] = sBy[x.course_id] || []).push(x));
       const items = [];
       mine.forEach(c => {

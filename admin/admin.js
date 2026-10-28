@@ -1547,7 +1547,7 @@ async function hwaEnsureData() {
     const dom = c.domain || majors.map(m => keyDomain(m) || (isMajorGroup(m) ? MAJOR_DOMAIN[groupMajors(m)[0]] : '')).find(Boolean) || '其他';
     return {
       id: c.id, name: c.name || '', teacher: c.teacher || '', hwN: hwN[c.id] || 0, first: c.first_session_date || '',
-      pkey: c.first_session_date ? periodKeyOf(c) : '未排期', domain: dom, majors, classIds: courseClassIds(c),
+      pkey: c.first_session_date ? periodQuarterKeyOf(c) : '未排期', domain: dom, majors, classIds: courseClassIds(c),
       art: isGakubuArtCourse(c), hwOn: c.homework_enabled === true,
     };
   }).sort((a, b) => b.first.localeCompare(a.first) || a.name.localeCompare(b.name, 'zh'));

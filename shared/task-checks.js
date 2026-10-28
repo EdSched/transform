@@ -198,16 +198,16 @@ const TASK_CHECK_FN = {
   async payroll_pending() { return { count: 0, items: [], na: true }; },   // 系统里暂时没有工资审批
   async next_term_unconfirmed(D, t) {
     const [courses, sess] = await Promise.all([taskCourses(D), taskSessions(D)]);
-    const nt = taskNextTerm(), mine = courses.filter(c => taskCourseOk(t, c) && periodKeyOf(c) === nt.key);
+    const nt = taskNextTerm(), mine = courses.filter(c => taskCourseOk(t, c) && periodQuarterKeyOf(c) === nt.key);
     const sBy = {}; sess.forEach(x => (sBy[x.course_id] = sBy[x.course_id] || []).push(x));
     const items = [];
     mine.forEach(c => { const ss = sBy[c.id] || []; if (!ss.length) items.push({ name: c.name, note: '还没有录入单回' }); else if (!ss.every(x => x.confirmed)) items.push({ name: c.name, note: `单回未全部确认发布（${ss.filter(x => x.confirmed).length}/${ss.length}）` }); });
-    taskTeacherDomains(t).forEach(d => { if (!courses.some(c => periodKeyOf(c) === nt.key && taskCourseOk({ domains: [d] }, c))) items.push({ name: d, note: `${nt.key}还没有录入任何课程` }); });
+    taskTeacherDomains(t).forEach(d => { if (!courses.some(c => periodQuarterKeyOf(c) === nt.key && taskCourseOk({ domains: [d] }, c))) items.push({ name: d, note: `${nt.key}还没有录入任何课程` }); });
     return { count: items.length, items };
   },
   async next_year_courses(D, t) {
     const courses = await taskCourses(D), y = taskNextTerm().year + 1, items = [];
-    TASK_PERIOD_ORDER.forEach(p => { const n = courses.filter(c => taskCourseOk(t, c) && periodKeyOf(c) === `${y}年${p}`).length; if (!n) items.push({ name: `${y}年${p}`, note: '还没有录入课程' }); });
+    TASK_PERIOD_ORDER.forEach(p => { const n = courses.filter(c => taskCourseOk(t, c) && periodQuarterKeyOf(c) === `${y}年${p}`).length; if (!n) items.push({ name: `${y}年${p}`, note: '还没有录入课程' }); });
     return { count: items.length, items };
   },
   async term_start_minus_14() { const nt = taskNextTerm(); return nt.days >= 0 && nt.days <= 14 ? { count: 1, items: [{ name: `下一期（${nt.key}）`, note: `${nt.days} 天后开课` }] } : { count: 0, items: [], visible: false }; },
