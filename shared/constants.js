@@ -809,6 +809,79 @@ function periodFromDate(dateStr) {
   return '10月期';
 }
 
+// ── 期数自动规则（新建 / 修改课程时用；已经建好的课不重算，除非勾了「自动排期」）──
+// 按第一回日期定是哪一期，最后一回日期只用来判断这门课有多长：
+//   ① 第一回和最后一回同年同月 → 「2026年11月」（学部美术就是这种）
+//   ② 最后一回比第一回晚超过 3 个月 → 第一回在 1–7 月「2027春夏期」，8–12 月「2027秋冬期」（年份 = 第一回的年份）
+//   ③ 其他（跨月、但不超过 3 个月）→ 落到 1 / 4 / 7 / 10 月期，加年份「2026年10月期」
+function autoPeriodOf(firstDate, lastDate) {
+  const f = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(firstDate || ''));
+  if (!f) return '';
+  const fy = +f[1], fm = +f[2], fd = +f[3];
+  const l = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(lastDate || ''));
+  if (l) {
+    if (+l[1] === fy && +l[2] === fm) return `${fy}年${fm}月`;
+    // 第一回 + 3 个月（日期超出当月天数时取月底）
+    const t = new Date(fy, fm - 1 + 3, 1), dim = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
+    const lim = t.getFullYear() * 10000 + (t.getMonth() + 1) * 100 + Math.min(fd, dim);
+    if (+l[1] * 10000 + +l[2] * 100 + +l[3] > lim) return fm <= 7 ? `${fy}春夏期` : `${fy}秋冬期`;
+  }
+  return `${fy}年${periodFromDate(firstDate)}`;
+}
+
+// ── 按「第一回日期 + 星期」往后排课次日期，遇全局假期（没豁免）或休讲日跳过 ──
+// c: { first_session_date, weekdays, skip_dates, holiday_except }；o: { total, last }
+//   只给 total → 排满 total 回；只给 last → 排到 last 为止（含）；两个都给 → 以 last 为界（超出的不排）
+// 返回 { dates:[上课日期], hits:[{date,label,excepted}] }
+//   hits = 这期间「正好落在全局假期里的上课日」，excepted=true 的是豁免了、照常上课的（也在 dates 里）
+function holidayOn(d) {
+  for (const h of HOLIDAYS) { const s = h.start_date, e = h.end_date || h.start_date; if (s && d >= s && d <= e) return h; }
+  return null;
+}
+function courseScan(c, o) {
+  o = o || {};
+  const wdList = parseWeekdays(c.weekdays);
+  const total = parseInt(o.total) || 0, last = o.last || '';
+  const out = { dates: [], hits: [] };
+  if (!wdList.length || !c.first_session_date || (!total && !last)) return out;
+  const skip = new Set((c.skip_dates || '').split(',').map(s => s.trim()).filter(Boolean));
+  const except = new Set((c.holiday_except || '').split(',').map(s => s.trim()).filter(Boolean));
+  const cur = new Date(c.first_session_date + 'T12:00:00');
+  const pad = n => String(n).padStart(2, '0');
+  for (let guard = 0; guard < 1100; guard++) {
+    const d = cur.getFullYear() + '-' + pad(cur.getMonth() + 1) + '-' + pad(cur.getDate());
+    if (last && d > last) break;
+    if (wdList.includes(cur.getDay())) {
+      const hol = holidayOn(d), ex = except.has(d);
+      if (hol) out.hits.push({ date: d, label: hol.label || '假期', excepted: ex });
+      if (!((hol && !ex) || skip.has(d))) {
+        out.dates.push(d);
+        if (!last && out.dates.length >= total) break;
+      }
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return out;
+}
+
+// ── 校区：存「高马 / 市谷 / 线上」三种（排课系统的教室、筛选都认这三个写法），界面上叫「高马校区 / 市谷校区 / 线上」──
+const CAMPUS_OPTS = [
+  { value: '高马', label: '高马校区', delivery: '线下＋线上' },
+  { value: '市谷', label: '市谷校区', delivery: '线下＋线上' },
+  { value: '线上', label: '线上', delivery: '线上' },
+];
+// 旧写法 → 现在的写法；对应不上返回 ''
+function campusNormalize(raw) {
+  const t = String(raw || '').trim();
+  if (!t) return '';
+  if (CAMPUS_OPTS.some(o => o.value === t)) return t;
+  if (/腾讯|会议|线上|online|zoom/i.test(t)) return '线上';
+  if (/市谷|ichigaya/i.test(t)) return '市谷';
+  if (/高马|高田|takadanobaba|馬場|马场/i.test(t)) return '高马';
+  return '';
+}
+function campusLabel(v) { const o = CAMPUS_OPTS.find(x => x.value === v); return o ? o.label : (v || ''); }
+
 // ── 期数（可自定义的月份范围筛选器）──
 // PERIODS：从 DB periods 表加载。每个期 = 名字 + 起始月 + 结束月（跨年时 end<start）。
 // 期是筛选维度，不是给课贴的归属标签——点某个期=筛出开课月份落在该范围的课。
@@ -822,6 +895,8 @@ async function loadPeriodsFromDB() {
 // 某课的「有效期数」：手动指定(period_override)优先，否则按开课月份自动落入 PERIODS
 function effectivePeriod(c) {
   if (c && c.period_override) return c.period_override;
+  // 期数选了「暂定」= 存空，只是个标签，不按日期硬算
+  if (c && 'period' in c && !c.period) return '暂定';
   // 学部美术不分期，按月份：首回日期所在的月（2026年9月）
   if (isGakubuArtCourse(c)) return monthPeriodOf(c && c.first_session_date);
   return periodFromDate(c && c.first_session_date);
@@ -837,13 +912,30 @@ function stripPeriodYear(p) { return String(p == null ? '' : p).replace(/^\d{4}�
 // 带年份的期数键：大学院等「2026年10月期」；学部美术本身就是「2026年9月」
 function periodKeyOf(c) {
   const p = effectivePeriod(c);
-  if (/^\d{4}年/.test(p)) return p;
+  if (/^\d{4}年/.test(p) || /^\d{4}(春夏|秋冬)期$/.test(p) || p === '暂定') return p;
   return (c && c.first_session_date) ? `${c.first_session_date.slice(0, 4)}年${p}` : p;
 }
 // 课程是否属于「当前期」：学部美术=本月，其他=当前期（1/4/7/10月期）
 function courseInCurrentPeriod(c) {
-  if (isGakubuArtCourse(c)) return effectivePeriod(c) === monthPeriodOf(new Date().toISOString().slice(0, 10));
-  return effectivePeriod(c) === currentPeriodKey();
+  const today = new Date().toISOString().slice(0, 10);
+  if (isGakubuArtCourse(c)) return effectivePeriod(c) === monthPeriodOf(today);
+  const p = effectivePeriod(c);
+  if (p === currentPeriodKey()) return true;
+  // 自动排期的名字：2026年10月期 / 2026年11月（按月）/ 2027春夏期、秋冬期（跨度超过 3 个月，看今天落没落在这门课的起止日期里）
+  if (/^\d{4}年\d{1,2}月期$/.test(p)) return p === `${today.slice(0, 4)}年${currentPeriodKey()}`;
+  if (/^\d{4}年\d{1,2}月$/.test(p)) return p === monthPeriodOf(today);
+  if (/^\d{4}(春夏|秋冬)期$/.test(p)) {
+    const f = c.first_session_date || '', e = c.end_date || '';
+    return !!f && f <= today && (e ? today <= e : today.slice(0, 4) === p.slice(0, 4));
+  }
+  return false;
+}
+// 「年份+1/4/7/10月期」这种季度键（和 currentPeriodKey 的下一期 / 当期比较用）：自动排期的春夏期、秋冬期、按月的非美术课，按第一回日期落到哪个季度算
+function periodQuarterKeyOf(c) {
+  const p = effectivePeriod(c);
+  if (!isGakubuArtCourse(c) && c && c.first_session_date && (/^\d{4}(春夏|秋冬)期$/.test(p) || /^\d{4}年\d{1,2}月$/.test(p)))
+    return `${c.first_session_date.slice(0, 4)}年${periodFromDate(c.first_session_date)}`;
+  return periodKeyOf(c);
 }
 
 // ── 学部美术：按月建课、有班级（领域名以「学部」开头且含「美术」；领域来自 MAJOR_DOMAIN / courses.domain）──
