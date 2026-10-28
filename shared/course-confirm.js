@@ -28,7 +28,7 @@ function ccOverlay(id) {
 const CC_BOX = 'background:var(--surface,#fff);color:var(--text,#1a1814);border-radius:6px;max-width:640px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 30px rgba(0,0,0,.25);font-size:12px';
 const CC_WARN = 'background:#fff4d6;color:#7a5b00;border:1px solid #ecd48a;border-radius:3px;padding:2px 8px;margin:2px 0;font-size:11px';
 
-// 一门课的核对内容。it: { course, dates:[每回日期], notes:[黄色提醒], autoCount, autoLast, periodChange:{from,to} }
+// 一门课的核对内容。it: { course, dates:[每回日期], notes:[黄色提醒], autoCount, autoLast, periodChange:{from,to}, majorText?, periodText? }
 function ccItemHtml(it, open) {
   const c = it.course || {};
   const warns = (it.notes || []).slice();
@@ -42,11 +42,12 @@ function ccItemHtml(it, open) {
   let period;
   if (c.period_auto) period = `自动：${c.period_override || ''}`;
   else { try { period = periodKeyOf(c); } catch (e) { period = c.period || ''; } }
+  if (it.periodText) period = it.periodText;
   if (period === '暂定') warns.push('期数是暂定，之后记得调整');
   if (it.periodChange) warns.push(`期数由 ${it.periodChange.from} 变成 ${it.periodChange.to}`);
   if (it.autoCount) warns.push(`回数 ${c.total_sessions} 是按星期、跳过假期自动算出来的`);
   if (it.autoLast) warns.push(`最后一回日期 ${last} 是按回数、星期、跳过假期自动算出来的`);
-  const majors = (c.major || []).map(m => typeof majorLabel === 'function' ? majorLabel(m) : m).join('、');
+  const majors = it.majorText || (c.major || []).map(m => typeof majorLabel === 'function' ? majorLabel(m) : m).join('、');
   const row = (k, v) => `<div style="display:flex;gap:8px;padding:2px 0;border-bottom:1px solid var(--border-light,#eee)"><span style="width:88px;flex:none;color:var(--text-3,#888)">${k}</span><span style="flex:1;min-width:0;word-break:break-all">${v}</span></div>`;
   const e = ccEsc;
   const head = `${e(c.name || '')}　${e(period)}　${dates.length || c.total_sessions || 0}回　${e(ccMD(first))}～${e(ccMD(last))}${warns.length ? `　<span style="color:#7a5b00">（${warns.length} 条提醒）</span>` : ''}`;

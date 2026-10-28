@@ -35,7 +35,10 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="common.js?v=20261101"></script>
+<script src="../shared/constants.js?v=20270112"></script>
+<script src="common.js?v=20270112"></script>
+<script src="../shared/course-confirm.js?v=20270112"></script>
+<script src="../shared/course-sessions.js?v=20270112"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], ROLE=null;
@@ -102,7 +105,7 @@ async function autoFixEnds(){
 }
 let MTEMPLATES=[];
 let REQUESTS=[];   // 推送给负责人确认的记录 sched_course_requests
-let HOLIDAYS=[];
+/* HOLIDAYS 在 shared/constants.js 里声明（全局假期，和管理端共用同一个变量） */
 let CHANGELOG=[];
 let DELETED_COURSES=[];
 const rname=id=>{ const r=ROOMS.find(x=>String(x.id)===String(id)); return r?r.name:'—'; };
@@ -241,7 +244,7 @@ function remindCourses(){ return schedViewList(ALL_COURSES, null); }
 /* ---------- 排课提醒：每条可展开，列出课并能直接去排 ---------- */
 window.REM_OPEN = window.REM_OPEN || new Set();   // 展开状态只放内存，刷新后默认收起
 function remCourseRow(c, act){
-  const wd=weekdaysLabel(c.weekdays), tm=(c.start_time||'')?((c.start_time||'')+'-'+(c.end_time||'')):'';
+  const wd=weekdaysLabel(c.weekdays), tm=classTimeText(c);
   const where=schedIsOnline(c)?'线上':(c.campus||'');
   const parts=[c.teacher||'', [wd,tm].filter(Boolean).join(' '), where, c.start_date?('开课 '+c.start_date):''].filter(Boolean);
   return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed rgba(0,0,0,.12)"><div style="flex:1;min-width:0"><b>'+esc(c.merge_name||c.name||'')+'</b><div style="font-size:12px;opacity:.8">'+esc(parts.join(' ｜ '))+'</div></div>'+
@@ -677,7 +680,7 @@ function renderAssignDay(){
       return `<div class="daypick" data-pick="${c.id}" style="cursor:pointer;border:1px solid ${done?'#cfe0d3':cc.bd};background:${done?'#f2f8f4':'#fff'};border-radius:7px;padding:7px 9px;margin-bottom:6px">`+
         `<div style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:3px;background:${cc.bg};border:1px solid ${cc.bd};display:inline-block"></span><b style="font-size:13px">${esc(c.merge_name||c.name)}</b>${c.merge_group?'<span class="badge b-mute" style="font-size:10px">合并</span>':''}`+
         (done?`<span class="badge b-ok" style="margin-left:auto">已排 ${esc(rm)}</span>`:`<span class="badge b-warn" style="margin-left:auto">未排</span>`)+'</div>'+
-        `<div class="muted" style="font-size:11px;margin-top:3px">${esc(c.category||'')}${c.teacher?' · '+esc(c.teacher):''} · ${c.start_time||''}-${c.end_time||''} · 日期 ${esc(dateRange(c))}</div></div>`;
+        `<div class="muted" style="font-size:11px;margin-top:3px">${esc(c.category||'')}${c.teacher?' · '+esc(c.teacher):''} · ${esc(classTimeText(c))} · 日期 ${esc(dateRange(c))}</div></div>`;
     }).join('');
   }
   box.innerHTML='<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">'+
@@ -794,7 +797,7 @@ function renderAssignWeek(){
     const cid=w.dataset.as; const c=COURSES.find(x=>String(x.id)===String(cid))||{};
     let ph='<div style="position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:60" id="wkAct"><div class="card" style="width:360px;max-width:92vw">'+
       '<h3 style="margin-top:2px">'+esc(c.name||'课程')+'</h3>'+
-      '<div class="muted" style="font-size:12px;margin-bottom:10px">'+esc(c.category||'')+' · '+weekdaysLabel(c.weekdays)+' '+(c.start_time||'')+'-'+(c.end_time||'')+' · 现排在「'+esc(room.name)+'」</div>'+
+      '<div class="muted" style="font-size:12px;margin-bottom:10px">'+esc(c.category||'')+' · '+weekdaysLabel(c.weekdays)+' '+esc(classTimeText(c))+' · 现排在「'+esc(room.name)+'」</div>'+
       '<div style="display:flex;flex-direction:column;gap:8px">'+
         '<button id="wk_re">重排 / 改教室</button>'+
         '<button class="danger" id="wk_rm">移出本教室（删除占用）</button>'+
@@ -879,7 +882,7 @@ function renderAssignTable(){
     h+=`<tr><td>${esc(c.name)}<br><small class="muted">${esc(c.teacher||'')}</small></td>`+
       `<td><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:${cc.bg};color:${cc.tx};border:1px solid ${cc.bd}">${esc(c.category)}</span></td>`+
       `<td>${esc(c.campus)}</td>`+
-      `<td>${weekdaysLabel(c.weekdays)}</td><td>${c.start_time||''}-${c.end_time||''}</td>`+
+      `<td>${weekdaysLabel(c.weekdays)}</td><td>${esc(classTimeText(c))}</td>`+
       `<td>${noDate?'<span class="badge b-warn">缺日期</span>':(c.start_date+' ~ '+c.end_date)}</td>`+
       `<td>${c.est_students||'?'}</td><td>${esc(c.mode)}</td>`+
       `<td>${schedRemoved(c)?'<span class="badge b-mute" style="background:#e4e4e4">已移出 · '+esc(c.sched_removed_reason)+'</span>':(done?'<span class="badge b-ok">已排 · '+esc(where)+'</span>':'<span class="badge b-mute">未排</span>')}${schedReqBadgeHtml(c)}</td>`+
@@ -1981,7 +1984,7 @@ function renderCoursesTable(){
   h+='<table><thead><tr><th><input type="checkbox" id="cf_all"></th><th>期</th><th>课程</th><th>类别</th><th>专业</th><th>属性</th><th>校区</th><th>讲师</th><th>周几</th><th>时段</th><th>日期区间</th><th>方式</th><th>会议</th><th>操作</th></tr></thead><tbody>';
   if(!shown.length) h+='<tr><td colspan="14" class="muted">无匹配课程</td></tr>';
   shown.forEach(c=>{ h+=`<tr data-cid="${c.id}"${schedRemoved(c)?' style="opacity:.6"':''}><td><input type="checkbox" class="cf_ck" value="${c.id}"></td><td>${esc(c.term||'')}</td><td>${esc(c.name)}</td><td>${esc(c.category)}</td><td>${esc(c.major||'')}</td><td>${esc(c.course_type||'')}</td><td>${esc(c.campus)}</td><td>${esc(c.teacher||'')}</td>`+
-    `<td>${weekdaysLabel(c.weekdays)}</td><td>${c.start_time||''}-${c.end_time||''}</td>`+
+    `<td>${weekdaysLabel(c.weekdays)}</td><td>${esc(classTimeText(c))}</td>`+
     `<td>${(c.start_date&&c.end_date)?(c.start_date+' ~ '+c.end_date):'<span class="badge b-warn">缺日期</span>'}</td>`+
     `<td>${esc(c.mode)}</td>`+
     `<td style="font-size:11px">${(c.meeting_link||c.meeting_id)?('<span class="badge b-ok" style="font-size:10px">已设</span>'+(c.meeting_id?(' '+esc(c.meeting_id)):'')+(c.meeting_link?(' <a href="'+esc(c.meeting_link)+'" target="_blank" rel="noopener">进入</a>'):'')):'<span class="muted">—</span>'}</td>`+
@@ -2224,7 +2227,7 @@ function dupScan(list){
       '<table style="font-size:12px;width:100%"><thead><tr><th>状态</th><th>期</th><th>讲师</th><th>专业</th><th>周几</th><th>时段</th><th>方式</th></tr></thead><tbody>';
     g.forEach((c,i)=>{ ph+='<tr'+(i>0?' style="background:#fff6f4"':'')+'>'+
       '<td>'+(i===0?'<span class="badge b-ok" style="font-size:10px">保留</span>':'<span class="badge b-err" style="font-size:10px">冗余</span>')+'</td>'+
-      '<td>'+esc(c.term||'')+'</td><td>'+esc(c.teacher||'')+'</td><td>'+esc(c.major||'')+'</td><td>'+parseWeekdaysSched(c.weekdays).map(wd).join('、')+'</td><td>'+esc((c.start_time||'')+'-'+(c.end_time||''))+'</td><td>'+esc(c.mode||'')+'</td></tr>'; });
+      '<td>'+esc(c.term||'')+'</td><td>'+esc(c.teacher||'')+'</td><td>'+esc(c.major||'')+'</td><td>'+parseWeekdaysSched(c.weekdays).map(wd).join('、')+'</td><td>'+esc(classTimeText(c))+'</td><td>'+esc(c.mode||'')+'</td></tr>'; });
     ph+='</tbody></table></div>';
   });
   ph+='</div>';
@@ -2236,13 +2239,19 @@ function dupScan(list){
     if(cb){ cb.checked=true; mark++; } const tr=document.querySelector('tr[data-cid="'+c.id+'"]'); if(tr) tr.style.background='#fffdf0'; }); });
   if(el('cf_selinfo')) el('cf_selinfo').textContent='已勾选 '+mark+' 门冗余，可点「删除所选」';
 }
-function courseEdit(id){
+async function courseEdit(id){
   const isNew = (id===null || id===undefined || id==='');
   const c = isNew
     ? { id:null, name:'', teacher:'', category:CATEGORIES[0], campus:'高马', major:'', course_type:'', term:'', mode:'线下', start_time:'18:00', end_time:'21:00', start_date:'', end_date:'', sessions:'', est_students:'', weekdays:'', meeting_link:'', skip_dates:'' }
     : (COURSES.find(x=>String(x.id)===String(id)) || ALL_COURSES.find(x=>String(x.id)===String(id)));
+  // 管理端的这门课（期数、上课时间原样都在这里）：排课改的就是它
+  let real=null;
+  if(!isNew){ try{ real=(await sbGet('courses','select=*&id=eq.'+encodeURIComponent(c.id)+'&limit=1'))[0]||null; }catch(e){} }
+  const oldVals=Object.assign({},c,{time_range:classTimeText(c)});
   const wd=parseWeekdaysSched(c.weekdays);
-  const slotOpts=(sel)=>SLOTS.map(t=>`<option${t===sel?' selected':''}>${t}</option>`).join('');
+  const perSel=(real&&real.period_auto)?'__auto__':'__keep__';
+  const perOpts=[...(perSel==='__keep__'?[['__keep__','保持现状：'+(c.term||'暂定')]]:[]),['__auto__','自动排期'],['1月期','1月期'],['4月期','4月期'],['7月期','7月期'],['10月期','10月期'],['__tbd__','暂定（之后调整）']]
+    .map(([v,l])=>`<option value="${v}"${v===perSel?' selected':''}>${l}</option>`).join('');
   const catOpts=CATEGORIES.map(x=>`<option${x===c.category?' selected':''}>${x}</option>`).join('');
   const campOpts=['高马','市谷','线上'].map(x=>`<option${x===c.campus?' selected':''}>${x}</option>`).join('');
   let h='<div style="position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:60;overflow:auto;padding:40px 16px">'+
@@ -2255,11 +2264,10 @@ function courseEdit(id){
     `<div class="field"><label>专业</label><input id="e_major" value="${esc(c.major||'')}" readonly style="background:#f2f2f2" title="专业请在管理端『课程安排』里改"></div>`+
     `<div class="field"><label>课程属性</label><select id="e_ctype"><option value="">（无）</option>`+
       ['共通课','专业课','大课'].map(x=>`<option${x===c.course_type?' selected':''}>${x}</option>`).join('')+`</select></div>`+
-    `<div class="field"><label>期</label><input id="e_term" value="${esc(c.term||'')}" placeholder="如 2026年7月期"></div>`+
+    `<div class="field"><label>期数</label><select id="e_term">${perOpts}</select><div class="muted" id="e_termHint" style="font-size:12px;margin-top:2px"></div></div>`+
     (c.merge_group?`<div class="field"><label>合并轮流顺序（${esc(c.merge_name||'')}）</label><input type="number" id="e_morder" min="1" value="${c.merge_order||''}" style="width:90px" title="课表按此顺序在连续上课日轮流：1先出现，2其次…"></div>`:'')+
     `<div class="field"><label>方式</label><select id="e_mode"><option${c.mode==='线下'?' selected':''}>线下</option><option${c.mode==='线上'?' selected':''}>线上</option></select></div>`+
-    `<div class="field"><label>开始时间</label><select id="e_st">${slotOpts(c.start_time)}</select></div>`+
-    `<div class="field"><label>结束时间</label><select id="e_et">${slotOpts(c.end_time)}</select></div>`+
+    `<div class="field" style="grid-column:1/-1"><label>上课时间 <span class="muted" style="font-size:12px">（多个时间段用 / 分隔，如 10:00-12:00/13:00-15:00；占教室按最早到最晚）</span></label><div style="display:flex;gap:6px"><input id="e_tr" value="${esc(classTimeText(c))}" placeholder="14:00-18:00" style="flex:1;min-width:0"><button type="button" class="ghost sm" id="e_trAdd">＋ 时间段</button></div></div>`+
     `<div class="field"><label>开课日</label><input type="date" id="e_sd" value="${c.start_date||''}"></div>`+
     `<div class="field"><label>结课日</label><input type="date" id="e_ed" value="${c.end_date||''}"></div>`+
     `<div class="field"><label>回数</label><input type="number" id="e_sess" value="${c.sessions||''}"></div>`+
@@ -2288,6 +2296,14 @@ function courseEdit(id){
     b.onclick=()=>{ const on=b.dataset.on==='1'; b.dataset.on=on?'':'1'; b.style.background=on?'#fff':'var(--blue)'; b.style.color=on?'var(--ink)':'#fff'; };
     box.appendChild(b); }
   el('e_cancel').onclick=()=>el('cEdit').innerHTML='';
+  el('e_trAdd').onclick=()=>{ const i=el('e_tr'), v=i.value.trim(); i.value=v&&!/[\/／]$/.test(v)?v+'/':v; i.focus(); };
+  function termHint(){
+    const h=el('e_termHint'); if(!h) return;
+    if(el('e_term').value!=='__auto__'){ h.textContent=''; return; }
+    const sd=el('e_sd').value, ed=el('e_ed').value;
+    h.textContent=sd?('→ '+autoPeriodOf(sd,ed)):'→ 先填开课日';
+  }
+  ['e_term','e_sd','e_ed'].forEach(i=>el(i).addEventListener('input',termHint)); el('e_term').addEventListener('change',termHint); termHint();
   // 休讲日期管理
   let SKIP = (c.skip_dates||'').split(',').map(s=>s.trim()).filter(Boolean).sort();
   function renderSkip(){
@@ -2357,12 +2373,13 @@ function courseEdit(id){
   };
   el('e_save').onclick=async()=>{
     const days=[...box.querySelectorAll('button[data-on="1"]')].map(b=>b.dataset.d).join(',');
-    const st=el('e_st').value, et=el('e_et').value;
-    if(et<=st){ el('e_warn').className=''; el('e_warn').innerHTML='<span class="badge b-err">结束需晚于开始</span>'; return; }
+    const tr=normalizeTimeRanges(el('e_tr').value), segs=parseTimeRanges(tr);
+    const badSeg=!segs.length||segs.some(r=>{ const a=_trMin(r.start), b=_trMin(r.end); return a==null||b==null||b<=a; });
+    if(badSeg){ el('e_warn').className=''; el('e_warn').innerHTML='<span class="badge b-err">上课时间格式不对（每段要「开始-结束」，结束晚于开始，多段用 / 分隔）</span>'; return; }
     const patch={ name:el('e_name').value.trim(), teacher:el('e_teacher').value.trim()||null,
-      category:el('e_cat').value, campus:el('e_campus').value, term:el('e_term').value.trim()||null,
+      category:el('e_cat').value, campus:el('e_campus').value,
       major:el('e_major').value.trim()||null, course_type:el('e_ctype').value||null,
-      mode:el('e_mode').value, start_time:st, end_time:et,
+      mode:el('e_mode').value, time_range:tr,
       start_date:el('e_sd').value||null, end_date:el('e_ed').value||null,
       weekdays:days, sessions:el('e_sess').value?Number(el('e_sess').value):null,
       est_students:el('e_est').value?Number(el('e_est').value):null, meeting_link:el('e_link').value.trim()||null,
@@ -2380,18 +2397,40 @@ function courseEdit(id){
       }
     }
     try{
+      // 开课日改了，管理端的「第一回日期」跟着改；期数按管理端的规则存（自动排期按新的起止日期重算）
+      if(patch.start_date && patch.start_date!==c.start_date) patch.first_session_date=patch.start_date;
+      const frame={ first_session_date:patch.first_session_date||(real&&real.first_session_date)||patch.start_date||'', weekdays:patch.weekdays, skip_dates:patch.skip_dates||'', holiday_except:patch.holiday_except||'' };
+      let lastD=patch.end_date||'';
+      if(patch.sessions&&frame.first_session_date&&frame.weekdays){ const sc=courseScan(frame,{total:patch.sessions}); if(sc.dates.length===patch.sessions) lastD=sc.dates[sc.dates.length-1]; }
+      Object.assign(patch, coursePeriodFields(el('e_term').value, frame.first_session_date, lastD));
       // 记录变更日志（供首页提醒）
-      const FLBL={name:'课程名',teacher:'讲师',category:'类别',campus:'校区',term:'期',major:'专业',course_type:'属性',mode:'方式',start_time:'开始',end_time:'结束',start_date:'开课日',end_date:'结课日',weekdays:'周几',sessions:'回数',est_students:'人数',meeting_link:'会议链接',skip_dates:'休讲日'};
+      const FLBL={name:'课程名',teacher:'讲师',category:'类别',campus:'校区',major:'专业',course_type:'属性',mode:'方式',time_range:'上课时间',start_date:'开课日',end_date:'结课日',weekdays:'周几',sessions:'回数',est_students:'人数',meeting_link:'会议链接',skip_dates:'休讲日'};
       const changes=[];
-      Object.keys(FLBL).forEach(f=>{ const ov=(c[f]==null?'':String(c[f])), nv=(patch[f]==null?'':String(patch[f]));
+      Object.keys(FLBL).forEach(f=>{ const ov=(oldVals[f]==null?'':String(oldVals[f])), nv=(patch[f]==null?'':String(patch[f]));
         if(ov!==nv) changes.push({field:f,label:FLBL[f],from:ov||'（空）',to:nv||'（空）'}); });
       await schedCourseUpdate(c.id, patch);
+      // 管理端的单回跟着改：框架（星期 / 开课日 / 回数 / 假期 / 休讲）变了就重排日期；没变只同步名字、校区、上课时间
+      const fresh=(await sbGet('courses','select=*&id=eq.'+encodeURIComponent(c.id)+'&limit=1'))[0];
+      let regen=null, regenErr='';
+      if(real&&fresh){ try{ regen=await courseRegenSessions(c.id,{old:real, fieldsOnly:!courseFrameChanged(real,fresh)}); }catch(e){ regenErr=e.message; } }
       if(changes.length){ try{ await sbInsert('sched_change_log',{ course_id:(c.legacy_sched_id!=null?c.legacy_sched_id:null), course_name:patch.name||c.name,
         actor_role:(ROLE&&ROLE.role)||'', actor_label:(ROLE&&(ROLE.label||ROLE.role))||'某账号', action:'edit', changes, acked_by:'' }); }catch(e){} }
       // 若已排教室，同步把休讲日/结课日写进对应占用，看板才准
       const bs=BOOKINGS.filter(b=>b.kind==='course'&&String(b.course_id)===String(c.id));
       for(const b of bs) await sbUpdate('sched_bookings', b.id, {end_date:patch.end_date, note: SKIP.length?('排课自动生成；休讲:'+SKIP.join(',')):'排课自动生成'});
       await reloadAll(); tabCourses(); toast('已保存');
+      el('cEdit').innerHTML='';
+      if(fresh){
+        const nt=fresh.period_auto?fresh.period_override:((fresh.first_session_date&&fresh.period)?(fresh.first_session_date.slice(0,4)+'年'+fresh.period):(fresh.period||'暂定'));
+        const notes=[...(regen?regen.warnings:[])];
+        if(regenErr) notes.push('单回日期没有重排：'+regenErr);
+        else if(regen&&(regen.moved||regen.created||regen.deleted)) notes.push('管理端的单回已按新的框架重排（'+(regen.moved?'改了 '+regen.moved+' 回的日期':'')+(regen.created?'，新增 '+regen.created+' 回':'')+(regen.deleted?'，删除 '+regen.deleted+' 回':'')+'）');
+        if(regen&&(regen.moved||regen.created||regen.deleted)) notes.push('日期有变动，已排的教室占用请到「排教室」确认或重排');
+        let datesNow=regen?regen.dates:[];
+        if(!datesNow.length){ try{ datesNow=(await sbGet('course_sessions','select=session_date&is_cancelled=not.is.true&course_id=eq.'+encodeURIComponent(c.id))).map(x=>x.session_date); }catch(e){} }
+        courseConfirmOpen({ title:'课程已修改，请核对', onEdit:courseEdit, items:[{ course:fresh, dates:datesNow, notes, majorText:c.major||'',
+          periodChange:(c.term&&nt&&c.term!==nt)?{from:c.term,to:nt}:null, autoLast:false }] });
+      }
     }catch(e){ el('e_warn').className=''; el('e_warn').innerHTML='<span class="badge b-err">'+esc(e.message)+'</span>'; }
   };
 }

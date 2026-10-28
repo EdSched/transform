@@ -838,9 +838,17 @@ function holidayOn(d) {
   for (const h of HOLIDAYS) { const s = h.start_date, e = h.end_date || h.start_date; if (s && d >= s && d <= e) return h; }
   return null;
 }
+// 星期字符串 → getDay 体系（周日=0）。自己带一份，不用 parseWeekdays：排课页里 parseWeekdays 是 1–7（周日=7）的另一个版本
+function courseWdList(str) {
+  str = String(str == null ? '' : str);
+  const cn = { '日': 0, '天': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6 }, days = [];
+  (str.match(/[周星期礼拜]+\s*([日天一二三四五六])/g) || []).forEach(m => { const ch = m.slice(-1); if (ch in cn) days.push(cn[ch]); });
+  (str.match(/\d+/g) || []).forEach(n => { const v = parseInt(n, 10); if (v >= 0 && v <= 7) days.push(v === 7 ? 0 : v); });
+  return [...new Set(days)];
+}
 function courseScan(c, o) {
   o = o || {};
-  const wdList = parseWeekdays(c.weekdays);
+  const wdList = courseWdList(c.weekdays);
   const total = parseInt(o.total) || 0, last = o.last || '';
   const out = { dates: [], hits: [] };
   if (!wdList.length || !c.first_session_date || (!total && !last)) return out;

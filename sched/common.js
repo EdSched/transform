@@ -127,8 +127,18 @@ const SCHED_COURSE_COLMAP = {
   meeting_link:'meeting_url', meeting_id:'meeting_id', meeting_template_id:'meeting_template_id', host_key:'host_key',
   skip_dates:'skip_dates', skip_reasons:'skip_reasons', holiday_except:'holiday_except',
   merge_group:'sched_merge_group', merge_name:'sched_merge_name', merge_order:'sched_merge_order',
-  sched_removed_reason:'sched_removed_reason', sched_removed_at:'sched_removed_at'
+  sched_removed_reason:'sched_removed_reason', sched_removed_at:'sched_removed_at',
+  // 上课时间原样写回（可以是多段 10:00-12:00/13:00-15:00）；期数照管理端的存法（period / period_override / period_auto），不再去掉年份
+  time_range:'time_range', first_session_date:'first_session_date',
+  period:'period', period_override:'period_override', period_auto:'period_auto'
 };
+/* 排课里显示「上课时间」用：管理端存的原样（两段就是两段）；视图还没有这一列时退回最早～最晚 */
+function classTimeText(c){
+  const t = c && c.class_time_range;
+  if(t) return String(t);
+  const s = (c && c.start_time) || '', e = (c && c.end_time) || '';
+  return (s||e) ? (s+'-'+e) : '';
+}
 /* 改一门课（id = courses.id）。major 不在这里写（管理端的专业是代码数组，请在管理端改）；其余没有对应列的字段直接报错，免得悄悄丢数据 */
 async function schedCourseUpdate(id, patch){
   const out = {};
@@ -136,7 +146,7 @@ async function schedCourseUpdate(id, patch){
   Object.keys(patch).forEach(k=>{
     const v = patch[k];
     if(SCHED_COURSE_COLMAP[k]) out[SCHED_COURSE_COLMAP[k]] = v;
-    else if(k==='term') out.period = (v==null || v==='') ? null : (String(v).replace(/^\s*\d{4}\s*年\s*/, '') || null);
+    else if(k==='term') throw new Error('期数请用 period / period_override / period_auto 写（照管理端的存法）');
     else if(k==='start_time' || k==='end_time') timeTouched = true;
     else if(k==='major') { /* 不写 */ }
     else throw new Error('排课不能写入管理端课程的这个字段：'+k);
@@ -564,9 +574,11 @@ function termOf(dateStr){
 }
 /* 期数的两种写法：大学院等按期「2026年10月期」；学部美术按月「2026年9月」（没有「期」字） */
 function isMonthTerm(t){ return /^\s*\d{4}\s*年\s*\d{1,2}\s*月\s*$/.test(String(t||'')); }
-/* 期数排序键（越大越新）：2026年10月期 / 2026年9月 → 202610 / 202609；上学期≈4月、下学期≈10月 */
+/* 期数排序键（越大越新）：2026年10月期 / 2026年9月 → 202610 / 202609；上学期≈4月、下学期≈10月；春夏期≈4月、秋冬期≈10月 */
 function termSortKey(t){
   t=String(t||'');
+  const hy=t.match(/(\d{4})\s*(春夏|秋冬)期/);
+  if(hy) return Number(hy[1])*100 + (hy[2]==='春夏'?4:10);
   const ym=t.match(/(\d{4})\D+(\d{1,2})\s*月/);
   if(ym) return Number(ym[1])*100 + Number(ym[2]);
   const y=t.match(/(\d{4})/);
@@ -575,6 +587,21 @@ function termSortKey(t){
   if(/上学期|前期/.test(t))     return year*100 + 4;
   if(year) return year*100 + 6;
   return 999999;
+}
+/* 期数的类型：quarter 季度期（2026年10月期）/ half 春夏·秋冬期 / month 月（学部美术）/ other 其他旧写法（上学期、下学期、暂定等） */
+function termKindOf(t){
+  t=String(t||'');
+  if(/^\s*\d{4}\s*年\s*\d{1,2}\s*月期\s*$/.test(t)) return 'quarter';
+  if(/^\s*\d{4}\s*(春夏|秋冬)期\s*$/.test(t)) return 'half';
+  if(isMonthTerm(t)) return 'month';
+  return 'other';
+}
+const TERM_KIND_TITLES = [['quarter','季度期（1/4/7/10 月期）'],['half','春夏 / 秋冬期'],['month','月（学部美术）'],['other','其他旧写法（上学期、下学期等）']];
+/* 期数列表 → 按类型分开的几行，每行里按时间先后排；空的类型不出现 */
+function termGroups(terms){
+  const list=[...new Set((terms||[]).filter(Boolean))];
+  return TERM_KIND_TITLES.map(([kind,title])=>({kind, title,
+    list:list.filter(t=>termKindOf(t)===kind).sort((a,b)=>termSortKey(a)-termSortKey(b) || String(a).localeCompare(String(b)))})).filter(g=>g.list.length);
 }
 /* YYYYMM 键加减 n 个月 */
 function shiftYM(key, n){

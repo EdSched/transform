@@ -68,7 +68,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="common.js?v=20261101"></script>
+<script src="common.js?v=20270112"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], BOOKINGS=[], CODEREC=null, PARSED=[], EXISTING=[];
 
@@ -159,7 +159,7 @@ async function downloadAll(){
     const rows = all.map(c=>({
       '校区':c.campus||'','类别':c.category||'','专业':c.major||'','课程属性':c.course_type||'',
       '课程名':c.name||'','讲师':c.teacher||'','周几':weekdaysLabel(c.weekdays),
-      '上课时间':(c.start_time&&c.end_time)?(c.start_time+'-'+c.end_time):'',
+      '上课时间':classTimeText(c),
       '开课日':c.start_date||'','结课日':c.end_date||'','回数':c.sessions??'','预估人数':c.est_students??'',
       '授课方式':c.mode||'','腾讯会议链接':c.meeting_link||''
     }));
