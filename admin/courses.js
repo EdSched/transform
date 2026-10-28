@@ -470,10 +470,7 @@ function renderCourseCleanupPage(mc){
 
   <!-- 批量改期浮动条：选中课时才显示 -->
   <div id="cleanup_period_bar" style="display:none;position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:500;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);padding:10px 16px;align-items:center;gap:8px">
-    <span style="font-size:12px;color:var(--text-2)">已选 <b id="cleanup_bar_count">0</b> 门 · 期数改为</span>
-    <input id="cp_name" placeholder="期名，如 秋冬期" style="width:130px;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px">
-    <button class="btn btn-primary btn-sm" onclick="cleanupApplyPeriod()">应用</button>
-    <span style="color:var(--border)">|</span>
+    <span style="font-size:12px;color:var(--text-2)">已选 <b id="cleanup_bar_count">0</b> 门</span>
     <span style="font-size:12px;color:var(--text-2)">出席属性</span>
     <select id="cp_att_mode" style="padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px"><option value="">请选择</option>${Object.keys(ATT_MODES).map(k=>`<option value="${k}">${ATT_MODES[k]}</option>`).join('')}</select>
     <button class="btn btn-primary btn-sm" onclick="cleanupApplyAttMode()">应用</button>
@@ -520,22 +517,6 @@ function updateCleanupPeriodBar(){
   if(!bar) return;
   if(cleanupSelected.size>0){ bar.style.display='flex'; if(cnt) cnt.textContent=cleanupSelected.size; }
   else { bar.style.display='none'; }
-}
-// 批量把选中课的期数设为指定值（写 period_override）；__auto__=清除覆盖恢复自动
-async function cleanupApplyPeriod(){
-  if(!cleanupSelected.size){alert('请先选中课程');return}
-  const name=document.getElementById('cp_name').value.trim();
-  if(!name){alert('请填期名');return}
-  if(!confirm(`把选中的 ${cleanupSelected.size} 门课定义为「${name}」？`))return;
-  try{
-    for(const id of cleanupSelected){
-      await sb(`/rest/v1/courses?id=eq.${id}`,'PATCH',{period_override:name});
-      const c=cachedCourses.find(x=>x.id===id); if(c) c.period_override=name;
-    }
-    alert(`已把 ${cleanupSelected.size} 门课定义为「${name}」`);
-    cleanupSelected.clear();
-    renderCourseCleanupPage(document.getElementById('mainContent'));
-  }catch(err){alert('设置失败：'+err.message)}
 }
 function cleanupClearSelection(){
   cleanupSelected.clear();
@@ -1138,15 +1119,10 @@ function closePeriodMgr(){ const ov=document.getElementById('periodMgrOverlay');
 function renderPeriodMgr(){
   const ov=document.getElementById('periodMgrOverlay');
   const monthOpts=(sel)=>Array.from({length:12},(_,i)=>i+1).map(m=>`<option value="${m}"${sel==m?' selected':''}>${m}月</option>`).join('');
-  let rows=PERIODS.map(p=>`
-    <div style="display:flex;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border-light)">
-      <input id="pm_name_${p.id}" value="${p.name}" style="width:110px;padding:4px 6px;border:1px solid var(--border);border-radius:3px;font-size:12px">
-      <select id="pm_start_${p.id}" style="padding:4px;border:1px solid var(--border);border-radius:3px;font-size:12px">${monthOpts(p.start_month)}</select>
-      <span style="font-size:11px;color:var(--text-3)">到</span>
-      <select id="pm_end_${p.id}" style="padding:4px;border:1px solid var(--border);border-radius:3px;font-size:12px">${monthOpts(p.end_month)}</select>
-      ${p.start_month>p.end_month?'<span style="font-size:9px;color:var(--primary,#8b5cf6)">跨年</span>':''}
-      <button onclick="savePeriod(${p.id})" class="btn btn-outline btn-sm" style="margin-left:auto">保存</button>
-      <button onclick="deletePeriod(${p.id})" class="btn btn-outline btn-sm">删除</button>
+  const rows=PERIODS.map(p=>`
+    <div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border-light);font-size:12px">
+      <span style="min-width:110px">${p.name}</span>
+      <span style="color:var(--text-3)">${p.start_month}月 到 ${p.end_month}月${p.start_month>p.end_month?'（跨年）':''}</span>
     </div>`).join('');
   ov.innerHTML=`
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:24px 28px;width:min(560px,94vw);max-height:86vh;overflow:auto">
@@ -1154,50 +1130,9 @@ function renderPeriodMgr(){
       <div style="font-family:'Noto Serif SC',serif;font-size:1.1rem;font-weight:600">期数管理</div>
       <button onclick="closePeriodMgr()" class="btn btn-outline btn-sm">关闭</button>
     </div>
-    <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">每个期是一个月份范围（结束月小于起始月＝跨年，如 9月到1月）。课按开课月份落入对应期。</div>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">只读，仅用来显示旧数据。新课程请用「自动排期」（建课时在期数下拉里选）。</div>
     ${rows||'<div style="color:var(--text-3);font-size:12px;padding:10px 0">暂无期数</div>'}
-    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
-      <div style="font-size:12px;font-weight:600;margin-bottom:8px">＋ 新增期</div>
-      <div style="display:flex;gap:6px;align-items:center">
-        <input id="pm_new_name" placeholder="期名" style="width:110px;padding:4px 6px;border:1px solid var(--border);border-radius:3px;font-size:12px">
-        <select id="pm_new_start" style="padding:4px;border:1px solid var(--border);border-radius:3px;font-size:12px">${monthOpts(1)}</select>
-        <span style="font-size:11px;color:var(--text-3)">到</span>
-        <select id="pm_new_end" style="padding:4px;border:1px solid var(--border);border-radius:3px;font-size:12px">${monthOpts(3)}</select>
-        <button onclick="addPeriod()" class="btn btn-primary btn-sm" style="margin-left:auto">新增</button>
-      </div>
-    </div>
   </div>`;
-}
-async function savePeriod(id){
-  const name=document.getElementById('pm_name_'+id).value.trim();
-  const s=parseInt(document.getElementById('pm_start_'+id).value);
-  const e=parseInt(document.getElementById('pm_end_'+id).value);
-  if(!name){ alert('请填期名'); return; }
-  try{
-    await sb(`/rest/v1/periods?id=eq.${id}`,'PATCH',{name,start_month:s,end_month:e});
-    await loadPeriodsFromDB(); renderPeriodMgr();
-    renderCourseCleanupPage(document.getElementById('mainContent'));
-  }catch(err){ alert('保存失败：'+err.message); }
-}
-async function addPeriod(){
-  const name=document.getElementById('pm_new_name').value.trim();
-  const s=parseInt(document.getElementById('pm_new_start').value);
-  const e=parseInt(document.getElementById('pm_new_end').value);
-  if(!name){ alert('请填期名'); return; }
-  try{
-    const maxOrder=Math.max(0,...PERIODS.map(p=>p.sort_order||0));
-    await sb('/rest/v1/periods','POST',{name,start_month:s,end_month:e,sort_order:maxOrder+1});
-    await loadPeriodsFromDB(); renderPeriodMgr();
-    renderCourseCleanupPage(document.getElementById('mainContent'));
-  }catch(err){ alert('新增失败：'+err.message); }
-}
-async function deletePeriod(id){
-  if(!confirm('确定删除这个期？')) return;
-  try{
-    await sb(`/rest/v1/periods?id=eq.${id}`,'DELETE');
-    await loadPeriodsFromDB(); renderPeriodMgr();
-    renderCourseCleanupPage(document.getElementById('mainContent'));
-  }catch(err){ alert('删除失败：'+err.message); }
 }
 function setCoursesType(t,el){
   coursesTypeFilter=t;
