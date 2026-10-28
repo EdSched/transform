@@ -872,6 +872,17 @@ function courseScan(c, o) {
   return out;
 }
 
+// ── 课程属性筛选（专业课 / 共通课 / 班课；VIP 是旧写法，只用来筛已有的老课）──
+function courseTypeMatch(c, t) {
+  const ct = (c && c.course_type) || '';
+  if (!t || t === 'all' || t === '全部') return true;
+  if (t === '共通课') return ct.includes('共通');
+  if (t === '班课') return ct.includes('班课');
+  if (t === 'VIP') return ct.includes('VIP');
+  if (t === '专业课') return !!ct && !ct.includes('共通') && !ct.includes('VIP') && !ct.includes('班课');
+  return ct === t;
+}
+
 // ── 校区：存「高马 / 市谷 / 线上」三种（排课系统的教室、筛选都认这三个写法），界面上叫「高马校区 / 市谷校区 / 线上」──
 const CAMPUS_OPTS = [
   { value: '高马', label: '高马校区', delivery: '线下＋线上' },

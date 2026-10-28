@@ -57,79 +57,124 @@ function generateSessionDatesFromFirst(firstDate,weekdays,totalSessions){
   return dates;
 }
 
+// ── 批量导入课程（Excel）：和手动添加同一套规则（自动排期、校区三选一、回数 ⇄ 最后一回日期、跳过全局假期）──
+const COURSE_IMPORT_COLS=['课程名称','专业','期数','课程属性','讲师','校区','授课形式','星期','上课时间','课时','课程回数','第一回日期','最后一回日期','照常上课的假期','备注'];
+function downloadCourseImportTemplate(){
+  if(typeof XLSX==='undefined'){ alert('Excel 组件还没加载好，请稍后再试'); return; }
+  const wb=XLSX.utils.book_new();
+  const ex=['社会人文大课','社会学、新闻传播学、社会福祉学','自动排期','专业课','山田','高马校区','线下＋线上','周六','10:00-12:00/13:00-15:00',4,10,'2027-04-10','','','']
+  const ws=XLSX.utils.aoa_to_sheet([COURSE_IMPORT_COLS,ex,['经营学大课','经营学','1月期','共通课','','线上','线上','周二,周四','19:00-21:00','',,'2027-01-12','2027-03-25','','回数留空，按最后一回日期算']]);
+  ws['!cols']=COURSE_IMPORT_COLS.map(c=>({wch:Math.max(10,c.length*2+2)}));
+  XLSX.utils.book_append_sheet(wb,ws,'课程');
+  const tip=[['列','怎么填'],
+    ['课程名称','必填'],
+    ['专业','必填。可多个，用 、 或 , 分隔；写「社会人文」会带上社会学、新闻传播学、社会福祉学三个专业'],
+    ['期数','留空或「自动排期」= 按第一回、最后一回日期自动算（如 2027春夏期）；也可填 1月期 / 4月期 / 7月期 / 10月期；填「暂定」= 之后再调整'],
+    ['课程属性','专业课 / 共通课 / 班课（留空也可以）'],
+    ['讲师','多人用 / 分隔'],
+    ['校区','高马校区 / 市谷校区 / 线上（只能这三个；写「高马」「市谷」也认）'],
+    ['授课形式','线下 / 线上 / 线下＋线上。留空：校区是线上→线上；高马、市谷→线下＋线上'],
+    ['星期','必填。如 周六，多个用逗号：周二,周四'],
+    ['上课时间','如 14:00-18:00；一天有多段用 / 分隔：10:00-12:00/13:00-15:00'],
+    ['课时','小时数，用于工资核算。留空：按上课时间自动算'],
+    ['课程回数 / 最后一回日期','至少填一个。只填回数→按星期往后排、跳过全局假期，算出最后一回；只填最后一回日期→算出回数；两个都填会核对，对不上这一行不导入'],
+    ['第一回日期','必填。格式 2027-04-10'],
+    ['照常上课的假期','选填。哪些全局假期这门课照常上课，填日期，多个用逗号：2027-05-03,2027-05-04'],
+    ['备注','选填'],
+    ['单回明细（可选）','如需给每一回写单回名称 / 讲师，用「单回明细」这张表：课程名称、第几回、单回名称、单回讲师、备注']];
+  const wt=XLSX.utils.aoa_to_sheet(tip); wt['!cols']=[{wch:22},{wch:110}];
+  XLSX.utils.book_append_sheet(wb,wt,'填写说明');
+  const wd=XLSX.utils.aoa_to_sheet([['课程名称','第几回','单回名称','单回讲师','备注'],['社会人文大课',1,'第一回主题','山田','']]);
+  XLSX.utils.book_append_sheet(wb,wd,'单回明细');
+  XLSX.writeFile(wb,'课程批量导入模板.xlsx');
+}
+function ciDate(v){
+  if(v instanceof Date) return dateToStr(v);
+  const t=String(v==null?'':v).trim(); if(!t) return '';
+  return normalizeDateStr(t);
+}
+function ciParseRow(row,detailMap){
+  const g=k=>String(row[k]==null?'':row[k]).trim();
+  const errs=[], name=g('课程名称');
+  const majors=detectMajorsFromField(g('专业'));
+  if(!majors.length) errs.push('专业没有识别出来');
+  // 期数
+  const pRaw=g('期数').replace(/\s/g,'');
+  let periodSel='__auto__';
+  if(!pRaw||/^自动/.test(pRaw)) periodSel='__auto__';
+  else if(/^暂定/.test(pRaw)) periodSel='__tbd__';
+  else if(/(1|4|7|10)月期$/.test(pRaw)&&!/^\d{4}年\d{1,2}月$/.test(pRaw)) periodSel=pRaw.match(/(1|4|7|10)月期$/)[0];
+  else errs.push('期数只能是 自动排期 / 1月期 / 4月期 / 7月期 / 10月期 / 暂定');
+  const course_type=g('课程属性');
+  if(course_type&&!['专业课','共通课','班课'].includes(course_type)) errs.push('课程属性只能是 专业课 / 共通课 / 班课');
+  const campRaw=g('校区'), campus=campRaw?campusNormalize(campRaw):'';
+  if(campRaw&&!campus) errs.push('校区只能是 高马校区 / 市谷校区 / 线上');
+  let delivery=g('授课形式').replace('+','＋');
+  if(delivery&&!['线下','线上','线下＋线上'].includes(delivery)){ errs.push('授课形式只能是 线下 / 线上 / 线下＋线上'); delivery=''; }
+  if(!delivery&&campus) delivery=(CAMPUS_OPTS.find(o=>o.value===campus)||{}).delivery||'';
+  const wdStr=g('星期');
+  if(!courseWdList(wdStr).length) errs.push('星期没有识别出来');
+  const timeRange=normalizeTimeRanges(g('上课时间'));
+  const hours=parseFloat(g('课时'))||(parseTimeRanges(timeRange).length?timeRangesHours(timeRange):0)||null;
+  const first=ciDate(row['第一回日期']), lastIn=ciDate(row['最后一回日期']), total0=parseInt(g('课程回数'))||0;
+  if(!first) errs.push('第一回日期缺失或格式不对');
+  if(!total0&&!lastIn) errs.push('课程回数和最后一回日期至少填一个');
+  if(first&&lastIn&&lastIn<first) errs.push('最后一回日期早于第一回日期');
+  const except=g('照常上课的假期').split(/[,，、;；\s]+/).map(normalizeDateStr).filter(Boolean).sort().join(',');
+  let dates=[],hits=[],total=total0,last=lastIn;
+  if(!errs.length||(first&&wdStr&&(total0||lastIn))){
+    const frame={first_session_date:first,weekdays:wdStr,skip_dates:'',holiday_except:except};
+    if(first&&courseWdList(wdStr).length&&!(lastIn&&lastIn<first)){
+      const sc=courseScan(frame,total0&&!lastIn?{total:total0}:{last:lastIn});
+      dates=sc.dates; hits=sc.hits;
+      if(!dates.length) errs.push('按星期排不出课，请检查');
+      else if(total0&&lastIn&&dates.length!==total0) errs.push(`按星期、跳过假期，这段时间是 ${dates.length} 回，填的是 ${total0} 回`);
+      else if(total0&&!lastIn&&dates.length<total0) errs.push(`按星期只排出 ${dates.length} 回（需要 ${total0} 回）`);
+      else { total=dates.length; last=dates[dates.length-1]; }
+    }
+  }
+  if(!name) errs.push('课程名称缺失');
+  let pf={};
+  if(first&&last){
+    if(periodSel==='__auto__'){ const nm=autoPeriodOf(first,last); pf={period:/^\d{4}年\d{1,2}月$/.test(nm)?stripPeriodYear(nm):periodFromDate(first),period_override:nm,period_auto:true}; }
+    else if(periodSel==='__tbd__') pf={period:null,period_override:null,period_auto:false};
+    else pf={period:periodSel,period_override:null,period_auto:false};
+  }
+  return { name,major:majors,course_type,teacher:g('老师')||g('讲师'),campus,delivery,weekdays:wdStr,time_range:timeRange,actual_hours:hours,
+    total_sessions:total,first_session_date:first,start_date:first||null,end_date:last||null,holiday_except:except||null,notes:g('备注'),
+    ...pf,_dates:dates,_hits:hits,_details:detailMap[name]||[],_errs:errs };
+}
+
 function handleCourseImportFile(input){
   const file=input.files[0];
   if(!file) return;
   input.value='';
   const reader=new FileReader();
-  reader.onload=e=>{
+  reader.onload=async e=>{
     try{
+      if(!HOLIDAYS.length) await loadHolidaysFromDB();
       const wb=XLSX.read(e.target.result,{type:'array',cellDates:true});
-
-      // 读主表
-      const mainSheet=wb.Sheets[wb.SheetNames[0]];
-      const mainData=XLSX.utils.sheet_to_json(mainSheet,{defval:''});
-
-      // 读单回明细表
+      const mainData=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
       const detailSheetName=wb.SheetNames.find(n=>n.includes('单回')||n.includes('明细'));
-      const detailData=detailSheetName
-        ?XLSX.utils.sheet_to_json(wb.Sheets[detailSheetName],{defval:''})
-        :[];
-
-      // 整理单回明细 {课程名: [{回数,单回名称,单回讲师,备注}]}
+      const detailData=detailSheetName?XLSX.utils.sheet_to_json(wb.Sheets[detailSheetName],{defval:''}):[];
       const detailMap={};
       for(const row of detailData){
         const name=String(row['课程名称']||'').trim();
         if(!name) continue;
-        if(!detailMap[name]) detailMap[name]=[];
-        detailMap[name].push({
-          num:parseInt(row['第几回']||0),
-          title:String(row['单回名称']||'').trim(),
-          teacher:String(row['单回讲师']||'').trim(),
-          notes:String(row['备注']||'').trim(),
-        });
+        (detailMap[name]=detailMap[name]||[]).push({
+          num:parseInt(row['第几回']||0), title:String(row['单回名称']||'').trim(),
+          teacher:String(row['单回讲师']||'').trim(), notes:String(row['备注']||'').trim() });
       }
-
       const rows=[];
       for(const row of mainData){
         const name=String(row['课程名称']||'').trim();
         if(!name||name==='课程名称') continue;
-
-        const majorStr=String(row['专业']||'').trim();
-        const majors=detectMajorsFromField(majorStr);
-        const period=stripPeriodYear(String(row['期数']||'').trim());
-        const course_type=String(row['课程属性']||'').trim();
-        const teacher=String(row['讲师']||'').trim();
-        const campus=String(row['校区']||'').trim();
-        const delivery=String(row['授课形式']||'').trim();
-        const wdStr=String(row['星期']||'').trim();
-        const weekdays=parseWeekdays(wdStr);
-        const timeRange=String(row['上课时间']||'').trim();
-        const total=parseInt(row['课程回数']||0);
-        const notes=String(row['备注']||'').trim();
-
-        // 第一回日期：Excel读取后是JS Date对象（因为cellDates:true）
-        const rawDate=row['第一回日期'];
-        let firstDate='';
-        if(rawDate instanceof Date) firstDate=dateToStr(rawDate);
-        else if(typeof rawDate==='string'&&rawDate) firstDate=rawDate.slice(0,10);
-
-        const dates=generateSessionDatesFromFirst(firstDate,weekdays,total);
-        const details=detailMap[name]||[];
-
-        rows.push({
-          name,major:majors,period,course_type,teacher,campus,delivery,
-          weekdays:wdStr,time_range:timeRange,total_sessions:total,
-          first_session_date:firstDate,notes,
-          _dates:dates,_details:details
-        });
+        rows.push(ciParseRow(row,detailMap));
       }
-
-      if(!rows.length){alert('未能解析到课程数据，请检查Excel格式');return}
-
-      // 已存在判断：同课程名+期数 算同一条
-      const existingKeys=new Set(cachedCourses.map(c=>`${c.name}|${c.period||''}`));
-      pendingCourseImport=rows.map(r=>({...r,_exists:existingKeys.has(`${r.name}|${r.period}`)}));
+      if(!rows.length){alert('未能解析到课程数据，请检查Excel格式（可以先下载模板）');return}
+      // 已存在判断：同课程名 + 第一回日期 算同一条
+      const existingKeys=new Set(cachedCourses.map(c=>`${c.name}|${c.first_session_date||''}`));
+      pendingCourseImport=rows.map(r=>({...r,_exists:existingKeys.has(`${r.name}|${r.first_session_date}`)}));
       showCourseImportPreview();
     }catch(err){alert('解析失败：'+err.message+'\n'+err.stack)}
   };
@@ -137,56 +182,60 @@ function handleCourseImportFile(input){
 }
 
 function showCourseImportPreview(){
-  const newRows=pendingCourseImport.filter(r=>!r._exists);
+  const bad=pendingCourseImport.filter(r=>!r._exists&&r._errs.length);
+  const newRows=pendingCourseImport.filter(r=>!r._exists&&!r._errs.length);
   const skipRows=pendingCourseImport.filter(r=>r._exists);
   const preview=document.getElementById('courseImportPreview');
+  const e=escTM;
   preview.innerHTML=`
     <div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap">
       <div style="background:var(--ok-bg);border-radius:3px;padding:8px 14px;font-size:12px"><strong style="color:var(--ok)">${newRows.length}</strong> <span style="color:var(--text-2)">门课程将导入</span></div>
-      <div style="background:var(--warn-bg);border-radius:3px;padding:8px 14px;font-size:12px"><strong style="color:var(--warn)">${skipRows.length}</strong> <span style="color:var(--text-2)">门已存在将跳过</span></div>
+      <div style="background:var(--warn-bg);border-radius:3px;padding:8px 14px;font-size:12px"><strong style="color:var(--warn)">${skipRows.length}</strong> <span style="color:var(--text-2)">门已存在（同名同第一回日期）将跳过</span></div>
+      ${bad.length?`<div style="background:#fdecea;border-radius:3px;padding:8px 14px;font-size:12px"><strong style="color:#c0392b">${bad.length}</strong> <span style="color:var(--text-2)">门有问题，不会导入</span></div>`:''}
     </div>
-    ${newRows.length?`<div style="max-height:380px;overflow-y:auto;border:1px solid var(--border);border-radius:3px">
+    ${bad.length?`<div style="border:1px solid #e8b4ae;background:#fdf5f4;border-radius:3px;padding:8px 12px;margin-bottom:10px;font-size:12px">${bad.map(r=>`<div style="padding:2px 0"><b>${e(r.name)}</b>：${r._errs.map(e2=>e(e2)).join('；')}</div>`).join('')}</div>`:''}
+    ${newRows.length?`<div style="max-height:360px;overflow-y:auto;border:1px solid var(--border);border-radius:3px">
       <table class="student-table" style="margin:0">
-        <thead><tr><th>课程名称</th><th>专业</th><th>期数</th><th>讲师</th><th>校区</th><th>授课形式</th><th>星期</th><th>第一回</th><th>回数</th><th>日期生成</th></tr></thead>
-        <tbody>${newRows.map(r=>`<tr>
-          <td style="font-size:11px">${r.name}</td>
-          <td style="font-size:11px">${(r.major||[]).map(m=>MAJORS[m]||m).join('・')||'<span style="color:var(--warn)">未识别</span>'}</td>
-          <td style="font-size:11px">${r.period}</td>
-          <td style="font-size:11px">${r.teacher}</td>
-          <td style="font-size:11px">${r.campus}</td>
-          <td style="font-size:11px">${r.delivery}</td>
-          <td style="font-size:11px">${r.weekdays}</td>
-          <td style="font-size:11px">${r.first_session_date||'<span style="color:var(--danger)">缺失</span>'}</td>
+        <thead><tr><th>课程名称</th><th>专业</th><th>期数</th><th>讲师</th><th>校区</th><th>形式</th><th>星期</th><th>起止</th><th>回数</th><th>跳过的假期</th></tr></thead>
+        <tbody>${newRows.map(r=>{ const sk=r._hits.filter(h=>!h.excepted); return `<tr>
+          <td style="font-size:11px">${e(r.name)}</td>
+          <td style="font-size:11px">${e((r.major||[]).map(m=>MAJORS[m]||m).join('・'))}</td>
+          <td style="font-size:11px">${r.period_auto?'自动：'+e(r.period_override):(r.period?e(r.period):'<span style="color:#7a5b00">暂定</span>')}</td>
+          <td style="font-size:11px">${e(r.teacher)}</td>
+          <td style="font-size:11px">${e(campusLabel(r.campus))}</td>
+          <td style="font-size:11px">${e(r.delivery)}</td>
+          <td style="font-size:11px">${e(r.weekdays)}</td>
+          <td style="font-size:11px">${e(r.first_session_date)}～${e(r.end_date||'')}</td>
           <td style="font-size:11px">${r.total_sessions}回</td>
-          <td style="font-size:11px;color:${r._dates.length===r.total_sessions?'var(--ok)':r._dates.length>0?'var(--warn)':'var(--danger)'}">${r._dates.length}/${r.total_sessions}</td>
-        </tr>`).join('')}</tbody>
+          <td style="font-size:11px;color:var(--text-3)">${sk.length?sk.map(h=>e(ccMD(h.date)+' '+h.label)).join('、'):'—'}</td>
+        </tr>`}).join('')}</tbody>
       </table>
-    </div>`:'<div class="empty" style="padding:20px">所有课程已存在，无需导入</div>'}`;
+    </div>`:'<div class="empty" style="padding:20px">没有可导入的课程</div>'}`;
   document.getElementById('courseImportConfirmBtn').disabled=!newRows.length;
   document.getElementById('courseImportModal').classList.add('open');
 }
 
 async function confirmCourseImport(){
-  const newRows=pendingCourseImport.filter(r=>!r._exists);
+  const newRows=pendingCourseImport.filter(r=>!r._exists&&!r._errs.length);
   if(!newRows.length){closeModal('courseImportModal');return}
   const confirmed=document.getElementById('importConfirmPublish')?.checked||false;
   const btn=document.getElementById('courseImportConfirmBtn');
   btn.textContent='导入中…';btn.disabled=true;
+  const done=[];
   try{
     for(const r of newRows){
       const courseId=`c-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;
       const course=withCourseDomain({
-        id:courseId,name:r.name,major:r.major,period:r.period,
+        id:courseId,name:r.name,major:r.major,period:r.period,period_override:r.period_override||null,period_auto:!!r.period_auto,
         course_type:r.course_type,teacher:r.teacher,campus:r.campus,
-        delivery:r.delivery,weekdays:r.weekdays,time_range:r.time_range,
+        delivery:r.delivery,weekdays:r.weekdays,time_range:r.time_range,actual_hours:r.actual_hours,
         total_sessions:r.total_sessions,first_session_date:r.first_session_date||null,
+        start_date:r.start_date,end_date:r.end_date,holiday_except:r.holiday_except,
         notes:r.notes,
         has_details:(r._details||[]).some(d=>d.title||d.teacher)
       },r.major);
       const res=await sb('/rest/v1/courses','POST',[course]);
       cachedCourses.push(Array.isArray(res)?res[0]:course);
-
-      // 生成每次课
       if(r._dates.length){
         const details=r._details||[];
         const sessions=r._dates.map((date,i)=>{
@@ -196,27 +245,31 @@ async function confirmCourseImport(){
             id:`s-${Date.now()}-${i}-${Math.random().toString(36).slice(2,4)}`,
             course_id:courseId,course_name:r.name,major:r.major,
             session_date:date,session_number:i+1,
-            time_range:r.time_range,
+            time_range:r.time_range,actual_hours:r.actual_hours,
             delivery:r.delivery,campus:r.campus,
             teacher:tv,
             session_title:detail.title||'',
             session_teacher:tv,
-            confirmed
+            confirmed,homework_enabled:false
           };
         });
         for(let i=0;i<sessions.length;i+=20){
-          // 每个课次继承课程的 homework_enabled
-          const chunk=sessions.slice(i,i+20).map(s=>({...s,homework_enabled:courseData.homework_enabled||false}));
+          const chunk=sessions.slice(i,i+20);
           const sres=await sb('/rest/v1/course_sessions','POST',chunk);
           cachedSessions.push(...(Array.isArray(sres)?sres:chunk));
         }
       }
+      done.push({course:Array.isArray(res)?res[0]:course,dates:r._dates});
       await new Promise(resolve=>setTimeout(resolve,120));
     }
     closeModal('courseImportModal');
     renderCoursesPage(document.getElementById('mainContent'));
-    alert(`成功导入 ${newRows.length} 门课程！`);
-  }catch(e){alert('导入失败：'+e.message);btn.textContent='确认导入';btn.disabled=false}
+    courseConfirmOpen({ title:`成功导入 ${done.length} 门课程，请核对`, items:done });
+  }catch(e){
+    alert('导入失败：'+e.message+(done.length?`\n（已经导入了前 ${done.length} 门，请不要重复导入这几门）`:''));
+    btn.textContent='确认导入';btn.disabled=false;
+    if(done.length) renderCoursesPage(document.getElementById('mainContent'));
+  }
 }
 
 let coursesMajorFilter='none';  // 初始不选任何专业，需手动点选后才显示课程（避免一打开满屏）
@@ -317,12 +370,10 @@ function renderCourseCleanupPage(mc){
     return (c.major||[]).some(m=>majorList.includes(m));
   });
 
-  if(cleanupTypeFilter==='专业课') filtered=filtered.filter(c=>c.course_type&&!c.course_type.includes('共通')&&!c.course_type.includes('VIP'));
-  else if(cleanupTypeFilter==='共通课') filtered=filtered.filter(c=>c.course_type?.includes('共通'));
-  else if(cleanupTypeFilter==='VIP') filtered=filtered.filter(c=>c.course_type?.includes('VIP'));
+  filtered=filtered.filter(c=>courseTypeMatch(c,cleanupTypeFilter));
 
   if(cleanupPeriodFilter!=='all') filtered=filtered.filter(c=>effectivePeriod(c)===cleanupPeriodFilter);
-  if(cleanupCampusFilter!=='all') filtered=filtered.filter(c=>(c.campus||'')===cleanupCampusFilter);
+  if(cleanupCampusFilter!=='all') filtered=filtered.filter(c=>(campusNormalize(c.campus)||c.campus||'')===cleanupCampusFilter);
   if(cleanupYearFilter!=='all') filtered=filtered.filter(c=>c.first_session_date?.startsWith(cleanupYearFilter));
   if(cleanupHwFilter) filtered=filtered.filter(c=>{ const st=hwTplStatus(c); return st&&(st.noTpl||st.missing>0); });
   cleanupLastFiltered=filtered;
@@ -334,7 +385,7 @@ function renderCourseCleanupPage(mc){
   });
   const allYears=[...new Set(viewCourses.filter(c=>c.first_session_date).map(c=>c.first_session_date.slice(0,4)))].sort((a,b)=>b.localeCompare(a));
   const allCleanupPeriods=[...new Set(viewCourses.map(c=>effectivePeriod(c)).filter(p=>p&&p!=='未分期'))].sort();
-  const allCleanupCampuses=[...new Set(viewCourses.map(c=>c.campus).filter(Boolean))];
+  const allCleanupCampuses=[...new Set(viewCourses.map(c=>campusNormalize(c.campus)||c.campus).filter(Boolean))];
 
   const groups={};
   filtered.forEach(c=>{
@@ -380,7 +431,7 @@ function renderCourseCleanupPage(mc){
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">课程属性</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
-        ${['all','专业课','共通课','VIP'].map((t,i)=>`<div class="filter-chip${cleanupTypeFilter===t?' active':''}" onclick="setCleanupType('${t}',this)" style="font-size:11px;padding:3px 10px">${i===0?'全部':t}</div>`).join('')}
+        ${['all','专业课','共通课','班课',...(cachedCourses.some(c=>(c.course_type||'').includes('VIP'))?['VIP']:[])].map((t,i)=>`<div class="filter-chip${cleanupTypeFilter===t?' active':''}" onclick="setCleanupType('${t}',this)" style="font-size:11px;padding:3px 10px">${i===0?'全部':(t==='VIP'?'VIP（旧）':t)}</div>`).join('')}
       </div>
     </div>
     <div>
@@ -408,7 +459,7 @@ function renderCourseCleanupPage(mc){
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">校区</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
         <div class="filter-chip${cleanupCampusFilter==='all'?' active':''}" onclick="setCleanupCampus('all',this)" style="font-size:11px;padding:3px 10px">全部</div>
-        ${allCleanupCampuses.map(cp=>`<div class="filter-chip${cleanupCampusFilter===cp?' active':''}" onclick="setCleanupCampus('${cp}',this)" style="font-size:11px;padding:3px 10px">${cp}</div>`).join('')}
+        ${allCleanupCampuses.map(cp=>`<div class="filter-chip${cleanupCampusFilter===cp?' active':''}" onclick="setCleanupCampus('${cp}',this)" style="font-size:11px;padding:3px 10px">${campusLabel(cp)}</div>`).join('')}
       </div>
     </div>`:''}
   </div>
@@ -829,10 +880,8 @@ function renderCoursesPage(mc){
     filtered=filtered.filter(c=>periodKeyOf(c)===coursesPeriodFilter||effectivePeriod(c)===coursesPeriodFilter);
   }
   // 课程属性筛选
-  if(coursesTypeFilter==='专业课') filtered=filtered.filter(c=>c.course_type&&!c.course_type.includes('共通')&&!c.course_type.includes('VIP'));
-  else if(coursesTypeFilter==='共通课') filtered=filtered.filter(c=>c.course_type?.includes('共通'));
-  else if(coursesTypeFilter==='VIP') filtered=filtered.filter(c=>c.course_type?.includes('VIP'));
-  if(coursesCampusFilter!=='all') filtered=filtered.filter(c=>(c.campus||'')===coursesCampusFilter);
+  filtered=filtered.filter(c=>courseTypeMatch(c,coursesTypeFilter));
+  if(coursesCampusFilter!=='all') filtered=filtered.filter(c=>(campusNormalize(c.campus)||c.campus||'')===coursesCampusFilter);
   // 状态筛选：默认「进行中」隐藏已结课的课程
   if(coursesArchiveFilter==='active') filtered=filtered.filter(c=>!courseIsEnded(c));
   else if(coursesArchiveFilter==='ended') filtered=filtered.filter(c=>courseIsEnded(c));
@@ -848,6 +897,7 @@ function renderCoursesPage(mc){
       <button class="btn btn-outline btn-sm" onclick="openScheduleShare()">🗓 学生课表</button>
       <button class="btn btn-primary btn-sm" onclick="openAddCourseModal()">＋ 手动添加</button>
       <button class="btn btn-outline btn-sm" onclick="exportCoursesExcel()">↓ 导出 Excel</button>
+      <button class="btn btn-outline btn-sm" onclick="downloadCourseImportTemplate()">↓ 下载导入模板</button>
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('courseImportFileInput').click()">↑ 导入 Excel</button>
       <input type="file" id="courseImportFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleCourseImportFile(this)">
     </div>
@@ -858,7 +908,7 @@ function renderCoursesPage(mc){
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">课程属性</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
-        ${['all','专业课','共通课','VIP'].map((t,i)=>`<div class="filter-chip${coursesTypeFilter===t?' active':''}" onclick="setCoursesType('${t}',this)" style="font-size:11px;padding:3px 10px">${i===0?'全部':t}</div>`).join('')}
+        ${['all','专业课','共通课','班课',...(cachedCourses.some(c=>(c.course_type||'').includes('VIP'))?['VIP']:[])].map((t,i)=>`<div class="filter-chip${coursesTypeFilter===t?' active':''}" onclick="setCoursesType('${t}',this)" style="font-size:11px;padding:3px 10px">${i===0?'全部':(t==='VIP'?'VIP（旧）':t)}</div>`).join('')}
       </div>
     </div>
     <div>
@@ -886,8 +936,8 @@ function renderCoursesPage(mc){
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">校区</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
         <div class="filter-chip${coursesCampusFilter==='all'?' active':''}" onclick="setCoursesCampus('all',this)" style="font-size:11px;padding:3px 10px">全部</div>
-        <div class="filter-chip${coursesCampusFilter==='高马'?' active':''}" onclick="setCoursesCampus('高马',this)" style="font-size:11px;padding:3px 10px">高马</div>
-        <div class="filter-chip${coursesCampusFilter==='市谷'?' active':''}" onclick="setCoursesCampus('市谷',this)" style="font-size:11px;padding:3px 10px">市谷</div>
+        <div class="filter-chip${coursesCampusFilter==='高马'?' active':''}" onclick="setCoursesCampus('高马',this)" style="font-size:11px;padding:3px 10px">高马校区</div>
+        <div class="filter-chip${coursesCampusFilter==='市谷'?' active':''}" onclick="setCoursesCampus('市谷',this)" style="font-size:11px;padding:3px 10px">市谷校区</div>
         <div class="filter-chip${coursesCampusFilter==='线上'?' active':''}" onclick="setCoursesCampus('线上',this)" style="font-size:11px;padding:3px 10px">线上</div>
       </div>
     </div>
@@ -2714,9 +2764,7 @@ function renderSchedulePage(mc){
 
   // 按属性+期数+课程筛选
   let filteredCourses=viewCourses;
-  if(schedTypeFilter==='共通课') filteredCourses=filteredCourses.filter(c=>c.course_type?.includes('共通'));
-  else if(schedTypeFilter==='专业课') filteredCourses=filteredCourses.filter(c=>c.course_type&&!c.course_type.includes('共通')&&!c.course_type.includes('VIP'));
-  else if(schedTypeFilter==='VIP') filteredCourses=filteredCourses.filter(c=>c.course_type?.includes('VIP'));
+  filteredCourses=filteredCourses.filter(c=>courseTypeMatch(c,schedTypeFilter));
 
   if(schedPeriodFilter!=='all'){
     filteredCourses=filteredCourses.filter(c=>periodKeyOf(c)===schedPeriodFilter);
@@ -2744,7 +2792,7 @@ function renderSchedulePage(mc){
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">课程属性</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
-        ${['all','专业课','共通课','VIP'].map((t,i)=>`<div class="filter-chip${schedTypeFilter===t?' active':''}" onclick="setSchedType('${t}',this)" style="font-size:11px;padding:3px 10px">${i===0?'全部':t}</div>`).join('')}
+        ${['all','专业课','共通课','班课',...(cachedCourses.some(c=>(c.course_type||'').includes('VIP'))?['VIP']:[])].map((t,i)=>`<div class="filter-chip${schedTypeFilter===t?' active':''}" onclick="setSchedType('${t}',this)" style="font-size:11px;padding:3px 10px">${i===0?'全部':(t==='VIP'?'VIP（旧）':t)}</div>`).join('')}
       </div>
     </div>
     ${showPeriod?`<div>
@@ -2966,9 +3014,7 @@ function csPopulatePeriods(){
     return true;
   });
   if(csTypeFilter!=='全部'){
-    if(csTypeFilter==='共通课') courses=courses.filter(c=>c.course_type?.includes('共通'));
-    else if(csTypeFilter==='专业课') courses=courses.filter(c=>c.course_type&&!c.course_type.includes('共通')&&!c.course_type.includes('VIP'));
-    else if(csTypeFilter==='VIP') courses=courses.filter(c=>c.course_type?.includes('VIP'));
+    courses=courses.filter(c=>courseTypeMatch(c,csTypeFilter));
   }
   const periods=[...new Map(courses.filter(c=>c.period&&c.first_session_date).map(c=>{
     const key=periodKeyOf(c);
@@ -2986,9 +3032,7 @@ function csFilterCourses(){
     return true;
   });
   if(csTypeFilter!=='全部'){
-    if(csTypeFilter==='共通课') courses=courses.filter(c=>c.course_type?.includes('共通'));
-    else if(csTypeFilter==='专业课') courses=courses.filter(c=>c.course_type&&!c.course_type.includes('共通')&&!c.course_type.includes('VIP'));
-    else if(csTypeFilter==='VIP') courses=courses.filter(c=>c.course_type?.includes('VIP'));
+    courses=courses.filter(c=>courseTypeMatch(c,csTypeFilter));
   }
   const periodVal=document.getElementById('cs_period').value;
   if(periodVal){
@@ -3571,9 +3615,7 @@ function cleanupSelectAllFiltered(){
     return (c.major||[]).some(m=>majorList.includes(m));
   });
   // 与清理页筛选逻辑完全一致（类型三分支 + 期数）
-  if(cleanupTypeFilter==='专业课') filtered=filtered.filter(c=>c.course_type&&!c.course_type.includes('共通')&&!c.course_type.includes('VIP'));
-  else if(cleanupTypeFilter==='共通课') filtered=filtered.filter(c=>c.course_type?.includes('共通'));
-  else if(cleanupTypeFilter==='VIP') filtered=filtered.filter(c=>c.course_type?.includes('VIP'));
+  filtered=filtered.filter(c=>courseTypeMatch(c,cleanupTypeFilter));
   if(typeof cleanupPeriodFilter!=='undefined'&&cleanupPeriodFilter!=='all') filtered=filtered.filter(c=>effectivePeriod(c)===cleanupPeriodFilter);
   if(cleanupHwFilter) filtered=filtered.filter(c=>{ const st=hwTplStatus(c); return st&&(st.noTpl||st.missing>0); });
   filtered.forEach(c=>cleanupSelected.add(c.id));

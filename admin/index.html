@@ -368,7 +368,8 @@
         <div class="filter-chip active" onclick="csSetType('全部',this)" style="font-size:11px;padding:3px 10px">全部</div>
         <div class="filter-chip" onclick="csSetType('共通课',this)" style="font-size:11px;padding:3px 10px">共通课</div>
         <div class="filter-chip" onclick="csSetType('专业课',this)" style="font-size:11px;padding:3px 10px">专业课</div>
-        <div class="filter-chip" onclick="csSetType('VIP',this)" style="font-size:11px;padding:3px 10px">VIP</div>
+        <div class="filter-chip" onclick="csSetType('班课',this)" style="font-size:11px;padding:3px 10px">班课</div>
+        <div class="filter-chip" onclick="csSetType('VIP',this)" style="font-size:11px;padding:3px 10px">VIP（旧）</div>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
@@ -693,7 +694,7 @@
   <div class="modal" style="width:700px;max-width:96vw">
     <div class="modal-title">导入课程安排</div>
     <div class="modal-sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px">
-      上传课程安排Excel，自动解析并生成每次课的日期。已存在同名课程将跳过。
+      上传课程安排Excel，自动解析并生成每次课的日期。已存在（同名同第一回日期）的课程将跳过；有问题的行会标红、不导入。可先「下载导入模板」。
     </div>
     <div id="courseImportPreview"></div>
     <div style="margin:12px 0;padding:10px 12px;background:var(--bg);border:1px solid var(--border-light);border-radius:3px">
@@ -775,7 +776,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
 <script src="../shared/vendor/supabase.min.js"></script>
 <script src="../shared/supabase.js?v=20261202"></script>
-<script src="../shared/constants.js?v=20270112"></script>
+<script src="../shared/constants.js?v=20270113"></script>
 <script src="../shared/search.js?v=20261123"></script>
 <script src="../shared/student-table.js?v=20261123"></script>
 <script src="../shared/progress-card.js?v=20261123"></script>
@@ -794,7 +795,7 @@
 <script src="../shared/mgmt-metrics.js?v=20270110"></script>
 <script src="../shared/mgmt-notice.js?v=20261123"></script>
 <script src="../shared/vip-lessons.js?v=20261029"></script>
-<script src="attendance.js?v=20261230"></script>
+<script src="attendance.js?v=20270113"></script>
 <script src="../shared/workrec-table.js?v=20270108"></script>
 <script src="../shared/payroll-core.js?v=20270108"></script>
 <script src="payroll.js?v=20270108"></script>
@@ -806,7 +807,7 @@
 <script src="booking.js?v=20270103"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270112"></script>
-<script src="courses.js?v=20270112"></script>
+<script src="courses.js?v=20270113"></script>
 <script src="monthcal.js?v=20261123"></script>
 <script src="vip-framework.js?v=20261123"></script>
 <script src="promo.js?v=20261231"></script>

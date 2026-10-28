@@ -165,7 +165,7 @@ function renderAttendancePage(mc){
   )].sort();
   const types=[...new Set(viewCourses.map(c=>c.course_type).filter(Boolean))];
   // 校区：只列本视角课实际有的
-  const campuses=[...new Set(viewCourses.map(c=>c.campus).filter(Boolean))];
+  const campuses=[...new Set(viewCourses.map(c=>campusNormalize(c.campus)||c.campus).filter(Boolean))];
 
   // courses matching current type+period filter
   let filteredCourses=cachedCourses;
@@ -175,7 +175,7 @@ function renderAttendancePage(mc){
     return true;
   });
   if(attTypeFilter) filteredCourses=filteredCourses.filter(c=>c.course_type===attTypeFilter);
-  if(attCampusFilter) filteredCourses=filteredCourses.filter(c=>c.campus===attCampusFilter);
+  if(attCampusFilter) filteredCourses=filteredCourses.filter(c=>(campusNormalize(c.campus)||c.campus)===attCampusFilter);
   if(attPeriodFilter){
     filteredCourses=filteredCourses.filter(c=>periodKeyOf(c)===attPeriodFilter);
   }
@@ -224,7 +224,7 @@ function renderAttendancePage(mc){
       ${campuses.length>1?`<div>
         <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px">校区</div>
         <div style="display:flex;gap:5px;flex-wrap:wrap">
-          ${campuses.map(cp=>`<div class="filter-chip${attCampusFilter===cp?' active':''}" onclick="setAttCampus('${cp}')">${cp}</div>`).join('')}
+          ${campuses.map(cp=>`<div class="filter-chip${attCampusFilter===cp?' active':''}" onclick="setAttCampus('${cp}')">${campusLabel(cp)}</div>`).join('')}
         </div>
       </div>`:''}
       ${dmfBar?`<div style="flex-basis:100%">${dmfBar}</div>`:''}
