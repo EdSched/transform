@@ -760,8 +760,10 @@ async function adminBatchDownloadCourse(courseId) {
 async function deleteSession(sessionId) {
   if (!confirm('确定删除这个课次？')) return;
   try {
+    const _cid = (cachedSessions.find(s => s.id === sessionId) || {}).course_id;
     await sb(`/rest/v1/course_sessions?id=eq.${sessionId}`, 'DELETE');
     cachedSessions = cachedSessions.filter(s => s.id !== sessionId);
+    if (_cid) await courseRoomSyncSafe(_cid);
     renderAttendancePage(document.getElementById('mainContent'));
   } catch(e) { alert('删除失败：' + e.message); }
 }

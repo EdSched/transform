@@ -39,7 +39,15 @@ async function courseRegenSessions(courseId, opts) {
   if (!co) throw new Error('找不到这门课');
   const sessions = await csGet('course_sessions', `select=*&course_id=eq.${encodeURIComponent(courseId)}&order=session_date.asc&limit=2000`);
   const warnings = [];
-  if (opts.fieldsOnly) return await courseSyncSessionFields(co, sessions, opts.old);   // 框架没变：只同步名字 / 校区 / 上课时间，不动日期
+  let res;
+  if (opts.fieldsOnly) res = await courseSyncSessionFields(co, sessions, opts.old);   // 框架没变：只同步名字 / 校区 / 上课时间，不动日期
+  else res = await csRegen(co, sessions, opts, warnings, courseId);
+  // 单回有变动：教室占用跟着走（失败不挡保存）
+  if (typeof courseRoomSyncSafe === 'function') res.room = await courseRoomSyncSafe(courseId);
+  return res;
+}
+
+async function csRegen(co, sessions, opts, warnings, courseId) {
   const plan = courseSessionPlan(co, sessions);
   if (plan.err) throw new Error(plan.err);
   const oldTr = opts.old ? (opts.old.time_range || '') : null;

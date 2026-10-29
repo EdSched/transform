@@ -660,10 +660,15 @@ function findNearby(bookings, roomId, dateStr, s, e, days){
 }
 
 /* 某 booking 在指定日期是否生效 */
+/* 这门课「按周排的教室」占用（临时占用 recurrence==='once' 不算） */
+function isWeeklyCourseBk(b){ return b && b.kind==='course' && b.recurrence!=='once'; }
 function bookingOnDate(b, dateStr){
   if(b.recurrence === 'weekly'){
     if(b.start_date && dateStr < b.start_date) return false;
     if(b.end_date   && dateStr > b.end_date)   return false;
+    // 单回改期：系统自动释放 / 人工释放的日子，这条按周占用那天不占教室
+    if(b.auto_off_dates   && String(b.auto_off_dates).split(',').includes(dateStr))   return false;
+    if(b.manual_off_dates && String(b.manual_off_dates).split(',').includes(dateStr)) return false;
     return Number(b.weekday) === weekdayOf(dateStr);
   }
   return b.booking_date === dateStr;

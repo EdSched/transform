@@ -581,6 +581,7 @@ function cleanupClearSelection(){
 async function cleanupDeleteSingle(courseId){
   if(!confirm('确定删除这门课程及其所有课次记录？此操作不可恢复。'))return;
   try{
+    await courseRoomClear(courseId).catch(e=>console.warn('清理自动临时占用失败',e));
     await sb(`/rest/v1/session_records?session_id=in.(${cachedSessions.filter(s=>s.course_id===courseId).map(s=>`"${s.id}"`).join(',')||'""'})`,'DELETE').catch(()=>{});
     await sb(`/rest/v1/course_sessions?course_id=eq.${courseId}`,'DELETE');
     await sb(`/rest/v1/courses?id=eq.${courseId}`,'DELETE');
@@ -595,6 +596,7 @@ async function cleanupDeleteSelected(){
   if(!confirm(`确定删除已选中的 ${cleanupSelected.size} 门课程及其所有课次记录？此操作不可恢复。`))return;
   try{
     for(const courseId of cleanupSelected){
+      await courseRoomClear(courseId).catch(e=>console.warn('清理自动临时占用失败',e));
       const sessionIds=cachedSessions.filter(s=>s.course_id===courseId).map(s=>s.id);
       if(sessionIds.length) await sb(`/rest/v1/session_records?session_id=in.(${sessionIds.map(i=>`"${i}"`).join(',')})`,'DELETE').catch(()=>{});
       await sb(`/rest/v1/course_sessions?course_id=eq.${courseId}`,'DELETE');
@@ -1204,6 +1206,7 @@ async function toggleCourseConfirm(courseId, isCurrentlyConfirmed){
 
 async function deleteCourse(id){
   try{
+    await courseRoomClear(id).catch(e=>console.warn('清理自动临时占用失败',e));
     await sb(`/rest/v1/session_records?session_id=in.(${cachedSessions.filter(s=>s.course_id===id).map(s=>`"${s.id}"`).join(',')||'""'})`,'DELETE').catch(()=>{});
     await sb(`/rest/v1/course_sessions?course_id=eq.${id}`,'DELETE');
     await sb(`/rest/v1/courses?id=eq.${id}`,'DELETE');
@@ -2301,6 +2304,7 @@ async function saveAddCourse(){
       }
 
       const hwMsg=await hwFollowTitles(editingId, hwItems, hwKey, courseData.homework_enabled);
+      await courseRoomSyncSafe(editingId);   // 单回日期 / 取消 / 时间有变：排课的教室占用跟着走
 
       closeModal('addCourseModal');
       renderCoursesPage(document.getElementById('mainContent'));
@@ -2541,6 +2545,7 @@ async function regenerateSessions(){
     await sb(`/rest/v1/courses?id=eq.${id}`,'PATCH',{first_session_date:firstDate,total_sessions:total,weekdays:wdStr,time_range:timeRange});
     const idx=cachedCourses.findIndex(c=>c.id===id);
     if(idx>=0) Object.assign(cachedCourses[idx],{first_session_date:firstDate,total_sessions:total,weekdays:wdStr,time_range:timeRange});
+    await courseRoomSyncSafe(id);
     closeModal('editCourseModal');
     renderCoursesPage(document.getElementById('mainContent'));
     alert(`已重新生成 ${sessions.length} 个课次`);
@@ -2613,6 +2618,7 @@ async function confirmCopyPeriod(){
       const sres=await sb('/rest/v1/course_sessions','POST',chunk);
       cachedSessions.push(...(Array.isArray(sres)?sres:chunk));
     }
+    await courseRoomSyncSafe(newId);
     coursesPeriodFilter=periodKeyOf(newCourse);
     closeModal('copyPeriodModal');
     renderCoursesPage(document.getElementById('mainContent'));
@@ -2731,6 +2737,7 @@ async function confirmReschedule(){
       if(co){ co.skip_dates=newSkip; co.end_date=newDateStr; }
     }catch(e){ /* 同步失败不阻断休讲本身 */ }
 
+    await courseRoomSyncSafe(courseId);   // 休讲那天释放教室，顺延出的新日期临时占用
     closeModal('rescheduleModal');
     renderCoursesPage(document.getElementById('mainContent'));
     alert(`已将 ${target.session_date} 标记为休讲，内容顺延，末尾 ${newDateStr} 补第${newSession.session_number}回。\n\n新增的补课日期请到排课系统确认教室占用（可能与其他课撞车）。`);
@@ -3336,7 +3343,7 @@ async function confirmArrangement(){
   }
   if(!confirm(`确认将 ${entries.length} 个课次的排课结果同步到课程安排？`))return;
   try{
-    let synced=0;
+    let synced=0; const roomSyncIds=new Set();
     for(const [date,{title,teacher}] of entries){
       const session=cachedSessions.find(s=>s.course_name===courseName&&s.session_date===date);
       if(session){
@@ -3349,7 +3356,7 @@ async function confirmArrangement(){
         if(preferredDate&&preferredDate!==date) patchData.session_date=preferredDate;
         await sb(`/rest/v1/course_sessions?id=eq.${session.id}`,'PATCH',patchData);
         session.session_title=title;session.session_teacher=teacher;session.teacher=teacher;
-        if(patchData.session_date) session.session_date=patchData.session_date;
+        if(patchData.session_date){ session.session_date=patchData.session_date; roomSyncIds.add(session.course_id); }
         arrangementDraft[date].session_id=session.id;
         arrangementDraft[date].confirmed=true;
         synced++;
@@ -3362,6 +3369,7 @@ async function confirmArrangement(){
         }
       }
     }
+    for(const cid of roomSyncIds) await courseRoomSyncSafe(cid);
     // re-render summary
     renderSummaryBody(allSlots,courseName);
     // update courses page in background
