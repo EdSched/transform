@@ -122,7 +122,7 @@ function sbErrMsg(t){ try{ const j=JSON.parse(t); return j && j.message ? j.mess
    · 改课程用 schedCourseUpdate（排课字段名 → courses 列名），不再写旧的 sched_courses */
 /* 排课字段名 → 管理端 courses 列名（对应关系见 PR 描述） */
 const SCHED_COURSE_COLMAP = {
-  name:'name', category:'domain', course_type:'course_type', campus:'campus', teacher:'teacher', weekdays:'weekdays',
+  name:'name', category:'domain', course_type:'course_type', campus:'campus', weekdays:'weekdays',
   start_date:'start_date', end_date:'end_date', sessions:'total_sessions', est_students:'est_students', mode:'delivery',
   meeting_link:'meeting_url', meeting_id:'meeting_id', meeting_template_id:'meeting_template_id', host_key:'host_key',
   skip_dates:'skip_dates', skip_reasons:'skip_reasons', holiday_except:'holiday_except',
@@ -148,7 +148,7 @@ async function schedCourseUpdate(id, patch){
     if(SCHED_COURSE_COLMAP[k]) out[SCHED_COURSE_COLMAP[k]] = v;
     else if(k==='term') throw new Error('期数请用 period / period_override / period_auto 写（照管理端的存法）');
     else if(k==='start_time' || k==='end_time') timeTouched = true;
-    else if(k==='major') { /* 不写 */ }
+    else if(k==='major' || k==='teacher') { /* 不写：专业、讲师请在管理端『课程安排』里改 */ }
     else throw new Error('排课不能写入管理端课程的这个字段：'+k);
   });
   if(timeTouched){
