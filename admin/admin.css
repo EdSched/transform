@@ -198,3 +198,18 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 
 /* ── Login overlay ── */
 #loginOverlay{display:none;position:fixed;inset:0;background:rgba(250,247,242,.97);z-index:1200;align-items:center;justify-content:center}
+
+/* 面谈预约列表（admin/booking.js）：一行一条，点一行展开 */
+.bkl{border:1px solid var(--border);border-radius:4px;overflow:hidden;background:var(--surface)}
+.bkl-item{border-bottom:1px solid var(--border-light,#eee)}
+.bkl-item:last-child{border-bottom:0}
+.bkl-row{display:grid;grid-template-columns:92px minmax(0,1.6fr) 96px minmax(0,1fr) 116px minmax(150px,auto);gap:8px;align-items:center;padding:8px 12px;border-left:3px solid transparent;cursor:pointer;font-size:12px}
+.bkl-row:hover{background:var(--bg,#f7f5f0)}
+.bkl-row.need{border-left-color:#d9a400}
+.bkl-row.dim{opacity:.6}
+.bkl-ac{display:flex;align-items:center;justify-content:flex-end;white-space:nowrap}
+.bkl-detail{padding:10px 14px 14px;background:var(--bg,#f7f5f0);border-top:1px solid var(--border-light,#eee)}
+@media(max-width:760px){
+  .bkl-row{grid-template-columns:auto minmax(0,1fr);grid-template-areas:"d s" "ty te" "st ac"}
+  .bkl-d{grid-area:d}.bkl-s{grid-area:s}.bkl-ty{grid-area:ty}.bkl-te{grid-area:te}.bkl-st{grid-area:st}.bkl-ac{grid-area:ac}
+}
