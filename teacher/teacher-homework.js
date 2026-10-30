@@ -145,7 +145,7 @@ function thwMainHtml() {
       <div style="font-size:12px;font-weight:600;margin-bottom:2px">${thwEsc(s.course_name||'')} 第${s.session_number||''}回</div>
       <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">${s.session_date||''}${s.session_title?' · '+thwEsc(s.session_title):''} · 共 ${subs.length} 份提交</div>
       <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
-        <button onclick="thwExportWordAll()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">⬇ 全部导出 Word（可批注）</button>
+        <button onclick="thwExportWordAll()" style="font-size:11px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">⬇ 全部导出 Word（可批注）</button>
         <button onclick="thwPrintAll()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">🖨 打印 / 存为 PDF</button>
       </div>
       <div style="display:flex;flex-direction:column;gap:5px">
@@ -167,7 +167,7 @@ function thwMainHtml() {
       <span style="font-size:13px;font-weight:600">${thwEsc(sub.student_name)}</span>
       <span style="font-size:10px;color:var(--text-3)">${thwEsc(s.course_name||'')} 第${s.session_number||''}回 · ${fmtJst(sub.submitted_at)}</span>
       <span style="margin-left:auto;display:flex;gap:5px">
-        <button onclick="thwExportWord('${sub.id}')" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">⬇ 导出 Word</button>
+        <button onclick="thwExportWord('${sub.id}')" style="font-size:10px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">⬇ 导出 Word</button>
         <button onclick="thwPrintOne('${sub.id}')" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">🖨 打印 / PDF</button>
       </span>
     </div>
@@ -197,7 +197,7 @@ function thwMainHtml() {
         <label style="font-size:10px;color:var(--accent);cursor:pointer;border:1px solid var(--border);border-radius:2px;padding:5px 12px">📎 上传批改文件（可带批注的 Word）
           <input type="file" accept=".doc,.docx,.pdf,image/*" style="display:none" onchange="thwUploadFile('${sub.id}', this)"></label>
         <span id="thw_file_tip" style="font-size:10px;color:var(--text-3)">${hasFile ? '✓ 已上传批改文件' + (thwPendingFile ? '（保存后生效）' : '') : ''}</span>
-        <button onclick="thwSaveFeedback('${sub.id}')" style="margin-left:auto;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">${mine ? '保存修改' : '保存我的批改'}</button>
+        <button onclick="thwSaveFeedback('${sub.id}')" style="margin-left:auto;font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">${mine ? '保存修改' : '保存我的批改'}</button>
       </div>`;
       })()}
     </div>
@@ -817,7 +817,7 @@ function thwIcMainHtml() {
       <textarea id="thw_ic_text" rows="4" placeholder="评语" style="width:100%;font-size:11px;line-height:1.8;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical;margin-bottom:8px;box-sizing:border-box">${thwEsc(mine ? (mine.text || '') : '')}</textarea>
       <div style="display:flex;gap:8px;align-items:center">
         <input id="thw_ic_score" value="${thwEsc(mine ? (mine.score || '') : '')}" placeholder="分数（可选）" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;width:120px">
-        <button onclick="thwIcSave('${sub.id}')" style="margin-left:auto;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">${mine ? '保存修改' : '保存我的批改'}</button>
+        <button onclick="thwIcSave('${sub.id}')" style="margin-left:auto;font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">${mine ? '保存修改' : '保存我的批改'}</button>
       </div>
     </div>
   </div>`;

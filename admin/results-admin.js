@@ -120,7 +120,7 @@ const RA_CSS = `
 #ra-root .rm-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
 #ra-root .rm-lab { font-size: 10px; color: var(--text-muted); min-width: 64px; }
 #ra-root .ra-chip, #ra-root .filter-chip { padding: 3px 10px; border-radius: 2px; font-size: 11px; border: 1px solid var(--border); cursor: pointer; background: var(--surface); font-family: inherit; user-select: none; }
-#ra-root .ra-chip.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+#ra-root .ra-chip.on { background: var(--pick-bg,#ebe4da); color: var(--pick-fg,#3a2e24); border-color: var(--pick-bd,#c9bba9); font-weight: 600; }
 #ra-root .ra-chip i { font-style: normal; opacity: .6; font-size: 10px; }
 #ra-root .rm-stats { display: flex; gap: 18px; align-items: baseline; flex-wrap: wrap; padding: 8px 12px; margin: 4px 0 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 3px; }
 #ra-root .rm-stat b { font-size: 18px; font-weight: 600; margin-right: 3px; }

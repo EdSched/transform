@@ -269,8 +269,8 @@ function pstBuildUi() {
     <div style="display:flex;gap:6px;align-items:center"><input style="${inp};width:80px" id="pst-year" type="number" value="${st.year}" oninput="pstSetDate()"><span>年</span><input style="${inp};width:60px" id="pst-month" type="number" min="1" max="12" value="${st.month}" oninput="pstSetDate()"><span>月</span></div>
     <label style="${lab}">本校专业（可不填；老师端按它筛选）</label><div id="pst-major-box"></div>
     <div style="display:flex;flex-direction:column;gap:6px;margin-top:14px">
-      <button style="${btn};background:var(--accent);color:#fff;border-color:var(--accent)" onclick="pstSave(false)">保存</button>
-      <button style="${btn};background:var(--accent);color:#fff;border-color:var(--accent)" onclick="pstSave(true)">保存并发布</button>
+      <button style="${btn};background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border-color:var(--btn-bd,#d5c9bb)" onclick="pstSave(false)">保存</button>
+      <button style="${btn};background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border-color:var(--btn-bd,#d5c9bb)" onclick="pstSave(true)">保存并发布</button>
       <button style="${btn}" onclick="pstExportWeb()">下载网络版 JPG</button>
       <button style="${btn}" onclick="pstExportPdf()">下载印刷版 PDF</button>
       <button class="pst-desk" style="${btn}" onclick="pstClose()">关闭</button>

@@ -1328,7 +1328,7 @@ function renderTeachersPage(mc){
     <div class="section-title">老师管理 <span class="badge-count">${cachedTeachers.length}</span></div>
     <div style="display:flex;gap:8px;align-items:center">
     <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:3px;overflow:hidden">
-      <button style="font-size:11px;padding:5px 16px;border:none;cursor:pointer;font-family:inherit;background:var(--accent);color:#fff">👥 老师账号</button>
+      <button style="font-size:11px;padding:5px 16px;border:1px solid var(--btn-bd,#d5c9bb);cursor:pointer;font-family:inherit;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24)">👥 老师账号</button>
       <button onclick="renderTeacherProfilesPage(teacherPageHost())" style="font-size:11px;padding:5px 16px;border:none;cursor:pointer;font-family:inherit;background:var(--surface);color:var(--text-2)">📇 讲师档案</button>
     </div>
     ${isHubAdminUser()?'<button class="btn btn-outline btn-sm" onclick="aoOpen()">⚙ 选项设置</button>':''}
@@ -2788,7 +2788,7 @@ async function renderTeacherProfilesPage(mc){
     <div style="display:flex;gap:8px;align-items:center">
       <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:3px;overflow:hidden">
         <button onclick="renderTeachersPage(teacherPageHost());renderTeacherList()" style="font-size:11px;padding:5px 16px;border:none;cursor:pointer;font-family:inherit;background:var(--surface);color:var(--text-2)">👥 老师账号</button>
-        <button style="font-size:11px;padding:5px 16px;border:none;cursor:pointer;font-family:inherit;background:var(--accent);color:#fff">📇 讲师档案</button>
+        <button style="font-size:11px;padding:5px 16px;border:1px solid var(--btn-bd,#d5c9bb);cursor:pointer;font-family:inherit;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24)">📇 讲师档案</button>
       </div>
       ${profAsT()?'':`<label class="btn btn-outline btn-sm" style="cursor:pointer">⬆ 导入 Excel<input type="file" accept=".xlsx,.xls" style="display:none" onchange="profImportExcel(this)"></label>`}
       ${profCanEdit()?`<button class="btn btn-primary btn-sm" onclick="profEditingId='new';profRender()">＋ 新增讲师</button>`:''}

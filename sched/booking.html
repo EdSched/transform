@@ -2,11 +2,11 @@
 <html lang="zh"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>教室占用录入 · 唯新</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=20261030">
 <style>
   .seg{ display:inline-flex; gap:4px; }
   .seg button{ padding:6px 14px; border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:6px; cursor:pointer; font-size:13px; }
-  .seg button.on{ background:var(--blue); color:#fff; border-color:var(--blue); }
+  .seg button.on{ background:var(--pick-bg);color:var(--pick-fg);border-color:var(--pick-bd);font-weight:600; }
 </style>
 </head><body>
 <div id="nav"></div>
@@ -195,7 +195,7 @@ async function boot(){
   el('wdPick').querySelectorAll('.wdb').forEach(b=>b.onclick=()=>{
     const wd=b.dataset.wd;
     if(SELWD.has(wd)){ SELWD.delete(wd); b.style.background=''; b.style.color=''; }
-    else { SELWD.add(wd); b.style.background='var(--blue)'; b.style.color='#fff'; }
+    else { SELWD.add(wd); b.style.background='var(--pick-bg)'; b.style.color='var(--pick-fg)'; }
   });
   el('rec').onchange=()=>{
     const weekly=el('rec').value==='weekly';

@@ -135,7 +135,7 @@ function pkPriceBarHtml() {
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
     <select onchange="pkPriceSetDomain(this.value)" style="${sel}">${doms.map(d => `<option value="${pkEsc(d)}" ${d === pkPrice.domain ? 'selected' : ''}>${pkEsc(d)}</option>`).join('')}</select>
     <select onchange="pkPriceSetTrack(this.value)" style="${sel}">${tracks.map(t => `<option value="${pkEsc(t)}" ${t === pkPrice.track ? 'selected' : ''}>${pkEsc(t)}</option>`).join('')}</select>
-    <button onclick="pkAddPriceTable()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 14px;cursor:pointer;font-family:inherit">➕ 加入价格表</button></div>`;
+    <button onclick="pkAddPriceTable()" style="font-size:11px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:5px 14px;cursor:pointer;font-family:inherit">➕ 加入价格表</button></div>`;
 }
 function pkPriceBarRender() { document.querySelectorAll('.pk-price-bar').forEach(el => { el.innerHTML = pkPriceBarHtml(); }); }
 // 价目表 → 一张对照表：套餐为列；课程按分组（共有的分组在前）列在左边
@@ -194,7 +194,7 @@ function pkCommonHtml() {
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${doms.map(d => chip(d === pkCommon.domain, pkEsc(d), `pkCommonSetDomain('${pkEsc(d)}')`)).join('')}</div>
     <div style="font-size:10px;color:var(--text-3);margin-bottom:5px">点选要放进资料的内容块（高亮 = 加入），每块作为一章，排在资料最后</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${chipFold(rows.map(r => ({ on: !pkCommon.off.has(r.id), html: chip(!pkCommon.off.has(r.id), pkEsc(r.title), `pkCommonToggle('${pkEsc(r.id)}')`) })))}</div>
-    <button onclick="pkAddCommon()" ${n ? '' : 'disabled'} style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 14px;cursor:${n ? 'pointer' : 'not-allowed'};opacity:${n ? 1 : .5};font-family:inherit">➕ 加入宣传资料（${n} 块）</button>
+    <button onclick="pkAddCommon()" ${n ? '' : 'disabled'} style="font-size:11px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:5px 14px;cursor:${n ? 'pointer' : 'not-allowed'};opacity:${n ? 1 : .5};font-family:inherit">➕ 加入宣传资料（${n} 块）</button>
   </div>`;
 }
 function pkAddCommon() {
@@ -406,7 +406,7 @@ function pkRender(mc) {
             </select>
             ${PK_MAJOR_PARTS.filter(([k]) => PK_MAJOR_ALL3.includes(k)).map(([k, l]) => `<label style="font-size:11px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="pk_part_${k}" checked style="accent-color:var(--accent)">${l}</label>`).join('')}
           </div>
-          <button id="pk_major_btn" onclick="pkAddMajor()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 14px;cursor:pointer;font-family:inherit">➕ 添加学科介绍</button>
+          <button id="pk_major_btn" onclick="pkAddMajor()" style="font-size:11px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:5px 14px;cursor:pointer;font-family:inherit">➕ 添加学科介绍</button>
           <a onclick="pkGoSchedule()" style="margin-left:10px;font-size:11px;color:var(--accent);cursor:pointer;text-decoration:underline">课程表 → 去宣传相关调整后加入</a>
         </div>` : ''}
         ${typeof pricingEnabled === 'function' && pricingEnabled() ? `<div style="border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:10px">
@@ -446,7 +446,7 @@ function pkRender(mc) {
       }).join('') : `<div style="text-align:center;padding:36px 16px;color:var(--text-3);font-size:12px;border:1px dashed var(--border);border-radius:4px">还没有内容<br><span style="font-size:10px">从左侧添加学科介绍，或到各工具里点「➕ 加入宣传资料」</span></div>`}
 
       <div style="border-top:1px solid var(--border-light);margin-top:12px;padding-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-        <button onclick="pkOpenDoc(true)" ${incl.length ? '' : 'disabled'} style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 18px;cursor:${incl.length ? 'pointer' : 'not-allowed'};font-family:inherit;opacity:${incl.length ? 1 : .5}">🖨 生成完整 PDF</button>
+        <button onclick="pkOpenDoc(true)" ${incl.length ? '' : 'disabled'} style="font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:8px 18px;cursor:${incl.length ? 'pointer' : 'not-allowed'};font-family:inherit;opacity:${incl.length ? 1 : .5}">🖨 生成完整 PDF</button>
       </div>
       <div style="font-size:10px;color:var(--text-3);margin-top:8px;line-height:1.7">生成 PDF：在打印对话框的「目标打印机」选「另存为 PDF」，并勾选「背景图形」以保留配色。</div>
     </div>

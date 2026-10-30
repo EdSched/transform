@@ -425,7 +425,7 @@ function batchAssignOwner(){
       <input list="batch_owner_list" id="batch_owner_input" placeholder="输入或选择老师姓名" style="width:100%;font-size:12px;padding:7px 9px;border:1px solid var(--border);border-radius:3px;margin-bottom:10px">
       <datalist id="batch_owner_list">${pool.map(t=>`<option value="${t.name}">`).join('')}</datalist>
       <div style="display:flex;gap:6px;margin-bottom:12px">
-        <button onclick="applyBatchOwner('add',${JSON.stringify(selected).replace(/"/g,'&quot;')})" style="flex:1;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:8px;cursor:pointer;font-family:inherit">追加（保留原有）</button>
+        <button onclick="applyBatchOwner('add',${JSON.stringify(selected).replace(/"/g,'&quot;')})" style="flex:1;font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:4px;padding:8px;cursor:pointer;font-family:inherit">追加（保留原有）</button>
         <button onclick="applyBatchOwner('replace',${JSON.stringify(selected).replace(/"/g,'&quot;')})" style="flex:1;font-size:12px;background:none;border:1px solid var(--border);border-radius:4px;padding:8px;cursor:pointer;font-family:inherit">替换（清空重设）</button>
       </div>
       <button onclick="applyBatchOwner('clear',${JSON.stringify(selected).replace(/"/g,'&quot;')})" style="width:100%;font-size:11px;background:none;border:1px solid #e0b0a0;color:#a33;border-radius:3px;padding:6px;cursor:pointer;font-family:inherit;margin-bottom:6px">移除这些学生的全部负责老师</button>
@@ -1294,7 +1294,7 @@ function spNotesRender(sid, sname) {
   box.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px">
     <textarea id="spnote_input_${sid}" rows="2" placeholder="补充评估、交接备注…" onclick="event.stopPropagation()"
       style="width:100%;font-size:11px;line-height:1.8;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical"></textarea>
-    <button onclick="event.stopPropagation();spNoteSave('${sid}','${sname}')" style="margin-top:5px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">保存记录</button>
+    <button onclick="event.stopPropagation();spNoteSave('${sid}','${sname}')" style="margin-top:5px;font-size:10px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">保存记录</button>
     <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px">
       ${notes.length ? notes.map(n => `<div style="font-size:11px;border-top:1px dashed var(--border-light);padding-top:6px">
         <span style="color:var(--accent);font-weight:600">${n.teacher_name || ''}</span>

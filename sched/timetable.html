@@ -4,7 +4,7 @@
 <title>课表 · 唯新</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=20261030">
 <style>
 :root{
   --bg:#f7f5f0; --surface:#fff; --border:#e2ded6; --border-light:#ede9e2;
@@ -288,7 +288,7 @@ function fillMajors(){
 let TT_DOM='', TERM_ALL=false;
 function renderDomTags(){
   const box=el('domTags'); if(!box) return;
-  box.innerHTML=CATEGORIES.map(c=>`<button type="button" class="ghost sm domtag" data-d="${esc(c)}" style="${TT_DOM===c?'background:var(--blue);color:#fff':''}">${esc(c)}</button>`).join('');
+  box.innerHTML=CATEGORIES.map(c=>`<button type="button" class="ghost sm domtag" data-d="${esc(c)}" style="${TT_DOM===c?'background:var(--pick-bg);color:var(--pick-fg);border-color:var(--pick-bd);font-weight:600':''}">${esc(c)}</button>`).join('');
   box.querySelectorAll('.domtag').forEach(b=>b.onclick=()=>{
     const d=b.dataset.d; if(d===TT_DOM) return;
     TT_DOM=d; SEL_TERMS.clear(); TERM_ALL=false;
@@ -305,7 +305,7 @@ function renderTermTags(){
   const allT=[...new Set(dc.map(c=>c.term).filter(Boolean))];
   const inWin=new Set(dc.filter(c=>!schedRemoved(c)&&schedInWindow(c)).map(c=>c.term).filter(Boolean));
   const shownT=TERM_ALL?allT:allT.filter(t=>inWin.has(t)||SEL_TERMS.has(t));
-  const btn=t=>{ const on=SEL_TERMS.has(t); return `<button type="button" class="ghost sm termbtn" data-t="${esc(t)}" style="${on?'background:var(--blue);color:#fff':''}">${on?'✓ ':''}${esc(t)}</button>`; };
+  const btn=t=>{ const on=SEL_TERMS.has(t); return `<button type="button" class="ghost sm termbtn" data-t="${esc(t)}" style="${on?'background:var(--pick-bg);color:var(--pick-fg);border-color:var(--pick-bd);font-weight:600':''}">${on?'✓ ':''}${esc(t)}</button>`; };
   let html=termGroups(shownT).map(g=>`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="muted" style="min-width:150px;font-size:12px">${esc(g.title)}</span>${g.list.map(btn).join('')}</div>`).join('');
   if(!html) html='<span class="muted">这个领域在当前期和下一期里没有课</span>';
   const hiddenN=allT.length-shownT.length;

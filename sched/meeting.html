@@ -2,10 +2,10 @@
 <html lang="zh"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>腾讯会议账号占用 · 唯新</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=20261030">
 <style>
   .chip{display:inline-block;cursor:pointer;user-select:none;border:1px solid var(--line);border-radius:14px;padding:3px 12px;font-size:12px;margin:2px;color:#666}
-  .chip.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .chip.on{background:var(--pick-bg);color:var(--pick-fg);border-color:var(--pick-bd);font-weight:600}
   .pickrow{cursor:pointer;padding:6px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;font-size:12px}
   .pickrow.on{border-color:var(--blue);background:#eef4ff}
   .acc-free{cursor:pointer;border:1px solid #b7e0c4;background:#eafaf0;color:#1f7a4d;border-radius:8px;padding:6px 12px;font-size:13px;margin:3px;display:inline-block}
@@ -552,7 +552,7 @@ function mtgSetForm(courseId, room){
       '</div></div>';
     el('ms_form').innerHTML=h;
     if(el('ms_saveTplChip')) el('ms_saveTplChip').onclick=()=>{ const c2=el('ms_saveTplChip'); const on=c2.dataset.on==='1'?'0':'1'; c2.dataset.on=on;
-      c2.style.background=on==='1'?'var(--blue)':''; c2.style.color=on==='1'?'#fff':'#666'; c2.style.borderColor=on==='1'?'var(--blue)':'var(--line)';
+      c2.style.background=on==='1'?'var(--pick-bg)':''; c2.style.color=on==='1'?'var(--pick-fg)':'#666'; c2.style.borderColor=on==='1'?'var(--pick-bd)':'var(--line)';
       el('ms_tplTitle').style.display=on==='1'?'':'none'; };
     if(el('ms_tpl')) el('ms_tpl').onchange=()=>{ const id=el('ms_tpl').value; chosenTpl=id?MTEMPLATES.find(t=>String(t.id)===String(id)):null; parsed=null; render(); };
     el('ms_ctitle').onclick=()=>navigator.clipboard.writeText(el('ms_title').value).then(()=>toast('标题已复制'));

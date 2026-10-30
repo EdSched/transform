@@ -61,7 +61,7 @@ function renderStudyLogin(wrap) {
       <input id="sl_code" placeholder="查询码" style="width:100%;font-size:13px;padding:8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);text-transform:uppercase" onkeydown="if(event.key==='Enter')studyLoginSubmit()">
     </div>
     <div id="sl_error" style="font-size:11px;color:var(--danger);min-height:16px;margin-bottom:10px"></div>
-    <button onclick="studyLoginSubmit()" style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:11px;font-size:13px;cursor:pointer;font-family:inherit">查询 →</button>
+    <button onclick="studyLoginSubmit()" style="width:100%;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:11px;font-size:13px;cursor:pointer;font-family:inherit">查询 →</button>
     <div style="font-size:10px;color:var(--text-muted);margin-top:10px;text-align:center">查询码由老师/管理员提供</div>
   </div>`;
 }
@@ -336,7 +336,7 @@ function renderSchoolsTab() {
     <div style="font-size:12px;font-weight:600">我的志望校 (${schoolPlans.length}/6)</div>
     <div style="display:flex;align-items:center;gap:8px">
       <span id="ssp_save_msg" style="font-size:11px;color:var(--ok)"></span>
-      <button onclick="saveStudySchoolPlans()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 16px;cursor:pointer;font-family:inherit;font-weight:500">保存</button>
+      <button onclick="saveStudySchoolPlans()" style="font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:6px 16px;cursor:pointer;font-family:inherit;font-weight:500">保存</button>
     </div>
   </div>
   <div id="studySchoolRows">`;
@@ -480,7 +480,7 @@ function openStudyPlanEditor() {
     ${d.teacher_comment?`<div style="background:var(--ok-bg);border-radius:3px;padding:10px;font-size:11px;color:var(--ok);margin-bottom:14px">💬 老师批注：${d.teacher_comment}</div>`:''}
 
     <div style="display:flex;gap:8px">
-      <button onclick="saveStudyPlanDraft('${d.id||''}')" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:11px;font-size:13px;cursor:pointer;font-family:inherit">保存</button>
+      <button onclick="saveStudyPlanDraft('${d.id||''}')" style="flex:1;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:4px;padding:11px;font-size:13px;cursor:pointer;font-family:inherit">保存</button>
       <button onclick="document.getElementById('studyPlanModal').remove()" style="background:none;border:1px solid var(--border);border-radius:4px;padding:11px 18px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
     </div>
   </div>`;
@@ -764,7 +764,7 @@ function riyuStudentRender() {
       ${g.sections.length ? secs : '<div style="font-size:11px;color:var(--text-muted);padding:8px 0">写作指导还没有设置，请联系老师</div>'}
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <button onclick="riyuStudentSave(${idx},false)" style="background:var(--surface);color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:inherit">💾 保存草稿</button>
-        <button onclick="riyuStudentSave(${idx},true)" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:inherit">📤 提交给老师</button>
+        <button onclick="riyuStudentSave(${idx},true)" style="background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:4px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:inherit">📤 提交给老师</button>
         <span id="rs_msg_${idx}" style="font-size:11px;color:var(--ok)">${escA(flash)}</span>
       </div>
     </div>`;
@@ -855,7 +855,7 @@ function studyMatRender() {
         ${matEditFieldsHtml('sm_ed', r, "matFieldsToggle('sm_ed')", inp)}
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
           <button onclick="studyMatOpen('')" style="font-size:12px;border:1px solid var(--border);background:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-family:inherit">收起</button>
-          <button id="sm_ed_btn" onclick="studyMatSave('${escA(it.id)}')" style="background:var(--accent);color:#fff;border:none;border-radius:4px;padding:6px 16px;font-size:12px;cursor:pointer;font-family:inherit">保存</button>
+          <button id="sm_ed_btn" onclick="studyMatSave('${escA(it.id)}')" style="background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:4px;padding:6px 16px;font-size:12px;cursor:pointer;font-family:inherit">保存</button>
         </div>`;
     }
   }
@@ -914,7 +914,7 @@ function renderPlanTab() {
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:6px;margin-bottom:8px">
           ${refFields.map(f => `<input id="ref_f_${f.k}" placeholder="${escA(f.label)}" style="font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg)">`).join('')}
         </div>
-        <button onclick="studyAddRef()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">＋ 添加</button>
+        <button onclick="studyAddRef()" style="font-size:11px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">＋ 添加</button>
       </div>
 
       <!-- 文献列表 -->
@@ -969,7 +969,7 @@ function renderPlanTab() {
           <label style="font-size:10px;color:var(--text-muted);display:block;margin-bottom:3px">草稿进展说明（进展情况、遇到的问题等）</label>
           <textarea id="spd_dn" rows="2" style="width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical">${escA(d.draft_notes||'')}</textarea>
         </div>
-        <button onclick="studySaveDraft()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit">保存草稿</button>
+        <button onclick="studySaveDraft()" style="font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit">保存草稿</button>
         <span id="spd_save_msg" style="font-size:11px;margin-left:10px"></span>
         ${d.teacher_comment?`<div style="background:var(--ok-bg);border-radius:3px;padding:10px;margin-top:10px;font-size:11px;color:var(--ok)">💬 老师批注：${d.teacher_comment}</div>`:''}
       </div>
@@ -984,7 +984,7 @@ function renderPlanTab() {
         ${d.draft_file_url?`<div style="margin-bottom:10px"><a href="${d.draft_file_url}" target="_blank" style="font-size:12px;color:var(--accent)">📎 当前上传的文件</a></div>`:''}
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">上传计划书文件（.doc / .docx / .pdf）</div>
         <input type="file" id="spd_file" accept=".doc,.docx,.pdf" style="font-size:11px;margin-bottom:10px">
-        <button onclick="studyUploadDraft()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit">上传</button>
+        <button onclick="studyUploadDraft()" style="font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit">上传</button>
         <span id="spd_upload_msg" style="font-size:11px;margin-left:10px"></span>
       </div>
     </div>
@@ -1566,13 +1566,13 @@ function hwPreview(url, name) {
              <div style="font-size:34px;margin-bottom:8px">📄</div>
              <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px">${escA(name||'资料')}</div>
              <div style="font-size:10px;color:var(--text-muted);margin-bottom:14px">手机上内嵌 PDF 无法缩放，请点击下方按钮打开（可放大、可保存）</div>
-             <a href="${escA(url)}" target="_blank" style="display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-size:12px;padding:9px 24px;border-radius:3px">打开 PDF 查看题目</a>
+             <a href="${escA(url)}" target="_blank" style="display:inline-block;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);text-decoration:none;font-size:12px;padding:9px 24px;border-radius:3px">打开 PDF 查看题目</a>
            </div>`
         : `<iframe src="${escA(url)}" style="width:100%;height:72vh;border:none;display:block"></iframe>`)
       : `<div style="padding:8px">
            <img src="${escA(url)}" style="max-width:100%;display:block;cursor:zoom-in" onclick="window.open('${escA(url)}','_blank')">
            <div style="text-align:center;margin-top:8px">
-             <a href="${escA(url)}" target="_blank" style="display:inline-block;background:var(--accent);color:#fff;text-decoration:none;font-size:11px;padding:7px 18px;border-radius:3px">🔍 全屏查看 / 放大</a>
+             <a href="${escA(url)}" target="_blank" style="display:inline-block;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);text-decoration:none;font-size:11px;padding:7px 18px;border-radius:3px">🔍 全屏查看 / 放大</a>
            </div>
          </div>`}`;
   // 窄屏：预览在左屏，自动滑过去，否则点了看不到变化
@@ -1951,7 +1951,7 @@ function hwDetailHtml(s, sub) {
          <span style="font-size:10px;color:var(--text-muted)">已于 ${fmtJst(sub.submitted_at)} 提交${hwGraded(sub)?'':'，等待老师批改'}${sub.whole_file_url?` · <a href="${escA(sub.whole_file_url)}" target="_blank" style="color:var(--accent)">📎 整份作业文件</a>`:''}</span>
          ${!hwGraded(sub)?`<button onclick="hwWithdraw('${s.id}')" style="margin-left:auto;font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit;color:var(--text-secondary)">↺ 撤回重做</button>`:''}
        </div>`
-    : `<button onclick="hwSubmit('${s.id}','${escA(L.key||'')}')" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:8px 22px;cursor:pointer;font-family:inherit">提交作业</button>`}`;
+    : `<button onclick="hwSubmit('${s.id}','${escA(L.key||'')}')" style="font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:8px 22px;cursor:pointer;font-family:inherit">提交作业</button>`}`;
 }
 
 // 交作业方式：整份上传 / 逐题作答 二选一，记在草稿 hwDraft.__mode；全是打字题时默认逐题
@@ -2355,7 +2355,7 @@ function sschedMeCardHtml() {
     const place = [inf.delivery === '线下＋线上' ? '线上线下同步' : inf.delivery, inf.campus].filter(Boolean).join(' · ');
     nextHtml = `${next.session_date === today ? `<div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:3px">今天${next.time_range ? ' ' + escA(parseTimeRanges(next.time_range)[0].start) : ''} 有课</div>` : ''}
       <div style="font-size:12px;line-height:1.7"><span style="color:var(--text-muted)">下次上课</span> ${next.session_date.slice(5).replace('-', '/')}（周${wd[d.getDay()]}）${next.time_range ? ' · ' + escA(next.time_range) : ''} · <b>${escA(next.course_name || '')}</b>${next.session_number ? ' · 第' + next.session_number + '回' : ''}${place ? ' · ' + escA(place) : ''}
-      ${url ? `<a href="${escA(url)}" target="_blank" style="display:inline-block;margin-left:6px;padding:2px 10px;border-radius:3px;background:var(--accent);color:#fff;font-size:11px;text-decoration:none">进入课堂</a>` : ''}</div>`;
+      ${url ? `<a href="${escA(url)}" target="_blank" style="display:inline-block;margin-left:6px;padding:2px 10px;border-radius:3px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);font-size:11px;text-decoration:none">进入课堂</a>` : ''}</div>`;
   }
   // 出席：只算必出席的课（出席 + 迟到 ÷ 已点名的课次，口径同老师端）；选修单独一行；不记出席的课不统计
   const calc = mode => {
@@ -2674,7 +2674,7 @@ function icTodoHtml(s) {
         <span id="ic_tip_${s.id}" style="font-size:10px;color:var(--text-muted)"></span>
       </div>
       <div id="ic_imgs_${s.id}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${icThumbsHtml(s.id, true)}</div>
-      <button onclick="icSubmit('${s.id}')" style="margin-top:10px;font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 26px;cursor:pointer;font-family:inherit">提交</button>
+      <button onclick="icSubmit('${s.id}')" style="margin-top:10px;font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:7px 26px;cursor:pointer;font-family:inherit">提交</button>
     </div>` : ''}
   </div>`;
 }

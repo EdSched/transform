@@ -221,7 +221,7 @@ function tdcRender(studentName) {
     <div style="font-size:13px;font-weight:600;margin-bottom:3px">📄 计划书 · 先行研究　—　${tsaEsc(studentName)}</div>
     <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">关键词与评语会同步显示给学生；学生自己的文献列表不会被覆盖</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-      ${draft.draft_file_url ? `<a href="${draft.draft_file_url}" target="_blank" style="font-size:11px;background:var(--accent);color:#fff;border-radius:3px;padding:6px 14px;text-decoration:none">⬇ 下载完成稿</a>` : '<span style="font-size:11px;color:var(--text-3)">学生尚未上传完成稿</span>'}
+      ${draft.draft_file_url ? `<a href="${draft.draft_file_url}" target="_blank" style="font-size:11px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border-radius:3px;padding:6px 14px;text-decoration:none">⬇ 下载完成稿</a>` : '<span style="font-size:11px;color:var(--text-3)">学生尚未上传完成稿</span>'}
       ${refs.length ? `<button onclick="tdcExportRefs('${tsaEsc(studentName)}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">⬇ 导出先行研究(CSV)</button>` : ''}
     </div>
     <div style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:12px">
@@ -586,7 +586,7 @@ function tsaListHtml() {
     rowClick: s => `tsaExpandedId=tsaExpandedId==='${s.id}'?null:'${s.id}';tsaRenderList()`,
     expand: s => tsaExpandedId !== s.id ? '' : `<div style="font-size:11px;margin-bottom:6px"><span style="color:var(--text-3)">上课方式：</span>${s.default_mode === 'offline' ? '线下' : '线上'}</div>
         <button onclick="event.stopPropagation();tsaCodeNotice('${s.id}')" style="margin-right:6px;font-size:10px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">✉ 查询码通知</button>
-        ${(teacherData.permissions.student_mgmt_items||[]).includes('profile_edit')?`<button onclick="event.stopPropagation();tseOpen('${s.id}')" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">✏ 修改档案</button>`:''}`
+        ${(teacherData.permissions.student_mgmt_items||[]).includes('profile_edit')?`<button onclick="event.stopPropagation();tseOpen('${s.id}')" style="font-size:10px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">✏ 修改档案</button>`:''}`
   });
 }
 
@@ -615,7 +615,7 @@ function tsaRender() {
         ${(teacherData && teacherData.permissions && teacherData.permissions.guaranteed_only)
           ? `<div style="font-size:10px;padding:2px 10px;border-radius:12px;background:#8a5010;color:#fff;white-space:nowrap">🎓 仅保录学生（管理员限定）</div>`
           : `<div class="filter-chip ${tsaGuaranteedOnly?'active':''}" onclick="tsaGuaranteedOnly=!tsaGuaranteedOnly;tsaRender()" style="padding:2px 10px;font-size:10px;white-space:nowrap;${tsaGuaranteedOnly?'background:#8a5010;color:#fff;border-color:#8a5010':''}">🎓 只看保录</div>`}
-        <button onclick="tsaFormOpen=!tsaFormOpen;tsaRender()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">${tsaFormOpen ? '收起表单' : '＋ 添加学生'}</button>
+        <button onclick="tsaFormOpen=!tsaFormOpen;tsaRender()" style="font-size:11px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">${tsaFormOpen ? '收起表单' : '＋ 添加学生'}</button>
       </div>
     </div>
 
@@ -641,7 +641,7 @@ function tsaRender() {
         ${inp('tsa_expiry', '到期时间', '27年3月')}
         ${fld('tsa_mode', '默认上课方式', `<select id="tsa_mode" style="${inpStyle}"><option value="online">线上</option><option value="offline">线下</option></select>`)}
       </div>
-      <button onclick="tsaSaveStudent()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit">保存</button>
+      <button onclick="tsaSaveStudent()" style="font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit">保存</button>
       <span id="tsa_save_msg" style="font-size:11px;margin-left:10px"></span>
     </div>` : ''}
 
@@ -1707,7 +1707,7 @@ function tmRenderShell() {
     ${arrow(-1, '‹')}<span style="font-size:13px;font-weight:600;min-width:92px;text-align:center">${tmYm.replace('-', '年')}月</span>${arrow(1, '›')}
     ${cur ? '' : `<span onclick="tmSetYm('${tmCurYm()}')" style="font-size:10px;color:var(--accent);cursor:pointer">回到本月</span>`}
     <span style="font-size:10px;color:var(--text-3)">每个学生每月至少一次面谈；没面谈的补「学习记录」或「联系未回复」</span>
-    <button onclick="tmBatchReminder()" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:4px 12px;cursor:pointer;font-family:inherit;margin-left:auto">✉ 按专业批量生成提醒</button>
+    <button onclick="tmBatchReminder()" style="font-size:10px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:2px;padding:4px 12px;cursor:pointer;font-family:inherit;margin-left:auto">✉ 按专业批量生成提醒</button>
     <button onclick="tmContactModal('')" style="font-size:10px;background:#1a6d3a;color:#fff;border:none;border-radius:2px;padding:4px 12px;cursor:pointer;font-family:inherit">＋ 补充记录</button>
   </div>
   <div id="tm_chips" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px"></div>
@@ -1945,7 +1945,7 @@ function tpNotesRender(sid, sname) {
   box.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px">
     <textarea id="tpnote_input_${sid}" rows="2" placeholder="记录该学生的评估、注意事项、交接备注…（如：笔试水平待评估；临近出愿需主动跟进）" onclick="event.stopPropagation()"
       style="width:100%;font-size:11px;line-height:1.8;padding:7px 9px;border:1px solid var(--border);border-radius:2px;background:var(--bg);font-family:inherit;resize:vertical"></textarea>
-    <button onclick="event.stopPropagation();tpNoteSave('${sid}','${tsaEsc(sname)}')" style="margin-top:5px;font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">保存记录</button>
+    <button onclick="event.stopPropagation();tpNoteSave('${sid}','${tsaEsc(sname)}')" style="margin-top:5px;font-size:10px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">保存记录</button>
     <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px">
       ${notes.length ? notes.map(n => `<div style="font-size:11px;border-top:1px dashed var(--border-light);padding-top:6px">
         <span style="color:var(--accent);font-weight:600">${tsaEsc(n.teacher_name)}</span>
@@ -2012,7 +2012,7 @@ function tseOpen(sid) {
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button onclick="document.getElementById('tseModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">取消</button>
-      <button onclick="tseSave('${sid}')" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存修改</button>
+      <button onclick="tseSave('${sid}')" style="font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存修改</button>
     </div>
   </div>`;
   modal.onclick = e => { if (e.target === modal) modal.remove(); };

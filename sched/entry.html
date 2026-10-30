@@ -2,7 +2,7 @@
 <html lang="zh"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>数据录入 · 唯新</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=20261030">
 </head><body>
 <div id="nav"></div>
 <div class="wrap">
@@ -127,7 +127,7 @@ function renderRoomWeekdayToggle(){
   for(let d=1; d<=7; d++){ const b=document.createElement('button');
     b.type='button'; b.className='ghost sm'; b.textContent=WEEKDAYS[d]; b.dataset.d=d;
     b.onclick=()=>{ const on=b.dataset.on==='1'; b.dataset.on=on?'':'1';
-      b.style.background=on?'#fff':'var(--blue)'; b.style.color=on?'var(--ink)':'#fff'; checkRoomConflict(); };
+      b.style.background=on?'#fff':'var(--pick-bg)'; b.style.color=on?'var(--ink)':'var(--pick-fg)'; checkRoomConflict(); };
     box.appendChild(b); }
 }
 function roomSelectedWeekdays(){ return [...el('r_wd').querySelectorAll('button[data-on="1"]')].map(b=>Number(b.dataset.d)); }

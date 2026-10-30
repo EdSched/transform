@@ -72,7 +72,7 @@ function homeNickToggle() {
     ${(teacherData.public_name || '').trim() ? `<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">对外名称：${homeEsc(teacherData.public_name)}（管理员设定，用于宣传）</div>` : ''}
     <div style="display:flex;gap:6px;justify-content:flex-end">
       <button onclick="document.getElementById('nickBox').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text-2)">取消</button>
-      <button onclick="saveDisplayName()" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 14px;font-size:11px;cursor:pointer;font-family:inherit">保存</button>
+      <button onclick="saveDisplayName()" style="background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:5px 14px;font-size:11px;cursor:pointer;font-family:inherit">保存</button>
     </div>`;
   const host = document.getElementById('headerLeft'); if (!host) return;
   host.appendChild(box);

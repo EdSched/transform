@@ -759,7 +759,7 @@ function openShareToStudents() {
         <textarea id="share_notes" rows="2" placeholder="例：请在截止日期前完成志望校填写，每个等级选2校，找到2位教授…"></textarea>
       </div>
       <div style="display:flex;gap:8px;margin-top:6px">
-        <button onclick="confirmShareToStudents()" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">确认共享</button>
+        <button onclick="confirmShareToStudents()" style="flex:1;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">确认共享</button>
         <button onclick="document.getElementById('shareModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:10px 14px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
       </div>
     </div>`;

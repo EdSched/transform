@@ -396,7 +396,7 @@ async function vfOpenTemplateImport() {
           <div><div style="font-size:12px;font-weight:600">${vfEsc(t.name || '未命名模板')}</div>
             <div style="font-size:10px;color:var(--text-3)">${(t.items || []).length} 条${t.major ? ' · ' + vfEsc(majorLabel(t.major) || t.major) : ''} · ${String(t.created_at || '').slice(0, 10)}</div></div>
           <div style="display:flex;gap:6px;flex-shrink:0">
-            <button onclick="vfImportTemplate('${t.id}')" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 12px;cursor:pointer;font-family:inherit">导入</button>
+            <button onclick="vfImportTemplate('${t.id}')" style="font-size:11px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:5px 12px;cursor:pointer;font-family:inherit">导入</button>
             <button onclick="vfDeleteTemplate('${t.id}')" style="font-size:11px;background:none;border:1px solid var(--border);color:#a33;border-radius:3px;padding:5px 10px;cursor:pointer;font-family:inherit">删除</button>
           </div>
         </div>`).join('')}
