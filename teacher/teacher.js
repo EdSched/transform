@@ -683,27 +683,114 @@ function renderTodo(mc) {
 
 let teacherBkSection = 'regular'; // 'regular' | 'vip'
 
+// 面谈预约：状态 chips + 一行一条的列表（状态规则同管理端，见 shared/payroll-core.js 的 interviewState）
+const TBK_STATS = [['pending', '待确认'], ['confirmed', '已确认'], ['need_record', '待补记录'], ['done', '已完成'], ['all', '全部']];
+let tbkStat = null, tbkYm = '', tbkQ = '', tbkShown = 30;
+const tbkOpen = {};
+function tbkRegular() { return cachedTeacherBookings.filter(b => b.type !== 'vip' && b.status !== 'cancelled'); }
+// 已完成 / 全部 按月；待确认 / 已确认 / 待补记录 不分月（都是要处理的）
+function tbkInView(b, st) {
+  if (st === 'pending' || st === 'confirmed' || st === 'need_record') return true;
+  return (b.slot_date || '').startsWith(tbkYm);
+}
+function tbkEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
 function renderBookingManagement(mc) {
-  const regularBookings = cachedTeacherBookings.filter(b => b.type !== 'vip');
+  if (!tbkYm) tbkYm = new Date().toISOString().slice(0, 7);
+  const list = tbkRegular();
+  const cnt = {}; let allN = 0;
+  list.forEach(b => { const st = interviewState(b); if (!tbkInView(b, st)) return; cnt[st] = (cnt[st] || 0) + 1; allN++; });
+  if (!tbkStat) tbkStat = cnt.need_record ? 'need_record' : cnt.pending ? 'pending' : 'confirmed';
+  const [y, m] = tbkYm.split('-').map(Number);
+  const arrow = (d, t) => `<span onclick="tbkShift(${d})" style="cursor:pointer;color:var(--accent);font-size:15px;padding:0 8px;user-select:none">${t}</span>`;
+  const monthBar = (tbkStat === 'done' || tbkStat === 'all') ? `<div style="display:flex;align-items:center;margin:2px 0 10px">${arrow(-1, '‹')}<span style="font-size:13px;font-weight:600">${y}年${m}月</span>${arrow(1, '›')}</div>` : '';
   mc.innerHTML = `
   <div class="page-section">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
       <div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">面谈预约</div>
       <button onclick="exportMyFiles()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 12px;cursor:pointer;font-family:inherit;white-space:nowrap">📦 批量导出我的文件</button>
     </div>
-    <div style="margin-bottom:16px">
-      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">待确认预约</div>
-      ${regularBookings.filter(b => b.status === 'pending').length ? regularBookings.filter(b => b.status === 'pending').map(b => renderBookingCardCollapsed(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无待确认预约</div>'}
+    <input id="tbkSearch" value="${tbkEsc(tbkQ)}" placeholder="搜索学生" oninput="tbkSetQ(this.value)" style="width:100%;box-sizing:border-box;font-size:12px;padding:7px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;margin-bottom:10px">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+      ${TBK_STATS.map(([k, l]) => { const n = k === 'all' ? allN : (cnt[k] || 0); const hot = k === 'need_record' && n && tbkStat !== k; return `<div class="filter-chip${tbkStat === k ? ' active' : ''}" ${hot ? 'style="background:#fff3cd;border-color:#d9a400;color:#7a5b00;font-weight:600"' : ''} onclick="tbkSetStat('${k}')">${l} ${n}</div>`; }).join('')}
     </div>
-    <div>
-      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">已确认预约</div>
-      ${regularBookings.filter(b => b.status === 'confirmed').length ? regularBookings.filter(b => b.status === 'confirmed').map(b => renderBookingCardCollapsed(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已确认预约</div>'}
-    </div>
-    <div style="margin-top:16px">
-      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">已完成预约</div>
-      ${regularBookings.filter(b => b.status === 'completed').length ? regularBookings.filter(b => b.status === 'completed').map(b => renderBookingCardCollapsed(b)).join('') : '<div style="font-size:12px;color:var(--text-3);padding:12px 0">暂无已完成预约</div>'}
-    </div>
+    ${monthBar}
+    <div id="tbkList">${tbkListHtml()}</div>
   </div>`;
+}
+function tbkMatch(b) {
+  const st = interviewState(b);
+  if (tbkStat !== 'all' && st !== tbkStat) return false;
+  if (!tbkInView(b, st)) return false;
+  const q = tbkQ.trim().toLowerCase();
+  return !q || (b.name || '').toLowerCase().includes(q);
+}
+function tbkListHtml() {
+  const list = tbkRegular().filter(tbkMatch);
+  const asc = ['need_record', 'pending', 'confirmed'].includes(tbkStat);   // 待处理的：最久 / 最近的在上面；已完成、全部：最新在上面
+  const key = b => (b.slot_date || '') + ' ' + String(b.slot_time_range || '').split(/[–\-~～]/)[0].trim();
+  list.sort((x, y) => asc ? key(x).localeCompare(key(y)) : key(y).localeCompare(key(x)));
+  const shown = list.slice(0, tbkShown);
+  return `<div class="tbkl">${shown.length ? shown.map(tbkRowHtml).join('') : '<div style="font-size:12px;color:var(--text-3);padding:14px 12px">暂无预约</div>'}</div>
+  ${list.length > tbkShown ? `<div onclick="tbkMore()" style="text-align:center;font-size:11px;color:var(--accent);cursor:pointer;padding:10px">显示更多（还有 ${list.length - tbkShown} 条）</div>` : ''}`;
+}
+function tbkRowHtml(b) {
+  const st = interviewState(b), f = fmtSessionDate(b.slot_date), open = !!tbkOpen[b.id], id = b.id, stop = 'event.stopPropagation();';
+  const col = { pending: 'var(--warn)', confirmed: 'var(--ok)', need_record: '#7a5b00', done: 'var(--accent)', old: 'var(--text-3)' }[st] || 'var(--text-3)';
+  let act = '';
+  // 面谈日已过但还没确认的预约：先确认（展开确认那一块），确认后才有记录表单
+  if (st === 'pending' || (st === 'need_record' && b.status === 'pending')) act = `<button class="tbkl-btn ok" onclick="${stop}tbkToggle('${id}')">✓ 确认</button>`;
+  else if ((st === 'confirmed' || st === 'need_record') && interviewCanFinish(b)) act = `<button class="tbkl-btn ok big" onclick="${stop}tbkFinish('${id}')">✓ 完成面谈・填记录</button>`;
+  else if (st === 'done') act = `<button class="tbkl-btn" onclick="${stop}tbkFinish('${id}')">查看记录</button>`;
+  const tagBg = st === 'need_record' ? 'background:#fff3cd;' : '';
+  return `<div class="tbkl-item" id="tbkc_${tbkEsc(id)}">
+    <div class="tbkl-row${st === 'need_record' ? ' need' : ''}" style="${st === 'need_record' ? '' : 'border-left-color:' + col}" onclick="tbkToggle('${id}')">
+      <div class="tbkl-d"><b>${f.short}</b> ${f.dow}<span style="color:var(--text-3);font-size:11px"> ${tbkEsc(b.slot_time_range || '')}</span></div>
+      <div class="tbkl-s"><b>${tbkEsc(b.name)}</b> <span class="tag ${typeTag(b.type)}" style="font-size:9px">${typeLabel(b.type)}</span></div>
+      <div class="tbkl-st"><span style="${tagBg}color:${col};border:1px solid ${col};font-size:10px;padding:1px 6px;border-radius:2px;white-space:nowrap">${INTERVIEW_STATE_LABEL[st]}</span>${st === 'need_record' ? `<span style="font-size:10px;color:#7a5b00;margin-left:6px">${interviewNeedReason(b)}</span>` : ''}</div>
+      <div class="tbkl-ac">${act}</div>
+    </div>
+    ${open ? `<div class="tbkl-detail">
+      <div style="font-size:11px;margin-bottom:8px">
+        <span style="cursor:pointer;color:var(--accent);text-decoration:underline" onclick="showStudentInfoTeacher('${b.name}','${b.student_id || ''}')">${b.name}</span>
+        <span style="color:var(--text-3);margin-left:6px">${MAJORS[tBkMajor(b)] || tBkMajor(b)}</span>${manualEntryTag(b)}${!b.student_id ? `<span style="font-size:9px;color:var(--warn);border:1px solid var(--warn);border-radius:2px;padding:0 5px;margin-left:6px">未关联档案·确认时认领</span><button onclick="tLinkStudent('${b.id}')" style="font-size:10px;margin-left:6px;background:none;border:1px solid var(--border);border-radius:2px;padding:0 6px;cursor:pointer;font-family:inherit">关联到学生</button>` : ''}
+      </div>
+      ${renderBookingCardBody(b)}
+    </div>` : ''}
+  </div>`;
+}
+function tbkDraw() { const el = document.getElementById('tbkList'); if (el) el.innerHTML = tbkListHtml(); }
+function tbkToggle(id) { if (tbkOpen[id]) delete tbkOpen[id]; else tbkOpen[id] = true; tbkDraw(); }
+function tbkMore() { tbkShown += 30; tbkDraw(); }
+function tbkSetQ(v) { tbkQ = v; tbkShown = 30; tbkDraw(); }
+function tbkSetStat(k) { tbkStat = k; tbkShown = 30; renderBookingManagement(document.getElementById('mainContent')); }
+function tbkShift(d) {
+  const [y, m] = tbkYm.split('-').map(Number), dt = new Date(y, m - 1 + d, 1);
+  tbkYm = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0'); tbkShown = 30;
+  renderBookingManagement(document.getElementById('mainContent'));
+}
+// 「完成面谈・填记录」：展开这一行，直接打开面谈记录表单（实际面谈时间和时长在表单最上面）
+function tbkFinish(id) {
+  tbkOpen[id] = true; tbkDraw();
+  const panel = document.getElementById('record_panel_' + id);
+  if (panel && panel.style.display === 'none') toggleRecordPanel(id);
+  const row = document.getElementById('tbkc_' + id);
+  if (row && row.scrollIntoView) row.scrollIntoView({ block: 'start' });
+}
+// 保存记录后：收起这一行、刷新数量（当前在「待补记录」时这条就消失）
+function tbkAfterSave(id) {
+  if (!document.getElementById('tbkList')) return;
+  delete tbkOpen[id];
+  renderBookingManagement(document.getElementById('mainContent'));
+}
+// 工作记录页「待填写面谈记录」点过来：切到待补记录并展开那一条的记录表单
+function tbkGoRecord(id) {
+  const b = tbkRegular().find(x => String(x.id) === String(id));
+  tbkQ = '';
+  tbkStat = b && interviewState(b) === 'need_record' ? 'need_record' : 'all';
+  if (b && tbkStat === 'all') tbkYm = (b.slot_date || '').slice(0, 7) || tbkYm;
+  switchTab('booking');
+  if (!b) return;
+  if (b.status === 'pending') tbkToggle(b.id); else tbkFinish(b.id);
 }
 
 // VIP 预约渲染（供「VIP管理 → 预约」调用）
@@ -781,35 +868,6 @@ function tvbDoneShift(d) {
 function setTeacherBkSection(s) {
   teacherBkSection = s;
   renderBookingManagement(document.getElementById('mainContent'));
-}
-
-// 默认收起的卡片：只显示姓名+时间+状态一行，点击展开完整内容
-function renderBookingCardCollapsed(b) {
-  const f = fmtSessionDate(b.slot_date);
-  const rowId = 'bkc_' + b.id;
-  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;margin-bottom:8px;border-left:3px solid ${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'}">
-    <div style="padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer" onclick="toggleBookingCard('${b.id}')">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-family:'Noto Serif SC',serif;font-weight:600;font-size:13px">${b.name}</span>
-        <span style="font-size:11px;color:var(--text-3)">${f.short} ${f.dow} · ${b.slot_time_range || ''}</span>
-        ${b.type==='vip' ? '<span style="font-size:9px;background:#5a3a9a;color:#fff;border-radius:2px;padding:1px 6px">VIP</span>' : `<span class="tag ${typeTag(b.type)}" style="font-size:9px">${typeLabel(b.type)}</span>`}
-      </div>
-      <span style="font-size:10px;background:${b.status === 'pending' ? 'var(--warn-bg)' : 'var(--ok-bg)'};color:${b.status === 'pending' ? 'var(--warn)' : 'var(--ok)'};padding:2px 7px;border-radius:2px;white-space:nowrap">${b.status === 'pending' ? '待确认' : b.status === 'completed' ? '已完成' : '已确认'}</span>
-    </div>
-    <div id="${rowId}" style="display:none;padding:0 14px 14px">
-      <div style="font-size:11px;margin-bottom:8px">
-        <span style="cursor:pointer;color:var(--accent);text-decoration:underline" onclick="showStudentInfoTeacher('${b.name}','${b.student_id || ''}')">${b.name}</span>
-        <span style="color:var(--text-3);margin-left:6px">${MAJORS[tBkMajor(b)] || tBkMajor(b)}</span>${manualEntryTag(b)}${!b.student_id && b.type !== 'vip' ? `<span style="font-size:9px;color:var(--warn);border:1px solid var(--warn);border-radius:2px;padding:0 5px;margin-left:6px">未关联档案·确认时认领</span><button onclick="tLinkStudent('${b.id}')" style="font-size:10px;margin-left:6px;background:none;border:1px solid var(--border);border-radius:3px;padding:1px 7px;cursor:pointer;font-family:inherit;color:var(--accent)">关联到学生</button>` : ''}${b.name_conflict ? '<span style="font-size:9px;color:var(--danger);border:1px solid var(--danger);border-radius:2px;padding:0 5px;margin-left:6px">⚠ 与在籍学生同名，请确认</span>' : ''}
-      </div>
-      ${renderBookingCardBody(b)}
-    </div>
-  </div>`;
-}
-
-function toggleBookingCard(id) {
-  const el = document.getElementById('bkc_' + id);
-  if (!el) return;
-  el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
 // 独立展示用（如需要单独渲染一张完整卡片，带外壳+头部）
@@ -1087,8 +1145,7 @@ async function saveBookingRecord(id) {
     }
 
     setTeacherRecordMode(id, 'view');
-    const btn = document.querySelector(`[onclick="saveBookingRecord('${id}')"]`);
-    if (btn) { btn.textContent = '✓ 已保存，面谈标记为已完成'; setTimeout(() => btn.textContent = '保存记录', 2000); }
+    tbkAfterSave(id);
   } catch (e) { alert('保存失败：' + e.message); }
 }
 
@@ -2860,11 +2917,7 @@ async function wrtPaint() {
   t.shown = rows;
 }
 // 跳到「面谈预约」，展开对应的那一条（找不到就停在面谈预约页）
-function wrtGoInterview(id) {
-  switchTab('booking');
-  const el = document.getElementById('bkc_' + id);
-  if (el) { el.style.display = 'block'; if (el.scrollIntoView) el.scrollIntoView({ block: 'center' }); }
-}
+function wrtGoInterview(id) { tbkGoRecord(id); }
 function wrtActions(r) {
   if (r.source !== 'declare' || r.status === 'approved') return '';
   const id = wrtEsc(r.id);

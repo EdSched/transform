@@ -159,3 +159,21 @@ input:focus,select:focus{border-color:var(--accent)}
 .vbf-right{min-width:0}
 .vbf-left input:not([type=checkbox]):not([type=radio]),.vbf-left select,.vbf-left textarea{width:100%;box-sizing:border-box;font-size:12px}
 .vbf-left textarea#vip_notes{min-height:170px;line-height:1.7}
+
+/* 面谈预约列表（teacher/teacher.js tbk*）：一行一条，点一行展开 */
+.tbkl{border:1px solid var(--border);border-radius:4px;overflow:hidden;background:var(--surface)}
+.tbkl-item{border-bottom:1px solid var(--border-light,#eee)}
+.tbkl-item:last-child{border-bottom:0}
+.tbkl-row{display:grid;grid-template-columns:120px minmax(0,1.4fr) minmax(0,1.4fr) auto;gap:8px;align-items:center;padding:9px 12px;border-left:3px solid transparent;cursor:pointer;font-size:12px}
+.tbkl-row.need{border-left-color:#d9a400}
+.tbkl-ac{display:flex;justify-content:flex-end}
+.tbkl-btn{font-size:11px;border:1px solid var(--border);background:var(--surface);border-radius:3px;padding:6px 12px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.tbkl-btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.tbkl-btn.big{font-size:12px;font-weight:600;padding:7px 14px}
+.tbkl-detail{padding:10px 14px 14px;background:var(--bg,#f7f5f0);border-top:1px solid var(--border-light,#eee)}
+@media(max-width:640px){
+  .tbkl-row{grid-template-columns:auto minmax(0,1fr);grid-template-areas:"d s" "st st" "ac ac"}
+  .tbkl-d{grid-area:d}.tbkl-s{grid-area:s}.tbkl-st{grid-area:st}.tbkl-ac{grid-area:ac}
+  .tbkl-ac .tbkl-btn{width:100%;padding:10px 12px}
+  .tbkl-ac:empty{display:none}
+}
