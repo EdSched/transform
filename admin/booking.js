@@ -17,6 +17,19 @@ function bkMajorInView(m){
 function bkMajorMatch(m,f){ return f==='all'||expandMajorFilter(f).includes(m); }
 function bkIsAdmin(){ return typeof ACCESS_KEY==='undefined'||!ACCESS_KEY||!!ACCESS_KEY.is_admin; }
 
+// 待填写面谈记录：没完成面谈，或已完成但没填记录（规则统一在 shared/payroll-core.js）
+let bkPendRec=false;
+function bkIvTeacher(b){ const slot=cachedSlots.find(s=>s.id===b.slot_id); return b.assigned_teacher||slot?.teacher_name||''; }
+function bkIvPendOf(b){ return buildInterviewPending([b],bkIvTeacher(b),cachedSlots,cachedStudents,{noScope:true})[0]||null; }
+function bkIvCopyOne(id){
+  const b=cachedBookings.find(x=>x.id===id); const p=b&&bkIvPendOf(b); if(!p) return;
+  interviewRemindCopy(interviewRemindText(bkIvTeacher(b),[p]));
+}
+function bkIvBatch(ids){
+  const by={};
+  ids.forEach(id=>{ const b=cachedBookings.find(x=>x.id===id); const p=b&&bkIvPendOf(b); if(p){ const t=bkIvTeacher(b)||'（未分配老师）'; (by[t]=by[t]||[]).push(p); } });
+  interviewRemindDialog(Object.keys(by).map(t=>({teacher:t,list:by[t].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time))})));
+}
 function renderBookingPage(mc){
   if(bkSection==='vip'){ renderVipBookingPage(mc); return; }
   if(bkSection==='unlinked'){ if(bkIsAdmin()){ renderUnlinkedBookingPage(mc); return; } bkSection='regular'; }
@@ -31,6 +44,7 @@ function renderBookingPage(mc){
   if(bkType!=='all') filtered=filtered.filter(b=>b.type===bkType);
   // 已绑定学生的按档案专业筛选；未绑定的按 bookings.major（社会人文分组链接的预约在「社会人文」下可见）
   if(bkMajor!=='all') filtered=filtered.filter(b=>bkMajorMatch(bkRealMajor(b),bkMajor));
+  if(bkPendRec) filtered=filtered.filter(b=>bkIvPendOf(b));
 
   mc.innerHTML=`
   <div class="page-header">
@@ -78,7 +92,9 @@ function renderBookingPage(mc){
   </div>
   <div class="filter-row">
     ${['all','daily','plan','mock'].map((t,i)=>`<div class="filter-chip${bkType===t?' active':''}" onclick="setBkType('${t}',this)">${['所有类型','日常学习','计划书','模拟面试'][i]}</div>`).join('')}
+    <div class="filter-chip${bkPendRec?' active':''}" onclick="bkPendRec=!bkPendRec;renderBookingPage(document.getElementById('mainContent'))">待填写记录</div>
   </div>
+  ${bkPendRec?`<div style="margin-bottom:10px"><button class="btn btn-outline btn-sm" onclick='bkIvBatch(${JSON.stringify(filtered.map(b=>b.id)).replace(/'/g,"&#39;")})'>批量生成提醒文字</button><span style="font-size:10px;color:var(--text-3);margin-left:8px">当前筛选下 ${filtered.length} 条，按老师分组</span></div>`:''}
   <div class="booking-grid" id="bookingGrid">
     ${filtered.length?filtered.map(b=>renderBookingCard(b)).join(''):'<div class="empty">暂无预约记录</div>'}
   </div>`;
@@ -1347,6 +1363,7 @@ function renderBookingCard(b){
         <span class="tag ${typeTag(b.type)}">${typeLabel(b.type)}</span>
         <span class="status-badge status-${b.status}">${bookingStatusLabel(b)}</span>
         ${hasRecord?'<span class="record-done">已记录</span>':''}
+        ${bkIvPendOf(b)?`<button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 7px" onclick="bkIvCopyOne('${b.id}')">复制提醒</button>`:''}
       </div>
     </div>
     <div class="booking-body">
@@ -1637,8 +1654,11 @@ async function saveRecord(){
   // 如果没填实际时间，默认用预约日期（不附时间段，避免显示时间槽范围）
   const actual_time=(d&&t)?`${d}T${t}`:d||b.slot_date||'';
   try{
-    await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',{actual_time,daily_record,status:'completed'});
-    b.actual_time=actual_time;b.daily_record=daily_record;b.status='completed';
+    const patch={actual_time,daily_record,status:'completed'};
+    // 第一次填好记录的日期：面谈工资按它算月份；已有就不改（之后再编辑记录不会挪月）
+    if(payrollHasRecord({daily_record})&&!b.record_done_at) patch.record_done_at=new Date().toISOString();
+    await sb(`/rest/v1/bookings?id=eq.${id}`,'PATCH',patch);
+    b.actual_time=actual_time;b.daily_record=daily_record;b.status='completed';if(patch.record_done_at) b.record_done_at=patch.record_done_at;
 
     // 自动追加进度时间线（从面谈记录映射）
     const stu = b.student_id ? bkStudentOf(b) : cachedStudents?.find(s=>s.name===b.name);
