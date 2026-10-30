@@ -1056,8 +1056,11 @@ async function saveBookingRecord(id) {
   const timeInput = document.getElementById(`actual_time_rec_${id}`)?.value || '';
   const actual_time = timeInput || booking?.actual_time || booking?.slot_date || '';
   try {
-    await bkPatch(id, { daily_record: record, actual_duration, actual_time, status: 'completed' });
-    if (booking) { booking.daily_record = record; booking.actual_duration = actual_duration; booking.actual_time = actual_time; booking.status = 'completed'; }
+    const patch = { daily_record: record, actual_duration, actual_time, status: 'completed' };
+    // 第一次填好记录的日期：面谈工资按它算月份；已有就不改
+    if (payrollHasRecord({ daily_record: record }) && !(booking && booking.record_done_at)) patch.record_done_at = new Date().toISOString();
+    await bkPatch(id, patch);
+    if (booking) { booking.daily_record = record; booking.actual_duration = actual_duration; booking.actual_time = actual_time; booking.status = 'completed'; if (patch.record_done_at) booking.record_done_at = patch.record_done_at; }
 
     // 自动追加进度时间线
     const stuRes = booking?.student_id
@@ -2779,7 +2782,8 @@ async function wrtLoadAuto(ym) {
     ...buildVipRows(d.vipConfirmed, teacherName, d.slots, d.students, opt)
   ];
   const pending = buildVipPending(d.vipPending, teacherName, d.slots, d.students, opt);
-  return (wrtTeacher.auto[ym] = { rows, pending });
+  const ivPending = buildInterviewPending(d.interviewPending, teacherName, d.slots, d.students, { ...opt, end });
+  return (wrtTeacher.auto[ym] = { rows, pending, ivPending });
 }
 const wrtPlainRec = r => ({ id: r.type + ':' + r.source_id, source: r.type, source_id: r.source_id, teacher_name: teacherName, start_time: r.开始时间, end_time: r.结束时间, duration: r.时长, work_type: r.工作内容, location: r.工作地点, notes: r.备注, status: 'pending' });
 
@@ -2790,7 +2794,7 @@ async function wrtMerge() {
   const declares = mine.filter(r => r.source === 'declare' && inM(r));
   const pubOf = {};
   mine.filter(r => r.source !== 'declare' && r.status === 'approved').forEach(r => { pubOf[r.source + ':' + r.source_id] = r; });
-  if (ym === 'all') return { rows: [...declares, ...mine.filter(r => r.source !== 'declare' && r.status === 'approved')], pending: [] };
+  if (ym === 'all') return { rows: [...declares, ...mine.filter(r => r.source !== 'declare' && r.status === 'approved')], pending: [], ivPending: [] };
   const auto = await wrtLoadAuto(ym);
   const used = new Set(), rows = [...declares];
   auto.rows.forEach(a => {
@@ -2806,7 +2810,7 @@ async function wrtMerge() {
     (bs || []).forEach(b => { const c = payrollJstDate(b.student_confirmed_at); if (c && c.slice(0, 7) !== ym) otherMonth.add(String(b.id)); });
   }
   left.forEach(r => { if (!(r.source === 'vip' && otherMonth.has(String(r.source_id)))) rows.push(r); });
-  return { rows, pending: auto.pending };
+  return { rows, pending: auto.pending, ivPending: auto.ivPending || [] };
 }
 
 async function wrtPaint() {
@@ -2825,7 +2829,7 @@ async function wrtPaint() {
   const chip = (on, click, label) => `<div class="filter-chip${on ? ' active' : ''}" onclick="${click}">${label}</div>`;
   const stList = [['all', '全部', inMonth.length], ['approved', '已审批', approved.length], ['pending', '未审批', unap.length], ['rejected', '已驳回', inMonth.filter(r => r.status === 'rejected').length]];
   const rows = inMonth.filter(r => (!t.types.length || t.types.includes(payrollTypeName(r.work_type))) && (t.st === 'all' || r.status === t.st));
-  const pend = merged.pending;
+  const pend = merged.pending, ivPend = merged.ivPending || [];
   box.innerHTML = `
     <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
       ${chipFold(months.map(m => ({ on: t.ym === m, html: chip(t.ym === m, `wrtPickMonth('${m}')`, wrtMonthLabel(m)) })))}
@@ -2847,8 +2851,19 @@ async function wrtPaint() {
       <div style="font-size:12px;font-weight:600;color:#856404">待学生确认（不计入本月）：${pend.length} 节 · ${payrollRound(pend.reduce((s, x) => s + x.hours, 0))} 课时</div>
       <div style="font-size:10px;color:var(--text-3);margin:2px 0 6px">学生确认后才计入，按确认的月份算。</div>
       ${pend.map(x => `<div style="font-size:11px;padding:2px 0">${wrtEsc(x.name)} · ${wrtEsc(x.date)} ${wrtEsc(x.range)}${x.hours ? ' · ' + x.hours + 'h' : ''}</div>`).join('')}
+    </div>` : ''}
+    ${ivPend.length ? `<div style="margin-top:12px;background:#fff8e1;border:1px solid #e6a817;border-radius:3px;padding:9px 12px">
+      <div style="font-size:12px;font-weight:600;color:#856404">待填写面谈记录（不计入工资）：${ivPend.length} 条</div>
+      <div style="font-size:10px;color:var(--text-3);margin:2px 0 6px">完成面谈并填写面谈记录后计入，按填写记录的日期算月份。点一条可以跳到「面谈预约」。</div>
+      ${ivPend.map(x => `<div style="font-size:11px;padding:3px 0;cursor:pointer" onclick="wrtGoInterview(this.dataset.id)" data-id="${wrtEsc(x.id)}">${wrtEsc(x.name)} · ${wrtEsc(x.date)} ${wrtEsc(x.time)} · <span style="color:#9a5a00">${wrtEsc(x.reason)}</span> <span style="color:var(--accent)">去填写 →</span></div>`).join('')}
     </div>` : ''}`;
   t.shown = rows;
+}
+// 跳到「面谈预约」，展开对应的那一条（找不到就停在面谈预约页）
+function wrtGoInterview(id) {
+  switchTab('booking');
+  const el = document.getElementById('bkc_' + id);
+  if (el) { el.style.display = 'block'; if (el.scrollIntoView) el.scrollIntoView({ block: 'center' }); }
 }
 function wrtActions(r) {
   if (r.source !== 'declare' || r.status === 'approved') return '';

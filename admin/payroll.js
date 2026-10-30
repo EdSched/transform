@@ -218,11 +218,11 @@ async function payrollGenerate(keepEdits) {
   const res = document.getElementById('pr_result');
   res.innerHTML = '<div style="font-size:12px;color:var(--text-3)">加载中…</div>';
   try {
-    const { sessions, bookings, slots, courses, students, vipConfirmed, vipPending } = await payrollLoadData(rg.start, rg.end);
+    const { sessions, bookings, slots, courses, students, vipConfirmed, vipPending, interviewPending } = await payrollLoadData(rg.start, rg.end);
     const vipMap = {};
     vipConfirmed.forEach(b => { vipMap[b.id] = b; });
     const decls = await payrollLoadDeclares(names, rg.start, rg.end).catch(() => []);
-    const rows = [], pending = {};
+    const rows = [], pending = {}, ivPending = {};
     names.forEach(n => {
       const auto = [
         ...buildCourseRows(sessions, n, courses),
@@ -236,9 +236,11 @@ async function payrollGenerate(keepEdits) {
       rows.push(...list);
       const pl = buildVipPending(vipPending, n, slots, students);
       if (pl.length) pending[n] = pl;
+      const il = buildInterviewPending(interviewPending, n, slots, students, { end: rg.end });
+      if (il.length) ivPending[n] = il;
     });
     const pub = await payrollLoadPub(rows);
-    payrollCtx = { label: payrollRangeLabel(rg.start, rg.end), who, teachers: names.filter(n => rows.some(r => r.姓名 === n) || pending[n]), pending, pub };
+    payrollCtx = { label: payrollRangeLabel(rg.start, rg.end), who, teachers: names.filter(n => rows.some(r => r.姓名 === n) || pending[n] || ivPending[n]), pending, ivPending, pub };
     payrollRows = rows;
     payrollRows.forEach(r => {
       const old = snap[payrollKey(r.type, r.source_id)];
@@ -259,7 +261,7 @@ function payrollRenderResult() {
   if (!payrollCtx) { res.innerHTML = '<div style="font-size:12px;color:var(--text-3)">选好月份和老师，点「生成」。</div>'; return; }
   const counts = { all: payrollRows.length, new: 0, changed: 0, published: 0, missing: 0, rejected: 0, declpend: 0 };
   payrollRows.forEach(r => { counts[payrollStatusOf(r)]++; if (r._missing.length) counts.missing++; if (r.type === 'declare' && payrollStatusOf(r) === 'new') counts.declpend++; });
-  if (!payrollRows.length && !Object.keys(payrollCtx.pending).length) {
+  if (!payrollRows.length && !Object.keys(payrollCtx.pending).length && !Object.keys(payrollCtx.ivPending).length) {
     res.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:12px 0">该时间段内无数据</div>';
     return;
   }
@@ -269,6 +271,7 @@ function payrollRenderResult() {
     <span style="font-size:11px;color:var(--text-2)">${escTM(payrollCtx.label)} · ${escTM(payrollCtx.who)}</span>
     ${payrollCanApprove() ? `<button class="btn btn-outline btn-sm" onclick="payrollSelectVisible(true)">全选</button>
     <button class="btn btn-outline btn-sm" onclick="payrollSelectVisible(false)">全不选</button>` : ''}
+    ${Object.keys(payrollCtx.ivPending).length ? '<button class="btn btn-outline btn-sm" onclick="payrollIvBatch()">批量生成面谈提醒</button>' : ''}
     ${fchip('all', '全部')}${fchip('new', '未发布')}${fchip('changed', '有变化')}${fchip('published', '已发布')}${fchip('missing', '记录不全')}${fchip('declpend', '申告待审批')}
     <input id="pr_q" placeholder="搜索备注、学生名" value="${escTM(payrollQuery)}" style="width:160px;margin-left:auto" oninput="payrollSetQuery(this.value)">
   </div>
@@ -369,8 +372,8 @@ function payrollRenderGroups() {
   const canAp = payrollCanApprove();
   if (!payrollGrouped) {
     const items = payrollRows.map((r, i) => ({ r, i })).filter(x => payrollRowVisible(x.r));
-    const pend = payrollCtx.teachers.filter(n => (payrollCtx.pending[n] || []).length && (!payrollTeacherSel || payrollTeacherSel === n))
-      .map(n => `<div style="margin-top:10px"><div style="font-size:11px;font-weight:600">${escTM(n)}</div>${payrollPendingHtml(payrollCtx.pending[n])}</div>`).join('');
+    const pend = payrollCtx.teachers.filter(n => ((payrollCtx.pending[n] || []).length || (payrollCtx.ivPending[n] || []).length) && (!payrollTeacherSel || payrollTeacherSel === n))
+      .map(n => `<div style="margin-top:10px"><div style="font-size:11px;font-weight:600">${escTM(n)}</div>${payrollPendingHtml(payrollCtx.pending[n] || [])}${payrollIvPendingHtml(n, payrollCtx.ivPending[n] || [])}</div>`).join('');
     box.innerHTML = (items.length ? payrollTableHtml(items, true) : '<div style="font-size:11px;color:var(--text-3);padding:6px 0">当前筛选下没有行</div>') + pend;
     return;
   }
@@ -385,7 +388,7 @@ function payrollRenderGroups() {
       <span style="font-weight:400;font-size:11px;color:var(--text-2);margin-left:8px">${all.length} 节 · ${hours} 小时${canAp && !payrollIsSelf(n) ? ` · 已勾选 ${sel} 条` : ''}</span>${canAp && payrollIsSelf(n) ? '<span style="font-weight:400;font-size:11px;color:#9a5a00;margin-left:8px">自己的工资由管理员审批</span>' : ''}</div>`;
     const body = closed ? '' : (shown.length ? payrollTableHtml(shown, false)
       : `<div style="font-size:11px;color:var(--text-3);padding:6px 0">${all.length ? '当前筛选下没有行' : '该时间段内没有可发布的记录'}</div>`);
-    return `<div style="margin-bottom:16px">${head}${body}${closed ? '' : payrollPendingHtml(payrollCtx.pending[n] || [])}</div>`;
+    return `<div style="margin-bottom:16px">${head}${body}${closed ? '' : payrollPendingHtml(payrollCtx.pending[n] || []) + payrollIvPendingHtml(n, payrollCtx.ivPending[n] || [])}</div>`;
   }).join('');
 }
 
@@ -471,6 +474,54 @@ function payrollPendingHtml(list) {
       <button class="btn btn-outline btn-sm" onclick="payrollProxyConfirm('${escTM(x.id)}')">代学生确认</button></div>`).join('')}
   </div>`;
 }
+// 待填写面谈记录（不计入工资）：每位老师组下面，样式同上；右上角复制这位老师的提醒文字
+function payrollIvPendingHtml(n, list) {
+  if (!list.length) return '';
+  return `<div style="margin-top:8px;background:#fff8e1;border:1px solid #e6a817;border-radius:3px;padding:9px 12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <div style="font-size:12px;font-weight:600;color:#856404">待填写面谈记录（不计入工资）：${list.length} 条</div>
+      <button class="btn btn-outline btn-sm" onclick="payrollIvCopy(this.dataset.n)" data-n="${escTM(n)}">复制提醒文字</button>
+    </div>
+    <div style="font-size:10px;color:var(--text-3);margin:2px 0 6px">面谈完成并填写面谈记录之后，按填写记录的日期算进当月工资。</div>
+    ${list.map(x => `<div style="font-size:11px;padding:3px 0">${escTM(x.name)} · ${escTM(x.date)} ${escTM(x.time)} · <span style="color:#9a5a00">${escTM(x.reason)}</span></div>`).join('')}
+  </div>`;
+}
+function payrollIvCopy(n) { interviewRemindCopy(interviewRemindText(n, payrollCtx.ivPending[n] || [])); }
+function payrollIvBatch() {
+  interviewRemindDialog(Object.keys(payrollCtx.ivPending).filter(n => payrollCtx.ivPending[n].length).map(n => ({ teacher: n, list: payrollCtx.ivPending[n] })));
+}
+// 复制文字（管理端工资页 / 面谈预约页共用）
+function interviewRemindCopy(t, done) {
+  const ok = () => { if (done) done(); else alert('已复制'); };
+  const fb = () => { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); ok(); } catch (_) { alert('复制失败，请手动选中复制'); } ta.remove(); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(ok, fb); else fb();
+}
+// 批量提醒弹窗：groups = [{ teacher, list }]，按老师分段，每段有自己的复制按钮，最上面「复制全部」
+function interviewRemindDialog(groups) {
+  groups = (groups || []).filter(g => g.list && g.list.length);
+  if (!groups.length) { alert('没有待填写的面谈'); return; }
+  const texts = groups.map(g => interviewRemindText(g.teacher, g.list));
+  window.__ivRemindTexts = texts;
+  let ov = document.getElementById('ivRemindOverlay');
+  if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'ivRemindOverlay';
+  ov.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:16px 18px;width:min(640px,94vw);max-height:86vh;overflow:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px">
+      <div style="font-size:14px;font-weight:600">面谈提醒文字 · ${groups.length} 位老师</div>
+      <div style="display:flex;gap:8px"><button class="btn btn-primary btn-sm" onclick="interviewRemindCopy(window.__ivRemindTexts.join('\n\n'))">复制全部</button>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('ivRemindOverlay').remove()">关闭</button></div>
+    </div>
+    ${groups.map((g, i) => `<div style="border:1px solid var(--border);border-radius:4px;padding:9px 12px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><strong style="font-size:12px">${escTM(g.teacher)}</strong>
+      <button class="btn btn-outline btn-sm" onclick="interviewRemindCopy(window.__ivRemindTexts[${i}])">复制</button></div>
+      <div style="font-size:11px;line-height:1.7;white-space:pre-wrap;color:var(--text-2)">${escTM(texts[i])}</div></div>`).join('')}
+  </div>`;
+  document.body.appendChild(ov);
+}
+
 // 用管理端 booking.js 的同一个代确认弹窗，确认后重新生成（保留已改的时长、备注和勾选）
 function payrollProxyConfirm(id) {
   bkBfProxyOpen(id, () => payrollGenerate(true));
