@@ -203,6 +203,22 @@ function buildInterviewPending(list, teacherName, slots, students, opt) {
     })
     .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
 }
+// 面谈列表（管理端 / 老师端共用）里每条面谈只落在一个状态：
+//   cancelled 已取消 | done 已完成 | need_record 待补记录（面谈日早于今天，10/1 以后）| pending 待确认 | confirmed 已确认 | old 未记录（旧，只在「全部」里出现）
+// 和工资页的区别：工资页把今天的面谈也算进待填写；列表里今天的面谈还算待确认 / 已确认
+const INTERVIEW_STATE_LABEL = { cancelled: '已取消', done: '已完成', need_record: '待补记录', pending: '待确认', confirmed: '已确认', old: '未记录（旧）' };
+function interviewState(b) {
+  if (!b) return 'confirmed';
+  if (b.status === 'cancelled') return 'cancelled';
+  if (payrollInterviewDone(b)) return 'done';
+  const d = payrollInterviewDate(b);
+  if (d && d < payrollTodayJst()) return d >= PAYROLL_INTERVIEW_GATE_START ? 'need_record' : 'old';
+  return b.status === 'pending' ? 'pending' : 'confirmed';
+}
+// 待补记录的原因（与 buildInterviewPending 一致）
+const interviewNeedReason = b => (b && b.status === 'completed') ? '还没填写面谈记录' : '还没完成面谈';
+// 面谈日是今天或已过：可以点「完成・填记录」
+const interviewCanFinish = b => { const d = payrollInterviewDate(b); return !!d && d <= payrollTodayJst(); };
 // 提醒老师的文字
 function interviewRemindText(teacherName, list) {
   const wd = '日一二三四五六';
