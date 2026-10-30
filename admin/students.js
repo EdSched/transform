@@ -1,7 +1,7 @@
 // ══════════════════════════════════
 // STUDENTS PAGE
 // ══════════════════════════════════
-let stSearch='',stStatus='active';   // 领域/专业/来源筛选用 shared/constants.js 的 DMF（几个页面共用）
+let stSearch='',stStatus='';   // 领域/专业/来源筛选用 shared/constants.js 的 DMF（几个页面共用）
 let stVipFilter='all'; // 'all' | 'vip_only'(VIP+大课VIP都含) | 'vip_exclusive'(仅VIP不含大课)
 
 // 搜索：输入法组合 / 防抖由 searchBox 处理；整页重画后把原来的搜索框换回去（不丢光标、不打断输入法）
@@ -15,7 +15,7 @@ function handleProgressSearchInput(q){
 }
 let speEdits=null; // 老师修改记录（未处理）
 
-let stLastList=[];
+let stLastList=[], stIdle=false;
 function renderStudentsPage(mc){
   if(speEdits===null){
     speEdits=[];
@@ -27,15 +27,17 @@ function renderStudentsPage(mc){
   list=list.filter(s=>studentInCurrentView(s));
   const viewTotal=list.length; // 当前视角学生总数（不受下方专业/状态/搜索筛选影响）
   // 领域 → 专业 → 来源（主专业或附加专业(extra_majors,如日语/英语)匹配——叠加逻辑）；先生成筛选栏（会清掉失效的选择），再过滤
-  const dmfOpts={extra:true,also:s=>(stStatus==='all'||s.status===stStatus)&&(stVipFilter==='all'||(stVipFilter==='vip_only'?(s.is_vip_course==='VIP'||s.is_vip_course==='大课+VIP'):s.is_vip_course==='VIP'))};
+  const dmfOpts={extra:true,also:s=>(stStatus===''||stStatus==='all'||s.status===stStatus)&&(stVipFilter==='all'||(stVipFilter==='vip_only'?(s.is_vip_course==='VIP'||s.is_vip_course==='大课+VIP'):s.is_vip_course==='VIP'))};
   const dmfBar=domMajorFilterHtml(DMF,"renderStudentsPage(document.getElementById('mainContent'))",list,dmfOpts);
   list=dmfFilter(list,dmfOpts);
-  if(stStatus!=='all') list=list.filter(s=>s.status===stStatus);
+  if(stStatus&&stStatus!=='all') list=list.filter(s=>s.status===stStatus);
   if(stVipFilter==='vip_only') list=list.filter(s=>s.is_vip_course==='VIP'||s.is_vip_course==='大课+VIP');
   if(stVipFilter==='vip_exclusive') list=list.filter(s=>s.is_vip_course==='VIP');
   if(stSearch) list=list.filter(s=>matchesStudentSearch(s,stSearch));
   if(typeof stClassFilterApply==='function') list=stClassFilterApply(list);
-  stLastList=list; // 「批量生成查询码通知」用当前筛选结果
+  // 什么都没选（无状态、无领域/专业/来源、全部学生、无班级、无搜索）：不列表格，stLastList 置空避免误操作
+  stIdle=!stStatus&&!DMF.domain&&!DMF.major&&!DMF.source&&stVipFilter==='all'&&(typeof stClassFilter==='undefined'||stClassFilter==='all')&&!stSearch;
+  stLastList=stIdle?[]:list; // 「批量生成查询码通知」用当前筛选结果
   mc.innerHTML=`
   <div id="spe_bar"></div>
   ${(setTimeout(()=>speRenderBar(),0),'')}
@@ -63,7 +65,7 @@ function renderStudentsPage(mc){
   </div>
   ${typeof stClassFilterHtml==='function'?stClassFilterHtml():''}
   <div class="search-bar"><input id="st_search_input" placeholder="搜索姓名（汉字 / 拼音首字母）/ 专业 / 学校 / 备注…" value="${stEsc(stSearch)}" oninput="searchBox(this,handleStSearchInput)"></div>
-  ${sttHtml('admin',list,{
+  ${stIdle?'<div class="empty" style="color:var(--text-3)">点上面的状态、筛选，或者搜索，查看记录</div>':sttHtml('admin',list,{
     mode:'admin',select:true,canExport:true,exportName:'学生档案',
     nameClick:s=>`openStudentDetail('${s.id}')`,
     codeHtml:s=>s.student_code
@@ -76,7 +78,7 @@ function renderStudentsPage(mc){
 
 function setStVip(v,el){stVipFilter=v;document.querySelectorAll('.filter-row:nth-of-type(3) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderStudentsPage(document.getElementById('mainContent'))}
 
-function setStStatus(v,el){stStatus=v;document.querySelectorAll('.filter-row:nth-of-type(2) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderStudentsPage(document.getElementById('mainContent'))}
+function setStStatus(v,el){stStatus=(stStatus===v&&v!=='all')?'':v;document.querySelectorAll('.filter-row:nth-of-type(2) .filter-chip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderStudentsPage(document.getElementById('mainContent'))}
 // 渲染VIP指导老师标签+输入框，selectedTeachers 是已选老师姓名数组（存在 module 级变量里方便增删）
 let vipTeacherTags = [];
 function populateVipTeachers(selectedTeachers){
@@ -376,6 +378,7 @@ function toggleSelectAllStudents(cb){
 }
 
 function batchChangeStatus(){
+  if(stIdle){alert('请先筛选出要处理的学生');return}
   const selected=[...document.querySelectorAll('.student-select:checked')].map(c=>c.value);
   if(!selected.length){alert('请先勾选学生');return}
   // 显示状态选择浮层
@@ -411,6 +414,7 @@ async function applyBatchStatus(status, selected){
 
 // ── 批量指派专业负责老师（owner_teachers；姓名数组，与 VIP 独立）──
 function batchAssignOwner(){
+  if(stIdle){alert('请先筛选出要处理的学生');return}
   const selected=[...document.querySelectorAll('.student-select:checked')].map(c=>c.value);
   if(!selected.length){alert('请先勾选学生');return}
   // 候选老师池：按当前领域/专业过滤（与 VIP/单个指派一致）
@@ -525,7 +529,7 @@ function stCodeNotice(id){
 }
 async function stBatchCodeNotice(){
   const all=[...(stLastList||[])];
-  if(!all.length){ alert('当前筛选结果里没有学生'); return; }
+  if(stIdle||!all.length){ alert(stIdle?'请先筛选出要处理的学生':'当前筛选结果里没有学生'); return; }
   const list=all.filter(s=>s.status!=='graduated');
   const nGrad=all.length-list.length;
   if(!list.length){ alert('当前筛选结果里都是已合格学生，不需要查询码'); return; }

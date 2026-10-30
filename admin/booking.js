@@ -37,7 +37,7 @@ function renderBookingPage(mc){
   const base=cachedBookings.filter(b=>b.slot_date&&b.slot_date.startsWith(ym)&&b.type!=='vip'&&bkMajorInView(bkRealMajor(b)));
   const total=base.length; // 当月·本视角预约总数（不受下方筛选影响）
   const cnt={}; base.forEach(b=>{ const k=interviewState(b); cnt[k]=(cnt[k]||0)+1; });
-  if(!bkStat) bkStat=cnt.pending?'pending':cnt.need_record?'need_record':'all';
+  if(bkStat===null) bkStat=cnt.pending?'pending':cnt.need_record?'need_record':'';
   const teachers=[...new Set(base.map(bkIvTeacher).filter(Boolean))].sort();
   if(bkTeacher&&!teachers.includes(bkTeacher)) bkTeacher='';
   bkBase=base;
@@ -99,7 +99,7 @@ let bkStat=null, bkTeacher='', bkQ='', bkShown=30, bkBase=[];
 const bkOpen={};
 function bkWd(d){ const x=new Date(d+'T12:00:00'); return isNaN(x)?'':'周'+'日一二三四五六'[x.getDay()]; }
 function bkMatch(b){
-  if(bkStat!=='all'&&interviewState(b)!==bkStat) return false;
+  if(bkStat&&bkStat!=='all'&&interviewState(b)!==bkStat) return false;
   if(bkType!=='all'&&b.type!==bkType) return false;
   if(bkMajor!=='all'&&!bkMajorMatch(bkRealMajor(b),bkMajor)) return false;
   if(bkTeacher&&bkIvTeacher(b)!==bkTeacher) return false;
@@ -108,6 +108,7 @@ function bkMatch(b){
   return true;
 }
 function bkListHtml(){
+  if(!bkStat&&bkType==='all'&&bkMajor==='all'&&!bkTeacher&&!bkQ.trim()) return '<div class="empty" style="color:var(--text-3)">点上面的状态、筛选，或者搜索，查看记录</div>';
   const list=bkBase.filter(bkMatch);
   const asc=['need_record','pending','confirmed'].includes(bkStat);   // 待处理的最久 / 最近的在上面；已完成、已取消、全部最新在上面
   const key=b=>(b.slot_date||'')+' '+String(b.slot_time_range||'').split(/[–\-~～]/)[0].trim();
@@ -147,7 +148,7 @@ function bkToggle(id){ if(bkOpen[id]) delete bkOpen[id]; else bkOpen[id]=true; b
 function bkMore(){ bkShown+=30; bkDrawList(); }
 function bkSetQ(v){ bkQ=v; bkShown=30; bkDrawList(); }
 function bkRedraw(){ bkShown=30; renderBookingPage(document.getElementById('mainContent')); }
-function setBkStat(k){ bkStat=k; bkRedraw(); }
+function setBkStat(k){ bkStat=(bkStat===k&&k!=='all')?'':k; bkRedraw(); }
 function setBkTeacher(t){ bkTeacher=t?decodeURIComponent(t):''; bkRedraw(); }
 
 // ── VIP 预约（老师 / 学生谁发起都行，另一方确认就成立）：教务只是知情和兜底 ──
@@ -631,7 +632,7 @@ function renderVipBookingPage(mc){
   filtered=filtered.filter(b=>bkMajorInView(bkRealMajor(b)));
   const total=filtered.length; // 当月·本视角VIP预约总数（不受下方筛选影响）
   const cnt={}; filtered.forEach(b=>{ cnt[b.status]=(cnt[b.status]||0)+1; });
-  if(!bkvlStat) bkvlStat=cnt.pending?'pending':'all';
+  if(bkvlStat===null) bkvlStat=cnt.pending?'pending':'';
   const teachers=[...new Set(filtered.map(bkIvTeacher).filter(Boolean))].sort();
   if(bkvlTeacher&&!teachers.includes(bkvlTeacher)) bkvlTeacher='';
   bkvlBase=filtered;
@@ -670,12 +671,13 @@ const BKVL_STATS=[['all','全部'],['pending','待确认'],['confirmed','已确�
 let bkvlStat=null, bkvlTeacher='', bkvlQ='', bkvlShown=30, bkvlBase=[];
 const bkvlOpen={};
 function bkvlMatch(b){
-  if(bkvlStat!=='all'&&b.status!==bkvlStat) return false;
+  if(bkvlStat&&bkvlStat!=='all'&&b.status!==bkvlStat) return false;
   if(bkvlTeacher&&bkIvTeacher(b)!==bkvlTeacher) return false;
   const q=bkvlQ.trim().toLowerCase();
   return !q||((b.name||'')+' '+bkIvTeacher(b)).toLowerCase().includes(q);
 }
 function bkvlListHtml(){
+  if(!bkvlStat&&!bkvlTeacher&&!bkvlQ.trim()) return '<div class="empty" style="color:var(--text-3)">点上面的状态、筛选，或者搜索，查看记录</div>';
   const list=bkvlBase.filter(bkvlMatch);
   const asc=bkvlStat==='pending'||bkvlStat==='confirmed';
   const key=b=>(b.slot_date||'')+' '+String(b.slot_time_range||'').split(/[–\-~～]/)[0].trim();
@@ -707,7 +709,7 @@ function bkvlDraw(){ const el=document.getElementById('bkvlList'); if(el) el.inn
 function bkvlToggle(id){ if(bkvlOpen[id]) delete bkvlOpen[id]; else bkvlOpen[id]=true; bkvlDraw(); }
 function bkvlMore(){ bkvlShown+=30; bkvlDraw(); }
 function bkvlSetQ(v){ bkvlQ=v; bkvlShown=30; bkvlDraw(); }
-function bkvlSetStat(k){ bkvlStat=k; bkvlShown=30; renderBookingPage(document.getElementById('mainContent')); }
+function bkvlSetStat(k){ bkvlStat=(bkvlStat===k&&k!=='all')?'':k; bkvlShown=30; renderBookingPage(document.getElementById('mainContent')); }
 function bkvlSetTeacher(t){ bkvlTeacher=t?decodeURIComponent(t):''; bkvlShown=30; renderBookingPage(document.getElementById('mainContent')); }
 
 // ── Admin 调整VIP预约时间 ──
@@ -1493,7 +1495,7 @@ function renderPills(b){
   return [['target_school','目标学校'],['contact_prof','联系教授'],['plan_status','计划书'],['application_status','出愿进度'],['written_exam','笔试'],['interview_status','面试准备'],['specialty_status','专业知识']]
     .filter(([k])=>b[k]).map(([k,l])=>`<span class="progress-pill">${l}·${b[k]}</span>`).join('');
 }
-function bkMonthShift(d){bkShown=30;bkvlShown=30;bkMonth+=d;if(bkMonth>11){bkMonth=0;bkYear++}if(bkMonth<0){bkMonth=11;bkYear--}renderPage()}
+function bkMonthShift(d){bkShown=30;bkvlShown=30;bkMonth+=d;bkStat=null;bkvlStat=null;if(bkMonth>11){bkMonth=0;bkYear++}if(bkMonth<0){bkMonth=11;bkYear--}renderPage()}
 function setBkType(t){bkType=t;bkRedraw()}
 function setBkTab(t,el){bkTab=t;document.querySelectorAll('.btn-group button').forEach(b=>b.classList.remove('active'));el.classList.add('active');renderBookingPage(document.getElementById('mainContent'))}
 function toggleStudentLinks(){
