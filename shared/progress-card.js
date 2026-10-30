@@ -128,7 +128,7 @@ function pgcEnsureCss() {
 .pgc-title .act{margin-left:auto;display:flex;gap:6px;align-items:center}
 .pgc-fold{cursor:pointer;user-select:none}
 .pgc-fold .arr{margin-left:4px;color:var(--text-3)}
-.pgc-btn{font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.pgc-btn{font-size:10px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:4px;padding:4px 12px;cursor:pointer;font-family:inherit;white-space:nowrap}
 .pgc-btn.ghost{background:none;color:var(--text-2);border:1px solid var(--border)}
 .pgc-node{display:grid;grid-template-columns:112px minmax(0,1fr) 250px;gap:10px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--border-light);font-size:11px;line-height:1.6}
 .pgc-node:last-child{border-bottom:none}

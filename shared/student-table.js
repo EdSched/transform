@@ -291,7 +291,7 @@ function sttEnsureCss() {
 .stt-count{margin-left:auto;color:var(--text-3)}
 .stt-panel{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;margin-bottom:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg)}
 .stt-chip{cursor:pointer;user-select:none;font-size:11px;padding:2px 9px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text-2);white-space:nowrap}
-.stt-chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.stt-chip.on{background:var(--pick-bg,#ebe4da);border-color:var(--pick-bd,#c9bba9);color:var(--pick-fg,#3a2e24);font-weight:600}
 .stt-chip small{opacity:.65;font-size:9px}
 .stt-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%;border:1px solid var(--border);border-radius:4px;background:var(--surface)}
 .stt-table{border-collapse:separate;border-spacing:0;font-size:11px;width:max-content;min-width:100%}

@@ -443,7 +443,7 @@ function openVipSchoolPlanEditor() {
       <div id="vspContainer">${rows}</div>
       <button onclick="addVspRow()" style="width:100%;background:none;border:1px dashed var(--border);border-radius:3px;padding:8px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text-muted);margin-bottom:14px">＋ 添加学校</button>
       <div style="display:flex;gap:8px">
-        <button onclick="saveVipSchoolPlans()" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">保存</button>
+        <button onclick="saveVipSchoolPlans()" style="flex:1;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">保存</button>
         <button onclick="document.getElementById('vipSchoolModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:10px 14px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
       </div>
     </div>`;
@@ -519,7 +519,7 @@ function openVipPlanDraftEditor() {
         ${d.draft_file_url?`<a href="${d.draft_file_url}" target="_blank" style="font-size:10px;color:var(--accent);display:block;margin-top:4px">📎 当前草稿</a>`:''}</div>
       ${d.teacher_comment?`<div style="background:var(--ok-bg,#e4f5ee);border-radius:3px;padding:8px;font-size:11px;color:var(--ok,#2a9e6a);margin-bottom:14px">💬 老师批注：${d.teacher_comment}</div>`:''}
       <div style="display:flex;gap:8px">
-        <button onclick="saveVipPlanDraft('${d.id||''}')" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">保存</button>
+        <button onclick="saveVipPlanDraft('${d.id||''}')" style="flex:1;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">保存</button>
         <button onclick="document.getElementById('vipDraftModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:10px 14px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
       </div>
     </div>`;
@@ -847,7 +847,7 @@ function renderVipHistory() {
           <div style="font-size:11px;color:var(--danger);margin-bottom:6px">⚠ 请提交作业</div>
           <div style="display:flex;flex-direction:column;gap:6px">
             <input type="file" id="hw_file_${b.id}" accept="image/*,.pdf,.doc,.docx" style="font-size:11px">
-            <button onclick="submitVipHomework('${b.id}')" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 14px;font-size:11px;cursor:pointer;font-family:inherit;align-self:flex-start">提交作业</button>
+            <button onclick="submitVipHomework('${b.id}')" style="background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:7px 14px;font-size:11px;cursor:pointer;font-family:inherit;align-self:flex-start">提交作业</button>
             <div id="hw_result_${b.id}" style="font-size:11px"></div>
           </div>
         `}

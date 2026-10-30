@@ -427,7 +427,7 @@ async function loadAdminHwPanel(sessionId) {
   wrap.innerHTML = `
   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
     <span style="font-size:11px;font-weight:600">📝 作业提交（${subs.length}/${students.length}）</span>
-    <button onclick="admHwPrint('${sessionId}')" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">🖨 全部打印 / 存 PDF</button>
+    <button onclick="admHwPrint('${sessionId}')" style="font-size:10px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">🖨 全部打印 / 存 PDF</button>
     <button onclick="admHwWord('${sessionId}')" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">⬇ 全部导出 Word</button>
     ${missing.length ? `<span style="font-size:10px;color:var(--warn,#b8860b);margin-left:auto">未交 ${missing.length} 人：${missing.slice(0,6).map(x=>x.name).join('、')}${missing.length>6?'…':''}</span>` : '<span style="font-size:10px;color:var(--ok);margin-left:auto">✓ 全员已交</span>'}
   </div>

@@ -128,7 +128,7 @@ async function spOpenModal(opts) {
     <div id="sp_modal_form"><div style="font-size:11px;color:var(--text-3);padding:12px 0">读取出愿学校列表…</div></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
       <button onclick="document.getElementById('spSchoolModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 14px;cursor:pointer;font-family:inherit">取消</button>
-      <button id="sp_modal_save" onclick="spModalSave()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit;font-weight:500">保存</button>
+      <button id="sp_modal_save" onclick="spModalSave()" style="font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit;font-weight:500">保存</button>
     </div>
   </div>`;
   m.onclick = e => { if (e.target === m) m.remove(); };

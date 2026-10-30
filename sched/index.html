@@ -2,7 +2,7 @@
 <html lang="zh"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>管理后台 · 唯新</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=20261030">
 <script>if(new URLSearchParams(location.search).get('embed')==='admin') document.documentElement.classList.add('embedadmin');</script>
 <style>.embedadmin header.top{display:none}</style>
 </head><body>
@@ -546,9 +546,9 @@ function tabAssign(){
     if(el('dayCtrl')) el('dayCtrl').classList.toggle('hidden', !isDay);
   }
   document.querySelectorAll('.asview').forEach(b=>{
-    b.style.cssText += b.dataset.v===window.AS_VIEW?';background:var(--blue);color:#fff':'';
+    b.style.cssText += b.dataset.v===window.AS_VIEW?';background:var(--pick-bg);color:var(--pick-fg);border-color:var(--pick-bd);font-weight:600':'';
     b.onclick=()=>{ window.AS_VIEW=b.dataset.v;
-      document.querySelectorAll('.asview').forEach(x=>{ x.style.background=x.dataset.v===window.AS_VIEW?'var(--blue)':''; x.style.color=x.dataset.v===window.AS_VIEW?'#fff':''; });
+      document.querySelectorAll('.asview').forEach(x=>{ x.style.background=x.dataset.v===window.AS_VIEW?'var(--pick-bg)':''; x.style.color=x.dataset.v===window.AS_VIEW?'var(--pick-fg)':''; });
       syncRoomPicker(); renderAssignView(); };
   });
   el('af_campus').addEventListener('change', ()=>{ saveAF(); syncRoomPicker(); saveAF(); renderAssignView(); });
@@ -907,7 +907,7 @@ function adjustDayDialog(courseId){
     const chips=dates.map(d=>{ const es=byDate[d]; const rel=es.every(e=>e.released); const tmp=es.some(e=>e.temp);
       const e0=es[0]; const rm=e0.b.room_id?rname(e0.b.room_id):'线上';
       const on=sel===d;
-      return `<span data-d="${d}" style="display:inline-block;cursor:pointer;margin:3px;padding:4px 10px;border-radius:14px;font-size:12px;border:1px solid ${on?'var(--blue)':'var(--line)'};background:${on?'var(--blue)':(rel?'#eee':'#fff')};color:${on?'#fff':(rel?'#999':'#333')}">${d.slice(5).replace('-','/')} 周${WD[weekdayOf(d)%7]} · ${esc(rm)} ${esc((e0.b.start_time||'').slice(0,5))}-${esc((e0.b.end_time||'').slice(0,5))}${tmp?' · 临时':''}${rel?' · 已释放':''}</span>`; }).join('');
+      return `<span data-d="${d}" style="display:inline-block;cursor:pointer;margin:3px;padding:4px 10px;border-radius:14px;font-size:12px;border:1px solid ${on?'var(--pick-bd)':'var(--line)'};background:${on?'var(--pick-bg)':(rel?'#eee':'#fff')};color:${on?'var(--pick-fg)':(rel?'#999':'#333')}">${d.slice(5).replace('-','/')} 周${WD[weekdayOf(d)%7]} · ${esc(rm)} ${esc((e0.b.start_time||'').slice(0,5))}-${esc((e0.b.end_time||'').slice(0,5))}${tmp?' · 临时':''}${rel?' · 已释放':''}</span>`; }).join('');
     let act='';
     if(sel){
       const es=byDate[sel]||[]; const rel=es.length && es.every(e=>e.released);
@@ -1051,7 +1051,7 @@ function assignRoomOnly(courseId){
     : `${esc(c.campus)} · ${weekdaysLabel(c.weekdays)} · ${c.start_time||''}-${c.end_time||''} · 预估${c.est_students||'?'}人`;
   const roomBlock =
     '<div class="field" style="margin:8px 0"><label>选教室（容量足够）</label><select id="aro_room">'+roomOpts+'</select></div>'+
-    (isOnlineCourse?'':'<div style="display:flex;gap:8px;align-items:center;margin:8px 0"><span id="aro_um" data-on="1" style="cursor:pointer;user-select:none;border:1px solid var(--blue);background:var(--blue);color:#fff;border-radius:14px;padding:3px 12px;font-size:12px">占用该教室腾讯账号</span><span class="muted" id="aro_accName" style="font-size:12px"></span></div>');
+    (isOnlineCourse?'':'<div style="display:flex;gap:8px;align-items:center;margin:8px 0"><span id="aro_um" data-on="1" style="cursor:pointer;user-select:none;border:1px solid var(--pick-bd);background:var(--pick-bg);color:var(--pick-fg);border-radius:14px;padding:3px 12px;font-size:12px">占用该教室腾讯账号</span><span class="muted" id="aro_accName" style="font-size:12px"></span></div>');
   let h='<div style="position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:60;overflow:auto;padding:40px 16px" id="aroMask">'+
     '<div class="card" style="width:460px;max-width:94vw;margin:auto"><h3 style="margin-top:2px">'+(ex?'重排':'排')+'「'+esc(dispName)+'」教室</h3>'+
     `<div class="muted" style="margin-bottom:8px">${subLine}</div>`;
@@ -1080,7 +1080,7 @@ function assignRoomOnly(courseId){
   h+='</div></div>';
   const wrap=document.createElement('div'); wrap.innerHTML=h; document.body.appendChild(wrap.firstChild);
   if(isOnlineCourse){
-    const drawCampus=()=>{ el('aro_campus').innerHTML=CAMPUSES.map(cp=>`<span data-cp="${cp}" style="display:inline-block;padding:3px 12px;margin-right:6px;border:1px solid ${cp===aroCampus?'var(--blue)':'var(--line)'};border-radius:14px;font-size:13px;cursor:pointer;background:${cp===aroCampus?'var(--blue)':'#fff'};color:${cp===aroCampus?'#fff':'#666'}">${cp}</span>`).join('');
+    const drawCampus=()=>{ el('aro_campus').innerHTML=CAMPUSES.map(cp=>`<span data-cp="${cp}" style="display:inline-block;padding:3px 12px;margin-right:6px;border:1px solid ${cp===aroCampus?'var(--pick-bd)':'var(--line)'};border-radius:14px;font-size:13px;cursor:pointer;background:${cp===aroCampus?'var(--pick-bg)':'#fff'};color:${cp===aroCampus?'var(--pick-fg)':'#666'}">${cp}</span>`).join('');
       el('aro_campus').querySelectorAll('[data-cp]').forEach(x=>x.onclick=()=>{ aroCampus=x.dataset.cp; el('aro_room').innerHTML=roomOptsFor(aroCampus); drawCampus(); refreshAcc(); }); };
     drawCampus();
     const openMore=()=>{ el('aro_roomWrap').classList.remove('hidden'); el('aro_more').classList.add('hidden'); };
@@ -1097,7 +1097,7 @@ function assignRoomOnly(courseId){
     const um=el('aro_um'); if(um && !an){ um.dataset.on='0'; um.style.background=''; um.style.color='#999'; um.style.borderColor='var(--line)'; } };
   if(el('aro_room')) el('aro_room').onchange=refreshAcc; refreshAcc();
   if(el('aro_um')) el('aro_um').onclick=()=>{ const um=el('aro_um'); const r=ROOMS.find(x=>String(x.id)===String(el('aro_room').value)); if(!(r&&r.meeting_account_id)){ toast('该教室未绑定账号', false); return; }
-    const on=um.dataset.on==='1'?'0':'1'; um.dataset.on=on; um.style.background=on==='1'?'var(--blue)':''; um.style.color=on==='1'?'#fff':'#999'; um.style.borderColor=on==='1'?'var(--blue)':'var(--line)'; };
+    const on=um.dataset.on==='1'?'0':'1'; um.dataset.on=on; um.style.background=on==='1'?'var(--pick-bg)':''; um.style.color=on==='1'?'var(--pick-fg)':'#999'; um.style.borderColor=on==='1'?'var(--pick-bd)':'var(--line)'; };
   if(el('aro_noroom')) el('aro_noroom').onclick=async()=>{
     let sd=c.start_date, ed=c.end_date;
     if(noDate){ toast('这门课还没有日期，请先在管理端『课程安排』填好', false); return; }
@@ -1161,7 +1161,7 @@ function schedRemoveDialog(groupCourses, dispName, afterDone){
   const draw=()=>{
     m.innerHTML='<div class="card" style="width:460px;max-width:94vw;margin:auto"><h3 style="margin-top:2px">移出排课：「'+esc(dispName)+'」</h3>'+
       '<div class="tip">只从排课里移出，管理端的课程不受影响；这门课已经占的教室会释放。</div>'+
-      '<div class="field"><label>理由</label><div>'+SCHED_REMOVE_REASONS.map(r=>`<span data-rs="${esc(r)}" style="display:inline-block;padding:3px 12px;margin:2px 6px 2px 0;border:1px solid ${r===reason?'var(--blue)':'var(--line)'};border-radius:14px;font-size:13px;cursor:pointer;user-select:none;background:${r===reason?'var(--blue)':'#fff'};color:${r===reason?'#fff':'#666'}">${esc(r)}</span>`).join('')+'</div></div>'+
+      '<div class="field"><label>理由</label><div>'+SCHED_REMOVE_REASONS.map(r=>`<span data-rs="${esc(r)}" style="display:inline-block;padding:3px 12px;margin:2px 6px 2px 0;border:1px solid ${r===reason?'var(--pick-bd)':'var(--line)'};border-radius:14px;font-size:13px;cursor:pointer;user-select:none;background:${r===reason?'var(--pick-bg)':'#fff'};color:${r===reason?'var(--pick-fg)':'#666'}">${esc(r)}</span>`).join('')+'</div></div>'+
       (reason==='其他'?'<div class="field" style="margin-top:6px"><label>一句话说明</label><input id="rm_other" placeholder="如：并入别的班" style="width:100%"></div>':'')+
       (groupCourses.length>1?'<p class="muted" style="font-size:12px">这是合并组，整组 '+groupCourses.length+' 门课一起移出。</p>':'')+
       '<div style="display:flex;gap:8px;margin-top:12px"><button id="rm_ok">确认移出</button><button class="ghost" id="rm_cancel">返回</button></div></div>';
@@ -1202,7 +1202,7 @@ function schedBatchRemoveEnded(){
       '<div class="tip">列出结课日已过、没占教室的课。只从排课里移出（理由「已过期」），管理端的课程不受影响。点一行可取消 / 选中。</div>'+
       (list.length?('<div style="display:flex;gap:8px;margin:6px 0"><button class="ghost sm" id="bm_all">全选</button><button class="ghost sm" id="bm_none">全不选</button><span class="muted" style="align-self:center">已选 '+sel.size+' / '+list.length+' 门</span></div>'+
         '<div style="max-height:50vh;overflow:auto">'+list.map(c=>{ const on=sel.has(String(c.id));
-          return `<div data-bm="${c.id}" style="cursor:pointer;border:1px solid ${on?'var(--blue)':'var(--line)'};background:${on?'#eef4f0':'#fff'};border-radius:7px;padding:6px 10px;margin-bottom:5px;font-size:13px"><b>${esc(c.merge_name||c.name)}</b> <span class="muted">${esc(c.teacher||'')} · ${esc(c.campus||'')} · 结课 ${esc(c.end_date)}</span></div>`; }).join('')+'</div>')
+          return `<div data-bm="${c.id}" style="cursor:pointer;border:1px solid ${on?'var(--pick-bd)':'var(--line)'};background:${on?'#eef4f0':'#fff'};border-radius:7px;padding:6px 10px;margin-bottom:5px;font-size:13px"><b>${esc(c.merge_name||c.name)}</b> <span class="muted">${esc(c.teacher||'')} · ${esc(c.campus||'')} · 结课 ${esc(c.end_date)}</span></div>`; }).join('')+'</div>')
         :'<div class="muted" style="margin:10px 0">没有符合条件的课。</div>')+
       '<div style="display:flex;gap:8px;margin-top:12px">'+(list.length?'<button id="bm_ok"'+(sel.size?'':' disabled')+'>移出所选 '+sel.size+' 门</button>':'')+'<button class="ghost" id="bm_cancel">关闭</button></div></div>';
     m.querySelector('#bm_cancel').onclick=()=>m.remove();
@@ -1283,7 +1283,7 @@ function schedPushDialog(c, dispName, groupCourses){
     m.innerHTML='<div class="card" style="width:560px;max-width:94vw;margin:auto"><h3 style="margin-top:2px">推送给负责人确认：「'+esc(dispName)+'」</h3>'+
       (pendingReq?'<div class="tip">这门课已经推送过、还在等负责人确认。再推送会把下面的内容<b>追加</b>到原来的说明后面，不会新建。</div>':'<div class="tip">把排不进教室的情况发给这门课的负责人，让 TA 在管理端回复怎么调整。</div>')+
       (pendingReq?'<div class="muted" style="font-size:12px;white-space:pre-wrap;border:1px dashed var(--line);border-radius:6px;padding:6px 8px;margin-bottom:8px;max-height:120px;overflow:auto">原说明：\n'+esc(pendingReq.message)+'</div>':'')+
-      '<div class="field"><label>问题（可多选）</label><div>'+CRQ_ISSUES.map(([k,t])=>`<span data-is="${k}" style="display:inline-block;padding:3px 12px;margin:2px 6px 2px 0;border:1px solid ${issues.has(k)?'var(--blue)':'var(--line)'};border-radius:14px;font-size:13px;cursor:pointer;user-select:none;background:${issues.has(k)?'var(--blue)':'#fff'};color:${issues.has(k)?'#fff':'#666'}">${t}</span>`).join('')+'</div></div>'+
+      '<div class="field"><label>问题（可多选）</label><div>'+CRQ_ISSUES.map(([k,t])=>`<span data-is="${k}" style="display:inline-block;padding:3px 12px;margin:2px 6px 2px 0;border:1px solid ${issues.has(k)?'var(--pick-bd)':'var(--line)'};border-radius:14px;font-size:13px;cursor:pointer;user-select:none;background:${issues.has(k)?'var(--pick-bg)':'#fff'};color:${issues.has(k)?'var(--pick-fg)':'#666'}">${t}</span>`).join('')+'</div></div>'+
       '<div class="field" style="margin-top:6px"><label>说明（自动生成，可以改）</label><textarea id="pu_msg" rows="9" style="width:100%">'+esc(msg)+'</textarea></div>'+
       '<div style="display:flex;gap:8px;margin-top:12px"><button id="pu_ok">'+(pendingReq?'追加推送':'确认推送')+'</button><button class="ghost" id="pu_cancel">返回</button></div></div>';
     m.querySelectorAll('[data-is]').forEach(x=>x.onclick=()=>{ const k=x.dataset.is; issues.has(k)?issues.delete(k):issues.add(k);
@@ -1486,8 +1486,8 @@ function meetingLinkStep(c, accId){
       // —— 标题类型
       '<div class="field"><label>标题类型</label>'+
       '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
-        '<button type="button" class="ghost sm ttype" data-g="0" style="'+(!useGeneric?'background:var(--blue);color:#fff':'')+'">单门课标题</button>'+
-        '<button type="button" class="ghost sm ttype" data-g="1" style="'+(useGeneric?'background:var(--blue);color:#fff':'')+'">通用标题（多门课/多天共用一个会议）</button>'+
+        '<button type="button" class="ghost sm ttype" data-g="0" style="'+(!useGeneric?'background:var(--pick-bg);color:var(--pick-fg);border-color:var(--pick-bd);font-weight:600':'')+'">单门课标题</button>'+
+        '<button type="button" class="ghost sm ttype" data-g="1" style="'+(useGeneric?'background:var(--pick-bg);color:var(--pick-fg);border-color:var(--pick-bd);font-weight:600':'')+'">通用标题（多门课/多天共用一个会议）</button>'+
       '</div></div>';
 
     if(useGeneric){
@@ -2337,7 +2337,7 @@ function pickExemptDays(hol, allDates){
     const sel=new Set(allDates);   // 默认全选
     const mask=document.createElement('div');
     mask.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:70;overflow:auto;padding:40px 16px';
-    const chips=allDates.map(d=>`<span class="exday" data-d="${d}" style="cursor:pointer;user-select:none;border:1px solid var(--blue);background:var(--blue);color:#fff;border-radius:14px;padding:4px 12px;font-size:12px;margin:3px">${d}（${WD[weekdayOf(d)]}）</span>`).join('');
+    const chips=allDates.map(d=>`<span class="exday" data-d="${d}" style="cursor:pointer;user-select:none;border:1px solid var(--pick-bd);background:var(--pick-bg);color:var(--pick-fg);border-radius:14px;padding:4px 12px;font-size:12px;margin:3px">${d}（${WD[weekdayOf(d)]}）</span>`).join('');
     mask.innerHTML='<div class="card" style="width:520px;max-width:94vw;margin:auto"><h3 style="margin-top:2px">选择「'+esc(hol.label||'假期')+'」里照常上课的日期</h3>'+
       '<div class="muted" style="font-size:12px;margin-bottom:8px">默认全选。点击可取消/选中某一天——只有选中的日期，勾选的课才照常上课，其余日期仍放假。</div>'+
       '<div style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:6px">'+chips+'</div>'+
@@ -2345,7 +2345,7 @@ function pickExemptDays(hol, allDates){
       '<div style="display:flex;gap:8px"><button id="exd_ok">确定</button><button class="ghost" id="exd_cancel">取消</button></div></div>';
     document.body.appendChild(mask);
     const paint=()=>mask.querySelectorAll('.exday').forEach(c=>{ const on=sel.has(c.dataset.d);
-      c.style.background=on?'var(--blue)':''; c.style.color=on?'#fff':'#888'; c.style.borderColor=on?'var(--blue)':'var(--line)'; });
+      c.style.background=on?'var(--pick-bg)':''; c.style.color=on?'var(--pick-fg)':'#888'; c.style.borderColor=on?'var(--pick-bd)':'var(--line)'; });
     mask.querySelectorAll('.exday').forEach(c=>c.onclick=()=>{ const d=c.dataset.d; sel.has(d)?sel.delete(d):sel.add(d); paint(); });
     mask.querySelector('#exd_all').onclick=()=>{ allDates.forEach(d=>sel.add(d)); paint(); };
     mask.querySelector('#exd_none').onclick=()=>{ sel.clear(); paint(); };

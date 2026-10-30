@@ -269,7 +269,7 @@ function vipShowReqMsg(modalId, text, res) {
     <div style="font-size:11px;color:#a0521a;background:#fdf1e6;border:1px solid #e8c9a8;border-radius:3px;padding:6px 8px;margin-bottom:8px">${res.urgent ? '必须把下面这段发到群里，否则管理员会驳回。' : '把下面这段发到群里，周知管理员安排大教室。'}</div>
     <textarea id="vip_req_msg_text" rows="5" readonly style="width:100%;font-size:12px">${escapeHtmlVcm(text)}</textarea>
     <div style="display:flex;gap:8px;margin-top:10px">
-      <button onclick="vipCopyText('vip_req_msg_text')" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:9px;font-size:12px;cursor:pointer;font-family:inherit">复制文字</button>
+      <button onclick="vipCopyText('vip_req_msg_text')" style="flex:1;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:9px;font-size:12px;cursor:pointer;font-family:inherit">复制文字</button>
       <button onclick="document.getElementById('${modalId}').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:9px 14px;font-size:12px;cursor:pointer;font-family:inherit">完成</button>
     </div>`;
 }
@@ -319,7 +319,7 @@ function vipRoomRetry(id) {
     <div class="form-group"><label class="form-label">上课时间 / 下课时间（必填）</label>${vipTimeSelHtml('vrt', `vrtTimeChanged('${id}')`, 'vrt_ok')}</div>
     <div id="vrt_room_box"><div style="font-size:11px;color:var(--text-3)">请先填写上课和下课时间</div></div>
     <div style="display:flex;gap:8px;margin-top:14px">
-      <button id="vrt_ok" onclick="vipRoomRetryDo('${id}')" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:9px;font-size:12px;cursor:pointer;font-family:inherit">提交教室预约</button>
+      <button id="vrt_ok" onclick="vipRoomRetryDo('${id}')" style="flex:1;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:9px;font-size:12px;cursor:pointer;font-family:inherit">提交教室预约</button>
       <button onclick="document.getElementById('vipRetryModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:9px 14px;font-size:12px;cursor:pointer;font-family:inherit">取消</button>
     </div></div>`;
   document.body.appendChild(m);
@@ -656,7 +656,7 @@ function renderTodo(mc) {
       <div class="todo-head">⚠ 有 ${pendingBookings.length} 个学生预约待确认</div>
       ${pendingBookings.slice(0, 3).map(b => {
         const f = fmtSessionDate(b.slot_date);
-        return `<div class="todo-item"><span style="font-weight:600">${b.name}</span><span style="color:var(--text-3)">${f.short} ${f.dow} · ${b.slot_time_range || ''} · ${typeLabel(b.type)}</span><button onclick="switchTab('booking')" style="font-size:10px;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;margin-left:auto">去确认</button></div>`;
+        return `<div class="todo-item"><span style="font-weight:600">${b.name}</span><span style="color:var(--text-3)">${f.short} ${f.dow} · ${b.slot_time_range || ''} · ${typeLabel(b.type)}</span><button onclick="switchTab('booking')" style="font-size:10px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;margin-left:auto">去确认</button></div>`;
       }).join('')}
       ${pendingBookings.length > 3 ? `<div style="font-size:10px;color:var(--text-3);text-align:center;padding-top:4px">还有 ${pendingBookings.length - 3} 个…</div>` : ''}
     </div>` : ''}
@@ -707,7 +707,7 @@ function renderBookingManagement(mc) {
   <div class="page-section">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
       <div style="font-family:'Noto Serif SC',serif;font-size:15px;font-weight:600">面谈预约</div>
-      <button onclick="exportMyFiles()" style="font-size:11px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:6px 12px;cursor:pointer;font-family:inherit;white-space:nowrap">📦 批量导出我的文件</button>
+      <button onclick="exportMyFiles()" style="font-size:11px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:6px 12px;cursor:pointer;font-family:inherit;white-space:nowrap">📦 批量导出我的文件</button>
     </div>
     <input id="tbkSearch" value="${tbkEsc(tbkQ)}" placeholder="搜索学生" oninput="tbkSetQ(this.value)" style="width:100%;box-sizing:border-box;font-size:12px;padding:7px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;margin-bottom:10px">
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
@@ -977,7 +977,7 @@ function renderBookingCardBody(b) {
           <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px">面谈记录</div>
           ${renderRecordForm(b.id, b.daily_record || {})}
           <div style="display:flex;gap:6px;margin-top:10px">
-            <button onclick="saveBookingRecord('${b.id}')" style="background:var(--accent);color:#fff;border:none;border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit">保存记录</button>
+            <button onclick="saveBookingRecord('${b.id}')" style="background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit">保存记录</button>
             ${b.status !== 'confirmed' ? `<button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--danger)">取消预约</button>` : ''}
           </div>
         </div>
@@ -2426,7 +2426,7 @@ function openVipModify(id, fromReq) {
       <input id="vmd_reason" value="${escapeHtmlVcm(r && r.status === 'pending' && r.type === 'change' ? '学生申请改期' + (r.reason ? '：' + r.reason : '') : '')}" placeholder="例：学生请假 / 老师临时有事"></div>
     <div id="vmd_msg" style="font-size:11px;color:var(--danger);min-height:14px;margin-bottom:6px"></div>
     <div style="display:flex;gap:8px">
-      <button id="vmd_save" onclick="vmdSave('${id}')" style="flex:1;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:9px;font-size:12px;cursor:pointer;font-family:inherit">保存修改</button>
+      <button id="vmd_save" onclick="vmdSave('${id}')" style="flex:1;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:9px;font-size:12px;cursor:pointer;font-family:inherit">保存修改</button>
       <button onclick="document.getElementById('vipModifyModal').remove()" style="background:none;border:1px solid var(--border);border-radius:3px;padding:9px 14px;font-size:12px;cursor:pointer;font-family:inherit">返回</button>
     </div>
   </div>`;
@@ -3487,7 +3487,7 @@ function openProfileForm(key) {
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
       <button onclick="document.getElementById('profileFormModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">取消</button>
-      <button onclick="saveTeacherProfile()" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存「${profEscT(cur.label)}」</button>
+      <button onclick="saveTeacherProfile()" style="font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存「${profEscT(cur.label)}」</button>
     </div>
   </div>`;
   modal.onclick = e => { if (e.target === modal) modal.remove(); };

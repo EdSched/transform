@@ -1,5 +1,9 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
+  /* 选中状态（chips、标签页、导航当前项）：浅米底 + 深字 + 稍深边框 */
+  --pick-bg:#ebe4da; --pick-fg:#3a2e24; --pick-bd:#c9bba9;
+  /* 主按钮（保存、确定、提交这类）：浅米底 + 深字 + 细边框；悬停略深 */
+  --btn-bg:#efe9e1; --btn-fg:#3a2e24; --btn-bd:#d5c9bb; --btn-hover:#e4dacd;
   --bg:#faf7f2;--surface:#fff;--border:#e8e0d4;--border-light:#f0ebe2;
   --text:#3a2e24;--text-2:#6b5c4e;--text-3:#a8998a;
   --accent:#3a2e24;--ok:#2a9e6a;--ok-bg:#e4f5ee;
@@ -58,7 +62,7 @@ body{font-family:'DM Mono','Noto Serif SC',monospace;background:var(--bg);color:
 .sub-label{font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin:8px 0 4px}
 .chip-row{display:flex;flex-wrap:wrap;gap:4px}
 .chip{padding:4px 11px;border:1px solid var(--border);border-radius:2px;font-size:11px;cursor:pointer;background:var(--bg);transition:all .15s;font-family:'DM Mono',monospace}
-.chip.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chip.active{background:var(--pick-bg);color:var(--pick-fg);border-color:var(--pick-bd);font-weight:600}
 .chip.ok-active{background:var(--ok);color:#fff;border-color:var(--ok)}
 
 /* Submit bar inline */
@@ -66,10 +70,10 @@ body{font-family:'DM Mono','Noto Serif SC',monospace;background:var(--bg);color:
 
 /* Buttons */
 .btn{display:inline-flex;align-items:center;justify-content:center;padding:8px 20px;border-radius:3px;font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:'DM Mono',monospace;transition:all .15s}
-.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#5a4a3c}
+.btn-primary{background:var(--btn-bg);color:var(--btn-fg);border:1px solid var(--btn-bd)}.btn-primary:hover{background:var(--btn-hover)}
 .btn-primary:disabled{opacity:.45;cursor:not-allowed}
 .btn-full{width:100%;justify-content:center}
-.btn-sm-action{padding:5px 12px;background:var(--accent);color:#fff;border:none;border-radius:3px;font-size:11px;cursor:pointer;font-family:'DM Mono',monospace}
+.btn-sm-action{padding:5px 12px;background:var(--btn-bg);color:var(--btn-fg);border:1px solid var(--btn-bd);border-radius:3px;font-size:11px;cursor:pointer;font-family:'DM Mono',monospace}
 .btn-ghost{background:none;border:none;cursor:pointer;color:var(--text-3);font-size:13px;padding:2px 5px;line-height:1}
 .btn-ghost:hover{color:var(--danger)}
 
@@ -116,7 +120,7 @@ input:focus,select:focus{border-color:var(--accent)}
 /* filter-chip（admin端と同じ） */
 .filter-chip { display:inline-block; padding:4px 10px; border:1px solid var(--border); border-radius:3px; font-size:11px; cursor:pointer; background:var(--bg); color:var(--text-2); transition:all .15s; font-family:'DM Mono',monospace; user-select:none; }
 .filter-chip:hover { border-color:var(--accent); color:var(--accent); }
-.filter-chip.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+.filter-chip.active { background:var(--pick-bg);color:var(--pick-fg);border-color:var(--pick-bd);font-weight:600; }
 .filter-row { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
 
 /* btn追加 */

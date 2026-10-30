@@ -3767,7 +3767,7 @@ function hwEditorRender(){
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button onclick="document.getElementById('hwEditorModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">取消</button>
       <button onclick="hwSaveToTemplate('${s.id}')" style="font-size:12px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:7px 14px;cursor:pointer;font-family:inherit">💾 保存并写入模板</button>
-      <button onclick="hwSaveQuestions('${s.id}')" style="font-size:12px;background:var(--accent);color:#fff;border:none;border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存作业</button>
+      <button onclick="hwSaveQuestions('${s.id}')" style="font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:7px 20px;cursor:pointer;font-family:inherit">保存作业</button>
     </div>`;
 }
 
