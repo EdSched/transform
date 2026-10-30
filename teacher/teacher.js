@@ -794,74 +794,110 @@ function tbkGoRecord(id) {
 }
 
 // VIP 预约渲染（供「VIP管理 → 预约」调用）
-let tvbWaitOpen = true, tvbDoneOpen = false, tvbDoneStu = '', tvbDoneYM = '';
-function renderTeacherVipBookingsBody() {
+// VIP 预约：状态 chips + 一行一条的列表（逻辑沿用原来的分法，只多拆出「待填上课记录」）
+const TVB_STATS = [['needme', '待我确认'], ['waitstu', '等学生确认预约'], ['confirmed', '已确认'], ['needrec', '待填上课记录'], ['waiting', '待学生确认上课'], ['done', '已完成'], ['all', '全部']];
+let tvbStat = null, tvbDoneStu = '', tvbDoneYM = '', tvbQ = '', tvbShown = 30;
+const tvbOpen = {};
+function tvbStateOf(b, ctx) {
+  if (b.vip_session_notes && !b.student_confirmed) return 'waiting';
+  if (isVipDone(b)) return 'done';
+  if (ctx.waitStuIds.has(b.id)) return 'waitstu';
+  if (b.status === 'pending' || (b.self_booked && vipNeedTeacherOk(b))) return 'needme';
+  if (b.status === 'confirmed' && !b.student_confirmed && !vipNeedTeacherOk(b)) return (b.slot_date || '') < payrollTodayJst() ? 'needrec' : 'confirmed';
+  return 'confirmed';
+}
+function tvbItems() {
   const vipBookings = cachedTeacherBookings.filter(b => b.type === 'vip' && b.status !== 'cancelled');
-  // 待学生确认：已填上课记录、学生还没确认；已完成：学生已确认（或旧数据里已完成但没有记录的）
-  const waiting = vipBookings.filter(b => b.vip_session_notes && !b.student_confirmed);
-  const waitIds = new Set(waiting.map(b => b.id));
-  const done = vipBookings.filter(b => isVipDone(b) && !waitIds.has(b.id)).sort((x, y) => (y.slot_date || '').localeCompare(x.slot_date || ''));
-  const confirmed = vipBookings.filter(b => b.status === 'confirmed' && !waitIds.has(b.id) && !b.student_confirmed && !vipNeedTeacherOk(b));
-  const waitStu = vipBookings.filter(b => typeof vipBookingState === 'function' && vipBookingState(b).k === 'wait_student');   // 我发起、等学生确认
-  const waitStuIds = new Set(waitStu.map(b => b.id));
-  const needMe = vipBookings.filter(b => !waitStuIds.has(b.id) && (b.status === 'pending' || (b.self_booked && vipNeedTeacherOk(b))));
-  const head = (t) => `<div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">${t}</div>`;
-  const empty = (t) => `<div style="font-size:12px;color:var(--text-3);padding:12px 0">${t}</div>`;
-  const fold = (open, fn, t) => `<div onclick="${fn}" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-weight:600;padding:8px 0;border-top:1px solid var(--border);user-select:none"><span style="color:var(--text-3);width:10px">${open ? '▾' : '▸'}</span>${t}</div>`;
-  // 已完成：学生 + 月份筛选
+  const ctx = { waitStuIds: new Set(vipBookings.filter(b => typeof vipBookingState === 'function' && vipBookingState(b).k === 'wait_student').map(b => b.id)) };
+  return vipBookings.map(b => ({ b, st: tvbStateOf(b, ctx) }));
+}
+function tvbStuKey(b) { return b.student_id || ('n:' + (b.name || '')); }
+// 已完成按月；其他状态都是要处理的，不分月
+function tvbInView(x) { return x.st !== 'done' || (x.b.slot_date || '').startsWith(tvbDoneYM); }
+function renderTeacherVipBookingsBody() {
   if (!tvbDoneYM) tvbDoneYM = new Date().toISOString().slice(0, 7);
-  const stuKey = b => b.student_id || ('n:' + (b.name || ''));
-  const stuMap = {}; done.forEach(b => { if (!stuMap[stuKey(b)]) stuMap[stuKey(b)] = b.name || '（未命名）'; });
-  if (tvbDoneStu && !stuMap[tvbDoneStu]) tvbDoneStu = '';
-  const doneShown = done.filter(b => (!tvbDoneStu || stuKey(b) === tvbDoneStu) && (b.slot_date || '').startsWith(tvbDoneYM));
+  const items = tvbItems();
+  const cnt = {}; let allN = 0;
+  items.forEach(x => { if (!tvbInView(x)) return; cnt[x.st] = (cnt[x.st] || 0) + 1; allN++; });
+  if (!tvbStat) tvbStat = ((cnt.needme || 0) || (cnt.needrec || 0)) ? ((cnt.needrec || 0) > (cnt.needme || 0) ? 'needrec' : 'needme') : 'confirmed';
+  const vipBookings = items.map(x => x.b);
+  const roomRej = vipBookings.filter(vipRoomRejected);
   const [dy, dm] = tvbDoneYM.split('-').map(Number);
   const arrow = (d, t) => `<span onclick="tvbDoneShift(${d})" style="cursor:pointer;color:var(--accent);font-size:15px;padding:0 8px;user-select:none">${t}</span>`;
-  const roomRej = vipBookings.filter(vipRoomRejected);
+  let stuBar = '';
+  if (tvbStat === 'done') {
+    const stuMap = {}; items.filter(x => x.st === 'done').forEach(x => { if (!stuMap[tvbStuKey(x.b)]) stuMap[tvbStuKey(x.b)] = x.b.name || '（未命名）'; });
+    if (tvbDoneStu && !stuMap[tvbDoneStu]) tvbDoneStu = '';
+    const ents = Object.entries(stuMap).sort((x, y) => x[1].localeCompare(y[1], 'zh'));
+    const chip = (on, k, label) => `<div class="filter-chip${on ? ' active' : ''}" data-k="${tbkEsc(k)}" onclick="tvbSetStu(this.dataset.k)">${tbkEsc(label)}</div>`;
+    stuBar = `<div style="display:flex;align-items:center;margin:2px 0 8px">${arrow(-1, '‹')}<span style="font-size:13px;font-weight:600">${dy}年${dm}月</span>${arrow(1, '›')}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${chipFold([{ on: !tvbDoneStu, html: chip(!tvbDoneStu, '', '全部学生') }].concat(ents.map(([k, n]) => ({ on: k === tvbDoneStu, html: chip(k === tvbDoneStu, k, n) }))))}</div>`;
+  } else if (tvbStat === 'all') {
+    stuBar = `<div style="display:flex;align-items:center;margin:2px 0 10px">${arrow(-1, '‹')}<span style="font-size:13px;font-weight:600">${dy}年${dm}月</span>${arrow(1, '›')}<span style="font-size:10px;color:var(--text-3);margin-left:6px">（只影响已完成的）</span></div>`;
+  }
   return `<div id="tvbk_body">
     ${typeof vbfListHtml === 'function' ? vbfListHtml() : ''}
     ${roomRej.length ? `<div style="background:#fdf1ed;border:1px solid #f2d5cc;border-radius:4px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:var(--danger)">有 ${roomRej.length} 个 VIP 预约的教室申请被驳回，请在对应预约上点「重新预约教室」（预约本身没有取消）</div>` : ''}
-    ${waitStu.length ? `<div style="margin-bottom:16px">
-      ${head('我发起的 · 等学生确认')}
-      ${waitStu.map(b => renderMyVipRow(b)).join('')}
-    </div>` : ''}
-    <div style="margin-bottom:16px">
-      ${head('待确认VIP预约')}
-      ${needMe.length ? needMe.map(b => renderMyVipRow(b)).join('') : empty('暂无待确认VIP预约')}
+    <input id="tvbSearch" value="${tbkEsc(tvbQ)}" placeholder="搜索学生" oninput="tvbSetQ(this.value)" style="width:100%;box-sizing:border-box;font-size:12px;padding:7px 10px;border:1px solid var(--border);border-radius:3px;font-family:inherit;margin-bottom:10px">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+      ${TVB_STATS.map(([k, l]) => { const n = k === 'all' ? allN : (cnt[k] || 0); const hot = (k === 'needme' || k === 'needrec') && n && tvbStat !== k; return `<div class="filter-chip${tvbStat === k ? ' active' : ''}" ${hot ? 'style="background:#fff3cd;border-color:#d9a400;color:#7a5b00;font-weight:600"' : ''} onclick="tvbSetStat('${k}')">${l} ${n}</div>`; }).join('')}
     </div>
-    <div style="margin-bottom:16px">
-      ${head('已确认VIP预约')}
-      ${confirmed.length ? confirmed.map(b => renderMyVipRow(b)).join('') : empty('暂无已确认VIP预约')}
+    ${stuBar}
+    <div id="tvbList">${tvbListHtml()}</div>
+  </div>`;
+}
+function tvbMatch(x) {
+  if (tvbStat !== 'all' && x.st !== tvbStat) return false;
+  if (!tvbInView(x)) return false;
+  if (tvbStat === 'done' && tvbDoneStu && tvbStuKey(x.b) !== tvbDoneStu) return false;
+  const q = tvbQ.trim().toLowerCase();
+  return !q || (x.b.name || '').toLowerCase().includes(q);
+}
+function tvbListHtml() {
+  const list = tvbItems().filter(tvbMatch);
+  const asc = ['needme', 'waitstu', 'confirmed', 'needrec', 'waiting'].includes(tvbStat);   // 待处理的：最久 / 最近的在上面；已完成、全部：最新在上面
+  const key = x => (x.b.slot_date || '') + ' ' + String(x.b.slot_time_range || '').split(/[–\-~～]/)[0].trim();
+  list.sort((x, y) => asc ? key(x).localeCompare(key(y)) : key(y).localeCompare(key(x)));
+  const shown = list.slice(0, tvbShown);
+  return `<div class="tbkl">${shown.length ? shown.map(tvbRowHtml).join('') : '<div style="font-size:12px;color:var(--text-3);padding:14px 12px">暂无VIP预约</div>'}</div>
+  ${list.length > tvbShown ? `<div onclick="tvbMore()" style="text-align:center;font-size:11px;color:var(--accent);cursor:pointer;padding:10px">显示更多（还有 ${list.length - tvbShown} 条）</div>` : ''}`;
+}
+function tvbRowHtml(x) {
+  const b = x.b, st = x.st, id = b.id, f = fmtSessionDate(b.slot_date), open = !!tvbOpen[id], stop = 'event.stopPropagation();';
+  const label = { needme: '待我确认', waitstu: '等学生确认预约', confirmed: '已确认', needrec: '待填上课记录', waiting: '待学生确认上课', done: '已完成' }[st];
+  const hot = st === 'needme' || st === 'needrec';
+  const col = hot ? '#7a5b00' : st === 'done' ? 'var(--ok)' : '#5a3a9a';
+  let act = '';
+  if (st === 'needme') act = vipNeedTeacherOk(b) ? `<button class="tbkl-btn ok big" onclick="${stop}openVipConfirmModal('${id}')">✓ 确认</button>` : `<button class="tbkl-btn ok" onclick="${stop}tvbToggle('${id}')">✓ 确认</button>`;
+  else if (st === 'waitstu') act = `<button class="tbkl-btn" onclick="${stop}vnbRemindOpen('${id}')">复制提醒</button>`;
+  else if (st === 'needrec') act = `<button class="tbkl-btn ok big" onclick="${stop}openVipSessionRecord('${id}')">✓ 填上课记录</button>`;
+  else if (st === 'waiting') act = `<button class="tbkl-btn" onclick="${stop}openVipConfirmText('${id}')">复制提醒</button>`;
+  const tag = t => `<span style="font-size:9px;background:#ede7f8;color:#5a3a9a;border:1px solid #c8bfe8;border-radius:2px;padding:1px 6px;white-space:nowrap">${t}</span>`;
+  return `<div class="tbkl-item">
+    <div class="tbkl-row vip" onclick="tvbToggle('${id}')">
+      <div class="tbkl-d"><b>${f.short}</b> ${f.dow}<span style="color:var(--text-3);font-size:11px"> ${tbkEsc(b.slot_time_range || '')}</span></div>
+      <div class="tbkl-s"><b>${tbkEsc(b.name)}</b> ${tag('VIP')}${b.self_booked ? ' ' + tag('学生自主填写') : ''}${b.teacher_backfill ? ' ' + tag('老师补录') : ''}${b.initiated_by === 'teacher' ? ' ' + tag('我发起') : ''}</div>
+      <div class="tbkl-st"><span style="${hot ? 'background:#fff3cd;' : ''}color:${col};border:1px solid ${col};font-size:10px;padding:1px 6px;border-radius:2px;white-space:nowrap">${label}</span></div>
+      <div class="tbkl-ac">${act}</div>
     </div>
-    <div style="margin-bottom:8px">
-      ${fold(tvbWaitOpen, 'tvbToggle(\'wait\')', `⏳ 待学生确认 <span style="font-weight:400;color:var(--text-3)">${waiting.length} 节</span>`)}
-      ${tvbWaitOpen ? (waiting.length ? waiting.map(b => renderMyVipRow(b)).join('') : empty('没有等待学生确认的课程')) : ''}
-    </div>
-    <div>
-      ${fold(tvbDoneOpen, 'tvbToggle(\'done\')', `✓ 已完成（学生已确认） <span style="font-weight:400;color:var(--text-3)">共 ${done.length} 节</span>`)}
-      ${tvbDoneOpen ? `
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 0 10px">
-        <select onchange="tvbDoneStu=this.value;tvbRerender()" style="font-size:12px;padding:4px 8px;font-family:inherit">
-          <option value="">全部学生</option>
-          ${Object.entries(stuMap).sort((x, y) => x[1].localeCompare(y[1], 'zh')).map(([k, n]) => `<option value="${String(k).replace(/"/g, '&quot;')}"${k === tvbDoneStu ? ' selected' : ''}>${String(n).replace(/</g, '&lt;')}</option>`).join('')}
-        </select>
-        <div style="margin-left:auto;display:flex;align-items:center">${arrow(-1, '‹')}<span style="font-size:13px;font-weight:600">${dy}年${dm}月</span>${arrow(1, '›')}</div>
-      </div>
-      ${doneShown.length ? `<div style="font-size:11px;color:var(--text-3);margin-bottom:6px">本月 ${doneShown.length} 节</div>` + doneShown.map(b => renderMyVipRow(b)).join('') : empty('这个月没有已完成的课程')}` : ''}
-    </div>
+    ${open ? `<div class="tbkl-detail">${renderMyVipRow(b)}</div>` : ''}
   </div>`;
 }
 function tvbRerender() {
   const el = document.getElementById('tvbk_body');
   if (el) el.outerHTML = renderTeacherVipBookingsBody();
 }
-function tvbToggle(k) {
-  if (k === 'wait') tvbWaitOpen = !tvbWaitOpen; else tvbDoneOpen = !tvbDoneOpen;
-  tvbRerender();
-}
+function tvbDraw() { const el = document.getElementById('tvbList'); if (el) el.innerHTML = tvbListHtml(); }
+function tvbToggle(id) { if (tvbOpen[id]) delete tvbOpen[id]; else tvbOpen[id] = true; tvbDraw(); }
+function tvbMore() { tvbShown += 30; tvbDraw(); }
+function tvbSetQ(v) { tvbQ = v; tvbShown = 30; tvbDraw(); }
+function tvbSetStat(k) { tvbStat = k; tvbShown = 30; tvbRerender(); }
+function tvbSetStu(k) { tvbDoneStu = k; tvbShown = 30; tvbRerender(); }
 function tvbDoneShift(d) {
   const [y, m] = (tvbDoneYM || new Date().toISOString().slice(0, 7)).split('-').map(Number);
   const dt = new Date(y, m - 1 + d, 1);
   tvbDoneYM = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
+  tvbShown = 30;
   tvbRerender();
 }
 

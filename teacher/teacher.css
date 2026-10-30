@@ -177,3 +177,4 @@ input:focus,select:focus{border-color:var(--accent)}
   .tbkl-ac .tbkl-btn{width:100%;padding:10px 12px}
   .tbkl-ac:empty{display:none}
 }
+.tbkl-row.vip{border-left-color:#5a3a9a}
