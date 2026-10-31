@@ -1545,10 +1545,8 @@ async function clearCancelledBookings(){
 }
 async function openReassignTeacher(bookingId, slotId) {
   const b = cachedBookings.find(x => x.id === bookingId);
-  // 学生档案里的真实专业/领域（与预约入口标记 booking.major 无关）
+  // 学生档案里的真实专业（与预约入口标记 booking.major 无关）
   const realMajor = bkRealMajor(b);
-  const domOf = m => (typeof MAJOR_DOMAIN !== 'undefined' ? MAJOR_DOMAIN[m] : '') || '';
-  const stuDomain = domOf(realMajor);
 
   // 需要 majors/domains/tags 字段做筛选；cachedTeachers 缺这些字段时重新拉
   let teachers = (cachedTeachers && cachedTeachers.length && ('majors' in cachedTeachers[0])) ? cachedTeachers : [];
@@ -1556,29 +1554,16 @@ async function openReassignTeacher(bookingId, slotId) {
     try { teachers = await sb('/rest/v1/teachers?select=name,majors,domains,tags&order=name.asc'); } catch(e) { teachers = []; }
   }
 
-  const isAdminOnly = t => { const g = t.tags || []; return g.includes('营业老师') || g.includes('保录老师'); };
-  const matches = t => {
-    if (isAdminOnly(t)) return false;                       // 营业/保录：仅后台，不作为授课老师分配
-    const mj = t.majors || [], dm = t.domains || [];
-    if (realMajor && mj.includes(realMajor)) return true;    // 同专业
-    if (stuDomain) {                                         // 同领域（含有该领域专业课的老师）
-      if (dm.includes(stuDomain)) return true;
-      if (mj.some(m => domOf(m) === stuDomain)) return true;
-    }
-    return false;
-  };
-
-  // 优先只显示对口老师；找不到再退回（先排除营业/保录，仍为空才显示全部），保证工具不至于无人可选
-  let pool = teachers.filter(matches);
-  let scoped = true;
-  if (!pool.length) { pool = teachers.filter(t => !isAdminOnly(t)); scoped = false; }
-  if (!pool.length) { pool = teachers; scoped = false; }
+  // 营业/保录：仅后台，不作为授课老师分配
+  const pool = teachers.filter(t => { const g = t.tags || []; return !(g.includes('营业老师') || g.includes('保录老师')); });
+  const own = realMajor ? pool.filter(t => (t.majors || []).includes(realMajor)) : [];
+  const cur = (b && b.assigned_teacher) || '';
+  window._rsState = { pool, own, query: '', selected: cur };
 
   const majorLbl = realMajor ? (typeof majorLabel === 'function' ? majorLabel(realMajor) : (MAJORS[realMajor] || realMajor)) : '';
-  const options = pool.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
-  const hint = scoped
-    ? `仅显示${majorLbl ? `「${majorLbl}」` : '该学生专业'}对口老师（已排除营业/保录标签）`
-    : `未找到该学生专业的对口老师，已显示全部可授课老师`;
+  const hint = !realMajor ? '这位学生没有专业信息，请在下面搜索'
+    : own.length ? `显示「${majorLbl}」专业的老师；要安排其他老师请在下面搜索`
+    : `没有「${majorLbl}」专业的老师，请在下面搜索`;
 
   const modal = document.createElement('div');
   modal.id = 'reassignModal';
@@ -1588,19 +1573,40 @@ async function openReassignTeacher(bookingId, slotId) {
       <div style="font-size:13px;font-weight:600;margin-bottom:14px">重新分配老师</div>
       <div class="form-group">
         <label class="form-label">选择老师</label>
-        <select id="reassign_teacher">${options}</select>
-        <div style="font-size:10px;color:var(--text-3);margin-top:5px">${hint}</div>
+        <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">${hint}</div>
+        <div id="reassignOwn" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      </div>
+      <div class="form-group">
+        <input id="reassignSearch" type="text" placeholder="搜索其他老师（姓名 / 拼音首字母）" autocomplete="off">
+        <div id="reassignFound" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
       </div>
       <div style="display:flex;gap:8px;margin-top:14px">
-        <button class="btn btn-primary btn-sm" onclick="confirmReassignTeacher('${bookingId}','${slotId}')">确认</button>
+        <button id="reassignOk" class="btn btn-primary btn-sm" onclick="confirmReassignTeacher('${bookingId}','${slotId}')">确认</button>
         <button class="btn btn-outline btn-sm" onclick="document.getElementById('reassignModal').remove()">取消</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
+  bindSearch(document.getElementById('reassignSearch'), q => { _rsState.query = q; rsRenderChips(); });
+  rsRenderChips();
+}
+function rsChip(t) {
+  const on = _rsState.selected === t.name;
+  const st = on ? 'background:var(--accent,#b8953a);color:#fff;border-color:var(--accent,#b8953a)' : 'background:var(--surface);color:var(--text-2)';
+  return `<span data-name="${escTM(t.name)}" onclick="rsPick(this.dataset.name)" style="cursor:pointer;font-size:12px;padding:3px 10px;border:1px solid var(--border);border-radius:12px;${st}">${escTM(t.name)}</span>`;
+}
+function rsPick(name) { _rsState.selected = name; rsRenderChips(); }
+function rsRenderChips() {
+  const S = _rsState;
+  document.getElementById('reassignOwn').innerHTML = S.own.map(rsChip).join('');
+  const q = (S.query || '').trim();
+  const found = q ? S.pool.filter(t => searchMatch(q, [t.name])).slice(0, 20) : [];
+  document.getElementById('reassignFound').innerHTML = q && !found.length
+    ? '<span style="font-size:11px;color:var(--text-3)">没有匹配的老师</span>' : found.map(rsChip).join('');
+  document.getElementById('reassignOk').disabled = !S.selected;
 }
 
 async function confirmReassignTeacher(bookingId, slotId) {
-  const name = document.getElementById('reassign_teacher').value;
+  const name = window._rsState && _rsState.selected;
   if (!name) return;
   try {
     // 只更新这一条预约自己的老师归属，不动 slots 表（避免影响同一时间槽下的其他学生）
