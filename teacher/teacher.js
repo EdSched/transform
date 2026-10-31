@@ -2886,13 +2886,15 @@ async function wrtMerge() {
   const inM = r => ym === 'all' || wrtParse(r.start_time).ym === ym;
   const declares = mine.filter(r => r.source === 'declare' && inM(r));
   const pubOf = {};
+  const rejOf = {};   // 管理端驳回的系统行（大课 / 面谈 / VIP）：显示已驳回和原因，不算合计
   mine.filter(r => r.source !== 'declare' && r.status === 'approved').forEach(r => { pubOf[r.source + ':' + r.source_id] = r; });
-  if (ym === 'all') return { rows: [...declares, ...mine.filter(r => r.source !== 'declare' && r.status === 'approved')], pending: [], ivPending: [] };
+  mine.filter(r => r.source !== 'declare' && r.status === 'rejected').forEach(r => { rejOf[r.source + ':' + r.source_id] = r; });
+  if (ym === 'all') return { rows: [...declares, ...mine.filter(r => r.source !== 'declare' && (r.status === 'approved' || r.status === 'rejected'))], pending: [], ivPending: [] };
   const auto = await wrtLoadAuto(ym);
   const used = new Set(), rows = [...declares];
   auto.rows.forEach(a => {
     const k = a.type + ':' + a.source_id, p = pubOf[k];
-    if (p) { used.add(k); rows.push(p); } else rows.push(wrtPlainRec(a));
+    if (p) { used.add(k); rows.push(p); } else if (rejOf[k]) { used.add(k); rows.push(rejOf[k]); } else rows.push(wrtPlainRec(a));
   });
   // 已发布、但这个月核算里没有了（课被删等）：照样显示发布的那一版。VIP 按确认月份算，不在本月确认的不算本月
   const left = mine.filter(r => r.source !== 'declare' && r.status === 'approved' && !used.has(r.source + ':' + r.source_id) && inM(r));
