@@ -1151,6 +1151,7 @@ let tatBar={ pending:[], done:[], stats:{} };   // 当前范围内的课次（�
 let tatExisting={};         // 当前打开课次已有的记录：student_id -> 最早的一条
 let tatEditing=false;       // 当前是否在修改已有记录
 const tatYmd=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const tatIsCancelled=se=>!!(se&&(se.is_cancelled||se.session_title==='休讲'));   // 与 student/study.js 同一个判断
 async function tatRenderSessionBar(){
   const bar=document.getElementById('tat_session_bar'); if(!bar) return;
   const set=tsaAllowedSet();
@@ -1159,13 +1160,14 @@ async function tatRenderSessionBar(){
   const mon=new Date(today.getFullYear(),today.getMonth(),today.getDate()-((today.getDay()+6)%7));
   const sun=new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+6);
   // 拉可见专业的课次（course_sessions），按范围过滤；「全部」按日期倒序
-  let q=`/rest/v1/course_sessions?select=id,course_name,course_id,session_number,session_date,session_title,time_range,major&order=session_date.${tatRange==='all'?'desc':'asc'}&limit=1000`;
+  let q=`/rest/v1/course_sessions?select=id,course_name,course_id,session_number,session_date,session_title,time_range,major,is_cancelled&order=session_date.${tatRange==='all'?'desc':'asc'}&limit=1000`;
   if(tatRange==='today') q+=`&session_date=eq.${todayStr}`;
   else if(tatRange==='week') q+=`&session_date=gte.${tatYmd(mon)}&session_date=lte.${tatYmd(sun)}`;
   let all=await sb(q).catch(()=>[]);
   // 「不记出席」的课不出现在点名列表里（还没加这一列时查询会失败，当作都要点名）
   const noAtt=new Set((await sb('/rest/v1/courses?attendance_mode=eq.none&select=id').catch(()=>[])||[]).map(c=>String(c.id)));
   if(noAtt.size) all=all.filter(se=>!noAtt.has(String(se.course_id)));
+  all=all.filter(se=>!tatIsCancelled(se));   // 休讲的回次不点名
   // 专业过滤（可见专业）
   if(set){ all=all.filter(se=>{ const mj=se.major||[]; return (Array.isArray(mj)?mj:[mj]).some(m=>tsaMajorOk(m)|| (isMajorGroup(m)&&groupMajors(m).some(x=>tsaMajorOk(x)))); }); }
   // 各课次已有的出席记录 → 区分待记录 / 已记录，并统计
@@ -1214,6 +1216,18 @@ async function tatOpen(sessionId){
   const se=tatSessions.find(x=>x.id===sessionId)||await sb(`/rest/v1/course_sessions?id=eq.${sessionId}&select=*`).then(r=>r&&r[0]).catch(()=>null);
   if(!se){ alert('课次未找到'); return; }
   tatCurSession=se;
+  if(tatIsCancelled(se)){
+    let ov=document.getElementById('tatOverlay');
+    if(!ov){ov=document.createElement('div');ov.id='tatOverlay';ov.style.cssText='position:fixed;inset:0;z-index:980;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:16px';document.body.appendChild(ov);}
+    ov.style.display='flex';
+    ov.innerHTML=`<div style="background:var(--surface);border-radius:10px;padding:16px 18px;width:min(420px,96vw);margin:auto">
+      <div style="font-size:15px;font-weight:600;margin-bottom:4px">${tsaEsc(se.course_name)} 第${se.session_number}回</div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">${se.session_date}</div>
+      <div style="font-size:13px;color:var(--text-2);margin-bottom:14px">这一回是休讲，不记出席</div>
+      <button onclick="document.getElementById('tatOverlay').style.display='none'" style="font-size:12px;padding:5px 14px;border:1px solid var(--border);border-radius:5px;background:var(--bg);cursor:pointer;font-family:inherit">关闭</button>
+    </div>`;
+    return;
+  }
   // 该课的成员学生（全部，不受可见范围限制——记出席要全班；成员规则见 shared/constants.js 的 courseMemberIds）
   const majors=Array.isArray(se.major)?se.major:(se.major?[se.major]:[]);
   const [all,crs,cms,recs]=await Promise.all([

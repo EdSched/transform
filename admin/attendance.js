@@ -331,7 +331,7 @@ function renderSessionListMain(courses){
         <span>${course.name} <span style="font-size:10px;font-weight:400;opacity:.7">${course.time_range||''}</span></span>
         <div style="display:flex;align-items:center;gap:8px">
           ${attModeChips(cid)}
-          <span style="font-size:10px;opacity:.7">${sess.length}回 · ${isOpen?attCountText(course, cid, sess[0]?.major):totalStudents+'人'}</span>
+          <span style="font-size:10px;opacity:.7">${sess.filter(x=>!attIsCancelled(x)).length}回 · ${isOpen?attCountText(course, cid, sess[0]?.major):totalStudents+'人'}</span>
           ${sess.some(s=>s.homework_enabled)?`<button onclick="adminBatchDownloadCourse('${cid}')" style="font-size:10px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);border-radius:3px;padding:3px 8px;cursor:pointer;color:inherit;font-family:inherit">📦 下载作业</button>`:''}
         </div>
       </div>
@@ -364,6 +364,17 @@ function renderSessionListMain(courses){
             const rate=tot?Math.min(100,Math.round(present/tot*100)):0;
             const f=fmtSessionDate(s.session_date);
             const hasHw=!!s.homework_enabled;
+            if(attIsCancelled(s)){
+              const nRec=allRecs.length;
+              return `<tr style="color:var(--text-3)">
+              <td style="font-size:11px;color:var(--text-3)">${s.session_number}</td>
+              <td style="font-size:12px;font-weight:600;color:var(--text-3)"><span style="display:inline-block;background:var(--border);color:var(--text-3);border-radius:4px;padding:2px 8px;font-size:11px;margin-right:6px">记录</span>${f.short} <span style="font-size:10px">${f.dow}</span></td>
+              <td style="font-size:11px;color:var(--text-3)">${s.session_title||'休讲'}${nRec?`<div style="margin-top:3px;font-size:10px;color:var(--danger)">这一回是休讲，但有 ${nRec} 条出席记录 <button class="btn btn-outline btn-sm" style="font-size:10px;padding:1px 8px" onclick="attClearCancelledRecords('${s.id}')">清除这些记录</button></div>`:''}</td>
+              <td style="font-size:11px">—</td><td style="font-size:11px">—</td><td style="font-size:11px">—</td>
+              <td style="display:flex;gap:4px;align-items:center"><span style="font-size:11px;color:var(--text-3)">休讲 · 不记出席</span>
+                <button class="btn btn-danger btn-sm" onclick="deleteSession('${s.id}')">删</button></td>
+            </tr>`;
+            }
             return `<tr>
               <td style="font-size:11px;color:var(--text-3)">${s.session_number}</td>
               <td style="font-size:12px;font-weight:600;cursor:pointer" onclick="openSessionModal('${s.id}')"><span style="display:inline-block;background:var(--accent,#b8953a);color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;margin-right:6px">📝 记录</span>${f.short} <span style="font-size:10px;color:${f.dowColor}">${f.dow}</span></td>
@@ -757,6 +768,19 @@ async function adminBatchDownloadCourse(courseId) {
 }
 
 
+// 休讲的回次：不记出席（与 student/study.js 同一个判断）
+const attIsCancelled = s => !!(s && (s.is_cancelled || s.session_title === '休讲'));
+async function attClearCancelledRecords(sessionId) {
+  const n = cachedSessionRecords.filter(r => r.session_id === sessionId).length;
+  if (!n) return;
+  if (!confirm(`这一回是休讲，确定清除这 ${n} 条出席记录？清除后不能恢复。`)) return;
+  try {
+    await sb(`/rest/v1/session_records?session_id=eq.${encodeURIComponent(sessionId)}`, 'DELETE');
+    cachedSessionRecords = cachedSessionRecords.filter(r => r.session_id !== sessionId);
+    renderAttendancePage(document.getElementById('mainContent'));
+  } catch (e) { alert('清除失败：' + e.message); }
+}
+
 async function deleteSession(sessionId) {
   if (!confirm('确定删除这个课次？')) return;
   try {
@@ -884,7 +908,7 @@ function renderAttStatusView(sessions, courses){
     const elIds=courseAttMode(course)==='open'?attElectives(cid, sess[0]?.major).map(x=>x.id):[];
     const students=members.concat(attNonMembersWithRecords(cachedSessionRecords.filter(r=>sessIds.has(r.session_id)), members, elIds));
     if(!students.length&&courseAttMode(course)!=='open') return '';
-    const hwSess=sess.filter(s=>s.homework_enabled);
+    const hwSess=sess.filter(s=>s.homework_enabled&&!attIsCancelled(s));
     const isOpen=courseAttMode(course)==='open';
     const head=`<thead><tr>
           <th style="width:110px;position:sticky;left:0;background:var(--bg);z-index:1">学生</th>
@@ -900,6 +924,7 @@ function renderAttStatusView(sessions, courses){
             let att=0, rec=0, hw=0, hwNeed=0;
             const startD=studentStartDate(stu);
             const cells=sess.map(s=>{
+              if(attIsCancelled(s)) return `<td style="text-align:center;font-size:10px;color:var(--text-3)" title="休讲 · 不记出席">休讲</td>`;
               const r=cachedSessionRecords.find(x=>x.session_id===s.id&&x.student_name===stu.name);
               const submitted=!!(attHwSubs[s.id]&&attHwSubs[s.id].has(stu.name));
               const applies=elective||sessionCountsFor(stu,s.session_date);   // 报名前的课次对这个学生不适用
@@ -945,7 +970,7 @@ function renderAttStatusView(sessions, courses){
     return `<div style="margin-bottom:18px;background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
       <div style="background:${color.bg};color:${color.text};padding:8px 14px;font-size:12px;font-weight:600;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
         <span>${course.name}</span>
-        <span style="font-size:10px;opacity:.75">${sess.length}回 · ${isOpen?'必修 '+members.length+' 人':members.length+'人'}　✓出席 ✗缺席 ─未记录 ·报名前 · 📝已交作业</span>
+        <span style="font-size:10px;opacity:.75">${sess.filter(x=>!attIsCancelled(x)).length}回 · ${isOpen?'必修 '+members.length+' 人':members.length+'人'}　✓出席 ✗缺席 ─未记录 ·报名前 · 📝已交作业</span>
       </div>
       ${body}
     </div>`;
