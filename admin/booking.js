@@ -34,7 +34,7 @@ function renderBookingPage(mc){
   if(bkSection==='unlinked'){ if(bkIsAdmin()){ renderUnlinkedBookingPage(mc); return; } bkSection='regular'; }
   const ym=`${bkYear}-${String(bkMonth+1).padStart(2,'0')}`;
   // 视角过滤（跟随链接）：非总览时，按学生真实专业判断是否属于当前领域/专业
-  const base=cachedBookings.filter(b=>b.slot_date&&b.slot_date.startsWith(ym)&&b.type!=='vip'&&bkMajorInView(bkRealMajor(b)));
+  const base=cachedBookings.filter(b=>b.slot_date&&interviewListYm(b)===ym&&b.type!=='vip'&&bkMajorInView(bkRealMajor(b)));
   const total=base.length; // 当月·本视角预约总数（不受下方筛选影响）
   const cnt={}; base.forEach(b=>{ const k=interviewState(b); cnt[k]=(cnt[k]||0)+1; });
   if(bkStat===null) bkStat=cnt.pending?'pending':cnt.need_record?'need_record':'';
@@ -133,7 +133,7 @@ function bkRowHtml(b){
   const dt=b.slot_date||'';
   return `<div class="bkl-item">
     <div class="bkl-row${st==='need_record'?' need':''}${st==='cancelled'||st==='old'?' dim':''}" onclick="bkToggle('${id}')">
-      <div class="bkl-d"><b>${dt.slice(5).replace('-','/')}</b> ${bkWd(dt)}<div style="color:var(--text-3);font-size:11px">${bkSelfEsc(b.slot_time_range||'')}</div></div>
+      <div class="bkl-d"><b>${dt.slice(5).replace('-','/')}</b> ${bkWd(dt)}<div style="color:var(--text-3);font-size:11px">${bkSelfEsc(b.slot_time_range||'')}</div>${interviewLateNote(b)?`<div style="color:var(--text-3);font-size:10px">${bkSelfEsc(interviewLateNote(b))}</div>`:''}</div>
       <div class="bkl-s"><b>${bkSelfEsc(b.name||'')}</b> <span style="font-size:11px;color:var(--text-3)">${bkSelfEsc(dm)}</span>${!b.student_id?'<span style="font-size:10px;color:var(--warn);border:1px solid var(--warn);border-radius:2px;padding:0 5px;margin-left:6px">未建档</span>':''}</div>
       <div class="bkl-ty"><span class="tag ${typeTag(b.type)}">${typeLabel(b.type)}</span></div>
       <div class="bkl-te">${tn?bkSelfEsc(tn):'<span style="color:var(--danger)">未关联老师</span>'}</div>

@@ -2453,7 +2453,7 @@ async function focusOpenSummary(sid) {
   // 每个查询单独记录成功 / 失败：失败要显示错误，不能当成「0 条」
   const safe = p => p.then(v => ({ v: v || [] }), e => ({ v: [], err: (e && e.message) || String(e) }));
   const get = path => safe(sb(path, 'GET', null, nc));
-  const bkSel = 'id,name,student_id,major,slot_date,slot_time_range,actual_time,actual_duration,status,type,assigned_teacher,daily_record';
+  const bkSel = 'id,name,student_id,major,slot_date,slot_time_range,actual_time,actual_duration,status,type,assigned_teacher,daily_record,record_done_at';
   const [tlR, plR, bkIdR, bkNmR, lgIdR, lgNmR] = await Promise.all([
     get(`/rest/v1/student_progress_timeline?student_id=eq.${enc(sid)}&select=*&order=created_at.asc`),
     get(`/rest/v1/student_school_plans?student_id=eq.${enc(sid)}&select=*&order=level.asc`),
@@ -2470,7 +2470,7 @@ async function focusOpenSummary(sid) {
   try {
   const timeline = tlR.v, plans = plR.v;
   const bks = bkIdR.v.concat(bkNmR.v), logs = lgIdR.v.concat(lgNmR.v);
-  const recs = bks.filter(tmHasRec).sort((a, b) => (b.slot_date || '').localeCompare(a.slot_date || ''));
+  const recs = bks.filter(tmHasRec).sort((a, b) => (payrollInterviewPayDate(b) || '').localeCompare(payrollInterviewPayDate(a) || ''));   // 补填的按填写记录的时间点排
   const info = { recs, pend: bks.filter(b => ['pending', 'confirmed'].includes(b.status) && b.type !== 'vip' && !tmHasRec(b)), logs: logs.sort((a, b) => tmLogKey(b).localeCompare(tmLogKey(a))) };
   const errHtml = (...rs) => { const e = rs.map(r => r.err).filter(Boolean)[0]; return e ? `<div style="font-size:11px;color:#b03a2e;padding:4px 0">读取失败：${tsaEsc(e)}</div>` : ''; };
   const months = focusMonthsUntil(s.expiry_date);
@@ -2528,7 +2528,7 @@ async function focusOpenSummary(sid) {
     if (dr.extra) out.push(`补充：${dr.extra}`);
     return out.join('\n');
   };
-  const mtgHtml = errHtml(bkIdR, bkNmR) + (recs.length ? recs.map(b => `<div style="font-size:12px;padding:6px 0;border-top:1px solid #eee"><span style="color:#2a6a9a;font-family:monospace">${tsaEsc(b.slot_date || '')}</span> ${b.assigned_teacher ? '<span style="color:#888">' + tsaEsc(b.assigned_teacher) + '老师</span>' : ''}<div style="white-space:pre-wrap;line-height:1.7;color:#444;margin-top:2px">${tsaEsc(recText(b.daily_record))}</div></div>`).join('') : '<div style="font-size:11px;color:#aaa">暂无面谈记录</div>');
+  const mtgHtml = errHtml(bkIdR, bkNmR) + (recs.length ? recs.map(b => `<div style="font-size:12px;padding:6px 0;border-top:1px solid #eee"><span style="color:#2a6a9a;font-family:monospace">${tsaEsc(b.slot_date || '')}</span> ${b.assigned_teacher ? '<span style="color:#888">' + tsaEsc(b.assigned_teacher) + '老师</span>' : ''}${interviewLateNote(b) ? ' <span style="color:#999;font-size:10px">' + tsaEsc(interviewLateNote(b)) + '</span>' : ''}<div style="white-space:pre-wrap;line-height:1.7;color:#444;margin-top:2px">${tsaEsc(recText(b.daily_record))}</div></div>`).join('') : '<div style="font-size:11px;color:#aaa">暂无面谈记录</div>');
 
   // 5. 学习记录 / 联系记录 + 近 6 个月方格
   const streak = tmStreak(info), curNone = tmMonthState(info, tmCurYm()).group === 'none';

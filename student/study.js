@@ -1457,14 +1457,22 @@ function renderProgressTab() {
 // ══════════════════════════════════
 
 
+// 面谈记录按「填写记录的日期」排（补填的排在填写那个时间点），并注明补填（同 shared/payroll-core.js 的 interviewLateNote；学生端不加载该文件，这里单独写）
+const studyRecPay = b => b.record_done_at ? new Date(new Date(b.record_done_at).getTime() + 9 * 3600e3).toISOString().slice(0, 10) : (b.slot_date || '');
+function studyRecLate(b) {
+  const pay = b.record_done_at ? studyRecPay(b) : '', iv = (b.slot_date || '').slice(0, 10);
+  if (!pay || !iv || pay === iv) return '';
+  const md = d => +d.slice(5, 7) + '月' + +d.slice(8, 10) + '日';
+  return md(iv) + '的面谈，' + md(pay) + '补填记录';
+}
 function renderRecordsTab() {
   const { bookings } = studyData;
-  const validBookings = bookings.filter(b => b.daily_record && Object.values(b.daily_record).some(v=>v));
+  const validBookings = bookings.filter(b => b.daily_record && Object.values(b.daily_record).some(v=>v)).sort((x, y) => studyRecPay(y).localeCompare(studyRecPay(x)));
   if (!validBookings.length) return '<div style="text-align:center;padding:40px;color:var(--text-muted);font-size:12px">暂无面谈记录</div>';
   return `<div style="font-size:11px;font-weight:600;margin-bottom:10px">📋 面谈记录（${validBookings.length}条）</div>
   <div class="study-cols2" style="gap:12px 20px">
     ${validBookings.map(b => `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:12px;margin-bottom:8px">
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${b.slot_date}${b.actual_duration?' · '+b.actual_duration+'min':''} ${b.assigned_teacher?'· '+escA(stuName(b.assigned_teacher, studyPubMap))+'老师':''}${manualEntryTag(b)}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${b.slot_date}${b.actual_duration?' · '+b.actual_duration+'min':''} ${b.assigned_teacher?'· '+escA(stuName(b.assigned_teacher, studyPubMap))+'老师':''}${manualEntryTag(b)}${studyRecLate(b)?' <span style="font-size:10px">（'+studyRecLate(b)+'）</span>':''}</div>
       <pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0;color:var(--text-secondary)">${buildRecordText(b)}</pre>
     </div>`).join('')}
   </div>`;

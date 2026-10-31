@@ -166,7 +166,7 @@ function buildBookingRows(bookings, slots, teacherName, students, opt) {
       const { start, end, hours } = bookingTimes(b);
       const slot = slotMap[b.slot_id];
       const loc = b.location || slot?.location || 'online';
-      const pay = payrollInterviewPayDate(b), iv = payrollInterviewDate(b);
+      const pay = payrollInterviewPayDate(b);
       return {
         type: 'booking',
         source_id: b.id,
@@ -176,7 +176,7 @@ function buildBookingRows(bookings, slots, teacherName, students, opt) {
         时长: hours,
         工作内容: '教研工作',
         工作地点: payrollLocation(loc, ''),
-        备注: `${b.name}的面谈预约${b.manual_entry ? '（教务补录）' : ''}${pay && iv && pay !== iv ? '（' + +pay.slice(5, 7) + '月' + +pay.slice(8, 10) + '日填写记录）' : ''}`,
+        备注: `${b.name}的面谈预约${b.manual_entry ? '（教务补录）' : ''}${interviewLateNote(b) ? '（' + interviewLateNote(b) + '）' : ''}`,
         _date: pay,
         _domain: payrollMajorDomain(payrollBookingMajor(b, stuMap))
       };
@@ -201,6 +201,16 @@ function buildInterviewPending(list, teacherName, slots, students, opt) {
       return { id: b.id, name: b.name, date: (b.slot_date || '') + '', time: tr, reason: b.status === 'completed' ? '还没填写面谈记录' : '还没完成面谈', teacher: teacherName };
     })
     .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+}
+// 面谈在「按月份查看」的地方算哪个月：已完成的跟着填写记录的月份（补填的在补填那个月找），其余按预约日期
+const interviewListYm = b => (payrollInterviewDone(b) ? payrollInterviewPayDate(b) : (b && b.slot_date) || '').slice(0, 7);
+// 补填说明：已完成、且填写记录的日期和预约日期不是同一天时返回「8月12日的面谈，10月15日补填记录」，否则空
+function interviewLateNote(b) {
+  if (!payrollInterviewDone(b) || !b.record_done_at || !b.slot_date) return '';
+  const pay = payrollJstDate(b.record_done_at), iv = String(b.slot_date).slice(0, 10);
+  if (!pay || pay === iv) return '';
+  const md = d => +d.slice(5, 7) + '月' + +d.slice(8, 10) + '日';
+  return `${md(iv)}的面谈，${md(pay)}补填记录`;
 }
 // 面谈列表（管理端 / 老师端共用）里每条面谈只落在一个状态：
 //   cancelled 已取消 | done 已完成 | need_record 待补记录（面谈日早于今天，10/1 以后）| pending 待确认 | confirmed 已确认 | old 未记录（旧，只在「全部」里出现）

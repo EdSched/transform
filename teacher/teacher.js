@@ -691,7 +691,7 @@ function tbkRegular() { return cachedTeacherBookings.filter(b => b.type !== 'vip
 // 已完成 / 全部 按月；待确认 / 已确认 / 待补记录 不分月（都是要处理的）
 function tbkInView(b, st) {
   if (st === 'pending' || st === 'confirmed' || st === 'need_record') return true;
-  return (b.slot_date || '').startsWith(tbkYm);
+  return interviewListYm(b) === tbkYm;
 }
 function tbkEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
 function renderBookingManagement(mc) {
@@ -744,7 +744,7 @@ function tbkRowHtml(b) {
   const tagBg = st === 'need_record' ? 'background:#fff3cd;' : '';
   return `<div class="tbkl-item" id="tbkc_${tbkEsc(id)}">
     <div class="tbkl-row${st === 'need_record' ? ' need' : ''}" style="${st === 'need_record' ? '' : 'border-left-color:' + col}" onclick="tbkToggle('${id}')">
-      <div class="tbkl-d"><b>${f.short}</b> ${f.dow}<span style="color:var(--text-3);font-size:11px"> ${tbkEsc(b.slot_time_range || '')}</span></div>
+      <div class="tbkl-d"><b>${f.short}</b> ${f.dow}<span style="color:var(--text-3);font-size:11px"> ${tbkEsc(b.slot_time_range || '')}</span>${interviewLateNote(b) ? `<div style="color:var(--text-3);font-size:10px">${tbkEsc(interviewLateNote(b))}</div>` : ''}</div>
       <div class="tbkl-s"><b>${tbkEsc(b.name)}</b> <span class="tag ${typeTag(b.type)}" style="font-size:9px">${typeLabel(b.type)}</span></div>
       <div class="tbkl-st"><span style="${tagBg}color:${col};border:1px solid ${col};font-size:10px;padding:1px 6px;border-radius:2px;white-space:nowrap">${INTERVIEW_STATE_LABEL[st]}</span>${st === 'need_record' ? `<span style="font-size:10px;color:#7a5b00;margin-left:6px">${interviewNeedReason(b)}</span>` : ''}</div>
       <div class="tbkl-ac">${act}</div>
