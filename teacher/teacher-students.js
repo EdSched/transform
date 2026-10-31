@@ -1673,14 +1673,14 @@ function tmInfo(s, D) {
   if (c[s.id]) return c[s.id];
   const pick = ix => (ix.id[s.id] || []).concat(ix.nm[s.name] || []);
   return (c[s.id] = {
-    recs: pick(D.rec).sort((a, b) => (b.slot_date || '').localeCompare(a.slot_date || '')),
+    recs: pick(D.rec).sort((a, b) => payrollInterviewPayDate(b).localeCompare(payrollInterviewPayDate(a))),   // 补填的按填写记录的日期排
     pend: pick(D.pend).sort((a, b) => (a.slot_date || '').localeCompare(b.slot_date || '')),
     logs: pick(D.logs).sort((a, b) => tmLogKey(b).localeCompare(tmLogKey(a))),
   });
 }
 // 某个月的状态：group = done | pend | noreply | none
 function tmMonthState(info, ym) {
-  const mtg = info.recs.filter(b => (b.slot_date || '').slice(0, 7) === ym);
+  const mtg = info.recs.filter(b => interviewListYm(b) === ym);   // 补填的算在填写记录的月份
   const inM = info.logs.filter(l => tmLogYm(l) === ym);
   const study = inM.filter(l => tmLogKind(l) === 'study'), nore = inM.filter(l => tmLogKind(l) === 'no_reply'), wait = inM.filter(l => tmLogKind(l) === 'waiting');
   const pend = info.pend.filter(b => (b.slot_date || '').slice(0, 7) === ym);
@@ -1690,7 +1690,7 @@ function tmMonthState(info, ym) {
 }
 // 截至某月月底，连续几次联系未回复（中间有面谈 / 学习记录就清零）
 function tmStreak(info, uptoYm) {   // uptoYm 为空 = 截至现在
-  const ev = info.recs.map(b => ({ k: b.slot_date || '', ok: true })).concat(info.logs.filter(l => tmLogKind(l) !== 'waiting').map(l => ({ k: tmLogKey(l), ok: tmLogKind(l) === 'study' })))
+  const ev = info.recs.map(b => ({ k: payrollInterviewPayDate(b), ok: true })).concat(info.logs.filter(l => tmLogKind(l) !== 'waiting').map(l => ({ k: tmLogKey(l), ok: tmLogKind(l) === 'study' })))
     .filter(e => e.k && (!uptoYm || e.k.slice(0, 7) <= uptoYm)).sort((a, b) => a.k.localeCompare(b.k) || (b.ok ? 1 : 0) - (a.ok ? 1 : 0));
   let n = 0;
   ev.forEach(e => { n = e.ok ? 0 : n + 1; });
@@ -1770,7 +1770,7 @@ function tmRenderList() {
   if (!list.length) { listBox.innerHTML = '<div class="empty">没有符合筛选条件的学生</div>'; return; }
   let lastG = '';
   listBox.innerHTML = tsmSlice(list).map(r => {
-    const s = r.s, open = tmExpandedId === s.id, lastM = r.info.recs[0] ? r.info.recs[0].slot_date : '';
+    const s = r.s, open = tmExpandedId === s.id, lastM = r.info.recs[0] ? payrollInterviewPayDate(r.info.recs[0]) : '';
     let head = '';
     if (!tmGroup && r.st.group !== lastG) { lastG = r.st.group; const t = TM_GROUPS.find(x => x[0] === lastG)[1].replace(/^(\S+) /, '$1 ' + w); head = `<div style="font-size:11px;font-weight:600;color:var(--text-2);margin:12px 0 6px">${t}（${cnt(lastG)}）</div>`; }
     return head + `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:6px">
@@ -1793,7 +1793,7 @@ function tmDetailHtml(s, info) {
   const me = (typeof teacherData !== 'undefined' && teacherData && teacherData.name) || '';
   const sub = (title, inner, btn) => `<div style="margin-bottom:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:11px;font-weight:600;color:var(--text-2)">${title}</span>${btn || ''}</div>${inner}</div>`;
   const mtg = info.recs.length ? info.recs.map(b => `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:6px">
-      <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">${tsaEsc(b.slot_date)}${b.slot_time_range ? ' ' + tsaEsc(b.slot_time_range) : ''}${b.actual_duration ? ' · ' + tsaEsc(b.actual_duration) + 'min' : ''}${b.assigned_teacher ? ' · ' + tsaEsc(b.assigned_teacher) + '老师' : ''}${b.type ? ' · ' + tsaEsc(typeLabel(b.type)) : ''}</div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">${tsaEsc(b.slot_date)}${b.slot_time_range ? ' ' + tsaEsc(b.slot_time_range) : ''}${b.actual_duration ? ' · ' + tsaEsc(b.actual_duration) + 'min' : ''}${b.assigned_teacher ? ' · ' + tsaEsc(b.assigned_teacher) + '老师' : ''}${b.type ? ' · ' + tsaEsc(typeLabel(b.type)) : ''}${interviewLateNote(b) ? ' · ' + tsaEsc(interviewLateNote(b)) : ''}</div>
       <pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0;color:var(--text-2)">${tsaEsc(buildRecordText(b))}</pre></div>`).join('')
     : '<div style="font-size:11px;color:var(--text-3)">还没有面谈记录</div>';
   const logs = info.logs.length ? info.logs.map(l => {
