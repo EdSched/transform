@@ -178,12 +178,12 @@ async function sb(path, method = 'GET', body = null, extra = null) {   // extra�
 }
 
 // ── Fetch all rows (bypasses 1000-row default limit) ──
-async function sbAll(path) {
+async function sbAll(path, extra) {
   const pageSize = 1000;
   let all = [], offset = 0;
   const sep = path.includes('?') ? '&' : '?';
   while (true) {
-    const batch = await sb(`${path}${sep}limit=${pageSize}&offset=${offset}`);
+    const batch = await sb(`${path}${sep}limit=${pageSize}&offset=${offset}`, 'GET', null, extra);
     all = all.concat(batch);
     if (batch.length < pageSize) break;
     offset += pageSize;

@@ -190,16 +190,15 @@ function buildInterviewPending(list, teacherName, slots, students, opt) {
   const last = opt && opt.end && opt.end < payrollTodayJst() ? opt.end : payrollTodayJst();
   return (list || []).filter(b => {
       if (!b || b.type === 'vip' || b.status === 'cancelled' || payrollInterviewDone(b)) return false;
-      const d = payrollInterviewDate(b);
+      const d = (b.slot_date || '') + '';
       if (!d || d < PAYROLL_INTERVIEW_GATE_START || d > last) return false;
       if (payrollInterviewOwner(b, slotMap) !== teacherName) return false;
       return (opt && opt.noScope) || scopeMajor(payrollBookingMajor(b, stuMap));
     })
     .map(b => {
       const slot = slotMap[b.slot_id];
-      const at = (b.actual_time || '') + '';
       const tr = (b.slot_time_range || slot?.time_range || '').split(/[–\-~～]/)[0].trim();
-      return { id: b.id, name: b.name, date: payrollInterviewDate(b), time: at.length > 10 ? at.slice(11, 16) : tr, reason: b.status === 'completed' ? '还没填写面谈记录' : '还没完成面谈', teacher: teacherName };
+      return { id: b.id, name: b.name, date: (b.slot_date || '') + '', time: tr, reason: b.status === 'completed' ? '还没填写面谈记录' : '还没完成面谈', teacher: teacherName };
     })
     .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
 }
@@ -292,7 +291,10 @@ function buildVipPending(pending, teacherName, slots, students, opt) {
 // 面谈预约取数后的整理：已完成的按「填写记录日期」留在区间内；待填写的另外收集
 function payrollSplitInterviews(all, start, end) {
   const nonVip = (all || []).filter(b => b.type !== 'vip');
-  const seen = {}, uniq = nonVip.filter(b => !seen[b.id] && (seen[b.id] = 1));
+  const rank = { completed: 3, confirmed: 2, pending: 1 };   // 同一条预约读到多份时，留状态更靠后的，不让旧数据盖掉已完成
+  const byId = {};
+  nonVip.forEach(b => { const o = byId[b.id]; if (!o || (rank[b.status] || 0) > (rank[o.status] || 0)) byId[b.id] = b; });
+  const uniq = Object.values(byId);
   const bookings = uniq.filter(b => { if (!payrollInterviewDone(b)) return false; const d = payrollInterviewPayDate(b); return d >= start && d <= end; });
   const interviewPending = uniq.filter(b => !payrollInterviewDone(b) && b.status !== 'cancelled');
   return { bookings, interviewPending };
@@ -306,24 +308,24 @@ async function payrollLoadData(start, end) {
   const enc = encodeURIComponent;
   const pendEnd = payrollPendEnd(end);
   const [sessions, bkInRange, slots, courses, students, vipConfirmed, vipPending, bkByRecord, bkPend] = await Promise.all([
-    sb(`/rest/v1/course_sessions?select=*&session_date=gte.${start}&session_date=lte.${end}&order=session_date.asc`),
-    sb(`/rest/v1/bookings?select=*&slot_date=gte.${start}&slot_date=lte.${end}&order=slot_date.asc`),
-    sb(`/rest/v1/slots?select=*&date=gte.${start}&date=lte.${end}`),
-    sb(`/rest/v1/courses?select=id,time_range,course_type,delivery,campus,actual_hours,domain,major,class_ids`),
-    sbAll(`/rest/v1/students?select=id,major,extra_majors,class_ids`),
-    sbAll(`/rest/v1/bookings?type=eq.vip&status=eq.completed&student_confirmed=is.true&student_confirmed_at=gte.${enc(start + 'T00:00:00+09:00')}&student_confirmed_at=lt.${enc(nextDay + 'T00:00:00+09:00')}&select=*`),
-    sbAll(`/rest/v1/bookings?type=eq.vip&status=eq.completed&or=(student_confirmed.is.null,student_confirmed.is.false)&slot_date=lte.${end}&select=*`),
+    sb(`/rest/v1/course_sessions?select=*&session_date=gte.${start}&session_date=lte.${end}&order=session_date.asc`, 'GET', undefined, { cache: 'no-store' }),
+    sb(`/rest/v1/bookings?select=*&slot_date=gte.${start}&slot_date=lte.${end}&order=slot_date.asc`, 'GET', undefined, { cache: 'no-store' }),
+    sb(`/rest/v1/slots?select=*&date=gte.${start}&date=lte.${end}`, 'GET', undefined, { cache: 'no-store' }),
+    sb(`/rest/v1/courses?select=id,time_range,course_type,delivery,campus,actual_hours,domain,major,class_ids`, 'GET', undefined, { cache: 'no-store' }),
+    sbAll(`/rest/v1/students?select=id,major,extra_majors,class_ids`, { cache: 'no-store' }),
+    sbAll(`/rest/v1/bookings?type=eq.vip&status=eq.completed&student_confirmed=is.true&student_confirmed_at=gte.${enc(start + 'T00:00:00+09:00')}&student_confirmed_at=lt.${enc(nextDay + 'T00:00:00+09:00')}&select=*`, { cache: 'no-store' }),
+    sbAll(`/rest/v1/bookings?type=eq.vip&status=eq.completed&or=(student_confirmed.is.null,student_confirmed.is.false)&slot_date=lte.${end}&select=*`, { cache: 'no-store' }),
     // 面谈填写记录的日期落在区间内（面谈日期可能在更早的月份）
-    sbAll(`/rest/v1/bookings?status=eq.completed&record_done_at=gte.${enc(start + 'T00:00:00+09:00')}&record_done_at=lt.${enc(nextDay + 'T00:00:00+09:00')}&select=*`),
+    sbAll(`/rest/v1/bookings?status=eq.completed&record_done_at=gte.${enc(start + 'T00:00:00+09:00')}&record_done_at=lt.${enc(nextDay + 'T00:00:00+09:00')}&select=*`, { cache: 'no-store' }),
     // 待填写：从起算日到区间结束日（不超过今天）、没取消的面谈，最后在 JS 里精确判断
-    pendEnd >= PAYROLL_INTERVIEW_GATE_START ? sbAll(`/rest/v1/bookings?status=neq.cancelled&slot_date=gte.${PAYROLL_INTERVIEW_GATE_START}&slot_date=lte.${pendEnd}&select=*`) : Promise.resolve([])
+    pendEnd >= PAYROLL_INTERVIEW_GATE_START ? sbAll(`/rest/v1/bookings?status=neq.cancelled&slot_date=gte.${PAYROLL_INTERVIEW_GATE_START}&slot_date=lte.${pendEnd}&select=*`, { cache: 'no-store' }) : Promise.resolve([])
   ]);
   const { bookings, interviewPending } = payrollSplitInterviews([...bkInRange, ...bkByRecord, ...bkPend], start, end);
   // 补齐「填写日期在区间内、但面谈日期在更早月份」那些预约的时间槽（面谈地点、老师要用）
   const have = new Set(slots.map(x => x.id));
   const needIds = [...new Set([...bookings, ...interviewPending].map(b => b.slot_id).filter(x => x != null && !have.has(x)))];
   const extra = [];
-  for (let i = 0; i < needIds.length; i += 80) extra.push(...await sb(`/rest/v1/slots?select=*&id=in.${enc('(' + needIds.slice(i, i + 80).map(x => '"' + x + '"').join(',') + ')')}`).catch(() => []));
+  for (let i = 0; i < needIds.length; i += 80) extra.push(...await sb(`/rest/v1/slots?select=*&id=in.${enc('(' + needIds.slice(i, i + 80).map(x => '"' + x + '"').join(',') + ')')}`, 'GET', undefined, { cache: 'no-store' }).catch(() => []));
   return { sessions, bookings, slots: [...slots, ...extra], courses, students, vipConfirmed, vipPending, interviewPending };
 }
 
@@ -337,11 +339,11 @@ async function payrollLoadTeacherData(start, end, name) {
   const recQ = `status=eq.completed&record_done_at=gte.${enc(start + 'T00:00:00+09:00')}&record_done_at=lt.${enc(nextDay + 'T00:00:00+09:00')}`;   // 面谈：填写记录的日期落在本期
   const pendQ = `status=neq.cancelled&slot_date=gte.${PAYROLL_INTERVIEW_GATE_START}&slot_date=lte.${pendEnd}`;   // 面谈：待填写的候选
   const [sessions, mySlots, assigned, ivRecA, ivPendA] = await Promise.all([
-    sbAll(`/rest/v1/course_sessions?select=*&session_date=gte.${start}&session_date=lte.${end}&or=${enc(`(teacher.eq.${q},session_teacher.eq.${q})`)}&order=session_date.asc`),
-    sbAll(`/rest/v1/slots?select=*&teacher_name=eq.${enc(name)}`),
-    sbAll(`/rest/v1/bookings?select=*&assigned_teacher=eq.${enc(name)}&or=${enc(`(and(slot_date.gte.${start},slot_date.lte.${end}),and(type.eq.vip,status.eq.completed,or(student_confirmed.is.null,student_confirmed.is.false,and(student_confirmed_at.gte.${start}T00:00:00+09:00,student_confirmed_at.lt.${nextDay}T00:00:00+09:00))))`)}`),
-    sbAll(`/rest/v1/bookings?select=*&assigned_teacher=eq.${enc(name)}&${recQ}`),
-    hasPend ? sbAll(`/rest/v1/bookings?select=*&assigned_teacher=eq.${enc(name)}&${pendQ}`) : Promise.resolve([])
+    sbAll(`/rest/v1/course_sessions?select=*&session_date=gte.${start}&session_date=lte.${end}&or=${enc(`(teacher.eq.${q},session_teacher.eq.${q})`)}&order=session_date.asc`, { cache: 'no-store' }),
+    sbAll(`/rest/v1/slots?select=*&teacher_name=eq.${enc(name)}`, { cache: 'no-store' }),
+    sbAll(`/rest/v1/bookings?select=*&assigned_teacher=eq.${enc(name)}&or=${enc(`(and(slot_date.gte.${start},slot_date.lte.${end}),and(type.eq.vip,status.eq.completed,or(student_confirmed.is.null,student_confirmed.is.false,and(student_confirmed_at.gte.${start}T00:00:00+09:00,student_confirmed_at.lt.${nextDay}T00:00:00+09:00))))`)}`, { cache: 'no-store' }),
+    sbAll(`/rest/v1/bookings?select=*&assigned_teacher=eq.${enc(name)}&${recQ}`, { cache: 'no-store' }),
+    hasPend ? sbAll(`/rest/v1/bookings?select=*&assigned_teacher=eq.${enc(name)}&${pendQ}`, { cache: 'no-store' }) : Promise.resolve([])
   ]);
   // 我的时间槽上、没单独分配过老师的预约：面谈按本期的槽，VIP 按全部的槽（确认月份可能晚于上课日）
   const ids = rows => rows.map(x => x.id);
@@ -368,9 +370,9 @@ async function payrollLoadTeacherData(start, end, name) {
   const slotById = {}; mySlots.forEach(x => { slotById[x.id] = x; });
   const needSlots = [...new Set([...bookings, ...interviewPending, ...vipConfirmed, ...vipPending].map(b => b.slot_id).filter(x => x != null && !slotById[x]))];
   const [extraSlots, courses, students] = await Promise.all([
-    Promise.all(chunks(needSlots, 80).map(c => sb(`/rest/v1/slots?select=*&id=in.${enc(inList(c))}`))).then(r => r.flat()),
-    Promise.all(chunks([...new Set(sessions.map(x => x.course_id).filter(Boolean))], 80).map(c => sb(`/rest/v1/courses?select=id,time_range,course_type,delivery,campus,actual_hours,domain,major,class_ids&id=in.${enc(inList(c))}`))).then(r => r.flat()),
-    Promise.all(chunks([...new Set([...bookings, ...interviewPending, ...vipConfirmed, ...vipPending].map(b => b.student_id).filter(Boolean))], 80).map(c => sb(`/rest/v1/students?select=id,major,extra_majors,class_ids&id=in.${enc(inList(c))}`).catch(() => []))).then(r => r.flat())
+    Promise.all(chunks(needSlots, 80).map(c => sb(`/rest/v1/slots?select=*&id=in.${enc(inList(c))}`, 'GET', undefined, { cache: 'no-store' }))).then(r => r.flat()),
+    Promise.all(chunks([...new Set(sessions.map(x => x.course_id).filter(Boolean))], 80).map(c => sb(`/rest/v1/courses?select=id,time_range,course_type,delivery,campus,actual_hours,domain,major,class_ids&id=in.${enc(inList(c))}`, 'GET', undefined, { cache: 'no-store' }))).then(r => r.flat()),
+    Promise.all(chunks([...new Set([...bookings, ...interviewPending, ...vipConfirmed, ...vipPending].map(b => b.student_id).filter(Boolean))], 80).map(c => sb(`/rest/v1/students?select=id,major,extra_majors,class_ids&id=in.${enc(inList(c))}`, 'GET', undefined, { cache: 'no-store' }).catch(() => []))).then(r => r.flat())
   ]);
   return { sessions, bookings, slots: [...mySlots, ...extraSlots], courses, students, vipConfirmed, vipPending, interviewPending };
 }
