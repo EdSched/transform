@@ -68,7 +68,7 @@ const _mgQuarter = () => {   // 本期：1月期→1–3月 … 期末月月末�
 const mgVipBookings = D => mgmLoad(D, 'mg_vbk', () => sbAll('/rest/v1/bookings?type=eq.vip&select=id,student_id,name,type,status,slot_date,assigned_teacher,self_booked,initiated_by,student_ok,teacher_ok,admin_review,teacher_backfill,vip_session_notes,student_confirmed,change_request'));
 const mgVipPlans = D => mgmLoad(D, 'mg_vpl', () => sbAll('/rest/v1/vip_student_plans?select=id,student_id,student_name,status'));
 // 教务补录统计用：本月预约（含 manual_entry）；列还没建时读取失败，只让这两项显示「读取失败」
-const mgMonthBookings = D => mgmLoad(D, 'mg_mbk', () => { const ym = _tkYm(); return sbAll(`/rest/v1/bookings?slot_date=gte.${ym}-01&slot_date=lte.${ym}-31&status=in.(pending,confirmed,completed)&select=id,student_id,name,type,status,slot_date,assigned_teacher,manual_entry,manual_reason`); });
+const mgMonthBookings = D => mgmLoad(D, 'mg_mbk', () => { const ym = _tkYm(); return sbAll(`/rest/v1/bookings?slot_date=gte.${ym}-01&slot_date=lt.${ymNextFirst(ym)}&status=in.(pending,confirmed,completed)&select=id,student_id,name,type,status,slot_date,assigned_teacher,manual_entry,manual_reason`); });
 async function _mgManualMonth(D, sc, vip) {
   const [all, bks] = await Promise.all([taskStudents(D), mgMonthBookings(D)]);
   const ok = vip ? (s => _mgIsVip(s) && sc.stuBase(s)) : sc.stu, byId = {}, byName = {};

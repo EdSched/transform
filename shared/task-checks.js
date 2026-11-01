@@ -26,7 +26,7 @@ function taskRiyu(D) { return _tkLoad(D, 'riyu', () => _tkAll('/rest/v1/riyu_sub
 function taskBookingsMonth(D) {
   return _tkLoad(D, 'bk', async () => {
     const ym = _tkYm();
-    return _tkAll(`/rest/v1/bookings?select=student_id,name,slot_date,daily_record&daily_record=not.is.null&slot_date=gte.${ym}-01&slot_date=lte.${ym}-31`);
+    return _tkAll(`/rest/v1/bookings?select=student_id,name,slot_date,daily_record&daily_record=not.is.null&slot_date=gte.${ym}-01&slot_date=lt.${ymNextFirst(ym)}`);
   });
 }
 function taskRecords(D) { return _tkLoad(D, 'rec', () => _tkAll(`/rest/v1/session_records?select=student_id,student_name,session_id,session_date,attendance_status,created_at&session_date=gte.${_tkDaysAgo(60)}&order=session_date.desc`)); }
