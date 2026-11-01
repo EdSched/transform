@@ -117,6 +117,7 @@ function vipNoticeWhat(b, ev, x) {
     case 'admin_ok':
       return `教务已${x.who ? '代' + x.who : ''}确认，${off && room ? '教室 ' + room + (appr ? `（${appr}）` : '') + '，' : ''}这节课已成立`;
     case 'room_changed': return `教室调整为 ${room || '待安排'}（${x.by || '总务安排'}）`;
+    case 'remind_confirm': return '这节课已上完，请同学到 VIP 页面确认上课记录并评价：https://edsched.github.io/transform/vip/ 。一直没有确认的话，教务会代为确认。';
     case 'done': return '本次课已完成，请同学到 VIP 页面确认并评价：https://edsched.github.io/transform/vip/';
     default: return String(x.text || '');
   }

@@ -372,30 +372,98 @@ async function bkBfProxyDo(id){
     vipNoticeModal(b,'proxy_confirmed',{text:`教务（${bkSelfWho()}）已代学生确认上课记录${rating?'，评价：'+rating:''}`},'已代学生确认');
   }catch(e){ alert('操作失败：'+e.message); }
 }
+// 提醒进度：最近一条 remind_confirm 留言（存在 messages 里，不需要新列）
+function bkRemindInfo(b){
+  let ts=0; (b.messages||[]).forEach(m=>{ if(m&&m.ev==='remind_confirm'&&(m.ts||0)>ts) ts=m.ts; });
+  return ts?{ts,days:Math.max(0,Math.floor((Date.now()-ts)/864e5))}:null;
+}
+// 进度小标签 + 主按钮 + 灰色小字（管理端顶部块 / 工资页共用）
+function bkProgressHtml(b,after){
+  const id=bkSelfEsc(String(b.id)), r=bkRemindInfo(b), cb=after?`,${after}`:'';
+  const tag=r?`<span style="font-size:11px;border-radius:10px;padding:1px 8px;background:#fff3cd;color:#856404;border:1px solid #e6a817">已提醒 · ${r.days} 天前</span>`:`<span style="font-size:11px;border-radius:10px;padding:1px 8px;background:#eee;color:#777">未提醒</span>`;
+  const main=r?`<button class="btn btn-primary btn-sm" onclick="bkBfProxyOpen('${id}'${cb})">代学生确认</button>`:`<button class="btn btn-primary btn-sm" onclick="bkRemindOne('${id}'${cb})">提醒学生</button>`;
+  const link=r?`<a href="javascript:void(0)" onclick="bkRemindOne('${id}'${cb})" style="font-size:11px;color:var(--text-3)">再提醒</a>`:`<a href="javascript:void(0)" onclick="bkBfProxyOpen('${id}'${cb})" style="font-size:11px;color:var(--text-3)">直接代确认</a>`;
+  return `${tag}${main}${link}`;
+}
+async function bkRemindSave(b){
+  const patch={messages:[...(b.messages||[]),vipNoticeMsg(b,'已提醒同学确认上课记录并评价','remind_confirm',{})]};
+  await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(b.id)}`,'PATCH',patch);
+  Object.assign(b,patch);
+}
+function bkRemindRefresh(after){
+  if(typeof after==='function') after();
+  else renderBookingPage(document.getElementById('mainContent'));
+}
+async function bkRemindOne(id,after){
+  const b=bkProxyFind(id); if(!b) return;
+  try{ await bkRemindSave(b); }catch(e){ alert('操作失败：'+e.message); return; }
+  bkRemindRefresh(after);
+  vipNoticeModal(b,'remind_confirm',{},'已记录提醒，复制文字发给学生');
+}
 // 顶部集中入口：上完课、学生还没确认
+let bkPcFilter='all';
 function bkProxyAllHtml(){
   const list=bkProxyList(); if(!list.length) return '';
-  const rows=list.map(b=>({b,d:bkProxyDays(b)})).sort((x,y)=>y.d-x.d);
+  const all=list.map(b=>({b,d:bkProxyDays(b),r:bkRemindInfo(b)})).sort((x,y)=>y.d-x.d);
+  const nNo=all.filter(x=>!x.r).length, nYes=all.length-nNo;
+  const rows=all.filter(x=>bkPcFilter==='no'?!x.r:bkPcFilter==='yes'?!!x.r:true);
+  const chip=(k,t,n)=>{ const on=bkPcFilter===k; return `<span onclick="bkPcFilter='${k}';renderBookingPage(document.getElementById('mainContent'))" style="cursor:pointer;font-size:11px;border-radius:12px;padding:2px 10px;border:1px solid ${on?'var(--accent)':'var(--border)'};background:${on?'var(--accent)':'transparent'};color:${on?'#fff':'var(--text-2)'}">${t} ${n}</span>`; };
   const body=bkPcOpen?`<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${chip('all','全部',all.length)}${chip('no','未提醒',nNo)}${chip('yes','已提醒',nYes)}</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;color:var(--text-3)">
-      <button class="btn btn-outline btn-sm" onclick="bkPcAll(true)">全选</button><button class="btn btn-outline btn-sm" onclick="bkPcAll(false)">全不选</button>
-      <button class="btn btn-primary btn-sm" onclick="bkPcBatch()">批量代确认（不评价）</button>
+      <button class="btn btn-outline btn-sm" onclick="bkPcAll(true)">全选当前筛选</button><button class="btn btn-outline btn-sm" onclick="bkPcAll(false)">全不选</button>
+      <button class="btn btn-primary btn-sm" onclick="bkPcRemindBatch()">批量提醒</button>
+      <button class="btn btn-outline btn-sm" onclick="bkPcBatch()">批量代确认（不评价）</button>
       <span>代确认的日期就是算工资的日期（今天：${bkJstTodayCn()}）</span></div>
     ${rows.map(({b,d})=>{ const on=!!bkPcSel[b.id]; return `<div style="background:var(--surface);border:1px solid ${on?'var(--accent)':'var(--border)'};border-radius:3px;padding:8px 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <span onclick="bkPcToggle('${bkSelfEsc(String(b.id))}')" style="cursor:pointer;font-size:11px;border-radius:12px;padding:2px 10px;border:1px solid ${on?'var(--accent)':'var(--border)'};background:${on?'var(--accent)':'transparent'};color:${on?'#fff':'var(--text-2)'}">${on?'已选':'选择'}</span>
       <div style="flex:1;min-width:220px;font-size:12px;line-height:1.7"><div>${bkSelfEsc(b.slot_date)} ${bkSelfEsc(b.slot_time_range||'')} · ${parseFloat(b.vip_hours_used)||0}h</div>
-      <div>老师：${bkSelfEsc(b.assigned_teacher||'—')} · 学生：<strong>${bkSelfEsc(b.name)}</strong> · <span style="color:${d>=7?'var(--danger)':'var(--warn)'}">上完课 ${d} 天</span></div></div>
-      <button class="btn btn-primary btn-sm" onclick="bkBfProxyOpen('${bkSelfEsc(String(b.id))}')">代学生确认</button></div>`; }).join('')}</div>`:'';
+      <div><strong>${bkSelfEsc(b.name)}</strong> · ${bkSelfEsc(b.assigned_teacher||'—')} · <span style="color:${d>=7?'var(--danger)':'var(--warn)'}">上完课 ${d} 天</span></div></div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${bkProgressHtml(b)}</div></div>`; }).join('')}</div>`:'';
   return `<div style="background:#fff8e1;border:1px solid #e6a817;border-radius:3px;padding:9px 12px;margin-bottom:10px">
-    <div onclick="bkPcOpen=!bkPcOpen;renderBookingPage(document.getElementById('mainContent'))" style="cursor:pointer;font-size:12px;font-weight:600;color:#856404">上完课、学生还没确认：${list.length} 节（不计入工资，可以代学生确认） ${bkPcOpen?'▾':'→'}</div>${body}</div>`;
+    <div onclick="bkPcOpen=!bkPcOpen;renderBookingPage(document.getElementById('mainContent'))" style="cursor:pointer;font-size:12px;font-weight:600;color:#856404">上完课、学生还没确认：${list.length} 节（不计入工资，可以先提醒学生，再代学生确认） ${bkPcOpen?'▾':'→'}</div>${body}</div>`;
 }
 function bkPcToggle(id){ if(bkPcSel[id]) delete bkPcSel[id]; else bkPcSel[id]=true; renderBookingPage(document.getElementById('mainContent')); }
-function bkPcAll(on){ Object.keys(bkPcSel).forEach(k=>delete bkPcSel[k]); if(on) bkProxyList().forEach(b=>{ bkPcSel[b.id]=true; }); renderBookingPage(document.getElementById('mainContent')); }
+function bkPcAll(on){
+  Object.keys(bkPcSel).forEach(k=>delete bkPcSel[k]);
+  if(on) bkProxyList().filter(b=>bkPcFilter==='no'?!bkRemindInfo(b):bkPcFilter==='yes'?!!bkRemindInfo(b):true).forEach(b=>{ bkPcSel[b.id]=true; });
+  renderBookingPage(document.getElementById('mainContent'));
+}
+function bkPcWhenShort(b){
+  const m=String(b.slot_date||'').match(/^\d{4}-(\d{2})-(\d{2})/); if(!m) return b.slot_date||'';
+  const wd='日一二三四五六'[new Date(b.slot_date+'T12:00:00').getDay()];
+  return `${+m[1]}/${+m[2]}（周${wd}）${String(b.slot_time_range||'').replace(/\s*[-~～—]\s*/,'–')}`;
+}
+async function bkPcRemindBatch(){
+  const ids=new Set(Object.keys(bkPcSel).filter(k=>bkPcSel[k]));
+  const list=bkProxyList().filter(b=>ids.has(String(b.id)));
+  if(!list.length){ alert('请先选择要提醒的课'); return; }
+  await vipNoticeLoadMap();
+  const done=[], fail=[];
+  for(const b of list){ try{ await bkRemindSave(b); done.push(b); delete bkPcSel[b.id]; }catch(e){ fail.push(`${b.name} ${b.slot_date}：${e.message}`); } }
+  renderBookingPage(document.getElementById('mainContent'));
+  if(fail.length) alert(`成功 ${done.length} 节，失败 ${fail.length} 节：\n${fail.join('\n')}`);
+  if(!done.length) return;
+  const groups=[], idx={};
+  done.forEach(b=>{ const k=b.student_id||b.name; if(!(k in idx)){ idx[k]=groups.length; groups.push({name:b.name,list:[]}); } groups[idx[k]].list.push(b); });
+  groups.forEach(g=>{ g.list.sort((x,y)=>String(x.slot_date).localeCompare(String(y.slot_date))||String(x.slot_time_range||'').localeCompare(String(y.slot_time_range||'')));
+    g.text=`${g.name}同学：以下 VIP 课已上完，请到 VIP 页面确认上课记录并评价（https://edsched.github.io/transform/vip/）：\n`+g.list.map((b,i)=>`${i+1}. ${bkPcWhenShort(b)} ${stuName(b.assigned_teacher||'',vipNoticeNameMap())}老师`).join('\n')+'\n一直没有确认的话，教务会代为确认。'; });
+  window.__bkRemindTexts=groups.map(g=>g.text);
+  document.getElementById('vipNoticeModal')?.remove();
+  const m=document.createElement('div'); m.id='vipNoticeModal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
+  m.innerHTML=`<div style="background:var(--surface,#fff);border-radius:6px;padding:20px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px"><div style="font-size:13px;font-weight:600">已记录提醒 ${done.length} 节 · ${groups.length} 位学生</div>
+    <div style="display:flex;gap:8px"><button type="button" class="btn btn-primary btn-sm" onclick="bkSelfCopyText(window.__bkRemindTexts.join('\\n\\n'))">复制全部</button><button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('vipNoticeModal').remove()">关闭</button></div></div>
+    ${groups.map((g,i)=>`<div style="border:1px solid var(--border,#ddd);border-radius:4px;padding:8px 10px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><strong style="font-size:12px">${bkSelfEsc(g.name)}</strong><button type="button" class="btn btn-outline btn-sm" onclick="bkSelfCopyText(window.__bkRemindTexts[${i}])">复制</button></div><div style="font-size:11px;line-height:1.7;white-space:pre-wrap;color:var(--text-2)">${bkSelfEsc(g.text)}</div></div>`).join('')}</div>`;
+  document.body.appendChild(m);
+}
 async function bkPcBatch(){
   const ids=new Set(Object.keys(bkPcSel).filter(k=>bkPcSel[k]));
   const list=bkProxyList().filter(b=>ids.has(String(b.id)));
   if(!list.length){ alert('请先勾选要代确认的课'); return; }
-  if(!confirm(`批量代学生确认 ${list.length} 节课（不评价）？\n确认日期按今天（${bkJstTodayCn()}）算工资。`)) return;
+  const nNo=list.filter(b=>!bkRemindInfo(b)).length;
+  if(!confirm(`批量代学生确认 ${list.length} 节课（不评价）？${nNo?`\n其中 ${nNo} 节还没提醒过学生。`:''}\n确认日期按今天（${bkJstTodayCn()}）算工资。`)) return;
   const done=[], fail=[];
   for(const b of list){
     try{ await bkProxyPatchOne(b,bkProxyPatch(b,'')); done.push(b); delete bkPcSel[b.id]; }catch(e){ fail.push(`${b.name} ${b.slot_date}：${e.message}`); }

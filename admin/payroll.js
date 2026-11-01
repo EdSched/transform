@@ -595,7 +595,7 @@ function payrollPendingHtml(list) {
     <div style="font-size:10px;color:var(--text-3);margin:2px 0 6px">老师已填上课记录，学生确认并评价（教务可代确认）之后，按确认的日期算进当月工资。</div>
     ${list.map(x => `<div style="font-size:11px;padding:3px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span>${escTM(x.name)} · ${escTM(x.date)} ${escTM(x.range)}${x.hours ? ' · ' + x.hours + 'h' : ''}</span>
-      <button class="btn btn-outline btn-sm" onclick="payrollProxyConfirm('${escTM(x.id)}')">代学生确认</button></div>`).join('')}
+      ${typeof bkProgressHtml === 'function' && bkProxyFind(x.id) ? bkProgressHtml(bkProxyFind(x.id), "()=>payrollGenerate(true)") : `<button class="btn btn-outline btn-sm" onclick="payrollProxyConfirm('${escTM(x.id)}')">代学生确认</button>`}</div>`).join('')}
   </div>`;
 }
 // 待填写面谈记录（不计入工资）：每位老师组下面，样式同上；右上角复制这位老师的提醒文字
