@@ -122,6 +122,21 @@ function vipNoticeWhat(b, ev, x) {
     default: return String(x.text || '');
   }
 }
+// 按学生合并的通知文字：10/25（周六）18:00–20:00 王泽老师
+function vipShortWhen(d, t) {
+  const m = String(d || '').match(/^\d{4}-(\d{2})-(\d{2})/);
+  if (!m) return d || '';
+  return `${+m[1]}/${+m[2]}（周${'日一二三四五六'[new Date(d + 'T12:00:00').getDay()]}）` + String(t || '').replace(/\s*[-~～—]\s*/, '–');
+}
+function vipStudentLines(list) {
+  return list.map((b, i) => `${i + 1}. ${vipShortWhen(b.slot_date, b.slot_time_range)} ${typeof stuName === 'function' ? stuName(b.assigned_teacher || '', vipNoticeNameMap()) : (b.assigned_teacher || '')}老师`).join('\n');
+}
+function vipGroupRemindText(name, list) {
+  return `${name}同学：以下 VIP 课已上完，请到 VIP 页面确认上课记录并评价（https://edsched.github.io/transform/vip/），登录后可以一起确认：\n${vipStudentLines(list)}\n一直没有确认的话，教务会代为确认。`;
+}
+function vipGroupProxyText(name, list, who) {
+  return `${name}同学：以下 VIP 课的上课记录已由教务（${who}）代为确认：\n${vipStudentLines(list)}\n如果记录有问题，请联系老师或教务。`;
+}
 function vipNoticeText(b, ev, extra) {
   const x = extra || {};
   const sn = Object.assign(vipNoticeSnap(b), x.snap || {});
