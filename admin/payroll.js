@@ -24,7 +24,7 @@ function buildDeclareRows(decls, teacherName) {
     return {
       type: 'declare', source_id: r.id, 姓名: teacherName,
       开始时间: r.start_time, 结束时间: r.end_time, 时长: payrollRound(r.duration),
-      工作内容: r.work_type, 工作地点: r.location, 备注: r.notes || '',
+      工作内容: payrollTypeName(r.work_type), 工作地点: payrollPlaceName(r.location), 备注: r.notes || '',
       _date: String(r.start_time).slice(0, 4) + '-' + String(r.start_time).slice(5, 7) + '-' + String(r.start_time).slice(8, 10),
       _domain: r.domain || '', _rec: r
     };
@@ -340,8 +340,8 @@ function payrollRowHtml(r, i, showName) {
     ${showName ? `<td style="${td}white-space:nowrap;font-weight:600">${escTM(r.姓名)}</td>` : ''}
     <td style="${td}white-space:nowrap;color:var(--text-2)">${escTM(dt.t)}${de.t ? '–' + escTM(de.t) : ''}</td>
     <td style="${td}">${can ? `<input type="number" step="0.25" min="0" value="${r.时长}" style="width:64px;font-size:11px;padding:2px 4px" onchange="payrollEditHours(${i},this.value)">` : escTM(r.时长)}</td>
-    <td style="${td}white-space:nowrap">${declTag}${escTM(r.工作内容)}</td>
-    <td style="${td}white-space:nowrap;color:var(--text-2)">${escTM(r.工作地点)}</td>
+    <td style="${td}white-space:nowrap">${declTag}${escTM(payrollTypeName(r.工作内容))}</td>
+    <td style="${td}white-space:nowrap;color:var(--text-2)">${escTM(payrollPlaceName(r.工作地点))}</td>
     <td style="${td}min-width:200px">${can ? `<input value="${escTM(r.备注)}" style="width:100%;font-size:11px;padding:2px 4px" onchange="payrollEditNote(${i},this.value)">` : escTM(r.备注)}${miss}${declNote}</td>
     <td style="${td}white-space:nowrap">${badge}${rejBtn}</td>
   </tr>${open ? `<tr><td colspan="${showName ? 9 : 8}" style="padding:0 8px 8px 32px;background:#faf9f6;border-bottom:1px solid var(--border-light)">${payrollDetailHtml(r.type, r.source_id, r._rec || r)}</td></tr>` : ''}`;

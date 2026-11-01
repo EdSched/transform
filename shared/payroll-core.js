@@ -1,25 +1,24 @@
 // 工资核算的核算函数：管理端「工作管理」生成工资表和老师端「工作记录」共用同一套算法。
 // 依赖 shared/constants.js（scope*、MAJOR_DOMAIN 等）、shared/workrec-table.js、shared/supabase.js 的 sb / sbAll。
 
-// ── 工作内容映射 ──
+// ── 工作内容映射：除 VIP 外一律叫「大课」 ──
 function payrollWorkType(courseType) {
-  if (!courseType) return '大课';
-  if (courseType.includes('VIP')) return 'VIP授课';
-  if (courseType.includes('共通')) return '共通课';
+  if (courseType && courseType.includes('VIP')) return 'VIP授课';
   return '大课';
 }
 
-// ── 地点映射 ──
+// ── 地点映射：只有 高马校区 / 市谷校区 / 线上（明确线下但校区没填的显示「线下（校区未填）」）──
 function payrollLocation(loc, campus) {
-  if (!loc || loc === 'online') return '线上';
-  if (loc.includes('ichigaya')) return '市谷校区';
-  if (loc.includes('takadanobaba')) return '高马校区';
-  if (campus) {
-    if (campus.includes('市谷')) return '市谷校区';
-    if (campus.includes('高马') || campus.includes('高田')) return '高马校区';
-    return campus;
-  }
-  return '线下';
+  const hit = s => {
+    s = String(s || '').toLowerCase();
+    if (s.includes('市谷') || s.includes('ichigaya')) return '市谷校区';
+    if (s.includes('高马') || s.includes('高田') || s.includes('takadanobaba')) return '高马校区';
+    return '';
+  };
+  const r = hit(loc);
+  if (r) return r;
+  if (/线下|offline/i.test(String(loc || ''))) return hit(campus) || '线下（校区未填）';
+  return '线上';
 }
 
 // ── 时间段解析 → 开始/结束/时长 ──
@@ -174,7 +173,7 @@ function buildBookingRows(bookings, slots, teacherName, students, opt) {
         开始时间: start,
         结束时间: end,
         时长: hours,
-        工作内容: '教研工作',
+        工作内容: '教研',
         工作地点: payrollLocation(loc, ''),
         备注: `${b.name}的面谈预约${b.manual_entry ? '（教务补录）' : ''}${interviewLateNote(b) ? '（' + interviewLateNote(b) + '）' : ''}`,
         _date: pay,

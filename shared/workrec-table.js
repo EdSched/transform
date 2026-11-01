@@ -6,9 +6,17 @@ const payrollRound = n => Math.round((parseFloat(n) || 0) * 100) / 100;
 const payrollPad = n => String(n).padStart(2, '0');
 
 // ── 按工作内容统计 ──
-// 工作内容的固定顺序（"教研"是旧名字，统一当"教研工作"）；不在清单里的排在最后
-const PAYROLL_TYPES = ['大课', '共通课', 'VIP授课', '教研工作', '试听・试讲', '临时上课安排'];
-const payrollTypeName = t => (t === '教研' ? '教研工作' : (t || ''));
+// 工作内容的固定顺序；旧叫法统一：教研工作→教研，共通课→大课；旧的「试听・试讲」申告原样保留，排在最后
+const PAYROLL_TYPES = ['大课', 'VIP授课', '教研', '试听', '试讲', '临时上课安排'];
+const payrollTypeName = t => (t === '教研工作' ? '教研' : t === '共通课' ? '大课' : (t || ''));
+// 工作地点统一成 高马校区 / 市谷校区 / 线上（旧记录里的「腾讯会议」等都显示成线上）
+const payrollPlaceName = loc => {
+  const s = String(loc || '').toLowerCase();
+  if (s.includes('市谷') || s.includes('ichigaya')) return '市谷校区';
+  if (s.includes('高马') || s.includes('高田') || s.includes('takadanobaba')) return '高马校区';
+  if (s.includes('校区未填') || /线下|offline/.test(s)) return '线下（校区未填）';
+  return '线上';
+};
 const payrollTypeIdx = t => { const i = PAYROLL_TYPES.indexOf(payrollTypeName(t)); return i < 0 ? 99 : i; };
 const payrollTypeSort = (a, b) => payrollTypeIdx(a) - payrollTypeIdx(b) || String(a).localeCompare(String(b), 'zh');
 // items = [{ name, type, h }] → { types, names, cell:{name:{type:{h,n}}}, rowTot:{name:{h,n}}, colTot:{type:{h,n}}, total:{h,n} }
@@ -81,7 +89,7 @@ function payrollDownload(rows, label, who) {
   XLSX.writeFile(payrollBuildWorkbook(rows), `工资核算_${label}_${who}.xlsx`);
 }
 // work_records 一行 → Excel 行
-const payrollRecToRow = r => ({ 姓名: r.teacher_name, 开始时间: r.start_time, 结束时间: r.end_time, 时长: r.duration, 工作内容: r.work_type, 工作地点: r.location, 备注: r.notes });
+const payrollRecToRow = r => ({ 姓名: r.teacher_name, 开始时间: r.start_time, 结束时间: r.end_time, 时长: r.duration, 工作内容: payrollTypeName(r.work_type), 工作地点: payrollPlaceName(r.location), 备注: r.notes });
 
 function payrollDT(s) {
   const m = String(s || '').match(/(\d{4})年(\d{2})月(\d{2})日\s*(\d{1,2}:\d{2})/);
@@ -147,7 +155,7 @@ function wrtTableHtml(recs, opt) {
       <td style="${td}${stick(88, 1)}background:${bg};white-space:nowrap;font-family:'DM Mono',monospace;color:var(--accent)">${wrtEsc(r.duration)}h</td>
       <td style="${td}white-space:nowrap;color:var(--text-2)">${wrtEsc(p.hm)}${e.hm ? '–' + wrtEsc(e.hm) : ''}</td>
       <td style="${td}white-space:nowrap">${wrtEsc(payrollTypeName(r.work_type))}</td>
-      <td style="${td}white-space:nowrap;color:var(--text-2)">${wrtEsc(r.location)}</td>
+      <td style="${td}white-space:nowrap;color:var(--text-2)">${wrtEsc(payrollPlaceName(r.location))}</td>
       <td style="${td}min-width:160px">${tag}${wrtEsc(r.notes)}${reject}</td>
       <td style="${td}white-space:nowrap">${opt.actions ? opt.actions(r) : ''}</td>
     </tr>`;
