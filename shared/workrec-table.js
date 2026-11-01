@@ -6,8 +6,8 @@ const payrollRound = n => Math.round((parseFloat(n) || 0) * 100) / 100;
 const payrollPad = n => String(n).padStart(2, '0');
 
 // ── 按工作内容统计 ──
-// 工作内容的固定顺序；旧叫法统一：教研工作→教研，共通课→大课；旧的「试听・试讲」申告原样保留，排在最后
-const PAYROLL_TYPES = ['大课', 'VIP授课', '教研', '试听', '试讲', '临时上课安排'];
+// 工作内容的固定顺序；旧叫法统一：教研工作→教研，共通课→大课；「试听・试讲」是固定的一项
+const PAYROLL_TYPES = ['大课', 'VIP授课', '教研', '试听・试讲', '临时上课安排'];
 const payrollTypeName = t => (t === '教研工作' ? '教研' : t === '共通课' ? '大课' : (t || ''));
 // 工作地点统一成 高马校区 / 市谷校区 / 线上（旧记录里的「腾讯会议」等都显示成线上）
 const payrollPlaceName = loc => {
