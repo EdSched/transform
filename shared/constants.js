@@ -1,4 +1,6 @@
 // 本地日期 → 'YYYY-MM-DD'（不经过 UTC）
+// 返回 ym('YYYY-MM') 的下个月 1 号，用于「小于下月1号」代替写死 -31
+function ymNextFirst(ym){ const [y,m]=String(ym).split('-').map(Number); return m>=12 ? (y+1)+'-01-01' : y+'-'+String(m+1).padStart(2,'0')+'-01'; }
 function localDateStr(d){ d = d || new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 // 学生开始算出席 / 作业的日期（YYYY-MM-DD），取档案「报名时间」signup_date（自由文本：2026-07-12 / 2026/7/12 / 2026年7月12日 / 2026年7月 / 2026.7）
 // 只有年月 = 当月 1 日；空或解析不了 = ''（不限，所有课次照常算）

@@ -723,7 +723,7 @@ function smsLoad(ym) {
   const p = (async () => {
     const today = jstToday();
     const lo = ym ? ym + '-01' : SMS_START;
-    const hiQ = ym ? `&session_date=lte.${ym}-31` : '';
+    const hiQ = ym ? `&session_date=lt.${ymNextFirst(ym)}` : '';
     const sess = await sbAll(`/rest/v1/course_sessions?select=id,course_id,course_name,session_date,session_number,is_cancelled,confirmed,homework_enabled,hw_release_date&session_date=gte.${lo}${hiQ}&order=session_date.asc,id.asc`);
     const live = sess.filter(x => !x.is_cancelled && x.confirmed !== false && x.course_id);
     const cids = [...new Set(live.map(x => String(x.course_id)))];
