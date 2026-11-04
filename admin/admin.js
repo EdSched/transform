@@ -962,7 +962,7 @@ function tsecState(key){
     return {has:n>0,sum:n?`已开 ${n} 项`:'未开启'};
   }
   if(key==='sales'){
-    const ids=['perm_promo','perm_progress_plan','perm_lect_info','perm_vip_sales','perm_promo_pack','perm_result_view','perm_pass_posters','perm_result_admin','perm_promo_pricing','perm_success_cases'];
+    const ids=['perm_promo','perm_progress_plan','perm_lect_info','perm_vip_sales','perm_promo_pack','perm_result_view','perm_pass_posters','perm_result_admin','perm_promo_pricing','perm_success_cases','perm_consult'];
     const n=ids.filter(chk).length;
     return {has:n>0,sum:n?`已开 ${n} 项`:'未开启'};
   }
@@ -1487,6 +1487,7 @@ function renderTeachersPage(mc){
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_result_admin" style="accent-color:var(--accent);width:15px;height:15px" onchange="if(this.checked){const _p=document.getElementById('perm_pass_posters'); if(_p)_p.checked=true;}">合格实绩管理<span style="font-size:9px;color:var(--text-3)">和管理端一样管理合格实绩、合格写真、制作和发布海报（会同时开启「合格海报查询」；有管理时不再单独显示合格实绩查询）。负责人在管理模式里开放了「合格实绩」页，就不需要再开这个。这个开关给不是负责人的营业老师用。</span></label>
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_promo_pricing" style="accent-color:var(--accent);width:15px;height:15px">课程方案（含价格）<span style="font-size:9px;color:var(--text-3)">在宣传相关里给学生配带价格的课程方案并加入资料；价目在中枢『💴 价目』维护；需同时勾选「宣传相关」</span></label>
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_success_cases" style="accent-color:var(--accent);width:15px;height:15px">合格案例（填写）<span style="font-size:9px;color:var(--text-3)">在宣传相关里新建、修改合格案例（只能改自己负责的领域/专业）；不勾也能浏览已发布的案例，需同时勾选「宣传相关」</span></label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_consult" style="accent-color:var(--accent);width:15px;height:15px">咨询（营业咨询台）<span style="font-size:9px;color:var(--text-3)">老师端「咨询」：给潜在学生做信息采集、选校、选课、生成升学计划；咨询者档案只有录入人自己和管理员能看</span></label>
             </div>
           </div>`,0):''}
       ${tsecWrap('homework','作业批改分配',`
@@ -1758,6 +1759,7 @@ function cancelEditTeacher(){
     {const _e=document.getElementById('perm_result_admin'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_promo_pricing'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_consult'); if(_e)_e.checked=false;}
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
   {const _e=document.getElementById('perm_vip_backfill'); if(_e)_e.checked=false;}
@@ -1791,6 +1793,7 @@ function openTeacherManager(){
     {const _e=document.getElementById('perm_result_admin'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_promo_pricing'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_consult'); if(_e)_e.checked=false;}
   document.getElementById('perm_homework').checked=false;
   document.getElementById('perm_admission_query').checked=false;
   {const _e=document.getElementById('perm_vip_backfill'); if(_e)_e.checked=false;}
@@ -1879,7 +1882,7 @@ function roleDefaultTokens(pos,roles,staffType){
   if(staffType==='正社员'){ out.add('p:slots'); out.add('slot_types:attendance'); }
   return out;
 }
-const TF_P_LABEL={booking:'预约管理',slots:'时间槽设定',student_mgmt:'学生管理',admission_query:'出願数据查询',vip_backfill:'VIP 上课补录',homework:'批改作业',promo:'宣传相关',progress_plan:'进度规划',lect_info:'讲师信息查询',vip_sales:'VIP营业规划',promo_pack:'宣传资料整合',result_view:'合格实绩查询',pass_posters:'合格海报查询',result_admin:'合格实绩管理',promo_pricing:'课程方案（含价格）',success_cases:'合格案例（填写）'};
+const TF_P_LABEL={booking:'预约管理',slots:'时间槽设定',student_mgmt:'学生管理',admission_query:'出願数据查询',vip_backfill:'VIP 上课补录',homework:'批改作业',promo:'宣传相关',progress_plan:'进度规划',lect_info:'讲师信息查询',vip_sales:'VIP营业规划',promo_pack:'宣传资料整合',result_view:'合格实绩查询',pass_posters:'合格海报查询',result_admin:'合格实绩管理',promo_pricing:'课程方案（含价格）',success_cases:'合格案例（填写）',consult:'咨询（营业咨询台）'};
 const TF_SUB_LABEL={booking_types:{daily:'日常',plan:'计划书',mock:'模拟面试',vip:'VIP'},slot_types:{daily:'日常',plan:'计划书',mock:'模拟面试',vip:'VIP',attendance:'出勤'},student_mgmt_items:{progress:'考学进度',meetings:'面谈查询',records_view:'出席・作业 查看',records_entry:'出席 登记',monthly:'月度学习情况',profile:'学生档案录入',profile_edit:'档案修改'}};
 const TF_SUB_PREFIX={booking_types:'预约·',slot_types:'时间槽·',student_mgmt_items:'学生管理·'};
 function roleTokenLabel(tk){
@@ -2083,6 +2086,7 @@ const TEACHER_FEATURE_DEFS=[
   ['result_admin','实绩管理','合格实绩管理（营业）',(t,p)=>!!p.result_admin],
   ['promo_pricing','课程方案','课程方案（含价格）',(t,p)=>!!p.promo_pricing],
   ['success_cases','合格案例','合格案例（填写）',(t,p)=>!!p.success_cases],
+  ['consult','咨询','咨询（营业咨询台）',(t,p)=>!!p.consult],
   ['resource','资源权限','资源管理权限',(t)=>(t.resource_perms||[]).length>0],
   ['manager','负责人','负责人',(t)=>managerScopeNonEmpty(t.manage_scope)],
 ];
@@ -2232,6 +2236,7 @@ function renderTeacherRows(){
           if(p.result_admin) permsFull.push('合格实绩管理（营业）');
           if(p.promo_pricing) permsFull.push('课程方案（含价格）');
           if(p.success_cases) permsFull.push('合格案例（填写）');
+          if(p.consult) permsFull.push('咨询（营业咨询台）');
           const open=teacherExpandedId===t.id;
           const link=`${base}?tid=${encodeURIComponent(t.id)}`;  // 只带 id，不暴露老师真名（真名由老师端按 id 查出）
           return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
@@ -2299,6 +2304,7 @@ function getPermissionsFromForm(prev){
     result_admin:_chk('perm_result_admin',prev.result_admin),
     promo_pricing:_chk('perm_promo_pricing',prev.promo_pricing),
     success_cases:_chk('perm_success_cases',prev.success_cases),
+    consult:_chk('perm_consult',prev.consult),
     student_mgmt:document.getElementById('perm_student_mgmt').checked,
     guaranteed_only:document.getElementById('perm_guaranteed_only')?.classList.contains('active')||false,
     student_mgmt_items:[...document.querySelectorAll('#perm_student_mgmt_items .filter-chip.active')].map(c=>c.dataset.value),
@@ -2439,6 +2445,7 @@ async function addTeacher(){
     {const _e=document.getElementById('perm_result_admin'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_promo_pricing'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_consult'); if(_e)_e.checked=false;}
     tfFormReset();
     renderTeacherList();
   }catch(e){alert('添加失败：'+(deptTeachersReadOnly()||!isHubAdminUser()?teacherSaveErrMsg(e):e.message))}
@@ -2516,6 +2523,7 @@ function openEditTeacher(id){
   {const _e=document.getElementById('perm_result_admin'); if(_e)_e.checked=!!p.result_admin;}
   {const _e=document.getElementById('perm_promo_pricing'); if(_e)_e.checked=!!p.promo_pricing;}
   {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=!!p.success_cases;}
+  {const _e=document.getElementById('perm_consult'); if(_e)_e.checked=!!p.consult;}
   document.getElementById('perm_student_mgmt').checked=!!p.student_mgmt;
   {const _g=document.getElementById('perm_guaranteed_only'); if(_g) _g.classList.toggle('active',!!p.guaranteed_only);}
   document.querySelectorAll('#perm_student_mgmt_items .filter-chip').forEach(c=>{c.classList.toggle('active',((p.student_mgmt_items||[]).includes(c.dataset.value)||((p.student_mgmt_items||[]).includes('records')&&/^records_(view|entry)$/.test(c.dataset.value))));});   // 旧的 records = 查看+登记都开
