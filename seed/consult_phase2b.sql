@@ -26,3 +26,6 @@ commit;
 
 -- ── 回滚 ──
 -- drop table if exists public.consult_files;
+
+-- 【已不再使用】宣传册 / 试讲视频 改为直接读「宣传相关」里现有的内容（通用宣传、专业视频、讲师资料），这张表不再被页面读写。
+-- 想清掉就执行：drop table if exists public.consult_files;

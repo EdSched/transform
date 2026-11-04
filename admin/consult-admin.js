@@ -1,12 +1,12 @@
 // ══════════════════════════════════
-// consult-admin.js — 管控台「咨询台」：维护常见问题（faq）和课程推荐规则（consult_rules）
+// consult-admin.js — 管控台「咨询台」：维护常见问题（faq）、课程推荐规则（consult_rules），并管理咨询者（转学生）
 // 老师端「咨询」（teacher/teacher-consult.js）读取这两张表。只有管理员能改（RLS 见 seed/consult_phase2.sql）。
 // 全局名字统一用 csa / CSA_ 前缀。依赖：shared/constants.js、shared/supabase.js、admin.js（switchConsoleTab）
 // ══════════════════════════════════
 const CSA_STAGES = ['信息采集', '选校', '课程', '价格', '入学后'];
 const CSA_LEVELS = [['daigakuin', '大学院'], ['gakubu', '学部']];
 const CSA_GAPS = [['jp', '日语成绩'], ['en', '英语成绩'], ['plan', '研究计划书・志望理由书'], ['interview', '面试'], ['written', '笔试'], ['specialty', '专业能力（跨专业补课）']];
-let csa = { tab: 'faq', faq: null, rules: null, files: null, leads: null, teachers: [], lq: '', edit: null, body: null, err: '' };
+let csa = { tab: 'faq', faq: null, rules: null, leads: null, teachers: [], lq: '', edit: null, body: null, err: '' };
 const csaE = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const csaJ = v => String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
@@ -14,10 +14,9 @@ async function csaMount(body) {
   csa.body = body || csa.body; csa.edit = null;
   csa.body.innerHTML = '<div style="padding:20px;color:var(--text-3);font-size:12px">加载中…</div>';
   try {
-    [csa.faq, csa.rules, csa.files, csa.leads, csa.teachers] = await Promise.all([
+    [csa.faq, csa.rules, csa.leads, csa.teachers] = await Promise.all([
       sbAll('/rest/v1/faq?select=*&order=sort.asc,created_at.asc', { cache: 'no-store' }),
       sbAll('/rest/v1/consult_rules?select=*&order=sort.asc,created_at.asc', { cache: 'no-store' }).catch(() => null),
-      sbAll('/rest/v1/consult_files?select=*&order=sort.asc,created_at.asc', { cache: 'no-store' }).catch(() => null),
       sbAll('/rest/v1/consult_leads?select=*&order=updated_at.desc', { cache: 'no-store' }).catch(() => []),
       sb('/rest/v1/teachers?select=id,name').catch(() => []),
     ]);
@@ -29,14 +28,13 @@ const csaChip = (on, label, click) => `<span class="filter-chip${on ? ' active' 
 function csaRender() {
   const b = csa.body; if (!b) return;
   if (csa.err) { b.innerHTML = `<div style="padding:20px;color:var(--danger,#b03a2e);font-size:12px">读取失败：${csaE(csa.err)}</div>`; return; }
-  const tabs = [['faq', '常见问题'], ['rules', '课程推荐规则'], ['brochure', '宣传册'], ['trial', '试讲视频'], ['leads', '咨询者']].map(([k, t]) => csaChip(csa.tab === k, t, `csa.tab='${k}';csa.edit=null;csaRender()`)).join('');
-  b.innerHTML = `<div style="padding:14px 18px;max-width:900px"><div style="display:flex;gap:6px;margin-bottom:12px">${tabs}</div>${csa.tab === 'faq' ? csaFaqHtml() : csa.tab === 'rules' ? csaRulesHtml() : csa.tab === 'leads' ? csaLeadsHtml() : csaFilesHtml()}</div>`;
+  const tabs = [['faq', '常见问题'], ['rules', '课程推荐规则'], ['leads', '咨询者']].map(([k, t]) => csaChip(csa.tab === k, t, `csa.tab='${k}';csa.edit=null;csaRender()`)).join('');
+  b.innerHTML = `<div style="padding:14px 18px;max-width:900px"><div style="display:flex;gap:6px;margin-bottom:12px">${tabs}</div>${csa.tab === 'faq' ? csaFaqHtml() : csa.tab === 'rules' ? csaRulesHtml() : csaLeadsHtml()}</div>`;
 }
 function csaToggle(k, v) { const a = csa.edit[k], i = a.indexOf(v); if (i >= 0) a.splice(i, 1); else a.push(v); csaCapture(); csaRender(); }
 function csaCapture() {
   const g = id => { const el = document.getElementById(id); return el ? el.value : undefined; }, e = csa.edit; if (!e) return;
   if (csa.tab === 'faq') { const q = g('csa_q'), a = g('csa_a'), s = g('csa_s'); if (q !== undefined) { e.question = q; e.answer = a; e.sort = parseInt(s) || 0; } }
-  else if (csa.tab === 'brochure' || csa.tab === 'trial') { const t = g('csa_ft'), u = g('csa_fu'), te = g('csa_fe'), k = g('csa_fk'), m = g('csa_fm'), s = g('csa_s'); if (t !== undefined) { e.title = t; e.url = u; e.teacher = te; e.keyword = k; e.major = m; e.sort = parseInt(s) || 0; } }
   else { const t = g('csa_t'), k = g('csa_k'), gp = g('csa_g'), s = g('csa_s'); if (t !== undefined) { e.title = t; e.keywords_text = k; e.gap = gp; e.sort = parseInt(s) || 0; } }
 }
 const csaIn = 'width:100%;font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:3px;box-sizing:border-box;font-family:inherit';
@@ -103,50 +101,6 @@ async function csaRuleSave() {
 async function csaDel(table, id) {
   if (!confirm('确定删除？删除后不能恢复。')) return;
   try { await sb(`/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, 'DELETE'); await csaMount(); } catch (err) { alert('删除失败：' + err.message); }
-}
-
-// ── 宣传册（按专业）/ 讲师试讲视频（按老师和课程）──
-function csaFileNew() { csa.edit = { id: '', kind: csa.tab, major: '', title: '', url: '', teacher: '', keyword: '', sort: (csa.files.length + 1) * 10, published: true }; csaRender(); }
-function csaFileOpen(id) { const f = csa.files.find(x => x.id === id); if (f) { csa.edit = { ...f }; csaRender(); } }
-async function csaFileUpload(inp) {
-  const f = inp.files && inp.files[0]; if (!f) return;
-  const ext = (f.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin';
-  const st = document.getElementById('csa_up'); if (st) st.textContent = '上传中…';
-  try {
-    const url = await sbUpload('admission-photos', `consult/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`, f);
-    csaCapture(); csa.edit.url = url; if (!csa.edit.title) csa.edit.title = f.name.replace(/\.[^.]+$/, ''); csaRender();
-  } catch (e) { if (st) st.textContent = ''; alert('上传失败：' + e.message); }
-}
-function csaFilesHtml() {
-  const kind = csa.tab, isB = kind === 'brochure', e = csa.edit;
-  if (csa.files === null) return '<div class="empty">还没有 consult_files 表，请先执行 seed/consult_phase2b.sql</div>';
-  if (e) return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:14px">
-    ${isB ? `<div style="font-size:11px;color:var(--text-3);margin-bottom:3px">专业</div><select id="csa_fm" style="${csaIn}"><option value="">请选择</option>${csaMajorKeys().map(k => `<option value="${k}" ${e.major === k ? 'selected' : ''}>${csaE(ADMISSION_MAJORS[k])}</option>`).join('')}</select>` : `<input type="hidden" id="csa_fm" value="">`}
-    <div style="font-size:11px;color:var(--text-3);margin:10px 0 3px">标题</div><input id="csa_ft" value="${csaE(e.title)}" style="${csaIn}">
-    ${isB ? `<div style="font-size:11px;color:var(--text-3);margin:10px 0 3px">文件（PDF 或图片）：上传，或直接填链接</div><input type="file" accept=".pdf,image/*" onchange="csaFileUpload(this)" style="font-size:12px"> <span id="csa_up" style="font-size:11px;color:var(--text-3)"></span>
-      <input id="csa_fu" value="${csaE(e.url)}" placeholder="https://…" style="${csaIn};margin-top:6px"><input type="hidden" id="csa_fe" value=""><input type="hidden" id="csa_fk" value="">`
-      : `<div style="font-size:11px;color:var(--text-3);margin:10px 0 3px">视频链接</div><input id="csa_fu" value="${csaE(e.url)}" placeholder="https://…" style="${csaIn}">
-      <div style="font-size:11px;color:var(--text-3);margin:10px 0 3px">老师姓名（要和「课程安排」里的老师名一致）</div><input id="csa_fe" value="${csaE(e.teacher)}" style="${csaIn}">
-      <div style="font-size:11px;color:var(--text-3);margin:10px 0 3px">课程名关键词（可留空 = 这位老师的所有课程都显示这个试讲视频）</div><input id="csa_fk" value="${csaE(e.keyword)}" style="${csaIn}">`}
-    <div style="display:flex;gap:10px;align-items:center;margin-top:12px"><span style="font-size:11px;color:var(--text-3)">排序</span><input id="csa_s" type="number" value="${e.sort}" style="${csaIn};width:90px">
-      ${csaChip(e.published, e.published ? '已发布' : '未发布', `csaCapture();csa.edit.published=!csa.edit.published;csaRender()`)}</div>
-    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-primary btn-sm" onclick="csaFileSave()">保存</button><button class="btn btn-outline btn-sm" onclick="csa.edit=null;csaRender()">取消</button>
-      ${e.id ? `<button class="btn btn-outline btn-sm" style="margin-left:auto;color:var(--danger,#b03a2e)" onclick="csaDel('consult_files','${csaJ(e.id)}')">删除</button>` : ''}</div></div>`;
-  const rows = csa.files.filter(f => f.kind === kind);
-  return `<div style="display:flex;align-items:center;margin-bottom:10px"><span style="font-size:11px;color:var(--text-3)">${isB ? '按专业上传宣传册。咨询页第 ② 步「专业介绍」里可以打开查看。' : '讲师试讲视频：老师在咨询页被选中的课程旁边会显示。'}</span><button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="csaFileNew()">＋ 新增</button></div>
-    ${isB ? `<div style="font-size:11px;color:var(--text-3);background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:8px 12px;margin-bottom:10px;line-height:1.8">专业介绍里的「需要的语言与专业能力」「跨专业要补什么」两个固定小节：在「宣传介绍」的专业介绍里新增两条内容，标题分别写 <b>需要的语言与专业能力</b> 和 <b>跨专业要补什么</b>，咨询页会自动放到专业介绍最前面。</div>` : ''}
-    ${rows.map(f => `<div onclick="csaFileOpen('${csaJ(f.id)}')" style="border:1px solid var(--border-light);border-radius:4px;padding:8px 12px;margin-bottom:6px;cursor:pointer;background:var(--surface)"><span style="font-size:12px;font-weight:600">${csaE(f.title)}</span> <span style="font-size:10px;color:var(--text-3)">${csaE(isB ? (ADMISSION_MAJORS[f.major] || f.major || '') : [f.teacher, f.keyword].filter(Boolean).join(' · '))}${f.published === false ? ' · 未发布' : ''}</span></div>`).join('') || '<div class="empty">还没有内容</div>'}`;
-}
-async function csaFileSave() {
-  csaCapture(); const e = csa.edit;
-  if (!e.title.trim() || !String(e.url || '').trim()) { alert('请填写标题和文件 / 视频链接'); return; }
-  if (e.kind === 'brochure' && !e.major) { alert('请选择专业'); return; }
-  if (e.kind === 'trial' && !String(e.teacher || '').trim()) { alert('请填写老师姓名'); return; }
-  const rec = { kind: e.kind, major: e.kind === 'brochure' ? e.major : null, title: e.title.trim(), url: e.url.trim(), teacher: (e.teacher || '').trim() || null, keyword: (e.keyword || '').trim() || null, sort: e.sort || 0, published: !!e.published };
-  try {
-    if (e.id) await sb(`/rest/v1/consult_files?id=eq.${encodeURIComponent(e.id)}`, 'PATCH', rec); else await sb('/rest/v1/consult_files', 'POST', rec);
-    await csaMount();
-  } catch (err) { alert('保存失败：' + err.message); }
 }
 
 // ── 咨询者：管理员能看到所有营业录入的咨询者；报名后一键转成学生档案 ──
