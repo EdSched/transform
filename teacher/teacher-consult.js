@@ -227,10 +227,35 @@ function cstParseReq(detail) {
   const re2 = /N([1-5])/gi; while ((m = re2.exec(t))) alts.push({ exam: 'JLPT', lvl: +m[1] });
   return alts;
 }
-function cstLangCheck(label, req, detail, status, exam, score) {
+// 出愿数据库的「语言明细」（english_tests / japanese_tests，如 { TOEFL:'〇（必須）', 'JLPT-N1':'〇', EJU:'〇（250）' }）：有明细就按明细判断
+function cstTestsCheck(label, tests, status, exam, score) {
+  const ok = v => { v = String(v == null ? '' : v).trim(); return !!v && !/^[×✕✗xX\-－―]+$/.test(v) && v !== 'なし'; };
+  const acc = Object.entries(tests || {}).filter(([k, v]) => k !== 'その他' && ok(v));
+  if (!acc.length) return null;
+  const names = acc.map(([k, v]) => k.replace(/^JLPT-/, '') + (/[（(]\s*\d/.test(v) ? String(v).match(/[（(](.+?)[）)]/)[0] : '')).join('、');
+  const need = `${label}需取得其中一项：${names}`;
+  if (status === 'unrecorded') return { st: 'manual', note: `${label}成绩待录入后再判断` };
+  if (status !== 'have') return { st: 'short', note: need };
+  const ex = String(exam || '').toUpperCase(), sc = String(score || '').trim(), lvl = +((sc.match(/N([1-5])/i) || [])[1] || 0), num = parseFloat(sc);
+  let hit = false, low = null;
+  acc.forEach(([k, v]) => {
+    const kk = k.toUpperCase();
+    if (kk.startsWith('JLPT-N')) { if (ex === 'JLPT' && lvl && lvl <= +kk.slice(-1)) hit = true; return; }
+    if (kk !== ex) return;
+    const min = parseFloat(((String(v).match(/[（(]\s*(\d+(?:\.\d+)?)/) || [])[1]));
+    if (isNaN(min)) { hit = true; return; }
+    if (isNaN(num)) { low = low || 'x'; return; }
+    if (num >= min) hit = true; else low = `目前 ${sc}，要求 ${min}`;
+  });
+  if (hit) return { st: 'ok' };
+  if (low === 'x') return { st: 'manual', note: `${label}成绩（${sc || '未填'}）读不出分数，需人工确认` };
+  return { st: 'short', note: low ? `${label}分数不够（${low}）` : `${need}（目前 ${exam || '其他考试'}${sc ? ' ' + sc : ''}）` };
+}
+function cstLangCheck(label, req, detail, status, exam, score, tests) {
   const r = String(req || '').trim();
   if (!r) return { st: 'manual', note: `${label}要求没有录入` };
   if (r !== '必須') return { st: 'ok' };
+  const byTests = cstTestsCheck(label, tests, status, exam, score); if (byTests) return byTests;
   const alts = cstParseReq(detail);
   if (!alts.length) return { st: 'manual', note: `${label}要求是文字说明（${detail || '无详细'}），需人工确认` };
   const need = `${label}需取得 ${detail}`;
@@ -255,8 +280,8 @@ function cstDeadline(a, l) {
 function cstEval(a) {
   const l = cst.cur, notes = [];
   let st = 'ok';
-  const j = cstLangCheck('日语', a.japanese_required, a.japanese_detail, l.jp_status, l.jp_exam, l.jp_score);
-  const e = cstLangCheck('英语', a.english_required, a.english_detail, l.en_status, l.en_exam, l.en_score);
+  const j = cstLangCheck('日语', a.japanese_required, a.japanese_detail, l.jp_status, l.jp_exam, l.jp_score, a.japanese_tests);
+  const e = cstLangCheck('英语', a.english_required, a.english_detail, l.en_status, l.en_exam, l.en_score, a.english_tests);
   [j, e].forEach(x => { if (x.note) notes.push(x.note); });
   const hasMan = j.st === 'manual' || e.st === 'manual', hasShort = j.st === 'short' || e.st === 'short';
   if (/資格審査|资格审查/.test([a.notes, a.exam_style, a.admission_type].join(' '))) { notes.push('有资格审查'); st = 'manual'; }
