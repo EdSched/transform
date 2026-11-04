@@ -1,0 +1,114 @@
+/* 咨询台（teacher/teacher-consult.js）专用样式：
+   进入咨询后 body 加 consult-mode，整页只显示咨询台；所有选择器都限定在 body.consult-mode 或 .cst-root 下，不影响老师端其他页面。 */
+body.consult-mode .header, body.consult-mode #tabBar { display: none !important; }
+body.consult-mode { background: #fcf8f4; }
+body.consult-mode .main { max-width: none !important; width: 100% !important; padding: 0 !important; margin: 0 !important; }
+
+.cst-root {
+  /* 覆盖后台的变量，让里面沿用的内联样式也变成暖色 */
+  --bg: #fcf8f4; --surface: #ffffff; --border: #d9cfc4; --border-light: #e8dfd5;
+  --text: #3a342e; --text-2: #5a5148; --text-3: #8a7f73; --accent: #b8791a; --accent-light: #f8eac2;
+  --pick-bg: #f8eac2; --pick-fg: #3a342e; --pick-bd: #f2a93b; --btn-bg: #f3ece4; --btn-fg: #3a342e; --btn-bd: #d9cfc4;
+  --ok-bg: #e6f2ea; --danger: #b03a2e;
+  font-family: 'Noto Sans SC', 'DM Mono', sans-serif; color: #3a342e; font-size: 15px; line-height: 1.7;
+  min-height: 100vh; display: flex; flex-direction: column; background: #fcf8f4;
+}
+.cst-root *, .cst-root *::before, .cst-root *::after { box-sizing: border-box; }
+.cst-root h1 { font-family: 'Noto Serif SC', serif; color: #2e2924; font-weight: 600; margin: 0; }
+
+/* 按钮 / chip / 输入框 */
+.cst-root .btn { font-family: inherit; font-size: 14px; padding: 8px 18px; border-radius: 10px; background: #f3ece4; color: #3a342e; border: 1px solid #d9cfc4; cursor: pointer; transition: background .15s, border-color .15s; }
+.cst-root .btn:hover { border-color: #f2a93b; background: #f8eac2; }
+.cst-root .btn.btn-sm { font-size: 13px; padding: 6px 14px; }
+.cst-root .btn-outline { background: #fff; }
+.cst-root .btn-primary { background: #f8eac2; border-color: #f2a93b; color: #2e2924; font-weight: 500; }
+.cst-root .btn[disabled] { opacity: .45; cursor: not-allowed; }
+.cst-root .btn[disabled]:hover { background: #f8eac2; border-color: #f2a93b; }
+.cst-root .filter-chip { font-family: inherit; font-size: 13.5px; padding: 5px 13px; border-radius: 999px; background: #f3ece4; color: #5a5148; border: 1px solid #e8dfd5; }
+.cst-root .filter-chip:hover { border-color: #f2a93b; color: #2e2924; }
+.cst-root .filter-chip.active { background: #f8eac2; color: #2e2924; border-color: #f2a93b; font-weight: 500; }
+.cst-root input, .cst-root select, .cst-root textarea { font-family: inherit; background: #fff; border: 1px solid #d9cfc4; border-radius: 10px; color: #3a342e; }
+.cst-root input, .cst-root select { padding: 9px 12px !important; }
+.cst-root textarea { padding: 10px 12px !important; }
+.cst-root input:focus, .cst-root select:focus, .cst-root textarea:focus { border-color: #f2a93b; outline: none; box-shadow: 0 0 0 3px rgba(242, 169, 59, .18); }
+.cst-root a { color: #b8791a; }
+
+/* 里面沿用的内联小字整体放大一档（共享屏幕给学生看） */
+.cst-root [style*="font-size:9px"] { font-size: 11px !important; }
+.cst-root [style*="font-size:10px"] { font-size: 12px !important; }
+.cst-root [style*="font-size:11px"] { font-size: 13.5px !important; }
+.cst-root [style*="font-size:12px"] { font-size: 15px !important; }
+.cst-root [style*="font-size:13px"] { font-size: 16px !important; }
+
+/* 顶部栏 */
+.cst-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 28px; background: #fff; border-bottom: 1px solid #e8dfd5; position: sticky; top: 0; z-index: 30; }
+.cst-who { font-family: 'Noto Serif SC', serif; font-weight: 600; font-size: 17px; color: #2e2924; margin-left: 6px; }
+.cst-state { font-size: 12px; color: #8a7f73; }
+.cst-top-r { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.cst-root .cst-del { color: #b03a2e; background: #fff; }
+
+/* 首页：咨询者卡片 */
+.cst-home { width: 100%; max-width: 1100px; margin: 0 auto; padding: 32px 28px 60px; }
+.cst-home-h { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; flex-wrap: wrap; }
+.cst-home-h h1 { font-size: 28px; margin-right: auto; }
+.cst-home-h input { width: 260px; }
+.cst-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.cst-lead { background: #fff; border: 1px solid #e8dfd5; border-top: 4px solid var(--c); border-radius: 14px; padding: 18px 20px; cursor: pointer; box-shadow: 0 2px 12px rgba(120, 90, 50, .05); transition: transform .15s, box-shadow .15s; }
+.cst-lead:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(120, 90, 50, .12); }
+.cst-lead-n { font-family: 'Noto Serif SC', serif; font-weight: 600; font-size: 19px; color: #2e2924; }
+.cst-lead-m { color: #5a5148; font-size: 14px; margin-top: 2px; }
+.cst-lead-p { margin-top: 12px; font-size: 13.5px; color: #3a342e; display: flex; align-items: center; gap: 8px; }
+.cst-lead-p i { width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
+.cst-lead-d { margin-top: 4px; font-size: 12px; color: #8a7f73; }
+.cst-empty { grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: #8a7f73; border: 1px dashed #d9cfc4; border-radius: 14px; }
+
+/* 进度条 */
+.cst-prog { background: #fff; border-bottom: 1px solid #e8dfd5; padding: 14px 28px 12px; }
+.cst-groups { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.cst-pg { border-top: 4px solid #e8dfd5; padding-top: 8px; min-width: 0; }
+.cst-pg.on { border-top-color: var(--c); }
+.cst-pg-h { font-family: 'Noto Serif SC', serif; font-weight: 600; font-size: 15px; color: #2e2924; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.cst-pg-h i { font-style: normal; font-family: 'Noto Sans SC', sans-serif; font-weight: 500; font-size: 12px; color: var(--c); }
+.cst-pg-h i.y { color: #c9831f; }
+.cst-dots { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.cst-dot { min-width: 44px; height: 30px; padding: 0 8px; border-radius: 15px; border: 1px solid #d9cfc4; background: #fff; font-family: inherit; font-size: 12.5px; color: #8a7f73; cursor: pointer; }
+.cst-dot:hover:not([disabled]) { border-color: var(--c); color: #2e2924; }
+.cst-dot.done { background: var(--c); border-color: var(--c); color: #fff; }
+.cst-dot.skip { background: #f8eac2; border-color: #f2a93b; color: #8a5a00; }
+.cst-dot.cur { background: #fff; border-color: var(--c); color: #2e2924; font-weight: 600; outline: 2px solid var(--c); outline-offset: 2px; }
+.cst-dot.cur.done { background: var(--c); color: #fff; }
+.cst-dot.lock { background: #f3ece4; opacity: .5; cursor: not-allowed; }
+.cst-prog-sum { margin-top: 10px; font-size: 13.5px; color: #5a5148; }
+
+/* 一项一页 */
+.cst-page { flex: 1; width: 100%; max-width: 1100px; margin: 0 auto; padding: 30px 28px 40px; }
+.cst-title { display: flex; gap: 18px; margin-bottom: 22px; }
+.cst-title-bar { width: 6px; border-radius: 3px; background: var(--c); flex: none; }
+.cst-kicker { font-size: 14px; color: var(--c); font-weight: 500; letter-spacing: .04em; }
+.cst-title h1 { font-size: 32px; line-height: 1.3; }
+.cst-title p { margin: 4px 0 0; color: #8a7f73; font-size: 15.5px; }
+.cst-card { background: #fff; border: 1px solid #e8dfd5; border-radius: 18px; padding: 30px 34px; box-shadow: 0 2px 16px rgba(120, 90, 50, .06); }
+.cst-sub { font-family: 'Noto Serif SC', serif; font-weight: 600; font-size: 17px; color: #2e2924; margin: 26px 0 10px; padding-top: 18px; border-top: 1px solid #f0e8de; }
+.cst-sub span { font-family: 'Noto Sans SC', sans-serif; font-weight: 400; font-size: 12.5px; color: #8a7f73; margin-left: 10px; }
+
+/* 底部操作栏 */
+.cst-bar { position: sticky; bottom: 0; z-index: 25; background: rgba(252, 248, 244, .96); backdrop-filter: blur(6px); border-top: 1px solid #e8dfd5; padding: 14px 28px; display: flex; align-items: center; gap: 12px; }
+.cst-bar-r { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+.cst-miss { color: #a03a2e; font-size: 14px; }
+.cst-root .cst-next { font-size: 16px; padding: 11px 26px; border-radius: 12px; }
+
+@media (max-width: 900px) {
+  .cst-groups { grid-template-columns: repeat(2, 1fr); }
+  .cst-top, .cst-prog, .cst-bar { padding-left: 16px; padding-right: 16px; }
+  .cst-page, .cst-home { padding-left: 16px; padding-right: 16px; }
+  .cst-card { padding: 20px 18px; }
+  .cst-title h1 { font-size: 26px; }
+}
+@media (max-width: 520px) {
+  .cst-groups { grid-template-columns: 1fr; }
+  .cst-home-h input { width: 100%; }
+  .cst-bar { flex-wrap: wrap; }
+}
+.cst-root select { background: #fff !important; min-height: 42px; }
+.cst-root input:not([type="hidden"]) { min-height: 42px; }
+.cst-root input, .cst-root select { width: auto; }   /* 里面带内联 width 的（表单、搜索框）不受影响 */
