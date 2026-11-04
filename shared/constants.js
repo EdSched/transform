@@ -1332,6 +1332,8 @@ function exportAdmissionHtmlShared(filtered, opts) {
     ['合格発表','68px','time'],
     ['英語','42px','lang'],
     ['日語','42px','lang'],
+    ['英語明細','120px','lang'],
+    ['日語明細','120px','lang'],
   ];
 
   const thColors = {
@@ -1356,6 +1358,8 @@ function exportAdmissionHtmlShared(filtered, opts) {
     <td>${s.result_date||''}</td>
     <td class="center" style="color:${engColor(s.english_required)};font-weight:700">${s.english_required||'-'}</td>
     <td class="center" style="color:${engColor(s.japanese_required)};font-weight:700">${s.japanese_required||'-'}</td>
+    <td>${typeof adgTestsText==='function'?adgTestsText(s,'en'):''}</td>
+    <td>${typeof adgTestsText==='function'?adgTestsText(s,'jp'):''}</td>
   </tr>`).join('');
 
   const theadCells = colDefs.map(([l,,g]) =>
@@ -1420,10 +1424,12 @@ function exportAdmissionHtmlShared(filtered, opts) {
 
 // 构建筛选条件描述文字（共享）
 function buildAdmissionFilterDesc(opts) {
-  const { english, japanese, search, monthFrom, monthTo, filtered } = opts;
+  const { english, japanese, search, monthFrom, monthTo, filtered, engTests, jpTests } = opts;
   const desc = [];
   if (english && english !== 'all') desc.push(`英语：${english==='必須'?'必须':english==='任意'?'任意':'不要'}`);
   if (japanese && japanese !== 'all') desc.push(`日语：${japanese==='必須'?'必须':japanese==='任意'?'任意':'不要'}`);
+  if (engTests && engTests.size) desc.push(`接受英语考试：${[...engTests].join('/')}`);
+  if (jpTests && jpTests.size) desc.push(`接受日语考试：${[...jpTests].map(k => k.replace(/^JLPT-/, '')).join('/')}`);
   if (search && search.trim()) desc.push(`关键词：${search.trim()}`);
   if (monthFrom || monthTo) {
     desc.push(`出願：${monthFrom?monthFrom+'月':'不限'}～${monthTo?monthTo+'月':'不限'}`);

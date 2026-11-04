@@ -7,12 +7,14 @@ if (typeof ADMISSION_MAJORS === 'undefined') {
   window.ADMISSION_MAJORS = { shakai:'社会学', keiei:'経営学', keizai:'経済学', shinpan:'新闻传播学', fukushi:'社会福祉学', jpjiaoyu:'日本语教育', hyosho:'表象文化・文学・哲学', seiji:'政治学', toyo:'東洋史', bunka:'文化人类学', mot:'MOT', tokei:'統計・計量', kyoiku:'教育学' };
 }
 
+// 导入时整个跳过的 sheet（MOT 的副本、分野分类）
+const ADMISSION_SKIP_SHEETS = ['MOT（复制用）', '社会学各分'];
 const SHEET_TO_MAJOR = {
   '社会学': 'shakai', '经营学': 'keiei', '经济学': 'keizai',
   '新闻传播学': 'shinpan', '社会福祉学': 'fukushi', '日本语教育': 'jpjiaoyu',
   '表象文化・文学・哲学': 'hyosho', '政治学': 'seiji', '东洋史': 'toyo',
-  '文化人类学': 'bunka', 'MOT': 'mot', 'MOT（复制用）': 'mot',
-  '統計・計量在籍': 'tokei', '经营学专升硕': 'keiei', '社会学各分': 'shakai',
+  '文化人类学': 'bunka', 'MOT': 'mot',
+  '統計・計量在籍': 'tokei', '经营学专升硕': 'keiei',
   '教育学': 'kyoiku', '教育': 'kyoiku', '教育学在籍': 'kyoiku',
 };
 
@@ -22,8 +24,11 @@ let adbEnglish = 'all', adbJapanese = 'all', adbSearch = '';
 let adbMonthFrom = 0, adbMonthTo = 0;
 let adbEreOnly = false; // 0=不限
 let adbEditId = null;
-let adbSortCol = '', adbSortDir = 1;
-let adbColFilters = {}; // { col: Set of values }
+let adbEngTests = new Set(), adbJpTests = new Set(); // 语言考试 chips（可叠加，key 如 'TOEIC' / 'JLPT-N1'）
+let adbSortMode = 'time';   // 'time' 按最早出愿时间 | 'name' 按大学名
+let adbOpen = new Set();    // 已展开的组（key）
+let adbShown = 30;          // 每次多显示 30 组
+let adbGroupsView = [];     // 当前显示的组（行上的 onclick 用下标取）
 
 function renderAdmissionDbPage(mc) {
   const majorCounts = (typeof cachedAdmissionMajorCounts !== 'undefined' && Object.keys(cachedAdmissionMajorCounts).length) ? cachedAdmissionMajorCounts : {};
@@ -63,6 +68,10 @@ function renderAdmissionDbPage(mc) {
     <div style="font-size:11px;color:var(--text-3)">日语</div>
     ${['all','必須','任意','不要'].map((v,i)=>`<button class="btn btn-sm adb-lang-btn${adbJapanese===v?' btn-primary':' btn-outline'}" onclick="setAdbFilter('japanese','${v}')" style="font-size:11px;padding:3px 10px">${['全部','必须','任意','不要'][i]}</button>`).join('')}
   </div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+    <span style="font-size:11px;color:var(--text-3)">接受的考试（可多选，选其一即可）</span>
+    <span id="adbTestChips" style="display:inline-flex;gap:6px;flex-wrap:wrap;align-items:center">${adbTestChipsInner()}</span>
+  </div>
 
   <!-- 出願月份筛选 -->
   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
@@ -91,7 +100,14 @@ function renderAdmissionDbPage(mc) {
   </div>
 
   <!-- 结果数 -->
-  <div style="font-size:11px;color:var(--text-3);margin-bottom:8px" id="adbResultCount">请点击上方专业查看数据</div>
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+    <div style="font-size:11px;color:var(--text-3)" id="adbResultCount">请点击上方专业查看数据</div>
+    <span style="font-size:11px;color:var(--text-3)">排序</span>
+    <select onchange="adbSortMode=this.value;adbShown=30;renderAdmissionTable()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
+      <option value="time" ${adbSortMode==='time'?'selected':''}>按最早出愿时间</option>
+      <option value="name" ${adbSortMode==='name'?'selected':''}>按大学名</option>
+    </select>
+  </div>
 
   <!-- 表格 -->
   <div style="overflow-x:auto">
@@ -100,6 +116,7 @@ function renderAdmissionDbPage(mc) {
       <tbody id="admissionTableBody"></tbody>
     </table>
   </div>
+  <div id="adbMoreBox" style="text-align:center;margin:10px 0"></div>
 
   <!-- 编辑 modal -->
   <div class="modal-overlay" id="admissionEditModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;padding:16px">
@@ -140,6 +157,12 @@ function renderAdmissionDbPage(mc) {
         <div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">備考</label><textarea id="adb_notes" rows="2"></textarea></div>
         <div class="form-group" style="margin:0"><label class="form-label">募集要項URL</label><input id="adb_guideline_url" type="url"></div>
         <div class="form-group" style="margin:0"><label class="form-label">過去問URL</label><input id="adb_past_exam_url" type="url"></div>
+        <div class="form-group" style="margin:0"><label class="form-label">教员URL（仅管理端可见）</label><input id="adb_staff_url" type="url"></div>
+        <div class="form-group" style="margin:0"><label class="form-label">その他書類</label><input id="adb_other_docs"></div>
+        <div style="grid-column:1/-1;font-size:11px;color:var(--text-3);margin-top:4px">英語成績明細（〇 / 〇（必須）/ 〇（250）…，不接受的留空）</div>
+        ${ADG_EN_TESTS.map(k=>`<div class="form-group" style="margin:0"><label class="form-label">${k}</label><input id="adb_et_${k}"></div>`).join('')}
+        <div style="grid-column:1/-1;font-size:11px;color:var(--text-3);margin-top:4px">日本語成績明細</div>
+        ${ADG_JP_TESTS.map(k=>`<div class="form-group" style="margin:0"><label class="form-label">${k}</label><input id="adb_jt_${k}"></div>`).join('')}
       </div>
       <div class="modal-actions">
         <button class="btn btn-outline" onclick="closeAdmissionEdit()">取消</button>
@@ -148,23 +171,7 @@ function renderAdmissionDbPage(mc) {
       </div>
     </div>
   </div>
-
-  <!-- 导入 modal -->
-  <div class="modal-overlay" id="admissionImportModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;padding:16px">
-    <div class="modal" style="width:560px">
-      <div class="modal-title">导入 Excel</div>
-      <div style="font-size:11px;color:var(--text-2);margin-bottom:12px;line-height:1.8">
-        上传格式与原始数据 Excel 相同的文件，系统按 sheet 名自动识别专业。
-      </div>
-      <div class="form-group"><label class="form-label">选择文件</label>
-        <input type="file" id="admissionImportFile" accept=".xlsx,.xls"></div>
-      <div id="admissionImportPreview" style="margin-top:10px;font-size:11px;color:var(--text-2)"></div>
-      <div class="modal-actions">
-        <button class="btn btn-outline" onclick="closeAdmissionImport()">取消</button>
-        <button class="btn btn-primary" id="admissionImportBtn" onclick="confirmAdmissionImport()">确认导入</button>
-      </div>
-    </div>
-  </div>`;
+  `;
 
   renderAdmissionTable();
 }
@@ -219,21 +226,33 @@ async function loadAdbData() {
   if (tbody) tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;padding:20px;color:var(--text-3)">加载中…</td></tr>';
   const majorFilter = `major=in.(${adbSelectedMajors.map(m=>`"${m}"`).join(',')})`;
   cachedAdmissionSchools = await sb(`/rest/v1/admission_schools?select=*&${majorFilter}&order=university.asc&limit=5000`).catch(() => []);
-  adbColFilters = {};
-  adbSortCol = '';
+  adbOpen = new Set(); adbShown = 30;
   renderAdmissionTable();
 }
 
 // ── 语言筛选 ──
-function setAdbMonthFrom(v) { adbMonthFrom = v; renderAdmissionTable(); }
-function setAdbMonthTo(v) { adbMonthTo = v; renderAdmissionTable(); }
+function setAdbMonthFrom(v) { adbMonthFrom = v; adbShown = 30; renderAdmissionTable(); }
+function setAdbMonthTo(v) { adbMonthTo = v; adbShown = 30; renderAdmissionTable(); }
 
-// 从出願期間字符串提取月份数字列表（例："5月上旬" → [5]，"5月上旬まで" → [5]）
-function extractMonths(periodStr) {
-  if (!periodStr) return [];
-  const matches = periodStr.match(/(\d{1,2})月/g);
-  if (!matches) return [];
-  return matches.map(m => parseInt(m));
+// 出願期間里的月份（旧名字保留，其它地方可能还在用）
+function extractMonths(periodStr) { return adgRowMonths({ application_period: periodStr }); }
+
+function adbTestChipsInner() {
+  return `<span style="font-size:10px;color:var(--text-3)">英语</span>${adgTestChipsHtml('en', adbEngTests, 'toggleAdbTest')}
+    <span style="font-size:10px;color:var(--text-3);margin-left:6px">日语</span>${adgTestChipsHtml('jp', adbJpTests, 'toggleAdbTest')}
+    ${(adbEngTests.size||adbJpTests.size)?`<span class="filter-chip" onclick="clearAdbTests()" style="font-size:11px;padding:2px 9px;color:var(--text-3)">清除</span>`:''}`;
+}
+function toggleAdbTest(kind, key) {
+  const set = kind === 'en' ? adbEngTests : adbJpTests;
+  if (set.has(key)) set.delete(key); else set.add(key);
+  adbShown = 30;
+  const box = document.getElementById('adbTestChips'); if (box) box.innerHTML = adbTestChipsInner();
+  renderAdmissionTable();
+}
+function clearAdbTests() {
+  adbEngTests.clear(); adbJpTests.clear();
+  const box = document.getElementById('adbTestChips'); if (box) box.innerHTML = adbTestChipsInner();
+  renderAdmissionTable();
 }
 
 function setAdbFilter(type, val) {
@@ -251,65 +270,26 @@ function setAdbFilter(type, val) {
       btn.classList.toggle('btn-outline', !active);
     }
   });
+  adbShown = 30;
   renderAdmissionTable();
 }
 
-function setAdbSearch(v) { adbSearch = v; renderAdmissionTable(); }
+function setAdbSearch(v) { adbSearch = v; adbShown = 30; renderAdmissionTable(); }
 
-// ── 过滤 ──
-function filterAdmissionSchools() {
-  let list = cachedAdmissionSchools;
-  if (adbEnglish !== 'all') list = list.filter(s => s.english_required === adbEnglish);
-  if (adbJapanese !== 'all') list = list.filter(s => s.japanese_required === adbJapanese);
-  if (adbSearch.trim()) {
-    list = list.filter(s => searchMatch(adbSearch, [s.university, s.faculty, s.department, s.admission_type], { names: 0 }));
-  }
-  // 出願月份范围筛选
-  if (adbMonthFrom || adbMonthTo) {
-    list = list.filter(s => {
-      const months = extractMonths(s.application_period);
-      if (!months.length) return false;
-      const minM = Math.min(...months), maxM = Math.max(...months);
-      if (adbMonthFrom && maxM < adbMonthFrom) return false;
-      if (adbMonthTo && minM > adbMonthTo) return false;
-      return true;
-    });
-  }
-  // ERE筛选
-  if (adbEreOnly) list = list.filter(s => s.ere_available === true);
-  // 列筛选
-  Object.entries(adbColFilters).forEach(([col, vals]) => {
-    if (vals && vals.size) list = list.filter(s => vals.has(s[col]||''));
-  });
-  // 排序
-  if (adbSortCol) {
-    list = [...list].sort((a,b) => {
-      const av = a[adbSortCol]||'', bv = b[adbSortCol]||'';
-      return av.localeCompare(bv, 'ja') * adbSortDir;
-    });
-  }
-  return list;
+// ── 过滤 / 归并 ──
+function adbFilterObj() {
+  return { english: adbEnglish, japanese: adbJapanese, engTests: adbEngTests, jpTests: adbJpTests,
+    search: adbSearch, monthFrom: adbMonthFrom, monthTo: adbMonthTo, ere: adbEreOnly };
 }
+// 归并后的组（每组：大学+研究科+専攻+コース；只含有符合筛选的出愿的组）
+function adbGroups() { return adgBuildGroups(cachedAdmissionSchools, adbFilterObj(), adbSortMode); }
+// 符合筛选的出愿，一行一种（导出、共享用），顺序同页面
+function filterAdmissionSchools() { return adgFlatten(adbGroups()); }
 
-// ── 表格渲染（带列头筛选/排序） ──
-const ADB_COLS = [
-  { key:'university', label:'大学名', width:'120px' },
-  { key:'type', label:'性质', width:'54px' },
-  { key:'faculty', label:'研究科', width:'140px' },
-  { key:'department', label:'専攻', width:'100px' },
-  { key:'admission_type', label:'出願類型', width:'80px' },
-  { key:'doc_review_period', label:'資格審査', width:'80px' },
-  { key:'application_period', label:'出願期間', width:'80px' },
-  { key:'written_exam', label:'筆記試験', width:'80px' },
-  { key:'oral_exam', label:'口述試験', width:'72px' },
-  { key:'result_date', label:'合格発表', width:'72px' },
-  { key:'english_required', label:'英語', width:'54px' },
-  { key:'japanese_required', label:'日語', width:'54px' },
-  { key:'recommendation', label:'推薦状', width:'54px' },
-  { key:'thesis', label:'卒論', width:'54px' },
-  { key:'exam_style', label:'試験方式', width:'90px' },
-  { key:'ere_available', label:'ERE', width:'44px' },
-];
+function adbCtx(showMajor) {
+  return { admin: true, showMajor, majorMap: ADMISSION_MAJORS, open: adbOpen, toggleFn: 'adbToggleGroup',
+    filterActive: adgFilterActive(adbFilterObj()), editFn: 'openAdmissionEdit', delFn: 'adbDeleteRow' };
+}
 
 function renderAdmissionTable() {
   const thead = document.getElementById('admissionThead');
@@ -317,7 +297,6 @@ function renderAdmissionTable() {
   if (!thead || !tbody) return;
 
   const showMajorCol = adbSelectedMajors.length !== 1;
-  const filtered = filterAdmissionSchools();
 
   // ERE按钮：只在选了经济学时显示
   const ereContainer = document.getElementById('adbEreContainer');
@@ -335,104 +314,30 @@ function renderAdmissionTable() {
   }
 
   const countEl = document.getElementById('adbResultCount');
+  const more = document.getElementById('adbMoreBox');
   if (!cachedAdmissionSchools.length) {
     if (countEl) countEl.textContent = '请点击上方专业查看数据';
     thead.innerHTML = '';
-    tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;padding:40px;color:var(--text-3)">← 请先选择专业</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--text-3)">← 请先选择专业</td></tr>';
+    if (more) more.innerHTML = '';
     return;
   }
-  if (countEl) countEl.innerHTML = `筛选结果 <strong style="color:var(--text)">${filtered.length}</strong> 条`;
+  const groups = adbGroups();
+  const nRows = groups.reduce((n, g) => n + g.hit.size, 0);
+  if (countEl) countEl.innerHTML = `筛选结果 <strong style="color:var(--text)">${groups.length}</strong> 所（コース）· ${nRows} 次出愿 <span style="color:var(--text-3)">· 点一行展开出愿明细</span>`;
 
-  // 构建列头（含排序箭头和筛选下拉）
-  const cols = showMajorCol ? [{ key:'major', label:'专业', width:'72px' }, ...ADB_COLS] : ADB_COLS;
-  thead.innerHTML = `<tr>${cols.map(c => {
-    const sortArrow = adbSortCol===c.key ? (adbSortDir===1?'▲':'▼') : '⇅';
-    // 收集该列的唯一值用于筛选
-    const uniqueVals = [...new Set(cachedAdmissionSchools.map(s => s[c.key]||'').filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ja'));
-    const hasFilter = adbColFilters[c.key] && adbColFilters[c.key].size;
-    const filterIcon = uniqueVals.length > 1 ? `<span onclick="event.stopPropagation();openColFilter('${c.key}',this)" style="cursor:pointer;color:${hasFilter?'var(--accent)':'var(--text-3)'};margin-left:3px;font-size:10px">▾</span>` : '';
-    return `<th style="min-width:${c.width};cursor:pointer;user-select:none;white-space:nowrap" onclick="adbSort('${c.key}')">
-      ${c.label} <span style="font-size:9px;color:var(--text-3)">${sortArrow}</span>${filterIcon}
-    </th>`;
-  }).join('')}<th style="width:50px"></th></tr>`;
-
-  if (!filtered.length) { tbody.innerHTML = `<tr><td colspan="${cols.length+1}" style="text-align:center;padding:20px;color:var(--text-3)">暂无数据</td></tr>`; return; }
-
-  const engColor = v => v==='必須'?'var(--accent)':v==='任意'?'var(--warn)':'var(--text-3)';
-
-  tbody.innerHTML = filtered.map(s => {
-    const majorCell = showMajorCol ? `<td style="font-size:10px;color:var(--text-2)">${ADMISSION_MAJORS[s.major]||s.major}</td>` : '';
-    return `<tr style="cursor:pointer" onclick="openAdmissionEdit('${s.id}')">
-      ${majorCell}
-      <td style="font-weight:500">${s.university||''}</td>
-      <td><span style="font-size:10px;background:${s.type==='国立'?'#e8f0fb':s.type==='公立'?'#e8f5e9':'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 4px">${s.type||''}</span></td>
-      <td>${s.faculty||''}</td>
-      <td>${s.department||''}</td>
-      <td style="color:var(--text-2)">${s.admission_type||''}</td>
-      <td style="color:var(--text-2)">${s.doc_review_period||''}</td>
-      <td>${s.application_period||''}</td>
-      <td style="color:var(--text-2)">${s.written_exam||''}</td>
-      <td style="color:var(--text-2)">${s.oral_exam||''}</td>
-      <td style="color:var(--text-2)">${s.result_date||''}</td>
-      <td><span style="font-weight:600;color:${engColor(s.english_required)}">${s.english_required||'-'}</span></td>
-      <td><span style="font-weight:600;color:${engColor(s.japanese_required)}">${s.japanese_required||'-'}</span></td>
-      <td style="color:var(--text-2)">${s.recommendation||'-'}</td>
-      <td style="color:var(--text-2)">${s.thesis||'-'}</td>
-      <td style="color:var(--text-2);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.exam_style||''}</td>
-      <td style="text-align:center">${s.ere_available?'<span style="font-size:11px;color:var(--ok);font-weight:700">✓</span>':''}</td>
-      <td onclick="event.stopPropagation()" style="white-space:nowrap">
-        ${s.guideline_url?`<a href="${s.guideline_url}" target="_blank" style="font-size:10px;color:var(--accent);margin-right:4px">要项</a>`:''}
-        ${s.past_exam_url?`<a href="${s.past_exam_url}" target="_blank" style="font-size:10px;color:var(--accent)">过去问</a>`:''}
-      </td>
-    </tr>`;
-  }).join('');
+  const ctx = adbCtx(showMajorCol);
+  thead.innerHTML = adgHeadHtml(ctx);
+  if (!groups.length) { tbody.innerHTML = `<tr><td colspan="${adgColCount(ctx)}" style="text-align:center;padding:20px;color:var(--text-3)">暂无数据</td></tr>`; if (more) more.innerHTML = ''; return; }
+  adbGroupsView = groups.slice(0, adbShown);
+  tbody.innerHTML = adgBodyHtml(adbGroupsView, ctx);
+  if (more) more.innerHTML = groups.length > adbShown
+    ? `<button class="btn btn-outline btn-sm" onclick="adbShown+=30;renderAdmissionTable()">显示更多（还有 ${groups.length - adbShown} 所）</button>` : '';
 }
 
-function adbSort(col) {
-  if (adbSortCol === col) adbSortDir *= -1;
-  else { adbSortCol = col; adbSortDir = 1; }
-  renderAdmissionTable();
-}
-
-// 列筛选下拉
-function openColFilter(col, btn) {
-  document.querySelectorAll('.adb-col-filter-popup').forEach(p => p.remove());
-  const uniqueVals = [...new Set(cachedAdmissionSchools.map(s => s[col]||'').filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ja'));
-  const current = adbColFilters[col] || new Set();
-  const popup = document.createElement('div');
-  popup.className = 'adb-col-filter-popup';
-  popup.style.cssText = 'position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:8px;z-index:9999;min-width:140px;max-height:260px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)';
-  popup.innerHTML = `
-    <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-      <span style="font-size:11px;font-weight:600">筛选</span>
-      <button onclick="clearColFilter('${col}')" style="font-size:10px;background:none;border:none;color:var(--accent);cursor:pointer">清除</button>
-    </div>
-    ${uniqueVals.map(v=>`
-      <label style="display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 0;cursor:pointer">
-        <input type="checkbox" ${current.has(v)?'checked':''} onchange="toggleColFilter('${col}','${v.replace(/'/g,"\\'")}',this.checked)" style="accent-color:var(--accent)">
-        ${v}
-      </label>
-    `).join('')}`;
-  const rect = btn.getBoundingClientRect();
-  popup.style.top = (rect.bottom + window.scrollY + 4) + 'px';
-  popup.style.left = (rect.left + window.scrollX) + 'px';
-  document.body.appendChild(popup);
-  setTimeout(() => document.addEventListener('click', function closeFilter(e) {
-    if (!popup.contains(e.target)) { popup.remove(); document.removeEventListener('click', closeFilter); }
-  }), 10);
-}
-
-function toggleColFilter(col, val, checked) {
-  if (!adbColFilters[col]) adbColFilters[col] = new Set();
-  if (checked) adbColFilters[col].add(val);
-  else adbColFilters[col].delete(val);
-  if (!adbColFilters[col].size) delete adbColFilters[col];
-  renderAdmissionTable();
-}
-
-function clearColFilter(col) {
-  delete adbColFilters[col];
-  document.querySelectorAll('.adb-col-filter-popup').forEach(p => p.remove());
+function adbToggleGroup(i) {
+  const g = adbGroupsView[i]; if (!g) return;
+  if (adbOpen.has(g.key)) adbOpen.delete(g.key); else adbOpen.add(g.key);
   renderAdmissionTable();
 }
 
@@ -443,9 +348,12 @@ function openAdmissionAdd() {
   document.getElementById('adbDeleteBtn').style.display = 'none';
   ['id','university','faculty','department','course','admission_type','doc_review_period',
    'application_period','written_exam','oral_exam','result_date','english_detail',
-   'japanese_detail','exam_style','notes','guideline_url','past_exam_url'].forEach(f => {
+   'japanese_detail','exam_style','notes','guideline_url','past_exam_url','staff_url','other_docs'].forEach(f => {
     const el = document.getElementById('adb_' + f); if (el) el.value = '';
   });
+  ADG_EN_TESTS.forEach(k => { const el = document.getElementById('adb_et_' + k); if (el) el.value = ''; });
+  ADG_JP_TESTS.forEach(k => { const el = document.getElementById('adb_jt_' + k); if (el) el.value = ''; });
+  const ere0 = document.getElementById('adb_ere_available'); if (ere0) ere0.checked = false;
   ['major','type','english_required','japanese_required','recommendation','thesis'].forEach(f => {
     const el = document.getElementById('adb_' + f); if (el) el.value = '';
   });
@@ -469,8 +377,12 @@ function openAdmissionEdit(id) {
     recommendation: s.recommendation, thesis: s.thesis,
     exam_style: s.exam_style, notes: s.notes,
     guideline_url: s.guideline_url, past_exam_url: s.past_exam_url,
+    staff_url: s.staff_url, other_docs: s.other_docs,
     ere_available: s.ere_available,
   };
+  const et = adgTestsOf(s, 'en'), jt = adgTestsOf(s, 'jp');
+  ADG_EN_TESTS.forEach(k => { const el = document.getElementById('adb_et_' + k); if (el) el.value = et[k] || ''; });
+  ADG_JP_TESTS.forEach(k => { const el = document.getElementById('adb_jt_' + k); if (el) el.value = jt[k] || ''; });
   for (const [k, v] of Object.entries(fields)) {
     const el = document.getElementById('adb_' + k);
     if (!el) continue;
@@ -482,6 +394,13 @@ function openAdmissionEdit(id) {
 
 function closeAdmissionEdit() {
   document.getElementById('admissionEditModal').style.display = 'none';
+}
+
+// 编辑框里的语言明细 → {考试:值}（空格子不写；全空 = null）
+function adbCollectTests(prefix, keys) {
+  const o = {};
+  keys.forEach(k => { const v = (document.getElementById('adb_' + prefix + '_' + k)?.value || '').trim(); if (v) o[k] = v; });
+  return Object.keys(o).length ? o : null;
 }
 
 async function saveAdmissionSchool() {
@@ -510,6 +429,10 @@ async function saveAdmissionSchool() {
     notes: document.getElementById('adb_notes').value,
     guideline_url: document.getElementById('adb_guideline_url').value,
     past_exam_url: document.getElementById('adb_past_exam_url').value,
+    staff_url: document.getElementById('adb_staff_url').value,
+    other_docs: document.getElementById('adb_other_docs').value,
+    english_tests: adbCollectTests('et', ADG_EN_TESTS),
+    japanese_tests: adbCollectTests('jt', ADG_JP_TESTS),
     ere_available: document.getElementById('adb_ere_available')?.checked || false,
     updated_at: new Date().toISOString(),
   };
@@ -529,13 +452,18 @@ async function saveAdmissionSchool() {
 }
 
 async function deleteAdmissionSchool() {
-  if (!adbEditId || !confirm('确定删除这条记录？')) return;
+  if (!adbEditId) return;
+  if (await adbDeleteRow(adbEditId)) closeAdmissionEdit();
+}
+// 删除一条出愿（明细里的「删除」和编辑框共用）。返回是否已删除
+async function adbDeleteRow(id) {
+  if (!confirm('确定删除这条记录？')) return false;
   try {
-    await sb(`/rest/v1/admission_schools?id=eq.${adbEditId}`, 'DELETE');
-    cachedAdmissionSchools = cachedAdmissionSchools.filter(x => x.id !== adbEditId);
-    closeAdmissionEdit();
+    await sb(`/rest/v1/admission_schools?id=eq.${encodeURIComponent(id)}`, 'DELETE');
+    cachedAdmissionSchools = cachedAdmissionSchools.filter(x => x.id !== id);
     renderAdmissionTable();
-  } catch(e) { alert('删除失败：' + e.message); }
+    return true;
+  } catch(e) { alert('删除失败：' + e.message); return false; }
 }
 
 // ── 导出 Excel ──
@@ -572,6 +500,9 @@ function exportAdmissionExcel() {
     row['英語成績'] = s.english_required;
     row['日本語成績'] = s.japanese_required;
     if (s.major === 'keizai') row['ERE可代替笔试'] = s.ere_available ? '是' : '';
+    const et = adgTestsOf(s, 'en'), jt = adgTestsOf(s, 'jp');
+    ADG_EN_TESTS.forEach(k => { row['英語_' + k] = et[k] || ''; });
+    ADG_JP_TESTS.forEach(k => { row['日本語_' + k] = jt[k] || ''; });
     return row;
   });
   const ws = XLSX.utils.json_to_sheet(rows);
@@ -592,117 +523,14 @@ function exportAdmissionHtml() {
   const filterLine = buildAdmissionFilterDesc({
     english: adbEnglish, japanese: adbJapanese,
     search: adbSearch, monthFrom: adbMonthFrom, monthTo: adbMonthTo,
+    engTests: adbEngTests, jpTests: adbJpTests,
     filtered,
   });
   exportAdmissionHtmlShared(filtered, { majorLabel, filterLine, showMajor, majorMap: ADMISSION_MAJORS });
 }
 
 
-// ── 导入 Excel ──
-let admissionImportData = [];
-
-function openAdmissionImport() {
-  admissionImportData = [];
-  document.getElementById('admissionImportFile').value = '';
-  document.getElementById('admissionImportPreview').innerHTML = '';
-  document.getElementById('admissionImportModal').style.display = 'flex';
-}
-function closeAdmissionImport() {
-  document.getElementById('admissionImportModal').style.display = 'none';
-}
-
-document.addEventListener('change', function(e) {
-  if (e.target.id !== 'admissionImportFile') return;
-  const file = e.target.files[0];
-  if (!file) return;
-  const preview = document.getElementById('admissionImportPreview');
-  preview.innerHTML = '解析中…';
-  const reader = new FileReader();
-  reader.onload = function(ev) {
-    try {
-      const wb = XLSX.read(ev.target.result, { type: 'array' });
-      admissionImportData = [];
-      const results = [];
-      wb.SheetNames.forEach(sheetName => {
-        const major = SHEET_TO_MAJOR[sheetName];
-        if (!major) { results.push(`⚠ 跳过：${sheetName}`); return; }
-        const ws = wb.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
-        let count = 0;
-        const normalizeReq = v => {
-          if (!v) return '不要';
-          v = v.toString().trim();
-          if (v === '必要' || v === '必須') return '必須';
-          if (v === '任意') return '任意';
-          if (v === '不要') return '不要';
-          return v || '不要';
-        };
-        rows.forEach(row => {
-          const university = (row['大学名'] || row['大学'] || '').toString().trim();
-          if (!university) return;
-          admissionImportData.push({
-            id: `as-${Date.now()}-${Math.random().toString(36).slice(2,6)}-${count}`,
-            major, university,
-            type: (row['設置主体'] || '').toString().trim(),
-            faculty: (row['研究科名'] || '').toString().trim(),
-            department: (row['専攻名'] || '').toString().trim(),
-            course: (row['コース名'] || '').toString().trim(),
-            admission_type: (row['出願類型'] || '').toString().trim(),
-            doc_review_period: (row['資格審査'] || row['資格審査期間'] || '').toString().trim(),
-            application_period: (row['出願期間'] || '').toString().trim(),
-            written_exam: (row['筆記試験時間'] || '').toString().trim(),
-            oral_exam: (row['口述試験時間'] || '').toString().trim(),
-            result_date: (row['合格発表時間'] || '').toString().trim(),
-            english_required: normalizeReq(row['英語成績']),
-            english_detail: (row['英語詳細'] || '').toString().trim(),
-            japanese_required: normalizeReq(row['日本語成績']),
-            japanese_detail: (row['日本語詳細'] || '').toString().trim(),
-            recommendation: normalizeReq(row['推薦状']),
-            thesis: normalizeReq(row['卒業論文']),
-            other_docs: (row['その他書類'] || '').toString().trim(),
-            exam_style: (row['試験方式'] || '').toString().trim(),
-            notes: (row['備考'] || '').toString().trim(),
-            guideline_url: (row['募集要項URL'] || '').toString().trim(),
-            past_exam_url: (row['過去問URL'] || '').toString().trim(),
-          });
-          count++;
-        });
-        results.push(`✓ ${sheetName}（${ADMISSION_MAJORS[major]||major}）：${count} 条`);
-      });
-      preview.innerHTML = `<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;line-height:2">${results.join('<br>')}</div><div style="margin-top:6px;color:var(--text-3)">共 <strong>${admissionImportData.length}</strong> 条待导入</div>`;
-    } catch(err) {
-      preview.innerHTML = `<span style="color:var(--danger)">解析失败：${err.message}</span>`;
-    }
-  };
-  reader.readAsArrayBuffer(file);
-});
-
-async function confirmAdmissionImport() {
-  if (!admissionImportData.length) { alert('请先选择文件'); return; }
-  const btn = document.getElementById('admissionImportBtn');
-  btn.textContent = '导入中…'; btn.disabled = true;
-  let successCount = 0;
-  try {
-    for (let i = 0; i < admissionImportData.length; i += 100) {
-      const batch = admissionImportData.slice(i, i + 100);
-      btn.textContent = `导入中… ${i}/${admissionImportData.length}`;
-      await sb('/rest/v1/admission_schools', 'POST', batch);
-      successCount += batch.length;
-    }
-    closeAdmissionImport();
-    alert(`导入完成：成功 ${successCount} 条`);
-    // 刷新 major counts
-    const majorRows = await sb('/rest/v1/admission_schools?select=major&limit=10000').catch(()=>[]);
-    cachedAdmissionMajorCounts = {};
-    majorRows.forEach(r => { cachedAdmissionMajorCounts[r.major] = (cachedAdmissionMajorCounts[r.major]||0)+1; });
-    renderAdmissionDbPage(document.getElementById('mainContent'));
-  } catch(e) {
-    alert(`导入中断（已成功 ${successCount} 条）：${e.message}`);
-    if (successCount > 0) renderAdmissionDbPage(document.getElementById('mainContent'));
-  } finally {
-    btn.textContent = '确认导入'; btn.disabled = false;
-  }
-}
+// 导入（补缺）见 admin/admission-import.js
 
 
 // ── 共享学校列表给学生 ──
