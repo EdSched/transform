@@ -309,7 +309,7 @@ async function confirmAdmissionImport() {
     }
     closeAdmissionImport();
     alert(`补缺完成：补了 ${okRows} 行 / ${okFields} 个字段，新增 ${addOk} 行。`);
-    const majorRows = await sbAll('/rest/v1/admission_schools?select=major').catch(() => []);
+    const majorRows = await sbAll('/rest/v1/admission_schools?select=major&order=id.asc').catch(() => []);
     cachedAdmissionMajorCounts = {};
     majorRows.forEach(r => { cachedAdmissionMajorCounts[r.major] = (cachedAdmissionMajorCounts[r.major] || 0) + 1; });
     if (adbSelectedMajors.length) await loadAdbData();
