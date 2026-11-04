@@ -9,7 +9,7 @@
 let cst = {
   loaded: false, err: '', list: [], cur: null, step: 1, show: false, q: '', saving: '',
   adm: [], admKey: '', admLoading: false, admLimit: 30,
-  courses: null, pkgs: null, rules: [], files: null, tiers: null, cases: null, faqs: null, intro: null, introKey: '',
+  courses: null, pkgs: null, rules: [], common: null, commonDom: '', profiles: null, tiers: null, cases: null, faqs: null, intro: null, introKey: '',
   open: {}, overlay: '', faqQ: '', crsQ: '', crsLimit: 30, dirty: {}, timer: null,
 };
 
@@ -349,19 +349,37 @@ async function cstLoadIntro() {
     ]);
     cst.intro = { blocks: blocks || [], videos: videos || [] };
   } catch (e) { cst.intro = { blocks: [], videos: [] }; }
-  if (cst.step === 2) cstRender();
-}
-async function cstLoadFiles() {
-  if (cst.files) return; cst.files = [];
-  try { cst.files = await sbAll('/rest/v1/consult_files?published=is.true&select=*&order=sort.asc,created_at.asc'); } catch (e) { cst.files = []; }
   if (cst.step === 2 || cst.step === 3) cstRender();
 }
-// 讲师试讲视频：老师姓名对得上，且（关键词为空或课程名含关键词）
-function cstTrials(course) {
-  const t = String(course.teacher || '').replace(/老师|先生/g, '');
-  return (cst.files || []).filter(f => f.kind === 'trial' && f.teacher && t && (t.includes(String(f.teacher).replace(/老师|先生/g, '')) || String(f.teacher).includes(t)) && (!f.keyword || String(course.name || '').includes(f.keyword)));
+// 通用宣传（宣传册转好的内容，按领域；表 promo_common，和「宣传相关 → 通用宣传」同一份）
+async function cstLoadCommon() {
+  const dom = admissionMajorDomain(cst.cur && cst.cur.target_major); if (!dom || (cst.common && cst.commonDom === dom)) return;
+  cst.commonDom = dom; cst.common = [];
+  try { cst.common = (await sbAll('/rest/v1/promo_common?or=(published.is.null,published.is.true)&select=*&order=sort_order.asc,updated_at.asc')).filter(r => r.domain === dom && salesDomOkMe(r.domain)); } catch (e) { cst.common = []; }
+  if (cst.step === 2) cstRender();
 }
-const cstTrialLinks = c => cstTrials(c).map(f => `<a href="${cstE(f.url)}" target="_blank" style="font-size:10px;color:var(--accent);margin-left:6px">试讲视频：${cstE(f.title)}</a>`).join('');
+// 讲师资料：沿用「讲师信息」（teacher_profiles），按课程安排里的老师名对上
+async function cstLoadProfiles() {
+  if (cst.profiles) return; cst.profiles = [];
+  try {
+    const [pf, th] = await Promise.all([sbAll('/rest/v1/teacher_profiles?select=*&order=sort_order.asc,created_at.asc'), sb('/rest/v1/teachers?select=name,public_name').catch(() => [])]);
+    cst.profiles = pf.filter(p => salesDomOkMe(profileDomain(p)));
+    if (typeof tsPubMap !== 'undefined' && !tsPubMap) { tsPubMap = {}; (th || []).forEach(t => { const pub = String(t.public_name || '').trim(); if (pub) tsPubMap[t.name] = pub; }); }
+  } catch (e) { cst.profiles = []; }
+  if (cst.step === 3) cstRender();
+}
+function cstProfilesOf(teacher) {
+  const nrm = x => String(x || '').replace(/老师|先生|様|さん/g, '').trim(), names = String(teacher || '').split(/[、,，\/\s]+/).map(nrm).filter(Boolean);
+  const out = [], seen = new Set();
+  (cst.profiles || []).forEach(p => { if (names.includes(nrm(p.name)) || (p.real_name && names.includes(nrm(p.real_name)))) { if (!seen.has(p.name)) { seen.add(p.name); out.push(p); } } });
+  return out;
+}
+function cstTeacherCard(x) {
+  const profs = cstProfilesOf(x.teacher); if (!profs.length || typeof tsCardsGridHtml !== 'function') return '';
+  const key = 'tc_' + x.id, open = key in cst.open ? cst.open[key] : false;
+  return `<span class="filter-chip${open ? ' active' : ''}" style="margin-left:6px" onclick="cst.open['${cstJ(key)}']=${!open};cstRender()">讲师资料</span>` +
+    (open ? `<div style="flex-basis:100%;margin-top:6px">${cst.show ? tsCardsGridHtml(profs, '', false) : tsInfoHtml(profs)}</div>` : '');
+}
 async function cstLoadCases() {
   if (cst.cases) return;
   cst.cases = [];
@@ -371,9 +389,12 @@ async function cstLoadCases() {
 function cstStep2() {
   const l = cst.cur;
   if (!l.target_major) return '<div class="empty" style="padding:30px">请先在第 ① 步选择「目标专业」。</div>';
-  cstLoadAdm(); cstLoadIntro(); cstLoadCases(); cstLoadTiers(); cstLoadFiles();
+  cstLoadAdm(); cstLoadIntro(); cstLoadCases(); cstLoadTiers(); cstLoadCommon();
   const note = (l.target_level === 'gakubu' || l.arts_sci === '理科' || l.arts_sci === '艺术') ? `<div style="background:#f6edd2;color:#8a6a1a;font-size:11px;padding:7px 10px;border-radius:3px;margin-bottom:10px">出愿数据库目前只覆盖大学院文科，学部 / 理科 / 艺术的院校列表可能不全。</div>` : '';
   return note + cstSec('s2a', `专业介绍：${cstE(cstMajorName(l.target_major))}`, cstIntroHtml, false) +
+    cstSec('s2e', '课程介绍', () => cstPromoBlocks('course'), false) +
+    cstSec('s2f', '讲师介绍', () => cstPromoBlocks('lecturer'), false) +
+    cstSec('s2g', `通用宣传（${cstE(admissionMajorDomain(l.target_major) || '')}）`, cstCommonHtml, false, '宣传册内容') +
     cstSec('s2b', '可考虑的院校', cstAdmHtml, true, '具备报考资格 ≠ 能够合格') +
     cstSec('s2c', `已确定的目标（${(l.goals || []).length}）`, cstGoalsHtml, true) +
     cstSec('s2d', '相关合格案例', cstCasesHtml, false);
@@ -386,10 +407,26 @@ function cstIntroHtml() {
   const abil = intro.filter(isAbil), cross = intro.filter(b => !isAbil(b) && isCross(b)), rest = intro.filter(b => !isAbil(b) && !isCross(b));
   const blk = (b, mark) => `<div style="margin-bottom:12px;${mark ? 'border-left:3px solid var(--accent);padding-left:10px' : ''}"><div style="font-weight:600;font-size:12px;margin-bottom:4px">${cstE(b.title)}</div><div style="font-size:12px;line-height:1.9;color:var(--text-2)">${md(b.body)}</div></div>`;
   const fixed = (label, arr, title) => arr.length ? arr.map(b => blk(b, true)).join('') : `<div style="font-size:11px;color:var(--text-3);margin-bottom:10px;border-left:3px solid var(--border);padding-left:10px">「${label}」还没有填写（管理员在「宣传介绍」的专业介绍里新增一条，标题写「${title}」）</div>`;
-  const brochures = (cst.files || []).filter(f => f.kind === 'brochure' && f.major === cst.cur.target_major);
+  const vk = { intro: '学科介绍', lesson: '正课体验', other: '其他' };
   return fixed('需要的语言与专业能力', abil, '需要的语言与专业能力') + (cst.cur.major_match === '跨专业' || cross.length ? fixed('跨专业要补什么', cross, '跨专业要补什么') : '') +
     rest.map(b => blk(b)).join('') +
-    ((videos.length || brochures.length) ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${videos.map(v => `<a href="${cstE(v.url)}" target="_blank" class="filter-chip" style="text-decoration:none">视频：${cstE(v.title)}${v.duration ? '（' + cstE(v.duration) + '）' : ''}</a>`).join('')}${brochures.map(f => `<a href="${cstE(f.url)}" target="_blank" class="filter-chip" style="text-decoration:none">宣传册：${cstE(f.title)}</a>`).join('')}</div>` : (!intro.length ? '<div style="font-size:11px;color:var(--text-3)">这个专业在「宣传相关」里还没有介绍内容。</div>' : ''));
+    (videos.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${videos.map(v => `<a href="${cstE(v.url)}" target="_blank" class="filter-chip" style="text-decoration:none">${cstE(vk[v.kind] || '视频')}：${cstE(v.title)}${v.duration ? '（' + cstE(v.duration) + '）' : ''}</a>`).join('')}</div>` : (!intro.length ? '<div style="font-size:11px;color:var(--text-3)">这个专业在「宣传相关」里还没有介绍内容。</div>' : ''));
+}
+// 课程介绍 / 讲师介绍：和「宣传相关」同一套版式（shared/promo-render.js）
+function cstPromoBlocks(section) {
+  if (!cst.intro) return '<div style="font-size:11px;color:var(--text-3)">加载中…</div>';
+  const list = cst.intro.blocks.filter(b => b.section === section);
+  if (!list.length) return '<div style="font-size:11px;color:var(--text-3)">这个专业在「宣传相关」里还没有这部分内容。</div>';
+  if (typeof pmrEnsureCss !== 'function') return list.map(b => `<div style="margin-bottom:10px"><b>${cstE(b.title)}</b></div>`).join('');
+  pmrEnsureCss();
+  return `<div class="pm">${section === 'course' ? pmrCoursesHtml(list, {}) : pmrLecturersHtml(list)}</div>`;
+}
+function cstCommonHtml() {
+  if (!cst.common) return '<div style="font-size:11px;color:var(--text-3)">加载中…</div>';
+  if (!cst.common.length) return '<div style="font-size:11px;color:var(--text-3)">该领域暂无通用宣传内容。</div>';
+  const md = typeof prMd === 'function' ? prMd : cstE;
+  return cst.common.map(r => { const k = 'cm_' + r.id, open = k in cst.open ? cst.open[k] : false;
+    return `<div style="border:1px solid var(--border-light);border-radius:3px;margin-bottom:6px"><div onclick="cst.open['${cstJ(k)}']=${!open};cstRender()" style="padding:8px 12px;cursor:pointer;font-size:12px;font-weight:600">${cstE(r.title)} <span style="font-size:10px;font-weight:400;color:var(--text-3)">${open ? '▾' : '▸'}</span></div>${open ? `<div style="padding:0 12px 10px;font-size:12px;line-height:1.9;color:var(--text-2)">${md(r.body)}</div>` : ''}</div>`; }).join('');
 }
 function cstAdmHtml() {
   const l = cst.cur, f = cstFilters(l);
@@ -515,7 +552,7 @@ function cstPriceLines() {
   return { lines, total: lines.reduce((s, x) => s + x.yen, 0) };
 }
 function cstStep3() {
-  const l = cst.cur; cstLoadCourses(); cstLoadAdm(); cstLoadFiles();
+  const l = cst.cur; cstLoadCourses(); cstLoadAdm(); cstLoadProfiles(); cstLoadIntro();
   if (!cst.courses) return '<div class="empty">加载中…</div>';
   return cstSec('s3g', '需要补足的差距与推荐课程', cstGapHtml, true, '按目标校的要求自动列出') +
     cstSec('s3a', `选中的课程（${cstCoursesObj(l).items.length}）`, cstPickedHtml, true) +
@@ -537,10 +574,11 @@ function cstGapHtml() {
   }).join('');
 }
 function cstPickedHtml() {
-  const items = cstCoursesObj(cst.cur).items;
-  if (!items.length) return '<div style="font-size:11px;color:var(--text-3)">还没有选课程。在下面「添加课程」里选；每门课写一句选择理由，方便后面生成方案。</div>';
-  return items.map(x => `<div style="border:1px solid var(--border-light);border-radius:3px;padding:8px 12px;margin-bottom:6px">
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;font-weight:600">${cstE(x.name)}</span><span style="font-size:10px;color:var(--text-3)">${cstE([x.teacher, x.start && (x.start + ' 起')].filter(Boolean).join(' · '))}</span>${cstTrialLinks(x)}
+  const items = cstCoursesObj(cst.cur).items, lv = ((cst.intro && cst.intro.videos) || []).filter(v => v.kind === 'lesson');
+  const lvHtml = lv.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"><span style="font-size:10px;color:var(--text-3);align-self:center">试听 / 正课体验视频</span>${lv.map(v => `<a href="${cstE(v.url)}" target="_blank" class="filter-chip" style="text-decoration:none">${cstE(v.title)}${v.duration ? '（' + cstE(v.duration) + '）' : ''}</a>`).join('')}</div>` : '';
+  if (!items.length) return lvHtml + '<div style="font-size:11px;color:var(--text-3)">还没有选课程。在下面「添加课程」里选；每门课写一句选择理由，方便后面生成方案。</div>';
+  return lvHtml + items.map(x => `<div style="border:1px solid var(--border-light);border-radius:3px;padding:8px 12px;margin-bottom:6px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;font-weight:600">${cstE(x.name)}</span><span style="font-size:10px;color:var(--text-3)">${cstE([x.teacher, x.start && (x.start + ' 起')].filter(Boolean).join(' · '))}</span>${cstTeacherCard(x)}
     <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="cstCrsDel('${cstJ(x.id)}')">删除</button></div>
     <input placeholder="选择理由（例如：补足计划书、日语 N1）" value="${cstE(x.reason)}" onchange="cstCrsReason('${cstJ(x.id)}',this.value)" style="width:100%;margin-top:6px;font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;box-sizing:border-box"></div>`).join('');
 }
@@ -550,7 +588,7 @@ function cstCrsListHtml() {
   let rows = cst.courses.filter(c => !picked.includes(c.id) && (q ? [c.name, c.teacher, c.major].join(' ').toLowerCase().includes(q) : sameMajor(c)));
   const total = rows.length; rows = rows.slice(0, cst.crsLimit);
   return `<input placeholder="搜索课程 / 老师（不搜索时只显示目标专业的课程）" value="${cstE(cst.crsQ)}" onchange="cst.crsQ=this.value;cst.crsLimit=30;cstRender()" style="width:100%;font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:3px;box-sizing:border-box;margin-bottom:8px">
-    ${rows.map(c => `<div style="display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border-light);padding:6px 2px;font-size:12px"><div style="flex:1;min-width:0"><div style="font-weight:600">${cstE(c.name)}</div><div style="font-size:10px;color:var(--text-3)">${cstE([c.teacher, c.weekdays && ('周' + c.weekdays), c.time_range, c.delivery, c.first_session_date && (c.first_session_date + ' 起'), c.total_sessions && (c.total_sessions + ' 次')].filter(Boolean).join(' · '))}${cstTrialLinks(c)}</div></div><button class="btn btn-outline btn-sm" onclick="cstCrsAdd('${cstJ(c.id)}')">＋ 添加</button></div>`).join('') || '<div style="font-size:11px;color:var(--text-3)">没有找到课程。</div>'}
+    ${rows.map(c => `<div style="display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border-light);padding:6px 2px;font-size:12px"><div style="flex:1;min-width:0"><div style="font-weight:600">${cstE(c.name)}</div><div style="font-size:10px;color:var(--text-3)">${cstE([c.teacher, c.weekdays && ('周' + c.weekdays), c.time_range, c.delivery, c.first_session_date && (c.first_session_date + ' 起'), c.total_sessions && (c.total_sessions + ' 次')].filter(Boolean).join(' · '))}</div></div><button class="btn btn-outline btn-sm" onclick="cstCrsAdd('${cstJ(c.id)}')">＋ 添加</button></div>`).join('') || '<div style="font-size:11px;color:var(--text-3)">没有找到课程。</div>'}
     ${total > cst.crsLimit ? `<div onclick="cst.crsLimit+=30;cstRender()" style="text-align:center;padding:10px;font-size:11px;color:var(--accent);cursor:pointer">显示更多（还有 ${total - cst.crsLimit} 门）</div>` : ''}`;
 }
 function cstPriceHtml() {
