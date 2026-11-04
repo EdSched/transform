@@ -1270,7 +1270,7 @@ async function renderPage(){
     } else if(curPage==='admissiondb'){
       if(typeof loadAdmissionMajorsFromDB==='function') await loadAdmissionMajorsFromDB();
       // 只拉 major 字段用于渲染专业筛选按钮，点专业后再拉完整数据
-      const majorRows=await sb('/rest/v1/admission_schools?select=major&limit=10000').catch(()=>[]);
+      const majorRows=await sbAll('/rest/v1/admission_schools?select=major&order=id.asc').catch(()=>[]);
       cachedAdmissionSchools=[];
       cachedAdmissionMajorCounts={};
       majorRows.forEach(r=>{ cachedAdmissionMajorCounts[r.major]=(cachedAdmissionMajorCounts[r.major]||0)+1; });

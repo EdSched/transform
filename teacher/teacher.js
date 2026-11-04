@@ -3141,7 +3141,7 @@ async function teacherAdbLoad() {
   const f = `major=in.(${teacherAdbMajors.map(m=>`"${m}"`).join(',')})`;
   // 老师端不取：備考、過去問、その他書類、教员链接（只给管理端）
   const cols = 'id,major,university,type,faculty,department,course,admission_type,doc_review_period,application_period,written_exam,oral_exam,result_date,english_required,english_detail,english_tests,japanese_required,japanese_detail,japanese_tests,recommendation,thesis,exam_style,guideline_url,ere_available';
-  teacherAdbData = await sb(`/rest/v1/admission_schools?select=${cols}&${f}&order=university.asc&limit=5000`).catch(()=>[]);
+  teacherAdbData = await sbAll(`/rest/v1/admission_schools?select=${cols}&${f}&order=university.asc,id.asc`).catch(()=>[]);
   teacherAdbOpen = new Set(); teacherAdbShown = 30;
   teacherAdbRender();
 }

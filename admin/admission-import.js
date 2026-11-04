@@ -190,16 +190,24 @@ async function aimpOnFile(input) {
     const dbBy = {};
     dbRows.forEach(r => { (dbBy[r.major] = dbBy[r.major] || []).push(r); });
     Object.keys(xlByMajor).forEach(major => {
-      // Excel 内完全相同的行（比如专升硕 sheet 重复）只算一行
-      const seen = new Set(), xl = [];
-      xlByMajor[major].forEach(x => { const sig = JSON.stringify(x.row); if (!seen.has(sig)) { seen.add(sig); xl.push(x); } });
+      // 只去掉「不同 sheet 之间」完全相同的行（比如经营学 与 经营学专升硕）；同一个 sheet 里重复的行是真实的多条，要一一对应
+      const firstSheet = new Map(), xl = [];
+      xlByMajor[major].forEach(x => {
+        const sig = JSON.stringify(x.row);
+        if (firstSheet.has(sig) && firstSheet.get(sig) !== x.sheet) return;
+        firstSheet.set(sig, x.sheet); xl.push(x);
+      });
       const dbMap = new Map();
       (dbBy[major] || []).forEach(r => { const k = aimpKey(major, r); (dbMap.get(k) || dbMap.set(k, []).get(k)).push(r); });
       const used = new Set();
+      // 同一个 key 有多条时，优先对上日程最像的那条（出願期間等一致），避免明细补到别的出愿上
+      const sim = (db, row) => ['application_period', 'doc_review_period', 'written_exam', 'oral_exam', 'result_date']
+        .reduce((n, f) => n + (!aimpEmpty(row[f]) && adgNorm(db[f]) === adgNorm(row[f]) ? 1 : 0), 0);
       xl.forEach(x => {
         const k = aimpKey(major, x.row);
-        const list = dbMap.get(k) || [];
-        const db = list.find(r => !used.has(r.id));
+        const list = (dbMap.get(k) || []).filter(r => !used.has(r.id));
+        let db = null, best = -1;
+        list.forEach(r => { const sc = sim(r, x.row); if (sc > best) { best = sc; db = r; } });
         if (!db) { addable.push({ major, xl: x.row, sheet: x.sheet, cols: x.cols }); return; }
         used.add(db.id);
         const patch = {};
@@ -309,7 +317,7 @@ async function confirmAdmissionImport() {
     }
     closeAdmissionImport();
     alert(`补缺完成：补了 ${okRows} 行 / ${okFields} 个字段，新增 ${addOk} 行。`);
-    const majorRows = await sbAll('/rest/v1/admission_schools?select=major').catch(() => []);
+    const majorRows = await sbAll('/rest/v1/admission_schools?select=major&order=id.asc').catch(() => []);
     cachedAdmissionMajorCounts = {};
     majorRows.forEach(r => { cachedAdmissionMajorCounts[r.major] = (cachedAdmissionMajorCounts[r.major] || 0) + 1; });
     if (adbSelectedMajors.length) await loadAdbData();

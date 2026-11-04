@@ -225,7 +225,7 @@ async function loadAdbData() {
   const tbody = document.getElementById('admissionTableBody');
   if (tbody) tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;padding:20px;color:var(--text-3)">加载中…</td></tr>';
   const majorFilter = `major=in.(${adbSelectedMajors.map(m=>`"${m}"`).join(',')})`;
-  cachedAdmissionSchools = await sb(`/rest/v1/admission_schools?select=*&${majorFilter}&order=university.asc&limit=5000`).catch(() => []);
+  cachedAdmissionSchools = await sbAll(`/rest/v1/admission_schools?select=*&${majorFilter}&order=university.asc,id.asc`).catch(() => []);
   adbOpen = new Set(); adbShown = 30;
   renderAdmissionTable();
 }
