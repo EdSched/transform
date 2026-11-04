@@ -9,7 +9,7 @@
 let cst = {
   loaded: false, err: '', list: [], cur: null, step: 1, show: false, q: '', saving: '',
   adm: [], admKey: '', admLoading: false, admLimit: 30,
-  courses: null, pkgs: null, rules: [], common: null, commonDom: '', profiles: null, tiers: null, cases: null, faqs: null, intro: null, introKey: '',
+  courses: null, pkgs: null, rules: [], profs: null, media: null, mediaTab: 'textbook', mediaQ: '', common: null, commonDom: '', profiles: null, tiers: null, cases: null, faqs: null, intro: null, introKey: '',
   open: {}, overlay: '', faqQ: '', crsQ: '', crsLimit: 30, dirty: {}, timer: null,
 };
 
@@ -153,6 +153,7 @@ function cstMainHtml() {
       <span id="cst_state" style="font-size:10px;color:var(--text-3)">${cstE(cst.saving)}</span>
       <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-sm ${cst.show ? 'btn-primary' : 'btn-outline'}" onclick="cstToggleShow()">展示模式${cst.show ? '：开' : '：关'}</button>
+        <button class="btn btn-outline btn-sm" onclick="cstOpenMedia()">教材・校区</button>
         <button class="btn btn-outline btn-sm" onclick="cstOpenFaq()">常见问题</button>
         ${cst.show ? '' : '<button class="btn btn-outline btn-sm" style="color:var(--danger,#b03a2e)" onclick="cstDelete()">删除</button>'}
       </div></div>
@@ -358,6 +359,25 @@ async function cstLoadCommon() {
   try { cst.common = (await sbAll('/rest/v1/promo_common?or=(published.is.null,published.is.true)&select=*&order=sort_order.asc,updated_at.asc')).filter(r => r.domain === dom && salesDomOkMe(r.domain)); } catch (e) { cst.common = []; }
   if (cst.step === 2) cstRender();
 }
+// 教授资料（管理员在「管控台 → 咨询台 → 教授资料」维护）
+async function cstLoadProfs() {
+  if (cst.profs) return; cst.profs = [];
+  try { cst.profs = await sbAll('/rest/v1/consult_professors?published=is.true&select=*&order=university.asc,name.asc'); } catch (e) { cst.profs = []; }
+  if (cst.step === 2) cstRender();
+}
+const cstUniKey = u => String(u || '').replace(/\s|大学$/g, '');
+function cstProfsHtml() {
+  if (!cst.profs) return '<div style="font-size:11px;color:var(--text-3)">加载中…</div>';
+  const l = cst.cur, unis = (l.goals || []).map(g => cstUniKey(g.uni)).filter(Boolean);
+  const rows = unis.length ? cst.profs.filter(p => unis.some(u => cstUniKey(p.university).includes(u) || u.includes(cstUniKey(p.university)))) : cst.profs.filter(p => p.major && p.major === l.target_major);
+  if (!rows.length) return `<div style="font-size:11px;color:var(--text-3)">${unis.length ? '目标校暂时没有教授资料。' : '先设目标校；没设目标校时，这里显示目标专业下的教授资料。'}</div>`;
+  return rows.map(p => `<div style="border:1px solid var(--border-light);border-radius:3px;padding:9px 12px;margin-bottom:6px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:13px;font-weight:600">${cstE(p.name)}</span><span style="font-size:11px;color:var(--text-2)">${cstE([p.university, p.department].filter(Boolean).join(' '))}</span>${p.unconfirmed ? '<span style="font-size:10px;padding:1px 7px;border-radius:2px;background:#f6edd2;color:#8a6a1a">待确认</span>' : ''}</div>
+    ${p.research ? `<div style="font-size:11px;color:var(--text-2);margin-top:4px;line-height:1.8"><span style="color:var(--text-3)">研究方向：</span>${cstE(p.research)}</div>` : ''}
+    ${p.contact_req ? `<div style="font-size:11px;color:var(--text-2);line-height:1.8"><span style="color:var(--text-3)">联系要求：</span>${cstE(p.contact_req)}</div>` : ''}
+    <div style="font-size:10px;color:var(--text-3);margin-top:3px">来源：${p.source_url ? `<a href="${cstE(p.source_url)}" target="_blank" style="color:var(--accent)">${cstE(p.source || '链接')}</a>` : cstE(p.source || '未注明')}${p.updated_on ? ' · 更新 ' + cstE(p.updated_on) : ''}</div>
+    ${!cst.show && p.notes ? `<div style="font-size:10px;color:var(--text-3);margin-top:2px">备注：${cstE(p.notes)}</div>` : ''}</div>`).join('');
+}
 // 讲师资料：沿用「讲师信息」（teacher_profiles），按课程安排里的老师名对上
 async function cstLoadProfiles() {
   if (cst.profiles) return; cst.profiles = [];
@@ -389,7 +409,7 @@ async function cstLoadCases() {
 function cstStep2() {
   const l = cst.cur;
   if (!l.target_major) return '<div class="empty" style="padding:30px">请先在第 ① 步选择「目标专业」。</div>';
-  cstLoadAdm(); cstLoadIntro(); cstLoadCases(); cstLoadTiers(); cstLoadCommon();
+  cstLoadAdm(); cstLoadIntro(); cstLoadCases(); cstLoadTiers(); cstLoadCommon(); cstLoadProfs();
   const note = (l.target_level === 'gakubu' || l.arts_sci === '理科' || l.arts_sci === '艺术') ? `<div style="background:#f6edd2;color:#8a6a1a;font-size:11px;padding:7px 10px;border-radius:3px;margin-bottom:10px">出愿数据库目前只覆盖大学院文科，学部 / 理科 / 艺术的院校列表可能不全。</div>` : '';
   return note + cstSec('s2a', `专业介绍：${cstE(cstMajorName(l.target_major))}`, cstIntroHtml, false) +
     cstSec('s2e', '课程介绍', () => cstPromoBlocks('course'), false) +
@@ -397,6 +417,7 @@ function cstStep2() {
     cstSec('s2g', `通用宣传（${cstE(admissionMajorDomain(l.target_major) || '')}）`, cstCommonHtml, false, '宣传册内容') +
     cstSec('s2b', '可考虑的院校', cstAdmHtml, true, '具备报考资格 ≠ 能够合格') +
     cstSec('s2c', `已确定的目标（${(l.goals || []).length}）`, cstGoalsHtml, true) +
+    cstSec('s2h', '目标校教授资料', cstProfsHtml, false, '来源和更新时间见各条') +
     cstSec('s2d', '相关合格案例', cstCasesHtml, false);
 }
 function cstIntroHtml() {
@@ -737,6 +758,23 @@ ${tl.length ? tl.map(x => '- ' + x).join('\n') : '- 待确认'}
 ${co.items.length ? co.items.map(x => `- ${x.name}${x.reason ? '：' + x.reason : ''}`).join('\n') : '- 待确认'}`;
 }
 function cstOpenPrompt() { cst.overlay = 'prompt'; cstRender(); }
+async function cstOpenMedia() {
+  cst.overlay = 'media'; cstRender();
+  if (!cst.media) { cst.media = []; try { cst.media = await sbAll('/rest/v1/consult_media?published=is.true&select=*&order=sort.asc,created_at.asc'); } catch (e) { cst.media = []; } if (cst.overlay === 'media') cstRender(); }
+}
+function cstMediaHtml() {
+  if (!cst.media) return '<div style="font-size:11px;color:var(--text-3)">加载中…</div>';
+  const q = cst.mediaQ.trim().toLowerCase(), rows = cst.media.filter(m => m.kind === cst.mediaTab && (!q || [m.title, m.caption, m.course_key].join(' ').toLowerCase().includes(q)));
+  const one = m => {
+    const u = cstE(m.url);
+    const body = m.media_type === 'image' ? `<a href="${u}" target="_blank"><img src="${u}" loading="lazy" style="width:100%;border-radius:3px;display:block"></a>`
+      : (m.media_type === 'video' && /\.(mp4|webm|mov)(\?|$)/i.test(m.url)) ? `<video src="${u}" controls preload="none" style="width:100%;border-radius:3px"></video>`
+      : `<a href="${u}" target="_blank" class="filter-chip" style="text-decoration:none">${m.media_type === 'pdf' ? '打开 PDF' : (m.media_type === 'video' ? '播放视频' : '打开链接')}</a>`;
+    return `<div style="border:1px solid var(--border-light);border-radius:4px;padding:8px;background:var(--surface)">${body}<div style="font-size:12px;font-weight:600;margin-top:6px">${cstE(m.title)}</div>${m.caption ? `<div style="font-size:11px;color:var(--text-2);line-height:1.7;margin-top:2px">${cstE(m.caption)}</div>` : ''}</div>`;
+  };
+  return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px">${[['textbook', '教材'], ['campus', '校区']].map(([k, t]) => cstChip(cst.mediaTab === k, t, `cst.mediaTab='${k}';cstRender()`)).join('')}<input placeholder="搜索" value="${cstE(cst.mediaQ)}" onchange="cst.mediaQ=this.value;cstRender()" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;margin-left:auto;width:140px"></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px">${rows.map(one).join('') || '<div style="font-size:11px;color:var(--text-3)">还没有内容（管理员在「管控台 → 咨询台 → 教材・校区」里添加）</div>'}</div>`;
+}
 function cstOpenFaq() { cst.overlay = 'faq'; cst.faqQ = ''; cstRender(); if (!cst.faqs) cstLoadFaq(); }
 function cstCloseOverlay() { cst.overlay = ''; cstRender(); }
 async function cstLoadFaq() {
@@ -745,7 +783,8 @@ async function cstLoadFaq() {
 }
 function cstCopyPrompt() { const t = document.getElementById('cst_prompt'); if (!t) return; t.select(); try { navigator.clipboard.writeText(t.value).then(() => alert('已复制')).catch(() => { document.execCommand('copy'); alert('已复制'); }); } catch (e) { document.execCommand('copy'); alert('已复制'); } }
 function cstOverlayHtml() {
-  const l = cst.cur, wrap = (title, inner) => `<div onclick="if(event.target===this)cstCloseOverlay()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px"><div style="background:var(--bg);border-radius:6px;max-width:720px;width:100%;max-height:88vh;overflow:auto;padding:16px 18px"><div style="display:flex;align-items:center;margin-bottom:10px"><b style="font-size:14px;font-family:'Noto Serif SC',serif">${title}</b><button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="cstCloseOverlay()">关闭</button></div>${inner}</div></div>`;
+  const l = cst.cur, wrap = (title, inner, w) => `<div onclick="if(event.target===this)cstCloseOverlay()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px"><div style="background:var(--bg);border-radius:6px;max-width:${w || 720}px;width:100%;max-height:88vh;overflow:auto;padding:16px 18px"><div style="display:flex;align-items:center;margin-bottom:10px"><b style="font-size:14px;font-family:'Noto Serif SC',serif">${title}</b><button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="cstCloseOverlay()">关闭</button></div>${inner}</div></div>`;
+  if (cst.overlay === 'media') return wrap('教材・校区', cstMediaHtml(), 1000);
   if (cst.overlay === 'prompt') return wrap('AI 提示词', `<div style="font-size:11px;color:var(--text-3);margin-bottom:6px">复制后贴到你自己用的 AI 里。提示词里没有姓名和联系方式，用"该同学"代替。</div><textarea id="cst_prompt" readonly rows="18" style="width:100%;font-size:12px;line-height:1.7;padding:8px;border:1px solid var(--border);border-radius:3px;box-sizing:border-box;font-family:inherit">${cstE(cstPromptText())}</textarea><div style="margin-top:8px"><button class="btn btn-primary btn-sm" onclick="cstCopyPrompt()">复制</button></div>`);
   const q = cst.faqQ.trim().toLowerCase(), stage = CST_STAGE[cst.step];
   let rows = (cst.faqs || []).filter(f => f.published !== false);
