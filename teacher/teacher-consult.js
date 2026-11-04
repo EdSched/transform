@@ -105,7 +105,6 @@ async function cstDelete() {
     cst.list = cst.list.filter(x => x.id !== l.id); cst.cur = null; cst.dirty = {}; cstRender();
   } catch (e) { alert('删除失败：' + e.message); }
 }
-function cstToggleShow() { cst.show = !cst.show; cstRender(); }
 const cstChip = (on, label, click, extra) => `<span class="filter-chip${on ? ' active' : ''}" onclick="${click}" ${extra || ''}>${label}</span>`;
 
 // ══════════ 总框架：首页（咨询者卡片）+ 流程页（一项一页，顶部进度条）══════════
