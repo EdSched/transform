@@ -310,10 +310,10 @@ function pkMajorHtml(major, data, parts) {
 function pkAdmissionHtml(rows, opts) {
   const { filterLine, showMajor, majorMap } = opts || {};
   const lc = v => v === '必須' ? '#1a56a0' : v === '任意' ? '#b45309' : '#888';
-  const head = [...(showMajor ? ['专业'] : []), '大学名', '設置', '研究科', '専攻', 'コース', '出願類型', '資格審査', '出願期間', '筆記試験', '口述試験', '合格発表', '英語', '日語'];
+  const head = [...(showMajor ? ['专业'] : []), '大学名', '設置', '研究科', '専攻', 'コース', '出願類型', '資格審査', '出願期間', '筆記試験', '口述試験', '合格発表', '英語', '日語', '英語明細', '日語明細'];
   return `<div class="pk-filter">筛选条件：${pkEsc(filterLine || '全部')}　·　共 ${rows.length} 条</div>
   <table class="pk-adb">
-    <colgroup>${(showMajor ? [6] : []).concat([10, 4, 11, 9, 8, 7, 7, 8, 7, 7, 7, 4, 4]).map(w => `<col style="width:${w}%">`).join('')}</colgroup>
+    <colgroup>${(showMajor ? [6] : []).concat([9, 4, 10, 8, 7, 6, 6, 7, 6, 6, 6, 4, 4, 9, 9]).map(w => `<col style="width:${w}%">`).join('')}</colgroup>
     <thead><tr>${head.map(t => `<th>${t}</th>`).join('')}</tr></thead>
     <tbody>${rows.map(s => `<tr>
       ${showMajor ? `<td>${pkEsc((majorMap && majorMap[s.major]) || s.major)}</td>` : ''}
@@ -322,6 +322,7 @@ function pkAdmissionHtml(rows, opts) {
       <td>${pkEsc(s.written_exam)}</td><td>${pkEsc(s.oral_exam)}</td><td>${pkEsc(s.result_date)}</td>
       <td class="c" style="color:${lc(s.english_required)}">${pkEsc(s.english_required || '-')}</td>
       <td class="c" style="color:${lc(s.japanese_required)}">${pkEsc(s.japanese_required || '-')}</td>
+      <td>${pkEsc(typeof adgTestsText === 'function' ? adgTestsText(s, 'en') : '')}</td><td>${pkEsc(typeof adgTestsText === 'function' ? adgTestsText(s, 'jp') : '')}</td>
     </tr>`).join('')}</tbody>
   </table>
   <div class="pk-note">・上旬约为1日～10日，中旬约为11日～20日，下旬约为21日～月末。出愿信息每年均有变化，本表仅供参考，请以各校当年度官方募集要项为准。<br>・各校对语言考试类型及分数要求不同，部分学校另有内部要求。如有疑问请联系唯新教育老师确认。</div>`;
