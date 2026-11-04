@@ -520,6 +520,7 @@ function buildTabs() {
   if (p.student_mgmt && Array.isArray(p.student_mgmt_items) && p.student_mgmt_items.length) tabs.push({ id: 'studentmgmt', label: '👥 学生管理' });
   if (p.progress_plan) tabs.push({ id: 'progressplan', label: '📅 进度规划' });
   if (p.promo) tabs.push({ id: 'promo', label: '📣 宣传相关' });
+  if (p.consult) tabs.push({ id: 'consult', label: '🧭 咨询' });
   // 宣传资料整合：把出愿学校 / 学科介绍 / 进度规划等营业资料合成一份 PDF（需 admin 在营业功能中单独勾选）
   if (p.promo_pack) tabs.push({ id: 'promopack', label: '📦 宣传资料整合' });
   // 有「合格实绩管理」的老师只显示「合格实绩管理」，不再重复显示只读的「合格实绩」
@@ -565,7 +566,7 @@ function renderTab() {
   const mc = document.getElementById('mainContent');
   mc.innerHTML = '<div class="loading">加载中…</div>';
   // 营业功能（宣传 / 进度规划 / 宣传资料整合 / 讲师信息 / VIP 规划）：不是营业 / 对接的人按负责范围限定；什么范围都没设 → 提示，不退回全部
-  if (['progressplan', 'promo', 'promopack', 'lectinfo', 'vipsales'].includes(curTab) && salesScopeEmptyMe()) { mc.innerHTML = `<div class="empty">${SALES_SCOPE_EMPTY_MSG}</div>`; return; }
+  if (['progressplan', 'promo', 'promopack', 'lectinfo', 'vipsales', 'consult'].includes(curTab) && salesScopeEmptyMe()) { mc.innerHTML = `<div class="empty">${SALES_SCOPE_EMPTY_MSG}</div>`; return; }
   switch (curTab) {
     case 'todo': renderTodo(mc); break;
     case 'mytasks': renderMyTasks(mc); break;
@@ -578,6 +579,7 @@ function renderTab() {
     case 'studentmgmt': renderStudentMgmt(mc); break;
     case 'progressplan': renderProgressPlanTool(mc); break;
     case 'promo': renderTeacherPromo(mc); break;
+    case 'consult': renderConsult(mc); break;
     case 'promopack': renderPromoPack(mc); break;
     case 'admissions': renderTeacherAdmissions(mc); break;
     case 'passposters': renderTeacherPosters(mc); break;

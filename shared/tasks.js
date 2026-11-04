@@ -44,8 +44,8 @@ function taskRequiresSpot(req) {
   if (req === 'records_entry') return ['features', 'records_entry'];
   if (req.startsWith('student_mgmt:')) return ['features', req.slice(13)];
   if (req.startsWith('tag:')) return ['basic', null];
-  const direct = ['booking', 'slots', 'admission_query', 'student_mgmt', 'promo', 'progress_plan', 'lect_info', 'vip_sales', 'promo_pack', 'promo_pricing', 'success_cases'];
-  if (direct.includes(req)) return [['promo', 'progress_plan', 'lect_info', 'vip_sales', 'promo_pack', 'promo_pricing', 'success_cases'].includes(req) ? 'sales' : 'features', req];
+  const direct = ['booking', 'slots', 'admission_query', 'student_mgmt', 'promo', 'progress_plan', 'lect_info', 'vip_sales', 'promo_pack', 'promo_pricing', 'success_cases', 'consult'];
+  if (direct.includes(req)) return [['promo', 'progress_plan', 'lect_info', 'vip_sales', 'promo_pack', 'promo_pricing', 'success_cases', 'consult'].includes(req) ? 'sales' : 'features', req];
   return null;
 }
 // 老师有没有这个角色：看 position / roles；老师数据里没有这两个字段（准备 SQL 还没执行）时退回看标签

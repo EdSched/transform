@@ -18,7 +18,7 @@ function rtpFeatureRows() {
   rows.push(['老师端功能', 'schedule:timetable', '仅我的课表']);
   rows.push(['老师端功能', 'schedule:full', '排班确认 + 我的课表']);
   Object.keys(TF_SUB_LABEL.student_mgmt_items).forEach(v => rows.push(['学生管理子项', 'student_mgmt_items:' + v, TF_SUB_LABEL.student_mgmt_items[v]]));
-  ['promo', 'progress_plan', 'lect_info', 'vip_sales', 'promo_pack', 'promo_pricing', 'success_cases'].forEach(k => rows.push(['营业功能', 'p:' + k, TF_P_LABEL[k]]));
+  ['promo', 'progress_plan', 'lect_info', 'vip_sales', 'promo_pack', 'promo_pricing', 'success_cases', 'consult'].forEach(k => rows.push(['营业功能', 'p:' + k, TF_P_LABEL[k]]));
   RESOURCE_PERM_DEFS.forEach(([c, l]) => rows.push(['资源权限', 'res:' + c, l]));
   return rows;
 }
