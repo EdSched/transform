@@ -1,0 +1,102 @@
+// ══════════════════════════════════
+// consult-admin.js — 管控台「咨询台」：维护常见问题（faq）和课程推荐规则（consult_rules）
+// 老师端「咨询」（teacher/teacher-consult.js）读取这两张表。只有管理员能改（RLS 见 seed/consult_phase2.sql）。
+// 全局名字统一用 csa / CSA_ 前缀。依赖：shared/constants.js、shared/supabase.js、admin.js（switchConsoleTab）
+// ══════════════════════════════════
+const CSA_STAGES = ['信息采集', '选校', '课程', '价格', '入学后'];
+const CSA_LEVELS = [['daigakuin', '大学院'], ['gakubu', '学部']];
+const CSA_GAPS = [['jp', '日语成绩'], ['en', '英语成绩'], ['plan', '研究计划书・志望理由书'], ['interview', '面试'], ['written', '笔试'], ['specialty', '专业能力（跨专业补课）']];
+let csa = { tab: 'faq', faq: null, rules: null, edit: null, body: null, err: '' };
+const csaE = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const csaJ = v => String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
+async function csaMount(body) {
+  csa.body = body || csa.body; csa.edit = null;
+  csa.body.innerHTML = '<div style="padding:20px;color:var(--text-3);font-size:12px">加载中…</div>';
+  try {
+    [csa.faq, csa.rules] = await Promise.all([
+      sbAll('/rest/v1/faq?select=*&order=sort.asc,created_at.asc', { cache: 'no-store' }),
+      sbAll('/rest/v1/consult_rules?select=*&order=sort.asc,created_at.asc', { cache: 'no-store' }).catch(() => null),
+    ]);
+    csa.err = '';
+  } catch (e) { csa.err = e.message; }
+  csaRender();
+}
+const csaChip = (on, label, click) => `<span class="filter-chip${on ? ' active' : ''}" onclick="${click}">${label}</span>`;
+function csaRender() {
+  const b = csa.body; if (!b) return;
+  if (csa.err) { b.innerHTML = `<div style="padding:20px;color:var(--danger,#b03a2e);font-size:12px">读取失败：${csaE(csa.err)}</div>`; return; }
+  const tabs = [['faq', '常见问题'], ['rules', '课程推荐规则']].map(([k, t]) => csaChip(csa.tab === k, t, `csa.tab='${k}';csa.edit=null;csaRender()`)).join('');
+  b.innerHTML = `<div style="padding:14px 18px;max-width:900px"><div style="display:flex;gap:6px;margin-bottom:12px">${tabs}</div>${csa.tab === 'faq' ? csaFaqHtml() : csaRulesHtml()}</div>`;
+}
+function csaToggle(k, v) { const a = csa.edit[k], i = a.indexOf(v); if (i >= 0) a.splice(i, 1); else a.push(v); csaCapture(); csaRender(); }
+function csaCapture() {
+  const g = id => { const el = document.getElementById(id); return el ? el.value : undefined; }, e = csa.edit; if (!e) return;
+  if (csa.tab === 'faq') { const q = g('csa_q'), a = g('csa_a'), s = g('csa_s'); if (q !== undefined) { e.question = q; e.answer = a; e.sort = parseInt(s) || 0; } }
+  else { const t = g('csa_t'), k = g('csa_k'), gp = g('csa_g'), s = g('csa_s'); if (t !== undefined) { e.title = t; e.keywords_text = k; e.gap = gp; e.sort = parseInt(s) || 0; } }
+}
+const csaIn = 'width:100%;font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:3px;box-sizing:border-box;font-family:inherit';
+const csaMajorKeys = () => Object.keys(ADMISSION_MAJORS);
+
+// ── 常见问题 ──
+function csaFaqNew() { csa.edit = { id: '', question: '', answer: '', levels: [], majors: [], stages: [], sort: (csa.faq.length + 1) * 10, published: true }; csaRender(); }
+function csaFaqOpen(id) { const f = csa.faq.find(x => x.id === id); if (!f) return; csa.edit = { ...f, levels: [...(f.levels || [])], majors: [...(f.majors || [])], stages: [...(f.stages || [])] }; csaRender(); }
+function csaFaqHtml() {
+  const e = csa.edit;
+  if (e) return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:14px">
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:3px">问题</div><input id="csa_q" value="${csaE(e.question)}" style="${csaIn}">
+    <div style="font-size:11px;color:var(--text-3);margin:10px 0 3px">回答</div><textarea id="csa_a" rows="6" style="${csaIn}">${csaE(e.answer)}</textarea>
+    <div style="font-size:11px;color:var(--text-3);margin:10px 0 3px">适用层次（不选 = 全部）</div><div style="display:flex;gap:6px;flex-wrap:wrap">${CSA_LEVELS.map(([k, t]) => csaChip(e.levels.includes(k), t, `csaToggle('levels','${k}')`)).join('')}</div>
+    <div style="font-size:11px;color:var(--text-3);margin:10px 0 3px">适用专业（不选 = 全部）</div><div style="display:flex;gap:6px;flex-wrap:wrap">${csaMajorKeys().map(k => csaChip(e.majors.includes(k), csaE(ADMISSION_MAJORS[k]), `csaToggle('majors','${k}')`)).join('')}</div>
+    <div style="font-size:11px;color:var(--text-3);margin:10px 0 3px">适用阶段（不选 = 全部）</div><div style="display:flex;gap:6px;flex-wrap:wrap">${CSA_STAGES.map(k => csaChip(e.stages.includes(k), k, `csaToggle('stages','${k}')`)).join('')}</div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:12px"><span style="font-size:11px;color:var(--text-3)">排序（小的在前）</span><input id="csa_s" type="number" value="${e.sort}" style="${csaIn};width:90px">
+      ${csaChip(e.published, e.published ? '已发布' : '未发布（老师看不到）', `csaCapture();csa.edit.published=!csa.edit.published;csaRender()`)}</div>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-primary btn-sm" onclick="csaFaqSave()">保存</button><button class="btn btn-outline btn-sm" onclick="csa.edit=null;csaRender()">取消</button>
+      ${e.id ? `<button class="btn btn-outline btn-sm" style="margin-left:auto;color:var(--danger,#b03a2e)" onclick="csaDel('faq','${csaJ(e.id)}')">删除</button>` : ''}</div></div>`;
+  return `<div style="display:flex;align-items:center;margin-bottom:10px"><span style="font-size:11px;color:var(--text-3)">共 ${csa.faq.length} 条。老师在咨询页右上角「常见问题」里看到，按咨询者的层次、专业、步骤自动筛选。</span><button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="csaFaqNew()">＋ 新增问题</button></div>
+    ${csa.faq.map(f => `<div onclick="csaFaqOpen('${csaJ(f.id)}')" style="border:1px solid var(--border-light);border-radius:4px;padding:8px 12px;margin-bottom:6px;cursor:pointer;background:var(--surface)">
+      <div style="font-size:12px;font-weight:600">${csaE(f.question)}${f.published === false ? ' <span style="font-size:10px;color:var(--text-3)">（未发布）</span>' : ''}</div>
+      <div style="font-size:10px;color:var(--text-3);margin-top:2px">${csaE([(f.levels || []).map(k => (CSA_LEVELS.find(x => x[0] === k) || [0, k])[1]).join('/'), (f.majors || []).map(k => ADMISSION_MAJORS[k] || k).join('/'), (f.stages || []).join('/')].filter(Boolean).join(' · ') || '全部适用')}</div></div>`).join('') || '<div class="empty">还没有常见问题</div>'}`;
+}
+async function csaFaqSave() {
+  csaCapture(); const e = csa.edit; if (!e.question.trim()) { alert('请填写问题'); return; }
+  const rec = { question: e.question.trim(), answer: e.answer || '', levels: e.levels, majors: e.majors, stages: e.stages, sort: e.sort || 0, published: !!e.published, updated_at: new Date().toISOString() };
+  try {
+    if (e.id) await sb(`/rest/v1/faq?id=eq.${encodeURIComponent(e.id)}`, 'PATCH', rec); else await sb('/rest/v1/faq', 'POST', rec);
+    await csaMount();
+  } catch (err) { alert('保存失败：' + err.message); }
+}
+
+// ── 课程推荐规则：差距 → 课程（课程名里含任一关键词，就算覆盖这个差距）──
+function csaRuleNew() { csa.edit = { id: '', gap: 'jp', title: '', keywords_text: '', majors: [], sort: (csa.rules.length + 1) * 10, published: true }; csaRender(); }
+function csaRuleOpen(id) { const r = csa.rules.find(x => x.id === id); if (!r) return; csa.edit = { ...r, keywords_text: (r.keywords || []).join('、'), majors: [...(r.majors || [])] }; csaRender(); }
+function csaRulesHtml() {
+  const e = csa.edit;
+  if (csa.rules === null) return '<div class="empty">还没有 consult_rules 表，请先执行 seed/consult_phase2.sql</div>';
+  if (e) return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:14px">
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:3px">对应的差距</div>
+    <select id="csa_g" style="${csaIn}">${CSA_GAPS.map(([k, t]) => `<option value="${k}" ${e.gap === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
+    <div style="font-size:11px;color:var(--text-3);margin:10px 0 3px">规则名称（老师看到的说明，如「日语 N1 冲刺课」）</div><input id="csa_t" value="${csaE(e.title)}" style="${csaIn}">
+    <div style="font-size:11px;color:var(--text-3);margin:10px 0 3px">课程名关键词（用顿号或逗号分开；课程名里含任一个，就算覆盖这个差距）</div><input id="csa_k" value="${csaE(e.keywords_text)}" placeholder="例如：日语、N1、JLPT" style="${csaIn}">
+    <div style="font-size:11px;color:var(--text-3);margin:10px 0 3px">适用专业（不选 = 全部）</div><div style="display:flex;gap:6px;flex-wrap:wrap">${csaMajorKeys().map(k => csaChip(e.majors.includes(k), csaE(ADMISSION_MAJORS[k]), `csaToggle('majors','${k}')`)).join('')}</div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:12px"><span style="font-size:11px;color:var(--text-3)">排序</span><input id="csa_s" type="number" value="${e.sort}" style="${csaIn};width:90px">
+      ${csaChip(e.published, e.published ? '启用' : '停用', `csaCapture();csa.edit.published=!csa.edit.published;csaRender()`)}</div>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-primary btn-sm" onclick="csaRuleSave()">保存</button><button class="btn btn-outline btn-sm" onclick="csa.edit=null;csaRender()">取消</button>
+      ${e.id ? `<button class="btn btn-outline btn-sm" style="margin-left:auto;color:var(--danger,#b03a2e)" onclick="csaDel('consult_rules','${csaJ(e.id)}')">删除</button>` : ''}</div></div>`;
+  return `<div style="display:flex;align-items:center;margin-bottom:10px"><span style="font-size:11px;color:var(--text-3)">差距 → 课程。咨询页会按这里的规则，给每个差距推荐课程；删掉课程导致某个差距没有课程覆盖时会提示。</span><button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="csaRuleNew()">＋ 新增规则</button></div>
+    ${CSA_GAPS.map(([k, t]) => { const rs = csa.rules.filter(r => r.gap === k); return `<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;margin-bottom:4px">${t}</div>${rs.map(r => `<div onclick="csaRuleOpen('${csaJ(r.id)}')" style="border:1px solid var(--border-light);border-radius:4px;padding:7px 12px;margin-bottom:5px;cursor:pointer;background:var(--surface)"><span style="font-size:12px">${csaE(r.title)}</span> <span style="font-size:10px;color:var(--text-3)">关键词：${csaE((r.keywords || []).join('、'))}${(r.majors || []).length ? ' · ' + csaE(r.majors.map(m => ADMISSION_MAJORS[m] || m).join('/')) : ''}${r.published === false ? ' · 停用' : ''}</span></div>`).join('') || '<div style="font-size:10px;color:var(--text-3)">还没有规则</div>'}</div>`; }).join('')}`;
+}
+async function csaRuleSave() {
+  csaCapture(); const e = csa.edit; if (!e.title.trim()) { alert('请填写规则名称'); return; }
+  const kws = String(e.keywords_text || '').split(/[、,，;；\s]+/).map(x => x.trim()).filter(Boolean);
+  if (!kws.length) { alert('请至少填一个课程名关键词'); return; }
+  const rec = { gap: e.gap, title: e.title.trim(), keywords: kws, majors: e.majors, sort: e.sort || 0, published: !!e.published };
+  try {
+    if (e.id) await sb(`/rest/v1/consult_rules?id=eq.${encodeURIComponent(e.id)}`, 'PATCH', rec); else await sb('/rest/v1/consult_rules', 'POST', rec);
+    await csaMount();
+  } catch (err) { alert('保存失败：' + err.message); }
+}
+async function csaDel(table, id) {
+  if (!confirm('确定删除？删除后不能恢复。')) return;
+  try { await sb(`/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, 'DELETE'); await csaMount(); } catch (err) { alert('删除失败：' + err.message); }
+}
