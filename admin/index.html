@@ -308,6 +308,9 @@
       <div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">专业负责老师（学生管理里"我负责的"筛选用；与 VIP 独立，不影响可读权限）</label>
         <div id="st_owner_teachers" style="display:flex;flex-wrap:wrap;gap:6px"></div>
       </div>
+      <div class="form-group" style="margin:0;grid-column:1/-1"><label class="form-label">班主任（合格实绩里填的「班主任」以后挂钩到这里；现在先留位置，不影响其他功能）</label>
+        <input id="st_homeroom" list="st_homeroom_list" placeholder="输入或选择老师姓名" style="font-size:12px"><datalist id="st_homeroom_list"></datalist>
+      </div>
       <div class="form-group" style="margin:0;grid-column:1/-1;display:none" id="st_class_wrap"><label class="form-label">所属班级 <span style="font-weight:400;color:var(--text-3)">（点选，可以多个；和专业分开）</span></label><div id="st_class_chips"></div></div>
       <div class="form-group" style="margin:0;grid-column:1/-1" id="st_vip_plan_wrap"><label class="form-label">VIP课程方案（营业保存的方案，按姓名匹配）</label>
         <div id="st_vip_plan_section" style="font-size:11px"></div>
@@ -804,7 +807,7 @@
 <script src="admissiondb.js?v=20270211"></script>
 <script src="admission-import.js?v=20270212"></script>
 <script src="classes.js?v=20270125"></script>
-<script src="students.js?v=20270125"></script>
+<script src="students.js?v=20261106"></script>
 <script src="materials.js?v=20270125"></script>
 <script src="../shared/vip-booking.js?v=20270202"></script>
 <script src="booking.js?v=20270202"></script>
@@ -825,7 +828,7 @@
 <script src="../shared/pass-posters.js?v=20270125"></script>
 <script src="../shared/poster.js?v=20270125"></script>
 <script src="../shared/subject-major-map.js?v=20270125"></script>
-<script src="results-admin.js?v=20261105"></script>
+<script src="results-admin.js?v=20261106"></script>
 <script src="app-options.js?v=20270125"></script>
 <script src="admin.js?v=20270212"></script>
 </body>
