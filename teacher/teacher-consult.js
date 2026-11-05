@@ -179,7 +179,8 @@ function cstExit() { cstFlush(); if (window.__CONSULT_STANDALONE__) { cstHome();
 // 顶栏 logo：美术领域的咨询者用美术 logo，其余（含首页列表）用普通 logo；图片加载失败时隐藏，只留文字「唯新学院」
 const cstIsArt = l => !!l && !!l.target_major && /美术/.test(admissionMajorDomain(l.target_major) || '');
 const cstLogoSrc = l => `../shared/img/${cstIsArt(l) ? 'artlogo' : 'logo'}-nav.png?v=20270218`;
-const cstLogoHtml = l => `<span class="cst-brand"><img class="cst-logo" src="${cstLogoSrc(l)}" alt="唯新学院" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'"><span class="cst-logo-fb" style="display:none">唯新学院</span><span class="cst-brand-t">升学咨询</span></span>`;
+const cstLogoHtml = l => `<span class="cst-brand"><img class="cst-logo" src="${cstLogoSrc(l)}" alt="唯新学院" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'"><span class="cst-logo-fb" style="display:none">唯新学院</span><span class="cst-brand-t"><b>唯新学院</b><i>TRANSFORM EDUCATION</i></span></span>`;
+const cstFootHtml = () => `<footer class="cst-foot"><span class="cst-foot-brand">TRANSFORM EDUCATION</span><span>唯新学院 · 升学咨询</span><span class="cst-foot-note">本页内容仅供咨询参考；具备报考资格 ≠ 能够合格，不含合格概率。</span></footer>`;
 const cstBackBtn = () => window.__CONSULT_STANDALONE__ ? '' : '<button class="btn btn-sm" onclick="cstExit()">← 返回老师端</button>';
 function cstRefresh() { if (cst.cur || cst.overlay) cstRender(); }
 function cstToggleShow() { cst.show = !cst.show; cstRender(); }
@@ -211,7 +212,7 @@ function cstHomeHtml() {
   const list = cst.list.filter(l => !q || [l.name, l.target_major && cstMajorName(l.target_major), l.orig_major].join(' ').toLowerCase().includes(q));
   return `${cstTopHtml(null)}<main class="cst-home">
     <div class="cst-home-h"><h1>咨询者</h1><input placeholder="搜索咨询者" value="${cstE(cst.q)}" oninput="cst.q=this.value;cstHomeList()"><button class="btn btn-primary" onclick="cstNew()">＋ 新咨询</button></div>
-    <div id="cst_cards" class="cst-cards">${cstCardsHtml(list)}</div></main>`;
+    <div id="cst_cards" class="cst-cards">${cstCardsHtml(list)}</div></main>${cstFootHtml()}`;
 }
 function cstHomeList() {
   const q = cst.q.trim().toLowerCase(), el = document.getElementById('cst_cards'); if (!el) return;
@@ -245,7 +246,7 @@ function cstFlowHtml() {
   const l = cst.cur, it = cstItemOf(cst.item), g = cstGroupOf(it.g), i = cstItemIdx(it.id), next = CST_ITEMS[i + 1], miss = cstMissing(it.id);
   return `${cstTopHtml(l)}${cstProgressHtml()}
     <main class="cst-page"><div class="cst-title" style="--c:${g[2]}"><div class="cst-title-bar"></div><div><div class="cst-kicker">第 ${it.g} 步 · ${g[1]}</div><h1>${cstE(it.name)}</h1><p>${cstE(it.lead)}</p></div></div>
-      <div class="cst-card">${it.fn()}</div></main>
+      <div class="cst-card">${it.fn()}</div></main>${cstFootHtml()}
     <footer class="cst-bar">
       ${i > 0 ? `<button class="btn" onclick="cstPrev()">← 上一项：${cstE(CST_ITEMS[i - 1].name)}</button>` : '<span></span>'}
       <span class="cst-bar-r">${miss.length ? `<span class="cst-miss">请先填写：${miss.join('、')}</span>` : ''}

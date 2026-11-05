@@ -45,7 +45,12 @@ body.consult-mode .main { max-width: none !important; width: 100% !important; pa
 .cst-brand { display: flex; align-items: center; gap: 10px; margin-right: 8px; }
 .cst-logo { height: 44px; width: auto; display: block; }
 .cst-logo-fb { font-family: 'Noto Serif SC', serif; font-weight: 600; font-size: 17px; color: #2e2924; }
-.cst-brand-t { font-family: 'Noto Serif SC', serif; font-size: 15px; font-weight: 600; color: #5a5148; letter-spacing: 1px; }
+.cst-brand-t { display: flex; flex-direction: column; line-height: 1.25; border-left: 1px solid #e8dfd5; padding-left: 10px; }
+.cst-brand-t b { font-family: 'Noto Serif SC', serif; font-size: 16px; font-weight: 600; color: #2e2924; letter-spacing: 2px; }
+.cst-brand-t i { font-style: normal; font-size: 10.5px; letter-spacing: 2.4px; color: #b8791a; font-weight: 500; }
+.cst-foot { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; padding: 18px 28px 22px; border-top: 1px solid #e8dfd5; background: #fff; font-size: 12px; color: #8a7f73; text-align: center; }
+.cst-foot-brand { font-size: 11px; letter-spacing: 3px; color: #b8791a; font-weight: 500; }
+.cst-foot-note { flex-basis: 100%; font-size: 11.5px; color: #a89c8f; }
 .cst-who { font-family: 'Noto Serif SC', serif; font-weight: 600; font-size: 17px; color: #2e2924; margin-left: 6px; }
 .cst-state { font-size: 12px; color: #8a7f73; }
 .cst-top-r { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
