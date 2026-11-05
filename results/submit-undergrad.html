@@ -33,12 +33,9 @@ main{max-width:640px;margin:2rem auto;padding:0 1.2rem 4rem}
   header{padding:1.5rem 1rem 1.2rem}
   .h-title{font-size:1.3rem}
 }
-.track-btns{display:flex;gap:8px;margin-bottom:0}
-.track-btn{flex:1;padding:12px;border:2px solid var(--border);border-radius:6px;background:var(--bg);font-family:inherit;font-size:13px;color:var(--text-secondary);cursor:pointer;text-align:center;transition:all .12s;font-weight:500;}
-.track-btn.active-bunka{border-color:#2c4a8a;background:#e8edf8;color:#2c4a8a}
-.track-btn.active-rika{border-color:#3a6630;background:#e8f0e4;color:#3a6630}
-.eju-section{display:none}
-.eju-section.show{display:block}
+.track-btns{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:0}
+.track-btn{flex:1 1 40%;padding:12px;border:2px solid var(--border);border-radius:6px;background:var(--bg);font-family:inherit;font-size:13px;color:var(--text-secondary);cursor:pointer;text-align:center;transition:all .12s;font-weight:500;}
+.track-btn.on{border-color:var(--accent);background:#e8f0e4;color:var(--accent)}
 .photo-upload{border:2px dashed var(--border);border-radius:8px;padding:1.5rem;text-align:center;cursor:pointer;transition:all .15s}
 .photo-upload:hover{border-color:var(--accent);background:#f0f8f4}
 .photo-upload input{display:none}
@@ -74,86 +71,77 @@ main{max-width:640px;margin:2rem auto;padding:0 1.2rem 4rem}
 <main>
 <div id="form-area">
   <div class="card">
-    <div class="card-title">🎓 院校信息</div>
+    <div class="card-title">院校信息</div>
     <div class="field"><label>真实姓名<span class="req">*</span></label><input id="f-student" type="text" placeholder="例：张三"><div style="font-size:11px;color:var(--text-secondary);margin-top:4px">真实姓名不会对外公开，请放心填写。</div></div>
-    <div class="field"><label>合格大学<span class="req">*</span></label><input id="f-univ" type="text" placeholder="例：早稲田大学"></div>
-    <div class="grid-2">
-      <div class="field"><label>学部名</label><input id="f-dept" type="text" placeholder="例：商学部"></div>
-      <div class="field"><label>学科名</label><input id="f-spec" type="text" placeholder="例：経営学科"></div>
-    </div>
+    <div class="field"><label>年份<span class="req">*</span></label><input id="f-year" type="number" inputmode="numeric" placeholder="例：2026" min="2000" max="2100"><div class="hint">填合格的年份（4 位数）</div></div>
     <div class="field">
-      <label>入学年度</label>
-      <select id="f-era">
-        <option value="hist">2026年入学</option>
-        <option value="new" selected>2027年入学</option>
-        <option value="new">2028年入学</option>
-      </select>
+      <label>在籍学科<span class="req">*</span></label>
+      <div class="track-btns" id="track-btns">
+        <button type="button" class="track-btn" data-t="bunka" onclick="setTrack('bunka')">学部文科</button>
+        <button type="button" class="track-btn" data-t="rika" onclick="setTrack('rika')">学部理科</button>
+        <button type="button" class="track-btn" data-t="ongaku" onclick="setTrack('ongaku')">学部音乐</button>
+        <button type="button" class="track-btn" data-t="other" onclick="setTrack('other')">其他</button>
+      </div>
+    </div>
+    <div class="field"><label>学校名<span class="req">*</span></label><input id="f-univ" type="text" placeholder="例：早稲田大学"><div class="hint">请用日文写完整的学校名，例：早稲田大学</div></div>
+    <div class="field"><label>学部名</label><input id="f-dept" type="text" placeholder="例：商学部"><div class="hint">请用日文写，例：商学部</div></div>
+    <div class="field">
+      <label>出愿区分</label>
+      <select id="f-method" onchange="methodChanged()"></select>
+      <input id="f-method-other" type="text" placeholder="请写明出愿区分" style="display:none;margin-top:6px">
     </div>
   </div>
 
   <div class="card">
-    <div class="card-title">📚 志望方向<span class="req">*</span></div>
-    <div class="track-btns">
-      <button class="track-btn active-bunka" id="btn-bunka" onclick="setTrack('bunka')">文科</button>
-      <button class="track-btn" id="btn-rika" onclick="setTrack('rika')">理科</button>
+    <div class="card-title">EJU 成绩</div>
+    <div class="hint" id="eju-tip" style="margin:0 0 10px">请先选择上面的在籍学科</div>
+    <div class="grid-2" id="eju-grid">
+      <div class="field" data-eju="jp"><label>EJU 日语（不加记述）</label><input id="f-eju-jp" type="number" placeholder="例：354" min="0" max="400"><div class="hint">读解+听解，满分400，不含记述</div></div>
+      <div class="field" data-eju="kijutsu"><label>EJU 记述</label><input id="f-eju-kijutsu" type="number" placeholder="例：45" min="0" max="50"><div class="hint">满分50</div></div>
+      <div class="field" data-eju="bunsou"><label>EJU 文综</label><input id="f-eju-bunsou" type="number" placeholder="例：150" min="0" max="200"><div class="hint">满分200</div></div>
+      <div class="field" data-eju="math"><label>EJU 数学</label><input id="f-eju-math" type="number" placeholder="例：193" min="0" max="200"><div class="hint">满分200</div></div>
+      <div class="field" data-eju="phys"><label>EJU 物理</label><input id="f-eju-phys" type="number" placeholder="例：93" min="0" max="200"><div class="hint">满分200（理科两科 + 数学）</div></div>
+      <div class="field" data-eju="chem"><label>EJU 化学</label><input id="f-eju-chem" type="number" placeholder="例：95" min="0" max="200"><div class="hint">满分200（理科两科 + 数学）</div></div>
+      <div class="field" data-eju="bio"><label>EJU 生物</label><input id="f-eju-bio" type="number" min="0" max="200"><div class="hint">满分200（理科两科 + 数学）</div></div>
+      <div class="field" data-eju="total"><label>EJU 总分</label><input id="f-eju-total" type="number" placeholder="例：549"></div>
     </div>
   </div>
 
   <div class="card">
-    <div class="card-title">📊 EJU 成绩</div>
-    <div class="eju-section show" id="eju-bunka">
-      <div class="grid-2">
-        <div class="field"><label>EJU 日本語</label><input id="f-eju-jp" type="number" placeholder="例：354" min="0" max="400"><div class="hint">読解+聴解，满分400</div></div>
-        <div class="field"><label>EJU 記述</label><input id="f-eju-kijutsu" type="number" placeholder="例：45" min="0" max="50"><div class="hint">满分50</div></div>
-      </div>
-      <div class="grid-2">
-        <div class="field"><label>EJU 文系総合</label><input id="f-eju-bunsou" type="number" placeholder="例：150" min="0" max="200"><div class="hint">满分200</div></div>
-        <div class="field"><label>EJU 総分</label><input id="f-eju-total-b" type="number" placeholder="例：549"></div>
+    <div class="card-title">语言成绩</div>
+    <div class="field"><label>英语成绩</label>
+      <div class="grid-2" style="gap:8px;margin:0">
+        <select id="f-eng-type"><option value="">—</option><option value="TOEIC">TOEIC</option><option value="TOEFL">TOEFL</option><option value="IELTS">IELTS</option></select>
+        <input id="f-eng-score" type="number" step="0.5" placeholder="分数" min="0">
       </div>
     </div>
-    <div class="eju-section" id="eju-rika">
-      <div class="grid-2">
-        <div class="field"><label>EJU 日本語</label><input id="f-eju-jp-r" type="number" placeholder="例：354" min="0" max="400"></div>
-        <div class="field"><label>EJU 数学</label><input id="f-eju-math" type="number" placeholder="例：193" min="0" max="200"></div>
-      </div>
-      <div class="grid-3">
-        <div class="field"><label>EJU 物理</label><input id="f-eju-phys" type="number" placeholder="例：93" min="0" max="200"></div>
-        <div class="field"><label>EJU 化学</label><input id="f-eju-chem" type="number" placeholder="例：95" min="0" max="200"></div>
-        <div class="field"><label>EJU 生物</label><input id="f-eju-bio" type="number" placeholder="" min="0" max="200"></div>
-      </div>
-      <div class="field"><label>EJU 総分</label><input id="f-eju-total-r" type="number" placeholder="例：735"></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">🗣 语言成绩</div>
-    <div class="grid-2">
-      <div class="field"><label>JLPT 级别</label>
+    <div class="field"><label>JLPT</label>
+      <div class="grid-2" style="gap:8px;margin:0">
         <select id="f-jlpt"><option value="">—</option><option value="N1">N1</option><option value="N2">N2</option><option value="N3">N3</option></select>
-      </div>
-      <div class="field"><label>英语成绩</label>
-        <div class="grid-2" style="gap:8px;margin:0">
-          <select id="f-eng-type"><option value="">—</option><option value="TOEIC">TOEIC</option><option value="TOEFL">TOEFL</option><option value="IELTS">IELTS</option></select>
-          <input id="f-eng-score" type="number" placeholder="分数" min="0">
-        </div>
+        <input id="f-jlpt-score" type="number" placeholder="分数" min="0" max="180">
       </div>
     </div>
   </div>
 
   <div class="card">
-    <div class="card-title">📷 合格通知书照片（选填）</div>
+    <div class="card-title">班主任</div>
+    <div class="field"><input id="f-homeroom" type="text" placeholder="班主任老师的名字"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">合格通知书图片（选填）</div>
     <div class="photo-upload" onclick="document.getElementById('f-photo').click()">
       <input type="file" id="f-photo" accept="image/*" onchange="previewPhoto(this)">
       <div class="pu-icon">🖼</div>
-      <div class="pu-text">点击上传合格通知书照片</div>
+      <div class="pu-text">点击上传合格通知书图片</div>
       <div class="pu-hint">支持 JPG / PNG，最大 5MB</div>
     </div>
     <img id="photo-preview" class="photo-preview" alt="预览">
   </div>
 
   <div class="card">
-    <div class="card-title">✏️ 其他</div>
-    <div class="field"><textarea id="f-note" placeholder="其他想补充的信息（选填）"></textarea></div>
+    <div class="card-title">留言</div>
+    <div class="field"><textarea id="f-message" rows="4" placeholder="对唯新的老师、后辈想说的话（选填）"></textarea></div>
   </div>
 
   <button class="submit-btn" id="submit-btn" onclick="submitForm()">提交合格信息</button>
@@ -174,20 +162,37 @@ main{max-width:640px;margin:2rem auto;padding:0 1.2rem 4rem}
 const SUPABASE_URL='https://vwntezfvqbrkeovnseku.supabase.co';
 const SUPABASE_KEY='sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
 const BUCKET='admission-private';   // 私有桶：原截图只有管理员能看
-let curTrack='bunka';
-// 学部不分专业：按系統写本校专业（学部文科 / 学部理科 / 学部美术）；系统里没有这个 key 时留空
-const UG_TRACK_MAJOR={bunka:null,rika:null,bijutsu:null};
-fetch(`${SUPABASE_URL}/rest/v1/majors?select=key&key=in.(gakubu_bunka,gakubu_rika,gakubu_bijutsu)`,{headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}})
+let curTrack='';   // 必选：bunka / rika / ongaku / other
+// 在籍学科 → 本校专业：文科 gakubu_bunka、理科 gakubu_rika、音乐 gakubu_ongaku（系统里没有这个 key 时留空）、其他留空
+const UG_TRACK_MAJOR={bunka:null,rika:null,ongaku:null,other:null};
+fetch(`${SUPABASE_URL}/rest/v1/majors?select=key&key=in.(gakubu_bunka,gakubu_rika,gakubu_ongaku)`,{headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}})
   .then(r=>r.ok?r.json():[]).then(rows=>{const ks=new Set(rows.map(x=>x.key));
-    ['bunka','rika','bijutsu'].forEach(t=>{if(ks.has('gakubu_'+t))UG_TRACK_MAJOR[t]='gakubu_'+t;});}).catch(()=>{});
+    ['bunka','rika','ongaku'].forEach(t=>{if(ks.has('gakubu_'+t))UG_TRACK_MAJOR[t]='gakubu_'+t;});}).catch(()=>{});
 
+// 出愿区分（与数据管理一致，顺序不变）
+const UG_METHODS=['校内考方式-笔试面试','校内考方式-仅笔试','校内考方式-仅面试','纯书类选考','SGU','语言学校推荐','编入','海外出愿校内考面试','校内考方式-面试＋口头试问','其他'];
+document.getElementById('f-method').innerHTML='<option value="">—</option>'+UG_METHODS.map(m=>`<option value="${m}">${m}</option>`).join('');
+function methodChanged(){document.getElementById('f-method-other').style.display=document.getElementById('f-method').value==='其他'?'':'none';}
+
+// 各学科显示的 EJU 格子（顺序即页面顺序）
+const UG_EJU_SHOW={
+  bunka:['jp','kijutsu','bunsou','math','total'],
+  rika:['jp','kijutsu','math','phys','chem','bio','total'],
+  ongaku:['jp','kijutsu','bunsou','math','phys','chem','bio','total'],
+  other:['jp','kijutsu','bunsou','math','phys','chem','bio','total'],
+};
 function setTrack(t){
   curTrack=t;
-  document.getElementById('btn-bunka').className='track-btn'+(t==='bunka'?' active-bunka':'');
-  document.getElementById('btn-rika').className='track-btn'+(t==='rika'?' active-rika':'');
-  document.getElementById('eju-bunka').className='eju-section'+(t==='bunka'?' show':'');
-  document.getElementById('eju-rika').className='eju-section'+(t==='rika'?' show':'');
+  document.querySelectorAll('#track-btns .track-btn').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+  const show=UG_EJU_SHOW[t]||[];
+  document.querySelectorAll('#eju-grid .field').forEach(f=>{
+    const on=show.includes(f.dataset.eju);
+    f.style.display=on?'':'none';
+    if(!on)f.querySelector('input').value='';   // 切换学科：不显示的格子清空，提交时存空
+  });
+  document.getElementById('eju-tip').style.display=t?'none':'';
 }
+setTrack('');
 
 function previewPhoto(input){
   const file=input.files[0];if(!file)return;
@@ -228,8 +233,17 @@ function isRealName(n){
 async function submitForm(){
   const stuName=document.getElementById('f-student').value.trim();
   if(!isRealName(stuName)){showToast('请填写真实姓名',false);return;}
+  const passYear=parseInt(document.getElementById('f-year').value);
+  if(!(passYear>=2000&&passYear<=2100)){showToast('请填写合格的年份（4 位数）',false);return;}
+  if(!curTrack){showToast('请选择在籍学科',false);return;}
   const univ=document.getElementById('f-univ').value.trim();
-  if(!univ){showToast('请填写合格大学',false);return;}
+  if(!univ){showToast('请填写学校名',false);return;}
+  let method=document.getElementById('f-method').value;
+  if(method==='其他'){
+    const o=document.getElementById('f-method-other').value.trim();
+    if(!o){showToast('请写明出愿区分',false);return;}
+    method='其他：'+o;
+  }
   const btn=document.getElementById('submit-btn');
   btn.disabled=true;btn.textContent='提交中...';
   try{
@@ -239,32 +253,37 @@ async function submitForm(){
     let photoPath=null;
     if(photoFile){btn.textContent='上传图片中...';photoPath=await uploadPhoto(photoFile,univ,student);}
 
-    const eju_japanese=curTrack==='bunka'?n('f-eju-jp'):n('f-eju-jp-r');
-    const eju_total=curTrack==='bunka'?n('f-eju-total-b'):n('f-eju-total-r');
+    // 只存当前学科显示的 EJU 格子，其余存空
+    const show=UG_EJU_SHOW[curTrack];
+    const ev=(k,id)=>show.includes(k)?n(id):null;
     const engType=document.getElementById('f-eng-type').value;
-    const engScore=n('f-eng-score');
+    const engRaw=document.getElementById('f-eng-score').value;
+    const engScore=engRaw!==''?parseFloat(engRaw):null;
 
     const rowId=crypto.randomUUID();   // 前端生成 id：匿名读不到整行，不能靠 return=representation 取回
     const row={
       id:rowId,
       univ,
       dept:document.getElementById('f-dept').value.trim()||null,
-      spec:document.getElementById('f-spec').value.trim()||null,
-      student,track:curTrack,
+      student,track:curTrack,pass_year:passYear,
       our_major:UG_TRACK_MAJOR[curTrack],entered_via:'public',
-      era:document.getElementById('f-era').value,
-      eju_japanese,
-      eju_kijutsu:curTrack==='bunka'?n('f-eju-kijutsu'):null,
-      eju_bunsou:curTrack==='bunka'?n('f-eju-bunsou'):null,
-      eju_math:curTrack==='rika'?n('f-eju-math'):null,
-      eju_physics:curTrack==='rika'?n('f-eju-phys'):null,
-      eju_chemistry:curTrack==='rika'?n('f-eju-chem'):null,
-      eju_biology:curTrack==='rika'?n('f-eju-bio'):null,
-      eju_total,
+      era:passYear>=2026?'new':'hist',   // 与管理端一致：2026 年及以后 = new（2026–2027），更早 = hist
+      admission_method:method||null,
+      eju_japanese:ev('jp','f-eju-jp'),
+      eju_kijutsu:ev('kijutsu','f-eju-kijutsu'),
+      eju_bunsou:ev('bunsou','f-eju-bunsou'),
+      eju_math:ev('math','f-eju-math'),
+      eju_physics:ev('phys','f-eju-phys'),
+      eju_chemistry:ev('chem','f-eju-chem'),
+      eju_biology:ev('bio','f-eju-bio'),
+      eju_total:ev('total','f-eju-total'),
       jlpt:document.getElementById('f-jlpt').value||null,
-      toefl:engType==='TOEFL'?engScore:null,
-      toeic:engType==='TOEIC'?engScore:null,
-      note:document.getElementById('f-note').value.trim()||null,
+      jlpt_score:n('f-jlpt-score'),
+      toefl:engType==='TOEFL'&&engScore!=null?Math.round(engScore):null,
+      toeic:engType==='TOEIC'&&engScore!=null?Math.round(engScore):null,
+      ielts:engType==='IELTS'?engScore:null,
+      homeroom:document.getElementById('f-homeroom').value.trim()||null,
+      message:document.getElementById('f-message').value.trim()||null,
     };
 
     btn.textContent='保存中...';
@@ -312,15 +331,16 @@ function launchConfetti(){
 }
 
 function resetForm(){
-  ['f-univ','f-dept','f-spec','f-student','f-note','f-eju-jp','f-eju-kijutsu','f-eju-bunsou','f-eju-total-b','f-eju-jp-r','f-eju-math','f-eju-phys','f-eju-chem','f-eju-bio','f-eju-total-r','f-eng-score'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  ['f-era','f-jlpt','f-eng-type'].forEach(id=>document.getElementById(id).selectedIndex=0);
+  ['f-student','f-year','f-univ','f-dept','f-method-other','f-eju-jp','f-eju-kijutsu','f-eju-bunsou','f-eju-math','f-eju-phys','f-eju-chem','f-eju-bio','f-eju-total','f-eng-score','f-jlpt-score','f-homeroom','f-message'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['f-method','f-jlpt','f-eng-type'].forEach(id=>document.getElementById(id).selectedIndex=0);
+  methodChanged();
   document.getElementById('f-photo').value='';
   document.getElementById('photo-preview').style.display='none';
   document.getElementById('success-photo').style.display='none';
   document.getElementById('form-area').style.display='';
   document.getElementById('success-screen').style.display='none';
   document.getElementById('confetti-area').innerHTML='';
-  setTrack('bunka');
+  setTrack('');
   const btn=document.getElementById('submit-btn');btn.disabled=false;btn.textContent='提交合格信息';
 }
 

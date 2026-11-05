@@ -182,6 +182,8 @@ main{padding:1.5rem 3rem 4rem}
 <div class="track-bar" id="track-bar">
   <button class="track-tab active" onclick="setTrack('bunka')">文科<span class="tcount" id="tc-bunka"></span></button>
   <button class="track-tab" onclick="setTrack('rika')">理科<span class="tcount" id="tc-rika"></span></button>
+  <button class="track-tab" onclick="setTrack('ongaku')">音乐<span class="tcount" id="tc-ongaku"></span></button>
+  <button class="track-tab" onclick="setTrack('other')">其他<span class="tcount" id="tc-other"></span></button>
   <button class="track-tab" onclick="setTrack('bijutsu')">美術<span class="tcount" id="tc-bijutsu"></span></button>
 </div>
 
@@ -369,7 +371,7 @@ const SUPABASE_URL = 'https://vwntezfvqbrkeovnseku.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
 
 async function fetchAllUG() {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/undergrad_results?select=id,univ,dept,spec,track,era,tier,jlpt,toefl,toeic,eju_japanese,eju_kijutsu,eju_bunsou,eju_math,eju_physics,eju_chemistry,eju_biology,eju_total,note&order=created_at.desc`, {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/undergrad_results?select=id,univ,dept,spec,track,pass_year,era,tier,jlpt,toefl,toeic,eju_japanese,eju_kijutsu,eju_bunsou,eju_math,eju_physics,eju_chemistry,eju_biology,eju_total,note&order=created_at.desc`, {
     headers: {'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}
   });
   if (!res.ok) throw new Error(await res.text());
@@ -392,7 +394,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     allData = raw.map(r => ({
       ...r,
       univ: normUnivUG(r.univ),
-      track: r.eju_bunsou ? 'bunka' : r.eju_math || r.eju_physics || r.eju_chemistry || r.eju_biology ? 'rika' : r.track || 'bunka',
+      // 新表单录入的（有合格年份）直接用填的在籍学科；旧数据按 EJU 成绩推断
+      track: r.pass_year ? (r.track || 'bunka') : r.eju_bunsou ? 'bunka' : r.eju_math || r.eju_physics || r.eju_chemistry || r.eju_biology ? 'rika' : r.track || 'bunka',
       tier: r.tier != null ? r.tier : ugTierOf(normUnivUG(r.univ)),
       school_type: r.school_type || ugSchoolType(normUnivUG(r.univ)),
     }));
@@ -405,18 +408,20 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 function setTrack(t) {
   curTrack = t;
-  document.querySelectorAll('.track-tab').forEach((b,i) => b.classList.toggle('active', ['bunka','rika','bijutsu'][i] === t));
+  document.querySelectorAll('.track-tab').forEach((b,i) => b.classList.toggle('active', ['bunka','rika','ongaku','other','bijutsu'][i] === t));
   const sub = document.getElementById('track-sub');
-  const labels = {bunka:'学部文科', rika:'学部理科', bijutsu:'学部美術'};
+  const labels = {bunka:'学部文科', rika:'学部理科', ongaku:'学部音乐', other:'其他', bijutsu:'学部美術'};
   if (sub) sub.textContent = '唯新教育 · ' + labels[t];
   applyFilters();
 }
 
 function updateTrackCounts() {
-  const counts = {bunka:0, rika:0, bijutsu:0};
+  const counts = {bunka:0, rika:0, ongaku:0, other:0, bijutsu:0};
   for (const r of allData) counts[r.track||'bunka'] = (counts[r.track||'bunka']||0) + 1;
   document.getElementById('tc-bunka').textContent = counts.bunka ? `(${counts.bunka})` : '';
   document.getElementById('tc-rika').textContent = counts.rika ? `(${counts.rika})` : '';
+  document.getElementById('tc-ongaku').textContent = counts.ongaku ? `(${counts.ongaku})` : '';
+  document.getElementById('tc-other').textContent = counts.other ? `(${counts.other})` : '';
   document.getElementById('tc-bijutsu').textContent = counts.bijutsu ? `(${counts.bijutsu})` : '';
 }
 
@@ -474,7 +479,7 @@ function applyFilters() {
   const content = document.getElementById('content');
   const trackTotal = allData.filter(r => (r.track||'bunka')===curTrack).length;
   if (trackTotal === 0) {
-    const labels = {bunka:'文科', rika:'理科', bijutsu:'美術'};
+    const labels = {bunka:'文科', rika:'理科', ongaku:'音乐', other:'其他', bijutsu:'美術'};
     content.innerHTML = `<div class="track-empty"><div class="te-icon">○</div><div class="te-text">${labels[curTrack]}のデータはまだありません</div></div>`;
   } else if (curGroup==='tier') content.innerHTML = renderTierView(data);
   else if (curGroup==='dept') content.innerHTML = renderDeptView(data);
