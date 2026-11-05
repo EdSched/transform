@@ -1081,18 +1081,18 @@ const RA_XL = {
   ug: {
     // 模板列顺序 = 公开页 / 手动录入表单的顺序（Sensis 定）；tpl:false 的列只出现在「导出」里（更新用 / 管理用 / 旧字段），模板里没有
     name: '学部', table: 'undergrad_results', p: 'ug-',
-    sample: ['', '填写说明（本行导入时自动跳过）', '合格的年份，4 位数，如 2026', '只能填：学部文科 / 学部理科 / 学部音乐 / 其他', '日文完整校名，如 早稲田大学', '日文，如 商学部',
+    sample: ['', '填写说明（本行导入时自动跳过）', '合格的年份，4 位数，如 2026', '只能填：学部文科 / 学部理科 / 学部音乐 / 其他', '日文完整校名，如 早稲田大学', '日文，如 商学部', '日文，如 経営学科',
       '只能填 10 个选项之一，或「其他：…」，见「填写说明」页', '满分400，不含记述', '满分50', '满分200', '满分200', '满分200', '满分200', '满分200', '数字',
-      'TOEIC / TOEFL / IELTS', '数字（IELTS 可带小数）', 'N1 / N2 / N3', '数字', '班主任老师的名字', '选填', '', '', '', ''],   // 和 cols 一一对应（id 列和末尾 4 个只导出的列留空）
+      'TOEIC / TOEFL / IELTS', '数字（IELTS 可带小数）', 'N1 / N2 / N3', '数字', '班主任老师的名字', '选填', '', '', ''],   // 和 cols 一一对应（id 列和末尾 4 个只导出的列留空）
     cols: [
       { k: 'id', head: '记录编号', tpl: false }, { k: 'student', head: '真实姓名' }, { k: 'pass_year', head: '年份' }, { k: 'track', head: '在籍学科' },
-      { k: 'univ', head: '学校名' }, { k: 'dept', head: '学部名' }, { k: 'admission_method', head: '出愿区分' },
+      { k: 'univ', head: '学校名' }, { k: 'dept', head: '学部名' }, { k: 'spec', head: '学科名' }, { k: 'admission_method', head: '出愿区分' },
       { k: 'eju_japanese', head: 'EJU日语' }, { k: 'eju_kijutsu', head: 'EJU记述' }, { k: 'eju_bunsou', head: 'EJU文综' }, { k: 'eju_math', head: 'EJU数学' },
       { k: 'eju_physics', head: 'EJU物理' }, { k: 'eju_chemistry', head: 'EJU化学' }, { k: 'eju_biology', head: 'EJU生物' }, { k: 'eju_total', head: 'EJU总分' },
       { k: 'eng_type', head: '英语类型' }, { k: 'eng_score', head: '英语分数' }, { k: 'jlpt', head: 'JLPT级别' }, { k: 'jlpt_score', head: 'JLPT分数' },
       { k: 'homeroom', head: '班主任' }, { k: 'message', head: '留言' },
       { k: 'our_major', head: '本校在籍专业', tpl: false }, { k: 'tier', head: 'Tier', tpl: false },
-      { k: 'spec', head: '学科名（旧）', tpl: false }, { k: 'note', head: '备注（旧）', tpl: false },
+      { k: 'note', head: '备注（旧）', tpl: false },
     ],
   },
 };
@@ -1272,6 +1272,7 @@ function raUgTemplate() {
   help.push(R('在籍学科', '是', '只能填：' + RA_UG_TRACKS.map(x => x[1]).join(' / ') + '。写错的行预览里标红，不导入', '学部文科'));
   help.push(R('学校名', '是', '用日文写完整的学校名', '早稲田大学'));
   help.push(R('学部名', '否', '用日文写', '商学部'));
+  help.push(R('学科名', '否', '用日文写', '経営学科'));
   help.push(R('出愿区分', '否', '只能填下面 10 个选项之一，或「其他：具体内容」。写错的行预览里标红，不导入：' + RA_UG_METHODS.join(' / '), '校内考方式-笔试面试'));
   help.push(R('EJU日语 … EJU总分', '否', '数字。日语满分400（读解+听解，不含记述）、记述50、文综 / 数学 / 物理 / 化学 / 生物各200。学部文科只存 日语、记述、文综、数学、总分；学部理科只存 日语、记述、数学、物理、化学、生物、总分；音乐 / 其他全部都存。不该有的格子导入时自动清空', '354'));
   help.push(R('英语类型 / 英语分数', '否', '类型：TOEIC / TOEFL / IELTS；分数是数字（IELTS 可带小数）。两项要一起填', 'TOEIC / 800'));
@@ -1392,7 +1393,7 @@ function raXlRenderPreview(kind) {
   const E = raArEsc, shown = plan.slice(0, raXl.show[kind]);
   const ST = { new: ['新增', '#1a4a30', '#ddf0e8'], update: ['更新', '#1a3a6a', '#ddeaf8'], skip: ['跳过', '#8a2020', '#f8e0e0'] };
   const isUg = kind === 'ug';
-  const UGC = [['student', '真实姓名'], ['pass_year', '年份'], ['track', '在籍学科'], ['univ', '学校名'], ['dept', '学部名'], ['admission_method', '出愿区分']];
+  const UGC = [['student', '真实姓名'], ['pass_year', '年份'], ['track', '在籍学科'], ['univ', '学校名'], ['dept', '学部名'], ['spec', '学科名'], ['admission_method', '出愿区分']];
   let html = isUg
     ? `<table class="preview-table"><thead><tr><th>行</th><th>状态</th>${UGC.map(c => `<th>${c[1]}</th>`).join('')}<th>说明 / 改动</th></tr></thead><tbody>`
     : `<table class="preview-table"><thead><tr><th>行</th><th>状态</th><th>大学名</th><th>${E(RA_XL_FIELD_LABEL.dept)}</th><th>${E(RA_XL_FIELD_LABEL.spec)}</th><th>学生</th><th>本校在籍专业</th><th>说明 / 改动</th></tr></thead><tbody>`;
@@ -3001,13 +3002,13 @@ async function raUgRefreshUnivList() {
 const raUG_FIELD_DEFS = [
   { key:'id', label:'记录编号（更新用，新增留空）' },
   { key:'student', label:'真实姓名 *' }, { key:'pass_year', label:'年份 *' }, { key:'track', label:'在籍学科 *（学部文科 / 学部理科 / 学部音乐 / 其他）' },
-  { key:'univ', label:'学校名 *' }, { key:'dept', label:'学部名' }, { key:'admission_method', label:'出愿区分' },
+  { key:'univ', label:'学校名 *' }, { key:'dept', label:'学部名' }, { key:'spec', label:'学科名' }, { key:'admission_method', label:'出愿区分' },
   { key:'eju_japanese', label:'EJU日语' }, { key:'eju_kijutsu', label:'EJU记述' }, { key:'eju_bunsou', label:'EJU文综' }, { key:'eju_math', label:'EJU数学' },
   { key:'eju_physics', label:'EJU物理' }, { key:'eju_chemistry', label:'EJU化学' }, { key:'eju_biology', label:'EJU生物' }, { key:'eju_total', label:'EJU总分' },
   { key:'eng_type', label:'英语类型' }, { key:'eng_score', label:'英语分数' }, { key:'jlpt', label:'JLPT级别' }, { key:'jlpt_score', label:'JLPT分数' },
   { key:'homeroom', label:'班主任' }, { key:'message', label:'留言' },
   { key:'our_major', label:'本校在籍专业（不填 = 按在籍学科默认）' }, { key:'tier', label:'学校等级（元データ / 0–4）' },
-  { key:'spec', label:'学科名（旧）' }, { key:'note', label:'备注（旧）' },
+  { key:'note', label:'备注（旧）' },
 ];
 
 function raUgHandleFile(file) {
@@ -3040,7 +3041,7 @@ function raUgBuildMappingUI() {
 }
 
 // 按表头名字对列（不按位置）。模板 / 导出文件：表头一字不差才对上（旧版表头「大学名」「学部」「学生名」也认）；别的文件：表头里带关键词就猜
-const raUG_HEAD_ALIAS = { univ: ['大学名'], dept: ['学部'], spec: ['学科', '学科名'], student: ['学生名', '学生姓名'], note: ['备注'], pass_year: ['合格年份'], eju_japanese: ['EJU日本語', 'EJU日语'], eju_total: ['EJU総分'], eju_bunsou: ['EJU文系総合'] };
+const raUG_HEAD_ALIAS = { univ: ['大学名'], dept: ['学部'], spec: ['学科', '学科名（旧）'], student: ['学生名', '学生姓名'], note: ['备注'], pass_year: ['合格年份'], eju_japanese: ['EJU日本語', 'EJU日语'], eju_total: ['EJU総分'], eju_bunsou: ['EJU文系総合'] };
 function raUgGuessCol(header, key) {
   if (raXlTpl.ug) return raXlGuessExact('ug', header, key) || (raUG_HEAD_ALIAS[key] || []).some(a => raXlNorm(a) === raXlNorm(header));
   const h = header.toLowerCase();

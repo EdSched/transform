@@ -185,6 +185,8 @@ function openStudentModal(id){
   setStLangs(s?.extra_majors||[]);
   populateVipTeachers(s?.vip_teachers||[]);
   populateOwnerTeachers(s?.owner_teachers||[]);
+  { const dl=document.getElementById('st_homeroom_list');
+    if(dl) dl.innerHTML=(typeof teacherInView==='function'?(cachedTeachers||[]).filter(teacherInView):(cachedTeachers||[])).map(t=>`<option value="${t.name}">`).join(''); }
   const fields={
     st_name:'name',st_type:'student_type',st_source:'source',
     st_course:'course_type',st_level:'level',st_japanese:'japanese_score',
@@ -192,7 +194,8 @@ function openStudentModal(id){
     st_gpa:'gpa',st_thesis:'thesis',st_graduation:'graduation_date',
     st_enrollment:'target_enrollment',st_arrival:'japan_arrival',
     st_signup:'signup_date',st_expiry:'expiry_date',st_default_mode:'default_mode',st_status:'status',
-    st_vip_course:'is_vip_course',st_vip_total:'vip_hours_total',st_vip_used:'vip_hours_used'
+    st_vip_course:'is_vip_course',st_vip_total:'vip_hours_total',st_vip_used:'vip_hours_used',
+    st_homeroom:'homeroom_teacher'
   };
   Object.entries(fields).forEach(([el,key])=>{
     const e=document.getElementById(el);
@@ -347,6 +350,7 @@ async function saveStudent(){
     vip_hours_used:parseFloat(document.getElementById('st_vip_used').value)||0,
     vip_teachers:[...vipTeacherTags],
     owner_teachers:[...ownerTeacherTags],
+    homeroom_teacher:(document.getElementById('st_homeroom')?.value||'').trim()||null,
     ...(typeof stClassPatch==='function'?stClassPatch():{})
   };
   try{
