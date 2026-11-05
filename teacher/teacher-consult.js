@@ -176,6 +176,10 @@ function cstSkip() {   // 只有「确定目标」可以暂不确定
 function cstPrev() { const i = cstItemIdx(cst.item); if (i > 0) cstGoItem(CST_ITEMS[i - 1].id); }
 function cstHome() { cstFlush(); cst.cur = null; cst.overlay = ''; cstRender(); window.scrollTo(0, 0); }
 function cstExit() { cstFlush(); if (window.__CONSULT_STANDALONE__) { cstHome(); return; } document.body.classList.remove('consult-mode'); if (typeof switchTab === 'function') switchTab('todo'); }
+// 顶栏 logo：美术领域的咨询者用美术 logo，其余（含首页列表）用普通 logo；图片加载失败时隐藏，只留文字「唯新学院」
+const cstIsArt = l => !!l && !!l.target_major && /美术/.test(admissionMajorDomain(l.target_major) || '');
+const cstLogoSrc = l => `../shared/img/${cstIsArt(l) ? 'artlogo' : 'logo'}-nav.png?v=20270218`;
+const cstLogoHtml = l => `<span class="cst-brand"><img class="cst-logo" src="${cstLogoSrc(l)}" alt="唯新学院" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'"><span class="cst-logo-fb" style="display:none">唯新学院</span><span class="cst-brand-t">升学咨询</span></span>`;
 const cstBackBtn = () => window.__CONSULT_STANDALONE__ ? '' : '<button class="btn btn-sm" onclick="cstExit()">← 返回老师端</button>';
 function cstRefresh() { if (cst.cur || cst.overlay) cstRender(); }
 function cstToggleShow() { cst.show = !cst.show; cstRender(); }
@@ -187,18 +191,19 @@ function cstProgText(l) {
 function cstRender() {
   const mc = document.getElementById('mainContent'); if (!mc) return;
   document.body.classList.add('consult-mode');
-  if (cst.err) { mc.innerHTML = `<div class="cst-root"><header class="cst-top">${cstBackBtn()}</header><div class="empty">加载失败：${cstE(cst.err)}<br><span style="font-size:11px">（如果提示表不存在，请联系管理员先执行咨询台的建表 SQL）</span></div></div>`; return; }
+  if (cst.err) { mc.innerHTML = `<div class="cst-root"><header class="cst-top">${cstLogoHtml(null)}<span class="cst-top-r">${cstBackBtn()}</span></header><div class="empty">加载失败：${cstE(cst.err)}<br><span style="font-size:11px">（如果提示表不存在，请联系管理员先执行咨询台的建表 SQL）</span></div></div>`; return; }
   mc.innerHTML = `<div class="cst-root">${cst.cur ? cstFlowHtml() : cstHomeHtml()}${cst.overlay ? cstOverlayHtml() : ''}</div>`;
 }
 function cstTopHtml(l) {
   return `<header class="cst-top">
-    ${cstBackBtn()}
+    ${cstLogoHtml(l)}
     ${l ? `<button class="btn btn-sm" onclick="cstHome()">咨询者列表</button><span class="cst-who">${cstE(l.name || '未命名咨询者')}</span>${cst.show ? '' : `<span id="cst_state" class="cst-state">${cstE(cst.saving)}</span>`}` : '<span class="cst-who">咨询台</span>'}
     <span class="cst-top-r">
       <button class="btn btn-sm" onclick="cstOpenAbout()">关于唯新</button>
       <button class="btn btn-sm" onclick="cstOpenMedia()">教材・校区</button>
       <button class="btn btn-sm" onclick="cstOpenFaq()">常见问题</button>
       ${l ? `<button class="btn btn-sm ${cst.show ? 'btn-primary' : ''}" onclick="cstToggleShow()">展示模式${cst.show ? '：开' : '：关'}</button>${cst.show ? '' : '<button class="btn btn-sm cst-del" onclick="cstDelete()">删除</button>'}` : ''}
+      ${cstBackBtn()}
     </span></header>`;
 }
 function cstHomeHtml() {
@@ -1003,9 +1008,10 @@ function cstExportPdf() {
   const w = window.open('', '_blank'); if (!w) { alert('浏览器拦截了新窗口，请允许弹出窗口后再试'); return; }
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>升学计划</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@400;500&display=swap" rel="stylesheet">
-<style>body{font-family:'Noto Sans SC',sans-serif;color:#1a1814;background:#f7f5f0;max-width:760px;margin:24px auto;padding:0 20px;font-size:13px;line-height:1.9}h1{font-family:'Noto Serif SC',serif;font-size:22px;border-bottom:2px solid #b8953a;padding-bottom:8px}.s{border-bottom:1px solid #e2ded6;padding:8px 0}.k{font-family:'Noto Serif SC',serif;font-weight:600;color:#b8953a;font-size:13px}p{margin:2px 0}.mute{color:#999}.f{font-size:11px;color:#777;margin-top:18px}@media print{body{background:#fff;margin:0}}</style></head><body>
-<h1>升学计划${l.name ? ' · ' + cstE(l.name) : ''}</h1>${Object.entries(data).map(sec).join('')}<div class="f">具备报考资格 ≠ 能够合格；本计划不含合格概率。生成于 ${new Date().toISOString().slice(0, 10)}</div></body></html>`);
+<style>body{font-family:'Noto Sans SC',sans-serif;color:#1a1814;background:#f7f5f0;max-width:760px;margin:24px auto;padding:0 20px;font-size:13px;line-height:1.9}h1{font-family:'Noto Serif SC',serif;font-size:22px;margin-top:6px;border-bottom:2px solid #b8953a;padding-bottom:8px}.brand img{height:56px;width:auto;display:block}.s{border-bottom:1px solid #e2ded6;padding:8px 0}.k{font-family:'Noto Serif SC',serif;font-weight:600;color:#b8953a;font-size:13px}p{margin:2px 0}.mute{color:#999}.f{font-size:11px;color:#777;margin-top:18px}@media print{body{background:#fff;margin:0}}</style></head><body>
+<div class="brand"><img src="${cstE(new URL(cstLogoSrc(l), location.href).href)}" alt="唯新学院" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'"><span style="display:none;font-family:'Noto Serif SC',serif;font-weight:600">唯新学院</span></div><h1>升学计划${l.name ? ' · ' + cstE(l.name) : ''}</h1>${Object.entries(data).map(sec).join('')}<div class="f">具备报考资格 ≠ 能够合格；本计划不含合格概率。生成于 ${new Date().toISOString().slice(0, 10)}</div></body></html>`);
   w.document.close();
   const go = () => { try { w.focus(); w.print(); } catch (e) {} };
-  setTimeout(() => { (w.document.fonts && w.document.fonts.ready ? w.document.fonts.ready : Promise.resolve()).then(go, go); }, 400);
+  const imgs = () => Promise.all([...w.document.images].map(i => i.complete ? 1 : new Promise(r => { i.onload = i.onerror = r; })));   // logo 加载完再打印
+  setTimeout(() => { (w.document.fonts && w.document.fonts.ready ? w.document.fonts.ready : Promise.resolve()).then(imgs).then(go, go); }, 400);
 }

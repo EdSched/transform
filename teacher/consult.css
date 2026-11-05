@@ -42,6 +42,10 @@ body.consult-mode .main { max-width: none !important; width: 100% !important; pa
 
 /* 顶部栏 */
 .cst-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 28px; background: #fff; border-bottom: 1px solid #e8dfd5; position: sticky; top: 0; z-index: 30; }
+.cst-brand { display: flex; align-items: center; gap: 10px; margin-right: 8px; }
+.cst-logo { height: 44px; width: auto; display: block; }
+.cst-logo-fb { font-family: 'Noto Serif SC', serif; font-weight: 600; font-size: 17px; color: #2e2924; }
+.cst-brand-t { font-family: 'Noto Serif SC', serif; font-size: 15px; font-weight: 600; color: #5a5148; letter-spacing: 1px; }
 .cst-who { font-family: 'Noto Serif SC', serif; font-weight: 600; font-size: 17px; color: #2e2924; margin-left: 6px; }
 .cst-state { font-size: 12px; color: #8a7f73; }
 .cst-top-r { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
