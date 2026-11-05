@@ -180,7 +180,7 @@ function cstExit() { cstFlush(); if (window.__CONSULT_STANDALONE__) { cstHome();
 const cstIsArt = l => !!l && !!l.target_major && /美术/.test(admissionMajorDomain(l.target_major) || '');
 const cstLogoSrc = l => `../shared/img/${cstIsArt(l) ? 'artlogo' : 'logo'}-nav.png?v=20270218`;
 const cstLogoHtml = l => `<span class="cst-brand"><img class="cst-logo" src="${cstLogoSrc(l)}" alt="唯新学院" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'"><span class="cst-logo-fb" style="display:none">唯新学院</span><span class="cst-brand-t"><b>唯新学院</b><i>TRANSFORM EDUCATION</i></span></span>`;
-const cstFootHtml = () => `<footer class="cst-foot"><span class="cst-foot-brand">TRANSFORM EDUCATION</span><span>唯新学院 · 升学咨询</span><span class="cst-foot-note">本页内容仅供咨询参考；具备报考资格 ≠ 能够合格，不含合格概率。</span></footer>`;
+const cstFootHtml = () => `<footer class="cst-foot"><span class="cst-foot-brand">TRANSFORM EDUCATION</span><span>唯新学院 · 升学咨询</span><span class="cst-foot-note">具备报考资格，就已经迈出了第一步。接下来认真准备、一起加油！</span></footer>`;
 const cstBackBtn = () => window.__CONSULT_STANDALONE__ ? '' : '<button class="btn btn-sm" onclick="cstExit()">← 返回老师端</button>';
 function cstRefresh() { if (cst.cur || cst.overlay) cstRender(); }
 function cstToggleShow() { cst.show = !cst.show; cstRender(); }
@@ -608,7 +608,7 @@ function cstAdmHtml() {
         ${ev.notes.length ? `<div style="font-size:11px;color:${c[1]};margin-top:3px">${cstE(ev.notes.join('；'))}</div>` : ''}${pOpen && profs.length ? `<div style="margin-top:8px">${cstProfCards(profs)}</div>` : ''}</div>`;
     }).join('')}
     ${rows.length > cst.admLimit ? `<div onclick="cst.admLimit+=30;cstRender()" style="text-align:center;padding:10px;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">显示更多（还有 ${rows.length - cst.admLimit} 条）</div>` : ''}
-    <div style="font-size:10px;color:var(--text-3);margin-top:8px">具备报考资格 ≠ 能够合格；这里不显示合格概率。「出愿时间已过」按目标入学时间推算，仅供参考。</div>`;
+    <div style="font-size:10px;color:var(--text-3);margin-top:8px">具备报考资格，就已经迈出了第一步，一起加油！「出愿时间已过」按目标入学时间推算，仅供参考。</div>`;
 }
 function cstGoalLabel(a) { return [a.university, a.faculty, a.department || a.course].filter(Boolean).join(' '); }
 function cstToggleGoal(id) {
@@ -949,7 +949,7 @@ function cstP42() {
   const cm = data['规划老师评语'] ? `<div style="margin-bottom:12px"><div style="font-size:11px;color:var(--text-3);margin-bottom:3px">规划老师评语</div><div style="font-size:12px;line-height:1.9;white-space:pre-wrap">${cstE(data['规划老师评语'])}</div></div>` : '';
   return `<div style="font-size:10px;color:${saved ? '#1a5a3a' : 'var(--text-3)'};margin-bottom:10px">${saved ? '已保存的方案版本（' + cstE(String(l.final_plan.saved_at).slice(0, 16).replace('T', ' ')) + '），后台改动不会影响它' : '实时内容，还没保存成版本'}</div>${secs}${cm}
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" onclick="cstSavePlan()">${saved ? '重新保存为新版本' : '保存方案版本'}</button><button class="btn btn-sm" onclick="cstExportPdf()">导出 PDF</button></div>
-      <div style="font-size:10px;color:var(--text-3);margin-top:10px">具备报考资格 ≠ 能够合格；本计划不含合格概率。</div>`;
+      <div style="font-size:10px;color:var(--text-3);margin-top:10px">具备报考资格，就已经迈出了第一步。接下来认真准备、一起加油！</div>`;
 }
 async function cstOpenMedia() {
   cst.overlay = 'media'; cstRender();
@@ -1010,7 +1010,7 @@ function cstExportPdf() {
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>升学计划</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@400;500&display=swap" rel="stylesheet">
 <style>body{font-family:'Noto Sans SC',sans-serif;color:#1a1814;background:#f7f5f0;max-width:760px;margin:24px auto;padding:0 20px;font-size:13px;line-height:1.9}h1{font-family:'Noto Serif SC',serif;font-size:22px;margin-top:6px;border-bottom:2px solid #b8953a;padding-bottom:8px}.brand img{height:56px;width:auto;display:block}.s{border-bottom:1px solid #e2ded6;padding:8px 0}.k{font-family:'Noto Serif SC',serif;font-weight:600;color:#b8953a;font-size:13px}p{margin:2px 0}.mute{color:#999}.f{font-size:11px;color:#777;margin-top:18px}@media print{body{background:#fff;margin:0}}</style></head><body>
-<div class="brand"><img src="${cstE(new URL(cstLogoSrc(l), location.href).href)}" alt="唯新学院" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'"><span style="display:none;font-family:'Noto Serif SC',serif;font-weight:600">唯新学院</span></div><h1>升学计划${l.name ? ' · ' + cstE(l.name) : ''}</h1>${Object.entries(data).map(sec).join('')}<div class="f">具备报考资格 ≠ 能够合格；本计划不含合格概率。生成于 ${new Date().toISOString().slice(0, 10)}</div></body></html>`);
+<div class="brand"><img src="${cstE(new URL(cstLogoSrc(l), location.href).href)}" alt="唯新学院" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'"><span style="display:none;font-family:'Noto Serif SC',serif;font-weight:600">唯新学院</span></div><h1>升学计划${l.name ? ' · ' + cstE(l.name) : ''}</h1>${Object.entries(data).map(sec).join('')}<div class="f">具备报考资格，就已经迈出了第一步。接下来认真准备、一起加油！生成于 ${new Date().toISOString().slice(0, 10)}</div></body></html>`);
   w.document.close();
   const go = () => { try { w.focus(); w.print(); } catch (e) {} };
   const imgs = () => Promise.all([...w.document.images].map(i => i.complete ? 1 : new Promise(r => { i.onload = i.onerror = r; })));   // logo 加载完再打印
