@@ -1323,19 +1323,19 @@ function raXlBuildPlan(kind, upRows, existing) {
     return cmp > 0;
   };
   return upRows.map((row, idx) => {
-    const e = { no: idx + 2, status: 'skip', reason: '', hint: '', diffs: [], rec: null, id: '', view: {}, majorRaw: '', majorErr: '' };
+    const e = { idx, no: idx + 2, status: 'skip', reason: '', hint: '', diffs: [], rec: null, id: '', view: {}, majorRaw: '', majorErr: '' };
     if (isSample(row)) { e.reason = '示例行'; return e; }
     const m = mapper(row);
     e.majorRaw = m._majorRaw; e.majorErr = m._majorErr;
     const rec = {}; Object.keys(m).forEach(k => { if (k[0] !== '_') rec[k] = m[k]; });
     const id = m._id;
     if (m._errs && m._errs.length) {   // 学部：写法不对（在籍学科 / 出愿区分 / 数字列…）：标红，整行不导入
-      e.bad = true; e.badRaw = m._badRaw || {}; e.reason = m._errs.join('；'); e.view = rec; return e;
+      e.bad = true; e.fix = true; e.badRaw = m._badRaw || {}; e.reason = m._errs.join('；'); e.view = rec; return e;
     }
     const ex = id ? byId[id] : null;
     const scopeReason = r2 => (raInMyScope(kind, r2) ? '' : (r2.our_major ? '本校在籍专业不在你的管理范围内' : '没有填本校在籍专业，系統所属领域不在你的管理范围内（只负责专业的负责人必须填）'));
     if (ex) {
-      if (seen.has(id)) { e.reason = '记录编号在文件里重复'; e.view = ex; return e; }
+      if (seen.has(id)) { e.reason = '记录编号在文件里重复'; e.fix = true; e.hiKeys = ['id']; e.view = ex; return e; }
       seen.add(id);
       const patch = {}; m._patchKeys.forEach(k => { patch[k] = rec[k]; });
       if (raXlEq(ex.univ, patch.univ)) delete patch.school_type;   // 大学名没变就不重算区分
@@ -1348,10 +1348,10 @@ function raXlBuildPlan(kind, upRows, existing) {
     }
     e.view = rec; e.auto = !!m._auto;
     if (id) e.hint = '找不到这个记录编号' + (raScopedLead() ? '（或不在你的范围内）' : '') + '，按新增';
-    if (!rec.univ) { e.reason = kind === 'ug' ? '没有学校名' : '没有大学名'; return e; }
+    if (!rec.univ) { e.reason = kind === 'ug' ? '没有学校名' : '没有大学名'; e.fix = true; e.hiKeys = ['univ']; return e; }
     if (kind === 'ug') {   // 新增必填：真实姓名、年份、在籍学科（更新时空白 = 保持原值，不用填）
       const miss = [!rec.student && '真实姓名', rec.pass_year == null && '年份', !m._trackOk && '在籍学科'].filter(Boolean);
-      if (miss.length) { e.bad = true; e.badRaw = {}; e.reason = '新增必填项没填：' + miss.join('、'); return e; }
+      if (miss.length) { e.bad = true; e.fix = true; e.hiKeys = [!rec.student && 'student', rec.pass_year == null && 'pass_year', !m._trackOk && 'track'].filter(Boolean); e.badRaw = {}; e.reason = '新增必填项没填：' + miss.join('、'); return e; }
     }
     const why = scopeReason(rec);
     if (why) { e.reason = why; return e; }
@@ -1377,15 +1377,54 @@ async function raXlShowPreview(kind) {
     document.getElementById(p + 'import-preview').style.display = '';
   } catch (e) { raToast('预览失败：' + e.message, false); }
 }
+// ── 下载「需要修改的行」：表头 / 列顺序 / 原始值和上传的文件一样，最前面加一列「需要修改」（导入时对不上任何字段，自动忽略）──
+async function raXlDownloadFix(kind) {
+  const K = RA_XL[kind], plan = raXl.plan[kind] || [], fixes = plan.filter(x => x.fix);
+  if (!fixes.length) return;
+  const heads = kind === 'ug' ? raUgUploadHeaders : raUploadHeaders, upRows = kind === 'ug' ? raUgUploadRows : raUploadRows, colMap = kind === 'ug' ? raUgUploadColMap : raUploadColMap;
+  const keyAt = {}; Object.keys(colMap).forEach(k => { if (colMap[k] != null && keyAt[colMap[k]] == null) keyAt[colMap[k]] = k; });
+  const sampleOf = {}; K.cols.forEach((c, i) => { sampleOf[c.k] = K.sample[i]; });
+  const instr = heads.map((h, i) => { const k = keyAt[i]; return k && sampleOf[k] != null ? sampleOf[k] : ''; });
+  const NEED = '需要修改', d = new Date(), pd = n => String(n).padStart(2, '0');
+  const fname = `合格实绩_需要修改_${K.name}_${d.getFullYear()}${pd(d.getMonth() + 1)}${pd(d.getDate())}-${pd(d.getHours())}${pd(d.getMinutes())}.xlsx`;
+  const body = fixes.map(x => { const r = upRows[x.idx] || []; return [x.reason].concat(heads.map((h, i) => r[i] == null ? '' : r[i])); });
+  const redCols = fixes.map(x => { const set = new Set(); Object.keys(x.badRaw || {}).concat(x.hiKeys || []).forEach(k => { if (colMap[k] != null) set.add(colMap[k] + 1); }); return set; });
+  await raLoadLib('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js', () => typeof ExcelJS !== 'undefined');
+  if (typeof ExcelJS !== 'undefined') {
+    try {
+      const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('填写');
+      const fill = argb => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
+      ws.addRow([NEED].concat(heads)).font = { bold: true };
+      ws.addRow([''].concat(instr));
+      body.forEach((row, i) => {
+        const r = ws.addRow(row);
+        r.getCell(1).fill = fill('FFFFF2CC');
+        redCols[i].forEach(c => { r.getCell(c + 1).fill = fill('FFFFC7CE'); });
+      });
+      ws.getColumn(1).width = 46;
+      for (let c = 2; c <= heads.length + 1; c++) ws.getColumn(c).width = 16;
+      const buf = await wb.xlsx.writeBuffer();
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = fname;
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      return;
+    } catch (e) { /* 退回无颜色导出 */ }
+  }
+  if (!(await raXlEnsureLib())) return;
+  const aoa = [[NEED].concat(heads), [''].concat(instr)].concat(body);
+  const ws = XLSX.utils.aoa_to_sheet(aoa), wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '填写');
+  XLSX.writeFile(wb, fname);
+  raToast('颜色组件没加载成功，已导出无颜色版本（原因在第一列）');
+}
 function raXlMoreRows(kind) { raXl.show[kind] += 50; raXlRenderPreview(kind); }
 function raXlRenderPreview(kind) {
   const K = RA_XL[kind], p = K.p, plan = raXl.plan[kind];
   const n = s => plan.filter(x => x.status === s).length;
   const nNew = n('new'), nUp = n('update'), nSkip = n('skip');
-  const nErr = plan.filter(x => x.majorErr).length, nBad = plan.filter(x => x.bad).length, nDup = plan.filter(x => x.dup).length;
+  const nFix = plan.filter(x => x.fix).length, nErr = plan.filter(x => x.majorErr).length, nBad = plan.filter(x => x.bad).length, nDup = plan.filter(x => x.dup).length;
   document.getElementById(p + 'import-summary').innerHTML =
     `<b>新增 ${nNew} 条 · 更新 ${nUp} 条 · 跳过 ${nSkip} 条</b>` +
     (nBad ? `<span style="color:var(--red);margin-left:10px">写法不对 / 必填没填 ${nBad} 行（标红，不导入）</span>` : '') +
+    (nFix ? `<button class="btn btn-secondary" style="margin-left:10px;padding:3px 10px;font-size:11px" onclick="raXlDownloadFix('${kind}')">⬇ 下载需要修改的行（${nFix} 行）</button>` : '') +
     (nDup ? `<span style="color:#a05a10;margin-left:10px">疑似重复 ${nDup} 行（已提示，仍会导入）</span>` : '') +
     (nErr ? `<span style="color:var(--red);margin-left:10px">本校在籍专业对不上 ${nErr} 行（已标红，该项留空）</span>` : '');
   document.getElementById(p + 'import-count').textContent = nNew + nUp;
