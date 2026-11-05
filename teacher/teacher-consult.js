@@ -3,15 +3,17 @@
 // 营业开会议共享屏幕给潜在学生看。4 步：① 学生信息 → ② 专业与院校 → ③ 课程与方案 → ④ 最终升学计划
 // 数据：consult_leads（咨询者档案，一人一行，RLS 只有录入人自己和管理员能看）、faq（常见问题）
 // 复用现有数据：admission_schools（出愿）、courses（课程）、price_packages（价目）、success_cases（合格案例）、promo_content / promo_videos（专业介绍）
-// 院校 4 种状态全部按规则判断，不用 AI；「生成 AI 提示词」只整理文字让老师复制出去，不接任何 AI 接口，提示词里不放姓名和联系方式。
+// 院校 4 种状态全部按规则判断，不用 AI。4-1 规划老师评语是 5 个分项：上半部分自动列出学生现状（只读），下半部分老师手填（consult_leads.comments）。
+// 差距 → 课程 / 介绍：用内置关键词去现有宣传内容（课程介绍、课程安排、通用宣传）里找，不需要管理员配规则。
+// 也可以单独打开：consult/?tid=xxx（window.__CONSULT_STANDALONE__），不经过老师端。
 // 显示方式：进入咨询后整页只显示咨询台（body.consult-mode，样式在 teacher/consult.css，全部限定在 .cst-root 下）；首页是咨询者卡片，进入一位后「一项一页」，顶部进度条。
 // 全局名字统一用 cst / CST_ 前缀。依赖：shared/constants.js、shared/supabase.js、teacher.js
 // ══════════════════════════════════
 let cst = {
   loaded: false, err: '', list: [], cur: null, step: 1, show: false, q: '', saving: '',
   adm: [], admKey: '', admLoading: false, admLimit: 30,
-  courses: null, pkgs: null, rules: [], profs: null, media: null, mediaTab: 'textbook', mediaQ: '', common: null, commonDom: '', profiles: null, tiers: null, cases: null, faqs: null, intro: null, introKey: '',
-  open: {}, item: '1-1', overlay: '', faqQ: '', crsQ: '', crsLimit: 30, dirty: {}, timer: null,
+  courses: null, pkgs: null, profs: null, media: null, mediaTab: 'textbook', mediaQ: '', common: null, commonDom: '', profiles: null, tiers: null, cases: null, faqs: null, intro: null, introKey: '',
+  open: {}, item: '1-1', overlay: '', faqQ: '', crsQ: '', crsLimit: 30, crsPer: 'next', crsScope: 'major', crsOther: '', crsCampus: '', dirty: {}, timer: null,
 };
 
 const CST_STEPS = [[1, '学生信息'], [2, '专业与院校'], [3, '课程与方案'], [4, '最终升学计划']];
@@ -173,7 +175,8 @@ function cstSkip() {   // 只有「确定目标」可以暂不确定
 }
 function cstPrev() { const i = cstItemIdx(cst.item); if (i > 0) cstGoItem(CST_ITEMS[i - 1].id); }
 function cstHome() { cstFlush(); cst.cur = null; cst.overlay = ''; cstRender(); window.scrollTo(0, 0); }
-function cstExit() { cstFlush(); document.body.classList.remove('consult-mode'); if (typeof switchTab === 'function') switchTab('todo'); }
+function cstExit() { cstFlush(); if (window.__CONSULT_STANDALONE__) { cstHome(); return; } document.body.classList.remove('consult-mode'); if (typeof switchTab === 'function') switchTab('todo'); }
+const cstBackBtn = () => window.__CONSULT_STANDALONE__ ? '' : '<button class="btn btn-sm" onclick="cstExit()">← 返回老师端</button>';
 function cstRefresh() { if (cst.cur || cst.overlay) cstRender(); }
 function cstToggleShow() { cst.show = !cst.show; cstRender(); }
 function cstProgText(l) {
@@ -184,12 +187,12 @@ function cstProgText(l) {
 function cstRender() {
   const mc = document.getElementById('mainContent'); if (!mc) return;
   document.body.classList.add('consult-mode');
-  if (cst.err) { mc.innerHTML = `<div class="cst-root"><header class="cst-top"><button class="btn btn-sm" onclick="cstExit()">← 返回老师端</button></header><div class="empty">加载失败：${cstE(cst.err)}<br><span style="font-size:11px">（如果提示表不存在，请联系管理员先执行咨询台的建表 SQL）</span></div></div>`; return; }
+  if (cst.err) { mc.innerHTML = `<div class="cst-root"><header class="cst-top">${cstBackBtn()}</header><div class="empty">加载失败：${cstE(cst.err)}<br><span style="font-size:11px">（如果提示表不存在，请联系管理员先执行咨询台的建表 SQL）</span></div></div>`; return; }
   mc.innerHTML = `<div class="cst-root">${cst.cur ? cstFlowHtml() : cstHomeHtml()}${cst.overlay ? cstOverlayHtml() : ''}</div>`;
 }
 function cstTopHtml(l) {
   return `<header class="cst-top">
-    <button class="btn btn-sm" onclick="cstExit()">← 返回老师端</button>
+    ${cstBackBtn()}
     ${l ? `<button class="btn btn-sm" onclick="cstHome()">咨询者列表</button><span class="cst-who">${cstE(l.name || '未命名咨询者')}</span>${cst.show ? '' : `<span id="cst_state" class="cst-state">${cstE(cst.saving)}</span>`}` : '<span class="cst-who">咨询台</span>'}
     <span class="cst-top-r">
       <button class="btn btn-sm" onclick="cstOpenAbout()">关于唯新</button>
@@ -501,7 +504,7 @@ function cstP23() {
   return cstGoalsHtml() + `<div style="margin-top:12px"><button class="btn btn-sm" onclick="cstGoItem('2-2')">← 回到院校列表继续选</button></div>`;
 }
 function cstP24() { cstLoadIntro(); return cstPromoBlocks('course'); }
-function cstP25() { cstLoadIntro(); return cstPromoBlocks('lecturer'); }
+function cstP25() { cstLoadIntro(); cstLoadProfiles(); cstLoadCourses(); return cstPromoBlocks('lecturer'); }
 function cstP26() { cstLoadCases(); return cstCasesHtml(); }
 function cstIntroHtml() {
   if (!cst.intro) return '<div style="font-size:11px;color:var(--text-3)">加载中…</div>';
@@ -523,7 +526,38 @@ function cstPromoBlocks(section) {
   if (!list.length) return '<div style="font-size:11px;color:var(--text-3)">这个专业在「宣传相关」里还没有这部分内容。</div>';
   if (typeof pmrEnsureCss !== 'function') return list.map(b => `<div style="margin-bottom:10px"><b>${cstE(b.title)}</b></div>`).join('');
   pmrEnsureCss();
-  return `<div class="pm">${section === 'course' ? pmrCoursesHtml(list, {}) : pmrLecturersHtml(list)}</div>`;
+  return `<div class="pm">${section === 'course' ? pmrCoursesHtml(list, {}) : pmrLecturersHtml(list, { extraFor: cstLectCourses })}</div>`;
+}
+// ── 讲师卡片下的「负责课程」：讲师档案的担当课程 + 课程安排里当期 / 下一期他上的课 ──
+const cstNrm = x => String(x || '').replace(/老师|先生|様|さん/g, '').trim();
+const cstTeachNames = t => String(t || '').split(/[、,，\/\s]+/).map(cstNrm).filter(Boolean);
+const cstMajorsOf = c => (Array.isArray(c.major) ? c.major : [c.major]).filter(Boolean);
+function cstLectNames(row) {
+  const t = String(row.title || '').trim(), m = t.match(/^(\S+)[\s　]+(.+)$/), n = cstNrm(m ? m[1] : t), set = new Set([n]);
+  cstProfilesOf(n).forEach(p => { set.add(cstNrm(p.name)); if (p.real_name) set.add(cstNrm(p.real_name)); });
+  if (typeof prPubMap !== 'undefined' && prPubMap) Object.keys(prPubMap).forEach(k => { if (cstNrm(prPubMap[k]) === n) set.add(k); });
+  set.delete(''); return set;
+}
+function cstPeriodCourses(per) {   // 某一期（cur / next）的课，不含 VIP
+  const p = prPeriodKeys()[per];
+  return (cst.courses || []).filter(c => !String(c.course_type || '').includes('VIP') && c.first_session_date && c.first_session_date.startsWith(String(p.year)) && effectivePeriod(c) === p.name)
+    .sort((a, b) => (a.first_session_date || '').localeCompare(b.first_session_date || ''));
+}
+const cstDeliv = c => [c.delivery === '线下＋线上' ? '线上线下同步' : c.delivery, c.campus].filter(Boolean).join(' · ');
+const cstCrsMeta = c => [prPubTeacher(c.teacher), c.weekdays, c.time_range, c.total_sessions && (c.total_sessions + ' 回'), cstDeliv(c), c.first_session_date && (c.first_session_date + ' 开课')].filter(Boolean).join(' · ');
+function cstAddBtn(id) {
+  const on = cstCoursesObj(cst.cur).items.some(x => x.id === id);
+  return on ? '<span style="font-size:11px;color:#1a5a3a;white-space:nowrap">已加入方案</span>' : `<button class="btn btn-outline btn-sm" style="white-space:nowrap" onclick="cstCrsAdd('${cstJ(id)}')">＋ 加入方案</button>`;
+}
+function cstLectCourses(row) {
+  const names = cstLectNames(row), profs = cstProfilesOf([...names].join('、'));
+  const own = [...new Set(profs.flatMap(p => String(p.courses || '').split(/[,，、\/\s]+/).filter(Boolean)))];
+  const k = prPeriodKeys(), rows = [];
+  ['cur', 'next'].forEach(per => cstPeriodCourses(per).forEach(c => { if (cstTeachNames(c.teacher).some(x => names.has(x))) rows.push([c, per === 'cur' ? '当期' : '下一期']); }));
+  if (!own.length && !rows.length) return '';
+  return `<div><div class="pm-llabel">负责课程</div><div class="pm-lcontent">
+    ${own.length ? `<div class="pm-chips">${own.map(c => `<span class="pm-chip">${pmPlain(c)}</span>`).join('')}</div>` : ''}
+    ${rows.map(([c, tag]) => `<div style="display:flex;gap:8px;align-items:center;border-top:1px solid #eee4d8;padding:6px 0;margin-top:6px"><div style="flex:1;min-width:0"><b>${pmPlain(c.name)}</b> <span style="font-size:12px;color:#8a7f73">${pmEsc(tag)} ${pmEsc(k[tag === '当期' ? 'cur' : 'next'].name)}</span><div style="font-size:12px;color:#8a7f73">${pmEsc([c.weekdays, c.time_range, cstDeliv(c)].filter(Boolean).join(' · '))}</div></div>${cst.show ? '' : cstAddBtn(c.id)}</div>`).join('')}</div></div>`;
 }
 function cstCommonHtml() {
   if (!cst.common) return '<div style="font-size:11px;color:var(--text-3)">加载中…</div>';
@@ -603,12 +637,14 @@ function cstCasesHtml() {
 async function cstLoadCourses() {
   if (cst.courses) return; cst.courses = [];
   try {
-    const [cs, pk, ru] = await Promise.all([
+    if (typeof PERIODS !== 'undefined' && !PERIODS.length && typeof loadPeriodsFromDB === 'function') await loadPeriodsFromDB();   // 算「当期 / 下一期」要用
+    const [cs, pk, th] = await Promise.all([
       sbAll('/rest/v1/courses?select=id,name,major,period,period_override,course_type,domain,teacher,weekdays,time_range,delivery,campus,total_sessions,first_session_date&order=first_session_date.desc'),
       sbAll('/rest/v1/price_packages?active=is.true&select=*&order=sort_order.asc').catch(() => []),
-      sbAll('/rest/v1/consult_rules?published=is.true&select=*&order=sort.asc').catch(() => []),
+      typeof prPubMap !== 'undefined' && prPubMap ? Promise.resolve(null) : sb('/rest/v1/teachers?select=name,public_name').catch(() => []),
     ]);
-    cst.rules = ru;
+    if (th) { prPubMap = {}; th.forEach(t => { const k = cstNrm(t.name), pub = String(t.public_name || '').trim(); if (k && pub) prPubMap[k] = pub; }); }   // 老师对外名称（同「宣传相关 → 课程表」）
+    if (typeof prCourses !== 'undefined' && !prCourses) prCourses = cs;
     cst.courses = cs; cst.pkgs = pk.filter(p => salesDomOkMe(p.domain || (DOMAINS.some(d => d.label === p.track) ? p.track : '')));
   } catch (e) { cst.courses = []; cst.pkgs = []; }
   cstRefresh();
@@ -624,7 +660,7 @@ function cstCrsAdd(id) {
   co.items.push({ id, name: c.name, teacher: c.teacher || '', start: c.first_session_date || '', end: end ? end.toISOString().slice(0, 10) : '', reason: '' });
   cstSet('courses', co); cstRender();
 }
-// 差距 → 课程：差距按目标校和咨询者条件算出来；规则由管理员在「管控台 → 咨询台」维护，课程名含规则里任一关键词就算覆盖
+// 差距 → 课程 / 介绍：差距按目标校和咨询者条件算出来；再用内置关键词去现有宣传内容里找（不需要管理员配置）
 function cstGaps() {
   const l = cst.cur, set = new Set(), goals = (l.goals || []).map(g => cst.adm.find(a => a.id === g.id)).filter(Boolean);
   goals.forEach(a => { cstEval(a).gaps.forEach(x => set.add(x)); if (!cstNone(a.oral_exam)) set.add('interview'); if (!cstNone(a.written_exam)) set.add('written'); });
@@ -632,9 +668,22 @@ function cstGaps() {
   if (l.major_match === '跨专业') set.add('specialty');
   return CST_GAPS.filter(([k]) => set.has(k));
 }
-const cstRulesOf = gap => (cst.rules || []).filter(r => r.gap === gap && (!(r.majors || []).length || (r.majors || []).includes(cst.cur.target_major)));
-const cstRuleHit = (r, name) => (r.keywords || []).some(k => k && String(name || '').includes(k));
-function cstCoveredGaps(items) { const out = new Set(); CST_GAPS.forEach(([k]) => { if (cstRulesOf(k).some(r => items.some(x => cstRuleHit(r, x.name)))) out.add(k); }); return out; }
+const CST_GAP_KW = {
+  plan: ['zemi', 'ゼミ', '计划书', '計画書', '研究计划', '志望理由'],
+  written: ['过去问', '過去問', '演习', '演習', '笔试', '筆記', '专业课'],
+  interview: ['面试', '面接', '口述', '口頭'],
+  jp: ['日语', '日本語', '日本语', 'jlpt', 'n1', 'n2', 'eju'],
+  en: ['英语', '英語', 'toeic', 'toefl', 'ielts'],
+  specialty: ['基础', '入门', '概论', '専門基礎', '专业课'],
+};
+const cstKwHit = (gap, text) => { const t = String(text || '').toLowerCase(); return (CST_GAP_KW[gap] || []).some(k => t.includes(k)); };
+const CST_GAP_LANG = { jp: 'nihongo', en: 'eigo' };
+function cstCrsCovers(gap, x) {   // 已选的某门课是否覆盖这个差距：课程名命中关键词；日语 / 英语差距也认语言课
+  if (cstKwHit(gap, x.name)) return true;
+  const c = (cst.courses || []).find(y => y.id === x.id);
+  return !!(c && CST_GAP_LANG[gap] && typeof prLangKind === 'function' && prLangKind(c) === CST_GAP_LANG[gap]);
+}
+function cstCoveredGaps(items) { const out = new Set(); CST_GAPS.forEach(([k]) => { if (items.some(x => cstCrsCovers(k, x))) out.add(k); }); return out; }
 function cstCrsDel(id) {
   const co = cstCoursesObj(cst.cur), after = co.items.filter(x => x.id !== id), need = new Set(cstGaps().map(g => g[0]));
   const before = cstCoveredGaps(co.items), now = cstCoveredGaps(after);
@@ -656,25 +705,47 @@ function cstPriceLines() {
   co.custom.forEach((c, i) => lines.push({ name: c.name, detail: '其他', yen: c.yen, del: `cstCustomDel(${i})` }));
   return { lines, total: lines.reduce((s, x) => s + x.yen, 0) };
 }
-function cstP31() { cstLoadCourses(); cstLoadAdm(); return cstGapHtml(); }
+function cstP31() { cstLoadCourses(); cstLoadAdm(); cstLoadIntro(); cstLoadCommon(); return cstGapHtml(); }
 function cstP32() {
   cstLoadCourses(); cstLoadProfiles(); cstLoadIntro();
   if (!cst.courses) return '<div class="empty">加载中…</div>';
-  return `<div class="cst-sub" style="margin-top:0">已选的课程（${cstCoursesObj(cst.cur).items.length}）</div>${cstPickedHtml()}<div class="cst-sub">添加课程<span>来自「课程安排」里已开的班级</span></div>${cstCrsListHtml()}`;
+  return `<div class="cst-sub" style="margin-top:0">已选的课程（${cstCoursesObj(cst.cur).items.length}）</div>${cstPickedHtml()}<div class="cst-sub">添加课程<span>来自「课程安排」里已开的班级</span></div>${cstCrsFilterHtml()}<div id="cst_crs_list">${cstCrsListHtml()}</div>`;
 }
 function cstP33() { cstLoadCourses(); return cstPriceHtml(); }
 function cstP34() { cstLoadCourses(); cstLoadAdm(); return cstTimelineHtml(); }
+// 某个差距在现有内容里能找到什么：课程介绍（宣传相关）、当期 / 下一期开课班级、通用宣传（关于唯新）
+function cstGapFind(gap) {
+  const l = cst.cur, picked = cstCoursesObj(l).items.map(x => x.id), tgt = [l.target_major, typeof groupOf === 'function' ? groupOf(l.target_major) : ''].filter(Boolean);
+  const intros = ((cst.intro && cst.intro.blocks) || []).filter(b => b.section === 'course' && cstKwHit(gap, b.title + ' ' + b.body));
+  const crs = [], seen = new Set();
+  ['next', 'cur'].forEach(per => cstPeriodCourses(per).forEach(c => {
+    if (seen.has(c.id) || picked.includes(c.id)) return;
+    const mine = cstMajorsOf(c).some(m => tgt.includes(m)), lang = typeof prLangKind === 'function' ? prLangKind(c) : '';
+    const hit = CST_GAP_LANG[gap] ? (lang === CST_GAP_LANG[gap]) : (mine && cstKwHit(gap, c.name));
+    if (hit) { seen.add(c.id); crs.push(c); }
+  }));
+  const commons = (cst.common || []).filter(r => cstKwHit(gap, r.title + ' ' + r.body));
+  return { intros, crs, commons };
+}
+function cstIntroBrief(b) {
+  const s = typeof pmSplit === 'function' ? pmSplit(b.body, PMR_COURSE_LABELS) : null, t = String((s && s.known && s.vals['课程描述']) || b.body || '').replace(/\*\*|__/g, '').split('\n').map(x => x.trim()).filter(Boolean)[0] || '';
+  return t.length > 70 ? t.slice(0, 70) + '…' : t;
+}
 function cstGapHtml() {
   const l = cst.cur, gaps = cstGaps(), picked = cstCoursesObj(l).items, cov = cstCoveredGaps(picked);
-  if (!(l.goals || []).length) return '<div style="font-size:11px;color:var(--text-3)">先在第 ② 步设好目标校，这里会列出要补足的差距，并按规则推荐课程。</div>';
+  if (!(l.goals || []).length) return '<div style="font-size:11px;color:var(--text-3)">先在第 ② 步设好目标校，这里会列出要补足的差距，并找出对应的课程和介绍。</div>';
   if (!gaps.length) return '<div style="font-size:11px;color:var(--text-3)">按目标校的要求，暂时没有需要补足的差距。</div>';
-  const pickedIds = picked.map(x => x.id);
+  const md = typeof prMd === 'function' ? prMd : cstE, tog = (k, open) => `cst.open['${cstJ(k)}']=${!open};cstRender()`;
   return gaps.map(([k, t]) => {
-    const rules = cstRulesOf(k), ok = cov.has(k);
-    const recs = (cst.courses || []).filter(c => !pickedIds.includes(c.id) && rules.some(r => cstRuleHit(r, c.name))).slice(0, 5);
-    return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:8px 12px;margin-bottom:6px">
-      <div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;font-weight:600">${t}</span><span style="font-size:10px;padding:1px 7px;border-radius:2px;background:${ok ? '#e6f2ea' : '#f6e2de'};color:${ok ? '#1a5a3a' : '#a03a2e'}">${ok ? '已有课程覆盖' : '还没有课程覆盖'}</span></div>
-      ${!rules.length ? '<div style="font-size:10px;color:var(--text-3);margin-top:4px">还没有配置推荐规则（管理员在「管控台 → 咨询台」里添加）</div>' : (!ok ? (recs.length ? recs.map(c => `<div style="display:flex;gap:8px;align-items:center;margin-top:5px;font-size:11px"><span style="flex:1">${cstE(c.name)} <span style="color:var(--text-3)">${cstE([c.teacher, c.first_session_date && (c.first_session_date + ' 起')].filter(Boolean).join(' · '))}</span></span><button class="btn btn-outline btn-sm" onclick="cstCrsAdd('${cstJ(c.id)}')">＋ 添加</button></div>`).join('') : '<div style="font-size:10px;color:var(--text-3);margin-top:4px">课程安排里暂时没有符合规则的班级，需人工安排</div>') : '')}</div>`;
+    const ok = cov.has(k), f = cstGapFind(k), none = !f.intros.length && !f.crs.length && !f.commons.length;
+    const intros = f.intros.map(b => { const ok2 = 'gi_' + k + b.id, open = ok2 in cst.open ? cst.open[ok2] : false;
+      return `<div style="margin-top:6px;border-left:3px solid var(--border);padding-left:10px"><div onclick="${tog(ok2, open)}" style="cursor:pointer;font-size:12px"><b>${cstE(String(b.title || '').replace(/\*\*|__/g, ''))}</b> <span style="color:var(--text-3)">${cstE(cstIntroBrief(b))}</span> <span style="font-size:10px;color:var(--accent)">${open ? '▾ 收起' : '▸ 看完整介绍'}</span></div>${open && typeof pmrCoursesHtml === 'function' ? (pmrEnsureCss(), `<div class="pm" style="margin-top:6px">${pmrCoursesHtml([b], { print: true })}</div>`) : ''}</div>`; }).join('');
+    const crs = f.crs.slice(0, 8).map(c => `<div style="display:flex;gap:8px;align-items:center;margin-top:6px;font-size:12px"><div style="flex:1;min-width:0"><b>${cstE(c.name)}</b> <span style="color:var(--text-3)">${cstE(prPeriodKeys()[cstPeriodCourses('cur').some(x => x.id === c.id) ? 'cur' : 'next'].label)}</span><div style="font-size:11px;color:var(--text-3)">${cstE(cstCrsMeta(c))}</div></div>${cstAddBtn(c.id)}</div>`).join('') + (f.crs.length > 8 ? `<div style="font-size:11px;color:var(--text-3);margin-top:4px">还有 ${f.crs.length - 8} 个班级，在「选择课程」里查看</div>` : '');
+    const comm = f.commons.map(r => { const ck = 'gc_' + k + r.id, open = ck in cst.open ? cst.open[ck] : false;
+      return `<div style="margin-top:6px;border-left:3px solid var(--border);padding-left:10px"><div onclick="${tog(ck, open)}" style="cursor:pointer;font-size:12px"><b>${cstE(String(r.title || '').replace(/\*\*|__/g, ''))}</b> <span style="font-size:10px;color:var(--text-3)">关于唯新</span> <span style="font-size:10px;color:var(--accent)">${open ? '▾ 收起' : '▸ 展开全文'}</span></div>${open ? `<div style="font-size:12px;line-height:1.9;color:var(--text-2);margin-top:4px">${md(r.body)}</div>` : ''}</div>`; }).join('');
+    return `<div style="border:1px solid var(--border-light);border-radius:3px;padding:8px 12px;margin-bottom:8px">
+      <div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;font-weight:600">${t}</span><span style="font-size:10px;padding:1px 7px;border-radius:2px;background:${ok ? '#e6f2ea' : '#f6e2de'};color:${ok ? '#1a5a3a' : '#a03a2e'}">${ok ? '已有课程覆盖' : '还没选课程'}</span></div>
+      ${none ? '<div style="font-size:11px;color:var(--text-3);margin-top:4px">目前宣传内容里没有找到对应介绍，可以在「选择课程」里手动添加。</div>' : intros + crs + comm}</div>`;
   }).join('');
 }
 function cstPickedHtml() {
@@ -686,14 +757,42 @@ function cstPickedHtml() {
     <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="cstCrsDel('${cstJ(x.id)}')">删除</button></div>
     <input placeholder="选择理由（例如：补足计划书、日语 N1）" value="${cstE(x.reason)}" onchange="cstCrsReason('${cstJ(x.id)}',this.value)" style="width:100%;margin-top:6px;font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;box-sizing:border-box"></div>`).join('');
 }
+// 选择课程：和「宣传相关 → 课程表」同一套——期数、本专业 / 日语 / 英语 / 同领域其他专业；搜索框输入即搜，搜全部当期 / 下一期课程
+function cstOtherMajors() {
+  const l = cst.cur, dom = admissionMajorDomain(l.target_major) || (typeof MAJOR_DOMAIN !== 'undefined' ? MAJOR_DOMAIN[l.target_major] : ''), all = typeof allMajorKeys === 'function' ? allMajorKeys() : Object.keys(MAJORS);
+  return all.filter(k => k !== l.target_major && !isMajorGroup(k) && dom && MAJOR_DOMAIN[k] === dom && salesMajorOkMe(k));
+}
+function cstCrsPool() {   // 当前范围的课（还没按搜索筛）
+  const l = cst.cur, per = cst.crsPer, tgt = [l.target_major, typeof groupOf === 'function' ? groupOf(l.target_major) : ''].filter(Boolean);
+  const pool = cstPeriodCourses(per), lang = c => (typeof prLangKind === 'function' ? prLangKind(c) : '');
+  if (cst.crsScope === 'nihongo' || cst.crsScope === 'eigo') return pool.filter(c => lang(c) === cst.crsScope && (!cst.crsCampus || (c.campus || '') === cst.crsCampus));
+  if (cst.crsScope === 'other') return cst.crsOther ? pool.filter(c => !lang(c) && cstMajorsOf(c).includes(cst.crsOther)) : [];
+  return pool.filter(c => !lang(c) && cstMajorsOf(c).some(m => tgt.includes(m)));
+}
+function cstCrsSet(k, v) { cst[k] = v; if (k === 'crsScope') { cst.crsCampus = ''; if (v !== 'other') cst.crsOther = ''; } if (k === 'crsPer') cst.crsCampus = ''; cst.crsLimit = 30; cstRender(); }
+function cstCrsRefresh() { const el = document.getElementById('cst_crs_list'); if (el) el.innerHTML = cstCrsListHtml(); }
+function cstCrsSearch(q) { cst.crsQ = q; cst.crsLimit = 30; cstCrsRefresh(); }
+function cstCrsFilterHtml() {
+  const k = prPeriodKeys(), q = cst.crsQ.trim(), row = (label, inner) => `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px"><span style="font-size:11px;color:var(--text-3)">${label}</span>${inner}</div>`;
+  const scope = [['major', '本专业'], ['nihongo', '日语'], ['eigo', '英语'], ['other', '同领域其他专业']];
+  const camp = (cst.crsScope === 'nihongo' || cst.crsScope === 'eigo') ? [...new Set(cstPeriodCourses(cst.crsPer).filter(c => prLangKind(c) === cst.crsScope).map(c => c.campus || '').filter(Boolean))] : [];
+  return `<input placeholder="搜索课程 / 老师（搜全部当期、下一期课程，不受下面筛选限制）" value="${cstE(cst.crsQ)}" oninput="searchBox(this,cstCrsSearch)" style="width:100%;font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:3px;box-sizing:border-box;margin-bottom:8px">
+    ${row('期数', cstChip(cst.crsPer === 'next', `下一期（${k.next.label}）`, `cstCrsSet('crsPer','next')`) + cstChip(cst.crsPer === 'cur', `当期（${k.cur.label}）`, `cstCrsSet('crsPer','cur')`))}
+    ${row('范围', scope.map(([v, t]) => cstChip(cst.crsScope === v, t, `cstCrsSet('crsScope','${v}')`)).join(''))}
+    ${cst.crsScope === 'other' ? row('专业', chipFold(cstOtherMajors().map(m => ({ on: cst.crsOther === m, html: cstChip(cst.crsOther === m, cstE(cstMajorName(m)), `cstCrsSet('crsOther','${cstJ(m)}')`) })))) : ''}
+    ${camp.length ? row('校区', cstChip(!cst.crsCampus, '全部', `cstCrsSet('crsCampus','')`) + chipFold(camp.map(c => ({ on: cst.crsCampus === c, html: cstChip(cst.crsCampus === c, cstE(c), `cstCrsSet('crsCampus','${cstJ(c)}')`) })))) : ''}
+    ${q ? '<div style="font-size:11px;color:var(--accent);margin-bottom:4px">正在搜索全部当期 / 下一期课程；清空搜索框回到上面的筛选</div>' : ''}`;
+}
 function cstCrsListHtml() {
-  const l = cst.cur, picked = cstCoursesObj(l).items.map(x => x.id), q = cst.crsQ.trim().toLowerCase();
-  const sameMajor = c => !l.target_major || c.major === l.target_major || (typeof groupMajors === 'function' && Object.keys(MAJOR_GROUPS || {}).some(g => groupMajors(g).includes(l.target_major) && c.major === g));
-  let rows = cst.courses.filter(c => !picked.includes(c.id) && (q ? [c.name, c.teacher, c.major].join(' ').toLowerCase().includes(q) : sameMajor(c)));
-  const total = rows.length; rows = rows.slice(0, cst.crsLimit);
-  return `<input placeholder="搜索课程 / 老师（不搜索时只显示目标专业的课程）" value="${cstE(cst.crsQ)}" onchange="cst.crsQ=this.value;cst.crsLimit=30;cstRender()" style="width:100%;font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:3px;box-sizing:border-box;margin-bottom:8px">
-    ${rows.map(c => `<div style="display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border-light);padding:6px 2px;font-size:12px"><div style="flex:1;min-width:0"><div style="font-weight:600">${cstE(c.name)}</div><div style="font-size:10px;color:var(--text-3)">${cstE([c.teacher, c.weekdays && ('周' + c.weekdays), c.time_range, c.delivery, c.first_session_date && (c.first_session_date + ' 起'), c.total_sessions && (c.total_sessions + ' 次')].filter(Boolean).join(' · '))}</div></div><button class="btn btn-outline btn-sm" onclick="cstCrsAdd('${cstJ(c.id)}')">＋ 添加</button></div>`).join('') || '<div style="font-size:11px;color:var(--text-3)">没有找到课程。</div>'}
-    ${total > cst.crsLimit ? `<div onclick="cst.crsLimit+=30;cstRender()" style="text-align:center;padding:10px;font-size:11px;color:var(--accent);cursor:pointer">显示更多（还有 ${total - cst.crsLimit} 门）</div>` : ''}`;
+  const picked = cstCoursesObj(cst.cur).items.map(x => x.id), q = cst.crsQ.trim(), k = prPeriodKeys();
+  let rows;
+  if (q) rows = [...cstPeriodCourses('next'), ...cstPeriodCourses('cur')].filter(c => searchMatch(q, [c.name, c.teacher, prPubTeacher(c.teacher), cstMajorsOf(c).map(cstMajorName).join(' ')]));
+  else rows = cstCrsPool();
+  rows = rows.filter(c => !picked.includes(c.id));
+  const total = rows.length, empty = !q && cst.crsScope === 'other' && !cst.crsOther ? '先选一个专业' : '这一期没有符合条件的课程';
+  const perOf = c => cstPeriodCourses('cur').some(x => x.id === c.id) ? k.cur.name : k.next.name;
+  return rows.slice(0, cst.crsLimit).map(c => `<div style="display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border-light);padding:6px 2px;font-size:12px"><div style="flex:1;min-width:0"><div style="font-weight:600">${cstE(c.name)}${q ? ` <span style="font-weight:400;font-size:10px;color:var(--text-3)">${cstE(perOf(c))}</span>` : ''}</div><div style="font-size:10px;color:var(--text-3)">${cstE(cstCrsMeta(c))}</div></div><button class="btn btn-outline btn-sm" onclick="cstCrsAdd('${cstJ(c.id)}')">＋ 加入方案</button></div>`).join('') || `<div style="font-size:11px;color:var(--text-3)">${empty}。</div>`
+    + (total > cst.crsLimit ? `<div onclick="cst.crsLimit+=30;cstCrsRefresh()" style="text-align:center;padding:10px;font-size:11px;color:var(--accent);cursor:pointer">显示更多（还有 ${total - cst.crsLimit} 门）</div>` : '');
 }
 function cstPriceHtml() {
   const co = cstCoursesObj(cst.cur), { lines, total } = cstPriceLines();
@@ -780,7 +879,7 @@ function cstTimelineHtml() {
 function cstPlanData() {
   const l = cst.cur, co = cstCoursesObj(l), { lines, total } = cstPriceLines(), en = cstEnroll(l);
   const lang = (st, ex, sc) => st === 'have' ? `${ex || ''} ${sc || ''}`.trim() || '已有成绩' : (st === 'none' ? '未参加' : (st === 'unrecorded' ? '有成绩，待录入' : '待确认'));
-  return {
+  const out = {
     '学生情况': [l.name, l.edu_level, l.edu_years && `教育年限 ${l.edu_years} 年`, l.graduated === true ? '已毕业' : (l.graduated === false ? '未毕业' : ''), l.orig_major && `原专业 ${l.orig_major}`].filter(Boolean).join('，') || '待确认',
     '升学方向': [l.target_level === 'gakubu' ? '学部' : (l.target_level === 'daigakuin' ? '大学院' : ''), l.arts_sci, l.target_major && cstMajorName(l.target_major), l.major_match].filter(Boolean).join(' · ') || '待确认',
     '语言现状': `日语：${lang(l.jp_status, l.jp_exam, l.jp_score)}；英语：${lang(l.en_status, l.en_exam, l.en_score)}`,
@@ -792,19 +891,50 @@ function cstPlanData() {
     '课程方案': co.items.map(x => `${x.name}${x.teacher ? '（' + x.teacher + '）' : ''}${x.start ? ' ' + x.start + ' 起' : ''}${x.reason ? '——' + x.reason : ''}`),
     '需补足的差距': cstGaps().map(([k, t]) => `${t}：${cstCoveredGaps(co.items).has(k) ? '已有课程覆盖' : '还没有课程覆盖，需人工安排'}`),
     '费用': lines.map(x => `${x.name}：${cstYen(x.yen)} 日元`).concat(lines.length ? [`合计：${cstYen(total)} 日元`] : []).concat(co.pkgs.map(id => (cst.pkgs || []).find(p => p.id === id)).filter(Boolean).map(p => { const i = cstPkgInfo(p); const f = a => a.map(x => x.item).join('、'); return `${p.name}｜包含：${f(i.have) || '无'}${i.opt.length ? '｜另购：' + f(i.opt) : ''}${i.exc.length ? '｜不包含：' + f(i.exc) : ''}`; })),
-    '规划老师评语': l.teacher_comment || '',
   };
+  CST_COMMENTS.forEach(([k, t]) => { const v = String((l.comments || {})[k] || '').trim(); if (v) out[t] = v; });
+  return out;
 }
 function cstSavePlan() {
   const l = cst.cur; if (!confirm('把当前内容保存为一个方案版本？之后后台改了课程或价格，这个版本不会跟着变。')) return;
   cstSet('final_plan', { saved_at: new Date().toISOString(), data: cstPlanData() }); cstSet('plan_saved_at', new Date().toISOString());
   cstRender();
 }
+const CST_COMMENTS = [['lang', '应在什么时间前取得什么语言成绩'], ['material', '应在什么阶段准备哪些材料'], ['skill', '哪些专业知识或能力需要重点加强'], ['self', '学生需要自行投入的学习与准备'], ['fallback', '若未按计划完成，可能需要怎样调整目标']];
+function cstComment(k, v) { const l = cst.cur; l.comments = Object.assign({}, l.comments || {}, { [k]: v }); cstSet('comments', l.comments); }
+function cstLangText(st, ex, sc) { return st === 'have' ? (`${ex || ''} ${sc || ''}`.trim() || '已有成绩') : (st === 'none' ? '未参加' : (st === 'unrecorded' ? '有成绩，待录入' : '待确认')); }
+// 4-1 每个分项上半部分自动列出的学生现状（只读）
+function cstAutoLines(key) {
+  const l = cst.cur, goals = (l.goals || []).map(g => ({ g, a: cst.adm.find(x => x.id === g.id) })), co = cstCoursesObj(l), en = cstEnroll(l), out = [];
+  const kind = g => g.kind || '';
+  if (key === 'lang') {
+    out.push(`日语：${cstLangText(l.jp_status, l.jp_exam, l.jp_score)}；英语：${cstLangText(l.en_status, l.en_exam, l.en_score)}`);
+    goals.forEach(({ g, a }) => { if (a) out.push(`${kind(g)}｜${g.label}：日语 ${a.japanese_required || '未录入'}${a.japanese_detail ? '（' + a.japanese_detail + '）' : ''}；英语 ${a.english_required || '未录入'}${a.english_detail ? '（' + a.english_detail + '）' : ''}`); });
+    const dl = goals.filter(x => x.a).map(x => ({ x, d: cstDeadline(x.a, l) })).filter(y => y.d).sort((p, q) => p.d - q.d)[0];
+    if (dl) out.push(`最早的出愿时间：${dl.x.a.university} ${dl.x.a.application_period}`);
+    else if (goals.some(x => x.a && x.a.application_period)) out.push('出愿时间：' + goals.filter(x => x.a && x.a.application_period).map(x => `${x.a.university} ${x.a.application_period}`).join('；'));
+  } else if (key === 'material') {
+    goals.forEach(({ g, a }) => { if (a) out.push(`${kind(g)}｜${g.label}：出愿 ${a.application_period || '-'}；推薦状 ${a.recommendation || '-'}；卒業論文 ${a.thesis || '-'}；考试方式 ${a.exam_style || '-'}`); });
+    out.push(l.target_level === 'gakubu' ? '学部：一般不需要研究计划书' : (goals.length ? '大学院：需要研究计划书 / 志望理由书' : '研究计划书 / 志望理由书：选好目标校后确认'));
+  } else if (key === 'skill') {
+    out.push([l.major_match || '本专业 / 跨专业待确认', l.orig_major && `原专业 ${l.orig_major}`].filter(Boolean).join('；'));
+    const cov = cstCoveredGaps(co.items); cstGaps().forEach(([k, t]) => out.push(`${t}：${cov.has(k) ? '已有课程覆盖' : '还没选课程'}`));
+  } else if (key === 'self') {
+    co.items.forEach(x => { const c = (cst.courses || []).find(y => y.id === x.id); out.push(`${x.name}${c ? '｜' + effectivePeriod(c) + (c.weekdays || c.time_range ? '｜' + [c.weekdays, c.time_range].filter(Boolean).join(' ') : '') : ''}${x.start ? '｜' + x.start + ' ～ ' + (x.end || '') : ''}`); });
+    if (!co.items.length) out.push('还没有选课程');
+    out.push([l.arrive_date && `赴日 ${l.arrive_date}`, en && `目标入学 ${en.y}年${en.m}月`].filter(Boolean).join('；') || '赴日 / 入学时间待确认');
+  } else if (key === 'fallback') {
+    CST_KINDS.forEach(k => goals.filter(x => x.g.kind === k).forEach(({ g, a }) => out.push(`${k}｜${g.label}：${a ? CST_ST[cstEval(a).st][0] : '待确认'}`)));
+    if (!goals.length) out.push('还没有确定目标校');
+  }
+  return out.filter(Boolean);
+}
 function cstP41() {
-  const l = cst.cur;
-  return `<textarea oninput="cstSet('teacher_comment',this.value)" rows="12" style="width:100%;font-size:12px;line-height:1.8;padding:8px;border:1px solid var(--border);border-radius:3px;box-sizing:border-box;font-family:inherit">${cstE(l.teacher_comment)}</textarea>
-      <div style="font-size:10px;color:var(--text-3);margin:6px 0 10px">把 AI 写好的评语贴到这里，修改后保存。</div>
-      ${cst.show ? '' : '<button class="btn btn-sm" onclick="cstOpenPrompt()">生成 AI 提示词</button>'}`;
+  const l = cst.cur; cstLoadAdm(); cstLoadCourses();
+  const old = l.teacher_comment ? `<div style="margin-bottom:14px;padding:8px 12px;background:#f3efe9;border-radius:6px;font-size:12px;color:var(--text-3);line-height:1.8;white-space:pre-wrap"><div style="font-size:10px;margin-bottom:2px">之前的评语（只读，不会自动拆进下面的分项）</div>${cstE(l.teacher_comment)}</div>` : '';
+  return old + CST_COMMENTS.map(([k, t], i) => `<div style="margin-bottom:18px"><div style="font-size:13px;font-weight:600;margin-bottom:6px">${i + 1}. ${t}</div>
+    <div style="background:#f7f1e8;border-radius:6px;padding:8px 12px;margin-bottom:6px;font-size:12px;line-height:1.9;color:var(--text-2)">${cstAutoLines(k).map(x => `<div>· ${cstE(x)}</div>`).join('')}</div>
+    <textarea oninput="cstComment('${k}',this.value)" rows="${cst.show ? 3 : 4}" placeholder="老师填写" style="width:100%;font-size:12px;line-height:1.8;padding:8px;border:1px solid var(--border);border-radius:3px;box-sizing:border-box;font-family:inherit">${cstE((l.comments || {})[k])}</textarea></div>`).join('');
 }
 function cstP42() {
   const l = cst.cur; cstLoadAdm(); cstLoadCourses();
@@ -815,36 +945,6 @@ function cstP42() {
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" onclick="cstSavePlan()">${saved ? '重新保存为新版本' : '保存方案版本'}</button><button class="btn btn-sm" onclick="cstExportPdf()">导出 PDF</button></div>
       <div style="font-size:10px;color:var(--text-3);margin-top:10px">具备报考资格 ≠ 能够合格；本计划不含合格概率。</div>`;
 }
-function cstPromptText() {
-  const l = cst.cur, d = cstPlanData(), co = cstCoursesObj(l);
-  const tl = [];
-  (l.goals || []).forEach(g => { const a = cst.adm.find(x => x.id === g.id); if (a) tl.push(`${g.uni}：出愿 ${a.application_period || '待确认'}，笔试 ${a.written_exam || '待确认'}，面试 ${a.oral_exam || '待确认'}，发表 ${a.result_date || '待确认'}`); });
-  return `请你作为留学升学规划老师，为"该同学"写一段升学规划评语。
-
-【写作要求】
-1. 按下面 5 点来写：什么时候取得什么语言成绩；什么阶段准备什么材料；需要加强的专业能力；学生自己需要投入什么；如果没按计划完成，怎么调整目标。
-2. 不承诺合格，不写合格概率；信息缺失的地方写"待确认"，不要自行补充。
-3. 用中文，语气面向学生，控制在 600 字以内。
-
-【该同学的情况】
-- 升学方向：${d['升学方向']}
-- 学历与背景：${d['学生情况'].replace(l.name || '\u0000', '该同学')}
-- 语言现状：${d['语言现状']}
-- 时间计划：${d['时间计划']}
-
-【目标院校（冲刺 / 主申 / 保底）及当前差距】
-${d['目标院校'].length ? d['目标院校'].map(x => '- ' + x).join('\n') : '- 待确认'}
-
-【需要补足的差距】
-${d['需补足的差距'].length ? d['需补足的差距'].map(x => '- ' + x).join('\n') : '- 待确认'}
-
-【时间轴上的关键节点】
-${tl.length ? tl.map(x => '- ' + x).join('\n') : '- 待确认'}
-
-【选中的课程及选择理由】
-${co.items.length ? co.items.map(x => `- ${x.name}${x.reason ? '：' + x.reason : ''}`).join('\n') : '- 待确认'}`;
-}
-function cstOpenPrompt() { cst.overlay = 'prompt'; cstRender(); }
 async function cstOpenMedia() {
   cst.overlay = 'media'; cstRender();
   if (!cst.media) { cst.media = []; try { cst.media = await sbAll('/rest/v1/consult_media?published=is.true&select=*&order=sort.asc,created_at.asc'); } catch (e) { cst.media = []; } if (cst.overlay === 'media') cstRender(); }
@@ -874,12 +974,10 @@ async function cstLoadFaq() {
   try { cst.faqs = await sbAll('/rest/v1/faq?select=*&order=sort.asc,created_at.asc'); } catch (e) { cst.faqs = []; cst.faqErr = e.message; }
   if (cst.overlay === 'faq') cstRender();
 }
-function cstCopyPrompt() { const t = document.getElementById('cst_prompt'); if (!t) return; t.select(); try { navigator.clipboard.writeText(t.value).then(() => alert('已复制')).catch(() => { document.execCommand('copy'); alert('已复制'); }); } catch (e) { document.execCommand('copy'); alert('已复制'); } }
 function cstOverlayHtml() {
   const l = cst.cur, wrap = (title, inner, w) => `<div onclick="if(event.target===this)cstCloseOverlay()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px"><div style="background:var(--bg);border-radius:6px;max-width:${w || 720}px;width:100%;max-height:88vh;overflow:auto;padding:16px 18px"><div style="display:flex;align-items:center;margin-bottom:10px"><b style="font-size:14px;font-family:'Noto Serif SC',serif">${title}</b><button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="cstCloseOverlay()">关闭</button></div>${inner}</div></div>`;
   if (cst.overlay === 'about') return wrap('关于唯新', cstAboutHtml(), 860);
   if (cst.overlay === 'media') return wrap('教材・校区', cstMediaHtml(), 1000);
-  if (cst.overlay === 'prompt') return wrap('AI 提示词', `<div style="font-size:11px;color:var(--text-3);margin-bottom:6px">复制后贴到你自己用的 AI 里。提示词里没有姓名和联系方式，用"该同学"代替。</div><textarea id="cst_prompt" readonly rows="18" style="width:100%;font-size:12px;line-height:1.7;padding:8px;border:1px solid var(--border);border-radius:3px;box-sizing:border-box;font-family:inherit">${cstE(cstPromptText())}</textarea><div style="margin-top:8px"><button class="btn btn-primary btn-sm" onclick="cstCopyPrompt()">复制</button></div>`);
   const q = cst.faqQ.trim().toLowerCase(), stage = CST_STAGE[cst.step];
   let rows = (cst.faqs || []).filter(f => f.published !== false);
   const fit = f => (!(f.levels || []).length || !l || (f.levels || []).includes(l.target_level)) && (!(f.majors || []).length || !l || (f.majors || []).includes(l.target_major)) && (!(f.stages || []).length || (f.stages || []).includes(stage));

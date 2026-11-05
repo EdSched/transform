@@ -11,6 +11,7 @@ const PMR_COURSE_LABELS = ['课时摘要', '课程描述', '课程目标', '课�
 const PMR_COLORS = [['#4f7194', '#e9eef3'], ['#b25a74', '#f6e8ec'], ['#5b7f55', '#ebf0e8'], ['#c9831f', '#f8eedd'], ['#7a68a3', '#eeebf4'], ['#3a342e', '#f3ece4']];
 
 function pmEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+function pmPlain(v) { return pmEsc(String(v == null ? '' : v).replace(/\*\*|__/g, '')); }   // 小标签 / chip / 标题：去掉 Markdown 的 ** 和 __ 再输出
 function pmInline(s) { return pmEsc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'); }
 
 // ── 迷你排版：## 小标题 / **粗体** / - 列表 / 1. 列表 / |表格|（首行表头）/ 含 Tab 的连续行（Excel 粘贴）──
@@ -233,12 +234,12 @@ function pmrIntroHtml(rows, o) {
   if (F['重点方向'] || F['研究课题例']) {
     const chips = pmrChips(F['重点方向']);
     h += pmrSec('DIRECTIONS', '重点方向',
-      (chips.length ? `<div class="pm-chips">${chips.map(c => `<span class="pm-chip">${pmEsc(c)}</span>`).join('')}</div>` : '')
+      (chips.length ? `<div class="pm-chips">${chips.map(c => `<span class="pm-chip">${pmPlain(c)}</span>`).join('')}</div>` : '')
       + (F['研究课题例'] ? `<div class="pm-sublabel">研究课题例</div><div class="pm-rich">${pmMd(F['研究课题例'])}</div>` : ''));
   }
   if (F['重点研究科']) h += pmrSec('SCHOOLS', '目标学校', pmrSchoolsHtml(F['重点研究科']));
   if (blocks.length) {
-    const inner = `<div class="pm-stack">${blocks.map(b => `<div class="pm-card">${b.title ? `<h3>${pmEsc(b.title)}</h3>` : ''}<div class="pm-rich">${pmMd(b.body)}</div></div>`).join('')}</div>`;
+    const inner = `<div class="pm-stack">${blocks.map(b => `<div class="pm-card">${b.title ? `<h3>${pmPlain(b.title)}</h3>` : ''}<div class="pm-rich">${pmMd(b.body)}</div></div>`).join('')}</div>`;
     h += structured ? pmrSec('MORE', '补充说明', inner) : pmrSec('OVERVIEW', '专业介绍', inner);
   }
   return h;
@@ -273,7 +274,7 @@ function pmrGoalHtml(text) {
   const rows = String(text || '').replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean).map(l => {
     const s = l.replace(/^[-・]\s*/, '').replace(/^\d+[.、]\s*/, '');
     const m = s.match(/^([^：:]{1,8})[：:]\s*(.+)$/);
-    return m ? `<div class="pm-goal-row"><span class="pm-tag">${pmEsc(m[1].trim())}</span><span>${pmInline(m[2])}</span></div>` : `<div class="pm-goal-row"><span>${pmInline(s)}</span></div>`;
+    return m ? `<div class="pm-goal-row"><span class="pm-tag">${pmPlain(m[1].trim())}</span><span>${pmInline(m[2])}</span></div>` : `<div class="pm-goal-row"><span>${pmInline(s)}</span></div>`;
   });
   return rows.length ? `<div class="pm-goal"><div class="pm-goal-title">课程目标</div>${rows.join('')}</div>` : '';
 }
@@ -295,7 +296,7 @@ function pmrCoursesHtml(rows, o) {
     }
     const box = o.boxFor ? o.boxFor(name, p) : '';
     return `<div class="pm-course${o.print ? ' open' : ''}"${o.idPrefix ? ` id="${pmEsc(o.idPrefix + i)}"` : ''}>
-      <div class="pm-chead"${o.print ? '' : ' onclick="pmrToggle(this)"'}><span class="pm-cname">${pmEsc(name)}</span>${o.tchFor ? `<span class="pm-tch" onclick="event.stopPropagation()">${o.tchFor(name, p) || ''}</span>` : ''}<span class="pm-cmeta">${v['课时摘要'] ? `<span class="pm-hours">${pmEsc(v['课时摘要'].replace(/\s*\n\s*/g, ' '))}</span>` : ''}<span class="pm-arrow">▾</span></span></div>
+      <div class="pm-chead"${o.print ? '' : ' onclick="pmrToggle(this)"'}><span class="pm-cname">${pmPlain(name)}</span>${o.tchFor ? `<span class="pm-tch" onclick="event.stopPropagation()">${o.tchFor(name, p) || ''}</span>` : ''}<span class="pm-cmeta">${v['课时摘要'] ? `<span class="pm-hours">${pmPlain(v['课时摘要'].replace(/\s*\n\s*/g, ' '))}</span>` : ''}<span class="pm-arrow">▾</span></span></div>
       <div class="pm-cbody">${body}${box}</div>
     </div>`;
   }).join('');
@@ -316,11 +317,11 @@ function pmrLecturersHtml(rows, o) {
     if (s.pre) parts.push(`<div class="pm-lcontent pm-rich">${pmMd(s.pre)}</div>`);
     s.extras.forEach(e => {
       const isChip = /专攻|研究领域|研究方向|关键词|方向/.test(e.label);
-      parts.push(`<div><div class="pm-llabel">${pmEsc(e.label)}</div><div class="pm-lcontent">${isChip ? `<div class="pm-chips">${pmrChips(e.text).map(c => `<span class="pm-chip">${pmEsc(c)}</span>`).join('')}</div>` : `<div class="pm-rich">${pmMd(e.text)}</div>`}</div></div>`);
+      parts.push(`<div><div class="pm-llabel">${pmPlain(e.label)}</div><div class="pm-lcontent">${isChip ? `<div class="pm-chips">${pmrChips(e.text).map(c => `<span class="pm-chip">${pmPlain(c)}</span>`).join('')}</div>` : `<div class="pm-rich">${pmMd(e.text)}</div>`}</div></div>`);
     });
     const extra = o.extraFor ? o.extraFor(p, i) : '';
     return `<div class="pm-lect"${o.idPrefix ? ` id="${pmEsc(o.idPrefix + i)}"` : ''}>
-      <div class="pm-lhead"><div class="pm-lname">${pmEsc(name)}</div>${cred ? `<div class="pm-laffil">${pmEsc(cred)}</div>` : ''}</div>
+      <div class="pm-lhead"><div class="pm-lname">${pmPlain(name)}</div>${cred ? `<div class="pm-laffil">${pmPlain(cred)}</div>` : ''}</div>
       <div class="pm-lbody">${parts.join('')}${extra || ''}</div>
     </div>`;
   }).join('');

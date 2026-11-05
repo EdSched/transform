@@ -30,7 +30,7 @@ const csaChip = (on, label, click) => `<span class="filter-chip${on ? ' active' 
 function csaRender() {
   const b = csa.body; if (!b) return;
   if (csa.err) { b.innerHTML = `<div style="padding:20px;color:var(--danger,#b03a2e);font-size:12px">读取失败：${csaE(csa.err)}</div>`; return; }
-  const tabs = [['faq', '常见问题'], ['rules', '课程推荐规则'], ['prof', '教授资料'], ['media', '教材・校区'], ['leads', '咨询者']].map(([k, t]) => csaChip(csa.tab === k, t, `csa.tab='${k}';csa.edit=null;csaRender()`)).join('');
+  const tabs = [['faq', '常见问题'], ['prof', '教授资料'], ['media', '教材・校区'], ['leads', '咨询者']].map(([k, t]) => csaChip(csa.tab === k, t, `csa.tab='${k}';csa.edit=null;csaRender()`)).join('');
   b.innerHTML = `<div style="padding:14px 18px;max-width:900px"><div style="display:flex;gap:6px;margin-bottom:12px">${tabs}</div>${csa.tab === 'faq' ? csaFaqHtml() : csa.tab === 'rules' ? csaRulesHtml() : csa.tab === 'prof' ? csaProfHtml() : csa.tab === 'media' ? csaMediaHtml() : csaLeadsHtml()}</div>`;
 }
 function csaToggle(k, v) { const a = csa.edit[k], i = a.indexOf(v); if (i >= 0) a.splice(i, 1); else a.push(v); csaCapture(); csaRender(); }

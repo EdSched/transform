@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>唯新教育 · 咨询台</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../teacher/teacher.css?v=20270125">
+<link rel="stylesheet" href="../teacher/consult.css?v=20270217">
+<style>.cst-plain{padding:60px 20px;text-align:center;color:#8a7f73;font-size:14px}</style>
+</head>
+<body class="consult-mode">
+<!-- 独立的咨询台页面：consult/?tid=<老师id>。不复制代码，直接用老师端的 teacher-consult.js / consult.css；没有老师端菜单。 -->
+<div class="main" id="mainContent"><div class="cst-plain">加载中…</div></div>
+<!-- supabase-js：先走 jsdelivr，紧跟本仓库同源副本兜底（国内 / 微信里 jsdelivr 时通时不通） -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
+<script src="../shared/vendor/supabase.min.js"></script>
+<script src="../shared/supabase.js?v=20270125"></script>
+<script src="../shared/constants.js?v=20270210"></script>
+<script src="../shared/search.js?v=20270125"></script>
+<script src="../shared/promo-md.js?v=20270125"></script>
+<script src="../shared/promo-render.js?v=20270217"></script>
+<script src="../admin/results-admin.js?v=20261106"></script>
+<script src="../teacher/teacher-promo.js?v=20270125"></script>
+<script src="../teacher/teacher-sales.js?v=20270125"></script>
+<script src="../teacher/teacher-consult.js?v=20270217"></script>
+<script>
+window.__CONSULT_STANDALONE__ = true;
+// 咨询台和营业范围判断要用的全局（老师端里由 teacher.js 声明）
+let teacherName = '';
+let teacherData = null;
+const teacherId = (new URLSearchParams(location.search).get('tid') || '').trim();
+(async function consultStandaloneInit() {
+  const mc = document.getElementById('mainContent');
+  const msg = t => { mc.innerHTML = `<div class="cst-plain">${t}</div>`; };
+  if (!teacherId) { msg('无效链接'); return; }
+  try {
+    // 静默登录，照 teacher/teacher.js init：已有本人 session 直接用，否则 signInWithPassword 重试 3 次
+    if (typeof supabase !== 'undefined' && supabase.createClient) {
+      const c = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: 'sb-teacher', persistSession: true, autoRefreshToken: true } });
+      let { data: sess } = await c.auth.getSession();
+      const ok = () => sess && sess.session && sess.session.user && sess.session.user.email === `${teacherId}@teacher.local`;
+      for (let i = 0; i < 3 && !ok(); i++) {
+        try { await c.auth.signInWithPassword({ email: `${teacherId}@teacher.local`, password: teacherId }); sess = (await c.auth.getSession()).data; } catch (e) {}
+        if (!ok()) await new Promise(r => setTimeout(r, 400 * (i + 1)));
+      }
+      if (ok()) {
+        if (typeof __setSbStorageKey === 'function') __setSbStorageKey('sb-teacher');
+        if (typeof __setSbToken === 'function') __setSbToken(sess.session.access_token, c);
+      }
+    }
+    if (typeof loadMajorsFromDB === 'function') await loadMajorsFromDB();
+    if (typeof loadAdmissionMajorsFromDB === 'function') await loadAdmissionMajorsFromDB();
+    const rows = await sb(`/rest/v1/teachers?id=eq.${encodeURIComponent(teacherId)}&select=*`);
+    if (!rows || !rows.length) { msg('无效链接'); return; }
+    teacherData = rows[0]; teacherName = teacherData.name || '';
+    if (!(teacherData.permissions || {}).consult) { msg('没有咨询台权限'); return; }
+    if (typeof salesScopeEmptyMe === 'function' && salesScopeEmptyMe()) { msg(SALES_SCOPE_EMPTY_MSG); return; }
+    renderConsult(mc);
+  } catch (e) { msg('加载失败：' + (e.message || e)); }
+})();
+</script>
+</body>
+</html>
