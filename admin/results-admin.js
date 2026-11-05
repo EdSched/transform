@@ -3261,7 +3261,9 @@ function raUgMapRow(row) {
   let method = null;
   { const v = get('admission_method');
     if (v !== '') {
-      if (RA_UG_METHODS.includes(v) && v !== '其他') method = v;
+      const mk = x => String(x).normalize('NFKC').replace(/\s+/g, '').replace(/[‐‑‒–—―−ー]/g, '-');   // 全角半角（＋/+）、空格、横线写法不同都认，存成标准写法
+      const hit = RA_UG_METHODS.find(x => x !== '其他' && mk(x) === mk(v));
+      if (hit) method = hit;
       else if (/^其他[：:]\s*\S/.test(v)) method = '其他：' + v.replace(/^其他[：:]\s*/, '');
       else bad('admission_method', '出愿区分', v, v === '其他' ? '要写成「其他：具体内容」' : '不是规定的选项');
     } }
