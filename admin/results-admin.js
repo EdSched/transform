@@ -1874,9 +1874,17 @@ async function raRmToggleDup(kind) {
   raRmRerender(kind);
 }
 function raDupHasPhoto(kind, r) { return !!(raAR_PH[kind] && raAR_PH[kind][String(r.id)]); }
+// 批量时默认保留哪条：已做海报 > 有合格通知书照片 > 填写内容最多（不为空的字段数）> 最早录入
+function raDupFilled(r) { return Object.keys(r).filter(k => k !== 'id' && k !== 'created_at' && k.charAt(0) !== '_' && !raDupEmpty(k, r[k])).length; }
+function raDupEmpty(k, v) { return v == null || v === '' || (k === 'subject' && v === 'other'); }
 function raDupDefaultKeep(kind, g) {
   const f = raRm[kind], poster = f.posterIds || new Set();
-  return (g.find(r => poster.has(String(r.id))) || g.find(r => raDupHasPhoto(kind, r)) || g[0]).id;
+  const best = g.slice().sort((a, b) =>
+    (poster.has(String(b.id)) - poster.has(String(a.id))) ||
+    (raDupHasPhoto(kind, b) - raDupHasPhoto(kind, a)) ||
+    (raDupFilled(b) - raDupFilled(a)) ||
+    String(a.created_at || '').localeCompare(String(b.created_at || '')))[0];
+  return best.id;
 }
 function raDupKeepOf(kind, g) {
   const f = raRm[kind], k = f.keep && f.keep[raDupSig(g)];
@@ -1888,10 +1896,14 @@ function raRmDupHtml(kind, rows) {
   const f = raRm[kind], ok = new Set(rows.map(r => String(r.id))), poster = f.posterIds || new Set();
   const groups = raDupOpenGroups(kind).filter(g => g.some(r => ok.has(String(r.id)))).sort((a, b) => b.length - a.length);
   if (!groups.length) return '<div class="load-state">没有疑似重复的记录</div>';
-  let h = '';
+  f.dupShown = groups; f.dupSel = f.dupSel || {};
+  let h = `<div id="ra-dupbar-${kind}" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;margin-bottom:8px;background:#f7f5f0;border:1px solid #e2ded6;border-radius:4px;font-size:12px;position:sticky;top:0;z-index:5">
+    <span style="flex:1;min-width:180px"><b>共 ${groups.length} 组疑似重复</b>（当前筛选下）</span>
+    <span class="ra-chip" onclick="raDupSelAll('${kind}',true)">全选当前筛选</span><span class="ra-chip" onclick="raDupSelAll('${kind}',false)">全不选</span>
+    <button class="btn btn-primary" id="ra-dupbatch-${kind}" style="padding:4px 12px;font-size:12px" onclick="raDupBatchAsk('${kind}')"></button></div>`;
   groups.forEach(g => {
     const sig = raDupSig(g), keep = raDupKeepOf(kind, g), sigAttr = raArEsc(sig);
-    h += `<div class="rm-school"><div class="rm-school-h" style="cursor:default"><span style="flex:1;font-weight:500">${raArEsc(g[0].student || '—')} · ${raArEsc(g[0].univ || '')}</span><span class="rm-sub">${g.length} 条</span>
+    h += `<div class="rm-school"><div class="rm-school-h" style="cursor:default"><span class="ra-chip ra-dupsel${f.dupSel[sig] ? ' on' : ''}" onclick="raDupSelToggle('${kind}',this)" data-s="${sigAttr}">${f.dupSel[sig] ? '已选' : '选择'}</span><span style="flex:1;font-weight:500">${raArEsc(g[0].student || '—')} · ${raArEsc(g[0].univ || '')}</span><span class="rm-sub">${g.length} 条</span>
       <button class="btn btn-primary" style="padding:3px 10px;font-size:11px" onclick="raDupMergeAsk('${kind}',this.dataset.s)" data-s="${sigAttr}">合并</button>
       <button class="btn btn-secondary" style="padding:3px 10px;font-size:11px" onclick="raDupIgnore('${kind}',this.dataset.s)" data-s="${sigAttr}">不是重复</button></div>
       <div class="rm-school-b"><div class="data-table-wrap"><table class="data-table"><thead><tr><th>保留</th><th>大学名</th><th>${kind === 'ug' ? '学部' : '研究科'}</th><th>${kind === 'ug' ? '学科' : '専攻'}</th><th>学生</th><th>本校专业</th><th>来源</th><th>录入日期</th><th>照片</th><th>海报</th><th>操作</th></tr></thead><tbody>`;
@@ -1904,44 +1916,136 @@ function raRmDupHtml(kind, rows) {
     });
     h += '</tbody></table></div></div></div>';
   });
+  setTimeout(() => raDupBarUpdate(kind), 0);
   return h;
+}
+// ─── 批量合并 ───
+function raDupSelGroups(kind) {
+  const f = raRm[kind], all = f.dupShown || [], sel = all.filter(g => f.dupSel && f.dupSel[raDupSig(g)]);
+  return { all, sel };
+}
+function raDupBarUpdate(kind) {
+  const b = document.getElementById('ra-dupbatch-' + kind); if (!b) return;
+  const { all, sel } = raDupSelGroups(kind);
+  b.textContent = sel.length ? `合并选中的 ${sel.length} 组` : `全部合并（${all.length} 组）`;
+}
+function raDupSelToggle(kind, el) {
+  const f = raRm[kind], sig = el.dataset.s; f.dupSel = f.dupSel || {};
+  if (f.dupSel[sig]) delete f.dupSel[sig]; else f.dupSel[sig] = true;
+  el.classList.toggle('on', !!f.dupSel[sig]); el.textContent = f.dupSel[sig] ? '已选' : '选择';
+  raDupBarUpdate(kind);
+}
+function raDupSelAll(kind, on) {
+  const f = raRm[kind]; f.dupSel = f.dupSel || {};
+  (f.dupShown || []).forEach(g => { if (on) f.dupSel[raDupSig(g)] = true; else delete f.dupSel[raDupSig(g)]; });
+  document.querySelectorAll('.ra-dupsel').forEach(el => { el.classList.toggle('on', on); el.textContent = on ? '已选' : '选择'; });
+  raDupBarUpdate(kind);
+}
+function raDupBatchAsk(kind) {
+  const { all, sel } = raDupSelGroups(kind), groups = sel.length ? sel : all;
+  if (!groups.length) return;
+  const items = groups.map(g => { const keep = g.find(r => String(r.id) === String(raDupKeepOf(kind, g))); return { g, keep, plan: raDupPlan(kind, g, keep) }; });
+  const st = { del: 0, patch: 0, photo: 0, poster: 0 };
+  items.forEach(it => { st.del += it.g.length - 1; if (Object.keys(it.plan.patch).length) st.patch++; if (it.plan.photoFrom) st.photo++; if (it.plan.posterFrom) st.poster++; });
+  const e = raArEsc, sub = kind === 'ug' ? '学部' : '大学院';
+  const lines = items.slice(0, 10).map(it => `<div>保留：${e([it.keep.univ, it.keep.dept].filter(Boolean).join(' '))} ${e(it.keep.student || '—')}（${it.keep.created_at ? String(it.keep.created_at).slice(0, 10) : '—'}）← 合并 ${it.g.length - 1} 条</div>`).join('');
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20000;display:flex;align-items:center;justify-content:center;padding:16px';
+  const bs = 'padding:6px 14px;font-size:12px;border-radius:3px;cursor:pointer;font-family:inherit;';
+  ov.innerHTML = `<div style="background:#fff;border-radius:6px;padding:20px 22px;max-width:560px;width:100%;max-height:88vh;overflow:auto;font-size:13px;line-height:1.7;color:#1a1814">
+    <div style="font-weight:600;margin-bottom:6px">批量合并（${sub}）</div>
+    <div id="ra-bm-body"><div>将合并 <b>${items.length}</b> 组，删除 <b>${st.del}</b> 条，补字段 <b>${st.patch}</b> 条，改挂照片 <b>${st.photo}</b> 张，改挂海报 <b>${st.poster}</b> 张。</div>
+    <div style="margin:8px 0;padding:8px 10px;background:#f7f5f0;border:1px solid #e2ded6;border-radius:4px;font-size:12px">${lines}${items.length > 10 ? `<div style="color:#9a9590">…另有 ${items.length - 10} 组</div>` : ''}</div>
+    <div style="color:#c0392b;font-size:12px;margin-bottom:14px">删除后不能恢复，已自动下载备份。（点「开始合并」时先下载备份 Excel，下载后才开始合并。）</div></div>
+    <div id="ra-bm-btns" style="display:flex;gap:8px;justify-content:flex-end"><button data-a="x" style="${bs}background:#fff;border:1px solid #e2ded6">取消</button><button data-a="go" style="${bs}background:#2c4a8a;border:1px solid #2c4a8a;color:#fff">开始合并</button></div></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('[data-a=x]').onclick = () => ov.remove();
+  ov.querySelector('[data-a=go]').onclick = () => raDupBatchRun(kind, items, ov);
+}
+async function raDupBatchRun(kind, items, ov) {
+  const body = ov.querySelector('#ra-bm-body'), btns = ov.querySelector('#ra-bm-btns');
+  btns.innerHTML = ''; body.innerHTML = '<div>正在下载合并前备份…</div>';
+  try {
+    if (!(await raXlEnsureLib())) throw new Error('Excel 组件未加载');
+    await raArEnsurePhotoMap(kind);
+    const keys = []; const seen = new Set();
+    items.forEach(it => it.g.forEach(r => Object.keys(r).forEach(k => { if (k.charAt(0) !== '_' && !seen.has(k)) { seen.add(k); keys.push(k); } })));
+    const aoa = [['组', '角色'].concat(keys)];
+    items.forEach((it, i) => it.g.forEach(r => aoa.push([i + 1, r === it.keep ? '保留' : '删除'].concat(keys.map(k => { const v = r[k]; return v == null ? '' : (typeof v === 'object' ? JSON.stringify(v) : v); })))));
+    const ws = XLSX.utils.aoa_to_sheet(aoa), wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '合并前备份');
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    XLSX.writeFile(wb, `合格实绩合并前备份_${kind === 'ug' ? '学部' : '大学院'}_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}.xlsx`);
+    await new Promise(r => setTimeout(r, 800));
+  } catch (e) {
+    body.innerHTML = `<div style="color:#c0392b">备份失败，未做任何合并：${raArEsc(e.message)}</div>`;
+    btns.innerHTML = '<button style="padding:6px 14px;font-size:12px;cursor:pointer">关闭</button>'; btns.firstChild.onclick = () => ov.remove(); return;
+  }
+  let stop = false, done = 0; const fails = [], merged = [];
+  body.innerHTML = '<div id="ra-bm-prog"></div>';
+  btns.innerHTML = '<button style="padding:6px 14px;font-size:12px;cursor:pointer">停止</button>';
+  btns.firstChild.onclick = () => { stop = true; btns.firstChild.disabled = true; btns.firstChild.textContent = '正在停止…'; };
+  const prog = body.querySelector('#ra-bm-prog');
+  for (const it of items) {
+    if (stop) break;
+    prog.textContent = `正在合并 ${done} / ${items.length}`;
+    const r = await raDupMerge(kind, it.g, it.keep, { silent: true });
+    done++;
+    if (r && r.ok) merged.push(raDupSig(it.g)); else fails.push(`${it.keep.univ || ''} ${it.keep.student || '—'}：${(r && r.error) || '未知错误'}`);
+    if (done % 5 === 0) await new Promise(res => setTimeout(res, 0));
+  }
+  const f = raRm[kind]; merged.forEach(sig => { if (f.dupSel) delete f.dupSel[sig]; });
+  body.innerHTML = `<div>${stop ? `已停止（处理了 ${done} / ${items.length} 组）。` : '合并完成。'}成功 <b>${merged.length}</b> 组，失败 <b>${fails.length}</b> 组。</div>`
+    + (fails.length ? `<div style="margin-top:8px;max-height:200px;overflow:auto;font-size:12px;color:#c0392b">${fails.map(x => `<div>${raArEsc(x)}</div>`).join('')}</div>` : '');
+  btns.innerHTML = '<button style="padding:6px 14px;font-size:12px;cursor:pointer;background:#2c4a8a;color:#fff;border:1px solid #2c4a8a;border-radius:3px">关闭</button>';
+  btns.firstChild.onclick = () => { ov.remove(); raRmRerender(kind); };
+  raRmRerender(kind);
 }
 function raDupMergeAsk(kind, sig) {
   const g = raDupOpenGroups(kind).find(x => raDupSig(x) === sig); if (!g) return;
   const keep = g.find(r => String(r.id) === String(raDupKeepOf(kind, g)));
   raShowModal('合并确认', `保留「${keep.univ} ${keep.dept || ''}」这一条；其余 ${g.length - 1} 条里有、这条没有的内容（照片、本校专业、英语成绩、学生关联等）补进来，然后删除其余几条。照片和海报跟着保留的这条走。`, () => raDupMerge(kind, g, keep));
 }
-async function raDupMerge(kind, g, keep) {
-  const table = kind === 'ug' ? 'undergrad_results' : 'admission_results', enc = encodeURIComponent, others = g.filter(r => r !== keep);
-  const poster = raRm[kind].posterIds || new Set(), skip = new Set(['id', 'created_at', 'entered_via', 'era', 'track', 'school_type']);
-  const empty = (k, v) => v == null || v === '' || (k === 'subject' && v === 'other');
+// 合并计划：补哪些字段、照片 / 海报从哪条改挂过来（单组合并和批量预览共用）
+function raDupPlan(kind, g, keep) {
+  const others = g.filter(r => r !== keep), poster = raRm[kind].posterIds || new Set(), skip = new Set(['id', 'created_at', 'entered_via', 'era', 'track', 'school_type']);
+  const patch = {};
+  others.forEach(o => Object.keys(o).forEach(k => {
+    if (skip.has(k) || k.charAt(0) === '_' || k in patch) return;
+    if (raDupEmpty(k, keep[k]) && !raDupEmpty(k, o[k])) patch[k] = o[k];
+  }));
+  const photoFrom = raDupHasPhoto(kind, keep) ? null : others.find(o => raDupHasPhoto(kind, o)) || null;
+  const posterFrom = poster.has(String(keep.id)) ? null : others.find(o => poster.has(String(o.id))) || null;
+  return { others, patch, photoFrom, posterFrom };
+}
+// opts.silent：批量用——不弹 toast、不重画页面，返回 { ok, error }
+async function raDupMerge(kind, g, keep, opts) {
+  const silent = !!(opts && opts.silent), table = kind === 'ug' ? 'undergrad_results' : 'admission_results', enc = encodeURIComponent;
+  const poster = raRm[kind].posterIds || new Set();
   try {
     await raArEnsurePhotoMap(kind);
-    const patch = {};
-    others.forEach(o => Object.keys(o).forEach(k => {
-      if (skip.has(k) || k.charAt(0) === '_' || k in patch) return;
-      if (empty(k, keep[k]) && !empty(k, o[k])) patch[k] = o[k];
-    }));
+    const { others, patch, photoFrom, posterFrom } = raDupPlan(kind, g, keep);
     if (Object.keys(patch).length) await raSbFetch(`${table}?id=eq.${enc(keep.id)}`, { method: 'PATCH', body: patch, prefer: 'return=minimal', headers: {} });
     // 照片 / 海报：保留的这条没有、别的有，就改挂到保留的这条；都有则保留的这条的，其余随删除清理
-    let hasPhoto = raDupHasPhoto(kind, keep), hasPoster = poster.has(String(keep.id));
-    for (const o of others) {
-      if (!hasPhoto && raDupHasPhoto(kind, o)) {
-        await raSbFetch(`result_photos?result_kind=eq.${kind}&result_id=eq.${enc(o.id)}`, { method: 'PATCH', body: { result_id: String(keep.id) }, prefer: 'return=minimal', headers: {} });
-        raAR_PH[kind][String(keep.id)] = raAR_PH[kind][String(o.id)]; delete raAR_PH[kind][String(o.id)]; hasPhoto = true;
-      }
-      if (!hasPoster && poster.has(String(o.id))) {
-        await raSbFetch(`pass_posters?result_kind=eq.${kind}&result_id=eq.${enc(o.id)}`, { method: 'PATCH', body: { result_id: String(keep.id) }, prefer: 'return=minimal', headers: {} });
-        poster.add(String(keep.id)); poster.delete(String(o.id)); hasPoster = true;
-      }
+    if (photoFrom) {
+      const o = photoFrom;
+      await raSbFetch(`result_photos?result_kind=eq.${kind}&result_id=eq.${enc(o.id)}`, { method: 'PATCH', body: { result_id: String(keep.id) }, prefer: 'return=minimal', headers: {} });
+      raAR_PH[kind][String(keep.id)] = raAR_PH[kind][String(o.id)]; delete raAR_PH[kind][String(o.id)];
+    }
+    if (posterFrom) {
+      const o = posterFrom;
+      await raSbFetch(`pass_posters?result_kind=eq.${kind}&result_id=eq.${enc(o.id)}`, { method: 'PATCH', body: { result_id: String(keep.id) }, prefer: 'return=minimal', headers: {} });
+      poster.add(String(keep.id)); poster.delete(String(o.id));
     }
     for (const o of others) { if (kind === 'ug') await raUgDeleteOne(o.id); else await raDeleteResult(o.id); }
     const gone = new Set(others.map(o => String(o.id)));
     if (kind === 'ug') { raUgAllData = raUgAllData.filter(r => !gone.has(String(r.id))); const i = raUgAllData.findIndex(r => String(r.id) === String(keep.id)); if (i >= 0) raUgAllData[i] = { ...raUgAllData[i], ...patch }; }
     else { raAllData = raAllData.filter(r => !gone.has(String(r.id))); const i = raAllData.findIndex(r => String(r.id) === String(keep.id)); if (i >= 0) raAllData[i] = { ...raAllData[i], ...patch }; }
-    raRmRerender(kind);
-    raToast('已合并 ✓');
-  } catch (e) { raToast('合并失败：' + e.message, false); }
+    if (!silent) { raRmRerender(kind); raToast('已合并 ✓'); }
+    return { ok: true };
+  } catch (e) {
+    if (!silent) raToast('合并失败：' + e.message, false);
+    return { ok: false, error: e.message };
+  }
 }
 
 function raRmNameKey(n) { return String(n || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase(); }
