@@ -1326,7 +1326,7 @@ function raXlBuildPlan(kind, upRows, existing) {
     const e = { idx, no: idx + 2, status: 'skip', reason: '', hint: '', diffs: [], rec: null, id: '', view: {}, majorRaw: '', majorErr: '' };
     if (isSample(row)) { e.reason = '示例行'; return e; }
     const m = mapper(row);
-    e.majorRaw = m._majorRaw; e.majorErr = m._majorErr;
+    e.majorRaw = m._majorRaw; e.majorErr = m._majorErr; e.extra = (m._jlptHints || []).join('；');
     const rec = {}; Object.keys(m).forEach(k => { if (k[0] !== '_') rec[k] = m[k]; });
     const id = m._id;
     if (m._errs && m._errs.length) {   // 学部：写法不对（在籍学科 / 出愿区分 / 数字列…）：标红，整行不导入
@@ -1443,12 +1443,13 @@ function raXlRenderPreview(kind) {
       : E(raXlMajorLabel(v.our_major)) + (x.auto && v.our_major ? '（自动）' : '');
     const note = x.status === 'update' ? x.diffs.map(d => `${E(RA_XL_FIELD_LABEL[d.f] || d.f)}：${E(d.old)} → ${E(d.now)}`).join('<br>')
       : x.status === 'skip' ? `<span style="color:#8a2020">${E(x.reason)}</span>` : (x.dup ? `<span style="color:#a05a10">${E(x.hint)}</span>` : E(x.hint));
+    const note2 = x.extra && x.status !== 'skip' ? note + (note ? '<br>' : '') + `<span style="color:#a05a10">${E(x.extra)}</span>` : note;
     const head = `<tr${x.bad ? ' style="background:#fbe3e0"' : x.status === 'skip' ? ' style="background:#fdf3f3"' : ''}><td>${x.no}</td><td><span style="font-size:10px;padding:1px 6px;border-radius:2px;background:${st[2]};color:${st[1]}">${st[0]}</span></td>`;
     if (isUg) {
       const cells = UGC.map(c => (x.badRaw && x.badRaw[c[0]] != null) ? `<td style="color:var(--red);font-weight:600">${E(x.badRaw[c[0]] || '（空）')}</td>` : `<td>${E(c[0] === 'track' ? raXlShow('track', v.track) : (v[c[0]] == null ? '' : v[c[0]]))}</td>`).join('');
-      html += head + cells + `<td style="font-size:11px">${note}</td></tr>`;
+      html += head + cells + `<td style="font-size:11px">${note2}</td></tr>`;
     } else {
-      html += head + `<td>${E(v.univ || '')}</td><td>${E(v.dept || '')}</td><td>${E(v.spec || '')}</td><td>${E(v.student || '')}</td><td>${major}</td><td style="font-size:11px">${note}</td></tr>`;
+      html += head + `<td>${E(v.univ || '')}</td><td>${E(v.dept || '')}</td><td>${E(v.spec || '')}</td><td>${E(v.student || '')}</td><td>${major}</td><td style="font-size:11px">${note2}</td></tr>`;
     }
   });
   html += '</tbody></table>';
@@ -2625,11 +2626,23 @@ async function raInsertBatch(rows) {
 async function raDeleteResult(id) { await pstDeleteForResults('grad', [id]); return raSbFetch(`admission_results?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); }
 async function raUpdateResult(id, row) { return raSbFetch(`admission_results?id=eq.${id}`, { method:'PATCH', body:row }); }
 
+// JLPT 拆分（学部 / 大学院导入共用）：格子里找 N1–N5（全角半角、大小写都认）作级别；级别以外第一个 2–3 位数字（0–180）作分数；
+// 括号里的说明单独返回 note。找不到 N1–N5：level = ''
+function raJlptSplit(raw) {
+  const t = String(raw == null ? '' : raw).normalize('NFKC').trim();
+  const m = t.match(/N\s*([1-5])/i);
+  if (!m) return { level: '', score: null, note: '' };
+  const notes = []; let rest = t.replace(/[(（]([^)）]*)[)）]/g, (_, x) => { if (x.trim()) notes.push(x.trim()); return ' '; });
+  rest = rest.replace(/N\s*[1-5]/i, ' ');
+  const sm = rest.match(/(?<!\d)\d{2,3}(?!\d)/);
+  const sc = sm ? parseInt(sm[0], 10) : null;
+  return { level: 'N' + m[1], score: sc != null && sc >= 0 && sc <= 180 ? sc : null, note: notes.join('；') };
+}
 function raParseJlpt(raw) {
   if (!raw || raw === '—' || raw === '无' || raw === '——') return { jlpt: null, jlpt_score: null };
-  const m = raw.match(/^(N[12])\D*(\d+)?/i);
-  if (!m) return { jlpt: raw.trim(), jlpt_score: null };
-  return { jlpt: m[1].toUpperCase(), jlpt_score: m[2] ? parseInt(m[2]) : null };
+  const sp = raJlptSplit(raw);
+  if (!sp.level) return { jlpt: raw.trim(), jlpt_score: null };
+  return { jlpt: sp.level, jlpt_score: sp.score };
 }
 
 function raParseEng(raw) {
@@ -3262,10 +3275,22 @@ function raUgMapRow(row) {
       else if (sc != null) { engSet = true; if (t === 'TOEIC') toeic = Math.round(sc); else if (t === 'TOEFL') toefl = Math.round(sc); else ielts = sc; }
     } }
   // JLPT
-  let jlpt = null;
-  { const v = get('jlpt').toUpperCase();
-    if (v !== '' && v !== 'NONE' && v !== '无') { if (['N1', 'N2', 'N3'].includes(v)) jlpt = v; else bad('jlpt', 'JLPT级别', get('jlpt'), '不是 N1 / N2 / N3'); } }
-  const jlptScore = num('jlpt_score', 'JLPT分数', true);
+  let jlpt = null, jlptSp = null;
+  { const raw = get('jlpt'), v = raw.toUpperCase();
+    if (v !== '' && v !== 'NONE' && v !== '无') {
+      jlptSp = raJlptSplit(raw);
+      if (jlptSp.level) jlpt = jlptSp.level; else bad('jlpt', 'JLPT级别', raw, '找不到 N1–N5');
+    } }
+  let jlptScore = num('jlpt_score', 'JLPT分数', true);
+  const jlptHints = [];
+  if (jlpt && jlptSp) {   // 级别格里写了分数 / 说明：自动拆开
+    const embedded = jlptSp.score;
+    if (jlptScore !== null && embedded !== null && embedded !== jlptScore) jlptHints.push(`级别格里的分数 ${embedded} 和分数列 ${jlptScore} 不一致，用分数列`);
+    else if (jlptScore === null && embedded !== null) jlptScore = embedded;
+    if (embedded !== null || jlptSp.note || get('jlpt').toUpperCase() !== jlpt) jlptHints.unshift(`JLPT 已拆分：${jlpt} / ${jlptScore != null ? jlptScore : '（无分数）'}`);
+  }
+  const noteExtra = (jlptSp && jlptSp.note && raUgUploadColMap.note != null) ? jlptSp.note : '';
+  const noteVal = [get('note'), noteExtra].filter(Boolean).join('；');
   // EJU：只保留这个学科显示的格子（没写学科时全部保留）
   const show = track ? raUgEjuShow(track) : RA_UG_EJU.map(x => x.s);
   const eju = {};
@@ -3286,7 +3311,8 @@ function raUgMapRow(row) {
   const mj = raMatchMajor(get('our_major'));
   const filled = k => get(k) !== '';
   const patchKeys = [];
-  ['student', 'dept', 'homeroom', 'message', 'spec', 'note'].forEach(k => { if (filled(k)) patchKeys.push(k); });
+  ['student', 'dept', 'homeroom', 'message', 'spec'].forEach(k => { if (filled(k)) patchKeys.push(k); });
+  if (noteVal) patchKeys.push('note');
   if (univ) patchKeys.push('univ', 'school_type');
   if (trackOk) patchKeys.push('track');
   if (passYear != null) patchKeys.push('pass_year', 'era');
@@ -3303,9 +3329,9 @@ function raUgMapRow(row) {
     track, pass_year: passYear, era: passYear != null ? raUgEraOfYear(passYear) : null,
     admission_method: method, tier, school_type: univ ? raUgSchoolType(univ) : null,
     jlpt, jlpt_score: jlptScore, toeic, toefl, ielts,
-    homeroom: get('homeroom') || null, message: get('message') || null, note: get('note') || null,
+    homeroom: get('homeroom') || null, message: get('message') || null, note: noteVal || null,
     our_major: mj.key || (trackOk ? raArUgDefaultMajor(track) : '') || null,
-    _id: id, _majorRaw: get('our_major'), _majorErr: mj.err, _patchKeys: patchKeys, _errs: errs, _badRaw: badRaw, _trackOk: trackOk,
+    _id: id, _majorRaw: get('our_major'), _majorErr: mj.err, _patchKeys: patchKeys, _errs: errs, _badRaw: badRaw, _trackOk: trackOk, _jlptHints: jlptHints,
   }, eju);
 }
 
