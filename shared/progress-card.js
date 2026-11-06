@@ -271,7 +271,7 @@ function pgcCardHtml(s, ctx, o) {
     </tr>`;
   }).join('');
   const secSchools = `<div class="pgc-sec"><div class="pgc-title">志望校 <span class="sub">（${plans.length}所）· 状态/过去问/面试稿可直接改，即时与学生端同步</span><span class="act"><button class="pgc-btn" onclick="event.stopPropagation();${h.schoolAdd}('${pgcJs(s.id)}')">＋ 添加志望校</button></span></div>
-    ${warn}${plans.length ? `<div class="pgc-tbl-wrap"><table class="pgc-tbl" style="min-width:820px"><colgroup><col style="width:36px"><col style="width:52px"><col><col style="width:90px"><col style="width:110px"><col style="width:150px"><col style="width:70px"><col style="width:70px"><col style="width:${o.passEntry ? 150 : 96}px"></colgroup>
+    ${typeof spTargetBoxHtml === 'function' ? spTargetBoxHtml(s, plans, h) : ''}${warn}${plans.length ? `<div class="pgc-tbl-wrap"><table class="pgc-tbl" style="min-width:820px"><colgroup><col style="width:36px"><col style="width:52px"><col><col style="width:90px"><col style="width:110px"><col style="width:150px"><col style="width:70px"><col style="width:70px"><col style="width:${o.passEntry ? 150 : 96}px"></colgroup>
     <thead><tr>${['No.', '级别', '学校 · 研究科', '教授', '出愿期间', '进度', '过去问', '面试稿', '操作'].map(t => `<th>${t}</th>`).join('')}</tr></thead><tbody>${schoolRows}</tbody></table></div>`
       : '<div style="font-size:11px;color:var(--text-3)">尚无志望校，点右上「＋ 添加志望校」录入</div>'}</div>`;
 

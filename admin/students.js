@@ -191,7 +191,7 @@ function openStudentModal(id){
     st_name:'name',st_type:'student_type',st_source:'source',
     st_course:'course_type',st_level:'level',st_japanese:'japanese_score',
     st_english:'english_score',st_university:'university',st_faculty:'faculty',
-    st_gpa:'gpa',st_thesis:'thesis',st_graduation:'graduation_date',
+    st_gpa:'gpa',st_thesis:'thesis',st_target_school:'target_school',st_notes:'notes',st_graduation:'graduation_date',
     st_enrollment:'target_enrollment',st_arrival:'japan_arrival',
     st_signup:'signup_date',st_expiry:'expiry_date',st_default_mode:'default_mode',st_status:'status',
     st_vip_course:'is_vip_course',st_vip_total:'vip_hours_total',st_vip_used:'vip_hours_used',
@@ -338,6 +338,8 @@ async function saveStudent(){
     faculty:document.getElementById('st_faculty').value,
     gpa:document.getElementById('st_gpa').value,
     thesis:document.getElementById('st_thesis').value,
+    target_school:(document.getElementById('st_target_school').value||'').trim()||null,
+    notes:(document.getElementById('st_notes').value||'').trim()||null,
     graduation_date:document.getElementById('st_graduation').value,
     target_enrollment:document.getElementById('st_enrollment').value,
     japan_arrival:document.getElementById('st_arrival').value,
@@ -466,7 +468,7 @@ async function openStudentDetail(id){
   document.getElementById('studentDetailModal').classList.add('open');
   try{
     // 每次打开都重新读数据库（不用缓存的学生列表）；共用函数见 shared/student-detail.js
-    const { html, student:s } = await renderStudentDetailCard(id, { actionsHtml:`
+    const { html, student:s } = await renderStudentDetailCard(id, { showProfileNotes:true, actionsHtml:`
       <button class="btn btn-outline btn-sm" onclick="closeModal('studentDetailModal');openStudentModal('${id}')">✏ 编辑档案</button>
       ${mgrPageAllowed('progress')?`<button class="btn btn-outline btn-sm" onclick="closeModal('studentDetailModal');renderProgressPage(document.getElementById('mainContent'),'${id}')">📊 考学进度</button>`:''}
       ${mgrPageAllowed('monthly')?`<button class="btn btn-outline btn-sm" onclick="openMonthlyReport('${id}',this.dataset.n)" data-n="">📅 月度学习情况</button>`:''}` });
@@ -1206,7 +1208,7 @@ function speRenderBar(){
   const bar=document.getElementById('spe_bar');
   if(!bar)return;
   if(!speEdits||!speEdits.length){bar.innerHTML='';return}
-  const fieldLabel={name:'姓名',major:'专业',level:'等级',japanese_score:'日语成绩',english_score:'英语成绩',target_enrollment:'目标入学',expiry_date:'到期日',status:'状态',student_type:'属性',source:'来源',course_type:'课程属性',university:'出身大学',faculty:'学部/专业',gpa:'GPA/履历',thesis:'毕业论文',graduation_date:'毕业时间',japan_arrival:'赴日时间',signup_date:'报名时间'};
+  const fieldLabel={name:'姓名',major:'专业',level:'等级',japanese_score:'日语成绩',english_score:'英语成绩',target_enrollment:'目标入学',expiry_date:'到期日',status:'状态',student_type:'属性',source:'来源',course_type:'课程属性',university:'出身大学',faculty:'学部/专业',gpa:'GPA/履历',thesis:'毕业论文',target_school:'目标学校',notes:'补充备注',graduation_date:'毕业时间',japan_arrival:'赴日时间',signup_date:'报名时间'};
   bar.innerHTML=`<div style="background:var(--warn-bg,#f8f0d8);border:1px solid var(--warn,#b8860b);border-radius:4px;padding:10px 14px;margin-bottom:12px">
     <div onclick="speOpen=!speOpen;speRenderBar()" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none">
       <span style="font-size:12px;color:#6a5210;font-weight:600">⚠ ${speEdits.length} 条老师修改档案记录待确认</span>
@@ -1342,9 +1344,9 @@ function spAdminStudent(sid) {
   return ((typeof cachedStudents !== 'undefined' && cachedStudents) || []).find(x => x.id === sid) || null;
 }
 function spAdminPlans(sid) { return (window.__spPlansAll || []).filter(p => p.student_id === sid); }
-function spSchoolAdd(sid) {
+function spSchoolAdd(sid, prefill) {
   const stu = spAdminStudent(sid); if (!stu) { alert('找不到这个学生，请刷新页面'); return; }
-  spOpenModal({ student: stu, plans: spAdminPlans(sid), onDone: () => renderProgressPage(document.getElementById('mainContent'), stu.id) });
+  spOpenModal({ student: stu, prefill, plans: spAdminPlans(sid), onDone: () => renderProgressPage(document.getElementById('mainContent'), stu.id) });
 }
 function spSchoolEdit(planId) {
   const plan = (window.__spPlansAll || []).find(p => p.id === planId);
