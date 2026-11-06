@@ -151,7 +151,7 @@ const T_REF_TAG_LIB = [
   ['研究方法', ['量的研究', '质的研究', '理论研究', '个案研究', '比较研究']],
   ['阅读建议', ['需精读', '可略读', '仅看结论', '需补充同类文献']],
 ];
-let tdcStudentId = null, tdcDraft = null, tdcNotes = {}, tdcTab = 'refs';
+let tdcName = '', tdcStudentId = null, tdcDraft = null, tdcNotes = {}, tdcTab = 'refs';
 
 function tRefKey(r, i) { return String((r && (r.title || r.keyword)) || '').trim() || ('#' + i); }
 function tParseNotes(draft) {
@@ -172,6 +172,7 @@ function openTeacherDraftComment(studentId, studentName) {
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   modal.innerHTML = '<div id="tdcBody" style="background:var(--surface);border-radius:6px;padding:20px;max-width:760px;width:100%;max-height:90vh;overflow-y:auto"></div>';
   document.body.appendChild(modal);
+  tdcName = studentName;
   tdcRender(studentName);
 }
 
@@ -223,8 +224,10 @@ function tdcRender(studentName) {
     <div style="font-size:10px;color:var(--text-3);margin-bottom:10px">关键词与评语会同步显示给学生；学生自己的文献列表不会被覆盖</div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
       ${draft.draft_file_url ? `<a href="${draft.draft_file_url}" target="_blank" style="font-size:11px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border-radius:3px;padding:6px 14px;text-decoration:none">⬇ 下载完成稿</a>` : '<span style="font-size:11px;color:var(--text-3)">学生尚未上传完成稿</span>'}
+      <button onclick="tdcPlanUpload()" style="font-size:11px;padding:6px 14px;border:1px solid var(--accent,#b8953a);border-radius:3px;background:none;color:var(--accent,#b8953a);cursor:pointer;font-family:inherit">⬆ 上传批复版</button>
       ${refs.length ? `<button onclick="tdcExportRefs('${tsaEsc(studentName)}')" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">⬇ 导出先行研究(CSV)</button>` : ''}
     </div>
+    ${typeof planRvStaffHtml === 'function' ? planRvStaffHtml(draft) : ''}
     <div style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:12px">
       ${tab('refs', '先行研究', refs.length)}
       ${tab('draft', '计划书全文')}
@@ -275,6 +278,52 @@ function tdcExportRefs(studentName) {
   a.download = `${studentName}_先行研究整理.csv`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+
+function tdcPlanUpload() {
+  if (!tdcDraft || !tdcDraft.id) return;
+  document.getElementById('tdcPlanUpModal')?.remove();
+  const ov = document.createElement('div');
+  ov.id = 'tdcPlanUpModal';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
+  const inp = 'width:100%;box-sizing:border-box;font-size:12px;padding:7px 9px;border:1px solid var(--border,#e2ded6);border-radius:3px;background:var(--bg,#f7f5f0);font-family:inherit';
+  ov.innerHTML = `<div style="background:var(--surface,#fff);border-radius:6px;padding:18px 20px;max-width:460px;width:100%">
+    <div style="font-size:14px;font-weight:600;margin-bottom:12px">上传批复版（计划书）</div>
+    <label style="font-size:10px;color:var(--text-3,#999);display:block;margin-bottom:3px">批复文件（Word / PDF）</label>
+    <input type="file" id="tdcPlanFile" accept=".doc,.docx,.pdf" style="${inp};margin-bottom:10px">
+    <label style="font-size:10px;color:var(--text-3,#999);display:block;margin-bottom:3px">批复备注（可选，学生能看到）</label>
+    <textarea id="tdcPlanNote" rows="2" style="${inp};resize:vertical;margin-bottom:12px"></textarea>
+    <div id="tdcPlanMsg" style="font-size:11px;color:var(--danger,#b03a2e);min-height:14px;margin-bottom:6px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="document.getElementById('tdcPlanUpModal').remove()" style="font-size:12px;padding:7px 14px;border:1px solid var(--border,#e2ded6);border-radius:3px;background:none;cursor:pointer;font-family:inherit">取消</button>
+      <button id="tdcPlanBtn" onclick="tdcPlanUploadDo()" style="font-size:12px;padding:7px 18px;border:none;border-radius:3px;background:var(--accent,#b8953a);color:#fff;cursor:pointer;font-family:inherit">上传</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+}
+async function tdcPlanUploadDo() {
+  const draft = tdcDraft; if (!draft || !draft.id) return;
+  const f = document.getElementById('tdcPlanFile')?.files?.[0];
+  const msg = document.getElementById('tdcPlanMsg');
+  if (!f) { msg.textContent = '请选择文件'; return; }
+  const ext = (f.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin';
+  if (!['doc', 'docx', 'pdf'].includes(ext)) { msg.textContent = '只能上传 Word（doc / docx）或 PDF'; return; }
+  const note = (document.getElementById('tdcPlanNote')?.value || '').trim();
+  const btn = document.getElementById('tdcPlanBtn'); btn.disabled = true; btn.textContent = '上传中…';
+  try {
+    const path = `plan/${String(tdcStudentId).replace(/[^A-Za-z0-9_-]/g, '_')}/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
+    const url = await sbUpload('teacher-files', path, f);
+    const now = new Date().toISOString();
+    const by = (typeof teacherName !== 'undefined' && teacherName) ? teacherName : '管理员';
+    const history = planRvHistory(draft).concat([{ at: now, by, file_url: url, file_name: f.name, note }]);
+    const patch = { reviewed_file_url: url, reviewed_file_name: f.name, reviewed_at: now, reviewed_by: by, review_history: history };
+    await sb(`/rest/v1/student_plan_drafts?id=eq.${draft.id}`, 'PATCH', patch);
+    Object.assign(draft, patch);
+    document.getElementById('tdcPlanUpModal')?.remove();
+    tdcRender(tdcName);
+  } catch (e) {
+    msg.textContent = '上传失败：' + e.message;
+    btn.disabled = false; btn.textContent = '上传';
+  }
 }
 
 async function saveTeacherDraftComment(draftId, studentId) {
