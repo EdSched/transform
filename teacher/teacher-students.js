@@ -418,7 +418,7 @@ function tsmFilterStudents(list) { return (list || []).filter(s => tsmMatch(s));
 async function tsmLoadPool(force) {
   if (!force && tsmPool && Date.now() - tsmPoolAt < 60000) return tsmPool;
   let all = [];
-  try { all = await sbAll('/rest/v1/students?select=id,name,major,level,status,course_type,student_type,source,class_ids,vip_teachers,is_vip_course&order=name.asc'); } catch (e) { all = tsmPool || []; }
+  try { all = await sbAll('/rest/v1/students?select=id,name,major,level,status,course_type,student_type,source,class_ids,vip_teachers,owner_teachers,is_vip_course&order=name.asc'); } catch (e) { all = tsmPool || []; }
   let list = tsaFilterStudents(all);
   if (tsaGuaranteedLock()) list = list.filter(tsaIsGuaranteed);
   tsmPool = list; tsmPoolAt = Date.now();
@@ -1659,7 +1659,7 @@ async function renderTsaMeetings(box) {
   box.innerHTML = '<div class="empty">加载中…</div>';
   if (!tmYm) tmYm = tmCurYm();
   try {
-    const allStu = await sb('/rest/v1/students?select=id,name,major,source,status,course_type,student_code,class_ids,vip_teachers,is_vip_course&limit=2000').catch(() => []);
+    const allStu = await sb('/rest/v1/students?select=id,name,major,source,status,course_type,student_code,class_ids,vip_teachers,owner_teachers,is_vip_course&limit=2000').catch(() => []);
     let myStudents = tsaFilterStudents(allStu);   // 全部状态；由全局「状态」筛选
     if (tsaGuaranteedLock()) myStudents = myStudents.filter(tsaIsGuaranteed);
     tmData = await tmLoadFollow(myStudents);
