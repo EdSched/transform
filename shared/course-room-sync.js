@@ -37,6 +37,7 @@ const crsOnDate = (b, d) => b.recurrence === 'weekly' ? crsWeeklyOn(b, d, true) 
 
 async function crsRemind(co, s, date, span, reason) {
   const key = s.id + '|' + date;
+  if (date < new Date().toISOString().slice(0, 10)) return false;   // 过去的日子不提醒
   try {
     const old = await crsGet('sched_change_log', 'select=changes&action=eq.session_room&order=created_at.desc&limit=500');
     if ((old || []).some(l => (l.changes || []).some(x => x && x.key === key && !x.resolved_at))) return false;
