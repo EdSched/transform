@@ -220,7 +220,7 @@ function bindCrsQuery(box){
     if(!cs.length){ out.textContent='没找到名字含「'+q+'」的课（已结课的课不在排课里）'; return; }
     go.disabled=true; out.textContent='核对中…'; const lines=[];
     for(const c of cs.slice(0,8)){
-      try{ const r=await courseRoomSync(c.id); lines.push('《'+c.name+'》'+((r.notes||[]).length?'\n  '+r.notes.join('\n  '):' 无需处理')+(r.created?'\n  本次新占用 '+r.created+' 天':'')+((r.resolved||[]).length?'\n  '+r.resolved.map(v=>v.note).join('；'):'')); }
+      try{ const r=await courseRoomSync(c.id); const rep=await courseRoomReport(c.id); lines.push('《'+c.name+'》'+((r.notes||[]).filter(t=>!/无需处理/.test(t)).length?'\n  '+r.notes.filter(t=>!/无需处理/.test(t)).join('\n  '):'')+(r.created?'\n  本次新占用 '+r.created+' 天':'')+((r.resolved||[]).length?'\n  '+r.resolved.map(v=>v.note).join('；'):'')+'\n  '+rep.join('\n  ')); }
       catch(e){ lines.push('《'+c.name+'》核对出错：'+(e&&e.message||e)); }
     }
     go.disabled=false; out.textContent=lines.join('\n\n');
@@ -628,7 +628,7 @@ function renderAssignSearch(box, q, term, cat){
     return `<div style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:13px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>${esc(c.name||'')}</b><span class="muted">${esc(c.teacher||'')} · ${esc(c.start_time||'')}${c.end_time?'-'+esc(c.end_time):''} · ${esc(c.start_date||'')}~${esc(c.end_date||'')}</span><span style="flex:1">${esc(rooms)}</span><button class="sm" data-srchchk="${c.id}">核对单回教室</button></div><div id="srchout_${c.id}" style="white-space:pre-wrap;font-size:12px;line-height:1.7;margin-top:4px"></div></div>`; }).join('');
   box.querySelectorAll('[data-srchchk]').forEach(b=>b.onclick=async()=>{
     const id=b.dataset.srchchk, out=el('srchout_'+id); b.disabled=true; out.textContent='核对中…';
-    try{ const r=await courseRoomSync(id); out.textContent=((r.notes||[]).join('\n')||'无需处理')+(r.created?'\n本次新占用 '+r.created+' 天':'')+((r.resolved||[]).length?'\n'+r.resolved.map(v=>v.note).join('；'):''); try{ await reloadAll(); }catch(e){} }
+    try{ const r=await courseRoomSync(id); const rep=await courseRoomReport(id); out.textContent=((r.notes||[]).filter(t=>!/无需处理/.test(t)).join('\n')+(r.created?'\n本次新占用 '+r.created+' 天':'')+((r.resolved||[]).length?'\n'+r.resolved.map(v=>v.note).join('；'):'')+'\n'+rep.join('\n')).trim(); try{ await reloadAll(); }catch(e){} }
     catch(e){ out.textContent='核对出错：'+(e&&e.message||e); }
     b.disabled=false;
   });
