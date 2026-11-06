@@ -39,7 +39,7 @@
 <script src="common.js?v=20270116"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270116"></script>
-<script src="../shared/course-room-sync.js?v=20261109"></script>
+<script src="../shared/course-room-sync.js?v=20261110"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], ROLE=null;
@@ -208,6 +208,25 @@ function bindRoomAck(box){
     renderChangeAlerts();
   });
 }
+function crsQueryBox(){
+  return `<details style="margin-bottom:8px;font-size:13px"><summary style="cursor:pointer;color:#666">单回教室查询（输入课程名，看某门课每一回有没有占上教室）</summary><div style="display:flex;gap:8px;margin-top:6px"><input id="crsq_name" placeholder="课程名，如 新闻传播学" style="flex:1;max-width:260px"><button class="sm" id="crsq_go">核对</button></div><div id="crsq_out" style="margin-top:6px;white-space:pre-wrap;line-height:1.7;font-size:12px"></div></details>`;
+}
+function bindCrsQuery(box){
+  const go=box.querySelector('#crsq_go'); if(!go) return;
+  go.onclick=async()=>{
+    const q=(box.querySelector('#crsq_name').value||'').trim(), out=box.querySelector('#crsq_out');
+    if(!q){ out.textContent='请先输入课程名'; return; }
+    const cs=(COURSES||[]).filter(c=>(c.name||'').includes(q));
+    if(!cs.length){ out.textContent='没找到名字含「'+q+'」的课（已结课的课不在排课里）'; return; }
+    go.disabled=true; out.textContent='核对中…'; const lines=[];
+    for(const c of cs.slice(0,8)){
+      try{ const r=await courseRoomSync(c.id); lines.push('《'+c.name+'》'+((r.notes||[]).length?'\n  '+r.notes.join('\n  '):' 无需处理')+(r.created?'\n  本次新占用 '+r.created+' 天':'')+((r.resolved||[]).length?'\n  '+r.resolved.map(v=>v.note).join('；'):'')); }
+      catch(e){ lines.push('《'+c.name+'》核对出错：'+(e&&e.message||e)); }
+    }
+    go.disabled=false; out.textContent=lines.join('\n\n');
+    try{ await reloadAll(); }catch(e){}
+  };
+}
 function renderChangeAlerts(){
   let box=el('changeAlerts');
   if(!box){ const hi=el('hello'); if(!hi) return; box=document.createElement('div'); box.id='changeAlerts'; hi.parentNode.insertBefore(box, hi.nextSibling); }
@@ -223,7 +242,8 @@ function renderChangeAlerts(){
     return `<div style="border-top:1px solid #e6b8b3;padding:6px 0;font-size:13px"><div style="display:flex;gap:10px;align-items:center"><span style="flex:1">${esc(x.to||'')}</span><button class="sm ghost" data-recheck="${l.id}">重新核对</button><button class="sm ghost" data-ackrm="${l.id}">知道了</button></div>${whyHtml}</div>`; }).join('');
   const roomOpen=window.__roomAlertOpen?'block':'none';
   const roomHtml=roomAlerts.length?`<div style="background:#fdecea;border:1px solid #e6b8b3;border-radius:8px;padding:8px 14px;margin-bottom:8px"><div style="font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1">有 <b>${roomAlerts.length}</b> 条单回改期的教室要安排（原教室当天被占）</span><button class="sm" data-recheckall="1">全部重新核对</button><button class="sm ghost" data-roomtoggle="1">${window.__roomAlertOpen?'收起':'展开'}</button></div><div id="roomAlertDetail" style="display:${roomOpen}">${roomRows}</div></div>`:'';
-  if(!pending.length){ box.innerHTML=roomHtml; bindRoomAck(box); return; }
+  const qHtml=window.__crsqHtml||(window.__crsqHtml=crsQueryBox());
+  if(!pending.length){ box.innerHTML=roomHtml+qHtml; bindRoomAck(box); bindCrsQuery(box); return; }
   // 按学科（类别）分组：反查课程的 category
   const catOf=(l)=>{
     const c=(COURSES||[]).find(x=>String(x.legacy_sched_id)===String(l.course_id) || String(x.id)===String(l.course_id));
@@ -231,7 +251,7 @@ function renderChangeAlerts(){
   };
   const groups={}; pending.forEach(l=>{ const k=catOf(l); (groups[k]=groups[k]||[]).push(l); });
   const cats=Object.keys(groups).sort();
-  box.innerHTML = roomHtml + cats.map((cat,gi)=>{
+  box.innerHTML = roomHtml + qHtml + cats.map((cat,gi)=>{
     const items=groups[cat];
     const ids=items.map(l=>l.id).join(',');
     const detail=items.map(l=>{
@@ -250,7 +270,7 @@ function renderChangeAlerts(){
       `<div id="chgdetail_${gi}" style="display:none">${detail}</div>`+
       `</div>`;
   }).join('');
-  bindRoomAck(box);
+  bindRoomAck(box); bindCrsQuery(box);
   box.querySelectorAll('[data-chgtoggle]').forEach(b=>b.onclick=()=>{
     const d=el('chgdetail_'+b.dataset.chgtoggle); if(!d) return;
     const open=d.style.display!=='none';
