@@ -2080,9 +2080,9 @@ async function tpReloadStudentPlans(sid) {
   const el = document.getElementById(`pgc_${sid}`);
   if (el && el.style.display === 'none') pgcToggle(sid);
 }
-function tpAddSchool(sid) {
+function tpAddSchool(sid, prefill) {
   const stu = tpStudentOf(sid); if (!stu) return;
-  spOpenModal({ student: stu, plans: teacherProgressData.plansMap[sid] || [], onDone: () => tpReloadStudentPlans(sid) });
+  spOpenModal({ student: stu, prefill, plans: teacherProgressData.plansMap[sid] || [], onDone: () => tpReloadStudentPlans(sid) });
 }
 function tpEditSchool(planId) {
   const plan = tpPlanOf(planId), stu = plan && tpStudentOf(plan.student_id);

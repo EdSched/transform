@@ -43,6 +43,7 @@ async function renderStudentDetailCard(studentId, opts) {
 
   const statusLabel = v => ({ active: '在籍', graduated: '已合格', expired: '已到期', stopped: '停课', withdrawn: '退学' }[v] || v);
   const row = (label, val) => val ? `<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border-light)"><span style="font-size:11px;color:var(--text-3);min-width:90px;flex-shrink:0">${label}</span><span style="font-size:11px;color:var(--text-2)">${val}</span></div>` : '';
+  const longTxt = v => String(v || '').trim() ? `<span style="white-space:pre-wrap">${sdEsc(String(v).trim())}</span>` : '';   // 保留换行，空的不显示
   const secTitle = (t, mt) => `<div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin:${mt || 14}px 0 8px">${t}</div>`;
 
   // 成绩：以档案为准；考学进度里若记录过更新的状态，在后面小字标「更新于」
@@ -102,6 +103,8 @@ async function renderStudentDetailCard(studentId, opts) {
     ${row('学部/专业', sdEsc(s.faculty))}
     ${row('GPA/履历', sdEsc(s.gpa))}
     ${row('毕业论文', sdEsc(s.thesis))}
+    ${opts.showProfileNotes ? row('目标学校', longTxt(s.target_school)) : ''}
+    ${opts.showProfileNotes ? row('补充备注', longTxt(s.notes)) : ''}
     ${row('毕业时间', sdEsc(s.graduation_date))}
     ${row('期待入学', sdEsc(s.target_enrollment))}
     ${row('赴日时间', sdEsc(s.japan_arrival))}
