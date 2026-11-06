@@ -30,7 +30,7 @@ Sensis 经常在多个窗口/对话里同时改同一批文件，**已经多次�
   - **排课系统**：`sched/`（排教室、预约批准、冲突检查、会议链接等）
   - 独立小工具：`salary/`（领现金工资预约，表 `salary_bookings`）
 - `admin/modules/*.js` 是 1 行的空壳，**真正的代码在 `admin/*.js`**。
-- `vip/index.html` 先加载 `vip.js`，再加载 `../student/study.js`——VIP 页面主体由 `study.js` 驱动（用 `window.__VIP_PAGE__` 区分）。
+- `vip/index.html` 只是跳转页（自动转到 `student/study.html`，参数原样带过去）；所有学生（含纯 VIP）都用学习页，VIP 标签按 `is_vip_course` 显示，`study.html` 设 `window.__VIP_EMBED__` 让 vip.js 不自己登录。
 - 老师端脚本按顺序加载：`teacher.js` → `teacher-students.js` → `teacher-plan.js` → `teacher-promo.js` → `teacher-sales.js` → `teacher-homework.js` → `teacher-vip.js` → `teacher-pack.js`。
 - `shared/constants.js` 在所有页面脚本之前加载，是公共常量/工具函数的唯一来源（如 `isGakubuMajor`、`RIYU_SECTIONS`、`majorKeyFromText`、`teacherInView`）。**不要在别的文件里重复声明同名 `const`，会直接报错。**
 - **新增任何全局名字（`let` / `const` / `function` / `class`）前，先全仓库搜一下有没有同名的**（尤其是 `tm*`、`tk*`、`tsa*` 这类短前缀，很容易撞）。同一个页面里 `let` / `const` / `class` 重名会让整个 js 文件加载失败（老师端曾因此整页「加载失败」）；`function` 重名不报错，但后加载的会悄悄覆盖先加载的。改完跑一遍 `node scripts/check-globals.js`（按各 `index.html` 的加载顺序检查，有致命重名会返回非 0）。
@@ -77,7 +77,7 @@ Sensis 经常在多个窗口/对话里同时改同一批文件，**已经多次�
 - **学生入口（两种入口看到的内容必须一致）**：
   - 专业链接 `student/?major=KEY`：学生用姓名+查询码登录后进入学习页，默认停在「面谈预约」标签；新同学（没有查询码）走公开预约，只有这个公开入口显示预约页页头和说明。
   - 学习页里的「面谈预约」是内嵌的 `student/?major=KEY&embed=1`：不显示页头、提醒条，只保留预约本身和我的预约状态；提醒统一放在学习页顶部「提醒」区块（志望校、计划书/志望理由书、本周未交作业），按已登录学生 id 判断。
-  - 纯 VIP 学生走 `vip/`：面谈预约、VIP 预约、VIP 课程安排（有规划时显示）。
+  - 纯 VIP 学生也走学习页（旧 `vip/` 链接自动跳转到学习页）：面谈预约、VIP 预约、VIP 课程安排（纯 VIP 一直显示）。
   - 大课+VIP 学生从专业链接进学习页，也能看到「VIP 预约」；「VIP 课程安排」只在有课程规划时显示。
 - 社会人文专业组筛选不能级联（选"社会学"不应带出"社会人文大課"）。
 

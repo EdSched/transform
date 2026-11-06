@@ -117,8 +117,8 @@ function vipNoticeWhat(b, ev, x) {
     case 'admin_ok':
       return `教务已${x.who ? '代' + x.who : ''}确认，${off && room ? '教室 ' + room + (appr ? `（${appr}）` : '') + '，' : ''}这节课已成立`;
     case 'room_changed': return `教室调整为 ${room || '待安排'}（${x.by || '总务安排'}）`;
-    case 'remind_confirm': return '这节课已上完，请同学到 VIP 页面确认上课记录并评价：https://edsched.github.io/transform/vip/ 。一直没有确认的话，教务会代为确认。';
-    case 'done': return '本次课已完成，请同学到 VIP 页面确认并评价：https://edsched.github.io/transform/vip/';
+    case 'remind_confirm': return '这节课已上完，请同学到学习页面确认上课记录并评价：https://edsched.github.io/transform/student/study.html 。一直没有确认的话，教务会代为确认。';
+    case 'done': return '本次课已完成，请同学到学习页面确认并评价：https://edsched.github.io/transform/student/study.html';
     default: return String(x.text || '');
   }
 }
@@ -132,7 +132,7 @@ function vipStudentLines(list) {
   return list.map((b, i) => `${i + 1}. ${vipShortWhen(b.slot_date, b.slot_time_range)} ${typeof stuName === 'function' ? stuName(b.assigned_teacher || '', vipNoticeNameMap()) : (b.assigned_teacher || '')}老师`).join('\n');
 }
 function vipGroupRemindText(name, list) {
-  return `${name}同学：以下 VIP 课已上完，请到 VIP 页面确认上课记录并评价（https://edsched.github.io/transform/vip/），登录后可以一起确认：\n${vipStudentLines(list)}\n一直没有确认的话，教务会代为确认。`;
+  return `${name}同学：以下 VIP 课已上完，请到学习页面确认上课记录并评价（https://edsched.github.io/transform/student/study.html），登录后可以一起确认：\n${vipStudentLines(list)}\n一直没有确认的话，教务会代为确认。`;
 }
 function vipGroupProxyText(name, list, who) {
   return `${name}同学：以下 VIP 课的上课记录已由教务（${who}）代为确认：\n${vipStudentLines(list)}\n如果记录有问题，请联系老师或教务。`;

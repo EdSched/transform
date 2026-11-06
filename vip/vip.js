@@ -329,7 +329,7 @@ async function saveVipProgress() {
 
 function renderVipMain() {
   // VIP 学生页由 study.js 主体驱动：任何调用 renderVipMain 的操作都改为重渲染 study 主页
-  if ((window.__VIP_PAGE__ || window.__VIP_EMBED__) && typeof renderStudyMain === 'function' && typeof studyStudent !== 'undefined' && studyStudent) {
+  if (window.__VIP_EMBED__ && typeof renderStudyMain === 'function' && typeof studyStudent !== 'undefined' && studyStudent) {
     renderStudyMain();
     return;
   }
@@ -964,8 +964,8 @@ async function confirmVipSession(bookingId, rating) {
 }
 
 // 在 VIP 学生页由 study.js 作为主体驱动；此处仅在独立使用时自启动
-// VIP 页面（__VIP_PAGE__）和学习页面嵌入（__VIP_EMBED__）都由 study.js 负责登录，不启动 VIP 自己的登录流程
-if (!window.__VIP_PAGE__ && !window.__VIP_EMBED__) initVip();
+// 学习页面（__VIP_EMBED__）由 study.js 负责登录，不启动 VIP 自己的登录流程
+if (!window.__VIP_EMBED__) initVip();
 
 
 // ════════════════════════════════════════════════════════════════

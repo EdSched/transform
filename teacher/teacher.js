@@ -2124,7 +2124,7 @@ async function openVipConfirmText(bookingId) {
     const students = await sb(`/rest/v1/students?name=eq.${encodeURIComponent(b.name)}&select=student_code`);
     if (students.length && students[0].student_code) code = students[0].student_code;
   } catch (e) { /* 拉取失败不阻断，使用默认提示文字 */ }
-  const text = `【唯新教育】${b.name}同学，您本次VIP课程已完成，请前往以下页面确认并评价：\nhttps://edsched.github.io/transform/vip/\n姓名：${b.name}\n查询码：${code}`;
+  const text = `【唯新教育】${b.name}同学，您本次VIP课程已完成，请前往以下页面确认并评价：\nhttps://edsched.github.io/transform/student/study.html\n姓名：${b.name}\n查询码：${code}`;
   const existing = document.getElementById('vipConfirmTextModal');
   if (existing) existing.remove();
   const modal = document.createElement('div');
