@@ -2,6 +2,7 @@
 // materials.js — 出愿材料准备（志望理由书任务第二批）
 // 清单：material_items（admin 考学进度 →「📁 出愿材料准备」→「📋 材料清单」维护；track = gakubu 学部 | grad 大学院）
 // 准备情况：student_materials（学生自己更新 / 老师帮改；status todo 未准备 | applying 已申请开具 | ready 已准备）
+// kind='prof_mail' / 'inquiry_mail' = 大学院的联系教授邮件 / 问询邮件（同一套流程，riyu_submissions 的 kind 为 grad_prof_mail / grad_inquiry_mail）
 // kind='riyu' 的条目 = 在线撰写的志望理由书（shared/riyu.js：大学院 grad_riyu / 学部 gakubu_riyu）
 // 依赖：shared/supabase.js、shared/constants.js、shared/riyu.js
 // ══════════════════════════════════
@@ -10,6 +11,46 @@ const MAT_STATUS = [['todo', '未准备'], ['applying', '已申请开具'], ['re
 function matEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
 function matTrackOf(stu) { return (typeof isGakubuStudent === 'function' && isGakubuStudent(stu)) ? 'gakubu' : 'grad'; }
 function matRiyuKind(track) { return track === 'gakubu' ? 'gakubu_riyu' : 'grad_riyu'; }
+// 在线撰写类条目：riyu 志望理由书 / prof_mail 联系教授邮件 / inquiry_mail 问询邮件（后两项只有大学院）
+function matIsDoc(it) { return !!it && (it.kind === 'riyu' || it.kind === 'prof_mail' || it.kind === 'inquiry_mail'); }
+// 条目 → riyu_submissions.kind
+function matDocKind(it, track) {
+  if (!it) return '';
+  if (it.kind === 'prof_mail') return 'grad_prof_mail';
+  if (it.kind === 'inquiry_mail') return 'grad_inquiry_mail';
+  return it.kind === 'riyu' ? matRiyuKind(track) : '';
+}
+// 学生出愿材料用到的全部文书 kind（读提交记录用）
+function matDocKinds(track) { return track === 'gakubu' ? ['gakubu_riyu'] : ['grad_riyu', 'grad_prof_mail', 'grad_inquiry_mail']; }
+// 各在线撰写条目的完成情况：返回 riyuCounts 的结果 + byKind（联系教授邮件：含同意校数；问询邮件：封数）
+function matCounts(plans, subs, track) {
+  const c = riyuCounts(plans, subs, matRiyuKind(track));
+  c.byKind = {};
+  if (track !== 'gakubu') {
+    const p = riyuCounts(plans, subs, 'grad_prof_mail');
+    p.agreed = (plans || []).filter(pl => { const s = riyuSubOf(pl, subs, 'grad_prof_mail'); return s && riyuMeta(s).status === 'agree'; }).length;
+    c.byKind.grad_prof_mail = p;
+    const iq = (subs || []).filter(x => x.kind === 'grad_inquiry_mail');
+    c.byKind.grad_inquiry_mail = { total: iq.length, submitted: iq.filter(x => x.status === 'submitted' || x.status === 'reviewed').length, reviewed: iq.filter(x => x.status === 'reviewed').length };
+  }
+  return c;
+}
+// 一个在线撰写条目的状态：{ done, started, text, none }；r = 该生该条目的 student_materials 行（问询邮件的「不需要」）
+function matDocState(it, riyuC, r) {
+  if (it.kind === 'prof_mail') {
+    const k = riyuC && riyuC.byKind && riyuC.byKind.grad_prof_mail;
+    if (!k || !k.total) return { done: false, started: false, text: '请先选志望校', none: true };
+    return { done: k.reviewed >= k.total, started: k.submitted > 0, text: `已批复 ${k.reviewed}/${k.total} 校 · 同意 ${k.agreed || 0} 校` };
+  }
+  if (it.kind === 'inquiry_mail') {
+    const k = (riyuC && riyuC.byKind && riyuC.byKind.grad_inquiry_mail) || { total: 0, submitted: 0, reviewed: 0 };
+    if (r && r.status === 'ready' && !k.total) return { done: true, started: true, text: '不需要' };
+    if (!k.total) return { done: false, started: false, text: '未开始' };
+    return { done: k.reviewed >= 1, started: k.submitted > 0, text: `${k.total} 封 · 已提交 ${k.submitted} · 已批复 ${k.reviewed}` };
+  }
+  if (!riyuC || !riyuC.total) return { done: false, started: false, text: '请先选志望校', none: true };
+  return { done: riyuC.reviewed >= riyuC.total, started: riyuC.submitted > 0, text: `已提交 ${riyuC.submitted}/${riyuC.total} 校 · 已批复 ${riyuC.reviewed} 校` };
+}
 function matFiles(it) { let v = it && it.example_files; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = []; } } return Array.isArray(v) ? v : []; }
 function matStatusInfo(st) {
   if (st === 'ready') return { t: '已准备', c: '#2a7a4a', bg: '#e4f0e8' };
@@ -60,7 +101,9 @@ function matMd(body) {
 
 async function matLoadItems(track, includeHidden) {
   const q = `/rest/v1/material_items?${track ? `track=eq.${track}&` : ''}${includeHidden ? '' : 'or=(published.is.null,published.is.true)&'}select=*&order=sort_order.asc,created_at.asc`;
-  return await sb(q);
+  const list = await sb(q);
+  // 联系教授邮件 / 问询邮件只给大学院：学部清单里即使有也不显示
+  return track === 'gakubu' ? (list || []).filter(it => it.kind !== 'prof_mail' && it.kind !== 'inquiry_mail') : list;
 }
 // 学生准备情况 upsert（主键 student_id + item_id）
 async function matUpsert(row) {
@@ -75,8 +118,8 @@ async function matUpsert(row) {
 function matProgress(items, rows, riyuC) {
   let ready = 0;
   (items || []).forEach(it => {
-    if (it.kind === 'riyu') { if (riyuC && riyuC.total && riyuC.reviewed >= riyuC.total) ready++; return; }
     const r = (rows || []).find(x => x.item_id === it.id);
+    if (matIsDoc(it)) { if (matDocState(it, riyuC, r).done) ready++; return; }
     if (r && r.status === 'ready') ready++;
   });
   return { ready, total: (items || []).length };
@@ -86,10 +129,9 @@ function matProgress(items, rows, riyuC) {
 // 紧凑方框（老师端 / 管理端 / 学生端共用）：默认只显示小方框，点一个在网格下方展开编辑区
 // ══════════════════════════════════
 function matBoxText(it, r, riyuC) {
-  if (it.kind === 'riyu') {
-    if (!riyuC || !riyuC.total) return { t: '请先选志望校', c: '#8a8580' };
-    const done = riyuC.reviewed >= riyuC.total;
-    return { t: `已提交 ${riyuC.submitted}/${riyuC.total} 校 · 已批复 ${riyuC.reviewed} 校`, c: done ? '#2a7a4a' : riyuC.submitted ? '#a0621a' : '#8a8580' };
+  if (matIsDoc(it)) {
+    const d = matDocState(it, riyuC, r);
+    return { t: d.text, c: d.done ? '#2a7a4a' : d.started ? '#a0621a' : '#8a8580' };
   }
   const st = (r && r.status) || 'todo', info = matStatusInfo(st);
   if (st === 'applying') return { t: '已申请' + (r.expected_date ? ' · 预计' + r.expected_date : ''), c: info.c };
@@ -144,16 +186,18 @@ function matStaffNodeHtml(student, items, rows, plans, subs) {
 }
 function matStaffInner(sid) {
   const c = MATS[sid]; if (!c) return '';
-  const track = matTrackOf(c.student), kind = matRiyuKind(track);
-  const riyuC = riyuCounts(c.plans, c.subs, kind);
+  const track = matTrackOf(c.student);
+  const riyuC = matCounts(c.plans, c.subs, track);
   const pg = matProgress(c.items, c.rows, riyuC);
   if (!c.items.length) return `<div style="font-size:11px;color:var(--text-3,#999)">${track === 'gakubu' ? '学部' : '大学院'}的出愿材料清单还没有录入（admin 考学进度 →「📁 出愿材料准备」→「📋 材料清单」）</div>`;
   const sidJs = matEsc(sid).replace(/'/g, "\\'");
   const it = c.items.find(x => x.id === c.open);
   let edit = '';
-  if (it && it.kind === 'riyu') {
+  if (it && matIsDoc(it)) {
+    const noneRow = it.kind === 'inquiry_mail' ? c.rows.find(x => x.item_id === it.id) : null;
     edit = `<div style="font-size:12px;font-weight:600;margin-bottom:6px">${matEsc(it.name)}</div>
-      ${riyuStaffListHtml(c.student, c.plans, c.subs, kind, sub => { const i = c.subs.findIndex(x => x.id === sub.id); if (i >= 0) c.subs[i] = sub; else c.subs.push(sub); matStaffRerender(sid); })}`;
+      ${noneRow && noneRow.status === 'ready' ? '<div style="font-size:11px;color:#2a7a4a;margin-bottom:6px">学生已标记：不需要问询邮件</div>' : ''}
+      ${riyuStaffListHtml(c.student, c.plans, c.subs, matDocKind(it, track), sub => { const i = c.subs.findIndex(x => x.id === sub.id); if (i >= 0) c.subs[i] = sub; else c.subs.push(sub); matStaffRerender(sid); })}`;
   } else if (it) {
     const pre = `mats_${matEsc(sid)}_${matEsc(it.id)}`;
     const r = c.rows.find(x => x.item_id === it.id) || {};

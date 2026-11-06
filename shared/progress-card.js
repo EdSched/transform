@@ -260,7 +260,7 @@ function pgcCardHtml(s, ctx, o) {
     return `<tr>
       <td style="color:var(--text-3)">${i + 1}</td>
       <td style="white-space:nowrap">${schoolLevelHtml(p.level)}</td>
-      <td><span style="font-weight:600">${pgcEsc(p.school_name)}</span>${p.faculty ? `<span style="color:var(--text-3);margin-left:4px;font-size:10px">${pgcEsc(p.faculty)}</span>` : ''}</td>
+      <td><span style="font-weight:600">${pgcEsc(p.school_name)}</span>${p.faculty ? `<span style="color:var(--text-3);margin-left:4px;font-size:10px">${pgcEsc(p.faculty)}</span>` : ''}${!gakubu && typeof riyuProfTagHtml === 'function' ? ' ' + riyuProfTagHtml(p, subs) : ''}</td>
       <td>${pgcEsc(p.professor) || '—'}</td>
       <td style="font-size:10px;color:var(--accent)">${pgcEsc(p.application_period) || '—'}</td>
       <td><select onchange="event.stopPropagation();${h.planSet}('${p.id}','status',this.value,this)" onclick="event.stopPropagation()" style="width:100%;font-size:10px;padding:3px 2px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;color:${st.c};font-weight:600">

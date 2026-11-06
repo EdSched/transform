@@ -672,7 +672,7 @@ function studyIsGakubu() {
 // 新版志望理由书（riyu_submissions + writing_guides，见 shared/riyu.js）：按志望校逐校撰写 → 提交给老师 → 老师上传批复版
 // 学部用 gakubu_riyu；大学院（出愿材料里）用 grad_riyu，共用同一个组件
 // 旧版 draft_fields.riyu（動機/意志/展望）不删除，只在还没有新记录的学校上方作为「旧版草稿（参考）」只读显示
-let rsState = { kind: '', wrapId: '', guide: null, subs: [], drafts: {}, flash: {}, err: '' };
+let rsState = { kind: '', wrapId: '', guide: null, subs: [], drafts: {}, metaDrafts: {}, blanks: [], flash: {}, err: '' };
 
 function renderRiyuTab() { return riyuStudentShell('gakubu_riyu'); }
 
@@ -688,39 +688,94 @@ async function riyuStudentLoad(kind, wrapId) {
     sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=eq.${kind}&select=*`)
       .then(r => { subs = r || []; }).catch(e => { err = e.message; }),
   ]);
-  rsState = { kind, wrapId, guide: g, subs, drafts: rsState.kind === kind ? rsState.drafts : {}, flash: {}, err };
+  const same = rsState.kind === kind;
+  rsState = { kind, wrapId, guide: g, subs, drafts: same ? rsState.drafts : {}, metaDrafts: same ? rsState.metaDrafts : {}, blanks: same ? rsState.blanks : [], flash: {}, err };
   riyuStudentRender();
 }
 function riyuStudentPlans() { return (studyData.schoolPlans || []).slice().sort((a, b) => (a.level || 2) - (b.level || 2)); }
+// 当前页要写的每一份：志望理由书 / 联系教授邮件 = 每所志望校一份（邮件里已删除的志望校保留，orphan）；问询邮件 = 已写的每一封 + 还没保存的空白封
+function riyuStudentItems() {
+  const kind = rsState.kind, plans = riyuStudentPlans();
+  const subP = s => ({ school_name: s.school_name || '', faculty: s.faculty || '', department: s.department || '' });
+  if (kind === 'grad_inquiry_mail') {
+    const mine = rsState.subs.slice().sort((a, b) => String(a.created_at || a.updated_at || '').localeCompare(String(b.created_at || b.updated_at || '')));
+    return mine.map(s => ({ key: s.school_key, sub: s, p: subP(s) }))
+      .concat(rsState.blanks.map(k => ({ key: k, sub: null, p: {}, blank: true })));
+  }
+  const items = plans.map(p => ({ key: riyuKeyOf(p), sub: rsState.subs.find(x => x.school_key === riyuKeyOf(p)) || null, p }));
+  if (kind === 'grad_prof_mail') {
+    const keys = items.map(x => x.key);
+    rsState.subs.filter(s => keys.indexOf(s.school_key) < 0).forEach(s => items.push({ key: s.school_key, sub: s, p: subP(s), orphan: true }));
+  }
+  return items;
+}
+const RS_META_FIELDS = ['prof_name', 'email', 'status', 'sent_date', 'reply', 'target', 'link'];
 // 重绘前先记下各文本框里还没保存的内容，避免保存 A 校时把 B 校正在写的内容冲掉
 function riyuStudentCollect() {
   const g = rsState.guide; if (!g) return;
-  riyuStudentPlans().forEach((p, idx) => {
-    const key = riyuKeyOf(p);
+  riyuStudentItems().forEach((it, idx) => {
+    const key = it.key;
     g.sections.forEach(sec => {
       const el = document.getElementById(`rs_${idx}_${sec.key}`);
       if (el) { (rsState.drafts[key] = rsState.drafts[key] || {})[sec.key] = el.value; }
     });
+    RS_META_FIELDS.forEach(f => {
+      const el = document.getElementById(`rs_${idx}_m_${f}`);
+      if (el) { (rsState.metaDrafts[key] = rsState.metaDrafts[key] || {})[f] = el.value; }
+    });
   });
+}
+// 邮件的发送信息（教授姓名 / 邮箱 / 发送状态 / 发送日期 / 回复要点；问询：收件对象 / 关于哪所学校）
+function riyuStudentMetaHtml(it, idx) {
+  const kind = rsState.kind, plans = riyuStudentPlans();
+  const m = Object.assign({}, riyuMeta(it.sub), rsState.metaDrafts[it.key] || {});
+  const inp = 'width:100%;box-sizing:border-box;font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit';
+  const lab = t => `<div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">${t}</div>`;
+  const id = f => `rs_${idx}_m_${f}`;
+  const stList = kind === 'grad_prof_mail' ? RIYU_PROF_STATUS : RIYU_INQ_STATUS;
+  const statusSel = `<select id="${id('status')}" style="${inp}">${stList.map(([k, l]) => `<option value="${k}" ${(m.status || 'unsent') === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  const reply = `<div style="margin-top:8px">${lab('回复要点（对方回复后，记下关键内容）')}<textarea id="${id('reply')}" rows="2" style="${inp};resize:vertical;line-height:1.7">${escA(m.reply || '')}</textarea></div>`;
+  let body;
+  if (kind === 'grad_prof_mail') {
+    body = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">
+      <div>${lab('教授姓名')}<input id="${id('prof_name')}" value="${escA(m.prof_name || '')}" placeholder="例：山田 太郎" style="${inp}"></div>
+      <div>${lab('教授邮箱')}<input id="${id('email')}" value="${escA(m.email || '')}" placeholder="xxx@xxx.ac.jp" style="${inp}"></div>
+      <div>${lab('发送状态')}${statusSel}</div>
+      <div>${lab('发送日期')}<input id="${id('sent_date')}" type="date" value="${escA(m.sent_date || '')}" style="${inp}"></div>
+    </div>${reply}`;
+  } else {
+    const link = m.link != null ? m.link : (m.link_key || '');
+    body = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">
+      <div>${lab('关于哪所志望校')}<select id="${id('link')}" style="${inp}"><option value="">不指定学校</option>${plans.map(p => { const k = riyuKeyOf(p); return `<option value="${escA(k)}" ${link === k ? 'selected' : ''}>${escA([p.school_name, p.faculty, p.department].filter(Boolean).join(' · ') || '（未命名学校）')}</option>`; }).join('')}</select></div>
+      <div>${lab('收件对象')}<input id="${id('target')}" value="${escA(m.target || '')}" placeholder="例：○○研究科 入試係" style="${inp}"></div>
+      <div>${lab('对方邮箱')}<input id="${id('email')}" value="${escA(m.email || '')}" placeholder="xxx@xxx.ac.jp" style="${inp}"></div>
+      <div>${lab('发送状态')}${statusSel}</div>
+    </div>${reply}`;
+  }
+  return `<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:4px;padding:10px 12px;margin-bottom:12px">${body}</div>`;
 }
 function riyuStudentRender() {
   const wrap = document.getElementById(rsState.wrapId); if (!wrap) return;
-  const g = rsState.guide || { title: '志望理由书', intro: '', sections: [] };
+  const kind = rsState.kind, isMail = riyuIsMail(kind), isInq = kind === 'grad_inquiry_mail';
+  const docName = RIYU_DOC_NAME[kind] || '志望理由书';
+  const g = rsState.guide || { title: docName, intro: '', sections: [] };
   const plans = riyuStudentPlans();
-  const oldMap = (typeof riyuMap === 'function') ? riyuMap(studyData.planDraft) : {};
+  const items = riyuStudentItems();
+  const oldMap = (typeof riyuMap === 'function' && !isMail) ? riyuMap(studyData.planDraft) : {};
   const head = `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:12px 14px;margin-bottom:14px;font-size:11px;color:var(--text-secondary);line-height:1.9">
-      <div style="font-weight:600;color:var(--text-primary);margin-bottom:4px">📄 ${escA(g.title || '志望理由书')}</div>
+      <div style="font-weight:600;color:var(--text-primary);margin-bottom:4px">${isMail ? '✉' : '📄'} ${escA(g.title || docName)}</div>
       ${riyuMd(g.intro)}
     </div>`;
   if (rsState.err) { wrap.innerHTML = head + `<div style="font-size:12px;color:var(--danger);padding:16px">读取失败：${escA(rsState.err)}（请刷新重试）</div>`; return; }
-  if (!plans.length) { wrap.innerHTML = head + '<div style="text-align:center;padding:36px;color:var(--text-muted);font-size:12px">请先在「🏫 志望校」标签填写志望校，这里会为每所学校生成一份志望理由书。</div>'; return; }
-  const cards = plans.map((p, idx) => {
-    const key = riyuKeyOf(p);
-    const sub = rsState.subs.find(x => x.school_key === key) || null;
+  if (!isInq && !items.length) { wrap.innerHTML = head + `<div style="text-align:center;padding:36px;color:var(--text-muted);font-size:12px">请先在「🏫 志望校」标签填写志望校，这里会为每所学校生成一份${docName}。</div>`; return; }
+  const cards = items.map((it, idx) => {
+    const p = it.p, key = it.key, sub = it.sub;
     const saved = riyuSecs(sub);
     const dr = rsState.drafts[key] || {};
     const st = riyuStatusInfo(sub && sub.status);
-    const title = [p.school_name, p.faculty, p.department].filter(Boolean).join(' · ') || '（未命名学校）';
+    const sch = [p.school_name, p.faculty, p.department].filter(Boolean).join(' · ');
+    const nth = isInq ? items.indexOf(it) + 1 : 0;
+    const title = isInq ? `问询邮件 ${nth}${sch ? ' · ' + sch : ' · 不指定学校'}` : (sch || '（未命名学校）');
     const lvLabel = p.level === 1 ? '冲刺' : p.level === 3 ? '保底' : '匹配';
     // 批复版本：当前（已批复时）+ 历史
     const reviews = riyuHistory(sub).filter(h => h.action === 'review' && h.file_url);
@@ -736,7 +791,7 @@ function riyuStudentRender() {
         ${past.map(h => `<div style="padding:4px 0 4px 12px;border-left:2px solid var(--border-light);margin-top:4px"><a href="${escA(h.file_url)}" target="_blank" style="color:var(--accent)">⬇ ${escA(h.file_name || '批复文件')}</a> · ${escA(riyuFmtTime(h.at))}${h.by ? ' · ' + escA(stuName(h.by, studyPubMap)) : ''}${h.note ? `<div style="color:var(--text-secondary)">${escA(h.note)}</div>` : ''}</div>`).join('')}
       </details>` : '';
     const old = oldMap[key] || {};
-    const oldHas = !sub && typeof RIYU_SECTIONS !== 'undefined' && RIYU_SECTIONS.some(x => String(old[x.k] || '').trim());
+    const oldHas = !isMail && !sub && typeof RIYU_SECTIONS !== 'undefined' && RIYU_SECTIONS.some(x => String(old[x.k] || '').trim());
     const oldBlock = oldHas ? `<details style="margin-bottom:10px;font-size:11px;background:var(--bg);border-radius:3px;padding:6px 10px"><summary style="cursor:pointer;color:var(--text-secondary)">旧版草稿（参考）</summary>
         ${RIYU_SECTIONS.map(x => String(old[x.k] || '').trim() ? `<div style="margin-top:6px"><div style="font-weight:600">${escA(x.label)}</div><div style="white-space:pre-wrap;line-height:1.8;color:var(--text-secondary)">${escA(old[x.k])}</div></div>` : '').join('')}
       </details>` : '';
@@ -756,27 +811,46 @@ function riyuStudentRender() {
     return `<div style="border:1px solid var(--border-light);border-radius:5px;padding:14px;margin-bottom:14px;background:var(--surface)">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
         <div style="font-size:13px;font-weight:600">${escA(title)}</div>
-        <span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:2px;padding:1px 7px">${lvLabel}</span>
+        ${!isInq && !it.orphan ? `<span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border);border-radius:2px;padding:1px 7px">${lvLabel}</span>` : ''}
+        ${it.orphan ? '<span style="font-size:10px;color:#b03a2e;border:1px solid #e8b8b0;border-radius:2px;padding:1px 7px">这所学校已不在志望校里</span>' : ''}
         <span style="font-size:10px;padding:1px 9px;border-radius:10px;background:${st.bg};color:${st.c};margin-left:auto">${sub ? st.t : '草稿'}</span>
       </div>
-      <div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">志望理由书要求：${p.plan_requirement ? `<span style="color:var(--accent)">${escA(p.plan_requirement)}</span>` : '<span style="color:var(--text-muted)">暂未填写要求</span>'}</div>
+      ${isMail ? '<div style="height:6px"></div>' : `<div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">志望理由书要求：${p.plan_requirement ? `<span style="color:var(--accent)">${escA(p.plan_requirement)}</span>` : '<span style="color:var(--text-muted)">暂未填写要求</span>'}</div>`}
       ${curBlock}${pastBlock}${oldBlock}
+      ${isMail ? riyuStudentMetaHtml(it, idx) : ''}
       ${g.sections.length ? secs : '<div style="font-size:11px;color:var(--text-muted);padding:8px 0">写作指导还没有设置，请联系老师</div>'}
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <button onclick="riyuStudentSave(${idx},false)" style="background:var(--surface);color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:inherit">💾 保存草稿</button>
         <button onclick="riyuStudentSave(${idx},true)" style="background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:4px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:inherit">📤 提交给老师</button>
+        ${it.blank ? `<button onclick="riyuInqDrop(${idx})" style="background:none;color:var(--text-muted);border:1px solid var(--border);border-radius:4px;padding:8px 14px;font-size:12px;cursor:pointer;font-family:inherit">放弃这封</button>` : ''}
         <span id="rs_msg_${idx}" style="font-size:11px;color:var(--ok)">${escA(flash)}</span>
       </div>
     </div>`;
   }).join('');
-  wrap.innerHTML = head + cards;
+  const addBtn = isInq ? `<div style="margin-bottom:14px"><button onclick="riyuInqNew()" style="background:var(--surface);color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:inherit">＋ 新建一封问询邮件</button></div>` : '';
+  const empty = isInq && !items.length ? '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px">还没有问询邮件。需要向学校确认出愿资格 / 材料时，点上面的「新建」。</div>' : '';
+  wrap.innerHTML = head + addBtn + empty + cards;
   wrap.querySelectorAll('textarea[id^="rs_"]').forEach(t => { t.style.height = 'auto'; t.style.height = Math.max(t.scrollHeight, 60) + 'px'; });
+}
+function riyuInqNew() {
+  riyuStudentCollect();
+  rsState.blanks.push('inq|' + Date.now() + '-' + Math.random().toString(36).slice(2, 7));
+  riyuStudentRender();
+}
+function riyuInqDrop(idx) {
+  const it = riyuStudentItems()[idx]; if (!it || !it.blank) return;
+  if (!confirm('放弃这封还没保存的问询邮件？')) return;
+  riyuStudentCollect();
+  rsState.blanks = rsState.blanks.filter(k => k !== it.key);
+  delete rsState.drafts[it.key]; delete rsState.metaDrafts[it.key];
+  riyuStudentRender();
 }
 async function riyuStudentSave(idx, submit) {
   const g = rsState.guide; if (!g) return;
-  const p = riyuStudentPlans()[idx]; if (!p) return;
-  const key = riyuKeyOf(p);
-  const sub = rsState.subs.find(x => x.school_key === key) || null;
+  const it = riyuStudentItems()[idx]; if (!it) return;
+  const kind = rsState.kind, isMail = riyuIsMail(kind), isInq = kind === 'grad_inquiry_mail';
+  const key = it.key, sub = it.sub;
+  let p = it.p;
   const sections = Object.assign({}, riyuSecs(sub));
   g.sections.forEach(sec => {
     const el = document.getElementById(`rs_${idx}_${sec.key}`);
@@ -786,7 +860,24 @@ async function riyuStudentSave(idx, submit) {
   const msg = document.getElementById('rs_msg_' + idx);
   if (msg) { msg.style.color = 'var(--text-muted)'; msg.textContent = submit ? '提交中…' : '保存中…'; }
   const now = new Date().toISOString();
-  const data = { sections, school_name: p.school_name || '', faculty: p.faculty || '', department: p.department || '', requirement: p.plan_requirement || null, updated_at: now };
+  const data = { sections, school_name: p.school_name || '', faculty: p.faculty || '', department: p.department || '', updated_at: now };
+  if (!isMail) data.requirement = p.plan_requirement || null;
+  if (isMail) {
+    const meta = Object.assign({}, riyuMeta(sub));
+    RS_META_FIELDS.forEach(f => {
+      const el = document.getElementById(`rs_${idx}_m_${f}`);
+      if (el) meta[f] = (el.value || '').trim();
+    });
+    if (isInq) {
+      // 关于哪所志望校：选了就记下学校（也写进 school_name 等列，老师端直接显示）；「不指定学校」则清空
+      const lp = riyuStudentPlans().find(x => riyuKeyOf(x) === (meta.link || ''));
+      meta.link_key = lp ? riyuKeyOf(lp) : '';
+      delete meta.link;
+      Object.assign(data, { school_name: lp ? lp.school_name || '' : '', faculty: lp ? lp.faculty || '' : '', department: lp ? lp.department || '' : '' });
+    }
+    delete meta.link;
+    data.mail_meta = meta;
+  }
   if (submit) {
     data.status = 'submitted'; data.submitted_at = now;
     data.history = riyuHistory(sub).concat([{ at: now, by: studyStudent.name, action: 'submit' }]);
@@ -797,12 +888,14 @@ async function riyuStudentSave(idx, submit) {
       const r = await sb(`/rest/v1/riyu_submissions?id=eq.${encodeURIComponent(sub.id)}`, 'PATCH', data);
       row = Object.assign(sub, data, (r || [])[0] || {});
     } else {
-      const ins = Object.assign({ id: `rs-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, student_id: studyStudent.id, kind: rsState.kind, school_key: key, status: 'draft', history: [] }, data);
+      const ins = Object.assign({ id: `rs-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, student_id: studyStudent.id, kind, school_key: key, status: 'draft', history: [] }, data);
       const r = await sb('/rest/v1/riyu_submissions', 'POST', ins);
       row = (r || [])[0] || ins;
       rsState.subs.push(row);
+      if (it.blank) rsState.blanks = rsState.blanks.filter(k => k !== key);
     }
     riyuStudentCollect();
+    delete rsState.metaDrafts[key];   // 已保存，之后以数据库里的为准
     rsState.flash = {};
     rsState.flash[key] = submit ? '已提交！老师会修改后给你批复，批复版本会出现在这里。' : '✓ 草稿已保存';
     riyuStudentRender();
@@ -822,7 +915,7 @@ async function studyMatLoad() {
   await Promise.all([
     matLoadItems(track).then(r => { items = r || []; }).catch(e => { err = e.message; }),
     sb(`/rest/v1/student_materials?student_id=eq.${encodeURIComponent(studyStudent.id)}&select=*`).then(r => { rows = r || []; }).catch(() => {}),
-    sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=eq.${matRiyuKind(track)}&select=*`).then(r => { subs = r || []; }).catch(() => {}),
+    sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=in.(${matDocKinds(track).join(',')})&select=*`).then(r => { subs = r || []; }).catch(() => {}),
   ]);
   smState = { track, items, rows, subs, err, openItem: smState.openItem || null };
   studyMatRender();
@@ -833,8 +926,7 @@ function studyMatRender() {
   const { track, items, rows, subs } = smState;
   if (smState.err) { wrap.innerHTML = `<div style="font-size:12px;color:var(--danger);padding:16px">读取失败：${escA(smState.err)}（请刷新重试）</div>`; return; }
   if (!items.length) { wrap.innerHTML = `<div style="text-align:center;padding:36px;color:var(--text-muted);font-size:12px">${track === 'gakubu' ? '学部' : '大学院'}的出愿材料清单还没有发布，请等待老师通知</div>`; return; }
-  const kind = matRiyuKind(track);
-  const riyuC = riyuCounts(studyData.schoolPlans || [], subs, kind);
+  const riyuC = matCounts(studyData.schoolPlans || [], subs, track);
   const pg = matProgress(items, rows, riyuC);
   const inp = 'font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit';
   const it = items.find(x => x.id === smState.openItem);
@@ -847,8 +939,14 @@ function studyMatRender() {
         ? `<a href="${escA(f.url)}" target="_blank" style="font-size:11px;color:var(--accent);border:1px solid var(--border);border-radius:3px;padding:4px 10px">📄 ${escA(f.name || '样本 PDF')}</a>`
         : `<a href="${escA(f.url)}" target="_blank" title="点开看大图"><img src="${escA(f.url)}" loading="lazy" style="width:96px;height:96px;object-fit:cover;border-radius:4px;border:1px solid var(--border)"></a>`).join('')}</div>` : ''}`;
     const guideBlock = guide.trim() ? `<div style="font-size:11px;color:var(--text-secondary);border-bottom:1px solid var(--border-light);padding-bottom:6px;margin-bottom:8px">${guide}</div>` : '';
-    if (it.kind === 'riyu') {
-      edit = `<div style="font-size:13px;font-weight:600;margin-bottom:6px">${escA(it.name)}</div>${guideBlock}${riyuStudentShell(kind)}`;
+    if (matIsDoc(it)) {
+      // 问询邮件：没有学校要问时，可以标记「不需要」（记在 student_materials：status=ready + 备注「不需要」）
+      const noneRow = it.kind === 'inquiry_mail' ? rows.find(x => x.item_id === it.id) : null;
+      const isNone = !!(noneRow && noneRow.status === 'ready');
+      const noneBar = it.kind === 'inquiry_mail' ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;color:var(--text-secondary)">
+          <span onclick="studyMatInqNone('${escA(it.id)}',${isNone ? 'false' : 'true'})" class="filter-chip${isNone ? ' active' : ''}" style="cursor:pointer">没有要问学校的问题 · 不需要问询邮件${isNone ? ' ✓' : ''}</span>
+          ${isNone ? '<span>已标记为不需要；如果之后需要问学校，再点一次取消，然后新建邮件</span>' : ''}</div>` : '';
+      edit = `<div style="font-size:13px;font-weight:600;margin-bottom:6px">${escA(it.name)}</div>${guideBlock}${noneBar}${riyuStudentShell(matDocKind(it, track))}`;
     } else {
       const r = rows.find(x => x.item_id === it.id) || {};
       edit = `<div style="font-size:13px;font-weight:600;margin-bottom:6px">${escA(it.name)}</div>${guideBlock}
@@ -871,6 +969,15 @@ function studyMatOpen(id) {
   if (typeof riyuStudentCollect === 'function') riyuStudentCollect();   // 志望理由书还没保存的内容先记下
   smState.openItem = (!id || smState.openItem === id) ? null : id;
   studyMatRender();
+}
+async function studyMatInqNone(itemId, on) {
+  if (typeof riyuStudentCollect === 'function') riyuStudentCollect();
+  try {
+    const saved = await matUpsert({ student_id: studyStudent.id, item_id: itemId, status: on ? 'ready' : 'todo', expected_date: null, issued_date: null, copies: null, note: on ? '不需要' : null });
+    const i = smState.rows.findIndex(x => x.item_id === itemId);
+    if (i >= 0) smState.rows[i] = saved; else smState.rows.push(saved);
+    studyMatRender();
+  } catch (e) { alert('保存失败：' + e.message); }
 }
 async function studyMatSave(itemId) {
   const it = smState.items.find(x => x.id === itemId); if (!it) return;

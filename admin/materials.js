@@ -6,7 +6,7 @@
 // 依赖：shared/supabase.js、shared/riyu.js、students.js（progressViewButtons）
 // ══════════════════════════════════
 let matSection = 'guide';          // 当前子板块：guide 文书指导
-let wgKind = 'gakubu_riyu';        // 正在编辑的指导：gakubu_riyu | grad_riyu
+let wgKind = 'gakubu_riyu';        // 正在编辑的指导：gakubu_riyu | grad_riyu | grad_prof_mail | grad_inquiry_mail
 let wgData = null;                 // { kind, title, intro, sections:[{key,title,subtitle,tips:[]}], _fromDb }
 let wgDirty = false;
 
@@ -43,7 +43,7 @@ function miRender() {
     <div style="font-size:12px;font-weight:600;margin-bottom:8px">${miEditId === 'new' ? '新增材料' : '编辑：' + riyuEsc(miEdit.name)}</div>
     <div style="display:grid;grid-template-columns:1fr 200px;gap:8px;margin-bottom:8px">
       <div>${lab('名称')}<input id="mi_name" value="${riyuEsc(miEdit.name)}" oninput="miEdit.name=this.value" placeholder="例：毕业证明书" style="${inp}"></div>
-      <div>${lab('类型')}<select onchange="miEdit.kind=this.value" style="${inp}"><option value="file" ${miEdit.kind !== 'riyu' ? 'selected' : ''}>普通材料（学生更新准备状态）</option><option value="riyu" ${miEdit.kind === 'riyu' ? 'selected' : ''}>志望理由书（在线撰写、老师批复）</option></select></div>
+      <div>${lab('类型')}<select onchange="miEdit.kind=this.value" style="${inp}"><option value="file" ${!matIsDoc(miEdit) ? 'selected' : ''}>普通材料（学生更新准备状态）</option><option value="riyu" ${miEdit.kind === 'riyu' ? 'selected' : ''}>志望理由书（在线撰写、老师批复）</option>${miTrack === 'grad' ? `<option value="prof_mail" ${miEdit.kind === 'prof_mail' ? 'selected' : ''}>联系教授邮件（在线撰写·按志望校）</option><option value="inquiry_mail" ${miEdit.kind === 'inquiry_mail' ? 'selected' : ''}>问询邮件（在线撰写）</option>` : ''}</select></div>
     </div>
     ${lab('如何准备（可用 ## 小标题、**粗体**、- 列表、表格）')}<textarea rows="4" oninput="miEdit.guide=this.value" style="${inp};resize:vertical;line-height:1.7;margin-bottom:8px">${riyuEsc(miEdit.guide)}</textarea>
     ${lab('参考例子')}<textarea rows="3" oninput="miEdit.example=this.value" style="${inp};resize:vertical;line-height:1.7;margin-bottom:8px">${riyuEsc(miEdit.example)}</textarea>
@@ -70,7 +70,7 @@ function miRender() {
   ${n ? miList.map((it, i) => `<div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border-light);border-radius:3px;padding:8px 12px;margin-bottom:6px;background:var(--surface)">
     <span style="font-size:11px;color:var(--text-3);width:18px">${i + 1}</span>
     <span style="font-size:12px;font-weight:600">${riyuEsc(it.name)}</span>
-    ${it.kind === 'riyu' ? '<span style="font-size:9px;color:var(--accent);border:1px solid var(--accent);border-radius:2px;padding:0 5px">在线撰写</span>' : ''}
+    ${matIsDoc(it) ? '<span style="font-size:9px;color:var(--accent);border:1px solid var(--accent);border-radius:2px;padding:0 5px">在线撰写</span>' : ''}
     <span style="font-size:10px;color:var(--text-3)">${(it.guide || '').trim() ? '有说明' : '无说明'} · 样本 ${matFiles(it).length}</span>
     <span onclick="miToggle('${riyuEsc(it.id)}')" style="cursor:pointer;font-size:9px;border-radius:2px;padding:1px 8px;${it.published === false ? 'background:var(--bg);color:var(--text-3);border:1px dashed var(--border)' : 'background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok)'}">${it.published === false ? '隐藏中 · 点击公开' : '公开中 · 点击隐藏'}</span>
     <span style="margin-left:auto;display:flex;gap:4px">
@@ -98,7 +98,7 @@ async function miUpload(input) {
 async function miSave() {
   const e = miEdit; if (!e) return;
   if (!(e.name || '').trim()) { alert('请填写名称'); return; }
-  const data = { track: miTrack, name: e.name.trim(), kind: e.kind === 'riyu' ? 'riyu' : 'file', guide: e.guide || '', example: e.example || '', example_files: e.example_files || [] };
+  const data = { track: miTrack, name: e.name.trim(), kind: (e.kind === 'riyu' || ((e.kind === 'prof_mail' || e.kind === 'inquiry_mail') && miTrack === 'grad')) ? e.kind : 'file', guide: e.guide || '', example: e.example || '', example_files: e.example_files || [] };
   try {
     if (miEditId === 'new') {
       Object.assign(data, { id: `mi-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, sort_order: miList.length ? Math.max(...miList.map(x => x.sort_order || 0)) + 1 : 0, published: true });
@@ -153,7 +153,6 @@ async function msLoad() {
   stus = stus.filter(s => matTrackOf(s) === msTrack);
   const by = (arr, k) => { const m = {}; (arr || []).forEach(r => (m[r[k]] = m[r[k]] || []).push(r)); return m; };
   const rowsBy = by(rows, 'student_id'), plansBy = by(plans, 'student_id'), subsBy = by(subs, 'student_id');
-  const kind = matRiyuKind(msTrack);
   const cell = (st, t) => { const i = matStatusInfo(st); return `<span style="font-size:10px;padding:1px 7px;border-radius:9px;background:${i.bg};color:${i.c};white-space:nowrap">${riyuEsc(t)}</span>`; };
   box.innerHTML = `
   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
@@ -168,12 +167,12 @@ async function msLoad() {
     <thead><tr style="background:var(--bg)"><th style="position:sticky;left:0;background:var(--bg);text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);white-space:nowrap">学生</th><th style="padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap">进度</th>
       ${items.map(it => `<th style="padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap;font-weight:600">${riyuEsc(it.name)}</th>`).join('')}</tr></thead>
     <tbody>${stus.map(s => {
-      const rs = rowsBy[s.id] || [], rc = riyuCounts(plansBy[s.id] || [], subsBy[s.id] || [], kind), pg = matProgress(items, rs, rc);
+      const rs = rowsBy[s.id] || [], rc = matCounts(plansBy[s.id] || [], subsBy[s.id] || [], msTrack), pg = matProgress(items, rs, rc);
       return `<tr style="border-bottom:1px solid var(--border-light)"><td style="position:sticky;left:0;background:var(--surface);padding:5px 10px;font-weight:600;white-space:nowrap">${riyuEsc(s.name)} <span style="font-weight:400;font-size:10px;color:var(--text-3)">${riyuEsc(MAJORS[s.major] || s.major || '')}</span></td>
         <td style="padding:5px 8px;text-align:center;white-space:nowrap;color:${pg.ready >= pg.total ? 'var(--ok)' : 'var(--text-2)'}">${pg.ready}/${pg.total}</td>
         ${items.map(it => {
-          if (it.kind === 'riyu') { const st = rc.total && rc.reviewed >= rc.total ? 'ready' : rc.submitted ? 'applying' : 'todo'; return `<td style="padding:5px 8px;text-align:center">${cell(st, rc.total ? `提交${rc.submitted}/${rc.total} 批复${rc.reviewed}` : '无志望校')}</td>`; }
           const r = rs.find(x => x.item_id === it.id) || {};
+          if (matIsDoc(it)) { const d = matDocState(it, rc, r); return `<td style="padding:5px 8px;text-align:center">${cell(d.done ? 'ready' : d.started ? 'applying' : 'todo', d.text)}</td>`; }
           return `<td style="padding:5px 8px;text-align:center">${cell(r.status || 'todo', matStatusText(r))}</td>`;
         }).join('')}</tr>`;
     }).join('')}</tbody>
@@ -200,7 +199,7 @@ function wgRender() {
   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
     <span style="font-size:11px;color:var(--text-3)">编辑哪一份：</span>
     <select onchange="wgSwitchKind(this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
-      ${Object.entries(RIYU_KIND_LABEL).map(([k, l]) => `<option value="${k}" ${wgKind === k ? 'selected' : ''}>${l} · 志望理由书</option>`).join('')}
+      ${RIYU_GUIDE_KINDS.map(([k, l]) => `<option value="${k}" ${wgKind === k ? 'selected' : ''}>${l}</option>`).join('')}
     </select>
     <span style="font-size:10px;color:var(--text-3)">保存后学生端马上看到新内容（学生按这里的段落逐段撰写）</span>
   </div>
