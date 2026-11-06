@@ -176,17 +176,20 @@ async function courseRoomSyncCore(courseId) {
   }
   for (const { s, sp, d } of need) {
     const st = sp.start || crsT5(tpl.start_time), en = sp.end || crsT5(tpl.end_time);
-    let reason = '';
+    let reason = '', who = '';
     if (!single) reason = '这门课有好几间教室，分不出用哪间';
     else {
       const hit = pool.filter(b => crsOnDate(b, d) && crsOverlap(st, en, b.start_time, b.end_time) &&
         ((!online && String(b.room_id) === rooms[0]) || (tpl.uses_meeting && b.uses_meeting && String(b.meeting_account_id) === String(tpl.meeting_account_id))));
-      if (hit.length) reason = online ? '原会议账号当天被占' : `原教室 ${roomName || rooms[0]} 当天被占`;
+      if (hit.length) {
+        reason = online ? '原会议账号当天被占' : `原教室 ${roomName || rooms[0]} 当天被占`;
+        who = hit.map(b => `${b.title || b.entry_name || '占用'}（${b.user_name || '未填占用人'}，${crsT5(b.start_time)}-${crsT5(b.end_time)}，${b.recurrence === 'weekly' ? '每周固定' : '临时'}${b.status === 'pending' ? '，待批准' : ''}）`).join('、');
+      }
     }
     if (reason) {
       const wrote = await crsRemind(co, s, d, { start: st, end: en }, reason);
       if (wrote) out.reminders++;
-      out.notes.push(`${d.slice(5)}：${reason}，${wrote ? '已写提醒' : (d < new Date().toISOString().slice(0, 10) ? '日期已过，不提醒' : '已有未处理的提醒')}`);
+      out.notes.push(`${d.slice(5)}：${reason}${who ? '，被 ' + who + ' 占着' : ''}，${wrote ? '已写提醒' : (d < new Date().toISOString().slice(0, 10) ? '日期已过，不提醒' : '已有未处理的提醒')}`);
       continue;
     }
     await crsInsert('sched_bookings', {
