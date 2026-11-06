@@ -1673,8 +1673,8 @@ function tabConflict(){
       '<div class="field"><label>校区</label><select id="cf_campus"></select></div>'+
       '<div class="field"><label>范畴（课程冲突用）</label><select id="cf_scope"><option value="">全部范畴</option>'+
         LEAD_SCOPES.map(s=>`<option value="${s}">${s}</option>`).join('')+'</select></div>'+
-      '<div class="field"><label>&nbsp;</label><button id="cf_go">检查</button></div>'+
-    '</div><div id="cf_res" style="margin-top:10px"></div></div>';
+      '<div class="field"><label>&nbsp;</label><button id="cf_go">检查</button> <button id="cf_refresh" class="ghost">刷新</button></div>'+
+    '</div><div class="muted" style="font-size:12px;margin-top:4px">按实际上课日判断（已扣除休讲、改期释放的日子）</div><div id="cf_res" style="margin-top:10px"></div></div>';
   render(h);
   fillSelect(el('cf_campus'), ['高马','市谷'], v=>v, v=>v, '全部校区');
   el('cf_mode').onchange=()=>{
@@ -1685,6 +1685,7 @@ function tabConflict(){
     runConflict();
   };
   el('cf_go').onclick=runConflict;
+  el('cf_refresh').onclick=async()=>{ window.CF_SESS=null; el('cf_res').innerHTML='<div class="muted">刷新中…</div>'; try{ await reloadAll(); }catch(e){} runConflict(); };
   ['cf_from','cf_to','cf_date','cf_campus','cf_scope'].forEach(id=>el(id).onchange=runConflict);
   runConflict();
 }
@@ -1714,7 +1715,39 @@ function bDetail(b){
   };
 }
 const WD_NAME={1:'周一',2:'周二',3:'周三',4:'周四',5:'周五',6:'周六',7:'周日'};
-function runConflict(){
+// 某条占用这一天是否真的占着（扣掉自动/人工释放的日子、休讲日）
+function cfOn(b,d){
+  if(!bookingOnDate(b,d)) return false;
+  const skip=window.SKIPMAP||{};
+  return !(b.kind==='course' && b.course_id && skip[b.course_id] && skip[b.course_id].has(d));
+}
+function cfDaysBetween(lo,hi,weekdays){
+  const out=[]; for(let d=lo,g=0; d && d<=hi && g<800; d=addDays(d,1),g++){ if(!weekdays||weekdays.includes(weekdayOf(d))) out.push(d); } return out;
+}
+const cfMD=d=>d.slice(5).replace('-','/');
+function cfDaysHtml(days){
+  if(days.length<=6) return esc(days.map(cfMD).join('、'));
+  return `<details style="display:inline"><summary style="display:inline;cursor:pointer">${esc(cfMD(days[0]))} 起共 ${days.length} 天</summary>${esc(days.map(cfMD).join('、'))}</details>`;
+}
+// 读区间内的单回（只读这个区间）；再读冲突涉及的课的全部单回，用来显示「实际上课日期范围」
+async function cfLoadSessions(lo,hi){
+  const key=lo+'|'+hi;
+  if(window.CF_SESS && window.CF_SESS.key===key) return window.CF_SESS.rows;
+  let rows=[]; try{ rows=await sbGet('course_sessions',`select=course_id,session_date,is_cancelled&session_date=gte.${lo}&session_date=lte.${hi}`); }catch(e){ rows=[]; }
+  window.CF_SESS={key,rows}; return rows;
+}
+async function cfLoadActual(ids){
+  window.CF_ACT=window.CF_ACT||{};
+  const need=[...new Set(ids.map(String))].filter(x=>x&&x!=='undefined');
+  if(!need.length) return;
+  try{
+    const rows=await sbGet('course_sessions',`select=course_id,session_date,is_cancelled&course_id=in.(${need.map(encodeURIComponent).join(',')})`);
+    const m={}; rows.forEach(r=>{ if(r.is_cancelled===true||!r.session_date) return; const k=String(r.course_id); const o=m[k]||(m[k]=[r.session_date,r.session_date]); if(r.session_date<o[0]) o[0]=r.session_date; if(r.session_date>o[1]) o[1]=r.session_date; });
+    need.forEach(k=>{ window.CF_ACT[k]=m[k]||null; });
+  }catch(e){ /* 读不到就显示记录上的日期 */ }
+}
+async function runConflict(){
+  const tok=window.CF_TOK=(window.CF_TOK||0)+1;
   const mode=el('cf_mode').value;
   const campus=el('cf_campus').value;
   let pool, headLabel, rangeLo, rangeHi;
@@ -1727,7 +1760,7 @@ function runConflict(){
     const from=el('cf_from').value, to=el('cf_to').value;
     if(!from||!to){ el('cf_res').innerHTML='<div class="muted">请选起止日期</div>'; return; }
     rangeLo=from; rangeHi=to;
-    // 该区间内活跃的占用（weekly 跨度与区间有交集；once 落在区间内）
+    // 先粗筛：区间内活跃的占用（weekly 跨度与区间有交集；once 落在区间内）
     pool=BOOKINGS.filter(b=>{
       if(b.status==='rejected') return false;
       const [s,e]=bSpan(b); if(!s) return false;
@@ -1740,30 +1773,41 @@ function runConflict(){
   for(let i=0;i<pool.length;i++) for(let j=i+1;j<pool.length;j++){
     const a=pool[i],b=pool[j];
     if(!overlap(a.start_time,a.end_time,b.start_time,b.end_time)) continue;
-    // 共同周几
     const wa=bookingWeekdays(a), wb=bookingWeekdays(b);
     const shared=[...wa].filter(w=>wb.has(w));
     if(!shared.length) continue;
-    // 重叠日期区间
     const [as,ae]=bSpan(a), [bs,be]=bSpan(b);
     const ovLo=[as,bs,rangeLo].filter(Boolean).sort().pop();
     const ovHi=[ae,be,rangeHi].filter(Boolean).sort()[0];
     if(ovLo>ovHi) continue;
-    const rec={a,b,shared,ovLo,ovHi};
-    if(a.room_id&&b.room_id&&String(a.room_id)===String(b.room_id)) roomIssues.push({...rec,label:rname(a.room_id)});
-    if(a.uses_meeting&&b.uses_meeting&&a.meeting_account_id&&String(a.meeting_account_id)===String(b.meeting_account_id)) accIssues.push({...rec,label:aname(a.meeting_account_id)});
+    const sameRoom=a.room_id&&b.room_id&&String(a.room_id)===String(b.room_id);
+    const sameAcc=a.uses_meeting&&b.uses_meeting&&a.meeting_account_id&&String(a.meeting_account_id)===String(b.meeting_account_id);
+    if(!sameRoom&&!sameAcc) continue;
+    // 再逐日：两边这一天都真的占着才算冲突
+    const days=cfDaysBetween(ovLo,ovHi,shared).filter(d=>cfOn(a,d)&&cfOn(b,d));
+    if(!days.length) continue;
+    const rec={a,b,shared,days};
+    if(sameRoom) roomIssues.push({...rec,label:rname(a.room_id)});
+    if(sameAcc) accIssues.push({...rec,label:aname(a.meeting_account_id)});
   }
+  const sess=await cfLoadSessions(rangeLo,rangeHi);
+  if(tok!==window.CF_TOK) return;
+  const cc=renderCourseConflictsData(rangeLo,rangeHi,campus,el('cf_scope')?el('cf_scope').value:'',sess);
+  const ids=[]; [...roomIssues,...accIssues].forEach(x=>[x.a,x.b].forEach(b=>{ if(b.course_id) ids.push(b.course_id); }));
+  [...cc.issues,...cc.acked].forEach(x=>{ ids.push(x.a.id,x.b.id); });
+  await cfLoadActual(ids);
+  if(tok!==window.CF_TOK) return;
   const card=(x)=>{
     const da=bDetail(x.a), db=bDetail(x.b);
     const wds=x.shared.map(w=>WD_NAME[w]).join('、');
-    const ovTxt = x.ovLo===x.ovHi ? x.ovLo : (x.ovLo+' ~ '+x.ovHi);
-    const side=(d,bk)=>`<div style="flex:1;min-width:200px;border:1px solid var(--line);border-radius:8px;padding:8px 10px">`+
+    const side=(d,bk)=>{ const act=bk.course_id&&window.CF_ACT?window.CF_ACT[String(bk.course_id)]:null; const sp=act||d.span;
+      return `<div style="flex:1;min-width:200px;border:1px solid var(--line);border-radius:8px;padding:8px 10px">`+
       `<div style="font-weight:600">${esc(d.name)} <span class="badge b-mute" style="font-size:10px">${esc(d.kind)}</span>${bk&&bk.status==='pending'?' <span class="badge b-warn" style="font-size:10px">待审批</span>':''}</div>`+
       `<div class="muted" style="font-size:12px;margin-top:3px">${d.who?('老师：'+esc(d.who)+' · '):''}${esc(d.campus||'')}</div>`+
-      `<div class="muted" style="font-size:12px">时段 ${esc(d.time)} · 日期 ${esc(d.span[0]||'')}${d.span[1]&&d.span[1]!==d.span[0]?('~'+esc(d.span[1])):''}</div>`+
-      `</div>`;
+      `<div class="muted" style="font-size:12px">时段 ${esc(d.time)} · 日期 ${esc(sp[0]||'')}${sp[1]&&sp[1]!==sp[0]?('~'+esc(sp[1])):''}</div>`+
+      `</div>`; };
     return `<div style="border:1px solid #f2c9ba;background:#fdf6f3;border-radius:10px;padding:10px 12px;margin-bottom:10px">`+
-      `<div style="font-size:13px;margin-bottom:6px"><b>${esc(x.label)}</b> · ${esc(wds)} · <span style="color:#c0392b">冲突日期：${esc(ovTxt)}</span></div>`+
+      `<div style="font-size:13px;margin-bottom:6px"><b>${esc(x.label)}</b> · ${esc(wds)} · <span style="color:#c0392b">冲突日期：${cfDaysHtml(x.days)}</span></div>`+
       `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:stretch">${side(da,x.a)}${side(db,x.b)}</div>`+
       `</div>`;
   };
@@ -1772,15 +1816,14 @@ function runConflict(){
   h+= roomIssues.length? roomIssues.map(card).join('') : '<div class="badge b-ok">无教室冲突</div>';
   h+='<h4 style="margin:16px 0 6px">会议账号冲突 '+(accIssues.length?('<span class="badge b-err">'+accIssues.length+'</span>'):'')+'</h4>';
   h+= accIssues.length? accIssues.map(card).join('') : '<div class="badge b-ok">无账号冲突</div>';
-  // 课程冲突（日期叠加）
-  h+=renderCourseConflicts(rangeLo, rangeHi, campus, el('cf_scope')?el('cf_scope').value:'');
+  h+=renderCourseConflictsHtml(cc);
   el('cf_res').innerHTML=h;
   bindCourseConflictBtns();
 }
 function ackKey(a,b){ const p=[String(a),String(b)].sort(); return 'cfack_'+p[0]+'_'+p[1]; }
 function isAcked(a,b){ try{ return localStorage.getItem(ackKey(a,b))==='1'; }catch(e){ return false; } }
 function setAcked(a,b,v){ try{ v?localStorage.setItem(ackKey(a,b),'1'):localStorage.removeItem(ackKey(a,b)); }catch(e){} }
-function renderCourseConflicts(lo, hi, campus, scope){
+function renderCourseConflictsData(lo, hi, campus, scope, sess){
   // 找同周几+同时段重叠+日期区间重叠的课程对（线下课，最易抢教室）
   const pool=COURSES.filter(c=>{
     if(c.mode==='线上'||c.campus==='线上') return false;
@@ -1795,6 +1838,13 @@ function renderCourseConflicts(lo, hi, campus, scope){
   const wdsOf=c=>parseWeekdaysSched(c.weekdays);
   // 某课已排的教室id集合
   const roomsOfCourse=cid=>[...new Set(BOOKINGS.filter(b=>isWeeklyCourseBk(b)&&String(b.course_id)===String(cid)&&b.room_id).map(b=>String(b.room_id)))];
+  const sessBy={}; (sess||[]).forEach(r=>{ const o=sessBy[r.course_id]||(sessBy[r.course_id]={rows:0,days:new Set()}); o.rows++; if(r.is_cancelled!==true&&r.session_date) o.days.add(r.session_date); });
+  const dayCache={};
+  const dayOf=c=>{ if(dayCache[c.id]) return dayCache[c.id];
+    let set; const o=sessBy[c.id];
+    if(o&&o.rows) set=o.days;
+    else { const skip=new Set(String(c.skip_dates||'').split(',').map(x=>x.trim()).filter(Boolean)); set=new Set(cfDaysBetween(c.start_date,c.end_date,wdsOf(c)).filter(d=>!skip.has(d))); }
+    return dayCache[c.id]=set; };
   const issues=[], acked=[];
   for(let i=0;i<pool.length;i++) for(let j=i+1;j<pool.length;j++){
     const a=pool[i],b=pool[j];
@@ -1816,14 +1866,20 @@ function renderCourseConflicts(lo, hi, campus, scope){
     const ovLo=[a.start_date,b.start_date,lo].filter(Boolean).sort().pop();
     const ovHi=[a.end_date,b.end_date,hi].filter(Boolean).sort()[0];
     if(ovLo>ovHi) continue;
-    const rec={a,b,shared,ovLo,ovHi,kind,ra,rb};
+    // 实际上课日：有单回按单回（没取消的），没有单回按开课~结课+星期并扣休讲日
+    const days=cfDaysBetween(ovLo,ovHi,shared).filter(d=>dayOf(a).has(d)&&dayOf(b).has(d));
+    if(!days.length) continue;
+    const rec={a,b,shared,days,kind,ra,rb};
     (isAcked(a.id,b.id)?acked:issues).push(rec);
   }
+  return {issues,acked};
+}
+function renderCourseConflictsHtml(cc){
+  const {issues,acked}=cc;
   const wdTxt=arr=>arr.map(w=>WD_NAME[w]).join('、');
   const ccard=(x,isAck)=>{
     const da=bDetail({course_id:x.a.id, start_time:x.a.start_time, end_time:x.a.end_time, kind:'course'});
     const db=bDetail({course_id:x.b.id, start_time:x.b.start_time, end_time:x.b.end_time, kind:'course'});
-    const ovTxt=x.ovLo===x.ovHi?x.ovLo:(x.ovLo+' ~ '+x.ovHi);
     const isSame = x.kind==='same';
     const roomTxt = isSame ? ('同一教室：'+x.ra.filter(r=>x.rb.includes(r)).map(rid=>rname(rid)).join('、'))
                            : '竞争空教室（有课还没排教室）';
@@ -1831,12 +1887,12 @@ function renderCourseConflicts(lo, hi, campus, scope){
     const side=(c,d)=>`<div style="flex:1;min-width:200px;border:1px solid var(--line);border-radius:8px;padding:8px 10px">`+
       `<div style="font-weight:600">${esc(c.merge_name||c.name)}</div>`+
       `<div class="muted" style="font-size:12px;margin-top:3px">${esc(courseScope(c))}${c.teacher?(' · 老师：'+esc(c.teacher)):''} · ${esc(c.campus||'')}</div>`+
-      `<div class="muted" style="font-size:12px">时段 ${esc(c.start_time)}-${esc(c.end_time)} · 日期 ${esc(c.start_date||'')}~${esc(c.end_date||'')}</div>`+
+      `<div class="muted" style="font-size:12px">时段 ${esc(c.start_time)}-${esc(c.end_time)} · 日期 ${esc(((window.CF_ACT||{})[String(c.id)]||[c.start_date,c.end_date])[0]||'')}~${esc(((window.CF_ACT||{})[String(c.id)]||[c.start_date,c.end_date])[1]||'')}</div>`+
       `<div style="margin-top:5px"><button class="sm ghost" data-cfedit="${c.id}">去调整</button></div>`+
       `</div>`;
     const bg=isAck?'#f2f6f4':'#fff8f0', bd=isAck?'#cfe0d3':'#f0d9b3';
     return `<div style="border:1px solid ${bd};background:${bg};border-radius:10px;padding:10px 12px;margin-bottom:10px">`+
-      `<div style="font-size:13px;margin-bottom:6px">${wdTxt(x.shared)} · <span style="color:#b5651d">叠加日期：${esc(ovTxt)}</span> ${kindBadge}${isAck?' <span class="badge b-ok" style="font-size:10px">已确认无碍</span>':''}</div>`+
+      `<div style="font-size:13px;margin-bottom:6px">${wdTxt(x.shared)} · <span style="color:#b5651d">叠加日期：${cfDaysHtml(x.days)}</span> ${kindBadge}${isAck?' <span class="badge b-ok" style="font-size:10px">已确认无碍</span>':''}</div>`+
       `<div class="muted" style="font-size:11px;margin-bottom:6px">教室：${esc(roomTxt)}</div>`+
       `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:stretch">${side(x.a)}${side(x.b)}</div>`+
       `<div style="margin-top:8px;display:flex;gap:8px">`+
