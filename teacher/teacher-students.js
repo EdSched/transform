@@ -51,6 +51,7 @@ async function renderTeacherStudyProgress(mc) {
     chunkFetch(ids => `/rest/v1/student_school_plans?student_id=in.(${ids})&select=*&order=level.asc`),
     chunkFetch(ids => `/rest/v1/student_plan_drafts?student_id=in.(${ids})&select=*&order=updated_at.desc`),
     chunkFetch(ids => `/rest/v1/riyu_submissions?student_id=in.(${ids})&select=*`),   // 新版志望理由书（表未建时为空）
+    (typeof riyuMailSavedLoad === 'function' ? riyuMailSavedLoad() : Promise.resolve()).catch(() => {}),   // 联系教授邮件 / 问询邮件有没有保存过指导
   ]);
   // 出愿材料：清单 + 各学生准备情况（表未建时为空）
   const [matItems, allMats] = await Promise.all([

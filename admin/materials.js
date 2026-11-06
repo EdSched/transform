@@ -263,7 +263,9 @@ async function wgSave() {
     wgData = JSON.parse(JSON.stringify(riyuGuideCache[wgKind]));
     wgDirty = false;
     wgRender();
-    const msg = document.getElementById('wg_msg'); if (msg) { msg.textContent = '✓ 已保存'; setTimeout(() => { if (msg.textContent === '✓ 已保存') msg.textContent = ''; }, 2500); }
+    if (typeof riyuMailSavedMark === 'function') riyuMailSavedMark(wgKind);
+    const okTxt = riyuIsMail(wgKind) ? '✓ 已保存。大学院学生在「计划书」里可以看到（联系教授邮件 / 问询邮件）' : '✓ 已保存';
+    const msg = document.getElementById('wg_msg'); if (msg) { msg.textContent = okTxt; setTimeout(() => { if (msg.textContent === okTxt) msg.textContent = ''; }, 6000); }
   } catch (e) {
     alert('保存失败：' + e.message);
     if (btn) { btn.disabled = false; btn.textContent = '保存'; }
