@@ -2,7 +2,6 @@
 // materials.js — 考学进度 →「📁 出愿材料准备」视图（admin）
 // 「✍ 文书指导」——维护 writing_guides（学部 / 大学院志望理由书的写作指导）
 // 「📋 材料清单」——维护 material_items（学部 / 大学院各自的出愿材料）
-// 「📊 学生准备情况」——学生 × 材料 的准备状态一览（student_materials）
 // 依赖：shared/supabase.js、shared/riyu.js、students.js（progressViewButtons）
 // ══════════════════════════════════
 let matSection = 'guide';          // 当前子板块：guide 文书指导
@@ -11,6 +10,7 @@ let wgData = null;                 // { kind, title, intro, sections:[{key,title
 let wgDirty = false;
 
 async function renderMaterialsView(mc) {
+  if (matSection !== 'guide' && matSection !== 'items') matSection = 'guide';   // 旧的 'status'（学生准备情况）已去掉
   mc.innerHTML = `
   <div class="page-header">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -19,12 +19,11 @@ async function renderMaterialsView(mc) {
     </div>
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
-    ${[['guide', '✍ 文书指导'], ['items', '📋 材料清单'], ['status', '📊 学生准备情况']].map(([k, l]) => `<div class="filter-chip${matSection === k ? ' active' : ''}" onclick="matSection='${k}';renderMaterialsView(document.getElementById('mainContent'))" style="font-size:12px;padding:4px 14px">${l}</div>`).join('')}
+    ${[['guide', '✍ 文书指导'], ['items', '📋 材料清单']].map(([k, l]) => `<div class="filter-chip${matSection === k ? ' active' : ''}" onclick="matSection='${k}';renderMaterialsView(document.getElementById('mainContent'))" style="font-size:12px;padding:4px 14px">${l}</div>`).join('')}
   </div>
   <div id="mat_body"><div class="loading">加载中…</div></div>`;
   if (matSection === 'guide') await wgLoad();
   else if (matSection === 'items') await miLoad();
-  else if (matSection === 'status') await msLoad();
 }
 
 // ══ 📋 材料清单 ══
@@ -131,52 +130,6 @@ async function miDel(id) {
   if (!confirm(`删除「${it.name}」？\n学生已经填写的这项准备情况也会看不到。`)) return;
   try { await sb(`/rest/v1/material_items?id=eq.${encodeURIComponent(id)}`, 'DELETE'); await miLoad(); }
   catch (e) { alert('删除失败：' + e.message); }
-}
-
-// ══ 📊 学生准备情况 ══
-let msTrack = 'grad';
-async function msLoad() {
-  const box = document.getElementById('mat_body'); if (!box) return;
-  box.innerHTML = '<div class="loading">加载中…</div>';
-  let items = [], rows = [], plans = [], subs = [];
-  try {
-    [items, rows, plans, subs] = await Promise.all([
-      matLoadItems(msTrack),
-      sbAll('/rest/v1/student_materials?select=*'),
-      sbAll('/rest/v1/student_school_plans?select=student_id,school_name,faculty,department,level'),
-      sbAll('/rest/v1/riyu_submissions?select=student_id,kind,school_key,status'),
-    ]);
-  } catch (e) { box.innerHTML = `<div style="font-size:12px;color:var(--danger)">读取失败：${riyuEsc(e.message)}（请先执行 PR 里的 SQL 建表）</div>`; return; }
-  // 学生：在读 + 当前领域 / 专业筛选（与学生视角一致），按学部 / 大学院分
-  let stus = (cachedStudents || []).filter(s => (s.status === 'active' || !s.status) && studentInCurrentView(s));
-  stus = dmfFilter(stus);   // 领域 / 专业 / 来源（与学生视角共用 DMF）
-  stus = stus.filter(s => matTrackOf(s) === msTrack);
-  const by = (arr, k) => { const m = {}; (arr || []).forEach(r => (m[r[k]] = m[r[k]] || []).push(r)); return m; };
-  const rowsBy = by(rows, 'student_id'), plansBy = by(plans, 'student_id'), subsBy = by(subs, 'student_id');
-  const cell = (st, t) => { const i = matStatusInfo(st); return `<span style="font-size:10px;padding:1px 7px;border-radius:9px;background:${i.bg};color:${i.c};white-space:nowrap">${riyuEsc(t)}</span>`; };
-  box.innerHTML = `
-  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-    <span style="font-size:11px;color:var(--text-3)">清单：</span>
-    <select onchange="msTrack=this.value;msLoad()" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
-      <option value="grad" ${msTrack === 'grad' ? 'selected' : ''}>大学院</option><option value="gakubu" ${msTrack === 'gakubu' ? 'selected' : ''}>学部</option>
-    </select>
-    <span style="font-size:10px;color:var(--text-3)">学生 ${stus.length} 人 · 专业筛选沿用「学生视角」里选的专业</span>
-  </div>
-  ${!items.length ? `<div class="empty" style="padding:30px">${msTrack === 'gakubu' ? '学部' : '大学院'}清单还没有公开的材料</div>` : !stus.length ? '<div class="empty" style="padding:30px">没有符合条件的学生</div>' : `
-  <div style="overflow-x:auto;border:1px solid var(--border);border-radius:4px"><table style="border-collapse:collapse;font-size:11px;min-width:100%">
-    <thead><tr style="background:var(--bg)"><th style="position:sticky;left:0;background:var(--bg);text-align:left;padding:6px 10px;border-bottom:1px solid var(--border);white-space:nowrap">学生</th><th style="padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap">进度</th>
-      ${items.map(it => `<th style="padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap;font-weight:600">${riyuEsc(it.name)}</th>`).join('')}</tr></thead>
-    <tbody>${stus.map(s => {
-      const rs = rowsBy[s.id] || [], rc = matCounts(plansBy[s.id] || [], subsBy[s.id] || [], msTrack), pg = matProgress(items, rs, rc);
-      return `<tr style="border-bottom:1px solid var(--border-light)"><td style="position:sticky;left:0;background:var(--surface);padding:5px 10px;font-weight:600;white-space:nowrap">${riyuEsc(s.name)} <span style="font-weight:400;font-size:10px;color:var(--text-3)">${riyuEsc(MAJORS[s.major] || s.major || '')}</span></td>
-        <td style="padding:5px 8px;text-align:center;white-space:nowrap;color:${pg.ready >= pg.total ? 'var(--ok)' : 'var(--text-2)'}">${pg.ready}/${pg.total}</td>
-        ${items.map(it => {
-          const r = rs.find(x => x.item_id === it.id) || {};
-          if (matIsDoc(it)) { const d = matDocState(it, rc, r); return `<td style="padding:5px 8px;text-align:center">${cell(d.done ? 'ready' : d.started ? 'applying' : 'todo', d.text)}</td>`; }
-          return `<td style="padding:5px 8px;text-align:center">${cell(r.status || 'todo', matStatusText(r))}</td>`;
-        }).join('')}</tr>`;
-    }).join('')}</tbody>
-  </table></div>`}`;
 }
 
 async function wgLoad() {

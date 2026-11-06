@@ -310,6 +310,8 @@ async function riyuStaffView(subId) {
   ov.innerHTML = `<div style="background:var(--surface,#fff);border-radius:6px;padding:18px 20px;max-width:720px;width:100%">
     <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
       <div style="font-size:14px;font-weight:600;flex:1">${riyuEsc(docName)} — ${riyuEsc(stu.name || '')}</div>
+      <button onclick="riyuStaffWord('${riyuEsc(sub.id)}')" style="font-size:10px;border:1px solid var(--border,#e2ded6);border-radius:3px;background:var(--surface,#fff);padding:2px 8px;cursor:pointer;font-family:inherit">⬇ 下载 Word</button>
+      <button onclick="riyuStaffUpload('${riyuEsc(sub.id)}')" style="font-size:10px;border:1px solid var(--accent,#b8953a);color:var(--accent,#b8953a);border-radius:3px;background:var(--surface,#fff);padding:2px 8px;cursor:pointer;font-family:inherit">⬆ 上传批复版</button>
       <button onclick="document.getElementById('riyuViewModal').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-3,#999)">×</button>
     </div>
     <div style="font-size:11px;color:var(--text-2,#5a5650);margin-bottom:10px">${riyuEsc([sub.school_name, sub.faculty, sub.department].filter(Boolean).join(' · '))}${sub.requirement && !isMail ? ' · 要求：' + riyuEsc(sub.requirement) : ''}${sub.submitted_at ? ' · 提交 ' + riyuEsc(riyuFmtTime(sub.submitted_at)) : ''}</div>
@@ -403,6 +405,7 @@ async function riyuStaffUploadDo(subId) {
     await sb(`/rest/v1/riyu_submissions?id=eq.${encodeURIComponent(sub.id)}`, 'PATCH', patch);
     Object.assign(sub, patch);
     document.getElementById('riyuUpModal')?.remove();
+    document.getElementById('riyuViewModal')?.remove();
     const cb = RIYU_STAFF.onChangeBy[sub.student_id] || RIYU_STAFF.onChange;
     if (typeof cb === 'function') cb(sub);
     alert('已上传批复版，学生端这所学校会显示「已批复」和下载链接');

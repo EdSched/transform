@@ -76,6 +76,18 @@ async function renderTeacherStudyProgress(mc) {
   catch (e) { mc.innerHTML = `<div class="empty" style="color:var(--danger)">考学进度渲染失败：${(e && e.message) || e}</div>`; console.error('tpRenderShell error:', e); }
 }
 
+let tpViewMode = 'student';   // 'student' 学生视角 | 'submissions' 学生提交（shared/submissions.js）
+// 学生提交：只列老师能看的在读学生（teacherProgressData.students 已按 teacherScope 过滤），再叠加全局筛选和「我负责的」
+function tpRenderSubmissions(listBox) {
+  const cnt = document.getElementById('tp_count'); if (cnt) cnt.textContent = '';
+  if (tpOwnerFilter === '') tpOwnerFilter = tpHasMine() ? 'mine' : 'all';
+  sbmRender(listBox, {
+    students: () => (teacherProgressData.students || []).filter(s => (s.status || 'active') === 'active'),
+    pass: s => tsmMatch(s, null, true) && (tpOwnerFilter !== 'mine' || tpIsMine(s)),
+    openPlan: (sid, name) => openTeacherDraftComment(sid, name),
+  });
+}
+
 // 外壳：标题/搜索/专业/来源筛选 + 列表容器（切换筛选时重绘外壳，搜索输入只刷新列表保持焦点）
 function tpRenderShell() {
   const box = document.getElementById('sm_content') || document.getElementById('mainContent');
@@ -89,6 +101,7 @@ function tpRenderShell() {
     <div class="filter-chip ${tpOwnerFilter==='mine'?'active':''}" onclick="tpSetOwner('mine')" style="padding:3px 10px;font-size:10px">⭐ 我负责的</div>
     <div class="filter-chip ${tpOwnerFilter==='all'?'active':''}" onclick="tpSetOwner('all')" style="padding:3px 10px;font-size:10px">全部（可见范围）</div>
   </div>` : ''}
+  <div style="display:flex;gap:4px;margin-bottom:8px">${[['student', '👤 学生视角'], ['submissions', '📥 学生提交']].map(([k, l]) => `<button class="btn btn-sm ${tpViewMode === k ? 'btn-primary' : 'btn-outline'}" onclick="tpViewMode='${k}';tpRenderShell()">${l}</button>`).join('')}</div>
   <div id="tp_list"></div>`;
   tpRenderProgressList();
 }
@@ -128,6 +141,7 @@ function tpRiyuChanged(sub) {
 function tpRenderProgressList() {
   const listBox = document.getElementById('tp_list');
   if (!listBox || !teacherProgressData) return;
+  if (tpViewMode === 'submissions') { tpRenderSubmissions(listBox); return; }
   const filteredAll = tpFilteredStudents();
   const filtered = tsmSlice(filteredAll);
   const cnt = document.getElementById('tp_count');
@@ -320,6 +334,7 @@ async function tdcPlanUploadDo() {
     Object.assign(draft, patch);
     document.getElementById('tdcPlanUpModal')?.remove();
     tdcRender(tdcName);
+    if (typeof sbmChanged === 'function') sbmChanged();   // 「学生提交」列表里这一条要从待批复里消失
   } catch (e) {
     msg.textContent = '上传失败：' + e.message;
     btn.disabled = false; btn.textContent = '上传';
