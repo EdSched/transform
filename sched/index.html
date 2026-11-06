@@ -39,7 +39,7 @@
 <script src="common.js?v=20270116"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270116"></script>
-<script src="../shared/course-room-sync.js?v=20261106"></script>
+<script src="../shared/course-room-sync.js?v=20261107"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], ROLE=null;
@@ -193,8 +193,11 @@ function bindRoomAck(box){
     const r=await courseRoomSyncSafe(x.course_id);
     try{ await reloadAll(); }catch(e){}
     const done=r&&(r.resolved||[]).find(v=>v.key===x.key);
-    toast(!r?'核对失败，请稍后再试':done?done.note:'原教室当天仍被占');
-    renderChangeAlerts();
+    if(!r){ toast('核对失败，请稍后再试'); renderChangeAlerts(); return; }
+    if(done){ toast(done.note); renderChangeAlerts(); return; }
+    let lines=[]; try{ lines=await courseRoomWhyBlocked(x.course_id,x); }catch(e){ lines=['查询占用详情失败']; }
+    window.__roomWhy=window.__roomWhy||{}; window.__roomWhy[l.id]=lines.length?lines:['当天没有查到冲突，请再点一次核对'];
+    window.__roomAlertOpen=true; renderChangeAlerts();
   });
   box.querySelectorAll('[data-ackrm]').forEach(b=>b.onclick=async()=>{
     const l=CHANGELOG.find(x=>String(x.id)===String(b.dataset.ackrm)); if(!l) return;
@@ -213,7 +216,9 @@ function renderChangeAlerts(){
   // 单回改期后原教室被占：要人安排，逐条列出
   const roomAlerts=(CHANGELOG||[]).filter(l=>l.action==='session_room' && notAcked(l) && !((Array.isArray(l.changes)?l.changes:[])[0]||{}).resolved_at);
   const roomRows=roomAlerts.map(l=>{ const x=(Array.isArray(l.changes)?l.changes:[])[0]||{};
-    return `<div style="border-top:1px solid #e6b8b3;padding:6px 0;font-size:13px;display:flex;gap:10px;align-items:center"><span style="flex:1">${esc(x.to||'')}</span><button class="sm ghost" data-recheck="${l.id}">重新核对</button><button class="sm ghost" data-ackrm="${l.id}">知道了</button></div>`; }).join('');
+    const why=(window.__roomWhy||{})[l.id];
+    const whyHtml=why?`<div style="margin-top:4px;padding:6px 10px;background:#fff;border-radius:6px;font-size:12px;line-height:1.7">${why.map(t=>esc(t)).join('<br>')}</div>`:'';
+    return `<div style="border-top:1px solid #e6b8b3;padding:6px 0;font-size:13px"><div style="display:flex;gap:10px;align-items:center"><span style="flex:1">${esc(x.to||'')}</span><button class="sm ghost" data-recheck="${l.id}">重新核对</button><button class="sm ghost" data-ackrm="${l.id}">知道了</button></div>${whyHtml}</div>`; }).join('');
   const roomOpen=window.__roomAlertOpen?'block':'none';
   const roomHtml=roomAlerts.length?`<div style="background:#fdecea;border:1px solid #e6b8b3;border-radius:8px;padding:8px 14px;margin-bottom:8px"><div style="font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1">有 <b>${roomAlerts.length}</b> 条单回改期的教室要安排（原教室当天被占）</span><button class="sm" data-recheckall="1">全部重新核对</button><button class="sm ghost" data-roomtoggle="1">${window.__roomAlertOpen?'收起':'展开'}</button></div><div id="roomAlertDetail" style="display:${roomOpen}">${roomRows}</div></div>`:'';
   if(!pending.length){ box.innerHTML=roomHtml; bindRoomAck(box); return; }

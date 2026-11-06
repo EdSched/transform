@@ -201,6 +201,29 @@ async function courseRoomClear(courseId) {
   return rows.length;
 }
 
+// 提醒还没补上时，查清楚是谁占着：返回文字行 [ '3A 当天被占：', '《xx》（某某，18:30-20:00，每周固定）' ]
+async function courseRoomWhyBlocked(courseId, x) {
+  const cid = encodeURIComponent(courseId);
+  const co = (await crsGet('courses', `select=id,time_range,sched_merge_group&id=eq.${cid}&limit=1`))[0];
+  const s = (await crsGet('course_sessions', `select=id,time_range&id=eq.${encodeURIComponent(x.session_id)}&limit=1`))[0];
+  const own = await crsGet('sched_bookings', `select=*&kind=eq.course&course_id=eq.${cid}&recurrence=eq.weekly&limit=50`);
+  const tpl = own.find(b => b.status === 'confirmed');
+  if (!co || !tpl) return ['找不到这门课的原教室占用'];
+  const sp = timeRangesSpan((s && s.time_range) || co.time_range || '');
+  const st = sp.start || crsT5(tpl.start_time), en = sp.end || crsT5(tpl.end_time);
+  const ownIds = new Set([String(courseId)]);
+  if (co.sched_merge_group) { try { (await crsGet('courses', `select=id&sched_merge_group=eq.${encodeURIComponent(co.sched_merge_group)}&limit=200`)).forEach(v => ownIds.add(String(v.id))); } catch (e) { /* 忽略 */ } }
+  let roomName = '原教室';
+  if (tpl.room_id != null && tpl.room_id !== '') { try { const r = (await crsGet('sched_rooms', `select=name&id=eq.${encodeURIComponent(tpl.room_id)}&limit=1`))[0]; if (r) roomName = r.name; } catch (e) { /* 忽略 */ } }
+  const q = tpl.room_id != null && tpl.room_id !== '' ? `room_id=eq.${encodeURIComponent(tpl.room_id)}` : `meeting_account_id=eq.${encodeURIComponent(tpl.meeting_account_id)}`;
+  const hit = (await crsGet('sched_bookings', `select=*&${q}&status=neq.rejected&limit=5000`))
+    .filter(b => !(ownIds.has(String(b.course_id)) && b.kind === 'course'))
+    .filter(b => crsOnDate(b, x.date) && crsOverlap(st, en, b.start_time, b.end_time));
+  if (!hit.length) return [];
+  return [`${roomName} ${x.date.slice(5).replace('-', '/')} ${st}-${en} 被这些占着：`].concat(hit.map(b =>
+    `${b.title || b.entry_name || '占用'}（${b.user_name || '未填占用人'}，${crsT5(b.start_time)}-${crsT5(b.end_time)}，${b.recurrence === 'weekly' ? '每周固定' : '临时'}${b.status === 'pending' ? '，待批准' : ''}）`));
+}
+
 // 调用方用：失败不阻断，只在控制台记一下
 async function courseRoomSyncSafe(courseId) {
   let r = null;
