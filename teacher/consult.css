@@ -121,3 +121,45 @@ body.consult-mode .main { max-width: none !important; width: 100% !important; pa
 .cst-root select { background: #fff !important; min-height: 42px; }
 .cst-root input:not([type="hidden"]) { min-height: 42px; }
 .cst-root input, .cst-root select { width: auto; }   /* 里面带内联 width 的（表单、搜索框）不受影响 */
+
+/* 2-2 院校：按学校研究科归并，一行一个学校，点开看每一次出愿 */
+.cst-root .cst-ag { border: 1px solid #e8dfd5; border-radius: 10px; margin-bottom: 8px; background: #fff; }
+.cst-root .cst-ag.open { border-color: #f2a93b; }
+.cst-root .cst-ag-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; cursor: pointer; }
+.cst-root .cst-ag-row:hover { background: #fcf8f4; border-radius: 10px; }
+.cst-root .cst-ag-main { flex: 1 1 240px; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cst-root .cst-ag-uni { font-size: 16px; font-weight: 600; color: #2e2924; }
+.cst-root .cst-ag-dep { font-size: 14px; color: #5a5148; }
+.cst-root .cst-ag-st { font-size: 12px; padding: 1px 8px; border-radius: 3px; white-space: nowrap; }
+.cst-root .cst-ag-lang { flex: 0 1 190px; min-width: 0; }
+.cst-root .cst-ag-lang .adg-lang { font-size: 12px; line-height: 1.5; }
+.cst-root .cst-ag-time { font-size: 13px; color: #8a7f73; white-space: nowrap; }
+.cst-root .cst-ag-n { color: #b8791a; }
+.cst-root .cst-ag-act { display: flex; gap: 6px; align-items: center; margin-left: auto; white-space: nowrap; }
+.cst-root .cst-ag-d { border-top: 1px dashed #e8dfd5; padding: 6px 14px 10px; }
+.cst-root .cst-ag-r { padding: 7px 0; border-bottom: 1px solid #f3ece4; }
+.cst-root .cst-ag-r:last-child { border-bottom: 0; }
+.cst-root .cst-ag-r.hit { background: #fbf3dc; margin: 0 -8px; padding: 7px 8px; border-radius: 6px; }
+.cst-root .cst-ag-r.dim { opacity: .55; }
+.cst-root .cst-ag-r1 { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 13.5px; color: #5a5148; }
+.cst-root .cst-ag-r1 b { color: #2e2924; }
+.cst-root .cst-ag-use, .cst-root .cst-ag-rep { margin-left: auto; }
+.cst-root .cst-ag-use { padding: 2px 10px; font-size: 12.5px; }
+.cst-root .cst-ag-rep { font-size: 12px; color: #1a5a3a; }
+.cst-root .cst-ag-note { font-size: 13px; margin-top: 3px; line-height: 1.7; }
+@media (max-width: 900px) { .cst-root .cst-ag-row { flex-wrap: wrap; } .cst-root .cst-ag-act { margin-left: 0; } .cst-root .cst-ag-lang { flex-basis: 100%; } }
+
+/* 2-7 上课体验：视频大卡片，一行两张，手机一行一张 */
+.cst-root .cst-vgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.cst-root .cst-vc { display: block; border: 1px solid #e8dfd5; border-radius: 14px; overflow: hidden; background: #fff; text-decoration: none; color: inherit; box-shadow: 0 2px 12px rgba(120, 90, 50, .06); }
+a.cst-vc:hover { box-shadow: 0 6px 20px rgba(120, 90, 50, .14); }
+.cst-root .cst-vc-cv { position: relative; aspect-ratio: 16 / 9; background: var(--c); display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; }
+.cst-root .cst-vc-cv img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cst-root .cst-vc-cv.playing { cursor: default; background: #000; }
+.cst-root .cst-vc-play { position: relative; width: 58px; height: 58px; border-radius: 50%; background: rgba(255, 255, 255, .92); color: #2e2924; font-size: 24px; display: flex; align-items: center; justify-content: center; padding-left: 4px; box-shadow: 0 2px 10px rgba(0, 0, 0, .25); }
+.cst-root .cst-vc-b { padding: 14px 18px 18px; }
+.cst-root .cst-vc-t { font-family: 'Noto Serif SC', serif; font-weight: 600; font-size: 18px; color: #2e2924; line-height: 1.4; }
+.cst-root .cst-vc-m { display: flex; gap: 8px; align-items: center; margin-top: 6px; font-size: 13px; color: #8a7f73; flex-wrap: wrap; }
+.cst-root .cst-vc-tag { padding: 1px 10px; border-radius: 999px; background: #f8eac2; color: #8a5a00; font-size: 12.5px; }
+.cst-root .cst-vc-d { margin-top: 8px; font-size: 14px; line-height: 1.8; color: #5a5148; }
+@media (max-width: 700px) { .cst-root .cst-vgrid { grid-template-columns: 1fr; } }
