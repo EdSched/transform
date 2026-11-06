@@ -1726,23 +1726,24 @@ function _scopeDomainMajors(dom) {
 }
 function teacherScope(t, kind) {
   kind = kind === 'admission' ? 'admission' : 'student';
-  const sc = { kind, all: false, majors: new Set(), classIds: new Set(), domains: new Set(), rangeMajors: new Set(), sources: [], excluded: new Set(), vipName: '', vipOnly: false, studentSources: [] };
+  const sc = { kind, all: false, majors: new Set(), classIds: new Set(), domains: new Set(), rangeMajors: new Set(), mgrMajors: new Set(), mgrDomains: new Set(), ownerName: '', sources: [], excluded: new Set(), vipName: '', vipOnly: false, studentSources: [] };
   if (!t) return sc;
   sc.studentSources = Array.isArray(t.student_sources) ? t.student_sources : [];
-  if (kind === 'student') sc.vipName = String(t.name || '').trim();   // 学生档案的 VIP 老师里有我 → 我能看到这个学生
+  if (kind === 'student') sc.vipName = sc.ownerName = String(t.name || '').trim();   // 学生档案的 VIP 老师里有我 → 我能看到这个学生
   sc.vipOnly = kind === 'student' && !!(t.permissions && t.permissions.vip_only);   // 勾了「仅可见自己指导的 VIP 学生」：不按负责专业 / 领域算
   if (kind === 'admission' ? canSeeAllAdmission(t) : canSeeAllStudents(t)) { sc.all = true; return sc; }
+  let mgr = false;   // 当前加的是不是「管理者范围」（负责人管理范围 / 班主任范围）：纯 VIP 学生只认这一份
   const add = (arr, src) => {
     let hit = false;
     (arr || []).forEach(m => {
       const ks = expandGroupKey(m);
-      ks.forEach(k => { if (k) { sc.rangeMajors.add(k); hit = true; } });
+      ks.forEach(k => { if (k) { sc.rangeMajors.add(k); if (mgr) sc.mgrMajors.add(k); hit = true; } });
     });
     if (hit && !sc.sources.includes(src)) sc.sources.push(src);
   };
   const addDom = (arr, src) => {
     let hit = false;
-    (arr || []).forEach(d => { if (d) { sc.domains.add(d); hit = true; } });
+    (arr || []).forEach(d => { if (d) { sc.domains.add(d); if (mgr) sc.mgrDomains.add(d); hit = true; } });
     if (hit && !sc.sources.includes(src)) sc.sources.push(src);
   };
   const own = Array.isArray(t.majors) ? t.majors : [];
@@ -1755,8 +1756,10 @@ function teacherScope(t, kind) {
   }
   if (t.position === 'lead' && managerScopeNonEmpty(t.manage_scope)) {
     const ms = t.manage_scope;
+    mgr = true;
     add([].concat(...(ms.domains || []).map(_scopeDomainMajors)).concat(ms.majors || []), '负责人管理范围');
     addDom(ms.domains, '负责人管理范围');
+    mgr = false;
   }
   const sdoms = salesIsSalesRole(t) ? salesScopeDomains(t) : [];   // 只有营业职位自己设的营业范围算进学生 / 出願数据范围（负责人等的营业范围不扩大学生范围）
   if (sdoms.length) {   // 营业指定了领域：这些领域的学生 / 出願数据都能看
@@ -1765,10 +1768,12 @@ function teacherScope(t, kind) {
   }
   const hr = t.role_scope && t.role_scope.homeroom;
   if (Array.isArray(t.roles) && t.roles.includes('homeroom') && hr && kind === 'student') {
+    mgr = true;
     const cls = (hr.class_ids || []).map(String);
     if (cls.length) { cls.forEach(c => sc.classIds.add(c)); sc.sources.push('班主任班级'); }
     add([].concat(...(hr.domains || []).map(_scopeDomainMajors)).concat(hr.majors || []), '班主任范围');
     addDom(hr.domains, '班主任范围');
+    mgr = false;
   }
   if (kind === 'admission') [...sc.rangeMajors].forEach(k => { if (!ADMISSION_MAJORS[k]) sc.rangeMajors.delete(k); });
   const ex = (t.permissions && t.permissions.exclude_majors) || [];
@@ -1783,6 +1788,13 @@ function teacherScopeHasStudent(sc, s) {
   if (!sourceAllowed(s, sc.studentSources)) return false;   // 来源限制：liaison / all 也要过这一关
   if (sc.all) return true;
   if (sc.vipName && Array.isArray(s.vip_teachers) && s.vip_teachers.includes(sc.vipName)) return true;   // 我是这个学生的 VIP 老师（即使专业在「排除的专业」里也能看）
+  if (sc.kind === 'student' && s.is_vip_course === 'VIP') {
+    // 纯 VIP 学生：只给他的 VIP 老师（上面已判断）、负责老师、班主任班级、负责人管理范围；负责专业 / 领域 / 营业范围命中不算
+    if (sc.ownerName && Array.isArray(s.owner_teachers) && s.owner_teachers.includes(sc.ownerName)) return true;
+    if (sc.classIds.size > 0 && studentClassIds(s).some(c => sc.classIds.has(String(c)))) return true;
+    if (sc.excluded.has(s.major)) return false;
+    return sc.mgrMajors.has(s.major) || (sc.mgrDomains.size > 0 && sc.mgrDomains.has(MAJOR_DOMAIN[s.major]));
+  }
   if (sc.majors.has(s.major)) return true;
   if (sc.domains.size && !sc.excluded.has(s.major) && sc.domains.has(MAJOR_DOMAIN[s.major])) return true;   // 整个领域（领域下专业 / 学生以后新增也算）
   return sc.classIds.size > 0 && studentClassIds(s).some(c => sc.classIds.has(String(c)));

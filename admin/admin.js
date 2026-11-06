@@ -1393,10 +1393,6 @@ function renderTeachersPage(mc){
         <label class="form-label">负责专业（可多选，按已选领域展开）</label>
         <div id="new_teacher_majors" style="min-height:20px"></div>
       </div>
-      <div class="form-group">
-        <div class="filter-chip" id="perm_vip_only" onclick="toggleChip(this);renderPermScope()" style="padding:3px 9px;font-size:10px">仅可见自己指导的 VIP 学生</div>
-        <div style="font-size:10px;color:var(--text-3);margin-top:4px;line-height:1.6">勾选后，这位老师在学生管理里只能看到学生档案「VIP 老师」里有他的学生；负责专业仍用于讲师介绍、课程等其他地方。负责人 / 班主任的范围照常叠加。</div>
-      </div>
       <div class="form-group" id="tf_src_box"></div>
       `,10)}
       ${tsecWrap('features','老师端功能',`
@@ -1447,6 +1443,7 @@ function renderTeachersPage(mc){
             <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;white-space:nowrap"><input type="checkbox" id="perm_student_mgmt" style="accent-color:var(--accent);flex-shrink:0;width:16px;height:16px;min-width:16px">学生管理</label>
             <div style="font-size:10px;color:var(--text-3);margin-bottom:8px;margin-left:20px">开启后老师端显示「学生管理」页，按下方勾选的子项提供对应功能</div>
             <div style="margin:0 0 8px 20px"><div class="filter-chip" id="perm_guaranteed_only" onclick="toggleChip(this)" style="padding:3px 9px;font-size:10px">仅保录学生</div><span style="font-size:10px;color:var(--text-3);margin-left:6px">点亮后此老师在学生管理里只能看到保录学生</span></div>
+            <div style="margin:0 0 8px 20px"><div class="filter-chip" id="perm_vip_only" onclick="toggleChip(this);renderPermScope()" style="padding:3px 9px;font-size:10px">只看自己指导的 VIP 学生</div><div style="font-size:10px;color:var(--text-3);margin-top:4px;line-height:1.6">开了以后，这位老师在学生管理里只看得到自己指导的 VIP 学生（大课学生都不显示）。不开的话：上大课的学生按负责专业看，纯 VIP 学生只看自己负责的。</div></div>
             <div style="margin-left:20px;margin-bottom:8px">
               <div style="font-size:10px;color:var(--text-3);margin-bottom:4px">可用的子项</div>
               <div style="display:flex;flex-wrap:wrap;gap:4px" id="perm_student_mgmt_items">
