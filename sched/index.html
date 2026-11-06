@@ -617,6 +617,22 @@ function renderAssignView(){
   else renderAssignDay();
 }
 /* 按天两栏：左=时段×教室占空（选校区+周几+日期区间），右=该周几该上的课（可点选排课） */
+/* 搜索课程名/讲师：没选校区也能用。列出匹配的课、已排教室，并可逐门核对单回教室 */
+function renderAssignSearch(box, q, term, cat){
+  const list=assignViewCourses().filter(c=>!schedRemoved(c) && (!term||c.term===term) && (!cat||c.category===cat) && searchMatch(q,[c.teacher,c.name])).slice(0,30);
+  if(!list.length){ box.innerHTML='<div class="muted">没有找到「'+esc(q)+'」（已结课或下期未开的课，请点上方「显示全部 / 追溯查询」）。</div>'; return; }
+  const rn=id=>{ const r=(ROOMS||[]).find(x=>String(x.id)===String(id)); return r?r.name:'未知教室'; };
+  box.innerHTML='<div class="muted" style="font-size:12px;margin-bottom:6px">找到 '+list.length+' 门；选校区后可看教室占用表。</div>'+list.map(c=>{
+    const wk=BOOKINGS.filter(b=>isWeeklyCourseBk(b)&&String(b.course_id)===String(c.id));
+    const rooms=[...new Set(wk.map(b=>rn(b.room_id)))].join('、')||'还没排教室';
+    return `<div style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:13px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>${esc(c.name||'')}</b><span class="muted">${esc(c.teacher||'')} · ${esc(c.start_time||'')}${c.end_time?'-'+esc(c.end_time):''} · ${esc(c.start_date||'')}~${esc(c.end_date||'')}</span><span style="flex:1">${esc(rooms)}</span><button class="sm" data-srchchk="${c.id}">核对单回教室</button></div><div id="srchout_${c.id}" style="white-space:pre-wrap;font-size:12px;line-height:1.7;margin-top:4px"></div></div>`; }).join('');
+  box.querySelectorAll('[data-srchchk]').forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.srchchk, out=el('srchout_'+id); b.disabled=true; out.textContent='核对中…';
+    try{ const r=await courseRoomSync(id); out.textContent=((r.notes||[]).join('\n')||'无需处理')+(r.created?'\n本次新占用 '+r.created+' 天':'')+((r.resolved||[]).length?'\n'+r.resolved.map(v=>v.note).join('；'):''); try{ await reloadAll(); }catch(e){} }
+    catch(e){ out.textContent='核对出错：'+(e&&e.message||e); }
+    b.disabled=false;
+  });
+}
 function renderAssignDay(){
   const box=el('assignTable');
   const campus=el('af_campus').value;
@@ -625,6 +641,7 @@ function renderAssignDay(){
   const de=el('af_dend')?el('af_dend').value:'';
   const term=el('af_term').value, cat=el('af_cat').value, q=(el('af_q').value||'').trim();
   const isOnline = el('af_mode') && el('af_mode').value==='online';
+  if(!campus && q){ renderAssignSearch(box, q, term, cat); return; }   // 搜索不受校区限制
   if(!campus){ box.innerHTML='<div class="muted">请先在上方选「校区」（线上课占教室时也需要选校区教室），再选周几和日期区间。</div>'; return; }
   const rooms=ROOMS.filter(r=>r.active!==false && r.campus===campus);
   if(!rooms.length){ box.innerHTML='<div class="muted">该校区没有教室。</div>'; return; }
