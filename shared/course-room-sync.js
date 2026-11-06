@@ -8,6 +8,7 @@
 //     原教室那天被占，或这门课分不出用哪间教室 → 不硬占，往 sched_change_log 写一条 session_room 提醒
 //   · 过期的自动临时占用（单回没了 / 改了日期 / 已被按周占用覆盖）删掉
 //   · 那天在 manual_off_dates 里的单回：人已经处理过，跳过
+//   · 以上全部只处理「今天以后」的日子；过去的日子不新建、不改自动释放（过期临时占用只清单回已没了的）
 
 const CRS_ADMIN = () => typeof sbAll === 'function';
 async function crsGet(table, q) { return CRS_ADMIN() ? sb(`/rest/v1/${table}?${q}`) : sbGet(table, q); }
@@ -21,6 +22,8 @@ function crsWeekday(d) { const w = new Date(d + 'T00:00:00').getDay(); return w 
 function crsAddDays(d, n) { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + n); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); }
 const crsOverlap = (aS, aE, bS, bE) => crsT5(aS) < crsT5(bE) && crsT5(bS) < crsT5(aE);
 const crsContains = (b, s, e) => !s || !e || (crsT5(b.start_time) <= crsT5(s) && crsT5(b.end_time) >= crsT5(e));
+// 本地日期 YYYY-MM-DD（不用 UTC，避免日本时间凌晨算成前一天）
+function crsToday() { const n = new Date(); return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0'); }
 const crsWeekdayName = d => '周' + '日一二三四五六'[new Date(d + 'T00:00:00').getDay()];
 
 // 按周占用那天算不算占（可选忽略系统自动释放的日子，因为自动释放是每次重算的）
@@ -37,7 +40,7 @@ const crsOnDate = (b, d) => b.recurrence === 'weekly' ? crsWeeklyOn(b, d, true) 
 
 async function crsRemind(co, s, date, span, reason) {
   const key = s.id + '|' + date;
-  if (date < new Date().toISOString().slice(0, 10)) return false;   // 过去的日子不提醒
+  if (date < crsToday()) return false;   // 过去的日子不提醒
   try {
     const old = await crsGet('sched_change_log', 'select=changes&action=eq.session_room&order=created_at.desc&limit=500');
     if ((old || []).some(l => (l.changes || []).some(x => x && x.key === key && !x.resolved_at))) return false;
@@ -102,6 +105,7 @@ async function courseRoomSyncCore(courseId) {
   const active = sessions.filter(s => s.is_cancelled !== true && s.session_date);
   const weekly = bks.filter(b => b.recurrence === 'weekly' && b.status === 'confirmed');
   const temps = bks.filter(b => b.recurrence === 'once');
+  const today = crsToday();   // 只处理今天以后的日子，过去的日子一律不动
   const spanOf = s => timeRangesSpan(s.time_range || co.time_range || '');
 
   // 1) 过期的自动临时占用
@@ -110,7 +114,8 @@ async function courseRoomSyncCore(courseId) {
     if (t.auto_sync !== true) { keepTemps.push(t); continue; }
     const s = active.find(x => x.id === t.session_id);
     let stale = !s || s.session_date !== t.booking_date;
-    if (!stale) {
+    // 过去的日子：只删「单回已不存在 / 已取消 / 改了日期」的，正常上过课的不动
+    if (!stale && t.booking_date >= today) {
       const sp = spanOf(s);
       stale = weekly.some(b => crsWeeklyOn(b, s.session_date, false) && crsContains(b, sp.start, sp.end)) || !crsContains(t, sp.start, sp.end);
     }
@@ -120,8 +125,10 @@ async function courseRoomSyncCore(courseId) {
   // 2) 按周占用的自动释放：整体重算
   for (const b of weekly) {
     const off = [];
+    const before = crsSplit(b.auto_off_dates);
+    const keepPast = before.filter(d => d < today);   // 过去的自动释放原样保留
     if (b.start_date && b.end_date) {
-      for (let d = b.start_date, g = 0; d <= b.end_date && g < 800; d = crsAddDays(d, 1), g++) {
+      for (let d = (b.start_date > today ? b.start_date : today), g = 0; d <= b.end_date && g < 800; d = crsAddDays(d, 1), g++) {
         if (!crsWeeklyOn(b, d, false)) continue;
         const hit = active.some(s => {
           if (s.session_date !== d) return false;
@@ -130,8 +137,7 @@ async function courseRoomSyncCore(courseId) {
         if (!hit) off.push(d);
       }
     }
-    const before = crsSplit(b.auto_off_dates);
-    const now = off.join(',');
+    const now = keepPast.concat(off).join(',');
     if (now !== before.join(',')) {
       await crsPatch('sched_bookings', b.id, { auto_off_dates: now || null });
       out.released += off.filter(d => !before.includes(d)).length;
@@ -142,6 +148,7 @@ async function courseRoomSyncCore(courseId) {
   // 3) 没被覆盖的单回
   const need = [];
   for (const s of active) {
+    if (s.session_date < today) continue;   // 过去的单回不补占用、不写提醒
     const sp = spanOf(s), d = s.session_date;
     if (weekly.some(b => crsWeeklyOn(b, d, false) && crsContains(b, sp.start, sp.end))) continue;
     if (keepTemps.some(t => t.booking_date === d && crsContains(t, sp.start, sp.end))) continue;
@@ -189,7 +196,7 @@ async function courseRoomSyncCore(courseId) {
     if (reason) {
       const wrote = await crsRemind(co, s, d, { start: st, end: en }, reason);
       if (wrote) out.reminders++;
-      out.notes.push(`${d.slice(5)}：${reason}${who ? '，被 ' + who + ' 占着' : ''}，${wrote ? '已写提醒' : (d < new Date().toISOString().slice(0, 10) ? '日期已过，不提醒' : '已有未处理的提醒')}`);
+      out.notes.push(`${d.slice(5)}：${reason}${who ? '，被 ' + who + ' 占着' : ''}，${wrote ? '已写提醒' : '已有未处理的提醒'}`);
       continue;
     }
     await crsInsert('sched_bookings', {

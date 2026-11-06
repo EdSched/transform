@@ -39,7 +39,7 @@
 <script src="common.js?v=20270116"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270116"></script>
-<script src="../shared/course-room-sync.js?v=20261112"></script>
+<script src="../shared/course-room-sync.js?v=20261113"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], ROLE=null;
@@ -933,7 +933,8 @@ async function crsVerifyAll(){
   }
   if(btn){ btn.disabled=false; btn.textContent='核对单回和教室'; }
   await reloadAll(); renderAssignView();
-  alert('核对了 '+ids.length+' 门课：\n释放教室 '+tot.released+' 天\n临时占用 '+tot.created+' 天\n清掉过期临时占用 '+tot.removed+' 条\n需要人处理 '+tot.reminders+' 条（见排课首页提醒）'+(fail?('\n失败 '+fail+' 门'):'')+(detail.length?('\n\n明细：\n'+detail.slice(0,30).join('\n')):''));
+  const _n=new Date();
+  alert('核对了 '+ids.length+' 门课（只处理今天（'+(_n.getMonth()+1)+'/'+_n.getDate()+'）以后的日子）：\n释放教室 '+tot.released+' 天\n临时占用 '+tot.created+' 天\n清掉过期临时占用 '+tot.removed+' 条\n需要人处理 '+tot.reminders+' 条（见排课首页提醒）'+(fail?('\n失败 '+fail+' 门'):'')+(detail.length?('\n\n明细：\n'+detail.slice(0,30).join('\n')):''));
 }
 /* 某门课今天以后的上课日（按周占用 + 临时占用），用于「调整某一天」 */
 function adjustDayEntries(group){
