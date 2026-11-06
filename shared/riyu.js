@@ -411,3 +411,47 @@ async function riyuStaffUploadDo(subId) {
     if (btn) { btn.disabled = false; btn.textContent = '上传并批复'; }
   }
 }
+
+// ══════════════════════════════════
+// 计划书批复版（student_plan_drafts.reviewed_* / review_history）
+// ══════════════════════════════════
+function planRvHistory(draft) {
+  let v = draft && draft.review_history;
+  if (typeof v === 'string') { try { v = JSON.parse(v); } catch (e) { v = []; } }
+  v = Array.isArray(v) ? v.slice() : [];
+  // 兼容：只有 reviewed_file_url 没有历史时，补一条
+  if (!v.length && draft && draft.reviewed_file_url) {
+    v.push({ at: draft.reviewed_at, by: draft.reviewed_by, file_url: draft.reviewed_file_url, file_name: draft.reviewed_file_name, note: '' });
+  }
+  return v.filter(h => h && h.file_url);
+}
+function planRvMD(at) {
+  const d = at ? new Date(at) : null;
+  return d && !isNaN(d) ? `${d.getMonth() + 1}/${d.getDate()}` : '';
+}
+function planRvLine(h) {
+  const meta = [planRvMD(h.at), h.by].filter(Boolean).join(' ');
+  return `${riyuEsc(h.file_name || '批复版')}${meta ? `（${riyuEsc(meta)}）` : ''}`;
+}
+// 老师端：批复版一行 + 历史（可展开）
+function planRvStaffHtml(draft) {
+  const hist = planRvHistory(draft);
+  if (!hist.length) return '';
+  const last = hist[hist.length - 1];
+  return `<div style="font-size:11px;margin-bottom:10px;color:var(--text-2,#5a5650)">批复版：${planRvLine(last)} <a href="${riyuEsc(last.file_url)}" target="_blank" style="color:var(--accent,#b8953a)">⬇</a>
+    ${hist.length > 1 ? `<details style="display:inline-block;vertical-align:top;margin-left:8px"><summary style="cursor:pointer;color:var(--text-3,#999)">历史 ${hist.length} 份</summary>
+      ${hist.slice().reverse().map(h => `<div style="margin-top:3px">${planRvLine(h)} <a href="${riyuEsc(h.file_url)}" target="_blank" style="color:var(--accent,#b8953a)">⬇</a>${h.note ? `<span style="color:var(--text-3,#999)"> · ${riyuEsc(h.note)}</span>` : ''}</div>`).join('')}</details>` : ''}</div>`;
+}
+// 学生端：绿框，突出最新一份，旧的可展开
+function planRvStudentHtml(draft) {
+  const hist = planRvHistory(draft);
+  if (!hist.length) return '';
+  const last = hist[hist.length - 1];
+  const old = hist.slice(0, -1).reverse();
+  return `<div style="background:var(--ok-bg);border-radius:3px;padding:10px;font-size:11px;color:var(--ok);margin-bottom:10px">
+    <div>📝 老师的批复版：${planRvLine(last)} <a href="${riyuEsc(last.file_url)}" target="_blank" style="color:var(--ok);font-weight:600;margin-left:6px">⬇ 下载</a></div>
+    ${last.note ? `<div style="margin-top:4px;white-space:pre-wrap">${riyuEsc(last.note)}</div>` : ''}
+    ${old.length ? `<details style="margin-top:6px"><summary style="cursor:pointer;font-size:10px;opacity:.8">以前的批复 ${old.length} 份</summary>
+      ${old.map(h => `<div style="margin-top:4px">${planRvLine(h)} <a href="${riyuEsc(h.file_url)}" target="_blank" style="color:var(--ok)">⬇</a>${h.note ? `<div style="opacity:.85">${riyuEsc(h.note)}</div>` : ''}</div>`).join('')}</details>` : ''}
+  </div>`;
+}

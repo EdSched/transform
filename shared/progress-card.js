@@ -285,6 +285,7 @@ function pgcCardHtml(s, ctx, o) {
     planInner = (typeof tDraftSummaryHtml === 'function' ? tDraftSummaryHtml(draft)
       : `<div style="font-size:11px;color:var(--text-2)">先行研究：${refsN ? `已整理 ${refsN} 条` : '未整理'}；草稿已填 ${draftN} 项</div>`)
       + (draft.draft_file_url ? `<a href="${pgcEsc(draft.draft_file_url)}" target="_blank" style="font-size:10px;color:var(--accent);display:inline-block;margin-top:4px">📎 草稿文件</a>` : '')
+      + (typeof planRvHistory === 'function' && planRvHistory(draft).length ? ` <a href="${pgcEsc(planRvHistory(draft).slice(-1)[0].file_url)}" target="_blank" style="font-size:10px;color:var(--accent);display:inline-block;margin-top:4px;margin-left:8px">批复版 ⬇</a>` : '')
       + (typeof openTeacherDraftComment === 'function' ? `<button onclick="event.stopPropagation();openTeacherDraftComment('${pgcJs(s.id)}','${sname}')" class="pgc-btn" style="margin-top:8px;display:block">查看・评估计划书/先行研究</button>` : '');
   } else planInner = '<div style="font-size:11px;color:var(--text-3)">学生尚未填写</div>';
   // 大学院：管理端「文书指导」保存过的联系教授邮件 / 问询邮件，逐校列在计划书下面（不依赖出愿材料清单里有没有条目）

@@ -476,7 +476,7 @@ function openStudyPlanEditor() {
       ${d.draft_file_url?`<div style="margin-top:5px"><a href="${d.draft_file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 当前草稿</a></div>`:''}
     </div>
 
-    ${d.teacher_comment?`<div style="background:var(--ok-bg);border-radius:3px;padding:10px;font-size:11px;color:var(--ok);margin-bottom:14px">💬 老师批注：${d.teacher_comment}</div>`:''}
+    ${typeof planRvStudentHtml==='function'?planRvStudentHtml(d):''}${d.teacher_comment?`<div style="background:var(--ok-bg);border-radius:3px;padding:10px;font-size:11px;color:var(--ok);margin-bottom:14px">💬 老师批注：${d.teacher_comment}</div>`:''}
 
     <div style="display:flex;gap:8px">
       <button onclick="saveStudyPlanDraft('${d.id||''}')" style="flex:1;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:4px;padding:11px;font-size:13px;cursor:pointer;font-family:inherit">保存</button>
@@ -1125,7 +1125,7 @@ function renderPlanResearchHtml() {
         </div>
         <button onclick="studySaveDraft()" style="font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit">保存草稿</button>
         <span id="spd_save_msg" style="font-size:11px;margin-left:10px"></span>
-        ${d.teacher_comment?`<div style="background:var(--ok-bg);border-radius:3px;padding:10px;margin-top:10px;font-size:11px;color:var(--ok)">💬 老师批注：${d.teacher_comment}</div>`:''}
+        ${typeof planRvStudentHtml==='function'?planRvStudentHtml(d):''}${d.teacher_comment?`<div style="background:var(--ok-bg);border-radius:3px;padding:10px;margin-top:10px;font-size:11px;color:var(--ok)">💬 老师批注：${d.teacher_comment}</div>`:''}
       </div>
     </div>
 
