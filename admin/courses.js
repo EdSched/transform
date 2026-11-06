@@ -2740,7 +2740,7 @@ async function confirmReschedule(){
     await courseRoomSyncSafe(courseId);   // 休讲那天释放教室，顺延出的新日期临时占用
     closeModal('rescheduleModal');
     renderCoursesPage(document.getElementById('mainContent'));
-    alert(`已将 ${target.session_date} 标记为休讲，内容顺延，末尾 ${newDateStr} 补第${newSession.session_number}回。\n\n新增的补课日期请到排课系统确认教室占用（可能与其他课撞车）。`);
+    alert(`已将 ${target.session_date} 标记为休讲，内容顺延，末尾 ${newDateStr} 补第${newSession.session_number}回。\n\n顺延日已自动占用原教室；原教室那天被占时，会在排课首页提醒。`);
   }catch(e){alert('操作失败：'+e.message)}
 }
 
