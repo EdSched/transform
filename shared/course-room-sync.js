@@ -39,7 +39,7 @@ async function crsRemind(co, s, date, span, reason) {
   const key = s.id + '|' + date;
   try {
     const old = await crsGet('sched_change_log', 'select=changes&action=eq.session_room&order=created_at.desc&limit=500');
-    if ((old || []).some(l => (l.changes || []).some(x => x && x.key === key))) return false;
+    if ((old || []).some(l => (l.changes || []).some(x => x && x.key === key && !x.resolved_at))) return false;
   } catch (e) { /* 读不到就照写，宁可多一条 */ }
   const timeTxt = span.start ? `${span.start}-${span.end}` : '';
   const msg = `《${co.name}》第 ${s.session_number || '?'} 回改到 ${date.slice(5).replace('-', '/')}（${crsWeekdayName(date)}）${timeTxt}，${reason}，请安排`;
@@ -53,6 +53,43 @@ async function crsRemind(co, s, date, span, reason) {
 }
 
 async function courseRoomSync(courseId) {
+  const out = await courseRoomSyncCore(courseId);
+  try { out.resolved = await crsResolveReminders(courseId); } catch (e) { console.warn('单回教室提醒标记失败', e); out.resolved = []; }
+  return out;
+}
+
+// 这门课还没处理的 session_room 提醒：补上了 / 不需要了 → 标「已处理」，返回 [{ key, kind:'occupied'|'gone', note }]
+async function crsResolveReminders(courseId) {
+  const res = [];
+  const logs = (await crsGet('sched_change_log', 'select=id,changes&action=eq.session_room&order=created_at.desc&limit=500') || [])
+    .filter(l => { const x = (l.changes || [])[0]; return x && !x.resolved_at && String(x.course_id) === String(courseId); });
+  if (!logs.length) return res;
+  const cid = encodeURIComponent(courseId);
+  const co = (await crsGet('courses', `select=id,time_range&id=eq.${cid}&limit=1`))[0];
+  const sessions = await crsGet('course_sessions', `select=id,session_date,time_range,is_cancelled&course_id=eq.${cid}&limit=2000`);
+  const bks = (await crsGet('sched_bookings', `select=*&kind=eq.course&course_id=eq.${cid}&limit=2000`)).filter(b => b.status !== 'rejected');
+  for (const l of logs) {
+    const x = l.changes[0];
+    const s = sessions.find(v => String(v.id) === String(x.session_id));
+    let note = '', kind = '';
+    if (!s || s.is_cancelled === true || s.session_date !== x.date) { kind = 'gone'; note = '这一回已不需要（日期已变或已取消）'; }
+    else {
+      const sp = timeRangesSpan(s.time_range || (co && co.time_range) || '');
+      const hit = bks.find(b => (b.recurrence === 'weekly' ? crsWeeklyOn(b, x.date, true) : b.booking_date === x.date) && crsContains(b, sp.start, sp.end));
+      if (hit) {
+        let name = '';
+        if (hit.room_id != null && hit.room_id !== '') { try { const r = (await crsGet('sched_rooms', `select=name&id=eq.${encodeURIComponent(hit.room_id)}&limit=1`))[0]; name = r ? r.name : ''; } catch (e) { /* 忽略 */ } }
+        kind = 'occupied'; note = '已自动占用 ' + (name || '原教室');
+      }
+    }
+    if (!kind) continue;
+    await crsPatch('sched_change_log', l.id, { changes: [Object.assign({}, x, { resolved_at: new Date().toISOString(), resolved_note: note }), ...l.changes.slice(1)] });
+    res.push({ key: x.key, kind, note });
+  }
+  return res;
+}
+
+async function courseRoomSyncCore(courseId) {
   const out = { released: 0, created: 0, removed: 0, reminders: 0 };
   const cid = encodeURIComponent(courseId);
   const co = (await crsGet('courses', `select=id,name,time_range,sched_merge_group&id=eq.${cid}&limit=1`))[0];
@@ -166,5 +203,38 @@ async function courseRoomClear(courseId) {
 
 // 调用方用：失败不阻断，只在控制台记一下
 async function courseRoomSyncSafe(courseId) {
-  try { return await courseRoomSync(courseId); } catch (e) { console.warn('单回教室核对失败', courseId, e); return null; }
+  let r = null;
+  try { r = await courseRoomSync(courseId); } catch (e) { console.warn('单回教室核对失败', courseId, e); }
+  // 管理端：这门课改期可能让出别的课等着的教室（不阻塞）
+  if (CRS_ADMIN() && !CRS_RETRYING) courseRoomRetryPending().catch(() => {});
+  return r;
+}
+
+// 空出教室后，替所有等着教室的课补占。返回补占天数。同一页面防重入。
+let CRS_RETRYING = false;
+async function courseRoomRetryPending() {
+  if (CRS_RETRYING) return 0;
+  CRS_RETRYING = true;
+  let n = 0;
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const logs = await crsGet('sched_change_log', 'select=changes&action=eq.session_room&order=created_at.desc&limit=500');
+    const ids = [...new Set((logs || []).map(l => (l.changes || [])[0]).filter(x => x && !x.resolved_at && x.course_id && (x.date || '') >= today).map(x => String(x.course_id)))];
+    for (const id of ids) { const r = await courseRoomSyncSafe(id); if (r) n += r.created || 0; }
+  } catch (e) { console.warn('补占等待中的单回失败', e); }
+  finally { CRS_RETRYING = false; }
+  return n;
+}
+
+// 排课页面用：占用被删除 / 挪动 / 释放后，后台补占，有补占就回调 onFilled(天数)
+function courseRoomWatchBookings(onFilled) {
+  const KEYS = ['booking_date', 'start_time', 'end_time', 'room_id', 'status', 'manual_off_dates', 'end_date'];
+  let timer = null;
+  const kick = () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => { const n = await courseRoomRetryPending(); if (n && onFilled) onFilled(n); }, 800);
+  };
+  const od = window.sbDelete, ou = window.sbUpdate;
+  window.sbDelete = async function (table, id) { const r = await od.apply(this, arguments); if (table === 'sched_bookings' && !CRS_RETRYING) kick(); return r; };
+  window.sbUpdate = async function (table, id, patch) { const r = await ou.apply(this, arguments); if (table === 'sched_bookings' && !CRS_RETRYING && patch && KEYS.some(k => k in patch)) kick(); return r; };
 }

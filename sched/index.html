@@ -39,7 +39,7 @@
 <script src="common.js?v=20270116"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270116"></script>
-<script src="../shared/course-room-sync.js?v=20270116"></script>
+<script src="../shared/course-room-sync.js?v=20261106"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], ROLE=null;
@@ -163,6 +163,10 @@ function renderHub(){
     }
   }catch(e){}
   renderChangeAlerts();
+  if(!window.__roomRetryStarted){ window.__roomRetryStarted=true;
+    courseRoomWatchBookings(async n=>{ try{ await reloadAll(); }catch(e){} renderChangeAlerts(); toast('已自动补占 '+n+' 天'); });
+    courseRoomRetryPending().then(async n=>{ if(n){ try{ await reloadAll(); }catch(e){} renderChangeAlerts(); toast('已自动补占 '+n+' 天'); } }).catch(()=>{});
+  }
   const pend = BOOKINGS.filter(b=>b.status==='pending').length;
   el('hubCards').innerHTML = visibleCards().map(([k,ic,nm,desc])=>{
     const badge = (k==='pending'&&pend)?` <span class="badge b-warn">${pend}</span>`:'';
@@ -172,6 +176,17 @@ function renderHub(){
 }
 function bindRoomAck(box){
   const myRole=(ROLE&&ROLE.role)||'';
+  box.querySelectorAll('[data-recheck]').forEach(b=>b.onclick=async()=>{
+    const l=CHANGELOG.find(x=>String(x.id)===String(b.dataset.recheck)); if(!l) return;
+    const x=(Array.isArray(l.changes)?l.changes:[])[0]||{};
+    if(!x.course_id){ toast('这条提醒没有对应课程'); return; }
+    b.disabled=true; b.textContent='核对中…';
+    const r=await courseRoomSyncSafe(x.course_id);
+    try{ await reloadAll(); }catch(e){}
+    const done=r&&(r.resolved||[]).find(v=>v.key===x.key);
+    toast(!r?'核对失败，请稍后再试':done?done.note:'原教室当天仍被占');
+    renderChangeAlerts();
+  });
   box.querySelectorAll('[data-ackrm]').forEach(b=>b.onclick=async()=>{
     const l=CHANGELOG.find(x=>String(x.id)===String(b.dataset.ackrm)); if(!l) return;
     const acked=(l.acked_by||'').split(',').map(s=>s.trim()).filter(Boolean);
@@ -187,9 +202,9 @@ function renderChangeAlerts(){
   const notAcked=l=>{ const acked=(l.acked_by||'').split(',').map(s=>s.trim()).filter(Boolean); return !acked.includes(myRole); };
   const pending=(CHANGELOG||[]).filter(l=>l.action!=='session_room' && notAcked(l));
   // 单回改期后原教室被占：要人安排，逐条列出
-  const roomAlerts=(CHANGELOG||[]).filter(l=>l.action==='session_room' && notAcked(l));
+  const roomAlerts=(CHANGELOG||[]).filter(l=>l.action==='session_room' && notAcked(l) && !((Array.isArray(l.changes)?l.changes:[])[0]||{}).resolved_at);
   const roomHtml=roomAlerts.map(l=>{ const x=(Array.isArray(l.changes)?l.changes:[])[0]||{};
-    return `<div style="background:#fdecea;border:1px solid #e6b8b3;border-radius:8px;padding:8px 14px;margin-bottom:8px;font-size:13px;display:flex;gap:10px;align-items:center"><span style="flex:1">${esc(x.to||'')}</span><button class="sm ghost" data-ackrm="${l.id}">知道了</button></div>`; }).join('');
+    return `<div style="background:#fdecea;border:1px solid #e6b8b3;border-radius:8px;padding:8px 14px;margin-bottom:8px;font-size:13px;display:flex;gap:10px;align-items:center"><span style="flex:1">${esc(x.to||'')}</span><button class="sm" data-recheck="${l.id}">重新核对</button><button class="sm ghost" data-ackrm="${l.id}">知道了</button></div>`; }).join('');
   if(!pending.length){ box.innerHTML=roomHtml; bindRoomAck(box); return; }
   // 按学科（类别）分组：反查课程的 category
   const catOf=(l)=>{
