@@ -91,14 +91,14 @@ async function crsResolveReminders(courseId) {
 }
 
 async function courseRoomSyncCore(courseId) {
-  const out = { released: 0, created: 0, removed: 0, reminders: 0 };
+  const out = { released: 0, created: 0, removed: 0, reminders: 0, notes: [] };
   const cid = encodeURIComponent(courseId);
   const co = (await crsGet('courses', `select=id,name,time_range,sched_merge_group&id=eq.${cid}&limit=1`))[0];
   if (!co) return out;
   const sessions = await crsGet('course_sessions', `select=id,session_number,session_date,time_range,is_cancelled&course_id=eq.${cid}&limit=2000`);
   const bks = await crsGet('sched_bookings', `select=*&kind=eq.course&course_id=eq.${cid}&limit=2000`);
   const autos = bks.filter(b => b.auto_sync === true);
-  if (!sessions.length) return out;
+  if (!sessions.length) { out.notes.push('这门课没有单回记录'); return out; }
   const active = sessions.filter(s => s.is_cancelled !== true && s.session_date);
   const weekly = bks.filter(b => b.recurrence === 'weekly' && b.status === 'confirmed');
   const temps = bks.filter(b => b.recurrence === 'once');
@@ -148,7 +148,8 @@ async function courseRoomSyncCore(courseId) {
     if (weekly.some(b => crsSplit(b.manual_off_dates).includes(d))) continue;   // 人已处理过
     need.push({ s, sp, d });
   }
-  if (!need.length || !weekly.length) return out;   // 都覆盖了；或这门课没排过教室：不处理
+  if (!need.length) { out.notes.push('每一回都已有教室占用，无需处理'); return out; }
+  if (!weekly.length) { out.notes.push(`有 ${need.length} 回没有占用（${need.map(x => x.d.slice(5)).join('、')}），但这门课没有「已确认」的每周教室占用，系统不知道用哪间，没处理`); return out; }
   const rooms = [...new Set(weekly.map(b => String(b.room_id == null ? '' : b.room_id)))];
   const accs = [...new Set(weekly.map(b => String(b.uses_meeting && b.meeting_account_id != null ? b.meeting_account_id : '')))];
   const tpl = weekly[0];
@@ -182,7 +183,12 @@ async function courseRoomSyncCore(courseId) {
         ((!online && String(b.room_id) === rooms[0]) || (tpl.uses_meeting && b.uses_meeting && String(b.meeting_account_id) === String(tpl.meeting_account_id))));
       if (hit.length) reason = online ? '原会议账号当天被占' : `原教室 ${roomName || rooms[0]} 当天被占`;
     }
-    if (reason) { if (await crsRemind(co, s, d, { start: st, end: en }, reason)) out.reminders++; continue; }
+    if (reason) {
+      const wrote = await crsRemind(co, s, d, { start: st, end: en }, reason);
+      if (wrote) out.reminders++;
+      out.notes.push(`${d.slice(5)}：${reason}，${wrote ? '已写提醒' : (d < new Date().toISOString().slice(0, 10) ? '日期已过，不提醒' : '已有未处理的提醒')}`);
+      continue;
+    }
     await crsInsert('sched_bookings', {
       room_id: tpl.room_id, kind: 'course', course_id: tpl.course_id, title: tpl.title, user_name: tpl.user_name,
       recurrence: 'once', booking_date: d, start_time: st, end_time: en,
@@ -191,6 +197,7 @@ async function courseRoomSyncCore(courseId) {
       session_id: s.id, auto_sync: true,
     });
     out.created++;
+    out.notes.push(`${d.slice(5)}：已占用`);
   }
   return out;
 }
@@ -228,7 +235,7 @@ async function courseRoomWhyBlocked(courseId, x) {
 // 调用方用：失败不阻断，只在控制台记一下
 async function courseRoomSyncSafe(courseId) {
   let r = null;
-  try { r = await courseRoomSync(courseId); } catch (e) { console.warn('单回教室核对失败', courseId, e); }
+  try { r = await courseRoomSync(courseId); } catch (e) { console.warn('单回教室核对失败', courseId, e); window.__crsLastError = e && e.message ? e.message : String(e); }
   // 管理端：这门课改期可能让出别的课等着的教室（不阻塞）
   if (CRS_ADMIN() && !CRS_RETRYING) courseRoomRetryPending().catch(() => {});
   return r;

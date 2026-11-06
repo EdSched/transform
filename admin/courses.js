@@ -2737,10 +2737,11 @@ async function confirmReschedule(){
       if(co){ co.skip_dates=newSkip; co.end_date=newDateStr; }
     }catch(e){ /* 同步失败不阻断休讲本身 */ }
 
-    await courseRoomSyncSafe(courseId);   // 休讲那天释放教室，顺延出的新日期临时占用
+    window.__crsLastError=''; const _rs=await courseRoomSyncSafe(courseId);   // 休讲那天释放教室，顺延出的新日期临时占用
+    const _rsTxt=!_rs?('\n\n教室核对失败：'+(window.__crsLastError||'未知原因')+'。请到排课首页点「核对单回和教室」重试'):((_rs.notes||[]).filter(t=>!/无需处理/.test(t)).length?('\n\n教室情况：\n'+_rs.notes.filter(t=>!/无需处理/.test(t)).join('\n')):'');
     closeModal('rescheduleModal');
     renderCoursesPage(document.getElementById('mainContent'));
-    alert(`已将 ${target.session_date} 标记为休讲，内容顺延，末尾 ${newDateStr} 补第${newSession.session_number}回。\n\n顺延日已自动占用原教室；原教室那天被占时，会在排课首页提醒。`);
+    alert(`已将 ${target.session_date} 标记为休讲，内容顺延，末尾 ${newDateStr} 补第${newSession.session_number}回。\n\n顺延日已自动占用原教室；原教室那天被占时，会在排课首页提醒。`+_rsTxt);
   }catch(e){alert('操作失败：'+e.message)}
 }
 

@@ -39,7 +39,7 @@
 <script src="common.js?v=20270116"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270116"></script>
-<script src="../shared/course-room-sync.js?v=20261108"></script>
+<script src="../shared/course-room-sync.js?v=20261109"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], ROLE=null;
@@ -888,14 +888,15 @@ async function crsVerifyAll(){
   const ids=[...new Set(list.filter(c=>BOOKINGS.some(b=>isWeeklyCourseBk(b)&&String(b.course_id)===String(c.id))).map(c=>String(c.id)))];
   if(!ids.length){ toast('当前显示的课里没有已排教室的'); return; }
   const btn=el('af_crsync'); if(btn){ btn.disabled=true; btn.textContent='核对中 0/'+ids.length; }
-  const tot={released:0,created:0,removed:0,reminders:0}; let fail=0, n=0;
+  const tot={released:0,created:0,removed:0,reminders:0}; let fail=0, n=0; const detail=[];
   for(const id of ids){
-    try{ const r=await courseRoomSync(id); Object.keys(tot).forEach(k=>tot[k]+=r[k]||0); }catch(e){ fail++; console.warn('核对失败',id,e); }
+    const cn=((COURSES||[]).find(c=>String(c.id)===id)||{}).name||id;
+    try{ const r=await courseRoomSync(id); Object.keys(tot).forEach(k=>tot[k]+=(typeof r[k]==='number'?r[k]:0)); (r.notes||[]).filter(t=>!/无需处理/.test(t)).forEach(t=>detail.push('《'+cn+'》'+t)); }catch(e){ fail++; detail.push('《'+cn+'》核对出错：'+(e&&e.message||e)); console.warn('核对失败',id,e); }
     n++; if(btn) btn.textContent='核对中 '+n+'/'+ids.length;
   }
   if(btn){ btn.disabled=false; btn.textContent='核对单回和教室'; }
   await reloadAll(); renderAssignView();
-  alert('核对了 '+ids.length+' 门课：\n释放教室 '+tot.released+' 天\n临时占用 '+tot.created+' 天\n清掉过期临时占用 '+tot.removed+' 条\n需要人处理 '+tot.reminders+' 条（见排课首页提醒）'+(fail?('\n失败 '+fail+' 门（见控制台）'):''));
+  alert('核对了 '+ids.length+' 门课：\n释放教室 '+tot.released+' 天\n临时占用 '+tot.created+' 天\n清掉过期临时占用 '+tot.removed+' 条\n需要人处理 '+tot.reminders+' 条（见排课首页提醒）'+(fail?('\n失败 '+fail+' 门'):'')+(detail.length?('\n\n明细：\n'+detail.slice(0,30).join('\n')):''));
 }
 /* 某门课今天以后的上课日（按周占用 + 临时占用），用于「调整某一天」 */
 function adjustDayEntries(group){
