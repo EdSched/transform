@@ -2454,13 +2454,14 @@ async function focusOpenSummary(sid) {
   const safe = p => p.then(v => ({ v: v || [] }), e => ({ v: [], err: (e && e.message) || String(e) }));
   const get = path => safe(sb(path, 'GET', null, nc));
   const bkSel = 'id,name,student_id,major,slot_date,slot_time_range,actual_time,actual_duration,status,type,assigned_teacher,daily_record,record_done_at';
-  const [tlR, plR, bkIdR, bkNmR, lgIdR, lgNmR] = await Promise.all([
+  const [tlR, plR, bkIdR, bkNmR, lgIdR, lgNmR, pmR] = await Promise.all([
     get(`/rest/v1/student_progress_timeline?student_id=eq.${enc(sid)}&select=*&order=created_at.asc`),
     get(`/rest/v1/student_school_plans?student_id=eq.${enc(sid)}&select=*&order=level.asc`),
     get(`/rest/v1/bookings?student_id=eq.${enc(sid)}&select=${bkSel}&order=slot_date.desc&limit=500`),
     get(`/rest/v1/bookings?student_id=is.null&name=eq.${enc(s.name)}&select=${bkSel}&order=slot_date.desc&limit=500`),   // 没绑定学生 id 的老预约才按姓名兜底
     get(`/rest/v1/student_contact_logs?student_id=eq.${enc(sid)}&select=*&order=created_at.desc`),
     get(`/rest/v1/student_contact_logs?student_id=is.null&student_name=eq.${enc(s.name)}&select=*&order=created_at.desc`),
+    get(`/rest/v1/riyu_submissions?student_id=eq.${enc(sid)}&kind=eq.grad_prof_mail&select=id,kind,school_key,status,mail_meta`),   // 联系教授邮件：志望校旁的「教授：…」标签
   ]);
 
   // 出席・作业统计（当前期 + 本月，口径同出席・作业页）；加载失败不影响概要其它部分
@@ -2503,7 +2504,7 @@ async function focusOpenSummary(sid) {
   const confirmed = plans.filter(p => CONFIRMED.includes(p.status)), others = plans.filter(p => !CONFIRMED.includes(p.status));
   const planLine = (p, strong) => {
     const st = stLabel(p.status), nm = [p.school_name, p.faculty, p.department].filter(Boolean).map(tsaEsc).join(' · ');
-    return `<div style="font-size:${strong ? 13 : 12}px;padding:${strong ? 7 : 4}px 0;border-top:1px solid #eee;${strong ? 'background:#fffaf0;padding-left:8px;border-left:3px solid #b8953a;' : ''}"><span style="font-weight:600">${nm}</span>${p.professor ? ' · 教授 ' + tsaEsc(p.professor) : ''} ${schoolLevelHtml(p.level)} <span style="color:${st.c};font-weight:600">${tsaEsc(st.t)}</span>${p.application_period ? ' <span style="color:#888;font-size:11px">出愿期间 ' + tsaEsc(p.application_period) + '</span>' : ''}</div>`;
+    return `<div style="font-size:${strong ? 13 : 12}px;padding:${strong ? 7 : 4}px 0;border-top:1px solid #eee;${strong ? 'background:#fffaf0;padding-left:8px;border-left:3px solid #b8953a;' : ''}"><span style="font-weight:600">${nm}</span>${p.professor ? ' · 教授 ' + tsaEsc(p.professor) : ''} ${schoolLevelHtml(p.level)} <span style="color:${st.c};font-weight:600">${tsaEsc(st.t)}</span>${!isGakubuStudent(s) && typeof riyuProfTagHtml === 'function' ? ' ' + riyuProfTagHtml(p, pmR.v) : ''}${p.application_period ? ' <span style="color:#888;font-size:11px">出愿期间 ' + tsaEsc(p.application_period) + '</span>' : ''}</div>`;
   };
   const schoolsHtml = errHtml(plR) + (confirmed.length ? `<div style="font-size:11px;color:#8a6d10;margin-bottom:2px">已确定报考（${confirmed.length}）</div>${confirmed.map(p => planLine(p, true)).join('')}`
       : `<div style="font-size:13px;font-weight:600;color:#c0392b;background:#fdecea;border-radius:4px;padding:8px 12px">尚未确定报考学校</div>`)

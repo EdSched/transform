@@ -78,7 +78,7 @@ async function renderStudentDetailCard(studentId, opts) {
   const schoolsHtml = plans.length ? plans.map(p => {
     const st = schoolStatusLabel(p.status), pass = p.status === 'passed';
     const name = [p.school_name, p.faculty, p.department].filter(Boolean).map(sdEsc).join(' · ');
-    return `<div style="font-size:11px;padding:5px 6px;border-bottom:1px solid var(--border-light);${pass ? 'background:var(--ok-bg,#e8f4ea);font-weight:600;border-radius:3px' : ''}">${schoolLevelHtml(p.level)} ${name}<span style="color:${st.c};margin-left:8px">${st.t}</span></div>`;
+    return `<div style="font-size:11px;padding:5px 6px;border-bottom:1px solid var(--border-light);${pass ? 'background:var(--ok-bg,#e8f4ea);font-weight:600;border-radius:3px' : ''}">${schoolLevelHtml(p.level)} ${name}<span style="color:${st.c};margin-left:8px">${st.t}</span>${!isGakubuStudent(s) && typeof riyuProfTagHtml === 'function' ? ' ' + riyuProfTagHtml(p, riyuSubs) : ''}</div>`;
   }).join('') : '<div style="font-size:11px;color:var(--text-3)">还没有志望校</div>';
 
   const dims = ['japanese', 'english', 'plan', 'apply', 'exam'];
