@@ -245,27 +245,21 @@ async function courseRoomReport(courseId) {
   const rooms = await crsGet('sched_rooms', 'select=id,name&limit=500');
   const rn = id => { const r = rooms.find(x => String(x.id) === String(id)); return r ? r.name : (id == null || id === '' ? '线上/会议账号' : '未知教室'); };
   const md = d => d ? d.slice(5).replace('-', '/') : '?';
+  // 只列需要处理的：没占上教室的那一回。都占上了就一句话
   const out = [];
   const weekly = bks.filter(b => b.recurrence === 'weekly');
-  if (!weekly.length) out.push('这门课没有每周教室占用');
-  weekly.forEach(b => out.push(`每周${'日一二三四五六'[Number(b.weekday) % 7]} ${rn(b.room_id)} ${crsT5(b.start_time)}-${crsT5(b.end_time)}（${b.status === 'confirmed' ? '已确认' : b.status}），${md(b.start_date)}~${md(b.end_date)}${b.manual_off_dates ? '，手动释放：' + crsSplit(b.manual_off_dates).map(md).join('、') : ''}${b.auto_off_dates ? '，自动释放：' + crsSplit(b.auto_off_dates).map(md).join('、') : ''}`));
+  if (!weekly.length) out.push('这门课没有每周教室占用，系统不知道该用哪间');
   const today = new Date().toISOString().slice(0, 10);
-  const list = sessions.filter(s => s.session_date && s.session_date >= crsAddDays(today, -7));
-  out.push('— 每一回 —');
-  if (!list.length) out.push('（没有最近或以后的单回）');
-  for (const s of list) {
+  let ok = 0;
+  for (const s of sessions.filter(v => v.session_date && v.session_date >= today && v.is_cancelled !== true)) {
     const d = s.session_date, sp = timeRangesSpan(s.time_range || co.time_range || '');
-    const head = `第${s.session_number || '?'}回 ${md(d)}（${crsWeekdayName(d)}）${sp.start ? sp.start + '-' + sp.end : ''}：`;
-    if (s.is_cancelled === true) { out.push(head + '已取消'); continue; }
-    const w = weekly.find(b => crsWeeklyOn(b, d, true) && crsContains(b, sp.start, sp.end));
-    const t = bks.find(b => b.recurrence === 'once' && b.booking_date === d && crsContains(b, sp.start, sp.end));
-    if (w) out.push(head + `占着 ${rn(w.room_id)}（每周占用）`);
-    else if (t) out.push(head + `占着 ${rn(t.room_id)}（临时占用${t.auto_sync ? '，系统自动' : ''}${t.status === 'pending' ? '，待批准' : ''}）`);
-    else {
-      const off = weekly.find(b => crsSplit(b.manual_off_dates).includes(d));
-      out.push(head + (off ? '没占教室（这天被手动释放过）' : '没占教室'));
-    }
+    const covered = weekly.some(b => crsWeeklyOn(b, d, true) && crsContains(b, sp.start, sp.end)) ||
+      bks.some(b => b.recurrence === 'once' && b.booking_date === d && crsContains(b, sp.start, sp.end));
+    if (covered) { ok++; continue; }
+    const off = weekly.find(b => crsSplit(b.manual_off_dates).includes(d));
+    out.push(`第${s.session_number || '?'}回 ${md(d)}（${crsWeekdayName(d)}）${sp.start ? sp.start + '-' + sp.end : ''}：没占教室${off ? '（这天被手动释放过）' : ''}`);
   }
+  if (!out.length) out.push(ok ? `没有需要处理的：今天及以后的 ${ok} 回都已占上教室` : '今天及以后没有单回');
   return out;
 }
 
