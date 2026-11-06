@@ -587,16 +587,30 @@ let progressStudentFilter = '';
 let progressStatus = 'active', progressShown = 30;   // 学生视角：状态筛选（默认在籍）+ 每次显示 30 人
 const PROGRESS_STATUS_OPTS = [['active','在籍'],['graduated','已合格'],['expired','已到期'],['stopped','停课'],['withdrawn','退学'],['all','全部']];
 function setProgressStatus(v){progressStatus=v;progressShown=30;renderProgressPage(document.getElementById('mainContent'))}
-let progressViewMode = 'student'; // 'student' | 'season' | 'materials'
-// 考学进度顶部的视图切换按钮（学生视角 / 年度出愿情报 / 出愿材料准备）
+let progressViewMode = 'student'; // 'student' | 'submissions' | 'season' | 'materials'
+// 考学进度顶部的视图切换按钮（学生视角 / 学生提交 / 年度出愿情报 / 出愿材料准备）
 function progressViewButtons(){
-  return [['student','👤 学生视角'],['season','📋 年度出愿情报'],['materials','📁 出愿材料准备']].map(([k,l])=>
+  return [['student','👤 学生视角'],['submissions','📥 学生提交'],['season','📋 年度出愿情报'],['materials','📁 出愿材料准备']].map(([k,l])=>
     `<button class="btn btn-sm ${progressViewMode===k?'btn-primary':'btn-outline'}" onclick="progressViewMode='${k}';renderProgressPage(document.getElementById('mainContent'))">${l}</button>`).join('');
+}
+
+// 📥 学生提交：谁交了计划书 / 志望理由书 / 邮件，等着老师批复（列表在 shared/submissions.js，老师端共用）
+async function renderSubmissionsView(mc){
+  const scoped=()=>cachedStudents.filter(s=>(s.status||'active')==='active'&&studentInCurrentView(s));
+  mc.innerHTML=`<div class="page-header"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+    <div class="section-title">考学进度</div><div style="display:flex;gap:4px">${progressViewButtons()}</div></div></div><div id="sbm_box"></div>`;
+  await sbmRender(document.getElementById('sbm_box'),{
+    students:scoped,
+    pass:s=>dmfFilter([s]).length>0,
+    barHtml:()=>domMajorFilterHtml(DMF,"sbmRender()",scoped()),
+    openPlan:sid=>{ progressViewMode='student'; renderProgressPage(document.getElementById('mainContent'),sid); },   // 管理端没有计划书批注弹窗：跳到学生视角并展开该生
+  });
 }
 
 async function renderProgressPage(mc, focusStudentId=null){
   mc.innerHTML='<div class="loading">加载中…</div>';
   if (progressViewMode === 'materials' && typeof renderMaterialsView === 'function') { await renderMaterialsView(mc); return; }
+  if (progressViewMode === 'submissions' && typeof sbmRender === 'function') { await renderSubmissionsView(mc); return; }
   let students=cachedStudents.filter(s=>s.status==='active'||s.status==='stopped'||s.status==='graduated');
   // 视角过滤（叠加逻辑）：非总览时按学生主专业+附加专业判断
   students=students.filter(s=>studentInCurrentView(s));
