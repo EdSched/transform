@@ -470,7 +470,7 @@ async function openStudentDetail(id){
     // 每次打开都重新读数据库（不用缓存的学生列表）；共用函数见 shared/student-detail.js
     const { html, student:s } = await renderStudentDetailCard(id, { showProfileNotes:true, actionsHtml:`
       <button class="btn btn-outline btn-sm" onclick="closeModal('studentDetailModal');openStudentModal('${id}')">✏ 编辑档案</button>
-      ${mgrPageAllowed('progress')?`<button class="btn btn-outline btn-sm" onclick="closeModal('studentDetailModal');renderProgressPage(document.getElementById('mainContent'),'${id}')">📊 考学进度</button>`:''}
+      ${mgrPageAllowed('progress')?`<button class="btn btn-outline btn-sm" onclick="pgFromDetail('${id}')">📊 考学进度</button>`:''}
       ${mgrPageAllowed('monthly')?`<button class="btn btn-outline btn-sm" onclick="openMonthlyReport('${id}',this.dataset.n)" data-n="">📅 月度学习情况</button>`:''}` });
     if(!s){ box.innerHTML='<div style="font-size:12px;color:var(--text-3)">未找到该学生档案</div>'; return; }
     const cached=cachedStudents.find(x=>x.id===id);
@@ -603,14 +603,36 @@ async function renderSubmissionsView(mc){
     students:scoped,
     pass:s=>dmfFilter([s]).length>0,
     barHtml:()=>domMajorFilterHtml(DMF,"sbmRender()",scoped()),
-    openPlan:sid=>{ progressViewMode='student'; renderProgressPage(document.getElementById('mainContent'),sid); },   // 管理端没有计划书批注弹窗：跳到学生视角并展开该生
+    openPlan:(sid,name,ctx)=>{   // 管理端没有计划书批注弹窗：单人模式打开该生并定位到计划书；返回时回到列表原样
+      const mc=document.getElementById('mainContent'), snap=pgsSnap(mc);
+      renderProgressPage(mc,sid,{section:'plan',back:{label:'返回学生提交',restore:async()=>{ progressViewMode='submissions'; if(ctx&&ctx.key) SBM.mark=ctx.key; await renderProgressPage(mc); pgsRestore(snap); }}});
+    },
   });
 }
 
-async function renderProgressPage(mc, focusStudentId=null){
+// 刷新：单人模式里留在单人模式；列表里保持老样子（展开这个学生）
+function pgRefresh(sid){ const mc=document.getElementById('mainContent'); return renderProgressPage(mc, sid, PGS.id===sid ? {keep:true} : {list:true}); }
+// 列表里「只看此人」：记下列表的样子（筛选 / 搜索 / 展开条数在全局变量里原样保留；展开的卡片和滚动位置记在这里）
+function pgSoloFromList(sid){
+  const mc=document.getElementById('mainContent'), snap=pgsSnap(mc);
+  const openIds=[...mc.querySelectorAll('.pgc-body')].filter(e=>e.style.display!=='none').map(e=>e.id.slice(4));
+  renderProgressPage(mc, sid, {back:{label:'返回全部学生', restore: async()=>{ progressViewMode='student'; window.__pgOpenIds=new Set(openIds); await renderProgressPage(mc); pgsRestore(snap); pgsMark(sid); }}});
+}
+// 学生详细里的「考学进度」
+function pgFromDetail(id){
+  closeModal('studentDetailModal');
+  const mc=document.getElementById('mainContent'), page=curPage;
+  renderProgressPage(mc, id, {back:{label:'返回学生档案', restore: async()=>{ switchPage(page); openStudentDetail(id); }}});
+}
+
+async function renderProgressPage(mc, focusStudentId=null, opts=null){
+  opts = opts || {};
+  const solo = !!focusStudentId && !opts.list;   // 单人模式：只显示这一个学生，不受筛选影响，也不改筛选
+  const keepSnap = (solo && opts.keep) ? pgsSnap(mc) : null;   // 单人模式里操作后刷新：位置不动
+  if (!solo) { PGS.id = null; PGS.back = null; }
   mc.innerHTML='<div class="loading">加载中…</div>';
-  if (progressViewMode === 'materials' && typeof renderMaterialsView === 'function') { await renderMaterialsView(mc); return; }
-  if (progressViewMode === 'submissions' && typeof sbmRender === 'function') { await renderSubmissionsView(mc); return; }
+  if (!solo && progressViewMode === 'materials' && typeof renderMaterialsView === 'function') { await renderMaterialsView(mc); return; }
+  if (!solo && progressViewMode === 'submissions' && typeof sbmRender === 'function') { await renderSubmissionsView(mc); return; }
   let students=cachedStudents.filter(s=>s.status==='active'||s.status==='stopped'||s.status==='graduated');
   // 视角过滤（叠加逻辑）：非总览时按学生主专业+附加专业判断
   students=students.filter(s=>studentInCurrentView(s));
@@ -623,17 +645,19 @@ async function renderProgressPage(mc, focusStudentId=null){
   let cardStudents=cachedStudents.filter(s=>studentInCurrentView(s));
   cardStudents=dmfFilter(cardStudents);
   if(progressStudentFilter) cardStudents=cardStudents.filter(s=>matchesStudentSearch(s,progressStudentFilter));
-  if(focusStudentId){ const fs=cachedStudents.find(x=>x.id===focusStudentId); if(fs && progressStatus!=='all' && (fs.status||'active')!==progressStatus) progressStatus='all'; }   // 从学生详情跳过来时，别让状态筛选把他藏起来
-  if(progressStatus!=='all') cardStudents=cardStudents.filter(s=>(s.status||'active')===progressStatus);
+  if(solo){ cardStudents=cachedStudents.filter(x=>x.id===focusStudentId); }
+  else if(focusStudentId){ const fs=cachedStudents.find(x=>x.id===focusStudentId); if(fs && progressStatus!=='all' && (fs.status||'active')!==progressStatus) progressStatus='all'; }   // 从学生详情跳过来时，别让状态筛选把他藏起来
+  if(!solo && progressStatus!=='all') cardStudents=cardStudents.filter(s=>(s.status||'active')===progressStatus);
+  const sf = solo ? '&student_id=eq.'+encodeURIComponent(focusStudentId) : '';   // 单人模式只读这一个学生的数据
 
   const [allTimeline, allPlansPG, allDraftsPG, allBkPG, allRiyuPG, matItemsPG, allMatsPG] = await Promise.all([
-    sb('/rest/v1/student_progress_timeline?select=*&order=created_at.asc&limit=5000').catch(()=>[]),
-    sb('/rest/v1/student_school_plans?select=*&order=level.asc&limit=5000').catch(()=>[]),
-    sb('/rest/v1/student_plan_drafts?select=*&limit=5000').catch(()=>[]),
-    sb('/rest/v1/bookings?target_school=not.is.null&select=student_id,name,target_school,slot_date&order=slot_date.desc&limit=5000').catch(()=>[]),
-    sbAll('/rest/v1/riyu_submissions?select=*').catch(()=>[]),   // 新版志望理由书（表未建时为空）
+    sb('/rest/v1/student_progress_timeline?select=*&order=created_at.asc&limit=5000'+sf).catch(()=>[]),
+    sb('/rest/v1/student_school_plans?select=*&order=level.asc&limit=5000'+sf).catch(()=>[]),
+    sb('/rest/v1/student_plan_drafts?select=*&limit=5000'+sf).catch(()=>[]),
+    sb('/rest/v1/bookings?target_school=not.is.null&select=student_id,name,target_school,slot_date&order=slot_date.desc&limit=5000'+sf).catch(()=>[]),
+    sbAll('/rest/v1/riyu_submissions?select=*'+sf).catch(()=>[]),   // 新版志望理由书（表未建时为空）
     (typeof matLoadItems === 'function' ? matLoadItems('') : Promise.resolve([])).catch(()=>[]),   // 出愿材料清单
-    sbAll('/rest/v1/student_materials?select=*').catch(()=>[]),
+    sbAll('/rest/v1/student_materials?select=*'+sf).catch(()=>[]),
     (typeof riyuMailSavedLoad === 'function' ? riyuMailSavedLoad() : Promise.resolve()).catch(()=>{}),   // 联系教授邮件 / 问询邮件有没有保存过指导
   ]);
   const matsMapPG = {};
@@ -662,13 +686,15 @@ async function renderProgressPage(mc, focusStudentId=null){
   cardStudents.forEach(s => { bkMapPG[s.id] = [...(bkByStuPG[s.id]||[]), ...(bkByNamePG[s.name]||[])].sort((x,y)=>String(y.slot_date||'').localeCompare(String(x.slot_date||''))); });
   const ctxPG = { timelineMap, plansMap: plansMapPG, draftsMap: draftsMapPG, riyuSubsMap: riyuSubsMapPG, matItems: matItemsPG||[], matsMap: matsMapPG, bkMap: bkMapPG };
   const passBtn = (p, s) => ` <button onclick='openAdmissionEntry(${JSON.stringify({school:p.school_name||'',faculty:p.faculty||'',dept:p.department||'',student:s.name||'',jp:s.japanese_score||'',en:s.english_score||'',major:s.major||'',enroll:s.target_enrollment||'',sid:s.id||''}).replace(/'/g,"&#39;")})' style="font-size:10px;padding:1px 6px;border:1px solid var(--accent);color:var(--accent);background:none;border-radius:3px;cursor:pointer;margin-top:3px;white-space:nowrap">录入合格实绩</button>`;
-  if (focusStudentId) { const fi = cardStudents.findIndex(x => x.id === focusStudentId); if (fi >= progressShown) progressShown = fi + 1; }
-  const shownStudents = cardStudents.slice(0, progressShown);
+  if (focusStudentId && !solo) { const fi = cardStudents.findIndex(x => x.id === focusStudentId); if (fi >= progressShown) progressShown = fi + 1; }
+  const shownStudents = solo ? cardStudents : cardStudents.slice(0, progressShown);
+  const openIdsPG = window.__pgOpenIds; window.__pgOpenIds = null;
   const cards = shownStudents.map(s => pgcCardHtml(s, ctxPG, {
-    mode: 'admin', open: focusStudentId === s.id, focus: focusStudentId === s.id,
+    mode: 'admin', open: solo || focusStudentId === s.id || !!(openIdsPG && openIdsPG.has(s.id)), focus: focusStudentId === s.id,
+    solo: solo ? null : (st => `pgSoloFromList('${pgcJs(st.id)}')`),
     h: { planSet: 'spPlanSet', planFlag: 'spPlanFlag', schoolAdd: 'spSchoolAdd', schoolEdit: 'spSchoolEdit', schoolDel: 'spSchoolDel' },
     notesFn: 'spNotesToggle',
-    riyuChanged: () => renderProgressPage(document.getElementById('mainContent'), s.id),
+    riyuChanged: () => pgRefresh(s.id),
     progressAdd: st => `openAddProgressEntry('${pgcJs(st.id)}','${pgcJs(st.name)}','${pgcJs(st.major)}')`,
     timelineEdit: (e, st) => `editProgressEntry('${pgcJs(e.id)}','${pgcJs(st.id)}','${pgcJs(st.name)}','${pgcJs(st.major)}')`,
     guaranteedEdit: true,
@@ -676,12 +702,17 @@ async function renderProgressPage(mc, focusStudentId=null){
   })).join('');
 
   // 如果是年度出愿情报视图
-  if (progressViewMode === 'season') {
+  if (!solo && progressViewMode === 'season') {
     await renderSeasonView(mc, seasonStudents, timelineMap);
     return;
   }
 
-  mc.innerHTML = `
+  const soloStu = solo ? cardStudents[0] : null;
+  if (solo && !soloStu) { PGS.id = null; mc.innerHTML = '<div class="empty">没有找到这个学生</div>'; return; }
+  if (solo) { pgsEnter(focusStudentId, opts.back); if (!PGS.back) PGS.back = {label:'返回全部学生', restore: async()=>{ progressViewMode='student'; await renderProgressPage(mc); }}; }
+  const topHtml = solo
+    ? pgsBarHtml(soloStu, PGS.back) + `<div style="display:flex;flex-direction:column;gap:10px">${cards}</div>`
+    : `
   <div class="page-header">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <div class="section-title">考学进度</div>
@@ -695,7 +726,9 @@ async function renderProgressPage(mc, focusStudentId=null){
   <div class="search-bar"><input id="progress_search_input" placeholder="搜索姓名（汉字 / 拼音首字母）/ 专业 / 学校 / 备注…" value="${stEsc(progressStudentFilter)}" oninput="searchBox(this,handleProgressSearchInput)"></div>
   <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">共 ${cardStudents.length} 人</div>
   <div style="display:flex;flex-direction:column;gap:10px">${cards || '<div class="empty">没有符合条件的学生</div>'}</div>
-  ${cardStudents.length>progressShown?`<div onclick="progressShown+=30;renderProgressPage(document.getElementById('mainContent'))" style="text-align:center;padding:10px;margin:8px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">显示更多（还有 ${cardStudents.length-progressShown} 人）</div>`:''}
+  ${cardStudents.length>progressShown?`<div onclick="progressShown+=30;renderProgressPage(document.getElementById('mainContent'))" style="text-align:center;padding:10px;margin:8px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">显示更多（还有 ${cardStudents.length-progressShown} 人）</div>`:''}`;
+  mc.innerHTML = `
+  ${topHtml}
 
   <div class="modal-overlay" id="progressEntryModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;padding:16px">
     <div class="modal" style="width:520px;max-height:85vh;overflow-y:auto">
@@ -730,6 +763,11 @@ async function renderProgressPage(mc, focusStudentId=null){
       </div>
     </div>
   </div>`;
+  if (solo) {
+    if (keepSnap) pgsRestore(keepSnap);
+    else if (opts.section) pgsGoto(focusStudentId, opts.section);
+    else { const sc = pgsScrollEl(mc); sc.scrollTop = 0; window.scrollTo(0, 0); }
+  }
 }
 
 
@@ -792,7 +830,7 @@ async function saveProgressEntry() {
       await sb('/rest/v1/student_progress_timeline', 'POST', data);
     }
     closeProgressModal();
-    renderProgressPage(document.getElementById('mainContent'), studentId);
+    pgRefresh(studentId);
   } catch(e) { alert('保存失败：' + e.message); }
 }
 
@@ -803,7 +841,7 @@ async function deleteProgressEntry() {
   try {
     await sb(`/rest/v1/student_progress_timeline?id=eq.${entryId}`, 'DELETE');
     closeProgressModal();
-    renderProgressPage(document.getElementById('mainContent'), studentId);
+    pgRefresh(studentId);
   } catch(e) { alert('删除失败：' + e.message); }
 }
 
@@ -1360,19 +1398,19 @@ function spAdminStudent(sid) {
 function spAdminPlans(sid) { return (window.__spPlansAll || []).filter(p => p.student_id === sid); }
 function spSchoolAdd(sid, prefill) {
   const stu = spAdminStudent(sid); if (!stu) { alert('找不到这个学生，请刷新页面'); return; }
-  spOpenModal({ student: stu, prefill, plans: spAdminPlans(sid), onDone: () => renderProgressPage(document.getElementById('mainContent'), stu.id) });
+  spOpenModal({ student: stu, prefill, plans: spAdminPlans(sid), onDone: () => pgRefresh(stu.id) });
 }
 function spSchoolEdit(planId) {
   const plan = (window.__spPlansAll || []).find(p => p.id === planId);
   const stu = plan && spAdminStudent(plan.student_id);
   if (!plan || !stu) { alert('找不到这条志望校，请刷新页面'); return; }
-  spOpenModal({ student: stu, plan, plans: spAdminPlans(stu.id), onDone: () => renderProgressPage(document.getElementById('mainContent'), stu.id) });
+  spOpenModal({ student: stu, plan, plans: spAdminPlans(stu.id), onDone: () => pgRefresh(stu.id) });
 }
 function spSchoolDel(planId) {
   const plan = (window.__spPlansAll || []).find(p => p.id === planId);
   const stu = plan && (spAdminStudent(plan.student_id) || { id: plan.student_id, name: plan.student_name, major: plan.major });
   if (!plan) { alert('找不到这条志望校，请刷新页面'); return; }
-  spDeletePlan(stu, plan, 'admin', '管理员', () => renderProgressPage(document.getElementById('mainContent'), stu.id));
+  spDeletePlan(stu, plan, 'admin', '管理员', () => pgRefresh(stu.id));
 }
 
 
