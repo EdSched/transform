@@ -236,7 +236,7 @@ async function initMajor() {
     <div class="header-major">面谈预约</div>
     <div class="header-sub">唯新教育</div>
     ${major ? `<div class="header-locked">📌 ${majorLabel(major)}</div>` : ''}
-    ${bkIsEmbed ? '' : `<a href="../vip/" style="display:inline-block;margin-top:8px;font-size:11px;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:4px 12px;text-decoration:none">⭐ 我有VIP课程 →</a>`}`;
+    ${bkIsEmbed ? '' : `<a href="study.html" style="display:inline-block;margin-top:8px;font-size:11px;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:4px 12px;text-decoration:none">已有查询码，去学习页面 →</a>`}`;
 
   if (bkIsEmbed) {
     bkEmbedAutoHeight();
@@ -339,7 +339,7 @@ async function loadBookingPage() {
     cachedSlots = await sb(`/rest/v1/slots?select=*&major=in.(${bkMajors.map(m => `"${m}"`).join(',')})&or=(locked.is.null,locked.is.false)&order=date.asc,time_range.asc`);
     // 按本页时间槽的 slot_id 拉取预约（只用于名额统计）
     cachedBookings = await fetchBookingsBySlots(cachedSlots.map(s => s.id));
-    // VIP 时间槽走独立的 /vip/ 页面预约，不在普通面谈预约里出现
+    // VIP 时间槽在学习页的「VIP预约」里预约，不在普通面谈预约里出现
     cachedSlots = cachedSlots.filter(s => !(Array.isArray(s.type) ? s.type : [s.type]).includes('vip'));
     cachedBookings = cachedBookings.filter(b => b.type !== 'vip');
     const teacherNames = [...new Set(cachedSlots.map(s => s.teacher_name).filter(Boolean))];

@@ -1828,9 +1828,8 @@ function isSchoolFailed(v) { return SCHOOL_FAILED_STATUSES.includes(v); }
 // 管理端学生管理、老师端学生管理、老师端面谈提醒共用。文字里只放该学生本人的查询码；群发文字不能带查询码。
 // ══════════════════════════════════
 const STUDENT_PORTAL_ROOT = 'https://edsched.github.io/transform/';
-// 纯 VIP 学生 → VIP 页；其他（大课、大课+VIP、未填）→ 学习页。不带专业。opts.tab：普通学生直接打开某个标签（如 'reserve'）
+// 所有学生统一给学习页（VIP 标签按课程属性自动显示）。不带专业。opts.tab：直接打开某个标签（如 'reserve'）
 function studentPortalLink(student, opts) {
-  if (isPureVipStudent(student)) return STUDENT_PORTAL_ROOT + 'vip/index.html';
   const tab = opts && opts.tab;
   return STUDENT_PORTAL_ROOT + 'student/study.html' + (tab ? `?tab=${encodeURIComponent(tab)}` : '');
 }

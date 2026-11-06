@@ -3,101 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VIP课程 — 唯新教育</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../student/student.css?v=20261030">
-<style>
-  /* 学习记录页专用：容器加宽到双倍（不影响其他页面共用的 student.css） */
-  .page-wrap { max-width:1360px; }
-  /* ── 全局防溢出：任何元素都不得撑出视口，避免 iOS 触发整页缩放 ── */
-  html, body { max-width:100%; overflow-x:hidden; }
-  /* tab 栏：独立横向滚动，与内容区左右滑动互不干扰 */
-  .study-tabbar {
-    overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch;
-    flex-wrap:nowrap !important; scrollbar-width:none; overscroll-behavior-x:contain;
-  }
-  .study-tabbar::-webkit-scrollbar { display:none; }
-  .study-tabbar > button { flex:0 0 auto; }
-  /* 顶部徽章行：内容多时也可横滑 */
-  .study-badgebar { overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
-  .study-badgebar::-webkit-scrollbar { display:none; }
-  @media (max-width:640px) {
-    .study-badgebar { flex-wrap:nowrap !important; }
-    .study-badgebar > * { flex:0 0 auto; }
-  }
-  header { width:100%; box-sizing:border-box; }
-  .page-wrap { width:100%; box-sizing:border-box; overflow-x:clip; }
-  img, iframe, video, table, canvas { max-width:100%; }
-  pre { white-space:pre-wrap; word-break:break-word; max-width:100%; }
-  textarea, input, select { max-width:100%; box-sizing:border-box; }
-  @media (max-width:640px) {
-    header { padding:1.1rem 1.1rem .9rem; }
-    .page-wrap { padding:18px 12px 60px; }
-  }
-  /* 宽屏双排（<1100px 自动回落单列）；.sc-full 占满整行 */
-  .study-cols2 { display:grid; grid-template-columns:1fr; gap:0 24px; align-items:start; }
-  @media (min-width:1100px) {
-    .study-cols2 { grid-template-columns:1fr 1fr; }
-    .study-cols2 > .sc-full { grid-column:1/-1; }
-  }
-  /* 左右分栏：足够宽才并排；否则单列横向滑动翻页（露出边缘提示可滑） */
-  .study-split { display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }
-  @media (max-width:1199px) {
-    /* 单列整屏翻页：一屏一栏，横滑切换 */
-    .study-split { display:flex; overflow-x:auto; scroll-snap-type:x mandatory; gap:0; padding-bottom:8px; -webkit-overflow-scrolling:touch; }
-    .study-split > div { flex:0 0 100%; scroll-snap-align:start; scroll-snap-stop:always; min-width:0; padding-right:2px; }
-    .study-split::-webkit-scrollbar { height:5px; }
-    .study-split::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
-    .split-hint { display:block !important; }
-  }
-  .split-hint { display:none; font-size:10px; color:var(--text-muted); text-align:center; margin-bottom:6px; letter-spacing:.05em; }
-  /* 任何情况下都不允许内部内容撑破容器 */
-  .study-split > div, .study-cols2 > div { min-width:0; max-width:100%; }
-  .study-split img, .study-cols2 img, .study-split iframe { max-width:100%; }
-  .study-nav { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:20px; overflow-x:auto; }
-  .study-tab { padding:8px 16px; font-size:12px; background:none; border:none; border-bottom:2px solid transparent; cursor:pointer; font-family:inherit; color:var(--text-muted); white-space:nowrap; }
-  .study-tab.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
-  .section-label { font-size:10px; color:var(--text-muted); letter-spacing:.08em; text-transform:uppercase; margin-bottom:10px; }
-  .school-chip { display:inline-flex; align-items:center; gap:6px; background:var(--surface); border:1px solid var(--border); border-radius:3px; padding:5px 10px; font-size:11px; cursor:pointer; transition:all .15s; margin:3px; }
-  .school-chip:hover { border-color:var(--accent); }
-  .school-chip.selected { background:var(--accent-light); border-color:var(--accent); }
-  .school-chip .school-period { font-size:10px; color:var(--accent); }
-  .level-section { margin-bottom:16px; }
-  .level-header { font-size:11px; font-weight:600; margin-bottom:8px; display:flex; align-items:center; gap:6px; }
-  .school-card { background:var(--surface); border:1px solid var(--border-light); border-radius:4px; padding:12px; margin-bottom:8px; }
-  .school-card-name { font-weight:600; font-size:13px; margin-bottom:4px; }
-  .school-card-sub { font-size:11px; color:var(--text-secondary); margin-bottom:6px; }
-  .school-card-detail { font-size:11px; color:var(--text-muted); }
-  .empty-tip { text-align:center; padding:32px 0; color:var(--text-muted); font-size:12px; }
-  .badge { display:inline-block; font-size:10px; padding:1px 7px; border-radius:2px; }
-  .badge-ok { background:var(--success-light); color:var(--success); }
-  .badge-warn { background:var(--warning-light); color:var(--warning); }
-  .timeline-entry { padding:10px 0; border-bottom:1px solid var(--border-light); display:flex; gap:10px; }
-  .timeline-source { font-size:10px; padding:1px 7px; border-radius:2px; white-space:nowrap; align-self:flex-start; margin-top:2px; }
-</style>
-
+<title>正在跳转 — 唯新教育</title>
+<script>location.replace('../student/study.html' + location.search + location.hash);</script>
+<style>body{font-family:sans-serif;background:#f7f5f0;color:#1a1814;text-align:center;padding:60px 20px;font-size:14px}a{color:#b8953a}</style>
 </head>
 <body>
-<header>
-  <div id="headerContent">
-    <div class="header-major">VIP课程</div>
-    <div class="header-sub">唯新教育</div>
-  </div>
-</header>
-<div class="page-wrap" id="mainWrap"><div class="loading">加载中…</div></div>
-<script>window.__VIP_PAGE__=true;</script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
-<script src="../shared/vendor/supabase.min.js"></script>
-<script src="../shared/supabase.js?v=20270121"></script>
-<script src="../shared/constants.js?v=20270211"></script>
-<script src="../shared/search.js?v=20261123"></script>
-<script src="../shared/riyu.js?v=20270211"></script>
-<script src="../shared/artworks.js?v=20261123"></script>
-<script src="../shared/materials.js?v=20270211"></script>
-<script src="../shared/schoolplan.js"></script>
-<script src="../shared/vip-booking.js?v=20270202"></script>
-<script src="vip.js?v=20270102"></script>
-<script src="../student/study.js?v=20270211"></script>
+<p>正在跳转到学习页面…（如果没有自动跳转，<a href="../student/study.html">点这里</a>）</p>
+<script>var a=document.querySelector('a');if(a)a.href='../student/study.html'+location.search+location.hash;</script>
 </body>
 </html>
