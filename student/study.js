@@ -755,6 +755,7 @@ function riyuStudentMetaHtml(it, idx) {
   return `<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:4px;padding:10px 12px;margin-bottom:12px">${body}</div>`;
 }
 function riyuStudentRender() {
+  if (riyuIsMail(rsState.kind) && document.getElementById('plan_doc_bar')) { studyPlanSubs[rsState.kind] = rsState.subs; studyPlanBarRender(); }   // 计划书 Tab 的 chip 进度跟着更新
   const wrap = document.getElementById(rsState.wrapId); if (!wrap) return;
   const kind = rsState.kind, isMail = riyuIsMail(kind), isInq = kind === 'grad_inquiry_mail';
   const docName = RIYU_DOC_NAME[kind] || '志望理由书';
@@ -996,9 +997,56 @@ async function studyMatSave(itemId) {
 // 计划书 Tab（三步骤）
 // ══════════════════════════════════
 
+// 大学院「计划书」Tab 顶部的文书切换：研究计划书 ｜ 联系教授邮件 ｜ 问询邮件
+// 邮件 chip 只在管理端「文书指导」保存过对应指导（writing_guides 有该 kind）时出现，不依赖出愿材料清单里有没有条目
+let studyPlanDoc = '';          // '' = 研究计划书；否则是 grad_prof_mail / grad_inquiry_mail
+let studyPlanSubs = {};         // kind → 该生的提交记录（chip 上的进度用）
 function renderPlanTab() {
   // 学部学生：本 tab 是「志望理由书」，按志望校逐校填写（大学院仍是研究计划书）
   if (studyIsGakubu()) return renderRiyuTab();
+  setTimeout(studyPlanBarLoad, 0);
+  const mail = studyPlanDoc;
+  return `<div id="plan_doc_bar"></div>
+    <div id="plan_doc_research" style="${mail ? 'display:none' : ''}">${renderPlanResearchHtml()}</div>
+    <div id="plan_doc_mail">${mail ? riyuStudentShell(mail) : ''}</div>`;
+}
+async function studyPlanBarLoad() {
+  const bar = document.getElementById('plan_doc_bar'); if (!bar) return;
+  const kinds = await riyuMailSavedLoad(true);
+  if (!kinds.length) {
+    if (studyPlanDoc) { studyPlanDoc = ''; const r = document.getElementById('plan_doc_research'); if (r) r.style.display = ''; const m = document.getElementById('plan_doc_mail'); if (m) m.innerHTML = ''; }
+    bar.innerHTML = ''; return;
+  }
+  try {
+    const rows = await sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=in.(${RIYU_MAIL_KINDS.join(',')})&select=*`, 'GET', null, { cache: 'no-store' });
+    studyPlanSubs = {};
+    RIYU_MAIL_KINDS.forEach(k => { studyPlanSubs[k] = (rows || []).filter(x => x.kind === k); });
+  } catch (e) { studyPlanSubs = studyPlanSubs || {}; }
+  if (studyPlanDoc && kinds.indexOf(studyPlanDoc) < 0) studyPlanDoc = '';
+  studyPlanBarRender();
+}
+function studyPlanBarRender() {
+  const bar = document.getElementById('plan_doc_bar'); if (!bar) return;
+  const kinds = RIYU_MAIL_SAVED.kinds; if (!kinds.length) { bar.innerHTML = ''; return; }
+  const plans = studyData.schoolPlans || [];
+  const subsAll = [].concat(studyPlanSubs.grad_prof_mail || [], studyPlanSubs.grad_inquiry_mail || []);
+  const c = matCounts(plans, subsAll, 'grad').byKind;
+  const text = {
+    grad_prof_mail: (!plans.length ? '请先选志望校' : `已提交 ${c.grad_prof_mail.submitted}/${c.grad_prof_mail.total} 校${c.grad_prof_mail.agreed ? ' · 同意 ' + c.grad_prof_mail.agreed : ''}`),
+    grad_inquiry_mail: c.grad_inquiry_mail.total ? `已写 ${c.grad_inquiry_mail.total} 封` : '还没写',
+  };
+  const chip = (k, name, sub) => `<span style="cursor:pointer;padding:5px 12px;border-radius:3px;font-size:12px;border:1px solid ${studyPlanDoc === k ? 'var(--accent)' : 'var(--border)'};background:${studyPlanDoc === k ? 'var(--btn-bg,#efe9e1)' : 'var(--surface)'};color:${studyPlanDoc === k ? 'var(--btn-fg,#3a2e24)' : 'var(--text-secondary)'};font-weight:${studyPlanDoc === k ? '600' : '400'}" onclick="studyPlanDocSwitch('${k}')">${name}${sub ? `<span style="font-size:10px;opacity:.8;margin-left:6px">${escA(sub)}</span>` : ''}</span>`;
+  bar.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${chip('', '研究计划书', '')}${kinds.map(k => chip(k, RIYU_DOC_NAME[k], text[k])).join('')}</div>`;
+}
+function studyPlanDocSwitch(k) {
+  if (studyPlanDoc && typeof riyuStudentCollect === 'function') riyuStudentCollect();   // 邮件里还没保存的内容先记下
+  studyPlanDoc = k || '';
+  const r = document.getElementById('plan_doc_research'), m = document.getElementById('plan_doc_mail');
+  if (r) r.style.display = studyPlanDoc ? 'none' : '';
+  if (m) m.innerHTML = studyPlanDoc ? riyuStudentShell(studyPlanDoc) : '';
+  studyPlanBarRender();
+}
+function renderPlanResearchHtml() {
   const d = studyData.planDraft || {};
   let refs = [];
   try { refs = d.prior_research_list ? JSON.parse(d.prior_research_list) : []; } catch(e) {}

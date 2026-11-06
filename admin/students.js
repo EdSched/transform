@@ -618,6 +618,7 @@ async function renderProgressPage(mc, focusStudentId=null){
     sbAll('/rest/v1/riyu_submissions?select=*').catch(()=>[]),   // 新版志望理由书（表未建时为空）
     (typeof matLoadItems === 'function' ? matLoadItems('') : Promise.resolve([])).catch(()=>[]),   // 出愿材料清单
     sbAll('/rest/v1/student_materials?select=*').catch(()=>[]),
+    (typeof riyuMailSavedLoad === 'function' ? riyuMailSavedLoad() : Promise.resolve()).catch(()=>{}),   // 联系教授邮件 / 问询邮件有没有保存过指导
   ]);
   const matsMapPG = {};
   (allMatsPG||[]).forEach(r => { (matsMapPG[r.student_id] = matsMapPG[r.student_id] || []).push(r); });

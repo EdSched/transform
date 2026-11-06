@@ -287,6 +287,13 @@ function pgcCardHtml(s, ctx, o) {
       + (draft.draft_file_url ? `<a href="${pgcEsc(draft.draft_file_url)}" target="_blank" style="font-size:10px;color:var(--accent);display:inline-block;margin-top:4px">📎 草稿文件</a>` : '')
       + (typeof openTeacherDraftComment === 'function' ? `<button onclick="event.stopPropagation();openTeacherDraftComment('${pgcJs(s.id)}','${sname}')" class="pgc-btn" style="margin-top:8px;display:block">查看・评估计划书/先行研究</button>` : '');
   } else planInner = '<div style="font-size:11px;color:var(--text-3)">学生尚未填写</div>';
+  // 大学院：管理端「文书指导」保存过的联系教授邮件 / 问询邮件，逐校列在计划书下面（不依赖出愿材料清单里有没有条目）
+  if (!gakubu && typeof riyuMailSavedKinds === 'function' && typeof riyuStaffListHtml === 'function') {
+    riyuMailSavedKinds().forEach(k => {
+      planInner += `<div style="font-size:11px;font-weight:600;margin:12px 0 4px;color:var(--text-2)">${pgcEsc(RIYU_DOC_NAME[k])}</div>`
+        + riyuStaffListHtml(s, plans, subs, k, o.riyuChanged || (() => {}));
+    });
+  }
   const secPlan = `<div class="pgc-sec"><div class="pgc-title">${gakubu ? '志望理由书' : '研究计划书'}${gakubu ? `<span class="sub">· ${pgcEsc(riyuCountText(riyuC))}</span>` : ''}</div>${planInner}</div>`;
 
   // ── 6. 出愿材料（卡片网格等宽，每行 4 张，窄屏 2 张）──

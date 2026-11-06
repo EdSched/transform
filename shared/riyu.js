@@ -117,6 +117,21 @@ async function riyuLoadGuide(kind, force) {
   return g;
 }
 
+// 大学院邮件文书「管理端已保存过指导」的 kind 列表（writing_guides 里有这一行才算）：决定计划书位置是否出现这两封邮件
+// 学生端「计划书」Tab、老师端 / 管理端的计划书部分都按它判断，不依赖出愿材料清单里有没有条目
+const RIYU_MAIL_SAVED = { loaded: false, kinds: [] };
+async function riyuMailSavedLoad(force) {
+  if (RIYU_MAIL_SAVED.loaded && !force) return RIYU_MAIL_SAVED.kinds;
+  try {
+    const rows = await sb(`/rest/v1/writing_guides?kind=in.(${RIYU_MAIL_KINDS.join(',')})&select=kind`, 'GET', null, { cache: 'no-store' });
+    RIYU_MAIL_SAVED.kinds = RIYU_MAIL_KINDS.filter(k => (rows || []).some(r => r.kind === k));
+    RIYU_MAIL_SAVED.loaded = true;
+  } catch (e) { /* 读取失败：保持原样，不当作「没保存」缓存 */ }
+  return RIYU_MAIL_SAVED.kinds;
+}
+function riyuMailSavedKinds() { return RIYU_MAIL_SAVED.kinds.slice(); }
+function riyuMailSavedMark(kind) { if (riyuIsMail(kind) && RIYU_MAIL_SAVED.kinds.indexOf(kind) < 0) RIYU_MAIL_SAVED.kinds.push(kind); }
+
 // ── 状态 / 统计 ──
 function riyuStatusInfo(status) {
   if (status === 'submitted') return { t: '已提交 · 待老师批复', c: '#b8860b', bg: '#fdf6e3' };
