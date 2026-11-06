@@ -176,6 +176,15 @@ function renderHub(){
 }
 function bindRoomAck(box){
   const myRole=(ROLE&&ROLE.role)||'';
+  const tg=box.querySelector('[data-roomtoggle]'); if(tg) tg.onclick=()=>{ window.__roomAlertOpen=!window.__roomAlertOpen; renderChangeAlerts(); };
+  const all=box.querySelector('[data-recheckall]'); if(all) all.onclick=async()=>{
+    const ids=[...new Set((CHANGELOG||[]).filter(l=>l.action==='session_room').map(l=>((Array.isArray(l.changes)?l.changes:[])[0]||{})).filter(x=>x.course_id&&!x.resolved_at).map(x=>String(x.course_id)))];
+    all.disabled=true; let ok=0, left=0;
+    for(let i=0;i<ids.length;i++){ all.textContent='核对中 '+(i+1)+'/'+ids.length; const r=await courseRoomSyncSafe(ids[i]); if(r) ok+=(r.resolved||[]).filter(v=>v.kind==='occupied').length; }
+    try{ await reloadAll(); }catch(e){}
+    left=(CHANGELOG||[]).filter(l=>l.action==='session_room' && !((l.changes||[])[0]||{}).resolved_at).length;
+    toast('已自动占用 '+ok+' 天；还有 '+left+' 条原教室仍被占'); renderChangeAlerts();
+  };
   box.querySelectorAll('[data-recheck]').forEach(b=>b.onclick=async()=>{
     const l=CHANGELOG.find(x=>String(x.id)===String(b.dataset.recheck)); if(!l) return;
     const x=(Array.isArray(l.changes)?l.changes:[])[0]||{};
@@ -203,8 +212,10 @@ function renderChangeAlerts(){
   const pending=(CHANGELOG||[]).filter(l=>l.action!=='session_room' && notAcked(l));
   // 单回改期后原教室被占：要人安排，逐条列出
   const roomAlerts=(CHANGELOG||[]).filter(l=>l.action==='session_room' && notAcked(l) && !((Array.isArray(l.changes)?l.changes:[])[0]||{}).resolved_at);
-  const roomHtml=roomAlerts.map(l=>{ const x=(Array.isArray(l.changes)?l.changes:[])[0]||{};
-    return `<div style="background:#fdecea;border:1px solid #e6b8b3;border-radius:8px;padding:8px 14px;margin-bottom:8px;font-size:13px;display:flex;gap:10px;align-items:center"><span style="flex:1">${esc(x.to||'')}</span><button class="sm" data-recheck="${l.id}">重新核对</button><button class="sm ghost" data-ackrm="${l.id}">知道了</button></div>`; }).join('');
+  const roomRows=roomAlerts.map(l=>{ const x=(Array.isArray(l.changes)?l.changes:[])[0]||{};
+    return `<div style="border-top:1px solid #e6b8b3;padding:6px 0;font-size:13px;display:flex;gap:10px;align-items:center"><span style="flex:1">${esc(x.to||'')}</span><button class="sm ghost" data-recheck="${l.id}">重新核对</button><button class="sm ghost" data-ackrm="${l.id}">知道了</button></div>`; }).join('');
+  const roomOpen=window.__roomAlertOpen?'block':'none';
+  const roomHtml=roomAlerts.length?`<div style="background:#fdecea;border:1px solid #e6b8b3;border-radius:8px;padding:8px 14px;margin-bottom:8px"><div style="font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1">有 <b>${roomAlerts.length}</b> 条单回改期的教室要安排（原教室当天被占）</span><button class="sm" data-recheckall="1">全部重新核对</button><button class="sm ghost" data-roomtoggle="1">${window.__roomAlertOpen?'收起':'展开'}</button></div><div id="roomAlertDetail" style="display:${roomOpen}">${roomRows}</div></div>`:'';
   if(!pending.length){ box.innerHTML=roomHtml; bindRoomAck(box); return; }
   // 按学科（类别）分组：反查课程的 category
   const catOf=(l)=>{
