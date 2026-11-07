@@ -222,6 +222,20 @@ function stSourceInit(s){
 
 // ── VIP 课程方案关联（在籍关联）──
 let stVipPlanList = [];   // 当前学生匹配到的方案
+let stVipPlanStu = null;  // 当前打开的学生
+// 学生的 VIP 方案：展开后看到每回内容和排期，能确认（待确认的）/ 修改内容 / 排期；界面和保存在 shared/vip-plan.js，和老师端同一套，变更日志署名「管理员」
+function stVppOpen(planId){
+  const p=stVipPlanList.find(x=>x.id===planId); if(!p) return;
+  document.getElementById('vppModal')?.remove();
+  const m=document.createElement('div');
+  m.id='vppModal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10001;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
+  m.innerHTML='<div id="vppBody" style="background:var(--surface,#fff);border-radius:6px;padding:14px 18px;max-width:1040px;width:100%;margin:auto"></div>';
+  document.body.appendChild(m);
+  const close=()=>{ document.getElementById('vppModal')?.remove(); if(stVipPlanStu) renderStudentVipPlans(stVipPlanStu); };
+  const host={ box:()=>document.getElementById('vppBody'), back:close, who:()=>'管理员', onDone:close };
+  if(p.status==='pending') vppOpenConfirm(p,host); else vppOpenSchedule(p,host);
+}
 async function renderStudentVipPlans(s) {
   const box = document.getElementById('st_vip_plan_section');
   const wrap = document.getElementById('st_vip_plan_wrap');
@@ -236,16 +250,17 @@ async function renderStudentVipPlans(s) {
   const name = (s.name || '').trim();
   // 按姓名取方案：已关联到本学生的 + 未关联的（可关联）
   const plans = await sb(`/rest/v1/vip_student_plans?student_name=eq.${encodeURIComponent(name)}&select=*&order=created_at.desc`).catch(() => []);
-  stVipPlanList = plans;
+  stVipPlanList = plans; stVipPlanStu = s;
   const linked = plans.filter(p => p.student_id === s.id);
   const avail = plans.filter(p => !p.student_id);
 
   const stLabel = { signed: '已签约', pending: '待老师确认', confirmed: '老师已确认' };
   const planLine = (p, mode) => {
     const hoursTxt = `${p.total_sessions || 0}回/${p.total_hours || 0}课时${(p.subject_hours && p.subject_hours > 0) ? '（含专业知识' + p.subject_hours + '）' : ''}`;
-    const btn = mode === 'linked'
+    const openBtn = `<button type="button" onclick="stVppOpen('${p.id}')" style="font-size:10px;background:none;border:1px solid var(--accent,#1a1814);color:var(--accent,#1a1814);border-radius:3px;padding:2px 8px;cursor:pointer">${p.status === 'pending' ? '确认方案' : '展开・排期'}</button>`;
+    const btn = (mode === 'linked' ? openBtn + ' ' : '') + (mode === 'linked'
       ? `<button type="button" onclick="unlinkVipPlan('${p.id}')" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:3px;padding:2px 8px;cursor:pointer;color:var(--text-3)">解除关联</button>`
-      : `<button type="button" onclick="linkVipPlan('${p.id}')" style="font-size:10px;background:var(--accent,#1a1814);color:#fff;border:none;border-radius:3px;padding:2px 10px;cursor:pointer">关联到该学生</button>`;
+      : `<button type="button" onclick="linkVipPlan('${p.id}')" style="font-size:10px;background:var(--accent,#1a1814);color:#fff;border:none;border-radius:3px;padding:2px 10px;cursor:pointer">关联到该学生</button>`);
     const delBtn = `<button type="button" onclick="deleteVipStudentPlan('${p.id}')" title="删除方案" style="font-size:10px;background:none;border:1px solid #e0b0a0;border-radius:3px;padding:2px 8px;cursor:pointer;color:#a33">删除</button>`;
     return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--surface,#fff);margin-bottom:5px">
       <div style="min-width:0"><span style="font-weight:600">${(typeof majorLabel === 'function' ? majorLabel(p.major) : p.major) || ''}</span>　<span style="color:var(--text-2)">${hoursTxt}</span>　<span style="color:var(--text-3);font-size:10px">${stLabel[p.status] || p.status}</span></div>
@@ -471,7 +486,8 @@ async function openStudentDetail(id){
     const { html, student:s } = await renderStudentDetailCard(id, { showProfileNotes:true, actionsHtml:`
       <button class="btn btn-outline btn-sm" onclick="closeModal('studentDetailModal');openStudentModal('${id}')">✏ 编辑档案</button>
       ${mgrPageAllowed('progress')?`<button class="btn btn-outline btn-sm" onclick="pgFromDetail('${id}')">📊 考学进度</button>`:''}
-      ${mgrPageAllowed('monthly')?`<button class="btn btn-outline btn-sm" onclick="openMonthlyReport('${id}',this.dataset.n)" data-n="">📅 月度学习情况</button>`:''}` });
+      ${mgrPageAllowed('monthly')?`<button class="btn btn-outline btn-sm" onclick="openMonthlyReport('${id}',this.dataset.n)" data-n="">📅 月度学习情况</button>`:''}
+      <button class="btn btn-outline btn-sm" onclick="focusOpenSummary('${id}')">📋 学生概要</button>` });
     if(!s){ box.innerHTML='<div style="font-size:12px;color:var(--text-3)">未找到该学生档案</div>'; return; }
     const cached=cachedStudents.find(x=>x.id===id);
     if(cached) Object.assign(cached,s);   // 顺便把缓存列表也刷成最新
@@ -603,10 +619,7 @@ async function renderSubmissionsView(mc){
     students:scoped,
     pass:s=>dmfFilter([s]).length>0,
     barHtml:()=>domMajorFilterHtml(DMF,"sbmRender()",scoped()),
-    openPlan:(sid,name,ctx)=>{   // 管理端没有计划书批注弹窗：单人模式打开该生并定位到计划书；返回时回到列表原样
-      const mc=document.getElementById('mainContent'), snap=pgsSnap(mc);
-      renderProgressPage(mc,sid,{section:'plan',back:{label:'返回学生提交',restore:async()=>{ progressViewMode='submissions'; if(ctx&&ctx.key) SBM.mark=ctx.key; await renderProgressPage(mc); pgsRestore(snap); }}});
-    },
+    openPlan:(sid,name)=>openTeacherDraftComment(sid,name),   // 和老师端同一个批复弹窗（shared/plan-review.js）
   });
 }
 

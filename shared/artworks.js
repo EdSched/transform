@@ -57,6 +57,9 @@ async function awMonthWorks(studentId, ym) {
   return out;
 }
 
+// 署名：老师端 = 老师名，管理端 = 「管理员」
+function awMe() { return (typeof teacherData !== 'undefined' && teacherData && teacherData.name) || (typeof teacherName !== 'undefined' && teacherName) || '管理员'; }
+
 // ── 批改（与作业批改同一结构，写入 art_works.feedbacks）──
 function awFeedbackFormHtml(w, me) {
   const mine = hwFeedbacks(w).filter(f => f.by === me).pop() || null;
@@ -120,7 +123,7 @@ async function awTSubmit(sid) {
       imgs.push(await awUploadOne(awT.pending[i].file, s.id, 'teacher-files'));
     }
     const row = { id: `aw-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, student_id: s.id, student_name: s.name, major: s.major, week_start: wk.start,
-      image_urls: imgs, source: 'teacher', uploaded_by: (typeof teacherName !== 'undefined' && teacherName) || '', feedbacks: [] };
+      image_urls: imgs, source: 'teacher', uploaded_by: awMe(), feedbacks: [] };
     const r = await sb('/rest/v1/art_works', 'POST', row);
     (awT.works = awT.works || []).unshift((r || [])[0] || row);
     awT.pending.forEach(p => URL.revokeObjectURL(p.preview));
@@ -149,7 +152,7 @@ function awTRender() {
       <span style="font-size:12px;color:var(--text-2)">${isCur ? '本周作业' : '作业'} · ${wk.label}</span>
       <span style="margin-left:auto;display:flex;gap:4px"><button onclick="awTWeekGo(-1)" style="${btn}">◀ 上一周</button>${isCur ? '' : `<button onclick="awT.week=weekRange().start;awT.openId=null;awTLoad()" style="${btn}">本周</button>`}<button onclick="awTWeekGo(1)" style="${btn}">下一周 ▶</button></span>
     </div>
-    ${!awT.students.length ? '<div style="font-size:11px;color:var(--text-3)">你的可见范围内没有学部美术学生</div>' : `
+    ${!awT.students.length ? '<div style="font-size:11px;color:var(--text-3)">可见范围内没有学部美术学生</div>' : `
     <label style="display:block;text-align:center;font-size:15px;font-weight:600;color:#fff;background:var(--accent,#b8953a);border-radius:8px;padding:14px;cursor:pointer;margin-bottom:8px">📷 拍摄 / 选择作品照片
       <input type="file" accept="image/*" capture="environment" multiple onchange="awTPick(this)" style="display:none"></label>
     ${awT.flash ? `<div style="font-size:11px;color:var(--ok,#2a9e6a);margin-bottom:6px">${awEsc(awT.flash)}</div>` : ''}
@@ -185,8 +188,8 @@ function awTDetailHtml(w) {
       <span id="aw_add_tip_${awEsc(w.id)}" style="font-size:10px;color:var(--text-3)"></span>
       <span onclick="awDelWork('${awEsc(w.id)}')" style="margin-left:auto;font-size:11px;color:var(--danger,#b03a2e);cursor:pointer">删除这条作品</span>
     </div>
-    ${hwFeedbackCardsHtml(w, { mine: (typeof teacherData !== 'undefined' && teacherData && teacherData.name) || '' })}
-    ${awFeedbackFormHtml(w, (typeof teacherData !== 'undefined' && teacherData && teacherData.name) || '')}
+    ${hwFeedbackCardsHtml(w, { mine: awMe() })}
+    ${awFeedbackFormHtml(w, awMe())}
   </div>`;
 }
 
@@ -235,7 +238,7 @@ async function awSaveFeedback(id) {
   const g = k => ((document.getElementById(k) || {}).value || '').trim();
   const know = g('aw_fb_know'), att = g('aw_fb_att'), sug = g('aw_fb_sug'), score = g('aw_fb_score');
   if (!know && !att && !sug) { alert('请至少填写一项评价'); return; }
-  const me = (typeof teacherData !== 'undefined' && teacherData && teacherData.name) || '老师', now = new Date().toISOString();
+  const me = awMe(), now = new Date().toISOString();
   const list = hwFeedbacks(w).map(f => Object.assign({}, f));
   let mine = null;
   for (let i = list.length - 1; i >= 0; i--) if (list[i].by === me) { mine = list[i]; break; }

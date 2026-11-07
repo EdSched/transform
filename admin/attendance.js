@@ -136,6 +136,7 @@ async function toggleInclassPanel(sessionId){
       <span style="font-size:11px;color:var(--text-2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${admEsc(String(x.text||'').slice(0,60))}</span>
       <span style="font-size:9px;color:var(--text-3)">${fmtJst(x.submitted_at)}</span>
       ${fb?'<span style="font-size:9px;color:var(--ok)">已批改</span>':'<span style="font-size:9px;color:var(--warn,#b8860b)">待批改</span>'}
+      <button onclick="admIcReview('${sessionId}','${x.id}')" style="font-size:10px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:2px;padding:2px 9px;cursor:pointer;font-family:inherit">${fb?'查看・批改':'批改'}</button>
     </div>`;}).join('')}</div>`:'<div style="font-size:11px;color:var(--text-3)">还没有人提交</div>'}
   ${missing.length?`<div style="font-size:11px;color:var(--warn,#b8860b);margin-top:8px">未交 ${missing.length} 人：${missing.map(m=>admEsc(m.name)).join('、')}</div>`:(subs.length?'<div style="font-size:11px;color:var(--ok);margin-top:8px">必修学生全部已交</div>':'')}`;
 }
@@ -200,6 +201,7 @@ function renderAttendancePage(mc){
       </div>
     </div>
   </div>
+  ${admAwBarHtml()}
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:14px;margin-bottom:16px">
     <div style="display:flex;gap:16px;flex-wrap:wrap">
       <div>
@@ -234,6 +236,19 @@ function renderAttendancePage(mc){
   ${attTypeFilter||attPeriodFilter||attCampusFilter||attAttFilter ? renderSessionList(filteredCourses) : ''}`;
   if(!Object.keys(attHwCount).length) attLoadHwCounts();
   if(!attIcLoaded) attLoadIcCounts();
+  if(admAwOpen) admAwMount();
+}
+
+// 学部美术「作业收集」（shared/artworks.js，和老师端同一套）：替学生上传 / 加减照片 / 删除 / 写评语；署名「管理员」
+// 打开页面时折叠，点开才读；学生范围 = 管理端视角内的在籍学生（再筛学部美术）
+let admAwOpen=false;
+function admAwToggle(){ admAwOpen=!admAwOpen; renderAttendancePage(document.getElementById('mainContent')); }
+function admAwMount(){
+  if(!document.getElementById('aw_admin_box')) return;
+  awTeacherMount('aw_admin_box',(cachedStudents||[]).filter(s=>(s.status||'active')==='active'&&scopeStudent(s)&&studentInCurrentView(s)));
+}
+function admAwBarHtml(){
+  return `<div style="margin-bottom:12px"><div class="filter-chip${admAwOpen?' active':''}" onclick="admAwToggle()" style="display:inline-block">学部美术 · 作业收集${admAwOpen?' ▲':' ▼'}</div>${admAwOpen?'<div id="aw_admin_box"></div>':''}</div>`;
 }
 
 // 课程标题栏里的出席属性 chip：点了立即保存
@@ -450,12 +465,28 @@ async function loadAdminHwPanel(sessionId) {
       <span style="font-size:9px;color:var(--text-3)">${(x.answers||[]).filter(a=>a.text||(a.images||[]).length).length} 处作答${x.whole_file_url?' · 📎附件':''}</span>
       ${hwFeedbacks(x).length?`<span style="font-size:9px;color:var(--ok)">✓ 已批改${hwGradedBy(x).length?`（${admEsc(hwGradedBy(x).join('、'))}）`:''}</span>`:'<span style="font-size:9px;color:var(--warn,#b8860b)">待批改</span>'}
       <span style="margin-left:auto;display:flex;gap:4px">
+        <button onclick="admHwReview('${sessionId}','${x.id}')" style="font-size:10px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:2px;padding:2px 9px;cursor:pointer;font-family:inherit">${hwFeedbacks(x).length?'查看・批改':'批改'}</button>
         <button onclick="admHwPrint('${sessionId}','${x.id}')" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 9px;cursor:pointer;font-family:inherit">打印</button>
         <button onclick="admHwWord('${sessionId}','${x.id}')" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 9px;cursor:pointer;font-family:inherit">Word</button>
       </span>
     </div>`).join('')}
   </div>`;
 }
+
+// ══ admin 侧批改（弹窗和表单在 shared/homework-review.js，和老师端同一套；署名「管理员」，写进同一个 feedbacks[]） ══
+function admHwReview(sessionId, subId) {
+  const s = cachedSessions.find(x => x.id === sessionId) || {};
+  const sub = (admHwSubs[sessionId] || []).find(x => x.id === subId); if (!sub) return;
+  hwrOpenModal('hw', s, sub, () => loadAdminHwPanel(sessionId));
+}
+function admIcReview(sessionId, subId) {
+  const s = cachedSessions.find(x => x.id === sessionId) || {};
+  const sub = (attIcSubs[sessionId] || []).find(x => x.id === subId); if (!sub) return;
+  hwrOpenModal('ic', s, sub, () => { const r = document.getElementById(`admin_ic_panel_${sessionId}`); if (r) r.style.display = 'none'; toggleInclassPanel(sessionId); });
+}
+// 批改表单里的「保存」按钮调用这两个名字（老师端在 teacher-homework.js 里有自己的）
+function thwSaveFeedback() { return hwrModalSave(); }
+function thwIcSave() { return hwrModalSave(); }
 
 // ══ admin 侧作业整合与导出（与老师端同一套排版） ══
 let admHwSubs = {};
