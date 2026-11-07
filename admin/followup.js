@@ -1,8 +1,7 @@
 // 管理端「面谈跟进」：和老师端同一套（shared/follow-up.js），这里只做管理端自己的筛选和入口。
-// 筛选：搜索（最上面，输入时不受其他筛选限制）· 领域 / 专业 / 来源（DMF，shared/constants.js）· 状态；各自独立、可以组合。
+// 筛选：搜索（最上面，输入时不受其他筛选限制）· 领域 / 专业 / 来源（DMF，shared/constants.js）；各自独立、可以组合。
 // 打开时不列学生：多个领域时要先选领域 / 专业，或者搜索姓名。
-const FUA = { q: '', status: 'active', shown: 30 };
-const FUA_STATUS = [['active', '在籍'], ['stopped', '停课'], ['graduated', '已合格'], ['', '全部']];
+const FUA = { q: '', shown: 30 };
 
 function fuaPool() { return (typeof cachedStudents !== 'undefined' ? cachedStudents : []).filter(s => studentInCurrentView(s)); }
 function fuaNeedPick() {
@@ -10,15 +9,14 @@ function fuaNeedPick() {
 }
 function fuaFilter(list) {
   const q = FUA.q.trim();
-  if (q) return (list || []).filter(s => matchesStudentSearch(s, q));
-  return dmfFilter(list || []).filter(s => !FUA.status || (s.status || 'active') === FUA.status);
+  const act = fuOnlyActive(list);   // 只看在籍，搜索也只在在籍里搜
+  if (q) return act.filter(s => matchesStudentSearch(s, q));
+  return dmfFilter(act);
 }
 function fuaTopHtml() {
   const pool = fuaPool();
-  const chips = FUA_STATUS.map(([k, l]) => `<div class="filter-chip${FUA.status === k ? ' active' : ''}" onclick="FUA.status='${k}';fuaRefresh()">${l}</div>`).join('');
   return `<div class="search-bar"><input id="fua_q" placeholder="搜索学生（汉字 / 拼音首字母）…" value="${fuEsc(FUA.q)}" oninput="searchBox(this,fuaSearch)"></div>
-    ${domMajorFilterHtml(DMF, 'fuaRefresh()', pool, { also: s => !FUA.status || (s.status || 'active') === FUA.status })}
-    <div class="filter-row"><span style="font-size:10px;color:var(--text-3);min-width:30px;align-self:center">状态</span>${chips}</div>`;
+    ${domMajorFilterHtml(DMF, 'fuaRefresh()', pool, { also: s => !s.status || s.status === 'active' })}`;
 }
 const fuaIsFocus = () => curPage === 'focus';
 function fuaDraw(listOnly) { return fuaIsFocus() ? focusRender() : (listOnly ? tmRenderList() : tmRenderShell()); }
@@ -34,6 +32,7 @@ fuSetHost({
   top: fuaTopHtml,
   need: () => fuaNeedPick() ? '<div class="empty" style="padding:40px">请先选择领域或专业，或在上面搜索学生姓名</div>' : '',
   filter: fuaFilter,
+  query: () => FUA.q,
   slice: l => l.slice(0, FUA.shown),
   more: n => n <= FUA.shown ? '' : `<div onclick="fuaMore()" style="text-align:center;padding:10px;margin:6px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">显示更多（还有 ${n - FUA.shown} 人）</div>`,
   reset: () => { FUA.shown = 30; },
