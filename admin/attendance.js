@@ -201,6 +201,7 @@ function renderAttendancePage(mc){
       </div>
     </div>
   </div>
+  ${admAwBarHtml()}
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:14px;margin-bottom:16px">
     <div style="display:flex;gap:16px;flex-wrap:wrap">
       <div>
@@ -235,6 +236,19 @@ function renderAttendancePage(mc){
   ${attTypeFilter||attPeriodFilter||attCampusFilter||attAttFilter ? renderSessionList(filteredCourses) : ''}`;
   if(!Object.keys(attHwCount).length) attLoadHwCounts();
   if(!attIcLoaded) attLoadIcCounts();
+  if(admAwOpen) admAwMount();
+}
+
+// 学部美术「作业收集」（shared/artworks.js，和老师端同一套）：替学生上传 / 加减照片 / 删除 / 写评语；署名「管理员」
+// 打开页面时折叠，点开才读；学生范围 = 管理端视角内的在籍学生（再筛学部美术）
+let admAwOpen=false;
+function admAwToggle(){ admAwOpen=!admAwOpen; renderAttendancePage(document.getElementById('mainContent')); }
+function admAwMount(){
+  if(!document.getElementById('aw_admin_box')) return;
+  awTeacherMount('aw_admin_box',(cachedStudents||[]).filter(s=>(s.status||'active')==='active'&&scopeStudent(s)&&studentInCurrentView(s)));
+}
+function admAwBarHtml(){
+  return `<div style="margin-bottom:12px"><div class="filter-chip${admAwOpen?' active':''}" onclick="admAwToggle()" style="display:inline-block">学部美术 · 作业收集${admAwOpen?' ▲':' ▼'}</div>${admAwOpen?'<div id="aw_admin_box"></div>':''}</div>`;
 }
 
 // 课程标题栏里的出席属性 chip：点了立即保存
