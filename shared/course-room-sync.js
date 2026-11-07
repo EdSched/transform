@@ -3,7 +3,8 @@
 //
 // 规则（排课只管教室，日期归管理端）：
 //   · 每一回都要被这门课的占用覆盖：同一天有按周占用（那天没被释放）或临时占用，且时间包住这一回的上课时间
-//   · 按周占用落在、但没有对应单回的日子 → 写进 auto_off_dates（每次整体重算，人工释放的 manual_off_dates 不碰）
+//   · （已停用，开关 CRS_AUTO_RELEASE=false）按周占用落在、但没有对应单回的日子 → 写进 auto_off_dates。核对不再改每周占用的释放日期
+//   · 每周占用的时间（和只有一个上课星期时的星期）跟着课程走：核对开头 crsAlignWeekly 对齐；对不上/冲突的写 session_room 提醒
 //   · 没被覆盖的单回 → 在原教室建一条临时占用（kind:'course', recurrence:'once', auto_sync:true）；
 //     原教室那天被占，或这门课分不出用哪间教室 → 不硬占，往 sched_change_log 写一条 session_room 提醒
 //   · 过期的自动临时占用（单回没了 / 改了日期 / 已被按周占用覆盖）删掉
@@ -11,6 +12,8 @@
 //   · 以上全部只处理「今天以后」的日子；过去的日子不新建、不改自动释放（过期临时占用只清单回已没了的）
 
 const CRS_ADMIN = () => typeof sbAll === 'function';
+// 按周占用的「自动释放」总开关：false = 核对不再往 auto_off_dates 里写任何日子（之前反复把排好的教室释放掉）
+const CRS_AUTO_RELEASE = false;
 async function crsGet(table, q) { return CRS_ADMIN() ? sb(`/rest/v1/${table}?${q}`, 'GET', null, { cache: 'no-store' }) : sbGet(table, q); }
 // 全表读取（自动分页，查询里不要带 limit）
 async function crsGetAll(table, q) { return CRS_ADMIN() ? sbAll(`/rest/v1/${table}?${q}`, { cache: 'no-store' }) : sbGet(table, q); }
@@ -122,9 +125,10 @@ async function crsResolveReminders(courseId) {
 
 // 一门课的完整核对 = 先释放（第 1、2 步），再补占（第 3 步）
 async function courseRoomSyncCore(courseId) {
+  const r0 = await crsAlignWeekly(courseId);
   const r1 = await crsRelease(courseId);
   const r2 = await crsFill(courseId);
-  return { released: r1.released, removed: r1.removed, created: r2.created, reminders: r2.reminders, notes: r1.notes.concat(r2.notes) };
+  return { aligned: r0.aligned, released: r1.released, removed: r1.removed, created: r2.created, reminders: r2.reminders + r0.reminders, notes: r0.notes.concat(r1.notes, r2.notes) };
 }
 
 // 好几门课一起核对：先全部释放，再全部补占，结果不受先后顺序影响。返回 { id: 结果 }，失败的课对应 { error }
@@ -133,14 +137,14 @@ async function courseRoomSyncMany(ids, onProgress) {
   const res = {};
   let n = 0;
   for (const id of list) {
-    try { res[id] = await crsRelease(id); } catch (e) { res[id] = { error: e && e.message ? e.message : String(e) }; console.warn('释放核对失败', id, e); }
+    try { const a0 = await crsAlignWeekly(id); res[id] = await crsRelease(id); res[id].aligned = a0.aligned; res[id].reminders = a0.reminders; res[id].notes = a0.notes.concat(res[id].notes); } catch (e) { res[id] = { error: e && e.message ? e.message : String(e) }; console.warn('释放核对失败', id, e); }
     if (onProgress) onProgress(++n, list.length * 2, id);
   }
   for (const id of list) {
     if (!res[id].error) {
       try {
         const r1 = res[id], r2 = await crsFill(id);
-        const out = { released: r1.released, removed: r1.removed, created: r2.created, reminders: r2.reminders, notes: r1.notes.concat(r2.notes) };
+        const out = { aligned: r1.aligned || 0, released: r1.released, removed: r1.removed, created: r2.created, reminders: r2.reminders + (r1.reminders || 0), notes: r1.notes.concat(r2.notes) };
         try { out.resolved = await crsResolveReminders(id); } catch (e) { out.resolved = []; }
         res[id] = out;
       } catch (e) { res[id] = { error: e && e.message ? e.message : String(e) }; console.warn('补占核对失败', id, e); }
@@ -150,7 +154,84 @@ async function courseRoomSyncMany(ids, onProgress) {
   return res;
 }
 
-// 第 1、2 步：清过期临时占用、重算按周占用的自动释放
+// 课程的上课星期 → [1..7]（周日=7）。认 "周六" / "6" / "星期六" / "2,4" / "周二/周四"
+function crsParseWd(str) {
+  const M = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 日: 7, 天: 7, 末: 6 };
+  const out = new Set();
+  String(str == null ? '' : str).split(/[\/、,，\s;；]+/).forEach(x => {
+    x = x.trim().replace(/^(周|星期|礼拜)/, ''); if (!x) return;
+    if (/^[0-7]$/.test(x)) out.add(x === '0' ? 7 : Number(x)); else if (M[x]) out.add(M[x]);
+  });
+  return [...out].sort((a, b) => a - b);
+}
+
+// 第 0 步：每周占用的时间（和星期）跟着课程走。时间归管理端（courses.time_range），排课只管教室。
+// 课程只有一个上课星期、且只有一条每周占用 → 星期也跟着改；有好几个星期 → 只改时间，星期对不上的写提醒。
+// 同教室同时段和别的占用冲突：照改，同时写提醒（不能因为冲突就不改，否则又对不上）。
+async function crsAlignWeekly(courseId) {
+  const out = { aligned: 0, reminders: 0, notes: [] };
+  const cid = encodeURIComponent(courseId);
+  const co = (await crsGet('courses', `select=id,name,time_range,weekdays,sched_merge_group&id=eq.${cid}&limit=1`))[0];
+  if (!co) return out;
+  const sp = timeRangesSpan(co.time_range || '');
+  const bks = (await crsGet('sched_bookings', `select=*&kind=eq.course&course_id=eq.${cid}&recurrence=eq.weekly&limit=200`)).filter(b => b.status !== 'rejected');
+  if (!bks.length) return out;
+  const wds = crsParseWd(co.weekdays);
+  const today = crsToday();
+  const ownIds = new Set([String(courseId)]);
+  if (co.sched_merge_group) { try { (await crsGet('courses', `select=id&sched_merge_group=eq.${encodeURIComponent(co.sched_merge_group)}&limit=200`)).forEach(x => ownIds.add(String(x.id))); } catch (e) { /* 忽略 */ } }
+  const remind = async (key, date, msg, reason) => {
+    try {
+      const old = await crsGet('sched_change_log', 'select=changes&action=eq.session_room&order=created_at.desc&limit=500');
+      if ((old || []).some(l => (l.changes || []).some(x => x && x.key === key && !x.resolved_at))) return false;
+    } catch (e) { /* 读不到就照写 */ }
+    const role = (typeof ROLE !== 'undefined' && ROLE) ? ROLE : null;
+    await crsInsert('sched_change_log', {
+      course_id: null, course_name: co.name, actor_role: (role && role.role) || 'admin', actor_label: (role && (role.label || role.role)) || '课程时间对齐',
+      action: 'session_room', acked_by: '',
+      changes: [{ key, field: 'session_room', label: '每周占用对齐', from: '', to: msg, course_id: co.id, session_id: '', date, reason }],
+    });
+    return true;
+  };
+  const single = wds.length === 1 && bks.length === 1;
+  for (const b of bks) {
+    const patch = {};
+    if (sp.start && sp.end && (crsT5(b.start_time) !== sp.start || crsT5(b.end_time) !== sp.end)) { patch.start_time = sp.start; patch.end_time = sp.end; }
+    if (wds.length) {
+      if (single) { if (Number(b.weekday) !== wds[0]) patch.weekday = wds[0]; }
+      else if (!wds.includes(Number(b.weekday))) {
+        const k = 'wk-wd|' + b.id + '|' + wds.join('');
+        if (await remind(k, today, `《${co.name}》课程的上课星期是「${co.weekdays}」，但教室占用 #${b.id} 在${crsWeekdayName(crsAddDays(today, (Number(b.weekday) - crsWeekday(today) + 7) % 7))}，请安排`, '星期对不上')) out.reminders++;
+        out.notes.push(`占用 #${b.id} 的星期和课程不一致，已写提醒`);
+      }
+    }
+    if (!Object.keys(patch).length) continue;
+    await crsPatch('sched_bookings', b.id, patch);
+    Object.assign(b, patch);
+    out.aligned++;
+    out.notes.push(`每周占用 #${b.id} 已对齐课程：${patch.weekday ? crsWeekdayName(crsAddDays(today, (patch.weekday - crsWeekday(today) + 7) % 7)) + ' ' : ''}${crsT5(b.start_time)}-${crsT5(b.end_time)}`);
+    // 改完看一眼同教室有没有冲突（只提醒，不回退）
+    if (b.room_id == null || b.room_id === '') continue;
+    try {
+      const pool = (await crsGet('sched_bookings', `select=*&room_id=eq.${encodeURIComponent(b.room_id)}&status=neq.rejected&limit=5000`))
+        .filter(x => !(ownIds.has(String(x.course_id)) && x.kind === 'course'));
+      let hitDate = '', hit = [];
+      for (let d = (b.start_date && b.start_date > today ? b.start_date : today), g = 0; g < 400 && (!b.end_date || d <= b.end_date); d = crsAddDays(d, 1), g++) {
+        if (!crsWeeklyOn(b, d, true)) continue;
+        hit = pool.filter(x => crsOnDate(x, d) && crsOverlap(b.start_time, b.end_time, x.start_time, x.end_time));
+        if (hit.length) { hitDate = d; break; }
+      }
+      if (hit.length) {
+        const who = hit.map(x => `${x.title || x.entry_name || '占用'}（${x.user_name || '未填占用人'}，${crsT5(x.start_time)}-${crsT5(x.end_time)}，${x.recurrence === 'weekly' ? '每周固定' : '临时'}）`).join('、');
+        if (await remind('wk-time|' + b.id + '|' + crsT5(b.start_time) + crsT5(b.end_time), hitDate, `《${co.name}》每周占用按课程新时间 ${crsT5(b.start_time)}-${crsT5(b.end_time)} 对齐后，${hitDate.slice(5).replace('-', '/')} 起和 ${who} 冲突，请安排`, '对齐后同教室冲突')) out.reminders++;
+        out.notes.push(`对齐后和别的占用冲突（${hitDate.slice(5)} 起），已写提醒`);
+      }
+    } catch (e) { console.warn('对齐后冲突检查失败', courseId, e); }
+  }
+  return out;
+}
+
+// 第 1、2 步：清过期临时占用（第 2 步按周占用自动释放已停用）
 async function crsRelease(courseId) {
   const out = { released: 0, removed: 0, notes: [] };
   const cid = encodeURIComponent(courseId);
@@ -179,8 +260,8 @@ async function crsRelease(courseId) {
     if (stale) { await crsDelete('sched_bookings', t.id); out.removed++; }
   }
 
-  // 2) 按周占用的自动释放：整体重算（没有结束日期就用最后一回的日期，没有开始日期从今天起）
-  for (const b of weekly) {
+  // 2) 按周占用的自动释放：整体重算。已停用（CRS_AUTO_RELEASE=false）：核对不再改每周占用的 auto_off_dates
+  if (CRS_AUTO_RELEASE) for (const b of weekly) {
     const off = [];
     const before = crsSplit(b.auto_off_dates);
     const keepPast = before.filter(d => d < today);   // 过去的自动释放原样保留
@@ -350,8 +431,7 @@ async function courseRoomReport(courseId) {
 async function courseRoomSyncSafe(courseId) {
   let r = null;
   try { r = await courseRoomSync(courseId); } catch (e) { console.warn('单回教室核对失败', courseId, e); window.__crsLastError = e && e.message ? e.message : String(e); }
-  // 管理端：这门课改期可能让出别的课等着的教室（不阻塞）
-  if (CRS_ADMIN() && !CRS_RETRYING) courseRoomRetryPending().catch(() => {});
+  // 不再顺带自动补占别的课（courseRoomRetryPending 只在人点按钮时才跑）
   return r;
 }
 
@@ -374,13 +454,5 @@ async function courseRoomRetryPending() {
 
 // 排课页面用：占用被删除 / 挪动 / 释放后，后台补占，有补占就回调 onFilled(天数)
 function courseRoomWatchBookings(onFilled) {
-  const KEYS = ['booking_date', 'start_time', 'end_time', 'room_id', 'status', 'manual_off_dates', 'end_date'];
-  let timer = null;
-  const kick = () => {
-    clearTimeout(timer);
-    timer = setTimeout(async () => { const n = await courseRoomRetryPending(); if (n && onFilled) onFilled(n); }, 800);
-  };
-  const od = window.sbDelete, ou = window.sbUpdate;
-  window.sbDelete = async function (table, id) { const r = await od.apply(this, arguments); if (table === 'sched_bookings' && !CRS_RETRYING) kick(); return r; };
-  window.sbUpdate = async function (table, id, patch) { const r = await ou.apply(this, arguments); if (table === 'sched_bookings' && !CRS_RETRYING && patch && KEYS.some(k => k in patch)) kick(); return r; };
+  // 已停用：不再监听占用变动后自动补占（只有人点「核对」才跑）。保留函数名，免得各页面调用报错。
 }

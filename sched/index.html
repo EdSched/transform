@@ -39,7 +39,7 @@
 <script src="common.js?v=20270117"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270116"></script>
-<script src="../shared/course-room-sync.js?v=20261115"></script>
+<script src="../shared/course-room-sync.js?v=20261118"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], ROLE=null;
@@ -163,10 +163,7 @@ function renderHub(){
     }
   }catch(e){}
   renderChangeAlerts();
-  if(!window.__roomRetryStarted){ window.__roomRetryStarted=true;
-    courseRoomWatchBookings(async n=>{ try{ await reloadAll(); }catch(e){} renderChangeAlerts(); toast('已自动补占 '+n+' 天'); });
-    courseRoomRetryPending().then(async n=>{ if(n){ try{ await reloadAll(); }catch(e){} renderChangeAlerts(); toast('已自动补占 '+n+' 天'); } }).catch(()=>{});
-  }
+  // 打开页面不再自动核对 / 补占：只有人点「核对单回和教室」等按钮才跑
   const pend = BOOKINGS.filter(b=>b.status==='pending').length;
   el('hubCards').innerHTML = visibleCards().map(([k,ic,nm,desc])=>{
     const badge = (k==='pending'&&pend)?` <span class="badge b-warn">${pend}</span>`:'';
@@ -553,7 +550,7 @@ function tabAssign(){
         '<option value="">全部</option><option value="todo">未排</option><option value="done">已排</option></select></div>'+
       '<div class="field"><label>方式</label><select id="af_kind"><option value="">全部</option><option value="online">线上课</option><option value="offline">线下课</option></select></div>'+
       '<div class="field"><label>&nbsp;</label><span class="muted" id="af_count"></span></div>'+
-      '<div class="field"><label>&nbsp;</label><button class="ghost sm" id="af_crsync" title="管理端改了单回日期/休讲后，让教室占用跟着走">核对单回和教室</button></div>'+
+      '<div class="field"><label>&nbsp;</label><button class="ghost sm" id="af_crsync" title="只补临时占用、让每周占用的时间跟着课程走，不改每周占用的释放日期">核对单回和教室</button></div>'+
     '</div>'+
     '<div style="display:flex;gap:6px;margin-bottom:10px;align-items:flex-end;flex-wrap:wrap">'+
       '<button type="button" class="ghost sm asview" data-v="day">按周排课</button>'+
@@ -938,7 +935,7 @@ async function crsVerifyAll(){
   const ids=[...new Set(list.filter(c=>BOOKINGS.some(b=>isWeeklyCourseBk(b)&&String(b.course_id)===String(c.id))).map(c=>String(c.id)))];
   if(!ids.length){ toast('当前显示的课里没有已排教室的'); return; }
   const btn=el('af_crsync'); if(btn){ btn.disabled=true; btn.textContent='核对中 0/'+ids.length; }
-  const tot={released:0,created:0,removed:0,reminders:0}; let fail=0; const detail=[];
+  const tot={aligned:0,created:0,removed:0,reminders:0}; let fail=0; const detail=[];
   const _res=await courseRoomSyncMany(ids,(i,t)=>{ if(btn) btn.textContent='核对中 '+i+'/'+t; });
   for(const id of ids){
     const cn=((COURSES||[]).find(c=>String(c.id)===id)||{}).name||id, r=_res[id]||{};
@@ -948,7 +945,7 @@ async function crsVerifyAll(){
   if(btn){ btn.disabled=false; btn.textContent='核对单回和教室'; }
   await reloadAll(); renderAssignView();
   const _n=new Date();
-  alert('核对了 '+ids.length+' 门课（只处理今天（'+(_n.getMonth()+1)+'/'+_n.getDate()+'）以后的日子）：\n释放教室 '+tot.released+' 天\n临时占用 '+tot.created+' 天\n清掉过期临时占用 '+tot.removed+' 条\n需要人处理 '+tot.reminders+' 条（见排课首页提醒）'+(fail?('\n失败 '+fail+' 门'):'')+(detail.length?('\n\n明细：\n'+detail.slice(0,30).join('\n')):''));
+  alert('核对了 '+ids.length+' 门课（只处理今天（'+(_n.getMonth()+1)+'/'+_n.getDate()+'）以后的日子）：\n每周占用时间对齐课程 '+tot.aligned+' 条\n新补临时占用 '+tot.created+' 天\n清掉过期临时占用 '+tot.removed+' 条\n需要人处理 '+tot.reminders+' 条（见排课首页提醒）'+(fail?('\n失败 '+fail+' 门'):'')+(detail.length?('\n\n明细：\n'+detail.slice(0,30).join('\n')):''));
 }
 /* 某门课今天以后的上课日（按周占用 + 临时占用），用于「调整某一天」 */
 function adjustDayEntries(group){
