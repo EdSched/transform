@@ -200,6 +200,19 @@ function bindRoomAck(box){
     window.__roomWhy=window.__roomWhy||{}; window.__roomWhy[l.id]=lines.length?lines:['当天没有查到冲突，请再点一次核对'];
     window.__roomAlertOpen=true; renderChangeAlerts();
   });
+  const ackAll=box.querySelector('[data-ackall]'); if(ackAll) ackAll.onclick=async()=>{
+    const _t=new Date().toISOString().slice(0,10);
+    const rows=(CHANGELOG||[]).filter(l=>{ const x=(Array.isArray(l.changes)?l.changes:[])[0]||{}; const a=(l.acked_by||'').split(',').map(s=>s.trim()).filter(Boolean); return l.action==='session_room' && !a.includes(myRole) && !x.resolved_at && (x.date||'')>=_t; });
+    if(!rows.length) return;
+    if(!confirm('把当前列表里的 '+rows.length+' 条教室提醒全部标为「知道了」？\n（只是不再提醒，不会占用教室；之后同一天再出问题仍会重新提醒）')) return;
+    ackAll.disabled=true; let fail=0;
+    for(const l of rows){
+      const a=(l.acked_by||'').split(',').map(s=>s.trim()).filter(Boolean); a.push(myRole);
+      try{ await sbUpdate('sched_change_log', l.id, {acked_by:a.join(',')}); l.acked_by=a.join(','); }catch(e){ fail++; }
+    }
+    toast(fail?('已处理 '+(rows.length-fail)+' 条，'+fail+' 条失败'):'已全部标为知道了');
+    renderChangeAlerts();
+  };
   box.querySelectorAll('[data-ackrm]').forEach(b=>b.onclick=async()=>{
     const l=CHANGELOG.find(x=>String(x.id)===String(b.dataset.ackrm)); if(!l) return;
     const acked=(l.acked_by||'').split(',').map(s=>s.trim()).filter(Boolean);
@@ -241,7 +254,7 @@ function renderChangeAlerts(){
     const whyHtml=why?`<div style="margin-top:4px;padding:6px 10px;background:#fff;border-radius:6px;font-size:12px;line-height:1.7">${why.map(t=>esc(t)).join('<br>')}</div>`:'';
     return `<div style="border-top:1px solid #e6b8b3;padding:6px 0;font-size:13px"><div style="display:flex;gap:10px;align-items:center"><span style="flex:1">${esc(x.to||'')}</span><button class="sm ghost" data-recheck="${l.id}">重新核对</button><button class="sm ghost" data-ackrm="${l.id}">知道了</button></div>${whyHtml}</div>`; }).join('');
   const roomOpen=window.__roomAlertOpen?'block':'none';
-  const roomHtml=roomAlerts.length?`<div style="background:#fdecea;border:1px solid #e6b8b3;border-radius:8px;padding:8px 14px;margin-bottom:8px"><div style="font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1">有 <b>${roomAlerts.length}</b> 条单回改期的教室要安排（原教室当天被占）</span><button class="sm" data-recheckall="1">全部重新核对</button><button class="sm ghost" data-roomtoggle="1">${window.__roomAlertOpen?'收起':'展开'}</button></div><div id="roomAlertDetail" style="display:${roomOpen}">${roomRows}</div></div>`:'';
+  const roomHtml=roomAlerts.length?`<div style="background:#fdecea;border:1px solid #e6b8b3;border-radius:8px;padding:8px 14px;margin-bottom:8px"><div style="font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1">有 <b>${roomAlerts.length}</b> 条单回改期的教室要安排（原教室当天被占）</span><button class="sm" data-recheckall="1">全部重新核对</button><button class="sm ghost" data-ackall="1">全部知道了</button><button class="sm ghost" data-roomtoggle="1">${window.__roomAlertOpen?'收起':'展开'}</button></div><div id="roomAlertDetail" style="display:${roomOpen}">${roomRows}</div></div>`:'';
   const qHtml=window.__crsqHtml||(window.__crsqHtml=crsQueryBox());
   if(!pending.length){ box.innerHTML=roomHtml+qHtml; bindRoomAck(box); bindCrsQuery(box); return; }
   // 按学科（类别）分组：反查课程的 category
