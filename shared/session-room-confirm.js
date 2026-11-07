@@ -84,8 +84,12 @@ async function srmOpen(opts) {
     // 新的日子：临时占用
     if (toLive) {
       const covered = bks.some(b => srmOn(b, t.date) && srmContains(b, tsp.start, tsp.end));
+      // 这一天正好是这门课自己的每周占用被释放过的日子：不能再建临时占用（数据库认为教室还是被每周占用占着），改成把这天从释放日期里去掉
+      const offHit = bks.find(b => b.recurrence === 'weekly' && (!b.start_date || t.date >= b.start_date) && (!b.end_date || t.date <= b.end_date) && Number(b.weekday) === srmWeekday(t.date) && srmSplit(b.manual_off_dates).includes(t.date) && srmContains(b, tsp.start, tsp.end));
       if (!tsp.start) blk.notes.push('这一回没有上课时间，不能判断教室，请到排课安排');
-      else if (!covered) {
+      else if (!covered && offHit) {
+        blk.items.push({ kind: 'new', restore: offHit, date: t.date, sp: tsp, room: String(offHit.room_id), on: true, label: '' });
+      } else if (!covered) {
         if (!weeklyRooms.length) blk.notes.push('这门课没有每周占用，不能确定用哪间教室，请到排课安排');
         else {
           const fromW = f && bks.find(b => b.recurrence === 'weekly' && srmOn(b, f.date) && srmOverlap(fsp.start, fsp.end, b.start_time, b.end_time));
@@ -127,8 +131,8 @@ async function srmOpen(opts) {
       const row = (bi, ii, it) => {
         if (it.kind === 'new') {
           const bl = realBlockers(it);
-          const roomChips = weeklyRooms.length > 1 ? `　${weeklyRooms.map(r => `<span class="filter-chip${String(it.room) === r ? ' active' : ''}" onclick="__srmRoom(${bi},${ii},'${e(r)}')" style="cursor:pointer;font-size:11px;padding:2px 8px">${e(roomName(r))}</span>`).join('')}` : '';
-          const txt = `${e(srmMDW(it.date))}${e(it.sp.start)}-${e(it.sp.end)} 临时占用 ${e(roomName(it.room))}`;
+          const roomChips = (weeklyRooms.length > 1 && !it.restore) ? `　${weeklyRooms.map(r => `<span class="filter-chip${String(it.room) === r ? ' active' : ''}" onclick="__srmRoom(${bi},${ii},'${e(r)}')" style="cursor:pointer;font-size:11px;padding:2px 8px">${e(roomName(r))}</span>`).join('')}` : '';
+          const txt = it.restore ? `恢复 ${e(srmMDW(it.date))}${e(it.sp.start)}-${e(it.sp.end)} 的 ${e(roomName(it.room))} 教室（每周占用）` : `${e(srmMDW(it.date))}${e(it.sp.start)}-${e(it.sp.end)} 临时占用 ${e(roomName(it.room))}`;
           if (bl.length) {
             const x = bl[0];
             return `<div style="padding:4px 8px;margin:3px 0;border:1px solid var(--border,#e2ded6);border-radius:3px;color:#999"><div>${txt}${roomChips}</div><div style="color:#a33;font-size:11px">被《${e(x.title)}》（${e(x.who || '—')}，${e(x.time)}）占着，请到排课另找教室</div></div>`;
@@ -188,10 +192,21 @@ async function srmOpen(opts) {
         } catch (er) { lines.push(`跳过：${e(it.label)}（${e(er.message || '失败')}）`); }
       }
       for (const it of picks.filter(x => x.kind === 'new')) {
-        const lab = `${srmMDW(it.date)}${it.sp.start}-${it.sp.end} 临时占用 ${roomName(it.room)}`;
+        const lab = it.restore ? `恢复 ${srmMDW(it.date)}${it.sp.start}-${it.sp.end} 的 ${roomName(it.room)} 教室（每周占用）` : `${srmMDW(it.date)}${it.sp.start}-${it.sp.end} 临时占用 ${roomName(it.room)}`;
         try {
           const bl = await srmBlockers(it.room, it.date, it.sp);   // 写之前再查一次
           if (bl.length) { lines.push(`跳过：${e(lab)}（被《${e(bl[0].title)}》${e(bl[0].who)} ${e(bl[0].time)} 占着）`); continue; }
+          if (it.restore) {
+            const cur = ((await srmGet(`/rest/v1/sched_bookings?id=eq.${it.restore.id}&select=id,manual_off_dates`)) || [])[0];
+            if (!cur) { lines.push(`跳过：${e(lab)}（占用已不存在）`); continue; }
+            const set = srmSplit(cur.manual_off_dates);
+            if (set.includes(it.date)) {
+              await sb(`/rest/v1/sched_bookings?id=eq.${it.restore.id}`, 'PATCH', { manual_off_dates: set.filter(d => d !== it.date).join(',') });
+              ops.push({ t: 'on', id: it.restore.id, date: it.date });
+            }
+            lines.push('已做：' + e(lab)); any = true;
+            continue;
+          }
           const tpl = bks.find(b => b.recurrence === 'weekly' && String(b.room_id) === String(it.room)) || {};
           const ch = blocks.find(b => b.items.includes(it)).ch;
           const rec = { room_id: tpl.room_id != null ? tpl.room_id : it.room, kind: 'course', recurrence: 'once', booking_date: it.date, start_time: it.sp.start, end_time: it.sp.end,
@@ -211,6 +226,10 @@ async function srmOpen(opts) {
       for (const o of ops.slice().reverse()) {
         try {
           if (o.t === 'new') await sb(`/rest/v1/sched_bookings?id=eq.${o.id}`, 'DELETE');
+          else if (o.t === 'on') {
+            const cur = ((await srmGet(`/rest/v1/sched_bookings?id=eq.${o.id}&select=id,manual_off_dates`)) || [])[0];
+            if (cur) { const set = srmSplit(cur.manual_off_dates); if (!set.includes(o.date)) set.push(o.date); await sb(`/rest/v1/sched_bookings?id=eq.${o.id}`, 'PATCH', { manual_off_dates: set.sort().join(',') }); }
+          }
           else if (o.t === 'off') {
             const cur = ((await srmGet(`/rest/v1/sched_bookings?id=eq.${o.id}&select=id,manual_off_dates`)) || [])[0];
             if (cur) await sb(`/rest/v1/sched_bookings?id=eq.${o.id}`, 'PATCH', { manual_off_dates: srmSplit(cur.manual_off_dates).filter(d => d !== o.date).join(',') });
