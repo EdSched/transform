@@ -669,6 +669,7 @@ async function bkSelfReject(id){
   const who=bkSelfWho(), now=new Date().toISOString();
   const patch={status:'cancelled',cancel_reason:note.trim(),cancelled_by:'教务取消（'+who+'）',cancelled_at:now,sched_booking_id:null,
     messages:[...(b.messages||[]),vipNoticeMsg(b,`【取消通知】教务取消了 ${b.slot_date} ${b.slot_time_range||''} 的VIP预约。原因：${note.trim()}`,'cancelled',{by:'教务取消',reason:note.trim()})]};
+  if(vipReqPending(b)) patch.change_request=vipReqHandled(b,'accepted');   // 学生申请取消：同意
   try{
     const rows=await sb(`/rest/v1/bookings?id=eq.${encodeURIComponent(id)}`,'PATCH',patch);
     if(Array.isArray(rows)&&!rows.length) throw new Error('数据库没有允许修改这条预约（0 行被更新）');
@@ -714,8 +715,8 @@ function renderVipBookingPage(mc){
   // 视角过滤（跟随链接）：按学生真实专业判断领域/专业归属
   filtered=filtered.filter(b=>bkMajorInView(bkRealMajor(b)));
   const total=filtered.length; // 当月·本视角VIP预约总数（不受下方筛选影响）
-  const cnt={}; filtered.forEach(b=>{ cnt[b.status]=(cnt[b.status]||0)+1; });
-  if(bkvlStat===null) bkvlStat=cnt.pending?'pending':'';
+  const cnt={}; filtered.forEach(b=>{ cnt[b.status]=(cnt[b.status]||0)+1; if(vipReqPending(b)) cnt.req=(cnt.req||0)+1; });
+  if(bkvlStat===null) bkvlStat=cnt.req?'req':cnt.pending?'pending':'';
   const teachers=[...new Set(filtered.map(bkIvTeacher).filter(Boolean))].sort();
   if(bkvlTeacher&&!teachers.includes(bkvlTeacher)) bkvlTeacher='';
   bkvlBase=filtered;
@@ -750,11 +751,12 @@ function renderVipBookingPage(mc){
 }
 
 // ── VIP 预约列表：一行一条，点一行展开详情（样式同面谈预约列表）──
-const BKVL_STATS=[['all','全部'],['pending','待确认'],['confirmed','已确认'],['completed','已完成'],['cancelled','已取消']];
+const BKVL_STATS=[['all','全部'],['pending','待确认'],['req','学生申请'],['confirmed','已确认'],['completed','已完成'],['cancelled','已取消']];
 let bkvlStat=null, bkvlTeacher='', bkvlQ='', bkvlShown=30, bkvlBase=[];
 const bkvlOpen={};
 function bkvlMatch(b){
-  if(bkvlStat&&bkvlStat!=='all'&&b.status!==bkvlStat) return false;
+  if(bkvlStat==='req'){ if(!vipReqPending(b)) return false; }   // 学生申请取消 / 改期，还没处理
+  else if(bkvlStat&&bkvlStat!=='all'&&b.status!==bkvlStat) return false;
   if(bkvlTeacher&&bkIvTeacher(b)!==bkvlTeacher) return false;
   const q=bkvlQ.trim().toLowerCase();
   return !q||((b.name||'')+' '+bkIvTeacher(b)).toLowerCase().includes(q);
@@ -794,6 +796,10 @@ function bkvlMore(){ bkvlShown+=30; bkvlDraw(); }
 function bkvlSetQ(v){ bkvlQ=v; bkvlShown=30; bkvlDraw(); }
 function bkvlSetStat(k){ bkvlStat=(bkvlStat===k&&k!=='all')?'':k; bkvlShown=30; renderBookingPage(document.getElementById('mainContent')); }
 function bkvlSetTeacher(t){ bkvlTeacher=t?decodeURIComponent(t):''; bkvlShown=30; renderBookingPage(document.getElementById('mainContent')); }
+
+// ── 学生的取消 / 改期申请：横幅在 shared/vip-record.js（和老师端同一个），这两个是横幅按钮在管理端的处理 ──
+function openVipCancel(id){ bkSelfReject(id); }          // 同意取消：沿用教务取消（写原因、释放教室），并把申请标成已同意
+function openVipModify(id){ openAdminVipReschedule(id); }  // 处理改期：沿用调整时间，保存后把申请标成已同意
 
 // ── Admin 调整VIP预约时间 ──
 function openAdminVipReschedule(bookingId) {
@@ -932,6 +938,7 @@ async function saveAdminVipReschedule(bookingId) {
       patch.vip_room = room.name;
     }
     const descBefore = vipNoticeDesc(b), sameSlot = b.slot_date === date && String(b.slot_time_range || '') === timeRange && (b.location || 'online') === loc;
+    if (vipReqPending(b)) patch.change_request = vipReqHandled(b, 'accepted');   // 学生申请改期：同意
     await sb(`/rest/v1/bookings?id=eq.${bookingId}`, 'PATCH', patch);
     Object.assign(b, patch);
     document.getElementById('adminVipRescheduleModal').remove();
@@ -1495,8 +1502,11 @@ function renderVipBookingCard(b){
       ${b.student_rating?`<div><div class="bf-label">学生评价</div><div class="bf-value">${b.student_rating}</div></div>`:''}
       ${b.student_confirmed_by?`<div><div class="bf-label">学生确认</div><div class="bf-value">教务（${bkSelfEsc(b.student_confirmed_by)}）代确认</div></div>`:''}
     </div>
+    ${vipReqBannerHtml(b, !!b.vip_session_notes)}
     <div style="display:flex;gap:6px;padding:0 14px 12px;flex-wrap:wrap">
       ${b.status==='pending'&&!b.self_booked&&!b.teacher_backfill&&b.initiated_by!=='teacher'?`<button class="btn btn-primary btn-sm" onclick="confirmBooking('${b.id}')">确认</button>`:''}
+      ${b.status!=='cancelled'?`<button class="btn btn-outline btn-sm" onclick="openVipSessionRecord('${b.id}')">${b.student_confirmed?'查看上课记录':b.vip_session_notes?'修改上课记录':'填写上课记录'}</button>`:''}
+      ${b.status!=='cancelled'?`<button class="btn btn-outline btn-sm" onclick="openVipMessages('${b.id}')">留言</button>`:''}
       ${bkProxyEligible(b)?`<button class="btn btn-outline btn-sm" onclick="bkBfProxyOpen('${b.id}')">代学生确认</button>`:''}
       ${b.status!=='cancelled'&&!b.vip_session_notes?`<button class="btn btn-outline btn-sm" onclick="openAdminVipReschedule('${b.id}')">🔄 调整时间</button>`:''}
       ${b.status==='completed'?`<button class="btn btn-outline btn-sm" style="color:var(--text-3);font-size:10px" onclick="revertVipToConfirmed('${b.id}')">撤销完成</button>`:''}
