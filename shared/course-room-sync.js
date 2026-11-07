@@ -11,7 +11,9 @@
 //   · 以上全部只处理「今天以后」的日子；过去的日子不新建、不改自动释放（过期临时占用只清单回已没了的）
 
 const CRS_ADMIN = () => typeof sbAll === 'function';
-async function crsGet(table, q) { return CRS_ADMIN() ? sb(`/rest/v1/${table}?${q}`) : sbGet(table, q); }
+async function crsGet(table, q) { return CRS_ADMIN() ? sb(`/rest/v1/${table}?${q}`, 'GET', null, { cache: 'no-store' }) : sbGet(table, q); }
+// 全表读取（自动分页，查询里不要带 limit）
+async function crsGetAll(table, q) { return CRS_ADMIN() ? sbAll(`/rest/v1/${table}?${q}`, { cache: 'no-store' }) : sbGet(table, q); }
 async function crsInsert(table, row) { return CRS_ADMIN() ? sb(`/rest/v1/${table}`, 'POST', [row]) : sbInsert(table, row); }
 async function crsPatch(table, id, obj) { return CRS_ADMIN() ? sb(`/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, 'PATCH', obj) : sbUpdate(table, id, obj); }
 async function crsDelete(table, id) { return CRS_ADMIN() ? sb(`/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, 'DELETE') : sbDelete(table, id); }
@@ -56,6 +58,31 @@ async function crsRemind(co, s, date, span, reason) {
   return true;
 }
 
+// 别的课的占用（每周、临时都算）：要看那门课当天有没有真的单回。返回 { sess: Map(course_id → 今天以后的单回[]), ctime: Map(course_id → time_range) }
+async function crsLoadOtherSessions(pool, ownIds) {
+  const ids = [...new Set(pool.filter(b => b.kind === 'course' && b.course_id != null && b.course_id !== '' && !ownIds.has(String(b.course_id))).map(b => String(b.course_id)))];
+  const ctx = { sess: new Map(), ctime: new Map() };
+  if (!ids.length) return ctx;
+  const inList = '(' + ids.map(encodeURIComponent).join(',') + ')';
+  const rows = await crsGetAll('course_sessions', `select=id,course_id,session_date,time_range,is_cancelled&course_id=in.${inList}&session_date=gte.${crsToday()}`);
+  rows.forEach(r => { const k = String(r.course_id); if (!ctx.sess.has(k)) ctx.sess.set(k, []); ctx.sess.get(k).push(r); });
+  try { (await crsGetAll('courses', `select=id,time_range&id=in.${inList}`)).forEach(c => ctx.ctime.set(String(c.id), c.time_range)); } catch (e) { /* 忽略 */ }
+  return ctx;
+}
+// 这条占用在 d 这天（st-en）算不算真的占着。别的课的占用 → 只有那门课当天有没取消的单回、时间重叠才算；其余照原规则
+function crsBlocks(b, d, st, en, ctx) {
+  if (!crsOnDate(b, d)) return false;
+  if (!crsOverlap(st, en, b.start_time, b.end_time)) return false;
+  if (b.kind !== 'course' || b.course_id == null || b.course_id === '' || !ctx) return true;
+  const list = ctx.sess.get(String(b.course_id));
+  if (!list || !list.length) return true;   // 老课没有单回数据：按每周占用算
+  return list.some(x => {
+    if (x.session_date !== d || x.is_cancelled === true) return false;
+    const sp = timeRangesSpan(x.time_range || ctx.ctime.get(String(b.course_id)) || '');
+    return !sp.start || !sp.end || crsOverlap(st, en, sp.start, sp.end);
+  });
+}
+
 async function courseRoomSync(courseId) {
   const out = await courseRoomSyncCore(courseId);
   try { out.resolved = await crsResolveReminders(courseId); } catch (e) { console.warn('单回教室提醒标记失败', e); out.resolved = []; }
@@ -93,25 +120,55 @@ async function crsResolveReminders(courseId) {
   return res;
 }
 
+// 一门课的完整核对 = 先释放（第 1、2 步），再补占（第 3 步）
 async function courseRoomSyncCore(courseId) {
-  const out = { released: 0, created: 0, removed: 0, reminders: 0, notes: [] };
+  const r1 = await crsRelease(courseId);
+  const r2 = await crsFill(courseId);
+  return { released: r1.released, removed: r1.removed, created: r2.created, reminders: r2.reminders, notes: r1.notes.concat(r2.notes) };
+}
+
+// 好几门课一起核对：先全部释放，再全部补占，结果不受先后顺序影响。返回 { id: 结果 }，失败的课对应 { error }
+async function courseRoomSyncMany(ids, onProgress) {
+  const list = [...new Set((ids || []).map(String))];
+  const res = {};
+  let n = 0;
+  for (const id of list) {
+    try { res[id] = await crsRelease(id); } catch (e) { res[id] = { error: e && e.message ? e.message : String(e) }; console.warn('释放核对失败', id, e); }
+    if (onProgress) onProgress(++n, list.length * 2, id);
+  }
+  for (const id of list) {
+    if (!res[id].error) {
+      try {
+        const r1 = res[id], r2 = await crsFill(id);
+        const out = { released: r1.released, removed: r1.removed, created: r2.created, reminders: r2.reminders, notes: r1.notes.concat(r2.notes) };
+        try { out.resolved = await crsResolveReminders(id); } catch (e) { out.resolved = []; }
+        res[id] = out;
+      } catch (e) { res[id] = { error: e && e.message ? e.message : String(e) }; console.warn('补占核对失败', id, e); }
+    }
+    if (onProgress) onProgress(++n, list.length * 2, id);
+  }
+  return res;
+}
+
+// 第 1、2 步：清过期临时占用、重算按周占用的自动释放
+async function crsRelease(courseId) {
+  const out = { released: 0, removed: 0, notes: [] };
   const cid = encodeURIComponent(courseId);
-  const co = (await crsGet('courses', `select=id,name,time_range,sched_merge_group&id=eq.${cid}&limit=1`))[0];
+  const co = (await crsGet('courses', `select=id,name,time_range&id=eq.${cid}&limit=1`))[0];
   if (!co) return out;
   const sessions = await crsGet('course_sessions', `select=id,session_number,session_date,time_range,is_cancelled&course_id=eq.${cid}&limit=2000`);
   const bks = await crsGet('sched_bookings', `select=*&kind=eq.course&course_id=eq.${cid}&limit=2000`);
-  const autos = bks.filter(b => b.auto_sync === true);
-  if (!sessions.length) { out.notes.push('这门课没有单回记录'); return out; }
+  if (!sessions.length) return out;
   const active = sessions.filter(s => s.is_cancelled !== true && s.session_date);
   const weekly = bks.filter(b => b.recurrence === 'weekly' && b.status === 'confirmed');
   const temps = bks.filter(b => b.recurrence === 'once');
   const today = crsToday();   // 只处理今天以后的日子，过去的日子一律不动
   const spanOf = s => timeRangesSpan(s.time_range || co.time_range || '');
+  const lastDate = sessions.reduce((m, s) => (s.session_date && s.session_date > m ? s.session_date : m), '');
 
   // 1) 过期的自动临时占用
-  const keepTemps = [];
   for (const t of temps) {
-    if (t.auto_sync !== true) { keepTemps.push(t); continue; }
+    if (t.auto_sync !== true) continue;
     const s = active.find(x => x.id === t.session_id);
     let stale = !s || s.session_date !== t.booking_date;
     // 过去的日子：只删「单回已不存在 / 已取消 / 改了日期」的，正常上过课的不动
@@ -119,16 +176,17 @@ async function courseRoomSyncCore(courseId) {
       const sp = spanOf(s);
       stale = weekly.some(b => crsWeeklyOn(b, s.session_date, false) && crsContains(b, sp.start, sp.end)) || !crsContains(t, sp.start, sp.end);
     }
-    if (stale) { await crsDelete('sched_bookings', t.id); out.removed++; } else keepTemps.push(t);
+    if (stale) { await crsDelete('sched_bookings', t.id); out.removed++; }
   }
 
-  // 2) 按周占用的自动释放：整体重算
+  // 2) 按周占用的自动释放：整体重算（没有结束日期就用最后一回的日期，没有开始日期从今天起）
   for (const b of weekly) {
     const off = [];
     const before = crsSplit(b.auto_off_dates);
     const keepPast = before.filter(d => d < today);   // 过去的自动释放原样保留
-    if (b.start_date && b.end_date) {
-      for (let d = (b.start_date > today ? b.start_date : today), g = 0; d <= b.end_date && g < 800; d = crsAddDays(d, 1), g++) {
+    const endD = b.end_date || lastDate;
+    if (endD) {
+      for (let d = (b.start_date && b.start_date > today ? b.start_date : today), g = 0; d <= endD && g < 800; d = crsAddDays(d, 1), g++) {
         if (!crsWeeklyOn(b, d, false)) continue;
         const hit = active.some(s => {
           if (s.session_date !== d) return false;
@@ -141,9 +199,25 @@ async function courseRoomSyncCore(courseId) {
     if (now !== before.join(',')) {
       await crsPatch('sched_bookings', b.id, { auto_off_dates: now || null });
       out.released += off.filter(d => !before.includes(d)).length;
-      b.auto_off_dates = now || null;
     }
   }
+  return out;
+}
+
+// 第 3 步：没被覆盖的单回补占，补不了的写提醒
+async function crsFill(courseId) {
+  const out = { created: 0, reminders: 0, notes: [] };
+  const cid = encodeURIComponent(courseId);
+  const co = (await crsGet('courses', `select=id,name,time_range,sched_merge_group&id=eq.${cid}&limit=1`))[0];
+  if (!co) return out;
+  const sessions = await crsGet('course_sessions', `select=id,session_number,session_date,time_range,is_cancelled&course_id=eq.${cid}&limit=2000`);
+  const bks = await crsGet('sched_bookings', `select=*&kind=eq.course&course_id=eq.${cid}&limit=2000`);
+  if (!sessions.length) { out.notes.push('这门课没有单回记录'); return out; }
+  const active = sessions.filter(s => s.is_cancelled !== true && s.session_date);
+  const weekly = bks.filter(b => b.recurrence === 'weekly' && b.status === 'confirmed');
+  const keepTemps = bks.filter(b => b.recurrence === 'once');   // 过期的自动临时占用在释放那一步已删
+  const today = crsToday();
+  const spanOf = s => timeRangesSpan(s.time_range || co.time_range || '');
 
   // 3) 没被覆盖的单回
   const need = [];
@@ -169,7 +243,7 @@ async function courseRoomSyncCore(courseId) {
   }
   let roomName = '';
   if (single && !online) { try { const r = (await crsGet('sched_rooms', `select=name&id=eq.${encodeURIComponent(rooms[0])}&limit=1`))[0]; roomName = r ? r.name : ''; } catch (e) { /* 忽略 */ } }
-  let pool = [];
+  let pool = [], other = null;
   if (single) {
     const minD = need.reduce((m, x) => (x.d < m ? x.d : m), need[0].d);
     const q = online ? `meeting_account_id=eq.${encodeURIComponent(accs[0])}` : `room_id=eq.${encodeURIComponent(rooms[0])}`;
@@ -180,13 +254,14 @@ async function courseRoomSyncCore(courseId) {
       const more = await crsGet('sched_bookings', `select=*&meeting_account_id=eq.${encodeURIComponent(tpl.meeting_account_id)}&status=neq.rejected&limit=5000`);
       more.filter(b => !ownIds.has(String(b.course_id)) || b.kind !== 'course').forEach(b => { if (!pool.some(p => p.id === b.id)) pool.push(b); });
     }
+    other = await crsLoadOtherSessions(pool, ownIds);   // 别的课的每周占用，按它实际的单回判断（一次查完）
   }
   for (const { s, sp, d } of need) {
     const st = sp.start || crsT5(tpl.start_time), en = sp.end || crsT5(tpl.end_time);
     let reason = '', who = '';
     if (!single) reason = '这门课有好几间教室，分不出用哪间';
     else {
-      const hit = pool.filter(b => crsOnDate(b, d) && crsOverlap(st, en, b.start_time, b.end_time) &&
+      const hit = pool.filter(b => crsBlocks(b, d, st, en, other) &&
         ((!online && String(b.room_id) === rooms[0]) || (tpl.uses_meeting && b.uses_meeting && String(b.meeting_account_id) === String(tpl.meeting_account_id))));
       if (hit.length) {
         reason = online ? '原会议账号当天被占' : `原教室 ${roomName || rooms[0]} 当天被占`;
@@ -234,9 +309,10 @@ async function courseRoomWhyBlocked(courseId, x) {
   let roomName = '原教室';
   if (tpl.room_id != null && tpl.room_id !== '') { try { const r = (await crsGet('sched_rooms', `select=name&id=eq.${encodeURIComponent(tpl.room_id)}&limit=1`))[0]; if (r) roomName = r.name; } catch (e) { /* 忽略 */ } }
   const q = tpl.room_id != null && tpl.room_id !== '' ? `room_id=eq.${encodeURIComponent(tpl.room_id)}` : `meeting_account_id=eq.${encodeURIComponent(tpl.meeting_account_id)}`;
-  const hit = (await crsGet('sched_bookings', `select=*&${q}&status=neq.rejected&limit=5000`))
-    .filter(b => !(ownIds.has(String(b.course_id)) && b.kind === 'course'))
-    .filter(b => crsOnDate(b, x.date) && crsOverlap(st, en, b.start_time, b.end_time));
+  const cand = (await crsGet('sched_bookings', `select=*&${q}&status=neq.rejected&limit=5000`))
+    .filter(b => !(ownIds.has(String(b.course_id)) && b.kind === 'course'));
+  const other = await crsLoadOtherSessions(cand, ownIds);
+  const hit = cand.filter(b => crsBlocks(b, x.date, st, en, other));
   if (!hit.length) return [];
   return [`${roomName} ${x.date.slice(5).replace('-', '/')} ${st}-${en} 被这些占着：`].concat(hit.map(b =>
     `${b.title || b.entry_name || '占用'}（${b.user_name || '未填占用人'}，${crsT5(b.start_time)}-${crsT5(b.end_time)}，${b.recurrence === 'weekly' ? '每周固定' : '临时'}${b.status === 'pending' ? '，待批准' : ''}）`));
@@ -286,10 +362,11 @@ async function courseRoomRetryPending() {
   CRS_RETRYING = true;
   let n = 0;
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = crsToday();
     const logs = await crsGet('sched_change_log', 'select=changes&action=eq.session_room&order=created_at.desc&limit=500');
     const ids = [...new Set((logs || []).map(l => (l.changes || [])[0]).filter(x => x && !x.resolved_at && x.course_id && (x.date || '') >= today).map(x => String(x.course_id)))];
-    for (const id of ids) { const r = await courseRoomSyncSafe(id); if (r) n += r.created || 0; }
+    const res = await courseRoomSyncMany(ids);   // 先全部释放再全部补占
+    Object.values(res).forEach(r => { n += (r && r.created) || 0; });
   } catch (e) { console.warn('补占等待中的单回失败', e); }
   finally { CRS_RETRYING = false; }
   return n;

@@ -39,7 +39,7 @@
 <script src="common.js?v=20270116"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270116"></script>
-<script src="../shared/course-room-sync.js?v=20261113"></script>
+<script src="../shared/course-room-sync.js?v=20261115"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], ROLE=null;
@@ -181,7 +181,7 @@ function bindRoomAck(box){
     const _t=new Date().toISOString().slice(0,10);
     const ids=[...new Set((CHANGELOG||[]).filter(l=>l.action==='session_room').map(l=>((Array.isArray(l.changes)?l.changes:[])[0]||{})).filter(x=>x.course_id&&!x.resolved_at&&(x.date||'')>=_t).map(x=>String(x.course_id)))];
     all.disabled=true; let ok=0, left=0;
-    for(let i=0;i<ids.length;i++){ all.textContent='核对中 '+(i+1)+'/'+ids.length; const r=await courseRoomSyncSafe(ids[i]); if(r) ok+=(r.resolved||[]).filter(v=>v.kind==='occupied').length; }
+    try{ const res=await courseRoomSyncMany(ids,(i,t)=>{ all.textContent='核对中 '+i+'/'+t; }); Object.values(res).forEach(r=>{ ok+=((r&&r.resolved)||[]).filter(v=>v.kind==='occupied').length; }); }catch(e){ console.warn('全部重新核对失败',e); }
     try{ await reloadAll(); }catch(e){}
     left=(CHANGELOG||[]).filter(l=>{ const x=(l.changes||[])[0]||{}; return l.action==='session_room' && !x.resolved_at && (x.date||'')>=_t; }).length;
     toast('已自动占用 '+ok+' 天；还有 '+left+' 条原教室仍被占'); renderChangeAlerts();
@@ -925,11 +925,12 @@ async function crsVerifyAll(){
   const ids=[...new Set(list.filter(c=>BOOKINGS.some(b=>isWeeklyCourseBk(b)&&String(b.course_id)===String(c.id))).map(c=>String(c.id)))];
   if(!ids.length){ toast('当前显示的课里没有已排教室的'); return; }
   const btn=el('af_crsync'); if(btn){ btn.disabled=true; btn.textContent='核对中 0/'+ids.length; }
-  const tot={released:0,created:0,removed:0,reminders:0}; let fail=0, n=0; const detail=[];
+  const tot={released:0,created:0,removed:0,reminders:0}; let fail=0; const detail=[];
+  const _res=await courseRoomSyncMany(ids,(i,t)=>{ if(btn) btn.textContent='核对中 '+i+'/'+t; });
   for(const id of ids){
-    const cn=((COURSES||[]).find(c=>String(c.id)===id)||{}).name||id;
-    try{ const r=await courseRoomSync(id); Object.keys(tot).forEach(k=>tot[k]+=(typeof r[k]==='number'?r[k]:0)); (r.notes||[]).filter(t=>!/无需处理/.test(t)).forEach(t=>detail.push('《'+cn+'》'+t)); }catch(e){ fail++; detail.push('《'+cn+'》核对出错：'+(e&&e.message||e)); console.warn('核对失败',id,e); }
-    n++; if(btn) btn.textContent='核对中 '+n+'/'+ids.length;
+    const cn=((COURSES||[]).find(c=>String(c.id)===id)||{}).name||id, r=_res[id]||{};
+    if(r.error){ fail++; detail.push('《'+cn+'》核对出错：'+r.error); continue; }
+    Object.keys(tot).forEach(k=>tot[k]+=(typeof r[k]==='number'?r[k]:0)); (r.notes||[]).filter(t=>!/无需处理/.test(t)).forEach(t=>detail.push('《'+cn+'》'+t));
   }
   if(btn){ btn.disabled=false; btn.textContent='核对单回和教室'; }
   await reloadAll(); renderAssignView();
