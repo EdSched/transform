@@ -851,9 +851,9 @@ function adjustDayEntries(group){
   BOOKINGS.filter(b=>b.kind==='course' && ids.has(String(b.course_id)) && b.status!=='rejected').forEach(b=>{
     if(b.recurrence==='once'){ if(b.booking_date>=today) out.push({date:b.booking_date, b, temp:true, released:false}); return; }
     if(b.recurrence!=='weekly' || !b.end_date) return;
-    const manual=(b.manual_off_dates||'').split(',').filter(Boolean), auto=(b.auto_off_dates||'').split(',').filter(Boolean);
+    const manual=(b.manual_off_dates||'').split(',').filter(Boolean);
     for(let d=(b.start_date&&b.start_date>today?b.start_date:today), g=0; d<=b.end_date && g<800; d=addDays(d,1), g++){
-      if(Number(b.weekday)!==weekdayOf(d) || auto.includes(d)) continue;
+      if(Number(b.weekday)!==weekdayOf(d)) continue;
       out.push({date:d, b, temp:false, released:manual.includes(d)});
     }
   });
