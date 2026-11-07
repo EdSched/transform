@@ -196,7 +196,8 @@ async function crsAlignWeekly(courseId) {
   const single = wds.length === 1 && bks.length === 1;
   for (const b of bks) {
     const patch = {};
-    if (sp.start && sp.end && (crsT5(b.start_time) !== sp.start || crsT5(b.end_time) !== sp.end)) { patch.start_time = sp.start; patch.end_time = sp.end; }
+    // 占用已经包住整节课的（比如课 14:00-18:00、占用 14:00-18:30，课后接别的）不缩短；只有没包住时才改成课程的时间
+    if (sp.start && sp.end && !crsContains(b, sp.start, sp.end)) { patch.start_time = sp.start; patch.end_time = sp.end; }
     if (wds.length) {
       if (single) { if (Number(b.weekday) !== wds[0]) patch.weekday = wds[0]; }
       else if (!wds.includes(Number(b.weekday))) {
