@@ -667,7 +667,6 @@ function bookingOnDate(b, dateStr){
     if(b.start_date && dateStr < b.start_date) return false;
     if(b.end_date   && dateStr > b.end_date)   return false;
     // 单回改期：系统自动释放 / 人工释放的日子，这条按周占用那天不占教室
-    if(b.auto_off_dates   && String(b.auto_off_dates).split(',').includes(dateStr))   return false;
     if(b.manual_off_dates && String(b.manual_off_dates).split(',').includes(dateStr)) return false;
     return Number(b.weekday) === weekdayOf(dateStr);
   }
@@ -889,3 +888,7 @@ function renderNav(active, roleRec){
     (label?`<span style="color:var(--sub);font-size:12px;margin-left:8px">${esc(label)}</span>`:'')+
     '</nav></div></header>';
 }
+
+// 兜底：「单回↔教室占用同步」已整套删除；万一哪里漏了调用，也不会报错
+window.courseRoomSyncSafe = window.courseRoomSyncSafe || (async () => null);
+window.courseRoomClear = window.courseRoomClear || (async () => null);
