@@ -114,6 +114,9 @@ function pgcEnsureCss() {
   st.textContent = `
 .pgc-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.03)}
 .pgc-card.focus{border-color:var(--accent)}
+.pgc-card.pgc-mark{background:#fbf6e6;border-color:var(--accent)}
+.pgc-sec{scroll-margin-top:8px}
+.pgc-sec.pgc-flash{background:#fbf3d9;transition:background .4s}
 .pgc-head{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer}
 .pgc-head .who{flex:1;min-width:0;font-size:11px;color:var(--text-3)}
 .pgc-head .who b{font-size:13px;color:var(--text)}
@@ -194,6 +197,7 @@ function pgcCardHtml(s, ctx, o) {
   const head = `<div class="pgc-head" onclick="pgcToggle('${pgcJs(s.id)}')">
     <div class="who"><b>${pgcEsc(s.name)}</b><span>${pgcEsc((typeof MAJORS !== 'undefined' && MAJORS[s.major]) || s.major || '')}</span>${s.target_enrollment ? `<span>入学目标 ${pgcEsc(s.target_enrollment)}</span>` : ''}<span>${routeShort}</span>${s.source ? `<span style="border:1px solid var(--border-light);border-radius:3px;padding:0 6px;font-size:10px">${pgcEsc(s.source)}</span>` : ''}</div>
     <div class="pgc-chips">${chips || '<span style="font-size:10px;color:var(--text-3)">暂无进度</span>'}</div>
+    ${o.solo ? `<span onclick="event.stopPropagation();${o.solo(s)}" style="font-size:10px;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:1px 8px;cursor:pointer;flex-shrink:0;white-space:nowrap">只看此人</span>` : ''}
     <span class="pgc-arr" style="font-size:11px;color:var(--text-3);flex-shrink:0">${o.open ? '▾' : '▸'}</span>
   </div>`;
 
@@ -270,7 +274,7 @@ function pgcCardHtml(s, ctx, o) {
       <td style="white-space:nowrap"><span onclick="event.stopPropagation();${h.schoolEdit}('${p.id}')" style="font-size:10px;color:var(--accent);cursor:pointer;margin-right:6px">编辑</span><span onclick="event.stopPropagation();${h.schoolDel}('${p.id}')" style="font-size:10px;color:var(--danger);cursor:pointer">删除</span>${o.passEntry && p.status === 'passed' ? o.passEntry(p, s) : ''}</td>
     </tr>`;
   }).join('');
-  const secSchools = `<div class="pgc-sec"><div class="pgc-title">志望校 <span class="sub">（${plans.length}所）· 状态/过去问/面试稿可直接改，即时与学生端同步</span><span class="act"><button class="pgc-btn" onclick="event.stopPropagation();${h.schoolAdd}('${pgcJs(s.id)}')">＋ 添加志望校</button></span></div>
+  const secSchools = `<div class="pgc-sec" id="pgc_${pgcEsc(s.id)}_schools"><div class="pgc-title">志望校 <span class="sub">（${plans.length}所）· 状态/过去问/面试稿可直接改，即时与学生端同步</span><span class="act"><button class="pgc-btn" onclick="event.stopPropagation();${h.schoolAdd}('${pgcJs(s.id)}')">＋ 添加志望校</button></span></div>
     ${typeof spTargetBoxHtml === 'function' ? spTargetBoxHtml(s, plans, h) : ''}${warn}${plans.length ? `<div class="pgc-tbl-wrap"><table class="pgc-tbl" style="min-width:820px"><colgroup><col style="width:36px"><col style="width:52px"><col><col style="width:90px"><col style="width:110px"><col style="width:150px"><col style="width:70px"><col style="width:70px"><col style="width:${o.passEntry ? 150 : 96}px"></colgroup>
     <thead><tr>${['No.', '级别', '学校 · 研究科', '教授', '出愿期间', '进度', '过去问', '面试稿', '操作'].map(t => `<th>${t}</th>`).join('')}</tr></thead><tbody>${schoolRows}</tbody></table></div>`
       : '<div style="font-size:11px;color:var(--text-3)">尚无志望校，点右上「＋ 添加志望校」录入</div>'}</div>`;
@@ -295,14 +299,14 @@ function pgcCardHtml(s, ctx, o) {
         + riyuStaffListHtml(s, plans, subs, k, o.riyuChanged || (() => {}));
     });
   }
-  const secPlan = `<div class="pgc-sec"><div class="pgc-title">${gakubu ? '志望理由书' : '研究计划书'}${gakubu ? `<span class="sub">· ${pgcEsc(riyuCountText(riyuC))}</span>` : ''}</div>${planInner}</div>`;
+  const secPlan = `<div class="pgc-sec" id="pgc_${pgcEsc(s.id)}_plan"><div class="pgc-title">${gakubu ? '志望理由书' : '研究计划书'}${gakubu ? `<span class="sub">· ${pgcEsc(riyuCountText(riyuC))}</span>` : ''}</div>${planInner}</div>`;
 
   // ── 6. 出愿材料（卡片网格等宽，每行 4 张，窄屏 2 张）──
   const secMaterials = (typeof matStaffNodeHtml === 'function') ? (() => {
     const track = matTrackOf(s);
     const items = (ctx.matItems || []).filter(it => it.track === track);
     const mm = (ctx.matsMap = ctx.matsMap || {});
-    return `<div class="pgc-sec"><div class="pgc-title">出愿材料</div>${matStaffNodeHtml(s, items, (mm[s.id] = mm[s.id] || []), plans, subs)}</div>`;
+    return `<div class="pgc-sec" id="pgc_${pgcEsc(s.id)}_materials"><div class="pgc-title">出愿材料</div>${matStaffNodeHtml(s, items, (mm[s.id] = mm[s.id] || []), plans, subs)}</div>`;
   })() : '';
 
   // ── 7. 保录学校（仅保录学生）──
@@ -333,3 +337,62 @@ function pgcCardHtml(s, ctx, o) {
 
   return `<div class="pgc-card${o.focus ? ' focus' : ''}">${head}<div class="pgc-body" id="pgc_${pgcEsc(s.id)}" style="display:${o.open ? 'block' : 'none'}"><div class="pgc-stack">${secNodes}${secDetail}${secSchools}${secPlan}${secMaterials}${secGuar}${secNotes}${secTimeline}</div></div></div>`;
 }
+
+
+// ══ 单人模式（从别处跳到考学进度时，只显示一个学生）══
+// 状态：PGS.id = 当前单人模式的学生；PGS.back = { label, restore }，restore 由调用方提供（回到跳过来之前的样子）
+const PGS = { id: null, back: null, pushed: false };
+function pgsScrollEl(from) {
+  let el = from || document.body;
+  while (el && el !== document.body && el !== document.documentElement) {
+    const oy = getComputedStyle(el).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight) return el;
+    el = el.parentElement;
+  }
+  return document.scrollingElement || document.documentElement;
+}
+function pgsSnap(host) { const sc = pgsScrollEl(host); return { top: sc.scrollTop, win: window.scrollY, host }; }
+function pgsRestore(snap) {
+  if (!snap) return;
+  const sc = pgsScrollEl(snap.host); sc.scrollTop = snap.top; window.scrollTo(0, snap.win);
+}
+// 在列表里把某个学生的卡片淡色标一下
+function pgsMark(studentId) {
+  const body = document.getElementById('pgc_' + studentId); if (!body) return;
+  const card = body.closest('.pgc-card'); if (!card) return;
+  card.classList.add('pgc-mark');
+}
+// 滚到某一块并高亮 2 秒（plan 计划书 / riyu 志望理由书・邮件 / materials 出愿材料 / schools 志望校）
+function pgsGoto(studentId, section) {
+  if (!section) return;
+  const el = document.getElementById(`pgc_${studentId}_${section}`) || (section === 'riyu' ? document.getElementById(`pgc_${studentId}_plan`) : null);
+  if (!el) return;
+  el.scrollIntoView({ block: 'start' });
+  el.classList.add('pgc-flash');
+  setTimeout(() => el.classList.remove('pgc-flash'), 2000);
+}
+function pgsBarHtml(s, back) {
+  const major = (typeof MAJORS !== 'undefined' && MAJORS[s.major]) || s.major || '';
+  return `<div id="pgs_bar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+    <button class="btn btn-outline btn-sm" onclick="pgsExit()">← ${pgcEsc((back && back.label) || '返回全部学生')}</button>
+    <span style="font-size:13px;font-weight:600">${pgcEsc(s.name)}</span><span style="font-size:11px;color:var(--text-3)">${pgcEsc(major)}</span>
+  </div>`;
+}
+// 进入单人模式：记下来源，压一条浏览器历史（手机「后退」= 返回按钮）
+function pgsEnter(studentId, back) {
+  PGS.back = back || (PGS.id === studentId ? PGS.back : null);
+  PGS.id = studentId;
+  if (!PGS.pushed) { try { history.pushState({ pgs: 1 }, ''); PGS.pushed = true; } catch (e) {} }
+}
+async function pgsExit() {
+  if (PGS.pushed) { PGS.pushed = false; try { history.back(); return; } catch (e) {} }   // 走 popstate，统一在那里处理
+  await pgsDoBack();
+}
+async function pgsDoBack() {
+  const b = PGS.back; PGS.id = null; PGS.back = null;
+  if (b && typeof b.restore === 'function') await b.restore();
+}
+window.addEventListener('popstate', () => {
+  if (PGS.id && document.getElementById('pgs_bar')) { PGS.pushed = false; pgsDoBack(); }
+  else if (PGS.id) { PGS.id = null; PGS.back = null; PGS.pushed = false; }   // 已经离开考学进度页
+});

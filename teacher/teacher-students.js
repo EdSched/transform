@@ -76,6 +76,35 @@ async function renderTeacherStudyProgress(mc) {
   catch (e) { mc.innerHTML = `<div class="empty" style="color:var(--danger)">考学进度渲染失败：${(e && e.message) || e}</div>`; console.error('tpRenderShell error:', e); }
 }
 
+let tpSoloId = null;          // 单人模式：只显示这一个学生（筛选保持原值，不显示筛选栏）
+let tpOpenIds = null;         // 返回列表时恢复展开的卡片
+function tpSolo(sid, back, section) {
+  const box = document.getElementById('tp_list') || document.getElementById('sm_content'); if (!box) return;
+  const snap = pgsSnap(box);
+  const openIds = [...box.querySelectorAll('.pgc-body')].filter(e => e.style.display !== 'none').map(e => e.id.slice(4));
+  tpSoloId = sid;
+  const sf = document.getElementById('sm_filter'); if (sf) sf.style.display = 'none';
+  pgsEnter(sid, back || { label: '返回全部学生', restore: async () => {
+    tpSoloId = null; const f = document.getElementById('sm_filter'); if (f) f.style.display = '';
+    tpOpenIds = new Set(openIds);
+    tpRenderShell(); pgsRestore(snap); pgsMark(sid);
+  } });
+  tpRenderShell();
+  if (section) pgsGoto(sid, section); else { const sc = pgsScrollEl(box); sc.scrollTop = 0; window.scrollTo(0, 0); }
+}
+function tpSoloHtml() {
+  const s = (teacherProgressData.students || []).find(x => x.id === tpSoloId);
+  if (!s) { tpSoloId = null; return ''; }
+  return pgsBarHtml(s, PGS.back) + `<div style="display:flex;flex-direction:column;gap:10px">${pgcCardHtml(s, teacherProgressData, tpCardOpts({ open: true, focus: true }))}</div>`;
+}
+function tpCardOpts(extra) {
+  return Object.assign({
+    mode: 'teacher',
+    h: { planSet: 'tpPlanSet', planFlag: 'tpPlanFlag', schoolAdd: 'tpAddSchool', schoolEdit: 'tpEditSchool', schoolDel: 'tpDelSchool' },
+    notesFn: 'tpNotesToggle',
+    riyuChanged: tpRiyuChanged,
+  }, extra || {});
+}
 let tpViewMode = 'student';   // 'student' 学生视角 | 'submissions' 学生提交（shared/submissions.js）
 // 学生提交：只列老师能看的在读学生（teacherProgressData.students 已按 teacherScope 过滤），再叠加全局筛选和「我负责的」
 function tpRenderSubmissions(listBox) {
@@ -92,6 +121,7 @@ function tpRenderSubmissions(listBox) {
 function tpRenderShell() {
   const box = document.getElementById('sm_content') || document.getElementById('mainContent');
   if (!box || !teacherProgressData) return;
+  if (tpSoloId) { box.innerHTML = '<div id="tp_list"></div>'; tpRenderProgressList(); return; }
   box.innerHTML = `
   <div class="page-header">
     <div class="section-title">考学进度 <span class="badge-count" id="tp_count"></span></div>
@@ -141,6 +171,11 @@ function tpRiyuChanged(sub) {
 function tpRenderProgressList() {
   const listBox = document.getElementById('tp_list');
   if (!listBox || !teacherProgressData) return;
+  if (tpSoloId) {   // 单人模式：操作后的刷新也留在这里，位置不动
+    const snap = pgsSnap(listBox);
+    const h = tpSoloHtml();
+    if (h) { listBox.innerHTML = h; pgsRestore(snap); return; }
+  }
   if (tpViewMode === 'submissions') { tpRenderSubmissions(listBox); return; }
   const filteredAll = tpFilteredStudents();
   const filtered = tsmSlice(filteredAll);
@@ -148,13 +183,9 @@ function tpRenderProgressList() {
   if (cnt) cnt.textContent = filteredAll.length;
   // 重绘前记下已展开的卡片，重绘后保持展开（首次进入不展开任何卡片）
   const openIds = new Set([...listBox.querySelectorAll('.pgc-body')].filter(e => e.style.display !== 'none').map(e => e.id.slice(4)));
-  const o = {
-    mode: 'teacher',
-    h: { planSet: 'tpPlanSet', planFlag: 'tpPlanFlag', schoolAdd: 'tpAddSchool', schoolEdit: 'tpEditSchool', schoolDel: 'tpDelSchool' },
-    notesFn: 'tpNotesToggle',
-    riyuChanged: tpRiyuChanged,
-  };
-  const cards = filtered.map(s => pgcCardHtml(s, teacherProgressData, { ...o, open: openIds.has(s.id) })).join('');
+  const o = tpCardOpts({ solo: st => `tpSolo('${pgcJs(st.id)}')` });
+  const restoreOpen = tpOpenIds; tpOpenIds = null;
+  const cards = filtered.map(s => pgcCardHtml(s, teacherProgressData, { ...o, open: openIds.has(s.id) || !!(restoreOpen && restoreOpen.has(s.id)) })).join('');
   listBox.innerHTML = (cards ? `<div style="display:flex;flex-direction:column;gap:10px">${cards}</div>` + tsmMoreHtml(filteredAll.length) : '') || `<div class="empty">${(tsmPool || []).length ? '没有符合筛选条件的学生' : (tsaScope().vipOnly ? '暂无你指导的 VIP 学生' : '没有符合筛选条件的学生')}</div>`;
 }
 
@@ -556,6 +587,7 @@ function tsmRefreshPage(light) {
 }
 
 function renderStudentMgmt(mc) {
+  tpSoloId = null;   // 切到别的子页面 / 重新进入：退出考学进度单人模式
   const allowed = smAllowedItems();
   if (!allowed.length) { mc.innerHTML = '<div class="empty">未开通任何学生管理子项，请联系管理员</div>'; return; }
   if (!allowed.find(([k]) => k === smTab)) smTab = allowed[0][0];
