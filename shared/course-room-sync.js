@@ -11,9 +11,9 @@
 //   · 以上全部只处理「今天以后」的日子；过去的日子不新建、不改自动释放（过期临时占用只清单回已没了的）
 
 const CRS_ADMIN = () => typeof sbAll === 'function';
-async function crsGet(table, q) { return CRS_ADMIN() ? sb(`/rest/v1/${table}?${q}`) : sbGet(table, q); }
+async function crsGet(table, q) { return CRS_ADMIN() ? sb(`/rest/v1/${table}?${q}`, 'GET', null, { cache: 'no-store' }) : sbGet(table, q); }
 // 全表读取（自动分页，查询里不要带 limit）
-async function crsGetAll(table, q) { return CRS_ADMIN() ? sbAll(`/rest/v1/${table}?${q}`) : sbGet(table, q); }
+async function crsGetAll(table, q) { return CRS_ADMIN() ? sbAll(`/rest/v1/${table}?${q}`, { cache: 'no-store' }) : sbGet(table, q); }
 async function crsInsert(table, row) { return CRS_ADMIN() ? sb(`/rest/v1/${table}`, 'POST', [row]) : sbInsert(table, row); }
 async function crsPatch(table, id, obj) { return CRS_ADMIN() ? sb(`/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, 'PATCH', obj) : sbUpdate(table, id, obj); }
 async function crsDelete(table, id) { return CRS_ADMIN() ? sb(`/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, 'DELETE') : sbDelete(table, id); }
@@ -58,9 +58,9 @@ async function crsRemind(co, s, date, span, reason) {
   return true;
 }
 
-// 别的课的每周占用：要看那门课当天有没有真的单回。返回 { sess: Map(course_id → 今天以后的单回[]), ctime: Map(course_id → time_range) }
+// 别的课的占用（每周、临时都算）：要看那门课当天有没有真的单回。返回 { sess: Map(course_id → 今天以后的单回[]), ctime: Map(course_id → time_range) }
 async function crsLoadOtherSessions(pool, ownIds) {
-  const ids = [...new Set(pool.filter(b => b.kind === 'course' && b.course_id != null && b.course_id !== '' && b.recurrence === 'weekly' && !ownIds.has(String(b.course_id))).map(b => String(b.course_id)))];
+  const ids = [...new Set(pool.filter(b => b.kind === 'course' && b.course_id != null && b.course_id !== '' && !ownIds.has(String(b.course_id))).map(b => String(b.course_id)))];
   const ctx = { sess: new Map(), ctime: new Map() };
   if (!ids.length) return ctx;
   const inList = '(' + ids.map(encodeURIComponent).join(',') + ')';
@@ -69,11 +69,11 @@ async function crsLoadOtherSessions(pool, ownIds) {
   try { (await crsGetAll('courses', `select=id,time_range&id=in.${inList}`)).forEach(c => ctx.ctime.set(String(c.id), c.time_range)); } catch (e) { /* 忽略 */ }
   return ctx;
 }
-// 这条占用在 d 这天（st-en）算不算真的占着。别的课的每周占用 → 只有那门课当天有没取消的单回、时间重叠才算；其余照原规则
+// 这条占用在 d 这天（st-en）算不算真的占着。别的课的占用 → 只有那门课当天有没取消的单回、时间重叠才算；其余照原规则
 function crsBlocks(b, d, st, en, ctx) {
   if (!crsOnDate(b, d)) return false;
   if (!crsOverlap(st, en, b.start_time, b.end_time)) return false;
-  if (b.kind !== 'course' || b.recurrence !== 'weekly' || b.course_id == null || b.course_id === '' || !ctx) return true;
+  if (b.kind !== 'course' || b.course_id == null || b.course_id === '' || !ctx) return true;
   const list = ctx.sess.get(String(b.course_id));
   if (!list || !list.length) return true;   // 老课没有单回数据：按每周占用算
   return list.some(x => {
@@ -362,10 +362,11 @@ async function courseRoomRetryPending() {
   CRS_RETRYING = true;
   let n = 0;
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = crsToday();
     const logs = await crsGet('sched_change_log', 'select=changes&action=eq.session_room&order=created_at.desc&limit=500');
     const ids = [...new Set((logs || []).map(l => (l.changes || [])[0]).filter(x => x && !x.resolved_at && x.course_id && (x.date || '') >= today).map(x => String(x.course_id)))];
-    for (const id of ids) { const r = await courseRoomSyncSafe(id); if (r) n += r.created || 0; }
+    const res = await courseRoomSyncMany(ids);   // 先全部释放再全部补占
+    Object.values(res).forEach(r => { n += (r && r.created) || 0; });
   } catch (e) { console.warn('补占等待中的单回失败', e); }
   finally { CRS_RETRYING = false; }
   return n;
