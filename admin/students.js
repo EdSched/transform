@@ -603,10 +603,7 @@ async function renderSubmissionsView(mc){
     students:scoped,
     pass:s=>dmfFilter([s]).length>0,
     barHtml:()=>domMajorFilterHtml(DMF,"sbmRender()",scoped()),
-    openPlan:(sid,name,ctx)=>{   // 管理端没有计划书批注弹窗：单人模式打开该生并定位到计划书；返回时回到列表原样
-      const mc=document.getElementById('mainContent'), snap=pgsSnap(mc);
-      renderProgressPage(mc,sid,{section:'plan',back:{label:'返回学生提交',restore:async()=>{ progressViewMode='submissions'; if(ctx&&ctx.key) SBM.mark=ctx.key; await renderProgressPage(mc); pgsRestore(snap); }}});
-    },
+    openPlan:(sid,name)=>openTeacherDraftComment(sid,name),   // 和老师端同一个批复弹窗（shared/plan-review.js）
   });
 }
 
