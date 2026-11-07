@@ -889,3 +889,7 @@ function renderNav(active, roleRec){
     (label?`<span style="color:var(--sub);font-size:12px;margin-left:8px">${esc(label)}</span>`:'')+
     '</nav></div></header>';
 }
+
+// 兜底：「单回↔教室占用同步」已整套删除；万一哪里漏了调用，也不会报错
+window.courseRoomSyncSafe = window.courseRoomSyncSafe || (async () => null);
+window.courseRoomClear = window.courseRoomClear || (async () => null);
