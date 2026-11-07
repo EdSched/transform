@@ -2223,6 +2223,9 @@ async function saveAddCourse(){
       const existingMap={}; existing.forEach(s=>{ existingMap[s.id]=s; });
       // 记录保存前的日期（按id），保存后对比，检测单回日期变动
       const oldDateById={}; existing.forEach(s=>{ oldDateById[s.id]=s.session_date; });
+      // 教室确认弹框要用：每一回保存前的日期 / 时间 / 是否休讲 / 回数
+      const oldInfoById={}; existing.forEach(s=>{ oldInfoById[s.id]={ date:s.session_date, time:s.time_range||'', cancelled:!!s.is_cancelled, num:s.session_number }; });
+      const oldCourseTime=_cur0?_cur0.time_range||'':'';
 
       // 开了单回明细：单回表是唯一依据，不再按框架重排日期（来自 acGetRows()：[{id,num,date,title,teacher}, ...]）
       let rows=detailRows;
@@ -2313,7 +2316,29 @@ async function saveAddCourse(){
       if(hwMsg) alert(hwMsg);
       if(tCtx.changed&&!tCtx.single) alert('上课老师已改，请在单回明细里重新分配老师（按周几 / 回数分配，或者去排课）');
       const saved=cachedCourses.find(c=>c.id===editingId);
-      const notes=dateChanged?['单回日期有变动（改期 / 休讲顺延 / 新增课次），可能影响排课系统里的教室占用和腾讯会议安排，请到排课系统为变动的日期确认或补上临时教室占用']:[];
+      const notes=dateChanged?['单回日期有变动（改期 / 休讲顺延 / 新增课次），可能影响腾讯会议安排，请到排课系统确认']:[];
+      // 课程整体上课时间改了：不动每周占用，只提示
+      const spanEq=(x,y)=>{ const p=timeRangesSpan(x||''),q=timeRangesSpan(y||''); return p.start===q.start&&p.end===q.end; };
+      const courseTimeChanged=!spanEq(oldCourseTime,courseData.time_range);
+      if(courseTimeChanged){
+        const wt=await srmWeeklyTimes(editingId);
+        if(wt.length) notes.push(`课程时间改成 ${courseData.time_range||'（空）'} 了，排课里的每周教室占用还是 ${wt.join('、')}，请到排课调整`);
+      }
+      // 弹框：这几回的教室要不要跟着调整（人点了才写；关掉 = 什么都不写）
+      try{
+        const roomChanges=[];
+        cachedSessions.filter(s=>s.course_id===editingId).forEach(s=>{
+          const o=oldInfoById[s.id];
+          const to={ date:s.session_date, time:s.time_range||courseData.time_range||'', cancelled:!!s.is_cancelled };
+          if(!o){ if(!to.cancelled) roomChanges.push({ id:s.id, num:s.session_number, from:null, to }); return; }
+          const from={ date:o.date, time:o.time||oldCourseTime, cancelled:o.cancelled };
+          // 课程整体改时间时，跟着课程走的回不算单回改时间
+          const followCourse=courseTimeChanged&&spanEq(from.time,oldCourseTime)&&spanEq(to.time,courseData.time_range);
+          const timeDiff=!followCourse&&!spanEq(from.time,to.time);
+          if(from.date!==to.date||timeDiff||from.cancelled!==to.cancelled) roomChanges.push({ id:s.id, num:o.num||s.session_number, from:from.cancelled?null:from, to });
+        });
+        await srmOpen({ course:saved, changes:roomChanges, sessions:cachedSessions.filter(s=>s.course_id===editingId) });
+      }catch(e){ console.warn('教室确认弹框失败', e); }
       const newKey=saved?periodKeyOf(saved):'';
       courseConfirmOpen({ title:'课程已修改，请核对', onEdit:openAddCourseModal, items:[Object.assign({
         course:saved, dates:cachedSessions.filter(s=>s.course_id===editingId&&!s.is_cancelled).map(s=>s.session_date), notes,
@@ -2649,6 +2674,7 @@ async function confirmReschedule(){
 
   const course=cachedCourses.find(c=>c.id===courseId);
   const weekdays=parseWeekdays(course?.weekdays||'');
+  const origTarget={ date:target.session_date, time:target.time_range||course?.time_range||'', num:target.session_number };   // 弹框用：休讲前的样子
   const lastSession=allSessions[allSessions.length-1];
   const lastNum=lastSession.session_number;   // 顺延前的最后回数（下面第 2 步会把 lastSession 的回数减 1，先记下来）
   const after=allSessions.slice(idx+1); // 休讲之后的所有课次（日期固定，等待填入顺延后的内容）
@@ -2734,6 +2760,13 @@ async function confirmReschedule(){
     closeModal('rescheduleModal');
     renderCoursesPage(document.getElementById('mainContent'));
     alert(`已将 ${target.session_date} 标记为休讲，内容顺延，末尾 ${newDateStr} 补第${newSession.session_number}回。`);
+    try{
+      await srmOpen({ course:cachedCourses.find(x=>x.id===courseId), sessions:cachedSessions.filter(s=>s.course_id===courseId),
+        changes:[
+          { id:target.id, num:origTarget.num, from:{ date:origTarget.date, time:origTarget.time, cancelled:false }, to:{ date:target.session_date, time:origTarget.time, cancelled:true } },
+          { id:newSession.id, num:newSession.session_number, from:null, to:{ date:newDateStr, time:newSession.time_range||course?.time_range||'', cancelled:false } },
+        ] });
+    }catch(e){ console.warn('教室确认弹框失败', e); }
   }catch(e){alert('操作失败：'+e.message)}
 }
 
