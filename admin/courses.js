@@ -581,7 +581,6 @@ function cleanupClearSelection(){
 async function cleanupDeleteSingle(courseId){
   if(!confirm('确定删除这门课程及其所有课次记录？此操作不可恢复。'))return;
   try{
-    await courseRoomClear(courseId).catch(e=>console.warn('清理自动临时占用失败',e));
     await sb(`/rest/v1/session_records?session_id=in.(${cachedSessions.filter(s=>s.course_id===courseId).map(s=>`"${s.id}"`).join(',')||'""'})`,'DELETE').catch(()=>{});
     await sb(`/rest/v1/course_sessions?course_id=eq.${courseId}`,'DELETE');
     await sb(`/rest/v1/courses?id=eq.${courseId}`,'DELETE');
@@ -596,7 +595,6 @@ async function cleanupDeleteSelected(){
   if(!confirm(`确定删除已选中的 ${cleanupSelected.size} 门课程及其所有课次记录？此操作不可恢复。`))return;
   try{
     for(const courseId of cleanupSelected){
-      await courseRoomClear(courseId).catch(e=>console.warn('清理自动临时占用失败',e));
       const sessionIds=cachedSessions.filter(s=>s.course_id===courseId).map(s=>s.id);
       if(sessionIds.length) await sb(`/rest/v1/session_records?session_id=in.(${sessionIds.map(i=>`"${i}"`).join(',')})`,'DELETE').catch(()=>{});
       await sb(`/rest/v1/course_sessions?course_id=eq.${courseId}`,'DELETE');
@@ -1206,7 +1204,6 @@ async function toggleCourseConfirm(courseId, isCurrentlyConfirmed){
 
 async function deleteCourse(id){
   try{
-    await courseRoomClear(id).catch(e=>console.warn('清理自动临时占用失败',e));
     await sb(`/rest/v1/session_records?session_id=in.(${cachedSessions.filter(s=>s.course_id===id).map(s=>`"${s.id}"`).join(',')||'""'})`,'DELETE').catch(()=>{});
     await sb(`/rest/v1/course_sessions?course_id=eq.${id}`,'DELETE');
     await sb(`/rest/v1/courses?id=eq.${id}`,'DELETE');
@@ -2226,6 +2223,9 @@ async function saveAddCourse(){
       const existingMap={}; existing.forEach(s=>{ existingMap[s.id]=s; });
       // 记录保存前的日期（按id），保存后对比，检测单回日期变动
       const oldDateById={}; existing.forEach(s=>{ oldDateById[s.id]=s.session_date; });
+      // 教室确认弹框要用：每一回保存前的日期 / 时间 / 是否休讲 / 回数
+      const oldInfoById={}; existing.forEach(s=>{ oldInfoById[s.id]={ date:s.session_date, time:s.time_range||'', cancelled:!!s.is_cancelled, num:s.session_number }; });
+      const oldCourseTime=_cur0?_cur0.time_range||'':'';
 
       // 开了单回明细：单回表是唯一依据，不再按框架重排日期（来自 acGetRows()：[{id,num,date,title,teacher}, ...]）
       let rows=detailRows;
@@ -2304,7 +2304,6 @@ async function saveAddCourse(){
       }
 
       const hwMsg=await hwFollowTitles(editingId, hwItems, hwKey, courseData.homework_enabled);
-      await courseRoomSyncSafe(editingId);   // 单回日期 / 取消 / 时间有变：排课的教室占用跟着走
 
       closeModal('addCourseModal');
       renderCoursesPage(document.getElementById('mainContent'));
@@ -2317,7 +2316,29 @@ async function saveAddCourse(){
       if(hwMsg) alert(hwMsg);
       if(tCtx.changed&&!tCtx.single) alert('上课老师已改，请在单回明细里重新分配老师（按周几 / 回数分配，或者去排课）');
       const saved=cachedCourses.find(c=>c.id===editingId);
-      const notes=dateChanged?['单回日期有变动（改期 / 休讲顺延 / 新增课次），可能影响排课系统里的教室占用和腾讯会议安排，请到排课系统为变动的日期确认或补上临时教室占用']:[];
+      const notes=dateChanged?['单回日期有变动（改期 / 休讲顺延 / 新增课次），可能影响腾讯会议安排，请到排课系统确认']:[];
+      // 课程整体上课时间改了：不动每周占用，只提示
+      const spanEq=(x,y)=>{ const p=timeRangesSpan(x||''),q=timeRangesSpan(y||''); return p.start===q.start&&p.end===q.end; };
+      const courseTimeChanged=!spanEq(oldCourseTime,courseData.time_range);
+      if(courseTimeChanged){
+        const wt=await srmWeeklyTimes(editingId);
+        if(wt.length) notes.push(`课程时间改成 ${courseData.time_range||'（空）'} 了，排课里的每周教室占用还是 ${wt.join('、')}，请到排课调整`);
+      }
+      // 弹框：这几回的教室要不要跟着调整（人点了才写；关掉 = 什么都不写）
+      try{
+        const roomChanges=[];
+        cachedSessions.filter(s=>s.course_id===editingId).forEach(s=>{
+          const o=oldInfoById[s.id];
+          const to={ date:s.session_date, time:s.time_range||courseData.time_range||'', cancelled:!!s.is_cancelled };
+          if(!o){ if(!to.cancelled) roomChanges.push({ id:s.id, num:s.session_number, from:null, to }); return; }
+          const from={ date:o.date, time:o.time||oldCourseTime, cancelled:o.cancelled };
+          // 课程整体改时间时，跟着课程走的回不算单回改时间
+          const followCourse=courseTimeChanged&&spanEq(from.time,oldCourseTime)&&spanEq(to.time,courseData.time_range);
+          const timeDiff=!followCourse&&!spanEq(from.time,to.time);
+          if(from.date!==to.date||timeDiff||from.cancelled!==to.cancelled) roomChanges.push({ id:s.id, num:o.num||s.session_number, from:from.cancelled?null:from, to });
+        });
+        await srmOpen({ course:saved, changes:roomChanges, sessions:cachedSessions.filter(s=>s.course_id===editingId) });
+      }catch(e){ console.warn('教室确认弹框失败', e); }
       const newKey=saved?periodKeyOf(saved):'';
       courseConfirmOpen({ title:'课程已修改，请核对', onEdit:openAddCourseModal, items:[Object.assign({
         course:saved, dates:cachedSessions.filter(s=>s.course_id===editingId&&!s.is_cancelled).map(s=>s.session_date), notes,
@@ -2545,7 +2566,6 @@ async function regenerateSessions(){
     await sb(`/rest/v1/courses?id=eq.${id}`,'PATCH',{first_session_date:firstDate,total_sessions:total,weekdays:wdStr,time_range:timeRange});
     const idx=cachedCourses.findIndex(c=>c.id===id);
     if(idx>=0) Object.assign(cachedCourses[idx],{first_session_date:firstDate,total_sessions:total,weekdays:wdStr,time_range:timeRange});
-    await courseRoomSyncSafe(id);
     closeModal('editCourseModal');
     renderCoursesPage(document.getElementById('mainContent'));
     alert(`已重新生成 ${sessions.length} 个课次`);
@@ -2618,7 +2638,6 @@ async function confirmCopyPeriod(){
       const sres=await sb('/rest/v1/course_sessions','POST',chunk);
       cachedSessions.push(...(Array.isArray(sres)?sres:chunk));
     }
-    await courseRoomSyncSafe(newId);
     coursesPeriodFilter=periodKeyOf(newCourse);
     closeModal('copyPeriodModal');
     renderCoursesPage(document.getElementById('mainContent'));
@@ -2655,6 +2674,7 @@ async function confirmReschedule(){
 
   const course=cachedCourses.find(c=>c.id===courseId);
   const weekdays=parseWeekdays(course?.weekdays||'');
+  const origTarget={ date:target.session_date, time:target.time_range||course?.time_range||'', num:target.session_number };   // 弹框用：休讲前的样子
   const lastSession=allSessions[allSessions.length-1];
   const lastNum=lastSession.session_number;   // 顺延前的最后回数（下面第 2 步会把 lastSession 的回数减 1，先记下来）
   const after=allSessions.slice(idx+1); // 休讲之后的所有课次（日期固定，等待填入顺延后的内容）
@@ -2737,11 +2757,16 @@ async function confirmReschedule(){
       if(co){ co.skip_dates=newSkip; co.end_date=newDateStr; }
     }catch(e){ /* 同步失败不阻断休讲本身 */ }
 
-    window.__crsLastError=''; const _rs=await courseRoomSyncSafe(courseId);   // 休讲那天释放教室，顺延出的新日期临时占用
-    const _rsTxt=!_rs?('\n\n教室核对失败：'+(window.__crsLastError||'未知原因')+'。请到排课首页点「核对单回和教室」重试'):((_rs.notes||[]).filter(t=>!/无需处理/.test(t)).length?('\n\n教室情况：\n'+_rs.notes.filter(t=>!/无需处理/.test(t)).join('\n')):'');
     closeModal('rescheduleModal');
     renderCoursesPage(document.getElementById('mainContent'));
-    alert(`已将 ${target.session_date} 标记为休讲，内容顺延，末尾 ${newDateStr} 补第${newSession.session_number}回。\n\n顺延日已自动占用原教室；原教室那天被占时，会在排课首页提醒。`+_rsTxt);
+    alert(`已将 ${target.session_date} 标记为休讲，内容顺延，末尾 ${newDateStr} 补第${newSession.session_number}回。`);
+    try{
+      await srmOpen({ course:cachedCourses.find(x=>x.id===courseId), sessions:cachedSessions.filter(s=>s.course_id===courseId),
+        changes:[
+          { id:target.id, num:origTarget.num, from:{ date:origTarget.date, time:origTarget.time, cancelled:false }, to:{ date:target.session_date, time:origTarget.time, cancelled:true } },
+          { id:newSession.id, num:newSession.session_number, from:null, to:{ date:newDateStr, time:newSession.time_range||course?.time_range||'', cancelled:false } },
+        ] });
+    }catch(e){ console.warn('教室确认弹框失败', e); }
   }catch(e){alert('操作失败：'+e.message)}
 }
 
@@ -3344,7 +3369,7 @@ async function confirmArrangement(){
   }
   if(!confirm(`确认将 ${entries.length} 个课次的排课结果同步到课程安排？`))return;
   try{
-    let synced=0; const roomSyncIds=new Set();
+    let synced=0;
     for(const [date,{title,teacher}] of entries){
       const session=cachedSessions.find(s=>s.course_name===courseName&&s.session_date===date);
       if(session){
@@ -3357,7 +3382,7 @@ async function confirmArrangement(){
         if(preferredDate&&preferredDate!==date) patchData.session_date=preferredDate;
         await sb(`/rest/v1/course_sessions?id=eq.${session.id}`,'PATCH',patchData);
         session.session_title=title;session.session_teacher=teacher;session.teacher=teacher;
-        if(patchData.session_date){ session.session_date=patchData.session_date; roomSyncIds.add(session.course_id); }
+        if(patchData.session_date){ session.session_date=patchData.session_date; }
         arrangementDraft[date].session_id=session.id;
         arrangementDraft[date].confirmed=true;
         synced++;
@@ -3370,7 +3395,6 @@ async function confirmArrangement(){
         }
       }
     }
-    for(const cid of roomSyncIds) await courseRoomSyncSafe(cid);
     // re-render summary
     renderSummaryBody(allSlots,courseName);
     // update courses page in background

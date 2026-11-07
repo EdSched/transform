@@ -60,7 +60,7 @@
   <div class="card" id="boardCard"><div class="board" id="gridBox"><div class="muted">加载中…</div></div></div>
   <p class="foot-note">仅显示上课安排。如需教室预约或管理，请使用管理员发放的专属链接。</p>
 </div>
-<script src="common.js?v=20270116"></script>
+<script src="common.js?v=20270126"></script>
 <script>
 // 是否在教室列里显示 VIP 教室：true = 方案 A（VIP 教室放在右边、列较窄）；false = 方案 B（只在大教室被 VIP 占用时显示灰色「VIP」）
 const SHOW_VIP_ROOMS = true;
@@ -112,7 +112,7 @@ function render(){
   el('meta').textContent = WEEKDAYS[weekdayOf(date)]+' '+date;
   if(!rooms.length){ el('gridBox').innerHTML='<div class="muted">该校区暂无教室</div>'; return; }
   const todays = BOOKINGS.filter(b => bookingOnDate(b, date) &&
-    !(b.course_id && window.SKIPMAP && window.SKIPMAP[b.course_id] && window.SKIPMAP[b.course_id].has(date)));
+    !skipHides(b,date));
   // 对外：隐藏使用人/事由，只显示课名+时间
   el('gridBox').innerHTML = renderOccupancyGrid(rooms, todays, 'room_id', {
     hideWho:true,

@@ -1,3 +1,6 @@
+// 兜底：「单回↔教室占用同步」已整套删除；万一哪里漏了调用，也不会报错打断保存
+window.courseRoomSyncSafe = window.courseRoomSyncSafe || (async () => null);
+window.courseRoomClear = window.courseRoomClear || (async () => null);
 // 管理端和排课共用：课程的单回（course_sessions）按课程框架重排日期
 // 依赖 shared/constants.js（courseScan / timeRangesSpan）。管理端用 sb / sbAll，排课用 sbGet / sbUpdate / sbInsert / sbDelete，这里自动认。
 //
@@ -42,8 +45,6 @@ async function courseRegenSessions(courseId, opts) {
   let res;
   if (opts.fieldsOnly) res = await courseSyncSessionFields(co, sessions, opts.old);   // 框架没变：只同步名字 / 校区 / 上课时间，不动日期
   else res = await csRegen(co, sessions, opts, warnings, courseId);
-  // 单回有变动：教室占用跟着走（失败不挡保存）
-  if (typeof courseRoomSyncSafe === 'function') res.room = await courseRoomSyncSafe(courseId);
   return res;
 }
 

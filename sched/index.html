@@ -36,10 +36,9 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../shared/constants.js?v=20270301"></script>
-<script src="common.js?v=20270116"></script>
+<script src="common.js?v=20270126"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
-<script src="../shared/course-sessions.js?v=20270116"></script>
-<script src="../shared/course-room-sync.js?v=20261115"></script>
+<script src="../shared/course-sessions.js?v=20270126"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], ROLE=null;
@@ -163,10 +162,7 @@ function renderHub(){
     }
   }catch(e){}
   renderChangeAlerts();
-  if(!window.__roomRetryStarted){ window.__roomRetryStarted=true;
-    courseRoomWatchBookings(async n=>{ try{ await reloadAll(); }catch(e){} renderChangeAlerts(); toast('已自动补占 '+n+' 天'); });
-    courseRoomRetryPending().then(async n=>{ if(n){ try{ await reloadAll(); }catch(e){} renderChangeAlerts(); toast('已自动补占 '+n+' 天'); } }).catch(()=>{});
-  }
+  // 打开页面不再自动核对 / 补占：只有人点「核对单回和教室」等按钮才跑
   const pend = BOOKINGS.filter(b=>b.status==='pending').length;
   el('hubCards').innerHTML = visibleCards().map(([k,ic,nm,desc])=>{
     const badge = (k==='pending'&&pend)?` <span class="badge b-warn">${pend}</span>`:'';
@@ -174,89 +170,13 @@ function renderHub(){
   }).join('') || '<span class="muted">当前账号暂无可用功能，请联系管理员。</span>';
   el('hubCards').querySelectorAll('[data-hub]').forEach(a=>a.onclick=(e)=>{ e.preventDefault(); openCard(a.dataset.hub); });
 }
-function bindRoomAck(box){
-  const myRole=(ROLE&&ROLE.role)||'';
-  const tg=box.querySelector('[data-roomtoggle]'); if(tg) tg.onclick=()=>{ window.__roomAlertOpen=!window.__roomAlertOpen; renderChangeAlerts(); };
-  const all=box.querySelector('[data-recheckall]'); if(all) all.onclick=async()=>{
-    const _t=new Date().toISOString().slice(0,10);
-    const ids=[...new Set((CHANGELOG||[]).filter(l=>l.action==='session_room').map(l=>((Array.isArray(l.changes)?l.changes:[])[0]||{})).filter(x=>x.course_id&&!x.resolved_at&&(x.date||'')>=_t).map(x=>String(x.course_id)))];
-    all.disabled=true; let ok=0, left=0;
-    try{ const res=await courseRoomSyncMany(ids,(i,t)=>{ all.textContent='核对中 '+i+'/'+t; }); Object.values(res).forEach(r=>{ ok+=((r&&r.resolved)||[]).filter(v=>v.kind==='occupied').length; }); }catch(e){ console.warn('全部重新核对失败',e); }
-    try{ await reloadAll(); }catch(e){}
-    left=(CHANGELOG||[]).filter(l=>{ const x=(l.changes||[])[0]||{}; return l.action==='session_room' && !x.resolved_at && (x.date||'')>=_t; }).length;
-    toast('已自动占用 '+ok+' 天；还有 '+left+' 条原教室仍被占'); renderChangeAlerts();
-  };
-  box.querySelectorAll('[data-recheck]').forEach(b=>b.onclick=async()=>{
-    const l=CHANGELOG.find(x=>String(x.id)===String(b.dataset.recheck)); if(!l) return;
-    const x=(Array.isArray(l.changes)?l.changes:[])[0]||{};
-    if(!x.course_id){ toast('这条提醒没有对应课程'); return; }
-    b.disabled=true; b.textContent='核对中…';
-    const r=await courseRoomSyncSafe(x.course_id);
-    try{ await reloadAll(); }catch(e){}
-    const done=r&&(r.resolved||[]).find(v=>v.key===x.key);
-    if(!r){ toast('核对失败，请稍后再试'); renderChangeAlerts(); return; }
-    if(done){ toast(done.note); renderChangeAlerts(); return; }
-    let lines=[]; try{ lines=await courseRoomWhyBlocked(x.course_id,x); }catch(e){ lines=['查询占用详情失败']; }
-    window.__roomWhy=window.__roomWhy||{}; window.__roomWhy[l.id]=lines.length?lines:['当天没有查到冲突，请再点一次核对'];
-    window.__roomAlertOpen=true; renderChangeAlerts();
-  });
-  const ackAll=box.querySelector('[data-ackall]'); if(ackAll) ackAll.onclick=async()=>{
-    const _t=new Date().toISOString().slice(0,10);
-    const rows=(CHANGELOG||[]).filter(l=>{ const x=(Array.isArray(l.changes)?l.changes:[])[0]||{}; const a=(l.acked_by||'').split(',').map(s=>s.trim()).filter(Boolean); return l.action==='session_room' && !a.includes(myRole) && !a.includes('admin') && !x.resolved_at && (x.date||'')>=_t; });
-    if(!rows.length) return;
-    if(!confirm('把当前列表里的 '+rows.length+' 条教室提醒全部标为「知道了」？\n（只是不再提醒，不会占用教室；之后同一天再出问题仍会重新提醒）')) return;
-    ackAll.disabled=true; let fail=0;
-    for(const l of rows){
-      const a=(l.acked_by||'').split(',').map(s=>s.trim()).filter(Boolean); a.push(myRole);
-      try{ await sbUpdate('sched_change_log', l.id, {acked_by:a.join(',')}); l.acked_by=a.join(','); }catch(e){ fail++; }
-    }
-    toast(fail?('已处理 '+(rows.length-fail)+' 条，'+fail+' 条失败'):'已全部标为知道了');
-    renderChangeAlerts();
-  };
-  box.querySelectorAll('[data-ackrm]').forEach(b=>b.onclick=async()=>{
-    const l=CHANGELOG.find(x=>String(x.id)===String(b.dataset.ackrm)); if(!l) return;
-    const acked=(l.acked_by||'').split(',').map(s=>s.trim()).filter(Boolean);
-    if(!acked.includes(myRole)) acked.push(myRole);
-    try{ await sbUpdate('sched_change_log', l.id, {acked_by:acked.join(',')}); l.acked_by=acked.join(','); }catch(e){}
-    renderChangeAlerts();
-  });
-}
-function crsQueryBox(){
-  return `<details style="margin-bottom:8px;font-size:13px"><summary style="cursor:pointer;color:#666">单回教室查询（输入课程名，看某门课每一回有没有占上教室）</summary><div style="display:flex;gap:8px;margin-top:6px"><input id="crsq_name" placeholder="课程名，如 新闻传播学" style="flex:1;max-width:260px"><button class="sm" id="crsq_go">核对</button></div><div id="crsq_out" style="margin-top:6px;white-space:pre-wrap;line-height:1.7;font-size:12px"></div></details>`;
-}
-function bindCrsQuery(box){
-  const go=box.querySelector('#crsq_go'); if(!go) return;
-  go.onclick=async()=>{
-    const q=(box.querySelector('#crsq_name').value||'').trim(), out=box.querySelector('#crsq_out');
-    if(!q){ out.textContent='请先输入课程名'; return; }
-    const cs=(COURSES||[]).filter(c=>(c.name||'').includes(q));
-    if(!cs.length){ out.textContent='没找到名字含「'+q+'」的课（已结课的课不在排课里）'; return; }
-    go.disabled=true; out.textContent='核对中…'; const lines=[];
-    for(const c of cs.slice(0,8)){
-      try{ const r=await courseRoomSync(c.id); const rep=await courseRoomReport(c.id); lines.push('《'+c.name+'》'+((r.notes||[]).filter(t=>!/无需处理/.test(t)).length?'\n  '+r.notes.filter(t=>!/无需处理/.test(t)).join('\n  '):'')+(r.created?'\n  本次新占用 '+r.created+' 天':'')+((r.resolved||[]).length?'\n  '+r.resolved.map(v=>v.note).join('；'):'')+'\n  '+rep.join('\n  ')); }
-      catch(e){ lines.push('《'+c.name+'》核对出错：'+(e&&e.message||e)); }
-    }
-    go.disabled=false; out.textContent=lines.join('\n\n');
-    try{ await reloadAll(); }catch(e){}
-  };
-}
 function renderChangeAlerts(){
   let box=el('changeAlerts');
   if(!box){ const hi=el('hello'); if(!hi) return; box=document.createElement('div'); box.id='changeAlerts'; hi.parentNode.insertBefore(box, hi.nextSibling); }
   const myRole=(ROLE&&ROLE.role)||'';
   const notAcked=l=>{ const acked=(l.acked_by||'').split(',').map(s=>s.trim()).filter(Boolean); return !acked.includes(myRole); };
   const pending=(CHANGELOG||[]).filter(l=>l.action!=='session_room' && notAcked(l));
-  // 单回改期后原教室被占：要人安排，逐条列出
-  const _todayStr=new Date().toISOString().slice(0,10);   // 当天之前的不再提醒
-  const roomAlerts=(CHANGELOG||[]).filter(l=>{ const x=(Array.isArray(l.changes)?l.changes:[])[0]||{}; return l.action==='session_room' && notAcked(l) && !(l.acked_by||'').split(',').map(s=>s.trim()).includes('admin') && !x.resolved_at && (x.date||'')>=_todayStr; });   // 管理员点过「知道了」的，所有人都不再提示
-  const roomRows=roomAlerts.map(l=>{ const x=(Array.isArray(l.changes)?l.changes:[])[0]||{};
-    const why=(window.__roomWhy||{})[l.id];
-    const whyHtml=why?`<div style="margin-top:4px;padding:6px 10px;background:#fff;border-radius:6px;font-size:12px;line-height:1.7">${why.map(t=>esc(t)).join('<br>')}</div>`:'';
-    return `<div style="border-top:1px solid #e6b8b3;padding:6px 0;font-size:13px"><div style="display:flex;gap:10px;align-items:center"><span style="flex:1">${esc(x.to||'')}</span><button class="sm ghost" data-recheck="${l.id}">重新核对</button><button class="sm ghost" data-ackrm="${l.id}">知道了</button></div>${whyHtml}</div>`; }).join('');
-  const roomOpen=window.__roomAlertOpen?'block':'none';
-  const roomHtml=roomAlerts.length?`<div style="background:#fdecea;border:1px solid #e6b8b3;border-radius:8px;padding:8px 14px;margin-bottom:8px"><div style="font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="flex:1">有 <b>${roomAlerts.length}</b> 条单回改期的教室要安排（原教室当天被占）</span><button class="sm" data-recheckall="1">全部重新核对</button><button class="sm ghost" data-ackall="1">全部知道了</button><button class="sm ghost" data-roomtoggle="1">${window.__roomAlertOpen?'收起':'展开'}</button></div><div id="roomAlertDetail" style="display:${roomOpen}">${roomRows}</div></div>`:'';
-  const qHtml=window.__crsqHtml||(window.__crsqHtml=crsQueryBox());
-  if(!pending.length){ box.innerHTML=roomHtml+qHtml; bindRoomAck(box); bindCrsQuery(box); return; }
+  if(!pending.length){ box.innerHTML=''; return; }
   // 按学科（类别）分组：反查课程的 category
   const catOf=(l)=>{
     const c=(COURSES||[]).find(x=>String(x.legacy_sched_id)===String(l.course_id) || String(x.id)===String(l.course_id));
@@ -264,7 +184,7 @@ function renderChangeAlerts(){
   };
   const groups={}; pending.forEach(l=>{ const k=catOf(l); (groups[k]=groups[k]||[]).push(l); });
   const cats=Object.keys(groups).sort();
-  box.innerHTML = roomHtml + qHtml + cats.map((cat,gi)=>{
+  box.innerHTML = cats.map((cat,gi)=>{
     const items=groups[cat];
     const ids=items.map(l=>l.id).join(',');
     const detail=items.map(l=>{
@@ -283,7 +203,6 @@ function renderChangeAlerts(){
       `<div id="chgdetail_${gi}" style="display:none">${detail}</div>`+
       `</div>`;
   }).join('');
-  bindRoomAck(box); bindCrsQuery(box);
   box.querySelectorAll('[data-chgtoggle]').forEach(b=>b.onclick=()=>{
     const d=el('chgdetail_'+b.dataset.chgtoggle); if(!d) return;
     const open=d.style.display!=='none';
@@ -502,7 +421,7 @@ function pendViewRooms(id){
   const date=b.booking_date;
   const rooms=ROOMS.filter(r=>r.active!==false && r.campus===campus).map(r=>({id:r.id,name:r.name,sub:(r.type||'')+'·'+r.capacity+'人'}));
   const todays=BOOKINGS.filter(x=>bookingOnDate(x,date) &&
-    !(x.course_id && window.SKIPMAP && window.SKIPMAP[x.course_id] && window.SKIPMAP[x.course_id].has(date)));
+    !skipHides(x,date));
   let h='<div class="card" style="margin-top:10px;background:#f7f9fb">'+
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">'+
       '<b>'+esc(campus)+' · '+esc(date)+'（'+WEEKDAYS[weekdayOf(date)]+'）教室占用情况</b>'+
@@ -553,7 +472,6 @@ function tabAssign(){
         '<option value="">全部</option><option value="todo">未排</option><option value="done">已排</option></select></div>'+
       '<div class="field"><label>方式</label><select id="af_kind"><option value="">全部</option><option value="online">线上课</option><option value="offline">线下课</option></select></div>'+
       '<div class="field"><label>&nbsp;</label><span class="muted" id="af_count"></span></div>'+
-      '<div class="field"><label>&nbsp;</label><button class="ghost sm" id="af_crsync" title="管理端改了单回日期/休讲后，让教室占用跟着走">核对单回和教室</button></div>'+
     '</div>'+
     '<div style="display:flex;gap:6px;margin-bottom:10px;align-items:flex-end;flex-wrap:wrap">'+
       '<button type="button" class="ghost sm asview" data-v="day">按周排课</button>'+
@@ -605,7 +523,6 @@ function tabAssign(){
   if(el('af_week')) el('af_week').onchange=()=>{ saveAF(); renderAssignView(); };
   if(el('af_weekclr')) el('af_weekclr').onclick=()=>{ el('af_week').value=''; saveAF(); renderAssignView(); };
   window.AS_VIEW = (window.AS_VIEW==='week') ? 'day' : (window.AS_VIEW || 'day');
-  if(el('af_crsync')) el('af_crsync').onclick=crsVerifyAll;
   function syncRoomPicker(){
     const isDay = window.AS_VIEW==='day';
     if(el('wkRoomWrap')) el('wkRoomWrap').classList.add('hidden');
@@ -638,13 +555,7 @@ function renderAssignSearch(box, q, term, cat){
   box.innerHTML='<div class="muted" style="font-size:12px;margin-bottom:6px">找到 '+list.length+' 门；选校区后可看教室占用表。</div>'+list.map(c=>{
     const wk=BOOKINGS.filter(b=>isWeeklyCourseBk(b)&&String(b.course_id)===String(c.id));
     const rooms=[...new Set(wk.map(b=>rn(b.room_id)))].join('、')||'还没排教室';
-    return `<div style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:13px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>${esc(c.name||'')}</b><span class="muted">${esc(c.teacher||'')} · ${esc(c.start_time||'')}${c.end_time?'-'+esc(c.end_time):''} · ${esc(c.start_date||'')}~${esc(c.end_date||'')}</span><span style="flex:1">${esc(rooms)}</span><button class="sm" data-srchchk="${c.id}">核对单回教室</button></div><div id="srchout_${c.id}" style="white-space:pre-wrap;font-size:12px;line-height:1.7;margin-top:4px"></div></div>`; }).join('');
-  box.querySelectorAll('[data-srchchk]').forEach(b=>b.onclick=async()=>{
-    const id=b.dataset.srchchk, out=el('srchout_'+id); b.disabled=true; out.textContent='核对中…';
-    try{ const r=await courseRoomSync(id); const rep=await courseRoomReport(id); out.textContent=((r.notes||[]).filter(t=>!/无需处理/.test(t)).join('\n')+(r.created?'\n本次新占用 '+r.created+' 天':'')+((r.resolved||[]).length?'\n'+r.resolved.map(v=>v.note).join('；'):'')+'\n'+rep.join('\n')).trim(); try{ await reloadAll(); }catch(e){} }
-    catch(e){ out.textContent='核对出错：'+(e&&e.message||e); }
-    b.disabled=false;
-  });
+    return `<div style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:13px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>${esc(c.name||'')}</b><span class="muted">${esc(c.teacher||'')} · ${esc(c.start_time||'')}${c.end_time?'-'+esc(c.end_time):''} · ${esc(c.start_date||'')}~${esc(c.end_date||'')}</span><span style="flex:1">${esc(rooms)}</span></div></div>`; }).join('');
 }
 function renderAssignDay(){
   const box=el('assignTable');
@@ -932,24 +843,7 @@ function renderAssignWeek(){
   };
   const cl=el('wk_clear'); if(cl) cl.onclick=()=>{ window.WK_PENDING[room.id]=new Set(); renderAssignWeek(); };
 }
-/* ---------- 单回和教室：兜底核对 / 调整某一天 ---------- */
-async function crsVerifyAll(){
-  const list=(window.AS_VIEW==='table' && window.AF_LIST) ? window.AF_LIST : assignViewCourses();
-  const ids=[...new Set(list.filter(c=>BOOKINGS.some(b=>isWeeklyCourseBk(b)&&String(b.course_id)===String(c.id))).map(c=>String(c.id)))];
-  if(!ids.length){ toast('当前显示的课里没有已排教室的'); return; }
-  const btn=el('af_crsync'); if(btn){ btn.disabled=true; btn.textContent='核对中 0/'+ids.length; }
-  const tot={released:0,created:0,removed:0,reminders:0}; let fail=0; const detail=[];
-  const _res=await courseRoomSyncMany(ids,(i,t)=>{ if(btn) btn.textContent='核对中 '+i+'/'+t; });
-  for(const id of ids){
-    const cn=((COURSES||[]).find(c=>String(c.id)===id)||{}).name||id, r=_res[id]||{};
-    if(r.error){ fail++; detail.push('《'+cn+'》核对出错：'+r.error); continue; }
-    Object.keys(tot).forEach(k=>tot[k]+=(typeof r[k]==='number'?r[k]:0)); (r.notes||[]).filter(t=>!/无需处理/.test(t)).forEach(t=>detail.push('《'+cn+'》'+t));
-  }
-  if(btn){ btn.disabled=false; btn.textContent='核对单回和教室'; }
-  await reloadAll(); renderAssignView();
-  const _n=new Date();
-  alert('核对了 '+ids.length+' 门课（只处理今天（'+(_n.getMonth()+1)+'/'+_n.getDate()+'）以后的日子）：\n释放教室 '+tot.released+' 天\n临时占用 '+tot.created+' 天\n清掉过期临时占用 '+tot.removed+' 条\n需要人处理 '+tot.reminders+' 条（见排课首页提醒）'+(fail?('\n失败 '+fail+' 门'):'')+(detail.length?('\n\n明细：\n'+detail.slice(0,30).join('\n')):''));
-}
+/* ---------- 调整某一天 ---------- */
 /* 某门课今天以后的上课日（按周占用 + 临时占用），用于「调整某一天」 */
 function adjustDayEntries(group){
   const today=ymd(new Date()), out=[];
@@ -957,9 +851,9 @@ function adjustDayEntries(group){
   BOOKINGS.filter(b=>b.kind==='course' && ids.has(String(b.course_id)) && b.status!=='rejected').forEach(b=>{
     if(b.recurrence==='once'){ if(b.booking_date>=today) out.push({date:b.booking_date, b, temp:true, released:false}); return; }
     if(b.recurrence!=='weekly' || !b.end_date) return;
-    const manual=(b.manual_off_dates||'').split(',').filter(Boolean), auto=(b.auto_off_dates||'').split(',').filter(Boolean);
+    const manual=(b.manual_off_dates||'').split(',').filter(Boolean);
     for(let d=(b.start_date&&b.start_date>today?b.start_date:today), g=0; d<=b.end_date && g<800; d=addDays(d,1), g++){
-      if(Number(b.weekday)!==weekdayOf(d) || auto.includes(d)) continue;
+      if(Number(b.weekday)!==weekdayOf(d)) continue;
       out.push({date:d, b, temp:false, released:manual.includes(d)});
     }
   });
@@ -975,14 +869,15 @@ function adjustDayDialog(courseId){
   mask.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:60;overflow:auto;padding:40px 16px';
   document.body.appendChild(mask);
   const actor=()=>schedActorStamp((ROLE&&(ROLE.label||ROLE.role))||'排课');
+  const weeklyOnDay=(b,d)=>b.recurrence==='weekly' && !(b.start_date&&d<b.start_date) && !(b.end_date&&d>b.end_date) && Number(b.weekday)===weekdayOf(d) && !(b.manual_off_dates||'').split(',').includes(d);
   const addOff=(b,d)=>{ const a=(b.manual_off_dates||'').split(',').filter(Boolean); if(!a.includes(d)) a.push(d); return a.sort().join(','); };
   // 释放：按周占用写 manual_off_dates；临时占用直接删（同时在该课的按周占用上记一笔，免得下次核对又占回去）
   async function releaseDay(d){
     for(const g of group){
       const wk=BOOKINGS.filter(b=>isWeeklyCourseBk(b)&&String(b.course_id)===String(g.id)&&b.status==='confirmed');
       const tmp=BOOKINGS.filter(b=>b.kind==='course'&&b.recurrence==='once'&&String(b.course_id)===String(g.id)&&b.booking_date===d);
-      let mark=wk.find(b=>crsWeeklyOn(b,d,true));
-      for(const b of wk.filter(b=>crsWeeklyOn(b,d,true))) await sbUpdate('sched_bookings', b.id, Object.assign({manual_off_dates:addOff(b,d)}, actor()));
+      let mark=wk.find(b=>weeklyOnDay(b,d));
+      for(const b of wk.filter(b=>weeklyOnDay(b,d))) await sbUpdate('sched_bookings', b.id, Object.assign({manual_off_dates:addOff(b,d)}, actor()));
       for(const t of tmp){ await sbDeleteAs('sched_bookings', t.id, actor().last_actor); if(!mark && wk[0]){ await sbUpdate('sched_bookings', wk[0].id, Object.assign({manual_off_dates:addOff(wk[0],d)}, actor())); wk[0].manual_off_dates=addOff(wk[0],d); } }
     }
   }
@@ -1007,7 +902,7 @@ function adjustDayDialog(courseId){
     el('adj_close').onclick=()=>mask.remove();
     mask.querySelectorAll('[data-d]').forEach(x=>x.onclick=()=>{ sel=sel===x.dataset.d?null:x.dataset.d; paint(); });
     const done=async(fn,msg)=>{
-      try{ await fn(); await courseRoomSyncSafe(courseId); await reloadAll(); toast(msg); paint(); renderAssignView(); }catch(e){ toast('失败：'+e.message,false); }
+      try{ await fn(); await reloadAll(); toast(msg); paint(); renderAssignView(); }catch(e){ toast('失败：'+e.message,false); }
     };
     if(el('adj_rel')) el('adj_rel').onclick=()=>done(()=>releaseDay(sel),'已释放 '+sel+' 的教室');
     if(el('adj_restore')) el('adj_restore').onclick=()=>done(async()=>{
@@ -1733,8 +1628,7 @@ const WD_NAME={1:'周一',2:'周二',3:'周三',4:'周四',5:'周五',6:'周六'
 // 某条占用这一天是否真的占着（扣掉自动/人工释放的日子、休讲日）
 function cfOn(b,d){
   if(!bookingOnDate(b,d)) return false;
-  const skip=window.SKIPMAP||{};
-  return !(b.kind==='course' && b.course_id && skip[b.course_id] && skip[b.course_id].has(d));
+  return !skipHides(b,d);
 }
 function cfDaysBetween(lo,hi,weekdays){
   const out=[]; for(let d=lo,g=0; d && d<=hi && g<800; d=addDays(d,1),g++){ if(!weekdays||weekdays.includes(weekdayOf(d))) out.push(d); } return out;
