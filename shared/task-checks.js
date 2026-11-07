@@ -29,6 +29,13 @@ function taskBookingsMonth(D) {
     return _tkAll(`/rest/v1/bookings?select=student_id,name,slot_date,daily_record&daily_record=not.is.null&slot_date=gte.${ym}-01&slot_date=lt.${ymNextFirst(ym)}`);
   });
 }
+// 本月的「学习记录」（联系记录里 kind 为学习记录 / 空）：和面谈记录一起算「本月已跟进」，口径见 shared/follow-up.js 的 fuFollowedSets
+function taskContactLogsMonth(D) {
+  return _tkLoad(D, 'sclogs', async () => {
+    const ym = _tkYm();
+    return _tkAll(`/rest/v1/student_contact_logs?select=student_id,student_name,kind,for_month,created_at&or=(for_month.eq.${ym},created_at.gte.${ym}-01T00:00:00Z)`);
+  });
+}
 function taskRecords(D) { return _tkLoad(D, 'rec', () => _tkAll(`/rest/v1/session_records?select=student_id,student_name,session_id,session_date,attendance_status,created_at&session_date=gte.${_tkDaysAgo(60)}&order=session_date.desc`)); }
 function taskCourses(D) { return _tkLoad(D, 'courses', () => _tkAll('/rest/v1/courses?select=id,name,teacher,period,period_override,first_session_date,domain,major,class_ids,attendance_mode')); }
 function taskSessions(D) { return _tkLoad(D, 'sess', () => _tkAll(`/rest/v1/course_sessions?select=id,course_id,course_name,session_date,session_teacher,teacher,confirmed,is_cancelled&session_date=gte.${_tkDaysAgo(90)}`)); }
@@ -134,9 +141,8 @@ const TASK_CHECK_FN = {
     return { count: items.length, items };
   },
   async meeting_due(D, t, tpl) {
-    const [stu, bk] = await Promise.all([taskScopedStudents(D, t, tpl), taskBookingsMonth(D)]);
-    const ids = new Set(), names = new Set();
-    bk.filter(_tkHasRec).forEach(b => { if (b.student_id) ids.add(b.student_id); if (b.name) names.add(b.name); });
+    const [stu, bk, logs] = await Promise.all([taskScopedStudents(D, t, tpl), taskBookingsMonth(D), taskContactLogsMonth(D)]);
+    const { ids, names } = fuFollowedSets(bk, logs, _tkYm());
     const items = stu.filter(s => !ids.has(s.id) && !names.has(s.name)).map(s => _tkStuItem(s));
     return { count: items.length, items };
   },

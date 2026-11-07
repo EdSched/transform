@@ -729,7 +729,7 @@ function deptIsDomLock(){
 // ── 管理模式「能用的页面」开关（manage_scope.pages；没有这个键 = 全部，现有负责人不受影响）──
 // [开关 key, 老师编辑页 chip 文字, 对应页面（switchPage 的 page 名）]；资源管理 / 价目 / 专业沿用各自的开关，不在这里
 const MGR_PAGE_DEFS=[
-  ['booking','面谈预约',['booking','slots']],['students','学生档案',['students']],['progress','考学进度',['progress']],
+  ['booking','面谈预约',['booking','slots']],['students','学生档案',['students','followup']],['progress','考学进度',['progress']],
   ['attendance','出席・作业',['attendance']],['monthly','月度学习情况',['monthly']],['courses','课程',['courses','coursecleanup','schedule']],
   ['vipframework','VIP框架',['vipframework']],['promo','宣传介绍',['promo']],['admissions','合格实绩',['admissions']],
   ['teachers','老师管理',['teachers']],['tasks','任务安排',['tasks']],['mgmt','管理可视化',['mgmt']],
@@ -1288,6 +1288,9 @@ async function renderPage(){
     } else if(curPage==='monthly'){
       cachedStudents=await sbAll('/rest/v1/students?select=*&order=name.asc');
       renderMonthlyPage(mc);
+    } else if(curPage==='followup'){
+      [cachedStudents]=await Promise.all([sbAll('/rest/v1/students?select=*&order=name.asc')]);
+      await renderFollowUpPage(mc);
     } else if(curPage==='progress'){
       cachedStudents=await sbAll('/rest/v1/students?select=*&order=name.asc');
       renderProgressPage(mc);
