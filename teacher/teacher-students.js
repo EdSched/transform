@@ -677,6 +677,7 @@ function tsaListHtml() {
     slice: tsmSlice, more: tsmMoreHtml,
     rowClick: s => `tsaExpandedId=tsaExpandedId==='${s.id}'?null:'${s.id}';tsaRenderList()`,
     expand: s => tsaExpandedId !== s.id ? '' : `<div style="font-size:11px;margin-bottom:6px"><span style="color:var(--text-3)">上课方式：</span>${s.default_mode === 'offline' ? '线下' : '线上'}</div>
+        ${[['目标学校', s.target_school], ['补充备注', s.notes]].filter(x => x[1]).map(x => `<div style="font-size:11px;margin-bottom:6px;white-space:pre-wrap"><span style="color:var(--text-3)">${x[0]}：</span>${tsaEsc(x[1])}</div>`).join('')}
         <button onclick="event.stopPropagation();tsaCodeNotice('${s.id}')" style="margin-right:6px;font-size:10px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">✉ 查询码通知</button>
         ${(teacherData.permissions.student_mgmt_items||[]).includes('profile_edit')?`<button onclick="event.stopPropagation();tseOpen('${s.id}')" style="font-size:10px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:2px;padding:3px 12px;cursor:pointer;font-family:inherit">✏ 修改档案</button>`:''}`
   });
@@ -732,6 +733,8 @@ function tsaRender() {
         ${inp('tsa_signup', '报名时间', '26年4月')}
         ${inp('tsa_expiry', '到期时间', '27年3月')}
         ${fld('tsa_mode', '默认上课方式', `<select id="tsa_mode" style="${inpStyle}"><option value="online">线上</option><option value="offline">线下</option></select>`)}
+        <div style="grid-column:1/-1"><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:2px">目标学校</label><textarea id="tsa_target_school" rows="3" placeholder="想考的学校，随便写。到考学进度里可以从这里找学校加入志望校" style="${inpStyle};resize:vertical"></textarea></div>
+        <div style="grid-column:1/-1"><label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:2px">补充备注</label><textarea id="tsa_notes" rows="3" placeholder="其他需要记下的情况" style="${inpStyle};resize:vertical"></textarea></div>
       </div>
       <button onclick="tsaSaveStudent()" style="font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit">保存</button>
       <span id="tsa_save_msg" style="font-size:11px;margin-left:10px"></span>
@@ -760,6 +763,7 @@ async function tsaSaveStudent() {
     target_enrollment: g('tsa_enrollment').trim(), japan_arrival: g('tsa_arrival').trim(),
     signup_date: g('tsa_signup').trim(), expiry_date: g('tsa_expiry').trim(),
     default_mode: g('tsa_mode'), status: 'active',
+    target_school: g('tsa_target_school').trim() || null, notes: g('tsa_notes').trim() || null,
   };
   try {
     const res = await sb('/rest/v1/students', 'POST', data);
@@ -1779,6 +1783,7 @@ const TSE_FIELDS = [
   ['course_type','课程属性','input'],['university','出身大学','input'],['faculty','学部/专业','input'],
   ['gpa','GPA/履历','input'],['thesis','毕业论文','input'],['graduation_date','毕业时间','input'],
   ['japan_arrival','赴日时间','input'],['signup_date','报名时间','input'],
+  ['target_school','目标学校','textarea'],['notes','补充备注','textarea'],
 ];
 
 function tseOpen(sid) {
@@ -1790,6 +1795,7 @@ function tseOpen(sid) {
   const ctrl = (k, type, v) => {
     if (type === 'major') return `<select id="tse_${k}" style="${inp}">${tsaMajorOptions(v)}</select>`;
     if (type === 'status') return `<select id="tse_${k}" style="${inp}">${[['active','在籍'],['graduated','已合格'],['expired','已到期'],['stopped','停课'],['withdrawn','退学']].map(([kk,vv])=>`<option value="${kk}" ${v===kk?'selected':''}>${vv}</option>`).join('')}</select>`;
+    if (type === 'textarea') return `<textarea id="tse_${k}" rows="3" style="${inp};resize:vertical">${tsaEsc(v)}</textarea>`;
     return `<input id="tse_${k}" value="${tsaEsc(v)}" style="${inp}">`;
   };
   const modal = document.createElement('div');
@@ -1799,7 +1805,7 @@ function tseOpen(sid) {
     <div style="font-size:13px;font-weight:600;margin-bottom:4px">✏ 修改学生档案 — ${tsaEsc(s.name)}</div>
     <div style="font-size:10px;color:var(--warn,#b8860b);margin-bottom:12px">⚠ 修改将直接覆盖 admin 学生档案的数据，并留下修改记录（admin 可查看与恢复），请谨慎操作。</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:12px">
-      ${TSE_FIELDS.map(([k,l,t]) => `<div><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">${l}</label>${ctrl(k, t, s[k])}</div>`).join('')}
+      ${TSE_FIELDS.map(([k,l,t]) => `<div${t === 'textarea' ? ' style="grid-column:1/-1"' : ''}><label style="font-size:9px;color:var(--text-3);display:block;margin-bottom:2px">${l}</label>${ctrl(k, t, s[k])}</div>`).join('')}
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button onclick="document.getElementById('tseModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 16px;cursor:pointer;font-family:inherit">取消</button>
@@ -2267,7 +2273,7 @@ async function focusOpenSummary(sid) {
       ${kv('GPA', s.gpa)}${kv('毕业时间', s.graduation_date)}
       ${kv('赴日', s.japan_arrival)}${kv('研究方向', s.thesis)}
       ${kv('日语成绩', s.japanese_score)}${kv('英语成绩', s.english_score)}
-    </div>`;
+    </div>${[['目标学校', s.target_school], ['补充备注', s.notes]].filter(x => x[1]).map(x => `<div style="font-size:12px;padding:3px 0;white-space:pre-wrap"><span style="color:#888;display:inline-block;width:78px;vertical-align:top">${x[0]}</span><span style="display:inline-block;max-width:calc(100% - 82px)">${tsaEsc(x[1])}</span></div>`).join('')}`;
 
   // 出席与作业（当前期 + 本月）
   const attCur = allCtx ? studentPeriodStats(s, allCtx).cur : null, attMon = monCtx ? studentMonthStats(s, monCtx) : null;
