@@ -14,7 +14,7 @@ const SBM = {
   drafts: null,                       // 有完成稿的计划书（student_plan_drafts 精简列）
   pend: null,                         // 待批复的 riyu 提交
   rev: [], revOffset: 0, revDone: false, revBusy: false,   // 已批复的 riyu 提交（分页加载）
-  rows: {},                           // key -> row，供「打开」使用
+  rows: {}, mark: null,                           // key -> row，供「打开」使用
 };
 
 function sbmEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
@@ -108,7 +108,7 @@ async function sbmRender(box, cfg) {
   const cards = shown.map(x => {
     SBM.rows[x.key] = x;
     const st = ST[x.st], track = x.track === 'gakubu' ? '学部' : '大学院';
-    return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1px solid var(--border-light,#ede9e2);border-radius:5px;padding:8px 10px;background:var(--surface,#fff)">
+    return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1px solid ${x.key === SBM.mark ? 'var(--accent,#b8953a)' : 'var(--border-light,#ede9e2)'};border-radius:5px;padding:8px 10px;background:${x.key === SBM.mark ? '#fbf6e6' : 'var(--surface,#fff)'}">
       <span style="font-size:12px;font-weight:600">${sbmEsc(x.stu.name)}</span>
       <span style="font-size:10px;color:var(--text-3,#999)">${sbmEsc((typeof majorLabel === 'function' ? majorLabel(x.stu.major) : x.stu.major) || '')} · ${track}</span>
       <span style="font-size:10px;padding:1px 8px;border-radius:10px;background:var(--bg,#f7f5f0);color:var(--text-2,#5a5650);border:1px solid var(--border,#e2ded6)">${sbmEsc(x.label)}</span>
@@ -118,6 +118,7 @@ async function sbmRender(box, cfg) {
       <button onclick="sbmOpen('${sbmEsc(x.key)}')" style="margin-left:auto;font-size:11px;border:1px solid var(--accent,#b8953a);color:var(--accent,#b8953a);background:none;border-radius:3px;padding:3px 12px;cursor:pointer;font-family:inherit">打开</button>
     </div>`;
   }).join('');
+  SBM.mark = null;   // 刚看过的那一行只标这一次
   const more = SBM.status === 'done' && !SBM.revDone ? `<div onclick="sbmMore()" style="text-align:center;padding:10px;margin:8px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">${SBM.revBusy ? '加载中…' : '加载更多（每次 50 条）'}</div>` : '';
   box.innerHTML = `<div id="sbm_root">
     ${typeof cfg.barHtml === 'function' ? cfg.barHtml() : (cfg.barHtml || '')}
@@ -153,7 +154,7 @@ function sbmChanged() {
 
 function sbmOpen(key) {
   const x = SBM.rows[key]; if (!x) return;
-  if (x.kind === 'plan') { if (SBM.cfg.openPlan) SBM.cfg.openPlan(x.stu.id, x.stu.name); return; }
+  if (x.kind === 'plan') { if (SBM.cfg.openPlan) SBM.cfg.openPlan(x.stu.id, x.stu.name, { key }); return; }
   RIYU_STAFF.subs[x.sub.id] = x.sub;
   RIYU_STAFF.students[x.stu.id] = x.stu;
   RIYU_STAFF.onChangeBy[x.stu.id] = () => sbmChanged();
