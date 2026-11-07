@@ -2,12 +2,16 @@
 // 补记录（学习记录 / 等回复 / 未回复，可附截图）、改类型、结案、删除、生成联络文字。
 // 署名：老师端 = 老师名，管理端 = 「管理员」（riyuReviewerName）。管理员可以改 / 删任何人的记录。
 // 页面差异通过宿主 FU_HOST 注入（谁定义：teacher/teacher-students.js、admin/followup.js）：
-//   filter(list) 按页面的领域/专业/状态/搜索筛学生 · slice(list) / more(total) 分页 · reset() 回到第一页
+//   filter(list) 按页面的领域/专业/搜索筛学生（只留在籍，见 fuOnlyActive）· query() 当前搜索词 · slice(list) / more(total) 分页 · reset() 回到第一页
 //   box() 页面容器 · reload() 重新读取并重画
 // 依赖：shared/supabase.js、shared/constants.js、shared/payroll-core.js（payrollInterviewPayDate / interviewListYm）、shared/riyu.js（riyuReviewerName）
 const fuEsc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 const FU_ADMIN_NAME = '管理员';
 let FU_HOST = { filter: l => l, slice: l => l, more: () => '', reset() {}, box: () => document.getElementById('mainContent'), reload() {} };
+// 重点关注 / 面谈跟进只看在籍学生（status 为 active 或空）；两端的 filter 都先过一遍
+function fuOnlyActive(list) { return (list || []).filter(s => !s.status || s.status === 'active'); }
+// 没有结果时的提示：有搜索词 = 「没有找到在籍学生」
+function fuEmptyText(dflt) { const q = FU_HOST.query ? String(FU_HOST.query() || '').trim() : ''; return q ? '没有找到在籍学生' : dflt; }
 function fuSetHost(h) { FU_HOST = Object.assign({}, FU_HOST, h); }
 const fuMe = () => (typeof riyuReviewerName === 'function' ? riyuReviewerName() : FU_ADMIN_NAME) || FU_ADMIN_NAME;
 
@@ -165,7 +169,7 @@ function tmRenderList() {
   const ord = { done: 0, pend: 1, noreply: 2, none: 3 };
   const list = all.filter(r => !tmGroup || r.st.group === tmGroup).sort((a, b) => (ord[a.st.group] - ord[b.st.group]) || (b.streak - a.streak) || a.s.name.localeCompare(b.s.name, 'zh'));
   const c0 = document.getElementById('tm_count'); if (c0) c0.textContent = list.length;
-  if (!list.length) { listBox.innerHTML = '<div class="empty">没有符合筛选条件的学生</div>'; return; }
+  if (!list.length) { listBox.innerHTML = `<div class="empty">${fuEmptyText('没有符合筛选条件的学生')}</div>`; return; }
   let lastG = '';
   listBox.innerHTML = FU_HOST.slice(list).map(r => {
     const s = r.s, open = tmExpandedId === s.id, lastM = r.info.recs[0] ? payrollInterviewPayDate(r.info.recs[0]) : '';
@@ -605,7 +609,7 @@ function focusRender() {
       <span style="font-size:10px;color:var(--text-3)">到期 ${fuEsc(r.s.expiry_date) || '—'}</span>
       <span style="margin-left:auto;font-size:11px;color:var(--accent)">查看概要 ›</span>
     </div>`;
-  }).join('') + FU_HOST.more(filtered.length) : '<div class="empty">当前筛选下没有学生</div>';
+  }).join('') + FU_HOST.more(filtered.length) : `<div class="empty">${fuEmptyText('当前筛选下没有学生')}</div>`;
 
   box.innerHTML = `${FU_HOST.top ? FU_HOST.top() : ''}
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px">

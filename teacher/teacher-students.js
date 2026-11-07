@@ -312,8 +312,11 @@ async function tsmLoadPool(force) {
   return tsmPool;
 }
 
+const tsmFuTab = () => smTab === 'meetings' || smTab === 'focus';   // 这两页只看在籍：不显示状态筛选，人数只算在籍
 function tsmBarHtml() {
-  const pool = tsmPool || [];
+  const fu = tsmFuTab();
+  const pool = fu ? fuOnlyActive(tsmPool || []) : (tsmPool || []);
+  const tsmMatch = (s, skip, noQ) => { if (!fu) return window.tsmMatch(s, skip, noQ); const o = tsm.status; tsm.status = ''; try { return window.tsmMatch(s, skip, noQ); } finally { tsm.status = o; } };   // 忽略状态筛选
   const chip = (on, label, n, fn) => `<div class="filter-chip ${on ? 'active' : ''}" onclick="${fn}" style="padding:3px 10px;font-size:10px;${n === 0 && !on ? 'opacity:.45' : ''}">${label}${n == null ? '' : ' ' + n}</div>`;
   const cnt = (skip, test) => pool.filter(s => tsmMatch(s, skip, true) && test(s)).length;
   const row = (label, inner) => `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px"><span style="font-size:10px;color:var(--text-3);min-width:30px">${label}</span>${inner}</div>`;
@@ -334,7 +337,7 @@ function tsmBarHtml() {
   } else if (present.size > 1) {
     h += row('专业', '<span style="font-size:10px;color:var(--text-3)">选择领域后可按专业筛选</span>');
   }
-  h += row('状态', TSM_STATUS.map(([k, l]) => chip(tsm.status === k, l, cnt('status', s => !k || (s.status || 'active') === k), `tsmSet('status','${k}')`)).join(''));
+  if (!fu) h += row('状态', TSM_STATUS.map(([k, l]) => chip(tsm.status === k, l, cnt('status', s => !k || (s.status || 'active') === k), `tsmSet('status','${k}')`)).join(''));
   h += row('来源', chip(!tsm.source, '全部', cnt('source', () => true), `tsmSet('source','')`) + TP_SOURCES.filter(x => sourceAllowed({ source: x }, teacherData && teacherData.student_sources)).map(x => chip(tsm.source === x, x, cnt('source', s => (s.source || '') === x), `tsmSet('source','${x}')`)).join(''));
   const n = pool.filter(s => tsmMatch(s)).length;
   h += `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px">
@@ -361,7 +364,7 @@ function tsmClear() {
 function tsmChanged() { tsmShown = TSM_PAGE; tsmRenderBar(); tsmRefreshPage(false); }
 function tsmSearchInput(v) {   // 输入搜索时不重画筛选栏（保持输入焦点），只更新人数和当前页
   tsm.q = v; tsmShown = TSM_PAGE;
-  const n = document.getElementById('tsm_n'); if (n) n.textContent = tsmNeed() ? '—' : (tsmPool || []).filter(s => tsmMatch(s)).length;
+  const n = document.getElementById('tsm_n'); if (n) n.textContent = tsmNeed() ? '—' : (tsmFuTab() ? fuOnlyActive(tsmPool || []).filter(s => tsmMatch(s, 'status')) : (tsmPool || []).filter(s => tsmMatch(s))).length;
   tsmRefreshPage(true);
 }
 // 筛选变化后刷新当前子页面（数据已缓存，不重新拉取）；light=只刷新列表，保持页头不动
@@ -1133,7 +1136,7 @@ async function tsrToggle(id) {
 
 // 宿主：共用的面谈跟进读老师端全局筛选（领域 / 专业 / 状态 / 来源 / 搜索）和分页
 fuSetHost({
-  filter: l => tsmFilterStudents(l), slice: l => tsmSlice(l), more: n => tsmMoreHtml(n), reset: () => { tsmShown = TSM_PAGE; },
+  filter: l => fuOnlyActive(l).filter(s => tsmMatch(s, 'status')), query: () => tsm.q, slice: l => tsmSlice(l), more: n => tsmMoreHtml(n), reset: () => { tsmShown = TSM_PAGE; },
   box: () => document.getElementById('sm_content'),
   reload: () => renderTsaMeetings(document.getElementById('sm_content') || document.getElementById('mainContent')),
 });
