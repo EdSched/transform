@@ -1634,47 +1634,35 @@ async function openMonthlyReport(sid, sname){
   amrRenderBody(sid, sname);
 }
 
-// 月度出勤口径：报名前的课次不算规定 / 缺席 / 请假；报名前有出席记录的照常算出席，出勤率上限 100%
-function amrCalc(sid, monthRecs){
-  const stu = (typeof cachedStudents !== 'undefined' ? cachedStudents : []).find(x => String(x.id) === String(sid)) || {};
-  const ok = r => ['offline','online','replay'].includes(r.attendance_status);
-  const app = monthRecs.filter(r => sessionCountsFor(stu, r.session_date));
-  const actual = monthRecs.filter(r => ok(r)).length;
-  const leave = app.filter(r => r.attendance_status === 'leave').length;
-  const required = app.length;
-  const actualApp = app.filter(ok).length;
-  return { required, actual, leave, absent: Math.max(0, required - actualApp - leave), rate: required ? Math.min(100, Math.round(actual / required * 100)) : 0 };
+// 统计 / 页面内容 / PDF 与老师端共用：shared/monthly-report.js（口径见 studentMonthStats）
+function amrStu(sid, sname){
+  return (typeof cachedStudents !== 'undefined' ? cachedStudents : []).find(x => String(x.id) === String(sid)) || { id: sid, name: sname || '' };
 }
-
 async function amrRenderBody(sid, sname){
   const body=document.getElementById('amr_body'); if(!body) return;
+  const stu = amrStu(sid, sname);
   if(!amrData[sid]){
     amrData[sid] = await sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(sname)}&select=*&order=session_date.desc&limit=500`).catch(()=>[]);
   }
   const recs = amrData[sid]||[];
   const monthRecs = recs.filter(r=>(r.session_date||'').slice(0,7)===amrYearMonth);
-  const {required, actual, leave, absent, rate} = amrCalc(sid, monthRecs);
-  const works = monthRecs.filter(r=>r.homework_file_url).map(r=>({url:r.homework_file_url,date:r.session_date}));
-  if (typeof awMonthWorks === 'function') works.push(...(await awMonthWorks(sid, amrYearMonth)));   // + 学部美术作业收集的作品照片
+  let summary;
+  try { summary = await mrSummaryHtml(stu, amrYearMonth, monthRecs); }
+  catch(e){ body.innerHTML = `<div style="font-size:11px;color:var(--danger);padding:20px">统计加载失败：${stEsc((e&&e.message)||e)}</div>`; return; }
   const key=`${sid}|${amrYearMonth}`;
   if(amrRev[key]===undefined){
     const rv=await sb(`/rest/v1/monthly_reviews?student_id=eq.${encodeURIComponent(sid)}&year_month=eq.${amrYearMonth}&select=*&limit=1`).catch(()=>[]);
     amrRev[key]=(rv&&rv[0])||null;
   }
   const rev=amrRev[key]||{};
-  const esc=stEsc;
+  const esc=stEsc, hrl = mrHrLabel(stu);
   body.innerHTML=`
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px;margin-bottom:14px">
-      ${[['规定',required],['实际',actual],['出勤率',rate+'%'],['请假',leave],['缺席',absent],['作业',works.length]].map(([l,v])=>`
-        <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:6px;padding:8px;text-align:center"><div style="font-size:16px;font-weight:700;color:var(--accent,#b8953a)">${v}</div><div style="font-size:10px;color:var(--text-3)">${l}</div></div>`).join('')}
-    </div>
-    <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;margin-bottom:6px">练习作品</div>
-    ${works.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:6px;margin-bottom:14px">${works.map(w=>`<a href="${w.url}" target="_blank"><img src="${w.url}" style="width:100%;height:70px;object-fit:cover;border:1px solid var(--border);border-radius:4px"></a>`).join('')}</div>`:'<div style="font-size:11px;color:var(--text-3);padding:6px 0 14px">本月无作品</div>'}
+    ${summary}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div><div style="font-size:11px;font-weight:600;margin-bottom:4px">专业老师评价</div>
         <textarea id="amr_tr" rows="4" style="width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:4px;font-family:inherit">${rev.teacher_review?esc(rev.teacher_review):''}</textarea>
         ${rev.teacher_review_by?`<div style="font-size:10px;color:var(--text-3);text-align:right">— ${esc(rev.teacher_review_by)}</div>`:''}</div>
-      <div><div style="font-size:11px;font-weight:600;margin-bottom:4px">班主任评价</div>
+      <div><div style="font-size:11px;font-weight:600;margin-bottom:4px">${hrl}评价</div>
         <textarea id="amr_hr" rows="4" style="width:100%;font-size:12px;padding:7px;border:1px solid var(--border);border-radius:4px;font-family:inherit">${rev.homeroom_review?esc(rev.homeroom_review):''}</textarea>
         ${rev.homeroom_review_by?`<div style="font-size:10px;color:var(--text-3);text-align:right">— ${esc(rev.homeroom_review_by)}</div>`:''}</div>
     </div>
@@ -1705,34 +1693,6 @@ async function amrSave(sid,sname){
 }
 
 async function amrPdf(sid,sname){
-  const recs=amrData[sid]||[];
-  const monthRecs=recs.filter(r=>(r.session_date||'').slice(0,7)===amrYearMonth);
-  const {required, actual, leave, absent, rate} = amrCalc(sid, monthRecs);
-  const works=monthRecs.filter(r=>r.homework_file_url).map(r=>({url:r.homework_file_url}));
-  if (typeof awMonthWorks === 'function') works.push(...(await awMonthWorks(sid, amrYearMonth)));   // + 作业收集的作品照片
-  const rev=amrRev[`${sid}|${amrYearMonth}`]||{};
-  const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const ym=amrYearMonth.replace('-','年')+'月';
-  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@400;500&display=swap" rel="stylesheet"><title>${esc(sname)} ${ym}</title><style>
-    @page{size:A4;margin:16mm}*{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:'Noto Sans SC',system-ui,sans-serif;color:#2b2822;line-height:1.7}.wrap{max-width:760px;margin:0 auto}
-    .head{text-align:center;padding:18px 0 14px;border-bottom:2px solid #b8953a;margin-bottom:20px}
-    .head .sub{font-size:12px;color:#9a9590;letter-spacing:.15em;margin-bottom:6px}.head h1{font-family:'Noto Serif SC',serif;font-size:28px;font-weight:700;letter-spacing:.05em;color:#2b2822}.head .stu{font-size:14px;color:#5a5650;margin-top:6px}
-    .sec-label{font-family:'Noto Serif SC',serif;font-size:13px;letter-spacing:.05em;color:#b8953a;margin:18px 0 8px;font-weight:600}
-    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.stat{background:#f7f5f0;border:1px solid #ede9e2;border-radius:8px;padding:12px;text-align:center}
-    .stat .n{font-family:'Noto Serif SC',serif;font-size:30px;font-weight:600;color:#b8953a;line-height:1}.stat .l{font-size:11px;color:#9a9590;margin-top:3px}
-    .works{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.works img{width:100%;height:130px;object-fit:cover;border:1px solid #e2ded6;border-radius:6px}
-    .review{background:#f7f5f0;border:1px solid #ede9e2;border-radius:8px;padding:14px 16px;margin-bottom:10px}
-    .review .c{font-size:13px;line-height:1.9;color:#3a352e;white-space:pre-wrap}.review .by{font-size:11px;color:#9a9590;text-align:right;margin-top:8px}
-    .foot{text-align:center;font-size:11px;color:#9a9590;margin-top:24px;padding-top:12px;border-top:1px solid #e2ded6}</style></head><body><div class="wrap">
-    <div class="head"><div class="sub">唯新教育</div><h1>${esc(ym)} 学习情况</h1><div class="stu">${esc(sname)}</div></div>
-    <div class="sec-label">出勤情况</div><div class="stats">
-      <div class="stat"><div class="n">${required}</div><div class="l">规定出勤</div></div><div class="stat"><div class="n">${actual}</div><div class="l">实际出勤</div></div><div class="stat"><div class="n">${rate}%</div><div class="l">出勤率</div></div>
-      <div class="stat"><div class="n">${leave}</div><div class="l">请假</div></div><div class="stat"><div class="n">${absent}</div><div class="l">缺席</div></div><div class="stat"><div class="n">${works.length}</div><div class="l">作品</div></div></div>
-    ${works.length?`<div class="sec-label">练习作品（部分）</div><div class="works">${works.slice(0,9).map(w=>`<img src="${w.url}">`).join('')}</div>`:''}
-    <div class="sec-label">专业老师评价</div><div class="review"><div class="c">${rev.teacher_review?esc(rev.teacher_review):'—'}</div>${rev.teacher_review_by?`<div class="by">— ${esc(rev.teacher_review_by)} 老师</div>`:''}</div>
-    <div class="sec-label">班主任评价</div><div class="review"><div class="c">${rev.homeroom_review?esc(rev.homeroom_review):'—'}</div>${rev.homeroom_review_by?`<div class="by">— ${esc(rev.homeroom_review_by)} 老师</div>`:''}</div>
-    <div class="foot">唯新教育　Unique New Education　·　${esc(ym)}</div></div>
-    <script>window.onload=function(){ if(document.fonts&&document.fonts.ready){document.fonts.ready.then(function(){setTimeout(function(){window.print()},400)})}else{setTimeout(function(){window.print()},1200)} }<\/script></body></html>`;
-  const w=window.open('','_blank'); if(!w){alert('请允许弹出窗口');return;} w.document.write(html); w.document.close();
+  const monthRecs=(amrData[sid]||[]).filter(r=>(r.session_date||'').slice(0,7)===amrYearMonth);
+  await mrOpenPdf(amrStu(sid, sname), amrYearMonth, monthRecs, amrRev[`${sid}|${amrYearMonth}`]||{});   // 与老师端同一份：shared/monthly-report.js
 }
