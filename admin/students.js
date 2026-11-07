@@ -471,7 +471,8 @@ async function openStudentDetail(id){
     const { html, student:s } = await renderStudentDetailCard(id, { showProfileNotes:true, actionsHtml:`
       <button class="btn btn-outline btn-sm" onclick="closeModal('studentDetailModal');openStudentModal('${id}')">✏ 编辑档案</button>
       ${mgrPageAllowed('progress')?`<button class="btn btn-outline btn-sm" onclick="pgFromDetail('${id}')">📊 考学进度</button>`:''}
-      ${mgrPageAllowed('monthly')?`<button class="btn btn-outline btn-sm" onclick="openMonthlyReport('${id}',this.dataset.n)" data-n="">📅 月度学习情况</button>`:''}` });
+      ${mgrPageAllowed('monthly')?`<button class="btn btn-outline btn-sm" onclick="openMonthlyReport('${id}',this.dataset.n)" data-n="">📅 月度学习情况</button>`:''}
+      <button class="btn btn-outline btn-sm" onclick="focusOpenSummary('${id}')">📋 学生概要</button>` });
     if(!s){ box.innerHTML='<div style="font-size:12px;color:var(--text-3)">未找到该学生档案</div>'; return; }
     const cached=cachedStudents.find(x=>x.id===id);
     if(cached) Object.assign(cached,s);   // 顺便把缓存列表也刷成最新
