@@ -91,7 +91,7 @@
   </div>
 </div>
 
-<script src="common.js?v=20270116"></script>
+<script src="common.js?v=20270117"></script>
 <script>
 let ROOMS=[], BOOKINGS=[], CUR=null;
 // 从老师端打开（带老师登录）时的账号 {kind:'teacher',id,name}；直接打开 / 没登录 = null，一切照旧
@@ -204,7 +204,7 @@ function renderGrid(){
   const box=el('gridBox');
   if(!rooms.length){ box.innerHTML='<div class="muted">该校区暂无 VIP 教室</div>'; return; }
   const todays=BOOKINGS.filter(b=>bookingOnDate(b,date) &&
-    !(b.kind==='course'&&b.course_id&&window.SKIPMAP&&window.SKIPMAP[b.course_id]&&window.SKIPMAP[b.course_id].has(date)));
+    !skipHides(b,date));
   box.innerHTML = renderOccupancyGrid(rooms, todays, 'room_id', {labelOnly:true});
 }
 let URGENT=false, OTHER=false;

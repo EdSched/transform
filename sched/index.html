@@ -36,7 +36,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../shared/constants.js?v=20270301"></script>
-<script src="common.js?v=20270116"></script>
+<script src="common.js?v=20270117"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270116"></script>
 <script src="../shared/course-room-sync.js?v=20261115"></script>
@@ -502,7 +502,7 @@ function pendViewRooms(id){
   const date=b.booking_date;
   const rooms=ROOMS.filter(r=>r.active!==false && r.campus===campus).map(r=>({id:r.id,name:r.name,sub:(r.type||'')+'·'+r.capacity+'人'}));
   const todays=BOOKINGS.filter(x=>bookingOnDate(x,date) &&
-    !(x.course_id && window.SKIPMAP && window.SKIPMAP[x.course_id] && window.SKIPMAP[x.course_id].has(date)));
+    !skipHides(x,date));
   let h='<div class="card" style="margin-top:10px;background:#f7f9fb">'+
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">'+
       '<b>'+esc(campus)+' · '+esc(date)+'（'+WEEKDAYS[weekdayOf(date)]+'）教室占用情况</b>'+
@@ -1733,8 +1733,7 @@ const WD_NAME={1:'周一',2:'周二',3:'周三',4:'周四',5:'周五',6:'周六'
 // 某条占用这一天是否真的占着（扣掉自动/人工释放的日子、休讲日）
 function cfOn(b,d){
   if(!bookingOnDate(b,d)) return false;
-  const skip=window.SKIPMAP||{};
-  return !(b.kind==='course' && b.course_id && skip[b.course_id] && skip[b.course_id].has(d));
+  return !skipHides(b,d);
 }
 function cfDaysBetween(lo,hi,weekdays){
   const out=[]; for(let d=lo,g=0; d && d<=hi && g<800; d=addDays(d,1),g++){ if(!weekdays||weekdays.includes(weekdayOf(d))) out.push(d); } return out;

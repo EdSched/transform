@@ -99,7 +99,7 @@
   </div>
 </div>
 
-<script src="common.js?v=20270116"></script>
+<script src="common.js?v=20270117"></script>
 <script src="../shared/constants.js?v=20270301"></script>
 <script src="../shared/course-room-sync.js?v=20261115"></script>
 <script>if(typeof courseRoomWatchBookings==="function") courseRoomWatchBookings(n=>{ if(typeof toast==="function") toast("已自动补占 "+n+" 天"); });</script>
@@ -361,7 +361,7 @@ function renderGrid(){
   const box=el('gridBox');
   if(!campus||!date||!rooms.length){ box.innerHTML='<div class="muted">该校区暂无对应教室</div>'; return; }
   const todays=BOOKINGS.filter(b=>bookingOnDate(b,date) &&
-    !(b.kind==='course'&&b.course_id&&window.SKIPMAP&&window.SKIPMAP[b.course_id]&&window.SKIPMAP[b.course_id].has(date)));
+    !skipHides(b,date));
   box.innerHTML = renderOccupancyGrid(rooms, todays, 'room_id');
   wireGridClicks();
 }
