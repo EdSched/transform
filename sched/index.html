@@ -202,7 +202,7 @@ function bindRoomAck(box){
   });
   const ackAll=box.querySelector('[data-ackall]'); if(ackAll) ackAll.onclick=async()=>{
     const _t=new Date().toISOString().slice(0,10);
-    const rows=(CHANGELOG||[]).filter(l=>{ const x=(Array.isArray(l.changes)?l.changes:[])[0]||{}; const a=(l.acked_by||'').split(',').map(s=>s.trim()).filter(Boolean); return l.action==='session_room' && !a.includes(myRole) && !x.resolved_at && (x.date||'')>=_t; });
+    const rows=(CHANGELOG||[]).filter(l=>{ const x=(Array.isArray(l.changes)?l.changes:[])[0]||{}; const a=(l.acked_by||'').split(',').map(s=>s.trim()).filter(Boolean); return l.action==='session_room' && !a.includes(myRole) && !a.includes('admin') && !x.resolved_at && (x.date||'')>=_t; });
     if(!rows.length) return;
     if(!confirm('把当前列表里的 '+rows.length+' 条教室提醒全部标为「知道了」？\n（只是不再提醒，不会占用教室；之后同一天再出问题仍会重新提醒）')) return;
     ackAll.disabled=true; let fail=0;
@@ -248,7 +248,7 @@ function renderChangeAlerts(){
   const pending=(CHANGELOG||[]).filter(l=>l.action!=='session_room' && notAcked(l));
   // 单回改期后原教室被占：要人安排，逐条列出
   const _todayStr=new Date().toISOString().slice(0,10);   // 当天之前的不再提醒
-  const roomAlerts=(CHANGELOG||[]).filter(l=>{ const x=(Array.isArray(l.changes)?l.changes:[])[0]||{}; return l.action==='session_room' && notAcked(l) && !x.resolved_at && (x.date||'')>=_todayStr; });
+  const roomAlerts=(CHANGELOG||[]).filter(l=>{ const x=(Array.isArray(l.changes)?l.changes:[])[0]||{}; return l.action==='session_room' && notAcked(l) && !(l.acked_by||'').split(',').map(s=>s.trim()).includes('admin') && !x.resolved_at && (x.date||'')>=_todayStr; });   // 管理员点过「知道了」的，所有人都不再提示
   const roomRows=roomAlerts.map(l=>{ const x=(Array.isArray(l.changes)?l.changes:[])[0]||{};
     const why=(window.__roomWhy||{})[l.id];
     const whyHtml=why?`<div style="margin-top:4px;padding:6px 10px;background:#fff;border-radius:6px;font-size:12px;line-height:1.7">${why.map(t=>esc(t)).join('<br>')}</div>`:'';
