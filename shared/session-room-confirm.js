@@ -121,7 +121,7 @@ async function srmOpen(opts) {
       const head = ch => {
         const f = ch.from, t = ch.to;
         const a = f ? srmTxt(f.date, srmSpan(f.time)) : '新增';
-        const b = t.cancelled ? '休讲' : srmTxt(t.date, srmSpan(t.time));
+        const b = t.cancelled ? (t.removed ? '删除' : '休讲') : srmTxt(t.date, srmSpan(t.time));
         return `${ch.num ? '第 ' + e(ch.num) + ' 回　' : ''}${e(a)}　→　${e(b)}`;
       };
       const row = (bi, ii, it) => {
