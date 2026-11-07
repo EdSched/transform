@@ -1031,7 +1031,7 @@ function renderCoursesSummary(courses){
                         <span style="font-size:13px;font-weight:600;color:var(--text-3);text-decoration:line-through">${f.short}</span>
                         <span style="font-size:10px;font-weight:500;color:var(--text-3)">${f.dow}</span>
                       </div>
-                      <button onclick="openReschedule('${s.id}')" title="调整日期" style="font-size:9px;background:none;border:none;cursor:pointer;color:var(--text-3);padding:0;line-height:1">⇄</button>
+                      <button onclick="undoCancelSession('${s.id}')" title="撤回休讲" style="font-size:9px;background:none;border:none;cursor:pointer;color:#b07020;padding:0;line-height:1">撤回</button>
                     </div>
                     <div style="font-size:9px;color:#b07020;margin-top:1px;font-weight:600">休讲${s.cancel_reason?'・'+s.cancel_reason:''}</div>
                   </div>`;
@@ -2768,6 +2768,57 @@ async function confirmReschedule(){
         ] });
     }catch(e){ console.warn('教室确认弹框失败', e); }
   }catch(e){alert('操作失败：'+e.message)}
+}
+
+// ── 撤回休讲（和「休讲并顺延」相反：这天恢复上课，之后每回内容前移一位，最后一回删除）──
+async function undoCancelSession(sessionId){
+  const target=cachedSessions.find(x=>x.id===sessionId);
+  if(!target||!target.is_cancelled){ alert('该课次不是休讲'); return; }
+  const courseId=target.course_id;
+  const course=cachedCourses.find(c=>c.id===courseId);
+  // 休讲日之后的正常课次（按日期）；最后一个就是当初顺延补出来的那一回
+  const L=cachedSessions.filter(s=>s.course_id===courseId&&!s.is_cancelled&&s.session_date>target.session_date).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+  const last=L[L.length-1]||null;
+  if(!confirm(`确认撤回 ${target.session_date} 的休讲？\n这天恢复上课，之后每一回的内容（标题、老师）整体前移一位，${last?`最后一回（${last.session_date}）会被删除。`:'之后没有课次，不删除任何课次。'}\n\n只适用于「休讲并顺延」做出来的休讲；其他情况请到「编辑课程」的单回明细里手动改。`)) return;
+  if(last){
+    const recs=await sb(`/rest/v1/session_records?session_id=eq.${last.id}&select=id`).catch(()=>[]);
+    if(recs&&recs.length){ alert(`无法撤回：最后一回（${last.session_date}）已有出席/作业记录，不能删除。`); return; }
+  }
+  try{
+    const origTime=target.time_range||course?.time_range||'';
+    const lastInfo=last?{ id:last.id, num:last.session_number, date:last.session_date, time:last.time_range||course?.time_range||'' }:null;
+    // 内容链：target ← L[0]，L[i] ← L[i+1]，L[末] 删除
+    const chain=L.map(x=>({ session_title:x.session_title||'', teacher:x.teacher, session_teacher:x.session_teacher }));
+    const tp=L.length?{ session_title:chain[0].session_title, teacher:chain[0].teacher||target.teacher, session_teacher:chain[0].session_teacher||chain[0].teacher||target.teacher||'' }:{ session_title:'', session_teacher:target.session_teacher||'' };
+    const tPatch=Object.assign({ is_cancelled:false, cancel_reason:null, cancel_note:null }, tp);
+    await sb(`/rest/v1/course_sessions?id=eq.${sessionId}`,'PATCH',tPatch);
+    Object.assign(target,tPatch);
+    for(let i=0;i<L.length-1;i++){
+      const c=chain[i+1], x=L[i];
+      const patch={ session_number:(x.session_number||0)+1, session_title:c.session_title, teacher:c.teacher||x.teacher, session_teacher:c.session_teacher||c.teacher||x.teacher||'' };
+      await sb(`/rest/v1/course_sessions?id=eq.${x.id}`,'PATCH',patch);
+      Object.assign(x,patch);
+    }
+    if(last){
+      await sb(`/rest/v1/course_sessions?id=eq.${last.id}`,'DELETE');
+      cachedSessions=cachedSessions.filter(x=>x.id!==last.id);
+    }
+    // 课程：休讲日从 skip_dates 去掉，结束日期＝现在最后一回
+    try{
+      const skip=((course?.skip_dates)||'').split(',').map(v=>v.trim()).filter(Boolean).filter(d=>d!==target.session_date).join(',');
+      const ds=cachedSessions.filter(x=>x.course_id===courseId&&!x.is_cancelled).map(x=>x.session_date).sort();
+      const upd={ skip_dates:skip }; if(ds.length) upd.end_date=ds[ds.length-1];
+      await sb(`/rest/v1/courses?id=eq.${courseId}`,'PATCH',upd);
+      if(course) Object.assign(course,upd);
+    }catch(e){ /* 同步失败不阻断 */ }
+    renderCoursesPage(document.getElementById('mainContent'));
+    alert(`已撤回 ${target.session_date} 的休讲${last?`，内容前移，已删除最后一回 ${last.session_date}`:''}。`);
+    try{
+      const changes=[{ id:target.id, num:target.session_number, from:null, to:{ date:target.session_date, time:origTime, cancelled:false } }];
+      if(lastInfo) changes.push({ id:lastInfo.id, num:lastInfo.num, from:{ date:lastInfo.date, time:lastInfo.time, cancelled:false }, to:{ date:lastInfo.date, time:lastInfo.time, cancelled:true, removed:true } });
+      await srmOpen({ course, sessions:cachedSessions.filter(x=>x.course_id===courseId), changes });
+    }catch(e){ console.warn('教室确认弹框失败', e); }
+  }catch(e){ alert('操作失败：'+e.message); }
 }
 
 // ── 出席・作业（see attendance.js）──
