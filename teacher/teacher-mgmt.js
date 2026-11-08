@@ -5,7 +5,7 @@
 // 业务做完了（我名下 0 项待处理）→ 这条自动收进「已完成」折叠区，并写回 business_done_at；关闭由负责人决定
 // 依赖：shared/mgmt-metrics.js、shared/mgmt-notice.js、shared/task-checks.js（taskOpenStudent）、teacher.js（teacherData / switchTab / teacherTabList / openProfileForm）、teacher-students.js（smTab / smAllowedItems）
 // ══════════════════════════════════
-const MGP_MAX = 20;
+const MGP_MAX = LIST_PAGE;
 let MGP = { notices: [], rc: {}, open: '', doneOpen: false, more: false, live: {}, draft: {} };
 const mgpMe = () => (teacherData && (teacherData.name || teacherName)) || '';
 

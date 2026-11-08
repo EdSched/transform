@@ -265,7 +265,7 @@ async function tkCalEdit(id) {
 }
 
 // ── 本月进度 / 团队进度：人 × 任务；自动任务显示当前数字（shared/task-checks.js），手动任务显示是否完成 ──
-let tkTeamShown = 30;   // 团队进度每次显示 30 人，底部「显示更多」
+let tkTeamShown = LIST_PAGE;   // 团队进度每次显示 30 人，底部「显示更多」
 let tkTeamPeriod = '', tkTeamRole = '', tkTeamQ = '', tkTeamRes = {}, tkTeamBox = null, tkTeamTeachers = [], tkTeamD = null;
 function tkRenderProg() { return tkTeamMount(document.getElementById('tkMain'), null); }
 // 管理端「📋 任务」页：自己范围内的老师（管理员 = 全部；负责人 / 领域链接 = 范围内）
@@ -274,7 +274,7 @@ async function tkRenderTeamPage(mc) {
   await tkTeamMount(document.getElementById('tkTeamHost'), t => typeof teacherInView !== 'function' || teacherInView(t));
 }
 async function tkTeamMount(box, teacherFilter) {
-  tkTeamBox = box; tkTeamFilterFn = teacherFilter; tkTeamShown = 30;
+  tkTeamBox = box; tkTeamFilterFn = teacherFilter; tkTeamShown = LIST_PAGE;
   box.innerHTML = '<div style="padding:20px;color:var(--text-3);font-size:12px">加载中…</div>';
   const now = new Date();
   const periods = [-1, 0, 1].map(d => taskPeriod(new Date(now.getFullYear(), now.getMonth() + d, 1)));
@@ -293,7 +293,7 @@ async function tkTeamMount(box, teacherFilter) {
 }
 let tkTeamTpl = [], tkTeamDone = [];
 // 搜索：整块重画后把原来的搜索框换回去（不丢光标、不打断输入法）；compute=false 时 tkTeamDraw 是同步重画
-function tkTeamSearch(q) { tkTeamQ = q; tkTeamShown = 30; searchRerender('tk_team_q', () => tkTeamDraw(null, false)); }
+function tkTeamSearch(q) { tkTeamQ = q; tkTeamShown = LIST_PAGE; searchRerender('tk_team_q', () => tkTeamDraw(null, false)); }
 async function tkTeamDraw(periods, compute) {
   const box = tkTeamBox; if (!box) return;
   const month = parseInt(tkTeamPeriod.slice(5), 10);
@@ -308,11 +308,11 @@ async function tkTeamDraw(periods, compute) {
   const sel = `font-size:11px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit`;
   box.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
       <select onchange="tkTeamPeriod=this.value;tkTeamMount(tkTeamBox,tkTeamFilterFn)" style="${sel}">${periods.map(p => `<option value="${p}"${p === tkTeamPeriod ? ' selected' : ''}>${p}</option>`).join('')}</select>
-      <select onchange="tkTeamRole=this.value;tkTeamShown=30;tkTeamDraw(null,false)" style="${sel}"><option value="">全部角色</option>${TASK_ROLES.map(r => `<option value="${r.key}"${tkTeamRole === r.key ? ' selected' : ''}>${r.label}</option>`).join('')}</select>
+      <select onchange="tkTeamRole=this.value;tkTeamShown=LIST_PAGE;tkTeamDraw(null,false)" style="${sel}"><option value="">全部角色</option>${TASK_ROLES.map(r => `<option value="${r.key}"${tkTeamRole === r.key ? ' selected' : ''}>${r.label}</option>`).join('')}</select>
       <input id="tk_team_q" placeholder="搜索老师姓名（汉字 / 拼音首字母）…" value="${tkE(tkTeamQ)}" oninput="searchBox(this,tkTeamSearch)" style="${sel};min-width:140px">
       <span style="font-size:10px;color:var(--text-3)">自动任务显示当前数字（0 = 完成）；点任务看名单；✓ = 已处理</span>
       <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="tkTeamMount(tkTeamBox,tkTeamFilterFn)">刷新</button></div>
-    ${rows.length ? `<div style="font-size:10px;color:var(--text-3);margin-bottom:6px">共 ${rows.length} 人</div>` + rows.slice(0, tkTeamShown).map(tkTeamRow).join('') + (rows.length > tkTeamShown ? `<div style="text-align:center;margin-top:8px"><button class="btn btn-outline btn-sm" onclick="tkTeamShown+=30;tkTeamDraw(null,false)">显示更多（还有 ${rows.length - tkTeamShown} 人）</button></div>` : '') : '<div class="empty" style="padding:40px">这个月没有分配到任何人的任务（给老师打职能标签，或开启对应功能后会出现）</div>'}`;
+    ${rows.length ? `<div style="font-size:10px;color:var(--text-3);margin-bottom:6px">共 ${rows.length} 人</div>` + rows.slice(0, tkTeamShown).map(tkTeamRow).join('') + (rows.length > tkTeamShown ? `<div style="text-align:center;margin-top:8px"><button class="btn btn-outline btn-sm" onclick="tkTeamShown+=LIST_PAGE;tkTeamDraw(null,false)">加载更多（还有 ${rows.length - tkTeamShown} 人）</button></div>` : '') : '<div class="empty" style="padding:40px">这个月没有分配到任何人的任务（给老师打职能标签，或开启对应功能后会出现）</div>'}`;
 }
 let tkTeamFilterFn = null;
 function tkTeamRow(t) {

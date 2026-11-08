@@ -1,3 +1,5 @@
+// 全站列表分页：一次显示条数 / 「加载更多」每次增加条数（只管页面显示，不管分批读写数据库）
+const LIST_PAGE = 30;
 // 本地日期 → 'YYYY-MM-DD'（不经过 UTC）
 // 返回 ym('YYYY-MM') 的下个月 1 号，用于「小于下月1号」代替写死 -31
 function ymNextFirst(ym){ const [y,m]=String(ym).split('-').map(Number); return m>=12 ? (y+1)+'-01-01' : y+'-'+String(m+1).padStart(2,'0')+'-01'; }

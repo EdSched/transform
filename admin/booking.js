@@ -95,7 +95,7 @@ function renderBookingPage(mc){
 
 // ── 面谈预约列表：一行一条，点一行展开详情 ──
 const BK_STATS=[['all','全部'],['pending','待确认'],['confirmed','已确认'],['need_record','待补记录'],['done','已完成'],['cancelled','已取消']];
-let bkStat=null, bkTeacher='', bkQ='', bkShown=30, bkBase=[];
+let bkStat=null, bkTeacher='', bkQ='', bkShown=LIST_PAGE, bkBase=[];
 const bkOpen={};
 function bkWd(d){ const x=new Date(d+'T12:00:00'); return isNaN(x)?'':'周'+'日一二三四五六'[x.getDay()]; }
 function bkMatch(b){
@@ -116,7 +116,7 @@ function bkListHtml(){
   const shown=list.slice(0,bkShown);
   return `${bkStat==='need_record'&&list.length?`<div style="margin-bottom:10px"><button class="btn btn-outline btn-sm" onclick='bkIvBatch(${JSON.stringify(list.map(b=>b.id)).replace(/'/g,"&#39;")})'>批量生成提醒文字</button><span style="font-size:10px;color:var(--text-3);margin-left:8px">当前筛选下 ${list.length} 条，按老师分组</span></div>`:''}
   <div class="bkl">${shown.length?shown.map(bkRowHtml).join(''):'<div class="empty">暂无预约记录</div>'}</div>
-  ${list.length>bkShown?`<div onclick="bkMore()" style="text-align:center;font-size:11px;color:var(--accent);cursor:pointer;padding:10px">显示更多（还有 ${list.length-bkShown} 条）</div>`:''}`;
+  ${list.length>bkShown?`<div onclick="bkMore()" style="text-align:center;font-size:11px;color:var(--accent);cursor:pointer;padding:10px">加载更多（还有 ${list.length-bkShown} 条）</div>`:''}`;
 }
 function bkRowHtml(b){
   const st=interviewState(b), open=!!bkOpen[b.id], hasRec=payrollHasRecord(b);
@@ -145,9 +145,9 @@ function bkRowHtml(b){
 }
 function bkDrawList(){ const el=document.getElementById('bkList'); if(el) el.innerHTML=bkListHtml(); }
 function bkToggle(id){ if(bkOpen[id]) delete bkOpen[id]; else bkOpen[id]=true; bkDrawList(); }
-function bkMore(){ bkShown+=30; bkDrawList(); }
-function bkSetQ(v){ bkQ=v; bkShown=30; bkDrawList(); }
-function bkRedraw(){ bkShown=30; renderBookingPage(document.getElementById('mainContent')); }
+function bkMore(){ bkShown+=LIST_PAGE; bkDrawList(); }
+function bkSetQ(v){ bkQ=v; bkShown=LIST_PAGE; bkDrawList(); }
+function bkRedraw(){ bkShown=LIST_PAGE; renderBookingPage(document.getElementById('mainContent')); }
 function setBkStat(k){ bkStat=(bkStat===k&&k!=='all')?'':k; bkRedraw(); }
 function setBkTeacher(t){ bkTeacher=t?decodeURIComponent(t):''; bkRedraw(); }
 
@@ -752,7 +752,7 @@ function renderVipBookingPage(mc){
 
 // ── VIP 预约列表：一行一条，点一行展开详情（样式同面谈预约列表）──
 const BKVL_STATS=[['all','全部'],['pending','待确认'],['req','学生申请'],['confirmed','已确认'],['completed','已完成'],['cancelled','已取消']];
-let bkvlStat=null, bkvlTeacher='', bkvlQ='', bkvlShown=30, bkvlBase=[];
+let bkvlStat=null, bkvlTeacher='', bkvlQ='', bkvlShown=LIST_PAGE, bkvlBase=[];
 const bkvlOpen={};
 function bkvlMatch(b){
   if(bkvlStat==='req'){ if(!vipReqPending(b)) return false; }   // 学生申请取消 / 改期，还没处理
@@ -769,7 +769,7 @@ function bkvlListHtml(){
   list.sort((x,y)=>asc?key(x).localeCompare(key(y)):key(y).localeCompare(key(x)));
   const shown=list.slice(0,bkvlShown);
   return `<div class="bkl">${shown.length?shown.map(bkvlRowHtml).join(''):'<div class="empty">暂无VIP预约记录</div>'}</div>
-  ${list.length>bkvlShown?`<div onclick="bkvlMore()" style="text-align:center;font-size:11px;color:var(--accent);cursor:pointer;padding:10px">显示更多（还有 ${list.length-bkvlShown} 条）</div>`:''}`;
+  ${list.length>bkvlShown?`<div onclick="bkvlMore()" style="text-align:center;font-size:11px;color:var(--accent);cursor:pointer;padding:10px">加载更多（还有 ${list.length-bkvlShown} 条）</div>`:''}`;
 }
 function bkvlRowHtml(b){
   const id=b.id, stop='event.stopPropagation();', tn=bkIvTeacher(b), dt=b.slot_date||'';
@@ -792,10 +792,10 @@ function bkvlRowHtml(b){
 }
 function bkvlDraw(){ const el=document.getElementById('bkvlList'); if(el) el.innerHTML=bkvlListHtml(); }
 function bkvlToggle(id){ if(bkvlOpen[id]) delete bkvlOpen[id]; else bkvlOpen[id]=true; bkvlDraw(); }
-function bkvlMore(){ bkvlShown+=30; bkvlDraw(); }
-function bkvlSetQ(v){ bkvlQ=v; bkvlShown=30; bkvlDraw(); }
-function bkvlSetStat(k){ bkvlStat=(bkvlStat===k&&k!=='all')?'':k; bkvlShown=30; renderBookingPage(document.getElementById('mainContent')); }
-function bkvlSetTeacher(t){ bkvlTeacher=t?decodeURIComponent(t):''; bkvlShown=30; renderBookingPage(document.getElementById('mainContent')); }
+function bkvlMore(){ bkvlShown+=LIST_PAGE; bkvlDraw(); }
+function bkvlSetQ(v){ bkvlQ=v; bkvlShown=LIST_PAGE; bkvlDraw(); }
+function bkvlSetStat(k){ bkvlStat=(bkvlStat===k&&k!=='all')?'':k; bkvlShown=LIST_PAGE; renderBookingPage(document.getElementById('mainContent')); }
+function bkvlSetTeacher(t){ bkvlTeacher=t?decodeURIComponent(t):''; bkvlShown=LIST_PAGE; renderBookingPage(document.getElementById('mainContent')); }
 
 // ── 学生的取消 / 改期申请：横幅在 shared/vip-record.js（和老师端同一个），这两个是横幅按钮在管理端的处理 ──
 function openVipCancel(id){ bkSelfReject(id); }          // 同意取消：沿用教务取消（写原因、释放教室），并把申请标成已同意
@@ -1589,7 +1589,7 @@ function renderPills(b){
   return [['target_school','目标学校'],['contact_prof','联系教授'],['plan_status','计划书'],['application_status','出愿进度'],['written_exam','笔试'],['interview_status','面试准备'],['specialty_status','专业知识']]
     .filter(([k])=>b[k]).map(([k,l])=>`<span class="progress-pill">${l}·${b[k]}</span>`).join('');
 }
-function bkMonthShift(d){bkShown=30;bkvlShown=30;bkMonth+=d;bkStat=null;bkvlStat=null;if(bkMonth>11){bkMonth=0;bkYear++}if(bkMonth<0){bkMonth=11;bkYear--}renderPage()}
+function bkMonthShift(d){bkShown=LIST_PAGE;bkvlShown=LIST_PAGE;bkMonth+=d;bkStat=null;bkvlStat=null;if(bkMonth>11){bkMonth=0;bkYear++}if(bkMonth<0){bkMonth=11;bkYear--}renderPage()}
 function setBkType(t){bkType=t;bkRedraw()}
 function setBkTab(t,el){bkTab=t;document.querySelectorAll('.btn-group button').forEach(b=>b.classList.remove('active'));el.classList.add('active');renderBookingPage(document.getElementById('mainContent'))}
 function toggleStudentLinks(){

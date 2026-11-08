@@ -49,7 +49,8 @@ const FIELD_LABEL={ booking_date:'日期', start_date:'起始日', end_date:'结
   uses_meeting:'占用会议账号', meeting_account_id:'会议账号', show_title:'对外显示标题', entry_name:'录入人', created_by:'创建标记', allow_multi:'允许同人多间',
   orig_room_id:'原申请教室', req_campus:'申请校区', reviewed_at:'审核时间', meeting_link:'会议链接', meeting_id:'会议号', course_id:'课程', client_token:'设备标记', id:'记录号' };
 const SEL={ act:new Set(), kind:new Set(), time:'7d', month:'' };
-const STATE={ rows:[], shown:30, trail:null };
+const LIST_PAGE=30;   // 与 shared/constants.js 一致（本页没加载 constants.js）
+const STATE={ rows:[], shown:LIST_PAGE, trail:null };
 let ROOMS=[], ACCOUNTS=[], CAN_ARCH=false;
 const rmap=()=>Object.fromEntries(ROOMS.map(r=>[String(r.id),r]));
 function roomText(id){ const r=rmap()[String(id)]; return r?(r.campus+' '+r.name):(id?('#'+id):'—'); }
@@ -90,7 +91,7 @@ async function boot(){
   });
   if(new URLSearchParams(location.search).get('tab')==='arch' && CAN_ARCH) document.querySelector('#tabs [data-t=arch]').click();
   el('monthPick').onchange=()=>{ SEL.month=el('monthPick').value; load(); };
-  bindSearch(el('q'), ()=>{ STATE.shown=30; renderRows(); });
+  bindSearch(el('q'), ()=>{ STATE.shown=LIST_PAGE; renderRows(); });
   load();
 }
 function timeRange(){
@@ -102,7 +103,7 @@ function timeRange(){
   return [new Date(y,m-1,1).toISOString(), new Date(y,m,1).toISOString()];
 }
 async function load(){
-  STATE.shown=30; STATE.trail=null; el('trailBar').classList.add('hidden');
+  STATE.shown=LIST_PAGE; STATE.trail=null; el('trailBar').classList.add('hidden');
   el('logBox').innerHTML='<div class="muted">加载中…</div>';
   const [from,to]=timeRange();
   let q='select=*&order=at.desc&limit=1000';
@@ -174,11 +175,11 @@ function renderRows(isTrail){
       `<tr class="hidden" data-d="${i}"><td colspan="8" style="background:#fafbfa">${detailHtml(x)}</td></tr>`;
   });
   h+='</tbody></table>';
-  if(list.length>shown.length) h+=`<div style="text-align:center;margin-top:10px"><button class="ghost sm" id="more">显示更多（还有 ${list.length-shown.length} 条）</button></div>`;
+  if(list.length>shown.length) h+=`<div style="text-align:center;margin-top:10px"><button class="ghost sm" id="more">加载更多（还有 ${list.length-shown.length} 条）</button></div>`;
   const box=el('logBox'); box.innerHTML=h;
   box.querySelectorAll('tr.lrow').forEach(tr=>tr.onclick=()=>box.querySelector('tr[data-d="'+tr.dataset.i+'"]').classList.toggle('hidden'));
   box.querySelectorAll('[data-trail]').forEach(b=>b.onclick=ev=>{ ev.stopPropagation(); showTrail(b.dataset.trail); });
-  if(el('more')) el('more').onclick=()=>{ STATE.shown+=30; renderRows(isTrail); };
+  if(el('more')) el('more').onclick=()=>{ STATE.shown+=LIST_PAGE; renderRows(isTrail); };
 }
 
 /* ================= 月度归档 ================= */

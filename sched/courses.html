@@ -66,7 +66,8 @@
 <script src="common.js?v=20270128"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
-const PAGE_SIZE = 30;
+const LIST_PAGE = 30;   // 与 shared/constants.js 一致（本页没加载 constants.js）
+const PAGE_SIZE = LIST_PAGE;
 const STATUSES = ['未开课','进行中','已结课'];
 const STATUS_ORDER = {'进行中':0,'未开课':1,'已结课':2};
 // 关键词快捷筛选的词表：只显示课程名里实际出现过的词；以后加词直接往这里加
@@ -305,7 +306,7 @@ function renderList(){
   el('hint').textContent= list.length ? '点卡片展开全部上课日期' : '';
   const shown=list.slice(0,SHOWN);
   el('list').innerHTML = shown.length ? shown.map(cardHtml).join('') +
-      (list.length>shown.length ? `<div style="text-align:center"><button class="ghost" id="moreBtn">显示更多（还有 ${list.length-shown.length} 门）</button></div>` : '')
+      (list.length>shown.length ? `<div style="text-align:center"><button class="ghost" id="moreBtn">加载更多（还有 ${list.length-shown.length} 门）</button></div>` : '')
     : '<div class="tip">'+(sr?'没有搜到符合的课程。':'没有符合条件的课程，试试放宽期数 / 状态筛选。')+'</div>';
 }
 function renderAll(){ renderFilters(); renderList(); }

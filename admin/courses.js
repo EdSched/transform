@@ -3971,7 +3971,7 @@ async function hwUploadBlockFile(bi,input){
 }
 
 // ── 从往期作业选：列出所有有作业的单回（及模板里的作业），选一份载入编辑器 ──
-let hwPickLoaded = '', hwPickKw = '';
+let hwPickLoaded = '', hwPickKw = '', hwPickShown = LIST_PAGE;
 function hwPickSummary(q){
   const n=hwNormalize({homework_questions:q});
   const T={choice:'选择',calc:'计算',term:'名词',essay:'论述',free:'自由'};
@@ -3998,11 +3998,12 @@ function hwPickItems(){
 }
 async function hwPickOpen(){
   if(!Array.isArray(cachedTemplates)) cachedTemplates=await sb('/rest/v1/course_templates?select=*&order=created_at.desc').catch(()=>null);
-  hwPickKw='';
+  hwPickKw=''; hwPickShown=LIST_PAGE;
   hwPickRender();
 }
 // 搜索：整块重画后把原来的搜索框换回去（不丢光标、不打断输入法）
-function hwPickSearch(q){ hwPickKw=q; searchRerender('hwPickSearch',hwPickRender); }
+function hwPickMore(){ hwPickShown+=LIST_PAGE; hwPickRender(); }
+function hwPickSearch(q){ hwPickKw=q; hwPickShown=LIST_PAGE; searchRerender('hwPickSearch',hwPickRender); }
 function hwPickRender(){
   const box=document.getElementById('hwEditorBody'); if(!box) return;
   const esc=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
@@ -4010,7 +4011,7 @@ function hwPickRender(){
   const kw=hwPickKw.trim();
   let list=hwPickItems();
   if(kw) list=list.filter(i=>searchMatch(kw,[i.course,i.title,i.period],{names:0}));
-  const total=list.length; list=list.slice(0,100);
+  const total=list.length; list=list.slice(0,hwPickShown);
   const t=(me.session_title||'').trim();
   box.innerHTML=`
     <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px">
@@ -4018,7 +4019,7 @@ function hwPickRender(){
       <button onclick="hwEditorRender()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:4px 10px;cursor:pointer;font-family:inherit">← 返回编辑</button>
     </div>
     <input id="hwPickSearch" value="${esc(hwPickKw)}" placeholder="搜索课程名 / 单回标题 / 期数…" oninput="searchBox(this,hwPickSearch)" style="width:100%;box-sizing:border-box;font-size:12px;padding:7px 10px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;margin-bottom:6px">
-    <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">同标题的单回排在最前，其次是同名课程。点一行即载入（会替换编辑器里当前的内容，保存前不会生效）。${total>100?` 共 ${total} 条，只显示前 100 条，请用搜索缩小范围。`:''}</div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">同标题的单回排在最前，其次是同名课程。点一行即载入（会替换编辑器里当前的内容，保存前不会生效）。共 ${total} 条</div>
     <div style="max-height:60vh;overflow-y:auto;border:1px solid var(--border-light);border-radius:3px">
       ${list.length?list.map(i=>`<div onclick="hwPickUse('${esc(i.id)}')" style="display:flex;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid var(--border-light);cursor:pointer;font-size:12px" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
         <div style="flex:1;min-width:0">
@@ -4027,7 +4028,7 @@ function hwPickRender(){
         </div>
         <span style="font-size:10px;color:${i.kind==='t'?'var(--accent)':'var(--text-3)'};white-space:nowrap">${i.kind==='t'?'模板':'单回'}</span>
       </div>`).join(''):`<div style="font-size:12px;color:var(--text-3);padding:16px;text-align:center">${kw?'无匹配':'没有找到其他有作业的单回'}</div>`}
-    </div>`;
+    </div>${total>list.length?`<div onclick="hwPickMore()" style="text-align:center;padding:10px;font-size:11px;color:var(--accent);cursor:pointer">加载更多（还有 ${total-list.length} 条）</div>`:''}`;
 }
 function hwPickUse(id){
   const i=hwPickItems().find(x=>x.id===id); if(!i) return;

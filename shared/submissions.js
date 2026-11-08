@@ -1,11 +1,11 @@
 // ══════════════════════════════════
 // submissions.js — 考学进度 →「📥 学生提交」（管理端 / 老师端共用）
 // 一条 = 一份提交：计划书 / 面试稿文件（一版一条，student_doc_versions）、志望理由书、联系教授邮件、问询邮件、在线面试稿（riyu_submissions）
-// 默认只看待批复；已批复每次 50 条，按提交时间倒序，「加载更多」。
+// 默认只看待批复；已批复每次 LIST_PAGE 条，按提交时间倒序，「加载更多」。
 // 依赖：shared/supabase.js、constants.js、search.js、riyu.js（RIYU_STAFF / riyuStaffView）
 // 用法：sbmRender(box, { students: () => 范围内在读学生[], pass: s => 是否通过领域/专业筛选（可选）, openPlan: (studentId, studentName, opts) => void, barHtml: 领域/专业筛选栏 html 或返回 html 的函数（可选） })
 // ══════════════════════════════════
-const SBM_PAGE = 50;
+const SBM_PAGE = LIST_PAGE;
 const SBM_TYPES = [['plan', '计划书'], ['riyu', '志望理由书'], ['prof', '联系教授邮件'], ['inq', '问询邮件'], ['interview', '面试稿']];
 const SBM_KIND_TYPE = { gakubu_riyu: 'riyu', grad_riyu: 'riyu', grad_prof_mail: 'prof', grad_inquiry_mail: 'inq', grad_interview: 'interview' };
 const SBM = {

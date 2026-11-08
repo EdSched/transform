@@ -7,7 +7,7 @@
 // 依赖：shared/mgmt-metrics.js、shared/constants.js、admin.js（showHub、openStudentDetail）
 // ══════════════════════════════════
 const MG_COL = { bg: '#fcf8f4', card: '#ffffff', text: '#3a342e', mute: '#8a8076', line: '#e8dfd5', border: '#d9cfc4', hover: '#b9ab9b', blue: '#4f7194', green: '#5b7f55', sand: '#c9a37a', track: '#ece4d9', red: '#c4646a' };
-const MG_PAGE = 20;                                                                                  // 名单每页条数
+const MG_PAGE = LIST_PAGE;                                                                                  // 名单每页条数
 const mgE = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 let mgS = { tab: 'domain', dom: '', grp: '', met: '', data: {}, tbl: {}, busy: {}, view: '', nid: '', all: null };               // 全局层状态：data[领域]=各大项结果；tbl[大项|指标]=各领域结果
 let mgPage = { mine: false, grp: '', met: '', rows: null, label: '', view: '', nid: '' };                              // 负责人层状态

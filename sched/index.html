@@ -35,7 +35,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="../shared/constants.js?v=20270301"></script>
+<script src="../shared/constants.js?v=20270401"></script>
 <script src="common.js?v=20270128"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270126"></script>
@@ -420,7 +420,7 @@ function pendHistoryHtml(){
   const isReq=b=>b.reviewed_at || (b.created_by && b.created_by!=='admin' && !String(b.created_by).includes('|'));
   const list=BOOKINGS.filter(b=>(b.status==='confirmed'||b.status==='rejected') && isReq(b))
     .sort((a,b)=>String(b.reviewed_at||'').localeCompare(String(a.reviewed_at||'')) || String(b.created_at||'').localeCompare(String(a.created_at||'')))
-    .slice(0,60);
+    .slice(0,LIST_PAGE);
   const fmt=t=>{ if(!t) return '<span class="muted">—</span>'; const d=new Date(t); if(isNaN(d)) return esc(t);
     const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes()); };
   const open=window.PEND_HIST_OPEN===true;
@@ -2201,8 +2201,7 @@ function renderCoursesTable(){
   if(tr && tr.open && !schedTraceActive(tr)){ el('coursesTable').innerHTML=''; return; }
   // 无任何筛选时默认只显示前50条，避免一次读太多
   const hasFilter = !!(q||term||cat||major||ctype||campus);
-  const showAll = window.CF_SHOWALL===true;
-  const LIMIT=50; const truncated = !hasFilter && !showAll && list.length>LIMIT;
+  const LIMIT=window.CF_LIM||LIST_PAGE; const truncated = list.length>LIMIT;
   const shown = truncated ? list.slice(0,LIMIT) : list;
   const isAdmin = ROLE && (ROLE.role==='admin' || (ROLE.perms&&ROLE.perms.split(',').map(s=>s.trim()).includes('manage')));
   const canAudit = isAdmin || (ROLE && ROLE.perms && ROLE.perms.split(',').map(s=>s.trim()).includes('course_audit'));
@@ -2239,16 +2238,14 @@ function renderCoursesTable(){
     `<td style="font-size:11px">${(c.meeting_link||c.meeting_id)?('<span class="badge b-ok" style="font-size:10px">已设</span>'+(c.meeting_id?(' '+esc(c.meeting_id)):'')+(c.meeting_link?(' <a href="'+esc(c.meeting_link)+'" target="_blank" rel="noopener">进入</a>'):'')):'<span class="muted">—</span>'}</td>`+
     `<td>${schedRemoved(c)?'<span class="badge b-mute" style="background:#e4e4e4">已移出 · '+esc(c.sched_removed_reason)+'</span> <button class="sm ghost" data-restore="'+c.id+'">恢复到排课</button> ':''}<button class="sm ghost" data-edc="${c.id}">编辑</button></td></tr>`; });
   h+='</tbody></table>';
-  if(truncated) h+='<div style="text-align:center;margin-top:10px"><span class="muted" style="font-size:12px">仅显示前 '+LIMIT+' 门（共 '+list.length+' 门）。用上方筛选缩小范围，或 </span><button class="ghost sm" id="cf_showall">显示全部</button></div>';
-  else if(showAll && list.length>LIMIT) h+='<div style="text-align:center;margin-top:10px"><button class="ghost sm" id="cf_showless">收起（只看前 '+LIMIT+'）</button></div>';
+  if(truncated) h+='<div style="text-align:center;margin-top:10px"><button class="ghost sm" id="cf_showall">加载更多（还有 '+(list.length-LIMIT)+' 门）</button></div>';
   el('coursesTable').innerHTML=h;
   // 全选 + 计数
   const updInfo=()=>{ const n=document.querySelectorAll('.cf_ck:checked').length; el('cf_selinfo').textContent=n?('已选 '+n+' 门'):''; };
   el('cf_all').onchange=()=>{ document.querySelectorAll('.cf_ck').forEach(c=>c.checked=el('cf_all').checked); updInfo(); };
   document.querySelectorAll('.cf_ck').forEach(c=>c.onchange=updInfo);
   el('cf_dupscan').onclick=()=>dupScan(list);
-  if(el('cf_showall')) el('cf_showall').onclick=()=>{ window.CF_SHOWALL=true; renderCoursesTable(); };
-  if(el('cf_showless')) el('cf_showless').onclick=()=>{ window.CF_SHOWALL=false; renderCoursesTable(); };
+  if(el('cf_showall')) el('cf_showall').onclick=()=>{ window.CF_LIM=(window.CF_LIM||LIST_PAGE)+LIST_PAGE; renderCoursesTable(); };
   if(el('cf_backup')) el('cf_backup').onclick=()=>downloadCourseBackup();
   if(el('cf_review')) el('cf_review').onclick=()=>{ const b=el('cf_trashBox'); if(b.dataset.open==='review'){ b.innerHTML=''; b.dataset.open=''; } else { b.dataset.open='review'; renderReview(list); } };
   // ---- 批量修改 ----

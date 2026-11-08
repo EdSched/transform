@@ -1,7 +1,7 @@
 // 管理端「面谈跟进」：和老师端同一套（shared/follow-up.js），这里只做管理端自己的筛选和入口。
 // 筛选：搜索（最上面，输入时不受其他筛选限制）· 领域 / 专业 / 来源（DMF，shared/constants.js）；各自独立、可以组合。
 // 打开时不列学生：多个领域时要先选领域 / 专业，或者搜索姓名。
-const FUA = { q: '', shown: 30 };
+const FUA = { q: '', shown: LIST_PAGE };
 
 function fuaPool() { return (typeof cachedStudents !== 'undefined' ? cachedStudents : []).filter(s => studentInCurrentView(s)); }
 function fuaNeedPick() {
@@ -21,12 +21,12 @@ function fuaTopHtml() {
 const fuaIsFocus = () => curPage === 'focus';
 function fuaDraw(listOnly) { return fuaIsFocus() ? focusRender() : (listOnly ? tmRenderList() : tmRenderShell()); }
 function fuaSearch(q) {
-  FUA.q = q || ''; FUA.shown = 30;
+  FUA.q = q || ''; FUA.shown = LIST_PAGE;
   fuaDraw(true);
   if (fuaIsFocus()) { const el = document.getElementById('fua_q'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }   // 重点关注整块重画，把光标放回搜索框
 }
-function fuaRefresh() { FUA.shown = 30; fuaDraw(false); }
-function fuaMore() { FUA.shown += 30; fuaDraw(true); }
+function fuaRefresh() { FUA.shown = LIST_PAGE; fuaDraw(false); }
+function fuaMore() { FUA.shown += LIST_PAGE; fuaDraw(true); }
 
 fuSetHost({
   top: fuaTopHtml,
@@ -34,8 +34,8 @@ fuSetHost({
   filter: fuaFilter,
   query: () => FUA.q,
   slice: l => l.slice(0, FUA.shown),
-  more: n => n <= FUA.shown ? '' : `<div onclick="fuaMore()" style="text-align:center;padding:10px;margin:6px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">显示更多（还有 ${n - FUA.shown} 人）</div>`,
-  reset: () => { FUA.shown = 30; },
+  more: n => n <= FUA.shown ? '' : `<div onclick="fuaMore()" style="text-align:center;padding:10px;margin:6px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">加载更多（还有 ${n - FUA.shown} 人）</div>`,
+  reset: () => { FUA.shown = LIST_PAGE; },
   box: () => document.getElementById('mainContent'),
   reload: () => (curPage === 'focus' ? renderFocusPage : renderFollowUpPage)(document.getElementById('mainContent')),
 });

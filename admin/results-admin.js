@@ -1063,7 +1063,7 @@ async function raRefreshUnivList() {
 // 列顺序 = 导出文件 = 导入模板；第一列「记录编号」(id) 导入时用来更新
 // ════════════════════════════════════════════════════════════════════════
 const raXlTpl = { grad: false, ug: false };   // 当前上传的文件表头是不是模板 / 导出文件（有「记录编号」列）
-const raXl = { plan: { grad: [], ug: [] }, show: { grad: 50, ug: 50 }, kind: 'grad' };
+const raXl = { plan: { grad: [], ug: [] }, show: { grad: LIST_PAGE, ug: LIST_PAGE }, kind: 'grad' };
 let raXlMajors = [];   // [{key,label,label_ja,domain,group_key}]：每次导出 / 模板 / 预览时从 majors 表实时读取
 let raXlGroups = {};   // 分组 key → { label, domain }
 
@@ -1371,7 +1371,7 @@ async function raXlShowPreview(kind) {
     const existing = kind === 'ug' ? await raUgFetchAll() : await raFetchAllResults();
     const upRows = kind === 'ug' ? raUgUploadRows : raUploadRows;
     raXl.plan[kind] = raXlBuildPlan(kind, upRows, existing);
-    raXl.show[kind] = 50;
+    raXl.show[kind] = LIST_PAGE;
     raXlRenderPreview(kind);
     document.getElementById(p + 'col-mapping').style.display = 'none';
     document.getElementById(p + 'import-preview').style.display = '';
@@ -1415,7 +1415,7 @@ async function raXlDownloadFix(kind) {
   XLSX.writeFile(wb, fname);
   raToast('颜色组件没加载成功，已导出无颜色版本（原因在第一列）');
 }
-function raXlMoreRows(kind) { raXl.show[kind] += 50; raXlRenderPreview(kind); }
+function raXlMoreRows(kind) { raXl.show[kind] += LIST_PAGE; raXlRenderPreview(kind); }
 function raXlRenderPreview(kind) {
   const K = RA_XL[kind], p = K.p, plan = raXl.plan[kind];
   const n = s => plan.filter(x => x.status === s).length;
@@ -1453,7 +1453,7 @@ function raXlRenderPreview(kind) {
     }
   });
   html += '</tbody></table>';
-  if (plan.length > shown.length) html += `<div style="text-align:center;margin:8px"><button class="btn btn-secondary" onclick="raXlMoreRows('${kind}')">显示更多（还有 ${plan.length - shown.length} 行）</button></div>`;
+  if (plan.length > shown.length) html += `<div style="text-align:center;margin:8px"><button class="btn btn-secondary" onclick="raXlMoreRows('${kind}')">加载更多（还有 ${plan.length - shown.length} 行）</button></div>`;
   document.getElementById(p + 'preview-wrap').innerHTML = html;
 }
 async function raXlExecute(kind) {
@@ -4011,7 +4011,7 @@ function raFillNew() {
 }
 raFill.grad = raFillNew(); raFill.ug = raFillNew();
 const raFILL_RANGES = [['1w', '最近 1 周'], ['1m', '最近 1 个月'], ['3m', '最近 3 个月'], ['old', '3 个月以前'], ['all', '全部']];
-const raFILL_PAGE = 100, raFILL_SCAN_MAX = 5000;
+const raFILL_PAGE = LIST_PAGE, raFILL_SCAN_MAX = 5000;
 function raFillCols(kind) { return 'id,univ,dept,spec,student,' + (kind === 'ug' ? '' : 'subject,') + 'track,era,created_at,our_major'; }
 
 function raPhModeRender(kind) {

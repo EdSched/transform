@@ -237,9 +237,9 @@ function aimpRender() {
   const sec = (id, title, count, inner) => `<details style="border:1px solid var(--border-light);border-radius:3px;margin-bottom:8px;background:var(--bg)" ${st.open && st.open[id] ? 'open' : ''} ontoggle="aimpState.open=aimpState.open||{};aimpState.open['${id}']=this.open">
     <summary style="cursor:pointer;padding:8px 10px;font-size:12px;font-weight:600">${title} <span style="font-weight:400;color:var(--text-3)">${count}</span></summary>
     <div style="padding:6px 10px 10px;border-top:1px solid var(--border-light)">${inner}</div></details>`;
-  const more = (id, total) => (st.shown[id] || 60) < total
-    ? `<div style="text-align:center;margin-top:6px"><button class="btn btn-outline btn-sm" onclick="aimpState.shown['${id}']=(aimpState.shown['${id}']||60)+60;aimpRender()">显示更多（还有 ${total - (st.shown[id] || 60)} 条）</button></div>` : '';
-  const lim = id => st.shown[id] || 60;
+  const more = (id, total) => (st.shown[id] || LIST_PAGE) < total
+    ? `<div style="text-align:center;margin-top:6px"><button class="btn btn-outline btn-sm" onclick="aimpState.shown['${id}']=(aimpState.shown['${id}']||LIST_PAGE)+LIST_PAGE;aimpRender()">加载更多（还有 ${total - (st.shown[id] || LIST_PAGE)} 条）</button></div>` : '';
+  const lim = id => st.shown[id] || LIST_PAGE;
   const showVal = (f, v) => typeof v === 'object' ? Object.entries(v).map(([k, x]) => `${adgEsc(k)}：${adgEsc(x)}`).join('　') : adgEsc(v);
   const withPatch = st.matched.filter(m => Object.keys(m.patch).length);
 

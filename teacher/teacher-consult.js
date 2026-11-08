@@ -11,9 +11,9 @@
 // ══════════════════════════════════
 let cst = {
   loaded: false, err: '', list: [], cur: null, step: 1, show: false, q: '', saving: '',
-  adm: [], admKey: '', admLoading: false, admLimit: 30, admOpen: '', vidOther: null,
+  adm: [], admKey: '', admLoading: false, admLimit: LIST_PAGE, admOpen: '', vidOther: null,
   courses: null, pkgs: null, profs: null, media: null, mediaTab: 'textbook', mediaQ: '', common: null, commonDom: '', profiles: null, tiers: null, cases: null, faqs: null, intro: null, introKey: '',
-  open: {}, item: '1-1', overlay: '', faqQ: '', crsQ: '', crsLimit: 30, crsPer: 'next', crsScope: 'major', crsOther: '', crsCampus: '', dirty: {}, timer: null,
+  open: {}, item: '1-1', overlay: '', faqQ: '', crsQ: '', crsLimit: LIST_PAGE, crsPer: 'next', crsScope: 'major', crsOther: '', crsCampus: '', dirty: {}, timer: null,
 };
 
 const CST_STEPS = [[1, '学生信息'], [2, '专业与院校'], [3, '课程与方案'], [4, '最终升学计划']];
@@ -79,7 +79,7 @@ async function cstNew() {
 }
 function cstPick(id) { const l = cst.list.find(x => x.id === id); if (!l) return; cstFlush(); cstEnter(l); }
 function cstEnter(l) {
-  cst.cur = l; cst.adm = []; cst.admKey = ''; cst.admOpen = ''; cst.vidOther = null; cst.open = {}; cst.admLimit = 30; cst.crsLimit = 30; cst.intro = null; cst.introKey = '';
+  cst.cur = l; cst.adm = []; cst.admKey = ''; cst.admOpen = ''; cst.vidOther = null; cst.open = {}; cst.admLimit = LIST_PAGE; cst.crsLimit = LIST_PAGE; cst.intro = null; cst.introKey = '';
   const p = cstProg(l), at = Math.min(cstItemIdx(p.at), cstFrontier(l)); cst.item = CST_ITEMS[at < 0 ? 0 : at].id; cst.step = cstItemOf(cst.item).g;
   cstRender(); window.scrollTo(0, 0);
 }
@@ -159,7 +159,7 @@ function cstMissing(id) {
 function cstGoItem(id) {
   const l = cst.cur; if (!l) return;
   if (cstItemIdx(id) > cstFrontier(l)) return;
-  const p = cstProg(l); p.at = id; cst.item = id; cst.step = cstItemOf(id).g; cst.admLimit = 30; cst.crsLimit = 30;
+  const p = cstProg(l); p.at = id; cst.item = id; cst.step = cstItemOf(id).g; cst.admLimit = LIST_PAGE; cst.crsLimit = LIST_PAGE;
   cstSet('progress', p); cstSet('step', cst.step); cstRender(); window.scrollTo(0, 0);
 }
 function cstNext() {
@@ -447,7 +447,7 @@ async function cstLoadAdm() {
   try { cst.adm = await sbAll(`/rest/v1/admission_schools?major=eq.${encodeURIComponent(k)}&select=*&order=university.asc`); } catch (e) { cst.adm = []; cst.admErr = e.message; }
   cst.admLoading = false; if (cst.cur && cst.cur.target_major === k) cstRender();
 }
-function cstSetF(k, v) { const f = cstFilters(cst.cur); f[k] = v; cst.admLimit = 30; cstSet('filters', f); cstRender(); }
+function cstSetF(k, v) { const f = cstFilters(cst.cur); f[k] = v; cst.admLimit = LIST_PAGE; cstSet('filters', f); cstRender(); }
 function cstToggleF(k) { const f = cstFilters(cst.cur); cstSetF(k, !f[k]); }
 function cstToggleTier(t) { const f = cstFilters(cst.cur); f.tiers = f.tiers || []; const i = f.tiers.indexOf(t); if (i >= 0) f.tiers.splice(i, 1); else f.tiers.push(t); cstSetF('tiers', f.tiers); }
 function cstToggleStatus(s) { const f = cstFilters(cst.cur), i = f.status.indexOf(s); if (i >= 0) f.status.splice(i, 1); else f.status.push(s); cstSetF('status', f.status); }
@@ -658,7 +658,7 @@ function cstAdmHtml() {
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${chips}</div>
     <div style="font-size:10px;color:var(--text-3);margin-bottom:6px">共 ${groups.length} 个学校研究科（T0–T3 学校等级沿用合格实绩，只用来排序和筛选；点一行看每一次出愿）</div>
     ${empty}${shown.map((g, gi) => cstAdmGroupHtml(g, gi, active)).join('')}
-    ${groups.length > cst.admLimit ? `<div onclick="cst.admLimit+=30;cstRender()" style="text-align:center;padding:10px;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">显示更多（还有 ${groups.length - cst.admLimit} 个）</div>` : ''}
+    ${groups.length > cst.admLimit ? `<div onclick="cst.admLimit+=LIST_PAGE;cstRender()" style="text-align:center;padding:10px;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">加载更多（还有 ${groups.length - cst.admLimit} 个）</div>` : ''}
     <div style="font-size:10px;color:var(--text-3);margin-top:8px">具备报考资格，就已经迈出了第一步，一起加油！「出愿时间已过」按目标入学时间推算，仅供参考。</div>`;
 }
 const cstFilterActive = f => !!(f.q || f.noEn || f.noJp || f.noWr || f.noOr || f.status.length || (f.tiers || []).length || f.mFrom || f.mTo);
@@ -874,9 +874,9 @@ function cstCrsPool() {   // 当前范围的课（还没按搜索筛）
   if (cst.crsScope === 'other') return cst.crsOther ? pool.filter(c => !lang(c) && cstMajorsOf(c).includes(cst.crsOther)) : [];
   return pool.filter(c => !lang(c) && cstMajorsOf(c).some(m => tgt.includes(m)));
 }
-function cstCrsSet(k, v) { cst[k] = v; if (k === 'crsScope') { cst.crsCampus = ''; if (v !== 'other') cst.crsOther = ''; } if (k === 'crsPer') cst.crsCampus = ''; cst.crsLimit = 30; cstRender(); }
+function cstCrsSet(k, v) { cst[k] = v; if (k === 'crsScope') { cst.crsCampus = ''; if (v !== 'other') cst.crsOther = ''; } if (k === 'crsPer') cst.crsCampus = ''; cst.crsLimit = LIST_PAGE; cstRender(); }
 function cstCrsRefresh() { const el = document.getElementById('cst_crs_list'); if (el) el.innerHTML = cstCrsListHtml(); }
-function cstCrsSearch(q) { cst.crsQ = q; cst.crsLimit = 30; cstCrsRefresh(); }
+function cstCrsSearch(q) { cst.crsQ = q; cst.crsLimit = LIST_PAGE; cstCrsRefresh(); }
 function cstCrsFilterHtml() {
   const k = prPeriodKeys(), q = cst.crsQ.trim(), row = (label, inner) => `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px"><span style="font-size:11px;color:var(--text-3)">${label}</span>${inner}</div>`;
   const scope = [['major', '本专业'], ['nihongo', '日语'], ['eigo', '英语'], ['other', '同领域其他专业']];
@@ -897,7 +897,7 @@ function cstCrsListHtml() {
   const total = rows.length, empty = !q && cst.crsScope === 'other' && !cst.crsOther ? '先选一个专业' : '这一期没有符合条件的课程';
   const perOf = c => cstPeriodCourses('cur').some(x => x.id === c.id) ? k.cur.name : k.next.name;
   return rows.slice(0, cst.crsLimit).map(c => `<div style="display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border-light);padding:6px 2px;font-size:12px"><div style="flex:1;min-width:0"><div style="font-weight:600">${cstE(c.name)}${q ? ` <span style="font-weight:400;font-size:10px;color:var(--text-3)">${cstE(perOf(c))}</span>` : ''}</div><div style="font-size:10px;color:var(--text-3)">${cstE(cstCrsMeta(c))}</div></div><button class="btn btn-outline btn-sm" onclick="cstCrsAdd('${cstJ(c.id)}')">＋ 加入方案</button></div>`).join('') || `<div style="font-size:11px;color:var(--text-3)">${empty}。</div>`
-    + (total > cst.crsLimit ? `<div onclick="cst.crsLimit+=30;cstCrsRefresh()" style="text-align:center;padding:10px;font-size:11px;color:var(--accent);cursor:pointer">显示更多（还有 ${total - cst.crsLimit} 门）</div>` : '');
+    + (total > cst.crsLimit ? `<div onclick="cst.crsLimit+=LIST_PAGE;cstCrsRefresh()" style="text-align:center;padding:10px;font-size:11px;color:var(--accent);cursor:pointer">加载更多（还有 ${total - cst.crsLimit} 门）</div>` : '');
 }
 function cstPriceHtml() {
   const co = cstCoursesObj(cst.cur), { lines, total } = cstPriceLines();

@@ -14,7 +14,7 @@ let prExpanded = null;  // 展开的课程介绍条目 id
 let prDomain = '';      // 专业行上一级：领域（逐级展开：先选领域，再列该领域的专业）
 let prDomainInited = false;
 let prBlockOpen = {};   // 宣传内容块的展开状态 id → true/false（未设置时：块数 ≤3 默认展开，更多则默认收起）
-let prBlockLimit = 30;  // 内容块一次显示的条数
+let prBlockLimit = LIST_PAGE;  // 内容块一次显示的条数
 let prLangIds = [];         // 课程表里额外加入的语言课（给某个咨询者个人搭配，切换专业时保留）
 let prLang = { open: false, kind: 'nihongo', period: '', campus: '' };   // 语言课选择面板状态；period ''=跟随上面课程表的期数
 let prOtherIds = [];        // 课程表里额外加入的同领域其他专业课（切换到同领域专业时保留，换领域清空）
@@ -67,7 +67,7 @@ function prSetDomain(d) {
   if (first && first !== prMajor) prSetMajor(first); else prRenderShell();
 }
 function prBlockToggle(id, dflt) { prBlockOpen[id] = !(id in prBlockOpen ? prBlockOpen[id] : dflt); prRenderBody(); }
-function prBlockMore() { prBlockLimit += 30; prRenderBody(); }
+function prBlockMore() { prBlockLimit += LIST_PAGE; prRenderBody(); }
 // 宣传内容块（专业介绍 / 讲师介绍 / 通用宣传）：块多时默认收起，只露标题；超过 30 块分页
 function prBlocksHtml(list) {
   const dflt = list.length <= 3;
@@ -81,7 +81,7 @@ function prBlocksHtml(list) {
     ${open ? `<div style="font-size:12px;line-height:2;color:var(--text-2);padding:0 16px 14px">${prMd(p.body)}</div>` : ''}
   </div>`;
   }).join('');
-  const more = list.length > prBlockLimit ? `<div onclick="prBlockMore()" style="text-align:center;padding:10px;margin:6px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">显示更多（还有 ${list.length - prBlockLimit} 项）</div>` : '';
+  const more = list.length > prBlockLimit ? `<div onclick="prBlockMore()" style="text-align:center;padding:10px;margin:6px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">加载更多（还有 ${list.length - prBlockLimit} 项）</div>` : '';
   return cards + more;
 }
 
@@ -120,7 +120,7 @@ async function prLangRefresh() {
   try { prData = await prFetchMajor(prMajor); } catch (e) { alert('读取失败：' + e.message); }
   prRenderBody();
 }
-function prLangSet(k, v) { prLang.limit = 30; prLang[k] = v; if (k === 'kind' || k === 'period') prLang.campus = ''; prRenderBody(); }
+function prLangSet(k, v) { prLang.limit = LIST_PAGE; prLang[k] = v; if (k === 'kind' || k === 'period') prLang.campus = ''; prRenderBody(); }
 function prLangToggle(id) {
   const i = prLangIds.indexOf(id);
   if (i >= 0) prLangIds.splice(i, 1); else prLangIds.push(id);
@@ -153,7 +153,7 @@ function prLangPanelHtml() {
         ${chip(pv === 'next', `prLangSet('period','next')`, `下一期（${k.next.label}）`)}${chip(pv === 'cur', `prLangSet('period','cur')`, `当期（${k.cur.label}）`)}</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px"><span style="font-size:10px;color:var(--text-3)">校区：</span>
         ${chip(!prLang.campus, `prLangSet('campus','')`, '全部')}${chipFold(campuses.map(c => ({ on: prLang.campus === c, html: chip(prLang.campus === c, `prLangSet('campus','${prEsc(c)}')`, c) })))}</div>
-      ${list.length ? list.slice(0, prLang.limit || 30).map(row).join('') + (list.length > (prLang.limit || 30) ? `<div onclick="prLang.limit=(prLang.limit||30)+30;prRenderBody()" style="cursor:pointer;text-align:center;padding:7px;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:3px">显示更多（还有 ${list.length - (prLang.limit || 30)} 项）</div>` : '') : '<div style="font-size:11px;color:var(--text-3);padding:8px 0">该期没有符合条件的语言课</div>'}
+      ${list.length ? list.slice(0, prLang.limit || LIST_PAGE).map(row).join('') + (list.length > (prLang.limit || LIST_PAGE) ? `<div onclick="prLang.limit=(prLang.limit||LIST_PAGE)+LIST_PAGE;prRenderBody()" style="cursor:pointer;text-align:center;padding:7px;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:3px">加载更多（还有 ${list.length - (prLang.limit || LIST_PAGE)} 项）</div>` : '') : '<div style="font-size:11px;color:var(--text-3);padding:8px 0">该期没有符合条件的语言课</div>'}
       ${n ? `<div style="margin-top:6px"><button onclick="prLangClear()" style="font-size:10px;background:var(--surface);border:1px solid var(--border);color:var(--text-2);border-radius:3px;padding:3px 12px;cursor:pointer;font-family:inherit">清空语言课（已选 ${n} 门）</button></div>` : ''}
     </div>` : ''}
   </div>`;
@@ -183,7 +183,7 @@ function prOtherCourses() {
     && c.first_session_date && c.first_session_date.startsWith(String(p.year)) && effectivePeriod(c) === p.name)
     .sort((a, b) => (a.first_session_date || '').localeCompare(b.first_session_date || ''));
 }
-function prOtherSet(k, v) { prOther.limit = 30; prOther[k] = v; if (k === 'major' || k === 'period') prOther.campus = ''; prRenderBody(); }
+function prOtherSet(k, v) { prOther.limit = LIST_PAGE; prOther[k] = v; if (k === 'major' || k === 'period') prOther.campus = ''; prRenderBody(); }
 function prOtherToggle(id) {
   const i = prOtherIds.indexOf(id);
   if (i >= 0) prOtherIds.splice(i, 1); else prOtherIds.push(id);
@@ -199,7 +199,7 @@ function prOtherPanelHtml() {
   const list = pool.filter(c => !prOther.campus || (c.campus || '') === prOther.campus);
   const pv = prOtherPeriodVal();
   const n = prOtherIds.length;
-  const lim = prOther.limit || 30;
+  const lim = prOther.limit || LIST_PAGE;
   const row = c => {
     const on = prOtherIds.includes(c.id);
     return `<div onclick="prOtherToggle('${prEsc(c.id)}')" style="cursor:pointer;padding:6px 10px;border:1px solid ${on ? 'var(--accent)' : 'var(--border)'};border-radius:3px;margin-bottom:4px;font-size:11px;background:${on ? 'var(--accent-bg,#f5ede3)' : 'var(--surface)'};color:var(--text-2)">
@@ -219,7 +219,7 @@ function prOtherPanelHtml() {
         ${chip(pv === 'next', `prOtherSet('period','next')`, `下一期（${k.next.label}）`)}${chip(pv === 'cur', `prOtherSet('period','cur')`, `当期（${k.cur.label}）`)}</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px"><span style="font-size:10px;color:var(--text-3)">校区：</span>
         ${chip(!prOther.campus, `prOtherSet('campus','')`, '全部')}${chipFold(campuses.map(c => ({ on: prOther.campus === c, html: chip(prOther.campus === c, `prOtherSet('campus','${prEsc(c)}')`, c) })))}</div>
-      ${list.length ? list.slice(0, lim).map(row).join('') + (list.length > lim ? `<div onclick="prOther.limit=${lim}+30;prRenderBody()" style="cursor:pointer;text-align:center;padding:7px;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:3px">显示更多（还有 ${list.length - lim} 项）</div>` : '') : `<div style="font-size:11px;color:var(--text-3);padding:8px 0">${empty}</div>`}
+      ${list.length ? list.slice(0, lim).map(row).join('') + (list.length > lim ? `<div onclick="prOther.limit=${lim}+LIST_PAGE;prRenderBody()" style="cursor:pointer;text-align:center;padding:7px;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:3px">加载更多（还有 ${list.length - lim} 项）</div>` : '') : `<div style="font-size:11px;color:var(--text-3);padding:8px 0">${empty}</div>`}
       ${n ? `<div style="margin-top:6px"><button onclick="prOtherClear()" style="font-size:10px;background:var(--surface);border:1px solid var(--border);color:var(--text-2);border-radius:3px;padding:3px 12px;cursor:pointer;font-family:inherit">清空其他专业课（已选 ${n} 门）</button></div>` : ''}
     </div>` : ''}
   </div>`;
@@ -411,7 +411,7 @@ function prRenderShell() {
   <div class="page-header"><div class="section-title">📣 宣传相关</div></div>
   ${prSection === 'plan' || prSection === 'cases' ? '' : prSection === 'common' ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
     <span style="font-size:10px;color:var(--text-3)">领域：</span>
-    ${prCommonDomains().map(d => `<div class="filter-chip ${prCommonDomain===d?'active':''}" onclick="prCommonDomain='${prEsc(d)}';prBlockLimit=30;prRenderShell()" style="padding:3px 10px;font-size:10px">${prEsc(d)}</div>`).join('') || '<span style="font-size:10px;color:var(--text-3)">admin 还没有发布任何通用宣传内容</span>'}
+    ${prCommonDomains().map(d => `<div class="filter-chip ${prCommonDomain===d?'active':''}" onclick="prCommonDomain='${prEsc(d)}';prBlockLimit=LIST_PAGE;prRenderShell()" style="padding:3px 10px;font-size:10px">${prEsc(d)}</div>`).join('') || '<span style="font-size:10px;color:var(--text-3)">admin 还没有发布任何通用宣传内容</span>'}
   </div>` : `${prDomainList().length > 1 ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
     <span style="font-size:10px;color:var(--text-3)">领域：</span>
     ${prDomainList().map(d => `<div class="filter-chip ${prCurDomain()===d?'active':''}" onclick="prSetDomain('${prEsc(d)}')" style="padding:3px 10px;font-size:10px">${prEsc(d)}</div>`).join('')}
@@ -420,7 +420,7 @@ function prRenderShell() {
     ${chipFold(prMajorList().filter(m => prDomainList().length <= 1 || (prMajorDomain(m) || '其他') === prCurDomain()).map(m => ({ on: prMajor===m, html: `<div class="filter-chip ${prMajor===m?'active':''}" onclick="prSetMajor('${m}')" style="padding:3px 10px;font-size:10px">${prEsc(prMajorName(m))}</div>` }))) || '<span style="font-size:10px;color:var(--text-3)">admin 还没有录入任何专业的宣传内容</span>'}
   </div>`}
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px">
-    ${prSections().map(([k,l]) => `<button onclick="prSection='${k}';prExpanded=null;prBlockLimit=30;prRenderShell()" style="font-size:11px;padding:5px 14px;border-radius:3px;cursor:pointer;font-family:inherit;border:1px solid ${prSection===k?'var(--accent)':'var(--border)'};background:${prSection===k?'var(--accent)':'var(--surface)'};color:${prSection===k?'#fff':'var(--text-2)'}">${l}</button>`).join('')}
+    ${prSections().map(([k,l]) => `<button onclick="prSection='${k}';prExpanded=null;prBlockLimit=LIST_PAGE;prRenderShell()" style="font-size:11px;padding:5px 14px;border-radius:3px;cursor:pointer;font-family:inherit;border:1px solid ${prSection===k?'var(--accent)':'var(--border)'};background:${prSection===k?'var(--accent)':'var(--surface)'};color:${prSection===k?'#fff':'var(--text-2)'}">${l}</button>`).join('')}
   </div>
   ${prSection === 'common' || prSection === 'plan' || prSection === 'cases' ? '' : `<div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:8px 12px;margin-bottom:12px">
     <span style="font-size:10px;color:var(--text-3)">发给客户的宣传页链接：</span>
@@ -445,7 +445,7 @@ function prSetMajor(m) {
   if (prMajorDomain(m) !== prMajorDomain(prMajor)) { prOtherIds = []; prOther.major = ''; prOther.campus = ''; }   // 其他专业课不能跨领域
   else if (prOther.major === m) prOther.major = '';
   prMajor = m;
-  prExpanded = null; prBlockLimit = 30; prVideoOpen = false;
+  prExpanded = null; prBlockLimit = LIST_PAGE; prVideoOpen = false;
   renderTeacherPromo(document.getElementById('mainContent'));
 }
 
