@@ -217,7 +217,8 @@ async function aimpOnFile(input) {
       });
       (dbBy[major] || []).forEach(r => { if (!used.has(r.id)) missing.push(r); });
     });
-    aimpState = { matched, addable, missing, skipped, sel: new Set(), shown: {}, dbReady, majors: Object.keys(xlByMajor) };
+    const dbCount = Object.keys(xlByMajor).reduce((n, mj) => n + (dbBy[mj] || []).length, 0);
+    aimpState = { matched, addable, missing, skipped, sel: new Set(), shown: {}, dbReady, majors: Object.keys(xlByMajor), dbCount, confirmNew: false };
     aimpRender();
   } catch (e) {
     box.innerHTML = `<span style="color:var(--danger)">解析失败：${adgEsc(e.message)}</span>`;
@@ -225,6 +226,9 @@ async function aimpOnFile(input) {
 }
 
 function aimpPatchedCount() { return aimpState.matched.filter(m => Object.keys(m.patch).length).length; }
+// 新增的条数超过这些专业已有条数的 20% = 很可能没对上已有数据
+function aimpTooMany() { const st = aimpState; return st.addable.length > 0 && st.addable.length > st.dbCount * 0.2; }
+function aimpNeedConfirm() { const st = aimpState; return aimpTooMany() && st.sel.size > 0 && !st.confirmNew; }
 function aimpFieldCount() { return aimpState.matched.reduce((n, m) => n + Object.keys(m.patch).length, 0); }
 
 function aimpRender() {
@@ -232,7 +236,7 @@ function aimpRender() {
   if (!st || !box) return;
   const btn = document.getElementById('admissionImportBtn');
   const nPatch = aimpPatchedCount(), nField = aimpFieldCount();
-  btn.disabled = !st.dbReady || (!nPatch && !st.sel.size);
+  btn.disabled = !st.dbReady || (!nPatch && !st.sel.size) || aimpNeedConfirm();
   btn.textContent = `确认补缺（补 ${nPatch} 行 / ${nField} 个字段${st.sel.size ? `，新增 ${st.sel.size} 行` : ''}）`;
   const sec = (id, title, count, inner) => `<details style="border:1px solid var(--border-light);border-radius:3px;margin-bottom:8px;background:var(--bg)" ${st.open && st.open[id] ? 'open' : ''} ontoggle="aimpState.open=aimpState.open||{};aimpState.open['${id}']=this.open">
     <summary style="cursor:pointer;padding:8px 10px;font-size:12px;font-weight:600">${title} <span style="font-weight:400;color:var(--text-3)">${count}</span></summary>
@@ -266,6 +270,10 @@ function aimpRender() {
     : '<div style="color:var(--text-3)">没有</div>';
 
   box.innerHTML = `
+    ${aimpTooMany() ? `<div style="background:#fdecea;border:1px solid #f5c6cb;border-radius:3px;padding:8px 10px;margin-bottom:8px;color:var(--danger);line-height:1.8">
+      <strong>新增的条数很多，可能没对上已有数据，请先确认</strong>（Excel 有、库里没有 ${st.addable.length} 行；这些专业库里已有 ${st.dbCount} 行，超过 20%）。<br>
+      <span class="filter-chip${st.confirmNew ? ' active' : ''}" style="font-size:11px;margin-top:4px" onclick="aimpState.confirmNew=!aimpState.confirmNew;aimpRender()">我确认这些是新学校</span>
+      <span style="color:var(--text-3);font-size:10.5px">${st.confirmNew ? '已确认' : '选中新增的行时，必须先点这里确认才能写入'}</span></div>` : ''}
     ${st.dbReady ? '' : '<div style="background:#fdecea;border:1px solid #f5c6cb;border-radius:3px;padding:8px 10px;margin-bottom:8px;color:var(--danger)">数据库还没有新增的列（english_tests / japanese_tests / staff_url）。请先在 Supabase 执行合并说明里的 SQL，再重新选文件。</div>'}
     <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:3px;padding:8px 10px;margin-bottom:8px;line-height:1.9">
       读到的专业：${st.majors.map(m => adgEsc(ADMISSION_MAJORS[m] || m)).join('、') || '无'}<br>
@@ -286,6 +294,7 @@ async function confirmAdmissionImport() {
   const patches = st.matched.filter(m => Object.keys(m.patch).length);
   const adds = [...st.sel].map(i => st.addable[i]);
   if (!patches.length && !adds.length) { alert('没有可写入的内容'); return; }
+  if (aimpNeedConfirm()) { alert('新增的条数很多，请先点「我确认这些是新学校」'); return; }
   if (!confirm(`将给 ${patches.length} 行补上 ${aimpFieldCount()} 个字段，并新增 ${adds.length} 行。已有值的字段不会改动，确定吗？`)) return;
   const btn = document.getElementById('admissionImportBtn');
   btn.disabled = true;
