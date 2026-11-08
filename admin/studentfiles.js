@@ -10,7 +10,7 @@ const SFL_CATS = ['计划书', '面试稿', '志望理由书', '联系教授邮�
 const SFL_KIND_CAT = { gakubu_riyu: '志望理由书', grad_riyu: '志望理由书', grad_prof_mail: '联系教授邮件', grad_inquiry_mail: '问询邮件', grad_interview: '面试稿' };
 const SFL_STATUS = [['active', '在籍'], ['graduated', '已合格'], ['expired', '已到期'], ['stopped', '停课'], ['withdrawn', '退学']];
 const SFL_PAGE = 30;
-const SFL = { students: null, loading: false, loadErr: '', cache: {}, q: '', status: 'active', shown: SFL_PAGE, sel: new Set(), sizes: {}, busy: false, queue: [], queueRun: 0, root: null, zipMsg: '' };
+const SFL = { students: null, loading: false, loadErr: '', cache: {}, q: '', status: '', shown: SFL_PAGE, sel: new Set(), sizes: {}, busy: false, queue: [], queueRun: 0, root: null, zipMsg: '' };
 
 function sflEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
 function sflSizeText(n) { return n >= 1024 * 1024 * 1024 ? (n / 1024 / 1024 / 1024).toFixed(2) + ' GB' : n >= 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + ' MB' : n > 0 ? Math.max(1, Math.round(n / 1024)) + ' KB' : '0 KB'; }
@@ -261,7 +261,8 @@ function sflModalRender(stu, files, failed) {
       <button class="btn btn-primary btn-sm" id="sflZipBtn" onclick="sflZipOne('${sflEsc(stu.id)}')" ${files.length ? '' : 'disabled'} style="margin-left:auto">⬇ 全部打包下载</button>
     </div>
     <div id="sflProg" style="font-size:12px;color:var(--text-2);margin-bottom:8px;white-space:pre-wrap"></div>
-    ${cats.length ? cats.map(([c, list]) => `<details style="border:1px solid var(--border-light,#ede9e2);border-radius:4px;margin-bottom:6px" ${cats.length === 1 ? 'open' : ''}>
+    ${cats.length ? cats.map(([c, list]) => `<details style="border:1px solid var(--border-light,#ede9e2);border-radius:4px;margin-bottom:6px"
+      >
       <summary style="cursor:pointer;padding:7px 10px;font-size:12px;font-weight:600">${c} <span style="font-weight:400;color:var(--text-3)">${list.length} 个</span></summary>
       <div style="padding:2px 10px 8px">${list.map(({ f, i }) => `<div style="display:flex;align-items:center;gap:8px;font-size:11px;padding:3px 0;border-top:1px dashed var(--border-light,#ede9e2)">
         <span style="flex:1;word-break:break-all">${sflEsc((f.sub ? f.sub + ' / ' : '') + f.label)}${f.ext ? '.' + sflEsc(f.ext) : ''}</span>
@@ -329,7 +330,7 @@ function sflRender() {
     : '';
   const filtered = typeof dmfFilter === 'function' ? dmfFilter(base, { extra: true }) : base;
   const cnt = st => filtered.filter(s => (s.status || 'active') === st).length;
-  const idle = !SFL.q.trim() && !DMF.domain && !DMF.major;   // 打开时不默认列出全部
+  const idle = !SFL.q.trim() && !DMF.domain && !DMF.major && !SFL.status;   // 打开时全部收起，不列学生；搜索或选了任一筛选条件才列出
   let list = filtered.filter(s => !SFL.status || (s.status || 'active') === SFL.status);
   if (SFL.q.trim()) list = (typeof matchesStudentSearch === 'function' ? base.filter(s => matchesStudentSearch(s, SFL.q.trim()) && (!SFL.status || (s.status || 'active') === SFL.status)) : list);
   const shown = list.slice(0, SFL.shown);
@@ -341,7 +342,7 @@ function sflRender() {
     <div class="search-bar"><input id="sfl_q" placeholder="搜索学生（汉字 / 拼音首字母）…" value="${sflEsc(SFL.q)}" oninput="searchBox(this,sflSearch)"></div>
     ${bar}
     <div class="filter-row"><span style="font-size:10px;color:var(--text-3);min-width:30px;align-self:center">状态</span>${SFL_STATUS.map(([v, l]) => chip(SFL.status === v, `${l} ${cnt(v)}`, `SFL.status=SFL.status==='${v}'?'':'${v}';SFL.shown=SFL_PAGE;sflRender()`)).join('')}</div>
-    ${idle ? '<div class="empty" style="color:var(--text-3)">请先搜索，或选择领域 / 专业，再显示学生列表</div>' : `
+    ${idle ? '<div class="empty" style="color:var(--text-3)">请先搜索，或选择领域 / 专业 / 状态，再显示学生列表</div>' : `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0">
       <span style="font-size:11px;color:var(--text-3)">共 ${list.length} 人${nSel ? `，已选 ${nSel} 人` : '（点学生所在行选择）'}</span>
       <button class="btn btn-outline btn-sm" onclick="sflSelect('all')">全选当前显示</button>
