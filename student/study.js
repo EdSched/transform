@@ -17,6 +17,8 @@ let schoolSortBy = 'application_period'; // application_period | japanese_requir
 let studyProgressView = 'roadmap'; // roadmap（备考规划月份表） | timeline（进度时间线）
 let studySchoolListOpen = null; // 参考学校列表展开状态：null=自动（未填志望校时展开）
 let schoolFilterLang = 'all'; // all | no_english | no_japanese | no_both
+let schoolSearch = '';
+let schoolShown = LIST_PAGE;
 
 const studyParams = new URLSearchParams(location.search);
 const studyMajor = studyParams.get('major') || '';
@@ -125,7 +127,7 @@ async function loadStudyData() {
   if (sharedLists.length) {
     const allIds = sharedLists.flatMap(sl => sl.school_ids || []);
     if (allIds.length) {
-      sharedSchools = await sb(`/rest/v1/admission_schools?id=in.(${allIds.map(id=>`"${id}"`).join(',')})&select=id,university,faculty,department,course,application_period,english_required,japanese_required,written_exam,oral_exam,result_date&order=application_period.asc`).catch(()=>[]);
+      sharedSchools = await sb(`/rest/v1/admission_schools?id=in.(${allIds.map(id=>`"${id}"`).join(',')})&select=id,major,university,faculty,department,course,application_period,english_tests,japanese_tests,english_required,japanese_required,written_exam,oral_exam,result_date&order=application_period.asc`).catch(()=>[]);
     }
   }
   studyData = { timeline, schoolPlans, planDraft: planDraftArr[0]||null, sharedLists, sharedSchools, bookings, sessionRecs, planVersions };
@@ -262,63 +264,73 @@ function renderStudyTab() {
 // ══════════════════════════════════
 // 志望校 Tab
 // ══════════════════════════════════
+// 出愿学校列表：按「大学+研究科+専攻+コース」归并，只显示出愿期、日语/英语要不要
+function studySchoolListHtml(sharedSchools) {
+  const lang = (r, k) => r[k] === '不要' ? '不要' : r[k] === '必須' ? '必須' : '任意';
+  const q = (schoolSearch || '').trim().toLowerCase();
+  const okRow = r => schoolFilterLang === 'no_english' ? r.english_required === '不要'
+    : schoolFilterLang === 'no_japanese' ? r.japanese_required === '不要'
+    : schoolFilterLang === 'no_both' ? (r.english_required === '不要' && r.japanese_required === '不要') : true;
+  let groups = adgBuildGroups(sharedSchools, {}, 'time').map(g => {
+    const hit = g.rows.filter(okRow);
+    return { g, hit };
+  }).filter(x => x.hit.length);
+  if (q) groups = groups.filter(x => [x.g.head.university, x.g.head.faculty, x.g.head.department, x.g.head.course].join(' ').toLowerCase().includes(q));
+  const noFirst = (x, k) => x.g.rows.some(r => r[k] === '不要') ? 0 : 1;
+  if (schoolSortBy === 'english_required') groups.sort((a, b) => noFirst(a, 'english_required') - noFirst(b, 'english_required') || a.g.sortKey - b.g.sortKey);
+  else if (schoolSortBy === 'japanese_required') groups.sort((a, b) => noFirst(a, 'japanese_required') - noFirst(b, 'japanese_required') || a.g.sortKey - b.g.sortKey);
+  const total = groups.length;
+  const shown = groups.slice(0, schoolShown);
+  const cell = (rows, k) => {
+    const vals = [...new Set(rows.map(r => lang(r, k)))];
+    if (vals.length > 1) return '<span style="color:#856404">部分不要</span>';
+    const v = vals[0];
+    return `<span style="color:${v==='不要'?'#27ae60':v==='必須'?'#c0392b':'#856404'}">${v}</span>`;
+  };
+  const esc = adgEsc;
+  const rowsHtml = shown.map((x, i) => {
+    const g = x.g, h = g.head, rs = g.rows;
+    const earliest = rs.find(r => r.application_period) || rs[0];
+    return `<tr style="border-bottom:1px solid #e8f0fb;background:${i%2===0?'#fff':'#f5f9ff'}">
+      <td style="padding:6px 8px;font-weight:600;white-space:nowrap">${esc(h.university)}</td>
+      <td style="padding:6px 8px;color:#444;font-size:10px">${esc([h.faculty,h.department,h.course].filter(Boolean).join(' · '))}</td>
+      <td style="padding:6px 6px;text-align:center;color:var(--accent);white-space:nowrap;font-size:10px">${esc(earliest.application_period||'-')}${rs.length>1?`<div style="color:var(--text-3);font-size:9px">等 ${rs.length} 次</div>`:''}</td>
+      <td style="padding:6px 4px;text-align:center;font-weight:600;font-size:10px">${cell(rs,'japanese_required')}</td>
+      <td style="padding:6px 4px;text-align:center;font-weight:600;font-size:10px">${cell(rs,'english_required')}</td>
+    </tr>`;
+  }).join('');
+  const th = 'padding:6px 8px;text-align:left;font-weight:600;color:#2c4a7c;border-bottom:1px solid #c5d9f0;white-space:nowrap';
+  return `<div style="font-size:11px;color:var(--text-3);margin-bottom:4px">共 ${total} 所</div>
+    <div style="border:1px solid #c5d9f0;border-radius:4px;overflow-y:auto;max-height:calc(100vh - 260px)">
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead style="position:sticky;top:0;z-index:1"><tr style="background:#ddeaf9">
+          <th style="${th}">大学</th><th style="${th}">研究科/専攻</th><th style="${th};text-align:center">出愿</th><th style="${th};text-align:center">日</th><th style="${th};text-align:center">英</th>
+        </tr></thead>
+        <tbody>${rowsHtml || '<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--text-3)">没有符合的学校</td></tr>'}</tbody>
+      </table>
+    </div>
+    ${total > shown.length ? `<div style="text-align:center;margin-top:6px"><button class="btn btn-sm" onclick="schoolShown+=LIST_PAGE;studySchoolListRefresh()">加载更多（还有 ${total - shown.length} 所）</button></div>` : ''}`;
+}
+function studySchoolListRefresh() {
+  const box = document.getElementById('school_list_box');
+  if (box) box.innerHTML = studySchoolListHtml(studyData.sharedSchools);
+}
+
 function renderSchoolsTab() {
   const { schoolPlans, sharedLists, sharedSchools } = studyData;
-
-  // 排序+筛选共享学校
-  let displaySchools = [...sharedSchools];
-  if (schoolFilterLang === 'no_english') displaySchools = displaySchools.filter(s => s.english_required === '不要');
-  else if (schoolFilterLang === 'no_japanese') displaySchools = displaySchools.filter(s => s.japanese_required === '不要');
-  else if (schoolFilterLang === 'no_both') displaySchools = displaySchools.filter(s => s.english_required === '不要' && s.japanese_required === '不要');
-
-  if (schoolSortBy === 'application_period') displaySchools.sort((a,b) => (a.application_period||'').localeCompare(b.application_period||''));
-  else if (schoolSortBy === 'english_required') displaySchools.sort((a,b) => (a.english_required==='不要'?0:1)-(b.english_required==='不要'?0:1));
-  else if (schoolSortBy === 'japanese_required') displaySchools.sort((a,b) => (a.japanese_required==='不要'?0:1)-(b.japanese_required==='不要'?0:1));
 
   // 共享学校表格HTML
   const sharedTableHtml = sharedLists.length ? `
     <div style="margin-bottom:10px">
       <div style="font-size:12px;font-weight:600;color:#2c4a7c;margin-bottom:2px">📋 ${sharedLists[0].title}</div>
       ${sharedLists[0].notes?`<div style="font-size:11px;color:#2c4a7c;opacity:.8;margin-bottom:8px">${sharedLists[0].notes}</div>`:''}
-      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-        <select onchange="schoolFilterLang=this.value;renderStudyTab()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-          <option value="all" ${schoolFilterLang==='all'?'selected':''}>全部</option>
-          <option value="no_english" ${schoolFilterLang==='no_english'?'selected':''}>不要英语</option>
-          <option value="no_japanese" ${schoolFilterLang==='no_japanese'?'selected':''}>不要日语</option>
-          <option value="no_both" ${schoolFilterLang==='no_both'?'selected':''}>均不要</option>
-        </select>
-        <select onchange="schoolSortBy=this.value;renderStudyTab()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)">
-          <option value="application_period" ${schoolSortBy==='application_period'?'selected':''}>按出愿期排序</option>
-          <option value="english_required" ${schoolSortBy==='english_required'?'selected':''}>英语不要优先</option>
-          <option value="japanese_required" ${schoolSortBy==='japanese_required'?'selected':''}>日语不要优先</option>
-        </select>
+      <input type="text" value="${String(schoolSearch).replace(/"/g,'&quot;')}" placeholder="搜索大学名、研究科名" oninput="schoolSearch=this.value;schoolShown=LIST_PAGE;studySchoolListRefresh()" style="width:100%;box-sizing:border-box;font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;margin-bottom:6px">
+      <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+        ${[['no_english','不要英语'],['no_japanese','不要日语'],['no_both','均不要']].map(([k,l])=>`<span onclick="schoolFilterLang=(schoolFilterLang==='${k}'?'all':'${k}');schoolShown=LIST_PAGE;renderStudyTab()" style="font-size:11px;padding:2px 9px;border:1px solid ${schoolFilterLang===k?'var(--accent)':'var(--border)'};background:${schoolFilterLang===k?'var(--accent)':'var(--surface)'};color:${schoolFilterLang===k?'#fff':'var(--text-2)'};border-radius:10px;cursor:pointer">${l}</span>`).join('')}
+        <span style="width:1px;background:var(--border);margin:0 2px"></span>
+        ${[['application_period','按出愿期'],['english_required','英语不要优先'],['japanese_required','日语不要优先']].map(([k,l])=>`<span onclick="schoolSortBy='${k}';schoolShown=LIST_PAGE;renderStudyTab()" style="font-size:11px;padding:2px 9px;border:1px solid ${schoolSortBy===k?'var(--accent)':'var(--border)'};background:${schoolSortBy===k?'var(--accent)':'var(--surface)'};color:${schoolSortBy===k?'#fff':'var(--text-2)'};border-radius:10px;cursor:pointer">${l}</span>`).join('')}
       </div>
-      <div style="border:1px solid #c5d9f0;border-radius:4px;overflow-y:auto;max-height:calc(100vh - 200px)">
-        <table style="width:100%;border-collapse:collapse;font-size:11px">
-          <thead style="position:sticky;top:0;z-index:1">
-            <tr style="background:#ddeaf9">
-              <th style="padding:6px 8px;text-align:left;font-weight:600;color:#2c4a7c;border-bottom:1px solid #c5d9f0;white-space:nowrap">大学</th>
-              <th style="padding:6px 8px;text-align:left;font-weight:600;color:#2c4a7c;border-bottom:1px solid #c5d9f0">研究科/専攻</th>
-              <th style="padding:6px 6px;text-align:center;font-weight:600;color:#2c4a7c;border-bottom:1px solid #c5d9f0;white-space:nowrap">出愿</th>
-              <th style="padding:6px 4px;text-align:center;font-weight:600;color:#2c4a7c;border-bottom:1px solid #c5d9f0">日</th>
-              <th style="padding:6px 4px;text-align:center;font-weight:600;color:#2c4a7c;border-bottom:1px solid #c5d9f0">英</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${displaySchools.map((s,i) => {
-              const jpColor = s.japanese_required==='不要'?'#27ae60':s.japanese_required==='必須'?'#c0392b':'#856404';
-              const enColor = s.english_required==='不要'?'#27ae60':s.english_required==='必須'?'#c0392b':'#856404';
-              return `<tr style="border-bottom:1px solid #e8f0fb;background:${i%2===0?'#fff':'#f5f9ff'}">
-                <td style="padding:6px 8px;font-weight:600;white-space:nowrap">${s.university}</td>
-                <td style="padding:6px 8px;color:#444;font-size:10px">${[s.faculty,s.department,s.course].filter(Boolean).join(' · ')}</td>
-                <td style="padding:6px 6px;text-align:center;color:var(--accent);white-space:nowrap;font-size:10px">${s.application_period||'-'}</td>
-                <td style="padding:6px 4px;text-align:center;color:${jpColor};font-weight:600;font-size:10px">${s.japanese_required==='不要'?'不要':s.japanese_required==='必須'?'必須':'任意'}</td>
-                <td style="padding:6px 4px;text-align:center;color:${enColor};font-weight:600;font-size:10px">${s.english_required==='不要'?'不要':s.english_required==='必須'?'必須':'任意'}</td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
+      <div id="school_list_box">${studySchoolListHtml(sharedSchools)}</div>
     </div>` : '';
 
   // 志望校编辑区（内联，不弹窗）：单所表单与老师端 / 管理端共用（shared/schoolplan.js）
