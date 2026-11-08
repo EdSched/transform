@@ -10,7 +10,7 @@ const SFL_CATS = ['计划书', '面试稿', '志望理由书', '联系教授邮�
 const SFL_KIND_CAT = { gakubu_riyu: '志望理由书', grad_riyu: '志望理由书', grad_prof_mail: '联系教授邮件', grad_inquiry_mail: '问询邮件', grad_interview: '面试稿' };
 const SFL_STATUS = [['active', '在籍'], ['graduated', '已合格'], ['expired', '已到期'], ['stopped', '停课'], ['withdrawn', '退学']];
 const SFL_PAGE = 30;
-const SFL = { cache: {}, q: '', status: 'active', shown: SFL_PAGE, sel: new Set(), sizes: {}, busy: false, queue: [], queueRun: 0, root: null, zipMsg: '' };
+const SFL = { students: null, loading: false, loadErr: '', cache: {}, q: '', status: 'active', shown: SFL_PAGE, sel: new Set(), sizes: {}, busy: false, queue: [], queueRun: 0, root: null, zipMsg: '' };
 
 function sflEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
 function sflSizeText(n) { return n >= 1024 * 1024 * 1024 ? (n / 1024 / 1024 / 1024).toFixed(2) + ' GB' : n >= 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + ' MB' : n > 0 ? Math.max(1, Math.round(n / 1024)) + ' KB' : '0 KB'; }
@@ -32,17 +32,25 @@ function sflArr(v) { if (typeof v === 'string') { try { v = JSON.parse(v); } cat
 async function sflCollect(stu) {
   const id = encodeURIComponent(stu.id);
   const failed = [];
-  const get = (tbl, path) => sbAll(path, { cache: 'no-store' }).catch(() => { failed.push(tbl); return []; });
+  const get = (tbl, path) => sbAll(path, { cache: 'no-store' }).catch(e => { failed.push(`${tbl}：${String((e && e.message) || e).slice(0, 300)}`); return []; });   // 记下数据库返回的错误原文，方便排查
   const [vers, riyu, drafts, hws, ics, arts, bks, mats] = await Promise.all([
     get('计划书/面试稿版本', `/rest/v1/student_doc_versions?student_id=eq.${id}&select=*&order=submitted_at.asc`),
-    get('志望理由书・邮件', `/rest/v1/riyu_submissions?student_id=eq.${id}&select=*&order=created_at.asc`),
-    get('旧计划书', `/rest/v1/student_plan_drafts?student_id=eq.${id}&select=draft_file_url,reviewed_file_url,reviewed_file_name,updated_at,reviewed_at`),
-    get('作业', `/rest/v1/homework_submissions?student_id=eq.${id}&select=id,course_name,session_number,session_date,answers,whole_file_url,feedbacks,teacher_file_url,submitted_at&order=session_date.asc`),
-    get('随堂作业', `/rest/v1/inclass_submissions?student_id=eq.${id}&select=*&order=session_date.asc`),
+    get('志望理由书・邮件', `/rest/v1/riyu_submissions?student_id=eq.${id}&select=*&order=submitted_at.asc.nullslast`),
+    get('旧计划书', `/rest/v1/student_plan_drafts?student_id=eq.${id}&select=*`),
+    get('作业', `/rest/v1/homework_submissions?student_id=eq.${id}&select=*&order=submitted_at.asc`),
+    get('随堂作业', `/rest/v1/inclass_submissions?student_id=eq.${id}&select=*&order=submitted_at.asc`),
     get('美术作业', `/rest/v1/art_works?student_id=eq.${id}&select=*&order=week_start.asc`),
     get('面谈', `/rest/v1/bookings?or=(student_id.eq.${id},and(student_id.is.null,name.eq.${encodeURIComponent(stu.name || '')}))&select=*&order=slot_date.asc`),
     get('出愿材料', `/rest/v1/student_materials?student_id=eq.${id}&select=*`),
   ]);
+  // 作业 / 随堂作业的课程名、第几回、上课日期：提交记录里有就用，没有的按 session_id 查 course_sessions（和老师端作业页同样的取法）
+  const sids = [...new Set([...hws, ...ics].filter(h => h.session_id && (!h.course_name || !h.session_number || !h.session_date)).map(h => h.session_id))];
+  const sess = {};
+  for (let k = 0; k < sids.length; k += 80) {
+    const part = sids.slice(k, k + 80).map(x => `"${String(x).replace(/"/g, '')}"`).join(',');
+    (await get('课程回次', `/rest/v1/course_sessions?id=in.(${part})&select=id,course_id,course_name,session_number,session_date`)).forEach(x => { sess[x.id] = x; });
+  }
+  const sinfo = h => { const x = sess[h.session_id] || {}; return { course_name: h.course_name || x.course_name, session_number: h.session_number || x.session_number, session_date: h.session_date || x.session_date }; };
   const files = [];
   const seen = new Set();
   const add = f => {
@@ -78,7 +86,8 @@ async function sflCollect(stu) {
   });
 
   // 作业：学生提交的图片 / 文件 + 整份 + 老师批改文件
-  hws.forEach(h => {
+  hws.forEach(h0 => {
+    const h = Object.assign({}, h0, sinfo(h0));
     const sub = sflClean(h.course_name || '作业'), date = sflDate(h.session_date || h.submitted_at), n = h.session_number ? `第${h.session_number}回` : '';
     const stem = [date, n].filter(Boolean).join('_');
     let i = 0;
@@ -88,7 +97,8 @@ async function sflCollect(stu) {
     fbs.forEach((f, k) => add({ cat: '作业', sub, label: `${stem}_批改${fbs.length > 1 ? (k + 1) : ''}`, date, url: f.file_url, fname: f.file_name }));
     if (h.teacher_file_url) add({ cat: '作业', sub, label: `${stem}_批改`, date, url: h.teacher_file_url });
   });
-  ics.forEach(h => {
+  ics.forEach(h0 => {
+    const h = Object.assign({}, h0, sinfo(h0));
     const sub = sflClean(h.course_name || '随堂作业'), date = sflDate(h.session_date || h.submitted_at), n = h.session_number ? `第${h.session_number}回` : '';
     const stem = [date, n].filter(Boolean).join('_');
     sflArr(h.images).forEach((im, i) => { if (im && im.url) add({ cat: '随堂作业', sub, label: `${stem}_${i + 1}`, date, url: im.url, fname: im.name }); });
@@ -140,7 +150,7 @@ function sflAssignPaths(files) {
   });
   return files;
 }
-function sflStudentOf(id) { return (typeof cachedStudents !== 'undefined' ? cachedStudents : []).find(s => s.id === id) || null; }
+function sflStudentOf(id) { return (SFL.students || []).find(s => s.id === id) || (typeof cachedStudents !== 'undefined' ? cachedStudents : []).find(s => s.id === id) || null; }
 function sflFolderName(stu) {
   const d = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' }).replace(/-/g, '');
   return sflClean(`${stu.name || '学生'}_${(typeof majorLabel === 'function' ? majorLabel(stu.major) : stu.major) || ''}_${d}`);
@@ -245,7 +255,7 @@ function sflModalRender(stu, files, failed) {
   const box = document.getElementById('sflBody'); if (!box) return;
   const cats = SFL_CATS.map(c => [c, files.map((f, i) => ({ f, i })).filter(x => x.f.cat === c)]).filter(x => x[1].length);
   box.innerHTML = `
-    ${failed.length ? `<div style="font-size:11px;color:var(--danger);margin-bottom:6px">有 ${failed.length} 类数据读取失败（${sflEsc(failed.join('、'))}），下面的清单可能不完整，请稍后重试</div>` : ''}
+    ${failed.length ? `<div style="font-size:11px;color:var(--danger);margin-bottom:6px">有 ${failed.length} 类数据读取失败，下面的清单可能不完整：<br>${failed.map(sflEsc).join('<br>')}</div>` : ''}
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
       <span id="sflTotal" style="font-size:12px;font-weight:600">共 ${files.length} 个文件，统计大小中…</span>
       <button class="btn btn-primary btn-sm" id="sflZipBtn" onclick="sflZipOne('${sflEsc(stu.id)}')" ${files.length ? '' : 'disabled'} style="margin-left:auto">⬇ 全部打包下载</button>
@@ -289,14 +299,30 @@ async function sflZipOne(studentId) {
 // ══ 批量：管控台「学生管理文件」页面上半部分 ══
 function sflMount(root) {
   SFL.root = root;
+  // 中枢台打开时学生名单还没加载过（cachedStudents 是空的）：自己读一次
+  if (!SFL.students && !(typeof cachedStudents !== 'undefined' && cachedStudents.length)) sflLoadStudents();
+  sflRender();
+}
+async function sflLoadStudents() {
+  if (SFL.loading) return;
+  SFL.loading = true; SFL.loadErr = ''; sflRender();
+  try { SFL.students = await sbAll('/rest/v1/students?select=*&order=name.asc', { cache: 'no-store' }); }
+  catch (e) { SFL.loadErr = String((e && e.message) || e); }
+  SFL.loading = false;
   sflRender();
 }
 function sflList() {
-  let list = (typeof cachedStudents !== 'undefined' ? cachedStudents : []).filter(s => typeof scopeStudent !== 'function' || scopeStudent(s));
-  return list;
+  const pool = SFL.students || (typeof cachedStudents !== 'undefined' ? cachedStudents : []);
+  return pool.filter(s => typeof scopeStudent !== 'function' || scopeStudent(s));
 }
 function sflRender() {
   const root = SFL.root || document.getElementById('sfl_root'); if (!root) return;
+  if (SFL.loading || SFL.loadErr) {
+    root.innerHTML = `<div style="max-width:900px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px 18px;margin-bottom:18px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:8px">学生管理文件</div>
+      ${SFL.loading ? '<div class="loading">读取学生名单…</div>' : `<div style="color:var(--danger);font-size:12px">学生名单读取失败：${sflEsc(SFL.loadErr)}　<a href="javascript:void(0)" onclick="sflLoadStudents()" style="color:var(--accent)">重试</a></div>`}</div>`;
+    return;
+  }
   const base = sflList();
   const bar = typeof domMajorFilterHtml === 'function'
     ? domMajorFilterHtml(DMF, "SFL.shown=SFL_PAGE;sflRender()", base, { extra: true, also: s => !SFL.status || (s.status || 'active') === SFL.status })
