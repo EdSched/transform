@@ -36,7 +36,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../shared/constants.js?v=20270301"></script>
-<script src="common.js?v=20270126"></script>
+<script src="common.js?v=20270127"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270126"></script>
 <script src="../shared/search.js?v=20261029"></script>
@@ -68,6 +68,7 @@ async function reloadAll(){
     sbGet('sched_course_v','select=*&order=created_at.desc'),
     sbGet('sched_bookings','select=*&order=created_at.desc')
   ]);
+  await loadCourseLink(); linkCourseBookings(BOOKINGS);
   DELETED_COURSES = COURSES.filter(c=>c.deleted_at);
   COURSES = COURSES.filter(c=>!c.deleted_at);
   ALL_COURSES = COURSES.slice();
@@ -427,7 +428,7 @@ function pendViewRooms(id){
       '<b>'+esc(campus)+' · '+esc(date)+'（'+WEEKDAYS[weekdayOf(date)]+'）教室占用情况</b>'+
       '<span class="badge b-warn">申请时段 '+b.start_time+'-'+b.end_time+'</span>'+
       '<button class="ghost sm" id="pgClose" style="margin-left:auto">收起</button></div>';
-  h+= rooms.length ? renderOccupancyGrid(rooms, todays, 'room_id') : '<div class="muted">该校区暂无教室</div>';
+  h+= rooms.length ? renderOccupancyGrid(rooms, todays, 'room_id', {date}) : '<div class="muted">该校区暂无教室</div>';
   h+='</div>';
   box.innerHTML=h;
   box.scrollIntoView({behavior:'smooth',block:'nearest'});
@@ -869,7 +870,7 @@ function adjustDayDialog(courseId){
   mask.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:60;overflow:auto;padding:40px 16px';
   document.body.appendChild(mask);
   const actor=()=>schedActorStamp((ROLE&&(ROLE.label||ROLE.role))||'排课');
-  const weeklyOnDay=(b,d)=>b.recurrence==='weekly' && !(b.start_date&&d<b.start_date) && !(b.end_date&&d>b.end_date) && Number(b.weekday)===weekdayOf(d) && !(b.manual_off_dates||'').split(',').includes(d);
+  const weeklyOnDay=(b,d)=>b.recurrence==='weekly' && (b._linked ? b._days.has(d) : (!(b.start_date&&d<b.start_date) && !(b.end_date&&d>b.end_date) && Number(b.weekday)===weekdayOf(d))) && !(b.manual_off_dates||'').split(',').includes(d);
   const addOff=(b,d)=>{ const a=(b.manual_off_dates||'').split(',').filter(Boolean); if(!a.includes(d)) a.push(d); return a.sort().join(','); };
   // 释放：按周占用写 manual_off_dates；临时占用直接删（同时在该课的按周占用上记一笔，免得下次核对又占回去）
   async function releaseDay(d){
@@ -1602,12 +1603,14 @@ function tabConflict(){
 // 占用的星期集合（weekly 用 weekday；once 用 booking_date）
 function bookingWeekdays(b){
   const set=new Set();
+  if(b._linked && b._days){ b._days.forEach((t,d)=>set.add(weekdayOf(d))); if(set.size) return set; }
   if(b.weekday!=null&&b.weekday!==''){ const w=Number(b.weekday); set.add(w===0?7:w); }
   if(b.recurrence!=='weekly' && b.booking_date){ const w=weekdayOf(b.booking_date); set.add(w===0?7:w); }
   return set;
 }
 // 占用的日期跨度
 function bSpan(b){
+  if(b._linked && b._days && b._days.size){ const ds=[...b._days.keys()].sort(); return [[b.start_date,ds[0]].filter(Boolean).sort()[0], [b.end_date,ds[ds.length-1]].filter(Boolean).sort().pop()]; }
   if(b.recurrence==='weekly') return [b.start_date||b.booking_date||'', b.end_date||b.start_date||b.booking_date||''];
   return [b.booking_date||'', b.booking_date||''];
 }
@@ -1681,7 +1684,7 @@ async function runConflict(){
   const roomIssues=[], accIssues=[];
   for(let i=0;i<pool.length;i++) for(let j=i+1;j<pool.length;j++){
     const a=pool[i],b=pool[j];
-    if(!overlap(a.start_time,a.end_time,b.start_time,b.end_time)) continue;
+    if(!a._linked && !b._linked && !overlap(a.start_time,a.end_time,b.start_time,b.end_time)) continue;
     const wa=bookingWeekdays(a), wb=bookingWeekdays(b);
     const shared=[...wa].filter(w=>wb.has(w));
     if(!shared.length) continue;
@@ -1693,7 +1696,7 @@ async function runConflict(){
     const sameAcc=a.uses_meeting&&b.uses_meeting&&a.meeting_account_id&&String(a.meeting_account_id)===String(b.meeting_account_id);
     if(!sameRoom&&!sameAcc) continue;
     // 再逐日：两边这一天都真的占着才算冲突
-    const days=cfDaysBetween(ovLo,ovHi,shared).filter(d=>cfOn(a,d)&&cfOn(b,d));
+    const days=cfDaysBetween(ovLo,ovHi,shared).filter(d=>cfOn(a,d)&&cfOn(b,d)&&overlap(...bookingTimeOn(a,d),...bookingTimeOn(b,d)));
     if(!days.length) continue;
     const rec={a,b,shared,days};
     if(sameRoom) roomIssues.push({...rec,label:rname(a.room_id)});

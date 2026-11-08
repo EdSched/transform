@@ -68,7 +68,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="common.js?v=20270126"></script>
+<script src="common.js?v=20270127"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], BOOKINGS=[], CODEREC=null, PARSED=[], EXISTING=[];
 
@@ -102,6 +102,7 @@ async function boot(){
   ROOMS    = await sbGet('sched_rooms','select=*&active=eq.true&order=campus,sort');
   ACCOUNTS = await sbGet('sched_meeting_accounts','select=*&active=eq.true');
   BOOKINGS = await sbGet('sched_bookings','select=*');
+  await loadCourseLink(); linkCourseBookings(BOOKINGS);
   { const cs = await sbGet('sched_course_v','select=id,skip_dates'); window.SKIPMAP={}; cs.forEach(c=>{ if(c.skip_dates) window.SKIPMAP[c.id]=new Set(c.skip_dates.split(',').map(x=>x.trim())); }); }
 
   el('r_campus').onchange = fillRooms; el('r_kind').onchange = fillRooms; fillRooms();

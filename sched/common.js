@@ -497,6 +497,8 @@ function parseTencent(text){
    rooms: [{id,name,sub}]；items: 占用记录数组；keyField: 'room_id' 或 'meeting_account_id' */
 function renderOccupancyGrid(rooms, items, keyField, opts){
   opts = opts||{};
+  // 传了 opts.date：跟着课程的占用按那一天自己的时间显示
+  if(opts.date) items = items.map(b=>{ const t=bookingTimeOn(b,opts.date); return (t[0]===b.start_time && t[1]===b.end_time) ? b : Object.assign({},b,{start_time:t[0],end_time:t[1]}); });
   const idxOf=t=>{ const i=SLOTS.indexOf(t); return i<0?SLOTS.length:i; };
   // 每列一个“跳过计数”：>0 表示这格被上面的 rowspan 占了，不输出
   const skip = rooms.map(()=>0);
@@ -638,7 +640,7 @@ function findNearby(bookings, roomId, dateStr, s, e, days){
   const dur = durationMin(s,e);
   const occupied = (d, ss, ee) => bookings.some(b =>
     b.status!=='rejected' && String(b.room_id)===String(roomId) &&
-    bookingOnDate(b, d) && overlap(ss, ee, b.start_time, b.end_time));
+    bookingOnDate(b, d) && overlap(ss, ee, ...bookingTimeOn(b, d)));
   // 当天其他空时段（按开始时刻找能放下 dur 的连续空档起点）
   const sameDay=[];
   for(const st of SLOTS){
@@ -664,13 +666,119 @@ function findNearby(bookings, roomId, dateStr, s, e, days){
 function isWeeklyCourseBk(b){ return b && b.kind==='course' && b.recurrence!=='once'; }
 function bookingOnDate(b, dateStr){
   if(b.recurrence === 'weekly'){
-    if(b.start_date && dateStr < b.start_date) return false;
-    if(b.end_date   && dateStr > b.end_date)   return false;
     // 单回改期：系统自动释放 / 人工释放的日子，这条按周占用那天不占教室
     if(b.manual_off_dates && String(b.manual_off_dates).split(',').includes(dateStr)) return false;
-    return Number(b.weekday) === weekdayOf(dateStr);
+    // 这门课这一天已有一条临时占用（可能在别的教室）：每周占用那天让位，只显示临时占用
+    if(b.kind==='course' && b.course_id && window.COURSE_ONCE && window.COURSE_ONCE.has(String(b.course_id)+'|'+dateStr)) return false;
+    const inWin = !!(window.COURSE_LINK_RANGE && dateStr>=window.COURSE_LINK_RANGE[0] && dateStr<=window.COURSE_LINK_RANGE[1]);
+    // 完全跟着管理端课程走：这一天这门课有单回才占着，不再看星期和起止日期
+    if(b._linked && inWin) return b._days.has(dateStr);
+    if(b.start_date && dateStr < b.start_date) return false;
+    if(b.end_date   && dateStr > b.end_date)   return false;
+    if(Number(b.weekday) !== weekdayOf(dateStr)) return false;
+    // 分段排教室的课：记录原样，只多一条——那天这门课没有单回就不占
+    if(b._dayOnly && inWin && !b._days.has(dateStr)) return false;
+    return true;
   }
   return b.booking_date === dateStr;
+}
+/* 某占用在某一天的时间 [开始, 结束]：跟着课程的占用返回那一回自己的时间，其他照记录 */
+function bookingTimeOn(b, dateStr){
+  if(b && b._linked && b._days){ const t=b._days.get(dateStr); if(t) return t; }
+  return [b.start_time, b.end_time];
+}
+
+/* ---------- 课程占用跟着管理端课程走（只改内存，不写任何数据） ----------
+   排课只管「哪间教室」；日期、时间、星期一律读管理端课程（sched_course_v）和单回（course_sessions）。 */
+window.COURSE_LINK = window.COURSE_LINK || {};
+function _clk5(t){ return t ? String(t).slice(0,5) : ''; }
+function _clkRange(tr, c){            // 单回时间 "10:00-13:00"（可多段：取第一段开始～最后一段结束）；没有就用课程的
+  const m = String(tr||'').match(/\d{1,2}:\d{2}/g);
+  if(m && m.length>=2){ const p=x=>x.length===4?'0'+x:x; return [p(m[0]), p(m[m.length-1])]; }
+  return [_clk5(c.start_time), _clk5(c.end_time)];
+}
+async function loadCourseLink(lo, hi){
+  lo = lo || addDays(todayStr(), -31);
+  hi = hi || addDays(todayStr(), 400);
+  const link = {};
+  try{
+    const [cs, ss] = await Promise.all([
+      sbGet('sched_course_v', 'select=id,start_time,end_time,weekdays,start_date,end_date,skip_dates'),
+      sbGet('course_sessions', 'select=course_id,session_date,time_range,is_cancelled&session_date=gte.'+lo+'&session_date=lte.'+hi+'&order=course_id.asc,session_date.asc')
+    ]);
+    const cmap = {}; cs.forEach(c=>{ cmap[String(c.id)] = c; });
+    ss.forEach(x=>{
+      if(x.is_cancelled) return;
+      const id = String(x.course_id), c = cmap[id]; if(!c) return;
+      const e = link[id] || (link[id] = { course:c, days:new Map() });
+      e.days.set(x.session_date, _clkRange(x.time_range, c));
+    });
+    window.COURSE_LINK_RANGE = [lo, hi];
+  }catch(err){
+    console.warn('loadCourseLink 失败，排课按占用记录原样显示：', err);
+    window.COURSE_LINK_RANGE = null;
+  }
+  window.COURSE_LINK = link;
+  return link;
+}
+function linkCourseBookings(bks){
+  const L = window.COURSE_LINK || {};
+  const list = bks || [];
+  // 重复调用时先还原
+  list.forEach(b=>{
+    if(b._orig){ Object.assign(b, b._orig); delete b._orig; }
+    delete b._linked; delete b._dayOnly; delete b._days;
+  });
+  // 当天另有临时占用的课：每周占用让位
+  const once = new Set();
+  list.forEach(b=>{
+    if(b.kind==='course' && b.recurrence==='once' && b.course_id && b.booking_date && b.status!=='rejected')
+      once.add(String(b.course_id)+'|'+b.booking_date);
+  });
+  window.COURSE_ONCE = once;
+  if(!window.COURSE_LINK_RANGE) return;
+  // 每门课的每周课程占用
+  const byCourse = {};
+  list.forEach(b=>{
+    if(b.kind!=='course' || b.recurrence!=='weekly' || !b.course_id || b.status==='rejected') return;
+    const e = L[String(b.course_id)]; if(!e || !e.days.size) return;
+    (byCourse[String(b.course_id)] = byCourse[String(b.course_id)] || []).push(b);
+  });
+  Object.keys(byCourse).forEach(cid=>{
+    const bs = byCourse[cid], e = L[cid], c = e.course;
+    const cw = parseWeekdaysSched(c.weekdays);
+    const single = cw.length===1;
+    const keyOf = b => single ? 'one' : String(Number(b.weekday));
+    const cnt = {}; bs.forEach(b=>{ const k=keyOf(b); cnt[k]=(cnt[k]||0)+1; });
+    const full = bs.filter(b=>cnt[keyOf(b)]===1);     // 一条占用代表这一天全部
+    bs.filter(b=>cnt[keyOf(b)]>1).forEach(b=>{ b._dayOnly = true; b._days = e.days; });   // 分段排的：不换，只看有没有单回
+    if(!full.length) return;
+    // 每个单回日归谁
+    const owner = new Map();
+    if(single){
+      full.forEach(b=>{ b._days = e.days; });
+    } else {
+      const byWd = {}; full.forEach(b=>{ byWd[Number(b.weekday)] = b; });
+      const splitWd = new Set(bs.filter(b=>cnt[keyOf(b)]>1).map(b=>Number(b.weekday)));
+      const mainWd = cw.find(w=>byWd[w]) || Math.min.apply(null, Object.keys(byWd).map(Number));
+      full.forEach(b=>{ b._days = new Map(); });
+      e.days.forEach((t, d)=>{
+        const w = weekdayOf(d);
+        if(byWd[w]) byWd[w]._days.set(d, t);
+        else if(!splitWd.has(w) && byWd[mainWd]) byWd[mainWd]._days.set(d, t);   // 改到别的星期：算到主占用
+      });
+    }
+    full.forEach(b=>{
+      b._orig = { start_time:b.start_time, end_time:b.end_time, start_date:b.start_date, end_date:b.end_date, weekday:b.weekday };
+      b._linked = true;
+      const first = b._days.size ? b._days.values().next().value : null;
+      b.start_time = _clk5(c.start_time) || (first&&first[0]) || b.start_time;
+      b.end_time   = _clk5(c.end_time)   || (first&&first[1]) || b.end_time;
+      if(c.start_date) b.start_date = c.start_date;
+      if(c.end_date)   b.end_date   = c.end_date;
+      if(single) b.weekday = cw[0];
+    });
+  });
 }
 
 /* ---------- 冲突检测 ---------- */
@@ -684,7 +792,7 @@ function roomConflicts(bookings, roomId, dateStr, s, e, excludeId){
   return bookings.filter(b =>
     b.id !== excludeId && b.status !== 'rejected' &&
     String(b.room_id) === String(roomId) &&
-    bookingOnDate(b, dateStr) && overlap(s, e, b.start_time, b.end_time) &&
+    bookingOnDate(b, dateStr) && overlap(s, e, ...bookingTimeOn(b, dateStr)) &&
     !skipHides(b, dateStr));
 }
 // 老师冲突：同一使用人、同日期、时间重叠，不管教室（排除自身）；休讲日该课不算。用于"再预约一间？"的确认提示
@@ -693,7 +801,7 @@ function teacherOverlaps(bookings, userName, dateStr, s, e, excludeId){
   return bookings.filter(b =>
     b.id !== excludeId && (b.status==='pending' || b.status==='confirmed') &&
     String(b.user_name||'').trim() === nm &&
-    bookingOnDate(b, dateStr) && overlap(s, e, b.start_time, b.end_time) &&
+    bookingOnDate(b, dateStr) && overlap(s, e, ...bookingTimeOn(b, dateStr)) &&
     !skipHides(b, dateStr));
 }
 // 账号冲突：同账号、同日期、时间重叠（排除自身）；休讲日该课不占账号
@@ -701,7 +809,7 @@ function accountConflicts(bookings, accId, dateStr, s, e, excludeId){
   return bookings.filter(b =>
     b.id !== excludeId && b.status !== 'rejected' &&
     b.uses_meeting && String(b.meeting_account_id) === String(accId) &&
-    bookingOnDate(b, dateStr) && overlap(s, e, b.start_time, b.end_time) &&
+    bookingOnDate(b, dateStr) && overlap(s, e, ...bookingTimeOn(b, dateStr)) &&
     !skipHides(b, dateStr));
 }
 

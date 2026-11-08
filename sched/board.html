@@ -26,7 +26,7 @@
   <div class="card board" id="boardBox"><div class="muted">加载中…</div></div>
 </div>
 
-<script src="common.js?v=20270126"></script>
+<script src="common.js?v=20270127"></script>
 <script>
 el('nav').innerHTML = renderNav('board.html');
 pageRole().then(r=>{ if(r) el('nav').innerHTML = renderNav('board.html', r); }).catch(()=>{});
@@ -41,6 +41,7 @@ async function boot(){
   try{
     ROOMS    = await sbGet('sched_rooms','select=*&active=eq.true&order=campus,sort');
     BOOKINGS = await sbGet('sched_bookings','select=*');
+    await loadCourseLink(); linkCourseBookings(BOOKINGS);
     const cs = await sbGet('sched_course_v','select=id,skip_dates');
     window.SKIPMAP={}; cs.forEach(c=>{ if(c.skip_dates) window.SKIPMAP[c.id]=new Set(c.skip_dates.split(',').map(s=>s.trim())); });
     render();
@@ -55,10 +56,10 @@ function render(){
     !skipHides(b,date));
   // 某教室在某时刻是否被占用（含跨时段中间格）
   const covered = (roomId, slot) => todays.some(b => String(b.room_id)===String(roomId) &&
-    b.start_time<=slot && slot<b.end_time);
+    bookingTimeOn(b,date)[0]<=slot && slot<bookingTimeOn(b,date)[1]);
 
   const gridRooms = rooms.map(r=>({ id:r.id, name:r.name, sub:(r.type==='大课'?(r.size_label+'·'+r.capacity+'人'):(r.capacity+'人')) }));
-  el('boardBox').innerHTML = renderOccupancyGrid(gridRooms, todays, 'room_id', {showEntry:true});
+  el('boardBox').innerHTML = renderOccupancyGrid(gridRooms, todays, 'room_id', {showEntry:true, date});
   // 手机上没有悬停：点占用格显示录入人
   el('boardBox').querySelectorAll('td.occ[data-entry]').forEach(td=>td.onclick=()=>toast('录入：'+td.dataset.entry));
 }

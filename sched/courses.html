@@ -63,7 +63,7 @@
   <div class="topline"><span class="muted" id="hint"></span><span><span class="cnt" id="cnt"></span> <button class="ghost sm hidden" id="clearBtn">清除筛选</button></span></div>
   <div id="list"></div>
 </div>
-<script src="common.js?v=20270126"></script>
+<script src="common.js?v=20270127"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 const PAGE_SIZE = 30;
@@ -136,7 +136,7 @@ function datesOf(c){
 }
 function roomOn(c, date){
   const wd=weekdayOf(date);
-  const bs=BOOKINGS.filter(b=>String(b.course_id)===String(c.id) && b.status!=='rejected' && bookingOnDate(b,date) && (b.recurrence!=='weekly' || Number(b.weekday)===wd));
+  const bs=BOOKINGS.filter(b=>String(b.course_id)===String(c.id) && b.status!=='rejected' && bookingOnDate(b,date) && (b.recurrence!=='weekly' || b._linked || Number(b.weekday)===wd));
   if(!bs.length) return '';
   const r=ROOMS.find(x=>String(x.id)===String(bs[0].room_id));
   if(!r) return '';
@@ -347,6 +347,7 @@ async function boot(){
       sbGet('course_sessions','select=course_id,session_date').catch(()=>[])
     ]);
     ALLC=cs.filter(c=>!c.deleted_at); HOLIDAYS=hol; BOOKINGS=bks.map(b=>Object.assign({kind:'course'},b)); ROOMS=rooms;
+    await loadCourseLink(); linkCourseBookings(BOOKINGS);
     ses.forEach(s=>{ if(s.course_id!=null && s.session_date) (SESS[String(s.course_id)]=SESS[String(s.course_id)]||[]).push(s.session_date); });
     ALLC.forEach(c=>{ WDS[c.id]=parseWeekdaysSched(c.weekdays); INFO[c.id]=buildInfo(c); HAY[c.id]=buildHay(c); });
     applyView();
