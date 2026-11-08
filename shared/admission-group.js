@@ -14,7 +14,7 @@ function adgJs(v) { return String(v == null ? '' : v).replace(/\\/g, '\\\\').rep
 // 比较用：去首尾空格（含全角）、统一「／」「/」
 function adgNorm(v) { return String(v == null ? '' : v).replace(/／/g, '/').replace(/^[\s\u3000]+|[\s\u3000]+$/g, ''); }
 // 判断「是不是同一个」用：NFKC 统一全角半角，去掉所有空格（全角、半角、换行、Tab），统一「／」「/」。原文不改，只在对比时用
-function adgKeyNorm(v) { return String(v == null ? '' : v).normalize('NFKC').replace(/[\s\u3000]+/g, ''); }
+function adgKeyNorm(v) { return String(v == null ? '' : v).normalize('NFKC').replace(/[\s\u3000\u200b-\u200d\u2060\ufeff]+/g, ''); }
 function adgGroupKey(s) { return [s.major, s.university, s.faculty, s.department, s.course].map(adgKeyNorm).join('\u0001'); }
 
 // 出愿时间排序值：月*100 + 日（上旬=5 中旬=15 下旬=25；只有月=15；yyyy/mm/dd 取实际日期）；识别不了 = 99999（排最后）
