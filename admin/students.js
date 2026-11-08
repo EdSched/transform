@@ -1,7 +1,8 @@
 // ══════════════════════════════════
 // STUDENTS PAGE
 // ══════════════════════════════════
-let stSearch='',stStatus='';   // 领域/专业/来源筛选用 shared/constants.js 的 DMF（几个页面共用）
+let stSearch='',stStatus='active';   // 领域/专业/来源筛选用 shared/constants.js 的 DMF（几个页面共用）
+let stShown=LIST_PAGE, stShownSig='';   // 学生档案一次显示 LIST_PAGE 人，筛选变了就回到第一页
 let stVipFilter='all'; // 'all' | 'vip_only'(VIP+大课VIP都含) | 'vip_exclusive'(仅VIP不含大课)
 
 // 搜索：输入法组合 / 防抖由 searchBox 处理；整页重画后把原来的搜索框换回去（不丢光标、不打断输入法）
@@ -37,6 +38,7 @@ function renderStudentsPage(mc){
   if(typeof stClassFilterApply==='function') list=stClassFilterApply(list);
   // 什么都没选（无状态、无领域/专业/来源、全部学生、无班级、无搜索）：不列表格，stLastList 置空避免误操作
   stIdle=!stStatus&&!DMF.domain&&!DMF.major&&!DMF.source&&stVipFilter==='all'&&(typeof stClassFilter==='undefined'||stClassFilter==='all')&&!stSearch;
+  { const sig=[stStatus,DMF.domain,DMF.major,DMF.source,stVipFilter,typeof stClassFilter==='undefined'?'':stClassFilter,stSearch].join('|'); if(sig!==stShownSig){ stShownSig=sig; stShown=LIST_PAGE; } }
   stLastList=stIdle?[]:list; // 「批量生成查询码通知」用当前筛选结果
   mc.innerHTML=`
   <div id="spe_bar"></div>
@@ -67,6 +69,8 @@ function renderStudentsPage(mc){
   <div class="search-bar"><input id="st_search_input" placeholder="搜索姓名（汉字 / 拼音首字母）/ 专业 / 学校 / 备注…" value="${stEsc(stSearch)}" oninput="searchBox(this,handleStSearchInput)"></div>
   ${stIdle?'<div class="empty" style="color:var(--text-3)">点上面的状态、筛选，或者搜索，查看记录</div>':sttHtml('admin',list,{
     mode:'admin',select:true,canExport:true,exportName:'学生档案',
+    slice:l=>l.slice(0,stShown),
+    more:n=>n>stShown?`<div onclick="stShown+=LIST_PAGE;sttRefresh('admin')" style="text-align:center;padding:10px;margin:6px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">加载更多（还有 ${n-stShown} 人）</div>`:'',
     nameClick:s=>`openStudentDetail('${s.id}')`,
     codeHtml:s=>s.student_code
       ?`<span style="font-size:11px;font-weight:600;letter-spacing:1px;color:var(--accent)">${s.student_code}</span>`
