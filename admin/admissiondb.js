@@ -42,6 +42,7 @@ function renderAdmissionDbPage(mc) {
       <button class="btn btn-outline btn-sm" onclick="exportAdmissionExcel()">↓ 导出 Excel</button>
       <button class="btn btn-outline btn-sm" onclick="exportAdmissionHtml()">↓ 导出 PDF表格</button>
       <button class="btn btn-outline btn-sm" onclick="openAdmMajorMgr()">🏷 出愿专业管理</button>
+      ${adbIsAdmin() ? '<button class="btn btn-outline btn-sm" onclick="openAdmissionDup()">检查重复</button>' : ''}
       <button class="btn btn-primary btn-sm" onclick="openShareToStudents()">📤 共享给学生</button>
     </div>
   </div>

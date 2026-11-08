@@ -22,7 +22,7 @@ function aimpReq(v) { v = aimpClean(v); if (v === '必要' || v === '必須') re
 function aimpEmpty(v) { return v == null || String(v).trim() === ''; }
 function aimpJsonEmpty(v) { return !v || typeof v !== 'object' || !Object.keys(v).length; }
 function aimpTitle(r) { return [r.university, r.faculty, r.department, r.course].map(x => aimpClean(x)).filter(Boolean).join(' / ') + (aimpClean(r.admission_type) ? '　【' + aimpClean(r.admission_type) + '】' : ''); }
-function aimpKey(major, r) { return [major, r.university, r.faculty, r.department, r.course, r.admission_type].map(adgNorm).join('\u0001'); }
+function aimpKey(major, r) { return [major, r.university, r.faculty, r.department, r.course, r.admission_type].map(adgKeyNorm).join('\u0001'); }
 
 // 子列名 → 标准考试名
 function aimpTestName(kind, raw) {
@@ -202,7 +202,7 @@ async function aimpOnFile(input) {
       const used = new Set();
       // 同一个 key 有多条时，优先对上日程最像的那条（出願期間等一致），避免明细补到别的出愿上
       const sim = (db, row) => ['application_period', 'doc_review_period', 'written_exam', 'oral_exam', 'result_date']
-        .reduce((n, f) => n + (!aimpEmpty(row[f]) && adgNorm(db[f]) === adgNorm(row[f]) ? 1 : 0), 0);
+        .reduce((n, f) => n + (!aimpEmpty(row[f]) && adgKeyNorm(db[f]) === adgKeyNorm(row[f]) ? 1 : 0), 0);
       xl.forEach(x => {
         const k = aimpKey(major, x.row);
         const list = (dbMap.get(k) || []).filter(r => !used.has(r.id));
