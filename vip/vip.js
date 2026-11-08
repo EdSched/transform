@@ -538,7 +538,7 @@ async function saveVipPlanDraft(existingId) {
   if (fileEl?.files[0]) {
     const f = fileEl.files[0];
     const ext = f.name.split('.').pop().toLowerCase();
-    fileUrl = await sbUpload('student-files', `${vipStudent.major||'vip'}/${Date.now()}_draft.${ext}`, f).catch(e => { alert('上传失败：'+e.message); return ''; });
+    fileUrl = await sbUpload('student-files', sbStudentPath(vipStudent.id, 'plan', f), f).catch(e => { alert('上传失败：'+e.message); return ''; });
     if (!fileUrl) return;
   }
 
@@ -929,8 +929,7 @@ async function submitVipBooking() {
   if (file) {
     try {
       const ext = file.name.split('.').pop().toLowerCase();
-      const path = `${vipStudent.major || 'general'}/${Date.now()}.${ext}`;
-      studentFileUrl = await sbUpload('student-files', path, file);
+      studentFileUrl = await sbUpload('student-files', sbStudentPath(vipStudent.id, 'booking', file), file);
     } catch (e) {
       alert('文件上传失败：' + e.message + '\n您可以改为粘贴文字内容，或稍后重试');
       return;
@@ -1217,7 +1216,7 @@ async function submitVipSelfBooking() {
     if (file) {
       try {
         const ext = file.name.split('.').pop().toLowerCase();
-        studentFileUrl = await sbUpload('student-files', `${vipStudent.major || 'general'}/${Date.now()}.${ext}`, file);
+        studentFileUrl = await sbUpload('student-files', sbStudentPath(vipStudent.id, 'booking', file), file);
       } catch (e) { alert('文件上传失败：' + e.message + '\n您可以改为粘贴文字内容，或稍后重试'); if (btn) btn.disabled = false; return; }
     }
     const booking = {
