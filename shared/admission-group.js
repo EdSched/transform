@@ -31,9 +31,33 @@ function adgPeriodKey(str) {
 // 出愿期間涉及的月份（用于月份范围筛选）
 function adgRowMonths(s) {
   const t = String(s.application_period || '').normalize('NFKC');
-  let ms = [...t.matchAll(/(\d{1,2})\s*月/g)].map(x => +x[1]).filter(n => n >= 1 && n <= 12);
-  if (!ms.length) { const k = adgPeriodKey(t); if (k < 99999) ms = [Math.floor(k / 100)]; }
-  return ms;
+  const ms = [...t.matchAll(/(\d{1,2})\s*月/g)].map(x => ({ n: +x[1], i: x.index, e: x.index + x[0].length })).filter(x => x.n >= 1 && x.n <= 12);
+  const out = new Set();
+  ms.forEach((m, j) => {
+    out.add(m.n);
+    const nx = ms[j + 1];
+    // 两个月份之间有「～ / - / から」：按起止往后数，中间月份都算上，可跨年
+    if (nx && /[～〜~\-－–—ー]|から|至/.test(t.slice(m.e, nx.i))) {
+      for (let k = m.n; ; k = k % 12 + 1) { out.add(k); if (k === nx.n) break; }
+    }
+  });
+  if (!out.size) { const k = adgPeriodKey(t); if (k < 99999) out.add(Math.floor(k / 100)); }
+  return [...out];
+}
+// 月份筛选范围：起 > 止 = 跨年（起～12月 + 1月～止）。返回月份 Set；没选 = null
+function adgMonthRange(f) {
+  const a = +f.monthFrom || 0, b = +f.monthTo || 0;
+  if (!a && !b) return null;
+  const set = new Set();
+  if (a && b && a > b) { for (let m = a; m <= 12; m++) set.add(m); for (let m = 1; m <= b; m++) set.add(m); }
+  else for (let m = a || 1; m <= (b || 12); m++) set.add(m);
+  return set;
+}
+// 跨年范围时排序用的偏移：起月以前的月份当作次年
+function adgWrapped(f) { return !!(+f.monthFrom && +f.monthTo && +f.monthFrom > +f.monthTo); }
+function adgSortKey(str, f) {
+  const k = adgPeriodKey(str);
+  return (adgWrapped(f) && k < 99999 && Math.floor(k / 100) < +f.monthFrom) ? k + 1200 : k;
 }
 
 // ── 语言明细 ──
@@ -92,12 +116,10 @@ function adgRowOk(s, f) {
   if (f.engTests && f.engTests.size && ![...f.engTests].some(k => adgAccepts(s, 'en', k))) return false;
   if (f.jpTests && f.jpTests.size && ![...f.jpTests].some(k => adgAccepts(s, 'jp', k))) return false;
   if (f.search && f.search.trim() && !searchMatch(f.search, [s.university, s.faculty, s.department, s.course, s.admission_type], { names: 0 })) return false;
-  if (f.monthFrom || f.monthTo) {
+  const rng = adgMonthRange(f);
+  if (rng) {
     const ms = adgRowMonths(s);
-    if (!ms.length) return false;
-    const minM = Math.min(...ms), maxM = Math.max(...ms);
-    if (f.monthFrom && maxM < f.monthFrom) return false;
-    if (f.monthTo && minM > f.monthTo) return false;
+    if (!ms.length || !ms.some(m => rng.has(m))) return false;
   }
   if (f.ere && s.ere_available !== true) return false;
   return true;
@@ -115,12 +137,11 @@ function adgBuildGroups(allRows, f, sortMode) {
   });
   const out = [];
   map.forEach(g => {
-    g.rows.sort((a, b) => adgPeriodKey(a.application_period) - adgPeriodKey(b.application_period)
+    g.rows.sort((a, b) => adgSortKey(a.application_period, f) - adgSortKey(b.application_period, f)
       || String(a.admission_type || '').localeCompare(String(b.admission_type || ''), 'ja'));
     g.rows.forEach(s => { if (adgRowOk(s, f)) g.hit.add(String(s.id)); });
     if (!g.hit.size) return;
-    const firstHit = g.rows.find(r => g.hit.has(String(r.id)));
-    g.sortKey = adgPeriodKey(firstHit.application_period);
+    g.sortKey = Math.min(...g.rows.filter(r => g.hit.has(String(r.id))).map(r => adgSortKey(r.application_period, f)));
     const r0 = g.rows[0];
     g.head = { major: r0.major, university: r0.university, faculty: r0.faculty, department: r0.department, course: r0.course,
       type: (g.rows.find(r => r.type) || {}).type || '' };
