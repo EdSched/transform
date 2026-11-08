@@ -213,6 +213,35 @@ async function bkInsertBooking(row) {
   if (!r.ok) throw new Error(await r.text());
 }
 
+// ── 面谈预约挂计划书：选已有版本（不用再传），或把新上传的文件存为新的一版 ──
+let bkPlanVersions = [], bkPlanPlans = [], bkPlanVersionId = null, bkPlanNew = false, bkPlanNewKey = '';
+async function bkPlanPickInit() {
+  const box = document.getElementById('bkPlanPick'); if (!box) return;
+  bkPlanVersionId = null; bkPlanNew = false; bkPlanNewKey = '';
+  if (bkMode !== 'member' || !bkStudent || typeof docvLoad !== 'function') { box.innerHTML = ''; return; }
+  try {
+    const [vs, ps] = await Promise.all([docvLoad(bkStudent.id, 'plan'), sb(`/rest/v1/student_school_plans?student_id=eq.${encodeURIComponent(bkStudent.id)}&select=*&order=level.asc`).catch(() => [])]);
+    bkPlanVersions = vs || []; bkPlanPlans = ps || [];
+  } catch (e) { bkPlanVersions = []; bkPlanPlans = []; }
+  if (bkPlanVersions.length) bkPlanVersionId = bkPlanVersions[0].id;   // 最新一版默认选中
+  bkPlanPickRender();
+}
+function bkPlanPickRender() {
+  const box = document.getElementById('bkPlanPick'); if (!box) return;
+  if (!bkPlanVersions.length) { box.innerHTML = ''; return; }
+  const chip = v => `<span onclick="bkPlanPickToggle(${v.id})" style="cursor:pointer;padding:4px 11px;border-radius:3px;font-size:11px;border:1px solid ${bkPlanVersionId === v.id ? 'var(--accent)' : 'var(--border)'};background:${bkPlanVersionId === v.id ? 'var(--btn-bg,#efe9e1)' : 'var(--surface)'};font-weight:${bkPlanVersionId === v.id ? '600' : '400'}">${bkEsc(docvTitle(v))} · ${bkEsc(docvMD(v.submitted_at))}</span>`;
+  box.innerHTML = `<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:600;margin-bottom:6px">要老师看计划书吗？<span style="font-weight:400;color:var(--text-muted)">（点选一版；再点一次取消，不用再传一次）</span></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${bkPlanVersions.slice(0, 8).map(chip).join('')}</div></div>`;
+}
+function bkPlanPickToggle(id) { bkPlanVersionId = bkPlanVersionId === id ? null : id; bkPlanPickRender(); }
+function bkPlanNewRender() {
+  const box = document.getElementById('bkPlanNew'); if (!box) return;
+  const has = !!document.getElementById('studentFileUpload')?.files?.[0];
+  if (bkMode !== 'member' || !bkStudent || !has) { box.innerHTML = ''; bkPlanNew = false; return; }
+  const sel = bkPlanNew ? `<select onchange="bkPlanNewKey=this.value" style="font-size:11px;padding:4px 6px;margin-left:8px"><option value="">通用版</option>${bkPlanPlans.map(p => { const k = riyuKeyOf(p); return `<option value="${bkEsc(k)}" ${bkPlanNewKey === k ? 'selected' : ''}>${bkEsc([p.school_name, p.faculty, p.department].filter(Boolean).join(' '))}</option>`; }).join('')}</select>` : '';
+  box.innerHTML = `<div style="margin-top:8px"><span onclick="bkPlanNew=!bkPlanNew;bkPlanNewRender()" style="cursor:pointer;padding:4px 11px;border-radius:3px;font-size:11px;border:1px solid ${bkPlanNew ? 'var(--accent)' : 'var(--border)'};background:${bkPlanNew ? 'var(--btn-bg,#efe9e1)' : 'var(--surface)'};font-weight:${bkPlanNew ? '600' : '400'}">这是计划书（存为新的一版）</span>${sel}</div>`;
+}
+
 // 页面模式：login=登录框 | new=新同学预约（手填姓名，不绑定学生）| member=已登录学生（内嵌在学习页）
 let bkMode = 'login';
 let bkStudent = null;   // member 模式下的学生档案 { id, name, major, ... }
@@ -564,10 +593,12 @@ function buildForm() {
   <div class="card" id="contentCard" style="display:none">
     <div class="card-title">📎 提交内容（可选）</div>
     <div style="font-size:10px;color:var(--text-muted);margin-bottom:8px">如需要老师查看 / 修改计划书或面试稿件，可粘贴文字内容，或直接上传文件（如含公式的Word文档），二者均可</div>
+    <div id="bkPlanPick"></div>
     <textarea id="studentContent" rows="6" placeholder="粘贴计划书草稿、面试稿等文字内容…"></textarea>
     <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)">
       <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px">或上传文件（Word / PDF / 图片，最大50MB）</div>
-      <input type="file" id="studentFileUpload" accept=".doc,.docx,.pdf,image/*">
+      <input type="file" id="studentFileUpload" accept=".doc,.docx,.pdf,image/*" onchange="bkPlanNewRender()">
+      <div id="bkPlanNew"></div>
     </div>
   </div>
   <button class="btn btn-primary" id="submitBtn" onclick="submitBooking()">提交预约申请 →</button>
@@ -578,6 +609,7 @@ function buildForm() {
 
   updateTypeOptions();
   renderSlots();
+  bkPlanPickInit();
   bindInfoGate();
   // restore saved info
   applyStoredInfo(loadStudentInfo());
@@ -952,9 +984,21 @@ async function submitBookingInner() {
 
   // 若学生选择了上传文件，先上传（文件名用专业+时间戳拼接，避免中文文件名导致的存储路径问题）
   let studentFileUrl = null;
+  const bkId = Date.now().toString();
+  let planVersionId = isMember ? bkPlanVersionId : null;   // 挂已有的计划书版本：不用再传一次
   const fileInput = document.getElementById('studentFileUpload');
   const file = fileInput?.files[0];
-  if (file) {
+  if (file && isMember && bkPlanNew) {
+    // 这个文件就是计划书：存为新的一版（students/<学生id>/plan/…），预约直接挂这一版
+    try {
+      const plan = bkPlanPlans.find(p => riyuKeyOf(p) === bkPlanNewKey);
+      const v = await docvCreate({ student: bkStudent, docType: 'plan', schoolKey: plan ? bkPlanNewKey : '', schoolName: plan ? [plan.school_name, plan.faculty, plan.department].filter(Boolean).join(' ') : '', file, source: 'booking', bookingId: bkId });
+      studentFileUrl = v.file_url; planVersionId = v.id;
+    } catch (e) {
+      alert('计划书上传失败：' + e.message + '\n您可以取消「这是计划书」后作为普通附件上传，或稍后重试');
+      return;
+    }
+  } else if (file) {
     try {
       const ext = file.name.split('.').pop().toLowerCase();
       const path = `${bookingMajor || 'general'}/${Date.now()}.${ext}`;
@@ -966,7 +1010,7 @@ async function submitBookingInner() {
   }
 
   const booking = {
-    id: Date.now().toString(), name, major: bookingMajor, exam_period: examPeriod,
+    id: bkId, name, major: bookingMajor, exam_period: examPeriod,
     specialty_status: document.getElementById('specialtyStatus').value,
     target_school: document.getElementById('targetSchool').value,
     contact_prof: document.getElementById('contactProf').value,
@@ -982,6 +1026,7 @@ async function submitBookingInner() {
   };
   // 已登录学生写入 student_id；新同学不带该字段（留空，老师确认时再认领/建档）
   if (isMember) booking.student_id = bkStudent.id;
+  if (planVersionId) booking.plan_version_id = planVersionId;
   if (nameConflict) booking.name_conflict = true;   // 与在籍学生同名的新同学，老师/管理员列表里会提醒
   try {
     await bkInsertBooking(booking);

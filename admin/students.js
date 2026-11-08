@@ -619,7 +619,7 @@ async function renderSubmissionsView(mc){
     students:scoped,
     pass:s=>dmfFilter([s]).length>0,
     barHtml:()=>domMajorFilterHtml(DMF,"sbmRender()",scoped()),
-    openPlan:(sid,name)=>openTeacherDraftComment(sid,name),   // 和老师端同一个批复弹窗（shared/plan-review.js）
+    openPlan:(sid,name,o)=>openTeacherDraftComment(sid,name,o),   // 和老师端同一个批复弹窗（shared/plan-review.js）
   });
 }
 

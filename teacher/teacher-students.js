@@ -113,7 +113,7 @@ function tpRenderSubmissions(listBox) {
   sbmRender(listBox, {
     students: () => (teacherProgressData.students || []).filter(s => (s.status || 'active') === 'active'),
     pass: s => tsmMatch(s, null, true) && (tpOwnerFilter !== 'mine' || tpIsMine(s)),
-    openPlan: (sid, name) => openTeacherDraftComment(sid, name),
+    openPlan: (sid, name, o) => openTeacherDraftComment(sid, name, o),
   });
 }
 

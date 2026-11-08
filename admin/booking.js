@@ -1554,6 +1554,7 @@ function renderBookingDetail(b,hasRecord){
     ${b.actual_time?`<div class="note-field"><div class="note-label">实际面谈时间</div><div class="actual-time">✓ ${b.actual_time.replace('T',' ')}${b.actual_duration?` · ${b.actual_duration}min`:''}</div></div>`:''}
     ${(b.location||cachedSlots.find(s=>s.id===b.slot_id)?.location)?`<div class="note-field"><div class="note-label">面谈地点</div><div class="note-content" style="color:${locationColor(b.location||cachedSlots.find(s=>s.id===b.slot_id)?.location)}">${locationLong(b.location||cachedSlots.find(s=>s.id===b.slot_id)?.location)||'线上'}</div></div>`:''}
     ${b.file_url?`<div class="note-field"><div class="note-label">提交文件</div><a href="${b.file_url}" target="_blank" style="font-size:11px;color:var(--accent)">📎 查看文件</a></div>`:''}
+    ${b.plan_version_id&&typeof docvBookingLinkHtml==='function'?`<div class="note-field">${docvBookingLinkHtml(b)}</div>`:''}
     ${b.student_content?`<div class="note-field"><div class="note-label">计划书 / 面试稿件</div><div class="note-content" style="max-height:80px;overflow-y:auto;white-space:pre-wrap">${b.student_content}</div></div>`:''}
     ${b.status==='confirmed'?`<div class="note-field">
       <div class="note-label" style="margin-bottom:6px">学生查询码</div>

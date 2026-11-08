@@ -1,9 +1,9 @@
 // ══════════════════════════════════
 // submissions.js — 考学进度 →「📥 学生提交」（管理端 / 老师端共用）
-// 一条 = 一份提交：计划书（student_plan_drafts 有完成稿）、志望理由书、联系教授邮件、问询邮件（riyu_submissions）
+// 一条 = 一份提交：计划书（一版一条，student_doc_versions）、志望理由书、联系教授邮件、问询邮件（riyu_submissions）
 // 默认只看待批复；已批复每次 50 条，按提交时间倒序，「加载更多」。
 // 依赖：shared/supabase.js、constants.js、search.js、riyu.js（RIYU_STAFF / riyuStaffView）
-// 用法：sbmRender(box, { students: () => 范围内在读学生[], pass: s => 是否通过领域/专业筛选（可选）, openPlan: (studentId, studentName) => void, barHtml: 领域/专业筛选栏 html 或返回 html 的函数（可选） })
+// 用法：sbmRender(box, { students: () => 范围内在读学生[], pass: s => 是否通过领域/专业筛选（可选）, openPlan: (studentId, studentName, opts) => void, barHtml: 领域/专业筛选栏 html 或返回 html 的函数（可选） })
 // ══════════════════════════════════
 const SBM_PAGE = 50;
 const SBM_TYPES = [['plan', '计划书'], ['riyu', '志望理由书'], ['prof', '联系教授邮件'], ['inq', '问询邮件']];
@@ -11,7 +11,8 @@ const SBM_KIND_TYPE = { gakubu_riyu: 'riyu', grad_riyu: 'riyu', grad_prof_mail: 
 const SBM = {
   cfg: null, box: null,
   status: 'pending', types: [], track: '', range: '', q: '',
-  drafts: null,                       // 有完成稿的计划书（student_plan_drafts 精简列）
+  drafts: null,                       // 有完成稿的计划书（student_plan_drafts 精简列；只用来兜底还没有版本记录的旧数据）
+  vers: null,                         // 计划书版本（student_doc_versions，doc_type=plan）：一版一条
   pend: null,                         // 待批复的 riyu 提交
   rev: [], revOffset: 0, revDone: false, revBusy: false,   // 已批复的 riyu 提交（分页加载）
   rows: {}, mark: null,                           // key -> row，供「打开」使用
@@ -29,9 +30,10 @@ function sbmPlanState(d) {
 }
 
 async function sbmLoad(force) {
-  if (force) { SBM.drafts = null; SBM.pend = null; SBM.rev = []; SBM.revOffset = 0; SBM.revDone = false; }
+  if (force) { SBM.drafts = null; SBM.vers = null; SBM.pend = null; SBM.rev = []; SBM.revOffset = 0; SBM.revDone = false; }
   const jobs = [];
   if (!SBM.drafts) jobs.push(sbAll('/rest/v1/student_plan_drafts?draft_file_url=not.is.null&select=id,student_id,draft_file_url,updated_at,reviewed_at,reviewed_file_url,teacher_comment_at').then(r => { SBM.drafts = r || []; }).catch(() => { SBM.drafts = []; }));
+  if (!SBM.vers) jobs.push(sbAll('/rest/v1/student_doc_versions?doc_type=eq.plan&select=id,student_id,version_no,school_key,school_name,submitted_at,review_file_url,reviewed_at&order=submitted_at.desc').then(r => { SBM.vers = r || []; }).catch(() => { SBM.vers = []; }));
   if (!SBM.pend) jobs.push(sbAll('/rest/v1/riyu_submissions?status=eq.submitted&select=*&order=submitted_at.desc').then(r => { SBM.pend = r || []; }).catch(() => { SBM.pend = []; }));
   await Promise.all(jobs);
 }
@@ -60,7 +62,13 @@ function sbmRiyuRow(r, stu, reviewed) {
 
 function sbmCollect(stuMap) {
   const out = [];
+  const withVer = new Set((SBM.vers || []).map(v => v.student_id));
+  (SBM.vers || []).forEach(v => {
+    const stu = stuMap.get(v.student_id); if (!stu) return;
+    out.push({ key: 'v_' + v.id, kind: 'plan', ver: v, stu, type: 'plan', track: typeof matTrackOf === 'function' ? matTrackOf(stu) : 'grad', school: '', time: v.submitted_at, st: v.review_file_url ? 'done' : 'pending', label: '计划书 · ' + docvTitle(v) });
+  });
   (SBM.drafts || []).forEach(d => {
+    if (withVer.has(d.student_id)) return;   // 已有版本记录的学生，以版本为准
     const stu = stuMap.get(d.student_id); if (!stu) return;
     out.push({ key: 'p_' + d.id, kind: 'plan', draft: d, stu, type: 'plan', track: typeof matTrackOf === 'function' ? matTrackOf(stu) : 'grad', school: '', time: d.updated_at, st: sbmPlanState(d), label: '计划书' });
   });
@@ -87,7 +95,7 @@ async function sbmRender(box, cfg) {
   if (cfg) SBM.cfg = cfg;
   if (box) SBM.box = box;
   box = SBM.box; cfg = SBM.cfg; if (!box || !cfg) return;
-  if (!SBM.drafts || !SBM.pend) { box.innerHTML = '<div class="loading">加载中…</div>'; await sbmLoad(false); }
+  if (!SBM.drafts || !SBM.vers || !SBM.pend) { box.innerHTML = '<div class="loading">加载中…</div>'; await sbmLoad(false); }
   const students = (typeof cfg.students === 'function' ? cfg.students() : []) || [];
   const stuMap = new Map(students.map(s => [s.id, s]));
   if (SBM.status === 'done' && !SBM.rev.length && !SBM.revDone) { box.innerHTML = '<div class="loading">加载中…</div>'; await sbmLoadReviewed(new Set(stuMap.keys())); }
@@ -147,14 +155,14 @@ async function sbmMore() {
 }
 // 批复完成后（弹窗里上传了批复版）：重新读取并刷新列表
 function sbmChanged() {
-  if (!document.getElementById('sbm_root')) { SBM.drafts = null; SBM.pend = null; SBM.rev = []; SBM.revOffset = 0; SBM.revDone = false; return; }
-  SBM.drafts = null; SBM.pend = null; SBM.rev = []; SBM.revOffset = 0; SBM.revDone = false;
+  if (!document.getElementById('sbm_root')) { SBM.drafts = null; SBM.vers = null; SBM.pend = null; SBM.rev = []; SBM.revOffset = 0; SBM.revDone = false; return; }
+  SBM.drafts = null; SBM.vers = null; SBM.pend = null; SBM.rev = []; SBM.revOffset = 0; SBM.revDone = false;
   sbmRender();
 }
 
 function sbmOpen(key) {
   const x = SBM.rows[key]; if (!x) return;
-  if (x.kind === 'plan') { if (SBM.cfg.openPlan) SBM.cfg.openPlan(x.stu.id, x.stu.name, { key }); return; }
+  if (x.kind === 'plan') { if (SBM.cfg.openPlan) SBM.cfg.openPlan(x.stu.id, x.stu.name, { key, versionId: x.ver ? x.ver.id : null }); return; }
   RIYU_STAFF.subs[x.sub.id] = x.sub;
   RIYU_STAFF.students[x.stu.id] = x.stu;
   RIYU_STAFF.onChangeBy[x.stu.id] = () => sbmChanged();

@@ -112,13 +112,14 @@ async function loadStudyData() {
     if (typeof majorLabel === 'function') { try { const l = majorLabel(v); if (l) _shareCands.add(l); } catch (e) {} }
   });
   const _shareIn = [..._shareCands].map(m => `"${String(m).replace(/"/g, '')}"`).join(',') || '"__none__"';
-  const [timeline, schoolPlans, planDraftArr, sharedLists, bookings, sessionRecs] = await Promise.all([
+  const [timeline, schoolPlans, planDraftArr, sharedLists, bookings, sessionRecs, planVersions] = await Promise.all([
     sb(`/rest/v1/student_progress_timeline?student_id=eq.${id}&select=*&order=created_at.desc`).catch(()=>[]),
     sb(`/rest/v1/student_school_plans?student_id=eq.${id}&select=*&order=level.asc`).catch(()=>[]),
     sb(`/rest/v1/student_plan_drafts?student_id=eq.${id}&select=*&order=updated_at.desc&limit=1`).catch(()=>[]),
     sb(`/rest/v1/teacher_school_shares?major=in.(${_shareIn})&select=*&order=created_at.desc&limit=3`).catch(()=>[]),
     sb(`/rest/v1/bookings?name=eq.${encodeURIComponent(name)}&status=in.("confirmed","completed")&select=*&order=slot_date.desc`).catch(()=>[]),
     sb(`/rest/v1/session_records?student_name=eq.${encodeURIComponent(name)}&select=*&order=session_date.desc`).catch(()=>[]),
+    docvLoad(id, 'plan').catch(()=>[]),   // 计划书的全部版本（student_doc_versions）
   ]);
   let sharedSchools = [];
   if (sharedLists.length) {
@@ -127,7 +128,7 @@ async function loadStudyData() {
       sharedSchools = await sb(`/rest/v1/admission_schools?id=in.(${allIds.map(id=>`"${id}"`).join(',')})&select=id,university,faculty,department,course,application_period,english_required,japanese_required,written_exam,oral_exam,result_date&order=application_period.asc`).catch(()=>[]);
     }
   }
-  studyData = { timeline, schoolPlans, planDraft: planDraftArr[0]||null, sharedLists, sharedSchools, bookings, sessionRecs };
+  studyData = { timeline, schoolPlans, planDraft: planDraftArr[0]||null, sharedLists, sharedSchools, bookings, sessionRecs, planVersions };
   // VIP：额外加载 VIP 预约数据与绑定的课程规划（纯VIP和大课+VIP）
   if (studyShowVip(studyStudent)) {
     if (typeof loadVipData === 'function') { vipStudent = studyStudent; await loadVipData(); }
@@ -1055,7 +1056,10 @@ function renderPlanResearchHtml() {
   try { df = d.draft_fields ? JSON.parse(d.draft_fields) : {}; } catch(e) {}
   const draftDefs = STUDY_DRAFT_FIELDS[cat] || null;
 
+  const hasDone = (studyData.planVersions || []).length > 0 || !!d.draft_file_url;
   return `<div>
+    ${hasDone ? '<details style="margin-bottom:20px"><summary style="cursor:pointer;font-size:12px;font-weight:700;padding-bottom:8px;border-bottom:2px solid var(--border-light);margin-bottom:12px">草稿（已收起，点开查看）</summary>'
+      : '<div style="font-size:11px;color:var(--text-2,#5a5650);background:var(--bg,#f7f5f0);border:1px dashed var(--border);border-radius:3px;padding:8px 12px;margin-bottom:14px">请先按草稿流程撰写（Step 1 → Step 2），老师确认后再上传完成稿</div>'}
     <!-- 步骤1：先行研究 -->
     <div style="margin-bottom:20px">
       <div style="font-size:12px;font-weight:700;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--border-light)">
@@ -1125,21 +1129,26 @@ function renderPlanResearchHtml() {
         </div>
         <button onclick="studySaveDraft()" style="font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit">保存草稿</button>
         <span id="spd_save_msg" style="font-size:11px;margin-left:10px"></span>
-        ${typeof planRvStudentHtml==='function'?planRvStudentHtml(d):''}${d.teacher_comment?`<div style="background:var(--ok-bg);border-radius:3px;padding:10px;margin-top:10px;font-size:11px;color:var(--ok)">💬 老师批注：${d.teacher_comment}</div>`:''}
+        ${typeof planRvStudentHtml==='function' && !(studyData.planVersions||[]).length ?planRvStudentHtml(d):''}${d.teacher_comment?`<div style="background:var(--ok-bg);border-radius:3px;padding:10px;margin-top:10px;font-size:11px;color:var(--ok)">💬 老师批注：${d.teacher_comment}</div>`:''}
       </div>
     </div>
 
-    <!-- 步骤3：完成稿上传 -->
+    ${hasDone ? '</details>' : ''}
+    <!-- 步骤3：完成稿上传（按版本） -->
     <div>
       <div style="font-size:12px;font-weight:700;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--border-light)">
-        Step 3 · 完成稿上传
+        Step 3 · 完成稿上传（按版本）
       </div>
       <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:14px">
-        ${d.draft_file_url?`<div style="margin-bottom:10px"><a href="${d.draft_file_url}" target="_blank" style="font-size:12px;color:var(--accent)">📎 当前上传的文件</a></div>`:''}
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">上传计划书文件（.doc / .docx / .pdf）</div>
-        <input type="file" id="spd_file" accept=".doc,.docx,.pdf" style="font-size:11px;margin-bottom:10px">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">用途</div>
+        <div id="spd_purpose" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${studyPurposeChipsHtml()}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">上传计划书文件（.doc / .docx / .pdf），每次上传都是新的一版，以前的版本都会保留</div>
+        <input type="file" id="spd_file" accept=".doc,.docx,.pdf" style="font-size:11px;margin-bottom:8px;display:block">
+        <input id="spd_vnote" placeholder="这一版改了什么（可选）" style="width:100%;box-sizing:border-box;font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);margin-bottom:10px">
         <button onclick="studyUploadDraft()" style="font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit">上传</button>
         <span id="spd_upload_msg" style="font-size:11px;margin-left:10px"></span>
+        <div style="font-size:12px;font-weight:600;margin-top:16px;padding-top:10px;border-top:1px solid var(--border-light)">已上传的版本</div>
+        ${docvStudentListHtml(studyData.planVersions)}
       </div>
     </div>
   </div>`;
@@ -1227,18 +1236,35 @@ async function studySaveDraft() {
   if (msg) { msg.textContent = '✓ 已保存'; setTimeout(()=>{ if(msg) msg.textContent=''; }, 2000); }
 }
 
+// 完成稿「用途」：'' = 通用版，否则是志望校的 riyuKeyOf
+let studyPurposeKey = '';
+function studyPurposeChipsHtml() {
+  const plans = studyData.schoolPlans || [];
+  const chip = (k, label) => `<span onclick="studyPurposeSet(${JSON.stringify(k).replace(/"/g, '&quot;')})" style="cursor:pointer;padding:4px 11px;border-radius:3px;font-size:11px;border:1px solid ${studyPurposeKey === k ? 'var(--accent)' : 'var(--border)'};background:${studyPurposeKey === k ? 'var(--btn-bg,#efe9e1)' : 'var(--surface)'};font-weight:${studyPurposeKey === k ? '600' : '400'}">${escA(label)}</span>`;
+  if (studyPurposeKey && !plans.some(p => riyuKeyOf(p) === studyPurposeKey)) studyPurposeKey = '';
+  return chip('', '通用版') + plans.map(p => chip(riyuKeyOf(p), [p.school_name, p.faculty, p.department].filter(Boolean).join(' ') || '（未命名学校）')).join('');
+}
+function studyPurposeSet(k) {
+  studyPurposeKey = k || '';
+  const el = document.getElementById('spd_purpose'); if (el) el.innerHTML = studyPurposeChipsHtml();
+}
+
 async function studyUploadDraft() {
   const fileEl = document.getElementById('spd_file');
   const msg = document.getElementById('spd_upload_msg');
   if (!fileEl?.files[0]) { if(msg) msg.textContent = '请先选择文件'; return; }
   if (msg) msg.textContent = '上传中…';
   try {
-    const f = fileEl.files[0];
-    const ext = f.name.split('.').pop().toLowerCase();
-    const fileUrl = await sbUpload('student-files', `${studyStudent.major||'plan'}/${Date.now()}_draft.${ext}`, f);
-    await studySavePlanField({ draft_file_url: fileUrl });
-    if (msg) msg.textContent = '✓ 上传成功';
-    fileEl.value = '';
+    const plan = (studyData.schoolPlans || []).find(p => riyuKeyOf(p) === studyPurposeKey);
+    const v = await docvCreate({
+      student: studyStudent, docType: 'plan',
+      schoolKey: plan ? studyPurposeKey : '',
+      schoolName: plan ? [plan.school_name, plan.faculty, plan.department].filter(Boolean).join(' ') : '',
+      file: fileEl.files[0], note: document.getElementById('spd_vnote')?.value || '', source: 'upload',
+    });
+    studyData.planVersions = [v].concat((studyData.planVersions || []).filter(x => x.id !== v.id));
+    studyData.planDraft = { ...(studyData.planDraft || {}), draft_file_url: v.file_url };   // docvCreate 已把最新一版写回 student_plan_drafts.draft_file_url
+    if (!studyData.planDraft.id) { try { studyData.planDraft = (await sb(`/rest/v1/student_plan_drafts?student_id=eq.${studyStudent.id}&select=*&limit=1`, 'GET', null, { cache: 'no-store' }))[0] || studyData.planDraft; } catch (e) {} }
     switchStudyTab('plan');
   } catch(e) { if(msg) msg.textContent = '上传失败：' + e.message; }
 }
