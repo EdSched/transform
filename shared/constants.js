@@ -1434,7 +1434,7 @@ function buildAdmissionFilterDesc(opts) {
   if (jpTests && jpTests.size) desc.push(`接受日语考试：${[...jpTests].map(k => k.replace(/^JLPT-/, '')).join('/')}`);
   if (search && search.trim()) desc.push(`关键词：${search.trim()}`);
   if (monthFrom || monthTo) {
-    desc.push(`出願：${monthFrom?monthFrom+'月':'不限'}～${monthTo?monthTo+'月':'不限'}`);
+    desc.push(`出願：${monthFrom?monthFrom+'月':'不限'}～${(monthFrom&&monthTo&&+monthFrom>+monthTo)?'次年':''}${monthTo?monthTo+'月':'不限'}`);
   }
   return desc.length ? desc.join('　|　') : '全部';
 }
