@@ -356,11 +356,11 @@ async function riyuStaffView(subId) {
   document.body.appendChild(ov);
 }
 
-async function riyuStaffWord(subId) {
-  const sub = RIYU_STAFF.subs[subId]; if (!sub) return;
+// 把在线撰写的内容生成 Word（HTML 格式的 .doc）。返回 { blob, name }：下载 Word 和「学生管理文件」打包共用
+async function riyuWordBuild(sub, stu) {
   const g = await riyuLoadGuide(sub.kind);
   const secs = riyuSecs(sub);
-  const stu = RIYU_STAFF.students[sub.student_id] || {};
+  stu = stu || {};
   const order = g.sections.map(s => s.key);
   Object.keys(secs).forEach(k => { if (!order.includes(k)) order.push(k); });
   const e = s => riyuEsc(s).replace(/\n/g, '<br>');
@@ -386,9 +386,14 @@ async function riyuStaffWord(subId) {
   const blob = new Blob(['﻿', html], { type: 'application/msword' });
   const d = new Date();
   const ds = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  return { blob, name: `${docName}_${stu.name || ''}_${sub.school_name || ''}_${ds}.doc`.replace(/[\\/:*?"<>|]/g, '_') };
+}
+async function riyuStaffWord(subId) {
+  const sub = RIYU_STAFF.subs[subId]; if (!sub) return;
+  const { blob, name } = await riyuWordBuild(sub, RIYU_STAFF.students[sub.student_id] || {});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `${docName}_${stu.name || ''}_${sub.school_name || ''}_${ds}.doc`.replace(/[\\/:*?"<>|]/g, '_');
+  a.download = name;
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }

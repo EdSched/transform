@@ -17,8 +17,12 @@ async function hwsList(prefix) {
   return out;
 }
 function hwsMount(body) {
-  body.innerHTML = `<div style="max-width:640px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px 18px">
-    <div style="font-size:14px;font-weight:600;margin-bottom:4px">作业图片存储</div>
+  // 上半部分：学生管理文件（按学生打包下载，admin/studentfiles.js）；下半部分：作业图片存储统计（原功能）
+  body.innerHTML = '<div id="sfl_root"></div><div id="hws_root"></div>';
+  if (typeof sflMount === 'function') sflMount(document.getElementById('sfl_root'));
+  const hwsBox = document.getElementById('hws_root');
+  hwsBox.innerHTML = `<div style="max-width:640px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px 18px">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">作业图片存储（统计）</div>
     <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">按月统计学生上传的作业图片（原图与缩略图合计）。只做统计，不会删除任何文件。文件多时需要几十秒。</div>
     <button class="btn btn-outline btn-sm" id="hws_btn" onclick="hwsRun()">开始统计</button>
     <div id="hws_out" style="margin-top:12px;font-size:12px"></div></div>`;
