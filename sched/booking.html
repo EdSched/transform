@@ -99,7 +99,7 @@
   </div>
 </div>
 
-<script src="common.js?v=20270126"></script>
+<script src="common.js?v=20270128"></script>
 <script src="../shared/constants.js?v=20270301"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
@@ -208,6 +208,7 @@ async function boot(){
   ROOMS    = await sbGet('sched_rooms','select=*&order=campus,sort');
   ACCOUNTS = await sbGet('sched_meeting_accounts','select=*&active=eq.true');
   BOOKINGS = await sbGet('sched_bookings','select=*');
+  await loadCourseLink(); linkCourseBookings(BOOKINGS);
   { const cs = await sbGet('sched_course_v','select=id,skip_dates'); window.SKIPMAP={}; cs.forEach(c=>{ if(c.skip_dates) window.SKIPMAP[c.id]=new Set(c.skip_dates.split(',').map(x=>x.trim())); }); }
   el('find').onclick = find;
   el('date').onchange = renderGrid;
@@ -229,7 +230,7 @@ async function boot(){
   renderGrid();
 }
 function aname(id){ const a=ACCOUNTS.find(x=>String(x.id)===String(id)); return a?(a.name+(a.note?('（'+a.note+'）'):'')):('#'+id); }
-async function reloadBookings(){ BOOKINGS = await sbGet('sched_bookings','select=*'); }
+async function reloadBookings(){ BOOKINGS = await sbGet('sched_bookings','select=*'); linkCourseBookings(BOOKINGS); }
 function fillMgmtRooms(){ const cp=el('oc_campus').value; const rs=ROOMS.filter(r=>!cp||r.campus===cp);
   el('oc_room').innerHTML='<option value="">全部教室</option>'+rs.map(r=>`<option value="${r.id}">${esc(r.name)}（${esc(r.campus)}）</option>`).join(''); }
 // 点网格里的占用格 → 直接编辑（仅非课程占用、且有管理权限）
@@ -294,15 +295,16 @@ function occupyEditForm(id){
   const rmap={}; ROOMS.forEach(r=>rmap[r.id]=r); const r=rmap[b.room_id];
   const roomOpts=ROOMS.filter(x=>!r||x.campus===r.campus).map(x=>`<option value="${x.id}"${String(x.id)===String(b.room_id)?' selected':''}>${esc(x.name)}（${esc(x.campus)}）</option>`).join('');
   const isWeekly=b.recurrence==='weekly';
+  const bv=b._orig?Object.assign({},b,b._orig):b;   // 编辑弹窗显示记录原值
   let h='<div style="position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:60;overflow:auto;padding:40px 16px"><div class="card" style="width:520px;max-width:94vw;margin:auto">'+
     '<h3 style="margin-top:2px">编辑占用 · '+(KIND_LABEL[b.kind]||b.kind)+'</h3>'+
     '<div class="row">'+
       '<div class="field"><label>教室</label><select id="oe_room">'+roomOpts+'</select></div>'+
       (isWeekly
-        ? '<div class="field"><label>起始日</label><input type="date" id="oe_sd" value="'+esc(b.start_date||'')+'"></div><div class="field"><label>结束日</label><input type="date" id="oe_ed" value="'+esc(b.end_date||'')+'"></div>'
+        ? '<div class="field"><label>起始日</label><input type="date" id="oe_sd" value="'+esc(bv.start_date||'')+'"></div><div class="field"><label>结束日</label><input type="date" id="oe_ed" value="'+esc(bv.end_date||'')+'"></div>'
         : '<div class="field"><label>日期</label><input type="date" id="oe_date" value="'+esc(b.booking_date||'')+'"></div>')+
-      '<div class="field"><label>开始</label><input type="time" id="oe_st" value="'+esc(b.start_time||'')+'"></div>'+
-      '<div class="field"><label>结束</label><input type="time" id="oe_et" value="'+esc(b.end_time||'')+'"></div>'+
+      '<div class="field"><label>开始</label><input type="time" id="oe_st" value="'+esc(bv.start_time||'')+'"></div>'+
+      '<div class="field"><label>结束</label><input type="time" id="oe_et" value="'+esc(bv.end_time||'')+'"></div>'+
       '<div class="field"><label>使用人</label><input id="oe_user" value="'+esc(b.user_name||'')+'"></div>'+
       '<div class="field"><label>状态</label><select id="oe_status"><option value="confirmed"'+(b.status!=='pending'?' selected':'')+'>已确认</option><option value="pending"'+(b.status==='pending'?' selected':'')+'>待确认</option></select></div>'+
       '<div class="field"><label>对外看板(today)显示</label><select id="oe_showtitle"><option value="0"'+(b.show_title===true?'':' selected')+'>只标类型（如VIP/临时）</option><option value="1"'+(b.show_title===true?' selected':'')+'>显示标题（如MBA课程）</option></select></div>'+
@@ -360,7 +362,7 @@ function renderGrid(){
   if(!campus||!date||!rooms.length){ box.innerHTML='<div class="muted">该校区暂无对应教室</div>'; return; }
   const todays=BOOKINGS.filter(b=>bookingOnDate(b,date) &&
     !skipHides(b,date));
-  box.innerHTML = renderOccupancyGrid(rooms, todays, 'room_id');
+  box.innerHTML = renderOccupancyGrid(rooms, todays, 'room_id', {date});
   wireGridClicks();
 }
 function find(){

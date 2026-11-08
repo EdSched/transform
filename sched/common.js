@@ -164,6 +164,84 @@ async function schedCourseUpdate(id, patch){
   }
   return sbUpdate('courses', id, out);
 }
+/* ---------- 排课改课程：快照 / 结果条 / 撤销 ----------
+   排课和管理端改的是同一份 courses / course_sessions。改之前存快照，改完弹结果条，点「撤销」按快照改回去（只撤这一次）。 */
+async function schedSnap(ids){
+  ids = [...new Set((ids||[]).map(String))];
+  if(!ids.length) return { courses:[], sessions:[] };
+  const inl = ids.map(encodeURIComponent).join(',');
+  const courses = await sbGet('courses', 'select=*&id=in.('+inl+')');
+  const sessions = await sbGet('course_sessions', 'select=*&course_id=in.('+inl+')');
+  return { courses, sessions };
+}
+const SCHED_COL_LABEL = { time_range:'上课时间', campus:'校区', delivery:'授课方式', est_students:'人数', meeting_url:'会议链接', meeting_id:'会议号', host_key:'主持人密钥',
+  sched_merge_group:'合并', sched_merge_name:'合并显示名', sched_merge_order:'合并顺序', sched_removed_at:'移出排课', sched_removed_reason:'移出排课原因',
+  skip_dates:'休讲日', holiday_except:'照常上课的假期', name:'课程名', session_date:'日期', is_cancelled:'休讲' };
+function _schedDiffCols(a, b){      // a → b 有变化的列 {col:[旧,新]}
+  const out = {};
+  Object.keys(Object.assign({}, a, b)).forEach(k=>{
+    if(/updated_at|modified/i.test(k)) return;
+    if(JSON.stringify(a[k]==null?null:a[k]) !== JSON.stringify(b[k]==null?null:b[k])) out[k] = [a[k], b[k]];
+  });
+  return out;
+}
+function schedSnapDiff(before, after){
+  const mapOf = rows => { const m = {}; rows.forEach(r=>{ m[String(r.id)] = r; }); return m; };
+  const bc = mapOf(before.courses), ac = mapOf(after.courses), bs = mapOf(before.sessions), as = mapOf(after.sessions);
+  const courses = [];
+  Object.keys(bc).forEach(id=>{ if(ac[id]){ const d = _schedDiffCols(bc[id], ac[id]); if(Object.keys(d).length) courses.push({ id, name:bc[id].name, cols:d }); } });
+  let sessChanged = 0;
+  Object.keys(bs).forEach(id=>{ if(as[id] && Object.keys(_schedDiffCols(bs[id], as[id])).length) sessChanged++; });
+  const sessAdded = Object.keys(as).filter(id=>!bs[id]).length, sessRemoved = Object.keys(bs).filter(id=>!as[id]).length;
+  return { courses, sessChanged, sessAdded, sessRemoved };
+}
+function schedColText(col, ft){
+  const v = x => (x==null||x==='') ? '（空）' : String(x);
+  const lab = SCHED_COL_LABEL[col] || col;
+  const a = v(ft[0]), b = v(ft[1]);
+  return (a.length>40||b.length>40) ? lab : (lab+' '+a+' → '+b);
+}
+/* 按快照把 courses / course_sessions 改回去（只动有差别的列；多出来的单回删掉，被删的单回补回） */
+async function schedUndo(before, ids){
+  const cur = await schedSnap(ids);
+  const cmap = {}; cur.courses.forEach(r=>{ cmap[String(r.id)] = r; });
+  for(const r of before.courses){
+    const now = cmap[String(r.id)]; if(!now) continue;
+    const d = _schedDiffCols(now, r), patch = {};
+    Object.keys(d).forEach(k=>{ patch[k] = r[k]; });
+    if(Object.keys(patch).length) await sbUpdate('courses', r.id, patch);
+  }
+  const smap = {}; cur.sessions.forEach(r=>{ smap[String(r.id)] = r; });
+  const had = new Set();
+  for(const r of before.sessions){
+    had.add(String(r.id));
+    const now = smap[String(r.id)];
+    if(!now){ try{ await sbInsert('course_sessions', r); }catch(e){ console.warn('补回单回失败', e); } continue; }
+    const d = _schedDiffCols(now, r), patch = {};
+    Object.keys(d).forEach(k=>{ patch[k] = r[k]; });
+    if(Object.keys(patch).length) await sbUpdate('course_sessions', r.id, patch);
+  }
+  for(const r of cur.sessions) if(!had.has(String(r.id))) { try{ await sbDelete('course_sessions', r.id); }catch(e){ console.warn('删除多出的单回失败', e); } }
+}
+/* 页面顶部结果条：不自动消失，点 × 关。onUndo 返回字符串 = 撤销后的提示 */
+function schedBar(html, onUndo){
+  let box = document.getElementById('schedBars');
+  if(!box){ box = document.createElement('div'); box.id = 'schedBars';
+    box.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9000;display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px;pointer-events:none';
+    document.body.appendChild(box); }
+  const bar = document.createElement('div');
+  bar.style.cssText = 'pointer-events:auto;max-width:860px;width:100%;background:#eaf6ec;border:1px solid #9fcfa8;color:#1f5a2c;border-radius:8px;padding:8px 12px;font-size:13px;line-height:1.5;display:flex;gap:10px;align-items:flex-start;box-shadow:0 4px 14px rgba(0,0,0,.15)';
+  bar.innerHTML = '<div style="flex:1;min-width:0" class="sbtxt">'+html+'</div>'+(onUndo?'<button class="sm" data-undo style="white-space:nowrap">撤销</button>':'')+'<button class="sm ghost" data-x style="white-space:nowrap">×</button>';
+  box.appendChild(bar);
+  bar.querySelector('[data-x]').onclick = ()=>bar.remove();
+  const ub = bar.querySelector('[data-undo]');
+  if(ub) ub.onclick = async ()=>{
+    ub.disabled = true; ub.textContent = '撤销中…';
+    try{ const msg = await onUndo(); bar.querySelector('.sbtxt').innerHTML = esc(msg||'已恢复'); ub.remove(); }
+    catch(e){ ub.disabled = false; ub.textContent = '撤销'; toast('撤销失败：'+e.message, false); }
+  };
+  return bar;
+}
 async function sbGet(table, query){
   await schedAuthReady();
   const q = query || 'select=*';
@@ -497,6 +575,8 @@ function parseTencent(text){
    rooms: [{id,name,sub}]；items: 占用记录数组；keyField: 'room_id' 或 'meeting_account_id' */
 function renderOccupancyGrid(rooms, items, keyField, opts){
   opts = opts||{};
+  // 传了 opts.date：跟着课程的占用按那一天自己的时间显示
+  if(opts.date) items = items.map(b=>{ const t=bookingTimeOn(b,opts.date); return (t[0]===b.start_time && t[1]===b.end_time) ? b : Object.assign({},b,{start_time:t[0],end_time:t[1]}); });
   const idxOf=t=>{ const i=SLOTS.indexOf(t); return i<0?SLOTS.length:i; };
   // 每列一个“跳过计数”：>0 表示这格被上面的 rowspan 占了，不输出
   const skip = rooms.map(()=>0);
@@ -638,7 +718,7 @@ function findNearby(bookings, roomId, dateStr, s, e, days){
   const dur = durationMin(s,e);
   const occupied = (d, ss, ee) => bookings.some(b =>
     b.status!=='rejected' && String(b.room_id)===String(roomId) &&
-    bookingOnDate(b, d) && overlap(ss, ee, b.start_time, b.end_time));
+    bookingOnDate(b, d) && overlap(ss, ee, ...bookingTimeOn(b, d)));
   // 当天其他空时段（按开始时刻找能放下 dur 的连续空档起点）
   const sameDay=[];
   for(const st of SLOTS){
@@ -664,13 +744,119 @@ function findNearby(bookings, roomId, dateStr, s, e, days){
 function isWeeklyCourseBk(b){ return b && b.kind==='course' && b.recurrence!=='once'; }
 function bookingOnDate(b, dateStr){
   if(b.recurrence === 'weekly'){
-    if(b.start_date && dateStr < b.start_date) return false;
-    if(b.end_date   && dateStr > b.end_date)   return false;
     // 单回改期：系统自动释放 / 人工释放的日子，这条按周占用那天不占教室
     if(b.manual_off_dates && String(b.manual_off_dates).split(',').includes(dateStr)) return false;
-    return Number(b.weekday) === weekdayOf(dateStr);
+    // 这门课这一天已有一条临时占用（可能在别的教室）：每周占用那天让位，只显示临时占用
+    if(b.kind==='course' && b.course_id && window.COURSE_ONCE && window.COURSE_ONCE.has(String(b.course_id)+'|'+dateStr)) return false;
+    const inWin = !!(window.COURSE_LINK_RANGE && dateStr>=window.COURSE_LINK_RANGE[0] && dateStr<=window.COURSE_LINK_RANGE[1]);
+    // 完全跟着管理端课程走：这一天这门课有单回才占着，不再看星期和起止日期
+    if(b._linked && inWin) return b._days.has(dateStr);
+    if(b.start_date && dateStr < b.start_date) return false;
+    if(b.end_date   && dateStr > b.end_date)   return false;
+    if(Number(b.weekday) !== weekdayOf(dateStr)) return false;
+    // 分段排教室的课：记录原样，只多一条——那天这门课没有单回就不占
+    if(b._dayOnly && inWin && !b._days.has(dateStr)) return false;
+    return true;
   }
   return b.booking_date === dateStr;
+}
+/* 某占用在某一天的时间 [开始, 结束]：跟着课程的占用返回那一回自己的时间，其他照记录 */
+function bookingTimeOn(b, dateStr){
+  if(b && b._linked && b._days){ const t=b._days.get(dateStr); if(t) return t; }
+  return [b.start_time, b.end_time];
+}
+
+/* ---------- 课程占用跟着管理端课程走（只改内存，不写任何数据） ----------
+   排课只管「哪间教室」；日期、时间、星期一律读管理端课程（sched_course_v）和单回（course_sessions）。 */
+window.COURSE_LINK = window.COURSE_LINK || {};
+function _clk5(t){ return t ? String(t).slice(0,5) : ''; }
+function _clkRange(tr, c){            // 单回时间 "10:00-13:00"（可多段：取第一段开始～最后一段结束）；没有就用课程的
+  const m = String(tr||'').match(/\d{1,2}:\d{2}/g);
+  if(m && m.length>=2){ const p=x=>x.length===4?'0'+x:x; return [p(m[0]), p(m[m.length-1])]; }
+  return [_clk5(c.start_time), _clk5(c.end_time)];
+}
+async function loadCourseLink(lo, hi){
+  lo = lo || addDays(todayStr(), -31);
+  hi = hi || addDays(todayStr(), 400);
+  const link = {};
+  try{
+    const [cs, ss] = await Promise.all([
+      sbGet('sched_course_v', 'select=id,start_time,end_time,weekdays,start_date,end_date,skip_dates'),
+      sbGet('course_sessions', 'select=course_id,session_date,time_range,is_cancelled&session_date=gte.'+lo+'&session_date=lte.'+hi+'&order=course_id.asc,session_date.asc')
+    ]);
+    const cmap = {}; cs.forEach(c=>{ cmap[String(c.id)] = c; });
+    ss.forEach(x=>{
+      if(x.is_cancelled) return;
+      const id = String(x.course_id), c = cmap[id]; if(!c) return;
+      const e = link[id] || (link[id] = { course:c, days:new Map() });
+      e.days.set(x.session_date, _clkRange(x.time_range, c));
+    });
+    window.COURSE_LINK_RANGE = [lo, hi];
+  }catch(err){
+    console.warn('loadCourseLink 失败，排课按占用记录原样显示：', err);
+    window.COURSE_LINK_RANGE = null;
+  }
+  window.COURSE_LINK = link;
+  return link;
+}
+function linkCourseBookings(bks){
+  const L = window.COURSE_LINK || {};
+  const list = bks || [];
+  // 重复调用时先还原
+  list.forEach(b=>{
+    if(b._orig){ Object.assign(b, b._orig); delete b._orig; }
+    delete b._linked; delete b._dayOnly; delete b._days;
+  });
+  // 当天另有临时占用的课：每周占用让位
+  const once = new Set();
+  list.forEach(b=>{
+    if(b.kind==='course' && b.recurrence==='once' && b.course_id && b.booking_date && b.status!=='rejected')
+      once.add(String(b.course_id)+'|'+b.booking_date);
+  });
+  window.COURSE_ONCE = once;
+  if(!window.COURSE_LINK_RANGE) return;
+  // 每门课的每周课程占用
+  const byCourse = {};
+  list.forEach(b=>{
+    if(b.kind!=='course' || b.recurrence!=='weekly' || !b.course_id || b.status==='rejected') return;
+    const e = L[String(b.course_id)]; if(!e || !e.days.size) return;
+    (byCourse[String(b.course_id)] = byCourse[String(b.course_id)] || []).push(b);
+  });
+  Object.keys(byCourse).forEach(cid=>{
+    const bs = byCourse[cid], e = L[cid], c = e.course;
+    const cw = parseWeekdaysSched(c.weekdays);
+    const single = cw.length===1;
+    const keyOf = b => single ? 'one' : String(Number(b.weekday));
+    const cnt = {}; bs.forEach(b=>{ const k=keyOf(b); cnt[k]=(cnt[k]||0)+1; });
+    const full = bs.filter(b=>cnt[keyOf(b)]===1);     // 一条占用代表这一天全部
+    bs.filter(b=>cnt[keyOf(b)]>1).forEach(b=>{ b._dayOnly = true; b._days = e.days; });   // 分段排的：不换，只看有没有单回
+    if(!full.length) return;
+    // 每个单回日归谁
+    const owner = new Map();
+    if(single){
+      full.forEach(b=>{ b._days = e.days; });
+    } else {
+      const byWd = {}; full.forEach(b=>{ byWd[Number(b.weekday)] = b; });
+      const splitWd = new Set(bs.filter(b=>cnt[keyOf(b)]>1).map(b=>Number(b.weekday)));
+      const mainWd = cw.find(w=>byWd[w]) || Math.min.apply(null, Object.keys(byWd).map(Number));
+      full.forEach(b=>{ b._days = new Map(); });
+      e.days.forEach((t, d)=>{
+        const w = weekdayOf(d);
+        if(byWd[w]) byWd[w]._days.set(d, t);
+        else if(!splitWd.has(w) && byWd[mainWd]) byWd[mainWd]._days.set(d, t);   // 改到别的星期：算到主占用
+      });
+    }
+    full.forEach(b=>{
+      b._orig = { start_time:b.start_time, end_time:b.end_time, start_date:b.start_date, end_date:b.end_date, weekday:b.weekday };
+      b._linked = true;
+      const first = b._days.size ? b._days.values().next().value : null;
+      b.start_time = _clk5(c.start_time) || (first&&first[0]) || b.start_time;
+      b.end_time   = _clk5(c.end_time)   || (first&&first[1]) || b.end_time;
+      if(c.start_date) b.start_date = c.start_date;
+      if(c.end_date)   b.end_date   = c.end_date;
+      if(single) b.weekday = cw[0];
+    });
+  });
 }
 
 /* ---------- 冲突检测 ---------- */
@@ -684,7 +870,7 @@ function roomConflicts(bookings, roomId, dateStr, s, e, excludeId){
   return bookings.filter(b =>
     b.id !== excludeId && b.status !== 'rejected' &&
     String(b.room_id) === String(roomId) &&
-    bookingOnDate(b, dateStr) && overlap(s, e, b.start_time, b.end_time) &&
+    bookingOnDate(b, dateStr) && overlap(s, e, ...bookingTimeOn(b, dateStr)) &&
     !skipHides(b, dateStr));
 }
 // 老师冲突：同一使用人、同日期、时间重叠，不管教室（排除自身）；休讲日该课不算。用于"再预约一间？"的确认提示
@@ -693,7 +879,7 @@ function teacherOverlaps(bookings, userName, dateStr, s, e, excludeId){
   return bookings.filter(b =>
     b.id !== excludeId && (b.status==='pending' || b.status==='confirmed') &&
     String(b.user_name||'').trim() === nm &&
-    bookingOnDate(b, dateStr) && overlap(s, e, b.start_time, b.end_time) &&
+    bookingOnDate(b, dateStr) && overlap(s, e, ...bookingTimeOn(b, dateStr)) &&
     !skipHides(b, dateStr));
 }
 // 账号冲突：同账号、同日期、时间重叠（排除自身）；休讲日该课不占账号
@@ -701,7 +887,7 @@ function accountConflicts(bookings, accId, dateStr, s, e, excludeId){
   return bookings.filter(b =>
     b.id !== excludeId && b.status !== 'rejected' &&
     b.uses_meeting && String(b.meeting_account_id) === String(accId) &&
-    bookingOnDate(b, dateStr) && overlap(s, e, b.start_time, b.end_time) &&
+    bookingOnDate(b, dateStr) && overlap(s, e, ...bookingTimeOn(b, dateStr)) &&
     !skipHides(b, dateStr));
 }
 

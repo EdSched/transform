@@ -80,7 +80,7 @@
     </div>
   </div>
 </div>
-<script src="common.js?v=20270126"></script>
+<script src="common.js?v=20270128"></script>
 <script src="../shared/constants.js?v=20270301"></script>
 <script>
 el('nav').innerHTML = renderNav('meeting.html');
@@ -96,6 +96,7 @@ async function boot(){
   ROOMS=await sbGet('sched_rooms','select=*');
   ACCOUNTS=await sbGet('sched_meeting_accounts','select=*&active=eq.true');
   BOOKINGS=await sbGet('sched_bookings','select=*');
+  await loadCourseLink(); linkCourseBookings(BOOKINGS);
   COURSES=(await sbGet('sched_course_v','select=*')).filter(c=>!c.deleted_at);
   try{ MTEMPLATES=await sbGet('sched_meeting_templates','select=*&order=created_at.desc'); }catch(e){ MTEMPLATES=[]; }
   window.SKIPMAP={}; COURSES.forEach(c=>{ if(c.skip_dates) window.SKIPMAP[c.id]=new Set(c.skip_dates.split(',').map(x=>x.trim())); });
@@ -214,7 +215,7 @@ async function saveOccupy(accId, status){
   if(clash.length && !confirm('该账号在以下日期该时段已被占：\n'+clash.slice(0,10).join('、')+(clash.length>10?'…':'')+'\n\n仍要占用吗？')) return;
   try{
     await sbInsert('sched_bookings', rows); schedSaveEntryName(entryName);
-    BOOKINGS=await sbGet('sched_bookings','select=*');
+    BOOKINGS=await sbGet('sched_bookings','select=*'); linkCourseBookings(BOOKINGS);
     warn(''); toast(status==='reserved'?'已预留':'已正式占用');
     refreshCourseDropdown(); renderPickList(); el('r_accBox').innerHTML=''; el('r_actBox').innerHTML=''; renderOverview();
   }catch(err){ warn(esc(err.message)); }
@@ -243,7 +244,7 @@ function renderOverview(){
   });
   h+='</tbody></table>';
   el('v_box').innerHTML=h;
-  el('v_box').querySelectorAll('[data-delo]').forEach(x=>x.onclick=async()=>{ const who=await schedAskActor('删除该账号占用？'); if(!who) return; try{ await sbDeleteAs('sched_bookings',x.dataset.delo,who); }catch(e){ toast(e.message,false); return; } BOOKINGS=await sbGet('sched_bookings','select=*'); refreshCourseDropdown(); renderPickList(); renderOverview(); toast('已删除'); });
+  el('v_box').querySelectorAll('[data-delo]').forEach(x=>x.onclick=async()=>{ const who=await schedAskActor('删除该账号占用？'); if(!who) return; try{ await sbDeleteAs('sched_bookings',x.dataset.delo,who); }catch(e){ toast(e.message,false); return; } BOOKINGS=await sbGet('sched_bookings','select=*'); linkCourseBookings(BOOKINGS); refreshCourseDropdown(); renderPickList(); renderOverview(); toast('已删除'); });
   el('v_box').querySelectorAll('[data-edito]').forEach(x=>x.onclick=()=>editOccupy(x.dataset.edito));
 }
 function aname(id){ const a=ACCOUNTS.find(x=>String(x.id)===String(id)); return a?acctName(a):('#'+id); }
@@ -276,7 +277,7 @@ function editOccupy(id){
     const patch={ ...schedActorStamp(actor), meeting_account_id:mask.querySelector('#oe_acc').value, start_time:mask.querySelector('#oe_st').value||null, end_time:mask.querySelector('#oe_et').value||null, status:mask.querySelector('#oe_status').value, note:mask.querySelector('#oe_note').value.trim()||null };
     if(isWeekly){ patch.start_date=mask.querySelector('#oe_sd').value||null; patch.end_date=mask.querySelector('#oe_ed').value||null; }
     else { patch.booking_date=mask.querySelector('#oe_date').value||null; }
-    try{ await sbUpdate('sched_bookings', b.id, patch); BOOKINGS=await sbGet('sched_bookings','select=*'); mask.remove(); renderOverview(); toast('已保存'); }
+    try{ await sbUpdate('sched_bookings', b.id, patch); BOOKINGS=await sbGet('sched_bookings','select=*'); linkCourseBookings(BOOKINGS); mask.remove(); renderOverview(); toast('已保存'); }
     catch(e){ toast(e.message,false); }
   };
 }
@@ -284,7 +285,7 @@ function editOccupy(id){
 // ===== 辅助（供区块2链接设定使用）=====
 function bind(sel, fn){ const attr=sel.match(/data-[\w-]+/)[0]; document.querySelectorAll(sel).forEach(b=>{ b.onclick=()=>fn(b.getAttribute(attr)); }); }
 async function reloadMtg(){
-  BOOKINGS=await sbGet('sched_bookings','select=*');
+  BOOKINGS=await sbGet('sched_bookings','select=*'); await loadCourseLink(); linkCourseBookings(BOOKINGS);
   COURSES=(await sbGet('sched_course_v','select=*')).filter(c=>!c.deleted_at);
   ACCOUNTS=await sbGet('sched_meeting_accounts','select=*&active=eq.true');
   try{ MTEMPLATES=await sbGet('sched_meeting_templates','select=*&order=created_at.desc'); }catch(e){ MTEMPLATES=[]; }
@@ -485,17 +486,16 @@ function renderMtgRoom(){
     catch(e){ toast('失败：'+e.message, false); btn.disabled=false; btn.textContent='一键补绑本教室账号'; }
   };
 }
-/* 把会议链接/会议号/主持人密钥同步写进管理系统的 courses 表（先按 id，找不到再按课名）。失败不阻断排课侧保存，只提示 */
+/* 把会议链接/会议号/主持人密钥同步写进管理系统的 courses 表（只按这门课自己的 id，找不到就提示，不按课名猜）。失败不阻断排课侧保存，只提示 */
 async function syncMeetingToMgmt(c, link, mid, hkey){
   const patch={ meeting_url:link||null, meeting_id:mid||null, host_key:hkey||null };
   const doPatch=async q=>{ const r=await fetch(SB_URL+'/rest/v1/courses?'+q,{ method:'PATCH', headers:sbHeaders({Prefer:'return=representation'}), body:JSON.stringify(patch) });
     if(!r.ok){ const t=await r.text(); throw new Error(sbErrMsg(t)||(r.status+' '+t)); } return r.json(); };
   let rows=await doPatch('id=eq.'+encodeURIComponent(c.id));
-  if(!rows.length && c.name) rows=await doPatch('name=eq.'+encodeURIComponent(String(c.name).trim()));
   return rows.length;
 }
 async function trySyncMgmt(c, link, mid, hkey){
-  try{ const n=await syncMeetingToMgmt(c, link, mid, hkey); return n?'（已同步到管理系统）':'（管理系统里没找到这门课，未同步）'; }
+  try{ const n=await syncMeetingToMgmt(c, link, mid, hkey); return n?'（已同步到管理系统）':'（没找到这门课，没有写回）'; }
   catch(e){ return '（同步到管理系统失败：'+e.message+'）'; }
 }
 

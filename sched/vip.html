@@ -91,7 +91,7 @@
   </div>
 </div>
 
-<script src="common.js?v=20270126"></script>
+<script src="common.js?v=20270128"></script>
 <script>
 let ROOMS=[], BOOKINGS=[], CUR=null;
 // 从老师端打开（带老师登录）时的账号 {kind:'teacher',id,name}；直接打开 / 没登录 = null，一切照旧
@@ -115,6 +115,7 @@ async function boot(){
   const i=SLOTS.indexOf('18:00'); if(i>0){ el('st').value='18:00'; el('et').value='21:00'; }
   ROOMS    = await sbGet('sched_rooms','select=*&active=eq.true&order=campus,sort');
   BOOKINGS = await sbGet('sched_bookings','select=*');
+  await loadCourseLink(); linkCourseBookings(BOOKINGS);
   { const cs = await sbGet('sched_course_v','select=id,skip_dates'); window.SKIPMAP={}; cs.forEach(c=>{ if(c.skip_dates) window.SKIPMAP[c.id]=new Set(c.skip_dates.split(',').map(x=>x.trim())); }); }
   el('find').onclick = find;
   el('date').onchange = ()=>{ checkAdvance(); renderGrid(); };
@@ -205,7 +206,7 @@ function renderGrid(){
   if(!rooms.length){ box.innerHTML='<div class="muted">该校区暂无 VIP 教室</div>'; return; }
   const todays=BOOKINGS.filter(b=>bookingOnDate(b,date) &&
     !skipHides(b,date));
-  box.innerHTML = renderOccupancyGrid(rooms, todays, 'room_id', {labelOnly:true});
+  box.innerHTML = renderOccupancyGrid(rooms, todays, 'room_id', {labelOnly:true, date});
 }
 let URGENT=false, OTHER=false;
 function openModal(roomId, urgent){
