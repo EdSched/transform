@@ -672,7 +672,7 @@ function studyIsGakubu() {
 // 新版志望理由书（riyu_submissions + writing_guides，见 shared/riyu.js）：按志望校逐校撰写 → 提交给老师 → 老师上传批复版
 // 学部用 gakubu_riyu；大学院（出愿材料里）用 grad_riyu，共用同一个组件
 // 旧版 draft_fields.riyu（動機/意志/展望）不删除，只在还没有新记录的学校上方作为「旧版草稿（参考）」只读显示
-let rsState = { kind: '', wrapId: '', guide: null, subs: [], drafts: {}, metaDrafts: {}, blanks: [], flash: {}, err: '' };
+let rsState = { kind: '', wrapId: '', guide: null, subs: [], vers: [], drafts: {}, metaDrafts: {}, blanks: [], flash: {}, err: '' };   // vers：面试稿的上传版本（student_doc_versions, interview）
 
 function renderRiyuTab() { return riyuStudentShell('gakubu_riyu'); }
 
@@ -682,14 +682,15 @@ function riyuStudentShell(kind) {
   return `<div id="${wrapId}"><div style="text-align:center;padding:36px;color:var(--text-muted);font-size:12px">加载中…</div></div>`;
 }
 async function riyuStudentLoad(kind, wrapId) {
-  let subs = [], err = '';
+  let subs = [], err = '', vers = [];
   const [g] = await Promise.all([
     riyuLoadGuide(kind),
+    kind === RIYU_INTERVIEW_KIND ? docvLoad(studyStudent.id, 'interview').then(r => { vers = r || []; }).catch(() => {}) : null,
     sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=eq.${kind}&select=*`)
       .then(r => { subs = r || []; }).catch(e => { err = e.message; }),
   ]);
   const same = rsState.kind === kind;
-  rsState = { kind, wrapId, guide: g, subs, drafts: same ? rsState.drafts : {}, metaDrafts: same ? rsState.metaDrafts : {}, blanks: same ? rsState.blanks : [], flash: {}, err };
+  rsState = { kind, wrapId, guide: g, subs, vers, drafts: same ? rsState.drafts : {}, metaDrafts: same ? rsState.metaDrafts : {}, blanks: same ? rsState.blanks : [], flash: {}, err };
   riyuStudentRender();
 }
 function riyuStudentPlans() { return (studyData.schoolPlans || []).slice().sort((a, b) => (a.level || 2) - (b.level || 2)); }
@@ -755,7 +756,7 @@ function riyuStudentMetaHtml(it, idx) {
   return `<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:4px;padding:10px 12px;margin-bottom:12px">${body}</div>`;
 }
 function riyuStudentRender() {
-  if (riyuIsMail(rsState.kind) && document.getElementById('plan_doc_bar')) { studyPlanSubs[rsState.kind] = rsState.subs; studyPlanBarRender(); }   // 计划书 Tab 的 chip 进度跟着更新
+  if (RIYU_PLAN_KINDS.indexOf(rsState.kind) >= 0 && document.getElementById('plan_doc_bar')) { studyPlanSubs[rsState.kind] = rsState.subs; studyPlanBarRender(); }   // 计划书 Tab 的 chip 进度跟着更新
   const wrap = document.getElementById(rsState.wrapId); if (!wrap) return;
   const kind = rsState.kind, isMail = riyuIsMail(kind), isInq = kind === 'grad_inquiry_mail';
   const docName = RIYU_DOC_NAME[kind] || '志望理由书';
@@ -766,6 +767,7 @@ function riyuStudentRender() {
   const head = `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:12px 14px;margin-bottom:14px;font-size:11px;color:var(--text-secondary);line-height:1.9">
       <div style="font-weight:600;color:var(--text-primary);margin-bottom:4px">${isMail ? '✉' : '📄'} ${escA(g.title || docName)}</div>
       ${riyuMd(g.intro)}
+      ${(g.ref_files || []).length ? `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border-light)"><div style="font-weight:600;color:var(--text-primary);margin-bottom:3px">📎 参考资料</div>${g.ref_files.map(f => `<div><a href="${escA(f.url)}" target="_blank" style="color:var(--accent)">${escA(f.name)} ⬇</a></div>`).join('')}</div>` : ''}
     </div>`;
   if (rsState.err) { wrap.innerHTML = head + `<div style="font-size:12px;color:var(--danger);padding:16px">读取失败：${escA(rsState.err)}（请刷新重试）</div>`; return; }
   if (!isInq && !items.length) { wrap.innerHTML = head + `<div style="text-align:center;padding:36px;color:var(--text-muted);font-size:12px">请先在「🏫 志望校」标签填写志望校，这里会为每所学校生成一份${docName}。</div>`; return; }
@@ -816,7 +818,7 @@ function riyuStudentRender() {
         ${it.orphan ? '<span style="font-size:10px;color:#b03a2e;border:1px solid #e8b8b0;border-radius:2px;padding:1px 7px">这所学校已不在志望校里</span>' : ''}
         <span style="font-size:10px;padding:1px 9px;border-radius:10px;background:${st.bg};color:${st.c};margin-left:auto">${sub ? st.t : '草稿'}</span>
       </div>
-      ${isMail ? '<div style="height:6px"></div>' : `<div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">志望理由书要求：${p.plan_requirement ? `<span style="color:var(--accent)">${escA(p.plan_requirement)}</span>` : '<span style="color:var(--text-muted)">暂未填写要求</span>'}</div>`}
+      ${isMail || kind === RIYU_INTERVIEW_KIND ? '<div style="height:6px"></div>' : `<div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">志望理由书要求：${p.plan_requirement ? `<span style="color:var(--accent)">${escA(p.plan_requirement)}</span>` : '<span style="color:var(--text-muted)">暂未填写要求</span>'}</div>`}
       ${curBlock}${pastBlock}${oldBlock}
       ${isMail ? riyuStudentMetaHtml(it, idx) : ''}
       ${g.sections.length ? secs : '<div style="font-size:11px;color:var(--text-muted);padding:8px 0">写作指导还没有设置，请联系老师</div>'}
@@ -826,12 +828,43 @@ function riyuStudentRender() {
         ${it.blank ? `<button onclick="riyuInqDrop(${idx})" style="background:none;color:var(--text-muted);border:1px solid var(--border);border-radius:4px;padding:8px 14px;font-size:12px;cursor:pointer;font-family:inherit">放弃这封</button>` : ''}
         <span id="rs_msg_${idx}" style="font-size:11px;color:var(--ok)">${escA(flash)}</span>
       </div>
+      ${kind === RIYU_INTERVIEW_KIND && !it.orphan ? riyuInterviewUploadHtml(it, idx) : ''}
     </div>`;
   }).join('');
   const addBtn = isInq ? `<div style="margin-bottom:14px"><button onclick="riyuInqNew()" style="background:var(--surface);color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:8px 16px;font-size:12px;cursor:pointer;font-family:inherit">＋ 新建一封问询邮件</button></div>` : '';
   const empty = isInq && !items.length ? '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px">还没有问询邮件。需要向学校确认出愿资格 / 材料时，点上面的「新建」。</div>' : '';
   wrap.innerHTML = head + addBtn + empty + cards;
   wrap.querySelectorAll('textarea[id^="rs_"]').forEach(t => { t.style.height = 'auto'; t.style.height = Math.max(t.scrollHeight, 60) + 'px'; });
+}
+// 面试稿：上传自己写好的稿子（按志望校分版本，老师逐版批复）
+function riyuInterviewUploadHtml(it, idx) {
+  const mine = (rsState.vers || []).filter(v => (v.school_key || '') === it.key);
+  const next = mine.reduce((m, v) => Math.max(m, v.version_no || 0), 0) + 1;
+  return `<div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border-light)">
+    <div style="font-size:12px;font-weight:600;margin-bottom:6px">上传面试稿文件（第 ${next} 版）</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">已经在本地写好的面试稿可以直接上传（.doc / .docx / .pdf）；每次上传都是新的一版，以前的版本都会保留</div>
+    <input type="file" id="rs_${idx}_ivfile" accept=".doc,.docx,.pdf" style="font-size:11px;margin-bottom:6px;display:block">
+    <input id="rs_${idx}_ivnote" placeholder="这一版改了什么（可选）" style="width:100%;box-sizing:border-box;font-size:11px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);margin-bottom:8px">
+    <button onclick="riyuInterviewUpload(${idx})" style="font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:6px 16px;cursor:pointer;font-family:inherit">上传</button>
+    <span id="rs_${idx}_ivmsg" style="font-size:11px;margin-left:8px;color:var(--ok)"></span>
+    ${docvStudentListHtml(mine)}
+  </div>`;
+}
+async function riyuInterviewUpload(idx) {
+  const it = riyuStudentItems()[idx]; if (!it) return;
+  const f = document.getElementById(`rs_${idx}_ivfile`)?.files?.[0];
+  const msg = document.getElementById(`rs_${idx}_ivmsg`);
+  if (!f) { if (msg) { msg.style.color = 'var(--danger)'; msg.textContent = '请先选择文件'; } return; }
+  if (msg) { msg.style.color = 'var(--text-muted)'; msg.textContent = '上传中…'; }
+  const note = document.getElementById(`rs_${idx}_ivnote`)?.value || '';
+  try {
+    const p = it.p || {};
+    const v = await docvCreate({ student: studyStudent, docType: 'interview', schoolKey: it.key, schoolName: [p.school_name, p.faculty, p.department].filter(Boolean).join(' '), file: f, note, source: 'upload' });
+    riyuStudentCollect();   // 其他学校还没保存的文字先记下
+    rsState.vers = [v].concat((rsState.vers || []).filter(x => x.id !== v.id));
+    rsState.flash = {}; rsState.flash[it.key] = `✓ 面试稿已上传（第 ${v.version_no} 版）`;
+    riyuStudentRender();
+  } catch (e) { if (msg) { msg.style.color = 'var(--danger)'; msg.textContent = '上传失败：' + e.message; } }
 }
 function riyuInqNew() {
   riyuStudentCollect();
@@ -862,7 +895,7 @@ async function riyuStudentSave(idx, submit) {
   if (msg) { msg.style.color = 'var(--text-muted)'; msg.textContent = submit ? '提交中…' : '保存中…'; }
   const now = new Date().toISOString();
   const data = { sections, school_name: p.school_name || '', faculty: p.faculty || '', department: p.department || '', updated_at: now };
-  if (!isMail) data.requirement = p.plan_requirement || null;
+  if (!isMail) data.requirement = kind === RIYU_INTERVIEW_KIND ? null : (p.plan_requirement || null);
   if (isMail) {
     const meta = Object.assign({}, riyuMeta(sub));
     RS_META_FIELDS.forEach(f => {
@@ -999,7 +1032,7 @@ async function studyMatSave(itemId) {
 
 // 大学院「计划书」Tab 顶部的文书切换：研究计划书 ｜ 联系教授邮件 ｜ 问询邮件
 // 邮件 chip 只在管理端「文书指导」保存过对应指导（writing_guides 有该 kind）时出现，不依赖出愿材料清单里有没有条目
-let studyPlanDoc = '';          // '' = 研究计划书；否则是 grad_prof_mail / grad_inquiry_mail
+let studyPlanDoc = '';          // '' = 研究计划书；否则是 grad_prof_mail / grad_inquiry_mail / grad_interview
 let studyPlanSubs = {};         // kind → 该生的提交记录（chip 上的进度用）
 function renderPlanTab() {
   // 学部学生：本 tab 是「志望理由书」，按志望校逐校填写（大学院仍是研究计划书）
@@ -1012,28 +1045,30 @@ function renderPlanTab() {
 }
 async function studyPlanBarLoad() {
   const bar = document.getElementById('plan_doc_bar'); if (!bar) return;
-  const kinds = await riyuMailSavedLoad(true);
+  await riyuMailSavedLoad(true);
+  const kinds = riyuPlanKindsFor(studyStudent);   // 面试稿只对大学院文科
   if (!kinds.length) {
     if (studyPlanDoc) { studyPlanDoc = ''; const r = document.getElementById('plan_doc_research'); if (r) r.style.display = ''; const m = document.getElementById('plan_doc_mail'); if (m) m.innerHTML = ''; }
     bar.innerHTML = ''; return;
   }
   try {
-    const rows = await sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=in.(${RIYU_MAIL_KINDS.join(',')})&select=*`, 'GET', null, { cache: 'no-store' });
+    const rows = await sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=in.(${RIYU_PLAN_KINDS.join(',')})&select=*`, 'GET', null, { cache: 'no-store' });
     studyPlanSubs = {};
-    RIYU_MAIL_KINDS.forEach(k => { studyPlanSubs[k] = (rows || []).filter(x => x.kind === k); });
+    RIYU_PLAN_KINDS.forEach(k => { studyPlanSubs[k] = (rows || []).filter(x => x.kind === k); });
   } catch (e) { studyPlanSubs = studyPlanSubs || {}; }
   if (studyPlanDoc && kinds.indexOf(studyPlanDoc) < 0) studyPlanDoc = '';
   studyPlanBarRender();
 }
 function studyPlanBarRender() {
   const bar = document.getElementById('plan_doc_bar'); if (!bar) return;
-  const kinds = RIYU_MAIL_SAVED.kinds; if (!kinds.length) { bar.innerHTML = ''; return; }
+  const kinds = riyuPlanKindsFor(studyStudent); if (!kinds.length) { bar.innerHTML = ''; return; }
   const plans = studyData.schoolPlans || [];
   const subsAll = [].concat(studyPlanSubs.grad_prof_mail || [], studyPlanSubs.grad_inquiry_mail || []);
   const c = matCounts(plans, subsAll, 'grad').byKind;
   const text = {
     grad_prof_mail: (!plans.length ? '请先选志望校' : `已提交 ${c.grad_prof_mail.submitted}/${c.grad_prof_mail.total} 校${c.grad_prof_mail.agreed ? ' · 同意 ' + c.grad_prof_mail.agreed : ''}`),
     grad_inquiry_mail: c.grad_inquiry_mail.total ? `已写 ${c.grad_inquiry_mail.total} 封` : '还没写',
+    grad_interview: (!plans.length ? '请先选志望校' : `已提交 ${riyuCounts(plans, studyPlanSubs.grad_interview || [], 'grad_interview').submitted}/${plans.length} 校`),
   };
   const chip = (k, name, sub) => `<span style="cursor:pointer;padding:5px 12px;border-radius:3px;font-size:12px;border:1px solid ${studyPlanDoc === k ? 'var(--accent)' : 'var(--border)'};background:${studyPlanDoc === k ? 'var(--btn-bg,#efe9e1)' : 'var(--surface)'};color:${studyPlanDoc === k ? 'var(--btn-fg,#3a2e24)' : 'var(--text-secondary)'};font-weight:${studyPlanDoc === k ? '600' : '400'}" onclick="studyPlanDocSwitch('${k}')">${name}${sub ? `<span style="font-size:10px;opacity:.8;margin-left:6px">${escA(sub)}</span>` : ''}</span>`;
   bar.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${chip('', '研究计划书', '')}${kinds.map(k => chip(k, RIYU_DOC_NAME[k], text[k])).join('')}</div>`;

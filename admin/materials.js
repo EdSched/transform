@@ -163,6 +163,11 @@ function wgRender() {
       <div>${lab('顶部说明（学生页最上方显示；可用 **粗体**、- 列表）')}<textarea rows="3" oninput="wgData.intro=this.value;wgDirty=true" style="${inp};resize:vertical;line-height:1.7">${riyuEsc(wgData.intro)}</textarea></div>
     </div>
   </div>
+  <div style="border:1px solid var(--border);border-radius:4px;padding:10px 14px;background:var(--bg);margin-bottom:12px">
+    ${lab('参考资料（PDF / Word，可以多个；学生撰写页最上面显示「参考资料」列表）')}
+    ${(wgData.ref_files || []).map((f, i) => `<div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:3px"><a href="${riyuEsc(f.url)}" target="_blank" style="color:var(--accent)">${riyuEsc(f.name)}</a><span onclick="wgRefDel(${i})" style="cursor:pointer;color:var(--danger);font-size:11px">删除</span></div>`).join('') || '<div style="font-size:11px;color:var(--text-3);margin-bottom:4px">还没有参考资料</div>'}
+    <div style="display:flex;align-items:center;gap:8px;margin-top:6px"><input type="file" id="wg_ref_file" accept=".pdf,.doc,.docx" multiple style="font-size:11px"><button class="btn btn-outline btn-sm" onclick="wgRefAdd()">上传</button><span id="wg_ref_msg" style="font-size:11px;color:var(--text-3)"></span></div>
+  </div>
   ${wgData.sections.map((sec, i) => `
   <div style="border:1px solid var(--border-light);border-radius:4px;padding:10px 12px;margin-bottom:8px;background:var(--surface)">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -187,6 +192,29 @@ function wgRender() {
     <span id="wg_msg" style="font-size:11px;color:var(--ok)"></span>
   </div>`;
 }
+async function wgRefAdd() {
+  const files = [...(document.getElementById('wg_ref_file')?.files || [])];
+  const msg = document.getElementById('wg_ref_msg');
+  if (!files.length) { if (msg) msg.textContent = '请先选择文件'; return; }
+  const bad = files.find(f => !['pdf', 'doc', 'docx'].includes((f.name.split('.').pop() || '').toLowerCase()));
+  if (bad) { if (msg) msg.textContent = '只能上传 PDF / Word：' + bad.name; return; }
+  wgData.ref_files = wgData.ref_files || [];
+  try {
+    for (let i = 0; i < files.length; i++) {
+      if (msg) msg.textContent = `上传中 ${i + 1} / ${files.length}…`;
+      const f = files[i], ext = f.name.split('.').pop().toLowerCase();
+      const url = await sbUpload('teacher-files', `guides/${wgKind}/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`, f);
+      wgData.ref_files.push({ name: f.name, url });
+    }
+    wgDirty = true; wgRender();
+    const m2 = document.getElementById('wg_ref_msg'); if (m2) m2.textContent = '已上传，记得点下面的「保存」';
+  } catch (e) { if (msg) msg.textContent = '上传失败：' + e.message; }
+}
+function wgRefDel(i) {
+  const f = (wgData.ref_files || [])[i]; if (!f) return;
+  if (!confirm(`从参考资料里移除「${f.name}」？（只是不再显示，文件不会被删除）`)) return;
+  wgData.ref_files.splice(i, 1); wgDirty = true; wgRender();
+}
 function wgMove(i, d) {
   const a = wgData.sections, j = i + d; if (j < 0 || j >= a.length) return;
   [a[i], a[j]] = [a[j], a[i]]; wgDirty = true; wgRender();
@@ -203,7 +231,7 @@ function wgAdd() {
 async function wgSave() {
   const secs = wgData.sections.map(s => ({ key: s.key, title: (s.title || '').trim(), subtitle: (s.subtitle || '').trim(), tips: (s.tips || []).map(t => String(t).trim()).filter(Boolean) }));
   if (secs.some(s => !s.title)) { alert('每一段都要有标题'); return; }
-  const row = { kind: wgKind, title: (wgData.title || '').trim(), intro: wgData.intro || '', sections: secs, updated_at: new Date().toISOString() };
+  const row = { kind: wgKind, title: (wgData.title || '').trim(), intro: wgData.intro || '', sections: secs, ref_files: wgData.ref_files || [], updated_at: new Date().toISOString() };
   const btn = document.getElementById('wg_save_btn'); if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
   try {
     const tok = (typeof __getSbToken === 'function') ? __getSbToken() : null;
@@ -217,7 +245,7 @@ async function wgSave() {
     wgDirty = false;
     wgRender();
     if (typeof riyuMailSavedMark === 'function') riyuMailSavedMark(wgKind);
-    const okTxt = riyuIsMail(wgKind) ? '✓ 已保存。大学院学生在「计划书」里可以看到（联系教授邮件 / 问询邮件）' : '✓ 已保存';
+    const okTxt = wgKind === RIYU_INTERVIEW_KIND ? '✓ 已保存。大学院文科学生在「计划书」里可以看到面试稿' : riyuIsMail(wgKind) ? '✓ 已保存。大学院学生在「计划书」里可以看到（联系教授邮件 / 问询邮件）' : '✓ 已保存';
     const msg = document.getElementById('wg_msg'); if (msg) { msg.textContent = okTxt; setTimeout(() => { if (msg.textContent === okTxt) msg.textContent = ''; }, 6000); }
   } catch (e) {
     alert('保存失败：' + e.message);
