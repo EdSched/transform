@@ -933,6 +933,7 @@ function renderBookingCardBody(b) {
     ${b.needs ? `<div style="font-size:11px;color:var(--text-2);background:var(--bg);border-radius:2px;padding:6px 8px;margin-bottom:8px">💬 ${b.needs}</div>` : ''}
     ${b.student_content ? `<div style="font-size:11px;color:var(--text-2);background:var(--bg);border-radius:2px;padding:6px 8px;margin-bottom:8px;white-space:pre-wrap">📄 ${b.student_content}</div>` : ''}
     ${b.student_file_url ? `<a href="${b.student_file_url}" target="_blank" style="font-size:11px;color:var(--accent);display:block;margin-bottom:8px">📎 学生上传文件下载</a>` : ''}
+    ${typeof docvBookingLinkHtml === 'function' ? docvBookingLinkHtml(b) : ''}
     ${b.actual_time ? `<div style="font-size:11px;color:var(--ok);margin-bottom:6px">✓ 面谈时间：${b.actual_time.replace('T', ' ')}${b.actual_duration?` · ${b.actual_duration}min`:''}</div>` : ''}
     ${b.status === 'pending' ? `
     <div style="display:flex;gap:6px">
