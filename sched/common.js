@@ -164,6 +164,84 @@ async function schedCourseUpdate(id, patch){
   }
   return sbUpdate('courses', id, out);
 }
+/* ---------- 排课改课程：快照 / 结果条 / 撤销 ----------
+   排课和管理端改的是同一份 courses / course_sessions。改之前存快照，改完弹结果条，点「撤销」按快照改回去（只撤这一次）。 */
+async function schedSnap(ids){
+  ids = [...new Set((ids||[]).map(String))];
+  if(!ids.length) return { courses:[], sessions:[] };
+  const inl = ids.map(encodeURIComponent).join(',');
+  const courses = await sbGet('courses', 'select=*&id=in.('+inl+')');
+  const sessions = await sbGet('course_sessions', 'select=*&course_id=in.('+inl+')');
+  return { courses, sessions };
+}
+const SCHED_COL_LABEL = { time_range:'上课时间', campus:'校区', delivery:'授课方式', est_students:'人数', meeting_url:'会议链接', meeting_id:'会议号', host_key:'主持人密钥',
+  sched_merge_group:'合并', sched_merge_name:'合并显示名', sched_merge_order:'合并顺序', sched_removed_at:'移出排课', sched_removed_reason:'移出排课原因',
+  skip_dates:'休讲日', holiday_except:'照常上课的假期', name:'课程名', session_date:'日期', is_cancelled:'休讲' };
+function _schedDiffCols(a, b){      // a → b 有变化的列 {col:[旧,新]}
+  const out = {};
+  Object.keys(Object.assign({}, a, b)).forEach(k=>{
+    if(/updated_at|modified/i.test(k)) return;
+    if(JSON.stringify(a[k]==null?null:a[k]) !== JSON.stringify(b[k]==null?null:b[k])) out[k] = [a[k], b[k]];
+  });
+  return out;
+}
+function schedSnapDiff(before, after){
+  const mapOf = rows => { const m = {}; rows.forEach(r=>{ m[String(r.id)] = r; }); return m; };
+  const bc = mapOf(before.courses), ac = mapOf(after.courses), bs = mapOf(before.sessions), as = mapOf(after.sessions);
+  const courses = [];
+  Object.keys(bc).forEach(id=>{ if(ac[id]){ const d = _schedDiffCols(bc[id], ac[id]); if(Object.keys(d).length) courses.push({ id, name:bc[id].name, cols:d }); } });
+  let sessChanged = 0;
+  Object.keys(bs).forEach(id=>{ if(as[id] && Object.keys(_schedDiffCols(bs[id], as[id])).length) sessChanged++; });
+  const sessAdded = Object.keys(as).filter(id=>!bs[id]).length, sessRemoved = Object.keys(bs).filter(id=>!as[id]).length;
+  return { courses, sessChanged, sessAdded, sessRemoved };
+}
+function schedColText(col, ft){
+  const v = x => (x==null||x==='') ? '（空）' : String(x);
+  const lab = SCHED_COL_LABEL[col] || col;
+  const a = v(ft[0]), b = v(ft[1]);
+  return (a.length>40||b.length>40) ? lab : (lab+' '+a+' → '+b);
+}
+/* 按快照把 courses / course_sessions 改回去（只动有差别的列；多出来的单回删掉，被删的单回补回） */
+async function schedUndo(before, ids){
+  const cur = await schedSnap(ids);
+  const cmap = {}; cur.courses.forEach(r=>{ cmap[String(r.id)] = r; });
+  for(const r of before.courses){
+    const now = cmap[String(r.id)]; if(!now) continue;
+    const d = _schedDiffCols(now, r), patch = {};
+    Object.keys(d).forEach(k=>{ patch[k] = r[k]; });
+    if(Object.keys(patch).length) await sbUpdate('courses', r.id, patch);
+  }
+  const smap = {}; cur.sessions.forEach(r=>{ smap[String(r.id)] = r; });
+  const had = new Set();
+  for(const r of before.sessions){
+    had.add(String(r.id));
+    const now = smap[String(r.id)];
+    if(!now){ try{ await sbInsert('course_sessions', r); }catch(e){ console.warn('补回单回失败', e); } continue; }
+    const d = _schedDiffCols(now, r), patch = {};
+    Object.keys(d).forEach(k=>{ patch[k] = r[k]; });
+    if(Object.keys(patch).length) await sbUpdate('course_sessions', r.id, patch);
+  }
+  for(const r of cur.sessions) if(!had.has(String(r.id))) { try{ await sbDelete('course_sessions', r.id); }catch(e){ console.warn('删除多出的单回失败', e); } }
+}
+/* 页面顶部结果条：不自动消失，点 × 关。onUndo 返回字符串 = 撤销后的提示 */
+function schedBar(html, onUndo){
+  let box = document.getElementById('schedBars');
+  if(!box){ box = document.createElement('div'); box.id = 'schedBars';
+    box.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9000;display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px;pointer-events:none';
+    document.body.appendChild(box); }
+  const bar = document.createElement('div');
+  bar.style.cssText = 'pointer-events:auto;max-width:860px;width:100%;background:#eaf6ec;border:1px solid #9fcfa8;color:#1f5a2c;border-radius:8px;padding:8px 12px;font-size:13px;line-height:1.5;display:flex;gap:10px;align-items:flex-start;box-shadow:0 4px 14px rgba(0,0,0,.15)';
+  bar.innerHTML = '<div style="flex:1;min-width:0" class="sbtxt">'+html+'</div>'+(onUndo?'<button class="sm" data-undo style="white-space:nowrap">撤销</button>':'')+'<button class="sm ghost" data-x style="white-space:nowrap">×</button>';
+  box.appendChild(bar);
+  bar.querySelector('[data-x]').onclick = ()=>bar.remove();
+  const ub = bar.querySelector('[data-undo]');
+  if(ub) ub.onclick = async ()=>{
+    ub.disabled = true; ub.textContent = '撤销中…';
+    try{ const msg = await onUndo(); bar.querySelector('.sbtxt').innerHTML = esc(msg||'已恢复'); ub.remove(); }
+    catch(e){ ub.disabled = false; ub.textContent = '撤销'; toast('撤销失败：'+e.message, false); }
+  };
+  return bar;
+}
 async function sbGet(table, query){
   await schedAuthReady();
   const q = query || 'select=*';

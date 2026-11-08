@@ -843,6 +843,7 @@ async function openApplyTemplate(templateId){
 }
 
 function renderCoursesPage(mc){
+  loadSchedEdits();
   // 专业钥匙锁定：强制默认选中锁定的专业（用户不能改）
   if(CURRENT_MAJOR) coursesMajorFilter=CURRENT_MAJOR;
   // 锁定在具体领域（领域账号/切换视角进入）：默认显示该领域全部课（不管领域有没有建专业）
@@ -1000,6 +1001,7 @@ function renderCoursesSummary(courses){
             ${course.delivery?`<span style="font-size:10px;opacity:.75">${course.delivery.includes('线下')&&course.delivery.includes('线上')?'🔀':course.delivery==='线下'?'🏫':'💻'} ${course.delivery}</span>`:''}
             ${(()=>{ const a=sessionWeekdaysLabel(sessions), f=frameWeekdaysLabel(course.weekdays); return a?`<span style="font-size:10px;opacity:.75">📅 周${a}${f&&a!==f?`<span style="opacity:.7">（框架 周${f}）</span>`:''}</span>`:''; })()}
             ${course.time_range?`<span style="font-size:10px;opacity:.75">⏰ ${course.time_range}</span>`:''}
+            ${schedEditTag(course)}
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <span style="font-size:10px;opacity:.7;white-space:nowrap">${total} 課次</span>
@@ -4729,4 +4731,55 @@ async function crqReply(id){
     await refreshCourseReqBox();
     if(typeof showToast==='function') showToast('已回复，排课那边会看到'); else alert('已回复，排课那边会看到');
   }catch(e){ alert('回复失败：'+e.message); }
+}
+
+
+// ══════════ 排课里改过课程的提示（sched_change_log action='edit'）══════════
+// 排课和管理端改的是同一份课程；排课改完会写一条记录，这里在课程卡片上显示小标签，管理员点「知道了」后消失
+let SCHED_EDITS = null;   // { 课程id: [log, ...] }（只放管理员还没点「知道了」的）
+async function loadSchedEdits() {
+  try {
+    const rows = (await sb('/rest/v1/sched_change_log?action=eq.edit&select=*&order=created_at.desc&limit=300', 'GET', null, { cache: 'no-store' })) || [];
+    const map = {};
+    rows.forEach(l => {
+      if (String(l.acked_by || '').split(',').map(x => x.trim()).includes('admin')) return;
+      const ids = new Set((Array.isArray(l.changes) ? l.changes : []).map(x => x && x.course_uuid).filter(Boolean));
+      ids.forEach(id => { (map[id] = map[id] || []).push(l); });
+    });
+    const changed = JSON.stringify(Object.keys(map).map(k => [k, map[k].map(l => l.id)])) !== JSON.stringify(Object.keys(SCHED_EDITS || {}).map(k => [k, SCHED_EDITS[k].map(l => l.id)]));
+    const first = SCHED_EDITS === null;
+    SCHED_EDITS = map;
+    if ((changed || first) && Object.keys(map).length) {
+      const mc = document.getElementById('mainContent');
+      if (mc && mc.querySelector('.section-title') && /课程安排/.test(mc.querySelector('.section-title').textContent)) renderCoursesPage(mc);
+    }
+  } catch (e) { if (SCHED_EDITS === null) SCHED_EDITS = {}; }
+}
+function schedEditTag(course) {
+  const es = (SCHED_EDITS || {})[course.id];
+  if (!es || !es.length) return '';
+  const l = es[0], d = (l.created_at || '').slice(5, 10).replace('-', '/').replace(/^0/, '').replace('/0', '/');
+  const labs = [...new Set(es.flatMap(x => (x.changes || []).filter(c => c && c.course_uuid === course.id).map(c => c.label)))].slice(0, 3).join('、');
+  return `<span onclick="schedEditOpen('${course.id}')" title="排课里改过这门课，点开看改了什么" style="font-size:10px;background:#fff4d6;color:#7a5b00;border:1px solid #ecd48a;border-radius:2px;padding:1px 6px;cursor:pointer">排课 ${ccEsc(d)} 改过：${ccEsc(labs)}${es.length > 1 ? ` 等 ${es.length} 次` : ''}</span>`;
+}
+function schedEditOpen(courseId) {
+  const es = (SCHED_EDITS || {})[courseId] || [];
+  if (!es.length) return;
+  const ov = ccOverlay('schedEditOv');
+  const body = es.map(l => `<div style="border-bottom:1px solid var(--border-light,#eee);padding:6px 0"><div style="color:var(--text-3)">${ccEsc((l.created_at || '').slice(0, 16).replace('T', ' '))}　${ccEsc(l.actor_label || '排课')}</div>`
+    + (l.changes || []).filter(c => c && c.course_uuid === courseId).map(c => `<div>· <b>${ccEsc(c.label || '')}</b>：${ccEsc(String(c.from == null ? '' : c.from))} → ${ccEsc(String(c.to == null ? '' : c.to))}</div>`).join('') + '</div>').join('');
+  ov.innerHTML = `<div style="${CC_BOX}"><div style="padding:14px 18px;border-bottom:1px solid var(--border,#e2ded6);font-size:15px;font-weight:600">排课里改过这门课</div><div style="padding:12px 18px;overflow:auto;flex:1">${body}</div><div style="padding:10px 18px;border-top:1px solid var(--border,#e2ded6);display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline btn-sm" id="seClose" style="padding:6px 16px;cursor:pointer">先放着</button><button type="button" class="btn btn-primary btn-sm" id="seAck" style="padding:6px 16px;cursor:pointer">知道了</button></div></div>`;
+  ov.querySelector('#seClose').onclick = () => ov.remove();
+  ov.querySelector('#seAck').onclick = async () => {
+    try {
+      for (const l of es) {
+        const acked = String(l.acked_by || '').split(',').map(x => x.trim()).filter(Boolean);
+        if (!acked.includes('admin')) acked.push('admin');
+        await sb(`/rest/v1/sched_change_log?id=eq.${l.id}`, 'PATCH', { acked_by: acked.join(',') });
+      }
+      delete SCHED_EDITS[courseId];
+      ov.remove();
+      renderCoursesPage(document.getElementById('mainContent'));
+    } catch (e) { alert('操作失败：' + e.message); }
+  };
 }

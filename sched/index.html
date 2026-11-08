@@ -36,7 +36,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../shared/constants.js?v=20270301"></script>
-<script src="common.js?v=20270127"></script>
+<script src="common.js?v=20270128"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270126"></script>
 <script src="../shared/search.js?v=20261029"></script>
@@ -871,6 +871,36 @@ function renderAssignWeek(){
   };
   const cl=el('wk_clear'); if(cl) cl.onclick=()=>{ window.WK_PENDING[room.id]=new Set(); renderAssignWeek(); };
 }
+/* ---------- 排课改课程：改前存快照、改完弹结果条、可撤销 ---------- */
+async function schedRefreshView(){ await reloadAll(); if(el('coursesTable')) tabCourses(); else { try{ renderAssignView(); }catch(e){} } }
+function schedActorLabel(){ return (ROLE&&(ROLE.label||ROLE.role))||'某账号'; }
+/* ids：这次会动到的课程 id；work()：真正的写入；o.logs(d,res)：要写的 sched_change_log 行；o.text(d,res)：结果条文字（html） */
+async function schedTrack(ids, work, o){
+  o=o||{};
+  const before=await schedSnap(ids);
+  const res=await work();
+  const after=await schedSnap(ids);
+  const d=schedSnapDiff(before,after);
+  const logIds=[];
+  for(const row of (o.logs?o.logs(d,res):[])){ try{ const r=await sbInsert('sched_change_log',row); if(r&&r[0]) logIds.push(r[0].id); }catch(e){ console.warn('写修改记录失败',e); } }
+  if(!d.courses.length && !d.sessChanged && !d.sessAdded && !d.sessRemoved) return res;
+  const sessTxt = (d.sessChanged||d.sessAdded||d.sessRemoved) ? '单回 '+(d.sessChanged+d.sessAdded+d.sessRemoved)+' 回跟着改。' : '';
+  const dflt = d.courses.length===1
+    ? '已同步到管理端：《'+esc(d.courses[0].name||'')+'》'+esc(Object.keys(d.courses[0].cols).map(k=>schedColText(k,d.courses[0].cols[k])).join('；'))+'。'+sessTxt
+    : '已同步到管理端：改了 '+d.courses.length+' 门课。'+sessTxt;
+  schedBar(o.text?o.text(d,res):dflt, async()=>{
+    await schedUndo(before, ids);
+    for(const id of logIds){ try{ await sbDelete('sched_change_log', id); }catch(e){} }
+    await schedRefreshView();
+    return '已恢复';
+  });
+  return res;
+}
+/* 修改记录里带上课程 id，管理端卡片靠它认出是哪门课 */
+function schedLogRow(c, action, changes){
+  return { course_id:(c.legacy_sched_id!=null?c.legacy_sched_id:null), course_name:c.merge_name||c.name||'', actor_role:(ROLE&&ROLE.role)||'', actor_label:schedActorLabel(),
+    action, changes:changes.map(x=>Object.assign({course_uuid:String(c.id)},x)), acked_by:'' };
+}
 /* ---------- 调整某一天 ---------- */
 /* 某门课今天以后的上课日（按周占用 + 临时占用），用于「调整某一天」 */
 function adjustDayEntries(group){
@@ -878,8 +908,10 @@ function adjustDayEntries(group){
   const ids=new Set(group.map(g=>String(g.id)));
   BOOKINGS.filter(b=>b.kind==='course' && ids.has(String(b.course_id)) && b.status!=='rejected').forEach(b=>{
     if(b.recurrence==='once'){ if(b.booking_date>=today) out.push({date:b.booking_date, b, temp:true, released:false}); return; }
-    if(b.recurrence!=='weekly' || !b.end_date) return;
+    if(b.recurrence!=='weekly') return;
     const manual=(b.manual_off_dates||'').split(',').filter(Boolean);
+    if(b._linked && b._days){ b._days.forEach((t,d)=>{ if(d>=today) out.push({date:d, b, temp:false, released:manual.includes(d)}); }); return; }
+    if(!b.end_date) return;
     for(let d=(b.start_date&&b.start_date>today?b.start_date:today), g=0; d<=b.end_date && g<800; d=addDays(d,1), g++){
       if(Number(b.weekday)!==weekdayOf(d)) continue;
       out.push({date:d, b, temp:false, released:manual.includes(d)});
@@ -892,6 +924,8 @@ function adjustDayDialog(courseId){
   const group=c.merge_group ? COURSES.filter(x=>x.merge_group===c.merge_group) : [c];
   const dispName=c.merge_name||c.name;
   let sel=null;       // 选中的日期
+  let SES=[];         // 这门课（合并组）今天以后的单回
+  const loadSes=async()=>{ try{ SES=await sbGet('course_sessions','select=id,course_id,session_date,time_range,is_cancelled,session_number&course_id=in.('+group.map(g=>encodeURIComponent(g.id)).join(',')+')&session_date=gte.'+todayStr()); }catch(e){ SES=[]; } };
   const WD=['日','一','二','三','四','五','六'];
   const mask=document.createElement('div');
   mask.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:60;overflow:auto;padding:40px 16px';
@@ -921,7 +955,9 @@ function adjustDayDialog(courseId){
     if(sel){
       const es=byDate[sel]||[]; const rel=es.length && es.every(e=>e.released);
       if(rel) act=`<div style="margin-top:10px"><b>${sel}</b> 已释放。 <button class="sm" id="adj_restore">恢复</button></div>`;
-      else act=`<div style="margin-top:10px"><b>${sel}</b>：<button class="sm" id="adj_rel">只释放这一天</button> <button class="sm ghost" id="adj_move">换到别的教室</button></div><div id="adj_rooms" style="margin-top:8px"></div>`;
+      else act=`<div style="margin-top:10px"><b>${sel}</b>：<button class="sm" id="adj_rel">只释放这一天</button> <button class="sm ghost" id="adj_move">换到别的教室</button>`+
+        (SES.some(x=>x.session_date===sel&&!x.is_cancelled)?` <button class="sm ghost" id="adj_mv">这一回改时间 / 改日期</button> <button class="sm ghost" id="adj_cx">这一回休讲</button>`:'')+
+        `</div><div id="adj_mvform"></div><div id="adj_rooms" style="margin-top:8px"></div>`;
     }
     mask.innerHTML='<div class="card" style="width:560px;max-width:94vw;margin:auto"><h3 style="margin-top:2px">「'+esc(dispName)+'」调整某一天</h3>'+
       '<div class="muted" style="font-size:12px;margin-bottom:8px">只调整教室占用，课程和上课日期不变（课程表照常显示上课）。点选一天：释放教室，或换到那天空着的别的教室。</div>'+
@@ -931,6 +967,54 @@ function adjustDayDialog(courseId){
     mask.querySelectorAll('[data-d]').forEach(x=>x.onclick=()=>{ sel=sel===x.dataset.d?null:x.dataset.d; paint(); });
     const done=async(fn,msg)=>{
       try{ await fn(); await reloadAll(); toast(msg); paint(); renderAssignView(); }catch(e){ toast('失败：'+e.message,false); }
+    };
+    const idsAll=group.map(g=>g.id), idset=new Set(idsAll.map(String));
+    const sesOn=()=>SES.filter(x=>x.session_date===sel&&!x.is_cancelled);
+    const afterOp=async()=>{ await reloadAll(); renderChangeAlerts(); await loadSes(); sel=null; paint(); try{ renderAssignView(); }catch(e){} };
+    const mdHm=(d,t)=>d.slice(5).replace('-','/')+' '+(t||'');
+    if(el('adj_mv')) el('adj_mv').onclick=()=>{
+      const ses=sesOn(), tr0=ses[0].time_range||classTimeText(c), roomId=byDate[sel]&&byDate[sel][0]&&byDate[sel][0].b.room_id;
+      el('adj_mvform').innerHTML=`<div class="row" style="margin-top:8px"><div class="field"><label>新日期</label><input type="date" id="mv_d" value="${sel}" min="${todayStr()}"></div><div class="field"><label>新时间</label><input id="mv_t" value="${esc(tr0)}" placeholder="18:30-21:30"></div></div><button class="sm" id="mv_ok">保存</button> <span class="muted" style="font-size:12px">写进管理端这一回；教室占用跟着这一回走。</span>`;
+      el('mv_ok').onclick=async()=>{
+        const nd=el('mv_d').value, tr=normalizeTimeRanges(el('mv_t').value), segs=parseTimeRanges(tr);
+        if(!nd){ toast('请填新日期',false); return; }
+        if(nd<todayStr()){ toast('已经结束的日子不能改',false); return; }
+        if(!segs.length||segs.some(r=>{ const a=_trMin(r.start), b=_trMin(r.end); return a==null||b==null||b<=a; })){ toast('上课时间格式不对（每段「开始-结束」，多段用 / 分隔）',false); return; }
+        if(nd===sel && tr===(ses[0].time_range||'')){ toast('没有变化',false); return; }
+        if(SES.some(x=>!ses.includes(x)&&!x.is_cancelled&&x.session_date===nd&&idset.has(String(x.course_id))) && !confirm(nd+' 这门课已经有一回了，仍要改到这一天吗？')) return;
+        const sp=timeRangesSpan(tr), num=ses[0].session_number, fromT=ses[0].time_range||tr0, from=sel;
+        el('mv_ok').disabled=true;
+        try{
+          await schedTrack(idsAll, async()=>{
+            for(const x of ses) await sbUpdate('course_sessions', x.id, {session_date:nd, time_range:tr});
+            await reloadAll();
+            const res={ noRoom:!roomId, roomName:roomId?rname(roomId):'', blockers:[] };
+            if(roomId) res.blockers=roomConflicts(BOOKINGS, roomId, nd, sp.start, sp.end, null).filter(b=>!idset.has(String(b.course_id)))
+              .map(b=>{ const t=bookingTimeOn(b,nd); return '《'+(b.title||KIND_LABEL[b.kind]||'占用')+'》（'+(b.user_name||'—')+'，'+String(t[0]).slice(0,5)+'-'+String(t[1]).slice(0,5)+'）'; });
+            return res;
+          }, {
+            logs:(d,res)=>{
+              const out=[schedLogRow(c,'edit',[{field:'session_move',label:'第 '+(num||'?')+' 回',from:from+' '+fromT,to:nd+' '+tr}])];
+              if(res.blockers.length) out.push(schedLogRow(c,'room_coord',[{field:'room_coord',label:'第 '+(num||'?')+' 回',num,session_id:ses[0].id,from:from+' '+fromT,to:nd+' '+tr,date:nd,time:sp.start+'-'+sp.end,room_name:res.roomName,blocker:res.blockers.join('、'),reason:'blocked'}]));
+              return out;
+            },
+            text:(d,res)=>'已改：《'+esc(dispName)+'》第 '+esc(String(num||'?'))+' 回 '+esc(mdHm(from,fromT))+' → '+esc(mdHm(nd,tr))+'（管理端单回已同步）<br>'+
+              (res.noRoom?'这门课还没排教室。':(res.blockers.length?'<b style="color:#a33">✗ '+esc(res.roomName)+' 被'+esc(res.blockers.join('、'))+'占着，已在排课首页写「需要补排教室」提醒。</b>':'✓ 原教室 '+esc(res.roomName)+' 空着'))
+          });
+          await afterOp();
+        }catch(e){ toast('失败：'+e.message,false); el('mv_ok').disabled=false; }
+      };
+    };
+    if(el('adj_cx')) el('adj_cx').onclick=async()=>{
+      const ses=sesOn(); if(!ses.length) return;
+      if(!confirm('把 '+sel+' 这一回标为休讲？只标休讲，不顺延（要顺延请到管理端「休讲并顺延」）。')) return;
+      const num=ses[0].session_number, from=sel;
+      try{
+        await schedTrack(idsAll, async()=>{ for(const x of ses) await sbUpdate('course_sessions', x.id, {is_cancelled:true, cancel_reason:'排课标休讲'}); await reloadAll(); },
+          { logs:()=>[schedLogRow(c,'edit',[{field:'session_cancel',label:'第 '+(num||'?')+' 回',from:from,to:'休讲'}])],
+            text:()=>'已改：《'+esc(dispName)+'》第 '+esc(String(num||'?'))+' 回 '+esc(from.slice(5).replace('-','/'))+' 标为休讲（管理端单回已同步，不顺延），那天的教室占用不再显示。' });
+        await afterOp();
+      }catch(e){ toast('失败：'+e.message,false); }
     };
     if(el('adj_rel')) el('adj_rel').onclick=()=>done(()=>releaseDay(sel),'已释放 '+sel+' 的教室');
     if(el('adj_restore')) el('adj_restore').onclick=()=>done(async()=>{
@@ -960,7 +1044,7 @@ function adjustDayDialog(courseId){
       });
     };
   }
-  paint();
+  paint(); loadSes().then(paint);
 }
 function renderAssignTable(){
   const q=(el('af_q').value||'').trim();
@@ -1158,10 +1242,13 @@ function assignRoomOnly(courseId){
    只写管理端 courses 上的 sched_removed_*（排课专用标记，管理端不显示、不用），并删掉这门课的教室占用；不改课程本身，也不删课程*/
 async function schedDoRemove(courses, reason){
   const now=new Date().toISOString();
-  for(const gc of courses){
-    for(const b of BOOKINGS.filter(b=>b.kind==='course' && String(b.course_id)===String(gc.id))) await sbDelete('sched_bookings', b.id);
-    await schedCourseUpdate(gc.id, {sched_removed_reason:reason, sched_removed_at:now});
-  }
+  await schedTrack(courses.map(c=>c.id), async()=>{
+    for(const gc of courses){
+      for(const b of BOOKINGS.filter(b=>b.kind==='course' && String(b.course_id)===String(gc.id))) await sbDelete('sched_bookings', b.id);
+      await schedCourseUpdate(gc.id, {sched_removed_reason:reason, sched_removed_at:now});
+    }
+  }, { logs:()=>courses.map(gc=>schedLogRow(gc,'edit',[{field:'sched_removed',label:'移出排课',from:'在排课',to:reason}])),
+       text:()=>'已同步到管理端：移出排课 '+courses.length+' 门（'+esc(reason)+'）。教室占用已释放，撤销只恢复标记，教室需要重新排。' });
 }
 function schedRemoveDialog(groupCourses, dispName, afterDone){
   let reason='';
@@ -1193,7 +1280,9 @@ async function schedRestore(id){
   const grp = c.merge_group ? ALL_COURSES.filter(x=>x.merge_group===c.merge_group && schedRemoved(x)) : [c];
   if(!confirm('把「'+(c.merge_name||c.name)+'」恢复到排课？恢复后它会重新出现在排教室列表里。')) return;
   try{
-    for(const gc of grp) await schedCourseUpdate(gc.id, {sched_removed_reason:null, sched_removed_at:null});
+    await schedTrack(grp.map(g=>g.id), async()=>{ for(const gc of grp) await schedCourseUpdate(gc.id, {sched_removed_reason:null, sched_removed_at:null}); },
+      { logs:()=>grp.map(gc=>schedLogRow(gc,'edit',[{field:'sched_removed',label:'移出排课',from:'已移出',to:'恢复到排课'}])),
+        text:()=>'已同步到管理端：《'+esc(c.merge_name||c.name)+'》恢复到排课。' });
     await reloadAll(); if(el('coursesTable')) tabCourses(); else renderAssignView(); toast('已恢复到排课');
   }catch(e){ toast('失败：'+e.message, false); }
 }
@@ -1578,7 +1667,9 @@ function meetingLinkStep(c, accId){
       const _hkInput=el('mk_hostkey')?el('mk_hostkey').value.trim():''; if(_hkInput) hkey=_hkInput;  // 手填优先
       const btn=el('mk_save'); if(btn.disabled) return; btn.disabled=true; btn.textContent='保存中…';
       try{
-        await schedCourseUpdate(c.id, { meeting_link:link||null, meeting_id:mid||null, host_key:hkey||null });
+        await schedTrack([c.id], async()=>{ await schedCourseUpdate(c.id, { meeting_link:link||null, meeting_id:mid||null, host_key:hkey||null }); },
+          { logs:d=>d.courses.length?[schedLogRow(c,'edit',[{field:'meeting_link',label:'会议链接',from:c.meeting_link||'（空）',to:link||'（空）'}])]:[],
+            text:()=>'已同步到管理端：《'+esc(c.merge_name||c.name)+'》会议链接已写入。' });
         // 通用标题且是新建 → 存入模板库，供本期同专业复用
         if(useGeneric && !chosenTpl){
           const majorName = el('mk_major')?el('mk_major').value.trim():'';
@@ -2254,7 +2345,9 @@ function renderCoursesTable(){
       const gid='mg_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
       const btn=el('cf_bapply'); btn.disabled=true; btn.textContent='合并中…';
       try{
-        for(let i=0;i<ids.length;i++) await schedCourseUpdate(ids[i], {merge_group:gid, merge_name:mname, merge_order:i+1});
+        await schedTrack(ids, async()=>{ for(let i=0;i<ids.length;i++) await schedCourseUpdate(ids[i], {merge_group:gid, merge_name:mname, merge_order:i+1}); },
+          { logs:()=>cs.map(c=>schedLogRow(c,'edit',[{field:'merge',label:'合并',from:'（未合并）',to:mname}])),
+            text:()=>'已同步到管理端：'+ids.length+' 门课合并为「'+esc(mname)+'」。' });
         await reloadAll(); el('cf_batchBox').classList.add('hidden'); tabCourses();
         toast('已合并 '+ids.length+' 门为「'+mname+'」，课表按 a→b→c 顺序轮流出现（顺序可在课程编辑里改）');
       }catch(e){ toast('失败：'+e.message, false); btn.disabled=false; btn.textContent='应用到所选'; }
@@ -2263,7 +2356,9 @@ function renderCoursesTable(){
     if(f==='unmerge'){
       const btn=el('cf_bapply'); btn.disabled=true; btn.textContent='处理中…';
       try{
-        for(const id of ids) await schedCourseUpdate(id, {merge_group:null, merge_name:null, merge_order:null});
+        await schedTrack(ids, async()=>{ for(const id of ids) await schedCourseUpdate(id, {merge_group:null, merge_name:null, merge_order:null}); },
+          { logs:()=>ids.map(id=>COURSES.find(x=>String(x.id)===String(id))).filter(Boolean).map(c=>schedLogRow(c,'edit',[{field:'merge',label:'合并',from:c.merge_name||'',to:'取消合并'}])),
+            text:()=>'已同步到管理端：'+ids.length+' 门课取消合并。' });
         await reloadAll(); el('cf_batchBox').classList.add('hidden'); tabCourses();
         toast('已取消合并');
       }catch(e){ toast('失败：'+e.message, false); btn.disabled=false; btn.textContent='应用到所选'; }
@@ -2272,12 +2367,17 @@ function renderCoursesTable(){
     const btn=el('cf_bapply'); btn.disabled=true; btn.textContent='处理中…';
     let done=0;
     try{
-      for(const id of ids){
-        const c=COURSES.find(x=>String(x.id)===String(id)); if(!c) continue;
-        await schedCourseUpdate(id, {[f]: v||null});
-        try{ await courseRegenSessions(id,{fieldsOnly:true}); }catch(e){ console.warn('同步单回失败',id,e); }
-        done++;
-      }
+      const FL={campus:'校区',mode:'授课方式'};
+      await schedTrack(ids, async()=>{
+        for(const id of ids){
+          const c=COURSES.find(x=>String(x.id)===String(id)); if(!c) continue;
+          await schedCourseUpdate(id, {[f]: v||null});
+          try{ await courseRegenSessions(id,{fieldsOnly:true}); }catch(e){ console.warn('同步单回失败',id,e); }
+          done++;
+        }
+      }, { logs:d=>d.courses.map(dc=>{ const c=COURSES.find(x=>String(x.id)===String(dc.id)); return c?schedLogRow(c,'edit',Object.keys(dc.cols).map(k=>({field:k,label:SCHED_COL_LABEL[k]||k,from:String(dc.cols[k][0]==null?'（空）':dc.cols[k][0]),to:String(dc.cols[k][1]==null?'（空）':dc.cols[k][1])}))):null; }).filter(Boolean),
+           text:d=>{ const c0=d.courses[0], k0=c0?Object.keys(c0.cols)[0]:''; const old=c0?(c0.cols[k0][0]==null||c0.cols[k0][0]===''?'（空）':c0.cols[k0][0]):'';
+             return '已同步到管理端：已改 '+d.courses.length+' 门课的'+esc(FL[f]||f)+(c0?'（'+esc(String(old))+' → '+esc(String(v||'（空）'))+'）':'')+'，单回共 '+(d.sessChanged+d.sessAdded+d.sessRemoved)+' 回跟着改。'; } });
       await reloadAll(); tabCourses();
       toast('已批量修改 '+done+' 门');
     }catch(e){ toast('部分失败：'+e.message, false); btn.disabled=false; btn.textContent='应用到所选'; }
@@ -2373,13 +2473,13 @@ async function courseEdit(id){
       const changes=[];
       Object.keys(FLBL).forEach(f=>{ if(!(f in patch)) return; const ov=(oldVals[f]==null?'':String(oldVals[f])), nv=(patch[f]==null?'':String(patch[f]));
         if(ov!==nv) changes.push({field:f,label:FLBL[f],from:ov||'（空）',to:nv||'（空）'}); });
-      await schedCourseUpdate(c.id, patch);
-      // 管理端的单回跟着改：框架（星期 / 开课日 / 回数 / 假期 / 休讲）变了就重排日期；没变只同步名字、校区、上课时间
-      const fresh=(await sbGet('courses','select=*&id=eq.'+encodeURIComponent(c.id)+'&limit=1'))[0];
-      let regen=null, regenErr='';
-      if(real&&fresh){ try{ regen=await courseRegenSessions(c.id,{old:real, fieldsOnly:true}); }catch(e){ regenErr=e.message; } }
-      if(changes.length){ try{ await sbInsert('sched_change_log',{ course_id:(c.legacy_sched_id!=null?c.legacy_sched_id:null), course_name:patch.name||c.name,
-        actor_role:(ROLE&&ROLE.role)||'', actor_label:(ROLE&&(ROLE.label||ROLE.role))||'某账号', action:'edit', changes, acked_by:'' }); }catch(e){} }
+      let fresh=null, regen=null, regenErr='';
+      await schedTrack([c.id], async()=>{
+        await schedCourseUpdate(c.id, patch);
+        // 管理端的单回跟着改：框架（星期 / 开课日 / 回数 / 假期 / 休讲）变了就重排日期；没变只同步名字、校区、上课时间
+        fresh=(await sbGet('courses','select=*&id=eq.'+encodeURIComponent(c.id)+'&limit=1'))[0];
+        if(real&&fresh){ try{ regen=await courseRegenSessions(c.id,{old:real, fieldsOnly:true}); }catch(e){ regenErr=e.message; } }
+      }, { logs:()=>changes.length?[schedLogRow(c,'edit',changes)]:[] });
       await reloadAll(); tabCourses(); toast('已保存');
       el('cEdit').innerHTML='';
       if(fresh){

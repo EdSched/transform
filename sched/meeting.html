@@ -80,7 +80,7 @@
     </div>
   </div>
 </div>
-<script src="common.js?v=20270127"></script>
+<script src="common.js?v=20270128"></script>
 <script src="../shared/constants.js?v=20270301"></script>
 <script>
 el('nav').innerHTML = renderNav('meeting.html');
@@ -486,17 +486,16 @@ function renderMtgRoom(){
     catch(e){ toast('失败：'+e.message, false); btn.disabled=false; btn.textContent='一键补绑本教室账号'; }
   };
 }
-/* 把会议链接/会议号/主持人密钥同步写进管理系统的 courses 表（先按 id，找不到再按课名）。失败不阻断排课侧保存，只提示 */
+/* 把会议链接/会议号/主持人密钥同步写进管理系统的 courses 表（只按这门课自己的 id，找不到就提示，不按课名猜）。失败不阻断排课侧保存，只提示 */
 async function syncMeetingToMgmt(c, link, mid, hkey){
   const patch={ meeting_url:link||null, meeting_id:mid||null, host_key:hkey||null };
   const doPatch=async q=>{ const r=await fetch(SB_URL+'/rest/v1/courses?'+q,{ method:'PATCH', headers:sbHeaders({Prefer:'return=representation'}), body:JSON.stringify(patch) });
     if(!r.ok){ const t=await r.text(); throw new Error(sbErrMsg(t)||(r.status+' '+t)); } return r.json(); };
   let rows=await doPatch('id=eq.'+encodeURIComponent(c.id));
-  if(!rows.length && c.name) rows=await doPatch('name=eq.'+encodeURIComponent(String(c.name).trim()));
   return rows.length;
 }
 async function trySyncMgmt(c, link, mid, hkey){
-  try{ const n=await syncMeetingToMgmt(c, link, mid, hkey); return n?'（已同步到管理系统）':'（管理系统里没找到这门课，未同步）'; }
+  try{ const n=await syncMeetingToMgmt(c, link, mid, hkey); return n?'（已同步到管理系统）':'（没找到这门课，没有写回）'; }
   catch(e){ return '（同步到管理系统失败：'+e.message+'）'; }
 }
 
