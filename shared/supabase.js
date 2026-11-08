@@ -211,6 +211,20 @@ async function sbUpload(bucket, path, file) {
   return `${SB_URL}/storage/v1/object/public/${bucket}/${path}`;
 }
 
+// ── 按学生归档的文件路径：students/<学生id>/<分类>/<时间戳>_<原文件名的ASCII部分>.<扩展名> ──
+// 学生传的放 student-files，老师批复的放 teacher-files（同一套路径）。分类：plan 计划书 / interview 面试稿 / riyu 志望理由书・邮件 / materials 出愿材料 / booking 面谈 / homework 作业（作业另有 homework 桶，不动）。
+// Storage 路径只能是 ASCII：原文件名里的汉字等去掉，真实文件名要另存在数据库的 file_name 列里。
+function sbStoreName(file) {
+  const raw = String((file && file.name) || 'file');
+  const dot = raw.lastIndexOf('.');
+  const ext = (dot >= 0 ? raw.slice(dot + 1) : 'bin').toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin';
+  const base = (dot >= 0 ? raw.slice(0, dot) : raw).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || 'file';
+  return `${Date.now()}_${base}.${ext}`;
+}
+function sbStudentPath(studentId, category, file) {
+  return `students/${String(studentId).replace(/[^A-Za-z0-9_-]/g, '_')}/${category}/${sbStoreName(file)}`;
+}
+
 // ── 学生登录（姓名 + 查询码）共用流程：学习记录页 / VIP 页 ──
 // ① RPC 用姓名+码换出 student_id（只有这一步明确查不到，才算「姓名或查询码不对」）
 // ② 用 id+码 走 Auth 登录拿 token；③ 带 token 读自己那条 students

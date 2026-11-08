@@ -1002,7 +1002,8 @@ async function submitBookingInner() {
     try {
       const ext = file.name.split('.').pop().toLowerCase();
       const path = `${bookingMajor || 'general'}/${Date.now()}.${ext}`;
-      studentFileUrl = await sbUpload('student-files', path, file);
+      // 已登录学生按学生归档（students/<id>/booking/）；新同学还没有 id，沿用原路径
+      studentFileUrl = await sbUpload('student-files', isMember ? sbStudentPath(bkStudent.id, 'booking', file) : path, file);
     } catch (e) {
       alert('文件上传失败：' + e.message + '\n您可以改为粘贴文字内容，或稍后重试');
       return;

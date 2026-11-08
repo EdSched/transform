@@ -500,7 +500,7 @@ async function saveStudyPlanDraft(existingId) {
   if (fileEl?.files[0]) {
     const f = fileEl.files[0];
     const ext = f.name.split('.').pop().toLowerCase();
-    fileUrl = await sbUpload('student-files', `${studyStudent.major||'plan'}/${Date.now()}_draft.${ext}`, f).catch(e => { alert('文件上传失败：'+e.message); return ''; });
+    fileUrl = await sbUpload('student-files', sbStudentPath(studyStudent.id, 'plan', f), f).catch(e => { alert('文件上传失败：'+e.message); return ''; });
     if (!fileUrl) return;
   }
 

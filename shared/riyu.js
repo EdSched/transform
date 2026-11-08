@@ -426,8 +426,7 @@ async function riyuStaffUploadDo(subId) {
   const note = ((document.getElementById('riyuUpNote') || {}).value || '').trim();
   const btn = document.getElementById('riyuUpBtn'); if (btn) { btn.disabled = true; btn.textContent = '上传中…'; }
   try {
-    const path = `riyu/${String(sub.student_id).replace(/[^A-Za-z0-9_-]/g, '_')}/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
-    const url = await sbUpload('teacher-files', path, f);
+    const url = await sbUpload('teacher-files', sbStudentPath(sub.student_id, sub.kind === RIYU_INTERVIEW_KIND ? 'interview' : 'riyu', f), f);
     const now = new Date().toISOString();
     const by = riyuReviewerName();
     const history = riyuHistory(sub).concat([{ at: now, by, action: 'review', file_url: url, file_name: f.name, note }]);

@@ -1046,7 +1046,8 @@ async function uploadTeacherFile(id) {
   if (btn) { btn.textContent = '上传中…'; btn.disabled = true; }
   try {
     const ext = file.name.split('.').pop();
-    const path = `${id}-${Date.now()}.${ext}`;
+    const bk0 = (typeof cachedTeacherBookings !== 'undefined' ? cachedTeacherBookings : []).find(x => x.id === id);
+    const path = bk0 && bk0.student_id ? sbStudentPath(bk0.student_id, 'booking', file) : `${id}-${Date.now()}.${ext}`;   // 有学生 id 的按学生归档，新同学沿用原路径
     const url = await sbUpload('teacher-files', path, file);
     await bkPatch(id, { teacher_file_url: url });
     const b = cachedTeacherBookings.find(x => x.id === id);

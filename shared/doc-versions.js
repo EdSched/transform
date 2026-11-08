@@ -16,15 +16,7 @@ function docvPurpose(v) {
 function docvTitle(v) { return `${docvPurpose(v)} 第 ${v.version_no} 版`; }
 function docvTypeName(t) { return t === 'interview' ? '面试稿' : '计划书'; }
 
-// 存储文件名只能是 ASCII：原文件名里的非 ASCII 字符去掉，真名放在 file_name 列里
-function docvStoreName(file) {
-  const raw = String(file && file.name || 'file');
-  const dot = raw.lastIndexOf('.');
-  const ext = (dot >= 0 ? raw.slice(dot + 1) : 'bin').toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin';
-  const base = (dot >= 0 ? raw.slice(0, dot) : raw).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || 'file';
-  return `${Date.now()}_${base}.${ext}`;
-}
-function docvDir(sid, docType) { return `students/${String(sid).replace(/[^A-Za-z0-9_-]/g, '_')}/${docType === 'interview' ? 'interview' : 'plan'}`; }
+// 存储路径统一用 shared/supabase.js 的 sbStudentPath（students/<学生id>/<分类>/…，文件名只留 ASCII，真名放 file_name 列）
 
 async function docvLoad(sid, docType) {
   const q = `student_id=eq.${encodeURIComponent(sid)}${docType ? `&doc_type=eq.${docType}` : ''}`;
@@ -51,7 +43,7 @@ async function docvCreate(opts) {
   const fresh = await docvLoad(student.id, docType);   // 上传前再读一次，版本号不会撞
   const key = schoolKey || '';
   const no = fresh.filter(r => (r.school_key || '') === key).reduce((m, r) => Math.max(m, r.version_no || 0), 0) + 1;
-  const url = await sbUpload('student-files', `${docvDir(student.id, docType)}/${docvStoreName(file)}`, file);
+  const url = await sbUpload('student-files', sbStudentPath(student.id, docType, file), file);
   const row = {
     student_id: String(student.id), doc_type: docType, version_no: no,
     school_key: key || null, school_name: key ? (schoolName || null) : null,
@@ -170,7 +162,7 @@ async function docvReviewDo(id) {
   if (!['doc', 'docx', 'pdf'].includes(ext)) { msg.textContent = '只能上传 Word（doc / docx）或 PDF'; return; }
   const btn = document.getElementById('docvRvBtn'); btn.disabled = true; btn.textContent = '上传中…';
   try {
-    const url = await sbUpload('teacher-files', `${docvDir(v.student_id, v.doc_type)}/${docvStoreName(f)}`, f);
+    const url = await sbUpload('teacher-files', sbStudentPath(v.student_id, v.doc_type, f), f);
     const patch = {
       review_file_url: url, review_file_name: f.name,
       review_note: (document.getElementById('docvRvNote')?.value || '').trim() || null,
