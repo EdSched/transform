@@ -176,8 +176,24 @@ function renderChangeAlerts(){
   if(!box){ const hi=el('hello'); if(!hi) return; box=document.createElement('div'); box.id='changeAlerts'; hi.parentNode.insertBefore(box, hi.nextSibling); }
   const myRole=(ROLE&&ROLE.role)||'';
   const notAcked=l=>{ const acked=(l.acked_by||'').split(',').map(s=>s.trim()).filter(Boolean); return !acked.includes(myRole); };
-  const pending=(CHANGELOG||[]).filter(l=>l.action!=='session_room' && notAcked(l));
-  if(!pending.length){ box.innerHTML=''; return; }
+  const coord=(CHANGELOG||[]).filter(l=>l.action==='room_coord' && notAcked(l));
+  const pending=(CHANGELOG||[]).filter(l=>l.action!=='session_room' && l.action!=='room_coord' && notAcked(l));
+  // 需要协调教室：管理端改单回后检查出教室被占 / 没排教室，总务来处理
+  const coordHtml = coord.length ? `<div style="background:#fff5f5;border:2px solid #c0392b;border-radius:8px;padding:10px 14px;margin-bottom:8px">`+
+    `<div style="font-size:14px;font-weight:600;color:#a33">需要协调教室（${coord.length}）</div>`+
+    coord.map(l=>{
+      const x=(Array.isArray(l.changes)?l.changes:[]).find(y=>y&&y.field==='room_coord')||{};
+      const what = x.reason==='no_room' ? '还没排教室' : ('教室 '+(x.room_name||'')+' 被 '+(x.blocker||'别的课')+' 占着');
+      return `<div style="border-top:1px solid #f0c8c8;padding-top:6px;margin-top:6px;font-size:13px;line-height:1.5">`+
+        `<div><b>${esc(l.course_name||'')}</b>　${esc(x.label||'')}　改到 ${esc(x.date||'')} ${esc(x.time||'')}</div>`+
+        `<div>${esc(what)}</div>`+
+        `<div class="muted" style="font-size:12px">发起：${esc(l.actor_label||'管理员')}　${esc((l.created_at||'').slice(0,16).replace('T',' '))}</div>`+
+        `<div style="margin-top:4px;display:flex;gap:8px"><button class="sm" data-coordgo="${esc(String(x.course_uuid||''))}">去处理</button><button class="sm ghost" data-coordack="${l.id}">已处理</button></div></div>`;
+    }).join('')+`</div>` : '';
+  if(!pending.length){
+    box.innerHTML=coordHtml; bindCoord(box,myRole);
+    return;
+  }
   // 按学科（类别）分组：反查课程的 category
   const catOf=(l)=>{
     const c=(COURSES||[]).find(x=>String(x.legacy_sched_id)===String(l.course_id) || String(x.id)===String(l.course_id));
@@ -185,7 +201,7 @@ function renderChangeAlerts(){
   };
   const groups={}; pending.forEach(l=>{ const k=catOf(l); (groups[k]=groups[k]||[]).push(l); });
   const cats=Object.keys(groups).sort();
-  box.innerHTML = cats.map((cat,gi)=>{
+  box.innerHTML = coordHtml + cats.map((cat,gi)=>{
     const items=groups[cat];
     const ids=items.map(l=>l.id).join(',');
     const detail=items.map(l=>{
@@ -204,6 +220,7 @@ function renderChangeAlerts(){
       `<div id="chgdetail_${gi}" style="display:none">${detail}</div>`+
       `</div>`;
   }).join('');
+  bindCoord(box,myRole);
   box.querySelectorAll('[data-chgtoggle]').forEach(b=>b.onclick=()=>{
     const d=el('chgdetail_'+b.dataset.chgtoggle); if(!d) return;
     const open=d.style.display!=='none';
@@ -218,6 +235,16 @@ function renderChangeAlerts(){
       if(!acked.includes(myRole)) acked.push(myRole);
       try{ await sbUpdate('sched_change_log', l.id, {acked_by:acked.join(',')}); l.acked_by=acked.join(','); }catch(e){}
     }
+    renderChangeAlerts();
+  });
+}
+function bindCoord(box,myRole){
+  box.querySelectorAll('[data-coordgo]').forEach(b=>b.onclick=()=>{ const id=b.dataset.coordgo; if(id) adjustDayDialog(id); else openCard('conflict'); });
+  box.querySelectorAll('[data-coordack]').forEach(b=>b.onclick=async()=>{
+    const l=CHANGELOG.find(x=>String(x.id)===String(b.dataset.coordack)); if(!l) return;
+    const acked=(l.acked_by||'').split(',').map(s=>s.trim()).filter(Boolean);
+    if(!acked.includes(myRole)) acked.push(myRole);
+    try{ await sbUpdate('sched_change_log', l.id, {acked_by:acked.join(',')}); l.acked_by=acked.join(','); }catch(e){ toast('保存失败：'+e.message,false); return; }
     renderChangeAlerts();
   });
 }
