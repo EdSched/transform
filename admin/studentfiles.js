@@ -9,7 +9,7 @@
 const SFL_CATS = ['计划书', '面试稿', '志望理由书', '联系教授邮件', '问询邮件', '作业', '随堂作业', '美术作业', '面谈附件', '出愿材料'];
 const SFL_KIND_CAT = { gakubu_riyu: '志望理由书', grad_riyu: '志望理由书', grad_prof_mail: '联系教授邮件', grad_inquiry_mail: '问询邮件', grad_interview: '面试稿' };
 const SFL_STATUS = [['active', '在籍'], ['graduated', '已合格'], ['expired', '已到期'], ['stopped', '停课'], ['withdrawn', '退学']];
-const SFL_PAGE = 30;
+const SFL_PAGE = LIST_PAGE;
 const SFL = { students: null, loading: false, loadErr: '', cache: {}, q: '', status: '', shown: SFL_PAGE, sel: new Set(), sizes: {}, busy: false, queue: [], queueRun: 0, root: null, zipMsg: '' };
 
 function sflEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
@@ -361,7 +361,7 @@ function sflRender() {
         <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();sflZipRow('${sflEsc(s.id)}')">打包下载</button>
       </div>`;
     }).join('') || '<div class="empty">没有符合条件的学生</div>'}</div>
-    ${list.length > shown.length ? `<div onclick="SFL.shown+=SFL_PAGE;sflRender()" style="text-align:center;padding:10px;margin:8px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">显示更多（还有 ${list.length - shown.length} 人）</div>` : ''}`}
+    ${list.length > shown.length ? `<div onclick="SFL.shown+=SFL_PAGE;sflRender()" style="text-align:center;padding:10px;margin:8px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">加载更多（还有 ${list.length - shown.length} 人）</div>` : ''}`}
   </div>`;
   if (!idle) sflQueueCounts(shown.map(s => s.id));
 }

@@ -12,10 +12,10 @@ const VL = {
   ym: '', view: 'lesson',            // view: lesson 按课次 | student 按学生
   status: '', teacher: '', q: '',     // status: '' | done | cancelled | todo
   rows: [], subs: {}, loadedYm: '', loading: false, err: '',
-  open: {}, stuOpen: {}, shown: 30,
+  open: {}, stuOpen: {}, shown: LIST_PAGE,
   box: null, cfg: null,
 };
-const VL_PAGE = 30;
+const VL_PAGE = LIST_PAGE;
 
 function vlEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
 function vlPad2(n) { return String(n).padStart(2, '0'); }
@@ -198,7 +198,7 @@ const VL_TH = 'text-align:left;font-size:10px;font-weight:600;color:var(--text-3
 const VL_TD = 'font-size:11px;padding:7px 8px;border-bottom:1px solid var(--border-light,#eee);vertical-align:top';
 
 function vlMoreBtn(total) {
-  return total > VL.shown ? `<div onclick="vlMore()" style="text-align:center;font-size:11px;color:var(--accent);cursor:pointer;padding:10px">显示更多（还有 ${total - VL.shown} 条）</div>` : '';
+  return total > VL.shown ? `<div onclick="vlMore()" style="text-align:center;font-size:11px;color:var(--accent);cursor:pointer;padding:10px">加载更多（还有 ${total - VL.shown} 条）</div>` : '';
 }
 
 // 一行课次 + 展开详情；colspan = 表格总列数

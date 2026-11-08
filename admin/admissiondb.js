@@ -27,7 +27,7 @@ let adbEditId = null;
 let adbEngTests = new Set(), adbJpTests = new Set(); // 语言考试 chips（可叠加，key 如 'TOEIC' / 'JLPT-N1'）
 let adbSortMode = 'time';   // 'time' 按最早出愿时间 | 'name' 按大学名
 let adbOpen = new Set();    // 已展开的组（key）
-let adbShown = 30;          // 每次多显示 30 组
+let adbShown = LIST_PAGE;          // 每次多显示 30 组
 let adbGroupsView = [];     // 当前显示的组（行上的 onclick 用下标取）
 
 function renderAdmissionDbPage(mc) {
@@ -103,7 +103,7 @@ function renderAdmissionDbPage(mc) {
   <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
     <div style="font-size:11px;color:var(--text-3)" id="adbResultCount">请点击上方专业查看数据</div>
     <span style="font-size:11px;color:var(--text-3)">排序</span>
-    <select onchange="adbSortMode=this.value;adbShown=30;renderAdmissionTable()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
+    <select onchange="adbSortMode=this.value;adbShown=LIST_PAGE;renderAdmissionTable()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
       <option value="time" ${adbSortMode==='time'?'selected':''}>按最早出愿时间</option>
       <option value="name" ${adbSortMode==='name'?'selected':''}>按大学名</option>
     </select>
@@ -226,13 +226,13 @@ async function loadAdbData() {
   if (tbody) tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;padding:20px;color:var(--text-3)">加载中…</td></tr>';
   const majorFilter = `major=in.(${adbSelectedMajors.map(m=>`"${m}"`).join(',')})`;
   cachedAdmissionSchools = await sbAll(`/rest/v1/admission_schools?select=*&${majorFilter}&order=university.asc,id.asc`).catch(() => []);
-  adbOpen = new Set(); adbShown = 30;
+  adbOpen = new Set(); adbShown = LIST_PAGE;
   renderAdmissionTable();
 }
 
 // ── 语言筛选 ──
-function setAdbMonthFrom(v) { adbMonthFrom = v; adbShown = 30; renderAdmissionTable(); }
-function setAdbMonthTo(v) { adbMonthTo = v; adbShown = 30; renderAdmissionTable(); }
+function setAdbMonthFrom(v) { adbMonthFrom = v; adbShown = LIST_PAGE; renderAdmissionTable(); }
+function setAdbMonthTo(v) { adbMonthTo = v; adbShown = LIST_PAGE; renderAdmissionTable(); }
 
 // 出願期間里的月份（旧名字保留，其它地方可能还在用）
 function extractMonths(periodStr) { return adgRowMonths({ application_period: periodStr }); }
@@ -245,7 +245,7 @@ function adbTestChipsInner() {
 function toggleAdbTest(kind, key) {
   const set = kind === 'en' ? adbEngTests : adbJpTests;
   if (set.has(key)) set.delete(key); else set.add(key);
-  adbShown = 30;
+  adbShown = LIST_PAGE;
   const box = document.getElementById('adbTestChips'); if (box) box.innerHTML = adbTestChipsInner();
   renderAdmissionTable();
 }
@@ -270,11 +270,11 @@ function setAdbFilter(type, val) {
       btn.classList.toggle('btn-outline', !active);
     }
   });
-  adbShown = 30;
+  adbShown = LIST_PAGE;
   renderAdmissionTable();
 }
 
-function setAdbSearch(v) { adbSearch = v; adbShown = 30; renderAdmissionTable(); }
+function setAdbSearch(v) { adbSearch = v; adbShown = LIST_PAGE; renderAdmissionTable(); }
 
 // ── 过滤 / 归并 ──
 function adbFilterObj() {
@@ -332,7 +332,7 @@ function renderAdmissionTable() {
   adbGroupsView = groups.slice(0, adbShown);
   tbody.innerHTML = adgBodyHtml(adbGroupsView, ctx);
   if (more) more.innerHTML = groups.length > adbShown
-    ? `<button class="btn btn-outline btn-sm" onclick="adbShown+=30;renderAdmissionTable()">显示更多（还有 ${groups.length - adbShown} 所）</button>` : '';
+    ? `<button class="btn btn-outline btn-sm" onclick="adbShown+=LIST_PAGE;renderAdmissionTable()">加载更多（还有 ${groups.length - adbShown} 所）</button>` : '';
 }
 
 function adbToggleGroup(i) {

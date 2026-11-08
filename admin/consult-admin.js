@@ -6,7 +6,7 @@
 const CSA_STAGES = ['信息采集', '选校', '课程', '价格', '入学后'];
 const CSA_LEVELS = [['daigakuin', '大学院'], ['gakubu', '学部']];
 const CSA_GAPS = [['jp', '日语成绩'], ['en', '英语成绩'], ['plan', '研究计划书・志望理由书'], ['interview', '面试'], ['written', '笔试'], ['specialty', '专业能力（跨专业补课）']];
-let csa = { tab: 'faq', faq: null, rules: null, profs: null, media: null, pq: '', mk: 'textbook', plim: 40, leads: null, teachers: [], lq: '', edit: null, body: null, err: '' };
+let csa = { tab: 'faq', faq: null, rules: null, profs: null, media: null, pq: '', mk: 'textbook', plim: LIST_PAGE, leads: null, teachers: [], lq: '', edit: null, body: null, err: '' };
 const csaE = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const csaJ = v => String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
@@ -165,9 +165,9 @@ function csaProfHtml() {
     <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-primary btn-sm" onclick="csaProfSave()">保存</button><button class="btn btn-outline btn-sm" onclick="csa.edit=null;csaRender()">取消</button>
       ${e.id ? `<button class="btn btn-outline btn-sm" style="margin-left:auto;color:var(--danger,#b03a2e)" onclick="csaDel('consult_professors','${csaJ(e.id)}')">删除</button>` : ''}</div></div>`;
   const q = csa.pq.trim().toLowerCase(), rows = csa.profs.filter(p => !q || [p.university, p.department, p.name, p.research].join(' ').toLowerCase().includes(q));
-  return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><input placeholder="搜索大学 / 教授 / 研究方向" value="${csaE(csa.pq)}" onchange="csa.pq=this.value;csa.plim=40;csaRender()" style="${csaIn};width:240px"><span style="font-size:11px;color:var(--text-3)">共 ${rows.length} 位。咨询页第 ② 步按目标校自动显示，带来源和更新时间。</span><button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="csaProfNew()">＋ 新增教授</button></div>
+  return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><input placeholder="搜索大学 / 教授 / 研究方向" value="${csaE(csa.pq)}" onchange="csa.pq=this.value;csa.plim=LIST_PAGE;csaRender()" style="${csaIn};width:240px"><span style="font-size:11px;color:var(--text-3)">共 ${rows.length} 位。咨询页第 ② 步按目标校自动显示，带来源和更新时间。</span><button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="csaProfNew()">＋ 新增教授</button></div>
     ${rows.slice(0, csa.plim).map(p => `<div onclick="csaProfOpen('${csaJ(p.id)}')" style="border:1px solid var(--border-light);border-radius:4px;padding:8px 12px;margin-bottom:6px;cursor:pointer;background:var(--surface)"><span style="font-size:12px;font-weight:600">${csaE(p.name)}</span> <span style="font-size:11px;color:var(--text-2)">${csaE([p.university, p.department].filter(Boolean).join(' '))}</span>${p.unconfirmed ? ' <span style="font-size:10px;color:#8a6a1a">待确认</span>' : ''}${p.published === false ? ' <span style="font-size:10px;color:var(--text-3)">未发布</span>' : ''}<div style="font-size:10px;color:var(--text-3);margin-top:2px">${csaE((p.research || '').slice(0, 70))}${p.updated_on ? ' · 更新 ' + csaE(p.updated_on) : ''}</div></div>`).join('') || '<div class="empty">还没有教授资料</div>'}
-    ${rows.length > csa.plim ? `<div onclick="csa.plim+=40;csaRender()" style="text-align:center;padding:10px;font-size:11px;color:var(--accent);cursor:pointer;border:1px dashed var(--border);border-radius:4px">显示更多（还有 ${rows.length - csa.plim} 位）</div>` : ''}`;
+    ${rows.length > csa.plim ? `<div onclick="csa.plim+=LIST_PAGE;csaRender()" style="text-align:center;padding:10px;font-size:11px;color:var(--accent);cursor:pointer;border:1px dashed var(--border);border-radius:4px">加载更多（还有 ${rows.length - csa.plim} 位）</div>` : ''}`;
 }
 async function csaProfSave() {
   csaCapture(); const e = csa.edit;

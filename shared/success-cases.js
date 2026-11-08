@@ -347,7 +347,7 @@ async function scOnlyPassed(all) {
 // ── ① 关联学生：搜索框 + 领域 / 专业 / 合格年份 / 案例 chips + 结果列表 ──
 function scSfInit() {
   const doms = scAllowedDomains();
-  return { dom: sc.ctx.lockDomain || (doms.length === 1 ? doms[0] : ''), major: '', year: '', cs: 'none', more: 30 };
+  return { dom: sc.ctx.lockDomain || (doms.length === 1 ? doms[0] : ''), major: '', year: '', cs: 'none', more: LIST_PAGE };
 }
 function scStuDom(s) { return MAJOR_DOMAIN[s.major] || ''; }
 function scStuHasCase(s) { const cid = sc.cur && sc.cur.id; return (sc.rows || []).some(r => r.id !== cid && String(r.student_id) === String(s.id)); }
@@ -404,15 +404,15 @@ function scStuListHtml() {
   return row('领域', domItems) + row('专业', majItems) + row('年份', yrItems) + row('案例', csItems)
     + `<div style="font-size:10px;color:var(--text-3);margin:6px 0 2px">共 ${list.length} 人</div>`
     + `<div style="border:1px solid var(--border);border-radius:3px;background:var(--bg);max-height:340px;overflow:auto">${rows || '<div class="empty" style="padding:12px">没有符合条件的已合格学生（学生档案状态为「已合格」，或志望校里有合格的学校）</div>'}`
-    + (list.length > shown.length ? `<div onclick="scSf('more',${f.more + 30})" style="text-align:center;padding:7px;font-size:11px;color:var(--accent);cursor:pointer">显示更多（还有 ${list.length - shown.length} 人）</div>` : '') + '</div>';
+    + (list.length > shown.length ? `<div onclick="scSf('more',${f.more + LIST_PAGE})" style="text-align:center;padding:7px;font-size:11px;color:var(--accent);cursor:pointer">加载更多（还有 ${list.length - shown.length} 人）</div>` : '') + '</div>';
 }
 function scSf(k, v) {
   const f = sc.cur.sf;
   if (k === 'more') f.more = v;
-  else { f[k] = f[k] === v && k !== 'cs' ? '' : v; f.more = 30; if (k === 'dom') f.major = ''; }
+  else { f[k] = f[k] === v && k !== 'cs' ? '' : v; f.more = LIST_PAGE; if (k === 'dom') f.major = ''; }
   scRerenderStuSelect();
 }
-function scStuSearch(q) { sc.cur.stuSearch = q; sc.cur.sf.more = 30; scRerenderStuSelect(); }
+function scStuSearch(q) { sc.cur.stuSearch = q; sc.cur.sf.more = LIST_PAGE; scRerenderStuSelect(); }
 function scRerenderStuSelect() { const el = document.getElementById('sc_stu_box'); if (el) el.innerHTML = scStuListHtml(); }
 
 function scEditHtml() {

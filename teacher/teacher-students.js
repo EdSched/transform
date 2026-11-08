@@ -279,12 +279,12 @@ function tsmNeed() {
 }
 function tsmPickHtml() { return `<div class="empty" style="padding:40px">${tsmNeed() === 'major' ? '请先在上面选择专业（或点「全部」）后再查看学生' : '请先在上面选择领域（或点「全部」）后再查看学生'}</div>`; }
 // 学生列表分页：每次先显示 30 人，「显示更多」再加 30；筛选/切页时重置
-const TSM_PAGE = 30;
+const TSM_PAGE = LIST_PAGE;
 let tsmShown = TSM_PAGE;
 function tsmSlice(list) { return list.slice(0, tsmShown); }
 function tsmMoreHtml(total) {
   if (total <= tsmShown) return '';
-  return `<div onclick="tsmShowMore()" style="text-align:center;padding:10px;margin:6px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">显示更多（还有 ${total - tsmShown} 人）</div>`;
+  return `<div onclick="tsmShowMore()" style="text-align:center;padding:10px;margin:6px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">加载更多（还有 ${total - tsmShown} 人）</div>`;
 }
 function tsmShowMore() { tsmShown += TSM_PAGE; tsmRefreshPage(true); }
 let tsmPool = null, tsmPoolAt = 0;   // 可见学生（全部状态）[{id,name,major,level,status,course_type,student_type,source}]
@@ -727,7 +727,7 @@ let tatState='present', tatMode='offline';
 // 顶部：课次签到区（渲染进 renderTsaRecords 顶部）
 // 课次分两组：待记录 / 已记录（记过出席的课次也能找到，点「修改出席」带出原来的记录再改，例如迟到、事后请假）
 let tatView='todo';         // todo 待记录 | done 已记录
-let tatLimit=30;            // 列表每次显示的条数（显示更多 +30）
+let tatLimit=LIST_PAGE;            // 列表每次显示的条数（显示更多 +30）
 let tatBar={ pending:[], done:[], stats:{} };   // 当前范围内的课次（已按可见专业过滤）和各课次出席统计
 let tatExisting={};         // 当前打开课次已有的记录：student_id -> 最早的一条
 let tatEditing=false;       // 当前是否在修改已有记录
@@ -773,10 +773,10 @@ function tatBarRender(){
   const rng=tatRange==='today'?'今天':tatRange==='week'?'本周':'';
   bar.innerHTML=`
     <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
-      ${[['today','今天'],['week','本周'],['all','全部']].map(([k,l])=>btn(tatRange===k,`tatRange='${k}';tatLimit=30;tatRenderSessionBar()`,l)).join('')}
+      ${[['today','今天'],['week','本周'],['all','全部']].map(([k,l])=>btn(tatRange===k,`tatRange='${k}';tatLimit=LIST_PAGE;tatRenderSessionBar()`,l)).join('')}
     </div>
     <div style="display:flex;gap:6px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
-      ${btn(tatView==='todo',`tatView='todo';tatLimit=30;tatBarRender()`,`待记录 ${tatBar.pending.length}`)}${btn(tatView==='done',`tatView='done';tatLimit=30;tatBarRender()`,`已记录 ${tatBar.done.length}`)}
+      ${btn(tatView==='todo',`tatView='todo';tatLimit=LIST_PAGE;tatBarRender()`,`待记录 ${tatBar.pending.length}`)}${btn(tatView==='done',`tatView='done';tatLimit=LIST_PAGE;tatBarRender()`,`已记录 ${tatBar.done.length}`)}
     </div>
     ${shown.length? `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">${shown.map(se=>{
       const d=new Date(se.session_date+'T12:00:00'); const dow='日一二三四五六'[d.getDay()];
@@ -788,7 +788,7 @@ function tatBarRender(){
         <button onclick="tatOpen('${se.id}')" style="margin-left:auto;font-size:12px;padding:5px 14px;background:var(--accent,#b8953a);color:#fff;border:none;border-radius:5px;cursor:pointer;font-family:inherit">${st?'✏ 修改出席':'📝 记录出席'}</button>
       </div>`;
     }).join('')}</div>
-    ${list.length>shown.length?`<div style="text-align:center;margin:-6px 0 14px"><button onclick="tatLimit+=30;tatBarRender()" style="font-size:12px;padding:5px 18px;border:1px solid var(--border);border-radius:5px;background:var(--bg);cursor:pointer;font-family:inherit">显示更多（还有 ${list.length-shown.length} 节）</button></div>`:''}`
+    ${list.length>shown.length?`<div style="text-align:center;margin:-6px 0 14px"><button onclick="tatLimit+=LIST_PAGE;tatBarRender()" style="font-size:12px;padding:5px 18px;border:1px solid var(--border);border-radius:5px;background:var(--bg);cursor:pointer;font-family:inherit">加载更多（还有 ${list.length-shown.length} 节）</button></div>`:''}`
     : `<div style="font-size:12px;color:var(--text-3);padding:12px;text-align:center;margin-bottom:14px">${rng}没有${tatView==='done'?'已记录':'待记录'}的课次${tatView==='todo'&&tatBar.done.length?'（记过的在「已记录」里，可以修改）':''}</div>`}
   `;
 }

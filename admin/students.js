@@ -10,7 +10,7 @@ function handleStSearchInput(q){
   searchRerender('st_search_input',()=>renderStudentsPage(document.getElementById('mainContent')));
 }
 function handleProgressSearchInput(q){
-  progressStudentFilter=q;progressShown=30;
+  progressStudentFilter=q;progressShown=LIST_PAGE;
   searchRerender('progress_search_input',()=>renderProgressPage(document.getElementById('mainContent')));
 }
 let speEdits=null; // 老师修改记录（未处理）
@@ -601,9 +601,9 @@ async function generateAllStudentCodes() {
 
 // ── 考学进度页面 ──
 let progressStudentFilter = '';
-let progressStatus = 'active', progressShown = 30;   // 学生视角：状态筛选（默认在籍）+ 每次显示 30 人
+let progressStatus = 'active', progressShown = LIST_PAGE;   // 学生视角：状态筛选（默认在籍）+ 每次显示 30 人
 const PROGRESS_STATUS_OPTS = [['active','在籍'],['graduated','已合格'],['expired','已到期'],['stopped','停课'],['withdrawn','退学'],['all','全部']];
-function setProgressStatus(v){progressStatus=v;progressShown=30;renderProgressPage(document.getElementById('mainContent'))}
+function setProgressStatus(v){progressStatus=v;progressShown=LIST_PAGE;renderProgressPage(document.getElementById('mainContent'))}
 let progressViewMode = 'student'; // 'student' | 'submissions' | 'season' | 'materials'
 // 考学进度顶部的视图切换按钮（学生视角 / 学生提交 / 年度出愿情报 / 出愿材料准备）
 function progressViewButtons(){
@@ -651,7 +651,7 @@ async function renderProgressPage(mc, focusStudentId=null, opts=null){
   // 视角过滤（叠加逻辑）：非总览时按学生主专业+附加专业判断
   students=students.filter(s=>studentInCurrentView(s));
   const dmfViewStudents=cachedStudents.filter(s=>studentInCurrentView(s));   // 领域/专业/来源筛选栏（DMF）用：当前视角下的全部学生
-  const dmfBar=domMajorFilterHtml(DMF,"progressShown=30;renderProgressPage(document.getElementById('mainContent'))",dmfViewStudents,{also:s=>progressStatus==='all'||(s.status||'active')===progressStatus});
+  const dmfBar=domMajorFilterHtml(DMF,"progressShown=LIST_PAGE;renderProgressPage(document.getElementById('mainContent'))",dmfViewStudents,{also:s=>progressStatus==='all'||(s.status||'active')===progressStatus});
   students=dmfFilter(students);
   if(progressStudentFilter) students=students.filter(s=>matchesStudentSearch(s,progressStudentFilter));
   // 学生视角用状态 chip 筛选（年度出愿情报仍沿用上面在籍/停课/已合格的范围）
@@ -740,7 +740,7 @@ async function renderProgressPage(mc, focusStudentId=null, opts=null){
   <div class="search-bar"><input id="progress_search_input" placeholder="搜索姓名（汉字 / 拼音首字母）/ 专业 / 学校 / 备注…" value="${stEsc(progressStudentFilter)}" oninput="searchBox(this,handleProgressSearchInput)"></div>
   <div style="font-size:11px;color:var(--text-3);margin-bottom:8px">共 ${cardStudents.length} 人</div>
   <div style="display:flex;flex-direction:column;gap:10px">${cards || '<div class="empty">没有符合条件的学生</div>'}</div>
-  ${cardStudents.length>progressShown?`<div onclick="progressShown+=30;renderProgressPage(document.getElementById('mainContent'))" style="text-align:center;padding:10px;margin:8px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">显示更多（还有 ${cardStudents.length-progressShown} 人）</div>`:''}`;
+  ${cardStudents.length>progressShown?`<div onclick="progressShown+=LIST_PAGE;renderProgressPage(document.getElementById('mainContent'))" style="text-align:center;padding:10px;margin:8px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">加载更多（还有 ${cardStudents.length-progressShown} 人）</div>`:''}`;
   mc.innerHTML = `
   ${topHtml}
 

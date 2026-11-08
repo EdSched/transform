@@ -688,7 +688,7 @@ let teacherBkSection = 'regular'; // 'regular' | 'vip'
 
 // 面谈预约：状态 chips + 一行一条的列表（状态规则同管理端，见 shared/payroll-core.js 的 interviewState）
 const TBK_STATS = [['pending', '待确认'], ['confirmed', '已确认'], ['need_record', '待补记录'], ['done', '已完成'], ['all', '全部']];
-let tbkStat = null, tbkYm = '', tbkQ = '', tbkShown = 30;
+let tbkStat = null, tbkYm = '', tbkQ = '', tbkShown = LIST_PAGE;
 const tbkOpen = {};
 function tbkRegular() { return cachedTeacherBookings.filter(b => b.type !== 'vip' && b.status !== 'cancelled'); }
 // 已完成 / 全部 按月；待确认 / 已确认 / 待补记录 不分月（都是要处理的）
@@ -734,7 +734,7 @@ function tbkListHtml() {
   list.sort((x, y) => asc ? key(x).localeCompare(key(y)) : key(y).localeCompare(key(x)));
   const shown = list.slice(0, tbkShown);
   return `<div class="tbkl">${shown.length ? shown.map(tbkRowHtml).join('') : '<div style="font-size:12px;color:var(--text-3);padding:14px 12px">暂无预约</div>'}</div>
-  ${list.length > tbkShown ? `<div onclick="tbkMore()" style="text-align:center;font-size:11px;color:var(--accent);cursor:pointer;padding:10px">显示更多（还有 ${list.length - tbkShown} 条）</div>` : ''}`;
+  ${list.length > tbkShown ? `<div onclick="tbkMore()" style="text-align:center;font-size:11px;color:var(--accent);cursor:pointer;padding:10px">加载更多（还有 ${list.length - tbkShown} 条）</div>` : ''}`;
 }
 function tbkRowHtml(b) {
   const st = interviewState(b), f = fmtSessionDate(b.slot_date), open = !!tbkOpen[b.id], id = b.id, stop = 'event.stopPropagation();';
@@ -763,12 +763,12 @@ function tbkRowHtml(b) {
 }
 function tbkDraw() { const el = document.getElementById('tbkList'); if (el) el.innerHTML = tbkListHtml(); }
 function tbkToggle(id) { if (tbkOpen[id]) delete tbkOpen[id]; else tbkOpen[id] = true; tbkDraw(); }
-function tbkMore() { tbkShown += 30; tbkDraw(); }
-function tbkSetQ(v) { tbkQ = v; tbkShown = 30; tbkDraw(); }
-function tbkSetStat(k) { tbkStat = k; tbkShown = 30; renderBookingManagement(document.getElementById('mainContent')); }
+function tbkMore() { tbkShown += LIST_PAGE; tbkDraw(); }
+function tbkSetQ(v) { tbkQ = v; tbkShown = LIST_PAGE; tbkDraw(); }
+function tbkSetStat(k) { tbkStat = k; tbkShown = LIST_PAGE; renderBookingManagement(document.getElementById('mainContent')); }
 function tbkShift(d) {
   const [y, m] = tbkYm.split('-').map(Number), dt = new Date(y, m - 1 + d, 1);
-  tbkYm = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0'); tbkShown = 30;
+  tbkYm = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0'); tbkShown = LIST_PAGE;
   renderBookingManagement(document.getElementById('mainContent'));
 }
 // 「完成面谈・填记录」：展开这一行，直接打开面谈记录表单（实际面谈时间和时长在表单最上面）
@@ -799,7 +799,7 @@ function tbkGoRecord(id) {
 // VIP 预约渲染（供「VIP管理 → 预约」调用）
 // VIP 预约：状态 chips + 一行一条的列表（逻辑沿用原来的分法，只多拆出「待填上课记录」）
 const TVB_STATS = [['needme', '待我确认'], ['waitstu', '等学生确认预约'], ['confirmed', '已确认'], ['needrec', '待填上课记录'], ['waiting', '待学生确认上课'], ['done', '已完成'], ['all', '全部']];
-let tvbStat = null, tvbDoneStu = '', tvbDoneYM = '', tvbQ = '', tvbShown = 30;
+let tvbStat = null, tvbDoneStu = '', tvbDoneYM = '', tvbQ = '', tvbShown = LIST_PAGE;
 const tvbOpen = {};
 function tvbStateOf(b, ctx) {
   if (b.vip_session_notes && !b.student_confirmed) return 'waiting';
@@ -863,7 +863,7 @@ function tvbListHtml() {
   list.sort((x, y) => asc ? key(x).localeCompare(key(y)) : key(y).localeCompare(key(x)));
   const shown = list.slice(0, tvbShown);
   return `<div class="tbkl">${shown.length ? shown.map(tvbRowHtml).join('') : '<div style="font-size:12px;color:var(--text-3);padding:14px 12px">暂无VIP预约</div>'}</div>
-  ${list.length > tvbShown ? `<div onclick="tvbMore()" style="text-align:center;font-size:11px;color:var(--accent);cursor:pointer;padding:10px">显示更多（还有 ${list.length - tvbShown} 条）</div>` : ''}`;
+  ${list.length > tvbShown ? `<div onclick="tvbMore()" style="text-align:center;font-size:11px;color:var(--accent);cursor:pointer;padding:10px">加载更多（还有 ${list.length - tvbShown} 条）</div>` : ''}`;
 }
 function tvbRowHtml(x) {
   const b = x.b, st = x.st, id = b.id, f = fmtSessionDate(b.slot_date), open = !!tvbOpen[id], stop = 'event.stopPropagation();';
@@ -892,15 +892,15 @@ function tvbRerender() {
 }
 function tvbDraw() { const el = document.getElementById('tvbList'); if (el) el.innerHTML = tvbListHtml(); }
 function tvbToggle(id) { if (tvbOpen[id]) delete tvbOpen[id]; else tvbOpen[id] = true; tvbDraw(); }
-function tvbMore() { tvbShown += 30; tvbDraw(); }
-function tvbSetQ(v) { tvbQ = v; tvbShown = 30; tvbDraw(); }
-function tvbSetStat(k) { tvbStat = k; tvbShown = 30; tvbRerender(); }
-function tvbSetStu(k) { tvbDoneStu = k; tvbShown = 30; tvbRerender(); }
+function tvbMore() { tvbShown += LIST_PAGE; tvbDraw(); }
+function tvbSetQ(v) { tvbQ = v; tvbShown = LIST_PAGE; tvbDraw(); }
+function tvbSetStat(k) { tvbStat = k; tvbShown = LIST_PAGE; tvbRerender(); }
+function tvbSetStu(k) { tvbDoneStu = k; tvbShown = LIST_PAGE; tvbRerender(); }
 function tvbDoneShift(d) {
   const [y, m] = (tvbDoneYM || new Date().toISOString().slice(0, 7)).split('-').map(Number);
   const dt = new Date(y, m - 1 + d, 1);
   tvbDoneYM = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
-  tvbShown = 30;
+  tvbShown = LIST_PAGE;
   tvbRerender();
 }
 
@@ -2597,7 +2597,7 @@ let teacherAdbData = [];
 let teacherAdbEngTests = new Set(), teacherAdbJpTests = new Set();   // 语言考试 chips（可叠加）
 let teacherAdbSortMode = 'time';   // 'time' 按最早出愿时间 | 'name' 按大学名
 let teacherAdbOpen = new Set();    // 已展开的组
-let teacherAdbShown = 30;          // 每次多显示 30 组
+let teacherAdbShown = LIST_PAGE;          // 每次多显示 30 组
 let teacherAdbView = [];           // 当前显示的组
 // 老师点选的学校（跨专业累积）：key=学校 id，value=整行数据。切换专业/筛选/标签页都不清空
 let teacherAdbSelected = new Map();   // key 统一用 String(id)
@@ -2694,7 +2694,7 @@ async function renderTeacherAdmissionDb(mc) {
   <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
     <div style="font-size:11px;color:var(--text-3)" id="tadbCount">请选择专业查看数据</div>
     <span style="font-size:11px;color:var(--text-3)">排序</span>
-    <select onchange="teacherAdbSortMode=this.value;teacherAdbShown=30;teacherAdbRender()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
+    <select onchange="teacherAdbSortMode=this.value;teacherAdbShown=LIST_PAGE;teacherAdbRender()" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
       <option value="time" ${teacherAdbSortMode==='time'?'selected':''}>按最早出愿时间</option>
       <option value="name" ${teacherAdbSortMode==='name'?'selected':''}>按大学名</option>
     </select>
@@ -2750,7 +2750,7 @@ async function teacherAdbLoad() {
   // 老师端不取：備考、過去問、その他書類、教员链接（只给管理端）
   const cols = 'id,major,university,type,faculty,department,course,admission_type,doc_review_period,application_period,written_exam,oral_exam,result_date,english_required,english_detail,english_tests,japanese_required,japanese_detail,japanese_tests,recommendation,thesis,exam_style,guideline_url,ere_available';
   teacherAdbData = await sbAll(`/rest/v1/admission_schools?select=${cols}&${f}&order=university.asc,id.asc`).catch(()=>[]);
-  teacherAdbOpen = new Set(); teacherAdbShown = 30;
+  teacherAdbOpen = new Set(); teacherAdbShown = LIST_PAGE;
   teacherAdbRender();
 }
 
@@ -2762,7 +2762,7 @@ function teacherAdbSetLang(type, val) {
     b.classList.toggle('btn-primary', v === val);
     b.classList.toggle('btn-outline', v !== val);
   });
-  teacherAdbShown = 30;
+  teacherAdbShown = LIST_PAGE;
   teacherAdbRender();
 }
 
@@ -2774,7 +2774,7 @@ function teacherAdbTestChipsInner() {
 function teacherAdbToggleTest(kind, key) {
   const set = kind === 'en' ? teacherAdbEngTests : teacherAdbJpTests;
   if (set.has(key)) set.delete(key); else set.add(key);
-  teacherAdbShown = 30;
+  teacherAdbShown = LIST_PAGE;
   const box = document.getElementById('tadbTestChips'); if (box) box.innerHTML = teacherAdbTestChipsInner();
   teacherAdbRender();
 }
@@ -2902,7 +2902,7 @@ function teacherAdbAddToPack() {
   });
 }
 
-function teacherAdbSetSearch(q) { teacherAdbSearch = q; teacherAdbShown = 30; teacherAdbRender(); }
+function teacherAdbSetSearch(q) { teacherAdbSearch = q; teacherAdbShown = LIST_PAGE; teacherAdbRender(); }
 function teacherAdbRender() {
   const thead = document.getElementById('tadbThead');
   const tbody = document.getElementById('tadbBody');
@@ -2952,7 +2952,7 @@ function teacherAdbRender() {
   teacherAdbView = groups.slice(0, teacherAdbShown);
   tbody.innerHTML = adgBodyHtml(teacherAdbView, ctx);
   if (more) more.innerHTML = groups.length > teacherAdbShown
-    ? `<button class="btn btn-outline btn-sm" onclick="teacherAdbShown+=30;teacherAdbRender()">显示更多（还有 ${groups.length - teacherAdbShown} 所）</button>` : '';
+    ? `<button class="btn btn-outline btn-sm" onclick="teacherAdbShown+=LIST_PAGE;teacherAdbRender()">加载更多（还有 ${groups.length - teacherAdbShown} 所）</button>` : '';
 }
 
 // ══════════════════════════════════

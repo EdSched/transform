@@ -9,10 +9,10 @@ let thwSubs = {};         // session_id → 提交数组
 let thwOpenSession = null;
 let thwOpenStudent = null;
 let thwShowPast = false, thwShowDone = false;   // 左栏「以前·未批改」「已批完的以前作业」是否展开
-let thwLimit = { todo: 30, done: 30 };   // 左栏「以前」两个展开列表先显示的条数
+let thwLimit = { todo: LIST_PAGE, done: LIST_PAGE };   // 左栏「以前」两个展开列表先显示的条数
 function thwLimited(list, key, itemFn) {
-  const n = thwLimit[key] || 30;
-  return list.slice(0, n).map(itemFn).join('') + (list.length > n ? `<div onclick="thwLimit['${key}']=${n}+30;thwRender()" style="cursor:pointer;text-align:center;padding:7px;font-size:11px;color:var(--accent)">显示更多（还有 ${list.length - n} 项）</div>` : '');
+  const n = thwLimit[key] || LIST_PAGE;
+  return list.slice(0, n).map(itemFn).join('') + (list.length > n ? `<div onclick="thwLimit['${key}']=${n}+LIST_PAGE;thwRender()" style="cursor:pointer;text-align:center;padding:7px;font-size:11px;color:var(--accent)">加载更多（还有 ${list.length - n} 项）</div>` : '');
 }
 // 学部美术「作品收集」：分配给我的美术课（②），或我担当的美术课（①），按周批改 art_works
 let thwArt = [];          // [{course, weeks:[{start,label,works}], showPast, showDone}]

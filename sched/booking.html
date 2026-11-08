@@ -100,7 +100,7 @@
 </div>
 
 <script src="common.js?v=20270128"></script>
-<script src="../shared/constants.js?v=20270301"></script>
+<script src="../shared/constants.js?v=20270401"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 el('nav').innerHTML = renderNav('booking.html');
@@ -171,7 +171,7 @@ function renderMine(){
     .sort((a,b)=>{const da=a.booking_date||a.start_date||'',db=b.booking_date||b.start_date||'';return db.localeCompare(da);});
   let h='<table><thead><tr><th>用途</th><th>教室</th><th>日期</th><th>时段</th><th>使用人</th><th></th></tr></thead><tbody>';
   if(!list.length) h+='<tr><td colspan="6" class="muted">暂无</td></tr>';
-  list.slice(0,60).forEach(b=>{ const r=rmap[b.room_id];
+  list.slice(0,LIST_PAGE).forEach(b=>{ const r=rmap[b.room_id];
     const when=b.recurrence==='weekly'?(weekdaysLabel(String(b.weekday))+' '+(b.start_date||'')+'~'+(b.end_date||'')):(b.booking_date||'');
     h+=`<tr><td>${esc(KIND_LABEL[b.kind]||b.kind)}</td><td>${esc(r?r.name:'—')}</td><td>${esc(when)}</td><td>${esc(b.start_time||'')}-${esc(b.end_time||'')}</td><td>${esc(b.user_name||'')}</td><td><button class="sm danger" data-delmine="${b.id}">删除</button></td></tr>`;
   });
@@ -261,8 +261,7 @@ function renderMgmtTable(){
     return true;
   }).sort((a,b)=>{ const da=a.booking_date||a.start_date||'', db=b.booking_date||b.start_date||''; return da.localeCompare(db); });
   el('oc_count').textContent='共 '+list.length+' 条';
-  const showAll = window.OC_SHOWALL===true;
-  const LIMIT=50; const truncated = !showAll && list.length>LIMIT;
+  const LIMIT=window.OC_LIM||LIST_PAGE; const truncated = list.length>LIMIT;
   const shown = truncated ? list.slice(0,LIMIT) : list;
   let h='<table><thead><tr><th>用途</th><th>校区</th><th>教室</th><th>日期/周期</th><th>时段</th><th>使用人</th><th>录入人</th><th>账号</th><th>状态</th><th>备注</th><th>操作</th></tr></thead><tbody>';
   if(!shown.length) h+='<tr><td colspan="11" class="muted">无匹配记录</td></tr>';
@@ -279,11 +278,9 @@ function renderMgmtTable(){
       `<td><button class="sm ghost" data-edito="${b.id}">编辑</button> <button class="sm danger" data-delo="${b.id}">删</button></td></tr>`;
   });
   h+='</tbody></table>';
-  if(truncated) h+='<div style="text-align:center;margin-top:10px"><span class="muted" style="font-size:12px">仅显示前 '+LIMIT+' 条（共 '+list.length+' 条）。用上方筛选缩小范围，或 </span><button class="ghost sm" id="oc_showall">显示全部</button></div>';
-  else if(showAll && list.length>LIMIT) h+='<div style="text-align:center;margin-top:10px"><button class="ghost sm" id="oc_showless">收起（只看前 '+LIMIT+'）</button></div>';
+  if(truncated) h+='<div style="text-align:center;margin-top:10px"><button class="ghost sm" id="oc_showall">加载更多（还有 '+(list.length-LIMIT)+' 条）</button></div>';
   el('occupyTable').innerHTML=h;
-  if(el('oc_showall')) el('oc_showall').onclick=()=>{ window.OC_SHOWALL=true; renderMgmtTable(); };
-  if(el('oc_showless')) el('oc_showless').onclick=()=>{ window.OC_SHOWALL=false; renderMgmtTable(); };
+  if(el('oc_showall')) el('oc_showall').onclick=()=>{ window.OC_LIM=(window.OC_LIM||LIST_PAGE)+LIST_PAGE; renderMgmtTable(); };
   el('occupyTable').querySelectorAll('[data-delo]').forEach(x=>x.onclick=async()=>{ const who=await askActor('删除该占用记录？删除即释放教室。'); if(!who) return;
     try{ await sbDeleteAs('sched_bookings',x.dataset.delo,who); }catch(e){ toast(e.message,false); return; }
     await reloadBookings(); renderMgmtTable(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已删除（教室已释放）'); });
