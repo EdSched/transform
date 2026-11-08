@@ -1058,6 +1058,7 @@ function clearDomainCaches(){
   try{
     cachedStudents=[]; cachedCourses=[]; cachedSessions=[]; cachedTeachers=[];
     cachedSlots=[]; cachedBookings=[]; cachedAttendance=[]; cachedSessionRecords=[];
+    teacherMajorFilter='';
   }catch(e){}
   const mc=document.getElementById('mainContent'); if(mc) mc.innerHTML='<div class="loading">加载中…</div>';
 }
@@ -2063,6 +2064,7 @@ function escTM(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g
 let teacherSearch='';
 let teacherTagFilter='';
 let teacherDomainFilter='';
+let teacherMajorFilter='';    // 领域视角下按负责专业筛（切换视角时清空）
 let teacherTypeFilter='';
 let teacherDeptFilter='';
 let teacherPosFilter='';       // 管理职位
@@ -2132,6 +2134,7 @@ function teacherFilteredList(){
     if((t.domains||[]).includes(teacherDomainFilter)) return true;
     return (t.majors||[]).some(m=>MAJOR_DOMAIN[m]===teacherDomainFilter);
   });
+  if(teacherMajorFilter && viewLockDomain()) list=list.filter(t=>(t.majors||[]).includes(teacherMajorFilter));
   const q=teacherSearch.trim();
   if(q) list=list.filter(t=>searchMatch(q,[t.name,t.public_name,t.display_name,(t.tags||[]).join(' '),t.notes]));
   return list;
@@ -2157,11 +2160,24 @@ function renderTeacherList(){
       <div class="filter-chip ${teacherTypeFilter==='兼职'?'active':''}" onclick="teacherTypeFilter='兼职';teacherDeptFilter='';renderTeacherList()" style="padding:2px 9px;font-size:10px">兼职</div>
       ${teacherTypeFilter==='正社员'?['教务本部','营业本部','管理本部','美术部','综合事业本部'].map(d=>`<div class="filter-chip ${teacherDeptFilter===d?'active':''}" onclick="teacherDeptFilter='${d}';renderTeacherList()" style="padding:2px 9px;font-size:10px;margin-left:2px">${d}</div>`).join(''):''}
     </div>
-    <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:8px">
+    ${(()=>{
+      const _lock=viewLockDomain();
+      if(_lock){
+        const _sc=teacherScopedList();
+        const _ms=Object.keys(MAJORS).filter(m=>MAJOR_DOMAIN[m]===_lock);
+        return `<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:8px">
+      <span style="font-size:10px;color:var(--text-3)">专业：</span>
+      <div class="filter-chip ${teacherMajorFilter===''?'active':''}" onclick="teacherMajorFilter='';renderTeacherList()" style="padding:2px 9px;font-size:10px">全部 ${_sc.length}</div>
+      ${_ms.map(m=>{ const n=_sc.filter(t=>(t.majors||[]).includes(m)).length; return `<div class="filter-chip ${teacherMajorFilter===m?'active':''}" onclick="teacherMajorFilter='${escTM(m)}';renderTeacherList()" style="padding:2px 9px;font-size:10px${n||teacherMajorFilter===m?'':';opacity:.45'}">${escTM(MAJORS[m]||m)} ${n}</div>`; }).join('')}
+    </div>
+`;
+      }
+      return `<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:8px">
       <span style="font-size:10px;color:var(--text-3)">领域：</span>
       <div class="filter-chip ${teacherDomainFilter===''?'active':''}" onclick="teacherDomainFilter='';renderTeacherList()" style="padding:2px 9px;font-size:10px">全部</div>
       ${DOMAINS.map(d=>`<div class="filter-chip ${teacherDomainFilter===d.label?'active':''}" onclick="teacherDomainFilter='${escTM(d.label)}';renderTeacherList()" style="padding:2px 9px;font-size:10px">${escTM(d.label)}</div>`).join('')}
-    </div>
+    </div>`;
+    })()}
     <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:8px">
       <span style="font-size:10px;color:var(--text-3)">管理职位：</span>
       <div class="filter-chip ${teacherPosFilter===''?'active':''}" onclick="teacherPosFilter='';renderTeacherList()" style="padding:2px 9px;font-size:10px">全部</div>
@@ -2217,7 +2233,7 @@ function renderTeacherRows(){
   const base=location.origin+location.pathname.replace(/\/admin\/.*$/,'/teacher/');
   const list=teacherFilteredList();
   const cnt=document.getElementById('teacherCount');
-  if(cnt) cnt.textContent=`${list.length} / ${cachedTeachers.length} 位`;
+  if(cnt) cnt.textContent=viewLockDomain()?`本领域 ${list.length} 位`:`${list.length} / ${cachedTeachers.length} 位`;
   box.innerHTML=list.length
     ?`<div style="display:flex;flex-direction:column;gap:6px">
         ${list.map(t=>{
@@ -2371,6 +2387,7 @@ function selectStaffType(el){
 async function addTeacher(){
   const _isDom = deptIsDomLock();
   const _lockDom = _isDom ? viewLockDomain() : '';
+  const _viewDom = viewLockDomain();   // 领域视角（管理员也算）
   const name=document.getElementById('new_teacher_name').value.trim();
   const notes=document.getElementById('new_teacher_notes').value.trim();
   const public_name=document.getElementById('new_teacher_pubname').value.trim();
@@ -2388,15 +2405,17 @@ async function addTeacher(){
   // 同名老师已存在：领域端提示「叠加本领域」（同一账号/ID）；中枢端沿用原「已存在」拦截
   const _existing=cachedTeachers.find(t=>t.name===name);
   if(_existing){
-    if(_isDom){
+    if(_viewDom){
       const curManaged=_existing.managed_by||[], curDomains=_existing.domains||[], curMajors=_existing.majors||[];
-      if(curManaged.includes(_lockDom)){ alert(`老师「${name}」已在本领域，请直接在下方列表中编辑。`); return; }
-      const others=curManaged.filter(d=>d!==_lockDom);
-      if(!confirm(`老师「${name}」已有账号${others.length?`（隶属领域：${others.join('、')}）`:''}。
-是否把本领域「${_lockDom}」叠加到其负责/管理领域？
-（姓名与账号 ID 不变，仅追加本领域及所选专业；其它设置保持不变）`)) return;
-      const willManaged=[...new Set([...curManaged,_lockDom])];
-      const willDomains=[...new Set([...curDomains,_lockDom])];
+      if(curManaged.includes(_viewDom)){ alert(`老师「${name}」已在本领域`); teacherSearch=name; teacherExpandedId=_existing.id; renderTeacherList(); return; }
+      const others=curManaged.filter(d=>d!==_viewDom);
+      const _belong=[...new Set([...curManaged,...curDomains])];
+      const _mj=curMajors.map(m=>MAJORS[m]||m);
+      if(!confirm(`老师「${name}」已有账号（归属：${_belong.join('、')||'—'}；负责专业：${_mj.join('、')||'—'}）。
+是否把「${_viewDom}」加到他的归属领域，并加上你勾选的专业？
+（只追加，其他设置不动）`)) return;
+      const willManaged=[...new Set([...curManaged,_viewDom])];
+      const willDomains=[...new Set([...curDomains,_viewDom])];
       const willMajors=[...new Set([...curMajors,...majors])];
       try{
         await sb(`/rest/v1/teachers?id=eq.${_existing.id}`,'PATCH',{managed_by:willManaged,domains:willDomains,majors:willMajors});
@@ -2404,12 +2423,13 @@ async function addTeacher(){
         document.getElementById('new_teacher_name').value='';
         document.querySelectorAll('#new_teacher_majors .filter-chip').forEach(c=>c.classList.remove('active'));
         if(typeof renderTeacherMajorChips==='function') renderTeacherMajorChips();
+        teacherSearch=name; teacherExpandedId=_existing.id;
         renderTeacherList();
-        alert(`已把「${_lockDom}」叠加到老师「${name}」，本领域现在可管理该老师。`);
+        alert(`已把「${_viewDom}」叠加到老师「${name}」，本领域现在可管理该老师。`);
       }catch(e){ alert('叠加失败：'+e.message); }
       return;
     }
-    alert('该老师已存在'); return;
+    alert('该老师已存在'); teacherSearch=name; teacherExpandedId=_existing.id; renderTeacherList(); return;
   }
   if(deptTeachersReadOnly()){ alert('你没有「本范围老师管理」权限，只能查看老师'); return; }
   const permissions=getPermissionsFromForm();
