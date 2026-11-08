@@ -293,10 +293,12 @@ function pgcCardHtml(s, ctx, o) {
       + (typeof openTeacherDraftComment === 'function' ? `<button onclick="event.stopPropagation();openTeacherDraftComment('${pgcJs(s.id)}','${sname}')" class="pgc-btn" style="margin-top:8px;display:block">查看・评估计划书/先行研究</button>` : '');
   } else planInner = '<div style="font-size:11px;color:var(--text-3)">学生尚未填写</div>';
   // 大学院：管理端「文书指导」保存过的联系教授邮件 / 问询邮件，逐校列在计划书下面（不依赖出愿材料清单里有没有条目）
-  if (!gakubu && typeof riyuMailSavedKinds === 'function' && typeof riyuStaffListHtml === 'function') {
-    riyuMailSavedKinds().forEach(k => {
+  if (!gakubu && typeof riyuPlanKindsFor === 'function' && typeof riyuStaffListHtml === 'function') {
+    riyuPlanKindsFor(s).forEach(k => {
       planInner += `<div style="font-size:11px;font-weight:600;margin:12px 0 4px;color:var(--text-2)">${pgcEsc(RIYU_DOC_NAME[k])}</div>`
         + riyuStaffListHtml(s, plans, subs, k, o.riyuChanged || (() => {}));
+      // 面试稿：除了在线撰写，还有学生上传的稿子（分版本，逐版批复）
+      if (k === RIYU_INTERVIEW_KIND && typeof docvMountHtml === 'function') planInner += `<div style="font-size:11px;font-weight:600;margin:10px 0 4px;color:var(--text-2)">面试稿文件（学生上传）</div>` + docvMountHtml(s.id, 'interview');
     });
   }
   const secPlan = `<div class="pgc-sec" id="pgc_${pgcEsc(s.id)}_plan"><div class="pgc-title">${gakubu ? '志望理由书' : '研究计划书'}${gakubu ? `<span class="sub">· ${pgcEsc(riyuCountText(riyuC))}</span>` : ''}</div>${planInner}</div>`;

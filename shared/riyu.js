@@ -40,8 +40,18 @@ const RIYU_GUIDE_SEED = {
 const RIYU_MAIL_KINDS = ['grad_prof_mail', 'grad_inquiry_mail'];
 function riyuIsMail(kind) { return RIYU_MAIL_KINDS.indexOf(kind) >= 0; }
 // 管理端「文书指导」下拉：[kind, 名称]
-const RIYU_GUIDE_KINDS = [['gakubu_riyu', '学部 · 志望理由书'], ['grad_riyu', '大学院 · 志望理由书'], ['grad_prof_mail', '大学院 · 联系教授邮件'], ['grad_inquiry_mail', '大学院 · 问询邮件']];
-const RIYU_DOC_NAME = { gakubu_riyu: '志望理由书', grad_riyu: '志望理由书', grad_prof_mail: '联系教授邮件', grad_inquiry_mail: '问询邮件' };
+const RIYU_GUIDE_KINDS = [['gakubu_riyu', '学部 · 志望理由书'], ['grad_riyu', '大学院 · 志望理由书'], ['grad_prof_mail', '大学院 · 联系教授邮件'], ['grad_inquiry_mail', '大学院 · 问询邮件'], ['grad_interview', '大学院文科 · 面试稿']];
+const RIYU_DOC_NAME = { gakubu_riyu: '志望理由书', grad_riyu: '志望理由书', grad_prof_mail: '联系教授邮件', grad_inquiry_mail: '问询邮件', grad_interview: '面试稿' };
+// 面试稿（大学院文科先开）：按志望校逐校撰写，流程同志望理由书；另外学生可上传自己写好的稿子（分版本，student_doc_versions doc_type='interview'）
+const RIYU_INTERVIEW_KIND = 'grad_interview';
+// 计划书页签上除研究计划书之外的文书：联系教授邮件、问询邮件、面试稿（writing_guides 里保存过才显示）
+const RIYU_PLAN_KINDS = RIYU_MAIL_KINDS.concat([RIYU_INTERVIEW_KIND]);
+function riyuInterviewOk(student) {   // 只对大学院文科学生显示面试稿
+  const m = student && student.major; if (!m) return false;
+  let d = '';
+  try { d = (typeof tsmDomainOf === 'function') ? tsmDomainOf(m) : ((typeof isMajorGroup === 'function' && isMajorGroup(m)) ? (groupDomain(m) || MAJOR_DOMAIN[groupMajors(m)[0]] || '') : (MAJOR_DOMAIN[m] || '')); } catch (e) { d = ''; }
+  return d === '大学院文科';
+}
 const RIYU_PROF_STATUS = [['unsent', '未发送'], ['sent', '已发送'], ['agree', '已回复·同意'], ['decline', '已回复·婉拒'], ['noreply', '无回复']];
 const RIYU_INQ_STATUS = [['unsent', '未发送'], ['sent', '已发送'], ['replied', '已回复']];
 
@@ -76,6 +86,21 @@ const RIYU_GUIDE_SEEDS = {
   },
 };
 
+RIYU_GUIDE_SEEDS.grad_interview = {
+  title: '面试稿',
+  intro: '面试稿按志望校逐校撰写：每一所学校写一份。\n- 面试稿用**日文**写。\n- **先完成研究计划书，再写面试稿**；面试稿要和计划书保持一致，不要写计划书里没有的东西。\n- 写完点「📤 提交给老师」，老师确认后会给你批复版，之后反复练习。\n\n**提示要点**\n- 用です・ます体\n- 每段先说结论，再展开\n- 控制在口头 1~2 分钟\n- 跟计划书内容保持一致',
+  sections: [
+    { key: 'self', title: '自我介绍（1 分钟版）', subtitle: '【姓名、毕业院校与专业、现在在做什么。】', tips: ['用です・ます体，口头一分钟以内', '先说名字和身份，再说和研究有关的经历'] },
+    { key: 'motive', title: '志望动机', subtitle: '【为什么读研、为什么是这个研究科 / 这位老师。】', tips: ['先说结论，再讲理由', '一定要和自己的经历、研究题目挂钩'] },
+    { key: 'plan', title: '研究计划概要', subtitle: '【题目、问题意识、要回答的问题（3 句话说清）。】', tips: ['三句话说清：研究什么、为什么重要、想回答什么问题', '和研究计划书保持一致'] },
+    { key: 'prior', title: '先行研究与本研究的位置', subtitle: '【主要先行研究、它们没解决什么。】', tips: ['只讲最关键的两三篇', '明确说出「它们没解决什么」，也就是本研究的位置'] },
+    { key: 'method', title: '研究方法与可行性', subtitle: '【资料、方法、时间安排。】', tips: ['说清资料从哪里来、用什么方法', '给出大致的时间安排，让人相信做得完'] },
+    { key: 'bg', title: '本科 / 工作经历和研究的关系', subtitle: '【经历如何通向这个研究。】', tips: ['只挑和研究有关的经历', '先说结论：这段经历给了我什么'] },
+    { key: 'future', title: '毕业后的规划', subtitle: '【读完研究生之后打算做什么。】', tips: ['要具体，让人看到清晰的画像'] },
+    { key: 'qa', title: '常见追问准备', subtitle: '【为什么不在中国读、研究的社会意义、语言能力、如果不合格怎么办。】', tips: ['每个问题先准备一句话的结论，再补两三句理由', '「如果不合格怎么办」要有真实的后续计划'] },
+  ],
+};
+
 function riyuEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
 
 // 简单排版：**粗体**、- 列表、换行（指导说明用）
@@ -100,6 +125,9 @@ function riyuNormGuide(row) {
   const g = Object.assign({ title: '', intro: '', sections: [] }, row || {});
   let secs = g.sections;
   if (typeof secs === 'string') { try { secs = JSON.parse(secs); } catch (e) { secs = []; } }
+  let rf = g.ref_files;
+  if (typeof rf === 'string') { try { rf = JSON.parse(rf); } catch (e) { rf = []; } }
+  g.ref_files = (Array.isArray(rf) ? rf : []).filter(f => f && f.url).map(f => ({ name: f.name || '参考资料', url: f.url }));
   g.sections = (Array.isArray(secs) ? secs : []).filter(s => s && s.key).map(s => ({
     key: String(s.key), title: s.title || '', subtitle: s.subtitle || '',
     tips: Array.isArray(s.tips) ? s.tips.filter(t => String(t || '').trim()) : [],
@@ -123,14 +151,16 @@ const RIYU_MAIL_SAVED = { loaded: false, kinds: [] };
 async function riyuMailSavedLoad(force) {
   if (RIYU_MAIL_SAVED.loaded && !force) return RIYU_MAIL_SAVED.kinds;
   try {
-    const rows = await sb(`/rest/v1/writing_guides?kind=in.(${RIYU_MAIL_KINDS.join(',')})&select=kind`, 'GET', null, { cache: 'no-store' });
-    RIYU_MAIL_SAVED.kinds = RIYU_MAIL_KINDS.filter(k => (rows || []).some(r => r.kind === k));
+    const rows = await sb(`/rest/v1/writing_guides?kind=in.(${RIYU_PLAN_KINDS.join(',')})&select=kind`, 'GET', null, { cache: 'no-store' });
+    RIYU_MAIL_SAVED.kinds = RIYU_PLAN_KINDS.filter(k => (rows || []).some(r => r.kind === k));
     RIYU_MAIL_SAVED.loaded = true;
   } catch (e) { /* 读取失败：保持原样，不当作「没保存」缓存 */ }
   return RIYU_MAIL_SAVED.kinds;
 }
 function riyuMailSavedKinds() { return RIYU_MAIL_SAVED.kinds.slice(); }
-function riyuMailSavedMark(kind) { if (riyuIsMail(kind) && RIYU_MAIL_SAVED.kinds.indexOf(kind) < 0) RIYU_MAIL_SAVED.kinds.push(kind); }
+// 这个学生的计划书页签能看到哪些文书（面试稿只对大学院文科）
+function riyuPlanKindsFor(student) { return RIYU_MAIL_SAVED.kinds.filter(k => k !== RIYU_INTERVIEW_KIND || riyuInterviewOk(student)); }
+function riyuMailSavedMark(kind) { if (RIYU_PLAN_KINDS.indexOf(kind) >= 0 && RIYU_MAIL_SAVED.kinds.indexOf(kind) < 0) RIYU_MAIL_SAVED.kinds.push(kind); }
 
 // ── 状态 / 统计 ──
 function riyuStatusInfo(status) {
@@ -265,7 +295,7 @@ function riyuStaffListHtml(student, plans, subs, kind, onChange) {
     RIYU_STAFF.plans[student.id + '|' + riyuKeyOf(p)] = p;
     const title = [p.school_name, p.faculty, p.department].filter(Boolean).join(' · ') || '（未命名学校）';
     const label = riyuIsMail(kind) ? '' : '要求：';
-    const req = kind === 'grad_prof_mail' ? '' : label + (p.plan_requirement ? riyuEsc(p.plan_requirement) : '<span style="color:var(--text-3,#999)">暂未填写要求</span>');
+    const req = (kind === 'grad_prof_mail' || kind === RIYU_INTERVIEW_KIND) ? '' : label + (p.plan_requirement ? riyuEsc(p.plan_requirement) : '<span style="color:var(--text-3,#999)">暂未填写要求</span>');
     return row(sub, title, req, kind === 'grad_prof_mail' ? mailLine(sub) : '');
   }).join('');
   if (kind === 'grad_prof_mail') {
@@ -314,7 +344,7 @@ async function riyuStaffView(subId) {
       <button onclick="riyuStaffUpload('${riyuEsc(sub.id)}')" style="font-size:10px;border:1px solid var(--accent,#b8953a);color:var(--accent,#b8953a);border-radius:3px;background:var(--surface,#fff);padding:2px 8px;cursor:pointer;font-family:inherit">⬆ 上传批复版</button>
       <button onclick="document.getElementById('riyuViewModal').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-3,#999)">×</button>
     </div>
-    <div style="font-size:11px;color:var(--text-2,#5a5650);margin-bottom:10px">${riyuEsc([sub.school_name, sub.faculty, sub.department].filter(Boolean).join(' · '))}${sub.requirement && !isMail ? ' · 要求：' + riyuEsc(sub.requirement) : ''}${sub.submitted_at ? ' · 提交 ' + riyuEsc(riyuFmtTime(sub.submitted_at)) : ''}</div>
+    <div style="font-size:11px;color:var(--text-2,#5a5650);margin-bottom:10px">${riyuEsc([sub.school_name, sub.faculty, sub.department].filter(Boolean).join(' · '))}${sub.requirement && !isMail && sub.kind !== RIYU_INTERVIEW_KIND ? ' · 要求：' + riyuEsc(sub.requirement) : ''}${sub.submitted_at ? ' · 提交 ' + riyuEsc(riyuFmtTime(sub.submitted_at)) : ''}</div>
     ${metaLine ? `<div style="font-size:11px;color:var(--text-2,#5a5650);margin-bottom:10px">${riyuEsc(metaLine)}</div>` : ''}
     ${order.map(k => {
       const s = g.sections.find(x => x.key === k) || { title: k };
@@ -344,7 +374,7 @@ async function riyuStaffWord(subId) {
     <table style="border-collapse:collapse;font-size:11pt;margin-bottom:12pt">
       <tr><td style="padding:2pt 10pt 2pt 0;color:#666">学生</td><td>${e(stu.name || '')}${major ? '（' + e(major) + '）' : ''}</td></tr>
       <tr><td style="padding:2pt 10pt 2pt 0;color:#666">志望校</td><td>${e([sub.school_name, sub.faculty, sub.department].filter(Boolean).join(' ') || (isMail ? '（不指定学校）' : ''))}</td></tr>
-      ${isMail ? mailRows : `<tr><td style="padding:2pt 10pt 2pt 0;color:#666">要求</td><td>${e(sub.requirement || '—')}</td></tr>`}
+      ${isMail ? mailRows : sub.kind === RIYU_INTERVIEW_KIND ? '' : `<tr><td style="padding:2pt 10pt 2pt 0;color:#666">要求</td><td>${e(sub.requirement || '—')}</td></tr>`}
       <tr><td style="padding:2pt 10pt 2pt 0;color:#666">提交时间</td><td>${e(riyuFmtTime(sub.submitted_at) || '—')}</td></tr>
     </table>
     ${order.map(k => {

@@ -4,7 +4,7 @@
 // 「用途」= school_key 为空是通用版；否则是某个志望校（key 用 riyuKeyOf）。version_no 在同一学生・同一类型・同一用途内递增。
 // 依赖：shared/supabase.js（sb / sbUpload）。riyuReviewerName / riyuFmtTime 来自 riyu.js（有就用，没有就退回默认）。
 // ══════════════════════════════════
-const DOCV = { rows: {}, onChange: null };
+const DOCV = { rows: {}, onChange: null, mounts: {} };
 
 function docvEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
 function docvMD(t) { const d = t ? new Date(t) : null; return d && !isNaN(d) ? `${d.getMonth() + 1}/${d.getDate()}` : ''; }
@@ -117,7 +117,7 @@ function docvStudentListHtml(rows) {
 // opts: { focusId, docType }
 function docvStaffHtml(rows, opts) {
   opts = opts || {};
-  if (!rows || !rows.length) return `<div style="font-size:11px;color:var(--text-3,#999);margin-bottom:10px">学生尚未上传${docvTypeName(opts.docType)}完成稿</div>`;
+  if (!rows || !rows.length) return `<div style="font-size:11px;color:var(--text-3,#999);margin-bottom:10px">学生尚未上传${docvTypeName(opts.docType)}文件</div>`;
   const line = r => {
     const done = !!r.review_file_url;
     const focus = String(opts.focusId) === String(r.id);
@@ -180,11 +180,41 @@ async function docvReviewDo(id) {
     await sb(`/rest/v1/student_doc_versions?id=eq.${id}`, 'PATCH', patch);
     Object.assign(v, patch);
     document.getElementById('docvRvModal')?.remove();
+    Object.keys(DOCV.mounts).forEach(docvMountFill);   // 嵌在卡片 / 弹窗里的版本列表一起刷新
     if (typeof DOCV.onChange === 'function') DOCV.onChange(v);
   } catch (e) {
     msg.textContent = '上传失败：' + e.message;
     btn.disabled = false; btn.textContent = '上传';
   }
+}
+
+// ── 嵌入式版本列表（考学进度卡片里的面试稿、学生提交里打开的弹窗）：先放占位，再读库填进去 ──
+function docvMountHtml(sid, docType, focusId) {
+  const id = `docvbox_${String(sid).replace(/[^A-Za-z0-9_-]/g, '_')}_${docType}`;
+  DOCV.mounts[id] = { sid, docType, focusId: focusId || null };
+  setTimeout(() => docvMountFill(id), 0);
+  return `<div id="${id}"><div style="font-size:11px;color:var(--text-3,#999)">加载中…</div></div>`;
+}
+async function docvMountFill(id) {
+  const m = DOCV.mounts[id], el = document.getElementById(id);
+  if (!m) return;
+  if (!el) { delete DOCV.mounts[id]; return; }
+  try { el.innerHTML = docvStaffHtml(await docvLoad(m.sid, m.docType), { docType: m.docType, focusId: m.focusId }); }
+  catch (e) { el.innerHTML = '<div style="font-size:11px;color:var(--text-3,#999)">版本记录读取失败</div>'; }
+}
+// 单独打开某个学生某类文件的版本列表（计划书以外，如面试稿；从「学生提交」点进来）
+function docvOpenStaffModal(sid, name, docType, focusId) {
+  document.getElementById('docvListModal')?.remove();
+  const ov = document.createElement('div');
+  ov.id = 'docvListModal';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `<div style="background:var(--surface,#fff);border-radius:6px;padding:18px 20px;max-width:640px;width:100%;max-height:88vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;margin-bottom:10px"><div style="font-size:14px;font-weight:600;flex:1">${docvEsc(docvTypeName(docType))} · 版本　—　${docvEsc(name)}</div>
+    <button onclick="document.getElementById('docvListModal').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-3,#999)">×</button></div>
+    ${docvMountHtml(sid, docType, focusId)}</div>`;
+  document.body.appendChild(ov);
+  setTimeout(() => { const e = document.getElementById('docv_row_' + focusId); if (e) e.scrollIntoView({ block: 'center' }); }, 400);
 }
 
 // ── 面谈卡片：「📄 计划书 通用版 第 3 版 ⬇」，点开直接定位到这一版的批复弹窗 ──
