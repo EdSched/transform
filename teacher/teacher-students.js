@@ -46,6 +46,7 @@ async function renderTeacherStudyProgress(mc) {
     }
     return out;
   };
+  await docScopeLoad(stuIds);   // 哪些学生的文书我能看内容，其余只显示状态（seed/student_docs_scope.sql）
   const [allTimeline, allPlans, allDrafts, allRiyu] = await Promise.all([
     chunkFetch(ids => `/rest/v1/student_progress_timeline?student_id=in.(${ids})&select=*&order=created_at.asc`),
     chunkFetch(ids => `/rest/v1/student_school_plans?student_id=in.(${ids})&select=*&order=level.asc`),

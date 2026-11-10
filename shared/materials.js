@@ -197,7 +197,7 @@ function matStaffInner(sid) {
     const noneRow = it.kind === 'inquiry_mail' ? c.rows.find(x => x.item_id === it.id) : null;
     edit = `<div style="font-size:12px;font-weight:600;margin-bottom:6px">${matEsc(it.name)}</div>
       ${noneRow && noneRow.status === 'ready' ? '<div style="font-size:11px;color:#2a7a4a;margin-bottom:6px">学生已标记：不需要问询邮件</div>' : ''}
-      ${riyuStaffListHtml(c.student, c.plans, c.subs, matDocKind(it, track), sub => { const i = c.subs.findIndex(x => x.id === sub.id); if (i >= 0) c.subs[i] = sub; else c.subs.push(sub); matStaffRerender(sid); })}`;
+      ${(typeof docCanView === 'function' && !docCanView(sid)) ? `<div style="font-size:11px;color:var(--text-3)">${matEsc(DOC_SCOPE_HINT)}</div>` : riyuStaffListHtml(c.student, c.plans, c.subs, matDocKind(it, track), sub => { const i = c.subs.findIndex(x => x.id === sub.id); if (i >= 0) c.subs[i] = sub; else c.subs.push(sub); matStaffRerender(sid); })}`;
   } else if (it) {
     const pre = `mats_${matEsc(sid)}_${matEsc(it.id)}`;
     const r = c.rows.find(x => x.item_id === it.id) || {};

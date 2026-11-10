@@ -171,7 +171,10 @@ function pgcCardHtml(s, ctx, o) {
   const timeline = (ctx.timelineMap || {})[s.id] || [];
   const latest = getLatestProgress(timeline);
   const plans = (ctx.plansMap || {})[s.id] || [];
-  const draft = (ctx.draftsMap || {})[s.id];
+  const docHidden = typeof docCanView === 'function' && !docCanView(s.id);   // 看不了文书内容：只显示状态（seed/student_docs_scope.sql）
+  const _dst = docHidden && typeof docStatusOf === 'function' ? docStatusOf(s.id) : null;
+  // 看不了内容时数据库不会返回草稿行：用状态函数拿到的「已提交」凑一个只含完成稿标记的占位，让节点进度照常判断（不含任何内容）
+  const draft = docHidden ? (_dst && _dst.plan_version_no ? { draft_file_url: '#', updated_at: _dst.plan_submitted_at } : undefined) : (ctx.draftsMap || {})[s.id];
   const subs = ((ctx.riyuSubsMap = ctx.riyuSubsMap || {})[s.id] = (ctx.riyuSubsMap[s.id] || []));
   const gakubu = (typeof isGakubuStudent === 'function') && isGakubuStudent(s);
   const nodes = pgcNodes(s, latest, plans, draft, ctx);
@@ -224,12 +227,14 @@ function pgcCardHtml(s, ctx, o) {
   else if (plans.length) derived.apply = '择校确认中';
   if (plans.some(p => p.interview_draft_done)) derived.exam = '在准备面试稿';
   else if (plans.some(p => p.kakomon_started)) derived.exam = '在写过去问';
-  if (gakubu) { if (riyuC.submitted > 0) derived.plan = riyuC.total && riyuC.reviewed >= riyuC.total ? '已完成' : '撰写中'; }
+  if (docHidden && gakubu) { const g = (_dst && _dst.riyu && _dst.riyu.gakubu_riyu) || null; if (g && g.submitted > 0) derived.plan = plans.length && g.reviewed >= plans.length ? '已完成' : '撰写中'; }
+  else if (gakubu) { if (riyuC.submitted > 0) derived.plan = riyuC.total && riyuC.reviewed >= riyuC.total ? '已完成' : '撰写中'; }
   else if (draft && draft.draft_file_url) derived.plan = '已完成';
   else if (draftN > 0 || legacy) derived.plan = '撰写中';
   else if (refsN > 0) derived.plan = '在收集材料';
   const detailOf = k => {
     if (k === 'plan') {
+      if (docHidden) return docStatusText(s.id);
       const p = [];
       if (gakubu) { if (plans.length) p.push(riyuCountText(riyuC)); }
       else { if (refsN) p.push(`先行研究 ${refsN} 条`); if (draftN) p.push(`草稿已填 ${draftN} 项`); if (draft && draft.draft_file_url) p.push('完成稿已上传'); }
@@ -281,7 +286,9 @@ function pgcCardHtml(s, ctx, o) {
 
   // ── 5. 计划书 / 志望理由书 ──
   let planInner;
-  if (gakubu) {
+  if (docHidden) {
+    planInner = docStatusHtml(s.id);
+  } else if (gakubu) {
     planInner = riyuStaffListHtml(s, plans, subs, 'gakubu_riyu', o.riyuChanged || (() => {}))
       + (typeof openTeacherDraftComment === 'function' && draft ? `<button onclick="event.stopPropagation();openTeacherDraftComment('${pgcJs(s.id)}','${sname}')" class="pgc-btn ghost" style="margin-top:8px;display:block">整体评语・旧版草稿</button>` : '')
       + ((typeof riyuFilledCount === 'function' && riyuFilledCount(draft, plans)) && typeof openTeacherDraftComment !== 'function' ? `<details style="margin-top:6px;font-size:11px"><summary style="cursor:pointer;color:var(--text-3)">旧版草稿（参考）</summary>${renderRiyuView(draft, plans)}</details>` : '');
@@ -293,7 +300,7 @@ function pgcCardHtml(s, ctx, o) {
       + (typeof openTeacherDraftComment === 'function' ? `<button onclick="event.stopPropagation();openTeacherDraftComment('${pgcJs(s.id)}','${sname}')" class="pgc-btn" style="margin-top:8px;display:block">查看・评估计划书/先行研究</button>` : '');
   } else planInner = '<div style="font-size:11px;color:var(--text-3)">学生尚未填写</div>';
   // 大学院：管理端「文书指导」保存过的联系教授邮件 / 问询邮件，逐校列在计划书下面（不依赖出愿材料清单里有没有条目）
-  if (!gakubu && typeof riyuPlanKindsFor === 'function' && typeof riyuStaffListHtml === 'function') {
+  if (!docHidden && !gakubu && typeof riyuPlanKindsFor === 'function' && typeof riyuStaffListHtml === 'function') {
     riyuPlanKindsFor(s).forEach(k => {
       planInner += `<div style="font-size:11px;font-weight:600;margin:12px 0 4px;color:var(--text-2)">${pgcEsc(RIYU_DOC_NAME[k])}</div>`
         + riyuStaffListHtml(s, plans, subs, k, o.riyuChanged || (() => {}));
@@ -301,7 +308,7 @@ function pgcCardHtml(s, ctx, o) {
       if (k === RIYU_INTERVIEW_KIND && typeof docvMountHtml === 'function') planInner += `<div style="font-size:11px;font-weight:600;margin:10px 0 4px;color:var(--text-2)">面试稿文件（学生上传）</div>` + docvMountHtml(s.id, 'interview');
     });
   }
-  const secPlan = `<div class="pgc-sec" id="pgc_${pgcEsc(s.id)}_plan"><div class="pgc-title">${gakubu ? '志望理由书' : '研究计划书'}${gakubu ? `<span class="sub">· ${pgcEsc(riyuCountText(riyuC))}</span>` : ''}</div>${planInner}</div>`;
+  const secPlan = `<div class="pgc-sec" id="pgc_${pgcEsc(s.id)}_plan"><div class="pgc-title">${gakubu ? '志望理由书' : '研究计划书'}${gakubu && !docHidden ? `<span class="sub">· ${pgcEsc(riyuCountText(riyuC))}</span>` : ''}</div>${planInner}</div>`;
 
   // ── 6. 出愿材料（卡片网格等宽，每行 4 张，窄屏 2 张）──
   const secMaterials = (typeof matStaffNodeHtml === 'function') ? (() => {

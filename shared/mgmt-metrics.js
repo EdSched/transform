@@ -242,6 +242,7 @@ const MGM_GROUPS = [
     } },
     { key: 'plan', label: '研究计划书/志望理由书', async fn(D, sc) {
       const [all, plans, drafts, riyu] = await Promise.all([taskStudents(D), taskPlans(D), taskDrafts(D), taskRiyu(D)]);
+      await taskDocFill(D, drafts, riyu);
       const stu = all.filter(sc.stu), pBy = {}, rBy = {};
       plans.forEach(p => (pBy[p.student_id] = pBy[p.student_id] || []).push(p)); riyu.forEach(r => (rBy[r.student_id] = rBy[r.student_id] || []).push(r));
       const items = stu.filter(s => !taskHasPlan(s, pBy[s.id] || [], drafts[s.id], rBy[s.id] || []))

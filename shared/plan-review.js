@@ -89,6 +89,8 @@ function prvStudentOf(sid) {
   return (pool || []).find(x => x.id === sid) || null;
 }
 async function openTeacherDraftComment(studentId, studentName, opts) {
+  try { await docScopeLoad([studentId]); } catch (e) {}
+  if (!docCanView(studentId)) { alert(DOC_SCOPE_HINT); return; }   // 数据库本来也读不到；这里给个明确提示
   let draft, plans, versions = [];
   const q = encodeURIComponent(studentId);
   if (prvIsTeacherSide()) {
