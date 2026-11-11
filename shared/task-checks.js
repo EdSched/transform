@@ -23,6 +23,21 @@ function taskDrafts(D) {
   });
 }
 function taskRiyu(D) { return _tkLoad(D, 'riyu', () => _tkAll('/rest/v1/riyu_submissions?select=student_id,school_key,kind,status')); }
+// 看不了文书内容的学生（营业、对接、别的专业的老师等）：数据库不返回他们的行，这里用状态函数补一条「只有状态」的占位，
+// 让「计划书交了没有」这类判断照常；占位不含任何内容。drafts = taskDrafts 的结果（{学生id: 行}），riyu = taskRiyu 的结果（数组，原地追加）
+async function taskDocFill(D, drafts, riyu) {
+  if (D.p.docfill) return D.p.docfill;
+  return (D.p.docfill = (async () => {
+    const stu = await taskStudents(D);
+    await docScopeLoad(stu.map(s => s.id));
+    stu.forEach(s => {
+      if (docCanView(s.id)) return;
+      const st = docStatusOf(s.id); if (!st) return;
+      if (st.plan_version_no && !drafts[s.id]) drafts[s.id] = { student_id: s.id, draft_file_url: '#', updated_at: st.plan_submitted_at };
+      Object.entries(st.riyu || {}).forEach(([k, v]) => { if (v && v.submitted > 0) riyu.push({ student_id: s.id, kind: k, status: 'submitted', school_key: '', _status_only: true }); });
+    });
+  })().catch(() => {}));
+}
 function taskBookingsMonth(D) {
   return _tkLoad(D, 'bk', async () => {
     const ym = _tkYm();
@@ -92,7 +107,7 @@ async function taskScopedStudents(D, t, tpl) { return (await taskStudents(D)).fi
 
 // ── 判断小工具 ──
 function taskHasPlan(s, plans, draft, subs) {
-  if (typeof isGakubuStudent === 'function' && isGakubuStudent(s)) return riyuCounts(plans, subs, 'gakubu_riyu').submitted > 0;   // 学部：志望理由书已提交
+  if (typeof isGakubuStudent === 'function' && isGakubuStudent(s)) return (subs || []).some(r => r._status_only && r.kind === 'gakubu_riyu') || riyuCounts(plans, subs, 'gakubu_riyu').submitted > 0;   // 学部：志望理由书已提交
   if (!draft) return false;
   if (draft.draft_file_url) return true;
   try { const f = draft.draft_fields ? JSON.parse(draft.draft_fields) : {}; if (Object.entries(f).some(([k, v]) => k !== 'riyu' && (Array.isArray(v) ? v.length : String(v || '').trim()))) return true; } catch (e) {}
@@ -123,6 +138,7 @@ const _tkStuItem = (s, note) => ({ sid: s.id, name: s.name, note: note || '' });
 const TASK_CHECK_FN = {
   async plan_missing(D, t, tpl) {
     const [stu, plans, drafts, riyu] = await Promise.all([taskScopedStudents(D, t, tpl), taskPlans(D), taskDrafts(D), taskRiyu(D)]);
+    await taskDocFill(D, drafts, riyu);
     const pBy = {}, rBy = {}; plans.forEach(p => (pBy[p.student_id] = pBy[p.student_id] || []).push(p)); riyu.forEach(r => (rBy[r.student_id] = rBy[r.student_id] || []).push(r));
     const items = stu.filter(s => !taskHasPlan(s, pBy[s.id] || [], drafts[s.id], rBy[s.id] || []))
       .map(s => _tkStuItem(s, (typeof isGakubuStudent === 'function' && isGakubuStudent(s)) ? '志望理由书' : '研究计划书'));

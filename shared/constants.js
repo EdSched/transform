@@ -2361,3 +2361,46 @@ function resultSame(a, b) {
   const da = deptKey(a.dept), db = deptKey(b.dept);
   return !da || !db || da === db;
 }
+
+// ── 学生文书可见范围（计划书 / 志望理由书 / 面试稿 / 联系教授・问询邮件）──
+// 真正的拦截在数据库（seed/student_docs_scope.sql 的 can_view_student_docs）；这里只负责问「这批学生我能不能看内容」
+// 和「看不了的拿状态」，页面据此决定显示正文还是只显示状态行。没跑 SQL 之前（函数不存在）一律当作能看，页面行为不变。
+const DOC_SCOPE = { ready: false, view: new Set(), status: {}, asked: new Set() };
+const DOC_SCOPE_HINT = '文书内容只有指导老师可以查看';
+async function docScopeLoad(sids) {
+  const need = [...new Set((sids || []).filter(Boolean))].filter(id => !DOC_SCOPE.asked.has(id));
+  if (!need.length) return;
+  for (let i = 0; i < need.length; i += 300) {
+    const part = need.slice(i, i + 300);
+    try {
+      const [vis, st] = await Promise.all([
+        sb('/rest/v1/rpc/student_docs_viewable', 'POST', { sids: part }),
+        sb('/rest/v1/rpc/student_doc_status', 'POST', { sids: part }),
+      ]);
+      DOC_SCOPE.ready = true;
+      (vis || []).forEach(x => DOC_SCOPE.view.add(typeof x === 'string' ? x : Object.values(x)[0]));
+      (st || []).forEach(r => { DOC_SCOPE.status[r.student_id] = r; });
+      part.forEach(id => DOC_SCOPE.asked.add(id));
+    } catch (e) { DOC_SCOPE.ready = false; return; }   // 函数还没建：当作都能看
+  }
+}
+// 能看文书内容吗（没加载过 / 函数不存在 = 能看）
+function docCanView(sid) { return !DOC_SCOPE.ready || !DOC_SCOPE.asked.has(sid) || DOC_SCOPE.view.has(sid); }
+function docStatusOf(sid) { return DOC_SCOPE.status[sid] || null; }
+// 状态文字：「计划书：已提交第 2 版 · 已批复」「志望理由书：2 校已提交」
+function docStatusText(sid, opts) {
+  const st = docStatusOf(sid); if (!st) return '';
+  const o = opts || {};
+  const out = [];
+  if (o.plan !== false) out.push('计划书：' + (st.plan_version_no ? `已提交第 ${st.plan_version_no} 版 · ${st.plan_reviewed ? '已批复' : '未批复'}` : '未提交'));
+  const names = (typeof RIYU_DOC_NAME === 'object' && RIYU_DOC_NAME) || {};
+  Object.entries(st.riyu || {}).forEach(([k, v]) => {
+    if (!v || !v.submitted) return;
+    out.push(`${names[k] || k}：已提交 ${v.submitted} 份${v.reviewed ? `，已批复 ${v.reviewed} 份` : ''}`);
+  });
+  return out.join('；');
+}
+function docStatusHtml(sid) {
+  const t = docStatusText(sid);
+  return `<div style="font-size:11px;color:var(--text-2)">${(typeof esc === 'function' ? esc : x => x)(t || '暂无文书提交')} <span style="color:var(--text-3);font-size:10px;margin-left:6px">${DOC_SCOPE_HINT}</span></div>`;
+}

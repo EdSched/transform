@@ -340,7 +340,7 @@ async function mrMonthProgress(stu, ym) {
     get('语言成绩・进度', `/rest/v1/student_progress_timeline?student_id=eq.${sid}&or=(and(recorded_at.gte.${lo},recorded_at.lt.${hi}),and(created_at.gte.${loT},created_at.lt.${hiT}))&select=*&order=created_at.asc`),
     get('择校', `/rest/v1/student_school_plans?student_id=eq.${sid}&created_at=gte.${loT}&created_at=lt.${hiT}&select=*&order=created_at.asc`),
     get('研究计划书', `/rest/v1/student_plan_drafts?student_id=eq.${sid}&select=*&limit=5`),
-    get('文书', `/rest/v1/riyu_submissions?student_id=eq.${sid}&or=(and(submitted_at.gte.${loT},submitted_at.lt.${hiT}),and(reviewed_at.gte.${loT},reviewed_at.lt.${hiT}))&select=id,kind,school_name,faculty,department,status,submitted_at,reviewed_at,reviewed_by,review_note,mail_meta&order=submitted_at.asc`),
+    get('文书', `/rest/v1/riyu_submissions?student_id=eq.${sid}&or=(and(submitted_at.gte.${loT},submitted_at.lt.${hiT}),and(reviewed_at.gte.${loT},reviewed_at.lt.${hiT}))&select=id,kind,school_name,faculty,department,status,submitted_at,reviewed_at,reviewed_by,mail_meta&order=submitted_at.asc`),
   ]);
   const inMonth = d => !!d && d >= lo && d < hi;
   const byDate = (a, b) => String(a.d).localeCompare(String(b.d));
@@ -381,8 +381,14 @@ async function mrMonthProgress(stu, ym) {
   drafts.forEach(dr => {
     if (dr.draft_file_url && inMonth(mrJstYmd(dr.updated_at))) out.docs.push({ d: mrJstYmd(dr.updated_at), text: '提交研究计划书完成稿' });
     const hist = (typeof planRvHistory === 'function') ? planRvHistory(dr) : [];
-    hist.forEach(h => { const d = mrJstYmd(h.at); if (inMonth(d)) out.docs.push({ d, text: `老师批复研究计划书${h.note ? `（备注：${h.note}）` : ''}` }); });
+    hist.forEach(h => { const d = mrJstYmd(h.at); if (inMonth(d)) out.docs.push({ d, text: '老师批复研究计划书' }); });   // 只写状态，不带批复备注
   });
+  // 看不了文书内容的老师：数据库不返回草稿行，只用状态函数补一行「提交了计划书第 N 版」
+  try {
+    await docScopeLoad([stu.id]);
+    const st = !docCanView(stu.id) && docStatusOf(stu.id);
+    if (st && st.plan_version_no && inMonth(mrJstYmd(st.plan_submitted_at))) out.docs.push({ d: mrJstYmd(st.plan_submitted_at), text: `提交研究计划书第 ${st.plan_version_no} 版` });
+  } catch (e) {}
   riyu.forEach(s => {
     const doc = (typeof RIYU_DOC_NAME === 'object' && RIYU_DOC_NAME[s.kind]) || '志望理由书';
     const sch = [s.school_name, s.faculty, s.department].filter(Boolean).join(' · ');
@@ -392,7 +398,7 @@ async function mrMonthProgress(stu, ym) {
       if (isMail) { const st = (typeof riyuMeta === 'function' ? riyuMeta(s).status : '') || ''; out.docs.push({ d: sd, text: `${doc}：${sch || '（不指定学校）'}${st ? ' ' + riyuMailStatusText(s.kind, st) : ' 已提交'}` }); }
       else out.docs.push({ d: sd, text: `提交${doc}${sch ? `（${sch}）` : ''}` });
     }
-    if (inMonth(rd)) out.docs.push({ d: rd, text: `老师批复${doc}${sch ? `（${sch}）` : ''}${s.review_note ? `（备注：${s.review_note}）` : ''}` });
+    if (inMonth(rd)) out.docs.push({ d: rd, text: `老师批复${doc}${sch ? `（${sch}）` : ''}` });   // 只写状态，不带批复备注
   });
 
   ['langs', 'schools', 'docs', 'others'].forEach(k => out[k].sort(byDate));

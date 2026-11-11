@@ -67,7 +67,11 @@ async function renderStudentDetailCard(studentId, opts) {
   // 计划书 / 志望理由书
   const gakubu = (typeof isGakubuStudent === 'function') && isGakubuStudent(s);
   let planTxt = latest.plan || '';
-  if (gakubu) {
+  let docHidden = false;
+  try { await docScopeLoad([s.id]); docHidden = !docCanView(s.id); } catch (e) {}   // 看不了文书内容：只显示状态
+  if (docHidden) {
+    planTxt = (planTxt ? planTxt + ' · ' : '') + docStatusText(s.id) + '（' + DOC_SCOPE_HINT + '）';
+  } else if (gakubu) {
     const c = riyuCounts(plans, riyuSubs, 'gakubu_riyu');
     planTxt = (planTxt ? planTxt + ' · ' : '') + (plans.length ? riyuCountText(c) : '');
   } else if (!planTxt && draft) {
