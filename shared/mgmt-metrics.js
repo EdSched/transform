@@ -119,7 +119,14 @@ const MGM_GROUPS = [
   { key: 'interview', label: '面谈相关', metrics: [
     { key: 'interview', label: '本月面谈', async fn(D, sc) {
       const [all, bk, logs] = await Promise.all([taskStudents(D), taskBookingsMonth(D), taskContactLogsMonth(D)]);
-      const stu = all.filter(sc.stu), { ids, names } = fuFollowedSets(bk, logs, _tkYm());
+      const { ids, names } = fuFollowedSets(bk, logs, _tkYm());
+      let stu = all.filter(sc.stu).filter(s => !s.follow_exempt);   // 「不需频繁联系」不算
+      // 连续 3 次以上联系未回复的也不算（要看完整历史，只对本月没跟进的人算）
+      const open = stu.filter(s => !ids.has(s.id) && !names.has(s.name));
+      if (open.length && typeof tmLoadFollow === 'function') {
+        const D = await tmLoadFollow(open), quiet = new Set(open.filter(s => tmStreak(tmInfo(s, D)) >= 3).map(s => s.id));
+        stu = stu.filter(s => !quiet.has(s.id));
+      }
       const items = stu.filter(s => !ids.has(s.id) && !names.has(s.name)).map(s => _mgStuItem(s, '本月没有面谈记录，也没有学习记录'));
       return _mgRate(stu.length - items.length, stu.length, items, '本月应面谈的在籍学生', `当月（${_tkYm()}）`, '完成 = 本月有面谈记录（daily_record）或学习记录的学生（和面谈跟进页同一口径）；名单 = 两样都没有的学生');
     } },
