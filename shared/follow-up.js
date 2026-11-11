@@ -25,6 +25,7 @@ const TM_KIND = { study: { t: '学习记录', c: '#1a6d3a', ic: '✎' }, waiting
 const TM_GROUPS = [['done', '✓ 已完成'], ['pend', '⏳ 待面谈'], ['noreply', '✉ 已联系'], ['none', '⚠ 无面谈无记录']];
 let tmYm = '';             // 当前查看的月份 YYYY-MM（空 = 本月）
 let tmGroup = '';          // '' 全部 | done | pend | noreply | none
+let tmView = 'need';       // need 需要跟进 | exempt 不需频繁联系
 let tmExpandedId = null;
 let tmData = null;         // { students, rec, pend, logs, cache }
 
@@ -100,12 +101,17 @@ function tmStreak(info, uptoYm) {   // uptoYm 为空 = 截至现在
 function tmRows() {
   const ym = tmYm || tmCurYm();
   return FU_HOST.filter(tmData.students || []).map(s => {
-    const info = tmInfo(s), st = tmMonthState(info, ym);
-    return { s, info, st, streak: st.nore.length ? tmStreak(info, ym) : 0 };
+    const info = tmInfo(s), st0 = tmMonthState(info, ym), sk = tmStreak(info, ym);
+    // 连续 3 次以上联系未回复：不再算「无面谈无记录」，归到「已联系」，用灰色标签显示
+    const quiet = st0.group === 'none' && sk >= 3;
+    const st = quiet ? Object.assign({}, st0, { group: 'noreply' }) : st0;
+    return { s, info, st, quiet, ex: fuExempt(s), streak: st.nore.length ? sk : (quiet ? sk : 0) };
   });
 }
-// 当前筛选下「本月无面谈无记录」的学生（批量提醒用）
-function tmNoRecStudents() { return tmRows().filter(r => r.st.group === 'none').map(r => r.s); }
+// 「不需频繁联系」标签（students.follow_exempt，Sensis / 老师手动设置）
+function fuExempt(s) { return !!(s && s.follow_exempt); }
+// 当前筛选下「本月无面谈无记录」的学生（批量提醒用）：不含「不需频繁联系」和连续 3 次以上未回复的
+function tmNoRecStudents() { return tmRows().filter(r => !r.ex && r.st.group === 'none').map(r => r.s); }
 
 function tmRenderShell() {
   const box = FU_HOST.box();
@@ -130,6 +136,7 @@ function tmRenderShell() {
 }
 function tmSetYm(ym) { tmYm = ym; tmShown0(); tmRenderShell(); }
 function tmShown0() { FU_HOST.reset(); }
+function tmSetView(v) { tmView = v; tmShown0(); tmRenderList(); }
 function tmSetGroup(g) { tmGroup = tmGroup === g ? '' : g; tmShown0(); tmRenderList(); }
 function tmStuName(id) { const s = ((tmData && tmData.students) || []).find(x => x.id === id); return s ? s.name : ''; }
 function tmToggle(id) { tmExpandedId = tmExpandedId === id ? null : id; tmRenderList(); }
@@ -146,6 +153,7 @@ function tmCellsHtml(info, endYm) {
 }
 function tmStateTag(r) {
   const st = r.st, tag = (c, bg, t) => `<span style="font-size:10px;padding:1px 8px;border-radius:10px;background:${bg};color:${c};white-space:nowrap">${t}</span>`;
+  if (r.quiet) return tag('#666', '#eeeeee', `连续 ${r.streak} 次未回复`);
   if (st.group === 'done') return st.mtg.length ? tag('#1a6d3a', '#e4f3ea', `✓ 已面谈${st.mtg.length > 1 ? ' ' + st.mtg.length + ' 次' : ''}`) : tag('#1a6d3a', '#e4f3ea', '✎ 学习记录');
   if (st.group === 'pend') { const b = st.pend[0]; return tag('#8a6d10', '#fef5e0', `⏳ 待面谈 ${fuEsc((b.slot_date || '').slice(5))} ${fuEsc(b.slot_time_range || '')}`); }
   if (st.group === 'noreply') {
@@ -162,33 +170,104 @@ function tmRenderList() {
   if (!listBox || !tmData) return;
   const need = FU_HOST.need ? FU_HOST.need() : '';   // 管理端：还没选范围时不列学生
   if (need) { if (chipBox) chipBox.innerHTML = ''; const c1 = document.getElementById('tm_count'); if (c1) c1.textContent = ''; listBox.innerHTML = need; return; }
-  const all = tmRows();
+  const allRows = tmRows(), nEx = allRows.filter(r => r.ex).length;
+  if (tmView === 'exempt' && !nEx) tmView = 'need';
+  const exView = tmView === 'exempt';
+  const all = allRows.filter(r => exView ? r.ex : !r.ex);
   const cnt = g => all.filter(r => r.st.group === g).length;
   const w = tmMonthWord();
-  if (chipBox) chipBox.innerHTML = '<span style="font-size:10px;color:var(--text-3)">分组：</span>' + TM_GROUPS.map(([k, l]) => `<div class="filter-chip ${tmGroup === k ? 'active' : ''}" onclick="tmSetGroup('${k}')" style="padding:3px 10px;font-size:10px">${l.replace(/^(\S+) /, '$1 ' + w)} ${cnt(k)}</div>`).join('');
+  const vchip = (k, l) => `<div class="filter-chip ${tmView === k ? 'active' : ''}" onclick="tmSetView('${k}')" style="padding:3px 10px;font-size:10px">${l}</div>`;
+  const viewChips = vchip('need', '需要跟进') + vchip('exempt', '不需频繁联系 ' + nEx) + '<span style="width:1px;height:14px;background:var(--border);margin:0 4px"></span>';
+  if (chipBox) chipBox.innerHTML = viewChips + (exView ? '' : '<span style="font-size:10px;color:var(--text-3)">分组：</span>' + TM_GROUPS.map(([k, l]) => `<div class="filter-chip ${tmGroup === k ? 'active' : ''}" onclick="tmSetGroup('${k}')" style="padding:3px 10px;font-size:10px">${l.replace(/^(\S+) /, '$1 ' + w)} ${cnt(k)}</div>`).join(''));
   const ord = { done: 0, pend: 1, noreply: 2, none: 3 };
-  const list = all.filter(r => !tmGroup || r.st.group === tmGroup).sort((a, b) => (ord[a.st.group] - ord[b.st.group]) || (b.streak - a.streak) || a.s.name.localeCompare(b.s.name, 'zh'));
+  const list = all.filter(r => exView || !tmGroup || r.st.group === tmGroup).sort((a, b) => (ord[a.st.group] - ord[b.st.group]) || (b.streak - a.streak) || a.s.name.localeCompare(b.s.name, 'zh'));
   const c0 = document.getElementById('tm_count'); if (c0) c0.textContent = list.length;
   if (!list.length) { listBox.innerHTML = `<div class="empty">${fuEmptyText('没有符合筛选条件的学生')}</div>`; return; }
   let lastG = '';
   listBox.innerHTML = FU_HOST.slice(list).map(r => {
     const s = r.s, open = tmExpandedId === s.id, lastM = r.info.recs[0] ? payrollInterviewPayDate(r.info.recs[0]) : '';
     let head = '';
-    if (!tmGroup && r.st.group !== lastG) { lastG = r.st.group; const t = TM_GROUPS.find(x => x[0] === lastG)[1].replace(/^(\S+) /, '$1 ' + w); head = `<div style="font-size:11px;font-weight:600;color:var(--text-2);margin:12px 0 6px">${t}（${cnt(lastG)}）</div>`; }
+    if (!exView && !tmGroup && r.st.group !== lastG) { lastG = r.st.group; const t = TM_GROUPS.find(x => x[0] === lastG)[1].replace(/^(\S+) /, '$1 ' + w); head = `<div style="font-size:11px;font-weight:600;color:var(--text-2);margin:12px 0 6px">${t}（${cnt(lastG)}）</div>`; }
     return head + `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:6px">
       <div onclick="tmToggle('${s.id}')" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 14px;cursor:pointer;${open ? 'background:var(--bg)' : ''}">
         <span style="font-size:13px;font-weight:600">${fuEsc(s.name)}</span>
         <span onclick="event.stopPropagation();copyNameText(tmStuName('${s.id}'),this)" style="font-size:10px;border:1px solid var(--border);border-radius:3px;padding:1px 7px;cursor:pointer;background:var(--surface);color:var(--text-2)">📋 姓名</span>
         <span onclick="event.stopPropagation();tmGenReminder('${s.id}')" style="font-size:10px;border:1px solid var(--border);border-radius:3px;padding:1px 7px;cursor:pointer;background:var(--surface);color:var(--text-2)">✉ 联络文字</span>
         <span style="font-size:11px;color:var(--text-3)">${fuEsc(MAJORS[s.major] || s.major || '')}</span>
-        ${tmStateTag(r)}
+        ${exView ? '' : tmStateTag(r)}
+        <span onclick="event.stopPropagation();tmExemptClick('${s.id}')" style="font-size:10px;border:1px solid var(--border);border-radius:3px;padding:1px 7px;cursor:pointer;background:var(--surface);color:var(--text-2)">${r.ex ? '恢复每月跟进' : '不需频繁联系'}</span>
         <span style="font-size:10px;color:var(--text-3);margin-left:auto">${lastM ? '最近面谈 ' + fuEsc(lastM) : '从未面谈'}</span>
         ${tmCellsHtml(r.info)}
         <span style="font-size:10px;color:var(--text-3)">${open ? '▲' : '▼'}</span>
       </div>
+      ${exView ? tmExemptLine(s, r.info) : ''}
       ${open ? tmDetailHtml(s, r.info) : ''}
     </div>`;
   }).join('') + FU_HOST.more(list.length);
+}
+
+// 「不需频繁联系」列表里每个学生下面的一行：原因 / 备注 / 谁设的 / 什么时候 / 最近一次面谈或联系
+function tmExemptLine(s, info) {
+  const lastM = info.recs[0] ? payrollInterviewPayDate(info.recs[0]) : '', lastL = info.logs[0] ? tmLogKey(info.logs[0]) : '';
+  const last = lastM >= lastL ? lastM : lastL;
+  return `<div style="padding:6px 14px 8px;border-top:1px solid var(--border-light);font-size:11px;color:var(--text-2);line-height:1.7">
+    <div>${fuEsc(s.follow_exempt_note || '（没写原因）')}</div>
+    <div style="font-size:10px;color:var(--text-3)">${fuEsc(s.follow_exempt_by || '')} 设置于 ${fuEsc(tmJstYmd(s.follow_exempt_at))} · 最近面谈 ${fuEsc(lastM) || '无'} · 最近联系 ${fuEsc(lastL) || '无'}${last ? '' : ''}</div>
+  </div>`;
+}
+const FU_EXEMPT_REASONS = ['快合格', '只剩手续', '本人要求少联系', '其他'];
+let fuExemptSel = [];
+function tmExemptClick(id) {
+  const s = ((tmData && tmData.students) || []).find(x => x.id === id);
+  if (!s) return;
+  if (fuExempt(s)) { fuExemptRestore(s); return; }
+  fuExemptSel = [];
+  const old = document.getElementById('fuExemptModal'); if (old) old.remove();
+  const o = document.createElement('div');
+  o.id = 'fuExemptModal';
+  o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  o.innerHTML = `<div style="background:var(--surface,#fff);border-radius:6px;padding:16px 18px;width:100%;max-width:380px">
+    <div style="font-size:13px;font-weight:600;margin-bottom:10px">不需频繁联系 · ${fuEsc(s.name)}</div>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">原因（可多选）</div>
+    <div id="fuExemptChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+    <textarea id="fuExemptNote" rows="3" placeholder="备注（选填）" style="width:100%;box-sizing:border-box;font-size:12px;font-family:inherit;padding:6px 8px;border:1px solid var(--border);border-radius:3px"></textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button onclick="document.getElementById('fuExemptModal').remove()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:4px 14px;cursor:pointer;font-family:inherit">取消</button>
+      <button id="fuExemptOk" onclick="fuExemptSave('${s.id}')" style="font-size:11px;background:#1a6d3a;color:#fff;border:none;border-radius:3px;padding:4px 16px;cursor:pointer;font-family:inherit">确定</button>
+    </div></div>`;
+  document.body.appendChild(o);
+  fuExemptChipsRender();
+}
+function fuExemptChipsRender() {
+  const box = document.getElementById('fuExemptChips'); if (!box) return;
+  box.innerHTML = FU_EXEMPT_REASONS.map(r => `<div class="filter-chip ${fuExemptSel.includes(r) ? 'active' : ''}" onclick="fuExemptToggle('${r}')" style="padding:3px 10px;font-size:11px;cursor:pointer">${r}</div>`).join('');
+}
+function fuExemptToggle(r) { fuExemptSel = fuExemptSel.includes(r) ? fuExemptSel.filter(x => x !== r) : fuExemptSel.concat(r); fuExemptChipsRender(); }
+async function fuExemptSave(id) {
+  const s = ((tmData && tmData.students) || []).find(x => x.id === id);
+  if (!s) return;
+  const memo = (document.getElementById('fuExemptNote').value || '').trim();
+  const note = fuExemptSel.join('、') + (fuExemptSel.length && memo ? '：' : '') + memo;
+  const btn = document.getElementById('fuExemptOk'); if (btn) btn.disabled = true;
+  const patch = { follow_exempt: true, follow_exempt_note: note || null, follow_exempt_by: fuMe(), follow_exempt_at: new Date().toISOString() };
+  try {
+    await sb(`/rest/v1/students?id=eq.${encodeURIComponent(id)}`, 'PATCH', patch);
+  } catch (e) { if (btn) btn.disabled = false; alert('保存失败：' + (e.message || e) + '\n（如果提示找不到字段，请先执行 follow_exempt 的 SQL）'); return; }
+  fuExemptApply(s, patch);
+  document.getElementById('fuExemptModal').remove();
+  tmRenderList();
+}
+async function fuExemptRestore(s) {
+  if (!confirm(`把「${s.name}」恢复为每月跟进？（之前的原因记录会保留）`)) return;
+  try { await sb(`/rest/v1/students?id=eq.${encodeURIComponent(s.id)}`, 'PATCH', { follow_exempt: false }); }
+  catch (e) { alert('恢复失败：' + (e.message || e)); return; }
+  fuExemptApply(s, { follow_exempt: false });
+  tmRenderList();
+}
+// 同步内存里的学生对象（面谈跟进 / 管理端缓存）
+function fuExemptApply(s, patch) {
+  Object.assign(s, patch);
+  if (typeof cachedStudents !== 'undefined') (cachedStudents || []).forEach(x => { if (x.id === s.id) Object.assign(x, patch); });
 }
 
 function tmDetailHtml(s, info) {
@@ -565,7 +644,9 @@ async function focusLoad(list) {
 function focusFlags(s) {
   if (!focusTm) return null;
   const info = tmInfo(s, focusTm);
-  return { info, none: tmMonthState(info, tmCurYm()).group === 'none', streak: tmStreak(info) };
+  if (fuExempt(s)) return { info, none: false, streak: 0, ex: true };   // 不需频繁联系：不算本月无面谈、不算连续未回复
+  const streak = tmStreak(info);
+  return { info, none: streak < 3 && tmMonthState(info, tmCurYm()).group === 'none', streak };   // 连续 3 次以上未回复的只在「连续 3 次联系未回复」里出现
 }
 // 当前期累计缺席 {n, courses}；统计没加载出来 = null
 function focusAbsent(s) { return focusSms ? smsCurAbsent(s, focusSms) : null; }
@@ -605,6 +686,7 @@ function focusRender() {
       ${badge}
       ${r.f && r.f.streak >= 3 ? tag('#c0392b', '#fdecea', `⚠ 连续 ${r.f.streak} 次联系未回复`) : ''}
       ${r.f && r.f.none ? tag('#b8560b', '#fbeee0', '本月无面谈无记录') : ''}
+      ${r.f && r.f.ex ? tag('#666', '#eeeeee', '不需频繁联系') : ''}
       ${r.ab && r.ab.n >= 3 ? tag('#c0392b', '#fdecea', `⚠ 缺席 ${r.ab.n} 次${r.ab.courses.length ? ' · ' + r.ab.courses.map(fuEsc).join('、') : ''}`) : ''}
       <span style="font-size:10px;color:var(--text-3)">到期 ${fuEsc(r.s.expiry_date) || '—'}</span>
       <span style="margin-left:auto;font-size:11px;color:var(--accent)">查看概要 ›</span>
@@ -737,7 +819,7 @@ async function focusOpenSummary(sid) {
   // 5. 学习记录 / 联系记录 + 近 6 个月方格
   const streak = tmStreak(info), curNone = tmMonthState(info, tmCurYm()).group === 'none';
   const logHtml = info.logs.length ? info.logs.map(l => { const k = TM_KIND[tmLogKind(l)]; return `<div style="font-size:12px;padding:6px 0;border-top:1px solid #eee"><span style="color:#2a6a9a;font-family:monospace">${fuEsc(tmLogYm(l))}</span> <span style="color:${k.c};border:1px solid ${k.c};border-radius:2px;padding:0 5px;font-size:10px">${k.t}</span> <span style="white-space:pre-wrap">${fuEsc(l.note) || ''}</span>${l.image_url ? ' <span style="color:#1a6d3a">[有截图]</span>' : ''} <span style="color:#aaa;font-size:10px">${fuEsc(l.teacher_name || '')}</span></div>`; }).join('') : '<div style="font-size:11px;color:#aaa">暂无学习记录 / 联系记录</div>';
-  const contactHtml = errHtml(lgIdR, lgNmR) + `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:11px;color:#888">近 6 个月（✓ 面谈 / ✎ 学习记录 / ✉ 未回复 / ⏳ 待面谈）${tmCellsHtml(info, tmCurYm())}${streak >= 3 ? `<span style="color:#c0392b;font-weight:600">⚠ 已连续 ${streak} 次联系未回复</span>` : ''}${curNone ? '<span style="color:#b8560b">本月无面谈无记录</span>' : ''}</div>` + logHtml;
+  const contactHtml = errHtml(lgIdR, lgNmR) + `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:11px;color:#888">近 6 个月（✓ 面谈 / ✎ 学习记录 / ✉ 未回复 / ⏳ 待面谈）${tmCellsHtml(info, tmCurYm())}${streak >= 3 ? `<span style="color:#c0392b;font-weight:600">⚠ 已连续 ${streak} 次联系未回复</span>` : ''}${curNone && streak < 3 && !fuExempt(s) ? '<span style="color:#b8560b">本月无面谈无记录</span>' : ''}</div>` + logHtml;
 
   // 反馈文字（给营业 / 家长）：基本信息 / 出席与作业 / 报考学校 / 考学进度 / 面谈记录（最近 3 次）/ 学习记录・联系记录（最近 3 条 + 近 6 个月）
   const cut = (t, n) => { t = String(t || '').replace(/\s*\n+\s*/g, '；').trim(); return t.length > n ? t.slice(0, n) + '…' : t; };

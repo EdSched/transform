@@ -1145,7 +1145,7 @@ async function renderTsaMeetings(box) {
   box.innerHTML = '<div class="empty">加载中…</div>';
   if (!tmYm) tmYm = tmCurYm();
   try {
-    const allStu = await sb('/rest/v1/students?select=id,name,major,source,status,course_type,student_code,class_ids,vip_teachers,owner_teachers,is_vip_course&limit=2000').catch(() => []);
+    const allStu = await sb('/rest/v1/students?select=id,name,major,source,status,course_type,student_code,class_ids,vip_teachers,owner_teachers,is_vip_course,follow_exempt,follow_exempt_note,follow_exempt_by,follow_exempt_at&limit=2000').catch(() => []);
     let myStudents = tsaFilterStudents(allStu);   // 全部状态；由全局「状态」筛选
     if (tsaGuaranteedLock()) myStudents = myStudents.filter(tsaIsGuaranteed);
     tmData = await tmLoadFollow(myStudents);

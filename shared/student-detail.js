@@ -96,6 +96,7 @@ async function renderStudentDetailCard(studentId, opts) {
   const html = `
     <div style="font-size:16px;font-weight:700;margin-bottom:4px">${sdEsc(s.name)}</div>
     <div style="font-size:11px;color:var(--text-3);margin-bottom:16px">${sdEsc(MAJORS[s.major] || s.major || '')} · ${sdEsc(statusLabel(s.status))}</div>
+    ${s.follow_exempt ? `<div style="font-size:10px;color:var(--text-3);margin:-12px 0 14px">不需频繁联系${s.follow_exempt_note ? ' · ' + sdEsc(s.follow_exempt_note) : ''}${s.follow_exempt_by ? ' · ' + sdEsc(s.follow_exempt_by) : ''}${s.follow_exempt_at ? ' ' + sdEsc(String(s.follow_exempt_at).slice(0, 10)) : ''}</div>` : ''}
     ${secTitle('基础档案', 0)}
     ${row('学生属性', sdEsc(s.student_type))}
     ${row('来源', sdEsc(s.source))}
