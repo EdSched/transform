@@ -28,6 +28,10 @@ let tmGroup = '';          // '' 全部 | done | pend | noreply | none
 let tmExReason = '';       // 「不需频繁联系」里按原因筛选（空 = 全部）
 let tmView = 'need';       // need 需要跟进 | exempt 不需频繁联系
 let tmExpandedId = null;
+const tmLogsAll = new Set();   // 联系记录「查看全部」展开的学生
+const tmMtgOpen = new Set();   // 面谈记录展开的学生（默认收起）
+function tmToggleLogsAll(id) { tmLogsAll.has(id) ? tmLogsAll.delete(id) : tmLogsAll.add(id); tmRenderList(); }
+function tmToggleMtg(id) { tmMtgOpen.has(id) ? tmMtgOpen.delete(id) : tmMtgOpen.add(id); tmRenderList(); }
 let tmData = null;         // { students, rec, pend, logs, cache }
 
 // 「本月算完成」的口径（老师端面谈跟进、管理看板、任务完成情况共用）：有面谈记录，或有学习记录
@@ -299,13 +303,16 @@ function tmDetailHtml(s, info) {
       <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">${fuEsc(b.slot_date)}${b.slot_time_range ? ' ' + fuEsc(b.slot_time_range) : ''}${b.actual_duration ? ' · ' + fuEsc(b.actual_duration) + 'min' : ''}${b.assigned_teacher ? ' · ' + fuEsc(b.assigned_teacher) + '老师' : ''}${b.type ? ' · ' + fuEsc(typeLabel(b.type)) : ''}${interviewLateNote(b) ? ' · ' + fuEsc(interviewLateNote(b)) : ''}</div>
       <pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0;color:var(--text-2)">${fuEsc(buildRecordText(b))}</pre></div>`).join('')
     : '<div style="font-size:11px;color:var(--text-3)">还没有面谈记录</div>';
-  const logs = info.logs.length ? info.logs.map(l => {
+  // 联系记录：「等回复」排最前，其余新的在上（created_at 倒序）；超过 5 条先只显示最近 5 条
+  const logsSorted = info.logs.slice().sort((a, b) => ((tmLogKind(b) === 'waiting') - (tmLogKind(a) === 'waiting')) || String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  const logsAll = tmLogsAll.has(s.id), logsShown = logsAll ? logsSorted : logsSorted.slice(0, 5);
+  const logs = info.logs.length ? logsShown.map(l => {
     const kd = tmLogKind(l), k = TM_KIND[kd], mine = l.teacher_name === me || me === FU_ADMIN_NAME;
     const kindTxt = kd === 'waiting' ? `${k.t} · 已等 ${tmWaitDays(l)} 天` : k.t;
     const acts = kd === 'waiting'
       ? `<span style="flex-shrink:0;display:flex;flex-direction:column;gap:4px;align-items:stretch"><button onclick="tmResolveModal('${l.id}','study')" style="font-size:10px;background:#1a6d3a;color:#fff;border:none;border-radius:3px;padding:3px 8px;cursor:pointer;font-family:inherit;white-space:nowrap">学生已回复 → 填学习记录</button><button onclick="tmResolveModal('${l.id}','no_reply')" style="font-size:10px;background:none;color:#b8560b;border:1px solid #b8560b;border-radius:3px;padding:3px 8px;cursor:pointer;font-family:inherit;white-space:nowrap">仍未回复 → 记为未回复</button>${mine ? `<span onclick="tmDeleteContact('${l.id}')" style="color:var(--danger);cursor:pointer;font-size:9px;text-align:right">删除</span>` : ''}</span>`
       : mine ? `<span style="flex-shrink:0;font-size:9px;white-space:nowrap"><span onclick="tmFlipKind('${l.id}')" style="color:var(--accent);cursor:pointer">改为${kd === 'study' ? '未回复' : '学习记录'}</span> <span onclick="tmDeleteContact('${l.id}')" style="color:var(--danger);cursor:pointer;margin-left:6px">删除</span></span>` : '';
-    return `<div style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--border-light)">
+    return `<div style="display:flex;gap:10px;align-items:flex-start;padding:7px ${kd === 'waiting' ? '8px' : '0'};border-top:1px solid var(--border-light);${kd === 'waiting' ? 'background:#fef5e0;border-radius:3px' : ''}">
       ${l.image_url ? `<img src="${fuEsc(l.image_url)}" onclick="tmImgLightbox('${fuEsc(l.image_url)}')" style="flex-shrink:0;width:52px;height:52px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:zoom-in">` : ''}
       <div style="flex:1;min-width:0">
         <div style="font-size:10px;margin-bottom:2px"><span style="color:var(--text-3)">${fuEsc(tmLogYm(l))}</span> <span style="color:${k.c};border:1px solid ${k.c};border-radius:2px;padding:0 5px">${k.ic} ${kindTxt}</span></div>
@@ -314,15 +321,19 @@ function tmDetailHtml(s, info) {
       </div>
       ${acts}
     </div>`;
-  }).join('') : '<div style="font-size:11px;color:var(--text-3)">还没有学习记录 / 联系记录</div>';
+  }).join('') + (logsSorted.length > 5 ? `<div onclick="tmToggleLogsAll('${s.id}')" style="font-size:11px;color:var(--accent);cursor:pointer;padding:6px 0;text-align:center;border-top:1px solid var(--border-light)">${logsAll ? '只看最近 5 条 ▴' : `查看全部 ${logsSorted.length} 条 ▾`}</div>` : '') : '<div style="font-size:11px;color:var(--text-3)">还没有学习记录 / 联系记录</div>';
   const from = (tmYm || tmCurYm()) + '-01';
   const pend = info.pend.filter(b => (b.slot_date || '') >= from);
   const pendHtml = pend.length ? pend.map(b => `<div style="font-size:11px;padding:4px 0;border-top:1px solid var(--border-light)">${fuEsc(b.slot_date)} ${fuEsc(b.slot_time_range || '')} · ${b.status === 'confirmed' ? '已确认' : '待确认'}${b.assigned_teacher ? ' · ' + fuEsc(b.assigned_teacher) + '老师' : ''}</div>`).join('') : '<div style="font-size:11px;color:var(--text-3)">没有待进行的预约</div>';
   const add = `<button onclick="tmContactModal('${s.id}')" style="margin-left:auto;font-size:10px;background:#1a6d3a;color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">＋ 补充记录</button>`;
+  const mtgOpen = tmMtgOpen.has(s.id), lastM = info.recs[0] ? payrollInterviewPayDate(info.recs[0]) : '';
+  const thisM = info.recs.some(b => interviewListYm(b) === tmCurYm());
+  const lastTxt = lastM ? ' · 最近一次 ' + parseInt(lastM.slice(5, 7), 10) + '/' + parseInt(lastM.slice(8, 10), 10) : '';
+  const mtgBox = `<div style="margin-bottom:4px"><div onclick="tmToggleMtg('${s.id}')" style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px"><span>面谈记录（${info.recs.length} 次）${lastTxt} ${mtgOpen ? '▾' : '▸'}</span>${thisM ? '<span style="font-size:10px;font-weight:400;padding:0 7px;border-radius:10px;background:#e4f3ea;color:#1a6d3a">本月已面谈</span>' : ''}</div>${mtgOpen ? mtg : ''}</div>`;
   return `<div style="border-top:1px solid var(--border-light);background:var(--bg);padding:10px 14px">
-    ${sub(`面谈记录（${info.recs.length} 次）`, mtg)}
     ${sub(`学习记录 / 联系记录（${info.logs.length}）`, logs, add)}
     ${sub(`预约（${tmMonthWord() === '本月' ? '本月' : tmYm.replace('-', '年') + '月'}及以后）`, pendHtml)}
+    ${mtgBox}
   </div>`;
 }
 
@@ -523,15 +534,20 @@ async function tmSaveContact() {
   let imageUrl = '';
   try {
     if (tmPendingImg) imageUrl = await sbUpload('teacher-files', `contact/${s.id}-${Date.now()}.jpg`, tmPendingImg);
-    await sb('/rest/v1/student_contact_logs', 'POST', [{
+    const row = {
       id: 'sclog-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5),
       student_id: s.id, student_name: s.name, major: s.major || '',
       teacher_name: fuMe(),
       note, image_url: imageUrl || null, kind: tmAdd.kind, for_month: ym,
-    }]);
+    };
+    await sb('/rest/v1/student_contact_logs', 'POST', [row]);
     document.getElementById('tmContactModal')?.remove();
-    tmYm = ym;   // 跳到刚记录的那个月，立刻能看到它出现在哪一组
-    FU_HOST.reload();
+    // 不整页重读：直接加进内存，保持当前学生展开、不跳回顶部
+    row.created_at = new Date().toISOString();
+    if (tmData) { (tmData.logs.id[s.id] = tmData.logs.id[s.id] || []).push(row); tmData.cache = {}; }
+    if (tmYm !== ym) { tmYm = ym; tmShown0(); tmRenderShell(); } else tmRenderList();   // 跳到刚记录的那个月，立刻能看到它出现在哪一组
+    tmExpandedId = s.id;
+    tmRenderList();
   } catch (e) {
     alert('保存失败：' + e.message);
     if (btn) { btn.disabled = false; btn.textContent = '保存'; }
@@ -599,7 +615,8 @@ async function tmDeleteContact(id) {
   if (!confirm('确认删除这条记录？')) return;
   try {
     await sb(`/rest/v1/student_contact_logs?id=eq.${encodeURIComponent(id)}`, 'DELETE');
-    FU_HOST.reload();
+    if (tmData) { [tmData.logs.id, tmData.logs.nm].forEach(ix => Object.keys(ix).forEach(k => { ix[k] = ix[k].filter(x => x.id !== id); })); tmData.cache = {}; tmRenderList(); }
+    else FU_HOST.reload();
   } catch (e) { alert('删除失败：' + e.message); }
 }
 
