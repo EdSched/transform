@@ -31,7 +31,7 @@ function parseTimeRange(dateStr, timeRange, actualHours) {
     const sp = timeRangesSpan(timeRange);
     return { start: pre + sp.start, end: pre + sp.end, hours: timeRangesHours(timeRange) };
   }
-  const parts = timeRange.split(/[–\-]/);
+  const parts = timeRange.split(/[–—\-~～]/);
   if (parts.length < 2) return { start: timeRange, end: '', hours: actualHours || 0 };
   const startT = parts[0].trim();
   const endT = parts[1].trim();
@@ -119,8 +119,12 @@ function buildCourseRows(sessions, teacherName, courses, opt) {
       return (opt && opt.noScope) || scopeCourse({ domain: c.domain, major: c.major || s.major, class_ids: c.class_ids });   // 只算本领域 / 本专业的课
     })
     .map(s => {
-      const tr = s.time_range || courseMap[s.course_id]?.time_range || '';
-      const actualHours = (s.actual_hours != null ? s.actual_hours : courseMap[s.course_id]?.actual_hours);
+      const cc = courseMap[s.course_id] || {};
+      const tr = s.time_range || cc.time_range || '';
+      // 课时：单回自己填了实际课时 → 用它；单回时间和课程框架不一样（单回改过）→ 按单回时间算，不用框架的实际课时；否则用框架的实际课时
+      const normTr = t => String(t || '').replace(/\s+/g, '').replace(/[–—~～]/g, '-');
+      const actualHours = s.actual_hours != null ? s.actual_hours
+        : (s.time_range && normTr(s.time_range) !== normTr(cc.time_range) ? null : cc.actual_hours);
       const { start, end, hours } = parseTimeRange(s.session_date, tr, actualHours);
       return {
         type: 'course',

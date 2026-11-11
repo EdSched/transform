@@ -239,6 +239,7 @@ async function payrollGenerate(keepEdits) {
       const il = buildInterviewPending(interviewPending, n, slots, students, { end: rg.end });
       if (il.length) ivPending[n] = il;
     });
+    await payrollApplyOverrides(rows);
     const pub = await payrollLoadPub(rows);
     payrollCtx = { label: payrollRangeLabel(rg.start, rg.end), who, teachers: names.filter(n => rows.some(r => r.姓名 === n) || pending[n] || ivPending[n]), pending, ivPending, pub };
     payrollRows = rows;
@@ -343,8 +344,8 @@ function payrollRowHtml(r, i, showName) {
     <td style="${td}white-space:nowrap">${declTag}${escTM(payrollTypeName(r.工作内容))}</td>
     <td style="${td}white-space:nowrap;color:var(--text-2)">${escTM(payrollPlaceName(r.工作地点))}</td>
     <td style="${td}min-width:200px">${can ? `<input value="${escTM(r.备注)}" style="width:100%;font-size:11px;padding:2px 4px" onchange="payrollEditNote(${i},this.value)">` : escTM(r.备注)}${miss}${declNote}</td>
-    <td style="${td}white-space:nowrap">${badge}${rejBtn}</td>
-  </tr>${open ? `<tr><td colspan="${showName ? 9 : 8}" style="padding:0 8px 8px 32px;background:#faf9f6;border-bottom:1px solid var(--border-light)">${payrollDetailHtml(r.type, r.source_id, r._rec || r)}</td></tr>` : ''}`;
+    <td style="${td}white-space:nowrap">${badge}${payrollOvTag(r)}${rejBtn}</td>
+  </tr>${open ? `<tr><td colspan="${showName ? 9 : 8}" style="padding:0 8px 8px 32px;background:#faf9f6;border-bottom:1px solid var(--border-light)">${payrollDetailHtml(r.type, r.source_id, r._rec || r)}${payrollCanApprove() && !isDecl && payrollRowSelectable(r) ? `<div style="margin-top:6px"><button class="btn btn-outline btn-sm" onclick="payrollOvOpen(${i})">✎ 编辑</button></div>` : ''}</td></tr>` : ''}`;
 }
 // 排序：点表头按 日期 / 老师 / 工作内容 / 时长，再点反过来；分组时在组内排
 function payrollSortItems(items) {
@@ -921,4 +922,142 @@ function renderPayrollPage(mc){
   </div>
   <div id="payrollContainer"></div>`;
   renderPayrollSection(document.getElementById('payrollContainer'));
+}
+
+
+// ══════════════════════════════════
+// 手动修改一条系统生成的记录（work_record_overrides）：只影响工资记录，不动单回 / 课程 / 预约
+// 生成时有覆盖就用覆盖的值；发布 / 重新发布都用覆盖后的值
+// ══════════════════════════════════
+const PAYROLL_OV_KEYS = ['开始时间', '结束时间', '时长', '工作内容', '工作地点', '备注', '_date'];
+const PAYROLL_OV_LABEL = { 开始时间: '开始时间', 结束时间: '结束时间', 时长: '时长', 工作内容: '工作内容', 工作地点: '工作地点', 备注: '备注', _date: '日期' };
+const PAYROLL_OV_TYPES = ['大课', 'VIP授课', '教研', '试听', '试讲', '临时上课安排'];
+const PAYROLL_OV_PLACES = ['高马校区', '市谷校区', '线上'];
+
+async function payrollApplyOverrides(rows) {
+  const list = rows.filter(r => r.type !== 'declare');
+  list.forEach(r => { r._sys = {}; PAYROLL_OV_KEYS.forEach(k => { r._sys[k] = r[k]; }); r._ov = null; });
+  if (!list.length) return;
+  const ids = [...new Set(list.map(r => r.source_id))];
+  const byKey = {};
+  try {
+    for (let i = 0; i < ids.length; i += 60) {
+      const part = await sb(`/rest/v1/work_record_overrides?source_id=in.(${ids.slice(i, i + 60).map(x => `"${x}"`).join(',')})&select=*`, 'GET', undefined, { cache: 'no-store' }) || [];
+      part.forEach(o => { byKey[payrollKey(o.source, o.source_id)] = o; });
+    }
+  } catch (e) { return; }   // 表还没建 / 读不到：照系统计算的值
+  list.forEach(r => {
+    const o = byKey[payrollKey(r.type, r.source_id)];
+    if (!o || !o.fields) return;
+    r._ov = o;
+    PAYROLL_OV_KEYS.forEach(k => { if (o.fields[k] !== undefined && o.fields[k] !== null) r[k] = o.fields[k]; });
+  });
+}
+function payrollOvTag(r) {
+  if (!r._ov) return '';
+  const f = r._ov.fields || {};
+  const tip = PAYROLL_OV_KEYS.filter(k => f[k] !== undefined).map(k => `${PAYROLL_OV_LABEL[k]}：${r._sys && r._sys[k] != null ? r._sys[k] : ''} → ${f[k]}`).join('\n')
+    + (f._reason ? `\n原因：${f._reason}` : '') + `\n修改人：${r._ov.edited_by || ''}${r._ov.edited_at ? ' · ' + payrollFmtTime(r._ov.edited_at) : ''}`;
+  return `<span title="${escTM(tip)}" style="font-size:10px;background:#e8f0fb;color:#1a4a8a;border-radius:2px;padding:1px 6px;margin-left:4px;cursor:help">已手动修改</span>`;
+}
+// 「2026年10月05日 13:00」→ { date:'2026-10-05', time:'13:00' }
+function payrollOvSplit(str) {
+  const m = String(str || '').match(/(\d{4})年(\d{2})月(\d{2})日\s*(\d{1,2}:\d{2})?/);
+  return m ? { date: `${m[1]}-${m[2]}-${m[3]}`, time: (m[4] || '').padStart(5, '0') } : { date: '', time: '' };
+}
+const payrollOvJoin = (date, time) => { const m = String(date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[1]}年${m[2]}月${m[3]}日 ${time || ''}`.trim() : ''; };
+const payrollOvMin = t => { const m = String(t || '').match(/^(\d{1,2}):(\d{2})$/); return m ? +m[1] * 60 + +m[2] : null; };
+let payrollOvState = null;
+
+function payrollOvOpen(i) {
+  const r = payrollRows[i];
+  if (!r || r.type === 'declare' || !payrollCanApprove() || !payrollRowSelectable(r)) return;
+  const a = payrollOvSplit(r.开始时间), b = payrollOvSplit(r.结束时间);
+  payrollOvState = { i, date: r._date || a.date, st: a.time, et: b.time, hours: r.时长, type: payrollTypeName(r.工作内容), place: payrollPlaceName(r.工作地点), note: r.备注 || '', reason: (r._ov && r._ov.fields && r._ov.fields._reason) || '' };
+  payrollOvRender();
+}
+function payrollOvChips(list, cur, fn) {
+  const all = list.includes(cur) || !cur ? list : list.concat([cur]);
+  return all.map(x => `<span onclick="${fn}(this.dataset.v)" data-v="${escTM(x)}" style="display:inline-block;cursor:pointer;font-size:12px;padding:3px 10px;margin:0 6px 6px 0;border:1px solid ${x === cur ? 'var(--accent)' : 'var(--border)'};background:${x === cur ? 'var(--accent)' : 'transparent'};color:${x === cur ? '#fff' : 'inherit'};border-radius:12px">${escTM(x)}</span>`).join('');
+}
+function payrollOvRender() {
+  const S = payrollOvState; if (!S) return;
+  const r = payrollRows[S.i];
+  let ov = document.getElementById('payrollOvOverlay');
+  if (!ov) {
+    ov = document.createElement('div'); ov.id = 'payrollOvOverlay';
+    ov.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center';
+    ov.onclick = e => { if (e.target === ov) { ov.remove(); payrollOvState = null; } };
+    document.body.appendChild(ov);
+  }
+  const lab = t => `<div style="font-size:11px;color:var(--text-3);margin:10px 0 4px">${t}</div>`;
+  const inp = 'font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:3px;background:var(--surface);font-family:inherit';
+  const published = (payrollCtx.pub[payrollKey(r.type, r.source_id)] || {}).status === 'approved';
+  ov.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:16px 18px;width:min(480px,94vw);max-height:90vh;overflow:auto">
+    <div style="font-size:14px;font-weight:600;margin-bottom:2px">编辑工作记录</div>
+    <div style="font-size:11px;color:var(--text-3)">${escTM(r.姓名)} · ${escTM(r._sys && r._sys.备注 || r.备注)}　只改工资记录，不改单回 / 课程</div>
+    ${lab('日期')}<input type="date" value="${escTM(S.date)}" onchange="payrollOvState.date=this.value" style="${inp}">
+    ${lab('开始 / 结束时间（改了时间会自动算时长）')}
+    <input type="time" value="${escTM(S.st)}" onchange="payrollOvTime('st',this.value)" style="${inp}"> – <input type="time" value="${escTM(S.et)}" onchange="payrollOvTime('et',this.value)" style="${inp}">
+    ${lab('时长（小时，也可手动改）')}<input id="payrollOvHours" type="number" step="0.25" min="0" value="${escTM(S.hours)}" onchange="payrollOvState.hours=this.value" style="${inp};width:90px">
+    ${lab('工作内容')}<div>${payrollOvChips(PAYROLL_OV_TYPES, S.type, 'payrollOvPick_type')}</div>
+    ${lab('工作地点')}<div>${payrollOvChips(PAYROLL_OV_PLACES, S.place, 'payrollOvPick_place')}</div>
+    ${lab('备注')}<input value="${escTM(S.note)}" onchange="payrollOvState.note=this.value" style="${inp};width:100%;box-sizing:border-box">
+    ${lab('修改原因（选填）')}<input value="${escTM(S.reason)}" onchange="payrollOvState.reason=this.value" style="${inp};width:100%;box-sizing:border-box">
+    <div style="display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" onclick="payrollOvSave()">保存</button>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('payrollOvOverlay').remove();payrollOvState=null">取消</button>
+      ${r._ov ? `<button class="btn btn-sm" style="margin-left:auto;color:var(--danger);border:1px solid var(--danger);background:none" onclick="payrollOvRestore()">恢复系统计算</button>` : ''}
+    </div>
+    ${published ? '<div style="font-size:10px;color:var(--text-3);margin-top:6px">这一行已发布：保存后老师端马上更新。</div>' : ''}
+  </div>`;
+}
+function payrollOvPick_type(v) { payrollOvState.type = v; payrollOvRender(); }
+function payrollOvPick_place(v) { payrollOvState.place = v; payrollOvRender(); }
+function payrollOvTime(which, v) {
+  const S = payrollOvState; S[which] = v;
+  const a = payrollOvMin(S.st), b = payrollOvMin(S.et);
+  if (a != null && b != null && b > a) { S.hours = Math.round((b - a) / 60 * 100) / 100; const h = document.getElementById('payrollOvHours'); if (h) h.value = S.hours; }
+}
+// 已发布的那条 work_records（通过的）对应的字段
+const payrollOvRecFields = r => ({ teacher_name: r.姓名, start_time: r.开始时间, end_time: r.结束时间, duration: r.时长, work_type: r.工作内容, location: r.工作地点, notes: r.备注, updated_at: new Date().toISOString() });
+function payrollOvEditor() { const a = payrollMe(); if (a && a.name) return a.name; return (typeof ADMIN_EMAIL !== 'undefined' && ADMIN_EMAIL) || (typeof ACCESS_KEY !== 'undefined' && ACCESS_KEY && (ACCESS_KEY.label || ACCESS_KEY.k)) || ''; }
+
+async function payrollOvSave() {
+  const S = payrollOvState; if (!S) return;
+  const r = payrollRows[S.i]; if (!r || !payrollCanApprove()) return;
+  const hours = parseFloat(S.hours);
+  if (!S.date || !S.st || !(hours >= 0)) { alert('日期、开始时间、时长要填'); return; }
+  const next = { 开始时间: payrollOvJoin(S.date, S.st), 结束时间: S.et ? payrollOvJoin(S.date, S.et) : (r._sys.结束时间 || ''), 时长: payrollRound(hours), 工作内容: S.type, 工作地点: S.place, 备注: S.note, _date: S.date };
+  const fields = {};
+  PAYROLL_OV_KEYS.forEach(k => { if (String(next[k]) !== String(r._sys[k])) fields[k] = next[k]; });
+  if (!Object.keys(fields).length) { if (r._ov) { if (confirm('和系统计算的值一样了，要恢复系统计算吗？')) await payrollOvRestore(true); } else alert('没有改动'); return; }
+  if (S.reason.trim()) fields._reason = S.reason.trim();
+  const key = payrollKey(r.type, r.source_id), p = payrollCtx.pub[key];
+  const body = { fields, edited_by: payrollOvEditor(), edited_at: new Date().toISOString(), teacher_name: r.姓名, domain: r._domain || null };
+  try {
+    if (r._ov) await sb(`/rest/v1/work_record_overrides?source=eq.${encodeURIComponent(r.type)}&source_id=eq.${encodeURIComponent(r.source_id)}`, 'PATCH', body);
+    else await sb('/rest/v1/work_record_overrides', 'POST', [{ source: r.type, source_id: r.source_id, ...body }]);
+    PAYROLL_OV_KEYS.forEach(k => { r[k] = next[k]; });
+    r._ov = { source: r.type, source_id: r.source_id, ...body };
+    if (p && p.status === 'approved') await sb(`/rest/v1/work_records?id=eq.${encodeURIComponent(p.id)}`, 'PATCH', payrollOvRecFields(r));
+    payrollCtx.pub = await payrollLoadPub(payrollRows);
+    document.getElementById('payrollOvOverlay').remove(); payrollOvState = null;
+    payrollRenderResult();
+    if (p && p.status === 'approved') payrollRenderPublished();
+  } catch (e) { alert('保存失败：' + e.message); }
+}
+async function payrollOvRestore(skipConfirm) {
+  const S = payrollOvState, r = S && payrollRows[S.i]; if (!r || !r._ov) return;
+  const p = payrollCtx.pub[payrollKey(r.type, r.source_id)], published = p && p.status === 'approved';
+  if (!skipConfirm && !confirm('恢复成系统计算的值？')) return;
+  try {
+    await sb(`/rest/v1/work_record_overrides?source=eq.${encodeURIComponent(r.type)}&source_id=eq.${encodeURIComponent(r.source_id)}`, 'DELETE');
+    PAYROLL_OV_KEYS.forEach(k => { r[k] = r._sys[k]; });
+    r._ov = null;
+    const ov = document.getElementById('payrollOvOverlay'); if (ov) ov.remove();
+    payrollOvState = null;
+    payrollRenderResult();
+    if (published) alert('已恢复系统计算。这一行已发布过，需要重新发布才会更新老师端。');
+  } catch (e) { alert('恢复失败：' + e.message); }
 }
