@@ -229,16 +229,14 @@ function tmExemptLine(s, info) {
     <div style="font-size:10px;color:var(--text-3)">${fuEsc(s.follow_exempt_by || '')} 设置于 ${fuEsc(tmJstYmd(s.follow_exempt_at))} · 最近面谈 ${fuEsc(lastM) || '无'} · 最近联系 ${fuEsc(lastL) || '无'}</div>
   </div>`;
 }
-const FU_EXEMPT_DEFAULTS = ['快合格', '只剩手续', '本人要求少联系'];
 let fuExemptChipList = [];
-// 快捷原因：以前用过的（去重，最近用的排前，最多 8 个）+ 三个起步用的
+// 快捷原因：只放以前自己填过的（去重，最近用的排前，最多 8 个）；没填过就不显示
 function fuExemptHistory() {
   const pool = [].concat((tmData && tmData.students) || [], typeof cachedStudents !== 'undefined' ? cachedStudents || [] : []);
   const seen = new Set(), out = [];
   pool.filter(s => fuReasonOf(s)).sort((a, b) => String(b.follow_exempt_at || '').localeCompare(String(a.follow_exempt_at || ''))).forEach(s => {
     const r = fuReasonOf(s); if (!seen.has(r) && out.length < 8) { seen.add(r); out.push(r); }
   });
-  FU_EXEMPT_DEFAULTS.forEach(r => { if (!seen.has(r)) { seen.add(r); out.push(r); } });
   return out;
 }
 function tmExemptClick(id) {
@@ -259,7 +257,7 @@ function fuExemptModal(s, edit) {
     <div style="font-size:13px;font-weight:600;margin-bottom:10px">${edit ? '修改原因' : '不需频繁联系'} · ${fuEsc(s.name)}</div>
     <div style="font-size:11px;color:var(--text-3);margin-bottom:4px">原因（必填，直接写）</div>
     <input id="fuExemptReason" value="${fuEsc(edit ? fuReasonOf(s) : '')}" placeholder="例如：已拿到内定，等手续" style="${inp};margin-bottom:6px">
-    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${fuExemptChipList.map((r, i) => `<div class="filter-chip" onclick="document.getElementById('fuExemptReason').value=fuExemptChipList[${i}]" style="padding:3px 10px;font-size:11px;cursor:pointer">${fuEsc(r)}</div>`).join('')}</div>
+    <div style="display:${fuExemptChipList.length ? 'flex' : 'none'};flex-wrap:wrap;gap:6px;margin-bottom:10px">${fuExemptChipList.map((r, i) => `<div class="filter-chip" onclick="document.getElementById('fuExemptReason').value=fuExemptChipList[${i}]" style="padding:3px 10px;font-size:11px;cursor:pointer">${fuEsc(r)}</div>`).join('')}</div>
     <textarea id="fuExemptNote" rows="3" placeholder="备注（选填）" style="${inp}">${fuEsc(edit ? fuMemoOf(s) : '')}</textarea>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
       <button onclick="document.getElementById('fuExemptModal').remove()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:4px 14px;cursor:pointer;font-family:inherit">取消</button>
