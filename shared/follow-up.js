@@ -50,6 +50,7 @@ function tmMonthWord() { return (tmYm || tmCurYm()) === tmCurYm() ? '本月' : p
 function tmJstYmd(iso) { return iso ? new Date(new Date(iso).getTime() + 9 * 3600e3).toISOString().slice(0, 10) : ''; }
 function tmHasRec(b) { return !!(b && b.daily_record && Object.values(b.daily_record).some(v => v && (typeof v === 'string' ? v : Object.values(v).some(x => x)))); }
 function tmLogKind(l) { return l.kind === 'no_reply' ? 'no_reply' : l.kind === 'waiting' ? 'waiting' : l.kind === 'booked' ? 'booked' : 'study'; }
+function tmClosedApt(info, l) { return tmMonthApts(info, tmLogYm(l))[0] || null; }
 function tmWaitDays(l) { return Math.max(0, Math.floor((Date.now() - new Date(l.created_at || Date.now()).getTime()) / 86400e3)); }
 function tmLogYm(l) { return l.for_month || tmJstYmd(l.created_at).slice(0, 7); }
 // 记录在时间线上的位置（补记往月的记录，按那个月月底算，避免排在后面的面谈前面）
@@ -59,18 +60,22 @@ function tmLogKey(l) { const ym = tmLogYm(l), cd = tmJstYmd(l.created_at); retur
 async function tmLoadFollow(students) {
   const [allBk, allPend, allLogs] = await Promise.all([
     sbAll('/rest/v1/bookings?daily_record=not.is.null&select=*&order=slot_date.desc,id.asc'),
-    sbAll('/rest/v1/bookings?status=in.("pending","confirmed")&select=id,name,student_id,major,slot_date,slot_time_range,status,type,assigned_teacher,daily_record,created_at&order=id.asc'),
+    sbAll('/rest/v1/bookings?status=in.("pending","confirmed","completed")&select=id,name,student_id,major,slot_date,slot_time_range,status,type,assigned_teacher,daily_record,created_at&order=id.asc'),
     sbAll('/rest/v1/student_contact_logs?select=*&order=created_at.desc,id.asc'),
   ]);
   // 按学生 id 归档；没绑定学生 id 的（新同学预约、旧记录）按姓名归档
   const idx = () => ({ id: {}, nm: {} });
   const put = (ix, row, name) => { if (row.student_id) (ix.id[row.student_id] = ix.id[row.student_id] || []).push(row); else (ix.nm[name] = ix.nm[name] || []).push(row); };
-  const rec = idx(), pend = idx(), logs = idx();
+  const rec = idx(), pend = idx(), apt = idx(), logs = idx();
   (allBk || []).forEach(b => { if (tmHasRec(b)) put(rec, b, b.name); });
-  (allPend || []).forEach(b => { if (b.type !== 'vip' && !tmHasRec(b)) put(pend, b, b.name); });
-  await tmAutoBooked(allLogs || [], (allPend || []).concat((allBk || []).filter(b => !(allPend || []).some(p => p.id === b.id))));
+  (allPend || []).forEach(b => { if (b.type !== 'vip' && !tmHasRec(b) && (b.status === 'pending' || b.status === 'confirmed')) put(pend, b, b.name); });
+  // 全部非 VIP、未取消的面谈预约（待确认 / 已确认 / 已完成，含老师临时建的）：当月有一条，这个月的「等回复 / 未回复」就闭环
+  const pids = new Set((allPend || []).map(p => p.id));
+  const allApt = (allPend || []).concat((allBk || []).filter(b => !pids.has(b.id))).filter(b => b.type !== 'vip' && b.status !== 'cancelled');
+  allApt.forEach(b => put(apt, b, b.name));
+  await tmAutoBooked(allLogs || [], allApt);
   (allLogs || []).forEach(l => put(logs, l, l.student_name));
-  return { students, rec, pend, logs, cache: {} };
+  return { students, rec, pend, apt, logs, cache: {} };
 }
 
 // 自动闭环：「已联系·等回复」之后学生预约了面谈（非 VIP、非已取消、预约创建晚于联系记录）→ 改成「已预约面谈」
@@ -100,22 +105,28 @@ function tmInfo(s, D) {
   return (c[s.id] = {
     recs: pick(D.rec).sort((a, b) => payrollInterviewPayDate(b).localeCompare(payrollInterviewPayDate(a))),   // 补填的按填写记录的日期排
     pend: pick(D.pend).sort((a, b) => (a.slot_date || '').localeCompare(b.slot_date || '')),
+    apt: pick(D.apt || { id: {}, nm: {} }).sort((a, b) => (a.slot_date || '').localeCompare(b.slot_date || '')),
     logs: pick(D.logs).sort((a, b) => tmLogKey(b).localeCompare(tmLogKey(a))),
   });
 }
+function tmMonthApts(info, ym) { return (info.apt || []).filter(b => (b.slot_date || '').slice(0, 7) === ym); }
 // 某个月的状态：group = done | pend | noreply | none
 function tmMonthState(info, ym) {
   const mtg = info.recs.filter(b => interviewListYm(b) === ym);   // 补填的算在填写记录的月份
   const inM = info.logs.filter(l => tmLogYm(l) === ym);
-  const study = inM.filter(l => tmLogKind(l) === 'study'), nore = inM.filter(l => tmLogKind(l) === 'no_reply'), wait = inM.filter(l => tmLogKind(l) === 'waiting');
+  const study = inM.filter(l => tmLogKind(l) === 'study'); let nore = inM.filter(l => tmLogKind(l) === 'no_reply'), wait = inM.filter(l => tmLogKind(l) === 'waiting');
   const pend = info.pend.filter(b => (b.slot_date || '').slice(0, 7) === ym);
-  const group = fuIsDone(mtg.length, study.length) ? 'done' : pend.length ? 'pend' : (nore.length || wait.length) ? 'noreply' : 'none';
-  const cell = mtg.length ? 'mtg' : study.length ? 'study' : pend.length ? 'pend' : nore.length ? 'noreply' : wait.length ? 'wait' : '';
-  return { group, cell, mtg, study, nore, wait, pend };
+  const apt = tmMonthApts(info, ym);   // 当月任何一条面谈预约（待确认 / 已确认 / 已完成）→ 当月的「等回复 / 未回复」闭环，不显示、不算
+  if (apt.length) { nore = []; wait = []; }
+  const group = fuIsDone(mtg.length, study.length) ? 'done' : (pend.length || apt.length) ? 'pend' : (nore.length || wait.length) ? 'noreply' : 'none';
+  const cell = mtg.length ? 'mtg' : study.length ? 'study' : (pend.length || apt.length) ? 'pend' : nore.length ? 'noreply' : wait.length ? 'wait' : '';
+  return { group, cell, mtg, study, nore, wait, pend, apt };
 }
 // 截至某月月底，连续几次联系未回复（中间有面谈 / 学习记录就清零）
 function tmStreak(info, uptoYm) {   // uptoYm 为空 = 截至现在
-  const ev = info.recs.map(b => ({ k: payrollInterviewPayDate(b), ok: true })).concat(info.logs.filter(l => tmLogKind(l) !== 'waiting').map(l => ({ k: tmLogKey(l), ok: tmLogKind(l) === 'study' || tmLogKind(l) === 'booked' })))
+  const aptYm = new Set((info.apt || []).map(b => (b.slot_date || '').slice(0, 7)));   // 当月有预约：当月的未回复不算
+  const ev = info.recs.map(b => ({ k: payrollInterviewPayDate(b), ok: true })).concat((info.apt || []).filter(b => b.status === 'completed').map(b => ({ k: b.slot_date, ok: true })))
+    .concat(info.logs.filter(l => tmLogKind(l) !== 'waiting' && !(tmLogKind(l) === 'no_reply' && aptYm.has(tmLogYm(l)))).map(l => ({ k: tmLogKey(l), ok: tmLogKind(l) === 'study' || tmLogKind(l) === 'booked' })))
     .filter(e => e.k && (!uptoYm || e.k.slice(0, 7) <= uptoYm)).sort((a, b) => a.k.localeCompare(b.k) || (b.ok ? 1 : 0) - (a.ok ? 1 : 0));
   let n = 0;
   ev.forEach(e => { n = e.ok ? 0 : n + 1; });
@@ -180,6 +191,7 @@ function tmStateTag(r) {
   const st = r.st, tag = (c, bg, t) => `<span style="font-size:10px;padding:1px 8px;border-radius:10px;background:${bg};color:${c};white-space:nowrap">${t}</span>`;
   if (r.quiet) return tag('#666', '#eeeeee', `连续 ${r.streak} 次未回复`);
   if (st.group === 'done') return st.mtg.length ? tag('#1a6d3a', '#e4f3ea', `✓ 已面谈${st.mtg.length > 1 ? ' ' + st.mtg.length + ' 次' : ''}`) : tag('#1a6d3a', '#e4f3ea', '✎ 学习记录');
+  if (st.group === 'pend' && !st.pend.length) { const b = st.apt.find(x => !tmHasRec(x)) || st.apt[0]; return tag('#1a6d3a', '#e4f3ea', `${tmHasRec(b) ? '已面谈' : '已面谈 · 待填记录'} ${fuEsc((b.slot_date || '').slice(5))}`); }
   if (st.group === 'pend') { const b = st.pend[0]; return tag('#8a6d10', '#fef5e0', `⏳ 待面谈 ${fuEsc((b.slot_date || '').slice(5))} ${fuEsc(b.slot_time_range || '')}`); }
   if (st.group === 'noreply') {
     const out = [];
@@ -321,13 +333,16 @@ function tmDetailHtml(s, info) {
       <pre style="font-size:11px;line-height:1.8;white-space:pre-wrap;font-family:inherit;margin:0;color:var(--text-2)">${fuEsc(buildRecordText(b))}</pre></div>`).join('')
     : '<div style="font-size:11px;color:var(--text-3)">还没有面谈记录</div>';
   // 联系记录：「等回复」排最前，其余新的在上（created_at 倒序）；超过 5 条先只显示最近 5 条
-  const logsSorted = info.logs.slice().sort((a, b) => ((tmLogKind(b) === 'waiting') - (tmLogKind(a) === 'waiting')) || String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  const logsSorted = info.logs.slice().sort((a, b) => ((tmLogKind(b) === 'waiting' && !tmClosedApt(info, b)) - (tmLogKind(a) === 'waiting' && !tmClosedApt(info, a))) || String(b.created_at || '').localeCompare(String(a.created_at || '')));
   const logsAll = tmLogsAll.has(s.id), logsShown = logsAll ? logsSorted : logsSorted.slice(0, 5);
   const logs = info.logs.length ? logsShown.map(l => {
-    const kd = tmLogKind(l), k = TM_KIND[kd], mine = l.teacher_name === me || me === FU_ADMIN_NAME;
-    const kindTxt = kd === 'waiting' ? `${k.t} · 已等 ${tmWaitDays(l)} 天` : kd === 'booked' ? `已预约面谈 · ${((l.note || '').match(/预约面谈 (\S+ \S+?)（/) || [])[1] || ''}`.replace(/ · $/, '') : k.t;
+    let kd = tmLogKind(l), k = TM_KIND[kd]; const mine = l.teacher_name === me || me === FU_ADMIN_NAME;
+    const ca = (kd === 'waiting' || kd === 'no_reply') ? tmClosedApt(info, l) : null;   // 当月已有面谈预约：记录保留，显示成灰色「已闭环」
+    if (ca) { k = { t: '已闭环', c: '#888', ic: '✓' }; kd = 'closed'; }
+    const kindTxt = ca ? `已闭环 · 本月已有面谈 ${(ca.slot_date || '').slice(5).replace('-', '/')}` : kd === 'waiting' ? `${k.t} · 已等 ${tmWaitDays(l)} 天` : kd === 'booked' ? `已预约面谈 · ${((l.note || '').match(/预约面谈 (\S+ \S+?)（/) || [])[1] || ''}`.replace(/ · $/, '') : k.t;
     const acts = kd === 'waiting'
       ? `<span style="flex-shrink:0;display:flex;flex-direction:column;gap:4px;align-items:stretch"><button onclick="tmResolveModal('${l.id}','study')" style="font-size:10px;background:#1a6d3a;color:#fff;border:none;border-radius:3px;padding:3px 8px;cursor:pointer;font-family:inherit;white-space:nowrap">学生已回复 → 填学习记录</button><button onclick="tmResolveModal('${l.id}','no_reply')" style="font-size:10px;background:none;color:#b8560b;border:1px solid #b8560b;border-radius:3px;padding:3px 8px;cursor:pointer;font-family:inherit;white-space:nowrap">仍未回复 → 记为未回复</button>${mine ? `<span onclick="tmDeleteContact('${l.id}')" style="color:var(--danger);cursor:pointer;font-size:9px;text-align:right">删除</span>` : ''}</span>`
+      : kd === 'closed' ? (mine ? `<span style="flex-shrink:0;font-size:9px;white-space:nowrap"><span onclick="tmDeleteContact('${l.id}')" style="color:var(--danger);cursor:pointer">删除</span></span>` : '')
       : kd === 'booked' ? (mine ? `<span style="flex-shrink:0;font-size:9px;white-space:nowrap"><span onclick="tmDeleteContact('${l.id}')" style="color:var(--danger);cursor:pointer">删除</span></span>` : '')
       : mine ? `<span style="flex-shrink:0;font-size:9px;white-space:nowrap"><span onclick="tmFlipKind('${l.id}')" style="color:var(--accent);cursor:pointer">改为${kd === 'study' ? '未回复' : '学习记录'}</span> <span onclick="tmDeleteContact('${l.id}')" style="color:var(--danger);cursor:pointer;margin-left:6px">删除</span></span>` : '';
     return `<div style="display:flex;gap:10px;align-items:flex-start;padding:7px ${kd === 'waiting' ? '8px' : '0'};border-top:1px solid var(--border-light);${kd === 'waiting' ? 'background:#fef5e0;border-radius:3px' : ''}">
