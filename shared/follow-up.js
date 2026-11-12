@@ -21,7 +21,7 @@ const fuMe = () => (typeof riyuReviewerName === 'function' ? riyuReviewerName() 
 //   学习记录（补充学习情况、和学生的互动等）→ 这个月算完成；联系未回复 → 没完成，继续跟进。
 //   连续 3 次联系未回复（中间没有面谈 / 学习记录）→ 转入重点关注。
 // ══════════════════════════════════
-const TM_KIND = { study: { t: '学习记录', c: '#1a6d3a', ic: '✎' }, waiting: { t: '已联系·等回复', c: '#8a6d10', ic: '✉' }, no_reply: { t: '联系未回复', c: '#b8560b', ic: '✉' } };
+const TM_KIND = { study: { t: '学习记录', c: '#1a6d3a', ic: '✎' }, waiting: { t: '已联系·等回复', c: '#8a6d10', ic: '✉' }, no_reply: { t: '联系未回复', c: '#b8560b', ic: '✉' }, booked: { t: '已预约面谈', c: '#1a6d3a', ic: '✓' } };
 const TM_GROUPS = [['done', '✓ 已完成'], ['pend', '⏳ 待面谈'], ['noreply', '✉ 已联系'], ['none', '⚠ 无面谈无记录']];
 let tmYm = '';             // 当前查看的月份 YYYY-MM（空 = 本月）
 let tmGroup = '';          // '' 全部 | done | pend | noreply | none
@@ -49,7 +49,7 @@ function tmShiftYm(ym, n) { const p = ym.split('-').map(Number); const d = new D
 function tmMonthWord() { return (tmYm || tmCurYm()) === tmCurYm() ? '本月' : parseInt(tmYm.slice(5), 10) + '月'; }
 function tmJstYmd(iso) { return iso ? new Date(new Date(iso).getTime() + 9 * 3600e3).toISOString().slice(0, 10) : ''; }
 function tmHasRec(b) { return !!(b && b.daily_record && Object.values(b.daily_record).some(v => v && (typeof v === 'string' ? v : Object.values(v).some(x => x)))); }
-function tmLogKind(l) { return l.kind === 'no_reply' ? 'no_reply' : l.kind === 'waiting' ? 'waiting' : 'study'; }
+function tmLogKind(l) { return l.kind === 'no_reply' ? 'no_reply' : l.kind === 'waiting' ? 'waiting' : l.kind === 'booked' ? 'booked' : 'study'; }
 function tmWaitDays(l) { return Math.max(0, Math.floor((Date.now() - new Date(l.created_at || Date.now()).getTime()) / 86400e3)); }
 function tmLogYm(l) { return l.for_month || tmJstYmd(l.created_at).slice(0, 7); }
 // 记录在时间线上的位置（补记往月的记录，按那个月月底算，避免排在后面的面谈前面）
@@ -59,7 +59,7 @@ function tmLogKey(l) { const ym = tmLogYm(l), cd = tmJstYmd(l.created_at); retur
 async function tmLoadFollow(students) {
   const [allBk, allPend, allLogs] = await Promise.all([
     sbAll('/rest/v1/bookings?daily_record=not.is.null&select=*&order=slot_date.desc,id.asc'),
-    sbAll('/rest/v1/bookings?status=in.("pending","confirmed")&select=id,name,student_id,major,slot_date,slot_time_range,status,type,assigned_teacher,daily_record&order=id.asc'),
+    sbAll('/rest/v1/bookings?status=in.("pending","confirmed")&select=id,name,student_id,major,slot_date,slot_time_range,status,type,assigned_teacher,daily_record,created_at&order=id.asc'),
     sbAll('/rest/v1/student_contact_logs?select=*&order=created_at.desc,id.asc'),
   ]);
   // 按学生 id 归档；没绑定学生 id 的（新同学预约、旧记录）按姓名归档
@@ -68,8 +68,27 @@ async function tmLoadFollow(students) {
   const rec = idx(), pend = idx(), logs = idx();
   (allBk || []).forEach(b => { if (tmHasRec(b)) put(rec, b, b.name); });
   (allPend || []).forEach(b => { if (b.type !== 'vip' && !tmHasRec(b)) put(pend, b, b.name); });
+  await tmAutoBooked(allLogs || [], (allPend || []).concat((allBk || []).filter(b => !(allPend || []).some(p => p.id === b.id))));
   (allLogs || []).forEach(l => put(logs, l, l.student_name));
   return { students, rec, pend, logs, cache: {} };
+}
+
+// 自动闭环：「已联系·等回复」之后学生预约了面谈（非 VIP、非已取消、预约创建晚于联系记录）→ 改成「已预约面谈」
+async function tmAutoBooked(logs, bks) {
+  const ok = bks.filter(b => b.type !== 'vip' && b.status !== 'cancelled' && b.created_at);
+  for (const l of logs) {
+    if (l.kind !== 'waiting' || !l.created_at) continue;
+    const t0 = new Date(l.created_at).getTime();
+    const hit = ok.filter(b => (l.student_id ? b.student_id === l.student_id : (!b.student_id && b.name === l.student_name)) && new Date(b.created_at).getTime() > t0)
+      .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))[0];
+    if (!hit) continue;
+    const md = String(hit.slot_date || '').slice(5).replace('-', '/'), tm = (String(hit.slot_time_range || '').match(/^\s*(\d{1,2}:\d{2})/) || [])[1] || String(hit.slot_time_range || '');
+    const note = (l.note ? l.note + '\n' : '') + `→ 学生已预约面谈 ${md} ${tm}（系统自动记录）`.replace(/ +（/, '（');
+    try {
+      await sb(`/rest/v1/student_contact_logs?id=eq.${encodeURIComponent(l.id)}`, 'PATCH', { kind: 'booked', note });
+      l.kind = 'booked'; l.note = note;
+    } catch (e) { console.warn('自动闭环失败', l.id, e); }
+  }
 }
 
 // 一个学生的全部面谈 / 预约 / 联系记录
@@ -96,7 +115,7 @@ function tmMonthState(info, ym) {
 }
 // 截至某月月底，连续几次联系未回复（中间有面谈 / 学习记录就清零）
 function tmStreak(info, uptoYm) {   // uptoYm 为空 = 截至现在
-  const ev = info.recs.map(b => ({ k: payrollInterviewPayDate(b), ok: true })).concat(info.logs.filter(l => tmLogKind(l) !== 'waiting').map(l => ({ k: tmLogKey(l), ok: tmLogKind(l) === 'study' })))
+  const ev = info.recs.map(b => ({ k: payrollInterviewPayDate(b), ok: true })).concat(info.logs.filter(l => tmLogKind(l) !== 'waiting').map(l => ({ k: tmLogKey(l), ok: tmLogKind(l) === 'study' || tmLogKind(l) === 'booked' })))
     .filter(e => e.k && (!uptoYm || e.k.slice(0, 7) <= uptoYm)).sort((a, b) => a.k.localeCompare(b.k) || (b.ok ? 1 : 0) - (a.ok ? 1 : 0));
   let n = 0;
   ev.forEach(e => { n = e.ok ? 0 : n + 1; });
@@ -306,9 +325,10 @@ function tmDetailHtml(s, info) {
   const logsAll = tmLogsAll.has(s.id), logsShown = logsAll ? logsSorted : logsSorted.slice(0, 5);
   const logs = info.logs.length ? logsShown.map(l => {
     const kd = tmLogKind(l), k = TM_KIND[kd], mine = l.teacher_name === me || me === FU_ADMIN_NAME;
-    const kindTxt = kd === 'waiting' ? `${k.t} · 已等 ${tmWaitDays(l)} 天` : k.t;
+    const kindTxt = kd === 'waiting' ? `${k.t} · 已等 ${tmWaitDays(l)} 天` : kd === 'booked' ? `已预约面谈 · ${((l.note || '').match(/预约面谈 (\S+ \S+?)（/) || [])[1] || ''}`.replace(/ · $/, '') : k.t;
     const acts = kd === 'waiting'
       ? `<span style="flex-shrink:0;display:flex;flex-direction:column;gap:4px;align-items:stretch"><button onclick="tmResolveModal('${l.id}','study')" style="font-size:10px;background:#1a6d3a;color:#fff;border:none;border-radius:3px;padding:3px 8px;cursor:pointer;font-family:inherit;white-space:nowrap">学生已回复 → 填学习记录</button><button onclick="tmResolveModal('${l.id}','no_reply')" style="font-size:10px;background:none;color:#b8560b;border:1px solid #b8560b;border-radius:3px;padding:3px 8px;cursor:pointer;font-family:inherit;white-space:nowrap">仍未回复 → 记为未回复</button>${mine ? `<span onclick="tmDeleteContact('${l.id}')" style="color:var(--danger);cursor:pointer;font-size:9px;text-align:right">删除</span>` : ''}</span>`
+      : kd === 'booked' ? (mine ? `<span style="flex-shrink:0;font-size:9px;white-space:nowrap"><span onclick="tmDeleteContact('${l.id}')" style="color:var(--danger);cursor:pointer">删除</span></span>` : '')
       : mine ? `<span style="flex-shrink:0;font-size:9px;white-space:nowrap"><span onclick="tmFlipKind('${l.id}')" style="color:var(--accent);cursor:pointer">改为${kd === 'study' ? '未回复' : '学习记录'}</span> <span onclick="tmDeleteContact('${l.id}')" style="color:var(--danger);cursor:pointer;margin-left:6px">删除</span></span>` : '';
     return `<div style="display:flex;gap:10px;align-items:flex-start;padding:7px ${kd === 'waiting' ? '8px' : '0'};border-top:1px solid var(--border-light);${kd === 'waiting' ? 'background:#fef5e0;border-radius:3px' : ''}">
       ${l.image_url ? `<img src="${fuEsc(l.image_url)}" onclick="tmImgLightbox('${fuEsc(l.image_url)}')" style="flex-shrink:0;width:52px;height:52px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:zoom-in">` : ''}
@@ -563,7 +583,7 @@ function tmFindLog(id) {
   return hit;
 }
 async function tmFlipKind(id) {
-  const l = tmFindLog(id); if (!l || tmLogKind(l) === 'waiting') return;
+  const l = tmFindLog(id); if (!l || tmLogKind(l) === 'waiting' || tmLogKind(l) === 'booked') return;
   const next = tmLogKind(l) === 'study' ? 'no_reply' : 'study';
   try {
     await sb(`/rest/v1/student_contact_logs?id=eq.${encodeURIComponent(id)}`, 'PATCH', { kind: next });
@@ -865,7 +885,7 @@ async function focusOpenSummary(sid) {
 
   // 反馈文字（给营业 / 家长）：基本信息 / 出席与作业 / 报考学校 / 考学进度 / 面谈记录（最近 3 次）/ 学习记录・联系记录（最近 3 条 + 近 6 个月）
   const cut = (t, n) => { t = String(t || '').replace(/\s*\n+\s*/g, '；').trim(); return t.length > n ? t.slice(0, n) + '…' : t; };
-  const kindTxt = l => l.kind === 'waiting' ? '已联系·等回复' : l.kind === 'no_reply' ? '联系未回复' : '学习记录';
+  const kindTxt = l => l.kind === 'waiting' ? '已联系·等回复' : l.kind === 'no_reply' ? '联系未回复' : l.kind === 'booked' ? '已预约面谈' : '学习记录';
   const cellTxt = { mtg: '面谈', study: '学习记录', noreply: '未回复', wait: '等回复', pend: '待面谈' };
   const six = []; for (let i = 5; i >= 0; i--) { const m = tmShiftYm(tmCurYm(), -i); six.push(`${+m.slice(5)}月 ${cellTxt[tmMonthState(info, m).cell] || '无'}`); }
   const L = [];
