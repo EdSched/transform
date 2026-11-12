@@ -206,7 +206,7 @@ function tmRenderList() {
         <span onclick="event.stopPropagation();tmGenReminder('${s.id}')" style="font-size:10px;border:1px solid var(--border);border-radius:3px;padding:1px 7px;cursor:pointer;background:var(--surface);color:var(--text-2)">✉ 联络文字</span>
         <span style="font-size:11px;color:var(--text-3)">${fuEsc(MAJORS[s.major] || s.major || '')}</span>
         ${exView ? '' : tmStateTag(r)}
-        <span onclick="event.stopPropagation();tmExemptClick('${s.id}')" style="font-size:10px;border:1px solid var(--border);border-radius:3px;padding:1px 7px;cursor:pointer;background:var(--surface);color:var(--text-2)">${r.ex ? '恢复每月跟进' : '不需频繁联系'}</span>
+        ${r.ex ? '<span style="font-size:10px;padding:1px 8px;border-radius:10px;background:#eeeeee;color:#666;white-space:nowrap">不需频繁联系</span>' : ''}
         <span style="font-size:10px;color:var(--text-3);margin-left:auto">${lastM ? '最近面谈 ' + fuEsc(lastM) : '从未面谈'}</span>
         ${tmCellsHtml(r.info)}
         <span style="font-size:10px;color:var(--text-3)">${open ? '▲' : '▼'}</span>
@@ -225,7 +225,7 @@ function tmExemptLine(s, info) {
   const lastM = info.recs[0] ? payrollInterviewPayDate(info.recs[0]) : '', lastL = info.logs[0] ? tmLogKey(info.logs[0]) : '';
   const memo = fuMemoOf(s);
   return `<div style="padding:6px 14px 8px;border-top:1px solid var(--border-light);font-size:11px;color:var(--text-2);line-height:1.7">
-    <div>原因：${fuEsc(fuReasonOf(s) || '（没写原因）')}${memo ? ' · 备注：' + fuEsc(memo) : ''} <span onclick="tmExemptEdit('${s.id}')" style="color:var(--accent);cursor:pointer;font-size:10px;margin-left:6px">修改原因</span></div>
+    <div>原因：${fuEsc(fuReasonOf(s) || '（没写原因）')}${memo ? ' · 备注：' + fuEsc(memo) : ''}</div>
     <div style="font-size:10px;color:var(--text-3)">${fuEsc(s.follow_exempt_by || '')} 设置于 ${fuEsc(tmJstYmd(s.follow_exempt_at))} · 最近面谈 ${fuEsc(lastM) || '无'} · 最近联系 ${fuEsc(lastL) || '无'}</div>
   </div>`;
 }
@@ -324,6 +324,10 @@ function tmDetailHtml(s, info) {
   const pend = info.pend.filter(b => (b.slot_date || '') >= from);
   const pendHtml = pend.length ? pend.map(b => `<div style="font-size:11px;padding:4px 0;border-top:1px solid var(--border-light)">${fuEsc(b.slot_date)} ${fuEsc(b.slot_time_range || '')} · ${b.status === 'confirmed' ? '已确认' : '待确认'}${b.assigned_teacher ? ' · ' + fuEsc(b.assigned_teacher) + '老师' : ''}</div>`).join('') : '<div style="font-size:11px;color:var(--text-3)">没有待进行的预约</div>';
   const add = `<button onclick="tmContactModal('${s.id}')" style="margin-left:auto;font-size:10px;background:#1a6d3a;color:#fff;border:none;border-radius:2px;padding:3px 10px;cursor:pointer;font-family:inherit">＋ 补充记录</button>`;
+  const lk = 'color:var(--accent);cursor:pointer;margin-left:8px';
+  const exBox = `<div style="border-top:1px solid var(--border-light);padding-top:8px;margin-top:6px;font-size:10px;color:var(--text-3)">${fuExempt(s)
+    ? `不需频繁联系 · ${fuEsc(fuReasonOf(s) || '（没写原因）')}${fuMemoOf(s) ? '（' + fuEsc(fuMemoOf(s)) + '）' : ''} · ${fuEsc(s.follow_exempt_by || '')} ${fuEsc(tmJstYmd(s.follow_exempt_at))}<span onclick="tmExemptEdit('${s.id}')" style="${lk}">修改原因</span><span onclick="tmExemptClick('${s.id}')" style="${lk}">恢复每月跟进</span>`
+    : `<span onclick="tmExemptClick('${s.id}')" style="cursor:pointer;text-decoration:underline">设为不需频繁联系…</span>`}</div>`;
   const mtgOpen = tmMtgOpen.has(s.id), lastM = info.recs[0] ? payrollInterviewPayDate(info.recs[0]) : '';
   const thisM = info.recs.some(b => interviewListYm(b) === tmCurYm());
   const lastTxt = lastM ? ' · 最近一次 ' + parseInt(lastM.slice(5, 7), 10) + '/' + parseInt(lastM.slice(8, 10), 10) : '';
@@ -332,6 +336,7 @@ function tmDetailHtml(s, info) {
     ${sub(`学习记录 / 联系记录（${info.logs.length}）`, logs, add)}
     ${sub(`预约（${tmMonthWord() === '本月' ? '本月' : tmYm.replace('-', '年') + '月'}及以后）`, pendHtml)}
     ${mtgBox}
+    ${exBox}
   </div>`;
 }
 
