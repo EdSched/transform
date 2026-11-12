@@ -977,7 +977,8 @@ function openManualBooking(kind){
       <div id="bkm_res" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
       <div id="bkm_sel" style="font-size:12px;margin-top:6px;color:var(--text-3)">还没有选择学生</div></div>
     <div class="form-group"><label class="form-label">老师（必选）</label>
-      <input id="bkm_tq" placeholder="搜索老师（汉字 / 拼音首字母）" oninput="bkmRenderTeachers()" autocomplete="off" style="margin-bottom:6px">
+      <input id="bkm_tq" placeholder="搜索老师（汉字 / 拼音首字母）" oninput="bkmRenderTeachers()" autocomplete="off" style="margin-bottom:4px">
+      <div id="bkm_thint" style="font-size:10px;color:var(--text-3);margin-bottom:6px"></div>
       <select id="bkm_teacher"><option value="">加载中…</option></select></div>
     <div class="form-group"><label class="form-label">日期</label><input type="date" id="bkm_date" onchange="bkmLoadRooms()"></div>
     <div class="form-group"><label class="form-label">时间段</label>
@@ -1019,13 +1020,27 @@ function bkmTeacherPool(stu){
     return (t.managed_by||[]).some(scopeHasDomain)||(t.domains||[]).some(scopeHasDomain)||(t.majors||[]).some(scopeMajor);
   });
 }
+// 按专业挑老师（重新分配 / 补录共用）：负责该专业、且不是营业 / 保录老师
+function teachersOfMajor(teachers, major){
+  if(!major) return [];
+  return (teachers||[]).filter(t=>{ const g=t.tags||[]; return !(g.includes('营业老师')||g.includes('保录老师'))&&(t.majors||[]).includes(major); });
+}
+function teacherMajorHint(major, hasOwn, where){
+  if(!major) return '这位学生没有专业信息，请在'+where+'搜索';
+  const lbl=typeof majorLabel==='function'?majorLabel(major):(MAJORS[major]||major);
+  return hasOwn?`显示「${lbl}」专业的老师；要安排其他老师请在${where}搜索`:`没有「${lbl}」专业的老师，请在${where}搜索`;
+}
 function bkmRenderTeachers(){
   const sel=document.getElementById('bkm_teacher'); if(!sel) return;
   const e=bkSelfEsc, cur=sel.value, q=(document.getElementById('bkm_tq')||{}).value||'';
   const vipT=new Set(bkmStu?(bkmStu.vip_teachers||[]):[]), ownT=new Set(bkmStu?(bkmStu.owner_teachers||[]):[]);
   const rank=t=>(bkmKind==='vip'&&vipT.has(t.name))?0:ownT.has(t.name)?1:(vipT.has(t.name)?2:3);
   const label=t=>t.name+((bkmKind==='vip'&&vipT.has(t.name))||(vipT.has(t.name)&&!ownT.has(t.name))?'（该生VIP老师）':ownT.has(t.name)?'（该生负责老师）':'');
-  const list=bkmTeacherPool().filter(t=>searchMatch(q,[t.name])).sort((a,b)=>rank(a)-rank(b));
+  const pool=bkmTeacherPool(), qt=q.trim();
+  const majorSet=new Set(bkmStu?teachersOfMajor(pool,bkmStu.major).map(t=>t.name):[]);
+  const list=pool.filter(t=>qt?searchMatch(q,[t.name]):(rank(t)<3||majorSet.has(t.name))).sort((a,b)=>rank(a)-rank(b));
+  const hintEl=document.getElementById('bkm_thint');
+  if(hintEl) hintEl.textContent=bkmStu?(qt?'':teacherMajorHint(bkmStu.major,majorSet.size>0,'上面')):'先选学生，再显示其专业的老师';
   const top=list.filter(t=>rank(t)<3);
   sel.innerHTML='<option value="">请选择老师</option>'+list.map(t=>`<option value="${e(t.name)}">${e(label(t))}</option>`).join('');
   if(cur&&list.some(t=>t.name===cur)) sel.value=cur;
@@ -1650,14 +1665,11 @@ async function openReassignTeacher(bookingId, slotId) {
 
   // 营业/保录：仅后台，不作为授课老师分配
   const pool = teachers.filter(t => { const g = t.tags || []; return !(g.includes('营业老师') || g.includes('保录老师')); });
-  const own = realMajor ? pool.filter(t => (t.majors || []).includes(realMajor)) : [];
+  const own = teachersOfMajor(pool, realMajor);
   const cur = (b && b.assigned_teacher) || '';
   window._rsState = { pool, own, query: '', selected: cur };
 
-  const majorLbl = realMajor ? (typeof majorLabel === 'function' ? majorLabel(realMajor) : (MAJORS[realMajor] || realMajor)) : '';
-  const hint = !realMajor ? '这位学生没有专业信息，请在下面搜索'
-    : own.length ? `显示「${majorLbl}」专业的老师；要安排其他老师请在下面搜索`
-    : `没有「${majorLbl}」专业的老师，请在下面搜索`;
+  const hint = teacherMajorHint(realMajor, own.length > 0, '下面');
 
   const modal = document.createElement('div');
   modal.id = 'reassignModal';
