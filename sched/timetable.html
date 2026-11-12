@@ -115,6 +115,9 @@ html.shareview #calBody:empty::after{ content:'课表加载中…'; color:#9a959
       <div class="field" style="flex:1;min-width:280px"><label>封面说明（每行一条，可自由换行）</label><textarea id="pdfCover" rows="4" placeholder="上课顺序和具体时间有调整的可能性，若有变动，将会在班级群内通知，一切以群内通知为准。&#10;校内考系列课程届时会根据同学实际出愿情况详细安排。&#10;定期面谈、升学规划、出愿材料指导、研究计划书修改等，均为班主任预约制1对1辅导，不显示在课表内。" style="width:100%;font-size:12px;line-height:1.7"></textarea></div>
       <div class="field" style="flex:1;min-width:220px"><label>页眉说明（每页顶部，选填）</label><textarea id="pdfHeader" rows="4" placeholder="如：唯新教育 · 社会人文课程表 · 2026年10月期" style="width:100%;font-size:12px;line-height:1.7"></textarea></div>
     </div>
+    <div class="row" style="margin-top:8px">
+      <div class="field" style="flex:1;min-width:280px"><label>单回调整说明（每页底部，选填；课程表格子按固定规律排，临时调整的单回在这里说明）　<button class="ghost sm" type="button" id="adjGen">自动生成</button> <span class="muted" id="adjNote" style="font-size:12px"></span></label><textarea id="pdfAdjust" rows="4" placeholder="点「自动生成」会按所选课程的单回列出改日期 / 改时间 / 新增 / 教室变动，可再手动修改" style="width:100%;font-size:12px;line-height:1.6"></textarea></div>
+    </div>
     <div class="field" style="margin-top:12px">
       <label>专业/共通课程（点选加入，可多选；可用「全选当前结果」一次全选；不选则不含专业课）</label>
       <div class="row" style="margin:4px 0 6px">
@@ -159,8 +162,9 @@ html.shareview #calBody:empty::after{ content:'课表加载中…'; color:#9a959
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="common.js?v=20270128"></script>
+<script src="common.js?v=20270403"></script>
 <script src="../shared/search.js?v=20261029"></script>
+<script src="../shared/course-room-view.js?v=20270403"></script>
 <script>
 el('nav').innerHTML = renderNav('timetable.html');
 pageRole().then(r=>{ if(r) el('nav').innerHTML = renderNav('timetable.html', r); }).catch(()=>{});
@@ -234,6 +238,7 @@ async function boot(){
   bindSearch(el('x_q'),refreshExtraList);
   el('go').onclick=gen; el('print').onclick=doPrint;
   if(el('ttLimit')) el('ttLimit').onchange=()=>{ document.querySelectorAll('.ttRange').forEach(x=>x.classList.toggle('hidden', el('ttLimit').value!=='1')); };
+  el('adjGen').onclick=genAdjust;
   el('tplSave').onclick=saveTpl; el('tplDel').onclick=delTpl; el('tpl').onchange=loadTpl;
   await fillTplSelect();
   fillMajors(); fillXMajors(); refreshCourseTags(); refreshExtraList();
@@ -449,6 +454,51 @@ function selectedCourses(){
   EXTRA_IDS.forEach(id=>{ const c=COURSES.find(x=>String(x.id)===id); if(c && !out.includes(c)) out.push(c); });
   return out;
 }
+/* 单回调整说明：读所选课的单回，跟课程固定规律比较 */
+const _tt5=t=>t?String(t).slice(0,5):'';
+const _ttRange=(tr,c)=>{ const m=String(tr||'').match(/\d{1,2}:\d{2}/g); if(m&&m.length>=2){ const p=x=>x.length===4?'0'+x:x; return [p(m[0]),p(m[m.length-1])]; } return [_tt5(c.start_time),_tt5(c.end_time)]; };
+const _ttMDW=d=>fmtMD(d)+'（'+DOW[dowIdx(d)].slice(1)+'）';
+async function buildAdjustText(){
+  const list=selectedCourses(); if(!list.length) return '';
+  const ids=list.map(c=>String(c.id)), sess=[];
+  for(let i=0;i<ids.length;i+=40) sess.push(...await sbGet('course_sessions','select=course_id,session_date,time_range,is_cancelled,session_number&course_id=in.('+ids.slice(i,i+40).map(encodeURIComponent).join(',')+')'));
+  // 教室：和课程安排同一套算法
+  try{
+    const [bks, rooms] = await Promise.all([ sbGet('sched_bookings','select=id,course_id,room_id,recurrence,weekday,booking_date,manual_off_dates,status&kind=eq.course'), sbGet('sched_rooms','select=id,name,campus') ]);
+    CRV.bks=bks.filter(b=>b.status!=='rejected'); CRV.roomList=rooms; CRV.rooms={}; rooms.forEach(r=>{ CRV.rooms[String(r.id)]=r; }); CRV.loaded=true;
+  }catch(e){ CRV.loaded=false; }
+  const byName={};   // 课名 → [{date, text}]
+  const groups={}; list.forEach(c=>{ if(c.merge_group) (groups[c.merge_group]=groups[c.merge_group]||[]).push(c); });
+  list.forEach(c=>{
+    const mine=sess.filter(x=>String(x.course_id)===String(c.id) && !x.is_cancelled && x.session_date);
+    if(!mine.length) return;
+    const fixedAll=c.merge_group ? expandMergedGroup(groups[c.merge_group]).filter(e=>e.c===c) : expand(c);
+    const fixed=fixedAll.filter(e=>!e.off).map(e=>e.date);
+    const fixedSet=new Set(fixed), actSet=new Set(mine.map(x=>x.session_date));
+    const missing=fixed.filter(d=>!actSet.has(d)).sort();
+    const extra=mine.filter(x=>!fixedSet.has(x.session_date)).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+    const cr=[_tt5(c.start_time),_tt5(c.end_time)];
+    const items=(byName[c.merge_name||c.name]=byName[c.merge_name||c.name]||[]);
+    const timeOf=x=>{ const r=_ttRange(x.time_range,c); return (x.time_range && (r[0]!==cr[0]||r[1]!==cr[1])) ? r[0]+'-'+r[1] : ''; };
+    extra.forEach((x,i)=>{
+      const t=timeOf(x);
+      if(i<missing.length) items.push({date:x.session_date, text:'第 '+(x.session_number||'?')+' 回：'+_ttMDW(missing[i])+' → '+_ttMDW(x.session_date)+(t?' '+t:'')});
+      else items.push({date:x.session_date, text:'新增 '+_ttMDW(x.session_date)+' '+(t||(cr[0]&&cr[1]?cr[0]+'-'+cr[1]:''))});
+    });
+    mine.filter(x=>fixedSet.has(x.session_date) && timeOf(x)).forEach(x=>items.push({date:x.session_date, text:'第 '+(x.session_number||'?')+' 回 '+_ttMDW(x.session_date)+'改为 '+timeOf(x)}));
+    if(CRV.loaded) mine.forEach(x=>{ const st=crvSessionState(c.id, x, {delivery:c.mode}); if(st.kind==='moved') items.push({date:x.session_date, text:_ttMDW(x.session_date)+'改在 '+st.label}); });
+  });
+  return Object.keys(byName).map(n=>({n, items:byName[n].sort((a,b)=>a.date.localeCompare(b.date)||a.text.localeCompare(b.text))})).filter(g=>g.items.length)
+    .sort((a,b)=>a.items[0].date.localeCompare(b.items[0].date))
+    .map(g=>'《'+g.n+'》'+g.items.map(x=>x.text).join('；')).join('\n');
+}
+async function genAdjust(){
+  const box=el('pdfAdjust'), note=el('adjNote');
+  if(box.value.trim() && !confirm('文本框里已有内容，自动生成会覆盖，继续吗？')) return;
+  note.textContent='生成中…';
+  try{ const t=await buildAdjustText(); box.value=t; note.textContent=t?'已生成，可以再手动修改':'所选课程没有单回调整'; }
+  catch(e){ note.textContent=''; toast('生成失败：'+e.message,false); }
+}
 /* 模板 */
 async function fillTplSelect(){
   TEMPLATES = await sbGet('sched_timetable_templates','select=*&order=created_at.desc');
@@ -463,12 +513,13 @@ async function saveTpl(){
     campus:el('campus').value||null, with_lang:el('lang').value==='1',
     course_ids:JSON.stringify([...SELECTED_IDS]), extra_ids:JSON.stringify([...EXTRA_IDS]),
     cover_text:(el('pdfCover')?el('pdfCover').value:'')||null,
+    adjust_text:(el('pdfAdjust')?el('pdfAdjust').value:'').trim()||undefined,
     header_text:(el('pdfHeader')?el('pdfHeader').value:'')||null,
     cover_img:(el('ttCover')?el('ttCover').value:'')||null,
     show_legend:el('ttLegend')?el('ttLegend').value==='1':null,
     custom_title:(el('ttTitle')?el('ttTitle').value:'')||null };
   try{ await sbInsert('sched_timetable_templates', rec); toast('模板已保存'); el('tplLabel').value=''; el('tplSlug').value=''; await fillTplSelect(); }
-  catch(e){ toast(/duplicate|unique/i.test(e.message)?'该分享后缀已被占用，请换一个':e.message, false); }
+  catch(e){ toast(/duplicate|unique/i.test(e.message)?'该分享后缀已被占用，请换一个':(/adjust_text/.test(e.message)?'保存失败：模板表还没有「单回调整说明」这一列，请先执行 PR 里的 SQL':e.message), false); }
 }
 function shareUrl(slug){ return location.origin+location.pathname+'?t='+encodeURIComponent(slug); }
 async function loadTpl(){
@@ -503,6 +554,7 @@ function applyTemplate(t){
   EXTRA_IDS=new Set(JSON.parse(t.extra_ids||'[]').map(_mapId));
   if(el('pdfCover') && t.cover_text!=null) el('pdfCover').value=t.cover_text;
   if(el('pdfHeader') && t.header_text!=null) el('pdfHeader').value=t.header_text;
+  if(el('pdfAdjust')) el('pdfAdjust').value=t.adjust_text||'';
   if(el('ttCover') && t.cover_img) el('ttCover').value=t.cover_img;
   if(el('ttLegend') && t.show_legend!=null) el('ttLegend').value=t.show_legend?'1':'0';
   if(el('ttTitle') && t.custom_title!=null) el('ttTitle').value=t.custom_title;
@@ -613,6 +665,7 @@ async function doPrint(){
     legendItems.push('<span class="cleg"><i style="'+styleOf(e.c)+'"></i>'+esc(nm)+'</span>'); });
   const coverLegend = (legendItems.length && el('ttLegend') && el('ttLegend').value==='1') ? ('<div class="cleg-wrap">'+legendItems.join('')+'</div>') : '';
   const headerText = (el('pdfHeader')?el('pdfHeader').value:'').trim();
+  const adjustText = (el('pdfAdjust')?el('pdfAdjust').value:'').trim();
   const coverLines = coverText? coverText.split(/\n/).filter(x=>x.trim()) : [];
 
   // 图片转 base64（内嵌，打印一定显示）
@@ -671,6 +724,7 @@ const coverFile = coverMap[coverVal] || 'back.jpg';
     .page-legend{ display:flex; flex-wrap:wrap; gap:4px 12px; margin:0 0 8px; padding-bottom:6px; border-bottom:1px dashed #e0dccf; }
     .page-legend .cleg{ display:inline-flex; align-items:center; gap:5px; font-size:10px; color:#5a5650; }
     .page-legend .cleg i{ width:9px; height:9px; border-radius:2px; display:inline-block; }
+    .padj{ font-size:11px; color:#6a655c; white-space:pre-wrap; line-height:1.7; margin-top:auto; padding-top:6px; }
     .pfoot{ margin-top:auto; padding-top:6px; text-align:center; font-size:10px; color:#9a958c; border-top:1px solid #ece7db; }
     .mblock{ break-inside:avoid; margin-bottom:6mm; }
     .mtitle{ font-family:'Noto Serif SC',serif; font-size:15px; margin:0 0 6px; color:#2b2822; }
@@ -713,7 +767,8 @@ const coverFile = coverMap[coverVal] || 'back.jpg';
   monthBlocks.forEach((mhtml, i)=>{
     const pageNo = i+2;   // 封面是第1页
     bodyPages += '<div class="page sheet">'+pageHead()+mhtml+
-      '<div class="pfoot">第 '+pageNo+' / '+totalPages+' 页</div></div>';
+      (adjustText?'<div class="padj">'+esc(adjustText)+'</div>':'')+
+      '<div class="pfoot"'+(adjustText?' style="margin-top:6px"':'')+'>第 '+pageNo+' / '+totalPages+' 页</div></div>';
   });
   const safeTitle = coverTitle.replace(/[\\/:*?"<>|]/g,'_');
   const doc =
@@ -796,6 +851,7 @@ function render(){
      '<button class="'+(curView==='week'?'on':'')+'" data-v="week">周历</button>'+
      '<button class="'+(curView==='sum'?'on':'')+'" data-v="sum">课程详解</button></div>';
   h+= curView==='month' ? buildMonth() : curView==='week' ? buildCal() : buildSummary();
+  { const at=(el('pdfAdjust')?el('pdfAdjust').value:'').trim(); if(at) h+='<div style="margin-top:12px;padding:8px 12px;background:#faf6ec;border:1px solid #e8dfc4;border-radius:6px;font-size:12px;color:#5a5650;white-space:pre-wrap;line-height:1.7"><b>单回调整说明</b>\n'+esc(at)+'</div>'; }
   box.innerHTML=h;
   box.querySelectorAll('.vt button[data-v]').forEach(b=>b.onclick=()=>{ curView=b.dataset.v; render(); });
   box.querySelectorAll('.vt button[data-st]').forEach(b=>b.onclick=()=>{ SHARE_VIEW_TERM=b.dataset.st; gen(); });
