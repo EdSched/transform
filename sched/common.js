@@ -742,7 +742,15 @@ function findNearby(bookings, roomId, dateStr, s, e, days){
 /* 某 booking 在指定日期是否生效 */
 /* 这门课「按周排的教室」占用（临时占用 recurrence==='once' 不算） */
 function isWeeklyCourseBk(b){ return b && b.kind==='course' && b.recurrence!=='once'; }
+/* 课程的临时占用只在「这门课那天真的有课」时才算数：这门课有单回数据、而那天没有没取消的单回 → 当它不存在 */
+function courseOnceOrphan(b, dateStr){
+  if(!b || b.kind!=='course' || b.recurrence!=='once' || !b.course_id) return false;
+  const R = window.COURSE_LINK_RANGE; if(!R || dateStr<R[0] || dateStr>R[1]) return false;
+  const e = (window.COURSE_LINK||{})[String(b.course_id)]; if(!e || !e.days || !e.days.size) return false;
+  return !e.days.has(dateStr);
+}
 function bookingOnDate(b, dateStr){
+  if(courseOnceOrphan(b, dateStr)) return false;
   if(b.recurrence === 'weekly'){
     // 单回改期：系统自动释放 / 人工释放的日子，这条按周占用那天不占教室
     if(b.manual_off_dates && String(b.manual_off_dates).split(',').includes(dateStr)) return false;
@@ -810,7 +818,7 @@ function linkCourseBookings(bks){
   // 当天另有临时占用的课：每周占用让位
   const once = new Set();
   list.forEach(b=>{
-    if(b.kind==='course' && b.recurrence==='once' && b.course_id && b.booking_date && b.status!=='rejected')
+    if(b.kind==='course' && b.recurrence==='once' && b.course_id && b.booking_date && b.status!=='rejected' && !courseOnceOrphan(b, b.booking_date))
       once.add(String(b.course_id)+'|'+b.booking_date);
   });
   window.COURSE_ONCE = once;

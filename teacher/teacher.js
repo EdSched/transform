@@ -465,6 +465,8 @@ async function init() {
       host_key: courseMap[s.course_id]?.host_key || '',
       needs_recording: courseMap[s.course_id]?.needs_recording || false,
     })).sort((a, b) => a.session_date.localeCompare(b.session_date));
+    // 每一回在哪个教室（只读；读不到不影响别的）
+    try { if (typeof crvLoad === 'function') await crvLoad([...new Set(confirmedSessions.map(x => x.course_id).filter(Boolean))]); } catch (e) { console.warn('读取教室失败', e); }
     if (p.booking) {
       cachedTeacherSlots = results[5] || [];
       const mySlotIds = cachedTeacherSlots.map(s => s.id);
@@ -619,7 +621,8 @@ function renderTodo(mc) {
   const unconfirmedVip = cachedTeacherBookings.filter(b => b.type === 'vip' && b.status === 'confirmed' && b.vip_session_notes && !b.student_confirmed);
   const vipRoomRej = cachedTeacherBookings.filter(b => b.type === 'vip' && vipRoomRejected(b));
   const vbfHome = typeof vbfHomeCardHtml === 'function' ? vbfHomeCardHtml() : '';
-  const hasTodo = (typeof vbfOpenList === 'function' && vbfOpenList().length > 0) || vipRoomRej.length > 0 || pendingBookings.length > 0 || pendingVip.length > 0 || vipRequests.length > 0 || pendingSlots.length > 0 || unconfirmedVip.length > 0 || profPendingCount > 0;
+  const roomAlerts = tRoomAlerts();
+  const hasTodo = roomAlerts.length > 0 || (typeof vbfOpenList === 'function' && vbfOpenList().length > 0) || vipRoomRej.length > 0 || pendingBookings.length > 0 || pendingVip.length > 0 || vipRequests.length > 0 || pendingSlots.length > 0 || unconfirmedVip.length > 0 || profPendingCount > 0;
   mc.innerHTML = `
   <div style="display:flex;flex-direction:column;gap:12px">
     <div id="homeBox"></div>
@@ -670,6 +673,11 @@ function renderTodo(mc) {
         return `<div class="todo-item"><span style="font-weight:600">${name}</span><span style="color:var(--text-3)">${count} 课次待回复</span><button onclick="switchTab('schedule')" style="font-size:10px;background:var(--warn);color:#fff;border:none;border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;margin-left:auto">去填写</button></div>`;
       }).join('')}
     </div>` : ''}
+    ${roomAlerts.length ? `<div class="todo-card warn">
+      <div class="todo-head">🏫 教室变更</div>
+      ${roomAlerts.map(x => { const d = x.s.session_date; const tm = String(x.s.time_range || '').split(/[-–~]/)[0].trim();
+        return `<div class="todo-item"><span>《${x.s.course_name}》${crvMDW(d)}${tm}</span><span style="color:${x.st.kind === 'none' ? '#c0392b' : '#d9822b'};font-weight:600">${x.st.kind === 'none' ? '还没排教室' : '改在 ' + x.st.label}</span></div>`; }).join('')}
+    </div>` : ''}
     ${upcomingSessions.length ? `<div class="todo-card">
       <div class="todo-head" style="color:var(--text-2)">📅 近期课程</div>
       ${upcomingSessions.map(s => {
@@ -677,7 +685,7 @@ function renderTodo(mc) {
         if (s._isVip) {
           return `<div class="todo-item"><span style="font-weight:600;color:#5a3a9a">${f.short} ${f.dow}</span><span>${s.course_name}</span><span style="font-size:9px;background:#5a3a9a;color:#fff;border-radius:2px;padding:1px 6px">VIP</span><span style="font-size:10px;color:var(--text-3);margin-left:auto">${s.time_range || ''}</span></div>`;
         }
-        return `<div class="todo-item"><span style="font-weight:600;color:${f.dowColor}">${f.short} ${f.dow}</span><span>${s.course_name}</span>${s.session_title ? `<span style="font-size:10px;color:var(--text-3)">${s.session_title}</span>` : ''}<span style="font-size:10px;color:var(--text-3);margin-left:auto">${s.time_range || ''}</span></div>`;
+        return `<div class="todo-item"><span style="font-weight:600;color:${f.dowColor}">${f.short} ${f.dow}</span><span>${s.course_name}</span>${s.session_title ? `<span style="font-size:10px;color:var(--text-3)">${s.session_title}</span>` : ''}${tRoomTxt(s) ? `<span style="font-size:10px">${tRoomTxt(s)}</span>` : ''}<span style="font-size:10px;color:var(--text-3);margin-left:auto">${s.time_range || ''}</span></div>`;
       }).join('')}
       <button onclick="switchTab('mycourses')" style="font-size:11px;color:var(--text-3);background:none;border:none;cursor:pointer;margin-top:6px;font-family:inherit">查看完整课表 →</button>
     </div>` : ''}
@@ -2337,6 +2345,22 @@ async function confirmVipWithDetails(bookingId) {
   }
 }
 
+// ── 每一回的教室（shared/course-room-view.js）──
+function tRoomTxt(s) {
+  if (typeof crvRoomOn !== 'function' || !CRV.loaded || !s || !s.course_id || s._isVip || s.is_cancelled) return '';
+  const st = crvSessionState(s.course_id, s, null);
+  if (st.kind === 'moved') return `<span style="color:#d9822b;font-weight:600">→ ${st.label}（教室变更）</span>`;
+  if (st.kind === 'none') return `<span style="color:#c0392b">未排教室</span>`;
+  const f = crvRoomOn(s.course_id, s);
+  return f && f.label ? `<span>🏫 ${f.label}</span>` : '';
+}
+// 首页提醒：今后 14 天内自己的课教室变了 / 还没排教室（按数据实时算，过了那天自动消失）
+function tRoomAlerts() {
+  if (typeof crvSessionState !== 'function' || !CRV.loaded) return [];
+  const t0 = crvToday(), t1 = crvAddDays(t0, 14);
+  return confirmedSessions.filter(s => !s.is_cancelled && s.course_id && s.session_date >= t0 && s.session_date <= t1)
+    .map(s => ({ s, st: crvSessionState(s.course_id, s, null) })).filter(x => x.st.kind);
+}
 function renderMySessionRow(s) {
   const d = new Date(s.session_date + 'T12:00:00');
   const dow = DAYS_CN[d.getDay()];
@@ -2379,7 +2403,7 @@ function renderMySessionRow(s) {
           <span style="font-size:9px;color:var(--text-3);background:var(--bg);border-radius:2px;padding:1px 5px">${(()=>{const m2=d.getMonth()+1;return m2<=3?'1月期':m2<=6?'4月期':m2<=9?'7月期':'10月期'})()}</span>
           <span style="margin-left:auto;font-size:10px;color:var(--text-3)" id="${rowId}_arrow">▾ 详情</span>
         </div>
-        <div style="font-size:11px;color:var(--text-3)">第${s.session_number}回 · ${s.time_range || ''} · ${locationText}${s.course_id != null && typeof homePinHtml === 'function' ? ' · ' + homePinHtml('course', s.course_id, s.course_name) : ''}</div>
+        <div style="font-size:11px;color:var(--text-3)">第${s.session_number}回 · ${s.time_range || ''} · ${locationText}${tRoomTxt(s) ? ' · ' + tRoomTxt(s) : ''}${s.course_id != null && typeof homePinHtml === 'function' ? ' · ' + homePinHtml('course', s.course_id, s.course_name) : ''}</div>
         ${s.session_title ? `<div style="font-size:11px;color:var(--text-2);margin-top:3px">📌 ${s.session_title}</div>` : ''}
       </div>
     </div>

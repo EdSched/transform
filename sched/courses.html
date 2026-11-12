@@ -59,12 +59,14 @@
     <div class="fl" id="fCampus"><span class="lbl">校区</span></div>
     <div class="fl" id="fWd"><span class="lbl">星期</span></div>
     <div class="fl" id="fKw"><span class="lbl">关键词</span></div>
+    <div class="fl" id="fChg"><span class="lbl">变动</span></div>
   </div>
   <div class="topline"><span class="muted" id="hint"></span><span><span class="cnt" id="cnt"></span> <button class="ghost sm hidden" id="clearBtn">清除筛选</button></span></div>
   <div id="list"></div>
 </div>
-<script src="common.js?v=20270128"></script>
+<script src="common.js?v=20270403"></script>
 <script src="../shared/search.js?v=20261029"></script>
+<script src="../shared/course-room-view.js?v=20270403"></script>
 <script>
 const LIST_PAGE = 30;   // 与 shared/constants.js 一致（本页没加载 constants.js）
 const PAGE_SIZE = LIST_PAGE;
@@ -74,10 +76,10 @@ const STATUS_ORDER = {'进行中':0,'未开课':1,'已结课':2};
 const KEYWORDS = ['N1','N2','N3','N4','N5','EJU','TOEIC','TOEFL','过去问','面试','小论文','研究计划书','共通课'];
 const SHAKAI_GROUP = ['社会人文','社会学','新闻传播学','新聞传播学','社会福祉学'];   // 与 timetable.html 一致
 const MAJOR_FOLD = 12;
-let COURSES=[], ALLC=[], TRACE=schedTraceNew(), HOLIDAYS=[], BOOKINGS=[], ROOMS=[], SESS={};
+let COURSES=[], ALLC=[], TRACE=schedTraceNew(), HOLIDAYS=[], BOOKINGS=[], ROOMS=[], SESS={}, SESD={};
 let INFO = {}, WDS = {}, HAY = {};
-const ROWS = ['cat','lang','major','term','status','campus','wd','kw'];
-const F = { cat:new Set(), lang:new Set(), major:new Set(), term:new Set(), status:new Set(['未开课','进行中']), campus:new Set(), wd:new Set(), kw:new Set(), q:'', only:false };
+const ROWS = ['cat','lang','major','term','status','campus','wd','kw','chg'];
+const F = { cat:new Set(), lang:new Set(), major:new Set(), term:new Set(), status:new Set(['未开课','进行中']), campus:new Set(), wd:new Set(), kw:new Set(), chg:new Set(), q:'', only:false };
 const MORE_OPEN = { term:false, termM:false, major:false };
 let SHOWN = PAGE_SIZE;
 const OPENED = new Set();
@@ -148,7 +150,20 @@ function placeOf(c, date){
 }
 function buildInfo(c){
   const today=todayStr(), nowT=new Date().toTimeString().slice(0,5);
-  const dates=datesOf(c).map(x=>Object.assign(x,{ s:c.start_time||'', e:c.end_time||'', room: x.off?'':placeOf(c,x.date) }));
+  const cs5=_clk5(c.start_time), ce5=_clk5(c.end_time), wds=WDS[c.id]||[];
+  const dates=datesOf(c).map(x=>{
+    const sd=(SESD[String(c.id)]||{})[x.date];
+    const o=Object.assign(x,{ s:c.start_time||'', e:c.end_time||'', room: x.off?'':placeOf(c,x.date), flags:[] });
+    if(!x.off && sd && !sd.is_cancelled){
+      const r=_clkRange(sd.time_range, c);
+      if(sd.time_range && (r[0]!==cs5 || r[1]!==ce5)){ o.s=r[0]; o.e=r[1]; o.myTime=r[0]+'-'+r[1]; o.flags.push('改时间'); }
+      if(wds.length && !wds.includes(weekdayOf(x.date))) o.flags.push('改日期');
+      const st=crvSessionState(c.id, {session_date:x.date}, {delivery:c.mode});
+      if(st.kind==='moved'){ o.moved=st.label; o.flags.push('改教室'); }
+      else if(st.kind==='none'){ o.noRoom=true; o.flags.push('未排教室'); }
+    }
+    return o;
+  });
   const act=dates.filter(x=>!x.off);
   const isPast=x=> x.date<today || (x.date===today && x.e && x.e<=nowT);
   const done=act.filter(isPast).length;
@@ -159,7 +174,8 @@ function buildInfo(c){
   if(first && today<first) status='未开课';
   else if(last && today>last) status='已结课';
   else if(act.length && done>=act.length) status='已结课';
-  return { dates, total, done, status, next, isPast };
+  const changes=dates.filter(x=>x.flags.length && x.date>=today);
+  return { dates, total, done, status, next, isPast, changes };
 }
 
 /* ---------- 筛选（每一行互相独立；行内多选取并集，行间取交集）---------- */
@@ -178,6 +194,7 @@ function rowTest(key, c, v){
     case 'campus': return campusOf(c)===v;
     case 'wd': return WDS[c.id].includes(v);
     case 'kw': return nameHay(c).includes(String(v).toLowerCase());
+    case 'chg': return INFO[c.id].changes.length>0;
   }
   return true;
 }
@@ -254,6 +271,7 @@ function renderFilters(){
   const kws=KEYWORDS.filter(k=>COURSES.some(c=>nameHay(c).includes(k.toLowerCase())));
   el('fKw').classList.toggle('hidden', !kws.length);
   setRow('fKw', kws.map(k=>chip('kw',k)).join(''));
+  setRow('fChg', chip('chg','1','只看有变动的课'));
 }
 function md(date){ const [,m,d]=date.split('-').map(Number); return m+'/'+d; }
 function cardHtml(c){
@@ -264,7 +282,11 @@ function cardHtml(c){
   const sep='<span class="sep">|</span>';
   const l2=[c.teacher, c.major, c.mode, campusOf(c)].filter(Boolean).map(esc).join(sep);
   const l3=[ (wl||time)? esc((wl+' '+time).trim()):'', (c.start_date||c.end_date)? esc((c.start_date||'?')+' ~ '+(c.end_date||'?')):'', `共 ${i.total} 回`, stTxt ].filter(Boolean).join(sep);
-  const nx=i.next ? `<div class="l4">下次：${md(i.next.date)}（${WEEKDAYS[weekdayOf(i.next.date)]}）${esc(classTimeText(c))} · ${esc(i.next.room)}</div>` : '';
+  const nx=i.next ? `<div class="l4">下次：${md(i.next.date)}（${WEEKDAYS[weekdayOf(i.next.date)]}）${esc(i.next.myTime||classTimeText(c))} · ${esc(i.next.moved||i.next.room)}</div>` : '';
+  const fixed=crvFixed(c.id, {delivery:c.mode});
+  const fx=`<div class="l2" style="margin-top:2px">${fixed?'🏫 固定教室：'+esc(fixed):'<span class="muted">未排教室</span>'}</div>`;
+  const chgTxt=i.changes.map(x=>md(x.date)+'（'+WEEKDAYS[weekdayOf(x.date)]+'）'+[x.moved?'→ '+esc(x.moved):'', x.noRoom?'⚠ 未排教室':'', x.myTime?esc(x.myTime)+'（改时间）':'', x.flags.includes('改日期')?'（改日期）':''].filter(Boolean).join(' ')).join('；');
+  const chgLine=i.changes.length?`<div class="l4" style="color:#d9822b">变动：${chgTxt}</div>`:'';
   const open=OPENED.has(String(c.id));
   return `<div class="ccard${searching()&&i.status==='已结课'?' ended':''}" data-id="${c.id}">`+
     `<div class="l1"><span class="nm">${esc(c.merge_name||c.name)}</span>`+
@@ -272,7 +294,7 @@ function cardHtml(c){
     (termKeyOf(c)?`<span class="badge b-mute">${esc(termKeyOf(c))}</span>`:'')+
     (schedRemoved(c)?`<span class="badge b-mute" style="background:#e4e4e4">已移出 · ${esc(c.sched_removed_reason)}</span>`:'')+
     `<span class="arrow">${open?'收起 ▴':'展开 ▾'}</span></div>`+
-    `<div class="l2">${l2}</div><div class="l3">${l3}</div>${nx}`+
+    `<div class="l2">${l2}</div>${fx}<div class="l3">${l3}</div>${chgLine}${nx}`+
     (open?detailHtml(c):'')+`</div>`;
 }
 function detailHtml(c){
@@ -283,7 +305,7 @@ function detailHtml(c){
     if(x.off) return `<div class="r off"><span class="n"></span><span class="d">${md(x.date)}（${WEEKDAYS[weekdayOf(x.date)]}）</span><span class="t">${x.off}${x.why?'<span class="why"> · '+esc(x.why)+'</span>':''}</span></div>`;
     n++;
     const cls = x===i.next ? 'next' : (i.isPast(x) ? 'past' : '');
-    return `<div class="r ${cls}"><span class="n">${n}</span><span class="d">${md(x.date)}（${WEEKDAYS[weekdayOf(x.date)]}）</span><span class="t">${esc(classTimeText(c))}</span><span>${esc(x.room)}</span></div>`;
+    return `<div class="r ${cls}"><span class="n">${n}</span><span class="d">${md(x.date)}（${WEEKDAYS[weekdayOf(x.date)]}）</span><span class="t">${x.myTime?esc(x.myTime)+'<span style="color:#d9822b">（改时间）</span>':esc(classTimeText(c))}${x.flags.includes('改日期')?'<span style="color:#d9822b">（改日期）</span>':''}</span>${x.noRoom?'<span style="color:#c0392b">⚠ 未排教室</span>':(x.moved?'<span style="color:#d9822b">→ '+esc(x.moved)+'</span>':'<span>'+esc(x.room)+'</span>')}</div>`;
   }).join('')+'</div>';
 }
 function renderList(){
@@ -343,13 +365,15 @@ async function boot(){
     const [cs, hol, bks, rooms, ses] = await Promise.all([
       sbGet('sched_course_v','select='+CF),
       sbGet('sched_holidays','select=*&order=start_date').catch(()=>[]),
-      sbGet('sched_bookings','select=id,room_id,course_id,recurrence,weekday,start_date,end_date,booking_date,start_time,end_time,status&kind=eq.course').catch(()=>[]),
+      sbGet('sched_bookings','select=id,room_id,course_id,recurrence,weekday,start_date,end_date,booking_date,start_time,end_time,status,manual_off_dates,uses_meeting&kind=eq.course').catch(()=>[]),
       sbGet('sched_rooms','select=id,name,campus').catch(()=>[]),
-      sbGet('course_sessions','select=course_id,session_date').catch(()=>[])
+      sbGet('course_sessions','select=course_id,session_date,time_range,is_cancelled,session_number').catch(()=>[])
     ]);
     ALLC=cs.filter(c=>!c.deleted_at); HOLIDAYS=hol; BOOKINGS=bks.map(b=>Object.assign({kind:'course'},b)); ROOMS=rooms;
     await loadCourseLink(); linkCourseBookings(BOOKINGS);
-    ses.forEach(s=>{ if(s.course_id!=null && s.session_date) (SESS[String(s.course_id)]=SESS[String(s.course_id)]||[]).push(s.session_date); });
+    // 每一回在哪个教室：和课程安排卡片同一套算法（shared/course-room-view.js），数据用本页已读的
+    CRV.bks=BOOKINGS.filter(b=>b.status!=='rejected'); CRV.roomList=ROOMS; CRV.rooms={}; ROOMS.forEach(r=>{ CRV.rooms[String(r.id)]=r; }); CRV.loaded=true;
+    ses.forEach(s=>{ if(s.course_id!=null && s.session_date){ (SESS[String(s.course_id)]=SESS[String(s.course_id)]||[]).push(s.session_date); (SESD[String(s.course_id)]=SESD[String(s.course_id)]||{})[s.session_date]={time_range:s.time_range||'', is_cancelled:!!s.is_cancelled, num:s.session_number}; } });
     ALLC.forEach(c=>{ WDS[c.id]=parseWeekdaysSched(c.weekdays); INFO[c.id]=buildInfo(c); HAY[c.id]=buildHay(c); });
     applyView();
   }catch(e){ el('list').innerHTML='<div class="tip">读取失败：'+esc(e.message)+'</div>'; return; }
