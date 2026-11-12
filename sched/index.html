@@ -36,7 +36,8 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../shared/constants.js?v=20261110"></script>
-<script src="common.js?v=20270128"></script>
+<script src="../shared/course-room-view.js?v=20270403"></script>
+<script src="common.js?v=20270403"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270126"></script>
 <script src="../shared/search.js?v=20261029"></script>
@@ -188,7 +189,7 @@ function renderChangeAlerts(){
         `<div><b>${esc(l.course_name||'')}</b>　${esc(x.label||'')}　改到 ${esc(x.date||'')} ${esc(x.time||'')}</div>`+
         `<div>${esc(what)}</div>`+
         `<div class="muted" style="font-size:12px">发起：${esc(l.actor_label||'管理员')}　${esc((l.created_at||'').slice(0,16).replace('T',' '))}</div>`+
-        `<div style="margin-top:4px;display:flex;gap:8px"><button class="sm" data-coordgo="${esc(String(x.course_uuid||''))}">去处理</button><button class="sm ghost" data-coordack="${l.id}">已处理</button></div></div>`;
+        `<div style="margin-top:4px;display:flex;gap:8px"><button class="sm" data-coordgo="${esc(String(x.course_uuid||''))}" data-coorddate="${esc(x.date||'')}">去处理</button><button class="sm ghost" data-coordack="${l.id}">已处理</button></div></div>`;
     }).join('')+`</div>` : '';
   if(!pending.length){
     box.innerHTML=coordHtml; bindCoord(box,myRole);
@@ -239,7 +240,7 @@ function renderChangeAlerts(){
   });
 }
 function bindCoord(box,myRole){
-  box.querySelectorAll('[data-coordgo]').forEach(b=>b.onclick=()=>{ const id=b.dataset.coordgo; if(id) adjustDayDialog(id); else openCard('conflict'); });
+  box.querySelectorAll('[data-coordgo]').forEach(b=>b.onclick=()=>{ const id=b.dataset.coordgo; if(id) adjustDayDialog(id,{date:b.dataset.coorddate||null, mode:'room'}); else openCard('conflict'); });
   box.querySelectorAll('[data-coordack]').forEach(b=>b.onclick=async()=>{
     const l=CHANGELOG.find(x=>String(x.id)===String(b.dataset.coordack)); if(!l) return;
     const acked=(l.acked_by||'').split(',').map(s=>s.trim()).filter(Boolean);
@@ -890,6 +891,7 @@ async function schedTrack(ids, work, o){
     : '已同步到管理端：改了 '+d.courses.length+' 门课。'+sessTxt;
   schedBar(o.text?o.text(d,res):dflt, async()=>{
     await schedUndo(before, ids);
+    if(o.undo){ try{ await o.undo(res); }catch(e){ console.warn('撤销附带操作失败',e); } }
     for(const id of logIds){ try{ await sbDelete('sched_change_log', id); }catch(e){} }
     await schedRefreshView();
     return '已恢复';
@@ -902,12 +904,13 @@ function schedLogRow(c, action, changes){
     action, changes:changes.map(x=>Object.assign({course_uuid:String(c.id)},x)), acked_by:'' };
 }
 /* ---------- 调整某一天 ---------- */
-function adjustDayDialog(courseId){
+function adjustDayDialog(courseId, opts){
+  opts=opts||{};
   const c=COURSES.find(x=>String(x.id)===String(courseId)); if(!c) return;
   const group=c.merge_group ? COURSES.filter(x=>x.merge_group===c.merge_group) : [c];
   const dispName=c.merge_name||c.name;
-  let sel=null;       // 选中的日期
-  let mode=null;      // 'room' | 'move' | 'cx'，默认都不选
+  let sel=opts.date||null;       // 选中的日期（总务从「需要协调教室」点进来时直接选中那一天）
+  let mode=opts.date?(opts.mode||null):null;      // 'room' | 'move' | 'cx'，默认都不选
   let SES=[], sesLoaded=false;   // 这门课（合并组）今天以后的单回
   const loadSes=async()=>{ try{ SES=await sbGet('course_sessions','select=id,course_id,session_date,time_range,is_cancelled,session_number&course_id=in.('+group.map(g=>encodeURIComponent(g.id)).join(',')+')&session_date=gte.'+todayStr()); }catch(e){ SES=[]; } sesLoaded=true; };
   const WD=['日','一','二','三','四','五','六'];
@@ -981,18 +984,24 @@ function adjustDayDialog(courseId){
         try{
           await schedTrack(idsAll, async()=>{
             for(const x of ses) await sbUpdate('course_sessions', x.id, {session_date:nd, time_range:tr});
+            // 旧日子（以前换教室留下的）临时占用一起删掉
+            const oldTemps=courseBks().filter(b=>b.recurrence==='once'&&b.booking_date===from&&ses.some(x=>String(x.course_id)===String(b.course_id)));
+            const gone=[];
+            for(const t of oldTemps){ gone.push({row:Object.assign({},t), room:t.room_id?rname(t.room_id):'线上'}); await sbDeleteAs('sched_bookings', t.id, actor().last_actor); }
             await reloadAll();
-            const res={ noRoom:!roomId, roomName:roomId?rname(roomId):'', blockers:[] };
+            const res={ noRoom:!roomId, roomName:roomId?rname(roomId):'', blockers:[], gone };
             if(roomId) res.blockers=roomConflicts(BOOKINGS, roomId, nd, sp.start, sp.end, null).filter(b=>!idset.has(String(b.course_id)))
               .map(b=>{ const t=bookingTimeOn(b,nd); return '《'+(b.title||KIND_LABEL[b.kind]||'占用')+'》（'+(b.user_name||'—')+'，'+String(t[0]).slice(0,5)+'-'+String(t[1]).slice(0,5)+'）'; });
             return res;
           }, {
+            undo:async(res)=>{ for(const g of (res.gone||[])){ const r=Object.assign({},g.row); delete r.id; delete r.created_at; delete r.updated_at; await sbInsert('sched_bookings', r); } },
             logs:(d,res)=>{
               const out=[schedLogRow(c,'edit',[{field:'session_move',label:'第 '+(num||'?')+' 回',from:from+' '+fromT,to:nd+' '+tr}])];
               if(res.blockers.length) out.push(schedLogRow(c,'room_coord',[{field:'room_coord',label:'第 '+(num||'?')+' 回',num,session_id:ses[0].id,from:from+' '+fromT,to:nd+' '+tr,date:nd,time:sp.start+'-'+sp.end,room_name:res.roomName,blocker:res.blockers.join('、'),reason:'blocked'}]));
               return out;
             },
             text:(d,res)=>'已改：《'+esc(dispName)+'》第 '+esc(String(num||'?'))+' 回 '+esc(mdHm(from,fromT))+' → '+esc(mdHm(nd,tr))+'（管理端单回已同步）<br>'+
+              (res.gone&&res.gone.length?res.gone.map(g=>'已删除 '+esc(md(from))+' 在 '+esc(g.room)+' 的临时占用<br>').join(''):'')+
               (res.noRoom?'这门课还没排教室。':(res.blockers.length?'<b style="color:#a33">✗ '+esc(res.roomName)+' 被'+esc(res.blockers.join('、'))+'占着，已在排课首页写「需要补排教室」提醒。</b>':'✓ 原教室 '+esc(res.roomName)+' 空着'))
           });
           await afterOp();
@@ -1015,22 +1024,10 @@ function adjustDayDialog(courseId){
     }
     if(mode==='room'){
       const sp=spanOf(ses0), d=sel;
-      const rows=ROOMS.filter(r=>r.active!==false).map(r=>{
-        const isCur=roomId&&String(r.id)===String(roomId);
-        const bl=isCur?[]:roomConflicts(BOOKINGS, r.id, d, sp.start, sp.end, null).filter(b=>!idset.has(String(b.course_id)));
-        return {r,isCur,bl};
-      });
-      const campuses=[...new Set(rows.map(x=>x.r.campus||''))];
-      let h=`<div class="muted" style="font-size:12px;margin-bottom:4px">${md(d)} ${esc(hm(sp.start))}-${esc(hm(sp.end))}（这一回的时间）各教室情况：</div>`;
-      campuses.forEach(cp=>{
-        h+=`<div style="margin-top:6px"><span class="muted" style="font-size:12px">${esc(cp||'未分校区')}</span><div>`+rows.filter(x=>(x.r.campus||'')===cp).map(({r,isCur,bl})=>{
-          const nm=esc(r.name)+(r.capacity?`（${r.capacity}人）`:'');
-          if(isCur) return `<span style="display:inline-block;margin:3px;padding:4px 10px;border-radius:14px;font-size:12px;border:1px solid var(--line);background:#eee;color:#888">${nm} · 现在用</span>`;
-          if(bl.length){ const who=bl.map(b=>{ const t=bookingTimeOn(b,d); return '《'+(b.title||KIND_LABEL[b.kind]||'占用')+'》（'+(b.user_name||'—')+'，'+hm(t[0])+'-'+hm(t[1])+'）'; }).join('、');
-            return `<span style="display:inline-block;margin:3px;padding:4px 10px;border-radius:14px;font-size:12px;border:1px solid var(--line);background:#f1f1f1;color:#999">${nm} <small>被${esc(who)}占</small></span>`; }
-          return `<span data-room="${r.id}" style="display:inline-block;cursor:pointer;margin:3px;padding:4px 10px;border-radius:14px;font-size:12px;border:1px solid var(--line);background:#fff">✓ ${nm}</span>`;
-        }).join('')+`</div></div>`;
-      });
+      const rows=ROOMS.filter(r=>r.active!==false).map(r=>({ room:r,
+        blockers:(roomId&&String(r.id)===String(roomId))?[]:roomConflicts(BOOKINGS, r.id, d, sp.start, sp.end, null).filter(b=>!idset.has(String(b.course_id)))
+          .map(b=>{ const t=bookingTimeOn(b,d); return { title:b.title||KIND_LABEL[b.kind]||'占用', who:b.user_name||'', time:hm(t[0])+'-'+hm(t[1]) }; }) }));
+      const h=`<div class="muted" style="font-size:12px;margin-bottom:4px">${md(d)} ${esc(hm(sp.start))}-${esc(hm(sp.end))}（这一回的时间）各教室情况：</div>`+crvRoomPickHtml(rows, roomId);
       el('adj_rooms').innerHTML=h;
       el('adj_rooms').querySelectorAll('[data-room]').forEach(x=>x.onclick=async()=>{
         const r=ROOMS.find(y=>String(y.id)===String(x.dataset.room)); if(!r) return;
@@ -1056,10 +1053,22 @@ function adjustDayDialog(courseId){
             }, um(tpl), { status:'confirmed', created_by:tpl.created_by||'admin', entry_name:'调整某一天', note:'调整某一天', auto_sync:false }, actor()));
             if(ins&&ins[0]) undo.push({del:ins[0].id});
           }
+          // 这一天的「需要协调教室」自动标成已处理，写上安排到哪里
+          const ackBack=[];
+          try{
+            const myRole=(ROLE&&ROLE.role)||'总务', who=schedActorLabel(), toTxt=((r.campus||'')+' '+r.name).trim();
+            const logs=(CHANGELOG||[]).filter(l=>l.action==='room_coord' && !String(l.acked_by||'').trim() && (Array.isArray(l.changes)?l.changes:[]).some(x=>x&&x.field==='room_coord'&&x.date===d&&(idset.has(String(x.course_uuid))||String(l.course_name||'')===String(dispName))));
+            for(const l of logs){
+              const chg=(l.changes||[]).map(x=>x&&x.field==='room_coord'&&x.date===d?Object.assign({},x,{done_room:toTxt, done_by:who, done_at:new Date().toISOString()}):x);
+              ackBack.push({id:l.id, acked_by:l.acked_by||'', changes:l.changes});
+              await sbUpdate('sched_change_log', l.id, {acked_by:myRole, changes:chg}); l.acked_by=myRole; l.changes=chg;
+            }
+          }catch(e){ console.warn('标记已处理失败',e); }
           await afterOp();
           schedBar('已把《'+esc(dispName)+'》'+esc(md(d))+' 这一回从 '+esc(fromName)+' 换到 '+esc(r.name)+'（只改这一天，'+esc(fromName)+' 的其他课不受影响）', async()=>{
             for(const u of undo.slice().reverse()){ if(u.del) await sbDelete('sched_bookings', u.del); else await sbUpdate('sched_bookings', u.upd, u.patch); }
-            await schedRefreshView(); return '已恢复';
+            for(const a of ackBack){ await sbUpdate('sched_change_log', a.id, {acked_by:a.acked_by, changes:a.changes}); const l=(CHANGELOG||[]).find(x=>x.id===a.id); if(l){ l.acked_by=a.acked_by; l.changes=a.changes; } }
+            await schedRefreshView(); try{ renderChangeAlerts(); }catch(e){} return '已恢复';
           });
         }catch(e){ toast('失败：'+e.message,false); }
       });

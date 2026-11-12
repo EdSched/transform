@@ -1,5 +1,5 @@
-// 管理端「课程安排」改单回后：弹框只做检查——新日子这门课用的教室（线上课还有会议账号）空不空，被占就能一键通知总务（只给管理端用，不引用 sched/ 下任何文件）
-// 依赖：shared/supabase.js（sb）、shared/constants.js（timeRangesSpan）、shared/course-confirm.js（ccOverlay / CC_BOX / ccEsc / ccMD / CC_WD）
+// 管理端「课程安排」改单回后检查新日子的教室：全空着 → 不弹框，页面上方提示一行；有被占 → 弹框只列有问题的回，当场选空教室（shared/course-room-view.js），或交给总务（只给管理端用，不引用 sched/ 下任何文件）
+// 依赖：shared/course-room-view.js（crv*）、shared/supabase.js（sb）、shared/constants.js（timeRangesSpan）、shared/course-confirm.js（ccOverlay / CC_BOX / ccEsc / ccMD / CC_WD）
 //
 // 规则：
 //   · 排课已经直接读管理端单回的日期和时间，所以这里不再释放、不再建临时占用、不再撤销
@@ -110,17 +110,31 @@ async function srmOpen(opts) {
   }
   if (!rows.length) return;
 
+  if (!rows.length) return;
+  const problems = r => r.checks.filter(c => c.none || (c.blockers && c.blockers.length));
+  const probRows = rows.filter(r => !r.note && problems(r).length);
+  const noteRows = rows.filter(r => r.note);
+  // 全部空着：不弹框，页面上方提示一行
+  if (!probRows.length && !noteRows.length) {
+    srmBar(rows.map(r => {
+      const t = r.ch.to;
+      return `已改：${r.ch.num ? '第 ' + ccEsc(r.ch.num) + ' 回' : '新增一回'} → ${ccEsc(srmMDW(t.date))}${ccEsc(r.sp.start)}，` + r.checks.map(c => `${c.col === 'room_id' ? '原教室 ' : ''}${ccEsc(c.label.replace('（会议账号）', ' 会议账号'))} 空着 ✓`).join('；');
+    }).join('<br>'));
+    return;
+  }
+  rows.forEach(r => { r.picked = null; });
+
   await new Promise(resolve => {
     const ov = ccOverlay('srmOv');
     const e = ccEsc;
     const notified = new Set();
-    const problems = r => r.checks.filter(c => c.none || (c.blockers && c.blockers.length));
-    const close = () => { ov.remove(); delete window.__srmNotify; delete window.__srmNotifyAll; resolve(); };
+    const close = () => { ov.remove(); delete window.__srmNotify; delete window.__srmNotifyAll; delete window.__srmPick; resolve(); };
     const who = () => (typeof ADMIN_EMAIL !== 'undefined' && ADMIN_EMAIL) ? ADMIN_EMAIL : '管理员';
+    const todoRows = () => (probRows.concat(noteRows)).filter(r => !r.picked);
 
     // 写一条 room_coord；同一回同一天已有没处理的就不再写
     const notifyOne = async r => {
-      if (notified.has(r.key)) return;
+      if (notified.has(r.key) || r.picked) return;
       const pr = problems(r)[0]; if (!pr) return;
       const t = r.ch.to;
       const blocker = pr.none ? '' : pr.blockers.map(x => `《${x.title}》（${x.who || '—'}，${x.time}）`).join('、');
@@ -146,31 +160,64 @@ async function srmOpen(opts) {
     window.__srmNotify = async i => { try { err = ''; await notifyOne(rows[i]); } catch (er) { err = '通知失败：' + (er.message || er); } draw(); };
     window.__srmNotifyAll = async () => {
       err = '';
-      for (const r of rows) { try { await notifyOne(r); } catch (er) { err = '通知失败：' + (er.message || er); break; } }
+      for (const r of todoRows()) { try { await notifyOne(r); } catch (er) { err = '通知失败：' + (er.message || er); break; } }
+      draw();
+    };
+    // 点一间空教室 → 确认 → 建临时占用
+    window.__srmPick = async (i, roomId) => {
+      const r = rows[i], t = r.ch.to;
+      const room = (r.pickRows || []).map(x => x.room).find(x => String(x.id) === String(roomId)); if (!room) return;
+      if (!confirm(`第 ${r.ch.num || '?'} 回 ${ccMD(t.date)} 改在 ${((room.campus || '') + ' ' + room.name).trim()}？`)) return;
+      try {
+        err = '';
+        await crvSwapRoom({ courseId: course.id, date: t.date, sp: r.sp, toRoom: room, entryName: '课程安排改单回' });
+        r.picked = ((room.campus || '') + ' ' + room.name).trim();
+      } catch (er) { err = '换教室失败：' + (er.message || er); }
+      draw();
+    };
+    const loadPick = async r => {
+      const pr = problems(r).find(c => c.none || c.col === 'room_id'); if (!pr) return;
+      try { r.pickRows = await crvRoomStatus(r.ch.to.date, r.sp, course.id); r.curRoomId = pr.none ? null : pr.id; } catch (er) { r.pickErr = true; }
       draw();
     };
 
     const draw = () => {
-      const body = rows.map((r, i) => {
+      const list = probRows.concat(noteRows);
+      const body = list.map(r => {
+        const i = rows.indexOf(r);
         const f = r.ch.from, t = r.ch.to;
-        const a = f ? srmMDW(f.date) : '新增';
-        const b = srmMDW(t.date) + (r.sp.start ? `${r.sp.start}-${r.sp.end}` : '');
-        const head = `${r.ch.num ? '第 ' + e(r.ch.num) + ' 回　' : ''}${e(a)} → ${e(b)}`;
+        const b = srmMDW(t.date) + (r.sp.start ? r.sp.start : '');
+        const head = `${r.ch.num ? '第 ' + e(r.ch.num) + ' 回' : '新增一回'} → ${e(b)}`;
+        if (r.picked) return `<div style="border-bottom:1px solid var(--border-light,#eee);padding:6px 0"><div style="font-weight:600">${head}</div><div style="color:#2a7a3a">已安排在 ${e(r.picked)} ✓</div></div>`;
         const pr = problems(r);
         let lines;
         if (r.note) lines = `<div style="color:#7a5b00">${e(r.note)}</div>`;
         else lines = r.checks.map(c => {
-          if (c.none) return `<div><span style="color:#a33">还没排教室</span></div>`;
-          if (c.blockers && c.blockers.length) { const x = c.blockers[0]; return `<div>${e(c.label)}　<span style="color:#a33">✗ 被《${e(x.title)}》（${e(x.who || '—')}，${e(x.time)}）占着${c.blockers.length > 1 ? ' 等' + c.blockers.length + '处' : ''}</span></div>`; }
-          return `<div>${e(c.label)}　<span style="color:#2a7a3a">✓ 空着</span>${c.err ? '（检查失败，仅供参考）' : ''}</div>`;
+          if (c.none) return `<div><span style="color:#a33">这门课还没排教室</span></div>`;
+          if (c.blockers && c.blockers.length) { const x = c.blockers[0]; return `<div>${e(c.label)}　<span style="color:#a33">被《${e(x.title)}》（${e(x.who || '—')}，${e(x.time)}）占着${c.blockers.length > 1 ? ' 等' + c.blockers.length + '处' : ''}</span></div>`; }
+          return `<div>${e(c.label)}　<span style="color:#2a7a3a">✓ 空着</span></div>`;
         }).join('');
-        const btn = pr.length ? (notified.has(r.key) ? '<span style="color:#2a7a3a;white-space:nowrap">已通知 ✓</span>' : `<button type="button" class="btn btn-outline btn-sm" style="padding:2px 10px;cursor:pointer;white-space:nowrap" onclick="__srmNotify(${i})">通知总务</button>`) : '';
-        return `<div style="border-bottom:1px solid var(--border-light,#eee);padding:6px 0;display:flex;gap:10px;align-items:flex-start"><div style="flex:1;min-width:0"><div style="font-weight:600">${head}</div>${lines}</div>${btn}</div>`;
+        const picker = r.pickRows ? `<div style="font-size:12px;color:#888;margin-top:4px">${e(srmMDW(t.date))}${e(r.sp.start)}-${e(r.sp.end)} 各教室（✓ 空着，点一间就改在那里）：</div><div class="srmPick" data-i="${i}">${crvRoomPickHtml(r.pickRows, r.curRoomId)}</div>` : (r.pickErr ? '<div style="color:#a33;font-size:12px">教室列表读取失败</div>' : (pr.length ? '<div style="color:#888;font-size:12px;margin-top:4px">读取教室列表…</div>' : ''));
+        const btn = pr.length ? (notified.has(r.key) ? '<span style="color:#2a7a3a;white-space:nowrap">已交给总务 ✓</span>' : `<button type="button" class="btn btn-outline btn-sm" style="padding:2px 10px;cursor:pointer;white-space:nowrap" onclick="__srmNotify(${i})">交给总务</button>`) : '';
+        return `<div style="border-bottom:1px solid var(--border-light,#eee);padding:6px 0;display:flex;gap:10px;align-items:flex-start"><div style="flex:1;min-width:0"><div style="font-weight:600">${head}</div>${lines}${pr.length ? picker : ''}</div>${btn}</div>`;
       }).join('');
-      const todo = rows.filter(r => problems(r).length && !notified.has(r.key)).length;
-      ov.innerHTML = `<div style="${CC_BOX}"><div style="padding:14px 18px;border-bottom:1px solid var(--border,#e2ded6);font-size:15px;font-weight:600">这几回的教室检查</div><div style="padding:12px 18px;overflow:auto;flex:1">${body}${err ? `<div style="color:#a33;margin-top:6px">${e(err)}</div>` : ''}</div><div style="padding:10px 18px;border-top:1px solid var(--border,#e2ded6);display:flex;gap:8px;justify-content:flex-end;align-items:center"><span style="flex:1"></span>${todo ? '<button type="button" class="btn btn-outline btn-sm" style="padding:6px 16px;cursor:pointer" onclick="__srmNotifyAll()">全部通知总务</button>' : ''}<button type="button" id="srmClose" class="btn btn-primary btn-sm" style="padding:6px 16px;cursor:pointer">关闭</button></div></div>`;
+      const todo = todoRows().filter(r => !notified.has(r.key) && problems(r).length).length;
+      ov.innerHTML = `<div style="${CC_BOX}"><div style="padding:14px 18px;border-bottom:1px solid var(--border,#e2ded6);font-size:15px;font-weight:600">这几回的教室需要处理</div><div style="padding:12px 18px;overflow:auto;flex:1">${body}${err ? `<div style="color:#a33;margin-top:6px">${e(err)}</div>` : ''}<div style="font-size:11px;color:#888;margin-top:8px">没处理的回保持原样，课程安排里会显示「被占 / 未排教室」。</div></div><div style="padding:10px 18px;border-top:1px solid var(--border,#e2ded6);display:flex;gap:8px;justify-content:flex-end;align-items:center"><span style="flex:1"></span>${todo ? '<button type="button" class="btn btn-outline btn-sm" style="padding:6px 16px;cursor:pointer" onclick="__srmNotifyAll()">全部交给总务</button>' : ''}<button type="button" id="srmClose" class="btn btn-primary btn-sm" style="padding:6px 16px;cursor:pointer">完成</button></div></div>`;
       ov.querySelector('#srmClose').onclick = close;
+      ov.querySelectorAll('.srmPick').forEach(box => box.querySelectorAll('[data-room]').forEach(x => x.onclick = () => __srmPick(+box.dataset.i, x.dataset.room)));
     };
     draw();
+    probRows.forEach(r => { loadPick(r); });
   });
+}
+
+// 页面上方提示一行（点 × 关掉，不自动消失）
+function srmBar(html) {
+  let box = document.getElementById('srmBars');
+  if (!box) { box = document.createElement('div'); box.id = 'srmBars'; box.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9000;display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px;pointer-events:none'; document.body.appendChild(box); }
+  const bar = document.createElement('div');
+  bar.style.cssText = 'pointer-events:auto;max-width:760px;width:100%;background:#eaf6ec;border:1px solid #9fcfa8;color:#1f5a2c;border-radius:8px;padding:8px 12px;font-size:13px;line-height:1.5;display:flex;gap:10px;align-items:flex-start;box-shadow:0 4px 14px rgba(0,0,0,.15)';
+  bar.innerHTML = `<div style="flex:1;min-width:0">${html}</div><button type="button" style="cursor:pointer;border:none;background:none;font-size:16px;line-height:1">×</button>`;
+  bar.querySelector('button').onclick = () => bar.remove();
+  box.appendChild(bar);
 }

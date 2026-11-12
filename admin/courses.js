@@ -844,6 +844,8 @@ async function openApplyTemplate(templateId){
 
 function renderCoursesPage(mc){
   loadSchedEdits();
+  loadCourseRooms();
+  setTimeout(loadRoomCoordBox,0);
   // 专业钥匙锁定：强制默认选中锁定的专业（用户不能改）
   if(CURRENT_MAJOR) coursesMajorFilter=CURRENT_MAJOR;
   // 锁定在具体领域（领域账号/切换视角进入）：默认显示该领域全部课（不管领域有没有建专业）
@@ -905,6 +907,7 @@ function renderCoursesPage(mc){
   </div>
 
   <div id="courseReqBox"></div>
+  <div id="roomCoordBox"></div>
   <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap">
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">课程属性</div>
@@ -998,6 +1001,7 @@ function renderCoursesSummary(courses){
             ${course.teacher?`<span style="font-size:10px;opacity:.75">👤 ${course.teacher}</span>`:''}
             ${typeof classTagsHtml==='function'?classTagsHtml(course.class_ids):''}
             ${course.campus?`<span style="font-size:10px;opacity:.75">📍 ${course.campus}</span>`:''}
+            ${crvHeadTag(course,sessions)}
             ${course.delivery?`<span style="font-size:10px;opacity:.75">${course.delivery.includes('线下')&&course.delivery.includes('线上')?'🔀':course.delivery==='线下'?'🏫':'💻'} ${course.delivery}</span>`:''}
             ${(()=>{ const a=sessionWeekdaysLabel(sessions), f=frameWeekdaysLabel(course.weekdays); return a?`<span style="font-size:10px;opacity:.75">📅 周${a}${f&&a!==f?`<span style="opacity:.7">（框架 周${f}）</span>`:''}</span>`:''; })()}
             ${course.time_range?`<span style="font-size:10px;opacity:.75">⏰ ${course.time_range}</span>`:''}
@@ -1017,6 +1021,7 @@ function renderCoursesSummary(courses){
             <button onclick="deleteCourse('${course.id}')" style="font-size:10px;background:rgba(255,255,255,.2);border:1px solid rgba(180,0,0,.25);border-radius:2px;padding:2px 8px;cursor:pointer;font-family:inherit;color:#8a2020">删除</button>
           </div>
         </div>
+        ${crvChangeLine(course,sessions)}
         ${sessions.length
           ?`<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0">
               ${sessions.map((s,i)=>{
@@ -1048,6 +1053,7 @@ function renderCoursesSummary(courses){
                   </div>
                   ${titleStr}
                   <div style="font-size:10px;color:var(--text-3);margin-top:1px">${s.time_range||course.time_range||''}</div>
+                  ${crvSessLine(course,s)}
                   <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
                     ${hasRec?`<span style="font-size:9px;color:var(--ok)">✓ ${recCount}人</span>`:''}
                     <span onclick="event.stopPropagation();openHwEditor('${s.id}')" title="布置作业" style="font-size:9px;cursor:pointer;margin-left:auto;${s.homework_enabled?'color:var(--accent);font-weight:600':'color:var(--text-3)'}">📝${s.homework_enabled?' 已布置':''}${s.homework_enabled&&hwHasReleaseRule(s,course)?`<span style="font-weight:400;color:var(--text-3)"> · ${(()=>{const p=hwReleaseDate(s,course).split('-');return (+p[1])+'/'+(+p[2])})()} 发布</span>`:''}</span>
@@ -4734,6 +4740,63 @@ async function crqReply(id){
   }catch(e){ alert('回复失败：'+e.message); }
 }
 
+
+// ══════════ 每门课每一回的教室（只读，shared/course-room-view.js）══════════
+let CRV_SIG = null, CRV_AT = 0;
+async function loadCourseRooms() {
+  if (typeof crvLoad !== 'function' || Date.now() - CRV_AT < 20000) return;
+  CRV_AT = Date.now();
+  try {
+    await crvLoad();
+    const sig = JSON.stringify(CRV.bks.map(b => [b.id, b.room_id, b.booking_date, b.manual_off_dates, b.weekday]));
+    const changed = sig !== CRV_SIG; CRV_SIG = sig;
+    if (changed) {
+      const mc = document.getElementById('mainContent');
+      if (mc && mc.querySelector('.section-title') && /课程安排/.test(mc.querySelector('.section-title').textContent)) renderCoursesPage(mc);
+    }
+  } catch (e) { console.warn('读取教室占用失败', e); }
+}
+// 课程安排页顶部「教室协调」：没处理的 room_coord + 最近 7 天处理完的
+async function loadRoomCoordBox() {
+  const box = document.getElementById('roomCoordBox'); if (!box) return;
+  try {
+    const since = new Date(Date.now() - 8 * 86400000).toISOString();
+    const rows = (await sb(`/rest/v1/sched_change_log?action=eq.room_coord&created_at=gte.${encodeURIComponent(since)}&select=*&order=created_at.desc&limit=100`, 'GET', null, { cache: 'no-store' })
+      .then(a => a || [])).concat(await sb('/rest/v1/sched_change_log?action=eq.room_coord&acked_by=eq.&select=*&order=created_at.desc&limit=100', 'GET', null, { cache: 'no-store' }).catch(() => []) || []);
+    const seen = new Set(), logs = rows.filter(l => l && !seen.has(l.id) && seen.add(l.id));
+    const xOf = l => (Array.isArray(l.changes) ? l.changes : []).find(y => y && y.field === 'room_coord') || {};
+    const pend = logs.filter(l => !String(l.acked_by || '').trim());
+    const wk = Date.now() - 7 * 86400000;
+    const done = logs.filter(l => String(l.acked_by || '').trim() && xOf(l).done_room && new Date(xOf(l).done_at || l.created_at).getTime() >= wk);
+    if (!pend.length && !done.length) { box.innerHTML = ''; return; }
+    const md2 = d => d ? crvMDW(d) : '';
+    box.innerHTML = `<div style="border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:12px;background:var(--surface)">
+      <div style="font-size:12px;font-weight:600">教室协调${pend.length ? `　<span style="color:#c0392b">待处理 ${pend.length}</span>` : ''}</div>
+      ${pend.map(l => { const x = xOf(l); return `<div style="font-size:12px;margin-top:4px;color:#a33">${ccEsc(l.course_name || '')}　${ccEsc(x.label || '')} → ${ccEsc(md2(x.date))}${ccEsc(String(x.time || '').split('-')[0])}　${x.reason === 'no_room' ? '还没排教室' : ccEsc((x.room_name || '') + ' 被' + (x.blocker || '别的课') + '占着')}　<span style="color:var(--text-3)">等总务处理</span></div>`; }).join('')}
+      ${done.map(l => { const x = xOf(l); const dt = new Date(x.done_at || l.created_at); return `<div style="font-size:12px;margin-top:4px;color:#2a7a3a">✓ ${ccEsc(md2(x.date))} ${ccEsc(x.label || '')} → ${ccEsc(x.done_room)}（总务 ${ccEsc(x.done_by || '')}，${dt.getMonth() + 1}/${dt.getDate()}）　<span style="color:var(--text-3)">${ccEsc(l.course_name || '')}</span></div>`; }).join('')}
+    </div>`;
+  } catch (e) { box.innerHTML = ''; }
+}
+function crvHeadTag(course, sessions) {
+  if (typeof crvFixed !== 'function' || !CRV.loaded) return '';
+  const ids = [...new Set([course.id].concat(sessions.map(s => s.course_id)))];
+  const txt = [...new Set(ids.map(id => crvFixed(id, course)).filter(Boolean))].join(' / ');
+  return txt ? `<span style="font-size:10px;opacity:.85">🏫 ${ccEsc(txt)}</span>` : `<span style="font-size:10px;opacity:.55">未排教室</span>`;
+}
+function crvChangeLine(course, sessions) {
+  if (typeof crvChangesFor !== 'function' || !CRV.loaded) return '';
+  const list = [...new Set([course.id].concat(sessions.map(s => s.course_id)))].flatMap(id => crvChangesFor(id, sessions.filter(s => s.course_id === id), course));
+  if (!list.length) return '';
+  list.sort((a, b) => a.session.session_date.localeCompare(b.session.session_date));
+  return `<div style="padding:3px 14px;font-size:10px;background:#fff7ec;color:#a05a00;border-bottom:1px solid var(--border-light)">教室变动：${list.map(x => `${ccEsc(crvMDW(x.session.session_date))}${x.kind === 'moved' ? '→ ' + ccEsc(x.label) : '<span style="color:#c0392b">⚠ 未排教室</span>'}`).join('；')}</div>`;
+}
+function crvSessLine(course, s) {
+  if (typeof crvSessionState !== 'function' || !CRV.loaded) return '';
+  const st = crvSessionState(s.course_id || course.id, s, course);
+  if (st.kind === 'moved') return `<div style="font-size:9px;color:#d9822b;margin-top:1px">→ ${ccEsc(st.label)}</div>`;
+  if (st.kind === 'none') return `<div style="font-size:9px;color:#c0392b;margin-top:1px">⚠ 未排教室</div>`;
+  return '';
+}
 
 // ══════════ 排课里改过课程的提示（sched_change_log action='edit'）══════════
 // 排课和管理端改的是同一份课程；排课改完会写一条记录，这里在课程卡片上显示小标签，管理员点「知道了」后消失
