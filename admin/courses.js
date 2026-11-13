@@ -1048,8 +1048,12 @@ function renderCoursesSummary(courses){
                     <div style="display:flex;align-items:baseline;gap:4px">
                       <span style="font-size:13px;font-weight:600">${f.short}</span>
                       <span style="font-size:10px;font-weight:500;color:${f.dowColor}">${f.dow}</span>
+                      ${csOrigTag(s,course)}
                     </div>
+                    <span style="display:flex;gap:5px;align-items:baseline">
+                    ${s.orig_date?`<button onclick="revertSessionMove('${s.id}')" title="改回原来的日期、时间" style="font-size:9px;background:none;border:none;cursor:pointer;color:#b07020;padding:0;line-height:1">撤回</button><button onclick="openReschedule('${s.id}','move')" title="再调整到别的日期" style="font-size:9px;background:none;border:none;cursor:pointer;color:#b07020;padding:0;line-height:1">再调整</button>`:''}
                     <button onclick="openReschedule('${s.id}')" title="调整日期" style="font-size:9px;background:none;border:none;cursor:pointer;color:var(--text-3);padding:0;line-height:1">⇄</button>
+                    </span>
                   </div>
                   ${titleStr}
                   <div style="font-size:10px;color:var(--text-3);margin-top:1px">${s.time_range||course.time_range||''}</div>
@@ -2275,6 +2279,8 @@ async function saveAddCourse(){
         questions:x.homework_questions, note:x.homework_note||null, enabled:true,
       }));
 
+      const _spanEq=(x,y)=>{ const p=timeRangesSpan(x||''),q=timeRangesSpan(y||''); return p.start===q.start&&p.end===q.end; };
+      const _courseTimeChg=!_spanEq(oldCourseTime,courseData.time_range);
       for(const r of rows){
         const isCancelled = r.num==='休讲' || r.title==='休讲';
         const tv=acRowTeacher(r.teacher,tCtx);
@@ -2293,6 +2299,12 @@ async function saveAddCourse(){
           confirmed,
         };
         if(tv!==undefined){ patchCommon.teacher=tv; patchCommon.session_teacher=tv; }   // 多人课关着单回明细：老师不动
+        if(hasDetails && !isCancelled && r.id && existingMap[r.id] && oldInfoById[r.id] && !oldInfoById[r.id].cancelled){
+          // 改了某一回的日期 / 时间：记下原来的（orig_* 为空才写）；课程整体改时间、跟着课程走的不算
+          const o=oldInfoById[r.id], oTime=o.time||oldCourseTime, nTime=r.time_range||courseData.time_range||'';
+          const follow=_courseTimeChg&&_spanEq(oTime,oldCourseTime)&&_spanEq(nTime,courseData.time_range);
+          Object.assign(patchCommon, csOrigPatch(existingMap[r.id],{date:o.date,time:oTime},{date:r.date,time:follow?oTime:nTime},'编辑修改'));
+        }
         if(r.id && existingMap[r.id]){
           // 已有记录：PATCH，id 不变，所有关联（出席/作业）保持
           await sb(`/rest/v1/course_sessions?id=eq.${r.id}`,'PATCH',patchCommon);
@@ -2695,7 +2707,7 @@ function rsCheck(){
   }
   return '';
 }
-function openReschedule(sessionId){
+function openReschedule(sessionId, mode){
   const s=cachedSessions.find(x=>x.id===sessionId);
   if(!s) return;
   if(s.is_cancelled){ alert('该课次已标记为休讲'); return; }
@@ -2711,38 +2723,85 @@ function openReschedule(sessionId){
   document.getElementById('rs_make_time').value=last.time_range||course?.time_range||'';
   document.getElementById('rs_new_date').value='';
   document.getElementById('rs_new_time').value=s.time_range||course?.time_range||'';
-  rsSetMode('shift');
+  rsSetMode(mode==='move'?'move':'shift');
   document.getElementById('rescheduleModal').classList.add('open');
 }
 
 // ── 改单回日期/时间（编辑课程改单回、休讲弹窗「改到别的日期」共用）：回数、内容、老师都不动 ──
-async function csMoveSessionDate(sessionId, newDate, newTime){
+function csOrigTag(s,course){
+  if(!s.orig_date) return '';
+  const sameDay=s.orig_date===s.session_date;
+  const txt=sameDay?`（原 ${ccMD(s.orig_date)} ${s.orig_time_range||''}）`:`（原 ${ccMD(s.orig_date)}）`;
+  const tip=[`原 ${ccMD(s.orig_date)}${s.orig_time_range?' '+s.orig_time_range:''}`, s.change_reason?'原因：'+s.change_reason:'', s.changed_by?'修改人：'+s.changed_by:'', s.changed_at?'时间：'+String(s.changed_at).slice(0,16).replace('T',' '):''].filter(Boolean).join('\n');
+  return `<span title="${ccEsc(tip)}" style="font-size:9px;color:#d9822b;white-space:nowrap">${ccEsc(txt)}</span>`;
+}
+// 记「原来的日子」：orig_date 还是空才写（永远记最早的）；改回原样就清空
+const CS_ORIG_CLEAR={ orig_date:null, orig_time_range:null, change_reason:null, changed_by:null, changed_at:null };
+function csSameSpan(x,y){ const p=timeRangesSpan(x||''),q=timeRangesSpan(y||''); return p.start===q.start&&p.end===q.end; }
+function csWho(){ return ((typeof ACCESS_KEY!=='undefined'&&ACCESS_KEY&&ACCESS_KEY.label)||(typeof ADMIN_EMAIL!=='undefined'&&ADMIN_EMAIL)||'管理员').replace(/^管理模式\s*·\s*/,''); }
+// s：回次（可能已带 orig_*）；old/nu：{date,time}；返回要附加到 PATCH 的字段（没变动返回 {}）
+function csOrigPatch(s, old, nu, reason){
+  if(old.date===nu.date&&csSameSpan(old.time,nu.time)) return {};
+  const oDate=s.orig_date||old.date;
+  const oTime=s.orig_date?(s.orig_time_range||''):(old.time||'');
+  if(nu.date===oDate&&csSameSpan(nu.time,oTime)) return Object.assign({},CS_ORIG_CLEAR);
+  return { orig_date:oDate, orig_time_range:oTime, change_reason:reason||'', changed_by:csWho(), changed_at:new Date().toISOString() };
+}
+async function csMoveSessionDate(sessionId, newDate, newTime, reason){
   const s=cachedSessions.find(x=>x.id===sessionId); if(!s) throw new Error('找不到该课次');
   const course=cachedCourses.find(c=>c.id===s.course_id);
-  const tr=newTime||s.time_range||course?.time_range||'';
-  const patch={ session_date:newDate, time_range:tr, actual_hours:trSessionHours(tr,course?.actual_hours) };
+  const old={ date:s.session_date, time:s.time_range||course?.time_range||'' };
+  const tr=newTime||old.time;
+  const patch=Object.assign({ session_date:newDate, time_range:tr, actual_hours:trSessionHours(tr,course?.actual_hours) },
+    csOrigPatch(s,old,{date:newDate,time:tr},reason));
   await sb(`/rest/v1/course_sessions?id=eq.${sessionId}`,'PATCH',patch);
   Object.assign(s,patch);
   return s;
 }
-async function undoMoveSession(sessionId, oldDate, oldTime){
+const CS_ORIG_KEYS=['orig_date','orig_time_range','change_reason','changed_by','changed_at'];
+async function undoMoveSession(sessionId, oldDate, oldTime, prevMeta){
   const s=cachedSessions.find(x=>x.id===sessionId); if(!s) return;
   const from={ date:s.session_date, time:s.time_range||'' };
   try{
-    await csMoveSessionDate(sessionId,oldDate,oldTime);
-    renderCoursesPage(document.getElementById('mainContent'));
     const course=cachedCourses.find(c=>c.id===s.course_id);
+    const patch=Object.assign({ session_date:oldDate, time_range:oldTime, actual_hours:trSessionHours(oldTime,course?.actual_hours) }, prevMeta);
+    await sb(`/rest/v1/course_sessions?id=eq.${sessionId}`,'PATCH',patch);
+    Object.assign(s,patch);
+    renderCoursesPage(document.getElementById('mainContent'));
     await srmOpen({ course, sessions:cachedSessions.filter(x=>x.course_id===s.course_id),
       changes:[{ id:s.id, num:s.session_number, from:{ date:from.date, time:from.time, cancelled:false }, to:{ date:oldDate, time:oldTime, cancelled:false } }] });
   }catch(e){ alert('撤销失败：'+e.message); }
 }
-function rsUndoToast(sessionId, oldDate, oldTime, text){
+// 格子上的「撤回」：改回 orig_date / orig_time_range，清空记录
+async function revertSessionMove(sessionId){
+  const s=cachedSessions.find(x=>x.id===sessionId); if(!s||!s.orig_date){ alert('这一回没有改过日期'); return; }
+  const course=cachedCourses.find(c=>c.id===s.course_id);
+  const oTime=s.orig_time_range||course?.time_range||'';
+  if(!confirm(`把第 ${s.session_number} 回改回原来的 ${ccMD(s.orig_date)}${oTime?' '+oTime:''}？`)) return;
+  const from={ date:s.session_date, time:s.time_range||course?.time_range||'' };
+  try{
+    const patch=Object.assign({ session_date:s.orig_date, time_range:oTime, actual_hours:trSessionHours(oTime,course?.actual_hours) }, CS_ORIG_CLEAR);
+    const to={ date:patch.session_date, time:oTime };
+    await sb(`/rest/v1/course_sessions?id=eq.${sessionId}`,'PATCH',patch);
+    Object.assign(s,patch);
+    try{
+      const ds=cachedSessions.filter(x=>x.course_id===s.course_id&&!x.is_cancelled).map(x=>x.session_date).sort();
+      if(course&&ds.length&&ds[ds.length-1]!==course.end_date){ await sb(`/rest/v1/courses?id=eq.${course.id}`,'PATCH',{end_date:ds[ds.length-1]}); course.end_date=ds[ds.length-1]; }
+    }catch(e){}
+    renderCoursesPage(document.getElementById('mainContent'));
+    alert(`已把第 ${s.session_number} 回改回 ${ccMD(to.date)}${oTime?' '+oTime:''}。`);
+    try{ await srmOpen({ course, sessions:cachedSessions.filter(x=>x.course_id===s.course_id),
+      changes:[{ id:s.id, num:s.session_number, from:{ date:from.date, time:from.time, cancelled:false }, to:{ date:to.date, time:to.time||from.time, cancelled:false } }] }); }
+    catch(e){ console.warn('教室确认弹框失败', e); }
+  }catch(e){ alert('操作失败：'+e.message); }
+}
+function rsUndoToast(sessionId, oldDate, oldTime, text, prevMeta){
   document.getElementById('rsUndoToast')?.remove();
   const el=document.createElement('div'); el.id='rsUndoToast';
   el.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1a1814;color:#fff;font-size:12px;padding:10px 14px;border-radius:4px;z-index:9999;display:flex;gap:12px;align-items:center';
   const sp=document.createElement('span'); sp.textContent=text;
   const u=document.createElement('button'); u.textContent='撤销'; u.style.cssText='background:none;border:1px solid #fff;color:#fff;border-radius:3px;padding:2px 10px;cursor:pointer';
-  u.onclick=()=>{ el.remove(); undoMoveSession(sessionId,oldDate,oldTime); };
+  u.onclick=()=>{ el.remove(); undoMoveSession(sessionId,oldDate,oldTime,prevMeta); };
   const x=document.createElement('button'); x.textContent='关闭'; x.style.cssText='background:none;border:none;color:#bbb;cursor:pointer';
   x.onclick=()=>el.remove();
   el.append(sp,u,x); document.body.appendChild(el);
@@ -2761,7 +2820,8 @@ async function confirmReschedMove(){
   if(same&&!confirm(`这一天已经有第 ${same.session_number} 回，仍要改到这一天吗？`)) return;
   try{
     const num=t.session_number;
-    await csMoveSessionDate(id,nd,nt);
+    const prevMeta={}; CS_ORIG_KEYS.forEach(k=>{ prevMeta[k]=t[k]??null; });
+    await csMoveSessionDate(id,nd,nt,reason+(note?'：'+note:''));
     // 同步 sched：课程结束日期跟着最后一回
     try{
       const ds=cachedSessions.filter(x=>x.course_id===t.course_id&&!x.is_cancelled).map(x=>x.session_date).sort();
@@ -2775,7 +2835,7 @@ async function confirmReschedMove(){
     courseConfirmOpen({ title:'课程已修改，请核对', onEdit:openAddCourseModal, items:[{
       course, dates:cachedSessions.filter(s=>s.course_id===t.course_id&&!s.is_cancelled).map(s=>s.session_date),
       notes:[line,'单回日期有变动（改期 / 休讲顺延 / 新增课次），可能影响腾讯会议安排，请到排课系统确认'] }] });
-    rsUndoToast(id,old.date,old.time,'已改日期：'+line);
+    rsUndoToast(id,old.date,old.time,'已改日期：'+line,prevMeta);
     try{
       await srmOpen({ course, sessions:cachedSessions.filter(s=>s.course_id===t.course_id),
         changes:[{ id, num, from:{ date:old.date, time:old.time, cancelled:false }, to:{ date:nd, time:nt||old.time, cancelled:false } }] });

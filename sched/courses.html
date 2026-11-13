@@ -157,7 +157,11 @@ function buildInfo(c){
     if(!x.off && sd && !sd.is_cancelled){
       const r=_clkRange(sd.time_range, c);
       if(sd.time_range && (r[0]!==cs5 || r[1]!==ce5)){ o.s=r[0]; o.e=r[1]; o.myTime=r[0]+'-'+r[1]; o.flags.push('改时间'); }
-      if(wds.length && !wds.includes(weekdayOf(x.date))) o.flags.push('改日期');
+      // 有「原日期」记录的优先按它判断；没有再按固定星期推算
+      if(sd.orig_date){
+        if(sd.orig_date!==x.date) o.flags.push('改日期');
+        if(sd.orig_time_range && !o.myTime){ const a=_clkRange(sd.orig_time_range,c), b=_clkRange(sd.time_range,c); if(a[0]!==b[0]||a[1]!==b[1]){ o.s=b[0]; o.e=b[1]; o.myTime=b[0]+'-'+b[1]; o.flags.push('改时间'); } }
+      } else if(wds.length && !wds.includes(weekdayOf(x.date))) o.flags.push('改日期');
       const st=crvSessionState(c.id, {session_date:x.date}, {delivery:c.mode});
       if(st.kind==='moved'){ o.moved=st.label; o.flags.push('改教室'); }
       else if(st.kind==='none'){ o.noRoom=true; o.flags.push('未排教室'); }
@@ -367,13 +371,13 @@ async function boot(){
       sbGet('sched_holidays','select=*&order=start_date').catch(()=>[]),
       sbGet('sched_bookings','select=id,room_id,course_id,recurrence,weekday,start_date,end_date,booking_date,start_time,end_time,status,manual_off_dates,uses_meeting&kind=eq.course').catch(()=>[]),
       sbGet('sched_rooms','select=id,name,campus').catch(()=>[]),
-      sbGet('course_sessions','select=course_id,session_date,time_range,is_cancelled,session_number').catch(()=>[])
+      sbGet('course_sessions','select=course_id,session_date,time_range,is_cancelled,session_number,orig_date,orig_time_range').catch(()=>[])
     ]);
     ALLC=cs.filter(c=>!c.deleted_at); HOLIDAYS=hol; BOOKINGS=bks.map(b=>Object.assign({kind:'course'},b)); ROOMS=rooms;
     await loadCourseLink(); linkCourseBookings(BOOKINGS);
     // 每一回在哪个教室：和课程安排卡片同一套算法（shared/course-room-view.js），数据用本页已读的
     CRV.bks=BOOKINGS.filter(b=>b.status!=='rejected'); CRV.roomList=ROOMS; CRV.rooms={}; ROOMS.forEach(r=>{ CRV.rooms[String(r.id)]=r; }); CRV.loaded=true;
-    ses.forEach(s=>{ if(s.course_id!=null && s.session_date){ (SESS[String(s.course_id)]=SESS[String(s.course_id)]||[]).push(s.session_date); (SESD[String(s.course_id)]=SESD[String(s.course_id)]||{})[s.session_date]={time_range:s.time_range||'', is_cancelled:!!s.is_cancelled, num:s.session_number}; } });
+    ses.forEach(s=>{ if(s.course_id!=null && s.session_date){ (SESS[String(s.course_id)]=SESS[String(s.course_id)]||[]).push(s.session_date); (SESD[String(s.course_id)]=SESD[String(s.course_id)]||{})[s.session_date]={time_range:s.time_range||'', is_cancelled:!!s.is_cancelled, num:s.session_number, orig_date:s.orig_date||'', orig_time_range:s.orig_time_range||''}; } });
     ALLC.forEach(c=>{ WDS[c.id]=parseWeekdaysSched(c.weekdays); INFO[c.id]=buildInfo(c); HAY[c.id]=buildHay(c); });
     applyView();
   }catch(e){ el('list').innerHTML='<div class="tip">读取失败：'+esc(e.message)+'</div>'; return; }
