@@ -529,6 +529,8 @@ function buildTabs() {
   if (p.result_view && !p.result_admin) tabs.push({ id: 'admissions', label: '🏆 合格实绩' });
   // 合格实绩管理：admin 在营业功能中单独勾选（permissions.result_admin）；内容就是管理端的合格实绩页（admin/results-admin.js，老师模式）
   if (p.result_admin) tabs.push({ id: 'resultadmin', label: '🏆 合格实绩管理' });
+  // 学部合格录入（permissions.result_ug_entry）：同一个页面，只能录入 / 编辑学部、传合格照片；与 result_admin 同时勾选时以 result_admin 为准
+  if (p.result_ug_entry && !p.result_admin) tabs.push({ id: 'resultug', label: '🏆 学部合格录入' });
   // 合格海报查询：admin 在营业功能中单独勾选（permissions.pass_posters）；只读已发布的海报
   if (p.pass_posters) tabs.push({ id: 'passposters', label: '🖼 合格海报' });
   if (p.lect_info) tabs.push({ id: 'lectinfo', label: '👤 讲师信息' });
@@ -587,6 +589,7 @@ function renderTab() {
     case 'admissions': renderTeacherAdmissions(mc); break;
     case 'passposters': renderTeacherPosters(mc); break;
     case 'resultadmin': raRender(mc, { mode: 'teacher' }); break;
+    case 'resultug': raRender(mc, { mode: 'teacher', ugOnly: true }); break;
     case 'lectinfo': renderLectInfo(mc); break;
     case 'studyprogress': renderTeacherStudyProgress(mc); break;
     case 'mycourses': renderMySchedule(mc); break;

@@ -963,7 +963,7 @@ function tsecState(key){
     return {has:n>0,sum:n?`已开 ${n} 项`:'未开启'};
   }
   if(key==='sales'){
-    const ids=['perm_promo','perm_progress_plan','perm_lect_info','perm_vip_sales','perm_promo_pack','perm_result_view','perm_pass_posters','perm_result_admin','perm_promo_pricing','perm_success_cases','perm_consult'];
+    const ids=['perm_promo','perm_progress_plan','perm_lect_info','perm_vip_sales','perm_promo_pack','perm_result_view','perm_pass_posters','perm_result_admin','perm_result_ug_entry','perm_promo_pricing','perm_success_cases','perm_consult'];
     const n=ids.filter(chk).length;
     return {has:n>0,sum:n?`已开 ${n} 项`:'未开启'};
   }
@@ -1489,7 +1489,8 @@ function renderTeachersPage(mc){
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_promo_pack" style="accent-color:var(--accent);width:15px;height:15px">宣传资料整合<span style="font-size:9px;color:var(--text-3)">把出愿学校/学科介绍/进度规划/讲师卡片/VIP方案合成一份完整 PDF</span></label>
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_result_view" style="accent-color:var(--accent);width:15px;height:15px">合格实绩查询<span style="font-size:9px;color:var(--text-3)">查看合格实绩（与公开页面相同的内容，只读）</span></label>
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_pass_posters" style="accent-color:var(--accent);width:15px;height:15px">合格海报查询<span style="font-size:9px;color:var(--text-3)">查看、下载已发布的合格海报</span></label>
-              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_result_admin" style="accent-color:var(--accent);width:15px;height:15px" onchange="if(this.checked){const _p=document.getElementById('perm_pass_posters'); if(_p)_p.checked=true;}">合格实绩管理<span style="font-size:9px;color:var(--text-3)">和管理端一样管理合格实绩、合格写真、制作和发布海报（会同时开启「合格海报查询」；有管理时不再单独显示合格实绩查询）。负责人在管理模式里开放了「合格实绩」页，就不需要再开这个。这个开关给不是负责人的营业老师用。</span></label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_result_admin" style="accent-color:var(--accent);width:15px;height:15px" onchange="if(this.checked){const _p=document.getElementById('perm_pass_posters'); if(_p)_p.checked=true; const _u=document.getElementById('perm_result_ug_entry'); if(_u)_u.checked=false;}">合格实绩管理<span style="font-size:9px;color:var(--text-3)">和管理端一样管理合格实绩、合格写真、制作和发布海报（会同时开启「合格海报查询」；有管理时不再单独显示合格实绩查询）。负责人在管理模式里开放了「合格实绩」页，就不需要再开这个。这个开关给不是负责人的营业老师用。</span></label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_result_ug_entry" style="accent-color:var(--accent);width:15px;height:15px" onchange="if(this.checked){const _a=document.getElementById('perm_result_admin'); if(_a)_a.checked=false;}">学部合格录入<span style="font-size:9px;color:var(--text-3)">只能录入、编辑学部合格数据和上传合格照片；不能删除、下载、批量导入，不能动海报。和「合格实绩管理」二选一（同时勾以合格实绩管理为准）。</span></label>
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_promo_pricing" style="accent-color:var(--accent);width:15px;height:15px">课程方案（含价格）<span style="font-size:9px;color:var(--text-3)">在宣传相关里给学生配带价格的课程方案并加入资料；价目在中枢『💴 价目』维护；需同时勾选「宣传相关」</span></label>
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_success_cases" style="accent-color:var(--accent);width:15px;height:15px">合格案例（填写）<span style="font-size:9px;color:var(--text-3)">在宣传相关里新建、修改合格案例（只能改自己负责的领域/专业）；不勾也能浏览已发布的案例，需同时勾选「宣传相关」</span></label>
               <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer"><input type="checkbox" id="perm_consult" style="accent-color:var(--accent);width:15px;height:15px">咨询（营业咨询台）<span style="font-size:9px;color:var(--text-3)">老师端「咨询」：给潜在学生做信息采集、选校、选课、生成升学计划；咨询者档案只有录入人自己和管理员能看</span></label>
@@ -1762,6 +1763,7 @@ function cancelEditTeacher(){
     {const _e=document.getElementById('perm_result_view'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_pass_posters'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_result_admin'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_result_ug_entry'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_promo_pricing'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_consult'); if(_e)_e.checked=false;}
@@ -1796,6 +1798,7 @@ function openTeacherManager(){
     {const _e=document.getElementById('perm_result_view'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_pass_posters'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_result_admin'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_result_ug_entry'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_promo_pricing'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_consult'); if(_e)_e.checked=false;}
@@ -1887,7 +1890,7 @@ function roleDefaultTokens(pos,roles,staffType){
   if(staffType==='正社员'){ out.add('p:slots'); out.add('slot_types:attendance'); }
   return out;
 }
-const TF_P_LABEL={booking:'预约管理',slots:'时间槽设定',student_mgmt:'学生管理',admission_query:'出願数据查询',vip_backfill:'VIP 上课补录',homework:'批改作业',promo:'宣传相关',progress_plan:'进度规划',lect_info:'讲师信息查询',vip_sales:'VIP营业规划',promo_pack:'宣传资料整合',result_view:'合格实绩查询',pass_posters:'合格海报查询',result_admin:'合格实绩管理',promo_pricing:'课程方案（含价格）',success_cases:'合格案例（填写）',consult:'咨询（营业咨询台）'};
+const TF_P_LABEL={booking:'预约管理',slots:'时间槽设定',student_mgmt:'学生管理',admission_query:'出願数据查询',vip_backfill:'VIP 上课补录',homework:'批改作业',promo:'宣传相关',progress_plan:'进度规划',lect_info:'讲师信息查询',vip_sales:'VIP营业规划',promo_pack:'宣传资料整合',result_view:'合格实绩查询',pass_posters:'合格海报查询',result_admin:'合格实绩管理',result_ug_entry:'学部合格录入',promo_pricing:'课程方案（含价格）',success_cases:'合格案例（填写）',consult:'咨询（营业咨询台）'};
 const TF_SUB_LABEL={booking_types:{daily:'日常',plan:'计划书',mock:'模拟面试',vip:'VIP'},slot_types:{daily:'日常',plan:'计划书',mock:'模拟面试',vip:'VIP',attendance:'出勤'},student_mgmt_items:{progress:'考学进度',meetings:'面谈查询',records_view:'出席・作业 查看',records_entry:'出席 登记',monthly:'月度学习情况',profile:'学生档案录入',profile_edit:'档案修改'}};
 const TF_SUB_PREFIX={booking_types:'预约·',slot_types:'时间槽·',student_mgmt_items:'学生管理·'};
 function roleTokenLabel(tk){
@@ -2090,6 +2093,7 @@ const TEACHER_FEATURE_DEFS=[
   ['promo_pack','资料整合','宣传资料整合（营业）',(t,p)=>!!p.promo_pack],
   ['pass_posters','合格海报','合格海报查询（营业）',(t,p)=>!!p.pass_posters],
   ['result_admin','实绩管理','合格实绩管理（营业）',(t,p)=>!!p.result_admin],
+  ['result_ug_entry','学部录入','学部合格录入',(t,p)=>!!p.result_ug_entry&&!p.result_admin],
   ['promo_pricing','课程方案','课程方案（含价格）',(t,p)=>!!p.promo_pricing],
   ['success_cases','合格案例','合格案例（填写）',(t,p)=>!!p.success_cases],
   ['consult','咨询','咨询（营业咨询台）',(t,p)=>!!p.consult],
@@ -2254,6 +2258,7 @@ function renderTeacherRows(){
           if(p.promo_pack) permsFull.push('宣传资料整合（营业）');
           if(p.pass_posters) permsFull.push('合格海报查询（营业）');
           if(p.result_admin) permsFull.push('合格实绩管理（营业）');
+          if(p.result_ug_entry) permsFull.push('学部合格录入');
           if(p.promo_pricing) permsFull.push('课程方案（含价格）');
           if(p.success_cases) permsFull.push('合格案例（填写）');
           if(p.consult) permsFull.push('咨询（营业咨询台）');
@@ -2322,6 +2327,7 @@ function getPermissionsFromForm(prev){
     result_view:_chk('perm_result_view',prev.result_view),
     pass_posters:_chk('perm_pass_posters',prev.pass_posters)||_chk('perm_result_admin',prev.result_admin),   // 开了合格实绩管理就一起开合格海报查询
     result_admin:_chk('perm_result_admin',prev.result_admin),
+    result_ug_entry:_chk('perm_result_ug_entry',prev.result_ug_entry)&&!_chk('perm_result_admin',prev.result_admin),   // 与合格实绩管理互斥，同时勾以合格实绩管理为准
     promo_pricing:_chk('perm_promo_pricing',prev.promo_pricing),
     success_cases:_chk('perm_success_cases',prev.success_cases),
     consult:_chk('perm_consult',prev.consult),
@@ -2467,6 +2473,7 @@ async function addTeacher(){
     {const _e=document.getElementById('perm_result_view'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_pass_posters'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_result_admin'); if(_e)_e.checked=false;}
+    {const _e=document.getElementById('perm_result_ug_entry'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_promo_pricing'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=false;}
     {const _e=document.getElementById('perm_consult'); if(_e)_e.checked=false;}
@@ -2545,6 +2552,7 @@ function openEditTeacher(id){
   {const _e=document.getElementById('perm_result_view'); if(_e)_e.checked=!!p.result_view;}
   {const _e=document.getElementById('perm_pass_posters'); if(_e)_e.checked=!!p.pass_posters;}
   {const _e=document.getElementById('perm_result_admin'); if(_e)_e.checked=!!p.result_admin;}
+  {const _e=document.getElementById('perm_result_ug_entry'); if(_e)_e.checked=!!p.result_ug_entry;}
   {const _e=document.getElementById('perm_promo_pricing'); if(_e)_e.checked=!!p.promo_pricing;}
   {const _e=document.getElementById('perm_success_cases'); if(_e)_e.checked=!!p.success_cases;}
   {const _e=document.getElementById('perm_consult'); if(_e)_e.checked=!!p.consult;}

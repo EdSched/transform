@@ -192,6 +192,10 @@ const RA_CSS = `
 `;
 
 let raMode = 'admin';   // 'admin' | 'teacher'
+// 老师端「学部合格录入」（permissions.result_ug_entry）：只能录入 / 编辑学部、传合格照片；不能删除、下载、批量导入、等级批量修改、合并重复、做海报
+let raUgOnly = false;
+const RA_UG_ONLY_DENY = ['grad', 'delete', 'deleteAll', 'deletePhoto', 'export', 'import', 'tier', 'dup', 'poster'];
+function raCan(action) { return !(raUgOnly && RA_UG_ONLY_DENY.indexOf(action) >= 0); }
 function raIsTeacher() { return raMode === 'teacher'; }
 // 能不能看截图 / 补图 / 做海报（数据库 can_manage_results() 同一规则）：管理员；result_admin；管理模式的负责人且「合格实绩」页对他开放
 function raCanPhotos() {
@@ -252,7 +256,7 @@ function raHtml() {
     <a href="../results/index.html" target="_blank">
       <button class="btn btn-secondary">← 公开页面</button>
     </a>
-    <a href="../results/submit-grad.html" target="_blank">
+    <a ${raCan('grad')?'':'style="display:none"'} href="../results/submit-grad.html" target="_blank">
       <button class="btn btn-secondary" style="background:#e8edf8;border-color:#2c4a8a;color:#2c4a8a">📤 大学院录入链接</button>
     </a>
     <a href="../results/submit-undergrad.html" target="_blank">
@@ -261,10 +265,10 @@ function raHtml() {
   </div>
 </header>
 
-<div class="major-bar">
+<div class="major-bar" ${raUgOnly?'style="display:none"':''}>
   <button class="major-btn active" onclick="raSwitchMajor('grad')">大学院</button>
   <button class="major-btn" onclick="raSwitchMajor('ug')">学部</button>
-  <button ${raCanPhotos()?'':'style="display:none"'} class="major-btn" onclick="raSwitchMajor('poster')">合格海报</button>
+  <button ${raCanPhotos()&&raCan('poster')?'':'style="display:none"'} class="major-btn" onclick="raSwitchMajor('poster')">合格海报</button>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════
@@ -590,9 +594,9 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
 
 <div class="tab-bar">
   <button class="tab-btn active" onclick="raSwitchUgTab('add')">手动添加</button>
-  <button class="tab-btn" onclick="raSwitchUgTab('excel')">Excel 批量导入</button>
+  <button ${raCan('import')?'':'style="display:none"'} class="tab-btn" onclick="raSwitchUgTab('excel')">Excel 批量导入</button>
   <button class="tab-btn" onclick="raSwitchUgTab('list')">数据管理</button>
-  <button ${raScopedLead()?'style="display:none"':''} class="tab-btn" onclick="raSwitchUgTab('tier')">Tier 管理</button>
+  <button ${raScopedLead()||!raCan('tier')?'style="display:none"':''} class="tab-btn" onclick="raSwitchUgTab('tier')">Tier 管理</button>
   <button ${raCanPhotos()?'':'style="display:none"'} class="tab-btn" onclick="raSwitchUgTab('photos')">合格写真</button>
 </div>
 
@@ -700,8 +704,8 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
       <option value="4">T4</option>
     </select>
     <span class="result-count" id="ug-result-count"></span>
-    <button class="btn btn-secondary" id="ug-export-btn" onclick="raXlExport('ug')" style="padding:5px 12px;font-size:11px">⬇ 下载 Excel</button>
-    ${raIsTeacher() || raScopedLead() ? '' : '<button class="btn btn-danger" onclick="raUgConfirmDeleteAll()" style="margin-left:auto">全件削除</button>'}
+    <button class="btn btn-secondary" id="ug-export-btn" onclick="raXlExport('ug')" style="padding:5px 12px;font-size:11px;${raCan('export')?'':'display:none'}">⬇ 下载 Excel</button>
+    ${raIsTeacher() || raScopedLead() || !raCan('deleteAll') ? '' : '<button class="btn btn-danger" onclick="raUgConfirmDeleteAll()" style="margin-left:auto">全件削除</button>'}
   </div>
   <div id="rm-filters-ug"></div>
   <div id="rm-stats-ug"></div>
@@ -853,6 +857,7 @@ CREATE POLICY "anon update" ON undergrad_results FOR UPDATE USING (true);</pre>
 // ─── Major category switch (大学院 / 学部) ───────────────────────────────────
 let raCurMajor = 'grad';
 function raSwitchMajor(m) {
+  if (raUgOnly && m !== 'ug') m = 'ug';
   raCurMajor = m;
   document.getElementById('major-grad').style.display = m==='grad' ? '' : 'none';
   document.getElementById('major-ug').style.display = m==='ug' ? '' : 'none';
@@ -865,6 +870,7 @@ function raSwitchMajor(m) {
 // ── 合格海报管理页（列表本身在 shared/pass-posters.js，和老师端共用）──
 let raPpAdminMounted = false;
 function raPpAdminOpen() {
+  if (!raCan('poster')) { raToast('没有权限', false); return; }
   if (raPpAdminMounted) { ppsReload(); return; }
   raPpAdminMounted = true;
   ppsMount(document.getElementById('pps-admin-root'), {
@@ -987,6 +993,7 @@ function raResetForm() {
 }
 
 async function raSubmitForm(btn, force) {
+  if (!raCan('grad')) { raToast('没有权限', false); return; }
   if (btn && btn.disabled) return;
   const univ = document.getElementById('f-univ').value.trim();
   const subject = document.getElementById('f-subject').value;
@@ -1186,6 +1193,7 @@ function raXlSetWidths(ws, aoa) {
   ws['!cols'] = (aoa[0] || []).map((_, i) => ({ wch: Math.min(40, Math.max(8, ...aoa.slice(0, 60).map(r => String(r[i] == null ? '' : r[i]).length * 1.6 + 2))) }));
 }
 async function raXlExport(kind) {
+  if (!raCan('export')) { raToast('没有权限', false); return; }
   const rows = kind === 'ug' ? raUgListRows() : raListRows();
   if (!rows.length) { raToast('当前筛选下没有记录可导出', false); return; }
   if (!(await raXlEnsureLib())) return;
@@ -1200,6 +1208,7 @@ async function raXlExport(kind) {
 
 // ── 模板 ──
 async function raXlTemplate(kind) {
+  if (!raCan('export')) { raToast('没有权限', false); return; }
   if (!(await raXlEnsureLib())) return;
   if (kind === 'ug') { raUgTemplate(); return; }
   await raXlLoadMajorRows();
@@ -1262,6 +1271,7 @@ async function raXlTemplate(kind) {
 
 // 学部模板：列 = 公开页的顺序；第 2 行是填写说明（导入时自动跳过）；另附「填写说明」页
 function raUgTemplate() {
+  if (!raCan('export')) { raToast('没有权限', false); return; }
   const K = RA_XL.ug, idx = K.cols.map((c, i) => i).filter(i => K.cols[i].tpl !== false);
   const heads = idx.map(i => K.cols[i].head), instr = idx.map(i => K.sample[i]);
   const wsFill = XLSX.utils.aoa_to_sheet([heads, instr]); raXlSetWidths(wsFill, [heads, instr]);
@@ -1364,6 +1374,7 @@ function raXlBuildPlan(kind, upRows, existing) {
   });
 }
 async function raXlShowPreview(kind) {
+  if (!raCan('import')) { raToast('没有权限', false); return; }
   const K = RA_XL[kind], p = K.p;
   raXl.kind = kind;
   try {
@@ -1379,6 +1390,7 @@ async function raXlShowPreview(kind) {
 }
 // ── 下载「需要修改的行」：表头 / 列顺序 / 原始值和上传的文件一样，最前面加一列「需要修改」（导入时对不上任何字段，自动忽略）──
 async function raXlDownloadFix(kind) {
+  if (!raCan('export')) { raToast('没有权限', false); return; }
   const K = RA_XL[kind], plan = raXl.plan[kind] || [], fixes = plan.filter(x => x.fix);
   if (!fixes.length) return;
   const heads = kind === 'ug' ? raUgUploadHeaders : raUploadHeaders, upRows = kind === 'ug' ? raUgUploadRows : raUploadRows, colMap = kind === 'ug' ? raUgUploadColMap : raUploadColMap;
@@ -1457,6 +1469,7 @@ function raXlRenderPreview(kind) {
   document.getElementById(p + 'preview-wrap').innerHTML = html;
 }
 async function raXlExecute(kind) {
+  if (!raCan('import')) { raToast('没有权限', false); return; }
   const K = RA_XL[kind], p = K.p, plan = raXl.plan[kind];
   const ins = plan.filter(x => x.status === 'new'), ups = plan.filter(x => x.status === 'update');
   if (!ins.length && !ups.length) { raToast('没有可导入的行', false); return; }
@@ -1526,6 +1539,7 @@ function raSelectImportTrack(t) {
 }
 
 function raHandleFile(file) {
+  if (!raCan('import')) { raToast('没有权限', false); return; }
   if (!file) return;
   const zone = document.getElementById('upload-zone');
   zone.textContent = `読み込み中: ${file.name}`;
@@ -1582,6 +1596,7 @@ function raGetColIndex(key) {
 }
 
 async function raPreviewImport() {
+  if (!raCan('import')) { raToast('没有权限', false); return; }
   const univIdx = raGetColIndex('univ');
   if (univIdx === null) { raToast('大学名の列を選択してください', false); return; }
   raUploadColMap = {};
@@ -1794,7 +1809,7 @@ function raRmFiltersHtml(kind) {
   }
   // 疑似重复
   const dn = raDupOpenGroups(kind).length;
-  if (dn || f.dup) h += row('检查', raRmChip(f.dup, '疑似重复', `raRmToggleDup('${kind}')`, dn).html);
+  if (raCan('dup') && (dn || f.dup)) h += row('检查', raRmChip(f.dup, '疑似重复', `raRmToggleDup('${kind}')`, dn).html);
   if (kind === 'ug') {   // 学部：在籍学科 / 年份 / 出愿区分（chips，可叠加）
     const tc = {}, yc2 = {}, mc2 = {};
     all.forEach(r => {
@@ -1903,6 +1918,7 @@ function raDupIgnore(kind, sig) {
 }
 function raDupOpenGroups(kind) { const ig = raDupIgnored(kind); return raDupGroups(raRmData(kind)).filter(g => !ig.has(raDupSig(g))); }
 async function raRmToggleDup(kind) {
+  if (!raCan('dup')) { raToast('没有权限', false); return; }
   const f = raRm[kind]; f.dup = !f.dup;
   if (f.dup) {
     try {
@@ -2003,6 +2019,7 @@ function raDupBatchAsk(kind) {
   ov.querySelector('[data-a=go]').onclick = () => raDupBatchRun(kind, items, ov);
 }
 async function raDupBatchRun(kind, items, ov) {
+  if (!raCan('dup')) { raToast('没有权限', false); return; }
   const body = ov.querySelector('#ra-bm-body'), btns = ov.querySelector('#ra-bm-btns');
   btns.innerHTML = ''; body.innerHTML = '<div>正在下载合并前备份…</div>';
   try {
@@ -2059,6 +2076,7 @@ function raDupPlan(kind, g, keep) {
 }
 // opts.silent：批量用——不弹 toast、不重画页面，返回 { ok, error }
 async function raDupMerge(kind, g, keep, opts) {
+  if (!raCan('dup')) { raToast('没有权限', false); return; }
   const silent = !!(opts && opts.silent), table = kind === 'ug' ? 'undergrad_results' : 'admission_results', enc = encodeURIComponent;
   const poster = raRm[kind].posterIds || new Set();
   try {
@@ -2150,7 +2168,7 @@ function raRmStatsHtml(kind, rows) {
   return `<div class="rm-stats">${stat(st.records, '记录数')}${stat(st.people, '合格人数')}${stat(st.schools, '合格校数')}${stat(st.pairs, '学校 × ' + dl)}`
     + (notes.length ? `<span class="rm-sub">${notes.join('；')}</span>` : '')
     + `<span style="margin-left:auto;display:flex;gap:6px;align-items:center">${tg('list', '明细列表')}${tg('school', '按学校汇总')}`
-    + (f.view === 'school' ? `<button class="btn btn-secondary" style="padding:3px 10px;font-size:11px" onclick="raRmExportSummary('${kind}')">⬇ 下载汇总</button>` : '')
+    + (f.view === 'school' && raCan('export') ? `<button class="btn btn-secondary" style="padding:3px 10px;font-size:11px" onclick="raRmExportSummary('${kind}')">⬇ 下载汇总</button>` : '')
     + `</span></div>`;
 }
 function raRmSummaryHtml(kind, rows) {
@@ -2177,11 +2195,12 @@ function raRmMiniTable(kind, rows) {
     const d = r.created_at ? String(r.created_at).slice(0, 10) : '—';
     h += `<tr data-id="${r.id}" data-univ="${raArEsc(r.univ || '')}"><td>${raArEsc(r.dept || '')}</td><td>${raArEsc(r.spec || '')}</td><td>${raArEsc(r.student || '—')}</td>
       <td>${raArEsc(raRmLabel(r))}</td><td>${r.era === 'new' ? '26–27' : '22–25'}</td><td>${d}</td>
-      <td style="white-space:nowrap"><button class="btn btn-secondary" style="padding:3px 8px;font-size:10px;margin-right:3px" onclick="${edit}(this)">編集</button><button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="${del}(this)">削除</button></td></tr>`;
+      <td style="white-space:nowrap"><button class="btn btn-secondary" style="padding:3px 8px;font-size:10px;margin-right:3px" onclick="${edit}(this)">編集</button>${raCan('delete') ? `<button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="${del}(this)">削除</button>` : ''}</td></tr>`;
   });
   return h + '</tbody></table></div>';
 }
 async function raRmExportSummary(kind) {
+  if (!raCan('export')) { raToast('没有权限', false); return; }
   const rows = kind === 'ug' ? raUgListRows() : raListRows();
   if (!rows.length) { raToast('当前筛选下没有记录可导出', false); return; }
   if (!(await raXlEnsureLib())) return;
@@ -2200,7 +2219,7 @@ async function raRmExportSummary(kind) {
 function raRmPaint(kind, rows) {
   const fe = document.getElementById('rm-filters-' + kind), se = document.getElementById('rm-stats-' + kind);
   if (fe) fe.innerHTML = raRmFiltersHtml(kind);
-  const dn = raDupOpenGroups(kind).length;
+  const dn = raCan('dup') ? raDupOpenGroups(kind).length : 0;
   if (se) se.innerHTML = (dn && !raRm[kind].dup ? `<div style="font-size:11px;color:#7a4a20;margin:4px 0;cursor:pointer" onclick="raRmToggleDup('${kind}')">有 ${dn} 组疑似重复（点这里查看）</div>` : '') + (rows.length ? raRmStatsHtml(kind, rows) : '');
   return raRm[kind].view === 'school' && rows.length > 0 && !raRm[kind].dup;
 }
@@ -2260,6 +2279,7 @@ function raSortList(col) {
 }
 
 function raConfirmDelete(id, univ) {
+  if (!raCan('delete')) { raToast('没有权限', false); return; }
   raShowModal('削除確認', `「${univ}」のレコードを削除しますか？`, async () => {
     try { await raDeleteResult(id); raAllData = raAllData.filter(r => r.id !== id); raRenderList(); raToast('削除しました ✓'); }
     catch(e) { raToast('削除エラー: ' + e.message, false); }
@@ -2267,6 +2287,7 @@ function raConfirmDelete(id, univ) {
 }
 
 function raConfirmDeleteAll() {
+  if (!raCan('deleteAll')) { raToast('没有权限', false); return; }
   raShowModal('全件削除', `${raAllData.length} 件すべてを削除しますか？この操作は元に戻せません。`, async () => {
     try { await pstDeleteForResults('grad', raAllData.map(r=>r.id)); for (const id of raAllData.map(r=>r.id)) await raSbFetch(`admission_results?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); raAllData = []; raRenderList(); raToast('全件削除しました ✓'); }
     catch(e) { raToast('削除エラー: ' + e.message, false); }
@@ -2623,7 +2644,8 @@ async function raInsertBatch(rows) {
   }));
   return raSbFetch('admission_results', { method:'POST', body:clean, prefer:'return=representation' });
 }
-async function raDeleteResult(id) { await pstDeleteForResults('grad', [id]); return raSbFetch(`admission_results?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); }
+async function raDeleteResult(id) {
+  if (!raCan('delete')) { raToast('没有权限', false); return; } await pstDeleteForResults('grad', [id]); return raSbFetch(`admission_results?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); }
 async function raUpdateResult(id, row) { return raSbFetch(`admission_results?id=eq.${id}`, { method:'PATCH', body:row }); }
 
 // JLPT 拆分（学部 / 大学院导入共用）：格子里找 N1–N5（全角半角、大小写都认）作级别；级别以外第一个 2–3 位数字（0–180）作分数；
@@ -2764,6 +2786,7 @@ function raUpdateTierSaveBtn() {
 }
 
 async function raSaveTierChanges() {
+  if (!raCan('tier')) { raToast('没有权限', false); return; }
   const entries = Object.entries(raTierChanges);
   if (!entries.length) return;
   const btn = document.getElementById('tier-save-btn');
@@ -2857,7 +2880,8 @@ async function raUgInsertBatch(rows) {
   const clean = rows.map(r => ({ ...r, tier: r.tier != null ? parseInt(r.tier)||null : null }));
   return raSbFetch(raUG_TABLE, { method:'POST', body:clean, prefer:'return=representation' });
 }
-async function raUgDeleteOne(id) { await pstDeleteForResults('ug', [id]); return raSbFetch(`${raUG_TABLE}?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); }
+async function raUgDeleteOne(id) {
+  if (!raCan('delete')) { raToast('没有权限', false); return; } await pstDeleteForResults('ug', [id]); return raSbFetch(`${raUG_TABLE}?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); }
 
 // ─── 学部录入表单（手动添加 / 编辑窗口 / 公开页 submit-undergrad.html 三处同一套字段和顺序）─────────────
 // 顺序：真实姓名 → 年份 → 在籍学科 → 学校名 → 学部名 → 出愿区分 → EJU → 英语 → JLPT → 班主任 → 合格通知书 → 留言
@@ -3168,6 +3192,7 @@ const raUG_FIELD_DEFS = [
 ];
 
 function raUgHandleFile(file) {
+  if (!raCan('import')) { raToast('没有权限', false); return; }
   if (!file) return;
   document.getElementById('ug-upload-zone').textContent = `読み込み中: ${file.name}`;
   const reader = new FileReader();
@@ -3222,6 +3247,7 @@ function raUgGetColIndex(key) {
 }
 
 async function raUgPreviewImport() {
+  if (!raCan('import')) { raToast('没有权限', false); return; }
   const univIdx = raUgGetColIndex('univ');
   if (univIdx === null) { raToast('请选择「学校名」对应的列', false); return; }
   raUgUploadColMap = {};
@@ -3414,7 +3440,7 @@ function raUgRenderList() {
       <td style="white-space:nowrap">
         <button class="btn btn-secondary" style="padding:3px 8px;font-size:10px;margin-right:3px" onclick="raUgToggleDetail(this)">详情</button>
         <button class="btn btn-secondary" style="padding:3px 8px;font-size:10px;margin-right:3px" onclick="raUgOpenEditModal(this)">編集</button>
-        <button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="raUgDoDelete(this)">削除</button>
+        ${raCan('delete') ? '<button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="raUgDoDelete(this)">削除</button>' : ''}
       </td>
     </tr>`;
   }
@@ -3444,6 +3470,7 @@ function raUgSortList(col) {
 }
 
 function raUgConfirmDelete(id, univ) {
+  if (!raCan('delete')) { raToast('没有权限', false); return; }
   raShowModal('削除確認', `「${univ}」のレコードを削除しますか？`, async () => {
     try { await raUgDeleteOne(id); raUgAllData = raUgAllData.filter(r=>r.id!==id); raUgRenderList(); raToast('削除しました ✓'); }
     catch(e) { raToast('削除エラー: ' + e.message, false); }
@@ -3451,6 +3478,7 @@ function raUgConfirmDelete(id, univ) {
 }
 
 function raUgConfirmDeleteAll() {
+  if (!raCan('deleteAll')) { raToast('没有权限', false); return; }
   raShowModal('全件削除', `${raUgAllData.length} 件すべてを削除しますか？この操作は元に戻せません。`, async () => {
     try { await pstDeleteForResults('ug', raUgAllData.map(r=>r.id)); for (const r of raUgAllData) await raSbFetch(`${raUG_TABLE}?id=eq.${r.id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); raUgAllData = []; raUgRenderList(); raToast('全件削除しました ✓'); }
     catch(e) { raToast('削除エラー: ' + e.message, false); }
@@ -3459,6 +3487,7 @@ function raUgConfirmDeleteAll() {
 
 // ─── 編集モーダル ────────────────────────────────────────────────────────────
 function raOpenEditModal(el) {
+  if (!raCan('grad')) { raToast('没有权限', false); return; }
   const id = typeof el === 'string' ? el : el.closest('tr').dataset.id;
   const r = raAllData.find(x => x.id === id);
   if (!r) return;
@@ -3489,6 +3518,7 @@ function raCloseEditModal() {
 }
 
 async function raSaveEdit(btn, force) {
+  if (!raCan('grad')) { raToast('没有权限', false); return; }
   if (btn && btn.disabled) return;
   const errEl = document.getElementById('em-err'); errEl.textContent = '';
   const id = document.getElementById('em-id').value;
@@ -3556,6 +3586,7 @@ async function raSaveEdit(btn, force) {
 
 
 function raDoDelete(btn) {
+  if (!raCan('delete')) { raToast('没有权限', false); return; }
   const tr = btn.closest('tr');
   const id = tr.dataset.id;
   const univ = tr.dataset.univ;
@@ -3564,6 +3595,7 @@ function raDoDelete(btn) {
 
 
 function raUgDoDelete(btn) {
+  if (!raCan('delete')) { raToast('没有权限', false); return; }
   const tr = btn.closest('tr');
   raUgConfirmDelete(tr.dataset.id, tr.dataset.univ);
 }
@@ -3688,6 +3720,7 @@ function raUgUpdateTierSaveBtn2(){
 }
 
 async function raUgSaveTierChanges(){
+  if (!raCan('tier')) { raToast('没有权限', false); return; }
   const entries=Object.entries(raUgTierChanges2);
   if(!entries.length)return;
   const btn=document.getElementById('ug-tier-save-btn');
@@ -3992,8 +4025,8 @@ function raPhRender(kind) {
         <img ${ppath ? `data-path="${esc(ppath)}"` : `src="${esc(legacy)}"`} alt="${esc(r.univ)}" onerror="this.style.display='none'" style="cursor:pointer" onclick="if(this.src)window.open(this.src,'_blank')">
         <div class="photo-card-info">
           <div class="photo-card-title">${esc(r.univ) || '（未知大学）'} ${r.student ? '· ' + esc(r.student) : ''}
-            <button class="photo-card-del" onclick="raDeletePhotoRecord('${kind}','${esc(r.id)}')">削除</button>
-            <button class="photo-card-del" style="background:#eef2fa;color:var(--accent);border-color:#c5d0e8;margin-right:4px" onclick="pstOpen('${kind}','${esc(r.id)}')">${pm && pm[r.id] ? '编辑海报' : '制作海报'}</button>
+            ${raCan('deletePhoto') ? `<button class="photo-card-del" onclick="raDeletePhotoRecord('${kind}','${esc(r.id)}')">削除</button>` : ''}
+            ${raCan('poster') ? `<button class="photo-card-del" style="background:#eef2fa;color:var(--accent);border-color:#c5d0e8;margin-right:4px" onclick="pstOpen('${kind}','${esc(r.id)}')">${pm && pm[r.id] ? '编辑海报' : '制作海报'}</button>` : ''}
           </div>
           ${pm && pm[r.id] ? `<div style="font-size:10px;color:var(--green);margin-bottom:2px">已制作${pm[r.id] === 'pub' ? ' · 已发布' : ''}</div>` : ''}
           <div class="photo-card-sub">${esc(r.dept)}${r.spec ? ' ' + esc(r.spec) : ''}　${esc(isUg ? grpName(grpOf(r)) : raRmLabel(r))}${noteText ? '　' + esc(noteText) : ''}</div>
@@ -4376,6 +4409,7 @@ async function raArFillImgs(root) {
 }
 // 删除：只去掉照片（删 result_photos 行 + 私有桶文件；迁移前的旧照片清 photo_url 和 note 里的 [photo] 段并删公开桶文件），合格数据保留
 async function raDeletePhotoRecord(kind, id) {
+  if (!raCan('deletePhoto')) { raToast('没有权限', false); return; }
   const c = raPH[kind];
   const hasPoster = c.posterMap && c.posterMap[id];
   if (!confirm('删除这张合格照片？（合格数据保留，只删照片）' + (hasPoster ? '\n这张照片的海报也会一起删除' : ''))) return;
@@ -4460,6 +4494,7 @@ async function raArMigratePhotos() {
 }
 
 async function raDeletePhoto(path) {
+  if (!raCan('deletePhoto')) { raToast('没有权限', false); return; }
   if (!confirm('この写真を削除しますか？')) return;
   try {
     await fetch(`${SB_URL}/storage/v1/object/${raPHOTO_BUCKET}/${path}`, {
@@ -4506,6 +4541,7 @@ function raLoadLibs() {
 
 function raRender(mc, opts) {
   raMode = (opts && opts.mode === 'teacher') ? 'teacher' : 'admin';
+  raUgOnly = raMode === 'teacher' && !!(opts && opts.ugOnly);
   if (raIsTeacher()) raLoadLibs();
   if (!document.getElementById('ra-style')) {
     const st = document.createElement('style');
@@ -4520,4 +4556,5 @@ function raRender(mc, opts) {
   raArLoadMajors();
   ['grad', 'ug'].forEach(raPhModeRender);
   raFillTeacherPreset();
+  if (raUgOnly) raSwitchMajor('ug');   // 学部合格录入：只有学部
 }
