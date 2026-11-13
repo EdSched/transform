@@ -2759,19 +2759,6 @@ async function csMoveSessionDate(sessionId, newDate, newTime, reason){
   return s;
 }
 const CS_ORIG_KEYS=['orig_date','orig_time_range','change_reason','changed_by','changed_at'];
-async function undoMoveSession(sessionId, oldDate, oldTime, prevMeta){
-  const s=cachedSessions.find(x=>x.id===sessionId); if(!s) return;
-  const from={ date:s.session_date, time:s.time_range||'' };
-  try{
-    const course=cachedCourses.find(c=>c.id===s.course_id);
-    const patch=Object.assign({ session_date:oldDate, time_range:oldTime, actual_hours:trSessionHours(oldTime,course?.actual_hours) }, prevMeta);
-    await sb(`/rest/v1/course_sessions?id=eq.${sessionId}`,'PATCH',patch);
-    Object.assign(s,patch);
-    renderCoursesPage(document.getElementById('mainContent'));
-    await srmOpen({ course, sessions:cachedSessions.filter(x=>x.course_id===s.course_id),
-      changes:[{ id:s.id, num:s.session_number, from:{ date:from.date, time:from.time, cancelled:false }, to:{ date:oldDate, time:oldTime, cancelled:false } }] });
-  }catch(e){ alert('撤销失败：'+e.message); }
-}
 // 格子上的「撤回」：改回 orig_date / orig_time_range，清空记录
 async function revertSessionMove(sessionId){
   const s=cachedSessions.find(x=>x.id===sessionId); if(!s||!s.orig_date){ alert('这一回没有改过日期'); return; }
@@ -2795,17 +2782,6 @@ async function revertSessionMove(sessionId){
     catch(e){ console.warn('教室确认弹框失败', e); }
   }catch(e){ alert('操作失败：'+e.message); }
 }
-function rsUndoToast(sessionId, oldDate, oldTime, text, prevMeta){
-  document.getElementById('rsUndoToast')?.remove();
-  const el=document.createElement('div'); el.id='rsUndoToast';
-  el.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1a1814;color:#fff;font-size:12px;padding:10px 14px;border-radius:4px;z-index:9999;display:flex;gap:12px;align-items:center';
-  const sp=document.createElement('span'); sp.textContent=text;
-  const u=document.createElement('button'); u.textContent='撤销'; u.style.cssText='background:none;border:1px solid #fff;color:#fff;border-radius:3px;padding:2px 10px;cursor:pointer';
-  u.onclick=()=>{ el.remove(); undoMoveSession(sessionId,oldDate,oldTime,prevMeta); };
-  const x=document.createElement('button'); x.textContent='关闭'; x.style.cssText='background:none;border:none;color:#bbb;cursor:pointer';
-  x.onclick=()=>el.remove();
-  el.append(sp,u,x); document.body.appendChild(el);
-}
 async function confirmReschedMove(){
   const id=document.getElementById('rs_session_id').value;
   const reason=document.getElementById('rs_reason').value;
@@ -2820,7 +2796,6 @@ async function confirmReschedMove(){
   if(same&&!confirm(`这一天已经有第 ${same.session_number} 回，仍要改到这一天吗？`)) return;
   try{
     const num=t.session_number;
-    const prevMeta={}; CS_ORIG_KEYS.forEach(k=>{ prevMeta[k]=t[k]??null; });
     await csMoveSessionDate(id,nd,nt,reason+(note?'：'+note:''));
     // 同步 sched：课程结束日期跟着最后一回
     try{
@@ -2835,7 +2810,6 @@ async function confirmReschedMove(){
     courseConfirmOpen({ title:'课程已修改，请核对', onEdit:openAddCourseModal, items:[{
       course, dates:cachedSessions.filter(s=>s.course_id===t.course_id&&!s.is_cancelled).map(s=>s.session_date),
       notes:[line,'单回日期有变动（改期 / 休讲顺延 / 新增课次），可能影响腾讯会议安排，请到排课系统确认'] }] });
-    rsUndoToast(id,old.date,old.time,'已改日期：'+line,prevMeta);
     try{
       await srmOpen({ course, sessions:cachedSessions.filter(s=>s.course_id===t.course_id),
         changes:[{ id, num, from:{ date:old.date, time:old.time, cancelled:false }, to:{ date:nd, time:nt||old.time, cancelled:false } }] });
