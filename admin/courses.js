@@ -1816,7 +1816,7 @@ function acAddRow(data){
   tr.innerHTML=`
     <td style="width:64px"><input value="${rowNum}" placeholder="第几回" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);text-align:center;font-family:'DM Mono',monospace"></td>
     <td style="width:120px"><input type="date" value="${data?.date||''}" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg)"></td>
-    <td style="width:150px"><input value="${data?.time_range||''}" placeholder="时间（多段用 / 分隔）" title="同一天多个时间段用 / 分隔，例：14:00-17:00/18:00-21:00" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
+    <td style="width:150px"><input value="${data?.time_range||''}" oninput="this.closest('tr').dataset.tfollow=''" placeholder="时间（多段用 / 分隔）" title="同一天多个时间段用 / 分隔，例：14:00-17:00/18:00-21:00" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
     <td><input value="${data?.title||''}" placeholder="单回名称（可留空，也可填「休讲」）" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
     <td><input value="${data?.teacher||''}" placeholder="任课老师（可留空）" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
     <td><button class="btn-ghost" onclick="this.closest('tr').remove()">✕</button></td>`;
@@ -1834,6 +1834,73 @@ function acSetWeekdayChips(str){
     c.classList.toggle('active', set.has(wdNum));
   });
 }
+// ── 改课程上课时间：今天以后、跟旧课程时间一样的单回跟着改；休讲 / 单独调整过的保留 ──
+function acToday(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function acSpanEq(x,y){ const p=timeRangesSpan(x||''),q=timeRangesSpan(y||''); return p.start===q.start&&p.end===q.end; }
+// 返回：'past' 已上过 | 'follow' 跟着改 | 'keep' 保留（休讲 / 单独调整过）| 'same' 时间本来就一样（只用于 oldTime 为 null 的对齐按钮）
+// s=库里的这一回（可为空：新增行）；date=表里当前日期；curTime=表里当前时间；oldTime=旧课程时间（未知传 null）；newTime=新课程时间
+function acTimeKind(s, date, curTime, oldTime, newTime, today, cancelledNow){
+  if(date<today) return 'past';
+  if(cancelledNow||(s&&s.is_cancelled)) return 'keep';
+  if(s&&(s.orig_time_range||s.orig_date)) return 'keep';
+  if(s&&date!==s.session_date) return 'keep';
+  if(oldTime===null) return acSpanEq(curTime,newTime)?'same':'follow';
+  return acSpanEq(curTime||oldTime,oldTime)?'follow':'keep';
+}
+function acTimeLabel(s,r){ const n=(s&&s.session_number)||r.num; const md=r.date?`${+r.date.slice(5,7)}/${+r.date.slice(8,10)}`:''; return {n,md}; }
+function acKeepText(s,r,cancelled){ const {n,md}=acTimeLabel(s,r); return cancelled?`第 ${n} 回 ${md}（休讲）`:`第 ${n} 回 ${md} ${r.time_range||(s&&s.time_range)||''}`.trim(); }
+// 页面上方一条提示，不自动消失
+function acShowNotice(text){
+  const mc=document.getElementById('mainContent'); if(!mc) return;
+  const old=document.getElementById('ac_time_notice'); if(old) old.remove();
+  const d=document.createElement('div');
+  d.id='ac_time_notice';
+  d.style.cssText='background:#fff8e6;border:1px solid #e8d49a;color:#6b5412;border-radius:3px;padding:8px 12px;margin-bottom:10px;font-size:12px;line-height:1.7;display:flex;gap:10px;align-items:flex-start';
+  const t=document.createElement('div'); t.style.flex='1'; t.textContent=text;
+  const x=document.createElement('button'); x.type='button'; x.textContent='×'; x.style.cssText='background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:inherit'; x.onclick=()=>d.remove();
+  d.appendChild(t); d.appendChild(x);
+  mc.insertBefore(d,mc.firstChild);
+}
+// 编辑弹窗里改了课程上课时间：跟着改的单回当场换成新时间，保留的标橙色小字
+function acTimeLive(){
+  const cid=acVal('ac_editing_id'); const c=cid?cachedCourses.find(x=>x.id===cid):null; if(!c) return;
+  const oldT=c.time_range||'', newT=normalizeTimeRanges(acVal('ac_time_range')), today=acToday();
+  document.querySelectorAll('#ac_details_body tr').forEach(tr=>{
+    const inp=tr.querySelectorAll('input'); const id=tr.dataset.id; const s=id?cachedSessions.find(x=>x.id===id):null;
+    tr.querySelectorAll('.ac-tnote').forEach(n=>n.remove());
+    if(!s||!inp[2]) return;
+    const managed=tr.dataset.tfollow==='1'||acSpanEq(inp[2].value,s.time_range||oldT);
+    const cancelledNow=inp[0].value.trim()==='休讲'||inp[3].value.trim()==='休讲';
+    const k=acTimeKind(s,inp[1].value,s.time_range||'',oldT,newT,today,cancelledNow);
+    const note=(txt,color)=>{ const d=document.createElement('div'); d.className='ac-tnote'; d.style.cssText='font-size:10px;margin-top:2px;color:'+color; d.textContent=txt; inp[2].parentNode.appendChild(d); };
+    if(newT&&!acSpanEq(oldT,newT)){
+      if(k==='follow'&&managed){ inp[2].value=newT; tr.dataset.tfollow='1'; inp[2].style.background='#f0f0ee'; note('跟课程时间','#888'); }
+      else if(k==='keep'){ note('单独调整过，不跟着改','#d97706'); }
+    } else if(tr.dataset.tfollow==='1'){ inp[2].value=s.time_range||''; tr.dataset.tfollow=''; inp[2].style.background=''; }
+  });
+}
+// 按钮「单回时间对齐课程时间」：今天以后、没单独调整过、时间跟课程不一样的回次改成课程时间（先确认；按保存才写入）
+function acAlignTimes(){
+  const newT=normalizeTimeRanges(acVal('ac_time_range'));
+  if(!newT){ alert('请先填上课时间'); return; }
+  const today=acToday(), fol=[], keep=[];
+  document.querySelectorAll('#ac_details_body tr').forEach(tr=>{
+    const inp=tr.querySelectorAll('input'); if(!inp[2]) return;
+    const s=tr.dataset.id?cachedSessions.find(x=>x.id===tr.dataset.id):null;
+    const r={ num:inp[0].value.trim(), date:inp[1].value, time_range:normalizeTimeRanges(inp[2].value) };
+    const cancelledNow=r.num==='休讲'||inp[3].value.trim()==='休讲';
+    const k=acTimeKind(s,r.date,r.time_range,null,newT,today,cancelledNow);
+    if(k==='follow') fol.push({tr,inp,s,r});
+    else if(k==='keep') keep.push(acKeepText(s,r,cancelledNow));
+  });
+  if(!fol.length&&!keep.length){ alert('今天以后的回次，时间都已经是 '+newT+'，不用改'); return; }
+  if(!fol.length){ alert('没有需要改的回次。\n以下回次单独调整过 / 休讲，保留原样：\n'+keep.join('、')); return; }
+  const txt=`将以下 ${fol.length} 回改成 ${newT}：\n`+fol.map(f=>`${acKeepText(f.s,f.r,false).replace(/ \S*$/,'')}（${f.r.time_range||'空'}）`).join('、')
+    +(keep.length?`\n\n以下 ${keep.length} 回单独调整过 / 休讲，保留原样：\n`+keep.join('、'):'')+'\n\n已上过的回次不动。确定吗？（按保存才写入）';
+  if(!confirm(txt)) return;
+  fol.forEach(f=>{ f.inp[2].value=newT; f.tr.dataset.tfollow='1'; });
+  alert(`已把 ${fol.length} 回的时间改成 ${newT}，请核对后点保存写入。`);
+}
 function acGetRows(){
   return [...document.querySelectorAll('#ac_details_body tr')].map((tr)=>{
     const inputs=tr.querySelectorAll('input');
@@ -1843,7 +1910,8 @@ function acGetRows(){
       date: inputs[1]?.value||'',
       time_range: normalizeTimeRanges(inputs[2]?.value||''),
       title: inputs[3]?.value.trim()||'',
-      teacher: inputs[4]?.value.trim()||''
+      teacher: inputs[4]?.value.trim()||'',
+      tfollow: tr.dataset.tfollow==='1'
     };
   });
 }
@@ -2281,6 +2349,21 @@ async function saveAddCourse(){
 
       const _spanEq=(x,y)=>{ const p=timeRangesSpan(x||''),q=timeRangesSpan(y||''); return p.start===q.start&&p.end===q.end; };
       const _courseTimeChg=!_spanEq(oldCourseTime,courseData.time_range);
+      // 课程上课时间改了：今天以后、跟旧课程时间一样的回次跟着改；已上过的 / 休讲 / 单独调整过的保持原时间
+      const _tFollow=new Set(), _tKeep=[];
+      if(_courseTimeChg){
+        const _today=acToday();
+        rows.forEach(r=>{
+          const s=r.id&&existingMap[r.id]; if(!s) return;
+          const dbT=s.time_range||'';
+          // 弹窗里手动改成别的时间的，按表里的来
+          if(hasDetails&&r.time_range&&!_spanEq(r.time_range,dbT||oldCourseTime)&&!_spanEq(r.time_range,courseData.time_range)) return;
+          const cancelledNow=r.num==='休讲'||r.title==='休讲';
+          const k=acTimeKind(s,r.date,dbT,oldCourseTime,courseData.time_range,_today,cancelledNow);
+          if(k==='follow'){ _tFollow.add(r.id); r.time_range=courseData.time_range; }
+          else { r.time_range=dbT||oldCourseTime; if(k==='keep') _tKeep.push(acKeepText(s,r,cancelledNow||!!s.is_cancelled)); }
+        });
+      }
       for(const r of rows){
         const isCancelled = r.num==='休讲' || r.title==='休讲';
         const tv=acRowTeacher(r.teacher,tCtx);
@@ -2302,7 +2385,7 @@ async function saveAddCourse(){
         if(hasDetails && !isCancelled && r.id && existingMap[r.id] && oldInfoById[r.id] && !oldInfoById[r.id].cancelled){
           // 改了某一回的日期 / 时间：记下原来的（orig_* 为空才写）；课程整体改时间、跟着课程走的不算
           const o=oldInfoById[r.id], oTime=o.time||oldCourseTime, nTime=r.time_range||courseData.time_range||'';
-          const follow=_courseTimeChg&&_spanEq(oTime,oldCourseTime)&&_spanEq(nTime,courseData.time_range);
+          const follow=_tFollow.has(r.id)||(r.tfollow&&_spanEq(nTime,courseData.time_range));
           Object.assign(patchCommon, csOrigPatch(existingMap[r.id],{date:o.date,time:oTime},{date:r.date,time:follow?oTime:nTime},'编辑修改'));
         }
         if(r.id && existingMap[r.id]){
@@ -2327,6 +2410,9 @@ async function saveAddCourse(){
 
       closeModal('addCourseModal');
       renderCoursesPage(document.getElementById('mainContent'));
+      if(_courseTimeChg){
+        acShowNotice(`上课时间改为 ${courseData.time_range||'（空）'}：今天以后的 ${_tFollow.size} 回已跟着改。`+(_tKeep.length?`以下 ${_tKeep.length} 回单独调整过，保留原样：${_tKeep.join('、')}。需要的话请在单回明细里单独改。`:''));
+      }
       // 检测单回日期是否有变动（改日期 / 休讲顺延 / 新增行）
       let dateChanged=false;
       for(const r of rows){
@@ -2353,8 +2439,7 @@ async function saveAddCourse(){
           if(!o){ if(!to.cancelled) roomChanges.push({ id:s.id, num:s.session_number, from:null, to }); return; }
           const from={ date:o.date, time:o.time||oldCourseTime, cancelled:o.cancelled };
           // 课程整体改时间时，跟着课程走的回不算单回改时间
-          const followCourse=courseTimeChanged&&spanEq(from.time,oldCourseTime)&&spanEq(to.time,courseData.time_range);
-          const timeDiff=!followCourse&&!spanEq(from.time,to.time);
+          const timeDiff=!spanEq(from.time,to.time);
           if(from.date!==to.date||timeDiff||from.cancelled!==to.cancelled) roomChanges.push({ id:s.id, num:o.num||s.session_number, from:from.cancelled?null:from, to });
         });
         await srmOpen({ course:saved, changes:roomChanges, sessions:cachedSessions.filter(s=>s.course_id===editingId) });
