@@ -1385,8 +1385,9 @@ function studyPrepModelKey() {
 async function studySetPrepModel(v) {
   if (!STUDY_PREP_MODELS[v]) return;
   studyStudent.prep_model = v;
+  studyStudent.exam_plan = null;   // 以学生最后选的为准
   renderStudyTab();
-  try { await sb(`/rest/v1/students?id=eq.${studyStudent.id}`, 'PATCH', { prep_model: v }); } catch(e) {}
+  try { await sb(`/rest/v1/students?id=eq.${studyStudent.id}`, 'PATCH', { prep_model: v, exam_plan: null }); } catch(e) {}
 }
 
 // 解析 "26年4月" / "2026年4月" / "2026-04" → 月序号
