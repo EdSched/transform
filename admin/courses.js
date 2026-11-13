@@ -2655,18 +2655,136 @@ async function confirmCopyPeriod(){
 }
 
 // ── 休讲调整（标记休讲 + 内容顺延 + 末尾补课）──
+// 顺延时补课日默认值：最后一回之后、固定星期的下一天，跳过全局假期
+function rsAutoMakeupDate(courseId){
+  const course=cachedCourses.find(c=>c.id===courseId);
+  const weekdays=parseWeekdays(course?.weekdays||'');
+  const act=cachedSessions.filter(s=>s.course_id===courseId&&!s.is_cancelled).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+  const last=act[act.length-1]; if(!last) return '';
+  const fmtD=dt=>dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+  const d=new Date(last.session_date+'T12:00:00');
+  do{ d.setDate(d.getDate()+1); } while( (weekdays.length && !weekdays.includes(d.getDay())) || (typeof dateInHoliday==='function' && dateInHoliday(fmtD(d))) );
+  return fmtD(d);
+}
+let rsMode='shift';
+function rsSetMode(m){
+  rsMode=m;
+  document.getElementById('rs_mode_shift').classList.toggle('active',m==='shift');
+  document.getElementById('rs_mode_move').classList.toggle('active',m==='move');
+  document.getElementById('rs_pane_shift').style.display=m==='shift'?'':'none';
+  document.getElementById('rs_pane_move').style.display=m==='move'?'':'none';
+  document.getElementById('rs_ok_btn').textContent=m==='shift'?'确认休讲并顺延':'确认改日期';
+  rsCheck();
+}
+// 返回错误文字（不能确认）；同时刷新提示
+function rsCheck(){
+  const id=document.getElementById('rs_session_id').value;
+  const t=cachedSessions.find(x=>x.id===id); const w=document.getElementById('rs_warn'); w.textContent='';
+  if(!t) return '';
+  if(rsMode==='shift'){
+    const d=document.getElementById('rs_make_date').value;
+    const act=cachedSessions.filter(s=>s.course_id===t.course_id&&!s.is_cancelled).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+    const last=act[act.length-1];
+    if(!d) return '请选择补课日期';
+    if(last&&d<=last.session_date){ const m=`补课日期要在最后一回（${ccMD(last.session_date)}）之后`; w.textContent=m; return m; }
+  } else {
+    const d=document.getElementById('rs_new_date').value;
+    if(!d) return '请选择新日期';
+    const same=cachedSessions.find(s=>s.course_id===t.course_id&&s.id!==t.id&&!s.is_cancelled&&s.session_date===d);
+    if(same) w.textContent=`这一天已经有第 ${same.session_number} 回（可以继续）`;
+  }
+  return '';
+}
 function openReschedule(sessionId){
   const s=cachedSessions.find(x=>x.id===sessionId);
   if(!s) return;
   if(s.is_cancelled){ alert('该课次已标记为休讲'); return; }
+  const course=cachedCourses.find(c=>c.id===s.course_id);
+  const act=cachedSessions.filter(x=>x.course_id===s.course_id&&!x.is_cancelled).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+  const last=act[act.length-1]||s;
   document.getElementById('rs_session_id').value=sessionId;
   document.getElementById('reschedule_sub').textContent=`${s.course_name} 第${s.session_number}回 · ${s.session_date}`;
   document.getElementById('rs_orig_date').value=s.session_date;
   document.getElementById('rs_reason').value='老师请假';
   document.getElementById('rs_note').value='';
+  document.getElementById('rs_make_date').value=rsAutoMakeupDate(s.course_id);
+  document.getElementById('rs_make_time').value=last.time_range||course?.time_range||'';
+  document.getElementById('rs_new_date').value='';
+  document.getElementById('rs_new_time').value=s.time_range||course?.time_range||'';
+  rsSetMode('shift');
   document.getElementById('rescheduleModal').classList.add('open');
 }
+
+// ── 改单回日期/时间（编辑课程改单回、休讲弹窗「改到别的日期」共用）：回数、内容、老师都不动 ──
+async function csMoveSessionDate(sessionId, newDate, newTime){
+  const s=cachedSessions.find(x=>x.id===sessionId); if(!s) throw new Error('找不到该课次');
+  const course=cachedCourses.find(c=>c.id===s.course_id);
+  const tr=newTime||s.time_range||course?.time_range||'';
+  const patch={ session_date:newDate, time_range:tr, actual_hours:trSessionHours(tr,course?.actual_hours) };
+  await sb(`/rest/v1/course_sessions?id=eq.${sessionId}`,'PATCH',patch);
+  Object.assign(s,patch);
+  return s;
+}
+async function undoMoveSession(sessionId, oldDate, oldTime){
+  const s=cachedSessions.find(x=>x.id===sessionId); if(!s) return;
+  const from={ date:s.session_date, time:s.time_range||'' };
+  try{
+    await csMoveSessionDate(sessionId,oldDate,oldTime);
+    renderCoursesPage(document.getElementById('mainContent'));
+    const course=cachedCourses.find(c=>c.id===s.course_id);
+    await srmOpen({ course, sessions:cachedSessions.filter(x=>x.course_id===s.course_id),
+      changes:[{ id:s.id, num:s.session_number, from:{ date:from.date, time:from.time, cancelled:false }, to:{ date:oldDate, time:oldTime, cancelled:false } }] });
+  }catch(e){ alert('撤销失败：'+e.message); }
+}
+function rsUndoToast(sessionId, oldDate, oldTime, text){
+  document.getElementById('rsUndoToast')?.remove();
+  const el=document.createElement('div'); el.id='rsUndoToast';
+  el.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1a1814;color:#fff;font-size:12px;padding:10px 14px;border-radius:4px;z-index:9999;display:flex;gap:12px;align-items:center';
+  const sp=document.createElement('span'); sp.textContent=text;
+  const u=document.createElement('button'); u.textContent='撤销'; u.style.cssText='background:none;border:1px solid #fff;color:#fff;border-radius:3px;padding:2px 10px;cursor:pointer';
+  u.onclick=()=>{ el.remove(); undoMoveSession(sessionId,oldDate,oldTime); };
+  const x=document.createElement('button'); x.textContent='关闭'; x.style.cssText='background:none;border:none;color:#bbb;cursor:pointer';
+  x.onclick=()=>el.remove();
+  el.append(sp,u,x); document.body.appendChild(el);
+}
+async function confirmReschedMove(){
+  const id=document.getElementById('rs_session_id').value;
+  const reason=document.getElementById('rs_reason').value;
+  const note=document.getElementById('rs_note').value.trim();
+  const t=cachedSessions.find(x=>x.id===id); if(!t){alert('找不到该课次');return}
+  const nd=document.getElementById('rs_new_date').value;
+  const nt=normalizeTimeRanges(document.getElementById('rs_new_time').value||'');
+  const course=cachedCourses.find(c=>c.id===t.course_id);
+  const old={ date:t.session_date, time:t.time_range||course?.time_range||'' };
+  if(nd===old.date&&nt===old.time){ alert('日期和时间都没变'); return; }
+  const same=cachedSessions.find(s=>s.course_id===t.course_id&&s.id!==t.id&&!s.is_cancelled&&s.session_date===nd);
+  if(same&&!confirm(`这一天已经有第 ${same.session_number} 回，仍要改到这一天吗？`)) return;
+  try{
+    const num=t.session_number;
+    await csMoveSessionDate(id,nd,nt);
+    // 同步 sched：课程结束日期跟着最后一回
+    try{
+      const ds=cachedSessions.filter(x=>x.course_id===t.course_id&&!x.is_cancelled).map(x=>x.session_date).sort();
+      if(course&&ds.length&&ds[ds.length-1]!==course.end_date){
+        await sb(`/rest/v1/courses?id=eq.${course.id}`,'PATCH',{end_date:ds[ds.length-1]}); course.end_date=ds[ds.length-1];
+      }
+    }catch(e){}
+    closeModal('rescheduleModal');
+    renderCoursesPage(document.getElementById('mainContent'));
+    const line=`第 ${num} 回 ${ccMD(old.date)} → ${ccMD(nd)}${nt?' '+nt:''}（${reason}${note?'：'+note:''}）`;
+    courseConfirmOpen({ title:'课程已修改，请核对', onEdit:openAddCourseModal, items:[{
+      course, dates:cachedSessions.filter(s=>s.course_id===t.course_id&&!s.is_cancelled).map(s=>s.session_date),
+      notes:[line,'单回日期有变动（改期 / 休讲顺延 / 新增课次），可能影响腾讯会议安排，请到排课系统确认'] }] });
+    rsUndoToast(id,old.date,old.time,'已改日期：'+line);
+    try{
+      await srmOpen({ course, sessions:cachedSessions.filter(s=>s.course_id===t.course_id),
+        changes:[{ id, num, from:{ date:old.date, time:old.time, cancelled:false }, to:{ date:nd, time:nt||old.time, cancelled:false } }] });
+    }catch(e){ console.warn('教室确认弹框失败', e); }
+  }catch(e){ alert('操作失败：'+e.message); }
+}
 async function confirmReschedule(){
+  const rsErr=rsCheck(); if(rsErr){ alert(rsErr); return; }
+  if(rsMode==='move') return confirmReschedMove();
   const id=document.getElementById('rs_session_id').value;
   const reason=document.getElementById('rs_reason').value;
   const note=document.getElementById('rs_note').value;
@@ -2731,12 +2849,8 @@ async function confirmReschedule(){
 
     // 3. 新增补课日期，内容＝contentChain 最后一项（原本 lastSession 自己的内容）
     //    补课日跳过全局假期（与 sched 一致），避免补到放假日
-    let newDate=new Date(lastSession.session_date+'T12:00:00');
-    const fmtD=dt=>dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
-    do{
-      newDate.setDate(newDate.getDate()+1);
-    } while( (weekdays.length && !weekdays.includes(newDate.getDay())) || (typeof dateInHoliday==='function' && dateInHoliday(fmtD(newDate))) );
-    const newDateStr=fmtD(newDate);
+    const newDateStr=document.getElementById('rs_make_date').value;
+    const newTimeStr=normalizeTimeRanges(document.getElementById('rs_make_time').value||'')||lastSession.time_range;
     const lastContent=contentChain[contentChain.length-1];
     const newTeacherVal = lastContent.teacher || lastSession.teacher;
 
@@ -2744,7 +2858,7 @@ async function confirmReschedule(){
       id:`s-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
       course_id:courseId,course_name:lastSession.course_name,major:lastSession.major,
       session_date:newDateStr,session_number:lastNum, // 原始最后编号（顺延前）
-      time_range:lastSession.time_range,actual_hours:lastSession.actual_hours,
+      time_range:newTimeStr,actual_hours:trSessionHours(newTimeStr,course?.actual_hours)||lastSession.actual_hours,
       delivery:lastSession.delivery,campus:lastSession.campus,
       teacher:newTeacherVal,
       session_title:lastContent.session_title||'',

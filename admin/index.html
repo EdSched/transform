@@ -677,12 +677,28 @@
     <div class="modal-title">休讲调整</div>
     <div class="modal-sub" id="reschedule_sub" style="padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px"></div>
     <input type="hidden" id="rs_session_id">
-    <div class="form-group"><label class="form-label">休讲日期</label><input id="rs_orig_date" disabled style="opacity:.6"></div>
-    <div style="font-size:11px;color:var(--text-3);line-height:1.7;background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:14px">
-      此日期将标记为「休讲」，不计入课程内容。<br>
-      原定该日的内容将顺延到下一节课，后续所有课次依次顺延一格，<br>
-      末尾自动新增一节课以补齐总回数。
+    <div style="display:flex;gap:6px;margin-bottom:12px">
+      <span class="filter-chip active" id="rs_mode_shift" onclick="rsSetMode('shift')">休讲并顺延</span>
+      <span class="filter-chip" id="rs_mode_move" onclick="rsSetMode('move')">改到别的日期</span>
     </div>
+    <div class="form-group"><label class="form-label">原日期</label><input id="rs_orig_date" disabled style="opacity:.6"></div>
+    <div id="rs_pane_shift">
+      <div style="font-size:11px;color:var(--text-3);line-height:1.7;background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:14px">
+        此日期将标记为「休讲」，不计入课程内容。<br>
+        原定该日的内容将顺延到下一节课，后续所有课次依次顺延一格，<br>
+        末尾自动新增一节课以补齐总回数。
+      </div>
+      <div class="form-group"><label class="form-label">补课日期</label><input type="date" id="rs_make_date" oninput="rsCheck()"></div>
+      <div class="form-group"><label class="form-label">补课时间</label><input id="rs_make_time" placeholder="如 14:00-17:00"></div>
+    </div>
+    <div id="rs_pane_move" style="display:none">
+      <div style="font-size:11px;color:var(--text-3);line-height:1.7;background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;margin-bottom:14px">
+        这一回不顺延，直接改到下面的日期和时间。原来的日子不再上课，其他回次不动。
+      </div>
+      <div class="form-group"><label class="form-label">新日期</label><input type="date" id="rs_new_date" oninput="rsCheck()"></div>
+      <div class="form-group"><label class="form-label">新时间</label><input id="rs_new_time" placeholder="如 14:00-17:00"></div>
+    </div>
+    <div id="rs_warn" style="font-size:11px;color:#b07020;margin-bottom:10px"></div>
     <div class="form-group"><label class="form-label">休讲原因</label>
       <select id="rs_reason">
         <option value="老师请假">老师请假</option>
@@ -694,7 +710,7 @@
     <div class="form-group"><label class="form-label">备注</label><input id="rs_note" placeholder="可选"></div>
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeModal('rescheduleModal')">取消</button>
-      <button class="btn btn-primary" onclick="confirmReschedule()">确认休讲并顺延</button>
+      <button class="btn btn-primary" id="rs_ok_btn" onclick="confirmReschedule()">确认休讲并顺延</button>
     </div>
   </div>
 </div>
@@ -830,7 +846,7 @@
 <script src="../shared/course-room-view.js?v=20270403"></script>
 <script src="../shared/session-room-confirm.js?v=20270403"></script>
 <script src="../shared/course-sessions.js?v=20270313"></script>
-<script src="courses.js?v=20270403"></script>
+<script src="courses.js?v=20261113"></script>
 <script src="monthcal.js?v=20270313"></script>
 <script src="vip-framework.js?v=20270313"></script>
 <script src="promo.js?v=20270313"></script>
