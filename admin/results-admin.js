@@ -138,6 +138,7 @@ const RA_CSS = `
   border-bottom: 2px solid var(--border); font-weight: 500; letter-spacing: .04em;
   color: var(--text-secondary); white-space: nowrap; cursor: pointer; user-select: none;
 }
+#ra-root.ra-ugonly .data-table th:last-child, #ra-root.ra-ugonly .data-table td:last-child { position: sticky; right: 0; background: var(--surface); box-shadow: -6px 0 6px -6px rgba(0,0,0,.18); z-index: 1 }
 #ra-root .data-table th:hover { color: var(--text-primary); }
 #ra-root .data-table th .sort-icon { margin-left: 4px; opacity: .4; }
 #ra-root .data-table th.sorted .sort-icon { opacity: 1; }
@@ -4550,7 +4551,7 @@ function raRender(mc, opts) {
     document.head.appendChild(st);
   }
   raResetState();
-  mc.innerHTML = '<div id="ra-root">' + raHtml() + '</div>';
+  mc.innerHTML = '<div id="ra-root"' + (raUgOnly ? ' class="ra-ugonly"' : '') + '>' + raHtml() + '</div>';
   raBindUploadZones();
   raRefreshUnivList();
   raArLoadMajors();
