@@ -630,6 +630,42 @@ async function renderSubmissionsView(mc){
 
 // 刷新：单人模式里留在单人模式；列表里保持老样子（展开这个学生）
 function pgRefresh(sid){ const mc=document.getElementById('mainContent'); return renderProgressPage(mc, sid, PGS.id===sid ? {keep:true} : {list:true}); }
+// 管理员手动改考试路线（students.exam_plan）
+const PG_EXAM = {};
+function pgExamBox(sid){
+  const st = PG_EXAM[sid], box = document.getElementById('pgcroute_'+sid);
+  if (!box || !st) return;
+  const cy = new Date().getFullYear(), ys = [cy, cy+1, cy+2];
+  if (st.y && !ys.includes(st.y)) ys.push(st.y);
+  const chip = (on, label, js) => `<span onclick="${js}" style="display:inline-block;padding:2px 10px;margin:2px 4px 2px 0;border:1px solid ${on?'var(--accent,#b8953a)':'var(--border-light,#ede9e2)'};background:${on?'var(--accent-bg,#f6efdc)':'transparent'};color:${on?'var(--accent,#b8953a)':'var(--text-2,#5a5650)'};border-radius:12px;font-size:11px;cursor:pointer">${label}</span>`;
+  const prev = st.y && st.season ? (st.season==='winter' ? `${st.y}年冬季：${st.y}年12月出愿・${st.y+1}年1月考试` : `${st.y}年夏季：${st.y}年7月出愿・${st.y}年8月考试`) : '请选择年份和季节';
+  const bs = 'font-size:11px;padding:2px 10px;border-radius:3px;cursor:pointer;margin-right:6px;';
+  box.innerHTML = `<div style="margin:6px 0 8px;padding:8px 10px;background:var(--bg,#f7f5f0);border:1px solid var(--border-light,#ede9e2);border-radius:6px" onclick="event.stopPropagation()">
+    <div>${ys.map(y=>chip(st.y===y, y+'年', `pgExamPick('${sid}','y',${y})`)).join('')}</div>
+    <div>${chip(st.season==='summer','夏季（7月出愿・8月考试）',`pgExamPick('${sid}','s','summer')`)}${chip(st.season==='winter','冬季（12月出愿・次年1月考试）',`pgExamPick('${sid}','s','winter')`)}</div>
+    <div style="font-size:11px;color:var(--text-3);margin:4px 0">${prev}</div>
+    <button onclick="pgExamSave('${sid}')" style="${bs}border:1px solid var(--accent,#b8953a);background:var(--accent,#b8953a);color:#fff">保存</button><button onclick="pgExamSave('${sid}',true)" style="${bs}border:1px solid var(--border-light);background:none;color:var(--text-2)">恢复自动</button><button onclick="pgExamClose('${sid}')" style="${bs}border:1px solid var(--border-light);background:none;color:var(--text-2)">取消</button></div>`;
+}
+function pgExamOpen(sid){
+  const box = document.getElementById('pgcroute_'+sid); if (!box) return;
+  if (box.style.display !== 'none') { pgExamClose(sid); return; }
+  const s = cachedStudents.find(x=>x.id===sid), ep = pgcExamPlan(s);
+  PG_EXAM[sid] = { y: ep ? ep.y : null, season: ep ? ep.season : null };
+  box.style.display = ''; pgExamBox(sid);
+}
+function pgExamClose(sid){ const box = document.getElementById('pgcroute_'+sid); if (box) { box.style.display='none'; box.innerHTML=''; } delete PG_EXAM[sid]; }
+function pgExamPick(sid, k, v){ const st = PG_EXAM[sid]; if (!st) return; if (k==='y') st.y = v; else st.season = v; pgExamBox(sid); }
+async function pgExamSave(sid, auto){
+  const st = PG_EXAM[sid];
+  if (!auto && !(st && st.y && st.season)) { alert('请先选择年份和季节'); return; }
+  const body = auto ? { exam_plan: null, prep_model: null } : { exam_plan: st.y + '-' + st.season, prep_model: st.season };
+  try {
+    await sb(`/rest/v1/students?id=eq.${encodeURIComponent(sid)}`, 'PATCH', body);
+  } catch(e) { alert('保存失败：' + (e.message || e) + '\n（是否已执行 students.exam_plan 的 SQL？）'); return; }
+  const s = cachedStudents.find(x=>x.id===sid); if (s) Object.assign(s, body);
+  delete PG_EXAM[sid];
+  pgRefresh(sid);
+}
 // 列表里「只看此人」：记下列表的样子（筛选 / 搜索 / 展开条数在全局变量里原样保留；展开的卡片和滚动位置记在这里）
 function pgSoloFromList(sid){
   const mc=document.getElementById('mainContent'), snap=pgsSnap(mc);
@@ -717,6 +753,7 @@ async function renderProgressPage(mc, focusStudentId=null, opts=null){
     timelineEdit: (e, st) => `editProgressEntry('${pgcJs(e.id)}','${pgcJs(st.id)}','${pgcJs(st.name)}','${pgcJs(st.major)}')`,
     guaranteedEdit: true,
     passEntry: passBtn,
+    canEditRoute: true,
   })).join('');
 
   // 如果是年度出愿情报视图

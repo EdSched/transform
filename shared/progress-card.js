@@ -20,13 +20,20 @@ function pgcParseYear(str) {
 
 // 节点计算：各项目的「现状」和「距最晚节点还剩几个月」。返回 { route, items:[{label,cur,txt,color}] }
 // ctx.riyuSubsMap：学部志望理由书的提交记录
+// 管理员手动设的考试路线：students.exam_plan = '2027-summer' | '2027-winter'（年份是出愿那一年）
+function pgcExamPlan(s) {
+  const m = /^(\d{4})-(summer|winter)$/.exec((s && s.exam_plan) || '');
+  return m ? { y: +m[1], season: m[2] } : null;
+}
 function pgcNodes(s, latest, plans, draft, ctx) {
   const now = new Date();
   const nowIdx = now.getFullYear() * 12 + now.getMonth();
   const enrollY = pgcParseYear(s.target_enrollment);
   const manualRoute = s.prep_model === 'winter' ? 'winter' : s.prep_model === 'next_summer' ? 'next_summer' : (s.prep_model === 'summer' ? 'summer' : null);
   let route, examIdx;
-  if (enrollY) {
+  const ep = pgcExamPlan(s);
+  if (ep) { route = ep.season; examIdx = ep.season === 'summer' ? ep.y * 12 + 7 : (ep.y + 1) * 12; }
+  else if (enrollY) {
     const baseY = enrollY - 1;
     const summerIdx = baseY * 12 + 7, winterIdx = (baseY + 1) * 12, nextSummerIdx = (baseY + 1) * 12 + 7;
     if (manualRoute) { route = manualRoute; examIdx = route === 'winter' ? winterIdx : route === 'next_summer' ? nextSummerIdx : summerIdx; }
@@ -182,7 +189,8 @@ function pgcCardHtml(s, ctx, o) {
   const sname = pgcJs(s.name);
 
   // ── 1. 标题行 ──
-  const routeShort = (nodes.route === 'winter' ? '冬季路线' : nodes.route === 'next_summer' ? '次年夏季路线' : '夏季路线') + (!s.prep_model ? '（自动）' : '');
+  const ep = pgcExamPlan(s);
+  const routeShort = ep ? `${ep.y}年${ep.season === 'winter' ? '冬季' : '夏季'}路线` : ((nodes.route === 'winter' ? '冬季路线' : nodes.route === 'next_summer' ? '次年夏季路线' : '夏季路线') + (!s.prep_model ? '（自动）' : ''));
   const anyPassed = plans.some(p => p.status === 'passed');
   const anyApplied = plans.some(p => ['applied', 'passed'].includes(p.status));
   const applyDisplay = anyPassed ? '已合格' : (latest.apply || (anyApplied ? '已出愿' : ''));
@@ -205,7 +213,8 @@ function pgcCardHtml(s, ctx, o) {
   </div>`;
 
   // ── 2. 节点进度（项目名｜现状｜距最晚节点，三列对齐）──
-  const secNodes = `<div class="pgc-sec"><div class="pgc-title">节点进度 <span class="sub">· ${routeShort}${nodes.route === 'winter' ? '・12月出愿1月考试' : nodes.route === 'next_summer' ? '・语言按冬季要求・次年7月出愿8月考试' : '・7月出愿8月考试'}</span></div>
+  const secNodes = `<div class="pgc-sec"><div class="pgc-title">节点进度 <span class="sub">· ${routeShort}${ep ? (ep.season === 'winter' ? `・12月出愿・${ep.y + 1}年1月考试` : '・7月出愿8月考试') : nodes.route === 'winter' ? '・12月出愿1月考试' : nodes.route === 'next_summer' ? '・语言按冬季要求・次年7月出愿8月考试' : '・7月出愿8月考试'}${o.canEditRoute ? ` <button onclick="event.stopPropagation();pgExamOpen('${pgcJs(s.id)}')" style="font-size:10px;padding:0 6px;margin-left:4px;border:1px solid var(--border-light);background:none;color:var(--text-2);border-radius:3px;cursor:pointer">✎ 修改</button>` : ''}</span></div>
+    ${o.canEditRoute ? `<div id="pgcroute_${pgcEsc(s.id)}" style="display:none"></div>` : ''}
     ${nodes.items.map(it => `<div class="pgc-node"><span class="nm">${pgcEsc(it.label)}</span><span class="cur">${pgcEsc(it.cur)}</span><span class="left" style="color:${it.color}">${pgcEsc(it.txt)}</span></div>`).join('')}</div>`;
 
   // ── 3. 当前进度明细（项目 | 现状 | 数据来源 | 更新时间 | 详情）──
