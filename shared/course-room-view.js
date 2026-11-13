@@ -82,6 +82,21 @@ function crvChangesFor(courseId, sessions, course, fromDate) {
     .map(x => ({ session: x.session, kind: x.st.kind, label: x.st.label || '' }));
 }
 
+// 点了被占的教室：确认文字（room 是教室行，d 日期，sp {start,end}，blockers [{title,who,time}]）
+function crvBusyConfirmText(room, d, sp, blockers) {
+  const b = (blockers || [])[0] || {};
+  const names = [...new Set((blockers || []).map(x => `《${x.title || '占用'}》`))].join('、');
+  return `${room.name} ${crvMDs(d)} ${crvT5(sp.start)}-${crvT5(sp.end)} 被${names}占着（${b.time || ''}）。仍然放在这里？之后再调整另一门。`;
+}
+function crvMDs(d) { const p = String(d || '').split('-'); return p.length === 3 ? `${+p[1]}/${+p[2]}` : String(d || ''); }
+// 数据库把写入挡了（教室已被占用 / 重复预约）：改成一句人话；不是这类错误返回 null
+function crvDbBlockMsg(err, roomName) {
+  const m = String((err && err.message) || err || '');
+  if (!/教室已被占用|重复预约|exclusion_violation|unique_violation/.test(m)) return null;
+  const t = m.match(/「([^」]*)」/);
+  return `数据库认为 ${roomName || '这间教室'} 这段时间被${t ? '《' + t[1] + '》' : '别的占用'}占着，请截图发给管理员`;
+}
+
 /* ───── 换教室：教室列表（纯 HTML，排课和管理端共用） ─────
    rows: [{ room:{id,name,campus,capacity}, blockers:[{title,who,time}] }]；curRoomId：现在用的那间
    空教室带 data-room，调用方自己绑点击。 */
@@ -92,7 +107,8 @@ function crvRoomPickHtml(rows, curRoomId) {
     const nm = e(r.name) + (r.capacity ? `（${r.capacity}人）` : '');
     const base = 'display:inline-block;margin:3px;padding:4px 10px;border-radius:14px;font-size:12px;border:1px solid #ddd;';
     if (curRoomId != null && curRoomId !== '' && String(r.id) === String(curRoomId)) return `<span style="${base}background:#eee;color:#888">${nm} · 现在用</span>`;
-    if (bl && bl.length) return `<span style="${base}background:#f1f1f1;color:#999">${nm} <small>被${e(bl.map(x => `《${x.title || '占用'}》（${x.who || '—'}，${x.time}）`).join('、'))}占</small></span>`;
+    // 被占的教室也能点（点了先确认「仍然放在这里？」，之后再调整另一门）；带 data-busy
+    if (bl && bl.length) return `<span data-room="${e(r.id)}" data-busy="1" title="被占着，点了会先确认" style="${base}cursor:pointer;background:#f6f1e6;color:#8a6d1f;border-color:#e3d3a6">${nm} <small>被${e(bl.map(x => `《${x.title || '占用'}》（${x.who || '—'}，${x.time}）`).join('、'))}占</small></span>`;
     return `<span data-room="${e(r.id)}" style="${base}cursor:pointer;background:#fff;color:#222">✓ ${nm}</span>`;
   }).join('') + '</div></div>').join('');
 }
@@ -145,8 +161,20 @@ async function crvRoomStatus(date, sp, excludeCourseId) {
 // 把这门课这一回（date）换到 toRoom：已有临时占用 → 改过去；没有 → 新建一条临时占用并在每周占用那天记 manual_off_dates
 // o: { courseId, date, sp:{start,end}, toRoom:{id,meeting_account_id}, entryName }；返回撤销用的步骤
 async function crvSwapRoom(o) {
+  const undo = [];
+  try { return await crvSwapRoomRun(o, undo); }
+  catch (er) {
+    // 写到一半挡住了：已经改的（manual_off_dates、临时占用）撤回，不留半截数据
+    for (const u of undo.slice().reverse()) { try { if (u.del) await sb(`/rest/v1/sched_bookings?id=eq.${u.del}`, 'DELETE'); else await sb(`/rest/v1/sched_bookings?id=eq.${u.upd}`, 'PATCH', u.patch); } catch (e2) { console.warn('撤回失败', e2); } }
+    delete CRV_MEMO.base;
+    const msg = crvDbBlockMsg(er, o.toRoom && o.toRoom.name);
+    if (msg) throw new Error(msg);
+    throw er;
+  }
+}
+async function crvSwapRoomRun(o, undo) {
   const bks = (await sb(`/rest/v1/sched_bookings?kind=eq.course&course_id=eq.${encodeURIComponent(o.courseId)}&status=neq.rejected&select=*`, 'GET', null, { cache: 'no-store' })) || [];
-  const r = o.toRoom, undo = [];
+  const r = o.toRoom;
   const um = tpl => ({ uses_meeting: !!r.meeting_account_id && !!tpl.uses_meeting, meeting_account_id: (tpl.uses_meeting && r.meeting_account_id) || null });
   const temp = bks.find(b => b.recurrence === 'once' && b.booking_date === o.date);
   if (temp) {
