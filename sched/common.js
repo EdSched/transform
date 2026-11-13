@@ -771,6 +771,10 @@ function bookingOnDate(b, dateStr){
 /* 某占用在某一天的时间 [开始, 结束]：跟着课程的占用返回那一回自己的时间，其他照记录 */
 function bookingTimeOn(b, dateStr){
   if(b && b._linked && b._days){ const t=b._days.get(dateStr); if(t) return t; }
+  // 课程的临时占用：只决定那天用哪间教室，时间按课程安排里那一回
+  if(b && b.kind==='course' && b.recurrence==='once' && b.course_id){
+    const e=(window.COURSE_LINK||{})[String(b.course_id)]; const t=e && e.days && e.days.get(dateStr); if(t) return t;
+  }
   return [b.start_time, b.end_time];
 }
 

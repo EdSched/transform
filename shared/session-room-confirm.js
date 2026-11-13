@@ -6,12 +6,12 @@
 //   · 弹框里唯一的写入：点「通知总务」往 sched_change_log 写一条 action='room_coord'（同一回同一天不重复写）
 //   · 空不空的判断：课程占用按那门课当天有没有单回（和单回自己的时间）；临时占用按日期；manual_off_dates、rejected 排除；不算这门课自己
 
-const srmT5 = t => String(t || '').slice(0, 5);
 const srmSplit = s => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
+const srmT5 = t => { const s = String(t || '').slice(0, 5); return /^\d:\d{2}$/.test(s) ? '0' + s : s; };
 const srmOverlap = (aS, aE, bS, bE) => srmT5(aS) < srmT5(bE) && srmT5(bS) < srmT5(aE);
 function srmWeekday(d) { const w = new Date(d + 'T12:00:00').getDay(); return w === 0 ? 7 : w; }
 function srmMDW(d) { return `${ccMD(d)}（${CC_WD[new Date(d + 'T12:00:00').getDay()]}）`; }
-function srmSpan(tr, courseTr) { const sp = timeRangesSpan(tr || courseTr || ''); return { start: sp.start || '', end: sp.end || '' }; }
+function srmSpan(tr, courseTr) { const sp = timeRangesSpan(tr || courseTr || ''); return { start: srmT5(sp.start), end: srmT5(sp.end) }; }
 function srmAddDays(d, n) { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); }
 const srmGet = path => sb(path, 'GET', null, { cache: 'no-store' });
 
@@ -30,7 +30,7 @@ async function srmBlockers(col, id, date, sp, courseId) {
   const rows = ((await srmGet(`/rest/v1/sched_bookings?${col}=eq.${encodeURIComponent(id)}${extra}&status=neq.rejected&or=(booking_date.eq.${date},recurrence.eq.weekly)&select=id,kind,course_id,recurrence,booking_date,weekday,start_date,end_date,manual_off_dates,start_time,end_time,title,user_name`)) || [])
     .filter(b => !(b.course_id && String(b.course_id) === String(courseId)));
   // 别的课的每周占用：看那门课当天有没有单回（及单回时间）；那天另有它自己的临时占用时以临时为准
-  const wc = [...new Set(rows.filter(b => b.kind === 'course' && b.recurrence === 'weekly' && b.course_id).map(b => String(b.course_id)))];
+  const wc = [...new Set(rows.filter(b => b.kind === 'course' && b.course_id).map(b => String(b.course_id)))];
   const sess = {}, hasData = new Set(), onceDay = new Set();
   if (wc.length) {
     const inList = wc.map(encodeURIComponent).join(',');
@@ -56,6 +56,14 @@ async function srmBlockers(col, id, date, sp, courseId) {
         } else if (!srmWeeklyRule(b, date)) return;
       } else if (!srmWeeklyRule(b, date)) return;
     } else if (b.booking_date !== date) return;
+    else if (b.kind === 'course' && b.course_id) {
+      // 课程临时占用：只决定教室，时间按那门课当天的单回；当天没有单回就不算占用
+      const cid = String(b.course_id);
+      if (hasData.has(cid)) {
+        if (!(cid in sess)) return;
+        const sp2 = srmSpan(sess[cid]); if (sp2.start) { s = sp2.start; e = sp2.end; }
+      }
+    }
     if (!srmOverlap(sp.start, sp.end, s, e)) return;
     out.push({ title: b.title || '', who: b.user_name || '', time: `${srmT5(s)}-${srmT5(e)}` });
   });

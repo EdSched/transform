@@ -4,7 +4,7 @@
 //       临时占用只在「这门课那天真的有没取消的单回」时才算数（跟排课「直接读管理端课程」一致）。
 const CRV = { bks: [], rooms: {}, roomList: [], loaded: false };
 const crvEsc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const crvT5 = t => String(t || '').slice(0, 5);
+const crvT5 = t => { const s = String(t || '').slice(0, 5); return /^\d:\d{2}$/.test(s) ? '0' + s : s; };
 const crvWd = d => { const w = new Date(d + 'T12:00:00').getDay(); return w === 0 ? 7 : w; };
 const crvWdName = ['日', '一', '二', '三', '四', '五', '六'];
 const crvMD = d => `${+d.slice(5, 7)}/${+d.slice(8, 10)}`;
@@ -130,7 +130,11 @@ async function crvRoomStatus(date, sp, excludeCourseId) {
         } else if (!ruleOk(b, date)) return;
       } else {
         if (b.booking_date !== date) return;
-        if (b.kind === 'course' && b.course_id && !validOnce.has(String(b.course_id))) return;
+        if (b.kind === 'course' && b.course_id) {
+          const c = String(b.course_id);
+          if (!validOnce.has(c)) return;
+          if (hasData.has(c)) { const m = String(sess[c]).match(/\d{1,2}:\d{2}/g); if (m && m.length >= 2) { s = m[0]; e = m[m.length - 1]; } }
+        }
       }
       if (crvOverlap(sp.start, sp.end, s, e)) out.push({ title: b.title || '', who: b.user_name || '', time: `${crvT5(s)}-${crvT5(e)}` });
     });
