@@ -461,7 +461,7 @@ const _ttMDW=d=>fmtMD(d)+'（'+DOW[dowIdx(d)].slice(1)+'）';
 async function buildAdjustText(){
   const list=selectedCourses(); if(!list.length) return '';
   const ids=list.map(c=>String(c.id)), sess=[];
-  for(let i=0;i<ids.length;i+=40) sess.push(...await sbGet('course_sessions','select=course_id,session_date,time_range,is_cancelled,session_number&course_id=in.('+ids.slice(i,i+40).map(encodeURIComponent).join(',')+')'));
+  for(let i=0;i<ids.length;i+=40) sess.push(...await sbGet('course_sessions','select=course_id,session_date,time_range,is_cancelled,session_number,orig_date,orig_time_range&course_id=in.('+ids.slice(i,i+40).map(encodeURIComponent).join(',')+')'));
   // 教室：和课程安排同一套算法
   try{
     const [bks, rooms] = await Promise.all([ sbGet('sched_bookings','select=id,course_id,room_id,recurrence,weekday,booking_date,manual_off_dates,status&kind=eq.course'), sbGet('sched_rooms','select=id,name,campus') ]);
@@ -475,8 +475,10 @@ async function buildAdjustText(){
     const fixedAll=c.merge_group ? expandMergedGroup(groups[c.merge_group]).filter(e=>e.c===c) : expand(c);
     const fixed=fixedAll.filter(e=>!e.off).map(e=>e.date);
     const fixedSet=new Set(fixed), actSet=new Set(mine.map(x=>x.session_date));
-    const missing=fixed.filter(d=>!actSet.has(d)).sort();
-    const extra=mine.filter(x=>!fixedSet.has(x.session_date)).sort((a,b)=>a.session_date.localeCompare(b.session_date));
+    // 有「原日期」记录的回次：直接按记录写「原 → 现」，不再靠固定规律推算
+    const movedS=mine.filter(x=>x.orig_date && x.orig_date!==x.session_date), movedSet=new Set(movedS), movedOrig=new Set(movedS.map(x=>x.orig_date));
+    const missing=fixed.filter(d=>!actSet.has(d) && !movedOrig.has(d)).sort();
+    const extra=mine.filter(x=>!fixedSet.has(x.session_date) && !movedSet.has(x)).sort((a,b)=>a.session_date.localeCompare(b.session_date));
     const cr=[_tt5(c.start_time),_tt5(c.end_time)];
     const items=(byName[c.merge_name||c.name]=byName[c.merge_name||c.name]||[]);
     const timeOf=x=>{ const r=_ttRange(x.time_range,c); return (x.time_range && (r[0]!==cr[0]||r[1]!==cr[1])) ? r[0]+'-'+r[1] : ''; };
@@ -485,7 +487,8 @@ async function buildAdjustText(){
       if(i<missing.length) items.push({date:x.session_date, text:'第 '+(x.session_number||'?')+' 回：'+_ttMDW(missing[i])+' → '+_ttMDW(x.session_date)+(t?' '+t:'')});
       else items.push({date:x.session_date, text:'新增 '+_ttMDW(x.session_date)+' '+(t||(cr[0]&&cr[1]?cr[0]+'-'+cr[1]:''))});
     });
-    mine.filter(x=>fixedSet.has(x.session_date) && timeOf(x)).forEach(x=>items.push({date:x.session_date, text:'第 '+(x.session_number||'?')+' 回 '+_ttMDW(x.session_date)+'改为 '+timeOf(x)}));
+    movedS.forEach(x=>{ const t=timeOf(x); items.push({date:x.session_date, text:'第 '+(x.session_number||'?')+' 回：'+_ttMDW(x.orig_date)+' → '+_ttMDW(x.session_date)+(t?' '+t:'')}); });
+    mine.filter(x=>fixedSet.has(x.session_date) && !movedSet.has(x) && timeOf(x)).forEach(x=>items.push({date:x.session_date, text:'第 '+(x.session_number||'?')+' 回 '+_ttMDW(x.session_date)+'改为 '+timeOf(x)}));
     if(CRV.loaded) mine.forEach(x=>{ const st=crvSessionState(c.id, x, {delivery:c.mode}); if(st.kind==='moved') items.push({date:x.session_date, text:_ttMDW(x.session_date)+'改在 '+st.label}); });
   });
   return Object.keys(byName).map(n=>({n, items:byName[n].sort((a,b)=>a.date.localeCompare(b.date)||a.text.localeCompare(b.text))})).filter(g=>g.items.length)
