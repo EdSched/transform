@@ -512,7 +512,7 @@
         </div>
         <div id="ac_weekday_actual" style="font-size:10px;color:var(--text-3);margin-top:3px"></div>
       </div>
-      <div class="form-group" style="margin:0"><label class="form-label">上课时间 <span style="font-weight:400;color:var(--text-3)">（多个时间段用 / 分隔）</span></label><div style="display:flex;gap:4px"><input id="ac_time_range" placeholder="14:00-18:00" oninput="trAutoHours('ac_time_range','ac_actual_hours')" style="flex:1;min-width:0"><button type="button" onclick="trAddSeg('ac_time_range')" style="font-size:11px;white-space:nowrap;background:none;border:1px solid var(--border);border-radius:2px;padding:0 8px;cursor:pointer;font-family:inherit">＋ 时间段</button></div></div>
+      <div class="form-group" style="margin:0"><label class="form-label">上课时间 <span style="font-weight:400;color:var(--text-3)">（多个时间段用 / 分隔）</span></label><div style="display:flex;gap:4px"><input id="ac_time_range" placeholder="14:00-18:00" oninput="trAutoHours('ac_time_range','ac_actual_hours')" onchange="acTimeLive()" style="flex:1;min-width:0"><button type="button" onclick="trAddSeg('ac_time_range')" style="font-size:11px;white-space:nowrap;background:none;border:1px solid var(--border);border-radius:2px;padding:0 8px;cursor:pointer;font-family:inherit">＋ 时间段</button></div></div>
       <div class="form-group" style="margin:0"><label class="form-label">课时（小时，用于工资核算）</label><input type="number" id="ac_actual_hours" step="0.5" min="0" placeholder="例：4"></div>
       <div class="form-group" id="ac_total_box" style="margin:0"><label class="form-label">课程回数 <span id="ac_total_auto" style="font-weight:400;color:var(--text-3)"></span></label><input type="number" id="ac_total" min="1" placeholder="10" oninput="acRangeInput('total')"></div>
       <div class="form-group" style="margin:0"><label class="form-label" id="ac_first_label">第一回日期 *</label><input type="date" id="ac_first_date" onchange="acFirstDateChange()"></div>
@@ -564,6 +564,7 @@
           <button class="btn btn-outline btn-sm" onclick="acToggleTextMode()">📝 文本编辑</button>
           <button class="btn btn-outline btn-sm" onclick="document.getElementById('ac_paste_area').style.display=document.getElementById('ac_paste_area').style.display==='none'?'block':'none'">📋 从Excel粘贴</button>
           <button class="btn btn-primary btn-sm" onclick="acSyncAll()" title="把当前的上课时间刷到所有单回，并按最新日期/星期/假期重算单回日期——改了时间/日期后点这个一键同步">↻ 一键同步时间·日期到单回</button>
+          <button class="btn btn-outline btn-sm" onclick="acAlignTimes()" title="今天以后、没单独调整过、时间跟课程不一样的回次，改成课程上课时间（休讲、已上过的不动）">单回时间对齐课程时间</button>
           <button class="btn btn-outline btn-sm" onclick="acRecomputeDates()" title="按全局假期＋该课的豁免重算所有单回日期：豁免的假期照常上课，被顺延的课次拉回">🗓 按假期/豁免重算日期</button>
           <button class="btn btn-outline btn-sm" onclick="acSyncRows()">↺ 同步行数</button>
         </div>
@@ -846,7 +847,7 @@
 <script src="../shared/course-room-view.js?v=20270403"></script>
 <script src="../shared/session-room-confirm.js?v=20270403"></script>
 <script src="../shared/course-sessions.js?v=20270313"></script>
-<script src="courses.js?v=20261115"></script>
+<script src="courses.js?v=20261116"></script>
 <script src="monthcal.js?v=20270313"></script>
 <script src="vip-framework.js?v=20270313"></script>
 <script src="promo.js?v=20270313"></script>
