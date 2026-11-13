@@ -502,13 +502,13 @@
       </div>
       <div class="form-group" id="ac_weekday_box" style="margin:0"><label class="form-label">星期（可多选）</label>
         <div id="ac_weekday_chips" style="display:flex;flex-wrap:wrap;gap:5px">
-          <div class="filter-chip" data-wd="周一" onclick="this.classList.toggle('active');acRangeRefresh()" style="font-size:12px;padding:5px 12px;cursor:pointer">周一</div>
-          <div class="filter-chip" data-wd="周二" onclick="this.classList.toggle('active');acRangeRefresh()" style="font-size:12px;padding:5px 12px;cursor:pointer">周二</div>
-          <div class="filter-chip" data-wd="周三" onclick="this.classList.toggle('active');acRangeRefresh()" style="font-size:12px;padding:5px 12px;cursor:pointer">周三</div>
-          <div class="filter-chip" data-wd="周四" onclick="this.classList.toggle('active');acRangeRefresh()" style="font-size:12px;padding:5px 12px;cursor:pointer">周四</div>
-          <div class="filter-chip" data-wd="周五" onclick="this.classList.toggle('active');acRangeRefresh()" style="font-size:12px;padding:5px 12px;cursor:pointer">周五</div>
-          <div class="filter-chip" data-wd="周六" onclick="this.classList.toggle('active');acRangeRefresh()" style="font-size:12px;padding:5px 12px;cursor:pointer">周六</div>
-          <div class="filter-chip" data-wd="周日" onclick="this.classList.toggle('active');acRangeRefresh()" style="font-size:12px;padding:5px 12px;cursor:pointer">周日</div>
+          <div class="filter-chip" data-wd="周一" onclick="this.classList.toggle('active');acFrameChanged('wd')" style="font-size:12px;padding:5px 12px;cursor:pointer">周一</div>
+          <div class="filter-chip" data-wd="周二" onclick="this.classList.toggle('active');acFrameChanged('wd')" style="font-size:12px;padding:5px 12px;cursor:pointer">周二</div>
+          <div class="filter-chip" data-wd="周三" onclick="this.classList.toggle('active');acFrameChanged('wd')" style="font-size:12px;padding:5px 12px;cursor:pointer">周三</div>
+          <div class="filter-chip" data-wd="周四" onclick="this.classList.toggle('active');acFrameChanged('wd')" style="font-size:12px;padding:5px 12px;cursor:pointer">周四</div>
+          <div class="filter-chip" data-wd="周五" onclick="this.classList.toggle('active');acFrameChanged('wd')" style="font-size:12px;padding:5px 12px;cursor:pointer">周五</div>
+          <div class="filter-chip" data-wd="周六" onclick="this.classList.toggle('active');acFrameChanged('wd')" style="font-size:12px;padding:5px 12px;cursor:pointer">周六</div>
+          <div class="filter-chip" data-wd="周日" onclick="this.classList.toggle('active');acFrameChanged('wd')" style="font-size:12px;padding:5px 12px;cursor:pointer">周日</div>
         </div>
         <div id="ac_weekday_actual" style="font-size:10px;color:var(--text-3);margin-top:3px"></div>
       </div>
@@ -518,6 +518,7 @@
       <div class="form-group" style="margin:0"><label class="form-label" id="ac_first_label">第一回日期 *</label><input type="date" id="ac_first_date" onchange="acFirstDateChange()"></div>
       <div class="form-group" id="ac_last_box" style="margin:0"><label class="form-label">最后一回日期 <span id="ac_last_auto" style="font-weight:400;color:var(--text-3)"></span></label><input type="date" id="ac_last_date" onchange="acRangeInput('last')"></div>
       <div id="ac_range_msg" style="grid-column:1/-1;font-size:11px;margin:-4px 0 0"></div>
+      <div id="ac_p2_hint" style="grid-column:1/-1;display:none;font-size:12px;line-height:1.7;margin:-2px 0 0;padding:6px 10px;border-radius:3px;background:#fff1e0;border:1px solid #f0c48a;color:#8a4b0a"></div>
       <div class="form-group" id="ac_holiday_box" style="margin:0;grid-column:1/-1"><label class="form-label">假期（按星期、第一回日期和回数 / 最后一回日期实时算）</label>
         <div id="ac_holiday_except" style="padding:7px 9px;border:1px solid var(--border);border-radius:3px;background:var(--bg);min-height:32px;font-size:11px"></div>
       </div>
@@ -548,6 +549,9 @@
       </select>
     </div>
 
+    <!-- 已开课阶段的提示（对齐时间 / 碰到假期 / 补回数），平时是空的 -->
+    <div id="ac_phase_alerts" style="margin-top:12px"></div>
+
     <!-- 单回明细开关 -->
     <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border-light)">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:600">
@@ -558,15 +562,12 @@
 
     <!-- 单回明细表格 -->
     <div id="ac_details_section" style="display:none;margin-top:12px">
+      <div id="ac_phase_note" style="font-size:11px;color:var(--text-3);margin-bottom:6px;line-height:1.6"></div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
         <div style="font-size:11px;color:var(--text-2)">每回的日期/编号/名称/任课老师均可自由调整（用于休讲、调课等场景）</div>
         <div style="display:flex;gap:6px">
           <button class="btn btn-outline btn-sm" onclick="acToggleTextMode()">📝 文本编辑</button>
           <button class="btn btn-outline btn-sm" onclick="document.getElementById('ac_paste_area').style.display=document.getElementById('ac_paste_area').style.display==='none'?'block':'none'">📋 从Excel粘贴</button>
-          <button class="btn btn-primary btn-sm" onclick="acSyncAll()" title="把当前的上课时间刷到所有单回，并按最新日期/星期/假期重算单回日期——改了时间/日期后点这个一键同步">↻ 一键同步时间·日期到单回</button>
-          <button class="btn btn-outline btn-sm" onclick="acAlignTimes()" title="今天以后、没单独调整过、时间跟课程不一样的回次，改成课程上课时间（休讲、已上过的不动）">单回时间对齐课程时间</button>
-          <button class="btn btn-outline btn-sm" onclick="acRecomputeDates()" title="按全局假期＋该课的豁免重算所有单回日期：豁免的假期照常上课，被顺延的课次拉回">🗓 按假期/豁免重算日期</button>
-          <button class="btn btn-outline btn-sm" onclick="acSyncRows()">↺ 同步行数</button>
         </div>
       </div>
       <!-- 文本编辑区：整份单回明细以文字呈现，方便批量改（尤其改老师） -->
@@ -847,7 +848,7 @@
 <script src="../shared/course-room-view.js?v=20270403"></script>
 <script src="../shared/session-room-confirm.js?v=20270403"></script>
 <script src="../shared/course-sessions.js?v=20270313"></script>
-<script src="courses.js?v=20261116"></script>
+<script src="courses.js?v=20270406"></script>
 <script src="monthcal.js?v=20270313"></script>
 <script src="vip-framework.js?v=20270313"></script>
 <script src="promo.js?v=20270313"></script>

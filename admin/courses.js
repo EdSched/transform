@@ -1022,6 +1022,7 @@ function renderCoursesSummary(courses){
           </div>
         </div>
         ${crvChangeLine(course,sessions)}
+        ${acHolidayWarnLine(course,sessions)}
         ${sessions.length
           ?`<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0">
               ${sessions.map((s,i)=>{
@@ -1391,6 +1392,7 @@ document.addEventListener('change',e=>{
 });
 
 function openAddCourseModal(editId){
+  acPhase=1;
   document.getElementById('addCourseModalTitle').textContent=editId?'编辑课程':'手动添加课程';
   document.getElementById('ac_editing_id').value=editId||'';
   acDomainSetup(editId?cachedCourses.find(x=>x.id===editId):null);
@@ -1453,7 +1455,9 @@ function openAddCourseModal(editId){
     toggleAcDetails(false);
   }
   acArtSetup(editId?cachedCourses.find(x=>x.id===editId):null);
+  acPhaseInit(editId?cachedCourses.find(x=>x.id===editId):null);
   acRangeInit(editId?cachedCourses.find(x=>x.id===editId):null);
+  acPhaseRender();
   { const h=document.getElementById('ac_weekday_actual');
     if(h){ const a=editId?sessionWeekdaysLabel(cachedSessions.filter(x=>x.course_id===editId)):'', f=frameWeekdaysLabel(editId?(cachedCourses.find(x=>x.id===editId)||{}).weekdays:'');
       h.textContent=a&&a!==f?`实际上课（按单回汇总）：周${a}`:''; } }
@@ -1526,7 +1530,7 @@ function acMonthChange(){
   acMpPreview(); acPeriodHint();
 }
 function acFirstDateChange(){
-  if(typeof acRenderHolidayExcept==='function') acRenderHolidayExcept();
+  acFrameChanged('first');
   acMpPreview();
 }
 
@@ -1673,43 +1677,9 @@ function acSetMajors(majors){
 function toggleAcDetails(show){
   document.getElementById('ac_details_section').style.display=show?'':'none';
   acAssignEnsure();
-  if(show) acSyncRows();
+  if(show&&acPhase===1) acFrameApply();
 }
 
-function acSyncRows(){
-  const total=parseInt(document.getElementById('ac_total').value)||0;
-  if(!total){
-    // 如果还没填回数，先显示空提示
-    document.getElementById('ac_details_body').innerHTML=
-      `<tr><td colspan="4" style="text-align:center;padding:12px;color:var(--text-3);font-size:11px">请先填写课程回数，再点「↺ 同步行数」</td></tr>`;
-    return;
-  }
-  // 已有的行原样保留（日期、时间、标题、老师都不动）；只有新增的行按框架（第一回日期 + 星期）补上日期
-  const teacher=acSingleTeacher(document.getElementById('ac_teacher').value);
-  const existing=acGetRows().filter(r=>r.id||r.date||r.title||r.teacher||r.time_range);
-  const firstDate=document.getElementById('ac_first_date').value;
-  const weekdayStr=acGetWeekdayChips();
-  const editingId=document.getElementById('ac_editing_id').value;
-  const co=cachedCourses.find(c=>c.id===editingId)||{};
-  const fw=(firstDate&&weekdayStr&&typeof computeSessionDates==='function')
-    ?computeSessionDates({first_session_date:firstDate,weekdays:weekdayStr,skip_dates:co.skip_dates||'',holiday_except:co.holiday_except||''},total+existing.length):[];
-  // 回数只数正常上课的行，休讲行不占回数、也不会被删掉
-  const isOff=r=>r.num==='休讲'||r.title==='休讲';
-  let realN=existing.filter(r=>!isOff(r)).length;
-  const keep=[];
-  // 行多于回数：从末尾删多出来的正常行（休讲行保留）
-  for(let j=existing.length-1;j>=0;j--){ const r=existing[j]; if(!isOff(r)&&realN>total){ realN--; continue; } keep.unshift(r); }
-  document.getElementById('ac_details_body').innerHTML='';
-  keep.forEach(r=>acAddRow(r));
-  const used=new Set(keep.map(r=>r.date).filter(Boolean));
-  let k=0;
-  while(realN<total){
-    while(k<fw.length&&used.has(fw[k])) k++;   // 跳过表里已经有的日期
-    acAddRow({num:acNextNum(),title:'',teacher,date:fw[k]||''});
-    if(fw[k]) used.add(fw[k]);
-    k++; realN++;
-  }
-}
 // 新增一行的回数 = 现有正常行里最大的回数 + 1（休讲行不算，避免跳号）
 function acNextNum(){
   const nums=acGetRows().filter(r=>!(r.num==='休讲'||r.title==='休讲')).map(r=>parseInt(r.num)).filter(n=>!isNaN(n));
@@ -1726,7 +1696,7 @@ function acPasteImport(){
   // 如果表格是空的或只有提示行，先同步行数
   const tbody=document.getElementById('ac_details_body');
   const hasRealRows=tbody.querySelectorAll('tr input').length>0;
-  if(!hasRealRows) acSyncRows();
+  if(!hasRealRows&&acPhase===1) acFrameApply();
 
   // 再次获取行（同步后）
   lines.forEach((line,i)=>{
@@ -1813,10 +1783,13 @@ function acAddRow(data){
   const rowNum=data?.num??acNextNum();
   const tr=document.createElement('tr');
   tr.dataset.id=data?.id||'';
+  if(data?.dframe) tr.dataset.dframe='1';     // 日期是按框架排出来的（没手动改过）
+  if(data?.tfollow) tr.dataset.tfollow='1';   // 时间跟着课程时间
+  if(data?.manual) tr.dataset.manual='1';     // 日期 / 时间手动改过：之后按框架重排前要先确认
   tr.innerHTML=`
     <td style="width:64px"><input value="${rowNum}" placeholder="第几回" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);text-align:center;font-family:'DM Mono',monospace"></td>
-    <td style="width:120px"><input type="date" value="${data?.date||''}" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg)"></td>
-    <td style="width:150px"><input value="${data?.time_range||''}" oninput="this.closest('tr').dataset.tfollow=''" placeholder="时间（多段用 / 分隔）" title="同一天多个时间段用 / 分隔，例：14:00-17:00/18:00-21:00" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
+    <td style="width:120px"><input type="date" value="${data?.date||''}" onchange="var r=this.closest('tr');r.dataset.manual='1';r.dataset.dframe=''" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg)"></td>
+    <td style="width:150px"><input value="${data?.time_range||''}" oninput="var r=this.closest('tr');r.dataset.tfollow='';r.dataset.manual='1'" placeholder="时间（多段用 / 分隔）" title="同一天多个时间段用 / 分隔，例：14:00-17:00/18:00-21:00" style="font-size:11px;padding:5px 6px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
     <td><input value="${data?.title||''}" placeholder="单回名称（可留空，也可填「休讲」）" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
     <td><input value="${data?.teacher||''}" placeholder="任课老师（可留空）" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;width:100%;background:var(--bg);font-family:'DM Mono',monospace"></td>
     <td><button class="btn-ghost" onclick="this.closest('tr').remove()">✕</button></td>`;
@@ -1863,6 +1836,10 @@ function acShowNotice(text){
 }
 // 编辑弹窗里改了课程上课时间：跟着改的单回当场换成新时间，保留的标橙色小字
 function acTimeLive(){
+  if(acPhase===1){ acFrameApply(); return; }   // 还没开课：单回时间全跟着课程时间
+  acTimeLive2(); acPhaseAlerts();
+}
+function acTimeLive2(){
   const cid=acVal('ac_editing_id'); const c=cid?cachedCourses.find(x=>x.id===cid):null; if(!c) return;
   const oldT=c.time_range||'', newT=normalizeTimeRanges(acVal('ac_time_range')), today=acToday();
   document.querySelectorAll('#ac_details_body tr').forEach(tr=>{
@@ -1900,6 +1877,143 @@ function acAlignTimes(){
   if(!confirm(txt)) return;
   fol.forEach(f=>{ f.inp[2].value=newT; f.tr.dataset.tfollow='1'; });
   alert(`已把 ${fol.length} 回的时间改成 ${newT}，请核对后点保存写入。`);
+  acPhaseAlerts();
+}
+// ── 课程的两个阶段（打开编辑弹窗时判断一次）──
+//   阶段一「还没开课」：所有单回都在今天以后，没有休讲、没有单独调整过 → 单回完全跟着框架（第一回日期 / 星期 / 时间 / 回数 / 假期豁免）自动排
+//   阶段二「已经开课」：其他情况 → 框架不再整体重排已有单回，有情况只提示
+let acPhase=1, acPhaseFirst='', acFrameTimer=null, acP2Timer=null;
+function acPhaseInit(c){
+  acPhase=1; acPhaseFirst='';
+  if(!c) return;
+  const today=acToday(), ss=cachedSessions.filter(s=>s.course_id===c.id);
+  if(ss.every(s=>s.session_date>=today&&!s.is_cancelled&&!s.orig_date&&!s.orig_time_range)) return;
+  acPhase=2;
+  const f=ss.slice().sort((a,b)=>(a.session_date||'').localeCompare(b.session_date||''))[0];
+  if(f) acPhaseFirst=`第 ${f.session_number||1} 回 ${+f.session_date.slice(5,7)}/${+f.session_date.slice(8,10)}`;
+}
+function acPhaseRender(){
+  const note=document.getElementById('ac_phase_note');
+  if(note) note.textContent=acPhase===1
+    ?'还没开课：单回跟着上面的第一回日期、星期、时间、回数自动排，改上面就行。'
+    :`已经开课（${acPhaseFirst}）：上面的设置不会重排已有单回。改某一回请直接在下面改，或在课程安排里用「休讲调整」。`;
+  const h=document.getElementById('ac_p2_hint'); if(h){ h.style.display='none'; h.textContent=''; }
+  const box=document.getElementById('ac_phase_alerts'); if(box) box.innerHTML='';
+  acPhaseAlerts();
+}
+function acP2Hint(text){ const h=document.getElementById('ac_p2_hint'); if(!h) return; h.textContent=text; h.style.display=text?'':'none'; }
+// 提示区里按 key 放一条：html 为空就删掉
+function acAlertSet(key,html,color){
+  const box=document.getElementById('ac_phase_alerts'); if(!box) return;
+  let d=box.querySelector(`[data-k="${key}"]`);
+  if(!html){ if(d) d.remove(); return; }
+  if(!d){ d=document.createElement('div'); d.dataset.k=key; box.appendChild(d); }
+  d.style.cssText='background:'+(color==='orange'?'#fff1e0;border:1px solid #f0c48a;color:#8a4b0a':'#fff8e6;border:1px solid #e8d49a;color:#6b5412')+';border-radius:3px;padding:7px 10px;margin-bottom:6px;font-size:12px;line-height:1.8';
+  d.innerHTML=html;
+}
+const AC_CHIP='style="cursor:pointer;font-size:11px;padding:2px 10px;margin-left:6px"';
+// 已开课：对齐时间 / 碰到假期的黄色提示（按表格里现在的内容算）
+function acPhaseAlerts(){
+  if(acPhase!==2){ acAlertSet('align',''); acAlertSet('holiday',''); return; }
+  const c=acEditingCourse(); if(!c) return;
+  const today=acToday(), newT=normalizeTimeRanges(acVal('ac_time_range'));
+  const diff=[], hol=[];
+  document.querySelectorAll('#ac_details_body tr').forEach(tr=>{
+    const inp=tr.querySelectorAll('input'); if(!inp[2]) return;
+    const s=tr.dataset.id?cachedSessions.find(x=>x.id===tr.dataset.id):null; if(!s) return;
+    const r={ num:inp[0].value.trim(), date:inp[1].value, time_range:normalizeTimeRanges(inp[2].value) };
+    const off=r.num==='休讲'||inp[3].value.trim()==='休讲';
+    if(off||s.is_cancelled||!r.date||r.date<today) return;
+    const {n,md}=acTimeLabel(s,r);
+    if(newT&&r.time_range&&acTimeKind(s,r.date,r.time_range,null,newT,today,false)==='follow') diff.push(`第 ${n} 回 ${md}`);
+    const h=holidayOn(r.date);
+    if(h&&!acExcept.has(r.date)) hol.push({ id:s.id, n, date:r.date, label:h.label||'假期' });
+  });
+  acAlertSet('align',diff.length?`有 ${diff.length} 回时间跟课程时间（${escTM(newT)}）不一样：${escTM(diff.join('、'))}。<span class="filter-chip" ${AC_CHIP} onclick="acAlignTimes()">对齐到课程时间</span>`:'');
+  acAlertSet('holiday',hol.length?`<div style="font-weight:600">以下回次碰到了假期：</div>`+hol.map(h=>`<div>第 ${h.n} 回 ${ccMD(h.date)}（周${CC_WD[new Date(h.date+'T12:00:00').getDay()]}）${escTM(h.label)}
+      <span class="filter-chip" ${AC_CHIP} onclick="acHolResolve('${h.id}','shift')">休讲顺延</span><span class="filter-chip" ${AC_CHIP} onclick="acHolResolve('${h.id}','move')">改到别的日期</span><span class="filter-chip" ${AC_CHIP} onclick="acHolResolve('${h.id}','except','${h.date}')">照常上课</span></div>`).join(''):'');
+}
+function acHolResolve(id,how,date){
+  if(how==='except'){ acExcept.add(date); acRangeRefresh(); acPhaseAlerts(); return; }
+  closeModal('addCourseModal');
+  openReschedule(id,how==='move'?'move':undefined);
+}
+// 已开课：点「照常上课」只记豁免，不重排；那天本来没有单回就提示
+function acP2ExceptNote(d){
+  const has=[...document.querySelectorAll('#ac_details_body tr')].some(tr=>{ const i=tr.querySelectorAll('input'); return i[1]&&i[1].value===d&&i[0].value.trim()!=='休讲'&&i[3].value.trim()!=='休讲'; });
+  acAlertSet('except',acExcept.has(d)&&!has?'已经开课，豁免不会自动把课加回来。需要的话在单回明细里加一回或改日期。':'','orange');
+}
+// 课程安排卡片上的小字：今天以后、没休讲、碰到全局假期又没豁免的回次
+function acHolidayWarnLine(course,sessions){
+  const today=acToday(), ex=new Set((course.holiday_except||'').split(',').map(x=>x.trim()).filter(Boolean));
+  const hits=sessions.filter(s=>!s.is_cancelled&&s.session_date>=today&&!ex.has(s.session_date)).map(s=>({s,h:holidayOn(s.session_date)})).filter(x=>x.h);
+  if(!hits.length) return '';
+  const txt=hits.slice(0,3).map(x=>`第 ${x.s.session_number||'?'} 回 ${ccMD(x.s.session_date)} 碰到假期（${x.h.label||'假期'}）`).join('；')+(hits.length>3?`…等 ${hits.length} 回`:'');
+  return `<div onclick="openAddCourseModal('${course.id}')" title="点击打开编辑处理" style="cursor:pointer;font-size:11px;color:#8a4b0a;background:#fff1e0;border-top:1px solid #f0c48a;padding:3px 12px">⚠ ${escTM(txt)}</div>`;
+}
+
+// 框架（第一回日期 / 星期 / 时间 / 回数 / 假期豁免）变了：先更新回数 / 最后一回日期 / 假期列表，再按阶段处理
+function acFrameChanged(which,d){
+  acRangeRefresh();
+  if(acPhase===2){
+    if(which==='first'||which==='wd') acP2Hint('已经开课，单回不会跟着重排。要改以后的上课日，请在下面单回明细里逐回改，或在课程安排里用「休讲调整」。');
+    else if(which==='except') acP2ExceptNote(d);
+    acPhaseAlerts(); return;
+  }
+  clearTimeout(acFrameTimer);
+  if(which==='total'||which==='last') acFrameTimer=setTimeout(acFrameApply,600);   // 打字过程中稍等一下
+  else acFrameApply();
+}
+// 阶段一：按框架重新生成单回表（只改表格，按「保存」才写库）。已有行的 id / 标题 / 老师按顺序保留
+function acFrameApply(){
+  if(acPhase!==1||acMode()==='month') return;
+  if(!document.getElementById('ac_has_details').checked) return;
+  const tbody=document.getElementById('ac_details_body'); if(!tbody) return;
+  const f=acFrame(), total=parseInt(acVal('ac_total'))||0, last=acVal('ac_last_date');
+  if(!f.first_session_date||!f.weekdays||(!total&&!last)){
+    if(!tbody.querySelector('tr input')) tbody.innerHTML='<tr><td colspan="6" style="text-align:center;padding:12px;color:var(--text-3);font-size:11px">请先填第一回日期、星期和回数，这里会自动排出每一回</td></tr>';
+    return;
+  }
+  const sc=courseScan(f,total?{total}:{last});
+  if(!sc.dates.length||(total&&sc.dates.length<total)) return;   // 排不出来：上面已经有红字提示
+  const old=acGetRows().filter(r=>r.id||r.date||r.title||r.teacher||r.time_range);
+  const isOff=r=>r.num==='休讲'||r.title==='休讲';
+  const act=old.filter(r=>!isOff(r)), off=old.filter(isOff);
+  if(old.some(r=>r.manual)&&!confirm('下面单回有手动改过的日期 / 时间，按新设置重排会覆盖，确定吗？')) return;
+  const newT=normalizeTimeRanges(acVal('ac_time_range')), teacher=acSingleTeacher(acVal('ac_teacher'));
+  const rows=sc.dates.map((d,i)=>{ const o=act[i]; return { id:o?o.id:'', num:String(i+1), date:d, time_range:newT||(o?o.time_range:''), title:o?o.title:'', teacher:o?o.teacher:teacher, dframe:true, tfollow:!!newT }; });
+  off.forEach(o=>rows.push({ id:o.id, num:o.num, date:o.date, time_range:o.time_range, title:o.title, teacher:o.teacher }));
+  acSetRowsFromData(rows);
+}
+// 阶段二：改回数。加 = 在末尾按星期往后补（跳过假期）；减 = 从末尾删，只删今天以后的，遇到已上过的就停
+function acP2TotalSchedule(){ clearTimeout(acP2Timer); acP2Timer=setTimeout(acP2Total,600); }
+function acP2Total(){
+  const totalEl=document.getElementById('ac_total'), want=parseInt(totalEl.value)||0; if(want<1) return;
+  const isOff=tr=>{ const i=tr.querySelectorAll('input'); return i[0].value.trim()==='休讲'||i[3].value.trim()==='休讲'; };
+  const real=[...document.querySelectorAll('#ac_details_body tr')].filter(tr=>tr.querySelector('input')&&!isOff(tr));
+  const cur=real.length, dateOf=tr=>tr.querySelectorAll('input')[1].value;
+  if(want===cur){ acAlertSet('count',''); return; }
+  if(want>cur){
+    const f=acFrame(); if(!f.weekdays){ alert('请先选星期，才能往后补回次'); totalEl.value=cur; return; }
+    const lastDate=real.map(dateOf).filter(Boolean).sort().pop()||f.first_session_date;
+    if(!lastDate){ alert('请先填第一回日期'); totalEl.value=cur; return; }
+    const need=want-cur, sc=courseScan(Object.assign({},f,{first_session_date:acNextDay(lastDate)}),{total:need});
+    if(sc.dates.length<need){ alert(`按这个星期只能往后补出 ${sc.dates.length} 回（需要 ${need} 回），请检查星期`); totalEl.value=cur; return; }
+    const newT=normalizeTimeRanges(acVal('ac_time_range')), teacher=acSingleTeacher(acVal('ac_teacher'));
+    sc.dates.forEach(d=>acAddRow({ num:acNextNum(), date:d, time_range:newT, title:'', teacher }));
+    acAlertSet('count',`已在末尾补 ${need} 回：${sc.dates.map(d=>`${ccMD(d)}（${CC_WD[new Date(d+'T12:00:00').getDay()]}）`).join('、')}，请核对后保存`,'orange');
+  } else {
+    const today=acToday(), order=real.slice().sort((a,b)=>dateOf(b).localeCompare(dateOf(a)));
+    let n=cur, blocked=null;
+    for(const tr of order){ if(n<=want) break; const d=dateOf(tr); if(d&&d<today){ blocked=tr; break; } tr.remove(); n--; }
+    if(blocked){
+      totalEl.value=n;
+      acAlertSet('count',`第 ${blocked.querySelectorAll('input')[0].value.trim()} 回已经上过，不能删。回数最少是 ${n}`,'orange');
+    } else acAlertSet('count',`已从末尾删掉 ${cur-n} 回，请核对后保存`,'orange');
+  }
+  const ds=[...document.querySelectorAll('#ac_details_body tr')].filter(tr=>tr.querySelector('input')&&!isOff(tr)).map(dateOf).filter(Boolean).sort();
+  document.getElementById('ac_last_date').value=ds[ds.length-1]||'';
+  acRangeRefresh(); acPhaseAlerts();
 }
 function acGetRows(){
   return [...document.querySelectorAll('#ac_details_body tr')].map((tr)=>{
@@ -1911,7 +2025,9 @@ function acGetRows(){
       time_range: normalizeTimeRanges(inputs[2]?.value||''),
       title: inputs[3]?.value.trim()||'',
       teacher: inputs[4]?.value.trim()||'',
-      tfollow: tr.dataset.tfollow==='1'
+      tfollow: tr.dataset.tfollow==='1',
+      dframe: tr.dataset.dframe==='1',
+      manual: tr.dataset.manual==='1'
     };
   });
 }
@@ -2018,32 +2134,34 @@ function acRangeInit(c){
   acTotalAuto=false; acLastAuto=false;
   const lastEl=document.getElementById('ac_last_date');
   if(c){
-    if(c.has_details){   // 开了单回明细：最后一回就是明细里最晚的日期，不做自动推算
+    if(acPhase===2){   // 已经开课：最后一回就是单回里最晚的日期（只读）
       const ds=cachedSessions.filter(s=>s.course_id===c.id&&!s.is_cancelled).map(s=>s.session_date).sort();
       lastEl.value=ds[ds.length-1]||c.end_date||'';
-    } else { lastEl.value=''; acLastAuto=true; }
+    } else { lastEl.value=''; acLastAuto=true; }   // 还没开课：跟着框架自动算
   } else lastEl.value='';
+  lastEl.readOnly=acPhase===2;
   acRangeRefresh();
 }
 function acRangeInput(which){
   const totalEl=document.getElementById('ac_total'), lastEl=document.getElementById('ac_last_date');
   if(which==='total'){ acTotalAuto=false; if(!totalEl.value&&acLastAuto){ lastEl.value=''; acLastAuto=false; } }
   else { acLastAuto=false; if(!lastEl.value&&acTotalAuto){ totalEl.value=''; acTotalAuto=false; } }
-  acRangeRefresh();
+  if(acPhase===2){ acRangeRefresh(); if(which==='total') acP2TotalSchedule(); return; }
+  acFrameChanged(which);
 }
 function acToggleExcept(d){
   if(acExcept.has(d)) acExcept.delete(d); else acExcept.add(d);
   // 两个都是手填的：以回数为准，最后一回日期跟着重算
   if(!acTotalAuto&&!acLastAuto&&acVal('ac_total')&&acVal('ac_last_date')) acLastAuto=true;
-  acRangeRefresh();
+  acFrameChanged('except',d);
 }
 function acRangeRefresh(){
   const totalEl=document.getElementById('ac_total'), lastEl=document.getElementById('ac_last_date');
   const msg=document.getElementById('ac_range_msg'), hol=document.getElementById('ac_holiday_except');
   if(!totalEl||!lastEl||!msg||!hol) return;
-  const setAuto=()=>{ document.getElementById('ac_total_auto').textContent=acTotalAuto?'（自动）':''; document.getElementById('ac_last_auto').textContent=acLastAuto?'（自动）':''; };
+  const setAuto=()=>{ document.getElementById('ac_total_auto').textContent=acTotalAuto?'（自动）':''; document.getElementById('ac_last_auto').textContent=acPhase===2?'（已开课，按单回明细）':acLastAuto?'（自动）':''; };
   msg.textContent=''; msg.style.color='';
-  const f=acFrame(), details=document.getElementById('ac_has_details').checked, month=acMode()==='month';
+  const f=acFrame(), details=acPhase===2, month=acMode()==='month';
   document.getElementById('ac_holiday_box').style.display=month?'none':'';
   document.getElementById('ac_last_box').style.display=month?'none':'';
   if(month){ setAuto(); acPeriodHint(); return; }
@@ -2085,45 +2203,6 @@ function acRangeCheck(){
   return { total:total&&!last?total:r.dates.length, last:r.dates[r.dates.length-1], dates:r.dates };
 }
 function acRenderHolidayExcept(){ acRangeRefresh(); }
-// 按「休讲日 + 假期豁免」重算所有单回日期（豁免的假期照常上课、被顺延的课次拉回）。仅改表格，保存后写库。
-// 一键同步：把主表最新的「上课时间」刷到所有单回 + 按最新日期规则重算单回日期（0/7 都=周日）
-function acSyncAll(){
-  const firstDate=document.getElementById('ac_first_date').value;
-  const weekdayStr=(typeof acGetWeekdayChips==='function')?acGetWeekdayChips():'';
-  const timeRange=(document.getElementById('ac_time_range')||{}).value||'';
-  if(!firstDate||!weekdayStr){ alert('请先填「第一回日期」和「星期」再同步'); return; }
-  const editingId=document.getElementById('ac_editing_id').value;
-  const co=cachedCourses.find(c=>c.id===editingId)||{};
-  const rows=acGetRows();
-  const N=rows.length;
-  if(!N){ alert('请先「同步行数」生成课次再同步'); return; }
-  if(!confirm(`将按框架重新排列全部 ${N} 个单回的日期，手动调整过的日期会被覆盖，确定吗？`)) return;
-  if(typeof computeSessionDates!=='function'){ alert('日期算法未加载'); return; }
-  const dates=computeSessionDates({first_session_date:firstDate,weekdays:weekdayStr,skip_dates:co.skip_dates||'',holiday_except:co.holiday_except||''},N);
-  if(dates.length!==N){ alert(`同步失败：算出 ${dates.length} 个日期、需要 ${N} 个（可能假期太多排不下，或星期设置有误）`); return; }
-  const exN=(co.holiday_except||'').split(',').filter(Boolean).length;
-  rows.forEach((r,i)=>{ r.date=dates[i]; if(timeRange) r.time_range=timeRange; });  // 日期重算 + 时间刷新
-  acSetRowsFromData(rows);
-  alert(`已同步 ${N} 个单回：\n· 日期按休讲/豁免重算${exN?`（含 ${exN} 个豁免日）`:''}\n${timeRange?`· 时间统一刷成「${timeRange}」`:'· （上课时间为空，未刷时间）'}\n请核对后点保存写入。`);
-}
-function acRecomputeDates(){
-  const firstDate=document.getElementById('ac_first_date').value;
-  const weekdayStr=(typeof acGetWeekdayChips==='function')?acGetWeekdayChips():'';
-  if(!firstDate||!weekdayStr){ alert('请先填「第一回日期」和「星期」再重算'); return; }
-  const editingId=document.getElementById('ac_editing_id').value;
-  const co=cachedCourses.find(c=>c.id===editingId)||{};
-  const rows=acGetRows();
-  const N=rows.length;
-  if(!N){ alert('请先「同步行数」生成课次再重算'); return; }
-  if(!confirm(`将按框架重新排列全部 ${N} 个单回的日期，手动调整过的日期会被覆盖，确定吗？`)) return;
-  if(typeof computeSessionDates!=='function'){ alert('日期算法未加载'); return; }
-  const dates=computeSessionDates({first_session_date:firstDate,weekdays:weekdayStr,skip_dates:co.skip_dates||'',holiday_except:co.holiday_except||''},N);
-  if(dates.length!==N){ alert(`重算失败：算出 ${dates.length} 个日期、需要 ${N} 个（可能假期太多排不下，或星期设置有误）`); return; }
-  const exN=(co.holiday_except||'').split(',').filter(Boolean).length;
-  rows.forEach((r,i)=>{ r.date=dates[i]; });
-  acSetRowsFromData(rows);
-  alert(`已按休讲/豁免重算 ${N} 个单回日期${exN?`（含 ${exN} 个豁免日：照常上课不顺延）`:''}。\n请核对后点保存写入。`);
-}
 function acToggleTextMode(){
   const area=document.getElementById('ac_text_area');
   if(!area) return;
@@ -2178,7 +2257,9 @@ function acApplyTextMode(){
       date: (p[1]&&p[1].trim())?normalizeDateStr(p[1]):(prev.date||''),
       time_range: (p[2]&&p[2].trim())?p[2]:(prev.time_range||''),
       title: p[3]!==undefined?p[3]:(prev.title||''),
-      teacher: p[4]!==undefined?p[4]:(prev.teacher||'')
+      teacher: p[4]!==undefined?p[4]:(prev.teacher||''),
+      manual: !!prev.manual||((p[1]&&p[1].trim()&&normalizeDateStr(p[1])!==prev.date)||(p[2]&&p[2].trim()&&normalizeTimeRanges(p[2])!==prev.time_range)),
+      dframe: prev.dframe&&!(p[1]&&p[1].trim()&&normalizeDateStr(p[1])!==prev.date), tfollow: prev.tfollow&&!(p[2]&&p[2].trim()&&normalizeTimeRanges(p[2])!==prev.time_range)
     };
   });
   if(!newRows.length){ alert('文本为空，未应用'); return; }
@@ -2211,8 +2292,11 @@ async function saveAddCourse(){
   // 开了「单回明细」的课：单回表是唯一依据——日期、时间、标题、老师、回数都以表为准；
   // 第一回日期 = 表里最早的日期，回数 = 表里的行数（不含休讲行）。没开的课照旧按框架生成课次。
   const hasDetails=document.getElementById('ac_has_details').checked;
-  const detailRows=hasDetails?acGetRows():[];
-  if(hasDetails){
+  // 已经开课的课（阶段二）：不再按框架重排，单回表（没打开明细也一样）就是依据，改回数在表里已经加减好了
+  const tableDriven=hasDetails||(acPhase===2&&!!document.getElementById('ac_editing_id').value);
+  const userFirst=firstDate;
+  const detailRows=tableDriven?acGetRows():[];
+  if(tableDriven){
     if(!detailRows.length){ alert('单回明细不能为空，至少需要一行课次'); return; }
     for(const r of detailRows){ if(!r.date){ alert(`第「${r.num}」行缺少日期，请补全后再保存`); return; } }
     const seenIds=new Set();
@@ -2220,6 +2304,8 @@ async function saveAddCourse(){
     const real=detailRows.filter(r=>!(r.num==='休讲'||r.title==='休讲'));
     var ds=(real.length?real:detailRows).map(r=>r.date).sort();
     firstDate=ds[0];
+    { const _c0=acPhase===2?acEditingCourse():null;   // 已开课：第一回日期框里改了就按框里的存（课程表按这个规律画格子）
+      if(_c0&&userFirst&&userFirst!==_c0.first_session_date) firstDate=userFirst; }
     total=real.length||detailRows.length;
     lastDate=ds[ds.length-1];
     if(!weekdayStr){alert('请选择星期（排课系统按星期占教室）');return}
@@ -2244,7 +2330,7 @@ async function saveAddCourse(){
   }
   const weekdays=parseWeekdays(weekdayStr);
   // 只有没开单回明细的新课才按框架生成日期
-  const dates=hasDetails?[]:rng.dates;
+  const dates=tableDriven?[]:rng.dates;
   const editingId=document.getElementById('ac_editing_id').value;
 
   const courseData={
@@ -2309,13 +2395,13 @@ async function saveAddCourse(){
 
       // 开了单回明细：单回表是唯一依据，不再按框架重排日期（来自 acGetRows()：[{id,num,date,title,teacher}, ...]）
       let rows=detailRows;
-      if(!hasDetails){
-        // 没开单回明细：按框架（第一回日期 + 星期 + 回数）排课次；已有课次按先后保留 id / 标题 / 老师，只改日期；休讲行原样保留
+      if(!tableDriven){
+        // 还没开课、没开单回明细：按框架（第一回日期 + 星期 + 回数）排课次；已有课次按先后保留 id / 标题 / 老师，只改日期；休讲行原样保留
         const _co=cachedCourses.find(c=>c.id===editingId)||{};
         // 和排课共用同一套规则（shared/course-sessions.js）：已有回次按先后保留 id / 标题 / 老师，只改日期
         const plan=courseSessionPlan(Object.assign({},_co,{first_session_date:firstDate,weekdays:weekdayStr,total_sessions:total}),existing);
         if(plan.err){ alert(plan.err); return; }
-        rows=plan.rows.map(r=>{ const e=r.src||{}; return { id:e.id||'', num:String(r.num), date:r.date, time_range:'', title:e.session_title||'', teacher:e.session_teacher||'' }; });   // 老师在下面按 acRowTeacher 写
+        rows=plan.rows.map(r=>{ const e=r.src||{}; return { id:e.id||'', num:String(r.num), date:r.date, time_range:'', title:e.session_title||'', teacher:e.session_teacher||'', dframe:true }; });   // 老师在下面按 acRowTeacher 写
         existing.filter(x=>x.is_cancelled).forEach(x=>rows.push({ id:x.id, num:'休讲', date:x.session_date, time_range:x.time_range||'', title:x.cancel_reason||'休讲', teacher:x.session_teacher||'' }));
       }
       if(!rows.length){ alert('单回明细不能为空，至少需要一行课次'); return; }
@@ -2359,7 +2445,8 @@ async function saveAddCourse(){
           // 弹窗里手动改成别的时间的，按表里的来
           if(hasDetails&&r.time_range&&!_spanEq(r.time_range,dbT||oldCourseTime)&&!_spanEq(r.time_range,courseData.time_range)) return;
           const cancelledNow=r.num==='休讲'||r.title==='休讲';
-          const k=acTimeKind(s,r.date,dbT,oldCourseTime,courseData.time_range,_today,cancelledNow);
+          // 日期是按框架排出来的（没手动改）：不算「单独调整过」，拿库里原日期判断
+          const k=acTimeKind(s,r.dframe?s.session_date:r.date,dbT,oldCourseTime,courseData.time_range,_today,cancelledNow);
           if(k==='follow'){ _tFollow.add(r.id); r.time_range=courseData.time_range; }
           else { r.time_range=dbT||oldCourseTime; if(k==='keep') _tKeep.push(acKeepText(s,r,cancelledNow||!!s.is_cancelled)); }
         });
@@ -2386,7 +2473,8 @@ async function saveAddCourse(){
           // 改了某一回的日期 / 时间：记下原来的（orig_* 为空才写）；课程整体改时间、跟着课程走的不算
           const o=oldInfoById[r.id], oTime=o.time||oldCourseTime, nTime=r.time_range||courseData.time_range||'';
           const follow=_tFollow.has(r.id)||(r.tfollow&&_spanEq(nTime,courseData.time_range));
-          Object.assign(patchCommon, csOrigPatch(existingMap[r.id],{date:o.date,time:oTime},{date:r.date,time:follow?oTime:nTime},'编辑修改'));
+          // 还没开课、日期时间都是按框架自动排的：不记「原日期」
+          Object.assign(patchCommon, csOrigPatch(existingMap[r.id],{date:o.date,time:oTime},{date:r.dframe?o.date:r.date,time:follow?oTime:nTime},'编辑修改'));
         }
         if(r.id && existingMap[r.id]){
           // 已有记录：PATCH，id 不变，所有关联（出席/作业）保持
