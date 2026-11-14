@@ -73,72 +73,60 @@ end $do$;
 grant select on public.course_series to anon, authenticated;
 grant insert, update, delete on public.course_series to authenticated;
 
--- B.4 视图：merge_* 改成系列，加 series_mode
-do $do$
-declare
-  map_tbl text := case when to_regclass('public.sched_course_id_map_legacy') is not null then 'sched_course_id_map_legacy' else 'sched_course_id_map' end;
-begin
-  execute replace($v$
+-- B.4 视图：以线上现在的定义为准（预检 A.1 的结果），只改 merge_* 三列、末尾加 series_mode
 create or replace view public.sched_course_v as
-select
-  c.id                                                                    as id,
-  case when c.campus = '腾讯会议' then '线上' else coalesce(c.campus, '线上') end as campus,
-  coalesce(c.domain, '大学院文科')                                        as category,
-  coalesce(c.name, '未命名课程')                                          as name,
-  c.teacher                                                               as teacher,
-  null::integer                                                           as weekday,
-  t.st                                                                    as start_time,
-  t.en                                                                    as end_time,
-  coalesce(c.start_date, d.min_d, c.first_session_date)                   as start_date,
-  coalesce(c.end_date, d.max_d)                                           as end_date,
-  c.total_sessions                                                        as sessions,
-  c.est_students                                                          as est_students,
-  coalesce(c.delivery, '线上')                                            as mode,
-  c.meeting_url                                                           as meeting_link,
-  true                                                                    as confirmed,
-  null::text                                                              as note,
-  c.created_at                                                            as created_at,
-  c.weekdays                                                              as weekdays,
-  case
-    when c.period_auto and c.period_override is not null and c.period_override <> '' then c.period_override
-    when c.first_session_date is not null and c.period is not null and c.period <> ''
-      then to_char(c.first_session_date, 'YYYY') || '年' || c.period
-    else coalesce(nullif(c.period, ''), '暂定')
-  end                                                                     as term,
-  public.major_code_to_cn(c.major)                                        as major,
-  c.course_type                                                           as course_type,
-  c.skip_dates                                                            as skip_dates,
-  c.meeting_id                                                            as meeting_id,
-  c.meeting_template_id                                                   as meeting_template_id,
-  c.series_id                                                             as merge_group,
-  sr.name                                                                 as merge_name,
-  c.series_order                                                          as merge_order,
-  c.skip_reasons                                                          as skip_reasons,
-  c.holiday_except                                                        as holiday_except,
-  null::timestamptz                                                       as deleted_at,
-  null::text                                                              as deleted_by,
-  c.host_key                                                              as host_key,
-  c.sched_removed_reason                                                  as sched_removed_reason,
-  c.sched_removed_at                                                      as sched_removed_at,
-  m.sched_id                                                              as legacy_sched_id,
-  c.time_range                                                            as class_time_range,
-  sr.mode                                                                 as series_mode
-from public.courses c
-left join public.course_series sr on sr.id = c.series_id
-left join lateral (
-  select min(cs.session_date) as min_d, max(cs.session_date) as max_d
-  from public.course_sessions cs where cs.course_id = c.id
-) d on true
-left join lateral (
-  -- 上课时间可能有多段（10:00-12:00/13:00-15:00）：最早的开始 ～ 最晚的结束
-  select min(lpad(split_part(btrim(seg), '-', 1), 5, '0')) as st,
-         max(lpad(split_part(btrim(seg), '-', 2), 5, '0')) as en
-  from regexp_split_to_table(coalesce(c.time_range, ''), '[/／]') as seg
-  where seg like '%-%'
-) t on true
-left join public.__MAP__ m on m.course_id = c.id;
-  $v$, '__MAP__', map_tbl);
-end $do$;
+select c.id,
+  case when c.campus = '腾讯会议'::text then '线上'::text else coalesce(c.campus, '线上'::text) end as campus,
+  coalesce(c.domain, '大学院文科'::text) as category,
+  coalesce(c.name, '未命名课程'::text) as name,
+  c.teacher,
+  null::integer as weekday,
+  t.st as start_time,
+  t.et as end_time,
+  coalesce(c.start_date, d.min_d, c.first_session_date) as start_date,
+  coalesce(c.end_date, d.max_d) as end_date,
+  c.total_sessions as sessions,
+  c.est_students,
+  coalesce(c.delivery, '线上'::text) as mode,
+  c.meeting_url as meeting_link,
+  true as confirmed,
+  null::text as note,
+  c.created_at,
+  c.weekdays,
+  case when c.first_session_date is not null and c.period is not null
+       then (to_char(c.first_session_date::timestamp with time zone, 'YYYY'::text) || '年'::text) || c.period
+       else c.period end as term,
+  major_code_to_cn(c.major) as major,
+  c.course_type,
+  c.skip_dates,
+  c.meeting_id,
+  c.meeting_template_id,
+  c.series_id as merge_group,
+  sr.name as merge_name,
+  c.series_order as merge_order,
+  c.skip_reasons,
+  c.holiday_except,
+  null::timestamp with time zone as deleted_at,
+  null::text as deleted_by,
+  c.host_key,
+  c.sched_removed_reason,
+  c.sched_removed_at,
+  m.sched_id as legacy_sched_id,
+  c.time_range as class_time_range,
+  sr.mode as series_mode
+from courses c
+  left join course_series sr on sr.id = c.series_id
+  left join lateral ( select to_char(min(seg.s)::interval, 'HH24:MI'::text) as st,
+          to_char(max(seg.e)::interval, 'HH24:MI'::text) as et
+         from ( select trim(both from split_part(x.x, '-'::text, 1))::time without time zone as s,
+                  trim(both from split_part(x.x, '-'::text, 2))::time without time zone as e
+                 from regexp_split_to_table(regexp_replace(coalesce(c.time_range, ''::text), '[–~～]'::text, '-'::text, 'g'::text), '\s*[/／,，、]\s*'::text) x(x)
+                where x.x ~ '^\s*\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}\s*$'::text) seg) t on true
+  left join lateral ( select min(cs.session_date) as min_d,
+          max(cs.session_date) as max_d
+         from course_sessions cs
+        where cs.course_id = c.id) d on true
+  left join sched_course_id_map_legacy m on m.course_id = c.id;
 
 grant select on public.sched_course_v to anon, authenticated;
 
