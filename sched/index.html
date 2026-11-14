@@ -705,7 +705,7 @@ function renderAssignDay(){
       const done=assignedSet.has(String(c.id)); const cc=catColor(c.category);
       const rm = done ? (()=>{ const b=BOOKINGS.find(x=>isWeeklyCourseBk(x)&&String(x.course_id)===String(c.id)&&String(x.weekday)===String(wd)); const r=b?ROOMS.find(rr=>String(rr.id)===String(b.room_id)):null; return r?r.name:''; })() : '';
       return `<div class="daypick" data-pick="${c.id}" style="cursor:pointer;border:1px solid ${done?'#cfe0d3':cc.bd};background:${done?'#f2f8f4':'#fff'};border-radius:7px;padding:7px 9px;margin-bottom:6px">`+
-        `<div style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:3px;background:${cc.bg};border:1px solid ${cc.bd};display:inline-block"></span><b style="font-size:13px">${esc(c.merge_name||c.name)}</b>${c.merge_group?'<span class="badge b-mute" style="font-size:10px">'+(c.series_mode==='split'?'系列·同日分段':'系列·接续')+'</span>':''}`+
+        `<div style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:3px;background:${cc.bg};border:1px solid ${cc.bd};display:inline-block"></span><b style="font-size:13px">${esc(c.merge_name||c.name)}</b>${c.merge_group?'<span class="badge b-mute" style="font-size:10px">'+(c.series_mode==='split'?'系列·同日分段':c.series_mode==='mixed'?'系列·接续＋同日分段':'系列·接续')+'</span>':''}`+
         (done?`<span class="badge b-ok" style="margin-left:auto">已排 ${esc(rm)}</span>`:`<span class="badge b-warn" style="margin-left:auto">未排</span>`)+'</div>'+
         `<div class="muted" style="font-size:11px;margin-top:3px">${esc(c.category||'')}${c.teacher?' · '+esc(c.teacher):''} · ${esc(classTimeText(c))} · 日期 ${esc(dateRange(c))}</div>${c.merge_group?seriesMembersLine(c):''}</div>`;
     }).join('');
@@ -1186,7 +1186,7 @@ function assignRoomOnly(courseId){
   const roomOpts = roomOptsFor(aroCampus);
   const timeTxt = weekdaysLabel(c.weekdays)+' '+(c.start_time||'')+'–'+(c.end_time||'');
   const seriesTip = groupCourses.length>1
-    ? '<div class="tip" style="margin:6px 0">系列课「'+esc(dispName)+'」（'+(c.series_mode==='split'?'同日分段':'接续')+'）：选一次教室，下面每门课按自己的日期和时段一起占用。<br>'+
+    ? '<div class="tip" style="margin:6px 0">系列课「'+esc(dispName)+'」（'+(c.series_mode==='split'?'同日分段':c.series_mode==='mixed'?'接续＋同日分段':'接续')+'）：选一次教室，下面每门课按自己的日期和时段一起占用。<br>'+
       groupCourses.map(g=>esc(g.name)+' · '+esc(classTimeText(g))+' · '+esc((g.start_date||'').slice(5))+'~'+esc((g.end_date||'').slice(5))).join('<br>')+'</div>' : '';
   const subLine = isOnlineCourse
     ? (c.campus && c.campus!=='线上' ? `线上课（登记校区：${esc(c.campus)}）· ${timeTxt}` : `线上课 · ${timeTxt}`)

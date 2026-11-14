@@ -291,7 +291,7 @@ function cardHtml(c){
   const open=OPENED.has(String(c.id));
   return `<div class="ccard${searching()&&i.status==='已结课'?' ended':''}" data-id="${c.id}">`+
     `<div class="l1"><span class="nm">${esc(c.name)}</span>`+
-    (c.merge_group?`<span class="badge b-mute" title="${esc((c.series_mode==='split'?'同日分段':'接续')+'系列课')}">⛓ ${esc(c.merge_name||'系列')}</span>`:'')+
+    (c.merge_group?`<span class="badge b-mute" title="${esc((c.series_mode==='split'?'同日分段':c.series_mode==='mixed'?'接续＋同日分段':'接续')+'系列课')}">⛓ ${esc(c.merge_name||'系列')}</span>`:'')+
     `<span class="tag" style="background:${cc.bg};border-color:${cc.bd};color:${cc.tx}">${esc(c.category||'')}</span>`+
     (termKeyOf(c)?`<span class="badge b-mute">${esc(termKeyOf(c))}</span>`:'')+
     (schedRemoved(c)?`<span class="badge b-mute" style="background:#e4e4e4">已移出 · ${esc(c.sched_removed_reason)}</span>`:'')+
