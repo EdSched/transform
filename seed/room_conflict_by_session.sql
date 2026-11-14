@@ -143,8 +143,8 @@ create or replace function public.sched_bookings_check_overlap()
 as $function$
 DECLARE
   d   date;
-  s   time;
-  e   time;
+  v_s time;
+  v_e time;
   hit record;
 BEGIN
   -- 新写入的是课程占用：不拦（冲突由页面提示，允许「稍后调整另一门」）
@@ -161,8 +161,8 @@ BEGIN
   END IF;
 
   d := NEW.booking_date::date;
-  s := NEW.start_time::time;
-  e := NEW.end_time::time;
+  v_s := NEW.start_time::time;
+  v_e := NEW.end_time::time;
 
   -- 同一教室串行化：两人同一瞬间提交也只能过一个
   PERFORM pg_advisory_xact_lock(hashtext('sched_room_' || NEW.room_id::text));
@@ -174,7 +174,7 @@ BEGIN
    WHERE b.id IS DISTINCT FROM NEW.id
      AND b.room_id = NEW.room_id
      AND b.status IN ('pending','confirmed')
-     AND s < x.e AND x.s < e
+     AND v_s < x.e AND x.s < v_e
    LIMIT 1;
 
   IF FOUND THEN
@@ -196,8 +196,8 @@ create or replace function public.sched_bookings_check_teacher_dup()
 as $function$
 DECLARE
   d   date;
-  s   time;
-  e   time;
+  v_s time;
+  v_e time;
   nm  text;
   hit record;
 BEGIN
@@ -216,8 +216,8 @@ BEGIN
   END IF;
 
   d := NEW.booking_date::date;
-  s := NEW.start_time::time;
-  e := NEW.end_time::time;
+  v_s := NEW.start_time::time;
+  v_e := NEW.end_time::time;
 
   PERFORM pg_advisory_xact_lock(hashtext('sched_teacher_' || nm));
 
@@ -229,7 +229,7 @@ BEGIN
    WHERE b.id IS DISTINCT FROM NEW.id
      AND btrim(COALESCE(b.user_name,'')) = nm
      AND b.status IN ('pending','confirmed')
-     AND s < x.e AND x.s < e
+     AND v_s < x.e AND x.s < v_e
    LIMIT 1;
 
   IF FOUND THEN
