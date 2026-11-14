@@ -2904,6 +2904,7 @@ function pcpPlan(){
   const sg=serCopyGroups(st.courses);
   sg.forEach(g=>{
     const rs=g.members.map(m=>rows.find(r=>r.c.id===m.id));
+    rs.forEach(r=>{ const n=cachedSessions.filter(x=>x.course_id===r.c.id&&!x.is_cancelled).length; if(n) r.total=n; });   // 系列成员：用实际没休讲的回数
     const sd={ mode:g.s.mode, first:pcpAddDays(g.s.first_session_date||g.members[0].first_session_date,shift), weekdays:g.s.weekdays||g.members[0].weekdays||'',
       time_range:g.s.time_range||'', except:st.except, total:rs[0].total, members:rs.map(r=>({total:r.total,tr:r.c.time_range||''})) };
     const p=serPlan(sd);

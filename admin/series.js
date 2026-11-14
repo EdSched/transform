@@ -129,32 +129,34 @@ function serLbl(t){ return `<div style="font-size:10px;color:var(--text-3);margi
 
 function serDraw(){
   if(!SER) return;
-  const d=SER, lock=d.phase2, lockMem=!!d.members.some(m=>m.cid);
+  if(SER.markOnly) serMarkRecalc();
+  const d=SER, lock=d.phase2, fx=d.phase2||d.markOnly, lockMem=!!d.members.some(m=>m.cid);
   const old=document.getElementById('serOv'), prevScroll=old&&old.querySelector('#serBody')?old.querySelector('#serBody').scrollTop:0;
   const ov=ccOverlay('serOv');
   const majors=majorFilterKeys().filter(k=>!(typeof isMajorGroup==='function'&&isMajorGroup(k)));
   const wds=['周一','周二','周三','周四','周五','周六','周日'], curWd=new Set(parseWeekdays(d.weekdays));
-  const campusChips=CAMPUS_OPTS.map(o=>serChip(d.campus===o.value,o.label,`serSet('campus','${o.value}')`,lock)).join('');
+  const campusChips=CAMPUS_OPTS.map(o=>serChip(d.campus===o.value,o.label,`serSet('campus','${o.value}')`,fx)).join('');
   ov.innerHTML=`<div style="${CC_BOX};max-width:760px">
     <div style="padding:14px 18px;border-bottom:1px solid var(--border,#e2ded6);font-size:15px;font-weight:600">${d.id?'编辑系列':'新建系列课'}${d.id?`<span style="font-size:11px;font-weight:400;color:var(--text-3);margin-left:8px">${serModeLabel(d.mode)}</span>`:''}</div>
     <div id="serBody" style="padding:6px 18px 12px;overflow:auto;flex:1">
       ${lock?`<div style="background:#fff1e0;border:1px solid #f0c48a;color:#8a4b0a;border-radius:3px;padding:7px 10px;margin-top:8px;font-size:12px;line-height:1.7">这个系列已经开课：框架（第一回日期 / 星期 / 时间 / 排法）不能在这里改，请在单回里调整，或用「休讲」调整。这里只能改系列名，和每门课的回数（只在这门课末尾加减，接续时后面的课整体往后推 / 往前收，确认前会列出变化）。</div>`:''}
+      ${d.markOnly?`<div style="background:#fff1e0;border:1px solid #f0c48a;color:#8a4b0a;border-radius:3px;padding:7px 10px;margin-top:8px;font-size:12px;line-height:1.7">这几门课已经开课或上完，只记成一个系列，日期、时间、单回都不动。以后整期复制时会整组复制，按系列重新排日期。</div>`:''}
       ${serLbl('系列名')}<input id="serName" value="${escTM(d.name)}" oninput="SER.name=this.value" placeholder="如：社会学专业课" style="${SER_INP};width:100%">
-      ${serLbl('专业（单选；系列里的课只限同一个专业）')}<div style="display:flex;flex-wrap:wrap;gap:5px">${majors.map(k=>serChip(d.major===k,majorLabel(k),`serSet('major','${k}')`,lock||lockMem)).join('')||'<span style="color:var(--text-3)">没有可选专业</span>'}</div>
-      ${serLbl('排法')}<div style="display:flex;gap:5px;align-items:center">${serChip(d.mode==='chain','接续',"serSet('mode','chain')",lock)}${serChip(d.mode==='split','同日分段',"serSet('mode','split')",lock)}${serChip(d.mode==='mixed','接续＋同日分段',"serSet('mode','mixed')",lock)}<span style="font-size:11px;color:var(--text-3);margin-left:6px">${d.mode==='chain'?'A 的回次全部上完，接着 B，再接着 C：同一个星期、同一个时间，日期一路往下排':d.mode==='split'?'同一天按时间段切开：每门课回数、日期都一样，时间不同':'每门课填时段和回数：时段相同的接续排（先 A 后 B），时段不同的同一天并行'}</span></div>
+      ${serLbl('专业（单选；系列里的课只限同一个专业）')}<div style="display:flex;flex-wrap:wrap;gap:5px">${majors.map(k=>serChip(d.major===k,majorLabel(k),`serSet('major','${k}')`,fx||lockMem)).join('')||'<span style="color:var(--text-3)">没有可选专业</span>'}</div>
+      ${serLbl(d.markOnly?'排法（只决定以后复制时怎么排，已经猜了一个，不对可以改）':'排法')}<div style="display:flex;gap:5px;align-items:center">${serChip(d.mode==='chain','接续',"serSet('mode','chain')",lock)}${serChip(d.mode==='split','同日分段',"serSet('mode','split')",lock)}${serChip(d.mode==='mixed','接续＋同日分段',"serSet('mode','mixed')",lock)}<span style="font-size:11px;color:var(--text-3);margin-left:6px">${d.mode==='chain'?'A 的回次全部上完，接着 B，再接着 C：同一个星期、同一个时间，日期一路往下排':d.mode==='split'?'同一天按时间段切开：每门课回数、日期都一样，时间不同':'每门课填时段和回数：时段相同的接续排（先 A 后 B），时段不同的同一天并行'}</span></div>
       ${serLbl('框架')}
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
-        <div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">第一回日期</div><input type="date" id="serFirst" value="${escTM(d.first)}" ${lock?'disabled':''} onchange="SER.first=this.value;serDrawMembers()" style="${SER_INP}"></div>
-        ${d.mode==='mixed'?'':d.mode==='chain'?`<div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">上课时间（所有成员共用）</div><input id="serTr" value="${escTM(d.time_range)}" ${lock?'disabled':''} oninput="SER.time_range=this.value;serDrawPreview()" placeholder="14:00-18:00" style="${SER_INP};width:150px"></div>`
-          :`<div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">回数（每门课一样）</div><input type="number" min="1" id="serTotal" value="${d.total||''}" ${lock?'disabled':''} oninput="SER.total=parseInt(this.value)||0;serDrawPreview()" style="${SER_INP};width:80px"></div>`}
+        <div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">第一回日期</div><input type="date" id="serFirst" value="${escTM(d.first)}" ${fx?'disabled':''} onchange="SER.first=this.value;serDrawMembers()" style="${SER_INP}"></div>
+        ${d.mode==='mixed'?'':d.mode==='chain'?`<div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">上课时间（所有成员共用）</div><input id="serTr" value="${escTM(d.time_range)}" ${fx?'disabled':''} oninput="SER.time_range=this.value;serDrawPreview()" placeholder="14:00-18:00" style="${SER_INP};width:150px"></div>`
+          :`<div><div style="font-size:10px;color:var(--text-3);margin-bottom:3px">回数（每门课一样）</div><input type="number" min="1" id="serTotal" value="${d.total||''}" ${fx?'disabled':''} oninput="SER.total=parseInt(this.value)||0;serDrawPreview()" style="${SER_INP};width:80px"></div>`}
       </div>
-      ${serLbl('星期')}<div style="display:flex;flex-wrap:wrap;gap:5px">${wds.map(w=>serChip(curWd.has(parseWeekdays(w)[0]),w,`serToggleWd('${w}')`,lock)).join('')}</div>
+      ${serLbl('星期')}<div style="display:flex;flex-wrap:wrap;gap:5px">${wds.map(w=>serChip(curWd.has(parseWeekdays(w)[0]),w,`serToggleWd('${w}')`,fx)).join('')}</div>
       ${serLbl('校区')}<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">${campusChips}
-        <select id="serDelivery" ${lock?'disabled':''} onchange="SER.delivery=this.value" style="${SER_INP};margin-left:8px"><option value="">上课方式</option>${['线下','线上','线下＋线上'].map(x=>`<option${d.delivery===x?' selected':''}>${x}</option>`).join('')}</select></div>
+        <select id="serDelivery" ${fx?'disabled':''} onchange="SER.delivery=this.value" style="${SER_INP};margin-left:8px"><option value="">上课方式</option>${['线下','线上','线下＋线上'].map(x=>`<option${d.delivery===x?' selected':''}>${x}</option>`).join('')}</select></div>
       ${serLbl(`成员（${d.members.length} 门，可上下拖动排顺序）`)}
       <div id="serMembers"></div>
       <div id="serPick"></div>
-      ${lock?'':`<div style="margin-top:8px;display:flex;gap:6px"><button type="button" class="btn btn-outline btn-sm" onclick="serAddNew()">＋ 新建一门课</button><button type="button" class="btn btn-outline btn-sm" onclick="serTogglePick()">＋ 选已有的课</button></div>`}
+      ${lock?'':`<div style="margin-top:8px;display:flex;gap:6px">${d.markOnly?'':'<button type="button" class="btn btn-outline btn-sm" onclick="serAddNew()">＋ 新建一门课</button>'}<button type="button" class="btn btn-outline btn-sm" onclick="serTogglePick()">＋ 选已有的课</button></div>`}
       ${serLbl('预览')}
       <div id="serPreview"></div>
     </div>
@@ -192,6 +194,7 @@ function serToggleExcept(date){ if(SER.except.has(date)) SER.except.delete(date)
 // ── 成员 ──
 function serAddNew(){
   if(!SER) return;
+  if(SER.markOnly){ alert('这个系列只是把已经开课的课记在一起，不能新建课'); return; }
   const prev=SER.members[SER.members.length-1];
   SER.members.push({ key:'m'+(SER.seq++), cid:'', name:'', teacher:'', total:5, cur:0, tr:SER.mode==='split'?serNextTr(prev&&prev.tr):(SER.mode==='mixed'&&prev?prev.tr:'') });
   serDraw();
@@ -224,10 +227,13 @@ function serPickRefresh(){
 }
 function serPickUse(cid){
   const c=cachedCourses.find(x=>x.id===cid); if(!c) return;
-  if(serStarted(c)){ alert('这门课已经开课，不能加入系列重排'); return; }
+  const started=serStarted(c);
+  if(started&&SER.id){ alert('这个系列已经存在，已经开课的课不能再加进来（会要重排日期）。请先在课程清理页把它们整理成新的系列'); return; }
+  if((started||SER.markOnly)&&SER.members.some(m=>!m.cid)){ alert('列表里有新建的课，不能和已经开课的课放在同一个系列里。请先把新建的课移除'); return; }
   const prev=SER.members[SER.members.length-1];
   SER.members.push({ key:'m'+(SER.seq++), cid:c.id, name:c.name||'', teacher:c.teacher||'', total:c.total_sessions||5, cur:serActive(c.id).length, tr:SER.mode==='split'?(c.time_range||serNextTr(prev&&prev.tr)):(SER.mode==='mixed'?(c.time_range||''):'') });
   if(!SER.name) SER.name=c.name||'';
+  if(started||SER.markOnly){ SER.markOnly=true; SER.mode=serGuessMode(SER.members.map(m=>cachedCourses.find(x=>x.id===m.cid)).filter(Boolean)); }
   SER.picking=false; serDraw();
 }
 function serRemoveMember(i){
@@ -250,7 +256,7 @@ function serSetMember(i,k,v){
 }
 function serDrawMembers(){
   const box=document.getElementById('serMembers'); if(!box||!SER) return;
-  const d=SER, lock=d.phase2;
+  const d=SER, lock=d.phase2, fx=d.phase2||d.markOnly;
   if(!d.members.length){ box.innerHTML='<div style="font-size:12px;color:var(--text-3);padding:6px 0">还没有成员：点下面「新建一门课」或「选已有的课」</div>'; serDrawPreview(); return; }
   box.innerHTML=d.members.map((m,i)=>{
     const ex=!!m.cid;
@@ -258,8 +264,8 @@ function serDrawMembers(){
       <span style="color:var(--text-3);${lock?'':'cursor:grab'}" title="拖动排顺序">${lock?'':'☰ '}${i+1}</span>
       ${ex?`<span style="font-size:12px;font-weight:600;min-width:120px">${escTM(m.name)}</span><span style="font-size:11px;color:var(--text-3)">${escTM(m.teacher||'')}（已有的课）</span>`
         :`<input value="${escTM(m.name)}" oninput="serSetMember(${i},'name',this.value)" placeholder="课名" style="${SER_INP};width:150px"><input value="${escTM(m.teacher)}" oninput="serSetMember(${i},'teacher',this.value)" placeholder="老师" style="${SER_INP};width:90px">`}
-      ${d.mode!=='split'?`<span style="font-size:11px;color:var(--text-3)">回数</span><input type="number" min="1" value="${m.total||''}" oninput="serSetMember(${i},'total',this.value)" style="${SER_INP};width:60px">`:''}
-      ${d.mode!=='chain'?`<span style="font-size:11px;color:var(--text-3)">时段</span><input value="${escTM(m.tr||'')}" ${lock?'disabled':''} oninput="serSetMember(${i},'tr',this.value)" placeholder="10:00-12:00" style="${SER_INP};width:120px">`:''}
+      ${d.mode!=='split'?`<span style="font-size:11px;color:var(--text-3)">回数</span><input type="number" min="1" value="${m.total||''}" ${d.markOnly?'disabled':''} oninput="serSetMember(${i},'total',this.value)" style="${SER_INP};width:60px">`:''}
+      ${d.mode!=='chain'?`<span style="font-size:11px;color:var(--text-3)">时段</span><input value="${escTM(m.tr||'')}" ${fx?'disabled':''} oninput="serSetMember(${i},'tr',this.value)" placeholder="10:00-12:00" style="${SER_INP};width:120px">`:''}
       <span style="flex:1"></span>
       ${lock?'':`<span class="filter-chip" onclick="serMoveMember(${i},-1)" style="cursor:pointer;font-size:11px;padding:2px 8px">▲</span><span class="filter-chip" onclick="serMoveMember(${i},1)" style="cursor:pointer;font-size:11px;padding:2px 8px">▼</span><span class="filter-chip" onclick="serRemoveMember(${i})" style="cursor:pointer;font-size:11px;padding:2px 8px;color:var(--danger)">移除</span>`}
     </div>`;
@@ -270,6 +276,9 @@ function serDrawMembers(){
 function serDrawPreview(){
   const box=document.getElementById('serPreview'); if(!box||!SER) return;
   const d=SER;
+  if(d.markOnly){
+    box.innerHTML=`<div style="font-size:12px;line-height:1.9">${d.members.map(m=>{ const c=cachedCourses.find(x=>x.id===m.cid), r=c?serRange(c):['','']; return `${escTM(m.name)}：现在 ${serMD(r[0])}～${serMD(r[1])}（${m.cur} 回）${m.tr?` · ${escTM(m.tr)}`:''}`; }).join('<br>')}</div><div style="font-size:11px;color:var(--text-3);margin-top:4px">保存只记系列，不会改这些课的日期。</div>`; return;
+  }
   if(d.phase2){
     box.innerHTML=`<div style="font-size:12px;color:var(--text-2)">${d.members.map((m,i)=>`${escTM(m.name)}：现在 ${m.cur} 回${m.total!==m.cur?` → 改成 ${m.total} 回`:''}`).join('<br>')}</div>`; return;
   }
@@ -297,7 +306,7 @@ function serCheck(d){
   if(!d.major) return '请选专业';
   if(!d.members.length) return '至少要有一门课';
   if(d.members.some(m=>!(m.name||'').trim())) return '每门课都要有课名';
-  if(d.phase2) return '';
+  if(d.phase2||d.markOnly) return '';
   if(!d.campus) return '请选校区';
   if(d.mode==='chain'&&!(d.time_range||'').trim()) return '接续：请填上课时间（所有成员共用）';
   if(d.mode==='mixed'&&d.members.some(m=>!(m.total>0))) return '每门课的回数都要填';
@@ -310,8 +319,41 @@ async function serSave(){
   const err=serCheck(d); if(err){ alert(err); return; }
   const btn=document.getElementById('serSaveBtn'); if(btn){ btn.disabled=true; btn.textContent='保存中…'; }
   try{
-    if(d.phase2) await serSavePhase2(d); else await serSavePhase1(d);
+    if(d.markOnly) await serSaveMark(d); else if(d.phase2) await serSavePhase2(d); else await serSavePhase1(d);
   }catch(e){ if(e.message!=='__cancel__') alert('保存失败：'+e.message); if(btn){ btn.disabled=false; btn.textContent='保存'; } }
+}
+// 只标记：旧课（已开课 / 已上完）整理成系列——只写系列行和成员的 series_id / series_order，日期、单回、教室一概不动
+function serRange(c){ const a=serActive(c.id); return a.length?[a[0].session_date,a[a.length-1].session_date]:[c.first_session_date||'',c.end_date||c.first_session_date||'']; }
+function serGuessMode(cs){
+  const rg=cs.map(serRange); let any=false, all=true;
+  for(let i=0;i<cs.length;i++) for(let j=i+1;j<cs.length;j++){ if(rg[i][0]<=rg[j][1]&&rg[j][0]<=rg[i][1]) any=true; else all=false; }
+  if(!any) return 'chain';
+  const keys=cs.map(c=>serLaneKey(c.time_range));
+  return all&&new Set(keys).size===cs.length?'split':'mixed';
+}
+// 框架从成员实际情况取：第一回日期＝最早的；星期 / 时间 / 校区＝第一门的；各成员时段＝各自的
+function serMarkRecalc(){
+  const d=SER; if(!d||!d.markOnly) return;
+  const cs=d.members.map(m=>cachedCourses.find(c=>c.id===m.cid)).filter(Boolean); if(!cs.length) return;
+  const f=cs[0], firsts=cs.map(c=>serRange(c)[0]).filter(Boolean).sort();
+  d.first=firsts[0]||''; d.weekdays=f.weekdays||''; d.campus=f.campus||''; d.delivery=f.delivery||''; d.time_range=f.time_range||'';
+  if(!d.major) d.major=(f.major&&f.major[0])||'';
+  d.members.forEach(m=>{ const c=cachedCourses.find(x=>x.id===m.cid); if(c){ m.tr=c.time_range||''; m.cur=serActive(c.id).length; m.total=m.cur||c.total_sessions||0; } });
+  d.total=d.members[0]?d.members[0].total:0;
+}
+async function serSaveMark(d){
+  const sid=serNewId('ser');
+  const row={ name:d.name.trim(), mode:d.mode, major:[d.major], first_session_date:d.first||null, weekdays:d.weekdays||null,
+    time_range:d.mode==='chain'?(normalizeTimeRanges(d.time_range||'')||null):null, campus:d.campus||null, holiday_except:null };
+  const r=await sb('/rest/v1/course_series','POST',[Object.assign({id:sid},row)]);
+  cachedSeries.unshift(Array.isArray(r)&&r[0]?r[0]:Object.assign({id:sid},row));
+  for(let i=0;i<d.members.length;i++){
+    const c=cachedCourses.find(x=>x.id===d.members[i].cid); if(!c) continue;
+    await sb(`/rest/v1/courses?id=eq.${encodeURIComponent(c.id)}`,'PATCH',{series_id:sid,series_order:i+1});
+    c.series_id=sid; c.series_order=i+1;
+  }
+  serClose(); serRerender();
+  alert(`已记成系列「${d.name.trim()}」（${d.members.length} 门课）。课程的日期、单回都没有改动。`);
 }
 // 阶段一：系列还没开课——写系列，所有成员的框架和单回按系列重排
 async function serSavePhase1(d){
@@ -667,7 +709,9 @@ function serOpenWith(courses){
     name:'', total:serActive(f.id).length||f.total_sessions||5,
     members:ms.map((c,i)=>({ key:'m'+i, cid:c.id, name:c.name||'', teacher:c.teacher||'', total:serActive(c.id).length||c.total_sessions||0, cur:serActive(c.id).length, tr:c.time_range||'' })),
   });
-  SER.seq=ms.length; SER.picking=false; serDraw();
+  SER.seq=ms.length; SER.picking=false;
+  if(ms.some(serStarted)){ SER.markOnly=true; SER.mode=serGuessMode(ms); }   // 有已经开课的：只标记，不重排
+  serDraw();
 }
 function cleanupMakeSeries(){
   const cs=[...cleanupSelected].map(id=>cachedCourses.find(c=>c.id===id)).filter(Boolean);
@@ -675,7 +719,6 @@ function cleanupMakeSeries(){
   const majors=new Set(cs.map(c=>(c.major||[]).join('/')));
   if(majors.size>1||(cs[0].major||[]).length!==1){ alert('系列里的课只限同一个专业（每门课只属于这一个专业），请重新选'); return; }
   const inSer=cs.find(c=>c.series_id); if(inSer){ alert(`《${inSer.name}》已经在系列里了，请先在课程安排里解散或移出`); return; }
-  const st=cs.find(serStarted); if(st){ alert(`《${st.name}》已经开课，不能加入系列重排`); return; }
   serOpenWith(cs);
 }
 // 整期复制用：这一批课里，成员全都在的系列 → Map(系列id → {s, members})
