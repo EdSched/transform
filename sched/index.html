@@ -36,7 +36,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../shared/constants.js?v=20261110"></script>
-<script src="../shared/course-room-view.js?v=20270404"></script>
+<script src="../shared/course-room-view.js?v=20261113"></script>
 <script src="common.js?v=20270404"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270126"></script>
@@ -1032,7 +1032,9 @@ function adjustDayDialog(courseId, opts){
       el('adj_rooms').querySelectorAll('[data-room]').forEach(x=>x.onclick=async()=>{
         const r=ROOMS.find(y=>String(y.id)===String(x.dataset.room)); if(!r) return;
         const fromName=roomId?rname(roomId):'线上';
-        if(!confirm('把 '+md(d)+' 这一回从 '+fromName+' 换到 '+r.name+'？只改这门课这一天的教室，'+fromName+' 的其他课不受影响。')) return;
+        const busyRow=rows.find(y=>String(y.room.id)===String(r.id)); const busy=(busyRow&&busyRow.blockers)||[];
+        if(busy.length){ if(!confirm(crvBusyConfirmText(r, d, sp, busy))) return; }
+        else if(!confirm('把 '+md(d)+' 这一回从 '+fromName+' 换到 '+r.name+'？只改这门课这一天的教室，'+fromName+' 的其他课不受影响。')) return;
         const undo=[]; // 撤销用：{del:id} / {upd:id, patch}
         try{
           for(const s of sesOn()){
@@ -1070,7 +1072,13 @@ function adjustDayDialog(courseId, opts){
             for(const a of ackBack){ await sbUpdate('sched_change_log', a.id, {acked_by:a.acked_by, changes:a.changes}); const l=(CHANGELOG||[]).find(x=>x.id===a.id); if(l){ l.acked_by=a.acked_by; l.changes=a.changes; } }
             await schedRefreshView(); try{ renderChangeAlerts(); }catch(e){} return '已恢复';
           });
-        }catch(e){ toast('失败：'+e.message,false); }
+          if(busy.length){ const bx=busy[0]; schedBar('<span style="color:#7a5b00">'+esc(md(d))+' 在 '+esc(r.name)+' 跟《'+esc(bx.title)+'》'+esc(bx.time)+' 撞了，调整另一门以后会自动消失。</span>'); }
+        }catch(e){
+          // 写到一半被数据库挡住：已经改的撤回，不留半截数据；报错改成一句人话
+          for(const u of undo.slice().reverse()){ try{ if(u.del) await sbDelete('sched_bookings', u.del); else await sbUpdate('sched_bookings', u.upd, u.patch); }catch(e2){ console.warn('撤回失败',e2); } }
+          try{ await schedRefreshView(); }catch(e3){}
+          toast(crvDbBlockMsg(e, r.name)||('失败：'+e.message), false);
+        }
       });
     }
   }
@@ -1833,7 +1841,8 @@ async function runConflict(){
   const roomIssues=[], accIssues=[];
   for(let i=0;i<pool.length;i++) for(let j=i+1;j<pool.length;j++){
     const a=pool[i],b=pool[j];
-    if(!a._linked && !b._linked && !overlap(a.start_time,a.end_time,b.start_time,b.end_time)) continue;
+    const cOnce=x=>x.kind==='course'&&x.recurrence==='once';   // 课程临时占用存的是旧时间，时间按单回算，不能在这里粗筛
+    if(!a._linked && !b._linked && !cOnce(a) && !cOnce(b) && !overlap(a.start_time,a.end_time,b.start_time,b.end_time)) continue;
     const wa=bookingWeekdays(a), wb=bookingWeekdays(b);
     const shared=[...wa].filter(w=>wb.has(w));
     if(!shared.length) continue;

@@ -75,9 +75,29 @@ function srmWeeklyRule(b, d) {
   return Number(b.weekday) === srmWeekday(d);
 }
 
+// 「稍后调整另一门」的提示条：{ key, courseId, col, id, date, sp, bar }。每次再检查时，冲突没了就自动撤掉
+const SRM_LATER = [];
+function srmLaterAdd(ent, text) {
+  const old = SRM_LATER.findIndex(x => x.key === ent.key);
+  if (old >= 0) { try { SRM_LATER[old].bar.remove(); } catch (e) { /* ignore */ } SRM_LATER.splice(old, 1); }
+  ent.bar = srmBar(text, true);
+  SRM_LATER.push(ent);
+}
+async function srmRecheckLater() {
+  for (let i = SRM_LATER.length - 1; i >= 0; i--) {
+    const x = SRM_LATER[i];
+    if (!x.bar || !x.bar.isConnected) { SRM_LATER.splice(i, 1); continue; }   // 手动关掉了
+    try {
+      const bl = await srmBlockers(x.col, x.id, x.date, x.sp, x.courseId);
+      if (!bl.length) { x.bar.remove(); SRM_LATER.splice(i, 1); }
+    } catch (e) { /* 读不到就先留着 */ }
+  }
+}
+
 // opts: { course, changes:[{ id, num, from:{date,time,cancelled}|null, to:{date,time,cancelled} }], sessions:[该课现在全部单回] }
 // 返回 Promise：窗口关掉后 resolve（不抛错）
 async function srmOpen(opts) {
+  await srmRecheckLater();     // 先看以前「稍后处理」的提示，冲突没了的自动消失
   const course = opts.course || {};
   const changes = (opts.changes || []).filter(c => c && c.to && !c.to.cancelled);
   if (!course.id || !changes.length) return;
@@ -136,9 +156,20 @@ async function srmOpen(opts) {
     const ov = ccOverlay('srmOv');
     const e = ccEsc;
     const notified = new Set();
-    const close = () => { ov.remove(); delete window.__srmNotify; delete window.__srmNotifyAll; delete window.__srmPick; resolve(); };
+    const close = () => { ov.remove(); delete window.__srmNotify; delete window.__srmNotifyAll; delete window.__srmPick; delete window.__srmLater; delete window.__srmLaterAll; resolve(); };
     const who = () => (typeof ADMIN_EMAIL !== 'undefined' && ADMIN_EMAIL) ? ADMIN_EMAIL : '管理员';
-    const todoRows = () => (probRows.concat(noteRows)).filter(r => !r.picked);
+    const todoRows = () => (probRows.concat(noteRows)).filter(r => !r.picked && !r.later);
+    // 稍后调整另一门：这一回收起，标成「稍后处理」，页面上方留一条提示（另一门调整完自动消失）
+    const laterOne = r => {
+      if (r.picked || r.later) return;
+      const c = problems(r).find(x => !x.none && x.blockers && x.blockers.length); if (!c) return;
+      const t = r.ch.to, x = c.blockers[0];
+      r.later = true;
+      srmLaterAdd({ key: r.key, courseId: course.id, col: c.col, id: c.id, date: t.date, sp: r.sp },
+        `${ccEsc(ccMD(t.date))} 第 ${ccEsc(r.ch.num || '?')} 回在 ${ccEsc(c.label.replace('（会议账号）', ' 会议账号'))} 跟《${ccEsc(x.title)}》${ccEsc(x.time)} 撞了，调整另一门以后会自动消失。`);
+    };
+    window.__srmLater = i => { laterOne(rows[i]); draw(); };
+    window.__srmLaterAll = () => { todoRows().forEach(laterOne); draw(); };
 
     // 写一条 room_coord；同一回同一天已有没处理的就不再写
     const notifyOne = async r => {
@@ -175,12 +206,16 @@ async function srmOpen(opts) {
     window.__srmPick = async (i, roomId) => {
       const r = rows[i], t = r.ch.to;
       const room = (r.pickRows || []).map(x => x.room).find(x => String(x.id) === String(roomId)); if (!room) return;
-      if (!confirm(`第 ${r.ch.num || '?'} 回 ${ccMD(t.date)} 改在 ${((room.campus || '') + ' ' + room.name).trim()}？`)) return;
+      const busy = ((r.pickRows || []).find(x => String(x.room.id) === String(roomId)) || {}).blockers || [];
+      if (busy.length) { if (!confirm(crvBusyConfirmText(room, t.date, r.sp, busy))) return; }
+      else if (!confirm(`第 ${r.ch.num || '?'} 回 ${ccMD(t.date)} 改在 ${((room.campus || '') + ' ' + room.name).trim()}？`)) return;
       try {
         err = '';
         await crvSwapRoom({ courseId: course.id, date: t.date, sp: r.sp, toRoom: room, entryName: '课程安排改单回' });
         r.picked = ((room.campus || '') + ' ' + room.name).trim();
-      } catch (er) { err = '换教室失败：' + (er.message || er); }
+        if (busy.length) srmLaterAdd({ key: r.key + '|pick', courseId: course.id, col: 'room_id', id: room.id, date: t.date, sp: r.sp },
+          `${ccEsc(ccMD(t.date))} 第 ${ccEsc(r.ch.num || '?')} 回在 ${ccEsc(room.name)} 跟《${ccEsc(busy[0].title)}》${ccEsc(busy[0].time)} 撞了，调整另一门以后会自动消失。`);
+      } catch (er) { err = /^数据库认为/.test(er.message || '') ? er.message : '换教室失败：' + (er.message || er); }
       draw();
     };
     const loadPick = async r => {
@@ -197,6 +232,7 @@ async function srmOpen(opts) {
         const b = srmMDW(t.date) + (r.sp.start ? r.sp.start : '');
         const head = `${r.ch.num ? '第 ' + e(r.ch.num) + ' 回' : '新增一回'} → ${e(b)}`;
         if (r.picked) return `<div style="border-bottom:1px solid var(--border-light,#eee);padding:6px 0"><div style="font-weight:600">${head}</div><div style="color:#2a7a3a">已安排在 ${e(r.picked)} ✓</div></div>`;
+        if (r.later) return `<div style="border-bottom:1px solid var(--border-light,#eee);padding:6px 0"><div style="font-weight:600">${head}</div><div style="color:#7a5b00">稍后处理（调整另一门后，这条提示会自动消失）</div></div>`;
         const pr = problems(r);
         let lines;
         if (r.note) lines = `<div style="color:#7a5b00">${e(r.note)}</div>`;
@@ -206,11 +242,14 @@ async function srmOpen(opts) {
           return `<div>${e(c.label)}　<span style="color:#2a7a3a">✓ 空着</span></div>`;
         }).join('');
         const picker = r.pickRows ? `<div style="font-size:12px;color:#888;margin-top:4px">${e(srmMDW(t.date))}${e(r.sp.start)}-${e(r.sp.end)} 各教室（✓ 空着，点一间就改在那里）：</div><div class="srmPick" data-i="${i}">${crvRoomPickHtml(r.pickRows, r.curRoomId)}</div>` : (r.pickErr ? '<div style="color:#a33;font-size:12px">教室列表读取失败</div>' : (pr.length ? '<div style="color:#888;font-size:12px;margin-top:4px">读取教室列表…</div>' : ''));
-        const btn = pr.length ? (notified.has(r.key) ? '<span style="color:#2a7a3a;white-space:nowrap">已交给总务 ✓</span>' : `<button type="button" class="btn btn-outline btn-sm" style="padding:2px 10px;cursor:pointer;white-space:nowrap" onclick="__srmNotify(${i})">交给总务</button>`) : '';
+        const hasBlock = pr.some(c => !c.none && c.blockers && c.blockers.length);
+        const laterBtn = hasBlock ? `<button type="button" class="btn btn-outline btn-sm" style="padding:2px 10px;cursor:pointer;white-space:nowrap" onclick="__srmLater(${i})">稍后调整另一门</button>` : '';
+        const btn = pr.length ? `<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">${notified.has(r.key) ? '<span style="color:#2a7a3a;white-space:nowrap">已交给总务 ✓</span>' : `<button type="button" class="btn btn-outline btn-sm" style="padding:2px 10px;cursor:pointer;white-space:nowrap" onclick="__srmNotify(${i})">交给总务</button>`}${laterBtn}</div>` : '';
         return `<div style="border-bottom:1px solid var(--border-light,#eee);padding:6px 0;display:flex;gap:10px;align-items:flex-start"><div style="flex:1;min-width:0"><div style="font-weight:600">${head}</div>${lines}${pr.length ? picker : ''}</div>${btn}</div>`;
       }).join('');
       const todo = todoRows().filter(r => !notified.has(r.key) && problems(r).length).length;
-      ov.innerHTML = `<div style="${CC_BOX}"><div style="padding:14px 18px;border-bottom:1px solid var(--border,#e2ded6);font-size:15px;font-weight:600">这几回的教室需要处理</div><div style="padding:12px 18px;overflow:auto;flex:1">${body}${err ? `<div style="color:#a33;margin-top:6px">${e(err)}</div>` : ''}<div style="font-size:11px;color:#888;margin-top:8px">没处理的回保持原样，课程安排里会显示「被占 / 未排教室」。</div></div><div style="padding:10px 18px;border-top:1px solid var(--border,#e2ded6);display:flex;gap:8px;justify-content:flex-end;align-items:center"><span style="flex:1"></span>${todo ? '<button type="button" class="btn btn-outline btn-sm" style="padding:6px 16px;cursor:pointer" onclick="__srmNotifyAll()">全部交给总务</button>' : ''}<button type="button" id="srmClose" class="btn btn-primary btn-sm" style="padding:6px 16px;cursor:pointer">完成</button></div></div>`;
+      const laterTodo = todoRows().filter(r => problems(r).some(c => !c.none && c.blockers && c.blockers.length)).length;
+      ov.innerHTML = `<div style="${CC_BOX}"><div style="padding:14px 18px;border-bottom:1px solid var(--border,#e2ded6);font-size:15px;font-weight:600">这几回的教室需要处理</div><div style="padding:12px 18px;overflow:auto;flex:1">${body}${err ? `<div style="color:#a33;margin-top:6px">${e(err)}</div>` : ''}<div style="font-size:11px;color:#888;margin-top:8px">没处理的回保持原样，课程安排里会显示「被占 / 未排教室」；点「稍后调整另一门」会在页面上方留提示，另一门调整完自动消失。</div></div><div style="padding:10px 18px;border-top:1px solid var(--border,#e2ded6);display:flex;gap:8px;justify-content:flex-end;align-items:center"><span style="flex:1"></span>${laterTodo ? '<button type="button" class="btn btn-outline btn-sm" style="padding:6px 16px;cursor:pointer" onclick="__srmLaterAll()">全部稍后处理</button>' : ''}${todo ? '<button type="button" class="btn btn-outline btn-sm" style="padding:6px 16px;cursor:pointer" onclick="__srmNotifyAll()">全部交给总务</button>' : ''}<button type="button" id="srmClose" class="btn btn-primary btn-sm" style="padding:6px 16px;cursor:pointer">完成</button></div></div>`;
       ov.querySelector('#srmClose').onclick = close;
       ov.querySelectorAll('.srmPick').forEach(box => box.querySelectorAll('[data-room]').forEach(x => x.onclick = () => __srmPick(+box.dataset.i, x.dataset.room)));
     };
@@ -220,12 +259,13 @@ async function srmOpen(opts) {
 }
 
 // 页面上方提示一行（点 × 关掉，不自动消失）
-function srmBar(html) {
+function srmBar(html, warn) {
   let box = document.getElementById('srmBars');
   if (!box) { box = document.createElement('div'); box.id = 'srmBars'; box.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9000;display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px;pointer-events:none'; document.body.appendChild(box); }
   const bar = document.createElement('div');
-  bar.style.cssText = 'pointer-events:auto;max-width:760px;width:100%;background:#eaf6ec;border:1px solid #9fcfa8;color:#1f5a2c;border-radius:8px;padding:8px 12px;font-size:13px;line-height:1.5;display:flex;gap:10px;align-items:flex-start;box-shadow:0 4px 14px rgba(0,0,0,.15)';
+  bar.style.cssText = 'pointer-events:auto;max-width:760px;width:100%;' + (warn ? 'background:#fbf3dc;border:1px solid #e3d3a6;color:#7a5b00;' : 'background:#eaf6ec;border:1px solid #9fcfa8;color:#1f5a2c;') + 'border-radius:8px;padding:8px 12px;font-size:13px;line-height:1.5;display:flex;gap:10px;align-items:flex-start;box-shadow:0 4px 14px rgba(0,0,0,.15)';
   bar.innerHTML = `<div style="flex:1;min-width:0">${html}</div><button type="button" style="cursor:pointer;border:none;background:none;font-size:16px;line-height:1">×</button>`;
   bar.querySelector('button').onclick = () => bar.remove();
   box.appendChild(bar);
+  return bar;
 }
