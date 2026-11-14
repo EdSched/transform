@@ -358,6 +358,7 @@ let cleanupHwFilter=false;   // 只看「作业未存模板」的课
 let cleanupLastFiltered=[];  // 当前筛选出的课（一键存模板用）
 let cachedCourseMembers=[];   // course_members 全部行（课程清理页加载）
 let cleanupYearFilter='all';
+let cleanupGroupCache={};   // 「年份+期数」分组（整期复制用）
 
 function renderCourseCleanupPage(mc){
   // 按「年份 + 期数」分组，年份取自 first_session_date
@@ -396,6 +397,7 @@ function renderCourseCleanupPage(mc){
     groups[key].courses.push(c);
   });
   const sortedKeys=Object.keys(groups).sort((a,b)=>b.localeCompare(a)); // 新的在前
+  cleanupGroupCache=groups;
 
   // 标记疑似重复：不只看名字——名字+校区+时间段+首回日期 都相同才算真重复
   // （同名但校区/时间/日期不同的，是不同的课，不算重复）
@@ -500,7 +502,8 @@ function renderCourseCleanupPage(mc){
           <span style="font-size:12px;font-weight:600;color:var(--text-2)">${key}</span>
           <span style="font-size:10px;color:var(--text-3)">共 ${g.courses.length} 门</span>
           ${dups.length?`<span style="font-size:10px;background:#e0c060;color:#5a4a10;border-radius:2px;padding:1px 7px">⚠ 疑似重复 ${dups.length} 门</span>`:'<span style="font-size:10px;color:var(--ok)">✓ 无重复</span>'}
-          <span style="font-size:10px;color:var(--text-3);margin-left:auto">${open?'▾ 收起':'▸ 展开'}</span>
+          <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openPeriodCopy('${key}')" style="font-size:11px;padding:2px 10px;margin-left:auto" title="把这一期的课一次复制到新一年">整期复制到…</button>
+          <span style="font-size:10px;color:var(--text-3)">${open?'▾ 收起':'▸ 展开'}</span>
         </div>
         ${open?`<div style="padding:10px 14px;border-top:1px solid var(--border-light)">
           ${dups.length?dups.map(rowHtml).join(''):''}
@@ -2837,6 +2840,159 @@ async function confirmCopyPeriod(){
     courseConfirmOpen({ title:'已复制到新一期，请核对', onEdit:openAddCourseModal, items:[{ course:cachedCourses.find(c=>c.id===newId)||newCourse, dates }] });
   }catch(e){alert('操作失败：'+e.message)}
   finally{btn.textContent='复制并生成';btn.disabled=false}
+}
+
+
+// ── 整期复制到新学年（课程清理页「年份+期数」分组上的按钮）──
+let pcpState=null;
+function pcpAddDays(ds,n){ const d=new Date(ds+'T12:00:00'); d.setDate(d.getDate()+n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function pcpDayDiff(a,b){ return Math.round((new Date(b+'T12:00:00')-new Date(a+'T12:00:00'))/86400000); }
+function pcpWd(ds){ return '日一二三四五六'[new Date(ds+'T12:00:00').getDay()]; }
+function pcpMD(ds){ return `${+ds.slice(5,7)}/${+ds.slice(8,10)}`; }
+function pcpYMD(ds){ return `${ds.slice(0,4)}/${+ds.slice(5,7)}/${+ds.slice(8,10)}`; }
+
+async function openPeriodCopy(key){
+  const g=cleanupGroupCache[key];
+  const courses=(g?g.courses:[]).filter(c=>c.first_session_date);
+  if(!courses.length){alert('这一期里没有设置第一回日期的课');return}
+  if(!HOLIDAYS.length) await loadHolidaysFromDB();
+  const orig=courses.map(c=>c.first_session_date).sort()[0];
+  pcpState={key,courses,sel:new Set(courses.map(c=>c.id)),orig,start:pcpAddDays(orig,364),except:new Set(),dupOn:new Set()};
+  pcpDraw();
+}
+function pcpPlan(){
+  const st=pcpState;
+  const n=Math.round(pcpDayDiff(st.orig,st.start)/7);
+  const shift=n*7;
+  const exceptStr=[...st.except].sort().join(',');
+  const hitMap={};
+  const rows=st.courses.map(c=>{
+    const total=parseInt(c.total_sessions)||cachedSessions.filter(s=>s.course_id===c.id&&!s.is_cancelled).length;
+    const first=pcpAddDays(c.first_session_date,shift);
+    const row={c,total,first,dates:[],auto:'',dup:false,err:''};
+    if(!courseWdList(c.weekdays).length){ row.err='未设置星期'; return row; }
+    if(!total){ row.err='没有回数'; return row; }
+    const frame={first_session_date:first,weekdays:c.weekdays||'',skip_dates:'',holiday_except:exceptStr};
+    const sc=courseScan(frame,{total});
+    row.dates=sc.dates;
+    sc.hits.forEach(h=>{ hitMap[h.date]=h.label; });
+    if(!row.dates.length){ row.err='排不出课次'; return row; }
+    row.auto=autoPeriodOf(first,row.dates[row.dates.length-1]);
+    row.dup=cachedCourses.some(x=>x.name===c.name&&(x.teacher||'')===(c.teacher||'')&&x.id!==c.id&&periodKeyOf(x)===row.auto);
+    return row;
+  });
+  const hits=Object.keys(hitMap).sort().map(d=>({date:d,label:hitMap[d],excepted:st.except.has(d)}));
+  return {n,shift,rows,hits,exceptStr};
+}
+function pcpDraw(){
+  const st=pcpState; if(!st) return;
+  const plan=pcpPlan();
+  const shifted=pcpAddDays(st.orig,plan.shift);
+  const wdNote=st.start&&pcpWd(st.start)!==pcpWd(st.orig)?`<div style="${CC_WARN}">按整周平移，新开始日会是 ${pcpMD(shifted)}（星期${pcpWd(shifted)}）</div>`:'';
+  const ov=ccOverlay('pcpOv');
+  const chip=r=>{
+    const c=r.c,on=st.sel.has(c.id);
+    return `<span class="filter-chip${on?' active':''}" onclick="pcpToggle('${c.id}')" style="cursor:pointer;font-size:11px;padding:3px 10px;margin:0 4px 4px 0;display:inline-block">${ccEsc(c.name)} · ${ccEsc(c.teacher||'')} · ${ccEsc(c.weekdays||'')} · ${ccEsc(c.time_range||'')} · ${r.total}回</span>`;
+  };
+  const sel=plan.rows.filter(r=>st.sel.has(r.c.id));
+  const willCopy=sel.filter(r=>!r.err&&!(r.dup&&!st.dupOn.has(r.c.id)));
+  st.willIds=willCopy.map(r=>r.c.id);
+  const tbl=sel.map(r=>{
+    const dupOn=r.dup&&st.dupOn.has(r.c.id);
+    const bg=r.err?'#fdecea':r.dup?'#fff4d6':'';
+    return `<tr style="background:${bg}">
+      <td style="padding:3px 6px">${ccEsc(r.c.name)}<div style="font-size:10px;color:var(--text-3)">${ccEsc(r.c.teacher||'')}</div></td>
+      <td style="padding:3px 6px;white-space:nowrap">${r.err?`<span style="color:var(--danger)">${r.err}</span>`:`${pcpMD(r.dates[0])}（${pcpWd(r.dates[0])}）～ ${pcpMD(r.dates[r.dates.length-1])}（${pcpWd(r.dates[r.dates.length-1])}）`}</td>
+      <td style="padding:3px 6px">${r.err?'':r.dates.length+'回'}</td>
+      <td style="padding:3px 6px">${r.dup?`<span class="filter-chip${dupOn?' active':''}" onclick="pcpToggleDup('${r.c.id}')" style="cursor:pointer;font-size:10px;padding:2px 8px">${dupOn?'仍要复制':'新的一期已有同名课（点此仍要复制）'}</span>`:''}</td></tr>`;
+  }).join('');
+  ov.innerHTML=`<div style="${CC_BOX};max-width:860px">
+    <div style="padding:14px 18px;border-bottom:1px solid var(--border,#e2ded6);font-size:15px;font-weight:600">整期复制：${ccEsc(st.key)}</div>
+    <div style="padding:12px 18px;overflow:auto;flex:1">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><b>1. 选课</b>
+        <span class="filter-chip" onclick="pcpAll(true)" style="cursor:pointer;font-size:11px;padding:2px 10px">全选</span>
+        <span class="filter-chip" onclick="pcpAll(false)" style="cursor:pointer;font-size:11px;padding:2px 10px">全不选</span></div>
+      <div style="margin-bottom:14px">${plan.rows.map(chip).join('')}</div>
+      <div style="margin-bottom:6px"><b>2. 新一期从哪天开始</b></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <input type="date" value="${st.start}" onchange="pcpSetStart(this.value)">
+        <span style="font-size:11px;color:var(--text-3)">原来这一期从 ${pcpYMD(st.orig)}（${pcpWd(st.orig)}）开始</span></div>
+      ${wdNote}
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">每门课整体平移 ${plan.n} 周（星期不变，先后关系不变）</div>
+      <div style="margin-bottom:6px"><b>3. 假期</b></div>
+      <div style="margin-bottom:14px">${courseHitsHtml(plan.hits,'pcpToggleHol')}</div>
+      <div style="margin-bottom:6px"><b>4. 预览</b></div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px"><tbody>${tbl||'<tr><td style="color:var(--text-3)">没有选中的课</td></tr>'}</tbody></table>
+    </div>
+    <div style="padding:10px 18px;border-top:1px solid var(--border,#e2ded6);display:flex;gap:8px;justify-content:flex-end">
+      <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('pcpOv').remove();pcpState=null" style="padding:6px 16px;cursor:pointer">取消</button>
+      <button type="button" id="pcpGo" class="btn btn-primary btn-sm" onclick="pcpConfirm()" style="padding:6px 16px;cursor:pointer" ${willCopy.length?'':'disabled'}>复制 ${willCopy.length} 门课</button>
+    </div></div>`;
+}
+function pcpToggle(id){ const s=pcpState.sel; if(s.has(id)) s.delete(id); else s.add(id); pcpDraw(); }
+function pcpAll(on){ pcpState.sel=on?new Set(pcpState.courses.map(c=>c.id)):new Set(); pcpDraw(); }
+function pcpSetStart(v){ if(!v) return; pcpState.start=v; pcpDraw(); }
+function pcpToggleHol(d){ const e=pcpState.except; if(e.has(d)) e.delete(d); else e.add(d); pcpDraw(); }
+function pcpToggleDup(id){ const s=pcpState.dupOn; if(s.has(id)) s.delete(id); else s.add(id); pcpDraw(); }
+
+async function pcpConfirm(){
+  const st=pcpState; if(!st) return;
+  const plan=pcpPlan();
+  const rows=plan.rows.filter(r=>(st.willIds||[]).includes(r.c.id));
+  if(!rows.length) return;
+  const btn=document.getElementById('pcpGo');
+  btn.textContent='复制中…';btn.disabled=true;
+  try{
+    const stamp=Date.now();
+    const newCourses=[],newSessions=[],items=[];
+    rows.forEach((r,ri)=>{
+      const src=r.c;
+      const newId=`c-${stamp}-${ri}-${Math.random().toString(36).slice(2,5)}`;
+      const newFirst=r.first,newStart=r.dates[0],newEnd=r.dates[r.dates.length-1];
+      const autoName=r.auto;
+      const periodPart={period:/^\d{4}年\d{1,2}月$/.test(autoName)?stripPeriodYear(autoName):periodFromDate(newFirst),period_override:autoName,period_auto:true};
+      const nc={...src,id:newId,...periodPart,first_session_date:newFirst,start_date:newStart,end_date:newEnd,holiday_except:plan.exceptStr||null,skip_dates:''};
+      delete nc.created_at;
+      newCourses.push(nc);
+      const old=cachedSessions.filter(s=>s.course_id===src.id&&!s.is_cancelled)
+        .sort((a,b)=>((a.session_number||999)-(b.session_number||999))||a.session_date.localeCompare(b.session_date));
+      const defT=acSingleTeacher(src.teacher);
+      r.dates.forEach((date,i)=>{
+        const o=old[i]||{};
+        newSessions.push({
+          id:`s-${stamp}-${ri}-${i}-${Math.random().toString(36).slice(2,4)}`,
+          course_id:newId,course_name:src.name,major:src.major,
+          session_date:date,session_number:i+1,
+          time_range:src.time_range,teacher:o.session_teacher||defT,
+          session_title:o.session_title||'',session_teacher:o.session_teacher||defT,
+          delivery:src.delivery,campus:src.campus,actual_hours:src.actual_hours,
+          homework_enabled:src.homework_enabled||false,
+          homework_questions:o.homework_questions==null?null:o.homework_questions,
+          homework_note:o.homework_note==null?null:o.homework_note,
+          confirmed:false,
+        });
+      });
+      items.push({course:nc,dates:r.dates});
+    });
+    const cres=await sb('/rest/v1/courses','POST',newCourses);
+    const created=Array.isArray(cres)&&cres.length===newCourses.length?cres:newCourses;
+    cachedCourses.push(...created);
+    for(let i=0;i<newSessions.length;i+=20){
+      const chunk=newSessions.slice(i,i+20);
+      const sres=await sb('/rest/v1/course_sessions','POST',chunk);
+      cachedSessions.push(...(Array.isArray(sres)?sres:chunk));
+    }
+    const cnt={};
+    newCourses.forEach(c=>{ const k=periodKeyOf(c); cnt[k]=(cnt[k]||0)+1; });
+    coursesPeriodFilter=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a])[0];
+    document.getElementById('pcpOv')?.remove();
+    pcpState=null;
+    switchPage('courses');
+    courseConfirmOpen({title:`已整期复制 ${newCourses.length} 门课，请核对`,onEdit:openAddCourseModal,items:items.map(it=>({course:cachedCourses.find(c=>c.id===it.course.id)||it.course,dates:it.dates}))});
+  }catch(e){
+    alert('操作失败：'+e.message+'\n（可能已建了一部分课，请到课程清理页检查）');
+    btn.textContent='重试';btn.disabled=false;
+  }
 }
 
 // ── 休讲调整（标记休讲 + 内容顺延 + 末尾补课）──
