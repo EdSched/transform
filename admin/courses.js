@@ -358,6 +358,7 @@ let cleanupHwFilter=false;   // 只看「作业未存模板」的课
 let cleanupLastFiltered=[];  // 当前筛选出的课（一键存模板用）
 let cachedCourseMembers=[];   // course_members 全部行（课程清理页加载）
 let cleanupYearFilter='all';
+let cleanupArchiveFilter='active'; // 课程清理页的状态筛选：active 进行中（含未开课）| ended 已结课 | all 全部（与课程安排页互不影响）
 let cleanupGroupCache={};   // 「年份+期数」分组（整期复制用）
 
 function renderCourseCleanupPage(mc){
@@ -377,6 +378,8 @@ function renderCourseCleanupPage(mc){
   if(cleanupCampusFilter!=='all') filtered=filtered.filter(c=>(campusNormalize(c.campus)||c.campus||'')===cleanupCampusFilter);
   if(cleanupYearFilter!=='all') filtered=filtered.filter(c=>c.first_session_date?.startsWith(cleanupYearFilter));
   if(cleanupHwFilter) filtered=filtered.filter(c=>{ const st=hwTplStatus(c); return st&&(st.noTpl||st.missing>0); });
+  if(cleanupArchiveFilter==='active') filtered=filtered.filter(c=>!courseIsEnded(c));
+  else if(cleanupArchiveFilter==='ended') filtered=filtered.filter(c=>courseIsEnded(c));
   cleanupLastFiltered=filtered;
 
   // 视角过滤后的全部课（筛选项来源，因地制宜——只列本视角实际有的期数/年份/校区）
@@ -424,6 +427,12 @@ function renderCourseCleanupPage(mc){
   </div>
 
   <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap">
+    <div>
+      <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">状态</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        ${[['active','进行中'],['ended','已结课'],['all','全部']].map(([k,l])=>`<div class="filter-chip${cleanupArchiveFilter===k?' active':''}" onclick="setCleanupArchive('${k}')" style="font-size:11px;padding:3px 10px">${l}</div>`).join('')}
+      </div>
+    </div>
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">作业</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">
@@ -501,6 +510,7 @@ function renderCourseCleanupPage(mc){
       <div style="margin-bottom:10px;border:1px solid var(--border);border-radius:4px;overflow:hidden">
         <div onclick="cleanupToggleGroup('${key}')" style="display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;user-select:none;${open?'background:var(--bg)':''}">
           <span style="font-size:12px;font-weight:600;color:var(--text-2)">${key}</span>
+          ${cleanupArchiveFilter==='ended'?'<span style="font-size:10px;color:var(--text-3)">已结课</span>':''}
           <span style="font-size:10px;color:var(--text-3)">共 ${g.courses.length} 门</span>
           ${dups.length?`<span style="font-size:10px;background:#e0c060;color:#5a4a10;border-radius:2px;padding:1px 7px">⚠ 疑似重复 ${dups.length} 门</span>`:'<span style="font-size:10px;color:var(--ok)">✓ 无重复</span>'}
           <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openPeriodCopy('${key}')" style="font-size:11px;padding:2px 10px;margin-left:auto" title="把这一期的课一次复制到新一年">整期复制到…</button>
@@ -547,6 +557,7 @@ function setCleanupType(t,el){cleanupTypeFilter=t;document.querySelectorAll('#ma
 function setCleanupCampus(cp,el){cleanupCampusFilter=cp;renderCourseCleanupPage(document.getElementById('mainContent'))}
 function setCleanupMajor(m,el){cleanupMajorFilter=m;renderCourseCleanupPage(document.getElementById('mainContent'))}
 function setCleanupPeriod(p,el){cleanupPeriodFilter=p;renderCourseCleanupPage(document.getElementById('mainContent'))}
+function setCleanupArchive(k){cleanupArchiveFilter=k;renderCourseCleanupPage(document.getElementById('mainContent'))}
 function setCleanupYear(y,el){cleanupYearFilter=y;renderCourseCleanupPage(document.getElementById('mainContent'))}
 
 function cleanupRowClick(e,id){
@@ -595,18 +606,21 @@ async function cleanupDeleteSingle(courseId){
   }catch(e){alert('删除失败：'+e.message)}
 }
 async function cleanupDeleteSelected(){
-  if(!cleanupSelected.size){alert('请先勾选要删除的课程');return}
-  if(!confirm(`确定删除已选中的 ${cleanupSelected.size} 门课程及其所有课次记录？此操作不可恢复。`))return;
+  const vis=new Set(cleanupLastFiltered.map(c=>c.id));
+  const ids=[...cleanupSelected].filter(id=>vis.has(id));   // 只处理当前显示出来的课
+  if(!ids.length){alert('请先勾选要删除的课程');return}
+  if(!confirm(`确定删除已选中的 ${ids.length} 门课程及其所有课次记录？此操作不可恢复。`))return;
   try{
-    for(const courseId of cleanupSelected){
+    for(const courseId of ids){
       const sessionIds=cachedSessions.filter(s=>s.course_id===courseId).map(s=>s.id);
       if(sessionIds.length) await sb(`/rest/v1/session_records?session_id=in.(${sessionIds.map(i=>`"${i}"`).join(',')})`,'DELETE').catch(()=>{});
       await sb(`/rest/v1/course_sessions?course_id=eq.${courseId}`,'DELETE');
       await sb(`/rest/v1/courses?id=eq.${courseId}`,'DELETE');
     }
-    cachedCourses=cachedCourses.filter(c=>!cleanupSelected.has(c.id));
-    cachedSessions=cachedSessions.filter(s=>!cleanupSelected.has(s.course_id));
-    cleanupSelected.clear();
+    const idSet=new Set(ids);
+    cachedCourses=cachedCourses.filter(c=>!idSet.has(c.id));
+    cachedSessions=cachedSessions.filter(s=>!idSet.has(s.course_id));
+    ids.forEach(id=>cleanupSelected.delete(id));
     renderCourseCleanupPage(document.getElementById('mainContent'));
   }catch(e){alert('删除失败：'+e.message)}
 }
@@ -4251,24 +4265,14 @@ async function ssPublish(){
 
 // 全选当前筛选条件下显示的全部课程（沿用清理页的专业/期数筛选逻辑）
 function cleanupSelectAllFiltered(){
-  let filtered=cachedCourses.filter(c=>{
-    if(!scopeCourse(c)) return false;
-    if(cleanupMajorFilter==='all') return true;
-    const majorList=expandMajorFilter(cleanupMajorFilter);
-    return (c.major||[]).some(m=>majorList.includes(m));
-  });
-  // 与清理页筛选逻辑完全一致（类型三分支 + 期数）
-  filtered=filtered.filter(c=>courseTypeMatch(c,cleanupTypeFilter));
-  if(typeof cleanupPeriodFilter!=='undefined'&&cleanupPeriodFilter!=='all') filtered=filtered.filter(c=>effectivePeriod(c)===cleanupPeriodFilter);
-  if(cleanupHwFilter) filtered=filtered.filter(c=>{ const st=hwTplStatus(c); return st&&(st.noTpl||st.missing>0); });
-  filtered.forEach(c=>cleanupSelected.add(c.id));
+  cleanupLastFiltered.forEach(c=>cleanupSelected.add(c.id));   // 与页面当前显示的课完全一致
   renderCourseCleanupPage(document.getElementById('mainContent'));
 }
 
 function cleanupExportInfo(){
-  if(!cleanupSelected.size){alert('请先选中要导出的课程（点击课程行选中，或用「全选当前筛选」）');return}
+  const list=cleanupLastFiltered.filter(c=>cleanupSelected.has(c.id));   // 只导出当前显示出来的课
+  if(!list.length){alert('请先选中要导出的课程（点击课程行选中，或用「全选当前筛选」）');return}
   if(typeof XLSX==='undefined'){alert('Excel 组件未加载，请刷新页面重试');return}
-  const list=cachedCourses.filter(c=>cleanupSelected.has(c.id));
   const rows=list.map(c=>{
     const ss=cachedSessions.filter(s=>s.course_id===c.id&&s.session_title!=='休讲'&&s.session_date);
     const dates=ss.map(s=>s.session_date).sort();
