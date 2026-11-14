@@ -162,7 +162,7 @@ html.shareview #calBody:empty::after{ content:'课表加载中…'; color:#9a959
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="common.js?v=20270404"></script>
+<script src="common.js?v=20270412"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script src="../shared/course-room-view.js?v=20261113"></script>
 <script>
@@ -264,11 +264,8 @@ function gen(){
   let list=selectedCourses();
   if(SHARE && SHARE_VIEW_TERM) list=list.filter(c=>c.term===SHARE_VIEW_TERM);
   EVENTS=[];
-  // 合并组按顺序轮流出现；非合并课正常展开
-  const groups={}, singles=[];
-  list.forEach(c=>{ if(c.merge_group){ (groups[c.merge_group]=groups[c.merge_group]||[]).push(c); } else singles.push(c); });
-  singles.forEach(c=>EVENTS.push(...expand(c)));
-  Object.values(groups).forEach(gc=>EVENTS.push(...expandMergedGroup(gc)));
+  // 系列课的每一门课也按自己的日期、时间画，和普通课一样
+  list.forEach(c=>EVENTS.push(...expand(c)));
   EVENTS.push(...holidayMarkers(list));   // 全局假期一天一个横幅
   // 限制日期范围
   if(el('ttLimit') && el('ttLimit').value==='1'){
@@ -468,11 +465,10 @@ async function buildAdjustText(){
     CRV.bks=bks.filter(b=>b.status!=='rejected'); CRV.roomList=rooms; CRV.rooms={}; rooms.forEach(r=>{ CRV.rooms[String(r.id)]=r; }); CRV.loaded=true;
   }catch(e){ CRV.loaded=false; }
   const byName={};   // 课名 → [{date, text}]
-  const groups={}; list.forEach(c=>{ if(c.merge_group) (groups[c.merge_group]=groups[c.merge_group]||[]).push(c); });
   list.forEach(c=>{
     const mine=sess.filter(x=>String(x.course_id)===String(c.id) && !x.is_cancelled && x.session_date);
     if(!mine.length) return;
-    const fixedAll=c.merge_group ? expandMergedGroup(groups[c.merge_group]).filter(e=>e.c===c) : expand(c);
+    const fixedAll=expand(c);
     const fixed=fixedAll.filter(e=>!e.off).map(e=>e.date);
     const fixedSet=new Set(fixed), actSet=new Set(mine.map(x=>x.session_date));
     // 有「原日期」记录的回次：直接按记录写「原 → 现」，不再靠固定规律推算
@@ -480,7 +476,7 @@ async function buildAdjustText(){
     const missing=fixed.filter(d=>!actSet.has(d) && !movedOrig.has(d)).sort();
     const extra=mine.filter(x=>!fixedSet.has(x.session_date) && !movedSet.has(x)).sort((a,b)=>a.session_date.localeCompare(b.session_date));
     const cr=[_tt5(c.start_time),_tt5(c.end_time)];
-    const items=(byName[c.merge_name||c.name]=byName[c.merge_name||c.name]||[]);
+    const items=(byName[c.name]=byName[c.name]||[]);
     const timeOf=x=>{ const r=_ttRange(x.time_range,c); return (x.time_range && (r[0]!==cr[0]||r[1]!==cr[1])) ? r[0]+'-'+r[1] : ''; };
     extra.forEach((x,i)=>{
       const t=timeOf(x);
@@ -596,36 +592,6 @@ function expand(c){
   }
   return out;
 }
-/* 合并组：同周几/时段，按 merge_order 在连续上课日轮流出现（第1个上课日=order1，第2个=order2…循环） */
-function expandMergedGroup(gc){
-  const out=[];
-  const grp=gc.slice().sort((a,b)=>(a.merge_order||99)-(b.merge_order||99));
-  const ref=grp[0];
-  if(!ref.weekdays||!ref.start_time) return out;
-  const wds=parseWeekdaysSched(ref.weekdays);
-  const starts=grp.map(c=>c.start_date).filter(Boolean).sort();
-  const ends=grp.map(c=>c.end_date).filter(Boolean).sort();
-  if(!starts.length||!ends.length) return out;
-  const lo=starts[0], hi=ends[ends.length-1];
-  let d=lo, guard=0, idx=0;
-  while(d<=hi && guard++<500){
-    if(wds.includes(weekdayOf(d))){
-      const cur=grp[idx % grp.length];   // 轮到哪门课
-      idx++;
-      const inRange=(!cur.start_date||d>=cur.start_date)&&(!cur.end_date||d<=cur.end_date);
-      if(inRange){
-        const skip=new Set((cur.skip_dates||'').split(',').map(s=>s.trim()).filter(Boolean));
-        const hol=holidayOf(d);
-        const except=new Set((cur.holiday_except||'').split(',').map(s=>s.trim()).filter(Boolean));
-        if(hol && !except.has(d)){ /* 假期由横幅统一标，课不显示 */ }
-        else if(skip.has(d)){ const rmap=skipReasonMap(cur); out.push({date:d, s:cur.start_time, e:cur.end_time, c:cur, off:true, skipReason:(rmap[d]||'')}); }
-        else out.push({date:d, s:cur.start_time, e:cur.end_time, c:cur});
-      }
-    }
-    d=addDays(d,1);
-  }
-  return out;
-}
 /* 全局假期标记：一天一个（含没课的日子），范围取所选课程的整体日期跨度 */
 function holidayMarkers(courses){
   if(!HOLIDAYS.length) return [];
@@ -662,9 +628,9 @@ async function doPrint(){
   const coverTitle = customTitle || [firstTerm, campus, tplName, '课程表'].filter(Boolean).join(' ');
   const subMeta = SEL_TERMS.size>1 ? ('含 '+[...SEL_TERMS].join('、')) : '唯新教育';
   const coverText = (el('pdfCover')?el('pdfCover').value:'').trim();
-  // 封面课程颜色图例（合并课用合并名去重）
+  // 封面课程颜色图例
   const legendSeen=new Set(), legendItems=[];
-  EVENTS.filter(e=>e.c).forEach(e=>{ const nm=e.c.merge_name||e.c.name; if(legendSeen.has(nm))return; legendSeen.add(nm);
+  EVENTS.filter(e=>e.c).forEach(e=>{ const nm=e.c.name; if(legendSeen.has(nm))return; legendSeen.add(nm);
     legendItems.push('<span class="cleg"><i style="'+styleOf(e.c)+'"></i>'+esc(nm)+'</span>'); });
   const coverLegend = (legendItems.length && el('ttLegend') && el('ttLegend').value==='1') ? ('<div class="cleg-wrap">'+legendItems.join('')+'</div>') : '';
   const headerText = (el('pdfHeader')?el('pdfHeader').value:'').trim();

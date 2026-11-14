@@ -64,7 +64,7 @@
   <div class="topline"><span class="muted" id="hint"></span><span><span class="cnt" id="cnt"></span> <button class="ghost sm hidden" id="clearBtn">清除筛选</button></span></div>
   <div id="list"></div>
 </div>
-<script src="common.js?v=20270404"></script>
+<script src="common.js?v=20270412"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script src="../shared/course-room-view.js?v=20261113"></script>
 <script>
@@ -100,20 +100,17 @@ function holidayOf(d){
 }
 function csv(s){ return new Set(String(s||'').split(',').map(x=>x.trim()).filter(Boolean)); }
 function reasonMap(c){ const m={}; (c.skip_reasons||'').split(';').forEach(p=>{ const i=p.indexOf('='); if(i>0) m[p.slice(0,i).trim()]=p.slice(i+1); }); return m; }
-// 推算：weekdays + 开课日 + 休讲日 + 全局假期（未豁免）；合并组按 merge_order 轮流
+// 推算：weekdays + 开课日 + 休讲日 + 全局假期（未豁免）
 function calcDates(c){
   const out=[];
-  const grp = c.merge_group ? ALLC.filter(x=>x.merge_group===c.merge_group).sort((a,b)=>(a.merge_order||99)-(b.merge_order||99)) : [c];
-  const ref = grp[0];
+  const ref = c;
   if(!ref.weekdays) return out;
   const wds = parseWeekdaysSched(ref.weekdays);
-  const starts = grp.map(x=>x.start_date).filter(Boolean).sort(), ends = grp.map(x=>x.end_date).filter(Boolean).sort();
-  if(!starts.length || !ends.length) return out;
-  let d=starts[0], guard=0, idx=0;
-  while(d<=ends[ends.length-1] && guard++<500){
+  if(!c.start_date || !c.end_date) return out;
+  let d=c.start_date, guard=0;
+  while(d<=c.end_date && guard++<500){
     if(wds.includes(weekdayOf(d))){
-      const cur = grp[idx % grp.length]; idx++;
-      if(cur===c && (!c.start_date||d>=c.start_date) && (!c.end_date||d<=c.end_date)){
+      {
         const hol=holidayOf(d), skip=csv(c.skip_dates), except=csv(c.holiday_except);
         if(hol && !except.has(d)) out.push({date:d, off:'假期', why:hol.label||''});
         else if(skip.has(d)) out.push({date:d, off:'休讲', why:reasonMap(c)[d]||''});
@@ -293,7 +290,8 @@ function cardHtml(c){
   const chgLine=i.changes.length?`<div class="l4" style="color:#d9822b">变动：${chgTxt}</div>`:'';
   const open=OPENED.has(String(c.id));
   return `<div class="ccard${searching()&&i.status==='已结课'?' ended':''}" data-id="${c.id}">`+
-    `<div class="l1"><span class="nm">${esc(c.merge_name||c.name)}</span>`+
+    `<div class="l1"><span class="nm">${esc(c.name)}</span>`+
+    (c.merge_group?`<span class="badge b-mute" title="${esc((c.series_mode==='split'?'同日分段':'接续')+'系列课')}">⛓ ${esc(c.merge_name||'系列')}</span>`:'')+
     `<span class="tag" style="background:${cc.bg};border-color:${cc.bd};color:${cc.tx}">${esc(c.category||'')}</span>`+
     (termKeyOf(c)?`<span class="badge b-mute">${esc(termKeyOf(c))}</span>`:'')+
     (schedRemoved(c)?`<span class="badge b-mute" style="background:#e4e4e4">已移出 · ${esc(c.sched_removed_reason)}</span>`:'')+
@@ -365,7 +363,7 @@ function bind(){
 async function boot(){
   el('list').innerHTML='<div class="tip">加载中…</div>';
   try{
-    const CF='id,name,merge_name,merge_group,merge_order,category,major,course_type,teacher,campus,mode,term,weekdays,start_time,end_time,class_time_range,start_date,end_date,sessions,skip_dates,skip_reasons,holiday_except,deleted_at,sched_removed_reason';
+    const CF='id,name,merge_name,merge_group,merge_order,series_mode,category,major,course_type,teacher,campus,mode,term,weekdays,start_time,end_time,class_time_range,start_date,end_date,sessions,skip_dates,skip_reasons,holiday_except,deleted_at,sched_removed_reason';
     const [cs, hol, bks, rooms, ses] = await Promise.all([
       sbGet('sched_course_v','select='+CF),
       sbGet('sched_holidays','select=*&order=start_date').catch(()=>[]),

@@ -703,13 +703,13 @@ function tplRenderGroups(){
         ${list.map(t=>tplEditingId===t.id?tplEditFormHtml(t):`
         <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border-light);border-radius:3px;margin-bottom:6px;flex-wrap:wrap">
           <div style="flex:1;min-width:200px">
-            <div style="font-size:12px;font-weight:600">${t.name}</div>
+            <div style="font-size:12px;font-weight:600">${t.name}${t.series_mode?` <span style="font-size:10px;font-weight:400;background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:0 6px;margin-left:4px">⛓ 系列 · ${t.series_mode==='split'?'同日分段':'接续'} · ${(t.series_members||[]).length} 门</span>`:''}</div>
             <div style="font-size:11px;color:var(--text-3);margin-top:2px">
-              ${t.teacher||''} · ${t.weekdays||''} ${t.time_range||''} · 共${t.total_sessions||'-'}回 · ${t.delivery||''} ${t.campus||''} · ${t.detail_rows?.length||0}条单回明细${(t.detail_rows||[]).filter(r=>r.homework_questions).length?` · <span style="color:var(--accent)">📝 ${(t.detail_rows||[]).filter(r=>r.homework_questions).length}回带作业</span>`:''}
+              ${t.series_mode?(t.series_members||[]).map(m=>escTM(m.name)).join(' → ')+' · ':''}${t.teacher||''} · ${t.weekdays||''} ${t.time_range||''} · 共${t.total_sessions||'-'}回 · ${t.delivery||''} ${t.campus||''} · ${t.detail_rows?.length||0}条单回明细${(t.detail_rows||[]).filter(r=>r.homework_questions).length?` · <span style="color:var(--accent)">📝 ${(t.detail_rows||[]).filter(r=>r.homework_questions).length}回带作业</span>`:''}
             </div>
           </div>
           <button class="btn btn-primary btn-sm" onclick="openApplyTemplate('${t.id}')">套用</button>
-          <button class="btn btn-outline btn-sm" onclick="tplEditingId='${t.id}';tplRenderGroups()">✏ 编辑</button>
+          ${t.series_mode?'':`<button class="btn btn-outline btn-sm" onclick="tplEditingId='${t.id}';tplRenderGroups()">✏ 编辑</button>`}
           <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="deleteTemplate('${t.id}')">删除</button>
         </div>`).join('')}
       </div>`:''}
@@ -794,6 +794,7 @@ async function openApplyTemplate(templateId){
     const t=templates[0];
     if(!t){alert('模板不存在');return}
     if(!/^\d{4}-\d{2}-\d{2}$/.test(firstDate.trim())){alert('日期格式不对，请按 YYYY-MM-DD 填写');return}
+    if(t.series_mode&&Array.isArray(t.series_members)&&t.series_members.length) return serApplyTemplate(t,firstDate.trim());   // 系列模板：建系列和全部成员
     if(!HOLIDAYS.length) await loadHolidaysFromDB();
     const frame={first_session_date:firstDate.trim(),weekdays:t.weekdays||'',skip_dates:'',holiday_except:''};
     // 碰到全局假期：先弹出列表，可以点「照常上课」，确认后再建
@@ -902,6 +903,7 @@ function renderCoursesPage(mc){
       <button class="btn btn-outline btn-sm" onclick="openMonthCalExport()">🗓 导出月课表</button>
       <button class="btn btn-outline btn-sm" onclick="openScheduleShare()">🗓 学生课表</button>
       <button class="btn btn-primary btn-sm" onclick="openAddCourseModal()">＋ 手动添加</button>
+      <button class="btn btn-outline btn-sm" onclick="serOpen()">＋ 新建系列课</button>
       <button class="btn btn-outline btn-sm" onclick="exportCoursesExcel()">↓ 导出 Excel</button>
       <button class="btn btn-outline btn-sm" onclick="downloadCourseImportTemplate()">↓ 下载导入模板</button>
       <button class="btn btn-outline btn-sm" onclick="document.getElementById('courseImportFileInput').click()">↑ 导入 Excel</button>
@@ -998,6 +1000,7 @@ function renderCoursesSummary(courses){
         <div style="background:${color.bg};color:${color.text};padding:8px 14px;display:flex;align-items:center;justify-content:space-between">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <span style="font-size:12px;font-weight:600">${dispName}</span>
+            ${serTagHtml(course)}
             ${course.first_session_date?`<span style="font-size:10px;opacity:.7;background:rgba(0,0,0,.08);border-radius:2px;padding:1px 6px">${effectivePeriod(course)}</span>`:''}
             ${course.first_session_date?`<span style="font-size:10px;opacity:.6;background:rgba(0,0,0,.08);border-radius:2px;padding:1px 5px">${course.first_session_date.slice(0,4)}年</span>`:''}
             ${(course.major||[]).length>1?`<span style="font-size:9px;opacity:.6">${(course.major||[]).map(m=>MAJORS[m]||m).join('・')}</span>`:''}
@@ -1465,6 +1468,7 @@ function openAddCourseModal(editId){
     if(h){ const a=editId?sessionWeekdaysLabel(cachedSessions.filter(x=>x.course_id===editId)):'', f=frameWeekdaysLabel(editId?(cachedCourses.find(x=>x.id===editId)||{}).weekdays:'');
       h.textContent=a&&a!==f?`实际上课（按单回汇总）：周${a}`:''; } }
   acAssignEnsure();
+  serLockFrame(editId?cachedCourses.find(x=>x.id===editId):null);   // 属于系列的课：框架字段变灰
   document.getElementById('addCourseModal').classList.add('open');
 }
 
@@ -3015,6 +3019,7 @@ function rsSetMode(m){
   document.getElementById('rs_pane_shift').style.display=m==='shift'?'':'none';
   document.getElementById('rs_pane_move').style.display=m==='move'?'':'none';
   document.getElementById('rs_ok_btn').textContent=m==='shift'?'确认休讲并顺延':'确认改日期';
+  if(typeof serRsDraw==='function') serRsDraw();
   rsCheck();
 }
 // 返回错误文字（不能确认）；同时刷新提示
@@ -3048,7 +3053,8 @@ function openReschedule(sessionId, mode){
   document.getElementById('rs_orig_date').value=s.session_date;
   document.getElementById('rs_reason').value='老师请假';
   document.getElementById('rs_note').value='';
-  document.getElementById('rs_make_date').value=rsAutoMakeupDate(s.course_id);
+  document.getElementById('rs_make_date').value=(typeof serChainMakeDate==='function'&&serChainMakeDate(sessionId))||rsAutoMakeupDate(s.course_id);
+  if(typeof serRsScope!=='undefined') serRsScope='all';
   document.getElementById('rs_make_time').value=last.time_range||course?.time_range||'';
   document.getElementById('rs_new_date').value='';
   document.getElementById('rs_new_time').value=s.time_range||course?.time_range||'';
@@ -3145,32 +3151,18 @@ async function confirmReschedMove(){
     }catch(e){ console.warn('教室确认弹框失败', e); }
   }catch(e){ alert('操作失败：'+e.message); }
 }
-async function confirmReschedule(){
-  const rsErr=rsCheck(); if(rsErr){ alert(rsErr); return; }
-  if(rsMode==='move') return confirmReschedMove();
-  const id=document.getElementById('rs_session_id').value;
-  const reason=document.getElementById('rs_reason').value;
-  const note=document.getElementById('rs_note').value;
-  const target=cachedSessions.find(x=>x.id===id);
-  if(!target){alert('找不到该课次');return}
-
-  const courseId=target.course_id;
-  if(target.is_cancelled){alert('该课次已经是休讲');return}
-  // 只看正常上课的课次：之前已休讲的日期不参与顺延，也不改它的回数
+// 休讲并顺延的核心：一门课、一回（休讲、内容顺延、末尾补一回）。返回弹教室确认要用的信息
+async function rsDoShift(target, reason, note, newDateStr, makeTime){
+  const id=target.id, courseId=target.course_id;
   const allSessions=cachedSessions.filter(s=>s.course_id===courseId&&!s.is_cancelled).sort((a,b)=>a.session_date.localeCompare(b.session_date));
   const idx=allSessions.findIndex(s=>s.id===id);
-  if(idx===-1){alert('找不到该课次');return}
-
+  if(idx===-1) throw new Error('找不到该课次');
   const course=cachedCourses.find(c=>c.id===courseId);
-  const weekdays=parseWeekdays(course?.weekdays||'');
   const origTarget={ date:target.session_date, time:target.time_range||course?.time_range||'', num:target.session_number };   // 弹框用：休讲前的样子
   const lastSession=allSessions[allSessions.length-1];
   const lastNum=lastSession.session_number;   // 顺延前的最后回数（下面第 2 步会把 lastSession 的回数减 1，先记下来）
   const after=allSessions.slice(idx+1); // 休讲之后的所有课次（日期固定，等待填入顺延后的内容）
-
-  if(!confirm(`确认将 ${target.session_date}（第${target.session_number}回）标记为休讲？\n该日期作废、不计入回数。被休讲掉的内容（连同之后所有内容）整体顺延一位，末尾新增一个日期承接原本最后一回的内容。\n\n如需更精细的手动调整（如改回数、改日期），可在「编辑课程」的单回明细表中直接修改。`)) return;
-
-  try{
+  {
     // ── 第一步：在做任何修改之前，构造完整的「内容链」快照 ──
     // 内容链 = [target自己原本的内容, after[0]原本的内容, after[1]原本的内容, ..., after[n-1]原本的内容]
     // 共 after.length + 1 份，要依次贴到 [after[0]的日期, after[1]的日期, ..., after[n-1]的日期, 新增日期] 这 after.length+1 个日期上
@@ -3212,8 +3204,7 @@ async function confirmReschedule(){
 
     // 3. 新增补课日期，内容＝contentChain 最后一项（原本 lastSession 自己的内容）
     //    补课日跳过全局假期（与 sched 一致），避免补到放假日
-    const newDateStr=document.getElementById('rs_make_date').value;
-    const newTimeStr=normalizeTimeRanges(document.getElementById('rs_make_time').value||'')||lastSession.time_range;
+    const newTimeStr=normalizeTimeRanges(makeTime||'')||lastSession.time_range;
     const lastContent=contentChain[contentChain.length-1];
     const newTeacherVal = lastContent.teacher || lastSession.teacher;
 
@@ -3242,21 +3233,61 @@ async function confirmReschedule(){
       if(co){ co.skip_dates=newSkip; co.end_date=newDateStr; }
     }catch(e){ /* 同步失败不阻断休讲本身 */ }
 
+  }
+  return { target, newSession, origTarget, newDateStr, courseId, course };
+}
+// 弹教室确认（一门课）
+async function rsRoomConfirm(r){
+  try{
+    await srmOpen({ course:cachedCourses.find(x=>x.id===r.courseId), sessions:cachedSessions.filter(s=>s.course_id===r.courseId),
+      changes:[
+        { id:r.target.id, num:r.origTarget.num, from:{ date:r.origTarget.date, time:r.origTarget.time, cancelled:false }, to:{ date:r.target.session_date, time:r.origTarget.time, cancelled:true } },
+        { id:r.newSession.id, num:r.newSession.session_number, from:null, to:{ date:r.newDateStr, time:r.newSession.time_range||r.course?.time_range||'', cancelled:false } },
+      ] });
+  }catch(e){ console.warn('教室确认弹框失败', e); }
+}
+async function confirmReschedule(){
+  const rsErr=rsCheck(); if(rsErr){ alert(rsErr); return; }
+  if(rsMode==='move') return confirmReschedMove();
+  const id=document.getElementById('rs_session_id').value;
+  const reason=document.getElementById('rs_reason').value;
+  const note=document.getElementById('rs_note').value;
+  const target=cachedSessions.find(x=>x.id===id);
+  if(!target){alert('找不到该课次');return}
+  if(target.is_cancelled){alert('该课次已经是休讲');return}
+  const courseId=target.course_id;
+  const allSessions=cachedSessions.filter(s=>s.course_id===courseId&&!s.is_cancelled);
+  if(!allSessions.some(s=>s.id===id)){alert('找不到该课次');return}
+  const course=cachedCourses.find(c=>c.id===courseId);
+  const ser=typeof serOf==='function'?serOf(course):null;
+  // 系列课：同日分段可以选「这一天整个系列」；接续要先列出后面成员的变动
+  let siblings=[];   // 同日分段 · 整个系列：这一天其他成员的同一回
+  if(ser&&ser.mode==='split'&&serRsScope==='all'){
+    serMembersOf(ser.id).forEach(c=>{ if(c.id===courseId) return; const t=cachedSessions.find(x=>x.course_id===c.id&&!x.is_cancelled&&x.session_date===target.session_date); if(t) siblings.push(t); });
+  }
+  let extra='';
+  if(ser&&ser.mode==='chain') extra='\n\n⛓ 系列《'+ser.name+'》（接续）：\n'+serChainPreviewText(courseId);
+  if(siblings.length) extra='\n\n⛓ 系列《'+ser.name+'》（同日分段）：这一天整个系列一起休讲，各自末尾补一回，补在同一天：\n'+siblings.map(t=>'　'+t.course_name+' 第 '+t.session_number+' 回').join('\n');
+  if(!confirm(`确认将 ${target.session_date}（第${target.session_number}回）标记为休讲？\n该日期作废、不计入回数。被休讲掉的内容（连同之后所有内容）整体顺延一位，末尾新增一个日期承接原本最后一回的内容。${extra}\n\n如需更精细的手动调整（如改回数、改日期），可在「编辑课程」的单回明细表中直接修改。`)) return;
+  try{
+    const makeDate=document.getElementById('rs_make_date').value, makeTime=document.getElementById('rs_make_time').value;
+    const results=[ await rsDoShift(target,reason,note,makeDate,makeTime) ];
+    for(const t of siblings) results.push(await rsDoShift(t,reason,note,makeDate,''));
+    let chain=null;
+    if(ser&&ser.mode==='chain'){ try{ chain=await serChainAfterShift(courseId); }catch(e){ alert('后面成员的顺延没有完成：'+e.message+'\n请到课程安排里检查'); } }
     closeModal('rescheduleModal');
     renderCoursesPage(document.getElementById('mainContent'));
-    alert(`已将 ${target.session_date} 标记为休讲，内容顺延，末尾 ${newDateStr} 补第${newSession.session_number}回。`);
-    try{
-      await srmOpen({ course:cachedCourses.find(x=>x.id===courseId), sessions:cachedSessions.filter(s=>s.course_id===courseId),
-        changes:[
-          { id:target.id, num:origTarget.num, from:{ date:origTarget.date, time:origTarget.time, cancelled:false }, to:{ date:target.session_date, time:origTarget.time, cancelled:true } },
-          { id:newSession.id, num:newSession.session_number, from:null, to:{ date:newDateStr, time:newSession.time_range||course?.time_range||'', cancelled:false } },
-        ] });
-    }catch(e){ console.warn('教室确认弹框失败', e); }
+    alert(`已将 ${target.session_date} 标记为休讲，内容顺延，末尾 ${makeDate} 补第${results[0].newSession.session_number}回。`+
+      (siblings.length?`\n同一系列另外 ${siblings.length} 门课这一天也已休讲，各自末尾补在 ${makeDate}。`:'')+
+      (chain?`\n\n系列里后面的课已整体往后挪一个上课日：\n`+chain.lines.join('\n'):''));
+    for(const r of results) await rsRoomConfirm(r);
+    if(chain) await serRoomConfirm(chain);
   }catch(e){alert('操作失败：'+e.message)}
 }
 
 // ── 撤回休讲（和「休讲并顺延」相反：这天恢复上课，之后每回内容前移一位，最后一回删除）──
-async function undoCancelSession(sessionId){
+async function undoCancelSession(sessionId, opts){
+  opts=opts||{};
   const target=cachedSessions.find(x=>x.id===sessionId);
   if(!target||!target.is_cancelled){ alert('该课次不是休讲'); return; }
   const courseId=target.course_id;
@@ -3264,7 +3295,10 @@ async function undoCancelSession(sessionId){
   // 休讲日之后的正常课次（按日期）；最后一个就是当初顺延补出来的那一回
   const L=cachedSessions.filter(s=>s.course_id===courseId&&!s.is_cancelled&&s.session_date>target.session_date).sort((a,b)=>a.session_date.localeCompare(b.session_date));
   const last=L[L.length-1]||null;
-  if(!confirm(`确认撤回 ${target.session_date} 的休讲？\n这天恢复上课，之后每一回的内容（标题、老师）整体前移一位，${last?`最后一回（${last.session_date}）会被删除。`:'之后没有课次，不删除任何课次。'}\n\n只适用于「休讲并顺延」做出来的休讲；其他情况请到「编辑课程」的单回明细里手动改。`)) return;
+  const _ser=typeof serOf==='function'?serOf(course):null;
+  const _sibs=(_ser&&_ser.mode==='split')?serMembersOf(_ser.id).filter(c=>c.id!==courseId).map(c=>cachedSessions.find(x=>x.course_id===c.id&&x.is_cancelled&&x.session_date===target.session_date)).filter(Boolean):[];
+  const _chainTxt=(_ser&&_ser.mode==='chain'&&serMembersOf(_ser.id).slice(serMembersOf(_ser.id).findIndex(c=>c.id===courseId)+1).length)?`\n\n⛓ 系列《${_ser.name}》（接续）：后面的课会整体往前收一个上课日。`:'';
+  if(!opts.silent&&!confirm(`确认撤回 ${target.session_date} 的休讲？\n这天恢复上课，之后每一回的内容（标题、老师）整体前移一位，${last?`最后一回（${last.session_date}）会被删除。`:'之后没有课次，不删除任何课次。'}${_chainTxt}\n\n只适用于「休讲并顺延」做出来的休讲；其他情况请到「编辑课程」的单回明细里手动改。`)) return;
   if(last){
     const recs=await sb(`/rest/v1/session_records?session_id=eq.${last.id}&select=id`).catch(()=>[]);
     if(recs&&recs.length){ alert(`无法撤回：最后一回（${last.session_date}）已有出席/作业记录，不能删除。`); return; }
@@ -3296,8 +3330,15 @@ async function undoCancelSession(sessionId){
       await sb(`/rest/v1/courses?id=eq.${courseId}`,'PATCH',upd);
       if(course) Object.assign(course,upd);
     }catch(e){ /* 同步失败不阻断 */ }
+    let _chain=null;
+    if(_ser&&_ser.mode==='chain'){ try{ _chain=await serChainAfterUndo(courseId); }catch(e){ alert('后面成员的前移没有完成：'+e.message+'\n请到课程安排里检查'); } }
     renderCoursesPage(document.getElementById('mainContent'));
-    alert(`已撤回 ${target.session_date} 的休讲${last?`，内容前移，已删除最后一回 ${last.session_date}`:''}。`);
+    if(!opts.silent) alert(`已撤回 ${target.session_date} 的休讲${last?`，内容前移，已删除最后一回 ${last.session_date}`:''}。`+(_chain?`\n\n系列里后面的课已整体往前收一个上课日：\n`+_chain.lines.join('\n'):''));
+    if(_chain) await serRoomConfirm(_chain);
+    if(!opts.silent&&_sibs.length&&confirm(`同一系列另外 ${_sibs.length} 门课这一天也休讲了，一起撤回吗？`)){
+      for(const t of _sibs){ try{ await undoCancelSession(t.id,{silent:true}); }catch(e){ alert('撤回《'+t.course_name+'》失败：'+e.message); } }
+      renderCoursesPage(document.getElementById('mainContent'));
+    }
     try{
       const changes=[{ id:target.id, num:target.session_number, from:null, to:{ date:target.session_date, time:origTime, cancelled:false } }];
       if(lastInfo) changes.push({ id:lastInfo.id, num:lastInfo.num, from:{ date:lastInfo.date, time:lastInfo.time, cancelled:false }, to:{ date:lastInfo.date, time:lastInfo.time, cancelled:true, removed:true } });

@@ -126,7 +126,6 @@ const SCHED_COURSE_COLMAP = {
   start_date:'start_date', end_date:'end_date', sessions:'total_sessions', est_students:'est_students', mode:'delivery',
   meeting_link:'meeting_url', meeting_id:'meeting_id', meeting_template_id:'meeting_template_id', host_key:'host_key',
   skip_dates:'skip_dates', skip_reasons:'skip_reasons', holiday_except:'holiday_except',
-  merge_group:'sched_merge_group', merge_name:'sched_merge_name', merge_order:'sched_merge_order',
   sched_removed_reason:'sched_removed_reason', sched_removed_at:'sched_removed_at',
   // 上课时间原样写回（可以是多段 10:00-12:00/13:00-15:00）；期数照管理端的存法（period / period_override / period_auto），不再去掉年份
   time_range:'time_range', first_session_date:'first_session_date',
@@ -175,7 +174,7 @@ async function schedSnap(ids){
   return { courses, sessions };
 }
 const SCHED_COL_LABEL = { time_range:'上课时间', campus:'校区', delivery:'授课方式', est_students:'人数', meeting_url:'会议链接', meeting_id:'会议号', host_key:'主持人密钥',
-  sched_merge_group:'合并', sched_merge_name:'合并显示名', sched_merge_order:'合并顺序', sched_removed_at:'移出排课', sched_removed_reason:'移出排课原因',
+  sched_removed_at:'移出排课', sched_removed_reason:'移出排课原因',
   skip_dates:'休讲日', holiday_except:'照常上课的假期', name:'课程名', session_date:'日期', is_cancelled:'休讲' };
 function _schedDiffCols(a, b){      // a → b 有变化的列 {col:[旧,新]}
   const out = {};
