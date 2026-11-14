@@ -1231,6 +1231,7 @@ async function renderPage(){
         sbAll('/rest/v1/course_sessions?select=*&order=session_date.asc')
       ]);
       cachedCourses=filterByDomain(cachedCourses);
+      if(typeof serLoad==='function') await serLoad();
       renderCoursesPage(mc);
     } else if(curPage==='promo'){
       [cachedCourses,cachedSessions]=await Promise.all([
@@ -1248,6 +1249,7 @@ async function renderPage(){
         sbAll('/rest/v1/course_members?select=*').catch(()=>[]),   // 课程学生成员（表未建时为空）
         sb('/rest/v1/course_templates?select=*&order=created_at.desc').catch(()=>null)   // 作业是否已存入模板的检查用
       ]).then(r=>{ cachedTemplates=r.pop(); return r; });
+      if(typeof serLoad==='function') await serLoad();
       renderCourseCleanupPage(mc);
     } else if(curPage==='schedule'){
       [cachedCourses,cachedSessions,cachedScheduleSlots,cachedTeacherAvail,cachedTeachers]=await Promise.all([
