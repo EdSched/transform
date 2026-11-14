@@ -628,3 +628,35 @@ async function serApplyTemplate(t,firstDate){
   SER=d; serDraw();    // 先给人核对一遍：弹窗里能看预览、改课名，确认后点「保存」才建
   alert(`已按模板「${t.name}」排好，请在弹窗里核对预览后点「保存」，才会建出系列和 ${members.length} 门课。\n（单回标题、作业会跟着带进去）`);
 }
+
+// ── 课程清理页：勾选几门课，整理成系列 ──
+function serOpenWith(courses){
+  const ms=courses.slice().sort((a,b)=>(a.first_session_date||'').localeCompare(b.first_session_date||'')||(a.name||'').localeCompare(b.name||''));
+  const f=ms[0];
+  serOpen(null,{
+    major:(f.major&&f.major[0])||'', first:f.first_session_date||'', weekdays:f.weekdays||'', campus:f.campus||'', delivery:f.delivery||'', time_range:f.time_range||'',
+    name:'', total:serActive(f.id).length||f.total_sessions||5,
+    members:ms.map((c,i)=>({ key:'m'+i, cid:c.id, name:c.name||'', teacher:c.teacher||'', total:serActive(c.id).length||c.total_sessions||0, cur:serActive(c.id).length, tr:c.time_range||'' })),
+  });
+  SER.seq=ms.length; SER.picking=false; serDraw();
+}
+function cleanupMakeSeries(){
+  const cs=[...cleanupSelected].map(id=>cachedCourses.find(c=>c.id===id)).filter(Boolean);
+  if(cs.length<2){ alert('请先在下面点选 2 门以上的课（点课程行选中），再点「整理成系列」'); return; }
+  const majors=new Set(cs.map(c=>(c.major||[]).join('/')));
+  if(majors.size>1||(cs[0].major||[]).length!==1){ alert('系列里的课只限同一个专业（每门课只属于这一个专业），请重新选'); return; }
+  const inSer=cs.find(c=>c.series_id); if(inSer){ alert(`《${inSer.name}》已经在系列里了，请先在课程安排里解散或移出`); return; }
+  const st=cs.find(serStarted); if(st){ alert(`《${st.name}》已经开课，不能加入系列重排`); return; }
+  serOpenWith(cs);
+}
+// 整期复制用：这一批课里，成员全都在的系列 → Map(系列id → {s, members})
+function serCopyGroups(courses){
+  const ids=new Set(courses.map(c=>c.id)), out=new Map();
+  courses.forEach(c=>{
+    if(!c.series_id||out.has(c.series_id)) return;
+    const s=serById(c.series_id); if(!s) return;
+    const ms=serMembersOf(s.id);
+    if(ms.length&&ms.every(m=>ids.has(m.id))) out.set(s.id,{ s, members:ms });
+  });
+  return out;
+}

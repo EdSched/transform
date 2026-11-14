@@ -418,6 +418,7 @@ function renderCourseCleanupPage(mc){
       ${(!ACCESS_KEY||ACCESS_KEY.is_admin)?`<button class="btn btn-outline btn-sm" onclick="openHolidayManager()" title="全局假期（与排课系统共用，这段时间所有课放假顺延）">⚙ 全局假期</button>`:''}
       <button class="btn btn-outline btn-sm" onclick="openCourseMembers()" title="设置所选课程的学生成员（至少选中一门课）">👥 学生成员</button>
       <button class="btn btn-primary btn-sm" onclick="cleanupExportInfo()">📄 导出所选信息</button>
+      <button class="btn btn-outline btn-sm" onclick="cleanupMakeSeries()" title="点选 2 门以上同专业的课，整理成一个系列">⛓ 整理成系列</button>
       <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="cleanupDeleteSelected()">删除已选 (<span id="cleanup_count">0</span>)</button>
     </div>
   </div>
@@ -2885,6 +2886,21 @@ function pcpPlan(){
     row.dup=cachedCourses.some(x=>x.name===c.name&&(x.teacher||'')===(c.teacher||'')&&x.id!==c.id&&periodKeyOf(x)===row.auto);
     return row;
   });
+  // 系列课：成员都在这一期里的，按系列整体重排（接续要连着排，同日分段日期一样）；成员不齐的当普通课复制
+  const sg=serCopyGroups(st.courses);
+  sg.forEach(g=>{
+    const rs=g.members.map(m=>rows.find(r=>r.c.id===m.id));
+    const sd={ mode:g.s.mode, first:pcpAddDays(g.s.first_session_date||g.members[0].first_session_date,shift), weekdays:g.s.weekdays||g.members[0].weekdays||'',
+      time_range:g.s.time_range||'', except:st.except, total:rs[0].total, members:rs.map(r=>({total:r.total,tr:r.c.time_range||''})) };
+    const p=serPlan(sd);
+    p.hits.forEach(h=>{ hitMap[h.date]=h.label; });
+    rs.forEach((r,i)=>{
+      r.series=g.s.id;
+      if(p.err){ r.err=p.err; r.dates=[]; return; }
+      r.err=''; r.dates=p.members[i].dates; r.first=r.dates[0]; r.auto=autoPeriodOf(r.first,r.dates[r.dates.length-1]);
+      r.dup=cachedCourses.some(x=>x.name===r.c.name&&(x.teacher||'')===(r.c.teacher||'')&&x.id!==r.c.id&&periodKeyOf(x)===r.auto);
+    });
+  });
   const hits=Object.keys(hitMap).sort().map(d=>({date:d,label:hitMap[d],excepted:st.except.has(d)}));
   return {n,shift,rows,hits,exceptStr};
 }
@@ -2905,7 +2921,7 @@ function pcpDraw(){
     const dupOn=r.dup&&st.dupOn.has(r.c.id);
     const bg=r.err?'#fdecea':r.dup?'#fff4d6':'';
     return `<tr style="background:${bg}">
-      <td style="padding:3px 6px">${ccEsc(r.c.name)}<div style="font-size:10px;color:var(--text-3)">${ccEsc(r.c.teacher||'')}</div></td>
+      <td style="padding:3px 6px">${r.series?'⛓ ':''}${ccEsc(r.c.name)}<div style="font-size:10px;color:var(--text-3)">${ccEsc(r.c.teacher||'')}</div></td>
       <td style="padding:3px 6px;white-space:nowrap">${r.err?`<span style="color:var(--danger)">${r.err}</span>`:`${pcpMD(r.dates[0])}（${pcpWd(r.dates[0])}）～ ${pcpMD(r.dates[r.dates.length-1])}（${pcpWd(r.dates[r.dates.length-1])}）`}</td>
       <td style="padding:3px 6px">${r.err?'':r.dates.length+'回'}</td>
       <td style="padding:3px 6px">${r.dup?`<span class="filter-chip${dupOn?' active':''}" onclick="pcpToggleDup('${r.c.id}')" style="cursor:pointer;font-size:10px;padding:2px 8px">${dupOn?'仍要复制':'新的一期已有同名课（点此仍要复制）'}</span>`:''}</td></tr>`;
@@ -2933,7 +2949,13 @@ function pcpDraw(){
       <button type="button" id="pcpGo" class="btn btn-primary btn-sm" onclick="pcpConfirm()" style="padding:6px 16px;cursor:pointer" ${willCopy.length?'':'disabled'}>复制 ${willCopy.length} 门课</button>
     </div></div>`;
 }
-function pcpToggle(id){ const s=pcpState.sel; if(s.has(id)) s.delete(id); else s.add(id); pcpDraw(); }
+function pcpToggle(id){
+  const s=pcpState.sel, on=!s.has(id), c=pcpState.courses.find(x=>x.id===id);
+  // 系列的成员一起选、一起取消
+  const ids=(c&&c.series_id&&serCopyGroups(pcpState.courses).has(c.series_id))?serMembersOf(c.series_id).map(m=>m.id):[id];
+  ids.forEach(i=>{ if(on) s.add(i); else s.delete(i); });
+  pcpDraw();
+}
 function pcpAll(on){ pcpState.sel=on?new Set(pcpState.courses.map(c=>c.id)):new Set(); pcpDraw(); }
 function pcpSetStart(v){ if(!v) return; pcpState.start=v; pcpDraw(); }
 function pcpToggleHol(d){ const e=pcpState.except; if(e.has(d)) e.delete(d); else e.add(d); pcpDraw(); }
@@ -2949,6 +2971,15 @@ async function pcpConfirm(){
   try{
     const stamp=Date.now();
     const newCourses=[],newSessions=[],items=[];
+    // 系列：成员全都复制时，新建一个系列（排法不变，框架按新日期）；成员没复制齐的，复制出来的当普通课
+    const sidMap={}, newSeries=[], bySer={};
+    rows.forEach(r=>{ if(r.series) (bySer[r.series]=bySer[r.series]||[]).push(r); });
+    Object.entries(bySer).forEach(([sid,rs])=>{
+      const old=serById(sid); if(!old||rs.length!==serMembersOf(sid).length) return;
+      const nsid=`ser-${stamp}-${Math.random().toString(36).slice(2,6)}`; sidMap[sid]=nsid;
+      newSeries.push({ id:nsid, name:old.name, mode:old.mode, major:old.major, first_session_date:rs.map(r=>r.first).sort()[0], weekdays:old.weekdays,
+        time_range:old.time_range||null, campus:old.campus, holiday_except:plan.exceptStr||null });
+    });
     rows.forEach((r,ri)=>{
       const src=r.c;
       const newId=`c-${stamp}-${ri}-${Math.random().toString(36).slice(2,5)}`;
@@ -2957,6 +2988,7 @@ async function pcpConfirm(){
       const periodPart={period:/^\d{4}年\d{1,2}月$/.test(autoName)?stripPeriodYear(autoName):periodFromDate(newFirst),period_override:autoName,period_auto:true};
       const nc={...src,id:newId,...periodPart,first_session_date:newFirst,start_date:newStart,end_date:newEnd,holiday_except:plan.exceptStr||null,skip_dates:''};
       delete nc.created_at;
+      if(src.series_id&&sidMap[src.series_id]) nc.series_id=sidMap[src.series_id]; else { nc.series_id=null; nc.series_order=null; }
       newCourses.push(nc);
       const old=cachedSessions.filter(s=>s.course_id===src.id&&!s.is_cancelled)
         .sort((a,b)=>((a.session_number||999)-(b.session_number||999))||a.session_date.localeCompare(b.session_date));
@@ -2978,6 +3010,7 @@ async function pcpConfirm(){
       });
       items.push({course:nc,dates:r.dates});
     });
+    if(newSeries.length){ const sr=await sb('/rest/v1/course_series','POST',newSeries); cachedSeries.unshift(...(Array.isArray(sr)&&sr.length===newSeries.length?sr:newSeries)); }
     const cres=await sb('/rest/v1/courses','POST',newCourses);
     const created=Array.isArray(cres)&&cres.length===newCourses.length?cres:newCourses;
     cachedCourses.push(...created);
