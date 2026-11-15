@@ -1234,6 +1234,7 @@ function seaStateOf(p, win) {
 }
 const SEA_STATUS_ORDER = Object.values(SCHOOL_STATUS_LABELS).map(v => v.t);
 const SEA_COLS = [
+  { key: 'student', label: '学生', def: 1, vals: r => [r.p.student_name || ''], text: r => r.p.student_name || '' },
   { key: 'start', label: '出愿开始', def: 1, sort: 'num', popDate: 1, num: r => seaNum(r.win && r.win.start), vals: r => [seaMonth(r.win && r.win.start)], text: r => seaMD(r.win && r.win.start) },
   { key: 'end', label: '出愿截止', def: 1, sort: 'num', popDate: 1, num: r => seaNum(r.win && r.win.end), vals: r => [seaMonth(r.win && r.win.end)], text: r => seaMD(r.win && r.win.end) },
   { key: 'state', label: '状态', def: 1, sort: 'num', order: SEA_STATE_ORDER, num: r => SEA_STATE_ORDER.indexOf(r.st.t), vals: r => [r.st.t], text: r => r.st.t === '7 天内开始' ? `还有 ${r.st.n} 天` : r.st.t,
@@ -1241,7 +1242,6 @@ const SEA_COLS = [
   { key: 'school', label: '学校', def: 1, vals: r => [r.p.school_name || ''], text: r => r.p.school_name || '' },
   { key: 'faculty', label: '研究科', def: 1, vals: r => [r.p.faculty || ''], text: r => r.p.faculty || '' },
   { key: 'dept', label: '专攻 / コース', def: 1, vals: r => [r.p.department || ''], text: r => r.p.department || '' },
-  { key: 'student', label: '学生', def: 1, vals: r => [r.p.student_name || ''], text: r => r.p.student_name || '' },
   { key: 'major', label: '专业', def: 1, vals: r => [sttMajor(r.s)], text: r => sttMajor(r.s) },
   { key: 'progress', label: '进度', def: 1, sort: 'num', order: SEA_STATUS_ORDER, num: r => SEA_STATUS_ORDER.indexOf(schoolStatusLabel(r.p.status).t), vals: r => [schoolStatusLabel(r.p.status).t], text: r => schoolStatusLabel(r.p.status).t,
     html: r => { const st = schoolStatusLabel(r.p.status); return `<span style="color:${st.c};font-weight:600">${sttEsc(st.t)}</span>`; } },
