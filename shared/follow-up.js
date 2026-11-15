@@ -715,6 +715,35 @@ async function focusLoad(list) {
   try { focusTm = await tmLoadFollow(list); focusTmErr = ''; } catch (e) { focusTm = null; focusTmErr = (e && e.message) || String(e); }
   focusSms = null; smsCtxCache = {};
   try { focusSms = await smsLoad(''); } catch (e) { focusSms = null; }
+  focusVip = null;
+  try { focusVip = await focusVipLoad(list); } catch (e) { focusVip = null; console.error('focusVipLoad error:', e); }
+}
+
+// ── VIP 两周以上没约课 ──
+let focusVip = null;        // {student_id: {last: 最近一次已过的 VIP 课日期|null, future: 有无今天以后的 VIP 课}}；没加载出来 = null
+function focusIsVip(s) { return s.is_vip_course === 'VIP' || s.is_vip_course === '大课+VIP'; }
+function focusYmd(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+async function focusVipLoad(list) {
+  const ids = list.filter(focusIsVip).map(s => s.id), today = focusYmd(new Date()), out = {};
+  ids.forEach(id => { out[id] = { last: null, future: false }; });
+  for (let i = 0; i < ids.length; i += 100) {
+    const part = ids.slice(i, i + 100).map(id => encodeURIComponent(id)).join(',');
+    const rows = await sbAll(`bookings?type=eq.vip&status=neq.cancelled&student_id=in.(${part})&select=student_id,slot_date`);
+    rows.forEach(b => {
+      const o = out[b.student_id]; const d = String(b.slot_date || '').slice(0, 10);
+      if (!o || !d) return;
+      if (d > today) o.future = true; else if (!o.last || d > o.last) o.last = d;
+    });
+  }
+  return out;
+}
+// 不是 VIP 学生 / 数据没加载 = null；否则 {idle, last, days}
+function focusVipIdle(s) {
+  if (!focusVip || !focusIsVip(s)) return null;
+  const o = focusVip[s.id] || { last: null, future: false };
+  let days = null;
+  if (o.last) { const t = new Date(); days = Math.round((new Date(t.getFullYear(), t.getMonth(), t.getDate()) - new Date(o.last + 'T00:00:00')) / 86400000); }
+  return { idle: !o.future && (days == null || days >= 14), last: o.last, days };
 }
 
 // 这个学生的面谈跟进情况：本月是否「无面谈无记录」、当前连续几次联系未回复
@@ -734,13 +763,14 @@ function focusRender() {
   try {
   const need = FU_HOST.need ? FU_HOST.need() : '';   // 管理端：还没选范围时不列学生
   if (need) { box.innerHTML = (FU_HOST.top ? FU_HOST.top() : '') + need; return; }
-  const rows = FU_HOST.filter(focusStudents).map(s => { const months = focusMonthsUntil(s.expiry_date); return { s, months, bucket: focusBucket(months), f: focusFlags(s), ab: focusAbsent(s) }; });
-  const nAbs = rows.filter(r => r.ab && r.ab.n >= 3).length, nNone = rows.filter(r => r.f && r.f.none).length, nStreak = rows.filter(r => r.f && r.f.streak >= 3).length;
+  const rows = FU_HOST.filter(focusStudents).map(s => { const months = focusMonthsUntil(s.expiry_date); return { s, months, bucket: focusBucket(months), f: focusFlags(s), ab: focusAbsent(s), vi: focusVipIdle(s) }; });
+  const nAbs = rows.filter(r => r.ab && r.ab.n >= 3).length, nNone = rows.filter(r => r.f && r.f.none).length, nStreak = rows.filter(r => r.f && r.f.streak >= 3).length, nVip = rows.filter(r => r.vi && r.vi.idle).length;
   let filtered = rows.filter(r => {
     if (focusUrgency === 'all') return true;
     if (focusUrgency === 'nomtg') return !!(r.f && r.f.none);
     if (focusUrgency === 'noreply3') return !!(r.f && r.f.streak >= 3);
     if (focusUrgency === 'abs3') return !!(r.ab && r.ab.n >= 3);
+    if (focusUrgency === 'vipidle') return !!(r.vi && r.vi.idle);
     if (focusUrgency === 'expired') return r.bucket === 'expired';
     if (focusUrgency === 'near') return ['near', 'expired'].includes(r.bucket);
     if (focusUrgency === 'q3') return ['near', 'q3', 'expired'].includes(r.bucket);
@@ -750,6 +780,7 @@ function focusRender() {
   const ord = { expired: 0, near: 1, q3: 2, half: 3, far: 4 };
   if (focusUrgency === 'noreply3') filtered.sort((a, b) => b.f.streak - a.f.streak);
   else if (focusUrgency === 'abs3') filtered.sort((a, b) => b.ab.n - a.ab.n);
+  else if (focusUrgency === 'vipidle') filtered.sort((a, b) => (b.vi.days == null ? 1e9 : b.vi.days) - (a.vi.days == null ? 1e9 : a.vi.days));
   else filtered.sort((a, b) => ((ord[a.bucket] ?? 5) - (ord[b.bucket] ?? 5)) || ((a.months ?? 9999) - (b.months ?? 9999)));
 
   const chip = (k, l) => `<div class="filter-chip ${focusUrgency === k ? 'active' : ''}" onclick="focusUrgency='${k}';FU_HOST.reset();focusRender()" style="padding:3px 10px;font-size:10px;cursor:pointer">${l}</div>`;
@@ -765,6 +796,7 @@ function focusRender() {
       ${r.f && r.f.none ? tag('#b8560b', '#fbeee0', '本月无面谈无记录') : ''}
       ${r.f && r.f.ex ? tag('#666', '#eeeeee', '不需频繁联系') : ''}
       ${r.ab && r.ab.n >= 3 ? tag('#c0392b', '#fdecea', `⚠ 缺席 ${r.ab.n} 次${r.ab.courses.length ? ' · ' + r.ab.courses.map(fuEsc).join('、') : ''}`) : ''}
+      ${r.vi && r.vi.idle ? tag('#c0392b', '#fdecea', r.vi.last ? `⚠ VIP 已 ${r.vi.days} 天没约课 · 最近 ${parseInt(r.vi.last.slice(5, 7))}/${parseInt(r.vi.last.slice(8, 10))}` : '⚠ VIP 从未约课') : ''}
       <span style="font-size:10px;color:var(--text-3)">到期 ${fuEsc(r.s.expiry_date) || '—'}</span>
       <span style="margin-left:auto;font-size:11px;color:var(--accent)">查看概要 ›</span>
     </div>`;
@@ -774,11 +806,12 @@ function focusRender() {
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
       ${chip('all', '全部')}${chip('half', '半年内')}${chip('q3', '三个月内')}${chip('near', '临近')}${chip('expired', '已过期')}
       <span style="width:1px;height:16px;background:var(--border);margin:0 4px"></span>
-      ${chip('nomtg', '本月无面谈无记录 ' + (focusTm ? nNone : '—'))}${chip('noreply3', '连续 3 次联系未回复 ' + (focusTm ? nStreak : '—'))}${chip('abs3', '缺席 3 次以上 ' + (focusSms ? nAbs : '—'))}
+      ${chip('nomtg', '本月无面谈无记录 ' + (focusTm ? nNone : '—'))}${chip('noreply3', '连续 3 次联系未回复 ' + (focusTm ? nStreak : '—'))}${chip('abs3', '缺席 3 次以上 ' + (focusSms ? nAbs : '—'))}${chip('vipidle', 'VIP 两周以上没约课 ' + (focusVip ? nVip : '—'))}
     </div>
     ${focusTm && !focusSms ? '<div style="font-size:11px;color:var(--danger);margin-bottom:8px">出席统计加载失败（「缺席 3 次以上」暂不可用）</div>' : ''}
+    ${focusTm && !focusVip ? '<div style="font-size:11px;color:var(--danger);margin-bottom:8px">VIP 约课记录加载失败（「VIP 两周以上没约课」暂不可用）</div>' : ''}
     ${focusTmErr ? `<div style="font-size:11px;color:var(--danger);margin-bottom:8px">面谈 / 联系记录加载失败：${fuEsc(focusTmErr)}（「本月无面谈无记录」「连续 3 次联系未回复」暂不可用）</div>` : ''}
-    <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">共 ${filtered.length} 人 · 点学生查看完整学习概要（可打印 / 复制反馈文字）。到期依据「到期时间」自动推算；连续 3 次联系未回复 = 中间没有面谈 / 学习记录；缺席 3 次以上 = 当前期累计缺席（不含请假，出席记录从 2026 年 10 月期起算）。</div>
+    <div style="font-size:10px;color:var(--text-3);margin-bottom:8px">共 ${filtered.length} 人 · 点学生查看完整学习概要（可打印 / 复制反馈文字）。到期依据「到期时间」自动推算；连续 3 次联系未回复 = 中间没有面谈 / 学习记录；缺席 3 次以上 = 当前期累计缺席（不含请假，出席记录从 2026 年 10 月期起算）。VIP 两周以上没约课 = 最近 14 天没有 VIP 课，后面也没有约好的课（不算已取消的）。</div>
     <div>${cards}</div>`;
   } catch (e) {
     box.innerHTML = `<div class="empty" style="color:var(--danger)">重点关注渲染失败：${(e && e.message) || e}</div>`;
