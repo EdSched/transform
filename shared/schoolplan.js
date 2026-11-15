@@ -324,26 +324,44 @@ async function spLoadSharedSchools(student) {
 // ── 老师端 / 管理端：添加・编辑弹窗 ──
 // opts: { student, plan（编辑时）, plans（这个学生现有的志望校）, onDone(), prefill（可选：出愿数据库的一行 {university, faculty, department}，新增时带入学校名・研究科・専攻） }
 let spModalCtx = null;
+let spModalSnap = null, spModalPrevOverflow = null;
+// 关弹窗（并恢复背景页面滚动）
+function spModalRemove() {
+  document.getElementById('spSchoolModal')?.remove();
+  if (spModalPrevOverflow !== null) { document.body.style.overflow = spModalPrevOverflow; spModalPrevOverflow = null; }
+  spModalSnap = null;
+}
+// 取消 / ×：表单里改过东西先确认；没改直接关
+function spModalClose() {
+  const root = document.querySelector('#sp_modal_form .sp-form');
+  if (root && spModalSnap !== null && JSON.stringify(spFormCollect(root)) !== spModalSnap && !confirm('填写的内容还没保存，确定关闭吗？')) return;
+  spModalRemove();
+}
 async function spOpenModal(opts) {
   const { student, plan } = opts;
-  document.getElementById('spSchoolModal')?.remove();
+  spModalRemove();
   const m = document.createElement('div');
   m.id = 'spSchoolModal';
   m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  m.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:18px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">
-    <div style="font-size:13px;font-weight:600;margin-bottom:10px">${plan ? '编辑志望校' : '＋ 添加志望校'} — ${spEsc(student.name)}</div>
+  m.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:18px;max-width:820px;width:100%;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px"><div style="font-size:13px;font-weight:600">${plan ? '编辑志望校' : '＋ 添加志望校'} — ${spEsc(student.name)}</div><button onclick="spModalClose()" title="关闭" style="font-size:18px;line-height:1;background:none;border:none;cursor:pointer;color:var(--text-3);padding:0 4px;font-family:inherit">×</button></div>
     <div id="sp_modal_form"><div style="font-size:11px;color:var(--text-3);padding:12px 0">读取出愿学校列表…</div></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
-      <button onclick="document.getElementById('spSchoolModal').remove()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 14px;cursor:pointer;font-family:inherit">取消</button>
+      <button onclick="spModalClose()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:7px 14px;cursor:pointer;font-family:inherit">取消</button>
       <button id="sp_modal_save" onclick="spModalSave()" style="font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:7px 18px;cursor:pointer;font-family:inherit;font-weight:500">保存</button>
     </div>
   </div>`;
-  m.onclick = e => { if (e.target === m) m.remove(); };
   document.body.appendChild(m);
+  spModalPrevOverflow = document.body.style.overflow;
+  document.body.style.overflow = 'hidden';   // 弹窗开着时背景页面不跟着滚
   spModalCtx = opts;
   const shared = await spLoadSharedSchools(student);
   const box = document.getElementById('sp_modal_form');
-  if (box && spModalCtx === opts) box.innerHTML = spFormHtml(plan || spPrefillPlan(opts.prefill), { sharedSchools: shared, gakubu: (typeof isGakubuStudent === 'function') && isGakubuStudent(student), showLevel: true });
+  if (box && spModalCtx === opts) {
+    box.innerHTML = spFormHtml(plan || spPrefillPlan(opts.prefill), { sharedSchools: shared, gakubu: (typeof isGakubuStudent === 'function') && isGakubuStudent(student), showLevel: true });
+    const root = box.querySelector('.sp-form');
+    if (root) spModalSnap = JSON.stringify(spFormCollect(root));   // 打开时的内容，关闭时比较有没有改过
+  }
 }
 function spPrefillPlan(pf) {
   return pf ? { school_name: pf.university || '', faculty: pf.faculty || '', department: pf.department || '' } : {};
@@ -371,7 +389,7 @@ async function spModalSave() {
       await sb('/rest/v1/student_school_plans', 'POST', row);
       await spAddLog(student, row, ctx.source || 'admin', ctx.sourceName || '管理员');
     }
-    document.getElementById('spSchoolModal')?.remove();
+    spModalRemove();
     spModalCtx = null;
     if (addedRole === 'backup') alert(`目标校已满 ${SP_TARGET_MAX} 所，这所加在备选里`);
     if (ctx.onDone) ctx.onDone();
