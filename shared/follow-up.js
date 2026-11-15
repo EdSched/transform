@@ -721,7 +721,7 @@ async function focusLoad(list) {
 
 // ── VIP 两周以上没约课 ──
 let focusVip = null;        // {student_id: {last: 最近一次已过的 VIP 课日期|null, future: 有无今天以后的 VIP 课}}；没加载出来 = null
-function focusIsVip(s) { return s.is_vip_course === 'VIP' || s.is_vip_course === '大课+VIP'; }
+function focusIsVip(s) { return s.is_vip_course === 'VIP'; }   // 只看纯 VIP；大课+VIP 的不算
 function focusYmd(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 async function focusVipLoad(list) {
   const ids = list.filter(focusIsVip).map(s => s.id), today = focusYmd(new Date()), out = {};
