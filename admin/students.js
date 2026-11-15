@@ -746,7 +746,7 @@ async function renderProgressPage(mc, focusStudentId=null, opts=null){
   const cards = shownStudents.map(s => pgcCardHtml(s, ctxPG, {
     mode: 'admin', open: solo || focusStudentId === s.id || !!(openIdsPG && openIdsPG.has(s.id)), focus: focusStudentId === s.id,
     solo: solo ? null : (st => `pgSoloFromList('${pgcJs(st.id)}')`),
-    h: { planSet: 'spPlanSet', planFlag: 'spPlanFlag', schoolAdd: 'spSchoolAdd', schoolEdit: 'spSchoolEdit', schoolDel: 'spSchoolDel' },
+    h: { planSet: 'spPlanSet', planFlag: 'spPlanFlag', schoolAdd: 'spSchoolAdd', schoolEdit: 'spSchoolEdit', schoolDel: 'spSchoolDel', roleSet: 'spRoleToggle' },
     notesFn: 'spNotesToggle',
     riyuChanged: () => pgRefresh(s.id),
     progressAdd: st => `openAddProgressEntry('${pgcJs(st.id)}','${pgcJs(st.name)}','${pgcJs(st.major)}')`,
@@ -1364,9 +1364,24 @@ async function speAck(id){
 }
 
 // ══ admin 侧志望校行内修改（与老师端/学生端同一张表） ══
+function spAdminPlanOf(planId) { return (window.__spPlansAll || []).find(p => p.id === planId) || null; }
+function spAdminStudentOfPlan(plan) { return spAdminStudent(plan.student_id) || { id: plan.student_id, name: plan.student_name, major: plan.major }; }
+// 行内修改后：同步本地缓存，并往考学进度时间线记一条（1 分钟内连续改同一所合并）
+async function spPlanLogChange(planId, field, value) {
+  const plan = spAdminPlanOf(planId); if (!plan) return;
+  const changes = spDiffPlan(plan, { [field]: value });
+  plan[field] = value;
+  await spLogModify(spAdminStudentOfPlan(plan), plan, changes, 'admin', '管理员');
+}
+function spRoleToggle(planId) {
+  const plan = spAdminPlanOf(planId); if (!plan) { alert('找不到这条志望校，请刷新页面'); return; }
+  const stu = spAdminStudentOfPlan(plan);
+  spSetRole(stu, plan, spRoleOf(plan) === 'backup' ? 'target' : 'backup', 'admin', '管理员', () => pgRefresh(stu.id));
+}
 async function spPlanSet(planId, field, value, el) {
   try {
     await sb(`/rest/v1/student_school_plans?id=eq.${planId}`, 'PATCH', { [field]: value });
+    await spPlanLogChange(planId, field, value);
     if (el && field === 'status') { const st = schoolStatusLabel(value); el.style.color = st.c; }
     if (el) { el.style.outline = '1px solid var(--ok)'; setTimeout(() => el.style.outline = '', 800); }
   } catch (e) { alert('保存失败：' + e.message); }
@@ -1376,6 +1391,7 @@ async function spPlanFlag(planId, field, btn) {
   const next = btn.dataset.on !== '1';
   try {
     await sb(`/rest/v1/student_school_plans?id=eq.${planId}`, 'PATCH', { [field]: next });
+    await spPlanLogChange(planId, field, next);
     btn.dataset.on = next ? '1' : '0';
     btn.textContent = next ? (field === 'kakomon_started' ? '✓ 已开始' : '✓ 已完成') : (field === 'kakomon_started' ? '未开始' : '未完成');
     btn.style.border = `1px solid ${next ? 'var(--ok)' : 'var(--border)'}`;
@@ -1453,13 +1469,13 @@ function spAdminStudent(sid) {
 function spAdminPlans(sid) { return (window.__spPlansAll || []).filter(p => p.student_id === sid); }
 function spSchoolAdd(sid, prefill) {
   const stu = spAdminStudent(sid); if (!stu) { alert('找不到这个学生，请刷新页面'); return; }
-  spOpenModal({ student: stu, prefill, plans: spAdminPlans(sid), onDone: () => pgRefresh(stu.id) });
+  spOpenModal({ student: stu, prefill, plans: spAdminPlans(sid), source: 'admin', sourceName: '管理员', onDone: () => pgRefresh(stu.id) });
 }
 function spSchoolEdit(planId) {
   const plan = (window.__spPlansAll || []).find(p => p.id === planId);
   const stu = plan && spAdminStudent(plan.student_id);
   if (!plan || !stu) { alert('找不到这条志望校，请刷新页面'); return; }
-  spOpenModal({ student: stu, plan, plans: spAdminPlans(stu.id), onDone: () => pgRefresh(stu.id) });
+  spOpenModal({ student: stu, plan, plans: spAdminPlans(stu.id), source: 'admin', sourceName: '管理员', onDone: () => pgRefresh(stu.id) });
 }
 function spSchoolDel(planId) {
   const plan = (window.__spPlansAll || []).find(p => p.id === planId);

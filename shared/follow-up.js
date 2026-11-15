@@ -899,11 +899,17 @@ async function focusOpenSummary(sid) {
   const confirmed = plans.filter(p => CONFIRMED.includes(p.status)), others = plans.filter(p => !CONFIRMED.includes(p.status));
   const planLine = (p, strong) => {
     const st = stLabel(p.status), nm = [p.school_name, p.faculty, p.department].filter(Boolean).map(fuEsc).join(' · ');
-    return `<div style="font-size:${strong ? 13 : 12}px;padding:${strong ? 7 : 4}px 0;border-top:1px solid #eee;${strong ? 'background:#fffaf0;padding-left:8px;border-left:3px solid #b8953a;' : ''}"><span style="font-weight:600">${nm}</span>${p.professor ? ' · 教授 ' + fuEsc(p.professor) : ''} ${schoolLevelHtml(p.level)} <span style="color:${st.c};font-weight:600">${fuEsc(st.t)}</span>${!isGakubuStudent(s) && typeof riyuProfTagHtml === 'function' ? ' ' + riyuProfTagHtml(p, pmR.v) : ''}${p.application_period ? ' <span style="color:#888;font-size:11px">出愿期间 ' + fuEsc(p.application_period) + '</span>' : ''}</div>`;
+    return `<div style="font-size:${strong ? 13 : 12}px;padding:${strong ? 7 : 4}px 0;border-top:1px solid #eee;${strong ? 'background:#fffaf0;padding-left:8px;border-left:3px solid #b8953a;' : ''}">${spRoleChipHtml(p, '')} <span style="font-weight:600">${nm}</span>${p.professor ? ' · 教授 ' + fuEsc(p.professor) : ''} ${schoolLevelHtml(p.level)} <span style="color:${st.c};font-weight:600">${fuEsc(st.t)}</span>${!isGakubuStudent(s) && typeof riyuProfTagHtml === 'function' ? ' ' + riyuProfTagHtml(p, pmR.v) : ''}${p.application_period ? ' <span style="color:#888;font-size:11px">出愿期间 ' + fuEsc(p.application_period) + '</span>' : ''}</div>`;
   };
-  const schoolsHtml = errHtml(plR) + (confirmed.length ? `<div style="font-size:11px;color:#8a6d10;margin-bottom:2px">已确定报考（${confirmed.length}）</div>${confirmed.map(p => planLine(p, true)).join('')}`
-      : `<div style="font-size:13px;font-weight:600;color:#c0392b;background:#fdecea;border-radius:4px;padding:8px 12px">尚未确定报考学校</div>`)
-    + (others.length ? `<div style="font-size:11px;color:#888;margin:10px 0 2px">候选（${others.length}）</div>${others.map(p => planLine(p, false)).join('')}` : '');
+  // 先目标校（n / 6）、再备选（n）；每组里已确定报考（教授 OK / 已出愿 / 已合格）的放最前并高亮
+  const spl = spSplit(plans);
+  const roleGroup = (role, list) => {
+    if (role === 'backup' && !list.length) return '';
+    const sorted = list.filter(p => CONFIRMED.includes(p.status)).concat(list.filter(p => !CONFIRMED.includes(p.status)));
+    return spGroupHeadHtml(role, list.length) + sorted.map(p => planLine(p, CONFIRMED.includes(p.status))).join('');
+  };
+  const schoolsHtml = errHtml(plR) + (confirmed.length ? '' : `<div style="font-size:13px;font-weight:600;color:#c0392b;background:#fdecea;border-radius:4px;padding:8px 12px">尚未确定报考学校</div>`)
+    + roleGroup('target', spl.targets) + roleGroup('backup', spl.backups);
 
   // 3. 考学进度：当前各项状态 + 时间线（只含进度更新，不含面谈）
   const latest = getLatestProgress(timeline);
@@ -947,6 +953,9 @@ async function focusOpenSummary(sid) {
   L.push('◆ 报考学校');
   L.push(confirmed.length ? '已确定：' + confirmed.map(p => [p.school_name, p.faculty, p.department].filter(Boolean).join(' ') + '（' + stLabel(p.status).t.replace(/\s*🎉/, '') + '）').join('；') : '已确定：尚未确定');
   if (others.length) L.push('候选：' + others.map(p => [p.school_name, p.faculty, p.department].filter(Boolean).join(' ')).join('；'));
+  { const nm = p => [p.school_name, p.faculty, p.department].filter(Boolean).join(' ');
+    L.push(spGroupTitle('target', spl.targets.length) + '：' + (spl.targets.map(nm).join('；') || '无'));
+    if (spl.backups.length) L.push(spGroupTitle('backup', spl.backups.length) + '：' + spl.backups.map(nm).join('；')); }
   L.push('考学进度：' + dims.map(k => `${PROGRESS_LABELS[k]} ${latest[k] || '未填写'}`).join('；'));
   L.push(`◆ 面谈记录（共 ${recs.length} 次，最近 3 次）`);
   if (recs.length) recs.slice(0, 3).forEach(b => L.push(`${b.slot_date || ''}${b.assigned_teacher ? ' · ' + b.assigned_teacher + '老师' : ''} · ${cut(recText(b.daily_record), 80) || '（无内容）'}`));

@@ -252,7 +252,7 @@ function renderRiyuView(draft, plans, esc){
   const m = riyuMap(draft);
   const list = (plans||[]).slice().sort((a,b)=>((a.level||2)-(b.level||2)));
   if(!list.length) return '<div style="font-size:11px;color:var(--text-3,#999)">尚无志望校，学生添加志望校后即可逐校填写志望理由书</div>';
-  return list.map(p=>{
+  const one = p=>{
     const v = m[riyuKeyOf(p)] || {};
     const title = [p.school_name,p.faculty,p.department].filter(Boolean).join(' · ') || '（未命名学校）';
     const any = RIYU_SECTIONS.some(s=>String(v[s.k]||'').trim());
@@ -263,7 +263,11 @@ function renderRiyuView(draft, plans, esc){
         return `<div style="margin-bottom:6px"><div style="font-size:10px;font-weight:600;color:var(--text-2,#5a5650)">${i+1}. ${s.label}</div><div style="font-size:11px;line-height:1.7;color:var(--text-2,#5a5650);white-space:pre-wrap">${txt?e(txt):'<span style=\'color:#bbb\'>（未填写）</span>'}</div></div>`;
       }).join('') : '<div style="font-size:11px;color:#bbb">该校志望理由书尚未填写</div>'}
     </div>`;
-  }).join('');
+  };
+  // 先目标校（n / 6），再备选（n）；没加载 schoolplan.js 时不分组
+  if(typeof spSplit!=='function') return list.map(one).join('');
+  const sp = spSplit(list);
+  return spGroupHeadHtml('target', sp.targets.length, 'margin-top:0') + sp.targets.map(one).join('') + (sp.backups.length ? spGroupHeadHtml('backup', sp.backups.length) + sp.backups.map(one).join('') : '');
 }
 // 学生可见性（叠加逻辑，仅用于学生管理/学生页）：
 // 学生的完整专业 = major(主) + extra_majors(附加，如日语/英语)。

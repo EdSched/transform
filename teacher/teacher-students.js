@@ -101,7 +101,7 @@ function tpSoloHtml() {
 function tpCardOpts(extra) {
   return Object.assign({
     mode: 'teacher',
-    h: { planSet: 'tpPlanSet', planFlag: 'tpPlanFlag', schoolAdd: 'tpAddSchool', schoolEdit: 'tpEditSchool', schoolDel: 'tpDelSchool' },
+    h: { planSet: 'tpPlanSet', planFlag: 'tpPlanFlag', schoolAdd: 'tpAddSchool', schoolEdit: 'tpEditSchool', schoolDel: 'tpDelSchool', roleSet: 'tpRoleToggle' },
     notesFn: 'tpNotesToggle',
     riyuChanged: tpRiyuChanged,
   }, extra || {});
@@ -1154,9 +1154,21 @@ async function renderTsaMeetings(box) {
 }
 
 // ══ 志望校行内修改（老师端；与学生端同一张表即时同步） ══
+// 行内修改后往考学进度时间线记一条（同一所学校 1 分钟内连续改合并）；必须在本地缓存更新之前调用，才能算出旧值 → 新值
+async function tpPlanLogChange(planId, field, value) {
+  const plan = tpPlanOf(planId); if (!plan) return;
+  const stu = tpStudentOf(plan.student_id) || { id: plan.student_id, name: plan.student_name, major: plan.major };
+  await spLogModify(stu, plan, spDiffPlan(plan, { [field]: value }), 'teacher', tpOperatorName());
+}
+function tpRoleToggle(planId) {
+  const plan = tpPlanOf(planId), stu = plan && tpStudentOf(plan.student_id);
+  if (!plan || !stu) return;
+  spSetRole(stu, plan, spRoleOf(plan) === 'backup' ? 'target' : 'backup', 'teacher', tpOperatorName(), () => tpReloadStudentPlans(stu.id));
+}
 async function tpPlanSet(planId, field, value, el) {
   try {
     await sb(`/rest/v1/student_school_plans?id=eq.${planId}`, 'PATCH', { [field]: value });
+    await tpPlanLogChange(planId, field, value);
     Object.values(teacherProgressData.plansMap || {}).forEach(list => {
       const p = (list || []).find(x => x.id === planId);
       if (p) p[field] = value;
@@ -1170,6 +1182,7 @@ async function tpPlanFlag(planId, field, btn) {
   const next = btn.dataset.on !== '1';
   try {
     await sb(`/rest/v1/student_school_plans?id=eq.${planId}`, 'PATCH', { [field]: next });
+    await tpPlanLogChange(planId, field, next);
     Object.values(teacherProgressData.plansMap || {}).forEach(list => {
       const p = (list || []).find(x => x.id === planId);
       if (p) p[field] = next;
@@ -1334,12 +1347,12 @@ async function tpReloadStudentPlans(sid) {
 }
 function tpAddSchool(sid, prefill) {
   const stu = tpStudentOf(sid); if (!stu) return;
-  spOpenModal({ student: stu, prefill, plans: teacherProgressData.plansMap[sid] || [], onDone: () => tpReloadStudentPlans(sid) });
+  spOpenModal({ student: stu, prefill, plans: teacherProgressData.plansMap[sid] || [], source: 'teacher', sourceName: tpOperatorName(), onDone: () => tpReloadStudentPlans(sid) });
 }
 function tpEditSchool(planId) {
   const plan = tpPlanOf(planId), stu = plan && tpStudentOf(plan.student_id);
   if (!plan || !stu) return;
-  spOpenModal({ student: stu, plan, plans: teacherProgressData.plansMap[stu.id] || [], onDone: () => tpReloadStudentPlans(stu.id) });
+  spOpenModal({ student: stu, plan, plans: teacherProgressData.plansMap[stu.id] || [], source: 'teacher', sourceName: tpOperatorName(), onDone: () => tpReloadStudentPlans(stu.id) });
 }
 function tpDelSchool(planId) {
   const plan = tpPlanOf(planId), stu = plan && tpStudentOf(plan.student_id);
