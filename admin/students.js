@@ -1212,30 +1212,14 @@ async function confirmImport() {
   }
 }
 
-// ── 年度出愿情报视图 ──
+// ── 年度出愿情报视图（按标准出愿日期 apply_date 分组；文字 application_period 只作参考显示）──
+const SEA = { q: '', when: 'all', role: 'all', sts: [], view: 'school', sort: 'date', shown: LIST_PAGE, expOpen: false };
+let seaPlans = [], seaValid = new Set(), seaMc = null;
+
 async function renderSeasonView(mc, students, timelineMap) {
-  // 拉取所有学生志望校
-  const allPlans = await sb('/rest/v1/student_school_plans?select=*&order=level.asc').catch(()=>[]);
-  const seasonLabel = { summer:'夏季', winter:'冬季', next_year:'次年' };
-  const seasonTitle = s => s === 'unknown' ? '出愿时期未定' : `${seasonLabel[s]||s}出愿`;
-  const levelLabel = { 1:'🔴 冲刺', 2:'🟡 匹配', 3:'🟢 保底' };
-  const statusLabel = { preparing:'准备中', applied:'已出愿', passed:'✅ 合格', failed:'❌ 不合格' };
-
-  // 按季度分组
-  const seasonGroups = {};
-  allPlans.forEach(p => {
-    const key = p.exam_season || 'unknown';
-    if (!seasonGroups[key]) seasonGroups[key] = {};
-    // 按学校分组
-    const schoolKey = `${p.school_name}|||${p.faculty||''}|||${p.department||''}`;
-    if (!seasonGroups[key][schoolKey]) seasonGroups[key][schoolKey] = [];
-    seasonGroups[key][schoolKey].push(p);
-  });
-
-  // 专业筛选后的学生ID集合
-  const validStudentIds = new Set(students.map(s => s.id));
-
-  const seasonOrder = ['summer','winter','next_year','unknown'];
+  seaMc = mc;
+  seaValid = new Set(students.map(s => s.id));
+  seaPlans = await sbAll('/rest/v1/student_school_plans?select=*&order=level.asc').catch(() => []) || [];
   const dmfBar = domMajorFilterHtml(DMF, "renderProgressPage(document.getElementById('mainContent'))", cachedStudents.filter(s=>studentInCurrentView(s)&&['active','stopped','graduated'].includes(s.status)));
   let html = `
   <div class="page-header">
@@ -1245,67 +1229,195 @@ async function renderSeasonView(mc, students, timelineMap) {
     </div>
   </div>
   ${dmfBar}`;
-
-  if (!allPlans.length) {
-    html += '<div style="text-align:center;padding:40px;color:var(--text-3)">暂无学生填写志望校数据</div>';
-    mc.innerHTML = html;
+  if (!seaPlans.length) {
+    mc.innerHTML = html + '<div style="text-align:center;padding:40px;color:var(--text-3)">暂无学生填写志望校数据</div>';
     return;
   }
+  mc.innerHTML = html + '<div id="seaFill"></div><div id="seaCtl"></div><div id="seaList"></div>';
+  seaDraw();
+}
 
-  seasonOrder.forEach(season => {
-    const schools = seasonGroups[season];
-    if (!schools) return;
-    // 过滤掉不在当前专业筛选内的学生
-    const filteredSchools = {};
-    Object.entries(schools).forEach(([key, plans]) => {
-      const filtered = plans.filter(p => validStudentIds.has(p.student_id));
-      if (filtered.length) filteredSchools[key] = filtered;
-    });
-    if (!Object.keys(filteredSchools).length) return;
+// 还没有标准日期、又没手动改过的志望校（只算当前看得到的学生）
+function seaMissing() {
+  const ok = new Set(cachedStudents.filter(s => studentInCurrentView(s)).map(s => s.id));
+  return seaPlans.filter(p => !p.apply_date && p.apply_date_manual !== true && ok.has(p.student_id));
+}
+function seaFillHtml() {
+  const n = seaMissing().length;
+  if (!n || !scopeAll()) return '';
+  return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;background:var(--warn-bg,#f8f0d8);border:1px solid var(--warn,#b8860b);border-radius:4px;padding:8px 12px;margin-bottom:10px;color:#6a5210">
+    有 ${n} 所志望校还没有标准出愿日期
+    <button id="seaFillBtn" onclick="seaFillRun()" style="font-size:11px;background:none;border:1px solid #6a5210;color:#6a5210;border-radius:3px;padding:2px 10px;cursor:pointer;font-family:inherit">补全</button>
+  </div>`;
+}
+async function seaFillRun() {
+  const list = seaMissing(); if (!list.length) return;
+  const btn = document.getElementById('seaFillBtn'); if (btn) { btn.disabled = true; btn.textContent = '补全中…'; }
+  let done = 0, unknown = 0, failed = 0;
+  for (const p of list) {
+    const d = spApplyDate(p.application_period, p.created_at || new Date());
+    if (!d) { unknown++; continue; }
+    try { await sb(`/rest/v1/student_school_plans?id=eq.${encodeURIComponent(p.id)}`, 'PATCH', { apply_date: d }); p.apply_date = d; done++; }
+    catch (e) { failed++; }
+  }
+  seaDraw();
+  alert(`补全 ${done} 条，有 ${unknown} 条文字看不出日期，请手动填` + (failed ? `；另有 ${failed} 条保存失败，请再点一次` : ''));
+}
 
-    const totalStudents = new Set(Object.values(filteredSchools).flat().map(p=>p.student_id)).size;
-    html += `<div style="margin-bottom:20px">
-      <div style="font-size:13px;font-weight:600;color:var(--text);padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:4px 4px 0 0;display:flex;align-items:center;gap:8px">
-        📅 ${seasonTitle(season)}
-        <span style="font-size:11px;font-weight:400;color:var(--text-3)">${totalStudents} 名学生</span>
-      </div>
-      <div style="border:1px solid var(--border);border-top:none;border-radius:0 0 4px 4px;overflow:hidden">
-        <table style="width:100%;border-collapse:collapse;font-size:11px">
-          <thead>
-            <tr style="background:var(--bg)">
-              <th style="padding:6px 10px;text-align:left;color:var(--text-3);font-weight:600;border-bottom:1px solid var(--border-light);width:140px">大学・研究科</th>
-              <th style="padding:6px 10px;text-align:left;color:var(--text-3);font-weight:600;border-bottom:1px solid var(--border-light)">教授</th>
-              <th style="padding:6px 10px;text-align:left;color:var(--text-3);font-weight:600;border-bottom:1px solid var(--border-light);width:80px">出愿期间</th>
-              <th style="padding:6px 10px;text-align:left;color:var(--text-3);font-weight:600;border-bottom:1px solid var(--border-light)">学生（等级·状态）</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${Object.entries(filteredSchools).sort().map(([key, plans]) => {
-              const [school, faculty, dept] = key.split('|||');
-              const studentCells = plans.map(p => {
-                const st = schoolStatusLabel(p.status);
-                const flags = ['prof_ok','applied','passed'].includes(p.status)
-                  ? ` <span style="color:var(--text-3)">过去问${p.kakomon_started?'✓':'—'}・面试稿${p.interview_draft_done?'✓':'—'}</span>` : '';
-                return `<span style="display:inline-block;background:${p.status==='passed'?'var(--ok-bg)':(p.status==='failed'||p.status==='prof_ng')?'#fdecea':'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px;margin:2px;font-size:10px">${p.student_name} <span style="color:var(--text-3)">${levelLabel[p.level]||''}</span> · <span style="color:${st.c};font-weight:600">${st.t}</span>${flags}</span>`;
-              }).join('');
-              const firstPlan = plans[0];
-              return `<tr style="border-bottom:1px solid var(--border-light)">
-                <td style="padding:8px 10px;vertical-align:top">
-                  <div style="font-weight:600">${school}</div>
-                  <div style="color:var(--text-3);font-size:10px">${[faculty,dept].filter(Boolean).join(' · ')}</div>
-                </td>
-                <td style="padding:8px 10px;vertical-align:top;color:var(--text-2)">${[...new Set(plans.map(p=>p.professor).filter(Boolean))].join('、') || '-'}</td>
-                <td style="padding:8px 10px;vertical-align:top;color:var(--accent)">${firstPlan.application_period||'-'}</td>
-                <td style="padding:8px 10px;vertical-align:top">${studentCells}</td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
+function seaSet(k, v) {
+  if (k === 'sts') { const i = SEA.sts.indexOf(v); if (i >= 0) SEA.sts.splice(i, 1); else SEA.sts.push(v); }
+  else SEA[k] = v;
+  if (k === 'when' && v === 'expired') SEA.expOpen = true;
+  SEA.shown = LIST_PAGE;
+  seaDraw();
+}
+function seaSearch(v) { SEA.q = v; SEA.shown = LIST_PAGE; seaRenderList(); }
+function seaMore() { SEA.shown += LIST_PAGE; seaRenderList(); }
+function seaToggleExp() { SEA.expOpen = !SEA.expOpen; seaRenderList(); }
+
+function seaDraw() {
+  const f = document.getElementById('seaFill'); if (f) f.innerHTML = seaFillHtml();
+  const c = document.getElementById('seaCtl');
+  if (c) {
+    const chip = (k, v, l, on) => `<div class="filter-chip${on ? ' active' : ''}" onclick="seaSet('${k}','${v}')">${l}</div>`;
+    const row = (label, inner) => `<div class="filter-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px"><span style="font-size:11px;color:var(--text-3);min-width:56px">${label}</span>${inner}</div>`;
+    const one = (k, arr) => arr.map(([v, l]) => chip(k, v, l, SEA[k] === v)).join('');
+    c.innerHTML = `<div style="margin-bottom:10px">
+      <input id="seaQ" type="search" placeholder="搜索学校名、研究科、学生名" value="${stEsc(SEA.q)}" oninput="seaSearch(this.value)" style="width:100%;max-width:360px;font-size:12px;padding:6px 10px;border:1px solid var(--border);border-radius:3px;margin-bottom:8px;font-family:inherit">
+      ${row('看法', one('view', [['school', '按学校'], ['student', '按学生']]))}
+      ${row('时期', one('when', [['all', '全部'], ['d30', '30 天内'], ['d90', '90 天内'], ['none', '日期未定'], ['expired', '已过期']]))}
+      ${row('目标/备选', one('role', [['all', '全部'], ['target', '目标校'], ['backup', '备选']]))}
+      ${row('进度', chipFold(Object.entries(SCHOOL_STATUS_LABELS).map(([k, v]) => ({ on: SEA.sts.includes(k), html: `<div class="filter-chip${SEA.sts.includes(k) ? ' active' : ''}" onclick="seaSet('sts','${k}')">${v.t}</div>` }))))}
+      ${row('排序', one('sort', [['date', '出愿日期'], ['school', '学校'], ['student', '学生']]))}
     </div>`;
-  });
+  }
+  seaRenderList();
+}
 
-  mc.innerHTML = html;
+function seaSeasonOf(date) {   // 'YYYY-MM-DD' → { key(排序用), title }
+  const y = +date.slice(0, 4), m = +date.slice(5, 7);
+  if (m >= 10 || m <= 3) { const w = m >= 10 ? y : y - 1; return { key: w * 12 + 10, title: `${w}年冬季出愿（${w}/10～${w + 1}/3）` }; }
+  return { key: y * 12 + 4, title: `${y}年夏季出愿（${y}/4～9）` };
+}
+const seaCmp = (a, b) => String(a || '').localeCompare(String(b || ''), 'ja');
+function seaPlanCmp(sort, dir) {   // dir: 1 = 日期从近到远（升序）；-1 = 已过期（降序）
+  const dc = (a, b) => dir * seaCmp(a.apply_date, b.apply_date);
+  const sc = (a, b) => seaCmp(a.school_name, b.school_name) || seaCmp(a.faculty, b.faculty) || seaCmp(a.department, b.department);
+  const nc = (a, b) => seaCmp(a.student_name, b.student_name);
+  if (sort === 'school') return (a, b) => sc(a, b) || nc(a, b) || dc(a, b);
+  if (sort === 'student') return (a, b) => nc(a, b) || dc(a, b) || sc(a, b);
+  return (a, b) => dc(a, b) || sc(a, b) || nc(a, b);
+}
+
+function seaRenderList() {
+  const box = document.getElementById('seaList'); if (!box) return;
+  const today = spTodayTokyo();
+  const addDays = n => { const t = spTokyoYMD(today); const d = new Date(Date.UTC(t.y, t.m - 1, t.d + n)); return d.toISOString().slice(0, 10); };
+  const q = SEA.q.trim().normalize('NFKC').toLowerCase();
+  const lim30 = addDays(30), lim90 = addDays(90);
+  const list = seaPlans.filter(p => {
+    if (!seaValid.has(p.student_id)) return false;
+    const d = p.apply_date || '';
+    if (SEA.when === 'd30' && !(d && d >= today && d <= lim30)) return false;
+    if (SEA.when === 'd90' && !(d && d >= today && d <= lim90)) return false;
+    if (SEA.when === 'none' && d) return false;
+    if (SEA.when === 'expired' && !(d && d < today)) return false;
+    if (SEA.role !== 'all' && spRoleOf(p) !== SEA.role) return false;
+    if (SEA.sts.length && !SEA.sts.includes(p.status || 'preparing')) return false;
+    if (q && ![p.school_name, p.faculty, p.department, p.student_name].some(x => String(x || '').normalize('NFKC').toLowerCase().includes(q))) return false;
+    return true;
+  });
+  if (!list.length) { box.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-3)">没有符合条件的志望校</div>'; return; }
+
+  // 分组：出愿季（近→远）→ 日期未定 → 已过期（收起）
+  const seasons = new Map(), none = [], expired = [];
+  list.forEach(p => {
+    const d = p.apply_date || '';
+    if (!d) none.push(p);
+    else if (d < today) expired.push(p);
+    else { const s = seaSeasonOf(d); if (!seasons.has(s.key)) seasons.set(s.key, { title: s.title, plans: [] }); seasons.get(s.key).plans.push(p); }
+  });
+  const groups = [...seasons.entries()].sort((a, b) => a[0] - b[0]).map(([, g]) => ({ title: g.title, plans: g.plans, dir: 1 }));
+  if (none.length) groups.push({ title: '出愿日期未定', plans: none, dir: 1 });
+
+  let left = SEA.shown, total = 0, hiddenRows = 0;
+  const schoolKey = p => [p.school_name, p.faculty, p.department].map(x => String(x || '').normalize('NFKC').trim()).join('|||');
+  const rowsOf = (plans, dir) => {   // 一个组里要显示的「行」
+    const cmp = seaPlanCmp(SEA.sort, dir);
+    if (SEA.view === 'student') return plans.slice().sort(cmp).map(p => ({ plans: [p] }));
+    const m = new Map();
+    plans.forEach(p => { const k = schoolKey(p); if (!m.has(k)) m.set(k, []); m.get(k).push(p); });
+    const rows = [...m.values()].map(ps => ({ plans: ps.sort(cmp) }));
+    // 行的排序：日期 = 组内最早（已过期 = 最近的在前）；学校 = 学校名；学生 = 第一位学生名
+    const best = r => r.plans[0];
+    const rc = SEA.sort === 'school' ? (a, b) => seaCmp(best(a).school_name, best(b).school_name) || seaCmp(best(a).faculty, best(b).faculty) || seaCmp(best(a).department, best(b).department)
+      : SEA.sort === 'student' ? (a, b) => seaCmp(best(a).student_name, best(b).student_name) || seaCmp(best(a).school_name, best(b).school_name)
+      : (a, b) => dir * seaCmp(a.plans[0].apply_date, b.plans[0].apply_date) || seaCmp(best(a).school_name, best(b).school_name);
+    return rows.sort(rc);
+  };
+  const th = (t, w) => `<th style="padding:6px 10px;text-align:left;color:var(--text-3);font-weight:600;border-bottom:1px solid var(--border-light)${w ? ';width:' + w : ''}">${t}</th>`;
+  const dateCell = ps => {   // 标准日期 + 灰字原文字；学生填的文字不同就全部列出
+    const seen = new Set(), out = [];
+    ps.forEach(p => {
+      const k = (p.apply_date || '') + '|' + String(p.application_period || '').trim();
+      if (seen.has(k)) return; seen.add(k);
+      const dt = p.apply_date ? p.apply_date.replace(/-0?/g, '/') : '<span style="color:var(--text-3)">日期未定</span>';
+      out.push(`<div><span style="color:var(--accent);font-weight:600">${dt}</span>${p.apply_date_manual ? ' <span style="font-size:9px;color:var(--text-3)">手动</span>' : ''}${p.application_period ? `<div style="font-size:10px;color:var(--text-3)">${stEsc(p.application_period)}</div>` : ''}</div>`);
+    });
+    return out.join('');
+  };
+  const schoolTitle = p => `<div style="font-weight:600">${stEsc(p.school_name)}</div><div style="color:var(--text-3);font-size:10px">${stEsc([p.faculty, p.department].filter(Boolean).join(' · '))}</div>`;
+  const flags = p => ['prof_ok', 'applied', 'passed'].includes(p.status) ? ` <span style="color:var(--text-3)">过去问${p.kakomon_started ? '✓' : '—'}・面试稿${p.interview_draft_done ? '✓' : '—'}</span>` : '';
+  const lvLabel = { 1: '冲刺', 2: '匹配', 3: '保底' };
+  const roleChip = p => `<span style="font-size:10px;color:${spRoleOf(p) === 'backup' ? 'var(--text-3)' : 'var(--accent)'}">${spRoleName(spRoleOf(p))}</span>`;
+  const stuChip = p => { const st = schoolStatusLabel(p.status);
+    return `<span style="display:inline-block;background:${p.status === 'passed' ? 'var(--ok-bg)' : (p.status === 'failed' || p.status === 'prof_ng') ? '#fdecea' : 'var(--bg)'};border:1px solid var(--border-light);border-radius:2px;padding:1px 6px;margin:2px;font-size:10px">${stEsc(p.student_name)} <span style="color:var(--text-3)">${lvLabel[p.level] || ''}${spRoleOf(p) === 'backup' ? '·备选' : ''}</span> · <span style="color:${st.c};font-weight:600">${st.t}</span>${flags(p)}</span>`; };
+  const tr = (r, body) => `<tr style="border-bottom:1px solid var(--border-light)">${body}</tr>`;
+  const rowHtml = r => {
+    const ps = r.plans, p = ps[0];
+    if (SEA.view === 'student') {
+      const st = schoolStatusLabel(p.status);
+      return tr(r, `<td style="padding:8px 10px;vertical-align:top;font-weight:600">${stEsc(p.student_name)}</td>
+        <td style="padding:8px 10px;vertical-align:top">${schoolTitle(p)}</td>
+        <td style="padding:8px 10px;vertical-align:top">${dateCell(ps)}</td>
+        <td style="padding:8px 10px;vertical-align:top">${roleChip(p)}</td>
+        <td style="padding:8px 10px;vertical-align:top;color:var(--text-2)">${lvLabel[p.level] || ''}</td>
+        <td style="padding:8px 10px;vertical-align:top"><span style="color:${st.c};font-weight:600">${st.t}</span></td>
+        <td style="padding:8px 10px;vertical-align:top;color:var(--text-3)">${['prof_ok', 'applied', 'passed'].includes(p.status) ? `过去问${p.kakomon_started ? '✓' : '—'}・面试稿${p.interview_draft_done ? '✓' : '—'}` : ''}</td>`);
+    }
+    return tr(r, `<td style="padding:8px 10px;vertical-align:top">${schoolTitle(p)}</td>
+      <td style="padding:8px 10px;vertical-align:top;color:var(--text-2)">${[...new Set(ps.map(x => x.professor).filter(Boolean))].map(stEsc).join('、') || '-'}</td>
+      <td style="padding:8px 10px;vertical-align:top">${dateCell(ps)}</td>
+      <td style="padding:8px 10px;vertical-align:top">${ps.map(stuChip).join('')}</td>`);
+  };
+  const head = SEA.view === 'student'
+    ? th('学生', '90px') + th('学校 · 研究科 · 专攻') + th('出愿日期', '110px') + th('类别', '50px') + th('级别', '50px') + th('进度') + th('过去问 / 面试稿')
+    : th('大学・研究科', '160px') + th('教授') + th('出愿日期', '110px') + th('学生（级别·进度）');
+  const countHtml = ps => `${new Set(ps.map(p => p.student_id)).size} 名学生 · ${new Set(ps.map(schoolKey)).size} 所学校`;
+  const groupHtml = (g, collapsible) => {
+    const rows = rowsOf(g.plans, g.dir);
+    let open = !collapsible || SEA.expOpen;
+    let body = '';
+    if (open) { const take = rows.slice(0, Math.max(left, 0)); left -= take.length; hiddenRows += rows.length - take.length; body = take.map(rowHtml).join(''); if (!take.length) return ''; }
+    total += open ? rows.length : 0;
+    const title = collapsible ? `已过期 ${g.plans.length} 所（${open ? '点击收起' : '点开'}）` : g.title;
+    return `<div style="margin-bottom:16px">
+      <div ${collapsible ? 'onclick="seaToggleExp()" ' : ''}style="font-size:13px;font-weight:600;color:var(--text);padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:4px ${open ? '4px 0 0' : '4px 4px'};display:flex;align-items:center;gap:8px;${collapsible ? 'cursor:pointer;user-select:none' : ''}">
+        ${collapsible ? `<span style="font-size:10px">${open ? '▾' : '▸'}</span>` : ''}${title}
+        <span style="font-size:11px;font-weight:400;color:var(--text-3)">${countHtml(g.plans)}</span>
+      </div>
+      ${open ? `<div style="border:1px solid var(--border);border-top:none;border-radius:0 0 4px 4px;overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:var(--bg)">${head}</tr></thead><tbody>${body}</tbody></table>
+      </div>` : ''}
+    </div>`;
+  };
+  let html = groups.map(g => groupHtml(g, false)).join('');
+  if (expired.length) {
+    // 已过期：按日期从近到远（最近过期的在前）
+    html += groupHtml({ title: '', plans: expired, dir: -1 }, true);
+  }
+  if (hiddenRows > 0) html += `<div style="text-align:center;margin:8px 0 20px"><button onclick="seaMore()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:6px 18px;cursor:pointer;font-family:inherit">显示更多（还有 ${hiddenRows} ${SEA.view === 'student' ? '行' : '所'}）</button></div>`;
+  box.innerHTML = html;
 }
 
 // ══ 老师修改档案的留痕提示（student_profile_edits）：admin 可恢复原值或确认知悉 ══

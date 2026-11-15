@@ -494,7 +494,9 @@ async function saveVipSchoolPlans() {
       school_name: p.school_name, faculty: p.faculty, department: p.department,
       professor: p.professor, professor_url: p.professor_url,
       application_period: p.application_period, level: p.level, plan_role: p.plan_role,
-    }, (oldById.get(p.id) ? {} : { status: 'preparing' })));
+    }, (oldById.get(p.id) ? {} : { status: 'preparing' }),
+    // 标准出愿日期：手动改过的（旧数据里 apply_date_manual = true）保留，其余按文字重算；这页没有日期框
+    ((o) => spApplyFields({ application_period: p.application_period, apply_date: o && o.apply_date, apply_date_manual: !!(o && o.apply_date_manual) }, o && o.created_at))(oldById.get(p.id))));
     await sb('/rest/v1/student_school_plans', 'POST', toInsert);
     // 新增 / 修改 / 目标备选切换 / 删除都在考学进度时间线里留记录（来源：学生）
     await spSaveDiffLog(vipStudent, _vipSchoolPlans || [], toInsert, 'student', vipStudent.name);

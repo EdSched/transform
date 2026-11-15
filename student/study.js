@@ -412,7 +412,8 @@ async function saveStudySchoolPlans() {
 
     if (msg) msg.textContent = '保存中…';
     await sb(`/rest/v1/student_school_plans?student_id=eq.${studyStudent.id}`, 'DELETE');
-    const toInsert = plans.map((p, i) => ({
+    const oldPlanById = new Map((studyData.schoolPlans || []).map(o => [o.id, o]));   // 先全删再全插：created_at 带回去，没写年份的出愿日期才有稳定的参考日
+    const toInsert = plans.map((p, i) => Object.assign({
       id: p.id || `ssp-${Date.now()}-${i}-${Math.random().toString(36).slice(2,6)}`,
       student_id: studyStudent.id, student_name: studyStudent.name, major: studyStudent.major,
       school_name:p.school_name, faculty:p.faculty, department:p.department,
@@ -424,7 +425,7 @@ async function saveStudySchoolPlans() {
       documents_required:p.documents_required,
       level:p.level, status:p.status || 'preparing', plan_role:p.plan_role === 'backup' ? 'backup' : 'target',
       kakomon_started:!!p.kakomon_started, interview_draft_done:!!p.interview_draft_done,
-    }));
+    }, ((o) => Object.assign({ created_at: (o && o.created_at) || new Date().toISOString() }, spApplyFields(p, o && o.created_at)))(oldPlanById.get(p.id))));
     await sb('/rest/v1/student_school_plans', 'POST', toInsert);
     // 新增 / 修改 / 目标备选切换 / 删除（清空学校名）都在考学进度时间线里留记录
     await spSaveDiffLog(studyStudent, studyData.schoolPlans || [], toInsert, 'student', studyStudent.name);

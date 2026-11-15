@@ -34,6 +34,70 @@ function spTlInsert(student, notes, source, sourceName) {
   const entry = makeProgressEntry({ studentId: student.id, studentName: student.name, major: student.major, source, sourceName, notes, recordedAt: new Date().toISOString().slice(0, 10) });
   return sb('/rest/v1/student_progress_timeline', 'POST', entry).then(() => entry).catch(() => null);
 }
+// ══ 标准出愿日期（student_school_plans.apply_date / apply_date_manual）══
+// 从 application_period 的文字算出「出愿开始那天」，一律东京时间；算不出来返回 ''。
+// apply_date_manual = true 表示手动改过，文字变了也不自动覆盖。原文字 application_period 永远保留。
+function spTokyoYMD(d) {   // Date / ISO 时间 / 'YYYY-MM-DD' → { y, m, d }（东京时间）；无效 = null
+  if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return { y: +d.slice(0, 4), m: +d.slice(5, 7), d: +d.slice(8, 10) };
+  const t = d instanceof Date ? d : new Date(d);
+  if (isNaN(t.getTime())) return null;
+  const j = new Date(t.getTime() + 9 * 3600 * 1000);
+  return { y: j.getUTCFullYear(), m: j.getUTCMonth() + 1, d: j.getUTCDate() };
+}
+function spTodayTokyo() { const t = spTokyoYMD(new Date()); return `${t.y}-${String(t.m).padStart(2, '0')}-${String(t.d).padStart(2, '0')}`; }
+function spApplyDate(text, refDate) {
+  const t = String(text == null ? '' : text).normalize('NFKC');
+  if (!/\d/.test(t)) return '';
+  const ref = spTokyoYMD(refDate || new Date()) || spTokyoYMD(new Date());
+  const pad = n => String(n).padStart(2, '0');
+  const ok = (y, m, d) => { const x = new Date(Date.UTC(y, m - 1, d)); return m >= 1 && m <= 12 && x.getUTCMonth() === m - 1 && x.getUTCDate() === d; };
+  const yearOf = m => (m >= ref.m ? ref.y : ref.y + 1);   // 没写年：参考日所在月或之后最先出现的那个月
+  const dayOfXun = x => ({ '上': 1, '中': 11, '下': 21 })[x] || 1;
+  // 按文字顺序取第一个能识别的日期（区间取开始）
+  const re = new RegExp([
+    '(?<!\\d)(\\d{4})\\s*[\\/\\-.年]\\s*(\\d{1,2})\\s*[\\/\\-.月]\\s*(\\d{1,2})(?!\\d)',            // 1 年月日
+    '(?<!\\d)(\\d{4})\\s*[\\/\\-.年]\\s*(\\d{1,2})(?!\\d)(?:\\s*月)?\\s*(?:(上|中|下)\\s*旬)?',    // 2 年月（可带旬）
+    '(?<!\\d)(\\d{1,2})\\s*月\\s*(\\d{1,2})\\s*日',                                              // 3 月日
+    '(?<!\\d)(\\d{1,2})\\s*[\\/.\\-]\\s*(\\d{1,2})(?![\\d\\/.\\-])',                              // 4 7/10
+    '(?<!\\d)(\\d{1,2})\\s*月\\s*(?:(上|中|下)\\s*旬)?',                                           // 5 月（可带旬）
+  ].join('|'), 'g');
+  for (const g of t.matchAll(re)) {
+    let y, m, d;
+    if (g[1]) { y = +g[1]; m = +g[2]; d = +g[3]; }
+    else if (g[4]) { y = +g[4]; m = +g[5]; d = dayOfXun(g[6]); }
+    else if (g[7]) { m = +g[7]; d = +g[8]; y = yearOf(m); }
+    else if (g[9]) { m = +g[9]; d = +g[10]; y = yearOf(m); }
+    else { m = +g[11]; d = dayOfXun(g[12]); y = yearOf(m); }
+    if (ok(y, m, d)) return `${y}-${pad(m)}-${pad(d)}`;
+  }
+  return '';
+}
+// 整理好要写库的 apply_date / apply_date_manual：manual 不是 true 时按文字重算（算不出来 = null）
+function spApplyFields(row, createdAt) {
+  const manual = row.apply_date_manual === true;
+  const date = manual ? (row.apply_date || null) : (spApplyDate(row.application_period, createdAt || new Date()) || null);
+  return { apply_date: date, apply_date_manual: manual };
+}
+// 表单里：文字变了 → 自动算；日期框手动改 → 标「手动」；按钮 → 恢复自动
+function spAdNote(form, manual) {
+  const n = form.querySelector('[data-adnote]'), h = form.querySelector('[data-field="apply_date_manual"]');
+  if (h) h.value = manual ? '1' : '0';
+  if (n) { n.textContent = manual ? '手动' : '自动'; n.style.color = manual ? 'var(--accent)' : 'var(--text-3)'; }
+}
+function spAdAuto(el) {   // 出愿时间文字输入时
+  const form = el.closest('.sp-form'); if (!form) return;
+  const h = form.querySelector('[data-field="apply_date_manual"]');
+  if (h && h.value === '1') return;   // 手动改过：文字变了不覆盖
+  const d = form.querySelector('[data-field="apply_date"]');
+  if (d) d.value = spApplyDate(el.value, form.dataset.ref || new Date());
+}
+function spAdManual(el) { const form = el.closest('.sp-form'); if (form) spAdNote(form, true); }
+function spAdRecalc(btn) {
+  const form = btn.closest('.sp-form'); if (!form) return;
+  const per = form.querySelector('[data-field="application_period"]'), d = form.querySelector('[data-field="apply_date"]');
+  if (d) d.value = spApplyDate(per ? per.value : '', form.dataset.ref || new Date());
+  spAdNote(form, false);
+}
 const SP_TRACK = [['school_name', '学校'], ['faculty', '研究科'], ['department', '专攻'], ['professor', '教授'], ['professor2', '教授2'],
   ['application_period', '出愿时间'], ['exam_date', '考试日期'], ['level', '级别'], ['status', '进度'], ['kakomon_started', '过去问'], ['interview_draft_done', '面试稿']];
 function spFieldText(f, v) {
@@ -226,7 +290,9 @@ function spFormHtml(p, opts) {
   const inp = 'font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)';
   const field = (f, ph) => `<input placeholder="${ph}" value="${spEsc(p[f])}" data-field="${f}" style="${inp}">`;
   const lv = opts.level != null ? opts.level : (p.level || 2);
-  return `<div class="sp-form" style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px" data-level="${lv}"${opts.role ? ` data-role="${opts.role}"` : ''}${opts.idx != null ? ` id="sr_${lv}_${opts.idx}"` : ''}>
+  const adManual = p.apply_date_manual === true;
+  const adVal = adManual ? (p.apply_date || '') : spApplyDate(p.application_period, p.created_at || new Date());
+  return `<div class="sp-form" style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px" data-ref="${spEsc(p.created_at)}" data-level="${lv}"${opts.role ? ` data-role="${opts.role}"` : ''}${opts.idx != null ? ` id="sr_${lv}_${opts.idx}"` : ''}>
       ${opts.idx != null || opts.role ? `<div style="display:flex;align-items:center;gap:8px;font-size:10px;font-weight:600;color:var(--text-muted,var(--text-3));margin-bottom:6px">${opts.idx != null ? `<span>第${opts.idx + 1}校</span>` : ''}${opts.role ? `<span data-rolechip="1" onclick="spEditorRoleClick(this)" title="点击切换目标校 / 备选" style="display:inline-block;font-size:10px;line-height:1;padding:2px 6px;border-radius:8px;border:1px solid var(--accent);color:#fff;background:var(--accent);cursor:pointer">目标</span>` : ''}</div>` : ''}
       ${opts.showLevel ? `<select data-field="level" style="${inp};width:100%;margin-bottom:6px">${[[1, '冲刺（挑战）'], [2, '匹配（目标）'], [3, '保底']].map(([v, l]) => `<option value="${v}" ${String(lv) === String(v) ? 'selected' : ''}>级别：${l}</option>`).join('')}</select>` : ''}
       <select onchange="spApplyShared(this)" style="${inp};width:100%;margin-bottom:6px">
@@ -235,7 +301,14 @@ function spFormHtml(p, opts) {
       </select>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:5px">
         ${field('school_name', '学校名 *')}${field('faculty', '研究科')}${field('department', '専攻/コース')}
-        ${field('application_period', '出愿时间（精确）')}${field('exam_date', '考试日期')}${field('documents_required', '必要书类（推荐信等）')}
+        <input placeholder="出愿时间（精确）" value="${spEsc(p.application_period)}" data-field="application_period" oninput="spAdAuto(this)" style="${inp}">${field('exam_date', '考试日期')}${field('documents_required', '必要书类（推荐信等）')}
+      </div>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:5px;font-size:11px">
+        <span style="color:var(--text-3)">出愿日期（标准）</span>
+        <input type="date" value="${spEsc(adVal)}" data-field="apply_date" oninput="spAdManual(this)" style="${inp}">
+        <span data-adnote="1" style="font-size:10px;color:${adManual ? 'var(--accent)' : 'var(--text-3)'}">${adManual ? '手动' : '自动'}</span>
+        <button type="button" onclick="spAdRecalc(this)" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;color:var(--text-3);font-family:inherit">按文字重算</button>
+        <input type="hidden" value="${adManual ? 1 : 0}" data-field="apply_date_manual">
       </div>
       <div style="font-size:10px;color:var(--text-muted,var(--text-3));margin-bottom:4px">👤 教授（每校尽量2位）</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:5px">
@@ -286,6 +359,7 @@ function spFormCollect(root) {
     status: get('status') || 'preparing', kakomon_started: chip('kakomon_started'), interview_draft_done: chip('interview_draft_done'),
     school_name: get('school_name'), faculty: get('faculty'), department: get('department'),
     application_period: get('application_period'), exam_date: get('exam_date'),
+    apply_date: get('apply_date') || null, apply_date_manual: get('apply_date_manual') === '1',
     professor: get('professor'), professor_url: get('professor_url'), professor2: get('professor2'), professor2_url: get('professor2_url'),
     plan_requirement: get('plan_requirement'), research_theme: get('research_theme'), documents_required: get('documents_required'),
   };
@@ -373,6 +447,7 @@ async function spModalSave() {
   if (!v.school_name) { alert('请填写学校名'); return; }
   const { student, plan } = ctx;
   const row = Object.assign({}, v, { exam_season: spGuessSeason(v.application_period) });
+  Object.assign(row, spApplyFields(row, plan && plan.created_at));
   delete row.id; delete row.plan_role;   // 目标 / 备选只由 chip 切换，编辑弹窗不改它
   let addedRole = null;
   const btn = document.getElementById('sp_modal_save'); if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
