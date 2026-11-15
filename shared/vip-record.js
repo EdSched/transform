@@ -17,6 +17,24 @@ const VIPH = {
 };
 
 // ── VIP 上课记录填写 ──
+const VIP_NOTES_MIN = 50; // 上课内容最少字数（去掉空格、换行后）；要改只改这里
+const VIP_HW_MIN = 10;    // 「本周学生要做什么」最少字数
+const VIP_HW_EMPTY_RE = /^(无|没有|无作业|没有作业|本次无作业|本次没有作业|暂无|暂无作业|无需|不用|没)[。.！!\s]*$/;
+function vipTextLen(v) { return String(v || '').replace(/\s+/g, '').length; }
+function vipNotesCountUpdate() {
+  const el = document.getElementById('vip_notes_count'), ta = document.getElementById('vip_notes');
+  if (!el || !ta) return;
+  const n = vipTextLen(ta.value);
+  if (n >= VIP_NOTES_MIN) { el.textContent = `✓ 已写 ${n} 字`; el.style.color = '#2e7d4a'; }
+  else { el.textContent = `已写 ${n} 字，还差 ${VIP_NOTES_MIN - n} 字`; el.style.color = 'var(--text-3)'; }
+}
+function vipHwCountUpdate() {
+  const el = document.getElementById('vip_hw_count'), inp = document.getElementById('vip_homework_text');
+  if (!el || !inp) return;
+  const n = vipTextLen(inp.value);
+  if (n >= VIP_HW_MIN) { el.textContent = `✓ 已写 ${n} 字`; el.style.color = '#2e7d4a'; }
+  else { el.textContent = `已写 ${n} 字，至少 ${VIP_HW_MIN} 字`; el.style.color = 'var(--text-3)'; }
+}
 const VIP_CONTENT_OPTIONS = ['专业课指导', '过去问对策', '研究计划书', '出愿指导', '面试对策', 'TA指导'];
 
 let vipRecordPlanItems = [];  // 当前打开记录的学生 VIP 规划课程
@@ -141,21 +159,26 @@ function vipRecFormHtml(b, slot, hasPlan) {
 
   return `
       ${contentSection}
-      <div class="form-group"><label class="form-label">上课内容（本次讲了什么）</label>
-        <textarea id="vip_notes" rows="3" placeholder="本次课的具体内容…">${vipRecEsc(b.vip_session_notes || '')}</textarea>
+      <div class="form-group"><label class="form-label">上课内容（本次讲了什么，至少 ${VIP_NOTES_MIN} 字）</label>
+        <textarea id="vip_notes" rows="5" oninput="vipNotesCountUpdate()" placeholder="可以这样写：① 本次讲了哪几个要点 ② 用了什么材料 / 做了哪些练习 ③ 学生哪里掌握了、哪里还卡着 ④ 下次接着做什么。不用写成文章，分点写就行。">${vipRecEsc(b.vip_session_notes || '')}</textarea>
+        <div id="vip_notes_count" style="font-size:11px;color:var(--text-3);margin-top:4px"></div>
+        <div style="font-size:10px;color:var(--text-3);margin-top:2px;line-height:1.5">为什么要写：这份记录学生和教务都会看，也是月度学习情况和交接的依据。只写「研究计划书」这样的标题，别人看不出这节课做了什么。</div>
       </div>
       <div class="form-group"><label class="form-label">学生状态（可多选）</label>
         <div id="vip_status_tags" style="display:flex;flex-wrap:wrap;gap:6px">${vipStatusRowsHtml()}</div>
         <input id="vip_status_note" value="${vipRecEsc(vipStatusFree)}" placeholder="其他补充（可选）" style="font-size:11px;margin-top:8px;width:100%">
       </div>
-      <div class="form-group"><label class="form-label">布置作业（学生将在VIP页面看到并提交；本次确实没有作业请写「本次无作业」）</label>
-        <input id="vip_homework_text" value="${vipRecEsc(b.vip_homework || '')}" placeholder="一句话说明（如：下节课前完成过去问2015第2题）" style="font-size:11px;width:100%;margin-bottom:6px">
+      <div class="form-group"><label class="form-label"><b>本周学生要做什么</b>（作业或复习安排，必填）</label>
+        <input id="vip_homework_text" oninput="vipHwCountUpdate()" value="${vipRecEsc(b.vip_homework || '')}" placeholder="例：下节课前完成过去问 2015 第 2 题；或：没有新作业，复习本次讲的 3 个概念，把计划书第 2 节改完。" style="font-size:11px;width:100%">
+        <div id="vip_hw_count" style="font-size:11px;color:var(--text-3);margin:4px 0 2px"></div>
+        <div style="font-size:10px;color:var(--text-3);margin-bottom:6px;line-height:1.5">为什么必填：学生在 VIP 页面会看到这一条，知道这周该做什么；就算不布置新作业，也请写清楚这周要复习或准备什么。</div>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <button type="button" onclick="openVipHwEditor('${b.id}')" style="font-size:12px;background:none;border:1px solid var(--accent);color:var(--accent);border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">📝 设置作业（结构化）</button>
           <span id="vip_hw_status" style="font-size:11px;color:var(--text-3)">${vipHwStatusText()}${vipHwAutoVal ? '（已从课程规划自动带入）' : ''}</span>
         </div>
         <div style="font-size:10px;color:var(--text-3);margin-top:4px">结构化作业＝学生逐题作答/拍照提交；若该回在「VIP排课」里预设过作业，这里会自动带出，可直接用或修改。</div>
       </div>
+      <img src="data:," style="display:none" onerror="vipNotesCountUpdate();vipHwCountUpdate();this.remove()">
       <div class="form-group"><label class="form-label">${b._bf ? '本次课时（小时，教务确认后才从学生VIP总课时中扣除）' : '本次耗时（小时，保存后将自动从学生VIP总课时中扣除）'}</label>
         <input type="number" id="vip_hours" step="0.5" min="0" value="${b.vip_hours_used || ''}" placeholder="例：1.5"></div>
 `;
@@ -185,9 +208,17 @@ function vipRecCollect() {
   if (freeVal) statusArr.push(freeVal);
   const studentStatus = statusArr.join('、');
   const newHours = parseFloat(document.getElementById('vip_hours').value) || 0;
-  if (!notes) { alert('请填写上课内容'); return null; }
-  if (newHours <= 0) { alert('请填写本次耗时'); return null; }
+  if (vipTextLen(notes) < VIP_NOTES_MIN) {
+    alert(`上课内容至少 ${VIP_NOTES_MIN} 字（现在 ${vipTextLen(notes)} 字）。可以写本次的要点、练习、学生的情况和下次安排。`);
+    document.getElementById('vip_notes')?.focus(); return null;
+  }
   const homework = document.getElementById('vip_homework_text')?.value.trim() || document.getElementById('vip_homework')?.value.trim() || '';
+  const hasStructHw = !!(vipHwEditQ && Array.isArray(vipHwEditQ.levels) && vipHwEditQ.levels.length);
+  if (!hasStructHw && (vipTextLen(homework) < VIP_HW_MIN || VIP_HW_EMPTY_RE.test(homework.replace(/\s+/g, '')))) {
+    alert('请写清楚这周学生要做什么。没有新作业的话，也请写要复习或准备的内容（例：复习本次讲的 3 个概念）。');
+    document.getElementById('vip_homework_text')?.focus(); return null;
+  }
+  if (newHours <= 0) { alert('请填写本次耗时'); return null; }
   return { content, offplanReason, notes, studentStatus, newHours, homework };
 }
 async function openVipSessionRecord(bookingId) {
@@ -238,6 +269,7 @@ function vipPickPlanItem(i) {
   if (notes && it.content && (!notes.value.trim() || notes.value === vipNotesAutoVal)) {
     notes.value = it.content;
     vipNotesAutoVal = it.content;
+    vipNotesCountUpdate();
   }
   // 作业：该回在「VIP排课/框架」里预设过结构化作业 → 自动带入本次上课记录
   // 老师若已在本弹窗手动设过（且不是上次自动带入的那份），不覆盖
@@ -252,7 +284,7 @@ function vipPickPlanItem(i) {
   }
   // 规划里这回只写了一句话作业 → 填进文字说明栏
   const hwText = document.getElementById('vip_homework_text');
-  if (hwText && it.homework && !hwText.value.trim()) hwText.value = it.homework;
+  if (hwText && it.homework && !hwText.value.trim()) { hwText.value = it.homework; vipHwCountUpdate(); }
 }
 // 切换"未按规划"：显示理由框，并清除规划课程选择
 function vipToggleOffplan(cb) {
