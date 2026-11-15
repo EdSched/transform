@@ -6,7 +6,211 @@
 // 依赖：shared/supabase.js、shared/constants.js（SCHOOL_STATUS_LABELS、makeProgressEntry）
 // ══════════════════════════════════
 
-const SP_MAX_SCHOOLS = 6;
+// ══ 目标校 / 备选（student_school_plans.plan_role：'target' 目标校 / 'backup' 备选；空值当目标校）══
+// 志望校总数不限；目标校最多 SP_TARGET_MAX 所，其余放备选。各端一律用下面这几个函数，不要各写一份。
+const SP_TARGET_MAX = 6;
+function spRoleOf(p) { return p && p.plan_role === 'backup' ? 'backup' : 'target'; }
+function spSplit(plans) {
+  const targets = [], backups = [];
+  (plans || []).forEach(p => (spRoleOf(p) === 'backup' ? backups : targets).push(p));
+  return { targets, backups };
+}
+function spRoleName(role) { return role === 'backup' ? '备选' : '目标校'; }
+function spGroupTitle(role, n) { return role === 'backup' ? `备选（${n}）` : `目标校（${n} / ${SP_TARGET_MAX}）`; }
+function spPlanTitle(p) { return [p.school_name, p.faculty, p.department].filter(Boolean).join(' · '); }
+// 分组标题条（列表里每组前面一条）
+function spGroupHeadHtml(role, n, style) {
+  return `<div style="font-size:11px;font-weight:600;margin:8px 0 4px;padding-bottom:3px;border-bottom:1px solid var(--border-light);color:${role === 'backup' ? 'var(--text-3)' : 'var(--text-2)'};${style || ''}">${spGroupTitle(role, n)}</div>`;
+}
+// 学校行上的小 chip：「目标」/「备选」。clickJs 为空 = 只读
+function spRoleChipHtml(p, clickJs) {
+  const bk = spRoleOf(p) === 'backup';
+  const col = bk ? 'var(--text-3)' : 'var(--accent)';
+  return `<span ${clickJs ? `onclick="event.stopPropagation();${clickJs}" title="点击切换目标校 / 备选"` : ''} style="display:inline-block;font-size:10px;line-height:1;padding:2px 6px;border-radius:8px;border:1px solid ${col};color:${bk ? col : '#fff'};background:${bk ? 'transparent' : 'var(--accent)'};white-space:nowrap;${clickJs ? 'cursor:pointer;' : ''}">${bk ? '备选' : '目标'}</span>`;
+}
+
+// ── 时间线记录（新增 / 修改 / 目标备选切换 / 删除都写进 student_progress_timeline）──
+function spTlInsert(student, notes, source, sourceName) {
+  const entry = makeProgressEntry({ studentId: student.id, studentName: student.name, major: student.major, source, sourceName, notes, recordedAt: new Date().toISOString().slice(0, 10) });
+  return sb('/rest/v1/student_progress_timeline', 'POST', entry).then(() => entry).catch(() => null);
+}
+const SP_TRACK = [['school_name', '学校'], ['faculty', '研究科'], ['department', '专攻'], ['professor', '教授'], ['professor2', '教授2'],
+  ['application_period', '出愿时间'], ['exam_date', '考试日期'], ['level', '级别'], ['status', '进度'], ['kakomon_started', '过去问'], ['interview_draft_done', '面试稿']];
+function spFieldText(f, v) {
+  if (f === 'level') return ({ 1: '冲刺', 2: '匹配', 3: '保底' })[v || 2] || '';
+  if (f === 'status') return (SCHOOL_STATUS_LABELS[v || 'preparing'] || {}).t || v || '';
+  if (f === 'kakomon_started') return v ? '已开始' : '未开始';
+  if (f === 'interview_draft_done') return v ? '已完成' : '未完成';
+  return String(v == null ? '' : v).trim();
+}
+// 旧值 → 新值：只比较 newP 里带了的字段；返回 [{label, from, to}]
+function spDiffPlan(oldP, newP) {
+  const out = [];
+  SP_TRACK.forEach(([f, label]) => {
+    if (!(f in newP)) return;
+    const a = spFieldText(f, oldP[f]), b = spFieldText(f, newP[f]);
+    if (a !== b) out.push({ label, from: a || '空', to: b || '空' });
+  });
+  return out;
+}
+function spAddLog(student, p, source, sourceName, remark) {
+  return spTlInsert(student, `新增志望校（${spRoleName(spRoleOf(p))}）：${spPlanTitle(p)}${remark ? `（${remark}）` : ''}`, source, sourceName);
+}
+// 修改：同一个人对同一所学校 1 分钟内连续改，合并成一条（更新上一条的 notes）
+const SP_LOG_RECENT = {};
+async function spLogModify(student, plan, changes, source, sourceName, remark) {
+  if (!changes || !changes.length) return;
+  const key = [student.id, plan.id, source, sourceName].join('|'), now = Date.now();
+  const build = (title, map) => `修改志望校：${title}｜${[...map.values()].map(c => `${c.label} ${c.from} → ${c.to}`).join('；')}${remark ? `（${remark}）` : ''}`;
+  const rec = SP_LOG_RECENT[key];
+  if (rec && now - rec.t < 60000) {
+    changes.forEach(c => {
+      const ex = rec.map.get(c.label);
+      if (ex) { ex.to = c.to; if (ex.to === ex.from) rec.map.delete(c.label); } else rec.map.set(c.label, Object.assign({}, c));
+    });
+    try {
+      if (!rec.map.size) { await sb(`/rest/v1/student_progress_timeline?id=eq.${encodeURIComponent(rec.id)}`, 'DELETE'); delete SP_LOG_RECENT[key]; }
+      else { await sb(`/rest/v1/student_progress_timeline?id=eq.${encodeURIComponent(rec.id)}`, 'PATCH', { notes: build(rec.title, rec.map) }); rec.t = now; }
+      return;
+    } catch (e) { delete SP_LOG_RECENT[key]; }
+  }
+  const map = new Map(); changes.forEach(c => map.set(c.label, Object.assign({}, c)));
+  const title = spPlanTitle(plan);
+  const entry = await spTlInsert(student, build(title, map), source, sourceName);
+  if (entry) SP_LOG_RECENT[key] = { id: entry.id, t: now, map, title };
+}
+function spRoleLog(student, p, role, source, sourceName) {
+  return spTlInsert(student, `志望校改为${spRoleName(role)}：${spPlanTitle(p)}`, source, sourceName);
+}
+function spSwapLog(student, up, down, source, sourceName) {
+  return spTlInsert(student, `志望校调整：${spPlanTitle(up)} 改为目标校，${spPlanTitle(down)} 改为备选`, source, sourceName);
+}
+
+// 选一所目标校换成备选：items = [{ key, label }]，返回选中的 key（取消 = null）
+function spPickSwap(items, upLabel) {
+  return new Promise(resolve => {
+    document.getElementById('spSwapModal')?.remove();
+    const m = document.createElement('div');
+    m.id = 'spSwapModal';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
+    const done = v => { m.remove(); resolve(v); };
+    m.innerHTML = `<div style="background:var(--surface);border-radius:6px;padding:16px;max-width:420px;width:100%;max-height:85vh;overflow-y:auto">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">目标校已满 ${SP_TARGET_MAX} 所，选一所换成备选</div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:10px">「${spEsc(upLabel)}」改为目标校，下面选中的一所改为备选</div>
+      ${items.map((it, i) => `<div data-i="${i}" style="font-size:12px;padding:8px 10px;border:1px solid var(--border);border-radius:3px;margin-bottom:6px;cursor:pointer;background:var(--bg)">${spEsc(it.label)}</div>`).join('')}
+      <div style="text-align:right;margin-top:6px"><button data-cancel style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:6px 14px;cursor:pointer;font-family:inherit">取消</button></div>
+    </div>`;
+    m.onclick = e => { if (e.target === m) done(null); };
+    m.querySelectorAll('[data-i]').forEach(el => { el.onclick = () => done(items[+el.dataset.i].key); });
+    m.querySelector('[data-cancel]').onclick = () => done(null);
+    document.body.appendChild(m);
+  });
+}
+
+// 切换目标 / 备选（管理端、老师端行内 chip 用；规则与时间线都在这里）
+// 备选→目标：目标校不到 6 所直接改；满 6 所弹出目标校列表选一所对调（两所一次保存，时间线记一条「志望校调整」）。目标→备选：直接改。
+async function spSetRole(student, plan, role, source, sourceName, onDone) {
+  if (spRoleOf(plan) === role) return;
+  try {
+    if (role === 'backup') {
+      await sb(`/rest/v1/student_school_plans?id=eq.${encodeURIComponent(plan.id)}`, 'PATCH', { plan_role: 'backup' });
+      plan.plan_role = 'backup';
+      await spRoleLog(student, plan, 'backup', source, sourceName);
+    } else {
+      const cur = await sb(`/rest/v1/student_school_plans?student_id=eq.${encodeURIComponent(student.id)}&select=*&order=level.asc`, 'GET', null, { cache: 'no-store' });
+      const targets = (cur || []).filter(p => spRoleOf(p) === 'target' && p.id !== plan.id);
+      if (targets.length < SP_TARGET_MAX) {
+        await sb(`/rest/v1/student_school_plans?id=eq.${encodeURIComponent(plan.id)}`, 'PATCH', { plan_role: 'target' });
+        plan.plan_role = 'target';
+        await spRoleLog(student, plan, 'target', source, sourceName);
+      } else {
+        const key = await spPickSwap(targets.map(p => ({ key: p.id, label: spPlanTitle(p) })), spPlanTitle(plan));
+        if (!key) return;
+        const down = targets.find(p => p.id === key);
+        await sb(`/rest/v1/student_school_plans?id=eq.${encodeURIComponent(down.id)}`, 'PATCH', { plan_role: 'backup' });
+        await sb(`/rest/v1/student_school_plans?id=eq.${encodeURIComponent(plan.id)}`, 'PATCH', { plan_role: 'target' });
+        plan.plan_role = 'target';
+        await spSwapLog(student, plan, down, source, sourceName);
+      }
+    }
+    if (onDone) onDone();
+  } catch (e) { alert('保存失败：' + e.message); }
+}
+
+// ── 学生端 / VIP 页：整表保存（先全删再全插）前后的比较，补记新增 / 修改 / 切换 / 删除 ──
+// oldPlans = 保存前从库里读到的；newPlans = 这次要写进去的（带 id、plan_role）
+async function spSaveDiffLog(student, oldPlans, newPlans, source, sourceName) {
+  const oldMap = new Map((oldPlans || []).filter(p => p.id).map(p => [p.id, p]));
+  const newIds = new Set(newPlans.map(p => p.id));
+  const up = [], down = [];
+  for (const p of newPlans) {
+    const o = oldMap.get(p.id);
+    if (!o) { await spAddLog(student, p, source, sourceName); continue; }
+    await spLogModify(student, p, spDiffPlan(o, p), source, sourceName);
+    if (spRoleOf(o) !== spRoleOf(p)) (spRoleOf(p) === 'target' ? up : down).push(p);
+  }
+  while (up.length && down.length) await spSwapLog(student, up.shift(), down.shift(), source, sourceName);   // 一升一降 = 对调，记一条
+  for (const p of up) await spRoleLog(student, p, 'target', source, sourceName);
+  for (const p of down) await spRoleLog(student, p, 'backup', source, sourceName);
+  for (const o of oldMap.values()) if (!newIds.has(o.id)) await spDeleteLog(student, o, source, sourceName);
+}
+
+// ── 学生端 / VIP 页的编辑区（先目标校、再备选；每组里面照旧选级别）──
+// 容器 [data-rolebox] 里有两个 [data-rolegroup="target|backup"]，每组有 .sp-grp-title 和 .sp-grp-body；单所表单带 data-role
+function spEditorHtml(rootId, byRole) {   // byRole = { target: [表单html…], backup: [表单html…] }；空白表单不计入标题数字，由 spEditorRefresh 重算
+  const grp = role => {
+    const arr = byRole[role] || [];
+    return `<div data-rolegroup="${role}" style="margin-bottom:12px${role === 'backup' && !arr.length ? ';display:none' : ''}">
+      <div class="sp-grp-title" style="font-size:11px;font-weight:600;margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid var(--border-light)">${spGroupTitle(role, arr.filter(h => !/data-field="school_name"[^>]*value=""|value=""[^>]*data-field="school_name"/.test(h)).length)}</div>
+      <div class="sp-grp-body">${arr.join('')}</div></div>`;
+  };
+  return `<div id="${rootId}" data-rolebox="1">${grp('target')}${grp('backup')}</div>`;
+}
+function spEditorRefresh(box) {
+  ['target', 'backup'].forEach(role => {
+    const g = box.querySelector(`[data-rolegroup="${role}"]`); if (!g) return;
+    const forms = [...g.querySelectorAll('.sp-grp-body > [data-role]')];
+    g.querySelector('.sp-grp-title').textContent = spGroupTitle(role, forms.filter(spEditorFilled).length);
+    if (role === 'backup') g.style.display = forms.length ? '' : 'none';
+    forms.forEach(f => { const c = f.querySelector('[data-rolechip]'); if (c) spEditorChipPaint(c, role); });
+  });
+}
+function spEditorFilled(f) { const el = f.querySelector('[data-field="school_name"]'); return !!(el && String(el.value || '').trim()); }
+function spEditorChipPaint(c, role) {
+  const bk = role === 'backup';
+  c.textContent = bk ? '备选' : '目标';
+  c.style.color = bk ? 'var(--text-3)' : '#fff';
+  c.style.background = bk ? 'transparent' : 'var(--accent)';
+  c.style.borderColor = bk ? 'var(--text-3)' : 'var(--accent)';
+}
+function spEditorMove(box, form, role) {
+  const body = box.querySelector(`[data-rolegroup="${role}"] .sp-grp-body`);
+  form.dataset.role = role;
+  body.appendChild(form);
+}
+// 添加一所：目标校不到 6 所放目标校，满了自动放备选
+function spEditorAdd(box, form) {
+  const nT = box.querySelectorAll('[data-rolegroup="target"] .sp-grp-body > [data-role]').length;
+  const role = nT < SP_TARGET_MAX ? 'target' : 'backup';
+  spEditorMove(box, form, role);
+  spEditorRefresh(box);
+  if (role === 'backup') alert(`目标校已满 ${SP_TARGET_MAX} 所，这所加在备选里`);
+  return role;
+}
+// 表单里的 chip 点击：目标→备选直接改；备选→目标，满 6 所时选一所对调
+async function spEditorRoleClick(chip) {
+  const form = chip.closest('[data-role]'), box = chip.closest('[data-rolebox]');
+  if (!form || !box) return;
+  if (form.dataset.role === 'target') { spEditorMove(box, form, 'backup'); spEditorRefresh(box); return; }
+  const targets = [...box.querySelectorAll('[data-rolegroup="target"] .sp-grp-body > [data-role]')];
+  if (targets.length < SP_TARGET_MAX) { spEditorMove(box, form, 'target'); spEditorRefresh(box); return; }
+  const name = f => [...['school_name', 'faculty', 'department']].map(k => (f.querySelector(`[data-field="${k}"]`) || {}).value || '').map(x => x.trim()).filter(Boolean).join(' · ') || '（未填学校名）';
+  const idx = await spPickSwap(targets.map((f, i) => ({ key: i, label: name(f) })), name(form));
+  if (idx == null) return;
+  spEditorMove(box, targets[idx], 'backup');
+  spEditorMove(box, form, 'target');
+  spEditorRefresh(box);
+}
 function spEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
 
 // 出愿学校列表 → 下拉选项
@@ -16,14 +220,14 @@ function spSharedOptionsHtml(sharedSchools) {
   ).join('');
 }
 
-// opts: { sharedSchools, gakubu, level（分组时的级别，写在 data-level 上）, idx（第几校）, showLevel（弹窗里显示级别下拉） }
+// opts: { sharedSchools, gakubu, level（分组时的级别，写在 data-level 上）, idx（第几校）, showLevel（显示级别下拉）, role（目标/备选，带上就显示可点的 chip，并写在 data-role 上） }
 function spFormHtml(p, opts) {
   p = p || {}; opts = opts || {};
   const inp = 'font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface)';
   const field = (f, ph) => `<input placeholder="${ph}" value="${spEsc(p[f])}" data-field="${f}" style="${inp}">`;
   const lv = opts.level != null ? opts.level : (p.level || 2);
-  return `<div class="sp-form" style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px" data-level="${lv}"${opts.idx != null ? ` id="sr_${lv}_${opts.idx}"` : ''}>
-      ${opts.idx != null ? `<div style="font-size:10px;font-weight:600;color:var(--text-muted,var(--text-3));margin-bottom:6px">第${opts.idx + 1}校</div>` : ''}
+  return `<div class="sp-form" style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px" data-level="${lv}"${opts.role ? ` data-role="${opts.role}"` : ''}${opts.idx != null ? ` id="sr_${lv}_${opts.idx}"` : ''}>
+      ${opts.idx != null || opts.role ? `<div style="display:flex;align-items:center;gap:8px;font-size:10px;font-weight:600;color:var(--text-muted,var(--text-3));margin-bottom:6px">${opts.idx != null ? `<span>第${opts.idx + 1}校</span>` : ''}${opts.role ? `<span data-rolechip="1" onclick="spEditorRoleClick(this)" title="点击切换目标校 / 备选" style="display:inline-block;font-size:10px;line-height:1;padding:2px 6px;border-radius:8px;border:1px solid var(--accent);color:#fff;background:var(--accent);cursor:pointer">目标</span>` : ''}</div>` : ''}
       ${opts.showLevel ? `<select data-field="level" style="${inp};width:100%;margin-bottom:6px">${[[1, '冲刺（挑战）'], [2, '匹配（目标）'], [3, '保底']].map(([v, l]) => `<option value="${v}" ${String(lv) === String(v) ? 'selected' : ''}>级别：${l}</option>`).join('')}</select>` : ''}
       <select onchange="spApplyShared(this)" style="${inp};width:100%;margin-bottom:6px">
         <option value="">— 从共享列表选择 —</option>
@@ -78,7 +282,7 @@ function spFormCollect(root) {
   const get = f => { const el = root.querySelector(`input[data-field="${f}"], select[data-field="${f}"]`); return el ? String(el.value || '').trim() : ''; };
   const chip = f => { const el = root.querySelector(`span[data-field="${f}"]`); return el ? el.dataset.on === '1' : false; };
   return {
-    id: get('id'), level: parseInt(get('level') || root.dataset.level || '2') || 2,
+    id: get('id'), plan_role: root.dataset.role === 'backup' ? 'backup' : 'target', level: parseInt(get('level') || root.dataset.level || '2') || 2,
     status: get('status') || 'preparing', kakomon_started: chip('kakomon_started'), interview_draft_done: chip('interview_draft_done'),
     school_name: get('school_name'), faculty: get('faculty'), department: get('department'),
     application_period: get('application_period'), exam_date: get('exam_date'),
@@ -122,7 +326,6 @@ async function spLoadSharedSchools(student) {
 let spModalCtx = null;
 async function spOpenModal(opts) {
   const { student, plan } = opts;
-  if (!plan && (opts.plans || []).length >= SP_MAX_SCHOOLS) { alert(`最多 ${SP_MAX_SCHOOLS} 所志望校，请先删除一所再添加`); return; }
   document.getElementById('spSchoolModal')?.remove();
   const m = document.createElement('div');
   m.id = 'spSchoolModal';
@@ -152,20 +355,25 @@ async function spModalSave() {
   if (!v.school_name) { alert('请填写学校名'); return; }
   const { student, plan } = ctx;
   const row = Object.assign({}, v, { exam_season: spGuessSeason(v.application_period) });
-  delete row.id;
+  delete row.id; delete row.plan_role;   // 目标 / 备选只由 chip 切换，编辑弹窗不改它
+  let addedRole = null;
   const btn = document.getElementById('sp_modal_save'); if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
   try {
     if (plan) {
+      const changes = spDiffPlan(plan, row);
       await sb(`/rest/v1/student_school_plans?id=eq.${encodeURIComponent(plan.id)}`, 'PATCH', row);
       Object.assign(plan, row);
+      await spLogModify(student, plan, changes, ctx.source || 'admin', ctx.sourceName || '管理员');
     } else {
-      const cur = await sb(`/rest/v1/student_school_plans?student_id=eq.${encodeURIComponent(student.id)}&select=id`).catch(() => ctx.plans || []);
-      if ((cur || []).length >= SP_MAX_SCHOOLS) throw new Error(`最多 ${SP_MAX_SCHOOLS} 所志望校，请先删除一所再添加`);
-      Object.assign(row, { id: `ssp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, student_id: student.id, student_name: student.name, major: student.major || '' });
+      const cur = await sb(`/rest/v1/student_school_plans?student_id=eq.${encodeURIComponent(student.id)}&select=id,plan_role`, 'GET', null, { cache: 'no-store' }).catch(() => ctx.plans || []);
+      addedRole = spSplit(cur || []).targets.length < SP_TARGET_MAX ? 'target' : 'backup';   // 前 6 所是目标校，之后是备选
+      Object.assign(row, { id: `ssp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, student_id: student.id, student_name: student.name, major: student.major || '', plan_role: addedRole });
       await sb('/rest/v1/student_school_plans', 'POST', row);
+      await spAddLog(student, row, ctx.source || 'admin', ctx.sourceName || '管理员');
     }
     document.getElementById('spSchoolModal')?.remove();
     spModalCtx = null;
+    if (addedRole === 'backup') alert(`目标校已满 ${SP_TARGET_MAX} 所，这所加在备选里`);
     if (ctx.onDone) ctx.onDone();
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = '保存'; }
@@ -173,10 +381,10 @@ async function spModalSave() {
   }
 }
 
-// 删除时写进时间线的文字：删除志望校：東京大学 · 総合文化研究科 · ○○専攻（原进度：准备中）
+// 删除时写进时间线的文字：删除志望校（备选）：東京大学 · 総合文化研究科 · ○○専攻（原进度：准备中）
 function spDeleteNote(p) {
   const st = (SCHOOL_STATUS_LABELS[p.status || 'preparing'] || {}).t || p.status || '';
-  return `删除志望校：${[p.school_name, p.faculty, p.department].filter(Boolean).join(' · ')}${st ? `（原进度：${st}）` : ''}`;
+  return `删除志望校（${spRoleName(spRoleOf(p))}）：${spPlanTitle(p)}${st ? `（原进度：${st}）` : ''}`;
 }
 function spDeleteLog(student, p, source, sourceName) {
   const entry = makeProgressEntry({ studentId: student.id, studentName: student.name, major: student.major, source, sourceName, notes: spDeleteNote(p), recordedAt: new Date().toISOString().slice(0, 10) });

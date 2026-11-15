@@ -80,11 +80,15 @@ async function renderStudentDetailCard(studentId, opts) {
     planTxt = draft.draft_file_url ? '已完成' : n > 0 ? '撰写中' : '';
   }
 
-  const schoolsHtml = plans.length ? plans.map(p => {
+  const schoolOne = p => {
     const st = schoolStatusLabel(p.status), pass = p.status === 'passed';
     const name = [p.school_name, p.faculty, p.department].filter(Boolean).map(sdEsc).join(' · ');
-    return `<div style="font-size:11px;padding:5px 6px;border-bottom:1px solid var(--border-light);${pass ? 'background:var(--ok-bg,#e8f4ea);font-weight:600;border-radius:3px' : ''}">${schoolLevelHtml(p.level)} ${name}<span style="color:${st.c};margin-left:8px">${st.t}</span>${!isGakubuStudent(s) && typeof riyuProfTagHtml === 'function' ? ' ' + riyuProfTagHtml(p, riyuSubs) : ''}</div>`;
-  }).join('') : '<div style="font-size:11px;color:var(--text-3)">还没有志望校</div>';
+    return `<div style="font-size:11px;padding:5px 6px;border-bottom:1px solid var(--border-light);${pass ? 'background:var(--ok-bg,#e8f4ea);font-weight:600;border-radius:3px' : ''}">${spRoleChipHtml(p, '')} ${schoolLevelHtml(p.level)} ${name}<span style="color:${st.c};margin-left:8px">${st.t}</span>${!isGakubuStudent(s) && typeof riyuProfTagHtml === 'function' ? ' ' + riyuProfTagHtml(p, riyuSubs) : ''}</div>`;
+  };
+  const spl = spSplit(plans);
+  const schoolsHtml = plans.length ? spGroupHeadHtml('target', spl.targets.length, 'margin-top:2px') + spl.targets.map(schoolOne).join('')
+    + (spl.backups.length ? spGroupHeadHtml('backup', spl.backups.length) + spl.backups.map(schoolOne).join('') : '')
+    : '<div style="font-size:11px;color:var(--text-3)">还没有志望校</div>';
 
   const dims = ['japanese', 'english', 'plan', 'apply', 'exam'];
   const tlHtml = timeline.length ? [...timeline].slice(-3).reverse().map(e => {
@@ -120,7 +124,7 @@ async function renderStudentDetailCard(studentId, opts) {
     ${secTitle('考学进度')}
     ${row('当前阶段', sdEsc(stage))}
     ${row(gakubu ? '志望理由书' : '计划书', sdEsc(planTxt))}
-    <div style="font-size:11px;color:var(--text-3);margin:8px 0 4px">志望校（${plans.length} 所）</div>
+    <div style="font-size:11px;color:var(--text-3);margin:8px 0 4px">志望校</div>
     ${schoolsHtml}
     <div style="font-size:11px;color:var(--text-3);margin:10px 0 4px">最近进度</div>
     ${tlHtml}

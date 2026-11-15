@@ -151,7 +151,7 @@ function renderStudyMain() {
   const s = studyStudent;
   const latest = getLatestProgress(studyData.timeline);
   const tabs = [
-    { id:'schools', label:`🏫 志望校 (${studyData.schoolPlans.length}/6)` },
+    { id:'schools', label:`🏫 志望校 (${studyData.schoolPlans.length})` },
     { id:'plan', label: studyIsGakubu() ? '📄 志望理由书' : '📄 计划书' },
     { id:'materials', label:'📁 出愿材料' },
     { id:'progress', label:'📊 考学进度' },
@@ -338,30 +338,22 @@ function renderSchoolsTab() {
     return spFormHtml(p, { sharedSchools, gakubu: studyIsGakubu(), level: lv, idx });
   }
 
-  const levelGroups = [
-    { lv:1, label:'<span style="color:#c0392b;font-weight:600">冲刺（挑战）</span>', plans: schoolPlans.filter(p=>p.level===1) },
-    { lv:2, label:'<span style="color:#b8860b;font-weight:600">匹配（目标）</span>', plans: schoolPlans.filter(p=>p.level===2) },
-    { lv:3, label:'<span style="color:#2a7a3a;font-weight:600">保底</span>', plans: schoolPlans.filter(p=>p.level===3) },
-  ];
+  // 先「目标校」、再「备选」；每组里面照旧选级别。单所表单带可点的 目标/备选 chip
+  const spl = spSplit(schoolPlans);
+  const formOf = (p, role) => spFormHtml(p, { sharedSchools, gakubu: studyIsGakubu(), level: p.level || 2, showLevel: true, role });
+  const byRole = { target: spl.targets.map(p => formOf(p, 'target')), backup: spl.backups.map(p => formOf(p, 'backup')) };
+  if (!schoolPlans.length) byRole.target.push(formOf({}, 'target'));   // 还没有志望校：给一个空白表单
 
-  let editHtml = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-    <div style="font-size:12px;font-weight:600">我的志望校 (${schoolPlans.length}/6)</div>
+  let editHtml = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+    <div style="font-size:12px;font-weight:600">我的志望校</div>
     <div style="display:flex;align-items:center;gap:8px">
       <span id="ssp_save_msg" style="font-size:11px;color:var(--ok)"></span>
       <button onclick="saveStudySchoolPlans()" style="font-size:12px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:6px 16px;cursor:pointer;font-family:inherit;font-weight:500">保存</button>
     </div>
   </div>
-  <div id="studySchoolRows">`;
-
-  levelGroups.forEach(g => {
-    editHtml += `<div style="margin-bottom:12px">
-      <div style="font-size:11px;font-weight:600;margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid var(--border-light)">${g.label}（推荐2校）</div>`;
-    const rows = g.plans.length >= 2 ? g.plans : [...g.plans, ...Array(2-g.plans.length).fill({})];
-    rows.forEach((p,i) => { editHtml += buildRow(p, g.lv, i); });
-    editHtml += `<button onclick="studyAddSchoolRowToGroup(${g.lv})" style="font-size:10px;background:none;border:1px dashed var(--border);border-radius:2px;padding:3px 10px;cursor:pointer;color:var(--text-muted);font-family:inherit">＋ 再添加一校</button>
-    </div>`;
-  });
-  editHtml += `</div>`;
+  <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">目标校最多 ${SP_TARGET_MAX} 所，更多的学校放在备选。点学校上的「目标 / 备选」可以切换。</div>
+  ${spEditorHtml('studySchoolRows', byRole)}
+  <button onclick="studyAddSchool()" style="font-size:11px;background:none;border:1px dashed var(--border);border-radius:2px;padding:5px 14px;cursor:pointer;color:var(--text-muted);font-family:inherit">＋ 添加学校</button>`;
 
   // 左右分栏（宽屏并排，手机横向滑动翻页），右栏独立上下滚动
   // 已填志望校后参考列表默认收起，主视图聚焦「我的志望校」的逐校推进；可手动展开查找
@@ -383,17 +375,12 @@ function renderSchoolsTab() {
 
 function studyApplySharedSchool(sel) { spApplyShared(sel); }
 
-function studyAddSchoolRowToGroup(lv) {
-  const allRows = document.querySelectorAll('#studySchoolRows [data-level]').length;
-  if (allRows >= SP_MAX_SCHOOLS) { alert('最多6所学校'); return; }
-  const lvRows = document.querySelectorAll(`#studySchoolRows [data-level="${lv}"]`).length;
+// 添加一所：目标校不到 6 所加在目标校，满了自动加在备选
+function studyAddSchool() {
+  const box = document.getElementById('studySchoolRows'); if (!box) return;
   const tmp = document.createElement('div');
-  tmp.innerHTML = spFormHtml({}, { sharedSchools: studyData.sharedSchools, gakubu: studyIsGakubu(), level: lv, idx: lvRows });
-  const div = tmp.firstElementChild;
-  div.removeAttribute('id');
-  // Insert before add button
-  const btn = [...document.querySelectorAll('#studySchoolRows button')].find(b => b.onclick?.toString().includes(`(${lv})`));
-  if (btn) btn.parentElement.insertBefore(div, btn);
+  tmp.innerHTML = spFormHtml({}, { sharedSchools: studyData.sharedSchools, gakubu: studyIsGakubu(), level: 2, showLevel: true, role: 'target' });
+  spEditorAdd(box, tmp.firstElementChild);
 }
 
 
@@ -416,11 +403,12 @@ function studyExamSeason(period) {
 async function saveStudySchoolPlans() {
   const msg = document.getElementById('ssp_save_msg');
   try {
-    const rows = [...document.querySelectorAll('#studySchoolRows [data-level]')];
+    const rows = [...document.querySelectorAll('#studySchoolRows [data-role]')];
     if (!rows.length) { alert('页面加载中，请稍后再试'); return; }
     const plans = rows.map(row => spFormCollect(row)).filter(p => p.school_name);
 
     if (!plans.length) { alert('请至少填写一所学校的学校名'); return; }
+    if (plans.filter(p => p.plan_role !== 'backup').length > SP_TARGET_MAX) { alert(`目标校最多 ${SP_TARGET_MAX} 所，请把多的改成备选`); return; }
 
     if (msg) msg.textContent = '保存中…';
     await sb(`/rest/v1/student_school_plans?student_id=eq.${studyStudent.id}`, 'DELETE');
@@ -434,13 +422,12 @@ async function saveStudySchoolPlans() {
       exam_season: studyExamSeason(p.application_period),
       plan_requirement:p.plan_requirement, research_theme:p.research_theme,
       documents_required:p.documents_required,
-      level:p.level, status:p.status || 'preparing',
+      level:p.level, status:p.status || 'preparing', plan_role:p.plan_role === 'backup' ? 'backup' : 'target',
       kakomon_started:!!p.kakomon_started, interview_draft_done:!!p.interview_draft_done,
     }));
     await sb('/rest/v1/student_school_plans', 'POST', toInsert);
-    // 学生自己删掉（清空学校名）的志望校：在考学进度时间线里留一条记录
-    const keep = new Set(toInsert.map(p => p.id));
-    (studyData.schoolPlans || []).filter(p => p.id && !keep.has(p.id)).forEach(p => spDeleteLog(studyStudent, p, 'student', studyStudent.name));
+    // 新增 / 修改 / 目标备选切换 / 删除（清空学校名）都在考学进度时间线里留记录
+    await spSaveDiffLog(studyStudent, studyData.schoolPlans || [], toInsert, 'student', studyStudent.name);
     studyData.schoolPlans = toInsert;
     switchStudyTab('schools');
     const m2 = document.getElementById('ssp_save_msg');

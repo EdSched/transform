@@ -373,21 +373,28 @@ async function loadVipSchoolData() {
 function renderVipSchoolPlanCard() {
   const plans = _vipSchoolPlans || [];
   const levelLabel = { 1:'🔴 冲刺', 2:'🟡 匹配', 3:'🟢 保底' };
-  const planRows = plans.length ? [1,2,3].map(lv => {
-    const lvPlans = plans.filter(p => p.level === lv);
-    if (!lvPlans.length) return '';
-    return `<div style="font-size:10px;color:var(--text-muted);margin:6px 0 3px">${levelLabel[lv]}</div>` +
-      lvPlans.map(p => `<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:7px 9px;margin-bottom:5px;font-size:11px">
-        <div style="font-weight:600">${p.school_name}</div>
+  const spl = spSplit(plans);
+  const groupHtml = (role, list) => {
+    if (role === 'backup' && !list.length) return '';
+    const head = spGroupHeadHtml(role, list.length);
+    const inner = [1,2,3].map(lv => {
+      const lvPlans = list.filter(p => (p.level || 2) === lv);
+      if (!lvPlans.length) return '';
+      return `<div style="font-size:10px;color:var(--text-muted);margin:6px 0 3px">${levelLabel[lv]}</div>` +
+        lvPlans.map(p => `<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:7px 9px;margin-bottom:5px;font-size:11px">
+        <div style="font-weight:600">${spRoleChipHtml(p, '')} ${p.school_name}</div>
         <div style="color:var(--text-muted)">${[p.faculty,p.department].filter(Boolean).join(' · ')}</div>
         ${p.professor?`<div style="color:var(--text-secondary);margin-top:2px">👤 ${p.professor}</div>`:''}
         ${p.application_period?`<div style="color:var(--accent);margin-top:2px;font-size:10px">📅 ${p.application_period}</div>`:''}
       </div>`).join('');
-  }).join('') : '<div style="font-size:11px;color:var(--text-muted)">暂未填写，请点击「编辑」完成志望校填写</div>';
+    }).join('');
+    return head + inner;
+  };
+  const planRows = plans.length ? groupHtml('target', spl.targets) + groupHtml('backup', spl.backups) : '<div style="font-size:11px;color:var(--text-muted)">暂未填写，请点击「编辑」完成志望校填写</div>';
 
   return `<div class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-      <div class="card-title" style="margin:0">🏫 志望校列表 (${plans.length}/6)</div>
+      <div class="card-title" style="margin:0">🏫 志望校列表</div>
       <button onclick="openVipSchoolPlanEditor()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:3px;padding:3px 10px;cursor:pointer;font-family:inherit;color:var(--text-secondary)">编辑</button>
     </div>
     ${planRows}
@@ -412,35 +419,46 @@ function renderVipPlanDraftCard() {
   </div>`;
 }
 
+const VSP_LEVEL_LABEL = { 1:'🔴 冲刺（挑战）', 2:'🟡 匹配（目标）', 3:'🟢 保底' };
+function vspRowHtml(s, role, id) {
+  s = s || {};
+  return `<div data-role="${role}" id="vsp_row_${id}" style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px">
+      <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+        <span data-rolechip="1" onclick="spEditorRoleClick(this)" title="点击切换目标校 / 备选" style="display:inline-block;font-size:10px;line-height:1;padding:2px 6px;border-radius:8px;border:1px solid var(--accent);color:#fff;background:var(--accent);cursor:pointer">目标</span>
+        <select style="font-size:11px;padding:3px 6px;font-family:inherit">
+          ${[1,2,3].map(lv=>`<option value="${lv}" ${(s.level||2)===lv?'selected':''}>${VSP_LEVEL_LABEL[lv]}</option>`).join('')}
+        </select>
+        <button onclick="vspRemoveRow(this)" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;color:var(--danger)">删除</button>
+      </div>
+      <input placeholder="学校名 *" value="${spEsc(s.school_name)}" style="font-size:11px;width:100%;margin-bottom:5px" data-field="school_name">
+      <input placeholder="研究科" value="${spEsc(s.faculty)}" style="font-size:11px;width:100%;margin-bottom:5px" data-field="faculty">
+      <input placeholder="専攻/コース" value="${spEsc(s.department)}" style="font-size:11px;width:100%;margin-bottom:5px" data-field="department">
+      <input placeholder="志望教授名" value="${spEsc(s.professor)}" style="font-size:11px;width:100%;margin-bottom:5px" data-field="professor">
+      <input placeholder="教授研究内容URL或说明" value="${spEsc(s.professor_url)}" style="font-size:11px;width:100%;margin-bottom:5px" data-field="professor_url">
+      <input placeholder="出愿期间" value="${spEsc(s.application_period)}" style="font-size:11px;width:100%" data-field="application_period">
+      <input type="hidden" value="${spEsc(s.id)}" data-field="id">
+    </div>`;
+}
+function vspRemoveRow(btn) {
+  const row = btn.closest('[data-role]'), box = btn.closest('[data-rolebox]');
+  if (row) row.remove();
+  if (box) spEditorRefresh(box);
+}
+
 function openVipSchoolPlanEditor() {
-  // 复用 student.js 的逻辑，但适配 VIP 学生
   const plans = _vipSchoolPlans || [];
-  const levelLabel = { 1:'🔴 冲刺（挑战）', 2:'🟡 匹配（目标）', 3:'🟢 保底' };
   const modal = document.createElement('div');
   modal.id = 'vipSchoolModal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto';
-  const rows = plans.map((s,i) => `
-    <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px" id="vsp_row_${i}">
-      <div style="display:flex;gap:8px;margin-bottom:8px">
-        <select style="font-size:11px;padding:3px 6px;font-family:inherit">
-          ${[1,2,3].map(lv=>`<option value="${lv}" ${s.level===lv?'selected':''}>${levelLabel[lv]}</option>`).join('')}
-        </select>
-        <button onclick="this.closest('[id]').remove()" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;color:var(--danger)">删除</button>
-      </div>
-      <input placeholder="学校名 *" value="${s.school_name||''}" style="font-size:11px;width:100%;margin-bottom:5px" data-field="school_name">
-      <input placeholder="研究科" value="${s.faculty||''}" style="font-size:11px;width:100%;margin-bottom:5px" data-field="faculty">
-      <input placeholder="専攻/コース" value="${s.department||''}" style="font-size:11px;width:100%;margin-bottom:5px" data-field="department">
-      <input placeholder="志望教授名" value="${s.professor||''}" style="font-size:11px;width:100%;margin-bottom:5px" data-field="professor">
-      <input placeholder="教授研究内容URL或说明" value="${s.professor_url||''}" style="font-size:11px;width:100%;margin-bottom:5px" data-field="professor_url">
-      <input placeholder="出愿期间" value="${s.application_period||''}" style="font-size:11px;width:100%" data-field="application_period">
-      <input type="hidden" value="${s.id||''}" data-field="id">
-    </div>`).join('');
+  const spl = spSplit(plans);
+  const byRole = { target: spl.targets.map((s,i) => vspRowHtml(s, 'target', 't'+i)), backup: spl.backups.map((s,i) => vspRowHtml(s, 'backup', 'b'+i)) };
+  if (!plans.length) byRole.target.push(vspRowHtml({}, 'target', 'n0'));
 
   modal.innerHTML = `
     <div style="background:var(--surface,#fff);border-radius:6px;padding:20px;max-width:460px;width:100%;margin:auto">
       <div style="font-size:14px;font-weight:600;margin-bottom:6px">🏫 志望校列表</div>
-      <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px">每个等级建议2所，共最多6所。建议每校找2位教授。</div>
-      <div id="vspContainer">${rows}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px">目标校最多 ${SP_TARGET_MAX} 所，更多的学校放在备选。点学校上的「目标 / 备选」可以切换。建议每校找2位教授。</div>
+      ${spEditorHtml('vspContainer', byRole)}
       <button onclick="addVspRow()" style="width:100%;background:none;border:1px dashed var(--border);border-radius:3px;padding:8px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text-muted);margin-bottom:14px">＋ 添加学校</button>
       <div style="display:flex;gap:8px">
         <button onclick="saveVipSchoolPlans()" style="flex:1;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:10px;font-size:12px;cursor:pointer;font-family:inherit">保存</button>
@@ -450,48 +468,36 @@ function openVipSchoolPlanEditor() {
   document.body.appendChild(modal);
 }
 
+// 添加一所：目标校不到 6 所加在目标校，满了自动加在备选
 function addVspRow() {
-  const c = document.getElementById('vspContainer');
-  if (c.children.length >= 6) { alert('最多6所'); return; }
-  const i = Date.now();
-  const levelLabel = { 1:'🔴 冲刺（挑战）', 2:'🟡 匹配（目标）', 3:'🟢 保底' };
-  const div = document.createElement('div');
-  div.style.cssText = 'background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px;margin-bottom:8px';
-  div.id = `vsp_row_${i}`;
-  div.innerHTML = `
-    <div style="display:flex;gap:8px;margin-bottom:8px">
-      <select style="font-size:11px;padding:3px 6px;font-family:inherit">
-        ${[1,2,3].map(lv=>`<option value="${lv}">${levelLabel[lv]}</option>`).join('')}
-      </select>
-      <button onclick="this.closest('[id]').remove()" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;color:var(--danger)">删除</button>
-    </div>
-    <input placeholder="学校名 *" style="font-size:11px;width:100%;margin-bottom:5px" data-field="school_name">
-    <input placeholder="研究科" style="font-size:11px;width:100%;margin-bottom:5px" data-field="faculty">
-    <input placeholder="専攻/コース" style="font-size:11px;width:100%;margin-bottom:5px" data-field="department">
-    <input placeholder="志望教授名" style="font-size:11px;width:100%;margin-bottom:5px" data-field="professor">
-    <input placeholder="教授研究内容URL或说明" style="font-size:11px;width:100%;margin-bottom:5px" data-field="professor_url">
-    <input placeholder="出愿期间" style="font-size:11px;width:100%" data-field="application_period">
-    <input type="hidden" value="" data-field="id">`;
-  c.appendChild(div);
+  const box = document.getElementById('vspContainer'); if (!box) return;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = vspRowHtml({}, 'target', Date.now());
+  spEditorAdd(box, tmp.firstElementChild);
 }
 
 async function saveVipSchoolPlans() {
-  const rows = [...document.getElementById('vspContainer').children];
+  const rows = [...document.querySelectorAll('#vspContainer [data-role]')];
   const plans = rows.map(row => {
     const get = f => row.querySelector(`[data-field="${f}"]`)?.value?.trim()||'';
-    return { id: get('id'), school_name: get('school_name'), faculty: get('faculty'), department: get('department'), professor: get('professor'), professor_url: get('professor_url'), application_period: get('application_period'), level: parseInt(row.querySelector('select')?.value||'2') };
+    return { id: get('id'), school_name: get('school_name'), faculty: get('faculty'), department: get('department'), professor: get('professor'), professor_url: get('professor_url'), application_period: get('application_period'), level: parseInt(row.querySelector('select')?.value||'2'), plan_role: row.dataset.role === 'backup' ? 'backup' : 'target' };
   }).filter(p => p.school_name);
   if (!plans.length) { alert('请至少填写一所学校'); return; }
+  if (plans.filter(p => p.plan_role !== 'backup').length > SP_TARGET_MAX) { alert(`目标校最多 ${SP_TARGET_MAX} 所，请把多的改成备选`); return; }
   try {
     await sb(`/rest/v1/student_school_plans?student_id=eq.${vipStudent.id}`, 'DELETE');
-    const toInsert = plans.map(p => ({
+    const oldById = new Map((_vipSchoolPlans || []).map(o => [o.id, o]));
+    // 先全删再全插：已有的志望校把这页没有的字段（进度、教授2、过去问等）原样带回去，不然一保存全被清掉
+    const toInsert = plans.map(p => Object.assign({}, oldById.get(p.id) || {}, {
       id: p.id || `ssp-${Date.now()}-${Math.random().toString(36).slice(2,4)}`,
       student_id: vipStudent.id, student_name: vipStudent.name, major: vipStudent.major,
       school_name: p.school_name, faculty: p.faculty, department: p.department,
       professor: p.professor, professor_url: p.professor_url,
-      application_period: p.application_period, level: p.level, status: 'preparing',
-    }));
+      application_period: p.application_period, level: p.level, plan_role: p.plan_role,
+    }, (oldById.get(p.id) ? {} : { status: 'preparing' })));
     await sb('/rest/v1/student_school_plans', 'POST', toInsert);
+    // 新增 / 修改 / 目标备选切换 / 删除都在考学进度时间线里留记录（来源：学生）
+    await spSaveDiffLog(vipStudent, _vipSchoolPlans || [], toInsert, 'student', vipStudent.name);
     _vipSchoolPlans = toInsert;
     document.getElementById('vipSchoolModal').remove();
     renderVipMain();

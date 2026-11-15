@@ -2532,16 +2532,22 @@ async function raArCreateStudent(row) {
 }
 async function raArUpsertPlan(stu, row) {
   const sid = encodeURIComponent(stu.id);
-  const plans = await raSbFetch(`student_school_plans?student_id=eq.${sid}&select=id,school_name,faculty`) || [];
+  const plans = await raSbFetch(`student_school_plans?student_id=eq.${sid}&select=id,school_name,faculty,department,status,level,plan_role`) || [];
   const sk = schoolKey(row.univ), dk = deptKey(row.dept);
   const same = plans.filter(p => schoolKey(p.school_name) === sk);
   const hit = same.find(p => deptKey(p.faculty) === dk) || (!dk ? same[0] : null) || same.find(p => !deptKey(p.faculty));
+  const hasSp = typeof spLogModify === 'function';
   if (hit) {
     await raSbFetch(`student_school_plans?id=eq.${encodeURIComponent(hit.id)}`, { method: 'PATCH', body: { status: 'passed' }, prefer: 'return=minimal', headers: {} });
+    // 考学进度时间线记一条（来源 admin，备注「合格实绩录入」）
+    if (hasSp) await spLogModify(stu, hit, spDiffPlan(hit, { status: 'passed' }), 'admin', '管理员', '合格实绩录入');
   } else {
-    await raSbFetch('student_school_plans', { method: 'POST', prefer: 'return=minimal', headers: {}, body: {
+    const body = {
       id: `ssp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, student_id: stu.id, student_name: stu.name, major: stu.major || row.our_major || '',
-      school_name: row.univ, faculty: row.dept || null, department: row.spec || null, status: 'passed' } });
+      school_name: row.univ, faculty: row.dept || null, department: row.spec || null, status: 'passed' };
+    if (typeof spSplit === 'function') body.plan_role = spSplit(plans).targets.length < SP_TARGET_MAX ? 'target' : 'backup';   // 前 6 所是目标校，之后是备选
+    await raSbFetch('student_school_plans', { method: 'POST', prefer: 'return=minimal', headers: {}, body });
+    if (hasSp) await spAddLog(stu, body, 'admin', '管理员', '合格实绩录入');
   }
 }
 async function raArSyncToStudent(row, table) {

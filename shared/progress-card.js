@@ -168,7 +168,7 @@ const PGC_SRC_LABEL = { student: '学生填写', teacher: '老师面谈', admin:
 // 一张学生考学进度卡片
 // ctx：{ timelineMap, plansMap, draftsMap, riyuSubsMap, matItems, matsMap, bkMap }
 // o：{ mode:'admin'|'teacher', open:是否默认展开,
-//      h:{ planSet, planFlag, schoolAdd, schoolEdit, schoolDel }  志望校操作的全局函数名
+//      h:{ planSet, planFlag, schoolAdd, schoolEdit, schoolDel, roleSet }  志望校操作的全局函数名（roleSet：切换目标校/备选）
 //      notesFn:'tpNotesToggle'|'spNotesToggle'（笔记容器 id 固定为 pgcnotes_<学生id>）
 //      riyuChanged:(sub)=>void  志望理由书批复版上传后的回调
 //      progressAdd:s=>js  timelineEdit:(entry,s)=>js  guaranteedEdit:true（保录学校可编辑）
@@ -273,12 +273,12 @@ function pgcCardHtml(s, ctx, o) {
     return `<button onclick="event.stopPropagation();${h.planFlag}('${p.id}','${field}',this)" data-on="${on ? '1' : '0'}" style="font-size:10px;border-radius:3px;padding:3px 7px;cursor:pointer;font-family:inherit;white-space:nowrap;border:1px solid ${on ? 'var(--ok)' : 'var(--border)'};background:${on ? 'var(--ok-bg)' : 'var(--bg)'};color:${on ? 'var(--ok)' : 'var(--text-3)'}">${on ? onTxt : offTxt}</button>`;
   };
   const warn = (typeof spChosenWarnHtml === 'function') ? spChosenWarnHtml((ctx.bkMap || {})[s.id], plans.length, `${h.schoolAdd}('${pgcJs(s.id)}')`) : '';
-  const schoolRows = plans.map((p, i) => {
+  const schoolRow = (p, i) => {
     const st = schoolStatusLabel(p.status);
     return `<tr>
       <td style="color:var(--text-3)">${i + 1}</td>
       <td style="white-space:nowrap">${schoolLevelHtml(p.level)}</td>
-      <td><span style="font-weight:600">${pgcEsc(p.school_name)}</span>${p.faculty ? `<span style="color:var(--text-3);margin-left:4px;font-size:10px">${pgcEsc(p.faculty)}</span>` : ''}${!gakubu && typeof riyuProfTagHtml === 'function' ? ' ' + riyuProfTagHtml(p, subs) : ''}</td>
+      <td>${spRoleChipHtml(p, h.roleSet ? `${h.roleSet}('${p.id}')` : '')} <span style="font-weight:600">${pgcEsc(p.school_name)}</span>${p.faculty ? `<span style="color:var(--text-3);margin-left:4px;font-size:10px">${pgcEsc(p.faculty)}</span>` : ''}${!gakubu && typeof riyuProfTagHtml === 'function' ? ' ' + riyuProfTagHtml(p, subs) : ''}</td>
       <td>${pgcEsc(p.professor) || '—'}</td>
       <td style="font-size:10px;color:var(--accent)">${pgcEsc(p.application_period) || '—'}</td>
       <td><select onchange="event.stopPropagation();${h.planSet}('${p.id}','status',this.value,this)" onclick="event.stopPropagation()" style="width:100%;font-size:10px;padding:3px 2px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;color:${st.c};font-weight:600">
@@ -287,8 +287,13 @@ function pgcCardHtml(s, ctx, o) {
       <td>${flagBtn(p, 'interview_draft_done', '✓ 已完成', '未完成')}</td>
       <td style="white-space:nowrap"><span onclick="event.stopPropagation();${h.schoolEdit}('${p.id}')" style="font-size:10px;color:var(--accent);cursor:pointer;margin-right:6px">编辑</span><span onclick="event.stopPropagation();${h.schoolDel}('${p.id}')" style="font-size:10px;color:var(--danger);cursor:pointer">删除</span>${o.passEntry && p.status === 'passed' ? o.passEntry(p, s) : ''}</td>
     </tr>`;
-  }).join('');
-  const secSchools = `<div class="pgc-sec" id="pgc_${pgcEsc(s.id)}_schools"><div class="pgc-title">志望校 <span class="sub">（${plans.length}所）· 状态/过去问/面试稿可直接改，即时与学生端同步</span><span class="act"><button class="pgc-btn" onclick="event.stopPropagation();${h.schoolAdd}('${pgcJs(s.id)}')">＋ 添加志望校</button></span></div>
+  };
+  // 先目标校（n / 6），再备选（n，没有就不显示）
+  const spl = spSplit(plans);
+  const groupRow = (role, n) => `<tr><td colspan="9" style="background:var(--bg);font-size:11px;font-weight:600;color:${role === 'backup' ? 'var(--text-3)' : 'var(--text-2)'}">${spGroupTitle(role, n)}</td></tr>`;
+  const schoolRows = groupRow('target', spl.targets.length) + spl.targets.map(schoolRow).join('')
+    + (spl.backups.length ? groupRow('backup', spl.backups.length) + spl.backups.map(schoolRow).join('') : '');
+  const secSchools = `<div class="pgc-sec" id="pgc_${pgcEsc(s.id)}_schools"><div class="pgc-title">志望校 <span class="sub">（目标校 ${spl.targets.length} / ${SP_TARGET_MAX}${spl.backups.length ? `，备选 ${spl.backups.length}` : ''}）· 状态/过去问/面试稿可直接改，即时与学生端同步</span><span class="act"><button class="pgc-btn" onclick="event.stopPropagation();${h.schoolAdd}('${pgcJs(s.id)}')">＋ 添加志望校</button></span></div>
     ${typeof spTargetBoxHtml === 'function' ? spTargetBoxHtml(s, plans, h) : ''}${warn}${plans.length ? `<div class="pgc-tbl-wrap"><table class="pgc-tbl" style="min-width:820px"><colgroup><col style="width:36px"><col style="width:52px"><col><col style="width:90px"><col style="width:110px"><col style="width:150px"><col style="width:70px"><col style="width:70px"><col style="width:${o.passEntry ? 150 : 96}px"></colgroup>
     <thead><tr>${['No.', '级别', '学校 · 研究科', '教授', '出愿期间', '进度', '过去问', '面试稿', '操作'].map(t => `<th>${t}</th>`).join('')}</tr></thead><tbody>${schoolRows}</tbody></table></div>`
       : '<div style="font-size:11px;color:var(--text-3)">尚无志望校，点右上「＋ 添加志望校」录入</div>'}</div>`;
