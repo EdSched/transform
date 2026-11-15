@@ -728,7 +728,7 @@ async function focusVipLoad(list) {
   ids.forEach(id => { out[id] = { last: null, future: false }; });
   for (let i = 0; i < ids.length; i += 100) {
     const part = ids.slice(i, i + 100).map(id => encodeURIComponent(id)).join(',');
-    const rows = await sbAll(`bookings?type=eq.vip&status=neq.cancelled&student_id=in.(${part})&select=student_id,slot_date`);
+    const rows = await sbAll(`/rest/v1/bookings?type=eq.vip&status=neq.cancelled&student_id=in.(${part})&select=student_id,slot_date`);
     rows.forEach(b => {
       const o = out[b.student_id]; const d = String(b.slot_date || '').slice(0, 10);
       if (!o || !d) return;
