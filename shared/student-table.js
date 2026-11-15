@@ -68,14 +68,21 @@ const STT_COLS = [
   { key: 'student_code', label: '查询码', adminDef: 1, vals: s => [s.student_code || ''], text: s => s.student_code || '' },
 ];
 const STT_COL_BY = Object.fromEntries(STT_COLS.map(c => [c.key, c]));
+// 这一张表自己的列：opts.colDefs（格式同 STT_COLS）；不传 = 学生档案的 STT_COLS
+function sttCols(key) { const o = STT_CFG[key] && STT_CFG[key].opts; return (o && o.colDefs) || STT_COLS; }
+function sttColBy(key, ck) { return sttCols(key).find(c => c.key === ck); }
 
 function sttInst(key) {
-  if (!STT_INST[key]) STT_INST[key] = { sort: null, filters: {}, cols: sttLoadCols(key), panel: false };
+  if (!STT_INST[key]) {
+    const o = (STT_CFG[key] && STT_CFG[key].opts) || {};
+    const f = {}; Object.entries(o.initFilters || {}).forEach(([k, v]) => { f[k] = new Set(v); });
+    STT_INST[key] = { sort: o.initSort ? { col: o.initSort.col, dir: o.initSort.dir || 1 } : null, filters: f, cols: sttLoadCols(key), panel: false };
+  }
   return STT_INST[key];
 }
 function sttDefaultCols(key) {
   const admin = (STT_CFG[key] && STT_CFG[key].opts && STT_CFG[key].opts.mode) === 'admin';
-  return STT_COLS.filter(c => c.fixed || c.def || (admin && c.adminDef)).map(c => c.key);
+  return sttCols(key).filter(c => c.fixed || c.def || (admin && c.adminDef)).map(c => c.key);
 }
 function sttLoadCols(key) {
   try {
@@ -83,9 +90,9 @@ function sttLoadCols(key) {
     if (raw) {
       const arr = JSON.parse(raw);
       if (Array.isArray(arr)) {
-        const ok = arr.filter(k => STT_COL_BY[k]);
+        const ok = arr.filter(k => sttColBy(key, k));
         if (ok.includes('course') && !arr.includes('vip_type')) ok.push('vip_type');   // 旧设置里「课程属性」拆成两列后，自动补上「大课/VIP」
-        if (ok.length) return STT_COLS.filter(c => c.fixed || ok.includes(c.key)).map(c => c.key);
+        if (ok.length) return sttCols(key).filter(c => c.fixed || ok.includes(c.key)).map(c => c.key);
       }
     }
   } catch (e) { /* 读不到就用默认 */ }
@@ -101,12 +108,12 @@ function sttRows(key) {
   const inst = sttInst(key);
   let list = cfg.list || [];
   Object.entries(inst.filters).forEach(([ck, set]) => {
-    const col = STT_COL_BY[ck];
+    const col = sttColBy(key, ck);
     if (!col || !set || !set.size) return;
     list = list.filter(s => { const v = col.vals(s).filter(x => x !== '' && x != null); return v.length ? v.some(x => set.has(x)) : set.has(''); });
   });
   if (inst.sort) {
-    const col = STT_COL_BY[inst.sort.col], dir = inst.sort.dir;
+    const col = sttColBy(key, inst.sort.col), dir = inst.sort.dir;
     if (col) {
       const keyOf = s => col.sort === 'num' ? col.num(s) : col.sort === 'date' ? sttDateKey(col.text(s)) : (col.text(s) || null);
       list = list.map(s => ({ s, k: keyOf(s) })).sort((a, b) => {
@@ -137,7 +144,7 @@ function sttInner(key) {
   const rowsAll = sttRows(key);
   if (o.onRows) { try { o.onRows(rowsAll); } catch (e) { /* ignore */ } }
   const rows = o.slice ? o.slice(rowsAll) : rowsAll;
-  const cols = STT_COLS.filter(c => inst.cols.includes(c.key));
+  const cols = sttCols(key).filter(c => inst.cols.includes(c.key));
   const fcols = Object.keys(inst.filters).filter(k => inst.filters[k] && inst.filters[k].size);
   const sortArrow = c => inst.sort && inst.sort.col === c.key ? (inst.sort.dir === 1 ? '▲' : '▼') : '';
   const funnel = '<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M0 1h10L6 5.5V10L4 8.5V5.5z"/></svg>';
@@ -145,11 +152,11 @@ function sttInner(key) {
   const tool = `<div class="stt-tool">
     <span class="stt-btn" onclick="sttTogglePanel('${key}')">列设置 ${inst.panel ? '▴' : '▾'}</span>
     ${o.canExport && typeof XLSX !== 'undefined' ? `<span class="stt-btn" onclick="sttExport('${key}')">导出当前结果</span>` : ''}
-    ${fcols.length ? `<span class="stt-filtered">已筛选：${fcols.map(k => sttEsc(STT_COL_BY[k].label)).join('、')} · <a onclick="sttClearAll('${key}')">清除全部</a></span>` : ''}
-    ${inst.sort ? `<span class="stt-filtered">排序：${sttEsc(STT_COL_BY[inst.sort.col].label)}${inst.sort.dir === 1 ? '升序' : '降序'} · <a onclick="sttSortClear('${key}')">取消</a></span>` : ''}
-    <span class="stt-count">表内 ${rowsAll.length} 人${rowsAll.length !== cfg.list.length ? `（共 ${cfg.list.length}）` : ''}</span>
-  </div>`;
-  const panel = inst.panel ? `<div class="stt-panel">${STT_COLS.filter(c => !c.fixed).map(c => {
+    ${fcols.length ? `<span class="stt-filtered">已筛选：${fcols.map(k => sttEsc(sttColBy(key, k).label)).join('、')} · <a onclick="sttClearAll('${key}')">清除全部</a></span>` : ''}
+    ${inst.sort ? `<span class="stt-filtered">排序：${sttEsc(sttColBy(key, inst.sort.col).label)}${inst.sort.dir === 1 ? '升序' : '降序'} · <a onclick="sttSortClear('${key}')">取消</a></span>` : ''}
+    <span class="stt-count">表内 ${rowsAll.length} ${o.unit || '人'}${rowsAll.length !== cfg.list.length ? `（共 ${cfg.list.length}）` : ''}</span>
+  </div>${o.notice ? o.notice(rowsAll) : ''}`;
+  const panel = inst.panel ? `<div class="stt-panel">${sttCols(key).filter(c => !c.fixed).map(c => {
     const on = inst.cols.includes(c.key);
     return `<span class="stt-chip${on ? ' on' : ''}" onclick="sttToggleCol('${key}','${c.key}')">${sttEsc(c.label)}</span>`;
   }).join('')}<span class="stt-chip" onclick="sttResetCols('${key}')" style="border-style:dashed">恢复默认</span></div>` : '';
@@ -157,10 +164,11 @@ function sttInner(key) {
   const th = cols.map(c => {
     const hasF = inst.filters[c.key] && inst.filters[c.key].size;
     const nameSel = c.fixed && admin && o.select ? `<input type="checkbox" id="selectAllStudents" onclick="event.stopPropagation()" onchange="toggleSelectAllStudents(this)"> ` : '';
-    return `<th class="${c.fixed ? 'stt-fix' : ''}"><span class="stt-th">${nameSel}<span class="stt-lab" onclick="sttSort('${key}','${c.key}')">${sttEsc(c.label)}<i class="stt-arr">${sortArrow(c)}</i></span><span class="stt-fn${hasF ? ' on' : ''}" onclick="event.stopPropagation();sttOpenFilter('${key}','${c.key}',this)" title="筛选">${funnel}</span></span></th>`;
+    return `<th class="${c.fixed ? 'stt-fix' : ''}"><span class="stt-th">${nameSel}${c.nosort ? `<span>${sttEsc(c.label)}</span>` : `<span class="stt-lab" onclick="sttSort('${key}','${c.key}')">${sttEsc(c.label)}<i class="stt-arr">${sortArrow(c)}</i></span>`}${c.nofilter ? '' : `<span class="stt-fn${hasF ? ' on' : ''}" onclick="event.stopPropagation();sttOpenFilter('${key}','${c.key}',this)" title="筛选">${funnel}</span>`}</span></th>`;
   }).join('') + (o.ops ? '<th></th>' : '');
 
-  const td = (c, s) => {
+  const td = (c, s, same) => {
+    if (same) return '<td class="stt-same"></td>';
     if (c.fixed) {
       const sel = admin && o.select ? `<input type="checkbox" class="student-select" value="${sttEsc(s.id)}" onclick="event.stopPropagation()"> ` : '';
       const tags = typeof classTagsHtml === 'function' && admin ? classTagsHtml(s.class_ids) : '';
@@ -176,9 +184,13 @@ function sttInner(key) {
     return `<td title="${sttEsc(t)}">${sttEsc(t)}</td>`;
   };
   const colspan = cols.length + (o.ops ? 1 : 0);
-  const body = rows.length ? rows.map(s => {
+  // 归在一起（opts.groupSame）：按某一列排序时，相邻且这一列值相同的行，只在第一行显示这个值
+  const gcol = o.groupSame && inst.sort ? sttColBy(key, inst.sort.col) : null;
+  const body = rows.length ? rows.map((s, i) => {
     const exp = o.expand ? o.expand(s) : '';
-    return `<tr${o.rowClick ? ` onclick="${o.rowClick(s)}" style="cursor:pointer"` : ''}>${cols.map(c => td(c, s)).join('')}${o.ops ? `<td class="stt-ops" onclick="event.stopPropagation()">${o.ops(s)}</td>` : ''}</tr>${exp ? `<tr class="stt-exp"><td colspan="${colspan}">${exp}</td></tr>` : ''}`;
+    const gs = gcol ? (i === 0 || gcol.text(rows[i - 1]) !== gcol.text(s)) : false;
+    const cls = gcol && gs && i > 0 ? ' class="stt-gs"' : '';
+    return `<tr${cls}${o.rowClick ? ` onclick="${o.rowClick(s)}" style="cursor:pointer"` : ''}>${cols.map(c => td(c, s, gcol && !gs && c.key === gcol.key)).join('')}${o.ops ? `<td class="stt-ops" onclick="event.stopPropagation()">${o.ops(s)}</td>` : ''}</tr>${exp ? `<tr class="stt-exp"><td colspan="${colspan}">${exp}</td></tr>` : ''}`;
   }).join('') : `<tr><td colspan="${colspan}" style="text-align:center;padding:26px;color:var(--text-3)">${o.empty || (cfg.list.length ? '没有符合列筛选的学生' : '暂无学生')}</td></tr>`;
 
   return `${tool}${panel}<div class="stt-scroll"><table class="stt-table"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>${o.more ? o.more(rowsAll.length) : ''}`;
@@ -188,7 +200,7 @@ function sttInner(key) {
 function sttTogglePanel(key) { const i = sttInst(key); i.panel = !i.panel; sttRefresh(key); }
 function sttToggleCol(key, ck) {
   const i = sttInst(key);
-  i.cols = STT_COLS.filter(c => c.fixed || (c.key === ck ? !i.cols.includes(ck) : i.cols.includes(c.key))).map(c => c.key);
+  i.cols = sttCols(key).filter(c => c.fixed || (c.key === ck ? !i.cols.includes(ck) : i.cols.includes(c.key))).map(c => c.key);
   sttSaveCols(key); sttRefresh(key);
 }
 function sttResetCols(key) { sttInst(key).cols = sttDefaultCols(key); sttSaveCols(key); sttRefresh(key); }
@@ -205,19 +217,19 @@ function sttClearAll(key) { sttInst(key).filters = {}; sttClosePop(); sttRefresh
 let STT_POP = null;   // { key, col, vals:[{v,n}], q }
 function sttClosePop() { document.querySelectorAll('.stt-pop').forEach(p => p.remove()); STT_POP = null; }
 function sttPopValues(key, ck) {
-  const col = STT_COL_BY[ck], map = new Map();
+  const col = sttColBy(key, ck), map = new Map();
   (STT_CFG[key].list || []).forEach(s => {
     const v = col.vals(s).filter(x => x !== '' && x != null);
     (v.length ? v : ['']).forEach(x => map.set(x, (map.get(x) || 0) + 1));
   });
-  return [...map.entries()].map(([v, n]) => ({ v, n })).sort((a, b) => (a.v === '') - (b.v === '') || (col.sort === 'date' ? ((sttDateKey(a.v) || 0) - (sttDateKey(b.v) || 0)) : String(a.v).localeCompare(String(b.v), 'zh')));
+  return [...map.entries()].map(([v, n]) => ({ v, n })).sort((a, b) => (a.v === '') - (b.v === '') || (col.order ? col.order.indexOf(a.v) - col.order.indexOf(b.v) : (col.sort === 'date' || col.popDate) ? ((sttDateKey(a.v) ?? (col.popDate ? 1e9 : 0)) - (sttDateKey(b.v) ?? (col.popDate ? 1e9 : 0))) : String(a.v).localeCompare(String(b.v), 'zh')));
 }
 function sttOpenFilter(key, ck, btn) {
   sttClosePop();
   STT_POP = { key, col: ck, vals: sttPopValues(key, ck), q: '' };
   const pop = document.createElement('div');
   pop.className = 'stt-pop';
-  pop.innerHTML = `<div class="stt-pop-h"><b>${sttEsc(STT_COL_BY[ck].label)}</b><span><a onclick="sttPopAll()">全选</a> · <a onclick="sttPopNone()">清空</a></span></div>
+  pop.innerHTML = `<div class="stt-pop-h"><b>${sttEsc(sttColBy(key, ck).label)}</b><span><a onclick="sttPopAll()">全选</a> · <a onclick="sttPopNone()">清空</a></span></div>
     <input class="stt-pop-q" placeholder="搜索取值（汉字 / 拼音首字母）…" oninput="searchBox(this,sttPopSearch)">
     <div class="stt-pop-list"></div>`;
   document.body.appendChild(pop);
@@ -263,7 +275,7 @@ function sttPopSearch(v) { if (!STT_POP) return; STT_POP.q = v; sttPopRender(); 
 function sttExport(key) {
   if (typeof XLSX === 'undefined') { alert('导出组件没有加载'); return; }
   const inst = sttInst(key), o = STT_CFG[key].opts;
-  const cols = STT_COLS.filter(c => inst.cols.includes(c.key));
+  const cols = sttCols(key).filter(c => inst.cols.includes(c.key));
   const rows = sttRows(key);
   if (!rows.length) { alert('当前没有可导出的学生'); return; }
   const data = rows.map(s => { const r = {}; cols.forEach(c => { r[c.label] = c.text(s); }); return r; });
@@ -313,6 +325,9 @@ function sttEnsureCss() {
 .stt-table td.stt-ops{max-width:none;overflow:visible;white-space:nowrap;position:sticky;right:0;background:var(--surface);box-shadow:-1px 0 0 var(--border)}
 .stt-table tbody tr:hover td.stt-ops{background:var(--bg)}
 .stt-ops .btn{margin-right:4px;display:inline-block;width:auto}
+.stt-table tr.stt-gs td{border-top:2px solid var(--border)}
+.stt-table td.stt-same{position:relative}
+.stt-table td.stt-same::before{content:'';position:absolute;left:14px;top:0;bottom:0;border-left:1px solid var(--border)}
 .stt-exp td{background:var(--bg);white-space:normal;max-width:none}
 .stt-pop{position:fixed;z-index:10000;width:268px;max-height:360px;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,.15);padding:8px;font-size:11px}
 .stt-pop-h{display:flex;justify-content:space-between;margin-bottom:6px}

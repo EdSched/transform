@@ -1212,23 +1212,60 @@ async function confirmImport() {
   }
 }
 
-// ── 年度出愿情报：最近出愿列表（日期每次打开现算：手动改过的用 apply_date，其余按原文字 spApplyWindow）──
-const SEA = { sort: 'date', shown: LIST_PAGE, doneOpen: false };
-let seaRows = [];
+// ── 年度出愿情报：一张表（用学生档案表格 shared/student-table.js 的组件，换一套列）──
+// 日期每次打开页面现算：手动改过的用 apply_date，其余按原文字 spApplyWindow。
+const SEA_STATE_ORDER = ['出愿中', '7 天内开始', '即将', '日期未定', '已结束', '已合格', '不合格', '婉拒'];
+const SEA_STATE_OPEN = ['出愿中', '7 天内开始', '即将', '日期未定'];
+const SEA_STATE_COLOR = { '出愿中': 'var(--ok,#2d7a4f)', '7 天内开始': '#d9822b', '即将': 'var(--accent)', '日期未定': 'var(--text-3)', '已结束': 'var(--text-3)', '已合格': '#1a6a9a', '不合格': 'var(--danger,#c0392b)', '婉拒': 'var(--danger,#c0392b)' };
+let seaToday = '';
+const seaNum = d => d ? +d.replace(/-/g, '') : null;
+const seaMonth = d => d ? `${+d.slice(0, 4)}年${+d.slice(5, 7)}月` : '日期未定';
+const seaMD = d => !d ? '' : (d.slice(0, 4) === seaToday.slice(0, 4) ? `${+d.slice(5, 7)}/${+d.slice(8, 10)}` : `${+d.slice(0, 4)}/${+d.slice(5, 7)}/${+d.slice(8, 10)}`);
+function seaStateOf(p, win) {
+  if (p.status === 'passed') return { t: '已合格' };
+  if (SCHOOL_FAILED_STATUSES.includes(p.status)) return { t: '不合格' };
+  if (p.status === 'prof_ng') return { t: '婉拒' };
+  if (!win) return { t: '日期未定' };
+  if (win.end < seaToday) return { t: '已结束' };
+  if (win.start <= seaToday) return { t: '出愿中' };
+  const a = spTokyoYMD(seaToday), b = spTokyoYMD(win.start);
+  const n = Math.round((Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86400000);
+  return n <= 7 ? { t: '7 天内开始', n } : { t: '即将' };
+}
+const SEA_STATUS_ORDER = Object.values(SCHOOL_STATUS_LABELS).map(v => v.t);
+const SEA_COLS = [
+  { key: 'start', label: '出愿开始', def: 1, sort: 'num', popDate: 1, num: r => seaNum(r.win && r.win.start), vals: r => [seaMonth(r.win && r.win.start)], text: r => seaMD(r.win && r.win.start) },
+  { key: 'end', label: '出愿截止', def: 1, sort: 'num', popDate: 1, num: r => seaNum(r.win && r.win.end), vals: r => [seaMonth(r.win && r.win.end)], text: r => seaMD(r.win && r.win.end) },
+  { key: 'state', label: '状态', def: 1, sort: 'num', order: SEA_STATE_ORDER, num: r => SEA_STATE_ORDER.indexOf(r.st.t), vals: r => [r.st.t], text: r => r.st.t === '7 天内开始' ? `还有 ${r.st.n} 天` : r.st.t,
+    html: r => `<span style="font-weight:600;color:${SEA_STATE_COLOR[r.st.t]}">${sttEsc(r.st.t === '7 天内开始' ? `还有 ${r.st.n} 天` : r.st.t)}</span>` },
+  { key: 'school', label: '学校', def: 1, vals: r => [r.p.school_name || ''], text: r => r.p.school_name || '' },
+  { key: 'faculty', label: '研究科', def: 1, vals: r => [r.p.faculty || ''], text: r => r.p.faculty || '' },
+  { key: 'dept', label: '专攻 / コース', def: 1, vals: r => [r.p.department || ''], text: r => r.p.department || '' },
+  { key: 'student', label: '学生', def: 1, vals: r => [r.p.student_name || ''], text: r => r.p.student_name || '' },
+  { key: 'major', label: '专业', def: 1, vals: r => [sttMajor(r.s)], text: r => sttMajor(r.s) },
+  { key: 'progress', label: '进度', def: 1, sort: 'num', order: SEA_STATUS_ORDER, num: r => SEA_STATUS_ORDER.indexOf(schoolStatusLabel(r.p.status).t), vals: r => [schoolStatusLabel(r.p.status).t], text: r => schoolStatusLabel(r.p.status).t,
+    html: r => { const st = schoolStatusLabel(r.p.status); return `<span style="color:${st.c};font-weight:600">${sttEsc(st.t)}</span>`; } },
+  { key: 'role', label: '目标 / 备选', vals: r => [spRoleName(spRoleOf(r.p))], text: r => spRoleName(spRoleOf(r.p)) },
+  { key: 'level', label: '级别', vals: r => [({ 1: '冲刺', 2: '匹配', 3: '保底' })[r.p.level] || ''], text: r => ({ 1: '冲刺', 2: '匹配', 3: '保底' })[r.p.level] || '' },
+  { key: 'prof', label: '教授', vals: r => [r.p.professor, r.p.professor2].filter(Boolean), text: r => [r.p.professor, r.p.professor2].filter(Boolean).join('、') },
+  { key: 'period', label: '出愿时间（原文）', def: 1, nosort: 1, nofilter: 1, long: 1, text: r => r.p.application_period || '', vals: r => [],
+    html: r => `<div class="stt-long" style="color:var(--text-3);font-size:10px" title="${sttEsc(r.p.application_period || '')}">${sttEsc(r.p.application_period || '')}</div>` },
+  { key: 'exam', label: '考试日期', nosort: 1, nofilter: 1, text: r => r.p.exam_date || '', vals: r => [] },
+];
+let seaRows = [], seaShown = LIST_PAGE;
 
 async function renderSeasonView(mc, students, timelineMap) {
-  const valid = new Set(students.map(s => s.id));
+  seaToday = spTodayTokyo();
+  const stuBy = new Map(students.map(s => [s.id, s]));
   const plans = await sbAll('/rest/v1/student_school_plans?select=*&order=level.asc').catch(() => []) || [];
-  const today = spTodayTokyo();
-  seaRows = plans.filter(p => valid.has(p.student_id)).map(p => {
+  seaRows = plans.filter(p => stuBy.has(p.student_id)).map(p => {
     const win = p.apply_date_manual === true
       ? (p.apply_date ? { start: p.apply_date, end: p.apply_date } : null)
-      : spApplyWindow(p.application_period, p.created_at || new Date(), today);
-    const result = p.status === 'passed' || SCHOOL_FAILED_STATUSES.includes(p.status) || p.status === 'prof_ng';
-    return { p, win, done: result || !!(win && win.end < today) };
+      : spApplyWindow(p.application_period, p.created_at || new Date(), seaToday);
+    return { p, s: stuBy.get(p.student_id), win, st: seaStateOf(p, win) };
   });
   const dmfBar = domMajorFilterHtml(DMF, "renderProgressPage(document.getElementById('mainContent'))", cachedStudents.filter(s=>studentInCurrentView(s)&&['active','stopped','graduated'].includes(s.status)));
-  let html = `
+  const head = `
   <div class="page-header">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <div class="section-title">考学进度</div>
@@ -1236,69 +1273,26 @@ async function renderSeasonView(mc, students, timelineMap) {
     </div>
   </div>
   ${dmfBar}`;
-  if (!seaRows.length) { mc.innerHTML = html + '<div style="text-align:center;padding:40px;color:var(--text-3)">暂无学生填写志望校数据</div>'; return; }
-  mc.innerHTML = html + '<div id="seaCtl"></div><div id="seaList"></div>';
-  seaDraw();
+  if (!seaRows.length) { mc.innerHTML = head + '<div style="text-align:center;padding:40px;color:var(--text-3)">暂无学生填写志望校数据</div>'; return; }
+  seaShown = LIST_PAGE;
+  mc.innerHTML = head + sttHtml('season', seaRows, {
+    colDefs: SEA_COLS, unit: '条', groupSame: true, empty: '没有符合筛选的志望校',
+    initSort: { col: 'start', dir: 1 }, initFilters: { state: SEA_STATE_OPEN },
+    slice: l => l.slice(0, seaShown),
+    more: n => n > seaShown ? `<div onclick="seaShown+=LIST_PAGE;sttRefresh('season')" style="text-align:center;padding:10px;margin:6px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">显示更多（还有 ${n - seaShown} 条）</div>` : '',
+    rowClick: r => `seaOpenStudent('${pgcJs(r.p.student_id)}')`,
+    notice: () => {
+      const set = sttInst('season').filters.state;
+      if (!set || !set.size) return '';
+      const n = seaRows.filter(r => !SEA_STATE_OPEN.includes(r.st.t) && !set.has(r.st.t)).length;
+      return n ? `<div onclick="seaShowAll()" style="font-size:11px;color:var(--text-3);margin-bottom:6px;cursor:pointer">已结束 / 有结果的 ${n} 条已隐藏（点「状态」漏斗可以看；点这行 = 全部显示）</div>` : '';
+    },
+  });
 }
-
-function seaSet(v) { SEA.sort = v; SEA.shown = LIST_PAGE; seaDraw(); }
-function seaMore() { SEA.shown += LIST_PAGE; seaDraw(); }
-function seaToggleDone() { SEA.doneOpen = !SEA.doneOpen; seaDraw(); }
-
-function seaDraw() {
-  const c = document.getElementById('seaCtl'), box = document.getElementById('seaList'); if (!c || !box) return;
-  c.innerHTML = `<div class="filter-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px"><span style="font-size:11px;color:var(--text-3)">排序</span>${
-    [['date', '出愿日期'], ['school', '学校'], ['student', '学生']].map(([v, l]) => `<div class="filter-chip${SEA.sort === v ? ' active' : ''}" onclick="seaSet('${v}')">${l}</div>`).join('')}</div>`;
-  const today = spTodayTokyo();
-  const cc = (a, b) => String(a || '').localeCompare(String(b || ''), 'ja');
-  const byStu = (a, b) => cc(a.p.student_name, b.p.student_name);
-  const bySch = (a, b) => cc(a.p.school_name, b.p.school_name) || cc(a.p.faculty, b.p.faculty) || cc(a.p.department, b.p.department);
-  // 日期未定排最后；active = 开始近的在前，done = 结束近的（最近结束的）在前
-  const dateKey = (r, done) => r.win ? (done ? r.win.end : r.win.start) : null;
-  const byDate = done => (a, b) => {
-    const x = dateKey(a, done), y = dateKey(b, done);
-    if (x == null || y == null) return x == null && y == null ? 0 : (x == null ? 1 : -1);
-    return done ? cc(y, x) : cc(x, y);
-  };
-  const sorter = done => SEA.sort === 'school' ? (a, b) => bySch(a, b) || byStu(a, b)
-    : SEA.sort === 'student' ? (a, b) => byStu(a, b) || byDate(done)(a, b) || bySch(a, b)
-    : (a, b) => byDate(done)(a, b) || bySch(a, b) || byStu(a, b);
-  const active = seaRows.filter(r => !r.done).sort(sorter(false));
-  const done = seaRows.filter(r => r.done).sort(sorter(true));
-
-  const dayDiff = s => { const a = spTokyoYMD(today), b = spTokyoYMD(s); return Math.round((Date.UTC(b.y, b.m - 1, b.d) - Date.UTC(a.y, a.m - 1, a.d)) / 86400000); };
-  const dateCell = r => {
-    const p = r.p; let main, tag = '';
-    if (!r.win) main = '<span style="color:var(--text-3)">日期未定</span>';
-    else {
-      main = `<span style="color:var(--accent);font-weight:600">${stEsc(spWinText(r.win.start, r.win.end))}</span>`;
-      if (!r.done) {
-        if (r.win.start <= today) tag = ' <span style="font-size:10px;color:var(--ok);font-weight:600">出愿中</span>';
-        else { const n = dayDiff(r.win.start); if (n <= 7) tag = ` <span style="font-size:10px;color:#d9822b;font-weight:600">还有 ${n} 天</span>`; }
-      }
-    }
-    return `<div>${main}${tag}</div>${p.application_period ? `<div style="font-size:10px;color:var(--text-3)">${stEsc(p.application_period)}</div>` : ''}`;
-  };
-  const th = (t, w) => `<th style="padding:6px 10px;text-align:left;color:var(--text-3);font-weight:600;border-bottom:1px solid var(--border-light)${w ? ';width:' + w : ''}">${t}</th>`;
-  const rowHtml = r => {
-    const p = r.p, st = schoolStatusLabel(p.status);
-    return `<tr style="border-bottom:1px solid var(--border-light)">
-      <td style="padding:8px 10px;vertical-align:top">${dateCell(r)}</td>
-      <td style="padding:8px 10px;vertical-align:top;font-weight:600">${stEsc(p.student_name)}</td>
-      <td style="padding:8px 10px;vertical-align:top"><div style="font-weight:600">${stEsc(p.school_name)}</div><div style="color:var(--text-3);font-size:10px">${stEsc([p.faculty, p.department].filter(Boolean).join(' · '))}</div></td>
-      <td style="padding:8px 10px;vertical-align:top"><span style="color:${st.c};font-weight:600">${st.t}</span></td></tr>`;
-  };
-  const table = rows => `<div style="border:1px solid var(--border);border-top:none;border-radius:0 0 4px 4px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:var(--bg)">${th('出愿日期', '150px')}${th('学生', '100px')}${th('学校 · 研究科 · 专攻')}${th('进度', '150px')}</tr></thead><tbody>${rows.map(rowHtml).join('')}</tbody></table></div>`;
-  const head = (title, n, click, open) => `<div ${click ? `onclick="${click}" ` : ''}style="font-size:13px;font-weight:600;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:${open ? '4px 4px 0 0' : '4px'};display:flex;align-items:center;gap:8px;${click ? 'cursor:pointer;user-select:none' : ''}">${click ? `<span style="font-size:10px">${open ? '▾' : '▸'}</span>` : ''}${title}<span style="font-size:11px;font-weight:400;color:var(--text-3)">${n}</span></div>`;
-
-  // 一共显示 SEA.shown 行（出愿中 / 即将出愿先占，已结束点开后接在后面）
-  const showA = active.slice(0, SEA.shown);
-  const showD = SEA.doneOpen ? done.slice(0, Math.max(SEA.shown - showA.length, 0)) : [];
-  const hidden = (active.length - showA.length) + (SEA.doneOpen ? done.length - showD.length : 0);
-  let html = `<div style="margin-bottom:16px">${head('出愿中 / 即将出愿', `${active.length} 所`, '', true)}${active.length ? table(showA) : '<div style="padding:20px;text-align:center;color:var(--text-3);border:1px solid var(--border);border-top:none;border-radius:0 0 4px 4px">目前没有出愿中或即将出愿的志望校</div>'}</div>`;
-  if (done.length) html += `<div style="margin-bottom:16px">${head('已结束 / 已有结果', `${done.length} 所${SEA.doneOpen ? '' : '（点开）'}`, 'seaToggleDone()', SEA.doneOpen)}${SEA.doneOpen && showD.length ? table(showD) : ''}</div>`;
-  if (hidden > 0) html += `<div style="text-align:center;margin:8px 0 20px"><button onclick="seaMore()" style="font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;padding:6px 18px;cursor:pointer;font-family:inherit">显示更多（还有 ${hidden} 行）</button></div>`;
-  box.innerHTML = html;
+function seaShowAll() { delete sttInst('season').filters.state; sttRefresh('season'); }
+function seaOpenStudent(sid) {
+  const mc = document.getElementById('mainContent');
+  renderProgressPage(mc, sid, { back: { label: '返回年度出愿情报', restore: async () => { progressViewMode = 'season'; await renderProgressPage(mc); } } });
 }
 
 // ══ 老师修改档案的留痕提示（student_profile_edits）：admin 可恢复原值或确认知悉 ══
