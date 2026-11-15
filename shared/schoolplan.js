@@ -45,32 +45,105 @@ function spTokyoYMD(d) {   // Date / ISO 时间 / 'YYYY-MM-DD' → { y, m, d }�
   return { y: j.getUTCFullYear(), m: j.getUTCMonth() + 1, d: j.getUTCDate() };
 }
 function spTodayTokyo() { const t = spTokyoYMD(new Date()); return `${t.y}-${String(t.m).padStart(2, '0')}-${String(t.d).padStart(2, '0')}`; }
-function spApplyDate(text, refDate) {
-  const t = String(text == null ? '' : text).normalize('NFKC');
-  if (!/\d/.test(t)) return '';
-  const ref = spTokyoYMD(refDate || new Date()) || spTokyoYMD(new Date());
+// 出愿期间文字 → 出愿窗口 { start:'YYYY-MM-DD', end:'YYYY-MM-DD' }，认不出来返回 null
+// text：老师/学生填的原文；refDate：没写年份时的参考日（志望校的 created_at），today：判断哪个窗口还没过（东京时间 'YYYY-MM-DD'）
+function spApplyWindow(text, refDate, today) {
   const pad = n => String(n).padStart(2, '0');
-  const ok = (y, m, d) => { const x = new Date(Date.UTC(y, m - 1, d)); return m >= 1 && m <= 12 && x.getUTCMonth() === m - 1 && x.getUTCDate() === d; };
-  const yearOf = m => (m >= ref.m ? ref.y : ref.y + 1);   // 没写年：参考日所在月或之后最先出现的那个月
-  const dayOfXun = x => ({ '上': 1, '中': 11, '下': 21 })[x] || 1;
-  // 按文字顺序取第一个能识别的日期（区间取开始）
+  const ymd = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`;
+  const valid = (y, m, d) => { if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31)) return false; const x = new Date(Date.UTC(y, m - 1, d)); return x.getUTCMonth() === m - 1; };
+  const lastDay = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const tokyo = v => { const d = v ? new Date(v) : new Date(); if (isNaN(d)) return null; const s = new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10); return { y: +s.slice(0, 4), m: +s.slice(5, 7), s }; };
+  const ref = tokyo(refDate) || tokyo();
+  const todayS = today || tokyo().s;
+
+  // 1) 统一写法：全角→半角、令和→西暦、去掉时刻、去掉括号里的星期
+  let t = String(text == null ? '' : text).normalize('NFKC');
+  t = t.replace(/令和\s*(\d{1,2})\s*\(\s*(\d{4})\s*\)\s*年/g, '$2年')                 // 令和 8(2026)年 → 2026年
+       .replace(/令和\s*(\d{1,2})\s*年/g, (_, n) => (2018 + +n) + '年')                 // 令和8年 → 2026年
+       .replace(/\d{1,2}\s*:\s*\d{2}/g, ' ')                                              // 10:00、13:00
+       .replace(/[(（][^()（）]{0,6}[)）]/g, ' ');                                          // (火)、（月･祝）、(木曜日)
+
+  // 2) 依次找出所有日期，记下位置；年份没写的沿用前一个日期的年份
   const re = new RegExp([
-    '(?<!\\d)(\\d{4})\\s*[\\/\\-.年]\\s*(\\d{1,2})\\s*[\\/\\-.月]\\s*(\\d{1,2})(?!\\d)',            // 1 年月日
-    '(?<!\\d)(\\d{4})\\s*[\\/\\-.年]\\s*(\\d{1,2})(?!\\d)(?:\\s*月)?\\s*(?:(上|中|下)\\s*旬)?',    // 2 年月（可带旬）
-    '(?<!\\d)(\\d{1,2})\\s*月\\s*(\\d{1,2})\\s*日',                                              // 3 月日
-    '(?<!\\d)(\\d{1,2})\\s*[\\/.\\-]\\s*(\\d{1,2})(?![\\d\\/.\\-])',                              // 4 7/10
-    '(?<!\\d)(\\d{1,2})\\s*月\\s*(?:(上|中|下)\\s*旬)?',                                           // 5 月（可带旬）
+    '(\\d{4})\\s*年\\s*(\\d{1,2})\\s*月\\s*(\\d{1,2})\\s*日?',          // 1-3 2027年1月4日
+    '(\\d{4})\\s*[\\/.\\-]\\s*(\\d{1,2})\\s*[\\/.\\-]\\s*(\\d{1,2})',   // 4-6 2027/1/12、2026.7.28
+    '(?<!\\d)(\\d{2})\\s*\\/\\s*(\\d{1,2})\\s*\\/\\s*(\\d{1,2})',        // 7-9 26/11/23
+    '(\\d{4})\\s*年\\s*(\\d{1,2})(?!\\s*\\d)\\s*月?',                    // 10-11 2026年7（月）
+    '(?<!\\d)(\\d{1,2})\\s*月\\s*(\\d{1,2})(?!\\d)\\s*日?',              // 12-13 1月14日、1月14
+    '(?<!\\d)(\\d{1,2})\\s*[\\/.\\-]\\s*(\\d{1,2})(?![\\d\\/.])',        // 14-15 12/2、11.30、04/16、1-8
+    '(?<![\\d月\\/.])(\\d{1,2})\\s*日',                                    // 16 ～22日（同月）
   ].join('|'), 'g');
+  const toks = [];
+  let curY = null, curM = null;
   for (const g of t.matchAll(re)) {
-    let y, m, d;
+    let y = null, m, d, monthOnly = false, dayOnly = false;
     if (g[1]) { y = +g[1]; m = +g[2]; d = +g[3]; }
-    else if (g[4]) { y = +g[4]; m = +g[5]; d = dayOfXun(g[6]); }
-    else if (g[7]) { m = +g[7]; d = +g[8]; y = yearOf(m); }
-    else if (g[9]) { m = +g[9]; d = +g[10]; y = yearOf(m); }
-    else { m = +g[11]; d = dayOfXun(g[12]); y = yearOf(m); }
-    if (ok(y, m, d)) return `${y}-${pad(m)}-${pad(d)}`;
+    else if (g[4]) { y = +g[4]; m = +g[5]; d = +g[6]; }
+    else if (g[7]) { y = 2000 + +g[7]; m = +g[8]; d = +g[9]; }
+    else if (g[10]) { y = +g[10]; m = +g[11]; d = 1; monthOnly = true; }
+    else if (g[12]) { m = +g[12]; d = +g[13]; }
+    else if (g[14]) { m = +g[14]; d = +g[15]; }
+    else { if (curM == null) continue; m = curM; d = +g[16]; dayOnly = true; }
+    if (!(m >= 1 && m <= 12)) continue;                   // 「0月9日」这种跳过
+    toks.push({ y, m, d, monthOnly, dayOnly, i: g.index, e: g.index + g[0].length });
+    if (y) curY = y; curM = m;
   }
-  return '';
+  if (!toks.length) return null;
+
+  // 3) 补年份：沿用前一个；都没有就按参考日（参考日所在月或以后最先出现的那个月）；比前一个日期早 = 跨年
+  let prev = null;
+  toks.forEach(k => {
+    if (k.y == null) {
+      if (prev) { k.y = prev.y; if (k.m < prev.m) k.y++; }
+      else k.y = k.m >= ref.m ? ref.y : ref.y + 1;
+    }
+    if (!valid(k.y, k.m, k.d)) k.bad = true;
+    k.s = ymd(k.y, k.m, k.d);
+    if (k.monthOnly) k.endS = ymd(k.y, k.m, lastDay(k.y, k.m));
+    prev = k;
+  });
+  const ok = toks.filter(k => !k.bad);
+  if (!ok.length) return null;
+
+  // 4) 连起来：两个日期之间只有「～ ~ - — から まで 至」之类 = 一个区间（连着三个也算一个）
+  const SEP = /^[\s~～〜\-－–—ー,、]*(から|至|到)?[\s~～〜\-－–—ー]*$/;
+  const wins = [];
+  for (let j = 0; j < ok.length; j++) {
+    const a = ok[j]; let b = a;
+    while (j + 1 < ok.length && SEP.test(t.slice(b.e, ok[j + 1].i)) && /[~～〜\-－–—ー]|から|至|到/.test(t.slice(b.e, ok[j + 1].i))) { b = ok[++j]; }
+    // 标签：日期前面（截到上一个 ，；,; 为止，最多 8 个字）和后面（截到下一个 ，；,; 为止，最多 4 个字）
+    const before = t.slice(Math.max(0, a.i - 8), a.i).split(/[，；,;。]/).pop();
+    const after = t.slice(b.e, b.e + 4).split(/[，；,;。]/)[0];
+    const label = before + '|' + after;
+    wins.push({ start: a.s, end: b.endS || b.s, range: a !== b || !!a.monthOnly, label });
+  }
+
+  // 5) 选哪一个：写了「出愿/出願」的优先；其次是区间（单个日期多半是结果发送、截止前相谈之类）；
+  //    面谈 / 事前 / 审查 / 結果 / 相谈 开头的不要（除非只剩它们）
+  const isApply = w => /出[愿願]/.test(w.label);
+  const isOther = w => /面[谈談]|事前|[审審]查|資格|結果|[发発]送|相[谈談]|网上|網上/.test(w.label.split('|')[0]);
+  let cand = wins.filter(isApply);
+  if (!cand.length) cand = wins.filter(w => !isOther(w));
+  if (!cand.length) cand = wins;
+  const ranges = cand.filter(w => w.range);
+  if (ranges.length) cand = ranges;
+  // 还没结束的第一个；都结束了取最后一个
+  const pick = cand.find(w => w.end >= todayS) || cand[cand.length - 1];
+  return { start: pick.start, end: pick.end < pick.start ? pick.start : pick.end };
+}
+if (typeof module !== 'undefined') module.exports = { spApplyWindow };
+// 只要开始那天（表单 / 保存用）
+function spApplyDate(text, refDate) { const w = spApplyWindow(text, refDate, spTodayTokyo()); return w ? w.start : ''; }
+// 窗口显示：「11/23～12/3」；跨年「12/21～2027/1/6」；开始 = 结束只写一天
+function spWinText(start, end) {
+  if (!start) return '';
+  const md = v => `${+v.slice(5, 7)}/${+v.slice(8, 10)}`;
+  if (!end || end === start) return md(start);
+  return `${md(start)}～${end.slice(0, 4) !== start.slice(0, 4) ? end.slice(0, 4) + '/' : ''}${md(end)}`;
+}
+function spAdHintText(text, ref) {
+  const w = spApplyWindow(text, ref || new Date(), spTodayTokyo());
+  return w ? `识别：${spWinText(w.start, w.end)}` : '认不出日期，可手动填';
 }
 // 整理好要写库的 apply_date / apply_date_manual：manual 不是 true 时按文字重算（算不出来 = null）
 function spApplyFields(row, createdAt) {
@@ -84,8 +157,13 @@ function spAdNote(form, manual) {
   if (h) h.value = manual ? '1' : '0';
   if (n) { n.textContent = manual ? '手动' : '自动'; n.style.color = manual ? 'var(--accent)' : 'var(--text-3)'; }
 }
+function spAdHint(form) {
+  const per = form.querySelector('[data-field="application_period"]'), n = form.querySelector('[data-adhint]');
+  if (n) n.textContent = spAdHintText(per ? per.value : '', form.dataset.ref);
+}
 function spAdAuto(el) {   // 出愿时间文字输入时
   const form = el.closest('.sp-form'); if (!form) return;
+  spAdHint(form);
   const h = form.querySelector('[data-field="apply_date_manual"]');
   if (h && h.value === '1') return;   // 手动改过：文字变了不覆盖
   const d = form.querySelector('[data-field="apply_date"]');
@@ -97,6 +175,7 @@ function spAdRecalc(btn) {
   const per = form.querySelector('[data-field="application_period"]'), d = form.querySelector('[data-field="apply_date"]');
   if (d) d.value = spApplyDate(per ? per.value : '', form.dataset.ref || new Date());
   spAdNote(form, false);
+  spAdHint(form);
 }
 const SP_TRACK = [['school_name', '学校'], ['faculty', '研究科'], ['department', '专攻'], ['professor', '教授'], ['professor2', '教授2'],
   ['application_period', '出愿时间'], ['exam_date', '考试日期'], ['level', '级别'], ['status', '进度'], ['kakomon_started', '过去问'], ['interview_draft_done', '面试稿']];
@@ -308,6 +387,7 @@ function spFormHtml(p, opts) {
         <input type="date" value="${spEsc(adVal)}" data-field="apply_date" oninput="spAdManual(this)" style="${inp}">
         <span data-adnote="1" style="font-size:10px;color:${adManual ? 'var(--accent)' : 'var(--text-3)'}">${adManual ? '手动' : '自动'}</span>
         <button type="button" onclick="spAdRecalc(this)" style="font-size:10px;background:none;border:1px solid var(--border);border-radius:2px;padding:2px 8px;cursor:pointer;color:var(--text-3);font-family:inherit">按文字重算</button>
+        <span data-adhint="1" style="font-size:10px;color:var(--text-3)">${spEsc(spAdHintText(p.application_period, p.created_at))}</span>
         <input type="hidden" value="${adManual ? 1 : 0}" data-field="apply_date_manual">
       </div>
       <div style="font-size:10px;color:var(--text-muted,var(--text-3));margin-bottom:4px">👤 教授（每校尽量2位）</div>
