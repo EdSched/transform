@@ -945,7 +945,7 @@ async function submitBookingInner() {
   let nameConflict = false;
   if (isMember) {
     try {
-      const act = await sb(`/rest/v1/bookings?or=(student_id.eq.${encodeURIComponent(bkStudent.id)},name.eq.${encodeURIComponent(name)})&status=in.("pending","confirmed")&select=slot_date,slot_time_range,status&limit=1`);
+      const act = await sb(`/rest/v1/bookings?and=(or(student_id.eq.${encodeURIComponent(bkStudent.id)},name.eq.${encodeURIComponent(name)}),or(type.is.null,type.neq.vip))&status=in.("pending","confirmed")&select=slot_date,slot_time_range,status&limit=1`);
       activeBooking = (act && act.length) ? act[0] : null;
     } catch (e) {
       activeBooking = cachedBookings.find(b =>
