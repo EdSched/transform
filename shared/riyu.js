@@ -40,17 +40,16 @@ const RIYU_GUIDE_SEED = {
 const RIYU_MAIL_KINDS = ['grad_prof_mail', 'grad_inquiry_mail'];
 function riyuIsMail(kind) { return RIYU_MAIL_KINDS.indexOf(kind) >= 0; }
 // 管理端「文书指导」下拉：[kind, 名称]
-const RIYU_GUIDE_KINDS = [['gakubu_riyu', '学部 · 志望理由书'], ['grad_riyu', '大学院 · 志望理由书'], ['grad_prof_mail', '大学院 · 联系教授邮件'], ['grad_inquiry_mail', '大学院 · 问询邮件'], ['grad_interview', '大学院文科 · 面试稿']];
+const RIYU_GUIDE_KINDS = [['gakubu_riyu', '学部 · 志望理由书'], ['grad_riyu', '大学院 · 志望理由书'], ['grad_prof_mail', '大学院 · 联系教授邮件'], ['grad_inquiry_mail', '大学院 · 问询邮件']];   // 面试稿改为按专业的题库（管理端「🎤 面试题库」，shared/interview-bank.js）；旧的 grad_interview 指导行保留不删，只作旧版参考
 const RIYU_DOC_NAME = { gakubu_riyu: '志望理由书', grad_riyu: '志望理由书', grad_prof_mail: '联系教授邮件', grad_inquiry_mail: '问询邮件', grad_interview: '面试稿' };
 // 面试稿（大学院文科先开）：按志望校逐校撰写，流程同志望理由书；另外学生可上传自己写好的稿子（分版本，student_doc_versions doc_type='interview'）
 const RIYU_INTERVIEW_KIND = 'grad_interview';
 // 计划书页签上除研究计划书之外的文书：联系教授邮件、问询邮件、面试稿（writing_guides 里保存过才显示）
 const RIYU_PLAN_KINDS = RIYU_MAIL_KINDS.concat([RIYU_INTERVIEW_KIND]);
-function riyuInterviewOk(student) {   // 只对大学院文科学生显示面试稿
-  const m = student && student.major; if (!m) return false;
-  let d = '';
-  try { d = (typeof tsmDomainOf === 'function') ? tsmDomainOf(m) : ((typeof isMajorGroup === 'function' && isMajorGroup(m)) ? (groupDomain(m) || MAJOR_DOMAIN[groupMajors(m)[0]] || '') : (MAJOR_DOMAIN[m] || '')); } catch (e) { d = ''; }
-  return d === '大学院文科';
+// 面试准备入口：该生所在专业（本人专业 → 所属专业组）有「已公开」的题库才显示（不再默认给大学院文科那一份）
+// 需要先 await riyuMailSavedLoad()（里面会读已公开题库列表）
+function riyuInterviewOk(student) {
+  return typeof ivbKeyFor === 'function' && !!ivbKeyFor(student);
 }
 const RIYU_PROF_STATUS = [['unsent', '未发送'], ['sent', '已发送'], ['agree', '已回复·同意'], ['decline', '已回复·婉拒'], ['noreply', '无回复']];
 const RIYU_INQ_STATUS = [['unsent', '未发送'], ['sent', '已发送'], ['replied', '已回复']];
@@ -145,10 +144,17 @@ async function riyuLoadGuide(kind, force) {
   return g;
 }
 
+// 某份提交对应的指导：面试稿有题库时拍平成「段落」形状（key = 题 key），其余照旧 riyuLoadGuide
+async function riyuGuideOf(sub, student) {
+  if (sub.kind === RIYU_INTERVIEW_KIND && student && typeof ivbGuideForSub === 'function') return ivbGuideForSub(sub, student);
+  return riyuLoadGuide(sub.kind);
+}
+
 // 大学院邮件文书「管理端已保存过指导」的 kind 列表（writing_guides 里有这一行才算）：决定计划书位置是否出现这两封邮件
 // 学生端「计划书」Tab、老师端 / 管理端的计划书部分都按它判断，不依赖出愿材料清单里有没有条目
 const RIYU_MAIL_SAVED = { loaded: false, kinds: [] };
 async function riyuMailSavedLoad(force) {
+  if (typeof ivbLoadPublishedKeys === 'function') await ivbLoadPublishedKeys(force);
   if (RIYU_MAIL_SAVED.loaded && !force) return RIYU_MAIL_SAVED.kinds;
   try {
     const rows = await sb(`/rest/v1/writing_guides?kind=in.(${RIYU_PLAN_KINDS.join(',')})&select=kind`, 'GET', null, { cache: 'no-store' });
@@ -159,7 +165,10 @@ async function riyuMailSavedLoad(force) {
 }
 function riyuMailSavedKinds() { return RIYU_MAIL_SAVED.kinds.slice(); }
 // 这个学生的计划书页签能看到哪些文书（面试稿只对大学院文科）
-function riyuPlanKindsFor(student) { return RIYU_MAIL_SAVED.kinds.filter(k => k !== RIYU_INTERVIEW_KIND || riyuInterviewOk(student)); }
+function riyuPlanKindsFor(student) {
+  const ks = RIYU_MAIL_SAVED.kinds.filter(k => k !== RIYU_INTERVIEW_KIND);
+  return riyuInterviewOk(student) ? ks.concat([RIYU_INTERVIEW_KIND]) : ks;   // 面试准备只看该专业有没有已公开题库，不再看 writing_guides
+}
 function riyuMailSavedMark(kind) { if (RIYU_PLAN_KINDS.indexOf(kind) >= 0 && RIYU_MAIL_SAVED.kinds.indexOf(kind) < 0) RIYU_MAIL_SAVED.kinds.push(kind); }
 
 // ── 状态 / 统计 ──
@@ -289,7 +298,8 @@ function riyuStaffListHtml(student, plans, subs, kind, onChange) {
       return row(sub, `问询邮件 ${i + 1}`, '关于：' + (sch ? riyuEsc(sch) : '<span style="color:var(--text-3,#999)">不指定学校</span>'), mailLine(sub));
     }).join('');
   }
-  if (!list.length && !(kind === 'grad_prof_mail' && (subs || []).some(x => x.kind === kind))) return '<div style="font-size:11px;color:var(--text-3,#999)">尚无志望校，学生添加志望校后即可逐校撰写</div>';
+  const commonSub = kind === RIYU_INTERVIEW_KIND ? ((subs || []).find(x => x.kind === kind && x.school_key === '_common') || null) : null;
+  if (!list.length && !commonSub && !(kind === 'grad_prof_mail' && (subs || []).some(x => x.kind === kind))) return '<div style="font-size:11px;color:var(--text-3,#999)">尚无志望校，学生添加志望校后即可逐校撰写</div>';
   let html = list.map(p => {
     const sub = riyuSubOf(p, subs, kind);
     RIYU_STAFF.plans[student.id + '|' + riyuKeyOf(p)] = p;
@@ -298,6 +308,7 @@ function riyuStaffListHtml(student, plans, subs, kind, onChange) {
     const req = (kind === 'grad_prof_mail' || kind === RIYU_INTERVIEW_KIND) ? '' : label + (p.plan_requirement ? riyuEsc(p.plan_requirement) : '<span style="color:var(--text-3,#999)">暂未填写要求</span>');
     return row(sub, title, req, kind === 'grad_prof_mail' ? mailLine(sub) : '');
   }).join('');
+  if (commonSub) html += row(commonSub, '共用部分（不分学校的题）', '', '');
   if (kind === 'grad_prof_mail') {
     const keys = list.map(riyuKeyOf);
     (subs || []).filter(x => x.kind === kind && keys.indexOf(x.school_key) < 0).forEach(sub => {
@@ -323,7 +334,7 @@ async function riyuStaffMetaSet(subId, field, value) {
 
 async function riyuStaffView(subId) {
   const sub = RIYU_STAFF.subs[subId]; if (!sub) return;
-  const g = await riyuLoadGuide(sub.kind);
+  const g = await riyuGuideOf(sub, RIYU_STAFF.students[sub.student_id]);
   const secs = riyuSecs(sub);
   const stu = RIYU_STAFF.students[sub.student_id] || {};
   const order = g.sections.map(s => s.key);
@@ -358,7 +369,7 @@ async function riyuStaffView(subId) {
 
 // 把在线撰写的内容生成 Word（HTML 格式的 .doc）。返回 { blob, name }：下载 Word 和「学生管理文件」打包共用
 async function riyuWordBuild(sub, stu) {
-  const g = await riyuLoadGuide(sub.kind);
+  const g = await riyuGuideOf(sub, stu);
   const secs = riyuSecs(sub);
   stu = stu || {};
   const order = g.sections.map(s => s.key);

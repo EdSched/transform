@@ -10,7 +10,7 @@ let wgData = null;                 // { kind, title, intro, sections:[{key,title
 let wgDirty = false;
 
 async function renderMaterialsView(mc) {
-  if (matSection !== 'guide' && matSection !== 'items') matSection = 'guide';   // 旧的 'status'（学生准备情况）已去掉
+  if (matSection !== 'guide' && matSection !== 'items' && matSection !== 'bank') matSection = 'guide';   // 旧的 'status'（学生准备情况）已去掉
   mc.innerHTML = `
   <div class="page-header">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -19,11 +19,12 @@ async function renderMaterialsView(mc) {
     </div>
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
-    ${[['guide', '✍ 文书指导'], ['items', '📋 材料清单']].map(([k, l]) => `<div class="filter-chip${matSection === k ? ' active' : ''}" onclick="matSection='${k}';renderMaterialsView(document.getElementById('mainContent'))" style="font-size:12px;padding:4px 14px">${l}</div>`).join('')}
+    ${[['guide', '✍ 文书指导'], ['items', '📋 材料清单'], ['bank', '🎤 面试题库']].map(([k, l]) => `<div class="filter-chip${matSection === k ? ' active' : ''}" onclick="matSection='${k}';renderMaterialsView(document.getElementById('mainContent'))" style="font-size:12px;padding:4px 14px">${l}</div>`).join('')}
   </div>
   <div id="mat_body"><div class="loading">加载中…</div></div>`;
   if (matSection === 'guide') await wgLoad();
   else if (matSection === 'items') await miLoad();
+  else if (matSection === 'bank') await renderInterviewBankAdmin();   // admin/interview-bank.js
 }
 
 // ══ 📋 材料清单 ══
@@ -245,7 +246,7 @@ async function wgSave() {
     wgDirty = false;
     wgRender();
     if (typeof riyuMailSavedMark === 'function') riyuMailSavedMark(wgKind);
-    const okTxt = wgKind === RIYU_INTERVIEW_KIND ? '✓ 已保存。大学院文科学生在「计划书」里可以看到面试稿' : riyuIsMail(wgKind) ? '✓ 已保存。大学院学生在「计划书」里可以看到（联系教授邮件 / 问询邮件）' : '✓ 已保存';
+    const okTxt = riyuIsMail(wgKind) ? '✓ 已保存。大学院学生在「计划书」里可以看到（联系教授邮件 / 问询邮件）' : '✓ 已保存';
     const msg = document.getElementById('wg_msg'); if (msg) { msg.textContent = okTxt; setTimeout(() => { if (msg.textContent === okTxt) msg.textContent = ''; }, 6000); }
   } catch (e) {
     alert('保存失败：' + e.message);
