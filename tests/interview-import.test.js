@@ -62,10 +62,12 @@ assert.ok(!eco.items.some(i => i.q === '注意点'));
 const micro = eco.items.find(i => i.q === 'ミクロ経済学');
 assert.deepStrictEqual(micro.keywords.sort(), ['公共財', '外部効果', '需要曲線'].sort(), '表格 → 关键词（去重）');
 assert.strictEqual(micro.required, false);
-assert.ok(eco.items.some(i => i.q === '関数') && eco.items.some(i => i.q === '微分'), '短小标题拆成独立题');
+const mathQ = eco.items.find(i => i.q === '簡単な数学知識の回答例');
+assert.ok(mathQ && mathQ.example.includes('**関数**') && mathQ.example.includes('**微分**'), '短小标题留在同一题里，用小标题分隔');
 const ask = by('逆質問');
 assert.strictEqual(ask.type, 'ask');
-assert.strictEqual(ask.items.length, 2, '每个 \\item 一题');
+assert.strictEqual(ask.items.length, 1, '逆質問：每个 section 一题');
+assert.strictEqual(ask.items[0].example.split('\n').length, 2, '各条并进 example，每行一条');
 assert.ok(ask.items.every(i => i.required === false && i.example));
 // key 稳定
 assert.deepStrictEqual(iviParse(SAMPLE).map(c => c.items.map(i => i.key)), ch.map(c => c.items.map(i => i.key)), '重复解析 key 不变');
@@ -93,7 +95,9 @@ if (fs.existsSync(fx)) {
   const r = iviParse(fs.readFileSync(fx, 'utf8')), c = iviCount(r);
   console.log('真实手册：', c);
   assert.ok(r.length >= 9 && r.length <= 11, '约 10 章，实际 ' + r.length);
-  assert.ok(c.items >= 65 && c.items <= 80, '约 72 题，实际 ' + c.items);
+  assert.strictEqual(c.items, 72, '任务单口径 72 题，实际 ' + c.items);
+  const per = r.map(x => x.items.length).join(',');
+  assert.strictEqual(per, '4,5,15,2,5,17,14,5,2,3', '各章题数，实际 ' + per);
   assert.ok(c.keywords >= 500, '关键词约 560，实际 ' + c.keywords);
 } else console.log('（没有 tests/fixtures/economics-interview-manual.tex，跳过真实手册断言）');
 console.log('interview-import: OK');

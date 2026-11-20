@@ -169,7 +169,14 @@ function iviSegments(text) {
     if (!t) return;
     if (!segs.length || IVI_PREFIX.test(t)) segs.push(t); else segs[segs.length - 1] += '\n' + t;
   });
-  return segs;
+  // 同一行里「中文说明……例如：日文例子」→ 在「例如：」处切开：前面是指导，后面是参考例
+  const out = [];
+  segs.forEach(sg => {
+    const m = /例如[:：]|例[:：]/.exec(sg);
+    if (m && m.index > 0 && !iviIsJa(sg.slice(0, m.index)) && iviIsJa(sg.slice(m.index))) { out.push(sg.slice(0, m.index).trim()); out.push('例：' + sg.slice(m.index + m[0].length).trim()); }
+    else out.push(sg);
+  });
+  return out.filter(Boolean);
 }
 function iviBuild(blocks) {
   const chapters = [];
@@ -211,17 +218,17 @@ function iviBuild(blocks) {
     if (b.t === 'para') iviSegments(b.text).forEach(sg => { const [f, t] = iviClassify(sg); put(f, t); });
     else if (b.t === 'table') { const kw = [...new Set(b.cells.map(c => c.replace(/\s+/g, '').trim()).filter(Boolean))]; (tgt.keywords = tgt.keywords || []).push(...kw); q.required = false; }
     else if (b.t === 'list') {
-      if (isAsk()) {   // 逆質問：每条一题，原文进 example
-        const secTitle = q.q, keep = q;
-        b.items.forEach((x, n) => { const it = newItem(b.items.length > 1 || keep.example || keep.tips ? `${secTitle}（${n + 1}）` : secTitle); it.example = x; it.required = false; });
-        if (!keep.tips && !keep.example && !(keep.keywords || []).length && b.items.length && ch.items.indexOf(keep) >= 0 && keep !== q) ch.items.splice(ch.items.indexOf(keep), 1);
-        ch.type = 'ask'; q = null;
+      if (isAsk()) {   // 逆質問：每个 section（個人面 / 教授面 / 学校面）一题，各条原文按行并进 example，学生挑选 / 改写
+        b.items.forEach(x => { q.example = q.example ? q.example + '\n' + x : x; });
+        q.required = false; ch.type = 'ask';
       } else b.items.forEach((x, n) => { const [f, t] = iviClassify(x); put(f, (b.ordered ? (n + 1) + '. ' : '- ') + t); });
     }
   });
   return chapters;
 }
 // 收尾：合并小标题段落、判断小标题是否拆成独立题、生成章 key / intro
+// 题下只有短小标题（如 関数 / 微分 / 偏微分）时是否拆成独立题：默认不拆，小标题留在同一题里（与手册「72 题」口径一致）
+const IVI_SPLIT_SUBS = false;
 function iviFinish(chapters) {
   const out = [];
   const usedKeys = {};
@@ -231,7 +238,7 @@ function iviFinish(chapters) {
       const parts = q._parts || [];
       const base = { key: q.key, q: q.q, tips: q.tips || '', example: q.example || '', required: q.required, tags: q.tags || [] };
       if (q.keywords && q.keywords.length) base.keywords = [...new Set(q.keywords)];
-      const split = parts.length >= 2 && !base.tips && !base.example && parts.every(p => p.title.length <= 8);
+      const split = IVI_SPLIT_SUBS && parts.length >= 2 && !base.tips && !base.example && parts.every(p => p.title.length <= 8);
       if (split) {
         parts.forEach(p => items.push(Object.assign({ key: iviQKey(ch.title, p.title, usedKeys), q: p.title, tips: p.tips, example: p.example, required: !(p.keywords && p.keywords.length), tags: [] }, p.keywords && p.keywords.length ? { keywords: [...new Set(p.keywords)] } : {})));
         return;
