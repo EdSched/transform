@@ -135,13 +135,41 @@ function ivmPrepared(st, itemKey) {
 function ivmChip(label, on, click, color) {
   return `<span onclick="${click}" style="cursor:pointer;padding:3px 11px;border-radius:3px;font-size:12px;border:1px solid ${on ? (color || 'var(--accent,#b8953a)') : 'var(--border,#e2ded6)'};background:${on ? 'var(--btn-bg,#efe9e1)' : 'var(--surface,#fff)'};color:${on ? 'var(--btn-fg,#3a2e24)' : 'var(--text-2,#5a5650)'};font-weight:${on ? 700 : 400}">${label}</span>`;
 }
+// ── 两页布局 ──
+// 选题 / 查看（左）｜ 记录填写（右）。容器宽度 ≥720px 左右并排、各自独立滚动；更窄（手机、管理端小弹窗）是左右滑动的两页，顶部页签也能点
+function ivmCss() {
+  if (document.getElementById('ivm_css')) return;
+  const s = document.createElement('style'); s.id = 'ivm_css';
+  s.textContent = `
+.ivm-wrap{container-type:inline-size;border:1px solid var(--border,#e2ded6);border-radius:4px;background:var(--bg,#f7f5f0);overflow:hidden}
+.ivm-head{padding:8px 10px;border-bottom:1px solid var(--border,#e2ded6)}
+.ivm-tabs{display:flex;border-bottom:1px solid var(--border,#e2ded6);background:var(--surface,#fff)}
+.ivm-tab{flex:1;text-align:center;padding:9px 4px;font-size:12px;cursor:pointer;color:var(--text-3,#999);border-bottom:2px solid transparent}
+.ivm-tab.on{color:var(--text,#1a1814);font-weight:700;border-bottom-color:var(--accent,#b8953a)}
+.ivm-panes{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none;overscroll-behavior-x:contain}
+.ivm-panes::-webkit-scrollbar{display:none}
+.ivm-pane{flex:0 0 100%;min-width:0;box-sizing:border-box;scroll-snap-align:start;scroll-snap-stop:always;height:58vh;height:58dvh;min-height:320px;overflow-y:auto;padding:10px}
+.ivm-pt{display:none;font-size:11px;font-weight:700;margin-bottom:6px;color:var(--text-2,#5a5650)}
+@container (min-width:720px){
+  .ivm-tabs{display:none}
+  .ivm-panes{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);overflow:visible;scroll-snap-type:none}
+  .ivm-pane{height:60vh;height:60dvh}
+  .ivm-pane + .ivm-pane{border-left:1px solid var(--border,#e2ded6)}
+  .ivm-pt{display:block}
+}`;
+  document.head.appendChild(s);
+}
 function ivmRender(id) {
   const st = IVM_ST[id], el = document.getElementById('ivm_form_' + id); if (!el || !st) return;
+  ivmCss(); st.view = st.view || {};
+  // 重画前记住两页各自的滚动位置，重画后还原（否则每点一次评价就跳回顶部）
+  const o0 = document.getElementById('ivm_p0_' + id), o1 = document.getElementById('ivm_p1_' + id);
+  const sc = o0 && o1 ? [o0.scrollTop, o1.scrollTop] : [0, 0];
   const inp = 'width:100%;box-sizing:border-box;font-size:11px;padding:6px 8px;border:1px solid var(--border,#e2ded6);border-radius:3px;background:var(--surface,#fff);font-family:inherit';
   const pr = st.bank ? ivbProgress(st.bank, st.subs, st.school) : null;
   const selKeys = new Set(st.sel.filter(x => !x.free).map(x => x.item_key));
   const q = (st.q || '').trim().toLowerCase();
-  // 选题区：搜索在最上面；章节默认折叠，点击一题 = 选入 / 取消（高亮行，不用复选框）
+  // 选题区：搜索在最上面；章节默认折叠，点击一题 = 选入 / 取消（高亮行，不用复选框）；「看答案」展开学生答案和参考例
   let pick = '';
   if (st.bank) {
     pick = st.bank.chapters.map(c => {
@@ -150,8 +178,9 @@ function ivmRender(id) {
       const open = q || st.openCh[c.key];
       const n = items.filter(i => selKeys.has(i.key)).length;
       return `<div style="margin-bottom:4px"><div onclick="ivmToggleCh('${id}','${c.key}')" style="cursor:pointer;font-size:11px;font-weight:600;padding:3px 0">${open ? '▾' : '▸'} ${ivmEsc(c.title)}<span style="font-weight:400;color:var(--text-3,#999)"> ${items.length} 题${n ? ' · 已选 ' + n : ''}</span></div>
-        ${open ? items.map(i => { const on = selKeys.has(i.key); const a = ivbAnswer(st.subs, ivbRowKeyFor(c, st.school), i.key, null).trim();
-          return `<div onclick="ivmToggleQ('${id}','${i.key}')" style="cursor:pointer;display:flex;gap:8px;align-items:baseline;padding:4px 8px;margin:2px 0;border-radius:3px;font-size:11px;border:1px solid ${on ? 'var(--accent,#b8953a)' : 'var(--border-light,#ede9e2)'};background:${on ? 'var(--btn-bg,#efe9e1)' : 'var(--surface,#fff)'}"><span style="font-weight:${on ? 700 : 400}">${ivmEsc(i.q)}</span><span style="margin-left:auto;color:${a ? '#2a7a4a' : '#b8860b'};white-space:nowrap">${a ? ivmEsc(a.slice(0, 24)) + (a.length > 24 ? '…' : '') : '未写'}</span></div>`; }).join('') : ''}</div>`;
+        ${open ? items.map(i => { const on = selKeys.has(i.key); const a = ivbAnswer(st.subs, ivbRowKeyFor(c, st.school), i.key, null).trim(); const v = !!st.view[i.key];
+          return `<div style="margin:2px 0"><div onclick="ivmToggleQ('${id}','${i.key}')" style="cursor:pointer;display:flex;gap:8px;align-items:baseline;padding:5px 8px;border-radius:3px;font-size:11px;border:1px solid ${on ? 'var(--accent,#b8953a)' : 'var(--border-light,#ede9e2)'};background:${on ? 'var(--btn-bg,#efe9e1)' : 'var(--surface,#fff)'}"><span style="flex:1;min-width:0;font-weight:${on ? 700 : 400}">${ivmEsc(i.q)}</span><span style="color:${a ? '#2a7a4a' : '#b8860b'};white-space:nowrap">${a ? '已写' : '未写'}</span><span onclick="event.stopPropagation();ivmView('${id}','${i.key}')" style="color:var(--accent,#b8953a);white-space:nowrap;padding:0 2px">${v ? '收起' : '看答案'}</span></div>
+            ${v ? `<div style="margin:2px 0 4px;padding:6px 8px;border:1px dashed var(--border,#e2ded6);border-radius:3px;font-size:11px;line-height:1.8;white-space:pre-wrap;background:var(--surface,#fff)"><b>学生答案</b>\n${ivmEsc(a || '（学生没写）')}${i.example ? `\n\n<b>参考例</b>\n${ivmEsc(i.example)}` : ''}</div>` : ''}</div>`; }).join('') : ''}</div>`;
     }).join('');
   }
   const qa = st.sel.map((x, i) => `<div style="border:1px solid var(--border-light,#ede9e2);border-radius:4px;padding:8px 10px;margin-bottom:6px;background:var(--surface,#fff)">
@@ -161,18 +190,42 @@ function ivmRender(id) {
       <textarea rows="2" placeholder="实际回答（记要点，可空）" oninput="ivmSet('${id}',${i},'answer',this.value)" style="${inp};margin:3px 0;resize:vertical">${ivmEsc(x.answer || '')}</textarea>
       <div style="display:flex;gap:5px;align-items:center;margin-bottom:4px"><span style="font-size:10px;color:var(--text-3,#999)">评价</span>${IVM_RATINGS.map(r => ivmChip(r, x.rating === r, `ivmRate('${id}',${i},'${r}')`)).join('')}</div>
       <textarea rows="2" placeholder="评语" oninput="ivmSet('${id}',${i},'comment',this.value)" style="${inp};resize:vertical">${ivmEsc(x.comment || '')}</textarea></div>`).join('');
-  el.innerHTML = `<div style="border:1px solid var(--border,#e2ded6);border-radius:4px;padding:10px 12px;background:var(--bg,#f7f5f0)">
-    <div style="font-size:11px;color:var(--text-2,#5a5650);margin-bottom:8px">${st.bank ? `该生面试稿完成度 <b>${pr.done}/${pr.total}</b> 题（必答，当前志望校）` : '该生所在专业还没有公开的面试题库（可以用「自由追问」记录）'} · 已做模拟面试 <b>${st.priorN}</b> 次</div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><span style="font-size:11px;color:var(--text-3,#999)">面试目标院校</span>
-      <select onchange="ivmSetSchool('${id}',this.value)" style="${inp};width:auto;max-width:100%"><option value="">不指定学校</option>${(st.plans || []).map(p => { const k = riyuKeyOf(p); return `<option value="${ivmEsc(k)}" ${st.school === k ? 'selected' : ''}>${ivmEsc(ivmSchoolName(st, k) || '（未命名）')}${p.exam_date ? '（' + ivmEsc(String(p.exam_date).slice(0, 10)) + '）' : ''}</option>`; }).join('')}</select></div>
-    ${st.bank ? `<input value="${ivmEsc(st.q)}" placeholder="搜索题库里的题" oninput="ivmSearch('${id}',this.value)" style="${inp};margin-bottom:6px"><div style="max-height:260px;overflow:auto;margin-bottom:8px">${pick || '<div style="font-size:11px;color:var(--text-3,#999)">没有匹配的题</div>'}</div>` : ''}
-    <div style="display:flex;gap:6px;margin-bottom:8px"><input id="ivm_free_${id}" placeholder="＋ 自由追问：现场加题库里没有的问题" onkeydown="if(event.key==='Enter'){ivmAddFree('${id}');}" style="${inp}"><button class="btn btn-outline btn-sm" onclick="ivmAddFree('${id}')">添加</button></div>
-    <div style="font-size:11px;font-weight:600;margin-bottom:5px">已选 ${st.sel.length} 题</div>
-    ${qa || '<div style="font-size:11px;color:var(--text-3,#999);margin-bottom:8px">还没有选题：点上面的题，或加自由追问</div>'}
-    <div style="border-top:1px solid var(--border,#e2ded6);margin-top:8px;padding-top:8px">
-      <div style="display:flex;gap:5px;align-items:center;margin-bottom:5px"><span style="font-size:11px;font-weight:600">整体评价</span>${IVM_RATINGS.map(r => ivmChip(r, st.overall_rating === r, `ivmRateAll('${id}','${r}')`)).join('')}</div>
-      <textarea rows="3" placeholder="整体反馈" oninput="IVM_ST['${id}'].overall=this.value" style="${inp};margin-bottom:5px;resize:vertical">${ivmEsc(st.overall)}</textarea>
-      <textarea rows="2" placeholder="下次课题" oninput="IVM_ST['${id}'].next=this.value" style="${inp};resize:vertical">${ivmEsc(st.next)}</textarea></div></div>`;
+  el.innerHTML = `<div class="ivm-wrap">
+    <div class="ivm-head">
+      <div style="font-size:11px;color:var(--text-2,#5a5650);margin-bottom:6px">${st.bank ? `该生面试稿完成度 <b>${pr.done}/${pr.total}</b> 题（必答，当前志望校）` : '该生所在专业还没有公开的面试题库（可以用「自由追问」记录）'} · 已做模拟面试 <b>${st.priorN}</b> 次</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:11px;color:var(--text-3,#999)">面试目标院校</span>
+        <select onchange="ivmSetSchool('${id}',this.value)" style="${inp};width:auto;max-width:100%"><option value="">不指定学校</option>${(st.plans || []).map(p => { const k = riyuKeyOf(p); return `<option value="${ivmEsc(k)}" ${st.school === k ? 'selected' : ''}>${ivmEsc(ivmSchoolName(st, k) || '（未命名）')}${p.exam_date ? '（' + ivmEsc(String(p.exam_date).slice(0, 10)) + '）' : ''}</option>`; }).join('')}</select></div></div>
+    <div class="ivm-tabs"><div id="ivm_tab_${id}_0" class="ivm-tab${st.pane ? '' : ' on'}" onclick="ivmGoPane('${id}',0)">选题 / 查看</div><div id="ivm_tab_${id}_1" class="ivm-tab${st.pane ? ' on' : ''}" onclick="ivmGoPane('${id}',1)">记录填写（已选 ${st.sel.length} 题）</div></div>
+    <div class="ivm-panes" id="ivm_panes_${id}" onscroll="ivmOnScroll('${id}')">
+      <div class="ivm-pane" id="ivm_p0_${id}">
+        <div class="ivm-pt">选题 / 查看</div>
+        ${st.bank ? `<input value="${ivmEsc(st.q)}" placeholder="搜索题库里的题" oninput="ivmSearch('${id}',this.value)" style="${inp};margin-bottom:6px"><div style="margin-bottom:8px">${pick || '<div style="font-size:11px;color:var(--text-3,#999)">没有匹配的题</div>'}</div>` : ''}
+        <div style="display:flex;gap:6px"><input id="ivm_free_${id}" placeholder="＋ 自由追问：现场加题库里没有的问题" onkeydown="if(event.key==='Enter'){ivmAddFree('${id}');}" style="${inp}"><button class="btn btn-outline btn-sm" onclick="ivmAddFree('${id}')">添加</button></div>
+      </div>
+      <div class="ivm-pane" id="ivm_p1_${id}">
+        <div class="ivm-pt">记录填写（已选 ${st.sel.length} 题）</div>
+        ${qa || '<div style="font-size:11px;color:var(--text-3,#999);margin-bottom:8px">还没有选题：在「选题 / 查看」页点题，或加自由追问</div>'}
+        <div style="border-top:1px solid var(--border,#e2ded6);margin-top:8px;padding-top:8px">
+          <div style="display:flex;gap:5px;align-items:center;margin-bottom:5px"><span style="font-size:11px;font-weight:600">整体评价</span>${IVM_RATINGS.map(r => ivmChip(r, st.overall_rating === r, `ivmRateAll('${id}','${r}')`)).join('')}</div>
+          <textarea rows="3" placeholder="整体反馈" oninput="IVM_ST['${id}'].overall=this.value" style="${inp};margin-bottom:5px;resize:vertical">${ivmEsc(st.overall)}</textarea>
+          <textarea rows="2" placeholder="下次课题" oninput="IVM_ST['${id}'].next=this.value" style="${inp};resize:vertical">${ivmEsc(st.next)}</textarea></div>
+      </div></div></div>`;
+  const p = document.getElementById('ivm_panes_' + id), a0 = document.getElementById('ivm_p0_' + id), a1 = document.getElementById('ivm_p1_' + id);
+  if (a0) a0.scrollTop = sc[0]; if (a1) a1.scrollTop = sc[1];
+  if (p && st.pane) p.scrollLeft = p.clientWidth;   // 窄屏：还原到当前页（宽屏是并排，这一句无效果）
+}
+function ivmView(id, key) { const st = IVM_ST[id]; st.view = st.view || {}; st.view[key] = !st.view[key]; ivmRender(id); }
+function ivmSyncTabs(id) {
+  const st = IVM_ST[id]; if (!st) return;
+  [0, 1].forEach(i => { const t = document.getElementById(`ivm_tab_${id}_${i}`); if (t) t.classList.toggle('on', (st.pane ? 1 : 0) === i); });
+}
+function ivmGoPane(id, i) {
+  const st = IVM_ST[id], p = document.getElementById('ivm_panes_' + id); if (!st || !p) return;
+  st.pane = i; ivmSyncTabs(id); p.scrollTo({ left: i * p.clientWidth, behavior: 'smooth' });
+}
+function ivmOnScroll(id) {   // 手指左右滑动后，页签跟着换
+  const st = IVM_ST[id], p = document.getElementById('ivm_panes_' + id); if (!st || !p || !p.clientWidth) return;
+  clearTimeout(st._st); st._st = setTimeout(() => { const n = Math.round(p.scrollLeft / p.clientWidth) ? 1 : 0; if (n !== (st.pane ? 1 : 0)) { st.pane = n; ivmSyncTabs(id); } }, 80);
 }
 function ivmToggleCh(id, k) { const st = IVM_ST[id]; st.openCh[k] = !st.openCh[k]; ivmRender(id); }
 function ivmSearch(id, v) { const st = IVM_ST[id]; st.q = v; clearTimeout(st._t); st._t = setTimeout(() => { ivmRender(id); const i = document.querySelector(`#ivm_form_${id} input[placeholder^="搜索"]`); if (i) { i.focus(); i.setSelectionRange(v.length, v.length); } }, 250); }
