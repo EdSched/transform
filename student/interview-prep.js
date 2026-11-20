@@ -1,11 +1,11 @@
 // ══════════════════════════════════
 // interview-prep.js — 学生端「面试准备」（学习页「计划书」页签里的「面试准备」chip）
-// 题库按专业一套（shared/interview-bank.js，管理端「🎤 面试题库」维护）；学生按章节检索、逐题作答
-// 答案存 riyu_submissions（kind='grad_interview'）：每所志望校一行（school_key=志望校 key），共用章一行（school_key='_common'）
+// 题库按专业一套或多套（版本跟着志望校走；shared/interview-bank.js，管理端「🎤 面试题库」维护）；学生按章节检索、逐题作答
+// 答案存 riyu_submissions（kind='grad_interview'）：每所志望校一行（school_key=志望校 key），共用章一行（默认版本 school_key='_common'，其他版本 '_common@版本'）
 // sections 以「题 key」为键；旧版 8 段（self / motive / …）的答案原样保留在同一行里，只读显示在「旧版面试稿」折叠块
 // 依赖：study.js（studyStudent / studyData / escA / studyPlanDoc / switchStudyTab）、shared/riyu.js、shared/interview-bank.js、shared/doc-versions.js
 // ══════════════════════════════════
-let ivs = { bank: null, subs: [], vers: [], old: null, drafts: {}, dirty: {}, school: '', chap: '', q: '', res: [], mocks: [], cat: 'bank', moreChaps: false, savedAt: '', err: '', focusTodo: false, loading: false };
+let ivs = { bank: null, variant: '', resAll: [], subs: [], vers: [], old: null, drafts: {}, dirty: {}, school: '', chap: '', q: '', res: [], mocks: [], cat: 'bank', moreChaps: false, savedAt: '', err: '', focusTodo: false, loading: false };
 let ivsSummary = null;      // 学习页提醒 / 时间线用的摘要：{ rem: ivbReminder 结果 | null, done, total }
 let ivsSaveTimer = null;
 const ivsChain = {};        // rowKey → 保存队列（避免同一行并发保存时重复新建）
@@ -22,23 +22,26 @@ function studyGoInterview() {   // 提醒条：去面试准备，并定位到第
 }
 function ivsPlans() { return (studyData.schoolPlans || []).slice().sort((a, b) => (a.level || 2) - (b.level || 2)); }
 function ivsSchoolName(p) { return [p.school_name, p.faculty, p.department].filter(Boolean).join(' · ') || '（未命名学校）'; }
+function ivsPlanByKey(k) { return ivsPlans().find(p => riyuKeyOf(p) === k) || null; }
 async function ivsLoad() {
   if (ivs.loading) return; ivs.loading = true;
   let subs = [], vers = [], err = '', bank = null, old = null;
+  const plans = ivsPlans();
+  const keep = ivs.school && plans.some(p => riyuKeyOf(p) === ivs.school);
+  const school = keep ? ivs.school : ivbDefaultSchool(plans);
   try {
     await Promise.all([
-      ivbForStudent(studyStudent).then(b => { bank = b; }),
+      ivbForStudent(studyStudent, ivsPlanByKey(school), ivs.variant).then(b => { bank = b; }),   // 题库版本跟着志望校走
       sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=eq.${RIYU_INTERVIEW_KIND}&select=*`, 'GET', null, { cache: 'no-store' }).then(r => { subs = r || []; }).catch(e => { err = e.message; }),
       docvLoad(studyStudent.id, 'interview').then(r => { vers = r || []; }).catch(() => {}),
       riyuLoadGuide(RIYU_INTERVIEW_KIND).then(g => { old = g; }).catch(() => {}),
-      ivbLoadResources(studyStudent).then(r => { ivs.res = r; }).catch(() => {}),
+      ivbLoadResources(studyStudent).then(r => { ivs.resAll = r; }).catch(() => {}),
       (typeof ivmList === 'function' ? sb(`/rest/v1/bookings?student_id=eq.${encodeURIComponent(studyStudent.id)}&type=eq.mock&daily_record=not.is.null&select=id,name,student_id,slot_date,actual_time,actual_duration,status,assigned_teacher,type,daily_record&order=slot_date.desc`, 'GET', null, { cache: 'no-store' }).then(r => { ivs.mocks = ivmList(r || []); }).catch(() => {}) : null),
     ]);
   } finally { ivs.loading = false; }
-  const plans = ivsPlans();
   if (ivs.focusTodo) ivs.cat = 'bank';
-  const keep = ivs.school && plans.some(p => riyuKeyOf(p) === ivs.school);
-  Object.assign(ivs, { bank, subs, vers, old, err, school: keep ? ivs.school : ivbDefaultSchool(plans) });
+  Object.assign(ivs, { bank, subs, vers, old, err, school, variant: bank ? bank.variant : '' });
+  ivs.res = ivbResForVariant(ivs.resAll, ivs.variant);
   if (bank && (!ivs.chap || !bank.chapters.some(c => c.key === ivs.chap))) ivs.chap = bank.chapters.length ? bank.chapters[0].key : '';
   if (ivs.focusTodo && bank) {
     ivs.focusTodo = false; ivs.q = '';
@@ -85,6 +88,7 @@ function ivsRender() {
     <div id="ivs_prog"></div>
     <input id="ivs_q" value="${escA(ivs.q)}" placeholder="搜索题目 / 指导 / 参考例 / 关键词（搜索所有章节）" oninput="ivsSearchInput(this.value)" style="${IVS_INP};margin-bottom:10px">
     ${schoolSel}
+    ${ivsVariantBar()}
     <div id="ivs_body"></div>
     <div id="ivs_legacy"></div>
     <div id="ivs_upload"></div>`;
@@ -118,7 +122,7 @@ function ivsRenderBody() {
     html += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${shown.map(chipHtml).join('')}${ivs.moreChaps ? hidden.map(chipHtml).join('') : ''}${hidden.length ? `<span onclick="ivs.moreChaps=!ivs.moreChaps;ivsRenderBody()" style="cursor:pointer;padding:4px 11px;font-size:11px;color:var(--text-muted);border:1px dashed var(--border);border-radius:3px">${ivs.moreChaps ? '收起 ▴' : `更多 ▾ ${hidden.length}`}</span>` : ''}</div>`;
     const ch = b.chapters.find(c => c.key === ivs.chap);
     if (ch) {
-      const rk = ivbRowKeyFor(ch, ivs.school);
+      const rk = ivbRowKeyFor(ch, ivs.school, b.variant);
       html += `<div style="font-size:13px;font-weight:600;margin-bottom:4px">${escA(ch.title)}${ch.scope === 'school' ? `<span style="font-size:10px;font-weight:400;color:var(--text-muted);margin-left:8px">各校分别作答${ivs.school && ivs.bank ? '：' + escA(ivsSchoolNameByKey(ivs.school)) : ''}</span>` : '<span style="font-size:10px;font-weight:400;color:var(--text-muted);margin-left:8px">只写一次，各校共用</span>'}</div>`;
       if (ch.intro) html += `<div style="font-size:11px;color:var(--text-secondary);line-height:1.9;margin-bottom:8px">${riyuMd(ch.intro)}</div>`;
       const items = ivbVisibleItems(ch);
@@ -140,7 +144,7 @@ function ivsRenderBody() {
   box.querySelectorAll('textarea[data-item]').forEach(t => { t.style.height = 'auto'; t.style.height = Math.max(t.scrollHeight, 64) + 'px'; });
   if (ivs._scrollTo) { const el = box.querySelector(`[data-card="${ivs._scrollTo}"]`); ivs._scrollTo = ''; if (el) { el.scrollIntoView({ block: 'center' }); const t = el.querySelector('textarea'); if (t) t.focus(); } }
 }
-function ivsSchoolNameByKey(k) { const p = ivsPlans().find(x => riyuKeyOf(x) === k); return p ? ivsSchoolName(p) : ''; }
+function ivsSchoolNameByKey(k) { const p = ivsPlans().find(x => riyuKeyOf(x) === k); return p ? ivsSchoolName(p) : ''; }   // 共用行（_common / _common@版本）没有学校名
 // 老师批复版本（该行已批复时）
 function ivsReviewHtml(rk) {
   const sub = ivs.subs.find(s => s.school_key === rk);
@@ -151,7 +155,7 @@ function ivsReviewHtml(rk) {
 // 一道题
 function ivsItemHtml(ch, it, inSearch) {
   const answerable = ivbAnswerable(ch, it);
-  const rk = ivbRowKeyFor(ch, ivs.school);
+  const rk = ivbRowKeyFor(ch, ivs.school, ivs.bank && ivs.bank.variant);
   const val = answerable && rk ? ivbAnswer(ivs.subs, rk, it.key, ivs.drafts) : '';
   const hasKw = it.keywords && it.keywords.length;
   const kw = hasKw ? `<div style="display:flex;flex-wrap:wrap;gap:5px;margin:6px 0">${it.keywords.map(k => `<span style="font-size:11px;padding:2px 9px;border:1px solid var(--border-light);border-radius:3px;background:var(--bg)">${escA(k)}</span>`).join('')}</div>` : '';
@@ -175,7 +179,42 @@ function ivsItemHtml(ch, it, inSearch) {
 
 // ── 交互 ──
 function ivsSetChap(k) { ivs.chap = k; ivsRenderBody(); }
-function ivsSetSchool(k) { ivs.school = k; ivsRenderBody(); ivsRenderProg(); }
+// 版本切换条：该专业有 ≥2 个已公开版本才显示（只有 1 个版本时和以前完全一样）
+function ivsVariantBar() {
+  const b = ivs.bank; if (!b) return '';
+  const vs = ivbVariantsFor(b.major_key); if (vs.length < 2) return '';
+  return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap"><span style="font-size:11px;color:var(--text-muted)">题库版本：</span>${chipFold(vs.map(v => ({ on: v.variant === ivs.variant, html: ivsChip(ivbVariantLabel(v), v.variant === ivs.variant, `ivsSetVariant('${escA(v.variant)}')`) })))}</div>`;
+}
+// 换版本：整页换成该版本的章节 / 题目 / 手册 / 标准 / 完成度；记到当前志望校（有志望校时）。已写的答案按行分开存，换回来还在
+async function ivsSetVariant(v) {
+  if (!ivs.bank || v === ivs.variant) return;
+  ivsFlush();
+  const bank = await ivbLoad(ivs.bank.major_key, false, v); if (!bank) return;
+  ivs.bank = bank; ivs.variant = v; ivs.res = ivbResForVariant(ivs.resAll, v);
+  if (!bank.chapters.some(c => c.key === ivs.chap)) ivs.chap = bank.chapters.length ? bank.chapters[0].key : '';
+  ivs.moreChaps = false;
+  const plan = ivsPlanByKey(ivs.school);
+  if (plan && plan.interview_variant !== v) {
+    plan.interview_variant = v;
+    sb(`/rest/v1/student_school_plans?id=eq.${encodeURIComponent(plan.id)}`, 'PATCH', { interview_variant: v }).catch(e => console.warn('记录题库版本失败', e));
+  }
+  ivsRender(); ivsRefreshSummary();
+}
+// 换志望校：版本跟着该校走（记录的 → 关键词猜 → 默认）；版本变了就整页重画
+async function ivsSetSchool(k) {
+  ivs.school = k;
+  const plan = ivsPlanByKey(k), r = ivbResolve(studyStudent, plan, ivs.variant);
+  if (r && ivs.bank && (r.variant !== ivs.variant || r.key !== ivs.bank.major_key)) {
+    const bank = await ivbLoad(r.key, false, r.variant);
+    if (bank) {
+      ivs.bank = bank; ivs.variant = bank.variant; ivs.res = ivbResForVariant(ivs.resAll, bank.variant); ivs.moreChaps = false;
+      if (!bank.chapters.some(c => c.key === ivs.chap)) ivs.chap = bank.chapters.length ? bank.chapters[0].key : '';
+      ivsRender(); return;
+    }
+  }
+  ivsRenderBody(); ivsRenderProg();
+}
+function ivsRefreshSummary() { if (typeof ivsReminderLoad === 'function') ivsReminderLoad().then(() => { if (typeof studyRemindersRender === 'function') studyRemindersRender(); }).catch(() => {}); }
 let ivsSearchTimer = null;
 function ivsSearchInput(v) { ivs.q = v; clearTimeout(ivsSearchTimer); ivsSearchTimer = setTimeout(ivsRenderBody, 200); }
 function ivsInput(el) {
@@ -215,7 +254,7 @@ async function ivsSaveRowDo(rowKey, submit, silent) {
   if (submit && !Object.keys(sections).some(k => String(sections[k] || '').trim())) { alert('还没有写任何内容，写完再提交吧'); return false; }
   if (!sub && !Object.keys(snap).length && !submit) return true;
   if (st && !silent) { st.style.color = 'var(--text-muted)'; st.textContent = submit ? '提交中…' : '保存中…'; }
-  const p = rowKey === IVB_COMMON_KEY ? {} : (ivsPlans().find(x => riyuKeyOf(x) === rowKey) || {});
+  const p = ivbIsCommonKey(rowKey) ? {} : (ivsPlans().find(x => riyuKeyOf(x) === rowKey) || {});
   const now = new Date().toISOString();
   const data = { sections, school_name: p.school_name || '', faculty: p.faculty || '', department: p.department || '', updated_at: now, requirement: null };
   if (submit) { data.status = 'submitted'; data.submitted_at = now; data.history = riyuHistory(sub).concat([{ at: now, by: studyStudent.name, action: 'submit' }]); }
@@ -255,7 +294,7 @@ function ivsRenderLegacy() {
   const rows = ivs.subs.filter(s => old.sections.some(sec => String(riyuSecs(s)[sec.key] || '').trim()));
   if (!rows.length) { el.innerHTML = ''; return; }
   el.innerHTML = `<details style="margin-top:14px;font-size:11px;background:var(--bg);border-radius:3px;padding:6px 10px"><summary style="cursor:pointer;color:var(--text-secondary)">旧版面试稿（参考，只读）</summary>
-    ${rows.map(s => `<div style="margin-top:8px"><div style="font-weight:600">${escA(s.school_key === IVB_COMMON_KEY ? '共用' : [s.school_name, s.faculty, s.department].filter(Boolean).join(' · ') || '（未命名学校）')}</div>
+    ${rows.map(s => `<div style="margin-top:8px"><div style="font-weight:600">${escA(ivbIsCommonKey(s.school_key) ? '共用' : [s.school_name, s.faculty, s.department].filter(Boolean).join(' · ') || '（未命名学校）')}</div>
       ${old.sections.map(sec => String(riyuSecs(s)[sec.key] || '').trim() ? `<div style="margin-top:4px"><div style="color:var(--text-muted)">${escA(sec.title)}</div><div style="white-space:pre-wrap;line-height:1.8;color:var(--text-secondary)">${escA(riyuSecs(s)[sec.key])}</div></div>` : '').join('')}</div>`).join('')}
   </details>`;
 }
@@ -288,22 +327,23 @@ async function ivsUpload() {
 
 // ── 计划书页签 chip 上的小字 ──
 function ivsChipText(subs) {
-  const bank = ivbCache[ivbKeyFor(studyStudent)]; if (!bank) return '';
-  const pr = ivbProgress(bank, subs || [], ivbDefaultSchool(ivsPlans()));
+  const plans = ivsPlans(), r = ivbResolve(studyStudent, ivbDefaultPlan(plans), ivs.variant);
+  const bank = r && ivbCache[ivbCacheKey(r.key, r.variant)]; if (!bank) return '';
+  const pr = ivbProgress(bank, subs || [], ivbDefaultSchool(plans));
   return pr.total ? `必答 ${pr.done}/${pr.total}` : '';
 }
 
-// ── 学习页顶部提醒 / 时间线 ──
+// ── 学习页顶部提醒 / 时间线（按默认志望校的题库版本算）──
 async function ivsReminderLoad() {
   if (!studyStudent) return;
-  const bank = await ivbForStudent(studyStudent);
+  const plans = studyData.schoolPlans || [];
+  const bank = await ivbForStudent(studyStudent, ivbDefaultPlan(plans), ivs.variant);
   if (!bank) { ivsSummary = { rem: null, done: 0, total: 0 }; return; }
   const today = (typeof jstToday === 'function') ? jstToday() : new Date().toISOString().slice(0, 10);
   const [subs, bks] = await Promise.all([
     sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=eq.${RIYU_INTERVIEW_KIND}&select=*`, 'GET', null, { cache: 'no-store' }).catch(() => []),
     sb(`/rest/v1/bookings?student_id=eq.${encodeURIComponent(studyStudent.id)}&type=eq.mock&status=in.(pending,confirmed)&slot_date=gte.${today}&select=type,status,slot_date`, 'GET', null, { cache: 'no-store' }).catch(() => []),
   ]);
-  const plans = studyData.schoolPlans || [];
   const pr = ivbProgress(bank, subs, ivbDefaultSchool(plans));
   ivsSummary = { rem: ivbReminder(bank, subs, plans, bks), done: pr.done, total: pr.total };
 }

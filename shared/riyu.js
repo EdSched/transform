@@ -298,17 +298,19 @@ function riyuStaffListHtml(student, plans, subs, kind, onChange) {
       return row(sub, `问询邮件 ${i + 1}`, '关于：' + (sch ? riyuEsc(sch) : '<span style="color:var(--text-3,#999)">不指定学校</span>'), mailLine(sub));
     }).join('');
   }
-  const commonSub = kind === RIYU_INTERVIEW_KIND ? ((subs || []).find(x => x.kind === kind && x.school_key === '_common') || null) : null;
-  if (!list.length && !commonSub && !(kind === 'grad_prof_mail' && (subs || []).some(x => x.kind === kind))) return '<div style="font-size:11px;color:var(--text-3,#999)">尚无志望校，学生添加志望校后即可逐校撰写</div>';
+  const isCommonKey = k => typeof ivbIsCommonKey === 'function' ? ivbIsCommonKey(k) : k === '_common';   // 共用行：_common（默认版本）/ _common@版本
+  const commonSubs = kind === RIYU_INTERVIEW_KIND ? (subs || []).filter(x => x.kind === kind && isCommonKey(x.school_key)).sort((a, b) => String(a.school_key).localeCompare(String(b.school_key))) : [];
+  if (!list.length && !commonSubs.length && !(kind === 'grad_prof_mail' && (subs || []).some(x => x.kind === kind))) return '<div style="font-size:11px;color:var(--text-3,#999)">尚无志望校，学生添加志望校后即可逐校撰写</div>';
   let html = list.map(p => {
     const sub = riyuSubOf(p, subs, kind);
     RIYU_STAFF.plans[student.id + '|' + riyuKeyOf(p)] = p;
     const title = [p.school_name, p.faculty, p.department].filter(Boolean).join(' · ') || '（未命名学校）';
     const label = riyuIsMail(kind) ? '' : '要求：';
     const req = (kind === 'grad_prof_mail' || kind === RIYU_INTERVIEW_KIND) ? '' : label + (p.plan_requirement ? riyuEsc(p.plan_requirement) : '<span style="color:var(--text-3,#999)">暂未填写要求</span>');
-    return row(sub, title, req, kind === 'grad_prof_mail' ? mailLine(sub) : '');
+    const vn = kind === RIYU_INTERVIEW_KIND && typeof ivbPlanVariantName === 'function' ? ivbPlanVariantName(student, p) : '';   // 多版本专业：标出该校用的版本
+    return row(sub, vn ? title + ' · ' + vn : title, req, kind === 'grad_prof_mail' ? mailLine(sub) : '');
   }).join('');
-  if (commonSub) html += row(commonSub, '共用部分（不分学校的题）', '', '');
+  commonSubs.forEach(cs => { html += row(cs, typeof ivbCommonRowName === 'function' ? ivbCommonRowName(student, cs.school_key) : '共用部分（不分学校的题）', '', ''); });
   if (kind === 'grad_prof_mail') {
     const keys = list.map(riyuKeyOf);
     (subs || []).filter(x => x.kind === kind && keys.indexOf(x.school_key) < 0).forEach(sub => {

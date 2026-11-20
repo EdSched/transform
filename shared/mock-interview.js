@@ -1,9 +1,10 @@
 // ══════════════════════════════════
 // mock-interview.js — 模拟面试记录（老师端 / 管理端共用）
 // 数据：bookings.type='mock' 的 daily_record.mock（jsonb 里的一个键，不新建表、不加列；次数 = 数「有 mock 记录」的预约，不单独存）
-//   mock = { school_key, school_name, qa:[{item_key,q,free,prepared,answer,rating,comment}], overall_rating, overall, next }
+//   mock = { school_key, school_name, variant, variant_label, qa:[{item_key,q,free,prepared,answer,rating,comment}], overall_rating, overall, next }
 // 三块：① 记录表单（ivmMount / ivmCollect，挂在预约卡片里） ② 展示（ivmViewHtml / ivmText，学生详情、概要、学生端共用）
 //       ③ 考学进度「模拟面试」视图（ivmRenderView，admin 与老师端各传自己范围内的学生）
+// variant / variant_label：该校面试用的题库版本（短码 / 当时的显示名；只有多版本的专业才写 variant_label）。老记录没有这两个键 = 默认版本
 // 依赖：shared/supabase.js、shared/constants.js、shared/riyu.js（riyuEsc / riyuKeyOf / riyuSecs）、shared/interview-bank.js
 // ══════════════════════════════════
 const IVM_RATINGS = ['◎', '○', '△', '×'];
@@ -49,11 +50,12 @@ function ivmCardText(sid) {
 
 // ── 展示 ──
 function ivmEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
-function ivmSchoolOf(m) { return (m && m.school_name) || ''; }
+// 学校名 +（多版本专业才有的）版本名：「学校 · MBA」
+function ivmSchoolOf(m) { return [(m && m.school_name) || '', (m && m.variant_label) || ''].filter(Boolean).join(' · '); }
 // 纯文本（反馈文字 / 面谈记录文字）
 function ivmText(b) {
   const m = ivmOf(b); if (!ivmHas(m)) return '';
-  const L = ['🎤 模拟面试' + (m.school_name ? '：' + m.school_name : '')];
+  const L = ['🎤 模拟面试' + (ivmSchoolOf(m) ? '：' + ivmSchoolOf(m) : '')];
   if (m.overall_rating) L.push('整体评价：' + m.overall_rating);
   (m.qa || []).forEach((x, i) => {
     if (!(String(x.answer || '').trim() || x.rating || String(x.comment || '').trim())) return;
@@ -117,9 +119,20 @@ async function ivmMount(b) {
       sb(`/rest/v1/bookings?student_id=eq.${encodeURIComponent(sid)}&type=eq.mock&daily_record=not.is.null&select=id,slot_date,actual_time,daily_record,type`, 'GET', null, { cache: 'no-store' }).catch(() => []),
     ]);
   }
-  let bank = null; try { bank = student ? await ivbForStudent(student) : null; } catch (e) { bank = null; }
   const pri = ivmList(prior).filter(x => x.id !== b.id);
   const school = old.school_key != null && old.school_key !== '' ? old.school_key : ivbDefaultSchool(plans);
+  // 题库按该校的版本取；已有记录（再次打开编辑）以记录里存的版本为准，没有 = 按志望校判定
+  let bank = null;
+  try {
+    if (student) {
+      await ivbLoadPublishedKeys();
+      const key = ivbKeyFor(student), plan = plans.find(p => riyuKeyOf(p) === school) || null;
+      if (key) {
+        bank = old.variant != null ? await ivbLoad(key, false, old.variant) : null;
+        if (!bank) bank = await ivbLoad(key, false, ivbVariantFor(student, plan, null, key));
+      }
+    }
+  } catch (e) { bank = null; }
   Object.assign(st, {
     student, subs, plans, bank, priorN: pri.length, school,
     sel: (old.qa || []).map(x => Object.assign({}, x)),
@@ -130,7 +143,7 @@ async function ivmMount(b) {
 function ivmSchoolName(st, key) { const p = (st.plans || []).find(x => riyuKeyOf(x) === key); return p ? [p.school_name, p.faculty, p.department].filter(Boolean).join(' · ') : ''; }
 function ivmPrepared(st, itemKey) {
   const ch = st.bank && st.bank.chapters.find(c => (c.items || []).some(i => i.key === itemKey)); if (!ch) return '';
-  return ivbAnswer(st.subs, ivbRowKeyFor(ch, st.school), itemKey, null);
+  return ivbAnswer(st.subs, ivbRowKeyFor(ch, st.school, st.bank.variant), itemKey, null);
 }
 function ivmChip(label, on, click, color) {
   return `<span onclick="${click}" style="cursor:pointer;padding:3px 11px;border-radius:3px;font-size:12px;border:1px solid ${on ? (color || 'var(--accent,#b8953a)') : 'var(--border,#e2ded6)'};background:${on ? 'var(--btn-bg,#efe9e1)' : 'var(--surface,#fff)'};color:${on ? 'var(--btn-fg,#3a2e24)' : 'var(--text-2,#5a5650)'};font-weight:${on ? 700 : 400}">${label}</span>`;
@@ -178,13 +191,13 @@ function ivmRender(id) {
       const open = q || st.openCh[c.key];
       const n = items.filter(i => selKeys.has(i.key)).length;
       return `<div style="margin-bottom:4px"><div onclick="ivmToggleCh('${id}','${c.key}')" style="cursor:pointer;font-size:11px;font-weight:600;padding:3px 0">${open ? '▾' : '▸'} ${ivmEsc(c.title)}<span style="font-weight:400;color:var(--text-3,#999)"> ${items.length} 题${n ? ' · 已选 ' + n : ''}</span></div>
-        ${open ? items.map(i => { const on = selKeys.has(i.key); const a = ivbAnswer(st.subs, ivbRowKeyFor(c, st.school), i.key, null).trim(); const v = !!st.view[i.key];
+        ${open ? items.map(i => { const on = selKeys.has(i.key); const a = ivbAnswer(st.subs, ivbRowKeyFor(c, st.school, st.bank.variant), i.key, null).trim(); const v = !!st.view[i.key];
           return `<div style="margin:2px 0"><div onclick="ivmToggleQ('${id}','${i.key}')" style="cursor:pointer;display:flex;gap:8px;align-items:baseline;padding:5px 8px;border-radius:3px;font-size:11px;border:1px solid ${on ? 'var(--accent,#b8953a)' : 'var(--border-light,#ede9e2)'};background:${on ? 'var(--btn-bg,#efe9e1)' : 'var(--surface,#fff)'}"><span style="flex:1;min-width:0;font-weight:${on ? 700 : 400}">${ivmEsc(i.q)}</span><span style="color:${a ? '#2a7a4a' : '#b8860b'};white-space:nowrap">${a ? '已写' : '未写'}</span><span onclick="event.stopPropagation();ivmView('${id}','${i.key}')" style="color:var(--accent,#b8953a);white-space:nowrap;padding:0 2px">${v ? '收起' : '看答案'}</span></div>
             ${v ? `<div style="margin:2px 0 4px;padding:6px 8px;border:1px dashed var(--border,#e2ded6);border-radius:3px;font-size:11px;line-height:1.8;white-space:pre-wrap;background:var(--surface,#fff)"><b>学生答案</b>\n${ivmEsc(a || '（学生没写）')}${i.example ? `\n\n<b>参考例</b>\n${ivmEsc(i.example)}` : ''}</div>` : ''}</div>`; }).join('') : ''}</div>`;
     }).join('');
   }
   const qa = st.sel.map((x, i) => `<div style="border:1px solid var(--border-light,#ede9e2);border-radius:4px;padding:8px 10px;margin-bottom:6px;background:var(--surface,#fff)">
-      <div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;font-weight:600">${i + 1}. ${ivmEsc(x.q)}${x.free ? ' <span style="font-size:10px;color:var(--text-3,#999);font-weight:400">自由追问</span>' : ''}</span>
+      <div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;font-weight:600">${i + 1}. ${ivmEsc(x.q)}${x.free ? ' <span style="font-size:10px;color:var(--text-3,#999);font-weight:400">自由追问</span>' : ''}${x._miss ? ' <span style="font-size:10px;color:#b03a2e;font-weight:400">不在当前版本题库</span>' : ''}</span>
         <span style="margin-left:auto;display:flex;gap:3px"><button class="btn btn-outline btn-sm" ${i === 0 ? 'disabled' : ''} onclick="ivmMove('${id}',${i},-1)">↑</button><button class="btn btn-outline btn-sm" ${i === st.sel.length - 1 ? 'disabled' : ''} onclick="ivmMove('${id}',${i},1)">↓</button><button class="btn btn-outline btn-sm" onclick="ivmDrop('${id}',${i})">✕</button></span></div>
       ${!x.free ? `<details style="font-size:11px;margin:3px 0"><summary style="cursor:pointer;color:var(--text-3,#999)">学生准备的答案</summary><div style="white-space:pre-wrap;line-height:1.8;color:var(--text-2,#5a5650)">${ivmEsc(x.prepared || ivmPrepared(st, x.item_key) || '（学生没写）')}</div></details>` : ''}
       <textarea rows="2" placeholder="实际回答（记要点，可空）" oninput="ivmSet('${id}',${i},'answer',this.value)" style="${inp};margin:3px 0;resize:vertical">${ivmEsc(x.answer || '')}</textarea>
@@ -192,6 +205,7 @@ function ivmRender(id) {
       <textarea rows="2" placeholder="评语" oninput="ivmSet('${id}',${i},'comment',this.value)" style="${inp};resize:vertical">${ivmEsc(x.comment || '')}</textarea></div>`).join('');
   el.innerHTML = `<div class="ivm-wrap">
     <div class="ivm-head">
+      ${ivmVariantName(st) ? `<div style="font-size:11px;margin-bottom:6px"><span style="color:var(--text-3,#999)">题库版本</span> <b>${ivmEsc(ivmVariantName(st))}</b>${(st.sel || []).some(x => x._miss) ? ` <span style="color:#b03a2e">已选题里有 ${(st.sel || []).filter(x => x._miss).length} 题不在这个版本的题库里（回答仍会保留）</span>` : ''}</div>` : ''}
       <div style="font-size:11px;color:var(--text-2,#5a5650);margin-bottom:6px">${st.bank ? `该生面试稿完成度 <b>${pr.done}/${pr.total}</b> 题（必答，当前志望校）` : '该生所在专业还没有公开的面试题库（可以用「自由追问」记录）'} · 已做模拟面试 <b>${st.priorN}</b> 次</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:11px;color:var(--text-3,#999)">面试目标院校</span>
         <select onchange="ivmSetSchool('${id}',this.value)" style="${inp};width:auto;max-width:100%"><option value="">不指定学校</option>${(st.plans || []).map(p => { const k = riyuKeyOf(p); return `<option value="${ivmEsc(k)}" ${st.school === k ? 'selected' : ''}>${ivmEsc(ivmSchoolName(st, k) || '（未命名）')}${p.exam_date ? '（' + ivmEsc(String(p.exam_date).slice(0, 10)) + '）' : ''}</option>`; }).join('')}</select></div></div>
@@ -244,11 +258,31 @@ function ivmDrop(id, i) { IVM_ST[id].sel.splice(i, 1); ivmRender(id); }
 function ivmSet(id, i, f, v) { IVM_ST[id].sel[i][f] = v; }
 function ivmRate(id, i, r) { const x = IVM_ST[id].sel[i]; x.rating = x.rating === r ? '' : r; ivmRender(id); }
 function ivmRateAll(id, r) { const st = IVM_ST[id]; st.overall_rating = st.overall_rating === r ? '' : r; ivmRender(id); }
-function ivmSetSchool(id, k) { const st = IVM_ST[id]; st.school = k; st.sel.forEach(x => { if (!x.free) x.prepared = ivmPrepared(st, x.item_key); }); ivmRender(id); }
+// 版本名（只有该专业有 ≥2 个已公开版本才显示 / 才写进记录）
+function ivmVariantName(st) {
+  const b = st && st.bank; if (!b) return '';
+  const vs = ivbVariantsFor(b.major_key); if (vs.length < 2) return '';
+  return ivbVariantLabel(vs.find(v => v.variant === b.variant) || b);
+}
+// 换学校：题库跟着该校的版本换；已选的题保留，不在新版本题库里的打标记提示
+async function ivmSetSchool(id, k) {
+  const st = IVM_ST[id]; st.school = k;
+  try {
+    const key = st.bank ? st.bank.major_key : (st.student ? ivbKeyFor(st.student) : '');
+    if (key) {
+      const plan = (st.plans || []).find(p => riyuKeyOf(p) === k) || null;
+      const v = ivbVariantFor(st.student, plan, null, key);
+      if (!st.bank || v !== st.bank.variant) { const nb = await ivbLoad(key, false, v); if (nb) { st.bank = nb; st.openCh = {}; } }
+    }
+  } catch (e) { /* 读取失败：保持原题库 */ }
+  const has = new Set(); ((st.bank && st.bank.chapters) || []).forEach(c => (c.items || []).forEach(i => has.add(i.key)));
+  st.sel.forEach(x => { if (x.free) return; x._miss = !!st.bank && !has.has(x.item_key); if (!x._miss) x.prepared = ivmPrepared(st, x.item_key); });
+  ivmRender(id);
+}
 // 保存用：返回 mock 对象；没有任何内容返回 null（调用方就把 mock 键删掉）。表单没打开过（没 mount）返回 undefined = 不要动原有的 mock
 function ivmCollect(id) {
   const st = IVM_ST[id]; if (!st || st.sel == null) return undefined;
-  const m = { school_key: st.school || '', school_name: ivmSchoolName(st, st.school), qa: st.sel.map(x => ({ item_key: x.item_key, q: x.q, free: !!x.free, prepared: x.free ? '' : (x.prepared || ivmPrepared(st, x.item_key) || ''), answer: x.answer || '', rating: x.rating || '', comment: x.comment || '' })), overall_rating: st.overall_rating || '', overall: st.overall || '', next: st.next || '' };
+  const m = { school_key: st.school || '', school_name: ivmSchoolName(st, st.school), variant: st.bank ? (st.bank.variant || '') : '', variant_label: ivmVariantName(st), qa: st.sel.map(x => ({ item_key: x.item_key, q: x.q, free: !!x.free, prepared: x.free ? '' : (x.prepared || (x._miss ? '' : ivmPrepared(st, x.item_key)) || ''), answer: x.answer || '', rating: x.rating || '', comment: x.comment || '' })), overall_rating: st.overall_rating || '', overall: st.overall || '', next: st.next || '' };
   return ivmHas(m) ? m : null;
 }
 // 把 mock 合并进已有的 daily_record（其他键 study / plan / extra… 原样保留）
@@ -311,7 +345,7 @@ function ivmVDraw() {
     <span style="font-size:11px;color:var(--text-3,#999)">共 ${total} 行</span></div>
   <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--bg,#f7f5f0);text-align:left">${['专业', '学生', '面试目标院校', '考试日期', '状态', '次数', '最近一次', '老师反馈'].map(h => `<th style="padding:6px 8px;border-bottom:1px solid var(--border,#e2ded6);white-space:nowrap">${h}</th>`).join('')}</tr></thead><tbody>
   ${show.map(r => { const last = r.ms[0], lm = last ? ivmOf(last) : null; const st = { todo: '#999', doing: '#2a6aad', done: '#6a6560' }[r.status];
-    return `<tr style="border-bottom:1px solid var(--border-light,#ede9e2);vertical-align:top"><td style="padding:6px 8px">${ivmEsc((typeof MAJORS !== 'undefined' && MAJORS[r.s.major]) || r.s.major || '')}</td><td style="padding:6px 8px;white-space:nowrap">${ivmEsc(r.s.name)}</td><td style="padding:6px 8px">${ivmEsc(r.name)}</td><td style="padding:6px 8px;white-space:nowrap">${ivmEsc(r.exam || '—')}</td>
+    return `<tr style="border-bottom:1px solid var(--border-light,#ede9e2);vertical-align:top"><td style="padding:6px 8px">${ivmEsc((typeof MAJORS !== 'undefined' && MAJORS[r.s.major]) || r.s.major || '')}</td><td style="padding:6px 8px;white-space:nowrap">${ivmEsc(r.s.name)}</td><td style="padding:6px 8px">${ivmEsc(r.name)}${lm && lm.variant_label ? `<span style="color:var(--text-3,#999)"> · ${ivmEsc(lm.variant_label)}</span>` : ''}</td><td style="padding:6px 8px;white-space:nowrap">${ivmEsc(r.exam || '—')}</td>
       <td style="padding:6px 8px;color:${st};white-space:nowrap">${IVM_STATUS[r.status]}</td><td style="padding:6px 8px">${r.ms.length}</td>
       <td style="padding:6px 8px;white-space:nowrap">${last ? ivmEsc(ivmDate(last)) + (last.actual_duration ? ` · ${last.actual_duration}分` : '') : '—'}</td>
       <td style="padding:6px 8px;max-width:340px">${lm ? `<details><summary style="cursor:pointer;color:var(--text-2,#5a5650)">${lm.overall_rating ? ivmEsc(lm.overall_rating) + ' ' : ''}${ivmEsc(String(lm.overall || '（见详情）').slice(0, 40))}</summary>${ivmDetailHtml(last)}</details>` : '—'}</td></tr>`; }).join('') || '<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--text-3,#999)">没有符合条件的记录</td></tr>'}

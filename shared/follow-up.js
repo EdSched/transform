@@ -928,7 +928,7 @@ async function focusOpenSummary(sid) {
     });
     if (dr.issue || dr.issue_advice) out.push(`问题：${[dr.issue, dr.issue_advice].filter(Boolean).join('；')}`);
     if (dr.extra) out.push(`补充：${dr.extra}`);
-    if (dr.mock && typeof ivmHas === 'function' && ivmHas(dr.mock)) out.push(`模拟面试：${[dr.mock.school_name, dr.mock.overall_rating ? '整体 ' + dr.mock.overall_rating : '', String(dr.mock.overall || '').slice(0, 40)].filter(Boolean).join(' · ')}`);
+    if (dr.mock && typeof ivmHas === 'function' && ivmHas(dr.mock)) out.push(`模拟面试：${[(typeof ivmSchoolOf === 'function' ? ivmSchoolOf(dr.mock) : dr.mock.school_name), dr.mock.overall_rating ? '整体 ' + dr.mock.overall_rating : '', String(dr.mock.overall || '').slice(0, 40)].filter(Boolean).join(' · ')}`);
     return out.join('\n');
   };
   const mtgHtml = errHtml(bkIdR, bkNmR) + (recs.length ? recs.map(b => `<div style="font-size:12px;padding:6px 0;border-top:1px solid #eee"><span style="color:#2a6a9a;font-family:monospace">${fuEsc(b.slot_date || '')}</span> ${b.assigned_teacher ? '<span style="color:#888">' + fuEsc(b.assigned_teacher) + '老师</span>' : ''}${interviewLateNote(b) ? ' <span style="color:#999;font-size:10px">' + fuEsc(interviewLateNote(b)) + '</span>' : ''}<div style="white-space:pre-wrap;line-height:1.7;color:#444;margin-top:2px">${fuEsc(recText(b.daily_record))}</div></div>`).join('') : '<div style="font-size:11px;color:#aaa">暂无面谈记录</div>');
