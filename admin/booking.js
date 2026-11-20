@@ -1780,6 +1780,10 @@ function openRecord(id){
   if(slotDt>new Date()){warn.style.display='block';warn.textContent=`⚠ 面谈还未开始（${b.slot_date} ${b.slot_time_range||''}），提前记录请准确填写实际面谈时间。`}
   else warn.style.display='none';
   const r=b.daily_record||{};
+  const isMock=b.type==='mock'&&typeof ivmMount==='function';   // 模拟面试：标准面谈字段换成逐题记录表单
+  document.getElementById('recStdFields').style.display=isMock?'none':'';
+  document.getElementById('ivmAdminBox').innerHTML=isMock?`<div id="ivm_form_${id}"></div>`:'';
+  if(isMock) ivmMount(b);
   const at=b.actual_time||'';
   document.getElementById('recActualDate').value=at.slice(0,10)||'';
   document.getElementById('recActualTime').value=at.slice(11,16)||'';
@@ -1838,7 +1842,7 @@ async function saveRecord(){
     const x = document.getElementById(`${prefix}_x`)?.value || '';
     return (y && m && x) ? `${y}年${m}月${x}` : '';
   };
-  const daily_record={
+  const daily_record=(b.type==='mock'&&typeof ivmMergeRecord==='function')?ivmMergeRecord(b,id):{
     study_status:document.getElementById('rec_study_status').value,study_advice:document.getElementById('rec_study_advice').value,study_deadline:readDeadline('rec_study_deadline'),
     plan_status:document.getElementById('rec_plan_status').value,plan_advice:document.getElementById('rec_plan_advice').value,plan_deadline:readDeadline('rec_plan_deadline'),
     apply_status:document.getElementById('rec_apply_status').value,apply_advice:document.getElementById('rec_apply_advice').value,apply_deadline:readDeadline('rec_apply_deadline'),

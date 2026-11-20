@@ -171,8 +171,10 @@
     <div id="recordViewArea" style="display:none"></div>
     <!-- 编辑模式 -->
     <div id="recordEditArea">
+    <div id="ivmAdminBox"></div><!-- 模拟面试：显示逐题记录表单（shared/mock-interview.js） -->
     <div class="form-group"><label class="form-label">实际面谈时间</label><input type="date" id="recActualDate" style="margin-bottom:4px">
 <input type="time" id="recActualTime"></div>
+    <div id="recStdFields">
     <div class="modal-section">
       <div class="modal-section-title">知识学习进展</div>
       <div class="form-group"><label class="form-label">状态</label>
@@ -266,6 +268,7 @@
       <div class="modal-section-title">补充</div>
       <div class="form-group" style="margin:0"><textarea id="rec_extra" rows="3" placeholder="语学成绩、学生诉求、评价等…"></textarea></div>
     </div>
+    </div><!-- /recStdFields -->
     </div><!-- /recordEditArea -->
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeModal('recordModal')">关闭</button>
@@ -803,11 +806,14 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
 <script src="../shared/vendor/supabase.min.js"></script>
 <script src="../shared/supabase.js?v=20270325"></script>
-<script src="../shared/constants.js?v=20270401"></script>
+<script src="../shared/constants.js?v=20270422"></script>
 <script src="../shared/search.js?v=20270313"></script>
 <script src="../shared/student-table.js?v=20270405"></script>
-<script src="../shared/progress-card.js?v=20270401"></script>
-<script src="../shared/riyu.js?v=20270328"></script>
+<script src="../shared/progress-card.js?v=20270422"></script>
+<script src="../shared/riyu.js?v=20270420"></script>
+<script src="../shared/interview-bank.js?v=20270421"></script>
+<script src="../shared/mock-interview.js?v=20270422"></script>
+<script src="../shared/interview-import.js?v=20270423"></script>
 <script src="../shared/submissions.js?v=20270401"></script>
 <script src="../shared/doc-versions.js?v=20270325"></script>
 <script src="../shared/plan-review.js?v=20261110"></script>
@@ -818,7 +824,7 @@
 <script src="../shared/success-cases.js?v=20270401"></script>
 <script src="../shared/materials.js?v=20261110"></script>
 <script src="../shared/schoolplan.js?v=20270404"></script>
-<script src="../shared/student-detail.js?v=20270401"></script>
+<script src="../shared/student-detail.js?v=20270422"></script>
 <script src="../shared/claim.js?v=20270313"></script>
 <script src="../shared/vip-catalog.js?v=20270313"></script>
 <script src="../shared/tasks.js?v=20270401"></script>
@@ -830,21 +836,22 @@
 <script src="attendance.js?v=20270313"></script>
 <script src="../shared/workrec-table.js?v=20270313"></script>
 <script src="../shared/payroll-core.js?v=20270314"></script>
-<script src="../shared/follow-up.js?v=20270401"></script>
+<script src="../shared/follow-up.js?v=20270422"></script>
 <script src="payroll.js?v=20270314"></script>
 <script src="../shared/admission-group.js?v=20261110"></script>
 <script src="admissiondb.js?v=20261109"></script>
 <script src="admission-dedup.js?v=20261109"></script>
 <script src="admission-import.js?v=20261110"></script>
 <script src="classes.js?v=20270313"></script>
-<script src="students.js?v=20270406"></script>
+<script src="students.js?v=20270422"></script>
 <script src="followup.js?v=20270401"></script>
-<script src="materials.js?v=20270322"></script>
+<script src="materials.js?v=20270420"></script>
+<script src="interview-bank.js?v=20270421"></script>
 <script src="../shared/vip-booking.js?v=20261112"></script>
 <script src="../shared/hw-core.js?v=20270313"></script>
 <script src="../shared/vip-record.js?v=20270318"></script>
 <script src="../shared/vip-plan.js?v=20270313"></script>
-<script src="booking.js?v=20261112"></script>
+<script src="booking.js?v=20270422"></script>
 <script src="../shared/course-confirm.js?v=20270313"></script>
 <script src="../shared/course-room-view.js?v=20261113"></script>
 <script src="../shared/session-room-confirm.js?v=20261113"></script>

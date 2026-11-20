@@ -208,6 +208,8 @@ function studyRemindersHtml() {
   if (studyIsGakubu()) {
     if (studyRemState.riyuStarted === false) items.push({ t: '📄 志望理由书 · 还没有开始', go: "switchStudyTab('plan')" });
   } else if (!studyData.planDraft) items.push({ t: '📄 计划书 · 还没有开始', go: "switchStudyTab('plan')" });
+  const ivr = (typeof ivsReminderItem === 'function') ? ivsReminderItem() : null;   // 面试稿没写完（有模拟面试预约或考试在 60 天内时才提醒）
+  if (ivr) items.push(ivr);
   if (hwLoaded) {
     const wk = weekRange();
     const todo = hwSessions.filter(x => hwIsCur(x, wk) && !hwSubs[x.id])
@@ -231,6 +233,7 @@ async function studyRemindersLoad() {
   try {
     await Promise.all([
       studyHwFetch().catch(() => {}),
+      (typeof ivsReminderLoad === 'function') ? ivsReminderLoad().catch(() => {}) : null,
       studyIsGakubu()
         ? sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=eq.gakubu_riyu&select=id&limit=1`)
             .then(r => { studyRemState.riyuStarted = !!(r && r.length) || !!studyData.planDraft; }).catch(() => {})
@@ -677,6 +680,7 @@ let rsState = { kind: '', wrapId: '', guide: null, subs: [], vers: [], drafts: {
 function renderRiyuTab() { return riyuStudentShell('gakubu_riyu'); }
 
 function riyuStudentShell(kind) {
+  if (kind === RIYU_INTERVIEW_KIND && typeof ivsShell === 'function') return ivsShell();   // 面试准备：按专业题库作答（student/interview-prep.js）
   const wrapId = 'rsWrap_' + kind;
   setTimeout(() => riyuStudentLoad(kind, wrapId), 0);
   return `<div id="${wrapId}"><div style="text-align:center;padding:36px;color:var(--text-muted);font-size:12px">加载中…</div></div>`;
@@ -1046,7 +1050,8 @@ function renderPlanTab() {
 async function studyPlanBarLoad() {
   const bar = document.getElementById('plan_doc_bar'); if (!bar) return;
   await riyuMailSavedLoad(true);
-  const kinds = riyuPlanKindsFor(studyStudent);   // 面试稿只对大学院文科
+  if (typeof ivbForStudent === 'function') await ivbForStudent(studyStudent).catch(() => {});   // 面试准备：该专业有已公开题库才显示
+  const kinds = riyuPlanKindsFor(studyStudent);
   if (!kinds.length) {
     if (studyPlanDoc) { studyPlanDoc = ''; const r = document.getElementById('plan_doc_research'); if (r) r.style.display = ''; const m = document.getElementById('plan_doc_mail'); if (m) m.innerHTML = ''; }
     bar.innerHTML = ''; return;
@@ -1068,12 +1073,13 @@ function studyPlanBarRender() {
   const text = {
     grad_prof_mail: (!plans.length ? '请先选志望校' : `已提交 ${c.grad_prof_mail.submitted}/${c.grad_prof_mail.total} 校${c.grad_prof_mail.agreed ? ' · 同意 ' + c.grad_prof_mail.agreed : ''}`),
     grad_inquiry_mail: c.grad_inquiry_mail.total ? `已写 ${c.grad_inquiry_mail.total} 封` : '还没写',
-    grad_interview: (!plans.length ? '请先选志望校' : `已提交 ${riyuCounts(plans, studyPlanSubs.grad_interview || [], 'grad_interview').submitted}/${plans.length} 校`),
+    grad_interview: (typeof ivsChipText === 'function' ? ivsChipText(studyPlanSubs.grad_interview) : ''),
   };
   const chip = (k, name, sub) => `<span style="cursor:pointer;padding:5px 12px;border-radius:3px;font-size:12px;border:1px solid ${studyPlanDoc === k ? 'var(--accent)' : 'var(--border)'};background:${studyPlanDoc === k ? 'var(--btn-bg,#efe9e1)' : 'var(--surface)'};color:${studyPlanDoc === k ? 'var(--btn-fg,#3a2e24)' : 'var(--text-secondary)'};font-weight:${studyPlanDoc === k ? '600' : '400'}" onclick="studyPlanDocSwitch('${k}')">${name}${sub ? `<span style="font-size:10px;opacity:.8;margin-left:6px">${escA(sub)}</span>` : ''}</span>`;
-  bar.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${chip('', '研究计划书', '')}${kinds.map(k => chip(k, RIYU_DOC_NAME[k], text[k])).join('')}</div>`;
+  bar.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${chip('', '研究计划书', '')}${kinds.map(k => chip(k, k === RIYU_INTERVIEW_KIND ? '面试准备' : RIYU_DOC_NAME[k], text[k])).join('')}</div>`;
 }
 function studyPlanDocSwitch(k) {
+  if (typeof ivsFlush === 'function') ivsFlush();   // 面试准备里还没保存的内容先存
   if (studyPlanDoc && typeof riyuStudentCollect === 'function') riyuStudentCollect();   // 邮件里还没保存的内容先记下
   studyPlanDoc = k || '';
   const r = document.getElementById('plan_doc_research'), m = document.getElementById('plan_doc_mail');
@@ -1452,7 +1458,7 @@ function buildStudyRoadmap() {
     apply:    { done: appliedN > 0 || ['已出愿','已合格'].includes(apply), active: ['联系教授中','材料准备中'].includes(apply) || contactedN > 0,
                 cur: appliedN ? `已出愿 ${appliedN} 校` : (apply || '未开始') },
     kakomon:  { done: isDone('exam', exam), active: !!exam || kakomonN > 0 || interviewN > 0,
-                cur: [(kakomonN ? `过去问已开始 ${kakomonN} 校` : ''), (interviewN ? `面试稿完成 ${interviewN} 校` : ''), exam || ''].filter(Boolean).join(' · ') || '未开始' },
+                cur: [(kakomonN ? `过去问已开始 ${kakomonN} 校` : ''), (interviewN ? `面试稿完成 ${interviewN} 校` : ''), (typeof ivsTimelineText === 'function' ? ivsTimelineText() : ''), exam || ''].filter(Boolean).join(' · ') || '未开始' },
     exam:     { done: passedN > 0 || apply === '已合格', active: appliedN > 0 || apply === '已出愿',
                 cur: passedN ? `合格 ${passedN} 校 🎉` : apply === '已合格' ? '已合格' : appliedN ? `已出愿 ${appliedN} 校・待考试` : '—' },
   };

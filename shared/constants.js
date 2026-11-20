@@ -1070,6 +1070,7 @@ function buildRecordText(b) {
   });
   if (r.issue || r.issue_advice) { lines.push('❓ 目前困惑 / 问题'); if (r.issue) lines.push(`问题：${r.issue}`); if (r.issue_advice) lines.push(`建议：${r.issue_advice}`); if (r.issue_deadline) lines.push(`期限：${r.issue_deadline}`); lines.push(''); }
   if (r.extra) { lines.push('📌 补充'); lines.push(r.extra); lines.push(''); }
+  if (typeof ivmText === 'function') { const mt = ivmText(b); if (mt) { lines.push(mt); lines.push(''); } }   // 模拟面试记录（shared/mock-interview.js）
   return lines.join('\n');
 }
 

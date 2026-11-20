@@ -218,6 +218,9 @@ function smAllowedItems() {
     allowed.push(['focus', '⭐ 重点关注']);
     allowed.push(['monthly', '📅 月度学习情况']);  // 月度：跟重点关注一样自动出现
   }
+  if (items.includes('progress')) {
+    allowed.push(['mock', '🎤 模拟面试']);   // 有考学进度权限就有（范围同考学进度：学生池已按 teacherScope 裁剪）
+  }
   // 若已在 student_mgmt_items 显式勾了 monthly 也不重复
 
   return allowed;
@@ -377,8 +380,15 @@ function tsmRefreshPage(light) {
   else if (smTab === 'records') { if (light && document.getElementById('tsr_list')) tsrRenderList(); else tsrRender(); }
   else if (smTab === 'monthly') renderMonthlyReport(box);
   else if (smTab === 'focus') focusRender();
+  else if (smTab === 'mock') renderTeacherMock(box);
   else if (light && document.getElementById('tsa_list')) tsaRenderList();
   else tsaRender();
+}
+
+// 🎤 模拟面试：学生范围 = 学生池（已按 teacherScope 裁剪）∩ 全局筛选，只看在籍
+function renderTeacherMock(box) {
+  if (typeof ivmRenderView !== 'function') { box.innerHTML = '<div class="empty">模拟面试模块未加载</div>'; return; }
+  ivmRenderView(box, () => (tsmPool || []).filter(s => (s.status || 'active') === 'active' && tsmMatch(s, 'status')));
 }
 
 function renderStudentMgmt(mc) {
@@ -406,6 +416,7 @@ function renderStudentMgmt(mc) {
     else if (tab === 'meetings') renderTsaMeetings(box);
     else if (tab === 'monthly') renderMonthlyReport(box);
     else if (tab === 'focus') renderTeacherFocus(box);
+    else if (tab === 'mock') renderTeacherMock(box);
     else renderTeacherStudents(box);
   });
 }
