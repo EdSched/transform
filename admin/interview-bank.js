@@ -1,15 +1,16 @@
 // ══════════════════════════════════
 // interview-bank.js（admin）— 考学进度 →「📁 出愿材料准备」→「🎤 面试题库」
 // 按专业维护面试题库（interview_banks 表）：标题 / 说明 / 面试稿标准 / 统一手册 / 章节与题目 / 一键批量导入 / 公开开关
+// 一个专业下可以有多个「版本」（主键 major_key + variant；variant 空 = 默认版本），各版本独立维护、独立公开；导入作用于当前所选版本
 // 依赖：shared/supabase.js、shared/riyu.js（riyuEsc / riyuMd）、shared/interview-bank.js、shared/interview-import.js、shared/constants.js
 // ══════════════════════════════════
-let ivba = { dom: '', major: '', bank: null, fromDb: false, dirty: false, list: {}, openCh: {}, openIt: {}, imp: null, tab: 'bank', res: [], resEdit: null };
+let ivba = { dom: '', major: '', variant: '', add: null, bank: null, fromDb: false, dirty: false, list: {}, openCh: {}, openIt: {}, imp: null, tab: 'bank', res: [], resEdit: null };
 
 async function renderInterviewBankAdmin() {
   const box = document.getElementById('mat_body'); if (!box) return;
   try {
-    const rows = await sbAll('/rest/v1/interview_banks?select=major_key,published,title');
-    ivba.list = {}; (rows || []).forEach(r => { ivba.list[r.major_key] = r; });
+    const rows = await sbAll('/rest/v1/interview_banks?select=major_key,variant,variant_label,published,title');
+    ivba.list = {}; (rows || []).forEach(r => { r.variant = r.variant || ''; ivba.list[ivbCacheKey(r.major_key, r.variant)] = r; });
     ivba.res = await sbAll('/rest/v1/interview_resources?select=*&order=sort_order.asc').catch(() => []);
   } catch (e) { box.innerHTML = `<div style="font-size:12px;color:var(--danger);padding:16px">读取失败：${riyuEsc(e.message)}（如果提示表不存在，请先执行 seed/interview_bank.sql）</div>`; return; }
   ivbaRender();
@@ -20,18 +21,45 @@ function ivbaMajorOptions(dom) {
   const gs = Object.keys(MAJOR_GROUPS).filter(g => groupDomain(g) === dom && !ms.some(m => m.k === g)).map(g => ({ k: g, label: groupLabel(g) + '（专业组）' }));
   return ms.concat(gs);
 }
-function ivbaMark(k) { const r = ivba.list[k]; return r ? (r.published ? '　· 已公开' : '　· 已建（未公开）') : ''; }
+// 专业下拉里的状态：单版本 = 已公开 / 已建（未公开）；多版本 = 已建 N 版 / 已公开 M 版
+function ivbaMark(k) {
+  const rs = Object.values(ivba.list).filter(r => r.major_key === k);
+  if (!rs.length) return '';
+  if (rs.length === 1) return rs[0].published ? '　· 已公开' : '　· 已建（未公开）';
+  return `　· 已建 ${rs.length} 版 / 已公开 ${rs.filter(r => r.published).length} 版`;
+}
+// 某专业的版本行（默认版本一定在；正在编辑还没保存的版本也列出来），默认在前
+function ivbaVariantRows(major) {
+  const rows = Object.values(ivba.list).filter(r => r.major_key === major).map(r => Object.assign({ exists: true }, r));
+  if (!rows.some(r => r.variant === '')) rows.push({ major_key: major, variant: '', variant_label: '', published: false, exists: false });
+  if (ivba.major === major && !rows.some(r => r.variant === ivba.variant)) rows.push({ major_key: major, variant: ivba.variant, variant_label: '', published: false, exists: false });
+  rows.forEach(r => { if (ivba.major === major && ivba.bank && r.variant === ivba.variant) r.variant_label = ivba.bank.variant_label || ''; });   // 正在编辑的版本：显示名用输入框里的
+  return rows.sort((a, b) => a.variant === '' ? -1 : b.variant === '' ? 1 : a.variant.localeCompare(b.variant));
+}
+function ivbaMajorName(k) { return MAJORS[k] || groupLabel(k) || k; }
+function ivbaBlankBank(k, v, label) {
+  return { major_key: k, variant: v || '', variant_label: label || '', match_words: [], title: ivbaMajorName(k) + (label ? ' · ' + label : '') + ' · 面试稿', intro: '', standard: '', chapters: [], manual_files: [], ref_files: [], published: false };
+}
 function ivbaPickDomain(d) {
   if (ivba.dirty && !confirm('当前修改还没有保存，切换后会丢失。继续？')) { ivbaRender(); return; }
-  ivba.dom = d; ivba.major = ''; ivba.bank = null; ivba.dirty = false; ivbaRender();
+  ivba.dom = d; ivba.major = ''; ivba.variant = ''; ivba.bank = null; ivba.dirty = false; ivbaRender();
 }
 async function ivbaPickMajor(k) {
   if (ivba.dirty && !confirm('当前修改还没有保存，切换后会丢失。继续？')) { ivbaRender(); return; }
-  ivba.major = k; ivba.dirty = false; ivba.openCh = {}; ivba.openIt = {};
-  if (!k) { ivba.bank = null; ivbaRender(); return; }
-  const b = await ivbLoad(k, true);
+  if (!k) { ivba.major = ''; ivba.variant = ''; ivba.dirty = false; ivba.bank = null; ivbaRender(); return; }
+  await ivbaOpen(k, '');
+}
+async function ivbaPickVariant(v) {
+  if (v === ivba.variant) return;
+  if (ivba.dirty && !confirm('当前修改还没有保存，切换后会丢失。继续？')) return;
+  await ivbaOpen(ivba.major, v);
+}
+async function ivbaOpen(k, v) {
+  ivba.major = k; ivba.variant = v || ''; ivba.dirty = false; ivba.openCh = {}; ivba.openIt = {}; ivba.add = null;
+  const b = await ivbLoad(k, true, ivba.variant);
   ivba.fromDb = !!b;
-  ivba.bank = b ? JSON.parse(JSON.stringify(b)) : { major_key: k, title: (MAJORS[k] || groupLabel(k) || k) + ' · 面试稿', intro: '', standard: '', chapters: [], manual_files: [], ref_files: [], published: false };
+  ivba.bank = b ? JSON.parse(JSON.stringify(b)) : ivbaBlankBank(k, ivba.variant, '');
+  if (!b && !ivba.variant) ivba.bank.title = ivbaMajorName(k) + ' · 面试稿';
   ivbaRender();
 }
 const IVBA_INP = 'width:100%;box-sizing:border-box;font-size:12px;padding:6px 8px;border:1px solid var(--border);border-radius:2px;background:var(--surface);font-family:inherit';
@@ -43,7 +71,7 @@ function ivbaTabBar() {
 }
 function ivbaSetTab(k) {
   if (ivba.tab === 'bank' && ivba.dirty && !confirm('当前修改还没有保存，切换后会丢失。继续？')) return;
-  if (ivba.tab === 'bank' && ivba.dirty) { ivba.dirty = false; ivba.bank = null; ivba.major = ''; }
+  if (ivba.tab === 'bank' && ivba.dirty) { ivba.dirty = false; ivba.bank = null; ivba.major = ''; ivba.variant = ''; }
   ivba.tab = k; ivbaRender();
 }
 function ivbaRender() {
@@ -59,9 +87,17 @@ function ivbaRender() {
   const b = ivba.bank;
   if (!b) { box.innerHTML = ivbaTabBar() + sel + '<div style="font-size:12px;color:var(--text-3);padding:20px 0">选好专业后，这里可以导入或编辑该专业的面试题库。学生只会看到「已公开」的题库。</div>'; return; }
   const n = ivbCount(b);
-  box.innerHTML = ivbaTabBar() + sel + `
-  ${ivba.fromDb ? '' : '<div style="font-size:11px;color:var(--warn,#b8860b);background:#fff8e6;border:1px solid #e8d4a0;border-radius:3px;padding:6px 10px;margin-bottom:10px">这个专业还没有题库。可以直接点「导入」批量导入手册，保存后才会正式写入（如果保存失败，请先执行 seed/interview_bank.sql 建表）。</div>'}
+  const vrows = ivbaVariantRows(ivba.major);
+  const vbar = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px"><span style="font-size:11px;color:var(--text-3)">题库版本：</span>${chipFold(vrows.map(r => { const on = r.variant === ivba.variant; return { on, html: `<div class="filter-chip${on ? ' active' : ''}" onclick="ivbaPickVariant('${riyuEsc(r.variant)}')" style="font-size:12px;padding:3px 12px">${riyuEsc(ivbVariantLabel(r))}${vrows.length > 1 && !r.published ? '<span style="font-size:10px;opacity:.6;margin-left:5px">未公开</span>' : ''}</div>` }; }))}<div class="filter-chip" onclick="ivbaVariantAdd()" style="font-size:12px;padding:3px 12px;border-style:dashed">＋ 新增版本</div></div>`;
+  box.innerHTML = ivbaTabBar() + sel + vbar + `
+  ${ivba.fromDb ? '' : `<div style="font-size:11px;color:var(--warn,#b8860b);background:#fff8e6;border:1px solid #e8d4a0;border-radius:3px;padding:6px 10px;margin-bottom:10px">${ivba.variant ? '这个版本' : '这个专业'}还没有题库。可以直接点「导入」批量导入手册，保存后才会正式写入（如果保存失败，请先执行 seed/interview_bank.sql 和 seed/interview_variants.sql）。</div>`}
   <div style="border:1px solid var(--border);border-radius:4px;padding:12px 14px;background:var(--bg);margin-bottom:12px">
+    <div style="display:grid;grid-template-columns:200px 1fr auto;gap:10px;margin-bottom:8px;align-items:end">
+      <div>${ivbaLab('版本显示名（学生看到；默认版本可改名，例：経営学研究科）')}<input value="${riyuEsc(b.variant_label || '')}" placeholder="${ivba.variant ? '例：MBA' : '不填显示「标准版」'}" oninput="ivba.bank.variant_label=this.value;ivbaTouch()" style="${IVBA_INP}"></div>
+      <div>${ivbaLab('自动判断关键词（逗号分隔；志望校的校名 / 学部 / 研究科含其中任一词，就自动用这个版本）')}<input value="${riyuEsc((b.match_words || []).join(', '))}" placeholder="例：MBA, ビジネススクール, 専門職" oninput="ivba.bank.match_words=ivbWords(this.value);ivbaTouch()" style="${IVBA_INP}"></div>
+      ${ivba.variant ? `<button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="ivbaVariantDel()">删除此版本</button>` : ''}
+    </div>
+    ${ivba.variant ? `<div style="font-size:10px;color:var(--text-3);margin-bottom:8px">版本短码：${riyuEsc(ivba.variant)}（建立后不能改）</div>` : ''}
     <div style="display:grid;grid-template-columns:240px 1fr;gap:10px;margin-bottom:8px">
       <div>${ivbaLab('标题')}<input value="${riyuEsc(b.title)}" oninput="ivba.bank.title=this.value;ivbaTouch()" style="${IVBA_INP}"></div>
       <div>${ivbaLab('顶部说明（学生页最上方显示；可用 **粗体**、- 列表）')}<textarea rows="3" oninput="ivba.bank.intro=this.value;ivbaTouch()" style="${IVBA_INP};resize:vertical;line-height:1.7">${riyuEsc(b.intro)}</textarea></div>
@@ -201,38 +237,116 @@ function ivbaFileDel(i) {
   ivba.bank.manual_files.splice(i, 1); ivbaTouch(); ivbaRender();
 }
 
-// ── 保存（整库一次 upsert）──
+// ── 保存（整库一次 upsert；主键 major_key + variant，MBA 不会覆盖研究科）──
+function ivbaRowOf() {
+  const b = ivba.bank;
+  return { major_key: ivba.major, variant: ivba.variant || '', variant_label: String(b.variant_label || '').trim(), match_words: ivbWords(b.match_words),
+    title: (b.title || '').trim() || '面试稿', intro: b.intro || '', standard: b.standard || '', chapters: b.chapters, manual_files: b.manual_files || [], ref_files: b.ref_files || [], published: !!b.published, updated_at: new Date().toISOString() };
+}
 async function ivbaSave() {
   const b = ivba.bank; if (!b) return;
   if (b.chapters.some(c => !String(c.title || '').trim())) { alert('每一章都要有标题'); return; }
-  const row = { major_key: ivba.major, title: (b.title || '').trim() || '面试稿', intro: b.intro || '', standard: b.standard || '', chapters: b.chapters, manual_files: b.manual_files || [], ref_files: b.ref_files || [], published: !!b.published, updated_at: new Date().toISOString() };
+  const row = ivbaRowOf();
   const btn = document.getElementById('ivba_save'); if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
   try {
     const tok = (typeof __getSbToken === 'function') ? __getSbToken() : null;
-    const r = await fetch(`${SB_URL}/rest/v1/interview_banks?on_conflict=major_key`, { method: 'POST', headers: {
+    const r = await fetch(`${SB_URL}/rest/v1/interview_banks?on_conflict=major_key,variant`, { method: 'POST', headers: {
       'apikey': SB_KEY, 'Authorization': 'Bearer ' + (tok || SB_KEY), 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify([row]) });
     if (!r.ok) throw new Error(await r.text());
     const saved = (await r.json())[0];
     if (!saved) throw new Error('没有写入成功（请确认已执行建表 SQL，且当前账号有权限）');
-    ivbCache[ivba.major] = ivbNorm(saved);
-    ivba.list[ivba.major] = { major_key: ivba.major, published: !!saved.published, title: saved.title };
-    ivbaMarkPublished(ivba.major, !!saved.published);
+    saved.variant = saved.variant || '';
+    ivbCache[ivbCacheKey(ivba.major, saved.variant)] = ivbNorm(saved);
+    ivba.list[ivbCacheKey(ivba.major, saved.variant)] = { major_key: ivba.major, variant: saved.variant, variant_label: saved.variant_label || '', published: !!saved.published, title: saved.title };
+    ivbSyncPublished(saved);
     ivba.fromDb = true; ivba.dirty = false;
     ivbaRender();
     const msg = document.getElementById('ivba_msg'); const t = saved.published ? '✓ 已保存并公开：该专业学生在「计划书」里可以看到「面试准备」' : '✓ 已保存（当前是隐藏状态，学生看不到）';
     if (msg) { msg.textContent = t; setTimeout(() => { if (msg.textContent === t) msg.textContent = ''; }, 6000); }
   } catch (e) { alert('保存失败：' + e.message); if (btn) { btn.disabled = false; btn.textContent = '保存'; } }
 }
-function ivbaMarkPublished(k, pub) {   // 同步 shared/interview-bank.js 里的「已公开专业」列表
-  ivbPublishedKeys = ivbPublishedKeys || [];
-  const i = ivbPublishedKeys.indexOf(k);
-  if (pub && i < 0) ivbPublishedKeys.push(k); else if (!pub && i >= 0) ivbPublishedKeys.splice(i, 1);
+
+// ── 新增版本 / 删除版本 ──
+function ivbaVariantAdd() {
+  if (!ivba.major) return;
+  if (ivba.dirty && !confirm('当前修改还没有保存，新增版本后会丢失。继续？')) return;
+  ivba.add = { label: '', code: '', touched: false, copy: '', err: '' };
+  ivbaAddRender();
+}
+function ivbaAddClose() { ivba.add = null; const m = document.getElementById('ivba_modal'); if (m) m.innerHTML = ''; }
+function ivbaAddRender() {
+  const m = document.getElementById('ivba_modal'); if (!m || !ivba.add) return;
+  const a = ivba.add, vrows = ivbaVariantRows(ivba.major).filter(r => r.exists);
+  m.innerHTML = `<div style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)ivbaAddClose()">
+    <div style="background:var(--surface,#fff);border-radius:6px;max-width:460px;width:100%;padding:16px 18px">
+      <div style="display:flex;align-items:center;margin-bottom:10px"><b style="font-size:14px">新增版本 · ${riyuEsc(ivbaMajorName(ivba.major))}</b><span style="margin-left:auto;cursor:pointer;font-size:18px" onclick="ivbaAddClose()">×</span></div>
+      ${ivbaLab('版本显示名（学生看到，例：MBA）')}<input id="ivba_add_label" value="${riyuEsc(a.label)}" oninput="ivbaAddLabel(this.value)" style="${IVBA_INP};margin-bottom:8px">
+      ${ivbaLab('版本短码（英文小写字母 / 数字 / 下划线，建立后不能改）')}<input id="ivba_add_code" value="${riyuEsc(a.code)}" oninput="ivba.add.code=this.value;ivba.add.touched=true" style="${IVBA_INP};margin-bottom:8px">
+      ${ivbaLab('从现有版本复制章节（可选；通用题多的话能省事）')}<select onchange="ivba.add.copy=this.value" style="${IVBA_INP};margin-bottom:8px"><option value="">不复制（空白版本）</option>${vrows.map(r => `<option value="${riyuEsc(r.variant)}|" ${a.copy === r.variant + '|' ? 'selected' : ''}>${riyuEsc(ivbVariantLabel(r))}</option>`).join('')}</select>
+      ${a.err ? `<div style="font-size:11px;color:var(--danger);margin-bottom:8px">${riyuEsc(a.err)}</div>` : ''}
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn btn-outline btn-sm" onclick="ivbaAddClose()">取消</button><button class="btn btn-primary btn-sm" onclick="ivbaAddOk()">建立</button></div>
+    </div></div>`;
+}
+function ivbaAddLabel(v) {   // 短码没手动改过时，按显示名自动给一个（中文名给不出，就要自己填）
+  const a = ivba.add; a.label = v;
+  if (!a.touched) { a.code = v.toLowerCase().replace(/[^a-z0-9_]/g, ''); const c = document.getElementById('ivba_add_code'); if (c) c.value = a.code; }
+}
+async function ivbaAddOk() {
+  const a = ivba.add; if (!a) return;
+  const label = a.label.trim(), code = a.code.trim();
+  if (!label) { a.err = '请填写版本显示名'; return ivbaAddRender(); }
+  if (!code) { a.err = '请填写版本短码（中文名无法自动生成，请手动输入英文）'; return ivbaAddRender(); }
+  if (!/^[a-z0-9_]+$/.test(code)) { a.err = '短码只能用英文小写字母、数字、下划线'; return ivbaAddRender(); }
+  if (ivbaVariantRows(ivba.major).some(r => r.variant === code)) { a.err = '这个短码已经有了，请换一个'; return ivbaAddRender(); }
+  const bank = ivbaBlankBank(ivba.major, code, label);
+  if (a.copy) {
+    const src = await ivbLoad(ivba.major, true, a.copy.slice(0, -1));
+    if (src) bank.chapters = JSON.parse(JSON.stringify(src.chapters));
+  }
+  ivba.variant = code; ivba.bank = bank; ivba.fromDb = false; ivba.openCh = {}; ivba.openIt = {};
+  ivbaAddClose(); ivbaRender();
+  await ivbaSave();   // 先建一个「隐藏」的版本，版本 chip 才会留下来；之后再导入 / 编辑
+}
+// 该版本下学生已写的面试稿数（人数）：共用答案行 _common@版本 + 记录了 / 按关键词判到这个版本的志望校的答案行
+async function ivbaVariantUsage(major, v, words) {
+  const majors = isMajorGroup(major) ? groupMajors(major) : [major];
+  const plans = await sbAll(`/rest/v1/student_school_plans?major=in.(${majors.map(encodeURIComponent).join(',')})&select=id,student_id,major,school_name,faculty,department,interview_variant`);
+  const ws = ivbWords(words).map(w => w.toLowerCase());
+  const mine = plans.filter(p => p.interview_variant != null ? p.interview_variant === v : ws.some(w => [p.school_name, p.faculty, p.department].filter(Boolean).join(' ').toLowerCase().indexOf(w) >= 0));
+  const keys = new Set(mine.map(p => p.student_id + '|' + riyuKeyOf(p))), ids = [...new Set(mine.map(p => p.student_id))];
+  const filled = r => Object.values(riyuSecs(r)).some(x => String(x || '').trim());
+  const hit = new Set();
+  for (let i = 0; i < ids.length; i += 40) {
+    const rows = await sbAll(`/rest/v1/riyu_submissions?kind=eq.${RIYU_INTERVIEW_KIND}&student_id=in.(${ids.slice(i, i + 40).map(encodeURIComponent).join(',')})&select=student_id,school_key,sections`);
+    rows.forEach(r => { if (keys.has(r.student_id + '|' + r.school_key) && filled(r)) hit.add(r.student_id); });
+  }
+  (await sbAll(`/rest/v1/riyu_submissions?kind=eq.${RIYU_INTERVIEW_KIND}&school_key=eq.${encodeURIComponent(ivbCommonKey(v))}&select=student_id,school_key,sections`)).forEach(r => { if (filled(r)) hit.add(r.student_id); });
+  return hit.size;
+}
+async function ivbaVariantDel() {
+  const v = ivba.variant; if (!v) return;   // 默认版本不允许删除
+  const label = ivbVariantLabel({ variant: v, variant_label: ivba.bank && ivba.bank.variant_label });
+  try {
+    if (ivba.fromDb) {
+      const n = await ivbaVariantUsage(ivba.major, v, ivba.bank && ivba.bank.match_words);
+      if (n > 0) { alert(`「${label}」下已有 ${n} 名学生写了面试稿，不能删除。\\n如果只是不想让学生看到，请把「公开状态」改成隐藏。`); return; }
+    }
+    if (!confirm(`删除版本「${label}」（含它的章节和题目）？不能恢复。`)) return;
+    if (ivba.fromDb) await sb(`/rest/v1/interview_banks?major_key=eq.${encodeURIComponent(ivba.major)}&variant=eq.${encodeURIComponent(v)}`, 'DELETE');
+    delete ivba.list[ivbCacheKey(ivba.major, v)]; delete ivbCache[ivbCacheKey(ivba.major, v)];
+    ivbSyncPublished({ major_key: ivba.major, variant: v, published: false });
+    await ivbaOpen(ivba.major, '');
+  } catch (e) { alert('删除失败：' + e.message); }
 }
 
 // ══ 批量导入 ══
 function ivbaImportOpen() {
   ivba.imp = { chapters: null, mode: ivba.bank.chapters.length ? 'merge' : 'new', text: '', err: '' };
   ivbaImpRender();
+}
+function ivbaImpTitle() {   // 多版本 / 非默认版本时标明导入到哪个版本，避免传错
+  const multi = ivba.variant || ivbaVariantRows(ivba.major).length > 1;
+  return multi ? '导入到：' + riyuEsc(ivbaMajorName(ivba.major)) + ' · ' + riyuEsc(ivbVariantLabel({ variant: ivba.variant, variant_label: ivba.bank && ivba.bank.variant_label })) : '导入面试题库 · ' + riyuEsc(ivbaMajorName(ivba.major));
 }
 function ivbaImpClose() { ivba.imp = null; const m = document.getElementById('ivba_modal'); if (m) m.innerHTML = ''; }
 function ivbaImpRender() {
@@ -241,7 +355,7 @@ function ivbaImpRender() {
   const cnt = cs ? iviCount(cs) : null;
   m.innerHTML = `<div style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)ivbaImpClose()">
     <div style="background:var(--surface,#fff);border-radius:6px;max-width:900px;width:100%;max-height:92vh;overflow:auto;padding:16px 18px">
-      <div style="display:flex;align-items:center;margin-bottom:8px"><b style="font-size:14px">导入面试题库 · ${riyuEsc(MAJORS[ivba.major] || groupLabel(ivba.major) || ivba.major)}</b><span style="margin-left:auto;cursor:pointer;font-size:18px" onclick="ivbaImpClose()">×</span></div>
+      <div style="display:flex;align-items:center;margin-bottom:8px"><b style="font-size:14px">${ivbaImpTitle()}</b><span style="margin-left:auto;cursor:pointer;font-size:18px" onclick="ivbaImpClose()">×</span></div>
       <div style="font-size:11px;color:var(--text-3);line-height:1.8;margin-bottom:8px">支持 .tex / .md / .docx，或直接粘贴文本。<b>PDF 在浏览器里解析不可靠，不支持</b>——手里是 PDF 的话，请先转成 Word（.docx）或 md 再导入。先预览、确认无误再导入。</div>
       <details style="font-size:11px;color:var(--text-2);margin-bottom:8px"><summary style="cursor:pointer">格式说明（md 约定）</summary>
         <pre style="white-space:pre-wrap;background:var(--bg);padding:8px;border-radius:3px;line-height:1.7"># 章标题            （tex：\\chapter{}）
@@ -328,7 +442,7 @@ function ivbaResRender() {
     return `<div style="margin-bottom:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span style="font-size:12px;font-weight:600">${cl}（${list.length}）</span><button class="btn btn-outline btn-sm" onclick="ivbaResNew('${ck}')">＋ 新增</button></div>
       ${list.map((r, i) => `<div style="border:1px solid var(--border-light);border-radius:4px;padding:6px 10px;margin-bottom:4px;background:${r.published ? 'var(--surface)' : '#f4f1ea'};display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="font-size:12px;font-weight:600;cursor:pointer" onclick="ivbaResOpen('${riyuEsc(r.id)}')">${riyuEsc(r.title)}</span>
-        <span style="font-size:10px;color:var(--text-3)">${r.major_key ? riyuEsc(MAJORS[r.major_key] || groupLabel(r.major_key)) : '通用'} · ${r.published ? '已公开' : '隐藏'}${(r.files || []).length ? ` · 文件 ${(r.files || []).length}` : ''}</span>
+        <span style="font-size:10px;color:var(--text-3)">${r.major_key ? riyuEsc(MAJORS[r.major_key] || groupLabel(r.major_key)) : '通用'}${r.major_key && r.variant ? ' · ' + riyuEsc(ivbaResVariantName(r)) : ''} · ${r.published ? '已公开' : '隐藏'}${(r.files || []).length ? ` · 文件 ${(r.files || []).length}` : ''}</span>
         <span style="margin-left:auto;display:flex;gap:4px">
           <button class="btn btn-outline btn-sm" ${i === 0 ? 'disabled' : ''} onclick="ivbaResMove('${riyuEsc(r.id)}',-1)">↑</button>
           <button class="btn btn-outline btn-sm" ${i === list.length - 1 ? 'disabled' : ''} onclick="ivbaResMove('${riyuEsc(r.id)}',1)">↓</button>
@@ -340,7 +454,8 @@ function ivbaResRender() {
     <div style="display:grid;grid-template-columns:1fr 150px 170px;gap:8px;margin-bottom:8px">
       <div>${ivbaLab('标题')}<input value="${riyuEsc(e.title)}" oninput="ivba.resEdit.title=this.value" style="${IVBA_INP}"></div>
       <div>${ivbaLab('分类')}<select onchange="ivba.resEdit.category=this.value" style="${IVBA_INP}">${IVBA_CATS.map(([k, l]) => `<option value="${k}" ${e.category === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-      <div>${ivbaLab('适用专业')}<select onchange="ivba.resEdit.major_key=this.value||null" style="${IVBA_INP}">${ivbaResMajorOpts(e.major_key)}</select></div></div>
+      <div>${ivbaLab('适用专业')}<select onchange="ivba.resEdit.major_key=this.value||null;ivba.resEdit.variant=null;ivbaResRender()" style="${IVBA_INP}">${ivbaResMajorOpts(e.major_key)}</select></div></div>
+    ${e.major_key && ivbaVariantRows(e.major_key).length > 1 ? `<div style="margin-bottom:8px;max-width:260px">${ivbaLab('适用版本')}<select onchange="ivba.resEdit.variant=this.value||null" style="${IVBA_INP}"><option value="">该专业所有版本</option>${ivbaVariantRows(e.major_key).map(r => `<option value="${riyuEsc(ivbResVariantKey(r.variant))}" ${(e.variant || '') === ivbResVariantKey(r.variant) ? 'selected' : ''}>${riyuEsc(ivbVariantLabel(r))}</option>`).join('')}</select></div>` : ''}
     ${ivbaLab('正文（可用 **粗体**、- 列表）')}<textarea rows="8" oninput="ivba.resEdit.body=this.value" style="${IVBA_INP};resize:vertical;line-height:1.7;margin-bottom:8px">${riyuEsc(e.body || '')}</textarea>
     ${ivbaLab('文件（PDF / 图片，可多个）')}
     ${(e.files || []).map((f, i) => `<div style="display:flex;gap:8px;font-size:12px;margin-bottom:3px"><a href="${riyuEsc(f.url)}" target="_blank" style="color:var(--accent)">${riyuEsc(f.name)}</a><span onclick="ivbaResFileDel(${i})" style="cursor:pointer;color:var(--danger);font-size:11px">移除</span></div>`).join('')}
@@ -350,6 +465,7 @@ function ivbaResRender() {
       <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="ivba.resEdit=null;ivbaResRender()">取消</button><button class="btn btn-primary btn-sm" onclick="ivbaResSave()">保存</button><span id="ivba_res_msg" style="font-size:11px;color:var(--ok)"></span></div>
   </div>` : ''}`;
 }
+function ivbaResVariantName(r) { const row = ivbaVariantRows(r.major_key).find(x => ivbResVariantKey(x.variant) === r.variant); return row ? ivbVariantLabel(row) : r.variant; }
 function ivbaResNew(cat) {
   const mx = ivba.res.filter(r => r.category === cat).reduce((m, r) => Math.max(m, r.sort_order || 0), 0);
   ivba.resEdit = { _new: true, id: 'ivr-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), major_key: null, category: cat, title: '', body: '', files: [], sort_order: mx + 1, published: true };
@@ -360,6 +476,7 @@ async function ivbaResSave() {
   const e = ivba.resEdit; if (!e) return;
   if (!String(e.title || '').trim()) { alert('请填写标题'); return; }
   const row = { id: e.id, major_key: e.major_key || null, category: e.category, title: e.title.trim(), body: e.body || '', files: e.files || [], sort_order: e.sort_order || 0, published: e.published !== false, updated_at: new Date().toISOString() };
+  if (e.variant || 'variant' in e) row.variant = e.variant || null;   // 适用版本：空 = 该专业所有版本（还没设过版本的资料不带这一列）
   try {
     if (e._new) await sb('/rest/v1/interview_resources', 'POST', row);
     else await sb(`/rest/v1/interview_resources?id=eq.${encodeURIComponent(e.id)}`, 'PATCH', row);

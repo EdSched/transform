@@ -428,7 +428,8 @@ async function saveStudySchoolPlans() {
       documents_required:p.documents_required,
       level:p.level, status:p.status || 'preparing', plan_role:p.plan_role === 'backup' ? 'backup' : 'target',
       kakomon_started:!!p.kakomon_started, interview_draft_done:!!p.interview_draft_done,
-    }, ((o) => Object.assign({ created_at: (o && o.created_at) || new Date().toISOString() }, spApplyFields(p, o && o.created_at)))(oldPlanById.get(p.id))));
+    }, ((o) => (o && o.interview_variant != null ? { interview_variant: o.interview_variant } : {}))(oldPlanById.get(p.id)),   // 面试题库版本：先全删再全插，要带回去
+    ((o) => Object.assign({ created_at: (o && o.created_at) || new Date().toISOString() }, spApplyFields(p, o && o.created_at)))(oldPlanById.get(p.id))));
     await sb('/rest/v1/student_school_plans', 'POST', toInsert);
     // 新增 / 修改 / 目标备选切换 / 删除（清空学校名）都在考学进度时间线里留记录
     await spSaveDiffLog(studyStudent, studyData.schoolPlans || [], toInsert, 'student', studyStudent.name);
@@ -1050,7 +1051,7 @@ function renderPlanTab() {
 async function studyPlanBarLoad() {
   const bar = document.getElementById('plan_doc_bar'); if (!bar) return;
   await riyuMailSavedLoad(true);
-  if (typeof ivbForStudent === 'function') await ivbForStudent(studyStudent).catch(() => {});   // 面试准备：该专业有已公开题库才显示
+  if (typeof ivbForStudent === 'function') await ivbForStudent(studyStudent, ivbDefaultPlan(studyData.schoolPlans || [])).catch(() => {});   // 面试准备：该专业有已公开题库才显示
   const kinds = riyuPlanKindsFor(studyStudent);
   if (!kinds.length) {
     if (studyPlanDoc) { studyPlanDoc = ''; const r = document.getElementById('plan_doc_research'); if (r) r.style.display = ''; const m = document.getElementById('plan_doc_mail'); if (m) m.innerHTML = ''; }
