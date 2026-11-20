@@ -995,7 +995,7 @@ function coordBuild(){
     const act=[];
     g.items.forEach(it=>{
       it.live=coordLive(g,it);
-      if(it.live&&(it.live.st==='gone'||it.live.st==='ok')) resolved.push({it,live:it.live}); else act.push(it);
+      if(it.live&&(it.live.st==='gone'||(it.live.st==='ok'&&it.x.reason!=='released'))) resolved.push({it,live:it.live}); else act.push(it);
     });
     if(!act.length) return;
     act.sort((a,b)=>String(a.x.date||'').localeCompare(String(b.x.date||'')));
@@ -1019,12 +1019,13 @@ function coordCardHtml(g){
     const rn=(lv&&lv.roomId!=null&&lv.roomId!=='')?rname(lv.roomId):(x.room_name||'');
     let st;
     if(coordWaiting(it)) st='<span style="color:#888">已反馈给老师，等待调整</span>';
-    else if(stSt==='noroom') st='<span style="color:#a33">这一回还没有排教室</span>';
+    else if(stSt==='noroom') st='<span style="color:#a33">'+(x.reason==='released'&&x.room_name?'原 '+esc(x.room_name)+' 教室已释放，':'')+'这一回还没有排教室</span>';
+    else if(stSt==='ok'&&x.reason==='released') st='<span style="color:#7a5b00">原 '+esc(x.room_name||'')+' 教室已释放；这一回现在用 '+esc(rn||'线上')+'（这门课每周的教室），请确认，或重新占用别的教室</span>';
     else{
-      const bl=lv?lv.blockers.map(b=>'「'+esc(b.title)+'」'+(b.who?'（'+esc(b.who)+'）':'')).join('、'):esc(x.blocker||'别的课');
+      const bl=lv?(lv.blockers||[]).map(b=>'「'+esc(b.title)+'」'+(b.who?'（'+esc(b.who)+'）':'')).join('、'):esc(x.blocker||'别的课');
       st='<span style="color:#a33">需要的教室 '+esc(rn)+' 在这个时间被'+bl+'占着</span>';
       const rid=(lv&&lv.roomId!=null)?lv.roomId:x.room_id;
-      if(rid!=null&&rid!==''&&lv){ const idset=new Set(coordGrpCourses(g.course).map(y=>String(y.id)));
+      if(rid!=null&&rid!==''&&lv&&stSt==='blocked'){ const idset=new Set(coordGrpCourses(g.course).map(y=>String(y.id)));
         coordOrphansNear(rid,x.date,lv.sp,idset).forEach(b=>{ const k=String(b.course_id); (orph.get(k)||orph.set(k,[]).get(k)).push(b); }); }
     }
     return '<div style="margin-top:4px"><b>'+esc(num)+'</b> → <b>'+esc(coordMDW(x.date))+' '+esc(t5)+'</b>'+(x.from&&!/新增/.test(x.from)?' <span class="muted" style="font-size:12px">（原 '+esc(coordFromTxt(x.from))+'）</span>':'')+'<div style="margin-left:14px">'+st+'</div></div>';
@@ -1104,7 +1105,7 @@ function coordHomeRoom(idset){
 }
 function coordPlan(g){
   const c=g.course, grp=coordGrpCourses(c), idset=new Set(grp.map(y=>String(y.id)));
-  const its=g.act.filter(it=>!coordWaiting(it)&&it.live&&(it.live.st==='blocked'||it.live.st==='noroom'));
+  const its=g.act.filter(it=>!coordWaiting(it)&&it.live&&(it.live.st==='blocked'||it.live.st==='noroom'||(it.live.st==='ok'&&it.x.reason==='released')));
   const home=coordHomeRoom(idset), est=Number(c.est_students)||0;
   const campusRaw=(home&&home.campus)||c.campus, campus=CAMPUSES.includes(campusRaw)?campusRaw:'';
   const floor=r=>(String(r.name||'').match(/^\D*(\d)/)||[])[1];
@@ -1150,7 +1151,7 @@ async function coordFeedback(pl,idxs){
   for(const i of idxs){
     const it=pl.its[i], x=it.x, lv=it.live;
     const adv=coordAdvice(pl,it);
-    const why=lv.st==='noroom'?'这一回没有教室可排':('教室 '+(lv.roomId!=null?rname(lv.roomId):(x.room_name||''))+' 被'+lv.blockers.map(b=>'「'+b.title+'」').join('、')+'占用');
+    const why=lv.st==='noroom'?'这一回没有教室可排':lv.st==='ok'?'没有更合适的教室':('教室 '+(lv.roomId!=null?rname(lv.roomId):(x.room_name||''))+' 被'+lv.blockers.map(b=>'「'+b.title+'」').join('、')+'占用');
     const change={field:'room_unavailable',label:'第 '+(x.num||'?')+' 回',num:x.num||null,session_id:x.session_id||null,course_uuid:String(c.id),
       date:x.date,time:coordT5(lv.sp.start)+'-'+coordT5(lv.sp.end),room_name:lv.roomId!=null?rname(lv.roomId):'',room_id:lv.roomId!=null?lv.roomId:null,reason:lv.st==='noroom'?'no_room':'blocked',
       why,advice:{slots:adv.slots,dates:adv.dates,campuses:adv.campuses},advice_text:adv.text};
@@ -1240,7 +1241,7 @@ function coordPanel(key){
     if(!g){ mask.remove(); return; }
     const pl=coordPlan(g), n=pl.its.length;
     const rowsTxt=pl.its.map((it,i)=>{ const lv=it.live, x=it.x;
-      const now=lv.st==='noroom'?'还没排教室':('现在：教室 '+(lv.roomId!=null?rname(lv.roomId):'')+' 被'+lv.blockers.map(b=>'「'+b.title+'」').join('、')+'占着');
+      const now=lv.st==='noroom'?'还没排教室':lv.st==='ok'?('原教室已释放，现在用：'+(lv.roomId!=null?rname(lv.roomId):'线上')):('现在：教室 '+(lv.roomId!=null?rname(lv.roomId):'')+' 被'+lv.blockers.map(b=>'「'+b.title+'」').join('、')+'占着');
       return '<div style="margin-top:3px"><b>'+esc(coordMDW(x.date))+' '+esc(coordT5(lv.sp.start))+'-'+esc(coordT5(lv.sp.end))+'</b>'+(x.num?' 第 '+esc(x.num)+' 回':'')+'　<span style="color:#a33">'+esc(now)+'</span></div>'; }).join('');
     const waitTxt=g.act.filter(coordWaiting).map(it=>'<div style="margin-top:3px;color:#888">'+esc(coordMDW(it.x.date))+(it.x.num?' 第 '+esc(it.x.num)+' 回':'')+'　已反馈给老师，等待调整</div>').join('');
     let body='';
