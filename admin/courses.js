@@ -5320,24 +5320,60 @@ async function loadCourseRooms() {
     }
   } catch (e) { console.warn('读取教室占用失败', e); }
 }
-// 课程安排页顶部「教室协调」：没处理的 room_coord + 最近 7 天处理完的
+// 课程安排页顶部「教室协调」：
+//   · 没处理的 room_coord（等总务安排教室）——同一回只显示最新一条，那一回已改走 / 休讲的不显示
+//   · room_unavailable（总务反馈「无法安排教室」+ 替代建议）——要调整人改日期 / 时间；
+//       以「那一回现在有没有教室 / 教室是不是还被占」为准：改好了自动消失，不靠手动点已处理
+//   · 最近 7 天总务已处理完的
 async function loadRoomCoordBox() {
   const box = document.getElementById('roomCoordBox'); if (!box) return;
   try {
     const since = new Date(Date.now() - 8 * 86400000).toISOString();
-    const rows = (await sb(`/rest/v1/sched_change_log?action=eq.room_coord&created_at=gte.${encodeURIComponent(since)}&select=*&order=created_at.desc&limit=100`, 'GET', null, { cache: 'no-store' })
-      .then(a => a || [])).concat(await sb('/rest/v1/sched_change_log?action=eq.room_coord&acked_by=eq.&select=*&order=created_at.desc&limit=100', 'GET', null, { cache: 'no-store' }).catch(() => []) || []);
+    const rows = (await sb(`/rest/v1/sched_change_log?action=in.(room_coord,room_unavailable)&created_at=gte.${encodeURIComponent(since)}&select=*&order=created_at.desc&limit=200`, 'GET', null, { cache: 'no-store' })
+      .then(a => a || [])).concat(await sb('/rest/v1/sched_change_log?action=in.(room_coord,room_unavailable)&acked_by=eq.&select=*&order=created_at.desc&limit=200', 'GET', null, { cache: 'no-store' }).catch(() => []) || []);
     const seen = new Set(), logs = rows.filter(l => l && !seen.has(l.id) && seen.add(l.id));
-    const xOf = l => (Array.isArray(l.changes) ? l.changes : []).find(y => y && y.field === 'room_coord') || {};
-    const pend = logs.filter(l => !String(l.acked_by || '').trim());
+    const xOf = l => (Array.isArray(l.changes) ? l.changes : []).find(y => y && (y.field === 'room_coord' || y.field === 'room_unavailable')) || {};
+    const fresh = l => !String(l.acked_by || '').trim();
+    const sessOf = x => (typeof cachedSessions !== 'undefined' ? cachedSessions : []).find(s => s.id === x.session_id);
+    // 同一回只留最新一条（旧的重复记录不再显示）
+    const latest = new Map();
+    logs.filter(l => fresh(l) && l.action === 'room_coord').forEach(l => { const x = xOf(l); const k = String(x.session_id || (l.course_name + '|' + x.num)); if (!latest.has(k)) latest.set(k, l); });
+    // 那一回已经改走（日期不是记录里的那天）/ 休讲了 → 不再显示
+    const stillThere = x => { const s = sessOf(x); return !s || (!s.is_cancelled && s.session_date === x.date); };
+    const pend = [...latest.values()].filter(l => stillThere(xOf(l)));
+    // 总务反馈：看那一回现在是不是还没教室 / 还被占着
+    if (!CRV.loaded) { try { await crvLoad(); } catch (e) { /* 读不到就按记录显示 */ } }
+    const unav = [];
+    const seenU = new Set();
+    for (const l of logs.filter(l => fresh(l) && l.action === 'room_unavailable')) {
+      const x = xOf(l), k = String(x.session_id || (l.course_name + '|' + x.num));
+      if (seenU.has(k)) continue; seenU.add(k);
+      const s = sessOf(x);
+      if (s) {
+        if (s.is_cancelled || s.session_date !== x.date) continue;                // 已经改走 / 休讲
+        const cid = s.course_id, course = (typeof cachedCourses !== 'undefined' ? cachedCourses : []).find(c => c.id === cid);
+        const sp = srmSpan(s.time_range, course && course.time_range);
+        if (sp.start && x.time && sp.start !== String(x.time).split('-')[0]) continue;   // 时间改过了：旧反馈作废
+        try {
+          if (CRV.loaded) {
+            const r = crvRoomOn(cid, s);
+            if (!r.none && !r.cancelled) { const bl = await srmBlockers('room_id', r.roomId, s.session_date, sp, cid); if (!bl.length) continue; }   // 已有教室且没人占：解决了
+          }
+        } catch (e) { /* 判断不了就照常显示 */ }
+      }
+      unav.push(l);
+    }
     const wk = Date.now() - 7 * 86400000;
-    const done = logs.filter(l => String(l.acked_by || '').trim() && xOf(l).done_room && new Date(xOf(l).done_at || l.created_at).getTime() >= wk);
-    if (!pend.length && !done.length) { box.innerHTML = ''; return; }
+    const done = logs.filter(l => l.action === 'room_coord' && String(l.acked_by || '').trim() && xOf(l).done_room && new Date(xOf(l).done_at || l.created_at).getTime() >= wk);
+    if (!pend.length && !done.length && !unav.length) { box.innerHTML = ''; return; }
     const md2 = d => d ? crvMDW(d) : '';
+    const tm = x => ccEsc(String(x.time || '').split('-')[0]);
     box.innerHTML = `<div style="border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:12px;background:var(--surface)">
-      <div style="font-size:12px;font-weight:600">教室协调${pend.length ? `　<span style="color:#c0392b">待处理 ${pend.length}</span>` : ''}</div>
-      ${pend.map(l => { const x = xOf(l); return `<div style="font-size:12px;margin-top:4px;color:#a33">${ccEsc(l.course_name || '')}　${ccEsc(x.label || '')} → ${ccEsc(md2(x.date))}${ccEsc(String(x.time || '').split('-')[0])}　${x.reason === 'no_room' ? '还没排教室' : ccEsc((x.room_name || '') + ' 被' + (x.blocker || '别的课') + '占着')}　<span style="color:var(--text-3)">等总务处理</span></div>`; }).join('')}
-      ${done.map(l => { const x = xOf(l); const dt = new Date(x.done_at || l.created_at); return `<div style="font-size:12px;margin-top:4px;color:#2a7a3a">✓ ${ccEsc(md2(x.date))} ${ccEsc(x.label || '')} → ${ccEsc(x.done_room)}（总务 ${ccEsc(x.done_by || '')}，${dt.getMonth() + 1}/${dt.getDate()}）　<span style="color:var(--text-3)">${ccEsc(l.course_name || '')}</span></div>`; }).join('')}
+      <div style="font-size:12px;font-weight:600">教室协调${unav.length ? `　<span style="color:#c0392b">需要你调整 ${unav.length}</span>` : ''}${pend.length ? `　<span style="color:#c0392b">等总务处理 ${pend.length}</span>` : ''}</div>
+      ${unav.map(l => { const x = xOf(l); return `<div style="font-size:12px;margin-top:6px;padding:6px 8px;background:#fff4f1;border:1px solid #f0c8c0;border-radius:4px;color:#a33;line-height:1.6">
+        <b>「${ccEsc(l.course_name || '')}」${ccEsc(x.label || '')} ${ccEsc(md2(x.date))}${tm(x)} 无法安排教室</b>（${ccEsc(x.why || (x.room_name ? '教室 ' + x.room_name + ' 被占用' : '没有可排的教室'))}）。${x.advice_text ? ccEsc(x.advice_text) : ''}请在课程安排里调整日期或时间（改好后这条提示会自动消失）。<span style="color:var(--text-3)">　${ccEsc(l.actor_label || '总务')} 反馈</span></div>`; }).join('')}
+      ${pend.map(l => { const x = xOf(l); return `<div style="font-size:12px;margin-top:4px;color:#a33">${ccEsc(l.course_name || '')}　${ccEsc(x.label || '')} → ${ccEsc(md2(x.date))}${tm(x)}　${x.reason === 'no_room' ? '还没排教室' : x.reason === 'released' ? ccEsc('原 ' + (x.room_name || '') + ' 教室已释放') : ccEsc((x.room_name || '') + ' 被' + (x.blocker || '别的课') + '占着')}　<span style="color:var(--text-3)">等总务处理</span></div>`; }).join('')}
+      ${done.map(l => { const x = xOf(l); const dt = new Date(x.done_at || l.created_at); return `<div style="font-size:12px;margin-top:4px;color:#2a7a3a">✓ ${ccEsc(md2(x.date))} ${ccEsc(x.label || '')} → ${ccEsc(x.done_room)}（${x.auto ? ccEsc(x.done_by || '自动核对') : '总务 ' + ccEsc(x.done_by || '')}，${dt.getMonth() + 1}/${dt.getDate()}）　<span style="color:var(--text-3)">${ccEsc(l.course_name || '')}</span></div>`; }).join('')}
     </div>`;
   } catch (e) { box.innerHTML = ''; }
 }

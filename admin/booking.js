@@ -532,7 +532,8 @@ async function bkvLoadRooms(campus,date,start,end,excludeSchedId){
   const big=(all||[]).filter(r=>r.type==='大课'&&r.active!==false&&!/コスモ|cosmo|外借|租/i.test((r.name||'')+(r.campus||'')));
   const rooms=[...vip,...big];
   if(!rooms.length) return {vip:[],big:[]};
-  const bks=await sb(`/rest/v1/sched_bookings?room_id=in.(${rooms.map(r=>r.id).join(',')})&status=neq.rejected&or=(booking_date.eq.${date},recurrence.eq.weekly)&select=id,room_id,course_id,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status,title,kind`);
+  let bks=await sb(`/rest/v1/sched_bookings?room_id=in.(${rooms.map(r=>r.id).join(',')})&status=neq.rejected&or=(booking_date.eq.${date},recurrence.eq.weekly)&select=id,room_id,course_id,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status,title,kind`);
+  bks=await crvSessionAwareBks(bks||[],[date]);   // 课程占用按单回算（每周占用里的星期 / 时间会过时）
   let hits=(bks||[]).filter(x=>!(excludeSchedId&&String(x.id)===String(excludeSchedId))&&start<x.end_time&&x.start_time<end&&bkvOnDate(x,date));
   const skip=await bkvSkipMap(hits);
   hits=hits.filter(x=>!(x.recurrence==='weekly'&&x.course_id&&skip[String(x.course_id)]&&skip[String(x.course_id)].has(date)));
@@ -594,7 +595,8 @@ async function bkSelfNotice(id){
   try{
     const rooms=window.__bkSelfRooms||[];
     const d0=bkvAddDays(b.slot_date,-5), d1=bkvAddDays(b.slot_date,5);
-    const bks=rooms.length?(await sb(`/rest/v1/sched_bookings?room_id=in.(${rooms.map(r=>r.id).join(',')})&status=neq.rejected&or=(recurrence.eq.weekly,and(booking_date.gte.${d0},booking_date.lte.${d1}))&select=id,room_id,course_id,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status`))||[]:[];
+    let bks=rooms.length?(await sb(`/rest/v1/sched_bookings?room_id=in.(${rooms.map(r=>r.id).join(',')})&status=neq.rejected&or=(recurrence.eq.weekly,and(booking_date.gte.${d0},booking_date.lte.${d1}))&select=id,room_id,course_id,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status,kind`))||[]:[];
+    bks=await crvSessionAwareBks(bks,Array.from({length:11},(_,i)=>bkvAddDays(b.slot_date,i-5)));   // 课程占用按单回算
     const skip=await bkvSkipMap(bks);
     const free=(date,s,e)=>rooms.some(r=>!bkvBusy(bks,skip,r.id,date,s,e,b.sched_booking_id));
     const mins=t=>{ const [h,m]=t.split(':').map(Number); return h*60+m; };

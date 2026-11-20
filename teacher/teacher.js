@@ -36,7 +36,8 @@ async function vipLoadRooms(campus, date, start, end, excludeSchedId) {
   if (!rooms.length) return { rooms: [], mineRoomId: null };
   const ids = rooms.map(r => r.id).join(',');
   const wd = vipWeekday(date);
-  const bks = await sb(`/rest/v1/sched_bookings?room_id=in.(${ids})&status=neq.rejected&or=(booking_date.eq.${date},recurrence.eq.weekly)&select=id,room_id,course_id,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status,title,kind,user_name`);
+  let bks = await sb(`/rest/v1/sched_bookings?room_id=in.(${ids})&status=neq.rejected&or=(booking_date.eq.${date},recurrence.eq.weekly)&select=id,room_id,course_id,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status,title,kind,user_name`);
+  bks = await crvSessionAwareBks(bks || [], [date]);   // 课程占用按单回算（每周占用里的星期 / 时间会过时）
   const mine = excludeSchedId ? (bks || []).find(x => String(x.id) === String(excludeSchedId)) : null;
   const overlap = (aS, aE, bS, bE) => aS < bE && bS < aE;
   const onDate = x => {
@@ -103,7 +104,8 @@ async function vipNearby(roomIds, date, s, e, excludeId) {
   const out = { sameDay: [], nearDates: [] };
   if (!roomIds.length) return out;
   const d0 = vipAddDays(date, -5), d1 = vipAddDays(date, 5);
-  const bks = (await sb(`/rest/v1/sched_bookings?room_id=in.(${roomIds.join(',')})&status=neq.rejected&or=(recurrence.eq.weekly,and(booking_date.gte.${d0},booking_date.lte.${d1}))&select=id,room_id,course_id,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status`)) || [];
+  let bks = (await sb(`/rest/v1/sched_bookings?room_id=in.(${roomIds.join(',')})&status=neq.rejected&or=(recurrence.eq.weekly,and(booking_date.gte.${d0},booking_date.lte.${d1}))&select=id,room_id,course_id,recurrence,booking_date,weekday,start_date,end_date,start_time,end_time,status,kind`)) || [];
+  bks = await crvSessionAwareBks(bks, Array.from({ length: 11 }, (_, i) => vipAddDays(date, i - 5)));   // 课程占用按单回算
   const cids = [...new Set(bks.filter(x => x.recurrence === 'weekly' && x.course_id).map(x => x.course_id))];
   const skip = {};
   if (cids.length) { try { (await sb(`/rest/v1/courses?id=in.(${cids.map(i => '"' + i + '"').join(',')})&select=id,skip_dates`) || []).forEach(c => { skip[String(c.id)] = new Set(String(c.skip_dates || '').split(',').map(t => t.trim()).filter(Boolean)); }); } catch (_) {} }

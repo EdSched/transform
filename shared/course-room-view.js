@@ -198,3 +198,42 @@ async function crvSwapRoomRun(o, undo) {
   delete CRV_MEMO.base;
   return undo;
 }
+
+// 老师端 VIP 预约 / 管理端面谈排教室用：把一批占用换算成「按单回」的口径（课程的每周占用自带的星期、时间、起止日期会过时，
+// 例如课程改了上课时间、休讲顺延后，原始记录还是旧的）。
+// bks：原始占用（要带 kind、course_id、recurrence、weekday、manual_off_dates 可选）；dates：要看的日期们。
+// 返回新数组：非课程占用原样；有单回数据的课程占用 → 只在那天有没休讲的单回时才算，时间用那一回的，
+// 那天有临时占用（换了教室）以临时为准、否则按每周占用的星期挑；没有单回数据的老课原样。读不到单回就原样返回。
+async function crvSessionAwareBks(bks, dates) {
+  const isC = b => b.kind === 'course' && b.course_id;
+  const cids = [...new Set((bks || []).filter(isC).map(b => String(b.course_id)))];
+  if (!cids.length || !dates || !dates.length) return bks || [];
+  const ds = dates.slice().sort(), lo = ds[0], hi = ds[ds.length - 1];
+  const inList = cids.map(encodeURIComponent).join(',');
+  let sess, onces;
+  try {
+    sess = await sbAll(`/rest/v1/course_sessions?course_id=in.(${inList})&session_date=gte.${crvAddDays(lo, -45)}&session_date=lte.${crvAddDays(hi, 45)}&select=course_id,session_date,time_range,is_cancelled`, { cache: 'no-store' });
+    onces = await sbAll(`/rest/v1/sched_bookings?kind=eq.course&recurrence=eq.once&status=neq.rejected&course_id=in.(${inList})&booking_date=gte.${lo}&booking_date=lte.${hi}&select=id,kind,course_id,room_id,recurrence,booking_date,weekday,start_time,end_time,status,title,user_name`, { cache: 'no-store' });
+  } catch (e) { return bks; }
+  const hasData = new Set(sess.map(x => String(x.course_id)));
+  const out = bks.filter(b => !isC(b) || !hasData.has(String(b.course_id)));
+  const pad = t => (t.length === 4 ? '0' + t : t);
+  hasData.forEach(cid => {
+    const weekly = bks.filter(b => isC(b) && String(b.course_id) === cid && b.recurrence === 'weekly');
+    ds.forEach(d => {
+      const ss = sess.filter(x => String(x.course_id) === cid && x.session_date === d && !x.is_cancelled);
+      if (!ss.length) return;
+      let s0 = '', e0 = '';
+      ss.forEach(x => { const m = String(x.time_range || '').match(/\d{1,2}:\d{2}/g); if (m && m.length >= 2) { const a = pad(m[0]), z = pad(m[m.length - 1]); if (!s0 || a < s0) s0 = a; if (!e0 || z > e0) e0 = z; } });
+      const once = onces.filter(b => String(b.course_id) === cid && b.booking_date === d);
+      let src = once;
+      if (!src.length) {
+        const on = weekly.filter(b => !crvSplit(b.manual_off_dates).includes(d));
+        src = on.filter(b => Number(b.weekday) === crvWd(d));
+        if (!src.length && on.length) src = [on[0]];
+      }
+      src.forEach(b => out.push(Object.assign({}, b, { recurrence: 'once', booking_date: d, start_time: s0 || b.start_time, end_time: e0 || b.end_time })));
+    });
+  });
+  return out;
+}

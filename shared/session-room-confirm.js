@@ -3,7 +3,9 @@
 //
 // 规则：
 //   · 排课已经直接读管理端单回的日期和时间，所以这里不再释放、不再建临时占用、不再撤销
-//   · 弹框里唯一的写入：点「通知总务」往 sched_change_log 写一条 action='room_coord'（同一回同一天不重复写）
+//   · 弹框里唯一的写入：点「交给总务」往 sched_change_log 写一条 action='room_coord'。同一门课的同一回（不管改到哪天）只留一条：
+//       没处理的已经有就更新那一条（新日期、新原因），多出来的旧记录标成「系统」已处理，不再新增
+//   · 单回挪走 / 休讲 / 撤回之后，把这门课在「原来那天」留下的临时占用清掉（srmReleaseOldTemps），不再留遗留占用
 //   · 空不空的判断：课程占用按那门课当天有没有单回（和单回自己的时间）；临时占用按日期；manual_off_dates、rejected 排除；不算这门课自己
 
 const srmSplit = s => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
@@ -75,6 +77,50 @@ function srmWeeklyRule(b, d) {
   return Number(b.weekday) === srmWeekday(d);
 }
 
+// 同一门课、同一回：已有没处理的 room_coord → 更新那一条；多出来的旧记录标成已处理（acked_by='系统'）；没有才新增
+// 以前按「课程名 + 这一回 + 这一天」判重：同一回改了两次日期（11/23 → 12/14）就判成两条，旧的永远留着，总务看到的就是重复提示
+async function srmCoordWrite(course, change, actorLabel) {
+  const nm = course.merge_name || course.name || '';
+  let rows = [];
+  try { rows = (await srmGet('/rest/v1/sched_change_log?action=eq.room_coord&select=id,course_name,changes,acked_by,created_at&order=created_at.desc&limit=200')) || []; } catch (er) { /* 查不到就照写 */ }
+  const same = x => x && x.field === 'room_coord' && (change.session_id && x.session_id ? String(x.session_id) === String(change.session_id) : (x.num == change.num && x.date === change.date))
+    && (x.course_uuid ? String(x.course_uuid) === String(course.id) : true);
+  const mine = rows.filter(l => !String(l.acked_by || '').trim() && Array.isArray(l.changes) && l.changes.some(same)
+    && (l.changes.some(x => x && x.course_uuid) || l.course_name === nm || l.course_name === course.name));
+  if (mine.length) {
+    await sb(`/rest/v1/sched_change_log?id=eq.${mine[0].id}`, 'PATCH', { changes: [change], actor_label: actorLabel, course_name: nm });
+    for (const l of mine.slice(1)) { try { await sb(`/rest/v1/sched_change_log?id=eq.${l.id}`, 'PATCH', { acked_by: '系统' }); } catch (er) { /* ignore */ } }
+    return;
+  }
+  await sb('/rest/v1/sched_change_log', 'POST', [{
+    course_id: course.legacy_sched_id != null ? course.legacy_sched_id : null, course_name: nm,
+    actor_role: 'admin', actor_label: actorLabel, action: 'room_coord', changes: [change], acked_by: ''
+  }]);
+}
+
+// 单回挪走 / 休讲 / 撤回之后：这门课在「原来那天」已经没有课了 → 删掉那天留下的临时占用（以前没人清，就成了遗留占用）
+// 那天每周占用让位时记下的日期（manual_off_dates）也还回去。只处理 changes[].from.date；sessions 是改完以后这门课的全部单回
+async function srmReleaseOldTemps(course, changes, sessions) {
+  if (!course || !course.id) return;
+  const live = new Set((sessions || []).filter(s => s && !s.is_cancelled && String(s.course_id) === String(course.id)).map(s => s.session_date));
+  const dates = [...new Set((changes || []).map(c => c && c.from && c.from.date).filter(d => d && !live.has(d)))];
+  if (!dates.length) return;
+  try {
+    const bks = (await srmGet(`/rest/v1/sched_bookings?kind=eq.course&course_id=eq.${encodeURIComponent(course.id)}&status=neq.rejected&select=id,recurrence,booking_date,manual_off_dates`)) || [];
+    for (const d of dates) {
+      const temps = bks.filter(b => b.recurrence === 'once' && b.booking_date === d);
+      if (!temps.length) continue;
+      for (const t of temps) await sb(`/rest/v1/sched_bookings?id=eq.${t.id}`, 'DELETE');
+      for (const w of bks.filter(b => b.recurrence === 'weekly' && srmSplit(b.manual_off_dates).includes(d))) {
+        const a = srmSplit(w.manual_off_dates).filter(x => x !== d);
+        await sb(`/rest/v1/sched_bookings?id=eq.${w.id}`, 'PATCH', { manual_off_dates: a.length ? a.join(',') : null });
+        w.manual_off_dates = a.join(',');
+      }
+    }
+    if (typeof CRV_MEMO !== 'undefined') delete CRV_MEMO.base;
+  } catch (e) { console.warn('清理原日期的临时占用失败', e); }
+}
+
 // 「稍后调整另一门」的提示条：{ key, courseId, col, id, date, sp, bar }。每次再检查时，冲突没了就自动撤掉
 const SRM_LATER = [];
 function srmLaterAdd(ent, text) {
@@ -99,6 +145,7 @@ async function srmRecheckLater() {
 async function srmOpen(opts) {
   await srmRecheckLater();     // 先看以前「稍后处理」的提示，冲突没了的自动消失
   const course = opts.course || {};
+  await srmReleaseOldTemps(course, opts.changes, opts.sessions);   // 原来那天已经没课了：把那天留下的临时占用一起清掉
   const changes = (opts.changes || []).filter(c => c && c.to && !c.to.cancelled);
   if (!course.id || !changes.length) return;
   let bks, rooms = [], accts = [];
@@ -157,7 +204,7 @@ async function srmOpen(opts) {
     const e = ccEsc;
     const notified = new Set();
     const close = () => { ov.remove(); delete window.__srmNotify; delete window.__srmNotifyAll; delete window.__srmPick; delete window.__srmLater; delete window.__srmLaterAll; resolve(); };
-    const who = () => (typeof ADMIN_EMAIL !== 'undefined' && ADMIN_EMAIL) ? ADMIN_EMAIL : '管理员';
+    const who = () => (typeof csWho === 'function' ? csWho() : ((typeof ADMIN_EMAIL !== 'undefined' && ADMIN_EMAIL) ? ADMIN_EMAIL : '管理员'));
     const todoRows = () => (probRows.concat(noteRows)).filter(r => !r.picked && !r.later);
     // 稍后调整另一门：这一回收起，标成「稍后处理」，页面上方留一条提示（另一门调整完自动消失）
     const laterOne = r => {
@@ -171,7 +218,7 @@ async function srmOpen(opts) {
     window.__srmLater = i => { laterOne(rows[i]); draw(); };
     window.__srmLaterAll = () => { todoRows().forEach(laterOne); draw(); };
 
-    // 写一条 room_coord；同一回同一天已有没处理的就不再写
+    // 写一条 room_coord；同一回已有没处理的就更新那一条（srmCoordWrite）
     const notifyOne = async r => {
       if (notified.has(r.key) || r.picked) return;
       const pr = problems(r)[0]; if (!pr) return;
@@ -180,19 +227,9 @@ async function srmOpen(opts) {
       const change = {
         field: 'room_coord', label: `第 ${r.ch.num || '?'} 回`, num: r.ch.num || null, session_id: r.ch.id, course_uuid: course.id,
         from: r.ch.from ? `${r.ch.from.date} ${r.ch.from.time || ''}`.trim() : '（新增）', to: `${t.date} ${r.sp.start ? r.sp.start + '-' + r.sp.end : ''}`.trim(),
-        date: t.date, time: r.sp.start ? `${r.sp.start}-${r.sp.end}` : '', room_name: pr.none ? '' : pr.label, blocker, reason: pr.none ? 'no_room' : 'blocked'
+        date: t.date, time: r.sp.start ? `${r.sp.start}-${r.sp.end}` : '', room_name: pr.none ? '' : pr.label, room_id: pr.none ? null : pr.id, blocker, reason: pr.none ? 'no_room' : 'blocked'
       };
-      let dup = false;
-      try {
-        const old = (await srmGet(`/rest/v1/sched_change_log?action=eq.room_coord&course_name=eq.${encodeURIComponent(course.merge_name || course.name || '')}&select=id,changes,acked_by&order=created_at.desc&limit=100`)) || [];
-        dup = old.some(l => !String(l.acked_by || '').trim() && Array.isArray(l.changes) && l.changes.some(x => x && x.session_id === r.ch.id && x.date === t.date));
-      } catch (er) { /* 查不到就照写 */ }
-      if (!dup) {
-        await sb('/rest/v1/sched_change_log', 'POST', [{
-          course_id: course.legacy_sched_id != null ? course.legacy_sched_id : null, course_name: course.merge_name || course.name || '',
-          actor_role: 'admin', actor_label: who(), action: 'room_coord', changes: [change], acked_by: ''
-        }]);
-      }
+      await srmCoordWrite(course, change, who());
       notified.add(r.key);
     };
     let err = '';
