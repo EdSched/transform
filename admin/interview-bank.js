@@ -3,13 +3,14 @@
 // 按专业维护面试题库（interview_banks 表）：标题 / 说明 / 面试稿标准 / 统一手册 / 章节与题目 / 一键批量导入 / 公开开关
 // 依赖：shared/supabase.js、shared/riyu.js（riyuEsc / riyuMd）、shared/interview-bank.js、shared/interview-import.js、shared/constants.js
 // ══════════════════════════════════
-let ivba = { dom: '', major: '', bank: null, fromDb: false, dirty: false, list: {}, openCh: {}, openIt: {}, imp: null };
+let ivba = { dom: '', major: '', bank: null, fromDb: false, dirty: false, list: {}, openCh: {}, openIt: {}, imp: null, tab: 'bank', res: [], resEdit: null };
 
 async function renderInterviewBankAdmin() {
   const box = document.getElementById('mat_body'); if (!box) return;
   try {
     const rows = await sbAll('interview_banks?select=major_key,published,title');
     ivba.list = {}; (rows || []).forEach(r => { ivba.list[r.major_key] = r; });
+    ivba.res = await sbAll('interview_resources?select=*&order=sort_order.asc').catch(() => []);
   } catch (e) { box.innerHTML = `<div style="font-size:12px;color:var(--danger);padding:16px">读取失败：${riyuEsc(e.message)}（如果提示表不存在，请先执行 seed/interview_bank.sql）</div>`; return; }
   ivbaRender();
 }
@@ -37,8 +38,17 @@ const IVBA_INP = 'width:100%;box-sizing:border-box;font-size:12px;padding:6px 8p
 const ivbaLab = t => `<label style="font-size:10px;color:var(--text-3);display:block;margin-bottom:2px">${t}</label>`;
 function ivbaTouch() { ivba.dirty = true; const m = document.getElementById('ivba_msg'); if (m) m.textContent = '有未保存的修改'; }
 
+function ivbaTabBar() {
+  return `<div style="display:flex;gap:6px;margin-bottom:12px">${[['bank', '题库'], ['res', '📎 面试资料']].map(([k, l]) => `<div class="filter-chip${ivba.tab === k ? ' active' : ''}" onclick="ivbaSetTab('${k}')" style="font-size:12px;padding:3px 12px">${l}</div>`).join('')}</div>`;
+}
+function ivbaSetTab(k) {
+  if (ivba.tab === 'bank' && ivba.dirty && !confirm('当前修改还没有保存，切换后会丢失。继续？')) return;
+  if (ivba.tab === 'bank' && ivba.dirty) { ivba.dirty = false; ivba.bank = null; ivba.major = ''; }
+  ivba.tab = k; ivbaRender();
+}
 function ivbaRender() {
   const box = document.getElementById('mat_body'); if (!box) return;
+  if (ivba.tab === 'res') return ivbaResRender();
   const doms = scopeDomainList();
   const majors = ivbaMajorOptions(ivba.dom);
   const sel = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
@@ -47,9 +57,9 @@ function ivbaRender() {
     ${ivba.dom ? `<select onchange="ivbaPickMajor(this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit"><option value="">选择专业…</option>${majors.map(m => `<option value="${riyuEsc(m.k)}" ${ivba.major === m.k ? 'selected' : ''}>${riyuEsc(m.label + ivbaMark(m.k))}</option>`).join('')}</select>` : ''}
   </div>`;
   const b = ivba.bank;
-  if (!b) { box.innerHTML = sel + '<div style="font-size:12px;color:var(--text-3);padding:20px 0">选好专业后，这里可以导入或编辑该专业的面试题库。学生只会看到「已公开」的题库。</div>'; return; }
+  if (!b) { box.innerHTML = ivbaTabBar() + sel + '<div style="font-size:12px;color:var(--text-3);padding:20px 0">选好专业后，这里可以导入或编辑该专业的面试题库。学生只会看到「已公开」的题库。</div>'; return; }
   const n = ivbCount(b);
-  box.innerHTML = sel + `
+  box.innerHTML = ivbaTabBar() + sel + `
   ${ivba.fromDb ? '' : '<div style="font-size:11px;color:var(--warn,#b8860b);background:#fff8e6;border:1px solid #e8d4a0;border-radius:3px;padding:6px 10px;margin-bottom:10px">这个专业还没有题库。可以直接点「导入」批量导入手册，保存后才会正式写入（如果保存失败，请先执行 seed/interview_bank.sql 建表）。</div>'}
   <div style="border:1px solid var(--border);border-radius:4px;padding:12px 14px;background:var(--bg);margin-bottom:12px">
     <div style="display:grid;grid-template-columns:240px 1fr;gap:10px;margin-bottom:8px">
@@ -301,3 +311,95 @@ function ivbaImpApply() {
   ivba.openCh = {}; ivba.openIt = {}; ivbaImpClose(); ivbaTouch(); ivbaRender();
   const m = document.getElementById('ivba_msg'); if (m) m.textContent = msg + '。检查后点「保存」才会写入。';
 }
+
+// ══ 📎 面试资料（interview_resources）：マナー / 临机应对 / 态度 / 其他 ══
+const IVBA_CATS = IVB_RES_CATS;
+function ivbaResMajorOpts(cur) {
+  const ks = (typeof allMajorKeys === 'function' ? allMajorKeys() : Object.keys(MAJORS));
+  const opts = ks.map(k => ({ k, l: MAJORS[k] || k })).concat(Object.keys(MAJOR_GROUPS).filter(g => !ks.includes(g)).map(g => ({ k: g, l: groupLabel(g) + '（专业组）' })));
+  return `<option value="">通用（所有专业）</option>` + opts.map(o => `<option value="${riyuEsc(o.k)}" ${cur === o.k ? 'selected' : ''}>${riyuEsc(o.l)}</option>`).join('');
+}
+function ivbaResRender() {
+  const box = document.getElementById('mat_body'); if (!box) return;
+  const e = ivba.resEdit;
+  box.innerHTML = ivbaTabBar() + `<div style="font-size:11px;color:var(--text-3);margin-bottom:10px">学生在「面试准备」里按分类看到这些资料（通用 + 本专业的）；没有内容的分类学生端不显示。</div>
+  ${IVBA_CATS.map(([ck, cl]) => {
+    const list = ivba.res.filter(r => r.category === ck).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    return `<div style="margin-bottom:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><span style="font-size:12px;font-weight:600">${cl}（${list.length}）</span><button class="btn btn-outline btn-sm" onclick="ivbaResNew('${ck}')">＋ 新增</button></div>
+      ${list.map((r, i) => `<div style="border:1px solid var(--border-light);border-radius:4px;padding:6px 10px;margin-bottom:4px;background:${r.published ? 'var(--surface)' : '#f4f1ea'};display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:12px;font-weight:600;cursor:pointer" onclick="ivbaResOpen('${riyuEsc(r.id)}')">${riyuEsc(r.title)}</span>
+        <span style="font-size:10px;color:var(--text-3)">${r.major_key ? riyuEsc(MAJORS[r.major_key] || groupLabel(r.major_key)) : '通用'} · ${r.published ? '已公开' : '隐藏'}${(r.files || []).length ? ` · 文件 ${(r.files || []).length}` : ''}</span>
+        <span style="margin-left:auto;display:flex;gap:4px">
+          <button class="btn btn-outline btn-sm" ${i === 0 ? 'disabled' : ''} onclick="ivbaResMove('${riyuEsc(r.id)}',-1)">↑</button>
+          <button class="btn btn-outline btn-sm" ${i === list.length - 1 ? 'disabled' : ''} onclick="ivbaResMove('${riyuEsc(r.id)}',1)">↓</button>
+          <button class="btn btn-outline btn-sm" onclick="ivbaResPub('${riyuEsc(r.id)}')">${r.published ? '设为隐藏' : '公开'}</button>
+          <button class="btn btn-outline btn-sm" onclick="ivbaResOpen('${riyuEsc(r.id)}')">编辑</button></span></div>`).join('') || '<div style="font-size:11px;color:var(--text-3);padding:2px 0 4px">还没有内容</div>'}</div>`;
+  }).join('')}
+  ${e ? `<div style="border:1px solid var(--accent);border-radius:4px;padding:12px 14px;background:var(--bg);margin-top:8px">
+    <div style="font-size:12px;font-weight:600;margin-bottom:8px">${e._new ? '新增资料' : '编辑资料'}</div>
+    <div style="display:grid;grid-template-columns:1fr 150px 170px;gap:8px;margin-bottom:8px">
+      <div>${ivbaLab('标题')}<input value="${riyuEsc(e.title)}" oninput="ivba.resEdit.title=this.value" style="${IVBA_INP}"></div>
+      <div>${ivbaLab('分类')}<select onchange="ivba.resEdit.category=this.value" style="${IVBA_INP}">${IVBA_CATS.map(([k, l]) => `<option value="${k}" ${e.category === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div>${ivbaLab('适用专业')}<select onchange="ivba.resEdit.major_key=this.value||null" style="${IVBA_INP}">${ivbaResMajorOpts(e.major_key)}</select></div></div>
+    ${ivbaLab('正文（可用 **粗体**、- 列表）')}<textarea rows="8" oninput="ivba.resEdit.body=this.value" style="${IVBA_INP};resize:vertical;line-height:1.7;margin-bottom:8px">${riyuEsc(e.body || '')}</textarea>
+    ${ivbaLab('文件（PDF / 图片，可多个）')}
+    ${(e.files || []).map((f, i) => `<div style="display:flex;gap:8px;font-size:12px;margin-bottom:3px"><a href="${riyuEsc(f.url)}" target="_blank" style="color:var(--accent)">${riyuEsc(f.name)}</a><span onclick="ivbaResFileDel(${i})" style="cursor:pointer;color:var(--danger);font-size:11px">移除</span></div>`).join('')}
+    <div style="display:flex;align-items:center;gap:8px;margin:4px 0 8px"><input type="file" id="ivba_res_file" accept=".pdf,.png,.jpg,.jpeg" multiple style="font-size:11px"><button class="btn btn-outline btn-sm" onclick="ivbaResFileAdd()">上传</button><span id="ivba_res_fmsg" style="font-size:11px;color:var(--text-3)"></span></div>
+    <div style="display:flex;gap:8px;align-items:center"><select onchange="ivba.resEdit.published=this.value==='1'" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:3px;background:var(--surface);font-family:inherit"><option value="1" ${e.published !== false ? 'selected' : ''}>公开</option><option value="0" ${e.published === false ? 'selected' : ''}>隐藏</option></select>
+      <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none;${e._new ? 'display:none' : ''}" onclick="ivbaResDel()">删除</button>
+      <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="ivba.resEdit=null;ivbaResRender()">取消</button><button class="btn btn-primary btn-sm" onclick="ivbaResSave()">保存</button><span id="ivba_res_msg" style="font-size:11px;color:var(--ok)"></span></div>
+  </div>` : ''}`;
+}
+function ivbaResNew(cat) {
+  const mx = ivba.res.filter(r => r.category === cat).reduce((m, r) => Math.max(m, r.sort_order || 0), 0);
+  ivba.resEdit = { _new: true, id: 'ivr-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), major_key: null, category: cat, title: '', body: '', files: [], sort_order: mx + 1, published: true };
+  ivbaResRender();
+}
+function ivbaResOpen(id) { const r = ivba.res.find(x => x.id === id); if (!r) return; ivba.resEdit = JSON.parse(JSON.stringify(Object.assign({}, r, { files: r.files || [] }))); ivbaResRender(); }
+async function ivbaResSave() {
+  const e = ivba.resEdit; if (!e) return;
+  if (!String(e.title || '').trim()) { alert('请填写标题'); return; }
+  const row = { id: e.id, major_key: e.major_key || null, category: e.category, title: e.title.trim(), body: e.body || '', files: e.files || [], sort_order: e.sort_order || 0, published: e.published !== false, updated_at: new Date().toISOString() };
+  try {
+    if (e._new) await sb('/rest/v1/interview_resources', 'POST', row);
+    else await sb(`/rest/v1/interview_resources?id=eq.${encodeURIComponent(e.id)}`, 'PATCH', row);
+    const i = ivba.res.findIndex(x => x.id === e.id); if (i >= 0) ivba.res[i] = row; else ivba.res.push(row);
+    ivba.resEdit = null; ivbaResRender();
+  } catch (err) { alert('保存失败：' + err.message + '（如果提示表不存在，请先执行 seed/interview_resources.sql）'); }
+}
+async function ivbaResDel() {
+  const e = ivba.resEdit; if (!e || e._new) return;
+  if (!confirm(`删除「${e.title}」？（文件本身不会被删除）`)) return;
+  try { await sb(`/rest/v1/interview_resources?id=eq.${encodeURIComponent(e.id)}`, 'DELETE'); ivba.res = ivba.res.filter(x => x.id !== e.id); ivba.resEdit = null; ivbaResRender(); }
+  catch (err) { alert('删除失败：' + err.message); }
+}
+async function ivbaResPub(id) {
+  const r = ivba.res.find(x => x.id === id); if (!r) return;
+  try { await sb(`/rest/v1/interview_resources?id=eq.${encodeURIComponent(id)}`, 'PATCH', { published: !r.published }); r.published = !r.published; ivbaResRender(); }
+  catch (err) { alert('保存失败：' + err.message); }
+}
+async function ivbaResMove(id, d) {
+  const r = ivba.res.find(x => x.id === id); if (!r) return;
+  const list = ivba.res.filter(x => x.category === r.category).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const i = list.indexOf(r), j = i + d; if (j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
+  try {
+    for (let k = 0; k < list.length; k++) if (list[k].sort_order !== k + 1) { await sb(`/rest/v1/interview_resources?id=eq.${encodeURIComponent(list[k].id)}`, 'PATCH', { sort_order: k + 1 }); list[k].sort_order = k + 1; }
+  } catch (err) { alert('排序保存失败：' + err.message); }
+  ivbaResRender();
+}
+async function ivbaResFileAdd() {
+  const files = [...(document.getElementById('ivba_res_file')?.files || [])], msg = document.getElementById('ivba_res_fmsg'), e = ivba.resEdit;
+  if (!files.length || !e) { if (msg) msg.textContent = '请先选择文件'; return; }
+  try {
+    for (let i = 0; i < files.length; i++) {
+      if (msg) msg.textContent = `上传中 ${i + 1} / ${files.length}…`;
+      const f = files[i], ext = (f.name.split('.').pop() || 'pdf').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const url = await sbUpload('teacher-files', `interview/resources/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`, f);
+      e.files.push({ name: f.name, url });
+    }
+    ivbaResRender();
+    const m2 = document.getElementById('ivba_res_fmsg'); if (m2) m2.textContent = '已上传，记得点「保存」';
+  } catch (err) { if (msg) msg.textContent = '上传失败：' + err.message; }
+}
+function ivbaResFileDel(i) { if (ivba.resEdit) { ivba.resEdit.files.splice(i, 1); ivbaResRender(); } }

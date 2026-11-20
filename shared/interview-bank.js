@@ -136,3 +136,15 @@ async function ivbGuideForSub(sub, student) {
   const legacy = old.sections.filter(s => !have.has(s.key)).map(s => Object.assign({}, s, { title: '【旧版】' + s.title }));
   return Object.assign({}, old, { sections: flat.concat(legacy), _bank: bank });
 }
+
+// ── 面试资料（マナー / 临机应对 / 态度 / 其他）：interview_resources，通用（major_key 为空）+ 本专业 ──
+const IVB_RES_CATS = [['manner', 'マナー'], ['impromptu', '临机应对'], ['attitude', '态度与心得'], ['other', '其他']];
+async function ivbLoadResources(student) {
+  let rows = [];
+  try { rows = await sb('/rest/v1/interview_resources?published=eq.true&order=sort_order.asc&select=*', 'GET', null, { cache: 'no-store' }) || []; } catch (e) { rows = []; }
+  const keys = [student && student.major, ivbKeyFor(student)].filter(Boolean);
+  return rows.filter(r => !r.major_key || keys.indexOf(r.major_key) >= 0).map(r => {
+    let f = r.files; if (typeof f === 'string') { try { f = JSON.parse(f); } catch (e) { f = []; } }
+    return Object.assign({}, r, { files: (Array.isArray(f) ? f : []).filter(x => x && x.url) });
+  });
+}

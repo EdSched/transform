@@ -5,7 +5,7 @@
 // sections 以「题 key」为键；旧版 8 段（self / motive / …）的答案原样保留在同一行里，只读显示在「旧版面试稿」折叠块
 // 依赖：study.js（studyStudent / studyData / escA / studyPlanDoc / switchStudyTab）、shared/riyu.js、shared/interview-bank.js、shared/doc-versions.js
 // ══════════════════════════════════
-let ivs = { bank: null, subs: [], vers: [], old: null, drafts: {}, dirty: {}, school: '', chap: '', q: '', moreChaps: false, savedAt: '', err: '', focusTodo: false, loading: false };
+let ivs = { bank: null, subs: [], vers: [], old: null, drafts: {}, dirty: {}, school: '', chap: '', q: '', res: [], cat: 'bank', moreChaps: false, savedAt: '', err: '', focusTodo: false, loading: false };
 let ivsSummary = null;      // 学习页提醒 / 时间线用的摘要：{ rem: ivbReminder 结果 | null, done, total }
 let ivsSaveTimer = null;
 const ivsChain = {};        // rowKey → 保存队列（避免同一行并发保存时重复新建）
@@ -31,9 +31,11 @@ async function ivsLoad() {
       sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=eq.${RIYU_INTERVIEW_KIND}&select=*`, 'GET', null, { cache: 'no-store' }).then(r => { subs = r || []; }).catch(e => { err = e.message; }),
       docvLoad(studyStudent.id, 'interview').then(r => { vers = r || []; }).catch(() => {}),
       riyuLoadGuide(RIYU_INTERVIEW_KIND).then(g => { old = g; }).catch(() => {}),
+      ivbLoadResources(studyStudent).then(r => { ivs.res = r; }).catch(() => {}),
     ]);
   } finally { ivs.loading = false; }
   const plans = ivsPlans();
+  if (ivs.focusTodo) ivs.cat = 'bank';
   const keep = ivs.school && plans.some(p => riyuKeyOf(p) === ivs.school);
   Object.assign(ivs, { bank, subs, vers, old, err, school: keep ? ivs.school : ivbDefaultSchool(plans) });
   if (bank && (!ivs.chap || !bank.chapters.some(c => c.key === ivs.chap))) ivs.chap = bank.chapters.length ? bank.chapters[0].key : '';
@@ -61,6 +63,8 @@ function ivsRender() {
   const b = ivs.bank;
   if (ivs.err) { wrap.innerHTML = `<div style="font-size:12px;color:var(--danger);padding:16px">读取失败：${escA(ivs.err)}（请刷新重试）</div>`; return; }
   if (!b) { wrap.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text-muted);font-size:12px">你所在的专业还没有面试题库，请联系老师</div>'; return; }
+  if (ivs.cat !== 'bank' && !ivs.res.some(r => r.category === ivs.cat)) ivs.cat = 'bank';
+  if (ivs.cat !== 'bank') { wrap.innerHTML = ivsCatBar() + ivsResourcesHtml(ivs.cat); return; }
   const plans = ivsPlans();
   const hasSchoolCh = b.chapters.some(c => c.scope === 'school');
   const head = `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:12px 14px;margin-bottom:12px;font-size:11px;color:var(--text-secondary);line-height:1.9">
@@ -74,7 +78,7 @@ function ivsRender() {
     ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap"><span style="font-size:11px;color:var(--text-muted)">写给哪所志望校（带「各校」标记的章按学校分别作答）：</span>
         <select onchange="ivsSetSchool(this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;max-width:100%">${plans.map(p => `<option value="${escA(riyuKeyOf(p))}" ${ivs.school === riyuKeyOf(p) ? 'selected' : ''}>${escA(ivsSchoolName(p))}</option>`).join('')}</select></div>`
     : '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">还没有志望校：带「各校」标记的章请先在「志望校」标签填写志望校；其余章可以照常写。</div>';
-  wrap.innerHTML = `${head}
+  wrap.innerHTML = `${ivsCatBar()}${head}
     <div id="ivs_prog"></div>
     <input id="ivs_q" value="${escA(ivs.q)}" placeholder="搜索题目 / 指导 / 参考例 / 关键词（搜索所有章节）" oninput="ivsSearchInput(this.value)" style="${IVS_INP};margin-bottom:10px">
     ${schoolSel}
@@ -305,3 +309,19 @@ function ivsReminderItem() {
   return { t: `面试稿 · 还有 ${r.left} 题没写完${r.reason === 'mock' ? '（已约模拟面试）' : '（考试在 60 天内）'}`, go: 'studyGoInterview()' };
 }
 function ivsTimelineText() { return ivsSummary && ivsSummary.total ? `面试稿 ${ivsSummary.done}/${ivsSummary.total} 题` : ''; }
+
+// ── 资料分类：面试稿 ｜ マナー ｜ 临机应对 ｜ 态度与心得 ｜ 其他（没有内容的分类不显示）──
+function ivsCatBar() {
+  const cats = IVB_RES_CATS.filter(([k]) => ivs.res.some(r => r.category === k));
+  if (!cats.length) return '';
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${ivsChip('面试稿', ivs.cat === 'bank', "ivsSetCat('bank')")}${cats.map(([k, l]) => ivsChip(l, ivs.cat === k, `ivsSetCat('${k}')`)).join('')}</div>`;
+}
+function ivsSetCat(k) { if (typeof ivsFlush === 'function') ivsFlush(); ivs.cat = k; ivsRender(); }
+function ivsResourcesHtml(cat) {
+  const list = ivs.res.filter(r => r.category === cat);
+  return list.map((r, i) => `<details ${i === 0 ? 'open' : ''} style="border:1px solid var(--border-light);border-radius:5px;padding:9px 13px;margin-bottom:10px;background:var(--surface)">
+    <summary style="cursor:pointer;font-size:13px;font-weight:600">${escA(r.title)}</summary>
+    <div style="font-size:12px;color:var(--text-secondary);line-height:1.9;margin-top:6px">${riyuMd(r.body)}</div>
+    ${r.files.length ? `<div style="margin-top:8px;font-size:12px">${r.files.map(f => `<div><a href="${escA(f.url)}" target="_blank" style="color:var(--accent)">📄 ${escA(f.name)} ⬇</a></div>`).join('')}</div>` : ''}
+  </details>`).join('');
+}
