@@ -8,9 +8,9 @@ let ivba = { dom: '', major: '', bank: null, fromDb: false, dirty: false, list: 
 async function renderInterviewBankAdmin() {
   const box = document.getElementById('mat_body'); if (!box) return;
   try {
-    const rows = await sbAll('interview_banks?select=major_key,published,title');
+    const rows = await sbAll('/rest/v1/interview_banks?select=major_key,published,title');
     ivba.list = {}; (rows || []).forEach(r => { ivba.list[r.major_key] = r; });
-    ivba.res = await sbAll('interview_resources?select=*&order=sort_order.asc').catch(() => []);
+    ivba.res = await sbAll('/rest/v1/interview_resources?select=*&order=sort_order.asc').catch(() => []);
   } catch (e) { box.innerHTML = `<div style="font-size:12px;color:var(--danger);padding:16px">读取失败：${riyuEsc(e.message)}（如果提示表不存在，请先执行 seed/interview_bank.sql）</div>`; return; }
   ivbaRender();
 }
