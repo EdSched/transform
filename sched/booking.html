@@ -37,7 +37,7 @@
   <div class="card hidden" id="mgmtCard">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
       <b>教室占用管理</b>
-      <span class="muted" style="font-size:12px">查询已占用 → 编辑 / 删除（删除即释放教室）。课程占用请到「排教室」处理。</span>
+      <span class="muted" style="font-size:12px">查询已占用 → 编辑 / 删除（删除即释放教室）。点网格里的课程占用格可以「释放这一回、重新占用」（会同步回课程安排）；整门课的教室请到「排教室」处理。</span>
       <button class="ghost sm" id="mgmtClose" style="margin-left:auto">收起</button>
     </div>
     <div class="row" style="margin-bottom:10px">
@@ -233,11 +233,99 @@ function aname(id){ const a=ACCOUNTS.find(x=>String(x.id)===String(id)); return 
 async function reloadBookings(){ BOOKINGS = await sbGet('sched_bookings','select=*'); linkCourseBookings(BOOKINGS); }
 function fillMgmtRooms(){ const cp=el('oc_campus').value; const rs=ROOMS.filter(r=>!cp||r.campus===cp);
   el('oc_room').innerHTML='<option value="">全部教室</option>'+rs.map(r=>`<option value="${r.id}">${esc(r.name)}（${esc(r.campus)}）</option>`).join(''); }
+/* ---------- 课程（大课）的某一回：释放教室 → 重新占用，并同步回课程安排 ----------
+   规则：一门课的每一天只有一组占用数据。释放 = 删掉那天的临时占用 / 让每周占用那天让位；
+   重新占用 = 新建那天（或新日期）的课程占用，日期 / 时间变了就把管理端那一回（course_sessions）一起改掉并留「原 → 现」记录。 */
+let RELEASED=null;   // { cid, courseName, teacher, legacy, session, fromDate, fromTime, fromRoomId, undo:[...] }
+const relMD=d=>d?(+d.slice(5,7))+'/'+(+d.slice(8,10)):'';
+const relSp=t=>{ const sp=timeRangesSpan(normalizeTimeRanges(t||'')); return sp&&sp.start?{start:sp.start,end:sp.end}:null; };
+async function courseReleaseDialog(bid, date){
+  if(RELEASED){ toast('上一回还没占用完：请先占用别的教室，或点「放弃」恢复', false); return; }
+  const b=BOOKINGS.find(x=>String(x.id)===String(bid)); if(!b||!b.course_id) return;
+  let course=null, ses=null;
+  try{
+    course=(await sbGet('sched_course_v','select=id,name,merge_name,teacher,legacy_sched_id&id=eq.'+encodeURIComponent(b.course_id)+'&limit=1'))[0]||null;
+    ses=(await sbGet('course_sessions','select=*&course_id=eq.'+encodeURIComponent(b.course_id)+'&session_date=eq.'+date)).filter(x=>!x.is_cancelled)[0]||null;
+  }catch(e){ toast('读取失败：'+e.message,false); return; }
+  if(!ses){ toast('这门课 '+date+' 在课程安排里没有这一回，请到管理端「课程安排」处理', false); return; }
+  const name=(course&&(course.merge_name||course.name))||b.title||'课程';
+  const fromTime=ses.time_range||((b.start_time||'')+'-'+(b.end_time||''));
+  const old=document.getElementById('relDlg'); if(old) old.remove();
+  const m=document.createElement('div'); m.id='relDlg';
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:60;overflow:auto;padding:40px 16px';
+  m.innerHTML='<div class="card" style="width:520px;max-width:94vw;margin:auto"><h3 style="margin-top:2px">释放这一回的教室</h3>'+
+    '<div style="line-height:1.8"><b>'+esc(name)+'</b>'+(ses.session_number?'　第 '+esc(String(ses.session_number))+' 回':'')+'<br>'+esc(relMD(date))+'（'+WEEKDAYS[weekdayOf(date)]+'）'+esc(fromTime)+'　教室：<b>'+esc(b.room_id?rname(b.room_id):'线上')+'</b>'+(course&&course.teacher?'　老师：'+esc(course.teacher):'')+'</div>'+
+    '<div class="muted" style="font-size:12px;margin-top:8px;line-height:1.7">释放后，这一回暂时没有教室，下一步会带着这一回的内容让你<b>重新占用别的教室</b>；日期、时间也可以一起改，改了会同步回管理端「课程安排」并留「原 → 现」记录。只影响这一回，这门课其他回不动。</div>'+
+    '<div style="margin-top:12px;display:flex;gap:8px"><button id="rel_ok">释放并重新占用</button><button class="ghost" id="rel_x">取消</button></div></div>';
+  document.body.appendChild(m);
+  el('rel_x').onclick=()=>m.remove();
+  el('rel_ok').onclick=async()=>{
+    el('rel_ok').disabled=true;
+    try{
+      const undo=[];
+      const mine=BOOKINGS.filter(x=>x.kind==='course'&&String(x.course_id)===String(b.course_id)&&x.status!=='rejected');
+      const addOff=(x,d)=>{ const a=(x.manual_off_dates||'').split(',').filter(Boolean); if(!a.includes(d)) a.push(d); return a.sort().join(','); };
+      const who=ACCOUNT?ACCOUNT.name:'管理员';
+      for(const t of mine.filter(x=>x.recurrence==='once'&&x.booking_date===date)){ const row=Object.assign({},t); delete row._orig; delete row._linked; delete row._days; delete row._dayOnly; undo.push({ins:row}); await sbDeleteAs('sched_bookings',t.id,who); }
+      const wk=mine.filter(x=>x.recurrence==='weekly'&&!String(x.manual_off_dates||'').split(',').includes(date));
+      const pick=wk.find(x=>Number(x.weekday)===weekdayOf(date)||(x._days&&x._days.has&&x._days.has(date)))||wk[0];
+      if(pick){ undo.push({upd:pick.id,patch:{manual_off_dates:pick.manual_off_dates||null}}); await sbUpdate('sched_bookings',pick.id,{manual_off_dates:addOff(pick,date),...schedActorStamp(who)}); }
+      RELEASED={cid:b.course_id,courseName:name,teacher:(course&&course.teacher)||'',legacy:course?course.legacy_sched_id:null,session:ses,fromDate:date,fromTime,fromRoomId:b.room_id,undo};
+      await reloadBookings(); m.remove();
+      // 带着被释放的内容去占用：日期 / 时间 / 校区预填，直接查空教室
+      const sp=relSp(fromTime), r0=ROOMS.find(x=>String(x.id)===String(b.room_id));
+      el('date').value=date; if(sp){ el('st').value=sp.start; el('et').value=sp.end; } if(r0&&r0.campus) el('campus').value=r0.campus;
+      if(el('rec')) el('rec').value='once';
+      renderGrid(); find(); showRelBanner();
+      toast('教室已释放，请重新占用别的教室');
+    }catch(e){ toast('释放失败：'+e.message,false); el('rel_ok').disabled=false; }
+  };
+}
+function showRelBanner(){
+  let bar=document.getElementById('relBanner');
+  if(!RELEASED){ if(bar) bar.remove(); return; }
+  if(!bar){ bar=document.createElement('div'); bar.id='relBanner'; el('resBox').parentNode.insertBefore(bar, el('resBox')); }
+  const R=RELEASED;
+  bar.style.cssText='background:#fff4d6;border:1px solid #ecd48a;color:#7a5b00;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:13px;line-height:1.7';
+  bar.innerHTML='<b>'+esc(R.fromRoomId?rname(R.fromRoomId):'线上')+' 教室已释放。</b>请重新占用别的教室：<b>'+esc(R.courseName)+'</b>'+(R.session.session_number?' 第 '+esc(String(R.session.session_number))+' 回':'')+'，原 '+esc(relMD(R.fromDate))+' '+esc(R.fromTime)+'。在下面点「录入占用」选教室；上面的日期 / 时间也可以改（会同步回课程安排）。 <button class="sm ghost" id="rel_undo">放弃，恢复原占用</button>';
+  el('rel_undo').onclick=relUndo;
+}
+async function relUndo(){
+  const R=RELEASED; if(!R) return;
+  if(!confirm('恢复原来的教室占用？')) return;
+  try{
+    for(const u of R.undo.slice().reverse()){ if(u.ins){ const r=Object.assign({},u.ins); delete r.id; delete r.created_at; delete r.updated_at; await sbInsert('sched_bookings',r); } else await sbUpdate('sched_bookings',u.upd,u.patch); }
+    RELEASED=null; await reloadBookings(); showRelBanner(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已恢复原占用');
+  }catch(e){ toast('恢复失败：'+e.message,false); }
+}
+// 重新占用成功后：日期 / 时间变了 → 改管理端那一回（留原 → 现）；只是换了教室 → 记一条「换教室」。都写一条修改记录，课程安排里能看到
+async function relWriteBack(newDate, s, e, room, entryName){
+  const R=RELEASED, ses=R.session, tr=s+'-'+e;
+  const oldSp=relSp(R.fromTime), same=(newDate===R.fromDate)&&oldSp&&oldSp.start===s&&oldSp.end===e;
+  const lab='第 '+(ses.session_number||'?')+' 回';
+  let change;
+  if(!same){
+    const oDate=ses.orig_date||R.fromDate, oTime=ses.orig_date?(ses.orig_time_range||''):R.fromTime;
+    const back=(newDate===oDate&&relSp(oTime)&&relSp(oTime).start===s&&relSp(oTime).end===e);
+    const patch=Object.assign({session_date:newDate,time_range:tr}, back?{orig_date:null,orig_time_range:null,change_reason:null,changed_by:null,changed_at:null}
+      :{orig_date:oDate,orig_time_range:oTime,change_reason:'教室占用录入：释放后重新占用',changed_by:entryName,changed_at:new Date().toISOString()});
+    await sbUpdate('course_sessions', ses.id, patch);
+    change={field:'session_move',label:lab,from:R.fromDate+' '+R.fromTime,to:newDate+' '+tr};
+  }else{
+    change={field:'session_room',label:lab+' '+relMD(newDate),from:R.fromRoomId?rname(R.fromRoomId):'线上',to:room.name};
+  }
+  try{ await sbInsert('sched_change_log',{course_id:R.legacy!=null?R.legacy:null,course_name:R.courseName,actor_role:'admin',actor_label:entryName,action:'edit',changes:[Object.assign({course_uuid:String(R.cid)},change)],acked_by:''}); }catch(err){ console.warn('写修改记录失败',err); }
+  return !same;
+}
 // 点网格里的占用格 → 直接编辑（仅非课程占用、且有管理权限）
 function wireGridClicks(){
   if(!CANMANAGE) return;
   el('gridBox').querySelectorAll('td.occ[data-b]').forEach(td=>{
-    if(td.dataset.kind==='course') return;   // 课程占用不在此处编辑
+    if(td.dataset.kind==='course'){   // 课程占用：释放这一回的教室，再重新占用（同步回课程安排）
+      td.style.cursor='pointer'; td.title='点击：释放这一回的教室，重新占用别的教室';
+      td.onclick=()=>courseReleaseDialog(td.dataset.b, el('date').value);
+      return;
+    }
     td.style.cursor='pointer'; td.title='点击编辑/删除此占用';
     td.onclick=()=>{ if(el('mgmtCard').classList.contains('hidden')){ el('mgmtCard').classList.remove('hidden'); renderMgmtTable(); } occupyEditForm(td.dataset.b); };
   });
@@ -405,6 +493,12 @@ function openModal(roomId){
   el('m_room').textContent = r.name;
   el('m_when').textContent = `${el('date').value}（${WEEKDAYS[weekdayOf(el('date').value)]}）${el('st').value}-${el('et').value} · ${r.campus}`;
   ['m_title','m_user','m_note'].forEach(id=>el(id).value='');
+  { let ri=document.getElementById('m_relinfo'); if(ri) ri.remove();
+    if(RELEASED){   // 被释放的课程内容：默认带出来，再占用
+      el('m_title').value=RELEASED.courseName; el('m_user').value=RELEASED.teacher||'';
+      ri=document.createElement('div'); ri.id='m_relinfo'; ri.style.cssText='background:#fff4d6;border:1px solid #ecd48a;color:#7a5b00;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:12px;line-height:1.7';
+      ri.innerHTML='被释放的课程：<b>'+esc(RELEASED.courseName)+'</b>'+(RELEASED.session.session_number?' 第 '+esc(String(RELEASED.session.session_number))+' 回':'')+'　原 '+esc(relMD(RELEASED.fromDate))+' '+esc(RELEASED.fromTime)+'　'+esc(RELEASED.fromRoomId?rname(RELEASED.fromRoomId):'线上')+' 已释放。占用后按课程记录，并同步回课程安排。';
+      el('m_when').parentNode.insertBefore(ri, el('m_when')); } }
   el('m_entry').value=schedEntryName();
   el('m_entryWrap').classList.toggle('hidden', !!ACCOUNT);
   el('m_entryAcc').classList.toggle('hidden', !ACCOUNT);
@@ -422,7 +516,7 @@ async function submit(){
   const accId = um ? (CUR.meeting_account_id||null) : null;
   if(um && !accId){ warn('该教室没有绑定固定会议账号，无法占用账号'); return; }
 
-  const weekly = el('rec').value==='weekly';
+  const weekly = !RELEASED && el('rec').value==='weekly';
   // 生成要录入的日期列表
   let dates=[];
   if(weekly){
@@ -465,15 +559,22 @@ async function submit(){
   const sb=el('m_submit'); if(sb.disabled) return; sb.disabled=true; sb.textContent='保存中…';
   try{
     for(const date of dates){
-      const rec={ room_id:CUR.id, kind:use, title: el('m_title').value.trim()||KIND_LABEL[use]||null, allow_multi:allowMulti,
+      const rec={ room_id:CUR.id, kind:RELEASED?'course':use, title: el('m_title').value.trim()||KIND_LABEL[use]||null, allow_multi:allowMulti,
         user_name: el('m_user').value.trim()||null, recurrence: 'once', weekday: weekdayOf(date), booking_date:date, start_time:s, end_time:e,
         uses_meeting:um, meeting_account_id:accId, show_title: el('m_showtitle')?el('m_showtitle').value==='1':false,
         status:'confirmed', created_by:myToken()+'|'+(CANMANAGE?'管理员':'使用者'), note: el('m_note').value.trim()||null,
         entry_name:entryName, ...schedActorStamp(entryName) };
+      if(RELEASED){ Object.assign(rec,{course_id:RELEASED.cid,title:RELEASED.courseName,user_name:RELEASED.teacher||rec.user_name,entry_name:'教室占用录入·调整单回',note:'教室占用录入·调整单回',auto_sync:false});
+        const sesBak=Object.assign({},RELEASED.session);
+        await relWriteBack(date, s, e, CUR, entryName);   // 先改课程安排里的那一回，再占用（那天要有这一回）
+        try{ const ins=await sbInsert('sched_bookings', rec); BOOKINGS.push(ins[0]); }
+        catch(er){ try{ await sbUpdate('course_sessions', sesBak.id, {session_date:sesBak.session_date,time_range:sesBak.time_range,orig_date:sesBak.orig_date||null,orig_time_range:sesBak.orig_time_range||null,change_reason:sesBak.change_reason||null,changed_by:sesBak.changed_by||null,changed_at:sesBak.changed_at||null}); }catch(e2){} throw er; }
+        continue; }
       const ins=await sbInsert('sched_bookings', rec); BOOKINGS.push(ins[0]);
     }
+    if(RELEASED){ RELEASED=null; showRelBanner(); try{ const ri=document.getElementById('m_relinfo'); if(ri) ri.remove(); }catch(e){} }
     if(!ACCOUNT) schedSaveEntryName(entryName);
-    el('modal').classList.add('hidden'); toast(weekly?('已批量录入 '+dates.length+' 条'):'已录入并生效'); find(); renderGrid(); renderMine();
+    el('modal').classList.add('hidden'); toast(weekly?('已批量录入 '+dates.length+' 条'):'已录入并生效（已同步到课程安排）'); find(); renderGrid(); renderMine();
   }catch(err){ warn(esc(err.message)); try{ await reloadBookings(); find(); renderGrid(); renderMine(); }catch(e){} }
   finally{ sb.disabled=false; sb.textContent='保存占用'; }
 }
