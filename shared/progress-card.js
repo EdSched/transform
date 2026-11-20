@@ -83,7 +83,7 @@ function pgcNodes(s, latest, plans, draft, ctx) {
     planItem,
     { label: '择校・联系教授', cur: (plans.length ? `已选 ${plans.length}/6 校` : '未选校') + (contactedN ? ` · 已发邮件 ${contactedN} 校` : '') + (profOkN ? ` · 教授OK ${profOkN} 校` : '') + (apply ? ' · ' + apply : ''), done: profOkN > 0, dl: DL.school, dlName: '锁定教授最晚' },
     { label: '出愿', cur: appliedN ? `已出愿 ${appliedN} 校` : (apply || '未开始'), done: appliedN > 0 || ['已出愿', '已合格'].includes(apply), dl: DL.apply, dlName: '出愿' },
-    { label: '过去问・面试稿', cur: [(kakomonN ? `过去问已开始 ${kakomonN} 校` : ''), (interviewN ? `面试稿完成 ${interviewN} 校` : ''), exam || ''].filter(Boolean).join(' · ') || '未开始', done: dn('exam', exam), dl: DL.kakomon, dlName: '完成最晚' },
+    { label: '过去问・面试稿', cur: [(kakomonN ? `过去问已开始 ${kakomonN} 校` : ''), (interviewN ? `面试稿完成 ${interviewN} 校` : ''), (typeof ivmCardText === 'function' ? ivmCardText(s.id) : ''), exam || ''].filter(Boolean).join(' · ') || '未开始', done: dn('exam', exam), dl: DL.kakomon, dlName: '完成最晚' },
     { label: '大学院考试', cur: passedN ? `合格 ${passedN} 校` : apply === '已合格' ? '已合格' : appliedN ? `已出愿 ${appliedN} 校・待考试` : '—', done: passedN > 0 || apply === '已合格', dl: DL.exam, dlName: '考试' },
   ];
   const items = defs.map(it => {

@@ -128,6 +128,7 @@ async function renderStudentDetailCard(studentId, opts) {
     ${schoolsHtml}
     <div style="font-size:11px;color:var(--text-3);margin:10px 0 4px">最近进度</div>
     ${tlHtml}
+    ${typeof ivmStudentBlockHtml === 'function' ? ivmStudentBlockHtml(s.id) : ''}
     ${bookings.length ? `${secTitle(`最近面谈（${bookings.length}条）`)}
     ${bookings.map(b => `<div style="font-size:11px;padding:6px 0;border-bottom:1px solid var(--border-light);color:var(--text-2)">${sdEsc(b.slot_date)} ${sdEsc(b.slot_time_range || '')} · ${sdEsc(typeLabel(b.type) || b.type)}</div>`).join('')}` : ''}
     ${opts.actionsHtml ? `<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">${opts.actionsHtml}</div>` : ''}`;

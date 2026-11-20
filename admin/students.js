@@ -611,8 +611,14 @@ function setProgressStatus(v){progressStatus=v;progressShown=LIST_PAGE;renderPro
 let progressViewMode = 'student'; // 'student' | 'submissions' | 'season' | 'materials'
 // 考学进度顶部的视图切换按钮（学生视角 / 学生提交 / 年度出愿情报 / 出愿材料准备）
 function progressViewButtons(){
-  return [['student','👤 学生视角'],['submissions','📥 学生提交'],['season','📋 年度出愿情报'],['materials','📁 出愿材料准备']].map(([k,l])=>
+  return [['student','👤 学生视角'],['submissions','📥 学生提交'],['season','📋 年度出愿情报'],['materials','📁 出愿材料准备'],['mock','🎤 模拟面试']].map(([k,l])=>
     `<button class="btn btn-sm ${progressViewMode===k?'btn-primary':'btn-outline'}" onclick="progressViewMode='${k}';renderProgressPage(document.getElementById('mainContent'))">${l}</button>`).join('');
+}
+
+// 🎤 模拟面试：次数 / 最近一次 / 老师反馈（视图在 shared/mock-interview.js，老师端共用；范围 = 当前视角 + 领域/专业/来源筛选，只看在籍）
+async function renderMockView(mc){
+  mc.innerHTML=`<div class="page-header"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="section-title">考学进度</div><div style="display:flex;gap:4px">${progressViewButtons()}</div></div></div><div id="ivm_view_box"></div>`;
+  await ivmRenderView(document.getElementById('ivm_view_box'),()=>dmfFilter(cachedStudents.filter(s=>(s.status||'active')==='active'&&studentInCurrentView(s))));
 }
 
 // 📥 学生提交：谁交了计划书 / 志望理由书 / 邮件，等着老师批复（列表在 shared/submissions.js，老师端共用）
@@ -686,6 +692,7 @@ async function renderProgressPage(mc, focusStudentId=null, opts=null){
   if (!solo) { PGS.id = null; PGS.back = null; }
   mc.innerHTML='<div class="loading">加载中…</div>';
   if (!solo && progressViewMode === 'materials' && typeof renderMaterialsView === 'function') { await renderMaterialsView(mc); return; }
+  if (!solo && progressViewMode === 'mock' && typeof ivmRenderView === 'function') { await renderMockView(mc); return; }
   if (!solo && progressViewMode === 'submissions' && typeof sbmRender === 'function') { await renderSubmissionsView(mc); return; }
   let students=cachedStudents.filter(s=>s.status==='active'||s.status==='stopped'||s.status==='graduated');
   // 视角过滤（叠加逻辑）：非总览时按学生主专业+附加专业判断

@@ -990,7 +990,7 @@ function renderBookingCardBody(b) {
             </div>
           </div>
           <div style="font-size:10px;color:var(--text-3);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px">面谈记录</div>
-          ${renderRecordForm(b.id, b.daily_record || {})}
+          ${b.type === 'mock' && typeof ivmMount === 'function' ? `<div id="ivm_form_${b.id}"></div>` : renderRecordForm(b.id, b.daily_record || {})}
           <div style="display:flex;gap:6px;margin-top:10px">
             <button onclick="saveBookingRecord('${b.id}')" style="background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);border:1px solid var(--btn-bd,#d5c9bb);border-radius:3px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:inherit">保存记录</button>
             ${b.status !== 'confirmed' ? `<button onclick="cancelBookingTeacher('${b.id}')" style="background:none;border:1px solid var(--border);border-radius:3px;padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--danger)">取消预约</button>` : ''}
@@ -1128,6 +1128,7 @@ function toggleRecordPanel(id) {
   if (!isOpen) {
     // 展开时：有记录就默认查看模式，否则编辑模式
     const booking = cachedTeacherBookings.find(x => x.id === id);
+    if (booking && booking.type === 'mock' && typeof ivmMount === 'function') ivmMount(booking);   // 模拟面试：逐题记录表单
     const hasRecord = booking && booking.daily_record && Object.values(booking.daily_record).some(v => v);
     setTeacherRecordMode(id, hasRecord ? 'view' : 'edit');
   }
@@ -1158,10 +1159,10 @@ function setTeacherRecordMode(id, mode) {
 }
 
 async function saveBookingRecord(id) {
-  const record = getRecordFromForm(id);
   const durVal = document.getElementById(`duration_${id}`)?.value || '';
   const actual_duration = durVal ? parseInt(durVal) : null;
   const booking = cachedTeacherBookings.find(x => x.id === id);
+  const record = (booking && booking.type === 'mock' && typeof ivmMergeRecord === 'function') ? ivmMergeRecord(booking, id) : getRecordFromForm(id);   // 模拟面试：记录合并进 daily_record.mock，其他键原样保留
   // 实际时间：从记录表单里取，没填则 fallback 到 confirmBooking 时填的 actual_time，再 fallback 到 slot_date
   const timeInput = document.getElementById(`actual_time_rec_${id}`)?.value || '';
   const actual_time = timeInput || booking?.actual_time || booking?.slot_date || '';

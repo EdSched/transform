@@ -5,7 +5,7 @@
 // sections 以「题 key」为键；旧版 8 段（self / motive / …）的答案原样保留在同一行里，只读显示在「旧版面试稿」折叠块
 // 依赖：study.js（studyStudent / studyData / escA / studyPlanDoc / switchStudyTab）、shared/riyu.js、shared/interview-bank.js、shared/doc-versions.js
 // ══════════════════════════════════
-let ivs = { bank: null, subs: [], vers: [], old: null, drafts: {}, dirty: {}, school: '', chap: '', q: '', res: [], cat: 'bank', moreChaps: false, savedAt: '', err: '', focusTodo: false, loading: false };
+let ivs = { bank: null, subs: [], vers: [], old: null, drafts: {}, dirty: {}, school: '', chap: '', q: '', res: [], mocks: [], cat: 'bank', moreChaps: false, savedAt: '', err: '', focusTodo: false, loading: false };
 let ivsSummary = null;      // 学习页提醒 / 时间线用的摘要：{ rem: ivbReminder 结果 | null, done, total }
 let ivsSaveTimer = null;
 const ivsChain = {};        // rowKey → 保存队列（避免同一行并发保存时重复新建）
@@ -32,6 +32,7 @@ async function ivsLoad() {
       docvLoad(studyStudent.id, 'interview').then(r => { vers = r || []; }).catch(() => {}),
       riyuLoadGuide(RIYU_INTERVIEW_KIND).then(g => { old = g; }).catch(() => {}),
       ivbLoadResources(studyStudent).then(r => { ivs.res = r; }).catch(() => {}),
+      (typeof ivmList === 'function' ? sb(`/rest/v1/bookings?student_id=eq.${encodeURIComponent(studyStudent.id)}&type=eq.mock&daily_record=not.is.null&select=id,name,student_id,slot_date,actual_time,actual_duration,status,assigned_teacher,type,daily_record&order=slot_date.desc`, 'GET', null, { cache: 'no-store' }).then(r => { ivs.mocks = ivmList(r || []); }).catch(() => {}) : null),
     ]);
   } finally { ivs.loading = false; }
   const plans = ivsPlans();
@@ -63,7 +64,9 @@ function ivsRender() {
   const b = ivs.bank;
   if (ivs.err) { wrap.innerHTML = `<div style="font-size:12px;color:var(--danger);padding:16px">读取失败：${escA(ivs.err)}（请刷新重试）</div>`; return; }
   if (!b) { wrap.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text-muted);font-size:12px">你所在的专业还没有面试题库，请联系老师</div>'; return; }
-  if (ivs.cat !== 'bank' && !ivs.res.some(r => r.category === ivs.cat)) ivs.cat = 'bank';
+  if (ivs.cat !== 'bank' && ivs.cat !== 'mock' && !ivs.res.some(r => r.category === ivs.cat)) ivs.cat = 'bank';
+  if (ivs.cat === 'mock' && !ivs.mocks.length) ivs.cat = 'bank';
+  if (ivs.cat === 'mock') { wrap.innerHTML = ivsCatBar() + `<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">老师在每次模拟面试后写的评价和反馈（点开看逐题）</div>` + ivmViewHtml(ivs.mocks); return; }
   if (ivs.cat !== 'bank') { wrap.innerHTML = ivsCatBar() + ivsResourcesHtml(ivs.cat); return; }
   const plans = ivsPlans();
   const hasSchoolCh = b.chapters.some(c => c.scope === 'school');
@@ -313,8 +316,8 @@ function ivsTimelineText() { return ivsSummary && ivsSummary.total ? `面试稿 
 // ── 资料分类：面试稿 ｜ マナー ｜ 临机应对 ｜ 态度与心得 ｜ 其他（没有内容的分类不显示）──
 function ivsCatBar() {
   const cats = IVB_RES_CATS.filter(([k]) => ivs.res.some(r => r.category === k));
-  if (!cats.length) return '';
-  return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${ivsChip('面试稿', ivs.cat === 'bank', "ivsSetCat('bank')")}${cats.map(([k, l]) => ivsChip(l, ivs.cat === k, `ivsSetCat('${k}')`)).join('')}</div>`;
+  if (!cats.length && !ivs.mocks.length) return '';
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${ivsChip('面试稿', ivs.cat === 'bank', "ivsSetCat('bank')")}${cats.map(([k, l]) => ivsChip(l, ivs.cat === k, `ivsSetCat('${k}')`)).join('')}${ivs.mocks.length ? ivsChip('模拟面试记录', ivs.cat === 'mock', "ivsSetCat('mock')", ivs.mocks.length + ' 次') : ''}</div>`;
 }
 function ivsSetCat(k) { if (typeof ivsFlush === 'function') ivsFlush(); ivs.cat = k; ivsRender(); }
 function ivsResourcesHtml(cat) {
