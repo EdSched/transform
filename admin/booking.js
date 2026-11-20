@@ -1782,6 +1782,7 @@ function openRecord(id){
   const r=b.daily_record||{};
   const isMock=b.type==='mock'&&typeof ivmMount==='function';   // 模拟面试：标准面谈字段换成逐题记录表单
   document.getElementById('recStdFields').style.display=isMock?'none':'';
+  const recBox=document.querySelector('#recordModal .modal'); if(recBox) recBox.style.width=isMock?'1000px':'';   // 模拟面试：弹窗加宽，选题和记录左右并排（窄屏自动变成左右滑动）
   document.getElementById('ivmAdminBox').innerHTML=isMock?`<div id="ivm_form_${id}"></div>`:'';
   if(isMock) ivmMount(b);
   const at=b.actual_time||'';
