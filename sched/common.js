@@ -342,6 +342,16 @@ function parseWeekdaysSched(s){
   const arr = String(s).split(/[\/、,，\s;；]+/).map(x=>{ x=x.trim(); return (x==='0'||x==='周0') ? 7 : WD_MAP[x]; }).filter(Boolean);
   return [...new Set(arr)].sort((a,b)=>a-b);
 }
+/* 课程开课了没有（课程管理 / 回数审查共用）：
+   单回（course_sessions）里有任何早于今天的日期 → 已开课；有单回但都在今天及以后 → 未开课；
+   一条单回都没有的老课，退回用 start_date：晚于今天 → 未开课。
+   ses = { past:Set(有早于今天单回的课程 id), any:Set(有任何单回的课程 id) }，由课程管理页读好传进来 */
+function courseIsStarted(c, ses){
+  const id = String(c.id), today = todayStr();
+  if(ses && ses.past && ses.past.has(id)) return true;
+  if(ses && ses.any && ses.any.has(id)) return false;
+  return !!(c.start_date && c.start_date <= today);
+}
 function weekdaysLabel(str){ // "2,4" / "周二,周四" -> "周二/周四"
   return parseWeekdaysSched(str).map(d=>WEEKDAYS[d]).join('/');
 }
