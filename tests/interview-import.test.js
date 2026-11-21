@@ -2,7 +2,7 @@
 // ① 用内置小样本（按任务单描述的 tex 结构写的）断言规则
 // ② 如果放了真实手册 tests/fixtures/economics-interview-manual.tex，再断言章数 / 题数 / 关键词数
 const fs = require('fs'), path = require('path'), assert = require('assert');
-const { iviParse, iviMerge, iviCount } = require('../shared/interview-import.js');
+const { iviParse, iviMerge, iviCount, iviReport } = require('../shared/interview-import.js');
 
 const SAMPLE = String.raw`\documentclass{ltjsbook}
 \begin{document}
@@ -88,6 +88,73 @@ assert.strictEqual(m3.stat.itemsGone, 1);
 const md = iviParse('# 背景\n\n## 自己紹介\n> 指导：先说结论\n例：私は○○です。\n\n## 关键词\n| 外部効果 | 公共財 |\n|---|---|\n');
 assert.strictEqual(md[0].items[0].tips, '先说结论'); assert.ok(md[0].items[0].example.includes('私は'));
 assert.deepStrictEqual(md[0].items[1].keywords, ['外部効果', '公共財']);
+
+// ── 别名命令：导言区 \newcommand{\interviewquestion}[1]{\subsection*{#1}} ──
+const ALIAS = String.raw`\documentclass{ltjsbook}
+\newcommand{\interviewquestion}[1]{\subsection*{#1}}
+\newcommand{\qsec}[1]{\section*{#1}}
+\newcommand{\fancy}[2]{\section*{#1 #2}}
+\begin{document}
+\chapter{MBA面接}
+章首说明。
+\interviewquestion{Q01　自己紹介をしてください}
+注：先说结论。
+例：私は○○です。
+\interviewquestion{Q02　志望動機は何ですか}
+\chapter{別の章}
+\qsec{短い質問}
+\subsection*{小見出し}
+中文说明。
+\end{document}`;
+const al = iviParse(ALIAS);
+assert.strictEqual(al[0].items.length, 2, '别名 → \\subsection*，该章无 \\section，当题');
+assert.strictEqual(al[0].items[0].q, 'Q01 自己紹介をしてください');
+assert.ok(al[0].items[0].tips.includes('先说结论') && al[0].items[0].example.includes('私は'));
+assert.ok(al[0].intro.includes('章首说明'));
+assert.strictEqual(al[1].items.length, 1, '别名 → \\section*，其下 \\subsection 仍是题内小标题');
+assert.ok(al[1].items[0].tips.includes('小見出し') || al[1].items[0].tips.includes('中文说明'));
+assert.ok(al.warnings.length === 1 && al.warnings[0].includes('fancy'), '复杂宏给警告，实际 ' + JSON.stringify(al.warnings));
+
+// ── \subsection 当题：无 \section 的章 / 有 \section 的章 ──
+const SUBQ = String.raw`\begin{document}
+\chapter{甲}
+\subsection*{注意点}
+不要背诵。
+\subsection*{题一}
+\subsection*{题二}
+\chapter{乙}
+\section{题A}
+\subsection*{小标题}
+中文说明。
+\end{document}`;
+const sq = iviParse(SUBQ);
+assert.deepStrictEqual(sq[0].items.map(i => i.q), ['题一', '题二'], '无 \\section 的章：\\subsection 当题（注意点仍进 intro）');
+assert.ok(sq[0].intro.includes('不要背诵'));
+assert.deepStrictEqual(sq[1].items.map(i => i.q), ['题A'], '有 \\section 的章：\\subsection 保持小标题');
+// 题 key 不变：同样的题面直接写成 \section 时 key 相同
+const sec = iviParse(String.raw`\begin{document}\chapter{甲}\section{题一}\section{题二}\end{document}`);
+assert.deepStrictEqual(sq[0].items.map(i => i.key), sec[0].items.map(i => i.key), '题 key 与写成 \\section 时一致');
+
+// ── 识别报告 ──
+const LONG = String.raw`\begin{document}
+\chapter{空章}
+${'这是一段很长的说明文字。'.repeat(120)}
+\chapter{短空章}
+一句话。
+\chapter{正常}
+\section{题}
+\end{document}`;
+const rp = iviReport(iviParse(LONG));
+assert.strictEqual(rp.chapters, 3); assert.strictEqual(rp.items, 1);
+assert.deepStrictEqual(rp.noItems, ['空章', '短空章']);
+assert.deepStrictEqual(rp.longIntro, ['空章'], 'intro > 1000 字且无题');
+
+// ── ※ 标记：选答，显示名去掉 ※，key 按去掉 ※ 的题面算 ──
+const OPT = iviParse(String.raw`\begin{document}\chapter{甲}\section{※文献}\section{必答题}\end{document}`);
+assert.strictEqual(OPT[0].items[0].q, '文献'); assert.strictEqual(OPT[0].items[0].required, false);
+assert.strictEqual(OPT[0].items[1].required, true);
+assert.strictEqual(OPT[0].items[0].key, iviParse(String.raw`\begin{document}\chapter{甲}\section{文献}\end{document}`)[0].items[0].key);
+assert.strictEqual(iviParse('# 甲\n\n## ※说明\n').pop().items[0].required, false, 'md 也认 ※');
 
 // 真实手册（可选）
 const fx = path.join(__dirname, 'fixtures', 'economics-interview-manual.tex');

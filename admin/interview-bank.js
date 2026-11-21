@@ -364,13 +364,17 @@ function ivbaImpRender() {
 例：日文参考答案
 ### 小标题          （题内小标题；短标题（≤8 字）且题下只有小标题时拆成独立题）
 | 概念 | 概念 |      （表格 → 关键词，只读）
-- 逆質問原文         （「逆質問」章里的列表：每条一题）</pre></details>
+- 逆質問原文         （「逆質問」章里的列表：每条一题）
+※ 标题开头加「※」  （tex：\\section*{※文献}；md：## ※文献）→ 资料/说明，导入后为「选答」，显示名去掉 ※（不要用 * 号）
+tex 补充：导言区 \\newcommand{\\名字}[1]{\\subsection*{#1}} 这种简单的标题别名会自动识别；
+         一章里没有 \\section、只有 \\subsection 时，\\subsection 当题</pre></details>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
         <input type="file" id="ivba_imp_file" accept=".tex,.md,.txt,.docx" style="font-size:11px" onchange="ivbaImpFile(this)">
         <span style="font-size:11px;color:var(--text-3)">或粘贴：</span></div>
       <textarea id="ivba_imp_text" rows="4" placeholder="把 tex / md 内容贴在这里" style="${IVBA_INP};resize:vertical;margin-bottom:6px">${riyuEsc(im.text)}</textarea>
       <button class="btn btn-outline btn-sm" onclick="ivbaImpParse()">解析并预览</button>
       ${im.err ? `<span style="font-size:11px;color:var(--danger);margin-left:8px">${riyuEsc(im.err)}</span>` : ''}
+      ${cs && im.report ? ivbaImpReportHtml(im.report) : ''}
       ${cs ? `<div style="margin-top:12px;font-size:12px;font-weight:600">预览：${cnt.chapters} 章 · ${cnt.items} 题 · 关键词 ${cnt.keywords}</div>
         <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">每题可改题面、点「指导⇄参考例」互换归类、删除；章的作答范围可改。</div>
         <div style="max-height:46vh;overflow:auto;border:1px solid var(--border-light);border-radius:4px;padding:6px 10px">${cs.map((c, ci) => ivbaImpChapterHtml(c, ci)).join('')}</div>
@@ -378,6 +382,14 @@ function ivbaImpRender() {
           <select onchange="ivba.imp.mode=this.value" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit"><option value="merge" ${im.mode === 'merge' ? 'selected' : ''}>合并到现有题库（学生答案不动）</option><option value="new" ${im.mode === 'new' ? 'selected' : ''}>新建（用导入内容替换现有章节）</option></select>
           <button class="btn btn-primary btn-sm" onclick="ivbaImpApply()" style="margin-left:auto">导入</button></div>` : ''}
     </div></div>`;
+}
+function ivbaImpReportHtml(r) {
+  const warn = r.noItems.length || r.longIntro.length || r.warnings.length;
+  return `<div style="margin-top:10px;padding:6px 10px;border-radius:4px;font-size:11px;line-height:1.7;border:1px solid ${warn ? '#d9b36a' : 'var(--border-light)'};background:${warn ? '#fff8e8' : 'var(--bg)'}">
+    <b>识别报告：</b>共 ${r.chapters} 章 ${r.items} 题
+    ${r.noItems.length ? `<div>以下章没有识别出题：${riyuEsc(r.noItems.join('、'))}</div>` : ''}
+    ${r.longIntro.length ? `<div style="color:#a0621a">以下章的说明文字特别长（可能有题没识别出来）：${riyuEsc(r.longIntro.join('、'))}</div>` : ''}
+    ${r.warnings.map(w => `<div style="color:#a0621a">${riyuEsc(w)}</div>`).join('')}</div>`;
 }
 function ivbaImpChapterHtml(c, ci) {
   return `<details ${ci === 0 ? 'open' : ''} style="margin:4px 0"><summary style="cursor:pointer;font-size:12px;font-weight:600">${riyuEsc(c.title)} <span style="font-weight:400;color:var(--text-3)">${c.items.length} 题 · ${c.type === 'ask' ? '逆质问' : c.type === 'keywords' ? '关键词' : '问答'}</span></summary>
@@ -412,7 +424,7 @@ function ivbaImpParse() {
   try {
     const cs = iviParse(ivba.imp.text);
     if (!cs.length) { ivba.imp.err = '没有识别出章节：tex 需要 \\chapter / \\section，md 需要 # / ##'; ivba.imp.chapters = null; }
-    else { ivba.imp.chapters = cs; ivba.imp.err = ''; }
+    else { ivba.imp.chapters = cs; ivba.imp.report = iviReport(cs); ivba.imp.err = ''; }
   } catch (e) { ivba.imp.err = '解析失败：' + e.message; ivba.imp.chapters = null; }
   ivbaImpRender();
 }
