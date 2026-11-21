@@ -1,5 +1,5 @@
 // 管理端「课程安排」改单回后检查新日子的教室：全空着 → 不弹框，页面上方提示一行；有被占 → 弹框只列有问题的回，当场选空教室（shared/course-room-view.js），或交给总务（只给管理端用，不引用 sched/ 下任何文件）
-// 依赖：shared/course-room-view.js（crv*）、shared/supabase.js（sb）、shared/constants.js（timeRangesSpan）、shared/course-confirm.js（ccOverlay / CC_BOX / ccEsc / ccMD / CC_WD）
+// 依赖：shared/session-online.js（sol*，「改成线上」）、shared/course-room-view.js（crv*）、shared/supabase.js（sb）、shared/constants.js（timeRangesSpan）、shared/course-confirm.js（ccOverlay / CC_BOX / ccEsc / ccMD / CC_WD）
 //
 // 规则：
 //   · 排课已经直接读管理端单回的日期和时间，所以这里不再释放、不再建临时占用、不再撤销
@@ -242,7 +242,9 @@ async function srmOpen(opts) {
   for (const ch of changes) {
     const f = ch.from, t = ch.to;
     const sp = srmSpan(t.time);
-    const row = { ch, sp, checks: [], note: '', key: `${course.id}|${ch.id}|${t.date}` };
+    const ses = (opts.sessions || []).find(x => x && String(x.id) === String(ch.id)) || null;
+    if (ses && typeof solIsOnline === 'function' && solIsOnline(ses)) continue;   // 这一回单独改成线上：不需要教室
+    const row = { ch, sp, ses, checks: [], note: '', key: `${course.id}|${ch.id}|${t.date}`, sol: { open: false, mode: 'link', url: '', acct: null, rows: null, busy: false } };
     if (!sp.start) row.note = '这一回没有上课时间，不能判断教室';
     else {
       // 教室：和原来那天占的教室一致，其次同星期的每周占用，再其次第一条
@@ -280,9 +282,12 @@ async function srmOpen(opts) {
     const ov = ccOverlay('srmOv');
     const e = ccEsc;
     const notified = new Set();
-    const close = () => { ov.remove(); delete window.__srmNotify; delete window.__srmNotifyAll; delete window.__srmPick; delete window.__srmLater; delete window.__srmLaterAll; resolve(); };
+    const close = () => {
+      ov.remove(); ['__srmOnlineToggle', '__srmOnlineMode', '__srmOnlineUrl', '__srmOnlineAcct', '__srmOnlineGo'].forEach(k => { delete window[k]; });
+      if (rows.some(x => x.online) && typeof renderCoursesPage === 'function' && document.getElementById('mainContent')) { try { renderCoursesPage(document.getElementById('mainContent')); } catch (er) { /* ignore */ } }
+      delete window.__srmNotify; delete window.__srmNotifyAll; delete window.__srmPick; delete window.__srmLater; delete window.__srmLaterAll; resolve(); };
     const who = () => (typeof csWho === 'function' ? csWho() : ((typeof ADMIN_EMAIL !== 'undefined' && ADMIN_EMAIL) ? ADMIN_EMAIL : '管理员'));
-    const todoRows = () => (probRows.concat(noteRows)).filter(r => !r.picked && !r.later);
+    const todoRows = () => (probRows.concat(noteRows)).filter(r => !r.picked && !r.later && !r.online);
     // 稍后调整另一门：这一回收起，标成「稍后处理」，页面上方留一条提示（另一门调整完自动消失）
     const laterOne = r => {
       if (r.picked || r.later) return;
@@ -297,7 +302,7 @@ async function srmOpen(opts) {
 
     // 写一条 room_coord；同一回已有没处理的就更新那一条（srmCoordWrite）
     const notifyOne = async r => {
-      if (notified.has(r.key) || r.picked) return;
+      if (notified.has(r.key) || r.picked || r.online) return;
       const pr = problems(r)[0]; if (!pr) return;
       const t = r.ch.to;
       const blocker = pr.none ? '' : pr.blockers.map(x => `《${x.title}》（${x.who || '—'}，${x.time}）`).join('、');
@@ -332,6 +337,42 @@ async function srmOpen(opts) {
       } catch (er) { err = /^数据库认为/.test(er.message || '') ? er.message : '换教室失败：' + (er.message || er); }
       draw();
     };
+    // ── 这一回改成线上 ──
+    const loadAcct = async r => {
+      const d = r.ch.to.date;
+      try {
+        const st = await crvRoomStatus(d, r.sp, course.id);
+        r.sol.rows = await solAcctRows(st, aid => srmBlockers('meeting_account_id', aid, d, r.sp, course.id));
+        if (r.sol.acct && !(r.sol.rows.find(x => String(x.room.id) === String(r.sol.acct) && !x.blockers.length))) r.sol.acct = null;
+      } catch (er) { r.sol.rows = []; r.sol.rowsErr = true; }
+      draw();
+    };
+    window.__srmOnlineToggle = i => { const r = rows[i]; r.sol.open = !r.sol.open; draw(); };
+    window.__srmOnlineMode = (i, v) => { const r = rows[i]; r.sol.mode = v; draw(); if (v === 'acct' && !r.sol.rows) loadAcct(r); };
+    window.__srmOnlineUrl = (i, v) => {
+      const r = rows[i]; r.sol.url = v;
+      const b = document.getElementById('solOk' + i); if (b) b.disabled = !solLinkOk(v);
+    };
+    window.__srmOnlineAcct = (i, id) => { rows[i].sol.acct = id; draw(); };
+    window.__srmOnlineGo = async i => {
+      const r = rows[i], S = r.sol, t = r.ch.to;
+      if (S.busy) return;
+      if (!r.ses) { err = '找不到这一回的单回数据，请刷新页面后再试'; draw(); return; }
+      const acct = S.mode === 'acct' ? ((S.rows || []).map(x => x.room).find(x => String(x.id) === String(S.acct)) || null) : null;
+      if (S.mode === 'acct' && !acct) return;
+      if (S.mode === 'link' && !solLinkOk(S.url)) return;
+      const how = S.mode === 'acct' ? `会议账号 ${acct.name}` : '自备链接';
+      if (!confirm(`第 ${r.ch.num || '?'} 回 ${ccMD(t.date)} 改成线上（${how}）；原来占的教室会释放`)) return;
+      S.busy = true; err = ''; draw();
+      try {
+        const res = await solSetOnline({ course, session: r.ses, sp: r.sp, mode: S.mode, url: S.url, acctRoom: acct, who: who() });
+        r.online = res.text;
+        r.onlineWarn = (res.warn || []).join('；');
+        Object.assign(r.ses, { delivery: '线上', campus: '线上', delivery_set: true, meeting_url: S.mode === 'link' ? S.url.trim() : null });
+        if (typeof srmRecheckLater === 'function') srmRecheckLater();
+      } catch (er) { err = er.message || String(er); if (S.mode === 'acct') { S.rows = null; loadAcct(r); } }
+      S.busy = false; draw();
+    };
     const loadPick = async r => {
       const pr = problems(r).find(c => c.none || c.col === 'room_id'); if (!pr) return;
       try { r.pickRows = await crvRoomStatus(r.ch.to.date, r.sp, course.id); r.curRoomId = pr.none ? null : pr.id; } catch (er) { r.pickErr = true; }
@@ -345,6 +386,7 @@ async function srmOpen(opts) {
         const f = r.ch.from, t = r.ch.to;
         const b = srmMDW(t.date) + (r.sp.start ? r.sp.start : '');
         const head = `${r.ch.num ? '第 ' + e(r.ch.num) + ' 回' : '新增一回'} → ${e(b)}`;
+        if (r.online) return `<div style="border-bottom:1px solid var(--border-light,#eee);padding:6px 0"><div style="font-weight:600">${head}</div><div style="color:#2a6fb0">已${e(r.online)} ✓</div>${r.onlineWarn ? `<div style="color:#7a5b00;font-size:12px">${e(r.onlineWarn)}</div>` : ''}</div>`;
         if (r.picked) return `<div style="border-bottom:1px solid var(--border-light,#eee);padding:6px 0"><div style="font-weight:600">${head}</div><div style="color:#2a7a3a">已安排在 ${e(r.picked)} ✓</div></div>`;
         if (r.later) return `<div style="border-bottom:1px solid var(--border-light,#eee);padding:6px 0"><div style="font-weight:600">${head}</div><div style="color:#7a5b00">稍后处理（调整另一门后，这条提示会自动消失）</div></div>`;
         const pr = problems(r);
@@ -358,8 +400,18 @@ async function srmOpen(opts) {
         const picker = r.pickRows ? `<div style="font-size:12px;color:#888;margin-top:4px">${e(srmMDW(t.date))}${e(r.sp.start)}-${e(r.sp.end)} 各教室（✓ 空着，点一间就改在那里）：</div><div class="srmPick" data-i="${i}">${crvRoomPickHtml(r.pickRows, r.curRoomId)}</div>` : (r.pickErr ? '<div style="color:#a33;font-size:12px">教室列表读取失败</div>' : (pr.length ? '<div style="color:#888;font-size:12px;margin-top:4px">读取教室列表…</div>' : ''));
         const hasBlock = pr.some(c => !c.none && c.blockers && c.blockers.length);
         const laterBtn = hasBlock ? `<button type="button" class="btn btn-outline btn-sm" style="padding:2px 10px;cursor:pointer;white-space:nowrap" onclick="__srmLater(${i})">稍后调整另一门</button>` : '';
-        const btn = pr.length ? `<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">${notified.has(r.key) ? '<span style="color:#2a7a3a;white-space:nowrap">已交给总务 ✓</span>' : `<button type="button" class="btn btn-outline btn-sm" style="padding:2px 10px;cursor:pointer;white-space:nowrap" onclick="__srmNotify(${i})">交给总务</button>`}${laterBtn}</div>` : '';
-        return `<div style="border-bottom:1px solid var(--border-light,#eee);padding:6px 0;display:flex;gap:10px;align-items:flex-start"><div style="flex:1;min-width:0"><div style="font-weight:600">${head}</div>${lines}${pr.length ? picker : ''}</div>${btn}</div>`;
+        const onlineBtn = pr.length && r.ses ? `<button type="button" class="btn btn-outline btn-sm" style="padding:2px 10px;cursor:pointer;white-space:nowrap" onclick="__srmOnlineToggle(${i})">${r.sol.open ? '收起线上' : '改成线上'}</button>` : '';
+        const S = r.sol;
+        const okOn = S.mode === 'acct' ? !!S.acct : solLinkOk(S.url);
+        const onlinePanel = pr.length && r.ses && S.open ? `<div style="margin-top:8px;padding:8px 10px;border:1px solid var(--border,#e2ded6);border-radius:6px;background:#faf8f3">
+          <div style="font-size:12px;color:#888;margin-bottom:4px">只改这一回，课程和别的回不变</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px">线上方式</span><select onchange="__srmOnlineMode(${i},this.value)" style="padding:4px 8px;border:1px solid var(--border,#e2ded6);border-radius:6px"><option value="link"${S.mode === 'link' ? ' selected' : ''}>自备腾讯会议链接</option><option value="acct"${S.mode === 'acct' ? ' selected' : ''}>占用一个会议账号</option></select></div>
+          ${S.mode === 'link'
+            ? `<input type="text" value="${e(S.url)}" oninput="__srmOnlineUrl(${i},this.value)" placeholder="https://meeting.tencent.com/…" style="width:100%;box-sizing:border-box;margin-top:6px;padding:6px 8px;border:1px solid var(--border,#e2ded6);border-radius:6px"><div style="font-size:11px;color:#888;margin-top:2px">必填，以 http 开头。不占教室，也不占会议账号。</div>`
+            : `<div style="font-size:12px;color:#888;margin-top:6px">${e(srmMDW(t.date))}${e(r.sp.start)}-${e(r.sp.end)} 各会议账号（点一个空着的）：</div><div class="srmAcct" data-i="${i}">${S.rows ? solAcctHtml(S.rows, S.acct) : (S.rowsErr ? '<span style="color:#a33;font-size:12px">会议账号读取失败</span>' : '<span style="color:#888;font-size:12px">读取中…</span>')}</div>`}
+          <div style="margin-top:8px;text-align:right"><button type="button" id="solOk${i}" class="btn btn-primary btn-sm" style="padding:4px 14px;cursor:pointer" ${okOn && !S.busy ? '' : 'disabled'} onclick="__srmOnlineGo(${i})">${S.busy ? '保存中…' : '确认改成线上'}</button></div></div>` : '';
+        const btn = pr.length ? `<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">${onlineBtn}${notified.has(r.key) ? '<span style="color:#2a7a3a;white-space:nowrap">已交给总务 ✓</span>' : `<button type="button" class="btn btn-outline btn-sm" style="padding:2px 10px;cursor:pointer;white-space:nowrap" onclick="__srmNotify(${i})">交给总务</button>`}${laterBtn}</div>` : '';
+        return `<div style="border-bottom:1px solid var(--border-light,#eee);padding:6px 0;display:flex;gap:10px;align-items:flex-start"><div style="flex:1;min-width:0"><div style="font-weight:600">${head}</div>${lines}${pr.length ? picker : ''}${onlinePanel}</div>${btn}</div>`;
       }).join('');
       const todo = todoRows().filter(r => !notified.has(r.key) && problems(r).length).length;
       const laterTodo = todoRows().filter(r => problems(r).some(c => !c.none && c.blockers && c.blockers.length)).length;
@@ -370,6 +422,7 @@ async function srmOpen(opts) {
         for (const r of rest) { try { await notifyOne(r); } catch (er) { err = '通知失败：' + (er.message || er); draw(); return; } }
         close();
       };
+      ov.querySelectorAll('.srmAcct').forEach(box => box.querySelectorAll('[data-acct]').forEach(x => x.onclick = () => __srmOnlineAcct(+box.dataset.i, x.dataset.acct)));
       ov.querySelectorAll('.srmPick').forEach(box => box.querySelectorAll('[data-room]').forEach(x => x.onclick = () => __srmPick(+box.dataset.i, x.dataset.room)));
     };
     draw();
