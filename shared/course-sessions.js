@@ -120,3 +120,54 @@ function coursePeriodFields(sel, first, last) {
   if (sel === '__tbd__') return { period: null, period_override: null, period_auto: false };
   return { period: sel, period_override: null, period_auto: false };
 }
+
+// ── 回数审查（排课·课程管理 / 管理端提醒共用，只算不写）──
+// 按「第一回日期 + 周几 + 回数」推算应有的结课日；休讲日 = 课程 skip_dates ＋ 单回里已休讲的日期（单回是实际情况，框架没记也要算进去）。
+// 再对照单回，写清「为什么对不上」。co 两边的字段名都认：first_session_date / start_date、total_sessions / sessions。
+// 返回 { need, expectedEnd, endNow, process, status, sources:[文字], skips, holidayLive, unrecorded, err }
+//   need = 真正要调整：有没休讲的单回落在全局假期里 / 结课日和最后一回不一致 / 单回数和回数不一致 / （没有单回时）推算结课日和课程结课日不同
+function courseReviewDetail(co, sessions) {
+  const first = co.first_session_date || co.start_date || '';
+  const total = parseInt(co.total_sessions != null && co.total_sessions !== '' ? co.total_sessions : co.sessions) || 0;
+  const out = { need: false, total, first, endNow: co.end_date || '', expectedEnd: '', process: '', status: '', sources: [], skips: [], holidayLive: [], unrecorded: [], err: '' };
+  const wdList = courseWdList(co.weekdays);
+  if (!first || !total || !wdList.length) { out.err = '缺开课日 / 回数 / 周几'; return out; }
+  const md = d => { const m = String(d || '').match(/^\d{4}-(\d{2})-(\d{2})$/); return m ? (+m[1]) + '/' + (+m[2]) : String(d || ''); };
+  const ses = sessions || [];
+  const split = v => String(v || '').split(',').map(x => x.trim()).filter(Boolean);
+  const skipRec = new Set(split(co.skip_dates)), except = new Set(split(co.holiday_except));
+  const cancelled = [...new Set(ses.filter(x => x.is_cancelled).map(x => x.session_date))].sort();
+  const active = ses.filter(x => !x.is_cancelled).sort((a, b) => (a.session_date || '').localeCompare(b.session_date || ''));
+  const merged = [...new Set([...skipRec, ...cancelled])];
+  const scan = courseScan({ first_session_date: first, weekdays: co.weekdays, skip_dates: merged.join(','), holiday_except: co.holiday_except || '' }, { total });
+  if (scan.dates.length !== total) { out.err = '按框架算出 ' + scan.dates.length + ' 个日期、需要 ' + total + ' 个'; return out; }
+  out.expectedEnd = scan.dates[total - 1];
+  // 推算时跳过的上课日：命中的全局假期（没豁免）＋ 休讲日
+  const sk = new Map();
+  scan.hits.filter(h => !h.excepted).forEach(h => sk.set(h.date, h.label || '假期'));
+  merged.forEach(d => { if (d >= first && d <= out.expectedEnd && wdList.includes(new Date(d + 'T12:00:00').getDay()) && !sk.has(d)) sk.set(d, '休讲'); });
+  out.skips = [...sk.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([date, why]) => ({ date, why }));
+  const WN = ['日', '一', '二', '三', '四', '五', '六'];
+  out.process = md(first) + ' 起每周' + wdList.slice().sort((a, b) => ((a || 7) - (b || 7))).map(d => WN[d]).join('、') + '，共 ' + total + ' 回'
+    + (out.skips.length ? '；跳过 ' + out.skips.map(x => md(x.date) + '（' + x.why + '）').join('、') : '') + ' → 推算最后一回 ' + md(out.expectedEnd);
+  if (!out.endNow) out.status = '现在的结课日没填';
+  else {
+    const diff = Math.round((new Date(out.endNow + 'T12:00:00') - new Date(out.expectedEnd + 'T12:00:00')) / 86400000);
+    out.status = '现在的结课日是 ' + md(out.endNow) + (diff === 0 ? '，和推算一致' : '，比推算' + (diff > 0 ? '晚 ' : '早 ') + (Math.abs(diff) % 7 === 0 ? (Math.abs(diff) / 7) + ' 周' : Math.abs(diff) + ' 天'));
+  }
+  // 差异来源（读单回）
+  out.unrecorded = cancelled.filter(d => d >= first && !skipRec.has(d));
+  if (out.unrecorded.length) out.sources.push('单回里 ' + out.unrecorded.map(md).join('、') + ' 已休讲，但课程的休讲日里没有记录——框架没记，以单回为准');
+  out.holidayLive = active.filter(x => holidayOn(x.session_date) && !except.has(x.session_date)).map(x => ({ date: x.session_date, label: holidayOn(x.session_date).label || '假期', num: x.session_number }));
+  if (out.holidayLive.length) out.sources.push(out.holidayLive.map(x => md(x.date) + '（' + x.label + '）').join('、') + ' 这一回还在假期那天，没有休讲——需要休讲并顺延');
+  const last = active.length ? active[active.length - 1].session_date : '';
+  const endOff = !!(ses.length && out.endNow && last && out.endNow !== last);
+  if (endOff) out.sources.push('结课日（' + md(out.endNow) + '）和最后一回的日期（' + md(last) + '）不一致——结课日需要更新');
+  const countOff = !!(ses.length && active.length !== total);
+  if (countOff) out.sources.push('单回有 ' + active.length + ' 回（不含休讲），课程回数是 ' + total + '——请核对回数');
+  if (ses.length && !endOff && !countOff && !out.holidayLive.length && last && last !== out.expectedEnd && !out.unrecorded.length) out.sources.push('单回的日期单独调整过，最后一回是 ' + md(last) + '——以单回为准');
+  if (!ses.length && out.endNow && out.endNow !== out.expectedEnd) out.sources.push('这门课还没有单回，只能按框架推算：结课日需要更新为 ' + md(out.expectedEnd));
+  if (!out.sources.length) out.sources.push('没有发现差异');
+  out.need = out.holidayLive.length > 0 || endOff || countOff || (!ses.length && !!out.endNow && out.endNow !== out.expectedEnd);
+  return out;
+}

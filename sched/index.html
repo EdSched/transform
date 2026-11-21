@@ -39,7 +39,7 @@
 <script src="../shared/course-room-view.js?v=20261113"></script>
 <script src="common.js?v=20270423"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
-<script src="../shared/course-sessions.js?v=20270126"></script>
+<script src="../shared/course-sessions.js?v=20270424"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], ROLE=null;
@@ -182,7 +182,7 @@ function renderChangeAlerts(){
   if(!box){ const hi=el('hello'); if(!hi) return; box=document.createElement('div'); box.id='changeAlerts'; hi.parentNode.insertBefore(box, hi.nextSibling); }
   const myRole=(ROLE&&ROLE.role)||'';
   const notAcked=l=>{ const acked=(l.acked_by||'').split(',').map(s=>s.trim()).filter(Boolean); return !acked.includes(myRole); };
-  const pending=(CHANGELOG||[]).filter(l=>l.action!=='session_room' && l.action!=='room_coord' && l.action!=='room_unavailable' && notAcked(l));
+  const pending=(CHANGELOG||[]).filter(l=>l.action!=='session_room' && l.action!=='room_coord' && l.action!=='room_unavailable' && l.action!=='course_review' && notAcked(l));
   // 需要协调教室：管理端改单回后检查出教室被占 / 没排教室，总务来处理。一门课一张卡，状态按现在的占用重新核对
   const cv=coordBuild(); COORD_VIEW=cv;
   const pendN=cv.groups.filter(g=>g.act.some(it=>!coordWaiting(it))).length;
@@ -2977,29 +2977,49 @@ function pickExemptDays(hol, allDates){
     paint();
   });
 }
-function renderReview(list){
+async function renderReview(list){
   const box=el('cf_trashBox'); if(!box) return;
+  box.innerHTML='<div class="muted" style="margin:8px 0;padding:10px">核对中…</div>';
   const SES=window.CM_SES||{past:new Set(),any:new Set(),fut:[]};
   // 只审「未开课」的课：已开课的课以单回为准，不再拿框架去衡量
   const all=(list||COURSES).filter(c=>c.sessions&&c.start_date&&c.weekdays&&!courseIsStarted(c,SES));
-  // 只关心「受假期/休讲影响」的课：命中过假期或休讲的才需要审查
-  const affected=[];
-  all.forEach(c=>{ const det=computeEndDetail(c); if(det.blocked.length) affected.push({c,det}); });
+  // 读这些课的单回：推算要把单回里已休讲的日期一起算进去，再用单回说明为什么对不上
+  const sesBy={};
+  try{
+    for(let i=0;i<all.length;i+=40){
+      const ids=all.slice(i,i+40).map(c=>encodeURIComponent(c.id)).join(',');
+      (await sbGet('course_sessions','select=course_id,session_date,session_number,is_cancelled&course_id=in.('+ids+')')).forEach(r=>{ (sesBy[String(r.course_id)]=sesBy[String(r.course_id)]||[]).push(r); });
+    }
+  }catch(e){ console.warn('回数审查读单回失败',e); }
+  const rows=all.map(c=>({c, det:courseReviewDetail(c, sesBy[String(c.id)]||[])})).filter(r=>!r.det.err);
+  const affected=rows.filter(r=>r.det.skips.length||r.det.need);   // 只关心跳过过假期 / 休讲、或已经对不上的课
   const NOTE='未开课的课按框架推算；已开课的课以单回为准，不在此审查';
-  const need=affected.filter(r=>r.det.end!==r.c.end_date);   // 需调整
-  const ok=affected.filter(r=>r.det.end===r.c.end_date);      // 已一致
+  const need=affected.filter(r=>r.det.need);
+  const ok=affected.filter(r=>!r.det.need);
+  const isAdmin=!!(ROLE&&(ROLE.role==='admin'||(ROLE.perms&&ROLE.perms.split(',').map(x=>x.trim()).includes('manage'))));
+  // 没有管理权限的人点「通知管理端调整」：同一门课已有没处理的通知就不再写
+  const notified={};
+  if(!isAdmin&&need.length){ try{ (await sbGet('sched_change_log','select=id,created_at,changes,acked_by&action=eq.course_review&or=(acked_by.is.null,acked_by.eq.)&order=created_at.desc&limit=500')).forEach(l=>{ (Array.isArray(l.changes)?l.changes:[]).forEach(x=>{ if(x&&x.course_uuid&&!notified[x.course_uuid]) notified[x.course_uuid]=l.created_at; }); }); }catch(e){ console.warn('读已有通知失败',e); } }
   const rowHtml=(r,isOk)=>{
     const c=r.c, det=r.det;
-    const blockedTxt=det.blocked.map(b=>b.date+'('+b.why+')').join('、');
+    const why='<div>'+esc(det.process)+'</div><div>'+esc(det.status)+'</div>'+det.sources.map(t=>'<div'+(isOk?'':' style="color:#a33"')+'>'+esc(t)+'</div>').join('');
+    let act='—';
+    if(!isOk){
+      const id=esc(String(c.id));
+      if(isAdmin) act='<button class="sm ghost" data-rvgo="'+id+'">去调整</button>';
+      else if(notified[String(c.id)]) act='<button class="sm ghost" disabled>已通知（'+esc(String(notified[String(c.id)]).slice(5,10).replace('-','/'))+'）</button>';
+      else act='<button class="sm ghost" data-rvnotify="'+id+'">通知管理端调整</button>';
+      if(c.start_date) act+='<div style="margin-top:4px"><button class="sm ghost" data-rvedit="'+id+'">改回数 / 周几 / 开课日</button></div>';
+    }
     return `<tr${isOk?'':' style="background:#fff8f0"'}><td><b>${esc(c.name)}</b></td><td>${esc(String(c.sessions))}</td><td>${esc(c.start_date||'')}</td>`+
       `<td>${esc(c.end_date||'（空）')}${isOk?' <span class="badge b-ok" style="font-size:10px">一致</span>':''}</td>`+
-      `<td class="muted" style="max-width:240px">${esc(blockedTxt)}</td>`+
-      `<td><b>${esc(det.end||'')}</b>${isOk?'':' <span class="badge b-warn" style="font-size:10px">需调整</span>'}</td>`+
-      `<td>${isOk?'—':'<button class="sm ghost" data-rvedit="'+esc(String(c.id))+'">改回数 / 周几 / 开课日</button>'}</td></tr>`;
+      `<td><b>${esc(det.expectedEnd||'')}</b>${isOk?'':' <span class="badge b-warn" style="font-size:10px">需调整</span>'}</td>`+
+      `<td class="muted" style="max-width:420px;font-size:12px;line-height:1.6">${why}</td>`+
+      `<td style="white-space:nowrap">${act}</td></tr>`;
   };
-  const thead='<thead><tr><th>课程</th><th>回数</th><th>开课日</th><th>当前结课日</th><th>命中假期/休讲</th><th>应有结课日</th><th>操作</th></tr></thead>';
+  const thead='<thead><tr><th>课程</th><th>回数</th><th>开课日</th><th>当前结课日</th><th>应有结课日</th><th>原因</th><th>操作</th></tr></thead>';
   let h='<div style="border:1px solid #cdd8e6;background:#f8fafd;border-radius:8px;padding:10px 12px;margin:8px 0">'+
-    '<div style="font-size:13px;margin-bottom:6px"><b>回数审查</b> <span class="muted" style="font-size:12px">'+NOTE+'。只列出受假期/休讲影响的课，仅作提醒。</span></div>';
+    '<div style="font-size:13px;margin-bottom:6px"><b>回数审查</b> <span class="muted" style="font-size:12px">'+NOTE+'。休讲日已把单回里休讲的日期一起算进去；只列出跳过过假期 / 休讲的课，仅作提醒。</span></div>';
   if(!affected.length) h+='<div class="muted" style="margin:8px 0;padding:10px;border:1px dashed var(--line);border-radius:8px">没有未开课的课受假期/休讲影响，回数都不受影响，无需审查。</div>';
   else{
     h+='<div style="font-size:13px;margin:6px 0 4px;color:#c0392b"><b>需调整（'+need.length+'）</b></div>';
@@ -3028,6 +3048,16 @@ function renderReview(list){
   h+='</details></div>';
   box.innerHTML=h;
   bind('[data-rvedit]', id=>courseEdit(id));
+  bind('[data-rvgo]', id=>{ window.open('../admin/?page=courses&course='+encodeURIComponent(id),'_blank'); });
+  document.querySelectorAll('[data-rvnotify]').forEach(btn=>btn.onclick=async()=>{
+    const r=need.find(x=>String(x.c.id)===btn.dataset.rvnotify); if(!r) return;
+    btn.disabled=true; btn.textContent='发送中…';
+    try{
+      await sbInsert('sched_change_log', schedLogRow(r.c,'course_review',[{ field:'course_review', label:'回数 / 结课日对不上',
+        why:r.det.process+'；'+r.det.status+'；'+r.det.sources.join('；'), expected_end:r.det.expectedEnd||'', current_end:r.c.end_date||'', by:schedActorLabel() }]));
+      btn.textContent='已通知（'+todayStr().slice(5).replace('-','/')+'）'; toast('已通知管理端');
+    }catch(e){ btn.disabled=false; btn.textContent='通知管理端调整'; toast('通知失败：'+e.message+'（如提示 action 约束，需先执行 PR 里的 SQL）', false); }
+  });
 }
 /* 按回数算真实结束日：从开课日按周几排，跳过全局假期和个别休讲（豁免的照常计），数满 sessions 次 */
 /* 正推带明细：从开课日按回数排，返回 {end, blocked:[命中的假期/休讲日期], classDates:[实际上课日]} */
