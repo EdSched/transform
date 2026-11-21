@@ -365,6 +365,12 @@ const SLOTS = (function(){
     a.push(h+':'+mm);
   } return a;
 })();
+// 把读出来的整行 sched_bookings 变成「可以插回去的行」：去掉 id / 时间戳 / 数据库生成列 course_ref，以及 _ 开头的临时字段
+function schedBookingInsertRow(row){
+  const r={};
+  Object.keys(row||{}).forEach(k=>{ if(k==='id'||k==='created_at'||k==='updated_at'||k==='course_ref'||k.charAt(0)==='_') return; r[k]=row[k]; });
+  return r;
+}
 function slotEnd(t){ // 某 30 分格的结束时刻
   const [h,m]=t.split(':').map(Number); let x=h*60+m+30;
   return String(Math.floor(x/60)).padStart(2,'0')+':'+String(x%60).padStart(2,'0');

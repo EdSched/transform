@@ -99,7 +99,7 @@
   </div>
 </div>
 
-<script src="common.js?v=20270404"></script>
+<script src="common.js?v=20270425"></script>
 <script src="../shared/constants.js?v=20270422"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script>
@@ -294,7 +294,9 @@ async function relUndo(){
   const R=RELEASED; if(!R) return;
   if(!confirm('恢复原来的教室占用？')) return;
   try{
-    for(const u of R.undo.slice().reverse()){ if(u.ins){ const r=Object.assign({},u.ins); delete r.id; delete r.created_at; delete r.updated_at; await sbInsert('sched_bookings',r); } else await sbUpdate('sched_bookings',u.upd,u.patch); }
+    // 先插回单日占用，再还原每周占用的 manual_off_dates；任何一步失败都不清 RELEASED，黄条保留可重试
+    for(const u of R.undo){ if(u.ins) await sbInsert('sched_bookings', schedBookingInsertRow(u.ins)); }
+    for(const u of R.undo.slice().reverse()){ if(!u.ins) await sbUpdate('sched_bookings',u.upd,u.patch); }
     RELEASED=null; await reloadBookings(); showRelBanner(); renderGrid(); if(el('resBox').dataset.done) find(); toast('已恢复原占用');
   }catch(e){ toast('恢复失败：'+e.message,false); }
 }
