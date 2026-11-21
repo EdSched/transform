@@ -3216,6 +3216,7 @@ async function rsDoShift(target, reason, note, newDateStr, makeTime){
   const lastSession=allSessions[allSessions.length-1];
   const lastNum=lastSession.session_number;   // 顺延前的最后回数（下面第 2 步会把 lastSession 的回数减 1，先记下来）
   const after=allSessions.slice(idx+1); // 休讲之后的所有课次（日期固定，等待填入顺延后的内容）
+  let newSession=null;   // 补课那一回（要在下面的块外 return，所以声明在块外）
   {
     // ── 第一步：在做任何修改之前，构造完整的「内容链」快照 ──
     // 内容链 = [target自己原本的内容, after[0]原本的内容, after[1]原本的内容, ..., after[n-1]原本的内容]
@@ -3262,7 +3263,7 @@ async function rsDoShift(target, reason, note, newDateStr, makeTime){
     const lastContent=contentChain[contentChain.length-1];
     const newTeacherVal = lastContent.teacher || lastSession.teacher;
 
-    const newSession={
+    newSession={
       id:`s-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
       course_id:courseId,course_name:lastSession.course_name,major:lastSession.major,
       session_date:newDateStr,session_number:lastNum, // 原始最后编号（顺延前）
