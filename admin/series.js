@@ -379,6 +379,7 @@ async function serSavePhase1(d){
   }
   serClose();
   serRerender();
+  await serFlushCoord();
   courseConfirmOpen({ title:`系列「${d.name.trim()}」已保存，请核对`, onEdit:openAddCourseModal, items });
 }
 // 写一门成员课：课程行 + 单回。已有课按先后保留 id / 标题 / 老师；新课新建
@@ -410,6 +411,16 @@ async function serWriteMember(o){
   await serWriteSessions(course, dates, tr, existing, m.detail_rows||null, m.teacher);
   return course;
 }
+// 系列保存 / 往后顺延 / 加回数：日期或时间变了的回，先排进队列，保存结束后一次性自动通知总务（每门课一个确认窗口）
+const SER_ROOM_QUEUE=[];
+function serQueueCoord(course,change){ let q=SER_ROOM_QUEUE.find(x=>x.course===course); if(!q) SER_ROOM_QUEUE.push(q={course,changes:[]}); q.changes.push(change); }
+async function serFlushCoord(){
+  const qs=SER_ROOM_QUEUE.splice(0);
+  for(const q of qs){
+    try{ await srmOpen({ course:q.course, changes:q.changes, sessions:cachedSessions.filter(x=>x.course_id===q.course.id), auto:true }); }
+    catch(e){ console.warn('自动通知总务失败', e); alert('《'+(q.course.name||'')+'》的日期 / 时间已改，但自动通知总务失败：'+e.message+'\n请直接联系总务'); }
+  }
+}
 async function serWriteSessions(course, dates, tr, existing, detailRows, teacherName){
   const act=existing.filter(s=>!s.is_cancelled).sort((a,b)=>(a.session_date||'').localeCompare(b.session_date||'')||((a.session_number||0)-(b.session_number||0)));
   const cancelled=existing.filter(s=>s.is_cancelled);
@@ -421,6 +432,8 @@ async function serWriteSessions(course, dates, tr, existing, detailRows, teacher
     const s=act[i];
     if(s){
       const patch={ course_name:course.name, major:course.major, session_date:dates[i], session_number:i+1, time_range:tr, actual_hours:hours, delivery:course.delivery, campus:course.campus };
+      const oT=s.time_range||course.time_range||'', sp1=timeRangesSpan(oT), sp2=timeRangesSpan(tr||'');
+      if(s.session_date!==dates[i]||sp1.start!==sp2.start||sp1.end!==sp2.end) serQueueCoord(course,{ id:s.id, num:i+1, from:{ date:s.session_date, time:oT, cancelled:false }, to:{ date:dates[i], time:tr||oT, cancelled:false } });
       await sb(`/rest/v1/course_sessions?id=eq.${encodeURIComponent(s.id)}`,'PATCH',patch);
       Object.assign(s,patch);
     } else {
@@ -487,6 +500,8 @@ async function serApplyShift(moves){
   const fwd=moves.length&&moves[0].to>moves[0].from;
   const order=moves.slice().sort((a,b)=>fwd?b.from.localeCompare(a.from):a.from.localeCompare(b.from));
   for(const mv of order){
+    const mt=mv.s.time_range||mv.course.time_range||'';
+    serQueueCoord(mv.course,{ id:mv.s.id, num:mv.s.session_number, from:{ date:mv.from, time:mt, cancelled:false }, to:{ date:mv.to, time:mt, cancelled:false } });
     await sb(`/rest/v1/course_sessions?id=eq.${encodeURIComponent(mv.s.id)}`,'PATCH',{session_date:mv.to});
     mv.s.session_date=mv.to;
   }
@@ -554,6 +569,7 @@ async function serSavePhase2(d){
         delivery:c.delivery, campus:c.campus, teacher:last.teacher||acSingleTeacher(c.teacher)||'', session_teacher:last.session_teacher||acSingleTeacher(c.teacher)||'',
         session_title:'', confirmed:!!last.confirmed, homework_enabled:c.homework_enabled||false }));
       const r=await sb('/rest/v1/course_sessions','POST',rows); cachedSessions.push(...(Array.isArray(r)?r:rows));
+      rows.forEach(x=>serQueueCoord(c,{ id:x.id, num:x.session_number, from:null, to:{ date:x.session_date, time:x.time_range||'', cancelled:false } }));
     } else {
       await sb(`/rest/v1/course_sessions?id=in.(${op.tail.map(x=>`"${x.id}"`).join(',')})`,'DELETE');
       cachedSessions=cachedSessions.filter(x=>!op.tail.some(t=>t.id===x.id));
@@ -562,7 +578,8 @@ async function serSavePhase2(d){
   }
   serClose();
   serRerender();
-  if(ops.length) alert('已改好：\n\n'+lines.join('\n')+'\n\n教室占用如有变化，请到排课系统确认。');
+  if(ops.length) alert('已改好：\n\n'+lines.join('\n')+'\n\n日期有变的回（今天以后、有教室的）已自动通知总务。');
+  await serFlushCoord();
 }
 
 async function serDissolve(){

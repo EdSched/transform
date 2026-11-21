@@ -2755,11 +2755,26 @@ async function saveEditCourse(){
     needs_recording:document.getElementById('ec_recording').value==='yes',
   };
   try{
+    const oldTime=(cachedCourses.find(c=>c.id===id)||{}).time_range||'';
     await sb(`/rest/v1/courses?id=eq.${id}`,'PATCH',data);
     const idx=cachedCourses.findIndex(c=>c.id===id);
     if(idx>=0) cachedCourses[idx]={...cachedCourses[idx],...data};
+    // 整体上课时间改了：今天以后、还跟着课程时间走的回一起改，并自动通知总务（和「课程安排」里编辑课程同一套规则）
+    const tChanges=[];
+    const _sp=(x,y)=>{ const p=timeRangesSpan(x||''),q=timeRangesSpan(y||''); return p.start===q.start&&p.end===q.end; };
+    if(!_sp(oldTime,data.time_range)){
+      const today=acToday();
+      for(const ss of cachedSessions.filter(x=>x.course_id===id&&!x.is_cancelled&&x.session_date>=today)){
+        const cur=ss.time_range||oldTime; if(!_sp(cur,oldTime)) continue;     // 单独调整过的回保持原样
+        const patch={ time_range:data.time_range, actual_hours:trSessionHours(data.time_range,data.actual_hours) };
+        await sb(`/rest/v1/course_sessions?id=eq.${ss.id}`,'PATCH',patch);
+        Object.assign(ss,patch);
+        tChanges.push({ id:ss.id, num:ss.session_number, from:{ date:ss.session_date, time:cur, cancelled:false }, to:{ date:ss.session_date, time:data.time_range||'', cancelled:false } });
+      }
+    }
     closeModal('editCourseModal');
     renderCoursesPage(document.getElementById('mainContent'));
+    if(tChanges.length){ try{ await srmOpen({ course:cachedCourses[idx], changes:tChanges, sessions:cachedSessions.filter(x=>x.course_id===id), auto:true }); }catch(e){ console.warn('自动通知总务失败', e); alert('上课时间已改，但自动通知总务失败：'+e.message+'\n请到「课程安排」里重新保存这门课，或直接联系总务'); } }
   }catch(e){alert('保存失败：'+e.message)}
 }
 async function regenerateSessions(){
@@ -2774,6 +2789,7 @@ async function regenerateSessions(){
   if(!firstDate||!weekdays.length||!total){alert('请填写第一回日期、星期和回数');return}
   if(!confirm(`将删除该课程现有 ${cachedSessions.filter(s=>s.course_id===id).length} 个课次并重新生成 ${total} 个，是否继续？`))return;
   try{
+    const oldByNum={}; cachedSessions.filter(s=>s.course_id===id&&!s.is_cancelled).forEach(s=>{ oldByNum[s.session_number]={ date:s.session_date, time:s.time_range||c.time_range||'' }; });
     await sb(`/rest/v1/course_sessions?course_id=eq.${id}`,'DELETE');
     cachedSessions=cachedSessions.filter(s=>s.course_id!==id);
     const dates=generateSessionDatesFromFirst(firstDate,weekdays,total);
@@ -2797,6 +2813,13 @@ async function regenerateSessions(){
     closeModal('editCourseModal');
     renderCoursesPage(document.getElementById('mainContent'));
     alert(`已重新生成 ${sessions.length} 个课次`);
+    // 日期 / 时间和重排前不一样的回：自动通知总务（只通知今天以后、有教室的回）
+    try{
+      const rc=sessions.map(x=>{ const o=oldByNum[x.session_number], t=x.time_range||'';
+        if(o&&o.date===x.session_date&&timeRangesSpan(o.time||'').start===timeRangesSpan(t).start&&timeRangesSpan(o.time||'').end===timeRangesSpan(t).end) return null;
+        return { id:x.id, num:x.session_number, from:o?{ date:o.date, time:o.time, cancelled:false }:null, to:{ date:x.session_date, time:t, cancelled:false } }; }).filter(Boolean);
+      if(rc.length) await srmOpen({ course:cachedCourses.find(x=>x.id===id), changes:rc, sessions:cachedSessions.filter(x=>x.course_id===id), auto:true });
+    }catch(e){ console.warn('自动通知总务失败', e); alert('课次已重排，但自动通知总务失败：'+e.message+'\n请直接联系总务'); }
   }catch(e){alert('操作失败：'+e.message)}
 }
 

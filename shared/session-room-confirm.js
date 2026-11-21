@@ -286,8 +286,13 @@ async function srmOpen(opts) {
       }).join('');
       const todo = todoRows().filter(r => !notified.has(r.key) && problems(r).length).length;
       const laterTodo = todoRows().filter(r => problems(r).some(c => !c.none && c.blockers && c.blockers.length)).length;
-      ov.innerHTML = `<div style="${CC_BOX}"><div style="padding:14px 18px;border-bottom:1px solid var(--border,#e2ded6);font-size:15px;font-weight:600">这几回的教室需要处理</div><div style="padding:12px 18px;overflow:auto;flex:1">${body}${err ? `<div style="color:#a33;margin-top:6px">${e(err)}</div>` : ''}<div style="font-size:11px;color:#888;margin-top:8px">没处理的回保持原样，课程安排里会显示「被占 / 未排教室」；点「稍后调整另一门」会在页面上方留提示，另一门调整完自动消失。</div></div><div style="padding:10px 18px;border-top:1px solid var(--border,#e2ded6);display:flex;gap:8px;justify-content:flex-end;align-items:center"><span style="flex:1"></span>${laterTodo ? '<button type="button" class="btn btn-outline btn-sm" style="padding:6px 16px;cursor:pointer" onclick="__srmLaterAll()">全部稍后处理</button>' : ''}${todo ? '<button type="button" class="btn btn-outline btn-sm" style="padding:6px 16px;cursor:pointer" onclick="__srmNotifyAll()">全部交给总务</button>' : ''}<button type="button" id="srmClose" class="btn btn-primary btn-sm" style="padding:6px 16px;cursor:pointer">完成</button></div></div>`;
-      ov.querySelector('#srmClose').onclick = close;
+      ov.innerHTML = `<div style="${CC_BOX}"><div style="padding:14px 18px;border-bottom:1px solid var(--border,#e2ded6);font-size:15px;font-weight:600">这几回的教室需要处理</div><div style="padding:12px 18px;overflow:auto;flex:1">${body}${err ? `<div style="color:#a33;margin-top:6px">${e(err)}</div>` : ''}<div style="font-size:11px;color:#888;margin-top:8px">点「完成」时，还没处理的回（没换教室、没点「稍后」）会自动交给总务；点「稍后调整另一门」会在页面上方留提示，另一门调整完自动消失。</div></div><div style="padding:10px 18px;border-top:1px solid var(--border,#e2ded6);display:flex;gap:8px;justify-content:flex-end;align-items:center"><span style="flex:1"></span>${laterTodo ? '<button type="button" class="btn btn-outline btn-sm" style="padding:6px 16px;cursor:pointer" onclick="__srmLaterAll()">全部稍后处理</button>' : ''}${todo ? '<button type="button" class="btn btn-outline btn-sm" style="padding:6px 16px;cursor:pointer" onclick="__srmNotifyAll()">全部交给总务</button>' : ''}<button type="button" id="srmClose" class="btn btn-primary btn-sm" style="padding:6px 16px;cursor:pointer">完成</button></div></div>`;
+      // 点「完成」：还没处理的回（没换教室、没点「稍后」）自动交给总务，不再「关掉弹窗 = 什么都不发」
+      ov.querySelector('#srmClose').onclick = async () => {
+        const rest = todoRows().filter(r => !notified.has(r.key) && problems(r).some(c => !c.none && c.blockers && c.blockers.length));
+        for (const r of rest) { try { await notifyOne(r); } catch (er) { err = '通知失败：' + (er.message || er); draw(); return; } }
+        close();
+      };
       ov.querySelectorAll('.srmPick').forEach(box => box.querySelectorAll('[data-room]').forEach(x => x.onclick = () => __srmPick(+box.dataset.i, x.dataset.room)));
     };
     draw();
