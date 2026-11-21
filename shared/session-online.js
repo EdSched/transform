@@ -29,7 +29,7 @@ function solColErr(er) {
 }
 
 // o: { course:{id,name,delivery,campus,merge_name,legacy_sched_id}, session:{id,session_date,session_number,time_range,delivery,campus,delivery_set,meeting_url},
-//      sp:{start,end}, mode:'link'|'acct', url, acctRoom:{id,name,campus,meeting_account_id}（acct 时必填）,
+//      ackAdmin:true（管理端自己改的，记录不再给管理员弹「排课改过」提示）, sp:{start,end}, mode:'link'|'acct', url, acctRoom:{id,name,campus,meeting_account_id}（acct 时必填）,
 //      who:'操作人', role:'admin'|总务角色, bkExtra:{...}（排课端写 sched_bookings 时要带的字段，可不传） }
 // 返回 { text }。失败抛 Error（已写的部分已撤回）
 async function solSetOnline(o) {
@@ -99,7 +99,7 @@ async function solLog(o, text, temps, wk, chosen) {
     actor_role: o.role || 'admin', actor_label: o.who || '管理员', action: 'edit',
     changes: [{ field: 'session_online', course_uuid: String(c.id), session_id: s.id, num: s.session_number || null, date: s.session_date,
       label: `第 ${s.session_number || '?'} 回 ${solMD(s.session_date)}`, from, to: text, url: o.mode === 'link' ? String(o.url || '').trim() : '' }],
-    acked_by: ''
+    acked_by: o.ackAdmin ? 'admin' : ''
   }]);
 }
 const solMD = d => { const p = String(d || '').split('-'); return p.length === 3 ? `${+p[1]}/${+p[2]}` : String(d || ''); };
@@ -136,7 +136,7 @@ async function solRevertOnline(o) {
       course_id: c.legacy_sched_id != null ? c.legacy_sched_id : null, course_name: c.merge_name || c.name || '',
       actor_role: o.role || 'admin', actor_label: o.who || '管理员', action: 'edit',
       changes: [{ field: 'session_online', course_uuid: String(c.id), session_id: s.id, num: s.session_number || null, date: d, label: `第 ${s.session_number || '?'} 回 ${solMD(d)}`, from: '线上', to: '撤回线上，恢复课程原来的上课方式', url: '' }],
-      acked_by: ''
+      acked_by: o.ackAdmin ? 'admin' : ''
     }]);
   } catch (er) { console.warn('写撤回记录失败', er); }
   if (typeof CRV_MEMO !== 'undefined') delete CRV_MEMO.base;

@@ -365,7 +365,7 @@ async function srmOpen(opts) {
       if (!confirm(`第 ${r.ch.num || '?'} 回 ${ccMD(t.date)} 改成线上（${how}）；原来占的教室会释放`)) return;
       S.busy = true; err = ''; draw();
       try {
-        const res = await solSetOnline({ course, session: r.ses, sp: r.sp, mode: S.mode, url: S.url, acctRoom: acct, who: who() });
+        const res = await solSetOnline({ course, session: r.ses, sp: r.sp, mode: S.mode, url: S.url, acctRoom: acct, who: who(), ackAdmin: true });
         r.online = res.text;
         r.onlineWarn = (res.warn || []).join('；');
         Object.assign(r.ses, { delivery: '线上', campus: '线上', delivery_set: true, meeting_url: S.mode === 'link' ? S.url.trim() : null });

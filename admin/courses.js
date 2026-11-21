@@ -3186,7 +3186,7 @@ async function revertSessionOnline(sessionId){
   const course=cachedCourses.find(c=>c.id===s.course_id)||{};
   if(!confirm(`第 ${s.session_number||'?'} 回 ${ccMD(s.session_date)} 撤回线上，改回课程原来的上课方式？\n自备链接 / 会议账号占用会清掉，然后重新检查教室。`)) return;
   try{
-    await solRevertOnline({ course, session:s, who:csWho() });
+    await solRevertOnline({ course, session:s, who:csWho(), ackAdmin:true });
     Object.assign(s,{ delivery:course.delivery||null, campus:course.campus||null, delivery_set:false, meeting_url:null });
     renderCoursesPage(document.getElementById('mainContent'));
     const tm=s.time_range||course.time_range||'';
