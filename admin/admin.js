@@ -1061,6 +1061,7 @@ function clearDomainCaches(){
     cachedStudents=[]; cachedCourses=[]; cachedSessions=[]; cachedTeachers=[];
     cachedSlots=[]; cachedBookings=[]; cachedAttendance=[]; cachedSessionRecords=[];
     teacherMajorFilter='';
+    if(typeof acFocusRestore==='function') acFocusRestore();
   }catch(e){}
   const mc=document.getElementById('mainContent'); if(mc) mc.innerHTML='<div class="loading">加载中…</div>';
 }
@@ -1150,6 +1151,7 @@ let slotMode='single';
 function checkCoursePw(){ return true; }  // 已取消课程管理二次密码
 
 function switchPage(page){
+  if(!acFocusCid && typeof acFocusRestore==='function') acFocusRestore();   // 换页 / 重新进课程安排：还原用户自己的筛选（定位中的除外）
   if((page==='courses'||page==='schedule')&&!checkCoursePw()){return}
   if(!mgrPageAllowed(page)){
     curPage=page;
@@ -2657,6 +2659,9 @@ async function initApp(){
   await loadPeriodsFromDB(); await loadHolidaysFromDB();
   // 旧链接 results/admin.html 会跳到 admin/?page=admissions：进系统后直接打开对应页面（只认这一个值，只用一次）
   const _dl=deepLinkTake();
+  // 课程安排里「切换到某视角」后接着定位那门课
+  if(acFocusAfterSwitch){ acFocusCid=acFocusAfterSwitch; acFocusAfterSwitch=''; switchPage('courses'); return; }
+  if(_dl.page==='courses'&&!_dl.course) acFocusCleanUrl();   // 只有 page 没有 course：也把网址参数清掉
   if(!_pageParamUsed && _dl.page==='admissions'){
     _pageParamUsed=true;
     switchPage('admissions');   // 管理模式没开放这个页面时，switchPage 会显示「没有对你开放」
