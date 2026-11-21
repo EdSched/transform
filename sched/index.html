@@ -37,7 +37,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../shared/constants.js?v=20270422"></script>
 <script src="../shared/course-room-view.js?v=20261113"></script>
-<script src="common.js?v=20270423"></script>
+<script src="common.js?v=20270425"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270424"></script>
 <script src="../shared/search.js?v=20261029"></script>
@@ -1390,7 +1390,7 @@ function adjustDayDialog(courseId, opts){
               .map(b=>{ const t=bookingTimeOn(b,nd); return '《'+(b.title||KIND_LABEL[b.kind]||'占用')+'》（'+(b.user_name||'—')+'，'+String(t[0]).slice(0,5)+'-'+String(t[1]).slice(0,5)+'）'; });
             return res;
           }, {
-            undo:async(res)=>{ for(const g of (res.gone||[])){ const r=Object.assign({},g.row); delete r.id; delete r.created_at; delete r.updated_at; await sbInsert('sched_bookings', r); } },
+            undo:async(res)=>{ for(const g of (res.gone||[])){ await sbInsert('sched_bookings', schedBookingInsertRow(g.row)); } },
             logs:(d,res)=>{
               const out=[schedLogRow(c,'edit',[{field:'session_move',label:'第 '+(num||'?')+' 回',from:from+' '+fromT,to:nd+' '+tr}])];
               if(res.blockers.length) out.push(schedLogRow(c,'room_coord',[{field:'room_coord',label:'第 '+(num||'?')+' 回',num,session_id:ses[0].id,from:from+' '+fromT,to:nd+' '+tr,date:nd,time:sp.start+'-'+sp.end,room_name:res.roomName,room_id:roomId||null,actor_name:schedActorLabel(),blocker:res.blockers.join('、'),reason:'blocked'}]));
