@@ -870,8 +870,8 @@ function renderCoursesPage(mc){
   if(CURRENT_MAJOR) coursesMajorFilter=CURRENT_MAJOR;
   // 锁定在具体领域（领域账号/切换视角进入）：默认显示该领域全部课（不管领域有没有建专业）
   else if(!scopeAll() && coursesMajorFilter==='none') coursesMajorFilter='all';
-  // 从排课「去调整」/ 通知里点进来（?page=courses&course=ID）：把筛选放开到能看到这门课
-  if(acFocusCid){ if(!CURRENT_MAJOR) coursesMajorFilter='all'; coursesPeriodFilter='all'; coursesArchiveFilter='all'; coursesTypeFilter='all'; coursesCampusFilter='all'; }
+  // 从排课「去调整」/ 通知里点进来（?page=courses&course=ID）：只临时放开挡住这门课的筛选（用户自己的筛选另存，手动点筛选 / 换页就还原）
+  acFocusApplyView();
 
   // 学部美术视角下「期数」按月份：当前期 = 本月
   const artView=viewIsArt();
@@ -930,6 +930,7 @@ function renderCoursesPage(mc){
   </div>
 
   <div id="courseReqBox"></div>
+  <div id="courseFocusBox">${acFocusNoteHtml()}</div>
   <div id="courseReviewBox"></div>
   <div id="roomCoordBox"></div>
   <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap">
@@ -1101,22 +1102,27 @@ function renderCoursesSummary(courses){
 }
 
 function setCoursesMajor(m,el){
+  acFocusRestore();
   coursesMajorFilter=m;
   renderCoursesPage(document.getElementById('mainContent'));
 }
 function setCoursesPeriod(p,el){
+  acFocusRestore();
   coursesPeriodFilter=p;
   renderCoursesPage(document.getElementById('mainContent'));
 }
 function setCoursesCampus(c,el){
+  acFocusRestore();
   coursesCampusFilter=c;
   renderCoursesPage(document.getElementById('mainContent'));
 }
 function setCoursesArchive(v,el){
+  acFocusRestore();
   coursesArchiveFilter=v;
   renderCoursesPage(document.getElementById('mainContent'));
 }
 function setCoursesDomain(d,el){
+  acFocusRestore();
   coursesDomainFilter=d;
   coursesMajorFilter=d?'all':'none'; // 选了领域自动显示该领域全部；清领域回到不选
   renderCoursesPage(document.getElementById('mainContent'));
@@ -1225,6 +1231,7 @@ function renderPeriodMgr(){
   </div>`;
 }
 function setCoursesType(t,el){
+  acFocusRestore();
   coursesTypeFilter=t;
   renderCoursesPage(document.getElementById('mainContent'));
 }
@@ -5491,20 +5498,113 @@ function schedEditOpen(courseId) {
 // ══════════ 定位到某一门课（?page=courses&course=ID，或提醒里的「去调整」）══════════
 // 课程安排页的每张课卡带 data-cids（同一组合并的课 id 都在里面）；筛选放开由 renderCoursesPage 开头处理
 let acFocusCid = '';
+let acFocusView = null;        // 临时视图 {cid, over:{major,period,archive,type,campus}}：只含被放开的那几项
+let acFocusSaved = null;       // 用户自己的筛选（进临时视图前存下，还原时放回去）
+let acFocusNote = null;        // 页面顶部提示条 {text, btn:{label,cid,domain}}
+let acFocusNoteTimer = 0;
+let acFocusAfterSwitch = '';   // 点「切换到某视角」后，initApp 里接着定位的课 id
 function acFocusCourse(cid) {
   acFocusCid = String(cid || '');
   if (!acFocusCid) return;
   if (typeof curPage !== 'undefined' && curPage === 'courses') renderCoursesPage(document.getElementById('mainContent'));
   else switchPage('courses');
 }
-function acFocusRun() {
+// 还原用户自己的筛选，结束临时视图
+function acFocusRestore() {
+  if (acFocusSaved) {
+    coursesMajorFilter = acFocusSaved.major; coursesPeriodFilter = acFocusSaved.period; coursesArchiveFilter = acFocusSaved.archive;
+    coursesTypeFilter = acFocusSaved.type; coursesCampusFilter = acFocusSaved.campus;
+  }
+  acFocusSaved = null; acFocusView = null;
+}
+// renderCoursesPage 开头调用：算出这门课被哪几项筛选挡住，只放开那几项（放开成刚好能看到它）；之后每次重绘都按同一份临时视图
+function acFocusApplyView() {
+  if (acFocusCid && (!acFocusView || acFocusView.cid !== acFocusCid)) {
+    const c = cachedCourses.find(y => String(y.id) === acFocusCid);
+    if (!c || (typeof scopeCourse === 'function' && !scopeCourse(c))) return;   // 找不到 / 范围外：不动任何筛选，acFocusRun 里提示
+    acFocusRestore();   // 先还原上一次的临时视图（如果有），再以用户自己的筛选为基准
+    acFocusSaved = { major: coursesMajorFilter, period: coursesPeriodFilter, archive: coursesArchiveFilter, type: coursesTypeFilter, campus: coursesCampusFilter };
+    const over = {};
+    const ended = courseIsEnded(c);
+    if (coursesArchiveFilter === 'active' && ended) over.archive = 'all';
+    else if (coursesArchiveFilter === 'ended' && !ended) over.archive = 'all';
+    if (!CURRENT_MAJOR) {
+      const mOk = coursesMajorFilter !== 'none' && (coursesMajorFilter === 'all' || (Array.isArray(c.major) && c.major.some(m => expandMajorFilter(coursesMajorFilter).includes(m))));
+      if (!mOk) { const k = Array.isArray(c.major) && c.major[0]; over.major = (k && majorFilterKeys({ includeAll: true }).includes(k)) ? k : 'all'; }
+    }
+    const pOk = coursesPeriodFilter === 'all' || (coursesPeriodFilter === 'current' ? courseInCurrentPeriod(c) : (periodKeyOf(c) === coursesPeriodFilter || effectivePeriod(c) === coursesPeriodFilter));
+    if (!pOk) over.period = c.first_session_date ? periodKeyOf(c) : 'all';
+    if (!courseTypeMatch(c, coursesTypeFilter)) over.type = 'all';
+    if (coursesCampusFilter !== 'all' && (campusNormalize(c.campus) || c.campus || '') !== coursesCampusFilter) over.campus = 'all';
+    acFocusView = { cid: acFocusCid, over };
+  }
+  if (!acFocusView) return;
+  const o = acFocusView.over;
+  if (o.major !== undefined) coursesMajorFilter = o.major;
+  if (o.period !== undefined) coursesPeriodFilter = o.period;
+  if (o.archive !== undefined) coursesArchiveFilter = o.archive;
+  if (o.type !== undefined) coursesTypeFilter = o.type;
+  if (o.campus !== undefined) coursesCampusFilter = o.campus;
+}
+// 提示条（页面内，不用 alert）
+function acFocusNoteHtml() {
+  const n = acFocusNote; if (!n) return '';
+  const esc = t => String(t).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  return `<div style="border:1px solid #e8dcb8;border-radius:6px;padding:8px 12px;margin-bottom:12px;background:#fbf6e6;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px">
+    <span style="flex:1;min-width:160px">${esc(n.text)}</span>
+    ${n.btn ? `<button class="btn btn-outline btn-sm" onclick="acFocusSwitchView()">${esc(n.btn.label)}</button>` : ''}
+    <a href="javascript:void(0)" onclick="acFocusNoteClose()" style="color:var(--text-3)">关闭</a></div>`;
+}
+function acFocusNoteClose() {
+  acFocusNote = null; clearTimeout(acFocusNoteTimer);
+  const b = document.getElementById('courseFocusBox'); if (b) b.innerHTML = '';
+}
+function acFocusNoteShow(text, btn) {
+  acFocusNote = { text, btn: btn || null };
+  const b = document.getElementById('courseFocusBox'); if (b) b.innerHTML = acFocusNoteHtml();
+  clearTimeout(acFocusNoteTimer);
+  if (!btn) acFocusNoteTimer = setTimeout(acFocusNoteClose, 10000);
+}
+// 管理员点「切换到【X】视角」：用现有的 enterScope 切过去，initApp 里接着定位
+function acFocusSwitchView() {
+  const n = acFocusNote; if (!n || !n.btn) return;
+  const cid = n.btn.cid, dom = n.btn.domain;
+  acFocusNote = null; acFocusAfterSwitch = cid;
+  enterScope({ domains: [dom] });
+}
+// 定位完成 / 找不到：把网址里的 page、course 去掉（保留 k 等其他参数），并确认登录前记下的 txe_deeplink 已删
+function acFocusCleanUrl() {
+  try {
+    const q = new URLSearchParams(location.search); q.delete('page'); q.delete('course');
+    const qs = q.toString();
+    history.replaceState(history.state, '', location.pathname + (qs ? '?' + qs : '') + location.hash);
+  } catch (e) {}
+  try { localStorage.removeItem('txe_deeplink'); } catch (e) {}
+}
+async function acFocusRun() {
   const cid = acFocusCid; acFocusCid = '';
+  acFocusCleanUrl();
   if (!cid) return;
-  const card = [...document.querySelectorAll('[data-cids]')].find(e => e.dataset.cids.includes(',' + cid + ','));
-  if (!card) { alert('在课程安排里找不到这门课（可能已删除，或不在你的范围内）'); return; }
-  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  const old = card.style.boxShadow; card.style.boxShadow = '0 0 0 3px #b8953a';
-  setTimeout(() => { card.style.boxShadow = old; }, 4000);
+  if (acFocusView && acFocusView.cid === cid) {
+    const card = [...document.querySelectorAll('[data-cids]')].find(e => e.dataset.cids.includes(',' + cid + ','));
+    if (!card) { acFocusNoteShow('没能定位到这门课，请在列表里查找'); return; }
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const old = card.style.boxShadow; card.style.boxShadow = '0 0 0 3px #b8953a';
+    setTimeout(() => { card.style.boxShadow = old; }, 4000);
+    return;
+  }
+  // 缓存里没有 = 已删除，或不在当前视角范围内（缓存已按范围过滤）：到数据库确认是哪一种
+  if (cachedCourses.find(y => String(y.id) === cid)) { acFocusNoteShow('没能定位到这门课，请在列表里查找'); return; }
+  let row = null;
+  try { row = ((await sb('/rest/v1/courses?id=eq.' + encodeURIComponent(cid) + '&select=id,domain,major', 'GET', null, { cache: 'no-store' })) || [])[0] || null; } catch (e) { row = null; }
+  const isAdmin = !ACCESS_KEY || !!ACCESS_KEY.is_admin;
+  if (!row) { acFocusNoteShow(isAdmin ? '这门课已不存在' : '这门课不在你的范围内'); return; }
+  if (!isAdmin) { acFocusNoteShow('这门课不在你的范围内'); return; }
+  const ms = Array.isArray(row.major) ? row.major : (row.major ? [row.major] : []);
+  const dom = row.domain || (ms.length ? keyDomain(ms[0]) : '');
+  if (!dom) { acFocusNoteShow('这门课不在当前视角的范围内'); return; }
+  const cur = scopeAll() ? '总览' : scopeSummary(VIEW_SCOPE);
+  acFocusNoteShow(`这门课属于【${dom}】，当前是【${cur}】视角`, { label: `切换到【${dom}】视角`, cid, domain: dom });
 }
 
 // ══════════ 排课「回数审查」通知（sched_change_log action='course_review'）══════════
