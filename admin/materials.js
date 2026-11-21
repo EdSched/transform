@@ -8,6 +8,8 @@ let matSection = 'guide';          // 当前子板块：guide 文书指导
 let wgKind = 'gakubu_riyu';        // 正在编辑的指导：gakubu_riyu | grad_riyu | grad_prof_mail | grad_inquiry_mail
 let wgData = null;                 // { kind, title, intro, sections:[{key,title,subtitle,tips:[]}], _fromDb }
 let wgDirty = false;
+let wgScope = '';                  // 适用范围（仅 grad_riyu）：'' = 通用；领域名 / 专业 key = 专属
+let wgScopesSet = [];              // grad_riyu 已有专属指导的范围
 
 async function renderMaterialsView(mc) {
   if (matSection !== 'guide' && matSection !== 'items' && matSection !== 'bank') matSection = 'guide';   // 旧的 'status'（学生准备情况）已去掉
@@ -134,15 +136,74 @@ async function miDel(id) {
 }
 
 async function wgLoad() {
-  const g = await riyuLoadGuide(wgKind, true);
+  if (wgKind !== 'grad_riyu') wgScope = '';
+  const g = await riyuLoadGuide(wgKind, true, wgScope);
+  if (wgKind === 'grad_riyu') {
+    try { wgScopesSet = ((await sb('/rest/v1/writing_guides?kind=eq.grad_riyu&select=scope', 'GET', null, { cache: 'no-store' })) || []).map(r => r.scope || '').filter(Boolean); }
+    catch (e) { wgScopesSet = []; }
+  }
   wgData = JSON.parse(JSON.stringify(g));
+  // 专属范围还没有自己的那一份：编辑区先空着，等「从通用版本复制一份」
+  if (wgScope && !g._fromDb) wgData = { kind: wgKind, scope: wgScope, title: '', intro: '', sections: [], ref_files: [], _fromDb: false };
   wgDirty = false;
   wgRender();
 }
 function wgSwitchKind(k) {
   if (wgDirty && !confirm('当前修改还没有保存，切换后会丢失。继续？')) { wgRender(); return; }
-  wgKind = k; wgLoad();
+  wgKind = k; wgScope = ''; wgLoad();
 }
+function wgSwitchScope(sc) {
+  if (wgDirty && !confirm('当前修改还没有保存，切换后会丢失。继续？')) { wgRender(); return; }
+  wgScope = sc || ''; wgLoad();
+}
+function wgScopeLabel(sc) { return sc ? (/^大学院/.test(sc) ? sc : majorLabel(sc)) : '通用'; }
+// 「适用范围」下拉的选项：通用 → 大学院领域 → 大学院专业（受管理链接范围限制）
+function wgScopeOptions() {
+  const doms = [], seen = {};
+  Object.keys(MAJOR_DOMAIN).forEach(k => { const d = MAJOR_DOMAIN[k]; if (d && /^大学院/.test(d) && !seen[d]) { seen[d] = 1; doms.push(d); } });
+  const mks = allMajorKeys().filter(k => !isMajorGroup(k) && /^大学院/.test(MAJOR_DOMAIN[k] || ''));
+  return { doms: doms.filter(d => scopeDomainOnly(d)), majors: mks.filter(k => scopeMajor(k)) };
+}
+function wgIsReadOnly() { return wgKind === 'grad_riyu' && wgScope === '' && !scopeAll(); }
+function wgScopeSelectHtml() {
+  if (wgKind !== 'grad_riyu') return '';
+  const o = wgScopeOptions();
+  const opt = (v, l) => `<option value="${riyuEsc(v)}" ${wgScope === v ? 'selected' : ''}>${riyuEsc(l)}${v && wgScopesSet.includes(v) ? ' · 已设置' : ''}</option>`;
+  return `<span style="font-size:11px;color:var(--text-3)">适用范围：</span>
+    <select onchange="wgSwitchScope(this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
+      ${opt('', '通用（默认）')}
+      ${o.doms.map(d => opt(d, d)).join('')}
+      ${o.majors.map(k => opt(k, majorLabel(k) + '（专业）')).join('')}
+    </select>`;
+}
+function wgScopeNoticeHtml() {
+  if (wgKind !== 'grad_riyu') return '';
+  const box = 'font-size:11px;border-radius:3px;padding:6px 10px;margin-bottom:10px;';
+  let h = '';
+  if (wgIsReadOnly()) h += `<div style="${box}color:var(--text-3);background:var(--surface);border:1px solid var(--border)">通用版本由总览账号维护（当前只读）。</div>`;
+  if (wgScope && !wgData._fromDb) h += `<div style="${box}color:var(--warn,#b8860b);background:#fff8e6;border:1px solid #e8d4a0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">这个范围还没有单独的指导，学生现在看到的是通用版本。<button class="btn btn-outline btn-sm" onclick="wgCopyGeneric()">从通用版本复制一份</button></div>`;
+  if (wgScope && wgData._fromDb) h += `<div style="${box}display:flex;align-items:center;gap:10px"><span style="color:var(--text-3)">当前编辑：${riyuEsc(wgScopeLabel(wgScope))} 专属指导</span><button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="wgDelScope()">删除这份专属指导，回到通用</button></div>`;
+  h += `<div style="font-size:10px;color:var(--text-3);margin-bottom:8px;line-height:1.6">想让已经开始写的学生不丢内容：专属版本尽量沿用通用版本的段落（用「从通用复制」再改标题和提示即可）；新增段落没关系，删段落学生那段内容不会被删，但撰写页不再显示。</div>`;
+  return h;
+}
+async function wgCopyGeneric() {
+  if (wgDirty && !confirm('当前已经有修改，复制后会被通用版本覆盖。继续？')) return;
+  try {
+    const g = await riyuLoadGuide(wgKind, true, '');
+    wgData = JSON.parse(JSON.stringify(g)); wgData.scope = wgScope; wgData._fromDb = false;
+    wgDirty = true; wgRender();
+  } catch (e) { alert('复制失败：' + e.message); }
+}
+async function wgDelScope() {
+  if (!wgScope || wgKind !== 'grad_riyu') return;
+  if (!confirm(`删除「${wgScopeLabel(wgScope)}」的专属指导，回到通用版本？\n学生已经写的内容不会删除。`)) return;
+  try {
+    await sb(`/rest/v1/writing_guides?kind=eq.grad_riyu&scope=eq.${encodeURIComponent(wgScope)}`, 'DELETE');
+    wgClearCache('grad_riyu');
+    await wgLoad();
+  } catch (e) { alert('删除失败：' + e.message); }
+}
+function wgClearCache(kind) { Object.keys(riyuGuideCache).forEach(k => { if (k.indexOf(kind + '|') === 0) delete riyuGuideCache[k]; }); }
 
 function wgRender() {
   const box = document.getElementById('mat_body'); if (!box || !wgData) return;
@@ -155,9 +216,11 @@ function wgRender() {
     <select onchange="wgSwitchKind(this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
       ${RIYU_GUIDE_KINDS.map(([k, l]) => `<option value="${k}" ${wgKind === k ? 'selected' : ''}>${l}</option>`).join('')}
     </select>
+    ${wgScopeSelectHtml()}
     <span style="font-size:10px;color:var(--text-3)">保存后学生端马上看到新内容（学生按这里的段落逐段撰写）</span>
   </div>
-  ${wgData._fromDb ? '' : '<div style="font-size:11px;color:var(--warn,#b8860b);background:#fff8e6;border:1px solid #e8d4a0;border-radius:3px;padding:6px 10px;margin-bottom:10px">数据库里还没有这份指导，下面是默认内容；点「保存」后才会正式写入（如果保存失败，请先执行 PR 里的 SQL 建表）。</div>'}
+  ${wgScopeNoticeHtml()}
+  ${(wgScope || wgData._fromDb) ? '' : '<div style="font-size:11px;color:var(--warn,#b8860b);background:#fff8e6;border:1px solid #e8d4a0;border-radius:3px;padding:6px 10px;margin-bottom:10px">数据库里还没有这份指导，下面是默认内容；点「保存」后才会正式写入（如果保存失败，请先执行 PR 里的 SQL 建表）。</div>'}
   <div style="border:1px solid var(--border);border-radius:4px;padding:12px 14px;background:var(--bg);margin-bottom:12px">
     <div style="display:grid;grid-template-columns:220px 1fr;gap:10px">
       <div>${lab('标题')}<input value="${riyuEsc(wgData.title)}" oninput="wgData.title=this.value;wgDirty=true" style="${inp}"></div>
@@ -192,6 +255,7 @@ function wgRender() {
     <button class="btn btn-primary btn-sm" id="wg_save_btn" onclick="wgSave()" style="margin-left:auto">保存</button>
     <span id="wg_msg" style="font-size:11px;color:var(--ok)"></span>
   </div>`;
+  if (wgIsReadOnly()) box.querySelectorAll('input,textarea,button').forEach(el => { el.disabled = true; });
 }
 async function wgRefAdd() {
   const files = [...(document.getElementById('wg_ref_file')?.files || [])];
@@ -232,17 +296,26 @@ function wgAdd() {
 async function wgSave() {
   const secs = wgData.sections.map(s => ({ key: s.key, title: (s.title || '').trim(), subtitle: (s.subtitle || '').trim(), tips: (s.tips || []).map(t => String(t).trim()).filter(Boolean) }));
   if (secs.some(s => !s.title)) { alert('每一段都要有标题'); return; }
-  const row = { kind: wgKind, title: (wgData.title || '').trim(), intro: wgData.intro || '', sections: secs, ref_files: wgData.ref_files || [], updated_at: new Date().toISOString() };
+  if (wgIsReadOnly()) { alert('通用版本由总览账号维护'); return; }
+  const row = { kind: wgKind, scope: wgScope, title: (wgData.title || '').trim(), intro: wgData.intro || '', sections: secs, ref_files: wgData.ref_files || [], updated_at: new Date().toISOString() };
   const btn = document.getElementById('wg_save_btn'); if (btn) { btn.disabled = true; btn.textContent = '保存中…'; }
   try {
     const tok = (typeof __getSbToken === 'function') ? __getSbToken() : null;
-    const r = await fetch(`${SB_URL}/rest/v1/writing_guides?on_conflict=kind`, { method: 'POST', headers: {
-      'apikey': SB_KEY, 'Authorization': 'Bearer ' + (tok || SB_KEY), 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify([row]) });
+    const post = (oc, body) => fetch(`${SB_URL}/rest/v1/writing_guides?on_conflict=${oc}`, { method: 'POST', headers: {
+      'apikey': SB_KEY, 'Authorization': 'Bearer ' + (tok || SB_KEY), 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify([body]) });
+    let r = await post('kind,scope', row);
+    if (!r.ok && wgScope === '') {   // scope 列还没建（SQL 未执行）：通用版本退回旧写法
+      const old = Object.assign({}, row); delete old.scope;
+      const r2 = await post('kind', old);
+      if (r2.ok) r = r2;
+    }
     if (!r.ok) throw new Error(await r.text());
     const saved = (await r.json())[0];
     if (!saved) throw new Error('没有写入成功（请确认已执行建表 SQL，且当前账号有权限）');
-    riyuGuideCache[wgKind] = Object.assign(riyuNormGuide(saved), { kind: wgKind, _fromDb: true });
-    wgData = JSON.parse(JSON.stringify(riyuGuideCache[wgKind]));
+    wgClearCache(wgKind);
+    riyuGuideCache[wgKind + '|' + wgScope] = Object.assign(riyuNormGuide(saved), { kind: wgKind, scope: wgScope, _fromDb: true });
+    wgData = JSON.parse(JSON.stringify(riyuGuideCache[wgKind + '|' + wgScope]));
+    if (wgScope && !wgScopesSet.includes(wgScope)) wgScopesSet.push(wgScope);
     wgDirty = false;
     wgRender();
     if (typeof riyuMailSavedMark === 'function') riyuMailSavedMark(wgKind);
