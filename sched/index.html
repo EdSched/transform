@@ -2997,18 +2997,23 @@ async function renderReview(list){
   const need=affected.filter(r=>r.det.need);
   const ok=affected.filter(r=>!r.det.need);
   const isAdmin=!!(ROLE&&(ROLE.role==='admin'||(ROLE.perms&&ROLE.perms.split(',').map(x=>x.trim()).includes('manage'))));
-  // 没有管理权限的人点「通知管理端调整」：同一门课已有没处理的通知就不再写
+  // 点「记录调整」：同一门课已有没处理的记录就不再写（管理员也一样）
   const notified={};
-  if(!isAdmin&&need.length){ try{ (await sbGet('sched_change_log','select=id,created_at,changes,acked_by&action=eq.course_review&or=(acked_by.is.null,acked_by.eq.)&order=created_at.desc&limit=500')).forEach(l=>{ (Array.isArray(l.changes)?l.changes:[]).forEach(x=>{ if(x&&x.course_uuid&&!notified[x.course_uuid]) notified[x.course_uuid]=l.created_at; }); }); }catch(e){ console.warn('读已有通知失败',e); } }
+  if(need.length){ try{ (await sbGet('sched_change_log','select=id,created_at,changes,acked_by&action=eq.course_review&or=(acked_by.is.null,acked_by.eq.)&order=created_at.desc&limit=500')).forEach(l=>{ (Array.isArray(l.changes)?l.changes:[]).forEach(x=>{ if(x&&x.course_uuid&&!notified[x.course_uuid]) notified[x.course_uuid]=l.created_at; }); }); }catch(e){ console.warn('读已有通知失败',e); } }
+  // 记录之后的提示：管理端现在有有效登录才给「打开课程安排」，否则只说明下次会看到提醒（绝不给会掉进登录页的链接）
+  const adminLoggedIn=()=>{ try{ return !!schedReadToken('sb-admin'); }catch(e){ return false; } };
+  const rvAfter=id=>{
+    if(isAdmin&&adminLoggedIn()) return ' <a class="sm" target="_blank" rel="noopener" style="font-size:12px" href="../admin/?page=courses&course='+encodeURIComponent(id)+'">打开课程安排</a>';
+    return '<div class="muted" style="font-size:11px;margin-top:3px">下次打开管理端课程安排会看到提醒</div>';
+  };
   const rowHtml=(r,isOk)=>{
     const c=r.c, det=r.det;
     const why='<div>'+esc(det.process)+'</div><div>'+esc(det.status)+'</div>'+det.sources.map(t=>'<div'+(isOk?'':' style="color:#a33"')+'>'+esc(t)+'</div>').join('');
     let act='—';
     if(!isOk){
       const id=esc(String(c.id));
-      if(isAdmin) act='<button class="sm ghost" data-rvgo="'+id+'">去调整</button>';
-      else if(notified[String(c.id)]) act='<button class="sm ghost" disabled>已通知（'+esc(String(notified[String(c.id)]).slice(5,10).replace('-','/'))+'）</button>';
-      else act='<button class="sm ghost" data-rvnotify="'+id+'">通知管理端调整</button>';
+      if(notified[String(c.id)]) act='<button class="sm ghost" disabled>已记录（'+esc(String(notified[String(c.id)]).slice(5,10).replace('-','/'))+'）</button>'+rvAfter(id);
+      else act='<button class="sm ghost" data-rvnotify="'+id+'">记录调整</button><span data-rvafter="'+id+'"></span>';
       if(c.start_date) act+='<div style="margin-top:4px"><button class="sm ghost" data-rvedit="'+id+'">改回数 / 周几 / 开课日</button></div>';
     }
     return `<tr${isOk?'':' style="background:#fff8f0"'}><td><b>${esc(c.name)}</b></td><td>${esc(String(c.sessions))}</td><td>${esc(c.start_date||'')}</td>`+
@@ -3048,15 +3053,14 @@ async function renderReview(list){
   h+='</details></div>';
   box.innerHTML=h;
   bind('[data-rvedit]', id=>courseEdit(id));
-  bind('[data-rvgo]', id=>{ window.open('../admin/?page=courses&course='+encodeURIComponent(id),'_blank'); });
   document.querySelectorAll('[data-rvnotify]').forEach(btn=>btn.onclick=async()=>{
     const r=need.find(x=>String(x.c.id)===btn.dataset.rvnotify); if(!r) return;
-    btn.disabled=true; btn.textContent='发送中…';
+    btn.disabled=true; btn.textContent='记录中…';
     try{
       await sbInsert('sched_change_log', schedLogRow(r.c,'course_review',[{ field:'course_review', label:'回数 / 结课日对不上',
         why:r.det.process+'；'+r.det.status+'；'+r.det.sources.join('；'), expected_end:r.det.expectedEnd||'', current_end:r.c.end_date||'', by:schedActorLabel() }]));
-      btn.textContent='已通知（'+todayStr().slice(5).replace('-','/')+'）'; toast('已通知管理端');
-    }catch(e){ btn.disabled=false; btn.textContent='通知管理端调整'; toast('通知失败：'+e.message+'（如提示 action 约束，需先执行 PR 里的 SQL）', false); }
+      btn.textContent='已记录（'+todayStr().slice(5).replace('-','/')+'）'; const af=btn.parentNode.querySelector('[data-rvafter]'); if(af) af.outerHTML=rvAfter(btn.dataset.rvnotify); toast('已记录，管理端课程安排会看到提醒');
+    }catch(e){ btn.disabled=false; btn.textContent='记录调整'; toast('记录失败：'+e.message, false); }
   });
 }
 /* 按回数算真实结束日：从开课日按周几排，跳过全局假期和个别休讲（豁免的照常计），数满 sessions 次 */

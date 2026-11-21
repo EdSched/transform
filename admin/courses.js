@@ -5508,7 +5508,7 @@ function acFocusRun() {
 }
 
 // ══════════ 排课「回数审查」通知（sched_change_log action='course_review'）══════════
-// 没有管理权限的人在排课点「通知管理端调整」写进来的。显示在教室协调框上面：
+// 排课「回数审查」里任何人点「记录调整」写进来的（含管理员）。显示在教室协调框上面：
 //   · 没点「知道了」（acked_by 里没有 admin-read）的才显示
 //   · 自动消失：这门课已经开课（有早于今天的单回）/ 已删除 / 重新核对后对得上了（courseReviewDetail，和排课同一套算法）
 async function loadCourseReviewBox() {
@@ -5519,7 +5519,7 @@ async function loadCourseReviewBox() {
     const today = localDateStr(), seen = new Set(), items = [];
     for (const l of rows) {
       const x = xOf(l), cid = String(x.course_uuid || ''); if (!cid || seen.has(cid)) continue; seen.add(cid);
-      const c = cachedCourses.find(y => String(y.id) === cid); if (!c) continue;           // 已删除 / 不在范围内
+      const c = cachedCourses.find(y => String(y.id) === cid); if (!c || (typeof scopeCourse === 'function' && !scopeCourse(c))) continue;   // 已删除 / 不在范围内
       const ses = cachedSessions.filter(y => y.course_id === c.id);
       if (ses.some(y => y.session_date < today)) continue;                                  // 已开课：以单回为准，不再审
       const det = courseReviewDetail(c, ses);
