@@ -5364,7 +5364,31 @@ async function loadRoomCoordBox() {
       unav.push(l);
     }
     const wk = Date.now() - 7 * 86400000;
-    const done = logs.filter(l => l.action === 'room_coord' && String(l.acked_by || '').trim() && xOf(l).done_room && new Date(xOf(l).done_at || l.created_at).getTime() >= wk);
+    // 已处理的：还要核对那一回现在的状态（日期改回去 / 休讲 / 教室不是记录里那间 → 不显示）；管理员点过「知道了」（acked_by 里带 admin-read）的也不显示
+    const sessOfDone = (l, x) => {
+      const arr = typeof cachedSessions !== 'undefined' ? cachedSessions : [];
+      let s = x.session_id ? arr.find(y => y.id === x.session_id) : null;
+      if (s) return s;
+      const cs = typeof cachedCourses !== 'undefined' ? cachedCourses : [];
+      const c = (x.course_uuid && cs.find(y => String(y.id) === String(x.course_uuid))) || cs.find(y => y.name && y.name === l.course_name);
+      if (c && x.num != null) s = arr.find(y => y.course_id === c.id && Number(y.session_number) === Number(x.num));
+      return s || null;
+    };
+    const doneStillOk = l => {
+      const x = xOf(l), s = sessOfDone(l, x);
+      if (!s) return true;                                                   // 找不到那一回：按记录显示
+      if (s.is_cancelled || s.session_date !== x.date) return false;          // 已改走 / 休讲
+      try {
+        if (CRV.loaded) {
+          const r = crvRoomOn(s.course_id, s);
+          const now = r.none ? '' : (r.cancelled ? null : crvRoomLabel(r.roomId));
+          if (now === null) return false;
+          if (String(now).trim() !== String(x.done_room || '').trim()) return false;   // 教室和记录里的不一致（含撤销后没教室）
+        }
+      } catch (e) { /* 判断不了就按记录显示 */ }
+      return true;
+    };
+    const done = logs.filter(l => l.action === 'room_coord' && String(l.acked_by || '').trim() && !String(l.acked_by).split(',').map(t => t.trim()).includes('admin-read') && xOf(l).done_room && new Date(xOf(l).done_at || l.created_at).getTime() >= wk && doneStillOk(l));
     if (!pend.length && !done.length && !unav.length) { box.innerHTML = ''; return; }
     const md2 = d => d ? crvMDW(d) : '';
     const tm = x => ccEsc(String(x.time || '').split('-')[0]);
@@ -5373,9 +5397,19 @@ async function loadRoomCoordBox() {
       ${unav.map(l => { const x = xOf(l); return `<div style="font-size:12px;margin-top:6px;padding:6px 8px;background:#fff4f1;border:1px solid #f0c8c0;border-radius:4px;color:#a33;line-height:1.6">
         <b>「${ccEsc(l.course_name || '')}」${ccEsc(x.label || '')} ${ccEsc(md2(x.date))}${tm(x)} 无法安排教室</b>（${ccEsc(x.why || (x.room_name ? '教室 ' + x.room_name + ' 被占用' : '没有可排的教室'))}）。${x.advice_text ? ccEsc(x.advice_text) : ''}请在课程安排里调整日期或时间（改好后这条提示会自动消失）。<span style="color:var(--text-3)">　${ccEsc(l.actor_label || '总务')} 反馈</span></div>`; }).join('')}
       ${pend.map(l => { const x = xOf(l); return `<div style="font-size:12px;margin-top:4px;color:#a33">${ccEsc(l.course_name || '')}　${ccEsc(x.label || '')} → ${ccEsc(md2(x.date))}${tm(x)}　${x.reason === 'no_room' ? '还没排教室' : x.reason === 'released' ? ccEsc('原 ' + (x.room_name || '') + ' 教室已释放') : ccEsc((x.room_name || '') + ' 被' + (x.blocker || '别的课') + '占着')}　<span style="color:var(--text-3)">等总务处理</span></div>`; }).join('')}
-      ${done.map(l => { const x = xOf(l); const dt = new Date(x.done_at || l.created_at); return `<div style="font-size:12px;margin-top:4px;color:#2a7a3a">✓ ${ccEsc(md2(x.date))} ${ccEsc(x.label || '')} → ${ccEsc(x.done_room)}（${x.auto ? ccEsc(x.done_by || '自动核对') : '总务 ' + ccEsc(x.done_by || '')}，${dt.getMonth() + 1}/${dt.getDate()}）　<span style="color:var(--text-3)">${ccEsc(l.course_name || '')}</span></div>`; }).join('')}
+      ${done.map(l => { const x = xOf(l); const dt = new Date(x.done_at || l.created_at); return `<div style="font-size:12px;margin-top:4px;color:#2a7a3a">✓ ${ccEsc(md2(x.date))} ${ccEsc(x.label || '')} → ${ccEsc(x.done_room)}（${x.auto ? ccEsc(x.done_by || '自动核对') : '总务 ' + ccEsc(x.done_by || '')}，${dt.getMonth() + 1}/${dt.getDate()}）　<span style="color:var(--text-3)">${ccEsc(l.course_name || '')}</span>　<a href="javascript:void(0)" onclick="roomCoordAck('${l.id}')" style="font-size:11px;color:var(--text-3)">知道了</a></div>`; }).join('')}
     </div>`;
   } catch (e) { box.innerHTML = ''; }
+}
+// 「已处理」那行点「知道了」：在 acked_by 里追加 admin-read（不新建字段；不影响总务端的已处理判断）
+async function roomCoordAck(id) {
+  try {
+    const r = await sb(`/rest/v1/sched_change_log?id=eq.${encodeURIComponent(id)}&select=acked_by`, 'GET', null, { cache: 'no-store' });
+    const acked = String((r && r[0] && r[0].acked_by) || '').split(',').map(x => x.trim()).filter(Boolean);
+    if (!acked.includes('admin-read')) acked.push('admin-read');
+    await sb(`/rest/v1/sched_change_log?id=eq.${encodeURIComponent(id)}`, 'PATCH', { acked_by: acked.join(',') });
+    loadRoomCoordBox();
+  } catch (e) { alert('操作失败：' + e.message); }
 }
 function crvHeadTag(course, sessions) {
   if (typeof crvFixed !== 'function' || !CRV.loaded) return '';
