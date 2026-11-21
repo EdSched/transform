@@ -133,21 +133,56 @@ function riyuNormGuide(row) {
   }));
   return g;
 }
-async function riyuLoadGuide(kind, force) {
-  if (!force && riyuGuideCache[kind]) return riyuGuideCache[kind];
+// 指导的适用范围：'' = 通用；领域名 = 该领域专属；专业 key = 该专业专属。优先级：本人主专业 → 所属领域 → 通用
+function riyuGuideScopesFor(student) {
+  const m = student && student.major, out = [];
+  if (m) out.push(m);
+  const d = m && typeof MAJOR_DOMAIN !== 'undefined' ? MAJOR_DOMAIN[m] : '';
+  if (d && out.indexOf(d) < 0) out.push(d);
+  out.push('');
+  return out;
+}
+async function riyuLoadGuide(kind, force, scope) {
+  scope = scope || '';
+  const ck = kind + '|' + scope;
+  if (!force && riyuGuideCache[ck]) return riyuGuideCache[ck];
   let row = null;
-  try { row = (await sb(`/rest/v1/writing_guides?kind=eq.${encodeURIComponent(kind)}&select=*`) || [])[0] || null; }
-  catch (e) { row = null; }
+  const q = `/rest/v1/writing_guides?kind=eq.${encodeURIComponent(kind)}&select=*`;
+  try { row = (await sb(q + `&scope=eq.${encodeURIComponent(scope)}`, 'GET', null, force ? { cache: 'no-store' } : undefined) || [])[0] || null; }
+  catch (e) {
+    row = null;
+    // scope 列还不存在（SQL 未执行）：通用版本回退成只按 kind 读；专属范围当作没有
+    if (scope === '') { try { row = (await sb(q) || [])[0] || null; } catch (e2) { row = null; } }
+  }
   const g = riyuNormGuide(row || Object.assign({ kind }, JSON.parse(JSON.stringify(RIYU_GUIDE_SEEDS[kind] || RIYU_GUIDE_SEED))));
-  g.kind = kind; g._fromDb = !!row;
-  riyuGuideCache[kind] = g;
+  g.kind = kind; g.scope = scope; g._fromDb = !!row;
+  riyuGuideCache[ck] = g;
+  return g;
+}
+// 学生（或某份提交对应学生）该用的指导：目前只有 grad_riyu 按范围找，其他 kind 等同 riyuLoadGuide(kind)
+async function riyuLoadGuideFor(kind, student, force) {
+  if (kind !== 'grad_riyu') return riyuLoadGuide(kind, force);
+  const scopes = riyuGuideScopesFor(student);
+  const ck = kind + '|?' + scopes.join(',');
+  if (!force && riyuGuideCache[ck]) return riyuGuideCache[ck];
+  let rows = null;
+  try {
+    const inList = scopes.map(x => '"' + String(x).replace(/"/g, '') + '"').join(',');
+    rows = await sb(`/rest/v1/writing_guides?kind=eq.${encodeURIComponent(kind)}&scope=in.(${encodeURIComponent(inList)})&select=*`, 'GET', null, force ? { cache: 'no-store' } : undefined) || [];
+  } catch (e) { rows = null; }   // 列不存在等：回退通用
+  let hit = null, hitScope = '';
+  if (rows) for (const sc of scopes) { const r = rows.find(x => (x.scope || '') === sc); if (r) { hit = r; hitScope = sc; break; } }
+  let g;
+  if (hit) { g = riyuNormGuide(hit); g.kind = kind; g.scope = hitScope; g._fromDb = true; }
+  else g = await riyuLoadGuide(kind, force);
+  riyuGuideCache[ck] = g;
   return g;
 }
 
 // 某份提交对应的指导：面试稿有题库时拍平成「段落」形状（key = 题 key），其余照旧 riyuLoadGuide
 async function riyuGuideOf(sub, student) {
   if (sub.kind === RIYU_INTERVIEW_KIND && student && typeof ivbGuideForSub === 'function') return ivbGuideForSub(sub, student);
-  return riyuLoadGuide(sub.kind);
+  return riyuLoadGuideFor(sub.kind, student);
 }
 
 // 大学院邮件文书「管理端已保存过指导」的 kind 列表（writing_guides 里有这一行才算）：决定计划书位置是否出现这两封邮件

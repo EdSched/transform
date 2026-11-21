@@ -689,7 +689,7 @@ function riyuStudentShell(kind) {
 async function riyuStudentLoad(kind, wrapId) {
   let subs = [], err = '', vers = [];
   const [g] = await Promise.all([
-    riyuLoadGuide(kind),
+    riyuLoadGuideFor(kind, studyStudent),
     kind === RIYU_INTERVIEW_KIND ? docvLoad(studyStudent.id, 'interview').then(r => { vers = r || []; }).catch(() => {}) : null,
     sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=eq.${kind}&select=*`)
       .then(r => { subs = r || []; }).catch(e => { err = e.message; }),
