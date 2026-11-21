@@ -2994,25 +2994,52 @@ async function renderReview(list){
   const rows=all.map(c=>({c, det:courseReviewDetail(c, sesBy[String(c.id)]||[])})).filter(r=>!r.det.err);
   const affected=rows.filter(r=>r.det.skips.length||r.det.need);   // 只关心跳过过假期 / 休讲、或已经对不上的课
   const NOTE='未开课的课按框架推算；已开课的课以单回为准，不在此审查';
-  const need=affected.filter(r=>r.det.need);
+  const needAll=affected.filter(r=>r.det.need);
   const ok=affected.filter(r=>!r.det.need);
   const isAdmin=!!(ROLE&&(ROLE.role==='admin'||(ROLE.perms&&ROLE.perms.split(',').map(x=>x.trim()).includes('manage'))));
-  // 没有管理权限的人点「通知管理端调整」：同一门课已有没处理的通知就不再写
-  const notified={};
-  if(!isAdmin&&need.length){ try{ (await sbGet('sched_change_log','select=id,created_at,changes,acked_by&action=eq.course_review&or=(acked_by.is.null,acked_by.eq.)&order=created_at.desc&limit=500')).forEach(l=>{ (Array.isArray(l.changes)?l.changes:[]).forEach(x=>{ if(x&&x.course_uuid&&!notified[x.course_uuid]) notified[x.course_uuid]=l.created_at; }); }); }catch(e){ console.warn('读已有通知失败',e); } }
+  // 点「记录调整」：同一门课已有没处理的记录就不再写（管理员也一样）
+  const notified={}, unackedIds={}, ignoreRows=[];
+  if(needAll.length){ try{
+    (await sbGet('sched_change_log','select=id,created_at,changes,acked_by,actor_label&action=eq.course_review&order=created_at.desc&limit=1000')).forEach(l=>{
+      (Array.isArray(l.changes)?l.changes:[]).forEach(x=>{
+        if(!x||!x.course_uuid) return;
+        if(x.field==='course_review_ignore'){ ignoreRows.push({ id:l.id, cid:String(x.course_uuid), cur:x.current_end||'', exp:x.expected_end||'', by:x.by||l.actor_label||'', at:l.created_at }); return; }
+        if(x.field!=='course_review'||l.acked_by) return;    // 只算还没处理的「记录调整」
+        if(!notified[x.course_uuid]) notified[x.course_uuid]=l.created_at;
+        (unackedIds[x.course_uuid]=unackedIds[x.course_uuid]||[]).push(l.id);
+      });
+    });
+  }catch(e){ console.warn('读已有记录失败',e); } }
+  // 「不用处理」只对「这次的对不上」有效：当前结课日和应有结课日两个都没变才算
+  const ignoredBy={};
+  const need=[], ignored=[];
+  needAll.forEach(r=>{
+    const m=ignoreRows.find(g=>g.cid===String(r.c.id)&&g.cur===(r.c.end_date||'')&&g.exp===(r.det.expectedEnd||''));
+    if(m){ ignoredBy[String(r.c.id)]=m; ignored.push(r); } else need.push(r);
+  });
+  // 记录之后的提示：管理端现在有有效登录才给「打开课程安排」，否则只说明下次会看到提醒（绝不给会掉进登录页的链接）
+  const adminLoggedIn=()=>{ try{ return !!schedReadToken('sb-admin'); }catch(e){ return false; } };
+  const rvAfter=id=>{
+    if(isAdmin&&adminLoggedIn()) return ' <a class="sm" target="_blank" rel="noopener" style="font-size:12px" href="../admin/?page=courses&course='+encodeURIComponent(id)+'">打开课程安排</a>';
+    return '<div class="muted" style="font-size:11px;margin-top:3px">下次打开管理端课程安排会看到提醒</div>';
+  };
   const rowHtml=(r,isOk)=>{
     const c=r.c, det=r.det;
-    const why='<div>'+esc(det.process)+'</div><div>'+esc(det.status)+'</div>'+det.sources.map(t=>'<div'+(isOk?'':' style="color:#a33"')+'>'+esc(t)+'</div>').join('');
+    const why='<div>'+esc(det.process)+'</div><div>'+esc(det.status)+'</div>'+det.sources.map(t=>'<div'+(isOk?'':' style="color:#a33"')+'>'+esc(t)+'</div>').join('')+
+      ((!isOk&&isOk!=='ign'&&det.unrecorded&&det.unrecorded.length)?'<div style="color:#8a6d1d">这类通常是正常调整，可点『不用处理』</div>':'');
     let act='—';
-    if(!isOk){
+    if(isOk==='ign'){
+      const g=ignoredBy[String(c.id)]||{};
+      act='<div class="muted" style="font-size:11px;margin-bottom:3px">'+esc(g.by||'')+' 标于 '+esc(String(g.at||'').slice(5,10).replace('-','/'))+'</div><button class="sm ghost" data-rvrestore="'+esc(String(c.id))+'">恢复</button>';
+    }else if(!isOk){
       const id=esc(String(c.id));
-      if(isAdmin) act='<button class="sm ghost" data-rvgo="'+id+'">去调整</button>';
-      else if(notified[String(c.id)]) act='<button class="sm ghost" disabled>已通知（'+esc(String(notified[String(c.id)]).slice(5,10).replace('-','/'))+'）</button>';
-      else act='<button class="sm ghost" data-rvnotify="'+id+'">通知管理端调整</button>';
+      if(notified[String(c.id)]) act='<button class="sm ghost" disabled>已记录（'+esc(String(notified[String(c.id)]).slice(5,10).replace('-','/'))+'）</button>'+rvAfter(id);
+      else act='<button class="sm ghost" data-rvnotify="'+id+'">记录调整</button><span data-rvafter="'+id+'"></span>';
+      act+=' <button class="sm ghost" data-rvignore="'+id+'">不用处理</button>';
       if(c.start_date) act+='<div style="margin-top:4px"><button class="sm ghost" data-rvedit="'+id+'">改回数 / 周几 / 开课日</button></div>';
     }
     return `<tr${isOk?'':' style="background:#fff8f0"'}><td><b>${esc(c.name)}</b></td><td>${esc(String(c.sessions))}</td><td>${esc(c.start_date||'')}</td>`+
-      `<td>${esc(c.end_date||'（空）')}${isOk?' <span class="badge b-ok" style="font-size:10px">一致</span>':''}</td>`+
+      `<td>${esc(c.end_date||'（空）')}${isOk===true?' <span class="badge b-ok" style="font-size:10px">一致</span>':''}</td>`+
       `<td><b>${esc(det.expectedEnd||'')}</b>${isOk?'':' <span class="badge b-warn" style="font-size:10px">需调整</span>'}</td>`+
       `<td class="muted" style="max-width:420px;font-size:12px;line-height:1.6">${why}</td>`+
       `<td style="white-space:nowrap">${act}</td></tr>`;
@@ -3024,7 +3051,11 @@ async function renderReview(list){
   else{
     h+='<div style="font-size:13px;margin:6px 0 4px;color:#c0392b"><b>需调整（'+need.length+'）</b></div>';
     if(need.length) h+='<table style="font-size:12px">'+thead+'<tbody>'+need.map(r=>rowHtml(r,false)).join('')+'</tbody></table>';
-    else h+='<div class="badge b-ok" style="margin-bottom:6px">受影响的课结课日都已对上，无需调整</div>';
+    else h+='<div class="badge b-ok" style="margin-bottom:6px">'+(ignored.length?'没有需要调整的课':'受影响的课结课日都已对上，无需调整')+'</div>';
+    if(ignored.length){
+      h+='<details style="margin-top:10px"><summary class="muted" style="font-size:12px;cursor:pointer">已标为不用处理（'+ignored.length+'）— 点开查看</summary>'+
+         '<table style="font-size:12px;margin-top:6px">'+thead+'<tbody>'+ignored.map(r=>rowHtml(r,'ign')).join('')+'</tbody></table></details>';
+    }
     if(ok.length){
       h+='<details style="margin-top:10px"><summary class="muted" style="font-size:12px;cursor:pointer">已一致（'+ok.length+'）— 点开查看</summary>'+
          '<table style="font-size:12px;margin-top:6px">'+thead+'<tbody>'+ok.map(r=>rowHtml(r,true)).join('')+'</tbody></table></details>';
@@ -3048,15 +3079,32 @@ async function renderReview(list){
   h+='</details></div>';
   box.innerHTML=h;
   bind('[data-rvedit]', id=>courseEdit(id));
-  bind('[data-rvgo]', id=>{ window.open('../admin/?page=courses&course='+encodeURIComponent(id),'_blank'); });
+  document.querySelectorAll('[data-rvignore]').forEach(btn=>btn.onclick=async()=>{
+    const r=need.find(x=>String(x.c.id)===btn.dataset.rvignore); if(!r) return;
+    btn.disabled=true; btn.textContent='处理中…';
+    try{
+      await sbInsert('sched_change_log', schedLogRow(r.c,'course_review',[{ field:'course_review_ignore', label:'回数审查：不用处理',
+        expected_end:r.det.expectedEnd||'', current_end:r.c.end_date||'', by:schedActorLabel(), on:todayStr() }]));
+      // 这门课已有没处理的「记录调整」通知：顺手标为已处理，管理端就不再提醒
+      for(const lid of (unackedIds[String(r.c.id)]||[])){ try{ await sbUpdate('sched_change_log', lid, {acked_by:'admin-read'}); }catch(e){ console.warn('标记通知已处理失败',e); } }
+      toast('已标为不用处理'); renderReview(list);
+    }catch(e){ btn.disabled=false; btn.textContent='不用处理'; toast('操作失败：'+e.message, false); }
+  });
+  document.querySelectorAll('[data-rvrestore]').forEach(btn=>btn.onclick=async()=>{
+    const cid=btn.dataset.rvrestore; btn.disabled=true;
+    try{
+      for(const g of ignoreRows.filter(x=>x.cid===cid)) await sbDelete('sched_change_log', g.id);
+      toast('已恢复'); renderReview(list);
+    }catch(e){ btn.disabled=false; toast('恢复失败：'+e.message, false); }
+  });
   document.querySelectorAll('[data-rvnotify]').forEach(btn=>btn.onclick=async()=>{
     const r=need.find(x=>String(x.c.id)===btn.dataset.rvnotify); if(!r) return;
-    btn.disabled=true; btn.textContent='发送中…';
+    btn.disabled=true; btn.textContent='记录中…';
     try{
       await sbInsert('sched_change_log', schedLogRow(r.c,'course_review',[{ field:'course_review', label:'回数 / 结课日对不上',
         why:r.det.process+'；'+r.det.status+'；'+r.det.sources.join('；'), expected_end:r.det.expectedEnd||'', current_end:r.c.end_date||'', by:schedActorLabel() }]));
-      btn.textContent='已通知（'+todayStr().slice(5).replace('-','/')+'）'; toast('已通知管理端');
-    }catch(e){ btn.disabled=false; btn.textContent='通知管理端调整'; toast('通知失败：'+e.message+'（如提示 action 约束，需先执行 PR 里的 SQL）', false); }
+      btn.textContent='已记录（'+todayStr().slice(5).replace('-','/')+'）'; const af=btn.parentNode.querySelector('[data-rvafter]'); if(af) af.outerHTML=rvAfter(btn.dataset.rvnotify); toast('已记录，管理端课程安排会看到提醒');
+    }catch(e){ btn.disabled=false; btn.textContent='记录调整'; toast('记录失败：'+e.message, false); }
   });
 }
 /* 按回数算真实结束日：从开课日按周几排，跳过全局假期和个别休讲（豁免的照常计），数满 sessions 次 */
