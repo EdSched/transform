@@ -593,12 +593,29 @@ function cleanupClearSelection(){
   document.getElementById('cleanup_count').textContent=0;
   updateCleanupPeriodBar();
 }
+// 删除课程时一并清理它的教室占用（sched_bookings 没有外键，不会随课程自动删）
+async function delBkRows(ids){
+  if(!ids.length) return [];
+  let out=[];
+  for(let i=0;i<ids.length;i+=40) out=out.concat(await sbAll(`/rest/v1/sched_bookings?kind=eq.course&course_id=in.(${ids.slice(i,i+40).map(x=>`"${x}"`).join(',')})&select=id,course_id,recurrence,booking_date,room_id`));
+  return out;
+}
+function delBkText(rows){
+  if(!rows.length) return '';
+  const w=rows.filter(b=>b.recurrence==='weekly').length, o=rows.length-w;
+  return `\n\n还有 ${rows.length} 条教室占用（每周 ${w} 条、单日 ${o} 条），删除课程时会一起清掉，教室会空出来。`;
+}
+async function delBkClean(rows){
+  for(const b of rows){ try{ await sb(`/rest/v1/sched_bookings?id=eq.${b.id}`,'DELETE'); }catch(e){ console.warn('清理教室占用失败',b.id,e); } }
+}
 async function cleanupDeleteSingle(courseId){
-  if(!confirm('确定删除这门课程及其所有课次记录？此操作不可恢复。'))return;
+  let bkRows=[]; try{ bkRows=await delBkRows([courseId]); }catch(e){ console.warn('读取教室占用失败',e); }
+  if(!confirm('确定删除这门课程及其所有课次记录？此操作不可恢复。'+delBkText(bkRows)))return;
   try{
     await sb(`/rest/v1/session_records?session_id=in.(${cachedSessions.filter(s=>s.course_id===courseId).map(s=>`"${s.id}"`).join(',')||'""'})`,'DELETE').catch(()=>{});
     await sb(`/rest/v1/course_sessions?course_id=eq.${courseId}`,'DELETE');
     await sb(`/rest/v1/courses?id=eq.${courseId}`,'DELETE');
+    await delBkClean(bkRows);   // 课程删成功以后才清占用（被排班外键拦住时不会误清）
     cachedCourses=cachedCourses.filter(c=>c.id!==courseId);
     cachedSessions=cachedSessions.filter(s=>s.course_id!==courseId);
     cleanupSelected.delete(courseId);
@@ -609,13 +626,15 @@ async function cleanupDeleteSelected(){
   const vis=new Set(cleanupLastFiltered.map(c=>c.id));
   const ids=[...cleanupSelected].filter(id=>vis.has(id));   // 只处理当前显示出来的课
   if(!ids.length){alert('请先勾选要删除的课程');return}
-  if(!confirm(`确定删除已选中的 ${ids.length} 门课程及其所有课次记录？此操作不可恢复。`))return;
+  let bkRows=[]; try{ bkRows=await delBkRows(ids); }catch(e){ console.warn('读取教室占用失败',e); }
+  if(!confirm(`确定删除已选中的 ${ids.length} 门课程及其所有课次记录？此操作不可恢复。`+delBkText(bkRows)))return;
   try{
     for(const courseId of ids){
       const sessionIds=cachedSessions.filter(s=>s.course_id===courseId).map(s=>s.id);
       if(sessionIds.length) await sb(`/rest/v1/session_records?session_id=in.(${sessionIds.map(i=>`"${i}"`).join(',')})`,'DELETE').catch(()=>{});
       await sb(`/rest/v1/course_sessions?course_id=eq.${courseId}`,'DELETE');
       await sb(`/rest/v1/courses?id=eq.${courseId}`,'DELETE');
+      await delBkClean(bkRows.filter(b=>String(b.course_id)===String(courseId)));
     }
     const idSet=new Set(ids);
     cachedCourses=cachedCourses.filter(c=>!idSet.has(c.id));
@@ -1250,10 +1269,14 @@ async function toggleCourseConfirm(courseId, isCurrentlyConfirmed){
 }
 
 async function deleteCourse(id){
+  let bkRows=[]; try{ bkRows=await delBkRows([id]); }catch(e){ console.warn('读取教室占用失败',e); }
+  const _c=cachedCourses.find(x=>x.id===id);
+  if(!confirm(`确定删除课程「${_c?_c.name:''}」及其所有课次记录？此操作不可恢复。`+delBkText(bkRows)))return;
   try{
     await sb(`/rest/v1/session_records?session_id=in.(${cachedSessions.filter(s=>s.course_id===id).map(s=>`"${s.id}"`).join(',')||'""'})`,'DELETE').catch(()=>{});
     await sb(`/rest/v1/course_sessions?course_id=eq.${id}`,'DELETE');
     await sb(`/rest/v1/courses?id=eq.${id}`,'DELETE');
+    await delBkClean(bkRows);   // 课程删成功以后才清占用（被排班外键拦住时不会误清）
     cachedSessions=cachedSessions.filter(s=>s.course_id!==id);
     cachedSessionRecords=cachedSessionRecords.filter(r=>!cachedSessions.find(s=>s.id===r.session_id));
     cachedCourses=cachedCourses.filter(c=>c.id!==id);
