@@ -140,6 +140,82 @@ async function srmRecheckLater() {
   }
 }
 
+// ── 自动通知总务（课程整体改日期 / 时间后用；opts.auto=true）──
+// 今天以后、有教室的回：不管原教室空不空，都自动写一条 room_coord（同一回只留一条，srmCoordWrite）。原教室在新时间被占：reason='blocked'，总务面板会推荐空教室；没被占：reason='changed'，总务确认即可。
+// 没有教室占用的课（还没排教室）不发，交给现有「排课提醒」
+const srmToday = () => (typeof jstToday === 'function' ? jstToday() : new Date().toISOString().slice(0, 10));
+function srmChangeText(f, t) {
+  if (!f) return '新增的一回';
+  const parts = [];
+  if (f.date !== t.date) parts.push(`日期由 ${srmMDW(f.date)} 改为 ${srmMDW(t.date)}`);
+  const a = srmSpan(f.time), b = srmSpan(t.time);
+  if (a.start !== b.start || a.end !== b.end) parts.push(`上课时间由 ${a.start}-${a.end} 改为 ${b.start}-${b.end}`);
+  return parts.join('；') || '日期 / 时间有调整';
+}
+// 返回要通知的回：[{ ch, sp, room:{id,name}, blockers, text, change }]（只计算 + 读冲突，不写库）
+async function srmAutoPlan(course, changes, bks, roomName, today) {
+  const withRoom = (bks || []).filter(b => b.room_id != null && b.room_id !== '');
+  const out = [];
+  if (!withRoom.length) return out;
+  for (const ch of changes) {
+    const f = ch.from, t = ch.to;
+    if (!t || t.cancelled || !t.date || t.date < today) continue;       // 只通知今天以后的回
+    const sp = srmSpan(t.time);
+    if (!sp.start) continue;
+    const fsp = f ? srmSpan(f.time) : null;
+    const pick = (f && withRoom.find(b => srmWeeklyRule(b, f.date) && srmOverlap(fsp.start, fsp.end, b.start_time, b.end_time)))
+      || withRoom.find(b => Number(b.weekday) === srmWeekday(t.date)) || withRoom[0];
+    let blockers = [];
+    try { blockers = await srmBlockers('room_id', pick.room_id, t.date, sp, course.id); } catch (er) { blockers = []; }
+    const rn = roomName(pick.room_id);
+    const text = srmChangeText(f, t);
+    const blockerTxt = blockers.map(x => `《${x.title}》（${x.who || '—'}，${x.time}）`).join('、');
+    out.push({ ch, sp, room: { id: pick.room_id, name: rn }, blockers, text,
+      change: { field: 'room_coord', label: `第 ${ch.num || '?'} 回`, num: ch.num || null, session_id: ch.id, course_uuid: course.id,
+        from: f ? `${f.date} ${f.time || ''}`.trim() : '（新增）', to: `${t.date} ${sp.start}-${sp.end}`, date: t.date, time: `${sp.start}-${sp.end}`,
+        room_name: rn, room_id: pick.room_id, blocker: blockerTxt, reason: blockers.length ? 'blocked' : 'changed', note: text } });
+  }
+  return out;
+}
+async function srmAutoOpen(course, changes, bks, roomName) {
+  const plan = await srmAutoPlan(course, changes, bks, roomName, srmToday());
+  if (!plan.length) return { notified: 0 };
+  const who = () => (typeof csWho === 'function' ? csWho() : ((typeof ADMIN_EMAIL !== 'undefined' && ADMIN_EMAIL) ? ADMIN_EMAIL : '管理员'));
+  const failed = [];
+  for (const it of plan) { try { await srmCoordWrite(course, it.change, who()); } catch (er) { failed.push(er.message || String(er)); } }
+  const ok = plan.length - failed.length;
+  await new Promise(resolve => {
+    const ov = ccOverlay('srmOv'), e = ccEsc;
+    let memo = '', err = failed.length ? `有 ${failed.length} 回通知失败：${failed[0]}` : '', busy = false;
+    const close = () => { ov.remove(); resolve(); };
+    const writeAll = async extra => {
+      failed.length = 0; err = '';
+      for (const it of plan) { try { await srmCoordWrite(course, Object.assign({}, it.change, extra), who()); } catch (er) { failed.push(er.message || String(er)); } }
+      if (failed.length) err = `有 ${failed.length} 回通知失败：${failed[0]}`;
+    };
+    const draw = () => {
+      const body = plan.map(it => {
+        const t = it.ch.to, n = it.ch.num ? '第 ' + e(it.ch.num) + ' 回' : '新增一回';
+        const st = it.blockers.length
+          ? `<span style="color:#a33">原教室 ${e(it.room.name)} 在新时间已被《${e(it.blockers[0].title)}》（${e(it.blockers[0].who || '—')}，${e(it.blockers[0].time)}）占用${it.blockers.length > 1 ? ' 等' + it.blockers.length + '处' : ''}，总务会推荐空教室</span>`
+          : `<span style="color:#2a7a3a">原教室 ${e(it.room.name)} 新时间空着，请总务确认</span>`;
+        return `<div style="border-bottom:1px solid var(--border-light,#eee);padding:6px 0"><div style="font-weight:600">${n} → ${e(srmMDW(t.date))}${e(it.sp.start)}-${e(it.sp.end)}</div><div style="font-size:12px;color:#666">${e(it.text)}</div><div>${st}</div></div>`;
+      }).join('');
+      ov.innerHTML = `<div style="${CC_BOX}"><div style="padding:14px 18px;border-bottom:1px solid var(--border,#e2ded6);font-size:15px;font-weight:600">${failed.length ? '通知没发完整' : `已通知总务（${plan.length - failed.length} 回），请核对`}</div><div style="padding:12px 18px;overflow:auto;flex:1"><div style="font-size:12px;color:#888;margin-bottom:4px">《${e(course.merge_name || course.name || '')}》今天以后、有教室的回，已自动发给总务，不用再点「交给总务」。已上过的回没有通知。</div>${body}<div style="margin-top:10px"><div style="font-size:12px;color:#888;margin-bottom:3px">给总务补充一句备注（可不填，会写进同一条通知）</div><input id="srmMemo" type="text" value="${e(memo)}" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--border,#e2ded6);border-radius:6px"></div>${err ? `<div style="color:#a33;margin-top:6px">${e(err)}</div>` : ''}</div><div style="padding:10px 18px;border-top:1px solid var(--border,#e2ded6);display:flex;gap:8px;justify-content:flex-end"><button type="button" id="srmRetry" class="btn btn-outline btn-sm" style="padding:6px 16px;cursor:pointer;${failed.length ? '' : 'display:none'}">重新通知</button><button type="button" id="srmClose" class="btn btn-primary btn-sm" style="padding:6px 16px;cursor:pointer">${busy ? '保存中…' : '完成'}</button></div></div>`;
+      const inp = ov.querySelector('#srmMemo'); inp.oninput = () => { memo = inp.value; };
+      ov.querySelector('#srmRetry').onclick = async () => { await writeAll(memo.trim() ? { memo: memo.trim() } : {}); draw(); };
+      ov.querySelector('#srmClose').onclick = async () => {
+        if (busy) return;
+        const m = memo.trim();
+        if (m) { busy = true; draw(); await writeAll({ memo: m }); busy = false; if (failed.length) { draw(); return; } }
+        close();
+      };
+    };
+    draw();
+  });
+  return { notified: ok, total: plan.length };
+}
+
 // opts: { course, changes:[{ id, num, from:{date,time,cancelled}|null, to:{date,time,cancelled} }], sessions:[该课现在全部单回] }
 // 返回 Promise：窗口关掉后 resolve（不抛错）
 async function srmOpen(opts) {
@@ -147,7 +223,7 @@ async function srmOpen(opts) {
   const course = opts.course || {};
   await srmReleaseOldTemps(course, opts.changes, opts.sessions);   // 原来那天已经没课了：把那天留下的临时占用一起清掉
   const changes = (opts.changes || []).filter(c => c && c.to && !c.to.cancelled);
-  if (!course.id || !changes.length) return;
+  if (!course.id || !changes.length) return { notified: 0 };
   let bks, rooms = [], accts = [];
   try {
     bks = ((await srmGet(`/rest/v1/sched_bookings?kind=eq.course&course_id=eq.${encodeURIComponent(course.id)}&select=*`)) || []).filter(b => b.status === 'confirmed' && b.recurrence === 'weekly');
@@ -155,8 +231,9 @@ async function srmOpen(opts) {
     if (rids.length) rooms = (await srmGet(`/rest/v1/sched_rooms?id=in.(${rids.map(encodeURIComponent).join(',')})&select=id,name`)) || [];
     const aids = [...new Set(bks.filter(b => b.uses_meeting && b.meeting_account_id != null && b.meeting_account_id !== '').map(b => b.meeting_account_id))];
     if (aids.length) accts = (await srmGet(`/rest/v1/sched_meeting_accounts?id=in.(${aids.map(encodeURIComponent).join(',')})&select=id,name`)) || [];
-  } catch (e) { console.warn('读取教室占用失败', e); return; }
+  } catch (e) { console.warn('读取教室占用失败', e); return { notified: 0 }; }
   const roomName = id => { const r = rooms.find(x => String(x.id) === String(id)); return r ? r.name : '教室'; };
+  if (opts.auto) return srmAutoOpen(course, changes, bks, roomName);   // 课程整体改日期 / 时间：自动通知总务，弹框只是确认 + 备注
   const acctName = id => { const a = accts.find(x => String(x.id) === String(id)); return a ? (a.name || '会议账号') : '会议账号'; };
   const withRoom = bks.filter(b => b.room_id != null && b.room_id !== '');
 
