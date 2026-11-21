@@ -105,6 +105,28 @@ async function matLoadItems(track, includeHidden) {
   // 联系教授邮件 / 问询邮件只给大学院：学部清单里即使有也不显示
   return track === 'gakubu' ? (list || []).filter(it => it.kind !== 'prof_mail' && it.kind !== 'inquiry_mail') : list;
 }
+// 给某个学生看的清单：大学院「志望理由书」按 主专业 → 领域 → 通用 只留一条，占通用那条的位置；专属版本未公开视为不存在
+// 没有 scope 列（SQL 未执行）时 scope 是 undefined，一律当通用。学部 / 非 riyu 条目原样保留。
+function matItemsFor(items, student) {
+  const list = items || [];
+  const isCand = it => it.kind === 'riyu' && it.track === 'grad';
+  const scoped = list.filter(it => isCand(it) && it.scope);
+  if (!scoped.length) return list;
+  const generic = list.find(it => isCand(it) && !it.scope);
+  const scopes = (typeof riyuGuideScopesFor === 'function') ? riyuGuideScopesFor(student) : [''];
+  let chosen = null;
+  for (const sc of scopes) {
+    chosen = sc === '' ? (generic || null) : scoped.find(it => it.scope === sc && it.published !== false);
+    if (chosen) break;
+  }
+  const anchor = generic || chosen;
+  const out = [];
+  list.forEach(it => {
+    if (!isCand(it) || (!it.scope && it !== generic)) { out.push(it); return; }
+    if (it === anchor && chosen) out.push(chosen);   // 其余专属版本、以及没选中的通用那条都不出现
+  });
+  return out;
+}
 // 学生准备情况 upsert（主键 student_id + item_id）
 async function matUpsert(row) {
   const tok = (typeof __getSbToken === 'function') ? __getSbToken() : null;
