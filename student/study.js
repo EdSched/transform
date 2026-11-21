@@ -1414,17 +1414,38 @@ function buildStudyRoadmap() {
   if (ws == null && we != null) ws = we - 11;
   if (ws == null) { const y = now.getFullYear(), m = now.getMonth() + 1; ws = (m >= 4 ? y : y - 1) * 12 + 3; }
   if (we == null || we < ws) we = ws + 11;
-  const total = we - ws + 1;
-  // 显示窗口：超过14个月的合同期截取当前周期附近
-  let dispS = ws, dispE = we;
-  if (total > 14) { dispS = Math.max(ws, Math.min(nowIdx - 2, we - 13)); dispE = Math.min(we, dispS + 13); }
+  const signupIdx = studyParseYm(s.signup_date) != null ? studyParseYm(s.signup_date) : (contractKnown ? ws : null);
+  let total = we - ws + 1;
 
-  // 当前考试周期：所选路线下一次考试月
-  const modelKey = studyPrepModelKey();
+  // 当前考试周期：管理员手动设的 exam_plan 优先（与考学进度卡片同一函数）；否则所选路线下一次考试月
+  const ep = (typeof pgcExamPlan === 'function') ? pgcExamPlan(s) : null;
+  const modelKey = ep ? ep.season : studyPrepModelKey();
   const model = STUDY_PREP_MODELS[modelKey];
   const nextExamIdx = examMonth => { let e = now.getFullYear() * 12 + (examMonth - 1); while (e < nowIdx) e += 12; return e; };
-  let examIdx = nextExamIdx(model.examMonth);
-  if (model.skipOne) examIdx += 12; // 次年路线：跳过最近一轮
+  let examIdx;
+  if (ep) examIdx = ep.season === 'summer' ? ep.y * 12 + 7 : (ep.y + 1) * 12;
+  else {
+    examIdx = nextExamIdx(model.examMonth);
+    if (model.skipOne) examIdx += 12; // 次年路线：跳过最近一轮
+  }
+  const examLabel = ep ? `${ep.y}年${ep.season === 'summer' ? '夏季' : '冬季'}考试` : '';
+
+  // 显示窗口
+  let dispS = ws, dispE = we;
+  if (ep) {
+    // 以目标考试为准：起点 = max(报名月, E+最早偏移)，终点 = E+最晚偏移
+    let minOff = 0, maxOff = 0;
+    STUDY_ROADMAP_ROWS.forEach(r0 => {
+      const ms = (model.skipOne && r0.ms2) ? r0.ms2 : r0.ms;
+      Object.keys(ms).forEach(k => { minOff = Math.min(minOff, +k); maxOff = Math.max(maxOff, +k); });
+    });
+    ws = signupIdx != null ? Math.max(signupIdx, examIdx + minOff) : examIdx + minOff;
+    we = examIdx + maxOff;
+    if (we < ws) ws = we;
+    total = we - ws + 1;
+    dispS = ws; dispE = we;
+  }
+  if (total > 14) { dispS = Math.max(ws, Math.min(nowIdx - 2, we - 13)); dispE = Math.min(we, dispS + 13); }
   const otherKey = modelKey === 'winter' ? 'summer' : 'winter';
   const altExamIdx = nextExamIdx(STUDY_PREP_MODELS[otherKey].examMonth);
 
@@ -1500,7 +1521,7 @@ function buildStudyRoadmap() {
     banner = `💡 距离所选路线的下一次考试（${ymStr(examIdx)}）还有 ${examIdx - nowIdx} 个月；更近的考试机会是${STUDY_PREP_MODELS[otherKey].label}——${ymStr(altExamIdx - 1)}出愿・${ymStr(altExamIdx)}考试。如需转换请在右上角切换路线。`;
   }
 
-  return { ws, we, total, contractKnown, dispS, dispE, nowIdx, examIdx, rows, meetDots, ymStr, modelKey, banner };
+  return { ws, we, total, contractKnown, signupIdx, examLabel, dispS, dispE, nowIdx, examIdx, rows, meetDots, ymStr, modelKey, banner };
 }
 
 function renderStudyRoadmap() {
@@ -1548,15 +1569,20 @@ function renderStudyRoadmap() {
     <td style="padding:6px 8px;font-size:10px;color:${r.vc};border-bottom:1px solid var(--border-light)">${r.vt}</td>
   </tr>`).join('');
 
-  const stayed = Math.min(Math.max(R.nowIdx - R.ws + 1, 0), R.total);
+  const stayed = R.examLabel
+    ? (R.signupIdx != null ? Math.max(R.nowIdx - R.signupIdx + 1, 0) : 0)
+    : Math.min(Math.max(R.nowIdx - R.ws + 1, 0), R.total);
   return `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:4px;padding:12px">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px">
-      <div style="font-size:11px;font-weight:600">📅 备考规划　<span style="font-weight:400;color:var(--text-secondary)">在学期间：${R.ymStr(R.ws)} 〜 ${R.ymStr(R.we)}（共 ${R.total} 个月・已在学 ${stayed} 个月）</span></div>
+      <div style="font-size:11px;font-weight:600">📅 备考规划　<span style="font-weight:400;color:var(--text-secondary)">${R.examLabel
+          ? `备考期间：${R.ymStr(R.ws)} 〜 ${R.ymStr(R.we)}（目标：${R.examLabel}）`
+          : `在学期间：${R.ymStr(R.ws)} 〜 ${R.ymStr(R.we)}（共 ${R.total} 个月・已在学 ${stayed} 个月）`}</span>
+        ${R.examLabel && R.signupIdx != null ? `<div style="font-size:9px;font-weight:400;color:var(--text-secondary);margin-top:2px">报名：${R.ymStr(R.signupIdx)}（已在学 ${stayed} 个月）</div>` : ''}</div>
       <label style="font-size:10px;color:var(--text-secondary)">考试路线：<select onchange="studySetPrepModel(this.value)" style="font-size:10px;padding:2px 6px;border:1px solid var(--border);border-radius:2px;background:var(--surface);width:auto">
         ${Object.entries(STUDY_PREP_MODELS).map(([k,m]) => `<option value="${k}" ${R.modelKey===k?'selected':''}>${m.label}</option>`).join('')}
       </select></label>
     </div>
-    ${R.contractKnown ? '' : '<div style="font-size:10px;color:var(--warning);margin-bottom:6px">⚠ 档案中未登记到期时间，暂按本学年（4月起）显示。请联系老师在学生档案中填写「到期时间」。</div>'}
+    ${(R.contractKnown || R.examLabel) ? '' : '<div style="font-size:10px;color:var(--warning);margin-bottom:6px">⚠ 档案中未登记到期时间，暂按本学年（4月起）显示。请联系老师在学生档案中填写「到期时间」。</div>'}
     ${R.banner ? `<div style="font-size:10px;color:var(--text-primary);background:var(--accent-light);border:1px solid var(--border-light);border-radius:3px;padding:7px 10px;margin-bottom:8px">${R.banner}</div>` : ''}
     ${R.total > (R.dispE - R.dispS + 1) ? `<div style="font-size:9px;color:var(--text-secondary);margin-bottom:6px">合同期较长，当前显示 ${R.ymStr(R.dispS)} 〜 ${R.ymStr(R.dispE)}</div>` : ''}
     <div style="overflow-x:auto">
