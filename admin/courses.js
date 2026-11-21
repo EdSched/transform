@@ -2546,14 +2546,10 @@ async function saveAddCourse(){
       if(tCtx.changed&&!tCtx.single) alert('上课老师已改，请在单回明细里重新分配老师（按周几 / 回数分配，或者去排课）');
       const saved=cachedCourses.find(c=>c.id===editingId);
       const notes=dateChanged?['单回日期有变动（改期 / 休讲顺延 / 新增课次），可能影响腾讯会议安排，请到排课系统确认']:[];
-      // 课程整体上课时间改了：不动每周占用，只提示
+      // 课程整体上课时间改了：今天以后、有教室的回由下面自动通知总务（不再只提示）
       const spanEq=(x,y)=>{ const p=timeRangesSpan(x||''),q=timeRangesSpan(y||''); return p.start===q.start&&p.end===q.end; };
-      const courseTimeChanged=!spanEq(oldCourseTime,courseData.time_range);
-      if(courseTimeChanged){
-        const wt=await srmWeeklyTimes(editingId);
-        if(wt.length) notes.push(`课程时间改成 ${courseData.time_range||'（空）'} 了，排课里的每周教室占用还是 ${wt.join('、')}，请到排课调整`);
-      }
-      // 弹框：这几回的教室要不要跟着调整（人点了才写；关掉 = 什么都不写）
+      // 日期 / 时间有变的回：自动通知总务（弹框只是确认 + 备注）。没有教室占用的课不发，由「排课提醒」处理
+      let _coordRes=null;
       try{
         const roomChanges=[];
         cachedSessions.filter(s=>s.course_id===editingId).forEach(s=>{
@@ -2561,12 +2557,13 @@ async function saveAddCourse(){
           const to={ date:s.session_date, time:s.time_range||courseData.time_range||'', cancelled:!!s.is_cancelled };
           if(!o){ if(!to.cancelled) roomChanges.push({ id:s.id, num:s.session_number, from:null, to }); return; }
           const from={ date:o.date, time:o.time||oldCourseTime, cancelled:o.cancelled };
-          // 课程整体改时间时，跟着课程走的回不算单回改时间
+          // 课程整体改时间时，跟着课程走的回（今天以后）也要进通知：新旧时间不同就算
           const timeDiff=!spanEq(from.time,to.time);
           if(from.date!==to.date||timeDiff||from.cancelled!==to.cancelled) roomChanges.push({ id:s.id, num:o.num||s.session_number, from:from.cancelled?null:from, to });
         });
-        await srmOpen({ course:saved, changes:roomChanges, sessions:cachedSessions.filter(s=>s.course_id===editingId) });
-      }catch(e){ console.warn('教室确认弹框失败', e); }
+        _coordRes=await srmOpen({ course:saved, changes:roomChanges, sessions:cachedSessions.filter(s=>s.course_id===editingId), auto:true });
+      }catch(e){ console.warn('自动通知总务失败', e); notes.push('自动通知总务失败，请到「课程安排」里重新保存一次，或联系总务：'+(e.message||e)); }
+      if(_coordRes&&_coordRes.notified) notes.push(`已通知总务：${_coordRes.notified} 回的日期 / 时间有变，总务会核对教室`);
       const newKey=saved?periodKeyOf(saved):'';
       courseConfirmOpen({ title:'课程已修改，请核对', onEdit:openAddCourseModal, items:[Object.assign({
         course:saved, dates:cachedSessions.filter(s=>s.course_id===editingId&&!s.is_cancelled).map(s=>s.session_date), notes,
@@ -5409,7 +5406,7 @@ async function loadRoomCoordBox() {
       <div style="font-size:12px;font-weight:600">教室协调${unav.length ? `　<span style="color:#c0392b">需要你调整 ${unav.length}</span>` : ''}${pend.length ? `　<span style="color:#c0392b">等总务处理 ${pend.length}</span>` : ''}</div>
       ${unav.map(l => { const x = xOf(l); return `<div style="font-size:12px;margin-top:6px;padding:6px 8px;background:#fff4f1;border:1px solid #f0c8c0;border-radius:4px;color:#a33;line-height:1.6">
         <b>「${ccEsc(l.course_name || '')}」${ccEsc(x.label || '')} ${ccEsc(md2(x.date))}${tm(x)} 无法安排教室</b>（${ccEsc(x.why || (x.room_name ? '教室 ' + x.room_name + ' 被占用' : '没有可排的教室'))}）。${x.advice_text ? ccEsc(x.advice_text) : ''}请在课程安排里调整日期或时间（改好后这条提示会自动消失）。<span style="color:var(--text-3)">　${ccEsc(l.actor_label || '总务')} 反馈</span></div>`; }).join('')}
-      ${pend.map(l => { const x = xOf(l); return `<div style="font-size:12px;margin-top:4px;color:#a33">${ccEsc(l.course_name || '')}　${ccEsc(x.label || '')} → ${ccEsc(md2(x.date))}${tm(x)}　${x.reason === 'no_room' ? '还没排教室' : x.reason === 'released' ? ccEsc('原 ' + (x.room_name || '') + ' 教室已释放') : ccEsc((x.room_name || '') + ' 被' + (x.blocker || '别的课') + '占着')}　<span style="color:var(--text-3)">等总务处理</span></div>`; }).join('')}
+      ${pend.map(l => { const x = xOf(l); return `<div style="font-size:12px;margin-top:4px;color:#a33">${ccEsc(l.course_name || '')}　${ccEsc(x.label || '')} → ${ccEsc(md2(x.date))}${tm(x)}　${x.reason === 'no_room' ? '还没排教室' : x.reason === 'released' ? ccEsc('原 ' + (x.room_name || '') + ' 教室已释放') : x.reason === 'changed' ? ccEsc((x.note || '日期 / 时间有调整') + '，' + (x.room_name || '') + ' 待总务确认') : ccEsc((x.room_name || '') + ' 被' + (x.blocker || '别的课') + '占着')}${x.memo ? ccEsc('　备注：' + x.memo) : ''}　<span style="color:var(--text-3)">等总务处理</span></div>`; }).join('')}
       ${done.map(l => { const x = xOf(l); const dt = new Date(x.done_at || l.created_at); return `<div style="font-size:12px;margin-top:4px;color:#2a7a3a">✓ ${ccEsc(md2(x.date))} ${ccEsc(x.label || '')} → ${ccEsc(x.done_room)}（${x.auto ? ccEsc(x.done_by || '自动核对') : '总务 ' + ccEsc(x.done_by || '')}，${dt.getMonth() + 1}/${dt.getDate()}）　<span style="color:var(--text-3)">${ccEsc(l.course_name || '')}</span>　<a href="javascript:void(0)" onclick="roomCoordAck('${l.id}')" style="font-size:11px;color:var(--text-3)">知道了</a></div>`; }).join('')}
     </div>`;
   } catch (e) { box.innerHTML = ''; }

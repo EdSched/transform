@@ -995,7 +995,7 @@ function coordBuild(){
     const act=[];
     g.items.forEach(it=>{
       it.live=coordLive(g,it);
-      if(it.live&&(it.live.st==='gone'||(it.live.st==='ok'&&it.x.reason!=='released'))) resolved.push({it,live:it.live}); else act.push(it);
+      if(it.live&&(it.live.st==='gone'||(it.live.st==='ok'&&it.x.reason!=='released'&&it.x.reason!=='changed'))) resolved.push({it,live:it.live}); else act.push(it);
     });
     if(!act.length) return;
     act.sort((a,b)=>String(a.x.date||'').localeCompare(String(b.x.date||'')));
@@ -1020,6 +1020,7 @@ function coordCardHtml(g){
     let st;
     if(coordWaiting(it)) st='<span style="color:#888">已反馈给老师，等待调整</span>';
     else if(stSt==='noroom') st='<span style="color:#a33">'+(x.reason==='released'&&x.room_name?'原 '+esc(x.room_name)+' 教室已释放，':'')+'这一回还没有排教室</span>';
+    else if(stSt==='ok'&&x.reason==='changed') st='<span style="color:#7a5b00">'+esc(x.note||'日期 / 时间有调整')+'。这一回现在用 '+esc(rn||'线上')+'，请确认教室和新时间没问题；要换教室就点「安排教室」</span>';
     else if(stSt==='ok'&&x.reason==='released') st='<span style="color:#7a5b00">原 '+esc(x.room_name||'')+' 教室已释放；这一回现在用 '+esc(rn||'线上')+'（这门课每周的教室），请确认，或重新占用别的教室</span>';
     else{
       const bl=lv?(lv.blockers||[]).map(b=>'「'+esc(b.title)+'」'+(b.who?'（'+esc(b.who)+'）':'')).join('、'):esc(x.blocker||'别的课');
@@ -1028,7 +1029,7 @@ function coordCardHtml(g){
       if(rid!=null&&rid!==''&&lv&&stSt==='blocked'){ const idset=new Set(coordGrpCourses(g.course).map(y=>String(y.id)));
         coordOrphansNear(rid,x.date,lv.sp,idset).forEach(b=>{ const k=String(b.course_id); (orph.get(k)||orph.set(k,[]).get(k)).push(b); }); }
     }
-    return '<div style="margin-top:4px"><b>'+esc(num)+'</b> → <b>'+esc(coordMDW(x.date))+' '+esc(t5)+'</b>'+(x.from&&!/新增/.test(x.from)?' <span class="muted" style="font-size:12px">（原 '+esc(coordFromTxt(x.from))+'）</span>':'')+'<div style="margin-left:14px">'+st+'</div></div>';
+    return '<div style="margin-top:4px"><b>'+esc(num)+'</b> → <b>'+esc(coordMDW(x.date))+' '+esc(t5)+'</b>'+(x.from&&!/新增/.test(x.from)?' <span class="muted" style="font-size:12px">（原 '+esc(coordFromTxt(x.from))+'）</span>':'')+'<div style="margin-left:14px">'+st+'</div>'+(x.memo?'<div style="margin-left:14px;font-size:12px;color:#555">备注：'+esc(x.memo)+'</div>':'')+'</div>';
   }).join('');
   const orphHtml=[...orph.entries()].map(([cid,bs])=>{
     const nm=coordCourseName(cid)||bs[0].title||'别的课', all=coordOrphanBks(cid);
@@ -1105,7 +1106,7 @@ function coordHomeRoom(idset){
 }
 function coordPlan(g){
   const c=g.course, grp=coordGrpCourses(c), idset=new Set(grp.map(y=>String(y.id)));
-  const its=g.act.filter(it=>!coordWaiting(it)&&it.live&&(it.live.st==='blocked'||it.live.st==='noroom'||(it.live.st==='ok'&&it.x.reason==='released')));
+  const its=g.act.filter(it=>!coordWaiting(it)&&it.live&&(it.live.st==='blocked'||it.live.st==='noroom'||(it.live.st==='ok'&&(it.x.reason==='released'||it.x.reason==='changed'))));
   const home=coordHomeRoom(idset), est=Number(c.est_students)||0;
   const campusRaw=(home&&home.campus)||c.campus, campus=CAMPUSES.includes(campusRaw)?campusRaw:'';
   const floor=r=>(String(r.name||'').match(/^\D*(\d)/)||[])[1];
