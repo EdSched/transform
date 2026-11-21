@@ -1071,16 +1071,14 @@ function renderCoursesSummary(courses){
         ${crvChangeLine(course,sessions)}
         ${acHolidayWarnLine(course,sessions)}
         ${sessions.length
-          ?`<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0">
+          ?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:1px;background:var(--border-light)">
               ${sessions.map((s,i)=>{
                 const f=fmtSessionDate(s.session_date);
                 const recCount=cachedSessionRecords.filter(r=>r.session_id===s.id&&r.attendance).length;
                 const hasRec=recCount>0;
-                const border=i%5!==0?'border-left:1px solid var(--border-light)':'';
-                const borderT=i>=5?'border-top:1px solid var(--border-light)':'';
                 const titleStr=s.session_title?`<div style="font-size:9px;color:var(--text-2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.session_title}</div>`:'';
                 if(s.is_cancelled){
-                  return `<div style="padding:8px 10px;${border};${borderT};position:relative;background:rgba(0,0,0,.03)" title="休讲${s.cancel_note?'：'+s.cancel_note:''}">
+                  return `<div style="padding:8px 10px;position:relative;background:linear-gradient(rgba(0,0,0,.03),rgba(0,0,0,.03)) var(--surface)" title="休讲${s.cancel_note?'：'+s.cancel_note:''}">
                     <div style="display:flex;align-items:baseline;justify-content:space-between;gap:4px">
                       <div style="display:flex;align-items:baseline;gap:4px">
                         <span style="font-size:13px;font-weight:600;color:var(--text-3);text-decoration:line-through">${f.short}</span>
@@ -1091,7 +1089,7 @@ function renderCoursesSummary(courses){
                     <div style="font-size:9px;color:#b07020;margin-top:1px;font-weight:600">休讲${s.cancel_reason?'・'+s.cancel_reason:''}</div>
                   </div>`;
                 }
-                return `<div style="padding:8px 10px;${border};${borderT};position:relative" title="${s.session_title||''}">
+                return `<div style="padding:8px 10px;position:relative;background:var(--surface)" title="${s.session_title||''}">
                   <div style="display:flex;align-items:baseline;justify-content:space-between;gap:4px">
                     <div style="display:flex;align-items:baseline;gap:4px">
                       <span style="font-size:13px;font-weight:600">${f.short}</span>
