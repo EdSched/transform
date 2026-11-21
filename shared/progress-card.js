@@ -327,7 +327,7 @@ function pgcCardHtml(s, ctx, o) {
   // ── 6. 出愿材料（卡片网格等宽，每行 4 张，窄屏 2 张）──
   const secMaterials = (typeof matStaffNodeHtml === 'function') ? (() => {
     const track = matTrackOf(s);
-    const items = (ctx.matItems || []).filter(it => it.track === track);
+    const items = matItemsFor((ctx.matItems || []).filter(it => it.track === track), s);
     const mm = (ctx.matsMap = ctx.matsMap || {});
     return `<div class="pgc-sec" id="pgc_${pgcEsc(s.id)}_materials"><div class="pgc-title">出愿材料</div>${matStaffNodeHtml(s, items, (mm[s.id] = mm[s.id] || []), plans, subs)}</div>`;
   })() : '';

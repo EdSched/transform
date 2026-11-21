@@ -142,6 +142,16 @@ function riyuGuideScopesFor(student) {
   out.push('');
   return out;
 }
+// 「适用范围」下拉的选项（文书指导 / 材料清单共用）：大学院领域 + 大学院专业，受管理链接范围限制；「通用」由调用方自己加
+function riyuScopeOptions() {
+  const doms = [], seen = {};
+  Object.keys(MAJOR_DOMAIN).forEach(k => { const d = MAJOR_DOMAIN[k]; if (d && /^大学院/.test(d) && !seen[d]) { seen[d] = 1; doms.push(d); } });
+  const mks = allMajorKeys().filter(k => !isMajorGroup(k) && /^大学院/.test(MAJOR_DOMAIN[k] || ''));
+  return { doms: doms.filter(d => scopeDomainOnly(d)), majors: mks.filter(k => scopeMajor(k)) };
+}
+function riyuScopeLabel(sc) { return sc ? (/^大学院/.test(sc) ? sc : majorLabel(sc)) : '通用'; }
+// 这个范围在当前管理视角下能不能管（通用只有总览能管）
+function riyuScopeManageable(sc) { return !sc ? scopeAll() : (/^大学院/.test(sc) ? scopeDomainOnly(sc) : scopeMajor(sc)); }
 async function riyuLoadGuide(kind, force, scope) {
   scope = scope || '';
   const ck = kind + '|' + scope;

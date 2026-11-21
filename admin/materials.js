@@ -31,6 +31,7 @@ async function renderMaterialsView(mc) {
 
 // ══ 📋 材料清单 ══
 let miTrack = 'grad', miList = [], miEditId = null, miEdit = null;
+let miScopeOpen = false;          // 通用「志望理由书」下的专属版本折叠区是否展开（默认收起）
 async function miLoad() {
   const box = document.getElementById('mat_body'); if (!box) return;
   try { miList = await matLoadItems(miTrack, true) || []; }
@@ -45,7 +46,7 @@ function miRender() {
     <div style="font-size:12px;font-weight:600;margin-bottom:8px">${miEditId === 'new' ? '新增材料' : '编辑：' + riyuEsc(miEdit.name)}</div>
     <div style="display:grid;grid-template-columns:1fr 200px;gap:8px;margin-bottom:8px">
       <div>${lab('名称')}<input id="mi_name" value="${riyuEsc(miEdit.name)}" oninput="miEdit.name=this.value" placeholder="例：毕业证明书" style="${inp}"></div>
-      <div>${lab('类型')}<select onchange="miEdit.kind=this.value" style="${inp}"><option value="file" ${!matIsDoc(miEdit) ? 'selected' : ''}>普通材料（学生更新准备状态）</option><option value="riyu" ${miEdit.kind === 'riyu' ? 'selected' : ''}>志望理由书（在线撰写、老师批复）</option>${miTrack === 'grad' ? `<option value="prof_mail" ${miEdit.kind === 'prof_mail' ? 'selected' : ''}>联系教授邮件（在线撰写·按志望校）</option><option value="inquiry_mail" ${miEdit.kind === 'inquiry_mail' ? 'selected' : ''}>问询邮件（在线撰写）</option>` : ''}</select></div>
+      <div>${miEdit._scoped ? lab('适用范围') + miScopeSelectHtml(inp) : lab('类型') + miKindSelectHtml(inp)}</div>
     </div>
     ${lab('如何准备（可用 ## 小标题、**粗体**、- 列表、表格）')}<textarea rows="4" oninput="miEdit.guide=this.value" style="${inp};resize:vertical;line-height:1.7;margin-bottom:8px">${riyuEsc(miEdit.guide)}</textarea>
     ${lab('参考例子')}<textarea rows="3" oninput="miEdit.example=this.value" style="${inp};resize:vertical;line-height:1.7;margin-bottom:8px">${riyuEsc(miEdit.example)}</textarea>
@@ -58,7 +59,7 @@ function miRender() {
     </div>
     <div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" onclick="miSave()">保存</button><button class="btn btn-outline btn-sm" onclick="miEditId=null;miEdit=null;miRender()">取消</button></div>
   </div>` : '';
-  const n = miList.length;
+  const main = miList.filter(x => !x.scope), n = main.length;
   box.innerHTML = `
   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
     <span style="font-size:11px;color:var(--text-3)">清单：</span>
@@ -69,19 +70,60 @@ function miRender() {
     <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="miEditId='new';miEdit={name:'',kind:'file',guide:'',example:'',example_files:[]};miRender()">＋ 新增材料</button>
   </div>
   ${form}
-  ${n ? miList.map((it, i) => `<div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border-light);border-radius:3px;padding:8px 12px;margin-bottom:6px;background:var(--surface)">
+  ${n ? main.map((it, i) => { const gen = miIsGenericRiyu(it), ro = gen && !scopeAll(); return `<div style="margin-bottom:6px"><div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border-light);border-radius:3px;padding:8px 12px;background:var(--surface)">
     <span style="font-size:11px;color:var(--text-3);width:18px">${i + 1}</span>
     <span style="font-size:12px;font-weight:600">${riyuEsc(it.name)}</span>
     ${matIsDoc(it) ? '<span style="font-size:9px;color:var(--accent);border:1px solid var(--accent);border-radius:2px;padding:0 5px">在线撰写</span>' : ''}
     <span style="font-size:10px;color:var(--text-3)">${(it.guide || '').trim() ? '有说明' : '无说明'} · 样本 ${matFiles(it).length}</span>
-    <span onclick="miToggle('${riyuEsc(it.id)}')" style="cursor:pointer;font-size:9px;border-radius:2px;padding:1px 8px;${it.published === false ? 'background:var(--bg);color:var(--text-3);border:1px dashed var(--border)' : 'background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok)'}">${it.published === false ? '隐藏中 · 点击公开' : '公开中 · 点击隐藏'}</span>
+    <span ${ro ? '' : `onclick="miToggle('${riyuEsc(it.id)}')"`} style="cursor:pointer;font-size:9px;border-radius:2px;padding:1px 8px;${it.published === false ? 'background:var(--bg);color:var(--text-3);border:1px dashed var(--border)' : 'background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok)'}">${it.published === false ? '隐藏中 · 点击公开' : '公开中 · 点击隐藏'}</span>
     <span style="margin-left:auto;display:flex;gap:4px">
+      ${gen && miTrack === 'grad' ? `<button class="btn btn-outline btn-sm" onclick="miScopeOpen=!miScopeOpen;miRender()">专属版本（${miScopedList().length}）${miScopeOpen ? ' ▴' : ' ▾'}</button>` : ''}
       <button class="btn btn-outline btn-sm" ${i === 0 ? 'disabled' : ''} onclick="miMove(${i},-1)">↑</button>
       <button class="btn btn-outline btn-sm" ${i === n - 1 ? 'disabled' : ''} onclick="miMove(${i},1)">↓</button>
-      <button class="btn btn-outline btn-sm" onclick="miEditId='${riyuEsc(it.id)}';miEdit=JSON.parse(JSON.stringify(Object.assign({},miList[${i}],{example_files:matFiles(miList[${i}])})));miRender()">编辑</button>
-      <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="miDel('${riyuEsc(it.id)}')">删除</button>
+      <button class="btn btn-outline btn-sm" ${ro ? 'disabled' : ''} onclick="miEditStart('${riyuEsc(it.id)}')">编辑</button>
+      <button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" ${ro ? 'disabled' : ''} onclick="miDel('${riyuEsc(it.id)}')">删除</button>
     </span>
-  </div>`).join('') : `<div class="empty" style="padding:30px">${miTrack === 'gakubu' ? '学部' : '大学院'}清单还没有材料，点「＋ 新增材料」开始录入</div>`}`;
+  </div>${gen && miTrack === 'grad' && miScopeOpen ? miScopedHtml() : ''}</div>`; }).join('') : `<div class="empty" style="padding:30px">${miTrack === 'gakubu' ? '学部' : '大学院'}清单还没有材料，点「＋ 新增材料」开始录入</div>`}`;
+}
+function miKindSelectHtml(inp) {
+  return `<select onchange="miEdit.kind=this.value" style="${inp}"><option value="file" ${!matIsDoc(miEdit) ? 'selected' : ''}>普通材料（学生更新准备状态）</option><option value="riyu" ${miEdit.kind === 'riyu' ? 'selected' : ''}>志望理由书（在线撰写、老师批复）</option>${miTrack === 'grad' ? `<option value="prof_mail" ${miEdit.kind === 'prof_mail' ? 'selected' : ''}>联系教授邮件（在线撰写·按志望校）</option><option value="inquiry_mail" ${miEdit.kind === 'inquiry_mail' ? 'selected' : ''}>问询邮件（在线撰写）</option>` : ''}</select>`;
+}
+function miIsGenericRiyu(it) { return it && it.kind === 'riyu' && it.track === 'grad' && !it.scope; }
+function miScopedList() { return miList.filter(x => x.kind === 'riyu' && x.track === 'grad' && x.scope && riyuScopeManageable(x.scope)); }
+function miScopedHtml() {
+  const list = miScopedList();
+  const btn = 'font-size:10px;padding:2px 8px';
+  return `<div style="margin:4px 0 0 28px;border-left:2px solid var(--border);padding:4px 0 4px 10px">
+    ${list.map(it => `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:11px">
+      <span style="font-weight:600">适用：${riyuEsc(riyuScopeLabel(it.scope))}</span>
+      <span style="color:var(--text-3)">${(it.guide || '').trim() ? '有说明' : '无说明'} · 样本 ${matFiles(it).length}</span>
+      <span onclick="miToggle('${riyuEsc(it.id)}')" style="cursor:pointer;font-size:9px;border-radius:2px;padding:1px 8px;${it.published === false ? 'background:var(--bg);color:var(--text-3);border:1px dashed var(--border)' : 'background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok)'}">${it.published === false ? '未公开 · 点击公开' : '公开中 · 点击隐藏'}</span>
+      <span style="margin-left:auto;display:flex;gap:4px">
+        <button class="btn btn-outline btn-sm" style="${btn}" onclick="miEditStart('${riyuEsc(it.id)}')">编辑</button>
+        <button class="btn btn-sm" style="${btn};color:var(--danger);border:1px solid var(--danger);background:none" onclick="miDel('${riyuEsc(it.id)}')">删除</button>
+      </span></div>`).join('') || '<div style="font-size:11px;color:var(--text-3);padding:4px 0">还没有专属版本</div>'}
+    <button class="btn btn-outline btn-sm" style="margin-top:4px" onclick="miScopedNew()">＋ 新增专属版本</button>
+  </div>`;
+}
+function miEditStart(id) {
+  const it = miList.find(x => x.id === id); if (!it) return;
+  miEditId = id;
+  miEdit = JSON.parse(JSON.stringify(Object.assign({}, it, { example_files: matFiles(it) })));
+  if (miIsScopedRiyu(it)) miEdit._scoped = true;
+  miRender();
+}
+function miIsScopedRiyu(it) { return it && it.kind === 'riyu' && it.track === 'grad' && !!it.scope; }
+function miScopedNew() {
+  const g = miList.find(miIsGenericRiyu); if (!g) return;
+  miEditId = 'new';
+  miEdit = { name: g.name, kind: 'riyu', scope: '', _scoped: true, guide: g.guide || '', example: g.example || '', example_files: JSON.parse(JSON.stringify(matFiles(g))) };
+  miRender();
+}
+function miScopeSelectHtml(inp) {
+  const o = riyuScopeOptions();
+  const used = miList.filter(x => miIsScopedRiyu(x) && x.id !== miEditId).map(x => x.scope);
+  const opt = (v, l) => `<option value="${riyuEsc(v)}" ${miEdit.scope === v ? 'selected' : ''} ${used.includes(v) ? 'disabled' : ''}>${riyuEsc(l)}${used.includes(v) ? ' · 已设置' : ''}</option>`;
+  return `<select onchange="miEdit.scope=this.value" style="${inp}"><option value="">请选择适用范围</option>${o.doms.map(d => opt(d, d)).join('')}${o.majors.map(k => opt(k, majorLabel(k) + '（专业）')).join('')}</select>`;
 }
 async function miUpload(input) {
   const files = [...(input.files || [])]; input.value = '';
@@ -100,10 +142,17 @@ async function miUpload(input) {
 async function miSave() {
   const e = miEdit; if (!e) return;
   if (!(e.name || '').trim()) { alert('请填写名称'); return; }
-  const data = { track: miTrack, name: e.name.trim(), kind: (e.kind === 'riyu' || ((e.kind === 'prof_mail' || e.kind === 'inquiry_mail') && miTrack === 'grad')) ? e.kind : 'file', guide: e.guide || '', example: e.example || '', example_files: e.example_files || [] };
+  if (e._scoped) {
+    if (!e.scope) { alert('请选择适用范围'); return; }
+    if (!riyuScopeManageable(e.scope)) { alert('这个范围不在当前账号的管理范围内'); return; }
+    if (miList.some(x => miIsScopedRiyu(x) && x.scope === e.scope && x.id !== miEditId)) { alert('这个范围已经有专属版本了，不能重复新增'); return; }
+  }
+  const data = { track: miTrack, name: e.name.trim(), kind: (e._scoped || e.kind === 'riyu' || ((e.kind === 'prof_mail' || e.kind === 'inquiry_mail') && miTrack === 'grad')) ? e.kind : 'file', guide: e.guide || '', example: e.example || '', example_files: e.example_files || [] };
+  if (e._scoped) { data.scope = e.scope; data.kind = 'riyu'; }
   try {
     if (miEditId === 'new') {
-      Object.assign(data, { id: `mi-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, sort_order: miList.length ? Math.max(...miList.map(x => x.sort_order || 0)) + 1 : 0, published: true });
+      const gen = e._scoped ? miList.find(miIsGenericRiyu) : null;   // 专属版本的排序沿用通用那条（学生端不看它自己的排序）
+      Object.assign(data, { id: `mi-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, sort_order: gen ? (gen.sort_order || 0) : (miList.length ? Math.max(...miList.map(x => x.sort_order || 0)) + 1 : 0), published: true });
       await sb('/rest/v1/material_items', 'POST', data);
     } else {
       await sb(`/rest/v1/material_items?id=eq.${encodeURIComponent(miEditId)}`, 'PATCH', data);
@@ -119,18 +168,27 @@ async function miToggle(id) {
   catch (e) { alert('保存失败：' + e.message); }
 }
 async function miMove(i, d) {
-  const j = i + d; if (j < 0 || j >= miList.length) return;
-  [miList[i], miList[j]] = [miList[j], miList[i]];
+  const main = miList.filter(x => !x.scope), j = i + d; if (j < 0 || j >= main.length) return;
+  [main[i], main[j]] = [main[j], main[i]];
   try {
-    for (let k = 0; k < miList.length; k++) {
-      if (miList[k].sort_order !== k) { await sb(`/rest/v1/material_items?id=eq.${encodeURIComponent(miList[k].id)}`, 'PATCH', { sort_order: k }); miList[k].sort_order = k; }
+    for (let k = 0; k < main.length; k++) {
+      if (main[k].sort_order !== k) { await sb(`/rest/v1/material_items?id=eq.${encodeURIComponent(main[k].id)}`, 'PATCH', { sort_order: k }); main[k].sort_order = k; }
     }
+    // 专属版本的排序跟着通用那条走
+    const g = main.find(miIsGenericRiyu);
+    for (const x of miList.filter(miIsScopedRiyu)) if (g && x.sort_order !== g.sort_order) { await sb(`/rest/v1/material_items?id=eq.${encodeURIComponent(x.id)}`, 'PATCH', { sort_order: g.sort_order }); x.sort_order = g.sort_order; }
   } catch (e) { alert('排序保存失败：' + e.message); }
+  miList = main.concat(miList.filter(x => x.scope)).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
   miRender();
 }
 async function miDel(id) {
   const it = miList.find(x => x.id === id); if (!it) return;
-  if (!confirm(`删除「${it.name}」？\n学生已经填写的这项准备情况也会看不到。`)) return;
+  if (miIsGenericRiyu(it)) {
+    if (!scopeAll()) { alert('通用版本由总览账号维护'); return; }
+    if (miList.some(miIsScopedRiyu)) { alert('这条「志望理由书」下还有专属版本，请先删除专属版本'); return; }
+  }
+  if (miIsScopedRiyu(it)) { if (!confirm(`删除「${riyuScopeLabel(it.scope)}」的专属版本？\n删除后，这个范围的学生回到通用版本。`)) return; }
+  else if (!confirm(`删除「${it.name}」？\n学生已经填写的这项准备情况也会看不到。`)) return;
   try { await sb(`/rest/v1/material_items?id=eq.${encodeURIComponent(id)}`, 'DELETE'); await miLoad(); }
   catch (e) { alert('删除失败：' + e.message); }
 }
@@ -156,18 +214,10 @@ function wgSwitchScope(sc) {
   if (wgDirty && !confirm('当前修改还没有保存，切换后会丢失。继续？')) { wgRender(); return; }
   wgScope = sc || ''; wgLoad();
 }
-function wgScopeLabel(sc) { return sc ? (/^大学院/.test(sc) ? sc : majorLabel(sc)) : '通用'; }
-// 「适用范围」下拉的选项：通用 → 大学院领域 → 大学院专业（受管理链接范围限制）
-function wgScopeOptions() {
-  const doms = [], seen = {};
-  Object.keys(MAJOR_DOMAIN).forEach(k => { const d = MAJOR_DOMAIN[k]; if (d && /^大学院/.test(d) && !seen[d]) { seen[d] = 1; doms.push(d); } });
-  const mks = allMajorKeys().filter(k => !isMajorGroup(k) && /^大学院/.test(MAJOR_DOMAIN[k] || ''));
-  return { doms: doms.filter(d => scopeDomainOnly(d)), majors: mks.filter(k => scopeMajor(k)) };
-}
 function wgIsReadOnly() { return wgKind === 'grad_riyu' && wgScope === '' && !scopeAll(); }
 function wgScopeSelectHtml() {
   if (wgKind !== 'grad_riyu') return '';
-  const o = wgScopeOptions();
+  const o = riyuScopeOptions();
   const opt = (v, l) => `<option value="${riyuEsc(v)}" ${wgScope === v ? 'selected' : ''}>${riyuEsc(l)}${v && wgScopesSet.includes(v) ? ' · 已设置' : ''}</option>`;
   return `<span style="font-size:11px;color:var(--text-3)">适用范围：</span>
     <select onchange="wgSwitchScope(this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit">
@@ -182,7 +232,7 @@ function wgScopeNoticeHtml() {
   let h = '';
   if (wgIsReadOnly()) h += `<div style="${box}color:var(--text-3);background:var(--surface);border:1px solid var(--border)">通用版本由总览账号维护（当前只读）。</div>`;
   if (wgScope && !wgData._fromDb) h += `<div style="${box}color:var(--warn,#b8860b);background:#fff8e6;border:1px solid #e8d4a0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">这个范围还没有单独的指导，学生现在看到的是通用版本。<button class="btn btn-outline btn-sm" onclick="wgCopyGeneric()">从通用版本复制一份</button></div>`;
-  if (wgScope && wgData._fromDb) h += `<div style="${box}display:flex;align-items:center;gap:10px"><span style="color:var(--text-3)">当前编辑：${riyuEsc(wgScopeLabel(wgScope))} 专属指导</span><button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="wgDelScope()">删除这份专属指导，回到通用</button></div>`;
+  if (wgScope && wgData._fromDb) h += `<div style="${box}display:flex;align-items:center;gap:10px"><span style="color:var(--text-3)">当前编辑：${riyuEsc(riyuScopeLabel(wgScope))} 专属指导</span><button class="btn btn-sm" style="color:var(--danger);border:1px solid var(--danger);background:none" onclick="wgDelScope()">删除这份专属指导，回到通用</button></div>`;
   h += `<div style="font-size:10px;color:var(--text-3);margin-bottom:8px;line-height:1.6">想让已经开始写的学生不丢内容：专属版本尽量沿用通用版本的段落（用「从通用复制」再改标题和提示即可）；新增段落没关系，删段落学生那段内容不会被删，但撰写页不再显示。</div>`;
   return h;
 }
@@ -196,7 +246,7 @@ async function wgCopyGeneric() {
 }
 async function wgDelScope() {
   if (!wgScope || wgKind !== 'grad_riyu') return;
-  if (!confirm(`删除「${wgScopeLabel(wgScope)}」的专属指导，回到通用版本？\n学生已经写的内容不会删除。`)) return;
+  if (!confirm(`删除「${riyuScopeLabel(wgScope)}」的专属指导，回到通用版本？\n学生已经写的内容不会删除。`)) return;
   try {
     await sb(`/rest/v1/writing_guides?kind=eq.grad_riyu&scope=eq.${encodeURIComponent(wgScope)}`, 'DELETE');
     wgClearCache('grad_riyu');

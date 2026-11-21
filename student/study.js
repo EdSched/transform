@@ -956,6 +956,7 @@ async function studyMatLoad() {
     sb(`/rest/v1/student_materials?student_id=eq.${encodeURIComponent(studyStudent.id)}&select=*`).then(r => { rows = r || []; }).catch(() => {}),
     sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=in.(${matDocKinds(track).join(',')})&select=*`).then(r => { subs = r || []; }).catch(() => {}),
   ]);
+  items = matItemsFor(items, studyStudent);
   smState = { track, items, rows, subs, err, openItem: smState.openItem || null };
   studyMatRender();
 }
