@@ -52,6 +52,8 @@ async function sendMagicLink(){
   const c=sbAuthClient();
   if(!c){ msg.style.color='var(--danger)'; msg.textContent='登录组件未加载，请刷新页面重试'; return; }
   msg.style.color='var(--text-3)'; msg.textContent='正在发送…';
+  // 魔法链接跳回来会丢掉网址后面的参数：先记下「要去的页面」（?page=courses&course=ID），登录后 initApp 再取出来
+  try{ if(/[?&]page=/.test(location.search)) localStorage.setItem('txe_deeplink',JSON.stringify({s:location.search,ts:Date.now()})); }catch(e){}
   try{
     const { error } = await c.auth.signInWithOtp({
       email,
@@ -2640,14 +2642,31 @@ async function deleteTeacher(id){
 
 // ── Init ──
 let _pageParamUsed=false;
+// 要打开的页面参数：先看网址；没有就看登录前记下的（1 小时内有效），取一次就清掉
+function deepLinkTake(){
+  let q=new URLSearchParams(location.search);
+  try{
+    const raw=localStorage.getItem('txe_deeplink');
+    if(raw){ localStorage.removeItem('txe_deeplink'); const o=JSON.parse(raw); if(!q.get('page')&&o&&Date.now()-o.ts<3600000) q=new URLSearchParams(o.s); }
+  }catch(e){}
+  return { page:q.get('page')||'', course:q.get('course')||'' };
+}
 async function initApp(){
   bkMonth=new Date().getMonth();bkYear=new Date().getFullYear();
   await loadMajorsFromDB(); await loadAppOptions();
   await loadPeriodsFromDB(); await loadHolidaysFromDB();
   // 旧链接 results/admin.html 会跳到 admin/?page=admissions：进系统后直接打开对应页面（只认这一个值，只用一次）
-  if(!_pageParamUsed && new URLSearchParams(location.search).get('page')==='admissions'){
+  const _dl=deepLinkTake();
+  if(!_pageParamUsed && _dl.page==='admissions'){
     _pageParamUsed=true;
     switchPage('admissions');   // 管理模式没开放这个页面时，switchPage 会显示「没有对你开放」
+    return;
+  }
+  // 排课「回数审查」的「去调整」：?page=courses&course=课程id → 打开课程安排并定位到这门课
+  if(!_pageParamUsed && _dl.page==='courses'){
+    _pageParamUsed=true;
+    acFocusCid=_dl.course;
+    switchPage('courses');
     return;
   }
   // 管理模式：默认落地页（面谈预约）被关了，落到第一个允许的页面

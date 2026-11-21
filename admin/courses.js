@@ -865,10 +865,13 @@ function renderCoursesPage(mc){
   loadSchedEdits();
   loadCourseRooms();
   setTimeout(loadRoomCoordBox,0);
+  setTimeout(loadCourseReviewBox,0);
   // 专业钥匙锁定：强制默认选中锁定的专业（用户不能改）
   if(CURRENT_MAJOR) coursesMajorFilter=CURRENT_MAJOR;
   // 锁定在具体领域（领域账号/切换视角进入）：默认显示该领域全部课（不管领域有没有建专业）
   else if(!scopeAll() && coursesMajorFilter==='none') coursesMajorFilter='all';
+  // 从排课「去调整」/ 通知里点进来（?page=courses&course=ID）：把筛选放开到能看到这门课
+  if(acFocusCid){ if(!CURRENT_MAJOR) coursesMajorFilter='all'; coursesPeriodFilter='all'; coursesArchiveFilter='all'; coursesTypeFilter='all'; coursesCampusFilter='all'; }
 
   // 学部美术视角下「期数」按月份：当前期 = 本月
   const artView=viewIsArt();
@@ -927,6 +930,7 @@ function renderCoursesPage(mc){
   </div>
 
   <div id="courseReqBox"></div>
+  <div id="courseReviewBox"></div>
   <div id="roomCoordBox"></div>
   <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap">
     <div>
@@ -973,6 +977,7 @@ function renderCoursesPage(mc){
     ?`<div class="empty" style="padding:60px 0">暂无课程数据<br><span style="font-size:11px;color:var(--text-3);margin-top:6px;display:block">请切换期数/专业筛选，或点击右上角导入课程安排</span></div>`
     :renderCoursesSummary(filtered)
   }`;
+  if(acFocusCid) setTimeout(acFocusRun,0);
 }
 
 function renderCoursesSummary(courses){
@@ -989,7 +994,8 @@ function renderCoursesSummary(courses){
     const nameKey=courseGroupKey(c.name);
     const yr=c.first_session_date?c.first_session_date.slice(0,4):'';
     const key=`${nameKey}|${effectivePeriod(c)}|${yr}|${c.campus||''}`;
-    if(!groups[key]){groups[key]={course:c,sessions:[]};groupOrder.push(key)}
+    if(!groups[key]){groups[key]={course:c,sessions:[],ids:[]};groupOrder.push(key)}
+    groups[key].ids.push(c.id);
     const sess=cachedSessions.filter(s=>s.course_id===c.id).sort((a,b)=>a.session_date.localeCompare(b.session_date));
     groups[key].sessions.push(...sess);
   });
@@ -1005,13 +1011,13 @@ function renderCoursesSummary(courses){
 
   return `<div style="display:flex;flex-direction:column;gap:12px">
     ${groupOrder.map(key=>{
-      const {course,sessions}=groups[key];
+      const {course,sessions,ids}=groups[key];
       const dispName=courseGroupKey(course.name);
       const color=courseColor(dispName,course);
       const total=sessions.length||course.total_sessions||0;
       const teacherStr=course.teacher?` · ${course.teacher}`:'';
       const timeStr=course.time_range?` · ${course.time_range}`:'';
-  return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
+  return `<div data-cids=",${(ids||[]).join(',')}," style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden">
         <div style="background:${color.bg};color:${color.text};padding:8px 14px;display:flex;align-items:center;justify-content:space-between">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <span style="font-size:12px;font-weight:600">${dispName}</span>
@@ -5480,4 +5486,61 @@ function schedEditOpen(courseId) {
       renderCoursesPage(document.getElementById('mainContent'));
     } catch (e) { alert('操作失败：' + e.message); }
   };
+}
+
+// ══════════ 定位到某一门课（?page=courses&course=ID，或提醒里的「去调整」）══════════
+// 课程安排页的每张课卡带 data-cids（同一组合并的课 id 都在里面）；筛选放开由 renderCoursesPage 开头处理
+let acFocusCid = '';
+function acFocusCourse(cid) {
+  acFocusCid = String(cid || '');
+  if (!acFocusCid) return;
+  if (typeof curPage !== 'undefined' && curPage === 'courses') renderCoursesPage(document.getElementById('mainContent'));
+  else switchPage('courses');
+}
+function acFocusRun() {
+  const cid = acFocusCid; acFocusCid = '';
+  if (!cid) return;
+  const card = [...document.querySelectorAll('[data-cids]')].find(e => e.dataset.cids.includes(',' + cid + ','));
+  if (!card) { alert('在课程安排里找不到这门课（可能已删除，或不在你的范围内）'); return; }
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const old = card.style.boxShadow; card.style.boxShadow = '0 0 0 3px #b8953a';
+  setTimeout(() => { card.style.boxShadow = old; }, 4000);
+}
+
+// ══════════ 排课「回数审查」通知（sched_change_log action='course_review'）══════════
+// 没有管理权限的人在排课点「通知管理端调整」写进来的。显示在教室协调框上面：
+//   · 没点「知道了」（acked_by 里没有 admin-read）的才显示
+//   · 自动消失：这门课已经开课（有早于今天的单回）/ 已删除 / 重新核对后对得上了（courseReviewDetail，和排课同一套算法）
+async function loadCourseReviewBox() {
+  const box = document.getElementById('courseReviewBox'); if (!box) return;
+  try {
+    const rows = (await sb('/rest/v1/sched_change_log?action=eq.course_review&or=(acked_by.is.null,acked_by.eq.)&select=*&order=created_at.desc&limit=200', 'GET', null, { cache: 'no-store' })) || [];
+    const xOf = l => (Array.isArray(l.changes) ? l.changes : []).find(y => y && y.field === 'course_review') || {};
+    const today = localDateStr(), seen = new Set(), items = [];
+    for (const l of rows) {
+      const x = xOf(l), cid = String(x.course_uuid || ''); if (!cid || seen.has(cid)) continue; seen.add(cid);
+      const c = cachedCourses.find(y => String(y.id) === cid); if (!c) continue;           // 已删除 / 不在范围内
+      const ses = cachedSessions.filter(y => y.course_id === c.id);
+      if (ses.some(y => y.session_date < today)) continue;                                  // 已开课：以单回为准，不再审
+      const det = courseReviewDetail(c, ses);
+      if (det.err || !det.need) continue;                                                   // 重新核对后对得上了
+      items.push({ l, x, c, det });
+    }
+    if (!items.length) { box.innerHTML = ''; return; }
+    box.innerHTML = `<div style="border:1px solid #f0c8c0;border-radius:6px;padding:8px 12px;margin-bottom:12px;background:#fff4f1">
+      <div style="font-size:12px;font-weight:600;color:#a33">回数 / 结课日提醒　<span style="font-weight:400;color:var(--text-3)">${items.length} 条（核对对得上后会自动消失）</span></div>
+      ${items.map(({ l, x, c, det }) => `<div style="font-size:12px;margin-top:6px;line-height:1.6;display:flex;gap:10px;align-items:flex-start;justify-content:space-between">
+        <div><b>${ccEsc(l.actor_label || '某账号')}</b> 提醒：「${ccEsc(c.name)}」回数 / 结课日对不上：${ccEsc(det.sources.join('；'))}（应有结课日 ${ccEsc(det.expectedEnd)}，现在 ${ccEsc(det.endNow || '空')}）</div>
+        <div style="white-space:nowrap"><a href="javascript:void(0)" onclick="acFocusCourse('${c.id}')" style="color:var(--accent,#b8953a)">去调整</a>　<a href="javascript:void(0)" onclick="courseReviewAck('${l.id}')" style="color:var(--text-3)">知道了</a></div></div>`).join('')}
+    </div>`;
+  } catch (e) { box.innerHTML = ''; }
+}
+async function courseReviewAck(id) {
+  try {
+    const r = await sb(`/rest/v1/sched_change_log?id=eq.${encodeURIComponent(id)}&select=acked_by`, 'GET', null, { cache: 'no-store' });
+    const acked = String((r && r[0] && r[0].acked_by) || '').split(',').map(x => x.trim()).filter(Boolean);
+    if (!acked.includes('admin-read')) acked.push('admin-read');
+    await sb(`/rest/v1/sched_change_log?id=eq.${encodeURIComponent(id)}`, 'PATCH', { acked_by: acked.join(',') });
+    loadCourseReviewBox();
+  } catch (e) { alert('操作失败：' + e.message); }
 }
