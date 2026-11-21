@@ -816,7 +816,9 @@ async function loadCourseLink(lo, hi){
       if(x.is_cancelled) return;
       const id = String(x.course_id), c = cmap[id]; if(!c) return;
       const e = link[id] || (link[id] = { course:c, days:new Map() });
-      e.days.set(x.session_date, _clkRange(x.time_range, c));
+      // 同一天好几回：取最早开始～最晚结束（和 crvSessionAwareBks / 数据库触发器一致）
+      const rg = _clkRange(x.time_range, c), old = e.days.get(x.session_date);
+      e.days.set(x.session_date, old ? [ old[0] < rg[0] ? old[0] : rg[0], old[1] > rg[1] ? old[1] : rg[1] ] : rg);
     });
     window.COURSE_LINK_RANGE = [lo, hi];
   }catch(err){
@@ -832,7 +834,7 @@ function linkCourseBookings(bks){
   // 重复调用时先还原
   list.forEach(b=>{
     if(b._orig){ Object.assign(b, b._orig); delete b._orig; }
-    delete b._linked; delete b._dayOnly; delete b._days;
+    delete b._linked; delete b._dayOnly; delete b._days; delete b._onceLinked;
   });
   // 当天另有临时占用的课：每周占用让位
   const once = new Set();
@@ -842,6 +844,16 @@ function linkCourseBookings(bks){
   });
   window.COURSE_ONCE = once;
   if(!window.COURSE_LINK_RANGE) return;
+  // 单日课程占用（某一回换了教室）：教室归它，时间跟着这一回走；那天这门课没有没休讲的单回 = 遗留占用，保持原样
+  list.forEach(b=>{
+    if(b.kind!=='course' || b.recurrence!=='once' || !b.course_id || !b.booking_date || b.status==='rejected') return;
+    const e = L[String(b.course_id)]; if(!e) return;
+    const t = e.days.get(b.booking_date); if(!t) return;
+    if(t[0]===_clk5(b.start_time) && t[1]===_clk5(b.end_time)) return;
+    b._orig = { start_time:b.start_time, end_time:b.end_time };
+    b._onceLinked = true;
+    b.start_time = t[0]; b.end_time = t[1];
+  });
   // 每门课的每周课程占用
   const byCourse = {};
   list.forEach(b=>{
