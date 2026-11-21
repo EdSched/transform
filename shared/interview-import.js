@@ -57,9 +57,30 @@ function iviBrace(src, i) {   // src[i] === '{'，返回 [内容, 结束位置]
   for (; j < src.length; j++) { if (src[j] === '{' && src[j - 1] !== '\\') d++; else if (src[j] === '}' && src[j - 1] !== '\\') { d--; if (!d) break; } }
   return [src.slice(i + 1, j), j + 1];
 }
+// 导言区里的「标题别名」：\newcommand{\名字}[1]{\section*{#1}} → { 名字: 'section' }；复杂宏不展开，给警告
+const IVI_HEAD_LV = 'chapter|section|subsection|subsubsection|paragraph';
+function iviTexAliases(pre, warnings) {
+  const aliases = {};
+  const defRe = /\\(?:newcommand|renewcommand|providecommand)\*?\s*(?:\{\s*\\([a-zA-Z]+)\s*\}|\\([a-zA-Z]+))\s*(?:\[(\d)\])?\s*(?:\[[^\]]*\])?\s*\{|\\(?:def|gdef|edef)\s*\\([a-zA-Z]+)\s*(#1)?\s*\{/g;
+  const simple = new RegExp('^\\\\(' + IVI_HEAD_LV + ')\\*?\\s*(?:\\[[^\\]]*\\])?\\s*\\{\\s*#1\\s*\\}$');
+  const hasHead = new RegExp('\\\\(?:' + IVI_HEAD_LV + ')(?![a-zA-Z])');
+  let m;
+  while ((m = defRe.exec(pre))) {
+    const name = m[1] || m[2] || m[4], nargs = m[3] !== undefined ? +m[3] : (m[5] ? 1 : 0);
+    const [body, end] = iviBrace(pre, m.index + m[0].length - 1);
+    defRe.lastIndex = end;
+    if (!hasHead.test(body)) continue;   // 不含标题命令的宏与导入无关
+    const sm = nargs === 1 ? simple.exec(body.trim()) : null;
+    if (sm) aliases[name] = sm[1];
+    else if (warnings) warnings.push('导言区的宏 \\' + name + ' 里含章节命令，但不是「\\section*{#1}」这种简单写法，没有展开（正文里用到它的地方可能识别不出来）');
+  }
+  return aliases;
+}
 function iviTexBlocks(tex) {
   let src = String(tex || '').replace(/\r/g, '').replace(/(^|[^\\])%.*$/gm, '$1');
-  const b = src.indexOf('\\begin{document}'); if (b >= 0) src = src.slice(b + 16);
+  const warnings = [];
+  let aliases = {};
+  const b = src.indexOf('\\begin{document}'); if (b >= 0) { aliases = iviTexAliases(src.slice(0, b), warnings); src = src.slice(b + 16); }
   const e = src.lastIndexOf('\\end{document}'); if (e >= 0) src = src.slice(0, e);
   const blocks = [];
   let i = 0, buf = '';
@@ -71,14 +92,17 @@ function iviTexBlocks(tex) {
   // 用于 \par 切段：iviTexInline 之前先把 \par 换成空行
   src = src.replace(/\\par\b/g, '\n\n');
   const headRe = /\\(chapter|section|subsection|subsubsection|paragraph)\*?\s*(?:\[[^\]]*\])?\s*\{/y;
+  const aliasNames = Object.keys(aliases);
+  const aliasRe = aliasNames.length ? new RegExp('\\\\(' + aliasNames.join('|') + ')(?![a-zA-Z])\\*?\\s*(?:\\[[^\\]]*\\])?\\s*\\{', 'y') : null;
   while (i < src.length) {
     if (src[i] === '\\') {
       headRe.lastIndex = i;
-      const m = headRe.exec(src);
+      let m = headRe.exec(src), lv = m && m[1];
+      if (!m && aliasRe) { aliasRe.lastIndex = i; m = aliasRe.exec(src); if (m) lv = aliases[m[1]]; }
       if (m) {
         flush();
         const [title, end] = iviBrace(src, i + m[0].length - 1);
-        blocks.push({ t: m[1] === 'chapter' ? 'chapter' : m[1] === 'section' ? 'section' : 'sub', title: iviTexInline(title).replace(/\s+/g, ' ').trim(), level: m[1] });
+        blocks.push({ t: lv === 'chapter' ? 'chapter' : lv === 'section' ? 'section' : 'sub', title: iviTexInline(title).replace(/\s+/g, ' ').trim(), level: lv });
         i = end; continue;
       }
       const env = /^\\begin\{(tabular\*?|longtable|itemize|enumerate|description)\}/.exec(src.slice(i, i + 40));
@@ -103,7 +127,20 @@ function iviTexBlocks(tex) {
     buf += src[i++];
   }
   flush();
+  blocks.warnings = warnings;
   return blocks;
+}
+// tex：一章里没有任何 \section、但有 \subsection → 把 \subsection 当题（「注意点」除外，仍进章说明）
+function iviPromoteSubs(blocks) {
+  const segs = []; let cur = [];
+  blocks.forEach(b => { if (b.t === 'chapter') { segs.push(cur); cur = []; } cur.push(b); });
+  segs.push(cur);
+  const out = segs.map(seg => {
+    if (seg.some(b => b.t === 'section') || !seg.some(b => b.t === 'sub' && b.level === 'subsection')) return seg;
+    return seg.map(b => (b.t === 'sub' && b.level === 'subsection' && !/^注意/.test(b.title)) ? Object.assign({}, b, { t: 'section' }) : b);
+  }).reduce((a, x) => a.concat(x), []);
+  out.warnings = blocks.warnings;
+  return out;
 }
 
 // ── md → 块序列 ──
@@ -191,7 +228,13 @@ function iviBuild(blocks) {
   const isAsk = () => /逆質問|逆质问/.test(ch ? ch.title : '');
   blocks.forEach((b, idx) => {
     if (b.t === 'chapter') { introMode = false; newChapter(b.title); return; }
-    if (b.t === 'section') { introMode = false; newItem(b.title); if (/^(はじめに|前言|序|说明|說明)$/.test(b.title)) q.required = false; return; }
+    if (b.t === 'section') {
+      introMode = false;
+      const opt = /^※\s*/.test(b.title), title = b.title.replace(/^※\s*/, '');   // 「※」开头 = 资料/说明，不要求作答（key 按去掉 ※ 的题面算）
+      newItem(title);
+      if (opt || /^(はじめに|前言|序|说明|說明)$/.test(title)) q.required = false;
+      return;
+    }
     if (b.t === 'sub') {
       if (!ch) newChapter('（未分章）');
       introMode = false;
@@ -260,8 +303,20 @@ function iviFinish(chapters) {
 }
 function iviParse(text, format) {
   const fmt = format || (/\\(chapter|section|begin)\b/.test(text) ? 'tex' : 'md');
-  const blocks = fmt === 'tex' ? iviTexBlocks(text) : iviMdBlocks(text);
-  return iviFinish(iviBuild(blocks));
+  const blocks = fmt === 'tex' ? iviPromoteSubs(iviTexBlocks(text)) : iviMdBlocks(text);
+  const out = iviFinish(iviBuild(blocks));
+  out.warnings = blocks.warnings || [];
+  return out;
+}
+// 识别报告（只读提示）：没识别出题的章、说明文字特别长且没有题的章（可能有题没识别出来）、解析警告
+function iviReport(chapters) {
+  const cs = chapters || [], c = iviCount(cs);
+  return {
+    chapters: c.chapters, items: c.items,
+    noItems: cs.filter(x => !x.items.length).map(x => x.title),
+    longIntro: cs.filter(x => !x.items.length && (x.intro || '').length > 1000).map(x => x.title),
+    warnings: cs.warnings || [],
+  };
 }
 
 // ── 合并到现有题库 ──
@@ -296,4 +351,4 @@ function iviCount(chapters) {
   return { chapters: (chapters || []).length, items, keywords: kw };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { iviParse, iviMerge, iviCount, iviQKey, iviHash, iviIsJa, iviGuessScope, iviTexBlocks, iviMdBlocks };
+if (typeof module !== 'undefined' && module.exports) module.exports = { iviParse, iviMerge, iviCount, iviQKey, iviHash, iviIsJa, iviGuessScope, iviTexBlocks, iviMdBlocks, iviReport, iviPromoteSubs };
