@@ -2565,12 +2565,38 @@ function tabAccounts(){
 /* ---------- 课程：筛选 + 编辑 + 删除 ---------- */
 /* 课程管理当前该显示的课：默认 = 当前期 + 下一期、没移出；点开「追溯查询」后按所选条件 */
 function cmViewCourses(){ return schedViewList(ALL_COURSES, window.CM_TRACE); }
+/* 课程管理顶部：全局假期（只读，数据用已加载的 HOLIDAYS） */
+function cmHolRender(){
+  const box=el('cm_holBox'); if(!box) return;
+  const S=window.CM_HOL||(window.CM_HOL={open:false,early:false,n:30});
+  const td=todayStr();
+  const endOf=h=>h.end_date||h.start_date||'';
+  const all=(HOLIDAYS||[]).slice().sort((x,y)=>String(x.start_date||'').localeCompare(String(y.start_date||'')));
+  const fut=all.filter(h=>endOf(h)>=td), past=all.filter(h=>endOf(h)<td).reverse();
+  let h='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button class="sm" id="cm_holToggle">全局假期（'+all.length+' 条）'+(S.open?' ▴':' ▾')+'</button>'+
+    '<span class="muted" style="font-size:12px">全局假期与管理端共用，在管理端课程安排页右上角『全局假期』维护；排课这里的『批量修改 → 新增假期』也能加</span></div>';
+  if(S.open){
+    const list=S.early?fut.concat(past):fut;
+    const shown=list.slice(0,S.n);
+    const chip=x=>{ const col=x.color==='green'?'#2c8a4f':'#c0392b';
+      return `<div style="display:inline-flex;align-items:center;gap:8px;margin:5px 8px 0 0;padding:3px 10px;border-radius:12px;background:${x.color==='green'?'#e7f6ec':'#fdecea'};color:${col};font-size:12px">${esc(x.label||'假期')} ${esc(x.start_date||'')}${x.end_date&&x.end_date!==x.start_date?('~'+esc(x.end_date)):''}</div>`; };
+    h+='<div style="margin-top:6px">'+(shown.length?shown.map(chip).join(''):'<span class="muted" style="font-size:12px">今天及以后没有假期</span>')+'</div>';
+    const more=list.length-shown.length;
+    if(more>0) h+='<div style="margin-top:8px"><button class="sm" id="cm_holMore">显示更多（还有 '+more+' 条）</button></div>';
+    if(!S.early && past.length) h+='<div style="margin-top:8px"><button class="sm" id="cm_holEarly">显示更早的（还有 '+past.length+' 条）</button></div>';
+  }
+  box.innerHTML=h;
+  el('cm_holToggle').onclick=()=>{ S.open=!S.open; cmHolRender(); };
+  const m=el('cm_holMore'); if(m) m.onclick=()=>{ S.n+=30; cmHolRender(); };
+  const e=el('cm_holEarly'); if(e) e.onclick=()=>{ S.early=true; cmHolRender(); };
+}
 function tabCourses(){
   window.CM_SES=null;   // 每次进课程管理重读单回（判断未开课 / 已开课）
   if(!window.CM_TRACE) window.CM_TRACE=schedTraceNew();
   const dflt=schedViewList(ALL_COURSES, null);
   const majors=[...new Set(dflt.map(c=>c.major).filter(Boolean))].sort();
-  let h='<div class="card"><h3 style="margin-top:2px">课程（共 '+dflt.length+'）'+
+  let h='<div class="card" id="cm_holBox" style="padding-top:8px;padding-bottom:8px"></div>'+
+    '<div class="card"><h3 style="margin-top:2px">课程（共 '+dflt.length+'）'+
     '<span class="muted" style="font-size:12px;font-weight:400;margin-left:10px">新课程请在管理端『课程安排』里建，建好后这里马上能排</span></h3>'+
     '<div class="row" style="margin-bottom:10px">'+
       '<div class="field"><label>搜索课名/讲师</label><input id="cf_q" placeholder="搜索讲师（汉字 / 拼音首字母）/ 课程名…"></div>'+
@@ -2583,6 +2609,7 @@ function tabCourses(){
       '<div class="field"><label>&nbsp;</label><span class="muted" id="cf_count"></span></div>'+
     '</div><div id="cf_trace" style="margin-bottom:8px"></div><div id="coursesTable"></div></div><div id="cEdit"></div>';
   render(h);
+  cmHolRender();
   fillTermSelect(el('cf_term'), dflt.map(c=>c.term), '全部期');
   schedTraceMount('cf_trace', ()=>ALL_COURSES, window.CM_TRACE, ()=>renderCoursesTable());
   fillSelect(el('cf_cat'), CATEGORIES, v=>v, v=>v, '全部类别');
