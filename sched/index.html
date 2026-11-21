@@ -37,14 +37,14 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../shared/constants.js?v=20270422"></script>
 <script src="../shared/course-room-view.js?v=20261113"></script>
-<script src="common.js?v=20270427"></script>
+<script src="common.js?v=20270428"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270424"></script>
 <script src="../shared/search.js?v=20261029"></script>
-<script src="health.js?v=20270427"></script>
+<script src="health.js?v=20270428"></script>
 <script>
 let ROOMS=[], ACCOUNTS=[], COURSES=[], BOOKINGS=[], ROLE=null;
-let ALL_COURSES=[];   // 全部未删除的课（含已结课、已移出排课）：只给「追溯查询 / 批量移出」用；教室占空、冲突检查仍用 COURSES
+let ALL_COURSES=[];   // 全部未删除的课（含已结课、已移出排课）：只给「追溯查询 / 批量移出」用；教室占空、同步检查仍用 COURSES
 const EMBED_ADMIN = new URLSearchParams(location.search).get('embed')==='admin';   // 嵌在管理端「资源管理」里
 
 /* 口令登录（口令即 access_codes 的 code，需 manage 权限）。admin-7910 可直接进 */
@@ -107,7 +107,7 @@ const HUB_CARDS = [
   ['bookingf', '🏫','教室占用录入','查空闲→点教室→录入临时/租用/开会','iframe','booking.html'],
   ['pending',  '✅','预约批准','审批老师提交的教室预约','tab','pending'],
   ['assign',   '🧩','排教室','把课程分配到教室（周历排课）','tab','assign'],
-  ['conflict', '⚠️','冲突检查','选日期，检查教室/账号有没有撞车','tab','conflict'],
+  ['conflict', '⚠️','同步检查','课程改了、教室没跟上的地方；教室冲突也在这里','tab','conflict'],
   ['rooms',    '🏠','教室管理','增删改教室、新增租借教室','tab','rooms'],
   ['accounts', '🎙️','会议账号管理','管理腾讯账号（固定/临时、登录名密码）','tab','accounts'],
   ['courses',  '✍️','课程管理','课程列表：新增/编辑/删除/查重','tab','courses'],
@@ -1077,7 +1077,7 @@ function hcCanSee(){ const ps=permSet(ROLE); return ps.has('assign')||ps.has('ma
 function hcHomeHtml(){
   if(!hcCanSee()) return '';
   const r=hcRun(); if(!r) return '';
-  return '<div style="font-size:12px;color:#777;margin:0 0 8px 2px">课程 / 教室一致性：'+(r.total?'<span style="color:#a33">发现 '+r.total+' 处不一致</span> <a href="#" data-hcgo="1">（查看）</a>':'全部正常')+'</div>';
+  return '<div style="font-size:12px;color:#777;margin:0 0 8px 2px">课程 / 教室同步：'+(r.total?'<span style="color:#a33">发现 '+r.total+' 处不一致</span> <a href="#" data-hcgo="1">（查看）</a>':'全部正常')+'</div>';
 }
 const HC_SECS=[
   ['orphans','遗留占用','单日占用所在的那一天，这门课已经没有课','删除这条占用'],
@@ -1094,9 +1094,11 @@ function hcItemText(k,it){
   const nmB=b=>b.kind==='course'&&b.course_id?nm(b.course_id):'《'+esc(b.title||KIND_LABEL[b.kind]||'占用')+'》';
   return room(it.roomId)+'　'+nmB(it.a)+' × '+nmB(it.b)+'　'+cfDaysHtml(it.days);
 }
+function hcStaleList(){ try{ return hcStale(coordBuild().groups,Date.now()); }catch(e){ return []; } }
 function hcMount(){
   const box=el('hcBox'); if(!box) return;
   const r=hcRun(); if(!r||!hcCanSee()){ box.innerHTML=''; return; }
+  const stale=hcStaleList();
   const secs=HC_SECS.map(([k,title,desc,fixTxt])=>{
     const list=r[k]; if(!list.length) return '';
     const shown=list.slice(0,30);
@@ -1106,8 +1108,12 @@ function hcMount(){
       (list.length>shown.length?'<div class="muted" style="font-size:12px">还有 '+(list.length-shown.length)+' 处没有列出，点「全部修复」会一起处理</div>':'')+
       '<div style="margin-top:4px"><button class="sm" data-hcfix="'+k+'|all">全部修复（'+list.length+'）：'+esc(fixTxt)+'</button></div></details>';
   }).join('');
-  box.innerHTML='<div class="card" style="margin-bottom:10px"><div><b>课程 / 教室一致性</b>　'+(r.total?'<span style="color:#a33">发现 '+r.total+' 处不一致</span>':'<span style="color:#2a7a3a">全部正常</span>')+
-    '　<span class="muted" style="font-size:12px">今天起 90 天内；修复前会确认，并记录操作人</span></div>'+secs+'</div>';
+  const staleHtml=stale.length?'<details open style="margin-top:6px"><summary style="cursor:pointer"><b>通知了总务、等了超过 2 天还没处理</b> <span style="color:#a33">'+stale.length+' 门课</span></summary>'+
+    '<div class="muted" style="font-size:12px;margin:4px 0">在总务首页「需要协调教室」里处理；等得最久的在前</div>'+
+    stale.map(x=>'<div style="padding:3px 0;border-top:1px solid #f0eee8;font-size:13px">《'+esc(x.name)+'》 '+esc(x.nums.slice(0,6).join('、'))+(x.nums.length>6?' 等 '+x.nums.length+' 回':'')+'　<span style="color:#a33">已等 '+x.days+' 天</span></div>').join('')+'</details>':'';
+  const head=r.total?'<span style="color:#a33">发现 '+r.total+' 处不一致</span>　<span class="muted" style="font-size:12px">今天起 90 天内；修复前会确认，并记录操作人</span>'
+    :'<span style="color:#2a7a3a">课程和教室已同步，没有发现不一致</span>';
+  box.innerHTML='<div class="card" style="margin-bottom:10px"><div><b>同步检查</b>　'+head+'</div>'+secs+staleHtml+'</div>';
   box.querySelectorAll('[data-hcfix]').forEach(b=>b.onclick=()=>{ const [k,i]=b.dataset.hcfix.split('|'); hcFix(k,i); });
 }
 async function hcFix(kind,idx){
@@ -2204,11 +2210,13 @@ function meetingLinkStep(c, accId){
   render();
 }
 
-/* ---------- 冲突检查 ---------- */
+/* ---------- 同步检查（原「冲突检查」）：① 同步检查 ② 教室 / 会议账号冲突 ③ 排不下预警（默认折叠） ---------- */
 function tabConflict(){
   const t0=todayStr();
-  let h='<div id="hcBox"></div><div class="card"><h3 style="margin-top:2px">冲突检查</h3>'+
-    '<div class="row">'+
+  let h='<div class="card" style="margin-bottom:10px"><h3 style="margin:2px 0">同步检查</h3><div class="muted" style="font-size:12px">课程改了、教室没跟上的地方；教室冲突也在这里</div></div>'+
+    '<div id="hcBox"></div>'+
+    '<div class="card"><h4 style="margin:0 0 6px">教室 / 会议账号冲突</h4><div id="cf_res"><div class="muted">检查中…</div></div>'+
+    '<details style="margin-top:10px"><summary class="muted" style="font-size:12px;cursor:pointer">检查范围与筛选（默认今天起 90 天）</summary><div class="row" style="margin-top:6px">'+
       '<div class="field"><label>检查方式</label><select id="cf_mode">'+
         '<option value="range">按日期区间（推荐·看到具体哪几号冲突）</option>'+
         '<option value="date">按具体某天</option>'+
@@ -2217,10 +2225,11 @@ function tabConflict(){
       '<div class="field" id="cf_toWrap"><label>止</label><input type="date" id="cf_to" value="'+addDays(t0,90)+'"></div>'+
       '<div class="field hidden" id="cf_dateWrap"><label>检查日期</label><input type="date" id="cf_date" value="'+t0+'"></div>'+
       '<div class="field"><label>校区</label><select id="cf_campus"></select></div>'+
-      '<div class="field"><label>范畴（课程冲突用）</label><select id="cf_scope"><option value="">全部范畴</option>'+
+      '<div class="field"><label>范畴（排不下预警用）</label><select id="cf_scope"><option value="">全部范畴</option>'+
         LEAD_SCOPES.map(s=>`<option value="${s}">${s}</option>`).join('')+'</select></div>'+
       '<div class="field"><label>&nbsp;</label><button id="cf_go">检查</button> <button id="cf_refresh" class="ghost">刷新</button></div>'+
-    '</div><div class="muted" style="font-size:12px;margin-top:4px">按实际上课日判断（已扣除休讲、改期释放的日子）</div><div id="cf_res" style="margin-top:10px"></div></div>';
+    '</div><div class="muted" style="font-size:12px;margin-top:4px">按实际上课日判断（已扣除休讲、改期释放的日子）</div></details></div>'+
+    '<div id="capBox" style="margin-top:10px"></div>';
   render(h); hcMount();
   fillSelect(el('cf_campus'), ['高马','市谷'], v=>v, v=>v, '全部校区');
   el('cf_mode').onchange=()=>{
@@ -2231,8 +2240,9 @@ function tabConflict(){
     runConflict();
   };
   el('cf_go').onclick=runConflict;
-  el('cf_refresh').onclick=async()=>{ window.CF_SESS=null; el('cf_res').innerHTML='<div class="muted">刷新中…</div>'; try{ await reloadAll(); }catch(e){} hcMount(); runConflict(); };
+  el('cf_refresh').onclick=async()=>{ el('cf_res').innerHTML='<div class="muted">刷新中…</div>'; try{ await reloadAll(); }catch(e){} hcMount(); runConflict(); };
   ['cf_from','cf_to','cf_date','cf_campus','cf_scope'].forEach(id=>el(id).onchange=runConflict);
+  window.CAP_ACKS=null;
   runConflict();
 }
 // 占用的星期集合（weekly 用 weekday；once 用 booking_date）
@@ -2276,13 +2286,7 @@ function cfDaysHtml(days){
   if(days.length<=6) return esc(days.map(cfMD).join('、'));
   return `<details style="display:inline"><summary style="display:inline;cursor:pointer">${esc(cfMD(days[0]))} 起共 ${days.length} 天</summary>${esc(days.map(cfMD).join('、'))}</details>`;
 }
-// 读区间内的单回（只读这个区间）；再读冲突涉及的课的全部单回，用来显示「实际上课日期范围」
-async function cfLoadSessions(lo,hi){
-  const key=lo+'|'+hi;
-  if(window.CF_SESS && window.CF_SESS.key===key) return window.CF_SESS.rows;
-  let rows=[]; try{ rows=await sbGet('course_sessions',`select=course_id,session_date,is_cancelled&session_date=gte.${lo}&session_date=lte.${hi}`); }catch(e){ rows=[]; }
-  window.CF_SESS={key,rows}; return rows;
-}
+// 读冲突涉及的课的全部单回，用来显示「实际上课日期范围」
 async function cfLoadActual(ids){
   window.CF_ACT=window.CF_ACT||{};
   const need=[...new Set(ids.map(String))].filter(x=>x&&x!=='undefined');
@@ -2338,11 +2342,7 @@ async function runConflict(){
     if(sameRoom) roomIssues.push({...rec,label:rname(a.room_id)});
     if(sameAcc) accIssues.push({...rec,label:aname(a.meeting_account_id)});
   }
-  const sess=await cfLoadSessions(rangeLo,rangeHi);
-  if(tok!==window.CF_TOK) return;
-  const cc=renderCourseConflictsData(rangeLo,rangeHi,campus,el('cf_scope')?el('cf_scope').value:'',sess);
   const ids=[]; [...roomIssues,...accIssues].forEach(x=>[x.a,x.b].forEach(b=>{ if(b.course_id) ids.push(b.course_id); }));
-  [...cc.issues,...cc.acked].forEach(x=>{ ids.push(x.a.id,x.b.id); });
   await cfLoadActual(ids);
   if(tok!==window.CF_TOK) return;
   const card=(x)=>{
@@ -2359,105 +2359,69 @@ async function runConflict(){
       `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:stretch">${side(da,x.a)}${side(db,x.b)}</div>`+
       `</div>`;
   };
-  let h=`<div class="muted" style="margin-bottom:8px">${esc(headLabel)}${campus?('· '+esc(campus)):''}</div>`;
-  h+='<h4 style="margin:10px 0 6px">教室冲突 '+(roomIssues.length?('<span class="badge b-err">'+roomIssues.length+'</span>'):'')+'</h4>';
-  h+= roomIssues.length? roomIssues.map(card).join('') : '<div class="badge b-ok">无教室冲突</div>';
-  h+='<h4 style="margin:16px 0 6px">会议账号冲突 '+(accIssues.length?('<span class="badge b-err">'+accIssues.length+'</span>'):'')+'</h4>';
-  h+= accIssues.length? accIssues.map(card).join('') : '<div class="badge b-ok">无账号冲突</div>';
-  h+=renderCourseConflictsHtml(cc);
-  el('cf_res').innerHTML=h;
-  bindCourseConflictBtns();
-}
-function ackKey(a,b){ const p=[String(a),String(b)].sort(); return 'cfack_'+p[0]+'_'+p[1]; }
-function isAcked(a,b){ try{ return localStorage.getItem(ackKey(a,b))==='1'; }catch(e){ return false; } }
-function setAcked(a,b,v){ try{ v?localStorage.setItem(ackKey(a,b),'1'):localStorage.removeItem(ackKey(a,b)); }catch(e){} }
-function renderCourseConflictsData(lo, hi, campus, scope, sess){
-  // 找同周几+同时段重叠+日期区间重叠的课程对（线下课，最易抢教室）
-  const pool=COURSES.filter(c=>{
-    if(c.mode==='线上'||c.campus==='线上') return false;
-    if(!c.weekdays||!c.start_time||!c.start_date||!c.end_date) return false;
-    if(campus && c.campus!==campus) return false;
-    if(scope && courseScope(c)!==scope) return false;
-    // 与查询区间有交集
-    if(hi && c.start_date>hi) return false;
-    if(lo && c.end_date<lo) return false;
-    return true;
-  });
-  const wdsOf=c=>parseWeekdaysSched(c.weekdays);
-  // 某课已排的教室id集合
-  const roomsOfCourse=cid=>[...new Set(BOOKINGS.filter(b=>isWeeklyCourseBk(b)&&String(b.course_id)===String(cid)&&b.room_id).map(b=>String(b.room_id)))];
-  const sessBy={}; (sess||[]).forEach(r=>{ const o=sessBy[r.course_id]||(sessBy[r.course_id]={rows:0,days:new Set()}); o.rows++; if(r.is_cancelled!==true&&r.session_date) o.days.add(r.session_date); });
-  const dayCache={};
-  const dayOf=c=>{ if(dayCache[c.id]) return dayCache[c.id];
-    let set; const o=sessBy[c.id];
-    if(o&&o.rows) set=o.days;
-    else { const skip=new Set(String(c.skip_dates||'').split(',').map(x=>x.trim()).filter(Boolean)); set=new Set(cfDaysBetween(c.start_date,c.end_date,wdsOf(c)).filter(d=>!skip.has(d))); }
-    return dayCache[c.id]=set; };
-  const issues=[], acked=[];
-  for(let i=0;i<pool.length;i++) for(let j=i+1;j<pool.length;j++){
-    const a=pool[i],b=pool[j];
-    if(a.merge_group && a.merge_group===b.merge_group) continue; // 系列内部不互相算冲突
-    if((a.campus||'')!==(b.campus||'')) continue;               // 不同校区不冲突
-    if(!overlap(a.start_time,a.end_time,b.start_time,b.end_time)) continue;
-    const wa=new Set(wdsOf(a)), shared=wdsOf(b).filter(w=>wa.has(w));
-    if(!shared.length) continue;
-    // 教室判断：都排了且不同教室=不冲突；同教室=真冲突；有一方没排=潜在竞争
-    const ra=roomsOfCourse(a.id), rb=roomsOfCourse(b.id);
-    let kind;
-    if(ra.length && rb.length){
-      const same=ra.some(x=>rb.includes(x));
-      if(!same) continue;              // 分别排在不同教室，不冲突
-      kind='same';                     // 同一间教室，真撞车
-    } else {
-      kind='compete';                  // 至少一方未排，竞争同校区空教室
-    }
-    const ovLo=[a.start_date,b.start_date,lo].filter(Boolean).sort().pop();
-    const ovHi=[a.end_date,b.end_date,hi].filter(Boolean).sort()[0];
-    if(ovLo>ovHi) continue;
-    // 实际上课日：有单回按单回（没取消的），没有单回按开课~结课+星期并扣休讲日
-    const days=cfDaysBetween(ovLo,ovHi,shared).filter(d=>dayOf(a).has(d)&&dayOf(b).has(d));
-    if(!days.length) continue;
-    const rec={a,b,shared,days,kind,ra,rb};
-    (isAcked(a.id,b.id)?acked:issues).push(rec);
+  let h='';
+  if(!roomIssues.length&&!accIssues.length) h='<div class="badge b-ok">无冲突</div> <span class="muted" style="font-size:12px">'+esc(headLabel)+(campus?'· '+esc(campus):'')+'（教室 / 会议账号；数据库触发器已经拦着，平时应该是 0）</span>';
+  else {
+    h='<div class="muted" style="margin-bottom:8px">'+esc(headLabel)+(campus?'· '+esc(campus):'')+'</div>';
+    if(roomIssues.length) h+='<h4 style="margin:10px 0 6px">教室冲突 <span class="badge b-err">'+roomIssues.length+'</span></h4>'+roomIssues.map(card).join('');
+    if(accIssues.length) h+='<h4 style="margin:16px 0 6px">会议账号冲突 <span class="badge b-err">'+accIssues.length+'</span></h4>'+accIssues.map(card).join('');
   }
-  return {issues,acked};
+  el('cf_res').innerHTML=h;
+  capRender(rangeLo,rangeHi,campus);
 }
-function renderCourseConflictsHtml(cc){
-  const {issues,acked}=cc;
-  const wdTxt=arr=>arr.map(w=>WD_NAME[w]).join('、');
-  const ccard=(x,isAck)=>{
-    const da=bDetail({course_id:x.a.id, start_time:x.a.start_time, end_time:x.a.end_time, kind:'course'});
-    const db=bDetail({course_id:x.b.id, start_time:x.b.start_time, end_time:x.b.end_time, kind:'course'});
-    const isSame = x.kind==='same';
-    const roomTxt = isSame ? ('同一教室：'+x.ra.filter(r=>x.rb.includes(r)).map(rid=>rname(rid)).join('、'))
-                           : '竞争空教室（有课还没排教室）';
-    const kindBadge = isSame ? '<span class="badge b-err" style="font-size:10px">同教室·真撞车</span>' : '<span class="badge b-warn" style="font-size:10px">潜在竞争</span>';
-    const side=(c,d)=>`<div style="flex:1;min-width:200px;border:1px solid var(--line);border-radius:8px;padding:8px 10px">`+
-      `<div style="font-weight:600">${esc(c.name)}</div>`+
-      `<div class="muted" style="font-size:12px;margin-top:3px">${esc(courseScope(c))}${c.teacher?(' · 老师：'+esc(c.teacher)):''} · ${esc(c.campus||'')}</div>`+
-      `<div class="muted" style="font-size:12px">时段 ${esc(c.start_time)}-${esc(c.end_time)} · 日期 ${esc(((window.CF_ACT||{})[String(c.id)]||[c.start_date,c.end_date])[0]||'')}~${esc(((window.CF_ACT||{})[String(c.id)]||[c.start_date,c.end_date])[1]||'')}</div>`+
-      `<div style="margin-top:5px"><button class="sm ghost" data-cfedit="${c.id}">去调整</button></div>`+
-      `</div>`;
-    const bg=isAck?'#f2f6f4':'#fff8f0', bd=isAck?'#cfe0d3':'#f0d9b3';
-    return `<div style="border:1px solid ${bd};background:${bg};border-radius:10px;padding:10px 12px;margin-bottom:10px">`+
-      `<div style="font-size:13px;margin-bottom:6px">${wdTxt(x.shared)} · <span style="color:#b5651d">叠加日期：${cfDaysHtml(x.days)}</span> ${kindBadge}${isAck?' <span class="badge b-ok" style="font-size:10px">已确认无碍</span>':''}</div>`+
-      `<div class="muted" style="font-size:11px;margin-bottom:6px">教室：${esc(roomTxt)}</div>`+
-      `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:stretch">${side(x.a)}${side(x.b)}</div>`+
-      `<div style="margin-top:8px;display:flex;gap:8px">`+
-        (isAck?`<button class="sm ghost" data-cfunack="${x.a.id}|${x.b.id}">重新标为冲突</button>`
-              :`<button class="sm ghost" data-cfack="${x.a.id}|${x.b.id}">确认无碍（不再提示）</button>`)+
-      `</div></div>`;
+/* ---------- 排不下预警（原「课程冲突」）：按校区 + 日期 + 时间段算容量，需要的教室数 > 可用数才报 ----------
+   「确认无碍」存数据库：sched_change_log，action='course_review'（沿用回数审查的内部标记写法，不新增 action），
+   changes=[{field:'capacity_ack', campus, date, slot, need, avail}]；acked_by 写 'admin-read'，管理端「回数 / 结课日提醒」不会读到它。
+   需求数或可用数变了，就和当时记的对不上，会重新提示。 */
+async function capLoadAcks(force){
+  if(window.CAP_ACKS&&!force) return window.CAP_ACKS;
+  const out=[];
+  try{
+    (await sbGet('sched_change_log','select=id,changes&action=eq.course_review&order=created_at.desc&limit=1000')).forEach(l=>{
+      (Array.isArray(l.changes)?l.changes:[]).forEach(x=>{ if(x&&x.field==='capacity_ack') out.push({id:l.id,key:hcCapKey(x),need:x.need,avail:x.avail}); });
+    });
+  }catch(e){ console.warn('读确认记录失败',e); }
+  return window.CAP_ACKS=out;
+}
+async function capRender(lo,hi,campus){
+  const box=el('capBox'); if(!box) return;
+  const tok=window.CAP_TOK=(window.CAP_TOK||0)+1;
+  const scope=el('cf_scope')?el('cf_scope').value:'';
+  const from=[lo,todayStr()].sort().pop();
+  const list=hcCapacity({courses:COURSES,rooms:ROOMS,bookings:BOOKINGS,link:window.COURSE_LINK,today:from,to:hi,campus,scope:scope?(c=>courseScope(c)===scope):null});
+  const acks=await capLoadAcks();
+  if(tok!==window.CAP_TOK||!el('capBox')) return;
+  const open=[], done=[]; list.forEach(x=>(hcCapAcked(x,acks)?done:open).push(x));
+  const row=(x,isAck)=>{
+    const k=esc(hcCapKey(x));
+    return '<div style="border-top:1px solid #f0eee8;padding:5px 0"><details><summary style="cursor:pointer;font-size:13px"><b>'+esc(x.campus)+'</b> · '+esc(cfMD(x.date))+'（'+esc(WD_NAME[weekdayOf(x.date)]||'')+'）'+esc(x.slot)+
+      '　需要 '+x.need+' 间 / 可用 '+x.avail+' 间　<span style="color:#b5651d">缺 '+x.short+' 间</span>'+(isAck?' <span class="badge b-ok" style="font-size:10px">已确认无碍</span>':'')+'</summary>'+
+      '<div style="font-size:12px;margin:4px 0 4px 14px">'+x.courses.map(c=>'《'+esc(c.name)+'》').join('、')+'</div></details>'+
+      '<div style="margin:2px 0 0 14px;display:flex;gap:8px">'+
+        '<button class="sm ghost" data-capgo="1">去排教室</button>'+
+        (isAck?'<button class="sm ghost" data-capunack="'+k+'">重新提示</button>':'<button class="sm ghost" data-capack="'+k+'">确认无碍</button>')+'</div></div>';
   };
-  let out='<h4 style="margin:18px 0 6px">课程冲突（同周几·同时段·日期叠加）'+(issues.length?('<span class="badge b-err">'+issues.length+'</span>'):'')+'</h4>'+
-    '<div class="muted" style="font-size:12px;margin-bottom:8px">这类课日期重叠、同周几同时段，重叠期需要两间教室，最容易排不上。可「去调整」改时间/日期，或「确认无碍」。</div>';
-  out += issues.length? issues.map(x=>ccard(x,false)).join('') : '<div class="badge b-ok">无日期叠加冲突</div>';
-  if(acked.length){ out+='<details style="margin-top:8px"><summary class="muted" style="font-size:12px;cursor:pointer">已确认无碍（'+acked.length+'）</summary>'+acked.map(x=>ccard(x,true)).join('')+'</details>'; }
-  return out;
-}
-function bindCourseConflictBtns(){
-  document.querySelectorAll('[data-cfedit]').forEach(x=>x.onclick=()=>{ show('courses'); setTimeout(()=>courseEdit(x.dataset.cfedit),120); });
-  document.querySelectorAll('[data-cfack]').forEach(x=>x.onclick=()=>{ const [a,b]=x.dataset.cfack.split('|'); setAcked(a,b,true); runConflict(); });
-  document.querySelectorAll('[data-cfunack]').forEach(x=>x.onclick=()=>{ const [a,b]=x.dataset.cfunack.split('|'); setAcked(a,b,false); runConflict(); });
+  const MAX=40, shown=open.slice(0,MAX);
+  box.innerHTML='<details class="card"><summary style="cursor:pointer"><b>排不下预警（'+open.length+'）</b>'+(done.length?' <span class="muted" style="font-size:12px">另有 '+done.length+' 条已确认无碍</span>':'')+'</summary>'+
+    '<div class="muted" style="font-size:12px;margin:6px 0">同一校区、同一天、同一时间段，需要教室的课比可用教室多，才会列在这里（可用 = 校区在用教室 − 被临时占用 / 租用 / 开会占住的）。点开某一条看是哪几门课。</div>'+
+    (open.length?shown.map(x=>row(x,false)).join(''):'<div class="badge b-ok">没有排不下的时段</div>')+
+    (open.length>MAX?'<div class="muted" style="font-size:12px;margin-top:6px">还有 '+(open.length-MAX)+' 条没有列出（缩小日期区间或选校区可看到）</div>':'')+
+    (done.length?'<details style="margin-top:8px"><summary class="muted" style="font-size:12px;cursor:pointer">已确认无碍（'+done.length+'）</summary>'+done.slice(0,MAX).map(x=>row(x,true)).join('')+'</details>':'')+'</details>';
+  const byKey=k=>list.find(x=>hcCapKey(x)===k);
+  box.querySelectorAll('[data-capgo]').forEach(b=>b.onclick=()=>openCard('assign'));
+  box.querySelectorAll('[data-capack]').forEach(b=>b.onclick=async()=>{
+    const x=byKey(b.dataset.capack); if(!x) return; b.disabled=true;
+    try{
+      await sbInsert('sched_change_log',{ course_id:null, course_name:'排不下预警：确认无碍', actor_role:(ROLE&&ROLE.role)||'', actor_label:schedActorLabel(), action:'course_review',
+        changes:[{ field:'capacity_ack', label:'排不下预警：确认无碍', campus:x.campus, date:x.date, slot:x.slot, need:x.need, avail:x.avail, by:schedActorLabel(), on:todayStr() }], acked_by:'admin-read' });
+      await capLoadAcks(true); capRender(lo,hi,campus);
+    }catch(e){ b.disabled=false; toast('保存失败：'+e.message,false); }
+  });
+  box.querySelectorAll('[data-capunack]').forEach(b=>b.onclick=async()=>{
+    b.disabled=true;
+    try{ for(const a of (window.CAP_ACKS||[]).filter(a=>a.key===b.dataset.capunack)) await sbDelete('sched_change_log',a.id); await capLoadAcks(true); capRender(lo,hi,campus); }
+    catch(e){ b.disabled=false; toast('操作失败：'+e.message,false); }
+  });
 }
 
 /* ---------- 教室占用总表（临时/VIP/出租/开会） ---------- */
