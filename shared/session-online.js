@@ -16,7 +16,7 @@ const solEnc = encodeURIComponent;
 // 这一回是不是单独改成线上了（列还不存在时读到 undefined，当没设过）
 function solIsOnline(s) { return !!(s && s.delivery_set && s.delivery === SOL_ONLINE); }
 function solLinkOk(u) { return /^https?:\/\/\S+/i.test(String(u || '').trim()); }
-// 链接可以先不填：自备链接方式没填时 meeting_url 存空字符串 ''（会议账号方式存 null）= 「线上 · 待补链接」。不需要新列。
+// 链接可以先不填：自备链接没填 / 选了备用（临时）账号时 meeting_url 存空字符串 ''（固定账号存 null）= 「线上 · 待补链接」。不需要新列。
 function solNeedLink(s) { return solIsOnline(s) && s.meeting_url === ''; }
 // 链接格式：留空 = 可以；填了必须 http 开头
 function solLinkValid(u) { const v = String(u || '').trim(); return !v || solLinkOk(v); }
@@ -69,7 +69,7 @@ async function solSetOnline(o) {
     }
     // 3) 这一回改成线上
     const back = { delivery: s.delivery == null ? null : s.delivery, campus: s.campus == null ? null : s.campus, delivery_set: !!s.delivery_set, meeting_url: s.meeting_url == null ? null : s.meeting_url };
-    try { await csPatch('course_sessions', s.id, { delivery: SOL_ONLINE, campus: SOL_ONLINE, delivery_set: true, meeting_url: o.mode === 'link' ? url : null }); }   // 自备链接没填：存 ''（待补链接）
+    try { await csPatch('course_sessions', s.id, { delivery: SOL_ONLINE, campus: SOL_ONLINE, delivery_set: true, meeting_url: o.mode === 'link' ? url : (o.acctRoom && o.acctRoom.noRoom ? '' : null) }); }   // 链接还没填：存 ''（待补链接）；备用账号也要建会议、要补链接；固定账号不需要
     catch (er) { throw solColErr(er); }
     undo.push({ ses: s.id, patch: back });
     const text = `改成线上（${o.mode === 'acct' ? '会议账号 ' + acctName : (url ? '自备链接' : '自备链接，待补')}）`;

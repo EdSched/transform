@@ -5537,7 +5537,7 @@ function crvChangeLine(course, sessions) {
   return `<div style="padding:3px 14px;font-size:10px;background:#fff7ec;color:#a05a00;border-bottom:1px solid var(--border-light)">教室变动：${list.map(x => `${ccEsc(crvMDW(x.session.session_date))}${x.kind === 'moved' ? '→ ' + ccEsc(x.label) : '<span style="color:#c0392b">⚠ 未排教室</span>'}`).join('；')}</div>`;
 }
 function crvSessLine(course, s) {
-  if (typeof solIsOnline === 'function' && solIsOnline(s)) return `<div style="font-size:9px;color:#2a6fb0;margin-top:1px">${solNeedLink(s) ? `<span style="color:#c0392b">待补链接</span> <button onclick="csFillLink('${s.id}')" style="font-size:9px;background:none;border:none;cursor:pointer;color:#c0392b;padding:0;text-decoration:underline">补链接</button>` : '改成线上' + (s.meeting_url ? '（自备链接）' : '')}</div>`;
+  if (typeof solIsOnline === 'function' && solIsOnline(s)) return `<div style="font-size:9px;color:#2a6fb0;margin-top:1px">${solNeedLink(s) ? `<span style="color:#c0392b">待补链接</span> <button onclick="csFillLink('${s.id}')" style="font-size:9px;background:none;border:none;cursor:pointer;color:#c0392b;padding:0;text-decoration:underline">补链接</button>` : '改成线上' + (s.meeting_url ? '（自备链接）' : '') + (s.meeting_url ? '' : ` <button onclick="csFillLink('${s.id}')" style="font-size:9px;background:none;border:none;cursor:pointer;color:#2a6fb0;padding:0;text-decoration:underline">补链接</button>`)}</div>`;
   if (typeof crvSessionState !== 'function' || !CRV.loaded) return '';
   const st = crvSessionState(s.course_id || course.id, s, course);
   if (st.kind === 'moved') return `<div style="font-size:9px;color:#d9822b;margin-top:1px">→ ${ccEsc(st.label)}</div>`;
