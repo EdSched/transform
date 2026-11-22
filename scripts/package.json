@@ -1,0 +1,7 @@
+{
+  "name": "transform-scripts",
+  "private": true,
+  "description": "开发用自检脚本的依赖（只给 check-ui-flows.js 用；线上页面仍是纯 HTML / JS，不依赖这里）",
+  "scripts": { "flows": "node check-ui-flows.js" },
+  "devDependencies": { "jsdom": "24.1.3" }
+}
