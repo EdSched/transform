@@ -272,6 +272,7 @@ async function confirmCourseImport(){
   }
 }
 
+let coursesShowN=30, coursesShowSig='';  // 课程列表分页（每次 30 组）
 let coursesMajorFilter='none';  // 初始不选任何专业，需手动点选后才显示课程（避免一打开满屏）
 let coursesDomainFilter='';  // 总览时按领域筛（空=全部领域）
 let coursesPeriodFilter='current'; // 'current' | 'all'
@@ -888,8 +889,8 @@ function renderCoursesPage(mc){
   setTimeout(loadCourseReviewBox,0);
   // 专业钥匙锁定：强制默认选中锁定的专业（用户不能改）
   if(CURRENT_MAJOR) coursesMajorFilter=CURRENT_MAJOR;
-  // 锁定在具体领域（领域账号/切换视角进入）：默认显示该领域全部课（不管领域有没有建专业）
-  else if(!scopeAll() && coursesMajorFilter==='none') coursesMajorFilter='all';
+  // 领域/专业范围视角：范围内可选专业 ≥2 个时和总览一致，默认不选专业（请先选择专业）；只有 0/1 个专业时选这一级没有意义，默认「全部」
+  else if(!scopeAll() && coursesMajorFilter==='none' && majorFilterKeys({includeAll:false}).length<2) coursesMajorFilter='all';
   // 从排课「去调整」/ 通知里点进来（?page=courses&course=ID）：只临时放开挡住这门课的筛选（用户自己的筛选另存，手动点筛选 / 换页就还原）
   acFocusApplyView();
 
@@ -1031,8 +1032,13 @@ function renderCoursesSummary(courses){
     groups[k].sessions=groups[k].sessions.filter(s=>{if(seen2.has(s.id))return false;seen2.add(s.id);return true});
   });
 
+  // 分页：先显示前 30 组，底部「显示更多」；筛选变化时回到 30；定位跳转时不截断（保证能定位到那门课）
+  const showSig=[coursesMajorFilter,coursesPeriodFilter,coursesArchiveFilter,coursesTypeFilter,coursesCampusFilter].join('|');
+  if(showSig!==coursesShowSig){coursesShowSig=showSig;coursesShowN=30}
+  const shownKeys=acFocusCid?groupOrder:groupOrder.slice(0,coursesShowN);
+  const moreHtml=shownKeys.length<groupOrder.length?`<div onclick="coursesShowMore()" style="text-align:center;padding:10px;font-size:12px;color:var(--accent);cursor:pointer;border:1px dashed var(--border);border-radius:4px">显示更多（还有 ${groupOrder.length-shownKeys.length} 门课）</div>`:'';
   return `<div style="display:flex;flex-direction:column;gap:12px">
-    ${groupOrder.map(key=>{
+    ${shownKeys.map(key=>{
       const {course,sessions,ids}=groups[key];
       const dispName=courseGroupKey(course.name);
       const color=courseColor(dispName,course);
@@ -1117,9 +1123,14 @@ function renderCoursesSummary(courses){
         }
       </div>`;
     }).join('')}
+    ${moreHtml}
   </div>`;
 }
 
+function coursesShowMore(){
+  coursesShowN+=30;
+  renderCoursesPage(document.getElementById('mainContent'));
+}
 function setCoursesMajor(m,el){
   acFocusRestore();
   coursesMajorFilter=m;
