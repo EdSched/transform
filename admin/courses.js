@@ -1787,7 +1787,7 @@ function acPasteImport(){
 function acAssignEnsure(){
   const sec=document.getElementById('ac_details_section');
   if(!sec||document.getElementById('ac_assign_btn')) return;
-  const head=sec.firstElementChild, btns=head&&head.lastElementChild;
+  const btns=document.getElementById('ac_details_btns');   // 按 id 取：说明行、标题行怎么增减都不影响
   if(!btns) return;
   const b=document.createElement('button');
   b.type='button'; b.id='ac_assign_btn'; b.className='btn btn-outline btn-sm';
