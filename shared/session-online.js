@@ -28,7 +28,7 @@ async function solGet(table, q) {
 // 列还没建好的报错 → 一句人话
 function solColErr(er) {
   const m = String((er && er.message) || er || '');
-  if (/delivery_set|meeting_url/.test(m) && /column|schema|PGRST/i.test(m)) return new Error('数据库还没有「单回线上」需要的列，请先让管理员执行 seed/session_online.sql');
+  if (/delivery_set|meeting_url|host_key/.test(m) && /column|schema|PGRST/i.test(m)) return new Error('数据库还没有「单回线上」需要的列，请先让管理员执行 seed/session_online.sql');
   return er;
 }
 
@@ -68,8 +68,8 @@ async function solSetOnline(o) {
       if (ins && ins[0]) undo.push({ del: ins[0].id });
     }
     // 3) 这一回改成线上
-    const back = { delivery: s.delivery == null ? null : s.delivery, campus: s.campus == null ? null : s.campus, delivery_set: !!s.delivery_set, meeting_url: s.meeting_url == null ? null : s.meeting_url };
-    try { await csPatch('course_sessions', s.id, { delivery: SOL_ONLINE, campus: SOL_ONLINE, delivery_set: true, meeting_url: o.mode === 'link' ? url : (o.acctRoom && o.acctRoom.noRoom ? '' : null) }); }   // 链接还没填：存 ''（待补链接）；备用账号也要建会议、要补链接；固定账号不需要
+    const back = { delivery: s.delivery == null ? null : s.delivery, campus: s.campus == null ? null : s.campus, delivery_set: !!s.delivery_set, meeting_url: s.meeting_url == null ? null : s.meeting_url, host_key: s.host_key == null ? null : s.host_key };
+    try { await csPatch('course_sessions', s.id, Object.assign({ delivery: SOL_ONLINE, campus: SOL_ONLINE, delivery_set: true, meeting_url: o.mode === 'link' ? url : (o.acctRoom && o.acctRoom.noRoom ? '' : null) }, String(o.hostKey || '').trim() ? { host_key: String(o.hostKey).trim() } : {})); }   // 链接还没填：存 ''（待补链接）；备用账号也要建会议、要补链接；固定账号不需要
     catch (er) { throw solColErr(er); }
     undo.push({ ses: s.id, patch: back });
     const text = `改成线上（${o.mode === 'acct' ? '会议账号 ' + acctName : (url ? '自备链接' : '自备链接，待补')}）`;
@@ -125,7 +125,7 @@ async function solAckCoord(o, text) {
 // o: { course, session, bkExtra }。调用方撤回后自己再走教室检查（srmOpen）
 async function solRevertOnline(o) {
   const s = o.session, c = o.course, d = s.session_date, ex = o.bkExtra || {};
-  try { await csPatch('course_sessions', s.id, { delivery: c.delivery == null ? null : c.delivery, campus: c.campus == null ? null : c.campus, delivery_set: false, meeting_url: null }); }
+  try { await csPatch('course_sessions', s.id, { delivery: c.delivery == null ? null : c.delivery, campus: c.campus == null ? null : c.campus, delivery_set: false, meeting_url: null, host_key: null }); }
   catch (er) { throw solColErr(er); }
   // 会议账号的临时占用（这一回改成线上时建的）清掉；每周占用这一天的「让位」标记还回去
   const bks = await solGet('sched_bookings', `select=*&kind=eq.course&course_id=eq.${solEnc(String(c.id))}&status=neq.rejected`);
@@ -169,10 +169,10 @@ async function solAcctRows(statusRows, blockerFn) {
   return rows;
 }
 // 补链接：填了才存（必须 http 开头）；返回存下的链接
-async function solSetLink(session, url) {
+async function solSetLink(session, url, hostKey) {
   const v = String(url || '').trim();
   if (!solLinkOk(v)) throw new Error('会议链接要以 http 开头');
-  try { await csPatch('course_sessions', session.id, { meeting_url: v }); } catch (er) { throw solColErr(er); }
+  try { await csPatch('course_sessions', session.id, { meeting_url: v, host_key: String(hostKey || '').trim() || null }); session.host_key = String(hostKey || '').trim() || null; } catch (er) { throw solColErr(er); }
   return v;
 }
 // 面板里的账号小方块：空着的 data-acct 可点；被占的灰显并写明被谁占
