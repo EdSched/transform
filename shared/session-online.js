@@ -16,6 +16,10 @@ const solEnc = encodeURIComponent;
 // 这一回是不是单独改成线上了（列还不存在时读到 undefined，当没设过）
 function solIsOnline(s) { return !!(s && s.delivery_set && s.delivery === SOL_ONLINE); }
 function solLinkOk(u) { return /^https?:\/\/\S+/i.test(String(u || '').trim()); }
+// 链接可以先不填：自备链接方式没填时 meeting_url 存空字符串 ''（会议账号方式存 null）= 「线上 · 待补链接」。不需要新列。
+function solNeedLink(s) { return solIsOnline(s) && s.meeting_url === ''; }
+// 链接格式：留空 = 可以；填了必须 http 开头
+function solLinkValid(u) { const v = String(u || '').trim(); return !v || solLinkOk(v); }
 
 async function solGet(table, q) {
   if (typeof sbAll === 'function') return (await sb(`/rest/v1/${table}?${q}`, 'GET', null, { cache: 'no-store' })) || [];
@@ -35,7 +39,7 @@ function solColErr(er) {
 async function solSetOnline(o) {
   const undo = [], cid = String(o.course.id), s = o.session, d = s.session_date, ex = o.bkExtra || {};
   const url = String(o.url || '').trim();
-  if (o.mode === 'link' && !solLinkOk(url)) throw new Error('请填写 http 开头的会议链接');
+  if (o.mode === 'link' && !solLinkValid(url)) throw new Error('会议链接要以 http 开头（也可以先不填，之后补）');
   if (o.mode === 'acct' && !(o.acctRoom && o.acctRoom.meeting_account_id)) throw new Error('请选一个会议账号');
   if (!o.sp || !o.sp.start) throw new Error('这一回没有上课时间，不能占会议账号');
   try {
@@ -56,7 +60,7 @@ async function solSetOnline(o) {
       const r = o.acctRoom, tpl = chosen || temps[0] || wk[0] || bks[0] || {};
       acctName = r.name || '';
       const ins = await csInsert('sched_bookings', [Object.assign({
-        room_id: r.id, kind: 'course', course_id: cid, title: tpl.title || o.course.name || '', user_name: tpl.user_name || null,
+        room_id: r.noRoom ? null : r.id, kind: 'course', course_id: cid,   // 备用（临时）账号不绑教室：room_id 为空，只用会议账号 title: tpl.title || o.course.name || '', user_name: tpl.user_name || null,
         recurrence: 'once', booking_date: d, start_time: o.sp.start, end_time: o.sp.end,
         uses_meeting: true, meeting_account_id: r.meeting_account_id,
         status: 'confirmed', created_by: tpl.created_by || 'admin', entry_name: '单回改成线上', note: '单回改成线上', auto_sync: false
@@ -64,11 +68,11 @@ async function solSetOnline(o) {
       if (ins && ins[0]) undo.push({ del: ins[0].id });
     }
     // 3) 这一回改成线上
-    const back = { delivery: s.delivery == null ? null : s.delivery, campus: s.campus == null ? null : s.campus, delivery_set: !!s.delivery_set, meeting_url: s.meeting_url || null };
-    try { await csPatch('course_sessions', s.id, { delivery: SOL_ONLINE, campus: SOL_ONLINE, delivery_set: true, meeting_url: o.mode === 'link' ? url : null }); }
+    const back = { delivery: s.delivery == null ? null : s.delivery, campus: s.campus == null ? null : s.campus, delivery_set: !!s.delivery_set, meeting_url: s.meeting_url == null ? null : s.meeting_url };
+    try { await csPatch('course_sessions', s.id, { delivery: SOL_ONLINE, campus: SOL_ONLINE, delivery_set: true, meeting_url: o.mode === 'link' ? url : null }); }   // 自备链接没填：存 ''（待补链接）
     catch (er) { throw solColErr(er); }
     undo.push({ ses: s.id, patch: back });
-    const text = `改成线上（${o.mode === 'acct' ? '会议账号 ' + acctName : '自备链接'}）`;
+    const text = `改成线上（${o.mode === 'acct' ? '会议账号 ' + acctName : (url ? '自备链接' : '自备链接，待补')}）`;
     // 4) 记录 + 把总务那条没处理的「需要协调教室」标成已处理（失败只提醒，不回滚）
     const warn = [];
     try { await solLog(o, text, temps, wk, chosen); } catch (er) { warn.push('写修改记录失败：' + (er.message || er)); }
@@ -143,15 +147,33 @@ async function solRevertOnline(o) {
   return { ok: true };
 }
 
-// 会议账号列表（给选择面板用）：statusRows = crvRoomStatus 的结果 [{room, blockers}]；只留有会议账号的项。
-// blockerFn(acctId) 可选：再按「会议账号」本身查一遍谁占着（同一个账号可能挂在别的教室名下）
+// 会议账号列表（给选择面板用）：固定账号 = statusRows（crvRoomStatus 的结果 [{room, blockers}]，只留有会议账号的项）
+// ＋ 备用（临时）账号（sched_meeting_accounts.kind='临时' 且在用，不绑教室）放在后面。
+// blockerFn(acctId) 可选：再按「会议账号」本身查一遍谁占着（同一个账号可能挂在别的教室名下；临时账号只能靠它）
+function solTempRow(a, blockers) {
+  return { room: { id: 'acct:' + a.id, name: '备用 · ' + (a.name || '临时账号') + (a.note ? '（' + a.note + '）' : ''), meeting_account_id: a.id, noRoom: true }, blockers: blockers || [] };
+}
 async function solAcctRows(statusRows, blockerFn) {
   const rows = (statusRows || []).filter(x => x.room && x.room.meeting_account_id != null && x.room.meeting_account_id !== '');
   for (const x of rows) {
     if (!blockerFn) break;
     try { const more = await blockerFn(x.room.meeting_account_id); (more || []).forEach(b => { if (!x.blockers.some(y => y.title === b.title && y.time === b.time)) x.blockers.push(b); }); } catch (er) { /* 查不到就按原样 */ }
   }
+  let temps = [];
+  try { temps = await solGet('sched_meeting_accounts', 'select=id,name,note&kind=eq.临时&active=eq.true&order=id'); } catch (er) { /* 读不到就只列固定账号 */ }
+  for (const a of temps) {
+    let bl = [];
+    try { bl = blockerFn ? ((await blockerFn(a.id)) || []) : []; } catch (er) { /* 查不到按空着算，写入时数据库还会拦 */ }
+    rows.push(solTempRow(a, bl));
+  }
   return rows;
+}
+// 补链接：填了才存（必须 http 开头）；返回存下的链接
+async function solSetLink(session, url) {
+  const v = String(url || '').trim();
+  if (!solLinkOk(v)) throw new Error('会议链接要以 http 开头');
+  try { await csPatch('course_sessions', session.id, { meeting_url: v }); } catch (er) { throw solColErr(er); }
+  return v;
 }
 // 面板里的账号小方块：空着的 data-acct 可点；被占的灰显并写明被谁占
 function solAcctHtml(rows, pickedId) {

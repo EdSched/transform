@@ -40,7 +40,7 @@
 <script src="common.js?v=20270428"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270429"></script>
-<script src="../shared/session-online.js?v=20270429"></script>
+<script src="../shared/session-online.js?v=20270430"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script src="health.js?v=20270428"></script>
 <script>
@@ -1405,27 +1405,31 @@ function schedOnlineDialog(o){
     roomConflicts(BOOKINGS,r.id,d,sp.start,sp.end,null).concat(accountConflicts(BOOKINGS,r.meeting_account_id,d,sp.start,sp.end,null))
       .filter(b=>!idset.has(String(b.course_id))).forEach(b=>{ if(seen.has(b.id)) return; seen.add(b.id); const t=bookingTimeOn(b,d); bl.push({title:b.title||KIND_LABEL[b.kind]||'占用',who:b.user_name||'',time:coordT5(t[0])+'-'+coordT5(t[1])}); });
     return {room:r,blockers:bl};
-  });
+  }).concat(ACCOUNTS.filter(a=>a.kind==='临时'&&a.active!==false).map(a=>{   // 备用（临时）账号：不绑教室，排在固定账号后面
+    const seen=new Set(), bl=[];
+    accountConflicts(BOOKINGS,a.id,d,sp.start,sp.end,null).filter(b=>!idset.has(String(b.course_id))).forEach(b=>{ if(seen.has(b.id)) return; seen.add(b.id); const t=bookingTimeOn(b,d); bl.push({title:b.title||KIND_LABEL[b.kind]||'占用',who:b.user_name||'',time:coordT5(t[0])+'-'+coordT5(t[1])}); });
+    return solTempRow(a,bl);
+  }));
   const num=s.session_number?'第 '+s.session_number+' 回 ':'';
   const paint=()=>{
-    const ok=S.mode==='acct'?!!S.acct:solLinkOk(S.url);
+    const ok=S.mode==='acct'?!!S.acct:solLinkValid(S.url);
     mask.innerHTML='<div class="card" style="width:560px;max-width:94vw;margin:auto"><h3 style="margin-top:2px">「'+esc(c.merge_name||c.name)+'」'+esc(num)+esc(coordMDW(d))+' 改成线上</h3>'+
       '<div class="muted" style="font-size:12px;margin-bottom:8px">只改这一回，课程和别的回不变；这一回原来占的教室会释放。'+esc(coordT5(sp.start))+'-'+esc(coordT5(sp.end))+'</div>'+
       '<div class="row"><div class="field"><label>线上方式</label><select id="sol_mode"><option value="link"'+(S.mode==='link'?' selected':'')+'>自备腾讯会议链接</option><option value="acct"'+(S.mode==='acct'?' selected':'')+'>占用一个会议账号</option></select></div></div>'+
       (S.mode==='link'
-        ?'<div class="field" style="margin-top:6px"><label>会议链接（必填，http 开头）</label><input id="sol_url" style="width:100%;box-sizing:border-box" value="'+esc(S.url)+'" placeholder="https://meeting.tencent.com/…"></div>'
+        ?'<div class="field" style="margin-top:6px"><label>会议链接（可以先不填，之后在课程安排里补；填了要 http 开头）</label><input id="sol_url" style="width:100%;box-sizing:border-box" value="'+esc(S.url)+'" placeholder="https://meeting.tencent.com/…"><div id="sol_hint" style="color:#a33;font-size:12px;margin-top:2px;display:'+(solLinkValid(S.url)?'none':'block')+'">链接格式不对，要以 http 开头</div></div>'
         :'<div class="muted" style="font-size:12px;margin-top:6px">各会议账号（点一个空着的）：</div><div id="sol_acct">'+solAcctHtml(acctRows(),S.acct)+'</div>')+
       (S.err?'<div style="color:#a33;margin-top:8px">'+esc(S.err)+'</div>':'')+
       '<div style="margin-top:12px;display:flex;gap:8px"><button id="sol_ok"'+(ok&&!S.busy?'':' disabled')+'>'+(S.busy?'保存中…':'确认改成线上')+'</button><button class="ghost" id="sol_cancel">取消</button></div></div>';
     el('sol_cancel').onclick=()=>mask.remove();
     el('sol_mode').onchange=()=>{ S.mode=el('sol_mode').value; S.err=''; paint(); };
-    if(el('sol_url')) el('sol_url').oninput=()=>{ S.url=el('sol_url').value; el('sol_ok').disabled=!solLinkOk(S.url); };
+    if(el('sol_url')) el('sol_url').oninput=()=>{ S.url=el('sol_url').value; el('sol_ok').disabled=!solLinkValid(S.url); el('sol_hint').style.display=solLinkValid(S.url)?'none':'block'; };
     mask.querySelectorAll('#sol_acct [data-acct]').forEach(x=>x.onclick=()=>{ S.acct=x.dataset.acct; paint(); });
     el('sol_ok').onclick=async()=>{
       if(S.busy) return;
       const acct=S.mode==='acct'?(acctRows().map(x=>x.room).find(r=>String(r.id)===String(S.acct))||null):null;
       if(S.mode==='acct'&&!acct) return;
-      if(!confirm(num+coordMD(d)+' 改成线上（'+(acct?'会议账号 '+acct.name:'自备链接')+'）；原来占的教室会释放。确认？')) return;
+      if(!confirm(num+coordMD(d)+' 改成线上（'+(acct?'会议账号 '+acct.name:(S.url.trim()?'自备链接':'自备链接，之后补'))+'）；原来占的教室会释放。确认？')) return;
       S.busy=true; S.err=''; paint();
       try{
         const who=schedActorLabel();

@@ -2609,11 +2609,12 @@ function sschedMeCardHtml() {
   let nextHtml = '<div style="font-size:12px;color:var(--text-muted)">下次上课：暂无后续课次</div>';
   if (next) {
     const inf = sschedCourseInfo(next.course_id) || {}, d = new Date(next.session_date + 'T00:00:00');
-    const url = next.meeting_url || inf.meeting_url || '';
+    const linkLater = next.delivery_set && next.delivery === '线上' && next.meeting_url === '';   // 这一回改成线上、链接还没填
+    const url = linkLater ? '' : (next.meeting_url || inf.meeting_url || '');
     const place = next.delivery_set && next.delivery === '线上' ? '线上（这一回改成线上）' : [inf.delivery === '线下＋线上' ? '线上线下同步' : inf.delivery, inf.campus].filter(Boolean).join(' · ');
     nextHtml = `${next.session_date === today ? `<div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:3px">今天${next.time_range ? ' ' + escA(parseTimeRanges(next.time_range)[0].start) : ''} 有课</div>` : ''}
       <div style="font-size:12px;line-height:1.7"><span style="color:var(--text-muted)">下次上课</span> ${next.session_date.slice(5).replace('-', '/')}（周${wd[d.getDay()]}）${next.time_range ? ' · ' + escA(next.time_range) : ''} · <b>${escA(next.course_name || '')}</b>${next.session_number ? ' · 第' + next.session_number + '回' : ''}${place ? ' · ' + escA(place) : ''}
-      ${url ? `<a href="${escA(url)}" target="_blank" style="display:inline-block;margin-left:6px;padding:2px 10px;border-radius:3px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);font-size:11px;text-decoration:none">进入课堂</a>` : ''}</div>`;
+      ${url ? `<a href="${escA(url)}" target="_blank" style="display:inline-block;margin-left:6px;padding:2px 10px;border-radius:3px;background:var(--btn-bg,#efe9e1);color:var(--btn-fg,#3a2e24);font-size:11px;text-decoration:none">进入课堂</a>` : (linkLater ? '<span style="margin-left:6px;font-size:11px;color:var(--text-muted)">链接稍后通知</span>' : '')}</div>`;
   }
   // 出席：只算必出席的课（出席 + 迟到 ÷ 已点名的课次，口径同老师端）；选修单独一行；不记出席的课不统计
   const calc = mode => {
