@@ -763,7 +763,7 @@ function tplEditFormHtml(t){
   const detailText=(t.detail_rows||[]).map(r=>`${r.num||''}|${r.title||''}|${r.teacher||''}${r.homework_questions?'|📝':''}`).join('\n');
   return `<div style="border:1px solid var(--accent);border-radius:3px;padding:12px;margin-bottom:6px;background:var(--bg)">
     <div style="font-size:11px;font-weight:600;margin-bottom:8px">✏ 编辑模板</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:8px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(max(150px,19%),1fr));gap:8px;margin-bottom:8px">
       ${fld('te_name','模板/课程名称 *',t.name)}
       ${fld('te_teacher','主讲老师',t.teacher)}
       ${fld('te_weekdays','星期（如 周六）',t.weekdays)}
@@ -1071,7 +1071,7 @@ function renderCoursesSummary(courses){
         ${crvChangeLine(course,sessions)}
         ${acHolidayWarnLine(course,sessions)}
         ${sessions.length
-          ?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:1px;background:var(--border-light)">
+          ?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(max(150px,19%),1fr));gap:1px;background:var(--border-light)">
               ${sessions.map((s,i)=>{
                 const f=fmtSessionDate(s.session_date);
                 const recCount=cachedSessionRecords.filter(r=>r.session_id===s.id&&r.attendance).length;
