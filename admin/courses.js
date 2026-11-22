@@ -1071,7 +1071,7 @@ function renderCoursesSummary(courses){
         ${crvChangeLine(course,sessions)}
         ${acHolidayWarnLine(course,sessions)}
         ${sessions.length
-          ?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:1px;background:var(--border-light)">
+          ?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(max(150px,19%),1fr));gap:1px;background:var(--border-light)">
               ${sessions.map((s,i)=>{
                 const f=fmtSessionDate(s.session_date);
                 const recCount=cachedSessionRecords.filter(r=>r.session_id===s.id&&r.attendance).length;
