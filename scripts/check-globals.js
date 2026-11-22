@@ -5,9 +5,9 @@
 // 用法：node scripts/check-globals.js        （在仓库根目录跑；需要 acorn：npm i -g acorn 或系统里已有）
 const fs = require('fs'), path = require('path');
 let acorn; try { acorn = require('acorn'); } catch (e) { acorn = require('/opt/node-tools/node_modules/acorn'); }
-const root = path.resolve(__dirname, '..');
-const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => e.name === 'node_modules' || e.name === '.git' ? [] : e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
-const htmls = walk(root).filter(f => f.endsWith('.html'));
+const { root, loadPages } = require('./lib/pages');   // 页面 → 脚本 的读取，与 check-ui-hooks.js 共用
+const pages = loadPages();
+const htmls = pages;
 function patternNames(p, out) {
   if (!p) return;
   if (p.type === 'Identifier') out.push(p.name);
@@ -27,18 +27,8 @@ function topDecls(code, label) {
   return out;
 }
 let fatal = 0, warn = 0;
-htmls.forEach(h => {
-  const html = fs.readFileSync(h, 'utf8'), rel = path.relative(root, h);
-  const scripts = [];
-  const re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi; let m, i = 0;
-  while ((m = re.exec(html))) {
-    const attrs = m[1], src = (/src\s*=\s*["']([^"']+)["']/.exec(attrs) || [])[1];
-    if (src) {
-      if (/^https?:/.test(src)) continue;
-      const f = path.resolve(path.dirname(h), src.split('?')[0]);
-      if (fs.existsSync(f)) scripts.push({ label: path.relative(root, f), code: fs.readFileSync(f, 'utf8') });
-    } else if (!/type\s*=\s*["'](?!text\/javascript|module)/i.test(attrs) && m[2].trim()) scripts.push({ label: `${rel}#内联${++i}`, code: m[2] });
-  }
+pages.forEach(pg => {
+  const rel = pg.rel, scripts = pg.scripts;
   const seen = {};   // name -> [{label,kind}]
   scripts.forEach(s => {
     let ds; try { ds = topDecls(s.code, s.label); } catch (e) { console.log(`[解析失败] ${s.label}: ${e.message}`); return; }

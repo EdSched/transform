@@ -1,0 +1,84 @@
+{
+  "_说明": "「必须在」功能清单：用户明确在意、改过很多版本、消失过的功能。每次修好一个「又不见了」的功能，往 items 里加一项。检查类型：define=必须有这些函数定义；call=在 in 函数体里必须调用 fn；id=这个文件里必须有创建该 id 元素的代码；text=这个文件里必须出现这段文字；forbidInFn=这个函数里不许用位置取元素（firstElementChild 等）。",
+  "items": [
+    {
+      "name": "单回明细：按周几 / 回数分配老师",
+      "checks": [
+        {
+          "file": "admin/courses.js",
+          "define": ["acAssignEnsure", "acAssignToggle", "acAssignApply"],
+          "call": [
+            { "in": "openAddCourseModal", "fn": "acAssignEnsure" },
+            { "in": "toggleAcDetails", "fn": "acAssignEnsure" }
+          ],
+          "id": ["ac_assign_btn", "ac_assign_panel"],
+          "text": ["按周几 / 回数分配老师"],
+          "forbidInFn": [
+            { "fn": "acAssignEnsure", "why": "（找按钮容器不能靠「第几个子元素」：单回明细顶上加一行说明，按钮就悄悄不出现了；请按 id 取）" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "单回明细：文本编辑、从 Excel 粘贴",
+      "checks": [
+        { "file": "admin/courses.js", "define": ["acToggleTextMode", "acPasteImport"] },
+        { "file": "admin/index.html", "id": ["ac_text_area", "ac_paste_area"], "text": ["acToggleTextMode()", "acPasteImport()", "文本编辑", "从Excel粘贴"] }
+      ]
+    },
+    {
+      "name": "单回改日期后的确认窗口：交给总务 / 稍后调整另一门 / 改成线上",
+      "checks": [
+        {
+          "file": "shared/session-room-confirm.js",
+          "define": ["srmCoordWrite", "srmOpen", "srmAutoOpen"],
+          "call": [
+            { "in": "srmAutoOpen", "fn": "srmCoordWrite" },
+            { "in": "srmOpen", "fn": "srmCoordWrite" }
+          ],
+          "text": ["window.__srmLater", "改成线上", "__srmOnlineToggle"]
+        }
+      ]
+    },
+    {
+      "name": "课程卡片单回格子：撤回、⇄ 调整日期、休讲撤回",
+      "checks": [
+        {
+          "file": "admin/courses.js",
+          "define": ["revertSessionMove", "openReschedule", "undoCancelSession"],
+          "text": ["onclick=\"revertSessionMove(", "onclick=\"openReschedule(", "onclick=\"undoCancelSession(", "撤回休讲", "改回原来的日期、时间"]
+        }
+      ]
+    },
+    {
+      "name": "排课系统：同步检查页（含「去排教室」）",
+      "checks": [{ "file": "sched/index.html", "text": ["同步检查", "去排教室"] }]
+    },
+    {
+      "name": "排课系统：回数审查（记录调整 / 不用处理）",
+      "checks": [{ "file": "sched/index.html", "text": ["记录调整", "不用处理"] }]
+    },
+    {
+      "name": "排课系统：全局假期区块",
+      "checks": [{ "file": "sched/index.html", "define": ["cmHolRender"], "call": [{ "in": "cmHolRender", "fn": "cmHolRender" }], "id": ["cm_holToggle"] }]
+    },
+    {
+      "name": "排课系统：课程管理的未开课 / 已开课筛选",
+      "checks": [{ "file": "sched/index.html", "id": ["cf_open"], "text": ["未开课", "已开课"] }]
+    },
+    {
+      "name": "学生端：志望理由书按范围取指导",
+      "checks": [
+        { "file": "shared/riyu.js", "define": ["riyuLoadGuideFor"] },
+        { "file": "student/study.js", "text": ["riyuLoadGuideFor("] }
+      ]
+    },
+    {
+      "name": "学生端：出愿材料按学生取清单",
+      "checks": [
+        { "file": "shared/materials.js", "define": ["matItemsFor"] },
+        { "file": "student/study.js", "text": ["matItemsFor("] }
+      ]
+    }
+  ]
+}
