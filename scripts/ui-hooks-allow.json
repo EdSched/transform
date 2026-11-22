@@ -1,0 +1,14 @@
+{
+  "_说明": "check-ui-hooks.js 的放行名单。每一项必须写原因；没命中任何问题的放行项会被提醒「可以删了」。不要为了让检查通过而往里加：先确认是真的不需要，而不是真的缺。",
+  "builtinHandlers": [],
+  "functions": {
+    "pgExamOpen": "shared/progress-card.js 里「改路线」按钮：只有 o.canEditRoute 才渲染，而这个选项只有管理端学生档案（admin/students.js）会传；老师端 / 学生端永远不会出现这个按钮。函数定义在 admin/students.js。",
+    "gsAdd": "shared/progress-card.js 里「保录学校 添加」按钮：只有 o.guaranteedEdit 才渲染，只有管理端（admin/students.js）会传；函数定义在 admin/students.js。",
+    "toggleSelectAllStudents": "shared/student-table.js 的全选框：只有 admin 模式（mode:'admin'）且 select:true 才渲染，只有管理端学生表会开；函数定义在 admin/students.js。老师端加载了 student-table.js 但不会走到这个分支。"
+  },
+  "ids": {
+    "x": "shared/search.js 第 5 行是注释里的用法示例（bindSearch(document.getElementById('x'), …)），不是真代码。",
+    "teacherManagerModal": "admin/admin.js 的 openTeacherManager() 已经没有任何地方调用（全仓库只有定义），属死代码；元素本来就不存在。",
+    "cleanup_count2": "admin/courses.js 里 const c2=getElementById('cleanup_count2') 后面是 if(c2) 才用，页面里没有这个元素时直接跳过，属遗留的可选元素，不影响功能。"
+  }
+}
