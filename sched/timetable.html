@@ -488,7 +488,7 @@ async function buildAdjustText(){
     });
     movedS.forEach(x=>{ const t=timeOf(x); items.push({date:x.session_date, text:'第 '+(x.session_number||'?')+' 回：'+_ttMDW(x.orig_date)+' → '+_ttMDW(x.session_date)+(t?' '+t:'')}); });
     mine.filter(x=>fixedSet.has(x.session_date) && !movedSet.has(x) && timeOf(x)).forEach(x=>items.push({date:x.session_date, text:'第 '+(x.session_number||'?')+' 回 '+_ttMDW(x.session_date)+'改为 '+timeOf(x)}));
-    mine.filter(x=>x.delivery_set&&x.delivery==='线上').forEach(x=>items.push({date:x.session_date, text:'第 '+(x.session_number||'?')+' 回 '+_ttMDW(x.session_date)+'改成线上'+(x.meeting_url?'（自备链接：'+x.meeting_url+'）':'')}));
+    mine.filter(x=>x.delivery_set&&x.delivery==='线上').forEach(x=>items.push({date:x.session_date, text:'第 '+(x.session_number||'?')+' 回 '+_ttMDW(x.session_date)+'改成线上'+(x.meeting_url?'（自备链接：'+x.meeting_url+'）':(x.meeting_url===''?'（链接稍后通知）':''))}));
     if(CRV.loaded) mine.forEach(x=>{ const st=crvSessionState(c.id, x, {delivery:c.mode}); if(st.kind==='moved') items.push({date:x.session_date, text:_ttMDW(x.session_date)+'改在 '+st.label}); });
   });
   return Object.keys(byName).map(n=>({n, items:byName[n].sort((a,b)=>a.date.localeCompare(b.date)||a.text.localeCompare(b.text))})).filter(g=>g.items.length)

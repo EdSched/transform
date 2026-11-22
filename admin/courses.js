@@ -884,6 +884,7 @@ function renderCoursesPage(mc){
   loadSchedEdits();
   loadCourseRooms();
   setTimeout(loadRoomCoordBox,0);
+  setTimeout(renderOnlineLinkBox,0);
   setTimeout(loadCourseReviewBox,0);
   // 专业钥匙锁定：强制默认选中锁定的专业（用户不能改）
   if(CURRENT_MAJOR) coursesMajorFilter=CURRENT_MAJOR;
@@ -952,6 +953,7 @@ function renderCoursesPage(mc){
   <div id="courseFocusBox">${acFocusNoteHtml()}</div>
   <div id="courseReviewBox"></div>
   <div id="roomCoordBox"></div>
+  <div id="onlineLinkBox"></div>
   <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap">
     <div>
       <div style="font-size:10px;color:var(--text-3);letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">课程属性</div>
@@ -3177,8 +3179,36 @@ function csOrigTag(s,course){
 // 这一回单独改成线上：格子里的小标签（有自备链接的悬停显示链接）
 function csOnlineTag(s){
   if(typeof solIsOnline!=='function'||!solIsOnline(s)) return '';
+  if(solNeedLink(s)) return `<span title="还没有会议链接，点「补链接」填写" style="font-size:9px;color:#c0392b;white-space:nowrap;border:1px solid #e8b4ac;border-radius:2px;padding:0 3px;font-weight:600">线上 · 待补链接</span><button onclick="csFillLink('${s.id}')" style="font-size:9px;background:none;border:none;cursor:pointer;color:#c0392b;padding:0;line-height:1;text-decoration:underline">补链接</button>`;
   const tip=s.meeting_url?'自备链接：'+s.meeting_url:'这一回改成线上';
   return `<span title="${ccEsc(tip)}" style="font-size:9px;color:#2a6fb0;white-space:nowrap;border:1px solid #b9d3ee;border-radius:2px;padding:0 3px">线上</span>`;
+}
+// 补链接：弹一个小输入框，填 http 链接后保存；填完标签变回「线上」，顶部提醒消失
+function csFillLink(sessionId){
+  const s=cachedSessions.find(x=>x.id===sessionId); if(!s) return;
+  const ov=ccOverlay('csLinkOv'), e=ccEsc;
+  ov.innerHTML=`<div style="${CC_BOX}"><div style="padding:14px 18px;border-bottom:1px solid var(--border,#e2ded6);font-size:15px;font-weight:600">补会议链接：${e(s.course_name||'')} 第 ${e(s.session_number||'?')} 回 ${e(ccMD(s.session_date))}</div>
+    <div style="padding:12px 18px"><input id="csLinkIn" type="text" placeholder="https://meeting.tencent.com/…" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--border,#e2ded6);border-radius:6px"><div id="csLinkErr" style="color:#a33;font-size:12px;margin-top:4px;min-height:16px"></div></div>
+    <div style="padding:10px 18px;border-top:1px solid var(--border,#e2ded6);display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline btn-sm" id="csLinkNo" style="padding:6px 16px;cursor:pointer">取消</button><button type="button" class="btn btn-primary btn-sm" id="csLinkOk" style="padding:6px 16px;cursor:pointer">保存</button></div></div>`;
+  ov.querySelector('#csLinkNo').onclick=()=>ov.remove();
+  ov.querySelector('#csLinkOk').onclick=async()=>{
+    const v=ov.querySelector('#csLinkIn').value.trim();
+    if(!solLinkOk(v)){ ov.querySelector('#csLinkErr').textContent='链接要以 http 开头'; return; }
+    try{ s.meeting_url=await solSetLink(s,v); ov.remove(); renderCoursesPage(document.getElementById('mainContent')); }
+    catch(er){ ov.querySelector('#csLinkErr').textContent='保存失败：'+er.message; }
+  };
+  setTimeout(()=>{ const i=ov.querySelector('#csLinkIn'); if(i) i.focus(); },0);
+}
+// 课程安排页顶部：线上但还没填链接的回次，一行一条；距离上课 ≤ 2 天的排前面并加深；点一下跳到那门课
+function renderOnlineLinkBox(){
+  const box=document.getElementById('onlineLinkBox'); if(!box) return;
+  const today=localDateStr(), dayN=d=>Math.round((new Date(d+'T12:00:00')-new Date(today+'T12:00:00'))/86400000);
+  const list=cachedSessions.filter(s=>!s.is_cancelled&&s.session_date>=today&&solNeedLink(s))
+    .sort((a,b)=>(dayN(a.session_date)<=2?0:1)-(dayN(b.session_date)<=2?0:1)||a.session_date.localeCompare(b.session_date));
+  if(!list.length){ box.innerHTML=''; return; }
+  const row=s=>{ const urgent=dayN(s.session_date)<=2, c=cachedCourses.find(x=>x.id===s.course_id)||{};
+    return `<div onclick="acFocusCourse('${s.course_id}')" style="cursor:pointer;padding:2px 0;${urgent?'color:#a02010;font-weight:600':''}">《${ccEsc(s.course_name||c.name||'')}》第 ${ccEsc(s.session_number||'?')} 回 ${ccEsc(ccMD(s.session_date))} 线上，还没有会议链接${urgent?'（快上课了）':''}</div>`; };
+  box.innerHTML=`<div style="border:1px solid #e8b4ac;border-radius:6px;padding:8px 12px;margin-bottom:12px;background:#fdf1ee;font-size:12px"><div style="color:#a02010;margin-bottom:2px">还没有会议链接的线上课（${list.length}）　点一行跳到那门课，在格子里点「补链接」</div>${list.slice(0,5).map(row).join('')}${list.length>5?`<details><summary style="cursor:pointer;color:var(--text-3)">显示更多（还有 ${list.length-5} 回）</summary>${list.slice(5).map(row).join('')}</details>`:''}</div>`;
 }
 // 撤回线上：改回课程原来的上课方式，清链接 / 会议账号占用，然后重新检查教室
 async function revertSessionOnline(sessionId){
@@ -4229,6 +4259,7 @@ function wnGenerate(){
       const st=(s.session_title||'').trim();
       text+=`${s.time_range||c.time_range||''} ${s.course_name||c.name||''}${st?'（'+st+'）':''}${dv?' '+dv:''}\n`;
       if(onl&&s.meeting_url) text+=`${s.meeting_url}\n`;
+      else if(onl&&s.meeting_url==='') text+='会议链接稍后通知\n';
       else if(c.meeting_url) text+=`${c.meeting_url}\n`;
       const campus=s.campus||c.campus||'';
       const isOffline=(s.delivery||c.delivery||'').includes('线下');
@@ -5504,7 +5535,7 @@ function crvChangeLine(course, sessions) {
   return `<div style="padding:3px 14px;font-size:10px;background:#fff7ec;color:#a05a00;border-bottom:1px solid var(--border-light)">教室变动：${list.map(x => `${ccEsc(crvMDW(x.session.session_date))}${x.kind === 'moved' ? '→ ' + ccEsc(x.label) : '<span style="color:#c0392b">⚠ 未排教室</span>'}`).join('；')}</div>`;
 }
 function crvSessLine(course, s) {
-  if (typeof solIsOnline === 'function' && solIsOnline(s)) return `<div style="font-size:9px;color:#2a6fb0;margin-top:1px">改成线上${s.meeting_url ? '（自备链接）' : ''}</div>`;
+  if (typeof solIsOnline === 'function' && solIsOnline(s)) return `<div style="font-size:9px;color:#2a6fb0;margin-top:1px">${solNeedLink(s) ? '线上 · 待补链接' : '改成线上' + (s.meeting_url ? '（自备链接）' : '')}</div>`;
   if (typeof crvSessionState !== 'function' || !CRV.loaded) return '';
   const st = crvSessionState(s.course_id || course.id, s, course);
   if (st.kind === 'moved') return `<div style="font-size:9px;color:#d9822b;margin-top:1px">→ ${ccEsc(st.label)}</div>`;

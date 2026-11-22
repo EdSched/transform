@@ -351,7 +351,8 @@ async function srmOpen(opts) {
     window.__srmOnlineMode = (i, v) => { const r = rows[i]; r.sol.mode = v; draw(); if (v === 'acct' && !r.sol.rows) loadAcct(r); };
     window.__srmOnlineUrl = (i, v) => {
       const r = rows[i]; r.sol.url = v;
-      const b = document.getElementById('solOk' + i); if (b) b.disabled = !solLinkOk(v);
+      const b = document.getElementById('solOk' + i); if (b) b.disabled = !solLinkValid(v);
+      const h = document.getElementById('solHint' + i); if (h) h.style.display = solLinkValid(v) ? 'none' : 'block';
     };
     window.__srmOnlineAcct = (i, id) => { rows[i].sol.acct = id; draw(); };
     window.__srmOnlineGo = async i => {
@@ -360,8 +361,8 @@ async function srmOpen(opts) {
       if (!r.ses) { err = '找不到这一回的单回数据，请刷新页面后再试'; draw(); return; }
       const acct = S.mode === 'acct' ? ((S.rows || []).map(x => x.room).find(x => String(x.id) === String(S.acct)) || null) : null;
       if (S.mode === 'acct' && !acct) return;
-      if (S.mode === 'link' && !solLinkOk(S.url)) return;
-      const how = S.mode === 'acct' ? `会议账号 ${acct.name}` : '自备链接';
+      if (S.mode === 'link' && !solLinkValid(S.url)) return;
+      const how = S.mode === 'acct' ? `会议账号 ${acct.name}` : (S.url.trim() ? '自备链接' : '自备链接，之后补');
       if (!confirm(`第 ${r.ch.num || '?'} 回 ${ccMD(t.date)} 改成线上（${how}）；原来占的教室会释放`)) return;
       S.busy = true; err = ''; draw();
       try {
@@ -402,12 +403,12 @@ async function srmOpen(opts) {
         const laterBtn = hasBlock ? `<button type="button" class="btn btn-outline btn-sm" style="padding:2px 10px;cursor:pointer;white-space:nowrap" onclick="__srmLater(${i})">稍后调整另一门</button>` : '';
         const onlineBtn = pr.length && r.ses ? `<button type="button" class="btn btn-outline btn-sm" style="padding:2px 10px;cursor:pointer;white-space:nowrap" onclick="__srmOnlineToggle(${i})">${r.sol.open ? '收起线上' : '改成线上'}</button>` : '';
         const S = r.sol;
-        const okOn = S.mode === 'acct' ? !!S.acct : solLinkOk(S.url);
+        const okOn = S.mode === 'acct' ? !!S.acct : solLinkValid(S.url);
         const onlinePanel = pr.length && r.ses && S.open ? `<div style="margin-top:8px;padding:8px 10px;border:1px solid var(--border,#e2ded6);border-radius:6px;background:#faf8f3">
           <div style="font-size:12px;color:#888;margin-bottom:4px">只改这一回，课程和别的回不变</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px">线上方式</span><select onchange="__srmOnlineMode(${i},this.value)" style="padding:4px 8px;border:1px solid var(--border,#e2ded6);border-radius:6px"><option value="link"${S.mode === 'link' ? ' selected' : ''}>自备腾讯会议链接</option><option value="acct"${S.mode === 'acct' ? ' selected' : ''}>占用一个会议账号</option></select></div>
           ${S.mode === 'link'
-            ? `<input type="text" value="${e(S.url)}" oninput="__srmOnlineUrl(${i},this.value)" placeholder="https://meeting.tencent.com/…" style="width:100%;box-sizing:border-box;margin-top:6px;padding:6px 8px;border:1px solid var(--border,#e2ded6);border-radius:6px"><div style="font-size:11px;color:#888;margin-top:2px">必填，以 http 开头。不占教室，也不占会议账号。</div>`
+            ? `<input type="text" value="${e(S.url)}" oninput="__srmOnlineUrl(${i},this.value)" placeholder="https://meeting.tencent.com/…" style="width:100%;box-sizing:border-box;margin-top:6px;padding:6px 8px;border:1px solid var(--border,#e2ded6);border-radius:6px"><div style="font-size:11px;color:#888;margin-top:2px">可以先不填，之后在课程安排里补。填了要以 http 开头。不占教室，也不占会议账号。</div><div id="solHint${i}" style="font-size:11px;color:#a33;margin-top:2px;display:${solLinkValid(S.url) ? 'none' : 'block'}">链接格式不对，要以 http 开头</div>`
             : `<div style="font-size:12px;color:#888;margin-top:6px">${e(srmMDW(t.date))}${e(r.sp.start)}-${e(r.sp.end)} 各会议账号（点一个空着的）：</div><div class="srmAcct" data-i="${i}">${S.rows ? solAcctHtml(S.rows, S.acct) : (S.rowsErr ? '<span style="color:#a33;font-size:12px">会议账号读取失败</span>' : '<span style="color:#888;font-size:12px">读取中…</span>')}</div>`}
           <div style="margin-top:8px;text-align:right"><button type="button" id="solOk${i}" class="btn btn-primary btn-sm" style="padding:4px 14px;cursor:pointer" ${okOn && !S.busy ? '' : 'disabled'} onclick="__srmOnlineGo(${i})">${S.busy ? '保存中…' : '确认改成线上'}</button></div></div>` : '';
         const btn = pr.length ? `<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">${onlineBtn}${notified.has(r.key) ? '<span style="color:#2a7a3a;white-space:nowrap">已交给总务 ✓</span>' : `<button type="button" class="btn btn-outline btn-sm" style="padding:2px 10px;cursor:pointer;white-space:nowrap" onclick="__srmNotify(${i})">交给总务</button>`}${laterBtn}</div>` : '';

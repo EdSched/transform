@@ -463,7 +463,8 @@ async function init() {
       ...s,
       course_type: courseMap[s.course_id]?.course_type || '',
       campus: s.campus || courseMap[s.course_id]?.campus || '',
-      meeting_url: (s.delivery_set && s.meeting_url) ? s.meeting_url : (courseMap[s.course_id]?.meeting_url || ''),   // 这一回单独改成线上、有自备链接：用这一回的
+      link_later: !!(s.delivery_set && s.delivery === '线上' && s.meeting_url === ''),
+      meeting_url: (s.delivery_set && s.meeting_url != null) ? s.meeting_url : (courseMap[s.course_id]?.meeting_url || ''),   // 改成线上的回：用这一回的（'' = 链接还没填，不回退到课程的链接）   // 这一回单独改成线上、有自备链接：用这一回的
       host_key: courseMap[s.course_id]?.host_key || '',
       needs_recording: courseMap[s.course_id]?.needs_recording || false,
     })).sort((a, b) => a.session_date.localeCompare(b.session_date));
@@ -2416,6 +2417,7 @@ function renderMySessionRow(s) {
     <div id="${rowId}" style="display:none;padding:0 14px 14px 72px">
       <div style="background:var(--bg);border:1px solid var(--border-light);border-radius:3px;padding:10px 12px;font-size:11px;color:var(--text-2);line-height:1.9">
         <div>📍 上课地点：${locationText}</div>
+        ${s.link_later ? '<div>🎥 腾讯会议：链接稍后通知</div>' : ''}
         ${s.meeting_url ? `<div>🎥 腾讯会议：<a href="${s.meeting_url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent)">${s.meeting_url}</a></div>` : ''}
         ${s.host_key ? `<div>🔑 主持人密钥：<span style="font-weight:600;font-family:'DM Mono',monospace">${s.host_key}</span></div>` : ''}
         <div>📹 是否需要录制：${s.needs_recording ? '<span style="color:#856404;font-weight:600">是</span>' : '否'}</div>
