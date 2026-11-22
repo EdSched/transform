@@ -164,7 +164,7 @@ html.shareview #calBody:empty::after{ content:'课表加载中…'; color:#9a959
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="common.js?v=20270428"></script>
 <script src="../shared/search.js?v=20261029"></script>
-<script src="../shared/course-room-view.js?v=20261113"></script>
+<script src="../shared/course-room-view.js?v=20270429"></script>
 <script>
 el('nav').innerHTML = renderNav('timetable.html');
 pageRole().then(r=>{ if(r) el('nav').innerHTML = renderNav('timetable.html', r); }).catch(()=>{});
@@ -458,7 +458,10 @@ const _ttMDW=d=>fmtMD(d)+'（'+DOW[dowIdx(d)].slice(1)+'）';
 async function buildAdjustText(){
   const list=selectedCourses(); if(!list.length) return '';
   const ids=list.map(c=>String(c.id)), sess=[];
-  for(let i=0;i<ids.length;i+=40) sess.push(...await sbGet('course_sessions','select=course_id,session_date,time_range,is_cancelled,session_number,orig_date,orig_time_range&course_id=in.('+ids.slice(i,i+40).map(encodeURIComponent).join(',')+')'));
+  for(let i=0;i<ids.length;i+=40){
+    const q='&course_id=in.('+ids.slice(i,i+40).map(encodeURIComponent).join(',')+')', base='select=course_id,session_date,time_range,is_cancelled,session_number,orig_date,orig_time_range';
+    sess.push(...await sbGet('course_sessions',base+',delivery,delivery_set,meeting_url'+q).catch(()=>sbGet('course_sessions',base+q)));
+  }
   // 教室：和课程安排同一套算法
   try{
     const [bks, rooms] = await Promise.all([ sbGet('sched_bookings','select=id,course_id,room_id,recurrence,weekday,booking_date,manual_off_dates,status&kind=eq.course'), sbGet('sched_rooms','select=id,name,campus') ]);
@@ -485,6 +488,7 @@ async function buildAdjustText(){
     });
     movedS.forEach(x=>{ const t=timeOf(x); items.push({date:x.session_date, text:'第 '+(x.session_number||'?')+' 回：'+_ttMDW(x.orig_date)+' → '+_ttMDW(x.session_date)+(t?' '+t:'')}); });
     mine.filter(x=>fixedSet.has(x.session_date) && !movedSet.has(x) && timeOf(x)).forEach(x=>items.push({date:x.session_date, text:'第 '+(x.session_number||'?')+' 回 '+_ttMDW(x.session_date)+'改为 '+timeOf(x)}));
+    mine.filter(x=>x.delivery_set&&x.delivery==='线上').forEach(x=>items.push({date:x.session_date, text:'第 '+(x.session_number||'?')+' 回 '+_ttMDW(x.session_date)+'改成线上'+(x.meeting_url?'（自备链接：'+x.meeting_url+'）':'')}));
     if(CRV.loaded) mine.forEach(x=>{ const st=crvSessionState(c.id, x, {delivery:c.mode}); if(st.kind==='moved') items.push({date:x.session_date, text:_ttMDW(x.session_date)+'改在 '+st.label}); });
   });
   return Object.keys(byName).map(n=>({n, items:byName[n].sort((a,b)=>a.date.localeCompare(b.date)||a.text.localeCompare(b.text))})).filter(g=>g.items.length)

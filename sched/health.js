@@ -28,6 +28,7 @@ function hcCheck(o){
     const e = L[cid]; if(!e || !e.days) return;
     const mine = cbks.filter(b => String(b.course_id) === cid);
     [...e.days.keys()].filter(d => d >= today).sort().forEach(d => {
+      if(e.online && e.online.has(d)) return;   // 这一回单独改成线上：不需要教室
       if(!mine.some(b => bookingOnDate(b, d))) out.uncovered.push({ cid, date:d, time:e.days.get(d) });
     });
   });

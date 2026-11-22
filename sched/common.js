@@ -807,15 +807,19 @@ async function loadCourseLink(lo, hi){
   hi = hi || addDays(todayStr(), 400);
   const link = {};
   try{
+    const sesQ = '&session_date=gte.'+lo+'&session_date=lte.'+hi+'&order=course_id.asc,session_date.asc';
     const [cs, ss] = await Promise.all([
       sbGet('sched_course_v', 'select=id,start_time,end_time,weekdays,start_date,end_date,skip_dates'),
-      sbGet('course_sessions', 'select=course_id,session_date,time_range,is_cancelled&session_date=gte.'+lo+'&session_date=lte.'+hi+'&order=course_id.asc,session_date.asc')
+      // delivery / delivery_set：这一回单独改成线上的（列还没建好时退回不带）
+      sbGet('course_sessions', 'select=course_id,session_date,time_range,is_cancelled,delivery,delivery_set'+sesQ)
+        .catch(()=>sbGet('course_sessions', 'select=course_id,session_date,time_range,is_cancelled'+sesQ))
     ]);
     const cmap = {}; cs.forEach(c=>{ cmap[String(c.id)] = c; });
     ss.forEach(x=>{
       if(x.is_cancelled) return;
       const id = String(x.course_id), c = cmap[id]; if(!c) return;
-      const e = link[id] || (link[id] = { course:c, days:new Map() });
+      const e = link[id] || (link[id] = { course:c, days:new Map(), online:new Set() });
+      if(x.delivery_set && x.delivery==='线上') e.online.add(x.session_date);   // 这一回单独改成线上：不需要教室
       // 同一天好几回：取最早开始～最晚结束（和 crvSessionAwareBks / 数据库触发器一致）
       const rg = _clkRange(x.time_range, c), old = e.days.get(x.session_date);
       e.days.set(x.session_date, old ? [ old[0] < rg[0] ? old[0] : rg[0], old[1] > rg[1] ? old[1] : rg[1] ] : rg);

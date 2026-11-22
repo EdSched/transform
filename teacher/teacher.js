@@ -463,7 +463,7 @@ async function init() {
       ...s,
       course_type: courseMap[s.course_id]?.course_type || '',
       campus: s.campus || courseMap[s.course_id]?.campus || '',
-      meeting_url: courseMap[s.course_id]?.meeting_url || '',
+      meeting_url: (s.delivery_set && s.meeting_url) ? s.meeting_url : (courseMap[s.course_id]?.meeting_url || ''),   // 这一回单独改成线上、有自备链接：用这一回的
       host_key: courseMap[s.course_id]?.host_key || '',
       needs_recording: courseMap[s.course_id]?.needs_recording || false,
     })).sort((a, b) => a.session_date.localeCompare(b.session_date));

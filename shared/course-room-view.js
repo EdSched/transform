@@ -66,6 +66,7 @@ function crvRoomOn(courseId, session) {
 }
 // 某回相对固定教室的状态：'' 一样 / 'moved' 换了 / 'none' 没教室
 function crvSessionState(courseId, session, course) {
+  if (session && session.delivery_set && session.delivery === '线上') return { kind: '' };   // 这一回单独改成线上：不需要教室
   const r = crvRoomOn(courseId, session);
   if (r.cancelled) return { kind: '' };
   const has = crvWeekly(courseId).length > 0;

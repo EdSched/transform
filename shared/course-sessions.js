@@ -62,8 +62,9 @@ async function csRegen(co, sessions, opts, warnings, courseId) {
       if (s.session_date !== r.date) { patch.session_date = r.date; moved++; }
       if (s.session_number !== r.num) patch.session_number = r.num;
       if (s.course_name !== co.name) patch.course_name = co.name;
-      if ((s.delivery || null) !== (co.delivery || null)) patch.delivery = co.delivery;
-      if ((s.campus || null) !== (co.campus || null)) patch.campus = co.campus;
+      // 这一回单独改成线上（delivery_set）的，不跟课程走
+      if (!s.delivery_set && (s.delivery || null) !== (co.delivery || null)) patch.delivery = co.delivery;
+      if (!s.delivery_set && (s.campus || null) !== (co.campus || null)) patch.campus = co.campus;
       // 上课时间：没单独设过的回次（空，或和改之前的课程一样）跟着课程走；单独设过的不动
       if ((s.time_range || '') !== (co.time_range || '') && (!s.time_range || oldTr === null || s.time_range === oldTr)) patch.time_range = co.time_range;
       if (Object.keys(patch).length) await csPatch('course_sessions', s.id, patch);
@@ -97,8 +98,8 @@ async function courseSyncSessionFields(co, sessions, old) {
   for (const s of sessions) {
     const patch = {};
     if (s.course_name !== co.name) patch.course_name = co.name;
-    if ((s.delivery || null) !== (co.delivery || null)) patch.delivery = co.delivery;
-    if ((s.campus || null) !== (co.campus || null)) patch.campus = co.campus;
+    if (!s.delivery_set && (s.delivery || null) !== (co.delivery || null)) patch.delivery = co.delivery;
+    if (!s.delivery_set && (s.campus || null) !== (co.campus || null)) patch.campus = co.campus;
     if ((s.time_range || '') !== (co.time_range || '') && (!s.time_range || oldTr === null || s.time_range === oldTr)) patch.time_range = co.time_range;
     if (Object.keys(patch).length) await csPatch('course_sessions', s.id, patch);
   }

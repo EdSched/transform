@@ -1094,10 +1094,11 @@ function renderCoursesSummary(courses){
                     <div style="display:flex;align-items:baseline;gap:4px">
                       <span style="font-size:13px;font-weight:600">${f.short}</span>
                       <span style="font-size:10px;font-weight:500;color:${f.dowColor}">${f.dow}</span>
-                      ${csOrigTag(s,course)}
+                      ${csOrigTag(s,course)}${csOnlineTag(s)}
                     </div>
                     <span style="display:flex;gap:5px;align-items:baseline">
                     ${s.orig_date?`<button onclick="revertSessionMove('${s.id}')" title="改回原来的日期、时间" style="font-size:9px;background:none;border:none;cursor:pointer;color:#b07020;padding:0;line-height:1">撤回</button><button onclick="openReschedule('${s.id}','move')" title="再调整到别的日期" style="font-size:9px;background:none;border:none;cursor:pointer;color:#b07020;padding:0;line-height:1">再调整</button>`:''}
+                    ${(typeof solIsOnline==='function'&&solIsOnline(s))?`<button onclick="revertSessionOnline('${s.id}')" title="这一回改回课程原来的上课方式" style="font-size:9px;background:none;border:none;cursor:pointer;color:#b07020;padding:0;line-height:1">撤回线上</button>`:''}
                     <button onclick="openReschedule('${s.id}')" title="调整日期" style="font-size:9px;background:none;border:none;cursor:pointer;color:var(--text-3);padding:0;line-height:1">⇄</button>
                     </span>
                   </div>
@@ -2525,6 +2526,7 @@ async function saveAddCourse(){
           confirmed,
         };
         if(tv!==undefined){ patchCommon.teacher=tv; patchCommon.session_teacher=tv; }   // 多人课关着单回明细：老师不动
+        if(r.id&&existingMap[r.id]&&existingMap[r.id].delivery_set){ delete patchCommon.delivery; delete patchCommon.campus; }   // 这一回单独改成线上：不跟课程走
         if(hasDetails && !isCancelled && r.id && existingMap[r.id] && oldInfoById[r.id] && !oldInfoById[r.id].cancelled){
           // 改了某一回的日期 / 时间：记下原来的（orig_* 为空才写）；课程整体改时间、跟着课程走的不算
           const o=oldInfoById[r.id], oTime=o.time||oldCourseTime, nTime=r.time_range||courseData.time_range||'';
@@ -3171,6 +3173,27 @@ function csOrigTag(s,course){
   const txt=sameDay?`（原 ${ccMD(s.orig_date)} ${s.orig_time_range||''}）`:`（原 ${ccMD(s.orig_date)}）`;
   const tip=[`原 ${ccMD(s.orig_date)}${s.orig_time_range?' '+s.orig_time_range:''}`, s.change_reason?'原因：'+s.change_reason:'', s.changed_by?'修改人：'+s.changed_by:'', s.changed_at?'时间：'+String(s.changed_at).slice(0,16).replace('T',' '):''].filter(Boolean).join('\n');
   return `<span title="${ccEsc(tip)}" style="font-size:9px;color:#d9822b;white-space:nowrap">${ccEsc(txt)}</span>`;
+}
+// 这一回单独改成线上：格子里的小标签（有自备链接的悬停显示链接）
+function csOnlineTag(s){
+  if(typeof solIsOnline!=='function'||!solIsOnline(s)) return '';
+  const tip=s.meeting_url?'自备链接：'+s.meeting_url:'这一回改成线上';
+  return `<span title="${ccEsc(tip)}" style="font-size:9px;color:#2a6fb0;white-space:nowrap;border:1px solid #b9d3ee;border-radius:2px;padding:0 3px">线上</span>`;
+}
+// 撤回线上：改回课程原来的上课方式，清链接 / 会议账号占用，然后重新检查教室
+async function revertSessionOnline(sessionId){
+  const s=cachedSessions.find(x=>x.id===sessionId); if(!s||!solIsOnline(s)){ alert('这一回没有单独改成线上'); return; }
+  const course=cachedCourses.find(c=>c.id===s.course_id)||{};
+  if(!confirm(`第 ${s.session_number||'?'} 回 ${ccMD(s.session_date)} 撤回线上，改回课程原来的上课方式？\n自备链接 / 会议账号占用会清掉，然后重新检查教室。`)) return;
+  try{
+    await solRevertOnline({ course, session:s, who:csWho(), ackAdmin:true });
+    Object.assign(s,{ delivery:course.delivery||null, campus:course.campus||null, delivery_set:false, meeting_url:null });
+    renderCoursesPage(document.getElementById('mainContent'));
+    const tm=s.time_range||course.time_range||'';
+    try{ await srmOpen({ course, sessions:cachedSessions.filter(x=>x.course_id===s.course_id),
+      changes:[{ id:s.id, num:s.session_number, from:null, to:{ date:s.session_date, time:tm, cancelled:false } }] }); }
+    catch(e){ console.warn('教室确认弹框失败', e); }
+  }catch(e){ alert('撤回失败：'+e.message); }
 }
 // 记「原来的日子」：orig_date 还是空才写（永远记最早的）；改回原样就清空
 const CS_ORIG_CLEAR={ orig_date:null, orig_time_range:null, change_reason:null, changed_by:null, changed_at:null };
@@ -4201,10 +4224,12 @@ function wnGenerate(){
         curDate=s.session_date;
         text+=`${dLabel(curDate)}\n`;
       }
+      const onl=s.delivery_set&&s.delivery==='线上';
       const dv=dvLabel(s.delivery||c.delivery);
       const st=(s.session_title||'').trim();
       text+=`${s.time_range||c.time_range||''} ${s.course_name||c.name||''}${st?'（'+st+'）':''}${dv?' '+dv:''}\n`;
-      if(c.meeting_url) text+=`${c.meeting_url}\n`;
+      if(onl&&s.meeting_url) text+=`${s.meeting_url}\n`;
+      else if(c.meeting_url) text+=`${c.meeting_url}\n`;
       const campus=s.campus||c.campus||'';
       const isOffline=(s.delivery||c.delivery||'').includes('线下');
       if(isOffline&&campus) text+=`线下教室：${campus}\n`;
@@ -5479,6 +5504,7 @@ function crvChangeLine(course, sessions) {
   return `<div style="padding:3px 14px;font-size:10px;background:#fff7ec;color:#a05a00;border-bottom:1px solid var(--border-light)">教室变动：${list.map(x => `${ccEsc(crvMDW(x.session.session_date))}${x.kind === 'moved' ? '→ ' + ccEsc(x.label) : '<span style="color:#c0392b">⚠ 未排教室</span>'}`).join('；')}</div>`;
 }
 function crvSessLine(course, s) {
+  if (typeof solIsOnline === 'function' && solIsOnline(s)) return `<div style="font-size:9px;color:#2a6fb0;margin-top:1px">改成线上${s.meeting_url ? '（自备链接）' : ''}</div>`;
   if (typeof crvSessionState !== 'function' || !CRV.loaded) return '';
   const st = crvSessionState(s.course_id || course.id, s, course);
   if (st.kind === 'moved') return `<div style="font-size:9px;color:#d9822b;margin-top:1px">→ ${ccEsc(st.label)}</div>`;
