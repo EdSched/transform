@@ -3187,13 +3187,13 @@ function csFillLink(sessionId){
   const s=cachedSessions.find(x=>x.id===sessionId); if(!s) return;
   const ov=ccOverlay('csLinkOv'), e=ccEsc;
   ov.innerHTML=`<div style="${CC_BOX}"><div style="padding:14px 18px;border-bottom:1px solid var(--border,#e2ded6);font-size:15px;font-weight:600">补会议链接：${e(s.course_name||'')} 第 ${e(s.session_number||'?')} 回 ${e(ccMD(s.session_date))}</div>
-    <div style="padding:12px 18px"><input id="csLinkIn" type="text" placeholder="https://meeting.tencent.com/…" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--border,#e2ded6);border-radius:6px"><div id="csLinkErr" style="color:#a33;font-size:12px;margin-top:4px;min-height:16px"></div></div>
+    <div style="padding:12px 18px"><input id="csLinkIn" type="text" value="${e(s.meeting_url||'')}" placeholder="https://meeting.tencent.com/…" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--border,#e2ded6);border-radius:6px"><div style="font-size:12px;color:#888;margin:8px 0 3px">主持人密钥（可不填，只有老师能看到，只用于这一回）</div><input id="csHostIn" type="text" value="${e(s.host_key||'')}" style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid var(--border,#e2ded6);border-radius:6px"><div id="csLinkErr" style="color:#a33;font-size:12px;margin-top:4px;min-height:16px"></div></div>
     <div style="padding:10px 18px;border-top:1px solid var(--border,#e2ded6);display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline btn-sm" id="csLinkNo" style="padding:6px 16px;cursor:pointer">取消</button><button type="button" class="btn btn-primary btn-sm" id="csLinkOk" style="padding:6px 16px;cursor:pointer">保存</button></div></div>`;
   ov.querySelector('#csLinkNo').onclick=()=>ov.remove();
   ov.querySelector('#csLinkOk').onclick=async()=>{
     const v=ov.querySelector('#csLinkIn').value.trim();
     if(!solLinkOk(v)){ ov.querySelector('#csLinkErr').textContent='链接要以 http 开头'; return; }
-    try{ s.meeting_url=await solSetLink(s,v); ov.remove(); renderCoursesPage(document.getElementById('mainContent')); }
+    try{ s.meeting_url=await solSetLink(s,v,ov.querySelector('#csHostIn').value); ov.remove(); renderCoursesPage(document.getElementById('mainContent')); }
     catch(er){ ov.querySelector('#csLinkErr').textContent='保存失败：'+er.message; }
   };
   setTimeout(()=>{ const i=ov.querySelector('#csLinkIn'); if(i) i.focus(); },0);
@@ -3216,7 +3216,7 @@ async function revertSessionOnline(sessionId){
   if(!confirm(`第 ${s.session_number||'?'} 回 ${ccMD(s.session_date)} 撤回线上，改回课程原来的上课方式？\n自备链接 / 会议账号占用会清掉，然后重新检查教室。`)) return;
   try{
     await solRevertOnline({ course, session:s, who:csWho(), ackAdmin:true });
-    Object.assign(s,{ delivery:course.delivery||null, campus:course.campus||null, delivery_set:false, meeting_url:null });
+    Object.assign(s,{ delivery:course.delivery||null, campus:course.campus||null, delivery_set:false, meeting_url:null, host_key:null });
     renderCoursesPage(document.getElementById('mainContent'));
     const tm=s.time_range||course.time_range||'';
     try{ await srmOpen({ course, sessions:cachedSessions.filter(x=>x.course_id===s.course_id),
@@ -3258,7 +3258,7 @@ async function revertSessionMove(sessionId){
   if(!confirm(`把第 ${s.session_number} 回改回原来的 ${ccMD(s.orig_date)}${oTime?' '+oTime:''}？${solIsOnline(s)?'\n这一回的「改成线上」也会一起撤回（改回课程原来的上课方式）。':''}`)) return;
   const from={ date:s.session_date, time:s.time_range||course?.time_range||'' };
   try{
-    if(solIsOnline(s)){ await solRevertOnline({ course:course||{}, session:s, who:csWho(), ackAdmin:true }); Object.assign(s,{ delivery:course?.delivery||null, campus:course?.campus||null, delivery_set:false, meeting_url:null }); }
+    if(solIsOnline(s)){ await solRevertOnline({ course:course||{}, session:s, who:csWho(), ackAdmin:true }); Object.assign(s,{ delivery:course?.delivery||null, campus:course?.campus||null, delivery_set:false, meeting_url:null, host_key:null }); }
     const patch=Object.assign({ session_date:s.orig_date, time_range:oTime, actual_hours:trSessionHours(oTime,course?.actual_hours) }, CS_ORIG_CLEAR);
     const to={ date:patch.session_date, time:oTime };
     await sb(`/rest/v1/course_sessions?id=eq.${sessionId}`,'PATCH',patch);

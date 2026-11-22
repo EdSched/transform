@@ -40,7 +40,7 @@
 <script src="common.js?v=20270428"></script>
 <script src="../shared/course-confirm.js?v=20270112"></script>
 <script src="../shared/course-sessions.js?v=20270429"></script>
-<script src="../shared/session-online.js?v=20270502"></script>
+<script src="../shared/session-online.js?v=20270503"></script>
 <script src="../shared/search.js?v=20261029"></script>
 <script src="health.js?v=20270428"></script>
 <script>
@@ -1396,7 +1396,7 @@ function schedOnlineDialog(o){
   const c=o.course, s=o.ses, d=s.session_date;
   const grp=coordGrpCourses(c), idset=new Set(grp.map(y=>String(y.id)));
   const sp=coordSpanOf(s,grp,c);
-  const S={mode:'link',url:'',acct:null,busy:false,err:''};
+  const S={mode:'link',url:'',host:'',acct:null,busy:false,err:''};
   const mask=document.createElement('div');
   mask.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-start;justify-content:center;z-index:70;overflow:auto;padding:40px 16px';
   document.body.appendChild(mask);
@@ -1417,12 +1417,13 @@ function schedOnlineDialog(o){
       '<div class="muted" style="font-size:12px;margin-bottom:8px">只改这一回，课程和别的回不变；这一回原来占的教室会释放。'+esc(coordT5(sp.start))+'-'+esc(coordT5(sp.end))+'</div>'+
       '<div class="row"><div class="field"><label>线上方式</label><select id="sol_mode"><option value="link"'+(S.mode==='link'?' selected':'')+'>自备腾讯会议链接</option><option value="acct"'+(S.mode==='acct'?' selected':'')+'>占用一个会议账号</option></select></div></div>'+
       (S.mode==='link'
-        ?'<div class="field" style="margin-top:6px"><label>会议链接（可以先不填，之后在课程安排里补；填了要 http 开头）</label><input id="sol_url" style="width:100%;box-sizing:border-box" value="'+esc(S.url)+'" placeholder="https://meeting.tencent.com/…"><div id="sol_hint" style="color:#a33;font-size:12px;margin-top:2px;display:'+(solLinkValid(S.url)?'none':'block')+'">链接格式不对，要以 http 开头</div></div>'
+        ?'<div class="field" style="margin-top:6px"><label>会议链接（可以先不填，之后在课程安排里补；填了要 http 开头）</label><input id="sol_url" style="width:100%;box-sizing:border-box" value="'+esc(S.url)+'" placeholder="https://meeting.tencent.com/…"><div id="sol_hint" style="color:#a33;font-size:12px;margin-top:2px;display:'+(solLinkValid(S.url)?'none':'block')+'">链接格式不对，要以 http 开头</div><input id="sol_host" style="width:100%;box-sizing:border-box;margin-top:6px" value="'+esc(S.host)+'" placeholder="主持人密钥（选填，只用于这一回）"></div>'
         :'<div class="muted" style="font-size:12px;margin-top:6px">各会议账号（点一个空着的）：</div><div id="sol_acct">'+solAcctHtml(acctRows(),S.acct)+'</div>')+
       (S.err?'<div style="color:#a33;margin-top:8px">'+esc(S.err)+'</div>':'')+
       '<div style="margin-top:12px;display:flex;gap:8px"><button id="sol_ok"'+(ok&&!S.busy?'':' disabled')+'>'+(S.busy?'保存中…':'确认改成线上')+'</button><button class="ghost" id="sol_cancel">取消</button></div></div>';
     el('sol_cancel').onclick=()=>mask.remove();
     el('sol_mode').onchange=()=>{ S.mode=el('sol_mode').value; S.err=''; paint(); };
+    if(el('sol_host')) el('sol_host').oninput=()=>{ S.host=el('sol_host').value; };
     if(el('sol_url')) el('sol_url').oninput=()=>{ S.url=el('sol_url').value; el('sol_ok').disabled=!solLinkValid(S.url); el('sol_hint').style.display=solLinkValid(S.url)?'none':'block'; };
     mask.querySelectorAll('#sol_acct [data-acct]').forEach(x=>x.onclick=()=>{ S.acct=x.dataset.acct; paint(); });
     el('sol_ok').onclick=async()=>{
@@ -1433,7 +1434,7 @@ function schedOnlineDialog(o){
       S.busy=true; S.err=''; paint();
       try{
         const who=schedActorLabel();
-        const res=await solSetOnline({course:grp.find(y=>String(y.id)===String(s.course_id))||c, session:s, sp:{start:coordT5(sp.start),end:coordT5(sp.end)}, mode:S.mode, url:S.url, acctRoom:acct, who, role:(ROLE&&ROLE.role)||'总务', bkExtra:schedActorStamp(who)});
+        const res=await solSetOnline({course:grp.find(y=>String(y.id)===String(s.course_id))||c, session:s, sp:{start:coordT5(sp.start),end:coordT5(sp.end)}, mode:S.mode, url:S.url, hostKey:S.host, acctRoom:acct, who, role:(ROLE&&ROLE.role)||'总务', bkExtra:schedActorStamp(who)});
         mask.remove(); toast('已'+res.text+(res.warn&&res.warn.length?'（'+res.warn.join('；')+'）':''));
         if(o.onDone) await o.onDone();
       }catch(e){ S.busy=false; S.err=e.message||String(e); try{ await reloadAll(); }catch(e2){} paint(); }

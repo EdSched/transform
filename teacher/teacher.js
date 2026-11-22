@@ -465,7 +465,7 @@ async function init() {
       campus: s.campus || courseMap[s.course_id]?.campus || '',
       link_later: !!(s.delivery_set && s.delivery === '线上' && s.meeting_url === ''),
       meeting_url: (s.delivery_set && s.meeting_url != null) ? s.meeting_url : (courseMap[s.course_id]?.meeting_url || ''),   // 改成线上的回：用这一回的（'' = 链接还没填，不回退到课程的链接）   // 这一回单独改成线上、有自备链接：用这一回的
-      host_key: courseMap[s.course_id]?.host_key || '',
+      host_key: s.host_key || courseMap[s.course_id]?.host_key || '',   // 这一回单独填了密钥的优先
       needs_recording: courseMap[s.course_id]?.needs_recording || false,
     })).sort((a, b) => a.session_date.localeCompare(b.session_date));
     // 每一回在哪个教室（只读；读不到不影响别的）
