@@ -159,8 +159,9 @@ function buildInfo(c){
         if(sd.orig_date!==x.date) o.flags.push('改日期');
         if(sd.orig_time_range && !o.myTime){ const a=_clkRange(sd.orig_time_range,c), b=_clkRange(sd.time_range,c); if(a[0]!==b[0]||a[1]!==b[1]){ o.s=b[0]; o.e=b[1]; o.myTime=b[0]+'-'+b[1]; o.flags.push('改时间'); } }
       } else if(wds.length && !wds.includes(weekdayOf(x.date))) o.flags.push('改日期');
-      const st=crvSessionState(c.id, {session_date:x.date}, {delivery:c.mode});
-      if(st.kind==='moved'){ o.moved=st.label; o.flags.push('改教室'); }
+      const st=crvSessionState(c.id, {session_date:x.date, delivery_set:sd.online, delivery:sd.online?'线上':''}, {delivery:c.mode});
+      if(sd.online){ o.online=true; o.url=sd.url; o.room='线上'; o.flags.push('改成线上'); }
+      else if(st.kind==='moved'){ o.moved=st.label; o.flags.push('改教室'); }
       else if(st.kind==='none'){ o.noRoom=true; o.flags.push('未排教室'); }
     }
     return o;
@@ -286,7 +287,7 @@ function cardHtml(c){
   const nx=i.next ? `<div class="l4">下次：${md(i.next.date)}（${WEEKDAYS[weekdayOf(i.next.date)]}）${esc(i.next.myTime||classTimeText(c))} · ${esc(i.next.moved||i.next.room)}</div>` : '';
   const fixed=crvFixed(c.id, {delivery:c.mode});
   const fx=`<div class="l2" style="margin-top:2px">${fixed?'🏫 固定教室：'+esc(fixed):'<span class="muted">未排教室</span>'}</div>`;
-  const chgTxt=i.changes.map(x=>md(x.date)+'（'+WEEKDAYS[weekdayOf(x.date)]+'）'+[x.moved?'→ '+esc(x.moved):'', x.noRoom?'⚠ 未排教室':'', x.myTime?esc(x.myTime)+'（改时间）':'', x.flags.includes('改日期')?'（改日期）':''].filter(Boolean).join(' ')).join('；');
+  const chgTxt=i.changes.map(x=>md(x.date)+'（'+WEEKDAYS[weekdayOf(x.date)]+'）'+[x.moved?'→ '+esc(x.moved):'', x.noRoom?'⚠ 未排教室':'', x.online?'改成线上'+(x.url?'（自备链接）':''):'', x.myTime?esc(x.myTime)+'（改时间）':'', x.flags.includes('改日期')?'（改日期）':''].filter(Boolean).join(' ')).join('；');
   const chgLine=i.changes.length?`<div class="l4" style="color:#d9822b">变动：${chgTxt}</div>`:'';
   const open=OPENED.has(String(c.id));
   return `<div class="ccard${searching()&&i.status==='已结课'?' ended':''}" data-id="${c.id}">`+
@@ -307,7 +308,7 @@ function detailHtml(c){
     if(x.off) return `<div class="r off"><span class="n"></span><span class="d">${md(x.date)}（${WEEKDAYS[weekdayOf(x.date)]}）</span><span class="t">${x.off}${x.why?'<span class="why"> · '+esc(x.why)+'</span>':''}</span></div>`;
     n++;
     const cls = x===i.next ? 'next' : (i.isPast(x) ? 'past' : '');
-    return `<div class="r ${cls}"><span class="n">${n}</span><span class="d">${md(x.date)}（${WEEKDAYS[weekdayOf(x.date)]}）</span><span class="t">${x.myTime?esc(x.myTime)+'<span style="color:#d9822b">（改时间）</span>':esc(classTimeText(c))}${x.flags.includes('改日期')?'<span style="color:#d9822b">（改日期）</span>':''}</span>${x.noRoom?'<span style="color:#c0392b">⚠ 未排教室</span>':(x.moved?'<span style="color:#d9822b">→ '+esc(x.moved)+'</span>':'<span>'+esc(x.room)+'</span>')}</div>`;
+    return `<div class="r ${cls}"><span class="n">${n}</span><span class="d">${md(x.date)}（${WEEKDAYS[weekdayOf(x.date)]}）</span><span class="t">${x.myTime?esc(x.myTime)+'<span style="color:#d9822b">（改时间）</span>':esc(classTimeText(c))}${x.flags.includes('改日期')?'<span style="color:#d9822b">（改日期）</span>':''}</span>${x.online?'<span style="color:#2a6fb0" title="'+esc(x.url||'这一回改成线上')+'">线上（改成线上）</span>':x.noRoom?'<span style="color:#c0392b">⚠ 未排教室</span>':(x.moved?'<span style="color:#d9822b">→ '+esc(x.moved)+'</span>':'<span>'+esc(x.room)+'</span>')}</div>`;
   }).join('')+'</div>';
 }
 function renderList(){
@@ -369,13 +370,13 @@ async function boot(){
       sbGet('sched_holidays','select=*&order=start_date').catch(()=>[]),
       sbGet('sched_bookings','select=id,room_id,course_id,recurrence,weekday,start_date,end_date,booking_date,start_time,end_time,status,manual_off_dates,uses_meeting&kind=eq.course').catch(()=>[]),
       sbGet('sched_rooms','select=id,name,campus').catch(()=>[]),
-      sbGet('course_sessions','select=course_id,session_date,time_range,is_cancelled,session_number,orig_date,orig_time_range').catch(()=>[])
+      sbGet('course_sessions','select=course_id,session_date,time_range,is_cancelled,session_number,orig_date,orig_time_range,delivery,delivery_set,meeting_url').catch(()=>sbGet('course_sessions','select=course_id,session_date,time_range,is_cancelled,session_number,orig_date,orig_time_range')).catch(()=>[])
     ]);
     ALLC=cs.filter(c=>!c.deleted_at); HOLIDAYS=hol; BOOKINGS=bks.map(b=>Object.assign({kind:'course'},b)); ROOMS=rooms;
     await loadCourseLink(); linkCourseBookings(BOOKINGS);
     // 每一回在哪个教室：和课程安排卡片同一套算法（shared/course-room-view.js），数据用本页已读的
     CRV.bks=BOOKINGS.filter(b=>b.status!=='rejected'); CRV.roomList=ROOMS; CRV.rooms={}; ROOMS.forEach(r=>{ CRV.rooms[String(r.id)]=r; }); CRV.loaded=true;
-    ses.forEach(s=>{ if(s.course_id!=null && s.session_date){ (SESS[String(s.course_id)]=SESS[String(s.course_id)]||[]).push(s.session_date); (SESD[String(s.course_id)]=SESD[String(s.course_id)]||{})[s.session_date]={time_range:s.time_range||'', is_cancelled:!!s.is_cancelled, num:s.session_number, orig_date:s.orig_date||'', orig_time_range:s.orig_time_range||''}; } });
+    ses.forEach(s=>{ if(s.course_id!=null && s.session_date){ (SESS[String(s.course_id)]=SESS[String(s.course_id)]||[]).push(s.session_date); (SESD[String(s.course_id)]=SESD[String(s.course_id)]||{})[s.session_date]={time_range:s.time_range||'', is_cancelled:!!s.is_cancelled, num:s.session_number, orig_date:s.orig_date||'', orig_time_range:s.orig_time_range||'', online:!!(s.delivery_set&&s.delivery==='线上'), url:s.meeting_url||''}; } });
     ALLC.forEach(c=>{ WDS[c.id]=parseWeekdaysSched(c.weekdays); INFO[c.id]=buildInfo(c); HAY[c.id]=buildHay(c); });
     applyView();
   }catch(e){ el('list').innerHTML='<div class="tip">读取失败：'+esc(e.message)+'</div>'; return; }
