@@ -97,6 +97,20 @@ const check = (flow, ok, msg) => results.push({ flow, ok, msg });
     } catch (e) { check('流程3 执行', false, e.message); }
   }
 
+  // ───── 流程 4：休讲并顺延 rsDoShift：不抛异常，返回值里有 newSession（曾因 newSession 声明在块里面而报 not defined）─────
+  {
+    const { w, run, loadErrors } = makeDom('admin/index.html', [[/./, () => []]]);
+    try {
+      const sessions = [], base = new Date('2026-11-02T12:00:00Z');
+      for (let i = 0; i < 5; i++) { const d = new Date(base.getTime() + i * 7 * 864e5).toISOString().slice(0, 10); sessions.push({ id: 's' + i, course_id: 'C1', course_name: 'テスト課程', major: 'fashion', session_date: d, session_number: i + 1, session_title: '第' + (i + 1) + '回', teacher: 'T', session_teacher: 'T', is_cancelled: false, confirmed: false, time_range: '19:00-21:00' }); }
+      const course = { id: 'C1', name: 'テスト課程', major: ['fashion'], total_sessions: 5, weekdays: '1', time_range: '19:00-21:00', skip_dates: '' };
+      run(`cachedCourses = ${JSON.stringify([course])}; cachedSessions = ${JSON.stringify(sessions)};`, 'flow4-data');
+      const r = await run("rsDoShift(cachedSessions[1], '测试', '', '2026-12-14', '')", 'flow4-call');
+      check('流程4a 休讲并顺延 rsDoShift 不抛异常且返回 newSession', !!(r && r.newSession && r.newSession.id && r.target && r.origTarget && r.newDateStr && r.courseId), '返回对象缺字段：' + JSON.stringify(Object.keys(r || {})));
+      check('流程4b 末尾只多一回，且回数是原最后一回的编号', run('cachedSessions.length', 'flow4-n') === 6 && r.newSession.session_number === 5, '课次数或回数不对');
+    } catch (e) { check('流程4 休讲并顺延 执行', false, e.message); }
+  }
+
   const bad = results.filter(r => !r.ok);
   results.forEach(r => console.log(`${r.ok ? '通过' : '失败'}  ${r.flow}${r.ok ? '' : '：' + r.msg}`));
   console.log(`\n共 ${results.length} 项：失败 ${bad.length} 项`);

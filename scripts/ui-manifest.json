@@ -41,6 +41,21 @@
       ]
     },
     {
+      "name": "休讲并顺延（确认休讲并顺延 → 教室确认窗口）",
+      "checks": [
+        {
+          "file": "admin/courses.js",
+          "define": ["rsDoShift", "rsRoomConfirm", "confirmReschedule"],
+          "call": [
+            { "in": "confirmReschedule", "fn": "rsDoShift" },
+            { "in": "confirmReschedule", "fn": "rsRoomConfirm" },
+            { "in": "rsRoomConfirm", "fn": "srmOpen" }
+          ],
+          "text": ["let newSession;", "return { target, newSession, origTarget, newDateStr, courseId, course };"]
+        }
+      ]
+    },
+    {
       "name": "课程卡片单回格子：撤回、⇄ 调整日期、休讲撤回",
       "checks": [
         {
