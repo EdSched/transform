@@ -100,6 +100,19 @@ function ivbVisibleItems(ch) { return (ch.items || []).filter(i => !i.hidden); }
 // 一道题要不要作答：只有 qa / ask 章里的普通题；关键词题（带 keywords）只读
 function ivbAnswerable(ch, it) { return !(it.keywords && it.keywords.length) && ch.type !== 'keywords'; }
 function ivbRowKeyFor(ch, schoolKey, variant) { return ch.scope === 'school' ? (schoolKey || '') : ivbCommonKey(variant); }
+
+// ── 老师补充的问题（student_interview_extras；模拟面试里「同步给学生」写入）──
+// row_key：这道题的答案存在哪一行（志望校 key / _common / _common@版本）；item_key（x_ 开头）= riyu_submissions.sections 里的键
+const IVB_EXTRA_CH = '__extra';
+const IVB_EXTRA_TITLE = '老师补充的问题';
+async function ivbExtrasLoad(studentId) {
+  if (!studentId) return [];
+  try { return await sbAll(`/rest/v1/student_interview_extras?student_id=eq.${encodeURIComponent(studentId)}&archived=eq.false&order=created_at.asc&select=*`, { cache: 'no-store' }) || []; } catch (e) { return []; }   // 表还没建 / 没权限：当作没有
+}
+// 属于这所志望校或共用行的补充题（schoolKey 为空 = 只有共用行的）
+function ivbExtrasFor(extras, schoolKey) {
+  return (extras || []).filter(e => e && e.item_key && (ivbIsCommonKey(e.row_key) || (schoolKey && e.row_key === schoolKey)));
+}
 // subs：该生 grad_interview 的全部 riyu_submissions 行；返回 答案文字（没写 = ''）
 function ivbAnswer(subs, rowKey, itemKey, drafts) {
   if (drafts && drafts[rowKey] && drafts[rowKey][itemKey] != null) return String(drafts[rowKey][itemKey]);
@@ -108,9 +121,15 @@ function ivbAnswer(subs, rowKey, itemKey, drafts) {
 }
 // 必答完成度（针对某所志望校：schoolKey 为空 = 只算共用章，school 章记为没写）
 // 返回 { done, total, firstTodo: {chapter, item} | null, byChapter: {chKey: {done, total}} }
-function ivbProgress(bank, subs, schoolKey, drafts) {
-  const out = { done: 0, total: 0, firstTodo: null, byChapter: {} };
+// extras（可选）：老师补充的问题（student_interview_extras 行）；只算属于这所志望校或共用行的，计入必答，排在 firstTodo 最前面（章 key = IVB_EXTRA_CH）
+function ivbProgress(bank, subs, schoolKey, drafts, extras) {
+  const out = { done: 0, total: 0, firstTodo: null, byChapter: {}, extraDone: 0, extraTotal: 0 };
   if (!bank) return out;
+  ivbExtrasFor(extras, schoolKey).forEach(e => {
+    out.total++; out.extraTotal++;
+    if (ivbAnswer(subs, e.row_key, e.item_key, drafts).trim()) { out.done++; out.extraDone++; }
+    else if (!out.firstTodo) out.firstTodo = { chapter: IVB_EXTRA_CH, item: e.item_key };
+  });
   bank.chapters.forEach(ch => {
     const bc = out.byChapter[ch.key] = { done: 0, total: 0 };
     ivbVisibleItems(ch).forEach(it => {
@@ -133,11 +152,14 @@ function ivbDefaultPlan(plans) {
   return fut[0] || list[0];
 }
 // 提醒用：这个学生要不要被提醒「面试稿没写完」。返回 null 或 { left, total, firstTodo, reason }
-function ivbReminder(bank, subs, plans, bookings) {
+// 有没回答的老师补充题：优先提醒（不要求有模拟面试预约 / 考试临近）
+function ivbReminder(bank, subs, plans, bookings, extras) {
   if (!bank) return null;
   const sk = ivbDefaultSchool(plans);
-  const pr = ivbProgress(bank, subs, sk);
+  const pr = ivbProgress(bank, subs, sk, null, extras);
   if (!pr.total || pr.done >= pr.total) return null;
+  const exLeft = pr.extraTotal - pr.extraDone;
+  if (exLeft > 0) return { left: pr.total - pr.done, total: pr.total, firstTodo: pr.firstTodo, reason: 'extra', extraLeft: exLeft };
   const today = (typeof jstToday === 'function') ? jstToday() : new Date().toISOString().slice(0, 10);
   const mock = (bookings || []).some(b => b.type === 'mock' && (b.status === 'pending' || b.status === 'confirmed') && String(b.slot_date || b.date || '') >= today);
   const soon = (plans || []).some(p => {
@@ -160,8 +182,9 @@ function ivbSearch(bank, q) {
 }
 
 // ── 拍平成「段落」形状：老师批复 / 下载 Word（riyuStaffView / riyuWordBuild）按 g.sections 排版，这里给它们同样的形状 ──
-function ivbFlatSections(bank) {
-  const out = [];
+// extras（可选）：该行的老师补充题，放在最前面（标题带「老师补充的问题」和老师要点）
+function ivbFlatSections(bank, extras) {
+  const out = (extras || []).map(e => ({ key: e.item_key, title: `【${IVB_EXTRA_TITLE}】${e.q}${String(e.teacher_note || '').trim() ? '（老师要点：' + String(e.teacher_note).trim() + '）' : ''}`, subtitle: '', tips: [] }));
   if (!bank) return out;
   bank.chapters.forEach(ch => (ch.items || []).forEach(it => {
     if (it.keywords && it.keywords.length) return;
@@ -188,6 +211,8 @@ function ivbCommonRowName(student, schoolKey) {
 async function ivbGuideForSub(sub, student) {
   const old = await riyuLoadGuide(sub.kind);
   if (sub.kind !== RIYU_INTERVIEW_KIND || !student) return old;
+  let ex = [];
+  try { ex = (await ivbExtrasLoad(student.id)).filter(e => e.row_key === sub.school_key); } catch (e) { ex = []; }
   let bank = null;
   try {
     await ivbLoadPublishedKeys();
@@ -208,8 +233,8 @@ async function ivbGuideForSub(sub, student) {
       if (!bank && v) bank = await ivbLoad(k, false, ivbVariantFor(student, null, null, k));   // 该版本已不存在：退回默认版本
     }
   } catch (e) { bank = null; }
-  if (!bank) return old;
-  const flat = ivbFlatSections(bank);
+  if (!bank) return ex.length ? Object.assign({}, old, { sections: ivbFlatSections(null, ex).concat(old.sections) }) : old;
+  const flat = ivbFlatSections(bank, ex);
   // 旧段落（self/motive/…）若学生写过，放在末尾（riyuStaffView 本来就会把没见过的 key 列在最后；这里带上标题）
   const have = new Set(flat.map(s => s.key));
   const legacy = old.sections.filter(s => !have.has(s.key)).map(s => Object.assign({}, s, { title: '【旧版】' + s.title }));

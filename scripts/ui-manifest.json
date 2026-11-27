@@ -94,6 +94,47 @@
         { "file": "shared/materials.js", "define": ["matItemsFor"] },
         { "file": "student/study.js", "text": ["matItemsFor("] }
       ]
+    },
+    {
+      "name": "面试回答下载：共用的导出（Word / PDF，范围 / 格式用 chip 选）",
+      "checks": [
+        { "file": "shared/interview-export.js", "define": ["ivbAnswersExport", "ivxBuildModel", "ivxWordBuild", "ivxPrintHtml", "ivxOpen", "ivxGo", "ivxBtnHtml", "ivxCanExport"], "text": ["下载面试回答", "老师补充的问题", "全部志望校 + 共用题", "（未填写）", "window.print()", "Noto+Serif+SC"] }
+      ]
+    },
+    {
+      "name": "面试回答下载：学生端「下载我的面试回答」按钮",
+      "checks": [
+        { "file": "student/interview-prep.js", "call": [{ "in": "ivsRender", "fn": "ivxBtnHtml" }], "text": ["下载我的面试回答"] },
+        { "file": "student/study.html", "text": ["interview-export.js"] }
+      ]
+    },
+    {
+      "name": "面试回答下载：管理端按钮（学生面试稿列表 / 查看弹窗）",
+      "checks": [
+        { "file": "shared/riyu.js", "call": [{ "in": "riyuStaffListHtml", "fn": "ivxBtnHtml" }, { "in": "riyuStaffView", "fn": "ivxBtnHtml" }], "text": ["下载面试回答（Word / PDF）"] },
+        { "file": "admin/index.html", "text": ["interview-export.js"] }
+      ]
+    },
+    {
+      "name": "面试回答下载：老师端按钮（只限自己范围内的学生，按 tsaStudentOk）",
+      "checks": [
+        { "file": "shared/interview-export.js", "text": ["tsaStudentOk"] },
+        { "file": "shared/riyu.js", "call": [{ "in": "riyuStaffListHtml", "fn": "ivxBtnHtml" }] },
+        { "file": "teacher/index.html", "text": ["interview-export.js"] }
+      ]
+    },
+    {
+      "name": "模拟面试：补充题「同步给学生」（写入 student_interview_extras，已同步显示「已同步」/「更新」）",
+      "checks": [
+        { "file": "shared/mock-interview.js", "define": ["ivmSyncExtra", "ivmExtraHtml", "ivmEditQ", "ivmExtraOf"], "call": [{ "in": "ivmRender", "fn": "ivmExtraHtml" }, { "in": "ivmMount", "fn": "ivbExtrasLoad" }], "text": ["同步给学生", "已同步", "补充要点", "student_interview_extras", "学生已作答，改题可能让回答对不上"] }
+      ]
+    },
+    {
+      "name": "学生端面试准备：顶部「老师补充的问题」区块（高亮、最前、计入必答、提醒优先）",
+      "checks": [
+        { "file": "student/interview-prep.js", "define": ["ivsRenderExtra", "ivsExtraList", "ivsExtraCardHtml"], "call": [{ "in": "ivsRender", "fn": "ivsRenderExtra" }, { "in": "ivsLoad", "fn": "ivbExtrasLoad" }, { "in": "ivsReminderLoad", "fn": "ivbExtrasLoad" }], "id": ["ivs_extra"], "text": ["老师补充", "老师的补充要点"] },
+        { "file": "shared/interview-bank.js", "define": ["ivbExtrasLoad", "ivbExtrasFor"], "call": [{ "in": "ivbGuideForSub", "fn": "ivbExtrasLoad" }], "text": ["老师补充的问题"] }
+      ]
     }
   ]
 }
