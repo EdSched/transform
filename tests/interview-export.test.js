@@ -64,13 +64,13 @@ ctx.data = { subs: [{ school_key: 'S1', sections: { q1: '我的动机', x_aaa: '
   ctx.d2 = d2;
   const h2 = (await ev(`ivbAnswersExport(student, 'all', 'word', { data: d2, returnOnly: true })`)).html;
   assert.ok(!h2.includes('志望动机') && !h2.includes('东京') && h2.includes('自我介绍') && !h2.includes('老师补充的问题') && !h2.includes('补充题一'), '空章/空节/未答补充题不显示');
-  const a = await ev(`ivbAnswersExport(student, 'all', 'word', { school: 'S1', data, returnOnly: true })`);
+  const a = await ev(`ivbAnswersExport(student, 'all', 'word', { school: 'S1', data, returnOnly: true, blanks: true })`);
   assert.ok(a.name.includes('_全部_') && a.html.includes('别校的补充题') && a.html.includes('京都大学') && a.html.includes('共用题') && a.html.includes('我是山田'), '全部：所有志望校 + 共用题');
   assert.ok(a.html.indexOf('老师补充的问题') < a.html.indexOf('東京大学'), '全部：补充题仍在最前');
   assert.strictEqual((a.html.match(/page-break-before:always/g) || []).length, 2, '两所学校各自新起一页');
   const p = await ev(`ivbAnswersExport(student, 'all', 'pdf', { school: 'S1', data, returnOnly: true })`);
   assert.ok(p.html.includes('Noto+Serif+SC') && p.html.includes('window.print()') && p.html.includes('@media print') && p.html.includes('.grp.brk'), 'PDF：加载字体、字体就绪后打印、分页');
   await assert.rejects(ev(`ivbAnswersExport(student, 'all', 'word', { data: { subs: [], plans: [], extras: [], bankOf: () => null }, returnOnly: true })`), /还没有填写任何面试回答/);
-  await assert.rejects(ev(`ivbAnswersExport(student, 'all', 'word', { data: { subs: [], plans: [{ k: 'S1' }], extras, bankOf: () => ctx.bank }, returnOnly: true })`), /还没有填写任何面试回答/, '全空：新提示');
+  await assert.rejects(ev(`ivbAnswersExport(student, 'all', 'word', { data: { subs: [], plans: [{ k: 'S1' }], extras, bankOf: () => bank }, returnOnly: true })`), /还没有填写任何面试回答/, '全空：新提示');
   console.log('interview-export: OK');
 })().catch(e => { console.error(e); process.exit(1); });
