@@ -363,6 +363,11 @@ function riyuStaffListHtml(student, plans, subs, kind, onChange) {
       html += row(sub, title, '<span style="color:#b03a2e">这所学校已不在志望校里</span>', mailLine(sub));
     });
   }
+  // 面试稿：整份下载学生保存的回答（Word / PDF；shared/interview-export.js，老师只限范围内的学生）
+  if (kind === RIYU_INTERVIEW_KIND && typeof ivxBtnHtml === 'function') {
+    const dl = ivxBtnHtml(student, typeof ivbDefaultSchool === 'function' ? ivbDefaultSchool(list) : '', '下载面试回答（Word / PDF）', 'font-size:11px;border:1px solid var(--accent,#b8953a);color:var(--accent,#b8953a);border-radius:3px;background:var(--surface,#fff);padding:3px 10px;cursor:pointer;font-family:inherit');
+    if (dl) html = `<div style="margin-bottom:6px">${dl}</div>` + html;
+  }
   return html;
 }
 
@@ -399,6 +404,7 @@ async function riyuStaffView(subId) {
     <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">
       <div style="font-size:14px;font-weight:600;flex:1">${riyuEsc(docName)} — ${riyuEsc(stu.name || '')}</div>
       <button onclick="riyuStaffWord('${riyuEsc(sub.id)}')" style="font-size:10px;border:1px solid var(--border,#e2ded6);border-radius:3px;background:var(--surface,#fff);padding:2px 8px;cursor:pointer;font-family:inherit">⬇ 下载 Word</button>
+      ${sub.kind === RIYU_INTERVIEW_KIND && typeof ivxBtnHtml === 'function' ? ivxBtnHtml(stu, sub.school_key, '下载面试回答（Word / PDF）') : ''}
       <button onclick="riyuStaffUpload('${riyuEsc(sub.id)}')" style="font-size:10px;border:1px solid var(--accent,#b8953a);color:var(--accent,#b8953a);border-radius:3px;background:var(--surface,#fff);padding:2px 8px;cursor:pointer;font-family:inherit">⬆ 上传批复版</button>
       <button onclick="document.getElementById('riyuViewModal').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-3,#999)">×</button>
     </div>

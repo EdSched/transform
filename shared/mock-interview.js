@@ -1,7 +1,7 @@
 // ══════════════════════════════════
 // mock-interview.js — 模拟面试记录（老师端 / 管理端共用）
 // 数据：bookings.type='mock' 的 daily_record.mock（jsonb 里的一个键，不新建表、不加列；次数 = 数「有 mock 记录」的预约，不单独存）
-//   mock = { school_key, school_name, variant, variant_label, qa:[{item_key,q,free,prepared,answer,rating,comment}], overall_rating, overall, next }
+//   mock = { school_key, school_name, variant, variant_label, qa:[{item_key,q,free,prepared,answer,rating,comment,extra_id?,extra_note?}]（extra_id：已同步给学生的补充题在 student_interview_extras 里的 id）, overall_rating, overall, next }
 // 三块：① 记录表单（ivmMount / ivmCollect，挂在预约卡片里） ② 展示（ivmViewHtml / ivmText，学生详情、概要、学生端共用）
 //       ③ 考学进度「模拟面试」视图（ivmRenderView，admin 与老师端各传自己范围内的学生）
 // variant / variant_label：该校面试用的题库版本（短码 / 当时的显示名；只有多版本的专业才写 variant_label）。老记录没有这两个键 = 默认版本
@@ -106,17 +106,18 @@ async function ivmMount(b) {
   const old = ivmOf(b) || {};
   const st = IVM_ST[b.id] = Object.assign(IVM_ST[b.id] || {}, { b, sel: null });
   el.innerHTML = '<div style="font-size:11px;color:var(--text-3,#999);padding:8px">加载面试稿…</div>';
-  let student = null, subs = [], plans = [], prior = [];
+  let student = null, subs = [], plans = [], prior = [], extras = [];
   try {
     student = b.student_id ? ((await sb(`/rest/v1/students?id=eq.${encodeURIComponent(b.student_id)}&select=id,name,major`, 'GET', null, { cache: 'no-store' })) || [])[0]
       : ((await sb(`/rest/v1/students?name=eq.${encodeURIComponent(b.name || '')}&select=id,name,major`, 'GET', null, { cache: 'no-store' })) || [])[0];
   } catch (e) { student = null; }
   const sid = student ? student.id : b.student_id;
   if (sid) {
-    [subs, plans, prior] = await Promise.all([
+    [subs, plans, prior, extras] = await Promise.all([
       sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(sid)}&kind=eq.${RIYU_INTERVIEW_KIND}&select=*`, 'GET', null, { cache: 'no-store' }).catch(() => []),
       sb(`/rest/v1/student_school_plans?student_id=eq.${encodeURIComponent(sid)}&select=*&order=level.asc`, 'GET', null, { cache: 'no-store' }).catch(() => []),
       sb(`/rest/v1/bookings?student_id=eq.${encodeURIComponent(sid)}&type=eq.mock&daily_record=not.is.null&select=id,slot_date,actual_time,daily_record,type`, 'GET', null, { cache: 'no-store' }).catch(() => []),
+      ivbExtrasLoad(sid),   // 已同步给学生的补充题（含学生的回答要从 subs 里取）
     ]);
   }
   const pri = ivmList(prior).filter(x => x.id !== b.id);
@@ -134,9 +135,16 @@ async function ivmMount(b) {
     }
   } catch (e) { bank = null; }
   Object.assign(st, {
-    student, subs, plans, bank, priorN: pri.length, school,
+    student, subs, plans, bank, extras, priorN: pri.length, school,
     sel: (old.qa || []).map(x => Object.assign({}, x)),
     overall_rating: old.overall_rating || '', overall: old.overall || '', next: old.next || '', q: '', openCh: st.openCh || {}, freeText: '',
+  });
+  // 补充题的 extra_id 没随记录保存（同步后没点保存）：按「来源预约 + 题目文字」认回已同步的那一行，避免重复生成
+  st.sel.forEach(x => {
+    if (!x.free) return;
+    if (!x.extra_id) { const m = extras.find(e => String(e.source_booking_id || '') === String(b.id) && e.q === x.q); if (m) x.extra_id = m.id; }
+    const m2 = x.extra_id && extras.find(e => e.id === x.extra_id);
+    if (m2 && x.extra_note == null) x.extra_note = m2.teacher_note || '';
   });
   ivmRender(b.id);
 }
@@ -198,7 +206,8 @@ function ivmRender(id) {
   }
   const qa = st.sel.map((x, i) => `<div style="border:1px solid var(--border-light,#ede9e2);border-radius:4px;padding:8px 10px;margin-bottom:6px;background:var(--surface,#fff)">
       <div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;font-weight:600">${i + 1}. ${ivmEsc(x.q)}${x.free ? ' <span style="font-size:10px;color:var(--text-3,#999);font-weight:400">自由追问</span>' : ''}${x._miss ? ' <span style="font-size:10px;color:#b03a2e;font-weight:400">不在当前版本题库</span>' : ''}</span>
-        <span style="margin-left:auto;display:flex;gap:3px"><button class="btn btn-outline btn-sm" ${i === 0 ? 'disabled' : ''} onclick="ivmMove('${id}',${i},-1)">↑</button><button class="btn btn-outline btn-sm" ${i === st.sel.length - 1 ? 'disabled' : ''} onclick="ivmMove('${id}',${i},1)">↓</button><button class="btn btn-outline btn-sm" onclick="ivmDrop('${id}',${i})">✕</button></span></div>
+        <span style="margin-left:auto;display:flex;gap:3px">${x.free ? `<button class="btn btn-outline btn-sm" onclick="ivmEditQ('${id}',${i})">改题</button>` : ''}<button class="btn btn-outline btn-sm" ${i === 0 ? 'disabled' : ''} onclick="ivmMove('${id}',${i},-1)">↑</button><button class="btn btn-outline btn-sm" ${i === st.sel.length - 1 ? 'disabled' : ''} onclick="ivmMove('${id}',${i},1)">↓</button><button class="btn btn-outline btn-sm" onclick="ivmDrop('${id}',${i})">✕</button></span></div>
+      ${x.free ? ivmExtraHtml(id, i, x, st) : ''}
       ${!x.free ? `<details style="font-size:11px;margin:3px 0"><summary style="cursor:pointer;color:var(--text-3,#999)">学生准备的答案</summary><div style="white-space:pre-wrap;line-height:1.8;color:var(--text-2,#5a5650)">${ivmEsc(x.prepared || ivmPrepared(st, x.item_key) || '（学生没写）')}</div></details>` : ''}
       <textarea rows="2" placeholder="实际回答（记要点，可空）" oninput="ivmSet('${id}',${i},'answer',this.value)" style="${inp};margin:3px 0;resize:vertical">${ivmEsc(x.answer || '')}</textarea>
       <div style="display:flex;gap:5px;align-items:center;margin-bottom:4px"><span style="font-size:10px;color:var(--text-3,#999)">评价</span>${IVM_RATINGS.map(r => ivmChip(r, x.rating === r, `ivmRate('${id}',${i},'${r}')`)).join('')}</div>
@@ -227,6 +236,49 @@ function ivmRender(id) {
   const p = document.getElementById('ivm_panes_' + id), a0 = document.getElementById('ivm_p0_' + id), a1 = document.getElementById('ivm_p1_' + id);
   if (a0) a0.scrollTop = sc[0]; if (a1) a1.scrollTop = sc[1];
   if (p && st.pane) p.scrollLeft = p.clientWidth;   // 窄屏：还原到当前页（宽屏是并排，这一句无效果）
+}
+// 补充题（free:true）→「同步给学生」：写入 student_interview_extras，学生在面试准备顶部看到并回答；老师的补充要点 = teacher_note（评语 comment 不同步）
+function ivmExtraOf(st, x) { return x.extra_id ? (st.extras || []).find(e => e.id === x.extra_id) || null : null; }
+function ivmExtraHtml(id, i, x, st) {
+  const ex = ivmExtraOf(st, x), synced = !!x.extra_id;
+  const ans = ex ? ivbAnswer(st.subs, ex.row_key, ex.item_key, null).trim() : '';
+  const inp = 'width:100%;box-sizing:border-box;font-size:11px;padding:6px 8px;border:1px solid var(--border,#e2ded6);border-radius:3px;background:var(--surface,#fff);font-family:inherit';
+  return `<div style="margin:4px 0;padding:6px 8px;border:1px dashed var(--accent,#b8953a);border-radius:3px;background:rgba(184,149,58,.08)">
+    <input value="${ivmEsc(x.extra_note || '')}" placeholder="补充要点（回答思路 / 要点；学生能看到，可空）" oninput="ivmSet('${id}',${i},'extra_note',this.value)" style="${inp}">
+    <div style="display:flex;gap:8px;align-items:center;margin-top:5px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="ivmSyncExtra('${id}',${i})">${synced ? '更新' : '同步给学生'}</button>
+      ${synced ? '<span style="font-size:11px;color:#2a7a4a">已同步</span>' : '<span style="font-size:10px;color:var(--text-3,#999)">同步后学生在面试准备顶部看到这道题</span>'}</div>
+    ${synced ? `<details style="font-size:11px;margin-top:4px"><summary style="cursor:pointer;color:var(--text-3,#999)">学生的回答${ans ? '' : '（还没写）'}</summary><div style="white-space:pre-wrap;line-height:1.8;color:var(--text-2,#5a5650)">${ivmEsc(ans || '（学生还没写）')}</div></details>` : ''}</div>`;
+}
+async function ivmSyncExtra(id, i) {
+  const st = IVM_ST[id], x = st && st.sel[i]; if (!x || !x.free) return;
+  const sid = st.student ? st.student.id : (st.b && st.b.student_id);
+  if (!sid) { alert('这次面试没有关联到学生档案，不能同步'); return; }
+  const q = String(x.q || '').trim(), note = String(x.extra_note || '').trim(); if (!q) return;
+  const rowKey = st.school || ivbCommonKey(st.bank ? st.bank.variant : '');   // 指定了学校：答案存在该校那一行；没指定：共用行
+  const now = new Date().toISOString();
+  try {
+    let row = null;
+    if (x.extra_id) {   // 已同步：更新题目 / 要点，不重复生成（行被归档 / 删了就重新生成）
+      const r = await sb(`/rest/v1/student_interview_extras?id=eq.${encodeURIComponent(x.extra_id)}`, 'PATCH', { q, teacher_note: note || null, archived: false, updated_at: now });
+      row = (r || [])[0] || null;
+    }
+    if (!row) {
+      const ins = { student_id: sid, row_key: rowKey, item_key: 'x_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), q, teacher_note: note || null, source_booking_id: String(st.b.id), created_by: typeof riyuReviewerName === 'function' ? riyuReviewerName() : '', created_at: now, updated_at: now };
+      const r = await sb('/rest/v1/student_interview_extras', 'POST', ins);
+      row = (r || [])[0] || ins;
+    }
+    x.extra_id = row.id;
+    st.extras = (st.extras || []).filter(e => e.id !== row.id).concat([row]);
+    ivmRender(id);
+  } catch (e) { alert('同步失败：' + e.message + '（如果提示表不存在，请先执行 seed/interview_extras.sql）'); }
+}
+// 改补充题的文字：学生已经答过的，提示一下改题可能让回答对不上
+function ivmEditQ(id, i) {
+  const st = IVM_ST[id], x = st && st.sel[i]; if (!x) return;
+  const ex = ivmExtraOf(st, x);
+  if (ex && ivbAnswer(st.subs, ex.row_key, ex.item_key, null).trim() && !confirm('学生已作答，改题可能让回答对不上。仍要修改题目吗？')) return;
+  const t = prompt('修改题目文字', x.q); if (t == null || !t.trim()) return;
+  x.q = t.trim(); ivmRender(id);
 }
 function ivmView(id, key) { const st = IVM_ST[id]; st.view = st.view || {}; st.view[key] = !st.view[key]; ivmRender(id); }
 function ivmSyncTabs(id) {
@@ -282,7 +334,7 @@ async function ivmSetSchool(id, k) {
 // 保存用：返回 mock 对象；没有任何内容返回 null（调用方就把 mock 键删掉）。表单没打开过（没 mount）返回 undefined = 不要动原有的 mock
 function ivmCollect(id) {
   const st = IVM_ST[id]; if (!st || st.sel == null) return undefined;
-  const m = { school_key: st.school || '', school_name: ivmSchoolName(st, st.school), variant: st.bank ? (st.bank.variant || '') : '', variant_label: ivmVariantName(st), qa: st.sel.map(x => ({ item_key: x.item_key, q: x.q, free: !!x.free, prepared: x.free ? '' : (x.prepared || (x._miss ? '' : ivmPrepared(st, x.item_key)) || ''), answer: x.answer || '', rating: x.rating || '', comment: x.comment || '' })), overall_rating: st.overall_rating || '', overall: st.overall || '', next: st.next || '' };
+  const m = { school_key: st.school || '', school_name: ivmSchoolName(st, st.school), variant: st.bank ? (st.bank.variant || '') : '', variant_label: ivmVariantName(st), qa: st.sel.map(x => Object.assign({}, x.extra_id ? { extra_id: x.extra_id, extra_note: x.extra_note || '' } : {}, { item_key: x.item_key, q: x.q, free: !!x.free, prepared: x.free ? '' : (x.prepared || (x._miss ? '' : ivmPrepared(st, x.item_key)) || ''), answer: x.answer || '', rating: x.rating || '', comment: x.comment || '' })), overall_rating: st.overall_rating || '', overall: st.overall || '', next: st.next || '' };
   return ivmHas(m) ? m : null;
 }
 // 把 mock 合并进已有的 daily_record（其他键 study / plan / extra… 原样保留）

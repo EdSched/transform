@@ -5,7 +5,7 @@
 // sections 以「题 key」为键；旧版 8 段（self / motive / …）的答案原样保留在同一行里，只读显示在「旧版面试稿」折叠块
 // 依赖：study.js（studyStudent / studyData / escA / studyPlanDoc / switchStudyTab）、shared/riyu.js、shared/interview-bank.js、shared/doc-versions.js
 // ══════════════════════════════════
-let ivs = { bank: null, variant: '', resAll: [], subs: [], vers: [], old: null, drafts: {}, dirty: {}, school: '', chap: '', q: '', res: [], mocks: [], cat: 'bank', moreChaps: false, savedAt: '', err: '', focusTodo: false, loading: false };
+let ivs = { bank: null, variant: '', resAll: [], subs: [], vers: [], old: null, drafts: {}, dirty: {}, school: '', chap: '', q: '', res: [], mocks: [], extras: [], extraShown: 12, cat: 'bank', moreChaps: false, savedAt: '', err: '', focusTodo: false, loading: false };
 let ivsSummary = null;      // 学习页提醒 / 时间线用的摘要：{ rem: ivbReminder 结果 | null, done, total }
 let ivsSaveTimer = null;
 const ivsChain = {};        // rowKey → 保存队列（避免同一行并发保存时重复新建）
@@ -25,7 +25,7 @@ function ivsSchoolName(p) { return [p.school_name, p.faculty, p.department].filt
 function ivsPlanByKey(k) { return ivsPlans().find(p => riyuKeyOf(p) === k) || null; }
 async function ivsLoad() {
   if (ivs.loading) return; ivs.loading = true;
-  let subs = [], vers = [], err = '', bank = null, old = null;
+  let subs = [], vers = [], err = '', bank = null, old = null, extras = [];
   const plans = ivsPlans();
   const keep = ivs.school && plans.some(p => riyuKeyOf(p) === ivs.school);
   const school = keep ? ivs.school : ivbDefaultSchool(plans);
@@ -33,6 +33,7 @@ async function ivsLoad() {
     await Promise.all([
       ivbForStudent(studyStudent, ivsPlanByKey(school), ivs.variant).then(b => { bank = b; }),   // 题库版本跟着志望校走
       sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=eq.${RIYU_INTERVIEW_KIND}&select=*`, 'GET', null, { cache: 'no-store' }).then(r => { subs = r || []; }).catch(e => { err = e.message; }),
+      ivbExtrasLoad(studyStudent.id).then(r => { extras = r; }).catch(() => {}),   // 老师补充的问题
       docvLoad(studyStudent.id, 'interview').then(r => { vers = r || []; }).catch(() => {}),
       riyuLoadGuide(RIYU_INTERVIEW_KIND).then(g => { old = g; }).catch(() => {}),
       ivbLoadResources(studyStudent).then(r => { ivs.resAll = r; }).catch(() => {}),
@@ -40,13 +41,13 @@ async function ivsLoad() {
     ]);
   } finally { ivs.loading = false; }
   if (ivs.focusTodo) ivs.cat = 'bank';
-  Object.assign(ivs, { bank, subs, vers, old, err, school, variant: bank ? bank.variant : '' });
+  Object.assign(ivs, { bank, subs, vers, old, err, school, extras, variant: bank ? bank.variant : '' });
   ivs.res = ivbResForVariant(ivs.resAll, ivs.variant);
   if (bank && (!ivs.chap || !bank.chapters.some(c => c.key === ivs.chap))) ivs.chap = bank.chapters.length ? bank.chapters[0].key : '';
   if (ivs.focusTodo && bank) {
     ivs.focusTodo = false; ivs.q = '';
-    const pr = ivbProgress(bank, subs, ivs.school, ivs.drafts);
-    if (pr.firstTodo) { ivs.chap = pr.firstTodo.chapter; ivs._scrollTo = pr.firstTodo.item; }
+    const pr = ivbProgress(bank, subs, ivs.school, ivs.drafts, extras);
+    if (pr.firstTodo) { if (pr.firstTodo.chapter !== IVB_EXTRA_CH) ivs.chap = pr.firstTodo.chapter; ivs._scrollTo = pr.firstTodo.item; }   // 补充题在顶部，不用切章
   }
   ivsRender();
 }
@@ -84,7 +85,8 @@ function ivsRender() {
     ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap"><span style="font-size:11px;color:var(--text-muted)">写给哪所志望校（带「各校」标记的章按学校分别作答）：</span>
         <select onchange="ivsSetSchool(this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:3px;background:var(--bg);font-family:inherit;max-width:100%">${plans.map(p => `<option value="${escA(riyuKeyOf(p))}" ${ivs.school === riyuKeyOf(p) ? 'selected' : ''}>${escA(ivsSchoolName(p))}</option>`).join('')}</select></div>`
     : '<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">还没有志望校：带「各校」标记的章请先在「志望校」标签填写志望校；其余章可以照常写。</div>';
-  wrap.innerHTML = `${ivsCatBar()}${head}
+  wrap.innerHTML = `${ivsCatBar()}<div id="ivs_extra"></div>${head}
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px">${ivxBtnHtml(studyStudent, ivs.school, '下载我的面试回答', 'font-size:12px;border:1px solid var(--accent);color:var(--accent);border-radius:3px;background:var(--surface);padding:5px 14px;cursor:pointer;font-family:inherit')}</div>
     <div id="ivs_prog"></div>
     <input id="ivs_q" value="${escA(ivs.q)}" placeholder="搜索题目 / 指导 / 参考例 / 关键词（搜索所有章节）" oninput="ivsSearchInput(this.value)" style="${IVS_INP};margin-bottom:10px">
     ${schoolSel}
@@ -92,6 +94,7 @@ function ivsRender() {
     <div id="ivs_body"></div>
     <div id="ivs_legacy"></div>
     <div id="ivs_upload"></div>`;
+  ivsRenderExtra();
   ivsRenderBody();
   ivsRenderProg();
   ivsRenderLegacy();
@@ -99,7 +102,7 @@ function ivsRender() {
 }
 function ivsRenderProg() {
   const el = document.getElementById('ivs_prog'); if (!el || !ivs.bank) return;
-  const pr = ivbProgress(ivs.bank, ivs.subs, ivs.school, ivs.drafts);
+  const pr = ivbProgress(ivs.bank, ivs.subs, ivs.school, ivs.drafts, ivs.extras);
   const pct = pr.total ? Math.round(pr.done / pr.total * 100) : 0;
   el.innerHTML = pr.total ? `<div style="margin-bottom:10px"><div style="font-size:11px;color:var(--text-secondary);margin-bottom:3px">必答 ${pr.done} / ${pr.total}${pr.done >= pr.total ? ' · 已全部写完，可以提交给老师' : ''}</div>
     <div style="height:6px;background:var(--border-light);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--accent)"></div></div></div>` : '';
@@ -107,7 +110,7 @@ function ivsRenderProg() {
 function ivsRenderBody() {
   const box = document.getElementById('ivs_body'); if (!box || !ivs.bank) return;
   const b = ivs.bank, q = ivs.q.trim();
-  const pr = ivbProgress(b, ivs.subs, ivs.school, ivs.drafts);
+  const pr = ivbProgress(b, ivs.subs, ivs.school, ivs.drafts, ivs.extras);
   let html = '';
   if (q) {
     const hits = ivbSearch(b, q);
@@ -142,7 +145,7 @@ function ivsRenderBody() {
   }
   box.innerHTML = html;
   box.querySelectorAll('textarea[data-item]').forEach(t => { t.style.height = 'auto'; t.style.height = Math.max(t.scrollHeight, 64) + 'px'; });
-  if (ivs._scrollTo) { const el = box.querySelector(`[data-card="${ivs._scrollTo}"]`); ivs._scrollTo = ''; if (el) { el.scrollIntoView({ block: 'center' }); const t = el.querySelector('textarea'); if (t) t.focus(); } }
+  if (ivs._scrollTo) { const el = (document.getElementById('ivs_wrap') || box).querySelector(`[data-card="${ivs._scrollTo}"]`); ivs._scrollTo = ''; if (el) { el.scrollIntoView({ block: 'center' }); const t = el.querySelector('textarea'); if (t) t.focus(); } }
 }
 function ivsSchoolNameByKey(k) { const p = ivsPlans().find(x => riyuKeyOf(x) === k); return p ? ivsSchoolName(p) : ''; }   // 共用行（_common / _common@版本）没有学校名
 // 老师批复版本（该行已批复时）
@@ -175,6 +178,43 @@ function ivsItemHtml(ch, it, inSearch) {
       ${answerable ? `<span style="margin-left:auto;font-size:10px;color:${done ? 'var(--success,#2a7a4a)' : 'var(--text-muted)'}">${done ? '已写' : '未写'}</span>` : ''}</div>
     ${kw}${tips}${ex}${ta}
   </div>`;
+}
+
+// ── 老师补充的问题（student_interview_extras）：面试准备顶部，高亮、放在最前面；答案走同一套 ivsInput / ivsSaveRowDo，存进 riyu_submissions.sections[item_key] ──
+function ivsExtraList() {
+  const list = ivbExtrasFor(ivs.extras, ivs.school).map(e => ({ e, done: !!ivbAnswer(ivs.subs, e.row_key, e.item_key, ivs.drafts).trim() }));
+  return list.filter(x => !x.done).concat(list.filter(x => x.done));   // 没答完的永远排在最前面，答完的紧跟其后
+}
+function ivsExtraCardStyle(done) {
+  return done ? 'border:1px solid var(--border-light);border-radius:5px;padding:11px 13px;margin-bottom:10px;background:var(--surface)'
+    : 'border:1px solid #b8953a;border-radius:5px;padding:11px 13px;margin-bottom:10px;background:rgba(184,149,58,.12)';
+}
+function ivsExtraCardMark(card, done) {
+  card.style.cssText = ivsExtraCardStyle(done);
+  const st = card.querySelector('[data-xs]'); if (st) { st.textContent = done ? '已写' : '未写'; st.style.color = done ? 'var(--success,#2a7a4a)' : 'var(--text-muted)'; }
+}
+function ivsExtraCardHtml(x) {
+  const e = x.e, rk = e.row_key, val = ivbAnswer(ivs.subs, rk, e.item_key, ivs.drafts);
+  const sch = ivbIsCommonKey(rk) ? '' : ivsSchoolNameByKey(rk);
+  return `<div data-card="${escA(e.item_key)}" data-extra="1" style="${ivsExtraCardStyle(x.done)}">
+    <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><span style="font-size:10px;color:#fff;background:#b8953a;border-radius:2px;padding:0 6px">老师补充</span>
+      <span style="font-size:13px;font-weight:600;line-height:1.7">${escA(e.q)}</span><span style="font-size:10px;color:#a0621a;border:1px solid #e8c9a0;border-radius:2px;padding:0 5px">必答</span>
+      <span data-xs style="margin-left:auto;font-size:10px;color:${x.done ? 'var(--success,#2a7a4a)' : 'var(--text-muted)'}">${x.done ? '已写' : '未写'}</span></div>
+    ${sch ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">关于：${escA(sch)}</div>` : ''}
+    ${String(e.teacher_note || '').trim() ? `<div style="background:#faf6ec;border:1px solid #efe4c8;border-radius:3px;padding:6px 10px;margin:6px 0;font-size:11px;color:var(--text-secondary);line-height:1.8"><span style="color:#8a6a1b;font-weight:600">老师的补充要点</span><div style="white-space:pre-wrap">${escA(e.teacher_note)}</div></div>` : ''}
+    <textarea data-row="${escA(rk)}" data-item="${escA(e.item_key)}" rows="3" placeholder="请修改并写下你的回答" oninput="ivsInput(this)" style="${IVS_INP};resize:vertical;overflow:hidden;margin-top:6px">${escA(val)}</textarea></div>`;
+}
+function ivsRenderExtra() {
+  const box = document.getElementById('ivs_extra'); if (!box) return;
+  const list = ivsExtraList();
+  const others = (ivs.extras || []).length - ivbExtrasFor(ivs.extras, ivs.school).length;
+  if (!list.length) { box.innerHTML = others > 0 ? `<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">老师还给其他志望校补充了 ${others} 道问题，切换志望校后可见</div>` : ''; return; }
+  const left = list.filter(x => !x.done).length, MAX = ivs.extraShown || 12, shown = list.slice(0, MAX);
+  box.innerHTML = `<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:600;margin-bottom:6px;color:#8a6a1b">${IVB_EXTRA_TITLE}<span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:8px">${left ? `还有 ${left} 道没回答` : '已全部回答'}</span></div>
+    ${shown.map(ivsExtraCardHtml).join('')}
+    ${list.length > shown.length ? `<div style="text-align:center;padding:6px"><span onclick="ivs.extraShown=(ivs.extraShown||12)+30;ivsRenderExtra()" style="cursor:pointer;font-size:11px;color:var(--text-muted);border:1px dashed var(--border);border-radius:3px;padding:4px 14px">显示更多（还有 ${list.length - shown.length} 道）</span></div>` : ''}
+    ${others > 0 ? `<div style="font-size:11px;color:var(--text-muted)">老师还给其他志望校补充了 ${others} 道问题，切换志望校后可见</div>` : ''}</div>`;
+  box.querySelectorAll('textarea[data-item]').forEach(t => { t.style.height = 'auto'; t.style.height = Math.max(t.scrollHeight, 64) + 'px'; });
 }
 
 // ── 交互 ──
@@ -212,7 +252,7 @@ async function ivsSetSchool(k) {
       ivsRender(); return;
     }
   }
-  ivsRenderBody(); ivsRenderProg();
+  ivsRenderExtra(); ivsRenderBody(); ivsRenderProg();
 }
 function ivsRefreshSummary() { if (typeof ivsReminderLoad === 'function') ivsReminderLoad().then(() => { if (typeof studyRemindersRender === 'function') studyRemindersRender(); }).catch(() => {}); }
 let ivsSearchTimer = null;
@@ -221,6 +261,7 @@ function ivsInput(el) {
   const rk = el.dataset.row, ik = el.dataset.item;
   (ivs.drafts[rk] = ivs.drafts[rk] || {})[ik] = el.value;
   ivs.dirty[rk] = true;
+  const xc = el.closest('[data-extra]'); if (xc) ivsExtraCardMark(xc, !!el.value.trim());   // 补充题写完：就地换成不高亮样式（不重画，免得丢光标）
   el.style.height = 'auto'; el.style.height = Math.max(el.scrollHeight, 64) + 'px';
   const st = document.getElementById('ivs_stat'); if (st) st.textContent = '未保存…';
   ivsRenderProgSoon();
@@ -234,7 +275,7 @@ function ivsFlush() {   // 自动保存所有有改动的行（切换页签时�
 }
 async function ivsSaveNow(rk, submit) {
   if (submit) {
-    const pr = ivbProgress(ivs.bank, ivs.subs, ivs.school, ivs.drafts);
+    const pr = ivbProgress(ivs.bank, ivs.subs, ivs.school, ivs.drafts, ivs.extras);
     if (pr.total && pr.done < pr.total && !confirm(`必答题还有 ${pr.total - pr.done} 题没写完，现在提交给老师吗？`)) return;
   }
   const ok = await ivsSaveRow(rk, submit, false);
@@ -276,7 +317,7 @@ async function ivsSaveRowDo(rowKey, submit, silent) {
     const t = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
     ivs.savedAt = submit ? '已提交 ' + t : '已保存 ' + t;
     if (typeof ivsReminderLoad === 'function') ivsReminderLoad().then(() => { if (typeof studyRemindersRender === 'function') studyRemindersRender(); }).catch(() => {});   // 提醒 / 时间线重算
-    if (submit) ivsRenderBody(); else { const s2 = document.getElementById('ivs_stat'); if (s2) { s2.style.color = 'var(--ok,#2a7a4a)'; s2.textContent = ivs.savedAt; } }
+    if (submit) { ivsRenderExtra(); ivsRenderBody(); } else { const s2 = document.getElementById('ivs_stat'); if (s2) { s2.style.color = 'var(--ok,#2a7a4a)'; s2.textContent = ivs.savedAt; } }
     ivsRenderProg();
     if (typeof studyPlanBarRender === 'function' && document.getElementById('plan_doc_bar')) { studyPlanSubs[RIYU_INTERVIEW_KIND] = ivs.subs; studyPlanBarRender(); }
     return true;
@@ -329,7 +370,7 @@ async function ivsUpload() {
 function ivsChipText(subs) {
   const plans = ivsPlans(), r = ivbResolve(studyStudent, ivbDefaultPlan(plans), ivs.variant);
   const bank = r && ivbCache[ivbCacheKey(r.key, r.variant)]; if (!bank) return '';
-  const pr = ivbProgress(bank, subs || [], ivbDefaultSchool(plans));
+  const pr = ivbProgress(bank, subs || [], ivbDefaultSchool(plans), null, ivs.extras);
   return pr.total ? `必答 ${pr.done}/${pr.total}` : '';
 }
 
@@ -340,15 +381,17 @@ async function ivsReminderLoad() {
   const bank = await ivbForStudent(studyStudent, ivbDefaultPlan(plans), ivs.variant);
   if (!bank) { ivsSummary = { rem: null, done: 0, total: 0 }; return; }
   const today = (typeof jstToday === 'function') ? jstToday() : new Date().toISOString().slice(0, 10);
-  const [subs, bks] = await Promise.all([
+  const [subs, bks, extras] = await Promise.all([
     sb(`/rest/v1/riyu_submissions?student_id=eq.${encodeURIComponent(studyStudent.id)}&kind=eq.${RIYU_INTERVIEW_KIND}&select=*`, 'GET', null, { cache: 'no-store' }).catch(() => []),
     sb(`/rest/v1/bookings?student_id=eq.${encodeURIComponent(studyStudent.id)}&type=eq.mock&status=in.(pending,confirmed)&slot_date=gte.${today}&select=type,status,slot_date`, 'GET', null, { cache: 'no-store' }).catch(() => []),
+    ivbExtrasLoad(studyStudent.id),
   ]);
-  const pr = ivbProgress(bank, subs, ivbDefaultSchool(plans));
-  ivsSummary = { rem: ivbReminder(bank, subs, plans, bks), done: pr.done, total: pr.total };
+  const pr = ivbProgress(bank, subs, ivbDefaultSchool(plans), null, extras);
+  ivsSummary = { rem: ivbReminder(bank, subs, plans, bks, extras), done: pr.done, total: pr.total };
 }
 function ivsReminderItem() {
   const r = ivsSummary && ivsSummary.rem; if (!r) return null;
+  if (r.reason === 'extra') return { t: `面试稿 · 老师补充了 ${r.extraLeft} 道问题，请回答`, go: 'studyGoInterview()' };   // 有未回答的补充题：优先提醒，点进去定位到第一道
   return { t: `面试稿 · 还有 ${r.left} 题没写完${r.reason === 'mock' ? '（已约模拟面试）' : '（考试在 60 天内）'}`, go: 'studyGoInterview()' };
 }
 function ivsTimelineText() { return ivsSummary && ivsSummary.total ? `面试稿 ${ivsSummary.done}/${ivsSummary.total} 题` : ''; }
