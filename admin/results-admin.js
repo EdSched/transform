@@ -200,7 +200,7 @@ const RA_UG_ONLY_DENY = ['grad', 'delete', 'deleteAll', 'deletePhoto', 'export',
 // 老师端「合格数据查看（只读）」（permissions.result_data_view）：和管理端一样看全部合格数据（大学院 + 学部、含照片），但什么都不能改
 // 只能「看」：列表 / 搜索 / 筛选 / 详细（只读）/ 照片查看。录入、编辑、删除、上传 / 删除照片、下载、导入、等级批量修改、合并重复、海报全部拒绝
 let raReadOnly = false;
-const RA_READONLY_DENY = ['add', 'edit', 'grad', 'delete', 'deleteAll', 'photoUpload', 'deletePhoto', 'export', 'import', 'tier', 'dup', 'poster'];
+const RA_READONLY_DENY = ['add', 'edit', 'grad', 'delete', 'deleteAll', 'photoUpload', 'deletePhoto', 'import', 'tier', 'dup', 'poster'];
 function raCan(action) {
   if (raReadOnly && RA_READONLY_DENY.indexOf(action) >= 0) return false;
   return !(raUgOnly && RA_UG_ONLY_DENY.indexOf(action) >= 0);
@@ -537,7 +537,7 @@ CREATE POLICY "anon update" ON admission_results FOR UPDATE USING (true);</pre>
   <div class="list-controls">
     <input type="text" id="search-input" placeholder="大学名・研究科・専攻・学生名（漢字 / ピンイン頭文字）で検索..." oninput="searchBox(this,raRenderList)">
     <span class="result-count" id="result-count"></span>
-    <button class="btn btn-secondary" id="export-btn" onclick="raXlExport('grad')" style="padding:5px 12px;font-size:11px">⬇ 下载 Excel</button>
+    <button class="btn btn-secondary" id="export-btn" onclick="raXlExport('grad')" style="padding:5px 12px;font-size:11px;${raCan('export')?'':'display:none'}">⬇ 下载 Excel</button>
     ${raIsTeacher() || raScopedLead() ? '' : '<button class="btn btn-danger" onclick="raConfirmDeleteAll()" style="margin-left:auto">全件削除</button>'}
   </div>
   <div id="rm-filters-grad"></div>
@@ -1221,7 +1221,7 @@ async function raXlExport(kind) {
 
 // ── 模板 ──
 async function raXlTemplate(kind) {
-  if (!raCan('export')) { raToast('没有权限', false); return; }
+  if (!raCan('import')) { raToast('没有权限', false); return; }
   if (!(await raXlEnsureLib())) return;
   if (kind === 'ug') { raUgTemplate(); return; }
   await raXlLoadMajorRows();
@@ -1284,7 +1284,7 @@ async function raXlTemplate(kind) {
 
 // 学部模板：列 = 公开页的顺序；第 2 行是填写说明（导入时自动跳过）；另附「填写说明」页
 function raUgTemplate() {
-  if (!raCan('export')) { raToast('没有权限', false); return; }
+  if (!raCan('import')) { raToast('没有权限', false); return; }
   const K = RA_XL.ug, idx = K.cols.map((c, i) => i).filter(i => K.cols[i].tpl !== false);
   const heads = idx.map(i => K.cols[i].head), instr = idx.map(i => K.sample[i]);
   const wsFill = XLSX.utils.aoa_to_sheet([heads, instr]); raXlSetWidths(wsFill, [heads, instr]);
@@ -1403,7 +1403,7 @@ async function raXlShowPreview(kind) {
 }
 // ── 下载「需要修改的行」：表头 / 列顺序 / 原始值和上传的文件一样，最前面加一列「需要修改」（导入时对不上任何字段，自动忽略）──
 async function raXlDownloadFix(kind) {
-  if (!raCan('export')) { raToast('没有权限', false); return; }
+  if (!raCan('import')) { raToast('没有权限', false); return; }
   const K = RA_XL[kind], plan = raXl.plan[kind] || [], fixes = plan.filter(x => x.fix);
   if (!fixes.length) return;
   const heads = kind === 'ug' ? raUgUploadHeaders : raUploadHeaders, upRows = kind === 'ug' ? raUgUploadRows : raUploadRows, colMap = kind === 'ug' ? raUgUploadColMap : raUploadColMap;
