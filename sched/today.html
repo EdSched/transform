@@ -6,9 +6,9 @@
 <style>
   /* VIP 占用：中性暖灰 + 很淡的斜线纹，一眼看出是「被占用」而不是某一类课程；只显示「VIP」，不露信息 */
   #gridBox td.occ-vip{ background:repeating-linear-gradient(135deg,#efeae4 0,#efeae4 7px,#e3dbd2 7px,#e3dbd2 9px); border-color:#d9cfc4; color:#8a7f74; }
-  #gridBox td.occ-vip .occ-in{ font-size:21px; font-weight:800; letter-spacing:.06em; color:#8a7f74; }
+  #gridBox td.occ-vip .occ-in{ font-size:max(11px,calc(21px*var(--k,1))); font-weight:800; letter-spacing:.06em; color:#8a7f74; }
   /* VIP 教室列：比大教室窄（约一半宽），表头小一号；与大教室之间用稍粗的竖线隔开 */
-  #gridBox thead th.vipcol{ font-size:clamp(12px,1.05vw,18px); font-weight:800; overflow:hidden; }
+  #gridBox thead th.vipcol{ font-size:min(clamp(12px,1.05vw,18px),max(10px,calc(27px*var(--k,1)))); font-weight:800; overflow:hidden; }
   #gridBox thead th.vipcol small{ font-size:clamp(9px,.6vw,11px); }
   #gridBox th.vipfirst,#gridBox td.vipfirst{ border-left:3px solid #b9aea1; }
   html,body{ height:100%; margin:0; overflow:hidden; }
@@ -23,27 +23,22 @@
   #gridBox{ height:100%; }
   #gridBox table{ width:100%; height:100%; table-layout:fixed; border-collapse:collapse; }
   #gridBox th,#gridBox td{ border:1px solid var(--line); }
-  #gridBox thead th{ font-size:27px; font-weight:800; padding:5px 3px; }
-  #gridBox thead th small{ font-size:13px; font-weight:600; }
-  #gridBox td.tcol,#gridBox th.tcol{ width:80px; font-size:16px; font-weight:700; color:var(--sub); white-space:nowrap; }
-  #gridBox td{ text-align:center; vertical-align:middle; padding:1px 3px; }
+  #gridBox thead th{ font-size:max(12px,calc(27px*var(--k,1))); font-weight:800; padding:calc(5px*var(--k,1)) 3px; line-height:1.15; }
+  #gridBox thead th small{ font-size:max(9px,calc(13px*var(--k,1))); font-weight:600; }
+  #gridBox td.tcol,#gridBox th.tcol{ width:80px; font-size:max(9px,calc(16px*var(--k,1))); font-weight:700; color:var(--sub); white-space:nowrap; }
+  #gridBox td{ text-align:center; vertical-align:middle; padding:0 3px; line-height:1; }
+  #gridBox tr,#gridBox td.cell{ height:var(--rowh,24px); }
   #gridBox td.cell{ min-width:0; }   /* style.css 里给空格设了 96px 最小宽，VIP 窄列放不下 */
-  #gridBox td.tcol{ padding:1px 4px; }
-  #gridBox .occ-in{ font-size:21px; font-weight:800; line-height:1.15; }
-  #gridBox .occ-in small{ display:block; font-size:19px; font-weight:700; opacity:.9; }
+  #gridBox td.tcol{ padding:0 4px; line-height:1; }
+  #gridBox .occ-in{ font-size:max(11px,calc(21px*var(--k,1))); font-weight:800; line-height:1.1; }
+  #gridBox .occ-in small{ display:block; font-size:max(9px,calc(19px*var(--k,1))); font-weight:700; opacity:.9; }
   #gridBox .freetag{ font-size:11px; color:#c8ccd2; }
   .foot-note{ font-size:10px; text-align:center; color:var(--sub); margin:0; }
-  /* 矮屏（如 1366×768）：表头和时段列缩一点，让 28 行时段整张表放进一屏；课程格里的字号不变 */
-  @media (max-height:820px) and (min-width:901px){
-    #gridBox thead th{ font-size:20px; padding:3px 2px; line-height:1.15; }
-    #gridBox thead th small{ font-size:11px; }
-    #gridBox td.tcol,#gridBox th.tcol{ font-size:12px; padding:0 3px; }
-    #gridBox td{ padding:0 3px; }
-    #gridBox tr,#gridBox td.cell{ height:17px; }   /* style.css 里每行最小 24px，28 行放不进 768 高的屏 */
-    #gridBox .occ-in{ line-height:1.05; }
-    #gridBox .occ-in small{ font-size:14px; }
-    #gridBox thead th.vipcol{ font-size:clamp(12px,1.05vw,15px); }
-  }
+  /* 整页自适应：fitBoard() 按窗口高度算出 --rowh（行高）和 --k（字号系数，最大 1 = 原来的大小），
+     不管电视有没有开系统 / 浏览器放大，28 行时段都放进一屏。占用块里的字放在格子里面裁剪，不再把行撑高 */
+  #gridBox td.occ{ position:relative; padding:0; }
+  #gridBox td.occ > .occ-in{ position:absolute; top:0; right:0; bottom:0; left:0; display:flex; flex-direction:column; align-items:center; justify-content:center; overflow:hidden; padding:1px 3px; }
+  @media (max-height:700px){ .foot-note{ display:none; } }
   @media (max-width:900px){ html,body{ overflow:auto; } .wrap{ height:auto; } #boardCard{ display:block; } #gridBox{ height:auto; } #gridBox table{ height:auto; } }
 </style>
 </head><body>
@@ -97,6 +92,24 @@ async function boot(){
     }catch(e){ /* 网络抖动忽略，下次再刷 */ }
   }, REFRESH_MS);
 }
+// 整页自适应（电视大屏）：按可用高度算行高 --rowh 和字号系数 --k（最大 1），行高不低于 11px；再小就让 .board 可上下滚动，不再静默截掉
+function fitBoard(){
+  const box=el('gridBox'), t=box.querySelector('table'), bd=box.parentElement;
+  if(!t) return;
+  if(window.innerWidth<=900){ box.style.removeProperty('--k'); box.style.removeProperty('--rowh'); bd.style.overflowY=''; return; }   // 手机窄屏：沿用原样式
+  const n=SLOTS.length, MINROW=11;
+  let k=1, rowh=24;
+  for(let i=0;i<4;i++){
+    box.style.setProperty('--k',k.toFixed(3)); box.style.setProperty('--rowh',rowh.toFixed(2)+'px');
+    t.style.height='auto';
+    const head=t.tHead.getBoundingClientRect().height, avail=box.clientHeight;
+    const nr=Math.max(MINROW,(avail-head)/n), nk=Math.max(.5,Math.min(1,nr/24));
+    const done=Math.abs(nr-rowh)<.3 && Math.abs(nk-k)<.01; rowh=nr; k=nk; if(done) break;
+  }
+  box.style.setProperty('--k',k.toFixed(3)); box.style.setProperty('--rowh',rowh.toFixed(2)+'px');
+  t.style.height='';
+  bd.style.overflowY = t.getBoundingClientRect().height > box.clientHeight+2 ? 'auto' : '';   // 实在放不下（窗口极小）：允许滚动
+}
 function render(){
   const campus=el('campus').value, date=el('date').value;
   const fmt=r=>({id:r.id,name:r.name,sub:(r.type==='大课'?(r.size_label+'·'+r.capacity+'人'):(r.capacity+'人'))});
@@ -123,6 +136,7 @@ function render(){
     catOf:(cid)=>window.CATMAP?window.CATMAP[cid]:'',
     nameOf:(cid)=>window.CNAME?window.CNAME[cid]:''
   });
+  fitBoard();
 }
 let _rz; window.addEventListener('resize', ()=>{ clearTimeout(_rz); _rz=setTimeout(()=>{ if(ROOMS.length) render(); }, 200); });
 boot();
