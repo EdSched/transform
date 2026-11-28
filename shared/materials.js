@@ -252,9 +252,9 @@ function matStaffInner(sid) {
   let dl = '';   // 截止 = 出愿前 2 个月（考试月 -3）；考试月由考学进度卡片的节点计算记在 student._examIdx
   const ei = c.student._examIdx;
   if (typeof ei === 'number') { const i = ei - 3; dl = ` · 截止 ${Math.floor(i / 12)}年${i % 12 + 1}月`; }
-  const rowCss = 'display:flex;gap:8px;align-items:flex-start;margin-bottom:6px';
-  const lblCss = 'flex:0 0 150px;font-size:11px;font-weight:600;color:var(--text-2,#5a5650);line-height:24px';
-  const chipsCss = 'display:flex;flex-wrap:wrap;gap:5px;min-width:0';
+  const rowCss = 'display:flex;flex-wrap:wrap;gap:4px 10px;align-items:flex-start;margin-bottom:6px';
+  const lblCss = 'flex:0 0 auto;min-width:215px;white-space:nowrap;font-size:11px;font-weight:600;color:var(--text-2,#5a5650);line-height:24px';
+  const chipsCss = 'display:flex;flex-wrap:wrap;gap:5px;flex:1 1 260px;min-width:0';
   return `${proofs.length ? `<div style="${rowCss}"><div style="${lblCss}">证明材料<span style="font-weight:400;color:var(--text-3,#999)">${matEsc(dl)} · ${readyN}/${proofs.length}</span></div><div style="${chipsCss}">${proofs.map(proofChip).join('')}</div></div>` : ''}
     ${docs.length ? `<div style="${rowCss}"><div style="${lblCss}">文书<span style="font-weight:400;color:var(--text-3,#999)">（择校后）</span></div><div style="${chipsCss}">${docs.map(docChip).join('')}</div></div>` : ''}
     ${edit ? `<div style="border:1px solid var(--accent,#b8953a);border-radius:4px;padding:10px 12px;margin-top:4px;background:var(--surface,#fff)">${edit}</div>` : ''}`;
