@@ -138,7 +138,7 @@ const RA_CSS = `
   border-bottom: 2px solid var(--border); font-weight: 500; letter-spacing: .04em;
   color: var(--text-secondary); white-space: nowrap; cursor: pointer; user-select: none;
 }
-#ra-root.ra-readonly .ra-pz, #ra-root.ra-readonly #edit-modal .form-actions .btn-primary, #ra-root.ra-readonly #ug-edit-modal .form-actions .btn-primary, #ra-root.ra-readonly .ra-wr { display: none !important; }
+#ra-root.ra-readonly #edit-modal .form-actions .btn-primary, #ra-root.ra-readonly #ug-edit-modal .form-actions .btn-primary, #ra-root.ra-readonly .ra-wr { display: none !important; }
 #ra-root.ra-ugonly .data-table th:last-child, #ra-root.ra-ugonly .data-table td:last-child { position: sticky; right: 0; background: var(--surface); box-shadow: -6px 0 6px -6px rgba(0,0,0,.18); z-index: 1 }
 #ra-root .data-table th:hover { color: var(--text-primary); }
 #ra-root .data-table th .sort-icon { margin-left: 4px; opacity: .4; }
@@ -202,12 +202,19 @@ const RA_UG_ONLY_DENY = ['grad', 'delete', 'deleteAll', 'deletePhoto', 'export',
 let raReadOnly = false;
 const RA_READONLY_DENY = ['add', 'edit', 'grad', 'delete', 'deleteAll', 'photoUpload', 'deletePhoto', 'import', 'tier', 'dup', 'poster'];
 function raCan(action) {
+  if (action === 'photoFill') return raCan('photoUpload') || (raReadOnly && raCanPhotos());   // 补图：能上传就能补；只读时能看照片的人也能补（只给没照片的记录）
   if (raReadOnly && RA_READONLY_DENY.indexOf(action) >= 0) return false;
   return !(raUgOnly && RA_UG_ONLY_DENY.indexOf(action) >= 0);
 }
 function raIsTeacher() { return raMode === 'teacher'; }
 // 能不能看截图 / 补图 / 做海报（数据库 can_manage_results() 同一规则）：管理员；result_admin；管理模式的负责人且「合格实绩」页对他开放
 function raCanPhotos() {
+  if (raIsTeacher() && raReadOnly) {   // 只读账号：有 result_admin，或管理范围里有领域 / 专业才能看照片（具体哪几条以数据库读到的为准）
+    const t = (typeof teacherData !== 'undefined' && teacherData) || {};
+    if (String((t.permissions || {}).result_admin).toLowerCase() === 'true') return true;
+    const ms = t.manage_scope || {};
+    return !!((ms.domains || []).length || (ms.majors || []).length);
+  }
   if (raIsTeacher()) return true;   // 老师端「合格实绩管理」本身就要求 result_admin
   if (typeof ACCESS_KEY === 'undefined' || !ACCESS_KEY) return true;   // 管理员邮箱登录
   if (ACCESS_KEY.invalid) return false;
@@ -2278,7 +2285,7 @@ function raRenderList() {
       <td>${r.eng_score?`<span style="font-size:10px;padding:1px 6px;border-radius:2px;background:#e8f4e4;color:#1a4020">${r.eng_score}</span>`:'—'}</td>
       <td>${r.student||'—'}</td>
       <td style="white-space:nowrap">
-        ${(raReadOnly || raRowManageable('grad', r)) ? `<button class="btn btn-secondary" style="padding:3px 10px;font-size:11px;margin-right:4px" onclick="raOpenEditModal(this)">${raReadOnly ? '详细' : '編集'}</button>
+        ${(raReadOnly || raRowManageable('grad', r)) ? `<button class="btn btn-secondary" style="padding:3px 10px;font-size:11px;margin-right:4px" onclick="raOpenEditModal(this)">${raReadOnly ? '详细' : '編集'}</button>${raRoMark('grad', r)}
         ${raReadOnly ? '' : '<button class="btn btn-danger" style="padding:3px 10px;font-size:11px" onclick="raDoDelete(this)">削除</button>'}` : RA_NO_SCOPE_TXT}
       </td>
     </tr>`;
@@ -2422,7 +2429,7 @@ function raTierOf(univ) {
 
 // 请求统一走 admin 的 sb()：自动带当前登录身份，token 过期会续期。path 不含 /rest/v1/ 前缀；opts: { method, body, prefer, headers }
 async function raSbFetch(path, opts = {}) {
-  if (raReadOnly && String(opts.method || 'GET').toUpperCase() !== 'GET') throw new Error('没有权限');   // 只读模式：任何写入一律拦下
+  if (raReadOnly && String(opts.method || 'GET').toUpperCase() !== 'GET' && !(opts.fill && raCan('photoFill'))) throw new Error('没有权限');   // 只读模式：任何写入一律拦下
   const h = Object.assign({}, opts.prefer ? { Prefer: opts.prefer } : {}, opts.headers || {});
   return sb('/rest/v1/' + path, opts.method || 'GET', opts.body || null, Object.keys(h).length ? { headers: h } : null);
 }
@@ -3521,7 +3528,7 @@ function raUgRenderList() {
       <td>${r.eju_total||'—'}</td><td>${E(jl)}</td><td>${r.toefl||'—'}</td><td>${r.toeic||'—'}</td><td>${r.ielts||'—'}</td><td>${E(r.homeroom||'—')}</td><td>${E(r.student||'—')}</td>
       <td style="white-space:nowrap">
         <button class="btn btn-secondary" style="padding:3px 8px;font-size:10px;margin-right:3px" onclick="raUgToggleDetail(this)">详情</button>
-        ${(raReadOnly || raRowManageable('ug', r)) ? `<button class="btn btn-secondary" style="padding:3px 8px;font-size:10px;margin-right:3px" onclick="raUgOpenEditModal(this)">${raReadOnly ? '详细' : '編集'}</button>
+        ${(raReadOnly || raRowManageable('ug', r)) ? `<button class="btn btn-secondary" style="padding:3px 8px;font-size:10px;margin-right:3px" onclick="raUgOpenEditModal(this)">${raReadOnly ? '详细' : '編集'}</button>${raRoMark('ug', r)}
         ${raCan('delete') ? '<button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="raUgDoDelete(this)">削除</button>' : ''}` : RA_NO_SCOPE_TXT}
       </td>
     </tr>`;
@@ -3885,7 +3892,7 @@ async function raArResolveSrc(ref) {
 }
 // 管理员身份上传原截图到私有桶（原图原样，文件名随机 ASCII）；返回路径
 async function raArUploadPhoto(file, folder) {
-  if (!raCan('photoUpload')) throw new Error('没有权限');
+  if (!raCan('photoUpload') && !raCan('photoFill')) throw new Error('没有权限');
   let ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, ''); if (!ext || ext.length > 5) ext = 'jpg';
   const path = (folder || 'grad') + '/' + Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.' + ext;
   const up = await fetch(`${SB_URL}/storage/v1/object/${raPRIV_BUCKET}/${path}`, { method: 'POST', headers: await raAuthHeaders({ 'Content-Type': file.type || 'application/octet-stream' }), body: file });
@@ -3908,10 +3915,16 @@ async function raArRemoveLegacyFile(url) {
   return !!(r && r.ok);
 }
 // 给一条记录设置（或更换）照片：写 result_photos，删旧文件（私有桶里的旧文件 + 迁移前的公开文件）
+// 补图前再确认一次这条记录还没有照片（直接问数据库）
+async function raFillHasPhoto(kind, id) {
+  const r = await raSbFetch(`result_photos?result_kind=eq.${kind}&result_id=eq.${encodeURIComponent(id)}&select=path&limit=1`);
+  return !!(r && r.length);
+}
 async function raArSetPhoto(kind, id, path, legacyRow) {
   await raArEnsurePhotoMap(kind);
   const key = String(id), old = raAR_PH[kind][key];
-  await raSbFetch('result_photos?on_conflict=result_kind,result_id', { method: 'POST', body: { result_kind: kind, result_id: key, path }, prefer: 'resolution=merge-duplicates,return=minimal', headers: {} });
+  if (raReadOnly && (old || await raFillHasPhoto(kind, key))) throw new Error('这条已经有照片了');   // 只读补图：不覆盖已有照片
+  await raSbFetch('result_photos?on_conflict=result_kind,result_id', { method: 'POST', body: { result_kind: kind, result_id: key, path }, prefer: 'resolution=merge-duplicates,return=minimal', headers: {}, fill: true });
   raAR_PH[kind][key] = path;
   if (old && old !== path) await raArRemoveFiles([old]);
   const lu = legacyRow && raArLegacyUrl(legacyRow);
@@ -3946,14 +3959,16 @@ async function raArDeleteResultPhotos(kind, ids) {
 // 编辑弹窗里显示现有照片（临时链接）
 async function raArPhotoShowFor(kind, r, pre) {
   const box = document.getElementById(pre + '-photo-box');
-  if (box) box.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">读取中…</div>';
+  if (raReadOnly && !raCanPhotos()) { if (box) box.innerHTML = ''; return; }   // 只读且没有看照片的权限：不显示照片区
+  if (box) box.innerHTML = raReadOnly ? '' : '<div style="font-size:11px;color:var(--text-muted)">读取中…</div>';
   let url = '';
   try { url = await raArResolveSrc(await raArPhotoRef(kind, r)); } catch (e) { url = ''; }
   raEmPhotoShow(url, false, pre);
+  if (raReadOnly && url && box) { const im = box.querySelector('img'); if (im) { im.style.cursor = 'pointer'; im.onclick = () => raRoView(kind, String(r.id)); } }
 }
 function raEmPhotoShow(url, isNew, pre) {
   const box = document.getElementById((pre || 'em') + '-photo-box'); if (!box) return;
-  box.innerHTML = url ? `<img src="${url}" style="max-width:100%;max-height:160px;border:1px solid var(--border);border-radius:4px;display:block"><div style="font-size:10px;color:var(--text-muted);margin-top:3px">${isNew ? '新图（保存后生效）' : (raReadOnly ? '' : '现在的图；选择文件可更换')}</div>` : '<div style="font-size:11px;color:var(--text-muted)">还没有截图</div>';
+  box.innerHTML = url ? `<img src="${url}" style="max-width:100%;max-height:160px;border:1px solid var(--border);border-radius:4px;display:block"><div style="font-size:10px;color:var(--text-muted);margin-top:3px">${isNew ? '新图（保存后生效）' : (raReadOnly ? '' : '现在的图；选择文件可更换')}</div>` : (raReadOnly ? '' : '<div style="font-size:11px;color:var(--text-muted)">还没有截图</div>');
 }
 function raEmPhotoPick(inp, pre) {
   const f = inp.files[0]; if (!f) return;
@@ -3962,6 +3977,7 @@ function raEmPhotoPick(inp, pre) {
 
 // 截图上传区：拖入 / 点击 / 粘贴，选中后本地预览（保存时才上传）。pre = 'f' | 'ug-f' | 'em' | 'ug-em'
 function raPhotoZone(pre) {
+  if (raReadOnly) return '';   // 只读：不画上传 / 换图区和提示
   return `<div id="${pre}-photo-zone" class="ra-pz" data-pre="${pre}" style="border:1.5px dashed var(--border);border-radius:6px;padding:10px;font-size:12px;color:var(--text-muted);cursor:pointer;text-align:center" onclick="raPhotoZoneClick(event,'${pre}')" ondragover="raPhotoZoneDrag(event,'${pre}',1)" ondragleave="raPhotoZoneDrag(event,'${pre}',0)" ondrop="raPhotoZoneDrop(event,'${pre}')">
     <div id="${pre}-photo-hint">把截图拖到这里，或点击选择，也可以 Ctrl / ⌘+V 粘贴</div>
     <div id="${pre}-photo-prev" style="display:none;align-items:center;gap:10px;text-align:left">
@@ -4047,6 +4063,7 @@ async function raLoadPhotos(kind) {
     raArMigCount();
     // 已做过海报的记录（表还没建时 posterMap 为 null，「海报」筛选和按钮状态都不显示）
     try {
+      if (raReadOnly) throw new Error('readonly');
       const ps = await raSbFetch(`pass_posters?result_kind=eq.${kind}&select=result_id,web_url`);
       c.posterMap = {};
       (ps || []).forEach(p => { c.posterMap[p.result_id] = p.web_url ? 'pub' : 'draft'; });
@@ -4065,7 +4082,7 @@ function raPhChip(on, label, onclick) {
 function raPhRender(kind) {
   kind = kind || 'grad';
   if (raFill[kind].mode === 'fill') return raFillLoad(kind, true);   // 补图模式下搜索框 = 补图的搜索
-  const c = raPH[kind], f = c.f, pm = c.posterMap;
+  const c = raPH[kind], f = c.f, pm = raReadOnly ? null : c.posterMap;   // 只读：不显示任何海报相关内容
   const q = (document.getElementById(c.pre + '-search')?.value || '').trim();
   const isUg = kind === 'ug';
   // 第二组筛选：学部=系統，大学院=本校专业（our_major → 旧学科对照 → 其他）
@@ -4114,7 +4131,7 @@ function raPhRender(kind) {
     const ppath = raAR_PH[kind][String(r.id)] || '', legacy = ppath ? '' : raArLegacyUrl(r);
     const noteText = raArStripNotePhoto(r.note);
     return `<div class="photo-card">
-        <img ${ppath ? `data-path="${esc(ppath)}"` : `src="${esc(legacy)}"`} alt="${esc(r.univ)}" onerror="this.style.display='none'" style="cursor:pointer" onclick="if(this.src)window.open(this.src,'_blank')">
+        <img ${ppath ? `data-path="${esc(ppath)}"` : `src="${esc(legacy)}"`} alt="${esc(r.univ)}" onerror="this.style.display='none'" style="cursor:pointer" onclick="${raReadOnly ? `raRoView('${kind}','${esc(r.id)}',true)` : `if(this.src)window.open(this.src,'_blank')`}">
         <div class="photo-card-info">
           <div class="photo-card-title">${esc(r.univ) || '（未知大学）'} ${r.student ? '· ' + esc(r.student) : ''}
             ${raCan('deletePhoto') ? `<button class="photo-card-del" onclick="raDeletePhotoRecord('${kind}','${esc(r.id)}')">削除</button>` : ''}
@@ -4141,11 +4158,11 @@ function raFillCols(kind) { return 'id,univ,dept,spec,student,' + (kind === 'ug'
 
 function raPhModeRender(kind) {
   const c = raPH[kind], f = raFill[kind], el = document.getElementById(c.pre + '-mode'); if (!el) return;
-  el.innerHTML = raPhChip(f.mode === 'have', '已有截图', `raFillMode('${kind}','have')`) + (raCan('photoUpload') ? raPhChip(f.mode === 'fill', '补图', `raFillMode('${kind}','fill')`) : '')
+  el.innerHTML = raPhChip(f.mode === 'have', '已有截图', `raFillMode('${kind}','have')`) + (raCan('photoFill') ? raPhChip(f.mode === 'fill', '补图', `raFillMode('${kind}','fill')`) : '')
     + `<input type="file" accept="image/*" id="${c.pre}-fillfile" style="display:none" onchange="raFillFilePicked('${kind}',this)">`;
 }
 function raFillMode(kind, m) {
-  if (m === 'fill' && !raCan('photoUpload')) { raToast('没有权限', false); return; }
+  if (m === 'fill' && !raCan('photoFill')) { raToast('没有权限', false); return; }
   const f = raFill[kind]; if (f.mode === m) return;
   if (f.batch) { if (!raBpLeave(kind)) return; f.batch = false; }
   f.mode = m;
@@ -4258,7 +4275,7 @@ function raFillRender(kind) {
     let right;
     if (s && s.s === 'busy') right = '<span style="font-size:11px;color:var(--text-muted)">上传中…</span>';
     else if (s && s.s === 'done') right = `${s.url ? `<img src="${esc(s.url)}" style="height:34px;border:1px solid var(--border);border-radius:3px;cursor:pointer" onclick="event.stopPropagation();window.open(this.src,'_blank')">` : ''}<span style="font-size:12px;color:var(--green);font-weight:600">✓ 已补</span>`
-      + `<button style="${btn}" onclick="event.stopPropagation();raFillPick('${kind}',this)">换一张</button><button style="${btn}" onclick="event.stopPropagation();raFillUndo('${kind}',this)">撤销</button>`;
+      + (raReadOnly ? '' : `<button style="${btn}" onclick="event.stopPropagation();raFillPick('${kind}',this)">换一张</button><button style="${btn}" onclick="event.stopPropagation();raFillUndo('${kind}',this)">撤销</button>`);
     else right = (s && s.s === 'err' ? `<span style="font-size:11px;color:var(--red)">${esc(s.msg)}</span>` : '')
       + `<button style="${btn}" onclick="event.stopPropagation();raFillPick('${kind}',this)">${s && s.s === 'err' ? '重试' : '上传截图'}</button>`;
     return `<div class="ra-fill-row" data-rid="${esc(id)}" onclick="raFillSelect('${kind}',this)" ondragover="event.preventDefault();this.style.background='#fbf6e6'" ondragleave="this.style.background=''" ondrop="raFillDrop('${kind}',event,this)"
@@ -4283,13 +4300,14 @@ function raFillDrop(kind, ev, row) {
   if (file) raFillUpload(kind, row.dataset.rid, file); else raToast('请拖入图片文件', false);
 }
 async function raFillUpload(kind, id, file) {
-  if (!raCan('photoUpload')) { raToast('没有权限', false); return; }
+  if (!raCan('photoFill')) { raToast('没有权限', false); return; }
   const f = raFill[kind], r = f.rows.find(x => String(x.id) === String(id));
   if (!r || !file) return;
   if (!/^image\//.test(file.type)) { raToast('只能上传图片', false); return; }
   if (f.st[id] && f.st[id].s === 'busy') return;
   f.st[id] = { s: 'busy' }; raFillRender(kind);
   try {
+    if (raReadOnly && await raFillHasPhoto(kind, id)) { if (f.phIds) f.phIds.add(String(id)); f.rows = f.rows.filter(x => String(x.id) !== String(id)); delete f.st[id]; raToast('这条已经有照片了', false); raFillRender(kind); return; }
     const path = await raArUploadPhoto(file, kind);
     await raArSetPhoto(kind, id, path, null);
     let url = ''; try { url = (await raArSignedUrls([path]))[path] || ''; } catch (e) {}
@@ -4328,7 +4346,7 @@ window.addEventListener('beforeunload', ev => {
   if (['grad', 'ug'].some(k => raFill[k] && raBpPaired(k).length)) { ev.preventDefault(); ev.returnValue = ''; }
 });
 function raBpAdd(kind, files) {
-  if (!raCan('photoUpload')) { raToast('没有权限', false); return; }
+  if (!raCan('photoFill')) { raToast('没有权限', false); return; }
   const f = raFill[kind], list = [...files].filter(x => /^image\//.test(x.type));
   if (!list.length) { raToast('请选择图片文件', false); return; }
   list.forEach(file => f.imgs.push({ id: ++f.imgSeq, file, url: URL.createObjectURL(file), rid: '', row: null, no: 0, s: '', msg: '' }));
@@ -4390,7 +4408,7 @@ function raBpZoom(kind, id) {
   document.body.appendChild(ov);
 }
 async function raBpUpload(kind) {
-  if (!raCan('photoUpload')) { raToast('没有权限', false); return; }
+  if (!raCan('photoFill')) { raToast('没有权限', false); return; }
   const f = raFill[kind]; if (f.bBusy) return;
   const list = raBpPaired(kind); if (!list.length) return;
   f.bBusy = true; let ok = 0, fail = 0;
@@ -4398,6 +4416,7 @@ async function raBpUpload(kind) {
     const img = list[n];
     f.bProg = (n + 1) + ' / ' + list.length; img.s = 'busy'; raBpRefresh(kind);
     try {
+      if (raReadOnly && await raFillHasPhoto(kind, img.rid)) throw new Error('这条已经有照片了');
       const path = await raArUploadPhoto(img.file, kind);
       await raArSetPhoto(kind, img.rid, path, null);
       f.st[img.rid] = { s: 'done', path, url: img.url };
@@ -4656,4 +4675,43 @@ function raRender(mc, opts) {
   raFillTeacherPreset();
   if (raUgOnly) raSwitchMajor('ug');   // 学部合格录入：只有学部
   if (raReadOnly) raSwitchTab('list');   // 合格数据查看（只读）：直接看数据列表
+  if (raReadOnly && raCanPhotos()) {   // 只读且能看照片：读照片路径表，列表里才有「📷」
+    Promise.all(['grad', 'ug'].map(k => raArLoadPhotoMap(k).catch(() => {}))).then(() => {
+      try { if (raAllData.length) raRenderList(); } catch (e) {}
+      try { if (raUgAllData.length) raUgRenderList(); } catch (e) {}
+    });
+  }
+}
+// ─── 只读：列表里的「📷」和看图层（左右切换、点空白或 × 关闭；没有下载按钮）───
+function raRoMark(kind, r) {
+  if (!raReadOnly || !raCanPhotos() || !raAR_PH[kind] || !raAR_PH[kind][String(r.id)]) return '';
+  return `<button class="btn btn-secondary" style="padding:3px 8px;font-size:10px;margin-right:3px" title="看照片" onclick="raRoView('${kind}','${raArEsc(String(r.id))}')">📷</button>`;
+}
+let raRoV = null;
+async function raRoView(kind, id, fromGrid) {
+  let ids = fromGrid ? (raPH[kind].rows || []).map(r => String(r.id)).filter(x => raAR_PH[kind][x]) : Object.keys(raAR_PH[kind] || {});
+  if (ids.indexOf(String(id)) < 0) ids = [String(id)].concat(ids);
+  raRoV = { kind, ids, i: ids.indexOf(String(id)) };
+  let ov = document.getElementById('ra-ro-view');
+  if (!ov) {
+    ov = document.createElement('div'); ov.id = 'ra-ro-view';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center';
+    ov.onclick = e => { if (e.target === ov || e.target.dataset.a === 'close') ov.remove(); else if (e.target.dataset.a === 'prev') raRoStep(-1); else if (e.target.dataset.a === 'next') raRoStep(1); };
+    document.body.appendChild(ov);
+  }
+  raRoShow();
+}
+function raRoStep(d) { const v = raRoV; if (!v) return; v.i = (v.i + d + v.ids.length) % v.ids.length; raRoShow(); }
+async function raRoShow() {
+  const ov = document.getElementById('ra-ro-view'), v = raRoV; if (!ov || !v) return;
+  const b = 'position:absolute;top:50%;transform:translateY(-50%);width:40px;height:56px;border:none;border-radius:4px;background:rgba(255,255,255,.2);color:#fff;font-size:26px;cursor:pointer';
+  ov.innerHTML = `<div data-a="close" style="position:absolute;top:10px;right:16px;color:#fff;font-size:28px;cursor:pointer;line-height:1">×</div>
+    ${v.ids.length > 1 ? `<button data-a="prev" style="${b};left:12px">‹</button><button data-a="next" style="${b};right:12px">›</button>` : ''}
+    <div id="ra-ro-img" style="color:#fff;font-size:12px">读取中…</div>
+    <div style="position:absolute;bottom:10px;left:0;right:0;text-align:center;color:#ddd;font-size:11px">${v.i + 1} / ${v.ids.length}</div>`;
+  const cur = v.ids[v.i];
+  let url = ''; try { url = await raArResolveSrc(raAR_PH[v.kind][cur]); } catch (e) {}
+  if (raRoV !== v || v.ids[v.i] !== cur) return;
+  const box = document.getElementById('ra-ro-img'); if (!box) return;
+  box.outerHTML = url ? `<img id="ra-ro-img" src="${raArEsc(url)}" oncontextmenu="return false" draggable="false" style="max-width:86vw;max-height:88vh;border-radius:4px;background:#fff">` : '<div id="ra-ro-img" style="color:#fff;font-size:12px">读不到这张照片</div>';
 }
