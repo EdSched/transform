@@ -2447,12 +2447,12 @@ function raNoMajorBanner(kind) {
   const n = data.filter(raNoMajorNoTrack).length;
   if (!n) return '';
   const on = raNoMajorOnly[kind];
-  return `<div style="margin:6px 0;padding:6px 10px;background:#fff7e0;border:1px solid #e8d9a8;border-radius:6px;font-size:12px">有 ${n} 条记录没有设置专业（系統也空），负责人老师无法管理，请补上专业。
+  return `<div style="margin:6px 0;padding:6px 10px;background:#fff7e0;border:1px solid #e8d9a8;border-radius:6px;font-size:12px">有 ${n} 条记录没有填在籍学科（系統）也没有设置专业，负责人老师无法管理，请补上。
     <a href="javascript:void(0)" onclick="raToggleNoMajor('${kind}')" style="color:var(--gold,#b8953a);font-weight:600">${on ? '显示全部' : '只看这些记录'}</a></div>`;
 }
 const raNoMajorOnly = { grad: false, ug: false };
 // 没有专业、系統（track）也没有：数据库推不出领域，只有管理员能管
-function raNoMajorNoTrack(r) { return !r.our_major && ['bunka', 'rika', 'bijutsu'].indexOf(r.track) < 0; }
+function raNoMajorNoTrack(r) { return !r.our_major && !r.track; }   // 学部音乐 / 其他是有效系統，只是没有对应领域（只有管理员管），不算；系統空的在列表里会默认显示成「学部文科」
 function raToggleNoMajor(kind) { raNoMajorOnly[kind] = !raNoMajorOnly[kind]; if (kind === 'ug') raUgRenderList(); else raRenderList(); }
 // 直连 Storage 用的请求头（上传 / 删除 / 取临时链接不能走 sb()）：同样带当前登录身份，先取新鲜 token
 async function raAuthHeaders(extra) {
