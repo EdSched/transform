@@ -209,11 +209,9 @@ function raCan(action) {
 function raIsTeacher() { return raMode === 'teacher'; }
 // 能不能看截图 / 补图 / 做海报（数据库 can_manage_results() 同一规则）：管理员；result_admin；管理模式的负责人且「合格实绩」页对他开放
 function raCanPhotos() {
-  if (raIsTeacher() && raReadOnly) {   // 只读账号：有 result_admin，或管理范围里有领域 / 专业才能看照片（具体哪几条以数据库读到的为准）
+  if (raIsTeacher() && raReadOnly) {   // 只读账号：只有在老师管理里勾了「合格照片」才能看图 / 补图（具体哪几条以数据库读到的为准）
     const t = (typeof teacherData !== 'undefined' && teacherData) || {};
-    if (String((t.permissions || {}).result_admin).toLowerCase() === 'true') return true;
-    const ms = t.manage_scope || {};
-    return !!((ms.domains || []).length || (ms.majors || []).length);
+    return String((t.permissions || {}).result_photo_view).toLowerCase() === 'true';
   }
   if (raIsTeacher()) return true;   // 老师端「合格实绩管理」本身就要求 result_admin
   if (typeof ACCESS_KEY === 'undefined' || !ACCESS_KEY) return true;   // 管理员邮箱登录
