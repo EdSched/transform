@@ -1739,6 +1739,7 @@ function raListRows() {
   raAllData.forEach(r => { r._maj = raRmLabel(r); });
   let rows = raAllData.filter(r => {
     if (!raRmMatch('grad', r)) return false;
+    if (raNoMajorOnly.grad && !raNoMajorNoTrack(r)) return false;
     if (q && !searchMatch(q, [r.student, r.univ, r.dept, r.spec])) return false;
     return true;
   });
@@ -2095,7 +2096,7 @@ async function raDupMerge(kind, g, keep, opts) {
   try {
     await raArEnsurePhotoMap(kind);
     const { others, patch, photoFrom, posterFrom } = raDupPlan(kind, g, keep);
-    if (Object.keys(patch).length) await raSbFetch(`${table}?id=eq.${enc(keep.id)}`, { method: 'PATCH', body: patch, prefer: 'return=minimal', headers: {} });
+    if (Object.keys(patch).length && !(await raWriteChecked(table, `id=eq.${enc(keep.id)}`, 'PATCH', patch)).length) throw new Error(raNotMineMsg('改成', kind, keep));
     // 照片 / 海报：保留的这条没有、别的有，就改挂到保留的这条；都有则保留的这条的，其余随删除清理
     if (photoFrom) {
       const o = photoFrom;
@@ -2277,13 +2278,13 @@ function raRenderList() {
       <td>${r.eng_score?`<span style="font-size:10px;padding:1px 6px;border-radius:2px;background:#e8f4e4;color:#1a4020">${r.eng_score}</span>`:'—'}</td>
       <td>${r.student||'—'}</td>
       <td style="white-space:nowrap">
-        <button class="btn btn-secondary" style="padding:3px 10px;font-size:11px;margin-right:4px" onclick="raOpenEditModal(this)">${raReadOnly ? '详细' : '編集'}</button>
-        ${raReadOnly ? '' : '<button class="btn btn-danger" style="padding:3px 10px;font-size:11px" onclick="raDoDelete(this)">削除</button>'}
+        ${(raReadOnly || raRowManageable('grad', r)) ? `<button class="btn btn-secondary" style="padding:3px 10px;font-size:11px;margin-right:4px" onclick="raOpenEditModal(this)">${raReadOnly ? '详细' : '編集'}</button>
+        ${raReadOnly ? '' : '<button class="btn btn-danger" style="padding:3px 10px;font-size:11px" onclick="raDoDelete(this)">削除</button>'}` : RA_NO_SCOPE_TXT}
       </td>
     </tr>`;
   }
   html += '</tbody></table></div>';
-  document.getElementById('list-area').innerHTML = html;
+  document.getElementById('list-area').innerHTML = raNoMajorBanner('grad') + html;
 }
 
 function raSortList(col) {
@@ -2294,15 +2295,29 @@ function raSortList(col) {
 function raConfirmDelete(id, univ) {
   if (!raCan('delete')) { raToast('没有权限', false); return; }
   raShowModal('削除確認', `「${univ}」のレコードを削除しますか？`, async () => {
-    try { await raDeleteResult(id); raAllData = raAllData.filter(r => r.id !== id); raRenderList(); raToast('削除しました ✓'); }
-    catch(e) { raToast('削除エラー: ' + e.message, false); }
+    try { await raDeleteResult(id); await raLoadList(); raToast('削除しました ✓'); }
+    catch(e) { raToast(e.message, false); }
   });
 }
 
+// 全件删除：逐条删并核对；只清掉确认删成功的那些的照片 / 海报；最后以数据库为准重读列表
+async function raDeleteAllChecked(kind) {
+  const ug = kind === 'ug', table = ug ? raUG_TABLE : 'admission_results', data = (ug ? raUgAllData : raAllData).slice();
+  const okIds = [], bad = [];
+  for (const r of data) {
+    let got = [];
+    try { got = await raWriteChecked(table, `id=eq.${r.id}`, 'DELETE'); } catch (e) { got = []; }
+    if (got.length) okIds.push(r.id); else bad.push(r);
+  }
+  if (okIds.length) await pstDeleteForResults(kind, okIds);
+  if (ug) await raUgLoadList(); else await raLoadList();
+  const list = bad.slice(0, 20).map(r => `${r.student || '—'}（${r.univ || ''}）`).join('、') + (bad.length > 20 ? ` 等 ${bad.length} 条` : '');
+  raToast(bad.length ? `成功 ${okIds.length} 条，没有权限 ${bad.length} 条：${list}` : '全件削除しました ✓', !bad.length);
+}
 function raConfirmDeleteAll() {
   if (!raCan('deleteAll')) { raToast('没有权限', false); return; }
   raShowModal('全件削除', `${raAllData.length} 件すべてを削除しますか？この操作は元に戻せません。`, async () => {
-    try { await pstDeleteForResults('grad', raAllData.map(r=>r.id)); for (const id of raAllData.map(r=>r.id)) await raSbFetch(`admission_results?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); raAllData = []; raRenderList(); raToast('全件削除しました ✓'); }
+    try { await raDeleteAllChecked('grad'); }
     catch(e) { raToast('削除エラー: ' + e.message, false); }
   });
 }
@@ -2411,6 +2426,34 @@ async function raSbFetch(path, opts = {}) {
   const h = Object.assign({}, opts.prefer ? { Prefer: opts.prefer } : {}, opts.headers || {});
   return sb('/rest/v1/' + path, opts.method || 'GET', opts.body || null, Object.keys(h).length ? { headers: h } : null);
 }
+// 写 admission_results / undergrad_results 后核对：数据库因权限一行都没改 / 没删时不会报错，所以要回读受影响的行数。
+// 返回受影响的行（只回 id）；0 行 = 没写进去（不在管理范围 / 记录已不存在）
+async function raWriteChecked(table, filter, method, body) {
+  const res = await raSbFetch(`${table}?${filter}&select=id`, { method, body: body || null, prefer: 'return=representation', headers: {} });
+  return Array.isArray(res) ? res : [];
+}
+function raNotMineMsg(what, kind, row) {
+  const mj = row && row.our_major;
+  const label = mj ? ((typeof MAJOR_LABEL !== 'undefined' && MAJOR_LABEL[mj]) || mj) : '未设置';
+  return `没有${what}：这条不在你的管理范围（专业：${label}），请联系管理员处理。`;
+}
+// 这一行我能不能删 / 改（管理员都能；负责人看 our_major / track 在不在自己范围，同数据库 can_manage_result_row）
+function raRowManageable(kind, row) { return raInMyScope(kind, row); }
+const RA_NO_SCOPE_TXT = '<span style="font-size:10px;color:var(--text-muted)">不在你的管理范围</span>';
+// 没有设置专业的记录（负责人老师管不了）：管理员列表顶部提示，点了筛出这些记录
+function raNoMajorBanner(kind) {
+  if (raIsTeacher() || raScopedLead()) return '';
+  const data = kind === 'ug' ? raUgAllData : raAllData;
+  const n = data.filter(raNoMajorNoTrack).length;
+  if (!n) return '';
+  const on = raNoMajorOnly[kind];
+  return `<div style="margin:6px 0;padding:6px 10px;background:#fff7e0;border:1px solid #e8d9a8;border-radius:6px;font-size:12px">有 ${n} 条记录没有设置专业（系統也空），负责人老师无法管理，请补上专业。
+    <a href="javascript:void(0)" onclick="raToggleNoMajor('${kind}')" style="color:var(--gold,#b8953a);font-weight:600">${on ? '显示全部' : '只看这些记录'}</a></div>`;
+}
+const raNoMajorOnly = { grad: false, ug: false };
+// 没有专业、系統（track）也没有：数据库推不出领域，只有管理员能管
+function raNoMajorNoTrack(r) { return !r.our_major && ['bunka', 'rika', 'bijutsu'].indexOf(r.track) < 0; }
+function raToggleNoMajor(kind) { raNoMajorOnly[kind] = !raNoMajorOnly[kind]; if (kind === 'ug') raUgRenderList(); else raRenderList(); }
 // 直连 Storage 用的请求头（上传 / 删除 / 取临时链接不能走 sb()）：同样带当前登录身份，先取新鲜 token
 async function raAuthHeaders(extra) {
   const t = (await __sbFreshToken()) || __getSbToken() || SB_KEY;
@@ -2665,8 +2708,18 @@ async function raInsertBatch(rows) {
   return raSbFetch('admission_results', { method:'POST', body:clean, prefer:'return=representation' });
 }
 async function raDeleteResult(id) {
-  if (!raCan('delete')) { raToast('没有权限', false); return; } await pstDeleteForResults('grad', [id]); return raSbFetch(`admission_results?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); }
-async function raUpdateResult(id, row) { return raSbFetch(`admission_results?id=eq.${id}`, { method:'PATCH', body:row }); }
+  if (!raCan('delete')) { raToast('没有权限', false); return; }
+  const row = raAllData.find(r => String(r.id) === String(id));
+  const got = await raWriteChecked('admission_results', `id=eq.${id}`, 'DELETE');
+  if (!got.length) throw new Error(raNotMineMsg('删掉', 'grad', row));
+  await pstDeleteForResults('grad', [id]);   // 记录确认删掉之后再清照片 / 海报
+  return got;
+}
+async function raUpdateResult(id, row) {
+  const got = await raWriteChecked('admission_results', `id=eq.${id}`, 'PATCH', row);
+  if (!got.length) throw new Error(raNotMineMsg('改成', 'grad', raAllData.find(r => String(r.id) === String(id))));
+  return got;
+}
 
 // JLPT 拆分（学部 / 大学院导入共用）：格子里找 N1–N5（全角半角、大小写都认）作级别；级别以外第一个 2–3 位数字（0–180）作分数；
 // 括号里的说明单独返回 note。找不到 N1–N5：level = ''
@@ -2812,13 +2865,13 @@ async function raSaveTierChanges() {
   const btn = document.getElementById('tier-save-btn');
   btn.disabled = true; btn.textContent = '保存中...';
   const status = document.getElementById('tier-status');
-  let done = 0;
+  let done = 0; const tierBad = [];
   try {
     for (const [univ, tier] of entries) {
-      await raSbFetch(`admission_results?univ=eq.${encodeURIComponent(univ)}`, { method:'PATCH', body:{tier}, prefer:'return=minimal', headers:{} });
-      done++; status.textContent = `${done} / ${entries.length} 件処理中...`;
+      const got = await raWriteChecked('admission_results', `univ=eq.${encodeURIComponent(univ)}`, 'PATCH', { tier });
+      if (got.length) done++; else tierBad.push(univ); status.textContent = `${done} / ${entries.length} 件処理中...`;
     }
-    raToast(`${done} 大学のTierを更新しました ✓`);
+    raToast(tierBad.length ? `成功 ${done} 所大学，没有权限 ${tierBad.length} 所：${tierBad.join('、')}` : `${done} 大学のTierを更新しました ✓`, !tierBad.length);
     raTierChanges = {};
     await raLoadTierTab();
   } catch(e) { raToast('エラー: ' + e.message, false); btn.disabled = false; raUpdateTierSaveBtn(); }
@@ -2846,7 +2899,7 @@ async function raHandleRepairFile(file) {
       if (univCol === -1) { status.textContent = '大学名の列が見つかりません'; return; }
       status.textContent = `${dataRows.length} 件を処理中...`;
       const all = await raFetchAllResults();
-      let updated = 0, skipped = 0;
+      let updated = 0, skipped = 0; const repairBad = [];
       for (const row of dataRows) {
         const univ = String(row[univCol] || '').trim();
         if (!univ) continue;
@@ -2863,11 +2916,11 @@ async function raHandleRepairFile(file) {
         });
         for (const rec of matches) {
           if (rec.jlpt || rec.eng_type) { skipped++; continue; }
-          await raSbFetch(`admission_results?id=eq.${rec.id}`, { method:'PATCH', body:{jlpt,jlpt_score,eng_type,eng_score}, prefer:'return=minimal', headers:{} });
-          updated++;
+          const g = await raWriteChecked('admission_results', `id=eq.${rec.id}`, 'PATCH', { jlpt, jlpt_score, eng_type, eng_score });
+          if (g.length) updated++; else repairBad.push(`${rec.student || '—'}（${rec.univ || ''}）`);
         }
       }
-      status.textContent = `完了: ${updated} 件更新, ${skipped} 件スキップ ✓`;
+      status.textContent = `完了: ${updated} 件更新, ${skipped} 件スキップ` + (repairBad.length ? `，没有权限 ${repairBad.length} 条：${repairBad.slice(0, 20).join('、')}` : ' ✓');
       document.getElementById('repair-input').value = '';
     } catch(err) { status.textContent = 'エラー: ' + err.message; }
   };
@@ -2901,7 +2954,13 @@ async function raUgInsertBatch(rows) {
   return raSbFetch(raUG_TABLE, { method:'POST', body:clean, prefer:'return=representation' });
 }
 async function raUgDeleteOne(id) {
-  if (!raCan('delete')) { raToast('没有权限', false); return; } await pstDeleteForResults('ug', [id]); return raSbFetch(`${raUG_TABLE}?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); }
+  if (!raCan('delete')) { raToast('没有权限', false); return; }
+  const row = raUgAllData.find(r => String(r.id) === String(id));
+  const got = await raWriteChecked(raUG_TABLE, `id=eq.${id}`, 'DELETE');
+  if (!got.length) throw new Error(raNotMineMsg('删掉', 'ug', row));
+  await pstDeleteForResults('ug', [id]);   // 记录确认删掉之后再清照片 / 海报
+  return got;
+}
 
 // ─── 学部录入表单（手动添加 / 编辑窗口 / 公开页 submit-undergrad.html 三处同一套字段和顺序）─────────────
 // 顺序：真实姓名 → 年份 → 在籍学科 → 学校名 → 学部名 → 出愿区分 → EJU → 英语 → JLPT → 班主任 → 合格通知书 → 留言
@@ -3411,6 +3470,7 @@ function raUgListRows() {
 
   let rows = raUgAllData.filter(r => {
     if (!raRmMatch('ug', r)) return false;
+    if (raNoMajorOnly.ug && !raNoMajorNoTrack(r)) return false;
     if (fT !== '' && String(r.tier ?? raUgTierOf(r.univ)) !== fT) return false;
     if (q && !searchMatch(q, [r.student, r.univ, r.dept, r.spec, r.homeroom])) return false;
     return true;
@@ -3461,13 +3521,13 @@ function raUgRenderList() {
       <td>${r.eju_total||'—'}</td><td>${E(jl)}</td><td>${r.toefl||'—'}</td><td>${r.toeic||'—'}</td><td>${r.ielts||'—'}</td><td>${E(r.homeroom||'—')}</td><td>${E(r.student||'—')}</td>
       <td style="white-space:nowrap">
         <button class="btn btn-secondary" style="padding:3px 8px;font-size:10px;margin-right:3px" onclick="raUgToggleDetail(this)">详情</button>
-        <button class="btn btn-secondary" style="padding:3px 8px;font-size:10px;margin-right:3px" onclick="raUgOpenEditModal(this)">${raReadOnly ? '详细' : '編集'}</button>
-        ${raCan('delete') ? '<button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="raUgDoDelete(this)">削除</button>' : ''}
+        ${(raReadOnly || raRowManageable('ug', r)) ? `<button class="btn btn-secondary" style="padding:3px 8px;font-size:10px;margin-right:3px" onclick="raUgOpenEditModal(this)">${raReadOnly ? '详细' : '編集'}</button>
+        ${raCan('delete') ? '<button class="btn btn-danger" style="padding:3px 8px;font-size:10px" onclick="raUgDoDelete(this)">削除</button>' : ''}` : RA_NO_SCOPE_TXT}
       </td>
     </tr>`;
   }
   html += '</tbody></table></div>';
-  document.getElementById('ug-list-area').innerHTML = html;
+  document.getElementById('ug-list-area').innerHTML = raNoMajorBanner('ug') + html;
 }
 
 // 展开 / 收起一行的详情：留言（可能很长）、全部 EJU、旧字段（学科名 / 备注）
@@ -3494,15 +3554,15 @@ function raUgSortList(col) {
 function raUgConfirmDelete(id, univ) {
   if (!raCan('delete')) { raToast('没有权限', false); return; }
   raShowModal('削除確認', `「${univ}」のレコードを削除しますか？`, async () => {
-    try { await raUgDeleteOne(id); raUgAllData = raUgAllData.filter(r=>r.id!==id); raUgRenderList(); raToast('削除しました ✓'); }
-    catch(e) { raToast('削除エラー: ' + e.message, false); }
+    try { await raUgDeleteOne(id); await raUgLoadList(); raToast('削除しました ✓'); }
+    catch(e) { raToast(e.message, false); }
   });
 }
 
 function raUgConfirmDeleteAll() {
   if (!raCan('deleteAll')) { raToast('没有权限', false); return; }
   raShowModal('全件削除', `${raUgAllData.length} 件すべてを削除しますか？この操作は元に戻せません。`, async () => {
-    try { await pstDeleteForResults('ug', raUgAllData.map(r=>r.id)); for (const r of raUgAllData) await raSbFetch(`${raUG_TABLE}?id=eq.${r.id}`, { method:'DELETE', prefer:'return=minimal', headers:{} }); raUgAllData = []; raUgRenderList(); raToast('全件削除しました ✓'); }
+    try { await raDeleteAllChecked('ug'); }
     catch(e) { raToast('削除エラー: ' + e.message, false); }
   });
 }
@@ -3595,9 +3655,7 @@ async function raSaveEdit(btn, force) {
     }
     const oldRow = raAllData.find(x => x.id === id);
     if (oldRow && oldRow.student_id && (oldRow.student || null) !== updates.student) updates.student_id = null;   // 改了学生名：旧关联作废
-    await raSbFetch(`admission_results?id=eq.${id}`, {
-      method: 'PATCH', body: updates, prefer: 'return=minimal', headers: {}
-    });
+    if (!(await raWriteChecked('admission_results', `id=eq.${id}`, 'PATCH', updates)).length) throw new Error(raNotMineMsg('改成', 'grad', raAllData.find(x => x.id === id)));
     // ローカルデータも更新
     const idx = raAllData.findIndex(x => x.id === id);
     if (idx >= 0) raAllData[idx] = { ...raAllData[idx], ...updates };
@@ -3676,7 +3734,7 @@ async function raUgSaveEdit(btn, force) {
     }
     const oldUg=raUgAllData.find(x=>x.id===id);
     if(oldUg&&oldUg.student_id&&(oldUg.student||null)!==updates.student) updates.student_id=null;   // 改了学生名：旧关联作废
-    await raSbFetch(`undergrad_results?id=eq.${id}`,{method:'PATCH',body:updates,prefer:'return=minimal',headers:{}});
+    if (!(await raWriteChecked('undergrad_results', `id=eq.${id}`, 'PATCH', updates)).length) throw new Error(raNotMineMsg('改成', 'ug', raUgAllData.find(x => x.id === id)));
     const idx2=raUgAllData.findIndex(x=>x.id===id);
     if(idx2>=0) raUgAllData[idx2]={...raUgAllData[idx2],...updates};
     if(idx2>=0&&updates.our_major&&updates.student&&!raIsTeacher()){ raBtnBusy(btn, '同步学生档案中…'); await raArSyncToStudent(raUgAllData[idx2],'undergrad_results'); }
@@ -3756,14 +3814,14 @@ async function raUgSaveTierChanges(){
   const btn=document.getElementById('ug-tier-save-btn');
   btn.disabled=true;btn.textContent='保存中...';
   const status=document.getElementById('ug-tier-status');
-  let done2=0;
+  let done2=0; const tierBad2=[];
   try{
     for(const [u,t] of entries){
-      await raSbFetch(`undergrad_results?univ=eq.${encodeURIComponent(u)}`,{method:'PATCH',body:{tier:t},prefer:'return=minimal',headers:{}});
-      done2++;
+      const got2 = await raWriteChecked('undergrad_results', `univ=eq.${encodeURIComponent(u)}`, 'PATCH', { tier: t });
+      if (got2.length) done2++; else tierBad2.push(u);
       status.textContent=`${done2}/${entries.length}件処理中...`;
     }
-    raToast(`${done2}大学のTierを更新しました ✓`);
+    raToast(tierBad2.length ? `成功 ${done2} 所大学，没有权限 ${tierBad2.length} 所：${tierBad2.join('、')}` : `${done2}大学のTierを更新しました ✓`, !tierBad2.length);
     raUgTierChanges2={};
     await raUgLoadTierTab();
   }catch(e){raToast('エラー: '+e.message,false);btn.disabled=false;raUgUpdateTierSaveBtn2();}
