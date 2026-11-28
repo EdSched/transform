@@ -210,7 +210,6 @@ function matStaffInner(sid) {
   const c = MATS[sid]; if (!c) return '';
   const track = matTrackOf(c.student);
   const riyuC = matCounts(c.plans, c.subs, track);
-  const pg = matProgress(c.items, c.rows, riyuC);
   if (!c.items.length) return `<div style="font-size:11px;color:var(--text-3,#999)">${track === 'gakubu' ? '学部' : '大学院'}的出愿材料清单还没有录入（admin 考学进度 →「📁 出愿材料准备」→「📋 材料清单」）</div>`;
   const sidJs = matEsc(sid).replace(/'/g, "\\'");
   const it = c.items.find(x => x.id === c.open);
@@ -231,9 +230,34 @@ function matStaffInner(sid) {
         <button onclick="matStaffSave('${sidJs}','${matEsc(it.id)}')" style="font-size:11px;border:none;color:#fff;background:var(--accent,#b8953a);border-radius:3px;padding:3px 14px;cursor:pointer;font-family:inherit">保存</button>
       </div>`;
   }
-  return `<div style="font-size:11px;color:var(--text-2,#5a5650);margin-bottom:6px">已准备 <b>${pg.ready} / ${pg.total}</b> 项</div>
-    ${matBoxesHtml(c.items, c.rows, riyuC, c.open, id => `matStaffOpen('${sidJs}','${matEsc(id)}')`, true)}
-    ${edit ? `<div style="border:1px solid var(--accent,#b8953a);border-radius:4px;padding:10px 12px;margin-top:8px;background:var(--surface,#fff)">${edit}</div>` : ''}`;
+  const rowOf = x => c.rows.find(r => r.item_id === x.id) || {};
+  const proofs = c.items.filter(x => !matIsDoc(x)), docs = c.items.filter(matIsDoc);
+  const chipCss = (fg, bg, bd, on) => `display:inline-flex;align-items:center;height:24px;box-sizing:border-box;padding:0 9px;border-radius:12px;font-size:11px;white-space:nowrap;cursor:pointer;color:${fg};background:${bg};border:1px solid ${on ? 'var(--accent,#b8953a)' : bd};${on ? 'box-shadow:0 0 0 1px var(--accent,#b8953a);' : ''}`;
+  const clickOf = x => `matStaffOpen('${sidJs}','${matEsc(x.id)}')`;
+  const proofChip = x => {
+    const st = rowOf(x).status || 'todo', on = c.open === x.id;
+    if (st === 'ready') return `<span onclick="${clickOf(x)}" style="${chipCss('#2a7a4a', '#e4f0e8', '#b8d8bc', on)}">✓ ${matEsc(x.name)}</span>`;
+    if (st === 'applying') return `<span onclick="${clickOf(x)}" style="${chipCss('#a0621a', '#fdf1e6', '#ecc9a0', on)}">◐ ${matEsc(x.name)}</span>`;
+    return `<span onclick="${clickOf(x)}" style="${chipCss('#8a8580', 'transparent', '#cfcac2', on)}">○ ${matEsc(x.name)}</span>`;
+  };
+  const docChip = x => {
+    const d = matDocState(x, riyuC, rowOf(x)), on = c.open === x.id;
+    const short = x.kind === 'prof_mail' ? (() => { const k = riyuC.byKind && riyuC.byKind.grad_prof_mail || {}; return k.total ? `${matEsc(x.name)} ${k.submitted || 0}/${k.total} · 同意 ${k.agreed || 0}` : `${matEsc(x.name)} ${matEsc(d.text)}`; })()
+      : x.kind === 'inquiry_mail' ? `${matEsc(x.name)} ${matEsc(d.text.replace(/^(\d+) 封.*$/, '$1 封'))}`
+      : `${matEsc(x.name)} ${riyuC.total ? `${riyuC.submitted}/${riyuC.total} 校 · 批复 ${riyuC.reviewed}` : matEsc(d.text)}`;
+    const col = d.done ? ['#2a7a4a', '#e4f0e8', '#b8d8bc'] : d.started ? ['#a0621a', '#fdf1e6', '#ecc9a0'] : ['#8a8580', 'transparent', '#cfcac2'];
+    return `<span onclick="${clickOf(x)}" style="${chipCss(col[0], col[1], col[2], on)}" title="${matEsc(d.text)}">${short}</span>`;
+  };
+  const readyN = proofs.filter(x => rowOf(x).status === 'ready').length;
+  let dl = '';   // 截止 = 出愿前 2 个月（考试月 -3）；考试月由考学进度卡片的节点计算记在 student._examIdx
+  const ei = c.student._examIdx;
+  if (typeof ei === 'number') { const i = ei - 3; dl = ` · 截止 ${Math.floor(i / 12)}年${i % 12 + 1}月`; }
+  const rowCss = 'display:flex;gap:8px;align-items:flex-start;margin-bottom:6px';
+  const lblCss = 'flex:0 0 150px;font-size:11px;font-weight:600;color:var(--text-2,#5a5650);line-height:24px';
+  const chipsCss = 'display:flex;flex-wrap:wrap;gap:5px;min-width:0';
+  return `${proofs.length ? `<div style="${rowCss}"><div style="${lblCss}">证明材料<span style="font-weight:400;color:var(--text-3,#999)">${matEsc(dl)} · ${readyN}/${proofs.length}</span></div><div style="${chipsCss}">${proofs.map(proofChip).join('')}</div></div>` : ''}
+    ${docs.length ? `<div style="${rowCss}"><div style="${lblCss}">文书<span style="font-weight:400;color:var(--text-3,#999)">（择校后）</span></div><div style="${chipsCss}">${docs.map(docChip).join('')}</div></div>` : ''}
+    ${edit ? `<div style="border:1px solid var(--accent,#b8953a);border-radius:4px;padding:10px 12px;margin-top:4px;background:var(--surface,#fff)">${edit}</div>` : ''}`;
 }
 function matStaffOpen(sid, itemId) {
   const c = MATS[sid]; if (!c) return;

@@ -131,6 +131,12 @@ async function loadStudyData() {
     }
   }
   studyData = { timeline, schoolPlans, planDraft: planDraftArr[0]||null, sharedLists, sharedSchools, bookings, sessionRecs, planVersions };
+  // 备考规划「材料准备」行用：自己的出愿材料清单与准备情况
+  try {
+    const mt = matTrackOf(studyStudent);
+    const [mi, mr] = await Promise.all([matLoadItems(mt).catch(()=>[]), sb(`/rest/v1/student_materials?student_id=eq.${encodeURIComponent(id)}&select=*`).catch(()=>[])]);
+    studyData.matItems = matItemsFor(mi || [], studyStudent); studyData.matRows = mr || [];
+  } catch (e) { studyData.matItems = []; studyData.matRows = []; }
   // VIP：额外加载 VIP 预约数据与绑定的课程规划（纯VIP和大课+VIP）
   if (studyShowVip(studyStudent)) {
     if (typeof loadVipData === 'function') { vipStudent = studyStudent; await loadVipData(); }
@@ -958,6 +964,7 @@ async function studyMatLoad() {
   ]);
   items = matItemsFor(items, studyStudent);
   smState = { track, items, rows, subs, err, openItem: smState.openItem || null };
+  if (!err) { studyData.matItems = items; studyData.matRows = rows; }
   studyMatRender();
 }
 // 出愿材料：默认只显示小方框；点一个方框，在网格下方展开「如何准备 / 参考例子 / 样本」和编辑项（一次只展开一项）
@@ -1358,8 +1365,9 @@ const STUDY_ROADMAP_ROWS = [
   { key:'school', icon:'🏫', label:'择校相关', dl:-2, dlName:'锁定教授最晚',
     ms:{ '-4':'完成初版出愿 list', '-3':'锁定教授', '-2':'针对教授修改计划书' },
     ms2:{ '-7':'完成初版出愿 list', '-3':'锁定教授', '-2':'针对教授修改计划书' }, dl2:-3 },
+  { key:'materials', icon:'🗂', label:'材料准备', dl:-3, dlName:'证明备齐最晚', ms:{ '-4':'开具证明（3 个月内有效）', '-3':'证明备齐' } },
   { key:'apply', icon:'📮', label:'出愿相关', dl:-1, dlName:'出愿',
-    ms:{ '-4':'准备相关证明', '-3':'联系教授', '-2':'参加说明会', '-1':'出愿' }, red:['-1'] },
+    ms:{ '-3':'联系教授', '-2':'参加说明会', '-1':'出愿' }, red:['-1'] },
   { key:'kakomon', icon:'✏️', label:'过去问备考', dl:0, dlName:'面试稿完成最晚',
     ms:{ '-3':'阅读教授论文', '-2':'笔试练习开始', '-1':'过去问刷题', '0':'面试稿・面试训练' } },
   { key:'exam', icon:'🎓', label:'大学院考试', dl:0, dlName:'考试',
@@ -1480,6 +1488,13 @@ function buildStudyRoadmap() {
                 cur: (plans.length ? `已选 ${plans.length}/6 校` : '未选校') + (contactedN ? ` · 已发邮件 ${contactedN} 校` : '') + (profOkN ? ` · 教授OK ${profOkN} 校` : '') },
     apply:    { done: appliedN > 0 || ['已出愿','已合格'].includes(apply), active: ['联系教授中','材料准备中'].includes(apply) || contactedN > 0,
                 cur: appliedN ? `已出愿 ${appliedN} 校` : (apply || '未开始') },
+    materials: (() => {
+      const mi = (studyData.matItems || []).filter(it => !matIsDoc(it)), mr = studyData.matRows || [];
+      const stOf = it => ((mr.find(x => x.item_id === it.id) || {}).status) || 'todo';
+      const rd = mi.filter(it => stOf(it) === 'ready').length, ap = mi.filter(it => stOf(it) === 'applying').length;
+      return { done: mi.length > 0 && rd === mi.length, active: rd + ap > 0,
+               cur: mi.length ? `已准备 ${rd}/${mi.length} 项` + (ap ? ` · 申请中 ${ap} 项` : '') : '材料清单未录入' };
+    })(),
     kakomon:  { done: isDone('exam', exam), active: !!exam || kakomonN > 0 || interviewN > 0,
                 cur: [(kakomonN ? `过去问已开始 ${kakomonN} 校` : ''), (interviewN ? `面试稿完成 ${interviewN} 校` : ''), (typeof ivsTimelineText === 'function' ? ivsTimelineText() : ''), exam || ''].filter(Boolean).join(' · ') || '未开始' },
     exam:     { done: passedN > 0 || apply === '已合格', active: appliedN > 0 || apply === '已出愿',

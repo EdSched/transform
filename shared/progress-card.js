@@ -48,11 +48,11 @@ function pgcNodes(s, latest, plans, draft, ctx) {
     while (examIdx < nowIdx) examIdx += 12;
     if (route === 'next_summer') examIdx += 12;
   }
-  s._computedRoute = route;
+  s._computedRoute = route; s._examIdx = examIdx;
   // 各项目最晚节点偏移（次年路线：语言按冬季要求、草稿提前到12月）
   const DL = route === 'next_summer'
-    ? { japanese: -7, english: -7, plan: -8, school: -3, apply: -1, kakomon: 0, exam: 0 }
-    : { japanese: -1, english: -1, plan: -3, school: -2, apply: -1, kakomon: 0, exam: 0 };
+    ? { japanese: -7, english: -7, plan: -8, school: -3, materials: -3, apply: -1, kakomon: 0, exam: 0 }
+    : { japanese: -1, english: -1, plan: -3, school: -2, materials: -3, apply: -1, kakomon: 0, exam: 0 };
   const ymStr = i => `${Math.floor(i / 12)}年${i % 12 + 1}月`;
   let refs = 0;
   try { refs = draft && draft.prior_research_list ? JSON.parse(draft.prior_research_list).length : 0; } catch (e) {}
@@ -77,12 +77,35 @@ function pgcNodes(s, latest, plans, draft, ctx) {
   const planItem = gakubu
     ? { label: '志望理由书', cur: riyuCountText(riyuC), done: riyuC.total > 0 && riyuC.reviewed >= riyuC.total, dl: DL.plan, dlName: '完成最晚' + dlSuffix }
     : { label: '研究计划书', cur: [plan || (draftUploaded ? '已完成' : draftFilled ? '撰写中' : refs ? '在收集材料' : '未填写'), refs ? `文献 ${refs} 条` : '', draftUploaded ? '📎 完成稿已上传' : ''].filter(Boolean).join(' · '), done: plan === '已完成' || draftUploaded, dl: DL.plan, dlName: '草稿完成最晚' + dlSuffix };
+  // 材料准备（证明类条目）+ 出愿行后面的文书进度
+  let matCur = '材料清单未录入', matDone = false, docCur = '';
+  if (typeof matItemsFor === 'function' && typeof matTrackOf === 'function') {
+    const track = matTrackOf(s);
+    const mItems = matItemsFor(((ctx && ctx.matItems) || []).filter(it => it.track === track), s);
+    const mRows = ((ctx && ctx.matsMap) || {})[s.id] || [];
+    const proofs = mItems.filter(it => !matIsDoc(it));
+    if (proofs.length) {
+      const st = it => ((mRows.find(r => r.item_id === it.id) || {}).status) || 'todo';
+      const readyN = proofs.filter(it => st(it) === 'ready').length, applyingN = proofs.filter(it => st(it) === 'applying').length;
+      matCur = `已准备 ${readyN}/${proofs.length} 项` + (applyingN ? ` · 申请中 ${applyingN} 项` : '');
+      matDone = readyN === proofs.length;
+    }
+    if (typeof matCounts === 'function') {
+      const mc = matCounts(plans, ((ctx && ctx.riyuSubsMap) || {})[s.id], track);
+      const parts = [];
+      if (!gakubu && mc.total > 0) parts.push(`志望理由书 已提交 ${mc.submitted}/${mc.total} 校`);
+      const pm = mc.byKind && mc.byKind.grad_prof_mail;
+      if (pm && pm.total > 0) parts.push(`联系教授邮件 已提交 ${pm.submitted}/${pm.total} 校`);
+      docCur = parts.length ? ' · ' + parts.join(' · ') : '';
+    }
+  }
   const defs = [
     { label: '日语', cur: [jp || '未填写', s.japanese_score || ''].filter(Boolean).join(' · '), done: dn('japanese', jp), dl: DL.japanese, dlName: '成绩确定最晚' + dlSuffix },
     { label: '英语', cur: [en || '未填写', s.english_score || ''].filter(Boolean).join(' · '), done: dn('english', en), dl: DL.english, dlName: '成绩确定最晚' + dlSuffix },
     planItem,
     { label: '择校・联系教授', cur: (plans.length ? `已选 ${plans.length}/6 校` : '未选校') + (contactedN ? ` · 已发邮件 ${contactedN} 校` : '') + (profOkN ? ` · 教授OK ${profOkN} 校` : '') + (apply ? ' · ' + apply : ''), done: profOkN > 0, dl: DL.school, dlName: '锁定教授最晚' },
-    { label: '出愿', cur: appliedN ? `已出愿 ${appliedN} 校` : (apply || '未开始'), done: appliedN > 0 || ['已出愿', '已合格'].includes(apply), dl: DL.apply, dlName: '出愿' },
+    { label: '材料准备', cur: matCur, done: matDone, dl: DL.materials, dlName: '证明备齐最晚' },
+    { label: '出愿', cur: (appliedN ? `已出愿 ${appliedN} 校` : (apply || '未开始')) + docCur, done: appliedN > 0 || ['已出愿', '已合格'].includes(apply), dl: DL.apply, dlName: '出愿' },
     { label: '过去问・面试稿', cur: [(kakomonN ? `过去问已开始 ${kakomonN} 校` : ''), (interviewN ? `面试稿完成 ${interviewN} 校` : ''), (typeof ivmCardText === 'function' ? ivmCardText(s.id) : ''), exam || ''].filter(Boolean).join(' · ') || '未开始', done: dn('exam', exam), dl: DL.kakomon, dlName: '完成最晚' },
     { label: '大学院考试', cur: passedN ? `合格 ${passedN} 校` : apply === '已合格' ? '已合格' : appliedN ? `已出愿 ${appliedN} 校・待考试` : '—', done: passedN > 0 || apply === '已合格', dl: DL.exam, dlName: '考试' },
   ];
