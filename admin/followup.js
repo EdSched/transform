@@ -36,6 +36,7 @@ fuSetHost({
   slice: l => l.slice(0, FUA.shown),
   more: n => n <= FUA.shown ? '' : `<div onclick="fuaMore()" style="text-align:center;padding:10px;margin:6px 0;font-size:11px;color:var(--accent);border:1px dashed var(--border);border-radius:4px;cursor:pointer">加载更多（还有 ${n - FUA.shown} 人）</div>`,
   reset: () => { FUA.shown = LIST_PAGE; },
+  openDetail: id => openStudentDetail(id),
   box: () => document.getElementById('mainContent'),
   reload: () => (curPage === 'focus' ? renderFocusPage : renderFollowUpPage)(document.getElementById('mainContent')),
 });

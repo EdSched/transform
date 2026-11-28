@@ -1149,6 +1149,7 @@ async function tsrToggle(id) {
 // 宿主：共用的面谈跟进读老师端全局筛选（领域 / 专业 / 状态 / 来源 / 搜索）和分页
 fuSetHost({
   filter: l => fuOnlyActive(l).filter(s => tsmMatch(s, 'status')), query: () => tsm.q, slice: l => tsmSlice(l), more: n => tsmMoreHtml(n), reset: () => { tsmShown = TSM_PAGE; },
+  openDetail: (id, name) => showStudentInfoTeacher(name, id),
   box: () => document.getElementById('sm_content'),
   reload: () => renderTsaMeetings(document.getElementById('sm_content') || document.getElementById('mainContent')),
 });

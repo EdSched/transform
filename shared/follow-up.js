@@ -12,6 +12,12 @@ let FU_HOST = { filter: l => l, slice: l => l, more: () => '', reset() {}, box: 
 function fuOnlyActive(list) { return (list || []).filter(s => !s.status || s.status === 'active'); }
 // 没有结果时的提示：有搜索词 = 「没有找到在籍学生」
 function fuEmptyText(dflt) { const q = FU_HOST.query ? String(FU_HOST.query() || '').trim() : ''; return q ? '没有找到在籍学生' : dflt; }
+// 学生行上的「档案详情」：宿主给了 openDetail 就打开档案卡，没给就退回学生概要
+function fuOpenDetail(id) {
+  const st = (tmData && tmData.students || []).find(x => x.id === id);
+  if (FU_HOST.openDetail) FU_HOST.openDetail(id, st ? st.name : (typeof tmStuName === 'function' ? tmStuName(id) : ''));
+  else if (typeof focusOpenSummary === 'function') focusOpenSummary(id);
+}
 function fuSetHost(h) { FU_HOST = Object.assign({}, FU_HOST, h); }
 const fuMe = () => (typeof riyuReviewerName === 'function' ? riyuReviewerName() : FU_ADMIN_NAME) || FU_ADMIN_NAME;
 
@@ -233,7 +239,7 @@ function tmRenderList() {
     return head + `<div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:6px">
       <div onclick="tmToggle('${s.id}')" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 14px;cursor:pointer;${open ? 'background:var(--bg)' : ''}">
         <span style="font-size:13px;font-weight:600">${fuEsc(s.name)}</span>
-        <span onclick="event.stopPropagation();copyNameText(tmStuName('${s.id}'),this)" style="font-size:10px;border:1px solid var(--border);border-radius:3px;padding:1px 7px;cursor:pointer;background:var(--surface);color:var(--text-2)">📋 姓名</span>
+        <span onclick="event.stopPropagation();fuOpenDetail('${s.id}')" style="font-size:10px;border:1px solid var(--border);border-radius:3px;padding:1px 7px;cursor:pointer;background:var(--surface);color:var(--text-2)">📄 档案详情</span>
         <span onclick="event.stopPropagation();tmGenReminder('${s.id}')" style="font-size:10px;border:1px solid var(--border);border-radius:3px;padding:1px 7px;cursor:pointer;background:var(--surface);color:var(--text-2)">✉ 联络文字</span>
         <span style="font-size:11px;color:var(--text-3)">${fuEsc(MAJORS[s.major] || s.major || '')}</span>
         ${exView ? '' : tmStateTag(r)}
