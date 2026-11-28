@@ -371,11 +371,19 @@ const SUPABASE_URL = 'https://vwntezfvqbrkeovnseku.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_cUnCkti5qv1_G4N6Ho5tpw_9pr7pSas';
 
 async function fetchAllUG() {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/undergrad_results?select=id,univ,dept,spec,track,pass_year,era,tier,jlpt,toefl,toeic,eju_japanese,eju_kijutsu,eju_bunsou,eju_math,eju_physics,eju_chemistry,eju_biology,eju_total,note&order=created_at.desc`, {
-    headers: {'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  const URL_ = `${SUPABASE_URL}/rest/v1/undergrad_results?select=id,univ,dept,spec,track,pass_year,era,tier,jlpt,toefl,toeic,eju_japanese,eju_kijutsu,eju_bunsou,eju_math,eju_physics,eju_chemistry,eju_biology,eju_total,note&order=created_at.desc,id.desc`;
+  // 每次最多回 1000 条：循环分页读到不足 1000 条为止
+  const PAGE = 1000; let all = [];
+  for (let from = 0; ; from += PAGE) {
+    const res = await fetch(URL_, {
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Range-Unit':'items','Range':`${from}-${from+PAGE-1}`}
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const part = await res.json();
+    all = all.concat(part);
+    if (part.length < PAGE) break;
+  }
+  return all;
 }
 
 // ─── State ────────────────────────────────────────────────────────────────────
