@@ -534,6 +534,8 @@ function buildTabs() {
   if (p.result_admin) tabs.push({ id: 'resultadmin', label: '🏆 合格实绩管理' });
   // 学部合格录入（permissions.result_ug_entry）：同一个页面，只能录入 / 编辑学部、传合格照片；与 result_admin 同时勾选时以 result_admin 为准
   if (p.result_ug_entry && !p.result_admin) tabs.push({ id: 'resultug', label: '🏆 学部合格录入' });
+  // 合格数据查看（只读，permissions.result_data_view）：像管理端一样看大学院 + 学部的全部合格数据（含照片），不能录入 / 编辑 / 删除 / 下载 / 导入 / 动海报；有「合格实绩管理」时不再重复显示
+  if (p.result_data_view && !p.result_admin) tabs.push({ id: 'resultview', label: '🏆 合格数据' });
   // 合格海报查询：admin 在营业功能中单独勾选（permissions.pass_posters）；只读已发布的海报
   if (p.pass_posters) tabs.push({ id: 'passposters', label: '🖼 合格海报' });
   if (p.lect_info) tabs.push({ id: 'lectinfo', label: '👤 讲师信息' });
@@ -593,6 +595,7 @@ function renderTab() {
     case 'passposters': renderTeacherPosters(mc); break;
     case 'resultadmin': raRender(mc, { mode: 'teacher' }); break;
     case 'resultug': raRender(mc, { mode: 'teacher', ugOnly: true }); break;
+    case 'resultview': raRender(mc, { mode: 'teacher', readOnly: true }); break;
     case 'lectinfo': renderLectInfo(mc); break;
     case 'studyprogress': renderTeacherStudyProgress(mc); break;
     case 'mycourses': renderMySchedule(mc); break;
